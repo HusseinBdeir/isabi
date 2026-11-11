@@ -6,9 +6,9 @@
 // Run: node build/verify_kiosk_cloud.mjs      (Node 22.5+ for node:sqlite; touches nothing live)
 
 import { DatabaseSync } from 'node:sqlite';
-import { handleKioskVerify } from '../functions/_lib/kiosk_verify.js';
+import { handleKioskPunchFeed, handleKioskVerify } from '../functions/_lib/kiosk_verify.js';
 import {
-  handleIndustryDomainStore, isServerOwnedCustomRow, isServerOwnedRowEditKey,
+  handleIndustryDomainStore, handleSync, isServerOwnedCustomRow, isServerOwnedRowEditKey,
   mirrorStoreDeltaToD1Tables, stripServerOwnedCustomRows
 } from '../functions/_lib/d1_store.js';
 import { canAccessCompany, isOwnerOrFullGroupSession } from '../functions/_lib/security.js';
@@ -16,7 +16,8 @@ import { canAccessCompany, isOwnerOrFullGroupSession } from '../functions/_lib/s
 // ---- minimal D1 stand-in ----
 class Stmt {
   constructor(db, sql, params = []) { this.db = db; this.sql = sql; this.params = params; }
-  bind(...p) { return new Stmt(this.db, this.sql, p); }
+  // D1 refuses a statement with more than 100 bound values; SQLite itself would not.
+  bind(...p) { if (p.length > 100) throw new Error(`D1 allows 100 bound values per statement, got ${p.length}`); return new Stmt(this.db, this.sql, p); }
   // D1 binds ?1, ?2 ... by position; node:sqlite treats ?N as named, so pass them by name.
   args() {
     const used = new Set((this.sql.match(/\?\d+/g) || []));
@@ -30,12 +31,25 @@ class Stmt {
   }
   async first() { return this.db.prepare(this.sql).get(...this.args()) || null; }
   async all() { return { results: this.db.prepare(this.sql).all(...this.args()) }; }
-  async run() { const r = this.db.prepare(this.sql).run(...this.args()); return { success: true, meta: { changes: r.changes } }; }
+  async run() {
+    // Tests can make another request land at the exact moment a stored document is about to be rewritten.
+    if (this.db.beforeKvWrite && /UPDATE edge_kv_store SET payload_json/.test(this.sql)) {
+      const hook = this.db.beforeKvWrite; this.db.beforeKvWrite = null; await hook();
+    }
+    if (this.db.beforeKvInsert && /INSERT OR IGNORE INTO edge_kv_store/.test(this.sql)) {
+      const hook = this.db.beforeKvInsert; this.db.beforeKvInsert = null; await hook();
+    }
+    const r = this.db.prepare(this.sql).run(...this.args()); return { success: true, meta: { changes: r.changes } };
+  }
 }
 class D1 {
   constructor() { this.db = new DatabaseSync(':memory:'); }
   prepare(sql) { return new Stmt(this.db, sql); }
-  async batch(stmts) { const out = []; for (const s of stmts) out.push(await s.all()); return out; }
+  // Tests can make something happen (or fail) at the exact moment a batch of row writes begins.
+  async batch(stmts) {
+    if (this.beforeBatch) { const hook = this.beforeBatch; this.beforeBatch = null; await hook(); }
+    const out = []; for (const s of stmts) out.push(await s.all()); return out;
+  }
   exec(sql) { this.db.exec(sql); }
   rows(sql, ...p) { return this.db.prepare(sql).all(...p); }
 }
@@ -388,6 +402,439 @@ console.log('attendance tablet');
   ok('NEGATIVE: an attendance face does not sign in on the till', r.json.matched === false, r.json);
   r = await call({ op: 'verify_face', resort: 'LAUNA', descriptor: vec(5) }, { key: KEY_LAUNA });
   ok('the till still recognises its own cashier', r.json.matched === true && r.json.userId === 'cash-1', r.json);
+}
+
+console.log('station keys made in the Command Center');
+{
+  const SUP = { role: 'Supervisor', companies: 'La Una' };
+  const keyDoc = () => d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'kiosk_station_keys'")[0].payload_json;
+  await call({ op: 'roster', site: 'LAUNA', device: 'gate', version: '0.6.0' }, { key: KEY_LAUNA });
+  let r = await call({ op: 'list_station_keys' }, { session: OWNER });
+  ok('the Owner lists the keys, with the site list', r.status === 200 && r.json.keys.length >= 4 && r.json.sites.length === 11
+    && r.json.sites.find(s => s.code === 'LAUNA').till === true && r.json.sites.find(s => s.code === 'WTC').till === false, r.json);
+  ok('NEGATIVE: the list carries no key and no hash', !/key_hash|[0-9a-f]{64}/.test(JSON.stringify(r.json)) && !JSON.stringify(r.json).includes(KEY_LAUNA), r.json);
+  ok('the list shows when a tablet was last heard from', r.json.keys.some(k => k.last_seen_at && k.device === 'gate'), r.json.keys.map(k => [k.id, k.last_seen_at, k.device]));
+
+  r = await call({ op: 'create_station_key', site: 'blanca', scope: 'pos', label: '  Blanca gate till  ' }, { session: OWNER });
+  const made = r.json;
+  ok('the Owner makes a till key for Blanca', r.status === 200 && made.ok && /^[A-HJ-NP-Za-km-z2-9]{24}$/.test(made.key)
+    && made.site === 'BLANCA' && made.company === 'Blanca' && made.scope === 'pos' && made.label === 'Blanca gate till'
+    && made.qr === `ISABIKEY1|BLANCA|pos|${made.key}`, made);
+  ok('only the hash of the new key is stored', !keyDoc().includes(made.key) && keyDoc().includes(made.id));
+  r = await call({ op: 'pos_sales', resort: 'BLANCA', sales: [sale('sale-blanca-1', { resort: 'BLANCA', userId: 'bl-1', userName: 'Blanca Cashier' })] }, { key: made.key });
+  ok('the new key posts sales for its own resort', r.status === 200 && r.json.ok && r.json.company === 'Blanca', r);
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [sale('sale-blanca-2')] }, { key: made.key });
+  const rr = await call({ op: 'roster', site: 'BLANCA' }, { key: made.key });
+  ok('NEGATIVE: it works for no other resort and for no attendance roster', r.status === 403 && rr.status === 403, [r.status, rr.status]);
+  const twin = await Promise.all([1, 2].map(n => call({ op: 'create_station_key', site: 'PALMS', scope: 'attendance', label: 'Palms door ' + n }, { session: OWNER })));
+  ok('two keys made in the same instant get different ids and keys', twin[0].json.ok && twin[1].json.ok && twin[0].json.id !== twin[1].json.id && twin[0].json.key !== twin[1].json.key, twin.map(t => t.json.id));
+  const twinWork = await Promise.all(twin.map(t => call({ op: 'roster', site: 'PALMS' }, { key: t.json.key })));
+  ok('and neither overwrote the other: both are on file and both work', keyDoc().includes(twin[0].json.id) && keyDoc().includes(twin[1].json.id)
+    && twinWork.every(w => w.status === 200), twinWork.map(w => w.status));
+  const mix = await Promise.all([
+    call({ op: 'revoke_station_key', id: twin[0].json.id }, { session: OWNER }),
+    call({ op: 'create_station_key', site: 'VOILE', scope: 'attendance', label: 'Voile door' }, { session: OWNER }),
+    call({ op: 'revoke_station_key', id: twin[1].json.id }, { session: OWNER })
+  ]);
+  const afterMix = (await call({ op: 'list_station_keys' }, { session: OWNER })).json.keys;
+  ok('switching keys off while another is made loses none of the three changes', mix.every(m => m.json.ok)
+    && afterMix.find(k => k.id === twin[0].json.id).revoked === true && afterMix.find(k => k.id === twin[1].json.id).revoked === true
+    && afterMix.some(k => k.id === mix[1].json.id && !k.revoked)
+    && (await call({ op: 'roster', site: 'PALMS' }, { key: twin[0].json.key })).status === 401
+    && (await call({ op: 'roster', site: 'VOILE' }, { key: mix[1].json.key })).status === 200, afterMix.map(k => [k.id, k.revoked]));
+  // Another Owner window switches a key off at the very moment this one is about to save a new key.
+  let innerRevoke = null;
+  d1.db.beforeKvWrite = async () => { innerRevoke = await call({ op: 'revoke_station_key', id: mix[1].json.id }, { session: OWNER }); };
+  r = await call({ op: 'create_station_key', site: 'PLATINUM', scope: 'pos', label: 'Platinum gate till' }, { session: OWNER });
+  const afterRace = (await call({ op: 'list_station_keys' }, { session: OWNER })).json.keys;
+  ok('NEGATIVE: saving a new key never brings a key back that was switched off in the same moment', r.json.ok && innerRevoke && innerRevoke.json.ok
+    && afterRace.find(k => k.id === mix[1].json.id).revoked === true && afterRace.some(k => k.id === r.json.id && !k.revoked)
+    && (await call({ op: 'roster', site: 'VOILE' }, { key: mix[1].json.key })).status === 401, afterRace.map(k => [k.id, k.revoked]));
+  // The general store route (/api/sync) can reach any stored document by name. The kiosk documents are shut to it.
+  const viaSync = async (body, session) => {
+    const req = new Request('https://example.test/app/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await handleSync(req, env, session, body, {});
+    return { status: res.status, text: await res.text() };
+  };
+  const groupSeat = { sub: 'u9', role: 'Group Supervisor', companies: 'ALL' };
+  const docBeforeSync = keyDoc();
+  const syncTries = [];
+  for (const who of [groupSeat, { sub: 'u1', role: 'Owner', companies: 'ALL' }]) {
+    for (const body of [
+      { op: 'get_mfg', doc: 'kiosk_station_keys' },
+      { op: 'patch', patch: { kiosk_station_keys: { keys: [{ id: 'planted', site_key: '*', scope: '', key_hash: 'f'.repeat(64) }] } } },
+      { op: 'patch', doc: 'mfg_web_store', patch: { pos_revenue_posting: { sites: { launa: { from: '2020-01-01' } } } } },
+      { op: 'get_mfg', doc: 'pos_revenue_posting' },
+      { op: 'get_mfg', doc: 'kiosk_key_seen:any' }
+    ]) {
+      const x = await viaSync(body, who);
+      syncTries.push(x.status === 403 && !/key_hash|[0-9a-f]{64}/.test(x.text));
+    }
+  }
+  ok('NEGATIVE: the general store route neither serves nor patches the key list, the last-seen marks or the posting dates, for any seat',
+    syncTries.every(Boolean) && keyDoc() === docBeforeSync && !keyDoc().includes('planted')
+    && d1.rows("SELECT COUNT(*) n FROM edge_kv_store WHERE doc_key = 'pos_revenue_posting'")[0].n === 0, syncTries);
+  r = await call({ op: 'provision_station_key', site: '*', rawKey: 'station-key-group-seat-06', id: 'group-seat' }, { session: { role: 'Group Supervisor', companies: 'ALL' } });
+  ok('NEGATIVE: the older provisioning op also refuses a non-Owner seat that has every company', r.status === 403 && !keyDoc().includes('group-seat'), r);
+
+  for (const [name, body] of [
+    ['an unknown site', { site: 'NOWHERE', scope: 'pos', label: 'Typo site' }],
+    ['no kind of tablet', { site: 'LAUNA', scope: '', label: 'No kind' }],
+    ['a key for everything', { site: '*', scope: 'pos', label: 'Any site' }],
+    ['a till key for a plant', { site: 'WTC', scope: 'pos', label: 'Plant till' }],
+    ['a nameless tablet', { site: 'LAUNA', scope: 'attendance', label: ' ' }]
+  ]) {
+    r = await call(Object.assign({ op: 'create_station_key' }, body), { session: OWNER });
+    ok(`NEGATIVE: ${name} is refused`, r.status === 400 && !r.json.key, r);
+  }
+  const before = keyDoc();
+  const tries = [];
+  for (const op of ['list_station_keys', 'create_station_key', 'revoke_station_key']) {
+    const body = { op, site: 'LAUNA', scope: 'attendance', label: 'Sneaky', id: made.id };
+    tries.push((await call(body, { key: KEY_LAUNA })).status, (await call(body, { key: KEY_ANY })).status,
+      (await call(body, { session: SUP })).status, (await call(body)).status, (await call(body, { session: { role: 'Group Supervisor', companies: 'ALL' } })).status);
+  }
+  ok('NEGATIVE: a station key, a Supervisor seat, a stranger and a non-Owner seat with every company cannot list, make or switch off keys',
+    JSON.stringify(tries) === JSON.stringify([403, 403, 403, 401, 403, 403, 403, 403, 401, 403, 403, 403, 403, 401, 403]) && keyDoc() === before, tries);
+
+  r = await call({ op: 'revoke_station_key', id: made.id }, { session: OWNER });
+  const again = await call({ op: 'revoke_station_key', id: made.id }, { session: OWNER });
+  const gone = await call({ op: 'revoke_station_key', id: 'ksk-nope' }, { session: OWNER });
+  ok('the Owner switches a key off (twice is harmless, an unknown id is named)', r.json.ok && again.json.ok && gone.status === 404, [r.json, again.json, gone.status]);
+  r = await call({ op: 'pos_sales', resort: 'BLANCA', sales: [sale('sale-blanca-3', { resort: 'BLANCA' })] }, { key: made.key });
+  ok('NEGATIVE: a switched-off key stops working', r.status === 401
+    && d1.rows("SELECT COUNT(*) n FROM kiosk_pos_sales WHERE id = 'sale-blanca-3'")[0].n === 0, r);
+  r = await call({ op: 'list_station_keys' }, { session: OWNER });
+  const listed = r.json.keys.find(k => k.id === made.id);
+  ok('the list shows it as switched off, and the older keys still work', listed && listed.revoked === true && listed.revoked_at
+    && (await call({ op: 'roster', site: 'LAUNA' }, { key: KEY_LAUNA })).status === 200, listed);
+}
+
+console.log('switching a person off and on at the door');
+{
+  const vec = seed => Array.from({ length: 128 }, (_, i) => Math.sin(seed * 31 + i) * 0.2);
+  const rosterOf = async extra => (await call(Object.assign({ op: 'roster', site: 'LAUNA', restore: true }, extra || {}), { key: KEY_LAUNA })).json;
+  let r = await call({ op: 'sync', site: 'LAUNA', staff: [{ id: 'st-1', name: 'Door Person', active: false }] }, { key: KEY_LAUNA });
+  let plain = await rosterOf();
+  let full = await rosterOf({ includeInactive: true });
+  ok('a person switched off at the door leaves the roster an older tablet gets', r.json.staff.includes('st-1') && !plain.staff.some(s => s.id === 'st-1')
+    && !plain.faces.some(f => f.staffId === 'st-1'), plain.staff.map(s => s.id));
+  const off = full.staff.find(s => s.id === 'st-1');
+  ok('a tablet that asks sees them as switched off, without their enrolments', off && off.active === false && !off.pinhash
+    && !full.faces.some(f => f.staffId === 'st-1'), off);
+  r = await call({ op: 'verify', site: 'LAUNA', method: 'face', descriptor: vec(1.001) }, { key: KEY_LAUNA });
+  ok('NEGATIVE: they do not clock in on the server', r.json.matched === false, r.json);
+  r = await call({ op: 'sync', site: 'LAUNA', staff: [{ id: 'st-1', name: 'Door Person' }] }, { key: KEY_LAUNA });
+  ok('NEGATIVE: an ordinary sync that says nothing about the switch does not switch them back on',
+    !(await rosterOf()).staff.some(s => s.id === 'st-1'));
+  r = await call({ op: 'sync', site: 'LAUNA', staff: [{ id: 'st-1', name: 'Door Person', active: true }] }, { key: KEY_LAUNA });
+  plain = await rosterOf();
+  ok('switching them back on restores the person with their enrolments', plain.staff.some(s => s.id === 'st-1' && s.active === true)
+    && plain.faces.filter(f => f.staffId === 'st-1' && f.descriptor.length === 128).length === 3, plain.staff.map(s => s.id));
+  r = await call({ op: 'verify', site: 'LAUNA', method: 'face', descriptor: vec(1.001) }, { key: KEY_LAUNA });
+  ok('and they clock in again', r.json.matched === true && r.json.staffId === 'st-1', r.json);
+  r = await call({ op: 'sync', site: 'LAUNA', staff: [{ id: 'stf-3', name: 'Voided Person', active: true }] }, { key: KEY_LAUNA });
+  full = await rosterOf({ includeInactive: true });
+  ok('NEGATIVE: a person voided in the staff register cannot be switched on from the tablet', !full.staff.some(s => s.id === 'stf-3'), full.staff.map(s => s.id));
+  r = await call({ op: 'sync', site: 'LAUNA', staff: [{ id: 'st-1', name: 'Door Person', active: false }] }, { key: KEY_TILL_ONLY });
+  ok('NEGATIVE: a till key cannot switch attendance staff', r.status === 403 && (await rosterOf()).staff.some(s => s.id === 'st-1'), r);
+}
+
+console.log('door tablet punches read by the Command Center');
+{
+  const feed = async (body, session, opts) => {
+    const req = new Request('https://example.test/app/api/kiosk/punches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const res = await handleKioskPunchFeed(req, env, session || null, body || {}, Object.assign({ settleMs: 0 }, helpers, opts || {}));
+    return { status: res.status, json: await res.json(), cors: res.headers.get('Access-Control-Allow-Origin') };
+  };
+  await call({ op: 'sync', site: 'LAUNA', punches: [
+    { id: 'p-2', staffId: 'st-2', staffName: 'Pin Person', ts: DAY + 'T05:02:00.000Z', tzOffsetMin: 120, day: DAY, direction: 'in', method: 'pin', confidence: 0.4123456, snapshot: 'data:image/jpeg;base64,AAAA', note: 'weak match 0.47' }
+  ] }, { key: KEY_LAUNA });
+  await call({ op: 'sync', site: 'WTC', punches: [
+    { id: 'p-wtc-1', staffId: 'stf-4', staffName: 'Plant Person', ts: DAY + 'T04:00:00.000Z', day: DAY, direction: 'in', method: 'face' }
+  ] }, { key: KEY_ANY });
+  let r = await feed({});
+  ok('NEGATIVE: the punch list needs a signed-in seat', r.status === 401 && !r.json.punches, r);
+  r = await feed({}, OWNER);
+  const p2 = r.json.punches.find(p => p.id === 'p-2');
+  ok('the Owner reads every site, each punch with its company', r.status === 200 && r.json.punches.length === 3 && p2 && p2.company === 'La Una' && p2.site === 'LAUNA'
+    && p2.staffName === 'Pin Person' && p2.direction === 'in' && p2.tzOffsetMin === 120 && p2.confidence === 0.412 && p2.note === 'weak match 0.47'
+    && r.json.punches.find(p => p.id === 'p-wtc-1').company === 'WTC', r.json);
+  ok('NEGATIVE: the audit photo never travels in the list', !JSON.stringify(r.json).includes('data:image') && !('snapshot' in p2));
+  ok('the list is same-origin only', r.cors === null, r.cors);
+  const cursor = r.json.cursor;
+  r = await feed({}, { role: 'Entry', companies: 'La Una' });
+  ok('a La Una seat reads La Una only', r.json.punches.length === 2 && r.json.punches.every(p => p.company === 'La Una'), r.json.punches.map(p => p.id));
+  r = await feed({}, { role: 'Supervisor', companies: 'Blanca' });
+  ok('NEGATIVE: a Blanca seat reads none of them', r.status === 200 && r.json.punches.length === 0, r.json);
+  r = await feed({ since: cursor.since, sinceId: cursor.sinceId }, OWNER);
+  ok('a second pull from the cursor brings nothing', r.json.punches.length === 0 && r.json.more === false, r.json);
+  await new Promise(res => setTimeout(res, 5));
+  await call({ op: 'sync', site: 'LAUNA', punches: [{ id: 'p-2', staffId: 'st-2', staffName: 'Pin Person', ts: DAY + 'T05:02:00.000Z', tzOffsetMin: 120, day: DAY, direction: 'out', method: 'pin', rev: 1 }] }, { key: KEY_LAUNA });
+  r = await feed({ since: cursor.since, sinceId: cursor.sinceId }, OWNER);
+  ok('a punch corrected on the tablet comes again with its new direction', r.json.punches.length === 1 && r.json.punches[0].id === 'p-2'
+    && r.json.punches[0].direction === 'out' && r.json.punches[0].rev === 1, r.json.punches);
+  // A clock-out arrives in a later pull than its clock-in: the clock-in comes along as context.
+  await call({ op: 'sync', site: 'BLANCA', punches: [{ id: 'p-bl-in', staffId: 'bl-9', staffName: 'Late Out', ts: DAY_PREV + 'T20:00:00.000Z', tzOffsetMin: 120, day: DAY_PREV, direction: 'in', method: 'face', snapshot: 'data:image/jpeg;base64,BBBB' }] }, { key: KEY_ANY });
+  const afterIn = (await feed({}, OWNER)).json.cursor;
+  await new Promise(res => setTimeout(res, 5));
+  await call({ op: 'sync', site: 'BLANCA', punches: [{ id: 'p-bl-out', staffId: 'bl-9', staffName: 'Late Out', ts: DAY + 'T04:00:00.000Z', tzOffsetMin: 120, day: DAY, direction: 'out', method: 'face' },
+    { id: 'p-bl-other', staffId: 'bl-8', staffName: 'Someone Else', ts: DAY_PREV + 'T20:05:00.000Z', day: DAY_PREV, direction: 'in', method: 'pin' }] }, { key: KEY_ANY });
+  await call({ op: 'sync', site: 'PALMS', punches: [{ id: 'p-pa-in', staffId: 'bl-9', staffName: 'Same Id Other Site', ts: DAY_PREV + 'T20:00:00.000Z', day: DAY_PREV, direction: 'in', method: 'face' }] }, { key: KEY_ANY });
+  r = await feed({ since: afterIn.since, sinceId: afterIn.sinceId }, { role: 'Supervisor', companies: 'Blanca' });
+  ok('a later clock-out brings its earlier clock-in along, and nobody else\'s', r.json.punches.some(p => p.id === 'p-bl-out') && r.json.context.length === 1
+    && r.json.context[0].id === 'p-bl-in' && r.json.context[0].direction === 'in' && r.json.context[0].company === 'Blanca'
+    && !JSON.stringify(r.json).includes('data:image') && !JSON.stringify(r.json).includes('p-pa-in'), r.json);
+  r = await feed({ since: afterIn.since, sinceId: afterIn.sinceId, noContext: true }, { role: 'Supervisor', companies: 'Blanca' });
+  ok('a first pull that asks for no context gets none', r.json.punches.some(p => p.id === 'p-bl-out') && r.json.context.length === 0, r.json.context);
+  // Context is the days around the change only, and people with no staff id are told apart by name.
+  const beforeNamed = (await feed({}, OWNER)).json.cursor;
+  await call({ op: 'sync', site: 'VOILE', punches: [
+    { id: 'p-vo-old', staffId: 'vo-1', staffName: 'Voile One', ts: isoDay(-3) + 'T06:00:00.000Z', day: isoDay(-3), direction: 'in', method: 'face' },
+    { id: 'p-vo-yday', staffId: 'vo-1', staffName: 'Voile One', ts: DAY_PREV + 'T06:00:00.000Z', day: DAY_PREV, direction: 'in', method: 'face' },
+    { id: 'p-vo-2ago', staffId: 'vo-1', staffName: 'Voile One', ts: isoDay(-2) + 'T06:00:00.000Z', day: isoDay(-2), direction: 'in', method: 'face' },
+    { id: 'p-vo3-5ago', staffId: 'vo-3', staffName: 'Voile Three', ts: isoDay(-5) + 'T06:00:00.000Z', day: isoDay(-5), direction: 'in', method: 'face' },
+    { id: 'p-na-1', staffId: '', staffName: 'No Id Anna', ts: DAY_PREV + 'T06:00:00.000Z', day: DAY_PREV, direction: 'in', method: 'pin' },
+    { id: 'p-nb-1', staffId: '', staffName: 'No Id Bassam', ts: DAY_PREV + 'T06:10:00.000Z', day: DAY_PREV, direction: 'in', method: 'pin' }] }, { key: KEY_ANY });
+  const mid = (await feed({ since: beforeNamed.since, sinceId: beforeNamed.sinceId }, OWNER)).json.cursor;
+  await new Promise(res => setTimeout(res, 5));
+  await call({ op: 'sync', site: 'VOILE', punches: [
+    { id: 'p-vo-today', staffId: 'vo-1', staffName: 'Voile One', ts: DAY + 'T06:00:00.000Z', day: DAY, direction: 'in', method: 'face' },
+    { id: 'p-na-2', staffId: '', staffName: 'No Id Anna', ts: DAY + 'T06:00:00.000Z', day: DAY, direction: 'out', method: 'pin' },
+    { id: 'p-void', staffId: 'vo-2', staffName: 'Voile Void', ts: DAY + 'T07:00:00.000Z', day: DAY, direction: 'in', method: 'face', void: true },
+    // someone else's late punch from three days back is in the same pull: it must not widen the first person's days
+    { id: 'p-vo3-late', staffId: 'vo-3', staffName: 'Voile Three', ts: isoDay(-3) + 'T08:00:00.000Z', day: isoDay(-3), direction: 'in', method: 'face' }] }, { key: KEY_ANY });
+  r = await feed({ since: mid.since, sinceId: mid.sinceId }, OWNER);
+  const ctxIds = r.json.context.map(p => p.id).sort();
+  ok('context is two days either side of a changed punch: the edge days are sent, a punch three days back is not',
+    ctxIds.includes('p-vo-yday') && ctxIds.includes('p-vo-2ago') && ctxIds.includes('p-vo3-5ago') && !ctxIds.includes('p-vo-old'), ctxIds);
+  ok('NEGATIVE: two people with no staff id are told apart by name, neither gets the other\'s punches', ctxIds.includes('p-na-1') && !ctxIds.includes('p-nb-1'), ctxIds);
+  ok('a punch voided on the tablet arrives marked as voided', r.json.punches.find(p => p.id === 'p-void').voided === true
+    && r.json.punches.find(p => p.id === 'p-vo-today').voided === false, r.json.punches.map(p => [p.id, p.voided]));
+  // A big pull: 95 people at one site, each with a punch today and one two days ago, and one person with
+  // punches on 15 different days. The day list is too long for one statement and the people do not fit in
+  // one either, so the range form and the chunking are both used. Everyone still gets exactly their own.
+  const beforeBig = (await feed({}, OWNER)).json.cursor;
+  const crowd = Array.from({ length: 95 }, (_, i) => 'pl-' + String(i).padStart(3, '0'));
+  await call({ op: 'sync', site: 'PLATINUM', punches: crowd.map(id => ({ id: 'old-' + id, staffId: id, staffName: 'Crowd ' + id, ts: isoDay(-2) + 'T06:00:00.000Z', day: isoDay(-2), direction: 'in', method: 'face' }))
+    .concat(crowd.slice(0, 3).map(id => ({ id: 'far-' + id, staffId: id, staffName: 'Crowd ' + id, ts: isoDay(-9) + 'T06:00:00.000Z', day: isoDay(-9), direction: 'in', method: 'face' }))) }, { key: KEY_ANY });
+  const afterOld = (await feed({ since: beforeBig.since, sinceId: beforeBig.sinceId }, OWNER)).json.cursor;
+  await new Promise(res => setTimeout(res, 5));
+  await call({ op: 'sync', site: 'PLATINUM', punches: crowd.map(id => ({ id: 'new-' + id, staffId: id, staffName: 'Crowd ' + id, ts: DAY + 'T06:00:00.000Z', day: DAY, direction: 'out', method: 'face' })) }, { key: KEY_ANY });
+  await call({ op: 'sync', site: 'PLATINUM', punches: Array.from({ length: 15 }, (_, k) => ({ id: 'span-' + k, staffId: 'pl-span', staffName: 'Many Days', ts: isoDay(-40 + k * 2) + 'T06:00:00.000Z', day: isoDay(-40 + k * 2), direction: 'in', method: 'face' })) }, { key: KEY_ANY });
+  r = await feed({ since: afterOld.since, sinceId: afterOld.sinceId }, OWNER);
+  const bigCtx = new Set(r.json.context.map(p => p.id));
+  ok('a pull too big for one statement still gives every person their own neighbouring punches, and nothing else',
+    r.json.punches.length === 110 && crowd.every(id => bigCtx.has('old-' + id)) && !r.json.context.some(p => p.id.startsWith('far-'))
+    && r.json.context.length === 95 && r.json.context.every(p => p.site === 'PLATINUM'), [r.json.punches.length, r.json.context.length, [...bigCtx].filter(x => !x.startsWith('old-')).slice(0, 5)]);
+  // One person entered on two tablets before either had the roster: same name, two staff ids, one site.
+  const beforeTwoIds = (await feed({}, OWNER)).json.cursor;
+  await call({ op: 'sync', site: 'KORRI', punches: [
+    { id: 'p-2id-in', staffId: 'loc-aaa', staffName: 'Two Ids', ts: DAY_PREV + 'T06:00:00.000Z', day: DAY_PREV, direction: 'in', method: 'face' },
+    { id: 'p-2id-out', staffId: 'loc-aaa', staffName: 'Two Ids', ts: DAY_PREV + 'T15:00:00.000Z', day: DAY_PREV, direction: 'out', method: 'face' },
+    { id: 'p-2id-other', staffId: 'loc-ccc', staffName: 'Somebody Else', ts: DAY_PREV + 'T06:00:00.000Z', day: DAY_PREV, direction: 'in', method: 'face' }] }, { key: KEY_ANY });
+  const afterTwoIds = (await feed({ since: beforeTwoIds.since, sinceId: beforeTwoIds.sinceId }, OWNER)).json.cursor;
+  await new Promise(res => setTimeout(res, 5));
+  await call({ op: 'sync', site: 'KORRI', punches: [
+    { id: 'p-2id-next', staffId: 'loc-bbb', staffName: '  TWO   ids ', ts: DAY + 'T06:00:00.000Z', day: DAY, direction: 'in', method: 'face' }] }, { key: KEY_ANY });
+  r = await feed({ since: afterTwoIds.since, sinceId: afterTwoIds.sinceId }, OWNER);
+  const twoIds = r.json.context.map(p => p.id).sort();
+  ok('a person under two staff ids at one site still gets all their own punches as context, by name, whatever the capitals and spaces',
+    JSON.stringify(twoIds) === '["p-2id-in","p-2id-out"]', twoIds);
+  // The other way round: the untidy name (double space, a tab) is on the punch stored first.
+  const beforeMessy = (await feed({}, OWNER)).json.cursor;
+  await call({ op: 'sync', site: 'PROPS', punches: [
+    { id: 'p-messy-in', staffId: 'loc-m1', staffName: 'Rana  \t Saad', ts: DAY_PREV + 'T06:00:00.000Z', day: DAY_PREV, direction: 'in', method: 'face' }] }, { key: KEY_ANY });
+  const afterMessy = (await feed({ since: beforeMessy.since, sinceId: beforeMessy.sinceId }, OWNER)).json;
+  await new Promise(res => setTimeout(res, 5));
+  await call({ op: 'sync', site: 'PROPS', punches: [
+    { id: 'p-messy-out', staffId: 'loc-m2', staffName: 'rana saad', ts: DAY_PREV + 'T15:00:00.000Z', day: DAY_PREV, direction: 'out', method: 'face' }] }, { key: KEY_ANY });
+  r = await feed({ since: afterMessy.cursor.since, sinceId: afterMessy.cursor.sinceId }, OWNER);
+  ok('and the same when the untidy name was stored first: it is kept with single spaces and still found',
+    afterMessy.punches.find(p => p.id === 'p-messy-in').staffName === 'Rana Saad' && JSON.stringify(r.json.context.map(p => p.id)) === '["p-messy-in"]'
+    && d1.rows("SELECT staff_name FROM kiosk_punches_ext WHERE id = 'p-messy-in'")[0].staff_name === 'Rana Saad', r.json.context.map(p => p.id));
+  r = await feed({ limit: 1 }, OWNER);
+  const r2 = await feed({ limit: 1, since: r.json.cursor.since, sinceId: r.json.cursor.sinceId }, OWNER);
+  ok('pages follow each other without repeating a punch', r.json.more === true && r.json.punches.length === 1 && r2.json.punches.length === 1
+    && r.json.punches[0].id !== r2.json.punches[0].id, [r.json.punches.map(p => p.id), r2.json.punches.map(p => p.id)]);
+  r = await feed({ fromDay: isoDay(1) }, OWNER);
+  ok('a first pull can be limited to recent days', r.json.punches.length === 0, r.json.punches.map(p => p.id));
+  r = await feed({}, OWNER, { settleMs: undefined });
+  ok('a punch still inside the one-minute settling window is not handed out yet, so a cursor cannot pass a half-written upload', r.status === 200 && r.json.punches.length === 0 && r.json.more === false, r.json);
+  r = await feed({ since: "' OR 1=1 --", sinceId: 'x', fromDay: "2026' OR '1'='1", limit: 'abc' }, { role: 'Supervisor', companies: 'Shacman' });
+  ok('NEGATIVE: odd cursor values change nothing about what a seat may read', r.status === 200 && r.json.punches.length === 0, r.json);
+}
+
+console.log('till sales posted to venue revenue from a date the Owner sets');
+{
+  const revRows = () => d1.rows("SELECT row_id, company, rev, voided, payload_json FROM industry_custom_rows WHERE bucket = 'hsp_revenue' AND row_id LIKE 'HSP-REV-POS-%' ORDER BY row_id")
+    .map(x => Object.assign({ row_id: x.row_id, rowCompany: x.company, rowRev: x.rev, rowVoided: x.voided }, JSON.parse(x.payload_json)));
+  const live = (site, day) => revRows().filter(x => x.rowVoided === 0 && x.row_id.startsWith(`HSP-REV-POS-${site}-`) && (!day || x.date === day));
+  const cents = n => Math.round(n * 100);
+  const billed = (site, day) => cents(d1.rows('SELECT COALESCE(SUM(total_usd), 0) t FROM kiosk_pos_sales WHERE site_key = ? AND day = ? AND voided = 0', site.toLowerCase(), day)[0].t);
+  const posted = (site, day) => live(site, day).reduce((a, x) => a + cents(x.ttc_usd), 0);
+  const tillBilled = (company, day) => tillRows().filter(x => x.company === company && x.date === day && x.source === 'pos_till').reduce((a, x) => a + cents(x.pos_billed_ttc), 0);
+  const setFrom = (site, from, who) => call({ op: 'set_pos_revenue_posting', site, from }, who || { session: OWNER });
+
+  ok('nothing is posted to venue revenue until a date is set', revRows().length === 0 && billed('LAUNA', DAY) > 0);
+  let r = await call({ op: 'get_pos_revenue_posting' }, { session: OWNER });
+  ok('the Owner sees the five resorts, all without a date', r.status === 200 && r.json.sites.length === 5 && r.json.sites.every(s => s.from === ''), r.json);
+  const sneaky = [(await setFrom('LAUNA', DAY, { key: KEY_LAUNA })).status, (await setFrom('LAUNA', DAY, { session: { role: 'Supervisor', companies: 'La Una' } })).status,
+    (await setFrom('LAUNA', DAY, {})).status, (await call({ op: 'get_pos_revenue_posting' }, { key: KEY_ANY })).status,
+    (await setFrom('LAUNA', DAY, { session: { role: 'Group Supervisor', companies: 'ALL' } })).status];
+  ok('NEGATIVE: a station key, a Supervisor seat and a stranger cannot set or read the date', JSON.stringify(sneaky) === '[403,403,401,403,403]' && revRows().length === 0, sneaky);
+  for (const [name, site, from] of [['a plant', 'WTC', DAY], ['a date in another format', 'LAUNA', '10/11/2026'], ['an impossible date', 'LAUNA', '2026-13-45'], ['an unknown site', 'NOWHERE', DAY]]) {
+    r = await setFrom(site, from);
+    ok(`NEGATIVE: ${name} is refused`, r.status === 400 && revRows().length === 0, r);
+  }
+
+  // Two Owner windows save the very first date at the same moment, when no dates are stored yet.
+  let firstInner = null;
+  d1.db.beforeKvInsert = async () => { firstInner = await setFrom('VOILE', DAY); };
+  r = await setFrom('PALMS', DAY);
+  const both = (await call({ op: 'get_pos_revenue_posting' }, { session: OWNER })).json.sites;
+  ok('two first dates saved in the same moment are both kept', r.json.ok && firstInner && firstInner.json.ok
+    && both.find(s => s.code === 'PALMS').from === DAY && both.find(s => s.code === 'VOILE').from === DAY, both);
+  await setFrom('PALMS', ''); await setFrom('VOILE', '');
+
+  r = await setFrom('LAUNA', DAY);
+  let rows = live('LAUNA');
+  ok('setting the date posts the stored sales of that day onward', r.json.ok && r.json.changedRows === rows.length && rows.length >= 1
+    && r.json.sites.find(s => s.code === 'LAUNA').from === DAY && rows.every(x => x.date >= DAY), [r.json, rows.map(x => [x.row_id, x.ttc_usd])]);
+  ok('venue revenue for the day equals the billed total of the stored sales, to the cent', posted('LAUNA', DAY) === billed('LAUNA', DAY) && posted('LAUNA', DAY) > 0, [posted('LAUNA', DAY), billed('LAUNA', DAY)]);
+  ok('and equals the billed total of the till close rows', posted('LAUNA', DAY) === tillBilled('La Una', DAY), [posted('LAUNA', DAY), tillBilled('La Una', DAY)]);
+  ok('days before the date are not posted', posted('LAUNA', DAY_PREV) === 0 && billed('LAUNA', DAY_PREV) > 0);
+  const e = rows.find(x => x.category === 'Beach Entrance' && x.date === DAY);
+  ok('row shape matches venue revenue', e && e.company === 'La Una' && e.rowCompany === 'La Una' && e.outlet === 'La Una Gate Till' && e.method === 'Gate Till'
+    && e.source === 'pos_till' && e._customBucket === 'hsp_revenue' && e.voided === false && e.rooms === 0 && e.covers >= 1
+    && new RegExp(`^HSP-REV-POS-LAUNA-${DAY_TAG}-[0-9A-F]{6}$`).test(e.id) && isServerOwnedCustomRow('hsp_revenue', e.id) && !isServerOwnedCustomRow('hsp_revenue', 'HSP-REV-900'), e);
+  ok('the price includes 11% VAT: net plus VAT is the total', rows.every(x => cents(x.ht_usd) + cents(x.vat_usd) === cents(x.ttc_usd) && cents(x.ht_usd) === Math.round(cents(x.ttc_usd) / 1.11)), rows.map(x => [x.ht_usd, x.vat_usd, x.ttc_usd]));
+  ok('Blanca, with no date, posts nothing', live('BLANCA').length === 0 && billed('BLANCA', DAY) > 0);
+
+  // A sale with two categories, one priced in LBP: 2 x $20 entrance + 3 x 100,000 LBP snacks at 90,000 = $43.33.
+  const mixed = sale('sale-mix-1', { userId: 'user-m', userName: 'Mix', totalUSD: 43.33, totalLBP: 3900000, netUSD: 43.33, lines: [
+    { sku: 'ENT-ADULT', name: 'Entrance - Adult', category: 'Entrance', qty: 2, price: 20, cur: 'USD' },
+    { sku: 'SNK-1', name: 'Snack', category: 'Snack Bar', qty: 3, price: 100000, cur: 'LBP' }] });
+  const entBefore = cents(live('LAUNA', DAY).find(x => x.category === 'Beach Entrance').ttc_usd);
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [mixed] }, { key: KEY_LAUNA });
+  const snack = live('LAUNA', DAY).find(x => x.category === 'Snack Bar');
+  const entAfter = cents(live('LAUNA', DAY).find(x => x.category === 'Beach Entrance').ttc_usd);
+  ok('a sale is split across its categories by value, and the parts add up to the sale', r.json.ok && r.json.revenueRows === 2 && snack && snack.covers === 3
+    && cents(snack.ttc_usd) + (entAfter - entBefore) === 4333 && cents(snack.ttc_usd) === 333 && posted('LAUNA', DAY) === billed('LAUNA', DAY), [snack, entAfter - entBefore]);
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [mixed] }, { key: KEY_LAUNA });
+  ok('a replay changes nothing', r.json.revenueRows === 0 && live('LAUNA', DAY).find(x => x.category === 'Snack Bar').rev === snack.rev, r.json);
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [Object.assign({}, mixed, { voided: true, rev: 1 })] }, { key: KEY_LAUNA });
+  const snackGone = revRows().find(x => x.row_id === snack.row_id);
+  ok('voiding the only sale of a category withdraws its row, and the day still ties', snackGone.rowVoided === 1 && snackGone.voided === true && snackGone.rev === snack.rev + 1
+    && posted('LAUNA', DAY) === billed('LAUNA', DAY) && posted('LAUNA', DAY) === tillBilled('La Una', DAY), snackGone);
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [sale('sale-nolines', { userId: 'user-m', userName: 'Mix', lines: [], totalUSD: 7, netUSD: 7 })] }, { key: KEY_LAUNA });
+  ok('a sale with no lines is still counted, under its own heading', live('LAUNA', DAY).some(x => x.category === 'Gate Till Sales' && cents(x.ttc_usd) === 700)
+    && posted('LAUNA', DAY) === billed('LAUNA', DAY), live('LAUNA', DAY).map(x => [x.category, x.ttc_usd]));
+
+  // The Command Center cannot restate or hide these rows, by either write path.
+  const target = live('LAUNA', DAY).find(x => x.category === 'Beach Entrance');
+  const ownerSeat = { id: 'u1', role: 'Owner', email: 'owner@example.test', full_name: 'Owner', companies: 'ALL', pbi_access: 'full' };
+  const body = { industryCustomRows: { hsp_revenue: [
+    Object.assign({}, target, { rev: 999, ttc_usd: 1, ht_usd: 1, vat_usd: 0 }),
+    { id: 'HSP-REV-900', date: DAY, company: 'La Una', outlet: 'Hand keyed', category: 'Restaurant F&B', ht_usd: 9.01, vat_usd: 0.99, ttc_usd: 10, rev: 1 }
+  ] }, industryRowEdits: { ['WF::hsp_revenue::' + target.id]: { company: 'La Una', ttc_usd: 1, rev: 9 }, [target.id]: { company: 'La Una', voided: true, rev: 9 } } };
+  const req = new Request('https://example.test/app/api/industry_domain_store', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const res = await (await handleIndustryDomainStore(req, env, ownerSeat, body)).json();
+  const afterPost = revRows().find(x => x.row_id === target.row_id);
+  ok('NEGATIVE: a Command Center copy with a higher rev does not change a posted row, a hand-keyed row still saves', afterPost.rev === target.rev && cents(afterPost.ttc_usd) === cents(target.ttc_usd)
+    && res.ignoredServerOwned === 3 && d1.rows("SELECT COUNT(*) n FROM industry_custom_rows WHERE row_id = 'HSP-REV-900'")[0].n === 1
+    && !d1.rows('SELECT edit_key FROM industry_row_edits').some(x => x.edit_key.includes(target.id)), [res, afterPost.rev]);
+  await mirrorStoreDeltaToD1Tables(d1, { industryCustomRows: { hsp_revenue: [Object.assign({}, target, { rev: 999, voided: true })] }, industryRowEdits: {} }, {}, ownerSeat);
+  const doc = stripServerOwnedCustomRows({ industryCustomRows: { hsp_revenue: [Object.assign({}, target, { rev: 999 }), { id: 'HSP-REV-900' }] }, industryRowEdits: { ['WF::hsp_revenue::' + target.id]: {}, 'WF::hsp_revenue::HSP-REV-900': {} } });
+  ok('NEGATIVE: the sync mirror and the shared store document hold the same line', revRows().find(x => x.row_id === target.row_id).rowVoided === 0
+    && JSON.stringify(doc.industryCustomRows.hsp_revenue.map(x => x.id)) === '["HSP-REV-900"]' && JSON.stringify(Object.keys(doc.industryRowEdits)) === '["WF::hsp_revenue::HSP-REV-900"]', doc);
+
+  // Two tills of the same resort send at the same instant: the day's revenue rows still tie to the sales.
+  const pair = await Promise.all(['a', 'b', 'c'].map(x => call({ op: 'pos_sales', resort: 'LAUNA', sales: [
+    sale('sale-same-instant-' + x, { userId: 'user-' + x + x, userName: 'Twin ' + x, totalUSD: 11.11, netUSD: 11.11 })] }, { key: KEY_LAUNA })));
+  ok('batches landing together leave venue revenue equal to the stored sales', pair.every(p => p.json.ok) && posted('LAUNA', DAY) === billed('LAUNA', DAY)
+    && posted('LAUNA', DAY) === tillBilled('La Una', DAY), [posted('LAUNA', DAY), billed('LAUNA', DAY), tillBilled('La Una', DAY)]);
+
+  // A second till batch lands between the moment the first one read the day's sales and the moment it
+  // writes the rows: the first one must notice and total the day again.
+  let nested = null;
+  d1.beforeBatch = async () => {
+    nested = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [sale('sale-race-inner', { userId: 'user-ri', userName: 'Race In', totalUSD: 7.77, netUSD: 7.77 })] }, { key: KEY_LAUNA });
+  };
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [sale('sale-race-outer', { userId: 'user-ro', userName: 'Race Out', totalUSD: 5.55, netUSD: 5.55 })] }, { key: KEY_LAUNA });
+  ok('a batch that lands mid-write is not lost from venue revenue', r.json.ok && nested && nested.json.ok && posted('LAUNA', DAY) === billed('LAUNA', DAY)
+    && posted('LAUNA', DAY) === tillBilled('La Una', DAY), [posted('LAUNA', DAY), billed('LAUNA', DAY)]);
+
+  // The Owner clears the date at the moment a till batch is writing that day's rows.
+  let cleared = null;
+  d1.beforeBatch = async () => { cleared = await setFrom('LAUNA', ''); };
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [sale('sale-date-race', { userId: 'user-ro', userName: 'Race Out', totalUSD: 3.33, netUSD: 3.33 })] }, { key: KEY_LAUNA });
+  ok('NEGATIVE: a date cleared during a till batch leaves no revenue row behind', r.json.ok && cleared && cleared.json.ok && live('LAUNA').length === 0, live('LAUNA').map(x => x.row_id));
+  r = await setFrom('LAUNA', DAY);
+  ok('setting the date again posts the day in full', posted('LAUNA', DAY) === billed('LAUNA', DAY) && posted('LAUNA', DAY) > 0, [posted('LAUNA', DAY), billed('LAUNA', DAY)]);
+
+  // Sales keep landing through every attempt to total the day: the till is told to send again, never a wrong total.
+  let storm = 0;
+  const rearm = async () => {
+    storm++;
+    d1.beforeBatch = rearm;
+    d1.exec(`INSERT INTO kiosk_pos_sales (id, site_key, day, num, user_id, user_name, total_usd, total_lbp, net_usd, net_lbp, rate, voided, rev, payload_json, updated_at)
+      VALUES ('sale-storm-${storm}', 'launa', '${DAY}', '', 'user-st', 'Storm', 1, 90000, 1, 0, 90000, 0, 0, '{"lines":[]}', '${new Date().toISOString()}-${storm}')`);
+  };
+  d1.beforeBatch = rearm;
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [sale('sale-unsettled', { userId: 'user-ro', userName: 'Race Out', totalUSD: 2.22, netUSD: 2.22 })] }, { key: KEY_LAUNA });
+  d1.beforeBatch = null;
+  ok('NEGATIVE: a day that never settles is not acknowledged', r.status === 503 && r.json.ok === false && storm >= 4, [r.status, storm]);
+  d1.exec("DELETE FROM kiosk_pos_sales WHERE id LIKE 'sale-storm-%'");   // the stand-in sales never went through a till
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [sale('sale-unsettled', { userId: 'user-ro', userName: 'Race Out', totalUSD: 2.22, netUSD: 2.22 })] }, { key: KEY_LAUNA });
+  ok('and the resend settles it', r.json.ok && posted('LAUNA', DAY) === billed('LAUNA', DAY), [posted('LAUNA', DAY), billed('LAUNA', DAY)]);
+
+  // If the revenue rows cannot be written, the till is told to send the batch again.
+  d1.beforeBatch = async () => { throw new Error('rows table unavailable'); };
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [sale('sale-rev-fail', { userId: 'user-ro', userName: 'Race Out', totalUSD: 4.44, netUSD: 4.44 })] }, { key: KEY_LAUNA });
+  ok('NEGATIVE: a failed venue revenue write is not acknowledged', r.status === 503 && r.json.ok === false && !r.json.sales && posted('LAUNA', DAY) !== billed('LAUNA', DAY), r);
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [sale('sale-rev-fail', { userId: 'user-ro', userName: 'Race Out', totalUSD: 4.44, netUSD: 4.44 })] }, { key: KEY_LAUNA });
+  ok('the resend brings venue revenue back in line', r.json.ok && posted('LAUNA', DAY) === billed('LAUNA', DAY), [posted('LAUNA', DAY), billed('LAUNA', DAY)]);
+
+  // A date whose re-total was cut short is repaired by saving the same date again.
+  await setFrom('LAUNA', '');
+  d1.beforeBatch = async () => { throw new Error('rows table unavailable'); };
+  let threw = false;
+  try { r = await setFrom('LAUNA', DAY); } catch (_) { threw = true; }
+  const stuck = (await call({ op: 'get_pos_revenue_posting' }, { session: OWNER })).json.sites.find(s => s.code === 'LAUNA').from;
+  ok('a re-total that fails is reported, not passed off as saved', !threw && r.status === 503 && r.json.ok === false && posted('LAUNA', DAY) === 0 && stuck === DAY, { threw, status: r && r.status, stuck });
+  r = await setFrom('LAUNA', DAY);
+  ok('saving the same date again completes it', r.json.ok && r.json.changedRows > 0 && posted('LAUNA', DAY) === billed('LAUNA', DAY) && posted('LAUNA', DAY) > 0, [r.json.changedRows, posted('LAUNA', DAY), billed('LAUNA', DAY)]);
+
+  // Totals that are not whole cents are rounded when the sale is taken in, so the day still ties.
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [1, 2, 3].map(n => sale('sale-subcent-' + n, { userId: 'user-sc', userName: 'Sub Cent', totalUSD: 10.004, netUSD: 10.004 })) }, { key: KEY_LAUNA });
+  ok('sub-cent totals still tie to the cent', r.json.ok && posted('LAUNA', DAY) === billed('LAUNA', DAY) && posted('LAUNA', DAY) === tillBilled('La Una', DAY)
+    && cents(tillRow('Sub Cent', DAY).pos_billed_ttc) === 3000, [posted('LAUNA', DAY), billed('LAUNA', DAY), tillBilled('La Una', DAY)]);
+
+  // Moving the date.
+  const revBefore = revRows().find(x => x.row_id === target.row_id).rev;
+  r = await setFrom('LAUNA', isoDay(1));
+  ok('moving the date later withdraws the days before it', r.json.ok && r.json.changedRows >= 1 && live('LAUNA').length === 0
+    && revRows().find(x => x.row_id === target.row_id).rev === revBefore + 1, [r.json.changedRows, live('LAUNA').length]);
+  r = await call({ op: 'pos_sales', resort: 'LAUNA', sales: [sale('sale-after-move', { userId: 'user-m', userName: 'Mix' })] }, { key: KEY_LAUNA });
+  ok('a sale on a day before the date posts no revenue row', r.json.ok && r.json.revenueRows === 0 && live('LAUNA').length === 0, r.json);
+  r = await setFrom('LAUNA', DAY_PREV);
+  ok('moving it earlier posts both days, each tying to its sales', posted('LAUNA', DAY) === billed('LAUNA', DAY) && posted('LAUNA', DAY_PREV) === billed('LAUNA', DAY_PREV)
+    && posted('LAUNA', DAY_PREV) === 30 && revRows().find(x => x.row_id === target.row_id).rev === revBefore + 2, [posted('LAUNA', DAY), billed('LAUNA', DAY), posted('LAUNA', DAY_PREV)]);
+  r = await setFrom('LAUNA', DAY_PREV);
+  ok('saving the same date again changes nothing', r.json.ok && r.json.changedRows === 0, r.json);
+  r = await call({ op: 'set_pos_revenue_posting', site: 'LAUNA', from: isoDay(1), expect: DAY }, { session: OWNER });
+  ok('NEGATIVE: a window that still shows an older date cannot move it without seeing the current one', r.status === 409 && r.json.ok === false
+    && r.json.sites.find(s => s.code === 'LAUNA').from === DAY_PREV
+    && (await call({ op: 'get_pos_revenue_posting' }, { session: OWNER })).json.sites.find(s => s.code === 'LAUNA').from === DAY_PREV, r);
+  r = await call({ op: 'set_pos_revenue_posting', site: 'LAUNA', from: DAY_PREV, expect: DAY_PREV }, { session: OWNER });
+  ok('a window that shows the current date saves as before', r.json.ok === true, r.json);
+  r = await setFrom('LAUNA', '');
+  ok('clearing the date withdraws every posted row and stops posting', r.json.ok && live('LAUNA').length === 0 && r.json.sites.find(s => s.code === 'LAUNA').from === ''
+    && (await call({ op: 'pos_sales', resort: 'LAUNA', sales: [sale('sale-after-clear', { userId: 'user-m', userName: 'Mix' })] }, { key: KEY_LAUNA })).json.revenueRows === 0
+    && live('LAUNA').length === 0, r.json);
+  ok('the till close register was never touched by any of this', tillBilled('La Una', DAY) === billed('LAUNA', DAY), [tillBilled('La Una', DAY), billed('LAUNA', DAY)]);
+  ok('no em dash or arrow in stored text', !/[—→]/.test(JSON.stringify(revRows())));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

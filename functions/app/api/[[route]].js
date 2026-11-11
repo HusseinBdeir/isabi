@@ -28,7 +28,7 @@ import {
   handleEdgeTts
 } from '../../_lib/gemini.js';
 import { handleTelematics } from '../../_lib/telematics.js';
-import { handleKioskOptions, handleKioskVerify } from '../../_lib/kiosk_verify.js';
+import { handleKioskOptions, handleKioskPunchFeed, handleKioskVerify } from '../../_lib/kiosk_verify.js';
 import {
   applyEdgeCors,
   canAccessCompany,
@@ -173,6 +173,11 @@ async function routeAppApi(context) {
 
   if (subPath === '/industry_domain_store') {
     return handleIndustryDomainStore(request, env, session, body);
+  }
+
+  // Door tablet punches for Payroll & Attendance (signed-in seats only, scoped to their companies).
+  if (subPath === '/kiosk/punches' && request.method === 'POST') {
+    return handleKioskPunchFeed(request, env, session, body, { isOwnerOrFullGroupSession, canAccessCompany });
   }
 
   if (subPath === '/blobs') {

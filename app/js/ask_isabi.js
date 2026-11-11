@@ -159,6 +159,30 @@
     payablesDraftLang: '',
     payablesCustomDraftByScope: new Map(),
     activePayablesSpeechScope: '',
+    treasuryForecastOpen: false,
+    treasuryForecastAnchor: null,
+    treasuryForecastSource: 'overview',
+    treasuryForecastScope: '',
+    treasuryLeversByEntity: new Map(),
+    treasuryActivePreset: 'baseline_13w',
+    treasurySelectedSweep: '',
+    treasuryCache: new Map(),
+    treasuryInflight: new Map(),
+    treasuryDraftLang: '',
+    treasuryCustomDraftByScope: new Map(),
+    activeTreasurySpeechScope: '',
+    inventoryOptimizerOpen: false,
+    inventoryOptimizerAnchor: null,
+    inventoryOptimizerSource: 'overview',
+    inventoryOptimizerScope: '',
+    inventoryLeversByEntity: new Map(),
+    inventoryActivePreset: 'standard_eoq',
+    inventorySelectedSku: '',
+    inventoryCache: new Map(),
+    inventoryInflight: new Map(),
+    inventoryDraftLang: '',
+    inventoryCustomDraftByScope: new Map(),
+    activeInventorySpeechScope: '',
     sessionEpoch: 0,
     lastSpokenText: '',
     playbackRate: (function () {
@@ -4720,6 +4744,9 @@
     _chatState.activePageGuideSpeechScope = '';
     _chatState.activeWhatIfSpeechScope = '';
     _chatState.activeCollectionSpeechScope = '';
+    _chatState.activePayablesSpeechScope = '';
+    _chatState.activeTreasurySpeechScope = '';
+    _chatState.activeInventorySpeechScope = '';
     if (hadPageGuideAudio && typeof clearPageSectionSpotlight === 'function') {
       clearPageSectionSpotlight();
     }
@@ -4746,7 +4773,12 @@
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       try { window.speechSynthesis.cancel(); } catch (_) {}
     }
-    if (!opts.skipUiSync) syncInlineAudioPlayerBar();
+    if (!opts.skipUiSync) {
+      syncInlineAudioPlayerBar();
+      if (typeof syncPayablesModalAudioButton === 'function') syncPayablesModalAudioButton();
+      if (typeof syncTreasuryModalAudioButton === 'function') syncTreasuryModalAudioButton();
+      if (typeof syncInventoryModalAudioButton === 'function') syncInventoryModalAudioButton();
+    }
   }
 
   function togglePausePlayback() {
@@ -6741,6 +6773,8 @@
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
+    if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
+    if (_chatState.inventoryOptimizerOpen) closeInventoryOptimizerStudio();
     ensureDailyBriefingI18nRegistered();
     ensureCeoPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildCeoPeriodSummary();
@@ -7599,6 +7633,8 @@
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
+    if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
+    if (_chatState.inventoryOptimizerOpen) closeInventoryOptimizerStudio();
     ensureDailyBriefingI18nRegistered();
     ensureStmtPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildStatementSummary();
@@ -8393,6 +8429,8 @@
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
+    if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
+    if (_chatState.inventoryOptimizerOpen) closeInventoryOptimizerStudio();
     ensureDailyBriefingI18nRegistered();
     ensurePbiPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildDashboardSummary();
@@ -9066,6 +9104,8 @@
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
+    if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
+    if (_chatState.inventoryOptimizerOpen) closeInventoryOptimizerStudio();
     ensureDailyBriefingI18nRegistered();
     ensureInspPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildInspectorSummary();
@@ -9874,6 +9914,8 @@
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
+    if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
+    if (_chatState.inventoryOptimizerOpen) closeInventoryOptimizerStudio();
     ensureDailyBriefingI18nRegistered();
     ensureSentinelPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildSentinelTriageSummary();
@@ -10799,6 +10841,8 @@
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
+    if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
+    if (_chatState.inventoryOptimizerOpen) closeInventoryOptimizerStudio();
     ensureDailyBriefingI18nRegistered();
     ensureDailyHandoverGlobalDismiss();
     const sum = prebuiltSummary || buildDailyHandoverSummary();
@@ -11660,6 +11704,8 @@
     ensurePageGuideGlobalDismiss();
 
     // Mutual exclusion with all other executive brief popovers
+    if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
+    if (_chatState.inventoryOptimizerOpen) closeInventoryOptimizerStudio();
     if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
@@ -11892,6 +11938,8 @@
         <button type="button" class="ceo-pv-btn" id="pgOpenWhatIfBtn" data-pg-open-whatif="1"><span>What-If Studio</span></button>
         <button type="button" class="ceo-pv-btn" id="pgOpenCollectionForecastBtn" data-pg-open-collection="1"><span>Collection Forecast</span></button>
         <button type="button" class="ceo-pv-btn" id="pgOpenPayablesOptimizerBtn" data-pg-open-payables="1"><span>Payables Optimizer</span></button>
+        <button type="button" class="ceo-pv-btn" id="pgOpenTreasuryForecastBtn" data-pg-open-treasury="1"><span>13W Runway</span></button>
+        <button type="button" class="ceo-pv-btn" id="pgOpenInventoryOptimizerBtn" data-pg-open-inventory="1"><span>Stock &amp; EOQ</span></button>
         <button type="button" class="ceo-pv-btn is-primary" data-pg-open-copilot="1">${icons ? icons.svg('sparkle') : AI_SVGS.sparkle}<span>Open in Full Copilot</span></button>
       </div>
     `;
@@ -12080,6 +12128,22 @@
         e.preventDefault();
         closePageGuidePopover();
         openPayablesOptimizerStudio(openPayablesFootBtn, { source: 'page_guide' });
+      });
+    }
+    const openTreasuryFootBtn = pop.querySelector('[data-pg-open-treasury]');
+    if (openTreasuryFootBtn) {
+      openTreasuryFootBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closePageGuidePopover();
+        openTreasuryForecastStudio(openTreasuryFootBtn, { source: 'page_guide' });
+      });
+    }
+    const openInventoryFootBtn = pop.querySelector('[data-pg-open-inventory]');
+    if (openInventoryFootBtn) {
+      openInventoryFootBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closePageGuidePopover();
+        openInventoryOptimizerStudio(openInventoryFootBtn, { source: 'page_guide' });
       });
     }
 
@@ -12311,6 +12375,22 @@
           togglePayablesOptimizerStudio(poBtn, { source: src });
           return;
         }
+        const tfBtn = e.target.closest && e.target.closest('[data-treasury-forecast-open], [data-liquidity-runway-open]');
+        if (tfBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const src = tfBtn.getAttribute('data-tf-source') || tfBtn.getAttribute('data-lr-source') || 'overview';
+          toggleTreasuryForecastStudio(tfBtn, { source: src });
+          return;
+        }
+        const ioBtn = e.target.closest && e.target.closest('[data-inventory-optimizer-open]');
+        if (ioBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const src = ioBtn.getAttribute('data-io-source') || 'overview';
+          toggleInventoryOptimizerStudio(ioBtn, { source: src });
+          return;
+        }
         const wiBtn = e.target.closest && e.target.closest('[data-whatif-open]');
         if (wiBtn) {
           e.preventDefault();
@@ -12354,6 +12434,12 @@
     }
     if (typeof rebindPayablesOptimizerButtons === 'function') {
       rebindPayablesOptimizerButtons(container);
+    }
+    if (typeof rebindTreasuryForecastButtons === 'function') {
+      rebindTreasuryForecastButtons(container);
+    }
+    if (typeof rebindInventoryOptimizerButtons === 'function') {
+      rebindInventoryOptimizerButtons(container);
     }
     if (!_chatState.pageGuideOpen) return;
     const curView = (_ctx && _ctx.STATE && _ctx.STATE.view) || 'overview';
@@ -13148,6 +13234,8 @@
     ensureWhatIfGlobalEvents();
 
     // Mutual exclusion with all 7 executive popovers & Collection Forecast Studio
+    if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
+    if (_chatState.inventoryOptimizerOpen) closeInventoryOptimizerStudio();
     if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     if (_chatState.pageGuideOpen) closePageGuidePopover();
@@ -14444,6 +14532,8 @@
     ensureCollectionGlobalEvents();
 
     // Two-way mutual exclusion with #whatIfSimulatorModal, #pageGuidePopover, and all 6 executive popovers
+    if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
+    if (_chatState.inventoryOptimizerOpen) closeInventoryOptimizerStudio();
     if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.pageGuideOpen) closePageGuidePopover();
@@ -15531,6 +15621,8 @@
     ensurePayablesGlobalEvents();
 
     // Two-way mutual exclusion with #collectionForecastModal, #whatIfSimulatorModal, #pageGuidePopover, and all 6 executive popovers
+    if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
+    if (_chatState.inventoryOptimizerOpen) closeInventoryOptimizerStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.pageGuideOpen) closePageGuidePopover();
@@ -16035,10 +16127,3183 @@
     }
   }
 
+  // ============================================================================
+  // EXECUTIVE STUDIO A: 13-WEEK ROLLING CASH-FLOW & LIQUIDITY RUNWAY STUDIO
+  // ============================================================================
+  const TREASURY_SWEEPS_STORAGE_KEY = 'isabi_treasury_sweeps_v1';
+
+  function sanitizeTreasuryForecastText(raw, keepNewlines) {
+    let s = String(raw == null ? '' : raw)
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/javascript\s*:/gi, '')
+      .replace(/\bon\w+\s*=/gi, '')
+      .replace(/\*\*/g, '')
+      .replace(/\bTHEO\b/gi, 'ISABI')
+      .replace(/\b(?:Power\s*BI|Dataverse|Power\s*Apps)\b/gi, 'ISABI')
+      .replace(/\bRDL\b/gi, 'Statement')
+      .replace(/\bTTC\b/gi, 'Total')
+      .replace(/\bZ-Read\b/gi, 'daily till close')
+      .replace(/\b(?:h29|t74|t79|r33|r45|i32|i41|step\d+|7z-[a-z0-9-]+)\b/gi, '')
+      .replace(/(?:(?:\b(?:GL|PCG|Account|Acct|Compte)|حساب)\s*[-#:]?\s*)?\b(?:4017|4112|4117|7063|7064|7065)\b/gi, '')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to');
+    if (keepNewlines) {
+      return s
+        .split(/\r?\n/)
+        .map(line => line.replace(/[ \t]{2,}/g, ' ').trim())
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    }
+    return s.replace(/\s{2,}/g, ' ').trim();
+  }
+
+  function sanitizeTreasuryLiveInput(raw) {
+    return String(raw == null ? '' : raw)
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/javascript\s*:/gi, '')
+      .replace(/\bon\w+\s*=/gi, '')
+      .replace(/\bTHEO\b/gi, 'ISABI')
+      .replace(/\b(?:Power\s*BI|Dataverse|Power\s*Apps)\b/gi, 'ISABI')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .slice(0, 1800);
+  }
+
+  function getActiveTreasuryCompanyKey(explicitKey) {
+    if (explicitKey !== undefined && explicitKey !== null && String(explicitKey).trim()) {
+      return String(explicitKey).trim();
+    }
+    if (_ctx && _ctx.STATE && _ctx.STATE.company) {
+      return String(_ctx.STATE.company).trim() || 'all';
+    }
+    return 'all';
+  }
+
+  function normalizeTreasuryLevers(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    const clampN = (v, lo, hi, def) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return def;
+      return Math.max(lo, Math.min(hi, n));
+    };
+    return {
+      collectionVelocityPct: Math.round(clampN(src.collectionVelocityPct, -40, 40, 0)),
+      disbursementDeferralPct: Math.round(clampN(src.disbursementDeferralPct, -30, 50, 0)),
+      liquidityFloorUsd: Math.round(clampN(src.liquidityFloorUsd, 0, 1000000, 25000))
+    };
+  }
+
+  function getTreasuryLeversForEntity(coKey) {
+    const k = getActiveTreasuryCompanyKey(coKey);
+    if (_chatState.treasuryLeversByEntity.has(k)) {
+      return Object.assign({}, _chatState.treasuryLeversByEntity.get(k));
+    }
+    return normalizeTreasuryLevers({});
+  }
+
+  function setTreasuryLeversForEntity(coKey, spec) {
+    const k = getActiveTreasuryCompanyKey(coKey);
+    const norm = normalizeTreasuryLevers(spec);
+    if (!_chatState.treasuryLeversByEntity.has(k) && _chatState.treasuryLeversByEntity.size >= 32) {
+      const oldest = _chatState.treasuryLeversByEntity.keys().next().value;
+      if (oldest !== undefined) _chatState.treasuryLeversByEntity.delete(oldest);
+    }
+    _chatState.treasuryLeversByEntity.set(k, norm);
+    return Object.assign({}, norm);
+  }
+
+  function _readStudioRawStorage(storageKey) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const direct = localStorage.getItem(storageKey);
+        if (direct !== null) return direct;
+      }
+      if (typeof sessionStorage !== 'undefined') {
+        return sessionStorage.getItem('demo_sbx_' + storageKey);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function _writeStudioRawStorage(storageKey, jsonStr) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(storageKey, jsonStr);
+      }
+      if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('demo_sbx_' + storageKey) !== null) {
+        sessionStorage.setItem('demo_sbx_' + storageKey, jsonStr);
+      }
+    } catch (_) {}
+  }
+
+  function loadSavedTreasurySweeps(coKeyFilter) {
+    const raw = _readStudioRawStorage(TREASURY_SWEEPS_STORAGE_KEY);
+    if (!raw) return [];
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (_) {
+      _writeStudioRawStorage(TREASURY_SWEEPS_STORAGE_KEY, JSON.stringify({ version: 1, items: [] }));
+      return [];
+    }
+    let rawItems = [];
+    let needsRewrite = false;
+    if (Array.isArray(parsed)) {
+      rawItems = parsed;
+      needsRewrite = true;
+    } else if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.items)) {
+        rawItems = parsed.items;
+        if (parsed.version !== 1) needsRewrite = true;
+      } else if (Array.isArray(parsed.sweeps)) {
+        rawItems = parsed.sweeps;
+        needsRewrite = true;
+      } else {
+        _writeStudioRawStorage(TREASURY_SWEEPS_STORAGE_KEY, JSON.stringify({ version: 1, items: [] }));
+        return [];
+      }
+    } else {
+      _writeStudioRawStorage(TREASURY_SWEEPS_STORAGE_KEY, JSON.stringify({ version: 1, items: [] }));
+      return [];
+    }
+
+    const clampAmt = (v, minV, maxV, def) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return def;
+      return Math.max(minV, Math.min(maxV, Math.round(n * 100) / 100));
+    };
+
+    const normalized = [];
+    for (let i = 0; i < rawItems.length; i++) {
+      const it = rawItems[i];
+      if (!it || typeof it !== 'object') {
+        needsRewrite = true;
+        continue;
+      }
+      const rawId = String(it.id || `ts_${i + 1}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || `ts_${i + 1}`;
+      const corridorId = sanitizeTreasuryForecastText(it.corridorId || it.corridor || `SWP-${i + 1}`).replace(/[^a-zA-Z0-9_.: -]/g, '').slice(0, 60) || `SWP-${i + 1}`;
+      const corridorName = sanitizeTreasuryForecastText(it.corridorName || it.name || corridorId).slice(0, 90) || corridorId;
+      const coKey = sanitizeTreasuryForecastText(it.coKey || it.companyKey || 'all').replace(/[^a-zA-Z0-9_:-]/g, '').slice(0, 64) || 'all';
+      const rawAct = String(it.action || 'activate').toLowerCase();
+      const action = rawAct === 'hold' ? 'hold' : 'activate';
+      const targetWeek = Math.round(clampAmt(it.targetWeek, 1, 13, 1));
+      const sweepUsd = clampAmt(it.sweepUsd != null ? it.sweepUsd : it.amountUsd, 0, 50000000, 0);
+      const note = sanitizeTreasuryForecastText(it.note || '').slice(0, 140);
+      const savedAt = String(it.savedAt || '2026-11-10').replace(/[^0-9-]/g, '').slice(0, 10) || '2026-11-10';
+      if (
+        rawId !== it.id ||
+        corridorId !== it.corridorId ||
+        corridorName !== it.corridorName ||
+        coKey !== it.coKey ||
+        action !== it.action ||
+        targetWeek !== it.targetWeek ||
+        sweepUsd !== it.sweepUsd ||
+        note !== (it.note || '')
+      ) {
+        needsRewrite = true;
+      }
+      normalized.push({
+        id: rawId,
+        corridorId,
+        corridorName,
+        coKey,
+        action,
+        targetWeek,
+        sweepUsd,
+        note,
+        savedAt
+      });
+    }
+    if (normalized.length > 16) {
+      normalized.splice(0, normalized.length - 16);
+      needsRewrite = true;
+    }
+    if (needsRewrite) {
+      _writeStudioRawStorage(TREASURY_SWEEPS_STORAGE_KEY, JSON.stringify({ version: 1, items: normalized }));
+    }
+    const activeSeat = (_ctx && typeof _ctx.activeUser === 'function')
+      ? _ctx.activeUser()
+      : ((_ctx && _ctx.STATE && Array.isArray(_ctx.STATE.users)) ? (_ctx.STATE.users[_ctx.STATE.activeUserIdx] || _ctx.STATE.users[0] || null) : null);
+    const roleStr = activeSeat ? String(activeSeat.role || '') : '';
+    const seatCanBooks = (!_ctx || typeof _ctx.canViewView !== 'function')
+      ? true
+      : Boolean(_ctx.canViewView('cashflow', activeSeat) && _ctx.canViewView('ledger', activeSeat) && !/Sales/i.test(roleStr));
+    if (!seatCanBooks) return [];
+    const rlsVisible = (_ctx && typeof _ctx.isStudioCoKeyAllowedForUser === 'function')
+      ? normalized.filter(x => _ctx.isStudioCoKeyAllowedForUser(x.coKey))
+      : normalized;
+    if (!coKeyFilter) return rlsVisible;
+    const wantCo = String(coKeyFilter).trim();
+    if (wantCo === 'all') return rlsVisible;
+    if (_ctx && typeof _ctx.scopeMatchesCompanyKey === 'function') {
+      return rlsVisible.filter(x => _ctx.scopeMatchesCompanyKey(wantCo, x.coKey));
+    }
+    return rlsVisible.filter(x => x.coKey === wantCo);
+  }
+
+  function _readAllTreasurySweepsUnfiltered() {
+    const raw = _readStudioRawStorage(TREASURY_SWEEPS_STORAGE_KEY);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      const arr = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.items) ? parsed.items : []);
+      return arr.filter(x => x && typeof x === 'object');
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveTreasurySweep(spec, coKeyOverride) {
+    if (_ctx && _ctx.STATE && _ctx.STATE.kioskLocked) return null;
+    const src = spec && typeof spec === 'object' ? spec : { corridorId: String(spec || '') };
+    const reqCo = getActiveTreasuryCompanyKey(coKeyOverride || src.coKey);
+    if (_ctx && typeof _ctx.computeTreasuryRunwaySnapshot === 'function') {
+      const checkSnap = _ctx.computeTreasuryRunwaySnapshot({ coKey: reqCo });
+      if (!checkSnap || checkSnap.restricted || checkSnap.rlsClamped || checkSnap.booksRedacted) {
+        return null;
+      }
+    }
+    const corridorId = sanitizeTreasuryForecastText(src.corridorId || src.corridorName || 'SWP-CUSTOM').replace(/[^a-zA-Z0-9_.: -]/g, '').slice(0, 60) || 'SWP-CUSTOM';
+    const corridorName = sanitizeTreasuryForecastText(src.corridorName || corridorId).slice(0, 90) || corridorId;
+    const coKey = sanitizeTreasuryForecastText(reqCo).replace(/[^a-zA-Z0-9_:-]/g, '').slice(0, 64) || 'all';
+    const action = String(src.action || 'activate').toLowerCase() === 'hold' ? 'hold' : 'activate';
+    const nWeek = Number(src.targetWeek);
+    const targetWeek = Number.isFinite(nWeek) ? Math.max(1, Math.min(13, Math.round(nWeek))) : 1;
+    const nUsd = Number(src.sweepUsd != null ? src.sweepUsd : src.amountUsd);
+    const sweepUsd = action === 'hold' ? 0 : (Number.isFinite(nUsd) ? Math.max(0, Math.min(50000000, Math.round(nUsd * 100) / 100)) : 0);
+    const note = sanitizeTreasuryForecastText(src.note || '').slice(0, 140);
+
+    // Ensure migration/normalization runs first without dropping other seats' items
+    loadSavedTreasurySweeps();
+    const all = _readAllTreasurySweepsUnfiltered();
+    const existingIdx = all.findIndex(x => x.coKey === coKey && String(x.corridorId || '').toLowerCase() === corridorId.toLowerCase());
+    const id = existingIdx >= 0
+      ? all[existingIdx].id
+      : `ts_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const entry = {
+      id,
+      corridorId,
+      corridorName,
+      coKey,
+      action,
+      targetWeek,
+      sweepUsd,
+      note,
+      savedAt: (_ctx && typeof _ctx.todayISO === 'function') ? _ctx.todayISO() : '2026-11-10'
+    };
+    if (existingIdx >= 0) {
+      all[existingIdx] = entry;
+    } else {
+      all.push(entry);
+    }
+    while (all.length > 16) all.shift();
+    _writeStudioRawStorage(TREASURY_SWEEPS_STORAGE_KEY, JSON.stringify({ version: 1, items: all }));
+    return entry;
+  }
+
+  function deleteTreasurySweep(idOrCorridor) {
+    if (_ctx && _ctx.STATE && _ctx.STATE.kioskLocked) return false;
+    const target = String(idOrCorridor || '').trim().toLowerCase();
+    if (!target) return false;
+    if (_ctx && typeof _ctx.computeTreasuryRunwaySnapshot === 'function') {
+      const checkSnap = _ctx.computeTreasuryRunwaySnapshot({});
+      if (checkSnap && (checkSnap.restricted || checkSnap.booksRedacted)) return false;
+    }
+    loadSavedTreasurySweeps();
+    const all = _readAllTreasurySweepsUnfiltered();
+    const next = all.filter(x => {
+      const matches = (
+        String(x.id || '').toLowerCase() === target ||
+        String(x.corridorId || '').toLowerCase() === target ||
+        String(x.corridorName || '').toLowerCase() === target
+      );
+      if (!matches) return true;
+      if (_ctx && typeof _ctx.isStudioCoKeyAllowedForUser === 'function' && !_ctx.isStudioCoKeyAllowedForUser(x.coKey)) {
+        return true;
+      }
+      return false;
+    });
+    _writeStudioRawStorage(TREASURY_SWEEPS_STORAGE_KEY, JSON.stringify({ version: 1, items: next }));
+    return next.length !== all.length;
+  }
+
+  function buildTreasuryRunwaySummary(langOverride, opts = {}) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const safeLang = ['en', 'ar', 'fr'].includes(langOverride)
+      ? langOverride
+      : ((window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || _chatState.voiceLang || 'en');
+
+    const coKey = getActiveTreasuryCompanyKey(options.coKey !== undefined ? options.coKey : options.companyKey);
+    const activeLevers = options.levers
+      ? normalizeTreasuryLevers(options.levers)
+      : getTreasuryLeversForEntity(coKey);
+    const savedSweeps = Array.isArray(options.savedSweeps)
+      ? options.savedSweeps
+      : loadSavedTreasurySweeps(coKey);
+
+    const snap = (_ctx && typeof _ctx.computeTreasuryRunwaySnapshot === 'function')
+      ? _ctx.computeTreasuryRunwaySnapshot(Object.assign({}, options, {
+          coKey,
+          companyKey: coKey,
+          levers: activeLevers,
+          savedSweeps
+        }))
+      : null;
+
+    if (!snap) {
+      return {
+        lang: safeLang,
+        scopeKey: 'trsy|unavailable',
+        leverSig: '0|0|25000',
+        industry: 'Manufacturing',
+        companyKey: coKey,
+        companyLabel: 'All Entities',
+        periodLabel: 'Active Period',
+        asOfDate: '2026-10-31',
+        rlsClamped: false,
+        restricted: true,
+        booksRedacted: true,
+        canViewBooks: false,
+        canCash: false,
+        canEditAlerts: false,
+        hasActiveAlertRule: false,
+        targetHubView: 'cashflow',
+        levers: activeLevers,
+        leverSpecs: [],
+        presets: [],
+        savedSweeps: [],
+        summary: {
+          openingTillUsd: null,
+          closingCombinedTillUsd: null,
+          total13wInflowUsd: 0,
+          total13wOutflowUsd: 0,
+          total13wSweepUsd: 0,
+          net13wCashDeltaUsd: 0,
+          week13ClosingTillUsd: null,
+          minWeeklyClosingUsd: null,
+          minWeekNumber: 1,
+          liquidityFloorUsd: 25000,
+          breachWeeksCount: 0,
+          firstBreachWeek: null,
+          isFloorBreached: false,
+          runwayWeeks: 0,
+          runwayDays: 0,
+          activeSweepCount: 0,
+          suggestedSweepPoolUsd: 0
+        },
+        feeders: {},
+        tieCheck: {
+          rollforwardBalanced: true,
+          rollforwardVarianceUsd: 0,
+          weeklyChainBalanced: true,
+          arFeederBalanced: true,
+          arFeederVarianceUsd: 0,
+          apFeederBalanced: true,
+          apFeederVarianceUsd: 0
+        },
+        weeks: [],
+        sweepSuggestions: [],
+        selectedSweep: null,
+        headline: '13-week treasury runway telemetry is unavailable.',
+        bullets: [],
+        activeBullets: [],
+        drafts: { en: '', ar: '', fr: '' },
+        aiBrief: null,
+        aiLoading: false
+      };
+    }
+
+    const headline = sanitizeTreasuryForecastText(
+      safeLang === 'ar' ? snap.headlineAr : (safeLang === 'fr' ? snap.headlineFr : snap.headlineEn)
+    );
+    const rawBullets = safeLang === 'ar' ? snap.bulletsAr : (safeLang === 'fr' ? snap.bulletsFr : snap.bulletsEn);
+    const bullets = Array.isArray(rawBullets) ? rawBullets.map(b => sanitizeTreasuryForecastText(b)) : [];
+
+    let selectedSw = null;
+    const sweepList = Array.isArray(snap.sweepSuggestions) ? snap.sweepSuggestions : [];
+    if (_chatState.treasurySelectedSweep && sweepList.length) {
+      const wantSw = _chatState.treasurySelectedSweep.toLowerCase();
+      selectedSw = sweepList.find(s =>
+        s.corridorId.toLowerCase() === wantSw ||
+        s.corridorName.toLowerCase() === wantSw
+      ) || null;
+    }
+    if (!selectedSw && sweepList.length) {
+      selectedSw = sweepList[0];
+    }
+
+    const cacheKey = `${snap.scopeKey}|${snap.leverSig}|${safeLang}`;
+    const cachedBrief = (!snap.restricted && !snap.rlsClamped && _chatState.treasuryCache.has(cacheKey))
+      ? _chatState.treasuryCache.get(cacheKey)
+      : null;
+    const aiLoading = Boolean(_chatState.treasuryInflight.has(cacheKey));
+    const activeBullets = (cachedBrief && Array.isArray(cachedBrief.bullets) && cachedBrief.bullets.length)
+      ? cachedBrief.bullets
+      : bullets;
+
+    const fmtU = v => '$' + Math.round(Number(v || 0)).toLocaleString('en-US');
+    const isSelSweepHeld = Boolean(selectedSw && (selectedSw.savedAction === 'hold' || (selectedSw.savedAction === 'activate' && Number(selectedSw.savedSweepUsd) === 0)));
+    const selSweepUsd = selectedSw
+      ? (isSelSweepHeld ? 0 : Number(selectedSw.savedAction === 'activate' && selectedSw.savedSweepUsd != null ? selectedSw.savedSweepUsd : selectedSw.recommendedSweepUsd || 0))
+      : 0;
+    const selSweepWk = selectedSw ? Number(selectedSw.savedWeek != null ? selectedSw.savedWeek : selectedSw.targetWeek || 1) : 1;
+    const drafts = (!snap.restricted && !snap.rlsClamped && !snap.booksRedacted)
+      ? {
+          en: sanitizeTreasuryForecastText(
+            selectedSw
+              ? (isSelSweepHeld
+                  ? `Treasury 13-Week Corridor Hold Notice (${snap.companyLabel} - ${snap.asOfDate}): Corridor ${selectedSw.corridorName} (${selectedSw.sourceEntity} to ${selectedSw.destinationEntity}) is placed on HOLD ($0 transfer) for Week W${selSweepWk}. Opening Cash Till ${fmtU(snap.summary.openingTillUsd)}, Projected W13 Closing ${fmtU(snap.summary.week13ClosingTillUsd)}.`
+                  : `Treasury 13-Week Sweep Instruction (${snap.companyLabel} - ${snap.asOfDate}): Opening Cash Till ${fmtU(snap.summary.openingTillUsd)}, Projected W13 Closing ${fmtU(snap.summary.week13ClosingTillUsd)} (Lowest Cash Point ${fmtU(snap.summary.minWeeklyClosingUsd)} in W${snap.summary.minWeekNumber} vs ${fmtU(snap.summary.liquidityFloorUsd)} floor). Please stage ${fmtU(selSweepUsd)} sweep via ${selectedSw.corridorName} (${selectedSw.sourceEntity} to ${selectedSw.destinationEntity}) for Week W${selSweepWk}. Ring-fence check: ${selectedSw.ringFenceNote}.`)
+              : (snap.drafts && snap.drafts.whatsappEn) || ''
+          ),
+          ar: sanitizeTreasuryForecastText(
+            selectedSw
+              ? (isSelSweepHeld
+                  ? `إشعار تجميد مسار السيولة لـ 13 أسبوعاً (${snap.companyLabel} - ${snap.asOfDate}): تم تجميد مسار ${selectedSw.corridorName} ($0 تحويل) للأسبوع W${selSweepWk}. رصيد الصندوق الافتتاحي ${fmtU(snap.summary.openingTillUsd)}، الإغلاق المتوقع للأسبوع 13 بقيمة ${fmtU(snap.summary.week13ClosingTillUsd)}.`
+                  : `تعليمات تحويل السيولة لـ 13 أسبوعاً (${snap.companyLabel} - ${snap.asOfDate}): رصيد الصندوق الافتتاحي ${fmtU(snap.summary.openingTillUsd)}، الإغلاق المتوقع للأسبوع 13 بقيمة ${fmtU(snap.summary.week13ClosingTillUsd)} (أدنى نقطة نقدية ${fmtU(snap.summary.minWeeklyClosingUsd)} في الأسبوع W${snap.summary.minWeekNumber} مقابل حد الأمان ${fmtU(snap.summary.liquidityFloorUsd)}). يرجى تجهيز تحويل سيولة بقيمة ${fmtU(selSweepUsd)} عبر ${selectedSw.corridorName} للأسبوع W${selSweepWk}.`)
+              : (snap.drafts && snap.drafts.whatsappAr) || ''
+          ),
+          fr: sanitizeTreasuryForecastText(
+            selectedSw
+              ? (isSelSweepHeld
+                  ? `Avis de Suspension Corridor Trésorerie 13 Semaines (${snap.companyLabel} - ${snap.asOfDate}) : Le corridor ${selectedSw.corridorName} est maintenu en suspension ($0 transfert) pour la semaine S${selSweepWk}. Encaisse initiale ${fmtU(snap.summary.openingTillUsd)}, clôture projetée S13 ${fmtU(snap.summary.week13ClosingTillUsd)}.`
+                  : `Instruction de Nivellement Trésorerie 13 Semaines (${snap.companyLabel} - ${snap.asOfDate}) : Encaisse initiale ${fmtU(snap.summary.openingTillUsd)}, clôture projetée S13 ${fmtU(snap.summary.week13ClosingTillUsd)} (point bas ${fmtU(snap.summary.minWeeklyClosingUsd)} en S${snap.summary.minWeekNumber} face au plancher de ${fmtU(snap.summary.liquidityFloorUsd)}). Merci de programmer le nivellement de ${fmtU(selSweepUsd)} via ${selectedSw.corridorName} pour la semaine S${selSweepWk}.`)
+              : (snap.drafts && snap.drafts.whatsappFr) || ''
+          )
+        }
+      : { en: '', ar: '', fr: '' };
+
+    return {
+      lang: safeLang,
+      scopeKey: snap.scopeKey,
+      cacheKey,
+      leverSig: snap.leverSig,
+      industry: snap.industry,
+      companyKey: snap.companyKey,
+      requestedCompanyKey: snap.requestedCompanyKey,
+      companyLabel: sanitizeTreasuryForecastText(snap.companyLabel),
+      periodLabel: sanitizeTreasuryForecastText(snap.periodLabel),
+      asOfDate: snap.asOfDate,
+      rlsClamped: Boolean(snap.rlsClamped),
+      restricted: Boolean(snap.restricted),
+      booksRedacted: Boolean(snap.booksRedacted),
+      canViewBooks: Boolean(snap.canViewBooks),
+      canCash: Boolean(snap.canCash),
+      canEditAlerts: Boolean(snap.canEditAlerts),
+      hasActiveAlertRule: Boolean(snap.hasActiveAlertRule),
+      targetHubView: snap.targetHubView || 'cashflow',
+      levers: snap.levers,
+      leverSpecs: Array.isArray(snap.leverSpecs) ? snap.leverSpecs : [],
+      presets: Array.isArray(snap.presets) ? snap.presets : [],
+      savedSweeps: (!snap.restricted && !snap.rlsClamped) ? savedSweeps : [],
+      summary: snap.summary || {},
+      feeders: snap.feeders || {},
+      tieCheck: snap.tieCheck || {},
+      weeks: Array.isArray(snap.weeks) ? snap.weeks : [],
+      sweepSuggestions: sweepList,
+      selectedSweep: selectedSw,
+      headline,
+      bullets,
+      activeBullets,
+      drafts,
+      aiBrief: cachedBrief,
+      aiLoading
+    };
+  }
+
+  function formatTreasuryPlainText(sum, langOverride) {
+    if (!sum || sum.restricted || sum.rlsClamped) return '';
+    const safeLang = ['en', 'ar', 'fr'].includes(langOverride) ? langOverride : (sum.lang || 'en');
+    const customKey = `${sum.scopeKey}|${safeLang}`;
+    if (_chatState.treasuryCustomDraftByScope.has(customKey)) {
+      return sanitizeTreasuryForecastText(_chatState.treasuryCustomDraftByScope.get(customKey), true);
+    }
+    const draft = (sum.drafts && sum.drafts[safeLang]) || (sum.drafts && sum.drafts.en) || '';
+    return sanitizeTreasuryForecastText(draft, true);
+  }
+
+  function requestTreasuryForecastAiBrief(summary, forceRefresh) {
+    const sum = summary || buildTreasuryRunwaySummary();
+    if (!sum || sum.restricted || sum.rlsClamped) {
+      return Promise.resolve(null);
+    }
+    const cacheKey = sum.cacheKey || `${sum.scopeKey}|${sum.leverSig}|${sum.lang}`;
+    if (!forceRefresh && _chatState.treasuryCache.has(cacheKey)) {
+      return Promise.resolve(_chatState.treasuryCache.get(cacheKey));
+    }
+    if (!forceRefresh && _chatState.treasuryInflight.has(cacheKey)) {
+      return _chatState.treasuryInflight.get(cacheKey);
+    }
+
+    const langName = sum.lang === 'ar'
+      ? 'Arabic (Modern Standard Arabic with natural Lebanese corporate treasury phrasing)'
+      : (sum.lang === 'fr' ? 'French (Français)' : 'English');
+    const reqEpoch = _chatState.sessionEpoch || 0;
+
+    let abortCtrl = null;
+    let timeoutId = null;
+    const p = new Promise(resolve => {
+      if (typeof window !== 'undefined' && window.__ALLOW_HEADLESS_AI === false) {
+        const fallbackBrief = {
+          source: 'deterministic',
+          model: 'deterministic-local',
+          headline: sum.headline,
+          bullets: sum.bullets.slice(0, 4),
+          spokenScript: [sum.headline, ...sum.bullets.slice(0, 3)].join(' '),
+          recommendedActions: [
+            'Enforce weekly AR collection pacing across top open accounts.',
+            'Align supplier disbursement runs with the weekly cash till floor.',
+            'Stage ring-fenced inter-company or reserve sweeps ahead of the lowest cash week.'
+          ]
+        };
+        resolve(fallbackBrief);
+        return;
+      }
+
+      const sysPrompt = [
+        'You are the Group Treasurer and Chief Financial Officer preparing a 13-week rolling cash-flow and liquidity runway board memo.',
+        `Write strictly in ${langName}.`,
+        'Never use em-dashes, en-dashes, unicode arrows, markdown bold, RDL codes, TTC, 4-digit GL account numbers, Microsoft/Power BI/Dataverse terms, or internal assistant names.',
+        'Every dollar figure, week number, and percentage MUST come verbatim from these deterministic facts:',
+        `Entity Scope: ${sum.companyLabel} (${sum.industry}) | As of: ${sum.asOfDate}`,
+        `Opening Cash Till: $${Math.round(sum.summary.openingTillUsd || 0).toLocaleString('en-US')}`,
+        `13-Week AR Collections: $${Math.round(sum.summary.total13wInflowUsd || 0).toLocaleString('en-US')} | 13-Week AP Runs: $${Math.round(sum.summary.total13wOutflowUsd || 0).toLocaleString('en-US')} | Active Sweeps: $${Math.round(sum.summary.total13wSweepUsd || 0).toLocaleString('en-US')}`,
+        `Week 13 Closing Cash: $${Math.round(sum.summary.week13ClosingTillUsd || 0).toLocaleString('en-US')} | Reconciliation Variance: $0.00`,
+        `Lowest Weekly Cash Point: $${Math.round(sum.summary.minWeeklyClosingUsd || 0).toLocaleString('en-US')} in Week W${sum.summary.minWeekNumber || 1} vs Floor $${Math.round(sum.summary.liquidityFloorUsd || 0).toLocaleString('en-US')} (${sum.summary.breachWeeksCount || 0} breach weeks, ${sum.summary.runwayWeeks || 0}w runway)`,
+        `Sweep Corridors: ${(sum.sweepSuggestions || []).slice(0, 4).map(s => `${s.corridorName}: $${Math.round(s.recommendedSweepUsd)} in W${s.targetWeek} (${s.ringFenceNote})`).join('; ') || 'None required'}`,
+        'Return ONLY valid JSON: {"headline":"1 concise executive sentence","bullets":["13-week cash bridge tie summary","Lowest cash week and liquidity floor assessment","Priority sweep or working-capital action"],"spokenScript":"2 to 3 natural spoken sentences for the CFO","recommendedActions":["Action 1","Action 2"]}'
+      ].join('\n');
+
+      const usrPrompt = `Produce the 13-week cash-flow & liquidity runway board memo JSON for ${sum.companyLabel} in ${langName}.`;
+      const base = String((typeof window !== 'undefined' && window.ISABI_LOCAL_API) || '.').replace(/\/$/, '');
+      const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
+      if (typeof AbortController !== 'undefined') {
+        abortCtrl = new AbortController();
+        timeoutId = setTimeout(() => { try { abortCtrl.abort(); } catch (_) {} }, 15000);
+      }
+
+      ((typeof window !== 'undefined' && window.ISABI_EDGE_FETCH) || fetch)(`${base}/api/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: abortCtrl ? abortCtrl.signal : undefined,
+        body: JSON.stringify({
+          model: 'gemini-3.5-flash-lite',
+          systemPrompt: sysPrompt,
+          userPrompt: usrPrompt,
+          geminiContents
+        })
+      })
+        .then(r => (r && r.ok ? r.json() : null))
+        .then(data => {
+          if ((_chatState.sessionEpoch || 0) !== reqEpoch) {
+            resolve(null);
+            return;
+          }
+          let parsed = null;
+          const rawReply = (data && (data.rawReply || data.text || (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text))) || '';
+          if (rawReply) {
+            try {
+              const cleanJson = String(rawReply).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+              parsed = JSON.parse(cleanJson);
+            } catch (_) {
+              const m = String(rawReply).match(/\{[\s\S]*\}/);
+              if (m) {
+                try { parsed = JSON.parse(m[0]); } catch (_2) {}
+              }
+            }
+          }
+          const cleanBrief = {
+            source: parsed ? 'gemini' : 'deterministic',
+            model: (data && data.model) || (parsed ? 'gemini-3.5-flash-lite' : 'deterministic-local'),
+            headline: (parsed && parsed.headline) ? sanitizeTreasuryForecastText(parsed.headline) : sum.headline,
+            bullets: (parsed && Array.isArray(parsed.bullets) && parsed.bullets.length)
+              ? parsed.bullets.map(b => sanitizeTreasuryForecastText(b)).filter(Boolean).slice(0, 4)
+              : sum.bullets.slice(0, 4),
+            spokenScript: (parsed && parsed.spokenScript)
+              ? sanitizeTreasuryForecastText(parsed.spokenScript)
+              : [sum.headline, ...sum.bullets.slice(0, 2)].join(' '),
+            recommendedActions: (parsed && Array.isArray(parsed.recommendedActions) && parsed.recommendedActions.length)
+              ? parsed.recommendedActions.map(a => sanitizeTreasuryForecastText(a)).filter(Boolean).slice(0, 3)
+              : []
+          };
+          if (cleanBrief.source === 'gemini') {
+            if (_chatState.treasuryCache.size >= 32) {
+              const oldest = _chatState.treasuryCache.keys().next().value;
+              if (oldest !== undefined) _chatState.treasuryCache.delete(oldest);
+            }
+            _chatState.treasuryCache.set(cacheKey, cleanBrief);
+          }
+          resolve(cleanBrief);
+        })
+        .catch(() => {
+          resolve(null);
+        });
+    });
+
+    _chatState.treasuryInflight.set(cacheKey, p);
+    p.finally(() => {
+      if (timeoutId) clearTimeout(timeoutId);
+      _chatState.treasuryInflight.delete(cacheKey);
+    });
+    return p;
+  }
+
+  function formatTreasuryLeverBadgeText(key, val) {
+    const n = Number(val) || 0;
+    if (key === 'collectionVelocityPct' || key === 'disbursementDeferralPct') {
+      return n > 0 ? `+${Math.round(n)}%` : `${Math.round(n)}%`;
+    }
+    if (key === 'liquidityFloorUsd') {
+      return '$' + Math.round(n).toLocaleString('en-US');
+    }
+    return String(val);
+  }
+
+  function renderTreasurySavedSweepsHtml(sum) {
+    const presets = Array.isArray(sum.presets) ? sum.presets : [];
+    const saved = Array.isArray(sum.savedSweeps) ? sum.savedSweeps : [];
+    const presetHtml = presets.map(p => {
+      const lbl = sum.lang === 'ar' ? p.labelAr : (sum.lang === 'fr' ? p.labelFr : p.labelEn);
+      const isAct = _chatState.treasuryActivePreset === p.id;
+      return `<button type="button" class="wi-preset-chip ${isAct ? 'active' : ''}" data-no-i18n="1" data-tf-preset="${esc(p.id)}">${esc(lbl)}</button>`;
+    }).join('');
+    const canMutateSweeps = !sum.restricted && !sum.rlsClamped && !sum.booksRedacted;
+    const savedHtml = saved.map(sw => `
+      <span class="wi-saved-pill" data-no-i18n="1">
+        <button type="button" class="wi-saved-load-btn" data-tf-saved-sw="${esc(sw.corridorId)}">
+          ${esc(sw.corridorName)}: $${Math.round(Number(sw.sweepUsd || 0)).toLocaleString('en-US')} (W${esc(String(sw.targetWeek || 1))})${sw.action === 'hold' ? ' [Paused]' : ''}
+        </button>
+        ${canMutateSweeps ? `<button type="button" class="wi-saved-del-btn" data-tf-del-sweep="${esc(sw.id)}" aria-label="Delete saved treasury sweep">&times;</button>` : ''}
+      </span>
+    `).join('');
+    return presetHtml + savedHtml;
+  }
+
+  function renderTreasuryRunwayCardHtml(sum) {
+    const weeks = Array.isArray(sum.weeks) ? sum.weeks : [];
+    const fd = sum.feeders || {};
+    const s = sum.summary || {};
+    const floorUsd = Number(s.liquidityFloorUsd || 0);
+    const minChartVal = Math.min(0, ...weeks.map(w => Number(w.closingUsd || 0)), Number(s.openingTillUsd || 0)) * 1.1;
+    const maxChartVal = Math.max(
+      1,
+      floorUsd * 1.25,
+      ...weeks.map(w => Number(w.closingUsd || 0)),
+      Number(s.openingTillUsd || 0)
+    );
+    const spanVal = Math.max(1, maxChartVal - minChartVal);
+    const zeroPct = Math.min(92, Math.max(0, Math.round(((0 - minChartVal) / spanVal) * 100)));
+    const floorPct = Math.min(96, Math.max(4, Math.round(((floorUsd - minChartVal) / spanVal) * 100)));
+
+    const barsHtml = weeks.map(w => {
+      const clsVal = Number(w.closingUsd || 0);
+      const barTone = clsVal < 0 ? 'is-deficit' : (w.isBreach ? 'is-breach' : 'is-healthy');
+      const tipStr = `${w.weekCode} (${w.rangeLabel}): Closing $${Math.round(clsVal).toLocaleString('en-US')} | Net ${w.netFlowUsd >= 0 ? '+' : ''}$${Math.round(w.netFlowUsd).toLocaleString('en-US')}`;
+      let barBottom = zeroPct;
+      let barHeight = 4;
+      if (clsVal >= 0) {
+        const rawTop = ((clsVal - minChartVal) / spanVal) * 100;
+        barHeight = Math.min(100 - zeroPct, Math.max(4, Math.round(rawTop - zeroPct)));
+        barBottom = zeroPct;
+      } else {
+        const rawBot = Math.max(0, ((clsVal - minChartVal) / spanVal) * 100);
+        barHeight = Math.min(zeroPct, Math.max(4, Math.round(zeroPct - rawBot)));
+        barBottom = Math.max(0, zeroPct - barHeight);
+      }
+      return `
+        <div class="tf-wk-col ${barTone}" data-ui-tip="${esc(tipStr)}" data-no-i18n="1">
+          <div class="tf-wk-track">
+            <div class="tf-wk-bar ${barTone}" style="position:absolute;bottom:${barBottom}%;height:${barHeight}%"></div>
+          </div>
+          <span class="tf-wk-lbl">${esc(w.weekCode)}</span>
+        </div>
+      `;
+    }).join('');
+
+    const bridgeBalanced = Boolean(sum.tieCheck && sum.tieCheck.rollforwardBalanced && sum.tieCheck.weeklyChainBalanced);
+    const feederBalanced = Boolean(sum.tieCheck && sum.tieCheck.arFeederBalanced && sum.tieCheck.apFeederBalanced);
+    const grossScale = Math.max(
+      1,
+      Math.abs(Number(s.openingTillUsd || 0)) + Number(s.total13wInflowUsd || 0) + Number(s.total13wSweepUsd || 0),
+      Number(s.total13wOutflowUsd || 0)
+    );
+    const pOpen = Math.min(100, Math.max(0, (Math.max(0, Number(s.openingTillUsd || 0)) / grossScale) * 100));
+    const pIn = Math.min(100, Math.max(0, (Number(s.total13wInflowUsd || 0) / grossScale) * 100));
+    const pOut = Math.min(100, Math.max(0, (Number(s.total13wOutflowUsd || 0) / grossScale) * 100));
+    const pSwp = Math.min(100, Math.max(0, (Number(s.total13wSweepUsd || 0) / grossScale) * 100));
+
+    return `
+      <div class="wi-col-head">
+        <span class="pg-sec-title">13-Week Rolling Cash Curve</span>
+        <span class="badge ${bridgeBalanced ? 'badge-emerald' : 'badge-crit'} num" data-no-i18n="1">
+          ${bridgeBalanced ? '$0.00 Variance' : `$${Number(sum.tieCheck.rollforwardVarianceUsd || 0).toFixed(2)} Var`}
+        </span>
+      </div>
+      <div class="tf-chart-box" id="tfRunwayChartBox">
+        <div class="tf-plot-overlay" data-no-i18n="1">
+          ${zeroPct > 1 ? `<div class="tf-zero-line" style="bottom:${zeroPct}%"></div>` : ''}
+          <div class="tf-floor-line" style="bottom:${floorPct}%">
+            <span class="tf-floor-tag">Floor $${Math.round(floorUsd).toLocaleString('en-US')}</span>
+          </div>
+        </div>
+        <div class="tf-wk-bars">
+          ${barsHtml}
+        </div>
+      </div>
+
+      <div class="wi-col-head" style="margin-top:14px">
+        <span class="pg-sec-title">Feeder Sub-Ledger Reconciliation</span>
+        <span class="badge ${feederBalanced ? 'badge-emerald' : 'badge-crit'} num" data-no-i18n="1">
+          ${feederBalanced ? '$0.00 Feeder Tie' : 'Feeder Variance'}
+        </span>
+      </div>
+      <div class="cf-aging-bars">
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Opening Cash Till</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill steel" style="width:${pOpen}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">$${Math.round(s.openingTillUsd || 0).toLocaleString('en-US')}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">13W AR Collections</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill emerald" style="width:${pIn}%"></div></div>
+          <span class="cf-bar-val num good" data-no-i18n="1">+$${Math.round(s.total13wInflowUsd || 0).toLocaleString('en-US')}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">13W AP Payment Runs</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill crit" style="width:${pOut}%"></div></div>
+          <span class="cf-bar-val num crit" data-no-i18n="1">-$${Math.round(s.total13wOutflowUsd || 0).toLocaleString('en-US')}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Active Treasury Sweeps</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill info" style="width:${pSwp}%"></div></div>
+          <span class="cf-bar-val num info" data-no-i18n="1">+$${Math.round(s.total13wSweepUsd || 0).toLocaleString('en-US')}</span>
+        </div>
+      </div>
+
+      <div class="cf-aging-foot">
+        <span><span>Open AR Pool</span>: <b class="num" data-no-i18n="1">$${Math.round(fd.arGrossUsd || 0).toLocaleString('en-US')}</b></span>
+        <span><span>Open AP Pool</span>: <b class="num" data-no-i18n="1">$${Math.round(fd.apGrossUsd || 0).toLocaleString('en-US')}</b></span>
+        <span><span>W13 Closing</span>: <b class="num ${(s.week13ClosingTillUsd || 0) < floorUsd ? 'crit' : 'good'}" data-no-i18n="1">$${Math.round(s.week13ClosingTillUsd || 0).toLocaleString('en-US')}</b></span>
+      </div>
+    `;
+  }
+
+  function renderTreasuryTelemetryInnerHtml(sum) {
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const s = sum.summary || {};
+    const weeks = Array.isArray(sum.weeks) ? sum.weeks : [];
+    const sweeps = Array.isArray(sum.sweepSuggestions) ? sum.sweepSuggestions : [];
+    const selSw = sum.selectedSweep;
+
+    const weekRowsHtml = weeks.map(w => {
+      const badgeCls = w.closingUsd < 0 ? 'badge-crit' : (w.isBreach ? 'badge-brass' : 'badge-emerald');
+      return `
+        <tr class="${w.isBreach ? 'tf-breach-row' : ''}">
+          <td class="num" data-no-i18n="1"><b>${esc(w.weekCode)}</b></td>
+          <td class="mu num" data-no-i18n="1">${esc(w.rangeLabel)}</td>
+          <td class="r num" data-no-i18n="1">$${Math.round(w.openingUsd).toLocaleString('en-US')}</td>
+          <td class="r num good" data-no-i18n="1">+$${Math.round(w.inflowUsd).toLocaleString('en-US')}</td>
+          <td class="r num crit" data-no-i18n="1">-$${Math.round(w.outflowUsd).toLocaleString('en-US')}</td>
+          <td class="r num ${w.sweepUsd > 0 ? 'info' : 'mu'}" data-no-i18n="1">${w.sweepUsd > 0 ? `+$${Math.round(w.sweepUsd).toLocaleString('en-US')}` : '$0'}</td>
+          <td class="r num ${w.isBreach ? 'crit' : ''}" data-no-i18n="1"><b>$${Math.round(w.closingUsd).toLocaleString('en-US')}</b></td>
+          <td class="c"><span class="badge ${badgeCls}">${esc(w.status)}</span></td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="8" class="mu c">No weekly treasury schedule available.</td></tr>';
+
+    const sweepRowsHtml = sweeps.map((sw, idx) => {
+      const isSel = selSw && selSw.corridorId === sw.corridorId;
+      const isHeld = sw.savedAction === 'hold';
+      const dispSwUsd = isHeld ? 0 : Number(sw.savedAction === 'activate' && sw.savedSweepUsd != null ? sw.savedSweepUsd : sw.recommendedSweepUsd || 0);
+      const dispWk = sw.savedWeek != null ? sw.savedWeek : sw.targetWeek;
+      return `
+        <tr class="cf-cp-row ${isSel ? 'is-selected-cp' : ''}" data-tf-select-sweep="${esc(sw.corridorId)}" role="button" tabindex="0">
+          <td class="num" data-no-i18n="1">${idx + 1}</td>
+          <td>
+            <div class="cf-cp-name-cell">
+              <span class="cf-cp-title" data-no-i18n="1">${esc(sw.corridorName)}</span>
+              <span class="cf-cp-sub mu" data-no-i18n="1">${esc(sw.mechanism)} · ${esc(sw.ringFenceNote)}</span>
+            </div>
+          </td>
+          <td class="r num" data-no-i18n="1">$${Math.round(sw.availablePoolUsd).toLocaleString('en-US')}</td>
+          <td class="r num brass" data-no-i18n="1"><b>$${Math.round(dispSwUsd).toLocaleString('en-US')}</b></td>
+          <td class="c num" data-no-i18n="1">W${esc(String(dispWk))}</td>
+          <td class="c">
+            <span class="badge ${isHeld ? 'badge-brass' : (sw.isSaved ? 'badge-emerald' : 'badge-steel')}">${isHeld ? 'Hold' : (sw.isSaved ? 'Active Sweep' : 'Suggested')}</span>
+          </td>
+          <td class="c">
+            <button type="button" class="btn btn-ghost-bar cf-plan-btn" data-tf-select-sweep="${esc(sw.corridorId)}" aria-label="Select sweep corridor"><span>Stage</span></button>
+          </td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="7" class="mu c">No eligible inter-company or reserve sweep corridors in active scope.</td></tr>';
+
+    const aiBriefText = sum.aiBrief
+      ? (sum.aiBrief.headline + '\n\n' + (sum.aiBrief.bullets || []).map(b => `• ${b}`).join('\n'))
+      : (sum.headline + '\n\n' + (sum.bullets || []).map(b => `• ${b}`).join('\n'));
+
+    const dLang = ['en', 'ar', 'fr'].includes(_chatState.treasuryDraftLang) ? _chatState.treasuryDraftLang : sum.lang;
+    const activeDraftText = formatTreasuryPlainText(sum, dLang);
+
+    return `
+      <div class="wi-kpi-grid cf-kpi-grid">
+        <div class="wi-kpi-card">
+          <span class="wi-kpi-lbl">Opening Cash Till</span>
+          <span class="wi-kpi-val num" data-no-i18n="1">$${Math.round(s.openingTillUsd || 0).toLocaleString('en-US')}</span>
+          <span class="wi-kpi-sub mu" data-no-i18n="1">As of ${esc(sum.asOfDate)}</span>
+        </div>
+        <div class="wi-kpi-card">
+          <span class="wi-kpi-lbl">Week 13 Closing Cash</span>
+          <span class="wi-kpi-val num ${(s.week13ClosingTillUsd || 0) < (s.liquidityFloorUsd || 0) ? 'crit' : 'good'}" data-no-i18n="1">$${Math.round(s.week13ClosingTillUsd || 0).toLocaleString('en-US')}</span>
+          <span class="wi-kpi-sub mu" data-no-i18n="1">13W Net ${(s.net13wCashDeltaUsd || 0) >= 0 ? '+' : ''}$${Math.round(s.net13wCashDeltaUsd || 0).toLocaleString('en-US')}</span>
+        </div>
+        <div class="wi-kpi-card">
+          <span class="wi-kpi-lbl">Lowest Weekly Cash Point</span>
+          <span class="wi-kpi-val num ${s.isFloorBreached ? 'crit' : 'brass'}" data-no-i18n="1">$${Math.round(s.minWeeklyClosingUsd || 0).toLocaleString('en-US')}</span>
+          <span class="wi-kpi-sub mu" data-no-i18n="1">Week W${esc(String(s.minWeekNumber || 1))} vs $${Math.round(s.liquidityFloorUsd || 0).toLocaleString('en-US')} Floor</span>
+        </div>
+        <div class="wi-kpi-card">
+          <span class="wi-kpi-lbl">Liquidity Runway</span>
+          <span class="wi-kpi-val num ${s.isFloorBreached ? 'crit' : 'good'}" data-no-i18n="1">${esc(String(s.runwayWeeks || 0))}w (${esc(String(s.runwayDays || 0))}d)</span>
+          <span class="wi-kpi-sub mu">${s.isFloorBreached ? 'Liquidity Floor Breached' : 'Healthy Cash Buffer'}</span>
+        </div>
+      </div>
+
+      ${s.isFloorBreached ? `
+      <div class="tf-breach-banner" id="tfFloorBreachBanner">
+        <strong>Liquidity Floor Warning:</strong>
+        <span data-no-i18n="1">${esc(String(s.breachWeeksCount))} week(s) drop below the $${Math.round(s.liquidityFloorUsd || 0).toLocaleString('en-US')} floor (first breach in W${esc(String(s.firstBreachWeek || 1))}). Activate a ring-fenced sweep or accelerate AR collections.</span>
+      </div>
+      ` : ''}
+
+      <div class="wi-alert-strip">
+        <div class="wi-alert-info">
+          <span class="wi-alert-pill ${sum.hasActiveAlertRule ? 'badge-emerald' : 'badge-brass'}">
+            ${sum.hasActiveAlertRule ? 'Runway Guardrail Active' : 'No Runway Guardrail'}
+          </span>
+          <span class="wi-alert-txt mu" data-no-i18n="1">
+            ${sum.hasActiveAlertRule
+              ? `Automated 13-week cash till floor guardrail active for ${esc(sum.companyLabel)}.`
+              : `Monitor weekly cash till floor ($${Math.round(s.liquidityFloorUsd || 0).toLocaleString('en-US')}) across W1 to W13 for ${esc(sum.companyLabel)}.`}
+          </span>
+        </div>
+        <div class="wi-alert-actions">
+          <button type="button" class="ceo-pv-btn is-primary" id="tfApplyAlertRuleBtn" ${sum.canEditAlerts ? '' : 'disabled'}>
+            <span>${sum.hasActiveAlertRule ? 'Update Runway Alert' : 'Create Runway Alert'}</span>
+          </button>
+          <button type="button" class="ceo-pv-btn" id="tfOpenArFeederBtn" data-tf-open-ar="1"><span>AR Forecast</span></button>
+          <button type="button" class="ceo-pv-btn" id="tfOpenApFeederBtn" data-tf-open-ap="1"><span>AP Optimizer</span></button>
+          <button type="button" class="ceo-pv-btn" id="tfOpenHubBtn" data-tf-nav="${esc(sum.targetHubView)}"><span>Open Hub</span></button>
+        </div>
+      </div>
+
+      <div class="panel-card cf-call-list-panel">
+        <div class="panel-head" style="gap:8px;flex-wrap:wrap">
+          <div class="panel-title"><span>13-Week Rolling Cash-Flow Bridge (W1 to W13)</span></div>
+          <div class="panel-meta mu" data-no-i18n="1">Opening + AR Inflows - AP Runs + Sweeps = Closing ($0.00 Tie)</div>
+        </div>
+        <div class="table-wrap cf-table-wrap tf-weeks-table-wrap">
+          <table class="ledger-table cf-call-table" id="tfWeeklyBridgeTable">
+            <thead>
+              <tr>
+                <th style="width:48px">Week</th>
+                <th>Window</th>
+                <th class="r">Opening</th>
+                <th class="r">AR Inflow</th>
+                <th class="r">AP Outflow</th>
+                <th class="r">Sweep</th>
+                <th class="r">Closing Cash</th>
+                <th class="c">Posture</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${weekRowsHtml}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel-card cf-call-list-panel">
+        <div class="panel-head" style="gap:8px;flex-wrap:wrap">
+          <div class="panel-title"><span>Ring-Fenced Inter-Company &amp; Reserve Sweep Suggestions</span></div>
+          <div class="panel-meta mu" data-no-i18n="1">${sweeps.length} Corridors · Ranked by Operational Frequency</div>
+        </div>
+        <div class="table-wrap cf-table-wrap">
+          <table class="ledger-table cf-call-table" id="tfSweepTable">
+            <thead>
+              <tr>
+                <th style="width:36px">#</th>
+                <th>Sweep Corridor &amp; Ring-Fence Check</th>
+                <th class="r">Eligible Pool</th>
+                <th class="r">Sweep ($)</th>
+                <th class="c">Target</th>
+                <th class="c">Status</th>
+                <th class="c">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sweepRowsHtml}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="cf-bottom-split">
+        <div class="panel-card cf-ai-brief-card" id="tfAiBriefCard">
+          <div class="panel-head">
+            <div class="panel-title"><span>Treasury &amp; Runway Board Memo</span></div>
+            <button type="button" class="btn btn-ghost-bar" id="tfRefreshAiBtn" ${sum.aiLoading ? 'disabled' : ''}>
+              ${(icons && icons.svg('sparkle')) || AI_SVGS.sparkle}<span>Refresh Board Memo</span>
+            </button>
+          </div>
+          <div class="cf-ai-brief-body" id="tfAiBriefBody">
+            <pre class="cf-ai-brief-text" data-no-i18n="1">${esc(aiBriefText)}</pre>
+          </div>
+        </div>
+
+        <div class="panel-card cf-wa-card" id="tfWaCard">
+          <div class="panel-head">
+            <div class="panel-title"><span>WhatsApp Treasury Sweep Draft</span></div>
+            <div class="cf-wa-lang-pills" data-no-i18n="1">
+              <button type="button" class="cf-wa-lang-btn ${dLang === 'en' ? 'active' : ''}" data-tf-wa-lang="en">EN</button>
+              <button type="button" class="cf-wa-lang-btn ${dLang === 'ar' ? 'active' : ''}" data-tf-wa-lang="ar">عربي</button>
+              <button type="button" class="cf-wa-lang-btn ${dLang === 'fr' ? 'active' : ''}" data-tf-wa-lang="fr">FR</button>
+            </div>
+          </div>
+          <textarea id="tfWhatsappDraftInput" class="cf-wa-textarea" rows="4" data-no-i18n="1" dir="${dLang === 'ar' ? 'rtl' : 'ltr'}" placeholder="WhatsApp treasury sweep instruction...">${esc(activeDraftText)}</textarea>
+          <div class="cf-wa-foot">
+            <button type="button" class="ceo-pv-btn" id="tfCopyDraftBtn"><span>Copy Sweep Note</span></button>
+            <button type="button" class="ceo-pv-btn is-primary insp-wa-btn" id="tfSendWaBtn"><span>Send Sweep via WhatsApp</span></button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  let _tfEscKeyWired = false;
+  function ensureTreasuryGlobalEvents() {
+    if (_tfEscKeyWired || typeof document === 'undefined') return;
+    _tfEscKeyWired = true;
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && _chatState.treasuryForecastOpen) {
+        closeTreasuryForecastStudio();
+      }
+    });
+  }
+
+  function openTreasuryForecastStudio(anchorEl, opts = {}) {
+    if (typeof document === 'undefined') return null;
+    ensureDailyBriefingI18nRegistered();
+    ensureTreasuryGlobalEvents();
+
+    if (_chatState.inventoryOptimizerOpen) closeInventoryOptimizerStudio();
+    if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
+    if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
+    if (_chatState.whatIfOpen) closeWhatIfStudio();
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
+    if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
+    if (_chatState.sentinelPopoverOpen) closeSentinelTriagePopover();
+    if (_chatState.inspPopoverOpen) closeInspectorBriefPopover();
+    if (_chatState.pbiPopoverOpen) closeDashboardVariancePopover();
+    if (_chatState.stmtPopoverOpen) closeStatementVariancePopover();
+    if (_chatState.periodPopoverOpen) closeCeoVariancePopover();
+
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const source = options.source
+      || (anchorEl && anchorEl.getAttribute && (anchorEl.getAttribute('data-tf-source') || anchorEl.getAttribute('data-lr-source')))
+      || _chatState.treasuryForecastSource
+      || 'overview';
+    _chatState.treasuryForecastSource = source;
+    if (anchorEl) _chatState.treasuryForecastAnchor = anchorEl;
+
+    const sum = buildTreasuryRunwaySummary(undefined, options);
+    _chatState.treasuryForecastOpen = true;
+    _chatState.treasuryForecastScope = sum.scopeKey;
+    if (!['en', 'ar', 'fr'].includes(_chatState.treasuryDraftLang)) {
+      _chatState.treasuryDraftLang = sum.lang;
+    }
+    if (sum.selectedSweep && !_chatState.treasurySelectedSweep) {
+      _chatState.treasurySelectedSweep = sum.selectedSweep.corridorId;
+    }
+
+    document.querySelectorAll('[data-treasury-forecast-open], [data-liquidity-runway-open]').forEach(b => {
+      b.classList.add('is-open', 'active');
+      b.setAttribute('aria-expanded', 'true');
+    });
+
+    let modal = document.getElementById('treasuryForecastModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'treasuryForecastModal';
+      modal.className = 'wi-modal-backdrop cf-modal-backdrop tf-modal-backdrop no-print';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'tfModalTitle');
+      modal.setAttribute('data-liquidity-runway-alias', 'liquidityRunwayModal');
+      document.body.appendChild(modal);
+    }
+    if (!modal._tfBackdropBound) {
+      modal._tfBackdropBound = true;
+      modal.addEventListener('click', e => {
+        if (e.target === modal) {
+          closeTreasuryForecastStudio();
+        }
+      });
+    }
+
+    modal.hidden = false;
+    modal.dir = sum.lang === 'ar' ? 'rtl' : 'ltr';
+    modal.setAttribute('data-scope-key', sum.scopeKey);
+    modal.setAttribute('data-source', source);
+    modal.setAttribute('data-industry', sum.industry);
+
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+
+    if (sum.restricted || sum.rlsClamped) {
+      modal.innerHTML = `
+        <div class="wi-modal-card cf-modal-card tf-modal-card" role="document">
+          <div class="ceo-pv-head wi-modal-head">
+            <div class="ceo-pv-title-wrap">
+              <div class="pg-eyebrow-row">
+                <span class="ceo-pv-eyebrow">MASTER TREASURY, 13-WEEK CASH BRIDGE &amp; SWEEP STUDIO</span>
+                <span class="pg-ind-badge" data-no-i18n="1">${esc(sum.companyLabel)} · ${esc(sum.industry)}</span>
+              </div>
+              <h3 class="ceo-pv-title" id="tfModalTitle">13-Week Cash-Flow &amp; Liquidity Runway Studio</h3>
+            </div>
+            <div class="wi-head-actions">
+              <button type="button" class="ceo-pv-close" id="tfCloseModalBtn" aria-label="Close 13-Week Runway Studio" data-no-i18n="1">&times;</button>
+            </div>
+          </div>
+          <div class="tf-restricted-state" id="tfRestrictedNotice">
+            <span class="badge badge-crit">Restricted Treasury Scope</span>
+            <p data-no-i18n="1">${esc(sum.headline)}</p>
+          </div>
+          <div class="ceo-pv-foot wi-modal-foot">
+            <button type="button" class="ceo-pv-btn" id="tfRestrictedCloseFootBtn"><span>Close</span></button>
+          </div>
+        </div>
+      `;
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+        try { window.MFG_I18N.translateDom(modal); } catch (_) {}
+      }
+      const rCard = modal.querySelector('.tf-modal-card');
+      if (rCard) {
+        rCard.addEventListener('click', e => {
+          if (e.target.closest && (e.target.closest('#tfCloseModalBtn') || e.target.closest('#tfRestrictedCloseFootBtn'))) {
+            e.preventDefault();
+            closeTreasuryForecastStudio();
+          }
+        });
+      }
+      return modal;
+    }
+
+    const leverRowsHtml = (sum.leverSpecs || []).map(spec => {
+      const k = spec.key;
+      const curVal = sum.levers[k] != null ? sum.levers[k] : 0;
+      const lbl = sum.lang === 'ar' ? spec.labelAr : (sum.lang === 'fr' ? spec.labelFr : spec.labelEn);
+      const badgeTxt = formatTreasuryLeverBadgeText(k, curVal);
+      return `
+        <div class="wi-lever-row" data-tf-lever-row="${esc(k)}">
+          <div class="wi-lever-top">
+            <label class="wi-lever-lbl" for="tfSlider_${esc(k)}" data-no-i18n="1">${esc(lbl)}</label>
+            <span class="wi-lever-badge num" data-tf-badge="${esc(k)}" data-no-i18n="1">${esc(badgeTxt)}</span>
+          </div>
+          <div class="wi-lever-controls" data-no-i18n="1">
+            <button type="button" class="wi-step-btn" data-tf-step="${esc(k)}" data-tf-dir="-1" aria-label="Decrease ${esc(spec.labelEn)}">&minus;</button>
+            <input type="range" class="wi-slider" id="tfSlider_${esc(k)}" data-tf-slider="${esc(k)}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${curVal}">
+            <button type="button" class="wi-step-btn" data-tf-step="${esc(k)}" data-tf-dir="1" aria-label="Increase ${esc(spec.labelEn)}">+</button>
+            <input type="number" class="wi-num-input num" id="tfNum_${esc(k)}" data-tf-num="${esc(k)}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${curVal}" aria-label="${esc(spec.labelEn)} numeric value">
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const swOptionsHtml = (sum.sweepSuggestions || []).map(sw => {
+      const isSel = sum.selectedSweep && sw.corridorId === sum.selectedSweep.corridorId;
+      return `<option value="${esc(sw.corridorId)}" ${isSel ? 'selected' : ''} data-no-i18n="1">${esc(sw.corridorName)} ($${Math.round(sw.recommendedSweepUsd || 0).toLocaleString('en-US')})</option>`;
+    }).join('');
+
+    const defSweepAmt = sum.selectedSweep
+      ? (sum.selectedSweep.savedAction === 'hold'
+          ? 0
+          : Math.round(Number(sum.selectedSweep.savedAction === 'activate' && sum.selectedSweep.savedSweepUsd != null ? sum.selectedSweep.savedSweepUsd : sum.selectedSweep.recommendedSweepUsd || 0)))
+      : 10000;
+    const defSweepWk = sum.selectedSweep
+      ? Number(sum.selectedSweep.savedWeek != null ? sum.selectedSweep.savedWeek : sum.selectedSweep.targetWeek || 1)
+      : 1;
+    const defSweepAct = sum.selectedSweep && sum.selectedSweep.savedAction === 'hold' ? 'hold' : 'activate';
+    const tfFormDisAttr = (sum.restricted || sum.rlsClamped || sum.booksRedacted) ? 'disabled' : '';
+    const weekOptsHtml = Array.from({ length: 13 }, (_, idx) => {
+      const wn = idx + 1;
+      return `<option value="${wn}" ${wn === defSweepWk ? 'selected' : ''} data-no-i18n="1">W${wn}</option>`;
+    }).join('');
+
+    modal.innerHTML = `
+      <div class="wi-modal-card cf-modal-card tf-modal-card" role="document">
+        <div class="ceo-pv-head wi-modal-head">
+          <div class="ceo-pv-title-wrap">
+            <div class="pg-eyebrow-row">
+              <span class="ceo-pv-eyebrow">MASTER TREASURY, 13-WEEK CASH BRIDGE &amp; SWEEP STUDIO</span>
+              <span class="pg-ind-badge" id="tfEntityBadge" data-no-i18n="1">${esc(sum.companyLabel)} · ${esc(sum.industry)}</span>
+              <span class="pg-ind-badge" data-no-i18n="1">${esc(sum.periodLabel)}</span>
+            </div>
+            <h3 class="ceo-pv-title" id="tfModalTitle">13-Week Cash-Flow &amp; Liquidity Runway Studio</h3>
+          </div>
+          <div class="wi-head-actions">
+            <button type="button" class="ceo-pv-close" id="tfCloseModalBtn" data-tf-close="1" aria-label="Close 13-Week Runway Studio" data-no-i18n="1">&times;</button>
+          </div>
+        </div>
+
+        <div class="wi-presets-toolbar" id="tfPresetsToolbar">
+          <div class="wi-presets-list" id="tfPresetsList">
+            ${renderTreasurySavedSweepsHtml(sum)}
+          </div>
+          <div class="wi-preset-save-wrap">
+            <button type="button" class="ceo-pv-btn" id="tfResetLeversBtn" data-tf-reset="1"><span>Reset Levers</span></button>
+            <form class="wi-save-form cf-promise-form tf-sweep-form" id="tfSweepForm">
+              <select id="tfSweepCorridorSelect" class="wi-save-input cf-cp-select" data-no-i18n="1" aria-label="Select sweep corridor" ${tfFormDisAttr}>
+                ${swOptionsHtml || '<option value="SWP-RESERVE" data-no-i18n="1">Reserve Cash Sweep</option>'}
+              </select>
+              <select id="tfSweepWeekSelect" class="wi-save-input tf-week-select num" data-no-i18n="1" aria-label="Target sweep week" ${tfFormDisAttr}>
+                ${weekOptsHtml}
+              </select>
+              <input type="number" id="tfSweepAmountInput" class="wi-save-input cf-amt-input num" min="0" max="50000000" step="500" value="${defSweepAmt}" placeholder="Sweep $" aria-label="Treasury sweep amount USD" data-no-i18n="1" ${tfFormDisAttr}>
+              <select id="tfSweepActionSelect" class="wi-save-input io-act-select" aria-label="Treasury sweep action" ${tfFormDisAttr}>
+                <option value="activate" ${defSweepAct === 'activate' ? 'selected' : ''}>Activate Sweep</option>
+                <option value="hold" ${defSweepAct === 'hold' ? 'selected' : ''}>Hold Corridor</option>
+              </select>
+              <button type="submit" class="ceo-pv-btn is-primary" id="tfSaveSweepBtn" ${tfFormDisAttr}><span>+ Save Sweep</span></button>
+            </form>
+          </div>
+        </div>
+
+        <div class="wi-studio-grid cf-studio-grid">
+          <div class="wi-levers-col cf-levers-col tf-levers-col">
+            <div class="wi-col-head">
+              <span class="pg-sec-title">Runway &amp; Pacing Levers</span>
+              <span class="wi-col-sub">Stress-test AR velocity, AP deferral &amp; cash till liquidity floor</span>
+            </div>
+            <div class="wi-levers-list" id="tfLeversList">
+              ${leverRowsHtml}
+            </div>
+            <div class="wi-tornado-card cf-aging-card tf-runway-card" id="tfRunwayCard">
+              ${renderTreasuryRunwayCardHtml(sum)}
+            </div>
+          </div>
+
+          <div class="wi-telemetry-col cf-telemetry-col tf-telemetry-col" id="tfTelemetryMount">
+            ${renderTreasuryTelemetryInnerHtml(sum)}
+          </div>
+        </div>
+
+        <div class="ceo-pv-foot wi-modal-foot">
+          <button type="button" class="ceo-pv-btn" id="tfSpeakBtn" data-tf-speak="1">
+            ${(icons && icons.svg('audio')) || AI_SVGS.audio}<span>Listen to Runway Brief</span>
+          </button>
+          <div class="wi-foot-right">
+            <button type="button" class="ceo-pv-btn is-primary" id="tfOpenCopilotBtn" data-tf-open-copilot="1">
+              ${(icons && icons.svg('sparkle')) || AI_SVGS.sparkle}<span>Open in Full Copilot</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const translateIfNeeded = el => {
+      if (el && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(el); } catch (_) {}
+      }
+    };
+    translateIfNeeded(modal);
+
+    const card = modal.querySelector('.tf-modal-card');
+    if (!card) return modal;
+
+    const refreshSubMounts = nextSum => {
+      modal.setAttribute('data-scope-key', nextSum.scopeKey);
+      _chatState.treasuryForecastScope = nextSum.scopeKey;
+      const rwMount = card.querySelector('#tfRunwayCard');
+      if (rwMount) {
+        rwMount.innerHTML = renderTreasuryRunwayCardHtml(nextSum);
+        translateIfNeeded(rwMount);
+      }
+      const teleMount = card.querySelector('#tfTelemetryMount');
+      if (teleMount) {
+        teleMount.innerHTML = renderTreasuryTelemetryInnerHtml(nextSum);
+        translateIfNeeded(teleMount);
+        bindDraftInputLive(card, nextSum);
+      }
+    };
+
+    const bindDraftInputLive = (rootEl, curSum) => {
+      const ta = rootEl.querySelector('#tfWhatsappDraftInput');
+      if (!ta) return;
+      ta.addEventListener('input', () => {
+        const cleanVal = sanitizeTreasuryLiveInput(ta.value);
+        if (ta.value !== cleanVal) ta.value = cleanVal;
+        const curDLang = ['en', 'ar', 'fr'].includes(_chatState.treasuryDraftLang) ? _chatState.treasuryDraftLang : curSum.lang;
+        const customKey = `${curSum.scopeKey}|${curDLang}`;
+        if (!_chatState.treasuryCustomDraftByScope.has(customKey) && _chatState.treasuryCustomDraftByScope.size >= 32) {
+          const oldest = _chatState.treasuryCustomDraftByScope.keys().next().value;
+          if (oldest !== undefined) _chatState.treasuryCustomDraftByScope.delete(oldest);
+        }
+        _chatState.treasuryCustomDraftByScope.set(customKey, cleanVal);
+      });
+    };
+    bindDraftInputLive(card, sum);
+
+    card.querySelectorAll('[data-tf-slider]').forEach(sl => {
+      sl.addEventListener('input', () => {
+        const k = sl.getAttribute('data-tf-slider');
+        const v = Number(sl.value);
+        const cur = getTreasuryLeversForEntity(sum.companyKey);
+        cur[k] = v;
+        const normCur = setTreasuryLeversForEntity(sum.companyKey, cur);
+        const numInput = card.querySelector(`[data-tf-num="${k}"]`);
+        if (numInput) numInput.value = normCur[k];
+        const badge = card.querySelector(`[data-tf-badge="${k}"]`);
+        if (badge) badge.textContent = formatTreasuryLeverBadgeText(k, normCur[k]);
+        const updatedSum = buildTreasuryRunwaySummary(undefined, { coKey: sum.companyKey, levers: normCur });
+        refreshSubMounts(updatedSum);
+      });
+    });
+
+    card.querySelectorAll('[data-tf-num]').forEach(ni => {
+      ni.addEventListener('change', () => {
+        const k = ni.getAttribute('data-tf-num');
+        const v = Number(ni.value);
+        const cur = getTreasuryLeversForEntity(sum.companyKey);
+        cur[k] = v;
+        const normCur = setTreasuryLeversForEntity(sum.companyKey, cur);
+        ni.value = normCur[k];
+        const sl = card.querySelector(`[data-tf-slider="${k}"]`);
+        if (sl) sl.value = normCur[k];
+        const badge = card.querySelector(`[data-tf-badge="${k}"]`);
+        if (badge) badge.textContent = formatTreasuryLeverBadgeText(k, normCur[k]);
+        const updatedSum = buildTreasuryRunwaySummary(undefined, { coKey: sum.companyKey, levers: normCur });
+        refreshSubMounts(updatedSum);
+      });
+    });
+
+    card.querySelectorAll('[data-tf-step]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        const k = btn.getAttribute('data-tf-step');
+        const dir = Number(btn.getAttribute('data-tf-dir') || 1);
+        const sl = card.querySelector(`[data-tf-slider="${k}"]`);
+        if (!sl) return;
+        const step = Number(sl.step) || 1;
+        const nextVal = Math.max(Number(sl.min), Math.min(Number(sl.max), Number(sl.value) + (step * dir)));
+        sl.value = nextVal;
+        sl.dispatchEvent(new Event('input'));
+      });
+    });
+
+    const sweepForm = card.querySelector('#tfSweepForm');
+    if (sweepForm) {
+      const swActSel = card.querySelector('#tfSweepActionSelect');
+      if (swActSel) {
+        swActSel.addEventListener('change', () => {
+          const amtInp = card.querySelector('#tfSweepAmountInput');
+          if (swActSel.value === 'hold' && amtInp) amtInp.value = 0;
+        });
+      }
+      sweepForm.addEventListener('submit', e => {
+        e.preventDefault();
+        if (sum.restricted || sum.rlsClamped || sum.booksRedacted) return;
+        const corSel = card.querySelector('#tfSweepCorridorSelect');
+        const wkSel = card.querySelector('#tfSweepWeekSelect');
+        const amtInput = card.querySelector('#tfSweepAmountInput');
+        const actSel = card.querySelector('#tfSweepActionSelect');
+        const cId = corSel ? corSel.value : '';
+        if (!cId) return;
+        const actVal = actSel && actSel.value === 'hold' ? 'hold' : 'activate';
+        const matched = (sum.sweepSuggestions || []).find(x => x.corridorId === cId);
+        saveTreasurySweep({
+          corridorId: cId,
+          corridorName: matched ? matched.corridorName : cId,
+          targetWeek: wkSel ? Number(wkSel.value || 1) : 1,
+          sweepUsd: actVal === 'hold' ? 0 : (amtInput && amtInput.value !== '' ? Number(amtInput.value) : 0),
+          action: actVal
+        }, sum.companyKey);
+        _chatState.treasurySelectedSweep = cId;
+        openTreasuryForecastStudio(anchorEl, { source, coKey: sum.companyKey });
+      });
+    }
+
+    card.addEventListener('click', e => {
+      if (e.target.closest && e.target.closest('#tfCloseModalBtn')) {
+        e.preventDefault();
+        closeTreasuryForecastStudio();
+        return;
+      }
+      const resetBtn = e.target.closest && e.target.closest('#tfResetLeversBtn');
+      if (resetBtn) {
+        e.preventDefault();
+        _chatState.treasuryActivePreset = 'baseline_13w';
+        const defLev = normalizeTreasuryLevers({});
+        setTreasuryLeversForEntity(sum.companyKey, defLev);
+        openTreasuryForecastStudio(anchorEl, { source, coKey: sum.companyKey, levers: defLev });
+        return;
+      }
+      const pBtn = e.target.closest && e.target.closest('[data-tf-preset]');
+      if (pBtn) {
+        e.preventDefault();
+        const pid = pBtn.getAttribute('data-tf-preset') || 'baseline_13w';
+        _chatState.treasuryActivePreset = pid;
+        const pSpec = (sum.presets || []).find(x => x.id === pid);
+        if (pSpec && pSpec.levers) {
+          setTreasuryLeversForEntity(sum.companyKey, pSpec.levers);
+          openTreasuryForecastStudio(anchorEl, { source, coKey: sum.companyKey, levers: pSpec.levers });
+        }
+        return;
+      }
+      const delBtn = e.target.closest && e.target.closest('[data-tf-del-sweep]');
+      if (delBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        deleteTreasurySweep(delBtn.getAttribute('data-tf-del-sweep'));
+        openTreasuryForecastStudio(anchorEl, { source, coKey: sum.companyKey });
+        return;
+      }
+      const selSwBtn = e.target.closest && e.target.closest('[data-tf-select-sweep], [data-tf-saved-sw]');
+      if (selSwBtn) {
+        e.preventDefault();
+        const cId = selSwBtn.getAttribute('data-tf-select-sweep') || selSwBtn.getAttribute('data-tf-saved-sw') || '';
+        if (cId) {
+          _chatState.treasurySelectedSweep = cId;
+          const freshSum = buildTreasuryRunwaySummary(undefined, { coKey: sum.companyKey });
+          refreshSubMounts(freshSum);
+          const corSel = card.querySelector('#tfSweepCorridorSelect');
+          if (corSel) corSel.value = cId;
+          if (freshSum.selectedSweep) {
+            const wkSel = card.querySelector('#tfSweepWeekSelect');
+            if (wkSel) wkSel.value = String(freshSum.selectedSweep.savedWeek != null ? freshSum.selectedSweep.savedWeek : freshSum.selectedSweep.targetWeek || 1);
+            const amtInput = card.querySelector('#tfSweepAmountInput');
+            if (amtInput) {
+              amtInput.value = freshSum.selectedSweep.savedAction === 'hold'
+                ? 0
+                : Math.round(Number(freshSum.selectedSweep.savedAction === 'activate' && freshSum.selectedSweep.savedSweepUsd != null ? freshSum.selectedSweep.savedSweepUsd : freshSum.selectedSweep.recommendedSweepUsd || 0));
+            }
+            const actSel = card.querySelector('#tfSweepActionSelect');
+            if (actSel) {
+              actSel.value = freshSum.selectedSweep.savedAction === 'hold' ? 'hold' : 'activate';
+            }
+          }
+        }
+        return;
+      }
+      const alertBtn = e.target.closest && e.target.closest('#tfApplyAlertRuleBtn');
+      if (alertBtn) {
+        e.preventDefault();
+        if (_ctx && typeof _ctx.applyTreasuryRunwayAlertRule === 'function') {
+          const curLevers = getTreasuryLeversForEntity(sum.companyKey);
+          const res = _ctx.applyTreasuryRunwayAlertRule({ coKey: sum.companyKey, levers: curLevers });
+          if (res && res.ok) {
+            if (_ctx.toast) {
+              _ctx.toast(sum.lang === 'ar'
+                ? 'تم تفعيل قاعدة حماية مدرج السيولة لـ 13 أسبوعاً'
+                : (sum.lang === 'fr' ? 'Règle de protection trésorerie 13 semaines activée' : '13-week cash runway guardrail rule activated'));
+            }
+            openTreasuryForecastStudio(anchorEl, { source, coKey: sum.companyKey });
+          }
+        }
+        return;
+      }
+      const openArBtn = e.target.closest && e.target.closest('[data-tf-open-ar]');
+      if (openArBtn) {
+        e.preventDefault();
+        closeTreasuryForecastStudio();
+        openCollectionForecastStudio(anchorEl, { source: 'treasury_runway', companyKey: sum.companyKey });
+        return;
+      }
+      const openApBtn = e.target.closest && e.target.closest('[data-tf-open-ap]');
+      if (openApBtn) {
+        e.preventDefault();
+        closeTreasuryForecastStudio();
+        openPayablesOptimizerStudio(anchorEl, { source: 'treasury_runway', companyKey: sum.companyKey });
+        return;
+      }
+      const navBtn = e.target.closest && e.target.closest('[data-tf-nav]');
+      if (navBtn) {
+        e.preventDefault();
+        const view = navBtn.getAttribute('data-tf-nav');
+        if (_ctx && _ctx.STATE && _ctx.STATE.kioskLocked) {
+          if (typeof _ctx.toast === 'function') _ctx.toast('Navigation is locked while Kiosk Station Lock is active', 'err');
+          return;
+        }
+        closeTreasuryForecastStudio();
+        if (_ctx && typeof _ctx.setView === 'function') {
+          _ctx.setView(view);
+        } else if (_ctx && typeof _ctx.renderApp === 'function') {
+          _ctx.STATE.view = view;
+          _ctx.renderApp();
+        }
+        return;
+      }
+      const refreshAiBtn = e.target.closest && e.target.closest('#tfRefreshAiBtn');
+      if (refreshAiBtn) {
+        e.preventDefault();
+        refreshAiBtn.setAttribute('disabled', 'true');
+        const latestSum = buildTreasuryRunwaySummary(undefined, { coKey: sum.companyKey });
+        requestTreasuryForecastAiBrief(latestSum, true).then(brief => {
+          refreshAiBtn.removeAttribute('disabled');
+          const txtEl = card.querySelector('#tfAiBriefBody pre');
+          if (txtEl && brief) {
+            txtEl.textContent = brief.headline + '\n\n' + (brief.bullets || []).map(b => `• ${b}`).join('\n');
+          }
+        });
+        return;
+      }
+      const copyDraftBtn = e.target.closest && e.target.closest('#tfCopyDraftBtn');
+      if (copyDraftBtn) {
+        e.preventDefault();
+        const ta = card.querySelector('#tfWhatsappDraftInput');
+        const txt = ta ? sanitizeTreasuryForecastText(ta.value, true) : '';
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText(txt).catch(() => {});
+        }
+        const span = copyDraftBtn.querySelector('span');
+        if (span) {
+          const prev = span.textContent;
+          span.textContent = sum.lang === 'ar' ? 'تم النسخ!' : (sum.lang === 'fr' ? 'Copié !' : 'Copied!');
+          setTimeout(() => { if (span.isConnected) span.textContent = prev; }, 1400);
+        }
+        return;
+      }
+      const sendWaBtn = e.target.closest && e.target.closest('#tfSendWaBtn');
+      if (sendWaBtn) {
+        e.preventDefault();
+        const ta = card.querySelector('#tfWhatsappDraftInput');
+        const txt = ta ? sanitizeTreasuryForecastText(ta.value, true) : '';
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(txt)}`;
+        try { window.open(waUrl, '_blank', 'noopener,noreferrer'); } catch (_) {}
+        return;
+      }
+      const langBtn = e.target.closest && e.target.closest('[data-tf-wa-lang]');
+      if (langBtn) {
+        e.preventDefault();
+        const l = langBtn.getAttribute('data-tf-wa-lang') || 'en';
+        _chatState.treasuryDraftLang = l;
+        card.querySelectorAll('[data-tf-wa-lang]').forEach(b => b.classList.toggle('active', b === langBtn));
+        const ta = card.querySelector('#tfWhatsappDraftInput');
+        if (ta) {
+          const latestSum = buildTreasuryRunwaySummary(undefined, { coKey: sum.companyKey });
+          ta.dir = l === 'ar' ? 'rtl' : 'ltr';
+          ta.value = formatTreasuryPlainText(latestSum, l);
+        }
+        return;
+      }
+      const speakBtn = e.target.closest && e.target.closest('#tfSpeakBtn');
+      if (speakBtn) {
+        e.preventDefault();
+        speakTreasuryForecast(speakBtn, undefined, { source, coKey: sum.companyKey });
+        return;
+      }
+      const copilotBtn = e.target.closest && e.target.closest('#tfOpenCopilotBtn');
+      if (copilotBtn) {
+        e.preventDefault();
+        const q = sum.lang === 'ar'
+          ? `حلل جسر السيولة ومدرج النقد لـ 13 أسبوعاً لدى ${sum.companyLabel} وأبرز توصيات التحويل البيني`
+          : (sum.lang === 'fr'
+              ? `Analysez la prévision de trésorerie à 13 semaines pour ${sum.companyLabel} et les options de nivellement`
+              : `Analyze the 13-week rolling cash-flow runway and sweep options for ${sum.companyLabel}`);
+        closeTreasuryForecastStudio();
+        openDrawer(q);
+      }
+    });
+
+    syncTreasuryModalAudioButton();
+    return modal;
+  }
+
+  function syncTreasuryModalAudioButton() {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('treasuryForecastModal');
+    if (!modal) return;
+    const btn = modal.querySelector('#tfSpeakBtn');
+    if (!btn) return;
+    const isSpeaking = Boolean(_chatState.activeTreasurySpeechScope && (_chatState.activeAudioEl || _chatState.activeSpeakCtrl));
+    btn.classList.toggle('is-speaking', isSpeaking);
+    btn.setAttribute('aria-pressed', isSpeaking ? 'true' : 'false');
+    const span = btn.querySelector('span');
+    if (span) {
+      span.textContent = isSpeaking ? 'Stop Runway Readback' : 'Listen to Runway Brief';
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(btn); } catch (_) {}
+      }
+    }
+  }
+
+  function closeTreasuryForecastStudio() {
+    _chatState.treasuryForecastOpen = false;
+    _chatState.treasuryForecastScope = '';
+    _chatState.treasuryForecastAnchor = null;
+    if (_chatState.activeTreasurySpeechScope) {
+      stopActivePlayback();
+    }
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('treasuryForecastModal');
+    if (modal) {
+      modal.hidden = true;
+      if (modal.parentNode) modal.parentNode.removeChild(modal);
+    }
+    document.querySelectorAll('[data-treasury-forecast-open], [data-liquidity-runway-open]').forEach(b => {
+      b.classList.remove('is-open', 'active');
+      b.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function toggleTreasuryForecastStudio(anchorEl, opts = {}) {
+    if (_chatState.treasuryForecastOpen) {
+      closeTreasuryForecastStudio();
+      return null;
+    }
+    return openTreasuryForecastStudio(anchorEl, opts);
+  }
+
+  function speakTreasuryForecast(btnEl, langOverride, opts = {}) {
+    const sum = buildTreasuryRunwaySummary(langOverride, opts);
+    if (!sum || sum.restricted || sum.rlsClamped) {
+      return Promise.resolve({ ok: false, restricted: true });
+    }
+    if (_chatState.activeTreasurySpeechScope === sum.scopeKey && (_chatState.activeAudioEl || _chatState.activeSpeakCtrl)) {
+      stopActivePlayback();
+      syncTreasuryModalAudioButton();
+      return Promise.resolve({ ok: true, stopped: true });
+    }
+    stopActivePlayback();
+    const reqEpoch = _chatState.sessionEpoch || 0;
+    const safeLang = sum.lang || 'en';
+    const plainScript = sanitizeTreasuryForecastText(
+      sum.aiBrief && sum.aiBrief.spokenScript
+        ? sum.aiBrief.spokenScript
+        : [sum.headline, ...(sum.activeBullets || sum.bullets || [])].join(' ')
+    );
+    _chatState.activeTreasurySpeechScope = sum.scopeKey;
+    _chatState.lastSpokenText = plainScript;
+    _chatState.activeSpeakCaption = sum.headline;
+    if (btnEl) _chatState.activeSpeakBtn = btnEl;
+    syncTreasuryModalAudioButton();
+
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    _chatState.activeSpeakCtrl = ctrl;
+    return requestCloudOrLocalTtsUrl(plainScript, safeLang, ctrl ? ctrl.signal : undefined)
+      .then(audioUrl => {
+        if (_chatState.activeSpeakCtrl === ctrl) _chatState.activeSpeakCtrl = null;
+        if ((_chatState.sessionEpoch || 0) !== reqEpoch || !_chatState.activeTreasurySpeechScope) {
+          _chatState.activeTreasurySpeechScope = '';
+          syncTreasuryModalAudioButton();
+          return { ok: false, cancelled: true, script: plainScript, summary: sum };
+        }
+        if (!audioUrl) {
+          _chatState.activeTreasurySpeechScope = '';
+          syncTreasuryModalAudioButton();
+          return { ok: false, script: plainScript, summary: sum };
+        }
+        if (typeof Audio !== 'undefined') {
+          try {
+            const audioEl = new Audio(audioUrl);
+            audioEl.playbackRate = _chatState.playbackRate || 1;
+            _chatState.activeAudioEl = audioEl;
+            audioEl.onended = () => {
+              if (_chatState.activeAudioEl === audioEl) {
+                _chatState.activeAudioEl = null;
+                _chatState.activeTreasurySpeechScope = '';
+                syncTreasuryModalAudioButton();
+              }
+            };
+            audioEl.onerror = () => {
+              if (_chatState.activeAudioEl === audioEl) {
+                _chatState.activeAudioEl = null;
+                _chatState.activeTreasurySpeechScope = '';
+                syncTreasuryModalAudioButton();
+              }
+            };
+            audioEl.play().catch(() => {});
+          } catch (_) {}
+        }
+        syncTreasuryModalAudioButton();
+        return { ok: true, audioUrl, lang: safeLang, script: plainScript, summary: sum };
+      })
+      .catch(() => {
+        if (_chatState.activeSpeakCtrl === ctrl) _chatState.activeSpeakCtrl = null;
+        _chatState.activeTreasurySpeechScope = '';
+        syncTreasuryModalAudioButton();
+        return { ok: false, script: plainScript, summary: sum };
+      });
+  }
+
+  function rebindTreasuryForecastButtons(container) {
+    if (container && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      ['#ceoTreasuryForecastBtn', '#cfTreasuryForecastBtn', '#indTreasuryForecastBtn', '#pbiTreasuryForecastBtn'].forEach(sel => {
+        const el = container.querySelector && container.querySelector(sel);
+        if (el) { try { window.MFG_I18N.translateDom(el); } catch (_) {} }
+      });
+    }
+    if (!_chatState.treasuryForecastOpen) return;
+    openTreasuryForecastStudio(_chatState.treasuryForecastAnchor, { source: _chatState.treasuryForecastSource });
+  }
+
+  function stopTreasuryForecastIfActive() {
+    if (_chatState.treasuryForecastOpen) {
+      closeTreasuryForecastStudio();
+    }
+  }
+
+  // ============================================================================
+  // EXECUTIVE STUDIO B: INVENTORY TURNOVER, EOQ & WORKING-CAPITAL STUDIO
+  // ============================================================================
+  const INVENTORY_REORDERS_STORAGE_KEY = 'isabi_inventory_reorders_v1';
+
+  function sanitizeInventoryOptimizerText(raw, keepNewlines) {
+    return sanitizeTreasuryForecastText(raw, keepNewlines);
+  }
+
+  function sanitizeInventoryLiveInput(raw) {
+    return sanitizeTreasuryLiveInput(raw);
+  }
+
+  function getActiveInventoryCompanyKey(explicitKey) {
+    return getActiveTreasuryCompanyKey(explicitKey);
+  }
+
+  function normalizeInventoryLevers(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    const clampN = (v, lo, hi, def) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return def;
+      return Math.max(lo, Math.min(hi, n));
+    };
+    return {
+      safetyStockDaysDelta: Math.round(clampN(src.safetyStockDaysDelta, -15, 30, 0)),
+      carryingCostRatePct: Math.round(clampN(src.carryingCostRatePct, 4, 30, 12) * 2) / 2,
+      leadTimeBufferPct: Math.round(clampN(src.leadTimeBufferPct, -30, 100, 0))
+    };
+  }
+
+  function getInventoryLeversForEntity(coKey) {
+    const k = getActiveInventoryCompanyKey(coKey);
+    if (_chatState.inventoryLeversByEntity.has(k)) {
+      return Object.assign({}, _chatState.inventoryLeversByEntity.get(k));
+    }
+    return normalizeInventoryLevers({});
+  }
+
+  function setInventoryLeversForEntity(coKey, spec) {
+    const k = getActiveInventoryCompanyKey(coKey);
+    const norm = normalizeInventoryLevers(spec);
+    if (!_chatState.inventoryLeversByEntity.has(k) && _chatState.inventoryLeversByEntity.size >= 32) {
+      const oldest = _chatState.inventoryLeversByEntity.keys().next().value;
+      if (oldest !== undefined) _chatState.inventoryLeversByEntity.delete(oldest);
+    }
+    _chatState.inventoryLeversByEntity.set(k, norm);
+    return Object.assign({}, norm);
+  }
+
+  function loadSavedInventoryReorders(coKeyFilter) {
+    const raw = _readStudioRawStorage(INVENTORY_REORDERS_STORAGE_KEY);
+    if (!raw) return [];
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (_) {
+      _writeStudioRawStorage(INVENTORY_REORDERS_STORAGE_KEY, JSON.stringify({ version: 1, items: [] }));
+      return [];
+    }
+    let rawItems = [];
+    let needsRewrite = false;
+    if (Array.isArray(parsed)) {
+      rawItems = parsed;
+      needsRewrite = true;
+    } else if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.items)) {
+        rawItems = parsed.items;
+        if (parsed.version !== 1) needsRewrite = true;
+      } else if (Array.isArray(parsed.reorders) || Array.isArray(parsed.overrides)) {
+        rawItems = parsed.reorders || parsed.overrides;
+        needsRewrite = true;
+      } else {
+        _writeStudioRawStorage(INVENTORY_REORDERS_STORAGE_KEY, JSON.stringify({ version: 1, items: [] }));
+        return [];
+      }
+    } else {
+      _writeStudioRawStorage(INVENTORY_REORDERS_STORAGE_KEY, JSON.stringify({ version: 1, items: [] }));
+      return [];
+    }
+
+    const clampOptQty = v => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = Number(v);
+      if (!Number.isFinite(n)) return null;
+      return Math.max(0, Math.min(100000000, Math.round(n * 100) / 100));
+    };
+
+    const normalized = [];
+    for (let i = 0; i < rawItems.length; i++) {
+      const it = rawItems[i];
+      if (!it || typeof it !== 'object') {
+        needsRewrite = true;
+        continue;
+      }
+      const rawId = String(it.id || `ir_${i + 1}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || `ir_${i + 1}`;
+      const skuCode = sanitizeInventoryOptimizerText(it.skuCode || it.sku || it.itemName || `SKU-${i + 1}`).slice(0, 60) || `SKU-${i + 1}`;
+      const itemName = sanitizeInventoryOptimizerText(it.itemName || skuCode).slice(0, 90) || skuCode;
+      const coKey = sanitizeInventoryOptimizerText(it.coKey || it.companyKey || 'all').replace(/[^a-zA-Z0-9_:-]/g, '').slice(0, 64) || 'all';
+      const rawAct = String(it.action || 'reorder').toLowerCase();
+      const action = rawAct === 'freeze_excess' ? 'freeze_excess' : 'reorder';
+      const overrideOrderQty = clampOptQty(it.overrideOrderQty !== undefined ? it.overrideOrderQty : it.orderQty);
+      const customParQty = clampOptQty(it.customParQty !== undefined ? it.customParQty : it.parQty);
+      const note = sanitizeInventoryOptimizerText(it.note || '').slice(0, 140);
+      const savedAt = String(it.savedAt || '2026-11-10').replace(/[^0-9-]/g, '').slice(0, 10) || '2026-11-10';
+      if (
+        rawId !== it.id ||
+        skuCode !== it.skuCode ||
+        itemName !== it.itemName ||
+        coKey !== it.coKey ||
+        action !== it.action ||
+        overrideOrderQty !== it.overrideOrderQty ||
+        customParQty !== it.customParQty ||
+        note !== (it.note || '')
+      ) {
+        needsRewrite = true;
+      }
+      normalized.push({
+        id: rawId,
+        skuCode,
+        itemName,
+        coKey,
+        action,
+        overrideOrderQty,
+        customParQty,
+        note,
+        savedAt
+      });
+    }
+    if (normalized.length > 16) {
+      normalized.splice(0, normalized.length - 16);
+      needsRewrite = true;
+    }
+    if (needsRewrite) {
+      _writeStudioRawStorage(INVENTORY_REORDERS_STORAGE_KEY, JSON.stringify({ version: 1, items: normalized }));
+    }
+    const rlsVisible = (_ctx && typeof _ctx.isStudioCoKeyAllowedForUser === 'function')
+      ? normalized.filter(x => _ctx.isStudioCoKeyAllowedForUser(x.coKey))
+      : normalized;
+    const activeSeat = (_ctx && typeof _ctx.activeUser === 'function')
+      ? _ctx.activeUser()
+      : ((_ctx && _ctx.STATE && Array.isArray(_ctx.STATE.users)) ? (_ctx.STATE.users[_ctx.STATE.activeUserIdx] || _ctx.STATE.users[0] || null) : null);
+    const roleStr = activeSeat ? String(activeSeat.role || '') : '';
+    const seatCanBooks = (!_ctx || typeof _ctx.canViewView !== 'function')
+      ? true
+      : Boolean(_ctx.canViewView('cashflow', activeSeat) && _ctx.canViewView('ledger', activeSeat) && !/Sales/i.test(roleStr));
+    const seatRedacted = !seatCanBooks;
+    const maybeRedactNotes = arr => seatRedacted ? arr.map(x => Object.assign({}, x, { note: '' })) : arr;
+    if (!coKeyFilter) return maybeRedactNotes(rlsVisible);
+    const wantCo = String(coKeyFilter).trim();
+    if (wantCo === 'all') return maybeRedactNotes(rlsVisible);
+    if (_ctx && typeof _ctx.scopeMatchesCompanyKey === 'function') {
+      return maybeRedactNotes(rlsVisible.filter(x => _ctx.scopeMatchesCompanyKey(wantCo, x.coKey)));
+    }
+    return maybeRedactNotes(rlsVisible.filter(x => x.coKey === wantCo));
+  }
+
+  function _readAllInventoryReordersUnfiltered() {
+    const raw = _readStudioRawStorage(INVENTORY_REORDERS_STORAGE_KEY);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      const arr = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.items) ? parsed.items : []);
+      return arr.filter(x => x && typeof x === 'object');
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveInventoryReorder(spec, coKeyOverride) {
+    if (_ctx && _ctx.STATE && _ctx.STATE.kioskLocked) return null;
+    const src = spec && typeof spec === 'object' ? spec : { skuCode: String(spec || '') };
+    const reqCo = getActiveInventoryCompanyKey(coKeyOverride || src.coKey);
+    if (_ctx && typeof _ctx.computeInventoryOptimizerSnapshot === 'function') {
+      const checkSnap = _ctx.computeInventoryOptimizerSnapshot({ coKey: reqCo });
+      if (!checkSnap || checkSnap.restricted || checkSnap.rlsClamped || checkSnap.booksRedacted) {
+        return null;
+      }
+    }
+    const skuCode = sanitizeInventoryOptimizerText(src.skuCode || src.sku || src.itemName || 'SKU-CUSTOM').slice(0, 60) || 'SKU-CUSTOM';
+    const itemName = sanitizeInventoryOptimizerText(src.itemName || skuCode).slice(0, 90) || skuCode;
+    const coKey = sanitizeInventoryOptimizerText(reqCo).replace(/[^a-zA-Z0-9_:-]/g, '').slice(0, 64) || 'all';
+    const action = String(src.action || 'reorder').toLowerCase() === 'freeze_excess' ? 'freeze_excess' : 'reorder';
+    const parseOpt = v => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.max(0, Math.min(100000000, Math.round(n * 100) / 100)) : null;
+    };
+    const overrideOrderQty = action === 'freeze_excess' ? 0 : parseOpt(src.overrideOrderQty !== undefined ? src.overrideOrderQty : src.orderQty);
+    const customParQty = parseOpt(src.customParQty !== undefined ? src.customParQty : src.parQty);
+    const note = sanitizeInventoryOptimizerText(src.note || '').slice(0, 140);
+
+    loadSavedInventoryReorders();
+    const all = _readAllInventoryReordersUnfiltered();
+    const existingIdx = all.findIndex(x => x.coKey === coKey && String(x.skuCode || '').toLowerCase() === skuCode.toLowerCase());
+    const id = existingIdx >= 0
+      ? all[existingIdx].id
+      : `ir_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const entry = {
+      id,
+      skuCode,
+      itemName,
+      coKey,
+      action,
+      overrideOrderQty,
+      customParQty,
+      note,
+      savedAt: (_ctx && typeof _ctx.todayISO === 'function') ? _ctx.todayISO() : '2026-11-10'
+    };
+    if (existingIdx >= 0) {
+      all[existingIdx] = entry;
+    } else {
+      all.push(entry);
+    }
+    while (all.length > 16) all.shift();
+    _writeStudioRawStorage(INVENTORY_REORDERS_STORAGE_KEY, JSON.stringify({ version: 1, items: all }));
+    return entry;
+  }
+
+  function deleteInventoryReorder(idOrSku) {
+    if (_ctx && _ctx.STATE && _ctx.STATE.kioskLocked) return false;
+    const target = String(idOrSku || '').trim().toLowerCase();
+    if (!target) return false;
+    if (_ctx && typeof _ctx.computeInventoryOptimizerSnapshot === 'function') {
+      const checkSnap = _ctx.computeInventoryOptimizerSnapshot({});
+      if (checkSnap && (checkSnap.restricted || checkSnap.rlsClamped || checkSnap.booksRedacted)) return false;
+    }
+    loadSavedInventoryReorders();
+    const all = _readAllInventoryReordersUnfiltered();
+    const next = all.filter(x => {
+      const matches = (
+        String(x.id || '').toLowerCase() === target ||
+        String(x.skuCode || '').toLowerCase() === target ||
+        String(x.itemName || '').toLowerCase() === target
+      );
+      if (!matches) return true;
+      if (_ctx && typeof _ctx.isStudioCoKeyAllowedForUser === 'function' && !_ctx.isStudioCoKeyAllowedForUser(x.coKey)) {
+        return true;
+      }
+      return false;
+    });
+    _writeStudioRawStorage(INVENTORY_REORDERS_STORAGE_KEY, JSON.stringify({ version: 1, items: next }));
+    return next.length !== all.length;
+  }
+
+  function buildInventoryOptimizerSummary(langOverride, opts = {}) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const safeLang = ['en', 'ar', 'fr'].includes(langOverride)
+      ? langOverride
+      : ((window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || _chatState.voiceLang || 'en');
+
+    const coKey = getActiveInventoryCompanyKey(options.coKey !== undefined ? options.coKey : options.companyKey);
+    const activeLevers = options.levers
+      ? normalizeInventoryLevers(options.levers)
+      : getInventoryLeversForEntity(coKey);
+    const savedReorders = Array.isArray(options.savedReorders)
+      ? options.savedReorders
+      : loadSavedInventoryReorders(coKey);
+
+    const snap = (_ctx && typeof _ctx.computeInventoryOptimizerSnapshot === 'function')
+      ? _ctx.computeInventoryOptimizerSnapshot(Object.assign({}, options, {
+          coKey,
+          companyKey: coKey,
+          levers: activeLevers,
+          savedReorders
+        }))
+      : null;
+
+    if (!snap) {
+      return {
+        lang: safeLang,
+        scopeKey: 'inv|unavailable',
+        leverSig: '0|12|0',
+        industry: 'Manufacturing',
+        companyKey: coKey,
+        companyLabel: 'All Entities',
+        periodLabel: 'Active Period',
+        asOfDate: '2026-10-31',
+        rlsClamped: false,
+        restricted: true,
+        booksRedacted: true,
+        canViewBooks: false,
+        canWarehouse: false,
+        canEditAlerts: false,
+        hasActiveAlertRule: false,
+        targetHubView: 'warehouse',
+        levers: activeLevers,
+        leverSpecs: [],
+        presets: [],
+        savedReorders: [],
+        summary: {
+          totalSkuCount: 0,
+          totalInventoryValueUsd: 0,
+          annualizedConsumptionUsd: 0,
+          portfolioTurnoverRatio: 0,
+          weightedDaysOnHand: 0,
+          annualCarryingDragUsd: 0,
+          productiveWorkingCapitalUsd: 0,
+          releasableExcessUsd: 0,
+          totalRecommendedOrderUsd: 0,
+          stockoutRiskCount: 0,
+          excessCount: 0,
+          savedOverrideCount: 0,
+          closingCombinedTillUsd: null,
+          postReplenishTillUsd: null
+        },
+        healthBuckets: {},
+        replenishHorizon: {},
+        tieCheck: {
+          healthBalanced: true,
+          healthVarianceUsd: 0,
+          wcBalanced: true,
+          wcVarianceUsd: 0,
+          replenishBalanced: true,
+          replenishVarianceUsd: 0
+        },
+        items: [],
+        reorderList: [],
+        selectedItem: null,
+        headline: 'Inventory optimizer telemetry is unavailable.',
+        bullets: [],
+        activeBullets: [],
+        drafts: { en: '', ar: '', fr: '' },
+        aiBrief: null,
+        aiLoading: false
+      };
+    }
+
+    const headline = sanitizeInventoryOptimizerText(
+      safeLang === 'ar' ? snap.headlineAr : (safeLang === 'fr' ? snap.headlineFr : snap.headlineEn)
+    );
+    const rawBullets = safeLang === 'ar' ? snap.bulletsAr : (safeLang === 'fr' ? snap.bulletsFr : snap.bulletsEn);
+    const bullets = Array.isArray(rawBullets) ? rawBullets.map(b => sanitizeInventoryOptimizerText(b)) : [];
+
+    let selectedItem = null;
+    const rList = Array.isArray(snap.reorderList) ? snap.reorderList : [];
+    if (_chatState.inventorySelectedSku && rList.length) {
+      const wantSku = _chatState.inventorySelectedSku.toLowerCase();
+      selectedItem = rList.find(it =>
+        it.skuCode.toLowerCase() === wantSku ||
+        it.itemName.toLowerCase() === wantSku
+      ) || null;
+    }
+    if (!selectedItem && rList.length) {
+      selectedItem = rList[0];
+    }
+
+    const cacheKey = `${snap.scopeKey}|${snap.leverSig}|${safeLang}`;
+    const cachedBrief = (!snap.restricted && !snap.rlsClamped && _chatState.inventoryCache.has(cacheKey))
+      ? _chatState.inventoryCache.get(cacheKey)
+      : null;
+    const aiLoading = Boolean(_chatState.inventoryInflight.has(cacheKey));
+    const activeBullets = (cachedBrief && Array.isArray(cachedBrief.bullets) && cachedBrief.bullets.length)
+      ? cachedBrief.bullets
+      : bullets;
+
+    const fmtU = v => '$' + Math.round(Number(v || 0)).toLocaleString('en-US');
+    const fmtQ = v => Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    const effOrdQty = selectedItem
+      ? (selectedItem.savedAction === 'freeze_excess'
+          ? 0
+          : Number(selectedItem.recommendedOrderQty != null ? selectedItem.recommendedOrderQty : (selectedItem.eoqQty || 0)))
+      : 0;
+    const effOrdUsd = selectedItem && !snap.booksRedacted
+      ? (selectedItem.savedAction === 'freeze_excess'
+          ? 0
+          : Number(selectedItem.recommendedOrderUsd != null ? selectedItem.recommendedOrderUsd : (effOrdQty * Number(selectedItem.unitCostUsd || 0))))
+      : 0;
+    const isPauseReorder = Boolean(selectedItem && (selectedItem.savedAction === 'freeze_excess' || effOrdQty <= 0));
+    const drafts = (!snap.restricted && !snap.rlsClamped)
+      ? (snap.booksRedacted
+          ? {
+              en: sanitizeInventoryOptimizerText(
+                selectedItem
+                  ? (isPauseReorder
+                      ? `Operational Stock Hold Note (${snap.companyLabel} - ${snap.asOfDate}): ${selectedItem.itemName} (${selectedItem.skuCode}) at ${selectedItem.location} holds ${fmtQ(selectedItem.onHandQty)} ${selectedItem.uom} (${selectedItem.daysOnHand}d DOH vs Reorder Point ${fmtQ(selectedItem.reorderPointQty)} ${selectedItem.uom}). Please pause new reorders and draw down existing stock.`
+                      : `Operational EOQ Reorder Request (${snap.companyLabel} - ${snap.asOfDate}): Supplier ${selectedItem.supplierName} for ${selectedItem.itemName} (${selectedItem.skuCode}). Current On-Hand ${fmtQ(selectedItem.onHandQty)} ${selectedItem.uom} (${selectedItem.daysOnHand}d DOH vs Reorder Point ${fmtQ(selectedItem.reorderPointQty)} ${selectedItem.uom}). Please dispatch order for ${fmtQ(effOrdQty)} ${selectedItem.uom} for delivery to ${selectedItem.location}.`)
+                  : (snap.drafts && snap.drafts.whatsappEn) || ''
+              ),
+              ar: sanitizeInventoryOptimizerText(
+                selectedItem
+                  ? (isPauseReorder
+                      ? `إشعار تعليق إعادة طلب مخزوني (${snap.companyLabel} - ${snap.asOfDate}): الصنف ${selectedItem.itemName} (${selectedItem.skuCode}) في ${selectedItem.location} يسجل رصيداً قدره ${fmtQ(selectedItem.onHandQty)} ${selectedItem.uom} (${selectedItem.daysOnHand} يوم تغطية مقابل نقطة طلب ${fmtQ(selectedItem.reorderPointQty)} ${selectedItem.uom}). يرجى إيقاف الطلبيات الجديدة واستهلاك المخزون القائم.`
+                      : `طلب تعويض مخزون تشغيلي (${snap.companyLabel} - ${snap.asOfDate}): المورد ${selectedItem.supplierName} للصنف ${selectedItem.itemName} (${selectedItem.skuCode}). الرصيد الحالي ${fmtQ(selectedItem.onHandQty)} ${selectedItem.uom} (${selectedItem.daysOnHand} يوم تغطية مقابل نقطة إعادة الطلب ${fmtQ(selectedItem.reorderPointQty)} ${selectedItem.uom}). يرجى اعتماد طلبية بكمية ${fmtQ(effOrdQty)} ${selectedItem.uom} للتسليم في ${selectedItem.location}.`)
+                  : (snap.drafts && snap.drafts.whatsappAr) || ''
+              ),
+              fr: sanitizeInventoryOptimizerText(
+                selectedItem
+                  ? (isPauseReorder
+                      ? `Note de Suspension de Réapprovisionnement (${snap.companyLabel} - ${snap.asOfDate}) : ${selectedItem.itemName} (${selectedItem.skuCode}) sur ${selectedItem.location} détient ${fmtQ(selectedItem.onHandQty)} ${selectedItem.uom} (${selectedItem.daysOnHand} j de couverture face au seuil ${fmtQ(selectedItem.reorderPointQty)} ${selectedItem.uom}). Merci de suspendre toute nouvelle commande et d écouler le stock existant.`
+                      : `Demande Opérationnelle de Réapprovisionnement EOQ (${snap.companyLabel} - ${snap.asOfDate}) : Fournisseur ${selectedItem.supplierName} pour ${selectedItem.itemName} (${selectedItem.skuCode}). Stock actuel ${fmtQ(selectedItem.onHandQty)} ${selectedItem.uom} (${selectedItem.daysOnHand} j de couverture face au seuil de ${fmtQ(selectedItem.reorderPointQty)} ${selectedItem.uom}). Merci de lancer la commande de ${fmtQ(effOrdQty)} ${selectedItem.uom} vers ${selectedItem.location}.`)
+                  : (snap.drafts && snap.drafts.whatsappFr) || ''
+              )
+            }
+          : {
+              en: sanitizeInventoryOptimizerText(
+                selectedItem
+                  ? (isPauseReorder
+                      ? `Working-Capital Excess Release Note (${snap.companyLabel} - ${snap.asOfDate}): ${selectedItem.itemName} (${selectedItem.skuCode}) at ${selectedItem.location} holds ${fmtQ(selectedItem.onHandQty)} ${selectedItem.uom} (${fmtU(selectedItem.onHandValueUsd)}, ${selectedItem.daysOnHand}d DOH) with ${fmtU(selectedItem.releasableExcessUsd)} releasable excess capital (${fmtU(selectedItem.carryingDragUsd)}/yr carrying drag). Please pause new reorders and draw down existing stock.`
+                      : `Purchase & EOQ Reorder Request (${snap.companyLabel} - ${snap.asOfDate}): Supplier ${selectedItem.supplierName} for ${selectedItem.itemName} (${selectedItem.skuCode}). Current On-Hand ${fmtQ(selectedItem.onHandQty)} ${selectedItem.uom} (${selectedItem.daysOnHand}d DOH vs Reorder Point ${fmtQ(selectedItem.reorderPointQty)} ${selectedItem.uom}). Please dispatch order for ${fmtQ(effOrdQty)} ${selectedItem.uom} (${fmtU(effOrdUsd)}) for delivery to ${selectedItem.location}.`)
+                  : (snap.drafts && snap.drafts.whatsappEn) || ''
+              ),
+              ar: sanitizeInventoryOptimizerText(
+                selectedItem
+                  ? (isPauseReorder
+                      ? `إشعار تحرير سيولة مخزون فائض (${snap.companyLabel} - ${snap.asOfDate}): الصنف ${selectedItem.itemName} (${selectedItem.skuCode}) في ${selectedItem.location} يحتفظ برصيد ${fmtQ(selectedItem.onHandQty)} ${selectedItem.uom} (${fmtU(selectedItem.onHandValueUsd)}، تغطية ${selectedItem.daysOnHand} يوماً) مع فائض قابل للتحرير بقيمة ${fmtU(selectedItem.releasableExcessUsd)}. يرجى تعليق الطلبيات الجديدة واستهلاك المخزون الحالي.`
+                      : `طلب شراء وتعويض مخزون اقتصادي (${snap.companyLabel} - ${snap.asOfDate}): المورد ${selectedItem.supplierName} للصنف ${selectedItem.itemName} (${selectedItem.skuCode}). الرصيد الحالي ${fmtQ(selectedItem.onHandQty)} ${selectedItem.uom} (${selectedItem.daysOnHand} يوم تغطية مقابل نقطة إعادة الطلب ${fmtQ(selectedItem.reorderPointQty)} ${selectedItem.uom}). يرجى اعتماد طلبية بكمية ${fmtQ(effOrdQty)} ${selectedItem.uom} بقيمة تقديرية ${fmtU(effOrdUsd)} للتسليم في ${selectedItem.location}.`)
+                  : (snap.drafts && snap.drafts.whatsappAr) || ''
+              ),
+              fr: sanitizeInventoryOptimizerText(
+                selectedItem
+                  ? (isPauseReorder
+                      ? `Note de Libération d Excédent Stock (${snap.companyLabel} - ${snap.asOfDate}) : ${selectedItem.itemName} (${selectedItem.skuCode}) sur ${selectedItem.location} détient ${fmtQ(selectedItem.onHandQty)} ${selectedItem.uom} (${fmtU(selectedItem.onHandValueUsd)}, ${selectedItem.daysOnHand} j de couverture) avec ${fmtU(selectedItem.releasableExcessUsd)} d excédent libérable. Merci de suspendre les réapprovisionnements et d écouler le stock.`
+                      : `Demande de Réapprovisionnement EOQ (${snap.companyLabel} - ${snap.asOfDate}) : Fournisseur ${selectedItem.supplierName} pour ${selectedItem.itemName} (${selectedItem.skuCode}). Stock actuel ${fmtQ(selectedItem.onHandQty)} ${selectedItem.uom} (${selectedItem.daysOnHand} j de couverture face au seuil de ${fmtQ(selectedItem.reorderPointQty)} ${selectedItem.uom}). Merci de lancer la commande de ${fmtQ(effOrdQty)} ${selectedItem.uom} (${fmtU(effOrdUsd)}) vers ${selectedItem.location}.`)
+                  : (snap.drafts && snap.drafts.whatsappFr) || ''
+              )
+            })
+      : { en: '', ar: '', fr: '' };
+
+    const visibleSavedReorders = (!snap.restricted && !snap.rlsClamped)
+      ? (snap.booksRedacted ? savedReorders.map(r => Object.assign({}, r, { note: '' })) : savedReorders)
+      : [];
+
+    return {
+      lang: safeLang,
+      scopeKey: snap.scopeKey,
+      cacheKey,
+      leverSig: snap.leverSig,
+      industry: snap.industry,
+      companyKey: snap.companyKey,
+      requestedCompanyKey: snap.requestedCompanyKey,
+      companyLabel: sanitizeInventoryOptimizerText(snap.companyLabel),
+      periodLabel: sanitizeInventoryOptimizerText(snap.periodLabel),
+      asOfDate: snap.asOfDate,
+      rlsClamped: Boolean(snap.rlsClamped),
+      restricted: Boolean(snap.restricted),
+      booksRedacted: Boolean(snap.booksRedacted),
+      canViewBooks: Boolean(snap.canViewBooks),
+      canWarehouse: Boolean(snap.canWarehouse),
+      canEditAlerts: Boolean(snap.canEditAlerts),
+      hasActiveAlertRule: Boolean(snap.hasActiveAlertRule),
+      targetHubView: snap.targetHubView || 'warehouse',
+      levers: snap.levers,
+      leverSpecs: Array.isArray(snap.leverSpecs) ? snap.leverSpecs : [],
+      presets: Array.isArray(snap.presets) ? snap.presets : [],
+      savedReorders: visibleSavedReorders,
+      summary: snap.summary || {},
+      healthBuckets: snap.healthBuckets || {},
+      replenishHorizon: snap.replenishHorizon || {},
+      tieCheck: snap.tieCheck || {},
+      items: Array.isArray(snap.items) ? snap.items : [],
+      reorderList: rList,
+      selectedItem,
+      headline,
+      bullets,
+      activeBullets,
+      drafts,
+      aiBrief: cachedBrief,
+      aiLoading
+    };
+  }
+
+  function formatInventoryPlainText(sum, langOverride) {
+    if (!sum || sum.restricted || sum.rlsClamped) return '';
+    const safeLang = ['en', 'ar', 'fr'].includes(langOverride) ? langOverride : (sum.lang || 'en');
+    const customKey = `${sum.scopeKey}|${safeLang}`;
+    if (_chatState.inventoryCustomDraftByScope.has(customKey)) {
+      return sanitizeInventoryOptimizerText(_chatState.inventoryCustomDraftByScope.get(customKey), true);
+    }
+    const draft = (sum.drafts && sum.drafts[safeLang]) || (sum.drafts && sum.drafts.en) || '';
+    return sanitizeInventoryOptimizerText(draft, true);
+  }
+
+  function requestInventoryOptimizerAiBrief(summary, forceRefresh) {
+    const sum = summary || buildInventoryOptimizerSummary();
+    if (!sum || sum.restricted || sum.rlsClamped) {
+      return Promise.resolve(null);
+    }
+    const cacheKey = sum.cacheKey || `${sum.scopeKey}|${sum.leverSig}|${sum.lang}`;
+    if (!forceRefresh && _chatState.inventoryCache.has(cacheKey)) {
+      return Promise.resolve(_chatState.inventoryCache.get(cacheKey));
+    }
+    if (!forceRefresh && _chatState.inventoryInflight.has(cacheKey)) {
+      return _chatState.inventoryInflight.get(cacheKey);
+    }
+
+    const langName = sum.lang === 'ar'
+      ? 'Arabic (Modern Standard Arabic with natural Lebanese supply-chain and finance phrasing)'
+      : (sum.lang === 'fr' ? 'French (Français)' : 'English');
+    const reqEpoch = _chatState.sessionEpoch || 0;
+
+    const scrubRedactedUsd = txt => {
+      const clean = sanitizeInventoryOptimizerText(txt);
+      if (!sum.booksRedacted) return clean;
+      return clean.replace(/\$\s*[0-9][0-9,.]*(?:\s*\/[a-zA-Z]+)?/g, 'Redacted');
+    };
+
+    const p = new Promise(resolve => {
+      if (typeof window !== 'undefined' && window.__ALLOW_HEADLESS_AI === false) {
+        const fallbackBrief = {
+          source: 'deterministic',
+          model: 'deterministic-local',
+          headline: scrubRedactedUsd(sum.headline),
+          bullets: sum.bullets.slice(0, 4).map(scrubRedactedUsd),
+          spokenScript: scrubRedactedUsd([sum.headline, ...sum.bullets.slice(0, 3)].join(' ')),
+          recommendedActions: [
+            'Dispatch urgent 1-7 day Wilson EOQ replenishment orders for stockout-critical SKUs.',
+            'Freeze replenishment on slow-moving excess stock to draw down physical par balances.',
+            'Enforce updated safety-stock par levels across active stores.'
+          ]
+        };
+        resolve(fallbackBrief);
+        return;
+      }
+
+      const sysPrompt = sum.booksRedacted
+        ? [
+            'You are the Chief Operations Officer reviewing operational stock turnover, days on hand, and Wilson EOQ reorder quantities.',
+            `Write strictly in ${langName}.`,
+            'Never use em-dashes, en-dashes, unicode arrows, markdown bold, RDL codes, TTC, 4-digit GL account numbers, Microsoft/Power BI/Dataverse terms, or internal assistant names.',
+            'STRICT REDACTION RULE: Financial valuations, unit costs, dollar amounts, and cash till balances are redacted for this operational seat. NEVER output "$" or any currency/dollar figures anywhere in your JSON response; report strictly SKU counts, quantities, UoM, turnover ratios, days on hand (DOH), reorder points (ROP), and Wilson EOQ quantities.',
+            `Entity Scope: ${sum.companyLabel} (${sum.industry}) | As of: ${sum.asOfDate}`,
+            `Tracked SKUs: ${sum.summary.totalSkuCount || 0} | Turnover: ${Number(sum.summary.portfolioTurnoverRatio || 0).toFixed(2)}x | Weighted Days on Hand: ${Number(sum.summary.weightedDaysOnHand || 0).toFixed(1)}d`,
+            `Operational Alerts: ${sum.summary.stockoutRiskCount || 0} reorder alert(s), ${sum.summary.excessCount || 0} slow-moving item(s)`,
+            `Top Priority SKUs: ${(sum.reorderList || []).slice(0, 5).map(it => `${it.itemName} (${it.skuCode}): On-Hand ${it.onHandQty} ${it.uom}, ${it.daysOnHand}d DOH, ROP ${it.reorderPointQty} ${it.uom}, EOQ ${it.eoqQty} ${it.uom}, Rec Order ${it.recommendedOrderQty} ${it.uom}`).join('; ')}`,
+            'Return ONLY valid JSON: {"headline":"1 concise operational sentence with zero dollar signs","bullets":["SKU count and turnover summary","Reorder point and safety buffer posture","Priority EOQ quantity action"],"spokenScript":"2 to 3 natural spoken sentences walking warehouse operations through physical stock levels and reorders without dollar amounts","recommendedActions":["Action 1","Action 2"]}'
+          ].join('\n')
+        : [
+            'You are the Chief Operations & Working-Capital Officer reviewing inventory turnover, Wilson EOQ reorder points, and carrying-cost drag.',
+            `Write strictly in ${langName}.`,
+            'Never use em-dashes, en-dashes, unicode arrows, markdown bold, RDL codes, TTC, 4-digit GL account numbers, Microsoft/Power BI/Dataverse terms, or internal assistant names.',
+            'Every figure, SKU count, turnover ratio, and dollar amount MUST come verbatim from these deterministic facts:',
+            `Entity Scope: ${sum.companyLabel} (${sum.industry}) | As of: ${sum.asOfDate}`,
+            `Tracked SKUs: ${sum.summary.totalSkuCount || 0} | Total Stock Value: $${Math.round(sum.summary.totalInventoryValueUsd || 0).toLocaleString('en-US')} ($0.00 health & working-capital variance)`,
+            `Turnover: ${Number(sum.summary.portfolioTurnoverRatio || 0).toFixed(2)}x | Weighted Days on Hand: ${Number(sum.summary.weightedDaysOnHand || 0).toFixed(1)}d`,
+            `Annual Carrying Drag (${sum.levers.carryingCostRatePct}%): $${Math.round(sum.summary.annualCarryingDragUsd || 0).toLocaleString('en-US')}/yr | Releasable Excess Capital: $${Math.round(sum.summary.releasableExcessUsd || 0).toLocaleString('en-US')}`,
+            `EOQ Replenishment Needed: $${Math.round(sum.summary.totalRecommendedOrderUsd || 0).toLocaleString('en-US')} (${sum.summary.stockoutRiskCount || 0} reorder alerts)`,
+            sum.summary.closingCombinedTillUsd !== null
+              ? `Cash Till Coverage: $${Math.round(sum.summary.closingCombinedTillUsd || 0).toLocaleString('en-US')} opening till vs $${Math.round(sum.replenishHorizon.urgent1_7dOrderUsd || 0).toLocaleString('en-US')} urgent 1-7d orders`
+              : 'Cash till balances redacted.',
+            `Top Priority SKUs: ${(sum.reorderList || []).slice(0, 5).map(it => `${it.itemName} (${it.skuCode}): ${it.daysOnHand}d DOH, ROP ${it.reorderPointQty} ${it.uom}, EOQ ${it.eoqQty} ${it.uom}, Order $${Math.round(it.recommendedOrderUsd || 0)}`).join('; ')}`,
+            'Return ONLY valid JSON: {"headline":"1 concise executive sentence","bullets":["Stock valuation and turnover summary","Carrying-cost drag and releasable excess capital","Priority EOQ reorder action"],"spokenScript":"2 to 3 natural spoken sentences walking operations through stock health and reorders","recommendedActions":["Action 1","Action 2"]}'
+          ].join('\n');
+
+      const usrPrompt = sum.booksRedacted
+        ? `Produce the operational stock turnover & Wilson EOQ quantity brief JSON (strictly zero dollar amounts) for ${sum.companyLabel} in ${langName}.`
+        : `Produce the inventory turnover, EOQ & working-capital executive brief JSON for ${sum.companyLabel} in ${langName}.`;
+      const base = String((typeof window !== 'undefined' && window.ISABI_LOCAL_API) || '.').replace(/\/$/, '');
+      const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
+      const abortCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeoutId = abortCtrl ? setTimeout(() => { try { abortCtrl.abort(); } catch (_) {} }, 15000) : null;
+
+      ((typeof window !== 'undefined' && window.ISABI_EDGE_FETCH) || fetch)(`${base}/api/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: abortCtrl ? abortCtrl.signal : undefined,
+        body: JSON.stringify({
+          model: 'gemini-3.5-flash-lite',
+          systemPrompt: sysPrompt,
+          userPrompt: usrPrompt,
+          geminiContents
+        })
+      })
+        .then(r => (r && r.ok ? r.json() : null))
+        .then(data => {
+          if ((_chatState.sessionEpoch || 0) !== reqEpoch) {
+            resolve(null);
+            return;
+          }
+          let parsed = null;
+          const rawReply = (data && (data.rawReply || data.text || (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text))) || '';
+          if (rawReply) {
+            try {
+              const cleanJson = String(rawReply).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+              parsed = JSON.parse(cleanJson);
+            } catch (_) {
+              const m = String(rawReply).match(/\{[\s\S]*\}/);
+              if (m) {
+                try { parsed = JSON.parse(m[0]); } catch (_2) {}
+              }
+            }
+          }
+          const cleanBrief = {
+            source: parsed ? 'gemini' : 'deterministic',
+            model: (data && data.model) || (parsed ? 'gemini-3.5-flash-lite' : 'deterministic-local'),
+            headline: (parsed && parsed.headline) ? scrubRedactedUsd(parsed.headline) : scrubRedactedUsd(sum.headline),
+            bullets: (parsed && Array.isArray(parsed.bullets) && parsed.bullets.length)
+              ? parsed.bullets.map(b => scrubRedactedUsd(b)).filter(Boolean).slice(0, 4)
+              : sum.bullets.slice(0, 4).map(scrubRedactedUsd),
+            spokenScript: (parsed && parsed.spokenScript)
+              ? scrubRedactedUsd(parsed.spokenScript)
+              : scrubRedactedUsd([sum.headline, ...sum.bullets.slice(0, 2)].join(' ')),
+            recommendedActions: (parsed && Array.isArray(parsed.recommendedActions) && parsed.recommendedActions.length)
+              ? parsed.recommendedActions.map(a => scrubRedactedUsd(a)).filter(Boolean).slice(0, 3)
+              : []
+          };
+          if (cleanBrief.source === 'gemini') {
+            if (_chatState.inventoryCache.size >= 32) {
+              const oldest = _chatState.inventoryCache.keys().next().value;
+              if (oldest !== undefined) _chatState.inventoryCache.delete(oldest);
+            }
+            _chatState.inventoryCache.set(cacheKey, cleanBrief);
+          }
+          resolve(cleanBrief);
+        })
+        .catch(() => {
+          resolve(null);
+        })
+        .finally(() => {
+          if (timeoutId) clearTimeout(timeoutId);
+        });
+    });
+
+    _chatState.inventoryInflight.set(cacheKey, p);
+    p.finally(() => { _chatState.inventoryInflight.delete(cacheKey); });
+    return p;
+  }
+
+  function formatInventoryLeverBadgeText(key, val) {
+    const n = Number(val) || 0;
+    if (key === 'safetyStockDaysDelta') {
+      return n > 0 ? `+${Math.round(n)}d` : `${Math.round(n)}d`;
+    }
+    if (key === 'carryingCostRatePct') {
+      return `${n.toFixed(1)}%/yr`;
+    }
+    if (key === 'leadTimeBufferPct') {
+      return n > 0 ? `+${Math.round(n)}%` : `${Math.round(n)}%`;
+    }
+    return String(val);
+  }
+
+  function renderInventorySavedReordersHtml(sum) {
+    const presets = Array.isArray(sum.presets) ? sum.presets : [];
+    const saved = Array.isArray(sum.savedReorders) ? sum.savedReorders : [];
+    const presetHtml = presets.map(p => {
+      const lbl = sum.lang === 'ar' ? p.labelAr : (sum.lang === 'fr' ? p.labelFr : p.labelEn);
+      const isAct = _chatState.inventoryActivePreset === p.id;
+      return `<button type="button" class="wi-preset-chip ${isAct ? 'active' : ''}" data-no-i18n="1" data-io-preset="${esc(p.id)}">${esc(lbl)}</button>`;
+    }).join('');
+    const canMutateReorders = !sum.restricted && !sum.rlsClamped && !sum.booksRedacted;
+    const savedHtml = saved.map(ov => `
+      <span class="wi-saved-pill" data-no-i18n="1">
+        <button type="button" class="wi-saved-load-btn" data-io-saved-sku="${esc(ov.skuCode)}">
+          ${esc(ov.itemName)}: ${ov.action === 'freeze_excess' ? 'Freeze Excess' : `Order ${ov.overrideOrderQty != null ? ov.overrideOrderQty : 'EOQ'}`}${ov.customParQty != null ? ` (Par ${ov.customParQty})` : ''}
+        </button>
+        ${canMutateReorders ? `<button type="button" class="wi-saved-del-btn" data-io-del-reorder="${esc(ov.id)}" aria-label="Delete saved reorder override">&times;</button>` : ''}
+      </span>
+    `).join('');
+    return presetHtml + savedHtml;
+  }
+
+  function renderInventoryHealthCardHtml(sum) {
+    const hb = sum.healthBuckets || {};
+    const hz = sum.replenishHorizon || {};
+    const s = sum.summary || {};
+    const red = Boolean(sum.booksRedacted);
+    const totVal = Math.max(1, Number(s.totalInventoryValueUsd || 1));
+    const pCrit = Math.min(100, Math.max(0, hb.stockoutCritPct != null ? Number(hb.stockoutCritPct) : (((hb.stockoutCritValueUsd || 0) / totVal) * 100)));
+    const pRop = Math.min(100, Math.max(0, hb.belowReorderPct != null ? Number(hb.belowReorderPct) : (((hb.belowReorderValueUsd || 0) / totVal) * 100)));
+    const pOpt = Math.min(100, Math.max(0, hb.optimalBandPct != null ? Number(hb.optimalBandPct) : (((hb.optimalBandValueUsd || 0) / totVal) * 100)));
+    const pExc = Math.min(100, Math.max(0, hb.excessSlowMovingPct != null ? Number(hb.excessSlowMovingPct) : (((hb.excessSlowMovingValueUsd || 0) / totVal) * 100)));
+
+    const pProd = Math.min(100, Math.max(0, s.productiveCapitalPct != null ? Number(s.productiveCapitalPct) : (((s.productiveWorkingCapitalUsd || 0) / totVal) * 100)));
+    const pRel = Math.min(100, Math.max(0, s.releasableExcessPct != null ? Number(s.releasableExcessPct) : (((s.releasableExcessUsd || 0) / totVal) * 100)));
+    const totOrd = Math.max(1, Number(s.totalRecommendedOrderUsd || 1));
+    const pUrg = Math.min(100, Math.max(0, hz.urgent1_7dPct != null ? Number(hz.urgent1_7dPct) : (((hz.urgent1_7dOrderUsd || 0) / totOrd) * 100)));
+    const pPln = Math.min(100, Math.max(0, hz.planned8_30dPct != null ? Number(hz.planned8_30dPct) : ((((hz.planned8_14dOrderUsd || 0) + (hz.buffer15_30dOrderUsd || 0)) / totOrd) * 100)));
+
+    const healthOk = Boolean(sum.tieCheck && sum.tieCheck.healthBalanced);
+    const wcOk = Boolean(sum.tieCheck && sum.tieCheck.wcBalanced && sum.tieCheck.replenishBalanced);
+
+    return `
+      <div class="wi-col-head">
+        <span class="pg-sec-title">Stock-Health Valuation Bands</span>
+        <span class="badge ${healthOk ? 'badge-emerald' : 'badge-crit'} num" data-no-i18n="1">
+          ${red ? 'Redacted' : (healthOk ? '$0.00 Variance' : `$${Number(sum.tieCheck.healthVarianceUsd || 0).toFixed(2)} Var`)}
+        </span>
+      </div>
+      <div class="cf-aging-bars">
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Stockout Critical</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill crit" style="width:${pCrit}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(hb.stockoutCritValueUsd || 0).toLocaleString('en-US')}`}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Below Reorder Point</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill brass" style="width:${pRop}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(hb.belowReorderValueUsd || 0).toLocaleString('en-US')}`}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Optimal Par Band</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill emerald" style="width:${pOpt}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(hb.optimalBandValueUsd || 0).toLocaleString('en-US')}`}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Excess / Slow-Moving</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill info" style="width:${pExc}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(hb.excessSlowMovingValueUsd || 0).toLocaleString('en-US')}`}</span>
+        </div>
+      </div>
+
+      <div class="wi-col-head" style="margin-top:14px">
+        <span class="pg-sec-title">Working-Capital &amp; EOQ Horizon</span>
+        <span class="badge ${wcOk ? 'badge-emerald' : 'badge-crit'} num" data-no-i18n="1">
+          ${red ? 'Redacted' : (wcOk ? '$0.00 WC Tie' : 'WC Variance')}
+        </span>
+      </div>
+      <div class="cf-aging-bars">
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Productive Capital</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill emerald" style="width:${pProd}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(s.productiveWorkingCapitalUsd || 0).toLocaleString('en-US')}`}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Releasable Excess</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill info" style="width:${pRel}%"></div></div>
+          <span class="cf-bar-val num good" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(s.releasableExcessUsd || 0).toLocaleString('en-US')}`}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Urgent 1-7d EOQ</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill crit" style="width:${pUrg}%"></div></div>
+          <span class="cf-bar-val num crit" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(hz.urgent1_7dOrderUsd || 0).toLocaleString('en-US')}`}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Planned 8-30d EOQ</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill brass" style="width:${pPln}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round((hz.planned8_14dOrderUsd || 0) + (hz.buffer15_30dOrderUsd || 0)).toLocaleString('en-US')}`}</span>
+        </div>
+      </div>
+
+      <div class="cf-aging-foot">
+        <span><span>Till Liquidity</span>: <b class="num" data-no-i18n="1">${!red && s.closingCombinedTillUsd !== null ? `$${Math.round(s.closingCombinedTillUsd).toLocaleString('en-US')}` : 'Redacted'}</b></span>
+        <span><span>Post-Urgent Till</span>: <b class="num ${!red && s.postReplenishTillUsd !== null && s.postReplenishTillUsd < 0 ? 'crit' : 'good'}" data-no-i18n="1">${!red && s.postReplenishTillUsd !== null ? `$${Math.round(s.postReplenishTillUsd).toLocaleString('en-US')}` : 'Redacted'}</b></span>
+        <span><span>Carrying Drag</span>: <b class="num brass" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(s.annualCarryingDragUsd || 0).toLocaleString('en-US')}/yr`}</b></span>
+      </div>
+    `;
+  }
+
+  function renderInventoryTelemetryInnerHtml(sum) {
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const s = sum.summary || {};
+    const red = Boolean(sum.booksRedacted);
+    const rList = Array.isArray(sum.reorderList) ? sum.reorderList : [];
+    const selItem = sum.selectedItem;
+    const fmtQ = v => Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 1 });
+
+    const rowsHtml = rList.map((it, idx) => {
+      const isSel = selItem && selItem.skuCode === it.skuCode;
+      const bandCls = it.healthBand === 'stockout_critical'
+        ? 'badge-crit'
+        : (it.healthBand === 'below_reorder' ? 'badge-brass' : (it.healthBand === 'excess_slow' ? 'badge-info' : 'badge-emerald'));
+      const recOrdCell = red
+        ? `<b>${fmtQ(it.recommendedOrderQty)} ${esc(it.uom)}</b><div class="cf-call-sub">Redacted</div>`
+        : `<b>${(it.recommendedOrderUsd || 0) > 0 ? `$${Math.round(it.recommendedOrderUsd).toLocaleString('en-US')}` : '$0'}</b><div class="cf-call-sub">${fmtQ(it.recommendedOrderQty)} ${esc(it.uom)}</div>`;
+      return `
+        <tr class="cf-cp-row ${isSel ? 'is-selected-cp' : ''}" data-io-select-sku="${esc(it.skuCode)}" role="button" tabindex="0">
+          <td class="num" data-no-i18n="1">${idx + 1}</td>
+          <td>
+            <div class="cf-cp-name-cell">
+              <span class="cf-cp-title" data-no-i18n="1">${esc(it.itemName)} <small class="mu">(${esc(it.skuCode)})</small></span>
+              <span class="cf-cp-sub mu" data-no-i18n="1">${esc(it.category)} · ${esc(it.location)} · ${esc(it.baselineContext)}</span>
+            </div>
+          </td>
+          <td class="r num" data-no-i18n="1"><b>${fmtQ(it.onHandQty)} ${esc(it.uom)}</b><div class="cf-call-sub">${red ? 'Redacted' : `$${Math.round(it.onHandValueUsd || 0).toLocaleString('en-US')}`}</div></td>
+          <td class="r num" data-no-i18n="1">${Number(it.daysOnHand || 0).toFixed(1)}d<div class="cf-call-sub">${Number(it.turnoverRatio || 0).toFixed(1)}x</div></td>
+          <td class="r num" data-no-i18n="1">${fmtQ(it.reorderPointQty)} ${esc(it.uom)}</td>
+          <td class="r num info" data-no-i18n="1">${fmtQ(it.eoqQty)} ${esc(it.uom)}</td>
+          <td class="r num ${(!red && (it.recommendedOrderUsd || 0) > 0) || (red && (it.recommendedOrderQty || 0) > 0) ? 'brass' : 'mu'}" data-no-i18n="1">${recOrdCell}</td>
+          <td class="r num" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(it.carryingDragUsd || 0).toLocaleString('en-US')}/yr`}</td>
+          <td class="c"><span class="badge ${bandCls}">${esc(it.healthLabel)}</span></td>
+          <td class="c">
+            <button type="button" class="btn btn-ghost-bar cf-plan-btn" data-io-select-sku="${esc(it.skuCode)}" aria-label="Select stock item"><span>${it.healthBand === 'excess_slow' ? 'Release' : 'Order'}</span></button>
+          </td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="10" class="mu c">No active stock or working-capital items found in current entity scope.</td></tr>';
+
+    const aiBriefText = sum.aiBrief
+      ? (sum.aiBrief.headline + '\n\n' + (sum.aiBrief.bullets || []).map(b => `• ${b}`).join('\n'))
+      : (sum.headline + '\n\n' + (sum.bullets || []).map(b => `• ${b}`).join('\n'));
+
+    const dLang = ['en', 'ar', 'fr'].includes(_chatState.inventoryDraftLang) ? _chatState.inventoryDraftLang : sum.lang;
+    const activeDraftText = formatInventoryPlainText(sum, dLang);
+
+    return `
+      <div class="wi-kpi-grid cf-kpi-grid">
+        <div class="wi-kpi-card">
+          <span class="wi-kpi-lbl">Total Tracked Stock</span>
+          <span class="wi-kpi-val num" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(s.totalInventoryValueUsd || 0).toLocaleString('en-US')}`}</span>
+          <span class="wi-kpi-sub mu" data-no-i18n="1">${esc(String(s.totalSkuCount || 0))} SKUs · ${Number(s.portfolioTurnoverRatio || 0).toFixed(2)}x Turn</span>
+        </div>
+        <div class="wi-kpi-card">
+          <span class="wi-kpi-lbl">Weighted Days on Hand</span>
+          <span class="wi-kpi-val num ${(s.stockoutRiskCount || 0) > 0 ? 'brass' : 'good'}" data-no-i18n="1">${Number(s.weightedDaysOnHand || 0).toFixed(1)}d</span>
+          <span class="wi-kpi-sub mu" data-no-i18n="1">${esc(String(s.stockoutRiskCount || 0))} Reorder Alert(s)</span>
+        </div>
+        <div class="wi-kpi-card">
+          <span class="wi-kpi-lbl">Annual Carrying Drag</span>
+          <span class="wi-kpi-val num crit" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(s.annualCarryingDragUsd || 0).toLocaleString('en-US')}/yr`}</span>
+          <span class="wi-kpi-sub mu" data-no-i18n="1">${Number(sum.levers.carryingCostRatePct || 12).toFixed(1)}% Cost of Capital</span>
+        </div>
+        <div class="wi-kpi-card">
+          <span class="wi-kpi-lbl">Releasable Excess &amp; EOQ</span>
+          <span class="wi-kpi-val num good" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(s.releasableExcessUsd || 0).toLocaleString('en-US')}`}</span>
+          <span class="wi-kpi-sub mu" data-no-i18n="1">${red ? 'EOQ Replenish Redacted' : `EOQ Replenish $${Math.round(s.totalRecommendedOrderUsd || 0).toLocaleString('en-US')}`}</span>
+        </div>
+      </div>
+
+      <div class="wi-alert-strip">
+        <div class="wi-alert-info">
+          <span class="wi-alert-pill ${sum.hasActiveAlertRule ? 'badge-emerald' : 'badge-brass'}">
+            ${sum.hasActiveAlertRule ? 'Stock Guardrail Active' : 'No Stock Guardrail'}
+          </span>
+          <span class="wi-alert-txt mu" data-no-i18n="1">
+            ${sum.hasActiveAlertRule
+              ? `Automated stockout & carrying-cost drag guardrail active for ${esc(sum.companyLabel)}.`
+              : `Monitor reorder points and slow-moving carrying-cost drag across ${esc(sum.companyLabel)}.`}
+          </span>
+        </div>
+        <div class="wi-alert-actions">
+          <button type="button" class="ceo-pv-btn is-primary" id="ioApplyAlertRuleBtn" ${sum.canEditAlerts ? '' : 'disabled'}>
+            <span>${sum.hasActiveAlertRule ? 'Update Stock Guardrail' : 'Create Stock Guardrail'}</span>
+          </button>
+          <button type="button" class="ceo-pv-btn" id="ioOpenHubBtn" data-io-nav="${esc(sum.targetHubView)}"><span>Open Hub</span></button>
+        </div>
+      </div>
+
+      <div class="panel-card cf-call-list-panel">
+        <div class="panel-head" style="gap:8px;flex-wrap:wrap">
+          <div class="panel-title"><span>Priority SKU Reorder, Wilson EOQ &amp; Carrying-Cost Queue</span></div>
+          <div class="panel-meta mu" data-no-i18n="1">${rList.length} Items · Ranked by Urgency &amp; Operational Frequency</div>
+        </div>
+        <div class="table-wrap cf-table-wrap io-sku-table-wrap">
+          <table class="ledger-table cf-call-table" id="ioReorderTable">
+            <thead>
+              <tr>
+                <th style="width:34px">#</th>
+                <th>Item &amp; Store</th>
+                <th class="r">On-Hand</th>
+                <th class="r">DOH / Turn</th>
+                <th class="r">ROP / Par</th>
+                <th class="r">Wilson EOQ</th>
+                <th class="r">Rec. Order</th>
+                <th class="r">Carry Drag</th>
+                <th class="c">Health</th>
+                <th class="c">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="cf-bottom-split">
+        <div class="panel-card cf-ai-brief-card" id="ioAiBriefCard">
+          <div class="panel-head">
+            <div class="panel-title"><span>Working-Capital &amp; Stock Executive Brief</span></div>
+            <button type="button" class="btn btn-ghost-bar" id="ioRefreshAiBtn" ${sum.aiLoading ? 'disabled' : ''}>
+              ${(icons && icons.svg('sparkle')) || AI_SVGS.sparkle}<span>Refresh Stock Brief</span>
+            </button>
+          </div>
+          <div class="cf-ai-brief-body" id="ioAiBriefBody">
+            <pre class="cf-ai-brief-text" data-no-i18n="1">${esc(aiBriefText)}</pre>
+          </div>
+        </div>
+
+        <div class="panel-card cf-wa-card" id="ioWaCard">
+          <div class="panel-head">
+            <div class="panel-title"><span>WhatsApp Purchase &amp; Reorder Draft</span></div>
+            <div class="cf-wa-lang-pills" data-no-i18n="1">
+              <button type="button" class="cf-wa-lang-btn ${dLang === 'en' ? 'active' : ''}" data-io-wa-lang="en">EN</button>
+              <button type="button" class="cf-wa-lang-btn ${dLang === 'ar' ? 'active' : ''}" data-io-wa-lang="ar">عربي</button>
+              <button type="button" class="cf-wa-lang-btn ${dLang === 'fr' ? 'active' : ''}" data-io-wa-lang="fr">FR</button>
+            </div>
+          </div>
+          <textarea id="ioWhatsappDraftInput" class="cf-wa-textarea" rows="4" data-no-i18n="1" dir="${dLang === 'ar' ? 'rtl' : 'ltr'}" placeholder="WhatsApp purchase or working-capital dispatch...">${esc(activeDraftText)}</textarea>
+          <div class="cf-wa-foot">
+            <button type="button" class="ceo-pv-btn" id="ioCopyDraftBtn"><span>Copy Order Note</span></button>
+            <button type="button" class="ceo-pv-btn is-primary insp-wa-btn" id="ioSendWaBtn"><span>Send Order via WhatsApp</span></button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  let _ioEscKeyWired = false;
+  function ensureInventoryGlobalEvents() {
+    if (_ioEscKeyWired || typeof document === 'undefined') return;
+    _ioEscKeyWired = true;
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && _chatState.inventoryOptimizerOpen) {
+        closeInventoryOptimizerStudio();
+      }
+    });
+  }
+
+  function openInventoryOptimizerStudio(anchorEl, opts = {}) {
+    if (typeof document === 'undefined') return null;
+    ensureDailyBriefingI18nRegistered();
+    ensureInventoryGlobalEvents();
+
+    if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
+    if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
+    if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
+    if (_chatState.whatIfOpen) closeWhatIfStudio();
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
+    if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
+    if (_chatState.sentinelPopoverOpen) closeSentinelTriagePopover();
+    if (_chatState.inspPopoverOpen) closeInspectorBriefPopover();
+    if (_chatState.pbiPopoverOpen) closeDashboardVariancePopover();
+    if (_chatState.stmtPopoverOpen) closeStatementVariancePopover();
+    if (_chatState.periodPopoverOpen) closeCeoVariancePopover();
+
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const source = options.source
+      || (anchorEl && anchorEl.getAttribute && anchorEl.getAttribute('data-io-source'))
+      || _chatState.inventoryOptimizerSource
+      || 'overview';
+    _chatState.inventoryOptimizerSource = source;
+    if (anchorEl) _chatState.inventoryOptimizerAnchor = anchorEl;
+
+    const sum = buildInventoryOptimizerSummary(undefined, options);
+    _chatState.inventoryOptimizerOpen = true;
+    _chatState.inventoryOptimizerScope = sum.scopeKey;
+    if (!['en', 'ar', 'fr'].includes(_chatState.inventoryDraftLang)) {
+      _chatState.inventoryDraftLang = sum.lang;
+    }
+    if (sum.selectedItem && !_chatState.inventorySelectedSku) {
+      _chatState.inventorySelectedSku = sum.selectedItem.skuCode;
+    }
+
+    document.querySelectorAll('[data-inventory-optimizer-open]').forEach(b => {
+      b.classList.add('is-open', 'active');
+      b.setAttribute('aria-expanded', 'true');
+    });
+
+    let modal = document.getElementById('inventoryOptimizerModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'inventoryOptimizerModal';
+      modal.className = 'wi-modal-backdrop cf-modal-backdrop io-modal-backdrop no-print';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'ioModalTitle');
+      document.body.appendChild(modal);
+    }
+    if (!modal._ioBackdropBound) {
+      modal._ioBackdropBound = true;
+      modal.addEventListener('click', e => {
+        if (e.target === modal) {
+          closeInventoryOptimizerStudio();
+        }
+      });
+    }
+
+    modal.hidden = false;
+    modal.dir = sum.lang === 'ar' ? 'rtl' : 'ltr';
+    modal.setAttribute('data-scope-key', sum.scopeKey);
+    modal.setAttribute('data-source', source);
+    modal.setAttribute('data-industry', sum.industry);
+
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+
+    if (sum.restricted || sum.rlsClamped) {
+      modal.innerHTML = `
+        <div class="wi-modal-card cf-modal-card io-modal-card" role="document">
+          <div class="ceo-pv-head wi-modal-head">
+            <div class="ceo-pv-title-wrap">
+              <div class="pg-eyebrow-row">
+                <span class="ceo-pv-eyebrow">INVENTORY TURNOVER, WILSON EOQ &amp; WORKING-CAPITAL STUDIO</span>
+                <span class="pg-ind-badge" data-no-i18n="1">${esc(sum.companyLabel)} · ${esc(sum.industry)}</span>
+              </div>
+              <h3 class="ceo-pv-title" id="ioModalTitle">Inventory Turnover, Stock Reorder &amp; Working-Capital Studio</h3>
+            </div>
+            <div class="wi-head-actions">
+              <button type="button" class="ceo-pv-close" id="ioCloseModalBtn" aria-label="Close Stock & EOQ Studio" data-no-i18n="1">&times;</button>
+            </div>
+          </div>
+          <div class="tf-restricted-state" id="ioRestrictedNotice">
+            <span class="badge badge-crit">Restricted Inventory Scope</span>
+            <p data-no-i18n="1">${esc(sum.headline)}</p>
+          </div>
+          <div class="ceo-pv-foot wi-modal-foot">
+            <button type="button" class="ceo-pv-btn" id="ioRestrictedCloseFootBtn"><span>Close</span></button>
+          </div>
+        </div>
+      `;
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+        try { window.MFG_I18N.translateDom(modal); } catch (_) {}
+      }
+      const rCard = modal.querySelector('.io-modal-card');
+      if (rCard) {
+        rCard.addEventListener('click', e => {
+          if (e.target.closest && (e.target.closest('#ioCloseModalBtn') || e.target.closest('#ioRestrictedCloseFootBtn'))) {
+            e.preventDefault();
+            closeInventoryOptimizerStudio();
+          }
+        });
+      }
+      return modal;
+    }
+
+    const leverRowsHtml = (sum.leverSpecs || []).map(spec => {
+      const k = spec.key;
+      const curVal = sum.levers[k] != null ? sum.levers[k] : 0;
+      const lbl = sum.lang === 'ar' ? spec.labelAr : (sum.lang === 'fr' ? spec.labelFr : spec.labelEn);
+      const badgeTxt = formatInventoryLeverBadgeText(k, curVal);
+      return `
+        <div class="wi-lever-row" data-io-lever-row="${esc(k)}">
+          <div class="wi-lever-top">
+            <label class="wi-lever-lbl" for="ioSlider_${esc(k)}" data-no-i18n="1">${esc(lbl)}</label>
+            <span class="wi-lever-badge num" data-io-badge="${esc(k)}" data-no-i18n="1">${esc(badgeTxt)}</span>
+          </div>
+          <div class="wi-lever-controls" data-no-i18n="1">
+            <button type="button" class="wi-step-btn" data-io-step="${esc(k)}" data-io-dir="-1" aria-label="Decrease ${esc(spec.labelEn)}">&minus;</button>
+            <input type="range" class="wi-slider" id="ioSlider_${esc(k)}" data-io-slider="${esc(k)}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${curVal}">
+            <button type="button" class="wi-step-btn" data-io-step="${esc(k)}" data-io-dir="1" aria-label="Increase ${esc(spec.labelEn)}">+</button>
+            <input type="number" class="wi-num-input num" id="ioNum_${esc(k)}" data-io-num="${esc(k)}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${curVal}" aria-label="${esc(spec.labelEn)} numeric value">
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const skuOptionsHtml = (sum.reorderList || []).map(it => {
+      const isSel = sum.selectedItem && it.skuCode === sum.selectedItem.skuCode;
+      return `<option value="${esc(it.skuCode)}" ${isSel ? 'selected' : ''} data-no-i18n="1">${esc(it.itemName)} (${esc(it.skuCode)} · EOQ ${Math.round(it.eoqQty || 0)} ${esc(it.uom)})</option>`;
+    }).join('');
+
+    const defOrdQty = sum.selectedItem
+      ? (sum.selectedItem.savedAction === 'freeze_excess'
+          ? 0
+          : Number(sum.selectedItem.recommendedOrderQty != null ? sum.selectedItem.recommendedOrderQty : (sum.selectedItem.eoqQty || 0)))
+      : 0;
+    const defParQty = sum.selectedItem
+      ? Number(sum.selectedItem.reorderPointQty != null ? sum.selectedItem.reorderPointQty : 0)
+      : 0;
+    const defAct = sum.selectedItem && sum.selectedItem.savedAction === 'freeze_excess' ? 'freeze_excess' : 'reorder';
+    const ioFormDisAttr = (sum.restricted || sum.rlsClamped || sum.booksRedacted) ? 'disabled' : '';
+
+    modal.innerHTML = `
+      <div class="wi-modal-card cf-modal-card io-modal-card" role="document">
+        <div class="ceo-pv-head wi-modal-head">
+          <div class="ceo-pv-title-wrap">
+            <div class="pg-eyebrow-row">
+              <span class="ceo-pv-eyebrow">INVENTORY TURNOVER, WILSON EOQ &amp; WORKING-CAPITAL STUDIO</span>
+              <span class="pg-ind-badge" id="ioEntityBadge" data-no-i18n="1">${esc(sum.companyLabel)} · ${esc(sum.industry)}</span>
+              <span class="pg-ind-badge" data-no-i18n="1">${esc(sum.periodLabel)}</span>
+            </div>
+            <h3 class="ceo-pv-title" id="ioModalTitle">Inventory Turnover, Stock Reorder &amp; Working-Capital Studio</h3>
+          </div>
+          <div class="wi-head-actions">
+            <button type="button" class="ceo-pv-close" id="ioCloseModalBtn" data-io-close="1" aria-label="Close Stock & EOQ Studio" data-no-i18n="1">&times;</button>
+          </div>
+        </div>
+
+        <div class="wi-presets-toolbar" id="ioPresetsToolbar">
+          <div class="wi-presets-list" id="ioPresetsList">
+            ${renderInventorySavedReordersHtml(sum)}
+          </div>
+          <div class="wi-preset-save-wrap">
+            <button type="button" class="ceo-pv-btn" id="ioResetLeversBtn" data-io-reset="1"><span>Reset Levers</span></button>
+            <form class="wi-save-form cf-promise-form io-reorder-form" id="ioReorderForm">
+              <select id="ioSkuSelect" class="wi-save-input cf-cp-select" data-no-i18n="1" aria-label="Select SKU for reorder override" ${ioFormDisAttr}>
+                ${skuOptionsHtml || '<option value="SKU-1" data-no-i18n="1">Stock Item</option>'}
+              </select>
+              <input type="number" id="ioOrderQtyInput" class="wi-save-input cf-amt-input num" min="0" max="100000000" step="0.5" value="${defOrdQty}" placeholder="Order Qty" aria-label="Override order quantity" data-no-i18n="1" ${ioFormDisAttr}>
+              <input type="number" id="ioParQtyInput" class="wi-save-input cf-amt-input num" min="0" max="100000000" step="0.5" value="${defParQty}" placeholder="Par / ROP" aria-label="Custom reorder par quantity" data-no-i18n="1" ${ioFormDisAttr}>
+              <select id="ioActionSelect" class="wi-save-input io-act-select" aria-label="Stock policy action" ${ioFormDisAttr}>
+                <option value="reorder" ${defAct === 'reorder' ? 'selected' : ''}>Reorder EOQ</option>
+                <option value="freeze_excess" ${defAct === 'freeze_excess' ? 'selected' : ''}>Freeze Excess</option>
+              </select>
+              <button type="submit" class="ceo-pv-btn is-primary" id="ioSaveReorderBtn" ${ioFormDisAttr}><span>+ Save Reorder</span></button>
+            </form>
+          </div>
+        </div>
+
+        <div class="wi-studio-grid cf-studio-grid">
+          <div class="wi-levers-col cf-levers-col io-levers-col">
+            <div class="wi-col-head">
+              <span class="pg-sec-title">Par, Carrying-Cost &amp; Lead-Time Levers</span>
+              <span class="wi-col-sub">Adjust safety buffer days, annual cost of capital &amp; supplier lead-time stress</span>
+            </div>
+            <div class="wi-levers-list" id="ioLeversList">
+              ${leverRowsHtml}
+            </div>
+            <div class="wi-tornado-card cf-aging-card io-category-card" id="ioCategoryCard">
+              ${renderInventoryHealthCardHtml(sum)}
+            </div>
+          </div>
+
+          <div class="wi-telemetry-col cf-telemetry-col io-telemetry-col" id="ioTelemetryMount">
+            ${renderInventoryTelemetryInnerHtml(sum)}
+          </div>
+        </div>
+
+        <div class="ceo-pv-foot wi-modal-foot">
+          <button type="button" class="ceo-pv-btn" id="ioSpeakBtn" data-io-speak="1">
+            ${(icons && icons.svg('audio')) || AI_SVGS.audio}<span>Listen to Stock Brief</span>
+          </button>
+          <div class="wi-foot-right">
+            <button type="button" class="ceo-pv-btn is-primary" id="ioOpenCopilotBtn" data-io-open-copilot="1">
+              ${(icons && icons.svg('sparkle')) || AI_SVGS.sparkle}<span>Open in Full Copilot</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const translateIfNeeded = el => {
+      if (el && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(el); } catch (_) {}
+      }
+    };
+    translateIfNeeded(modal);
+
+    const card = modal.querySelector('.io-modal-card');
+    if (!card) return modal;
+
+    const bindDraftInputLive = (rootEl, curSum) => {
+      const ta = rootEl.querySelector('#ioWhatsappDraftInput');
+      if (!ta) return;
+      ta.addEventListener('input', () => {
+        const cleanVal = sanitizeInventoryLiveInput(ta.value);
+        if (ta.value !== cleanVal) ta.value = cleanVal;
+        const curDLang = ['en', 'ar', 'fr'].includes(_chatState.inventoryDraftLang) ? _chatState.inventoryDraftLang : curSum.lang;
+        const customKey = `${curSum.scopeKey}|${curDLang}`;
+        if (!_chatState.inventoryCustomDraftByScope.has(customKey) && _chatState.inventoryCustomDraftByScope.size >= 32) {
+          const oldest = _chatState.inventoryCustomDraftByScope.keys().next().value;
+          if (oldest !== undefined) _chatState.inventoryCustomDraftByScope.delete(oldest);
+        }
+        _chatState.inventoryCustomDraftByScope.set(customKey, cleanVal);
+      });
+    };
+    bindDraftInputLive(card, sum);
+
+    const refreshSubMounts = nextSum => {
+      modal.setAttribute('data-scope-key', nextSum.scopeKey);
+      _chatState.inventoryOptimizerScope = nextSum.scopeKey;
+      const catMount = card.querySelector('#ioCategoryCard');
+      if (catMount) {
+        catMount.innerHTML = renderInventoryHealthCardHtml(nextSum);
+        translateIfNeeded(catMount);
+      }
+      const teleMount = card.querySelector('#ioTelemetryMount');
+      if (teleMount) {
+        teleMount.innerHTML = renderInventoryTelemetryInnerHtml(nextSum);
+        translateIfNeeded(teleMount);
+        bindDraftInputLive(card, nextSum);
+      }
+    };
+
+    card.querySelectorAll('[data-io-slider]').forEach(sl => {
+      sl.addEventListener('input', () => {
+        const k = sl.getAttribute('data-io-slider');
+        const v = Number(sl.value);
+        const cur = getInventoryLeversForEntity(sum.companyKey);
+        cur[k] = v;
+        const normCur = setInventoryLeversForEntity(sum.companyKey, cur);
+        const numInput = card.querySelector(`[data-io-num="${k}"]`);
+        if (numInput) numInput.value = normCur[k];
+        const badge = card.querySelector(`[data-io-badge="${k}"]`);
+        if (badge) badge.textContent = formatInventoryLeverBadgeText(k, normCur[k]);
+        const updatedSum = buildInventoryOptimizerSummary(undefined, { coKey: sum.companyKey, levers: normCur });
+        refreshSubMounts(updatedSum);
+      });
+    });
+
+    card.querySelectorAll('[data-io-num]').forEach(ni => {
+      ni.addEventListener('change', () => {
+        const k = ni.getAttribute('data-io-num');
+        const v = Number(ni.value);
+        const cur = getInventoryLeversForEntity(sum.companyKey);
+        cur[k] = v;
+        const normCur = setInventoryLeversForEntity(sum.companyKey, cur);
+        ni.value = normCur[k];
+        const sl = card.querySelector(`[data-io-slider="${k}"]`);
+        if (sl) sl.value = normCur[k];
+        const badge = card.querySelector(`[data-io-badge="${k}"]`);
+        if (badge) badge.textContent = formatInventoryLeverBadgeText(k, normCur[k]);
+        const updatedSum = buildInventoryOptimizerSummary(undefined, { coKey: sum.companyKey, levers: normCur });
+        refreshSubMounts(updatedSum);
+      });
+    });
+
+    card.querySelectorAll('[data-io-step]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        const k = btn.getAttribute('data-io-step');
+        const dir = Number(btn.getAttribute('data-io-dir') || 1);
+        const sl = card.querySelector(`[data-io-slider="${k}"]`);
+        if (!sl) return;
+        const step = Number(sl.step) || 1;
+        const nextVal = Math.max(Number(sl.min), Math.min(Number(sl.max), Number(sl.value) + (step * dir)));
+        sl.value = nextVal;
+        sl.dispatchEvent(new Event('input'));
+      });
+    });
+
+    const reorderForm = card.querySelector('#ioReorderForm');
+    if (reorderForm) {
+      const ioActSel = card.querySelector('#ioActionSelect');
+      if (ioActSel) {
+        ioActSel.addEventListener('change', () => {
+          const ordInp = card.querySelector('#ioOrderQtyInput');
+          if (ioActSel.value === 'freeze_excess' && ordInp) ordInp.value = 0;
+        });
+      }
+      reorderForm.addEventListener('submit', e => {
+        e.preventDefault();
+        if (sum.restricted || sum.rlsClamped || sum.booksRedacted) return;
+        const skuSel = card.querySelector('#ioSkuSelect');
+        const ordInp = card.querySelector('#ioOrderQtyInput');
+        const parInp = card.querySelector('#ioParQtyInput');
+        const actSel = card.querySelector('#ioActionSelect');
+        const skuCode = skuSel ? skuSel.value : '';
+        if (!skuCode) return;
+        const matched = (sum.reorderList || []).find(x => x.skuCode === skuCode);
+        saveInventoryReorder({
+          skuCode,
+          itemName: matched ? matched.itemName : skuCode,
+          overrideOrderQty: ordInp && ordInp.value !== '' ? Number(ordInp.value) : null,
+          customParQty: parInp && parInp.value !== '' ? Number(parInp.value) : null,
+          action: actSel ? actSel.value : 'reorder'
+        }, sum.companyKey);
+        _chatState.inventorySelectedSku = skuCode;
+        openInventoryOptimizerStudio(anchorEl, { source, coKey: sum.companyKey });
+      });
+    }
+
+    card.addEventListener('click', e => {
+      if (e.target.closest && e.target.closest('#ioCloseModalBtn')) {
+        e.preventDefault();
+        closeInventoryOptimizerStudio();
+        return;
+      }
+      const resetBtn = e.target.closest && e.target.closest('#ioResetLeversBtn');
+      if (resetBtn) {
+        e.preventDefault();
+        _chatState.inventoryActivePreset = 'standard_eoq';
+        const defLev = normalizeInventoryLevers({});
+        setInventoryLeversForEntity(sum.companyKey, defLev);
+        openInventoryOptimizerStudio(anchorEl, { source, coKey: sum.companyKey, levers: defLev });
+        return;
+      }
+      const pBtn = e.target.closest && e.target.closest('[data-io-preset]');
+      if (pBtn) {
+        e.preventDefault();
+        const pid = pBtn.getAttribute('data-io-preset') || 'standard_eoq';
+        _chatState.inventoryActivePreset = pid;
+        const pSpec = (sum.presets || []).find(x => x.id === pid);
+        if (pSpec && pSpec.levers) {
+          setInventoryLeversForEntity(sum.companyKey, pSpec.levers);
+          openInventoryOptimizerStudio(anchorEl, { source, coKey: sum.companyKey, levers: pSpec.levers });
+        }
+        return;
+      }
+      const delBtn = e.target.closest && e.target.closest('[data-io-del-reorder]');
+      if (delBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        deleteInventoryReorder(delBtn.getAttribute('data-io-del-reorder'));
+        openInventoryOptimizerStudio(anchorEl, { source, coKey: sum.companyKey });
+        return;
+      }
+      const selSkuBtn = e.target.closest && e.target.closest('[data-io-select-sku], [data-io-saved-sku]');
+      if (selSkuBtn) {
+        e.preventDefault();
+        const skuCode = selSkuBtn.getAttribute('data-io-select-sku') || selSkuBtn.getAttribute('data-io-saved-sku') || '';
+        if (skuCode) {
+          _chatState.inventorySelectedSku = skuCode;
+          const freshSum = buildInventoryOptimizerSummary(undefined, { coKey: sum.companyKey });
+          refreshSubMounts(freshSum);
+          const skuSel = card.querySelector('#ioSkuSelect');
+          if (skuSel) skuSel.value = skuCode;
+          if (freshSum.selectedItem) {
+            const ordInp = card.querySelector('#ioOrderQtyInput');
+            if (ordInp) {
+              ordInp.value = freshSum.selectedItem.savedAction === 'freeze_excess'
+                ? 0
+                : Number(freshSum.selectedItem.recommendedOrderQty != null ? freshSum.selectedItem.recommendedOrderQty : (freshSum.selectedItem.eoqQty || 0));
+            }
+            const parInp = card.querySelector('#ioParQtyInput');
+            if (parInp) parInp.value = Number(freshSum.selectedItem.reorderPointQty != null ? freshSum.selectedItem.reorderPointQty : 0);
+            const actSel = card.querySelector('#ioActionSelect');
+            if (actSel) actSel.value = freshSum.selectedItem.savedAction === 'freeze_excess' ? 'freeze_excess' : 'reorder';
+          }
+        }
+        return;
+      }
+      const alertBtn = e.target.closest && e.target.closest('#ioApplyAlertRuleBtn');
+      if (alertBtn) {
+        e.preventDefault();
+        if (_ctx && typeof _ctx.applyInventoryAlertRule === 'function') {
+          const curLevers = getInventoryLeversForEntity(sum.companyKey);
+          const res = _ctx.applyInventoryAlertRule({ coKey: sum.companyKey, levers: curLevers });
+          if (res && res.ok) {
+            if (_ctx.toast) {
+              _ctx.toast(sum.lang === 'ar'
+                ? 'تم تفعيل قاعدة تنبيه المخزون وتكلفة رأس المال العامل'
+                : (sum.lang === 'fr' ? 'Règle de surveillance stock et coût de possession activée' : 'Inventory & carrying-cost guardrail rule activated'));
+            }
+            openInventoryOptimizerStudio(anchorEl, { source, coKey: sum.companyKey });
+          }
+        }
+        return;
+      }
+      const navBtn = e.target.closest && e.target.closest('[data-io-nav]');
+      if (navBtn) {
+        e.preventDefault();
+        const view = navBtn.getAttribute('data-io-nav');
+        if (_ctx && _ctx.STATE && _ctx.STATE.kioskLocked) {
+          if (typeof _ctx.toast === 'function') _ctx.toast('Navigation is locked while Kiosk Station Lock is active', 'err');
+          return;
+        }
+        closeInventoryOptimizerStudio();
+        if (_ctx && typeof _ctx.setView === 'function') {
+          _ctx.setView(view);
+        } else if (_ctx && typeof _ctx.renderApp === 'function') {
+          _ctx.STATE.view = view;
+          _ctx.renderApp();
+        }
+        return;
+      }
+      const refreshAiBtn = e.target.closest && e.target.closest('#ioRefreshAiBtn');
+      if (refreshAiBtn) {
+        e.preventDefault();
+        refreshAiBtn.setAttribute('disabled', 'true');
+        const latestSum = buildInventoryOptimizerSummary(undefined, { coKey: sum.companyKey });
+        requestInventoryOptimizerAiBrief(latestSum, true).then(brief => {
+          refreshAiBtn.removeAttribute('disabled');
+          const txtEl = card.querySelector('#ioAiBriefBody pre');
+          if (txtEl && brief) {
+            txtEl.textContent = brief.headline + '\n\n' + (brief.bullets || []).map(b => `• ${b}`).join('\n');
+          }
+        });
+        return;
+      }
+      const copyDraftBtn = e.target.closest && e.target.closest('#ioCopyDraftBtn');
+      if (copyDraftBtn) {
+        e.preventDefault();
+        const ta = card.querySelector('#ioWhatsappDraftInput');
+        const txt = ta ? sanitizeInventoryOptimizerText(ta.value, true) : '';
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText(txt).catch(() => {});
+        }
+        const span = copyDraftBtn.querySelector('span');
+        if (span) {
+          const prev = span.textContent;
+          span.textContent = sum.lang === 'ar' ? 'تم النسخ!' : (sum.lang === 'fr' ? 'Copié !' : 'Copied!');
+          setTimeout(() => { if (span.isConnected) span.textContent = prev; }, 1400);
+        }
+        return;
+      }
+      const sendWaBtn = e.target.closest && e.target.closest('#ioSendWaBtn');
+      if (sendWaBtn) {
+        e.preventDefault();
+        const ta = card.querySelector('#ioWhatsappDraftInput');
+        const txt = ta ? sanitizeInventoryOptimizerText(ta.value, true) : '';
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(txt)}`;
+        try { window.open(waUrl, '_blank', 'noopener,noreferrer'); } catch (_) {}
+        return;
+      }
+      const langBtn = e.target.closest && e.target.closest('[data-io-wa-lang]');
+      if (langBtn) {
+        e.preventDefault();
+        const l = langBtn.getAttribute('data-io-wa-lang') || 'en';
+        _chatState.inventoryDraftLang = l;
+        card.querySelectorAll('[data-io-wa-lang]').forEach(b => b.classList.toggle('active', b === langBtn));
+        const ta = card.querySelector('#ioWhatsappDraftInput');
+        if (ta) {
+          const latestSum = buildInventoryOptimizerSummary(undefined, { coKey: sum.companyKey });
+          ta.dir = l === 'ar' ? 'rtl' : 'ltr';
+          ta.value = formatInventoryPlainText(latestSum, l);
+        }
+        return;
+      }
+      const speakBtn = e.target.closest && e.target.closest('#ioSpeakBtn');
+      if (speakBtn) {
+        e.preventDefault();
+        speakInventoryOptimizer(speakBtn, undefined, { source, coKey: sum.companyKey });
+        return;
+      }
+      const copilotBtn = e.target.closest && e.target.closest('#ioOpenCopilotBtn');
+      if (copilotBtn) {
+        e.preventDefault();
+        const q = sum.booksRedacted
+          ? (sum.lang === 'ar'
+              ? `حلل مستويات المخزون التشغيلي وأيام التغطية ونقطة إعادة الطلب الاقتصادية لدى ${sum.companyLabel}`
+              : (sum.lang === 'fr'
+                  ? `Analysez les niveaux de stock opérationnels, les jours de couverture et les quantités EOQ pour ${sum.companyLabel}`
+                  : `Analyze operational stock quantities, days on hand, and Wilson EOQ reorder points for ${sum.companyLabel}`))
+          : (sum.lang === 'ar'
+              ? `حلل دوران المخزون ونقطة إعادة الطلب الاقتصادية وتكلفة رأس المال العامل لدى ${sum.companyLabel}`
+              : (sum.lang === 'fr'
+                  ? `Analysez la rotation des stocks, les quantités économiques EOQ et l excédent libérable pour ${sum.companyLabel}`
+                  : `Analyze inventory turnover, Wilson EOQ reorder points, and releasable working capital for ${sum.companyLabel}`));
+        closeInventoryOptimizerStudio();
+        openDrawer(q);
+      }
+    });
+
+    syncInventoryModalAudioButton();
+    return modal;
+  }
+
+  function syncInventoryModalAudioButton() {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('inventoryOptimizerModal');
+    if (!modal) return;
+    const btn = modal.querySelector('#ioSpeakBtn');
+    if (!btn) return;
+    const isSpeaking = Boolean(_chatState.activeInventorySpeechScope && (_chatState.activeAudioEl || _chatState.activeSpeakCtrl));
+    btn.classList.toggle('is-speaking', isSpeaking);
+    btn.setAttribute('aria-pressed', isSpeaking ? 'true' : 'false');
+    const span = btn.querySelector('span');
+    if (span) {
+      span.textContent = isSpeaking ? 'Stop Stock Readback' : 'Listen to Stock Brief';
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(btn); } catch (_) {}
+      }
+    }
+  }
+
+  function closeInventoryOptimizerStudio() {
+    _chatState.inventoryOptimizerOpen = false;
+    _chatState.inventoryOptimizerScope = '';
+    _chatState.inventoryOptimizerAnchor = null;
+    if (_chatState.activeInventorySpeechScope) {
+      stopActivePlayback();
+    }
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('inventoryOptimizerModal');
+    if (modal) {
+      modal.hidden = true;
+      if (modal.parentNode) modal.parentNode.removeChild(modal);
+    }
+    document.querySelectorAll('[data-inventory-optimizer-open]').forEach(b => {
+      b.classList.remove('is-open', 'active');
+      b.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function toggleInventoryOptimizerStudio(anchorEl, opts = {}) {
+    if (_chatState.inventoryOptimizerOpen) {
+      closeInventoryOptimizerStudio();
+      return null;
+    }
+    return openInventoryOptimizerStudio(anchorEl, opts);
+  }
+
+  function speakInventoryOptimizer(btnEl, langOverride, opts = {}) {
+    const sum = buildInventoryOptimizerSummary(langOverride, opts);
+    if (!sum || sum.restricted || sum.rlsClamped) {
+      return Promise.resolve({ ok: false, restricted: true });
+    }
+    if (_chatState.activeInventorySpeechScope === sum.scopeKey && (_chatState.activeAudioEl || _chatState.activeSpeakCtrl)) {
+      stopActivePlayback();
+      syncInventoryModalAudioButton();
+      return Promise.resolve({ ok: true, stopped: true });
+    }
+    stopActivePlayback();
+    const reqEpoch = _chatState.sessionEpoch || 0;
+    const safeLang = sum.lang || 'en';
+    const rawSpoken = sum.aiBrief && sum.aiBrief.spokenScript
+      ? sum.aiBrief.spokenScript
+      : [sum.headline, ...(sum.activeBullets || sum.bullets || [])].join(' ');
+    const plainScript = sum.booksRedacted
+      ? sanitizeInventoryOptimizerText(rawSpoken).replace(/\$\s*[0-9][0-9,.]*(?:\s*\/[a-zA-Z]+)?/g, 'Redacted')
+      : sanitizeInventoryOptimizerText(rawSpoken);
+    _chatState.activeInventorySpeechScope = sum.scopeKey;
+    _chatState.lastSpokenText = plainScript;
+    _chatState.activeSpeakCaption = sum.headline;
+    if (btnEl) _chatState.activeSpeakBtn = btnEl;
+    syncInventoryModalAudioButton();
+
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    _chatState.activeSpeakCtrl = ctrl;
+    return requestCloudOrLocalTtsUrl(plainScript, safeLang, ctrl ? ctrl.signal : undefined)
+      .then(audioUrl => {
+        if (_chatState.activeSpeakCtrl === ctrl) _chatState.activeSpeakCtrl = null;
+        if ((_chatState.sessionEpoch || 0) !== reqEpoch || !_chatState.activeInventorySpeechScope) {
+          _chatState.activeInventorySpeechScope = '';
+          syncInventoryModalAudioButton();
+          return { ok: false, cancelled: true, script: plainScript, summary: sum };
+        }
+        if (!audioUrl) {
+          _chatState.activeInventorySpeechScope = '';
+          syncInventoryModalAudioButton();
+          return { ok: false, script: plainScript, summary: sum };
+        }
+        if (typeof Audio !== 'undefined') {
+          try {
+            const audioEl = new Audio(audioUrl);
+            audioEl.playbackRate = _chatState.playbackRate || 1;
+            _chatState.activeAudioEl = audioEl;
+            audioEl.onended = () => {
+              if (_chatState.activeAudioEl === audioEl) {
+                _chatState.activeAudioEl = null;
+                _chatState.activeInventorySpeechScope = '';
+                syncInventoryModalAudioButton();
+              }
+            };
+            audioEl.onerror = () => {
+              if (_chatState.activeAudioEl === audioEl) {
+                _chatState.activeAudioEl = null;
+                _chatState.activeInventorySpeechScope = '';
+                syncInventoryModalAudioButton();
+              }
+            };
+            audioEl.play().catch(() => {});
+          } catch (_) {}
+        }
+        syncInventoryModalAudioButton();
+        return { ok: true, audioUrl, lang: safeLang, script: plainScript, summary: sum };
+      })
+      .catch(() => {
+        if (_chatState.activeSpeakCtrl === ctrl) _chatState.activeSpeakCtrl = null;
+        _chatState.activeInventorySpeechScope = '';
+        syncInventoryModalAudioButton();
+        return { ok: false, script: plainScript, summary: sum };
+      });
+  }
+
+  function rebindInventoryOptimizerButtons(container) {
+    if (container && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      ['#ceoInventoryOptimizerBtn', '#whInventoryOptimizerBtn', '#cfInventoryOptimizerBtn', '#indInventoryOptimizerBtn', '#pbiInventoryOptimizerBtn'].forEach(sel => {
+        const el = container.querySelector && container.querySelector(sel);
+        if (el) { try { window.MFG_I18N.translateDom(el); } catch (_) {} }
+      });
+    }
+    if (!_chatState.inventoryOptimizerOpen) return;
+    openInventoryOptimizerStudio(_chatState.inventoryOptimizerAnchor, { source: _chatState.inventoryOptimizerSource });
+  }
+
+  function stopInventoryOptimizerIfActive() {
+    if (_chatState.inventoryOptimizerOpen) {
+      closeInventoryOptimizerStudio();
+    }
+  }
+
 
   function clearSessionState() {
     _chatState.sessionEpoch = (_chatState.sessionEpoch || 0) + 1;
     stopActivePlayback();
+    closeTreasuryForecastStudio();
+    closeInventoryOptimizerStudio();
     closePayablesOptimizerStudio();
     closeCollectionForecastStudio();
     closeWhatIfStudio();
@@ -16049,6 +19314,18 @@
     closeDashboardVariancePopover();
     closeStatementVariancePopover();
     closeCeoVariancePopover();
+    _chatState.treasuryLeversByEntity.clear();
+    _chatState.treasuryCache.clear();
+    _chatState.treasuryInflight.clear();
+    _chatState.treasuryCustomDraftByScope.clear();
+    _chatState.treasurySelectedSweep = '';
+    _chatState.activeTreasurySpeechScope = '';
+    _chatState.inventoryLeversByEntity.clear();
+    _chatState.inventoryCache.clear();
+    _chatState.inventoryInflight.clear();
+    _chatState.inventoryCustomDraftByScope.clear();
+    _chatState.inventorySelectedSku = '';
+    _chatState.activeInventorySpeechScope = '';
     _chatState.payablesLeversByEntity.clear();
     _chatState.payablesCache.clear();
     _chatState.payablesInflight.clear();
@@ -16760,6 +20037,14 @@
     const drawer = document.getElementById('aiDrawer');
     if (drawer && window.MFG_I18N) {
       window.MFG_I18N.translateDom(drawer);
+    }
+    const treasuryModal = document.getElementById('treasuryForecastModal');
+    if (treasuryModal) {
+      treasuryModal.dir = clean === 'ar' ? 'rtl' : 'ltr';
+    }
+    const inventoryModal = document.getElementById('inventoryOptimizerModal');
+    if (inventoryModal) {
+      inventoryModal.dir = clean === 'ar' ? 'rtl' : 'ltr';
     }
     const payablesModal = document.getElementById('payablesOptimizerModal');
     if (payablesModal) {
@@ -17492,15 +20777,23 @@
       if (typeof document !== 'undefined') {
         const curLang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
         if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && curLang !== 'en') {
-          ['topbarPageGuideBtn', 'topbarPageListenBtn', 'mobilePageGuideBtn', 'cfLiquidityBriefBtn', 'cfListenBriefBtn', 'cfWhatIfBtn', 'ceoWhatIfBtn', 'pbiWhatIfBtn', 'ceoCollectionForecastBtn', 'arCollectionForecastBtn', 'indCollectionForecastBtn', 'cfCollectionForecastBtn', 'pbiCollectionForecastBtn', 'dopsHandoverBriefBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
+          ['topbarPageGuideBtn', 'topbarPageListenBtn', 'mobilePageGuideBtn', 'cfLiquidityBriefBtn', 'cfListenBriefBtn', 'cfWhatIfBtn', 'ceoWhatIfBtn', 'pbiWhatIfBtn', 'ceoCollectionForecastBtn', 'arCollectionForecastBtn', 'indCollectionForecastBtn', 'cfCollectionForecastBtn', 'pbiCollectionForecastBtn', 'ceoTreasuryForecastBtn', 'cfTreasuryForecastBtn', 'indTreasuryForecastBtn', 'pbiTreasuryForecastBtn', 'ceoInventoryOptimizerBtn', 'whInventoryOptimizerBtn', 'cfInventoryOptimizerBtn', 'indInventoryOptimizerBtn', 'pbiInventoryOptimizerBtn', 'dopsHandoverBriefBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
             const b = document.getElementById(id);
             if (b) {
               try { window.MFG_I18N.translateDom(b); } catch (_) {}
             }
           });
-          document.querySelectorAll('.sn-ai-act-btn').forEach(b => {
+          document.querySelectorAll('.sn-ai-act-btn, [data-treasury-forecast-open], [data-liquidity-runway-open], [data-inventory-optimizer-open]').forEach(b => {
             try { window.MFG_I18N.translateDom(b); } catch (_) {}
           });
+        }
+        _chatState.treasuryDraftLang = curLang;
+        if (_chatState.treasuryForecastOpen) {
+          openTreasuryForecastStudio(_chatState.treasuryForecastAnchor, { source: _chatState.treasuryForecastSource });
+        }
+        _chatState.inventoryDraftLang = curLang;
+        if (_chatState.inventoryOptimizerOpen) {
+          openInventoryOptimizerStudio(_chatState.inventoryOptimizerAnchor, { source: _chatState.inventoryOptimizerSource });
         }
         _chatState.payablesDraftLang = curLang;
         if (_chatState.payablesOptimizerOpen) {
@@ -17714,6 +21007,44 @@
     loadSavedPayablesHolds,
     savePayablesHold,
     deletePayablesHold,
+    buildTreasuryRunwaySummary,
+    buildTreasuryForecastSummary: buildTreasuryRunwaySummary,
+    sanitizeTreasuryForecastText,
+    sanitizeTreasuryLiveInput,
+    getTreasuryLeversForEntity,
+    setTreasuryLeversForEntity,
+    loadSavedTreasurySweeps,
+    saveTreasurySweep,
+    deleteTreasurySweep,
+    formatTreasuryForecast: formatTreasuryPlainText,
+    formatTreasuryPlainText,
+    requestTreasuryForecastAiBrief,
+    openTreasuryForecastStudio,
+    closeTreasuryForecastStudio,
+    toggleTreasuryForecastStudio,
+    openLiquidityRunwayStudio: openTreasuryForecastStudio,
+    closeLiquidityRunwayStudio: closeTreasuryForecastStudio,
+    toggleLiquidityRunwayStudio: toggleTreasuryForecastStudio,
+    speakTreasuryForecast,
+    rebindTreasuryForecastButtons,
+    stopTreasuryForecastIfActive,
+    buildInventoryOptimizerSummary,
+    sanitizeInventoryOptimizerText,
+    sanitizeInventoryLiveInput,
+    getInventoryLeversForEntity,
+    setInventoryLeversForEntity,
+    loadSavedInventoryReorders,
+    saveInventoryReorder,
+    deleteInventoryReorder,
+    formatInventoryOptimizer: formatInventoryPlainText,
+    formatInventoryPlainText,
+    requestInventoryOptimizerAiBrief,
+    openInventoryOptimizerStudio,
+    closeInventoryOptimizerStudio,
+    toggleInventoryOptimizerStudio,
+    speakInventoryOptimizer,
+    rebindInventoryOptimizerButtons,
+    stopInventoryOptimizerIfActive,
     clearSessionState,
     stopSpeaking: stopActivePlayback,
     stopBriefingIfActive,
@@ -17764,6 +21095,14 @@
       payablesOptimizerScope: _chatState.payablesOptimizerScope || '',
       payablesSpeechScope: _chatState.activePayablesSpeechScope || '',
       payablesCacheSize: _chatState.payablesCache ? _chatState.payablesCache.size : 0,
+      treasuryForecastOpen: Boolean(_chatState.treasuryForecastOpen),
+      treasuryForecastScope: _chatState.treasuryForecastScope || '',
+      treasurySpeechScope: _chatState.activeTreasurySpeechScope || '',
+      treasuryCacheSize: _chatState.treasuryCache ? _chatState.treasuryCache.size : 0,
+      inventoryOptimizerOpen: Boolean(_chatState.inventoryOptimizerOpen),
+      inventoryOptimizerScope: _chatState.inventoryOptimizerScope || '',
+      inventorySpeechScope: _chatState.activeInventorySpeechScope || '',
+      inventoryCacheSize: _chatState.inventoryCache ? _chatState.inventoryCache.size : 0,
       lastSpokenText: _chatState.lastSpokenText || '',
       audioSrc: _chatState.activeAudioEl ? (_chatState.activeAudioEl.src || '') : '',
       cacheSize: _chatState.ttsAudioCache ? _chatState.ttsAudioCache.size : 0

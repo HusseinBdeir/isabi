@@ -164,6 +164,14 @@
     return Math.round((Number(n) || 0) * 100) / 100;
   }
 
+  // Hardcoded sample figures and identities are for the public demo sandbox only (same rule as industryDemoRows
+  // in app.js). A signed-in workspace gets `live`: an empty list, a zero, or a blank placeholder.
+  function demoOnly(sample, live) {
+    let isDemo = false;
+    try { isDemo = typeof window.__ISABI_IS_DEMO === 'function' && window.__ISABI_IS_DEMO() === true; } catch (_) { isDemo = false; }
+    return isDemo ? sample : live;
+  }
+
   function fmtUSD(v, dp) {
     if (D && typeof D.fmtUSD === 'function') return D.fmtUSD(v, dp == null ? 2 : dp);
     const n = Number(v) || 0;
@@ -2838,7 +2846,7 @@
 
   function buildRealEstateArrearsNotice(lang) {
     const pack = EDGE_STATE.reReconPack || reconcileRealEstateCamAndWires(EDGE_STATE.reReconText);
-    const sample = pack.wireRows[0] || pack.rows[0] || { tenant: 'Valued Tenant', property: '4235 Msaytbeh Commercial Center', grossUsd: 9975, company: '4235 Company S.A.L' };
+    const sample = pack.wireRows[0] || pack.rows[0] || demoOnly({ tenant: 'Valued Tenant', property: '4235 Msaytbeh Commercial Center', grossUsd: 9975, company: '4235 Company S.A.L' }, { tenant: '', property: '', grossUsd: 0, company: '' });
     const amt = fmtUSD(sample.grossUsd, 2);
     if (lang === 'ar') {
       return sanitizeOutward(`تحية طيبة ${sample.tenant}، نود إعلامكم بتحديث كشف الإيجار والمصاريف المشتركة في ${sample.property} لدى ${sample.company} بقيمة ${amt}، علماً أن مبلغ التأمين النقدي يبقى محفوظاً بشكل مستقل في حساب الأمانات دون مقاصة مع الإيجار الجاري. شكراً لتعاونكم.`);
@@ -4115,7 +4123,7 @@
       byResort.set(resort, bucket);
     });
 
-    if (!byResort.size) {
+    if (!byResort.size && demoOnly(true, false)) {
       byResort.set('Blanca', { resort: 'Blanca', contractsCount: 18, contractTotalUsd: 64500, earnedSeasonUsd: 58200, deferredLiabilityUsd: 6300, activeSeasonLabel: 'May-Sep Active Days' });
       byResort.set('La Una', { resort: 'La Una', contractsCount: 14, contractTotalUsd: 48200, earnedSeasonUsd: 44100, deferredLiabilityUsd: 4100, activeSeasonLabel: 'May-Sep Active Days' });
     }
@@ -4359,7 +4367,9 @@
   ].join('\n');
 
   function parseRealEstateAddendumClause(rawText) {
-    const txt = String(rawText || EDGE_STATE.reAddendumText || SAMPLE_RE_ADDENDUM_TEXT).trim();
+    // With nothing typed, a signed-in workspace parses nothing: the example addendum text is the default input
+    // in the demo sandbox only, so a month-end close pack never carries proposals nobody entered.
+    const txt = String(rawText || EDGE_STATE.reAddendumText || demoOnly(SAMPLE_RE_ADDENDUM_TEXT, '')).trim();
     EDGE_STATE.reAddendumText = txt;
     const lines = txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const parsed = lines.map((line, idx) => {
@@ -4402,12 +4412,12 @@
     const invoices = re.invoices || [];
     const vat4235Usd = round2(invoices
       .filter(inv => /4235/i.test(String(inv.company || inv.property || '')))
-      .reduce((s, inv) => s + Number(inv.vat_usd || 0), 0)) || 6875.00;
+      .reduce((s, inv) => s + Number(inv.vat_usd || 0), 0)) || demoOnly(6875.00, 0);
 
-    const amortRows = (leases.length ? leases : [
+    const amortRows = (leases.length ? leases : demoOnly([
       { id: 'LEASE-20250301-MAZEN-001', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen Pharmacy', frequency: 'Quarterly', net_period_usd: 12500, vat_rate: 11, days_to_expiry: 45 },
       { id: 'LEASE-20250601-INF-002', company: 'Properties', property: 'Hamra Commercial Tower', tenant: 'Infinitas Advisory', frequency: 'Annual', net_period_usd: 36000, vat_rate: 0, days_to_expiry: 28 }
-    ]).map((ls, idx) => {
+    ], [])).map((ls, idx) => {
       const freq = String(ls.frequency || 'Quarterly');
       const periodNet = Number(ls.net_period_usd || 12500);
       const monthsInBilling = /annual|year/i.test(freq) ? 12 : (/semi/i.test(freq) ? 6 : (/month/i.test(freq) ? 1 : 3));
@@ -4479,7 +4489,7 @@
   function buildRealEstateRenewalConfirmation(lang) {
     const l = lang || EDGE_STATE.reConfirmLang || curLang();
     const pack = EDGE_STATE.reClosePack || computeRealEstateMonthEndClosePack();
-    const p0 = pack.addendumProposals[0] || { tenant: 'Mazen Pharmacy', property: '4235 Msaytbeh Commercial Center', stepUpPct: 5, proposedAnnualTtcUsd: 58275, effectiveDate: '2026-12-01' };
+    const p0 = pack.addendumProposals[0] || demoOnly({ tenant: 'Mazen Pharmacy', property: '4235 Msaytbeh Commercial Center', stepUpPct: 5, proposedAnnualTtcUsd: 58275, effectiveDate: '2026-12-01' }, { tenant: '', property: '', stepUpPct: 0, proposedAnnualTtcUsd: 0, effectiveDate: '' });
     if (l === 'ar') {
       return sanitizeOutward(`السادة ${p0.tenant} المحترمين، إشارة إلى إقفال الفترة الضريبية والمحاسبية كما في ${pack.cutoffDate}، نود إعلامكم باقتراب موعد تجديد عقد الإيجار في ${p0.property} اعتباراً من ${p0.effectiveDate} وفق بند الزيادة التعاقدية (${p0.stepUpPct}%) ليصبح البدل السنوي الشامل ${fmtUSD(p0.proposedAnnualTtcUsd, 2)}. يرجى تأكيد الموافقة لتوثيق الملحق.`);
     }
@@ -4729,7 +4739,7 @@
   function buildTradingBuyerEtaConfirmation(lang) {
     const l = lang || EDGE_STATE.trdConfirmLang || curLang();
     const pack = EDGE_STATE.trdClosePack || computeTradingMonthEndClosePack();
-    const v0 = pack.vinAccrualRows[0] || { vin: 'LZGJLDR44RX010821', model: 'Shacman X3000', company: 'Shacman' };
+    const v0 = pack.vinAccrualRows[0] || demoOnly({ vin: 'LZGJLDR44RX010821', model: 'Shacman X3000', company: 'Shacman' }, { vin: '', model: '', company: '' });
     if (l === 'ar') {
       return sanitizeOutward(`حضرة العميل الكريم، بمناسبة إقفال شهر ${pack.cutoffDate} لدى ${v0.company}، نؤكد أن الدفعة المقدمة الخاصة بكم محفوظة بالكامل في حساب دفعات الزبائن المسبقة لآلية ${v0.model} (رقم الشاصي ${v0.vin})، ومن المتوقع استكمال التخليص والتسليم خلال الأسبوع الأول من الشهر الجديد.`);
     }
@@ -4980,7 +4990,7 @@
   function buildInsuranceRenewalProposal(lang) {
     const l = lang || EDGE_STATE.insProposalLang || curLang();
     const pack = EDGE_STATE.insClosePack || computeInsuranceMonthEndClosePack();
-    const b0 = pack.binderRows[0] || { policyNo: 'MGF-MED-2026-52077', client: 'Corporate Policyholder', carrier: 'MedGulf', renewalPremUsd: 188700 };
+    const b0 = pack.binderRows[0] || demoOnly({ policyNo: 'MGF-MED-2026-52077', client: 'Corporate Policyholder', carrier: 'MedGulf', renewalPremUsd: 188700 }, { policyNo: '', client: '', carrier: '', renewalPremUsd: 0 });
     if (l === 'ar') {
       return sanitizeOutward(`السادة ${b0.client} المحترمين، مع اقتراب موعد تجديد بوليصة التأمين رقم ${b0.policyNo} لدى شركة ${b0.carrier}، يسرنا تزويدكم بعرض التجديد المحدث بقسط إجمالي ${fmtUSD(b0.renewalPremUsd, 2)} مع مراجعة حدود التغطية لضمان استمرارية الحماية التأمينية دون انقطاع. يرجى تأكيد الموافقة لإصدار ملحق التجديد.`);
     }
@@ -5178,8 +5188,8 @@
 
     const sealedCount = entities.filter(e => e.isSealed).length;
     const all14TbZero = entities.every(e => e.tbDriftUsd === 0);
-    const totalSalesUsd = Number((roll.totals && (roll.totals.salesUsd || roll.totals.revenueUsd)) || 17990000);
-    const totalOpProfitUsd = Number((roll.totals && (roll.totals.opProfitUsd || roll.totals.ebitdaUsd || roll.totals.netProfitUsd)) || 5600000);
+    const totalSalesUsd = Number((roll.totals && (roll.totals.salesUsd || roll.totals.revenueUsd)) || demoOnly(17990000, 0));
+    const totalOpProfitUsd = Number((roll.totals && (roll.totals.opProfitUsd || roll.totals.ebitdaUsd || roll.totals.netProfitUsd)) || demoOnly(5600000, 0));
 
     const pack = {
       cutoffDate: cutoff,

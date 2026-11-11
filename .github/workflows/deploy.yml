@@ -1,0 +1,80 @@
+# Push to main = deploy to Cloudflare Pages (site, Command Center and the Edge functions).
+#
+# No PC needs a Cloudflare sign-in for a code deploy once two repository secrets exist
+# (GitHub, repository Settings, Secrets and variables, Actions):
+#   CLOUDFLARE_API_TOKEN   an API token limited to: Account, Cloudflare Pages, Edit
+#   CLOUDFLARE_ACCOUNT_ID  the account id shown on the Cloudflare dashboard overview
+# Until both exist this workflow runs the checks and stops with a notice; nothing fails.
+#
+# What it does not do: it never seeds or alters the D1 database. Schema changes and data seeds stay with
+# build/deploy_cloudflare.py, which is run on purpose after a data top-up.
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-pages-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Offline checks (nothing live is touched)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check functions/_lib/kiosk_verify.js
+          node --check functions/_lib/d1_store.js
+          # The log goes outside the checkout: everything in the checkout is what gets deployed.
+          node --no-warnings build/verify_kiosk_cloud.mjs > "$RUNNER_TEMP/kiosk-checks.log" || { tail -n 40 "$RUNNER_TEMP/kiosk-checks.log"; exit 1; }
+          tail -n 1 "$RUNNER_TEMP/kiosk-checks.log"
+
+      - name: Shell version in this commit
+        id: ver
+        run: echo "sw=$(head -n 1 app/sw.js)" >> "$GITHUB_OUTPUT"
+
+      - name: Not deployed, the Cloudflare secrets are not set on this repository
+        if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
+        run: echo "::notice::Checks passed. Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets to deploy on push."
+
+      - name: Deploy
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        run: npx --yes wrangler@4 pages deploy . --project-name=isabi-systems --branch=main --commit-hash="$GITHUB_SHA" --commit-dirty=true
+
+      - name: Live probe
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        env:
+          WANT_SW: ${{ steps.ver.outputs.sw }}
+        shell: bash
+        run: |
+          set -eu
+          live=""
+          for i in 1 2 3 4 5 6; do
+            sleep 10
+            live="$(curl -fsS -H 'Cache-Control: no-cache' "https://isabisystems.com/app/sw.js?probe=$GITHUB_SHA" 2>/dev/null | head -n 1 | tr -d '\r' || true)"
+            if [ "$live" = "$WANT_SW" ]; then break; fi
+          done
+          echo "live:   $live"
+          echo "commit: $WANT_SW"
+          [ "$live" = "$WANT_SW" ] || { echo "::error::The live app is not the version in this commit."; exit 1; }
+          # Read-only health check of the Edge functions (the kiosk endpoint is not probed: a refused request there is logged).
+          code="$(curl -s -o /dev/null -w '%{http_code}' https://isabisystems.com/app/api/status)"
+          [ "$code" = "200" ] || { echo "::error::The Edge API status check answered $code; expected 200."; exit 1; }
+          echo "The live app is the version in this commit and the Edge API answers."

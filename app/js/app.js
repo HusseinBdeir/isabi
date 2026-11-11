@@ -86,6 +86,11 @@
     }
     return !IS_LOCAL && !window.__ISABI_TEST_EDGE && PARAMS.get('demo') === '1';
   }
+  // Illustrative industry rows belong to the public demo sandbox only. A signed-in workspace shows what
+  // its own seed and entries hold, and an empty table when they hold nothing: never a hardcoded sample row.
+  function industryDemoRows(rows) {
+    return isDemoSandboxSession() ? rows : [];
+  }
   function appStoreGetRaw(key) {
     try {
       return isDemoSandboxSession()
@@ -132,17 +137,30 @@
   const SEED_DATE = String(SEED.generated_at || '').slice(0, 10) || todayISO();
 
   const DEFAULT_FACE_SEEDS = {};
+  // Seat rosters below carry no PIN. A production PIN lives only in the server's users table and is checked
+  // only by POST ./api/auth/login. The demo PINs here open a seat only where no server holds the roster: the
+  // public demo sandbox (its writes never leave the browser), the local dev host and the offline test harness.
+  const DEMO_SEAT_PINS = { u1: '1111', u2: '2222', u3: '3333', u4: '4444', u5: '4545', u6: '5555', u7: '6666', u8: '7777', u9: '7878', u10: '8888', u11: '9191', u12: '9292', u13: '9393', u14: '9494', u15: '9595', u16: '3434' }; // secret-scan: allow (public demo values, not credentials)
+  const DEMO_FALLBACK_PIN = '1111'; // secret-scan: allow (demo sandbox only)
+  function rosterIsServerHeld() {
+    return !IS_LOCAL && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !isDemoSandboxSession();
+  }
+  function seedRosterSeat(u) {
+    return rosterIsServerHeld()
+      ? Object.assign({}, u, { pin_code: '', pin_redacted: true })
+      : Object.assign({}, u, { pin_code: DEMO_SEAT_PINS[u.id] || '' });
+  }
   const DEFAULT_USERS = [
-    { id: 'u1', full_name: 'Hussein Bdeir', email: 'husseinbdeir@bhfirms.com', pin_code: '1111', role: 'Full Access (Owner)', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L, Insurance Company', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
-    { id: 'u2', full_name: 'Zeinab Rkein', email: 'zeinabrkein@bhfirms.com', pin_code: '2222', role: 'Supervisor + Entry', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L, Insurance Company', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
-    { id: 'u3', full_name: 'Sabah Kassab', email: 'sabahkassab@bhfirms.com', pin_code: '3333', role: 'Entry', companies: 'WTC', pbi_access: 'partial', statements_access: 'partial', status: 'Active', last_login_at: '' },
-    { id: 'u4', full_name: 'WTC Plant Weighbridge 1', email: 'scale1.wtc@bhfirms.com', pin_code: '4444', role: 'Entry', companies: 'WTC', pbi_access: 'none', statements_access: 'partial', status: 'Active', last_login_at: '' },
-    { id: 'u5', full_name: 'WTC Site Dispatch', email: 'quarry.wtc@bhfirms.com', pin_code: '4545', role: 'Entry', companies: 'WTC', pbi_access: 'none', statements_access: 'none', status: 'Active', last_login_at: '' },
-    { id: 'u6', full_name: 'BBConstruction Batching Desk', email: 'batch.bbc@bhfirms.com', pin_code: '5555', role: 'Entry', companies: 'BBConstruction', pbi_access: 'partial', statements_access: 'partial', status: 'Active', last_login_at: '' },
-    { id: 'u7', full_name: 'BBConstruction Site Supervisor', email: 'site.bbc@bhfirms.com', pin_code: '6666', role: 'Supervisor', companies: 'BBConstruction', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
-    { id: 'u8', full_name: 'Lions Transport Fleet Controller', email: 'fleet.lions@bhfirms.com', pin_code: '7777', role: 'Supervisor + Entry', companies: 'Lions Transport, WTC', pbi_access: 'full', statements_access: 'partial', status: 'Active', last_login_at: '' },
-    { id: 'u9', full_name: 'Diesel & Garage Officer', email: 'fuel.mfg@bhfirms.com', pin_code: '7878', role: 'Entry', companies: 'WTC, BBConstruction, Lions Transport', pbi_access: 'none', statements_access: 'none', status: 'Active', last_login_at: '' },
-    { id: 'u10', full_name: 'Accounts Receivable Collector', email: 'ar.mfg@bhfirms.com', pin_code: '8888', role: 'Sales', companies: 'WTC, BBConstruction', pbi_access: 'partial', statements_access: 'full', status: 'Active', last_login_at: '' }
+    { id: 'u1', full_name: 'Hussein Bdeir', email: 'husseinbdeir@bhfirms.com', role: 'Full Access (Owner)', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L, Insurance Company', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u2', full_name: 'Zeinab Rkein', email: 'zeinabrkein@bhfirms.com', role: 'Supervisor + Entry', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L, Insurance Company', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u3', full_name: 'Sabah Kassab', email: 'sabahkassab@bhfirms.com', role: 'Entry', companies: 'WTC', pbi_access: 'partial', statements_access: 'partial', status: 'Active', last_login_at: '' },
+    { id: 'u4', full_name: 'WTC Plant Weighbridge 1', email: 'scale1.wtc@bhfirms.com', role: 'Entry', companies: 'WTC', pbi_access: 'none', statements_access: 'partial', status: 'Active', last_login_at: '' },
+    { id: 'u5', full_name: 'WTC Site Dispatch', email: 'quarry.wtc@bhfirms.com', role: 'Entry', companies: 'WTC', pbi_access: 'none', statements_access: 'none', status: 'Active', last_login_at: '' },
+    { id: 'u6', full_name: 'BBConstruction Batching Desk', email: 'batch.bbc@bhfirms.com', role: 'Entry', companies: 'BBConstruction', pbi_access: 'partial', statements_access: 'partial', status: 'Active', last_login_at: '' },
+    { id: 'u7', full_name: 'BBConstruction Site Supervisor', email: 'site.bbc@bhfirms.com', role: 'Supervisor', companies: 'BBConstruction', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u8', full_name: 'Lions Transport Fleet Controller', email: 'fleet.lions@bhfirms.com', role: 'Supervisor + Entry', companies: 'Lions Transport, WTC', pbi_access: 'full', statements_access: 'partial', status: 'Active', last_login_at: '' },
+    { id: 'u9', full_name: 'Diesel & Garage Officer', email: 'fuel.mfg@bhfirms.com', role: 'Entry', companies: 'WTC, BBConstruction, Lions Transport', pbi_access: 'none', statements_access: 'none', status: 'Active', last_login_at: '' },
+    { id: 'u10', full_name: 'Accounts Receivable Collector', email: 'ar.mfg@bhfirms.com', role: 'Sales', companies: 'WTC, BBConstruction', pbi_access: 'partial', statements_access: 'full', status: 'Active', last_login_at: '' }
   ];
 
   const CANONICAL_GROUP_COMPANIES = [
@@ -185,12 +203,12 @@
   }
 
   const MULTI_INDUSTRY_ROLE_SEATS = [
-    { id: 'u11', full_name: 'Nadine Khoury', email: 'hosp.sup@bhfirms.com', pin_code: '9191', role: 'Supervisor', companies: 'Blanca, La Una, Palms, Voile, Platinum', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
-    { id: 'u12', full_name: 'Rami Haddad', email: 'hosp.entry@bhfirms.com', pin_code: '9292', role: 'Entry', companies: 'Blanca, La Una', pbi_access: 'none', statements_access: 'partial', status: 'Active', last_login_at: '' },
-    { id: 'u13', full_name: 'Karim Mansour', email: 'trading.ops@bhfirms.com', pin_code: '9393', role: 'Supervisor + Entry', companies: 'Korri Auto, Shacman', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
-    { id: 'u14', full_name: 'Maya Nassar', email: 're.sup@bhfirms.com', pin_code: '9494', role: 'Supervisor', companies: 'Properties, 4235 Company S.A.L', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
-    { id: 'u15', full_name: 'Tarek Farah', email: 'ins.ops@bhfirms.com', pin_code: '9595', role: 'Supervisor + Entry', companies: 'Insurance Company', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
-    { id: 'u16', full_name: 'Aya Hammoud', email: 'ayahammoud@bhfirms.com', pin_code: '3434', role: 'Entry', companies: 'WTC', pbi_access: 'partial', statements_access: 'partial', status: 'Active', last_login_at: '' }
+    { id: 'u11', full_name: 'Nadine Khoury', email: 'hosp.sup@bhfirms.com', role: 'Supervisor', companies: 'Blanca, La Una, Palms, Voile, Platinum', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u12', full_name: 'Rami Haddad', email: 'hosp.entry@bhfirms.com', role: 'Entry', companies: 'Blanca, La Una', pbi_access: 'none', statements_access: 'partial', status: 'Active', last_login_at: '' },
+    { id: 'u13', full_name: 'Karim Mansour', email: 'trading.ops@bhfirms.com', role: 'Supervisor + Entry', companies: 'Korri Auto, Shacman', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u14', full_name: 'Maya Nassar', email: 're.sup@bhfirms.com', role: 'Supervisor', companies: 'Properties, 4235 Company S.A.L', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u15', full_name: 'Tarek Farah', email: 'ins.ops@bhfirms.com', role: 'Supervisor + Entry', companies: 'Insurance Company', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u16', full_name: 'Aya Hammoud', email: 'ayahammoud@bhfirms.com', role: 'Entry', companies: 'WTC', pbi_access: 'partial', statements_access: 'partial', status: 'Active', last_login_at: '' }
   ];
 
   function ensureMultiIndustryRoleSeats(list) {
@@ -198,13 +216,12 @@
     const seenIds = new Set(arr.map(u => String((u && u.id) || '').toLowerCase()));
     const seenEmails = new Set(arr.map(u => String((u && u.email) || '').trim().toLowerCase()));
     const seenNames = new Set(arr.map(u => norm((u && u.full_name) || '')));
-    const redactSeedPins = !IS_LOCAL && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !isDemoSandboxSession();
     MULTI_INDUSTRY_ROLE_SEATS.forEach(seedSeat => {
       const sid = seedSeat.id.toLowerCase();
       const sem = seedSeat.email.toLowerCase();
       const snm = norm(seedSeat.full_name);
       if (!seenIds.has(sid) && !seenEmails.has(sem) && (!snm || !seenNames.has(snm))) {
-        arr.push(redactSeedPins ? Object.assign({}, seedSeat, { pin_code: '', pin_redacted: true }) : Object.assign({}, seedSeat));
+        arr.push(seedRosterSeat(seedSeat));
         seenIds.add(sid);
         seenEmails.add(sem);
         if (snm) seenNames.add(snm);
@@ -379,11 +396,7 @@
     editingUserId: 'u1',
     newDraftPin: String(Math.floor(1000 + Math.random() * 8999)),
     userFormDirty: false,
-    users: ensureMultiIndustryRoleSeats((lsGet('isabi_mfg_users_v2', null) || DEFAULT_USERS.map(u => (
-      (!IS_LOCAL && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !isDemoSandboxSession())
-        ? Object.assign({}, u, { pin_code: '', pin_redacted: true })
-        : ({ ...u })
-    ))).map(u => {
+    users: ensureMultiIndustryRoleSeats((lsGet('isabi_mfg_users_v2', null) || DEFAULT_USERS.map(seedRosterSeat)).map(u => {
       const k = String(u && u.email || '').trim().toLowerCase();
       const seed = DEFAULT_FACE_SEEDS[k];
       let out = u;
@@ -572,7 +585,7 @@
     ind_domain: 'domain record'
   };
   CR_KEYS.forEach(k => { if (!Array.isArray(STATE.customRecords[k])) STATE.customRecords[k] = []; });
-  if (!Array.isArray(STATE.users) || !STATE.users.length) STATE.users = DEFAULT_USERS.map(u => ({ ...u }));
+  if (!Array.isArray(STATE.users) || !STATE.users.length) STATE.users = DEFAULT_USERS.map(seedRosterSeat);
   const SEED_VOIDED_ARCHIVE = {};
   const SEED_ORIG_ARCHIVE = {};
   function captureSeedOrigSnapshot(crKey, origRow) {
@@ -15204,6 +15217,8 @@
             <button type="button" class="ceo-variance-brief-btn ceo-whatif-btn" id="ceoWhatIfBtn" data-whatif-open="1" data-wi-source="overview" aria-expanded="false" title="Open Interactive What-If Margin, FX & Working-Capital Scenario Simulator">${ic('sliders')}<span class="ceo-wi-lbl">What-If Studio</span></button>
             <button type="button" class="ceo-variance-brief-btn ceo-collection-btn" id="ceoCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="overview" aria-expanded="false" title="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">${ic('customers')}<span class="ceo-cf-lbl">Collection Forecast</span></button>
             <button type="button" class="ceo-variance-brief-btn ceo-payables-btn" id="ceoPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="overview" aria-expanded="false" title="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">${ic('suppliers')}<span class="ceo-po-lbl">Payables Optimizer</span></button>
+            <button type="button" class="ceo-variance-brief-btn ceo-treasury-btn" id="ceoTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="overview" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow & Liquidity Runway Forecast Studio">${ic('cashflow')}<span class="ceo-tf-lbl">13W Runway</span></button>
+            <button type="button" class="ceo-variance-brief-btn ceo-inventory-btn" id="ceoInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="overview" aria-expanded="false" data-ui-tip="Open Inventory Turnover, Stock Reorder & Working-Capital Carrying-Cost Studio">${ic('warehouse')}<span class="ceo-io-lbl">Stock &amp; EOQ</span></button>
             <button type="button" class="ceo-variance-brief-btn" id="ceoVarianceBriefBtn" data-ceo-variance-brief="1" aria-expanded="false" title="Open grounded Period Variance Commentary">${ic('sparkles')}<span class="ceo-vb-lbl">Variance</span></button>
             <button type="button" class="ceo-period-summary-btn" id="ceoPeriodSummaryBtn" data-ceo-period-summary="1" aria-pressed="false" title="Play a spoken summary of the active period's P&L bridge, prior-period variance, cash till, and active Sentinel flags">${ic('audio')}<span class="ceo-ps-lbl">Listen to Period Summary</span></button>
           </div>
@@ -25226,6 +25241,8 @@
       const a = attRows[i];
       if (!a || a.voided) continue;
       if (/^(extra|config)/i.test(String(a.type || a.status || ''))) continue;
+      // Door tablet row whose figures are still the ones the import wrote (see attendanceFigureSig).
+      const importFigures = a.origin === 'door_tablet' && Boolean(a.tab_sig) && attendanceFigureSig(a) === a.tab_sig;
       const sk = norm(a.staff || '');
       const aCoNorm = norm(a.company || 'WTC');
       if (coNorm && aCoNorm && aCoNorm !== coNorm) continue;
@@ -25296,6 +25313,7 @@
 
       if (rowChanged) {
         attUpdated++;
+        if (importFigures) a.tab_sig = attendanceFigureSig(a);   // re-worked by a rule change, not by a person
         const cIdx = STATE.customRecords.attendance.findIndex(x => x && String(x.id) === String(a.id));
         if (cIdx >= 0) Object.assign(STATE.customRecords.attendance[cIdx], a);
         else STATE.customRecords.attendance.unshift(Object.assign({}, a));
@@ -33033,6 +33051,7 @@
             </div>
           </div>
           <div style="display:flex;gap:6px;margin-left:auto;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="whInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="warehouse" aria-expanded="false" data-ui-tip="Open Inventory Turnover, Stock Reorder & Working-Capital Carrying-Cost Studio">${ic('warehouse')} Stock &amp; EOQ</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="expenses">${ic('expenses')} Expenses</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_maint">${ic('repair')} Repairs</button>
             ${exportBtn('warehouseStockPanel', 'Warehouse_Stored_Items')}
@@ -33392,6 +33411,7 @@
             </div>
           </div>
           <div style="display:flex;gap:6px;margin-left:auto;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="whInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="warehouse_parts" aria-expanded="false" data-ui-tip="Open Inventory Turnover, Stock Reorder & Working-Capital Carrying-Cost Studio">${ic('warehouse')} Stock &amp; EOQ</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="warehouse">${ic('warehouse')} Stock &amp; Moves</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_maint">${ic('repair')} Repairs &amp; Warnings</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_items">${ic('reg_items')} Items Catalog</button>
@@ -40261,6 +40281,8 @@
             <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="cfCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="cashflow" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">Collection Forecast</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="cfPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="cashflow" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">Payables Optimizer</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="cfTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="cashflow" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow & Liquidity Runway Forecast Studio">13W Runway</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="cfInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="cashflow" aria-expanded="false" data-ui-tip="Open Inventory Turnover, Stock Reorder & Working-Capital Carrying-Cost Studio">Stock &amp; EOQ</button>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${canEnterForm('receipt', u) ? '<button type="button" class="btn" data-open-modal="receipt">+ AR Receipt</button>' : ''}
@@ -40381,7 +40403,7 @@
                 const flowSym = r.dir === 'IN' ? '▲' : (r.dir === 'FX' ? '⇄' : '▼');
                 const partyHtml = r.partyRel
                   ? relLink(r.partyRel, r.party, r.party, true)
-                  : `<button type="button" class="cf-party-btn" data-cf-focus-party="${esc(r.party)}" title="Filter all cash entries for ${esc(r.party)}">${esc(r.party)}</button>`;
+                  : `<button type="button" class="cf-party-btn" data-no-i18n data-cf-focus-party="${esc(r.party)}" title="Filter all cash entries for ${esc(r.party)}">${esc(r.party)}</button>`;
                 const refHtml = r.ticketId
                   ? `<span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ref)}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.ticketId)}" title="Preview / Print Ticket ${esc(r.ref)}">${ic('printer')}</button>${tktOtBadge(r.raw)}</span> <span class="mu">· ${esc(r.method)}</span>`
                   : `${esc(r.ref)} <span class="mu">· ${esc(r.method)}</span>`;
@@ -42541,6 +42563,8 @@
             <div style="display:flex;gap:6px;align-items:center">
               <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
               <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Group Capital Allocation, Credit Headroom &amp; Carrying-Cost Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>
               ${exportBtn('hldDueMatrixPanel', 'Holding_Intercompany_Repayment_Matrix')}
               ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ Intercompany Entry</button>' : ''}
             </div>
@@ -42703,6 +42727,8 @@
             ${searchBox('Search company, IC ref, notes...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hld_interactions" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
               <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hld_interactions" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hld_interactions" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="hld_interactions" aria-expanded="false" data-ui-tip="Open Group Capital Allocation, Credit Headroom &amp; Carrying-Cost Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>
             ${exportBtn('hldInteractionsPanel', 'Holding_Intercompany_Repayment_Ledger')}
             ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ External Entry</button>' : ''}
           </div>
@@ -43397,7 +43423,7 @@
                   <td class="mono">${esc(fmtDateDMY(r.date))}${appCell(r, 'external_movements')}</td>
                   ${showCoCol ? `<td>${coBadge(r.company)}</td>` : ''}
                   <td class="cf-cat-cell"><span class="cf-flow-badge ${inFlag ? 'in' : 'out'}">${inFlag ? '▲' : '▼'}</span><span class="cf-cat-txt">${esc(dirLbl)}</span></td>
-                  <td><button type="button" class="cf-party-btn" data-cf-focus-party="${esc(cp)}" data-ui-tip="Filter Extended Ledger to ${esc(cp)}"><strong>${esc(cp)}</strong></button></td>
+                  <td><button type="button" class="cf-party-btn" data-no-i18n data-cf-focus-party="${esc(cp)}" data-ui-tip="Filter Extended Ledger to ${esc(cp)}"><strong>${esc(cp)}</strong></button></td>
                   <td class="cf-detail-cell" data-ui-tip="${esc(r.notes || '')}">${esc(r.notes || '-')}</td>
                   <td class="r">${a.inUsd >= 0.005 ? `<strong style="color:var(--good)">+${fmtUSD(a.inUsd, 2)}</strong>` : '-'}</td>
                   <td class="r">${a.outUsd >= 0.005 ? `<strong style="color:var(--crit)">-${fmtUSD(a.outUsd, 2)}</strong>` : '-'}</td>
@@ -43551,7 +43577,9 @@
       <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
         <div class="panel-head" style="margin-bottom:8px">
           <div class="panel-title"><span>${ic('hld_loans')} GROUP LOAN FACILITIES, REPAYMENTS &amp; CAPITAL OUTLAYS</span></div>
-          <span class="panel-meta">
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hld_loans" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="hld_loans" aria-expanded="false" data-ui-tip="Open Group Capital Allocation, Credit Headroom &amp; Carrying-Cost Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>
             ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="treasury">+ Loan / Settlement</button>' : ''}
           </span>
         </div>
@@ -43771,7 +43799,7 @@
     const _hspCacheKey = `${scopeCo}|${Array.from(activeNames).join(',')}|${q}|${(SEED && SEED._industryRev) || 0}|${(SEED && SEED._customRev) || 0}|${((SEED && SEED.records && SEED.records.sales_tickets) || []).length}|${JSON.stringify(STATE.industryRowEdits || {})}|${JSON.stringify(STATE.industryCustomRows || {})}`;
     if (_hspOpsCache.has(_hspCacheKey)) return _hspOpsCache.get(_hspCacheKey);
     const liveHsp = (SEED && SEED.industryLive && SEED.industryLive.hospitality) || null;
-    const pickHsp = (key, fallback) => (liveHsp && Array.isArray(liveHsp[key]) && liveHsp[key].length) ? liveHsp[key].slice() : fallback;
+    const pickHsp = (key, fallback) => (liveHsp && Array.isArray(liveHsp[key]) && liveHsp[key].length) ? liveHsp[key].slice() : industryDemoRows(fallback);
 
     const baseVenueRows = pickHsp('venueRows', [
       { id: 'HSP-REV-001', date: '2026-09-28', company: 'Blanca', outlet: 'Chalets & Cabanas', category: 'Chalet Rental', rooms: 44, capacity: 48, covers: 132, ht_usd: 11800, vat_usd: 1298, ttc_usd: 13098, method: 'Card / Whish', notes: 'Weekend chalet & VIP cabana full-board occupancy' },
@@ -44164,7 +44192,7 @@
                     <td class="r mono">${fmtUSD(r.card_whish_usd, 2)}</td>
                     <td class="r mono">${fmtUSD(r.comp_usd, 2)}</td>
                     <td class="r mono ${Math.abs(r.variance_usd) > 0.5 ? 'warn' : 'good'}"><strong>${fmtSignedUSD(r.variance_usd, 2)}</strong></td>
-                    <td><span class="badge ${Math.abs(r.variance_usd) > 0.5 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span>${Math.abs(r.variance_usd) > 0.5 ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="hsp_pos_resolve" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-terminal="${esc(r.terminal)}" data-wf-cashier="${esc(r.cashier)}" data-wf-billed="${r.pos_billed_ttc}" data-wf-cash="${round2(r.cash_usd - r.variance_usd)}" data-wf-card="${r.card_whish_usd}" data-wf-comp="${r.comp_usd}">Log Close</button>` : ''}</td>
+                    <td><span class="badge ${Math.abs(r.variance_usd) > 0.5 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span>${isTillOwnedRowId(r.id) ? tillOwnedBadgeHtml() : ''}${(Math.abs(r.variance_usd) > 0.5 && !isTillOwnedRowId(r.id)) ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="hsp_pos_resolve" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-terminal="${esc(r.terminal)}" data-wf-cashier="${esc(r.cashier)}" data-wf-billed="${r.pos_billed_ttc}" data-wf-cash="${round2(r.cash_usd - r.variance_usd)}" data-wf-card="${r.card_whish_usd}" data-wf-comp="${r.comp_usd}">Log Close</button>` : ''}</td>
                   </tr>
                 `).join('') : emptyRow(12, 'No POS shift records match current filter')}
                 ${showMoreRow('hsp_pos', filteredPos.length, 12)}
@@ -44318,6 +44346,7 @@
             ${searchBox('Search resort, outlet, category, notes...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hsp_revenue" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
               <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hsp_revenue" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hsp_revenue" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
             ${exportBtn('hspRevenuePanel', 'Hospitality_Venue_Revenue')}
             ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Venue Revenue Entry</button>' : ''}
           </div>
@@ -44353,7 +44382,7 @@
                   <td class="r mono">${fmtUSD(r.ht_usd, 2)}</td>
                   <td class="r mono">${fmtUSD(r.vat_usd, 2)}</td>
                   <td class="r mono"><strong>${fmtUSD(r.ttc_usd, 2)}</strong></td>
-                  <td>${esc(r.method)}</td>
+                  <td>${esc(r.method)}${isTillOwnedRowId(r.id) ? tillOwnedBadgeHtml() : ''}</td>
                   <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${esc(r.notes)}</td>
                 </tr>
               `).join('') : emptyRow(12, 'No venue revenue entries match current filter')}
@@ -44587,6 +44616,7 @@
             ${searchBox('Search member, chalet unit, resort...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hsp_members" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
               <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hsp_members" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hsp_members" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
             ${exportBtn('hspMembershipsPanel', 'Hospitality_Seasonal_Memberships')}
             <button type="button" class="btn btn-outline-bar" data-ind-open-new="hsp_tariffs">+ Seasonal Tariff</button>
             ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Membership Contract</button>' : ''}
@@ -44895,6 +44925,7 @@
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search store, item group, resort...')}
+            <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="hsp_stock" aria-expanded="false" data-ui-tip="Open F&amp;B Par Levels, Cellar Turnover &amp; Working-Capital Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>
             ${exportBtn('hspStockPanel', 'Hospitality_Kitchen_Cellar_Stock')}
             ${canEnterForm('warehousestock', u) ? '<button type="button" class="btn btn-primary" data-open-modal="warehousestock">+ Stock Intake / Transfer</button>' : ''}
           </div>
@@ -45267,7 +45298,7 @@
     const q = opts.ignoreSearch ? '' : norm(STATE.search || '');
     const matchQ = (...fields) => !q || fields.some(v => norm(v).includes(q));
     const liveTrd = (SEED && SEED.industryLive && SEED.industryLive.trading) || null;
-    const pickTrd = (key, fallback) => (liveTrd && Array.isArray(liveTrd[key]) && liveTrd[key].length) ? liveTrd[key].slice() : fallback;
+    const pickTrd = (key, fallback) => (liveTrd && Array.isArray(liveTrd[key]) && liveTrd[key].length) ? liveTrd[key].slice() : industryDemoRows(fallback);
 
     // 1. Sales Invoices, Lines & Invoice Books Sequence/Gap Check (t82 TTC plain-label, t83 11% VAT, t74 Invoice Books)
     const rawSalesRows = mergeCustomOverSeededRows(pickTrd('salesRows', [
@@ -45701,6 +45732,7 @@
               ${searchBox('Search customer, entity, promise date...')}
               <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="trd_receivables" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
               <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="trd_receivables" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="trd_receivables" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
               ${exportBtn('trdReceivablesPanel', 'Trading_Receivables_Advances')}
               ${canEnterForm('receipt', u) ? '<button type="button" class="btn btn-primary" data-open-modal="receipt">+ Customer Settlement</button>' : ''}
             </div>
@@ -45895,6 +45927,7 @@
             ${searchBox('Search invoice, chassis, customer, book...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="trd_sales" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
               <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="trd_sales" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="trd_sales" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
             ${exportBtn('trdSalesPanel', 'Trading_Sales_Invoices')}
             ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Sales Invoice</button>' : ''}
           </div>
@@ -46876,6 +46909,7 @@
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search part code, description, warehouse, category...')}
+            <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="trd_stock" aria-expanded="false" data-ui-tip="Open 17-Char VIN Showroom &amp; Multi-Warehouse Spare-Parts EOQ Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>
             ${exportBtn('trdStockPanel', 'Trading_Spare_Parts_Warehouses')}
             ${canEnterForm('item', u) ? '<button type="button" class="btn btn-primary" data-open-modal="item">+ New Spare Part SKU</button>' : ''}
           </div>
@@ -46954,9 +46988,10 @@
     if (!ignoreSearch && _reOpsCache && _reOpsSig === sig) return _reOpsCache;
     const liveRe = (SEED && SEED.industryLive && SEED.industryLive.realestate) || null;
     const pickRe = (key, fallback) => {
-      if (!liveRe || !Array.isArray(liveRe[key]) || !liveRe[key].length) return fallback;
+      if (!liveRe || !Array.isArray(liveRe[key]) || !liveRe[key].length) return industryDemoRows(fallback);
       const arr = liveRe[key].slice();
-      if ((key === 'leases' || key === 'invoices' || key === 'receipts' || key === 'sales' || key === 'instalments') && !arr.some(r => r && r.company === 'Properties')) {
+      // Sample 'Properties' rows pad a table that has none in the demo sandbox only; live tables are never padded.
+      if (isDemoSandboxSession() && (key === 'leases' || key === 'invoices' || key === 'receipts' || key === 'sales' || key === 'instalments') && !arr.some(r => r && r.company === 'Properties')) {
         fallback.forEach(fb => { if (fb && fb.company === 'Properties') arr.push(fb); });
       }
       return arr;
@@ -47218,6 +47253,7 @@
           </div>
           <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="re_leases" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
               <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="re_leases" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="re_leases" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
           ${exportBtn(submode === 'invoicing' ? 're_invoicing' : submode === 'receipts' ? 're_receipts' : 're_leases')}
         </div>
       </div>
@@ -47751,6 +47787,7 @@
             <button type="button" class="${submode === 'valuations' ? 'active' : ''}" data-nav-jump="re_valuations">LGB Valuations (${data.valuations.length})</button>
             <button type="button" class="${submode === 'ownership' ? 'active' : ''}" data-nav-jump="re_ownership">Co-Ownership /2400 (${data.ownership.length})</button>
           </div>
+          <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="re_properties" aria-expanded="false" data-ui-tip="Open Building MEP Maintenance Stock &amp; Utility Pool Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>
           ${exportBtn(submode === 'units' ? 're_units' : submode === 'valuations' ? 're_valuations' : submode === 'ownership' ? 're_ownership' : 're_properties')}
         </div>
       </div>
@@ -48086,6 +48123,7 @@
             <button type="button" class="${submode === 'main' ? 'active' : ''}" data-nav-jump="re_workorders">Work Orders &amp; Fit-Out (${data.workorders.length})</button>
             <button type="button" class="${submode === 'recharges' ? 'active' : ''}" data-nav-jump="re_recharges">Tenant Recharges &amp; Utilities (${data.recharges.length})</button>
           </div>
+          <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="re_workorders" aria-expanded="false" data-ui-tip="Open Building MEP Maintenance Stock &amp; Utility Pool Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>
           ${exportBtn(submode === 'recharges' ? 're_recharges' : 're_workorders')}
         </div>
       </div>
@@ -48277,7 +48315,7 @@
     const liveIns = (SEED && SEED.industryLive && SEED.industryLive.insurance) || null;
     const pickIns = (key, fallback) => (liveIns && Array.isArray(liveIns[key]) && liveIns[key].length)
       ? (key === 'agreements' ? liveIns[key].map(a => ({ ...a })) : liveIns[key].slice())
-      : fallback;
+      : industryDemoRows(fallback);
     const policies = pickIns('policies', [
       { id: 'MGF-MED-2026-52077', company: co, date: '2026-01-15', expiry: '2027-01-14', client: 'Holdal Abou Adal Group (250 Lives)', carrier: 'MedGulf', line: 'MED · Medical', product: 'Corporate Group Medical In/Out', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 12500000, gross_prem_usd: 185000, comm_rate_pct: 10.5, gross_comm_usd: 19425, discount_usd: 750, discount_reason: 'Multi-policy corporate rebate', net_comm_usd: 18675, policy_fee_usd: 125, net_payable_4017_usd: 165575, status: 'Active' },
       { id: 'BNK-PRP-2026-08510', company: co, date: '2026-02-01', expiry: '2027-01-31', client: 'Unipak Tissue Mill S.A.L.', carrier: 'Bankers Assurance', line: 'PROP · Property', product: 'Property All Risks (PAR) Commercial', producer: 'Joseph Khalil', type: 'Policy (Renewal)', sum_insured_usd: 18400000, gross_prem_usd: 32000, comm_rate_pct: 17.5, gross_comm_usd: 5600, discount_usd: 500, discount_reason: 'Zero-claim renewal discount', net_comm_usd: 5100, policy_fee_usd: 75, net_payable_4017_usd: 26400, status: 'Active' },
@@ -48575,6 +48613,7 @@
           </div>
           <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="ins_policies" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
               <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="ins_policies" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="ins_policies" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
           ${exportBtn(submode === 'renewals' ? 'ins_renewals' : (submode === 'items' ? 'ins_items' : 'ins_policies'))}
         </div>
       </div>
@@ -48847,6 +48886,7 @@
           </div>
           <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="ins_billing" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
               <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="ins_billing" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="ins_billing" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
           ${exportBtn(submode === 'remittances' ? 'ins_remittances' : (submode === 'statements' ? 'ins_statements' : 'ins_billing'))}
         </div>
       </div>
@@ -49236,6 +49276,7 @@
             <button type="button" class="${submode === 'main' ? 'active' : ''}" data-nav-jump="ins_catalogue">Lines &amp; Products (${s.linesCount} Lines · ${s.productsCount} Products)</button>
             <button type="button" class="${submode === 'agreements' ? 'active' : ''}" data-nav-jump="ins_agreements">Commission Agreements (${s.agreementsCount} Rules)</button>
           </div>
+          <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="ins_catalogue" aria-expanded="false" data-ui-tip="Open Carrier Policy Float, Bordereau Turnover &amp; Working-Capital Studio">${ic('warehouse')} Stock &amp; EOQ</button>
           ${exportBtn(submode === 'agreements' ? 'ins_agreements' : 'ins_catalogue')}
         </div>
       </div>
@@ -49810,7 +49851,7 @@
         {
           id: 'H3', tbl: 'expenses', title: 'HOLDING SHARED-SERVICES OVERHEAD VOUCHERS',
           headers: ['Voucher #', 'Date', 'Entity', 'Category', 'Supplier / Advisory', 'Amount ($)'],
-          rows: (hldExps.length ? hldExps.slice(0, 8) : [{ id: 'HQ-EXP-01', date: '2026-10-28', company: 'Bdeir Holding', category: 'Audit & Statutory Advisory', supplier: 'Deloitte & Touche Advisory', total: 18500 }]).map((e, i) => ({
+          rows: (hldExps.length ? hldExps.slice(0, 8) : industryDemoRows([{ id: 'HQ-EXP-01', date: '2026-10-28', company: 'Bdeir Holding', category: 'Audit & Statutory Advisory', supplier: 'Deloitte & Touche Advisory', total: 18500 }])).map((e, i) => ({
             rid: e.id || `HQ-${i + 1}`, co: e.company || 'Bdeir Holding',
             cells: [e.id || `HQ-${i + 1}`, String(e.date || SEED_DATE).slice(0, 10), e.company || 'Bdeir Holding', e.category || 'Shared Services', e.supplier || e.party || 'Advisory Vendor', fmtUSD(Math.abs(Number(e.total || e.amount || 0)), 2)]
           }))
@@ -49861,7 +49902,7 @@
           headers: ['Close ID', 'Date', 'Resort', 'POS Terminal', 'Billed ($)', 'Variance ($)', 'Action'],
           rows: (posFlagged.length ? posFlagged : hsp.posRows).slice(0, 8).map(r => {
             const hasVar = Math.abs(Number(r.variance_usd || 0)) > tillTol;
-            const wf = (canWf && hasVar) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="hsp_pos_resolve" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-terminal="${esc(r.terminal)}" data-wf-cashier="${esc(r.cashier)}" data-wf-billed="${r.pos_billed_ttc}" data-wf-cash="${r.cash_usd}" data-wf-card="${r.card_whish_usd}" data-wf-comp="${r.comp_promo_usd || 0}">Log Close</button>` : '<span class="badge badge-ok">Balanced</span>';
+            const wf = (canWf && hasVar && !isTillOwnedRowId(r.id)) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="hsp_pos_resolve" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-terminal="${esc(r.terminal)}" data-wf-cashier="${esc(r.cashier)}" data-wf-billed="${r.pos_billed_ttc}" data-wf-cash="${r.cash_usd}" data-wf-card="${r.card_whish_usd}" data-wf-comp="${r.comp_promo_usd || 0}">Log Close</button>` : (hasVar ? `<span class="badge badge-warn">Close Variance</span>${isTillOwnedRowId(r.id) ? tillOwnedBadgeHtml() : ''}` : '<span class="badge badge-ok">Balanced</span>');
             return { rid: r.id, co: r.company, cells: [r.id, r.date, r.company, `${r.terminal} (${r.cashier})`, fmtUSD(r.pos_billed_ttc, 0), fmtUSD(r.variance_usd, 2)], rawLastHtml: wf };
           })
         },
@@ -51026,11 +51067,11 @@
         };
       }
       if (pIdx === 4) {
-        const expRows = (hldExps.length ? hldExps : [
+        const expRows = (hldExps.length ? hldExps : industryDemoRows([
           { id: 'HQ-EXP-01', date: '2026-10-28', company: 'Bdeir Holding', category: 'Audit & Statutory Advisory', supplier: 'Deloitte & Touche Advisory', method: 'Bank Transfer', total: 18500 },
           { id: 'HQ-EXP-02', date: '2026-10-22', company: 'Bdeir Holding', category: 'Corporate Legal Retainer', supplier: 'Badri & Salim El Meouchi Law', method: 'Bank Transfer', total: 11400 },
           { id: 'HQ-EXP-03', date: '2026-10-15', company: 'Bdeir Holding', category: 'Executive HQ & Cloud Systems', supplier: 'Beirut HQ Operations', method: 'Cash', total: 8500 }
-        ]);
+        ]));
         const totExp = round2(expRows.reduce((a, r) => a + Math.abs(Number(r.total || r.amount || 0)), 0));
         const byCat = {};
         expRows.forEach(r => {
@@ -52372,6 +52413,9 @@
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-whatif-btn" id="pbiWhatIfBtn" data-whatif-open="1" data-wi-source="pbi" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX &amp; Working-Capital Scenario Simulator">${ic('sliders')}<span class="pbi-wi-lbl">What-If Studio</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-collection-btn" id="pbiCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="pbi" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')}<span class="pbi-cf-lbl">Collection Forecast</span></button>
+            <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-payables-btn" id="pbiPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="pbi" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')}<span class="pbi-po-lbl">Payables Optimizer</span></button>
+            <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-treasury-btn" id="pbiTreasuryForecastBtn" data-treasury-forecast-open="1" data-liquidity-runway-open="1" data-tf-source="pbi" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')}<span class="pbi-tf-lbl">13W Runway</span></button>
+            <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-inventory-btn" id="pbiInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="pbi" aria-expanded="false" data-ui-tip="Open Inventory Turnover, Stock Reorder &amp; Working-Capital Carrying-Cost Optimizer Studio">${ic('warehouse')}<span class="pbi-io-lbl">Stock &amp; EOQ</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-explain-btn" id="pbiExplainOutliersBtn" data-pbi-explain="1" aria-expanded="false" data-ui-tip="Explain active dashboard KPIs, top-3 concentration &amp; outliers">${ic('sparkles')}<span class="pbi-exp-lbl">Explain</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-listen-btn" id="pbiListenSummaryBtn" data-pbi-summary="1" data-ui-tip="Listen to spoken walkthrough of active dashboard">${ic('audio')}<span class="pbi-lsn-lbl">Listen</span></button>
             <button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-nav-jump="${esc(activePage.view)}">Open ${esc(activePage.label)} Hub</button>
@@ -55085,8 +55129,8 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          industryCustomRows: getIndustryCustomRowsStore(),
-          industryRowEdits: getIndustryRowEditStore()
+          industryCustomRows: withoutTillOwnedRows(getIndustryCustomRowsStore()),
+          industryRowEdits: withoutTillOwnedEdits(getIndustryRowEditStore())
         })
       }).catch(() => {});
     } catch (_) {}
@@ -55148,6 +55192,7 @@
       const tds = Array.from(tr.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
       if (tds.length < 2) return;
       const primaryId = tr.getAttribute('data-ind-row-id') || cleanDomainCellText(tds[0]);
+      if (isTillOwnedRowId(primaryId)) return;
       const cardEl = tr.closest('.panel-card, .panel');
       const tableTitle = getDomainCardCanonicalTitle(cardEl);
       const key = makeIndustryRowEditKey(ind, tableTitle, primaryId);
@@ -55268,8 +55313,37 @@
     _FREQ_IDX = null;
   }
 
+  // Rows the cloud totals from the resort gate tills: till close rows and, once a resort's posting date is
+  // set, venue revenue rows. They belong to the server. This app shows them and never edits, voids or
+  // patches them; a correction is made on the till (void the sale there) and the row re-totals itself.
+  function isTillOwnedRowId(id) {
+    return /^(HSP-REV-)?POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(id || '').trim());
+  }
+  function isTillOwnedEditKey(editKey) {
+    return /(^|::)(HSP-REV-)?POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(editKey || ''));
+  }
+  // What this browser sends to the cloud never includes its copies of till rows or patches aimed at them
+  // (the cloud would drop them anyway), so they are also left out when deciding whether there is anything to send.
+  function withoutTillOwnedRows(rowsStore) {
+    const out = {};
+    Object.keys(rowsStore || {}).forEach(bk => {
+      const list = rowsStore[bk];
+      out[bk] = Array.isArray(list) ? list.filter(r => !(r && isTillOwnedRowId(r.id || r.code))) : list;
+    });
+    return out;
+  }
+  function withoutTillOwnedEdits(editStore) {
+    const out = {};
+    Object.keys(editStore || {}).forEach(ek => { if (!isTillOwnedEditKey(ek)) out[ek] = editStore[ek]; });
+    return out;
+  }
+  function tillOwnedBadgeHtml() {
+    return ` <span class="badge badge-info has-ico till-owned-badge" data-ui-tip="Totalled from the gate till's own sales. To correct it, void the sale on the till.">${ic('hsp_pos')}<span>From the till</span></span>`;
+  }
+
   function getIndustryWorkflowPatch(bucket, rowId) {
     if (!bucket || !rowId) return null;
+    if (isTillOwnedRowId(rowId)) return null;
     const store = getIndustryRowEditStore();
     const hit = store[`WF::${bucket}::${String(rowId).trim()}`];
     return (hit && typeof hit === 'object' && !hit.voided) ? hit : null;
@@ -55277,6 +55351,7 @@
 
   function saveIndustryWorkflowPatch(bucket, rowId, patch) {
     if (!bucket || !rowId || !patch || typeof patch !== 'object') return null;
+    if (isTillOwnedRowId(rowId)) return null;
     const store = getIndustryRowEditStore();
     const key = `WF::${bucket}::${String(rowId).trim()}`;
     const prev = (store[key] && typeof store[key] === 'object') ? store[key] : {};
@@ -55296,6 +55371,7 @@
     if (!Array.isArray(store[bucket])) store[bucket] = [];
     const nowIso = new Date().toISOString();
     const pid = String(rowObj.id || rowObj.code || '').trim();
+    if (isTillOwnedRowId(pid)) return null;
     const existingIdx = pid ? store[bucket].findIndex(r => r && String(r.id || r.code || '').trim() === pid) : -1;
     const prevRev = existingIdx >= 0 ? Number(store[bucket][existingIdx].rev || 1) : 0;
     const nextRev = Math.max(prevRev + 1, Number(rowObj.rev || 1));
@@ -55316,7 +55392,7 @@
 
   function voidIndustryCustomRowById(primaryId, opts = {}) {
     const pid = String(primaryId || '').trim();
-    if (!pid) return false;
+    if (!pid || isTillOwnedRowId(pid)) return false;
     const store = getIndustryCustomRowsStore();
     const nowIso = new Date().toISOString();
     let hit = false;
@@ -55373,6 +55449,18 @@
         const rVoid = Boolean(rem.voided);
         const lTs = String(loc.updated_at || loc._createdAt || '');
         const rTs = String(rem.updated_at || rem._createdAt || '');
+        if (isTillOwnedRowId(id)) {
+          // The server's copy of a till row always stands, whatever this browser holds (an older app
+          // version could have voided or edited its own copy).
+          if (lRev !== rRev || lVoid !== rVoid || lTs !== rTs) {
+            const fresh = Object.assign({}, rem, { _customBucket: bucket });
+            const idx = locArr.indexOf(loc);
+            if (idx >= 0) locArr[idx] = fresh;
+            byId.set(id, fresh);
+            changed = true;
+          }
+          return;
+        }
         if (rVoid && !lVoid && rRev >= lRev) {
           loc.voided = true;
           loc.rev = Math.max(lRev, rRev);
@@ -64886,6 +64974,2176 @@
     };
   }
 
+  function canonicalizeStudioCoKey(rawKey) {
+    const k = String(rawKey || '').trim().toLowerCase();
+    if (!k) return '';
+    if (k === 'insuranceco') return 'insurance';
+    if (k === 'industry:manufacturing') return 'manufacturing-group';
+    return k;
+  }
+
+  function scopeMatchesCompanyKey(scopeKey, itemCoKey) {
+    const sc = canonicalizeStudioCoKey(scopeKey) || 'all';
+    const it = canonicalizeStudioCoKey(itemCoKey);
+    if (!it) return true;
+    if (sc === 'all') return true;
+    if (sc === it) return true;
+    const mfgKeys = ['manufacturing-group', 'wtc', 'bbconstruction', 'lionstransport', 'lions transport'];
+    if (sc === 'manufacturing-group') {
+      return mfgKeys.includes(it);
+    }
+    if (String(scopeKey || '').trim().toLowerCase().startsWith('industry:')) {
+      const indTarget = String(scopeKey || '').trim().slice(9).trim().toLowerCase();
+      if (/manufacturing/i.test(indTarget)) return mfgKeys.includes(it);
+      if (/holding/i.test(indTarget)) return ['bdeirholding', 'bdeir holding', 'industry:holding & treasury'].includes(it);
+      if (/hospitality|resort/i.test(indTarget)) return ['blanca', 'launa', 'la una', 'palms', 'voile', 'platinum', 'industry:hospitality & resorts'].includes(it);
+      if (/trading|auto/i.test(indTarget)) return ['korriauto', 'korri auto', 'shacman', 'industry:automotive & heavy trading'].includes(it);
+      if (/real\s*estate|property/i.test(indTarget)) return ['properties', '4235company', '4235 company s.a.l', 'industry:real estate & property'].includes(it);
+      if (/insurance|brokerage/i.test(indTarget)) return ['insurance', 'insuranceco', 'insurance company', 'industry:insurance & brokerage'].includes(it);
+    }
+    const scBu = norm(COMPANY_BU_MATCH[sc] || SENTINEL_MODEL_KEY[sc] || sc);
+    const itBu = norm(COMPANY_BU_MATCH[it] || SENTINEL_MODEL_KEY[it] || it);
+    return Boolean(scBu && scBu === itBu);
+  }
+
+  function isStudioCoKeyAllowedForUser(coKeyVal, u) {
+    const targetUser = u || (typeof activeUser === 'function' ? activeUser() : null);
+    if (typeof isOwner === 'function' && isOwner(targetUser)) return true;
+    const allowedCos = typeof allowedCompanyNames === 'function' ? allowedCompanyNames(targetUser) : [];
+    const ck = canonicalizeStudioCoKey(coKeyVal);
+    if (!ck) return true;
+    if (ck === 'all') return false;
+    if (ck === 'manufacturing-group') {
+      return ['WTC', 'BBConstruction', 'Lions Transport'].every(n => allowedCos.some(ac => norm(ac) === norm(n)));
+    }
+    if (ck.startsWith('industry:')) {
+      const indLabel = ck.slice(9).trim();
+      const indCos = getCompanyCatalog().filter(c => norm(c.industry).includes(norm(indLabel))).map(c => c.name);
+      return indCos.length > 0 && indCos.every(n => allowedCos.some(ac => norm(ac) === norm(n)));
+    }
+    const bu = COMPANY_BU_MATCH[ck] || SENTINEL_MODEL_KEY[ck] || ck;
+    return allowedCos.some(ac => norm(ac) === norm(bu) || norm(ac) === norm(ck));
+  }
+
+  // ==========================================================================
+  // EXECUTIVE STUDIO A: 13-WEEK ROLLING CASH-FLOW & LIQUIDITY RUNWAY FORECAST
+  // ==========================================================================
+  function computeTreasuryRunwaySnapshot(opts = {}) {
+    ensureMultiIndustrySpineSeeded();
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const u = options.user || (typeof activeUser === 'function' ? activeUser() : null);
+    const ownerFlag = Boolean(typeof isOwner === 'function' && isOwner(u));
+    const allowedCos = typeof allowedCompanyNames === 'function' ? allowedCompanyNames(u) : [];
+    const roleStr = String((u && u.role) || '');
+    const actualCanCash = Boolean(canViewView('cashflow', u) && !/Sales/i.test(roleStr));
+    const actualCanBooks = Boolean(actualCanCash && canViewView('ledger', u));
+
+    const rawCoOpt = options.coKey !== undefined && options.coKey !== null ? options.coKey : options.companyKey;
+    const rawRequestedCo = String(rawCoOpt !== undefined && rawCoOpt !== null ? rawCoOpt : (STATE.company || 'all')).trim() || 'all';
+    let reqCo = rawRequestedCo === 'insuranceco' ? 'insurance' : rawRequestedCo;
+    const indFromReq = reqCo.startsWith('industry:') ? reqCo.slice(9).trim() : '';
+    const ind = String(options.industry || indFromReq || (typeof getActiveIndustry === 'function' ? getActiveIndustry(reqCo) : 'Manufacturing') || 'Manufacturing').trim();
+    const indKey = /holding/i.test(ind) ? 'holding'
+      : (/hospitality|resort/i.test(ind) ? 'hospitality'
+        : (/trading|auto/i.test(ind) ? 'trading'
+          : (/real\s*estate|property/i.test(ind) ? 'realestate'
+            : (/insurance/i.test(ind) ? 'insurance' : 'manufacturing'))));
+
+    let rlsClamped = false;
+    if (!ownerFlag) {
+      if (!allowedCos.length) {
+        rlsClamped = true;
+      } else if (reqCo === 'all') {
+        if (allowedCos.length < CANONICAL_GROUP_COMPANIES.length) {
+          rlsClamped = true;
+          reqCo = slugCompanyKey(allowedCos[0]) || 'wtc';
+        }
+      } else if (reqCo === 'manufacturing-group') {
+        const allMfg = ['WTC', 'BBConstruction', 'Lions Transport'];
+        if (!allMfg.every(c => allowedCos.some(ac => norm(ac) === norm(c)))) {
+          rlsClamped = true;
+          reqCo = slugCompanyKey(allowedCos[0]) || 'wtc';
+        }
+      } else if (reqCo.startsWith('industry:')) {
+        const indCos = getCompanyCatalog()
+          .filter(c => norm(c.industry) === norm(ind) || norm(c.industry).includes(norm(indFromReq)))
+          .map(c => c.name);
+        if (!indCos.length || !indCos.every(icName => allowedCos.some(ac => norm(ac) === norm(icName)))) {
+          rlsClamped = true;
+          reqCo = slugCompanyKey(allowedCos[0]) || 'wtc';
+        }
+      } else {
+        const reqBu = COMPANY_BU_MATCH[reqCo] || SENTINEL_MODEL_KEY[reqCo] || COMPANY_LABELS[reqCo] || reqCo;
+        if (!allowedCos.some(c => norm(c) === norm(reqBu) || norm(c) === norm(reqCo))) {
+          rlsClamped = true;
+          reqCo = slugCompanyKey(allowedCos[0]) || 'wtc';
+        }
+      }
+    }
+
+    const canViewBooks = Boolean(!rlsClamped && actualCanBooks && (options.canViewBooks === undefined || options.canViewBooks));
+    const range = (typeof periodRange === 'function' && periodRange()) || { from: '1900-01-01', to: todayISO() || '2026-10-31', label: 'All Time' };
+    const anchorDate = String(options.asOfDate || range.to || todayISO() || '2026-10-31').slice(0, 10);
+    const coLabel = scrubOutwardGuideText(COMPANY_LABELS[reqCo] || (reqCo.startsWith('industry:') ? reqCo.slice(9) : reqCo) || 'All Entities');
+    const periodLabel = scrubOutwardGuideText(range.label || 'Active Period');
+
+    const clampNum = (v, lo, hi, def = 0) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return def;
+      return Math.max(lo, Math.min(hi, n));
+    };
+    const safeNum = v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const rawLevers = (options.levers && typeof options.levers === 'object') ? options.levers : options;
+    const levers = {
+      collectionVelocityPct: Math.round(clampNum(rawLevers.collectionVelocityPct, -40, 40, 0)),
+      disbursementDeferralPct: Math.round(clampNum(rawLevers.disbursementDeferralPct, -30, 50, 0)),
+      liquidityFloorUsd: round2(clampNum(rawLevers.liquidityFloorUsd, 0, 1000000, 25000))
+    };
+    const leverSig = `${levers.collectionVelocityPct}|${levers.disbursementDeferralPct}|${levers.liquidityFloorUsd}`;
+
+    const leverSpecs = [
+      {
+        key: 'collectionVelocityPct',
+        unit: '%',
+        min: -40,
+        max: 40,
+        step: 5,
+        labelEn: 'AR Collection Velocity Shift (%)',
+        labelAr: 'تعديل سرعة تحصيل الذمم المدينة (%)',
+        labelFr: 'Variation de vitesse d encaissement clients (%)'
+      },
+      {
+        key: 'disbursementDeferralPct',
+        unit: '%',
+        min: -30,
+        max: 50,
+        step: 5,
+        labelEn: 'AP Payment Run Deferral (%)',
+        labelAr: 'تأجيل جدولة دفعات الموردين (%)',
+        labelFr: 'Report des décaissements fournisseurs (%)'
+      },
+      {
+        key: 'liquidityFloorUsd',
+        unit: '$',
+        min: 0,
+        max: 500000,
+        step: 5000,
+        labelEn: 'Minimum Cash Till Liquidity Floor ($)',
+        labelAr: 'الحد الأدنى لرصيد سيولة الصندوق ($)',
+        labelFr: 'Plancher minimal de liquidité caisse ($)'
+      }
+    ];
+
+    const presets = [
+      {
+        id: 'baseline_13w',
+        labelEn: 'Baseline 13-Week Plan',
+        labelAr: 'خطة الأساس لـ 13 أسبوعاً',
+        labelFr: 'Plan de base 13 semaines',
+        levers: { collectionVelocityPct: 0, disbursementDeferralPct: 0, liquidityFloorUsd: 25000 }
+      },
+      {
+        id: 'ar_acceleration',
+        labelEn: 'Collection Acceleration',
+        labelAr: 'تسريع التحصيل النقدي',
+        labelFr: 'Accélération des encaissements',
+        levers: { collectionVelocityPct: 25, disbursementDeferralPct: 10, liquidityFloorUsd: 25000 }
+      },
+      {
+        id: 'stress_crunch',
+        labelEn: 'Stress Crunch (-25% AR)',
+        labelAr: 'اختبار ضغط السيولة (-25% تحصيل)',
+        labelFr: 'Stress de liquidité (-25% encaissements)',
+        levers: { collectionVelocityPct: -25, disbursementDeferralPct: -10, liquidityFloorUsd: 50000 }
+      },
+      {
+        id: 'sweep_preserve',
+        labelEn: 'Sweep & Cash Preservation',
+        labelAr: 'حفظ السيولة والتحويل البيني',
+        labelFr: 'Préservation et nivellement trésorerie',
+        levers: { collectionVelocityPct: 10, disbursementDeferralPct: 30, liquidityFloorUsd: 35000 }
+      }
+    ];
+
+    const domainHubByKey = {
+      manufacturing: 'cashflow',
+      holding: 'hld_due_matrix',
+      hospitality: 'hsp_revenue',
+      trading: 'trd_sales',
+      realestate: 're_leases',
+      insurance: 'ins_billing'
+    };
+    const targetHubView = domainHubByKey[indKey] || 'cashflow';
+
+    if (rlsClamped || !canViewBooks) {
+      return {
+        scopeKey: `trsy|restricted|${reqCo}|${u ? u.id : 'anon'}`,
+        leverSig,
+        industry: ind,
+        companyKey: reqCo,
+        requestedCompanyKey: rawRequestedCo,
+        companyLabel: coLabel,
+        companyEn: coLabel,
+        companyAr: coLabel,
+        companyFr: coLabel,
+        periodKey: periodLabel,
+        periodLabel,
+        periodEn: periodLabel,
+        periodAr: periodLabel,
+        periodFr: periodLabel,
+        asOfDate: anchorDate,
+        rlsClamped,
+        restricted: true,
+        booksRedacted: true,
+        canViewBooks: false,
+        canCash: false,
+        canEditAlerts: false,
+        hasActiveAlertRule: false,
+        targetHubView,
+        levers,
+        leverSpecs: [],
+        presets: [],
+        summary: {
+          openingTillUsd: null,
+          closingCombinedTillUsd: null,
+          total13wInflowUsd: 0,
+          total13wOutflowUsd: 0,
+          total13wSweepUsd: 0,
+          net13wCashDeltaUsd: 0,
+          week13ClosingTillUsd: null,
+          minWeeklyClosingUsd: null,
+          minWeekNumber: null,
+          liquidityFloorUsd: levers.liquidityFloorUsd,
+          breachWeeksCount: 0,
+          firstBreachWeek: null,
+          isFloorBreached: false,
+          runwayWeeks: 0,
+          runwayDays: 0,
+          activeSweepCount: 0,
+          suggestedSweepPoolUsd: 0
+        },
+        feeders: {
+          arGrossUsd: 0,
+          arScheduled13wUsd: 0,
+          arDiscountCostUsd: 0,
+          arPost13wTailUsd: 0,
+          apGrossUsd: 0,
+          apScheduled13wUsd: 0,
+          apEarlyDiscountSavingsUsd: 0,
+          apPost13wOrHeldUsd: 0
+        },
+        tieCheck: {
+          rollforwardBalanced: true,
+          rollforwardVarianceUsd: 0,
+          weeklyChainBalanced: true,
+          arFeederBalanced: true,
+          arFeederVarianceUsd: 0,
+          apFeederBalanced: true,
+          apFeederVarianceUsd: 0
+        },
+        weeks: [],
+        sweepSuggestions: [],
+        headlineEn: '13-week rolling cash-flow and liquidity runway telemetry is restricted to authorized treasury and finance seats for this entity scope.',
+        headlineAr: 'بيانات توقعات التدفقات النقدية ومدرج السيولة لـ 13 أسبوعاً مقيدة لمقاعد الخزينة والمالية المخولة ضمن هذا النطاق.',
+        headlineFr: 'Les prévisions de trésorerie et d autonomie sur 13 semaines sont réservées aux sièges trésorerie et finance autorisés pour ce périmètre.',
+        spokenEn: '13-week rolling cash-flow and liquidity runway telemetry is restricted for this seat or entity scope.',
+        spokenAr: 'بيانات توقعات التدفقات النقدية ومدرج السيولة لـ 13 أسبوعاً مقيدة لهذا المقعد أو النطاق.',
+        spokenFr: 'Les prévisions de trésorerie sur 13 semaines sont restreintes pour ce siège ou périmètre.',
+        bulletsEn: [],
+        bulletsAr: [],
+        bulletsFr: [],
+        drafts: { whatsappEn: '', whatsappAr: '', whatsappFr: '' }
+      };
+    }
+
+    // 1. Load live saved promises & holds from sibling studios if not explicitly overridden
+    const parseStoredList = (rawKey, explicitArr) => {
+      if (Array.isArray(explicitArr)) return explicitArr;
+      try {
+        const raw = (typeof appStoreGetRaw === 'function' ? appStoreGetRaw(rawKey) : null) || (typeof localStorage !== 'undefined' ? localStorage.getItem(rawKey) : null);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && Array.isArray(parsed.items)) return parsed.items;
+      } catch (_e) { /* ignore malformed storage */ }
+      return [];
+    };
+    const liveSavedPromises = parseStoredList('isabi_collection_promises_v1', options.savedPromises);
+    const liveSavedHolds = parseStoredList('isabi_payables_holds_v1', options.savedHolds);
+    const liveSavedSweeps = parseStoredList('isabi_treasury_sweeps_v1', options.savedSweeps);
+
+    // 2. Starting Cash Till Balance (closingCombinedUsd)
+    let openingTillUsd = 0;
+    if (options.overrideOpeningTillUsd !== undefined && options.overrideOpeningTillUsd !== null && Number.isFinite(Number(options.overrideOpeningTillUsd))) {
+      openingTillUsd = round2(Number(options.overrideOpeningTillUsd));
+    } else {
+      const prevCo = STATE.company;
+      try {
+        STATE.company = reqCo;
+        const cfSnap = computeCashflowLiquiditySnapshot({ user: u, canViewBooks: true });
+        openingTillUsd = round2(safeNum(cfSnap && (cfSnap.closingCombinedUsd != null ? cfSnap.closingCombinedUsd : cfSnap.closingUsd)));
+      } finally {
+        STATE.company = prevCo;
+      }
+    }
+
+    // 3. Probability-Weighted AR Feeder & Scheduled AP Feeder
+    const arFeederLevers = {
+      cadenceBoostDays: Math.round(clampNum(levers.collectionVelocityPct * 0.35, -15, 30, 0)),
+      overdueRecoveryPct: round2(clampNum(levers.collectionVelocityPct * 0.85, -40, 60, 0)),
+      discountIncentivePct: round2(clampNum(safeNum(rawLevers.arDiscountIncentivePct), 0, 10, 0))
+    };
+    const apFeederLevers = {
+      holdReleaseDisputePct: round2(clampNum(-levers.disbursementDeferralPct * 0.9, -50, 100, 0)),
+      earlyDiscountCapturePct: round2(clampNum(levers.disbursementDeferralPct < 0 ? Math.abs(levers.disbursementDeferralPct) * 0.12 : 0, 0, 10, 0)),
+      liquidityRunwayFloorDays: Math.round(clampNum(14 + Math.round(levers.disbursementDeferralPct * 0.3), 7, 60, 14))
+    };
+
+    const feederScopes = (reqCo === 'all' && ownerFlag)
+      ? [
+          'manufacturing-group',
+          'bdeirholding',
+          'industry:Hospitality & Resorts',
+          'industry:Automotive & Heavy Trading',
+          'industry:Real Estate & Property',
+          'industry:Insurance & Brokerage'
+        ]
+      : [reqCo];
+
+    let arGrossUsd = 0, arT1 = 0, arT2 = 0, arT3 = 0, arBeyond30 = 0, arDiscCost = 0;
+    let apGrossUsd = 0, apT1 = 0, apT2 = 0, apT3 = 0, apBeyond30 = 0, apEarlyDisc = 0;
+    feederScopes.forEach(sc => {
+      const scopePromises = liveSavedPromises.filter(p => p && (!p.coKey || scopeMatchesCompanyKey(sc, p.coKey)) && isStudioCoKeyAllowedForUser(p.coKey || sc, u));
+      const scopeHolds = liveSavedHolds.filter(h => h && (!h.coKey || scopeMatchesCompanyKey(sc, h.coKey)) && isStudioCoKeyAllowedForUser(h.coKey || sc, u));
+      const arS = computeCollectionForecastSnapshot({
+        companyKey: sc,
+        coKey: sc,
+        asOfDate: anchorDate,
+        user: u,
+        canViewBooks: true,
+        levers: arFeederLevers,
+        savedPromises: scopePromises
+      });
+      if (arS && !arS.restricted && arS.summary && arS.horizon) {
+        arGrossUsd = round2(arGrossUsd + safeNum(arS.summary.grossOpenArUsd));
+        arT1 = round2(arT1 + safeNum(arS.horizon.tranche1_7dUsd));
+        arT2 = round2(arT2 + safeNum(arS.horizon.tranche8_14dUsd));
+        arT3 = round2(arT3 + safeNum(arS.horizon.tranche15_30dUsd));
+        arBeyond30 = round2(arBeyond30 + safeNum(arS.horizon.beyond30dUsd));
+        arDiscCost = round2(arDiscCost + safeNum(arS.horizon.earlyDiscountCostUsd));
+      }
+      const apS = computePayablesOptimizerSnapshot({
+        companyKey: sc,
+        coKey: sc,
+        asOfDate: anchorDate,
+        user: u,
+        canViewBooks: true,
+        levers: apFeederLevers,
+        savedHolds: scopeHolds
+      });
+      if (apS && !apS.restricted && apS.summary && apS.horizon) {
+        apGrossUsd = round2(apGrossUsd + safeNum(apS.summary.grossOpenApUsd));
+        apT1 = round2(apT1 + safeNum(apS.horizon.tranche1_7dUsd));
+        apT2 = round2(apT2 + safeNum(apS.horizon.tranche8_14dUsd));
+        apT3 = round2(apT3 + safeNum(apS.horizon.tranche15_30dUsd));
+        apBeyond30 = round2(apBeyond30 + safeNum(apS.horizon.beyond30dUsd));
+        apEarlyDisc = round2(apEarlyDisc + safeNum(apS.horizon.earlyDiscountSavingsUsd));
+      }
+    });
+
+    // Map AR tranches into W1..W13 with exact $0.00 feeder tie
+    const arCollectiblePoolUsd = Math.max(0, round2(arGrossUsd - arDiscCost));
+    const velShift = clampNum(levers.collectionVelocityPct / 100, -0.4, 0.4, 0);
+    const arBeyondRealizeShare = clampNum(0.72 + velShift * 0.45, 0.30, 0.96, 0.72);
+    const arBeyondForW5_13 = round2(arBeyond30 * arBeyondRealizeShare);
+    const arW5_13Weights = [0.18, 0.15, 0.13, 0.12, 0.10, 0.09, 0.08, 0.08, 0.07];
+    const rawArWeeks = [
+      arT1 * (1 + velShift * 0.15),
+      arT2 * (1 + velShift * 0.10),
+      arT3 * 0.46,
+      arT3 * 0.38,
+      arT3 * 0.16 + arBeyondForW5_13 * arW5_13Weights[0],
+      arBeyondForW5_13 * arW5_13Weights[1],
+      arBeyondForW5_13 * arW5_13Weights[2],
+      arBeyondForW5_13 * arW5_13Weights[3],
+      arBeyondForW5_13 * arW5_13Weights[4],
+      arBeyondForW5_13 * arW5_13Weights[5],
+      arBeyondForW5_13 * arW5_13Weights[6],
+      arBeyondForW5_13 * arW5_13Weights[7],
+      arBeyondForW5_13 * arW5_13Weights[8]
+    ].map(v => Math.max(0, v));
+
+    const rawArSum = rawArWeeks.reduce((s, v) => s + v, 0);
+    const arScale = rawArSum > arCollectiblePoolUsd && rawArSum > 0 ? (arCollectiblePoolUsd / rawArSum) : 1;
+    const arWeeks = rawArWeeks.map(v => round2(v * arScale));
+    let arScheduled13wUsd = round2(arWeeks.reduce((s, v) => s + v, 0));
+    if (arScheduled13wUsd > arCollectiblePoolUsd) {
+      const over = round2(arScheduled13wUsd - arCollectiblePoolUsd);
+      for (let i = arWeeks.length - 1; i >= 0; i--) {
+        if (arWeeks[i] >= over) {
+          arWeeks[i] = round2(arWeeks[i] - over);
+          break;
+        }
+      }
+      arScheduled13wUsd = round2(arWeeks.reduce((s, v) => s + v, 0));
+    }
+    const arPost13wTailUsd = Math.max(0, round2(arCollectiblePoolUsd - arScheduled13wUsd));
+    const arFeederVarianceUsd = round2((arScheduled13wUsd + arDiscCost + arPost13wTailUsd) - arGrossUsd);
+
+    // Map AP tranches into W1..W13 with exact $0.00 feeder tie
+    const apPayablePoolUsd = Math.max(0, round2(apGrossUsd - apEarlyDisc));
+    const defShift = clampNum(levers.disbursementDeferralPct / 100, -0.3, 0.5, 0);
+    const w1DeferCarry = defShift > 0 ? round2(apT1 * defShift * 0.35) : 0;
+    const w2DeferCarry = defShift > 0 ? round2(apT2 * defShift * 0.30) : 0;
+    const apBeyondSettleShare = clampNum(0.68 - defShift * 0.48, 0.22, 0.92, 0.68);
+    const apBeyondForW5_13 = round2(apBeyond30 * apBeyondSettleShare);
+    const apW5_13Weights = [0.16, 0.14, 0.13, 0.12, 0.11, 0.10, 0.09, 0.08, 0.07];
+    const rawApWeeks = [
+      Math.max(0, apT1 - w1DeferCarry) * (defShift < 0 ? (1 + Math.abs(defShift) * 0.2) : 1),
+      Math.max(0, apT2 - w2DeferCarry) + w1DeferCarry * 0.5,
+      apT3 * 0.45 + w1DeferCarry * 0.5 + w2DeferCarry * 0.5,
+      apT3 * 0.39 + w2DeferCarry * 0.5,
+      apT3 * 0.16 + apBeyondForW5_13 * apW5_13Weights[0],
+      apBeyondForW5_13 * apW5_13Weights[1],
+      apBeyondForW5_13 * apW5_13Weights[2],
+      apBeyondForW5_13 * apW5_13Weights[3],
+      apBeyondForW5_13 * apW5_13Weights[4],
+      apBeyondForW5_13 * apW5_13Weights[5],
+      apBeyondForW5_13 * apW5_13Weights[6],
+      apBeyondForW5_13 * apW5_13Weights[7],
+      apBeyondForW5_13 * apW5_13Weights[8]
+    ].map(v => Math.max(0, v));
+
+    const rawApSum = rawApWeeks.reduce((s, v) => s + v, 0);
+    const apScale = rawApSum > apPayablePoolUsd && rawApSum > 0 ? (apPayablePoolUsd / rawApSum) : 1;
+    const apWeeks = rawApWeeks.map(v => round2(v * apScale));
+    let apScheduled13wUsd = round2(apWeeks.reduce((s, v) => s + v, 0));
+    if (apScheduled13wUsd > apPayablePoolUsd) {
+      const over = round2(apScheduled13wUsd - apPayablePoolUsd);
+      for (let i = apWeeks.length - 1; i >= 0; i--) {
+        if (apWeeks[i] >= over) {
+          apWeeks[i] = round2(apWeeks[i] - over);
+          break;
+        }
+      }
+      apScheduled13wUsd = round2(apWeeks.reduce((s, v) => s + v, 0));
+    }
+    const apPost13wOrHeldUsd = Math.max(0, round2(apPayablePoolUsd - apScheduled13wUsd));
+    const apFeederVarianceUsd = round2((apScheduled13wUsd + apEarlyDisc + apPost13wOrHeldUsd) - apGrossUsd);
+
+    // 4. Saved Inter-Company & Reserve Sweeps Overlay (RLS-scoped & deduplicated before W1..W13 accumulation)
+    const activeSweepMap = new Map();
+    const sweepWeeks = new Array(13).fill(0);
+    liveSavedSweeps.forEach(sw => {
+      if (!sw || typeof sw !== 'object') return;
+      const swCo = String(sw.coKey || '').trim();
+      if (swCo && !scopeMatchesCompanyKey(reqCo, swCo)) return;
+      if (swCo && !isStudioCoKeyAllowedForUser(swCo, u)) return;
+      const cId = String(sw.corridorId || sw.corridorName || '').trim();
+      if (!cId) return;
+      const action = String(sw.action || 'activate').toLowerCase() === 'hold' ? 'hold' : 'activate';
+      const targetWeek = Math.round(clampNum(sw.targetWeek, 1, 13, 1));
+      const sweepUsd = action === 'hold' ? 0 : round2(clampNum(sw.sweepUsd, 0, 50000000, 0));
+      const cleanNote = scrubOutwardGuideText(String(sw.note || '').slice(0, 140));
+      const dedupKey = norm(cId);
+      const existing = activeSweepMap.get(dedupKey);
+      // Concrete entity or exact requested scope takes precedence over generic 'all' when deduplicating
+      if (existing && canonicalizeStudioCoKey(existing.coKey) === canonicalizeStudioCoKey(reqCo) && canonicalizeStudioCoKey(swCo) !== canonicalizeStudioCoKey(reqCo)) {
+        return;
+      }
+      activeSweepMap.set(dedupKey, {
+        corridorId: scrubOutwardGuideText(cId.slice(0, 60)),
+        corridorName: scrubOutwardGuideText(String(sw.corridorName || cId).slice(0, 90)),
+        coKey: swCo || reqCo,
+        action,
+        targetWeek,
+        sweepUsd,
+        note: cleanNote
+      });
+    });
+    activeSweepMap.forEach(sw => {
+      if (sw.action === 'activate' && sw.sweepUsd > 0) {
+        sweepWeeks[sw.targetWeek - 1] = round2(sweepWeeks[sw.targetWeek - 1] + sw.sweepUsd);
+      }
+    });
+
+    // 5. Build 13-Week Rolling Cash Runway Bridge (W1..W13, 91 Days)
+    const addDaysIso = (iso, addD) => {
+      const parts = String(iso || '2026-10-31').split('-').map(Number);
+      const dt = new Date(Date.UTC(parts[0] || 2026, (parts[1] || 10) - 1, parts[2] || 31));
+      dt.setUTCDate(dt.getUTCDate() + addD);
+      return dt.toISOString().slice(0, 10);
+    };
+
+    const weeks = [];
+    let runningOpen = openingTillUsd;
+    let minWeeklyClosingUsd = null;
+    let minWeekNumber = 1;
+    let breachWeeksCount = 0;
+    let firstBreachWeek = null;
+    let weeklyChainBalanced = true;
+
+    for (let i = 0; i < 13; i++) {
+      const wkNum = i + 1;
+      const startIso = addDaysIso(anchorDate, i * 7 + 1);
+      const endIso = addDaysIso(anchorDate, (i + 1) * 7);
+      const inflowUsd = arWeeks[i];
+      const outflowUsd = apWeeks[i];
+      const sweepUsd = sweepWeeks[i];
+      const netFlowUsd = round2(inflowUsd - outflowUsd + sweepUsd);
+      const closingUsd = round2(runningOpen + netFlowUsd);
+      const wkDiff = round2((runningOpen + inflowUsd - outflowUsd + sweepUsd) - closingUsd);
+      if (Math.abs(wkDiff) >= 0.01) weeklyChainBalanced = false;
+      const isBreach = closingUsd < levers.liquidityFloorUsd - 0.005;
+      const floorHeadroomUsd = round2(closingUsd - levers.liquidityFloorUsd);
+      if (isBreach) {
+        breachWeeksCount += 1;
+        if (firstBreachWeek === null) firstBreachWeek = wkNum;
+      }
+      if (minWeeklyClosingUsd === null || closingUsd < minWeeklyClosingUsd) {
+        minWeeklyClosingUsd = closingUsd;
+        minWeekNumber = wkNum;
+      }
+      weeks.push({
+        weekNumber: wkNum,
+        weekCode: `W${wkNum}`,
+        startDate: startIso,
+        endDate: endIso,
+        rangeLabel: `${startIso.slice(5)} to ${endIso.slice(5)}`,
+        openingUsd: runningOpen,
+        inflowUsd,
+        outflowUsd,
+        sweepUsd,
+        netFlowUsd,
+        closingUsd,
+        floorHeadroomUsd,
+        isBreach,
+        status: closingUsd < 0 ? 'Cash Deficit' : (isBreach ? 'Below Floor' : 'Healthy')
+      });
+      runningOpen = closingUsd;
+    }
+
+    const total13wInflowUsd = round2(weeks.reduce((s, w) => s + w.inflowUsd, 0));
+    const total13wOutflowUsd = round2(weeks.reduce((s, w) => s + w.outflowUsd, 0));
+    const total13wSweepUsd = round2(weeks.reduce((s, w) => s + w.sweepUsd, 0));
+    const net13wCashDeltaUsd = round2(total13wInflowUsd - total13wOutflowUsd + total13wSweepUsd);
+    const week13ClosingTillUsd = weeks.length ? weeks[weeks.length - 1].closingUsd : openingTillUsd;
+    const rollforwardVarianceUsd = round2((openingTillUsd + total13wInflowUsd - total13wOutflowUsd + total13wSweepUsd) - week13ClosingTillUsd);
+
+    let runwayWeeks = 13;
+    if (openingTillUsd < levers.liquidityFloorUsd && weeks[0] && weeks[0].closingUsd < levers.liquidityFloorUsd) {
+      runwayWeeks = 0;
+    } else if (firstBreachWeek !== null) {
+      runwayWeeks = Math.max(0, firstBreachWeek - 1);
+    } else {
+      const avgWeeklyBurn = total13wOutflowUsd > total13wInflowUsd
+        ? (total13wOutflowUsd - total13wInflowUsd) / 13
+        : (total13wOutflowUsd > 0 ? total13wOutflowUsd * 0.15 / 13 : 0);
+      if (avgWeeklyBurn > 1 && week13ClosingTillUsd > levers.liquidityFloorUsd) {
+        runwayWeeks = Math.min(52, Math.round(13 + (week13ClosingTillUsd - levers.liquidityFloorUsd) / avgWeeklyBurn));
+      } else if (week13ClosingTillUsd >= levers.liquidityFloorUsd) {
+        runwayWeeks = 26;
+      }
+    }
+    const runwayDays = runwayWeeks * 7;
+
+    // 6. Inter-Company & Treasury Sweep Suggestions (RLS-Scoped + Ring-Fence Safe + Frequency Ranked)
+    const isCoVisibleToSeat = coName => {
+      if (ownerFlag) return true;
+      if (!coName) return false;
+      return allowedCos.some(ac => norm(ac) === norm(coName));
+    };
+    const isCoInScopeTrsy = coName => {
+      if (!isCoVisibleToSeat(coName)) return false;
+      if (reqCo === 'all') return true;
+      if (reqCo === 'manufacturing-group') return ['WTC', 'BBConstruction', 'Lions Transport'].some(c => norm(c) === norm(coName));
+      if (reqCo.startsWith('industry:')) {
+        const indCos = getCompanyCatalog()
+          .filter(c => norm(c.industry) === norm(ind) || norm(c.industry).includes(norm(indFromReq)))
+          .map(c => c.name);
+        return indCos.some(c => norm(c) === norm(coName));
+      }
+      const reqBu = COMPANY_BU_MATCH[reqCo] || SENTINEL_MODEL_KEY[reqCo] || COMPANY_LABELS[reqCo] || reqCo;
+      return norm(coName) === norm(reqBu) || norm(coName) === norm(reqCo);
+    };
+    const sweepCandidates = [];
+    const recommendedTargetWeek = firstBreachWeek || minWeekNumber || 1;
+    const shortfallNeededUsd = minWeeklyClosingUsd !== null && minWeeklyClosingUsd < levers.liquidityFloorUsd
+      ? round2(levers.liquidityFloorUsd - minWeeklyClosingUsd + 5000)
+      : round2(Math.max(10000, levers.liquidityFloorUsd * 0.5));
+
+    try {
+      const icRes = typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions() : null;
+      const bilaterals = (icRes && Array.isArray(icRes.byBilateral)) ? icRes.byBilateral : [];
+      bilaterals.forEach((b, idx) => {
+        if (!b || safeNum(b.netUnpaidUsd) <= 100) return;
+        if (!ownerFlag && (!isCoVisibleToSeat(b.lenderCo) || !isCoVisibleToSeat(b.borrowerCo))) return;
+        if (reqCo !== 'all' && indKey !== 'holding') {
+          if (!isCoInScopeTrsy(b.lenderCo) && !isCoInScopeTrsy(b.borrowerCo)) return;
+        }
+        const cid = `SWP-IC-${idx + 1}`;
+        const sweepCap = round2(Math.min(safeNum(b.netUnpaidUsd), Math.max(shortfallNeededUsd, safeNum(b.netUnpaidUsd) * 0.5)));
+        const txFreq = Math.max(1, Math.round(safeNum(b.totalCount || b.givenCount)));
+        sweepCandidates.push({
+          corridorId: cid,
+          corridorName: scrubOutwardGuideText(`${b.borrowerCo} settlement sweep to ${b.lenderCo}`),
+          sourceEntity: scrubOutwardGuideText(b.borrowerCo),
+          destinationEntity: scrubOutwardGuideText(b.lenderCo),
+          mechanism: 'Inter-Company Corridor Settlement',
+          ringFenceNote: 'Cleared 2-sided sister balance eligible for immediate treasury sweep',
+          availablePoolUsd: round2(safeNum(b.netUnpaidUsd)),
+          recommendedSweepUsd: sweepCap,
+          targetWeek: recommendedTargetWeek,
+          txCount: txFreq,
+          priorityScore: round2(txFreq * 300 + sweepCap * 0.4 + safeNum(b.repayPct) * 5)
+        });
+      });
+    } catch (_e) { /* safe fallback */ }
+
+    const hasIndustryLiveOrDemo = key => Boolean(
+      (typeof isDemoSandboxSession === 'function' && isDemoSandboxSession()) ||
+      (SEED && SEED.industryLive && SEED.industryLive[key])
+    );
+    if ((indKey === 'holding' || reqCo === 'all') && (hasIndustryLiveOrDemo('holding') || (SEED.records && Array.isArray(SEED.records.loans) && SEED.records.loans.length > 0))) {
+      const openLoans = Array.isArray(SEED.records && SEED.records.loans) ? SEED.records.loans.filter(l => l && !l.voided && isCoVisibleToSeat(l.company)) : [];
+      const recPool = round2(openLoans.reduce((s, l) => s + Math.max(0, safeNum(l.principal) - safeNum(l.settled_amount)), 0));
+      if (recPool > 500) {
+        sweepCandidates.push({
+          corridorId: 'SWP-HLD-LOAN',
+          corridorName: 'Group Revolving Treasury Facility Call',
+          sourceEntity: 'Shareholder & Partner Treasury Desk',
+          destinationEntity: coLabel,
+          mechanism: 'Active Revolving Credit Facility',
+          ringFenceNote: 'Deterministic principal recovery excluding locked equity pools',
+          availablePoolUsd: recPool,
+          recommendedSweepUsd: round2(Math.min(recPool, Math.max(15000, shortfallNeededUsd))),
+          targetWeek: recommendedTargetWeek,
+          txCount: Math.max(2, openLoans.length),
+          priorityScore: round2(openLoans.length * 260 + Math.min(recPool, 80000) * 0.35)
+        });
+      }
+    }
+    if ((indKey === 'hospitality' || reqCo === 'all') && hasIndustryLiveOrDemo('hospitality')) {
+      const hsp = computeHospitalityOperations();
+      const memArrears = round2(safeNum(hsp && hsp.summary && hsp.summary.totalMemArrears));
+      if (memArrears > 500 && (ownerFlag || hsp.activeResorts.some(r => isCoVisibleToSeat(r.name)))) {
+        sweepCandidates.push({
+          corridorId: 'SWP-HSP-MEM',
+          corridorName: 'Resort Seasonal Membership & Outlet Till Sweep',
+          sourceEntity: scrubOutwardGuideText((hsp.activeResorts[0] && hsp.activeResorts[0].name) || 'Resort Outlets'),
+          destinationEntity: coLabel,
+          mechanism: 'Outlet Till Consolidation',
+          ringFenceNote: 'Net of concessionaire and managing-partner retention splits',
+          availablePoolUsd: memArrears,
+          recommendedSweepUsd: round2(Math.min(memArrears, Math.max(12000, shortfallNeededUsd * 0.6))),
+          targetWeek: recommendedTargetWeek,
+          txCount: Math.max(3, (hsp.membershipRows || []).length),
+          priorityScore: round2((hsp.membershipRows || []).length * 240 + memArrears * 0.3)
+        });
+      }
+    }
+    if ((indKey === 'trading' || reqCo === 'all') && hasIndustryLiveOrDemo('trading')) {
+      const trdCoArg = (reqCo === 'all' || reqCo.startsWith('industry:')) ? '' : (COMPANY_BU_MATCH[reqCo] || SENTINEL_MODEL_KEY[reqCo] || reqCo);
+      const trd = computeTradingOperations({ company: trdCoArg, ignoreSearch: true });
+      const advPool = round2((trd.receivableRows || []).reduce((s, r) => s + safeNum(r.advance_usd), 0));
+      if (advPool > 500 || (trd.receivableRows || []).length > 0) {
+        const pool = Math.max(advPool, round2(safeNum(trd.summary && trd.summary.icTransferUsd)), 18000);
+        if (pool > 500) {
+          sweepCandidates.push({
+            corridorId: 'SWP-TRD-SHOWROOM',
+            corridorName: 'Showroom Fleet Advance & Parts Desk Sweep',
+            sourceEntity: 'Korri Auto & Shacman Desks',
+            destinationEntity: coLabel,
+            mechanism: 'Commercial Desk Cash Sweep',
+            ringFenceNote: 'Excludes customs duty letters of credit on active import containers',
+            availablePoolUsd: pool,
+            recommendedSweepUsd: round2(Math.min(pool, Math.max(15000, shortfallNeededUsd * 0.7))),
+            targetWeek: recommendedTargetWeek,
+            txCount: Math.max(4, (trd.receivableRows || []).length),
+            priorityScore: round2((trd.receivableRows || []).length * 250 + pool * 0.25)
+          });
+        }
+      }
+    }
+    if ((indKey === 'realestate' || reqCo === 'all') && hasIndustryLiveOrDemo('realestate')) {
+      const re = computeRealEstateOperations();
+      const secDepUsd = safeNum(re.summary && re.summary.securityDepositsHeldUsd);
+      const freeRentPool = round2(Math.max(15000, safeNum(re.summary && re.summary.totalCollectedRentUsd) - secDepUsd));
+      if (freeRentPool > 500) {
+        sweepCandidates.push({
+          corridorId: 'SWP-RE-RENT',
+          corridorName: 'Cleared Commercial Rent Roll Sweep (Deposit Ring-Fenced)',
+          sourceEntity: 'Portfolio Rent Collection Account',
+          destinationEntity: coLabel,
+          mechanism: 'Cleared Rent Surplus Sweep',
+          ringFenceNote: `Ring-fences ${fmtUSD(secDepUsd, 0)} refundable tenant security deposits`,
+          availablePoolUsd: freeRentPool,
+          recommendedSweepUsd: round2(Math.min(freeRentPool, Math.max(14000, shortfallNeededUsd * 0.65))),
+          targetWeek: recommendedTargetWeek,
+          txCount: Math.max(3, (re.receipts || []).length),
+          priorityScore: round2((re.receipts || []).length * 230 + freeRentPool * 0.22)
+        });
+      }
+    }
+    if ((indKey === 'insurance' || reqCo === 'all') && hasIndustryLiveOrDemo('insurance')) {
+      const ins = computeInsuranceOperations();
+      const carrierPayUsd = safeNum(ins.summary && ins.summary.payableToCarriers4017Usd);
+      const surplusFiduciary = round2(Math.max(4500, safeNum(ins.summary && ins.summary.cashHeldUsd) - carrierPayUsd, safeNum(ins.summary && ins.summary.earnedCommissionUsd) * 0.5));
+      if (surplusFiduciary > 100) {
+        sweepCandidates.push({
+          corridorId: 'SWP-INS-COMM',
+          corridorName: 'Realized Brokerage Commission Surplus Sweep',
+          sourceEntity: 'Brokerage Operating Account',
+          destinationEntity: coLabel,
+          mechanism: 'Earned Commission Transfer',
+          ringFenceNote: `Preserves 100% of ${fmtUSD(carrierPayUsd, 0)} carrier bordereau payable`,
+          availablePoolUsd: surplusFiduciary,
+          recommendedSweepUsd: round2(Math.min(surplusFiduciary, Math.max(3500, shortfallNeededUsd))),
+          targetWeek: recommendedTargetWeek,
+          txCount: Math.max(4, (ins.remittances || []).length),
+          priorityScore: round2((ins.remittances || []).length * 240 + surplusFiduciary * 0.5)
+        });
+      }
+    }
+    if (indKey === 'manufacturing' && arScheduled13wUsd + Math.max(0, openingTillUsd) > 0) {
+      const mfgReserve = round2(Math.max(5000, arT1 * 0.35));
+      sweepCandidates.push({
+        corridorId: 'SWP-MFG-TILL',
+        corridorName: `${coLabel} Daily Weighbridge & Plant Till Sweep`,
+        sourceEntity: `${coLabel} Dispatch Till`,
+        destinationEntity: `${coLabel} Main Treasury`,
+        mechanism: 'Daily Weighbridge Cash Consolidation',
+        ringFenceNote: 'Retains daily diesel and petty-cash float at quarry gate',
+        availablePoolUsd: mfgReserve,
+        recommendedSweepUsd: round2(Math.min(mfgReserve, Math.max(5000, shortfallNeededUsd * 0.5))),
+        targetWeek: recommendedTargetWeek,
+        txCount: 8,
+        priorityScore: round2(8 * 250 + mfgReserve * 0.3)
+      });
+    }
+
+    sweepCandidates.sort((a, b) => (b.priorityScore - a.priorityScore) || (b.txCount - a.txCount) || (b.recommendedSweepUsd - a.recommendedSweepUsd));
+    const matchedSavedKeys = new Set();
+    const sweepSuggestions = sweepCandidates.slice(0, 8).map(sc => {
+      const k1 = norm(sc.corridorId);
+      const k2 = norm(sc.corridorName);
+      const saved = activeSweepMap.get(k1) || activeSweepMap.get(k2) || null;
+      if (saved) matchedSavedKeys.add(norm(saved.corridorId));
+      return Object.assign({}, sc, {
+        isSaved: Boolean(saved && saved.action === 'activate'),
+        savedAction: saved ? saved.action : '',
+        savedWeek: saved ? saved.targetWeek : sc.targetWeek,
+        savedSweepUsd: saved ? saved.sweepUsd : sc.recommendedSweepUsd,
+        savedNote: saved ? saved.note : ''
+      });
+    });
+    activeSweepMap.forEach((saved, k) => {
+      if (matchedSavedKeys.has(k)) return;
+      sweepSuggestions.push({
+        corridorId: saved.corridorId,
+        corridorName: saved.corridorName,
+        sourceEntity: coLabel,
+        destinationEntity: `${coLabel} Main Treasury`,
+        mechanism: saved.action === 'hold' ? 'Held Treasury Corridor' : 'Saved Treasury Sweep',
+        ringFenceNote: saved.note || 'User-configured treasury sweep corridor',
+        availablePoolUsd: Math.max(saved.sweepUsd, 10000),
+        recommendedSweepUsd: saved.sweepUsd,
+        targetWeek: saved.targetWeek,
+        txCount: 1,
+        priorityScore: 100,
+        isSaved: saved.action === 'activate',
+        savedAction: saved.action,
+        savedWeek: saved.targetWeek,
+        savedSweepUsd: saved.sweepUsd,
+        savedNote: saved.note || ''
+      });
+    });
+
+    const suggestedSweepPoolUsd = round2(sweepSuggestions.reduce((s, x) => s + x.availablePoolUsd, 0));
+    const safeCoKey = String(reqCo || 'all').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ruleId = `CA_TRSY_${safeCoKey}`;
+    const alertSt = ensureAlertRulesState();
+    const hasActiveAlertRule = Boolean(alertSt && Array.isArray(alertSt.custom) && alertSt.custom.some(r => r && r.id === ruleId && r.enabled !== false));
+
+    const headlineEn = scrubOutwardGuideText(
+      `${coLabel}: Starting cash till of ${fmtUSD(openingTillUsd, 0)} plus ${fmtUSD(total13wInflowUsd, 0)} 13-week AR inflows less ${fmtUSD(total13wOutflowUsd, 0)} scheduled AP runs${total13wSweepUsd > 0 ? ' plus ' + fmtUSD(total13wSweepUsd, 0) + ' active sweeps' : ''} projects ${fmtUSD(week13ClosingTillUsd, 0)} Week 13 closing cash (${breachWeeksCount > 0 ? breachWeeksCount + ' week(s) below ' + fmtUSD(levers.liquidityFloorUsd, 0) + ' floor' : runwayWeeks + 'w healthy liquidity runway'}).`
+    );
+    const headlineAr = scrubOutwardGuideText(
+      `${coLabel}: رصيد الصندوق الافتتاحي ${fmtUSD(openingTillUsd, 0)} مضافاً إليه تحصيل ذمم مدينة بقيمة ${fmtUSD(total13wInflowUsd, 0)} ومطروحاً منه دفعات موردين مجدولة بقيمة ${fmtUSD(total13wOutflowUsd, 0)} خلال 13 أسبوعاً يتوقع رصيد إغلاق نقدي قدره ${fmtUSD(week13ClosingTillUsd, 0)} في الأسبوع 13 (${breachWeeksCount > 0 ? breachWeeksCount + ' أسابيع دون الحد الأدنى ' + fmtUSD(levers.liquidityFloorUsd, 0) : 'مدرج سيولة آمن لمدة ' + runwayWeeks + ' أسبوعاً'}).`
+    );
+    const headlineFr = scrubOutwardGuideText(
+      `${coLabel} : Encaisse initiale de ${fmtUSD(openingTillUsd, 0)} plus ${fmtUSD(total13wInflowUsd, 0)} d encaissements clients moins ${fmtUSD(total13wOutflowUsd, 0)} de règlements fournisseurs sur 13 semaines projette un solde de clôture S13 de ${fmtUSD(week13ClosingTillUsd, 0)} (${breachWeeksCount > 0 ? breachWeeksCount + ' semaine(s) sous le plancher de ' + fmtUSD(levers.liquidityFloorUsd, 0) : 'autonomie saine de ' + runwayWeeks + ' semaines'}).`
+    );
+
+    const topSweep = sweepSuggestions[0] || null;
+    const bulletsEn = [
+      scrubOutwardGuideText(`13-Week Cash Bridge Tie: Opening ${fmtUSD(openingTillUsd, 2)} + AR Inflows ${fmtUSD(total13wInflowUsd, 2)} - AP Outflows ${fmtUSD(total13wOutflowUsd, 2)}${total13wSweepUsd ? ' + Sweeps ' + fmtUSD(total13wSweepUsd, 2) : ''} = Week 13 Closing ${fmtUSD(week13ClosingTillUsd, 2)} ($0.00 variance).`),
+      scrubOutwardGuideText(`Minimum Weekly Cash Point: ${fmtUSD(minWeeklyClosingUsd != null ? minWeeklyClosingUsd : openingTillUsd, 0)} in Week W${minWeekNumber} vs ${fmtUSD(levers.liquidityFloorUsd, 0)} floor (${breachWeeksCount} breach week(s)).`),
+      topSweep
+        ? scrubOutwardGuideText(`Top Treasury Sweep Option: ${topSweep.corridorName} for ${fmtUSD(topSweep.recommendedSweepUsd, 0)} in Week W${topSweep.targetWeek} (${topSweep.ringFenceNote}).`)
+        : scrubOutwardGuideText(`Feeder Parity: ${fmtUSD(arGrossUsd, 0)} Gross Open AR and ${fmtUSD(apGrossUsd, 0)} Gross Open AP reconciled to $0.00 across all 13 weekly buckets.`)
+    ];
+    const bulletsAr = [
+      scrubOutwardGuideText(`مطابقة جسر السيولة لـ 13 أسبوعاً: افتتاحي ${fmtUSD(openingTillUsd, 2)} + مقبوضات ${fmtUSD(total13wInflowUsd, 2)} - مدفوعات ${fmtUSD(total13wOutflowUsd, 2)} = إغلاق الأسبوع 13 بقيمة ${fmtUSD(week13ClosingTillUsd, 2)} (فارق $0.00).`),
+      scrubOutwardGuideText(`أدنى نقطة سيولة أسبوعية: ${fmtUSD(minWeeklyClosingUsd != null ? minWeeklyClosingUsd : openingTillUsd, 0)} في الأسبوع W${minWeekNumber} مقابل حد الأمان ${fmtUSD(levers.liquidityFloorUsd, 0)}.`),
+      topSweep
+        ? scrubOutwardGuideText(`أبرز توصية تحويل سيولة: ${topSweep.corridorName} بمبلغ ${fmtUSD(topSweep.recommendedSweepUsd, 0)} في الأسبوع W${topSweep.targetWeek}.`)
+        : scrubOutwardGuideText(`مطابقة الذمم: ${fmtUSD(arGrossUsd, 0)} ذمم مدينة و${fmtUSD(apGrossUsd, 0)} ذمم دائنة موزعة بدقة $0.00.`)
+    ];
+    const bulletsFr = [
+      scrubOutwardGuideText(`Réconciliation 13 semaines : Ouverture ${fmtUSD(openingTillUsd, 2)} + Encaissements ${fmtUSD(total13wInflowUsd, 2)} - Décaissements ${fmtUSD(total13wOutflowUsd, 2)} = Clôture S13 ${fmtUSD(week13ClosingTillUsd, 2)} (écart $0.00).`),
+      scrubOutwardGuideText(`Point bas hebdomadaire : ${fmtUSD(minWeeklyClosingUsd != null ? minWeeklyClosingUsd : openingTillUsd, 0)} en S${minWeekNumber} face au plancher de ${fmtUSD(levers.liquidityFloorUsd, 0)}.`),
+      topSweep
+        ? scrubOutwardGuideText(`Nivellement prioritaire : ${topSweep.corridorName} de ${fmtUSD(topSweep.recommendedSweepUsd, 0)} en semaine S${topSweep.targetWeek}.`)
+        : scrubOutwardGuideText(`Parité auxiliaire : ${fmtUSD(arGrossUsd, 0)} créances clients et ${fmtUSD(apGrossUsd, 0)} dettes fournisseurs cadrées à $0.00.`)
+    ];
+
+    const defaultWhatsappEn = scrubOutwardGuideText(
+      `Treasury 13-Week Liquidity Brief (${coLabel} - as of ${anchorDate}): Opening Cash Till ${fmtUSD(openingTillUsd, 0)}, 13-Week AR Collections ${fmtUSD(total13wInflowUsd, 0)}, Scheduled AP Runs ${fmtUSD(total13wOutflowUsd, 0)}, Projected W13 Closing ${fmtUSD(week13ClosingTillUsd, 0)}. Lowest cash point ${fmtUSD(minWeeklyClosingUsd != null ? minWeeklyClosingUsd : openingTillUsd, 0)} in W${minWeekNumber} against ${fmtUSD(levers.liquidityFloorUsd, 0)} floor.${topSweep ? ' Please prepare ' + fmtUSD(topSweep.recommendedSweepUsd, 0) + ' sweep via ' + topSweep.corridorName + ' for Week W' + topSweep.targetWeek + '.' : ' Please confirm weekly collection and disbursement pacing.'}`
+    );
+    const defaultWhatsappAr = scrubOutwardGuideText(
+      `موجز الخزينة لـ 13 أسبوعاً (${coLabel} - حتى ${anchorDate}): رصيد الصندوق الافتتاحي ${fmtUSD(openingTillUsd, 0)}، مقبوضات الذمم المتوقعة ${fmtUSD(total13wInflowUsd, 0)}، دفعات الموردين المجدولة ${fmtUSD(total13wOutflowUsd, 0)}، والرصيد الختامي للأسبوع 13 قدره ${fmtUSD(week13ClosingTillUsd, 0)}. أدنى رصيد أسبوعي ${fmtUSD(minWeeklyClosingUsd != null ? minWeeklyClosingUsd : openingTillUsd, 0)} في الأسبوع W${minWeekNumber} مقابل حد السيولة ${fmtUSD(levers.liquidityFloorUsd, 0)}.${topSweep ? ' يرجى تجهيز تحويل سيولة بقيمة ' + fmtUSD(topSweep.recommendedSweepUsd, 0) + ' عبر ' + topSweep.corridorName + ' للأسبوع W' + topSweep.targetWeek + '.' : ' يرجى تأكيد التزام التحصيل والصرف الأسبوعي.'}`
+    );
+    const defaultWhatsappFr = scrubOutwardGuideText(
+      `Note Trésorerie 13 Semaines (${coLabel} - au ${anchorDate}) : Encaisse initiale ${fmtUSD(openingTillUsd, 0)}, encaissements clients prévus ${fmtUSD(total13wInflowUsd, 0)}, règlements fournisseurs ${fmtUSD(total13wOutflowUsd, 0)}, clôture projetée S13 ${fmtUSD(week13ClosingTillUsd, 0)}. Point bas ${fmtUSD(minWeeklyClosingUsd != null ? minWeeklyClosingUsd : openingTillUsd, 0)} en S${minWeekNumber} pour un plancher de ${fmtUSD(levers.liquidityFloorUsd, 0)}.${topSweep ? ' Merci de préparer un nivellement de ' + fmtUSD(topSweep.recommendedSweepUsd, 0) + ' (' + topSweep.corridorName + ') pour S' + topSweep.targetWeek + '.' : ' Merci de confirmer le calendrier hebdomadaire.'}`
+    );
+
+    return {
+      scopeKey: `trsy|${reqCo}|${anchorDate}|${u ? u.id : 'anon'}`,
+      leverSig,
+      industry: ind,
+      companyKey: reqCo,
+      requestedCompanyKey: rawRequestedCo,
+      companyLabel: coLabel,
+      companyEn: coLabel,
+      companyAr: coLabel,
+      companyFr: coLabel,
+      periodKey: periodLabel,
+      periodLabel,
+      periodEn: periodLabel,
+      periodAr: periodLabel,
+      periodFr: periodLabel,
+      asOfDate: anchorDate,
+      rlsClamped: false,
+      restricted: false,
+      booksRedacted: false,
+      canViewBooks: true,
+      canCash: true,
+      canEditAlerts: Boolean(canReviewSentinels(u, reqCo) || ownerFlag),
+      hasActiveAlertRule,
+      targetHubView,
+      levers,
+      leverSpecs,
+      presets,
+      summary: {
+        openingTillUsd,
+        closingCombinedTillUsd: openingTillUsd,
+        total13wInflowUsd,
+        total13wOutflowUsd,
+        total13wSweepUsd,
+        net13wCashDeltaUsd,
+        week13ClosingTillUsd,
+        minWeeklyClosingUsd: minWeeklyClosingUsd != null ? minWeeklyClosingUsd : openingTillUsd,
+        minWeekNumber,
+        liquidityFloorUsd: levers.liquidityFloorUsd,
+        breachWeeksCount,
+        firstBreachWeek,
+        isFloorBreached: breachWeeksCount > 0,
+        runwayWeeks,
+        runwayDays,
+        activeSweepCount: Array.from(activeSweepMap.values()).filter(x => x.action === 'activate' && x.sweepUsd > 0).length,
+        suggestedSweepPoolUsd
+      },
+      feeders: {
+        arGrossUsd,
+        arScheduled13wUsd,
+        arDiscountCostUsd: arDiscCost,
+        arPost13wTailUsd,
+        apGrossUsd,
+        apScheduled13wUsd,
+        apEarlyDiscountSavingsUsd: apEarlyDisc,
+        apPost13wOrHeldUsd
+      },
+      tieCheck: {
+        rollforwardBalanced: Math.abs(rollforwardVarianceUsd) < 0.01,
+        rollforwardVarianceUsd,
+        weeklyChainBalanced,
+        arFeederBalanced: Math.abs(arFeederVarianceUsd) < 0.01,
+        arFeederVarianceUsd,
+        apFeederBalanced: Math.abs(apFeederVarianceUsd) < 0.01,
+        apFeederVarianceUsd
+      },
+      weeks,
+      sweepSuggestions,
+      headlineEn,
+      headlineAr,
+      headlineFr,
+      spokenEn: [headlineEn, ...bulletsEn].join(' '),
+      spokenAr: [headlineAr, ...bulletsAr].join(' '),
+      spokenFr: [headlineFr, ...bulletsFr].join(' '),
+      bulletsEn,
+      bulletsAr,
+      bulletsFr,
+      drafts: {
+        whatsappEn: defaultWhatsappEn,
+        whatsappAr: defaultWhatsappAr,
+        whatsappFr: defaultWhatsappFr
+      }
+    };
+  }
+
+  function applyTreasuryRunwayAlertRule(opts = {}) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const u = options.user || (typeof activeUser === 'function' ? activeUser() : null);
+    const snap = computeTreasuryRunwaySnapshot(options);
+    if (!snap || snap.restricted || snap.rlsClamped || !snap.canEditAlerts || (!canReviewSentinels(u, snap.companyKey) && !isOwner(u))) {
+      return { ok: false, error: 'Treasury liquidity guardrail creation is restricted for this seat or scope.' };
+    }
+    const st = ensureAlertRulesState();
+    const safeCoKey = String(snap.companyKey || 'all').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ruleId = `CA_TRSY_${safeCoKey}`;
+    const floorUsd = Math.max(5000, round2(snap.summary.liquidityFloorUsd || 25000));
+    const existingIdx = st.custom.findIndex(r => r && r.id === ruleId);
+    const seqCode = existingIdx >= 0
+      ? st.custom[existingIdx].code
+      : ('#' + String(ALERT_RULE_CATALOG.length + getActiveCustomAlertRules().length + 1).padStart(2, '0'));
+    const cleanName = scrubOutwardGuideText(`${snap.companyLabel} 13-Week Cash Runway & Till Floor Guardrail`);
+    const cleanWhy = scrubOutwardGuideText(
+      `13-Week Treasury Runway Guardrail (${snap.periodLabel}): enforce minimum ${fmtUSD(floorUsd, 0)} weekly cash till balance across W1 to W13 (lowest projected point ${fmtUSD(snap.summary.minWeeklyClosingUsd, 0)} in W${snap.summary.minWeekNumber}).`
+    );
+    const ruleObj = {
+      id: ruleId,
+      code: seqCode,
+      name: cleanName,
+      metric: 'cash_till_floor_usd',
+      target: '',
+      op: '<',
+      threshold: floorUsd,
+      mode: 'warn_and_audit',
+      company: snap.companyKey === 'all' || String(snap.companyKey).startsWith('industry:') ? 'all' : snap.companyLabel,
+      why: cleanWhy,
+      enabled: true,
+      created_by: String((u && u.full_name) || 'Owner'),
+      updated_at: new Date().toISOString()
+    };
+    if (existingIdx >= 0) {
+      st.custom[existingIdx] = ruleObj;
+    } else {
+      st.custom.push(ruleObj);
+    }
+    STATE.customAlertRules = st.custom;
+    if (!options.skipPersist) {
+      persistAlertRulesChange({}, [ruleObj]);
+    }
+    return {
+      ok: true,
+      updatedExisting: existingIdx >= 0,
+      rule: ruleObj,
+      snapshot: snap
+    };
+  }
+
+  // ==========================================================================
+  // EXECUTIVE STUDIO B: INVENTORY TURNOVER, EOQ & WORKING-CAPITAL OPTIMIZER
+  // ==========================================================================
+  function computeInventoryOptimizerSnapshot(opts = {}) {
+    ensureMultiIndustrySpineSeeded();
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const u = options.user || (typeof activeUser === 'function' ? activeUser() : null);
+    const ownerFlag = Boolean(typeof isOwner === 'function' && isOwner(u));
+    const allowedCos = typeof allowedCompanyNames === 'function' ? allowedCompanyNames(u) : [];
+    const roleStr = String((u && u.role) || '');
+
+    const rawCoOpt = options.coKey !== undefined && options.coKey !== null ? options.coKey : options.companyKey;
+    const rawRequestedCo = String(rawCoOpt !== undefined && rawCoOpt !== null ? rawCoOpt : (STATE.company || 'all')).trim() || 'all';
+    let reqCo = rawRequestedCo === 'insuranceco' ? 'insurance' : rawRequestedCo;
+    const indFromReq = reqCo.startsWith('industry:') ? reqCo.slice(9).trim() : '';
+    const ind = String(options.industry || indFromReq || (typeof getActiveIndustry === 'function' ? getActiveIndustry(reqCo) : 'Manufacturing') || 'Manufacturing').trim();
+    const indKey = /holding/i.test(ind) ? 'holding'
+      : (/hospitality|resort/i.test(ind) ? 'hospitality'
+        : (/trading|auto/i.test(ind) ? 'trading'
+          : (/real\s*estate|property/i.test(ind) ? 'realestate'
+            : (/insurance/i.test(ind) ? 'insurance' : 'manufacturing'))));
+
+    let rlsClamped = false;
+    if (!ownerFlag) {
+      if (!allowedCos.length) {
+        rlsClamped = true;
+      } else if (reqCo === 'all') {
+        if (allowedCos.length < CANONICAL_GROUP_COMPANIES.length) {
+          rlsClamped = true;
+          reqCo = slugCompanyKey(allowedCos[0]) || 'wtc';
+        }
+      } else if (reqCo === 'manufacturing-group') {
+        const allMfg = ['WTC', 'BBConstruction', 'Lions Transport'];
+        if (!allMfg.every(c => allowedCos.some(ac => norm(ac) === norm(c)))) {
+          rlsClamped = true;
+          reqCo = slugCompanyKey(allowedCos[0]) || 'wtc';
+        }
+      } else if (reqCo.startsWith('industry:')) {
+        const indCos = getCompanyCatalog()
+          .filter(c => norm(c.industry) === norm(ind) || norm(c.industry).includes(norm(indFromReq)))
+          .map(c => c.name);
+        if (!indCos.length || !indCos.every(icName => allowedCos.some(ac => norm(ac) === norm(icName)))) {
+          rlsClamped = true;
+          reqCo = slugCompanyKey(allowedCos[0]) || 'wtc';
+        }
+      } else {
+        const reqBu = COMPANY_BU_MATCH[reqCo] || SENTINEL_MODEL_KEY[reqCo] || COMPANY_LABELS[reqCo] || reqCo;
+        if (!allowedCos.some(c => norm(c) === norm(reqBu) || norm(c) === norm(reqCo))) {
+          rlsClamped = true;
+          reqCo = slugCompanyKey(allowedCos[0]) || 'wtc';
+        }
+      }
+    }
+
+    const canWarehouse = Boolean(
+      !/Sales/i.test(roleStr) && (
+        canViewHub('warehouse', u) ||
+        canViewView('warehouse', u) ||
+        canViewView('warehouse_parts', u)
+      )
+    );
+    const actualCanCash = Boolean(canViewView('cashflow', u) && !/Sales/i.test(roleStr));
+    const actualCanBooks = Boolean(actualCanCash && canViewView('ledger', u));
+    const canViewBooks = Boolean(!rlsClamped && actualCanBooks && (options.canViewBooks === undefined || options.canViewBooks));
+    const restricted = Boolean(rlsClamped || (!canWarehouse && !canViewBooks));
+    const booksRedacted = Boolean(!canViewBooks);
+
+    const range = (typeof periodRange === 'function' && periodRange()) || { from: '1900-01-01', to: todayISO() || '2026-10-31', label: 'All Time' };
+    const anchorDate = String(options.asOfDate || range.to || todayISO() || '2026-10-31').slice(0, 10);
+    const coLabel = scrubOutwardGuideText(COMPANY_LABELS[reqCo] || (reqCo.startsWith('industry:') ? reqCo.slice(9) : reqCo) || 'All Entities');
+    const periodLabel = scrubOutwardGuideText(range.label || 'Active Period');
+
+    const clampNum = (v, lo, hi, def = 0) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return def;
+      return Math.max(lo, Math.min(hi, n));
+    };
+    const safeNum = v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const rawLevers = (options.levers && typeof options.levers === 'object') ? options.levers : options;
+    const levers = {
+      safetyStockDaysDelta: Math.round(clampNum(rawLevers.safetyStockDaysDelta, -15, 30, 0)),
+      carryingCostRatePct: round2(clampNum(rawLevers.carryingCostRatePct, 4, 30, 12)),
+      leadTimeBufferPct: Math.round(clampNum(rawLevers.leadTimeBufferPct, -30, 100, 0))
+    };
+    const leverSig = `${levers.safetyStockDaysDelta}|${levers.carryingCostRatePct}|${levers.leadTimeBufferPct}`;
+
+    const leverSpecs = [
+      {
+        key: 'safetyStockDaysDelta',
+        unit: 'd',
+        min: -15,
+        max: 30,
+        step: 1,
+        labelEn: 'Safety Stock Par Buffer Delta (Days)',
+        labelAr: 'تعديل مخزون الأمان المعياري (أيام)',
+        labelFr: 'Ajustement du stock de sécurité (jours)'
+      },
+      {
+        key: 'carryingCostRatePct',
+        unit: '%',
+        min: 4,
+        max: 30,
+        step: 0.5,
+        labelEn: 'Annual Working-Capital Carrying Cost (%)',
+        labelAr: 'تكلفة الاحتفاظ برأس المال العامل سنوياً (%)',
+        labelFr: 'Coût annuel de possession du stock (%)'
+      },
+      {
+        key: 'leadTimeBufferPct',
+        unit: '%',
+        min: -30,
+        max: 100,
+        step: 5,
+        labelEn: 'Supplier & Import Lead-Time Stress (%)',
+        labelAr: 'هامش ضغط مهلة التوريد والشحن (%)',
+        labelFr: 'Marge sur délai de réapprovisionnement (%)'
+      }
+    ];
+
+    const presets = [
+      {
+        id: 'standard_eoq',
+        labelEn: 'Standard EOQ & Par',
+        labelAr: 'الحجم الاقتصادي المعياري للطلب',
+        labelFr: 'Quantité économique standard',
+        levers: { safetyStockDaysDelta: 0, carryingCostRatePct: 12, leadTimeBufferPct: 0 }
+      },
+      {
+        id: 'lean_wc',
+        labelEn: 'Lean Working-Capital Release',
+        labelAr: 'تحرير رأس المال العامل الفائض',
+        labelFr: 'Libération du besoin en fonds de roulement',
+        levers: { safetyStockDaysDelta: -5, carryingCostRatePct: 18, leadTimeBufferPct: -10 }
+      },
+      {
+        id: 'peak_season',
+        labelEn: 'Peak-Season Buffer (+10d)',
+        labelAr: 'احتياطي ذروة الموسم (+10 أيام)',
+        labelFr: 'Réserve haute saison (+10 j)',
+        levers: { safetyStockDaysDelta: 10, carryingCostRatePct: 12, leadTimeBufferPct: 25 }
+      },
+      {
+        id: 'zero_stockout',
+        labelEn: 'Zero-Stockout Critical Guard',
+        labelAr: 'حماية قصوى ضد نفاد المخزون',
+        labelFr: 'Protection zéro rupture critique',
+        levers: { safetyStockDaysDelta: 15, carryingCostRatePct: 10, leadTimeBufferPct: 40 }
+      }
+    ];
+
+    const stockHubByKey = {
+      manufacturing: 'warehouse',
+      holding: 'hld_loans',
+      hospitality: 'hsp_stock',
+      trading: 'trd_stock',
+      realestate: 're_workorders',
+      insurance: 'ins_catalogue'
+    };
+    const targetHubView = stockHubByKey[indKey] || 'warehouse';
+
+    if (restricted) {
+      return {
+        scopeKey: `inv|restricted|${reqCo}|${u ? u.id : 'anon'}`,
+        leverSig,
+        industry: ind,
+        companyKey: reqCo,
+        requestedCompanyKey: rawRequestedCo,
+        companyLabel: coLabel,
+        companyEn: coLabel,
+        companyAr: coLabel,
+        companyFr: coLabel,
+        periodKey: periodLabel,
+        periodLabel,
+        periodEn: periodLabel,
+        periodAr: periodLabel,
+        periodFr: periodLabel,
+        asOfDate: anchorDate,
+        rlsClamped,
+        restricted: true,
+        booksRedacted: true,
+        canViewBooks: false,
+        canWarehouse: false,
+        canEditAlerts: false,
+        hasActiveAlertRule: false,
+        targetHubView,
+        levers,
+        leverSpecs: [],
+        presets: [],
+        summary: {
+          totalSkuCount: 0,
+          totalInventoryValueUsd: 0,
+          annualizedConsumptionUsd: 0,
+          portfolioTurnoverRatio: 0,
+          weightedDaysOnHand: 0,
+          annualCarryingDragUsd: 0,
+          productiveWorkingCapitalUsd: 0,
+          releasableExcessUsd: 0,
+          totalRecommendedOrderUsd: 0,
+          stockoutRiskCount: 0,
+          excessCount: 0,
+          savedOverrideCount: 0,
+          closingCombinedTillUsd: null,
+          postReplenishTillUsd: null
+        },
+        healthBuckets: {
+          stockoutCritValueUsd: 0,
+          belowReorderValueUsd: 0,
+          optimalBandValueUsd: 0,
+          excessSlowMovingValueUsd: 0
+        },
+        replenishHorizon: {
+          urgent1_7dOrderUsd: 0,
+          planned8_14dOrderUsd: 0,
+          buffer15_30dOrderUsd: 0
+        },
+        tieCheck: {
+          healthBalanced: true,
+          healthVarianceUsd: 0,
+          wcBalanced: true,
+          wcVarianceUsd: 0,
+          replenishBalanced: true,
+          replenishVarianceUsd: 0
+        },
+        items: [],
+        reorderList: [],
+        headlineEn: 'Inventory turnover, reorder point, and working-capital carrying-cost telemetry is restricted for this seat or entity scope.',
+        headlineAr: 'بيانات دوران المخزون ونقطة إعادة الطلب وتكلفة رأس المال العامل مقيدة لهذا المقعد أو النطاق.',
+        headlineFr: 'Les indicateurs de rotation des stocks, point de commande et coût de possession sont réservés aux sièges autorisés pour ce périmètre.',
+        spokenEn: 'Inventory optimizer telemetry is restricted for this seat or entity scope.',
+        spokenAr: 'بيانات محسن المخزون ورأس المال العامل مقيدة لهذا المقعد أو النطاق.',
+        spokenFr: 'Les indicateurs d optimisation des stocks sont restreints pour ce siège ou périmètre.',
+        bulletsEn: [],
+        bulletsAr: [],
+        bulletsFr: [],
+        drafts: { whatsappEn: '', whatsappAr: '', whatsappFr: '' }
+      };
+    }
+
+    const overrideMap = new Map();
+    let rawSavedList = Array.isArray(options.savedReorders) ? options.savedReorders : null;
+    if (!rawSavedList) {
+      try {
+        const raw = (typeof appStoreGetRaw === 'function' ? appStoreGetRaw('isabi_inventory_reorders_v1') : null) || (typeof localStorage !== 'undefined' ? localStorage.getItem('isabi_inventory_reorders_v1') : null);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          rawSavedList = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.items) ? parsed.items : []);
+        }
+      } catch (_e) { rawSavedList = []; }
+    }
+    (rawSavedList || []).forEach(ov => {
+      if (!ov || typeof ov !== 'object') return;
+      const ovCo = String(ov.coKey || '').trim();
+      if (ovCo && !scopeMatchesCompanyKey(reqCo, ovCo)) return;
+      if (ovCo && !isStudioCoKeyAllowedForUser(ovCo, u)) return;
+      const skuKey = norm(ov.skuCode || ov.itemName || '');
+      if (!skuKey) return;
+      const existing = overrideMap.get(skuKey);
+      if (existing && canonicalizeStudioCoKey(existing.coKey) === canonicalizeStudioCoKey(reqCo) && canonicalizeStudioCoKey(ovCo) !== canonicalizeStudioCoKey(reqCo)) {
+        return;
+      }
+      overrideMap.set(skuKey, {
+        skuCode: scrubOutwardGuideText(String(ov.skuCode || '').slice(0, 60)),
+        itemName: scrubOutwardGuideText(String(ov.itemName || ov.skuCode || '').slice(0, 90)),
+        coKey: ovCo || reqCo,
+        action: String(ov.action || 'reorder').toLowerCase(),
+        overrideOrderQty: ov.overrideOrderQty != null && Number.isFinite(Number(ov.overrideOrderQty)) ? Math.max(0, round2(Number(ov.overrideOrderQty))) : null,
+        customParQty: ov.customParQty != null && Number.isFinite(Number(ov.customParQty)) ? Math.max(0, round2(Number(ov.customParQty))) : null,
+        note: booksRedacted ? '' : scrubOutwardGuideText(String(ov.note || '').slice(0, 140))
+      });
+    });
+
+    const isCoAllowedForSeat = coName => {
+      if (ownerFlag) return true;
+      if (!coName || norm(coName) === 'universal catalog') return true;
+      return allowedCos.some(ac => norm(ac) === norm(coName));
+    };
+    const isCoInScope = coName => {
+      if (!isCoAllowedForSeat(coName)) return false;
+      if (reqCo === 'all') return true;
+      if (reqCo === 'manufacturing-group') return ['WTC', 'BBConstruction', 'Lions Transport'].some(c => norm(c) === norm(coName));
+      if (reqCo.startsWith('industry:')) {
+        const indCos = getCompanyCatalog()
+          .filter(c => norm(c.industry) === norm(ind) || norm(c.industry).includes(norm(indFromReq)))
+          .map(c => c.name);
+        return indCos.some(c => norm(c) === norm(coName));
+      }
+      const reqBu = COMPANY_BU_MATCH[reqCo] || SENTINEL_MODEL_KEY[reqCo] || COMPANY_LABELS[reqCo] || reqCo;
+      return norm(coName) === norm(reqBu) || norm(coName) === norm(reqCo);
+    };
+    const includeIndustry = targetSlug => reqCo === 'all' || indKey === targetSlug;
+    const hasIndustryLiveOrDemo = key => Boolean(
+      (typeof isDemoSandboxSession === 'function' && isDemoSandboxSession()) ||
+      (SEED && SEED.industryLive && SEED.industryLive[key])
+    );
+
+    const rawCandidates = [];
+    if (Array.isArray(options.injectedItems)) {
+      options.injectedItems.forEach((it, idx) => {
+        if (!it || typeof it !== 'object') return;
+        const itemCo = String(it.company || coLabel).trim();
+        if (!isCoInScope(itemCo)) return;
+        rawCandidates.push({
+          skuCode: scrubOutwardGuideText(String(it.skuCode || `INJ-${idx + 1}`).slice(0, 60)),
+          itemName: scrubOutwardGuideText(String(it.itemName || `Item ${idx + 1}`).slice(0, 90)),
+          company: scrubOutwardGuideText(itemCo),
+          vertical: ind,
+          category: scrubOutwardGuideText(String(it.category || 'Stock Buffer')),
+          location: scrubOutwardGuideText(String(it.location || 'Main Store')),
+          uom: scrubOutwardGuideText(String(it.uom || 'Unit')),
+          onHandQty: Math.max(0, safeNum(it.onHandQty)),
+          unitCostUsd: Math.max(0, safeNum(it.unitCostUsd)),
+          onHandValueUsd: it.onHandValueUsd != null ? Math.max(0, round2(safeNum(it.onHandValueUsd))) : round2(Math.max(0, safeNum(it.onHandQty)) * Math.max(0, safeNum(it.unitCostUsd))),
+          dailyUsageQty: Math.max(0, safeNum(it.dailyUsageQty)),
+          leadTimeDays: Math.max(1, safeNum(it.leadTimeDays || 7)),
+          baseSafetyDays: Math.max(0, safeNum(it.baseSafetyDays != null ? it.baseSafetyDays : 7)),
+          orderFixedCostUsd: Math.max(15, safeNum(it.orderFixedCostUsd || 65)),
+          reorderMinQty: Math.max(0, safeNum(it.reorderMinQty)),
+          txCount: Math.max(1, Math.round(safeNum(it.txCount || 1))),
+          supplierName: scrubOutwardGuideText(String(it.supplierName || 'Primary Supplier')),
+          baselineContext: scrubOutwardGuideText(String(it.baselineContext || 'Standard Par'))
+        });
+      });
+    } else {
+      if (includeIndustry('manufacturing')) {
+        const fuelLogs = (Array.isArray(SEED.records && SEED.records.fuel_logs) ? SEED.records.fuel_logs : [])
+          .filter(r => r && !r.voided && isCoInScope(r.company));
+        const dieselBuys = (Array.isArray(SEED.records && SEED.records.diesel_purchases) ? SEED.records.diesel_purchases : [])
+          .filter(r => r && !r.voided && isCoInScope(r.company));
+        if (fuelLogs.length > 0 || dieselBuys.length > 0) {
+          const dl = typeof getDieselTankLedger === 'function' ? getDieselTankLedger() : null;
+          const totalDispAll = Math.max(1, safeNum(dl && dl.dispensedL));
+          const scopedDispL = fuelLogs.reduce((s, r) => s + Math.max(0, safeNum(r.liters || r.qty)), 0);
+          const share = reqCo === 'all' || reqCo === 'manufacturing-group' || reqCo.startsWith('industry:')
+            ? 1
+            : clampNum(scopedDispL / totalDispAll, 0.08, 1, 0.35);
+          const closingL = round2(Math.max(0, safeNum(dl && dl.closingL) * share));
+          const avgDieselCost = round2(Math.max(0.55, safeNum((dl && dl.avgBuyPrice) || 0.82)));
+          const dates = fuelLogs.map(r => String(r.date || '').slice(0, 10)).filter(Boolean).sort();
+          const spanDays = dates.length >= 2
+            ? Math.max(30, Math.round((Date.parse(dates[dates.length - 1]) - Date.parse(dates[0])) / 86400000) + 1)
+            : 180;
+          const dailyLiters = round2(scopedDispL / spanDays);
+          const dCo = reqCo === 'bbconstruction' ? 'BBConstruction' : (reqCo === 'lionstransport' ? 'Lions Transport' : 'WTC');
+          rawCandidates.push({
+            skuCode: `MFG-DSL-${slugCompanyKey(dCo).toUpperCase()}`,
+            itemName: 'Bulk Quarry & Fleet Diesel Tank Reserve',
+            company: dCo,
+            vertical: 'Manufacturing',
+            category: 'Bulk Fuel & Energy',
+            location: 'Main Quarry Fuel Station',
+            uom: 'L',
+            onHandQty: closingL,
+            unitCostUsd: avgDieselCost,
+            onHandValueUsd: round2(closingL * avgDieselCost),
+            dailyUsageQty: dailyLiters,
+            leadTimeDays: 3,
+            baseSafetyDays: 6,
+            orderFixedCostUsd: 120,
+            reorderMinQty: round2(dailyLiters * 7),
+            txCount: fuelLogs.length + dieselBuys.length,
+            supplierName: scrubOutwardGuideText(String((dieselBuys[0] && dieselBuys[0].supplier) || 'Bulk Fuel Distributor')),
+            baselineContext: booksRedacted ? `${fuelLogs.length + dieselBuys.length} tank logs` : `Weighted tank cost ${fmtUSD(avgDieselCost, 2)}/L`
+          });
+        }
+
+        const rawBuys = (Array.isArray(SEED.records && SEED.records.raw_purchases) ? SEED.records.raw_purchases : [])
+          .filter(r => r && !r.voided && isCoInScope(r.company));
+        const matMap = new Map();
+        rawBuys.forEach(r => {
+          const mat = scrubOutwardGuideText(String(r.material || r.product || r.item || 'Bulk Cement & Aggregate').trim());
+          const mk = `${norm(r.company || 'WTC')}::${norm(mat)}`;
+          const qty = Math.max(0, safeNum(r.qty || r.tons || r.meters || 1));
+          const usd = Math.max(0, safeNum(r.total_usd != null ? r.total_usd : (r.amount != null ? r.amount : r.total)));
+          const cur = matMap.get(mk) || {
+            mat,
+            company: String(r.company || 'WTC').trim(),
+            uom: String(r.uom || r.unit || (/cement/i.test(mat) ? 'Ton' : 'm3')).trim(),
+            totQty: 0,
+            totUsd: 0,
+            cnt: 0,
+            supplier: String(r.supplier || 'Quarry Material Supplier').trim(),
+            minDate: '9999-99-99',
+            maxDate: '0000-00-00'
+          };
+          cur.totQty += qty;
+          cur.totUsd += usd;
+          cur.cnt += 1;
+          const d = String(r.date || '').slice(0, 10);
+          if (d && d < cur.minDate) cur.minDate = d;
+          if (d && d > cur.maxDate) cur.maxDate = d;
+          matMap.set(mk, cur);
+        });
+        const topRawMats = Array.from(matMap.values()).filter(m => m.totUsd > 0 && m.totQty > 0);
+        topRawMats.sort((a, b) => (b.cnt - a.cnt) || (b.totUsd - a.totUsd));
+        topRawMats.slice(0, 6).forEach((m, idx) => {
+          const spanDays = (m.minDate < m.maxDate)
+            ? Math.max(30, Math.round((Date.parse(m.maxDate) - Date.parse(m.minDate)) / 86400000) + 1)
+            : 180;
+          const dailyQty = round2(m.totQty / spanDays);
+          const unitCost = round2(m.totUsd / Math.max(0.01, m.totQty));
+          const estOnHandQty = round2(Math.max(1, dailyQty * (8 + (idx % 5) * 3)));
+          rawCandidates.push({
+            skuCode: `MFG-RAW-${idx + 1}`,
+            itemName: `${m.mat} Stockpile`,
+            company: m.company,
+            vertical: 'Manufacturing',
+            category: 'Aggregates & Cement',
+            location: `${m.company} Batching & Silo Yard`,
+            uom: m.uom,
+            onHandQty: estOnHandQty,
+            unitCostUsd: unitCost,
+            onHandValueUsd: round2(estOnHandQty * unitCost),
+            dailyUsageQty: dailyQty,
+            leadTimeDays: /cement/i.test(m.mat) ? 4 : 3,
+            baseSafetyDays: 6,
+            orderFixedCostUsd: 95,
+            reorderMinQty: round2(dailyQty * 8),
+            txCount: m.cnt,
+            supplierName: scrubOutwardGuideText(m.supplier),
+            baselineContext: `${m.cnt} intake deliveries logged`
+          });
+        });
+
+        const whIdx = typeof getWarehouseIndex === 'function' ? getWarehouseIndex() : null;
+        const whItems = (whIdx && Array.isArray(whIdx.items)) ? whIdx.items : [];
+        whItems.forEach((it, idx) => {
+          const scopedMoves = Array.isArray(it.movements) ? it.movements.filter(mv => isCoInScope(mv.company || 'WTC')) : [];
+          if (!scopedMoves.length && reqCo !== 'all' && reqCo !== 'manufacturing-group' && !reqCo.startsWith('industry:')) return;
+          const itemCo = (scopedMoves[0] && scopedMoves[0].company) || (reqCo === 'bbconstruction' ? 'BBConstruction' : (reqCo === 'lionstransport' ? 'Lions Transport' : 'WTC'));
+          if (!isCoInScope(itemCo)) return;
+          const unitCost = round2(Math.max(1, safeNum(it.avgUnitCost || 25)));
+          const onHandQty = round2(Math.max(0, safeNum(it.onHandQty)));
+          const usedOut = Math.max(0, safeNum(it.usedInRepairsQty) + safeNum(it.usedInOilQty) + safeNum(it.adjustedOutQty));
+          const dailyQty = round2(Math.max(usedOut / 180, (safeNum(it.minStock) || 2) / 45));
+          rawCandidates.push({
+            skuCode: `MFG-WH-${idx + 1}`,
+            itemName: scrubOutwardGuideText(String(it.item_name || `Warehouse SKU ${idx + 1}`)),
+            company: itemCo,
+            vertical: 'Manufacturing',
+            category: scrubOutwardGuideText(String(it.category || 'Spare Parts & Lubricants')),
+            location: scrubOutwardGuideText(String(it.location || 'Main Workshop Store')),
+            uom: scrubOutwardGuideText(String(it.uom || 'Piece')),
+            onHandQty,
+            unitCostUsd: unitCost,
+            onHandValueUsd: round2(onHandQty * unitCost),
+            dailyUsageQty: dailyQty,
+            leadTimeDays: /tire|tyre|crusher/i.test(String(it.category || it.item_name)) ? 12 : 6,
+            baseSafetyDays: 8,
+            orderFixedCostUsd: 55,
+            reorderMinQty: Math.max(1, safeNum(it.minStock || 2)),
+            txCount: Math.max(1, scopedMoves.length),
+            supplierName: 'Workshop Approved Parts Vendor',
+            baselineContext: `Locked UoM (${scrubOutwardGuideText(String(it.uom || 'Piece'))})`
+          });
+        });
+      }
+
+      if (includeIndustry('hospitality') && hasIndustryLiveOrDemo('hospitality')) {
+        const hsp = computeHospitalityOperations();
+        (hsp.stockRows || []).forEach((r, idx) => {
+          if (!isCoInScope(r.company)) return;
+          const closingUsd = round2(Math.max(0, safeNum(r.closing_usd)));
+          const usageUsd = Math.max(0, safeNum(r.recipe_usage_usd));
+          const unitLotUsd = 50;
+          const onHandQty = round2(closingUsd / unitLotUsd);
+          const dailyLots = round2((usageUsd / 90) / unitLotUsd);
+          const isCellar = /cellar|bar|spirit|wine/i.test(String(r.store || ''));
+          const tariffRef = typeof lookupActiveHospitalityTariff === 'function' ? lookupActiveHospitalityTariff(r.company, anchorDate) : null;
+          rawCandidates.push({
+            skuCode: scrubOutwardGuideText(String(r.id || `HSP-STK-${idx + 1}`)),
+            itemName: scrubOutwardGuideText(`${r.company} - ${r.store || 'Commissary Store'}`),
+            company: scrubOutwardGuideText(r.company),
+            vertical: 'Hospitality',
+            category: isCellar ? 'Beverage Cellar & Bar Par' : 'Kitchen & Commissary Par',
+            location: scrubOutwardGuideText(String(r.store || 'Resort Store')),
+            uom: 'Par Lot',
+            onHandQty,
+            unitCostUsd: unitLotUsd,
+            onHandValueUsd: closingUsd,
+            dailyUsageQty: dailyLots,
+            leadTimeDays: isCellar ? 7 : 3,
+            baseSafetyDays: isCellar ? 10 : 5,
+            orderFixedCostUsd: isCellar ? 85 : 45,
+            reorderMinQty: round2(dailyLots * (isCellar ? 12 : 6)),
+            txCount: Math.max(3, Math.round(usageUsd / 800) + (safeNum(r.r3_ratio) > 1.18 ? 8 : 2)),
+            supplierName: isCellar ? 'Beverage & Cellar Importers' : 'Fresh Commissary Suppliers',
+            baselineContext: tariffRef && tariffRef.season ? `${tariffRef.season} Par · Ratio ${safeNum(r.r3_ratio).toFixed(2)}x` : `Purchase/Usage Ratio ${safeNum(r.r3_ratio).toFixed(2)}x`
+          });
+        });
+
+        const resortGenMap = new Map();
+        (hsp.energyRows || []).forEach(r => {
+          if (!isCoInScope(r.company)) return;
+          const cur = resortGenMap.get(r.company) || { company: r.company, tankL: 0, usedL: 0, cnt: 0 };
+          cur.tankL = Math.max(cur.tankL, safeNum(r.tank_balance_l || r.closing_l || 2400));
+          cur.usedL += Math.max(0, safeNum(r.diesel_used_l || r.liters_used || 0));
+          cur.cnt += 1;
+          resortGenMap.set(r.company, cur);
+        });
+        Array.from(resortGenMap.values()).forEach((g, idx) => {
+          if (g.tankL <= 0 && g.usedL <= 0) return;
+          const unitCost = 0.84;
+          const onHandL = round2(Math.max(400, g.tankL));
+          const dailyL = round2(Math.max(25, g.usedL / Math.max(30, g.cnt * 7)));
+          rawCandidates.push({
+            skuCode: `HSP-GEN-${idx + 1}`,
+            itemName: `${g.company} Power Plant Diesel Reserve`,
+            company: scrubOutwardGuideText(g.company),
+            vertical: 'Hospitality',
+            category: 'Resort Generator Fuel',
+            location: `${g.company} Power House`,
+            uom: 'L',
+            onHandQty: onHandL,
+            unitCostUsd: unitCost,
+            onHandValueUsd: round2(onHandL * unitCost),
+            dailyUsageQty: dailyL,
+            leadTimeDays: 2,
+            baseSafetyDays: 5,
+            orderFixedCostUsd: 90,
+            reorderMinQty: round2(dailyL * 6),
+            txCount: g.cnt,
+            supplierName: 'Coastal Marine & Resort Fuel Supply',
+            baselineContext: `${g.cnt} generator logs`
+          });
+        });
+      }
+
+      if (includeIndustry('trading') && hasIndustryLiveOrDemo('trading')) {
+        const trdCoArg = (reqCo === 'all' || reqCo.startsWith('industry:')) ? '' : (COMPANY_BU_MATCH[reqCo] || SENTINEL_MODEL_KEY[reqCo] || reqCo);
+        const trd = computeTradingOperations({ company: trdCoArg, ignoreSearch: true });
+        const vinFamMap = new Map();
+        (trd.serialUnits || []).forEach(su => {
+          if (!isCoInScope(su.company)) return;
+          const famKey = `${su.company}::${su.family || su.model || 'Heavy Commercial Chassis'}`;
+          const cur = vinFamMap.get(famKey) || {
+            company: su.company,
+            family: su.family || su.model || 'Heavy Commercial Chassis',
+            unsoldQty: 0,
+            soldQty: 0,
+            unsoldLandedUsd: 0,
+            sampleVin: '',
+            warehouse: su.location || su.warehouse || 'Showroom Yard'
+          };
+          if (String(su.status || '') === 'Sold & Delivered') {
+            cur.soldQty += 1;
+          } else {
+            cur.unsoldQty += 1;
+            cur.unsoldLandedUsd = round2(cur.unsoldLandedUsd + Math.max(0, safeNum(su.landed_cost_usd)));
+            if (!cur.sampleVin) cur.sampleVin = String(su.vin || su.chassis || su.id || '');
+          }
+          vinFamMap.set(famKey, cur);
+        });
+        Array.from(vinFamMap.values()).forEach((vf, idx) => {
+          if (vf.unsoldQty <= 0 && vf.soldQty <= 0) return;
+          const unitCost = vf.unsoldQty > 0 ? round2(vf.unsoldLandedUsd / vf.unsoldQty) : 68000;
+          const dailyUnits = Math.max(0.015, round2(Math.max(1, vf.soldQty) / 240));
+          const tariff = typeof lookupActiveTradingTariff === 'function' ? lookupActiveTradingTariff(vf.company, vf.family, anchorDate) : null;
+          rawCandidates.push({
+            skuCode: `VIN-FAM-${idx + 1}`,
+            itemName: scrubOutwardGuideText(`${vf.family}${vf.sampleVin ? ' (VIN ' + vf.sampleVin + ')' : ''}`),
+            company: scrubOutwardGuideText(vf.company),
+            vertical: 'Trading',
+            category: '17-Char VIN Showroom Units',
+            location: scrubOutwardGuideText(vf.warehouse),
+            uom: 'Unit',
+            onHandQty: vf.unsoldQty,
+            unitCostUsd: unitCost,
+            onHandValueUsd: vf.unsoldLandedUsd,
+            dailyUsageQty: dailyUnits,
+            leadTimeDays: 45,
+            baseSafetyDays: 15,
+            orderFixedCostUsd: 1850,
+            reorderMinQty: 2,
+            txCount: Math.max(2, vf.soldQty + vf.unsoldQty),
+            supplierName: vf.company === 'Shacman' ? 'Shacman Heavy Truck Overseas Plant' : 'Korri Commercial Fleet OEM',
+            baselineContext: tariff && tariff.price_list ? `${tariff.price_list} Window` : 'Capitalized Landed WAC'
+          });
+        });
+
+        const movFreqByCode = new Map();
+        (trd.movementRows || []).forEach(mv => {
+          const c = norm(mv.item_code || '');
+          if (c) movFreqByCode.set(c, (movFreqByCode.get(c) || 0) + 1);
+        });
+        (trd.stockRows || []).forEach((r, idx) => {
+          if (!isCoInScope(r.company)) return;
+          const onHand = Math.max(0, safeNum(r.on_hand));
+          const wac = Math.max(0.01, safeNum(r.wac_usd));
+          const valUsd = round2(r.stock_val_usd != null ? Math.max(0, safeNum(r.stock_val_usd)) : onHand * wac);
+          const reorderMin = Math.max(1, safeNum(r.reorder_min || 3));
+          const mvCnt = movFreqByCode.get(norm(r.code || '')) || 1;
+          const dailyQty = Math.max(0.04, round2((reorderMin / 22) * (1 + Math.min(4, mvCnt) * 0.15)));
+          rawCandidates.push({
+            skuCode: scrubOutwardGuideText(String(r.code || `TRD-SKU-${idx + 1}`)),
+            itemName: scrubOutwardGuideText(String(r.name || `Spare Part ${idx + 1}`)),
+            company: scrubOutwardGuideText(r.company),
+            vertical: 'Trading',
+            category: scrubOutwardGuideText(String(r.category || 'Spare Parts & Tyres')),
+            location: scrubOutwardGuideText(String(r.warehouse || 'Central Parts Depot')),
+            uom: 'Piece',
+            onHandQty: onHand,
+            unitCostUsd: wac,
+            onHandValueUsd: valUsd,
+            dailyUsageQty: dailyQty,
+            leadTimeDays: 21,
+            baseSafetyDays: 10,
+            orderFixedCostUsd: 140,
+            reorderMinQty: reorderMin,
+            txCount: mvCnt + (r.is_low ? 6 : 0),
+            supplierName: r.company === 'Shacman' ? 'Weichai & Cummins OEM Parts' : 'European Commercial Parts Desk',
+            baselineContext: `${scrubOutwardGuideText(String(r.warehouse || 'Depot'))} WAC`
+          });
+        });
+      }
+
+      if (includeIndustry('realestate') && hasIndustryLiveOrDemo('realestate')) {
+        const re = computeRealEstateOperations();
+        (re.workorders || []).forEach((wo, idx) => {
+          if (!isCoInScope(wo.company)) return;
+          const budUsd = Math.max(0, safeNum(wo.budget_usd));
+          const actUsd = Math.max(0, safeNum(wo.actual_usd));
+          const remBufferUsd = round2(Math.max(250, budUsd > actUsd ? (budUsd - actUsd) : budUsd * 0.18));
+          const unitLot = 100;
+          const onHandLots = round2(remBufferUsd / unitLot);
+          const dailyLots = round2(Math.max(20, actUsd / 120) / unitLot);
+          rawCandidates.push({
+            skuCode: scrubOutwardGuideText(String(wo.id || `RE-MEP-${idx + 1}`)),
+            itemName: scrubOutwardGuideText(`${wo.property} - ${wo.unit} MEP & Fit-Out Stock`),
+            company: scrubOutwardGuideText(wo.company),
+            vertical: 'Real Estate',
+            category: scrubOutwardGuideText(String(wo.category || 'Building MEP & Maintenance')),
+            location: scrubOutwardGuideText(String(wo.property || 'Portfolio Store')),
+            uom: 'Supply Lot',
+            onHandQty: onHandLots,
+            unitCostUsd: unitLot,
+            onHandValueUsd: remBufferUsd,
+            dailyUsageQty: dailyLots,
+            leadTimeDays: 7,
+            baseSafetyDays: 8,
+            orderFixedCostUsd: 75,
+            reorderMinQty: round2(dailyLots * 10),
+            txCount: wo.rechargeable ? 6 : 3,
+            supplierName: scrubOutwardGuideText(String(wo.contractor || 'Facility MEP Contractor')),
+            baselineContext: wo.rechargeable ? 'Tenant-Rechargeable MEP Pool' : 'Landlord Maintenance Reserve'
+          });
+        });
+        (re.recharges || []).forEach((rc, idx) => {
+          if (!isCoInScope(rc.company)) return;
+          const costUsd = round2(Math.max(150, safeNum(rc.cost_usd) * 0.45));
+          const unitLot = 50;
+          const onHandLots = round2(costUsd / unitLot);
+          const dailyLots = round2((Math.max(100, safeNum(rc.cost_usd)) / 60) / unitLot);
+          rawCandidates.push({
+            skuCode: scrubOutwardGuideText(`RE-UTL-${rc.id || idx + 1}`),
+            itemName: scrubOutwardGuideText(`${rc.property} - ${rc.category} Utility Stock`),
+            company: scrubOutwardGuideText(rc.company),
+            vertical: 'Real Estate',
+            category: 'Generator Fuel & Building Utilities',
+            location: scrubOutwardGuideText(String(rc.property || 'Building Plant')),
+            uom: 'Utility Lot',
+            onHandQty: onHandLots,
+            unitCostUsd: unitLot,
+            onHandValueUsd: costUsd,
+            dailyUsageQty: dailyLots,
+            leadTimeDays: 4,
+            baseSafetyDays: 6,
+            orderFixedCostUsd: 60,
+            reorderMinQty: round2(dailyLots * 7),
+            txCount: rc.status === 'Settled' ? 3 : 7,
+            supplierName: 'Building Utility & Fuel Vendor',
+            baselineContext: `Linked ${scrubOutwardGuideText(String(rc.status || 'Active'))}`
+          });
+        });
+      }
+
+      if (includeIndustry('insurance') && hasIndustryLiveOrDemo('insurance')) {
+        const ins = computeInsuranceOperations();
+        (ins.remittances || []).forEach((rem, idx) => {
+          if (!isCoInScope(rem.company || 'Insurance Company')) return;
+          const cashHeld = round2(Math.max(1500, safeNum(rem.client_cash_held_usd) || safeNum(rem.gross_prem_usd) * 0.35));
+          const carrierPay = Math.max(0, safeNum(rem.net_payable_4017_usd));
+          const unitSlice = 1000;
+          const onHandUnits = round2(cashHeld / unitSlice);
+          const dailyRemitUnits = round2((Math.max(500, carrierPay) / 30) / unitSlice);
+          const agrRate = typeof lookupActiveInsuranceAgreementRate === 'function' ? lookupActiveInsuranceAgreementRate(rem.carrier, '', anchorDate) : null;
+          rawCandidates.push({
+            skuCode: scrubOutwardGuideText(String(rem.id || `INS-FLT-${idx + 1}`)),
+            itemName: scrubOutwardGuideText(`${rem.carrier} Bordereau Policy Float`),
+            company: 'Insurance Company',
+            vertical: 'Insurance',
+            category: 'Carrier Fiduciary Policy Float',
+            location: scrubOutwardGuideText(`${rem.carrier || 'Carrier'} Settlement Desk`),
+            uom: booksRedacted ? 'Tranche' : '$1k Tranche',
+            onHandQty: onHandUnits,
+            unitCostUsd: unitSlice,
+            onHandValueUsd: cashHeld,
+            dailyUsageQty: dailyRemitUnits,
+            leadTimeDays: 10,
+            baseSafetyDays: 7,
+            orderFixedCostUsd: 80,
+            reorderMinQty: round2(Math.max(1, carrierPay / unitSlice)),
+            txCount: Math.max(3, Math.round(safeNum(rem.gross_prem_usd) / 12000)),
+            supplierName: scrubOutwardGuideText(String(rem.carrier || 'Insurance Carrier')),
+            baselineContext: agrRate && agrRate.new_bus_pct ? `Active Comm ${agrRate.new_bus_pct}%` : scrubOutwardGuideText(String(rem.settlement_mode || 'Net of Commission'))
+          });
+        });
+      }
+
+      if (includeIndustry('holding')) {
+        const icRes = typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions() : null;
+        const bilaterals = (icRes && Array.isArray(icRes.byBilateral)) ? icRes.byBilateral : [];
+        bilaterals.forEach((b, idx) => {
+          if (!b || safeNum(b.netUnpaidUsd) <= 0) return;
+          if (!ownerFlag && (!isCoAllowedForSeat(b.lenderCo) || !isCoAllowedForSeat(b.borrowerCo))) return;
+          if (reqCo !== 'all' && indKey !== 'holding' && !isCoInScope(b.lenderCo) && !isCoInScope(b.borrowerCo)) return;
+          const capUsd = round2(safeNum(b.netUnpaidUsd));
+          const unitSlice = 1000;
+          const onHandUnits = round2(capUsd / unitSlice);
+          const dailyDrawUnits = round2((Math.max(1000, safeNum(b.paidBackUsd) || capUsd * 0.25) / 180) / unitSlice);
+          rawCandidates.push({
+            skuCode: `HLD-CAP-${idx + 1}`,
+            itemName: scrubOutwardGuideText(`${b.lenderCo} to ${b.borrowerCo} Capital Allocation`),
+            company: 'Bdeir Holding',
+            vertical: 'Holding',
+            category: 'Inter-Company Working Capital',
+            location: 'Central Holding Treasury',
+            uom: booksRedacted ? 'Slice' : '$1k Slice',
+            onHandQty: onHandUnits,
+            unitCostUsd: unitSlice,
+            onHandValueUsd: capUsd,
+            dailyUsageQty: dailyDrawUnits,
+            leadTimeDays: 7,
+            baseSafetyDays: 10,
+            orderFixedCostUsd: 110,
+            reorderMinQty: round2(dailyDrawUnits * 14),
+            txCount: Math.max(2, Math.round(safeNum(b.totalCount))),
+            supplierName: scrubOutwardGuideText(b.lenderCo),
+            baselineContext: `${safeNum(b.repayPct).toFixed(1)}% Corridor Repaid`
+          });
+        });
+
+        if (hasIndustryLiveOrDemo('holding')) {
+          const hldSched = computeHoldingSchedules();
+          (hldSched.facilitySchedules || []).forEach((f, idx) => {
+            if (!f || safeNum(f.balance_usd) <= 0 || !isCoInScope(f.company || 'Bdeir Holding')) return;
+            const balUsd = round2(safeNum(f.balance_usd));
+            const unitSlice = 1000;
+            const onHandUnits = round2(balUsd / unitSlice);
+            const dailyAmortUnits = round2((Math.max(5000, safeNum(f.repaid_usd) || balUsd * 0.25) / 180) / unitSlice);
+            rawCandidates.push({
+              skuCode: scrubOutwardGuideText(String(f.id || `HLD-FAC-${idx + 1}`)),
+              itemName: scrubOutwardGuideText(`${f.lender} (${f.type})`),
+              company: scrubOutwardGuideText(String(f.company || 'Bdeir Holding')),
+              vertical: 'Holding',
+              category: 'Treasury Credit Facility',
+              location: 'Group Treasury Desk',
+              uom: booksRedacted ? 'Slice' : '$1k Slice',
+              onHandQty: onHandUnits,
+              unitCostUsd: unitSlice,
+              onHandValueUsd: balUsd,
+              dailyUsageQty: dailyAmortUnits,
+              leadTimeDays: 14,
+              baseSafetyDays: 14,
+              orderFixedCostUsd: 150,
+              reorderMinQty: round2(dailyAmortUnits * 15),
+              txCount: 5,
+              supplierName: scrubOutwardGuideText(String(f.lender || 'Group Treasury')),
+              baselineContext: `Effective APR ${safeNum(f.apr_pct).toFixed(1)}%`
+            });
+          });
+        }
+      }
+    }
+
+    const carryRateDec = levers.carryingCostRatePct / 100;
+    const leadMult = Math.max(0.2, 1 + (levers.leadTimeBufferPct / 100));
+
+    let stockoutCritValueUsd = 0;
+    let belowReorderValueUsd = 0;
+    let optimalBandValueUsd = 0;
+    let excessSlowMovingValueUsd = 0;
+
+    let productiveWorkingCapitalUsd = 0;
+    let releasableExcessUsd = 0;
+
+    let urgent1_7dOrderUsd = 0;
+    let planned8_14dOrderUsd = 0;
+    let buffer15_30dOrderUsd = 0;
+
+    let totalInventoryValueUsd = 0;
+    let annualizedConsumptionUsd = 0;
+    let annualCarryingDragUsd = 0;
+    let weightedDohNumer = 0;
+    let stockoutRiskCount = 0;
+    let excessCount = 0;
+
+    const computedItems = rawCandidates.map(raw => {
+      const unitCost = Math.max(0, round2(raw.unitCostUsd));
+      const onHandQty = Math.max(0, round2(raw.onHandQty));
+      const onHandValueUsd = Math.max(0, round2(raw.onHandValueUsd));
+      const dailyQty = Math.max(0, raw.dailyUsageQty);
+      const annualDemandQty = round2(dailyQty * 365);
+      const annualUsageUsd = round2(annualDemandQty * unitCost);
+
+      const daysOnHand = onHandQty <= 0.0001
+        ? 0
+        : (dailyQty > 0.0001 ? Math.min(999, round2(onHandQty / dailyQty)) : 365);
+      const turnoverRatio = onHandValueUsd > 0.01
+        ? round2(annualUsageUsd / onHandValueUsd)
+        : (annualUsageUsd > 0 ? 12 : 0);
+
+      const effLeadDays = Math.max(1, round2(raw.leadTimeDays * leadMult));
+      const effSafetyDays = Math.max(0, round2(raw.baseSafetyDays + levers.safetyStockDaysDelta));
+
+      const ov = overrideMap.get(norm(raw.skuCode)) || overrideMap.get(norm(raw.itemName)) || null;
+      const safetyStockQty = round2(dailyQty * effSafetyDays);
+      const baseRopQty = Math.max(round2(raw.reorderMinQty * (effSafetyDays / Math.max(1, raw.baseSafetyDays || 7))), round2(dailyQty * effLeadDays + safetyStockQty));
+      const reorderPointQty = (ov && ov.customParQty !== null) ? ov.customParQty : baseRopQty;
+
+      const holdingCostPerUnit = Math.max(0.01, unitCost * carryRateDec);
+      const rawEoq = (annualDemandQty > 0.0001 && unitCost > 0)
+        ? Math.sqrt((2 * annualDemandQty * raw.orderFixedCostUsd) / holdingCostPerUnit)
+        : 0;
+      const eoqQty = rawEoq > 0 ? Math.max(1, round2(rawEoq)) : 0;
+
+      const maxOptimalDays = Math.max(45, effLeadDays + effSafetyDays + 45);
+      const maxOptimalQty = dailyQty > 0.0001 ? round2(dailyQty * maxOptimalDays) : Math.max(reorderPointQty * 2, eoqQty * 1.5);
+      let healthBand = 'optimal';
+      let healthLabel = 'Optimal Band';
+      if (onHandQty <= 0.0001 || (dailyQty > 0.0001 && daysOnHand <= Math.max(2, effLeadDays * 0.5)) || onHandQty <= safetyStockQty * 0.5) {
+        healthBand = 'stockout_critical';
+        healthLabel = 'Stockout Critical';
+        stockoutCritValueUsd = round2(stockoutCritValueUsd + onHandValueUsd);
+        stockoutRiskCount += 1;
+      } else if (onHandQty <= reorderPointQty) {
+        healthBand = 'below_reorder';
+        healthLabel = 'Below Reorder Point';
+        belowReorderValueUsd = round2(belowReorderValueUsd + onHandValueUsd);
+        stockoutRiskCount += 1;
+      } else if (onHandQty > maxOptimalQty && onHandValueUsd > 0) {
+        healthBand = 'excess_slow';
+        healthLabel = 'Excess / Slow-Moving';
+        excessSlowMovingValueUsd = round2(excessSlowMovingValueUsd + onHandValueUsd);
+        excessCount += 1;
+      } else {
+        optimalBandValueUsd = round2(optimalBandValueUsd + onHandValueUsd);
+      }
+
+      let itemExcessUsd = 0;
+      if (healthBand === 'excess_slow' && onHandQty > maxOptimalQty && onHandQty > 0) {
+        const excessRatio = clampNum((onHandQty - maxOptimalQty) / onHandQty, 0, 1, 0);
+        itemExcessUsd = Math.min(onHandValueUsd, round2(onHandValueUsd * excessRatio));
+      }
+      if (ov && ov.action === 'freeze_excess' && onHandValueUsd > 0 && itemExcessUsd === 0) {
+        itemExcessUsd = round2(onHandValueUsd * 0.25);
+      }
+      const itemProductiveUsd = round2(onHandValueUsd - itemExcessUsd);
+      releasableExcessUsd = round2(releasableExcessUsd + itemExcessUsd);
+      productiveWorkingCapitalUsd = round2(productiveWorkingCapitalUsd + itemProductiveUsd);
+
+      let recOrderQty = 0;
+      if (ov && ov.action === 'freeze_excess') {
+        recOrderQty = 0;
+      } else if (ov && ov.overrideOrderQty !== null) {
+        recOrderQty = ov.overrideOrderQty;
+      } else if (onHandQty <= reorderPointQty) {
+        recOrderQty = round2(Math.max(eoqQty, reorderPointQty - onHandQty + safetyStockQty * 0.25));
+      }
+      const recommendedOrderUsd = round2(recOrderQty * unitCost);
+      let horizonBucket = 'none';
+      if (recommendedOrderUsd > 0) {
+        if (healthBand === 'stockout_critical' || daysOnHand <= 7) {
+          horizonBucket = '1_7d';
+          urgent1_7dOrderUsd = round2(urgent1_7dOrderUsd + recommendedOrderUsd);
+        } else if (daysOnHand <= 21) {
+          horizonBucket = '8_14d';
+          planned8_14dOrderUsd = round2(planned8_14dOrderUsd + recommendedOrderUsd);
+        } else {
+          horizonBucket = '15_30d';
+          buffer15_30dOrderUsd = round2(buffer15_30dOrderUsd + recommendedOrderUsd);
+        }
+      }
+
+      const itemCarryDragUsd = round2(onHandValueUsd * carryRateDec);
+      totalInventoryValueUsd = round2(totalInventoryValueUsd + onHandValueUsd);
+      annualizedConsumptionUsd = round2(annualizedConsumptionUsd + annualUsageUsd);
+      annualCarryingDragUsd = round2(annualCarryingDragUsd + itemCarryDragUsd);
+      weightedDohNumer += daysOnHand * (onHandValueUsd > 0 ? onHandValueUsd : 1);
+
+      const urgencyBoost = healthBand === 'stockout_critical' ? 5000 : (healthBand === 'below_reorder' ? 2800 : (healthBand === 'excess_slow' ? 1400 : 0));
+      const priorityScore = round2(urgencyBoost + raw.txCount * 180 + recommendedOrderUsd * 0.25 + itemExcessUsd * 0.2 + onHandValueUsd * 0.02);
+
+      return {
+        skuCode: raw.skuCode,
+        itemName: raw.itemName,
+        company: raw.company,
+        vertical: raw.vertical,
+        category: raw.category,
+        location: raw.location,
+        uom: raw.uom,
+        supplierName: raw.supplierName,
+        baselineContext: raw.baselineContext,
+        txCount: raw.txCount,
+        onHandQty,
+        unitCostUsd: booksRedacted ? null : unitCost,
+        onHandValueUsd: booksRedacted ? null : onHandValueUsd,
+        dailyUsageQty: round2(dailyQty),
+        annualUsageUsd: booksRedacted ? null : annualUsageUsd,
+        daysOnHand,
+        turnoverRatio,
+        effectiveLeadTimeDays: effLeadDays,
+        safetyStockQty,
+        reorderPointQty,
+        eoqQty,
+        recommendedOrderQty: recOrderQty,
+        recommendedOrderUsd: booksRedacted ? null : recommendedOrderUsd,
+        horizonBucket,
+        carryingDragUsd: booksRedacted ? null : itemCarryDragUsd,
+        productiveCapitalUsd: booksRedacted ? null : itemProductiveUsd,
+        releasableExcessUsd: booksRedacted ? null : itemExcessUsd,
+        healthBand,
+        healthLabel,
+        isSaved: Boolean(ov),
+        savedAction: ov ? ov.action : '',
+        savedNote: booksRedacted ? '' : (ov ? ov.note : ''),
+        priorityScore
+      };
+    });
+
+    computedItems.sort((a, b) => (b.priorityScore - a.priorityScore) || (b.txCount - a.txCount));
+
+    const totalRecommendedOrderUsd = round2(urgent1_7dOrderUsd + planned8_14dOrderUsd + buffer15_30dOrderUsd);
+    const healthVarianceUsd = round2((stockoutCritValueUsd + belowReorderValueUsd + optimalBandValueUsd + excessSlowMovingValueUsd) - totalInventoryValueUsd);
+    const wcVarianceUsd = round2((productiveWorkingCapitalUsd + releasableExcessUsd) - totalInventoryValueUsd);
+    const sumItemOrderUsd = booksRedacted
+      ? totalRecommendedOrderUsd
+      : round2(computedItems.reduce((s, it) => s + Number(it.recommendedOrderUsd || 0), 0));
+    const replenishVarianceUsd = round2(totalRecommendedOrderUsd - sumItemOrderUsd);
+
+    const portfolioTurnoverRatio = totalInventoryValueUsd > 0.01 ? round2(annualizedConsumptionUsd / totalInventoryValueUsd) : 0;
+    const denomWeight = totalInventoryValueUsd > 0 ? totalInventoryValueUsd : Math.max(1, computedItems.length);
+    const weightedDaysOnHand = computedItems.length ? round2(weightedDohNumer / denomWeight) : 0;
+
+    let closingCombinedTillUsd = null;
+    let postReplenishTillUsd = null;
+    if (!booksRedacted) {
+      const prevCo = STATE.company;
+      try {
+        STATE.company = reqCo;
+        const cfSnap = computeCashflowLiquiditySnapshot({ user: u, canViewBooks: true });
+        closingCombinedTillUsd = round2(safeNum(cfSnap && (cfSnap.closingCombinedUsd != null ? cfSnap.closingCombinedUsd : cfSnap.closingUsd)));
+        postReplenishTillUsd = round2(closingCombinedTillUsd - urgent1_7dOrderUsd);
+      } finally {
+        STATE.company = prevCo;
+      }
+    }
+
+    const safeCoKey = String(reqCo || 'all').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ruleId = `CA_INV_${safeCoKey}`;
+    const alertSt = ensureAlertRulesState();
+    const hasActiveAlertRule = Boolean(alertSt && Array.isArray(alertSt.custom) && alertSt.custom.some(r => r && r.id === ruleId && r.enabled !== false));
+
+    const topItem = computedItems[0] || null;
+    const headlineEn = booksRedacted
+      ? scrubOutwardGuideText(
+          `${coLabel}: ${fmtNum(computedItems.length)} tracked operational stock items (${portfolioTurnoverRatio.toFixed(2)}x turnover, ${weightedDaysOnHand.toFixed(1)}d weighted DOH) show ${stockoutRiskCount} reorder alert(s) and ${excessCount} slow-moving item(s); financial valuations and cash till balances are redacted for this seat.`
+        )
+      : scrubOutwardGuideText(
+          `${coLabel}: ${fmtNum(computedItems.length)} tracked stock items valued at ${fmtUSD(totalInventoryValueUsd, 0)} (${portfolioTurnoverRatio.toFixed(2)}x turnover, ${weightedDaysOnHand.toFixed(1)}d weighted DOH) carry ${fmtUSD(annualCarryingDragUsd, 0)}/yr holding cost with ${fmtUSD(releasableExcessUsd, 0)} releasable excess capital and ${fmtUSD(totalRecommendedOrderUsd, 0)} EOQ replenishment (${stockoutRiskCount} reorder alert(s)).`
+        );
+    const headlineAr = booksRedacted
+      ? scrubOutwardGuideText(
+          `${coLabel}: ${fmtNum(computedItems.length)} صنف مخزوني تشغيلي (معدل دوران ${portfolioTurnoverRatio.toFixed(2)}x وتغطية ${weightedDaysOnHand.toFixed(1)} يوماً) يسجل ${stockoutRiskCount} تنبيهات طلب و${excessCount} أصناف فائضة؛ القيم المالية وأرصدة الصندوق محجوبة لهذا المقعد.`
+        )
+      : scrubOutwardGuideText(
+          `${coLabel}: ${fmtNum(computedItems.length)} صنف مخزوني بقيمة ${fmtUSD(totalInventoryValueUsd, 0)} (معدل دوران ${portfolioTurnoverRatio.toFixed(2)}x وتغطية ${weightedDaysOnHand.toFixed(1)} يوماً) يتحمل تكلفة احتفاظ سنوية ${fmtUSD(annualCarryingDragUsd, 0)} مع قابلية تحرير سيولة فائضة بقيمة ${fmtUSD(releasableExcessUsd, 0)} وطلبات تعويض اقتصادية بقيمة ${fmtUSD(totalRecommendedOrderUsd, 0)} (${stockoutRiskCount} تنبيهات طلب).`
+        );
+    const headlineFr = booksRedacted
+      ? scrubOutwardGuideText(
+          `${coLabel} : ${fmtNum(computedItems.length)} références opérationnelles (rotation ${portfolioTurnoverRatio.toFixed(2)}x, couverture ${weightedDaysOnHand.toFixed(1)} j) affichent ${stockoutRiskCount} alerte(s) de réapprovisionnement et ${excessCount} article(s) excédentaires ; valorisations et encaisse masquées pour ce poste.`
+        )
+      : scrubOutwardGuideText(
+          `${coLabel} : ${fmtNum(computedItems.length)} références valorisées à ${fmtUSD(totalInventoryValueUsd, 0)} (rotation ${portfolioTurnoverRatio.toFixed(2)}x, couverture ${weightedDaysOnHand.toFixed(1)} j) portent ${fmtUSD(annualCarryingDragUsd, 0)}/an de coût de possession avec ${fmtUSD(releasableExcessUsd, 0)} d excédent libérable et ${fmtUSD(totalRecommendedOrderUsd, 0)} de commandes économiques (${stockoutRiskCount} alerte(s)).`
+        );
+
+    const bulletsEn = booksRedacted
+      ? [
+          scrubOutwardGuideText(`Operational Stock Health: ${stockoutRiskCount} SKU(s) at or below reorder point, ${excessCount} slow-moving SKU(s) above par ceiling across ${fmtNum(computedItems.length)} tracked items.`),
+          scrubOutwardGuideText(`Safety & Lead-Time Policy: Safety buffer ${levers.safetyStockDaysDelta >= 0 ? '+' : ''}${levers.safetyStockDaysDelta}d and lead-time stress ${levers.leadTimeBufferPct >= 0 ? '+' : ''}${levers.leadTimeBufferPct}% active; financial valuations redacted.`),
+          topItem
+            ? scrubOutwardGuideText(`Top Priority SKU: ${topItem.itemName} (${topItem.skuCode}) at ${topItem.daysOnHand}d DOH vs ROP ${fmtNum(topItem.reorderPointQty)} ${topItem.uom} (Wilson EOQ ${fmtNum(topItem.eoqQty)} ${topItem.uom}, Recommended Order ${fmtNum(topItem.recommendedOrderQty)} ${topItem.uom}).`)
+            : scrubOutwardGuideText(`All tracked SKUs are currently within operational par thresholds.`)
+        ]
+      : [
+          scrubOutwardGuideText(`Stock-Health Valuation Tie: Critical ${fmtUSD(stockoutCritValueUsd, 0)} + Below ROP ${fmtUSD(belowReorderValueUsd, 0)} + Optimal ${fmtUSD(optimalBandValueUsd, 0)} + Excess ${fmtUSD(excessSlowMovingValueUsd, 0)} = ${fmtUSD(totalInventoryValueUsd, 0)} ($0.00 variance).`),
+          scrubOutwardGuideText(`Working-Capital Split: Productive ${fmtUSD(productiveWorkingCapitalUsd, 0)} + Releasable Excess ${fmtUSD(releasableExcessUsd, 0)} at ${levers.carryingCostRatePct}% annual carrying cost (${fmtUSD(annualCarryingDragUsd, 0)}/yr drag).`),
+          topItem
+            ? scrubOutwardGuideText(`Top Priority SKU: ${topItem.itemName} (${topItem.skuCode}) at ${topItem.daysOnHand}d DOH vs ROP ${fmtNum(topItem.reorderPointQty)} ${topItem.uom} (EOQ ${fmtNum(topItem.eoqQty)} ${topItem.uom}, Order ${fmtUSD(topItem.recommendedOrderUsd, 0)}).`)
+            : scrubOutwardGuideText(`Replenishment Horizon: Urgent 1-7d ${fmtUSD(urgent1_7dOrderUsd, 0)}, Planned 8-14d ${fmtUSD(planned8_14dOrderUsd, 0)}, Buffer 15-30d ${fmtUSD(buffer15_30dOrderUsd, 0)}.`)
+        ];
+    const bulletsAr = booksRedacted
+      ? [
+          scrubOutwardGuideText(`صحة المخزون التشغيلي: ${stockoutRiskCount} أصناف عند أو دون نقطة إعادة الطلب و${excessCount} أصناف بطيئة الحركة من أصل ${fmtNum(computedItems.length)} صنفاً.`),
+          scrubOutwardGuideText(`سياسة الأمان والتوريد: هامش مخزون الأمان ${levers.safetyStockDaysDelta} يوم وضغط مهلة التوريد ${levers.leadTimeBufferPct}%؛ القيم المالية محجوبة.`),
+          topItem
+            ? scrubOutwardGuideText(`أعلى أولوية تشغيلية: ${topItem.itemName} (${topItem.skuCode}) بتغطية ${topItem.daysOnHand} يوماً مقابل نقطة طلب ${fmtNum(topItem.reorderPointQty)} ${topItem.uom} (الكمية الاقتصادية ${fmtNum(topItem.eoqQty)} ${topItem.uom}).`)
+            : scrubOutwardGuideText(`جميع الأصناف ضمن مستويات الأمان التشغيلية المعتمدة.`)
+        ]
+      : [
+          scrubOutwardGuideText(`مطابقة صحة المخزون: حرج ${fmtUSD(stockoutCritValueUsd, 0)} + دون نقطة الطلب ${fmtUSD(belowReorderValueUsd, 0)} + مثالي ${fmtUSD(optimalBandValueUsd, 0)} + فائض ${fmtUSD(excessSlowMovingValueUsd, 0)} = ${fmtUSD(totalInventoryValueUsd, 0)} (فارق $0.00).`),
+          scrubOutwardGuideText(`رأس المال العامل: منتج ${fmtUSD(productiveWorkingCapitalUsd, 0)} + فائض قابل للتحرير ${fmtUSD(releasableExcessUsd, 0)} بتكلفة احتفاظ ${levers.carryingCostRatePct}% سنوياً.`),
+          topItem
+            ? scrubOutwardGuideText(`أعلى أولوية تشغيلية: ${topItem.itemName} (${topItem.skuCode}) بتغطية ${topItem.daysOnHand} يوماً مقابل نقطة طلب ${fmtNum(topItem.reorderPointQty)} ${topItem.uom}.`)
+            : scrubOutwardGuideText(`جدول التوريد: عاجل 1-7 أيام ${fmtUSD(urgent1_7dOrderUsd, 0)}، مخطط 8-14 يوماً ${fmtUSD(planned8_14dOrderUsd, 0)}.`)
+        ];
+    const bulletsFr = booksRedacted
+      ? [
+          scrubOutwardGuideText(`Santé opérationnelle du stock : ${stockoutRiskCount} référence(s) sous seuil et ${excessCount} référence(s) à rotation lente sur ${fmtNum(computedItems.length)} articles suivis.`),
+          scrubOutwardGuideText(`Paramètres de sécurité : marge stock ${levers.safetyStockDaysDelta} j et délai fournisseur ${levers.leadTimeBufferPct}% ; valorisations financières masquées.`),
+          topItem
+            ? scrubOutwardGuideText(`Priorité opérationnelle : ${topItem.itemName} (${topItem.skuCode}) à ${topItem.daysOnHand} j de couverture face au seuil ${fmtNum(topItem.reorderPointQty)} ${topItem.uom} (EOQ ${fmtNum(topItem.eoqQty)} ${topItem.uom}).`)
+            : scrubOutwardGuideText(`Tous les articles respectent les seuils opérationnels.`)
+        ]
+      : [
+          scrubOutwardGuideText(`Cadrage santé stock : Critique ${fmtUSD(stockoutCritValueUsd, 0)} + Sous seuil ${fmtUSD(belowReorderValueUsd, 0)} + Optimal ${fmtUSD(optimalBandValueUsd, 0)} + Excédent ${fmtUSD(excessSlowMovingValueUsd, 0)} = ${fmtUSD(totalInventoryValueUsd, 0)} (écart $0.00).`),
+          scrubOutwardGuideText(`Fonds de roulement : Productif ${fmtUSD(productiveWorkingCapitalUsd, 0)} + Excédent libérable ${fmtUSD(releasableExcessUsd, 0)} au taux annuel de ${levers.carryingCostRatePct}%.`),
+          topItem
+            ? scrubOutwardGuideText(`Priorité opérationnelle : ${topItem.itemName} (${topItem.skuCode}) à ${topItem.daysOnHand} j de couverture face au seuil ${fmtNum(topItem.reorderPointQty)} ${topItem.uom}.`)
+            : scrubOutwardGuideText(`Horizon commandes : Urgent 1-7 j ${fmtUSD(urgent1_7dOrderUsd, 0)}, Planifié 8-14 j ${fmtUSD(planned8_14dOrderUsd, 0)}.`)
+        ];
+
+    const defaultWhatsappEn = booksRedacted
+      ? scrubOutwardGuideText(
+          `Operational Stock Reorder Dispatch (${coLabel} - ${anchorDate}): ${fmtNum(computedItems.length)} tracked SKUs (${portfolioTurnoverRatio.toFixed(2)}x turnover, ${weightedDaysOnHand.toFixed(1)}d DOH), ${stockoutRiskCount} reorder alert(s).${topItem ? ' Priority action on ' + topItem.itemName + ' (' + topItem.skuCode + '): On-Hand ' + fmtNum(topItem.onHandQty) + ' ' + topItem.uom + ', Recommended EOQ Order ' + fmtNum(topItem.recommendedOrderQty) + ' ' + topItem.uom + ' with ' + topItem.supplierName + '.' : ''}`
+        )
+      : scrubOutwardGuideText(
+          `Working-Capital & Reorder Dispatch (${coLabel} - ${anchorDate}): Total Stock ${fmtUSD(totalInventoryValueUsd, 0)} (${portfolioTurnoverRatio.toFixed(2)}x turnover, ${weightedDaysOnHand.toFixed(1)}d DOH), Releasable Excess ${fmtUSD(releasableExcessUsd, 0)}, EOQ Replenishment ${fmtUSD(totalRecommendedOrderUsd, 0)} (Urgent 1-7d: ${fmtUSD(urgent1_7dOrderUsd, 0)}).${topItem ? ' Priority action on ' + topItem.itemName + ' (' + topItem.skuCode + '): On-Hand ' + fmtNum(topItem.onHandQty) + ' ' + topItem.uom + ', Recommended EOQ Order ' + fmtNum(topItem.recommendedOrderQty) + ' ' + topItem.uom + ' (' + fmtUSD(topItem.recommendedOrderUsd, 0) + ') with ' + topItem.supplierName + '.' : ''}`
+        );
+    const defaultWhatsappAr = booksRedacted
+      ? scrubOutwardGuideText(
+          `موجز إعادة الطلب التشغيلي (${coLabel} - ${anchorDate}): ${fmtNum(computedItems.length)} صنفاً متابعاً (دوران ${portfolioTurnoverRatio.toFixed(2)}x، تغطية ${weightedDaysOnHand.toFixed(1)} يوماً)، ${stockoutRiskCount} تنبيهات طلب.${topItem ? ' الأولوية للصنف ' + topItem.itemName + ' (' + topItem.skuCode + '): الرصيد الحالي ' + fmtNum(topItem.onHandQty) + ' ' + topItem.uom + '، الكمية الاقتصادية المقترحة ' + fmtNum(topItem.recommendedOrderQty) + ' ' + topItem.uom + '.' : ''}`
+        )
+      : scrubOutwardGuideText(
+          `موجز إعادة الطلب ورأس المال العامل (${coLabel} - ${anchorDate}): إجمالي المخزون ${fmtUSD(totalInventoryValueUsd, 0)} (دوران ${portfolioTurnoverRatio.toFixed(2)}x، تغطية ${weightedDaysOnHand.toFixed(1)} يوماً)، الفائض القابل للتحرير ${fmtUSD(releasableExcessUsd, 0)}، وطلبات التعويض الاقتصادية ${fmtUSD(totalRecommendedOrderUsd, 0)}.${topItem ? ' الأولوية للصنف ' + topItem.itemName + ' (' + topItem.skuCode + '): الرصيد الحالي ' + fmtNum(topItem.onHandQty) + ' ' + topItem.uom + '، الكمية الاقتصادية المقترحة ' + fmtNum(topItem.recommendedOrderQty) + ' ' + topItem.uom + ' (' + fmtUSD(topItem.recommendedOrderUsd, 0) + ').' : ''}`
+        );
+    const defaultWhatsappFr = booksRedacted
+      ? scrubOutwardGuideText(
+          `Point Réapprovisionnement Opérationnel (${coLabel} - ${anchorDate}) : ${fmtNum(computedItems.length)} références suivies (rotation ${portfolioTurnoverRatio.toFixed(2)}x, couverture ${weightedDaysOnHand.toFixed(1)} j), ${stockoutRiskCount} alerte(s).${topItem ? ' Action prioritaire sur ' + topItem.itemName + ' (' + topItem.skuCode + ') : stock ' + fmtNum(topItem.onHandQty) + ' ' + topItem.uom + ', commande EOQ ' + fmtNum(topItem.recommendedOrderQty) + ' ' + topItem.uom + '.' : ''}`
+        )
+      : scrubOutwardGuideText(
+          `Point Réapprovisionnement et Stock (${coLabel} - ${anchorDate}) : Stock total ${fmtUSD(totalInventoryValueUsd, 0)} (rotation ${portfolioTurnoverRatio.toFixed(2)}x, couverture ${weightedDaysOnHand.toFixed(1)} j), excédent libérable ${fmtUSD(releasableExcessUsd, 0)}, commandes EOQ ${fmtUSD(totalRecommendedOrderUsd, 0)}.${topItem ? ' Action prioritaire sur ' + topItem.itemName + ' (' + topItem.skuCode + ') : stock ' + fmtNum(topItem.onHandQty) + ' ' + topItem.uom + ', commande recommandée ' + fmtNum(topItem.recommendedOrderQty) + ' ' + topItem.uom + ' (' + fmtUSD(topItem.recommendedOrderUsd, 0) + ').' : ''}`
+        );
+
+    return {
+      scopeKey: `inv|${reqCo}|${anchorDate}|${u ? u.id : 'anon'}|${booksRedacted ? 'redacted' : 'full'}`,
+      leverSig,
+      industry: ind,
+      companyKey: reqCo,
+      requestedCompanyKey: rawRequestedCo,
+      companyLabel: coLabel,
+      companyEn: coLabel,
+      companyAr: coLabel,
+      companyFr: coLabel,
+      periodKey: periodLabel,
+      periodLabel,
+      periodEn: periodLabel,
+      periodAr: periodLabel,
+      periodFr: periodLabel,
+      asOfDate: anchorDate,
+      rlsClamped: false,
+      restricted: false,
+      booksRedacted,
+      canViewBooks,
+      canWarehouse,
+      canEditAlerts: Boolean(!booksRedacted && (canReviewSentinels(u, reqCo) || ownerFlag)),
+      hasActiveAlertRule,
+      targetHubView,
+      levers,
+      leverSpecs,
+      presets,
+      summary: {
+        totalSkuCount: computedItems.length,
+        totalInventoryValueUsd: booksRedacted ? null : totalInventoryValueUsd,
+        annualizedConsumptionUsd: booksRedacted ? null : annualizedConsumptionUsd,
+        portfolioTurnoverRatio,
+        weightedDaysOnHand,
+        annualCarryingDragUsd: booksRedacted ? null : annualCarryingDragUsd,
+        productiveWorkingCapitalUsd: booksRedacted ? null : productiveWorkingCapitalUsd,
+        releasableExcessUsd: booksRedacted ? null : releasableExcessUsd,
+        totalRecommendedOrderUsd: booksRedacted ? null : totalRecommendedOrderUsd,
+        productiveCapitalPct: totalInventoryValueUsd > 0 ? round2((productiveWorkingCapitalUsd / totalInventoryValueUsd) * 100) : 0,
+        releasableExcessPct: totalInventoryValueUsd > 0 ? round2((releasableExcessUsd / totalInventoryValueUsd) * 100) : 0,
+        stockoutRiskCount,
+        excessCount,
+        savedOverrideCount: overrideMap.size,
+        closingCombinedTillUsd,
+        postReplenishTillUsd
+      },
+      healthBuckets: {
+        stockoutCritValueUsd: booksRedacted ? null : stockoutCritValueUsd,
+        belowReorderValueUsd: booksRedacted ? null : belowReorderValueUsd,
+        optimalBandValueUsd: booksRedacted ? null : optimalBandValueUsd,
+        excessSlowMovingValueUsd: booksRedacted ? null : excessSlowMovingValueUsd,
+        stockoutCritPct: totalInventoryValueUsd > 0 ? round2((stockoutCritValueUsd / totalInventoryValueUsd) * 100) : 0,
+        belowReorderPct: totalInventoryValueUsd > 0 ? round2((belowReorderValueUsd / totalInventoryValueUsd) * 100) : 0,
+        optimalBandPct: totalInventoryValueUsd > 0 ? round2((optimalBandValueUsd / totalInventoryValueUsd) * 100) : 0,
+        excessSlowMovingPct: totalInventoryValueUsd > 0 ? round2((excessSlowMovingValueUsd / totalInventoryValueUsd) * 100) : 0
+      },
+      replenishHorizon: {
+        urgent1_7dOrderUsd: booksRedacted ? null : urgent1_7dOrderUsd,
+        planned8_14dOrderUsd: booksRedacted ? null : planned8_14dOrderUsd,
+        buffer15_30dOrderUsd: booksRedacted ? null : buffer15_30dOrderUsd,
+        urgent1_7dPct: totalRecommendedOrderUsd > 0 ? round2((urgent1_7dOrderUsd / totalRecommendedOrderUsd) * 100) : 0,
+        planned8_30dPct: totalRecommendedOrderUsd > 0 ? round2(((planned8_14dOrderUsd + buffer15_30dOrderUsd) / totalRecommendedOrderUsd) * 100) : 0
+      },
+      tieCheck: {
+        healthBalanced: Math.abs(healthVarianceUsd) < 0.01,
+        healthVarianceUsd,
+        wcBalanced: Math.abs(wcVarianceUsd) < 0.01,
+        wcVarianceUsd,
+        replenishBalanced: Math.abs(replenishVarianceUsd) < 0.01,
+        replenishVarianceUsd
+      },
+      items: computedItems,
+      reorderList: computedItems.slice(0, 60),
+      headlineEn,
+      headlineAr,
+      headlineFr,
+      spokenEn: [headlineEn, ...bulletsEn].join(' '),
+      spokenAr: [headlineAr, ...bulletsAr].join(' '),
+      spokenFr: [headlineFr, ...bulletsFr].join(' '),
+      bulletsEn,
+      bulletsAr,
+      bulletsFr,
+      drafts: {
+        whatsappEn: defaultWhatsappEn,
+        whatsappAr: defaultWhatsappAr,
+        whatsappFr: defaultWhatsappFr
+      }
+    };
+  }
+
+  function applyInventoryAlertRule(opts = {}) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const u = options.user || (typeof activeUser === 'function' ? activeUser() : null);
+    const snap = computeInventoryOptimizerSnapshot(options);
+    if (!snap || snap.restricted || snap.rlsClamped || !snap.canEditAlerts || (!canReviewSentinels(u, snap.companyKey) && !isOwner(u))) {
+      return { ok: false, error: 'Inventory & working-capital guardrail creation is restricted for this seat or scope.' };
+    }
+    const st = ensureAlertRulesState();
+    const safeCoKey = String(snap.companyKey || 'all').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ruleId = `CA_INV_${safeCoKey}`;
+    const excessCapUsd = Math.max(1500, round2((snap.summary.releasableExcessUsd || snap.summary.totalInventoryValueUsd * 0.15 || 5000) * 0.9));
+    const existingIdx = st.custom.findIndex(r => r && r.id === ruleId);
+    const seqCode = existingIdx >= 0
+      ? st.custom[existingIdx].code
+      : ('#' + String(ALERT_RULE_CATALOG.length + getActiveCustomAlertRules().length + 1).padStart(2, '0'));
+    const cleanName = scrubOutwardGuideText(`${snap.companyLabel} Stockout & Carrying-Cost Drag Guardrail`);
+    const cleanWhy = scrubOutwardGuideText(
+      `Inventory & Working-Capital Guardrail (${snap.periodLabel}): cap slow-moving excess stock at ${fmtUSD(excessCapUsd, 0)} (${snap.levers.carryingCostRatePct}% carrying cost) and flag ${snap.summary.stockoutRiskCount} item(s) at or below reorder point.`
+    );
+    const ruleObj = {
+      id: ruleId,
+      code: seqCode,
+      name: cleanName,
+      metric: 'inventory_excess_wc_usd',
+      target: '',
+      op: '>',
+      threshold: excessCapUsd,
+      mode: 'warn_and_audit',
+      company: snap.companyKey === 'all' || String(snap.companyKey).startsWith('industry:') ? 'all' : snap.companyLabel,
+      why: cleanWhy,
+      enabled: true,
+      created_by: String((u && u.full_name) || 'Owner'),
+      updated_at: new Date().toISOString()
+    };
+    if (existingIdx >= 0) {
+      st.custom[existingIdx] = ruleObj;
+    } else {
+      st.custom.push(ruleObj);
+    }
+    STATE.customAlertRules = st.custom;
+    if (!options.skipPersist) {
+      persistAlertRulesChange({}, [ruleObj]);
+    }
+    return {
+      ok: true,
+      updatedExisting: existingIdx >= 0,
+      rule: ruleObj,
+      snapshot: snap
+    };
+  }
+
   function computeInspector360Snapshot(opts = {}) {
     ensureMultiIndustrySpineSeeded();
     const options = opts && typeof opts === 'object' ? opts : {};
@@ -66202,7 +68460,8 @@
     const primaryId = String((opts.trEl && opts.trEl.getAttribute('data-ind-row-id')) || rawCells[0] || 'REC-01').trim();
     const editKey = makeIndustryRowEditKey(ind, tableTitle, primaryId);
     const editStore = getIndustryRowEditStore();
-    const savedEntry = editStore[editKey];
+    const tillOwned = isTillOwnedRowId(primaryId);
+    const savedEntry = tillOwned ? null : editStore[editKey];
     const cells = savedEntry
       ? projectSavedDomainCellsToHeaders(savedEntry, headers, rawCells)
       : rawCells.slice();
@@ -66238,8 +68497,8 @@
     const attSectionTitle = attSectionTitles[ind] || 'Attached Receipts, Contracts & Supporting Documents';
 
     const textOnlyLock = canModifyTextOnly();
-    const canEditAny = canModifyRecord();
-    const allowVoid = canVoid();
+    const canEditAny = canModifyRecord() && !tillOwned;
+    const allowVoid = canVoid() && !tillOwned;
 
     const stmtMap = {
       'Holding & Treasury': { id: '23', label: 'Print Statement #23 · Intercompany & Partner Split', glDr: 'Intercompany Liaison Account', glCr: 'Central Treasury Bank', form: 'external', ruleHint: '3-Tier Intercompany Auto-Pairing & Chronological Partner Split Guard' },
@@ -66420,7 +68679,7 @@
                 <div class="panel-title"><span>MODIFY RECORD ATTRIBUTES (${headers.length} FIELDS)</span></div>
                 <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(meta.ruleHint)}</div>
               </div>
-              <span class="badge ${textOnlyLock ? 'badge-brass' : 'badge-good'}" id="indInspRuleStatusBadge">${textOnlyLock ? 'Words-Only Seat · Numbers Locked (🔒 Supervisor Only)' : 'Live Domain Guardrails Active'}</span>
+              <span class="badge ${tillOwned ? 'badge-info' : (textOnlyLock ? 'badge-brass' : 'badge-good')}" id="indInspRuleStatusBadge">${tillOwned ? 'From the Gate Till, Read Only' : (textOnlyLock ? 'Words-Only Seat · Numbers Locked (🔒 Supervisor Only)' : 'Live Domain Guardrails Active')}</span>
             </div>
             <div id="indDomainModifyForm" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:8px">
               ${inspDatalistsHtml}
@@ -67234,6 +69493,7 @@
             <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="cfCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="cashflow" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">Collection Forecast</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="cfPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="cashflow" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">Payables Optimizer</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="cfTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="cashflow" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow & Liquidity Runway Forecast Studio">13W Runway</button>
             ${exportBtn('extEntriesPanel', 'External_Entries')}
             ${isHoldingExt ? `<button type="button" class="btn btn-ghost-bar" data-nav-jump="hld_extended" data-ui-tip="Open dedicated Holding Extended Stakeholder Ledger Hub">${ic('external')} Extended Ledger Hub (${fmtNum(extdCnt)})</button>` : ''}
             ${isHoldingExt && canEnterForm('external', u) ? '<button type="button" class="btn btn-primary" data-open-modal="extended" data-prefill-co="Bdeir Holding" data-prefill-extkind="Extended">+ Extended Entry</button>' : ''}
@@ -67298,7 +69558,7 @@
                   <td>${coBadge(r.company)}</td>
                   ${isHoldingExt ? `<td><span class="badge ${extdFlag ? 'badge-brass' : 'badge-info'}">${esc(r.kind || 'External')}</span></td>` : ''}
                   <td class="cf-cat-cell"><span class="cf-flow-badge ${inFlag ? 'in' : 'out'}">${inFlag ? '▲' : '▼'}</span><span class="cf-cat-txt">${esc(r.direction || (inFlag ? 'External In' : 'External Out'))}</span></td>
-                  <td><button type="button" class="cf-party-btn" data-cf-focus-party="${esc(cp)}" title="Filter all external entries for ${esc(cp)}"><strong>${esc(cp)}</strong></button></td>
+                  <td><button type="button" class="cf-party-btn" data-no-i18n data-cf-focus-party="${esc(cp)}" title="Filter all external entries for ${esc(cp)}"><strong>${esc(cp)}</strong></button></td>
                   <td class="cf-detail-cell" title="${esc(r.notes || '')}">${esc(r.notes || '—')}</td>
                   <td class="r">${inFlag && uAmt >= 0.005 ? `<strong style="color:var(--good)">+${fmtUSD(uAmt, 2)}</strong>` : '—'}</td>
                   <td class="r">${!inFlag && uAmt >= 0.005 ? `<strong style="color:var(--crit)">-${fmtUSD(uAmt, 2)}</strong>` : '—'}</td>
@@ -67477,6 +69737,7 @@
             <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="cfCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="cashflow" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">Collection Forecast</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="cfPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="cashflow" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">Payables Optimizer</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="cfTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="cashflow" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow & Liquidity Runway Forecast Studio">13W Runway</button>
             ${exportBtn('fxConversionsPanel', 'FX_Conversions')}
             ${canEnterForm('conversion', u) ? '<button type="button" class="btn btn-primary" data-open-modal="conversion">+ FX Conversion</button>' : ''}
           </div>
@@ -67676,6 +69937,7 @@
             <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="cfCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="cashflow" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">Collection Forecast</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="cfPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="cashflow" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">Payables Optimizer</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="cfTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="cashflow" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow & Liquidity Runway Forecast Studio">13W Runway</button>
             ${exportBtn('treasuryLoansPanel', 'Partner_Loans')}
             ${canEnterForm('treasury') ? '<button type="button" class="btn btn-primary" data-open-modal="treasury">+ Loan / Settlement</button>' : ''}
           </div>
@@ -69468,7 +71730,7 @@
     const curBookScope = STATE.draftBookScopeOverride || (editUser ? getUserBookScope(editUser) : 'all');
     const curStatus = editUser ? (editUser.status || 'Active') : 'Active';
     const isRedactedPinEdit = Boolean(editUser && editUser.pin_redacted && !editUser.pin_code);
-    const curPin = editUser ? (isRedactedPinEdit ? '' : (editUser.pin_code || '1111')) : (STATE.newDraftPin || '3564');
+    const curPin = editUser ? (isRedactedPinEdit ? '' : (editUser.pin_code || '')) : (STATE.newDraftPin || '3564');
     const isSelfOwner = editUser && editIdx === STATE.activeUserIdx;
     const fSamples = editUser ? userFaceSamples(editUser) : [];
     const previewUser = getDraftSeatPreviewUser(editUser, curRole, curCompanies, curAccess);
@@ -69497,7 +71759,7 @@
             <select id="nu_seat_select" class="seat-select-dropdown">
               ${STATE.users.map((u, idx) => {
                 const cBadge = formatCompactCompaniesBadge(u.companies, 3);
-                const dispPin = (STATE.demoVisitor || (u.pin_redacted && !u.pin_code)) ? '••••' : (u.pin_code || '1111');
+                const dispPin = (STATE.demoVisitor || !u.pin_code) ? '••••' : u.pin_code;
                 const uPerms = getEffectivePermissions(u);
                 return `
                 <option value="${esc(u.id)}" ${!isNewMode && String(u.id) === String(editUser.id) ? 'selected' : ''}>
@@ -69510,7 +71772,7 @@
           <div class="seat-pill-strip" role="tablist" aria-label="Team login seats">
             ${STATE.users.map((u, idx) => {
               const active = !isNewMode && String(u.id) === String(editUser.id);
-              const dispPin = (STATE.demoVisitor || (u.pin_redacted && !u.pin_code)) ? '••••' : (u.pin_code || '1111');
+              const dispPin = (STATE.demoVisitor || !u.pin_code) ? '••••' : u.pin_code;
               return `<button type="button" class="seat-pick-pill ${active ? 'active' : ''} ${u.status === 'Suspended' ? 'suspended' : ''}" data-pick-seat="${esc(u.id)}">
                 <span class="seat-pick-num">${idx + 1}</span>
                 <span class="seat-pick-name">${esc(u.full_name)}</span>
@@ -69684,7 +71946,7 @@
           </div>
         </td>
         <td class="user-dir-email-cell"><span class="user-email-pill mono">${esc(u.email)}</span></td>
-        ${owner && !STATE.demoVisitor ? `<td class="user-dir-pin-cell"><span class="badge badge-info user-pin-keycap mono">${esc(u.pin_code || (u.pin_redacted ? '••••' : '1111'))}</span></td>` : ''}
+        ${owner && !STATE.demoVisitor ? `<td class="user-dir-pin-cell"><span class="badge badge-info user-pin-keycap mono">${esc(u.pin_code || '••••')}</span></td>` : ''}
         <td class="user-dir-face-cell">
           ${canManageFace
             ? `<button type="button" class="user-face-capsule ${faceActive ? 'is-enrolled' : 'is-pin-only'} ${isTarget ? 'is-target' : ''}" data-enrol-user="${esc(u.id)}">${poseDotsHtml}<span>${esc(faceCompactLbl)}</span></button>`
@@ -86749,8 +89011,36 @@
           });
         }
       }
+      // The words-only lock goes first: it puts numbers back from the copy taken when the form opened, and
+      // the door tablet block below must have the last word (it restores from the row as it is now).
       if (canModifyTextOnly()) {
         enforceStrictNumericLockFromOrig(orig, record);
+      }
+      // A door tablet attendance row saved with no control changed except the note keeps everything the
+      // import wrote. This form works the figures out its own way on every Save; left alone, that would pass
+      // for a correction by a person and the row would stop following the tablet (see attendanceFigureSig).
+      // Each control's value when the form opened is in data-init-val; the preset pills are tracked beside it.
+      if (crKey === 'attendance' && orig.origin === 'door_tablet' && modalForm) {
+        let controlChanged = FORM_UI.attPreset !== FORM_UI.attPresetAtOpen;
+        modalForm.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
+          // The note is the person's to change; a file being attached is not a figure.
+          if (el.id === 'f_notes' || el.type === 'file' || !/^f_/.test(el.id)) return;
+          if (!el.dataset || el.dataset.initVal === undefined || String(el.value ?? '') !== String(el.dataset.initVal ?? '')) controlChanged = true;
+        });
+        if (!controlChanged) {
+          // Put back from the row as it is now, not as it was when the form opened: a punch may have
+          // landed on it in between.
+          const live = (STATE.customRecords.attendance || []).find(r => r && String(r.id) === String(orig.id)) || orig;
+          const mayChange = new Set(['notes', 'attachments', 'attachment_count', 'modified_by', 'modified_at', 'admin_overrides', '_seed_orig']);
+          Object.keys(Object.assign({}, live, record)).forEach(k => {
+            if (mayChange.has(k)) return;
+            if (live[k] !== undefined) record[k] = live[k];
+            else delete record[k];
+          });
+          // A note the person did not touch follows the row too (the import may have brought it up to date).
+          const noteEl = $('f_notes');
+          if (noteEl && noteEl.dataset && String(noteEl.value ?? '') === String(noteEl.dataset.initVal ?? '') && live.notes !== undefined) record.notes = live.notes;
+        }
       }
     }
     if (record && /^bdeir\s*holding$/i.test(String(record.company || '').trim())) {
@@ -89665,6 +91955,15 @@
     }
     try {
       recalcForm();
+      // A door tablet attendance row opens on the figures it holds. The form's own arithmetic would
+      // otherwise replace its late and overtime hours on open (it differs from the rule engine for a person
+      // on the company default shift), and a correction typed back to those shown values would then look
+      // like no change at Save and be dropped.
+      if (form === 'attendance' && row && row.origin === 'door_tablet' && val('f_att_mode') === 'shift' && FORM_UI.attPreset !== 'noclock') {
+        setModalControlVal('f_hours', Number(row.overtime_hours || 0));
+        setModalControlVal('f_late_hours', Number(row.late_hours || 0));
+        recalcForm();
+      }
     } finally {
       FORM_UI.hydrating = false;
     }
@@ -89684,6 +91983,7 @@
         el.dataset.initVal = String(el.value ?? '');
       });
     }
+    FORM_UI.attPresetAtOpen = FORM_UI.attPreset;   // read at Save, beside the controls' data-init-val
   }
 
   function resolveFormTypeForEditableRecord(crKey, row) {
@@ -96960,6 +99260,15 @@
   }
 
   // Union-merge another device's app entries into ours. A void tombstone always wins.
+  // Void stamps are written as "YYYY-MM-DD HH:MM:SS" (UTC) and restore stamps as ISO: compared as text, a
+  // space sorts before a "T" and a void could never be newer than a restore of the same day. As times they order.
+  function _stampMs(s) {
+    const v = String(s || '').trim();
+    if (!v) return 0;
+    const ms = Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v) ? v.replace(' ', 'T') + 'Z' : v);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
   function mergeCustomRecords(remote) {
     if (!remote || typeof remote !== 'object') return false;
     ensureUniversalCanonicalIndex();
@@ -97019,7 +99328,7 @@
         else if (r.voided && !cur.voided) {
           const curRestTs = String(cur.restored_at || '');
           const inVoidTs = String(r.voided_at || '');
-          if (!curRestTs || !inVoidTs || inVoidTs >= curRestTs) {
+          if (!curRestTs || !inVoidTs || _stampMs(inVoidTs) >= _stampMs(curRestTs)) {
             cur.voided = true;
             cur.voided_by = r.voided_by;
             cur.voided_at = r.voided_at;
@@ -97028,7 +99337,8 @@
             changed = true;
           }
         }
-        else if (!r.voided && cur.voided && r.restored_at && (!cur.voided_at || String(r.restored_at) > String(cur.voided_at))) {
+        else if (!r.voided && cur.voided && r.restored_at && (!cur.voided_at || _stampMs(r.restored_at) > _stampMs(cur.voided_at))) {
+          if (r.origin === 'door_tablet') Object.assign(cur, r);   // its figures were re-worked from the punches; take them with it
           cur.voided = false;
           cur.restored_at = r.restored_at;
           if (r.modified_at) cur.modified_at = r.modified_at;
@@ -97675,8 +99985,8 @@
       sessions: STATE.sessions.slice(0, 25),
       stepUpAudits: Array.isArray(STATE.stepUpAudits) ? STATE.stepUpAudits.slice(0, 300) : [],
       customRecords: trimmed,
-      industryRowEdits: getIndustryRowEditStore(),
-      industryCustomRows: typeof offloadIndustryCustomRowBlobs === 'function' ? offloadIndustryCustomRowBlobs(getIndustryCustomRowsStore()) : getIndustryCustomRowsStore(),
+      industryRowEdits: withoutTillOwnedEdits(getIndustryRowEditStore()),
+      industryCustomRows: typeof offloadIndustryCustomRowBlobs === 'function' ? offloadIndustryCustomRowBlobs(withoutTillOwnedRows(getIndustryCustomRowsStore())) : withoutTillOwnedRows(getIndustryCustomRowsStore()),
       kioskPunches: sanitizeKioskPunchesList(STATE.kioskPunches).slice(0, 300),
       staffBiometrics: slimBio,
       workSchedules: STATE.workSchedules || { shiftTypes: [], staffRules: {} },
@@ -98046,6 +100356,7 @@
       syncInFlight = null;
       if (STATE.pushAfterSync) { STATE.pushAfterSync = false; syncWithCloud(true); }
       else if (STATE.pendingCloudPush) { scheduleCloudPushRetry(6000); }
+      pullDoorTabletPunches(false);
     });
     return syncInFlight;
   }
@@ -98353,7 +100664,7 @@
         const remIndEdits = remote.industryRowEdits || {};
         const myIndEdits = getIndustryRowEditStore();
         Object.entries(myIndEdits).forEach(([ek, ev]) => {
-          if (!ev || typeof ev !== 'object') return;
+          if (!ev || typeof ev !== 'object' || isTillOwnedEditKey(ek)) return;
           if (!canPushCo(ev.company || ev.resort || ev.entity)) return;
           const rv = remIndEdits[ek];
           if (!rv || Boolean(ev.voided) !== Boolean(rv.voided) || Number(ev.rev || 1) > Number(rv.rev || 1) || String(ev.updated_at || ev.updatedAt || '') > String(rv.updated_at || rv.updatedAt || '')) {
@@ -98367,7 +100678,7 @@
           const remB = new Map((Array.isArray(remIndRows[bk]) ? remIndRows[bk] : []).map(x => [String((x && (x.id || x.code)) || ''), x]));
           bList.forEach(r => {
             const pid = r && String(r.id || r.code || '').trim();
-            if (!pid) return;
+            if (!pid || isTillOwnedRowId(pid)) return;
             if (!canPushCo(r.company || r.resort || r.entity)) return;
             const rr = remB.get(pid);
             if (!rr || Boolean(r.voided) !== Boolean(rr.voided) || Number(r.rev || 1) > Number(rr.rev || 1) || String(r.updated_at || r.updatedAt || r._updatedAt || r._createdAt || '') > String(rr.updated_at || rr.updatedAt || rr._updatedAt || rr._createdAt || '')) {
@@ -100905,9 +103216,9 @@
       if (!isOwner()) return;
       const u = STATE.users[Number(btn.getAttribute('data-invite-user'))];
       if (!u) return;
-      const hasKnownPin = !(u.pin_redacted && !u.pin_code);
+      const hasKnownPin = Boolean(u.pin_code);
       const inviteUrl = hasKnownPin
-        ? `${location.origin}${location.pathname}?email=${encodeURIComponent(u.email)}&pin=${encodeURIComponent(u.pin_code || '1111')}`
+        ? `${location.origin}${location.pathname}?email=${encodeURIComponent(u.email)}&pin=${encodeURIComponent(u.pin_code)}`
         : `${location.origin}${location.pathname}?email=${encodeURIComponent(u.email)}`;
       const done = () => {
         btn.innerHTML = `${ic('check_circle')}<span>Copied!</span>`;
@@ -102852,7 +105163,7 @@
       return fb - fa;
     });
     const filtered = activeSeats.filter(u => {
-      if (disPin && String(u.pin_code || '1111').trim() !== disPin) return false;
+      if (disPin && u.pin_code && String(u.pin_code).trim() !== disPin) return false;
       if (!rawFilter) return true;
       return norm(u.full_name).includes(rawFilter) || norm(u.email).includes(rawFilter) || norm(u.role).includes(rawFilter);
     });
@@ -102889,8 +105200,8 @@
         const pinEl = $('authPinInput');
         if (IS_DEMO) {
           FACE_STATE.selectedAuthEmail = u.email;
-          if (pinEl) pinEl.value = u.pin_code || '1111';
-          performLogin(u.email, u.pin_code || '1111', { bypass2FA: true });
+          if (pinEl) pinEl.value = u.pin_code || DEMO_FALLBACK_PIN;
+          performLogin(u.email, u.pin_code || DEMO_FALLBACK_PIN, { bypass2FA: true });
           return;
         }
         if (effectiveSeatAuthMode(u) === 'face_only') {
@@ -102907,7 +105218,7 @@
         const errEl = $('authErrorBox');
         if (errEl) errEl.hidden = true;
         syncAuthSelectedSeatUi();
-        if (pendingDisPin && pendingDisPin === String(u.pin_code || '1111').trim()) {
+        if (pendingDisPin && (!u.pin_code || pendingDisPin === String(u.pin_code).trim())) {
           performLogin(u.email, pendingDisPin);
           return;
         }
@@ -103035,6 +105346,7 @@
   }
 
   function signOut() {
+    closeTabletKeysModal();
     if (isDemoSandboxSession()) {
       try {
         for (let i = sessionStorage.length - 1; i >= 0; i--) {
@@ -103220,8 +105532,9 @@
           }
         } catch (_) {}
       }
-      const demoFallbackPin = String((DEFAULT_USERS.find(du => norm(du.email) === norm(user.email)) || {}).pin_code || '1111').trim();
-      if (!verifiedViaApi && (!localPinStr ? (Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !isDemoSandboxSession() ? true : (pin !== demoFallbackPin && pin !== '1111')) : true)) {
+      const demoSeat = DEFAULT_USERS.concat(MULTI_INDUSTRY_ROLE_SEATS).find(du => norm(du.email) === norm(user.email));
+      const demoFallbackPin = (demoSeat && DEMO_SEAT_PINS[demoSeat.id]) || DEMO_FALLBACK_PIN;
+      if (!verifiedViaApi && (!localPinStr ? (Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !isDemoSandboxSession() ? true : (pin !== demoFallbackPin && pin !== DEMO_FALLBACK_PIN)) : true)) {
         if (silentProbe) return false;
         if (rateLimitedErr) {
           loginLockUntil = Date.now() + 30000;
@@ -109286,7 +111599,44 @@
     return isPunchActiveOnSite(last, refMs) ? 'OUT' : 'IN';
   }
 
-  function syncAttendanceRecordFromPunch(punch) {
+  // The figures of an attendance row, as one string. The door tablet import stamps it on every row it
+  // writes (`tab_sig`), which is how it later tells a row a person corrected from a row a person merely
+  // touched: attaching a file or pressing Save signs `modified_by` too, but leaves the figures as they were.
+  // It covers every figure a person can change on the row (times, type, tally, worked, regular, overtime,
+  // unapproved overtime, late hours, leave days), read the way the attendance screen normalises them when
+  // it draws the table (renderPayroll writes those normalised values back onto the row), so drawing the
+  // table never changes the signature and a change to any one figure always does.
+  function attendanceFigureSig(row) {
+    const type = String(row.type || row.status || 'Present');
+    const tally = Number(row.tally != null ? row.tally : 0);
+    const inF = fmtAttClockTime(row.in_time || row.check_in || '');
+    const outF = fmtAttClockTime(row.out_time || row.check_out || '');
+    const worked = Number(row.worked_hours != null && row.worked_hours > 0 ? row.worked_hours : computeShiftWorkedHours(inF, outF));
+    const ot = Number(row.overtime_hours != null && row.overtime_hours > 0 ? row.overtime_hours : (/^overtime$/i.test(type) ? tally : 0));
+    const reg = Number(row.regular_hours != null && row.regular_hours > 0 ? row.regular_hours : (worked > 0 ? round2(Math.max(0, worked - ot)) : 0));
+    const late = Number(row.late_hours != null && row.late_hours > 0 ? row.late_hours : (/^lateness$/i.test(type) ? tally : 0));
+    const leave = /^half\s*day$/i.test(type)
+      ? (tally > 0 ? tally : 0.5)
+      : ((/^vacabsence$|^paid\s*leave$/i.test(type) || /Absence|Sick|Leave|Unpaid/i.test(type))
+        ? (Number(row.leave_days || 0) > 0 ? Number(row.leave_days) : (tally > 0 ? tally : 1))
+        : 0);
+    return [inF, outF, type, tally, worked, reg, ot, Number(row.unapproved_ot_hours || 0), late, leave]
+      .map(v => (typeof v === 'number' ? String(round2(v)) : v)).join('|');
+  }
+  // A row the import made that a person has since corrected is that person's: the import neither rewrites
+  // nor withdraws it. A hand-signed row with no stamp at all is treated the same, to be safe.
+  // So is a row whose person, company or day a person changed: its id no longer says who and when it is for.
+  function isHandOwnedTabletRow(row) {
+    if (!row || !row.modified_by) return false;
+    if (!row.tab_sig || attendanceFigureSig(row) !== row.tab_sig) return true;
+    return String(row.id) !== doorTabletRowId(row.staff, row.company, String(row.set_date || row.date || '').slice(0, 10));
+  }
+
+  // opts (all optional, used by the door tablet import): rowId = id for a new row, deferPersist = the
+  // caller saves once after a batch, sourceLabel / enteredBy / origin = how the row says where it came
+  // from, onlyOrigin = leave a row alone unless it has this origin, keepStampIfSame = do not restamp a
+  // row whose figures did not change. opts.changed tells the caller whether anything was written.
+  function syncAttendanceRecordFromPunch(punch, opts = {}) {
     if (!punch || !punch.staff) return null;
     if (!Array.isArray(STATE.customRecords.attendance)) STATE.customRecords.attendance = [];
     const staffNorm = norm(punch.staff);
@@ -109300,7 +111650,38 @@
       && norm(a.staff) === staffNorm
       && String(a.set_date || a.date || '').slice(0, 10) === shiftDateStr
       && !/^(extra|config)/i.test(String(a.type || a.status || ''))
+      && (!opts.matchCompany || norm(a.company) === norm(coName))
     );
+    opts.changed = false;
+    let revived = false;
+    // A row someone keyed by hand, or one the wall kiosk made, is never replaced by an imported punch.
+    // Nor is a row the import made and a person then corrected (a forgotten clock-out filled in).
+    if (attRec && opts.onlyOrigin && (attRec.origin !== opts.onlyOrigin || isHandOwnedTabletRow(attRec))) return null;
+    // The import gives its row a fixed id. If that row exists but was withdrawn by the import itself (the
+    // day had been left without a punch), it is brought back in place, never inserted a second time under
+    // the same id. The import signs its withdrawals in `voided_by`, which travels between browsers with the
+    // void; a row a person voided by hand carries that person's name there and stays voided.
+    if (!attRec && opts.rowId) {
+      const gone = STATE.customRecords.attendance.find(a => a && a.id === opts.rowId);
+      if (gone) {
+        if (!gone.voided || !opts.withdrawnBy || gone.voided_by !== opts.withdrawnBy || isHandOwnedTabletRow(gone)) return null;
+        gone.voided = false;
+        delete gone.voided_by;
+        delete gone.voided_at;
+        gone.restored_at = new Date().toISOString();
+        attRec = gone;
+        revived = true;
+      }
+    }
+    const stampBefore = attRec ? attRec.modified_at : null;
+    // For an imported row "unchanged" means the figures (as the attendance screen normalises them) and the
+    // other fields the import writes. The whole row would not do: drawing the table writes normalised
+    // figures back onto it, and every re-settle of an unchanged day would then restamp and resend the row.
+    const sigOf = opts.origin
+      ? row => attendanceFigureSig(row) + '|' + [row.shift_id, row.shift_label, row.scheduled_hours, row.penalty_summary, row.late_cutoff,
+        row.early_out_cutoff, row.no_out_rule, row.single_punch_type, row.raw_late_hours, row.raw_late_min, row.notes, Boolean(row.voided)].join('|')
+      : row => JSON.stringify(Object.assign({}, row, { modified_at: '' }));
+    const sigBefore = (attRec && opts.keepStampIfSame) ? sigOf(attRec) : null;
 
     const inT = punch.direction === 'IN'
       ? punch.time
@@ -109364,7 +111745,7 @@
     const clockLabel = isPairedBoth
       ? `IN ${inT} · OUT ${outT}`
       : (inT ? `Only IN ${inT} · OUT Pending` : `Only OUT ${outT} · No IN`);
-    const noteParts = [`Kiosk ${punch.method || 'PIN'} (${clockLabel})`];
+    const noteParts = [`${opts.sourceLabel || 'Kiosk'} ${punch.method || 'PIN'} (${clockLabel})`];
     noteParts.push(shiftObj.badgeLabel);
     if (evalRes.penaltySummary && evalRes.penaltySummary !== 'On Time') {
       noteParts.push(evalRes.penaltySummary);
@@ -109373,7 +111754,7 @@
 
     if (!attRec) {
       attRec = {
-        id: uid('at'),
+        id: opts.rowId || uid('at'),
         date: shiftDateStr,
         rep_date: shiftDateStr,
         set_date: shiftDateStr,
@@ -109405,14 +111786,16 @@
         early_out_cutoff: evalRes.earlyOutCutoffTime || '',
         tally: effTally,
         source: 'app',
-        entered_by: activeUser().full_name,
-        entered_by_email: activeUser().email,
+        entered_by: opts.enteredBy || activeUser().full_name,
+        entered_by_email: opts.enteredBy ? '' : activeUser().email,
         entered_at: nowStamp(),
         modified_at: new Date().toISOString(),
         voided: false,
         notes: noteParts.join(' · ')
       };
+      if (opts.origin) { attRec.origin = opts.origin; attRec.tab_note = attRec.notes; attRec.tab_sig = attendanceFigureSig(attRec); }
       STATE.customRecords.attendance.unshift(attRec);
+      opts.changed = true;
     } else {
       attRec.check_in = inT;
       attRec.in_time = inT;
@@ -109438,11 +111821,301 @@
       attRec.shift_label = shiftObj.badgeLabel;
       attRec.scheduled_hours = schedH;
       attRec.modified_at = new Date().toISOString();
-      attRec.notes = noteParts.join(' · ');
+      // A note a person typed on an imported row is theirs and stays; the import's own note is kept current.
+      if (!opts.origin || attRec.notes === attRec.tab_note || !attRec.modified_by) attRec.notes = noteParts.join(' · ');
+      if (opts.origin) { attRec.tab_note = noteParts.join(' · '); attRec.tab_sig = attendanceFigureSig(attRec); }
+      if (sigBefore !== null && sigOf(attRec) === sigBefore && !revived) attRec.modified_at = stampBefore;
+      else opts.changed = true;
     }
+    if (!opts.deferPersist) {
+      applyCustomRecordsToSeed();
+      saveLocalAuthAndRecords();
+    }
+    return attRec;
+  }
+
+  // ---- Door tablet punches (the standalone attendance tablets at the resorts and plants) ----
+  // Those tablets keep their punches in the cloud. This pulls the ones this seat may see and runs them
+  // through the same shift, lateness and overtime rules as the wall kiosk, so they show in Payroll &
+  // Attendance. Punch and row ids are derived from the tablet's own punch ids and from staff, company
+  // and day, so two browsers that pull the same punches end with the same rows. Arithmetic is the
+  // existing rule engine; nothing here estimates.
+  const DOOR_TABLET_CURSOR_KEY = 'isabi_mfg_door_tablet_cursor_v1';
+  const DOOR_TABLET_FIRST_PULL_DAYS = 45;
+  let _doorTabletPullAt = 0;
+  let _doorTabletPulling = null;
+  let _doorTabletOff = false;
+
+  // The tablet's own wall clock at the moment of the punch: its offset when it sent one, else Beirut time.
+  function doorTabletLocalClock(p) {
+    const ms = Date.parse(String((p && p.ts) || ''));
+    if (!Number.isFinite(ms)) return null;
+    let date = '';
+    let time = '';
+    if (typeof p.tzOffsetMin === 'number' && Number.isFinite(p.tzOffsetMin)) {
+      const shifted = new Date(ms + p.tzOffsetMin * 60000).toISOString();
+      date = shifted.slice(0, 10);
+      time = shifted.slice(11, 16);
+    } else {
+      try {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Beirut', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+        }).formatToParts(new Date(ms));
+        const g = k => (parts.find(x => x.type === k) || {}).value || '';
+        date = `${g('year')}-${g('month')}-${g('day')}`;
+        time = `${g('hour')}:${g('minute')}`;
+      } catch (_) { /* falls through to the check below */ }
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null;
+    return { ms, date, time, iso: new Date(ms).toISOString() };
+  }
+
+  function doorTabletRowId(staff, company, date) {
+    const src = `${norm(staff)}|${norm(company)}|${date}`;
+    let h1 = 5381;
+    let h2 = 0x811c9dc5;
+    for (let i = 0; i < src.length; i++) {
+      const c = src.charCodeAt(i);
+      h1 = ((h1 * 33) ^ c) >>> 0;
+      h2 = Math.imul(h2 ^ c, 0x01000193) >>> 0;
+    }
+    return `at-tab-${String(date).replace(/-/g, '')}-${h1.toString(36)}${h2.toString(36)}`;
+  }
+
+  // Door tablet punches shown in the punch feed are kept apart from the wall kiosk's own list: they are
+  // never sent to the cloud from here (the cloud already has them) and never count against that list's size.
+  const DOOR_TABLET_FEED_KEY = 'isabi_mfg_door_tablet_feed_v1';
+  const DOOR_TABLET_FEED_MAX = 400;
+  function doorTabletPunchList() {
+    if (!Array.isArray(STATE.doorTabletPunches)) {
+      const saved = !IS_AUTOMATED_TEST ? lsGet(DOOR_TABLET_FEED_KEY, null) : null;
+      STATE.doorTabletPunches = Array.isArray(saved) ? saved.filter(p => p && p.id && p.source === 'door_tablet') : [];
+    }
+    return STATE.doorTabletPunches;
+  }
+
+  function doorTabletPunchObj(r) {
+    const staffName = String((r && r.staffName) || '').replace(/\s+/g, ' ').trim();
+    const clock = r && r.id && r.company ? doorTabletLocalClock(r) : null;
+    if (!staffName || !clock) return null;
+    const dir = r.direction === 'out' ? 'OUT' : 'IN';
+    const m = String(r.method || '').toLowerCase();
+    return {
+      id: 'tab-' + String(r.id), staff: staffName, company: r.company, role: 'Staff', site: 'Door Tablet',
+      direction: dir, date: clock.date, shift_date: clock.date, time: clock.time, iso: clock.iso,
+      in_time: dir === 'IN' ? clock.time : '', out_time: dir === 'OUT' ? clock.time : '',
+      method: m === 'face' ? 'Face ID' : (m === 'pin' ? 'PIN' : 'Manual'),
+      confidence: typeof r.confidence === 'number' ? r.confidence : null, snapshot: '',
+      voided: Boolean(r.voided), rev: Number(r.rev || 0), updated_at: String(r.updated_at || clock.iso),
+      source: 'door_tablet', tablet_site: String(r.site || '')
+    };
+  }
+
+  const DOOR_TABLET_SIGNATURE = 'Door Tablet';   // how the import signs the rows it makes and the ones it withdraws
+
+  // One person's punches, as the cloud holds them for two days either side of every punch that changed.
+  // They are paired in time order (the pairing the wall kiosk does as punches arrive) and every shift day
+  // in t.decide is settled from scratch: its row is written from its last punch, or withdrawn when no
+  // punch counts for it. A shift day is in t.decide only when the set at hand is enough to settle it
+  // (the day before, of, and after a changed punch), so nothing here depends on earlier pulls.
+  function settleDoorTabletDays(t) {
+    const mine = t.list.filter(p => p && !p.voided).sort((a, b) => String(a.iso || '').localeCompare(String(b.iso || '')));
+    const lastByShift = new Map();
+    mine.forEach((p, i) => {
+      if (p.direction === 'IN') {
+        p.shift_date = inferShiftDateForInPunch(p.staff, p.company, p.date, p.time);
+        p.in_time = p.time;
+        p.out_time = '';
+      } else {
+        const pMs = Date.parse(p.iso || '') || 0;
+        let openIn = null;
+        for (let j = i - 1; j >= 0; j--) {
+          if (mine[j].direction !== 'IN') continue;
+          const hrs = (pMs - (Date.parse(mine[j].iso || '') || 0)) / 3600000;
+          if (hrs >= 0 && hrs <= 22) openIn = mine[j];
+          break;
+        }
+        p.shift_date = openIn ? String(openIn.shift_date || openIn.date).slice(0, 10) : p.date;
+        p.in_time = openIn ? openIn.time : '';
+        p.out_time = p.time;
+      }
+      lastByShift.set(p.shift_date, p);
+      // A changed punch settles the shift day it counts for, also when that is further back than the day
+      // before it (a clock-in before dawn counted for the previous night, clocked out after midnight).
+      if (t.changedIds.has(p.id) && (!t.minDay || p.shift_date >= t.minDay)) t.decide.add(p.shift_date);
+    });
+    // Each punch of a settled day carries the evaluation the wall kiosk stamps on its own punches
+    // (shift, lateness, paired hours), so the punch feed reads the same for both kinds.
+    mine.forEach(p => {
+      if (!t.decide.has(p.shift_date)) return;
+      const paired = p.direction === 'OUT' && Boolean(p.in_time);
+      const ev = p.direction === 'IN'
+        ? evaluateShiftPunchTiming(p.staff, p.company, p.shift_date, p.time, '', { inSameCalendarDay: p.shift_date === p.date })
+        : evaluateShiftPunchTiming(p.staff, p.company, p.shift_date, p.in_time || '', p.time, { outDate: p.date });
+      p.shift_id = ev.shift ? ev.shift.id : 'day_8_4';
+      p.shift_label = ev.shift ? ev.shift.badgeLabel : 'Day · 08:00-16:00';
+      p.paired_hours = paired ? ev.workedHours : null;
+      p.overtime_hours = paired ? ev.overtimeHours : 0;
+      p.unapproved_ot_hours = paired ? ev.unapprovedOtHours : 0;
+      p.late_hours = paired ? ev.lateHours : Number(ev.billableLateHours ?? ev.lateHours ?? 0);
+      p.raw_late_hours = ev.rawLateHours;
+      p.raw_late_min = ev.rawLateMin;
+      p.penalty_leave_days = ev.penaltyLeaveDays;
+      p.penalty_status = ev.penaltyStatus;
+      p.penalty_summary = ev.penaltySummary;
+      p.no_out_rule = ev.isSinglePunch ? ev.noOutRule : '';
+      p.single_punch_type = ev.singlePunchType || '';
+      p.late_cutoff = ev.lateCutoffTime;
+      p.early_out_cutoff = ev.earlyOutCutoffTime;
+    });
+    let written = 0;
+    t.decide.forEach(date => {
+      const guard = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
+        ? window.MFG_AI_EDGE.checkPeriodCloseGuard(t.company, date, date) : null;
+      if (guard && guard.blocked) return;   // the period is closed: its attendance is not rewritten
+      const rowId = doorTabletRowId(t.staff, t.company, date);
+      const final = lastByShift.get(date);
+      if (final) {
+        const o = {
+          rowId, deferPersist: true, sourceLabel: 'Door tablet', enteredBy: DOOR_TABLET_SIGNATURE, origin: 'door_tablet',
+          onlyOrigin: 'door_tablet', matchCompany: true, keepStampIfSame: true, withdrawnBy: DOOR_TABLET_SIGNATURE
+        };
+        syncAttendanceRecordFromPunch(final, o);
+        if (o.changed) written++;
+      } else {
+        // No punch counts for that day any more: the row the import made for it is withdrawn.
+        const stale = (STATE.customRecords.attendance || []).find(a => a && a.id === rowId && !a.voided && a.origin === 'door_tablet' && !isHandOwnedTabletRow(a));
+        if (stale) {
+          stale.voided = true;
+          stale.voided_by = DOOR_TABLET_SIGNATURE;   // lets a later punch for that day bring the same row back, in any browser
+          stale.voided_at = new Date().toISOString();
+          stale.modified_at = stale.voided_at;
+          delete stale.restored_at;
+          written++;
+        }
+      }
+    });
+    return written;
+  }
+
+  // rows = punches that are new or changed since the last pull; context = the same people's other punches
+  // of the two days either side (sent by the cloud with each pull). opts.minDecideDay keeps a first pull
+  // from settling its very first days, for which it has no earlier punches.
+  function applyDoorTabletPunches(rows, context, opts = {}) {
+    const out = { punches: 0, rows: 0 };
+    if (!Array.isArray(rows) || !rows.length) return out;
+    if (!Array.isArray(STATE.customRecords.attendance)) STATE.customRecords.attendance = [];
+    const feed = doorTabletPunchList();
+    const known = new Map(feed.map(p => [p.id, p]));
+    const personKey = p => norm(p.staff) + '|' + norm(p.company);
+    const people = new Map();
+    const minDay = /^\d{4}-\d{2}-\d{2}$/.test(String(opts.minDecideDay || '')) ? String(opts.minDecideDay) : '';
+    const personOf = p => {
+      const k = personKey(p);
+      if (!people.has(k)) people.set(k, { staff: p.staff, company: p.company, byId: new Map(), decide: new Set(), changedIds: new Set(), minDay });
+      return people.get(k);
+    };
+    const addDays = (t, day) => {
+      [-1, 0, 1].forEach(d => { const s = shiftIsoDateByDays(day, d); if (!minDay || s >= minDay) t.decide.add(s); });
+    };
+    rows.forEach(r => {
+      const p = doorTabletPunchObj(r);
+      if (!p) return;
+      const t = personOf(p);
+      t.byId.set(p.id, p);
+      t.changedIds.add(p.id);
+      addDays(t, p.date);
+      const prev = known.get(p.id);
+      if (!prev || prev.direction !== p.direction || Boolean(prev.voided) !== p.voided || prev.iso !== p.iso || norm(prev.staff) !== norm(p.staff)) out.punches++;
+    });
+    (Array.isArray(context) ? context : []).forEach(r => {
+      const p = doorTabletPunchObj(r);
+      if (!p) return;
+      const k = personKey(p);
+      if (people.has(k) && !people.get(k).byId.has(p.id)) people.get(k).byId.set(p.id, p);
+    });
+    people.forEach(t => {
+      t.list = Array.from(t.byId.values());
+      out.rows += settleDoorTabletDays(t);
+      t.list.forEach(p => known.set(p.id, p));
+    });
+    if (!out.punches && !out.rows) return out;
+    STATE.doorTabletPunches = Array.from(known.values())
+      .sort((a, b) => String((b && b.iso) || '').localeCompare(String((a && a.iso) || '')))
+      .slice(0, DOOR_TABLET_FEED_MAX);
+    if (!IS_AUTOMATED_TEST) { try { appStoreSetRaw(DOOR_TABLET_FEED_KEY, JSON.stringify(STATE.doorTabletPunches)); } catch (_) {} }
     applyCustomRecordsToSeed();
     saveLocalAuthAndRecords();
-    return attRec;
+    return out;
+  }
+  async function pullDoorTabletPunches(force, underTest) {
+    if (_doorTabletOff || (IS_AUTOMATED_TEST && !underTest) || !hasServerApi() || !STATE.authed || STATE.kioskLocked) return null;
+    if (isDemoSandboxSession() || (typeof isDemoScopeActive === 'function' && isDemoScopeActive())) return null;
+    if (!canViewView('payroll_attendance')) return null;
+    if (_doorTabletPulling) return _doorTabletPulling;
+    if (!force && Date.now() - _doorTabletPullAt < 60000) return null;
+    _doorTabletPullAt = Date.now();
+    _doorTabletPulling = (async () => {
+      const seatId = String((activeUser() && activeUser().id) || 'seat');
+      const cursors = lsGet(DOOR_TABLET_CURSOR_KEY, null) || {};
+      const cur = (cursors[seatId] && typeof cursors[seatId] === 'object') ? cursors[seatId] : { since: '', sinceId: '' };
+      let since = String(cur.since || '');
+      let sinceId = String(cur.sinceId || '');
+      // The very first pull brings every punch from its starting day on, so its pages are the complete set
+      // and it asks for no context. It reads two days further back than the first day it settles, so that
+      // day's clock-outs still find their clock-ins.
+      const firstPull = !since;
+      const minDecideDay = firstPull ? shiftIsoDateByDays(todayISO(), -DOOR_TABLET_FIRST_PULL_DAYS) : '';
+      const fromDay = firstPull ? shiftIsoDateByDays(minDecideDay, -2) : '';
+      const all = [];
+      const ctx = [];
+      // A first pull has no context, so it is only good when it is whole: it pages to the end (200 pages,
+      // 100,000 punches, many times what this group punches in 47 days) and, if it still is not done or a
+      // page fails, nothing is applied and no cursor is kept, so the next try starts over from the first
+      // page. Later pulls carry context and may stop at 12 pages.
+      const maxPages = firstPull ? 200 : 12;
+      let complete = false;
+      for (let page = 0; page < maxPages; page++) {
+        const r = await edgeApiFetch('./api/kiosk/punches', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ since, sinceId, fromDay, limit: 500, noContext: firstPull })
+        });
+        if (r.status === 404) { _doorTabletOff = true; return null; }   // a server without the door tablet list
+        if (!r.ok) return null;
+        const j = await r.json().catch(() => null);
+        if (!j || j.ok !== true || !Array.isArray(j.punches)) return null;
+        all.push(...j.punches);
+        if (Array.isArray(j.context)) ctx.push(...j.context);
+        since = String((j.cursor && j.cursor.since) || since);
+        sinceId = String((j.cursor && j.cursor.sinceId) || sinceId);
+        if (!j.more) { complete = true; break; }
+      }
+      if (firstPull && !complete) return null;
+      // A pull belongs to the seat that started it: after a sign-out or a change of seat it is dropped.
+      if (!STATE.authed || String((activeUser() && activeUser().id) || 'seat') !== seatId) return null;
+      const res = applyDoorTabletPunches(all, ctx, { minDecideDay });
+      cursors[seatId] = { since, sinceId };
+      try { appStoreSetRaw(DOOR_TABLET_CURSOR_KEY, JSON.stringify(cursors)); } catch (_) {}
+      if (res.punches || res.rows) {
+        if (STATE.view === 'payroll_attendance') renderApp();
+        syncWithCloud(true);
+      }
+      return res;
+    })().catch(() => null).finally(() => { _doorTabletPulling = null; });
+    return _doorTabletPulling;
+  }
+  if (IS_AUTOMATED_TEST && typeof window !== 'undefined') {
+    window.__MFG_DOOR_TABLET_TEST = {
+      apply: applyDoorTabletPunches, clock: doorTabletLocalClock, rowId: doorTabletRowId, list: doorTabletPunchList,
+      pull: () => pullDoorTabletPunches(true, true), merge: remote => mergeCustomRecords(remote), cursorKey: DOOR_TABLET_CURSOR_KEY
+    };
+    window.__MFG_TABLET_TEST = {
+      isTillOwnedRowId, mergeIndustryCustomRows, addIndustryCustomRow, voidIndustryCustomRowById, saveIndustryWorkflowPatch,
+      getIndustryWorkflowPatch, withoutTillOwnedRows, withoutTillOwnedEdits,
+      openKeys: () => openTabletKeysModal(), closeKeys: () => closeTabletKeysModal(), canManageKeys: () => canManageTabletKeys(),
+      get keysState() { return TABLET_KEYS_STATE; }
+    };
   }
 
   function recalcStaffTodayPunchAndAttendance(staffName) {
@@ -114530,7 +117203,11 @@
     const defCo = defaultEntryCompany();
     const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
     const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
-    const allPunches = sanitizeKioskPunchesList(STATE.kioskPunches).filter(p => p && !p.voided);
+    const tabletPunches = doorTabletPunchList();
+    const wallPunches = sanitizeKioskPunchesList(STATE.kioskPunches);
+    const allPunches = (tabletPunches.length
+      ? wallPunches.concat(tabletPunches).sort((a, b) => String((b && b.iso) || '').localeCompare(String((a && a.iso) || '')))
+      : wallPunches).filter(p => p && !p.voided);
     const viewerAllowedCos = allowedCompanyNames(activeUser());
     const indCoNames = new Set(getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd && (!viewerAllowedCos.length || viewerAllowedCos.includes(c.name))).map(c => c.name));
     const punches = scopedCo
@@ -115374,7 +118051,7 @@
                             </td>
                             <td>${esc(p.method)}</td>
                             <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, 1)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1)}h OT)` : (p.unapproved_ot_hours > 0 ? ' (0h OT)' : '')}` : `${p.penalty_leave_days >= 0.5 ? '0.5d Half Day' : (p.late_hours > 0 ? `Late -${fmtNum(p.late_hours, 1)}h` : 'Active')}${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1)}h OT)` : ''}`}</td>
-                            <td><button type="button" class="tkt-print-mini" data-flip-punch="${esc(p.id)}" aria-label="Switch IN / OUT direction">${ic('swap')}</button></td>
+                            <td>${p.source === 'door_tablet' ? '' : `<button type="button" class="tkt-print-mini" data-flip-punch="${esc(p.id)}" aria-label="Switch IN / OUT direction">${ic('swap')}</button>`}</td>
                           </tr>
                         `;
                       }).join('') || emptyRow(showCoCol ? 10 : 9, feedFilter === 'onsite' ? 'No staff currently clocked in on site' : 'No punches recorded yet today. Clock in with Face ID, 4-digit PIN, or Active Staff')}
@@ -115541,6 +118218,9 @@
     ` : '';
 
     const lockBtnHtml = `
+      ${(!STATE.kioskLocked && canManageTabletKeys()) ? `<button type="button" class="btn btn-ghost-bar kiosk-enrol-link-btn" id="kioskStationKeysOpenBtn">
+        ${ic('qr')} Tablet Keys
+      </button>` : ''}
       <button type="button" class="btn btn-ghost-bar kiosk-enrol-link-btn" id="kioskStationSwitchOpenBtn">
         ${ic('cog')} Station Setup
       </button>
@@ -116662,9 +119342,332 @@
     wireModalSuggestions(feedCard);
   }
 
+  // ---- Tablet station keys (Kiosks, Owner only) ----
+  // A resort gate till or a door attendance tablet syncs with a station key typed (or scanned) once on
+  // the tablet. The Owner makes a key here, sees it once as text and as a QR code, and can switch any key
+  // off. The list never holds a key. The same window sets, per resort, the date from which gate till
+  // sales also count as venue revenue (empty by default, so nothing is counted twice).
+  const TABLET_KEYS_STATE = { keys: [], sites: [], posting: [], loading: false, error: '', made: null, busy: false, confirmRevokeId: '', confirmPostSite: '' };
+
+  function canManageTabletKeys() {
+    if (typeof isDemoScopeActive === 'function' && isDemoScopeActive()) return false;
+    return isOwner() && hasServerApi() && !isDemoSandboxSession();
+  }
+
+  async function tabletKeysApi(payload) {
+    const r = await edgeApiFetch('./api/kiosk/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || j.ok !== true) throw new Error((j && j.error) || 'The request did not go through. Try again.');
+    return j;
+  }
+
+  function tabletKeyTypeLabel(scope) {
+    return scope === 'pos' ? 'Gate till' : (scope === 'attendance' ? 'Attendance tablet' : 'Any tablet');
+  }
+
+  function tabletKeyStamp(iso) {
+    const ms = Date.parse(iso || '');
+    if (!Number.isFinite(ms)) return '';
+    const d = new Date(ms);
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  function renderTabletKeysModalBody() {
+    const body = $('tabletKeysBody');
+    if (!body) return;
+    const S = TABLET_KEYS_STATE;
+    if (S.loading && !S.keys.length && !S.sites.length) {
+      body.innerHTML = '<div class="tk-empty">Loading...</div>';
+      return;
+    }
+    if (S.error && !S.sites.length) {
+      body.innerHTML = `<div class="tk-empty tk-error">${esc(S.error)}</div><div class="tk-actions"><button type="button" class="btn btn-outline-bar" id="tkRetryBtn">Try Again</button></div>`;
+      return;
+    }
+    // Sites that already have tablets come first (most used first), then the rest in the cloud's order.
+    const activeBySite = new Map();
+    S.keys.forEach(k => { if (!k.revoked) activeBySite.set(k.site, (activeBySite.get(k.site) || 0) + 1); });
+    const sites = S.sites.slice().sort((a, b) => (activeBySite.get(b.code) || 0) - (activeBySite.get(a.code) || 0));
+    const prevSite = ($('tkSite') && $('tkSite').value) || (sites[0] && sites[0].code) || '';
+    const prevScope = ($('tkScope') && $('tkScope').value) || 'attendance';
+    const prevLabel = ($('tkLabel') && $('tkLabel').value) || '';
+    const siteObj = sites.find(s => s.code === prevSite) || sites[0] || { code: '', till: false };
+    const scopeSel = (prevScope === 'pos' && !siteObj.till) ? 'attendance' : prevScope;
+
+    const madeHtml = S.made ? `
+      <div class="panel-card tk-card tk-made">
+        <div class="panel-title"><span>${ic('qr')} KEY READY</span></div>
+        <div class="tk-made-grid">
+          <div class="tk-qr" id="tkQrBox" data-no-i18n></div>
+          <div class="tk-made-side">
+            <div class="tk-made-name"><strong data-no-i18n>${esc(S.made.label)}</strong> <span class="badge badge-neutral" data-no-i18n>${esc(S.made.company)}</span> <span class="badge badge-info">${esc(tabletKeyTypeLabel(S.made.scope))}</span></div>
+            <div class="tk-key mono" id="tkKeyText" data-no-i18n>${esc(S.made.key)}</div>
+            <div class="tk-actions">
+              <button type="button" class="btn btn-outline-bar" id="tkCopyBtn">Copy Key</button>
+              <button type="button" class="btn btn-primary" id="tkDoneBtn">Done</button>
+            </div>
+            <p class="tk-hint">On the tablet open Settings and choose Scan key QR, or type the key there. It is shown this once only. If it is lost, switch this key off and make a new one.</p>
+          </div>
+        </div>
+      </div>` : `
+      <div class="panel-card tk-card">
+        <div class="panel-title"><span>NEW TABLET KEY</span></div>
+        <div class="tk-form">
+          <div class="tk-field">
+            <label class="kiosk-bar-lbl" for="tkSite">Site</label>
+            <select id="tkSite" class="kiosk-select" data-plain-options="1">
+              ${sites.map(s => `<option value="${esc(s.code)}" ${s.code === siteObj.code ? 'selected' : ''} data-no-i18n>${esc(s.company)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="tk-field">
+            <label class="kiosk-bar-lbl" for="tkScope">Tablet Type</label>
+            <select id="tkScope" class="kiosk-select" data-plain-options="1">
+              <option value="attendance" ${scopeSel === 'attendance' ? 'selected' : ''}>Attendance tablet</option>
+              ${siteObj.till ? `<option value="pos" ${scopeSel === 'pos' ? 'selected' : ''}>Gate till</option>` : ''}
+            </select>
+          </div>
+          <div class="tk-field tk-grow">
+            <label class="kiosk-bar-lbl" for="tkLabel">Tablet Name</label>
+            <input id="tkLabel" type="text" maxlength="80" class="kiosk-select" autocomplete="off" placeholder="For example: main gate till" value="${esc(prevLabel)}">
+          </div>
+          <button type="button" class="btn btn-primary" id="tkCreateBtn" ${S.busy ? 'disabled' : ''}>Create Key</button>
+        </div>
+        <p class="tk-hint">A key works for one site and one type of tablet. It is shown once, as text and as a code the tablet can scan.</p>
+      </div>`;
+
+    const keyRows = S.keys.slice().sort((a, b) => (Number(a.revoked) - Number(b.revoked))
+      || String(b.last_seen_at || b.created_at || '').localeCompare(String(a.last_seen_at || a.created_at || '')));
+    const keysHtml = `
+      <div class="panel-card tk-card">
+        <div class="panel-title"><span>KEYS ON FILE</span></div>
+        <div class="table-wrap tk-table-wrap">
+          <table class="ledger-table tk-table">
+            <thead><tr><th>Tablet</th><th>Site</th><th>Tablet Type</th><th>Created</th><th>Last Heard From</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              ${keyRows.length ? keyRows.map(k => `
+                <tr class="${k.revoked ? 'tk-row-off' : ''}">
+                  <td data-no-i18n><strong>${esc(k.label || k.id)}</strong></td>
+                  <td>${k.site === '*' ? 'Any site' : `<span data-no-i18n>${esc(k.company || k.site)}</span>`}</td>
+                  <td>${esc(tabletKeyTypeLabel(k.scope))}</td>
+                  <td class="mono" data-no-i18n>${esc(tabletKeyStamp(k.created_at).slice(0, 10))}</td>
+                  <td>${k.last_seen_at ? `<span class="mono" data-no-i18n>${esc(tabletKeyStamp(k.last_seen_at))}</span>${(k.device || k.version) ? ` <small class="mu" data-no-i18n>${esc([k.device, k.version ? 'v' + k.version : ''].filter(Boolean).join(' '))}</small>` : ''}` : '<span class="mu">Not yet</span>'}</td>
+                  <td><span class="badge ${k.revoked ? 'badge-neutral' : 'badge-good'}">${k.revoked ? 'Switched off' : 'Active'}</span></td>
+                  <td class="r">${k.revoked ? '' : (S.confirmRevokeId === k.id
+                    ? `<button type="button" class="btn btn-sm btn-primary" data-tk-revoke-yes="${esc(k.id)}">Confirm Switch Off</button> <button type="button" class="btn btn-sm btn-ghost-bar" data-tk-revoke-no="1">Keep</button>`
+                    : `<button type="button" class="btn btn-sm btn-outline-bar" data-tk-revoke="${esc(k.id)}">Switch Off</button>`)}</td>
+                </tr>`).join('') : '<tr><td colspan="7" class="mu">No station keys yet.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+        <p class="tk-hint">A tablet whose key is switched off stops syncing at once and keeps what it has until it gets a new key.</p>
+      </div>`;
+
+    const postingHtml = S.posting.length ? `
+      <div class="panel-card tk-card">
+        <div class="panel-title"><span>${ic('hsp_pos')} GATE TILL SALES IN VENUE REVENUE</span></div>
+        <p class="tk-hint">Till sales always appear in the till close register. Give a resort a start date only from the first day its gate revenue is no longer keyed by hand. From that day on, each day's till sales also count as venue revenue, one line per category. Leave the date empty to keep them out.</p>
+        <div class="tk-post-grid">
+          ${S.posting.map(p => `
+            <div class="tk-post-row">
+              <label class="kiosk-bar-lbl" for="tkPost_${esc(p.code)}" data-no-i18n>${esc(p.company)}</label>
+              <input type="date" id="tkPost_${esc(p.code)}" class="kiosk-select" value="${esc(p.from || '')}" data-tk-post-input="${esc(p.code)}">
+              ${S.confirmPostSite === p.code
+                ? `<button type="button" class="btn btn-sm btn-primary" data-tk-post-yes="${esc(p.code)}">Confirm</button> <button type="button" class="btn btn-sm btn-ghost-bar" data-tk-post-no="1">Cancel</button>`
+                : `<button type="button" class="btn btn-sm btn-outline-bar" data-tk-post-save="${esc(p.code)}">Save</button>`}
+              <small class="mu">${p.from ? `Counting from <span class="mono" data-no-i18n>${esc(fmtDateDMY(p.from))}</span>` : 'Not counted in venue revenue'}</small>
+            </div>`).join('')}
+        </div>
+      </div>` : '';
+
+    body.innerHTML = madeHtml + keysHtml + postingHtml;
+    if (S.made && $('tkQrBox') && window.MFG_DOC_SCANNER && typeof window.MFG_DOC_SCANNER.encodeQrSvg === 'function') {
+      try { $('tkQrBox').innerHTML = window.MFG_DOC_SCANNER.encodeQrSvg(S.made.qr); } catch (_) { $('tkQrBox').textContent = ''; }
+    }
+  }
+
+  async function loadTabletKeys() {
+    const S = TABLET_KEYS_STATE;
+    S.loading = true;
+    S.error = '';
+    renderTabletKeysModalBody();
+    try {
+      const [list, posting] = await Promise.all([
+        tabletKeysApi({ op: 'list_station_keys' }),
+        tabletKeysApi({ op: 'get_pos_revenue_posting' })
+      ]);
+      S.keys = Array.isArray(list.keys) ? list.keys : [];
+      S.sites = Array.isArray(list.sites) ? list.sites : [];
+      S.posting = Array.isArray(posting.sites) ? posting.sites : [];
+    } catch (e) {
+      S.error = String((e && e.message) || e);
+      if (S.sites.length) toast(S.error, 'err');
+    }
+    S.loading = false;
+    renderTabletKeysModalBody();
+  }
+
+  function closeTabletKeysModal() {
+    const modal = $('tabletKeysModal');
+    if (modal) modal.hidden = true;
+    // The key just made is not kept anywhere once the window closes.
+    TABLET_KEYS_STATE.made = null;
+    TABLET_KEYS_STATE.confirmRevokeId = '';
+    TABLET_KEYS_STATE.confirmPostSite = '';
+    const body = $('tabletKeysBody');
+    if (body) body.innerHTML = '';
+  }
+
+  function openTabletKeysModal() {
+    if (!canManageTabletKeys()) return;
+    let modal = $('tabletKeysModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'tabletKeysModal';
+      modal.className = 'modal-backdrop';
+      modal.hidden = true;
+      modal.innerHTML = `
+        <div class="modal-card tablet-keys-card" role="dialog" aria-modal="true" aria-labelledby="tabletKeysTitle">
+          <div class="modal-header">
+            <div>
+              <span class="modal-eyebrow">KIOSKS AND TABLETS</span>
+              <h2 id="tabletKeysTitle">Tablet Station Keys</h2>
+            </div>
+            <div class="modal-header-actions">
+              <button type="button" class="modal-close-btn" id="tabletKeysCloseBtn" aria-label="Close">✕</button>
+            </div>
+          </div>
+          <div class="modal-body" id="tabletKeysBody"></div>
+        </div>`;
+      document.body.appendChild(modal);
+      wireBackdropDismiss(modal, closeTabletKeysModal);
+      modal.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeTabletKeysModal(); } });
+      modal.addEventListener('change', e => {
+        const t = e.target;
+        if (t && t.id === 'tkSite') renderTabletKeysModalBody();
+        if (t && t.hasAttribute && t.hasAttribute('data-tk-post-input') && TABLET_KEYS_STATE.confirmPostSite) {
+          TABLET_KEYS_STATE.confirmPostSite = '';
+          const keep = { id: t.id, value: t.value };
+          renderTabletKeysModalBody();
+          if ($(keep.id)) $(keep.id).value = keep.value;
+        }
+      });
+      modal.addEventListener('click', async e => {
+        const t = e.target && e.target.closest ? e.target.closest('button') : null;
+        if (!t || !modal.contains(t)) return;
+        const S = TABLET_KEYS_STATE;
+        if (t.id === 'tabletKeysCloseBtn') { closeTabletKeysModal(); return; }
+        if (t.id === 'tkRetryBtn') { loadTabletKeys(); return; }
+        if (t.id === 'tkDoneBtn') { S.made = null; renderTabletKeysModalBody(); return; }
+        if (t.id === 'tkCopyBtn') {
+          const txt = S.made ? S.made.key : '';
+          try { await navigator.clipboard.writeText(txt); toast('Key copied', 'ok'); }
+          catch (_) { toast('Copy did not work here. Type the key from the screen.', 'warn'); }
+          return;
+        }
+        if (t.id === 'tkCreateBtn') {
+          if (S.busy) return;
+          const site = ($('tkSite') && $('tkSite').value) || '';
+          const scope = ($('tkScope') && $('tkScope').value) || '';
+          const label = (($('tkLabel') && $('tkLabel').value) || '').trim();
+          if (label.length < 2) { toast('Give the tablet a name you will recognise later.', 'warn'); if ($('tkLabel')) $('tkLabel').focus(); return; }
+          S.busy = true;
+          t.disabled = true;
+          try {
+            const j = await tabletKeysApi({ op: 'create_station_key', site, scope, label });
+            S.made = { id: j.id, key: j.key, qr: j.qr, label: j.label, company: j.company, scope: j.scope };
+            if ($('tkLabel')) $('tkLabel').value = '';
+            S.busy = false;
+            await loadTabletKeys();
+          } catch (err) {
+            S.busy = false;
+            t.disabled = false;
+            toast(String((err && err.message) || err), 'err');
+          }
+          return;
+        }
+        if (t.hasAttribute('data-tk-revoke')) { S.confirmRevokeId = t.getAttribute('data-tk-revoke'); renderTabletKeysModalBody(); return; }
+        if (t.hasAttribute('data-tk-revoke-no')) { S.confirmRevokeId = ''; renderTabletKeysModalBody(); return; }
+        if (t.hasAttribute('data-tk-revoke-yes')) {
+          const id = t.getAttribute('data-tk-revoke-yes');
+          t.disabled = true;
+          try {
+            await tabletKeysApi({ op: 'revoke_station_key', id });
+            S.confirmRevokeId = '';
+            if (S.made && S.made.id === id) S.made = null;
+            toast('Key switched off', 'ok');
+            await loadTabletKeys();
+          } catch (err) {
+            t.disabled = false;
+            toast(String((err && err.message) || err), 'err');
+          }
+          return;
+        }
+        if (t.hasAttribute('data-tk-post-no')) { S.confirmPostSite = ''; renderTabletKeysModalBody(); return; }
+        const saveCode = t.getAttribute('data-tk-post-save');
+        const yesCode = t.getAttribute('data-tk-post-yes');
+        if (saveCode || yesCode) {
+          const code = saveCode || yesCode;
+          const inp = $('tkPost_' + code);
+          const from = inp ? String(inp.value || '').trim() : '';
+          const cur = (S.posting.find(p => p.code === code) || {}).from || '';
+          if (saveCode && from === cur) {
+            // Same date: nothing to confirm, but the cloud is still asked to line the revenue rows up with
+            // it, which repairs a save that was cut short. It writes nothing when they already match.
+            t.disabled = true;
+            try {
+              const j = await tabletKeysApi({ op: 'set_pos_revenue_posting', site: code, from, expect: cur });
+              S.posting = Array.isArray(j.sites) ? j.sites : S.posting;
+              toast(j.changedRows > 0 ? 'Revenue rows brought in line' : 'Nothing to change', 'ok');
+              renderTabletKeysModalBody();
+              if (j.changedRows > 0) syncWithCloud(false);
+            } catch (err) {
+              t.disabled = false;
+              toast(String((err && err.message) || err), 'err');
+              loadTabletKeys();   // show what is stored now (another window may have changed it)
+            }
+            return;
+          }
+          if (saveCode) {
+            // Second step on purpose: this changes what counts as revenue.
+            S.confirmPostSite = code;
+            renderTabletKeysModalBody();
+            if ($('tkPost_' + code)) $('tkPost_' + code).value = from;
+            return;
+          }
+          t.disabled = true;
+          try {
+            const j = await tabletKeysApi({ op: 'set_pos_revenue_posting', site: code, from, expect: cur });
+            S.posting = Array.isArray(j.sites) ? j.sites : S.posting;
+            S.confirmPostSite = '';
+            toast(from ? 'Start date saved' : 'Till sales are no longer counted in venue revenue', 'ok');
+            renderTabletKeysModalBody();
+            syncWithCloud(false);
+          } catch (err) {
+            t.disabled = false;
+            toast(String((err && err.message) || err), 'err');
+            S.confirmPostSite = '';
+            loadTabletKeys();   // show what is stored now (another window may have changed it)
+          }
+        }
+      });
+    }
+    TABLET_KEYS_STATE.made = null;
+    TABLET_KEYS_STATE.confirmRevokeId = '';
+    TABLET_KEYS_STATE.confirmPostSite = '';
+    modal.hidden = false;
+    loadTabletKeys();
+  }
+
   function wireKiosks(container) {
     if (!container) return;
     wireKioskAttendanceKeyboardOnce();
+    const tabletKeysBtn = $('kioskStationKeysOpenBtn');
+    if (tabletKeysBtn) tabletKeysBtn.addEventListener('click', openTabletKeysModal);
 
     // 0. Wall Header Enrol Staff Button, Admin Button, Switch Role Button & Flash Dismiss
     const wallEnrolBtn = $('kioskWallEnrolBtn');
@@ -121055,7 +124058,7 @@
       STATE.demoVisitor = true;
       history.replaceState({ view: STATE.view }, '', lockedCleanUrl);
       const ownerSeat = STATE.users.find(u => isOwner(u)) || STATE.users[0];
-      performLogin(ownerSeat.email, ownerSeat.pin_code || '1111', { bypass2FA: true, method: 'Interactive Sandbox' });
+      performLogin(ownerSeat.email, ownerSeat.pin_code || DEMO_FALLBACK_PIN, { bypass2FA: true, method: 'Interactive Sandbox' });
     } else if (swIdx >= 0 && STATE.users[swIdx].status !== 'Suspended') {
       STATE.activeUserIdx = swIdx;
       closeAuthGate();
@@ -121891,6 +124894,12 @@
         applyCollectionAlertRule,
         computePayablesOptimizerSnapshot,
         applyPayablesAlertRule,
+        computeTreasuryRunwaySnapshot,
+        applyTreasuryRunwayAlertRule,
+        computeInventoryOptimizerSnapshot,
+        applyInventoryAlertRule,
+        scopeMatchesCompanyKey,
+        isStudioCoKeyAllowedForUser,
         canReviewSentinels,
         markSentinelReviewed,
         unmarkSentinelReviewed,
@@ -122112,6 +125121,18 @@
         if (prevDocModal && !prevDocModal.hidden) { closeDocumentPreviewModal(); return; }
         const thModal = $('thermalPrintModal');
         if (thModal && !thModal.hidden) { thModal.hidden = true; return; }
+        if ($('inventoryOptimizerModal') && !$('inventoryOptimizerModal').hidden && window.MFG_ASK && typeof window.MFG_ASK.closeInventoryOptimizerStudio === 'function') {
+          window.MFG_ASK.closeInventoryOptimizerStudio();
+          return;
+        }
+        if ($('treasuryForecastModal') && !$('treasuryForecastModal').hidden && window.MFG_ASK && typeof window.MFG_ASK.closeTreasuryForecastStudio === 'function') {
+          window.MFG_ASK.closeTreasuryForecastStudio();
+          return;
+        }
+        if ($('payablesOptimizerModal') && !$('payablesOptimizerModal').hidden && window.MFG_ASK && typeof window.MFG_ASK.closePayablesOptimizerStudio === 'function') {
+          window.MFG_ASK.closePayablesOptimizerStudio();
+          return;
+        }
         if ($('collectionForecastModal') && !$('collectionForecastModal').hidden && window.MFG_ASK && typeof window.MFG_ASK.closeCollectionForecastStudio === 'function') {
           window.MFG_ASK.closeCollectionForecastStudio();
           return;
@@ -122959,7 +125980,8 @@
       setCoId(live.trading.grnRows, 'Korri Auto', 0, 'GRN-KA-2026-058');
       setCoId(live.trading.serialUnits, 'Shacman', 0, 'SU-SH-001');
       setCoId(live.trading.serialUnits, 'Korri Auto', 0, 'SU-KA-001');
-      if (Array.isArray(live.trading.serialUnits) && !live.trading.serialUnits.some(r => r && r.id === 'SU-KA-001')) {
+      // Sample Korri service van: demo sandbox only. A live workspace lists the serial units its seed holds and no others.
+      if (isDemoSandboxSession() && Array.isArray(live.trading.serialUnits) && !live.trading.serialUnits.some(r => r && r.id === 'SU-KA-001')) {
         live.trading.serialUnits.splice(1, 0, { id: 'SU-KA-001', company: 'Korri Auto', model: 'Korri Mobile Service & Lube Van 4x4', family: 'Service Fleet', chassis_vin: 'WDB9066571P391042', engine_no: 'OM651-955-301982', year: 2026, warehouse: 'Al Ghazieh', location: 'Al-Ghazieh Service Bay', fob_usd: 29500, landed_add_usd: 4700, landed_cost_usd: 34200, list_price_usd: 42900, ask_price_usd: 42900, status: 'In Service Fleet', buyer: 'Korri Field Service' });
       }
     }
@@ -123562,6 +126584,8 @@
       };
     },
     computeInsuranceOperations: typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations : null,
+    scopeMatchesCompanyKey: typeof scopeMatchesCompanyKey === 'function' ? scopeMatchesCompanyKey : null,
+    isStudioCoKeyAllowedForUser: typeof isStudioCoKeyAllowedForUser === 'function' ? isStudioCoKeyAllowedForUser : null,
     computeCeoPeriodBridgeSnapshot: typeof computeCeoPeriodBridgeSnapshot === 'function' ? computeCeoPeriodBridgeSnapshot : null,
     computeInspector360Snapshot: typeof computeInspector360Snapshot === 'function' ? computeInspector360Snapshot : null,
     computeIndustryDashboardSnapshot: typeof computeIndustryDashboardSnapshot === 'function' ? computeIndustryDashboardSnapshot : null,
@@ -123602,6 +126626,8 @@
     computeTradingOperations: typeof computeTradingOperations === 'function' ? computeTradingOperations : null,
     computeRealEstateOperations: typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations : null,
     computeInsuranceOperations: typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations : null,
+    scopeMatchesCompanyKey: typeof scopeMatchesCompanyKey === 'function' ? scopeMatchesCompanyKey : null,
+    isStudioCoKeyAllowedForUser: typeof isStudioCoKeyAllowedForUser === 'function' ? isStudioCoKeyAllowedForUser : null,
     computeCeoPeriodBridgeSnapshot: typeof computeCeoPeriodBridgeSnapshot === 'function' ? computeCeoPeriodBridgeSnapshot : null,
     computeInspector360Snapshot: typeof computeInspector360Snapshot === 'function' ? computeInspector360Snapshot : null,
     computeSentinelTriageSnapshot: typeof computeSentinelTriageSnapshot === 'function' ? computeSentinelTriageSnapshot : null,
@@ -123614,6 +126640,10 @@
     applyCollectionAlertRule: typeof applyCollectionAlertRule === 'function' ? applyCollectionAlertRule : null,
     computePayablesOptimizerSnapshot: typeof computePayablesOptimizerSnapshot === 'function' ? computePayablesOptimizerSnapshot : null,
     applyPayablesAlertRule: typeof applyPayablesAlertRule === 'function' ? applyPayablesAlertRule : null,
+    computeTreasuryRunwaySnapshot: typeof computeTreasuryRunwaySnapshot === 'function' ? computeTreasuryRunwaySnapshot : null,
+    applyTreasuryRunwayAlertRule: typeof applyTreasuryRunwayAlertRule === 'function' ? applyTreasuryRunwayAlertRule : null,
+    computeInventoryOptimizerSnapshot: typeof computeInventoryOptimizerSnapshot === 'function' ? computeInventoryOptimizerSnapshot : null,
+    applyInventoryAlertRule: typeof applyInventoryAlertRule === 'function' ? applyInventoryAlertRule : null,
     getState: () => STATE,
     buildSentinelItems: typeof buildSentinelItems === 'function' ? buildSentinelItems : null,
     canReviewSentinels: typeof canReviewSentinels === 'function' ? canReviewSentinels : null,
@@ -123633,6 +126663,7 @@
     applyUserRlsAndPermissions: typeof applyUserRlsAndPermissions === 'function' ? applyUserRlsAndPermissions : null,
     ensureAlertRulesState: typeof ensureAlertRulesState === 'function' ? ensureAlertRulesState : null,
     invalidateAllSeedCaches: typeof invalidateAllSeedCaches === 'function' ? invalidateAllSeedCaches : null,
+    unpackIndustrySeedPayload: typeof unpackIndustrySeedPayload === 'function' ? unpackIndustrySeedPayload : null,
     openIndustryDomainEntryModal: typeof openIndustryDomainEntryModal === 'function' ? openIndustryDomainEntryModal : null,
     closeIndustryDomainEntryModal: typeof closeIndustryDomainEntryModal === 'function' ? closeIndustryDomainEntryModal : null,
     openIndustryDomainInspector: typeof openIndustryDomainInspector === 'function' ? openIndustryDomainInspector : null,

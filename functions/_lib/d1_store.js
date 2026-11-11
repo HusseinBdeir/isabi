@@ -61,14 +61,19 @@ const CR_KEY_TO_TABLE = {
 // hsp_pos, ids POS-<SITE>-<yyyymmdd>-<6 hex>) are owned by the server. A copy held by a Command Center
 // client is never written back over them, whatever its rev: the next till batch would only re-total a
 // row the client had changed, and a stale copy could roll the totals back.
+// The same holds for the venue revenue rows the endpoint posts from till sales once a resort's posting
+// date is set (bucket hsp_revenue, ids HSP-REV-POS-<SITE>-<yyyymmdd>-<6 hex>).
 export function isServerOwnedCustomRow(bucket, rowId) {
-  return bucket === 'hsp_pos' && /^POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(rowId || ''));
+  const id = String(rowId || '');
+  if (bucket === 'hsp_pos') return /^POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(id);
+  if (bucket === 'hsp_revenue') return /^HSP-REV-POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(id);
+  return false;
 }
 
 // Row edits and workflow patches are keyed "<prefix>::<bucket>::<row id>" (or by the row id alone). One that
 // targets a server-owned till close row is not stored either, so it cannot restate the till's totals.
 export function isServerOwnedRowEditKey(editKey) {
-  return /(^|::)POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(editKey || ''));
+  return /(^|::)(HSP-REV-)?POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(editKey || ''));
 }
 
 // Removes every client copy of a server-owned row from a store document before it is stored or mirrored,
@@ -76,8 +81,12 @@ export function isServerOwnedRowEditKey(editKey) {
 export function stripServerOwnedCustomRows(doc) {
   if (!doc || typeof doc !== 'object') return doc;
   const icr = doc.industryCustomRows;
-  if (icr && typeof icr === 'object' && Array.isArray(icr.hsp_pos)) {
-    icr.hsp_pos = icr.hsp_pos.filter(r => !(r && isServerOwnedCustomRow('hsp_pos', String(r.id || r.code || '').trim())));
+  if (icr && typeof icr === 'object') {
+    for (const bucket of ['hsp_pos', 'hsp_revenue']) {
+      if (Array.isArray(icr[bucket])) {
+        icr[bucket] = icr[bucket].filter(r => !(r && isServerOwnedCustomRow(bucket, String(r.id || r.code || '').trim())));
+      }
+    }
   }
   const ire = doc.industryRowEdits;
   if (ire && typeof ire === 'object') {
@@ -2901,10 +2910,22 @@ function scopeStoreDocForSession(docObj, session) {
   return copyDoc;
 }
 
+// Documents the kiosk endpoint alone reads and writes (station key hashes, when each tablet was last heard
+// from, the date till sales start posting to venue revenue). They are never served or patched through the
+// general store route, whatever the seat: the kiosk endpoint has its own Owner-only operations for them.
+export function isKioskOwnedDoc(docKey) {
+  const k = String(docKey || '');
+  return k === 'kiosk_station_keys' || k === 'kiosk_station_auth' || k === 'pos_revenue_posting' || k.startsWith('kiosk_key_seen:');
+}
+
 export async function handleSync(request, env, session, body, _ctx) {
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   if (!env || !env.DB) return jsonResponse({ ok: false, error: 'D1 not bound' }, 503);
   const docKey = String((body && body.doc) || 'mfg_web_store');
+  const patchDocKeys = (body && body.op === 'patch' && body.patch && typeof body.patch === 'object') ? Object.keys(body.patch) : [];
+  if (isKioskOwnedDoc(docKey) || patchDocKeys.some(isKioskOwnedDoc)) {
+    return jsonResponse({ ok: false, error: 'This document is managed from Kiosks, Tablet Keys.' }, 403);
+  }
 
   if (request.method === 'GET' || (body && (body.op === 'get_mfg' || body.op === 'get_control'))) {
     const targetKey = body && body.op === 'get_control' ? 'control_store' : docKey;
