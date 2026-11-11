@@ -780,6 +780,7 @@
   flex-shrink: 0;
 }
 .geo-dot.bu { background: #C89D54; }
+.geo-dot.site { background: #2356A8; }
 .geo-dot.raw { background: #059669; }
 .geo-dot.sales { background: #2563EB; }
 .geo-dot.dual { background: #7C3AED; }
@@ -1011,6 +1012,16 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
 .geo-reg-site-cat.is-jv {
   background: rgba(124, 58, 237, 0.12);
   color: #6D28D9;
+}
+.geo-reg-site-cat.is-bund,
+.reg-exp-site-cat.is-bund {
+  background: rgba(200, 157, 84, 0.16);
+  color: #8A5A0F;
+}
+[data-theme="dark"] .geo-reg-site-cat.is-bund,
+[data-theme="dark"] .reg-exp-site-cat.is-bund {
+  background: rgba(229, 185, 104, 0.2);
+  color: #FDE68A;
 }
 [data-theme="dark"] .geo-reg-site-cat {
   background: rgba(52, 211, 153, 0.18);

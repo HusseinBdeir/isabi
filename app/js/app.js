@@ -10467,13 +10467,15 @@
       return best;
     };
 
-    // Unify sites by normalized name: merge any __cust or duplicate site records into one canonical record
+    // Unify sites by normalized name within each industry partition: merge any __cust or duplicate site records into one canonical record
+    const isNonMfgSiteRow = s => Boolean(s && (s._multiIndustrySeed || (s._industry && s._industry !== 'Manufacturing')));
     const primaryByNorm = new Map();
     const unifiedSites = [];
     recs.sites.forEach(s => {
       if (!s || !s.name) return;
-      const k = norm(s.name);
-      if (!k) return;
+      const baseK = norm(s.name);
+      if (!baseK) return;
+      const k = (isNonMfgSiteRow(s) ? norm(s._industry || 'non_mfg') + '::' : '') + baseK;
       const isCustClone = String(s.id || '').endsWith('__cust');
       const existing = primaryByNorm.get(k);
       if (!existing) {
@@ -10499,7 +10501,7 @@
     }
 
     recs.sites.forEach(s => {
-      if (!s || !s.name) return;
+      if (!s || !s.name || isNonMfgSiteRow(s)) return;
       const k = norm(s.name);
       const soloCust = singleSalesCust(k);
       const rawRuleSup = latestRawRuleByNorm.get(k);
@@ -10596,7 +10598,7 @@
     });
     const bundledSeedSiteNorms = new Set();
     recs.sites.forEach(s => {
-      if (!s || !s.name) return;
+      if (!s || !s.name || isNonMfgSiteRow(s)) return;
       const jpMeta = jvPartBySiteNorm.get(norm(s.name));
       if (jpMeta && jpMeta.partner) {
         s.is_jv = true;
@@ -10944,11 +10946,13 @@
     };
   }
 
-  function cascadeSiteRename(oldName, newName, extraApiPosts) {
+  function cascadeSiteRename(oldName, newName, extraApiPosts, targetInd = '') {
     const cleanOld = String(oldName || '').trim();
     const cleanNew = String(newName || '').trim();
     const oldNorm = norm(cleanOld);
     if (!cleanOld || !cleanNew || !oldNorm || cleanOld === cleanNew) return 0;
+    const effTargetInd = targetInd || getActiveIndustry();
+    const isTargetMfg = effTargetInd === 'Manufacturing';
     const siteRefTables = [
       'price_rules', 'sales_tickets', 'raw_purchases',
       'jv_partnerships', 'jv_distributions',
@@ -10972,6 +10976,7 @@
           seenIds.add(rid);
         }
         if (r.voided) return;
+        if (isTargetMfg ? (Boolean(r._multiIndustrySeed) || (r._industry && r._industry !== 'Manufacturing')) : r._industry !== effTargetInd) return;
         const matchSite = Boolean(r.site && norm(r.site) === oldNorm);
         const matchOrigSite = Boolean(r.origin_site && norm(r.origin_site) === oldNorm);
         if (!matchSite && !matchOrigSite) return;
@@ -81247,7 +81252,7 @@
   function renderSitePriceAgreementsSubgrid(siteName, origSiteName, siteRow, isEditingSite) {
     const wrapEl = $('sitePriceAgreementsWrap');
     if (!wrapEl) return;
-    if (typeof canAccessTable === 'function' && !canAccessTable('price_rules')) {
+    if (getActiveIndustry() !== 'Manufacturing' || (typeof canAccessTable === 'function' && !canAccessTable('price_rules'))) {
       wrapEl.hidden = true;
       wrapEl.innerHTML = '';
       return;
@@ -83277,7 +83282,7 @@
         const curSiteInputVal = siteInp ? String(siteInp.value || '').trim() : '';
         const origSiteVal = editingSiteRec && editingSiteRec.orig ? String(editingSiteRec.orig.name || '').trim() : '';
         const resolvedSiteRow = (editingSiteRec && editingSiteRec.orig)
-          || ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && norm(s.name) === norm(curSiteInputVal || origSiteVal))
+          || ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && isRowInActiveIndustry(s) && norm(s.name) === norm(curSiteInputVal || origSiteVal))
           || null;
         renderSitePriceAgreementsSubgrid(curSiteInputVal || origSiteVal, origSiteVal, resolvedSiteRow, Boolean(editingSiteRec));
         return {};
@@ -87973,7 +87978,7 @@
           const origSiteName = String((STATE.editingRecord && STATE.editingRecord.crKey === 'sites' && STATE.editingRecord.orig && STATE.editingRecord.orig.name) || '').trim();
           const curSiteName = String(val('f_site') || origSiteName).trim();
           const siteRecObj = (STATE.editingRecord && STATE.editingRecord.crKey === 'sites' && STATE.editingRecord.orig)
-            || ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && norm(s.name) === norm(curSiteName))
+            || ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && isRowInActiveIndustry(s) && norm(s.name) === norm(curSiteName))
             || null;
           const pf = {
             site: curSiteName,
@@ -89368,6 +89373,9 @@
     if (!m) return '';
     if (crKey === 'expense_subcategories') return norm(r.category) + '|' + m;
     if (crKey === 'fx_rates') return norm(r.currency || 'LBP') + '|' + m;
+    if ((crKey === 'sites' || crKey === 'regions') && r._industry && r._industry !== 'Manufacturing') {
+      return norm(r._industry) + '|' + m;
+    }
     return m;
   }
 
@@ -89379,6 +89387,9 @@
     const qCurr = opts.currency ? norm(opts.currency) : '';
     if (!q && !qPlate) return null;
     const excludeId = opts.excludeId != null ? String(opts.excludeId) : '';
+    const isIndPartitioned = crKey === 'sites' || crKey === 'regions';
+    const targetInd = isIndPartitioned ? (opts.industry || getActiveIndustry() || 'Manufacturing') : '';
+    const isTargetMfg = !targetInd || targetInd === 'Manufacturing';
     const pool = [].concat(
       (SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [],
       (STATE.customRecords && Array.isArray(STATE.customRecords[crKey])) ? STATE.customRecords[crKey] : []
@@ -89387,6 +89398,12 @@
       if (!r || r.voided) continue;
       if (excludeId && r.id != null && String(r.id) === excludeId) continue;
       if (!opts.includeSelf && isSelfEditingRow(r, crKey)) continue;
+      if (isIndPartitioned) {
+        const inPart = isTargetMfg
+          ? (!r._multiIndustrySeed && (!r._industry || r._industry === 'Manufacturing'))
+          : r._industry === targetInd;
+        if (!inPart) continue;
+      }
       const rMain = norm(universalMainValue(crKey, r));
       if (crKey === 'expense_subcategories') {
         if (q && rMain === q && (!qCat || norm(r.category) === qCat)) return r;
@@ -90368,8 +90385,11 @@
         const pHit = window.MFG_GEO.resolvePlaceLocation(nm, SEED);
         if (pHit && pHit.region) siteReg = pHit.region;
       }
+      const isMfgSiteSave = getActiveIndustry() === 'Manufacturing';
       if (!siteReg && !inclTrans) {
-        addErr('f_region', 'Region is required when hauling in our trucks or 3rd-party haulers (or select Bundled Supplier Material + Transport).');
+        addErr('f_region', isMfgSiteSave
+          ? 'Region is required when hauling in our trucks or 3rd-party haulers (or select Bundled Supplier Material + Transport).'
+          : 'Region is required. Select a Region or click inside a zone on the map.');
       } else if (window.MFG_GEO && typeof window.MFG_GEO.validateSiteInsideRegion === 'function') {
         const geoCheck = window.MFG_GEO.validateSiteInsideRegion({
           siteName: nm,
@@ -90391,9 +90411,15 @@
           }
         }
       }
-      const supVal = (nm ? resolveSuppliersForSite(nm, company, date, '').activeSupplier : '') || (origSite && origSite.supplier) || '';
-      const custVal = !inclTrans ? ((nm ? resolveCustomersForSite(nm, company, date, '').activeCustomer : '') || (origSite && origSite.customer) || '') : '';
-      const isJvSite = Boolean(origSite && (origSite.is_jv || origSite.jv));
+      const supVal = isMfgSiteSave
+        ? ((nm ? resolveSuppliersForSite(nm, company, date, '').activeSupplier : '') || (origSite && origSite.supplier) || '')
+        : ((origSite && origSite.supplier) || '');
+      const custVal = !inclTrans
+        ? (isMfgSiteSave
+            ? ((nm ? resolveCustomersForSite(nm, company, date, '').activeCustomer : '') || (origSite && origSite.customer) || '')
+            : ((origSite && origSite.customer) || ''))
+        : '';
+      const isJvSite = Boolean(isMfgSiteSave && origSite && (origSite.is_jv || origSite.jv));
       const jvPartnerVal = isJvSite ? (origSite.jv_partner || '') : '';
       const jvShareVal = isJvSite ? (Number(origSite.jv_share) || 50) : 0;
       const jvCoVal = isJvSite ? (origSite.jv_company || company || 'WTC') : '';
@@ -91774,6 +91800,11 @@
         }
       }
     }
+    if (record && (crKey === 'sites' || crKey === 'regions')) {
+      const origInd = editCtx && editCtx.crKey === crKey && editCtx.orig && editCtx.orig._industry;
+      const curInd = origInd || getActiveIndustry();
+      if (curInd && curInd !== 'Manufacturing') record._industry = curInd;
+    }
     if (record && /^bdeir\s*holding$/i.test(String(record.company || '').trim())) {
       record._industry = 'Holding & Treasury';
     }
@@ -92365,7 +92396,8 @@
         });
       }
       if (crKey === 'sites' && isEditingExisting && editCtx && editCtx.orig && String(editCtx.orig.name || '').trim() !== String(record.name || '').trim()) {
-        cascadeSiteRename(editCtx.orig.name, record.name, extraApiPosts);
+        const renameInd = editCtx.orig._industry || record._industry || getActiveIndustry();
+        cascadeSiteRename(editCtx.orig.name, record.name, extraApiPosts, renameInd);
       }
       if (crKey === 'sites' && window.MFG_GEO) {
         if (isEditingExisting && editCtx && editCtx.orig && typeof window.MFG_GEO.clearLocationPin === 'function') {
@@ -92373,11 +92405,12 @@
           const nameChanged = norm(editCtx.orig.name) !== norm(record.name);
           const catChanged = origCat !== record.site_category;
           const pinRemoved = record.latitude == null || record.longitude == null;
+          const effInd = editCtx.orig._industry || record._industry || getActiveIndustry();
           if (nameChanged || catChanged || pinRemoved) {
-            window.MFG_GEO.clearLocationPin({ name: editCtx.orig.name, siteCategory: origCat, excludeId: record.id }, SEED);
+            window.MFG_GEO.clearLocationPin({ name: editCtx.orig.name, siteCategory: origCat, excludeId: record.id, industry: effInd }, SEED);
           }
           if (pinRemoved && !nameChanged) {
-            window.MFG_GEO.clearLocationPin({ name: record.name, siteCategory: record.site_category, excludeId: record.id }, SEED);
+            window.MFG_GEO.clearLocationPin({ name: record.name, siteCategory: record.site_category, excludeId: record.id, industry: effInd }, SEED);
           }
         }
         if (record.latitude != null && record.longitude != null) {
@@ -92392,7 +92425,8 @@
         if (!isBuP) {
           const allSites = ((SEED.records && SEED.records.sites) || []).concat(STATE.customRecords.sites || []);
           allSites.forEach(s => {
-            if (s && !s.voided && norm(s.name) === norm(record.site)) {
+            if (!s || s.voided || s._multiIndustrySeed || (s._industry && s._industry !== 'Manufacturing')) return;
+            if (norm(s.name) === norm(record.site)) {
               s.is_jv = true;
               s.jv_partner = record.partner;
               s.jv_share = Number(record.percentage ?? record.share_pct ?? 50) || 50;
@@ -95129,12 +95163,19 @@
     if (key === 'staff_members' || key === 'staff_roles' || key === 'staff_assignments' || key === 'work_shifts') ensureStaffMembersSeeded();
     const nq = norm(q);
     const list = (SEED.records[key] || []).concat(STATE.customRecords[key] || []);
-    let hit = list.find(r => r && String(r.id) === q);
+    const isInspRowInInd = r => {
+      if (!r) return false;
+      if (key !== 'sites' && key !== 'regions') return true;
+      const aInd = getActiveIndustry();
+      if (aInd === 'Manufacturing') return !r._multiIndustrySeed && (!r._industry || r._industry === 'Manufacturing');
+      return r._industry === aInd;
+    };
+    let hit = list.find(r => r && isInspRowInInd(r) && String(r.id) === q);
     if (!hit && key === 'sites') {
-      hit = list.find(r => r && !r.voided && norm(r.name) === nq);
+      hit = list.find(r => r && !r.voided && isInspRowInInd(r) && norm(r.name) === nq);
     }
     if (!hit) {
-      hit = list.find(r => r && (norm(r.name) === nq || norm(r.code) === nq || norm(r.ticket_no) === nq || norm(r.invoice_no) === nq || norm(r.staff) === nq || norm(r.driver) === nq || norm(r.equipment) === nq || norm(r.plate_no) === nq));
+      hit = list.find(r => r && isInspRowInInd(r) && (norm(r.name) === nq || norm(r.code) === nq || norm(r.ticket_no) === nq || norm(r.invoice_no) === nq || norm(r.staff) === nq || norm(r.driver) === nq || norm(r.equipment) === nq || norm(r.plate_no) === nq));
     }
     if (hit) return hit;
 
@@ -95331,9 +95372,19 @@
       };
     }
     if (key === 'sites') {
+      const isMfgSiteInsp = getActiveIndustry() === 'Manufacturing' && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing');
+      const gpsTxt = row.latitude != null ? `${row.latitude}, ${row.longitude}` : 'Pending coordinates';
+      if (!isMfgSiteInsp) {
+        const regTxt = row.region || 'Lebanon';
+        const regPart = regTxt && norm(regTxt) !== norm(row.name) ? ` (${regTxt})` : (row.region ? ` (Zone: ${row.region})` : '');
+        const custPart = row.customer ? `  |  Linked Customer: ${row.customer}` : '';
+        return {
+          tone: 'info',
+          text: `Site 360°: ${row.name}${regPart}${custPart}  |  GPS Pin: ${gpsTxt}`
+        };
+      }
       const isBundledSt = isSupplierDeliveredSite(row);
       const rulesCnt = activeRulesCountFor('site', row.name);
-      const gpsTxt = row.latitude != null ? `${row.latitude}, ${row.longitude}` : 'Pending coordinates';
       const supplyTxt = row.is_jv
         ? `Active JV (Partner: ${row.jv_partner || 'Assaf'} ${row.jv_share || 50}% · ${row.jv_company || 'WTC'} ${100 - (Number(row.jv_share) || 50)}%)`
         : (isBundledSt ? 'Bundled (Supplier Provides Material + Transport · split unknown)' : 'Standard Region Site (Separate Haulage)');
@@ -96299,11 +96350,21 @@
     }
     else if (key === 'sites' || key === 'regions') {
       const name = row.name || row.Site;
+      const aInd = getActiveIndustry();
+      const isMfgInsp = aInd === 'Manufacturing' && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing');
+      const isRowInInd = s => s && !s.voided && (aInd === 'Manufacturing'
+        ? (!s._multiIndustrySeed && (!s._industry || s._industry === 'Manufacturing'))
+        : s._industry === aInd);
       if (key === 'regions') {
         if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') window.MFG_GEO.hydrateSeedGeo(SEED);
-        addGrid('sg_r_sites', `Sites in Region ${name}`, 'Sites', 'Sites', 'sites', (rec.sites || []).filter(s => s && !s.voided && norm(s.region || s.geo_zone) === norm(name)), ['name', 'region', 'supplier', 'customer', 'is_jv', 'latitude', 'longitude'], null);
-        addGrid('sg_r_ot', `Driver Trip & Overtime Rates (${name})`, 'Overtime Rates', 'Overtime Rates', 'overtime_rates', (rec.overtime_rates || []).filter(o => norm(o.region) === norm(name)), ['name', 'company', 'region', 'amount', 'start_date', 'end_date'], 'amount');
-      } else {
+        const regSiteCols = isMfgInsp
+          ? ['name', 'region', 'supplier', 'customer', 'is_jv', 'latitude', 'longitude']
+          : ['name', 'region', 'customer', 'latitude', 'longitude'];
+        addGrid('sg_r_sites', `Sites in Region ${name}`, 'Sites', 'Sites', 'sites', (rec.sites || []).filter(s => isRowInInd(s) && norm(s.region || s.geo_zone) === norm(name)), regSiteCols, null);
+        if (isMfgInsp) {
+          addGrid('sg_r_ot', `Driver Trip & Overtime Rates (${name})`, 'Overtime Rates', 'Overtime Rates', 'overtime_rates', (rec.overtime_rates || []).filter(o => norm(o.region) === norm(name)), ['name', 'company', 'region', 'amount', 'start_date', 'end_date'], 'amount');
+        }
+      } else if (isMfgInsp) {
         const qRules = (rec.price_rules || []).filter(r => norm(r.site) === norm(name) && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim()));
         const sRules = (rec.price_rules || []).filter(r => norm(r.site) === norm(name) && !isCommRule(r) && !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim()));
         const rawLoads = (rec.raw_purchases || []).filter(t => norm(t.site) === norm(name));
@@ -97147,9 +97208,11 @@
         { key: 'notes', label: 'Description / Notes', type: 'text', sec: 3, span: true }
       ],
       sites: [
-        { key: 'includes_transport', label: 'Supplier Provides Mat + Transport', type: 'bool', sec: 1, getVal: r => isSupplierDeliveredSite(r) },
+        ...(getActiveIndustry() === 'Manufacturing' && !(row && (row._multiIndustrySeed || (row._industry && row._industry !== 'Manufacturing')))
+          ? [{ key: 'includes_transport', label: 'Supplier Provides Mat + Transport', type: 'bool', sec: 1, getVal: r => isSupplierDeliveredSite(r) }]
+          : []),
         { key: 'name', label: 'Site Name *', type: 'text', sec: 1 },
-        { key: 'region', label: (row && isSupplierDeliveredSite(row)) ? 'Region / Zone (Optional for Bundled)' : 'Region / Zone *', type: 'combo', dl: 'dl_insp_regions', sec: 2 },
+        { key: 'region', label: (getActiveIndustry() === 'Manufacturing' && row && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing') && isSupplierDeliveredSite(row)) ? 'Region / Zone (Optional for Bundled)' : 'Region / Zone *', type: 'combo', dl: 'dl_insp_regions', sec: 2 },
         { key: 'latitude', label: 'GPS Latitude', type: 'number', step: '0.000001', sec: 2 },
         { key: 'longitude', label: 'GPS Longitude', type: 'number', step: '0.000001', sec: 2 },
         { key: 'notes', label: 'Notes / Directions', type: 'text', sec: 3, span: true }
@@ -97709,16 +97772,25 @@
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
     if (key === 'raw_purchases') { hidden.add('includes_transport'); }
     if (key === 'sites') {
+      hidden.add('site_category');
+      hidden.add('geo_zone');
       hidden.add('jv_company');
       hidden.add('haulage_mode');
-      if (resolveSiteCategory(row) === 'customer') {
+      const isMfgSiteRow = getActiveIndustry() === 'Manufacturing' && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing');
+      if (!isMfgSiteRow) {
         hidden.add('supplier');
         hidden.add('is_jv');
         hidden.add('jv_partner');
         hidden.add('jv_share');
         hidden.add('includes_transport');
+      } else if (resolveSiteCategory(row) === 'customer') {
+        if (!row.supplier) hidden.add('supplier');
+        hidden.add('is_jv');
+        hidden.add('jv_partner');
+        hidden.add('jv_share');
+        hidden.add('includes_transport');
       } else {
-        hidden.add('customer');
+        if (!row.customer) hidden.add('customer');
         if (row.is_jv) hidden.add('includes_transport');
         if (!row.is_jv) {
           hidden.add('jv_partner');
@@ -97840,7 +97912,7 @@
       }
     }
 
-    const populatedKeys = Object.keys(row).filter(k => !hidden.has(k) && row[k] !== '' && row[k] != null && !(typeof row[k] === 'number' && row[k] === 0 && /tip|discount|tier|adj|difference/.test(k) && !schemaByKey.has(k)));
+    const populatedKeys = Object.keys(row).filter(k => !k.startsWith('_') && !hidden.has(k) && row[k] !== '' && row[k] != null && !(typeof row[k] === 'number' && row[k] === 0 && /tip|discount|tier|adj|difference/.test(k) && !schemaByKey.has(k)));
     const allKeysSet = new Set(populatedKeys);
     schema.forEach(f => {
       if (!f.drawerOnly && !hidden.has(f.key)) allKeysSet.add(f.key);
@@ -99323,8 +99395,8 @@
           ${key === 'equipment_defects' && isDefectOpen(row) && canEnterForm('partlog') ? `<button type="button" class="pa-cmd-btn" id="inspResolveWithPartBtn">${ic('cog')} + Log Part Change</button>` : ''}
           ${(key === 'staff_members' || key === 'employments' || key === 'staff_assignments') && canEnterForm('staffassignment') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspLogStaffAssignBtn">${ic('staffassignment')} + Log Role or Equipment</button>` : ''}
           ${key === 'staff_members' && canEnterForm('employment') ? `<button type="button" class="pa-cmd-btn" id="inspNewStaffContractBtn">${ic('employment')} + New Contract</button>` : ''}
-          ${key === 'sites' && canEnterForm('pricerule_raw') ? `<button type="button" class="pa-cmd-btn" id="inspNewSiteRawRuleBtn">${ic('pricing')} + Quarry Agreement</button>` : ''}
-          ${key === 'sites' && canEnterForm('pricerule') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspNewSiteSalesRuleBtn">${ic('pricing')} + Sales Agreement</button>` : ''}
+          ${key === 'sites' && getActiveIndustry() === 'Manufacturing' && canEnterForm('pricerule_raw') ? `<button type="button" class="pa-cmd-btn" id="inspNewSiteRawRuleBtn">${ic('pricing')} + Quarry Agreement</button>` : ''}
+          ${key === 'sites' && getActiveIndustry() === 'Manufacturing' && canEnterForm('pricerule') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspNewSiteSalesRuleBtn">${ic('pricing')} + Sales Agreement</button>` : ''}
           ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">${ic('ruler')} Truck Size Windows (${eqWindows.length})</button>` : ''}
           ${!row.voided && canVoid() ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
           ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
@@ -100108,15 +100180,24 @@
         const dec = /^(Piece|Set|Box|Bag|Truck)$/i.test(mUom) && Number.isInteger(mLit) ? 0 : 1;
         html = `<span>Item: <b>${esc(mCls.item)} (${esc(mCls.category)})</b></span><span>Type: <b>${esc(mType)}</b></span><span>Quantity: <b>${mLit > 0 ? '+' : ''}${fmtNum(mLit, dec)} ${esc(mUom)}</b></span><span>${mCls.isDiesel ? 'Tank Impact' : 'Stock Impact'}: <b>${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${esc(mUom)} (${mLit >= 0 ? '+ deducts' : '- adds'})</b></span>`;
       } else if (key === 'sites') {
-        const isBundledMod = (getModVal('includes_transport') === 'Yes' || getModVal('includes_transport') === 'true' || (!getModVal('includes_transport') && isSupplierDeliveredSite(row)));
-        const regLblMod = modDrawer.querySelector('label[for="insp_edit_region"]');
-        if (regLblMod) regLblMod.textContent = isBundledMod ? 'Region / Zone (Optional for Bundled)' : 'Region / Zone *';
-        const mReg = getModVal('region') || row.region || (isBundledMod ? 'Optional (Bundled)' : 'Lebanon');
-        const supRes = row && row.name ? resolveSuppliersForSite(row.name, '', SEED_DATE, '') : null;
-        const custRes = row && row.name ? resolveCustomersForSite(row.name, '', SEED_DATE, '') : null;
-        const mSup = (supRes && supRes.activeSupplier) || row.supplier || '';
-        const mCust = (custRes && custRes.activeCustomer) || row.customer || '';
-        html = `<span>Supply Basis: <b>${isBundledMod ? 'Mat + Trans Included (Split Unknown)' : 'Standard Site (Separate Haul)'}</b></span><span>Region: <b>${esc(mReg)}</b></span>${mSup ? `<span>Active Supplier: <b>${esc(mSup)}</b></span>` : ''}${mCust ? `<span>Active Customer: <b>${esc(mCust)}</b></span>` : ''}`;
+        const isMfgSiteMod = getActiveIndustry() === 'Manufacturing' && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing');
+        if (!isMfgSiteMod) {
+          const regLblMod = modDrawer.querySelector('label[for="insp_edit_region"]');
+          if (regLblMod) regLblMod.textContent = 'Region / Zone *';
+          const mReg = getModVal('region') || row.region || 'Lebanon';
+          const mCust = getModVal('customer') || row.customer || '';
+          html = `<span>Region: <b>${esc(mReg)}</b></span>${mCust ? `<span>Linked Customer: <b>${esc(mCust)}</b></span>` : ''}`;
+        } else {
+          const isBundledMod = (getModVal('includes_transport') === 'Yes' || getModVal('includes_transport') === 'true' || (!getModVal('includes_transport') && isSupplierDeliveredSite(row)));
+          const regLblMod = modDrawer.querySelector('label[for="insp_edit_region"]');
+          if (regLblMod) regLblMod.textContent = isBundledMod ? 'Region / Zone (Optional for Bundled)' : 'Region / Zone *';
+          const mReg = getModVal('region') || row.region || (isBundledMod ? 'Optional (Bundled)' : 'Lebanon');
+          const supRes = row && row.name ? resolveSuppliersForSite(row.name, '', SEED_DATE, '') : null;
+          const custRes = row && row.name ? resolveCustomersForSite(row.name, '', SEED_DATE, '') : null;
+          const mSup = (supRes && supRes.activeSupplier) || row.supplier || '';
+          const mCust = (custRes && custRes.activeCustomer) || row.customer || '';
+          html = `<span>Supply Basis: <b>${isBundledMod ? 'Mat + Trans Included (Split Unknown)' : 'Standard Site (Separate Haul)'}</b></span><span>Region: <b>${esc(mReg)}</b></span>${mSup ? `<span>Active Supplier: <b>${esc(mSup)}</b></span>` : ''}${mCust ? `<span>Active Customer: <b>${esc(mCust)}</b></span>` : ''}`;
+        }
       }
       if (modDrawer && isEffectiveSeriesTable(key, row)) {
         const modCand = Object.assign({}, row);
@@ -101049,18 +101130,25 @@
           row.site_category = (!row.is_jv && !isSupplierDeliveredSite(row) && row.customer && !row.supplier) ? 'customer' : 'supplier';
           const siteNameChanged = String((origRowSnap && origRowSnap.name) || '').trim() !== String(row.name || '').trim();
           const siteCatChanged = origSiteCat !== row.site_category;
-          const sitePinRemoved = row.latitude == null || row.longitude == null;
+          const sitePinRemoved = row.latitude == null || row.latitude === '' || row.longitude == null || row.longitude === '';
+          const effSiteInd = (origRowSnap && origRowSnap._industry) || row._industry || getActiveIndustry();
           if (window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function' && origRowSnap && origRowSnap.name) {
             if (siteNameChanged || siteCatChanged || sitePinRemoved) {
-              window.MFG_GEO.clearLocationPin({ name: origRowSnap.name, siteCategory: origSiteCat, excludeId: row.id }, SEED);
+              window.MFG_GEO.clearLocationPin({ name: origRowSnap.name, siteCategory: origSiteCat, excludeId: row.id, industry: effSiteInd }, SEED);
             }
           }
-          if (window.MFG_GEO && row.latitude != null && row.longitude != null) {
+          if (window.MFG_GEO && ('latitude' in pendingUpdates || 'longitude' in pendingUpdates) && sitePinRemoved) {
+            row._pinCleared = true;
+            if (typeof window.MFG_GEO.clearLocationPin === 'function') {
+              window.MFG_GEO.clearLocationPin({ name: row.name, siteCategory: row.site_category, excludeId: row.id, industry: effSiteInd }, SEED);
+            }
+          } else if (window.MFG_GEO && row.latitude != null && row.longitude != null) {
+            row._pinCleared = false;
             window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category, name: row.name, lat: row.latitude, lng: row.longitude, region: row.region }, { SEED, STATE });
           }
           row._inspSiteCascadePosts = [];
           if (siteNameChanged && origRowSnap && origRowSnap.name) {
-            cascadeSiteRename(origRowSnap.name, row.name, row._inspSiteCascadePosts);
+            cascadeSiteRename(origRowSnap.name, row.name, row._inspSiteCascadePosts, effSiteInd);
           }
           normalizeDistinctSiteCategories(SEED);
         } else if (key === 'repair_items') {
@@ -107279,6 +107367,13 @@
     return (hit && hit.industry) || 'Manufacturing';
   }
   window.__mfgGetActiveIndustry = getActiveIndustry;
+
+  function isRowInActiveIndustry(r, ind = getActiveIndustry()) {
+    if (!r) return false;
+    return ind === 'Manufacturing'
+      ? (!r._multiIndustrySeed && (!r._industry || r._industry === 'Manufacturing'))
+      : r._industry === ind;
+  }
 
   function resolveIndustryCompatibleView(view, targetInd) {
     const effInd = (targetInd && INDUSTRY_SIDEBAR_SPEC[targetInd])

@@ -910,7 +910,14 @@
       labelRightHtml: `<span class="pa-lock-pill locked" data-role-cat-frozen="1" data-ui-tip="Automatically linked to the selected Role" style="pointer-events:none;cursor:default">${ic('lock')} <span class="lp-short">Locked</span><span class="sr-only"> LOCKED</span></span>`
     });
     const counterpartyNames = uniqSorted(['Bdeir Holding', 'WTC', 'BBConstruction', 'Lions Transport', 'Cash Till', 'Bank Audi', 'Blom Bank'].concat((rec.loans || []).map(l => l.lender || l.counterparty || l.name)).concat((rec.external_movements || []).map(x => x.counterparty || x.name)).concat(supNames), fIdx && fIdx.counterparty);
-    const regNames = uniqSorted((rec.regions || []).map(r => r.name).concat([
+    const activeFormInd = (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function')
+      ? (window.__mfgGetActiveIndustry() || 'Manufacturing')
+      : 'Manufacturing';
+    const isMfgForm = activeFormInd === 'Manufacturing';
+    const isRowInFormInd = r => r && !r.voided && (isMfgForm
+      ? (!r._multiIndustrySeed && (!r._industry || r._industry === 'Manufacturing'))
+      : r._industry === activeFormInd);
+    const regNames = uniqSorted((rec.regions || []).filter(isRowInFormInd).map(r => r.name).concat([
       'Beirut', 'Mount Lebanon', 'South Lebanon', 'Bekaa', 'North Lebanon', 'Nabatieh',
       'Metn', 'Keserwan', 'Baabda', 'Aley', 'Chouf', 'Saida', 'Tyre', 'Jbeil', 'Batroun', 'Chekka',
       'Tripoli', 'Koura', 'Zgharta', 'Akkar', 'Zahle', 'Chtaura', 'West Bekaa', 'Rachaiya',
@@ -1320,12 +1327,11 @@
     if (fType === 'site') {
       const st = (ctx && ctx.STATE) || {};
       const activeSitesTblVw = (st.tableViews && st.tableViews.sites) || '';
-      const activeSites = (rec.sites || []).filter(s => s && !s.voided);
+      const activeSites = (rec.sites || []).filter(isRowInFormInd);
       const bundledSiteCount = activeSites.filter(s => !s.is_jv && !s.jv && Boolean(s.includes_transport || s.haulage_mode === 'supplier_delivered')).length;
       const separateSiteCount = Math.max(0, activeSites.length - bundledSiteCount);
-      const defBundled = activeSitesTblVw === 'bundled';
-      return `
-        <div class="form-grid-3">
+      const defBundled = isMfgForm && activeSitesTblVw === 'bundled';
+      const haulDeckHtml = isMfgForm ? `
           <div class="form-field span-3" id="quarryHaulageModeDeck">
             <label><span class="pa-fld-lbl">Site Location &amp; Transportation Basis *</span></label>
             <div class="quarry-mode-deck" role="radiogroup" aria-label="Quarry Transportation Mode">
@@ -1361,7 +1367,10 @@
               </button>
             </div>
             <input type="hidden" id="f_includes_transport" value="${defBundled ? '1' : '0'}">
-          </div>
+          </div>` : `<input type="hidden" id="f_includes_transport" value="0">`;
+      return `
+        <div class="form-grid-3">
+          ${haulDeckHtml}
           ${fld(defBundled ? 'Region (Optional · Supplier Delivers)' : 'Region *', inp('f_region', 'text', '', `list="dl_regions" placeholder="${defBundled ? 'Optional region (required only if we/3P haul)...' : 'Select region or click map zone...'}"`) + dl('dl_regions', regNames), {
             id: 'wrap_site_region',
             hint: defBundled
@@ -1383,7 +1392,7 @@
             <div class="geo-modal-map-bar">
               <span id="modalSiteMapPrompt"><b>Site Location:</b> Click on the map, drag the pin, or select a Region above to set or modify where this site is</span>
               <span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <span id="modalSiteKmReadout" style="font-weight:700;color:var(--accent,#1D4ED8)">Click map or select Region to estimate KM</span>
+                <span id="modalSiteKmReadout" style="font-weight:700;color:var(--accent,#1D4ED8)">${isMfgForm ? 'Click map or select Region to estimate KM' : 'Click map or select Region'}</span>
                 <button type="button" class="geo-mini-btn" id="modalClearSitePinBtn" hidden>Clear Pin</button>
               </span>
             </div>
@@ -1396,6 +1405,8 @@
     }
 
     if (fType === 'region') {
+      const distLbl = isMfgForm ? 'Reference Haulage Distance (km)' : 'Reference Distance (km)';
+      const distPh = isMfgForm ? 'Auto-estimated from WTC Hub' : 'Optional reference km';
       return `
         <div class="form-grid-3">
           ${secHdr('1. Geographic Region & Map Zone (Universal Registry · All BUs)')}
@@ -1416,7 +1427,7 @@
             labelRightHtml: `<span class="pa-lock-pill locked" data-corridor-frozen="1" style="pointer-events:none;cursor:default">${ic('lock')} <span class="lp-short">Locked</span><span class="sr-only"> LOCKED</span></span>`
           })}
           ${fld('Circle Radius (km)', inp('f_radius_km', 'number', '1.5', 'step="0.1" min="0.2" max="50"'), { id: 'wrap_f_radius_km', hidden: true })}
-          ${fld('Reference Haulage Distance (km)', inp('f_distance_km', 'number', '', 'step="0.5" min="0" placeholder="Auto-estimated from WTC Hub"'), { id: 'wrap_f_distance_km' })}
+          ${fld(distLbl, inp('f_distance_km', 'number', '', `step="0.5" min="0" placeholder="${distPh}"`), { id: 'wrap_f_distance_km' })}
           <input type="hidden" id="f_auto_code" value="">
           <input type="hidden" id="f_center_lat" value="">
           <input type="hidden" id="f_center_lng" value="">

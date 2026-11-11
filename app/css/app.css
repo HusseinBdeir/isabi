@@ -10925,6 +10925,43 @@ tr.rdl-interactive-group-row.is-expanded {
   margin-bottom: 12px;
 }
 
+/* WTC division seal (Accounting / Logistics / corporate) beside the statement title */
+.rdl-title-block.has-division-seal {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.rdl-title-block.has-division-seal .rdl-title-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rdl-division-seal {
+  flex: 0 0 auto;
+  width: 84px;
+  height: 84px;
+  object-fit: contain;
+  user-select: none;
+}
+
+@media (max-width: 860px) {
+  .rdl-division-seal {
+    width: 60px;
+    height: 60px;
+  }
+  .rdl-title-block.has-division-seal {
+    gap: 10px;
+  }
+}
+
+@media print {
+  .rdl-division-seal {
+    width: 0.95in;
+    height: 0.95in;
+  }
+}
+
 .rdl-title-text {
   font-size: 18px;
   font-weight: 700;

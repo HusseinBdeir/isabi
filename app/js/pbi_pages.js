@@ -1629,10 +1629,10 @@
     { key: 'expense_subcategories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Subcategories', singularLabel: 'Expense Subcategory', dvn: 'bhf_expensesubcategory', form: 'expensecategory', cols: ['name', 'category', 'expenses_count', 'total_spent'], relTables: ['expense_categories', 'expenses', 'recurring_expenses'], views: [{ id: 'all', label: 'All Expense Subcategories' }] },
     { key: 'sites', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_sites', label: 'Sites', singularLabel: 'Site', dvn: 'bhf_site', form: 'site', cols: ['name', 'supply_mode', 'region', 'supplier', 'customer', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'], relTables: ['regions', 'suppliers', 'customers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [
       { id: 'all', label: 'All Sites', cols: ['name', 'supply_mode', 'region', 'supplier', 'customer', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'] },
-      { id: 'source', label: 'Quarry / Raw Sites', fn: (r, rel) => Boolean(r.supplier || r.is_jv || isBundledQuarrySitePbi(r) || ((rel && rel.siteByName[norm(r.name)] && rel.siteByName[norm(r.name)].raw_loads) || 0) > 0 || !r.customer), cols: ['name', 'supply_mode', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads'] },
-      { id: 'bundled', label: 'Bundled (Mat + Trans)', fn: r => isBundledQuarrySitePbi(r), cols: ['name', 'supply_mode', 'region', 'supplier', 'gps_status', 'active_rules', 'raw_loads'] },
-      { id: 'delivery', label: 'Customer Delivery Sites', fn: (r, rel) => Boolean(r.customer || ((rel && rel.siteByName[norm(r.name)] && rel.siteByName[norm(r.name)].sales_loads) || 0) > 0), cols: ['name', 'region', 'customer', 'gps_status', 'latitude', 'longitude', 'active_rules', 'sales_loads'] },
-      { id: 'jv', label: 'JV 50/50 Sites', fn: r => Boolean(r.is_jv), cols: ['name', 'region', 'supplier', 'jv_partner', 'jv_share', 'is_jv', 'gps_status', 'active_rules', 'raw_loads'] },
+      { id: 'source', mfgOnly: true, label: 'Raw Activity', fn: (r, rel) => Boolean(r.supplier || r.is_jv || isBundledQuarrySitePbi(r) || ((rel && rel.siteByName[norm(r.name)] && rel.siteByName[norm(r.name)].raw_loads) || 0) > 0), cols: ['name', 'supply_mode', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads'] },
+      { id: 'bundled', mfgOnly: true, label: 'Bundled (Mat + Trans)', fn: r => isBundledQuarrySitePbi(r), cols: ['name', 'supply_mode', 'region', 'supplier', 'gps_status', 'active_rules', 'raw_loads'] },
+      { id: 'delivery', mfgOnly: true, label: 'Sales Activity', fn: (r, rel) => Boolean(r.customer || ((rel && rel.siteByName[norm(r.name)] && rel.siteByName[norm(r.name)].sales_loads) || 0) > 0), cols: ['name', 'region', 'customer', 'gps_status', 'latitude', 'longitude', 'active_rules', 'sales_loads'] },
+      { id: 'jv', mfgOnly: true, label: 'JV 50/50 Sites', fn: r => Boolean(r.is_jv), cols: ['name', 'region', 'supplier', 'jv_partner', 'jv_share', 'is_jv', 'gps_status', 'active_rules', 'raw_loads'] },
       { id: 'gps', label: 'Verified GPS Pin', fn: r => r.latitude != null && r.longitude != null, cols: ['name', 'supply_mode', 'region', 'supplier', 'customer', 'latitude', 'longitude', 'raw_loads', 'sales_loads'] }
     ] },
     { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region', dvn: 'bhf_region', form: 'region', cols: ['name', 'sites_count', 'corridor', 'zone_shape', 'distance_km', 'overtime_rate', 'total_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
@@ -1826,10 +1826,7 @@
       if (/JV 50\/50/i.test(String(v || cell))) {
         return `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('jv')}<span>JV 50/50</span></span>`;
       }
-      if (/Customer Delivery/i.test(String(v || cell))) {
-        return `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('pin')}<span>Delivery</span></span>`;
-      }
-      return `<span class="badge badge-info tkt-ot-badge" data-ui-tip="Ex-Quarry material only; haulage in own trucks or 3rd-party peers tracked separately (Region + Site required)">Ex-Quarry</span>`;
+      return `<span class="muted" data-ui-tip="Unified geographic site usable across raw purchases, sales deliveries, and agreements">Standard Site</span>`;
     }
     if (c === 'region' && tableKey === 'sites' && (v == null || v === '') && r && resolveSiteCategoryPbi(r) === 'supplier' && isBundledQuarrySitePbi(r)) {
       return `<span class="quarry-landed-pill" data-ui-tip="Region optional while supplier delivers material + transport; required if hauled in own trucks or 3rd-party peers">Optional (Bundled)</span>`;
@@ -2070,7 +2067,7 @@
       ? window.__mfgGetActiveIndustry()
       : 'Manufacturing';
     const isMfg = activeInd === 'Manufacturing';
-    const inIndDim = r => Boolean(r && !r.voided && (isMfg ? !r._multiIndustrySeed : r._industry === activeInd));
+    const inIndDim = r => Boolean(r && !r.voided && (isMfg ? (!r._multiIndustrySeed && (!r._industry || r._industry === 'Manufacturing')) : r._industry === activeInd));
     const inInd = r => Boolean(inIndDim(r) && (!singleBu || !r.company || r.company === singleBu));
     const stRef = _activePbiState || (typeof window !== 'undefined' ? window.STATE : null);
     const stCoStamp = String((stRef && stRef.company) || '');
@@ -3014,12 +3011,9 @@
       if (c === 'region') return r.region || r.geo_zone || (isBundledQuarrySitePbi(r) ? 'Unassigned (Mat + Trans)' : null);
       if (c === 'site_category') return 'Unified Site';
       if (c === 'supply_mode') {
-        const se = rel && rel.siteByName ? rel.siteByName[norm(r.name)] : null;
         if (r.is_jv) return 'JV 50/50 Partner';
-        if (isBundledQuarrySitePbi(r)) return 'Mat + Trans Included';
-        if ((se && se.raw_loads > 0 && se.sales_loads > 0) || (r.supplier && r.customer)) return 'Raw & Delivery (Separate Haul)';
-        if ((se && se.sales_loads > 0 && !(se.raw_loads > 0)) || (r.customer && !r.supplier)) return 'Customer Delivery';
-        return 'Ex-Quarry (Separate Haul)';
+        if (!r._multiIndustrySeed && isBundledQuarrySitePbi(r)) return 'Mat + Trans Included';
+        return 'Standard Site';
       }
       if (c === 'linked_party') return [r.supplier, r.customer].filter(Boolean).join(' · ') || null;
       if (c === 'supplier') return r.supplier || null;
@@ -9991,12 +9985,16 @@
       ignorePeriod: isUniv || !['sales_tickets', 'raw_purchases', 'receipts', 'settlements', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'expense_items', 'salaries', 'attendance', 'external_movements', 'loan_settlements', 'conversions', 'jv_distributions', 'daily_totals'].includes(meta.key)
     });
     const isHoldingTbl = ctx.activeIndustry === 'Holding & Treasury';
+    const activeIndTbl = (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function')
+      ? window.__mfgGetActiveIndustry()
+      : 'Manufacturing';
+    const isMfgTbl = activeIndTbl === 'Manufacturing';
     const rawViews = (meta.key === 'external_movements' && !isHoldingTbl)
       ? [{ id: 'all', label: 'All External Movements' }]
       : (meta.views || [{ id: 'all', label: 'All ' + meta.label }]);
-    const views = (meta.key === 'sales_tickets' && !STATE._canSeeTaxBreakdown)
+    const views = ((meta.key === 'sales_tickets' && !STATE._canSeeTaxBreakdown)
       ? rawViews.filter(v => v.id !== 'iva')
-      : rawViews;
+      : rawViews).filter(v => isMfgTbl || !v.mfgOnly);
     const activeViewId = (STATE.tableViews && STATE.tableViews[meta.key]) || 'all';
     const activeView = views.find(v => v.id === activeViewId) || views[0];
     const isRawPrMode = meta.key === 'price_rules' && /^raw_/i.test(activeView.id);
@@ -10013,11 +10011,14 @@
       : rlsScopedRaw;
     const rawActiveCols = (activeView && Array.isArray(activeView.cols) && activeView.cols.length) ? activeView.cols : meta.cols;
     const taxColsVisibleOnHub = Boolean((STATE._canSeeTaxBreakdown && STATE.showSalesTaxBreakdown) || STATE._officialScopeActive || activeView.id === 'iva');
-    const activeCols = (meta.key === 'sales_tickets' && !taxColsVisibleOnHub)
+    const baseActiveCols = (meta.key === 'sales_tickets' && !taxColsVisibleOnHub)
       ? rawActiveCols.filter(c => c !== 'vat')
       : ((meta.key === 'external_movements' && !isHoldingTbl)
           ? rawActiveCols.filter(c => c !== 'kind')
           : rawActiveCols);
+    const activeCols = (!isMfgTbl && meta.key === 'sites')
+      ? baseActiveCols.filter(c => !/^(supply_mode|is_jv|active_rules|raw_loads|sales_loads|total_loads)$/.test(c))
+      : ((!isMfgTbl && meta.key === 'regions') ? baseActiveCols.filter(c => c !== 'total_loads' && c !== 'overtime_rate') : baseActiveCols);
     const filtered = activeView && activeView.fn ? baseFiltered.filter(r => activeView.fn(r, rel)) : baseFiltered;
     const defSortSpec = getHubTableDefaultSort(meta, activeView.id);
     const rows = sortRows(filtered, 'tbl_' + meta.key, defSortSpec.key, defSortSpec.dir);
@@ -10441,6 +10442,9 @@
       if (tableKey === 'products') return 'Product';
       if (tableKey === 'items') return 'Item Name';
     }
+    if (c === 'distance_km' && typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function' && window.__mfgGetActiveIndustry() !== 'Manufacturing') {
+      return 'Ref KM';
+    }
     if (HUB_COL_LABELS[c]) return HUB_COL_LABELS[c];
     return String(c || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   }
@@ -10470,11 +10474,17 @@
     const siteMeta = TABLE_CATALOG.find(t => t.key === 'sites');
     const regCols = (regMeta && regMeta.cols) || ['name', 'sites_count', 'corridor', 'zone_shape', 'distance_km', 'overtime_rate', 'total_loads'];
     const selReg = (window.MFG_GEO && window.MFG_GEO.STUDIO && window.MFG_GEO.STUDIO.selectedRegion) || '';
+    const activeIndDual = (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function')
+      ? window.__mfgGetActiveIndustry()
+      : 'Manufacturing';
+    const isMfgDual = activeIndDual === 'Manufacturing';
     const chipCounts = _getHubTableChipCounts(SEED, STATE, ctx, TABLE_CATALOG);
-    const siteRelTablesMeta = ((siteMeta && siteMeta.relTables) || [])
-      .filter(rk => rk !== 'regions' && (typeof ctx.canAccessTable !== 'function' || ctx.canAccessTable(rk)))
-      .map(rk => TABLE_CATALOG.find(t => t.key === rk))
-      .filter(Boolean);
+    const siteRelTablesMeta = isMfgDual
+      ? ((siteMeta && siteMeta.relTables) || [])
+          .filter(rk => rk !== 'regions' && (typeof ctx.canAccessTable !== 'function' || ctx.canAccessTable(rk)))
+          .map(rk => TABLE_CATALOG.find(t => t.key === rk))
+          .filter(Boolean)
+      : [];
     const activeConnKey = (STATE.univConnTableKey && siteRelTablesMeta.some(rt => rt.key === STATE.univConnTableKey))
       ? STATE.univConnTableKey
       : '';
@@ -10571,18 +10581,27 @@
     };
 
     // 2. Sites Table (#sitesRegPanel)
+    const effSelReg = (selReg && selReg !== '__unassigned__' && !regBaseAll.some(r => norm(r.name) === norm(selReg)))
+      ? ''
+      : selReg;
+    if (effSelReg !== selReg && window.MFG_GEO && window.MFG_GEO.STUDIO) {
+      window.MFG_GEO.STUDIO.selectedRegion = '';
+    }
     const siteRawList = (SEED.records && SEED.records.sites) || [];
     const siteSearchCols = Array.from(new Set(siteMeta.cols.concat(['supplier', 'customer', 'site_category', 'linked_party'])));
     const allSitesBase = filterRecords(siteRawList, { cols: siteSearchCols, tableKey: 'sites', ignorePeriod: true, ignoreCompany: true, ignoreRls: true });
-    const sitesRegFiltered = selReg === '__unassigned__'
+    const sitesRegFiltered = effSelReg === '__unassigned__'
       ? allSitesBase.filter(s => !norm(s.region || s.geo_zone))
-      : (selReg ? allSitesBase.filter(s => norm(s.region || s.geo_zone) === norm(selReg)) : allSitesBase);
-    const siteViews = siteMeta.views || [{ id: 'all', label: 'All Sites' }];
+      : (effSelReg ? allSitesBase.filter(s => norm(s.region || s.geo_zone) === norm(effSelReg)) : allSitesBase);
+    const effRegCols = isMfgDual ? regCols : regCols.filter(c => c !== 'total_loads' && c !== 'overtime_rate');
+    const siteViews = (siteMeta.views || [{ id: 'all', label: 'All Sites' }]).filter(vw => isMfgDual || !vw.mfgOnly);
     const activeSiteViewId = (STATE.tableViews && STATE.tableViews.sites) || 'all';
     const activeSiteView = siteViews.find(v => v.id === activeSiteViewId) || siteViews[0];
-    const canSeeSitePriceRules = typeof ctx.canAccessTable !== 'function' || ctx.canAccessTable('price_rules');
+    const canSeeSitePriceRules = isMfgDual && (typeof ctx.canAccessTable !== 'function' || ctx.canAccessTable('price_rules'));
     const rawActiveSiteCols = (activeSiteView && Array.isArray(activeSiteView.cols) && activeSiteView.cols.length) ? activeSiteView.cols : siteMeta.cols;
-    const activeSiteCols = canSeeSitePriceRules ? rawActiveSiteCols : rawActiveSiteCols.filter(c => c !== 'active_rules');
+    const activeSiteCols = isMfgDual
+      ? (canSeeSitePriceRules ? rawActiveSiteCols : rawActiveSiteCols.filter(c => c !== 'active_rules'))
+      : rawActiveSiteCols.filter(c => !/^(supply_mode|is_jv|active_rules|raw_loads|sales_loads)$/.test(c));
     const siteViewFiltered = activeSiteView && activeSiteView.fn ? sitesRegFiltered.filter(r => activeSiteView.fn(r, rel)) : sitesRegFiltered;
     const siteDefSort = getHubTableDefaultSort(siteMeta, activeSiteView.id);
     const siteRows = sortRows(siteViewFiltered, 'ureg_sites', siteDefSort.key, siteDefSort.dir);
@@ -10593,7 +10612,7 @@
       const cnt = Number(cellValue(r, 'sites_count', 'regions', rel) || 0);
       const lds = Number(cellValue(r, 'total_loads', 'regions', rel) || 0);
       const gov = cellValue(r, 'corridor', 'regions', rel) || r.zone_shape || 'Region';
-      return { label: r.name, value: cnt, sub: `${gov} · ${fmtNum(lds)} loads` };
+      return { label: r.name, value: cnt, sub: isMfgDual ? `${gov} · ${fmtNum(lds)} loads` : gov };
     }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
 
     const siteChartRows = siteRows.map(r => {
@@ -10624,12 +10643,12 @@
               ${canEnterForm('region') ? `<button type="button" class="btn btn-primary" data-open-modal="region">+ New Region</button>` : ''}
             </div>
           </div>
-          ${typeof ctx.renderColFilterBar === 'function' ? ctx.renderColFilterBar('ureg_regions', regCols) : ''}
+          ${typeof ctx.renderColFilterBar === 'function' ? ctx.renderColFilterBar('ureg_regions', effRegCols) : ''}
           <div class="table-wrap">
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${regCols.map(c => th('ureg_regions', hubColLabel(c, 'regions'), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|overtime_rate|_count$|_km$|loads/.test(c) ? 'r' : '')).join('')}
+                  ${effRegCols.map(c => th('ureg_regions', hubColLabel(c, 'regions'), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|overtime_rate|_count$|_km$|loads/.test(c) ? 'r' : '')).join('')}
                 </tr>
               </thead>
               <tbody>
@@ -10643,12 +10662,12 @@
                   const memberSites = (re.sites || []).slice().sort((a, b) => memberSiteLoads(b) - memberSiteLoads(a));
                   const cnt = memberSites.length;
                   const explicitExp = Boolean(STATE.expandedRegions && STATE.expandedRegions[rk]);
-                  const isExp = Boolean((STATE.expandAllRegions && cnt > 0) || explicitExp || (selReg && selReg !== '__unassigned__' && norm(selReg) === rk));
+                  const isExp = Boolean((STATE.expandAllRegions && cnt > 0) || explicitExp || (effSelReg && effSelReg !== '__unassigned__' && norm(effSelReg) === rk));
                   const previewNames = memberSites.slice(0, 3).map(ms => ms.name).join(', ');
                   const previewMoreCnt = memberSites.length > 3 ? (memberSites.length - 3) : 0;
                   return `
                     <tr class="rrow" data-rkey="regions" data-rid="${esc(r.id)}">
-                      ${regCols.map((c, ci) => {
+                      ${effRegCols.map((c, ci) => {
                         if (c === 'sites_count') {
                           return `<td class="r">
                             <div class="reg-sites-cell" style="justify-content:flex-end">
@@ -10662,7 +10681,7 @@
                     </tr>
                     ${isExp ? `
                       <tr class="reg-expanded-sites-row" data-expanded-region="${esc(r.name)}">
-                        <td colspan="${regCols.length}">
+                        <td colspan="${effRegCols.length}">
                           <div class="reg-expanded-sites-box">
                             <div class="reg-expanded-sites-hdr">
                               <span>Sites in ${esc(r.name)} (${fmtNum(cnt)})</span>
@@ -10674,17 +10693,22 @@
                                   const se = rel.siteByName[norm(ms.name)] || {};
                                   const rLoads = Number(se.raw_loads || 0);
                                   const sLoadsCnt = Number(se.sales_loads || 0);
-                                  const isJv = Boolean(ms.is_jv);
-                                  const isBund = !isJv && isBundledQuarrySitePbi(ms);
-                                  const isDual = !isJv && !isBund && ((rLoads > 0 && sLoadsCnt > 0) || Boolean(ms.supplier && ms.customer));
-                                  const isCustOnly = !isJv && !isBund && !isDual && (sLoadsCnt > 0 || Boolean(ms.customer && !ms.supplier));
-                                  const catCls = isJv ? 'is-jv' : (isCustOnly ? 'is-cust' : '');
-                                  const catLbl = isJv ? 'JV 50/50' : (isBund ? 'Quarry (Mat+Trans)' : (isDual ? 'Raw & Sales' : (isCustOnly ? 'Delivery' : 'Quarry')));
+                                  const isJv = isMfgDual && Boolean(ms.is_jv);
+                                  const isBund = isMfgDual && !isJv && !ms._multiIndustrySeed && isBundledQuarrySitePbi(ms);
+                                  const specCls = isJv ? 'is-jv' : (isBund ? 'is-bund' : '');
+                                  const specLbl = isJv ? 'JV 50/50' : (isBund ? 'Mat+Trans' : '');
                                   const sLoads = rLoads + sLoadsCnt;
                                   const sRulesCnt = canSeeSitePriceRules ? Number(se.active_rules || 0) : 0;
-                                  return `<button type="button" class="reg-exp-site-card" data-exp-inspect-site="${esc(ms.id)}">
+                                  const loadBreakTip = sLoads > 0
+                                    ? (rLoads > 0 && sLoadsCnt > 0
+                                      ? `${fmtNum(rLoads)} raw · ${fmtNum(sLoadsCnt)} sales loads`
+                                      : (rLoads > 0
+                                        ? `${fmtNum(rLoads)} raw ${rLoads === 1 ? 'load' : 'loads'}`
+                                        : `${fmtNum(sLoadsCnt)} sales ${sLoadsCnt === 1 ? 'load' : 'loads'}`))
+                                    : '';
+                                  return `<button type="button" class="reg-exp-site-card" data-exp-inspect-site="${esc(ms.id)}"${loadBreakTip ? ` data-ui-tip="${esc(loadBreakTip)}"` : ''}>
                                     <b>${esc(ms.name)}</b>
-                                    <span class="reg-exp-site-cat ${catCls}">${catLbl}</span>
+                                    ${specLbl ? `<span class="reg-exp-site-cat ${specCls}">${specLbl}</span>` : ''}
                                     ${sRulesCnt > 0 ? `<span class="mono reg-exp-site-rules">${fmtNum(sRulesCnt)} ${sRulesCnt === 1 ? 'rule' : 'rules'}</span>` : ''}
                                     ${sLoads > 0 ? `<span class="mono" style="font-size:0.7rem;color:var(--muted)">${fmtNum(sLoads)} ${sLoads === 1 ? 'load' : 'loads'}</span>` : ''}
                                   </button>`;
@@ -10696,22 +10720,22 @@
                       </tr>
                     ` : ''}
                   `;
-                }).join('') || emptyRow(regCols.length, 'No regions match the active search.')}
-                ${showMoreRow('ureg_regions', regRows.length, regCols.length)}
+                }).join('') || emptyRow(effRegCols.length, 'No regions match the active search.')}
+                ${showMoreRow('ureg_regions', regRows.length, effRegCols.length)}
               </tbody>
               <tfoot>
-                <tr>${renderSubTfoot(regRows, regCols, 'regions')}</tr>
+                <tr>${renderSubTfoot(regRows, effRegCols, 'regions')}</tr>
               </tfoot>
             </table>
           </div>
         </section>
 
         <section class="srh-subpanel" id="sitesRegPanel" aria-label="Sites Table">
-          ${selReg ? `
+          ${effSelReg ? `
             <div class="sites-region-filter-banner" id="sitesRegionFilterBanner">
-              <span><b>${selReg === '__unassigned__' ? 'Filtered to Sites Without Assigned Region' : `Filtered to Region: ${esc(selReg)}`}</b> (${fmtNum(siteRows.length)} of ${fmtNum(allSitesBase.length)} sites)</span>
+              <span><b>${effSelReg === '__unassigned__' ? 'Filtered to Sites Without Assigned Region' : `Filtered to Region: ${esc(effSelReg)}`}</b> (${fmtNum(siteRows.length)} of ${fmtNum(allSitesBase.length)} sites)</span>
               <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-                ${selReg !== '__unassigned__' && canEnterForm('site') ? `<button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:0.76rem" data-open-modal="site" data-prefill-region="${esc(selReg)}">+ Add Site in ${esc(selReg)}</button>` : ''}
+                ${effSelReg !== '__unassigned__' && canEnterForm('site') ? `<button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:0.76rem" data-open-modal="site" data-prefill-region="${esc(effSelReg)}">+ Add Site in ${esc(effSelReg)}</button>` : ''}
                 <button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:0.76rem" id="clearRegionFilterBtn">Show All ${fmtNum(allSitesBase.length)} Sites</button>
               </div>
             </div>
@@ -10770,7 +10794,7 @@
               </div>
               <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
                 ${exportBtn('sitesRegPanel', 'sites')}
-                ${canEnterForm('site') ? `<button type="button" class="btn btn-primary" data-open-modal="site"${selReg && selReg !== '__unassigned__' ? ` data-prefill-region="${esc(selReg)}"` : ''}>+ New Site</button>` : ''}
+                ${canEnterForm('site') ? `<button type="button" class="btn btn-primary" data-open-modal="site"${effSelReg && effSelReg !== '__unassigned__' ? ` data-prefill-region="${esc(effSelReg)}"` : ''}>+ New Site</button>` : ''}
               </div>
             </div>
           </div>
@@ -10787,7 +10811,7 @@
                   <tr class="rrow" data-rkey="sites" data-rid="${esc(r.id)}">
                     ${activeSiteCols.map((c, ci) => renderGenericCell(r, c, ci, 'sites')).join('')}
                   </tr>
-                `).join('') || emptyRow(activeSiteCols.length, selReg ? 'No sites match the selected region and view filter.' : 'No sites match the active filter.')}
+                `).join('') || emptyRow(activeSiteCols.length, effSelReg ? 'No sites match the selected region and view filter.' : 'No sites match the active filter.')}
                 ${showMoreRow('ureg_sites', siteRows.length, activeSiteCols.length)}
               </tbody>
               <tfoot>
@@ -10798,8 +10822,8 @@
         </section>
       </div>
 
-      ${(regChartRows.length || siteChartRows.length) ? `
-        <div class="pbi-grid-2" id="univRegChartsRow" style="margin-top:14px">
+      ${(isMfgDual ? (regChartRows.length || siteChartRows.length) : regChartRows.length) ? `
+        <div class="${isMfgDual ? 'pbi-grid-2' : ''}" id="univRegChartsRow" style="margin-top:14px">
           ${pbiPanel('Regions Ranked by Sites Inside', buildHorizontalBarChart(regChartRows, 'label', 'value', v => fmtNum(v, 0) + (v === 1 ? ' site' : ' sites'), {
             subKey: 'sub',
             maxItems: 10,
@@ -10807,13 +10831,13 @@
           }), {
             subtitle: 'Active operational sites grouped by region across all business units'
           })}
-          ${pbiPanel('Top Operational Sites by Load Volume', buildHorizontalBarChart(siteChartRows, 'label', 'value', v => fmtNum(v, 0), {
+          ${isMfgDual ? pbiPanel('Top Operational Sites by Load Volume', buildHorizontalBarChart(siteChartRows, 'label', 'value', v => fmtNum(v, 0), {
             subKey: 'sub',
             maxItems: 10,
             color: C.brass
           }), {
             subtitle: 'Combined quarry intake and customer delivery loads'
-          })}
+          }) : ''}
         </div>
       ` : ''}
     `;
@@ -10837,16 +10861,21 @@
               : rlsScoped.filter(r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''))))
       : rlsScoped;
 
+    const activeIndConn = (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function')
+      ? window.__mfgGetActiveIndustry()
+      : 'Manufacturing';
+    const isMfgConn = activeIndConn === 'Manufacturing';
     const rawViews = connMeta.views || [{ id: 'all', label: 'All ' + connMeta.label }];
     const sitePrViews = [
       { id: 'site_all', label: 'All Site Agreements', cols: ['company', 'rule_type', 'supplier', 'customer', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] },
       { id: 'site_active', label: 'Active Agreements', fn: r => !r.end_date || String(r.end_date).trim().slice(0, 10) >= localTodayPbi(), cols: ['company', 'rule_type', 'supplier', 'customer', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] },
-      ...(canSeeRawPrConn ? [{ id: 'site_raw', label: 'Quarry & Haulage', fn: r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }] : []),
-      { id: 'site_sales', label: 'Sales & Delivery', fn: r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }
+      ...(isMfgConn && canSeeRawPrConn ? [{ id: 'site_raw', label: 'Quarry & Haulage', mfgOnly: true, fn: r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }] : []),
+      { id: 'site_sales', label: 'Sales & Delivery', mfgOnly: true, fn: r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }
     ];
-    const connViews = connKey === 'price_rules'
+    const connViews = (connKey === 'price_rules'
       ? (isSitePr ? sitePrViews : (isRawPr ? rawViews.filter(v => /^raw_/i.test(v.id)) : rawViews.filter(v => !/^raw_/i.test(v.id))))
-      : ((connKey === 'sales_tickets' && !STATE._canSeeTaxBreakdown) ? rawViews.filter(v => v.id !== 'iva') : rawViews);
+      : ((connKey === 'sales_tickets' && !STATE._canSeeTaxBreakdown) ? rawViews.filter(v => v.id !== 'iva') : rawViews)
+    ).filter(v => isMfgConn || !v.mfgOnly);
     const defaultViewId = isSitePr ? 'site_all' : (isRawPr ? 'raw_all' : ((connViews[0] && connViews[0].id) || 'all'));
     const activeConnViewId = STATE.univConnView || defaultViewId;
     const activeConnView = connViews.find(v => v.id === activeConnViewId) || connViews[0] || { id: 'all', label: 'All ' + connMeta.label };
@@ -10893,9 +10922,12 @@
     const q = norm(STATE.univConnSearch || '');
     const rawActiveCols = (activeConnView && Array.isArray(activeConnView.cols) && activeConnView.cols.length) ? activeConnView.cols : connMeta.cols;
     const taxColsVisibleOnHub = Boolean((STATE._canSeeTaxBreakdown && STATE.showSalesTaxBreakdown) || STATE._officialScopeActive || activeConnView.id === 'iva');
-    const connCols = (connKey === 'sales_tickets' && !taxColsVisibleOnHub)
+    const baseConnCols = (connKey === 'sales_tickets' && !taxColsVisibleOnHub)
       ? rawActiveCols.filter(c => c !== 'vat')
       : rawActiveCols;
+    const connCols = (!isMfgConn && connKey === 'sites')
+      ? baseConnCols.filter(c => !/^(supply_mode|is_jv|active_rules|raw_loads|sales_loads|total_loads)$/.test(c))
+      : baseConnCols;
 
     const searchFiltered = q
       ? partyFiltered.filter(r => connCols.some(c => norm(String(cellValue(r, c, connKey, rel) ?? '')).includes(q)))
@@ -11094,11 +11126,19 @@
     const searchCols = meta.key === 'sites'
       ? Array.from(new Set(meta.cols.concat(['supplier', 'customer', 'site_category', 'linked_party'])))
       : (meta.key === 'staff_members' ? Array.from(new Set(meta.cols.concat(['role_category', 'phone', 'reference']))) : meta.cols);
+    const activeIndUreg = (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function')
+      ? window.__mfgGetActiveIndustry()
+      : 'Manufacturing';
+    const isMfg = activeIndUreg === 'Manufacturing';
     const baseFiltered = filterRecords(rawList, { cols: searchCols, tableKey: meta.key, ignorePeriod: true, ignoreCompany: true, ignoreRls: true });
-    const views = meta.views || [{ id: 'all', label: 'All ' + meta.label }];
+    const views = (meta.views || [{ id: 'all', label: 'All ' + meta.label }]).filter(v => isMfg || !v.mfgOnly);
     const activeViewId = (STATE.tableViews && STATE.tableViews[meta.key]) || 'all';
     const activeView = views.find(v => v.id === activeViewId) || views[0];
-    const activeCols = (activeView && Array.isArray(activeView.cols) && activeView.cols.length) ? activeView.cols : meta.cols;
+    const mfgOnlyCols = !isMfg && meta.key === 'sites'
+      ? new Set(['supply_mode', 'is_jv', 'active_rules', 'raw_loads', 'sales_loads', 'total_loads'])
+      : (!isMfg && meta.key === 'regions' ? new Set(['overtime_rate', 'total_loads']) : null);
+    const rawActiveCols = (activeView && Array.isArray(activeView.cols) && activeView.cols.length) ? activeView.cols : meta.cols;
+    const activeCols = mfgOnlyCols ? rawActiveCols.filter(c => !mfgOnlyCols.has(c)) : rawActiveCols;
     const filtered = activeView && activeView.fn ? baseFiltered.filter(r => activeView.fn(r, rel)) : baseFiltered;
     const defSortSpec = getHubTableDefaultSort(meta, activeView.id);
     const rows = sortRows(filtered, 'ureg_' + meta.key, defSortSpec.key, defSortSpec.dir);
@@ -11106,8 +11146,11 @@
     const groupTabsMeta = groupKeys.length > 1
       ? groupKeys.map(gk => univPool.find(t => t.key === gk)).filter(Boolean)
       : [];
+    const mfgOnlyRelKeys = !isMfg && (meta.key === 'sites' || meta.key === 'regions')
+      ? new Set(['price_rules', 'raw_purchases', 'sales_tickets', 'jv_partnerships', 'jv_distributions', 'logistics_allowances', 'overtime_rates'])
+      : null;
     const relTablesMeta = (meta.relTables || [])
-      .filter(rk => !groupKeys.includes(rk))
+      .filter(rk => !groupKeys.includes(rk) && (!mfgOnlyRelKeys || !mfgOnlyRelKeys.has(rk)))
       .map(rk => TABLE_CATALOG.find(t => t.key === rk))
       .filter(Boolean);
     const activeConnKey = (STATE.univConnTableKey && relTablesMeta.some(rt => rt.key === STATE.univConnTableKey))

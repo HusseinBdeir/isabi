@@ -453,13 +453,53 @@
   }
 
 
+  // WTC division seals (approved Round-7 seal construction; masters in
+  // OneDrive System\Manufacturing\WTC\Logo\SVG, copied to css/brand/). Printed only when the
+  // statement's own company resolves to WTC, so counterparties can tell an Accounting-issued
+  // financial document from a Logistics field slip; executive reports carry the corporate seal.
+  const WTC_SEAL_DIVISION_BY_REPORT = {
+    '05': 'accounting', '06': 'accounting', '07': 'accounting', '09': 'accounting', '10': 'accounting',
+    '13': 'accounting', '14': 'accounting', '15': 'accounting', '16': 'accounting', '18': 'accounting',
+    '19': 'accounting', '20': 'accounting', '22': 'accounting',
+    '11': 'logistics', '12': 'logistics', '17': 'logistics', '21': 'logistics',
+    '01': 'corporate', '02': 'corporate', '03': 'corporate', '04': 'corporate', '08': 'corporate'
+  };
+  const WTC_DIVISION_SEALS = {
+    accounting: { file: 'wtc-accounting-seal.svg', alt: 'WTC Accounting' },
+    logistics: { file: 'wtc-logistics-seal.svg', alt: 'WTC Logistics' },
+    corporate: { file: 'wtc-seal.svg', alt: 'WTC' }
+  };
+
+  function wtcDivisionSealHtml(meta, coKey) {
+    // Strict lookup: CO_LEGAL's WTC fallback must never stamp a WTC seal on another company.
+    if (!coKey || CO_LEGAL[coKey] !== CO_WTC) return '';
+    const id = String((meta && meta.id) || '').padStart(2, '0');
+    const division = WTC_SEAL_DIVISION_BY_REPORT[id];
+    const seal = division ? WTC_DIVISION_SEALS[division] : null;
+    if (!seal) return '';
+    const shellVer = (typeof window !== 'undefined' && window.__MFG_SHELL_VER) ? String(window.__MFG_SHELL_VER) : '';
+    const src = `css/brand/${seal.file}${shellVer ? `?v=${encodeURIComponent(shellVer)}` : ''}`;
+    return `<img class="rdl-division-seal" data-wtc-division="${division}" src="${src}" alt="${esc(seal.alt)}" width="84" height="84" decoding="sync" draggable="false">`;
+  }
+
   function sheetHeaderHtml(meta, coKey, subtitle, noteText) {
     const L = CO_LEGAL[coKey] || CO_LEGAL.WTC;
-    return `
-      <div class="rdl-title-block">
+    const sealHtml = wtcDivisionSealHtml(meta, coKey);
+    const textHtml = `
         <div class="rdl-title-text">${esc(meta.title)} - ${esc(L.short)} / <span dir="rtl">${esc(meta.ar)}</span></div>
         <div class="rdl-subtitle-text">${esc(subtitle || '')}</div>
-        ${noteText ? `<div class="rdl-note-text">${esc(noteText)}</div>` : ''}
+        ${noteText ? `<div class="rdl-note-text">${esc(noteText)}</div>` : ''}`;
+    if (sealHtml) {
+      return `
+      <div class="rdl-title-block has-division-seal">
+        ${sealHtml}
+        <div class="rdl-title-main">${textHtml}
+        </div>
+      </div>
+    `;
+    }
+    return `
+      <div class="rdl-title-block">${textHtml}
       </div>
     `;
   }

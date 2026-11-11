@@ -497,14 +497,16 @@
   }
 
   function enrichAtlasItem(it, SEED) {
-    const wtcHub = getCompanyHub('WTC', SEED);
-    const wtcKm = (it.lat != null && it.lng != null)
+    const activeInd = getGeoActiveIndustry();
+    const isMfg = activeInd === 'Manufacturing';
+    const wtcHub = isMfg ? getCompanyHub('WTC', SEED) : null;
+    const wtcKm = (isMfg && wtcHub && it.lat != null && it.lng != null)
       ? Math.round(roadAdjustedKm(wtcHub.lat, wtcHub.lng, Number(it.lat), Number(it.lng)))
       : null;
     let sitesInside = 0;
     if (SEED && SEED.records && Array.isArray(SEED.records.sites) && it.geojson) {
       SEED.records.sites.forEach(s => {
-        if (s && !s.voided && s.latitude != null && s.longitude != null) {
+        if (isRowInGeoIndustry(s, activeInd) && s.latitude != null && s.longitude != null) {
           if (pointInGeoJson(Number(s.latitude), Number(s.longitude), it.geojson)) sitesInside++;
         }
       });
@@ -1255,13 +1257,32 @@
     return false;
   }
 
-  function findContainingRegion(lat, lng, SEED) {
+  function getGeoActiveIndustry() {
+    return (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function')
+      ? window.__mfgGetActiveIndustry()
+      : 'Manufacturing';
+  }
+
+  function isRowInGeoIndustry(r, explicitInd) {
+    if (!r || r.voided) return false;
+    const ind = explicitInd || getGeoActiveIndustry();
+    return ind === 'Manufacturing'
+      ? (!r._multiIndustrySeed && (!r._industry || r._industry === 'Manufacturing'))
+      : r._industry === ind;
+  }
+
+  function geoIndStorePrefix(explicitInd) {
+    const ind = explicitInd || getGeoActiveIndustry();
+    return (!ind || ind === 'Manufacturing') ? '' : (norm(ind) + '::');
+  }
+
+  function findContainingRegion(lat, lng, SEED, explicitInd) {
     const regions = ((SEED && SEED.records && SEED.records.regions) || []);
     const matches = [];
     const seen = new Set();
     for (let i = 0; i < regions.length; i++) {
       const r = regions[i];
-      if (!r || r.voided) continue;
+      if (!isRowInGeoIndustry(r, explicitInd)) continue;
       if (isPointInRegion(lat, lng, r)) {
         const areaKm2 = regionAreaKm2(r);
         matches.push({ region: r.name, areaKm2, tier: areaKm2 < 180 ? 0 : 2, row: r });
@@ -1373,11 +1394,11 @@
     return String(g || '').trim();
   }
 
-  function resolveRegionRecordOrAtlas(regionName, SEED) {
+  function resolveRegionRecordOrAtlas(regionName, SEED, explicitInd) {
     const q = norm(regionName);
     if (!q) return null;
     const seedRegs = (SEED && SEED.records && SEED.records.regions) || [];
-    const seedHit = seedRegs.find(r => r && !r.voided && norm(r.name) === q);
+    const seedHit = seedRegs.find(r => isRowInGeoIndustry(r, explicitInd) && norm(r.name) === q);
     const atlasHit = findAtlasRegionByName(regionName);
     if (seedHit) {
       const cLat = seedHit.center_lat != null ? Number(seedHit.center_lat) : (atlasHit ? atlasHit.lat : 33.8938);
@@ -1624,12 +1645,14 @@
   function ensureRegionInSeed(regionName, SEED, STATE) {
     const q = norm(regionName);
     if (!q || !SEED || !SEED.records) return null;
-    const existing = (SEED.records.regions || []).find(r => r && !r.voided && norm(r.name) === q);
+    const activeInd = getGeoActiveIndustry();
+    const isMfg = activeInd === 'Manufacturing';
+    const existing = (SEED.records.regions || []).find(r => isRowInGeoIndustry(r, activeInd) && norm(r.name) === q);
     if (existing) return existing;
     const atlasHit = findAtlasRegionByName(regionName);
     if (atlasHit) {
-      const wtc = getCompanyHub('WTC', SEED);
-      const distKm = round1(roadAdjustedKm(wtc.lat, wtc.lng, atlasHit.lat, atlasHit.lng));
+      const wtc = isMfg ? getCompanyHub('WTC', SEED) : null;
+      const distKm = wtc ? round1(roadAdjustedKm(wtc.lat, wtc.lng, atlasHit.lat, atlasHit.lng)) : null;
       return persistRegionZone({
         name: atlasHit.label,
         zone_type: atlasHit.zone_type || (atlasHit.poly ? 'boundary' : 'circle'),
@@ -1714,7 +1737,9 @@
     regions.forEach(r => {
       if (!r || !r.name) return;
       const nk = norm(r.name);
-      const ov = GEO_STORE.regions[nk];
+      const rInd = r._industry || 'Manufacturing';
+      const rIsMfg = rInd === 'Manufacturing' && !r._multiIndustrySeed;
+      const ov = GEO_STORE.regions[geoIndStorePrefix(rInd) + nk];
       const basePoly = exactPolyByNorm.get(nk);
       const baseCirc = exactCircByNorm.get(nk);
       const base = baseCirc || basePoly;
@@ -1725,7 +1750,7 @@
         r.center_lng = base.center_lng;
         if (base.radius_km != null) r.radius_km = base.radius_km;
         if (base.geojson) r.zone_geojson = base.geojson;
-        if (base.distance_km != null && r.distance_km == null) r.distance_km = base.distance_km;
+        if (rIsMfg && base.distance_km != null && r.distance_km == null) r.distance_km = base.distance_km;
       }
       if (ov) {
         if (ov.zone_type) r.zone_type = ov.zone_type;
@@ -1743,21 +1768,24 @@
     sites.forEach(s => {
       if (!s || !s.name) return;
       const nk = norm(s.name);
-      const ov = GEO_STORE.sites[nk] || GEO_STORE.sites[`supplier:${nk}`] || GEO_STORE.sites[`customer:${nk}`];
-      const basePin = BASELINE_SITE_PINS[nk];
+      const sInd = s._industry || 'Manufacturing';
+      const sIsMfg = sInd === 'Manufacturing' && !s._multiIndustrySeed;
+      const pfx = geoIndStorePrefix(sInd);
+      const ov = GEO_STORE.sites[pfx + nk] || GEO_STORE.sites[`${pfx}supplier:${nk}`] || GEO_STORE.sites[`${pfx}customer:${nk}`];
+      const basePin = sIsMfg ? BASELINE_SITE_PINS[nk] : null;
       let geoZone = s.region || '';
       if (basePin && !s._pinCleared) {
         if (s.latitude == null || s.latitude === '') s.latitude = basePin.lat;
         if (s.longitude == null || s.longitude === '') s.longitude = basePin.lng;
         if (!geoZone && basePin.region) geoZone = basePin.region;
       }
-      if (ov) {
+      if (ov && !s._pinCleared) {
         if (ov.latitude != null) s.latitude = Number(ov.latitude);
         if (ov.longitude != null) s.longitude = Number(ov.longitude);
         if (ov.region) { s.region = ov.region; geoZone = ov.region; }
       }
       if (s.latitude != null && s.longitude != null && !geoZone) {
-        const det = findContainingRegion(Number(s.latitude), Number(s.longitude), SEED);
+        const det = findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, sInd);
         if (det.best) geoZone = det.best;
       }
       if (!s.region && s.source === 'app' && geoZone) {
@@ -1791,7 +1819,8 @@
       if (govDet && govDet.code) {
         r.corridor = govDet.code;
       }
-      if (r.distance_km == null && r.center_lat != null && r.center_lng != null) {
+      const rIsMfg = (!r._industry || r._industry === 'Manufacturing') && !r._multiIndustrySeed;
+      if (rIsMfg && r.distance_km == null && r.center_lat != null && r.center_lng != null) {
         r.distance_km = round1(roadAdjustedKm(wtcHub.lat, wtcHub.lng, Number(r.center_lat), Number(r.center_lng)));
       }
     });
@@ -1809,15 +1838,19 @@
   }
 
   function makePairKey(aType, aName, bType, bName) {
+    const pfx = geoIndStorePrefix();
     const left = `${aType}:${norm(aName)}`;
     const right = `${bType}:${norm(bName)}`;
-    return left <= right ? `${left}||${right}` : `${right}||${left}`;
+    return pfx + (left <= right ? `${left}||${right}` : `${right}||${left}`);
   }
 
   function resolveEndpointCoord(spec, SEED) {
     if (!spec || !spec.name) return null;
+    const activeInd = getGeoActiveIndustry();
+    const isMfg = activeInd === 'Manufacturing';
     const kind = spec.type === 'bu' ? 'bu' : 'site';
     if (kind === 'bu') {
+      if (!isMfg) return null;
       const hub = getCompanyHub(spec.name, SEED);
       return { lat: hub.lat, lng: hub.lng, pinned: true, label: hub.name, region: hub.region, type: 'bu' };
     }
@@ -1825,13 +1858,16 @@
     const prefCat = (spec.category === 'customer' || spec.side === 'sales')
       ? 'customer'
       : ((spec.category === 'supplier' || spec.side === 'raw') ? 'supplier' : '');
-    const sites = (SEED && SEED.records && SEED.records.sites) || [];
-    const sRow = (prefCat && sites.find(s => s && !s.voided && norm(s.name) === nk && resolveGeoSiteCat(s) === prefCat))
-      || sites.find(s => s && !s.voided && norm(s.name) === nk && s.latitude != null && s.latitude !== '')
-      || sites.find(s => s && norm(s.name) === nk);
+    const sites = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => isRowInGeoIndustry(s, activeInd));
+    const sRow = (prefCat && sites.find(s => norm(s.name) === nk && resolveGeoSiteCat(s) === prefCat))
+      || sites.find(s => norm(s.name) === nk && s.latitude != null && s.latitude !== '')
+      || sites.find(s => norm(s.name) === nk);
+    if (!isMfg && !sRow) return null;
     const rowCat = sRow ? resolveGeoSiteCat(sRow) : (prefCat || 'supplier');
-    const ov = GEO_STORE.sites[`${rowCat}:${nk}`] || GEO_STORE.sites[nk];
-    const basePin = BASELINE_SITE_PINS[nk];
+    const pfx = geoIndStorePrefix(activeInd);
+    const pinCleared = Boolean(sRow && sRow._pinCleared);
+    const ov = !pinCleared ? (GEO_STORE.sites[`${pfx}${rowCat}:${nk}`] || GEO_STORE.sites[pfx + nk]) : null;
+    const basePin = (isMfg && !pinCleared) ? BASELINE_SITE_PINS[nk] : null;
     const lat = ov && ov.latitude != null ? Number(ov.latitude) : (sRow && sRow.latitude != null && sRow.latitude !== '' ? Number(sRow.latitude) : (basePin ? basePin.lat : null));
     const lng = ov && ov.longitude != null ? Number(ov.longitude) : (sRow && sRow.longitude != null && sRow.longitude !== '' ? Number(sRow.longitude) : (basePin ? basePin.lng : null));
     const regName = (ov && ov.region) || (sRow && sRow.region) || (basePin && basePin.region) || '';
@@ -1839,7 +1875,7 @@
       return { lat, lng, pinned: true, label: spec.name, region: regName, type: 'site' };
     }
     if (regName && SEED && SEED.records && SEED.records.regions) {
-      const rRow = SEED.records.regions.find(r => r && norm(r.name) === norm(regName));
+      const rRow = SEED.records.regions.find(r => isRowInGeoIndustry(r, activeInd) && norm(r.name) === norm(regName));
       if (rRow && rRow.center_lat != null && rRow.center_lng != null) {
         return { lat: Number(rRow.center_lat), lng: Number(rRow.center_lng), pinned: false, fromRegionCenter: true, label: spec.name, region: regName, distanceKmFallback: rRow.distance_km, type: 'site' };
       }
@@ -1848,7 +1884,7 @@
       }
     }
     // Check if site name matches a BU name (e.g. 'Wtc')
-    const matchBu = BU_LIST.find(b => norm(b) === nk);
+    const matchBu = isMfg ? BU_LIST.find(b => norm(b) === nk) : null;
     if (matchBu) {
       const hub = getCompanyHub(matchBu, SEED);
       return { lat: hub.lat, lng: hub.lng, pinned: true, label: spec.name, region: hub.region, type: 'site' };
@@ -2324,10 +2360,30 @@
     }
   }
 
+  function syncStudioDistEndpoints(hubs, siteListForDist) {
+    const validVals = []
+      .concat((hubs || []).map(h => `bu:${h.name}`))
+      .concat((siteListForDist || []).map(s => `site:${s.name}`));
+    const validSet = new Set(validVals);
+    if (!validVals.length) {
+      STUDIO.distFrom = '';
+      STUDIO.distTo = '';
+      return;
+    }
+    if (!validSet.has(STUDIO.distFrom)) {
+      STUDIO.distFrom = validVals[0];
+    }
+    if (!validSet.has(STUDIO.distTo) || (validVals.length > 1 && STUDIO.distTo === STUDIO.distFrom)) {
+      STUDIO.distTo = validVals.find(v => v !== STUDIO.distFrom) || validVals[0];
+    }
+  }
+
   function renderGeoStudioHtml(ctx) {
     const SEED = ctx.SEED;
     const STATE = ctx.STATE;
-    const hostKey = `${(STATE && STATE.view) || ''}:${ctx.metaKey || ''}`;
+    const activeInd = getGeoActiveIndustry();
+    const isMfg = activeInd === 'Manufacturing';
+    const hostKey = `${(STATE && STATE.view) || ''}:${ctx.metaKey || ''}:${activeInd}`;
     if (STUDIO._lastHostKey && STUDIO._lastHostKey !== hostKey) {
       const isExplicitJump = Date.now() - (STUDIO._jumpPendingTs || 0) < 1200;
       if (!isExplicitJump) {
@@ -2344,11 +2400,18 @@
     STUDIO._lastHostKey = hostKey;
     STUDIO._jumpPendingTs = 0;
     hydrateSeedGeo(SEED);
-    const regions = ((SEED && SEED.records && SEED.records.regions) || []).filter(r => r && !r.voided);
+    const inIndGeo = r => isRowInGeoIndustry(r, activeInd);
+    const regions = ((SEED && SEED.records && SEED.records.regions) || []).filter(inIndGeo);
+    if (STUDIO.selectedRegion && STUDIO.selectedRegion !== '__unassigned__' && !regions.some(r => norm(r.name) === norm(STUDIO.selectedRegion))) {
+      STUDIO.selectedRegion = '';
+    }
+    if (!isMfg && STUDIO.pinFilter && STUDIO.pinFilter !== 'all') {
+      STUDIO.pinFilter = 'all';
+    }
     const siteStats = getUnifiedSiteStats(SEED, STATE);
-    const hubs = getAllCompanyHubs(SEED);
+    const hubs = isMfg ? getAllCompanyHubs(SEED) : [];
 
-    const activeSites = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => s && !s.voided && s.name);
+    const activeSites = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => inIndGeo(s) && s.name);
     const mappedRegionsCnt = regions.filter(r => (r.zone_type === 'circle' && r.radius_km > 0) || Boolean(r.zone_geojson)).length;
     const pinnedSitesCnt = activeSites.filter(s => s.latitude != null && s.longitude != null && s.latitude !== '' && s.longitude !== '').length;
 
@@ -2381,12 +2444,14 @@
     });
 
     const otByReg = new Map();
-    ((SEED && SEED.records && SEED.records.overtime_rates) || []).forEach(o => {
-      if (o && !o.voided && o.region && Number(o.amount) > 0) {
-        const rk = norm(o.region);
-        if (!otByReg.has(rk)) otByReg.set(rk, Number(o.amount));
-      }
-    });
+    if (isMfg) {
+      ((SEED && SEED.records && SEED.records.overtime_rates) || []).forEach(o => {
+        if (o && !o.voided && o.region && Number(o.amount) > 0) {
+          const rk = norm(o.region);
+          if (!otByReg.has(rk)) otByReg.set(rk, Number(o.amount));
+        }
+      });
+    }
 
     const q = norm(STUDIO.regionSearch);
     const regFreq = getRegionOperationalFreqMap(SEED);
@@ -2405,26 +2470,31 @@
     });
 
     // Build distance endpoint options
+    const siteListForDist = isMfg ? siteStats.list.slice(0, 140) : activeSites.slice(0, 140);
+    syncStudioDistEndpoints(hubs, siteListForDist);
     const distOptionsHtml = (selectedVal) => {
       const buOpts = hubs.map(h => {
         const v = `bu:${h.name}`;
         return `<option value="${esc(v)}"${v === selectedVal ? ' selected' : ''}>Company BU: ${esc(h.name)} (${esc(h.region || 'Hub')})</option>`;
       }).join('');
-      const siteOpts = siteStats.list.slice(0, 140).map(s => {
+      const siteOpts = siteListForDist.map(s => {
         const v = `site:${s.name}`;
         return `<option value="${esc(v)}"${v === selectedVal ? ' selected' : ''}>Site: ${esc(s.name)}${s.region ? ' (' + esc(s.region) + ')' : ''}</option>`;
       }).join('');
-      return `<optgroup label="Company Business Units">${buOpts}</optgroup><optgroup label="Operational Sites (Raw &amp; Sales)">${siteOpts}</optgroup>`;
+      return `${buOpts ? `<optgroup label="Company Business Units">${buOpts}</optgroup>` : ''}<optgroup label="Operational Sites">${siteOpts}</optgroup>`;
     };
 
     const parseSpec = raw => {
       const s = String(raw || '');
+      if (!s) return { type: 'site', name: '' };
       const idx = s.indexOf(':');
       return idx > 0 ? { type: s.slice(0, idx), name: s.slice(idx + 1) } : { type: 'site', name: s };
     };
     const fromSpec = parseSpec(STUDIO.distFrom);
     const toSpec = parseSpec(STUDIO.distTo);
-    const kmEst = estimateLegKm(fromSpec, toSpec, SEED, { roundTripIfAnyBu: true });
+    const kmEst = (fromSpec.name && toSpec.name && STUDIO.distFrom !== STUDIO.distTo)
+      ? estimateLegKm(fromSpec, toSpec, SEED, { roundTripIfAnyBu: isMfg })
+      : null;
     const hasOverride = GEO_STORE.pairKmOverrides[kmEst ? kmEst.pairKey : ''] != null;
 
     const selRegObj = (STUDIO.selectedRegion && STUDIO.selectedRegion !== '__unassigned__')
@@ -2435,20 +2505,27 @@
 
     const renderMemberSiteBtn = (s) => {
       const st = siteStats.byNorm.get(norm(s.name)) || { raw: 0, sales: 0, total: 0 };
-      const isJvSite = Boolean(s.is_jv || /\bjv\b/i.test(s.name || ''));
-      const isBundSite = !isJvSite && Boolean(s.includes_transport === true || s.includes_transport === 1 || s.haulage_mode === 'supplier_delivered');
-      const isDual = !isJvSite && ((st.raw > 0 && st.sales > 0) || (s.supplier && s.customer));
-      const isDelivOnly = !isJvSite && !isBundSite && !isDual && (st.sales > 0 || (s.customer && !s.supplier));
-      const dotCls = isJvSite ? 'dual' : (isDelivOnly ? 'sales' : 'raw');
-      const catCls = isJvSite ? 'is-jv' : (isDelivOnly ? 'is-cust' : '');
-      const catLbl = isJvSite ? 'JV 50/50' : (isBundSite ? 'Mat+Trans' : (isDual ? 'Raw & Sales' : (isDelivOnly ? 'Delivery' : 'Quarry')));
-      const siteLoads = Number(st.total || (st.raw || 0) + (st.sales || 0));
+      const isJvSite = isMfg && Boolean(s.is_jv || /\bjv\b/i.test(s.name || ''));
+      const isBundSite = isMfg && !isJvSite && !s._multiIndustrySeed && Boolean(s.includes_transport === true || s.includes_transport === 1 || s.haulage_mode === 'supplier_delivered');
+      const dotCls = isJvSite ? 'dual' : 'site';
+      const specCls = isJvSite ? 'is-jv' : (isBundSite ? 'is-bund' : '');
+      const specLbl = isJvSite ? 'JV 50/50' : (isBundSite ? 'Mat+Trans' : '');
+      const rCnt = Number(st.raw || 0);
+      const sCntLoads = Number(st.sales || 0);
+      const siteLoads = isMfg ? Number(st.total || (rCnt + sCntLoads)) : 0;
       const metaLbl = siteLoads > 0 ? `${siteLoads.toLocaleString('en-US')} ${siteLoads === 1 ? 'load' : 'loads'}` : (s.latitude != null && s.longitude != null ? 'Pinned' : '');
+      const loadBreakTip = siteLoads > 0
+        ? (rCnt > 0 && sCntLoads > 0
+          ? `${rCnt.toLocaleString('en-US')} raw · ${sCntLoads.toLocaleString('en-US')} sales loads`
+          : (rCnt > 0
+            ? `${rCnt.toLocaleString('en-US')} raw ${rCnt === 1 ? 'load' : 'loads'}`
+            : `${sCntLoads.toLocaleString('en-US')} sales ${sCntLoads === 1 ? 'load' : 'loads'}`))
+        : '';
       return `
-        <button type="button" class="geo-reg-site-item" data-geo-inspect-site="${esc(s.id)}">
+        <button type="button" class="geo-reg-site-item" data-geo-inspect-site="${esc(s.id)}"${loadBreakTip ? ` data-ui-tip="${esc(loadBreakTip)}"` : ''}>
           <span class="geo-dot ${dotCls}"></span>
           <span class="geo-reg-site-name">${esc(s.name)}</span>
-          <span class="geo-reg-site-cat ${catCls}">${esc(catLbl)}</span>
+          ${specLbl ? `<span class="geo-reg-site-cat ${specCls}">${esc(specLbl)}</span>` : ''}
           ${metaLbl ? `<span class="geo-reg-site-meta">${esc(metaLbl)}</span>` : ''}
         </button>
       `;
@@ -2456,7 +2533,8 @@
 
     let toolDrawerHtml = '';
     if (!STUDIO.collapsed && STUDIO.mode === 'pin') {
-      const isBuPin = STUDIO.pinTargetType === 'bu';
+      if (!isMfg && STUDIO.pinTargetType === 'bu') STUDIO.pinTargetType = 'site';
+      const isBuPin = isMfg && STUDIO.pinTargetType === 'bu';
       const fIdxPin = typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null;
       const siteFreqMap = fIdxPin ? fIdxPin.site : null;
       const catSiteNames = Array.from(new Set(
@@ -2473,7 +2551,7 @@
             <label class="geo-tool-field">Pin Type
               <select id="geoPinTypeSel">
                 <option value="site"${!isBuPin ? ' selected' : ''}>Operational Site</option>
-                <option value="bu"${isBuPin ? ' selected' : ''}>Company BU Hub</option>
+                ${isMfg ? `<option value="bu"${isBuPin ? ' selected' : ''}>Company BU Hub</option>` : ''}
               </select>
             </label>
             ${isBuPin ? `
@@ -2509,11 +2587,11 @@
     const unassMatched = (q && !'unassigned'.includes(q)) ? unassignedSites.filter(s => norm(s.name).includes(q)) : unassignedSites;
     const showUnassSub = (isUnassignedAct || Boolean(q && unassMatched.length > 0)) && unassMatched.length > 0;
     const selRegMemberSites = selRegObj ? (sitesByRegList.get(norm(selRegObj.name)) || []) : [];
-    const selRegOt = selRegObj ? (otByReg.get(norm(selRegObj.name)) || selRegObj.driver_ot_rate || null) : null;
-    const scopedTruckCnt = (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getScopedUnits === 'function')
+    const selRegOt = (isMfg && selRegObj) ? (otByReg.get(norm(selRegObj.name)) || selRegObj.driver_ot_rate || null) : null;
+    const scopedTruckCnt = (isMfg && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getScopedUnits === 'function')
       ? window.MFG_TELEMATICS.getScopedUnits().length
       : 0;
-    if (STUDIO.pinFilter === 'trucks' && scopedTruckCnt === 0) {
+    if ((!isMfg && STUDIO.pinFilter !== 'all') || (STUDIO.pinFilter === 'trucks' && scopedTruckCnt === 0)) {
       STUDIO.pinFilter = 'all';
     }
 
@@ -2529,14 +2607,16 @@
           </div>
           <div class="geo-studio-controls-right">
             ${!STUDIO.collapsed ? `
-              <div class="geo-pin-filters" id="geoPinFilterStrip" role="group" aria-label="Map Pin Filter">
-                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'all' ? ' active' : ''}" data-geo-pin-filter="all">All</button>
-                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'bu' ? ' active' : ''}" data-geo-pin-filter="bu"><span class="geo-dot bu"></span>Company Hubs (${hubs.length})</button>
-                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'raw' ? ' active' : ''}" data-geo-pin-filter="raw"><span class="geo-dot raw"></span>Quarry</button>
-                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'sales' ? ' active' : ''}" data-geo-pin-filter="sales"><span class="geo-dot sales"></span>Delivery</button>
-                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'jv' ? ' active' : ''}" data-geo-pin-filter="jv"><span class="geo-dot dual"></span>JV 50/50</button>
-                ${scopedTruckCnt > 0 ? `<button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'trucks' ? ' active' : ''}" data-geo-pin-filter="trucks"><span class="geo-dot trucks"></span>Trucks (${scopedTruckCnt})</button>` : ''}
-              </div>
+              ${isMfg ? `
+                <div class="geo-pin-filters" id="geoPinFilterStrip" role="group" aria-label="Map Pin Filter">
+                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'all' ? ' active' : ''}" data-geo-pin-filter="all">All</button>
+                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'bu' ? ' active' : ''}" data-geo-pin-filter="bu"><span class="geo-dot bu"></span>Company Hubs (${hubs.length})</button>
+                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'raw' ? ' active' : ''}" data-geo-pin-filter="raw"><span class="geo-dot raw"></span>Raw Activity</button>
+                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'sales' ? ' active' : ''}" data-geo-pin-filter="sales"><span class="geo-dot sales"></span>Sales Activity</button>
+                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'jv' ? ' active' : ''}" data-geo-pin-filter="jv"><span class="geo-dot dual"></span>JV 50/50</button>
+                  ${scopedTruckCnt > 0 ? `<button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'trucks' ? ' active' : ''}" data-geo-pin-filter="trucks"><span class="geo-dot trucks"></span>Trucks (${scopedTruckCnt})</button>` : ''}
+                </div>
+              ` : ''}
               ${STUDIO.selectedRegion ? `<button type="button" class="geo-mini-btn" id="geoResetLebanonViewBtn">Reset View</button>` : ''}
             ` : ''}
             <button type="button" class="geo-collapse-btn" id="geoToggleCollapseBtn">${STUDIO.collapsed ? 'Show Map' : 'Hide Map'}</button>
@@ -2569,7 +2649,7 @@
                   const matchedSites = (q && !rk.includes(q)) ? memberSites.filter(s => norm(s.name).includes(q)) : memberSites;
                   const showSublist = (isAct || Boolean(q && matchedSites.length > 0)) && matchedSites.length > 0;
                   const buHits = busByReg.get(rk) || [];
-                  const otRate = otByReg.get(rk) || r.driver_ot_rate || null;
+                  const otRate = isMfg ? (otByReg.get(rk) || r.driver_ot_rate || null) : null;
                   const isCirc = r.zone_type === 'circle' && Number(r.radius_km) > 0;
                   const isBnd = r.zone_type === 'boundary' && Boolean(r.zone_geojson);
                   const isPoly = Boolean(r.zone_geojson) && !isBnd;
@@ -2633,7 +2713,7 @@
                   <div class="geo-focus-meta">
                     ${selRegObj.corridor ? `<div><b>Governorate:</b> ${esc(corridorLabel(selRegObj.corridor))}</div>` : ''}
                     ${(busByReg.get(norm(selRegObj.name)) || []).length ? `<div><b>Company Hub:</b> ${esc((busByReg.get(norm(selRegObj.name)) || []).join(', '))}</div>` : ''}
-                    ${selRegObj.distance_km != null ? `<div><b>Distance from WTC:</b> ${round1(selRegObj.distance_km)} km</div>` : ''}
+                    ${isMfg && selRegObj.distance_km != null ? `<div><b>Distance from WTC:</b> ${round1(selRegObj.distance_km)} km</div>` : (selRegObj.distance_km != null ? `<div><b>Ref Distance:</b> ${round1(selRegObj.distance_km)} km</div>` : '')}
                     ${selRegOt ? `<div><b>Driver OT:</b> $${round2(selRegOt)}</div>` : ''}
                   </div>
                   <div class="geo-focus-sites-sec">
@@ -2641,10 +2721,8 @@
                     ${selRegMemberSites.length ? `
                       <div class="geo-focus-sites-list">
                         ${selRegMemberSites.slice(0, 10).map(ms => {
-                          const mst = siteStats.byNorm.get(norm(ms.name)) || { raw: 0, sales: 0 };
-                          const mJv = Boolean(ms.is_jv || /\bjv\b/i.test(ms.name || ''));
-                          const mDelivOnly = !mJv && !(mst.raw > 0) && (mst.sales > 0 || (ms.customer && !ms.supplier));
-                          const mDot = mJv ? 'dual' : (mDelivOnly ? 'sales' : 'raw');
+                          const mJv = isMfg && Boolean(ms.is_jv || /\bjv\b/i.test(ms.name || ''));
+                          const mDot = mJv ? 'dual' : 'site';
                           return `<button type="button" class="geo-focus-site-chip" data-geo-inspect-site="${esc(ms.id)}"><span class="geo-dot ${mDot}"></span>${esc(ms.name)}</button>`;
                         }).join('')}
                         ${selRegMemberSites.length > 10 ? `<span class="geo-focus-site-more">+${selRegMemberSites.length - 10} more below</span>` : ''}
@@ -2674,7 +2752,7 @@
                 <span class="geo-km-badge" id="geoDistKmBadge">
                   One-Way: ${kmEst.oneWayKm.toFixed(1)} km${kmEst.roundTripKm != null ? ` · Round-Trip: ${kmEst.roundTripKm.toFixed(1)} km` : ''}
                 </span>
-                <span class="geo-km-sub" id="geoDistMetaSub">~${kmEst.estMinutes} min · ~${kmEst.estDieselL.toFixed(1)} L diesel (${esc(kmEst.source)})</span>
+                <span class="geo-km-sub" id="geoDistMetaSub">~${kmEst.estMinutes} min${isMfg ? ` · ~${kmEst.estDieselL.toFixed(1)} L diesel` : ''} (${esc(kmEst.source)})</span>
               ` : `
                 <span class="geo-km-sub" id="geoDistKmBadge">Pin location on map to compute exact road KM</span>
               `}
@@ -2700,10 +2778,19 @@
       STUDIO.layers = L.layerGroup().addTo(map);
     }
     const lg = STUDIO.layers;
-    const regions = ((SEED && SEED.records && SEED.records.regions) || []).filter(r => r && !r.voided);
-    const sites = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => s && !s.voided);
+    const activeInd = getGeoActiveIndustry();
+    const isMfg = activeInd === 'Manufacturing';
+    const inIndGeo = r => isRowInGeoIndustry(r, activeInd);
+    const regions = ((SEED && SEED.records && SEED.records.regions) || []).filter(inIndGeo);
+    const sites = ((SEED && SEED.records && SEED.records.sites) || []).filter(inIndGeo);
     const siteStats = getUnifiedSiteStats(SEED, STATE);
-    const hubs = getAllCompanyHubs(SEED);
+    const hubs = isMfg ? getAllCompanyHubs(SEED) : [];
+    if (STUDIO.selectedRegion && STUDIO.selectedRegion !== '__unassigned__' && !regions.some(r => norm(r.name) === norm(STUDIO.selectedRegion))) {
+      STUDIO.selectedRegion = '';
+    }
+    if (!isMfg && STUDIO.pinFilter && STUDIO.pinFilter !== 'all') {
+      STUDIO.pinFilter = 'all';
+    }
     const selRegNorm = norm(STUDIO.selectedRegion);
     let focusBounds = null;
 
@@ -2780,19 +2867,23 @@
     });
 
     // 2. Draw Active Distance Route Line (From <-> To)
+    syncStudioDistEndpoints(hubs, isMfg ? siteStats.list.slice(0, 140) : sites.filter(s => s && s.name).slice(0, 140));
     const parseSpec = raw => {
       const s = String(raw || '');
+      if (!s) return { type: 'site', name: '' };
       const idx = s.indexOf(':');
       return idx > 0 ? { type: s.slice(0, idx), name: s.slice(idx + 1) } : { type: 'site', name: s };
     };
     const fromSpec = parseSpec(STUDIO.distFrom);
     const toSpec = parseSpec(STUDIO.distTo);
-    const kmEst = estimateLegKm(fromSpec, toSpec, SEED, {
-      roundTripIfAnyBu: true,
-      onAsyncRoute: () => {
-        if (document.getElementById('geoMapStudioDeck')) rerenderWorkspace();
-      }
-    });
+    const kmEst = (fromSpec.name && toSpec.name && STUDIO.distFrom !== STUDIO.distTo)
+      ? estimateLegKm(fromSpec, toSpec, SEED, {
+          roundTripIfAnyBu: isMfg,
+          onAsyncRoute: () => {
+            if (document.getElementById('geoMapStudioDeck')) rerenderWorkspace();
+          }
+        })
+      : null;
     if (kmEst && kmEst.fromCoord && kmEst.toCoord && kmEst.fromCoord.lat != null && kmEst.toCoord.lat != null && kmEst.oneWayKm > 0) {
       const latlngs = Array.isArray(kmEst.routeCoords) && kmEst.routeCoords.length > 1
         ? kmEst.routeCoords.map(pt => [pt[1], pt[0]])
@@ -2806,7 +2897,7 @@
     }
 
     // 3. Draw Site Pins
-    const liveTruckPinCnt = (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getScopedUnits === 'function')
+    const liveTruckPinCnt = (isMfg && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getScopedUnits === 'function')
       ? window.MFG_TELEMATICS.getScopedUnits().length
       : 0;
     if (STUDIO.pinFilter === 'trucks' && liveTruckPinCnt === 0) {
@@ -2824,24 +2915,23 @@
           if (!selR || !isPointInRegion(lat, lng, selR)) return;
         }
         const siteCat = resolveGeoSiteCat(s);
-        const isJvSite = Boolean(s.is_jv || /\bjv\b/i.test(s.name || ''));
+        const isJvSite = isMfg && Boolean(s.is_jv || /\bjv\b/i.test(s.name || ''));
         const st = siteStats.byNorm.get(norm(s.name)) || { raw: 0, sales: 0, total: 0 };
-        const hasRaw = st.raw > 0 || Boolean(s.supplier) || isJvSite || !s.customer;
-        const hasSales = st.sales > 0 || Boolean(s.customer);
+        const hasRaw = isMfg && (st.raw > 0 || Boolean(s.supplier) || isJvSite);
+        const hasSales = isMfg && (st.sales > 0 || Boolean(s.customer));
         if (STUDIO.pinFilter === 'jv' && !isJvSite) return;
         if (STUDIO.pinFilter === 'raw' && !hasRaw) return;
         if (STUDIO.pinFilter === 'sales' && !hasSales) return;
 
-        const isDelivOnly = !isJvSite && !hasRaw && hasSales;
-        const color = isJvSite ? '#7C3AED' : (isDelivOnly ? '#2563EB' : '#059669');
-        const totalLoads = Number(st.total || (st.raw || 0) + (st.sales || 0));
+        const color = isJvSite ? '#7C3AED' : (hasRaw && !hasSales ? '#059669' : (!hasRaw && hasSales ? '#2563EB' : '#2356A8'));
+        const totalLoads = isMfg ? Number(st.total || (st.raw || 0) + (st.sales || 0)) : 0;
         const showTopLabel = selRegNorm || totalLoads >= 700;
         const marker = L.marker([lat, lng], {
           icon: makeSvgPinIcon(L, color, showTopLabel ? s.name : '', false)
         }).addTo(lg);
 
-        const wtcEst = estimateLegKm({ type: 'bu', name: 'WTC' }, { type: 'site', name: s.name }, SEED);
-        const bbcEst = estimateLegKm({ type: 'bu', name: 'BBConstruction' }, { type: 'site', name: s.name }, SEED);
+        const wtcEst = isMfg ? estimateLegKm({ type: 'bu', name: 'WTC' }, { type: 'site', name: s.name }, SEED) : null;
+        const bbcEst = isMfg ? estimateLegKm({ type: 'bu', name: 'BBConstruction' }, { type: 'site', name: s.name }, SEED) : null;
         const partyLines = [
           s.supplier ? `<div>Site Owner: <b>${esc(s.supplier)}</b></div>` : '',
           s.customer ? `<div>Linked Customer: <b>${esc(s.customer)}</b></div>` : ''
@@ -2861,7 +2951,7 @@
             <div style="font-weight:700;font-size:13px">${esc(s.name)}</div>
             <div style="color:#64748B">Region Zone: <b>${esc(s.region || s.geo_zone || 'Unassigned')}</b></div>
             ${partyLines}
-            ${loadsLine}
+            ${isMfg ? loadsLine : ''}
             ${wtcEst && wtcEst.available ? `<div>From WTC: <b>${wtcEst.oneWayKm.toFixed(1)} km</b> (RT ${wtcEst.roundTripKm.toFixed(1)} km)</div>` : ''}
             ${bbcEst && bbcEst.available ? `<div>From BBConstruction: <b>${bbcEst.oneWayKm.toFixed(1)} km</b> (RT ${bbcEst.roundTripKm.toFixed(1)} km)</div>` : ''}
             <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
@@ -2895,7 +2985,7 @@
     });
 
     // 4b. Draw Live Fleet GPS & CAN-Bus Truck Pins
-    if ((STUDIO.pinFilter === 'all' || STUDIO.pinFilter === 'trucks' || !STUDIO.pinFilter) && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderLeafletTruckMarkers === 'function') {
+    if (isMfg && (STUDIO.pinFilter === 'all' || STUDIO.pinFilter === 'trucks' || !STUDIO.pinFilter) && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderLeafletTruckMarkers === 'function') {
       window.MFG_TELEMATICS.renderLeafletTruckMarkers(L, lg);
     }
 
@@ -3061,8 +3151,11 @@
       corridor: spec.corridor,
       name: cleanName
     }, SEED);
+    const activeInd = getGeoActiveIndustry();
+    const isMfg = activeInd === 'Manufacturing';
+    const storePfx = geoIndStorePrefix(activeInd);
     const autoCorridor = resolvedGov.code || spec.corridor || 'Mount Lebanon';
-    GEO_STORE.regions[nk] = {
+    GEO_STORE.regions[storePfx + nk] = {
       name: cleanName,
       corridor: autoCorridor,
       zone_type: spec.zone_type,
@@ -3072,13 +3165,13 @@
       zone_geojson: spec.zone_geojson || null,
       updated_at: nowIso
     };
-    if (GEO_STORE._deletedKeys) delete GEO_STORE._deletedKeys['regions:' + nk];
+    if (GEO_STORE._deletedKeys) delete GEO_STORE._deletedKeys['regions:' + storePfx + nk];
     saveStoredConfig(true);
 
     const regions = (SEED.records && SEED.records.regions) || [];
-    let row = regions.find(r => r && !r.voided && norm(r.name) === nk);
-    const wtcHub = getCompanyHub('WTC', SEED);
-    const distKm = (spec.center_lat != null && spec.center_lng != null)
+    let row = regions.find(r => isRowInGeoIndustry(r, activeInd) && norm(r.name) === nk);
+    const wtcHub = isMfg ? getCompanyHub('WTC', SEED) : null;
+    const distKm = (isMfg && wtcHub && spec.center_lat != null && spec.center_lng != null)
       ? round1(roadAdjustedKm(wtcHub.lat, wtcHub.lng, spec.center_lat, spec.center_lng))
       : null;
 
@@ -3106,6 +3199,7 @@
         radius_km: spec.radius_km || null,
         zone_geojson: spec.zone_geojson || null,
         distance_km: distKm,
+        ...(isMfg ? {} : { _industry: activeInd }),
         source: 'app',
         entered_at: nowIso,
         voided: false
@@ -3121,10 +3215,10 @@
     hydrateSeedGeo(SEED, true);
     let insideCount = 0;
     ((SEED.records && SEED.records.sites) || []).forEach(s => {
-      if (!s || s.voided || s.latitude == null || s.longitude == null) return;
+      if (!isRowInGeoIndustry(s, activeInd) || s.latitude == null || s.longitude == null) return;
       if (isPointInRegion(Number(s.latitude), Number(s.longitude), row)) {
         insideCount++;
-        const det = findContainingRegion(Number(s.latitude), Number(s.longitude), SEED);
+        const det = findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, activeInd);
         s.geo_zone = det.best || cleanName;
         if (s.source === 'app' && (!s.region || norm(det.best) === nk)) s.region = det.best || cleanName;
       }
@@ -3172,27 +3266,30 @@
       return true;
     }
 
+    const activeInd = getGeoActiveIndustry();
+    const isMfg = activeInd === 'Manufacturing';
+    const storePfx = geoIndStorePrefix(activeInd);
     const nk = norm(cleanName);
     const normCat = (explicitSiteCat === 'customer' || explicitSiteCat === 'delivery' || explicitSiteCat === 'sales')
       ? 'customer'
       : ((explicitSiteCat === 'supplier' || explicitSiteCat === 'quarry' || explicitSiteCat === 'raw') ? 'supplier' : '');
-    const det = findContainingRegion(nLat, nLng, SEED);
+    const det = findContainingRegion(nLat, nLng, SEED, activeInd);
     const region = explicitRegion || det.best || '';
     const nowIso = new Date().toISOString();
 
     const sites = (SEED.records && SEED.records.sites) || [];
     const customSites = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.sites)) ? STATE.customRecords.sites : [];
     const pool = sites.concat(customSites);
-    let row = (explicitSiteId && pool.find(s => s && !s.voided && String(s.id || '') === explicitSiteId))
-      || pool.find(s => s && !s.voided && norm(s.name) === nk);
+    let row = (explicitSiteId && pool.find(s => isRowInGeoIndustry(s, activeInd) && String(s.id || '') === explicitSiteId))
+      || pool.find(s => isRowInGeoIndustry(s, activeInd) && norm(s.name) === nk);
     const effCat = normCat || (row ? resolveGeoSiteCat(row) : 'supplier');
 
     const pinEntry = { name: cleanName, site_category: effCat, latitude: nLat, longitude: nLng, region, updated_at: nowIso };
     if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
-    GEO_STORE.sites[nk] = pinEntry;
-    GEO_STORE.sites[`${effCat}:${nk}`] = pinEntry;
-    delete GEO_STORE._deletedKeys[`sites:${nk}`];
-    delete GEO_STORE._deletedKeys[`sites:${effCat}:${nk}`];
+    GEO_STORE.sites[storePfx + nk] = pinEntry;
+    GEO_STORE.sites[`${storePfx}${effCat}:${nk}`] = pinEntry;
+    delete GEO_STORE._deletedKeys[`sites:${storePfx}${nk}`];
+    delete GEO_STORE._deletedKeys[`sites:${storePfx}${effCat}:${nk}`];
     saveStoredConfig(true);
 
     if (row) {
@@ -3212,7 +3309,8 @@
         region,
         latitude: nLat,
         longitude: nLng,
-        is_jv: effCat === 'supplier' ? /\bjv\b/i.test(cleanName) : false,
+        is_jv: isMfg && effCat === 'supplier' ? /\bjv\b/i.test(cleanName) : false,
+        ...(isMfg ? {} : { _industry: activeInd }),
         source: 'app',
         entered_at: nowIso,
         voided: false
@@ -3235,37 +3333,39 @@
     const nm = String(o.name || '').trim();
     const nk = norm(nm);
     if (!nk) return;
+    const effInd = o.industry || getGeoActiveIndustry();
+    const storePfx = geoIndStorePrefix(effInd);
     const cat = o.siteCategory === 'customer' ? 'customer' : (o.siteCategory === 'supplier' ? 'supplier' : '');
     const delIso = new Date().toISOString();
     if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
     let changed = false;
     if (cat) {
-      if (GEO_STORE.sites[`${cat}:${nk}`]) {
-        delete GEO_STORE.sites[`${cat}:${nk}`];
-        GEO_STORE._deletedKeys[`sites:${cat}:${nk}`] = delIso;
+      if (GEO_STORE.sites[`${storePfx}${cat}:${nk}`]) {
+        delete GEO_STORE.sites[`${storePfx}${cat}:${nk}`];
+        GEO_STORE._deletedKeys[`sites:${storePfx}${cat}:${nk}`] = delIso;
         changed = true;
       }
     } else {
       ['supplier', 'customer'].forEach(c => {
-        if (GEO_STORE.sites[`${c}:${nk}`]) {
-          delete GEO_STORE.sites[`${c}:${nk}`];
-          GEO_STORE._deletedKeys[`sites:${c}:${nk}`] = delIso;
+        if (GEO_STORE.sites[`${storePfx}${c}:${nk}`]) {
+          delete GEO_STORE.sites[`${storePfx}${c}:${nk}`];
+          GEO_STORE._deletedKeys[`sites:${storePfx}${c}:${nk}`] = delIso;
           changed = true;
         }
       });
     }
     const sites = (SEED && SEED.records && SEED.records.sites) || [];
-    const oppRow = cat ? sites.find(s => s && !s.voided && norm(s.name) === nk && resolveGeoSiteCat(s) !== cat && (!o.excludeId || String(s.id) !== String(o.excludeId))) : null;
-    if (GEO_STORE.sites[nk]) {
+    const oppRow = cat ? sites.find(s => isRowInGeoIndustry(s, effInd) && norm(s.name) === nk && resolveGeoSiteCat(s) !== cat && (!o.excludeId || String(s.id) !== String(o.excludeId))) : null;
+    if (GEO_STORE.sites[storePfx + nk]) {
       if (oppRow) {
         const oppCat = resolveGeoSiteCat(oppRow);
-        if (!GEO_STORE.sites[`${oppCat}:${nk}`]) {
-          GEO_STORE.sites[`${oppCat}:${nk}`] = Object.assign({}, GEO_STORE.sites[nk], { site_category: oppCat });
-          delete GEO_STORE._deletedKeys[`sites:${oppCat}:${nk}`];
+        if (!GEO_STORE.sites[`${storePfx}${oppCat}:${nk}`]) {
+          GEO_STORE.sites[`${storePfx}${oppCat}:${nk}`] = Object.assign({}, GEO_STORE.sites[storePfx + nk], { site_category: oppCat });
+          delete GEO_STORE._deletedKeys[`sites:${storePfx}${oppCat}:${nk}`];
         }
       }
-      delete GEO_STORE.sites[nk];
-      GEO_STORE._deletedKeys[`sites:${nk}`] = delIso;
+      delete GEO_STORE.sites[storePfx + nk];
+      GEO_STORE._deletedKeys[`sites:${storePfx}${nk}`] = delIso;
       changed = true;
     }
     if (changed) saveStoredConfig(true);
@@ -3305,14 +3405,14 @@
           STUDIO._userPanned = false;
         } else if (nextMode === 'circle' && STUDIO.selectedRegion) {
           STUDIO.drawRegionName = STUDIO.selectedRegion;
-          const rRow = ((SEED.records && SEED.records.regions) || []).find(r => norm(r.name) === norm(STUDIO.selectedRegion));
+          const rRow = ((SEED.records && SEED.records.regions) || []).find(r => isRowInGeoIndustry(r) && norm(r.name) === norm(STUDIO.selectedRegion));
           if (rRow && rRow.center_lat != null && rRow.center_lng != null) {
             STUDIO.circleCenter = { lat: Number(rRow.center_lat), lng: Number(rRow.center_lng) };
             STUDIO.circleRadiusKm = Number(rRow.radius_km) > 0 ? Number(rRow.radius_km) : 1.5;
           }
         } else if (nextMode === 'polygon') {
           STUDIO.drawRegionName = STUDIO.selectedRegion || '';
-          const rRow = STUDIO.selectedRegion ? ((SEED.records && SEED.records.regions) || []).find(r => norm(r.name) === norm(STUDIO.selectedRegion)) : null;
+          const rRow = STUDIO.selectedRegion ? ((SEED.records && SEED.records.regions) || []).find(r => isRowInGeoIndustry(r) && norm(r.name) === norm(STUDIO.selectedRegion)) : null;
           if (rRow && rRow.zone_geojson) {
             STUDIO.polyPoints = extractEditablePolyRing(rRow.zone_geojson, 20);
             STUDIO.polyLocked = STUDIO.polyPoints.length >= 3;
@@ -3419,7 +3519,7 @@
         STUDIO.selectedRegion = nm;
         STUDIO.drawRegionName = nm;
         STUDIO.mode = 'circle';
-        const rRow = ((SEED.records && SEED.records.regions) || []).find(r => norm(r.name) === norm(nm));
+        const rRow = ((SEED.records && SEED.records.regions) || []).find(r => isRowInGeoIndustry(r) && norm(r.name) === norm(nm));
         if (rRow && rRow.center_lat != null && rRow.center_lng != null) {
           STUDIO.circleCenter = { lat: Number(rRow.center_lat), lng: Number(rRow.center_lng) };
           STUDIO.circleRadiusKm = Number(rRow.radius_km) > 0 ? Number(rRow.radius_km) : 1.5;
@@ -3433,7 +3533,7 @@
         STUDIO.selectedRegion = nm;
         STUDIO.drawRegionName = nm;
         STUDIO.mode = 'polygon';
-        const rRow = ((SEED.records && SEED.records.regions) || []).find(r => norm(r.name) === norm(nm));
+        const rRow = ((SEED.records && SEED.records.regions) || []).find(r => isRowInGeoIndustry(r) && norm(r.name) === norm(nm));
         STUDIO.polyPoints = (rRow && rRow.zone_geojson) ? extractEditablePolyRing(rRow.zone_geojson, 20) : [];
         STUDIO.polyLocked = STUDIO.polyPoints.length >= 3;
         rerenderWorkspace();
@@ -3491,7 +3591,7 @@
       let cnt = 0;
       const radKm = Math.max(0.2, Number(STUDIO.circleRadiusKm || 1.5));
       ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
-        if (s && !s.voided && s.latitude != null && s.longitude != null && pointInCircle(Number(s.latitude), Number(s.longitude), STUDIO.circleCenter.lat, STUDIO.circleCenter.lng, radKm)) cnt++;
+        if (isRowInGeoIndustry(s) && s.latitude != null && s.longitude != null && pointInCircle(Number(s.latitude), Number(s.longitude), STUDIO.circleCenter.lat, STUDIO.circleCenter.lng, radKm)) cnt++;
       });
       pill.hidden = false;
       pill.textContent = `${cnt} ${cnt === 1 ? 'Site' : 'Sites'} inside`;
@@ -3558,7 +3658,7 @@
           const gj = { type: 'Polygon', coordinates: [ring] };
           let cnt = 0;
           ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
-            if (s && !s.voided && s.latitude != null && s.longitude != null && pointInGeoJson(Number(s.latitude), Number(s.longitude), gj)) cnt++;
+            if (isRowInGeoIndustry(s) && s.latitude != null && s.longitude != null && pointInGeoJson(Number(s.latitude), Number(s.longitude), gj)) cnt++;
           });
           pill.hidden = false;
           pill.textContent = `${cnt} ${cnt === 1 ? 'Site' : 'Sites'} inside`;
@@ -3762,7 +3862,7 @@
     if (pinSiteInp) {
       const onSiteInp = () => {
         STUDIO.pinTargetName = pinSiteInp.value;
-        const sRow = ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && norm(s.name) === norm(STUDIO.pinTargetName));
+        const sRow = ((SEED.records && SEED.records.sites) || []).find(s => isRowInGeoIndustry(s) && norm(s.name) === norm(STUDIO.pinTargetName));
         if (sRow && sRow.latitude != null && sRow.longitude != null) {
           STUDIO.pinLat = Number(sRow.latitude);
           STUDIO.pinLng = Number(sRow.longitude);
@@ -3980,8 +4080,8 @@
             STUDIO.pinTargetType = 'site';
             STUDIO.pinSiteCategory = rCat;
             STUDIO.pinTargetName = nm;
-            const sRow = ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && norm(s.name) === norm(nm) && resolveGeoSiteCat(s) === rCat)
-              || ((SEED.records && SEED.records.sites) || []).find(s => s && norm(s.name) === norm(nm));
+            const sRow = ((SEED.records && SEED.records.sites) || []).find(s => isRowInGeoIndustry(s) && norm(s.name) === norm(nm) && resolveGeoSiteCat(s) === rCat)
+              || ((SEED.records && SEED.records.sites) || []).find(s => isRowInGeoIndustry(s) && norm(s.name) === norm(nm));
             if (sRow && sRow.latitude != null) { STUDIO.pinLat = Number(sRow.latitude); STUDIO.pinLng = Number(sRow.longitude); STUDIO.pinRegion = sRow.region || ''; }
             rerenderWorkspace();
           });
@@ -4074,15 +4174,17 @@
 
         const refreshSiteOverlay = (opts) => {
           const o = opts || {};
+          const activeInd = getGeoActiveIndustry();
+          const isMfg = activeInd === 'Manufacturing';
           lg.clearLayers();
           const accentColor = '#059669';
           const pinLabel = 'Site Pin';
           const selRegName = regInp ? String(regInp.value || '').trim() : '';
-          const selRegObj = selRegName ? resolveRegionRecordOrAtlas(selRegName, SEED) : null;
+          const selRegObj = selRegName ? resolveRegionRecordOrAtlas(selRegName, SEED, activeInd) : null;
           const drawnRegNorms = new Set();
 
           ((SEED.records && SEED.records.regions) || []).forEach(r => {
-            if (!r || r.voided) return;
+            if (!isRowInGeoIndustry(r, activeInd)) return;
             const isSel = selRegObj && norm(r.name) === norm(selRegObj.name);
             drawnRegNorms.add(norm(r.name));
             if (r.zone_type === 'circle' && r.center_lat != null && r.radius_km > 0) {
@@ -4118,9 +4220,11 @@
             }
           }
 
-          getAllCompanyHubs(SEED).forEach(h => {
-            L.marker([h.lat, h.lng], { icon: makeSvgPinIcon(L, '#D9A54A', h.name, true) }).addTo(lg);
-          });
+          if (isMfg) {
+            getAllCompanyHubs(SEED).forEach(h => {
+              L.marker([h.lat, h.lng], { icon: makeSvgPinIcon(L, '#D9A54A', h.name, true) }).addTo(lg);
+            });
+          }
 
           const rawLat = latInp && latInp.value !== '' ? parseFloat(latInp.value) : null;
           const rawLng = lngInp && lngInp.value !== '' ? parseFloat(lngInp.value) : null;
@@ -4151,15 +4255,19 @@
               const pos = ev.target.getLatLng();
               applyPickedSiteLatLng(round5(pos.lat), round5(pos.lng));
             });
-            const wtcHub = getCompanyHub('WTC', SEED);
-            const ow = roadAdjustedKm(wtcHub.lat, wtcHub.lng, previewLat, previewLng);
-            const det = findContainingRegion(previewLat, previewLng, SEED);
+            const det = findContainingRegion(previewLat, previewLng, SEED, activeInd);
             const zoneLbl = selRegName || det.best || (selRegObj && selRegObj.name) || '';
             if (kmStatus) {
-              kmStatus.textContent = `${zoneLbl ? 'Region: ' + zoneLbl + ' · ' : ''}From WTC: One-Way ${ow.toFixed(1)} km · Round-Trip ${(ow * 2).toFixed(1)} km`;
+              if (isMfg) {
+                const wtcHub = getCompanyHub('WTC', SEED);
+                const ow = roadAdjustedKm(wtcHub.lat, wtcHub.lng, previewLat, previewLng);
+                kmStatus.textContent = `${zoneLbl ? 'Region: ' + zoneLbl + ' · ' : ''}From WTC: One-Way ${ow.toFixed(1)} km · Round-Trip ${(ow * 2).toFixed(1)} km`;
+              } else {
+                kmStatus.textContent = zoneLbl ? `Region: ${zoneLbl} · ${round5(previewLat)}, ${round5(previewLng)}` : `${round5(previewLat)}, ${round5(previewLng)}`;
+              }
             }
           } else if (kmStatus) {
-            kmStatus.textContent = 'Click map or select Region to estimate KM';
+            kmStatus.textContent = isMfg ? 'Click map or select Region to estimate KM' : 'Click map or select Region';
           }
 
           if ((o.initialOpen || o.panToPin) && hasExplicitPin) {
@@ -4375,8 +4483,9 @@
 
       const countSitesInside = (gj, cLat, cLng, radKm, mode) => {
         let cnt = 0;
+        const activeInd = getGeoActiveIndustry();
         ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
-          if (!s || s.voided || s.latitude == null || s.longitude == null) return;
+          if (!isRowInGeoIndustry(s, activeInd) || s.latitude == null || s.longitude == null) return;
           const lat = Number(s.latitude), lng = Number(s.longitude);
           if (mode === 'circle' && cLat != null && cLng != null && radKm > 0) {
             if (pointInCircle(lat, lng, cLat, cLng, radKm)) cnt++;
@@ -4388,7 +4497,7 @@
       };
 
       const commitPolyToHiddenFields = () => {
-        const wtcHub = getCompanyHub('WTC', SEED);
+        const isMfg = getGeoActiveIndustry() === 'Manufacturing';
         if (polyPts.length >= 3) {
           const ring = polyPts.concat([[polyPts[0][0], polyPts[0][1]]]);
           if (gjInp) gjInp.value = JSON.stringify({ type: 'Polygon', coordinates: [ring] });
@@ -4397,7 +4506,10 @@
           const cLng = round5((Math.min(...lngs) + Math.max(...lngs)) / 2);
           if (cLatInp) cLatInp.value = String(cLat);
           if (cLngInp) cLngInp.value = String(cLng);
-          if (distInp) distInp.value = String(Math.round(roadAdjustedKm(wtcHub.lat, wtcHub.lng, cLat, cLng)));
+          if (isMfg && distInp) {
+            const wtcHub = getCompanyHub('WTC', SEED);
+            distInp.value = String(Math.round(roadAdjustedKm(wtcHub.lat, wtcHub.lng, cLat, cLng)));
+          }
         } else {
           if (gjInp) gjInp.value = '';
         }
@@ -4495,8 +4607,8 @@
         if (cLatInp) cLatInp.value = hit.lat != null ? String(hit.lat) : '';
         if (cLngInp) cLngInp.value = hit.lng != null ? String(hit.lng) : '';
         if (gjInp) gjInp.value = hit.geojson ? JSON.stringify(hit.geojson) : '';
-        const wtcHub = getCompanyHub('WTC', SEED);
-        if (distInp && hit.lat != null && hit.lng != null) {
+        if (getGeoActiveIndustry() === 'Manufacturing' && distInp && hit.lat != null && hit.lng != null) {
+          const wtcHub = getCompanyHub('WTC', SEED);
           distInp.value = String(Math.round(roadAdjustedKm(wtcHub.lat, wtcHub.lng, Number(hit.lat), Number(hit.lng))));
         }
         hostEl.querySelectorAll('[data-pick-map-region]').forEach(ch => {
@@ -4686,9 +4798,12 @@
           const isCrosshair = zt === 'circle' || (zt === 'polygon' && !polyLocked);
           canvas.classList.toggle('is-drawing-zone', isCrosshair);
 
-          getAllCompanyHubs(SEED).forEach(h => {
-            L.marker([h.lat, h.lng], { icon: makeSvgPinIcon(L, '#D9A54A', h.name, true), interactive: false }).addTo(lg);
-          });
+          const isMfg = getGeoActiveIndustry() === 'Manufacturing';
+          if (isMfg) {
+            getAllCompanyHubs(SEED).forEach(h => {
+              L.marker([h.lat, h.lng], { icon: makeSvgPinIcon(L, '#D9A54A', h.name, true), interactive: false }).addTo(lg);
+            });
+          }
 
           if (zt === 'boundary') {
             if (parsedGj) {
@@ -4730,8 +4845,10 @@
                 const nLat = round5(pos.lat), nLng = round5(pos.lng);
                 if (cLatInp) cLatInp.value = String(nLat);
                 if (cLngInp) cLngInp.value = String(nLng);
-                const wtcHub = getCompanyHub('WTC', SEED);
-                if (distInp) distInp.value = String(Math.round(roadAdjustedKm(wtcHub.lat, wtcHub.lng, nLat, nLng)));
+                if (isMfg && distInp) {
+                  const wtcHub = getCompanyHub('WTC', SEED);
+                  distInp.value = String(Math.round(roadAdjustedKm(wtcHub.lat, wtcHub.lng, nLat, nLng)));
+                }
                 redraw();
               });
               if (opts.fitBounds) {
@@ -4847,12 +4964,14 @@
           closeAllGeoPlaceMenus();
           const lat = round5(ev.latlng.lat), lng = round5(ev.latlng.lng);
           const zt = (shapeSel && shapeSel.value) || 'boundary';
-          const wtcHub = getCompanyHub('WTC', SEED);
           if (zt === 'circle') {
             if (cLatInp) cLatInp.value = String(lat);
             if (cLngInp) cLngInp.value = String(lng);
             if (gjInp) gjInp.value = '';
-            if (distInp) distInp.value = String(Math.round(roadAdjustedKm(wtcHub.lat, wtcHub.lng, lat, lng)));
+            if (getGeoActiveIndustry() === 'Manufacturing' && distInp) {
+              const wtcHub = getCompanyHub('WTC', SEED);
+              distInp.value = String(Math.round(roadAdjustedKm(wtcHub.lat, wtcHub.lng, lat, lng)));
+            }
             redraw();
           } else if (zt === 'polygon') {
             if (polyLocked) return;
