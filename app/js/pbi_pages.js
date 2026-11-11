@@ -1,10 +1,9 @@
 /* ============================================================================
-   ISABI Systems — 20-Page Power BI Report Studio & 34-Table Hub (js/pbi_pages.js)
-   Parity+ with m18c_report.py (20 Power BI pages) & m14_sitemap.py (34 tables)
-   v4.4 — Page-specific dynamic slicers, multi-band KPIs, section headings,
+   ISABI Systems · Multi-Industry Executive Analytics Studio & 34-Table Hub (js/pbi_pages.js)
+   v4.4 · Page-specific dynamic slicers, multi-band KPIs, section headings,
           AR aging signed column chart, combo/clustered/multi-line SVG charts,
           inline proportional table data bars, Ended amber & Pickup navy tints,
-          and full 3-section P12 Payroll, Site Allowances & Freelance studio.
+          and full 3-section Payroll, Site Allowances & Freelance studio.
    ============================================================================ */
 
 (function () {
@@ -4318,7 +4317,7 @@
     const visiblePages = typeof ctx.canAccessPbiPage === 'function' ? PBI_PAGES.filter(p => ctx.canAccessPbiPage(p.id)) : PBI_PAGES;
     const pagePool = visiblePages.length ? visiblePages : PBI_PAGES;
     const activePage = overridePageId
-      ? ({ id: overridePageId, num: '—', label: overridePageId, title: '' })
+      ? ({ id: overridePageId, num: '-', label: overridePageId, title: '' })
       : (pagePool.find(p => p.id === (STATE.pbiPage || 'p01_overview')) || pagePool[0]);
     const activePageId = activePage.id;
     if (!overridePageId) STATE.pbiPage = activePageId;
@@ -4338,19 +4337,20 @@
     const allowedCosKey = typeof ctx.allowedCompanyNames === 'function' ? ctx.allowedCompanyNames().join(',') : '';
     const baseCacheKey = `${STATE.company}|${STATE.period}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis}|${allowedCosKey}|${STATE._officialScopeActive ? 'OFF' : 'ALL'}|${SEED._customRev || 0}|${(rec.sales_tickets || []).length}|${(rec.raw_purchases || []).length}`;
     if (_pbiBaseCacheKey !== baseCacheKey || !_pbiBaseCacheVal) {
+      const mfgMasterPool = list => filterRecords(list || [], { ignorePeriod: true, ignoreSearch: true, excludeMultiIndustrySeed: true });
       const custIvaMap = new Map();
-      (rec.customers || []).forEach(c => custIvaMap.set(norm(c.name), c.vat_registered ? 'Yes' : 'No'));
+      mfgMasterPool(rec.customers).forEach(c => custIvaMap.set(norm(c.name), c.vat_registered ? 'Yes' : 'No'));
       (m.customers || []).forEach(c => custIvaMap.set(norm(c.Customer), c['VAT Registered'] === 'Yes' ? 'Yes' : 'No'));
       const suppIvaMap = new Map();
-      (rec.suppliers || []).forEach(s => suppIvaMap.set(norm(s.name), s.iva ? 'Yes' : 'No'));
+      mfgMasterPool(rec.suppliers).forEach(s => suppIvaMap.set(norm(s.name), s.iva ? 'Yes' : 'No'));
       (m.suppliers || []).forEach(s => suppIvaMap.set(norm(s.Supplier), s.IVA === 'Yes' ? 'Yes' : 'No'));
       const catClassMap = new Map();
-      (rec.expense_categories || []).forEach(c => catClassMap.set(norm(c.name), deriveExpenseCostClass(c)));
+      mfgMasterPool(rec.expense_categories).forEach(c => catClassMap.set(norm(c.name), deriveExpenseCostClass(c)));
       const equipMetaMap = new Map();
-      (rec.equipment || []).forEach(e => equipMetaMap.set(norm(e.name), e));
+      mfgMasterPool(rec.equipment).forEach(e => equipMetaMap.set(norm(e.name), e));
       (m.equipment || []).forEach(e => { if (!equipMetaMap.has(norm(e.Equipment))) equipMetaMap.set(norm(e.Equipment), { name: e.Equipment, type: e.Type, ownership: e.Ownership, status: e.Status }); });
-      const coDriverSet = new Set((rec.company_drivers || []).map(d => norm(d.driver || d.name)));
-      (rec.drivers || []).forEach(d => { if (d.is_company_driver) coDriverSet.add(norm(d.name)); });
+      const coDriverSet = new Set(mfgMasterPool(rec.company_drivers).map(d => norm(d.driver || d.name)));
+      mfgMasterPool(rec.drivers).forEach(d => { if (d.is_company_driver) coDriverSet.add(norm(d.name)); });
 
       const baseSalesRows = filterRecords(rec.sales_tickets, { ignoreSearch: true });
       const baseRawRows = filterRecords(rec.raw_purchases, { ignoreSearch: true });
@@ -5300,7 +5300,7 @@
             <div style="font-size:12.5px;font-weight:700;color:var(--ink)">${esc(title)}</div>
             <div style="font-size:11.5px;color:var(--muted);margin-top:2px">${esc(desc)}</div>
           </div>
-          <button type="button" class="btn btn-brass" style="padding:5px 12px;font-size:11.5px" data-nav-jump="${esc(targetView)}" ${modSec ? `data-mod-jump="${esc(modSec)}"` : ''}>Open in ${esc(targetLabel)} →</button>
+          <button type="button" class="btn btn-brass" style="padding:5px 12px;font-size:11.5px" data-nav-jump="${esc(targetView)}" ${modSec ? `data-mod-jump="${esc(modSec)}"` : ''}>Open in ${esc(targetLabel)}</button>
         </div>
       `;
     }
@@ -5312,6 +5312,7 @@
       const isSalesSlicerPage = activePageId === 'p04_sales' || activePageId === 'p05_pricing' || activePageId === 'p06_ar';
       const activeCoKey = (STATE && STATE.company && !/all|group|manufacturing/i.test(String(STATE.company))) ? norm(STATE.company) : '';
       const slicerMode = isRawSlicerPage ? 'raw' : (isSalesSlicerPage ? 'sales' : 'all');
+      const mfgPool = list => filterRecords(list || [], { ignorePeriod: true, ignoreSearch: true, excludeMultiIndustrySeed: true });
       if (!_pbiBaseCacheVal._slicerCache) _pbiBaseCacheVal._slicerCache = {};
       const sCache = _pbiBaseCacheVal._slicerCache;
       const getSlicerPool = (k, fn) => {
@@ -5327,32 +5328,95 @@
                 ? ((activeCoKey && fIdx.productSalesByCo && fIdx.productSalesByCo.get(activeCoKey)) || fIdx.productSales)
                 : fIdx.product))
         : null;
+      const isCoMaster = row => !activeCoKey || Boolean(row && row.company && norm(row.company) === activeCoKey);
       const slicerPools = {
-        get prodOpts() { return getSlicerPool(`prod_${slicerMode}_${activeCoKey}`, () => uniq((m.products || []).map(p => p.Product).concat((rec.products || []).map(p => p.name)), prodFreqMap)); },
-        get custOpts() { return getSlicerPool('cust', () => uniq((m.customers || []).map(c => c.Customer).concat((rec.customers || []).map(c => c.name)), fIdx && fIdx.customer)); },
-        get suppOpts() { return getSlicerPool(`supp_${slicerMode}`, () => uniq((m.suppliers || []).map(s => s.Supplier).concat((rec.suppliers || []).map(s => s.name)), fIdx ? (isRawSlicerPage ? fIdx.siteOwner : fIdx.supplier) : null)); },
-        get siteOpts() {
-          return getSlicerPool(`site_${slicerMode}`, () => uniq(
-            isRawSlicerPage
-              ? (m.sites || []).filter(s => Number(s.raw_loads || 0) > 0).map(s => s.Site)
-                  .concat((rec.sites || []).filter(s => resolveSiteCategoryPbi(s) === 'supplier').map(s => s.name))
-                  .concat((rec.raw_purchases || []).map(r => r.site))
-              : (isSalesSlicerPage
-                  ? (m.sites || []).filter(s => Number(s.loads || 0) > 0).map(s => s.Site)
-                      .concat((rec.sites || []).filter(s => resolveSiteCategoryPbi(s) === 'customer').map(s => s.name))
-                      .concat((rec.sales_tickets || []).map(t => t.site))
-                  : (m.sites || []).map(s => s.Site).concat((rec.sites || []).map(s => s.name))),
-            fIdx ? (isRawSlicerPage ? fIdx.siteRaw : (isSalesSlicerPage ? fIdx.siteSales : fIdx.site)) : null
-          ));
+        get prodOpts() {
+          return getSlicerPool(`prod_${slicerMode}_${activeCoKey}`, () => {
+            const mList = (m.products || []).map(p => p.Product);
+            const txList = activeCoKey
+              ? mfgPool(rec.sales_tickets).map(t => t.product)
+                  .concat(mfgPool(rec.raw_purchases).map(r => r.product))
+                  .concat(mfgPool(rec.fuel_intakes).map(f => f.fuel_type || f.product))
+              : [];
+            const rList = mfgPool(rec.products).filter(isCoMaster).map(p => p.name);
+            return uniq(mList.concat(txList).concat(rList), prodFreqMap);
+          });
         },
-        get equipOpts() { return getSlicerPool('equip', () => uniq((m.equipment || []).map(e => e.Equipment).concat((rec.equipment || []).map(e => e.name)), fIdx && fIdx.truck)); },
-        get driverOpts() { return getSlicerPool('driver', () => uniq((rec.drivers || []).map(d => d.name).concat((rec.sales_tickets || []).map(t => t.driver)), fIdx && fIdx.driver)); },
-        get staffOpts() { return getSlicerPool('staff', () => uniq((rec.employments || []).map(e => e.staff).concat((rec.salaries || []).map(s => s.staff)).concat((rec.attendance || []).map(a => a.staff)), fIdx && fIdx.staff)); },
-        get catOpts() { return getSlicerPool('cat', () => uniq((rec.expense_categories || []).map(c => c.name).concat((rec.expenses || []).map(x => x.category)), fIdx && fIdx.category)); },
-        get subcatOpts() { return getSlicerPool('subcat', () => uniq((rec.expense_subcategories || []).map(c => c.name), fIdx && fIdx.subcategory)); },
-        get regOpts() { return getSlicerPool('reg', () => uniq((rec.regions || []).map(r => r.name).concat((rec.overtime_rates || []).map(o => o.region)), fIdx && fIdx.region)); },
-        get cpOpts() { return getSlicerPool('cp', () => uniq((rec.external_movements || []).map(x => cellValue(x, 'counterparty')).concat((rec.loans || []).map(l => cellValue(l, 'counterparty'))), fIdx && fIdx.counterparty)); },
-        get jvSiteOpts() { return getSlicerPool('jv_site', () => uniq(['Jiyeh JV', 'Halat JV', 'Nahr Ibrahim JV'].concat((rec.jv_partnerships || []).map(j => j && j.site)).concat((rec.jv_distributions || []).map(j => j && j.site)), fIdx && fIdx.site)); }
+        get custOpts() {
+          return getSlicerPool(`cust_${activeCoKey}`, () => {
+            const mList = (m.customers || []).map(c => c.Customer);
+            const txList = activeCoKey ? mfgPool(rec.sales_tickets).map(t => t.customer).concat(mfgPool(rec.receipts).map(r => r.customer)) : [];
+            const rList = mfgPool(rec.customers).filter(isCoMaster).map(c => c.name);
+            const fMap = (fIdx && activeCoKey && fIdx.customerByCo && fIdx.customerByCo.get(activeCoKey)) || (fIdx && fIdx.customer);
+            return uniq(mList.concat(txList).concat(rList), fMap);
+          });
+        },
+        get suppOpts() {
+          return getSlicerPool(`supp_${slicerMode}_${activeCoKey}`, () => {
+            const mList = (m.suppliers || []).map(s => s.Supplier);
+            const txList = activeCoKey
+              ? mfgPool(rec.raw_purchases).flatMap(r => [r.site_owner, r.truck_owner, r.supplier])
+                  .concat(mfgPool(rec.expenses).map(x => x.supplier))
+                  .concat(mfgPool(rec.settlements).map(s => s.supplier))
+                  .concat(mfgPool(rec.fuel_intakes).map(f => f.supplier))
+              : [];
+            const rList = mfgPool(rec.suppliers).filter(isCoMaster).map(s => s.name);
+            return uniq(mList.concat(txList).concat(rList), fIdx ? (isRawSlicerPage ? fIdx.siteOwner : fIdx.supplier) : null);
+          });
+        },
+        get siteOpts() {
+          return getSlicerPool(`site_${slicerMode}_${activeCoKey}`, () => {
+            const mSites = m.sites || [];
+            const rSites = mfgPool(rec.sites).filter(isCoMaster);
+            const rRaw = mfgPool(rec.raw_purchases);
+            const rSales = mfgPool(rec.sales_tickets);
+            return uniq(
+              isRawSlicerPage
+                ? mSites.filter(s => Number(s.raw_loads || 0) > 0).map(s => s.Site)
+                    .concat(rSites.filter(s => resolveSiteCategoryPbi(s) === 'supplier').map(s => s.name))
+                    .concat(rRaw.map(r => r.site))
+                : (isSalesSlicerPage
+                    ? mSites.filter(s => Number(s.loads || 0) > 0).map(s => s.Site)
+                        .concat(rSites.filter(s => resolveSiteCategoryPbi(s) === 'customer').map(s => s.name))
+                        .concat(rSales.map(t => t.site))
+                    : mSites.map(s => s.Site).concat(rSites.map(s => s.name)).concat(rRaw.map(r => r.site)).concat(rSales.map(t => t.site))),
+              fIdx ? (isRawSlicerPage ? fIdx.siteRaw : (isSalesSlicerPage ? fIdx.siteSales : fIdx.site)) : null
+            );
+          });
+        },
+        get equipOpts() {
+          return getSlicerPool(`equip_${activeCoKey}`, () => {
+            const mList = (m.equipment || []).map(e => e.Equipment);
+            const txList = activeCoKey ? mfgPool(rec.sales_tickets).map(t => t.truck).concat(mfgPool(rec.raw_purchases).map(r => r.truck)).concat(mfgPool(rec.fuel_intakes).map(f => f.equipment)).concat(mfgPool(rec.expenses).map(x => x.equipment)) : [];
+            const rList = mfgPool(rec.equipment).filter(isCoMaster).map(e => e.name);
+            return uniq(mList.concat(txList).concat(rList), fIdx && fIdx.truck);
+          });
+        },
+        get driverOpts() {
+          return getSlicerPool(`driver_${activeCoKey}`, () => {
+            const txList = mfgPool(rec.sales_tickets).map(t => t.driver)
+              .concat(mfgPool(rec.raw_purchases).map(r => r.driver))
+              .concat(mfgPool(rec.fuel_intakes).map(f => f.driver))
+              .concat(mfgPool(rec.employments).filter(e => /driver/i.test(String((e && e.role) || ''))).map(e => e.staff));
+            const rList = mfgPool(rec.drivers).filter(isCoMaster).map(d => d.name);
+            return uniq(txList.concat(rList), fIdx && fIdx.driver);
+          });
+        },
+        get staffOpts() { return getSlicerPool(`staff_${activeCoKey}`, () => uniq(mfgPool(rec.employments).map(e => e.staff).concat(mfgPool(rec.salaries).map(s => s.staff)).concat(mfgPool(rec.attendance).map(a => a.staff)), fIdx && fIdx.staff)); },
+        get catOpts() { return getSlicerPool(`cat_${activeCoKey}`, () => uniq((activeCoKey ? [] : mfgPool(rec.expense_categories).map(c => c.name)).concat(mfgPool(rec.expenses).map(x => x.category)), fIdx && fIdx.category)); },
+        get subcatOpts() { return getSlicerPool(`subcat_${activeCoKey}`, () => uniq((activeCoKey ? [] : mfgPool(rec.expense_subcategories).map(c => c.name)).concat(mfgPool(rec.expenses).map(x => x.subcategory)), fIdx && fIdx.subcategory)); },
+        get regOpts() { return getSlicerPool(`reg_${activeCoKey}`, () => uniq((activeCoKey ? [] : mfgPool(rec.regions).map(r => r.name)).concat(mfgPool(rec.overtime_rates).map(o => o.region)), fIdx && fIdx.region)); },
+        get cpOpts() { return getSlicerPool(`cp_${activeCoKey}`, () => uniq(mfgPool(rec.external_movements).map(x => cellValue(x, 'counterparty')).concat(mfgPool(rec.loans).map(l => cellValue(l, 'counterparty'))), fIdx && fIdx.counterparty)); },
+        get jvSiteOpts() {
+          return getSlicerPool(`jv_site_${activeCoKey}`, () => {
+            const mJv = (m.sites || []).filter(s => s && s.JV === 'Yes').map(s => s.Site);
+            const txJv = mfgPool(rec.jv_partnerships).map(j => j && j.site)
+              .concat(mfgPool(rec.jv_distributions).map(j => j && j.site))
+              .concat(mfgPool(rec.jv_agreements).map(j => j && j.site));
+            const rJv = mfgPool(rec.sites).filter(s => isCoMaster(s) && s && (s.is_jv || /\bjv$/i.test(String(s.name || '').trim()))).map(s => s.name);
+            return uniq(mJv.concat(txJv).concat(rJv), fIdx && fIdx.site);
+          });
+        }
       };
 
       const pageSlicerDefs = buildPageSlicerDefs(activePageId, slicerPools);
@@ -5809,10 +5873,10 @@
             { label: 'Diesel (L)', key: 'diesel_l', r: true, fmt: v => fmtNum(v, 0) }
           ], outliers, { subtitle: 'Units exceeding tolerance thresholds (>80 L/100km for trucks or >25 L/hr for yellow iron)', unitLabel: 'outliers' })}
 
-          ${pbiTable('Salary payments without an employment contract (m220)', [
+          ${pbiTable('Salary payments without an employment contract', [
             { label: 'Staff Member', key: 'staff', bold: true },
             { label: 'Unmatched Paid ($)', key: 'unmatched_usd', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` }
-          ], unmatchedSal, { subtitle: 'Payments whose staff and payroll month no employment contract covers · add/extend contract on P12', unitLabel: 'staff' })}
+          ], unmatchedSal, { subtitle: 'Payments whose staff and payroll month no employment contract covers · add/extend contract on Workforce & Payroll', unitLabel: 'staff' })}
         </div>
         ${(() => {
           const lubEx = computeLubricationAudit({
@@ -8889,7 +8953,7 @@
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Joint Venture (JV) 50/50 Sites & Partner Stock Entitlement', [
-            { label: 'Active JV Sites', value: fmtNum(jvSites.length), sub: 'Halat JV · Jiyeh JV · Nahr Ibrahim JV', tone: 'brass' },
+            { label: 'Active JV Sites', value: fmtNum(jvSites.length), sub: jvSites.length ? jvSites.slice(0, 3).map(s => s.Site).join(' · ') : 'No JV sites in selected scope', tone: 'brass' },
             { label: 'JV Partnership Contracts', value: fmtNum(jvParts.length), sub: '50% / 50% profit & stock split' },
             { label: 'JV Sites Sales TTC', value: fmtUSD(jvSites.reduce((a, r) => a + Number(r.sales_ttc || 0), 0), 0), sub: 'Dispatched from JV pits' },
             { label: 'JV Sites Raw Material Cost', value: fmtUSD(totJvRaw, 0), sub: 'Total raw intake on JV sites' },
@@ -8899,7 +8963,7 @@
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('JV sites — Sales TTC vs Raw Material Cost', buildClusteredBarChart(jvSites, 'Site', [
+          ${pbiPanel('JV sites · Sales TTC vs Raw Material Cost', buildClusteredBarChart(jvSites, 'Site', [
             { label: 'Sales TTC', key: 'sales_ttc', color: C.navy },
             { label: 'Raw Cost', key: 'raw_cost', color: C.steel }
           ], { decimals: 0 }), { subtitle: 'Volume comparison across the 3 Joint Venture sites' })}
@@ -9125,13 +9189,13 @@
 
       bodyHtml = `
         <div class="pbi-overview-bands">
-          ${kpiBand('1 · Cross-Statement Reconciliation Bridge (Ties Executive Analytics → Lebanese CoA GL → 22 A4 PDF Statements)', [
-            { label: 'P&L Sales Ex-VAT → Stmt #03', value: fmtUSD(k.gross_sales || k.net_sales, 2), sub: 'Ties to Class 701 + 706', tone: 'good' },
-            { label: 'Output VAT 11% → Stmt #18', value: fmtUSD(k.sales_vat, 2), sub: 'Ties to Class 4427', tone: 'good' },
-            { label: 'FIFO Open AR → Stmt #09/#11', value: fmtUSD(k.ar_balance, 2), sub: 'Ties to Class 4111', tone: 'good' },
-            { label: '3-Leg Open AP → Stmt #10/#12', value: fmtUSD(k.ap_balance, 2), sub: 'Ties to Class 4011', tone: 'good' },
-            { label: 'Cash Till → Stmt #05', value: fmtUSD(k.cash_till, 2), sub: 'Ties to Class 5 Till', tone: 'good' },
-            { label: 'Trial Balance → Stmt #02', value: fmtUSD(k.tb_check || 0, 2), sub: 'Double-Entry Variance $0.00', tone: 'brass' }
+          ${kpiBand('1 · Cross-Statement Reconciliation Bridge (Ties Executive Analytics · Lebanese CoA GL · 27 A4 PDF Statements)', [
+            { label: 'P&L Sales Ex-VAT · Stmt #03', value: fmtUSD(k.gross_sales || k.net_sales, 2), sub: 'Ties to Class 701 + 706', tone: 'good' },
+            { label: 'Output VAT 11% · Stmt #18', value: fmtUSD(k.sales_vat, 2), sub: 'Ties to Class 4427', tone: 'good' },
+            { label: 'FIFO Open AR · Stmt #09/#11', value: fmtUSD(k.ar_balance, 2), sub: 'Ties to Class 4111', tone: 'good' },
+            { label: '3-Leg Open AP · Stmt #10/#12', value: fmtUSD(k.ap_balance, 2), sub: 'Ties to Class 4011', tone: 'good' },
+            { label: 'Cash Till · Stmt #05', value: fmtUSD(k.cash_till, 2), sub: 'Ties to Class 5 Till', tone: 'good' },
+            { label: 'Trial Balance · Stmt #02', value: fmtUSD(k.tb_check || 0, 2), sub: 'Double-Entry Variance $0.00', tone: 'brass' }
           ])}
         </div>
 
@@ -9143,10 +9207,10 @@
           <div class="pbi-panel">
             <div class="pbi-panel-hdr">
               <div>
-                <div class="pbi-panel-title">22 Printable A4 Statements &amp; Paginated Reports Launcher</div>
+                <div class="pbi-panel-title">27 Printable A4 Statements &amp; Paginated Reports Launcher</div>
                 <span class="pbi-panel-sub">Click any statement below to open its A4 printable sheet (including #19 Staff Payroll &amp; #15 Driver Overtime)</span>
               </div>
-              <button type="button" class="btn btn-brass" style="padding:4px 10px;font-size:11px" data-nav-jump="statements">Open Statement Center →</button>
+              <button type="button" class="btn btn-brass" style="padding:4px 10px;font-size:11px" data-nav-jump="statements">Open Statement Center</button>
             </div>
             <div style="padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:7px;max-height:245px;overflow-y:auto">
               ${stCatalog.map(s => `

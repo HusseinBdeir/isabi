@@ -304,11 +304,35 @@
         }
       };
     }
+    const curGlobalSig = `${STATE.period || 'all'}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}`;
+    if (STATE.rdl._lastGlobalPeriodSig !== undefined && STATE.rdl._lastGlobalPeriodSig !== curGlobalSig) {
+      STATE.rdl._dateTouched = false;
+    }
+    STATE.rdl._lastGlobalPeriodSig = curGlobalSig;
     if (!STATE.rdl._dateTouched) {
-      if (STATE.dateFrom) STATE.rdl.params.from = STATE.dateFrom;
-      if (STATE.dateTo) {
-        STATE.rdl.params.to = STATE.dateTo > maxDate ? maxDate : STATE.dateTo;
-        STATE.rdl.params.asof = STATE.rdl.params.to;
+      const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) || null;
+      const hasCustomBounds = Boolean(STATE.dateFrom || STATE.dateTo || STATE.period === 'custom');
+      const pr = (!hasCustomBounds && STATE.period && STATE.period !== 'all' && ent && typeof ent.periodRange === 'function')
+        ? ent.periodRange(STATE.period)
+        : null;
+      if (!hasCustomBounds && !pr && (!STATE.period || STATE.period === 'all')) {
+        STATE.rdl.params.from = '2024-01-01';
+        STATE.rdl.params.to = maxDate;
+        STATE.rdl.params.asof = maxDate;
+      } else if (pr && pr.from) {
+        const f = String(pr.from).slice(0, 10);
+        const rawT = String(pr.to || f).slice(0, 10);
+        const t = rawT < f ? f : rawT;
+        STATE.rdl.params.from = f;
+        STATE.rdl.params.to = t;
+        STATE.rdl.params.asof = t;
+      } else {
+        const f = String(STATE.dateFrom || '2024-01-01').slice(0, 10);
+        const rawT = String(STATE.dateTo || maxDate).slice(0, 10);
+        const t = rawT < f ? f : rawT;
+        STATE.rdl.params.from = f;
+        STATE.rdl.params.to = t;
+        STATE.rdl.params.asof = t;
       }
     }
     return STATE.rdl;
@@ -794,7 +818,7 @@
       : (STATE && STATE.company);
 
     if (ind === 'Hospitality & Resorts' && typeof E.computeHospitalityOperations === 'function') {
-      const hsp = E.computeHospitalityOperations({ ignoreSearch: true, company: effIndStateCo });
+      const hsp = E.computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true, company: effIndStateCo });
       (hsp.venueRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
         const isCr = /credit|account|receivable/i.test(String(r.method || ''));
         pushSale({
@@ -852,7 +876,7 @@
         }
       });
     } else if (ind === 'Automotive & Heavy Trading' && typeof E.computeTradingOperations === 'function') {
-      const trd = E.computeTradingOperations({ ignoreSearch: true, company: effIndStateCo });
+      const trd = E.computeTradingOperations({ ignoreSearch: true, ignorePeriod: true, company: effIndStateCo });
       (trd.salesRows || []).filter(r => !r.is_gap && coMatch(r.company, co, allowedCos)).forEach(r => {
         const vInv = `${r.book || 'INV'}-${r.seq || r.id}`;
         pushSale({
@@ -880,7 +904,7 @@
         });
       });
     } else if (ind === 'Real Estate & Property' && typeof E.computeRealEstateOperations === 'function') {
-      const re = E.computeRealEstateOperations({ ignoreSearch: true, company: effIndStateCo });
+      const re = E.computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true, company: effIndStateCo });
       (re.invoices || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
         const hasVat = Number(r.vat_usd || 0) > 0;
         const taxSeq = (r.tax_seq && !/N\/A/i.test(r.tax_seq)) ? String(r.tax_seq) : String(r.id);
@@ -927,7 +951,7 @@
         });
       });
     } else if (ind === 'Insurance & Brokerage' && typeof E.computeInsuranceOperations === 'function') {
-      const ins = E.computeInsuranceOperations();
+      const ins = E.computeInsuranceOperations({ ignorePeriod: true });
       (ins.policies || []).forEach(r => {
         const billTot = r2(Number(r.gross_prem_usd || 0) + Number(r.policy_fee_usd || 0) - Number(r.discount_usd || 0));
         pushSale({
@@ -1585,10 +1609,59 @@
 
     return {
       rdl, co, basis,
+      from: rdl.params.from,
+      to: rdl.params.to,
+      asof: rdl.params.asof,
+      period: STATE.period || 'all',
+      dateFrom: STATE.dateFrom || '',
+      dateTo: STATE.dateTo || '',
       showTaxBreakdown: Boolean(STATE._canSeeTaxBreakdown && STATE.showSalesTaxBreakdown),
       officialScope: Boolean(STATE._officialScopeActive),
       ...d
     };
+  }
+
+  function isUntouchedAllStmtWindow(ctx) {
+    return (!ctx || !ctx.period || ctx.period === 'all')
+      && !(ctx && ctx.rdl && ctx.rdl._dateTouched)
+      && !(ctx && (ctx.dateFrom || ctx.dateTo));
+  }
+
+  function stmtActiveRange(ctx) {
+    if (isUntouchedAllStmtWindow(ctx)) return null;
+    const p = (ctx && ctx.rdl && ctx.rdl.params) || {};
+    const from = String((ctx && ctx.from) || p.from || '2024-01-01').slice(0, 10);
+    const rawTo = String((ctx && ctx.to) || p.to || from).slice(0, 10);
+    const to = rawTo < from ? from : rawTo;
+    return { from, to };
+  }
+
+  function formatStmtWindowLabel(ctx, rows, dateField) {
+    const p = (ctx && ctx.rdl && ctx.rdl.params) || {};
+    const from = String((ctx && ctx.from) || p.from || '').slice(0, 10);
+    const to = String((ctx && ctx.to) || p.to || '').slice(0, 10);
+    const isUntouchedAll = isUntouchedAllStmtWindow(ctx);
+    if (isUntouchedAll) {
+      if (Array.isArray(rows) && rows.length && dateField) {
+        let minD = '', maxD = '';
+        for (let i = 0; i < rows.length; i++) {
+          const d = String((rows[i] && rows[i][dateField]) || '').slice(0, 10);
+          if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+            if (!minD || d < minD) minD = d;
+            if (!maxD || d > maxD) maxD = d;
+          }
+        }
+        if (minD && maxD) return `All Periods (${minD} to ${maxD})`;
+      }
+      return 'All Periods';
+    }
+    if (from && to) return from === to ? from : `${from} to ${to}`;
+    return from || to || 'All Periods';
+  }
+
+  function formatStmtWindowHeader(ctx, rows, dateField) {
+    const lbl = formatStmtWindowLabel(ctx, rows, dateField);
+    return lbl.startsWith('All Periods') ? lbl : `Window ${lbl}`;
   }
 
 
@@ -4007,20 +4080,23 @@
   }
 
   function render23HoldingRegister(meta, ctx) {
+    const stmtRange = stmtActiveRange(ctx);
     const h = (window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function')
-      ? window.MFG_HOLDING.compute()
+      ? window.MFG_HOLDING.compute({ range: stmtRange, ignorePeriod: !stmtRange })
       : { kpis: {}, expenses: [], partners: [], intercompany: [], cashflow: [] };
     const k = h.kpis || {};
     const icRows = h.intercompany || [];
     const pRows = h.partners || [];
     const coKey = ctx.co && ctx.co !== 'ALL' ? ctx.co : 'Bdeir Holding';
+    const winLbl = formatStmtWindowLabel(ctx);
+    const winHdr = formatStmtWindowHeader(ctx);
     return `
-      ${sheetHeaderHtml(meta, coKey, `Corporate Treasury & Intercompany Consolidation · Window ${ctx.from} to ${ctx.to}`)}
+      ${sheetHeaderHtml(meta, coKey, `Corporate Treasury & Intercompany Consolidation · ${winHdr}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(coKey)}
         ${metaRowsHtml([
           ['Statement Code', 'Statement 23 · Holding & Treasury'],
-          ['Reporting Window', `${ctx.from} to ${ctx.to}`],
+          ['Reporting Window', winLbl],
           ['Shared Holding Overhead', fmtUsd(k.totalExpenses || 0, 2)],
           ['Net Intercompany Clearing', fmtUsd(k.netIntercompany || 0, 2)]
         ])}
@@ -4096,8 +4172,9 @@
   }
 
   function render24HospitalityRegister(meta, ctx) {
+    const stmtRange = stmtActiveRange(ctx);
     const d = (window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function')
-      ? window.MFG_HOSPITALITY.compute({ company: 'industry:Hospitality & Resorts' })
+      ? window.MFG_HOSPITALITY.compute({ company: 'industry:Hospitality & Resorts', range: stmtRange, ignorePeriod: !stmtRange })
       : { kpis: {}, salesRows: [], memberRows: [] };
     const k = d.kpis || {};
     const coKey = (ctx.co && ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum', 'Hospitality Group'].includes(ctx.co)) ? ctx.co : 'Hospitality Group';
@@ -4106,8 +4183,9 @@
     const sRows = allSales.slice(0, 18);
     const mRows = allMembers.slice(0, 10);
     const revTotal = coKey === 'Hospitality Group' ? Number(k.salesTotal || 0) : allSales.reduce((s, r) => s + Number(r.totalTtc || 0), 0);
+    const winHdr = formatStmtWindowHeader(ctx, allSales, 'date');
     return `
-      ${sheetHeaderHtml(meta, coKey, `Resort F&B, Cabanas, POS Till & Membership Audit · Window ${ctx.from} to ${ctx.to}`)}
+      ${sheetHeaderHtml(meta, coKey, `Resort F&B, Cabanas, POS Till & Membership Audit · ${winHdr}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(coKey)}
         ${metaRowsHtml([
@@ -4189,8 +4267,9 @@
   }
 
   function render25TradingRegister(meta, ctx) {
+    const stmtRange = stmtActiveRange(ctx);
     const d = (window.MFG_TRADING && typeof window.MFG_TRADING.compute === 'function')
-      ? window.MFG_TRADING.compute({ company: 'industry:Automotive & Heavy Trading' })
+      ? window.MFG_TRADING.compute({ company: 'industry:Automotive & Heavy Trading', range: stmtRange, ignorePeriod: !stmtRange })
       : { kpis: {}, salesRows: [], vehicleRows: [], stockRows: [] };
     const k = d.kpis || {};
     const coKey = (ctx.co && ['Korri Auto', 'Shacman', 'Trading Group'].includes(ctx.co)) ? ctx.co : 'Trading Group';
@@ -4199,8 +4278,9 @@
     const sRows = allSales.slice(0, 14);
     const vRows = allVehicles.slice(0, 10);
     const revTotal = coKey === 'Trading Group' ? Number(k.salesTotal || 0) : allSales.reduce((s, r) => s + Number(r.totalTtc || 0), 0);
+    const winHdr = formatStmtWindowHeader(ctx, allSales, 'date');
     return `
-      ${sheetHeaderHtml(meta, coKey, `Multi-Book Commercial Sales (N/S/IS/IN), Shacman VIN Fleet & FIFO Stock · Window ${ctx.from} to ${ctx.to}`)}
+      ${sheetHeaderHtml(meta, coKey, `Multi-Book Commercial Sales (N/S/IS/IN), Shacman VIN Fleet & FIFO Stock · ${winHdr}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(coKey)}
         ${metaRowsHtml([
@@ -4281,21 +4361,23 @@
   }
 
   function render26RealEstateRegister(meta, ctx) {
+    const stmtRange = stmtActiveRange(ctx);
     const d = (window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function')
-      ? window.MFG_REALESTATE.compute({ company: 'industry:Real Estate & Property' })
+      ? window.MFG_REALESTATE.compute({ company: 'industry:Real Estate & Property', range: stmtRange, ignorePeriod: !stmtRange })
       : { kpis: {}, leases: [], rentInvoices: [] };
     const k = d.kpis || {};
     const coKey = (ctx.co && ['Properties', '4235 Company S.A.L', 'Real Estate Group'].includes(ctx.co)) ? ctx.co : '4235 Company S.A.L';
     const lRows = (d.leases || []).filter(l => coKey === 'Real Estate Group' || l.company === coKey);
     const rRows = (d.rentInvoices || []).filter(r => coKey === 'Real Estate Group' || !r.company || r.company === coKey);
     const rentTotal = lRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0);
+    const winHdr = formatStmtWindowHeader(ctx, rRows, 'date');
     return `
-      ${sheetHeaderHtml(meta, coKey, `Official 4235 Company S.A.L 11% VAT Rent Roll & Lease Schedule · Window ${ctx.from} to ${ctx.to}`)}
+      ${sheetHeaderHtml(meta, coKey, `Official 4235 Company S.A.L 11% VAT Rent Roll & Lease Schedule · ${winHdr}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(coKey)}
         ${metaRowsHtml([
           ['Statement Code', 'Statement 26 · Real Estate & Property'],
-          ['Contracted Annual Rent', fmtUsd(rentTotal || k.annualRentTtc || 0, 2)],
+          ['Contracted Annual Rent', fmtUsd(rentTotal, 2)],
           ['Portfolio Occupancy', `${fmtNum(k.occupiedUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} (${fmtNum(k.occupancyPct || 0, 1)}%)`],
           ['Rent Collected vs Open AR', `${fmtUsd(k.collectedUsd || 0, 0)} / ${fmtUsd(k.openArUsd || 0, 0)}`]
         ])}
@@ -4372,15 +4454,17 @@
   }
 
   function render27InsuranceRegister(meta, ctx) {
+    const stmtRange = stmtActiveRange(ctx);
     const d = (window.MFG_INSURANCE && typeof window.MFG_INSURANCE.compute === 'function')
-      ? window.MFG_INSURANCE.compute()
+      ? window.MFG_INSURANCE.compute({ range: stmtRange, ignorePeriod: !stmtRange })
       : { kpis: {}, policies: [], claims: [], carrierMatrix: [] };
     const k = d.kpis || {};
     const pRows = d.policies || [];
     const cRows = d.carrierMatrix || [];
     const coKey = 'Insurance Company';
+    const winHdr = formatStmtWindowHeader(ctx);
     return `
-      ${sheetHeaderHtml(meta, coKey, `Gross Written Premium (GWP), Brokerage Commission & Carrier Statement Recon · Window ${ctx.from} to ${ctx.to}`)}
+      ${sheetHeaderHtml(meta, coKey, `Gross Written Premium (GWP), Brokerage Commission & Carrier Statement Recon · ${winHdr}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(coKey)}
         ${metaRowsHtml([
@@ -4411,7 +4495,7 @@
               <td>${esc(p.insured)}</td>
               <td>${esc(p.carrier)}</td>
               <td>${esc(p.line)}</td>
-              <td class="mono">${esc(p.endDate)} (${p.daysToExpiry}d)</td>
+              <td class="mono">${esc(p.endDate || '-')}${Number.isFinite(Number(p.daysToExpiry)) ? ` (${Number(p.daysToExpiry)}d)` : ''}</td>
               <td class="num">${fmtUsd(p.gwpUsd || 0, 2)}</td>
               <td class="num">${fmtUsd(p.commUsd || 0, 2)}</td>
               <td class="num bold">${fmtUsd(p.clientBalanceUsd || 0, 2)}</td>
@@ -4499,13 +4583,15 @@
       const seedObj = (typeof window !== 'undefined' && window.MFG_SEED) ? window.MFG_SEED : {};
       const coRaw = opts.company !== undefined ? opts.company : (opts.co !== undefined ? opts.co : 'ALL');
       const maxD = String((seedObj && seedObj.generated_at) || '2026-12-31').slice(0, 10);
+      const hasExplicitBounds = Boolean(opts.from || opts.to || opts.asof);
       const mockState = {
         company: coRaw,
+        period: opts.periodSpec || 'all',
         dateFilter: opts.dateFilter || 'all',
-        dateFrom: opts.from || '2024-01-01',
-        dateTo: opts.to || maxD,
+        dateFrom: hasExplicitBounds ? (opts.from || '2024-01-01') : '',
+        dateTo: hasExplicitBounds ? (opts.to || maxD) : '',
         rdl: {
-          _dateTouched: Boolean(opts.from || opts.to || opts.asof),
+          _dateTouched: hasExplicitBounds,
           params: {
             from: opts.from || '2024-01-01',
             to: opts.to || maxD,
@@ -4536,9 +4622,7 @@
     }
     const fn = SHEET_RENDERERS[meta.id] || render01DailyOps;
     let html = fn(meta, effCtx);
-    if (effCtx && ((effCtx.ind && effCtx.ind !== 'Manufacturing') || Number(meta.id) >= 23)) {
-      html = String(html || '').replace(/\u2014/g, '-').replace(/\u2192/g, ' - ');
-    }
+    html = String(html || '').replace(/\u2014/g, '-').replace(/\u2192/g, ' - ');
     return html;
   }
 
@@ -4673,10 +4757,12 @@
       tone: tone || 'neutral'
     });
 
+    const isUntouchedAllSnap = isUntouchedAllStmtWindow(ctx);
+    const snapStmtRange = isUntouchedAllSnap ? null : { from: p.from, to: p.to };
     let windowMode = 'period';
-    let windowLabelEn = `${p.from} to ${p.to}`;
-    let windowLabelAr = `${p.from} إلى ${p.to}`;
-    let windowLabelFr = `${p.from} au ${p.to}`;
+    let windowLabelEn = isUntouchedAllSnap ? 'All Periods' : `${p.from} to ${p.to}`;
+    let windowLabelAr = isUntouchedAllSnap ? 'جميع الفترات' : `${p.from} إلى ${p.to}`;
+    let windowLabelFr = isUntouchedAllSnap ? 'Toutes les périodes' : `${p.from} au ${p.to}`;
     let tieCheck = null;
     let kpis = [];
     let facts = {};
@@ -5491,7 +5577,7 @@
       ];
     } else if (stmtId === '23') {
       const h = (typeof window !== 'undefined' && window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function')
-        ? window.MFG_HOLDING.compute()
+        ? window.MFG_HOLDING.compute({ range: snapStmtRange, ignorePeriod: !snapStmtRange })
         : { kpis: {}, partners: [], intercompany: [] };
       const k = h.kpis || {};
       const icRows = h.intercompany || [];
@@ -5517,7 +5603,7 @@
       ];
     } else if (stmtId === '24') {
       const d = (typeof window !== 'undefined' && window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function')
-        ? window.MFG_HOSPITALITY.compute({ company: 'industry:Hospitality & Resorts' })
+        ? window.MFG_HOSPITALITY.compute({ company: 'industry:Hospitality & Resorts', range: snapStmtRange, ignorePeriod: !snapStmtRange })
         : { kpis: {}, salesRows: [], memberRows: [] };
       const k = d.kpis || {};
       const allSales = (d.salesRows || []).filter(r => effCoKey === 'Hospitality Group' || r.company === effCoKey);
@@ -5542,7 +5628,7 @@
       ];
     } else if (stmtId === '25') {
       const d = (typeof window !== 'undefined' && window.MFG_TRADING && typeof window.MFG_TRADING.compute === 'function')
-        ? window.MFG_TRADING.compute({ company: 'industry:Automotive & Heavy Trading' })
+        ? window.MFG_TRADING.compute({ company: 'industry:Automotive & Heavy Trading', range: snapStmtRange, ignorePeriod: !snapStmtRange })
         : { kpis: {}, salesRows: [], vehicleRows: [] };
       const k = d.kpis || {};
       const allSales = (d.salesRows || []).filter(r => effCoKey === 'Trading Group' || r.company === effCoKey);
@@ -5567,12 +5653,12 @@
       ];
     } else if (stmtId === '26') {
       const d = (typeof window !== 'undefined' && window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function')
-        ? window.MFG_REALESTATE.compute({ company: 'industry:Real Estate & Property' })
+        ? window.MFG_REALESTATE.compute({ company: 'industry:Real Estate & Property', range: snapStmtRange, ignorePeriod: !snapStmtRange })
         : { kpis: {}, leases: [], rentInvoices: [] };
       const k = d.kpis || {};
       const lRows = (d.leases || []).filter(l => effCoKey === 'Real Estate Group' || l.company === effCoKey);
       const rRows = (d.rentInvoices || []).filter(r => effCoKey === 'Real Estate Group' || !r.company || r.company === effCoKey);
-      const rentTotal = lRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0) || Number(k.annualRentTtc || 0);
+      const rentTotal = lRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0);
       const vatTotal = lRows.reduce((s, l) => s + Number(l.vatUsd || 0), 0);
       facts = {
         activeLeases: lRows.length,
@@ -5593,7 +5679,7 @@
       ];
     } else if (stmtId === '27') {
       const d = (typeof window !== 'undefined' && window.MFG_INSURANCE && typeof window.MFG_INSURANCE.compute === 'function')
-        ? window.MFG_INSURANCE.compute()
+        ? window.MFG_INSURANCE.compute({ range: snapStmtRange, ignorePeriod: !snapStmtRange })
         : { kpis: {}, policies: [], carrierMatrix: [] };
       const k = d.kpis || {};
       const pRows = d.policies || [];
@@ -6068,7 +6154,7 @@
       root.querySelectorAll('input.rdl-date-input[data-rdl-param]').forEach(inp => {
         inp.addEventListener('change', () => {
           const k = inp.dataset.rdlParam;
-          if (!/^(202[0-9]|2030)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(String(inp.value || '').trim())) {
+          if (!/^20[2-9]\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(String(inp.value || '').trim())) {
             inp.value = liveCtx.rdl.params[k] || '';
             return;
           }

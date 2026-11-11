@@ -402,7 +402,7 @@
       "3-Leg Accounts Payable & Supplier Accrual Analytics": "تحليلات الذمم الدائنة ثلاثية الأرجل واستحقاقات الموردين",
       "3-Leg Accrued": "المستحق ثلاثي الأرجل",
       "3-Leg Credit vs. Settlements ($)": "الذمم الثلاثية مقابل التسديدات ($)",
-      "3-Leg Open AP": "الذمم الدائنة المفتوحة (3 شقوق)",
+      "3-Leg Open AP": "الذمم الدائنة المفتوحة (3 مسارات)",
       "3-Leg Open Payables Tie": "ربط الذمم الدائنة ثلاثية المسار",
       "3-Leg Remaining Payables": "صافي الذمم الدائنة المتبقية (3 شقوق)",
       "3-Way Audit": "مطابقة ثلاثية",
@@ -3237,7 +3237,7 @@
       "FIFO AR Aging by Bucket ($)": "أعمار الذمم المدينة حسب الشريحة الزمنية ($)",
       "FIFO Collection Rate": "نسبة التحصيل وفق الوارد أولاً (FIFO)",
       "FIFO Fully Matched": "مطابق بالكامل حسب الأقدمية",
-      "FIFO Open AR": "ذمم العملاء المفتوحة (FIFO)",
+      "FIFO Open AR": "الذمم المدينة المفتوحة (FIFO)",
       "FIFO Stock & Parts": "مخزون قطع الغيار (FIFO)",
       "FIFO Stock Valuation": "تقييم المخزون (FIFO)",
       "FIFO Wire Allocations": "تخصيص التحويلات حسب الأقدمية",
@@ -5604,8 +5604,8 @@
       "Open grounded Period Variance Commentary": "فتح تعليق تباين الفترة المستند إلى الدفتر",
       "Open in Full Copilot": "فتح في المساعد الكامل",
       "Open in General Ledger & SOA": "فتح في الأستاذ العام وكشف الحساب",
-      "Open interactive Date & Period Facilitator (From)": "فتح محدد التاريخ والفترة التفاعلي (من)",
-      "Open interactive Date & Period Facilitator (To)": "فتح محدد التاريخ والفترة التفاعلي (إلى)",
+      "Open interactive Date & Period Facilitator (From)": "فتح محدّد التاريخ والفترة التفاعلي (من)",
+      "Open interactive Date & Period Facilitator (To)": "فتح محدّد التاريخ والفترة التفاعلي (إلى)",
       "Open options": "فتح الخيارات",
       "Open registers": "فتح السجلات",
       "Open voucher and enter final supplier invoice price": "فتح السند وإدخال سعر فاتورة المورّد النهائي",
@@ -5730,7 +5730,7 @@
       "Outlet Stock Counts Verified": "جرد منافذ البيع المُدقق",
       "Outliers & Meter Guard": "حالات الشذوذ وحارس العدادات",
       "Output VAT": "ضريبة المخرجات (المبيعات)",
-      "Output VAT 11%": "ضريبة المخرجات 11%",
+      "Output VAT 11%": "ضريبة القيمة المضافة المحصلة 11%",
       "Output VAT 11% (4427)": "ضريبة المخرجات 11% (4427)",
       "Output VAT Invoiced": "ضريبة المخرجات المفوترة",
       "Output VAT Invoiced (11%)": "ضريبة المخرجات المفوترة (11%)",
@@ -5820,7 +5820,7 @@
       "P&L (6–7):": "الأرباح والخسائر (6–7):",
       "P&L Line Item": "بند الأرباح والخسائر",
       "P&L Reconciliation": "مطابقة الأرباح والخسائر",
-      "P&L Sales Ex-VAT": "مبيعات بيان الدخل دون الضريبة",
+      "P&L Sales Ex-VAT": "مبيعات الأرباح والخسائر دون الضريبة",
       "P&L Valuation Mode": "وضع تقييم الأرباح والخسائر",
       "P&L, Bills & Document Vault": "الأرباح والفواتير وخزنة المستندات",
       "PA": "حوادث شخصية",
@@ -10087,7 +10087,99 @@
       "is inside Region": "يقع داخل منطقة",
       "Quarry Rules": "قواعد الكسارة",
       "+ New Lease Schedule": "+ جدول إيجار جديد",
-      "Period Net / TTC": "صافي الفترة / شامل الضريبة"
+      "Period Net / TTC": "صافي الفترة / شامل الضريبة",
+      "(All Grades)": "(جميع الأصناف)",
+      "0.0% Cov": "تغطية 0.0%",
+      "100% Current": "100% غير مستحق",
+      "AGED CUSTOMER RECEIVABLES VS SEPARATED ADVANCES": "أعمار ذمم العملاء المدينة مقابل السلف المنفصلة",
+      "AR Collected": "تحصيل ذمم مدينة",
+      "All Dashboards + 27 Statements": "جميع اللوحات + 27 كشفاً",
+      "All Periods": "جميع الفترات",
+      "Carrier Commission & Credit Agreements": "اتفاقيات العمولات والائتمان",
+      "Carrier Settlement & Commission Protocols": "بروتوكولات تسوية الشركات والعمولات",
+      "Cash Held": "سيولة محتجزة",
+      "Commercial Lease Rate Schedules": "جداول بدلات الإيجار التجاري",
+      "Contractor Rate Agreements & CAM Schedules": "اتفاقيات بدلات الصيانة والخدمات المشتركة",
+      "Customer / Owner": "العميل / المالك",
+      "Deed Milestone": "دفعة سند ملكية",
+      "Expired (not renewed)": "منتهية (غير مجددة)",
+      "Factory PO & Trade Financing Terms": "شروط تمويل وتوريد الوكالات",
+      "Full Executive (All Dashboards & All Statements)": "تنفيذي كامل (جميع اللوحات وجميع الكشوفات)",
+      "Intercompany Facility & Rate Windows": "نوافذ تسهيلات وفائدة المجموعة",
+      "Intercompany Loan & Facility Terms": "شروط قروض وتسهيلات المجموعة",
+      "ISABI Systems | Enterprise Command Center & Double-Entry Ledger across 6 Industries (Manufacturing, Holding, Hospitality, Trading, Real Estate & Insurance).": "أنظمة إيسابي | مركز القيادة المؤسسي ودفتر الأستاذ المزدوج عبر 6 قطاعات (الصناعة، القابضة، الضيافة، التجارة، العقارات والتأمين).",
+      "JV entitlement = partner share × the JV site's raw material cost (Stock Entitlement basis). Revenue-side entitlement is not derivable from tickets because the ticket Site is the delivery site; confirm with the accountant before reading this as a debt.": "حصة الشريك في المشروع المشترك = نسبة الشريك × تكلفة المواد الأولية لموقع المشروع المشترك (على أساس استحقاق المخزون). لا يمكن احتساب الاستحقاق على أساس الإيرادات من القسائم لأن الموقع المسجل في القسيمة هو موقع التسليم؛ يرجى التأكد مع المحاسب قبل اعتباره ديناً.",
+      "Multi-Industry Enterprise ERP, Fleet, Lebanese CoA Ledger & Executive Analytics Command Center": "نظام تخطيط موارد المؤسسات متعدد القطاعات، والأسطول، والمحاسبة اللبنانية ولوحات التحليل التنفيذية",
+      "No Contracts": "لا توجد عقود",
+      "No Credit Billed": "لا توجد مبيعات آجلة",
+      "No Deed Sales": "لا توجد مبيعات عقارية",
+      "No IC Entries": "لا توجد قيود بينية",
+      "No consolidated revenue recorded in period": "لا توجد إيرادات موحدة مسجلة في الفترة",
+      "No resort revenue recorded in period": "لا توجد إيرادات منتجعات مسجلة في الفترة",
+      "No sales recorded in period": "لا توجد مبيعات مسجلة في الفترة",
+      "OEM Export": "تصدير المصنّع الأصلي",
+      "Occupied": "مشغولة",
+      "Ops Dashboards + 27 Statements": "لوحات العمليات + 27 كشفاً",
+      "PROPERTY DEED BUYER INSTALMENTS & TITLE TRANSFER GUARD": "أقساط مشتري العقارات وضابط نقل الملكية",
+      "Payments whose staff and payroll month no employment contract covers · add/extend contract on Workforce & Payroll": "دفعات رواتب لموظفين وأشهر لا يغطيها عقد عمل ساري المفعول · أضف أو مدّد العقد في قسم الموظفين والرواتب",
+      "Port": "المرفأ",
+      "Portfolio Property": "عقار المحفظة",
+      "Resort Supply Contracts & Seasonal Terms": "عقود التوريد والخدمات الموسمية",
+      "Salary payments without an employment contract": "دفعات رواتب بدون عقد عمل",
+      "Seasonal Package": "باقة موسمية",
+      "Seasonal Resort Tariffs & Contracts": "تعرفات وعقود المنتجعات الموسمية",
+      "Sequence Check": "فحص تسلسل الدفاتر",
+      "Showroom Price & Credit Windows": "نوافذ أسعار وائتمان المعرض",
+      "Supplier 3-Leg Terms & Rates": "شروط وأسعار الموردين",
+      "Switch Industry & Operating Company (6 Industries · Multi-Entity Ready)": "تبديل القطاع والشركة العاملة (6 قطاعات · متعدد الكيانات)",
+      "UNALLOCATED FREIGHT, CUSTOMS & CLEARANCE IMPORT FILES": "ملفات استيراد بتكاليف شحن وجمارك وتخليص غير موزعة",
+      "VACANT / FIT-OUT BUILDING UNITS & /2400 MULK DEED AUDIT": "الوحدات الشاغرة أو قيد التجهيز وتدقيق حصص الملكية /2400",
+      "Zero Open AR": "صفر ذمم مفتوحة",
+      "1 day apart": "فارق يوم واحد",
+      "1 · Cross-Statement Reconciliation Bridge (Ties Executive Analytics · Lebanese CoA GL · 27 A4 PDF Statements)": "1 · جسر المطابقة بين الكشوفات (يربط اللوحات التنفيذية · دفتر الأستاذ اللبناني · 27 كشف A4 قابل للطباعة)",
+      "27 Printable A4 Statements": "27 كشف A4 قابلاً للطباعة",
+      "27 Printable A4 Statements · Real-time reconciliation against executive KPIs": "27 كشف A4 قابلاً للطباعة · مطابقة فورية مع المؤشرات التنفيذية",
+      "Real-time reconciliation against executive KPIs": "مطابقة فورية مع المؤشرات التنفيذية",
+      "3-Leg Open AP · Stmt #10/#12": "الذمم الدائنة المفتوحة (3 مسارات) · كشف #10/#12",
+      "AWAITING MIRROR ENTRY": "بانتظار القيد المقابل",
+      "AWAITING MIRROR ENTRY ON COUNTERPARTY LEDGER": "بانتظار القيد المقابل في دفتر الطرف الآخر",
+      "Cash Till · Stmt #05": "صندوق النقد · كشف #05",
+      "Client discounts": "حسومات العملاء",
+      "Contracted Annual Rent": "الإيجار السنوي التعاقدي",
+      "FIFO Open AR · Stmt #09/#11": "الذمم المدينة المفتوحة (FIFO) · كشف #09/#11",
+      "From Day · click for Calendar or Up/Down to step ±1 day": "يوم البداية · اضغط للتقويم أو أعلى/أسفل لتقديم/تأخير يوم",
+      "From Month · click for Month Picker or Up/Down to step ±1 month": "شهر البداية · اضغط لاختيار الشهر أو أعلى/أسفل لتقديم/تأخير شهر",
+      "From Year · click for Year Picker or Up/Down to step ±1 year": "سنة البداية · اضغط لاختيار السنة أو أعلى/أسفل لتقديم/تأخير سنة",
+      "JV sites": "مواقع الشراكة",
+      "JV sites · Sales TTC vs Raw Material Cost": "مواقع الشراكة · المبيعات شاملة الضريبة مقابل تكلفة المواد الأولية",
+      "No JV sites in selected scope": "لا توجد مواقع شراكة في النطاق المحدد",
+      "No Policies": "لا توجد بوالص",
+      "No Policies fiduciary cash coverage": "لا توجد بوالص لتغطية السيولة الائتمانية",
+      "OPEN BOOKKEEPING QUEUE": "طابور القيود البينية المفتوحة",
+      "OPEN BOOKKEEPING QUEUE · AWAITING MIRROR ENTRY ON COUNTERPARTY LEDGER": "طابور القيود البينية المفتوحة · بانتظار القيد المقابل في دفتر الطرف الآخر",
+      "Output VAT 11% · Stmt #18": "ضريبة القيمة المضافة المحصلة 11% · كشف #18",
+      "P&L Sales Ex-VAT · Stmt #03": "مبيعات الأرباح والخسائر دون الضريبة · كشف #03",
+      "Pre-notification verified": "تم التحقق من الإشعار المسبق",
+      "Reset to All-Time (2024-2030)": "إعادة الضبط لكامل الفترة (2024-2030)",
+      "Stmt #02": "كشف #02",
+      "Stmt #03": "كشف #03",
+      "Stmt #05": "كشف #05",
+      "Stmt #09/#11": "كشف #09/#11",
+      "Stmt #10/#12": "كشف #10/#12",
+      "Stmt #18": "كشف #18",
+      "Ties to Class 4011": "يرتبط بالحساب 4011",
+      "Ties to Class 4111": "يرتبط بالحساب 4111",
+      "Ties to Class 4427": "يرتبط بالحساب 4427",
+      "Ties to Class 701 + 706": "يرتبط بالحسابين 701 + 706",
+      "To Day · click for Calendar or Up/Down to step ±1 day": "يوم النهاية · اضغط للتقويم أو أعلى/أسفل لتقديم/تأخير يوم",
+      "To Month · click for Month Picker or Up/Down to step ±1 month": "شهر النهاية · اضغط لاختيار الشهر أو أعلى/أسفل لتقديم/تأخير شهر",
+      "To Year · click for Year Picker or Up/Down to step ±1 year": "سنة النهاية · اضغط لاختيار السنة أو أعلى/أسفل لتقديم/تأخير سنة",
+      "Trial Balance · Stmt #02": "ميزان المراجعة · كشف #02",
+      "Unnotified emergency change · Sentinel S10 will log exception": "تغيير طارئ دون إشعار مسبق · ستسجّل الرقابة الذكية S10 استثناءً",
+      "day before": "قبل يوم واحد",
+      "same day": "في نفس اليوم",
+      "ACCOUNTS RECEIVABLE · FIFO ALLOCATION & CREDIT TERMS": "الذمم المدينة · التخصيص حسب الأقدمية وشروط الائتمان",
+      "FIFO ALLOCATION & CREDIT TERMS": "التخصيص حسب الأقدمية وشروط الائتمان"
     },
     fr: {
       "Loan or Settlement": "Prêt ou Règlement",
@@ -10505,7 +10597,7 @@
       "3-Leg Accounts Payable & Supplier Accrual Analytics": "Analytique des dettes fournisseurs à 3 volets et charges à payer",
       "3-Leg Accrued": "Cumulé 3 volets",
       "3-Leg Credit vs. Settlements ($)": "Crédit 3 Volets vs Règlements ($)",
-      "3-Leg Open AP": "Dettes Fournisseurs (3 volets)",
+      "3-Leg Open AP": "Dettes fournisseurs ouvertes (3 volets)",
       "3-Leg Open Payables Tie": "Equilibre fournisseurs a 3 volets",
       "3-Leg Remaining Payables": "Dettes Fournisseurs Restantes (3 Volets)",
       "3-Way Audit": "Controle tripartite",
@@ -11764,7 +11856,7 @@
       "Cash Sales + AR Collected": "Ventes comptant + Créances encaissées",
       "Cash Spend": "Achats Comptant",
       "Cash Stream": "Flux de Caisse",
-      "Cash Till": "Caisse Espèces",
+      "Cash Till": "Caisse espèces",
       "Cash Till Entries Explorer": "Explorateur des Mouvements de Caisse",
       "Cash Till Explorer View Mode": "Mode Explorateur de Caisse",
       "Cash Till View Mode": "Mode d'Affichage Caisse",
@@ -12411,7 +12503,7 @@
       "Customer Advances Split": "Ventilation des avances clients",
       "Customer Balances, 5-Bucket Aging & Ledger": "Soldes Clients, Balance Âgée (5 Tranches) & Grand Livre",
       "Customer Credit Exposure": "Exposition Crédit Clients",
-      "Customer Credit Terms": "Conditions de Crédit Clients",
+      "Customer Credit Terms": "Conditions de crédit clients",
       "Customer Credit Terms, Limits & 11% VAT Tax Invoices": "Conditions de Crédit, Plafonds & Factures TVA 11 %",
       "Customer Delivery & Pickup": "Livraison client et enlèvement centrale",
       "Customer Delivery Sites": "Chantiers Clients",
@@ -13339,7 +13431,7 @@
       "FIFO AR Aging by Bucket ($)": "Balance Âgée Clients FIFO par Tranche ($)",
       "FIFO Collection Rate": "Taux d'Encaissement FIFO",
       "FIFO Fully Matched": "Solde FIFO integral",
-      "FIFO Open AR": "Créances Clients FIFO",
+      "FIFO Open AR": "Créances clients ouvertes (FIFO)",
       "FIFO Stock & Parts": "Valorisation Stock FIFO",
       "FIFO Stock Valuation": "Valorisation du Stock FIFO",
       "FIFO Wire Allocations": "Affectations virements FIFO",
@@ -15704,8 +15796,8 @@
       "Open grounded Period Variance Commentary": "Ouvrir l'analyse d'écart de la période",
       "Open in Full Copilot": "Ouvrir dans Copilot complet",
       "Open in General Ledger & SOA": "Ouvrir dans Grand Livre & Relevés",
-      "Open interactive Date & Period Facilitator (From)": "Ouvrir le sélecteur interactif de période (Début)",
-      "Open interactive Date & Period Facilitator (To)": "Ouvrir le sélecteur interactif de période (Fin)",
+      "Open interactive Date & Period Facilitator (From)": "Ouvrir le sélecteur interactif de date et période (Début)",
+      "Open interactive Date & Period Facilitator (To)": "Ouvrir le sélecteur interactif de date et période (Fin)",
       "Open options": "Ouvrir les options",
       "Open registers": "Ouvrir les registres",
       "Open voucher and enter final supplier invoice price": "Ouvrir la pièce et saisir le prix facture définitif",
@@ -15830,7 +15922,7 @@
       "Outlet Stock Counts Verified": "Inventaires points de vente verifies",
       "Outliers & Meter Guard": "Anomalies & Garde Compteurs",
       "Output VAT": "TVA Collectée",
-      "Output VAT 11%": "TVA Collectée 11 %",
+      "Output VAT 11%": "TVA collectée 11 %",
       "Output VAT 11% (4427)": "TVA Collectée 11 % (4427)",
       "Output VAT Invoiced": "TVA collectée facturée",
       "Output VAT Invoiced (11%)": "TVA collectée facturée (11 %)",
@@ -15920,7 +16012,7 @@
       "P&L (6–7):": "Résultat (6–7) :",
       "P&L Line Item": "Poste P&L",
       "P&L Reconciliation": "Rapprochement Résultat (P&L)",
-      "P&L Sales Ex-VAT": "Ventes P&L HT",
+      "P&L Sales Ex-VAT": "Ventes compte de résultat HT",
       "P&L Valuation Mode": "Mode Valorisation P&L",
       "P&L, Bills & Document Vault": "Résultat, Factures & Coffre",
       "PA": "IA",
@@ -20156,7 +20248,99 @@
       "is inside Region": "est dans la région",
       "Quarry Rules": "Règles carrière",
       "+ New Lease Schedule": "+ Nouveau barème de bail",
-      "Period Net / TTC": "Net période / TTC"
+      "Period Net / TTC": "Net période / TTC",
+      "(All Grades)": "(Toutes qualités)",
+      "0.0% Cov": "Couv. 0.0%",
+      "100% Current": "100% courant",
+      "AGED CUSTOMER RECEIVABLES VS SEPARATED ADVANCES": "CRÉANCES CLIENTS ÂGÉES VS AVANCES SÉPARÉES",
+      "AR Collected": "Créances encaissées",
+      "All Dashboards + 27 Statements": "Tous les tableaux + 27 états",
+      "All Periods": "Toutes les périodes",
+      "Carrier Commission & Credit Agreements": "Accords de commission et crédit",
+      "Carrier Settlement & Commission Protocols": "Protocoles de règlement compagnies",
+      "Cash Held": "Trésorerie détenue",
+      "Commercial Lease Rate Schedules": "Barèmes de loyers commerciaux",
+      "Contractor Rate Agreements & CAM Schedules": "Accords de prestations et barèmes CAM",
+      "Customer / Owner": "Client / Propriétaire",
+      "Deed Milestone": "Échéance d'acte",
+      "Expired (not renewed)": "Expirée (non renouvelée)",
+      "Factory PO & Trade Financing Terms": "Conditions de financement commercial",
+      "Full Executive (All Dashboards & All Statements)": "Exécutif complet (tous les tableaux et tous les états)",
+      "Intercompany Facility & Rate Windows": "Facilités et taux inter-sociétés",
+      "Intercompany Loan & Facility Terms": "Conditions de prêts inter-sociétés",
+      "ISABI Systems | Enterprise Command Center & Double-Entry Ledger across 6 Industries (Manufacturing, Holding, Hospitality, Trading, Real Estate & Insurance).": "ISABI Systems | Centre de commande d'entreprise et grand livre en partie double sur 6 secteurs (Industrie, Holding, Hôtellerie, Négoce, Immobilier et Assurance).",
+      "JV entitlement = partner share × the JV site's raw material cost (Stock Entitlement basis). Revenue-side entitlement is not derivable from tickets because the ticket Site is the delivery site; confirm with the accountant before reading this as a debt.": "Quote-part JV = part du partenaire × coût matières premières du site JV (base droit sur stock). La quote-part côté revenus ne peut pas être déduite des bons car le site du bon est le lieu de livraison ; confirmer avec le comptable avant de la lire comme une dette.",
+      "Multi-Industry Enterprise ERP, Fleet, Lebanese CoA Ledger & Executive Analytics Command Center": "ERP d'entreprise multi-secteurs, flotte, comptabilité libanaise et centre d'analyse exécutive",
+      "No Contracts": "Aucun contrat",
+      "No Credit Billed": "Aucune vente à crédit",
+      "No Deed Sales": "Aucune vente immobilière",
+      "No IC Entries": "Aucune écriture inter-sociétés",
+      "No consolidated revenue recorded in period": "Aucun revenu consolidé enregistré sur la période",
+      "No resort revenue recorded in period": "Aucun revenu resort enregistré sur la période",
+      "No sales recorded in period": "Aucune vente enregistrée sur la période",
+      "OEM Export": "Export OEM",
+      "Occupied": "Occupé",
+      "Ops Dashboards + 27 Statements": "Tableaux opérationnels + 27 états",
+      "PROPERTY DEED BUYER INSTALMENTS & TITLE TRANSFER GUARD": "ÉCHÉANCES ACQUÉREURS ET CONTRÔLE DE TRANSFERT DE TITRE",
+      "Payments whose staff and payroll month no employment contract covers · add/extend contract on Workforce & Payroll": "Paiements de salaires dont le collaborateur et le mois ne sont couverts par aucun contrat · ajouter ou prolonger le contrat dans Effectifs et Paie",
+      "Port": "Port",
+      "Portfolio Property": "Bien du portefeuille",
+      "Resort Supply Contracts & Seasonal Terms": "Contrats d'approvisionnement resort",
+      "Salary payments without an employment contract": "Paiements de salaires sans contrat de travail",
+      "Seasonal Package": "Forfait saisonnier",
+      "Seasonal Resort Tariffs & Contracts": "Tarifs et contrats saisonniers",
+      "Sequence Check": "Contrôle de séquence",
+      "Showroom Price & Credit Windows": "Fenêtres tarifaires et crédit showroom",
+      "Supplier 3-Leg Terms & Rates": "Conditions fournisseurs et tarifs",
+      "Switch Industry & Operating Company (6 Industries · Multi-Entity Ready)": "Changer de secteur et de société (6 secteurs · multi-entités)",
+      "UNALLOCATED FREIGHT, CUSTOMS & CLEARANCE IMPORT FILES": "DOSSIERS D'IMPORTATION AVEC FRET, DOUANE ET TRANSIT NON IMPUTÉS",
+      "VACANT / FIT-OUT BUILDING UNITS & /2400 MULK DEED AUDIT": "UNITÉS VACANTES OU EN AMÉNAGEMENT ET AUDIT DES QUOTES-PARTS /2400",
+      "Zero Open AR": "Zéro créance ouverte",
+      "1 day apart": "1 jour d'écart",
+      "1 · Cross-Statement Reconciliation Bridge (Ties Executive Analytics · Lebanese CoA GL · 27 A4 PDF Statements)": "1 · Pont de rapprochement inter-états (Relie tableaux exécutifs · Grand Livre libanais · 27 états A4 PDF)",
+      "27 Printable A4 Statements": "27 états A4 imprimables",
+      "27 Printable A4 Statements · Real-time reconciliation against executive KPIs": "27 états A4 imprimables · Rapprochement en temps réel avec les indicateurs exécutifs",
+      "Real-time reconciliation against executive KPIs": "Rapprochement en temps réel avec les indicateurs exécutifs",
+      "3-Leg Open AP · Stmt #10/#12": "Dettes fournisseurs ouvertes (3 volets) · État #10/#12",
+      "AWAITING MIRROR ENTRY": "EN ATTENTE D'ÉCRITURE MIROIR",
+      "AWAITING MIRROR ENTRY ON COUNTERPARTY LEDGER": "EN ATTENTE D'ÉCRITURE MIROIR CHEZ LA CONTREPARTIE",
+      "Cash Till · Stmt #05": "Caisse espèces · État #05",
+      "Client discounts": "Remises clients",
+      "Contracted Annual Rent": "Loyer annuel contractuel",
+      "FIFO Open AR · Stmt #09/#11": "Créances clients ouvertes (FIFO) · État #09/#11",
+      "From Day · click for Calendar or Up/Down to step ±1 day": "Jour de début · cliquer pour le calendrier ou Haut/Bas pour ±1 jour",
+      "From Month · click for Month Picker or Up/Down to step ±1 month": "Mois de début · cliquer pour le sélecteur ou Haut/Bas pour ±1 mois",
+      "From Year · click for Year Picker or Up/Down to step ±1 year": "Année de début · cliquer pour le sélecteur ou Haut/Bas pour ±1 an",
+      "JV sites": "Sites JV",
+      "JV sites · Sales TTC vs Raw Material Cost": "Sites JV · Ventes TTC vs coût matières premières",
+      "No JV sites in selected scope": "Aucun site JV dans le périmètre sélectionné",
+      "No Policies": "Aucune police",
+      "No Policies fiduciary cash coverage": "Aucune police en couverture fiduciaire",
+      "OPEN BOOKKEEPING QUEUE": "FILE D'ATTENTE COMPTABLE OUVERTE",
+      "OPEN BOOKKEEPING QUEUE · AWAITING MIRROR ENTRY ON COUNTERPARTY LEDGER": "FILE D'ATTENTE COMPTABLE OUVERTE · EN ATTENTE D'ÉCRITURE MIROIR CHEZ LA CONTREPARTIE",
+      "Output VAT 11% · Stmt #18": "TVA collectée 11 % · État #18",
+      "P&L Sales Ex-VAT · Stmt #03": "Ventes compte de résultat HT · État #03",
+      "Pre-notification verified": "Préavis vérifié",
+      "Reset to All-Time (2024-2030)": "Réinitialiser sur toute la période (2024-2030)",
+      "Stmt #02": "État #02",
+      "Stmt #03": "État #03",
+      "Stmt #05": "État #05",
+      "Stmt #09/#11": "État #09/#11",
+      "Stmt #10/#12": "État #10/#12",
+      "Stmt #18": "État #18",
+      "Ties to Class 4011": "Relié au compte 4011",
+      "Ties to Class 4111": "Relié au compte 4111",
+      "Ties to Class 4427": "Relié au compte 4427",
+      "Ties to Class 701 + 706": "Relié aux comptes 701 + 706",
+      "To Day · click for Calendar or Up/Down to step ±1 day": "Jour de fin · cliquer pour le calendrier ou Haut/Bas pour ±1 jour",
+      "To Month · click for Month Picker or Up/Down to step ±1 month": "Mois de fin · cliquer pour le sélecteur ou Haut/Bas pour ±1 mois",
+      "To Year · click for Year Picker or Up/Down to step ±1 year": "Année de fin · cliquer pour le sélecteur ou Haut/Bas pour ±1 an",
+      "Trial Balance · Stmt #02": "Balance générale · État #02",
+      "Unnotified emergency change · Sentinel S10 will log exception": "Changement d'urgence sans préavis · la Sentinelle S10 enregistrera une exception",
+      "day before": "la veille",
+      "same day": "le jour même",
+      "ACCOUNTS RECEIVABLE · FIFO ALLOCATION & CREDIT TERMS": "CRÉANCES CLIENTS · IMPUTATION FIFO ET CONDITIONS DE CRÉDIT",
+      "FIFO ALLOCATION & CREDIT TERMS": "IMPUTATION FIFO ET CONDITIONS DE CRÉDIT"
     }
   };
 
@@ -21095,8 +21279,16 @@
     m = trimmed.match(/^Preview\s*\/\s*Print Ticket\s*(#\S+)$/i);
     if (m) return lang === 'ar' ? `معاينة / طباعة الإيصال ${m[1]}` : `Aperçu / Imprimer le bon ${m[1]}`;
 
-    m = trimmed.match(/^Ticketed:\s*([\d.,]+)\s*Ton\s*→\s*([\d.,]+)\s*m³$/i);
-    if (m) return lang === 'ar' ? `الوزن المسجّل: ${m[1]} طن ← ${m[2]} م³` : `Pesé : ${m[1]} t → ${m[2]} m³`;
+    m = trimmed.match(/^Ticketed:\s*([\d.,]+)\s*([A-Za-z³]+)\s*(?:→\s*([\d.,]+)\s*m³|\(([\d.,]+)\s*m³\))$/i);
+    if (m) {
+      const m3Val = m[3] || m[4];
+      const unitAr = /^ton$/i.test(m[2]) ? 'طن' : m[2];
+      const unitFr = /^ton$/i.test(m[2]) ? 't' : m[2];
+      return lang === 'ar' ? `الوزن المسجّل: ${m[1]} ${unitAr} (${m3Val} م³)` : `Pesé : ${m[1]} ${unitFr} (${m3Val} m³)`;
+    }
+
+    m = trimmed.match(/^Range:\s*(\S+)\s+(?:to|→)\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `النطاق: ${m[1]} إلى ${m[2]}` : `Plage : ${m[1]} au ${m[2]}`;
 
     m = trimmed.match(/^Non-material unit\s*\((.+)\)$/i);
     if (m) return lang === 'ar' ? `وحدة غير حجمية (${m[1]})` : `Unité hors matériau (${m[1]})`;
@@ -21248,7 +21440,7 @@
         : `Vente $${m[1]}/m³ vs brut $${m[2]}/m³ (écart ${m[3]}×)`;
     }
 
-    m = trimmed.match(/^(Cash|Credit|Cr|AR|Mat|Haul|Trans|Adv|Rep|Outlay|OT Bonus|Net Cash Flow|Total equip cost|Total Haulage Rev|Total Haulage|Total Material|Net Open AP|3rd-Party OT|Cost \/ m³|60\+\s*d(?:ays)?|Gross|Raw|Direct|OpEx & Pay|Billed|Overdue|Current|Open AP|AP Open|Open AR|AR Open|Gross AR|AR Collected|Paid|Paid Back|Repaid|Net Owed|Due|Comm|Base Comm|11% VAT|Ex-VAT|VAT|Rev|Net|List|Valuation|Rec|Op\.?\s*Profit|Gross Margin|Net AR|Security Deposits|Partner Pool|Policy Fees|Net Commission|Fiduciary Cash Held|Gross Comm|Fees|Disc|Landed COGS|Landed|Freight & Customs|Chassis|Spare Parts WAC|Promises|Unallocated Advances|Customer Advances|Portfolio Gross|Rent AR|Unbilled Buyer Tranches|Security Deposits Held|Invoiced|Fit-Out & Repairs|Venue|Memberships|Memberships Paid|Solar Offset|Net Margin|Kitchen BOM|Maint|Food & Pour Cost|Generator Solar Offset|IC Eliminated|Open Queue|Group AP|Sister Net Owed|Mfg|Sibling Sectors|Advances|Expected Comm|Stmt|Buyer Open|Annual Rent|Earned|Running|Driver|Collected|Balance|Variance|Settled|GWP|Net Comm|NOI|Exp|Shortfall|Usage|Revenue|Stock|FOB|Own):?\s+([+-]?\$[\d.,]+[kKMB]?|[\d.,]+%|\d+)$/i);
+    m = trimmed.match(/^(Cash|Credit|Cr|AR|Mat|Haul|Trans|Adv|Rep|Rem|Outlay|OT Bonus|Net Cash Flow|Total equip cost|Total Haulage Rev|Total Haulage|Total Material|Net Open AP|3rd-Party OT|Cost \/ m³|60\+\s*d(?:ays)?|Gross|Raw|Direct|OpEx & Pay|Billed|Overdue|Current|Open AP|AP Open|Open AR|AR Open|Gross AR|AR Collected|Paid|Paid Back|Repaid|Net Owed|Due|Comm|Base Comm|11% VAT|Ex-VAT|VAT|Rev|Net|List|Valuation|Rec|Op\.?\s*Profit|Gross Margin|Net AR|Security Deposits|Partner Pool|Policy Fees|Net Commission|Fiduciary Cash Held|Gross Comm|Fees|Disc|Landed COGS|Landed|Freight & Customs|Chassis|Spare Parts WAC|Promises|Unallocated Advances|Customer Advances|Portfolio Gross|Rent AR|Unbilled Buyer Tranches|Security Deposits Held|Invoiced|Fit-Out & Repairs|Venue|Memberships|Memberships Paid|Solar Offset|Net Margin|Kitchen BOM|Maint|Food & Pour Cost|Generator Solar Offset|IC Eliminated|Open Queue|Group AP|Sister Net Owed|Mfg|Sibling Sectors|Advances|Expected Comm|Stmt|Buyer Open|Annual Rent|Earned|Running|Driver|Collected|Balance|Variance|Settled|GWP|Net Comm|NOI|Exp|Shortfall|Usage|Revenue|Stock|FOB|Own):?\s+([+-]?\$[\d.,]+[kKMB]?|[\d.,]+%|\d+)$/i);
     if (m) {
       const kRaw = m[1].trim();
       const val = m[2];
@@ -21353,6 +21545,7 @@
         'trans': ['نقل', 'Transp.'],
         'adv': ['سلف', 'Avances'],
         'rep': ['التقرير', 'Rapp.'],
+        'rem': ['المتبقي', 'Reste'],
         'outlay': ['الإنفاق', 'Décaissements'],
         'ot bonus': ['مكافأة إضافي', 'Prime HS'],
         'net cash flow': ['صافي التدفق النقدي', 'Flux de Trésorerie Net'],
@@ -21641,8 +21834,12 @@
     m = trimmed.match(/^Covers\s+(\$[\d.,kM]+)\s+carrier payable\s*·\s*(\d+)\s+renewals\s*<90d$/i);
     if (m) return lang === 'ar' ? `يغطي ${m[1]} مستحقات شركات التأمين · ${m[2]} تجديدات <90 يوماً` : `Couvre ${m[1]} dus aux compagnies · ${m[2]} renouvellements <90j`;
 
-    m = trimmed.match(/^GWP\s+(\$[\d.,kM]+)\s*·\s*(\d+)\s+policies breaching commission floor\s*·\s*([\d.,]+%)\s+fiduciary cash coverage$/i);
-    if (m) return lang === 'ar' ? `الأقساط المكتتبة ${m[1]} · ${m[2]} بوالص دون حد العمولة الأدنى · ${m[3]} تغطية السيولة الائتمانية` : `GWP ${m[1]} · ${m[2]} polices sous le plancher de commission · ${m[3]} couverture fiduciaire`;
+    m = trimmed.match(/^GWP\s+(\$[\d.,kM]+)\s*·\s*(\d+)\s+policies breaching commission floor\s*·\s*(?:([\d.,]+%)|No Policies)\s+fiduciary cash coverage$/i);
+    if (m) {
+      const covAr = m[3] ? `${m[3]} تغطية السيولة الائتمانية` : 'لا توجد بوالص لتغطية السيولة الائتمانية';
+      const covFr = m[3] ? `${m[3]} couverture fiduciaire` : 'aucune police en couverture fiduciaire';
+      return lang === 'ar' ? `الأقساط المكتتبة ${m[1]} · ${m[2]} بوالص دون حد العمولة الأدنى · ${covAr}` : `GWP ${m[1]} · ${m[2]} polices sous le plancher de commission · ${covFr}`;
+    }
 
     m = trimmed.match(/^(\d+)\s+(?:active\s+)?policies\s*\+\s*(\d+)\s+endorsements(?:\s+across\s+(\d+)\s+carriers)?$/i);
     if (m) {
@@ -22346,11 +22543,20 @@
       return `${lhs} - ${rhs} /`;
     }
 
-    m = trimmed.match(/^Window\s+undefined\s+to\s+undefined$/i);
-    if (m) return lang === 'ar' ? 'كامل الفترة' : 'Toutes Périodes';
+    m = trimmed.match(/^All\s+Periods\s*\((\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})\)$/i);
+    if (m) return lang === 'ar' ? `جميع الفترات (${m[1]} إلى ${m[2]})` : `Toutes les périodes (${m[1]} au ${m[2]})`;
 
     m = trimmed.match(/^(?:Period|Window)\s+(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})$/i);
     if (m) return lang === 'ar' ? `الفترة من ${m[1]} إلى ${m[2]}` : `Période du ${m[1]} au ${m[2]}`;
+
+    m = trimmed.match(/^(?:Period|Window)\s+(\d{4}-\d{2}-\d{2})$/i);
+    if (m) return lang === 'ar' ? `الفترة ${m[1]}` : `Période ${m[1]}`;
+
+    m = trimmed.match(/^(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})$/i);
+    if (m) return lang === 'ar' ? `${m[1]} إلى ${m[2]}` : `${m[1]} au ${m[2]}`;
+
+    m = trimmed.match(/^([\d.,]+%)\s+Cov$/i);
+    if (m) return lang === 'ar' ? `تغطية ${m[1]}` : `Couv. ${m[1]}`;
 
     m = trimmed.match(/^([\d.,]+)\s*m³\s+dispatched$/i);
     if (m) return lang === 'ar' ? `${m[1]} م³ مرسلة` : `${m[1]} m³ expédiés`;

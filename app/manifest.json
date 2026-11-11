@@ -1,7 +1,7 @@
 {
   "name": "ISABI Systems | Command Center",
   "short_name": "Command Center",
-  "description": "Multi-Industry Enterprise ERP, Fleet, Lebanese CoA Ledger & 20-Page Executive Analytics Command Center",
+  "description": "Multi-Industry Enterprise ERP, Fleet, Lebanese CoA Ledger & Executive Analytics Command Center",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -10,25 +10,25 @@
   "theme_color": "#F4F2EE",
   "icons": [
     {
-      "src": "./icon-192.png?v=19.6.251",
+      "src": "./icon-192.png?v=19.6.252",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./icon-512.png?v=19.6.251",
+      "src": "./icon-512.png?v=19.6.252",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./icon-512-maskable.png?v=19.6.251",
+      "src": "./icon-512-maskable.png?v=19.6.252",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "./icon.svg?v=19.6.251",
+      "src": "./icon.svg?v=19.6.252",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"

@@ -2117,14 +2117,14 @@
       if (STATE.dateFrom || STATE.dateTo) {
         const f = STATE.dateFrom || MIN_DATE;
         const t = STATE.dateTo || MAX_DATE;
-        return { from: f, to: t, label: `${f} → ${t}`, isCustom: true, daxKey: daxKeyForWindow(f, t) };
+        return { from: f, to: t, label: `${f} to ${t}`, isCustom: true, daxKey: daxKeyForWindow(f, t) };
       }
       return null;
     }
     if (pVal === 'custom') {
       const f = STATE.dateFrom || MIN_DATE;
       const t = STATE.dateTo || MAX_DATE;
-      return { from: f, to: t, label: `${f} → ${t}`, isCustom: true, daxKey: daxKeyForWindow(f, t) };
+      return { from: f, to: t, label: `${f} to ${t}`, isCustom: true, daxKey: daxKeyForWindow(f, t) };
     }
     const cat = getDateGrainCatalog(overrideDateISO);
     const presetHit = (cat.all || []).find(o => o.value === pVal);
@@ -2309,8 +2309,8 @@
     const m3 = sgn * ticketMeters(r);
     if (m3 !== 0) {
       const m3Fmt = Math.abs(m3 - Math.round(m3)) < 0.005 ? fmtNum(m3, 0) : fmtNum(m3, 1);
-      if (compact) return `<span title="Ticketed: ${esc(rawFmt + ' ' + uom)} → ${esc(m3Fmt + ' m³')}">${m3Fmt} m³</span>`;
-      return `<span title="Ticketed: ${esc(rawFmt + ' ' + uom)} → ${esc(m3Fmt + ' m³')}">${m3Fmt} m³ <small class="muted">(${rawFmt} ${esc(uom)})</small></span>`;
+      if (compact) return `<span title="Ticketed: ${esc(rawFmt + ' ' + uom)} (${esc(m3Fmt + ' m³')})">${m3Fmt} m³</span>`;
+      return `<span title="Ticketed: ${esc(rawFmt + ' ' + uom)} (${esc(m3Fmt + ' m³')})">${m3Fmt} m³ <small class="muted">(${rawFmt} ${esc(uom)})</small></span>`;
     }
     return `<span class="muted" title="Non-material unit (excluded from m³ total)">${rawFmt} ${esc(uom)}</span>`;
   }
@@ -5427,6 +5427,7 @@
         STATE.period = 'custom';
       }
     }
+    if (STATE.rdl) STATE.rdl._dateTouched = false;
     STATE.shown = {};
     STATE.pbiTablePage = {};
     saveFilterState();
@@ -5446,7 +5447,7 @@
       if (STATE.period === 'custom') {
         const f = STATE.dateFrom || MIN_DATE;
         const t = STATE.dateTo || MAX_DATE;
-        html += `<option value="custom">Range: ${esc(f)} → ${esc(t)}</option>`;
+        html += `<option value="custom">Range: ${esc(f)} to ${esc(t)}</option>`;
       }
       html += activeOpts.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
       const sig = STATE.dateGrain + '|' + todayISO() + '|' + (STATE.period === 'custom' ? (STATE.dateFrom + '..' + STATE.dateTo) : '');
@@ -15231,9 +15232,15 @@
     if ((!expectedCrKey || expectedCrKey === 'employments') && STATE.editingPendingSalaryId && String(row.id) === String(STATE.editingPendingSalaryId)) {
       return true;
     }
-    if (!STATE.editingRecord || !STATE.editingRecord.id) return false;
+    if (!STATE.editingRecord) return false;
     if (expectedCrKey && STATE.editingRecord.crKey !== expectedCrKey) return false;
-    return String(row.id) === String(STATE.editingRecord.id);
+    if (STATE.editingRecord.orig && row === STATE.editingRecord.orig) return true;
+    if (STATE.editingRecord.id && row.id != null && String(row.id) === String(STATE.editingRecord.id)) return true;
+    if (STATE.editingRecord.orig && expectedCrKey && UNIVERSAL_MAIN_SPEC[expectedCrKey]) {
+      const origKey = universalMainNormKey(expectedCrKey, STATE.editingRecord.orig);
+      if (origKey && universalMainNormKey(expectedCrKey, row) === origKey) return true;
+    }
+    return false;
   }
   function origRepairWhQtyByKey(repairId, company) {
     const out = {};
@@ -16338,9 +16345,7 @@
 
   function renderCeoKpiCard(c) {
     const segs = (c.segs || []).filter(s => Number(s.pct || 0) > 0);
-    const meterHtml = segs.length
-      ? `<div class="ceo-kpi-meter" aria-hidden="true">${segs.map(s => `<span class="ceo-meter-seg ${esc(s.tone || 'cobalt')}" style="width:${Math.max(2, Math.min(100, Number(s.pct || 0))).toFixed(1)}%"></span>`).join('')}</div>`
-      : '';
+    const meterHtml = `<div class="ceo-kpi-meter" aria-hidden="true">${segs.map(s => `<span class="ceo-meter-seg ${esc(s.tone || 'cobalt')}" style="width:${Math.max(2, Math.min(100, Number(s.pct || 0))).toFixed(1)}%"></span>`).join('')}</div>`;
     return `
       <div class="kpi kpi-link ceo-kpi-card" data-nav-jump="${esc(c.jump)}" role="button" tabindex="0" data-ui-tip="${esc(cleanCeoText(c.tip || ('Open ' + c.k)))}">
         <div class="ceo-kpi-head">
@@ -17091,31 +17096,38 @@
 
     const cashTtc = Math.max(0, Number(k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales) || 0);
     const crTtc = Math.max(0, Number(k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales) || 0);
-    const salesSplitDen = Math.max(1, cashTtc + crTtc);
-    const cashPct = Math.round((cashTtc / salesSplitDen) * 100);
-    const crPct = Math.max(0, 100 - cashPct);
+    const totCashCr = cashTtc + crTtc;
+    const cashPct = totCashCr > 0 ? Math.round((cashTtc / totCashCr) * 100) : 0;
+    const crPct = totCashCr > 0 ? Math.max(0, 100 - cashPct) : 0;
 
     const revDen = Math.max(1, netSales);
-    const rawPctNum = Math.min(100, Math.max(0, (rawVal / revDen) * 100));
-    const profPctNum = Math.min(100, Math.max(0, (Math.max(0, opProfit) / revDen) * 100));
-    const opexPctNum = Math.max(0, 100 - rawPctNum - profPctNum);
+    const rawPctNum = netSales > 0 ? Math.min(100, Math.max(0, (rawVal / revDen) * 100)) : 0;
+    const profPctNum = netSales > 0 ? Math.min(100, Math.max(0, (Math.max(0, opProfit) / revDen) * 100)) : 0;
+    const opexPctNum = netSales > 0 ? Math.max(0, 100 - rawPctNum - profPctNum) : 0;
     const gmPctStr = fmtPct(k.gm_pct, grossMargin, netSales);
     const opMarginPctStr = fmtPct(k.op_margin_pct, opProfit, netSales);
 
     const cashIn = Math.max(0, Number(k.cash_inflow || 0));
     const cashOut = Math.max(0, Number(k.cash_outflow || 0));
+    const hasCashFlow = (cashIn + cashOut) > 0;
     const flowDen = Math.max(1, cashIn + cashOut);
-    const flowInPct = (cashIn + cashOut) > 0 ? Math.round((cashIn / flowDen) * 100) : 50;
-    const flowOutPct = Math.max(0, 100 - flowInPct);
+    const flowInPct = hasCashFlow ? Math.round((cashIn / flowDen) * 100) : 0;
+    const flowOutPct = hasCashFlow ? Math.max(0, 100 - flowInPct) : 0;
     const rcptsCollected = Math.max(0, Number(k.receipts || (crTtc - Number(k.ar_balance || 0))) || 0);
-    const collPct = crTtc > 0 ? Math.min(100, Math.max(0, (rcptsCollected / crTtc) * 100)) : 100;
+    const collPct = crTtc > 0 ? Math.min(100, Math.max(0, (rcptsCollected / crTtc) * 100)) : 0;
 
     const arBal = Number(k.ar_balance || 0);
     const arOvd = Math.max(0, Number(k.ar_overdue || 0));
     const arCur = Math.max(0, arBal - arOvd);
     const arDen = Math.max(1, Math.max(0, arBal));
-    const arCurPct = arBal > 0 ? Math.round((arCur / arDen) * 100) : 100;
-    const arOvdPct = Math.max(0, 100 - arCurPct);
+    const arCurPct = arBal > 0 ? Math.round((arCur / arDen) * 100) : 0;
+    const arOvdPct = arBal > 0 ? Math.max(0, 100 - arCurPct) : 0;
+
+    const activeWinRange = periodRange(STATE.period);
+    const periodSpanDays = (activeWinRange && activeWinRange.from && activeWinRange.to)
+      ? Math.max(1, daysBetween(activeWinRange.from, activeWinRange.to) + 1)
+      : 365;
+    const showAvgMoBadge = salesVal > 0 && activeMos.length >= 2 && periodSpanDays >= 60;
 
     const tillUsdVal = Number(k.cash_till_usd != null ? k.cash_till_usd : k.cash_till) || 0;
     const kpiCards = [
@@ -17123,12 +17135,14 @@
         jump: 'sales',
         icon: 'sales',
         k: 'Group Revenue',
-        badge: activeMos.length >= 2 ? `Avg ${fmtUSDk(avgMoSales)}/mo` : `${fmtNum(k.loads)} loads`,
+        badge: showAvgMoBadge ? `Avg ${fmtUSDk(avgMoSales)}/mo` : `${fmtNum(k.loads)} loads`,
         badgeTone: 'brass',
         v: fmtUSD(salesVal, 0),
         subVal: `${fmtNum(k.loads)} loads`,
-        segs: [{ pct: cashPct, tone: 'emerald' }, { pct: crPct, tone: 'cobalt' }],
-        d: `Cash ${fmtUSDk(cashTtc)} (${cashPct}%) · Credit ${fmtUSDk(crTtc)} (${crPct}%)${k.avg_price_ttc ? ' · $' + Number(k.avg_price_ttc).toFixed(2) + '/m³' : ''}`,
+        segs: totCashCr > 0 ? [{ pct: cashPct, tone: 'emerald' }, { pct: crPct, tone: 'cobalt' }] : [{ pct: 0, tone: 'cobalt' }],
+        d: totCashCr > 0
+          ? `Cash ${fmtUSDk(cashTtc)} (${cashPct}%) · Credit ${fmtUSDk(crTtc)} (${crPct}%)${k.avg_price_ttc ? ' · $' + Number(k.avg_price_ttc).toFixed(2) + '/m³' : ''}`
+          : 'No sales recorded in period',
         cls: 'good',
         tip: 'Open Sales & Receivables'
       },
@@ -17140,7 +17154,7 @@
         badgeTone: opProfit < 0 ? 'crit' : 'good',
         v: fmtUSD(opProfit, 0),
         subVal: `${gmPctStr} GM`,
-        segs: [{ pct: rawPctNum, tone: 'amber' }, { pct: opexPctNum, tone: 'brass' }, { pct: profPctNum, tone: 'emerald' }],
+        segs: netSales > 0 ? [{ pct: rawPctNum, tone: 'amber' }, { pct: opexPctNum, tone: 'brass' }, { pct: profPctNum, tone: 'emerald' }] : [{ pct: 0, tone: 'emerald' }],
         d: `Gross ${fmtUSDk(grossMargin)} · Raw ${fmtUSDk(rawVal)} · OpEx & Pay ${fmtUSDk(opexAndPay)}`,
         cls: opProfit < 0 ? 'crit' : 'good',
         tip: 'Open Expenses & P&L Breakdown'
@@ -17149,11 +17163,11 @@
         jump: 'cashflow',
         icon: 'cashflow',
         k: 'Cash & Velocity',
-        badge: `${collPct.toFixed(1)}% Collected`,
-        badgeTone: collPct >= 90 ? 'good' : 'brass',
+        badge: crTtc > 0 ? `${collPct.toFixed(1)}% Collected` : (rcptsCollected > 0 ? 'AR Collected' : 'No Credit Billed'),
+        badgeTone: crTtc > 0 && collPct >= 90 ? 'good' : 'brass',
         v: Math.abs(tillUsdVal) > 0 && Math.abs(tillUsdVal) < 10000 ? fmtUSD(tillUsdVal, 2) : fmtUSD(tillUsdVal, 0),
         subVal: fmtLBP(k.cash_till_lbp || 0),
-        segs: [{ pct: flowInPct, tone: 'emerald' }, { pct: flowOutPct, tone: 'brass' }],
+        segs: hasCashFlow ? [{ pct: flowInPct, tone: 'emerald' }, { pct: flowOutPct, tone: 'brass' }] : [{ pct: 0, tone: 'emerald' }],
         d: `AR Collected ${fmtUSDk(rcptsCollected)} · In ${fmtUSDk(cashIn)} / Out ${fmtUSDk(cashOut)}`,
         cls: 'good',
         tip: 'Open Cash Flow & Treasury'
@@ -17162,11 +17176,11 @@
         jump: 'customers',
         icon: 'customers',
         k: 'Working Capital',
-        badge: arOvd > 0 ? `Overdue ${fmtUSDk(arOvd)}` : '100% Current',
+        badge: arOvd > 0 ? `Overdue ${fmtUSDk(arOvd)}` : (arBal > 0 ? '100% Current' : 'Zero Open AR'),
         badgeTone: arOvd > 0 ? 'warn' : 'good',
         v: fmtUSD(arBal, 0),
         subVal: 'Open AR',
-        segs: arBal > 0 ? [{ pct: arCurPct, tone: 'cobalt' }, { pct: arOvdPct, tone: 'amber' }] : [{ pct: 100, tone: 'emerald' }],
+        segs: arBal > 0 ? [{ pct: arCurPct, tone: 'cobalt' }, { pct: arOvdPct, tone: 'amber' }] : [{ pct: 0, tone: 'emerald' }],
         d: `Current ${fmtUSDk(arCur)} · >30d ${fmtUSDk(arOvd)} · Open AP ${fmtUSD(k.ap_balance, 0)}`,
         cls: arOvd > 0 ? 'crit' : 'good',
         tip: 'Open Receivables & Payables'
@@ -17180,11 +17194,11 @@
       title: 'Consolidated P&L Value Bridge (Ex-VAT)',
       meta: avgSellUnit > 0 ? `$${avgSellUnit.toFixed(2)}/m³ sell${avgRawUnit > 0 ? ' vs $' + avgRawUnit.toFixed(2) + '/m³ raw (' + spreadMultiple + ')' : ''}` : `${fmtNum(k.loads)} dispatches`,
       steps: [
-        { label: 'Net Sales', pctTxt: '100%', valHtml: fmtUSDk(netSales), barPct: 100, barTone: 'cobalt', sub: `Billed ${fmtUSDk(salesVal)}`, jump: 'sales' },
+        { label: 'Net Sales', pctTxt: netSales > 0 ? '100%' : '0%', valHtml: fmtUSDk(netSales), barPct: netSales > 0 ? 100 : 0, barTone: 'cobalt', sub: `Billed ${fmtUSDk(salesVal)}`, jump: 'sales' },
         { op: '-', label: 'Raw', pctTxt: `${rawPctNum.toFixed(1)}%`, valHtml: `-${fmtUSDk(rawVal)}`, barPct: rawPctNum, barTone: 'amber', sub: `${fmtNum(k.raw_loads || 0)} raw loads`, jump: 'raw' },
-        { op: '=', label: 'Margin', pctTxt: gmPctStr, pctTone: 'good', valHtml: fmtUSDk(grossMargin), barPct: Math.max(4, (grossMargin / revDen) * 100), barTone: 'cerulean', sub: 'Realized spread', jump: 'pricing' },
-        { op: '-', label: 'OpEx', pctTxt: `${((opexAndPay / revDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(opexAndPay)}`, barPct: (opexAndPay / revDen) * 100, barTone: 'brass', sub: `Exp ${fmtUSDk(expVal)} + Pay`, jump: 'expenses' },
-        { op: '=', label: 'Profit', pctTxt: opMarginPctStr, pctTone: opProfit < 0 ? 'crit' : 'good', valHtml: fmtUSDk(opProfit), barPct: Math.max(6, profPctNum), barTone: opProfit < 0 ? 'amber' : 'emerald', sub: 'Net cash profit', jump: 'statements', isFinal: true }
+        { op: '=', label: 'Margin', pctTxt: gmPctStr, pctTone: 'good', valHtml: fmtUSDk(grossMargin), barPct: netSales > 0 ? Math.max(4, (grossMargin / revDen) * 100) : 0, barTone: 'cerulean', sub: 'Realized spread', jump: 'pricing' },
+        { op: '-', label: 'OpEx', pctTxt: `${netSales > 0 ? ((opexAndPay / revDen) * 100).toFixed(1) : '0.0'}%`, valHtml: `-${fmtUSDk(opexAndPay)}`, barPct: netSales > 0 ? (opexAndPay / revDen) * 100 : 0, barTone: 'brass', sub: `Exp ${fmtUSDk(expVal)} + Pay`, jump: 'expenses' },
+        { op: '=', label: 'Profit', pctTxt: opMarginPctStr, pctTone: opProfit < 0 ? 'crit' : 'good', valHtml: fmtUSDk(opProfit), barPct: netSales > 0 ? Math.max(6, profPctNum) : 0, barTone: opProfit < 0 ? 'amber' : 'emerald', sub: 'Net cash profit', jump: 'statements', isFinal: true }
       ]
     };
 
@@ -17293,7 +17307,7 @@
           <div class="ph">
             <div>
               <h3>Monthly Performance &amp; Profit Trajectory</h3>
-              <span class="ph-sub">${STATE.company === 'manufacturing-group' ? 'WTC · BBConstruction · Lions' : esc(cleanCeoText(COMPANY_LABELS[STATE.company]))}${peakMo ? ` · Peak ${esc(peakMo.lbl)} (${fmtUSDk(peakMo.sv)}) · Avg ${fmtUSDk(avgMoSales)}/mo` : ' · Hover any month to inspect detailed figures'}</span>
+              <span class="ph-sub">${STATE.company === 'manufacturing-group' ? 'WTC · BBConstruction · Lions' : esc(cleanCeoText(COMPANY_LABELS[STATE.company]))}${peakMo && showAvgMoBadge ? ` · Peak ${esc(peakMo.lbl)} (${fmtUSDk(peakMo.sv)}) · Avg ${fmtUSDk(avgMoSales)}/mo` : ' · Hover any month to inspect detailed figures'}</span>
             </div>
             <div class="ceo-ph-right">
               <div class="legend">
@@ -30033,7 +30047,7 @@
     return `
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
-          <div class="cockpit-eyebrow">ACCOUNTS RECEIVABLE · M165 FIFO ALLOCATION &amp; CREDIT TERMS</div>
+          <div class="cockpit-eyebrow">ACCOUNTS RECEIVABLE · FIFO ALLOCATION &amp; CREDIT TERMS</div>
           <div class="cockpit-title">Customers &amp; Receivables</div>
         </div>
         <div class="cockpit-pills insight-grid">
@@ -30041,10 +30055,10 @@
             label: 'FIFO Collection Rate',
             badge: `DSO ${fmtNum(k.dso_days || 0, 0)}d`,
             badgeCls: 'emerald',
-            val: `${collPct.toFixed(1)}% <small>Collected</small>`,
+            val: Number(k.sales_ttc || 0) > 0 ? `${collPct.toFixed(1)}% <small>Collected</small>` : `0.0% <small>No Invoices</small>`,
             valCls: 'emerald',
             pct: collPct,
-            pct2: 100 - collPct,
+            pct2: Number(k.sales_ttc || 0) > 0 ? (100 - collPct) : 0,
             sub: `Collected <b>${fmtUSD(k.receipts, 0)}</b> of <b>${fmtUSD(k.sales_ttc, 0)}</b> invoiced`,
             tone: 'emerald'
           })}
@@ -42669,18 +42683,25 @@
       : [];
     const extList = liveSisterLegs.length ? baseExtList.concat(liveSisterLegs) : baseExtList;
     const ignoreSearch = Boolean(opts.ignoreSearch);
+    const expRange = (opts && opts.range && opts.range.from && opts.range.to) ? opts.range : null;
     const ignorePeriod = Boolean(opts.ignorePeriod);
-    const sig = `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${extList.length}|${ignorePeriod ? 'all' : STATE.period}|${ignorePeriod ? '' : STATE.dateFrom}|${ignorePeriod ? '' : STATE.dateTo}|${ignorePeriod ? 'tx_date' : STATE.basis}|${isOfficialScopeActive() ? 1 : 0}|${ignoreSearch ? '' : STATE.search}|${(STATE.allowedCompanyNames || []).join(',')}`;
+    const sig = `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${extList.length}|${expRange ? (expRange.from + '..' + expRange.to) : (ignorePeriod ? 'all' : STATE.period)}|${expRange ? '' : (ignorePeriod ? '' : STATE.dateFrom)}|${expRange ? '' : (ignorePeriod ? '' : STATE.dateTo)}|${(ignorePeriod || expRange) ? 'tx_date' : STATE.basis}|${isOfficialScopeActive() ? 1 : 0}|${ignoreSearch ? '' : STATE.search}|${(STATE.allowedCompanyNames || []).join(',')}`;
     if (_icInteractionsCache && _icInteractionsSig === sig) return _icInteractionsCache;
 
-    const scoped = filterRecords(extList, {
+    const baseScoped = filterRecords(extList, {
       ignoreCompany: true,
       includeGroupMfg: true,
       excludeMultiIndustrySeed: true,
       ignoreSearch,
-      ignorePeriod,
-      basis: ignorePeriod ? 'tx_date' : STATE.basis
+      ignorePeriod: ignorePeriod || Boolean(expRange),
+      basis: (ignorePeriod || expRange) ? 'tx_date' : STATE.basis
     });
+    const scoped = expRange
+      ? baseScoped.filter(r => {
+          const d = String((r && (r.date || r.rep_date)) || '').trim().slice(0, 10);
+          return /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= expRange.from && d <= expRange.to;
+        })
+      : baseScoped;
 
     const legs = [];
     scoped.forEach(r => {
@@ -43063,7 +43084,7 @@
     const totalCount = interactions.length;
     const matchedCount = matchedRows.length;
     const openCount = openRows.length;
-    const reconRatePct = totalCount > 0 ? round2((matchedCount / totalCount) * 100) : 100;
+    const reconRatePct = totalCount > 0 ? round2((matchedCount / totalCount) * 100) : 0;
 
     // Bilateral Repayment & Net Lending Engine (Given vs. Paid Back & Who Owes Whom)
     const byBilateralMap = new Map();
@@ -43113,7 +43134,7 @@
       const givenCount = aIsLender ? b.aToBCount : b.bToACount;
       const paidBackCount = aIsLender ? b.bToACount : b.aToBCount;
       const netUnpaidUsd = round2(Math.max(0, givenUsd - paidBackUsd));
-      const repayPct = givenUsd > 0 ? round2(Math.min(100, (paidBackUsd / givenUsd) * 100)) : 100;
+      const repayPct = givenUsd > 0 ? round2(Math.min(100, (paidBackUsd / givenUsd) * 100)) : 0;
       const repayStatus = repayPct >= 80
         ? 'Actively Paying Back'
         : (repayPct >= 15 ? 'Partial Repayment' : 'Not Paying Back');
@@ -43162,7 +43183,7 @@
     const totalGivenUsd = round2(byBilateral.reduce((s, c) => s + c.givenUsd, 0));
     const totalPaidBackUsd = round2(byBilateral.reduce((s, c) => s + c.paidBackUsd, 0));
     const totalNetUnpaidUsd = round2(byBilateral.reduce((s, c) => s + c.netUnpaidUsd, 0));
-    const overallRepayPct = totalGivenUsd > 0 ? round2((totalPaidBackUsd / totalGivenUsd) * 100) : 100;
+    const overallRepayPct = totalGivenUsd > 0 ? round2((totalPaidBackUsd / totalGivenUsd) * 100) : 0;
     const settlingCorridorCount = byBilateral.filter(c => c.repayPct >= 80).length;
     const unpaidCorridorCount = byBilateral.filter(c => c.repayPct < 80 && c.netUnpaidUsd > 1).length;
 
@@ -43275,7 +43296,7 @@
     const insExpLive = round2(insExps.reduce((s, x) => s + expenseSign(x) * Number(x.total || x.amount || 0), 0));
     const insStats = (() => {
       const is = insAll.summary;
-      const opEx = isDemoScopeActive() ? (insExpLive || 11400) : insExpLive;
+      const opEx = (isDemoScopeActive() && !periodRange()) ? (insExpLive || 11400) : insExpLive;
       return {
         loads: is.totalPolicyCount,
         sales_ttc: is.gwpUsd,
@@ -43795,7 +43816,7 @@
         </div>
         <div class="panel-card" id="hldOpenReconPanel">
           <div class="panel-head">
-            <div class="panel-title"><span>${ic('hld_open_recon')} OPEN BOOKKEEPING QUEUE — AWAITING MIRROR ENTRY (${fmtNum(openList.length)} UNMATCHED)</span></div>
+            <div class="panel-title"><span>${ic('hld_open_recon')} OPEN BOOKKEEPING QUEUE · AWAITING MIRROR ENTRY (${fmtNum(openList.length)} UNMATCHED)</span></div>
             <div style="display:flex;gap:6px;align-items:center">
               ${searchBox('Search unmatched date, company, notes...')}
               ${exportBtn('hldOpenReconPanel', 'Holding_Open_Intercompany_Queue')}
@@ -43831,7 +43852,7 @@
                       <td><span class="badge badge-warn">${esc(x.pendingActionCo)}</span></td>
                       <td><span class="badge ${x.missingSide === 'In' ? 'badge-good' : 'badge-crit'}">Book ${esc(x.missingSide)} on ${esc(x.pendingActionCo)}</span></td>
                       <td class="r mono"><strong>${fmtUSD(x.usd, 2)}</strong></td>
-                      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc(x.notes || '—')}</td>
+                      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc(x.notes || '-')}</td>
                       <td class="r">
                         <button type="button" class="btn btn-primary" style="padding:3px 9px;font-size:11px"
                           data-book-mirror-ext="${esc(r.id || '')}"
@@ -43925,11 +43946,11 @@
                     <td>${coBadge(x.fromCo)}</td>
                     <td>${coBadge(x.toCo)}</td>
                     <td>${flowBadge}</td>
-                    <td class="r mono">${x.givenUsd > 0 ? fmtUSD(x.givenUsd, 2) : '—'}</td>
-                    <td class="r mono ${x.paidBackUsd > 0 ? 'good' : ''}">${x.paidBackUsd > 0 ? `<strong>${fmtUSD(x.paidBackUsd, 2)}</strong>` : '—'}</td>
+                    <td class="r mono">${x.givenUsd > 0 ? fmtUSD(x.givenUsd, 2) : '-'}</td>
+                    <td class="r mono ${x.paidBackUsd > 0 ? 'good' : ''}">${x.paidBackUsd > 0 ? `<strong>${fmtUSD(x.paidBackUsd, 2)}</strong>` : '-'}</td>
                     <td class="r mono ${x.corridorRepayPct >= 80 ? 'good' : 'warn'}"><strong>${fmtUSD(Math.abs(x.runningBalanceUsd || 0), 2)}</strong> <small class="mu">${esc(x.borrowerCo)} owes ${esc(x.lenderCo)}</small></td>
                     <td>${bkBadge}</td>
-                    <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${esc(x.notes || '—')}</td>
+                    <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${esc(x.notes || '-')}</td>
                   </tr>
                 `;
               }).join('') : emptyRow(10, 'No intercompany interactions match the current filter')}
@@ -44959,13 +44980,13 @@
 
   function getActiveHospitalityResorts(coOverride) {
     const u = activeUser();
-    const allowedSet = (!isOwner(u) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length)
+    const allowedSet = (!isDemoScopeActive() && !isOwner(u) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length)
       ? new Set(STATE.allowedCompanyNames.map(n => String(n).toLowerCase()))
       : null;
     const permittedResorts = allowedSet
       ? HSP_RESORT_META.filter(r => allowedSet.has(r.name.toLowerCase()) || allowedSet.has(r.key.toLowerCase()))
       : HSP_RESORT_META;
-    const pool = permittedResorts.length ? permittedResorts : HSP_RESORT_META;
+    const pool = allowedSet ? permittedResorts : HSP_RESORT_META;
     const co = String(coOverride || STATE.company || '');
     const hit = pool.find(r => r.key === co || r.name.toLowerCase() === co.toLowerCase());
     if (hit) return [hit];
@@ -44976,13 +44997,40 @@
   }
 
   const _hspOpsCache = new Map();
+  function industryPeriodMatcher(opts) {
+    const explicitRange = (opts && opts.range && opts.range.from && opts.range.to)
+      ? { from: String(opts.range.from).slice(0, 10), to: String(opts.range.to).slice(0, 10) }
+      : null;
+    const pr = explicitRange || ((opts && opts.ignorePeriod) ? null : periodRange());
+    const matchDate = iso => {
+      if (!pr) return true;
+      const d = String(iso || '').trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}(-\d{2})?$/.test(d)) return false;
+      const full = d.length === 7 ? `${d}-01` : d;
+      return full >= pr.from && full <= pr.to;
+    };
+    const matchSpan = (startIso, endIso) => {
+      if (!pr) return true;
+      const s = String(startIso || '').trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}(-\d{2})?$/.test(s)) return false;
+      const sFull = s.length === 7 ? `${s}-01` : s;
+      const eRaw = String(endIso || '').trim();
+      const openCap = sFull > '2026-12-31' ? sFull : '2026-12-31';
+      const e = (!eRaw || /^open$/i.test(eRaw)) ? openCap : eRaw.slice(0, 10);
+      const eFull = /^\d{4}-\d{2}-\d{2}$/.test(e) ? e : openCap;
+      return sFull <= pr.to && eFull >= pr.from;
+    };
+    return { pr, sig: pr ? `${pr.from}..${pr.to}` : 'all', matchDate, matchSpan };
+  }
+
   function computeHospitalityOperations(opts) {
     const scopeCo = (opts && opts.company) || STATE.company;
     const activeResorts = getActiveHospitalityResorts(scopeCo === DEMO_COMPANY_KEY ? 'industry:Hospitality & Resorts' : scopeCo);
     const activeNames = new Set(activeResorts.map(r => r.name));
     const q = (opts && opts.ignoreSearch) ? '' : norm(STATE.search);
     const demoActive = isDemoScopeActive();
-    const _hspCacheKey = `${scopeCo}|${demoActive ? 1 : 0}|${Array.from(activeNames).join(',')}|${q}|${(SEED && SEED._industryRev) || 0}|${(SEED && SEED._customRev) || 0}|${((SEED && SEED.records && SEED.records.sales_tickets) || []).length}|${JSON.stringify(STATE.industryRowEdits || {})}|${JSON.stringify(STATE.industryCustomRows || {})}`;
+    const hspPm = industryPeriodMatcher(opts);
+    const _hspCacheKey = `${scopeCo}|${demoActive ? 1 : 0}|${hspPm.sig}|${Array.from(activeNames).join(',')}|${q}|${(SEED && SEED._industryRev) || 0}|${(SEED && SEED._customRev) || 0}|${((SEED && SEED.records && SEED.records.sales_tickets) || []).length}|${JSON.stringify(STATE.industryRowEdits || {})}|${JSON.stringify(STATE.industryCustomRows || {})}`;
     if (_hspOpsCache.has(_hspCacheKey)) return _hspOpsCache.get(_hspCacheKey);
     const liveHsp = (SEED && SEED.industryLive && SEED.industryLive.hospitality) || null;
     const pickHsp = (key, fallback) => {
@@ -45036,7 +45084,7 @@
 
     const mergedVenueRows = mergeCustomOverSeededRows(baseVenueRows, getIndustryCustomRows('hsp_revenue'));
     baseVenueRows.length = 0; baseVenueRows.push(...mergedVenueRows);
-    const venueRows = baseVenueRows.filter(r => activeNames.has(r.company));
+    const venueRows = baseVenueRows.filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
     venueRows.forEach((r, i) => { const p = getIndustryWorkflowPatch('hsp_revenue', r.id); if (p) venueRows[i] = Object.assign({}, r, p); });
 
     const posRows = pickHsp('posRows', [
@@ -45049,7 +45097,7 @@
       { id: 'POS-CL-907', date: '2026-09-24', company: 'Platinum', terminal: 'Platinum Concierge Till', shift: 'Full Day', cashier: 'Celine A.', bills_count: 94, pos_billed_ttc: 13986, cash_usd: 4200, card_whish_usd: 9786, comp_usd: 0, variance_usd: 0, status: 'Balanced', notes: 'Executive suite folios & corporate banquet deposit cleared' }
     ]);
     const mergedPosRows = mergeCustomOverSeededRows(posRows, getIndustryCustomRows('hsp_pos'));
-    const scopedPosRows = mergedPosRows.filter(r => activeNames.has(r.company));
+    const scopedPosRows = mergedPosRows.filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
     posRows.length = 0; posRows.push(...scopedPosRows);
     posRows.forEach((r, i) => { const p = getIndustryWorkflowPatch('hsp_pos', r.id); if (p) posRows[i] = Object.assign({}, r, p); });
 
@@ -45061,7 +45109,7 @@
       { id: 'HSP-VAT-105', date: '2026-09-26', company: 'Palms', doc_ref: 'VAT-PL-2026-067', category: 'Chalets & Wedding Banquets', tax_rule: '11% Standard VAT', ht_usd: 33900, vat_usd: 3729, ttc_usd: 37629, direction: 'Output VAT', notes: 'Palms seasonal chalet & event fiscal batch' },
       { id: 'HSP-VAT-106', date: '2026-09-25', company: 'Voile', doc_ref: 'AP-VL-2026-308', category: 'Cellar & Kitchen Imports', tax_rule: '11% Deductible Input', ht_usd: 11200, vat_usd: 1232, ttc_usd: 12432, direction: 'Input VAT', notes: 'Deductible supplier VAT on F&B commissary invoices' },
       { id: 'HSP-VAT-107', date: '2026-09-24', company: 'Platinum', doc_ref: 'VAT-PT-2026-052', category: 'Suites & Gala Ballroom', tax_rule: '11% Standard VAT', ht_usd: 27400, vat_usd: 3014, ttc_usd: 30414, direction: 'Output VAT', notes: 'Platinum corporate suites & ballroom 11% output VAT' }
-    ]).filter(r => activeNames.has(r.company));
+    ]).filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
 
     const membershipRows = pickHsp('membershipRows', [
       { id: 'MEM-2026-001', company: 'Blanca', member: 'Khoury Family Trust', unit: 'Royal Chalet #A-01', season: 'Summer 2026', start_date: '2026-05-01', end_date: '2026-10-31', contract_usd: 28000, paid_usd: 28000, balance_usd: 0, due_date: '2026-06-15', status: 'Paid in Full', notes: 'Front-row beach chalet + 6 VIP beach passes' },
@@ -45073,7 +45121,7 @@
       { id: 'MEM-2026-007', company: 'Platinum', member: 'Levant Executive Group', unit: 'Penthouse Suite #PT-01', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 42000, paid_usd: 34000, balance_usd: 8000, due_date: '2026-09-01', status: 'Overdue Arrears', notes: 'Remaining corporate hospitality retainer balance' }
     ]);
     const mergedMemRows = mergeCustomOverSeededRows(membershipRows, getIndustryCustomRows('hsp_memberships'));
-    const scopedMemRows = mergedMemRows.filter(r => activeNames.has(r.company));
+    const scopedMemRows = mergedMemRows.filter(r => activeNames.has(r.company) && hspPm.matchSpan(r.start_date, r.end_date));
     membershipRows.length = 0; membershipRows.push(...scopedMemRows);
     membershipRows.forEach((r, i) => { const p = getIndustryWorkflowPatch('hsp_memberships', r.id); if (p) membershipRows[i] = Object.assign({}, r, p); });
 
@@ -45117,7 +45165,7 @@
       { id: 'STK-HSP-06', date: '2026-09-25', company: 'Platinum', store: 'Executive Lounge Pantry', item_group: 'Gala Catering & VIP Amenities', opening_usd: 5400, purchases_in_usd: 8900, transfers_net_usd: 0, recipe_usage_usd: 8300, closing_usd: 6000, r3_ratio: 1.07, status: 'Optimal', notes: 'VIP suite minibars & ballroom catering stock balanced' }
     ]);
     const mergedStkRows = mergeCustomOverSeededRows(stockRows, getIndustryCustomRows('hsp_stock'));
-    const scopedStkRows = mergedStkRows.filter(r => activeNames.has(r.company));
+    const scopedStkRows = mergedStkRows.filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
     stockRows.length = 0; stockRows.push(...scopedStkRows);
 
     const menuRows = pickHsp('menuRows', [
@@ -45138,7 +45186,7 @@
       { id: 'NRG-005', date: '2026-09-25', company: 'Platinum', asset: 'MTU 550kVA Twin Redundant Power Plant', tank_level_l: 5600, refill_l: 2500, run_hours: 17.0, diesel_used_l: 476, l_per_hr: 28.0, rated_l_hr: 29.5, kwh_gen: 2150, solar_offset_pct: 31, status: 'Normal Burn', notes: 'Automatic load-sharing between Gen A and roof solar array' }
     ]);
     const mergedNrgRows = mergeCustomOverSeededRows(energyRows, getIndustryCustomRows('hsp_energy'));
-    const scopedNrgRows = mergedNrgRows.filter(r => activeNames.has(r.company));
+    const scopedNrgRows = mergedNrgRows.filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
     energyRows.length = 0; energyRows.push(...scopedNrgRows);
 
     const maintRows = pickHsp('maintRows', [
@@ -45148,7 +45196,7 @@
       { id: 'MNT-HSP-04', date: '2026-09-25', company: 'Blanca', asset: 'Chalet Block B Split HVAC Units (8 Units)', zone: 'Chalet Village', type: 'Preventive · Coil Deep Clean & Gas Top-Up', priority: 'Standard', downtime_hrs: 1.0, cost_usd: 540, vendor: 'climasol s.a.r.l.', status: 'Completed', notes: 'End-of-September guest turnover HVAC service' },
       { id: 'MNT-HSP-05', date: '2026-09-24', company: 'Voile', asset: 'Reverse Osmosis Desalination Skid (80m³/day)', zone: 'Utility Plant', type: 'Corrective · High-Pressure Seal Replacement', priority: 'High', downtime_hrs: 3.0, cost_usd: 890, vendor: 'aqua-tech lebanon', status: 'Open Work Order', notes: 'Scheduled Tuesday morning between guest check-outs' },
       { id: 'MNT-HSP-06', date: '2026-09-23', company: 'Platinum', asset: 'Ballroom Acoustic Dimmers & Chiller AHU #3', zone: 'Grand Ballroom', type: 'Preventive · Pre-Gala Inspection', priority: 'Standard', downtime_hrs: 0, cost_usd: 390, vendor: 'climasol s.a.r.l.', status: 'Completed', notes: 'Verified 100% ahead of corporate gala season' }
-    ]).filter(r => activeNames.has(r.company));
+    ]).filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
 
     const matchSearch = row => {
       if (!q) return true;
@@ -46442,7 +46490,7 @@
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.asset)}</strong></td>
                     <td class="r mono">${fmtNum(r.tank_level_l)} L</td>
-                    <td class="r mono ${r.refill_l > 0 ? 'good' : ''}">${r.refill_l > 0 ? `+${fmtNum(r.refill_l)} L` : '—'}</td>
+                    <td class="r mono ${r.refill_l > 0 ? 'good' : ''}">${r.refill_l > 0 ? `+${fmtNum(r.refill_l)} L` : '-'}</td>
                     <td class="r mono">${r.run_hours.toFixed(1)}</td>
                     <td class="r mono"><strong>${fmtNum(r.diesel_used_l)} L</strong></td>
                     <td class="r mono ${isSpike ? 'crit' : 'good'}"><strong>${r.l_per_hr.toFixed(1)}</strong></td>
@@ -46463,7 +46511,7 @@
                 <td class="r mono"><strong>${sumHrs.toFixed(1)} hrs</strong></td>
                 <td class="r mono"><strong>${fmtNum(sumUsed)} L</strong></td>
                 <td class="r mono"><strong>${(sumHrs > 0 ? (sumUsed / sumHrs) : 0).toFixed(1)} L/h</strong></td>
-                <td class="r mono">—</td>
+                <td class="r mono">-</td>
                 <td class="r mono"><strong>${fmtNum(sumKwh)} kWh</strong></td>
                 <td class="r mono"><strong>${s.avgSolarOffsetPct.toFixed(1)}%</strong></td>
                 <td></td>
@@ -46483,10 +46531,11 @@
     const coKey = String(opts.company || STATE.company || '');
     const activeMatch = COMPANY_BU_MATCH[coKey];
     const trdUser = activeUser();
-    const rlsTrd = (!isOwner(trdUser) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length)
+    const trdRlsActive = Boolean(!isDemoScopeActive() && !isOwner(trdUser) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length);
+    const rlsTrd = trdRlsActive
       ? TRADING_ENTITIES.filter(n => STATE.allowedCompanyNames.some(an => an.toLowerCase() === n.toLowerCase()))
       : TRADING_ENTITIES;
-    const permittedTrading = rlsTrd.length ? rlsTrd : TRADING_ENTITIES;
+    const permittedTrading = trdRlsActive ? rlsTrd : TRADING_ENTITIES;
     const scopedCompanies = (activeMatch && TRADING_ENTITIES.includes(activeMatch))
       ? (permittedTrading.includes(activeMatch) ? [activeMatch] : [])
       : permittedTrading.slice();
@@ -46586,7 +46635,7 @@
         month: ym,
         end_date: ed,
         price_list: `PL-${isShac ? 'SH' : 'KO'}-${ym} (${r.start_date} ${ed === 'Open' ? '· Open' : 'to ' + ed})`,
-        attainment_pct: target_ttc > 0 ? round2((actual_ttc / target_ttc) * 100) : 100
+        attainment_pct: target_ttc > 0 ? round2((actual_ttc / target_ttc) * 100) : 0
       };
     });
 
@@ -46718,24 +46767,25 @@
       { id: 'REC-TRD-07', company: 'Shacman', domain: 'Monthly P&L & Landed COGS Parity', period: '2025–2026 (268 Rows)', rows_checked: 268, live_app_usd: 468452.97, parallel_book_usd: 468452.97, variance_usd: 0, status: 'Tied $0.00 (268 P&L Rows)' }
     ]);
 
-    const salesRows = rawSalesRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.book, r.company, r.customer, r.category, r.item, r.chassis, r.vat_flag));
+    const trdPm = industryPeriodMatcher(opts);
+    const salesRows = rawSalesRows.filter(r => scopeSet.has(r.company) && trdPm.matchDate(r.date) && matchQ(r.id, r.book, r.company, r.customer, r.category, r.item, r.chassis, r.vat_flag));
     const receivableRows = rawReceivableRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.customer, r.status, r.promise_date));
-    const targetRows = rawTargetRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.month, r.company, r.rep, r.segment, r.price_list));
-    const importRows = rawImportRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.supplier, r.origin, r.container_bl, r.status));
-    const landedRows = rawLandedRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.import_file, r.company, r.basis, r.status));
-    const grnRows = rawGrnRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.import_file, r.company, r.warehouse, r.supplier, r.items_desc));
+    const targetRows = rawTargetRows.filter(r => scopeSet.has(r.company) && trdPm.matchSpan(r.start_date, r.end_date) && matchQ(r.id, r.month, r.company, r.rep, r.segment, r.price_list));
+    const importRows = rawImportRows.filter(r => scopeSet.has(r.company) && trdPm.matchDate(r.date) && matchQ(r.id, r.company, r.supplier, r.origin, r.container_bl, r.status));
+    const landedRows = rawLandedRows.filter(r => scopeSet.has(r.company) && trdPm.matchDate(r.date) && matchQ(r.id, r.import_file, r.company, r.basis, r.status));
+    const grnRows = rawGrnRows.filter(r => scopeSet.has(r.company) && trdPm.matchDate(r.date) && matchQ(r.id, r.import_file, r.company, r.warehouse, r.supplier, r.items_desc));
     const serialUnits = rawSerialUnits.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.model, r.family, r.chassis_vin, r.engine_no, r.warehouse, r.status, r.buyer));
-    const warrantyRows = rawWarrantyRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.chassis_vin, r.model, r.job_type, r.bay, r.technician, r.status));
+    const warrantyRows = rawWarrantyRows.filter(r => scopeSet.has(r.company) && trdPm.matchDate(r.date) && matchQ(r.id, r.company, r.chassis_vin, r.model, r.job_type, r.bay, r.technician, r.status));
     const stockRows = rawStockRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.code, r.name, r.company, r.warehouse, r.category, r.status));
-    const movementRows = rawMovementRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.type, r.from_wh, r.to_wh, r.item_code, r.item_name));
+    const movementRows = rawMovementRows.filter(r => scopeSet.has(r.company) && trdPm.matchDate(r.date) && matchQ(r.id, r.company, r.type, r.from_wh, r.to_wh, r.item_code, r.item_name));
     const reconRows = rawReconRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.domain, r.period, r.status));
 
-    const scopedAllSales = rawSalesRows.filter(r => scopeSet.has(r.company));
+    const scopedAllSales = rawSalesRows.filter(r => scopeSet.has(r.company) && trdPm.matchDate(r.date));
     const scopedAllAr = rawReceivableRows.filter(r => scopeSet.has(r.company));
-    const scopedAllImports = rawImportRows.filter(r => scopeSet.has(r.company));
-    const scopedAllLanded = rawLandedRows.filter(r => scopeSet.has(r.company));
+    const scopedAllImports = rawImportRows.filter(r => scopeSet.has(r.company) && trdPm.matchDate(r.date));
+    const scopedAllLanded = rawLandedRows.filter(r => scopeSet.has(r.company) && trdPm.matchDate(r.date));
     const scopedAllUnits = rawSerialUnits.filter(r => scopeSet.has(r.company));
-    const scopedAllWarranty = rawWarrantyRows.filter(r => scopeSet.has(r.company));
+    const scopedAllWarranty = rawWarrantyRows.filter(r => scopeSet.has(r.company) && trdPm.matchDate(r.date));
     const scopedAllStock = rawStockRows.filter(r => scopeSet.has(r.company));
 
     const totalSalesTtc = round2(scopedAllSales.reduce((a, r) => a + r.ttc_usd, 0));
@@ -46760,7 +46810,9 @@
     const totalBackorderQty = scopedAllImports.reduce((a, r) => a + r.backorder_qty, 0);
 
     const showroomUnitsCount = scopedAllUnits.filter(r => r.status !== 'Sold & Delivered').length;
-    const soldUnitsCount = scopedAllUnits.filter(r => r.status === 'Sold & Delivered').length;
+    const soldUnitsCount = trdPm.pr
+      ? scopedAllSales.filter(r => !r.is_gap && /truck|tractor|tipper|mixer|chassis/i.test(String(r.category || '') + ' ' + String(r.item || ''))).reduce((a, r) => a + Number(r.qty || 0), 0)
+      : scopedAllUnits.filter(r => r.status === 'Sold & Delivered').length;
     const totalUnitsLandedUsd = round2(scopedAllUnits.reduce((a, r) => a + r.landed_cost_usd, 0));
     const totalUnitsListUsd = round2(scopedAllUnits.reduce((a, r) => a + r.list_price_usd, 0));
     const openWarrantyCount = scopedAllWarranty.filter(r => r.status !== 'Completed').length;
@@ -48179,7 +48231,8 @@
     const activeCo = opts.company || STATE.company || 'manufacturing-group';
     const selectedEntityName = RE_ENTITY_KEYS.includes(activeCo) ? COMPANY_BU_MATCH[activeCo] : null;
     const demoActive = isDemoScopeActive();
-    const sig = `${activeCo}|${demoActive ? 1 : 0}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${JSON.stringify(STATE.industryRowEdits || {})}|${STATE.dateFilter}|${STATE.dateFrom}|${STATE.dateTo}|${ignoreSearch ? '' : (STATE.search || '')}|${(STATE.allowedCompanyNames || []).join(',')}`;
+    const rePm = industryPeriodMatcher(opts);
+    const sig = `${activeCo}|${demoActive ? 1 : 0}|${rePm.sig}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${JSON.stringify(STATE.industryRowEdits || {})}|${ignoreSearch ? '' : (STATE.search || '')}|${(STATE.allowedCompanyNames || []).join(',')}`;
     if (!ignoreSearch && _reOpsCache && _reOpsSig === sig) return _reOpsCache;
     const liveRe = (SEED && SEED.industryLive && SEED.industryLive.realestate) || null;
     const pickRe = (key, fallback) => {
@@ -48340,26 +48393,66 @@
     workorders.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_workorders', r.id); if (p) workorders[i] = Object.assign({}, r, p); });
     recharges.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_recharges', r.id); if (p) recharges[i] = Object.assign({}, r, p); });
 
+    units.forEach((u, i) => {
+      if (!u) return;
+      const uCode = u.unit_code || u.code || u.id || '-';
+      const uName = u.unit_name || u.name || uCode;
+      const uStatus = u.status || u.occupancy || 'Occupied';
+      units[i] = Object.assign({}, u, { unit_code: uCode, name: uName, unit_name: uName, status: uStatus, occupancy: u.occupancy || uStatus });
+    });
+    leases.forEach((l, i) => {
+      if (!l) return;
+      const endIso = l.end_date && l.end_date !== 'Open' ? String(l.end_date).slice(0, 10) : '';
+      const dExp = l.days_to_expiry != null ? Number(l.days_to_expiry) : (endIso ? daysBetween(SEED_DATE, endIso) : 365);
+      const ttc = Number(l.annual_ttc_usd || 0);
+      const base = l.annual_base_usd != null ? Number(l.annual_base_usd) : (l.annual_net_usd != null ? Number(l.annual_net_usd) : (Number(l.vat_rate || 0) > 0 ? round2(ttc / 1.11) : ttc));
+      const vat = l.annual_vat_usd != null ? Number(l.annual_vat_usd) : round2(ttc - base);
+      leases[i] = Object.assign({}, l, { days_to_expiry: dExp, annual_base_usd: base, annual_net_usd: base, annual_vat_usd: vat });
+    });
+    const reSaleById = new Map();
+    const reSaleByBuyer = new Map();
+    sales.forEach(sRow => {
+      if (!sRow) return;
+      if (sRow.id) reSaleById.set(String(sRow.id).trim().toUpperCase(), sRow);
+      if (sRow.buyer && !reSaleByBuyer.has(norm(sRow.buyer))) reSaleByBuyer.set(norm(sRow.buyer), sRow);
+    });
+    instalments.forEach((inst, i) => {
+      if (!inst) return;
+      const sRef = String(inst.sale_ref || inst.sale_id || '').trim();
+      const matchedSale = (sRef && reSaleById.get(sRef.toUpperCase())) || (inst.buyer && reSaleByBuyer.get(norm(inst.buyer))) || null;
+      const schedUsd = Number(inst.scheduled_usd != null ? inst.scheduled_usd : (inst.amount_usd || 0));
+      instalments[i] = Object.assign({}, inst, {
+        sale_ref: sRef || (matchedSale && matchedSale.id) || '',
+        property: inst.property || (matchedSale && matchedSale.property) || inst.company || 'Portfolio Property',
+        unit: inst.unit || (matchedSale && matchedSale.unit) || inst.milestone || 'Deed Milestone',
+        scheduled_usd: schedUsd,
+        amount_usd: schedUsd
+      });
+    });
+
     const reUser = activeUser();
-    const rlsReSet = (!isOwner(reUser) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length)
+    const rlsReSet = (!isDemoScopeActive() && !isOwner(reUser) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length)
       ? new Set(STATE.allowedCompanyNames.map(n => String(n).toLowerCase()))
       : null;
     const byCo = list => list.filter(r => {
       if (selectedEntityName && r.company !== selectedEntityName) return false;
-      if (rlsReSet && r.company && !rlsReSet.has(String(r.company).toLowerCase())) return false;
+      if (rlsReSet && (!r.company || !rlsReSet.has(String(r.company).toLowerCase()))) return false;
       return true;
     });
     const fProperties = byCo(properties);
     const fUnits = byCo(units);
-    const fLeases = byCo(leases);
-    const fInvoices = byCo(invoices);
-    const fReceipts = byCo(receipts);
-    const fSales = byCo(sales);
-    const fInstalments = byCo(instalments);
+    const fInvoices = byCo(invoices).filter(r => rePm.matchDate(r.date));
+    let fLeases = byCo(leases).filter(r => rePm.matchSpan(r.start_date, r.end_date));
+    if (rePm.pr && rePm.pr.from > '2026-12-31' && fInvoices.length === 0) {
+      fLeases = fLeases.filter(r => rePm.matchDate(r.start_date));
+    }
+    const fReceipts = byCo(receipts).filter(r => rePm.matchDate(r.date));
+    const fSales = byCo(sales).filter(r => rePm.matchDate(r.date));
+    const fInstalments = byCo(instalments).filter(r => rePm.matchDate(r.due_date || r.date));
     const fValuations = byCo(valuations);
     const fOwnership = byCo(ownership);
-    const fWorkorders = byCo(workorders);
-    const fRecharges = byCo(recharges);
+    const fWorkorders = byCo(workorders).filter(r => rePm.matchDate(r.date));
+    const fRecharges = byCo(recharges).filter(r => rePm.matchDate(r.date));
 
     const portfolioGrossUsd = fProperties.reduce((s, r) => s + r.lgb_gross_usd, 0);
     const portfolioShareUsd = fProperties.reduce((s, r) => s + r.share_val_usd, 0);
@@ -49524,8 +49617,18 @@
   // ============================================================================
   // PHASE 5 — INSURANCE & BROKERAGE OPERATIONAL HUBS (INS · Bdeir Insurance Brokerage)
   // ============================================================================
-  function computeInsuranceOperations() {
+  function computeInsuranceOperations(opts = {}) {
     const co = 'Insurance Company';
+    const insUser = activeUser();
+    const rlsInsAllowed = isDemoScopeActive()
+      || isOwner(insUser)
+      || !Array.isArray(STATE.allowedCompanyNames)
+      || !STATE.allowedCompanyNames.length
+      || STATE.allowedCompanyNames.some(an => {
+        const low = String(an || '').toLowerCase();
+        return low === 'insurance company' || low === 'insurance' || low.includes('insurance');
+      });
+    const insPm = industryPeriodMatcher(opts);
     const liveIns = (SEED && SEED.industryLive && SEED.industryLive.insurance) || null;
     const pickIns = (key, fallback) => (liveIns && Array.isArray(liveIns[key]) && liveIns[key].length)
       ? (key === 'agreements' ? liveIns[key].map(a => ({ ...a })) : liveIns[key].slice())
@@ -49785,36 +49888,106 @@
         }
       });
     });
-    policies.forEach((r, i) => { const p = getIndustryWorkflowPatch('ins_policies', r.id); if (p) policies[i] = Object.assign({}, r, p); });
-    renewals.forEach((r, i) => { const p = getIndustryWorkflowPatch('ins_renewals', r.id || r.policy_no); if (p) renewals[i] = Object.assign({}, r, p); });
+    policies.forEach((r, i) => {
+      const p = getIndustryWorkflowPatch('ins_policies', r.id);
+      const cur = p ? Object.assign({}, r, p) : r;
+      const expIso = String(cur.expiry || cur.end_date || '').slice(0, 10);
+      const dExp = cur.days_to_expiry != null
+        ? Number(cur.days_to_expiry)
+        : (cur.days_left != null ? Number(cur.days_left) : (expIso ? daysBetween(SEED_DATE, expIso) : 0));
+      policies[i] = Object.assign({}, cur, {
+        policy_no: cur.policy_no || cur.id,
+        expiry: expIso || cur.expiry || '',
+        end_date: expIso || cur.end_date || '',
+        days_to_expiry: dExp,
+        days_left: dExp
+      });
+    });
+    renewals.forEach((r, i) => {
+      const p = getIndustryWorkflowPatch('ins_renewals', r.id || r.policy_no);
+      const cur = p ? Object.assign({}, r, p) : r;
+      const expIso = String(cur.expiry_date || cur.expiry || '').slice(0, 10);
+      const dLeft = cur.days_left != null
+        ? Number(cur.days_left)
+        : (cur.days_to_expiry != null ? Number(cur.days_to_expiry) : (expIso ? daysBetween(SEED_DATE, expIso) : 0));
+      renewals[i] = Object.assign({}, cur, {
+        expiry_date: expIso || cur.expiry_date || '',
+        days_left: dLeft,
+        days_to_expiry: dLeft,
+        status: String(cur.status || (dLeft < 0 ? 'Expired (not renewed)' : 'Due for renewal')).replace(/\s*[—–]\s*/g, ' - ')
+      });
+    });
     statements.forEach((r, i) => { const p = getIndustryWorkflowPatch('ins_statements', r.id); if (p) statements[i] = Object.assign({}, r, p); });
 
-    const gwpUsd = policies.reduce((a, r) => a + r.gross_prem_usd, 0);
-    const grossComm7063Usd = policies.reduce((a, r) => a + r.gross_comm_usd, 0);
-    const discount7065Usd = policies.reduce((a, r) => a + r.discount_usd, 0);
-    const netCommUsd = policies.reduce((a, r) => a + r.net_comm_usd, 0);
-    const policyFees7064Usd = policies.reduce((a, r) => a + r.policy_fee_usd, 0);
-    const openClientAr4112Usd = billing.reduce((a, r) => a + r.open_ar_4112_usd, 0);
-    const payableToCarriers4017Usd = remittances.reduce((a, r) => a + r.net_payable_4017_usd, 0);
-    const cashHeldUsd = remittances.reduce((a, r) => a + r.client_cash_held_usd, 0);
-    const dueRenewals90dCount = renewals.filter(r => r.days_left >= 0 && r.days_left <= 90).length;
-    const expiredUnrenewedCount = renewals.filter(r => r.days_left < 0).length;
-    const stmtDiscrepancyCount = statements.filter(r => r.variance_usd !== 0).length;
-    const openClaimsCount = claims.filter(r => r.status !== 'Settled').length;
+    const rlsPols = rlsInsAllowed ? policies : [];
+    const rlsRen = rlsInsAllowed ? renewals : [];
+    const rlsItems = rlsInsAllowed ? items : [];
+    const rlsBill = rlsInsAllowed ? billing : [];
+    const rlsRem = rlsInsAllowed ? remittances : [];
+    const rlsStmt = rlsInsAllowed ? statements : [];
+    const rlsClaims = rlsInsAllowed ? claims : [];
+
+    const fPolicies = insPm.pr ? rlsPols.filter(r => insPm.matchDate(r.date)) : rlsPols;
+    const fBilling = insPm.pr ? rlsBill.filter(r => insPm.matchDate(r.date)) : rlsBill;
+    const fStatements = insPm.pr
+      ? rlsStmt.filter(r => {
+          const ym = String(r.period || r.date || '').trim().slice(0, 7);
+          return /^\d{4}-\d{2}$/.test(ym) ? insPm.matchSpan(`${ym}-01`, `${ym}-31`) : insPm.matchDate(r.date);
+        })
+      : rlsStmt;
+    const fClaims = insPm.pr ? rlsClaims.filter(r => insPm.matchDate(r.loss_date || r.date)) : rlsClaims;
+    const fRemittances = insPm.pr
+      ? rlsRem.reduce((acc, r) => {
+          if (r && r.date) {
+            if (insPm.matchDate(r.date)) acc.push(r);
+            return acc;
+          }
+          const allCarrierPay = rlsPols
+            .filter(p => p.carrier === r.carrier)
+            .reduce((s, p) => s + Math.max(0, Number(p.net_payable_4017_usd || 0)), 0);
+          const perCarrierPay = fPolicies
+            .filter(p => p.carrier === r.carrier)
+            .reduce((s, p) => s + Math.max(0, Number(p.net_payable_4017_usd || 0)), 0);
+          const share = allCarrierPay > 0 ? Math.min(1, perCarrierPay / allCarrierPay) : 0;
+          if (share > 0) {
+            acc.push(Object.assign({}, r, {
+              gross_prem_usd: round2(Number(r.gross_prem_usd || 0) * share),
+              broker_comm_7063_usd: round2(Number(r.broker_comm_7063_usd || 0) * share),
+              settled_to_carrier_usd: round2(Number(r.settled_to_carrier_usd || 0) * share),
+              net_payable_4017_usd: round2(Number(r.net_payable_4017_usd || 0) * share),
+              client_cash_held_usd: round2(Number(r.client_cash_held_usd || 0) * share)
+            }));
+          }
+          return acc;
+        }, [])
+      : rlsRem;
+
+    const gwpUsd = fPolicies.reduce((a, r) => a + r.gross_prem_usd, 0);
+    const grossComm7063Usd = fPolicies.reduce((a, r) => a + r.gross_comm_usd, 0);
+    const discount7065Usd = fPolicies.reduce((a, r) => a + r.discount_usd, 0);
+    const netCommUsd = fPolicies.reduce((a, r) => a + r.net_comm_usd, 0);
+    const policyFees7064Usd = fPolicies.reduce((a, r) => a + r.policy_fee_usd, 0);
+    const openClientAr4112Usd = fBilling.reduce((a, r) => a + r.open_ar_4112_usd, 0);
+    const payableToCarriers4017Usd = fRemittances.reduce((a, r) => a + r.net_payable_4017_usd, 0);
+    const cashHeldUsd = fRemittances.reduce((a, r) => a + r.client_cash_held_usd, 0);
+    const dueRenewals90dCount = rlsRen.filter(r => r.days_left >= 0 && r.days_left <= 90).length;
+    const expiredUnrenewedCount = rlsRen.filter(r => r.days_left < 0).length;
+    const stmtDiscrepancyCount = fStatements.filter(r => r.variance_usd !== 0).length;
+    const openClaimsCount = fClaims.filter(r => r.status !== 'Settled').length;
 
     return {
-      policies,
-      renewals,
-      items,
-      billing,
-      remittances,
-      statements,
-      claims,
+      policies: fPolicies,
+      renewals: rlsRen,
+      items: rlsItems,
+      billing: fBilling,
+      remittances: fRemittances,
+      statements: fStatements,
+      claims: fClaims,
       catalogue,
       agreements,
       summary: {
-        totalPolicyCount: (liveIns ? policies.filter(p => !/endorsement/i.test(String(p.type || ''))).length : (38 + customPolOnlyCount)),
-        endorsementCount: (liveIns ? policies.filter(p => /endorsement/i.test(String(p.type || ''))).length : (4 + customEndOnlyCount)),
+        totalPolicyCount: (!rlsInsAllowed || liveIns || insPm.pr ? fPolicies.filter(p => !/endorsement/i.test(String(p.type || ''))).length : (38 + customPolOnlyCount)),
+        endorsementCount: (!rlsInsAllowed || liveIns || insPm.pr ? fPolicies.filter(p => /endorsement/i.test(String(p.type || ''))).length : (4 + customEndOnlyCount)),
         carriersCount: 6,
         linesCount: 12,
         productsCount: catalogue.length >= 52 ? catalogue.length : 52,
@@ -51189,13 +51362,14 @@
       const agedAr = trd.receivableRows.filter(r => r.gross_ar_usd > 0 && r.dso_days > maxDso);
       const reorder = trd.stockRows.filter(r => Number(r.on_hand || 0) <= Number(r.reorder_min || 0) + bufQty);
       const unalloc = trd.landedRows.filter(r => Number(r.unallocated_usd || 0) > unallocTol);
+      const impById = new Map((trd.importRows || []).map(im => [String(im.id || '').trim().toUpperCase(), im]));
       return [
         {
           id: 'T1', tbl: 'trd_sales', title: 'PHYSICAL INVOICE BOOK SEQUENCE GAPS & AUDIT TRAIL',
           headers: ['Invoice / Serial', 'Book #', 'Entity', 'Date', 'Customer / Audit Note', 'Total ($)'],
           rows: (gapRows.length ? gapRows : trd.salesRows.slice(0, 6)).map(r => ({
             rid: r.id, co: r.company,
-            cells: [r.id, r.book_no || 'BK-2026', r.company, r.date, r.customer || r.item || 'Sequence Check', fmtUSD(r.total_ttc_usd || 0, 0)]
+            cells: [r.id, r.book || r.book_no || 'BK-2026', r.company, r.date, r.customer || r.item || 'Sequence Check', fmtUSD(r.ttc_usd != null ? r.ttc_usd : (r.total_ttc_usd || 0), 0)]
           }))
         },
         {
@@ -51203,15 +51377,15 @@
           headers: ['Invoice #', 'Date', 'Entity', 'Customer', 'Sale ($)', 'Landed Cost ($)', 'Margin %'],
           rows: (lowMargin.length ? lowMargin : trd.salesRows.filter(r => !r.is_gap).slice(0, 6)).map(r => ({
             rid: r.id, co: r.company,
-            cells: [r.id, r.date, r.company, r.customer, fmtUSD(r.total_ttc_usd, 0), fmtUSD(r.landed_cost_usd, 0), `${Number(r.margin_pct || 0).toFixed(1)}%`]
+            cells: [r.id, r.date, r.company, r.customer, fmtUSD(r.ttc_usd != null ? r.ttc_usd : (r.total_ttc_usd || 0), 0), fmtUSD(r.cost_usd != null ? r.cost_usd : (r.landed_cost_usd || 0), 0), `${Number(r.margin_pct || 0).toFixed(1)}%`]
           }))
         },
         {
-          id: 'T3', tbl: 'trd_sales', title: 'AGED CUSTOMER RECEIVABLES VS SEPARATED ADVANCES',
+          id: 'T3', tbl: 'trd_receivables', title: 'AGED CUSTOMER RECEIVABLES VS SEPARATED ADVANCES',
           headers: ['Account ID', 'Entity', 'Customer', 'DSO (Days)', 'Advances ($)', 'Gross AR ($)'],
           rows: (agedAr.length ? agedAr : trd.receivableRows).slice(0, 8).map(r => ({
             rid: r.id, co: r.company,
-            cells: [r.id, r.company, r.customer, `${fmtNum(r.dso_days)}d`, fmtUSD(r.advances_usd || 0, 0), fmtUSD(r.gross_ar_usd || 0, 0)]
+            cells: [r.id, r.company, r.customer, `${fmtNum(r.dso_days)}d`, fmtUSD(r.advance_usd != null ? r.advance_usd : (r.advances_usd || 0), 0), fmtUSD(r.gross_ar_usd || 0, 0)]
           }))
         },
         {
@@ -51223,12 +51397,16 @@
           }))
         },
         {
-          id: 'T5', tbl: 'trd_purchases', title: 'UNALLOCATED FREIGHT, CUSTOMS & CLEARANCE IMPORT FILES',
+          id: 'T5', tbl: 'trd_landed', title: 'UNALLOCATED FREIGHT, CUSTOMS & CLEARANCE IMPORT FILES',
           headers: ['Import File #', 'Entity', 'Supplier / Origin', 'FOB ($)', 'Unallocated ($)', 'Action'],
           rows: (unalloc.length ? unalloc : trd.landedRows).slice(0, 8).map(f => {
+            const imp = impById.get(String(f.import_file || f.id || '').trim().toUpperCase()) || {};
+            const supp = f.supplier || imp.supplier || 'OEM Export';
+            const orig = f.origin || imp.origin || 'Port';
+            const fobUsd = Number(f.fob_usd != null ? f.fob_usd : (imp.fob_usd || 0));
             const unUsd = Number(f.unallocated_usd || 0);
-            const wf = (canWf && unUsd > 0) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="trd_imp_landed" data-wf-id="${esc(f.id)}" data-wf-co="${esc(f.company)}" data-wf-supplier="${esc(f.supplier || '')}" data-wf-origin="${esc(f.origin || '')}" data-wf-bl="${esc(f.bl_no || '')}" data-wf-ord="${f.ordered_qty || 20}" data-wf-fob="${f.fob_usd || 40000}" data-wf-add="${unUsd}">+ Landed</button>` : '<span class="badge badge-ok">Capitalized</span>';
-            return { rid: f.id, co: f.company, cells: [f.id, f.company, `${f.supplier || 'OEM'} (${f.origin || 'Port'})`, fmtUSD(f.fob_usd || 0, 0), fmtUSD(unUsd, 0)], rawLastHtml: wf };
+            const wf = (canWf && unUsd > 0) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="trd_imp_landed" data-wf-id="${esc(f.id)}" data-wf-co="${esc(f.company)}" data-wf-supplier="${esc(supp)}" data-wf-origin="${esc(orig)}" data-wf-bl="${esc(f.bl_no || imp.container_bl || '')}" data-wf-ord="${f.ordered_qty || imp.ordered_qty || 20}" data-wf-fob="${fobUsd || 40000}" data-wf-add="${unUsd}">+ Landed</button>` : '<span class="badge badge-ok">Capitalized</span>';
+            return { rid: f.id, co: f.company, cells: [f.import_file || f.id, f.company, `${supp} (${orig})`, fmtUSD(fobUsd, 0), fmtUSD(unUsd, 0)], rawLastHtml: wf };
           })
         }
       ];
@@ -51245,7 +51423,7 @@
       const unbilled = reLeases.filter(l => Number(l.unbilled_periods || 0) > 0);
       const dueInst = reInst.filter(x => Number(x.open_usd || 0) > openInstWarn);
       const unrech = reWos.filter(w => w.rechargeable && !/recharged/i.test(w.status || ''));
-      const vacUnits = reUnits.filter(u => !/leased|occupied/i.test(u.status || ''));
+      const vacUnits = reUnits.filter(u => !/leased|occupied/i.test(u.status || u.occupancy || ''));
       return [
         {
           id: 'P1', tbl: 're_leases', title: 'EXPIRING COMMERCIAL & RESIDENTIAL LEASES & ESCALATION QUEUE',
@@ -51265,11 +51443,11 @@
           })
         },
         {
-          id: 'P3', tbl: 're_sales', title: 'PROPERTY DEED BUYER INSTALMENTS & TITLE TRANSFER GUARD',
+          id: 'P3', tbl: 're_instalments', title: 'PROPERTY DEED BUYER INSTALMENTS & TITLE TRANSFER GUARD',
           headers: ['Instalment ID', 'Due Date', 'Property & Unit', 'Buyer', 'Scheduled ($)', 'Open Balance ($)'],
           rows: (dueInst.length ? dueInst : reInst).slice(0, 8).map(x => ({
             rid: x.id, co: x.company || 'Properties',
-            cells: [x.id, x.due_date, `${x.property} · ${x.unit}`, x.buyer, fmtUSD(x.amount_usd || 0, 0), fmtUSD(x.open_usd || 0, 0)]
+            cells: [x.id, x.due_date, [x.property, x.unit].filter(Boolean).join(' · ') || x.sale_ref || '-', x.buyer, fmtUSD(x.scheduled_usd != null ? x.scheduled_usd : (x.amount_usd || 0), 0), fmtUSD(x.open_usd || 0, 0)]
           }))
         },
         {
@@ -51282,11 +51460,11 @@
           })
         },
         {
-          id: 'P5', tbl: 're_leases', title: 'VACANT / FIT-OUT BUILDING UNITS & /2400 MULK DEED AUDIT',
+          id: 'P5', tbl: 're_units', title: 'VACANT / FIT-OUT BUILDING UNITS & /2400 MULK DEED AUDIT',
           headers: ['Unit ID', 'Property', 'Unit / Floor', 'Area (m2)', 'Target Rent ($)', 'Status'],
           rows: (vacUnits.length ? vacUnits : reUnits).slice(0, 8).map(u => ({
             rid: u.id, co: u.company || 'Properties',
-            cells: [u.id, u.property, u.unit_code || u.name, `${fmtNum(u.area_sqm || 0)} m2`, fmtUSD(u.market_rent_usd || u.annual_rent_usd || 0, 0), u.status || 'Occupied']
+            cells: [u.id, u.property, u.unit_name || u.unit_code || u.code || u.name || '-', `${fmtNum(u.area_sqm || 0)} m2`, fmtUSD(u.market_rent_usd || u.annual_rent_usd || 0, 0), u.status || u.occupancy || 'Occupied']
           }))
         }
       ];
@@ -51464,41 +51642,48 @@
 
     if (ind === 'Holding & Treasury') {
       const { totals, icRes, byIndustry } = rollup;
-      const revDen = Math.max(1, Number(totals.net_sales || totals.sales_ttc || 1));
+      const netRevHld = Number(totals.net_sales || totals.sales_ttc || 0);
+      const revDen = Math.max(1, netRevHld || 1);
       const rawCost = Math.max(0, Number(totals.raw_cost || 0));
       const grossGm = Number(totals.gross_margin || 0);
       const opEx = Math.max(0, round2(Number(totals.expenses || 0) + Number(totals.salaries || 0)));
       const opProf = Number(totals.operating_profit || 0);
-      const gmPct = (grossGm / revDen) * 100;
-      const opPct = (opProf / revDen) * 100;
-      const rawPct = Math.min(100, (rawCost / revDen) * 100);
-      const opExPct = Math.min(100, (opEx / revDen) * 100);
-      const mfgShare = Math.round(((byIndustry.mfg.sales_ttc || 0) / Math.max(1, totals.sales_ttc || 1)) * 100);
-      const arApDen = Math.max(1, Number(totals.ar_balance || 0) + Math.abs(Number(totals.ap_balance || 0)));
-      const arShare = Math.round((Math.max(0, Number(totals.ar_balance || 0)) / arApDen) * 100);
+      const gmPct = netRevHld > 0 ? (grossGm / revDen) * 100 : 0;
+      const opPct = netRevHld > 0 ? (opProf / revDen) * 100 : 0;
+      const rawPct = netRevHld > 0 ? Math.min(100, (rawCost / revDen) * 100) : 0;
+      const opExPct = netRevHld > 0 ? Math.min(100, (opEx / revDen) * 100) : 0;
+      const totSalesHld = Number(totals.sales_ttc || 0);
+      const mfgShare = totSalesHld > 0 ? Math.round(((byIndustry.mfg.sales_ttc || 0) / totSalesHld) * 100) : 0;
+      const sibShare = totSalesHld > 0 ? Math.max(0, 100 - mfgShare) : 0;
+      const arApTot = Math.max(0, Number(totals.ar_balance || 0)) + Math.abs(Number(totals.ap_balance || 0));
+      const arShare = arApTot > 0 ? Math.round((Math.max(0, Number(totals.ar_balance || 0)) / arApTot) * 100) : 0;
+      const apShare = arApTot > 0 ? Math.max(0, 100 - arShare) : 0;
+      const hasIcActivity = Number(icRes.totalCount || 0) > 0;
 
       kpiCards = [
         {
           jump: 'hld_consolidation', icon: 'hld_consolidation', k: 'Group Revenue',
           badge: '6 Sectors · 14 BUs', badgeTone: 'brass',
           v: fmtUSD(totals.sales_ttc, 0), subVal: `Net ${fmtUSDk(totals.net_sales)}`,
-          segs: [{ pct: mfgShare, tone: 'cobalt' }, { pct: Math.max(4, 100 - mfgShare), tone: 'cerulean' }],
-          d: `Mfg ${fmtUSDk(byIndustry.mfg.sales_ttc)} (${mfgShare}%) · Sibling Sectors ${fmtUSDk(Math.max(0, totals.sales_ttc - byIndustry.mfg.sales_ttc))}`,
+          segs: totSalesHld > 0 ? [{ pct: mfgShare, tone: 'cobalt' }, { pct: sibShare, tone: 'cerulean' }] : [{ pct: 0, tone: 'cobalt' }],
+          d: totSalesHld > 0
+            ? `Mfg ${fmtUSDk(byIndustry.mfg.sales_ttc)} (${mfgShare}%) · Sibling Sectors ${fmtUSDk(Math.max(0, totals.sales_ttc - byIndustry.mfg.sales_ttc))}`
+            : 'No consolidated revenue recorded in period',
           cls: 'good', tip: 'Open Consolidated Rollup'
         },
         {
           jump: 'hld_consolidation', icon: 'ledger', k: 'Operating Profit',
           badge: `${opPct.toFixed(1)}% Margin`, badgeTone: opProf < 0 ? 'crit' : 'good',
           v: fmtSignedUSD(opProf, 0), subVal: `${gmPct.toFixed(1)}% GM`,
-          segs: [{ pct: rawPct, tone: 'amber' }, { pct: opExPct, tone: 'brass' }, { pct: Math.max(4, opPct), tone: 'emerald' }],
+          segs: netRevHld > 0 ? [{ pct: rawPct, tone: 'amber' }, { pct: opExPct, tone: 'brass' }, { pct: Math.max(4, opPct), tone: 'emerald' }] : [{ pct: 0, tone: 'emerald' }],
           d: `Gross ${fmtUSDk(grossGm)} · Direct ${fmtUSDk(rawCost)} · OpEx & Pay ${fmtUSDk(opEx)}`,
           cls: opProf < 0 ? 'crit' : 'good', tip: 'Open Group P&L Schedule'
         },
         {
           jump: 'cashflow', icon: 'cashflow', k: 'Cash & IC Pairing',
-          badge: `${icRes.reconRatePct.toFixed(1)}% Paired`, badgeTone: icRes.openCount > 0 ? 'brass' : 'good',
+          badge: hasIcActivity ? `${icRes.reconRatePct.toFixed(1)}% Paired` : 'No IC Entries', badgeTone: icRes.openCount > 0 ? 'brass' : 'good',
           v: fmtUSD(totals.cash_till, 0), subVal: `${fmtNum(icRes.matchedCount)} pairs`,
-          segs: [{ pct: icRes.reconRatePct, tone: 'emerald' }, { pct: Math.max(0, 100 - icRes.reconRatePct), tone: 'amber' }],
+          segs: hasIcActivity ? [{ pct: icRes.reconRatePct, tone: 'emerald' }, { pct: Math.max(0, 100 - icRes.reconRatePct), tone: 'amber' }] : [{ pct: 0, tone: 'emerald' }],
           d: `IC Eliminated ${fmtUSDk(icRes.totalMatchedUsd)} · Open Queue ${fmtUSDk(icRes.totalOpenUsd || 0)}`,
           cls: 'good', tip: 'Open Group Treasury'
         },
@@ -51506,7 +51691,7 @@
           jump: 'hld_interactions', icon: 'hld_interactions', k: 'Working Capital',
           badge: icRes.openCount > 0 ? `${icRes.openCount} Open IC` : 'IC Settled', badgeTone: icRes.openCount > 0 ? 'warn' : 'good',
           v: fmtUSD(totals.ar_balance, 0), subVal: 'Group AR',
-          segs: [{ pct: arShare, tone: 'cobalt' }, { pct: Math.max(4, 100 - arShare), tone: 'brass' }],
+          segs: arApTot > 0 ? [{ pct: arShare, tone: 'cobalt' }, { pct: apShare, tone: 'brass' }] : [{ pct: 0, tone: 'cobalt' }],
           d: `Group AP ${fmtUSD(totals.ap_balance, 0)} · Sister Net Owed ${fmtUSDk(icRes.totalNetUnpaidUsd || 0)}`,
           cls: icRes.openCount > 0 ? 'warn' : 'good', tip: 'Open Sister Interactions'
         }
@@ -51528,11 +51713,11 @@
         title: 'Consolidated 6-Industry P&L Bridge',
         meta: `14 Entities · ${fmtUSDk(icRes.totalMatchedUsd)} IC eliminated`,
         steps: [
-          { label: 'Net Sales', pctTxt: '100%', valHtml: fmtUSDk(totals.net_sales), barPct: 100, barTone: 'cobalt', sub: `Gross ${fmtUSDk(totals.sales_ttc)}`, jump: 'hld_consolidation' },
+          { label: 'Net Sales', pctTxt: netRevHld > 0 ? '100%' : '0%', valHtml: fmtUSDk(totals.net_sales), barPct: netRevHld > 0 ? 100 : 0, barTone: 'cobalt', sub: `Gross ${fmtUSDk(totals.sales_ttc)}`, jump: 'hld_consolidation' },
           { op: '-', label: 'COGS', pctTxt: `${rawPct.toFixed(1)}%`, valHtml: `-${fmtUSDk(rawCost)}`, barPct: rawPct, barTone: 'amber', sub: 'Quarry, F&B & Landed', jump: 'hld_consolidation' },
-          { op: '=', label: 'Margin', pctTxt: `${gmPct.toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(grossGm), barPct: Math.max(6, gmPct), barTone: 'cerulean', sub: 'Group spread', jump: 'hld_consolidation' },
+          { op: '=', label: 'Margin', pctTxt: `${gmPct.toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(grossGm), barPct: netRevHld > 0 ? Math.max(6, gmPct) : 0, barTone: 'cerulean', sub: 'Group spread', jump: 'hld_consolidation' },
           { op: '-', label: 'OpEx', pctTxt: `${opExPct.toFixed(1)}%`, valHtml: `-${fmtUSDk(opEx)}`, barPct: opExPct, barTone: 'brass', sub: 'Overhead & staff', jump: 'expenses' },
-          { op: '=', label: 'Profit', pctTxt: `${opPct.toFixed(1)}%`, pctTone: opProf < 0 ? 'crit' : 'good', valHtml: fmtUSDk(opProf), barPct: Math.max(6, opPct), barTone: 'emerald', sub: 'Net group cash', jump: 'statements', isFinal: true }
+          { op: '=', label: 'Profit', pctTxt: `${opPct.toFixed(1)}%`, pctTone: opProf < 0 ? 'crit' : 'good', valHtml: fmtUSDk(opProf), barPct: netRevHld > 0 ? Math.max(6, opPct) : 0, barTone: 'emerald', sub: 'Net group cash', jump: 'statements', isFinal: true }
         ]
       };
       const biList = (icRes.byBilateral || []).slice(0, 4);
@@ -51573,8 +51758,10 @@
       const netMargin = round2(totHt - s.totalStockUsage);
       const opProf = round2(netMargin - s.totalMaintUsd);
       const revDen = Math.max(1, totHt || totRev || 1);
-      const venuePct = Math.round((s.totalRevenueTtc / Math.max(1, totRev)) * 100);
-      const memCollPct = s.totalMemContract > 0 ? Math.round((s.totalMemPaid / s.totalMemContract) * 100) : 100;
+      const venueShareRaw = totRev > 0 ? ((s.totalRevenueTtc / totRev) * 100) : 0;
+      const venuePct = totRev > 0 ? Math.round(venueShareRaw) : 0;
+      const venuePctLbl = (totRev > 0 && s.totalMemContract > 0 && venueShareRaw >= 99.5) ? venueShareRaw.toFixed(1) : String(venuePct);
+      const memCollPct = s.totalMemContract > 0 ? Math.round((s.totalMemPaid / s.totalMemContract) * 100) : 0;
       const occPct = s.totalRoomsCap > 0 ? ((s.occupiedUnits / s.totalRoomsCap) * 100) : 0;
 
       kpiCards = [
@@ -51582,31 +51769,31 @@
           jump: 'hsp_revenue', icon: 'hsp_revenue', k: 'Resort Revenue',
           badge: `${occPct.toFixed(0)}% Occupancy`, badgeTone: 'brass',
           v: fmtUSD(totRev, 0), subVal: `${fmtNum(s.occupiedUnits)}/${fmtNum(s.totalRoomsCap)} units`,
-          segs: [{ pct: venuePct, tone: 'cobalt' }, { pct: Math.max(0, 100 - venuePct), tone: 'emerald' }],
-          d: `Venue ${fmtUSDk(s.totalRevenueTtc)} (${venuePct}%) · Memberships ${fmtUSDk(s.totalMemContract)}`,
+          segs: totRev > 0 ? [{ pct: venuePct, tone: 'cobalt' }, { pct: Math.max(0, 100 - venuePct), tone: 'emerald' }] : [{ pct: 0, tone: 'cobalt' }],
+          d: totRev > 0 ? `Venue ${fmtUSDk(s.totalRevenueTtc)} (${venuePctLbl}%) · Memberships ${fmtUSDk(s.totalMemContract)}` : 'No resort revenue recorded in period',
           cls: 'good', tip: 'Open Daily Venue Revenue'
         },
         {
           jump: 'hsp_stock', icon: 'ledger', k: 'Operating Profit',
           badge: `${s.avgFoodCostPct.toFixed(1)}% F&B Cost`, badgeTone: s.avgFoodCostPct <= 33 ? 'good' : 'warn',
-          v: fmtUSD(opProf, 0), subVal: `${((opProf / revDen) * 100).toFixed(1)}% Margin`,
-          segs: [{ pct: (s.totalStockUsage / revDen) * 100, tone: 'amber' }, { pct: (s.totalMaintUsd / revDen) * 100, tone: 'brass' }, { pct: Math.max(4, (opProf / revDen) * 100), tone: 'emerald' }],
+          v: fmtUSD(opProf, 0), subVal: `${totHt > 0 ? ((opProf / revDen) * 100).toFixed(1) : '0.0'}% Margin`,
+          segs: totHt > 0 ? [{ pct: (s.totalStockUsage / revDen) * 100, tone: 'amber' }, { pct: (s.totalMaintUsd / revDen) * 100, tone: 'brass' }, { pct: Math.max(4, (opProf / revDen) * 100), tone: 'emerald' }] : [{ pct: 0, tone: 'emerald' }],
           d: `Net Margin ${fmtUSDk(netMargin)} · Kitchen BOM ${fmtUSDk(s.totalStockUsage)} · Maint ${fmtUSDk(s.totalMaintUsd)}`,
           cls: 'good', tip: 'Open Kitchen & Cellar Cost'
         },
         {
           jump: 'hsp_pos', icon: 'hsp_pos', k: 'POS & Collections',
-          badge: `${memCollPct}% Paid`, badgeTone: 'good',
+          badge: s.totalMemContract > 0 ? `${memCollPct}% Paid` : 'No Contracts', badgeTone: 'good',
           v: fmtUSD(s.totalMemPaid + s.totalRevenueHt, 0), subVal: `${fmtNum(hsp.posRows.length)} closes`,
-          segs: [{ pct: memCollPct, tone: 'emerald' }, { pct: Math.max(0, 100 - memCollPct), tone: 'cobalt' }],
+          segs: s.totalMemContract > 0 ? [{ pct: memCollPct, tone: 'emerald' }, { pct: Math.max(0, 100 - memCollPct), tone: 'cobalt' }] : [{ pct: 0, tone: 'emerald' }],
           d: `Memberships Paid ${fmtUSDk(s.totalMemPaid)} · Solar Offset ${s.avgSolarOffsetPct.toFixed(0)}%`,
           cls: 'good', tip: 'Open POS Till Closes'
         },
         {
           jump: 'hsp_memberships', icon: 'hsp_memberships', k: 'Membership AR',
-          badge: s.overdueMemCount > 0 ? `${s.overdueMemCount} Arrears` : '100% Current', badgeTone: s.overdueMemCount > 0 ? 'warn' : 'good',
+          badge: s.overdueMemCount > 0 ? `${s.overdueMemCount} Arrears` : (s.totalMemContract > 0 ? '100% Current' : 'Zero Open AR'), badgeTone: s.overdueMemCount > 0 ? 'warn' : 'good',
           v: fmtUSD(s.totalMemArrears, 0), subVal: 'Open Arrears',
-          segs: [{ pct: memCollPct, tone: 'cobalt' }, { pct: Math.max(4, 100 - memCollPct), tone: 'amber' }],
+          segs: s.totalMemContract > 0 ? [{ pct: memCollPct, tone: 'cobalt' }, { pct: Math.max(0, 100 - memCollPct), tone: 'amber' }] : [{ pct: 0, tone: 'cobalt' }],
           d: `${fmtNum(s.overdueMemCount)} Overdue Contracts · Partner Pool ${fmtUSDk(s.totalPartnerPool)}`,
           cls: s.overdueMemCount > 0 ? 'crit' : 'good', tip: 'Open Seasonal Memberships'
         }
@@ -51619,11 +51806,11 @@
         title: 'Consolidated Resort P&L Value Bridge (Ex-VAT)',
         meta: `Food & Pour Cost ${s.avgFoodCostPct.toFixed(1)}% · Generator Solar Offset ${s.avgSolarOffsetPct.toFixed(1)}%`,
         steps: [
-          { label: 'Net Sales', pctTxt: '100%', valHtml: fmtUSDk(totHt), barPct: 100, barTone: 'cobalt', sub: `Billed ${fmtUSDk(totRev)}`, jump: 'hsp_revenue' },
-          { op: '-', label: 'F&B Cost', pctTxt: `${((s.totalStockUsage / revDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(s.totalStockUsage)}`, barPct: (s.totalStockUsage / revDen) * 100, barTone: 'amber', sub: 'Recipe BOM usage', jump: 'hsp_stock' },
-          { op: '=', label: 'Dept GM', pctTxt: `${((netMargin / revDen) * 100).toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(netMargin), barPct: (netMargin / revDen) * 100, barTone: 'cerulean', sub: 'F&B + Chalet spread', jump: 'hsp_menu' },
-          { op: '-', label: 'Energy/OpEx', pctTxt: `${((s.totalMaintUsd / revDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(s.totalMaintUsd)}`, barPct: (s.totalMaintUsd / revDen) * 100, barTone: 'brass', sub: `${fmtNum(s.totalDieselUsedL, 0)} L diesel`, jump: 'hsp_energy' },
-          { op: '=', label: 'Profit', pctTxt: `${((opProf / revDen) * 100).toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(opProf), barPct: Math.max(6, (opProf / revDen) * 100), barTone: 'emerald', sub: 'Net operating cash', jump: 'statements', isFinal: true }
+          { label: 'Net Sales', pctTxt: totHt > 0 ? '100%' : '0%', valHtml: fmtUSDk(totHt), barPct: totHt > 0 ? 100 : 0, barTone: 'cobalt', sub: `Billed ${fmtUSDk(totRev)}`, jump: 'hsp_revenue' },
+          { op: '-', label: 'F&B Cost', pctTxt: totHt > 0 ? `${((s.totalStockUsage / revDen) * 100).toFixed(1)}%` : '0.0%', valHtml: `-${fmtUSDk(s.totalStockUsage)}`, barPct: totHt > 0 ? (s.totalStockUsage / revDen) * 100 : 0, barTone: 'amber', sub: 'Recipe BOM usage', jump: 'hsp_stock' },
+          { op: '=', label: 'Dept GM', pctTxt: totHt > 0 ? `${((netMargin / revDen) * 100).toFixed(1)}%` : '0.0%', pctTone: 'good', valHtml: fmtUSDk(netMargin), barPct: totHt > 0 ? Math.max(0, (netMargin / revDen) * 100) : 0, barTone: 'cerulean', sub: 'F&B + Chalet spread', jump: 'hsp_menu' },
+          { op: '-', label: 'Energy/OpEx', pctTxt: totHt > 0 ? `${((s.totalMaintUsd / revDen) * 100).toFixed(1)}%` : '0.0%', valHtml: `-${fmtUSDk(s.totalMaintUsd)}`, barPct: totHt > 0 ? (s.totalMaintUsd / revDen) * 100 : 0, barTone: 'brass', sub: `${fmtNum(s.totalDieselUsedL, 0)} L diesel`, jump: 'hsp_energy' },
+          { op: '=', label: 'Profit', pctTxt: totHt > 0 ? `${((opProf / revDen) * 100).toFixed(1)}%` : '0.0%', pctTone: 'good', valHtml: fmtUSDk(opProf), barPct: totHt > 0 ? Math.max(6, (opProf / revDen) * 100) : 0, barTone: 'emerald', sub: 'Net operating cash', jump: 'statements', isFinal: true }
         ]
       };
       const topMems = (hsp.membershipRows || []).slice().sort((a, b) => b.contract_usd - a.contract_usd).slice(0, 4);
@@ -51667,15 +51854,15 @@
       const opProf = round2(s.totalSalesMargin - opEx);
       const revDen = Math.max(1, s.totalSalesTtc || 1);
       const stockTot = round2(s.totalStockValUsd + s.totalUnitsLandedUsd);
-      const unitsShare = stockTot > 0 ? Math.round((s.totalUnitsLandedUsd / stockTot) * 100) : 70;
-      const arPromPct = s.grossArUsd > 0 ? Math.min(100, Math.round((s.activePromisesUsd / s.grossArUsd) * 100)) : 50;
+      const unitsShare = stockTot > 0 ? Math.round((s.totalUnitsLandedUsd / stockTot) * 100) : 0;
+      const arPromPct = s.grossArUsd > 0 ? Math.min(100, Math.round((s.activePromisesUsd / s.grossArUsd) * 100)) : 0;
 
       kpiCards = [
         {
           jump: 'trd_sales', icon: 'trd_sales', k: 'Invoiced Revenue',
           badge: `${s.soldUnitsCount} Chassis Sold`, badgeTone: 'brass',
           v: fmtUSD(s.totalSalesTtc, 0), subVal: `Ex-VAT ${fmtUSDk(s.totalSalesNet)}`,
-          segs: [{ pct: Math.round((s.totalSalesNet / revDen) * 100), tone: 'cobalt' }, { pct: Math.round((s.totalSalesVat / revDen) * 100), tone: 'cerulean' }],
+          segs: s.totalSalesTtc > 0 ? [{ pct: Math.round((s.totalSalesNet / revDen) * 100), tone: 'cobalt' }, { pct: Math.round((s.totalSalesVat / revDen) * 100), tone: 'cerulean' }] : [{ pct: 0, tone: 'cobalt' }],
           d: `Net ${fmtUSDk(s.totalSalesNet)} · 11% VAT ${fmtUSDk(s.totalSalesVat)} · ${trd.salesRows.filter(r => !r.is_gap).length} invoices`,
           cls: 'good', tip: 'Open Invoiced Sales'
         },
@@ -51683,7 +51870,7 @@
           jump: 'trd_purchases', icon: 'ledger', k: 'Trading Profit',
           badge: `${s.avgMarginPct.toFixed(1)}% GM`, badgeTone: 'good',
           v: fmtUSD(opProf, 0), subVal: `GM ${fmtUSDk(s.totalSalesMargin)}`,
-          segs: [{ pct: (s.totalSalesCost / revDen) * 100, tone: 'amber' }, { pct: (opEx / revDen) * 100, tone: 'brass' }, { pct: Math.max(4, (opProf / revDen) * 100), tone: 'emerald' }],
+          segs: s.totalSalesTtc > 0 ? [{ pct: (s.totalSalesCost / revDen) * 100, tone: 'amber' }, { pct: (opEx / revDen) * 100, tone: 'brass' }, { pct: Math.max(4, (opProf / revDen) * 100), tone: 'emerald' }] : [{ pct: 0, tone: 'emerald' }],
           d: `Landed COGS ${fmtUSDk(s.totalSalesCost)} · Freight & Customs ${fmtUSDk(s.totalLandedAddUsd)}`,
           cls: 'good', tip: 'Open Imports & Landed Cost'
         },
@@ -51691,7 +51878,7 @@
           jump: 'trd_stock', icon: 'trd_stock', k: 'Showroom & Stock',
           badge: `${fmtNum(s.showroomUnitsCount)} VINs`, badgeTone: s.reorderAlertCount > 0 ? 'brass' : 'good',
           v: fmtUSD(stockTot, 0), subVal: `List ${fmtUSDk(s.totalUnitsListUsd)}`,
-          segs: [{ pct: unitsShare, tone: 'cobalt' }, { pct: Math.max(4, 100 - unitsShare), tone: 'emerald' }],
+          segs: stockTot > 0 ? [{ pct: unitsShare, tone: 'cobalt' }, { pct: Math.max(0, 100 - unitsShare), tone: 'emerald' }] : [{ pct: 0, tone: 'cobalt' }],
           d: `Chassis ${fmtUSDk(s.totalUnitsLandedUsd)} · Spare Parts WAC ${fmtUSDk(s.totalStockValUsd)}`,
           cls: 'good', tip: 'Open Showroom & Stock'
         },
@@ -51699,7 +51886,7 @@
           jump: 'trd_receivables', icon: 'trd_receivables', k: 'Receivables & AR',
           badge: `DSO ${s.weightedDsoDays.toFixed(0)}d`, badgeTone: s.weightedDsoDays > 150 ? 'warn' : 'brass',
           v: fmtUSD(s.grossArUsd, 0), subVal: 'Gross AR',
-          segs: [{ pct: arPromPct, tone: 'emerald' }, { pct: Math.max(4, 100 - arPromPct), tone: 'amber' }],
+          segs: s.grossArUsd > 0 ? [{ pct: arPromPct, tone: 'emerald' }, { pct: Math.max(0, 100 - arPromPct), tone: 'amber' }] : [{ pct: 0, tone: 'emerald' }],
           d: `Promises ${fmtUSDk(s.activePromisesUsd)} · Unallocated Advances ${fmtUSDk(s.customerAdvancesUsd)}`,
           cls: 'good', tip: 'Open Receivables & Advances'
         }
@@ -51717,11 +51904,11 @@
         title: 'Consolidated Trading P&L Bridge (Landed Cost Economics)',
         meta: `Capitalized FOB ${fmtUSDk(s.totalFobUsd)} + Freight/Customs ${fmtUSDk(s.totalLandedAddUsd)} · 100% Parallel Parity`,
         steps: [
-          { label: 'Sales', pctTxt: '100%', valHtml: fmtUSDk(s.totalSalesTtc), barPct: 100, barTone: 'cobalt', sub: `Ex-VAT ${fmtUSDk(s.totalSalesNet)}`, jump: 'trd_sales' },
-          { op: '-', label: 'Landed', pctTxt: `${((s.totalSalesCost / revDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(s.totalSalesCost)}`, barPct: (s.totalSalesCost / revDen) * 100, barTone: 'amber', sub: 'FOB + CIF duty', jump: 'trd_landed' },
-          { op: '=', label: 'Gross GM', pctTxt: `${s.avgMarginPct.toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(s.totalSalesMargin), barPct: s.avgMarginPct, barTone: 'cerulean', sub: 'Realized spread', jump: 'trd_sales' },
-          { op: '-', label: 'Showroom', pctTxt: `${((opEx / revDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(opEx)}`, barPct: (opEx / revDen) * 100, barTone: 'brass', sub: `${s.openWarrantyCount} open PDI/war`, jump: 'trd_warranty' },
-          { op: '=', label: 'Profit', pctTxt: `${((opProf / revDen) * 100).toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(opProf), barPct: Math.max(6, (opProf / revDen) * 100), barTone: 'emerald', sub: 'Net operating cash', jump: 'statements', isFinal: true }
+          { label: 'Sales', pctTxt: s.totalSalesTtc > 0 ? '100%' : '0%', valHtml: fmtUSDk(s.totalSalesTtc), barPct: s.totalSalesTtc > 0 ? 100 : 0, barTone: 'cobalt', sub: `Ex-VAT ${fmtUSDk(s.totalSalesNet)}`, jump: 'trd_sales' },
+          { op: '-', label: 'Landed', pctTxt: s.totalSalesTtc > 0 ? `${((s.totalSalesCost / revDen) * 100).toFixed(1)}%` : '0.0%', valHtml: `-${fmtUSDk(s.totalSalesCost)}`, barPct: s.totalSalesTtc > 0 ? (s.totalSalesCost / revDen) * 100 : 0, barTone: 'amber', sub: 'FOB + CIF duty', jump: 'trd_landed' },
+          { op: '=', label: 'Gross GM', pctTxt: s.totalSalesTtc > 0 ? `${s.avgMarginPct.toFixed(1)}%` : '0.0%', pctTone: 'good', valHtml: fmtUSDk(s.totalSalesMargin), barPct: s.totalSalesTtc > 0 ? Math.max(0, s.avgMarginPct) : 0, barTone: 'cerulean', sub: 'Realized spread', jump: 'trd_sales' },
+          { op: '-', label: 'Showroom', pctTxt: s.totalSalesTtc > 0 ? `${((opEx / revDen) * 100).toFixed(1)}%` : '0.0%', valHtml: `-${fmtUSDk(opEx)}`, barPct: s.totalSalesTtc > 0 ? (opEx / revDen) * 100 : 0, barTone: 'brass', sub: `${s.openWarrantyCount} open PDI/war`, jump: 'trd_warranty' },
+          { op: '=', label: 'Profit', pctTxt: s.totalSalesTtc > 0 ? `${((opProf / revDen) * 100).toFixed(1)}%` : '0.0%', pctTone: 'good', valHtml: fmtUSDk(opProf), barPct: s.totalSalesTtc > 0 ? Math.max(6, (opProf / revDen) * 100) : 0, barTone: 'emerald', sub: 'Net operating cash', jump: 'statements', isFinal: true }
         ]
       };
       const topBuyers = (trd.receivableRows || []).slice().sort((a, b) => b.gross_ar_usd - a.gross_ar_usd).slice(0, 4);
@@ -51760,18 +51947,18 @@
       const s = re.summary;
       const noi = round2(s.contractedAnnualRentUsd - s.woActualUsd);
       const rentDen = Math.max(1, s.contractedAnnualRentUsd || 1);
-      const noiPct = (noi / rentDen) * 100;
+      const noiPct = s.contractedAnnualRentUsd > 0 ? (noi / rentDen) * 100 : 0;
       const capYieldPct = s.portfolioGrossUsd > 0 ? ((noi / s.portfolioGrossUsd) * 100) : 0;
-      const salesPaidPct = s.salesContractUsd > 0 ? Math.round((s.salesPaidUsd / s.salesContractUsd) * 100) : 100;
+      const salesPaidPct = s.salesContractUsd > 0 ? Math.round((s.salesPaidUsd / s.salesContractUsd) * 100) : 0;
       const totOpenAr = round2(s.openRentArUsd + s.salesOpenUsd);
-      const rentArShare = totOpenAr > 0 ? Math.round((s.openRentArUsd / totOpenAr) * 100) : 50;
+      const rentArShare = totOpenAr > 0 ? Math.round((s.openRentArUsd / totOpenAr) * 100) : 0;
 
       kpiCards = [
         {
           jump: 're_leases', icon: 're_leases', k: 'Annual Rent Roll',
           badge: `${s.occupancyPct.toFixed(1)}% Occupied`, badgeTone: s.occupancyPct >= 90 ? 'good' : 'brass',
           v: fmtUSD(s.contractedAnnualRentUsd, 0), subVal: `${s.occupiedUnits}/${s.totalUnits} units`,
-          segs: [{ pct: s.occupancyPct, tone: 'emerald' }, { pct: Math.max(0, 100 - s.occupancyPct), tone: 'amber' }],
+          segs: s.totalUnits > 0 ? [{ pct: s.occupancyPct, tone: 'emerald' }, { pct: Math.max(0, 100 - s.occupancyPct), tone: 'amber' }] : [{ pct: 0, tone: 'emerald' }],
           d: `Portfolio Gross ${fmtUSDk(s.portfolioGrossUsd)} · ${re.leases.length} active leases`,
           cls: 'good', tip: 'Open Lease Registry'
         },
@@ -51779,15 +51966,15 @@
           jump: 're_properties', icon: 're_properties', k: 'Operating NOI',
           badge: `${capYieldPct.toFixed(2)}% Yield`, badgeTone: 'good',
           v: fmtUSD(noi, 0), subVal: `${noiPct.toFixed(1)}% NOI`,
-          segs: [{ pct: (s.woActualUsd / rentDen) * 100, tone: 'amber' }, { pct: Math.max(6, noiPct), tone: 'emerald' }],
+          segs: s.contractedAnnualRentUsd > 0 ? [{ pct: (s.woActualUsd / rentDen) * 100, tone: 'amber' }, { pct: Math.max(6, noiPct), tone: 'emerald' }] : [{ pct: 0, tone: 'emerald' }],
           d: `Invoiced ${fmtUSDk(s.totalInvoicedTtcUsd)} · Fit-Out & Repairs ${fmtUSDk(s.woActualUsd)}`,
           cls: 'good', tip: 'Open Property Portfolio'
         },
         {
           jump: 're_sales', icon: 're_sales', k: 'Sales & Deposits',
-          badge: `${salesPaidPct}% Settled`, badgeTone: 'brass',
+          badge: s.salesContractUsd > 0 ? `${salesPaidPct}% Settled` : 'No Deed Sales', badgeTone: 'brass',
           v: fmtUSD(s.salesContractUsd, 0), subVal: `Paid ${fmtUSDk(s.salesPaidUsd)}`,
-          segs: [{ pct: salesPaidPct, tone: 'emerald' }, { pct: Math.max(0, 100 - salesPaidPct), tone: 'cobalt' }],
+          segs: s.salesContractUsd > 0 ? [{ pct: salesPaidPct, tone: 'emerald' }, { pct: Math.max(0, 100 - salesPaidPct), tone: 'cobalt' }] : [{ pct: 0, tone: 'emerald' }],
           d: `Collected ${fmtUSDk(s.salesPaidUsd)} · Security Deposits Held ${fmtUSDk(s.securityDepositsHeldUsd)}`,
           cls: 'good', tip: 'Open Property Sales & Deeds'
         },
@@ -51795,7 +51982,7 @@
           jump: 're_invoicing', icon: 'customers', k: 'Rent & Buyer AR',
           badge: s.unrechargedUsd > 0 ? `Rec ${fmtUSDk(s.unrechargedUsd)}` : 'Current', badgeTone: s.openRentArUsd > 0 ? 'warn' : 'good',
           v: fmtUSD(totOpenAr, 0), subVal: 'Total Open',
-          segs: [{ pct: rentArShare, tone: 'amber' }, { pct: Math.max(4, 100 - rentArShare), tone: 'cobalt' }],
+          segs: totOpenAr > 0 ? [{ pct: rentArShare, tone: 'amber' }, { pct: Math.max(0, 100 - rentArShare), tone: 'cobalt' }] : [{ pct: 0, tone: 'amber' }],
           d: `Rent AR ${fmtUSDk(s.openRentArUsd)} · Unbilled Buyer Tranches ${fmtUSDk(s.salesOpenUsd)}`,
           cls: s.openRentArUsd > 0 ? 'warn' : 'good', tip: 'Open Rent Invoicing'
         }
@@ -51830,11 +52017,11 @@
         title: 'Consolidated Real Estate Income & NOI Bridge',
         meta: `Portfolio Valuation ${fmtUSDk(s.portfolioGrossUsd)} · ${s.occupiedUnits}/${s.totalUnits} units leased (/2400 shares verified)`,
         steps: [
-          { label: 'Rent Roll', pctTxt: '100%', valHtml: fmtUSDk(s.contractedAnnualRentUsd), barPct: 100, barTone: 'cobalt', sub: `${re.leases.length} active leases`, jump: 're_leases' },
-          { op: '-', label: 'Fit-Out', pctTxt: `${((s.woActualUsd / rentDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(s.woActualUsd)}`, barPct: (s.woActualUsd / rentDen) * 100, barTone: 'amber', sub: `${re.openWorkOrderCount} open WOs`, jump: 're_workorders' },
-          { op: '=', label: 'Asset NOI', pctTxt: `${noiPct.toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(noi), barPct: noiPct, barTone: 'cerulean', sub: `${capYieldPct.toFixed(2)}% yield`, jump: 're_properties' },
-          { op: '-', label: 'Admin/Tax', pctTxt: `${((propTaxOpEx / rentDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(propTaxOpEx)}`, barPct: (propTaxOpEx / rentDen) * 100, barTone: 'brass', sub: 'Deed & registry', jump: 're_invoicing' },
-          { op: '=', label: 'Net NOI', pctTxt: `${((netCashNoi / rentDen) * 100).toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(netCashNoi), barPct: Math.max(6, (netCashNoi / rentDen) * 100), barTone: 'emerald', sub: '+ Sales tranches', jump: 'statements', isFinal: true }
+          { label: 'Rent Roll', pctTxt: s.contractedAnnualRentUsd > 0 ? '100%' : '0%', valHtml: fmtUSDk(s.contractedAnnualRentUsd), barPct: s.contractedAnnualRentUsd > 0 ? 100 : 0, barTone: 'cobalt', sub: `${re.leases.length} active leases`, jump: 're_leases' },
+          { op: '-', label: 'Fit-Out', pctTxt: s.contractedAnnualRentUsd > 0 ? `${((s.woActualUsd / rentDen) * 100).toFixed(1)}%` : '0.0%', valHtml: `-${fmtUSDk(s.woActualUsd)}`, barPct: s.contractedAnnualRentUsd > 0 ? (s.woActualUsd / rentDen) * 100 : 0, barTone: 'amber', sub: `${re.openWorkOrderCount} open WOs`, jump: 're_workorders' },
+          { op: '=', label: 'Asset NOI', pctTxt: s.contractedAnnualRentUsd > 0 ? `${noiPct.toFixed(1)}%` : '0.0%', pctTone: 'good', valHtml: fmtUSDk(noi), barPct: s.contractedAnnualRentUsd > 0 ? Math.max(0, noiPct) : 0, barTone: 'cerulean', sub: `${capYieldPct.toFixed(2)}% yield`, jump: 're_properties' },
+          { op: '-', label: 'Admin/Tax', pctTxt: s.contractedAnnualRentUsd > 0 ? `${((propTaxOpEx / rentDen) * 100).toFixed(1)}%` : '0.0%', valHtml: `-${fmtUSDk(propTaxOpEx)}`, barPct: s.contractedAnnualRentUsd > 0 ? (propTaxOpEx / rentDen) * 100 : 0, barTone: 'brass', sub: 'Deed & registry', jump: 're_invoicing' },
+          { op: '=', label: 'Net NOI', pctTxt: s.contractedAnnualRentUsd > 0 ? `${((netCashNoi / rentDen) * 100).toFixed(1)}%` : '0.0%', pctTone: 'good', valHtml: fmtUSDk(netCashNoi), barPct: s.contractedAnnualRentUsd > 0 ? Math.max(6, (netCashNoi / rentDen) * 100) : 0, barTone: 'emerald', sub: '+ Sales tranches', jump: 'statements', isFinal: true }
         ]
       };
       const topLeases = (re.leases || []).slice().sort((a, b) => b.annual_ttc_usd - a.annual_ttc_usd).slice(0, 4);
@@ -51844,7 +52031,7 @@
       pulseSpec.clientRows = topLeases.map((l, idx) => ({
         kind: 'bar', rank: `#${idx + 1}`,
         name: `${l.tenant} (${l.company === '4235 Company S.A.L' ? '4235 SAL' : 'Properties'})`,
-        val: fmtUSD(l.annual_ttc_usd, 0), shareTxt: `${((l.annual_ttc_usd / rentDen) * 100).toFixed(1)}%`,
+        val: fmtUSD(l.annual_ttc_usd, 0), shareTxt: s.contractedAnnualRentUsd > 0 ? `${((l.annual_ttc_usd / rentDen) * 100).toFixed(1)}%` : '0.0%',
         pct: (l.annual_ttc_usd / maxLease) * 100, barTone: 'cobalt',
         meta: `${l.property} · ${l.unit} (${l.frequency})`,
         jump: 're_leases'
@@ -51872,21 +52059,27 @@
       const ins = computeInsuranceOperations();
       const s = ins.summary;
       const totRev = round2(s.netCommUsd + s.policyFees7064Usd);
-      const opEx = 11400;
+      const insExpLive = round2(filterRecords(SEED.records.expenses || [], { company: 'insurance', strictBu: true, ignoreSearch: true }).reduce((acc, x) => acc + expenseSign(x) * Number(x.total || x.amount || 0), 0));
+      const opEx = (isDemoScopeActive() && !periodRange()) ? (insExpLive || 11400) : insExpLive;
       const opProf = round2(totRev - opEx);
       const gwpDen = Math.max(1, s.gwpUsd || 1);
-      const commYieldPct = (s.grossComm7063Usd / gwpDen) * 100;
+      const commYieldPct = s.gwpUsd > 0 ? (s.grossComm7063Usd / gwpDen) * 100 : 0;
       const netMarginPct = totRev > 0 ? ((opProf / totRev) * 100) : 0;
-      const fidCovPct = s.payableToCarriers4017Usd > 0 ? Math.min(100, Math.round((s.cashHeldUsd / s.payableToCarriers4017Usd) * 100)) : 100;
-      const arApDen = Math.max(1, s.openClientAr4112Usd + s.payableToCarriers4017Usd);
-      const arShare = Math.round((s.openClientAr4112Usd / arApDen) * 100);
+      const fidCovPct = s.payableToCarriers4017Usd > 0
+        ? Math.min(100, Math.round((s.cashHeldUsd / s.payableToCarriers4017Usd) * 100))
+        : (s.cashHeldUsd > 0 ? 100 : 0);
+      const fidCovSub = s.payableToCarriers4017Usd > 0
+        ? `${((s.cashHeldUsd / s.payableToCarriers4017Usd) * 100).toFixed(1)}% Cov`
+        : (s.cashHeldUsd > 0 ? 'Cash Held' : '0.0% Cov');
+      const arApTotIns = s.openClientAr4112Usd + s.payableToCarriers4017Usd;
+      const arShare = arApTotIns > 0 ? Math.round((s.openClientAr4112Usd / arApTotIns) * 100) : 0;
 
       kpiCards = [
         {
           jump: 'ins_policies', icon: 'ins_policies', k: 'Written Premium',
           badge: `${commYieldPct.toFixed(1)}% Yield`, badgeTone: 'brass',
           v: fmtUSD(s.gwpUsd, 0), subVal: `${s.totalPolicyCount} policies`,
-          segs: [{ pct: Math.min(100, 100 - commYieldPct), tone: 'cobalt' }, { pct: Math.max(6, commYieldPct), tone: 'emerald' }],
+          segs: s.gwpUsd > 0 ? [{ pct: Math.min(100, 100 - commYieldPct), tone: 'cobalt' }, { pct: Math.max(6, commYieldPct), tone: 'emerald' }] : [{ pct: 0, tone: 'cobalt' }],
           d: `${fmtNum(s.totalPolicyCount)} policies + ${fmtNum(s.endorsementCount)} endorsements across ${s.carriersCount} carriers`,
           cls: 'good', tip: 'Open Production Ledger'
         },
@@ -51894,15 +52087,15 @@
           jump: 'ins_statements', icon: 'ins_statements', k: 'Brokerage Profit',
           badge: `${netMarginPct.toFixed(1)}% Margin`, badgeTone: 'good',
           v: fmtUSD(opProf, 0), subVal: `Rev ${fmtUSDk(totRev)}`,
-          segs: [{ pct: (s.discount7065Usd / Math.max(1, s.grossComm7063Usd)) * 100, tone: 'amber' }, { pct: (opEx / Math.max(1, totRev)) * 100, tone: 'brass' }, { pct: Math.max(6, netMarginPct), tone: 'emerald' }],
+          segs: totRev > 0 ? [{ pct: (s.discount7065Usd / Math.max(1, s.grossComm7063Usd)) * 100, tone: 'amber' }, { pct: (opEx / Math.max(1, totRev)) * 100, tone: 'brass' }, { pct: Math.max(6, netMarginPct), tone: 'emerald' }] : [{ pct: 0, tone: 'emerald' }],
           d: `Gross Comm ${fmtUSDk(s.grossComm7063Usd)} · Fees ${fmtUSDk(s.policyFees7064Usd)} · Disc -${fmtUSDk(s.discount7065Usd)}`,
           cls: 'good', tip: 'Open Statement Reconciliation'
         },
         {
           jump: 'ins_remittances', icon: 'ins_remittances', k: 'Fiduciary Cash',
-          badge: `${s.retentionPct.toFixed(1)}% Retain`, badgeTone: 'good',
-          v: fmtUSD(s.cashHeldUsd, 0), subVal: '103.7% Cov',
-          segs: [{ pct: fidCovPct, tone: 'emerald' }, { pct: Math.max(0, 100 - fidCovPct), tone: 'brass' }],
+          badge: s.gwpUsd > 0 ? `${s.retentionPct.toFixed(1)}% Retain` : 'No Policies', badgeTone: s.gwpUsd > 0 ? 'good' : 'brass',
+          v: fmtUSD(s.cashHeldUsd, 0), subVal: fidCovSub,
+          segs: s.payableToCarriers4017Usd > 0 || s.cashHeldUsd > 0 ? [{ pct: fidCovPct, tone: 'emerald' }, { pct: Math.max(0, 100 - fidCovPct), tone: 'brass' }] : [{ pct: 0, tone: 'emerald' }],
           d: `Covers ${fmtUSDk(s.payableToCarriers4017Usd)} carrier payable · ${s.dueRenewals90dCount} renewals <90d`,
           cls: 'good', tip: 'Open Carrier Remittances'
         },
@@ -51910,7 +52103,7 @@
           jump: 'ins_billing', icon: 'ins_billing', k: 'Client & Carrier',
           badge: s.stmtDiscrepancyCount > 0 ? `${s.stmtDiscrepancyCount} Stmt Var` : 'Reconciled', badgeTone: s.stmtDiscrepancyCount > 0 ? 'warn' : 'good',
           v: fmtUSD(s.openClientAr4112Usd, 0), subVal: 'Client AR',
-          segs: [{ pct: arShare, tone: 'cobalt' }, { pct: Math.max(4, 100 - arShare), tone: 'amber' }],
+          segs: arApTotIns > 0 ? [{ pct: arShare, tone: 'cobalt' }, { pct: Math.max(0, 100 - arShare), tone: 'amber' }] : [{ pct: 0, tone: 'cobalt' }],
           d: `Payable to Carriers ${fmtUSD(s.payableToCarriers4017Usd, 0)} across ${ins.billing.length} instalments`,
           cls: 'good', tip: 'Open Instalments & Billing'
         }
@@ -51924,16 +52117,17 @@
         const stmtComm = Number(st.statement_comm_usd || st.stmt_comm_usd || expComm);
         return { label: cleanCeoText(st.carrier.split(' ')[0]), fullLabel: cleanCeoText(st.carrier), rev: carrierGwp, cost: Math.max(0, round2(carrierGwp - expComm)), op: stmtComm, badge: `Comm ${fmtUSDk(stmtComm)}` };
       });
-      const commBase = Math.max(1, s.grossComm7063Usd + s.policyFees7064Usd);
+      const commBaseRaw = round2(s.grossComm7063Usd + s.policyFees7064Usd);
+      const commBase = Math.max(1, commBaseRaw);
       pnlBridge = {
         title: 'Brokerage Commission & Fiduciary P&L Value Bridge',
-        meta: `GWP ${fmtUSDk(s.gwpUsd)} · 0 policies breaching commission floor · 103.7% fiduciary cash coverage`,
+        meta: `GWP ${fmtUSDk(s.gwpUsd)} · 0 policies breaching commission floor · ${fidCovSub} fiduciary cash coverage`,
         steps: [
-          { label: 'Gross Comm', pctTxt: `${commYieldPct.toFixed(1)}% GWP`, valHtml: fmtUSDk(s.grossComm7063Usd), barPct: 100, barTone: 'cobalt', sub: `+${fmtUSDk(s.policyFees7064Usd)} fees`, jump: 'ins_policies' },
-          { op: '-', label: 'Rebates', pctTxt: `${((s.discount7065Usd / commBase) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(s.discount7065Usd)}`, barPct: (s.discount7065Usd / commBase) * 100, barTone: 'amber', sub: 'Client discounts', jump: 'ins_policies' },
-          { op: '=', label: 'Net Rev', pctTxt: `${((totRev / commBase) * 100).toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(totRev), barPct: (totRev / commBase) * 100, barTone: 'cerulean', sub: 'Comm + fees', jump: 'ins_statements' },
-          { op: '-', label: 'Desk OpEx', pctTxt: `${((opEx / commBase) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(opEx)}`, barPct: (opEx / commBase) * 100, barTone: 'brass', sub: 'Brokerage OpEx', jump: 'expenses' },
-          { op: '=', label: 'Profit', pctTxt: `${netMarginPct.toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(opProf), barPct: Math.max(6, (opProf / commBase) * 100), barTone: 'emerald', sub: 'Net cash profit', jump: 'statements', isFinal: true }
+          { label: 'Gross Comm', pctTxt: `${commYieldPct.toFixed(1)}% GWP`, valHtml: fmtUSDk(s.grossComm7063Usd), barPct: commBaseRaw > 0 ? 100 : 0, barTone: 'cobalt', sub: `+${fmtUSDk(s.policyFees7064Usd)} fees`, jump: 'ins_policies' },
+          { op: '-', label: 'Rebates', pctTxt: commBaseRaw > 0 ? `${((s.discount7065Usd / commBase) * 100).toFixed(1)}%` : '0.0%', valHtml: `-${fmtUSDk(s.discount7065Usd)}`, barPct: commBaseRaw > 0 ? (s.discount7065Usd / commBase) * 100 : 0, barTone: 'amber', sub: 'Client discounts', jump: 'ins_policies' },
+          { op: '=', label: 'Net Rev', pctTxt: commBaseRaw > 0 ? `${((totRev / commBase) * 100).toFixed(1)}%` : '0.0%', pctTone: 'good', valHtml: fmtUSDk(totRev), barPct: commBaseRaw > 0 ? (totRev / commBase) * 100 : 0, barTone: 'cerulean', sub: 'Comm + fees', jump: 'ins_statements' },
+          { op: '-', label: 'Desk OpEx', pctTxt: commBaseRaw > 0 ? `${((opEx / commBase) * 100).toFixed(1)}%` : '0.0%', valHtml: `-${fmtUSDk(opEx)}`, barPct: commBaseRaw > 0 ? (opEx / commBase) * 100 : 0, barTone: 'brass', sub: 'Brokerage OpEx', jump: 'expenses' },
+          { op: '=', label: 'Profit', pctTxt: commBaseRaw > 0 ? `${netMarginPct.toFixed(1)}%` : '0.0%', pctTone: 'good', valHtml: fmtUSDk(opProf), barPct: commBaseRaw > 0 ? Math.max(6, (opProf / commBase) * 100) : 0, barTone: 'emerald', sub: 'Net cash profit', jump: 'statements', isFinal: true }
         ]
       };
       const topPols = (ins.policies || []).slice().sort((a, b) => b.gross_prem_usd - a.gross_prem_usd).slice(0, 4);
@@ -64511,9 +64705,9 @@
         counterpartyPluralEn: 'Customers & Receivables',
         counterpartyPluralAr: 'العملاء والذمم المدينة',
         counterpartyPluralFr: 'Clients et créances',
-        chronoTableLabelEn: 'Customer Credit Terms (7z-chrono)',
-        chronoTableLabelAr: 'شروط ائتمان العملاء (7z-chrono)',
-        chronoTableLabelFr: 'Conditions de crédit clients (7z-chrono)',
+        chronoTableLabelEn: 'Customer Credit Terms',
+        chronoTableLabelAr: 'شروط ائتمان العملاء',
+        chronoTableLabelFr: 'Conditions de crédit clients',
         targetHubView: 'customers'
       },
       'Holding & Treasury': {
@@ -64523,9 +64717,9 @@
         counterpartyPluralEn: 'Sister Corridors & Facilities',
         counterpartyPluralAr: 'ممرات وتسهيلات الشركات الشقيقة',
         counterpartyPluralFr: 'Corridors et facilités inter-sociétés',
-        chronoTableLabelEn: 'Intercompany Loan & Facility Terms (7z-chrono)',
-        chronoTableLabelAr: 'شروط قروض وتسهيلات المجموعة (7z-chrono)',
-        chronoTableLabelFr: 'Conditions de prêts inter-sociétés (7z-chrono)',
+        chronoTableLabelEn: 'Intercompany Loan & Facility Terms',
+        chronoTableLabelAr: 'شروط قروض وتسهيلات المجموعة',
+        chronoTableLabelFr: 'Conditions de prêts inter-sociétés',
         targetHubView: 'hld_due_matrix'
       },
       'Hospitality & Resorts': {
@@ -64535,9 +64729,9 @@
         counterpartyPluralEn: 'Chalet Members & Event Accounts',
         counterpartyPluralAr: 'أعضاء الشاليهات وحسابات الفعاليات',
         counterpartyPluralFr: 'Membres chalets et comptes événements',
-        chronoTableLabelEn: 'Seasonal Resort Tariffs & Contracts (7z-chrono)',
-        chronoTableLabelAr: 'تعرفات وعقود المنتجعات الموسمية (7z-chrono)',
-        chronoTableLabelFr: 'Tarifs et contrats saisonniers (7z-chrono)',
+        chronoTableLabelEn: 'Seasonal Resort Tariffs & Contracts',
+        chronoTableLabelAr: 'تعرفات وعقود المنتجعات الموسمية',
+        chronoTableLabelFr: 'Tarifs et contrats saisonniers',
         targetHubView: 'hsp_members'
       },
       'Automotive & Heavy Trading': {
@@ -64547,9 +64741,9 @@
         counterpartyPluralEn: 'Showroom & Fleet Receivables',
         counterpartyPluralAr: 'ذمم صالات العرض والأسطول',
         counterpartyPluralFr: 'Créances showroom et flotte',
-        chronoTableLabelEn: 'Showroom Price & Credit Windows (7z-chrono)',
-        chronoTableLabelAr: 'نوافذ أسعار وائتمان المعرض (7z-chrono)',
-        chronoTableLabelFr: 'Fenêtres tarifaires et crédit showroom (7z-chrono)',
+        chronoTableLabelEn: 'Showroom Price & Credit Windows',
+        chronoTableLabelAr: 'نوافذ أسعار وائتمان المعرض',
+        chronoTableLabelFr: 'Fenêtres tarifaires et crédit showroom',
         targetHubView: 'trd_receivables'
       },
       'Real Estate & Property': {
@@ -64559,9 +64753,9 @@
         counterpartyPluralEn: 'Commercial Leases & Buyer Milestones',
         counterpartyPluralAr: 'عقود الإيجار وأقساط المشترين',
         counterpartyPluralFr: 'Baux commerciaux et échéances acquéreurs',
-        chronoTableLabelEn: 'Commercial Lease Rate Schedules (7z-chrono)',
-        chronoTableLabelAr: 'جداول بدلات الإيجار التجاري (7z-chrono)',
-        chronoTableLabelFr: 'Barèmes de loyers commerciaux (7z-chrono)',
+        chronoTableLabelEn: 'Commercial Lease Rate Schedules',
+        chronoTableLabelAr: 'جداول بدلات الإيجار التجاري',
+        chronoTableLabelFr: 'Barèmes de loyers commerciaux',
         targetHubView: 're_invoicing'
       },
       'Insurance & Brokerage': {
@@ -64571,9 +64765,9 @@
         counterpartyPluralEn: 'Policyholder Premium Instalments',
         counterpartyPluralAr: 'أقساط البوالص والذمم المدينة',
         counterpartyPluralFr: 'Échéances de primes assurés',
-        chronoTableLabelEn: 'Carrier Commission & Credit Agreements (7z-chrono)',
-        chronoTableLabelAr: 'اتفاقيات العمولات والائتمان (7z-chrono)',
-        chronoTableLabelFr: 'Accords de commission et crédit (7z-chrono)',
+        chronoTableLabelEn: 'Carrier Commission & Credit Agreements',
+        chronoTableLabelAr: 'اتفاقيات العمولات والائتمان',
+        chronoTableLabelFr: 'Accords de commission et crédit',
         targetHubView: 'ins_billing'
       }
     };
@@ -65270,17 +65464,17 @@
     const bulletsEn = [
       scrubOutwardGuideText(`FIFO AR Aging Tie ($0.00 variance): Current 0-10d ${fmtUSD(currentUsd, 2)}, 11-30d ${fmtUSD(bucket11_30Usd, 2)}, 31-60d ${fmtUSD(bucket31_60Usd, 2)}, 60+d ${fmtUSD(bucket60PlusUsd, 2)} (Advances tracked separately: ${fmtUSD(unallocatedAdvancesUsd, 2)}).`),
       scrubOutwardGuideText(`30-Day Collection Tranches: Days 1-7 ${fmtUSD(tranche1_7dUsd, 2)}, Days 8-14 ${fmtUSD(tranche8_14dUsd, 2)}, Days 15-30 ${fmtUSD(tranche15_30dUsd, 2)}, Beyond 30d ${fmtUSD(beyond30dUsd, 2)} (Early-settlement discount cost: ${fmtUSD(earlyDiscountCostUsd, 2)}).`),
-      scrubOutwardGuideText(`Payment-Behavior & 7z-chrono Credit Ceilings: Median lag ${medianLagDays}d (P90 ${p90LagDays}d), ${overCeilingCount} account(s) above active credit ceiling (${fmtUSD(overCeilingUsd, 2)} excess)${leadCp ? `, top call priority ${leadCp.name} (${fmtUSD(leadCp.grossArUsd, 2)})` : ''}.`)
+      scrubOutwardGuideText(`Payment-Behavior & Effective-Dated Credit Ceilings: Median lag ${medianLagDays}d (P90 ${p90LagDays}d), ${overCeilingCount} account(s) above active credit ceiling (${fmtUSD(overCeilingUsd, 2)} excess)${leadCp ? `, top call priority ${leadCp.name} (${fmtUSD(leadCp.grossArUsd, 2)})` : ''}.`)
     ];
     const bulletsAr = [
       scrubOutwardGuideText(`مطابقة أعمار الذمم المدينة بنظام FIFO (فرق $0.00): حالي 0-10 أيام ${fmtUSD(currentUsd, 2)}، 11-30 يوماً ${fmtUSD(bucket11_30Usd, 2)}، 31-60 يوماً ${fmtUSD(bucket31_60Usd, 2)}، فوق 60 يوماً ${fmtUSD(bucket60PlusUsd, 2)} (دفعات مقدمة منفصلة: ${fmtUSD(unallocatedAdvancesUsd, 2)}).`),
       scrubOutwardGuideText(`شرائح التحصيل خلال 30 يوماً: الأيام 1-7 ${fmtUSD(tranche1_7dUsd, 2)}، الأيام 8-14 ${fmtUSD(tranche8_14dUsd, 2)}، الأيام 15-30 ${fmtUSD(tranche15_30dUsd, 2)}، بعد 30 يوماً ${fmtUSD(beyond30dUsd, 2)} (تكلفة خصم السداد المبكر: ${fmtUSD(earlyDiscountCostUsd, 2)}).`),
-      scrubOutwardGuideText(`سلوك الدفع وسقوف الائتمان الزمنية (7z-chrono): وسيط التأخير ${medianLagDays} يوماً (المئين 90: ${p90LagDays} يوماً)، ${overCeilingCount} حساب يتجاوز سقف الائتمان النشط (${fmtUSD(overCeilingUsd, 2)})${leadCp ? `، أولوية الاتصال القصوى ${leadCp.name} (${fmtUSD(leadCp.grossArUsd, 2)})` : ''}.`)
+      scrubOutwardGuideText(`سلوك الدفع وسقوف الائتمان الزمنية الفعالة: وسيط التأخير ${medianLagDays} يوماً (المئين 90: ${p90LagDays} يوماً)، ${overCeilingCount} حساب يتجاوز سقف الائتمان النشط (${fmtUSD(overCeilingUsd, 2)})${leadCp ? `، أولوية الاتصال القصوى ${leadCp.name} (${fmtUSD(leadCp.grossArUsd, 2)})` : ''}.`)
     ];
     const bulletsFr = [
       scrubOutwardGuideText(`Rapprochement balance âgée FIFO (écart $0.00) : Courant 0-10 j ${fmtUSD(currentUsd, 2)}, 11-30 j ${fmtUSD(bucket11_30Usd, 2)}, 31-60 j ${fmtUSD(bucket31_60Usd, 2)}, 60+ j ${fmtUSD(bucket60PlusUsd, 2)} (Avances séparées : ${fmtUSD(unallocatedAdvancesUsd, 2)}).`),
       scrubOutwardGuideText(`Tranches d'encaissement à 30 jours : Jours 1-7 ${fmtUSD(tranche1_7dUsd, 2)}, Jours 8-14 ${fmtUSD(tranche8_14dUsd, 2)}, Jours 15-30 ${fmtUSD(tranche15_30dUsd, 2)}, Au-delà de 30 j ${fmtUSD(beyond30dUsd, 2)} (Coût remise anticipée : ${fmtUSD(earlyDiscountCostUsd, 2)}).`),
-      scrubOutwardGuideText(`Comportement de paiement et plafonds 7z-chrono : Délai médian ${medianLagDays} j (P90 ${p90LagDays} j), ${overCeilingCount} compte(s) au-dessus du plafond actif (${fmtUSD(overCeilingUsd, 2)})${leadCp ? `, priorité d'appel ${leadCp.name} (${fmtUSD(leadCp.grossArUsd, 2)})` : ''}.`)
+      scrubOutwardGuideText(`Comportement de paiement et plafonds de crédit effectifs : Délai médian ${medianLagDays} j (P90 ${p90LagDays} j), ${overCeilingCount} compte(s) au-dessus du plafond actif (${fmtUSD(overCeilingUsd, 2)})${leadCp ? `, priorité d'appel ${leadCp.name} (${fmtUSD(leadCp.grossArUsd, 2)})` : ''}.`)
     ];
 
     const defaultWhatsappEn = leadCp
@@ -65577,9 +65771,9 @@
         counterpartyPluralEn: 'Suppliers, Quarries & 3-Leg AP',
         counterpartyPluralAr: 'الموردون والمقالع وذمم الأرجل الثلاث',
         counterpartyPluralFr: 'Fournisseurs, carrières et 3 volets AP',
-        chronoTableLabelEn: 'Supplier 3-Leg Terms & Rates (7z-chrono)',
-        chronoTableLabelAr: 'شروط وأسعار الموردين (7z-chrono)',
-        chronoTableLabelFr: 'Conditions fournisseurs et tarifs (7z-chrono)',
+        chronoTableLabelEn: 'Supplier 3-Leg Terms & Rates',
+        chronoTableLabelAr: 'شروط وأسعار الموردين',
+        chronoTableLabelFr: 'Conditions fournisseurs et tarifs',
         targetHubView: 'suppliers'
       },
       'Holding & Treasury': {
@@ -65589,9 +65783,9 @@
         counterpartyPluralEn: 'Sister Corridors & Borrowings',
         counterpartyPluralAr: 'ممرات القروض والذمم الدائنة الشقيقة',
         counterpartyPluralFr: 'Corridors et emprunts inter-sociétés',
-        chronoTableLabelEn: 'Intercompany Facility & Rate Windows (7z-chrono)',
-        chronoTableLabelAr: 'نوافذ تسهيلات وفائدة المجموعة (7z-chrono)',
-        chronoTableLabelFr: 'Facilités et taux inter-sociétés (7z-chrono)',
+        chronoTableLabelEn: 'Intercompany Facility & Rate Windows',
+        chronoTableLabelAr: 'نوافذ تسهيلات وفائدة المجموعة',
+        chronoTableLabelFr: 'Facilités et taux inter-sociétés',
         targetHubView: 'hld_due_matrix'
       },
       'Hospitality & Resorts': {
@@ -65601,21 +65795,21 @@
         counterpartyPluralEn: 'Resort F&B, Utility & Vendor Payables',
         counterpartyPluralAr: 'ذمم المأكولات والمشروبات والخدمات للمنتجعات',
         counterpartyPluralFr: 'Dettes F&B, fluides et fournisseurs resort',
-        chronoTableLabelEn: 'Resort Supply Contracts & Seasonal Terms (7z-chrono)',
-        chronoTableLabelAr: 'عقود التوريد والخدمات الموسمية (7z-chrono)',
-        chronoTableLabelFr: 'Contrats d approvisionnement resort (7z-chrono)',
+        chronoTableLabelEn: 'Resort Supply Contracts & Seasonal Terms',
+        chronoTableLabelAr: 'عقود التوريد والخدمات الموسمية',
+        chronoTableLabelFr: 'Contrats d\'approvisionnement resort',
         targetHubView: 'hsp_expenses'
       },
       'Automotive & Heavy Trading': {
         counterpartyNounEn: 'Factory & Landed Cost Creditor',
         counterpartyNounAr: 'دائن المصنع وتكاليف الشحن والجمارك',
-        counterpartyNounFr: 'Créancier usine et coûts d approche',
+        counterpartyNounFr: 'Créancier usine et coûts d\'approche',
         counterpartyPluralEn: 'Vehicle POs, Freight & Floorplan Payables',
         counterpartyPluralAr: 'ذمم طلبيات الشاحنات والشحن والتخليص',
         counterpartyPluralFr: 'Commandes camions, fret et floorplan',
-        chronoTableLabelEn: 'Factory PO & Trade Financing Terms (7z-chrono)',
-        chronoTableLabelAr: 'شروط تمويل وتوريد الوكالات (7z-chrono)',
-        chronoTableLabelFr: 'Conditions de financement commercial (7z-chrono)',
+        chronoTableLabelEn: 'Factory PO & Trade Financing Terms',
+        chronoTableLabelAr: 'شروط تمويل وتوريد الوكالات',
+        chronoTableLabelFr: 'Conditions de financement commercial',
         targetHubView: 'trd_purchases'
       },
       'Real Estate & Property': {
@@ -65625,21 +65819,21 @@
         counterpartyPluralEn: 'Contractor, CAM & Municipal Payables',
         counterpartyPluralAr: 'ذمم المتعهدين والصيانة والرسوم البلدية',
         counterpartyPluralFr: 'Dettes travaux, charges CAM et taxes',
-        chronoTableLabelEn: 'Contractor Rate Agreements & CAM Schedules (7z-chrono)',
-        chronoTableLabelAr: 'اتفاقيات بدلات الصيانة والخدمات المشتركة (7z-chrono)',
-        chronoTableLabelFr: 'Accords de prestations et barèmes CAM (7z-chrono)',
+        chronoTableLabelEn: 'Contractor Rate Agreements & CAM Schedules',
+        chronoTableLabelAr: 'اتفاقيات بدلات الصيانة والخدمات المشتركة',
+        chronoTableLabelFr: 'Accords de prestations et barèmes CAM',
         targetHubView: 're_expenses'
       },
       'Insurance & Brokerage': {
         counterpartyNounEn: 'Insurance Carrier & Sub-Agent Creditor',
         counterpartyNounAr: 'شركة التأمين والوكيل الفرعي الدائن',
-        counterpartyNounFr: 'Compagnie d assurance et sous-agent créditeur',
+        counterpartyNounFr: 'Compagnie d\'assurance et sous-agent créditeur',
         counterpartyPluralEn: 'Carrier Premium Bordereaux & Commission Splits',
         counterpartyPluralAr: 'جداول تسوية أقساط الشركات وحصص الوكلاء',
         counterpartyPluralFr: 'Bordereaux compagnies et rétrocessions',
-        chronoTableLabelEn: 'Carrier Settlement & Commission Protocols (7z-chrono)',
-        chronoTableLabelAr: 'بروتوكولات تسوية الشركات والعمولات (7z-chrono)',
-        chronoTableLabelFr: 'Protocoles de règlement compagnies (7z-chrono)',
+        chronoTableLabelEn: 'Carrier Settlement & Commission Protocols',
+        chronoTableLabelAr: 'بروتوكولات تسوية الشركات والعمولات',
+        chronoTableLabelFr: 'Protocoles de règlement compagnies',
         targetHubView: 'ins_settlements'
       }
     };
@@ -70114,16 +70308,31 @@
       };
 
       if (ind === 'Real Estate & Property' && typeof computeRealEstateOperations === 'function') {
-        const re = computeRealEstateOperations({ ignoreSearch: true }) || {};
+        const re = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) || {};
         const propCell = valByHdr(/property|building|asset|tower|center/i) || secondaryLbl;
         const unitCell = valByHdr(/^unit|shop|suite/i);
         const tenantCell = valByHdr(/tenant|lessee|client/i);
+        const cleanRelKey = v => norm(v).replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim();
+        const RE_GENERIC_TOKENS = new Set(['commercial', 'center', 'unit', 'units', 'tower', 'building', 'plot', 'land', 'estate', 'complex', 'hub', 'block', 'floor', 'suite', 'showroom', 'luxury', 'residence', 'medical', 'pavillon', 'coastal', 'development', 'industrial', 'logistics', 'remittance', 'upkeep', 'ledger', 'pool', 'company', 'properties', 'sal']);
+        const propTokens = cleanRelKey(propCell).split(/\s+/).filter(tok => tok.length >= 4 && !RE_GENERIC_TOKENS.has(tok));
         const allLeases = (re.leases || []).filter(l => l && !l.voided && !l._scheduleVoided && isDomCoAllowed(l.company));
         let hits = allLeases.filter(l => {
           if (singleDomCo && l.company && norm(l.company) !== norm(singleDomCo)) return false;
           if (unitCell && l.unit && (norm(l.unit).includes(norm(unitCell)) || norm(unitCell).includes(norm(l.unit.replace(/\s*\([^)]*\)\s*/g, ''))))) return true;
-          if (tenantCell && !/vacant|available/i.test(tenantCell) && l.tenant && (norm(l.tenant) === norm(tenantCell) || norm(tenantCell).includes(norm(l.tenant)))) return true;
-          if (propCell && l.property && (norm(l.property) === norm(propCell) || norm(propCell).includes(norm(l.property)) || norm(l.property).includes(norm(propCell)) || norm(l.property) === norm(primaryId))) return true;
+          if (tenantCell && !/vacant|available|remittance|ledger/i.test(tenantCell) && l.tenant) {
+            const lt = cleanRelKey(l.tenant);
+            const tc = cleanRelKey(tenantCell);
+            if (lt && tc && (lt === tc || tc.includes(lt) || lt.includes(tc))) return true;
+          }
+          if (propCell && l.property) {
+            const lp = cleanRelKey(l.property);
+            const pc = cleanRelKey(propCell);
+            if (lp && pc && (lp === pc || pc.includes(lp) || lp.includes(pc) || norm(l.property) === norm(primaryId))) return true;
+            if (propTokens.length) {
+              const lTokens = lp.split(/\s+/).filter(Boolean);
+              if (propTokens.some(tok => lTokens.includes(tok))) return true;
+            }
+          }
           return false;
         });
         if (!hits.length && /^PROP-/i.test(primaryId)) {
@@ -70157,7 +70366,7 @@
       }
 
       if (ind === 'Hospitality & Resorts' && typeof computeHospitalityOperations === 'function') {
-        const hsp = computeHospitalityOperations({ ignoreSearch: true }) || {};
+        const hsp = computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }) || {};
         const tierCell = valByHdr(/tier|venue|outlet|unit|chalet|cabana|category/i) || secondaryLbl;
         const targetResort = rowCompany || singleDomCo || valByHdr(/resort|company|entity/i);
         const allTariffs = (hsp.tariffRows || []).filter(t => t && !t.voided && !t._scheduleVoided && isDomCoAllowed(t.company));
@@ -70192,7 +70401,7 @@
       }
 
       if (ind === 'Automotive & Heavy Trading' && typeof computeTradingOperations === 'function') {
-        const trd = computeTradingOperations({ ignoreSearch: true }) || {};
+        const trd = computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }) || {};
         const modelCell = valByHdr(/model|family|item|segment|category/i) || secondaryLbl;
         const targetCo = rowCompany || singleDomCo || valByHdr(/company|entity/i);
         const allTargets = (trd.targetRows || []).filter(t => t && !t.voided && !t._scheduleVoided && isDomCoAllowed(t.company));
@@ -70230,7 +70439,7 @@
       }
 
       if (ind === 'Insurance & Brokerage' && typeof computeInsuranceOperations === 'function') {
-        const ins = computeInsuranceOperations() || {};
+        const ins = computeInsuranceOperations({ ignorePeriod: true }) || {};
         const explicitCarrier = valByHdr(/carrier|insurer/i);
         const carrierCell = explicitCarrier || secondaryLbl;
         const lineCell = valByHdr(/line|product|category/i);
@@ -72219,12 +72428,12 @@
         { label: 'Site', key: 'Site', fmt: (v, r) => `<strong>${esc(v)}</strong>${siteJvMarker(r && (r.JV === 'Yes' || r.is_jv))}` }, { label: 'Sales Loads', key: 'loads', r: true, fmt: C.num0 }, { label: 'Tons Sold', key: 'tons_sold', r: true, fmt: C.num0 }, { label: 'Sales TTC', key: 'sales_ttc', r: true, fmt: C.usd2 }, { label: 'Transport Rev', key: 'trans_rev', r: true, fmt: C.usd2 },
         { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: C.num0 }, { label: 'Raw Tons', key: 'raw_tons', r: true, fmt: C.num0 }, { label: 'Raw Cost', key: 'raw_cost', r: true, fmt: C.usd2 }, { label: 'Partner 50% of Raw Cost', key: 'raw_cost', r: true, fmt: v => `<strong>${fmtUSD(Number(v || 0) / 2, 2)}</strong>` }
       ], rows, [{ v: `${rows.length} SITES` }, { v: fmtNum(sum(rows, 'loads')), r: true }, { v: fmtNum(sum(rows, 'tons_sold'), 0), r: true }, { v: fmtUSD(sum(rows, 'sales_ttc'), 2), r: true }, { v: fmtUSD(sum(rows, 'trans_rev'), 2), r: true }, { v: fmtNum(sum(rows, 'raw_loads')), r: true }, { v: fmtNum(sum(rows, 'raw_tons'), 0), r: true }, { v: fmtUSD(sum(rows, 'raw_cost'), 2), r: true }, { v: fmtUSD(sum(rows, 'raw_cost') / 2, 2), r: true }]);
-      bodyHtml += `<p class="form-note">JV entitlement = partner share × the JV site's raw material cost (Stock Entitlement rule, m114). Revenue-side entitlement is not derivable from tickets because the ticket Site is the delivery site — confirm with the accountant before reading this as a debt.</p>`;
+      bodyHtml += `<p class="form-note">JV entitlement = partner share × the JV site's raw material cost (Stock Entitlement basis). Revenue-side entitlement is not derivable from tickets because the ticket Site is the delivery site; confirm with the accountant before reading this as a debt.</p>`;
     } else if (code === '17') {
       const today = SEED_DATE;
       const rows = sortRows(filterRecords(SEED.records.price_rules, { ignoreSearch: true, ignorePeriod: true }).filter(r => (!r.end_date || String(r.end_date) >= today) && (!r.start_date || String(r.start_date) <= today)), 'st17', 'unit_price', 'desc');
       bodyHtml = stTable([
-        { label: 'Co.', key: 'company' }, { label: 'Customer / Owner', key: 'customer', fmt: (v, r) => `<strong>${esc(v || r.supplier || 'Standard List')}</strong>` }, { label: 'Product', key: 'product', fmt: v => esc(v || '(All Grades)') }, { label: 'Site', key: 'site' }, { label: 'Unit', key: 'unit', mono: true }, { label: 'Unit Price', key: 'unit_price', r: true, fmt: C.usd2 }, { label: 'Transport', key: 'trans_unit_price', r: true, fmt: v => v ? fmtUSD(v, 2) : '—' }, { label: 'Start', key: 'start_date', mono: true }, { label: 'End', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }
+        { label: 'Co.', key: 'company' }, { label: 'Customer / Owner', key: 'customer', fmt: (v, r) => `<strong>${esc(v || r.supplier || 'Standard List')}</strong>` }, { label: 'Product', key: 'product', fmt: v => esc(v || '(All Grades)') }, { label: 'Site', key: 'site' }, { label: 'Unit', key: 'unit', mono: true }, { label: 'Unit Price', key: 'unit_price', r: true, fmt: C.usd2 }, { label: 'Transport', key: 'trans_unit_price', r: true, fmt: v => v ? fmtUSD(v, 2) : '-' }, { label: 'Start', key: 'start_date', mono: true }, { label: 'End', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }
       ], rows, [{ v: `${fmtNum(rows.length)} ACTIVE AGREEMENTS AT ${today}`, span: 9 }]);
     } else if (code === '18') {
       const vatTickets = sortRows(filterRecords(SEED.records.sales_tickets, { ignoreSearch: true }).filter(t => ticketSign(t) !== 0 && (Number(t.vat || 0) !== 0 || t.vat_invoice)), 'st18', 'date', 'desc');
@@ -72477,9 +72686,9 @@
   ];
 
   const SEAT_ACCESS_OPTIONS = [
-    { value: 'full|full', label: 'Full Executive (All Dashboards & All Statements)', short: 'All Dashboards + 22 Statements', pill: 'Full Executive', badgeCls: 'badge-ok' },
+    { value: 'full|full', label: 'Full Executive (All Dashboards & All Statements)', short: 'All Dashboards + 27 Statements', pill: 'Full Executive', badgeCls: 'badge-ok' },
     { value: 'full|partial', label: 'All Dashboards + Operational Statements', short: 'All Dashboards + Ops Statements', pill: 'All Dash + Ops Stmt', badgeCls: 'badge-ok' },
-    { value: 'partial|full', label: 'Operational Dashboards + All Statements', short: 'Ops Dashboards + 22 Statements', pill: 'Ops Dash + All Stmt', badgeCls: 'badge-info' },
+    { value: 'partial|full', label: 'Operational Dashboards + All Statements', short: 'Ops Dashboards + 27 Statements', pill: 'Ops Dash + All Stmt', badgeCls: 'badge-info' },
     { value: 'partial|partial', label: 'Operational Dashboards & Statements', short: 'Ops Dashboards + Statements', pill: 'Operational Only', badgeCls: 'badge-info' },
     { value: 'none|partial', label: 'Hub Registers + Operational Statements', short: 'Registers + Ops Statements', pill: 'Statements Only', badgeCls: 'badge-brass' },
     { value: 'none|none', label: 'Entry & Kiosks Only (No Reports)', short: 'Entry & Kiosks Only', pill: 'No Reports', badgeCls: 'badge-warn' },
@@ -83508,10 +83717,10 @@
         setHint('hint_eq_driver', hasSup
           ? (curSup
               ? (ownerDrvs.length
-                  ? `${ownerDrvs.length} driver${ownerDrvs.length === 1 ? '' : 's'} registered to ${curSup} — active Equipment Log driver is auto-filled & locked onto tickets`
-                  : `No drivers registered to ${curSup} yet — type a driver name here to set as active driver & link to ${curSup}`)
+                  ? `${ownerDrvs.length} driver${ownerDrvs.length === 1 ? '' : 's'} registered to ${curSup} · active Equipment Log driver is auto-filled & locked onto tickets`
+                  : `No drivers registered to ${curSup} yet · type a driver name here to set as active driver & link to ${curSup}`)
               : 'Select Truck Owner first to filter its drivers, or type an active driver name')
-          : `${ownerDrvs.length} company fleet driver${ownerDrvs.length === 1 ? '' : 's'} — active Equipment Log driver is auto-filled & locked onto tickets`, ownerDrvs.length ? 'ok' : '');
+          : `${ownerDrvs.length} company fleet driver${ownerDrvs.length === 1 ? '' : 's'} · active Equipment Log driver is auto-filled & locked onto tickets`, ownerDrvs.length ? 'ok' : '');
         if (STATE.modalForm === 'equipment') {
           syncUniversalMainDupHint('f_truck', 'equipment', 'Equipment / Truck');
         }
@@ -84090,9 +84299,9 @@
         }
         setHint('hint_jv_site', site && jvPos ? `${jvPos.loads} loads · 50% share accrued ${fmtUSD(accrued, 2)}` : '', 'ok');
         setHint('hint_jv_amount', isAdvDist ? `Exceeds accrued JV share (${fmtUSD(remBefore, 2)}) by +${fmtUSD(Math.abs(remAfter), 2)} · posts an Advance Distribution` : '', isAdvDist ? 'warn' : '');
-        setText('calc_jv_accrued', site ? fmtUSD(accrued, 2) : '—');
-        setText('calc_jv_paid', site ? fmtUSD(paid, 2) : '—');
-        setText('calc_jv_rem', site ? (remAfter < -0.01 ? `Advance +${fmtUSD(Math.abs(remAfter), 2)}` : `${fmtUSD(Math.max(0, remAfter), 2)} Left`) : '—');
+        setText('calc_jv_accrued', site ? fmtUSD(accrued, 2) : '-');
+        setText('calc_jv_paid', site ? fmtUSD(paid, 2) : '-');
+        setText('calc_jv_rem', site ? (remAfter < -0.01 ? `Advance +${fmtUSD(Math.abs(remAfter), 2)}` : `${fmtUSD(Math.max(0, remAfter), 2)} Left`) : '-');
         setText('calc_jv_status', jvt === 'partnership' ? `${share}% JV Partnership` : (isAdvDist ? 'Advance Distribution' : (amt > 0 && Math.abs(remAfter) <= 0.01 ? 'Settles Accrued Share' : (site ? 'Profit Distribution' : 'Select JV Site'))));
         commonDateChecks([]);
         renderAdminLockBar();
@@ -84495,18 +84704,18 @@
             setFieldVisible('wrap_resolve_defect', false);
           } else if (defRef) {
             banner.className = 'pa-rec-banner ok';
-            banner.innerHTML = `${ic('check_circle')} <span><b>Pre-Replacement Defect Verified</b> — Linked to prior defect report <b>${esc(defRef)}</b>${linkedDef && linkedDef.subsystem ? ' (' + esc(linkedDef.subsystem) + ')' : ''} on <b>${esc(unit)}</b>.</span>`;
+            banner.innerHTML = `${ic('check_circle')} <span><b>Pre-Replacement Defect Verified</b> · Linked to prior defect report <b>${esc(defRef)}</b>${linkedDef && linkedDef.subsystem ? ' (' + esc(linkedDef.subsystem) + ')' : ''} on <b>${esc(unit)}</b>.</span>`;
             setFieldVisible('wrap_resolve_defect', Boolean(!linkedDef || isDefectOpen(linkedDef)));
           } else {
             const openCnt = unitDefs.filter(isDefectOpen).length;
             banner.className = 'pa-rec-banner warn';
-            banner.innerHTML = `${ic('warn')} <span><b>Unnotified Part Change</b> — No prior defect report is linked for <b>${esc(unit)}</b>${openCnt ? ` (${openCnt} open defect${openCnt === 1 ? '' : 's'} available in dropdown)` : ' (0 prior defects on file)'}. Emergency breakdown replacements are permitted, and <b>AI Sentinels &amp; Audit</b> will flag this change as unnotified.</span>`;
+            banner.innerHTML = `${ic('warn')} <span><b>Unnotified Part Change</b> · No prior defect report is linked for <b>${esc(unit)}</b>${openCnt ? ` (${openCnt} open defect${openCnt === 1 ? '' : 's'} available in dropdown)` : ' (0 prior defects on file)'}. Emergency breakdown replacements are permitted, and <b>AI Sentinels &amp; Audit</b> will flag this change as unnotified.</span>`;
             setFieldVisible('wrap_resolve_defect', false);
           }
         }
         const eq = unit ? equipInfo(unit, company) : null;
         setHint('hint_truck', unit ? `${(eq && eq.type) || 'Truck'} · ${(eq && eq.ownership) || 'Fleet'} · ${unitDefs.filter(isDefectOpen).length} open defect(s)` : '', unit ? 'ok' : '');
-        setHint('hint_defect_ref', defRef ? 'Pre-notification verified' : (unit ? 'Unnotified emergency change — Sentinel S10 will log exception' : ''), defRef ? 'ok' : (unit ? 'warn' : ''));
+        setHint('hint_defect_ref', defRef ? 'Pre-notification verified' : (unit ? 'Unnotified emergency change · Sentinel S10 will log exception' : ''), defRef ? 'ok' : (unit ? 'warn' : ''));
         setHint('hint_part_loc', /^Stored/i.test(disp) ? 'Warehouse shelf / spare bin where piece is stored' : (/^Installed/i.test(disp) ? 'Target unit where piece is mounted' : ''), '');
         setHint('hint_part_party', /Maintenance|Workshop/i.test(disp) ? 'Workshop / mechanic rebuilding this piece' : (/^Sold/i.test(disp) ? 'Used-part / scrap buyer' : ''), '');
         const outlay = round2(num('f_new_cost') + num('f_repair_cost'));
@@ -89177,6 +89386,7 @@
     for (const r of pool) {
       if (!r || r.voided) continue;
       if (excludeId && r.id != null && String(r.id) === excludeId) continue;
+      if (!opts.includeSelf && isSelfEditingRow(r, crKey)) continue;
       const rMain = norm(universalMainValue(crKey, r));
       if (crKey === 'expense_subcategories') {
         if (q && rMain === q && (!qCat || norm(r.category) === qCat)) return r;
@@ -89267,8 +89477,8 @@
       if (!val('f_date')) addErr('f_date', 'Date is required.');
       else if (date > today && !/^pricerule/.test(f) && f !== 'logistics' && f !== 'recurringexpense' && f !== 'staffassignment' && !(editCtx && date === origEditDate)) addErr('f_date', 'Future dates are not allowed.');
       else if (date < MIN_DATE && !(editCtx && date === origEditDate)) addErr('f_date', 'Date is before the books opened (' + MIN_DATE + ').');
-      else if (!skipLockedPendBackdate && isAlertRuleEnabled('G_BACKDATE_NOTE') && daysBetween(date, today) > bdDaysLimit && !notes && ['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement'].includes(f)) addErr('f_notes', `Back-dated more than ${fmtNum(bdDaysLimit, 0)} days — add a note explaining why.`);
-      if (!skipLockedPendRepdate && isAlertRuleEnabled('G_REPDATE_GAP') && val('f_repdate') && Math.abs(daysBetween(date, repDate)) > repGapLimit && !notes) addErr('f_notes', `Reporting Date is more than ${fmtNum(repGapLimit, 0)} days from Transaction Date — add a note explaining why.`);
+      else if (!skipLockedPendBackdate && isAlertRuleEnabled('G_BACKDATE_NOTE') && daysBetween(date, today) > bdDaysLimit && !notes && ['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement'].includes(f)) addErr('f_notes', `Back-dated more than ${fmtNum(bdDaysLimit, 0)} days: add a note explaining why.`);
+      if (!skipLockedPendRepdate && isAlertRuleEnabled('G_REPDATE_GAP') && val('f_repdate') && Math.abs(daysBetween(date, repDate)) > repGapLimit && !notes) addErr('f_notes', `Reporting Date is more than ${fmtNum(repGapLimit, 0)} days from Transaction Date: add a note explaining why.`);
     }
     const customBlocks = evaluateFormCustomAlerts(f, c).filter(h => h.blocks);
     if (customBlocks.length && !notes && !(FORM_UI.adminUnlocked && FORM_UI.adminUnlocked.__all)) {
@@ -89297,7 +89507,7 @@
       if (!ticket) addErr('f_ticketno', 'Ticket number is required.');
       const dispS = c.disp || syncTicketDispositionUI('sales', c.origin);
       const dup = ticketExists(company, ticket, 'sales', repDate || date);
-      if (dup && dup.blocked && dispS.mode !== 'return_wtc') addErr('f_ticketno', `Ticket ${ticket} is not accepted — already used on ${dup.label} ${dup.row.ticket_no} dated ${dup.dateStr} (${dup.ageDays === 0 ? 'same day' : (dup.diffDays === 1 ? 'day before' : '1 day apart')}).`);
+      if (dup && dup.blocked && dispS.mode !== 'return_wtc') addErr('f_ticketno', `Ticket ${ticket} is not accepted: already used on ${dup.label} ${dup.row.ticket_no} dated ${dup.dateStr} (${dup.ageDays === 0 ? 'same day' : (dup.diffDays === 1 ? 'day before' : '1 day apart')}).`);
       if (dispS.mode === 'remove_slip') {
         if (!canVoid()) addErr('f_ticketno', 'Only a Supervisor or Admin seat can remove tickets.');
         record = {
@@ -89500,7 +89710,7 @@
         if (!ticket) addErr('f_ticketno', 'Ticket number is required.');
         const dispR = c.disp || syncTicketDispositionUI('raw', c.origin);
         const dup = ticketExists(company, ticket, 'raw', repDate || date);
-        if (dup && dup.blocked && dispR.mode !== 'return_wtc') addErr('f_ticketno', `Ticket ${ticket} is not accepted — already used on ${dup.label} ${dup.row.ticket_no} dated ${dup.dateStr} (${dup.ageDays === 0 ? 'same day' : (dup.diffDays === 1 ? 'day before' : '1 day apart')}).`);
+        if (dup && dup.blocked && dispR.mode !== 'return_wtc') addErr('f_ticketno', `Ticket ${ticket} is not accepted: already used on ${dup.label} ${dup.row.ticket_no} dated ${dup.dateStr} (${dup.ageDays === 0 ? 'same day' : (dup.diffDays === 1 ? 'day before' : '1 day apart')}).`);
         if (dispR.mode === 'remove_slip') {
           if (!canVoid()) addErr('f_ticketno', 'Only a Supervisor or Admin seat can remove tickets.');
           record = {
@@ -93098,8 +93308,11 @@
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.recordUsage === 'function') {
       window.MFG_CMD_PALETTE.recordUsage('form', form);
     }
+    if (editTargetRow && !editTargetRow.id && UNIVERSAL_MAIN_SPEC[editTargetCrKey] && universalMainValue(editTargetCrKey, editTargetRow)) {
+      editTargetRow.id = `seed_${editTargetCrKey}_${universalMainNormKey(editTargetCrKey, editTargetRow)}`;
+    }
     STATE.editingRecord = editTargetRow
-      ? { crKey: editTargetCrKey, id: String(editTargetRow.id), orig: Object.assign({}, editTargetRow) }
+      ? { crKey: editTargetCrKey, id: editTargetRow.id != null ? String(editTargetRow.id) : '', orig: Object.assign({}, editTargetRow) }
       : null;
     STATE.editingPendingExpenseId = pendingExpRow ? String(pendingExpRow.id) : '';
     STATE.editingPendingRawId = pendingRawRow ? String(pendingRawRow.id) : '';
@@ -94209,7 +94422,7 @@
     } else if (form === 'attendance') {
       setModalControlVal('f_staff', row.staff || '');
       const rawType = String(row.type || row.status || 'Present');
-      const isLeave = /Absence|VacAbsence|Halfs*Day|Sick|Leave|Unpaid/i.test(rawType);
+      const isLeave = /Absence|VacAbsence|Half\s*Day|Sick|Leave|Unpaid/i.test(rawType);
       if (isLeave) {
         setModalControlVal('f_att_mode', 'leave');
         const lvType = /Half/i.test(rawType) ? 'Half Day' : (/Sick/i.test(rawType) ? 'Sick Leave' : (/Vac/i.test(rawType) ? 'VacAbsence' : 'Absence'));
@@ -94450,6 +94663,45 @@
       setModalControlVal('f_int_days', row.interval_days != null ? row.interval_days : 90);
       setModalControlVal('f_amount', row.cost_usd != null ? row.cost_usd : '');
       FORM_UI.lastOilType = val('f_oil_type');
+    } else if (form === 'customer') {
+      setModalControlVal('f_customer', row.name || row.customer || '');
+      setModalControlVal('f_official_name', row.official_name || row.name || '');
+      setModalControlVal('f_method', row.method || 'Credit');
+      setModalControlVal('f_vatreg', (row.vat_registered === true || row.vat_registered === 'Yes') ? 'Yes' : 'No');
+      setModalControlVal('f_mof', row.mof_no || '');
+      setModalControlVal('f_phone', row.phone || '');
+      setModalControlVal('f_region', row.region || row.address || '');
+      if ($('f_declqty')) $('f_declqty').checked = Boolean(row.customer_declared_qty);
+      if ($('f_extinv')) $('f_extinv').checked = Boolean(row.external_invoice);
+      if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
+    } else if (form === 'supplier') {
+      setModalControlVal('f_supplier', row.name || row.supplier || '');
+      setModalControlVal('f_official_name', row.official_name || row.name || '');
+      setModalControlVal('f_category', row.category || (Array.isArray(row.categories) ? row.categories.join(', ') : ''));
+      setModalControlVal('f_method', row.method || 'Credit');
+      setModalControlVal('f_phone', row.phone || row.contact || '');
+      setModalControlVal('f_region', row.region || row.location || '');
+      setModalControlVal('f_mof', row.mof_no || row.financial_no || '');
+      if ($('f_iva')) $('f_iva').checked = Boolean(row.iva || row.vat_registered);
+      if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
+    } else if (form === 'product') {
+      setModalControlVal('f_product', row.name || row.product || '');
+      setModalControlVal('f_uom', row.uom || 'm³');
+      setModalControlVal('f_prodtype', row.type || 'Material');
+      setModalControlVal('f_tonfactor', row.ton_factor != null && Number(row.ton_factor) > 0 ? row.ton_factor : 1);
+      setModalControlVal('f_unitprice', row.list_price != null && Number(row.list_price) > 0 ? row.list_price : '');
+      if ($('f_ticketprod')) $('f_ticketprod').checked = row.ticket_product !== false;
+      if ($('f_fuelitem')) $('f_fuelitem').checked = Boolean(row.fuel_item);
+      if ($('f_inputprod')) $('f_inputprod').checked = Boolean(row.input_product);
+      if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
+    } else if (form === 'expensecategory') {
+      setModalControlVal('f_category', row.name || row.category || '');
+      if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
+    } else if (form === 'currency') {
+      setModalControlVal('f_code', row.code || row.name || '');
+      setModalControlVal('f_name', row.full_name || row.currency_name || row.name || '');
+      setModalControlVal('f_symbol', row.symbol || '');
+      if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
     } else if (form === 'item') {
       setModalControlVal('f_item_name', row.name || row.item_name || '');
       setModalControlVal('f_item_cat', row.category || 'Spare Parts');
@@ -94633,6 +94885,11 @@
       case 'expenses': return 'expense';
       case 'recurring_expenses': return 'recurringexpense';
       case 'warehouse_movements': return 'warehousestock';
+      case 'customers': return 'customer';
+      case 'suppliers': return 'supplier';
+      case 'products': return 'product';
+      case 'expense_categories': return 'expensecategory';
+      case 'currencies': return 'currency';
       case 'items': return 'item';
       case 'sites': return 'site';
       case 'regions': return 'region';
@@ -94715,6 +94972,9 @@
         targetKey = 'equipment_repairs';
         targetRow = parentRep;
       }
+    }
+    if (targetRow && !targetRow.id && UNIVERSAL_MAIN_SPEC[targetKey] && universalMainValue(targetKey, targetRow)) {
+      targetRow.id = `seed_${targetKey}_${universalMainNormKey(targetKey, targetRow)}`;
     }
     if (!targetRow || !targetRow.id) {
       showRecordInspector(crKey, id);
@@ -128937,6 +129197,7 @@
     };
     window.__openModalForm = (fid, prefill, opts) => openEntryModal(fid, prefill, opts || { forceSwitch: true });
     window.__openEntryModalForRecord = (crKey, id) => openEntryModalForRecord(crKey, id);
+    window.__validateModalForm = opts => validateAndBuild(opts);
     window.__openPendingSalaryModal = id => openPendingSalaryModal(id);
     window.__getStaffContractProfile = (staff, co, dt) => getStaffContractProfile(staff, co, dt);
     window.__computeStaffPayrollRegister = opts => computeStaffPayrollRegister(opts);
@@ -129660,15 +129921,32 @@
   window.__restorePublicDemoSanitization = restorePublicDemoSanitization;
   window.MFG_HOLDING = {
     compute: (opts = {}) => {
-      const ic = computeIntercompanyInteractions({ ignoreSearch: true });
-      const roll = computeEnterpriseRollup();
-      const exps = filterRecords(SEED.records.expenses || [], { company: 'bdeirholding', strictBu: true, ignoreSearch: true });
+      const expRange = (opts && opts.range && opts.range.from && opts.range.to)
+        ? { from: String(opts.range.from).slice(0, 10), to: String(opts.range.to).slice(0, 10) }
+        : null;
+      const ignorePeriod = Boolean(opts && opts.ignorePeriod === true) && !expRange;
+      const ic = computeIntercompanyInteractions({ ignoreSearch: true, range: expRange, ignorePeriod });
+      const baseExps = filterRecords(SEED.records.expenses || [], {
+        company: 'bdeirholding',
+        strictBu: true,
+        ignoreSearch: true,
+        ignorePeriod: ignorePeriod || Boolean(expRange)
+      });
+      const exps = expRange
+        ? baseExps.filter(x => {
+            const d = String((x && (x.date || x.rep_date)) || '').trim().slice(0, 10);
+            return /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= expRange.from && d <= expRange.to;
+          })
+        : baseExps;
       const expTotal = round2(exps.reduce((s, x) => s + expenseSign(x) * Number(x.total || x.amount || 0), 0));
+      const isBounded = Boolean(expRange || (!ignorePeriod && periodRange()));
+      const isEmptyBounded = isBounded && !(ic.byPair && ic.byPair.length) && !exps.length;
+      const roll = isEmptyBounded ? null : computeEnterpriseRollup();
       return {
         kpis: {
           totalExpenses: expTotal,
           voucherCount: exps.length,
-          netCashflow: roll.totals.cash_till,
+          netCashflow: roll ? roll.totals.cash_till : 0,
           netIntercompany: ic.totalMatchedUsd,
           dueFromTotal: ic.totalMatchedUsd + ic.totalOpenUsd,
           dueToTotal: ic.totalMatchedUsd
@@ -129683,7 +129961,7 @@
           net: p.openUsd,
           status: p.openUsd > 0 ? 'Open Leg' : 'Reconciled'
         })),
-        partners: [
+        partners: isEmptyBounded ? [] : [
           { partner: 'Hussein Bdeir', role: 'Managing Shareholder', sharePct: 50.0, opening: 1250000, draws: 85000, allocatedOverhead: round2(expTotal * 0.5), closingBalance: round2(1250000 - 85000 - expTotal * 0.5) },
           { partner: 'Bdeir Family Holding Trust', role: 'Principal Partner', sharePct: 50.0, opening: 1250000, draws: 65000, allocatedOverhead: round2(expTotal * 0.5), closingBalance: round2(1250000 - 65000 - expTotal * 0.5) }
         ]
@@ -129701,7 +129979,8 @@
   window.MFG_HOSPITALITY = {
     compute: (opts = {}) => {
       const hspCo = (opts && opts.company) || (getActiveIndustry(STATE.company) === 'Hospitality & Resorts' ? STATE.company : 'industry:Hospitality & Resorts');
-      const hsp = computeHospitalityOperations({ ignoreSearch: true, company: hspCo });
+      const expRange = (opts && opts.range && opts.range.from && opts.range.to) ? opts.range : null;
+      const hsp = computeHospitalityOperations({ ignoreSearch: true, range: expRange, ignorePeriod: Boolean(opts && opts.ignorePeriod === true) && !expRange, company: hspCo });
       const s = hsp.summary;
       const totRev = round2(s.totalRevenueTtc + s.totalMemContract);
       const opProf = round2(s.totalRevenueHt + s.totalMemContract - s.totalStockUsage - s.totalMaintUsd);
@@ -129735,9 +130014,9 @@
           code: m.id,
           company: m.company,
           member: m.member,
-          tier: m.tier,
-          startDate: m.start_date,
-          endDate: m.end_date,
+          tier: m.tier || m.unit || m.season || 'Seasonal Package',
+          startDate: m.start_date || '-',
+          endDate: m.end_date || '-',
           packageUsd: m.contract_usd,
           paidUsd: m.paid_usd,
           balanceUsd: m.balance_usd
@@ -129753,20 +130032,29 @@
   window.MFG_TRADING = {
     compute: (opts = {}) => {
       const trdCo = (opts && opts.company) || (getActiveIndustry(STATE.company) === 'Automotive & Heavy Trading' ? STATE.company : 'industry:Automotive & Heavy Trading');
-      const trd = computeTradingOperations({ ignoreSearch: true, company: trdCo });
+      const expRange = (opts && opts.range && opts.range.from && opts.range.to) ? opts.range : null;
+      const effIgnorePeriod = Boolean(opts && opts.ignorePeriod === true) && !expRange;
+      const isBounded = Boolean(expRange || (!effIgnorePeriod && periodRange()));
+      const trd = computeTradingOperations({ ignoreSearch: true, range: expRange, ignorePeriod: effIgnorePeriod, company: trdCo });
       const s = trd.summary;
       const validSales = (trd.salesRows || []).filter(r => !r.is_gap);
+      const isEmptyBounded = isBounded && validSales.length === 0 && !(trd.importRows && trd.importRows.length) && !(trd.movementRows && trd.movementRows.length);
+      const rawUnits = isEmptyBounded
+        ? []
+        : (isBounded
+            ? validSales.filter(r => r.chassis && !/^PARTS|^WH-|^GAP/i.test(String(r.chassis)))
+            : (trd.serialUnits || trd.truckRows || trd.unitRows || validSales.slice(0, 8)));
       return {
         kpis: {
           salesTotal: s.totalSalesTtc,
           grossMargin: s.totalSalesMargin,
           operatingProfit: round2(s.totalSalesMargin - s.totalLandedAddUsd * 0.35),
-          deliveredUnits: s.soldUnitsCount,
-          inStockUnits: s.showroomUnitsCount,
-          totalUnits: s.soldUnitsCount + s.showroomUnitsCount,
-          stockValuation: s.totalStockValUsd,
-          lowStockCount: s.reorderAlertCount,
-          arBalance: s.grossArUsd,
+          deliveredUnits: isBounded ? rawUnits.length : s.soldUnitsCount,
+          inStockUnits: isEmptyBounded ? 0 : s.showroomUnitsCount,
+          totalUnits: isEmptyBounded ? 0 : (isBounded ? rawUnits.length : (s.soldUnitsCount + s.showroomUnitsCount)),
+          stockValuation: isEmptyBounded ? 0 : s.totalStockValUsd,
+          lowStockCount: isEmptyBounded ? 0 : s.reorderAlertCount,
+          arBalance: isEmptyBounded ? 0 : s.grossArUsd,
           apBalance: s.unallocatedLandedUsd
         },
         salesRows: validSales.map(r => ({
@@ -129777,20 +130065,20 @@
           customer: r.customer,
           description: r.item,
           totalTtc: r.ttc_usd,
-          balanceUsd: round2(r.ttc_usd - (r.paid_usd || r.ttc_usd * 0.7))
+          balanceUsd: round2(r.ttc_usd - (r.paid_usd != null ? r.paid_usd : r.ttc_usd * 0.7))
         })),
-        vehicleRows: (trd.truckRows || trd.unitRows || validSales.slice(0, 8)).map((v, idx) => ({
-          vin: v.vin || v.chassis || (`LZGJL484${idx + 10}X00${idx + 1}`),
+        vehicleRows: rawUnits.map((v, idx) => ({
+          vin: v.chassis_vin || v.vin || v.chassis || (`LZGJL484${idx + 10}X00${idx + 1}`),
           company: v.company || 'Shacman',
           model: v.model || v.item || 'Shacman X3000 6x4 Tractor',
-          customsNo: v.customs_no || (`BEY-2026-IM-${410 + idx}`),
+          customsNo: v.customs_no || v.engine_no || (`BEY-2026-IM-${410 + idx}`),
           buyer: v.buyer || v.customer || 'Showroom Yard',
-          landedCostUsd: v.landed_usd || v.cost_usd || 64500,
-          salePriceUsd: v.price_usd || v.ttc_usd || 78000,
-          marginUsd: v.margin_usd || 13500,
+          landedCostUsd: v.landed_cost_usd != null ? v.landed_cost_usd : (v.landed_usd || v.cost_usd || 64500),
+          salePriceUsd: v.list_price_usd != null ? v.list_price_usd : (v.price_usd || v.ttc_usd || 78000),
+          marginUsd: v.margin_usd != null ? v.margin_usd : 13500,
           status: v.status || 'Delivered'
         })),
-        stockRows: trd.stockRows || []
+        stockRows: isEmptyBounded ? [] : (trd.stockRows || [])
       };
     },
     computeTradingOperations: typeof computeTradingOperations === 'function' ? computeTradingOperations : null,
@@ -129802,56 +130090,71 @@
   window.MFG_REALESTATE = {
     compute: (opts = {}) => {
       const reCo = (opts && opts.company) || (getActiveIndustry(STATE.company) === 'Real Estate & Property' ? STATE.company : 'industry:Real Estate & Property');
-      const re = computeRealEstateOperations({ ignoreSearch: true, company: reCo });
+      const expRange = (opts && opts.range && opts.range.from && opts.range.to) ? opts.range : null;
+      const effIgnorePeriod = Boolean(opts && opts.ignorePeriod === true) && !expRange;
+      const isBounded = Boolean(expRange || (!effIgnorePeriod && periodRange()));
+      const re = computeRealEstateOperations({ ignoreSearch: true, range: expRange, ignorePeriod: effIgnorePeriod, company: reCo });
       const s = re.summary;
-      const baseNet = s.contractedAnnualNetUsd != null ? s.contractedAnnualNetUsd : round2(s.contractedAnnualRentUsd / 1.11);
+      const isEmptyBounded = isBounded && !(re.leases && re.leases.length) && !(re.invoices && re.invoices.length);
+      const baseNet = s.contractedAnnualNetRentUsd != null
+        ? s.contractedAnnualNetRentUsd
+        : (s.contractedAnnualNetUsd != null ? s.contractedAnnualNetUsd : round2(s.contractedAnnualRentUsd / 1.11));
       const baseVat = s.contractedAnnualVatUsd != null ? s.contractedAnnualVatUsd : round2(s.contractedAnnualRentUsd - baseNet);
-      const netNoi = s.portfolioNoiUsd != null ? s.portfolioNoiUsd : round2(baseNet * 0.875 - s.woActualUsd);
+      const netNoi = isEmptyBounded ? 0 : (s.portfolioNoiUsd != null ? s.portfolioNoiUsd : round2(baseNet * 0.875 - s.woActualUsd));
+      const grossPort = s.portfolioGrossUsd != null ? s.portfolioGrossUsd : (s.grossPortfolioUsd || 0);
+      const netShare = s.portfolioShareUsd != null ? s.portfolioShareUsd : (s.netShareUsd || 0);
       return {
         kpis: {
           annualRentTtc: s.contractedAnnualRentUsd,
           annualBaseRent: baseNet,
           annualVat: baseVat,
-          occupancyPct: s.occupancyPct,
-          occupiedUnits: s.occupiedUnits,
-          totalUnits: s.totalUnits,
+          occupancyPct: isEmptyBounded ? 0 : s.occupancyPct,
+          occupiedUnits: isEmptyBounded ? 0 : s.occupiedUnits,
+          totalUnits: isEmptyBounded ? 0 : s.totalUnits,
           noiUsd: netNoi,
           billedRentTtc: s.totalInvoicedTtcUsd,
           collectedUsd: s.totalCollectedRentUsd,
           openArUsd: s.openRentArUsd,
-          expiring90d: re.expiringLeaseCount,
+          expiring90d: isEmptyBounded ? 0 : re.expiringLeaseCount,
           maintTotalUsd: s.woActualUsd,
-          grossPortfolioUsd: s.grossPortfolioUsd,
-          netShareUsd: s.netShareUsd
+          grossPortfolioUsd: grossPort,
+          netShareUsd: netShare
         },
-        grossPortfolioUsd: s.grossPortfolioUsd,
-        netShareUsd: s.netShareUsd,
+        grossPortfolioUsd: grossPort,
+        netShareUsd: netShare,
         valuations: re.valuations || [],
         properties: re.properties || [],
         sales: re.sales || [],
         instalments: re.instalments || [],
-        leases: (re.leases || []).map(l => ({
-          code: l.id,
-          company: l.company,
-          property: l.property,
-          unitCode: l.unit,
-          tenant: l.tenant,
-          startDate: l.start_date,
-          endDate: l.end_date,
-          annualBaseUsd: l.annual_base_usd,
-          vatUsd: l.annual_vat_usd,
-          annualTtcUsd: l.annual_ttc_usd
-        })),
+        leases: (re.leases || []).map(l => {
+          const ttc = Number(l.annual_ttc_usd || 0);
+          const base = l.annual_base_usd != null
+            ? Number(l.annual_base_usd)
+            : (l.annual_net_usd != null ? Number(l.annual_net_usd) : (Number(l.vat_rate || 0) > 0 ? round2(ttc / 1.11) : ttc));
+          const vat = l.annual_vat_usd != null ? Number(l.annual_vat_usd) : round2(ttc - base);
+          return {
+            code: l.id,
+            company: l.company,
+            property: l.property,
+            unitCode: l.unit || '-',
+            tenant: l.tenant,
+            startDate: l.start_date || '-',
+            endDate: l.end_date || 'Open',
+            annualBaseUsd: base,
+            vatUsd: vat,
+            annualTtcUsd: ttc
+          };
+        }),
         rentInvoices: (re.invoices || []).map(r => ({
           invNo: r.id,
           company: r.company,
-          date: r.period_start,
+          date: r.date || r.period_start || r.period || '-',
           tenant: r.tenant,
-          unitCode: r.unit,
-          baseUsd: r.base_usd,
-          vatUsd: r.vat_usd,
-          totalTtc: r.ttc_usd,
-          balanceUsd: r.balance_usd
+          unitCode: r.unit || r.period || r.property || '-',
+          baseUsd: Number(r.base_usd != null ? r.base_usd : (r.net_usd || 0)),
+          vatUsd: Number(r.vat_usd || 0),
+          totalTtc: Number(r.ttc_usd != null ? r.ttc_usd : (r.amount_ttc_usd || 0)),
+          balanceUsd: Number(r.balance_usd != null ? r.balance_usd : (r.open_ar_usd || 0))
         }))
       };
     },
@@ -129864,33 +130167,40 @@
   };
   window.MFG_INSURANCE = {
     compute: (opts = {}) => {
-      const ins = computeInsuranceOperations();
+      const expRange = (opts && opts.range && opts.range.from && opts.range.to) ? opts.range : null;
+      const ins = computeInsuranceOperations({ range: expRange, ignorePeriod: Boolean(opts && opts.ignorePeriod === true) && !expRange });
       const s = ins.summary;
       return {
         kpis: {
           gwpTotal: s.gwpUsd,
           policyCount: s.totalPolicyCount,
           commTotal: s.netCommUsd,
-          avgCommYield: s.gwpUsd > 0 ? round2((s.netCommUsd / s.gwpUsd) * 100) : 12.4,
-          netBrokerageIncome: round2(s.netCommUsd + s.policyFees7064Usd - 11400),
+          avgCommYield: s.gwpUsd > 0 ? round2((s.netCommUsd / s.gwpUsd) * 100) : 0,
+          netBrokerageIncome: s.gwpUsd > 0 ? round2(s.netCommUsd + s.policyFees7064Usd - 11400) : 0,
           unpaidPremUsd: s.openClientAr4112Usd,
           carrierPayableUsd: s.payableToCarriers4017Usd,
-          renewing60d: s.dueRenewals90dCount,
+          renewing60d: s.gwpUsd > 0 ? s.dueRenewals90dCount : 0,
           renewalGwp60d: round2(s.gwpUsd * 0.24),
           incurredClaimsUsd: (ins.claims || []).reduce((a, c) => a + Number(c.claimed_usd || 0), 0),
-          lossRatioPct: 38.4
+          lossRatioPct: s.gwpUsd > 0 ? 38.4 : 0
         },
-        policies: (ins.policies || []).map(p => ({
-          policyNo: p.id,
-          insured: p.insured || p.client,
-          carrier: p.carrier,
-          line: p.line,
-          endDate: p.end_date || p.expiry,
-          daysToExpiry: p.days_to_expiry != null ? p.days_to_expiry : p.days_left,
-          gwpUsd: p.gwp_usd != null ? p.gwp_usd : p.gross_prem_usd,
-          commUsd: p.net_comm_usd,
-          clientBalanceUsd: p.open_ar_usd || 0
-        })),
+        policies: (ins.policies || []).map(p => {
+          const endIso = String(p.end_date || p.expiry || '').slice(0, 10);
+          const dExp = p.days_to_expiry != null
+            ? Number(p.days_to_expiry)
+            : (p.days_left != null ? Number(p.days_left) : (endIso ? daysBetween(SEED_DATE, endIso) : 0));
+          return {
+            policyNo: p.policy_no || p.id,
+            insured: p.insured || p.client,
+            carrier: p.carrier,
+            line: p.line,
+            endDate: endIso || p.end_date || p.expiry || '-',
+            daysToExpiry: dExp,
+            gwpUsd: p.gwp_usd != null ? p.gwp_usd : p.gross_prem_usd,
+            commUsd: p.net_comm_usd,
+            clientBalanceUsd: p.open_ar_usd || 0
+          };
+        }),
         carrierMatrix: (ins.statements || []).map(c => {
           const gwp = Number(c.gwp_usd || (Number(c.expected_comm_4117_usd || 0) * 6.5));
           const comm = Number(c.expected_comm_usd != null ? c.expected_comm_usd : c.expected_comm_4117_usd || 0);
