@@ -1,0 +1,262 @@
+// Offline check of the legacy seed id counter (functions/_lib/legacy_ids.js) and its two hooks:
+// /api/sync (op patch) and /api/industry_domain_store (POST). In-memory SQLite stands in for D1 and a
+// small object stands in for the private R2 seed vault. Touches nothing live.
+// Run: node build/verify_legacy_id_hits.mjs      (Node 22.5+ for node:sqlite)
+
+import { readFileSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+import { handleIndustryDomainStore, handleSync } from '../functions/_lib/d1_store.js';
+import {
+  _resetLegacyIdHitsForTests, collectLegacyCandidates, isLegacyShapedId, recordLegacyIdHits
+} from '../functions/_lib/legacy_ids.js';
+
+class Stmt {
+  constructor(db, sql, params = []) { this.db = db; this.sql = sql; this.params = params; }
+  bind(...p) { if (p.length > 100) throw new Error(`D1 allows 100 bound values per statement, got ${p.length}`); return new Stmt(this.db, this.sql, p); }
+  args() {
+    const used = new Set((this.sql.match(/\?\d+/g) || []));
+    if (!used.size) return this.params;
+    const o = {};
+    for (const k of used) {
+      const v = this.params[Number(k.slice(1)) - 1];
+      o[k] = v === undefined ? null : (typeof v === 'boolean' ? (v ? 1 : 0) : v);
+    }
+    return [o];
+  }
+  async first() { return this.db.prepare(this.sql).get(...this.args()) || null; }
+  async all() {
+    if (/^\s*(INSERT|UPDATE|DELETE|CREATE)/i.test(this.sql)) { await this.run(); return { results: [] }; }
+    return { results: this.db.prepare(this.sql).all(...this.args()) };
+  }
+  async run() { const r = this.db.prepare(this.sql).run(...this.args()); return { success: true, meta: { changes: r.changes } }; }
+}
+class D1 {
+  constructor() { this.db = new DatabaseSync(':memory:'); }
+  prepare(sql) { return new Stmt(this.db, sql); }
+  async batch(stmts) { const out = []; for (const s of stmts) out.push(await s.all()); return out; }
+  exec(sql) { this.db.exec(sql); }
+  rows(sql, ...p) { return this.db.prepare(sql).all(...p); }
+}
+
+const SEED = {
+  _s: ['HSP-REV-4f5afc807f', 'STK-KO-b780fef882', 'MEM-2026-43a0aca968'],
+  tables: {},
+  legacy_id_map: { 'HSP-REV-0012': 0, 'STK-KO-041': 1, 'MEM-2026-001': 2 }
+};
+function bucketWith(seed, { failGet = false } = {}) {
+  let gets = 0;
+  return {
+    get gets() { return gets; },
+    async get(key) {
+      gets++;
+      if (failGet) throw new Error('R2 unavailable');
+      if (key !== 'seeds/seed_industries.json' || !seed) return null;
+      const txt = JSON.stringify(seed);
+      return { async text() { return txt; } };
+    }
+  };
+}
+
+function freshEnv(opts = {}) {
+  _resetLegacyIdHitsForTests();
+  const d1 = new D1();
+  d1.exec(readFileSync(new URL('../migrations/0001_schema.sql', import.meta.url), 'utf8'));
+  const env = { DB: d1 };
+  if (opts.bucket !== null) env.BUCKET = opts.bucket || bucketWith(SEED);
+  return { env, d1 };
+}
+function hits(d1) {
+  const out = {};
+  for (const r of d1.rows("SELECT kind, SUM(hits) AS n FROM legacy_id_hits WHERE day <> 'since' GROUP BY kind")) out[r.kind] = r.n;
+  return out;
+}
+function ctxCollector() {
+  const tasks = [];
+  return { ctx: { waitUntil(p) { tasks.push(p); } }, settle: () => Promise.all(tasks) };
+}
+
+let pass = 0, fail = 0;
+function ok(label, cond, detail) {
+  if (cond) { pass++; console.log(`  PASS  ${label}`); }
+  else { fail++; console.log(`  FAIL  ${label}${detail === undefined ? '' : `  ${JSON.stringify(detail)}`}`); }
+}
+
+const OWNER = { sub: 'u1', role: 'Owner', companies: 'ALL', email: 'owner@example.test' };
+const domainReq = body => new Request('https://example.test/app/api/industry_domain_store', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+});
+const syncReq = body => new Request('https://example.test/app/api/sync', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+});
+
+console.log('Legacy seed id counter');
+
+// 1. Shape filter
+ok('old positional ids look old', ['HSP-REV-0012', 'STK-KO-041', 'NRG-0007', 'hsp-ext-blanca-0001', 'MEM-2026-001'].every(isLegacyShapedId));
+ok('NEGATIVE: content-derived ids, curated memberships and till rows never look old',
+  !['HSP-REV-4f5afc807f', 'STK-KO-b780fef882', 'MEM-2026-901', 'POS-LAUNA-20261111-0A1B2C', 'HSP-REV-POS-LAUNA-20261111-0A1B2C', '', 'x'.repeat(80) + '-1']
+    .some(isLegacyShapedId));
+const cands = collectLegacyCandidates({
+  industryRowEdits: { 'IND::hsp_revenue::HSP-REV-0012': {}, 'WF::trd_stock::STK-KO-b780fef882': {} },
+  industryCustomRows: { hsp_members: [{ id: 'MEM-2026-001' }, { id: 'MEM-2026-43a0aca968', autoClosePriorId: 'STK-KO-041' }] },
+  purgedEditKeys: ['IND::hsp_revenue::HSP-REV-0012'],
+  purgedRows: [{ bucket: 'trd_stock', row_id: 'STK-KO-041' }]
+});
+ok('candidates come from edit keys, custom row ids, prior ids and the purge lists',
+  cands.submit.size === 3 && cands.upgrade.size === 2 && cands.submit.has('HSP-REV-0012') && cands.upgrade.has('STK-KO-041'),
+  { submit: [...cands.submit], upgrade: [...cands.upgrade] });
+
+// 2. /industry_domain_store from a browser still on old ids
+{
+  const { env, d1 } = freshEnv();
+  const { ctx, settle } = ctxCollector();
+  const body = {
+    industryRowEdits: { 'IND::hsp_revenue::HSP-REV-0012': { company: 'Platinum', rev: 1 } },
+    industryCustomRows: { trd_stock: [{ id: 'STK-KO-041', company: 'Korri Auto' }] }
+  };
+  const res = await handleIndustryDomainStore(domainReq(body), env, OWNER, body, ctx);
+  await settle();
+  const j = await res.json();
+  ok('an old-id write still saves as before (counting changes nothing else)', res.status === 200 && j.ok && j.edits === 1 && j.rows === 1, j);
+  ok('two old ids from that write are counted as submit', hits(d1).submit === 2, hits(d1));
+  const stored = d1.rows('SELECT * FROM legacy_id_hits');
+  ok('the table holds counts only: no id, company or email anywhere in it',
+    !JSON.stringify(stored).match(/HSP-REV|STK-KO|Platinum|Korri|owner@/), stored);
+  ok('the tracking start row is written once', d1.rows("SELECT * FROM legacy_id_hits WHERE day = 'since'").length === 1);
+  const day = new Date().toISOString().slice(0, 10);
+  ok('hits land on today (UTC)', d1.rows('SELECT day FROM legacy_id_hits WHERE kind = ?', 'submit')[0]?.day === day);
+}
+
+// 3. Look-alikes, padding and the upgrade path
+{
+  const { env, d1 } = freshEnv();
+  const { ctx, settle } = ctxCollector();
+  const body = {
+    industryRowEdits: {
+      'IND::hsp_revenue::HSP-REV-99999': { company: 'Platinum' },   // looks old, not in the map
+      'IND::hsp_revenue::HSP-REV-12': { company: 'Platinum' }       // unpadded form of HSP-REV-0012
+    },
+    purgedEditKeys: ['IND::trd_stock::STK-KO-041']
+  };
+  await handleIndustryDomainStore(domainReq(body), env, OWNER, body, ctx);
+  await settle();
+  const h = hits(d1);
+  ok('NEGATIVE: an id that only looks old is not counted', (h.submit || 0) === 1, h);
+  ok('an unpadded old id is matched like the browser matches it', (h.submit || 0) === 1, h);
+  ok('a browser purging upgraded old copies counts as upgrade', h.upgrade === 1, h);
+}
+
+// 4. Clean traffic counts nothing but still starts the window
+{
+  const { env, d1 } = freshEnv();
+  const bucket = env.BUCKET;
+  const { ctx, settle } = ctxCollector();
+  const body = { industryRowEdits: { 'IND::hsp_revenue::HSP-REV-4f5afc807f': { company: 'Platinum' } } };
+  await handleIndustryDomainStore(domainReq(body), env, OWNER, body, ctx);
+  await settle();
+  ok('NEGATIVE: a write with only new ids adds no hit', Object.keys(hits(d1)).length === 0, hits(d1));
+  ok('and never reads the seed from R2', bucket.gets === 0, bucket.gets);
+  ok('but the tracking start row exists', d1.rows("SELECT * FROM legacy_id_hits WHERE day = 'since'").length === 1);
+}
+
+// 5. Map unreadable: candidates count as unverified, so the sunset waits
+for (const [label, opts] of [['no R2 binding', { bucket: null }], ['R2 read fails', { bucket: bucketWith(SEED, { failGet: true }) }], ['seed missing from R2', { bucket: bucketWith(null) }]]) {
+  const { env, d1 } = freshEnv(opts);
+  const r = await recordLegacyIdHits(env, collectLegacyCandidates({ industryRowEdits: { 'IND::x::HSP-REV-0012': {} } }));
+  ok(`${label}: an old-looking id counts as unverified (never silently dropped)`, r.unverified === 1 && hits(d1).unverified === 1, { r, h: hits(d1) });
+}
+
+// 6. Seed without a map (faulty upload, or after the sunset): never reads as clean
+for (const [label, mapVal] of [['no legacy_id_map key', undefined], ['an empty legacy_id_map', {}]]) {
+  const { env, d1 } = freshEnv({ bucket: bucketWith(Object.assign({}, SEED, { legacy_id_map: mapVal })) });
+  const r = await recordLegacyIdHits(env, collectLegacyCandidates({ industryRowEdits: { 'IND::x::HSP-REV-0012': {} } }));
+  ok(`NEGATIVE: a seed with ${label} counts candidates as unverified, never as clean`, r.submit === 0 && r.unverified === 1 && hits(d1).unverified === 1, r);
+}
+
+// 6a. A map-less seed is remembered: five requests read R2 once, and all still count as unverified
+{
+  const { env, d1 } = freshEnv({ bucket: bucketWith(Object.assign({}, SEED, { legacy_id_map: undefined })) });
+  for (let i = 0; i < 5; i++) await recordLegacyIdHits(env, collectLegacyCandidates({ industryRowEdits: { 'IND::x::HSP-REV-0012': {} } }));
+  ok('NEGATIVE: after the sunset the 2 MB seed is not re-read per request (one R2 read for five requests)', env.BUCKET.gets === 1, env.BUCKET.gets);
+  ok('and every one of those requests still counts as unverified', hits(d1).unverified === 5, hits(d1));
+}
+
+// 6b. Old ids nested inside a row with a new id (the fields the browser also translates)
+{
+  const { env, d1 } = freshEnv();
+  const { ctx, settle } = ctxCollector();
+  const body = { industryCustomRows: {
+    trd_stock: [
+      { id: 'STK-KO-b780fef882', company: 'Korri Auto', autoClosePriorIds: ['STK-KO-041'] },
+      { id: 'HSP-REV-4f5afc807f', company: 'Platinum', _auto_closed_by_id: 'HSP-REV-0012' },
+      { id: 'MEM-2026-43a0aca968', code: 'MEM-2026-001', company: 'Blanca' }
+    ]
+  } };
+  await handleIndustryDomainStore(domainReq(body), env, OWNER, body, ctx);
+  await settle();
+  ok('an old id only inside autoClosePriorIds, _auto_closed_by_id or code is still counted', hits(d1).submit === 3, hits(d1));
+}
+
+// 6c. More old-looking ids than the cap: the overflow is reported, not dropped
+{
+  const { env, d1 } = freshEnv();
+  const edits = {};
+  for (let i = 0; i < 5005; i++) edits[`IND::x::NEW-2026-${String(i).padStart(5, '0')}`] = {};   // look old, are not in the map
+  edits['IND::x::HSP-REV-0012'] = {};
+  const c = collectLegacyCandidates({ industryRowEdits: edits });
+  const r = await recordLegacyIdHits(env, c);
+  ok('NEGATIVE: past the candidate cap the request counts as unverified (a real old id may be hidden there)',
+    c.overflow === true && r.unverified >= 1 && hits(d1).unverified >= 1, { overflow: c.overflow, r });
+}
+
+// 7. The map is read once per isolate, not per request
+{
+  const { env } = freshEnv();
+  for (let i = 0; i < 5; i++) await recordLegacyIdHits(env, collectLegacyCandidates({ industryRowEdits: { 'IND::x::HSP-REV-0012': {} } }));
+  ok('five requests with old ids read the seed from R2 once', env.BUCKET.gets === 1, env.BUCKET.gets);
+}
+
+// 8. /api/sync patch from an old browser
+{
+  const { env, d1 } = freshEnv();
+  const { ctx, settle } = ctxCollector();
+  const body = {
+    op: 'patch', doc: 'mfg_web_store',
+    patch: { mfg_web_store: {
+      updatedAt: '2026-11-11T10:00:00.000Z',
+      industryRowEdits: { 'IND::hsp_revenue::HSP-REV-0012': { company: 'Platinum', rev: 1 } },
+      industryCustomRows: { trd_stock: [{ id: 'STK-KO-b780fef882', company: 'Korri Auto' }] }
+    } }
+  };
+  const res = await handleSync(syncReq(body), env, OWNER, body, ctx);
+  await settle();
+  const j = await res.json();
+  ok('the sync itself is unchanged (saved, no conflict)', res.status === 200 && j.ok && !j.conflict, j);
+  ok('the one old id it carried is counted', hits(d1).submit === 1, hits(d1));
+  const body2 = { op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: j.updatedAt, patch: { mfg_web_store: {
+    updatedAt: '2026-11-11T10:05:00.000Z',
+    industryRowEdits: { 'IND::hsp_revenue::HSP-REV-4f5afc807f': { company: 'Platinum', rev: 2 } }
+  } } };
+  const { ctx: ctx2, settle: settle2 } = ctxCollector();
+  const res2 = await handleSync(syncReq(body2), env, OWNER, body2, ctx2);
+  await settle2();
+  ok('NEGATIVE: a later sync with only new ids adds nothing', (await res2.json()).ok && hits(d1).submit === 1, hits(d1));
+  const conflictBody = { op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: '1999-01-01T00:00:00.000Z', patch: { mfg_web_store: {
+    industryRowEdits: { 'IND::hsp_revenue::HSP-REV-0012': { company: 'Platinum', rev: 3 } }
+  } } };
+  const { ctx: ctx3, settle: settle3 } = ctxCollector();
+  const res3 = await (await handleSync(syncReq(conflictBody), env, OWNER, conflictBody, ctx3)).json();
+  await settle3();
+  ok('NEGATIVE: a patch refused as a conflict is not counted (the browser will resend it)', res3.conflict === true && hits(d1).submit === 1, { res3: res3.conflict, h: hits(d1) });
+}
+
+// 9. Without waitUntil the count still lands before the reply
+{
+  const { env, d1 } = freshEnv();
+  const body = { industryRowEdits: { 'IND::hsp_revenue::HSP-REV-0012': { company: 'Platinum' } } };
+  await handleIndustryDomainStore(domainReq(body), env, OWNER, body);
+  ok('a caller that passes no context still gets the hit recorded', hits(d1).submit === 1, hits(d1));
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

@@ -203,7 +203,7 @@ async function routeAppApi(context) {
   }
 
   if (subPath === '/industry_domain_store') {
-    return handleIndustryDomainStore(request, env, session, body);
+    return handleIndustryDomainStore(request, env, session, body, context);
   }
 
   // Door tablet punches for Payroll & Attendance (signed-in seats only, scoped to their companies).

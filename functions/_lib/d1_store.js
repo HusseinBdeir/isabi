@@ -25,6 +25,7 @@ import {
   verifyActiveEdgeSession,
   verifySeatPin
 } from './security.js';
+import { collectLegacyCandidates, scheduleLegacyIdHits } from './legacy_ids.js';
 
 export const ALLOWED_TABLES = new Set([
   'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions',
@@ -2615,7 +2616,7 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
   return jsonResponse({ ok: true, saved: true, updated_at: nowIso });
 }
 
-export async function handleIndustryDomainStore(request, env, session, body) {
+export async function handleIndustryDomainStore(request, env, session, body, ctx = null) {
   if (!env || !env.DB) return jsonResponse({ ok: true, industryCustomRows: {}, industryRowEdits: {} });
   if (!session) {
     if (isDemoHeader(request) && request.method === 'GET') {
@@ -2653,6 +2654,9 @@ export async function handleIndustryDomainStore(request, env, session, body) {
   }
 
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
+  // Old seed ids still in use (counts only; see legacy_ids.js). Read before anything below touches the body.
+  const legacyHitsTask = scheduleLegacyIdHits(env, ctx, collectLegacyCandidates(body));
+  if (legacyHitsTask) await legacyHitsTask;
   const customMap = (body && body.industryCustomRows && typeof body.industryCustomRows === 'object') ? body.industryCustomRows : {};
   const editsMap = (body && body.industryRowEdits && typeof body.industryRowEdits === 'object') ? body.industryRowEdits : {};
   let savedRows = 0;
@@ -4056,6 +4060,8 @@ export async function handleSync(request, env, session, body, _ctx) {
     const incomingDoc = body.patch[pKey] || {};
     delete incomingDoc._scopedForSession;
     const expectedTs = String(body.ifMatchUpdatedAt || '');
+    // Old seed ids as the browser sent them, before the RLS merge adds stored rows (counted once the write lands).
+    const legacyCandidates = pKey === 'mfg_web_store' ? collectLegacyCandidates(incomingDoc) : null;
 
     const currentRow = await readEdgeKvDoc(env.DB, pKey);
     const currentTs = currentRow ? String(currentRow.updated_at || '') : '';
@@ -4145,6 +4151,10 @@ export async function handleSync(request, env, session, body, _ctx) {
           await writeEdgeKvDoc(env.DB, 'face_settings', JSON.stringify(pubFs), newTs, updatedByStr);
         } catch (_) {}
       }
+    }
+    if (legacyCandidates) {
+      const legacyHitsTask = scheduleLegacyIdHits(env, _ctx, legacyCandidates);
+      if (legacyHitsTask) await legacyHitsTask;
     }
 
     return jsonResponse(
