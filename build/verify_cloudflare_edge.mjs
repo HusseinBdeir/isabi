@@ -958,14 +958,14 @@ finally:
     const weakPinAttempt17 = await httpReq('POST', '/app/api/users', {
       user: {
         email: 'sabahkassab@bhfirms.com',
-        full_name: 'Sabah Kassab',
+        full_name: 'Entry Test Seat',
         pin_code: '0000'
       }
     }, { 'X-ISABI-Session': entryToken });
     const entrySelfEscalate = await httpReq('POST', '/app/api/users', {
       user: {
         email: 'sabahkassab@bhfirms.com',
-        full_name: 'Sabah Kassab',
+        full_name: 'Entry Test Seat',
         role: 'Full Access (Owner)',
         companies: 'All',
         pin_redacted: true,
