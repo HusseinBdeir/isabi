@@ -22674,7 +22674,7 @@
     const nbSnOff = !isNonMfgSn && !isAlertRuleEnabled('S12');
     const nbSn = (isNonMfgSn || nbSnOff) ? null : getNetBackSentinelData();
     const nbSnSig = nbSn
-      ? `${nbSn.agreements}:${nbSn.sites}:${nbSn.lossCnt}:${nbSn.nightCnt}:${nbSn.noDistCnt}:${nbSn.noFuelCnt}:${nbSn.shortfall90}:${nbSn.lossLoads90}:${nbSn.showFuel ? 1 : 0}:${nbSn.prices.map(p => `${p.co}@${p.usdPerL}@${p.date}`).join(',')}`
+      ? `${nbSn.agreements}:${nbSn.sites}:${nbSn.lossCnt}:${nbSn.nightCnt}:${nbSn.noDistCnt}:${nbSn.approxCnt}:${nbSn.noFuelCnt}:${nbSn.shortfall90}:${nbSn.lossLoads90}:${nbSn.showFuel ? 1 : 0}:${nbSn.prices.map(p => `${p.co}@${p.usdPerL}@${p.date}`).join(',')}`
       : 'x';
     const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
@@ -22922,7 +22922,7 @@
         id: 'S12',
         code: 'Rule #22 · Delivery Pricing',
         title: 'Delivery Agreements Below Haulage Breakeven',
-        detail: `${fmtNum(nbSn.agreements)} delivery and haulage agreements in force across ${fmtNum(nbSn.sites)} sites, each checked against pickup price plus fuel for the round trip: ${fmtNum(nbSn.lossCnt)} below breakeven (${fmtUSD(nbSn.shortfall90, 0)} lost on ${fmtNum(nbSn.lossLoads90)} own-fleet loads in the last 90 days) · ${fmtNum(nbSn.nightCnt)} lose on night trips only · ${fmtNum(nbSn.noDistCnt)} without a pinned distance.${nbPriceTxt}`,
+        detail: `${fmtNum(nbSn.agreements)} delivery and haulage agreements in force across ${fmtNum(nbSn.sites)} sites, each checked against pickup price plus fuel for the round trip: ${fmtNum(nbSn.lossCnt)} below breakeven (${fmtUSD(nbSn.shortfall90, 0)} lost on ${fmtNum(nbSn.lossLoads90)} own-fleet loads in the last 90 days) · ${fmtNum(nbSn.nightCnt)} lose on night trips only · ${fmtNum(nbSn.noDistCnt)} without a pinned distance${nbSn.approxCnt > 0 ? ` · ${fmtNum(nbSn.approxCnt)} costed from the Region's centre (site not pinned)` : ''}.${nbPriceTxt}`,
         severity: nbSn.lossCnt > 0
           ? ((nbCritUsd > 0 && nbSn.shortfall90 >= nbCritUsd) ? 'crit' : 'warn')
           : ((nbSn.nightCnt > 0 || nbSn.noFuelCnt > 0 || nbNotCosted) ? 'warn' : 'ok'),
@@ -24100,6 +24100,19 @@
             ? `<button type="button" class="btn-sn-act btn-nb-pin-site" data-nb-pin-site="${esc(String(r.site))}" data-ui-tip="Open this site on the map to pin it or set its distance">${ic('pin')} <span>Pin Site</span></button>`
             : '') }
         ], 'snNetBackNoDist') : ''}
+        ${nbSnData && nbSnData.approxRows && nbSnData.approxRows.length ? miniTable('DELIVERY AGREEMENTS COSTED FROM THE REGION: SITE NOT PINNED', nbSnData.approxRows, [
+          { label: 'Site', key: 'site', fmt: (v, r) => `<span data-no-i18n="1">${esc(v || '-')}</span>${r && r.moved ? ' <span class="site-nb-status is-warn nb-moved-tag" data-ui-tip="A customer moved to its own site: the site has no pin yet, so its distance is the Region\'s guess">Moved Customer</span>' : ''}` },
+          { label: 'Co.', key: 'company' },
+          { label: 'Customer', key: 'party', fmt: v => (v ? `<span data-no-i18n="1">${esc(v)}</span>` : '<span>Site Default</span>') },
+          { label: 'Product', key: 'product', fmt: v => (v ? `<span data-no-i18n="1">${esc(v)}</span>` : '<span>All Products</span>') },
+          { label: 'Agreement', key: 'type_label', fmt: v => `<span>${esc(v || '')}</span>` },
+          { label: 'Delivered', key: 'delivered_price', r: true, noFoot: true, fmt: nbUnitFmt },
+          { label: 'One-Way (Estimate)', key: 'km_value', r: true, noFoot: true, fmt: v => (v != null ? `<span data-no-i18n="1">${esc(fmtNum(v, 1))} km</span>` : '-') },
+          { label: 'Loads (90 Days)', key: 'loads90', r: true, fmt: v => `<span data-no-i18n="1">${fmtNum(v || 0, 0)}</span>` },
+          { label: 'Fix', key: 'site', r: true, noFoot: true, fmt: (v, r) => (r && r.site
+            ? `<button type="button" class="btn-sn-act btn-nb-pin-site" data-nb-pin-site="${esc(String(r.site))}" data-ui-tip="Open this site on the map to pin it or set its distance">${ic('pin')} <span>Pin Site</span></button>`
+            : '') }
+        ], 'snNetBackApprox') : ''}
         ${miniTable('FUEL CONSUMPTION &amp; METER OUTLIERS', fleet.consumption_outliers || [], [
           { label: 'Equipment', key: 'equipment', mono: true }, { label: 'Type', key: 'type' }, { label: 'Metric', key: 'metric' },
           { label: 'Value', key: 'value', r: true, fmt: num1 }, { label: 'Distance / Hours', key: 'distance_km', r: true, fmt: (v, r) => fmtNum(v != null ? v : r.hours, 0) }, { label: 'Diesel (L)', key: 'diesel_l', r: true, fmt: v => fmtNum(v, 0) }
@@ -85303,6 +85316,11 @@
     priceOn(company, dateIso) {
       return this.mayReadPrice(company) ? this.bookPriceOn(company, dateIso) : null;
     },
+    // The table rights mayReadPrice reads, as a short key (the statements ledger context is cached per key).
+    rightsSig() {
+      const t = k => (typeof canAccessTable !== 'function' || canAccessTable(k)) ? '1' : '0';
+      return `${t('fuel_intakes')}${t('expenses')}`;
+    },
     burn: company => ((canSeeFleetBurn() && isFuelCompanyAllowed(company)) ? resolveFleetBurnRate(company) : null)
   };
 
@@ -85632,7 +85650,9 @@
         product: r.product || '',
         unitKey: basisUom,
         unitLbl: _siteNbUomLabel(basisUom),
-        oneWayKm: inp.leg ? inp.leg.oneWayKm : null
+        oneWayKm: inp.leg ? inp.leg.oneWayKm : null,
+        // Costed from the Region's centre or reference km (the site itself has no pin): listed with Pin Site.
+        distApprox: Boolean(inp.leg && inp.leg.approx)
       };
       const L = loadSize(co, basisUom);
       if (!L) {
@@ -86033,8 +86053,10 @@
 
     const rows = [];
     const noDistRows = []; // agreements on a site with no pinned distance: listed so the site can be pinned in one click
+    const approxRows = []; // agreements costed on the Region's centre (site not pinned): same Pin Site button
+    const approxSiteMoved = new Map();
     const prices = new Map();
-    let agreements = 0, costable = 0, lossCnt = 0, nightCnt = 0, noDistCnt = 0, noFuelCnt = 0, dormantCnt = 0, shortfall = 0, lossLoads = 0, listRefCnt = 0;
+    let agreements = 0, costable = 0, lossCnt = 0, nightCnt = 0, noDistCnt = 0, noFuelCnt = 0, dormantCnt = 0, shortfall = 0, lossLoads = 0, listRefCnt = 0, approxCnt = 0;
     bySite.forEach(g => {
       let nb = null;
       try {
@@ -86064,6 +86086,27 @@
             loads90: x.loads90 || 0
           });
         } else if (x.status === 'nofuel') noFuelCnt += 1;
+        if (x.distApprox && x.status !== 'nodist') {
+          // Costed, but on the Region's centre: a customer's own site made by a move to its own site starts without a
+          // pin, so its figure is the area's guess until someone pins the real site.
+          if (!approxSiteMoved.has(g.name)) approxSiteMoved.set(g.name, Boolean(_siteNbSplitInfo(g.name)));
+          approxCnt += 1;
+          approxRows.push({
+            rkey: 'price_rules',
+            rid: String(x.id || ''),
+            site: g.name,
+            moved: approxSiteMoved.get(g.name),
+            company: x.co,
+            party: x.party || '',
+            product: x.product || '',
+            type_label: x.typeLbl,
+            unit: x.unitLbl,
+            delivered_price: x.deliveredUnit,
+            km_value: x.oneWayKm,
+            status: x.status,
+            loads90: x.loads90 || 0
+          });
+        }
         if (x.status !== 'loss' && x.status !== 'night') return;
         if ((x.loads90 || 0) < minLoads) { dormantCnt += 1; return; }
         if (x.status === 'loss') {
@@ -86103,10 +86146,21 @@
     noDistRows.forEach(x => ndSiteLoads.set(norm(x.site), (ndSiteLoads.get(norm(x.site)) || 0) + x.loads90));
     noDistRows.sort((a, b) => ((ndSiteLoads.get(norm(b.site)) || 0) - (ndSiteLoads.get(norm(a.site)) || 0))
       || String(a.site).localeCompare(String(b.site)) || (b.loads90 - a.loads90) || String(a.party).localeCompare(String(b.party)));
+    // Region-estimated: customers' own sites from a move first (the case nobody is prompted on), then busiest sites,
+    // a site's agreements together.
+    const apSiteLoads = new Map();
+    approxRows.forEach(x => apSiteLoads.set(norm(x.site), (apSiteLoads.get(norm(x.site)) || 0) + x.loads90));
+    approxRows.sort((a, b) => ((b.moved ? 1 : 0) - (a.moved ? 1 : 0))
+      || ((apSiteLoads.get(norm(b.site)) || 0) - (apSiteLoads.get(norm(a.site)) || 0))
+      || String(a.site).localeCompare(String(b.site)) || (b.loads90 - a.loads90) || String(a.party).localeCompare(String(b.party)));
     const data = {
       rows,
       noDistRows,
       noDistSites: ndSiteLoads.size,
+      approxRows,
+      approxCnt,
+      approxSites: apSiteLoads.size,
+      approxMovedSites: Array.from(approxSiteMoved.values()).filter(Boolean).length,
       listRefCnt,
       agreements,
       costable,
@@ -104996,7 +105050,7 @@
       allowedSgIds = ['sg_st_raw', 'sg_st_rules', 'sg_s_mat', 'sg_s_rules'];
     } else if (panelId === 'snMalfunction') {
       allowedSgIds = ['sg_malf_sib', 'sg_malf_fuel'];
-    } else if (panelId === 'snNetBack' || panelId === 'snNetBackNoDist') {
+    } else if (panelId === 'snNetBack' || panelId === 'snNetBackNoDist' || panelId === 'snNetBackApprox') {
       allowedSgIds =['sg_pr_sales', 'sg_st_rules', 'sg_st_srules', 'sg_st_sales', 'sg_c_rules', 'sg_c_sales', 'sg_p_rules', 'sg_p_sales'];
     } else if (panelId === 'snDates' || panelId === 'snPendingPrice' || panelId === 'snCustomAlerts') {
       allowedSgIds = [];

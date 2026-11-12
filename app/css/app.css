@@ -36209,8 +36209,15 @@ video::-webkit-media-controls-start-playback-button {
 
 /* Delivery breakeven Sentinel table: 11 columns, so it takes the full width of the two-column grid. */
 .mini-table-grid > #snNetBack,
-.mini-table-grid > #snNetBackNoDist {
+.mini-table-grid > #snNetBackNoDist,
+.mini-table-grid > #snNetBackApprox {
   grid-column: 1 / -1;
+}
+
+/* "Moved Customer" tag beside a site costed from its Region (own site made by a customer move, not pinned yet). */
+.nb-moved-tag {
+  margin-inline-start: 6px;
+  white-space: nowrap;
 }
 
 /* Delivery price floor on the Price Agreement form (#prFloorStrip): same chips as the net-back strip. */

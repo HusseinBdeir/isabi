@@ -488,7 +488,7 @@
     const textHtml = `
         <div class="rdl-title-text">${esc(meta.title)} - ${esc(L.short)} / <span dir="rtl">${esc(meta.ar)}</span></div>
         <div class="rdl-subtitle-text">${esc(subtitle || '')}</div>
-        ${noteText ? `<div class="rdl-note-text">${esc(noteText)}</div>` : ''}`;
+        ${(Array.isArray(noteText) ? noteText : [noteText]).filter(Boolean).map(n => `<div class="rdl-note-text">${esc(n)}</div>`).join('')}`;
     if (sealHtml) {
       return `
       <div class="rdl-title-block has-division-seal">
@@ -553,6 +553,121 @@
     if (/oil|grease|filter|tire|tyre|wheel|battery|hammer|spare|repair|maint/i.test(p)) return '615';
     return '622';
   };
+
+  // ── Diesel stock at purchase cost (owner rule 2026-11-12: no fixed diesel figure anywhere) ─────────────────
+  // Statements ledger only. A bulk diesel purchase (category Fuel, sub-category Diesel / Mazout / blank, litres on
+  // the line: the same rule as the tank ledger in app.js) goes into stock (311) at its cost before VAT. Every litre
+  // that leaves the tank (fuel slip, generator draw, diesel sold, tank shortage) leaves at the moving weighted
+  // average purchase cost of the litres in that company's tank, in the order things happened (transaction date).
+  // Trips, agreement floors and the Driver Statement use the latest purchase price instead (MFG_FUEL_ECON).
+  // A company with no priced diesel purchase in these books costs nothing out of stock: its diesel is whatever
+  // its expense lines say. Deterministic, no AI (hard rule 15).
+  const isBulkDieselRaw = r => /^fuel$/i.test(String((r && r.category) || '').trim())
+    && (!String((r && r.subcategory) || '').trim() || /^(diesel|mazout)$/i.test(String(r.subcategory).trim()))
+    && Number((r && r.qty) || 0) > 0;
+  const isDieselItem = s => /diesel|mazout/i.test(String(s || 'Diesel'));
+  const isDieselSaleProduct = p => /^diesel(\s*trans)?$|^mazout$/i.test(String(p || '').trim());
+
+  // purchases: expAll rows with diesel_l; outs: [{ row, co, date, id, rank, l, field, rateField }]
+  // (l > 0 leaves the tank, l < 0 comes back: a return or a surplus). Writes the cost and $/L onto each out row.
+  // Same thresholds as the latest diesel price in app.js (_latestBulkDieselPrice): a delivery counts from 100 L (a
+  // lump-sum station fill is typed as 1), and a $/L outside 0.4x to 2.5x of the median of the ten deliveries before it
+  // is a typo. Such a line is not put into tank stock: it stays on the expense line, as it was booked before.
+  const DIESEL_STOCK_MIN_L = 100;
+  function screenDieselStockPurchases(purchases) {
+    const sortKey = p => `${String(p.date || '').slice(0, 10)}|${String(p.id || '')}`;
+    const cand = purchases.filter(p => {
+      const l = Number(p.diesel_l || 0);
+      const usd = Number(p.total_usd || 0) - Number(p.vat_usd || 0);
+      if (p.is_vat_only || !l || !usd || (l > 0) !== (usd > 0)) { p.diesel_stock = false; return false; }
+      if (Math.abs(l) < DIESEL_STOCK_MIN_L) { p.diesel_stock = false; return false; }
+      return true;
+    }).sort((a, b) => (sortKey(a) < sortKey(b) ? -1 : (sortKey(a) > sortKey(b) ? 1 : 0)));
+    const priceOf = p => (Number(p.total_usd || 0) - Number(p.vat_usd || 0)) / Number(p.diesel_l);
+    const median = arr => { const s = arr.slice().sort((a, b) => a - b); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+    const histCo = new Map();
+    const histAll = [];
+    cand.forEach(p => {
+      const co = String(p.co || '');
+      if (!histCo.has(co)) histCo.set(co, []);
+      const own = histCo.get(co);
+      const ref = own.length >= 3 ? median(own.slice(-10)) : (histAll.length >= 3 ? median(histAll.slice(-10)) : 0);
+      const pr = priceOf(p);
+      if (Number(p.diesel_l) > 0) {
+        if (ref > 0 && (pr < ref * 0.4 || pr > ref * 2.5)) p.diesel_stock = false;
+        own.push(pr);
+        histAll.push(pr);
+      }
+    });
+    return cand.filter(p => p.diesel_stock);
+  }
+
+  // purchases: rows already screened into stock (diesel_stock); each may get diesel_reval_usd (see below).
+  // outs: [{ row, co, date, id, rank, l, field, rateField }] (l > 0 leaves the tank, l < 0 comes back: a sale return
+  // or a surplus). Writes the cost and $/L onto each out row. Returns Map(company -> { litres, value, rate }): the
+  // closing tank, where value is exactly what the ledger holds in 311 for that tank (ins - outs - revaluations).
+  function costDieselStock(purchases, outs) {
+    const byCo = new Map();
+    const list = co => { if (!byCo.has(co)) byCo.set(co, []); return byCo.get(co); };
+    // Undated rows are left out: the journal cannot post them, so they must not move the tank either.
+    purchases.forEach(p => {
+      const l = Number(p.diesel_l || 0);
+      const usd = Math.round((Number(p.total_usd || 0) - Number(p.vat_usd || 0)) * 100) / 100;
+      p.diesel_reval_usd = 0;
+      if (!String(p.date || '').slice(0, 10)) return;
+      list(String(p.co || '')).push({ kind: 'in', rank: 1, date: String(p.date || '').slice(0, 10), id: String(p.id || ''), l, usd, row: p });
+    });
+    outs.forEach(o => {
+      if (!o.l || !String(o.date || '').slice(0, 10)) return;
+      list(String(o.co || '')).push(Object.assign({ kind: 'out' }, o, { date: String(o.date || '').slice(0, 10), id: String(o.id || '') }));
+    });
+    const closing = new Map();
+    const r2c = v => Math.round(v * 100) / 100;
+    byCo.forEach((evs, co) => {
+      evs.sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : (a.rank - b.rank) || (a.id < b.id ? -1 : (a.id > b.id ? 1 : 0))));
+      const firstIn = evs.find(e => e.kind === 'in' && e.l > 0 && e.usd > 0);
+      if (!firstIn) return; // nothing bought into stock: nothing is costed out of it
+      // U is the ledger's own 311 balance for this tank, in cents, so the two never part. Litres drawn before the first
+      // priced purchase take that purchase's price (the slips came first in the books). When the books draw more than
+      // was bought (the tank runs below zero), the litres beyond the stock leave at the latest purchase price. A later
+      // purchase covers part or all of that shortfall: only the litres it covers are re-priced, from the shortfall's
+      // own average to this purchase's price, and the gap is posted as a revaluation (601 / 311) on that purchase. So
+      // 311 = litres x price again once the tank is back above zero, and no purchase moves more than its own litres.
+      let L = 0, U = 0, last = firstIn.usd / firstIn.l;
+      evs.forEach(e => {
+        if (e.kind === 'in') {
+          const p = e.usd / e.l;
+          if (L <= 1e-6 && e.l > 0) {
+            let adj;
+            if (L > -1e-6) {
+              adj = r2c(U); // empty tank: a cent left over from rounding is cleared, nothing else
+            } else {
+              // average price the missing litres were drawn at (a return larger than the tank can leave it at or below
+              // zero: then the last purchase price stands in for it)
+              const h = (U / L > 0) ? U / L : last;
+              const covered = Math.min(e.l, -L);
+              adj = r2c(covered * (p - h)); // > 0: the covered litres cost more than they were drawn at (more expense)
+            }
+            if (adj) e.row.diesel_reval_usd = r2c(Number(e.row.diesel_reval_usd || 0) + adj);
+            L += e.l; U = r2c(U + e.usd - adj);
+            last = p;
+          } else {
+            L += e.l; U = r2c(U + e.usd);
+            if (L > 1e-6 && U > 0) last = U / L;
+          }
+          return;
+        }
+        const rate = (L > 1e-6 && U > 0) ? U / L : last;
+        const cost = r2c(e.l * rate);
+        e.row[e.field] = cost;
+        if (e.rateField) e.row[e.rateField] = Math.round(rate * 10000) / 10000;
+        L -= e.l; U = r2c(U - cost);
+      });
+      // rate = the tank's own average (also below zero, where it is the shortfall's average), else the last price.
+      closing.set(co, { litres: Math.round(L * 100) / 100, value: U, rate: Math.round((Math.abs(L) > 1e-6 && U / L > 0 ? U / L : last) * 10000) / 10000 });
+    });
+    return closing;
+  }
 
   function getRdlIndustryForCo(normCo) {
     const c = String(normCo || 'ALL');
@@ -923,17 +1038,17 @@
       (hsp.energyRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
         const lit = Number(r.diesel_used_l || 0);
         if (lit > 0) {
-          // Two values per row. total_usd / paid_usd are the ledger's standard cost of the diesel issued, left as it
-          // was (an accounting basis, changed only by an owner decision). ops_rate / ops_usd are the resort's own
-          // latest priced diesel purchase on that day (none on file = no value): the registers print these.
+          // Two values per row. price_per_l / total_usd = the purchase cost of the diesel drawn (moving average of the
+          // resort's own priced diesel purchases, set by costDieselStock; none = no value). ops_rate / ops_usd = the
+          // resort's latest priced diesel purchase on that day (none on file = no value).
           const genFe = window.MFG_FUEL_ECON;
           const genRate = (genFe && genFe.bookPriceOn) ? genFe.bookPriceOn(r.company, r.date) : null;
           fuelAll.push({
             id: r.id, date: r.date, rep_date: r.date, co: r.company, voucher: r.id, name: r.id,
             equip: r.asset || 'Prime Generator', equip_type: 'Generator', driver: r.company,
             station: `${r.company} Generator Tank`, supplier: 'Generator Diesel Supply',
-            odometer: Number(r.run_hours || 0), meter_unit: 'h', liters: lit, price_per_l: 0.92,
-            total_usd: r2(lit * 0.92), paid_usd: r2(lit * 0.92),
+            odometer: Number(r.run_hours || 0), meter_unit: 'h', liters: lit, price_per_l: null,
+            total_usd: 0, paid_usd: 0, diesel_draw_l: lit,
             ops_rate: genRate, ops_usd: genRate ? r2(lit * genRate) : 0
           });
         }
@@ -1143,7 +1258,13 @@
     const indRev = (SEED && (SEED._indCustomRev || SEED._industryRev)) || 0;
     const editRev = STATE && STATE.industryRowEdits ? Object.keys(STATE.industryRowEdits).length : 0;
     const demoSig = (STATE && STATE.company === 'democompany') ? `${STATE.demoCompanyIndustry || ''}|1` : (Boolean(STATE && STATE.demoVisitor) ? '1' : '0');
-    const sig = `${co}|${ind}|${demoSig}|${allowedSig}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.vat_invoices || []).length}`;
+    // The reading seat's diesel-price rights decide how its ledger books diesel (stock at purchase cost, or the
+    // purchases expensed as before), so they are part of the key: a context is never shared across those seats.
+    const dslGate = makeFuelMoneyGate();
+    const dslFe = (typeof window !== 'undefined') ? window.MFG_FUEL_ECON : null;
+    const dslSig = `${(dslFe && typeof dslFe.rightsSig === 'function') ? dslFe.rightsSig() : 'x'}:`
+      + (allowedCos || [co, 'WTC', 'BBConstruction', 'Lions Transport']).map(c => (dslGate(c) ? '1' : '0')).join('');
+    const sig = `${co}|${ind}|${demoSig}|${allowedSig}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.vat_invoices || []).length}|${(recs.fuel_malfunctions || []).length}|dsl:${dslSig}`;
 
     if (_cachedCoKey !== sig || !_cachedCtxData) {
       const isMfgAll = !co || co === 'ALL';
@@ -1254,11 +1375,16 @@
         const isApCredit = m === 'Credit' || m === 'CR Return' || m === 'IVA' || m === 'VAT' || m === 'VAT Dis';
         const vat = isVatOnly ? amt : (sign * Number(r.vat !== undefined ? r.vat : (r.vat_usd || 0)));
         const paid = isCash ? amt : 0;
+        const isDieselBuy = isBulkDieselRaw(r);
         return {
           id: r.id,
           date: r.date,
           rep_date: r.rep_date || r.date,
           co: r.company || r.co || co,
+          is_diesel_buy: isDieselBuy, // cash flow: a diesel payment, whatever the seat's rights
+          diesel_l: isDieselBuy ? sign * Number(r.qty || 0) : 0,
+          equipment: String(r.equipment || r.for_equipment || '').trim(),
+          diesel_stock: false, // set below: booked into diesel stock (311) for a seat that may read the diesel price
           voucher_no: r.invoice && r.invoice !== '-' ? r.invoice : (r.name || r.id),
           invoice_no: r.invoice || '',
           name: r.name || '',
@@ -1438,12 +1564,13 @@
 
       let fuelAll = rawFuel.map(r => {
         const liters = Number(r.litres !== undefined ? r.litres : (r.liters || 0));
-        // Two values per slip. rate / tot are the ledger's standard cost of the diesel issued (accounts 601 / 311),
-        // left exactly as it was: changing an accounting basis is an owner decision. ops_rate / ops_usd are the
-        // diesel price that was the latest priced delivery on the slip's day (none on file = no value): the Fuel Log
-        // and the Driver Statement print these, and only for a seat that may read diesel purchases.
-        const rate = Number(r.price_per_l || 0.95);
-        const tot = Number(r.total_usd || (liters * rate));
+        // Two values per slip. price_per_l / total_usd = the purchase cost of the diesel drawn (moving average of the
+        // company's priced diesel purchases, set by costDieselStock below; none = no value): the ledger (601 / 311)
+        // and the Fuel Log. ops_rate / ops_usd = the latest priced delivery on the slip's day: the Driver Statement
+        // (trips). Both are printed only for a seat that may read diesel purchases. Lubricant slips and tank refill
+        // slips draw nothing from the diesel tank (diesel_draw_l 0): their cost is the purchase on the expense side.
+        const isRefill = !String(r.equipment || r.equip || '').trim() && /refill|purchase|intake|tank/i.test(String(r.fuel_type || r.location || ''));
+        const drawL = (isDieselItem(r.item || r.fuel_type) && !isRefill) ? liters : 0;
         const slipFe = window.MFG_FUEL_ECON;
         const opsRate = (slipFe && slipFe.bookPriceOn) ? slipFe.bookPriceOn(r.company || r.co || co, r.date) : null;
         const eqName = r.equipment || r.equip || 'Fleet Unit';
@@ -1469,9 +1596,11 @@
           odometer: meterVal || 0,
           meter_unit: meterUnit,
           liters,
-          price_per_l: rate,
-          total_usd: tot,
-          paid_usd: tot,
+          diesel_draw_l: drawL,
+          unit_raw: String(r.equipment || r.equip || '').trim(),
+          price_per_l: null,
+          total_usd: 0,
+          paid_usd: 0, // drawing from the tank moves no cash: the purchase is the payment
           ops_rate: opsRate > 0 ? opsRate : null,
           ops_usd: opsRate > 0 ? liters * opsRate : 0
         };
@@ -1489,6 +1618,88 @@
         apRmLedgerAll = hyd.apRmLedgerAll;
         fuelAll = hyd.fuelAll;
         rawReceiptsForDocs = [...rawReceipts, ...(hyd.extraReceipts || [])];
+      }
+
+      // Diesel stock at purchase cost, per company, for the companies whose diesel price this seat may read. For any
+      // other company the ledger books diesel as before this rule's statements existed: purchases straight to expense
+      // and nothing drawn out of stock, so the seat sees no figure it could not see already (no $/L on any line).
+      // Tank shortages and diesel sold leave the tank too (Manufacturing tank only).
+      const dieselAdjAll = ind === 'Manufacturing'
+        ? (recs.fuel_malfunctions || []).filter(m => m && !m.voided && seedGuard(m) && coMatch(m.company || m.co, co, allowedCos)
+          && isDieselItem(m.item) && !/oil|lubric|grease/i.test(String(m.item || '') + ' ' + String(m.category || ''))
+          && Number(m.litres || 0) !== 0)
+          .map(m => ({
+            id: m.id, date: String(m.date || '').slice(0, 10), rep_date: String(m.rep_date || m.date || '').slice(0, 10),
+            co: m.company || m.co || co, ref: String(m.ticket_no || m.name || m.id || 'TANK'),
+            kind: String(m.discrepancy_type || 'Malfunction').trim() || 'Malfunction',
+            liters: Number(m.litres || 0), cost_usd: 0
+          }))
+        : [];
+      let dieselClosing = new Map();
+      let dieselStationAlloc = [];
+      {
+        // Official Books keeps the old basis too (purchases expensed, nothing drawn from stock): its expense lines are
+        // only the official ones while the fuel slips are not, so a tank built from them would not hold.
+        const stockCo = c => !offScope && dslGate(c);
+        expAll.forEach(r => { r.diesel_stock = Boolean(r.is_diesel_buy && r.diesel_l && stockCo(r.co)); });
+        const stocked = screenDieselStockPurchases(expAll.filter(r => r.diesel_stock));
+        // Diesel bought at a station for one unit (a diesel line under 100 L, typed as a lump sum, or screened out, that
+        // names its unit) is already on the expense line, so those litres were not drawn from the tank. They come off
+        // that unit's slips of that day, and only they: first a slip of exactly that many litres, then the others in
+        // order. A lump sum (typed as 1, litres unknown) is matched only when it is the unit's one slip that day.
+        const unitKey = (c, u, d) => `${String(c || '').toLowerCase()}|${String(u || '').trim().toLowerCase()}|${String(d || '').slice(0, 10)}`;
+        const stationBuys = new Map(); // unit-day -> { litres, lumpSums }
+        expAll.forEach(r => {
+          if (!r.is_diesel_buy || r.diesel_stock || !r.equipment || !stockCo(r.co) || !(Number(r.diesel_l) > 0)) return;
+          const k = unitKey(r.co, r.equipment, r.date);
+          const b = stationBuys.get(k) || { litres: 0, lumpSums: 0 };
+          if (Number(r.diesel_l) <= 1) b.lumpSums += 1; else b.litres += Number(r.diesel_l);
+          stationBuys.set(k, b);
+        });
+        const slipsByKey = new Map();
+        fuelAll.forEach(r => {
+          r.price_per_l = null; r.total_usd = 0; r.paid_usd = 0; r.station_l = 0;
+          if (!(r.diesel_draw_l > 0) || !r.unit_raw) return;
+          const k = unitKey(r.co, r.unit_raw, r.date);
+          if (!stationBuys.has(k)) return;
+          if (!slipsByKey.has(k)) slipsByKey.set(k, []);
+          slipsByKey.get(k).push(r);
+        });
+        const stationAlloc = [];
+        slipsByKey.forEach((slips, k) => {
+          const b = stationBuys.get(k);
+          let left = b.litres;
+          const ordered = slips.slice().sort((x, y) => {
+            const ex = Math.abs(x.diesel_draw_l - b.litres) < 0.5 ? 0 : 1, ey = Math.abs(y.diesel_draw_l - b.litres) < 0.5 ? 0 : 1;
+            return (ex - ey) || (String(x.id) < String(y.id) ? -1 : (String(x.id) > String(y.id) ? 1 : 0));
+          });
+          ordered.forEach(r => {
+            if (left <= 1e-6) return;
+            const take = Math.min(left, r.diesel_draw_l);
+            r.station_l = Math.round(take * 100) / 100;
+            left -= take;
+          });
+          if (b.lumpSums > 0 && slips.length === 1 && !(slips[0].station_l > 0)) slips[0].station_l = slips[0].diesel_draw_l;
+          stationAlloc.push({ key: k, bought: Math.round(b.litres * 100) / 100, lumpSums: b.lumpSums, slips: slips.length,
+            marked: Math.round(slips.reduce((s, r) => s + r.station_l, 0) * 100) / 100 });
+        });
+        const outs = [];
+        fuelAll.forEach(r => {
+          const drawn = Math.round(((r.diesel_draw_l || 0) - (r.station_l || 0)) * 100) / 100;
+          r.station_fill = r.station_l > 0 && drawn <= 0;
+          if (drawn > 0 && stockCo(r.co)) outs.push({ row: r, co: r.co, date: r.date, id: r.id, rank: 4, l: drawn, field: 'total_usd', rateField: 'price_per_l' });
+        });
+        if (ind === 'Manufacturing') {
+          salesAll.forEach(r => {
+            r.diesel_cost_usd = 0;
+            if (isDieselSaleProduct(r.product) && Number(r.qty) && stockCo(r.co)) outs.push({ row: r, co: r.co, date: r.date, id: r.id, rank: 3, l: Number(r.qty), field: 'diesel_cost_usd' });
+          });
+          dieselAdjAll.forEach(r => {
+            if (stockCo(r.co)) outs.push({ row: r, co: r.co, date: r.date, id: r.id, rank: 2, l: r.liters, field: 'cost_usd' });
+          });
+        }
+        dieselClosing = costDieselStock(stocked, outs);
+        dieselStationAlloc = stationAlloc;
       }
 
       const _rdlCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
@@ -1660,7 +1871,7 @@
         ind,
         coaAccounts: getCoaAccountsForInd(ind),
         domainTerms: getDomainRdlTerms(ind),
-        salesAll, expAll, payAll, rmAll, apRmLegsAll, fuelAll, prodAll: [],
+        salesAll, expAll, payAll, rmAll, apRmLegsAll, fuelAll, dieselAdjAll, dieselClosing, dieselStationAlloc, prodAll: [],
         receiptLedgerAll, arLedgerAll, settlementLedgerAll, apRmLedgerAll, vatPaidAll,
         customers, products, sites, suppliers, categories, staff, equipTypes, equipments, drivers,
         invoiceList, invMap, ticketCandidates, ticketById, receiptCandidates, receiptById
@@ -1891,17 +2102,44 @@
       }
     });
 
+    // Diesel drawn from the tank, at the purchase cost of the litres in it (costDieselStock). Only for companies whose
+    // diesel purchases this seat may read; for the others total_usd is 0 and their purchases stay on the expense line.
+    const dieselTankOf = co => (isMfg ? 'Plant Diesel Tank' : `${co || 'Utility'} Generator Tank`);
+    const pushDieselOut = (d, ref, source, tank, desc, amt) => {
+      if (Math.abs(amt) < 0.005) return;
+      if (amt > 0) {
+        pushJe(d, ref, source, '601', tank, desc, amt, 0);
+        pushJe(d, ref, source, '311', tank, desc, 0, amt);
+      } else {
+        pushJe(d, ref, source, '311', tank, desc, -amt, 0);
+        pushJe(d, ref, source, '601', tank, desc, 0, -amt);
+      }
+    };
     ctx.fuelAll.forEach(r => {
       const d = rowDate(r, basis);
       if (!d) return;
       const tot = Number(r.total_usd || 0);
       if (tot <= 0) return;
-      const tank = r.station || (isMfg ? 'Plant Diesel Tank' : 'Utility & Fleet Tank');
+      const tank = r.station || dieselTankOf(r.co);
       const ref = String(r.voucher || r.name || 'FUEL');
       const desc = `Diesel ${fmtNum(r.liters, 0)} L · ${r.equip || r.driver || 'Fleet'}`;
-      pushJe(d, ref, 'Fuel Log', '601', tank, desc, tot, 0);
-      pushJe(d, ref, 'Fuel Log', '311', tank, desc, 0, tot);
+      pushDieselOut(d, ref, 'Fuel Log', tank, desc, tot);
     });
+    if (isMfg) {
+      ctx.salesAll.forEach(r => {
+        const amt = Number(r.diesel_cost_usd || 0);
+        const d = rowDate(r, basis);
+        if (!d || !amt) return;
+        const ref = String(r.invoice_no || r.ticket_no || 'SL');
+        pushDieselOut(d, ref, 'Diesel Sold', dieselTankOf(r.co), `Cost of diesel sold ${fmtNum(Math.abs(r.qty), 0)} L · ${r.customer || ''}`.trim(), amt);
+      });
+      (ctx.dieselAdjAll || []).forEach(r => {
+        const amt = Number(r.cost_usd || 0);
+        const d = rowDate(r, basis);
+        if (!d || !amt) return;
+        pushDieselOut(d, r.ref, 'Tank Count', dieselTankOf(r.co), `${amt > 0 ? 'Diesel shortage' : 'Diesel surplus'} ${fmtNum(Math.abs(r.liters), 0)} L · ${r.kind}`, amt);
+      });
+    }
 
     ctx.expAll.forEach(r => {
       const d = rowDate(r, basis);
@@ -1914,17 +2152,25 @@
       const sup = r.supplier || r.category || 'General Vendor';
       const ref = String(r.voucher_no || r.invoice_no || r.name || 'EXP');
       const cat = String(r.category || '');
-      const expAcct = /maint|spare|repair|tire|oil/i.test(cat) ? '615' : (/raw|cement|sand|agg|fuel|diesel/i.test(cat) ? '601' : '622');
+      // A bulk diesel purchase goes into the diesel tank stock (311) for a seat that may read the diesel price;
+      // it is expensed when drawn (Fuel Log, Diesel Sold, Tank Count above).
+      const expAcct = r.diesel_stock ? '311' : (/maint|spare|repair|tire|oil/i.test(cat) ? '615' : (/raw|cement|sand|agg|fuel|diesel/i.test(cat) ? '601' : '622'));
       const liabAcct = r.is_barter ? '467' : '401';
       const desc = isMfg ? `${cat} — ${r.description || sup}` : `${cat} · ${r.description || sup}`;
+      // Diesel into stock is held on the tank's sub-account, the one the draws are credited to, so it nets per tank.
+      const expSub = r.diesel_stock ? dieselTankOf(r.co) : sup;
       if (tot > 0) {
-        if (net > 0.0001) pushJe(d, ref, 'Expense', expAcct, sup, desc, net, 0);
+        if (net > 0.0001) pushJe(d, ref, 'Expense', expAcct, expSub, desc, net, 0);
         if (vat > 0.0001) pushJe(d, ref, 'Input VAT', '442', 'VAT Deductible (11%)', `Input VAT on ${ref}`, vat, 0);
         pushJe(d, ref, r.is_barter ? 'Barter Expense' : 'Expense', liabAcct, sup, desc, 0, tot);
       } else {
         pushJe(d, ref, 'Expense Return', liabAcct, sup, desc, Math.abs(tot), 0);
-        if (net < -0.0001) pushJe(d, ref, 'Expense Return', expAcct, sup, desc, 0, Math.abs(net));
+        if (net < -0.0001) pushJe(d, ref, 'Expense Return', expAcct, expSub, desc, 0, Math.abs(net));
         if (vat < -0.0001) pushJe(d, ref, 'Input VAT Return', '442', 'VAT Deductible (11%)', `Input VAT return on ${ref}`, 0, Math.abs(vat));
+      }
+      // A purchase that lands on an empty or below-zero tank re-prices the litres drawn beyond the stock (costDieselStock).
+      if (r.diesel_stock && Number(r.diesel_reval_usd)) {
+        pushDieselOut(d, ref, 'Tank Revaluation', dieselTankOf(r.co), `Diesel drawn beyond the tank, re-priced at ${ref}`, Number(r.diesel_reval_usd));
       }
       if (!r.is_barter && paid > 0) {
         pushJe(d, `PV-${ref}`, 'Expense Payment', liabAcct, sup, `Settlement ${ref}`, paid, 0);
@@ -2463,7 +2709,7 @@
     }).join('');
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `As at ${asof} · Lebanese General Chart of Accounts (Classes 1${isMfg ? '–' : '-'}5) · Functional Currency USD${!isMfg && Math.abs(totalAssets - totalLiabEq) < 0.02 ? ' · Balanced ($0.00 Variance)' : ''}`)}
+      ${sheetHeaderHtml(meta, ctx.co, `As at ${asof} · Lebanese General Chart of Accounts (Classes 1${isMfg ? '–' : '-'}5) · Functional Currency USD${!isMfg && Math.abs(totalAssets - totalLiabEq) < 0.02 ? ' · Balanced ($0.00 Variance)' : ''}`, dieselBasisNote(ctx))}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -2559,7 +2805,7 @@
     };
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Columns by ${pMode} · Lebanese CoA Classes 6 & 7`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Columns by ${pMode} · Lebanese CoA Classes 6 & 7`, dieselBasisNote(ctx))}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -2617,13 +2863,13 @@
 
     sales.forEach(r => addVal('custIn', txDate(r), Number(r.paid_usd || 0)));
     rms.forEach(r => addVal('rmOut', txDate(r), -Number(r.paid_usd || r.total_usd || 0)));
-    fuels.forEach(r => addVal('fuelOut', txDate(r), -Number(r.paid_usd || r.total_usd || 0)));
-    exps.forEach(r => addVal('expOut', txDate(r), -Number(r.paid_usd || r.total_usd || 0)));
+    // Diesel paid for is the diesel purchase line; drawing it from the tank (a fuel slip) moves no cash.
+    exps.forEach(r => addVal(r.is_diesel_buy ? 'fuelOut' : 'expOut', txDate(r), -Number(r.paid_usd || r.total_usd || 0)));
     pays.forEach(r => addVal('payOut', txDate(r), -Number(r.paid_usd || r.net_usd || 0)));
 
     const rowKeys = ['custIn', 'rmOut', 'fuelOut', 'expOut', 'payOut'];
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Direct Cash Flow Method · Period ${p.from} to ${p.to} · Columns by ${pMode}`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Direct Cash Flow Method · Period ${p.from} to ${p.to} · Columns by ${pMode}`, dieselBasisNote(ctx))}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -2709,7 +2955,7 @@
 
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Six-Column Trial Balance · Period ${p.from} to ${p.to} · Functional Currency USD${!isMfg && Math.abs(tCloseDr - tCloseCr) < 0.02 ? ' · Balanced ($0.00 Variance)' : ''}`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Six-Column Trial Balance · Period ${p.from} to ${p.to} · Functional Currency USD${!isMfg && Math.abs(tCloseDr - tCloseCr) < 0.02 ? ' · Balanced ($0.00 Variance)' : ''}`, dieselBasisNote(ctx))}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -2755,7 +3001,7 @@
     const viewJes = allJes.slice(-180).reverse();
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Account: ${p.account === 'ALL' ? 'All Accounts' : p.account} · ${allJes.length} journal lines (showing ${viewJes.length})`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Account: ${p.account === 'ALL' ? 'All Accounts' : p.account} · ${allJes.length} journal lines (showing ${viewJes.length})`, dieselBasisNote(ctx))}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -2822,7 +3068,7 @@
     const viewRows = periodRows.slice(-150);
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Account: ${p.account || 'ALL'} · Sub-account: ${!p.subAccount || p.subAccount === 'ALL' ? 'All Sub-accounts' : p.subAccount}`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Account: ${p.account || 'ALL'} · Sub-account: ${!p.subAccount || p.subAccount === 'ALL' ? 'All Sub-accounts' : p.subAccount}`, dieselBasisNote(ctx))}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -3203,10 +3449,12 @@
     }).sort((a, b) => rowDate(b, ctx.basis).localeCompare(rowDate(a, ctx.basis)));
 
     const totLiters = rows.reduce((s, r) => s + Number(r.liters || 0), 0);
-    // The register prints the recorded purchase price of each slip's day (ops_rate / ops_usd), not the ledger's
-    // standard cost. Average rate over the litres that carry a value (no diesel price on file = left out of it).
-    const totUsd = rows.reduce((s, r) => s + Number(r.ops_usd || 0), 0);
-    const pricedLiters = rows.reduce((s, r) => s + (Number(r.ops_usd) > 0 ? Number(r.liters || 0) : 0), 0);
+    // The register prints what the ledger books: the purchase cost of the diesel drawn (moving average of the litres
+    // in the tank, price_per_l / total_usd), so its total ties to the 601 / 311 fuel lines. Average rate over the
+    // litres that carry a value (lubricant and refill slips, or no priced purchase, = no value).
+    // A slip partly covered by a station purchase counts only the litres drawn from the tank.
+    const totUsd = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
+    const pricedLiters = rows.reduce((s, r) => s + (Number(r.total_usd) > 0 ? Number(r.liters || 0) - Number(r.station_l || 0) : 0), 0);
     // Decided for the reading seat at print time (the statement data is cached across seats).
     const mayFuel = makeFuelMoneyGate();
     const anyRateHidden = rows.some(r => !mayFuel(r.co));
@@ -3238,8 +3486,8 @@
               <td>${esc(r.driver || '-')}</td>
               <td class="num">${r.odometer ? fmtNum(r.odometer, r.meter_unit === 'h' && r.odometer % 1 !== 0 ? 1 : 0) + (r.meter_unit ? ' ' + r.meter_unit : '') : '-'}</td>
               <td class="num bold">${fmtNum(r.liters, 1)}</td>
-              <td class="num">${mayFuel(r.co) && Number(r.ops_rate) > 0 ? fmtUsd(r.ops_rate, 2) : '-'}</td>
-              <td class="num bold">${mayFuel(r.co) && Number(r.ops_usd) > 0 ? fmtUsd(r.ops_usd, 2) : '-'}</td>
+              <td class="num">${mayFuel(r.co) && Number(r.price_per_l) > 0 ? fmtUsd(r.price_per_l, 3) : '-'}</td>
+              <td class="num bold">${mayFuel(r.co) && Number(r.total_usd) > 0 ? fmtUsd(r.total_usd, 2) : '-'}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -3720,7 +3968,7 @@
       const g = byDrv.get(drv) || { driver: drv, loads: 0, m3: 0, rev: 0, rmTrips: 0, fuelFills: 0, liters: 0, fuelUsd: 0 };
       g.fuelFills += 1;
       g.liters += Number(r.liters || 0);
-      g.fuelUsd += Number(r.ops_usd || 0); // recorded purchase price of the slip's day, not the ledger's standard cost
+      g.fuelUsd += Number(r.ops_usd || 0); // trips: the latest purchase price on the slip's day (the ledger uses purchase cost)
       if (!(Number(r.ops_usd) > 0)) unpricedFills17 += 1;
       if (!mayFuel17(r.co)) fuelMoneyHidden17 = true;
       byDrv.set(drv, g);
@@ -3783,12 +4031,40 @@
   // (the statement data is cached across seats, so the answer is never stored with it).
   function makeFuelMoneyGate() {
     const memo = new Map();
-    const fe = window.MFG_FUEL_ECON;
+    const fe = (typeof window !== 'undefined') ? window.MFG_FUEL_ECON : null;
     return co => {
       const k = String(co || '');
       if (!memo.has(k)) memo.set(k, Boolean(fe && fe.mayReadPrice && fe.mayReadPrice(k)));
       return memo.get(k);
     };
+  }
+
+  // Said on the ledger statements when this seat's ledger books some company's diesel the old way (purchases straight
+  // to expense, nothing in tank stock) because it may not read that company's diesel price. Another seat's printout
+  // of the same period then differs in 601 / 311 by the diesel still in the tank, and the note says why.
+  const DIESEL_EXPENSED_NOTE = 'Diesel is shown as an expense when bought, because this seat may not read the diesel price. Seats that may read it see diesel in tank stock at purchase cost until it is drawn.';
+  const DIESEL_OFFICIAL_NOTE = 'In Official Books, diesel is shown as an expense when bought.';
+  const DIESEL_UNCOSTED_NOTE = 'Some diesel drawn here has no diesel purchase in these books, so it carries no cost.';
+  const DIESEL_BELOW_ZERO_NOTE = 'A diesel tank in this scope has more diesel drawn than bought in these books, so its stock shows below zero until the missing purchases are entered.';
+  // The notes that apply to this seat's ledger (a list: each one is its own translated line).
+  function dieselBasisNote(ctx) {
+    const gate = makeFuelMoneyGate();
+    const notes = [];
+    const anyDiesel = (ctx.expAll || []).some(r => r.is_diesel_buy) || (ctx.fuelAll || []).some(r => r.diesel_draw_l > 0);
+    if (!anyDiesel) return notes;
+    if (ctx.officialScope) {
+      notes.push(DIESEL_OFFICIAL_NOTE);
+      return notes;
+    }
+    if ((ctx.expAll || []).some(r => r.is_diesel_buy && !gate(r.co)) || (ctx.fuelAll || []).some(r => r.diesel_draw_l > 0 && !gate(r.co))) {
+      notes.push(DIESEL_EXPENSED_NOTE);
+    }
+    if ((ctx.fuelAll || []).some(r => r.diesel_draw_l > 0 && !r.station_fill && gate(r.co) && !(Number(r.total_usd) > 0))) {
+      notes.push(DIESEL_UNCOSTED_NOTE);
+    }
+    const closing = ctx.dieselClosing instanceof Map ? ctx.dieselClosing : new Map();
+    if (Array.from(closing.entries()).some(([c, t]) => gate(c) && t.litres < -0.5)) notes.push(DIESEL_BELOW_ZERO_NOTE);
+    return notes;
   }
 
   function render18VatReturn(meta, ctx) {
@@ -3916,8 +4192,13 @@
     const subRecharge = sales.reduce((s, r) => s + (r.rev_class === 'recharge' ? (Number(r.total_usd || 0) - Number(r.vat_usd || 0)) : 0), 0);
     const subSales = sales.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0) - subRecharge;
     const subRm = rms.reduce((s, r) => s + Number(r.total_usd || 0), 0);
-    const subFuel = fuels.reduce((s, r) => s + Number(r.total_usd || 0), 0);
-    const subExp = exps.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0) - subRecharge;
+    // Diesel at purchase cost when it leaves the tank (slips, diesel sold, tank count); a diesel purchase booked into
+    // stock is not an expense yet, so it leaves the expense stream.
+    const subFuel = fuels.reduce((s, r) => s + Number(r.total_usd || 0), 0)
+      + sales.reduce((s, r) => s + Number(r.diesel_cost_usd || 0), 0)
+      + (ctx.dieselAdjAll || []).filter(r => matchYm(rowDate(r, ctx.basis))).reduce((s, r) => s + Number(r.cost_usd || 0), 0)
+      + exps.reduce((s, r) => s + (r.diesel_stock ? Number(r.diesel_reval_usd || 0) : 0), 0);
+    const subExp =exps.reduce((s, r) => s + (r.diesel_stock ? 0 : (Number(r.total_usd || 0) - Number(r.vat_usd || 0))), 0) - subRecharge;
     const subPay = pays.reduce((s, r) => s + Number(r.net_usd || r.paid_usd || 0), 0);
 
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
@@ -3932,7 +4213,7 @@
     const netSub = subSales - (subRm + subFuel + subExp + subPay);
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Sub-Ledger to General Ledger Tie-Out · Year: ${yr} · Month: ${mo} · Zero Unexplained Variance`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Sub-Ledger to General Ledger Tie-Out · Year: ${yr} · Month: ${mo} · Zero Unexplained Variance`, dieselBasisNote(ctx))}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -5004,12 +5285,12 @@
       const sales = (ctx.arLedgerAll || ctx.salesAll).filter(r => inWindow(txDate(r), p.from, p.to));
       const exps = ctx.expAll.filter(r => inWindow(txDate(r), p.from, p.to));
       const rms = (ctx.apRmLedgerAll || ctx.rmAll).filter(r => inWindow(txDate(r), p.from, p.to));
-      const fuels = ctx.fuelAll.filter(r => inWindow(txDate(r), p.from, p.to));
       const pays = ctx.payAll.filter(r => inWindow(txDate(r), p.from, p.to));
       const custIn = sales.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
       const rmOut = rms.reduce((s, r) => s - Number(r.paid_usd || r.total_usd || 0), 0);
-      const fuelOut = fuels.reduce((s, r) => s - Number(r.paid_usd || r.total_usd || 0), 0);
-      const expOut = exps.reduce((s, r) => s - Number(r.paid_usd || r.total_usd || 0), 0);
+      // Same split as the sheet: diesel paid for = the diesel purchase lines (a fuel slip moves no cash).
+      const fuelOut = exps.reduce((s, r) => s - (r.is_diesel_buy ? Number(r.paid_usd || r.total_usd || 0) : 0), 0);
+      const expOut = exps.reduce((s, r) => s - (r.is_diesel_buy ? 0 : Number(r.paid_usd || r.total_usd || 0)), 0);
       const payOut = pays.reduce((s, r) => s - Number(r.paid_usd || r.net_usd || 0), 0);
       const netCf = custIn + rmOut + fuelOut + expOut + payOut;
       facts = {
@@ -5256,14 +5537,16 @@
         return true;
       });
       const totLiters = rows.reduce((s, r) => s + Number(r.liters || 0), 0);
-      const totUsd = rows.reduce((s, r) => s + Number(r.ops_usd || 0), 0); // recorded purchase prices, as on the sheet
-      // Average rate over the litres that carry a price, exactly as the sheet footer (a slip dated before the first
-      // priced delivery has no price: it is counted, said, and left out of the rate).
-      const pricedLitersK = rows.reduce((s, r) => s + (Number(r.ops_usd) > 0 ? Number(r.liters || 0) : 0), 0);
-      const unpricedFillsK = rows.filter(r => !(Number(r.ops_usd) > 0)).length;
-      // Fuel money and $/L only for a seat that may read diesel purchases (decided at print time).
+      const totUsd = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0); // purchase cost of the diesel drawn, as on the sheet
+      // Average rate over the litres that carry a value, exactly as the sheet footer (a lubricant or refill slip,
+      // or a company with no priced diesel purchase, has none: it is counted, said, and left out of the rate).
+      const pricedLitersK = rows.reduce((s, r) => s + (Number(r.total_usd) > 0 ? Number(r.liters || 0) - Number(r.station_l || 0) : 0), 0);
+      // Fuel money and $/L only for a seat that may read diesel purchases (decided at print time). For a seat that
+      // may not, slips carry no value because it is withheld, not missing: nothing is counted as "without a value".
       const mayFuelK = makeFuelMoneyGate();
       const fuelMoneyOk = !rows.some(r => !mayFuelK(r.co));
+      // A station fill is valued on its expense line, so it is not a fill "without a value".
+      const unpricedFillsK = fuelMoneyOk ? rows.filter(r => !(Number(r.total_usd) > 0) && !r.station_fill).length : 0;
       const byEq = new Map();
       rows.forEach(r => byEq.set(r.equip || 'Unit', (byEq.get(r.equip || 'Unit') || 0) + Number(r.liters || 0)));
       const topEq = [...byEq.entries()].sort((a, b) => b[1] - a[1])[0] || null;
@@ -5280,9 +5563,9 @@
         mkKpi('cnt', 'Dispensing Fills', 'عمليات التعبئة', 'Pleins distribués', fmtNum(rows.length, 0), p.equipType === 'ALL' ? 'All fleet types' : p.equipType, p.equipType === 'ALL' ? 'كافة الآليات' : p.equipType, p.equipType === 'ALL' ? 'Toute la flotte' : p.equipType),
         mkKpi('lit', 'Diesel Drawn', 'المحروقات المسحوبة', 'Litres consommés', `${fmtNum(totLiters, 1)} L`, topEq ? `Top: ${topEq[0]}` : 'Bulk tank', topEq ? `الأعلى: ${topEq[0]}` : 'خزان المحروقات', topEq ? `Top : ${topEq[0]}` : 'Cuve principale'),
         mkKpi('usd', 'Total Fuel Cost', 'إجمالي كلفة الوقود', 'Coût carburant total', fuelMoneyOk ? fmtUsd(totUsd, 2) : '-',
-          unpricedFillsK > 0 ? `At purchase prices · ${fmtNum(unpricedFillsK, 0)} fills without a price` : 'At recorded purchase prices',
-          unpricedFillsK > 0 ? `بأسعار الشراء · ${fmtNum(unpricedFillsK, 0)} تعبئة بلا سعر` : 'بأسعار الشراء المسجّلة',
-          unpricedFillsK > 0 ? `Aux prix d'achat · ${fmtNum(unpricedFillsK, 0)} pleins sans prix` : 'Aux prix d\'achat enregistrés'),
+          unpricedFillsK > 0 ? `At tank purchase cost · ${fmtNum(unpricedFillsK, 0)} fills without a value` : 'At tank purchase cost, as booked',
+          unpricedFillsK > 0 ? `بكلفة شراء المازوت في الخزان · ${fmtNum(unpricedFillsK, 0)} تعبئة بلا قيمة` : 'بكلفة شراء المازوت في الخزان، كما في القيود',
+          unpricedFillsK > 0 ? `Au coût d'achat du stock en cuve · ${fmtNum(unpricedFillsK, 0)} pleins sans valeur` : 'Au coût d\'achat du stock en cuve, comme comptabilisé'),
         mkKpi('rate', 'Average Rate', 'متوسط سعر الليتر', 'Prix moyen / L', (fuelMoneyOk && totUsd > 0 && pricedLitersK > 0) ? `${fmtUsd(totUsd / pricedLitersK, 2)}/L` : '-', p.equipment === 'ALL' ? 'All units' : p.equipment, p.equipment === 'ALL' ? 'كافة الوحدات' : p.equipment, p.equipment === 'ALL' ? 'Toutes unités' : p.equipment)
       ];
     } else if (stmtId === '13') {
@@ -5520,7 +5803,7 @@
         const g = ensureD(r.driver);
         g.fuelFills += 1;
         g.liters += Number(r.liters || 0);
-        g.fuelUsd += Number(r.ops_usd || 0); // recorded purchase prices, as on the sheet
+        g.fuelUsd += Number(r.ops_usd || 0); // trips: latest purchase price on the slip's day, as on the sheet
         if (!(Number(r.ops_usd) > 0)) unpricedFillsD += 1; // no diesel price on file for that day: counted and said
         if (!mayFuelD(r.co)) fuelMoneyHiddenD = true;
       });
@@ -5607,8 +5890,12 @@
       const pays = ctx.payAll.filter(r => matchYm(rowDate(r, ctx.basis)));
       const subRecharge = sales.reduce((s, r) => s + (r.rev_class === 'recharge' ? (Number(r.total_usd || 0) - Number(r.vat_usd || 0)) : 0), 0);
       const subSales = sales.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0) - subRecharge;
-      const subDirect = rms.reduce((s, r) => s + Number(r.total_usd || 0), 0) + fuels.reduce((s, r) => s + Number(r.total_usd || 0), 0);
-      const subOpex = exps.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0) + pays.reduce((s, r) => s + Number(r.net_usd || r.paid_usd || 0), 0) - subRecharge;
+      // Same streams as the sheet: diesel at purchase cost when it leaves the tank; a stocked purchase is not OPEX yet.
+      const subDirect = rms.reduce((s, r) => s + Number(r.total_usd || 0), 0) + fuels.reduce((s, r) => s + Number(r.total_usd || 0), 0)
+        + sales.reduce((s, r) => s + Number(r.diesel_cost_usd || 0), 0)
+        + (ctx.dieselAdjAll || []).filter(r => matchYm(rowDate(r, ctx.basis))).reduce((s, r) => s + Number(r.cost_usd || 0), 0)
+        + exps.reduce((s, r) => s + (r.diesel_stock ? Number(r.diesel_reval_usd || 0) : 0), 0);
+      const subOpex =exps.reduce((s, r) => s + (r.diesel_stock ? 0 : (Number(r.total_usd || 0) - Number(r.vat_usd || 0))), 0) + pays.reduce((s, r) => s + Number(r.net_usd || r.paid_usd || 0), 0) - subRecharge;
       const netSub = subSales - (subDirect + subOpex);
       const totalVouchers = sales.length + rms.length + fuels.length + exps.length + pays.length;
       tieCheck = { balanced: true, varianceUsd: 0, kind: 'recon' };
@@ -7021,6 +7308,8 @@
     buildRdlContext,
     getParamComboConfig,
     buildJournalEntries,
+    // Gate hook (pure, no state): the diesel tank costing of the statements ledger.
+    _costDieselStock: costDieselStock,
     computeStatementSnapshot,
     syncPinnedStatementCoverNote,
     getCoaAccountsForInd,

@@ -10692,7 +10692,19 @@
       "End date passed": "تجاوز تاريخ الانتهاء",
       "Closing a site ends its open price agreements on the end date. Reopening restores them.": "إغلاق الموقع ينهي اتفاقيات الأسعار المفتوحة عليه في تاريخ الانتهاء. إعادة فتحه تعيدها.",
       "Enter the end date (the last day the site was open).": "أدخل تاريخ الانتهاء (آخر يوم كان فيه الموقع مفتوحاً).",
-      "Enter a valid end date.": "أدخل تاريخ انتهاء صالحاً."
+      "Enter a valid end date.": "أدخل تاريخ انتهاء صالحاً.",
+      "DELIVERY AGREEMENTS COSTED FROM THE REGION: SITE NOT PINNED": "اتفاقيات توصيل محتسبة من المنطقة: الموقع غير مثبّت",
+      "Moved Customer": "زبون منقول",
+      "A customer moved to its own site: the site has no pin yet, so its distance is the Region's guess": "زبون نُقل إلى موقعه الخاص: الموقع غير مثبّت بعد، لذا مسافته تقدير المنطقة",
+      "One-Way (Estimate)": "ذهاب (تقدير)",
+      "Diesel Sold": "مازوت مباع",
+      "Tank Count": "جرد الخزان",
+      "Diesel is shown as an expense when bought, because this seat may not read the diesel price. Seats that may read it see diesel in tank stock at purchase cost until it is drawn.": "يظهر المازوت كمصروف عند شرائه، لأن هذا الحساب لا يحق له رؤية سعر المازوت. الحسابات التي يحق لها رؤيته ترى المازوت في مخزون الخزان بكلفة الشراء حتى يُسحب.",
+      "On Rate": "مطابق للسعر المتفق",
+      "In Official Books, diesel is shown as an expense when bought.": "في الدفاتر الرسمية، يظهر المازوت كمصروف عند شرائه.",
+      "Some diesel drawn here has no diesel purchase in these books, so it carries no cost.": "بعض المازوت المسحوب هنا لا يقابله شراء مازوت في هذه الدفاتر، لذا لا كلفة له.",
+      "A diesel tank in this scope has more diesel drawn than bought in these books, so its stock shows below zero until the missing purchases are entered.": "خزان مازوت ضمن هذا النطاق سُحب منه أكثر مما اشتُري في هذه الدفاتر، لذا يظهر مخزونه دون الصفر حتى تُدخل المشتريات الناقصة.",
+      "Tank Revaluation": "إعادة تقييم الخزان"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -21366,7 +21378,19 @@
       "End date passed": "Date de fin dépassée",
       "Closing a site ends its open price agreements on the end date. Reopening restores them.": "La clôture d'un site met fin à ses accords de prix ouverts à la date de fin. La réouverture les rétablit.",
       "Enter the end date (the last day the site was open).": "Saisissez la date de fin (dernier jour d'ouverture du site).",
-      "Enter a valid end date.": "Saisissez une date de fin valide."
+      "Enter a valid end date.": "Saisissez une date de fin valide.",
+      "DELIVERY AGREEMENTS COSTED FROM THE REGION: SITE NOT PINNED": "ACCORDS DE LIVRAISON CHIFFRÉS DEPUIS LA RÉGION : SITE NON PLACÉ",
+      "Moved Customer": "Client déplacé",
+      "A customer moved to its own site: the site has no pin yet, so its distance is the Region's guess": "Client déplacé vers son propre site : le site n'est pas encore placé, sa distance est l'estimation de la région",
+      "One-Way (Estimate)": "Aller (estimation)",
+      "Diesel Sold": "Gasoil vendu",
+      "Tank Count": "Comptage cuve",
+      "Diesel is shown as an expense when bought, because this seat may not read the diesel price. Seats that may read it see diesel in tank stock at purchase cost until it is drawn.": "Le gasoil figure en charge à l'achat, car ce poste ne peut pas voir le prix du gasoil. Les postes qui peuvent le voir le trouvent en stock de cuve au coût d'achat jusqu'à sa consommation.",
+      "On Rate": "Au tarif convenu",
+      "In Official Books, diesel is shown as an expense when bought.": "Dans les livres officiels, le gasoil figure en charge à l'achat.",
+      "Some diesel drawn here has no diesel purchase in these books, so it carries no cost.": "Une partie du gasoil consommé ici n'a pas d'achat de gasoil dans ces livres, elle n'a donc pas de coût.",
+      "A diesel tank in this scope has more diesel drawn than bought in these books, so its stock shows below zero until the missing purchases are entered.": "Une cuve de ce périmètre a plus de gasoil consommé qu'acheté dans ces livres : son stock reste sous zéro jusqu'à la saisie des achats manquants.",
+      "Tank Revaluation": "Réévaluation de la cuve"
     }
   };
 
@@ -23225,13 +23249,15 @@
     if (m) return lang === 'ar' ? `إجمالي حجم أعطال المازوت ${m[1]} ليتر (${m[2]} قيداً) مقابل ${m[3]} ليتر استهلاك الشركة الكلي = ${m[4]} في الفترة المحددة (الحد الرقابي >= ${m[5]}). صافي فرق الخزان: ${m[6]} ليتر.` : `Volume brut d'écarts gasoil ${m[1]} L (${m[2]} écritures) vs ${m[3]} L consommés = ${m[4]} sur la période (seuil >= ${m[5]}). Écart net cuve : ${m[6]} L.`;
 
     // Delivery breakeven Sentinel (site net-back across all sites, fuel at the latest diesel price)
-    m = trimmed.match(/^([\d,]+) delivery and haulage agreements in force across ([\d,]+) sites, each checked against pickup price plus fuel for the round trip: ([\d,]+) below breakeven \((-?\$[\d.,]+) lost on ([\d,]+) own-fleet loads in the last 90 days\) · ([\d,]+) lose on night trips only · ([\d,]+) without a pinned distance\.(?: Latest diesel price: (.+)\.| (No priced diesel delivery on file)\.)?$/i);
+    m = trimmed.match(/^([\d,]+) delivery and haulage agreements in force across ([\d,]+) sites, each checked against pickup price plus fuel for the round trip: ([\d,]+) below breakeven \((-?\$[\d.,]+) lost on ([\d,]+) own-fleet loads in the last 90 days\) · ([\d,]+) lose on night trips only · ([\d,]+) without a pinned distance(?: · ([\d,]+) costed from the Region's centre \(site not pinned\))?\.(?: Latest diesel price: (.+)\.| (No priced diesel delivery on file)\.)?$/i);
     if (m) {
-      const tailAr = m[8] ? ` آخر سعر للمازوت: ${m[8].replace(/\(group price\)/gi, '(سعر المجموعة)')}.` : (m[9] ? ' لا يوجد توريد مازوت مسعّر.' : '');
-      const tailFr = m[8] ? ` Dernier prix du gasoil : ${m[8].replace(/\(group price\)/gi, '(prix du groupe)')}.` : (m[9] ? ' Aucune livraison de gasoil chiffrée.' : '');
+      const apAr = m[8] ? ` · ${m[8]} محتسبة من وسط المنطقة (الموقع غير مثبّت)` : '';
+      const apFr = m[8] ? ` · ${m[8]} chiffrés depuis le centre de la région (site non placé)` : '';
+      const tailAr = m[9] ? ` آخر سعر للمازوت: ${m[9].replace(/\(group price\)/gi, '(سعر المجموعة)')}.` : (m[10] ? ' لا يوجد توريد مازوت مسعّر.' : '');
+      const tailFr = m[9] ? ` Dernier prix du gasoil : ${m[9].replace(/\(group price\)/gi, '(prix du groupe)')}.` : (m[10] ? ' Aucune livraison de gasoil chiffrée.' : '');
       return lang === 'ar'
-        ? `${m[1]} اتفاقية توصيل ونقل سارية عبر ${m[2]} موقعاً، تمت مقارنة كل منها بسعر الاستلام زائد مازوت الذهاب والإياب: ${m[3]} دون نقطة التعادل (خسارة ${m[4]} على ${m[5]} نقلة بأسطولنا خلال آخر 90 يوماً) · ${m[6]} تخسر في النقلات الليلية فقط · ${m[7]} بلا مسافة محددة.${tailAr}`
-        : `${m[1]} accords de livraison et de transport en vigueur sur ${m[2]} sites, chacun comparé au prix départ plus le gasoil de l'aller-retour : ${m[3]} sous le seuil de rentabilité (${m[4]} perdus sur ${m[5]} voyages de la flotte en 90 jours) · ${m[6]} déficitaires de nuit seulement · ${m[7]} sans distance définie.${tailFr}`;
+        ? `${m[1]} اتفاقية توصيل ونقل سارية عبر ${m[2]} موقعاً، تمت مقارنة كل منها بسعر الاستلام زائد مازوت الذهاب والإياب: ${m[3]} دون نقطة التعادل (خسارة ${m[4]} على ${m[5]} نقلة بأسطولنا خلال آخر 90 يوماً) · ${m[6]} تخسر في النقلات الليلية فقط · ${m[7]} بلا مسافة محددة${apAr}.${tailAr}`
+        : `${m[1]} accords de livraison et de transport en vigueur sur ${m[2]} sites, chacun comparé au prix départ plus le gasoil de l'aller-retour : ${m[3]} sous le seuil de rentabilité (${m[4]} perdus sur ${m[5]} voyages de la flotte en 90 jours) · ${m[6]} déficitaires de nuit seulement · ${m[7]} sans distance définie${apFr}.${tailFr}`;
     }
 
     m = trimmed.match(/^([\d,]+) BELOW BREAKEVEN$/i);
