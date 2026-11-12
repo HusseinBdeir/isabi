@@ -34826,6 +34826,18 @@ video::-webkit-media-controls-start-playback-button {
 #indPbiSearchInput {
   font-size: 11.5px;
 }
+/* Inline filter pickers: the Rev 10 select upgrade wraps each <select> in a
+   width:100% .pa-select-wrap, which pushes the caret to the far edge of the row.
+   Size the wrap to its picker so the caret stays inside the box. */
+#indPbiSlicerBar .pa-select-wrap,
+.ind-specific-filter-bar > .pa-select-wrap {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 1 auto;
+  vertical-align: middle;
+}
 @media (max-width: 768px) {
   #indPbiDimSelect,
   #indPbiSearchInput,

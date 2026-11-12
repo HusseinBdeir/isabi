@@ -1378,6 +1378,20 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
 [data-theme="dark"] .geo-dist-select {
   background: rgba(255, 255, 255, 0.06);
 }
+/* The Rev 10 select upgrade wraps each picker in a width:100% .pa-select-wrap;
+   size the wrap to the picker so its caret sits inside the box, and keep
+   From / Swap / To on one row instead of stacking full-width wraps. */
+.geo-dist-selectors > .pa-select-wrap {
+  width: 210px;
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 1 210px;
+}
+.geo-dist-selectors > .pa-select-wrap > .geo-dist-select {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
 .geo-swap-btn {
   appearance: none;
   border: 1px solid var(--line);
@@ -2669,6 +2683,12 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
   .geo-dist-select {
     max-width: 100%;
     flex: 1 1 135px;
+  }
+  /* Phones: each picker takes its own full-width row so long site names stay readable. */
+  .geo-dist-selectors > .pa-select-wrap {
+    width: 100%;
+    max-width: 100%;
+    flex: 1 1 100%;
   }
   .origin-route-strip {
     grid-template-columns: 1fr;
