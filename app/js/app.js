@@ -51616,7 +51616,7 @@
 
     return `
       ${bannerHtml}
-      <div class="grid-2" style="margin-bottom:16px">
+      <div class="grid-2" id="reLeaseChartsRow" style="margin-bottom:16px">
         <div class="panel">
           <div class="panel-head">
             <div>
@@ -109437,6 +109437,22 @@
     }
   }
 
+  // Owner rule 2026-11-12: on a hub page, the chart rows sit at the bottom, below every register and panel,
+  // never between two tables. A chart row is a top-level block of the page whose id ends in "ChartsRow"
+  // (name new ones that way and they follow automatically). Dashboards, the Executive Overview and Daily
+  // Operations are chart-first pages and keep their own order. Rows keep their relative order.
+  const CHART_FIRST_VIEWS = new Set(['overview', 'daily_ops', 'pbi', 'statements']);
+  function settleChartRowsAtPageBottom(container, view) {
+    if (!container || CHART_FIRST_VIEWS.has(view)) return 0;
+    const rows = Array.from(container.children).filter(el => el.id && /ChartsRow$/.test(el.id));
+    if (!rows.length) return 0;
+    // Already settled (the rows are the last blocks, in order): leave the DOM untouched.
+    const tail = Array.from(container.children).slice(-rows.length);
+    if (tail.every((el, i) => el === rows[i])) return 0;
+    rows.forEach(row => container.appendChild(row));
+    return rows.length;
+  }
+
   function setContainerHtmlPreservingActiveInput(container, newHtml) {
     const prevScrollTop = container ? container.scrollTop : 0;
     const restoreScroll = () => {
@@ -130656,6 +130672,7 @@
         !(KIOSK_ATT_STATE.blackFrameStreak > 0)
       );
       setContainerHtmlPreservingActiveInput(container, wsHtml);
+      settleChartRowsAtPageBottom(container, STATE.view);
       if (keepLiveKioskVid) {
         const nextKioskVid = $('kioskAttVideo');
         if (nextKioskVid && nextKioskVid !== liveKioskVid && nextKioskVid.parentNode) {

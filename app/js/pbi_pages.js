@@ -11733,7 +11733,7 @@
             { label: 'Total Cash Outflows', value: fmtUSD(d.totOut, 0), isTotal: true, tone: 'crit' },
             { label: 'Operating Cash Surplus', value: fmtSignedUSD(d.opNet, 0), isTotal: true, tone: d.opNet >= 0 ? 'good' : 'crit' }
           ],
-          footer: 'Click month bar to filter entries below'
+          footer: 'Click month bar to filter entries'
         };
 
         return `<g class="cf-chart-bar pbi-chart-col${isSel ? ' is-selected' : ''}" ${d.ymIso ? `data-cf-focus-ym="${esc(d.ymIso)}"` : ''} data-chart-pop="${encodeChartPop(popSpec)}">` +
@@ -11829,7 +11829,7 @@
           badge: isZeroBar ? 'Balanced ($0.00)' : fmtUSD(d.val, 2),
           badgeTone: isZeroBar ? 'good' : (isNeg ? 'crit' : ''),
           rows: popRows,
-          footer: 'Click bar to inspect entries below'
+          footer: 'Click bar to inspect entries'
         };
 
         return `<g class="cf-chart-bar pbi-chart-col${isSel ? ' is-selected' : ''}" ${drillAttr} data-chart-pop="${encodeChartPop(popSpec)}">` +
@@ -11872,6 +11872,7 @@
         });
 
     return `
+      <div id="cashflowChartsRow">
       <div class="pbi-grid-1" style="margin-bottom:10px">
         <div class="cf-explainer-bar" role="region" aria-label="How Plant Cash Till Works">
           <div class="cf-explainer-copy">
@@ -11908,6 +11909,7 @@
             { label: 'Balanced ($0)', color: C.good }
           ]
         })}
+      </div>
       </div>
     `;
   }
