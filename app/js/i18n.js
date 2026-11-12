@@ -10494,6 +10494,132 @@
       "No matching quote line": "لا يوجد سطر مطابق في عرض السعر",
       "The attached file could not be read. These rows come from the pasted text.": "تعذّرت قراءة الملف المرفق. هذه الأسطر مأخوذة من النص الملصوق.",
       "ISABI AI read the attached file but found no usable prices. These rows come from the pasted text.": "قرأ ISABI AI الملف المرفق لكنه لم يجد أسعاراً صالحة. هذه الأسطر مأخوذة من النص الملصوق.",
+      "Net-Back & Haulage Breakeven": "صافي العائد ونقطة تعادل النقل",
+      "Below Pickup": "أقل من سعر الاستلام",
+      "Night Trips Lose": "النقلات الليلية خاسرة",
+      "Thin Margin": "هامش ضعيف",
+      "Covers Fuel": "يغطي المازوت",
+      "No Pickup Price": "لا سعر استلام",
+      "No Distance": "لا مسافة",
+      "Hauler Premium": "علاوة الناقل",
+      "Shortfall, Last 90 Days": "العجز، آخر 90 يوماً",
+      "Round Trip": "ذهاب وإياب",
+      "Distance Basis": "أساس المسافة",
+      "Pin the site to compute": "ثبّت موقع الورشة على الخريطة للحساب",
+      "Fleet Burn": "استهلاك الأسطول",
+      "Tank Cost": "كلفة الخزان",
+      "Fuel per Trip": "المازوت لكل نقلة",
+      "Night Trip Pay": "بدل النقلة الليلية",
+      "Unsaved map pin": "دبوس خريطة غير محفوظ",
+      "Saved custom KM": "كيلومترات مخصصة محفوظة",
+      "Road route": "مسار الطريق",
+      "Map road estimate": "تقدير الطريق من الخريطة",
+      "Region zone estimate": "تقدير حسب المنطقة",
+      "Region reference KM": "كيلومترات مرجعية للمنطقة",
+      "Fleet odometer": "عدادات الأسطول",
+      "Group fleet odometer": "عدادات أسطول المجموعة",
+      "Standard estimate": "تقدير قياسي",
+      "Median own-fleet load delivered to this site": "وسيط حمولة أسطولنا المسلّمة إلى هذا الموقع",
+      "Median own-fleet delivery load for this company": "وسيط حمولة توصيل أسطولنا لهذه الشركة",
+      "Flat rate per load": "سعر مقطوع لكل نقلة",
+      "Median registered capacity of own trucks": "وسيط السعة المسجلة لشاحناتنا",
+      "Longest one-way distance the haulage income still covers in fuel": "أطول مسافة ذهاب يغطي فيها دخل النقل كلفة المازوت",
+      "Pickup Price": "سعر الاستلام",
+      "Fuel Cost": "كلفة المازوت",
+      "Net-Back": "صافي العائد",
+      "Haul Margin": "هامش النقل",
+      "Breakeven": "نقطة التعادل",
+      "Loads (90 Days)": "النقلات (90 يوماً)",
+      "Fuel only: driver salary, tyres and wear are not included. Night Trip Pay is added on overtime trips.": "المازوت فقط: لا يشمل راتب السائق ولا الإطارات ولا الاستهلاك. يُضاف بدل النقلة الليلية على النقلات الإضافية.",
+      "Below List Price": "أقل من سعر اللائحة",
+      "Haul Below Fuel": "النقل أقل من كلفة المازوت",
+      "No Delivered Price": "لا سعر توصيل",
+      "Unit Not Costed": "وحدة غير محسوبة",
+      "Losing on Haulage": "خسارة في النقل",
+      "Incl. Separate Transport": "يشمل نقلاً باتفاقية منفصلة",
+      "Incl. Customer Haulage": "يشمل نقل العميل",
+      "Transport Only": "نقل فقط",
+      "Fuel only: driver salary, tyres and wear are not included.": "المازوت فقط: لا يشمل راتب السائق ولا الإطارات ولا الاستهلاك.",
+      "No Fuel Price": "لا سعر للمازوت",
+      "Latest Diesel Price": "آخر سعر للمازوت",
+      "No priced delivery yet": "لا توريد مسعّر بعد",
+      "Group purchase": "شراء المجموعة",
+      "A newer delivery is in the tank without an invoice price yet. The figure updates when it is priced.": "يوجد توريد أحدث في الخزان بلا سعر فاتورة بعد. يتحدّث الرقم عند تسعيره.",
+      "Fuel is costed at the latest priced diesel delivery and moves with every new purchase.": "تُحتسب كلفة المازوت على آخر توريد مسعّر وتتغيّر مع كل شراء جديد.",
+      "Delivery Price Floor": "الحد الأدنى لسعر التوصيل",
+      "Below Price Floor": "أقل من الحد الأدنى للسعر",
+      "Above Price Floor": "فوق الحد الأدنى للسعر",
+      "Enter a rate to compare": "أدخل السعر للمقارنة",
+      "Price Floor": "الحد الأدنى للسعر",
+      "Night Floor": "الحد الأدنى ليلاً",
+      "This Rate": "هذا السعر",
+      "This rate is below the price floor by": "هذا السعر أقل من الحد الأدنى بمقدار",
+      "Every own-fleet load loses": "كل نقلة بأسطولنا تخسر",
+      "against selling at pickup.": "مقارنةً بالبيع عند الاستلام.",
+      "Day trips clear the floor by": "النقلات النهارية تتجاوز الحد الأدنى بمقدار",
+      "Night trips fall short by": "النقلات الليلية تنقص عنه بمقدار",
+      "Above the floor by only": "فوق الحد الأدنى بمقدار ضئيل هو",
+      "A small diesel price rise turns this agreement into a loss.": "أي ارتفاع بسيط في سعر المازوت يحوّل هذه الاتفاقية إلى خسارة.",
+      "Above the price floor by": "فوق الحد الأدنى للسعر بمقدار",
+      "No pickup or list price for this product and unit, so only the fuel cost can be shown.": "لا يوجد سعر استلام أو سعر لائحة لهذا الصنف والوحدة، لذلك تُعرض كلفة المازوت فقط.",
+      "Pin the site on the map or set its distance to compute the fuel cost.": "ثبّت الموقع على الخريطة أو حدّد مسافته لاحتساب كلفة المازوت.",
+      "No priced diesel delivery on file yet, so the fuel cost cannot be computed.": "لا يوجد توريد مازوت مسعّر بعد، لذلك لا يمكن احتساب كلفة المازوت.",
+      "This pricing unit has no load size to cost.": "لا حجم نقلة لهذه الوحدة لاحتساب الكلفة.",
+      "The delivered rate should not go below the price floor.": "يجب ألا ينزل سعر التوصيل عن الحد الأدنى للسعر.",
+      "Delivery Agreements Below Haulage Breakeven": "اتفاقيات التوصيل دون نقطة تعادل النقل",
+      "Delivery Pricing": "تسعير التوصيل",
+      "DELIVERY AGREEMENTS BELOW HAULAGE BREAKEVEN (LATEST DIESEL PRICE)": "اتفاقيات التوصيل دون نقطة تعادل النقل (آخر سعر للمازوت)",
+      "AI Sentinels, Site Agreements & Price Agreement Form": "المراقبون واتفاقيات المواقع ونموذج اتفاقية السعر",
+      "A delivered price that does not cover the pickup price plus the diesel for the round trip loses money on every load. Diesel is costed at the latest priced delivery, so a fuel price rise shows at once which agreements stopped paying.": "سعر التوصيل الذي لا يغطي سعر الاستلام زائد مازوت الذهاب والإياب يخسر في كل نقلة. يُحتسب المازوت على آخر توريد مسعّر، فيظهر فوراً عند ارتفاع سعره أي الاتفاقيات لم تعد رابحة.",
+      "Min Own-Fleet Loads in 90 Days to Flag": "أدنى عدد نقلات بأسطولنا خلال 90 يوماً للتنبيه",
+      "Critical 90-Day Shortfall": "عجز حرج خلال 90 يوماً",
+      "Runs the site net-back on every delivery and customer-haulage agreement in force: delivered price against pickup price plus fuel for the round trip (distance x measured fleet burn x latest diesel price). Lists agreements below breakeven with at least": "يشغّل حساب صافي العائد على كل اتفاقية توصيل ونقل للعميل سارية: سعر التوصيل مقابل سعر الاستلام زائد مازوت الذهاب والإياب (المسافة × استهلاك الأسطول المقاس × آخر سعر للمازوت). يسرد الاتفاقيات دون نقطة التعادل التي لها على الأقل",
+      "own-fleet loads in 90 days and escalates to critical from": "نقلة بأسطولنا خلال 90 يوماً ويصعّد إلى حرج ابتداءً من",
+      "lost.": "خسارة.",
+      "One-Way": "ذهاب",
+      "Not Costed": "غير محتسبة",
+      "One-Way / Breakeven": "ذهاب / نقطة التعادل",
+      "Update KM": "تحديث المسافة",
+      "Below Ex-Works Floor": "أقل من الحد الأدنى لتسليم المعمل",
+      "Below Lowest Pickup": "أقل من أدنى سعر استلام",
+      "Ex-Works Floor": "الحد الأدنى لسعر تسليم المعمل",
+      "Lowest Pickup Price": "أدنى سعر استلام",
+      "Incl. Fuel Surcharge": "يشمل علاوة المازوت",
+      "Fuel Surcharge Now": "علاوة المازوت حالياً",
+      "DELIVERY AGREEMENTS NOT COSTED: SITE HAS NO DISTANCE": "اتفاقيات توصيل غير محتسبة: الموقع بلا مسافة",
+      "Pin Site": "تثبيت الموقع",
+      "Open this site on the map to pin it or set its distance": "افتح هذا الموقع على الخريطة لتثبيته أو تحديد مسافته",
+      "Fix": "معالجة",
+      "3. Fuel Surcharge Clause (Optional)": "3. بند علاوة المازوت (اختياري)",
+      "Diesel Price at Signing ($ / L)": "سعر المازوت عند التوقيع ($ / ليتر)",
+      "Diesel Price Step ($ / L)": "درجة سعر المازوت ($ / ليتر)",
+      "Surcharge per Step ($ / m³)": "العلاوة لكل درجة ($ / م³)",
+      "Surcharge per Step ($ / Ton)": "العلاوة لكل درجة ($ / طن)",
+      "Surcharge per Step ($ / Truck Load)": "العلاوة لكل درجة ($ / حمولة شاحنة)",
+      "Surcharge per Step ($)": "العلاوة لكل درجة ($)",
+      "Ex-Works Floor ($ / m³)": "الحد الأدنى لسعر تسليم المعمل ($ / م³)",
+      "Ex-Works Floor ($ / Ton)": "الحد الأدنى لسعر تسليم المعمل ($ / طن)",
+      "Ex-Works Floor ($)": "الحد الأدنى لسعر تسليم المعمل ($)",
+      "Blank = lowest pickup price": "فارغ = أدنى سعر استلام",
+      "e.g. 0.05": "مثال: 0.05",
+      "e.g. 0.10": "مثال: 0.10",
+      "The ex-works floor cannot be above the list price.": "لا يمكن أن يتجاوز الحد الأدنى لسعر تسليم المعمل سعر اللائحة.",
+      "Used as the pickup price for delivery customers with no pickup agreement.": "يُعتمد كسعر استلام لعملاء التوصيل الذين ليست لهم اتفاقية استلام.",
+      "Blank = the lowest pickup price in force is used for delivery customers with no pickup agreement.": "فارغ = يُعتمد أدنى سعر استلام سارٍ لعملاء التوصيل الذين ليست لهم اتفاقية استلام.",
+      "Filled from the latest priced diesel delivery. Change it if the agreement names another price.": "تمت تعبئته من آخر توريد مازوت مسعّر. عدّله إذا نصّت الاتفاقية على سعر آخر.",
+      "The diesel price named in the agreement. The surcharge starts above it.": "سعر المازوت المذكور في الاتفاقية. تبدأ العلاوة فوقه.",
+      "Fill all three fields to switch the clause on, or clear them.": "املأ الحقول الثلاثة لتفعيل البند، أو أفرغها.",
+      "No priced diesel delivery on file yet, so no surcharge applies.": "لا يوجد توريد مازوت مسعّر بعد، لذلك لا تُطبّق أي علاوة.",
+      "Added to the transport rate for each full step the diesel price stands above the price at signing.": "تُضاف إلى سعر النقل عن كل درجة كاملة يرتفع فيها سعر المازوت فوق سعره عند التوقيع.",
+      "Enter the diesel price at signing, or clear the fuel surcharge fields.": "أدخل سعر المازوت عند التوقيع، أو أفرغ حقول علاوة المازوت.",
+      "Enter the diesel price step, or clear the fuel surcharge fields.": "أدخل درجة سعر المازوت، أو أفرغ حقول علاوة المازوت.",
+      "Enter the surcharge per step, or clear the fuel surcharge fields.": "أدخل العلاوة لكل درجة، أو أفرغ حقول علاوة المازوت.",
+      "Fuel surcharge not applied: no priced diesel delivery on file for this date": "لم تُطبّق علاوة المازوت: لا يوجد توريد مازوت مسعّر لهذا التاريخ",
+      "The diesel price step cannot be smaller than $0.01 / L.": "لا يمكن أن تقل درجة سعر المازوت عن $0.01 / ليتر.",
+      "The clause is on. The surcharge is worked from the latest diesel purchase on each delivery.": "البند مفعّل. تُحتسب العلاوة من آخر شراء للمازوت عند كل توصيل.",
+      "Fuel Surcharge in Transport Price ($)": "علاوة المازوت ضمن سعر النقل ($)",
+      "Diesel Steps Above Agreement": "درجات المازوت فوق سعر الاتفاقية",
+      "Diesel Price Used ($ / L)": "سعر المازوت المعتمد ($ / ليتر)",
       "looks like an area, not one place.": "يبدو منطقة وليس موقعاً واحداً.",
       "customers take deliveries there.": "عملاء يستلمون فيها.",
       "customers take deliveries here.": "عملاء يستلمون هنا.",
@@ -21018,6 +21144,132 @@
       "No matching quote line": "Aucune ligne du devis correspondante",
       "The attached file could not be read. These rows come from the pasted text.": "Le fichier joint n'a pas pu être lu. Ces lignes proviennent du texte collé.",
       "ISABI AI read the attached file but found no usable prices. These rows come from the pasted text.": "ISABI AI a lu le fichier joint mais n'y a trouvé aucun prix exploitable. Ces lignes proviennent du texte collé.",
+      "Net-Back & Haulage Breakeven": "Net-back et seuil de rentabilité transport",
+      "Below Pickup": "Sous le prix enlèvement",
+      "Night Trips Lose": "Voyages de nuit à perte",
+      "Thin Margin": "Marge faible",
+      "Covers Fuel": "Couvre le gasoil",
+      "No Pickup Price": "Pas de prix d'enlèvement",
+      "No Distance": "Pas de distance",
+      "Hauler Premium": "Surcoût transporteur",
+      "Shortfall, Last 90 Days": "Manque à gagner, 90 derniers jours",
+      "Round Trip": "Aller-retour",
+      "Distance Basis": "Base de distance",
+      "Pin the site to compute": "Placez le site sur la carte pour calculer",
+      "Fleet Burn": "Conso. flotte",
+      "Tank Cost": "Coût cuve",
+      "Fuel per Trip": "Gasoil par voyage",
+      "Night Trip Pay": "Prime voyage de nuit",
+      "Unsaved map pin": "Repère carte non enregistré",
+      "Saved custom KM": "Km personnalisés enregistrés",
+      "Road route": "Itinéraire routier",
+      "Map road estimate": "Estimation routière carte",
+      "Region zone estimate": "Estimation par zone",
+      "Region reference KM": "Km de référence de la zone",
+      "Fleet odometer": "Compteurs flotte",
+      "Group fleet odometer": "Compteurs flotte groupe",
+      "Standard estimate": "Estimation standard",
+      "Median own-fleet load delivered to this site": "Charge médiane livrée à ce site par notre flotte",
+      "Median own-fleet delivery load for this company": "Charge médiane de livraison de notre flotte pour cette société",
+      "Flat rate per load": "Forfait par chargement",
+      "Median registered capacity of own trucks": "Capacité médiane enregistrée de nos camions",
+      "Longest one-way distance the haulage income still covers in fuel": "Distance aller maximale dont le revenu transport couvre encore le gasoil",
+      "Pickup Price": "Prix d'enlèvement",
+      "Fuel Cost": "Coût gasoil",
+      "Net-Back": "Net-back",
+      "Haul Margin": "Marge transport",
+      "Breakeven": "Seuil de rentabilité",
+      "Loads (90 Days)": "Chargements (90 jours)",
+      "Fuel only: driver salary, tyres and wear are not included. Night Trip Pay is added on overtime trips.": "Gasoil seul : salaire chauffeur, pneus et usure non inclus. La prime voyage de nuit s'ajoute aux voyages en heures sup.",
+      "Below List Price": "Sous le prix catalogue",
+      "Haul Below Fuel": "Transport sous le coût gasoil",
+      "No Delivered Price": "Pas de prix livré",
+      "Unit Not Costed": "Unité non chiffrée",
+      "Losing on Haulage": "Perte sur le transport",
+      "Incl. Separate Transport": "Transport séparé inclus",
+      "Incl. Customer Haulage": "Transport client inclus",
+      "Transport Only": "Transport seul",
+      "Fuel only: driver salary, tyres and wear are not included.": "Gasoil seul : salaire chauffeur, pneus et usure non inclus.",
+      "No Fuel Price": "Pas de prix gasoil",
+      "Latest Diesel Price": "Dernier prix du gasoil",
+      "No priced delivery yet": "Aucune livraison chiffrée",
+      "Group purchase": "Achat du groupe",
+      "A newer delivery is in the tank without an invoice price yet. The figure updates when it is priced.": "Une livraison plus récente est en cuve sans prix de facture. Le chiffre se met à jour dès qu'elle est chiffrée.",
+      "Fuel is costed at the latest priced diesel delivery and moves with every new purchase.": "Le gasoil est valorisé à la dernière livraison chiffrée et suit chaque nouvel achat.",
+      "Delivery Price Floor": "Prix plancher de livraison",
+      "Below Price Floor": "Sous le prix plancher",
+      "Above Price Floor": "Au-dessus du prix plancher",
+      "Enter a rate to compare": "Saisir un tarif pour comparer",
+      "Price Floor": "Prix plancher",
+      "Night Floor": "Plancher de nuit",
+      "This Rate": "Ce tarif",
+      "This rate is below the price floor by": "Ce tarif est sous le prix plancher de",
+      "Every own-fleet load loses": "Chaque voyage de la flotte perd",
+      "against selling at pickup.": "par rapport à une vente au départ.",
+      "Day trips clear the floor by": "Les voyages de jour dépassent le plancher de",
+      "Night trips fall short by": "Les voyages de nuit sont en dessous de",
+      "Above the floor by only": "Au-dessus du plancher de seulement",
+      "A small diesel price rise turns this agreement into a loss.": "Une légère hausse du gasoil rend cet accord déficitaire.",
+      "Above the price floor by": "Au-dessus du prix plancher de",
+      "No pickup or list price for this product and unit, so only the fuel cost can be shown.": "Pas de prix départ ni de prix catalogue pour ce produit et cette unité : seul le coût gasoil est affiché.",
+      "Pin the site on the map or set its distance to compute the fuel cost.": "Placez le site sur la carte ou saisissez sa distance pour calculer le coût gasoil.",
+      "No priced diesel delivery on file yet, so the fuel cost cannot be computed.": "Aucune livraison de gasoil chiffrée pour l'instant : le coût gasoil ne peut pas être calculé.",
+      "This pricing unit has no load size to cost.": "Cette unité de prix n'a pas de taille de chargement à valoriser.",
+      "The delivered rate should not go below the price floor.": "Le tarif livré ne doit pas descendre sous le prix plancher.",
+      "Delivery Agreements Below Haulage Breakeven": "Accords de livraison sous le seuil de rentabilité du transport",
+      "Delivery Pricing": "Tarification Livraison",
+      "DELIVERY AGREEMENTS BELOW HAULAGE BREAKEVEN (LATEST DIESEL PRICE)": "ACCORDS DE LIVRAISON SOUS LE SEUIL DE RENTABILITÉ (DERNIER PRIX DU GASOIL)",
+      "AI Sentinels, Site Agreements & Price Agreement Form": "Sentinelles IA, accords de site & formulaire d'accord tarifaire",
+      "A delivered price that does not cover the pickup price plus the diesel for the round trip loses money on every load. Diesel is costed at the latest priced delivery, so a fuel price rise shows at once which agreements stopped paying.": "Un prix livré qui ne couvre pas le prix départ plus le gasoil de l'aller-retour perd de l'argent à chaque voyage. Le gasoil est valorisé à la dernière livraison chiffrée : une hausse montre aussitôt quels accords ne sont plus rentables.",
+      "Min Own-Fleet Loads in 90 Days to Flag": "Voyages flotte min. sur 90 jours pour signaler",
+      "Critical 90-Day Shortfall": "Manque critique sur 90 jours",
+      "Runs the site net-back on every delivery and customer-haulage agreement in force: delivered price against pickup price plus fuel for the round trip (distance x measured fleet burn x latest diesel price). Lists agreements below breakeven with at least": "Calcule le net-back de chaque accord de livraison et de transport client en vigueur : prix livré face au prix départ plus le gasoil de l'aller-retour (distance x consommation mesurée x dernier prix du gasoil). Liste les accords sous le seuil ayant au moins",
+      "own-fleet loads in 90 days and escalates to critical from": "voyages flotte sur 90 jours et passe en critique à partir de",
+      "lost.": "perdus.",
+      "One-Way": "Aller",
+      "Not Costed": "Non chiffré",
+      "One-Way / Breakeven": "Aller / Seuil",
+      "Update KM": "Mettre à jour KM",
+      "Below Ex-Works Floor": "Sous le plancher départ usine",
+      "Below Lowest Pickup": "Sous le prix départ le plus bas",
+      "Ex-Works Floor": "Plancher départ usine",
+      "Lowest Pickup Price": "Prix départ le plus bas",
+      "Incl. Fuel Surcharge": "Surcharge gasoil incluse",
+      "Fuel Surcharge Now": "Surcharge gasoil actuelle",
+      "DELIVERY AGREEMENTS NOT COSTED: SITE HAS NO DISTANCE": "ACCORDS DE LIVRAISON NON CHIFFRÉS : SITE SANS DISTANCE",
+      "Pin Site": "Placer le site",
+      "Open this site on the map to pin it or set its distance": "Ouvrir ce site sur la carte pour le placer ou définir sa distance",
+      "Fix": "Corriger",
+      "3. Fuel Surcharge Clause (Optional)": "3. Clause de surcharge gasoil (facultative)",
+      "Diesel Price at Signing ($ / L)": "Prix du gasoil à la signature ($ / L)",
+      "Diesel Price Step ($ / L)": "Palier du prix du gasoil ($ / L)",
+      "Surcharge per Step ($ / m³)": "Surcharge par palier ($ / m³)",
+      "Surcharge per Step ($ / Ton)": "Surcharge par palier ($ / Tonne)",
+      "Surcharge per Step ($ / Truck Load)": "Surcharge par palier ($ / Chargement)",
+      "Surcharge per Step ($)": "Surcharge par palier ($)",
+      "Ex-Works Floor ($ / m³)": "Plancher départ usine ($ / m³)",
+      "Ex-Works Floor ($ / Ton)": "Plancher départ usine ($ / Tonne)",
+      "Ex-Works Floor ($)": "Plancher départ usine ($)",
+      "Blank = lowest pickup price": "Vide = prix départ le plus bas",
+      "e.g. 0.05": "ex. 0,05",
+      "e.g. 0.10": "ex. 0,10",
+      "The ex-works floor cannot be above the list price.": "Le plancher départ usine ne peut pas dépasser le prix catalogue.",
+      "Used as the pickup price for delivery customers with no pickup agreement.": "Sert de prix départ pour les clients livrés sans accord d'enlèvement.",
+      "Blank = the lowest pickup price in force is used for delivery customers with no pickup agreement.": "Vide = le prix départ le plus bas en vigueur s'applique aux clients livrés sans accord d'enlèvement.",
+      "Filled from the latest priced diesel delivery. Change it if the agreement names another price.": "Repris de la dernière livraison de gasoil chiffrée. Modifiez-le si l'accord cite un autre prix.",
+      "The diesel price named in the agreement. The surcharge starts above it.": "Le prix du gasoil cité dans l'accord. La surcharge commence au-dessus.",
+      "Fill all three fields to switch the clause on, or clear them.": "Remplissez les trois champs pour activer la clause, ou videz-les.",
+      "No priced diesel delivery on file yet, so no surcharge applies.": "Aucune livraison de gasoil chiffrée pour l'instant, donc aucune surcharge.",
+      "Added to the transport rate for each full step the diesel price stands above the price at signing.": "Ajoutée au tarif de transport pour chaque palier complet du prix du gasoil au-dessus du prix à la signature.",
+      "Enter the diesel price at signing, or clear the fuel surcharge fields.": "Saisissez le prix du gasoil à la signature, ou videz les champs de surcharge gasoil.",
+      "Enter the diesel price step, or clear the fuel surcharge fields.": "Saisissez le palier du prix du gasoil, ou videz les champs de surcharge gasoil.",
+      "Enter the surcharge per step, or clear the fuel surcharge fields.": "Saisissez la surcharge par palier, ou videz les champs de surcharge gasoil.",
+      "Fuel surcharge not applied: no priced diesel delivery on file for this date": "Surcharge gasoil non appliquée : aucune livraison de gasoil chiffrée à cette date",
+      "The diesel price step cannot be smaller than $0.01 / L.": "Le palier du prix du gasoil ne peut pas être inférieur à 0,01 $ / L.",
+      "The clause is on. The surcharge is worked from the latest diesel purchase on each delivery.": "La clause est active. La surcharge est calculée sur le dernier achat de gasoil à chaque livraison.",
+      "Fuel Surcharge in Transport Price ($)": "Surcharge gasoil dans le prix de transport ($)",
+      "Diesel Steps Above Agreement": "Paliers de gasoil au-dessus de l'accord",
+      "Diesel Price Used ($ / L)": "Prix du gasoil retenu ($ / L)",
       "looks like an area, not one place.": "ressemble à une zone, pas à un seul lieu.",
       "customers take deliveries there.": "clients y sont livrés.",
       "customers take deliveries here.": "clients sont livrés ici.",
@@ -22923,6 +23175,72 @@
     m = trimmed.match(/^Gross malfunction volume\s+([\d.,]+)\s*L\s*\((\d+)\s+entries\)\s*vs\s+([\d.,]+)\s*L total company diesel used\s*=\s*([\d.,]+%)\s+in selected period\s*\(threshold\s*>=\s*([\d.,]+%)\)\.\s*Net tank discrepancy across all types:\s*([+-]?[\d.,]+)\s*L\.?$/i);
     if (m) return lang === 'ar' ? `إجمالي حجم أعطال المازوت ${m[1]} ليتر (${m[2]} قيداً) مقابل ${m[3]} ليتر استهلاك الشركة الكلي = ${m[4]} في الفترة المحددة (الحد الرقابي >= ${m[5]}). صافي فرق الخزان: ${m[6]} ليتر.` : `Volume brut d'écarts gasoil ${m[1]} L (${m[2]} écritures) vs ${m[3]} L consommés = ${m[4]} sur la période (seuil >= ${m[5]}). Écart net cuve : ${m[6]} L.`;
 
+    // Delivery breakeven Sentinel (site net-back across all sites, fuel at the latest diesel price)
+    m = trimmed.match(/^([\d,]+) delivery and haulage agreements in force across ([\d,]+) sites, each checked against pickup price plus fuel for the round trip: ([\d,]+) below breakeven \((-?\$[\d.,]+) lost on ([\d,]+) own-fleet loads in the last 90 days\) · ([\d,]+) lose on night trips only · ([\d,]+) without a pinned distance\.(?: Latest diesel price: (.+)\.| (No priced diesel delivery on file)\.)?$/i);
+    if (m) {
+      const tailAr = m[8] ? ` آخر سعر للمازوت: ${m[8].replace(/\(group price\)/gi, '(سعر المجموعة)')}.` : (m[9] ? ' لا يوجد توريد مازوت مسعّر.' : '');
+      const tailFr = m[8] ? ` Dernier prix du gasoil : ${m[8].replace(/\(group price\)/gi, '(prix du groupe)')}.` : (m[9] ? ' Aucune livraison de gasoil chiffrée.' : '');
+      return lang === 'ar'
+        ? `${m[1]} اتفاقية توصيل ونقل سارية عبر ${m[2]} موقعاً، تمت مقارنة كل منها بسعر الاستلام زائد مازوت الذهاب والإياب: ${m[3]} دون نقطة التعادل (خسارة ${m[4]} على ${m[5]} نقلة بأسطولنا خلال آخر 90 يوماً) · ${m[6]} تخسر في النقلات الليلية فقط · ${m[7]} بلا مسافة محددة.${tailAr}`
+        : `${m[1]} accords de livraison et de transport en vigueur sur ${m[2]} sites, chacun comparé au prix départ plus le gasoil de l'aller-retour : ${m[3]} sous le seuil de rentabilité (${m[4]} perdus sur ${m[5]} voyages de la flotte en 90 jours) · ${m[6]} déficitaires de nuit seulement · ${m[7]} sans distance définie.${tailFr}`;
+    }
+
+    m = trimmed.match(/^([\d,]+) BELOW BREAKEVEN$/i);
+    if (m) return lang === 'ar' ? `${m[1]} دون نقطة التعادل` : `${m[1]} SOUS LE SEUIL`;
+
+    m = trimmed.match(/^([\d,]+) NIGHT TRIPS LOSE$/i);
+    if (m) return lang === 'ar' ? `${m[1]} نقلات ليلية خاسرة` : `${m[1]} VOYAGES DE NUIT DÉFICITAIRES`;
+
+    // Fuel surcharge clause: Price Agreement form hint and the Sales form transport hint
+    const fuelSurUnit = u => {
+      const k = String(u || '').trim().toLowerCase();
+      if (lang === 'ar') return k === 'm³' ? 'م³' : (k === 'ton' ? 'طن' : ((k === 'truck load' || k === 'truck') ? 'حمولة شاحنة' : (k === 'load' ? 'نقلة' : u)));
+      return k === 'ton' ? 'Tonne' : ((k === 'truck load' || k === 'truck') ? 'Chargement' : (k === 'load' ? 'voyage' : u));
+    };
+    m = trimmed.match(/^At the latest diesel price the surcharge is (-?\$[\d.,]+) \/ (.+?) \(([\d,]+) steps?\)\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `على آخر سعر للمازوت تبلغ العلاوة ${m[1]} / ${fuelSurUnit(m[2])} (${m[3]} درجة).`
+        : `Au dernier prix du gasoil, la surcharge est de ${m[1]} / ${fuelSurUnit(m[2])} (${m[3]} palier${Number(String(m[3]).replace(/,/g, '')) === 1 ? '' : 's'}).`;
+    }
+
+    m = trimmed.match(/^Includes fuel surcharge (-?\$[\d.,]+) \/ (.+?) · diesel is ([\d,]+) steps? above the agreement$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يشمل علاوة مازوت ${m[1]} / ${fuelSurUnit(m[2])} · المازوت أعلى من سعر الاتفاقية بـ ${m[3]} درجة`
+        : `Surcharge gasoil incluse ${m[1]} / ${fuelSurUnit(m[2])} · le gasoil est ${m[3]} palier${Number(String(m[3]).replace(/,/g, '')) === 1 ? '' : 's'} au-dessus de l'accord`;
+    }
+
+    m = trimmed.match(/^Includes fuel surcharge (-?\$[\d.,]+) \/ (.+)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يشمل علاوة مازوت ${m[1]} / ${fuelSurUnit(m[2])}`
+        : `Surcharge gasoil incluse ${m[1]} / ${fuelSurUnit(m[2])}`;
+    }
+
+    m = trimmed.match(/^Group latest diesel price \((\$[\d.,]+)\/L\)$/i);
+    if (m) return lang === 'ar' ? `آخر سعر مازوت للمجموعة (${m[1]}/ليتر)` : `Dernier prix du gasoil du groupe (${m[1]}/L)`;
+
+    m = trimmed.match(/^Loads >= ([\d,]+) · Crit >= (\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `النقلات >= ${m[1]} · حرج >= ${m[2]}` : `Voyages >= ${m[1]} · Critique >= ${m[2]}`;
+
+    m = trimmed.match(/^Live example: A delivery agreed at pickup price \+ \$0\.20 \/ m3 on a 50 km round trip loses the fuel gap on every load; it is listed once it has ([\d,]+) or more loads and turns critical from (\$[\d.,]+) lost in 90 days\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مثال حي: توصيل متفق عليه بسعر الاستلام + $0.20 / م³ على مسافة 50 كم ذهاباً وإياباً يخسر فرق المازوت في كل نقلة؛ يُدرج عند بلوغه ${m[1]} نقلة أو أكثر ويصبح حرجاً ابتداءً من ${m[2]} خسارة خلال 90 يوماً.`
+        : `Exemple : une livraison convenue au prix départ + 0,20 $ / m³ sur un aller-retour de 50 km perd l'écart de gasoil à chaque voyage ; elle est listée dès ${m[1]} voyages et devient critique à partir de ${m[2]} perdus en 90 jours.`;
+    }
+
+    m = trimmed.match(/^(Fleet odometer|Group fleet odometer|Standard estimate) ([\d.]+) L\/km(?: · (?:Latest diesel price (\$[\d.,]+)\/L(?: \((\d{2}-\d{2}-\d{4})\))?|(No priced diesel delivery yet)))?$/i);
+    if (m) {
+      const bk = m[1].toLowerCase();
+      const bAr = bk === 'fleet odometer' ? 'عدادات الأسطول' : (bk === 'group fleet odometer' ? 'عدادات أسطول المجموعة' : 'تقدير قياسي');
+      const bFr = bk === 'fleet odometer' ? 'Compteurs flotte' : (bk === 'group fleet odometer' ? 'Compteurs flotte groupe' : 'Estimation standard');
+      const pAr = m[3] ? ` · آخر سعر للمازوت ${m[3]}/ليتر${m[4] ? ` (${m[4]})` : ''}` : (m[5] ? ' · لا توريد مازوت مسعّر بعد' : '');
+      const pFr = m[3] ? ` · Dernier prix du gasoil ${m[3]}/L${m[4] ? ` (${m[4]})` : ''}` : (m[5] ? ' · Aucune livraison de gasoil chiffrée' : '');
+      return lang === 'ar' ? `${bAr} ${m[2]} ليتر/كم${pAr}` : `${bFr} ${m[2]} L/km${pFr}`;
+    }
+
     m = trimmed.match(/^(\d+)\s+central loan & facility agreements monitored across partner current accounts, sister facilities, and long-term borrowings\.?$/i);
     if (m) return lang === 'ar' ? `${m[1]} اتفاقيات قروض وتسهيلات مركزية مراقبة عبر الحسابات الجارية للشركاء وتسهيلات الشركات الشقيقة والقروض طويلة الأجل.` : `${m[1]} accords de prêts et facilités suivis sur les comptes courants d'associés, sociétés sœurs et emprunts.`;
 
@@ -23358,6 +23676,21 @@
       return m[2]
         ? (lang === 'ar' ? `ذهاب: ${m[1]} كم · ذهاب وإياب: ${m[2]} كم` : `Aller : ${m[1]} km · Aller-retour : ${m[2]} km`)
         : (lang === 'ar' ? `ذهاب: ${m[1]} كم` : `Aller : ${m[1]} km`);
+    }
+
+    m = trimmed.match(/^~?(\d+)\s*min\s*·\s*~?([\d.,]+)\s*L\s+diesel\s*·\s*~?(\$[\d.,]+)\s*\((Map road estimate|Region zone estimate|Region reference KM|Saved custom KM|Road route|Same location)\)$/i);
+    if (m) {
+      const srcMapUsd = {
+        'map road estimate': ['تقدير طريق الخريطة', 'estim. routière'],
+        'region zone estimate': ['تقدير نطاق المنطقة', 'estim. zone régionale'],
+        'region reference km': ['المسافة المرجعية للمنطقة', 'km réf. région'],
+        'saved custom km': ['مسافة مخصصة محفوظة', 'km personnalisé'],
+        'road route': ['مسار الطريق', 'itinéraire routier'],
+        'same location': ['نفس الموقع', 'même site']
+      }[m[4].toLowerCase()] || [m[4], m[4]];
+      return lang === 'ar'
+        ? `~${m[1]} دقيقة · ~${m[2]} ليتر مازوت · ~${m[3]} (${srcMapUsd[0]})`
+        : `~${m[1]} min · ~${m[2]} L gasoil · ~${m[3]} (${srcMapUsd[1]})`;
     }
 
     m = trimmed.match(/^~?(\d+)\s*min(?:\s*·\s*~?([\d.,]+)\s*L\s+diesel)?\s*\((Map road estimate|Region zone estimate|Region reference KM|Saved custom KM|Road route|Same location)\)$/i);

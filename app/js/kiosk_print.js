@@ -374,7 +374,8 @@
     const opts = resolved.opts || {};
     const cfg = loadCfg();
     const paperWidth = normWidthStr(opts.paperWidth || cfg.paperWidth || '80mm');
-    const priceMode = (opts.priceMode || cfg.priceMode || 'priced') === 'unpriced' ? 'unpriced' : 'priced';
+    // A record that says it carries no price (no diesel purchase on file to value it) always prints the unpriced slip.
+    const priceMode = ((record && record._noPriceOnFile) || (opts.priceMode || cfg.priceMode || 'priced') === 'unpriced') ? 'unpriced' : 'priced';
     const company = record.company || 'WTC';
     const coFull = company === 'BBConstruction'
       ? 'BBCONSTRUCTION S.A.R.L.'
@@ -1312,7 +1313,8 @@
     const opts = resolved.opts || {};
     const cfg = loadCfg();
     const paperWidth = normWidthStr(opts.paperWidth || cfg.paperWidth || '80mm');
-    const priceMode = (opts.priceMode || cfg.priceMode || 'priced') === 'unpriced' ? 'unpriced' : 'priced';
+    // A record that says it carries no price (no diesel purchase on file to value it) always prints the unpriced slip.
+    const priceMode = ((record && record._noPriceOnFile) || (opts.priceMode || cfg.priceMode || 'priced') === 'unpriced') ? 'unpriced' : 'priced';
     const rawCh = opts.transport || opts.channel || cfg.transport || 'rawbt';
     const transport = rawCh === 'web_bluetooth' ? 'webbt' : rawCh;
     const normOpts = { paperWidth, priceMode };
