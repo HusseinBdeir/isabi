@@ -175,6 +175,19 @@ def write_deployed_shell_ver(ver: str) -> bool:
     return True
 
 
+def rederive_deployed_shell_ver(app_out: str | None = None) -> tuple[str, bool]:
+    """Rewrites deployed_shell.js from the sw.js already in app/ (not the source being synced). Returns the version
+    found ('' when app/sw.js is missing or unreadable) and whether the file changed."""
+    try:
+        with open(os.path.join(app_out or APP_OUT, "sw.js"), "r", encoding="utf-8") as f:
+            m = re.search(r"SHELL_CACHE\s*=\s*['\"]isabi-mfg-v([0-9.]+)['\"]", f.read())
+    except FileNotFoundError:
+        return "", False
+    if not m:
+        return "", False
+    return m.group(1), write_deployed_shell_ver(m.group(1))
+
+
 def sync_command_app() -> int:
     if not os.path.isdir(APP_SRC_ROOT):
         print(f"WARN: {APP_SRC_ROOT} not found, skipping app/ sync.")
@@ -196,6 +209,12 @@ def sync_command_app() -> int:
         if chk.stdout.strip():
             print(chk.stdout.strip())
 
+    # deployed_shell.js is derived from app/sw.js: re-derive it from the shell this tree holds now, so a sync that
+    # stopped after copying sw.js (or a merged peer shell bump) never leaves the gates below failing for good.
+    cur_ver, cur_changed = rederive_deployed_shell_ver()
+    if cur_changed:
+        print(f"OK: functions/_lib/deployed_shell.js re-derived from the current app/sw.js (v{cur_ver})")
+
     run_release_gates()
 
     os.makedirs(APP_OUT, exist_ok=True)
@@ -206,6 +225,9 @@ def sync_command_app() -> int:
         if os.path.isfile(src):
             shutil.copyfile(src, os.path.join(APP_OUT, fname))
             copied += 1
+    # Straight after sw.js is copied, so nothing below can leave the two out of step.
+    changed = write_deployed_shell_ver(ver)
+    print(f"OK: functions/_lib/deployed_shell.js {'set to' if changed else 'already at'} v{ver} (minShellVer ceiling)")
 
     for dname in SUB_DIRS:
         src_dir = os.path.join(APP_SRC_ROOT, dname)
@@ -260,9 +282,6 @@ def sync_command_app() -> int:
                     content = f.read()
                 if "@bhfirms.com" in content.lower():
                     raise SystemExit(f"ERROR: Internal @bhfirms.com address leaked into public bundle: {fpath}")
-
-    changed = write_deployed_shell_ver(ver)
-    print(f"OK: functions/_lib/deployed_shell.js {'set to' if changed else 'already at'} v{ver} (minShellVer ceiling)")
 
     print(f"OK: Synced {copied} Command Center files from {APP_SRC_ROOT} -> {APP_OUT}")
     return copied

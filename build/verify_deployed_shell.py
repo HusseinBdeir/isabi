@@ -77,6 +77,12 @@ try:
     check("writer: LF line endings", b"\r\n" in pathlib.Path(SA.DEPLOYED_SHELL_JS).read_bytes(), False)
     raises("writer: refuses a junk version", lambda: SA.write_deployed_shell_ver("19.6.400'; alert(1);//"))
     check("writer: the junk attempt left the file alone", pathlib.Path(SA.DEPLOYED_SHELL_JS).read_bytes().decode("utf-8"), SA.render_deployed_shell_js("19.6.400"))
+    # A sync that stopped after copying a newer sw.js: the next run re-derives the file before its gates run.
+    (t / "app").mkdir(parents=True, exist_ok=True)
+    (t / "app" / "sw.js").write_text("const SHELL_CACHE = 'isabi-mfg-v19.6.401';\n", encoding="utf-8")
+    check("re-derive: follows the sw.js already in app/", SA.rederive_deployed_shell_ver(str(t / "app")), ("19.6.401", True))
+    check("re-derive: the stager accepts the repaired tree", SPB.check_deployed_shell_ver(t), "19.6.401")
+    check("re-derive: no app/sw.js is a no-op", SA.rederive_deployed_shell_ver(str(t / "nowhere")), ("", False))
 finally:
     SA.DEPLOYED_SHELL_JS = saved
 
