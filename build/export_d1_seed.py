@@ -70,6 +70,7 @@ EDGE_RUNTIME_TABLES = {
     "override_requests",
     "saved_views",
     "override_audit",
+    "push_subscriptions",
 }
 
 MULTI_INDUSTRY_COMPANIES = (

@@ -314,6 +314,21 @@ def seed_remote_d1(env: dict):
     else:
         print(f"Schema 0001_schema.sql unchanged ({schema_sha[:12]}); skipping remote DDL.")
 
+    # Later numbered migrations (0002_*.sql and up): idempotent CREATE ... IF NOT EXISTS files, applied once per
+    # content hash. The Edge code also creates these tables on first use, so a skipped run loses nothing.
+    for mig in sorted(SCHEMA_SQL.parent.glob("0[0-9][0-9][0-9]_*.sql")):
+        if mig.name == SCHEMA_SQL.name:
+            continue
+        mig_sha = file_sha256(mig)
+        mig_key = f"last_migration_sha256:{mig.name}"
+        meta = load_edge_meta()
+        if "--force-schema" in sys.argv or meta.get(mig_key) != mig_sha:
+            print(f"Applying {mig.name} to remote D1 `isabi-ledger`...")
+            run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={mig}", "-y"], env, check=True)
+            meta = load_edge_meta()
+            meta[mig_key] = mig_sha
+            save_edge_meta(meta)
+
     if "--skip-seed" in sys.argv:
         print("Skipping D1 data seed (--skip-seed passed; 0 D1 row writes).")
         return
