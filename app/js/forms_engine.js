@@ -1029,6 +1029,12 @@
           ${fld('Tier 2 Truck Size (m³)', inp('f_qty2', 'number', '', 'step="0.5" min="0" placeholder="e.g. 22 or 25 m³"'), { id: 'wrap_pr_tier2', hidden: true })}
           ${fld('Tier 2 Material Adj ($)', inp('f_adj2', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_adj2', hidden: true })}
           ${fld('Tier 2 Transportation Adj ($)', inp('f_transadj2', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_transadj2', hidden: true })}
+          ${fld('Ex-Works Floor ($ / m³)', inp('f_floorprice', 'number', '', 'step="0.01" min="0" placeholder="Blank = lowest pickup price"'), { id: 'wrap_pr_floorprice', hidden: true, hintId: 'hint_pr_floorprice', hint: '' })}
+          <div class="pa-form-sec-hdr" id="wrap_pr_fuel_hdr" hidden><span>3. Fuel Surcharge Clause (Optional)</span></div>
+          ${fld('Diesel Price at Signing ($ / L)', inp('f_fuelbase', 'number', '', 'step="0.0001" min="0"'), { id: 'wrap_pr_fuelbase', hidden: true, hintId: 'hint_pr_fuelbase', hint: '' })}
+          ${fld('Diesel Price Step ($ / L)', inp('f_fuelstep', 'number', '', 'step="0.01" min="0" placeholder="e.g. 0.05"'), { id: 'wrap_pr_fuelstep', hidden: true, hintId: 'hint_pr_fuelstep', hint: '' })}
+          ${fld('Surcharge per Step ($ / m³)', inp('f_fuelsur', 'number', '', 'step="0.01" min="0" placeholder="e.g. 0.10"'), { id: 'wrap_pr_fuelsur', hidden: true, hintId: 'hint_pr_fuelsur', hint: '' })}
+          <div id="prFloorStrip" class="form-field span-3 pr-floor-strip" hidden></div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
         <div class="live-calc">

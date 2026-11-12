@@ -8512,13 +8512,14 @@
     return canEnterForm('equipment', u) || canEnterForm('companyequipment', u) || canEnterForm('driver', u) || canEnterForm('sales', u) || canEnterForm('raw', u) || canEnterForm('fuel', u);
   }
   const WORD_EDITABLE_ID_KEY_RE = /^(id|name|code|ticket_no|origin_ticket_no|invoice_no|invoice|external_invoice|vat_invoice|voucher|reference|phone|contact|mof_no|financial_no|plate_no|serial_no)$/i;
-  const WORD_LOCK_NUMERIC_KEY_RE = /^(qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|trans_unit_cost|cost|trans_cost|amount|usd_amount|lbp_amount|usd_delta|lbp_delta|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|decimals|price_pending|salary_pending)$/i;
+  const WORD_LOCK_NUMERIC_KEY_RE = /^(floor_price|fuel_base_price|fuel_step|fuel_surcharge|fuel_surcharge_unit|fuel_steps|fuel_price_ref|qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|trans_unit_cost|cost|trans_cost|amount|usd_amount|lbp_amount|usd_delta|lbp_delta|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|decimals|price_pending|salary_pending)$/i;
   const WORD_LOCK_MODAL_ID_SET = new Set([
     'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip',
     'f_mat_total', 'f_trans_total', 'f_total_usd', 'f_amount', 'f_vat', 'f_net', 'f_total',
     'f_usd', 'f_lbp', 'f_fxrate', 'f_rate', 'f_vatpct', 'f_vatfx',
     'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours', 'f_ot_hours', 'f_late_hours', 'f_leave_days',
     'f_share', 'f_qty1', 'f_adj1', 'f_transadj1', 'f_qty2', 'f_adj2', 'f_transadj2',
+    'f_floorprice', 'f_fuelbase', 'f_fuelstep', 'f_fuelsur',
     'f_trucksize', 'f_capacity', 'f_tonfactor', 'f_minstock', 'f_listprice', 'f_defaultcost',
     'f_wh_cost', 'f_new_part_cost', 'f_repair_cost', 'f_sale_proceeds', 'f_out_parts', 'f_out_labor', 'f_new_cost',
     'f_salary', 'f_dailyrate', 'f_reimb', 'f_deduction', 'f_workdays', 'f_workhours', 'f_vacdays', 'f_otmult',
@@ -15460,7 +15461,8 @@
 
     const ruleMatVal = r => r ? Number(r.unit_price ?? r.price ?? r.indiff_price ?? r.rate ?? 0) : 0;
     const ruleTransVal = r => r ? Number(r.trans_unit_price ?? r.trans_price ?? r.trans_indiff_price ?? 0) : 0;
-    const ruleTierSig = r => r ? [r.qty1, r.adj1, r.trans_adj1, r.qty2, r.adj2, r.trans_adj2].map(v => Number(v || 0)).join('|') : '';
+    // Tiers and the fuel surcharge clause: a change to either re-prices the tickets in the agreement's window.
+    const ruleTierSig = r => r ? [r.qty1, r.adj1, r.trans_adj1, r.qty2, r.adj2, r.trans_adj2, r.fuel_base_price, r.fuel_step, r.fuel_surcharge].map(v => Number(v || 0)).join('|') : '';
 
     // Determine the exact surgical date range [rangeFrom, rangeTo] whose effective rule changed:
     const newS = ruleRow && !ruleRow.voided ? String(ruleRow.start_date || '1900-01-01').slice(0, 10) : '';
@@ -15634,6 +15636,10 @@
         let nextTp = Number(s.trans_unit_price || 0);
         let nextTransFlat = Boolean(s.trans_indiff);
         let nextTransTierAdj = Number(s.trans_tier_adj || 0);
+        let nextFuel = null;
+        let bfFuelUnit = 0;
+        let fuelChanged = false;
+        let fuelNoteIfTouched = false;
         let rowChanged = false;
 
         // 1) Truck size agreement (`truck_size > 0` on rule)
@@ -15705,19 +15711,25 @@
 
         // 3) Delivery Transportation / Haulage (Customer Site) — including reset to `$0.00` when agreement leaves date!
         if (isDelivery && checkTransLeg && !ovSet.has('f_transunitprice')) {
-          if (activeTrRule) {
-            const isHaulCust = /^Haulage \(Customer Site\)$/i.test(String(activeTrRule.rule_type || ''));
-            const trIndiff = isTransIndiffRule(activeTrRule);
+          // Fuel surcharge clause, at the diesel price the ticket was posted at (fuel_price_ref) when it has one,
+          // else at the price that was the latest one on the ticket's day: a later purchase never re-prices old tickets.
+          const bfFuel = resolveDeliveryFuelSurcharge({ company: s.company || 'WTC', date: d, activeTransRule: activeTrRule, salesRule: activeSalesRule, refPrice: s.fuel_price_ref });
+          const bfFuelOn = Boolean(bfFuel && bfFuel.perUnit > 0);
+          const trSrcRule = activeTrRule || (bfFuelOn ? bfFuel.rule : null);
+          if (trSrcRule) {
+            const isHaulCust = /^Haulage \(Customer Site\)$/i.test(String(trSrcRule.rule_type || ''));
+            const trIndiff = isTransIndiffRule(trSrcRule);
             const trFlat = Boolean(isTruckUom || trIndiff);
-            const rawTr = trIndiff
+            const baseTr = !activeTrRule ? 0 : (trIndiff
               ? Number(ruleTransIndiffPrice(activeTrRule) || 0)
               : Number(isHaulCust
                   ? (activeTrRule.trans_unit_price ?? activeTrRule.trans_price ?? activeTrRule.unit_price ?? activeTrRule.rate ?? 0)
-                  : (activeTrRule.trans_unit_price ?? activeTrRule.trans_price ?? 0));
-            const trUnit = activeTrRule.rate_per || activeTrRule.unit || 'm³';
+                  : (activeTrRule.trans_unit_price ?? activeTrRule.trans_price ?? 0)));
+            const rawTr = baseTr + (bfFuelOn ? bfFuel.perUnit : 0);
+            const trUnit = trSrcRule.rate_per || trSrcRule.unit || 'm³';
             const trConv = !trIndiff ? convertRateForTicketUom(rawTr, trUnit, uom, tonFactor) : { rate: round2(rawTr) };
             const targetTp = Number(trConv.rate || 0);
-            const trTierObj = (!trFlat && capForTier > 0 && window.MFG_FORMS)
+            const trTierObj = (activeTrRule && !trFlat && capForTier > 0 && window.MFG_FORMS)
               ? window.MFG_FORMS.matchTier(activeTrRule, Number(capForTier))
               : { adj: 0, transAdj: 0 };
             const targetTrTierAdj = trFlat ? 0 : Number(trTierObj.transAdj || (isHaulCust ? trTierObj.adj : 0) || 0);
@@ -15727,10 +15739,34 @@
               nextTransTierAdj = targetTrTierAdj;
               rowChanged = true;
             }
+            if (bfFuelOn) bfFuelUnit = trIndiff ? bfFuel.perUnit : Number(convertRateForTicketUom(bfFuel.perUnit, trUnit, uom, tonFactor).rate || 0);
           } else if (Math.abs(nextTp) > 1e-4 || nextTransFlat || Math.abs(nextTransTierAdj) > 1e-4) {
             nextTp = 0;
             nextTransFlat = false;
             nextTransTierAdj = 0;
+            rowChanged = true;
+          }
+          // What the ticket records: the surcharge inside its transport price, the steps, and the diesel price used.
+          // Empty text read back from a store counts as no value, so an untouched ticket is never rewritten.
+          const fNum = v => (v == null || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
+          const curUnit = fNum(s.fuel_surcharge_unit), curSteps = fNum(s.fuel_steps), curRef = fNum(s.fuel_price_ref);
+          if (bfFuel && !bfFuel.noPrice) {
+            nextFuel = { unit: bfFuelOn ? bfFuelUnit : null, steps: bfFuel.steps, ref: bfFuel.dieselPrice };
+            const unitDiffers = nextFuel.unit == null ? curUnit != null : (curUnit == null || Math.abs(curUnit - nextFuel.unit) > 1e-4);
+            const stepsDiffer = curSteps == null ? nextFuel.steps > 0 : curSteps !== nextFuel.steps;
+            if (unitDiffers || stepsDiffer) {
+              fuelChanged = true;
+              rowChanged = true;
+            } else if (curRef == null) {
+              // No surcharge and nothing recorded yet: the diesel price is noted only if the ticket changes anyway
+              // (tickets whose money does not move are never rewritten just to carry it).
+              fuelNoteIfTouched = true;
+            }
+          } else if (!bfFuel && (curUnit != null || curSteps != null)) {
+            // The clause is gone: the surcharge and steps leave the ticket; the diesel price it was worked at stays,
+            // so a clause put back later re-prices it at the same price.
+            nextFuel = null;
+            fuelChanged = true;
             rowChanged = true;
           }
         }
@@ -15761,6 +15797,11 @@
             s.trans_unit_price = nextTp;
             s.trans_indiff = nextTransFlat;
             s.trans_tier_adj = nextTransTierAdj;
+            if (fuelChanged || fuelNoteIfTouched) {
+              s.fuel_surcharge_unit = nextFuel ? nextFuel.unit : null;
+              s.fuel_steps = nextFuel ? nextFuel.steps : null;
+              if (nextFuel) s.fuel_price_ref = nextFuel.ref;
+            }
           }
           const useExtQty = origExtQtyS > 0 && (origUsedExtQty || Boolean(custObj && custObj.customer_declared_qty));
           const billQty = useExtQty ? origExtQtyS : nextQty;
@@ -16717,6 +16758,48 @@
   let _dieselAllIdxCache = null;
   const _dieselTankLedgerCache = new Map();
 
+  // Latest fuel price = litre-weighted $/L of the most recent day that has a priced bulk diesel delivery.
+  // Never a fixed figure. Lump-sum station fills (qty 1) are left out (a delivery counts from 100 L), a
+  // delivery dated in the future is left out, and a typo is left out by comparing each delivery with the
+  // median $/L of the ten deliveries before it (inside 0.4x to 2.5x; the median is not moved by one bad
+  // line). When a whole day is implausible the day before it is used.
+  const DIESEL_PRICE_MIN_BULK_L = 100;
+  // asOf (optional, never later than today): the price that was the latest one on that day, for a ticket dated then.
+  function _latestBulkDieselPrice(buys, groupBuys, asOf) {
+    const todayIso = todayISO();
+    const today = (asOf && String(asOf).slice(0, 10) < todayIso) ? String(asOf).slice(0, 10) : todayIso;
+    const clean = list => (list || [])
+      .filter(b => b && b.litres >= DIESEL_PRICE_MIN_BULK_L && b.amountUsd > 0 && b.date && String(b.date) <= today)
+      .map(b => ({ d: String(b.date), l: Number(b.litres), u: Number(b.amountUsd) }))
+      .sort((a, b) => (a.d < b.d ? -1 : (a.d > b.d ? 1 : 0)));
+    const bulk = clean(buys);
+    let groupBulk = null;
+    let end = bulk.length;
+    while (end > 0) {
+      const date = bulk[end - 1].d;
+      let start = end;
+      while (start > 0 && bulk[start - 1].d === date) start--;
+      let prev = [];
+      for (let i = Math.max(0, start - 10); i < start; i++) prev.push(bulk[i].u / bulk[i].l);
+      if (prev.length < 3 && groupBuys) {
+        // A company with too little history of its own is checked against the group's deliveries before that day.
+        if (!groupBulk) groupBulk = clean(groupBuys);
+        prev = groupBulk.filter(g => g.d < date).slice(-10).map(g => g.u / g.l);
+      }
+      prev.sort((a, b) => a - b);
+      const mid = prev.length >> 1;
+      const ref = prev.length >= 3 ? (prev.length % 2 ? prev[mid] : (prev[mid - 1] + prev[mid]) / 2) : 0;
+      let l = 0, usd = 0;
+      for (let i = start; i < end; i++) {
+        const p = bulk[i].u / bulk[i].l;
+        if (!(ref > 0) || (p >= ref * 0.4 && p <= ref * 2.5)) { l += bulk[i].l; usd += bulk[i].u; }
+      }
+      if (l > 0) return { usdPerL: Math.round((usd / l) * 10000) / 10000, date, litres: round2(l) };
+      end = start;
+    }
+    return null;
+  }
+
   function _evalDieselMalfunctionWatchdog(consumedL, otherDiscOutL, malfNetL, malfAbsL) {
     const warnPct = (typeof getAlertParam === 'function' ? Number(getAlertParam('S11', 'malfunction_warn_pct', MALFUNCTION_ALERT_PCT)) : MALFUNCTION_ALERT_PCT) || MALFUNCTION_ALERT_PCT;
     const critPct = (typeof getAlertParam === 'function' ? Number(getAlertParam('S11', 'malfunction_crit_pct', 10.0)) : 10.0) || 10.0;
@@ -16751,7 +16834,8 @@
     const salesArr = (SEED.records && SEED.records.sales_tickets) || [];
     const eqArr = (SEED.records && SEED.records.equipment) || [];
     const hydrated = Boolean(SEED._recordsReady);
-    const cacheKey = `${hydrated ? 1 : 0}|${SEED._customRev || 0}|${STATE._customRev || 0}|${STATE.basis}|${expArr.length}|${fuelArr.length}|${malfArr.length}|${salesArr.length}|${eqArr.length}`;
+    // todayISO: the latest fuel price leaves out future-dated deliveries, so the index turns over at midnight.
+    const cacheKey = `${hydrated ? 1 : 0}|${SEED._customRev || 0}|${STATE._customRev || 0}|${STATE.basis}|${expArr.length}|${fuelArr.length}|${malfArr.length}|${salesArr.length}|${eqArr.length}|${todayISO()}`;
     if (_dieselAllIdxCache && _dieselAllIdxCache.cacheKey === cacheKey) return _dieselAllIdxCache;
 
     const movements = [];
@@ -16784,7 +16868,7 @@
         pendingCount: 0,
         pendingLitres: 0,
         balance: round2(preB - preI - preS),
-        avgUsdPerL: 0.85
+        avgUsdPerL: 0 // set from priced deliveries below; never a fixed figure
       };
       coRunning[co] = round2(preB - preI - preS);
     });
@@ -16955,7 +17039,7 @@
       const mv = movements[i];
       const co = mv.company;
       if (!byCo[co]) {
-        byCo[co] = { bought: 0, boughtUsd: 0, boughtCount: 0, issued: 0, issuedOwn: 0, issuedHauler: 0, issuedCount: 0, discrepancy: 0, discrepancyCount: 0, malfNet: 0, malfAbs: 0, malfCount: 0, sold: 0, soldUsd: 0, soldCount: 0, pricedLitres: 0, pricedUsd: 0, pendingCount: 0, pendingLitres: 0, balance: 0, avgUsdPerL: 0.85 };
+        byCo[co] = { bought: 0, boughtUsd: 0, boughtCount: 0, issued: 0, issuedOwn: 0, issuedHauler: 0, issuedCount: 0, discrepancy: 0, discrepancyCount: 0, malfNet: 0, malfAbs: 0, malfCount: 0, sold: 0, soldUsd: 0, soldCount: 0, pricedLitres: 0, pricedUsd: 0, pendingCount: 0, pendingLitres: 0, balance: 0, avgUsdPerL: 0 };
         coRunning[co] = 0;
       }
       const st = byCo[co];
@@ -16969,11 +17053,14 @@
         if (mv.pendingPrice) {
           st.pendingCount += 1;
           st.pendingLitres = round2(st.pendingLitres + mv.litres);
+          if (!st._pendDates) st._pendDates = [];
+          st._pendDates.push(String((mv.rec && mv.rec.date) || mv.date || '').slice(0, 10));
         } else if (mv.litres > 0 && mv.amountUsd > 0) {
           st.pricedLitres += mv.litres;
           st.pricedUsd += mv.amountUsd;
           if (!st._pricedBuys) st._pricedBuys = [];
-          st._pricedBuys.push({ date: mv.date, litres: mv.litres, amountUsd: mv.amountUsd });
+          // txDate = the day the diesel was bought, whatever the Rep Date / Tx Date switch shows (latest fuel price).
+          st._pricedBuys.push({ date: mv.date, txDate: String((mv.rec && mv.rec.date) || mv.date || '').slice(0, 10), litres: mv.litres, amountUsd: mv.amountUsd });
         }
       } else if (mv.kind === 'sold') {
         st.sold = round2(st.sold + mv.litres);
@@ -16995,6 +17082,11 @@
       }
     }
 
+    // Priced deliveries of the three Manufacturing companies together: the typo reference for a company with little history.
+    const mfgGroupBuys = [];
+    ['WTC', 'BBConstruction', 'Lions Transport'].forEach(co => {
+      ((byCo[co] && byCo[co]._pricedBuys) || []).forEach(b => mfgGroupBuys.push({ date: b.txDate || b.date, litres: b.litres, amountUsd: b.amountUsd }));
+    });
     Object.keys(byCo).forEach(co => {
       const st = byCo[co];
       st.balance = round2(st.bought - st.issued - st.discrepancy - st.sold);
@@ -17030,14 +17122,40 @@
         st.remValueUsd = 0;
         st.avgUsdPerL = 0;
       }
+      // Kept on the index (purchase date, litres, $) so a past ticket can be costed at the price in force on its day.
+      st.pricedBuysTx = buys.map(b => ({ date: b.txDate || b.date, litres: b.litres, amountUsd: b.amountUsd }));
+      const lp = _latestBulkDieselPrice(st.pricedBuysTx, mfgGroupBuys);
+      st.latestBuyUsdPerL = lp ? lp.usdPerL : 0;
+      st.latestBuyDate = lp ? lp.date : '';
+      st.latestBuyLitres = lp ? lp.litres : 0;
+      // Deliveries already in the tank but newer than the latest priced one (supplier invoice still awaited).
+      const todayIso = todayISO();
+      st.pendingAfterLatestCount = (st._pendDates || []).filter(d => d <= todayIso && (!st.latestBuyDate || d > st.latestBuyDate)).length;
       delete st._pricedBuys;
+      delete st._pendDates;
     });
-    const fallbackRemRate = (byCo.WTC && byCo.WTC.avgUsdPerL > 0) ? byCo.WTC.avgUsdPerL : 1.36;
+    // Group fallback for a company with no delivery of its own: the newest one among the Manufacturing
+    // companies only (the expenses table is shared with the other industries, e.g. resort generator diesel).
+    let latestBuy = null;
+    ['WTC', 'BBConstruction', 'Lions Transport'].forEach(co => {
+      const st = byCo[co];
+      if (!st || !(st.latestBuyUsdPerL > 0)) return;
+      if (!latestBuy || st.latestBuyDate > latestBuy.date || (st.latestBuyDate === latestBuy.date && st.latestBuyLitres > latestBuy.litres)) {
+        latestBuy = { co, usdPerL: st.latestBuyUsdPerL, date: st.latestBuyDate, litres: st.latestBuyLitres };
+      }
+    });
+    // Tank valuation of a company with no priced delivery of its own: its latest fuel price, else the group's
+    // latest one, else no rate at all (the screens then show no value). Never a fixed $/L.
     Object.keys(byCo).forEach(co => {
-      if (!(byCo[co].avgUsdPerL > 0)) byCo[co].avgUsdPerL = fallbackRemRate;
+      const st = byCo[co];
+      if (st.avgUsdPerL > 0) return;
+      const isMfgCo = co === 'WTC' || co === 'BBConstruction' || co === 'Lions Transport';
+      const fb = st.latestBuyUsdPerL > 0 ? st.latestBuyUsdPerL : ((isMfgCo && latestBuy) ? latestBuy.usdPerL : 0);
+      st.avgUsdPerL = fb > 0 ? round2(fb) : 0;
+      st.avgIsGroupPrice = Boolean(fb > 0 && !(st.latestBuyUsdPerL > 0));
     });
 
-    _dieselAllIdxCache = { cacheKey, hydrated, movements, byCo, tankAfterById };
+    _dieselAllIdxCache = { cacheKey, hydrated, movements, byCo, tankAfterById, latestBuy, mfgGroupBuys, _asOfMemo: new Map() };
     _dieselTankLedgerCache.clear();
     return _dieselAllIdxCache;
   }
@@ -17066,7 +17184,7 @@
         consumedOwnL: 0, consumedHaulerL: 0, consumedL: 0, consumedCount: 0,
         discrepancyL: 0, discrepancyCount: 0, malfNetL: 0, malfAbsL: 0, malfCount: 0, otherDiscOutL: 0,
         soldL: 0, soldUsd: 0, soldCount: 0, closingL: 0, pendingCount: 0, pendingLitres: 0,
-        avgUsdPerL: coBase.avgUsdPerL || 1.36, remValueUsd: coBase.remValueUsd || 0,
+        avgUsdPerL: coBase.avgUsdPerL || 0, remValueUsd: coBase.remValueUsd || 0,
         companyDieselUsedL: 0, malfunctionPct: 0, malfunctionAlert: false, malfunctionSeverity: 'ok'
       };
     });
@@ -17434,7 +17552,7 @@
     const idx = _getAllDieselMovementsIndex();
     const byCo = {};
     ['WTC', 'BBConstruction', 'Lions Transport'].forEach(co => {
-      const st = idx.byCo[co] || { bought: 0, issued: 0, discrepancy: 0, sold: 0, balance: 0, avgUsdPerL: 1.36, remValueUsd: 0, allRefillsAvgUsdPerL: 0, pendingCount: 0, pendingLitres: 0 };
+      const st = idx.byCo[co] || { bought: 0, issued: 0, discrepancy: 0, sold: 0, balance: 0, avgUsdPerL: 0, remValueUsd: 0, allRefillsAvgUsdPerL: 0, pendingCount: 0, pendingLitres: 0 };
       byCo[co] = {
         bought: st.bought,
         issued: st.issued,
@@ -17442,6 +17560,7 @@
         sold: st.sold,
         balance: st.balance,
         avgUsdPerL: st.avgUsdPerL,
+        avgIsGroupPrice: Boolean(st.avgIsGroupPrice),
         remValueUsd: st.remValueUsd || 0,
         allRefillsAvgUsdPerL: st.allRefillsAvgUsdPerL || st.avgUsdPerL,
         pendingCount: st.pendingCount,
@@ -19180,6 +19299,24 @@
       whatFn: p => `Blocks a second Face ID or PIN clock punch for the same worker within <b>${fmtNum(p.debounce_sec, 0)} seconds</b> (${fmtNum(Number(p.debounce_sec || 300) / 60, 1)} min) unless the worker explicitly taps Switch Direction.`,
       threshFn: p => `${fmtNum(p.debounce_sec, 0)} sec cooldown`,
       previewFn: p => `Live example: After clocking IN at 07:00:00, repeat camera glances until 07:00 + ${fmtNum(p.debounce_sec, 0)}s are held without taking a new snapshot so the shift is not closed by mistake.`
+    },
+    {
+      id: 'S12',
+      code: '#22',
+      name: 'Delivery Agreements Below Haulage Breakeven',
+      domain: 'Sales & Quarry',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels, Site Agreements & Price Agreement Form',
+      jumpView: 'sentinels',
+      sentinelId: 'S12',
+      why: 'A delivered price that does not cover the pickup price plus the diesel for the round trip loses money on every load. Diesel is costed at the latest priced delivery, so a fuel price rise shows at once which agreements stopped paying.',
+      params: [
+        { key: 'min_loads_90d', label: 'Min Own-Fleet Loads in 90 Days to Flag', def: 0, min: 0, max: 100, step: 1, unit: 'loads' },
+        { key: 'crit_shortfall_usd', label: 'Critical 90-Day Shortfall', def: 1000, min: 0, max: 50000, step: 100, unit: '$' }
+      ],
+      whatFn: p => `Runs the site net-back on every delivery and customer-haulage agreement in force: delivered price against pickup price plus fuel for the round trip (distance x measured fleet burn x latest diesel price). Lists agreements below breakeven with at least <b>${fmtNum(p.min_loads_90d, 0)}</b> own-fleet loads in 90 days and escalates to critical from <b>$${fmtNum(p.crit_shortfall_usd, 0)}</b> lost.`,
+      threshFn: p => `Loads >= ${fmtNum(p.min_loads_90d, 0)} · Crit >= $${fmtNum(p.crit_shortfall_usd, 0)}`,
+      previewFn: p => `Live example: A delivery agreed at pickup price + $0.20 / m3 on a 50 km round trip loses the fuel gap on every load; it is listed once it has ${fmtNum(p.min_loads_90d, 0)} or more loads and turns critical from $${fmtNum(p.crit_shortfall_usd, 0)} lost in 90 days.`
     }
   ];
 
@@ -21835,7 +21972,14 @@
       const wPart = Object.keys(iWf).sort().map(wk => `${wk}:${Object.keys(iWf[wk] || {}).length}`).join(',');
       indMutSig = `${STATE.period || ''}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis || 'rep'}|${cPart}|${ePart}|${wPart}`;
     }
-    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}`;
+    // Delivery breakeven Sentinel (own cache, keyed on seat, scope, records, map distances and the latest diesel price).
+    // Switched off in Alerts & Thresholds: no all-site recompute, the card shows as paused.
+    const nbSnOff = !isNonMfgSn && !isAlertRuleEnabled('S12');
+    const nbSn = (isNonMfgSn || nbSnOff) ? null : getNetBackSentinelData();
+    const nbSnSig = nbSn
+      ? `${nbSn.agreements}:${nbSn.sites}:${nbSn.lossCnt}:${nbSn.nightCnt}:${nbSn.noDistCnt}:${nbSn.noFuelCnt}:${nbSn.shortfall90}:${nbSn.lossLoads90}:${nbSn.showFuel ? 1 : 0}:${nbSn.prices.map(p => `${p.co}@${p.usdPerL}@${p.date}`).join(',')}`
+      : 'x';
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
     let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
     if (!rawItems) {
@@ -22052,6 +22196,50 @@
       navView: 'fleet',
       navLabel: 'Open Tank Recon'
     });
+
+    if (nbSnOff && (typeof canAccessTable !== 'function' || canAccessTable('price_rules'))) {
+      rawItems.push({
+        id: 'S12',
+        code: 'Rule #22 · Delivery Pricing',
+        title: 'Delivery Agreements Below Haulage Breakeven',
+        detail: '',
+        severity: 'ok',
+        badge: 'PAUSED',
+        company: scope,
+        rawMetric: 0,
+        rawSecondary: 0,
+        navView: 'pricing',
+        navLabel: 'Open Pricing'
+      });
+    }
+    if (nbSn) {
+      const nbCritUsd = Number(getAlertParam('S12', 'crit_shortfall_usd', 1000)) || 0;
+      const nbPriceTxt = nbSn.showFuel
+        ? (nbSn.prices.length
+          ? ` Latest diesel price: ${nbSn.prices.map(p => `${p.co}${p.src === 'group' ? ' (group price)' : ''} ${fmtUSD(p.usdPerL, 3)}/L${p.date ? ` (${fmtDateDMY(p.date)})` : ''}`).join(', ')}.`
+          : ' No priced diesel delivery on file.')
+        : '';
+      // Nothing could be costed (no distance or no fuel price on any agreement) is not a pass.
+      const nbNotCosted = nbSn.agreements > 0 && nbSn.lossCnt === 0 && nbSn.nightCnt === 0 && (nbSn.noDistCnt + nbSn.noFuelCnt) >= nbSn.costable;
+      rawItems.push({
+        id: 'S12',
+        code: 'Rule #22 · Delivery Pricing',
+        title: 'Delivery Agreements Below Haulage Breakeven',
+        detail: `${fmtNum(nbSn.agreements)} delivery and haulage agreements in force across ${fmtNum(nbSn.sites)} sites, each checked against pickup price plus fuel for the round trip: ${fmtNum(nbSn.lossCnt)} below breakeven (${fmtUSD(nbSn.shortfall90, 0)} lost on ${fmtNum(nbSn.lossLoads90)} own-fleet loads in the last 90 days) · ${fmtNum(nbSn.nightCnt)} lose on night trips only · ${fmtNum(nbSn.noDistCnt)} without a pinned distance.${nbPriceTxt}`,
+        severity: nbSn.lossCnt > 0
+          ? ((nbCritUsd > 0 && nbSn.shortfall90 >= nbCritUsd) ? 'crit' : 'warn')
+          : ((nbSn.nightCnt > 0 || nbSn.noFuelCnt > 0 || nbNotCosted) ? 'warn' : 'ok'),
+        badge: nbSn.lossCnt > 0
+          ? `${fmtNum(nbSn.lossCnt)} BELOW BREAKEVEN`
+          : (nbSn.nightCnt > 0 ? `${fmtNum(nbSn.nightCnt)} NIGHT TRIPS LOSE` : (nbSn.noFuelCnt > 0 ? 'NO FUEL PRICE' : (nbNotCosted ? 'NOT COSTED' : 'COVERS FUEL'))),
+        company: scope,
+        rawMetric: nbSn.lossCnt,
+        rawSecondary: nbSn.nightCnt,
+        scrollPanel: 'snNetBack',
+        navView: 'pricing',
+        navLabel: 'Open Pricing'
+      });
+    }
       }
 
       const snScopedMetrics = getCustomAlertMetricsForIndustry(activeIndForSn);
@@ -22162,7 +22350,7 @@
     const list = rows || [];
     const footHtml = list.length ? `<tfoot><tr>${cols.map((c, idx) => {
       if (idx === 0) return `<td><b>TOTAL (${fmtNum(list.length)})</b></td>`;
-      if (!c.r) return `<td></td>`;
+      if (!c.r || c.noFoot) return `<td></td>`;
       const isAvg = /price|agreed|actual|value|gap/i.test(c.key || '') && !/shortfall|unmatched|amount|header_|diesel|ar_/i.test(c.key || '');
       let sum = 0, cnt = 0;
       list.forEach(r => {
@@ -23023,6 +23211,13 @@
     const usd0 = v => fmtUSD(v, 0);
     const usd2 = v => fmtUSD(v, 2);
     const num1 = v => fmtNum(v, 1);
+    const nbSnData = (isNonMfgSn || !isAlertRuleEnabled('S12')) ? null : getNetBackSentinelData();
+    const nbUnitFmt = (v, r) => (v == null || !Number.isFinite(Number(v)))
+      ? '-'
+      : `<span data-no-i18n="1">${esc(usd2(v))}${r && r.unit ? ` / ${esc(r.unit)}` : ''}</span>`;
+    const nbKmFmt = (v, r) => (v == null || !Number.isFinite(Number(v)))
+      ? '-'
+      : `<span data-no-i18n="1">${esc(fmtNum(v, 0))} / ${r && r.be_value != null && Number.isFinite(Number(r.be_value)) ? esc(fmtNum(r.be_value, 0)) : '-'} km</span>`;
     const evalModeTxt = isLive ? 'Live SQL' : (String(generated).slice(0, 10) || 'Live');
     const healthSub = reviewedCnt > 0
       ? `<b>${open}</b> open · <b>${reviewedCnt}</b> checked · <b>${nativePassCnt}</b> native pass · <b>${esc(evalModeTxt)}</b>`
@@ -23182,6 +23377,32 @@
           { label: 'Customer', key: 'customer' }, { label: 'Product', key: 'product' }, { label: 'Qty', key: 'qty', r: true, fmt: v => fmtNum(v, 1) },
           { label: 'Actual', key: 'actual_price', r: true, fmt: usd2 }, { label: 'Agreed (lapsed)', key: 'agreed_price', r: true, fmt: usd2 }, { label: 'Ended', key: 'end_date', mono: true }
         ], 'snLapsed')}
+        ${nbSnData ? miniTable('DELIVERY AGREEMENTS BELOW HAULAGE BREAKEVEN (LATEST DIESEL PRICE)', nbSnData.rows, [
+          { label: 'Site', key: 'site', fmt: v => `<span data-no-i18n="1">${esc(v || '-')}</span>` },
+          { label: 'Co.', key: 'company' },
+          { label: 'Customer', key: 'party', fmt: v => (v ? `<span data-no-i18n="1">${esc(v)}</span>` : '<span>Site Default</span>') },
+          { label: 'Product', key: 'product', fmt: v => (v ? `<span data-no-i18n="1">${esc(v)}</span>` : '<span>All Products</span>') },
+          { label: 'Status', key: 'status_label', fmt: (v, r) => `<span class="site-nb-status ${r && r.status === 'night' ? 'is-warn' : 'is-crit'}">${esc(v || '')}</span>` },
+          { label: 'Delivered', key: 'delivered_price', r: true, noFoot: true, fmt: nbUnitFmt },
+          { label: 'Pickup Price', key: 'pickup_price', r: true, noFoot: true, fmt: nbUnitFmt },
+          { label: 'Fuel Cost', key: 'fuel_price_unit', r: true, noFoot: true, fmt: nbUnitFmt },
+          { label: 'Haul Margin', key: 'margin_value', r: true, noFoot: true, fmt: nbUnitFmt },
+          { label: 'One-Way / Breakeven', key: 'km_value', r: true, noFoot: true, fmt: nbKmFmt },
+          { label: 'Loads (90 Days)', key: 'loads90', r: true, fmt: v => `<span data-no-i18n="1">${fmtNum(v || 0, 0)}</span>` },
+          { label: 'Shortfall', key: 'shortfall_usd', r: true, fmt: v => `<span data-no-i18n="1">${usd2(v || 0)}</span>` }
+        ], 'snNetBack') : ''}
+        ${nbSnData && nbSnData.noDistRows.length ? miniTable('DELIVERY AGREEMENTS NOT COSTED: SITE HAS NO DISTANCE', nbSnData.noDistRows, [
+          { label: 'Site', key: 'site', fmt: v => `<span data-no-i18n="1">${esc(v || '-')}</span>` },
+          { label: 'Co.', key: 'company' },
+          { label: 'Customer', key: 'party', fmt: v => (v ? `<span data-no-i18n="1">${esc(v)}</span>` : '<span>Site Default</span>') },
+          { label: 'Product', key: 'product', fmt: v => (v ? `<span data-no-i18n="1">${esc(v)}</span>` : '<span>All Products</span>') },
+          { label: 'Agreement', key: 'type_label', fmt: v => `<span>${esc(v || '')}</span>` },
+          { label: 'Delivered', key: 'delivered_price', r: true, noFoot: true, fmt: nbUnitFmt },
+          { label: 'Loads (90 Days)', key: 'loads90', r: true, fmt: v => `<span data-no-i18n="1">${fmtNum(v || 0, 0)}</span>` },
+          { label: 'Fix', key: 'site', r: true, noFoot: true, fmt: (v, r) => (r && r.site
+            ? `<button type="button" class="btn-sn-act btn-nb-pin-site" data-nb-pin-site="${esc(String(r.site))}" data-ui-tip="Open this site on the map to pin it or set its distance">${ic('pin')} <span>Pin Site</span></button>`
+            : '') }
+        ], 'snNetBackNoDist') : ''}
         ${miniTable('FUEL CONSUMPTION &amp; METER OUTLIERS', fleet.consumption_outliers || [], [
           { label: 'Equipment', key: 'equipment', mono: true }, { label: 'Type', key: 'type' }, { label: 'Metric', key: 'metric' },
           { label: 'Value', key: 'value', r: true, fmt: num1 }, { label: 'Distance / Hours', key: 'distance_km', r: true, fmt: (v, r) => fmtNum(v != null ? v : r.hours, 0) }, { label: 'Diesel (L)', key: 'diesel_l', r: true, fmt: v => fmtNum(v, 0) }
@@ -62894,6 +63115,7 @@
     let hspOps = null;
     let trdOps = null;
     let icOps = null;
+    let nbSnBrief = null;
     let customHitsMap = {};
 
     try {
@@ -62901,6 +63123,7 @@
       items = buildSentinelItems();
       snSliceData = sentinelSlice();
       kpiData = getKPI();
+      if (targetInd === 'Manufacturing') nbSnBrief = getNetBackSentinelData();
       if (targetInd !== 'Manufacturing') {
         indExcTables = buildIndustrySentinelExceptionTables(targetInd) || [];
         if (canViewBooks && typeof getIndustryGlModel === 'function') {
@@ -63406,6 +63629,44 @@
               : 'Les ajustements gasoil demeurent sous le seuil d alerte de 5,0% de la consommation.',
             'Vérifiez les bons d écart détaillés et le relevé d étalonnage avant validation.'
           ];
+        } else if (rid === 'S12') {
+          const nbd = nbSnBrief || { rows: [], agreements: 0, sites: 0, lossCnt: 0, nightCnt: 0, shortfall90: 0, lossLoads90: 0, prices: [], showFuel: false };
+          expUsd = round2(safeNum(nbd.shortfall90));
+          rowCnt = safeNum(nbd.lossCnt) + safeNum(nbd.nightCnt);
+          if (!(expUsd > 0)) {
+            physValEn = `${fmtNum(nbd.lossCnt, 0)} Below Breakeven`;
+            physValAr = `${fmtNum(nbd.lossCnt, 0)} دون نقطة التعادل`;
+            physValFr = `${fmtNum(nbd.lossCnt, 0)} sous le seuil`;
+          }
+          const nbTop = (nbd.rows || [])[0] || null;
+          topParty = nbTop ? sanitizePlain(`${nbTop.site}${nbTop.party ? ' / ' + nbTop.party : ''}`) : 'No Repeat Offenders';
+          topSubEn = nbTop ? `${fmtUSD(nbTop.shortfall_usd, 0)} lost on ${fmtNum(nbTop.loads90)} loads` : 'All agreements cover fuel';
+          topSubAr = nbTop ? `خسارة ${fmtUSD(nbTop.shortfall_usd, 0)} على ${fmtNum(nbTop.loads90)} نقلة` : 'جميع الاتفاقيات تغطي المازوت';
+          topSubFr = nbTop ? `${fmtUSD(nbTop.shortfall_usd, 0)} perdus sur ${fmtNum(nbTop.loads90)} voyages` : 'Tous les accords couvrent le gasoil';
+          const nbFp = (nbd.showFuel && (nbd.prices || []).length)
+            ? nbd.prices.map(p => `${sanitizePlain(p.co)} ${fmtUSD(p.usdPerL, 3)}/L${p.date ? ` (${fmtDateDMY(p.date)})` : ''}`).join(', ')
+            : '';
+          bEn = [
+            `${fmtNum(nbd.agreements)} delivery and haulage agreements across ${fmtNum(nbd.sites)} sites were checked against pickup price plus round-trip fuel at the latest diesel price${nbFp ? ` (${nbFp})` : ''}: ${fmtNum(nbd.lossCnt)} sit below breakeven and ${fmtNum(nbd.nightCnt)} lose on night trips only.`,
+            nbTop
+              ? `The largest exposure is ${topParty} (${topSubEn} in the last 90 days); total shortfall ${fmtUSD(expUsd, 0)} on ${fmtNum(nbd.lossLoads90)} own-fleet loads.`
+              : 'No agreement in force delivers below its pickup price plus fuel.',
+            'Open each flagged agreement and raise the delivered rate to the price floor, or hand the site to a hauler, before signing off.'
+          ];
+          bAr = [
+            `تم فحص ${fmtNum(nbd.agreements)} اتفاقية توصيل ونقل عبر ${fmtNum(nbd.sites)} موقعاً مقابل سعر الاستلام زائد مازوت الذهاب والإياب بآخر سعر شراء للمازوت${nbFp ? ` (${nbFp})` : ''}: ${fmtNum(nbd.lossCnt)} دون نقطة التعادل و${fmtNum(nbd.nightCnt)} تخسر في النقلات الليلية فقط.`,
+            nbTop
+              ? `أكبر خسارة لدى ${locOffender(topParty, 'ar')} (${topSubAr} خلال آخر 90 يوماً)؛ إجمالي العجز ${fmtUSD(expUsd, 0)} على ${fmtNum(nbd.lossLoads90)} نقلة بأسطولنا.`
+              : 'لا توجد اتفاقية سارية تسلّم بأقل من سعر الاستلام زائد كلفة المازوت.',
+            'افتح كل اتفاقية مرصودة وارفع سعر التوصيل إلى الحد الأدنى للسعر، أو أسند الموقع إلى ناقل خارجي، قبل الاعتماد.'
+          ];
+          bFr = [
+            `${fmtNum(nbd.agreements)} accords de livraison et de transport sur ${fmtNum(nbd.sites)} sites ont été comparés au prix départ plus le gasoil aller-retour au dernier prix d achat${nbFp ? ` (${nbFp})` : ''} : ${fmtNum(nbd.lossCnt)} sous le seuil de rentabilité et ${fmtNum(nbd.nightCnt)} déficitaires de nuit seulement.`,
+            nbTop
+              ? `La plus forte perte concerne ${locOffender(topParty, 'fr')} (${topSubFr} sur 90 jours) ; manque total ${fmtUSD(expUsd, 0)} sur ${fmtNum(nbd.lossLoads90)} voyages de la flotte.`
+              : 'Aucun accord en vigueur ne livre sous son prix départ plus le gasoil.',
+            'Ouvrez chaque accord signalé et relevez le tarif livré au prix plancher, ou confiez le site à un transporteur, avant validation.'
+          ];
         }
       } else {
         // 5 Sibling Verticals: H1-H5, R1-R5, T1-T5, P1-P5, I1-I5
@@ -63697,6 +63958,7 @@
         S9: { ar: 'مراقب تشغيل وتزويد الآليات بغياب السائق', fr: 'Contrôle ravitaillement engins avec chauffeur absent' },
         S10: { ar: 'بلاغات الأعطال المسبقة وعهدة القطع المستبدلة', fr: 'Avis de panne préalable & garde des pièces déposées' },
         S11: { ar: 'مراقب فروقات وأعطال المازوت (سقف 5%)', fr: 'Surveillance écarts & pannes gasoil (seuil 5%)' },
+        S12: { ar: 'اتفاقيات التوصيل دون نقطة تعادل النقل', fr: 'Accords de livraison sous le seuil de rentabilité du transport' },
         H1: { ar: 'تحويلات الشركات الشقيقة غير المقابلة', fr: 'Transferts inter-sociétés sans contrepartie miroir' },
         H2: { ar: 'مراقب فروقات المسارات الثنائية للشركات الشقيقة', fr: 'Contrôle d écart bilatéral entre sociétés sœurs' },
         H3: { ar: 'رقابة سقف مصاريف الخدمات المشتركة للقابضة', fr: 'Plafond des charges partagées Holding' },
@@ -82125,7 +82387,18 @@
         )
       )
     );
-    const transIsIndiff = isDelivery && !isUnreg && isTransIndiffRule(activeTransRule);
+    // Fuel surcharge clause (agreement field): steps of the diesel price above the price at signing, costed at the
+    // latest diesel price on the ticket's day. A ticket reopened on the same day keeps the price it was posted at.
+    const editFuelOrig = (STATE.editingRecord && STATE.editingRecord.crKey === 'sales_tickets') ? STATE.editingRecord.orig : null;
+    const editFuelRef = (editFuelOrig && Number(editFuelOrig.fuel_price_ref) > 0
+      && String(editFuelOrig.rep_date || editFuelOrig.date || '').slice(0, 10) === String(effDate || '').slice(0, 10))
+      ? Number(editFuelOrig.fuel_price_ref) : 0;
+    const fuelSur = (isDelivery && !isUnreg)
+      ? resolveDeliveryFuelSurcharge({ company, date: effDate, activeTransRule, salesRule: rule, refPrice: editFuelRef })
+      : null;
+    const fuelSurOn = Boolean(fuelSur && fuelSur.perUnit > 0);
+    const transSrcRule = activeTransRule || (fuelSurOn ? fuelSur.rule : null);
+    const transIsIndiff = isDelivery && !isUnreg && isTransIndiffRule(transSrcRule);
     setText('lbl_unitprice', (isTruckUom || matIsIndiff) ? 'Material Price ($) *' : `Material Unit Price ($ / ${uom}) *`);
     setText('lbl_transunitprice', (isTruckUom || transIsIndiff) ? 'Transportation Price ($)' : `Transportation Unit Price ($ / ${uom})`);
 
@@ -82133,14 +82406,17 @@
     const rawMatRate = rule ? (matIsIndiff ? Number(ruleIndiffPrice(rule) || 0) : Number(rule.unit_price ?? rule.price ?? 0)) : 0;
     const matConv = (rule && !matIsIndiff) ? convertRateForTicketUom(rawMatRate, ruleMatUnit, uom, tonFactor) : { rate: rawMatRate, converted: false, note: '' };
     const agreedMatRate = matConv.rate;
-    const rawTransRate = activeTransRule
+    const baseTransRate = activeTransRule
       ? (transIsIndiff
           ? Number(ruleTransIndiffPrice(activeTransRule) || 0)
           : Number(activeTransRule.trans_unit_price || activeTransRule.trans_price || activeTransRule.unit_price || 0))
       : 0;
-    const transRuleUnit = activeTransRule ? (activeTransRule.rate_per || activeTransRule.unit || 'm³') : 'm³';
-    const transConv = (activeTransRule && !transIsIndiff) ? convertRateForTicketUom(rawTransRate, transRuleUnit, uom, tonFactor) : { rate: rawTransRate, converted: false, note: '' };
+    // The surcharge is in the unit of the transport rate it rides on, so it is added before any m³ / Ton conversion.
+    const rawTransRate = baseTransRate + (fuelSurOn ? fuelSur.perUnit : 0);
+    const transRuleUnit = transSrcRule ? (transSrcRule.rate_per || transSrcRule.unit || 'm³') : 'm³';
+    const transConv = (transSrcRule && !transIsIndiff) ? convertRateForTicketUom(rawTransRate, transRuleUnit, uom, tonFactor) : { rate: rawTransRate, converted: false, note: '' };
     const agreedTransRate = transConv.rate;
+    const fuelSurTicketUnit = !fuelSurOn ? 0 : (transIsIndiff ? fuelSur.perUnit : Number(convertRateForTicketUom(fuelSur.perUnit, transRuleUnit, uom, tonFactor).rate || 0));
 
     if ((priceLocked || isAutoEditUnlockedField('f_unitprice')) && !FORM_UI.priceManual && upEl) {
       if (rule) {
@@ -82206,6 +82482,19 @@
         setHint('hint_trans', `${activeTransRule.rule_type || 'Delivery'} · ${transConv.note}`, 'ok');
       } else {
         setHint('hint_trans', transportBy === 'Third-party truck' ? 'Hauler delivers — transport price billed to customer' : 'Company fleet delivery rate', '');
+      }
+      // Fuel surcharge clause: said in plain words under the transport price it is part of.
+      if (isDelivery && fuelSur && !FORM_UI.transManual) {
+        const fsUnitLbl = transIsIndiff ? 'load' : uom;
+        if (fuelSurOn) {
+          // The step count is said only to a seat that may read diesel purchases; the surcharge is on the ticket for all.
+          const fsMayRead = canSeeFuelEconomics() && isFuelCompanyAllowed(company);
+          setHint('hint_trans', fsMayRead
+            ? `Includes fuel surcharge ${fmtUSD(fuelSurTicketUnit, 2)} / ${fsUnitLbl} · diesel is ${fmtNum(fuelSur.steps, 0)} step${fuelSur.steps === 1 ? '' : 's'} above the agreement`
+            : `Includes fuel surcharge ${fmtUSD(fuelSurTicketUnit, 2)} / ${fsUnitLbl}`, 'ok');
+        } else if (fuelSur.noPrice) {
+          setHint('hint_trans', 'Fuel surcharge not applied: no priced diesel delivery on file for this date', 'warn');
+        }
       }
     }
     setHint('hint_site', isDelivery ? (site ? '' : 'Required on Delivery') : '', (FORM_UI.postAttempted && isDelivery && !site) ? 'crit' : '');
@@ -82409,7 +82698,12 @@
       setText('calc_total', '$0.00 Net (' + fmtUSD(-ttc, 2) + ')');
     }
     renderAdminLockBar();
-    return { origin, disp, company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule, tier, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, transIsIndiff: effTransIsIndiff, qty, up, tp, disc, tip, mat: editSalesCalc ? editSalesCalc.price : matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard };
+    return { origin, disp, company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule, tier, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, transIsIndiff: effTransIsIndiff, qty, up, tp, disc, tip, mat: editSalesCalc ? editSalesCalc.price : matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard,
+      // Recorded on the ticket only while the transport price is the agreed one (a typed price carries no surcharge).
+      // The diesel price is noted even when it adds no surcharge yet (0 steps), so the ticket keeps the price of its day.
+      fuelSur: (fuelSur && !fuelSur.noPrice && isDelivery && Math.abs(tp - agreedTransRate) < 0.006)
+        ? { unit: fuelSurOn ? fuelSurTicketUnit : null, steps: fuelSur.steps, ref: fuelSur.dieselPrice, base: fuelSur.clause.base }
+        : null };
   }
 
   function recalcRaw() {
@@ -83437,7 +83731,7 @@
           </div>
           <div class="att-contract-metrics">
             ${!isLubricant && fuelType === 'Diesel' && litres > 0 ? `<span><small>Tank After Issue</small><b class="${tankAfter < 0 ? 'red' : ''}">${fmtNum(tankAfter, 0)} L</b></span>` : ''}
-            ${coTank.avgUsdPerL > 0 && !isLubricant ? `<span title="${coTank.balance > 0 ? `Average cost of remaining diesel in tank (${fmtUSD(coTank.avgUsdPerL, 2)}/L · ${fmtUSD(coTank.remValueUsd || (coTank.balance * coTank.avgUsdPerL), 0)} across ${fmtNum(coTank.balance, 0)} L remaining)` : `Latest bulk diesel refill average (${fmtUSD(coTank.avgUsdPerL, 2)}/L)`}"><small>Est. Cost (${fmtUSD(coTank.avgUsdPerL, 2)}/L)</small><b>${fmtUSD(litres > 0 ? litres * coTank.avgUsdPerL : coTank.avgUsdPerL, 2)}${litres > 0 ? '' : '/L'}</b></span>` : ''}
+            ${coTank.avgUsdPerL > 0 && !isLubricant && canSeeFuelEconomics() && isFuelCompanyAllowed(company) ? `<span title="${coTank.balance > 0 ? `Average cost of remaining diesel in tank (${fmtUSD(coTank.avgUsdPerL, 2)}/L · ${fmtUSD(coTank.remValueUsd || (coTank.balance * coTank.avgUsdPerL), 0)} across ${fmtNum(coTank.balance, 0)} L remaining)` : (coTank.avgIsGroupPrice ? `Group latest diesel price (${fmtUSD(coTank.avgUsdPerL, 2)}/L)` : `Latest bulk diesel refill average (${fmtUSD(coTank.avgUsdPerL, 2)}/L)`)}"><small>Est. Cost (${fmtUSD(coTank.avgUsdPerL, 2)}/L)</small><b>${fmtUSD(litres > 0 ? litres * coTank.avgUsdPerL : coTank.avgUsdPerL, 2)}${litres > 0 ? '' : '/L'}</b></span>` : ''}
             ${refLastFill ? `<span><small>Last Refuel</small><b>${fmtNum(refLastFill.litres || 0, 0)} L on ${esc(String(refLastFill.date || '').slice(0, 10))}</b></span>` : ''}
             ${delta != null && delta >= 0 ? `<span><small>Interval</small><b>+${fmtNum(delta, type === 'hours' && delta % 1 !== 0 ? 1 : 0)} ${type === 'hours' ? 'h' : 'km'}</b></span>` : ''}
           </div>
@@ -84050,6 +84344,1392 @@
     return { supplier, before, amount, disc, payableLeg, dupHit };
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // Site Net-Back & Haulage Breakeven (deterministic, hard rule 15: no AI in the arithmetic).
+  // Per active Sales (Delivery) / Haulage agreement at a site, one round trip from the company hub costs
+  //   fuel = round-trip km x fleet L/km (odometer fill-to-fill, road trucks) x latest diesel $/L
+  //   (the most recent priced bulk delivery: getLatestDieselPrice, never a fixed price),
+  // and the region's driver trip rate (overtime_rates, paid on night / overtime trips) is shown on top.
+  // Everything is worked per load (one round trip) and shown per agreement unit, so flat "/ Load"
+  // rates and mixed m³ / Ton legs stay exact. Shared by Edit Site (#sitePriceAgreementsPanel), Site 360°,
+  // the map distance estimate (MFG_FUEL_ECON), the delivery breakeven Sentinel and the agreement price floor.
+  // ---------------------------------------------------------------------------------------------
+  const SITE_NB_STD_L_PER_KM = 0.42; // burn used only while no truck has enough odometer readings (labelled Standard estimate)
+  let _siteNbIdxKey = '';
+  let _siteNbIdx = null;
+
+  // Latest diesel price for a company: its own most recent priced bulk delivery, else the newest one in the
+  // Manufacturing group. Returns null when no delivery has been priced yet (callers then show No Fuel Price).
+  function getLatestDieselPrice(company) {
+    const idx = _getAllDieselMovementsIndex();
+    const co = company ? canonTwBu(company) : '';
+    const st = co && idx && idx.byCo ? idx.byCo[co] : null;
+    if (st && st.latestBuyUsdPerL > 0) {
+      return { usdPerL: st.latestBuyUsdPerL, date: st.latestBuyDate, src: 'company', co, pendingNewer: st.pendingAfterLatestCount || 0 };
+    }
+    const g = idx && idx.latestBuy;
+    if (g && g.usdPerL > 0) {
+      // The buying company and its purchase date are named only to a seat assigned to that company.
+      const srcVisible = typeof allowedCompanyNames !== 'function' || allowedCompanyNames().some(n => canonTwBu(n) === g.co && norm(n) === norm(g.co));
+      return { usdPerL: g.usdPerL, date: srcVisible ? g.date : '', src: 'group', co: srcVisible ? g.co : '', pendingNewer: st ? (st.pendingAfterLatestCount || 0) : 0 };
+    }
+    return null;
+  }
+
+  // The diesel price that was the latest one on a given day (same rules as getLatestDieselPrice, looking no later
+  // than that day). Today or a future date answers the latest price. Used to price a ticket dated in the past.
+  // Company key in the diesel index: the three Manufacturing companies by their canonical name, any other company
+  // as written (canonTwBu alone would read every unknown name as WTC).
+  function fuelCompanyKey(company) {
+    const s = String(company || '').trim();
+    if (!s) return { co: '', isMfg: false };
+    if (/^(wtc|bbc|bbconstruction|lions|lions\s*transport)$/i.test(s)) return { co: canonTwBu(s), isMfg: true };
+    return { co: s, isMfg: false };
+  }
+
+  // opts.ownOnly: the company's own purchases only, no Manufacturing group fallback (a resort's generator diesel
+  // is never valued at the quarry fleet's price).
+  function getDieselPriceOn(company, dateIso, opts) {
+    const ownOnly = Boolean(opts && opts.ownOnly);
+    const d = String(dateIso || '').slice(0, 10);
+    const idx = _getAllDieselMovementsIndex();
+    const co = fuelCompanyKey(company).co;
+    if (!d || d >= todayISO()) {
+      if (ownOnly) {
+        const stOwn = co && idx.byCo ? idx.byCo[co] : null;
+        return (stOwn && stOwn.latestBuyUsdPerL > 0) ? { usdPerL: stOwn.latestBuyUsdPerL, date: stOwn.latestBuyDate, src: 'company' } : null;
+      }
+      const lp = getLatestDieselPrice(company);
+      return lp ? { usdPerL: lp.usdPerL, date: lp.date, src: lp.src } : null;
+    }
+    const memo = idx._asOfMemo;
+    const mk = `${co}|${d}|${ownOnly ? 1 : 0}`;
+    if (memo && memo.has(mk)) return memo.get(mk);
+    const priceOf = c => {
+      const st = c && idx.byCo ? idx.byCo[c] : null;
+      return (st && st.pricedBuysTx && st.pricedBuysTx.length) ? _latestBulkDieselPrice(st.pricedBuysTx, idx.mfgGroupBuys, d) : null;
+    };
+    let out = null;
+    const own = priceOf(co);
+    if (own) {
+      out = { usdPerL: own.usdPerL, date: own.date, src: 'company' };
+    } else if (!ownOnly) {
+      let best = null;
+      ['WTC', 'BBConstruction', 'Lions Transport'].forEach(c => {
+        const p = priceOf(c);
+        if (p && (!best || p.date > best.date || (p.date === best.date && p.litres > best.litres))) best = p;
+      });
+      if (best) out = { usdPerL: best.usdPerL, date: best.date, src: 'group' };
+    }
+    if (memo) memo.set(mk, out);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Fuel surcharge clause of a delivery agreement (Sales (Delivery) / Haulage (Customer Site)):
+  //   fuel_base_price  diesel $/L when the agreement was signed
+  //   fuel_step        size of one step in the diesel price, $/L
+  //   fuel_surcharge   $ added to the transport rate, per transport unit, for each full step above the base
+  // Upward only: the agreed rate is the minimum, a diesel price under the base changes nothing.
+  // Deterministic (hard rule 15); the diesel price is always a recorded purchase, never a fixed figure.
+  // ---------------------------------------------------------------------------------------------
+  const FUEL_CLAUSE_MIN_STEP = 0.01; // $/L: a finer step would let the surcharge spell out the diesel purchase price
+  function ruleFuelClause(r) {
+    if (!r || !/^(Sales \(Delivery\)|Haulage \(Customer Site\))$/i.test(String(r.rule_type || '').trim())) return null;
+    const base = Number(r.fuel_base_price), step = Number(r.fuel_step), sur = Number(r.fuel_surcharge);
+    if (!(base > 0) || !(step >= FUEL_CLAUSE_MIN_STEP - 1e-9) || !(sur > 0)) return null;
+    return { base, step, sur };
+  }
+  function computeFuelSurcharge(clause, usdPerL) {
+    const p = Number(usdPerL);
+    if (!clause || !(p > 0)) return { steps: 0, perUnit: 0 };
+    // 1e-6: a price exactly on a step boundary (1.30 + 4 x 0.05) counts that step whatever the binary rounding.
+    const steps = Math.max(0, Math.floor((p - clause.base) / clause.step + 1e-6));
+    return { steps, perUnit: Math.round(steps * clause.sur * 10000) / 10000 };
+  }
+  // The clause that applies to a delivery ticket is the one on the agreement that supplies its transport rate;
+  // when no agreement supplies one (an all-in delivered price), the product's own delivery agreement.
+  // q = { company, date, activeTransRule, salesRule, refPrice } · refPrice = the diesel $/L a posted ticket was worked at.
+  function resolveDeliveryFuelSurcharge(q) {
+    const rule = (q && (q.activeTransRule || q.salesRule)) || null;
+    const clause = ruleFuelClause(rule);
+    if (!clause) return null;
+    const ref = Number(q.refPrice) > 0 ? { usdPerL: Number(q.refPrice), date: '', src: 'ticket' } : getDieselPriceOn(q.company, q.date);
+    const res = computeFuelSurcharge(clause, ref ? ref.usdPerL : 0);
+    return {
+      rule,
+      clause,
+      steps: res.steps,
+      perUnit: res.perUnit, // in the unit of the rule's transport rate (rate_per); a flat amount when that is Truck
+      dieselPrice: ref ? ref.usdPerL : null,
+      dieselDate: ref ? ref.date : '',
+      noPrice: !ref
+    };
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Ex-works reference for a delivery agreement whose customer has no Pickup agreement of their own
+  // (so a contract discount is not read as a haulage loss against the List Price):
+  //   1. the Ex-Works Floor set on the List Price agreement in force (floor_price, effective-dated with it),
+  //   2. else the lowest Sales (Pickup) price in force for that company, product and unit,
+  //   3. else the List Price.
+  // Same unit only, per-unit prices only (a flat per-truck pickup price is not a unit price).
+  // ---------------------------------------------------------------------------------------------
+  let _exWorksMemo = { key: '', map: new Map() };
+  function resolveExWorksReference(company, product, uomKey, dateIso) {
+    const pN = norm(product);
+    if (!pN) return null;
+    const rules = (SEED.records && SEED.records.price_rules) || [];
+    const key = `${SEED._customRev || 0}|${STATE._customRev || 0}|${rules.length}`;
+    if (_exWorksMemo.key !== key) _exWorksMemo = { key, map: new Map() };
+    const mk = `${company || ''}|${pN}|${uomKey}|${dateIso}`;
+    if (_exWorksMemo.map.has(mk)) return _exWorksMemo.map.get(mk);
+    const unitPriceOf = r => _siteNbNum(r.unit_price != null && r.unit_price !== '' ? r.unit_price : r.price);
+    const lp = listPriceRule(company, product, dateIso);
+    const lpSameUnit = Boolean(lp && _siteNbUomKey(lp.unit || 'm³') === uomKey);
+    const listUnit = (lpSameUnit && !isMatIndiffRule(lp)) ? unitPriceOf(lp) : null;
+    let out = null;
+    const floor = lpSameUnit ? _siteNbNum(lp.floor_price) : null;
+    if (floor > 0) {
+      out = { unit: floor, src: 'exworks' };
+    } else {
+      let low = null;
+      for (let i = 0; i < rules.length; i++) {
+        const r = rules[i];
+        if (!r || r.voided || r._multiIndustrySeed || !r.customer) continue;
+        if (String(r.rule_type || '').trim() !== 'Sales (Pickup)') continue;
+        if (company && r.company && r.company !== company) continue;
+        if (!r.product || norm(r.product) !== pN) continue;
+        if (r.start_date && String(r.start_date) > dateIso) continue;
+        if (r.end_date && String(r.end_date) < dateIso) continue;
+        if (isMatIndiffRule(r) || _siteNbUomKey(r.unit || 'm³') !== uomKey) continue;
+        const p = unitPriceOf(r);
+        if (p > 0 && (low == null || p < low)) low = p;
+      }
+      if (low != null && (listUnit == null || !(listUnit > 0) || low < listUnit)) out = { unit: low, src: 'lowpickup' };
+      else if (listUnit != null) out = { unit: listUnit, src: 'list' };
+    }
+    _exWorksMemo.map.set(mk, out);
+    return out;
+  }
+
+  // Measured fleet burn (L/km) for a company, else the group's, else the labelled standard estimate.
+  function resolveFleetBurnRate(company) {
+    const idx = getSiteNetBackIndex();
+    const co = company ? canonTwBu(company) : '';
+    const b = co ? idx.burnAgg.get(co) : null;
+    if (b && b.km > 0) return { lPerKm: b.l / b.km, src: 'fleet', trucks: b.trucks };
+    const bAll = idx.burnAgg.get('*');
+    if (bAll && bAll.km > 0) return { lPerKm: bAll.l / bAll.km, src: 'group', trucks: bAll.trucks };
+    return { lPerKm: SITE_NB_STD_L_PER_KM, src: 'standard', trucks: 0 };
+  }
+
+  // Burn (litres) needs the fuel slips; the diesel price needs the diesel purchases as well.
+  function canSeeFleetBurn() {
+    return typeof canAccessTable !== 'function' || canAccessTable('fuel_intakes');
+  }
+  function canSeeFuelEconomics() {
+    return typeof canAccessTable !== 'function' || (canAccessTable('fuel_intakes') && canAccessTable('expenses'));
+  }
+  // A company's own burn and diesel price are shown only to a seat assigned to that company.
+  function isFuelCompanyAllowed(company) {
+    if (!company || typeof allowedCompanyNames !== 'function') return true;
+    const cn = norm(canonTwBu(company));
+    return allowedCompanyNames().some(n => norm(n) === cn);
+  }
+
+  // Diesel for a leg of N km, for the map and form estimates (MFG_GEO.estimateLegKm): measured burn x latest price.
+  // Litres for a seat that may read fuel slips; the $ figure only when it may also read diesel purchases.
+  window.MFG_FUEL_ECON = {
+    legFuel(company, km) {
+      const k = Number(km);
+      if (!(k > 0) || getActiveIndustry() !== 'Manufacturing' || !canSeeFleetBurn()) return null;
+      const co = company ? canonTwBu(company) : (COMPANY_BU_MATCH[STATE.company] || '');
+      if (!isFuelCompanyAllowed(co)) return null; // a hub of a company the seat is not assigned to: distance only
+      const burn = resolveFleetBurnRate(co);
+      const showPrice = canSeeFuelEconomics();
+      const fp = showPrice ? getLatestDieselPrice(co) : null;
+      const litres = k * burn.lPerKm;
+      return {
+        litres,
+        lPerKm: burn.lPerKm,
+        burnSrc: burn.src,
+        priceHidden: !showPrice,
+        usd: fp ? round2(litres * fp.usdPerL) : null,
+        usdPerL: fp ? fp.usdPerL : null,
+        priceDate: fp ? fp.date : '',
+        priceSrc: fp ? fp.src : ''
+      };
+    },
+    latestPrice: company => ((canSeeFuelEconomics() && isFuelCompanyAllowed(company)) ? getLatestDieselPrice(company) : null),
+    // Diesel $/L on a day, for statements and briefs (never a fixed figure): a Manufacturing company at the price
+    // that was its latest one that day (group fallback); any other company from its own diesel purchases only.
+    // null when none is on file: the caller shows no value. Statement arithmetic uses bookPriceOn, so a total is
+    // the same for every seat that may open the statement; mayReadPrice decides whether the $/L itself is shown.
+    bookPriceOn(company, dateIso) {
+      const k = fuelCompanyKey(company);
+      if (!k.co) return null;
+      const p = getDieselPriceOn(k.co, dateIso, { ownOnly: !k.isMfg });
+      return p && p.usdPerL > 0 ? p.usdPerL : null;
+    },
+    mayReadPrice(company) {
+      const k = fuelCompanyKey(company);
+      if (!k.co) return false;
+      const mayRead = k.isMfg ? canSeeFuelEconomics() : (typeof canAccessTable !== 'function' || canAccessTable('expenses'));
+      const coN = norm(k.co);
+      const coAllowed = typeof allowedCompanyNames !== 'function' || allowedCompanyNames().some(n => norm(n) === coN);
+      return Boolean(mayRead && coAllowed);
+    },
+    priceOn(company, dateIso) {
+      return this.mayReadPrice(company) ? this.bookPriceOn(company, dateIso) : null;
+    },
+    burn: company => ((canSeeFleetBurn() && isFuelCompanyAllowed(company)) ? resolveFleetBurnRate(company) : null)
+  };
+
+  function _siteNbMedian(arr) {
+    const s = (arr || []).filter(v => Number.isFinite(v)).slice().sort((a, b) => a - b);
+    if (!s.length) return null;
+    const m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+  function _siteNbIsoMinusDays(iso, days) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    if (!m) return '';
+    const dt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) - days));
+    return dt.toISOString().slice(0, 10);
+  }
+  function _siteNbUomKey(u) {
+    const s = String(u || '').trim().toLowerCase();
+    if (!s || /^m(3|³)?$/.test(s) || s === 'cbm' || s === 'cubic') return 'm3';
+    if (/^(t|ton|tons|tonne|tonnes)$/.test(s)) return 'ton';
+    if (/^(truck|load|trip)$/.test(s)) return 'load';
+    return s;
+  }
+  function _siteNbUomLabel(k) {
+    if (k === 'm3') return 'm³';
+    if (k === 'ton') return 'Ton';
+    if (k === 'load') return 'Load';
+    return k || 'm³';
+  }
+  function _siteNbNum(v) {
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function getSiteNetBackIndex() {
+    const recs = (SEED && SEED.records) || {};
+    const sales = recs.sales_tickets || [];
+    const fuel = recs.fuel_intakes || [];
+    const equip = recs.equipment || [];
+    const key = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${sales.length}|${fuel.length}|${equip.length}`;
+    if (_siteNbIdx && _siteNbIdxKey === key) return _siteNbIdx;
+
+    // 1) Fleet burn (L/km) per company from road-truck odometer readings over the latest 365 days of slips.
+    const eqType = new Map();
+    equip.forEach(e => { if (e && e.name) eqType.set(norm(e.name), String(e.type || '')); });
+    let latestFuel = '';
+    for (let i = 0; i < fuel.length; i++) {
+      const d = String((fuel[i] && fuel[i].date) || '').slice(0, 10);
+      if (d > latestFuel) latestFuel = d;
+    }
+    const fuelFloor = latestFuel ? _siteNbIsoMinusDays(latestFuel, 365) : '';
+    const perTruck = new Map();
+    for (let i = 0; i < fuel.length; i++) {
+      const f = fuel[i];
+      if (!f || f.voided) continue;
+      const odoRaw = Number(f.odometer);
+      const odo = odoRaw > 0 ? odoRaw : null; // slips without a reading still count: their litres burn the next interval's km
+      const l = Number(f.litres || 0);
+      if (!(l > 0)) continue;
+      if (/grease|oil/i.test(String(f.fuel_type || f.item || ''))) continue;
+      const d = String(f.date || '').slice(0, 10);
+      if (!d || (fuelFloor && d < fuelFloor)) continue;
+      const eqN = norm(f.equipment);
+      if (!eqN) continue;
+      const t = eqType.get(eqN);
+      if (t && !/truck/i.test(t)) continue;
+      const k = `${canonTwBu(f.company || 'WTC')}|${eqN}`;
+      if (!perTruck.has(k)) perTruck.set(k, []);
+      const tn = Number(String(f.ticket_no || '').replace(/[^\d.]/g, ''));
+      perTruck.get(k).push({ d, odo, l, tn: Number.isFinite(tn) && tn > 0 ? tn : null, i });
+    }
+    const burnAgg = new Map();
+    const addBurn = (co, l, km) => {
+      const b = burnAgg.get(co) || { l: 0, km: 0, trucks: 0 };
+      b.l += l; b.km += km; b.trucks += 1;
+      burnAgg.set(co, b);
+    };
+    perTruck.forEach((list, k) => {
+      if (list.filter(x => x.odo != null).length < 5) return;
+      // Chronological: date, then slip number, then entry order (a same-day slip without a reading stays in sequence).
+      list.sort((a, b) => {
+        if (a.d !== b.d) return a.d < b.d ? -1 : 1;
+        if (a.tn != null && b.tn != null && a.tn !== b.tn) return a.tn - b.tn;
+        return a.i - b.i;
+      });
+      let km = 0, l = 0, lastOdo = null, pendingL = 0;
+      for (let i = 0; i < list.length; i++) {
+        const s = list[i];
+        pendingL += s.l;
+        if (s.odo == null) continue;
+        if (lastOdo != null) {
+          const step = s.odo - lastOdo;
+          // Fill-to-fill: every litre put in since the last reading (recorded or not) covers the km just driven.
+          // Rollback, extra-zero typo or a long gap: drop that interval and restart from this reading.
+          if (step > 0 && step <= 2500) { km += step; l += pendingL; }
+        }
+        lastOdo = s.odo;
+        pendingL = 0;
+      }
+      if (km < 1000) return;
+      const rate = l / km;
+      if (rate < 0.2 || rate > 1.5) return; // outside any loaded-tipper corridor: meter or slip fault, not burn
+      addBurn(k.split('|')[0], l, km);
+      addBurn('*', l, km);
+    });
+
+    // 2) Own-fleet delivery loads per site (median load size + 90-day exposure).
+    const loadsBySite = new Map();
+    const loadsByCoUom = new Map();
+    for (let i = 0; i < sales.length; i++) {
+      const s = sales[i];
+      if (!s || s.voided) continue;
+      if (String(s.sale_type || '') !== 'Delivery') continue;
+      if (!/company\s*fleet/i.test(String(s.transport_by || ''))) continue;
+      const q = Number(s.qty || 0);
+      if (!(q > 0)) continue;
+      if (isRemovedTicket(s)) continue;
+      const row = {
+        co: canonTwBu(s.company || 'WTC'),
+        cust: norm(s.customer),
+        prod: norm(s.product),
+        uom: _siteNbUomKey(s.uom),
+        qty: q,
+        d: String(s.date || '').slice(0, 10)
+      };
+      const sk = norm(s.site);
+      if (sk) {
+        if (!loadsBySite.has(sk)) loadsBySite.set(sk, []);
+        loadsBySite.get(sk).push(row);
+      }
+      const ck = `${row.co}|${row.uom}`;
+      if (!loadsByCoUom.has(ck)) loadsByCoUom.set(ck, []);
+      loadsByCoUom.get(ck).push(row);
+    }
+    const newestFirst = (a, b) => (a.d === b.d ? 0 : (a.d < b.d ? 1 : -1));
+    loadsBySite.forEach(list => list.sort(newestFirst));
+    const coMedian = new Map();
+    loadsByCoUom.forEach((list, k) => {
+      list.sort(newestFirst);
+      coMedian.set(k, _siteNbMedian(list.slice(0, 200).map(r => r.qty)));
+    });
+    const ownCaps = equip
+      .filter(e => e && !e.voided && /^own/i.test(String(e.ownership || '')) && /truck/i.test(String(e.type || '')) && Number(e.capacity) > 0)
+      .map(e => Number(e.capacity));
+
+    _siteNbIdx = { burnAgg, loadsBySite, coMedian, ownCapM3: _siteNbMedian(ownCaps) };
+    _siteNbIdxKey = key;
+    return _siteNbIdx;
+  }
+
+  // A customer moved out of a shared area site to its own site (site.split_from): the move date of that
+  // customer, or '' when the site was not split for it. Same record test as payroll (evalOtTicket, siteSplitOf).
+  function _siteNbSplitInfo(siteName) {
+    const siteN = norm(siteName);
+    if (!siteN) return null;
+    const st = ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && norm(s.name) === siteN
+      && s.split_from && /^\d{4}-\d{2}-\d{2}/.test(String(s.split_at || ''))
+      && !s._multiIndustrySeed && (!s._industry || s._industry === 'Manufacturing') && norm(s.split_from) !== siteN);
+    if (!st) return null;
+    const dates = new Map();
+    const sAt = String(st.split_at).slice(0, 10);
+    (Array.isArray(st.split_customers) ? st.split_customers : []).forEach(c => { const ck = norm(c); if (ck) dates.set(ck, sAt); });
+    if (st.split_dates && typeof st.split_dates === 'object') {
+      Object.keys(st.split_dates).forEach(ck => { const dv = String(st.split_dates[ck] || '').slice(0, 10); if (/^\d{4}-\d{2}-\d{2}$/.test(dv)) dates.set(norm(ck), dv); });
+    }
+    return {
+      from: norm(st.split_from),
+      dates,
+      payRegions: (st.split_pay_regions && typeof st.split_pay_regions === 'object') ? st.split_pay_regions : null
+    };
+  }
+
+  // Driver trip rate for the site's region, resolved the way payroll resolves it (evalOtTicket):
+  // company site_regions map first, then the region typed on the form, then the Sites registry; overlapping rows add up.
+  // With a customer: a customer moved to this site out of an area site is paid at the area's Region rate up to its
+  // move date and whenever this site's own Region has no rate in force (the area's live Region while the area site
+  // still resolves, else the Region stored at the move), exactly as payroll pays it.
+  function resolveSiteTripRate(company, siteName, regionHint, dateIso, customer) {
+    const co = canonTwBu(company || 'WTC');
+    const coN = norm(co);
+    const siteN = norm(siteName);
+    const coMk = coN === 'bbconstruction' ? 'bbconstruction' : (coN === 'lions transport' ? 'lionstransport' : 'wtc');
+    const coSiteRegs = (SEED.models && SEED.models[coMk] && SEED.models[coMk].site_regions) || null;
+    const siteRecs = (SEED.records && SEED.records.sites) || [];
+    const hasMap = k => Boolean(coSiteRegs && k && Object.prototype.hasOwnProperty.call(coSiteRegs, k));
+    const sumRate = regN => {
+      let rate = 0;
+      let label = '';
+      ((SEED.records && SEED.records.overtime_rates) || []).forEach(o => {
+        if (!o || o.voided) return;
+        if (norm(o.company || 'WTC') !== coN) return;
+        if ((norm(o.region) || 'excluded') !== regN) return;
+        const s = String(o.start_date || '2020-01-01').slice(0, 10);
+        const e = String(o.end_date || '2035-12-31').slice(0, 10);
+        if (s <= dateIso && dateIso <= e) {
+          rate += Number(o.amount != null ? o.amount : (o.usd_amount || 0));
+          label = o.region || label;
+        }
+      });
+      return { rate: round2(rate), region: label || regN };
+    };
+    let regN = '';
+    let mappedNone = false;
+    if (hasMap(siteN)) {
+      regN = coSiteRegs[siteN] || '';
+      mappedNone = !regN; // mapped to no region: payroll pays no trip rate here
+    }
+    if (!regN && !mappedNone && regionHint) regN = norm(regionHint);
+    if (!regN && !mappedNone && siteN) {
+      const sr = siteRecs.find(s => s && !s.voided && norm(s.name) === siteN && s.region);
+      if (sr) regN = norm(sr.region);
+    }
+    const own = regN ? sumRate(regN) : { rate: 0, region: '' };
+    const custN = norm(customer);
+    if (!custN) return own;
+    const moved = _siteNbSplitInfo(siteName);
+    const movedAt = moved ? moved.dates.get(custN) : '';
+    if (!movedAt || (dateIso > movedAt && own.rate > 0)) return own;
+    const areaN = moved.from;
+    let areaReg = '';
+    if (hasMap(areaN)) {
+      areaReg = coSiteRegs[areaN] || '';
+    } else {
+      const ar = siteRecs.filter(s => s && norm(s.name) === areaN && s.region).pop();
+      if (ar) areaReg = norm(ar.region);
+      else if (moved.payRegions && Object.prototype.hasOwnProperty.call(moved.payRegions, coN)) areaReg = norm(moved.payRegions[coN] || '');
+    }
+    if (!areaReg) return { rate: 0, region: '' };
+    return Object.assign(sumRate(areaReg), { fromArea: true });
+  }
+
+  // Hub-to-site leg. A pin typed on the open Edit Site form wins over the saved one when it differs.
+  function resolveSiteNetBackLeg(company, siteName, liveCoord) {
+    const geo = window.MFG_GEO;
+    if (!geo || typeof geo.estimateLegKm !== 'function' || !siteName) return null;
+    const co = canonTwBu(company || 'WTC');
+    const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: siteName }, SEED, { roundTripIfAnyBu: true });
+    const hasLive = Boolean(liveCoord && Number.isFinite(liveCoord.lat) && Number.isFinite(liveCoord.lng));
+    if (hasLive && typeof geo.getCompanyHub === 'function' && typeof geo.roadAdjustedKm === 'function') {
+      const saved = est && est.toCoord;
+      const moved = !saved || saved.lat == null || saved.lng == null
+        || Math.abs(Number(saved.lat) - liveCoord.lat) > 2e-5 || Math.abs(Number(saved.lng) - liveCoord.lng) > 2e-5;
+      if (moved) {
+        const hub = geo.getCompanyHub(co, SEED);
+        if (hub && hub.lat != null && hub.lng != null) {
+          const one = Math.round(Number(geo.roadAdjustedKm(hub.lat, hub.lng, liveCoord.lat, liveCoord.lng)) * 10) / 10;
+          if (one > 0) return { oneWayKm: one, roundTripKm: Math.round(one * 20) / 10, source: 'Unsaved map pin', approx: false };
+        }
+      }
+    }
+    if (!est || !est.available || !(Number(est.oneWayKm) > 0)) return null;
+    const one = Number(est.oneWayKm);
+    return {
+      oneWayKm: one,
+      roundTripKm: est.roundTripKm != null ? Number(est.roundTripKm) : Math.round(one * 20) / 10,
+      source: est.source || 'Map road estimate',
+      approx: /region/i.test(String(est.source || ''))
+    };
+  }
+
+  function computeSiteNetBack(siteName, origSiteName, rules, opts = {}) {
+    const today = opts.today || todayISO();
+    const sNorm = norm(siteName);
+    const origNorm = norm(origSiteName);
+    const idx = getSiteNetBackIndex();
+    // Payroll and diesel-cost inputs follow the seat's table rights (a Sales seat cannot read overtime_rates, fuel slips or diesel purchases).
+    const canSeeTripPay = typeof canAccessTable !== 'function' || canAccessTable('overtime_rates');
+    const canSeeFuelCost = canSeeFuelEconomics();
+    const splitInfo = canSeeTripPay ? _siteNbSplitInfo(siteName || origSiteName) : null;
+    const inputsByCo = new Map();
+    const coInputs = co => {
+      if (inputsByCo.has(co)) return inputsByCo.get(co);
+      const leg = resolveSiteNetBackLeg(co, siteName || origSiteName, opts.liveCoord);
+      const burn = resolveFleetBurnRate(co);
+      // Always the latest priced diesel delivery; no price on file means no fuel figure, never an assumed one.
+      const fuelPrice = getLatestDieselPrice(co);
+      const usdPerL = fuelPrice ? fuelPrice.usdPerL : null;
+      const trip = canSeeTripPay
+        ? resolveSiteTripRate(co, siteName || origSiteName, opts.regionHint, today)
+        : { rate: 0, region: '', hidden: true };
+      const fuelPerTrip = (leg && usdPerL > 0) ? round2(leg.roundTripKm * burn.lPerKm * usdPerL) : null;
+      const coOk = isFuelCompanyAllowed(co);
+      const out = { co, leg, burn, usdPerL, fuelPrice, trip, fuelPerTrip, showBurn: canSeeFleetBurn() && coOk, showFuelInputs: canSeeFuelCost && coOk, showTripPay: canSeeTripPay };
+      inputsByCo.set(co, out);
+      return out;
+    };
+
+    const siteLoads = [
+      ...((sNorm && idx.loadsBySite.get(sNorm)) || []),
+      ...((origNorm && origNorm !== sNorm && idx.loadsBySite.get(origNorm)) || [])
+    ];
+    if (origNorm && origNorm !== sNorm) siteLoads.sort((a, b) => (a.d === b.d ? 0 : (a.d < b.d ? 1 : -1)));
+    const loadSize = (co, uomK) => {
+      if (uomK === 'load') return { qty: 1, src: 'load' };
+      if (uomK !== 'm3' && uomK !== 'ton') return null; // Unit, Litre...: no load size to cost, never invent one
+      const here = siteLoads.filter(r => r.co === co && r.uom === uomK).slice(0, 60).map(r => r.qty);
+      if (here.length >= 3) return { qty: _siteNbMedian(here), src: 'site' };
+      const cm = idx.coMedian.get(`${co}|${uomK}`);
+      if (cm > 0) return { qty: cm, src: 'company' };
+      const cap = idx.ownCapM3 > 0 ? idx.ownCapM3 : 20;
+      return { qty: uomK === 'ton' ? Math.round(cap * 16) / 10 : cap, src: 'capacity' };
+    };
+    const from90 = _siteNbIsoMinusDays(today, 90);
+    const defaultCo = canonTwBu(opts.defaultCo || 'WTC');
+
+    const rows = [];
+    (rules || []).forEach(r => {
+      if (!r || r.voided) return;
+      const rt = String(r.rule_type || '').trim();
+      const isSalesDel = /^Sales \(Delivery\)$/i.test(rt);
+      const isCustHaul = /^Haulage \(Customer Site\)$/i.test(rt);
+      const isHaulBuy = /^Transport Price \(Site\)$/i.test(rt);
+      if (!isSalesDel && !isCustHaul && !isHaulBuy) return;
+      if (isHaulBuy && (r.includes_transport === true || r.includes_transport === 1)) return;
+      const co = r.company ? canonTwBu(r.company) : defaultCo;
+      const inp = coInputs(co);
+      const matUom = _siteNbUomKey(r.unit || 'm³');
+      const trUom = _siteNbUomKey(r.rate_per || r.unit || 'm³');
+      const basisUom = isSalesDel ? matUom : trUom;
+      let typeLbl = 'Sales Delivery';
+      let typeCls = 'is-sales';
+      if (isHaulBuy) { typeLbl = 'Site Haulage'; typeCls = 'is-haul'; }
+      else if (isCustHaul) { typeLbl = 'Customer Haulage'; typeCls = 'is-haul'; }
+      const baseRow = {
+        id: r.id, co, typeLbl, typeCls,
+        party: isHaulBuy ? (r.supplier || '') : (r.customer || ''),
+        product: r.product || '',
+        unitKey: basisUom,
+        unitLbl: _siteNbUomLabel(basisUom),
+        oneWayKm: inp.leg ? inp.leg.oneWayKm : null
+      };
+      const L = loadSize(co, basisUom);
+      if (!L) {
+        rows.push(Object.assign(baseRow, { loadQty: null, loadSrc: '', status: 'nounit', loads90: null, shortfall90: 0 }));
+        return;
+      }
+
+      // A rate in unit trU, worked per load (flat "/ Load" rates kept as they are).
+      const unitToLoad = (t, trU) => {
+        if (trU === basisUom) return t * L.qty;
+        if (trU === 'load') return t;
+        // m³ rate on a Ton line (or the reverse): convert this load with the product's ton factor, as the Sales form does.
+        if (r.product && ((trU === 'm3' && basisUom === 'ton') || (trU === 'ton' && basisUom === 'm3'))) {
+          const prodRow = ((SEED.records && SEED.records.products) || []).find(p => p && !p.voided && norm(p.name) === norm(r.product)) || null;
+          const f = resolveProductTonFactor(prodRow, r.product);
+          if (f > 0) return trU === 'm3' ? t * (L.qty / f) : t * L.qty * f;
+        }
+        const LL = loadSize(co, trU);
+        return LL ? t * LL.qty : null;
+      };
+      // Fuel surcharge clause of an agreement at the latest diesel price, per load (0 when it has none or adds nothing).
+      const fuelSurPerLoad = tr => {
+        const clause = ruleFuelClause(tr);
+        if (!clause || !(inp.usdPerL > 0)) return 0;
+        const u = computeFuelSurcharge(clause, inp.usdPerL).perUnit;
+        if (!(u > 0)) return 0;
+        const v = unitToLoad(u, _siteNbUomKey(tr.rate_per || tr.unit || 'm³'));
+        return v > 0 ? v : 0;
+      };
+      let surPerLoad = 0; // the surcharge inside trPerLoad
+      // Per-unit leg price of an agreement, worked per load, with its fuel surcharge when the rate is charged at all.
+      const transPerLoad = (tr, asSalesDelivery) => {
+        if (!tr) return null;
+        let base;
+        if (isTransIndiffRule(tr) && ruleTransIndiffPrice(tr) != null) {
+          base = ruleTransIndiffPrice(tr);
+        } else {
+          const t = asSalesDelivery
+            ? _siteNbNum(tr.trans_unit_price != null && tr.trans_unit_price !== '' ? tr.trans_unit_price : tr.trans_price)
+            : _siteNbNum(tr.trans_unit_price != null && tr.trans_unit_price !== '' && Number(tr.trans_unit_price) !== 0
+              ? tr.trans_unit_price
+              : (tr.unit_price != null && tr.unit_price !== '' ? tr.unit_price : tr.price));
+          if (t == null) return null;
+          base = unitToLoad(t, _siteNbUomKey(tr.rate_per || tr.unit || 'm³'));
+          if (base == null) return null;
+        }
+        if (!(base > 0)) return base;
+        const sur = fuelSurPerLoad(tr);
+        surPerLoad = sur;
+        return base + sur;
+      };
+
+      // A product-less Sales (Delivery) line with no material price is a transport-only agreement (the material is
+      // priced on the customer's product lines), the way the Sales form reads it.
+      const isTransOnlyLine = isSalesDel && !r.product && !isMatIndiffRule(r)
+        && !(Number(r.unit_price != null && r.unit_price !== '' ? r.unit_price : (r.price || 0)) > 0);
+      let matPerLoad = null;
+      let trPerLoad = null;
+      let transFrom = '';
+      let sepTrId = '';
+      let sepTrUncosted = false;
+      if (isSalesDel && !isTransOnlyLine) {
+        if (isMatIndiffRule(r)) matPerLoad = ruleIndiffPrice(r);
+        else {
+          const p = _siteNbNum(r.unit_price != null && r.unit_price !== '' ? r.unit_price : r.price);
+          if (p != null) matPerLoad = p * L.qty;
+        }
+      }
+      trPerLoad = transPerLoad(r, isSalesDel);
+      if (isSalesDel && !isTransOnlyLine && !(trPerLoad > 0)) {
+        // Transport billed on a separate agreement: the customer's product-less delivery line, else Customer Haulage
+        // (same order as the Sales form: transRule, then haulCustRule).
+        const ruleCo = r.company || co;
+        const sepTr = r.customer
+          ? findRule({ company: ruleCo, customer: r.customer, product: '', site: r.site, date: today, types: ['Sales (Delivery)'] })
+          : null;
+        const sepTrPerLoad = (sepTr && sepTr.id !== r.id) ? transPerLoad(sepTr, true) : null;
+        if (sepTrPerLoad > 0) {
+          trPerLoad = sepTrPerLoad;
+          transFrom = 'separate';
+          sepTrId = String(sepTr.id || '');
+        } else if (sepTr && sepTr.id !== r.id && sepTrPerLoad == null
+          && Number(sepTr.trans_unit_price || sepTr.trans_price || 0) > 0) {
+          sepTrUncosted = true; // transport exists but in a unit that cannot be costed: never report a loss without it
+        } else {
+          const hc = findRule({ company: ruleCo, customer: r.customer || '', product: r.product || '', site: r.site, date: today, types: ['Haulage (Customer Site)'] });
+          const hcPerLoad = hc ? transPerLoad(hc, false) : null;
+          if (hcPerLoad > 0) {
+            trPerLoad = hcPerLoad;
+            transFrom = 'haulage';
+          } else {
+            // An all-in delivered price with a fuel surcharge clause of its own: the surcharge is its transport line.
+            const ownSur = fuelSurPerLoad(r);
+            if (ownSur > 0) {
+              trPerLoad = ownSur;
+              surPerLoad = ownSur;
+            }
+          }
+        }
+      }
+      if (!(trPerLoad > 0)) surPerLoad = 0;
+
+      // Ex-works reference: the customer's own Pickup agreement; without one, the Ex-Works Floor set on the List
+      // Price agreement, else the lowest Pickup price in force for the product, else the List Price.
+      let pickupUnit = null;
+      let pickupSrc = '';
+      if (isSalesDel && r.product) {
+        const ruleCo = r.company || co;
+        let pr = (r.customer && findRule({ company: ruleCo, customer: r.customer, product: r.product, date: today, types: ['Sales (Pickup)'], requireProduct: true })) || null;
+        let exw = null;
+        if (!pr) {
+          exw = resolveExWorksReference(ruleCo, r.product, matUom, today);
+          if (!exw || exw.src === 'list') {
+            exw = null;
+            pr = listPriceRule(ruleCo, r.product, today);
+          }
+        }
+        if (exw) {
+          pickupUnit = exw.unit;
+          pickupSrc = exw.src; // 'exworks' | 'lowpickup'
+        } else if (pr && _siteNbUomKey(pr.unit || 'm³') === matUom) {
+          if (isMatIndiffRule(pr)) {
+            const flat = ruleIndiffPrice(pr);
+            if (flat != null && L.qty > 0) pickupUnit = flat / L.qty;
+          } else {
+            pickupUnit = _siteNbNum(pr.unit_price != null && pr.unit_price !== '' ? pr.unit_price : pr.price);
+          }
+          if (pickupUnit != null) pickupSrc = /pickup/i.test(String(pr.rule_type || '')) ? 'pickup' : 'list';
+        }
+      }
+
+      const fuelPerLoad = inp.fuelPerTrip;
+      // A customer moved here from an area site keeps the area's night rate when payroll does (resolveSiteTripRate).
+      const ruleTrip = (inp.showTripPay && r.customer && splitInfo && splitInfo.dates.has(norm(r.customer)))
+        ? resolveSiteTripRate(co, siteName || origSiteName, opts.regionHint, today, r.customer)
+        : inp.trip;
+      const tripPay = ruleTrip.rate;
+      let deliveredPerLoad = null;
+      let haulIncome = null;
+      let lossRef = 'fuel'; // what a negative margin is measured against: pickup | list | fuel (haulage-only lines)
+      if (isSalesDel) {
+        if (isTransOnlyLine) {
+          haulIncome = trPerLoad; // haulage-only delivery line
+        } else {
+          if (matPerLoad != null) deliveredPerLoad = matPerLoad + (trPerLoad || 0);
+          if (deliveredPerLoad != null && pickupUnit != null) {
+            haulIncome = deliveredPerLoad - pickupUnit * L.qty;
+            lossRef = pickupSrc || 'pickup';
+          }
+        }
+      } else if (isCustHaul) {
+        haulIncome = trPerLoad;
+      }
+      const marginPerLoad = (!isHaulBuy && haulIncome != null && fuelPerLoad != null) ? haulIncome - fuelPerLoad : null;
+      const nightMarginPerLoad = marginPerLoad != null ? marginPerLoad - tripPay : null;
+      const netBackUnit = (isSalesDel && deliveredPerLoad != null && fuelPerLoad != null && L.qty > 0)
+        ? (deliveredPerLoad - fuelPerLoad) / L.qty
+        : null;
+      const kmCost = inp.usdPerL > 0 ? 2 * inp.burn.lPerKm * inp.usdPerL : 0; // $ per one-way km, there and back
+      const breakevenKm = (!isHaulBuy && haulIncome != null && kmCost > 0) ? Math.max(0, haulIncome / kmCost) : null;
+
+      let status;
+      if (!inp.leg) status = 'nodist';
+      else if (fuelPerLoad == null) status = 'nofuel'; // no priced diesel delivery on file yet
+      else if (sepTrUncosted) status = 'nounit';
+      else if (isHaulBuy) status = (trPerLoad == null ? 'noprice' : 'buy');
+      else if (isSalesDel && !isTransOnlyLine && matPerLoad == null) status = 'noprice';
+      else if ((isCustHaul || isTransOnlyLine) && trPerLoad == null) status = 'noprice';
+      else if (marginPerLoad == null) status = 'noref';
+      else if (marginPerLoad < -0.005) status = 'loss';
+      else if (nightMarginPerLoad < -0.005) status = 'night';
+      else if (haulIncome > 0 && marginPerLoad < 0.15 * haulIncome) status = 'thin';
+      else status = 'ok';
+
+      let loads90 = null;
+      if (!isHaulBuy) {
+        const custN = norm(r.customer);
+        const prodN = norm(r.product);
+        loads90 = siteLoads.filter(t => t.co === co && t.d >= from90 && t.d <= today
+          && t.uom === basisUom
+          && (!custN || t.cust === custN)
+          && (!prodN || t.prod === prodN)).length;
+      }
+      const shortfall90 = (status === 'loss' && loads90 > 0) ? round2(-marginPerLoad * loads90) : 0;
+      const perUnit = v => (v == null || !(L.qty > 0)) ? null : v / L.qty;
+
+      rows.push(Object.assign(baseRow, {
+        lossRef,
+        transFrom,
+        sepTrId,
+        isTransOnlyLine,
+        _marginPerLoad: marginPerLoad,
+        _custN: norm(r.customer),
+        loadQty: L.qty,
+        loadSrc: L.src,
+        deliveredUnit: isHaulBuy ? perUnit(trPerLoad) : (deliveredPerLoad != null ? perUnit(deliveredPerLoad) : perUnit(trPerLoad)),
+        fuelSurUnit: (!isHaulBuy && surPerLoad > 0) ? perUnit(surPerLoad) : null, // inside deliveredUnit
+        hasFuelClause: Boolean(ruleFuelClause(r)),
+        pickupUnit,
+        pickupSrc,
+        fuelUnit: perUnit(fuelPerLoad),
+        netBackUnit,
+        marginUnit: perUnit(marginPerLoad),
+        nightMarginUnit: perUnit(nightMarginPerLoad),
+        tripPay: ruleTrip.hidden ? null : tripPay,
+        tripRegion: ruleTrip.hidden ? '' : (ruleTrip.region || ''),
+        tripFromArea: Boolean(ruleTrip.fromArea),
+        haulerPremiumUnit: isHaulBuy && trPerLoad != null && fuelPerLoad != null ? perUnit(trPerLoad - fuelPerLoad) : null,
+        breakevenKm,
+        loads90,
+        shortfall90,
+        status
+      }));
+    });
+
+    // Split agreements: a product line that already carries its sibling transport-only line's rate owns those loads.
+    // The transport-only line keeps only the loads of products with no line of their own, so a loss is never counted twice.
+    rows.forEach(tRow => {
+      if (!tRow.isTransOnlyLine) return;
+      const carriers = rows.filter(p => p.transFrom === 'separate' && p.sepTrId && p.sepTrId === String(tRow.id || ''));
+      if (!carriers.length) return;
+      const covered = new Set(carriers.map(p => norm(p.product)).filter(Boolean));
+      if (tRow.loads90 != null) {
+        tRow.loads90 = siteLoads.filter(t => t.co === tRow.co && t.d >= from90 && t.d <= today
+          && t.uom === tRow.unitKey
+          && (!tRow._custN || t.cust === tRow._custN)
+          && !covered.has(t.prod)).length;
+      }
+      tRow.carriedBy = carriers.length;
+      tRow.shortfall90 = (tRow.status === 'loss' && tRow.loads90 > 0) ? round2(-tRow._marginPerLoad * tRow.loads90) : 0;
+      if (!(tRow.loads90 > 0)) tRow.countsInSummary = false; // shown, but its loads sit on the product lines (no pill counts it twice)
+    });
+    rows.forEach(x => { delete x._marginPerLoad; delete x._custN; });
+
+    const rank = { loss: 0, night: 1, thin: 2, noref: 3, noprice: 4, nounit: 5, nodist: 6, nofuel: 6, ok: 7, buy: 8 };
+    rows.sort((a, b) => (rank[a.status] - rank[b.status]) || ((b.loads90 || 0) - (a.loads90 || 0)) || String(a.party).localeCompare(String(b.party)));
+    const count = st => rows.filter(x => x.status === st && x.countsInSummary !== false).length;
+    return {
+      rows,
+      inputs: Array.from(inputsByCo.values()),
+      lossCnt: count('loss'),
+      nightCnt: count('night'),
+      thinCnt: count('thin'),
+      okCnt: count('ok'),
+      noDistCnt: count('nodist'),
+      noFuelCnt: count('nofuel'),
+      shortfall90: round2(rows.reduce((a, x) => a + (x.shortfall90 || 0), 0))
+    };
+  }
+
+  // Hooks for build/verify_site_netback.mjs. All read-only except setRuleEnabledForCheck, which flips rule #22
+  // in memory only (nothing is saved or synced), the way a seat pauses it in Alerts & Thresholds.
+  window.__mfgSiteNetBack = {
+    setRuleEnabledForCheck: on => {
+      const st = ensureAlertRulesState();
+      st.overrides.S12 = Object.assign({}, st.overrides.S12, { enabled: Boolean(on) });
+      invalidateAlertRuleCaches();
+      return isAlertRuleEnabled('S12');
+    },
+    compute: (siteName, rules, opts) => computeSiteNetBack(siteName, siteName, rules, opts || {}),
+    collectRules: (siteName, singleBu) => collectActiveSiteRulesForNetBack(siteName, singleBu || ''),
+    tripRate: (company, siteName, regionHint, dateIso, customer) => resolveSiteTripRate(company, siteName, regionHint, dateIso || todayISO(), customer || ''),
+    index: () => getSiteNetBackIndex(),
+    latestDieselPrice: company => getLatestDieselPrice(company),
+    burnRate: company => resolveFleetBurnRate(company),
+    sentinel: () => getNetBackSentinelData(),
+    sentinelItem: () => buildSentinelItems().find(i => i && i.id === 'S12') || null,
+    floor: draft => computePriceRuleFloor(draft),
+    dieselPriceOn: (company, dateIso) => getDieselPriceOn(company, dateIso),
+    fuelClause: rule => ruleFuelClause(rule),
+    fuelSurcharge: (clause, usdPerL) => computeFuelSurcharge(clause, usdPerL),
+    deliverySurcharge: q => resolveDeliveryFuelSurcharge(q),
+    exWorksRef: (company, product, uomKey, dateIso) => resolveExWorksReference(company, product, uomKey, dateIso || todayISO()),
+    // Re-pricing after an agreement edit, for the headless gate only: changes stay in memory, nothing is posted.
+    backfillRule: (ruleRow, origRow) => (window.__MFG_HEADLESS_TEST ? backfillPriceRuleToTickets(ruleRow, origRow, [], {}) : null),
+    inspect: (key, id) => (window.__MFG_HEADLESS_TEST ? showRecordInspector(key, id) : null),
+    editRecord: (key, id) => (window.__MFG_HEADLESS_TEST ? openEntryModalForRecord(key, id) : null),
+    tankRates: () => {
+      const idx = _getAllDieselMovementsIndex();
+      const out = {};
+      Object.keys(idx.byCo || {}).forEach(co => {
+        const st = idx.byCo[co];
+        out[co] = { avgUsdPerL: st.avgUsdPerL, latestBuyUsdPerL: st.latestBuyUsdPerL, balance: st.balance, buys: (st.pricedBuysTx || []).length, groupPrice: Boolean(st.avgIsGroupPrice) };
+      });
+      return out;
+    }
+  };
+
+  // Active (not ended) site agreements the seat may see, scoped like the Edit Site panel (no "all entities" toggle).
+  function collectActiveSiteRulesForNetBack(siteName, singleBu) {
+    const sNorm = norm(siteName);
+    if (!sNorm) return [];
+    const canSeeRaw = typeof canAccessTable !== 'function' || canAccessTable('raw_purchases');
+    const isRawType = r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim());
+    const seen = new Set();
+    const pool = [
+      ...((STATE.customRecords && STATE.customRecords.price_rules) || []),
+      ...((SEED.records && SEED.records.price_rules) || [])
+    ].filter(r => {
+      if (!r) return false;
+      const rid = String(r.id || '');
+      if (rid) {
+        if (seen.has(rid)) return false;
+        seen.add(rid);
+      }
+      if (r.voided || r._multiIndustrySeed || isCommRule(r)) return false;
+      if (!canSeeRaw && isRawType(r)) return false;
+      return norm(r.site || '') === sNorm;
+    });
+    const today = todayISO();
+    return filterRecords(pool, { ignorePeriod: true, ignoreCompany: true, ignoreSearch: true, tableKey: 'price_rules' })
+      .filter(r => !singleBu || !r.company || canonTwBu(r.company) === singleBu || norm(r.company) === norm(singleBu))
+      .filter(r => isSiteRuleInForceOn(r, today));
+  }
+
+  // In force today: started (no future start date) and not ended. A scheduled price change waits for its start date.
+  function isSiteRuleInForceOn(r, dateIso) {
+    const sd = String((r && r.start_date) || '').trim().slice(0, 10);
+    const ed = String((r && r.end_date) || '').trim().slice(0, 10);
+    return (!sd || sd <= dateIso) && (!ed || ed >= dateIso);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Delivery breakeven Sentinel: the site net-back run over every site that has a Sales (Delivery) or
+  // Haulage (Customer Site) agreement in force, in the active company scope and under the seat's rights.
+  // Deterministic (hard rule 15); fuel is always costed at the latest priced diesel delivery.
+  // ---------------------------------------------------------------------------------------------
+  // Read-only labels in the 360° Inspector for the ex-works floor and fuel surcharge fields. They are edited on the
+  // Price Agreement form only, where the clause is checked as a whole (all three fields, floor not above list price).
+  const INSPECT_FUEL_RO_LABELS = {
+    floor_price: 'Ex-Works Floor ($)',
+    fuel_base_price: 'Diesel Price at Signing ($ / L)',
+    fuel_step: 'Diesel Price Step ($ / L)',
+    fuel_surcharge: 'Surcharge per Step ($)',
+    fuel_surcharge_unit: 'Fuel Surcharge in Transport Price ($)',
+    fuel_steps: 'Diesel Steps Above Agreement',
+    fuel_price_ref: 'Diesel Price Used ($ / L)'
+  };
+
+  // What a losing delivery agreement is measured against, in plain words (shared by the strip, the Sentinel and the form).
+  function netBackLossLabel(lossRef) {
+    if (lossRef === 'pickup') return 'Below Pickup';
+    if (lossRef === 'exworks') return 'Below Ex-Works Floor';
+    if (lossRef === 'lowpickup') return 'Below Lowest Pickup';
+    if (lossRef === 'list') return 'Below List Price';
+    return 'Haul Below Fuel';
+  }
+  function netBackRefLabel(src) {
+    if (src === 'exworks') return 'Ex-Works Floor';
+    if (src === 'lowpickup') return 'Lowest Pickup Price';
+    if (src === 'list') return 'List Price';
+    return 'Pickup Price';
+  }
+
+  let _nbSentinelCache = null;
+  function getNetBackSentinelData() {
+    if (getActiveIndustry(STATE.company) !== 'Manufacturing') return null;
+    if (typeof canAccessTable === 'function' && !canAccessTable('price_rules')) return null;
+    if (!SEED || !SEED._recordsReady) return null; // loads and diesel purchases are not in memory yet
+    const today = todayISO();
+    const singleBu = COMPANY_BU_MATCH[STATE.company] || '';
+    const u = activeUser() || {};
+    const recs = SEED.records || {};
+    const customRules = (STATE.customRecords && STATE.customRecords.price_rules) || [];
+    const seedRules = recs.price_rules || [];
+    const geoStamp = window.MFG_GEO && typeof window.MFG_GEO.getConfigStamp === 'function' ? window.MFG_GEO.getConfigStamp() : '';
+    const minLoads = Math.max(0, Number(getAlertParam('S12', 'min_loads_90d', 0)) || 0);
+    const showFuel = canSeeFuelEconomics();
+    const key = [SEED._customRev || 0, STATE._customRev || 0, STATE.company, today, u.id || u.email || '', u.role || '', showFuel ? 1 : 0,
+      customRules.length, seedRules.length, (recs.sales_tickets || []).length, (recs.fuel_intakes || []).length, (recs.expenses || []).length,
+      (recs.overtime_rates || []).length, isOfficialScopeActive() ? 'OFF' : 'ALL', geoStamp, minLoads, allowedCompanyNames().join(',')].join('|');
+    if (_nbSentinelCache && _nbSentinelCache.key === key) return _nbSentinelCache.data;
+
+    const seen = new Set();
+    const pool = [...customRules, ...seedRules].filter(r => {
+      if (!r) return false;
+      const rid = String(r.id || '');
+      if (rid) {
+        if (seen.has(rid)) return false;
+        seen.add(rid);
+      }
+      if (r.voided || r._multiIndustrySeed || isCommRule(r)) return false;
+      if (!/^(Sales \(Delivery\)|Haulage \(Customer Site\))$/i.test(String(r.rule_type || '').trim())) return false;
+      return Boolean(norm(r.site || ''));
+    });
+    // Company rights: only agreements of the companies this seat is assigned to (group scope included).
+    const allowedCoSet = new Set(allowedCompanyNames().map(n => norm(n)));
+    const scoped = filterRecords(pool, { ignorePeriod: true, ignoreCompany: true, ignoreSearch: true, tableKey: 'price_rules' })
+      .filter(r => !singleBu || !r.company || canonTwBu(r.company) === singleBu || norm(r.company) === norm(singleBu))
+      .filter(r => allowedCoSet.has(norm(r.company ? canonTwBu(r.company) : (singleBu || 'WTC'))))
+      .filter(r => isSiteRuleInForceOn(r, today));
+    const bySite = new Map();
+    scoped.forEach(r => {
+      const k = norm(r.site);
+      if (!bySite.has(k)) bySite.set(k, { name: String(r.site).trim(), rules: [] });
+      bySite.get(k).rules.push(r);
+    });
+
+    const rows = [];
+    const noDistRows = []; // agreements on a site with no pinned distance: listed so the site can be pinned in one click
+    const prices = new Map();
+    let agreements = 0, costable = 0, lossCnt = 0, nightCnt = 0, noDistCnt = 0, noFuelCnt = 0, dormantCnt = 0, shortfall = 0, lossLoads = 0, listRefCnt = 0;
+    bySite.forEach(g => {
+      let nb = null;
+      try {
+        nb = computeSiteNetBack(g.name, g.name, g.rules, { today, defaultCo: singleBu || 'WTC' });
+      } catch (nbErr) {
+        console.warn('[delivery breakeven sentinel] site skipped', g.name, nbErr);
+        return;
+      }
+      nb.inputs.forEach(i => { if (i.fuelPrice && !prices.has(i.co)) prices.set(i.co, { co: i.co, usdPerL: i.fuelPrice.usdPerL, date: i.fuelPrice.date, src: i.fuelPrice.src }); });
+      nb.rows.forEach(x => {
+        agreements += 1;
+        if (x.countsInSummary === false) return; // its loads sit on the product lines that carry its rate
+        costable += 1;
+        if (x.pickupSrc === 'list') listRefCnt += 1; // no pickup price and no ex-works floor: still measured against the List Price
+        if (x.status === 'nodist') {
+          noDistCnt += 1;
+          noDistRows.push({
+            rkey: 'price_rules',
+            rid: String(x.id || ''),
+            site: g.name,
+            company: x.co,
+            party: x.party || '',
+            product: x.product || '',
+            type_label: x.typeLbl,
+            unit: x.unitLbl,
+            delivered_price: x.deliveredUnit,
+            loads90: x.loads90 || 0
+          });
+        } else if (x.status === 'nofuel') noFuelCnt += 1;
+        if (x.status !== 'loss' && x.status !== 'night') return;
+        if ((x.loads90 || 0) < minLoads) { dormantCnt += 1; return; }
+        if (x.status === 'loss') {
+          lossCnt += 1;
+          shortfall += x.shortfall90 || 0;
+          if (x.shortfall90 > 0) lossLoads += x.loads90 || 0;
+        } else {
+          nightCnt += 1;
+        }
+        rows.push({
+          rkey: 'price_rules',
+          rid: String(x.id || ''),
+          site: g.name,
+          company: x.co,
+          party: x.party || '',
+          product: x.product || '',
+          status: x.status,
+          status_label: x.status === 'night' ? 'Night Trips Lose' : netBackLossLabel(x.lossRef),
+          ref_src: x.pickupSrc || '',
+          unit: x.unitLbl,
+          delivered_price: x.deliveredUnit,
+          pickup_price: x.pickupUnit,
+          fuel_price_unit: x.fuelUnit,
+          margin_value: x.status === 'night' ? x.nightMarginUnit : x.marginUnit,
+          km_value: x.oneWayKm,
+          be_value: x.breakevenKm,
+          loads90: x.loads90 || 0,
+          shortfall_usd: x.shortfall90 || 0
+        });
+      });
+    });
+    const stRank = { loss: 0, night: 1 };
+    rows.sort((a, b) => (stRank[a.status] - stRank[b.status]) || (b.shortfall_usd - a.shortfall_usd) || (b.loads90 - a.loads90)
+      || ((a.margin_value || 0) - (b.margin_value || 0)) || String(a.site).localeCompare(String(b.site)));
+    // Busiest sites first, a site's agreements together: one pin costs all of them.
+    const ndSiteLoads = new Map();
+    noDistRows.forEach(x => ndSiteLoads.set(norm(x.site), (ndSiteLoads.get(norm(x.site)) || 0) + x.loads90));
+    noDistRows.sort((a, b) => ((ndSiteLoads.get(norm(b.site)) || 0) - (ndSiteLoads.get(norm(a.site)) || 0))
+      || String(a.site).localeCompare(String(b.site)) || (b.loads90 - a.loads90) || String(a.party).localeCompare(String(b.party)));
+    const data = {
+      rows,
+      noDistRows,
+      noDistSites: ndSiteLoads.size,
+      listRefCnt,
+      agreements,
+      costable,
+      sites: bySite.size,
+      lossCnt,
+      nightCnt,
+      noDistCnt,
+      noFuelCnt,
+      dormantCnt,
+      shortfall90: round2(shortfall),
+      lossLoads90: lossLoads,
+      prices: Array.from(prices.values()).sort((a, b) => String(a.co).localeCompare(String(b.co))),
+      showFuel
+    };
+    _nbSentinelCache = { key, data };
+    return data;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Price floor for a delivery agreement being typed (Sales (Delivery) / Haulage (Customer Site)):
+  //   floor per unit = pickup (or list) price + fuel for the round trip at the latest diesel price,
+  //   night floor    = floor + the region's night trip pay, both spread over the usual load.
+  // Same arithmetic as the site net-back: the draft goes through computeSiteNetBack as one agreement.
+  // ---------------------------------------------------------------------------------------------
+  function computePriceRuleFloor(draft) {
+    if (!draft || !draft.site || getActiveIndustry() !== 'Manufacturing') return null;
+    const rt = String(draft.rule_type || '').trim();
+    if (!/^(Sales \(Delivery\)|Haulage \(Customer Site\))$/i.test(rt)) return null;
+    const today = todayISO();
+    const asOf = draft.start_date && String(draft.start_date).slice(0, 10) > today ? String(draft.start_date).slice(0, 10) : today;
+    const co = canonTwBu(draft.company || 'WTC');
+    const nb = computeSiteNetBack(draft.site, draft.site, [draft], { today: asOf, defaultCo: co, regionHint: draft.regionHint || '' });
+    const row = nb.rows[0];
+    const inp = nb.inputs[0];
+    if (!row || !inp) return null;
+    const q = row.loadQty > 0 ? row.loadQty : null;
+    const fuelUnit = row.fuelUnit != null ? row.fuelUnit : null;
+    // The agreement's own night rate (a customer moved off an area site keeps the area's rate, as payroll pays it).
+    const nightRate = row.tripPay != null ? row.tripPay : (inp.trip ? inp.trip.rate : 0);
+    const nightPayUnit = (inp.showTripPay && nightRate > 0 && q) ? nightRate / q : 0;
+    const needsPickup = /^Sales \(Delivery\)$/i.test(rt) && !row.isTransOnlyLine;
+    const floorUnit = fuelUnit == null || (needsPickup && row.pickupUnit == null) ? null : (needsPickup ? row.pickupUnit : 0) + fuelUnit;
+    // A product line is compared only once its material price is typed (a transport rate alone is not a delivered price).
+    const entered = needsPickup
+      ? Number(draft._enteredMat || 0) > 0
+      : (Number(draft._enteredMat || 0) > 0 || Number(draft._enteredTrans || 0) > 0);
+    // What the floor is compared with: the delivered price, or the haulage rate on transport-only agreements.
+    const rateUnit = row.deliveredUnit != null ? row.deliveredUnit : null;
+    const gapUnit = (entered && floorUnit != null && rateUnit != null) ? rateUnit - floorUnit : null;
+    let state = 'idle';
+    if (row.status === 'nodist') state = 'nodist';
+    else if (row.status === 'nofuel') state = 'nofuel';
+    else if (row.status === 'nounit') state = 'nounit';
+    else if (floorUnit == null) state = 'noref';
+    else if (!entered) state = 'idle';
+    else if (gapUnit < -0.005) state = 'below';
+    else if (nightPayUnit > 0 && gapUnit - nightPayUnit < -0.005) state = 'night';
+    else if (row.status === 'thin') state = 'thin';
+    else state = 'ok';
+    return {
+      state,
+      co,
+      unitLbl: row.unitLbl,
+      loadQty: q,
+      loadSrc: row.loadSrc,
+      needsPickup,
+      pickupUnit: needsPickup ? row.pickupUnit : null,
+      pickupSrc: row.pickupSrc || '',
+      fuelUnit,
+      fuelPerTrip: inp.fuelPerTrip,
+      nightPayUnit,
+      floorUnit,
+      nightFloorUnit: floorUnit != null && nightPayUnit > 0 ? floorUnit + nightPayUnit : null,
+      rateUnit,
+      fuelSurUnit: row.fuelSurUnit > 0 ? row.fuelSurUnit : null, // the clause's surcharge at the latest diesel price, inside rateUnit
+      gapUnit,
+      gapPerLoad: gapUnit != null && q ? gapUnit * q : null,
+      transFrom: row.transFrom || '',
+      leg: inp.leg,
+      burn: inp.showBurn ? inp.burn : null,
+      fuelPrice: inp.showFuelInputs ? inp.fuelPrice : null,
+      tripRegion: inp.showTripPay ? (row.tripRegion || (inp.trip ? inp.trip.region : '')) : '',
+      loads90: row.loads90
+    };
+  }
+
+  function renderPriceRuleFloorStrip(ctx) {
+    const el = $('prFloorStrip');
+    if (!el) return null;
+    const hide = () => {
+      if (!el.hidden || el.innerHTML) { el.hidden = true; el.innerHTML = ''; }
+      el.removeAttribute('data-floor-state');
+      return null;
+    };
+    if (!ctx || !(ctx.isSalesDel || ctx.isHaulCust) || !ctx.site) return hide();
+    // Rule #22 switched off in Alerts & Thresholds switches the form warning off too.
+    if (typeof isAlertRuleEnabled === 'function' && !isAlertRuleEnabled('S12')) return hide();
+    const editing = STATE.editingRecord && STATE.editingRecord.orig ? STATE.editingRecord.orig : null;
+    // A clause being typed is costed in the strip only for a seat that may read diesel purchases: otherwise the
+    // surcharge of a made-up clause would spell the diesel price out.
+    const floorMayFuel = canSeeFuelEconomics() && isFuelCompanyAllowed(ctx.co);
+    const matIsTruck = ctx.hasMat && ctx.uomVal === 'Truck';
+    const transIsTruck = ctx.hasTrans && ctx.ratePer === 'Truck';
+    const up = Number(ctx.up || 0);
+    const tp = Number(ctx.tp || 0);
+    // Built like the saved record (validateAndBuild): flat truck rates go to the indifferent-price fields.
+    const draft = {
+      id: editing && editing.id != null ? String(editing.id) : '__pr_floor_draft__',
+      rule_type: ctx.rt,
+      company: ctx.co,
+      customer: ctx.customer || '',
+      supplier: ctx.supplier || '',
+      site: ctx.site,
+      product: ctx.product || '',
+      unit: ctx.hasMat ? ctx.uomVal : ctx.ratePer,
+      rate_per: ctx.hasTrans ? ctx.ratePer : ctx.uomVal,
+      unit_price: (!ctx.hasMat || matIsTruck) ? 0 : up,
+      price: (!ctx.hasMat || matIsTruck) ? null : (up || null),
+      trans_unit_price: (!ctx.hasTrans || transIsTruck) ? 0 : tp,
+      indiff_price: matIsTruck ? (up || null) : ((!ctx.hasMat && transIsTruck) ? (tp || null) : null),
+      trans_indiff_price: (ctx.hasMat && transIsTruck) ? (tp || null) : null,
+      start_date: ctx.startDate || '',
+      end_date: ctx.endDate || '',
+      regionHint: ctx.regionHint || '',
+      fuel_base_price: floorMayFuel && Number(ctx.fuelBase) > 0 ? Number(ctx.fuelBase) : null,
+      fuel_step: floorMayFuel && Number(ctx.fuelStep) > 0 ? Number(ctx.fuelStep) : null,
+      fuel_surcharge: floorMayFuel && Number(ctx.fuelSur) > 0 ? Number(ctx.fuelSur) : null,
+      _enteredMat: ctx.hasMat ? up : 0,
+      _enteredTrans: ctx.hasTrans ? tp : 0
+    };
+    let fl = null;
+    try {
+      fl = computePriceRuleFloor(draft);
+    } catch (flErr) {
+      console.warn('[price floor] skipped', flErr);
+    }
+    if (!fl) return hide();
+
+    const nv = v => `<span data-no-i18n="1">${v}</span>`;
+    const perU = v => `${nv(esc(fmtUSD(v, 2)))} <small class="site-nb-uom" data-no-i18n="1">/ ${esc(fl.unitLbl)}</small>`;
+    const stateMap = {
+      below: ['is-crit', 'Below Price Floor'],
+      night: ['is-warn', 'Night Trips Lose'],
+      thin: ['is-warn', 'Thin Margin'],
+      ok: ['is-ok', 'Above Price Floor'],
+      idle: ['is-neutral', 'Enter a rate to compare'],
+      noref: ['is-neutral', 'No Pickup Price'],
+      nodist: ['is-neutral', 'No Distance'],
+      nofuel: ['is-neutral', 'No Fuel Price'],
+      nounit: ['is-neutral', 'Unit Not Costed']
+    };
+    const [stCls, stLbl] = stateMap[fl.state] || stateMap.idle;
+    const chips = [];
+    if (fl.needsPickup) {
+      chips.push(`<span class="site-nb-chip" data-floor-ref-src="${esc(fl.pickupSrc || '')}"><small>${esc(netBackRefLabel(fl.pickupSrc))}</small><b>${fl.pickupUnit != null ? perU(fl.pickupUnit) : '-'}</b></span>`);
+    }
+    if (fl.leg) {
+      const legSub = `${nv(`${esc(fmtNum(fl.leg.roundTripKm, 1))} km`)} <span>Round Trip</span>${fl.loadQty ? ` · <span>Load</span> ${nv(`${esc(fmtNum(fl.loadQty, fl.loadQty % 1 ? 1 : 0))} ${esc(fl.unitLbl)}`)}` : ''}`;
+      chips.push(`<span class="site-nb-chip"><small>Fuel Cost</small><b>${fl.fuelUnit != null ? perU(fl.fuelUnit) : '-'}</b><em>${legSub}</em></span>`);
+    } else {
+      chips.push(`<span class="site-nb-chip is-approx"><small>Fuel Cost</small><b>Pin the site to compute</b></span>`);
+    }
+    if (fl.fuelPrice) {
+      chips.push(`<span class="site-nb-chip${fl.fuelPrice.pendingNewer > 0 ? ' is-approx' : ''}" data-floor-fuel-price="${esc(String(fl.fuelPrice.usdPerL))}" data-floor-fuel-date="${esc(fl.fuelPrice.date)}"><small>Latest Diesel Price</small><b>${nv(`${esc(fmtUSD(fl.fuelPrice.usdPerL, 3))}/L`)}</b><em>${fl.fuelPrice.src === 'group' ? '<span>Group purchase</span>' : '<span>Bought</span>'}${fl.fuelPrice.date ? ` ${nv(esc(fmtDateDMY(fl.fuelPrice.date)))}` : ''}</em></span>`);
+    } else if (fl.state === 'nofuel') {
+      chips.push(`<span class="site-nb-chip is-approx"><small>Latest Diesel Price</small><b>No priced delivery yet</b></span>`);
+    }
+    chips.push(`<span class="site-nb-chip is-key" data-floor-val="${fl.floorUnit != null ? esc(String(Math.round(fl.floorUnit * 10000) / 10000)) : ''}"><small>Price Floor</small><b>${fl.floorUnit != null ? perU(fl.floorUnit) : '-'}</b></span>`);
+    if (fl.nightFloorUnit != null) {
+      chips.push(`<span class="site-nb-chip"><small>Night Floor</small><b>${perU(fl.nightFloorUnit)}</b>${fl.tripRegion ? `<em data-no-i18n="1">${esc(fl.tripRegion)}</em>` : ''}</span>`);
+    }
+    if (fl.fuelSurUnit != null) {
+      chips.push(`<span class="site-nb-chip" data-floor-fuel-sur="${esc(String(Math.round(fl.fuelSurUnit * 10000) / 10000))}"><small>Fuel Surcharge Now</small><b>${perU(fl.fuelSurUnit)}</b></span>`);
+    }
+    if (fl.gapUnit != null) {
+      chips.push(`<span class="site-nb-chip${fl.transFrom ? ' is-approx' : ''}"><small>This Rate</small><b>${perU(fl.rateUnit)}</b>${fl.transFrom ? `<em>${fl.transFrom === 'haulage' ? 'Incl. Customer Haulage' : 'Incl. Separate Transport'}</em>` : (fl.fuelSurUnit != null ? '<em>Incl. Fuel Surcharge</em>' : '')}</span>`);
+    }
+    let msg = '';
+    if (fl.state === 'below') {
+      msg = `<span>This rate is below the price floor by</span> <b class="is-neg">${perU(Math.abs(fl.gapUnit))}</b>${fl.gapPerLoad != null ? ` <span>Every own-fleet load loses</span> <b class="is-neg">${nv(esc(fmtUSD(Math.abs(fl.gapPerLoad), 2)))}</b> <span>against selling at pickup.</span>` : ''}`;
+    } else if (fl.state === 'night') {
+      msg = `<span>Day trips clear the floor by</span> <b>${perU(fl.gapUnit)}</b> <span>Night trips fall short by</span> <b class="is-neg">${perU(Math.abs(fl.gapUnit - fl.nightPayUnit))}</b>`;
+    } else if (fl.state === 'thin') {
+      msg = `<span>Above the floor by only</span> <b>${perU(fl.gapUnit)}</b> <span>A small diesel price rise turns this agreement into a loss.</span>`;
+    } else if (fl.state === 'ok') {
+      msg = `<span>Above the price floor by</span> <b>${perU(fl.gapUnit)}</b>`;
+    } else if (fl.state === 'noref') {
+      msg = '<span>No pickup or list price for this product and unit, so only the fuel cost can be shown.</span>';
+    } else if (fl.state === 'nodist') {
+      msg = '<span>Pin the site on the map or set its distance to compute the fuel cost.</span>';
+    } else if (fl.state === 'nofuel') {
+      msg = '<span>No priced diesel delivery on file yet, so the fuel cost cannot be computed.</span>';
+    } else if (fl.state === 'nounit') {
+      msg = '<span>This pricing unit has no load size to cost.</span>';
+    } else {
+      msg = '<span>The delivered rate should not go below the price floor.</span>';
+    }
+    el.hidden = false;
+    el.setAttribute('data-floor-state', fl.state);
+    el.className = `form-field span-3 pr-floor-strip is-${fl.state}`;
+    el.innerHTML = `
+      <div class="pr-floor-head">
+        <span class="site-nb-kicker">${ic('fuel')} <span>Delivery Price Floor</span></span>
+        <span class="site-nb-status ${stCls}" id="prFloorStatus">${esc(stLbl)}</span>
+      </div>
+      <div class="site-nb-inputs">${chips.join('')}</div>
+      <div class="pr-floor-msg" id="prFloorMsg">${msg}</div>
+      <div class="site-nb-foot"><span>Fuel only: driver salary, tyres and wear are not included.</span> <span>Fuel is costed at the latest priced diesel delivery and moves with every new purchase.</span></div>
+    `;
+    return fl;
+  }
+
+  function renderSiteNetBackStripHtml(nb, opts = {}) {
+    if (!nb || !nb.rows.length) return '';
+    const domId = opts.id || 'siteNetBackStrip';
+    const nv = v => `<span data-no-i18n="1">${v}</span>`;
+    const money = (v, unitLbl) => (v == null || !Number.isFinite(v))
+      ? '<span class="mu">-</span>'
+      : `<span class="mono${v < -0.005 ? ' is-neg' : ''}" data-no-i18n="1">${esc(fmtUSD(v, 2))}</span>${unitLbl ? ` <small class="site-nb-uom" data-no-i18n="1">/ ${esc(unitLbl)}</small>` : ''}`;
+    const statusPill = row => {
+      const lossLbl = netBackLossLabel(row.lossRef);
+      const map = {
+        loss: ['is-crit', lossLbl],
+        night: ['is-warn', 'Night Trips Lose'],
+        thin: ['is-warn', 'Thin Margin'],
+        ok: ['is-ok', 'Covers Fuel'],
+        noref: ['is-neutral', 'No Pickup Price'],
+        noprice: ['is-neutral', 'No Delivered Price'],
+        nounit: ['is-neutral', 'Unit Not Costed'],
+        nodist: ['is-neutral', 'No Distance'],
+        nofuel: ['is-neutral', 'No Fuel Price'],
+        buy: ['is-info', 'Hauler Premium']
+      };
+      const [cls, lbl] = map[row.status] || map.noref;
+      return `<span class="site-nb-status ${cls}">${esc(lbl)}</span>`;
+    };
+    const fuelPriceChip = inp => {
+      const fp = inp.fuelPrice;
+      if (!fp) return `<span class="site-nb-chip is-approx" data-nb-fuel-price="none"><small>Latest Diesel Price</small><b>No priced delivery yet</b></span>`;
+      const sub = `${fp.src === 'group' ? `<span>Group purchase</span>` : `<span>Bought</span>`}${fp.date ? ` ${nv(esc(fmtDateDMY(fp.date)))}` : ''}${fp.src === 'group' && fp.co ? ` · ${nv(esc(fp.co))}` : ''}`;
+      const tip = fp.pendingNewer > 0 ? ' data-ui-tip="A newer delivery is in the tank without an invoice price yet. The figure updates when it is priced."' : '';
+      return `<span class="site-nb-chip${fp.pendingNewer > 0 ? ' is-approx' : ''}" data-nb-fuel-price="${esc(String(fp.usdPerL))}" data-nb-fuel-date="${esc(fp.date)}"${tip}><small>Latest Diesel Price</small><b>${nv(`${esc(fmtUSD(fp.usdPerL, 3))}/L`)}</b><em>${sub}</em></span>`;
+    };
+    const srcLbl = {
+      'Unsaved map pin': 'Unsaved map pin',
+      'Saved custom KM': 'Saved custom KM',
+      'Road route': 'Road route',
+      'Map road estimate': 'Map road estimate',
+      'Region zone estimate': 'Region zone estimate',
+      'Region reference KM': 'Region reference KM'
+    };
+    const burnSrcLbl = { fleet: 'Fleet odometer', group: 'Group fleet odometer', standard: 'Standard estimate' };
+    const multiCo = nb.inputs.length > 1;
+    const inputsHtml = nb.inputs.map(inp0 => {
+      // A site made for customers moved off an area site: show the night rate those customers are paid at.
+      const areaRow = inp0.showTripPay ? nb.rows.find(rw => rw.co === inp0.co && rw.tripFromArea) : null;
+      const inp = areaRow ? Object.assign({}, inp0, { trip: { rate: areaRow.tripPay || 0, region: areaRow.tripRegion || '' } }) : inp0;
+      return `
+      <div class="site-nb-inputs" data-nb-co="${esc(inp.co)}">
+        ${multiCo ? `<span class="site-nb-co" data-no-i18n="1">${esc(inp.co)}</span>` : ''}
+        ${inp.leg ? `
+          <span class="site-nb-chip"><small>Round Trip</small><b>${nv(`${esc(fmtNum(inp.leg.roundTripKm, 1))} km`)}</b></span>
+          <span class="site-nb-chip${inp.leg.approx ? ' is-approx' : ''}"><small>Distance Basis</small><b>${esc(srcLbl[inp.leg.source] || 'Map road estimate')}</b></span>
+        ` : `<span class="site-nb-chip is-approx"><small>Round Trip</small><b>Pin the site to compute</b></span>`}
+        ${inp.showBurn ? `<span class="site-nb-chip"><small>Fleet Burn</small><b>${nv(`${esc(fmtNum(inp.burn.lPerKm, 2))} L/km`)}</b><em>${esc(burnSrcLbl[inp.burn.src] || 'Standard estimate')}</em></span>` : ''}
+        ${inp.showFuelInputs ? fuelPriceChip(inp) : ''}
+        <span class="site-nb-chip is-key"><small>Fuel per Trip</small><b>${inp.fuelPerTrip != null ? nv(esc(fmtUSD(inp.fuelPerTrip, 2))) : '-'}</b></span>
+        ${inp.showTripPay ? `<span class="site-nb-chip"><small>Night Trip Pay</small><b>${inp.trip.rate > 0 ? nv(esc(fmtUSD(inp.trip.rate, 2))) : '-'}</b>${inp.trip.region ? `<em data-no-i18n="1">${esc(inp.trip.region)}</em>` : ''}</span>` : ''}
+      </div>
+    `;
+    }).join('');
+
+    const rowsHtml = nb.rows.map(row => {
+      const partyHtml = row.party ? `<span data-no-i18n="1">${esc(row.party)}</span>` : '<span>Site Default</span>';
+      const prodHtml = row.product ? `<span data-no-i18n="1">${esc(row.product)}</span>` : '<span>All Products</span>';
+      const loadTip = row.loadSrc === 'site' ? 'Median own-fleet load delivered to this site'
+        : (row.loadSrc === 'company' ? 'Median own-fleet delivery load for this company'
+          : (row.loadSrc === 'load' ? 'Flat rate per load' : 'Median registered capacity of own trucks'));
+      const marginCell = row.status === 'buy'
+        ? money(row.haulerPremiumUnit, row.unitLbl)
+        : money(row.marginUnit, row.unitLbl);
+      const beCell = row.breakevenKm == null
+        ? '<span class="mu">-</span>'
+        : `<span class="mono${row.oneWayKm != null && row.oneWayKm > row.breakevenKm ? ' is-neg' : ''}" data-no-i18n="1">${esc(fmtNum(row.breakevenKm, 0))} km</span>`;
+      return `
+        <tr class="site-nb-row is-${esc(row.status)}" data-open-site-rule="${esc(row.id)}" data-nb-status="${esc(row.status)}" role="button" tabindex="0" data-ui-tip="Click to open and edit this price agreement">
+          <td>
+            <span class="site-rule-type-pill ${esc(row.typeCls)}">${esc(row.typeLbl)}</span>
+            <div class="site-nb-party">${partyHtml} · ${prodHtml}</div>
+            ${row.loadQty != null ? `<div class="site-nb-load" data-ui-tip="${esc(loadTip)}"><span>Load</span> ${nv(`${esc(fmtNum(row.loadQty, row.loadQty % 1 ? 1 : 0))} ${esc(row.unitLbl)}`)}${multiCo ? ` · ${nv(esc(row.co))}` : ''}</div>` : ''}
+          </td>
+          <td class="r">${money(row.deliveredUnit, row.unitLbl)}${row.transFrom ? `<div class="site-nb-sub">${row.transFrom === 'haulage' ? 'Incl. Customer Haulage' : 'Incl. Separate Transport'}</div>` : (row.isTransOnlyLine ? '<div class="site-nb-sub">Transport Only</div>' : '')}${row.fuelSurUnit > 0 ? `<div class="site-nb-sub" data-nb-fuel-sur="${esc(String(Math.round(row.fuelSurUnit * 10000) / 10000))}"><span>Incl. Fuel Surcharge</span> ${money(row.fuelSurUnit, '')}</div>` : ''}</td>
+          <td class="r">${row.pickupUnit != null ? `${money(row.pickupUnit, row.unitLbl)}${row.pickupSrc && row.pickupSrc !== 'pickup' ? `<div class="site-nb-sub" data-nb-ref-src="${esc(row.pickupSrc)}">${esc(netBackRefLabel(row.pickupSrc))}</div>` : ''}` : '<span class="mu">-</span>'}</td>
+          <td class="r">${money(row.fuelUnit, row.unitLbl)}</td>
+          <td class="r">${money(row.netBackUnit, row.unitLbl)}</td>
+          <td class="r">${marginCell}${row.status !== 'buy' && row.nightMarginUnit != null && row.nightMarginUnit !== row.marginUnit ? `<div class="site-nb-sub"><span>Night</span> ${money(row.nightMarginUnit, '')}</div>` : ''}</td>
+          <td class="r">${beCell}</td>
+          <td class="r">${row.loads90 == null ? '<span class="mu">-</span>' : nv(esc(fmtNum(row.loads90, 0)))}</td>
+          <td class="r">${statusPill(row)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const pills = [
+      nb.lossCnt ? `<span class="site-nb-pill is-crit">${nv(esc(fmtNum(nb.lossCnt, 0)))} <span>Losing on Haulage</span></span>` : '',
+      nb.nightCnt ? `<span class="site-nb-pill is-warn">${nv(esc(fmtNum(nb.nightCnt, 0)))} <span>Night Trips Lose</span></span>` : '',
+      nb.thinCnt ? `<span class="site-nb-pill is-warn">${nv(esc(fmtNum(nb.thinCnt, 0)))} <span>Thin Margin</span></span>` : '',
+      nb.okCnt ? `<span class="site-nb-pill is-ok">${nv(esc(fmtNum(nb.okCnt, 0)))} <span>Covers Fuel</span></span>` : '',
+      nb.shortfall90 > 0 ? `<span class="site-nb-pill is-crit"><span>Shortfall, Last 90 Days</span> ${nv(esc(fmtUSD(nb.shortfall90, 0)))}</span>` : ''
+    ].join('');
+
+    return `
+      <div class="site-nb-strip${opts.compact ? ' is-compact' : ''}" id="${esc(domId)}" data-nb-rows="${nb.rows.length}" data-nb-loss="${nb.lossCnt}" data-nb-night="${nb.nightCnt}" data-nb-thin="${nb.thinCnt}">
+        <div class="site-nb-head">
+          <span class="site-nb-kicker">${ic('fuel')} Net-Back &amp; Haulage Breakeven</span>
+          <span class="site-nb-pills">${pills}</span>
+        </div>
+        ${inputsHtml}
+        <div class="table-wrap site-nb-table-wrap">
+          <table class="ledger-table site-nb-table">
+            <thead>
+              <tr>
+                <th>Agreement</th>
+                <th class="r">Delivered</th>
+                <th class="r">Pickup Price</th>
+                <th class="r">Fuel Cost</th>
+                <th class="r">Net-Back</th>
+                <th class="r">Haul Margin</th>
+                <th class="r" data-ui-tip="Longest one-way distance the haulage income still covers in fuel">Breakeven</th>
+                <th class="r">Loads (90 Days)</th>
+                <th class="r">Status</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+        <div class="site-nb-foot"><span>${nb.inputs.some(i => i.showTripPay)
+          ? 'Fuel only: driver salary, tyres and wear are not included. Night Trip Pay is added on overtime trips.'
+          : 'Fuel only: driver salary, tyres and wear are not included.'}</span> <span>Fuel is costed at the latest priced diesel delivery and moves with every new purchase.</span></div>
+      </div>
+    `;
+  }
+
   // ---- Area-as-site notice + "Move to Own Site" panel on the Price Agreement form ----
   const _AREA_SWITCH_ERR = {
     industry: 'Site switches apply to Manufacturing delivery sites only.',
@@ -84421,6 +86101,23 @@
       </tr>
     `;
 
+    let netBackHtml = '';
+    try {
+      const liveLat = Number(val('f_lat'));
+      const liveLng = Number(val('f_lng'));
+      const hasLivePin = val('f_lat') !== '' && val('f_lng') !== '' && Number.isFinite(liveLat) && Number.isFinite(liveLng);
+      const nb = computeSiteNetBack(cleanSite || cleanOrig, cleanOrig, scopedRules.filter(r => isSiteRuleInForceOn(r, todayStr)), {
+        today: todayStr,
+        defaultCo: singleBu || 'WTC',
+        regionHint: val('f_region') || (siteRow && siteRow.region) || '',
+        liveCoord: hasLivePin ? { lat: liveLat, lng: liveLng } : null
+      });
+      netBackHtml = renderSiteNetBackStripHtml(nb, { id: 'siteNetBackStrip' });
+    } catch (nbErr) {
+      console.warn('[site net-back] skipped', nbErr);
+      netBackHtml = '';
+    }
+
     const prevSearch = $('siteRulesSearchInput');
     const searchWasFocused = Boolean(prevSearch && document.activeElement === prevSearch);
     const selStart = searchWasFocused ? prevSearch.selectionStart : null;
@@ -84470,6 +86167,7 @@
             </div>
           </div>
         </div>
+        ${netBackHtml}
         <div class="table-wrap site-rules-table-wrap">
           <table class="ledger-table site-rules-table">
             <thead>
@@ -85955,6 +87653,62 @@
 
         const up = hasMat ? num('f_unitprice') : 0;
         const tp = hasTrans ? num('f_transunitprice') : 0;
+
+        // Ex-Works Floor (List Price agreements) and the fuel surcharge clause (delivery agreements).
+        const isFuelClauseType = isSalesDel || isHaulCust;
+        // The clause is set and changed only by a seat that may read the company's diesel purchases: any other seat
+        // could read the purchase price back from a clause of its own making (a ticket's surcharge counts the steps).
+        // For that seat the fields stay off the form and a stored clause is saved back untouched.
+        const mayReadFuel = canSeeFuelEconomics() && isFuelCompanyAllowed(prCo);
+        const fuelFieldsOn = isFuelClauseType && mayReadFuel;
+        setFieldVisible('wrap_pr_floorprice', isList);
+        ['wrap_pr_fuel_hdr', 'wrap_pr_fuelbase', 'wrap_pr_fuelstep', 'wrap_pr_fuelsur'].forEach(id => setFieldVisible(id, fuelFieldsOn));
+        if (!isList && $('f_floorprice') && $('f_floorprice').value) $('f_floorprice').value = '';
+        if (!fuelFieldsOn) ['f_fuelbase', 'f_fuelstep', 'f_fuelsur'].forEach(id => { if ($(id) && $(id).value) $(id).value = ''; });
+        const floorLblEl = document.querySelector('#wrap_pr_floorprice .pa-fld-lbl');
+        if (floorLblEl) floorLblEl.textContent = isTruckMat ? 'Ex-Works Floor ($)' : `Ex-Works Floor ($ / ${uomVal})`;
+        const fuelSurLblEl = document.querySelector('#wrap_pr_fuelsur .pa-fld-lbl');
+        if (fuelSurLblEl) fuelSurLblEl.textContent = `Surcharge per Step ($ / ${ratePer === 'Truck' ? 'Truck Load' : ratePer})`;
+        if (isList) {
+          const floorV = num('f_floorprice');
+          if (floorV > 0 && up > 0 && floorV > up) setHint('hint_pr_floorprice', 'The ex-works floor cannot be above the list price.', 'crit');
+          else if (floorV > 0) setHint('hint_pr_floorprice', 'Used as the pickup price for delivery customers with no pickup agreement.', 'ok');
+          else setHint('hint_pr_floorprice', 'Blank = the lowest pickup price in force is used for delivery customers with no pickup agreement.', '');
+        }
+        if (fuelFieldsOn) {
+          const fBase = num('f_fuelbase'), fStep = num('f_fuelstep'), fSur = num('f_fuelsur');
+          // Diesel price at signing: filled from the purchase that was the latest one on the start date, and
+          // refilled when that date changes, until the field is typed in.
+          if ((fStep > 0 || fSur > 0) && mayReadFuel && !FORM_UI.fuelBaseTouched && $('f_fuelbase')
+            && (!$('f_fuelbase').value || FORM_UI.fuelBaseAuto)) {
+            const atStart = getDieselPriceOn(prCo, val('f_date') || todayISO());
+            if (atStart && atStart.usdPerL > 0) {
+              $('f_fuelbase').value = Number(atStart.usdPerL).toFixed(4);
+              FORM_UI.fuelBaseAuto = true;
+            }
+          }
+          const fBaseNow = num('f_fuelbase');
+          setHint('hint_pr_fuelbase', FORM_UI.fuelBaseAuto && fBaseNow > 0
+            ? 'Filled from the latest priced diesel delivery. Change it if the agreement names another price.'
+            : 'The diesel price named in the agreement. The surcharge starts above it.', FORM_UI.fuelBaseAuto && fBaseNow > 0 ? 'ok' : '');
+          const anyFuel = fBaseNow > 0 || fStep > 0 || fSur > 0;
+          const allFuel = fBaseNow > 0 && fStep > 0 && fSur > 0;
+          if (anyFuel && !allFuel) {
+            setHint('hint_pr_fuelsur', 'Fill all three fields to switch the clause on, or clear them.', 'warn');
+          } else if (allFuel && fStep < FUEL_CLAUSE_MIN_STEP) {
+            setHint('hint_pr_fuelsur', 'The diesel price step cannot be smaller than $0.01 / L.', 'crit');
+          } else if (allFuel) {
+            const nowPrice = getLatestDieselPrice(prCo);
+            if (nowPrice && nowPrice.usdPerL > 0) {
+              const fsNow = computeFuelSurcharge({ base: fBaseNow, step: fStep, sur: fSur }, nowPrice.usdPerL);
+              setHint('hint_pr_fuelsur', `At the latest diesel price the surcharge is ${fmtUSD(fsNow.perUnit, 2)} / ${ratePer === 'Truck' ? 'Truck Load' : ratePer} (${fmtNum(fsNow.steps, 0)} step${fsNow.steps === 1 ? '' : 's'}).`, 'ok');
+            } else {
+              setHint('hint_pr_fuelsur', 'No priced diesel delivery on file yet, so no surcharge applies.', 'warn');
+            }
+          } else {
+            setHint('hint_pr_fuelsur', 'Added to the transport rate for each full step the diesel price stands above the price at signing.', '');
+          }
+        }
         const a1 = matIsM3 ? num('f_adj1') : 0;
         const ta1 = transIsM3 ? num('f_transadj1') : 0;
         const q2 = num('f_qty2');
@@ -86050,6 +87804,17 @@
                 ? `${fmtUSD(up, 2)} / ${matUnitDisp}`
                 : (!hasMat && hasTrans ? `${fmtUSD(tp, 2)} / ${trUnitDisp}` : `${matPart}${trPart ? ' + ' + trPart : ''}`)));
         }
+        // Live price floor (pickup + fuel at the latest diesel price + night trip pay) for delivery agreements.
+        renderPriceRuleFloorStrip({
+          rt, isSalesDel, isHaulCust, hasMat, hasTrans, uomVal, ratePer, up, tp,
+          co: prCo, customer: showCustomer ? prCust : '', supplier: showSupplier ? prSup : '',
+          site: showSite ? prSite : '', product: prProduct,
+          startDate: val('f_date') || '', endDate: val('f_enddate') || '',
+          regionHint: (prSiteObj && effectiveSiteRegion(prSiteObj, prSite)) || val('f_site_region') || '',
+          fuelBase: fuelFieldsOn ? num('f_fuelbase') : 0,
+          fuelStep: fuelFieldsOn ? num('f_fuelstep') : 0,
+          fuelSur: fuelFieldsOn ? num('f_fuelsur') : 0
+        });
         renderAdminLockBar();
         return { up, tp };
       }
@@ -90346,6 +92111,7 @@
     if (!body) return;
     clearTimeout(modalFocusTimer);
     FORM_UI.priceManual = false; FORM_UI.transManual = false; FORM_UI.methodManual = false; FORM_UI.uomManual = false; FORM_UI.meterTypeManual = false;
+    FORM_UI.fuelBaseTouched = false; FORM_UI.fuelBaseAuto = false;
     FORM_UI.otManual = false; FORM_UI.ticketManual = false; FORM_UI.qtyManual = false; FORM_UI.repDateManual = false; FORM_UI.showRepDate = false; FORM_UI.afterHoursYesterday = false;
     FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; FORM_UI.settleLegManual = false; FORM_UI.postAttempted = false;
     FORM_UI.rawSupplyModeManual = false; FORM_UI.transportByManual = false;
@@ -92299,6 +94065,7 @@
         }
         if (el.id === 'f_unitprice' && (isFieldAdminUnlocked('f_unitprice') || el.dataset.policyLockedNow !== '1')) FORM_UI.priceManual = true;
         if (el.id === 'f_transunitprice' && (isFieldAdminUnlocked('f_transunitprice') || el.dataset.policyLockedNow !== '1')) FORM_UI.transManual = true;
+        if (el.id === 'f_fuelbase') { FORM_UI.fuelBaseTouched = true; FORM_UI.fuelBaseAuto = false; } // a typed (or cleared) base is never refilled
         if (el.id === 'f_method' && (isFieldAdminUnlocked('f_method') || el.dataset.policyLockedNow !== '1')) FORM_UI.methodManual = true;
         if (el.id === 'f_uom' && (isFieldAdminUnlocked('f_uom') || el.dataset.policyLockedNow !== '1')) {
           FORM_UI.uomManual = true;
@@ -92812,6 +94579,12 @@
           trans_tier_adj: (!isRetS && c.tierTrAdj) || 0,
           ...(!isRetS && c.matIsIndiff ? { mat_indiff: true } : {}),
           ...(!isRetS && c.transIsIndiff ? { trans_indiff: true } : {}),
+          // Fuel surcharge inside the transport price, with the diesel price it was worked at (cleared on an edit that drops it).
+          ...((!isRetS && c.fuelSur)
+            ? { fuel_surcharge_unit: c.fuelSur.unit, fuel_steps: c.fuelSur.steps, fuel_price_ref: c.fuelSur.ref }
+            : ((editCtx && editCtx.crKey === 'sales_tickets' && editCtx.orig && (editCtx.orig.fuel_surcharge_unit != null || editCtx.orig.fuel_steps != null))
+                ? { fuel_surcharge_unit: null, fuel_steps: null }
+                : {})),
           tip: effTipS,
           discount: effDiscS,
           total: effNetS,
@@ -93344,6 +95117,31 @@
         if (!val('f_supplier')) addErr('f_supplier', 'A Commission rule needs the Plant Owner / Beneficiary.');
         if (!(up0 > 0)) addErr('f_unitprice', 'Commission rate ($ / unit) must be above zero.');
       }
+      // Ex-Works Floor (List Price agreements) and the fuel surcharge clause (delivery agreements): all three clause
+      // fields or none, so a half-typed clause is never saved as if it were in force.
+      const floorV = rt === 'List Price' ? roundPrRate(num('f_floorprice')) : 0;
+      if (floorV > 0 && up0 > 0 && floorV > up0) addErr('f_floorprice', 'The ex-works floor cannot be above the list price.');
+      const isFuelClauseRt = rt === 'Sales (Delivery)' || rt === 'Haulage (Customer Site)';
+      // Only a seat that may read the company's diesel purchases sets or changes a clause (it never trusts the
+      // form fields of another seat): for any other seat the clause already stored on the agreement is saved back.
+      const fuelEditAllowed = canSeeFuelEconomics() && isFuelCompanyAllowed(company);
+      const prOrigFuel = (editCtx && editCtx.crKey === 'price_rules' && editCtx.orig) ? editCtx.orig : null;
+      const fuelFieldV = (fieldId, key) => {
+        if (!isFuelClauseRt) return 0;
+        if (fuelEditAllowed) return roundPrRate(num(fieldId));
+        return prOrigFuel ? roundPrRate(Number(prOrigFuel[key]) || 0) : 0;
+      };
+      const fuelBaseV = fuelFieldV('f_fuelbase', 'fuel_base_price');
+      const fuelStepV = fuelFieldV('f_fuelstep', 'fuel_step');
+      const fuelSurV = fuelFieldV('f_fuelsur', 'fuel_surcharge');
+      const fuelAny = fuelBaseV > 0 || fuelStepV > 0 || fuelSurV > 0;
+      if (fuelEditAllowed) {
+        if (fuelAny && !(fuelBaseV > 0)) addErr('f_fuelbase', 'Enter the diesel price at signing, or clear the fuel surcharge fields.');
+        if (fuelAny && !(fuelStepV > 0)) addErr('f_fuelstep', 'Enter the diesel price step, or clear the fuel surcharge fields.');
+        if (fuelAny && !(fuelSurV > 0)) addErr('f_fuelsur', 'Enter the surcharge per step, or clear the fuel surcharge fields.');
+        if (fuelStepV > 0 && fuelStepV < FUEL_CLAUSE_MIN_STEP) addErr('f_fuelstep', 'The diesel price step cannot be smaller than $0.01 / L.');
+      }
+      const fuelOn = fuelBaseV > 0 && fuelStepV > 0 && fuelSurV > 0;
       const prInclTrans = rt === 'Purchase Price (Site)' && Boolean($('f_pr_incl_transport') && $('f_pr_incl_transport').checked);
       const autoCodeTag = rt === 'Commission' ? 'COMMISSION' : rt.slice(0, 5).toUpperCase();
       record = {
@@ -93372,6 +95170,10 @@
         adj2: adj2v,
         total2: q2v != null && effUp ? round2(q2v * effUp + adj2v) : null,
         trans_adj2: tAdj2v,
+        floor_price: floorV > 0 ? floorV : null,
+        fuel_base_price: fuelOn ? fuelBaseV : null,
+        fuel_step: fuelOn ? fuelStepV : null,
+        fuel_surcharge: fuelOn ? fuelSurV : null,
         start_date: date,
         end_date: val('f_enddate') || '',
         ...(rt === 'Transport Price (Site)' && prSiteVal && effPrSiteReg ? { _assign_site_region: { site: prSiteVal, region: effPrSiteReg, supplier: val('f_supplier') || '' } } : {})
@@ -94985,6 +96787,7 @@
           'f_saletype', 'f_transportby', 'f_raw_bundled', 'f_pr_incl_transport', 'f_customer', 'f_supplier', 'f_product', 'f_site', 'f_owner', 'f_truckowner',
           'f_amount', 'f_vat', 'f_usd', 'f_lbp', 'f_fxrate', 'f_direction', 'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours',
           'f_late_hours', 'f_leave_days', 'f_share', 'f_qty1', 'f_adj1', 'f_transadj1', 'f_qty2', 'f_adj2', 'f_transadj2',
+          'f_floorprice', 'f_fuelbase', 'f_fuelstep', 'f_fuelsur',
           'f_trucksize', 'f_wh_Cost', 'f_new_part_cost', 'f_repair_cost', 'f_sale_proceeds', 'f_out_parts', 'f_out_labor',
           'f_salary_pending', 'f_paytype', 'f_workdays', 'f_workhours'
         ];
@@ -97780,6 +99583,14 @@
       setModalControlVal('f_qty2', row.qty2 != null ? row.qty2 : '');
       setModalControlVal('f_adj2', row.adj2 != null ? row.adj2 : '');
       setModalControlVal('f_transadj2', row.trans_adj2 != null ? row.trans_adj2 : '');
+      setModalControlVal('f_floorprice', Number(row.floor_price) > 0 ? row.floor_price : '');
+      // The clause is put on the form only for a seat that may read the company's diesel purchases (the price at
+      // signing is a purchase price); for any other seat it stays on the record and is saved back as it is.
+      const mayFuelEdit = canSeeFuelEconomics() && isFuelCompanyAllowed(row.company || 'WTC');
+      setModalControlVal('f_fuelbase', mayFuelEdit && Number(row.fuel_base_price) > 0 ? row.fuel_base_price : '');
+      setModalControlVal('f_fuelstep', mayFuelEdit && Number(row.fuel_step) > 0 ? row.fuel_step : '');
+      setModalControlVal('f_fuelsur', mayFuelEdit && Number(row.fuel_surcharge) > 0 ? row.fuel_surcharge : '');
+      FORM_UI.fuelBaseTouched = Number(row.fuel_base_price) > 0; // an agreed base is never replaced by today's price
       setModalControlVal('f_name', row.name || '');
     } else if (form === 'vatinvoice') {
       FORM_UI.priceManual = true;
@@ -101127,6 +102938,14 @@
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
     if (key === 'raw_purchases') { hidden.add('includes_transport'); }
+    if (key === 'sales_tickets') {
+      // The diesel price a fuel surcharge was worked at is a purchase price (and the step count gives it away):
+      // shown only to a seat that may read diesel purchases of that company. The surcharge itself is on the ticket.
+      if (!(canSeeFuelEconomics() && isFuelCompanyAllowed(row.company || 'WTC'))) {
+        hidden.add('fuel_price_ref');
+        hidden.add('fuel_steps');
+      }
+    }
     if (key === 'sites') {
       hidden.add('site_category');
       hidden.add('geo_zone');
@@ -101266,6 +103085,17 @@
         hidden.add('adj2');
         hidden.add('trans_adj2');
       }
+      // Ex-Works Floor belongs to List Price agreements; the fuel surcharge clause to delivery agreements.
+      if (!/^List Price$/i.test(rtTrim)) hidden.add('floor_price');
+      if (!/^(Sales \(Delivery\)|Haulage \(Customer Site\))$/i.test(rtTrim)) {
+        hidden.add('fuel_base_price');
+        hidden.add('fuel_step');
+        hidden.add('fuel_surcharge');
+      } else if (!(canSeeFuelEconomics() && isFuelCompanyAllowed(row.company || 'WTC'))) {
+        // The diesel price at signing is a purchase price: only for a seat that may read diesel purchases.
+        // The step and the surcharge per step are terms of the agreement and stay readable.
+        hidden.add('fuel_base_price');
+      }
     }
 
     const populatedKeys = Object.keys(row).filter(k => !k.startsWith('_') && !hidden.has(k) && row[k] !== '' && row[k] != null && !(typeof row[k] === 'number' && row[k] === 0 && /tip|discount|tier|adj|difference/.test(k) && !schemaByKey.has(k)));
@@ -101320,7 +103150,7 @@
         source_module: 'Driven By', debit_rule: 'Hidden Debit Calculation', credit_rule: 'Hidden Credit Calculation',
         soa_legs: 'Posted SOA Legs', debit: 'Total Debit ($)', credit: 'Total Credit ($)', balance: 'Net Balance ($)'
       } : null;
-      const lblText = fDef ? fDef.label.replace(/\s*\*$/, '') : ((roLabels && roLabels[k]) || k.replace(/_/g, ' '));
+      const lblText = fDef ? fDef.label.replace(/\s*\*$/, '') : ((roLabels && roLabels[k]) || INSPECT_FUEL_RO_LABELS[k] || k.replace(/_/g, ' '));
       const canEditThisCell = canEditFull ? (fDef && valOverride === undefined) : (canEditWordOnly && fDef && valOverride === undefined && !isNumericInspectorField(k, fDef, row));
       const editableAttr = canEditThisCell ? ` data-edit-field="${esc(k)}" title="Click to modify ${esc(lblText)}"` : '';
       const cellCls = `inspector-cell${editableAttr ? ' is-editable-cell' : ''}${isEmpty && editableAttr ? ' is-empty-cell' : ''}`;
@@ -102319,6 +104149,8 @@
       allowedSgIds = ['sg_st_raw', 'sg_st_rules', 'sg_s_mat', 'sg_s_rules'];
     } else if (panelId === 'snMalfunction') {
       allowedSgIds = ['sg_malf_sib', 'sg_malf_fuel'];
+    } else if (panelId === 'snNetBack' || panelId === 'snNetBackNoDist') {
+      allowedSgIds =['sg_pr_sales', 'sg_st_rules', 'sg_st_srules', 'sg_st_sales', 'sg_c_rules', 'sg_c_sales', 'sg_p_rules', 'sg_p_sales'];
     } else if (panelId === 'snDates' || panelId === 'snPendingPrice' || panelId === 'snCustomAlerts') {
       allowedSgIds = [];
     } else {
@@ -102522,6 +104354,22 @@
     const banner = fastMod ? { tone: '', text: '' } : (tc ? { tone: tc.bannerTone || '', text: tc.bannerText } : buildInspectorLiveBanner(key, row));
     const cockpit = fastMod ? { bu: 'WTC', title: '', pill: '', cards: [] } : (tc ? tc.cockpit : buildInspectorCockpit(key, row));
     const qvCards = (fastMod || tc) ? [] : buildInspectorQuickViews(key, row);
+    let siteNetBackInspHtml = '';
+    if (!fastMod && !tc && key === 'sites' && getActiveIndustry() === 'Manufacturing'
+      && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing')
+      && canAccessTable('price_rules')) {
+      try {
+        const nbSite = String(row.name || row.Site || '').trim();
+        const nbBu = COMPANY_BU_MATCH[STATE.company] || '';
+        const nb = computeSiteNetBack(nbSite, nbSite, collectActiveSiteRulesForNetBack(nbSite, nbBu), {
+          defaultCo: nbBu || 'WTC',
+          regionHint: row.region || ''
+        });
+        siteNetBackInspHtml = renderSiteNetBackStripHtml(nb, { id: 'inspSiteNetBackStrip', compact: true });
+      } catch (nbErr) {
+        console.warn('[site net-back] inspector skipped', nbErr);
+      }
+    }
     const sections = (fastMod || tc) ? [] : buildInspectorSections(key, row);
     const rawSubgrids = fastMod ? [] : buildInspectorSubgrids(key, row);
     const subgrids = tc ? tc.filterSubgrids(rawSubgrids) : rawSubgrids;
@@ -102828,6 +104676,8 @@
           `).join('')}
         </div>
       </div>
+
+      ${siteNetBackInspHtml}
 
       ${tc ? `
         <div class="pa-subgrid-box" id="inspTableRowSnapshot" style="margin-bottom:14px">
@@ -103226,6 +105076,33 @@
         const sName = row.name || row.site || '';
         closeRecordInspector();
         openEntryModal('pricerule_raw', { site: sName, supplier: row.supplier || '' });
+      });
+    }
+    const inspNbStrip = $('inspSiteNetBackStrip');
+    if (inspNbStrip) {
+      const openNbRule = rowEl => {
+        const ruleId = rowEl.getAttribute('data-open-site-rule') || '';
+        const ruleRow = resolveInspectorRecord('price_rules', ruleId);
+        if (!ruleRow) return;
+        const ruleForm = resolveFormTypeForEditableRecord('price_rules', ruleRow);
+        if (ruleForm) {
+          closeRecordInspector();
+          openEntryModal(ruleForm, { editRecord: { crKey: 'price_rules', row: ruleRow } }, { label: ruleRow.name || 'Price Agreement' });
+        } else {
+          showRecordInspector('price_rules', ruleRow.id || ruleId);
+        }
+      };
+      inspNbStrip.addEventListener('click', ev => {
+        const rowEl = ev.target && ev.target.closest ? ev.target.closest('[data-open-site-rule]') : null;
+        if (rowEl) openNbRule(rowEl);
+      });
+      inspNbStrip.addEventListener('keydown', ev => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        const rowEl = ev.target && ev.target.closest ? ev.target.closest('[data-open-site-rule]') : null;
+        if (rowEl) {
+          ev.preventDefault();
+          openNbRule(rowEl);
+        }
       });
     }
     const inspNewSiteSalesRuleBtn = $('inspNewSiteSalesRuleBtn');
@@ -115985,13 +117862,17 @@
       }
       const dsl = numV('ik_diesel') || 220;
       const hrs = Math.max(0.5, numV('ik_hours') || 10);
+      // Diesel burnt, valued at the resort's own latest priced purchase on that day (never a fixed $/L); with no
+      // purchase on file, or a seat that may not read them, the voucher carries no money.
+      const genDieselRate = (window.MFG_FUEL_ECON && window.MFG_FUEL_ECON.priceOn(co, dt)) || 0;
       return {
         id: recId, ticket_no: recId, company: co, date: dt,
         customer: strV('ik_asset') || 'Prime Generator #1',
         product: `Generator Run ${hrs} hrs · ${dsl} L Diesel (${(dsl / hrs).toFixed(1)} L/hr)`,
         site: `${co} Power Plant`,
-        qty: dsl, uom: 'L', unit_price: 0.95,
-        total: round2(dsl * 0.95), vat: 0, total_ttc: round2(dsl * 0.95),
+        qty: dsl, uom: 'L', unit_price: genDieselRate,
+        total: round2(dsl * genDieselRate), vat: 0, total_ttc: round2(dsl * genDieselRate),
+        ...(genDieselRate > 0 ? {} : { _noPriceOnFile: true }),
         method: 'Utility Log', entered_by: who,
         _domainSlip: {
           ind: activeInd,
@@ -129878,6 +131759,13 @@
       const y = ws ? ws.scrollTop : 0;
       renderApp();
       if (ws) ws.scrollTop = y;
+    }));
+    // Not-costed delivery agreements: one click opens the site on the map (Edit Site) to pin it or set its distance.
+    container.querySelectorAll('[data-nb-pin-site]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      const siteName = btn.getAttribute('data-nb-pin-site') || '';
+      if (siteName) openEntryModalForRecord('sites', siteName);
     }));
     container.querySelectorAll('[data-sn-check]').forEach(btn => btn.addEventListener('click', ev => {
       ev.stopPropagation();

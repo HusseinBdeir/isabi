@@ -1651,7 +1651,10 @@
         }
         if (!repeatHits.length) {
           (hsp.energyRows || []).filter(r => Number(r.l_per_hr || 0) > Number(r.rated_l_hr || 999)).slice(0, 2).forEach(r => {
-            repeatHits.push({ equipment: r.asset, subsystem: 'burn spike', count: 2, cost: round2(Number(r.diesel_used_l || 0) * 0.95), id: r.id, inspectKey: 'hsp_energy' });
+            // Diesel burnt, valued at the resort's own latest priced purchase on that day (0 when none is on file).
+            // Only for a seat that may read that resort's purchases (the cost over the litres would give the price away).
+            const genRate = (window.MFG_FUEL_ECON && window.MFG_FUEL_ECON.priceOn) ? window.MFG_FUEL_ECON.priceOn(r.company, r.date) : null;
+            repeatHits.push({ equipment: r.asset, subsystem: 'burn spike', count: 2, cost: genRate ? round2(Number(r.diesel_used_l || 0) * genRate) : null, id: r.id, inspectKey: 'hsp_energy' });
           });
           (hsp.maintRows || []).filter(r => r.status === 'Open Work Order').slice(0, 2).forEach(r => {
             repeatHits.push({ equipment: r.asset, subsystem: 'corrective', count: 2, cost: round2(r.cost_usd || 0), id: r.id, inspectKey: 'hsp_maint' });
@@ -1833,7 +1836,7 @@
             ${data.repeatHits.length ? data.repeatHits.map(h => `
               <div class="aie-behav-row" data-aie-inspect-key="${esc(h.inspectKey || 'equipment_repairs')}" data-aie-inspect-id="${esc(h.id || '')}" data-no-i18n="1">
                 <span><strong>${esc(h.equipment)}</strong> · ${esc(h.subsystem)} (${h.count}×)</span>
-                <strong class="mono">${fmtUSD(h.cost, 0)}</strong>
+                <strong class="mono">${h.cost == null ? '-' : fmtUSD(h.cost, 0)}</strong>
               </div>
             `).join('') : `<div class="aie-behav-row"><span>${esc(tr('Zero repeat subsystem failures in window'))}</span><span class="aie-pill is-good">${esc(tr('Clean'))}</span></div>`}
           </div>

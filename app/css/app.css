@@ -35844,6 +35844,350 @@ video::-webkit-media-controls-start-playback-button {
   color: var(--brass);
 }
 
+/* ==================== SITE NET-BACK & HAULAGE BREAKEVEN STRIP (Edit Site + Site 360°) ==================== */
+.site-nb-strip {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.site-nb-strip.is-compact {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  margin: 0 0 14px;
+  overflow: hidden;
+}
+
+.site-nb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  flex-wrap: wrap;
+  padding: 9px 12px 6px;
+}
+
+.site-nb-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--brass);
+}
+
+.site-nb-kicker svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.site-nb-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.site-nb-pill,
+.site-nb-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.site-nb-pill.is-crit,
+.site-nb-status.is-crit {
+  background: color-mix(in srgb, var(--crit) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--crit) 40%, var(--line));
+  color: var(--crit);
+}
+
+.site-nb-pill.is-warn,
+.site-nb-status.is-warn {
+  background: color-mix(in srgb, var(--warn) 13%, var(--surface));
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+  color: color-mix(in srgb, var(--warn) 78%, var(--ink));
+}
+
+.site-nb-pill.is-ok,
+.site-nb-status.is-ok {
+  background: color-mix(in srgb, var(--good) 11%, var(--surface));
+  border-color: color-mix(in srgb, var(--good) 34%, var(--line));
+  color: color-mix(in srgb, var(--good) 80%, var(--ink));
+}
+
+.site-nb-status.is-info {
+  background: color-mix(in srgb, var(--brass) 13%, var(--surface));
+  border-color: color-mix(in srgb, var(--brass) 38%, var(--line));
+}
+
+.site-nb-status.is-neutral {
+  color: var(--ink-soft);
+}
+
+.site-nb-inputs {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 12px 8px;
+}
+
+.site-nb-co {
+  align-self: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--ink);
+  padding-inline-end: 2px;
+}
+
+.site-nb-chip {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 4px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-2) 55%, var(--surface));
+}
+
+.site-nb-chip small {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.site-nb-chip b {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.site-nb-chip em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.site-nb-chip.is-key {
+  border-color: color-mix(in srgb, var(--brass) 45%, var(--line));
+  background: color-mix(in srgb, var(--brass) 12%, var(--surface));
+}
+
+.site-nb-chip.is-approx b {
+  color: var(--ink-soft);
+}
+
+.site-nb-table-wrap {
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-top: 1px solid var(--line);
+}
+
+.site-nb-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.site-nb-table th,
+.site-nb-table td {
+  padding: 6px 9px;
+  vertical-align: middle;
+  font-size: 12px;
+}
+
+.site-nb-table th {
+  white-space: nowrap;
+}
+
+.site-nb-row {
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.site-nb-row:hover,
+.site-nb-row:focus-visible {
+  background: color-mix(in srgb, var(--brass) 10%, var(--surface));
+  outline: none;
+}
+
+.site-nb-row.is-loss > td:first-child {
+  border-inline-start: 3px solid var(--crit);
+}
+
+.site-nb-row.is-thin > td:first-child,
+.site-nb-row.is-night > td:first-child {
+  border-inline-start: 3px solid var(--warn);
+}
+
+.site-nb-party {
+  margin-top: 3px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.site-nb-load,
+.site-nb-sub {
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.site-nb-uom {
+  font-size: 10.5px;
+  color: var(--ink-soft);
+}
+
+.site-nb-table .mono {
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.site-nb-table .mono.is-neg {
+  color: var(--crit);
+}
+
+.site-nb-foot {
+  padding: 6px 12px 8px;
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--line);
+}
+
+/* Delivery breakeven Sentinel table: 11 columns, so it takes the full width of the two-column grid. */
+.mini-table-grid > #snNetBack,
+.mini-table-grid > #snNetBackNoDist {
+  grid-column: 1 / -1;
+}
+
+/* Delivery price floor on the Price Agreement form (#prFloorStrip): same chips as the net-back strip. */
+.pr-floor-strip {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-inline-start: 3px solid var(--brass);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.pr-floor-strip[hidden] {
+  display: none !important;
+}
+
+/* Fuel surcharge clause header on the Price Agreement form: shown for delivery agreements only. */
+.pa-form-sec-hdr[hidden] {
+  display: none !important;
+}
+
+/* Pin Site action in the not-costed delivery agreements table (Sentinels). */
+.btn-nb-pin-site {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.btn-nb-pin-site svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.pr-floor-strip.is-below {
+  border-inline-start-color: var(--crit);
+  background: color-mix(in srgb, var(--crit) 5%, var(--surface));
+}
+
+.pr-floor-strip.is-night,
+.pr-floor-strip.is-thin {
+  border-inline-start-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 6%, var(--surface));
+}
+
+.pr-floor-strip.is-ok {
+  border-inline-start-color: var(--good);
+}
+
+.pr-floor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px 6px;
+}
+
+.pr-floor-msg {
+  padding: 0 12px 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.pr-floor-msg b {
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.pr-floor-msg b.is-neg {
+  color: var(--crit);
+}
+
+.pr-floor-strip .site-nb-chip b .site-nb-uom {
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .pr-floor-head,
+  .pr-floor-msg {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
+@media (max-width: 768px) {
+  .site-nb-head,
+  .site-nb-inputs {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .site-nb-chip {
+    flex: 1 1 calc(50% - 6px);
+  }
+
+  .site-nb-chip b,
+  .site-nb-chip small,
+  .site-nb-chip em {
+    white-space: normal;
+  }
+}
+
 @media (max-width: 768px) {
   .site-rules-toolbar {
     padding: 9px 10px;

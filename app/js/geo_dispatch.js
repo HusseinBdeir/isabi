@@ -1970,7 +1970,14 @@
     const roundTripKm = showRoundTrip ? round1(oneWayKm * 2) : null;
     if (estMinutes == null) estMinutes = oneWayKm > 0 ? Math.max(2, Math.round((oneWayKm / 38) * 60)) : 0;
     const basisKmForFuel = roundTripKm != null ? roundTripKm : oneWayKm;
-    const estDieselL = round1(basisKmForFuel * 0.42);
+    // Diesel for the leg: the company's measured fleet burn (odometer fill-to-fill) and the latest priced
+    // diesel delivery, both read live from the books (window.MFG_FUEL_ECON). No fixed L/km or $/L here;
+    // a seat that may not read fuel slips or diesel purchases gets no diesel figure.
+    const fuelCo = fromSpec.type === 'bu' ? fromSpec.name : (toSpec.type === 'bu' ? toSpec.name : '');
+    const fuelEcon = (window.MFG_FUEL_ECON && typeof window.MFG_FUEL_ECON.legFuel === 'function')
+      ? window.MFG_FUEL_ECON.legFuel(fuelCo, basisKmForFuel)
+      : null;
+    const estDieselL = fuelEcon ? round1(fuelEcon.litres) : null;
 
     return {
       available: true,
@@ -1981,11 +1988,31 @@
       source,
       estMinutes,
       estDieselL,
+      estDieselUsd: fuelEcon && fuelEcon.usd != null ? fuelEcon.usd : null,
+      dieselLPerKm: fuelEcon ? fuelEcon.lPerKm : null,
+      dieselBurnSrc: fuelEcon ? fuelEcon.burnSrc : '',
+      dieselUsdPerL: fuelEcon ? fuelEcon.usdPerL : null,
+      dieselPriceDate: fuelEcon ? fuelEcon.priceDate : '',
+      dieselPriceHidden: Boolean(fuelEcon && fuelEcon.priceHidden),
       pairKey,
       fromCoord: c1,
       toCoord: c2,
       routeCoords
     };
+  }
+
+  // Tooltip for a diesel estimate: which burn and which diesel price it used (data-ui-tip, translated by the i18n engine).
+  function dieselTipAttr(est) {
+    if (!est || est.estDieselL == null || est.dieselLPerKm == null) return '';
+    const burnLbl = est.dieselBurnSrc === 'fleet' ? 'Fleet odometer' : (est.dieselBurnSrc === 'group' ? 'Group fleet odometer' : 'Standard estimate');
+    const dm = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(est.dieselPriceDate || ''));
+    // A seat that may not read diesel purchases gets the burn only (no price, no "missing price" note).
+    const priceTxt = est.dieselPriceHidden
+      ? ''
+      : (est.dieselUsdPerL != null
+        ? ` · Latest diesel price $${Number(est.dieselUsdPerL).toFixed(3)}/L${dm ? ` (${dm[3]}-${dm[2]}-${dm[1]})` : ''}`
+        : ' · No priced diesel delivery yet');
+    return ` data-ui-tip="${esc(`${burnLbl} ${Number(est.dieselLPerKm).toFixed(2)} L/km${priceTxt}`)}" data-diesel-lpkm="${Number(est.dieselLPerKm).toFixed(4)}" data-diesel-usdl="${est.dieselUsdPerL != null ? Number(est.dieselUsdPerL).toFixed(4) : ''}"`;
   }
 
   function setPairKmOverride(fromSpec, toSpec, kmVal) {
@@ -2760,7 +2787,7 @@
                 <span class="geo-km-badge" id="geoDistKmBadge">
                   One-Way: ${kmEst.oneWayKm.toFixed(1)} km${kmEst.roundTripKm != null ? ` · Round-Trip: ${kmEst.roundTripKm.toFixed(1)} km` : ''}
                 </span>
-                <span class="geo-km-sub" id="geoDistMetaSub">~${kmEst.estMinutes} min${isMfg ? ` · ~${kmEst.estDieselL.toFixed(1)} L diesel` : ''} (${esc(kmEst.source)})</span>
+                <span class="geo-km-sub" id="geoDistMetaSub"${dieselTipAttr(kmEst)}>~${kmEst.estMinutes} min${isMfg && kmEst.estDieselL != null ? ` · ~${kmEst.estDieselL.toFixed(1)} L diesel${kmEst.estDieselUsd != null ? ` · ~$${kmEst.estDieselUsd.toFixed(2)}` : ''}` : ''} (${esc(kmEst.source)})</span>
               ` : `
                 <span class="geo-km-sub" id="geoDistKmBadge">Pin location on map to compute exact road KM</span>
               `}
@@ -5243,6 +5270,7 @@
     validateSiteInsideRegion,
     ensureRegionInSeed,
     estimateLegKm,
+    getConfigStamp: () => String(GEO_STORE.updatedAt || ''),
     setPairKmOverride,
     getUnifiedSiteStats,
     getUnifiedSiteMetaItems,

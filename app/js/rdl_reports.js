@@ -923,12 +923,18 @@
       (hsp.energyRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
         const lit = Number(r.diesel_used_l || 0);
         if (lit > 0) {
+          // Two values per row. total_usd / paid_usd are the ledger's standard cost of the diesel issued, left as it
+          // was (an accounting basis, changed only by an owner decision). ops_rate / ops_usd are the resort's own
+          // latest priced diesel purchase on that day (none on file = no value): the registers print these.
+          const genFe = window.MFG_FUEL_ECON;
+          const genRate = (genFe && genFe.bookPriceOn) ? genFe.bookPriceOn(r.company, r.date) : null;
           fuelAll.push({
             id: r.id, date: r.date, rep_date: r.date, co: r.company, voucher: r.id, name: r.id,
             equip: r.asset || 'Prime Generator', equip_type: 'Generator', driver: r.company,
             station: `${r.company} Generator Tank`, supplier: 'Generator Diesel Supply',
             odometer: Number(r.run_hours || 0), meter_unit: 'h', liters: lit, price_per_l: 0.92,
-            total_usd: r2(lit * 0.92), paid_usd: r2(lit * 0.92)
+            total_usd: r2(lit * 0.92), paid_usd: r2(lit * 0.92),
+            ops_rate: genRate, ops_usd: genRate ? r2(lit * genRate) : 0
           });
         }
       });
@@ -1432,8 +1438,14 @@
 
       let fuelAll = rawFuel.map(r => {
         const liters = Number(r.litres !== undefined ? r.litres : (r.liters || 0));
+        // Two values per slip. rate / tot are the ledger's standard cost of the diesel issued (accounts 601 / 311),
+        // left exactly as it was: changing an accounting basis is an owner decision. ops_rate / ops_usd are the
+        // diesel price that was the latest priced delivery on the slip's day (none on file = no value): the Fuel Log
+        // and the Driver Statement print these, and only for a seat that may read diesel purchases.
         const rate = Number(r.price_per_l || 0.95);
         const tot = Number(r.total_usd || (liters * rate));
+        const slipFe = window.MFG_FUEL_ECON;
+        const opsRate = (slipFe && slipFe.bookPriceOn) ? slipFe.bookPriceOn(r.company || r.co || co, r.date) : null;
         const eqName = r.equipment || r.equip || 'Fleet Unit';
         const eqType = eqMap.get(eqName) || r.fuel_type || 'Truck / Loader';
         const isHourUnit = /^(excavator|wheel loader|generator|plant)$/i.test(String(eqType).trim()) ||
@@ -1459,7 +1471,9 @@
           liters,
           price_per_l: rate,
           total_usd: tot,
-          paid_usd: tot
+          paid_usd: tot,
+          ops_rate: opsRate > 0 ? opsRate : null,
+          ops_usd: opsRate > 0 ? liters * opsRate : 0
         };
       });
 
@@ -3189,7 +3203,13 @@
     }).sort((a, b) => rowDate(b, ctx.basis).localeCompare(rowDate(a, ctx.basis)));
 
     const totLiters = rows.reduce((s, r) => s + Number(r.liters || 0), 0);
-    const totUsd = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
+    // The register prints the recorded purchase price of each slip's day (ops_rate / ops_usd), not the ledger's
+    // standard cost. Average rate over the litres that carry a value (no diesel price on file = left out of it).
+    const totUsd = rows.reduce((s, r) => s + Number(r.ops_usd || 0), 0);
+    const pricedLiters = rows.reduce((s, r) => s + (Number(r.ops_usd) > 0 ? Number(r.liters || 0) : 0), 0);
+    // Decided for the reading seat at print time (the statement data is cached across seats).
+    const mayFuel = makeFuelMoneyGate();
+    const anyRateHidden = rows.some(r => !mayFuel(r.co));
     const viewRows = rows.slice(0, 160);
 
     return `
@@ -3218,8 +3238,8 @@
               <td>${esc(r.driver || '-')}</td>
               <td class="num">${r.odometer ? fmtNum(r.odometer, r.meter_unit === 'h' && r.odometer % 1 !== 0 ? 1 : 0) + (r.meter_unit ? ' ' + r.meter_unit : '') : '-'}</td>
               <td class="num bold">${fmtNum(r.liters, 1)}</td>
-              <td class="num">${fmtUsd(r.price_per_l, 2)}</td>
-              <td class="num bold">${fmtUsd(r.total_usd, 2)}</td>
+              <td class="num">${mayFuel(r.co) && Number(r.ops_rate) > 0 ? fmtUsd(r.ops_rate, 2) : '-'}</td>
+              <td class="num bold">${mayFuel(r.co) && Number(r.ops_usd) > 0 ? fmtUsd(r.ops_usd, 2) : '-'}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -3227,8 +3247,8 @@
           <tr class="rdl-total-row">
             <td colspan="6">TOTAL DIESEL & FLEET FUEL LOG (${fmtNum(rows.length, 0)} fills)</td>
             <td class="num">${fmtNum(totLiters, 1)}</td>
-            <td class="num">${fmtUsd(totLiters > 0 ? totUsd / totLiters : 0, 2)}</td>
-            <td class="num">${fmtUsd(totUsd, 2)}</td>
+            <td class="num">${!anyRateHidden && totUsd > 0 && pricedLiters > 0 ? fmtUsd(totUsd / pricedLiters, 2) : '-'}</td>
+            <td class="num">${!anyRateHidden && totUsd > 0 ? fmtUsd(totUsd, 2) : '-'}</td>
           </tr>
         </tfoot>
       </table>
@@ -3686,6 +3706,11 @@
       byDrv.set(drv, g);
     });
 
+    // Fuel money (litres x diesel price) is printed only for a seat that may read the diesel purchases of every
+    // company in the statement; litres stay. Decided at print time, never cached with the data.
+    const mayFuel17 = makeFuelMoneyGate();
+    let fuelMoneyHidden17 = false;
+    let unpricedFills17 = 0; // fills dated before any priced diesel delivery: no value, said under the sheet title
     ctx.fuelAll.forEach(r => {
       const d = rowDate(r, ctx.basis);
       if (!inWindow(d, p.from, p.to)) return;
@@ -3695,7 +3720,9 @@
       const g = byDrv.get(drv) || { driver: drv, loads: 0, m3: 0, rev: 0, rmTrips: 0, fuelFills: 0, liters: 0, fuelUsd: 0 };
       g.fuelFills += 1;
       g.liters += Number(r.liters || 0);
-      g.fuelUsd += Number(r.total_usd || 0);
+      g.fuelUsd += Number(r.ops_usd || 0); // recorded purchase price of the slip's day, not the ledger's standard cost
+      if (!(Number(r.ops_usd) > 0)) unpricedFills17 += 1;
+      if (!mayFuel17(r.co)) fuelMoneyHidden17 = true;
       byDrv.set(drv, g);
     });
 
@@ -3703,7 +3730,7 @@
     const sum = k => rows.reduce((s, r) => s + r[k], 0);
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Driver: ${drvFilter === 'ALL' ? 'All Drivers' : drvFilter} · Concrete Trips, Hauling & Diesel Consumption`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Driver: ${drvFilter === 'ALL' ? 'All Drivers' : drvFilter} · Concrete Trips, Hauling & Diesel Consumption${!fuelMoneyHidden17 && unpricedFills17 > 0 ? ` · Fuel cost at recorded purchase prices, ${fmtNum(unpricedFills17, 0)} fills without a price on file` : ''}`)}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -3728,7 +3755,7 @@
               <td class="num">${fmtNum(r.rmTrips, 0)}</td>
               <td class="num">${fmtNum(r.fuelFills, 0)}</td>
               <td class="num bold">${fmtNum(r.liters, 1)}</td>
-              <td class="num">${fmtUsd(r.fuelUsd)}</td>
+              <td class="num">${fuelMoneyHidden17 ? '-' : fmtUsd(r.fuelUsd)}</td>
               <td class="num">${r.loads > 0 ? fmtNum(r.liters / r.loads, 1) : '—'}</td>
             </tr>
           `).join('')}
@@ -3742,7 +3769,7 @@
             <td class="num">${fmtNum(sum('rmTrips'), 0)}</td>
             <td class="num">${fmtNum(sum('fuelFills'), 0)}</td>
             <td class="num">${fmtNum(sum('liters'), 1)}</td>
-            <td class="num">${fmtUsd(sum('fuelUsd'))}</td>
+            <td class="num">${fuelMoneyHidden17 ? '-' : fmtUsd(sum('fuelUsd'))}</td>
             <td class="num">${sum('loads') > 0 ? fmtNum(sum('liters') / sum('loads'), 1) : '—'}</td>
           </tr>
         </tfoot>
@@ -3751,6 +3778,18 @@
     `;
   }
 
+
+  // Whether the reading seat may see diesel $/L and fuel money of a company. Asked at print time for each statement
+  // (the statement data is cached across seats, so the answer is never stored with it).
+  function makeFuelMoneyGate() {
+    const memo = new Map();
+    const fe = window.MFG_FUEL_ECON;
+    return co => {
+      const k = String(co || '');
+      if (!memo.has(k)) memo.set(k, Boolean(fe && fe.mayReadPrice && fe.mayReadPrice(k)));
+      return memo.get(k);
+    };
+  }
 
   function render18VatReturn(meta, ctx) {
     const p = ctx.rdl.params;
@@ -5217,23 +5256,34 @@
         return true;
       });
       const totLiters = rows.reduce((s, r) => s + Number(r.liters || 0), 0);
-      const totUsd = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
+      const totUsd = rows.reduce((s, r) => s + Number(r.ops_usd || 0), 0); // recorded purchase prices, as on the sheet
+      // Average rate over the litres that carry a price, exactly as the sheet footer (a slip dated before the first
+      // priced delivery has no price: it is counted, said, and left out of the rate).
+      const pricedLitersK = rows.reduce((s, r) => s + (Number(r.ops_usd) > 0 ? Number(r.liters || 0) : 0), 0);
+      const unpricedFillsK = rows.filter(r => !(Number(r.ops_usd) > 0)).length;
+      // Fuel money and $/L only for a seat that may read diesel purchases (decided at print time).
+      const mayFuelK = makeFuelMoneyGate();
+      const fuelMoneyOk = !rows.some(r => !mayFuelK(r.co));
       const byEq = new Map();
       rows.forEach(r => byEq.set(r.equip || 'Unit', (byEq.get(r.equip || 'Unit') || 0) + Number(r.liters || 0)));
       const topEq = [...byEq.entries()].sort((a, b) => b[1] - a[1])[0] || null;
       facts = {
         dispensingFills: rows.length,
         dieselLiters: Number(totLiters.toFixed(1)),
-        totalFuelUsd: Math.round(totUsd),
-        avgRatePerLiterUsd: totLiters > 0 ? Number((totUsd / totLiters).toFixed(2)) : 0,
+        totalFuelUsd: fuelMoneyOk ? Math.round(totUsd) : null,
+        avgRatePerLiterUsd: (fuelMoneyOk && pricedLitersK > 0) ? Number((totUsd / pricedLitersK).toFixed(2)) : null,
+        fillsWithoutPrice: unpricedFillsK,
         topEquipment: topEq ? _stmtCleanParty(topEq[0]) : null,
         topEquipmentLiters: topEq ? Math.round(topEq[1]) : 0
       };
       kpis = [
         mkKpi('cnt', 'Dispensing Fills', 'عمليات التعبئة', 'Pleins distribués', fmtNum(rows.length, 0), p.equipType === 'ALL' ? 'All fleet types' : p.equipType, p.equipType === 'ALL' ? 'كافة الآليات' : p.equipType, p.equipType === 'ALL' ? 'Toute la flotte' : p.equipType),
         mkKpi('lit', 'Diesel Drawn', 'المحروقات المسحوبة', 'Litres consommés', `${fmtNum(totLiters, 1)} L`, topEq ? `Top: ${topEq[0]}` : 'Bulk tank', topEq ? `الأعلى: ${topEq[0]}` : 'خزان المحروقات', topEq ? `Top : ${topEq[0]}` : 'Cuve principale'),
-        mkKpi('usd', 'Total Fuel Cost', 'إجمالي كلفة الوقود', 'Coût carburant total', fmtUsd(totUsd, 2), 'Account 601 / 311', 'حساب 601 / 311', 'Comptes 601 / 311'),
-        mkKpi('rate', 'Average Rate', 'متوسط سعر الليتر', 'Prix moyen / L', `${fmtUsd(totLiters > 0 ? totUsd / totLiters : 0, 2)}/L`, p.equipment === 'ALL' ? 'All units' : p.equipment, p.equipment === 'ALL' ? 'كافة الوحدات' : p.equipment, p.equipment === 'ALL' ? 'Toutes unités' : p.equipment)
+        mkKpi('usd', 'Total Fuel Cost', 'إجمالي كلفة الوقود', 'Coût carburant total', fuelMoneyOk ? fmtUsd(totUsd, 2) : '-',
+          unpricedFillsK > 0 ? `At purchase prices · ${fmtNum(unpricedFillsK, 0)} fills without a price` : 'At recorded purchase prices',
+          unpricedFillsK > 0 ? `بأسعار الشراء · ${fmtNum(unpricedFillsK, 0)} تعبئة بلا سعر` : 'بأسعار الشراء المسجّلة',
+          unpricedFillsK > 0 ? `Aux prix d'achat · ${fmtNum(unpricedFillsK, 0)} pleins sans prix` : 'Aux prix d\'achat enregistrés'),
+        mkKpi('rate', 'Average Rate', 'متوسط سعر الليتر', 'Prix moyen / L', (fuelMoneyOk && totUsd > 0 && pricedLitersK > 0) ? `${fmtUsd(totUsd / pricedLitersK, 2)}/L` : '-', p.equipment === 'ALL' ? 'All units' : p.equipment, p.equipment === 'ALL' ? 'كافة الوحدات' : p.equipment, p.equipment === 'ALL' ? 'Toutes unités' : p.equipment)
       ];
     } else if (stmtId === '13') {
       const asof = p.asof || p.to;
@@ -5444,6 +5494,9 @@
         if (!byDrv.has(drv)) byDrv.set(drv, { driver: drv, loads: 0, m3: 0, rev: 0, rmTrips: 0, fuelFills: 0, liters: 0, fuelUsd: 0 });
         return byDrv.get(drv);
       };
+      const mayFuelD = makeFuelMoneyGate();
+      let fuelMoneyHiddenD = false;
+      let unpricedFillsD = 0;
       ctx.salesAll.forEach(r => {
         const d = rowDate(r, ctx.basis);
         if (!inWindow(d, p.from, p.to)) return;
@@ -5467,8 +5520,19 @@
         const g = ensureD(r.driver);
         g.fuelFills += 1;
         g.liters += Number(r.liters || 0);
-        g.fuelUsd += Number(r.total_usd || 0);
+        g.fuelUsd += Number(r.ops_usd || 0); // recorded purchase prices, as on the sheet
+        if (!(Number(r.ops_usd) > 0)) unpricedFillsD += 1; // no diesel price on file for that day: counted and said
+        if (!mayFuelD(r.co)) fuelMoneyHiddenD = true;
       });
+      // Fuel money only for a seat that may read diesel purchases (decided at print time). A total that leaves
+      // out fills with no price on file says so.
+      const fuelUsdTxt = lang => {
+        if (fuelMoneyHiddenD) return '-';
+        const base = fmtUsd(sum('fuelUsd'));
+        if (!(unpricedFillsD > 0)) return base;
+        const n = fmtNum(unpricedFillsD, 0);
+        return lang === 'ar' ? `${base} · ${n} تعبئة بلا سعر` : (lang === 'fr' ? `${base} · ${n} pleins sans prix` : `${base} · ${n} fills without a price`);
+      };
       const rows = [...byDrv.values()].sort((a, b) => b.loads - a.loads || b.liters - a.liters);
       const sum = k => rows.reduce((s, r) => s + r[k], 0);
       const loads = sum('loads');
@@ -5480,7 +5544,8 @@
         deliveredVolume: Number(sum('m3').toFixed(1)),
         haulingTrips: sum('rmTrips'),
         dieselLiters: Number(liters.toFixed(1)),
-        fuelCostUsd: Math.round(sum('fuelUsd')),
+        fuelCostUsd: fuelMoneyHiddenD ? null : Math.round(sum('fuelUsd')),
+        fillsWithoutPrice: unpricedFillsD,
         litersPerTrip: loads > 0 ? Number((liters / loads).toFixed(1)) : 0,
         topDriver: topDrv ? _stmtCleanParty(topDrv.driver) : null
       };
@@ -5488,7 +5553,7 @@
         mkKpi('drv', 'Active Drivers', 'السائقون الفعالون', 'Chauffeurs actifs', fmtNum(rows.length, 0), topDrv ? `Lead: ${topDrv.driver}` : 'Fleet log', topDrv ? `الأول: ${topDrv.driver}` : 'سجل الأسطول', topDrv ? `1er : ${topDrv.driver}` : 'Flotte active'),
         mkKpi('loads', 'Delivery Trips', 'رحلات التسليم', 'Rotations livrées', fmtNum(loads, 0), `${fmtNum(sum('m3'), 1)} ${dt.qtyUnit}`, `${fmtNum(sum('m3'), 1)} ${dt.qtyUnit}`, `${fmtNum(sum('m3'), 1)} ${dt.qtyUnit}`),
         mkKpi('lit', 'Diesel Drawn', 'المحروقات المسحوبة', 'Diesel consommé', `${fmtNum(liters, 1)} L`, `${fmtNum(sum('fuelFills'), 0)} fills`, `${fmtNum(sum('fuelFills'), 0)} تعبئة`, `${fmtNum(sum('fuelFills'), 0)} pleins`),
-        mkKpi('eff', 'Fuel Efficiency', 'معدل الاستهلاك', 'Ratio carburant', loads > 0 ? `${fmtNum(liters / loads, 1)} L/trip` : fmtUsd(sum('fuelUsd')), fmtUsd(sum('fuelUsd')), fmtUsd(sum('fuelUsd')), fmtUsd(sum('fuelUsd')))
+        mkKpi('eff', 'Fuel Efficiency', 'معدل الاستهلاك', 'Ratio carburant', loads > 0 ? `${fmtNum(liters / loads, 1)} L/trip` : (fuelMoneyHiddenD ? '-' : fmtUsd(sum('fuelUsd'))), fuelUsdTxt('en'), fuelUsdTxt('ar'), fuelUsdTxt('fr'))
       ];
     } else if (stmtId === '18') {
       const sales = ctx.salesAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
@@ -5775,7 +5840,13 @@
 
     const paramSig = (meta.params || []).map(pk => `${pk}:${p[pk] || ''}`).join('|');
     const customRev = (seedObj && (seedObj._customRev || seedObj._indCustomRev || seedObj._industryRev)) || 0;
-    const scopeKey = `stmt|${stmtId}|${effCoKey}|${ctx.ind}|${ctx.basis}|${ctx.officialScope ? '1' : '0'}|${canViewBooks ? '1' : '0'}|${paramSig}|${customRev}`;
+    // Diesel rights of the reading seat are part of the key: a cover note written for a seat that reads fuel money
+    // (Fuel Log, Driver Statement) is never served from the cache to a seat that may not.
+    const fuelFe = (typeof window !== 'undefined') ? window.MFG_FUEL_ECON : null;
+    const fuelSeatSig = (fuelFe && fuelFe.mayReadPrice)
+      ? Array.from(new Set((ctx.fuelAll || []).map(r => String(r.co || '')))).sort().map(c => `${c}:${fuelFe.mayReadPrice(c) ? '1' : '0'}`).join(',')
+      : 'x';
+    const scopeKey = `stmt|${stmtId}|${effCoKey}|${ctx.ind}|${ctx.basis}|${ctx.officialScope ? '1' : '0'}|${canViewBooks ? '1' : '0'}|${fuelSeatSig}|${paramSig}|${customRev}`;
 
     return {
       stmtId,
