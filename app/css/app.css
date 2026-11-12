@@ -151,6 +151,13 @@ html, body {
   -webkit-text-size-adjust: 100%;
 }
 
+/* Arrow cursor over read-only text (no I-beam on labels, KPIs, table cells);
+   the text cursor is kept only where the user can type. Text stays selectable. */
+html, body { cursor: default; }
+input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="image"]):not([disabled]):not([readonly]),
+textarea:not([disabled]):not([readonly]),
+[contenteditable]:not([contenteditable="false"]) { cursor: text; }
+
 [hidden] {
   display: none !important;
 }
