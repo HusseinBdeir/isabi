@@ -12534,6 +12534,36 @@ table.rdl-meta-box td.rdl-meta-val.bold {
   border-color: var(--brass) !important;
   box-shadow: 0 0 0 2px var(--brass-tint);
 }
+/* Root fix for detached carets: the upgrade loop (observeSelectWrapFit in js/app.js)
+   adds .pa-select-hug when a select is narrower than its wrap, so the wrap takes the
+   select's width and the caret stays inside the box. Kept early in the file so a
+   context's own wrap rule (e.g. full width on phones) still wins. The menu grows to
+   fit long names; JS flips it (.menu-flip-x) when it would leave the screen. */
+.pa-select-wrap.pa-select-hug {
+  display: inline-flex;
+  /* fit-content, not auto: a column flex or grid parent stretches an auto width */
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 1 auto;
+  vertical-align: middle;
+}
+.pa-select-wrap.pa-select-hug > .pa-select-menu {
+  min-width: max(100%, 260px);
+  width: max-content;
+  max-width: min(420px, calc(100vw - 32px));
+  left: 0;
+  right: auto;
+}
+[dir="rtl"] .pa-select-wrap.pa-select-hug > .pa-select-menu,
+.pa-select-wrap.pa-select-hug.menu-flip-x > .pa-select-menu {
+  left: auto;
+  right: 0;
+}
+[dir="rtl"] .pa-select-wrap.pa-select-hug.menu-flip-x > .pa-select-menu {
+  left: 0;
+  right: auto;
+}
 .pa-suggest-item {
   gap: 8px;
 }
@@ -28802,7 +28832,6 @@ tr.kiosk-staff-row:focus-visible .kiosk-row-edit-hint {
   min-width: max(100%, 210px);
   width: max-content;
   max-width: min(360px, calc(100vw - 32px));
-  right: auto;
 }
 
 #kioskLatenessRulesTable td:nth-last-child(-n+3) .pa-select-menu {
@@ -34826,35 +34855,126 @@ video::-webkit-media-controls-start-playback-button {
 #indPbiSearchInput {
   font-size: 11.5px;
 }
-/* Inline filter pickers: the Rev 10 select upgrade wraps each <select> in a
-   width:100% .pa-select-wrap, which pushes the caret to the far edge of the row.
-   Size the wrap to its picker so the caret stays inside the box. */
-#indPbiSlicerBar .pa-select-wrap,
-.ind-specific-filter-bar > .pa-select-wrap {
-  display: inline-flex;
-  width: auto;
-  max-width: 100%;
-  min-width: 0;
-  flex: 0 1 auto;
-  vertical-align: middle;
-}
-/* The options menu is as wide as its wrap; let it grow to fit long option names
-   (site + region, counts) instead of shrinking with the hugged picker. */
-.geo-dist-selectors .pa-select-menu,
-#indPbiSlicerBar .pa-select-menu,
-.ind-specific-filter-bar .pa-select-menu {
+/* Inline pickers hug their select through the generic .pa-select-hug (see the
+   select upgrade block). The KM Estimator wraps have a fixed 210px width instead,
+   so their options menu still needs room for long site + region names. */
+.geo-dist-selectors .pa-select-menu {
   min-width: max(100%, 260px);
   width: max-content;
   max-width: min(420px, calc(100vw - 32px));
   right: auto;
 }
-[dir="rtl"] .geo-dist-selectors .pa-select-menu,
-[dir="rtl"] #indPbiSlicerBar .pa-select-menu,
-[dir="rtl"] .ind-specific-filter-bar .pa-select-menu {
+[dir="rtl"] .geo-dist-selectors .pa-select-menu {
   left: auto;
   right: 0;
 }
+/* Specific asset / counterparty filter (6 views across the 6 industries):
+   label, frequency-ranked chips, the full picker, then Reset. */
+.ind-specific-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  min-width: 0;
+}
+.ind-specific-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ind-specific-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+@media (min-width: 769px) {
+  /* Desktop: label, chips, picker and Reset flow as one line that wraps. */
+  .ind-specific-pills {
+    display: contents;
+  }
+}
+.ind-asset-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.13s ease, border-color 0.13s ease, color 0.13s ease;
+}
+.ind-asset-pill:hover {
+  border-color: var(--brass-border);
+  color: var(--ink);
+}
+.ind-asset-pill.on {
+  background: var(--brass);
+  border-color: var(--brass);
+  color: #0B1730;
+}
+.ind-asset-pill:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+.ind-specific-filter-bar > .ind-asset-pill {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--brass-border);
+  color: var(--brass-strong, #A67320);
+}
+.ind-specific-filter-bar > .ind-asset-pill:hover {
+  background: var(--brass-tint);
+}
+.ind-specific-filter-bar .ind-asset-select {
+  height: 29px;
+  min-height: 29px;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 8px;
+  max-width: 280px;
+  min-width: 0;
+}
+:root[data-theme="dark"] .ind-asset-pill.on {
+  color: #0B1730;
+}
 @media (max-width: 768px) {
+  .ind-specific-filter-bar {
+    padding: 8px 10px;
+  }
+  /* One scrolling line of chips instead of a tall stack. */
+  .ind-specific-pills {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .ind-specific-pills::-webkit-scrollbar {
+    display: none;
+  }
+  .ind-asset-pill {
+    flex: 0 0 auto;
+  }
   .ind-specific-filter-bar > .pa-select-wrap {
     display: flex;
     width: 100%;
@@ -34862,7 +34982,10 @@ video::-webkit-media-controls-start-playback-button {
   }
   .ind-specific-filter-bar > .pa-select-wrap > select {
     width: 100%;
+    max-width: none;
     min-width: 0;
+    height: 38px;
+    min-height: 38px;
   }
 }
 @media (max-width: 768px) {
