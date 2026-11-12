@@ -1784,7 +1784,7 @@
     if (!isLocalHost && !window.ISABI_LOCAL_API && !window.ISABI_HAS_EDGE_API) return null;
     const hasBin = payload && payload.dataUrl && /^(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf)$/i.test(String(payload.mimeType || ''));
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), hasBin ? 12000 : 4800);
+    const timer = setTimeout(() => ctrl.abort(), hasBin ? 14000 : 4800);
     try {
       const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
       const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
@@ -1792,8 +1792,8 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(Object.assign({
-          model: hasBin ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite',
-          thinkingBudget: 0
+          tier: hasBin ? 'vision' : 'fast',
+          thinkingLevel: hasBin ? 'LOW' : undefined
         }, payload)),
         signal: ctrl.signal
       });
@@ -1846,7 +1846,7 @@
     if (isLocalHost || window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) {
       const useVisionProEdge = Boolean(inlinePart || cleanTxt.length < 160);
       const ctrlEdge = new AbortController();
-      const timerEdge = setTimeout(() => ctrlEdge.abort(), inlinePart ? 13000 : 8500);
+      const timerEdge = setTimeout(() => ctrlEdge.abort(), inlinePart ? 14500 : 8500);
       try {
         const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
         const resEdge = await (window.ISABI_EDGE_FETCH || fetch)(`${base}/api/smart-scan`, {
@@ -1858,8 +1858,8 @@
             mimeType: (attObj && attObj.mime_type) || '',
             extractedText: cleanTxt,
             companies: regScope.companies || [],
-            model: useVisionProEdge ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite',
-            thinkingBudget: 0
+            tier: useVisionProEdge ? 'vision' : 'fast',
+            thinkingLevel: useVisionProEdge ? 'LOW' : undefined
           }),
           signal: ctrlEdge.signal
         });
@@ -3953,7 +3953,6 @@
         const attObjs = normPairs.map(p => p.attObj);
         const stitchedAtt = attObjs.length > 1 ? await stitchMultiPageVisionSheet(attObjs) : attObjs[0];
         const inlinePart = extractVisionInlinePart(stitchedAtt);
-        const relay = resolveAskRelayEndpoint();
 
         const fieldSchema = [];
         if (liveModal && !liveModal.hidden) {
@@ -3984,33 +3983,37 @@
           : 'Extract all matching fields directly from this document image.';
 
         let aiDom = null;
-        if (relay.url && relay.url.startsWith('http') && (inlinePart || String(combinedText || '').trim().length >= 12)) {
-          const usePro = Boolean(inlinePart || String(combinedText || '').trim().length < 160);
-          const parts = [{ text: userText }];
-          if (inlinePart) parts.push({ inlineData: inlinePart });
+        const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
+        const hasEdgeHost = Boolean(isLocalHost || window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API);
+        if (hasEdgeHost && (inlinePart || String(combinedText || '').trim().length >= 12)) {
+          const useVisionTier = Boolean(inlinePart || String(combinedText || '').trim().length < 160);
+          const intentTier = useVisionTier ? 'vision' : 'fast';
+          const inlineMime = (inlinePart && inlinePart.mimeType) ? String(inlinePart.mimeType) : '';
+          const inlineDataUrl = (inlinePart && inlinePart.data) ? `data:${inlineMime || 'image/jpeg'};base64,${inlinePart.data}` : '';
           const reqBody = {
-            key: relay.key,
-            op: 'ask',
-            surface: 'domain_smart_scan',
-            q: 'Domain Smart Scan Parse',
-            model: usePro ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite',
-            systemPrompt: domPrompt,
-            userPrompt: userText,
-            geminiContents: [{ role: 'user', parts }]
+            task: 'domain_smart_scan',
+            prompt: domPrompt + '\n\n' + userText,
+            dataUrl: inlineDataUrl,
+            mimeType: inlineMime,
+            tier: intentTier,
+            thinkingLevel: useVisionTier ? 'LOW' : undefined
           };
-          if (usePro) reqBody.thinkingBudget = 0;
+          const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
+          const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
           const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), inlinePart ? 13000 : 8500);
+          const timer = setTimeout(() => ctrl.abort(), inlinePart ? 14500 : 8500);
           try {
-            const res = await fetch(relay.url, {
+            const res = await edgeFetch(`${base}/api/ai-edge`, {
               method: 'POST',
-              headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(reqBody),
               signal: ctrl.signal
             });
             if (res.ok) {
               const j = await res.json();
-              aiDom = extractJsonBlock(j && (j.rawReply || j.reply || j.answer));
+              aiDom = (j && j.result && typeof j.result === 'object')
+                ? j.result
+                : extractJsonBlock(j && (j.rawReply || j.reply || j.answer));
             }
           } catch (_) {
           } finally {

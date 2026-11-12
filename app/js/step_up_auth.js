@@ -1072,7 +1072,7 @@
         `Total Verified Overrides: ${totalCount} | Off-Hours (22:00-06:00): ${offCount} | Burst (>=3 in 15m): ${burstCount} | Latest: ${topSeat} - ${topAction}.`,
         'Return ONLY JSON {"headline":"1 crisp sentence","bullets":["3 grounded bullets"]} with zero em-dashes and zero arrows.'
       ].join('\n');
-      const ai = await window.MFG_AI_EDGE.callAiEdgeJson(prompt, 'gemini-3.5-flash-lite', 5000).catch(() => null);
+      const ai = await window.MFG_AI_EDGE.callAiEdgeJson('override_audit_brief', prompt, '', '', { tier: 'fast', timeoutMs: 5000 }).catch(() => null);
       if (ai && ai.headline && Array.isArray(ai.bullets) && ai.bullets.length) {
         return {
           lang: l,

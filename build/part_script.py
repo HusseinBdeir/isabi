@@ -4129,7 +4129,7 @@ JS = r"""
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'gemini-3.8-flash-lite-tts',
+        tier: 'tts',
         voiceName,
         lang: safeLang,
         text: ttsTextSlice
@@ -4182,7 +4182,7 @@ JS = r"""
     const hasAudio = hasMedia && mediaParts.some(p => p && /^audio\//i.test(p.mimeType || ''));
     const messages = buildConversationMessages(cleanQ, lang, hasAudio);
     const deepQuery = hasMedia || cleanQ.length > 100 || /\b(why|how|compare|difference|migrate|migration|vs\b|odoo|sap|recommend|architecture|multi-entity|consolidat|explain|analyze|custom)/i.test(cleanQ);
-    const targetModel = deepQuery ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
+    const intentTier = hasMedia ? 'vision' : (deepQuery ? 'deep' : 'fast');
     const geminiContents = messages.slice(1).map((m, idx, arr) => {
       const parts = [{ text: String(m.content || '') }];
       if (hasMedia && idx === arr.length - 1 && m.role === 'user') {
@@ -4201,7 +4201,7 @@ JS = r"""
     // Lane 0: Same-origin Cloudflare Edge (/api/ask) with encrypted GEMINI_API_KEY
     if (window.ISABI_HAS_EDGE_API) {
       const ctrlEdge = new AbortController();
-      const timerEdge = setTimeout(() => ctrlEdge.abort(), deepQuery ? 13500 : 10000);
+      const timerEdge = setTimeout(() => ctrlEdge.abort(), deepQuery ? 14500 : 10000);
       try {
         const resEdge = await fetch('./api/ask', {
           method: 'POST',
@@ -4212,8 +4212,7 @@ JS = r"""
             lang: lang,
             industry: state.sboxInd || 'holding',
             replyTitle: fallbackResp.title || '',
-            model: targetModel,
-            thinkingBudget: deepQuery ? 512 : 0,
+            tier: intentTier,
             systemPrompt: buildGeminiSystemPrompt(lang, hasAudio),
             userPrompt: buildGeminiUserPrompt(cleanQ),
             geminiContents: geminiContents

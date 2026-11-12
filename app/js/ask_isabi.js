@@ -5548,7 +5548,7 @@
         const rLocal = await edgeFetch(`${base}/api/tts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: promptText, lang, voiceName, model: 'gemini-3.8-flash-lite-tts' }),
+          body: JSON.stringify({ text: promptText, lang, voiceName, tier: 'tts' }),
           signal
         });
         if (rLocal.ok) {
@@ -6095,7 +6095,7 @@
   }
 
   // ============================================================================
-  // 1-TAP CEO PERIOD SUMMARY & GROUNDED GEMINI-3.5-FLASH-LITE VARIANCE COMMENTARY
+  // 1-TAP CEO PERIOD SUMMARY & GROUNDED FAST-TIER VARIANCE COMMENTARY
   // ============================================================================
   const PERIOD_SUMMARY_DOMAIN_SPEC = {
     'Manufacturing': {
@@ -6596,7 +6596,7 @@
     const runPromise = (async () => {
       let rawReply = '';
       let debugNote = '';
-      let usedModel = 'gemini-3.5-flash-lite';
+      let usedModel = 'fast';
       const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
 
       const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
@@ -6611,7 +6611,7 @@
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                model: 'gemini-3.5-flash-lite',
+                tier: 'fast',
                 systemPrompt: sysPrompt,
                 userPrompt: usrPrompt,
                 geminiContents
@@ -6622,7 +6622,7 @@
               const jLoc = await rLoc.json();
               if (jLoc && jLoc.ok && jLoc.rawReply) {
                 rawReply = String(jLoc.rawReply);
-                usedModel = jLoc.model || 'gemini-3.5-flash-lite';
+                usedModel = jLoc.model || 'fast';
               } else if (jLoc) {
                 debugNote = `loc:${jLoc.mode || ''}:${jLoc.note || ''}`;
               }
@@ -7435,7 +7435,7 @@
     const runPromise = (async () => {
       let rawReply = '';
       let debugNote = '';
-      let usedModel = 'gemini-3.5-flash-lite';
+      let usedModel = 'fast';
       const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
 
       const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
@@ -7450,7 +7450,7 @@
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                model: 'gemini-3.5-flash-lite',
+                tier: 'fast',
                 systemPrompt: sysPrompt,
                 userPrompt: usrPrompt,
                 geminiContents
@@ -7461,7 +7461,7 @@
               const jLoc = await rLoc.json();
               if (jLoc && jLoc.ok && jLoc.rawReply) {
                 rawReply = String(jLoc.rawReply);
-                usedModel = jLoc.model || 'gemini-3.5-flash-lite';
+                usedModel = jLoc.model || 'fast';
               } else if (jLoc) {
                 debugNote = `loc:${jLoc.mode || ''}:${jLoc.note || ''}`;
               }
@@ -8241,7 +8241,7 @@
     const runPromise = (async () => {
       let rawReply = '';
       let debugNote = '';
-      let usedModel = 'gemini-3.5-flash-lite';
+      let usedModel = 'fast';
       const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
 
       const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
@@ -8256,7 +8256,7 @@
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                model: 'gemini-3.5-flash-lite',
+                tier: 'fast',
                 systemPrompt: sysPrompt,
                 userPrompt: usrPrompt,
                 geminiContents
@@ -8267,7 +8267,7 @@
               const jLoc = await rLoc.json();
               if (jLoc && jLoc.ok && jLoc.rawReply) {
                 rawReply = String(jLoc.rawReply);
-                usedModel = jLoc.model || 'gemini-3.5-flash-lite';
+                usedModel = jLoc.model || 'fast';
               } else if (jLoc) {
                 debugNote = `loc:${jLoc.mode || ''}:${jLoc.note || ''}`;
               }
@@ -8930,7 +8930,7 @@
     const runPromise = (async () => {
       let rawReply = '';
       let debugNote = '';
-      let usedModel = 'gemini-3.5-flash-lite';
+      let usedModel = 'fast';
       const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
 
       const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
@@ -8945,7 +8945,7 @@
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                model: 'gemini-3.5-flash-lite',
+                tier: 'fast',
                 systemPrompt: sysPrompt,
                 userPrompt: usrPrompt,
                 geminiContents
@@ -8956,7 +8956,7 @@
               const jLoc = await rLoc.json();
               if (jLoc && jLoc.ok && jLoc.rawReply) {
                 rawReply = String(jLoc.rawReply);
-                usedModel = jLoc.model || 'gemini-3.5-flash-lite';
+                usedModel = jLoc.model || 'fast';
               } else if (jLoc) {
                 debugNote = `loc:${jLoc.mode || ''}:${jLoc.note || ''}`;
               }
@@ -9729,7 +9729,7 @@
     const runPromise = (async () => {
       let rawReply = '';
       let debugNote = '';
-      let usedModel = 'gemini-3.5-flash-lite';
+      let usedModel = 'fast';
       const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
 
       const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
@@ -9744,7 +9744,7 @@
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                model: 'gemini-3.5-flash-lite',
+                tier: 'fast',
                 systemPrompt: sysPrompt,
                 userPrompt: usrPrompt,
                 geminiContents
@@ -9755,7 +9755,7 @@
               const jLoc = await rLoc.json();
               if (jLoc && jLoc.ok && jLoc.rawReply) {
                 rawReply = String(jLoc.rawReply);
-                usedModel = jLoc.model || 'gemini-3.5-flash-lite';
+                usedModel = jLoc.model || 'fast';
               } else if (jLoc) {
                 debugNote = `loc:${jLoc.mode || ''}:${jLoc.note || ''}`;
               }
@@ -10651,7 +10651,7 @@
     const runPromise = (async () => {
       let rawReply = '';
       let debugNote = '';
-      let usedModel = 'gemini-3.5-flash-lite';
+      let usedModel = 'fast';
       const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
 
       const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
@@ -10666,7 +10666,7 @@
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                model: 'gemini-3.5-flash-lite',
+                tier: 'fast',
                 systemPrompt: sysPrompt,
                 userPrompt: usrPrompt,
                 geminiContents
@@ -10677,7 +10677,7 @@
               const jLoc = await rLoc.json();
               if (jLoc && jLoc.ok && jLoc.rawReply) {
                 rawReply = String(jLoc.rawReply);
-                usedModel = jLoc.model || 'gemini-3.5-flash-lite';
+                usedModel = jLoc.model || 'fast';
               } else if (jLoc) {
                 debugNote = `loc:${jLoc.mode || ''}:${jLoc.note || ''}`;
               }
@@ -11575,7 +11575,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'gemini-3.5-flash-lite',
+        tier: 'fast',
         systemPrompt: sysPrompt,
         userPrompt: usrPrompt,
         geminiContents
@@ -13280,7 +13280,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'gemini-3.5-flash-lite',
+        tier: 'fast',
         systemPrompt: sysPrompt,
         userPrompt: usrPrompt,
         geminiContents
@@ -14483,7 +14483,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'gemini-3.5-flash-lite',
+        tier: 'fast',
         lang: safeLang,
         messages: [{ role: 'user', content: promptLines.join('\n') }]
       })
@@ -15772,7 +15772,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'gemini-3.5-flash-lite',
+          tier: 'fast',
           systemPrompt: sysPrompt,
           userPrompt: usrPrompt,
           geminiContents
@@ -17163,7 +17163,7 @@
         headers: { 'Content-Type': 'application/json' },
         signal: abortCtrl ? abortCtrl.signal : undefined,
         body: JSON.stringify({
-          model: 'gemini-3.5-flash-lite',
+          tier: 'fast',
           systemPrompt: sysPrompt,
           userPrompt: usrPrompt,
           geminiContents
@@ -17190,7 +17190,7 @@
           }
           const cleanBrief = {
             source: parsed ? 'gemini' : 'deterministic',
-            model: (data && data.model) || (parsed ? 'gemini-3.5-flash-lite' : 'deterministic-local'),
+            model: (data && data.model) || (parsed ? 'fast' : 'deterministic-local'),
             headline: (parsed && parsed.headline) ? sanitizeTreasuryForecastText(parsed.headline) : sum.headline,
             bullets: (parsed && Array.isArray(parsed.bullets) && parsed.bullets.length)
               ? parsed.bullets.map(b => sanitizeTreasuryForecastText(b)).filter(Boolean).slice(0, 4)
@@ -18785,7 +18785,7 @@
         headers: { 'Content-Type': 'application/json' },
         signal: abortCtrl ? abortCtrl.signal : undefined,
         body: JSON.stringify({
-          model: 'gemini-3.5-flash-lite',
+          tier: 'fast',
           systemPrompt: sysPrompt,
           userPrompt: usrPrompt,
           geminiContents
@@ -18812,7 +18812,7 @@
           }
           const cleanBrief = {
             source: parsed ? 'gemini' : 'deterministic',
-            model: (data && data.model) || (parsed ? 'gemini-3.5-flash-lite' : 'deterministic-local'),
+            model: (data && data.model) || (parsed ? 'fast' : 'deterministic-local'),
             headline: (parsed && parsed.headline) ? scrubRedactedUsd(parsed.headline) : scrubRedactedUsd(sum.headline),
             bullets: (parsed && Array.isArray(parsed.bullets) && parsed.bullets.length)
               ? parsed.bullets.map(b => scrubRedactedUsd(b)).filter(Boolean).slice(0, 4)
@@ -20114,8 +20114,7 @@
     const messages = buildLlmContextMessages(cleanQ, lang, scope, fallback, turnAtts, llmOpts);
 
     const deepReason = isReasoningQuery(cleanQ) || cleanQ.length > 160 || hasMultimodal;
-    const useProFlash = Boolean(hasMultimodal || deepReason);
-    const targetModel = useProFlash ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
+    const intentTier = hasMultimodal ? 'vision' : (deepReason ? 'deep' : 'fast');
 
     const geminiContents = [];
     const nonSysMsgs = messages.slice(1);
@@ -20148,8 +20147,8 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: targetModel,
-            thinkingBudget: useProFlash ? (hasMultimodal ? 0 : 768) : 0,
+            tier: intentTier,
+            thinkingLevel: intentTier === 'deep' ? 'MEDIUM' : (intentTier === 'vision' ? 'LOW' : undefined),
             systemPrompt: messages[0].content,
             userPrompt: cleanQ,
             geminiContents
@@ -21341,7 +21340,7 @@
         text: buildTtsPromptPayload(plain, safeLang),
         lang: safeLang,
         voiceName: safeLang === 'ar' ? 'Charon' : (safeLang === 'fr' ? 'Aoede' : 'Kore'),
-        model: 'gemini-3.8-flash-lite-tts'
+        tier: 'tts'
       };
     },
     normalizeForSpeech: normalizeTextForSpeech,

@@ -398,16 +398,29 @@
   async function callAiEdgeJson(task, prompt, dataUrl, mimeType, opts) {
     if (isHeadlessEnv() && !window.__MFG_TEST_LIVE_AI) return null;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
+    if (typeof dataUrl === 'number' && /^(gemini-|fast|deep|vision)$/i.test(String(prompt || '').trim())) {
+      const legacyTier = String(prompt).trim().toLowerCase();
+      opts = Object.assign({}, (mimeType && typeof mimeType === 'object') ? mimeType : {}, {
+        tier: /^(fast|deep|vision)$/.test(legacyTier) ? legacyTier : 'fast',
+        timeoutMs: dataUrl
+      });
+      prompt = task;
+      task = 'grounded_brief';
+      dataUrl = '';
+      mimeType = '';
+    }
     const cleanPrompt = String(prompt || '').trim().slice(0, 12000);
     if (!cleanPrompt) return null;
 
     const inlinePart = extractAiEdgeInlinePart(dataUrl, mimeType);
     const hostnameHint = opts && typeof opts.hostname === 'string' ? opts.hostname : undefined;
+    const timeoutMs = (opts && Number(opts.timeoutMs) > 0) ? Number(opts.timeoutMs) : (inlinePart ? 14000 : 6500);
+    const intentTier = (opts && opts.tier) ? String(opts.tier).trim().toLowerCase() : (inlinePart ? 'vision' : 'fast');
 
     // Same-origin Cloudflare Edge / Local Server API (./api/ai-edge) — zero external relay
     if (isLocalOrEdgeApiHost(hostnameHint)) {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), inlinePart ? 12000 : 6500);
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
         const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
         const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
@@ -419,8 +432,7 @@
             prompt: cleanPrompt,
             dataUrl: dataUrl || '',
             mimeType: mimeType || '',
-            model: inlinePart ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite',
-            thinkingBudget: 0
+            tier: intentTier
           }),
           signal: ctrl.signal
         });
@@ -4096,7 +4108,7 @@
       `Unbilled Weighbridge Accrual: ${fmtUSD(pack.estRawUsd, 2)} | Unpriced Supplier Cutoff: ${fmtUSD(pack.estExpUsd, 2)} | Salary Pending Provision: ${fmtUSD(pack.estSalUsd, 2)}`,
       'Return ONLY JSON {"headline": "1 crisp sentence", "bullets": ["3 short grounded bullets"]} with zero em-dashes or arrows.'
     ].join('\n');
-    const aiRes = await callAiEdgeJson(prompt, 'gemini-3.5-flash-lite', 6500);
+    const aiRes = await callAiEdgeJson('mfg_close_sweep', prompt, '', '', { tier: 'fast', timeoutMs: 6500 });
     if (aiRes && aiRes.headline && Array.isArray(aiRes.bullets) && aiRes.bullets.length) {
       EDGE_STATE.mfgSweepBrief = {
         headline: sanitizeOutward(aiRes.headline),
@@ -4412,7 +4424,7 @@
       `Cutoff: ${pack.cutoffDate} | Earned Membership Revenue: ${fmtUSD(pack.totalEarnedUsd, 2)} | Deferred Unearned: ${fmtUSD(pack.totalDeferredUsd, 2)} | Stock Counts: ${pack.outletCountTotal} | Shrinkage Watch (>1.15x): ${pack.shrinkageOutliersCount}`,
       'Return ONLY JSON {"headline": "1 crisp sentence", "bullets": ["3 short grounded bullets"]} covering weather/holiday F&B shrinkage and complimentary-tab review with zero em-dashes or arrows.'
     ].join('\n');
-    const aiRes = await callAiEdgeJson(prompt, 'gemini-3.5-flash-lite', 6500);
+    const aiRes = await callAiEdgeJson('hsp_close_sweep', prompt, '', '', { tier: 'fast', timeoutMs: 6500 });
     EDGE_STATE.hspShrinkBrief = (aiRes && aiRes.headline && Array.isArray(aiRes.bullets) && aiRes.bullets.length)
       ? { headline: sanitizeOutward(aiRes.headline), bullets: aiRes.bullets.slice(0, 3).map(sanitizeOutward) }
       : fallback;
@@ -4939,7 +4951,7 @@
       `Cutoff: ${pack.cutoffDate} | Unsold VINs: ${pack.unsoldVinCount} | Floorplan Interest Accrual: ${fmtUSD(pack.totalFloorplanInterestUsd, 2)} | Undelivered Deposits Held: ${fmtUSD(pack.undeliveredCustomerDepositsUsd, 2)} | Reorder SKUs: ${pack.lowStockReorderCount}`,
       'Return ONLY JSON {"headline": "1 crisp sentence", "bullets": ["3 short grounded bullets"]} summarizing customs/backorder bottlenecks and deposit cutoff with zero em-dashes or arrows.'
     ].join('\n');
-    const aiRes = await callAiEdgeJson(prompt, 'gemini-3.5-flash-lite', 6500);
+    const aiRes = await callAiEdgeJson('trd_eta_brief', prompt, '', '', { tier: 'fast', timeoutMs: 6500 });
     EDGE_STATE.trdEtaBrief = (aiRes && aiRes.headline && Array.isArray(aiRes.bullets) && aiRes.bullets.length)
       ? { headline: sanitizeOutward(aiRes.headline), bullets: aiRes.bullets.slice(0, 3).map(sanitizeOutward) }
       : fallback;
@@ -5190,7 +5202,7 @@
       `Cutoff: ${pack.cutoffDate} | Renewal GWP Pipeline: ${fmtUSD(pack.totalRenewalGwpUsd, 2)} | Clawback Reserve: ${fmtUSD(pack.totalClawbackReserveUsd, 2)} | Portfolio Loss Ratio: ${pack.lossRatioPct}%`,
       'Return ONLY JSON {"headline": "1 crisp sentence", "bullets": ["3 short grounded bullets"]} covering coverage gaps, loss ratio, and bordereau cutoff with zero em-dashes or arrows.'
     ].join('\n');
-    const aiRes = await callAiEdgeJson(prompt, 'gemini-3.5-flash-lite', 6500);
+    const aiRes = await callAiEdgeJson('ins_renew_brief', prompt, '', '', { tier: 'fast', timeoutMs: 6500 });
     EDGE_STATE.insRenewBrief = (aiRes && aiRes.headline && Array.isArray(aiRes.bullets) && aiRes.bullets.length)
       ? { headline: sanitizeOutward(aiRes.headline), bullets: aiRes.bullets.slice(0, 3).map(sanitizeOutward) }
       : fallback;
@@ -5488,7 +5500,7 @@
       `Cutoff: ${gate.cutoffDate} | Consolidated Revenue: $${salesM}M | Operating Profit: $${ebitdaM}M | Sealed Entities: ${gate.sealedCount}/14 | TB Drift: $0.00`,
       'Return ONLY JSON {"headline": "1 sentence", "bullets": ["3 grounded bullets"], "spokenScript": "3 natural spoken sentences with zero symbols"} and zero em-dashes or arrows.'
     ].join('\n');
-    const aiRes = await callAiEdgeJson(prompt, 'gemini-3.5-flash-lite', 6500);
+    const aiRes = await callAiEdgeJson('hld_board_brief', prompt, '', '', { tier: 'fast', timeoutMs: 6500 });
     if (aiRes && aiRes.headline && Array.isArray(aiRes.bullets) && aiRes.bullets.length) {
       EDGE_STATE.hldBoardBrief = {
         lang: l,
@@ -5531,7 +5543,7 @@
         ttsUrl = await window.MFG_ASK.requestTtsUrl(script, l);
       } catch (_) {}
     } else if (isHeadlessEnv() && window.MFG_ASK && typeof window.MFG_ASK.requestTtsUrl === 'function') {
-      EDGE_STATE.boardAudioSrc = `headless-tts://gemini-3.8-flash-lite-tts/${l}`;
+      EDGE_STATE.boardAudioSrc = `headless-tts://tts/${l}`;
       EDGE_STATE.boardSpeaking = false;
       return { ok: true, mode: 'headless_gemini_tts_verified', audioSrc: EDGE_STATE.boardAudioSrc, script };
     }

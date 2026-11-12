@@ -8,6 +8,8 @@
 import { checkD1RateLimit, checkSlidingRateLimit, hashClientIp, jsonResponse } from './security.js';
 
 const ALLOWED_GEMINI_MODELS = new Set([
+  'gemini-4-hydrogen',
+  'gemini-4-argon',
   'gemini-3.8-flash',
   'gemini-3.5-flash-lite',
   'gemini-2.5-flash',
@@ -20,6 +22,89 @@ const ALLOWED_TTS_MODELS = new Set([
   'gemini-3.1-flash-tts-preview',
   'gemini-2.5-flash-preview-tts'
 ]);
+
+const VALID_INTENT_TIERS = new Set(['fast', 'deep', 'vision', 'tts']);
+
+function normalizeIntentTier(rawTier, fallback = 'fast') {
+  const t = String(rawTier || '').trim().toLowerCase();
+  if (VALID_INTENT_TIERS.has(t)) return t;
+  return VALID_INTENT_TIERS.has(fallback) ? fallback : 'fast';
+}
+
+export function resolveGeminiTierModel(env, { tier = '', reqModel = '', defaultTier = 'fast', isAuthed = false } = {}) {
+  const rawLite = String((env && env.ISABI_GEMINI_LITE_MODEL) || '').trim();
+  const rawDeep = String((env && env.ISABI_GEMINI_MODEL) || '').trim();
+  const rawVision = String((env && env.ISABI_GEMINI_VISION_MODEL) || '').trim();
+  const rawTts = String((env && env.ISABI_GEMINI_TTS_MODEL) || '').trim();
+
+  const fastModel = ALLOWED_GEMINI_MODELS.has(rawLite) ? rawLite : 'gemini-3.5-flash-lite';
+  const deepModel = ALLOWED_GEMINI_MODELS.has(rawDeep) ? rawDeep : 'gemini-4-hydrogen';
+  const visionModel = ALLOWED_GEMINI_MODELS.has(rawVision) ? rawVision : deepModel;
+  const ttsModel = ALLOWED_TTS_MODELS.has(rawTts) ? rawTts : 'gemini-3.8-flash-lite-tts';
+
+  const safeDefaultTier = normalizeIntentTier(defaultTier, 'fast');
+  const cleanReqModel = String(reqModel || '').trim();
+  const rawTier = isAuthed
+    ? (String(tier || '').trim() || (VALID_INTENT_TIERS.has(cleanReqModel.toLowerCase()) ? cleanReqModel : ''))
+    : '';
+  const normTier = normalizeIntentTier(rawTier, safeDefaultTier);
+
+  if (safeDefaultTier === 'tts') {
+    if (isAuthed && ALLOWED_TTS_MODELS.has(cleanReqModel)) {
+      return { model: cleanReqModel, intentTier: 'tts' };
+    }
+    return { model: ttsModel, intentTier: 'tts' };
+  }
+  const effTier = normTier === 'tts' ? safeDefaultTier : normTier;
+
+  const tierMap = {
+    fast: fastModel,
+    deep: deepModel,
+    vision: visionModel
+  };
+
+  if (isAuthed) {
+    if (rawTier && VALID_INTENT_TIERS.has(rawTier.toLowerCase()) && rawTier.toLowerCase() !== 'tts') {
+      return { model: tierMap[effTier] || fastModel, intentTier: effTier };
+    }
+    if (ALLOWED_GEMINI_MODELS.has(cleanReqModel)) {
+      return { model: cleanReqModel, intentTier: effTier };
+    }
+  }
+  return { model: tierMap[safeDefaultTier] || fastModel, intentTier: safeDefaultTier };
+}
+
+export function applyGeminiThinkingConfig(genCfg, targetModel, intentTier, body, isAuthed, maxLegacyBudget = 1024) {
+  const m = String(targetModel || '');
+  if (m.startsWith('gemini-4-')) {
+    const reqLvl = String((body && body.thinkingLevel) || '').trim().toUpperCase();
+    const tb = Number(body && body.thinkingBudget);
+    let thinkingLevel = 'LOW';
+    if (isAuthed) {
+      if (reqLvl === 'MEDIUM') thinkingLevel = 'MEDIUM';
+      else if (reqLvl === 'LOW') thinkingLevel = 'LOW';
+      else if (intentTier === 'deep' || (Number.isFinite(tb) && tb >= 256)) thinkingLevel = 'MEDIUM';
+    }
+    genCfg.thinkingConfig = { thinkingLevel };
+    genCfg.maxOutputTokens = Math.max(Number(genCfg.maxOutputTokens) || 0, isAuthed ? 2500 : 1400);
+    return genCfg;
+  }
+  if (m.includes('3.8-flash') || m.includes('3.6-flash')) {
+    const tb = isAuthed ? Number((body && body.thinkingBudget) || 0) : 0;
+    genCfg.thinkingConfig = { thinkingBudget: Number.isFinite(tb) && tb >= 0 ? Math.min(tb, maxLegacyBudget) : 0 };
+  }
+  return genCfg;
+}
+
+export function extractCandidateText(gRes) {
+  const parts = (((gRes && gRes.candidates && gRes.candidates[0]) || {}).content || {}).parts || [];
+  const answerPart = parts.find(p => p && !p.thought && typeof p.text === 'string' && p.text.trim())
+    || parts.find(p => p && !p.thought && typeof p.text === 'string')
+    || parts.find(p => p && typeof p.text === 'string' && p.text.trim())
+    || parts[0]
+    || {};
+  return String(answerPart.text || '').trim();
+}
 
 const ALLOWED_VOICES = new Set(['Kore', 'Charon', 'Aoede', 'Puck', 'Fenrir']);
 const PUBLIC_AI_DAILY_BUDGET = 1500;
@@ -193,14 +278,20 @@ export async function handleEdgeAsk(request, env, body, ctx, session = null) {
 
   try {
     let targetModel = 'gemini-3.5-flash-lite';
+    let resolvedTier = 'fast';
     let sysPrompt = '';
     let gemContents = [];
     let maxOutTokens = 900;
-    let thinkingBudget = 0;
 
     if (isAuthed) {
-      const reqModel = String((body && body.model) || (env && env.ISABI_GEMINI_MODEL) || 'gemini-3.8-flash').trim();
-      targetModel = ALLOWED_GEMINI_MODELS.has(reqModel) ? reqModel : 'gemini-3.8-flash';
+      const resolved = resolveGeminiTierModel(env, {
+        tier: body && body.tier,
+        reqModel: body && body.model,
+        defaultTier: 'deep',
+        isAuthed: true
+      });
+      targetModel = resolved.model;
+      resolvedTier = resolved.intentTier;
       sysPrompt = String((body && body.systemPrompt) || '').trim().slice(0, 24000);
       gemContents = Array.isArray(body && body.geminiContents) ? body.geminiContents.slice(-16) : [];
       if (!gemContents.length) {
@@ -209,26 +300,32 @@ export async function handleEdgeAsk(request, env, body, ctx, session = null) {
         gemContents = [{ role: 'user', parts: [{ text: userP }] }];
       }
       maxOutTokens = 1500;
-      const tb = Number(body && body.thinkingBudget);
-      thinkingBudget = Number.isFinite(tb) && tb >= 0 ? Math.min(tb, 2048) : 0;
     } else if (isShowcase) {
-      // Showcase: strictly ignore caller systemPrompt, model, and thinkingBudget
+      // Showcase: strictly ignore caller systemPrompt, tier, model, and thinking settings
       const san = sanitizeUnauthContents(body && body.geminiContents, body && (body.userPrompt || body.q), 480000);
       gemContents = san.contents;
       if (!gemContents.length) return jsonResponse({ ok: false, error: 'Empty prompt' }, 400);
-      targetModel = san.hasAudio ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
+      const resolved = resolveGeminiTierModel(env, {
+        defaultTier: san.hasAudio ? 'vision' : 'fast',
+        isAuthed: false
+      });
+      targetModel = resolved.model;
+      resolvedTier = resolved.intentTier;
       sysPrompt = buildShowcaseSystemPrompt(body && body.lang, san.hasAudio);
       maxOutTokens = 850;
-      thinkingBudget = 0;
     } else {
-      // Unauthenticated Command Center Demo Sandbox: lock model, budget, turns, and ERP-only guardrail
+      // Unauthenticated Command Center Demo Sandbox: lock model tier, budget, turns, and ERP-only guardrail
       const san = sanitizeUnauthContents(body && body.geminiContents, body && (body.userPrompt || body.q), 480000);
       gemContents = san.contents;
       if (!gemContents.length) return jsonResponse({ ok: false, error: 'Empty prompt' }, 400);
-      targetModel = san.hasAudio ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
+      const resolved = resolveGeminiTierModel(env, {
+        defaultTier: san.hasAudio ? 'vision' : 'fast',
+        isAuthed: false
+      });
+      targetModel = resolved.model;
+      resolvedTier = resolved.intentTier;
       sysPrompt = buildDemoErpSystemPrompt(body && body.systemPrompt);
       maxOutTokens = 900;
-      thinkingBudget = 0;
     }
 
     const genCfg = {
@@ -236,9 +333,7 @@ export async function handleEdgeAsk(request, env, body, ctx, session = null) {
       maxOutputTokens: maxOutTokens,
       responseMimeType: 'application/json'
     };
-    if (targetModel.includes('3.8-flash') || targetModel.includes('3.6-flash')) {
-      genCfg.thinkingConfig = { thinkingBudget };
-    }
+    applyGeminiThinkingConfig(genCfg, targetModel, resolvedTier, body, isAuthed, 2048);
 
     const reqObj = { contents: gemContents, generationConfig: genCfg };
     if (sysPrompt) {
@@ -260,9 +355,7 @@ export async function handleEdgeAsk(request, env, body, ctx, session = null) {
       return jsonResponse({ ok: false, mode: 'ask_fallback', note: `gemini_${resp.status}` });
     }
     const gRes = await resp.json();
-    const parts = (((gRes && gRes.candidates && gRes.candidates[0]) || {}).content || {}).parts || [];
-    const textPart = parts.find(p => p && typeof p.text === 'string' && p.text.trim()) || parts[0] || {};
-    const rawReply = String(textPart.text || '').trim();
+    const rawReply = extractCandidateText(gRes);
     if (!rawReply) {
       return jsonResponse({ ok: false, mode: 'ask_empty' });
     }
@@ -305,8 +398,12 @@ export async function handleEdgeTts(request, env, body, session = null) {
     const maxChars = isAuthed ? 2400 : 900;
     const ttsText = String((body && body.text) || '').trim().slice(0, maxChars);
     if (!ttsText) return jsonResponse({ ok: false, error: 'Empty text' }, 400);
-    const reqModel = String((body && body.model) || (env && env.ISABI_GEMINI_TTS_MODEL) || 'gemini-3.8-flash-lite-tts').trim();
-    const ttsModel = (isAuthed && ALLOWED_TTS_MODELS.has(reqModel)) ? reqModel : 'gemini-3.8-flash-lite-tts';
+    const { model: ttsModel } = resolveGeminiTierModel(env, {
+      tier: 'tts',
+      reqModel: body && body.model,
+      defaultTier: 'tts',
+      isAuthed
+    });
     const rawVoice = String((body && body.voiceName) || 'Kore').trim();
     const voiceName = ALLOWED_VOICES.has(rawVoice) ? rawVoice : 'Kore';
     const ttsCandidates = Array.from(new Set([
@@ -417,17 +514,14 @@ export async function handleEdgeSmartScan(request, env, body, session = null) {
       }
     }
 
-    const reqModel = String((body && body.model) || '').trim();
-    const targetModel = (isAuthed && ALLOWED_GEMINI_MODELS.has(reqModel))
-      ? reqModel
-      : (hasVisionBin
-        ? ((env && env.ISABI_GEMINI_VISION_MODEL) || 'gemini-3.8-flash')
-        : ((env && env.ISABI_GEMINI_MODEL) || 'gemini-3.5-flash-lite'));
-    const genCfg = { temperature: 0.1, maxOutputTokens: isAuthed ? 2048 : 1024, responseMimeType: 'application/json' };
-    if (targetModel.includes('3.8-flash') || targetModel.includes('3.6-flash')) {
-      const tb = isAuthed ? Number((body && body.thinkingBudget) || 0) : 0;
-      genCfg.thinkingConfig = { thinkingBudget: Number.isFinite(tb) && tb >= 0 ? Math.min(tb, 1024) : 0 };
-    }
+    const { model: targetModel, intentTier } = resolveGeminiTierModel(env, {
+      tier: body && body.tier,
+      reqModel: body && body.model,
+      defaultTier: hasVisionBin ? 'vision' : 'fast',
+      isAuthed
+    });
+    const genCfg = { temperature: 0.1, maxOutputTokens: isAuthed ? 2560 : 1024, responseMimeType: 'application/json' };
+    applyGeminiThinkingConfig(genCfg, targetModel, intentTier === 'deep' ? 'vision' : intentTier, body, isAuthed, 1024);
 
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 15000);
@@ -444,7 +538,7 @@ export async function handleEdgeSmartScan(request, env, body, session = null) {
       return jsonResponse({ ok: true, mode: 'fallback', parsed: null, note: `gemini_${resp.status}` });
     }
     const gRes = await resp.json();
-    const candTxt = (((((gRes && gRes.candidates && gRes.candidates[0]) || {}).content || {}).parts || [])[0] || {}).text || '{}';
+    const candTxt = extractCandidateText(gRes) || '{}';
     const parsedObj = extractFirstJsonObject(candTxt);
     return jsonResponse({ ok: true, mode: 'gemini_vision', edge: true, model: targetModel, parsed: parsedObj });
   } catch (ex) {
@@ -494,17 +588,14 @@ export async function handleEdgeAiEdge(request, env, body, session = null) {
       }
     }
 
-    const reqModel = String((body && body.model) || '').trim();
-    const targetModel = (isAuthed && ALLOWED_GEMINI_MODELS.has(reqModel))
-      ? reqModel
-      : (hasVisionBin
-        ? ((env && env.ISABI_GEMINI_VISION_MODEL) || 'gemini-3.8-flash')
-        : ((env && env.ISABI_GEMINI_LITE_MODEL) || 'gemini-3.5-flash-lite'));
-    const genCfg = { temperature: 0.1, maxOutputTokens: isAuthed ? 2048 : 900, responseMimeType: 'application/json' };
-    if (targetModel.includes('3.8-flash') || targetModel.includes('3.6-flash')) {
-      const tb = isAuthed ? Number((body && body.thinkingBudget) || 0) : 0;
-      genCfg.thinkingConfig = { thinkingBudget: Number.isFinite(tb) && tb >= 0 ? Math.min(tb, 1024) : 0 };
-    }
+    const { model: targetModel, intentTier } = resolveGeminiTierModel(env, {
+      tier: body && body.tier,
+      reqModel: body && body.model,
+      defaultTier: hasVisionBin ? 'vision' : 'fast',
+      isAuthed
+    });
+    const genCfg = { temperature: 0.1, maxOutputTokens: isAuthed ? 2560 : 900, responseMimeType: 'application/json' };
+    applyGeminiThinkingConfig(genCfg, targetModel, intentTier === 'deep' ? 'vision' : intentTier, body, isAuthed, 1024);
 
     const reqBody = { contents: [{ role: 'user', parts }], generationConfig: genCfg };
     if (!isAuthed) {
@@ -530,7 +621,7 @@ export async function handleEdgeAiEdge(request, env, body, session = null) {
       return jsonResponse({ ok: true, mode: 'local_hybrid', result: null, note: `gemini_${resp.status}` });
     }
     const gRes = await resp.json();
-    const candTxt = (((((gRes && gRes.candidates && gRes.candidates[0]) || {}).content || {}).parts || [])[0] || {}).text || '{}';
+    const candTxt = extractCandidateText(gRes) || '{}';
     const parsedObj = extractFirstJsonObject(candTxt);
     return jsonResponse({
       ok: true,
