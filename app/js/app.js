@@ -8173,6 +8173,13 @@
     master: 'Counterparties & Sites'
   };
 
+  // Unlock requests waiting on this seat (Approvals Inbox, js/approvals.js). Red: each one expires in 10 minutes.
+  function getApprovalsExceptionBadge(u) {
+    if (!window.MFG_APPROVALS || !canViewView('approvals', u)) return null;
+    const n = window.MFG_APPROVALS.pendingRequestCount();
+    return n > 0 ? { text: `${fmtNum(n)} Request${n === 1 ? '' : 's'}`, cls: 'crit' } : null;
+  }
+
   function getSentinelExceptionBadge(u, sentinelsOpen) {
     if (!canViewView('sentinels', u)) return null;
     const cnt = Number(sentinelsOpen || 0);
@@ -8571,7 +8578,7 @@
   }
 
   function getHubExceptionBadge(hubId, u, k, sentinelsOpen) {
-    if (hubId === 'sentinels') return getSentinelExceptionBadge(u, sentinelsOpen);
+    if (hubId === 'sentinels') return getApprovalsExceptionBadge(u) || getSentinelExceptionBadge(u, sentinelsOpen);
     if (hubId === 'raw') return getPendingRawPriceExceptionBadge(u);
     if (hubId === 'expenses') return getPendingPriceExceptionBadge(u);
     if (hubId === 'fleet') return getFleetExceptionBadge(u) || getDieselExceptionBadge(u);
@@ -8611,7 +8618,8 @@
       group: 'exec',
       tabs: [
         { view: 'sentinels', label: 'AI Sentinels & Audit', icon: 'sentinels', badgeFn: (u, _k, sn) => getSentinelExceptionBadge(u, sn) },
-        { view: 'alert_rules', label: 'Alerts & Thresholds', icon: 'alert_rules' }
+        { view: 'alert_rules', label: 'Alerts & Thresholds', icon: 'alert_rules' },
+        { view: 'approvals', label: 'Approvals Inbox', icon: 'approvals', badgeFn: u => getApprovalsExceptionBadge(u) }
       ]
     },
     {
@@ -9104,6 +9112,8 @@
     if (view === 'expenses_analytics') return canViewViewBaseline('expenses', u) && canAccessPbiPage('p07_ap', u);
     if (view === 'workforce_map' || view === 'payroll_attendance' || view === 'payroll_allowances' || view === 'payroll_contracts') return canViewViewBaseline('payroll', u);
     if (view === 'alert_rules') return canViewViewBaseline('sentinels', u);
+    // Approvals Inbox: anyone who reviews Sentinels, plus any seat that may approve an unlock.
+    if (view === 'approvals') return canViewViewBaseline('sentinels', u) || Boolean(window.MFG_APPROVALS && window.MFG_APPROVALS.canApprove(u));
     if (view === 'payroll_analytics') return canViewViewBaseline('payroll', u) && (canAccessPbiPage('p12_payroll', u) || canAccessPbiPage('p11_drivers', u));
     if (view === 'external') return canViewViewBaseline('cashflow', u) && canAccessTable('external_movements', u);
     if (view === 'ledger_treasury') return canViewViewBaseline('cashflow', u) && (canAccessTable('loans', u) || canAccessPbiPage('p15_treasury', u));
@@ -78481,6 +78491,8 @@
     const canUnlockTarget = isAdmin || canUnlockField(target.id, who);
     const roleUnlockableFields = fields.filter(f => isAdmin || f.canUnlock);
     const unlockedList = fields.filter(f => f.adminOpen);
+    // Remote approval (js/approvals.js): a signed-in workspace with a live connection, never the demo.
+    const canAskApproval = Boolean(!canUnlockTarget && window.MFG_APPROVALS && hasServerApi() && !isDemoScopeActive());
     const targetElForBox = $(target.id);
     const targetWrapForBox = targetElForBox ? targetElForBox.closest('.form-field') : null;
     if (targetWrapForBox && targetWrapForBox.parentNode) {
@@ -78497,7 +78509,13 @@
         <div style="margin-top:3px"><b>Override Posture:</b> ${canUnlockTarget
           ? `Your role (<b>${esc(who.role)}</b>) is authorized to unlock <b>${esc(target.label)}</b> directly without an external PIN.`
           : `Your role (<b>${esc(who.role)}</b>) does not have direct unlock rights for <b>${esc(target.label)}</b> · enter a Supervisor work email and Access PIN to authorize this override.`} Overrides are logged on the posted record.</div>
+        ${canAskApproval ? '<div style="margin-top:3px">Or ask a Supervisor to approve from their own screen. They see your request at once while their workspace is open.</div>' : ''}
       </div>
+      ${canAskApproval ? `
+      <div class="pa-admin-unlock-ask">
+        <button type="button" class="pa-admin-btn pa-ask-approval-btn" id="paRequestApprovalBtn">${ic('approvals')} Ask a Supervisor to Approve</button>
+        <span class="apv-wait-status" id="paApprovalWaitStatus" role="status" aria-live="polite" hidden></span>
+      </div>` : ''}
       <div class="pa-admin-unlock-controls">
         <select id="paUnlockFieldSelect" style="max-width:230px;padding:5px 8px;border-radius:5px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font-size:12px">
           ${fields.map(f => `<option value="${esc(f.id)}" ${f.id === target.id ? 'selected' : ''}>${esc(f.label)} (${f.adminOpen ? 'Unlocked' : (f.canUnlock ? 'Role Unlockable' : (f.lockedNow ? 'PIN Req' : 'Auto-Open'))})</option>`).join('')}
@@ -78697,6 +78715,67 @@
         } finally {
           overrideBusy = false;
           if (btnOne.isConnected) btnOne.disabled = false;
+        }
+      });
+    }
+    // Ask a Supervisor: the request waits up to 10 minutes; closing the form, switching field or record,
+    // or unlocking with a PIN meanwhile cancels it. On approval the same note stamp and audit id as the PIN path.
+    const btnAsk = $('paRequestApprovalBtn');
+    if (btnAsk) {
+      let askBusy = false;
+      btnAsk.addEventListener('click', async () => {
+        if (askBusy) return;
+        askBusy = true;
+        btnAsk.disabled = true;
+        const reqFormKey = String(STATE.modalForm || STATE.activeKiosk || '');
+        const reqRecId = String((STATE.editingRecord && STATE.editingRecord.id) || '');
+        const company = resolveOverrideCompany();
+        const noteEl = $('paAdminUnlockNote');
+        const reason = noteEl && noteEl.value.trim() ? noteEl.value.trim().slice(0, 200) : '';
+        const entryModalEl = $('entryModal');
+        const sameContext = () => Boolean(
+          box.isConnected && !box.hidden &&
+          FORM_UI.unlockTargetField === target.id &&
+          !(FORM_UI.adminUnlocked && FORM_UI.adminUnlocked[target.id]) &&
+          String(STATE.modalForm || STATE.activeKiosk || '') === reqFormKey &&
+          String((STATE.editingRecord && STATE.editingRecord.id) || '') === reqRecId &&
+          resolveOverrideCompany() === company &&
+          (!entryModalEl || !entryModalEl.hidden)
+        );
+        try {
+          const res = await window.MFG_APPROVALS.requestOverride({
+            company,
+            form_key: reqFormKey,
+            field_id: target.id,
+            field_label: target.label,
+            unlock_all: false,
+            record_id: reqRecId,
+            reason
+          }, {
+            statusEl: $('paApprovalWaitStatus'),
+            stillWaiting: sameContext
+          });
+          if (!res || !res.ok || !res.approved) return;
+          // Applied only to the exact form, record, company and field the approver saw.
+          if (!sameContext()) return;
+          saveNote({ directRole: false, authorizerName: res.authorizerName, auditId: res.auditId });
+          FORM_UI.lastOverrideAudit = {
+            audit_id: res.auditId || '',
+            created_at: new Date().toISOString(),
+            authorized_by: (res.request && res.request.decided_by) || {}
+          };
+          FORM_UI.adminUnlockCompany = company;
+          FORM_UI.adminUnlocked[target.id] = true;
+          box.hidden = true;
+          recalcForm();
+          const el = $(target.id);
+          if (el) {
+            try { el.focus(); if (el.select) el.select(); } catch (_) {}
+          }
+          toast(`Supervisor Override: "${target.label}" unlocked for manual editing`, 'ok');
+        } finally {
+          askBusy = false;
+          if (btnAsk.isConnected) btnAsk.disabled = false;
         }
       });
     }
@@ -108288,6 +108367,7 @@
     tables: 'All Tables & Registers',
     sentinels: 'AI Sentinels & Audit',
     alert_rules: 'Alerts & Thresholds',
+    approvals: 'Approvals Inbox',
     kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
@@ -108408,6 +108488,7 @@
     tables: 'All Tables & Registers',
     sentinels: 'AI Sentinels & Audit',
     alert_rules: 'Alerts & Thresholds',
+    approvals: 'Approvals Inbox',
     kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
@@ -110100,6 +110181,10 @@
     if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.clearLease === 'function') {
       window.MFG_STEP_UP.clearLease();
     }
+    // A signed-out screen keeps no other seat's unlock requests or saved views. Reset first, while the
+    // session can still cancel a waiting request (idle lock or expiry reach here without signOut).
+    if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.reset === 'function') window.MFG_APPROVALS.reset();
+    if (window.MFG_SAVED_VIEWS && typeof window.MFG_SAVED_VIEWS.reset === 'function') window.MFG_SAVED_VIEWS.reset();
     STATE.authed = false;
     window.__mfgSwResuming = false;
     document.documentElement.classList.remove('sw-resuming');
@@ -110253,6 +110338,8 @@
   }
 
   function signOut() {
+    // Withdraw a waiting unlock request while this session can still cancel it (before the logout call).
+    if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.cancelActive === 'function') window.MFG_APPROVALS.cancelActive(false);
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.close === 'function') {
       window.MFG_CMD_PALETTE.close({ clearCache: true });
     }
@@ -110756,7 +110843,7 @@
     }
     const map = {
       kiosks: 'sales', sales: 'sales', sales_vat: 'vatinvoice', sales_analytics: 'sales',
-      sentinels: 'defect', alert_rules: 'defect',
+      sentinels: 'defect', alert_rules: 'defect', approvals: 'defect',
       raw: 'raw', raw_pricing: 'pricerule_raw', raw_analytics: 'raw', raw_jv: 'jv', jv: 'jv',
       fleet: 'fuel', fleet_equip: 'companyequipment', fleet_maint: 'defect', fleet_drivers: 'triprate', fleet_analytics: 'triprate',
       pricing: 'pricerule',
@@ -125440,6 +125527,7 @@
       case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); ensureDocumentsVaultSeeded(); wsHtml = renderIndustryContextBanner('tables') + (window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, activeIndustry: activeInd, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview()); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
       case 'alert_rules': wsHtml = renderAlertRules(); break;
+      case 'approvals': wsHtml = window.MFG_APPROVALS ? window.MFG_APPROVALS.renderView() : ''; break;
       case 'kiosks': wsHtml = (!STATE.kioskLocked ? renderIndustryContextBanner('kiosks') : '') + renderKiosks(); break;
       case 'sales': wsHtml = renderSales(); break;
       case 'sales_vat': wsHtml = renderSalesVatAndCredit(); break;
@@ -130287,6 +130375,52 @@
         esc
       });
     }
+    // Phase 5: Approvals Inbox + remote unlock approval (js/approvals.js) and saved table views (js/saved_views.js).
+    if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.init === 'function') {
+      window.MFG_APPROVALS.init({
+        STATE,
+        FORM_TITLES,
+        esc,
+        ic,
+        fmtNum,
+        toast,
+        render: renderApp,
+        setView,
+        activeUser,
+        isAdminUser,
+        canUnlockField,
+        canViewView,
+        hasServerApi,
+        isDemoScopeActive,
+        edgeApiFetch,
+        recordDateDMY,
+        buildSentinelItems,
+        getScopedPendingPriceRaw,
+        getScopedPendingPriceExpenses,
+        getScopedPendingSalaryEmployments,
+        openPendingRawPriceModal,
+        openPendingExpensePriceModal,
+        openPendingSalaryModal,
+        refreshNavBadges: () => {
+          const el = $('navCountSentinels');
+          const badge = getApprovalsExceptionBadge(activeUser());
+          if (el && badge && badge.text) {
+            el.textContent = badge.text;
+            el.className = 'nav-pill' + (badge.cls ? ' ' + badge.cls : '');
+            el.hidden = false;
+          } else if (el && el.dataset.apvBadge === '1') {
+            // The last request is gone: drop the red pill; the next render restores any Sentinel count.
+            el.textContent = '';
+            el.className = 'nav-pill';
+            el.hidden = true;
+          }
+          if (el) el.dataset.apvBadge = badge && badge.text ? '1' : '';
+        }
+      });
+    }
+    if (window.MFG_SAVED_VIEWS && typeof window.MFG_SAVED_VIEWS.init === 'function') {
+      window.MFG_SAVED_VIEWS.init({ STATE, toast, render: renderApp, activeUser, hasServerApi, isDemoScopeActive, edgeApiFetch });
+    }
 
     // Keyboard: Escape closes the innermost open popover / drawer / modal / rail; Ctrl+K toggles Global Search
     document.addEventListener('keydown', e => {
@@ -132554,7 +132688,12 @@
     computeDynamicDomainTotals: typeof computeDynamicDomainTotals === 'function' ? computeDynamicDomainTotals : null,
     buildIndustrySentinelExceptionTables: typeof buildIndustrySentinelExceptionTables === 'function' ? buildIndustrySentinelExceptionTables : null,
     findDomainRecordPrefillForModal: typeof findDomainRecordPrefillForModal === 'function' ? findDomainRecordPrefillForModal : null,
-    contextFormForView: typeof contextFormForView === 'function' ? contextFormForView : null
+    contextFormForView: typeof contextFormForView === 'function' ? contextFormForView : null,
+    // Phase 5 gate (build/verify_phase5_workflow.mjs): open a form and its unlock box, read the unlock state.
+    openEntryModal: typeof openEntryModal === 'function' ? openEntryModal : null,
+    closeEntryModal: typeof closeEntryModal === 'function' ? closeEntryModal : null,
+    openAdminUnlockPrompt: typeof openAdminUnlockPrompt === 'function' ? openAdminUnlockPrompt : null,
+    getFormUi: () => FORM_UI
   };
   window.MFG_TEST_EXPORTS = Object.assign(window.MFG_TEST_EXPORTS || {}, window.MFG_ENTERPRISE);
 

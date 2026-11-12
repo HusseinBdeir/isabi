@@ -1,0 +1,117 @@
+/* ============================================================================
+   ISABI Systems - Approvals Inbox, remote unlock approval and saved table views
+   (css/workflow.css; js/approvals.js + js/saved_views.js). Theme tokens from css/app.css,
+   brass accents (never navy fills), logical properties for Arabic RTL, 44px touch targets on phones.
+   ============================================================================ */
+
+/* ---------- Approvals Inbox (view `approvals`) ---------- */
+.apv-inbox { display: grid; gap: 14px; min-width: 0; }
+.apv-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 14px 16px; background: var(--surface); border: 1px solid var(--line);
+  border-inline-start: 4px solid var(--brass); border-radius: 10px;
+}
+.apv-head-title { display: flex; align-items: flex-start; gap: 10px; min-width: 0; flex: 1 1 320px; }
+.apv-head-title > svg { width: 22px; height: 22px; flex: 0 0 auto; color: var(--brass-strong, var(--brass)); margin-top: 2px; }
+.apv-head h2 { margin: 0; font-size: 16px; color: var(--ink); }
+.apv-head p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+.apv-section { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-width: 0; }
+.apv-section .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.apv-section .panel-title { font-weight: 700; font-size: 12.5px; letter-spacing: .02em; color: var(--ink); }
+.apv-count {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 20px; padding: 0 7px;
+  border-radius: 999px; background: var(--brass-tint); color: var(--ink); border: 1px solid var(--brass-border);
+  font-size: 11px; font-weight: 700;
+}
+.apv-list { display: grid; }
+.apv-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; border-top: 1px solid var(--line); min-width: 0;
+}
+.apv-list > .apv-row:first-child { border-top: 0; }
+.apv-row-main { min-width: 0; flex: 1 1 260px; }
+.apv-row-title { font-size: 13px; color: var(--ink); overflow-wrap: anywhere; }
+.apv-row-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.apv-row-note { font-size: 12px; color: var(--ink-2); margin-top: 4px; font-style: italic; overflow-wrap: anywhere; }
+.apv-row-acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 0 0 auto; }
+.apv-row-acts .btn { padding: 5px 11px; font-size: 12px; }
+.apv-row-compact { padding-block: 8px; }
+.apv-empty, .apv-more { padding: 12px 14px; font-size: 12.5px; color: var(--ink-2); }
+.apv-more { border-top: 1px solid var(--line); color: var(--muted); }
+.apv-pill, .apv-sev {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; white-space: nowrap; border: 1px solid transparent;
+}
+.apv-pill-warn, .apv-sev-warn { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+.apv-pill-good { background: var(--good-bg); color: var(--good); border-color: var(--good); }
+.apv-pill-crit, .apv-sev-crit { background: var(--crit-bg); color: var(--crit); border-color: var(--crit); }
+.apv-pill-mu { background: var(--surface-2); color: var(--muted); border-color: var(--line); }
+.apv-sev { margin-inline-end: 6px; }
+
+/* ---------- Live card: a new unlock request while the app is open ---------- */
+.apv-live-card {
+  position: fixed; inset-inline-end: 18px; bottom: 18px; z-index: 1200; width: 340px; max-width: calc(100vw - 24px);
+  background: var(--surface); color: var(--ink); border: 1px solid var(--brass-border); border-top: 3px solid var(--brass);
+  border-radius: 10px; box-shadow: var(--shadow-lg); padding: 12px 14px;
+}
+.apv-live-hd { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.apv-live-hd > svg { width: 18px; height: 18px; color: var(--brass-strong, var(--brass)); }
+.apv-live-more { font-size: 11px; font-weight: 700; color: var(--muted); }
+.apv-live-x {
+  margin-inline-start: auto; border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  width: 28px; height: 28px; border-radius: 6px; font-size: 13px;
+}
+.apv-live-x:hover { background: var(--surface-2); color: var(--ink); }
+.apv-live-body { margin-top: 6px; font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.apv-live-meta { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+.apv-live-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.apv-live-acts .btn { padding: 5px 11px; font-size: 12px; }
+
+/* ---------- Requester side, inside the unlock box of a locked field ---------- */
+.pa-admin-unlock-ask { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0 2px; }
+.apv-wait-status { font-size: 12px; color: var(--ink-2); }
+.apv-wait-status.wait { color: var(--warn); font-weight: 600; }
+.apv-wait-status.err { color: var(--crit); font-weight: 600; }
+
+/* ---------- Saved views: "Views" beside "Columns" on every workspace table ---------- */
+.tbl-col-mgr-wrap .sv-wrap { position: relative; display: inline-flex; }
+.sv-trigger-btn { display: inline-flex; align-items: center; gap: 5px; }
+.sv-pop {
+  position: absolute; top: calc(100% + 6px); inset-inline-end: 0; width: 300px; max-width: calc(100vw - 24px);
+  background: var(--surface); color: var(--ink); border: 1px solid var(--brass-border); border-top: 3px solid var(--brass);
+  border-radius: 8px; box-shadow: var(--shadow-lg); z-index: 96; padding: 10px; text-align: start;
+  font-weight: 400; text-transform: none; letter-spacing: normal;
+}
+.sv-pop-hd { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin-bottom: 8px; }
+.sv-list { display: grid; gap: 4px; max-height: min(260px, 40vh); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.sv-item { display: flex; align-items: stretch; gap: 4px; }
+.sv-apply {
+  flex: 1 1 auto; min-width: 0; display: grid; gap: 1px; text-align: start; cursor: pointer;
+  padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink);
+}
+.sv-apply:hover, .sv-apply:focus-visible { border-color: var(--brass-border); background: var(--brass-tint); }
+.sv-name { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-desc { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-del {
+  flex: 0 0 30px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
+  color: var(--muted); cursor: pointer; font-size: 12px;
+}
+.sv-del:hover { color: var(--crit); border-color: var(--crit); }
+.sv-empty { font-size: 12px; color: var(--ink-2); padding: 4px 2px 8px; }
+.sv-save { display: flex; gap: 6px; margin-top: 8px; }
+.sv-name-input {
+  flex: 1 1 auto; min-width: 0; padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 6px;
+  background: var(--surface); color: var(--ink); font-size: 12.5px;
+}
+.sv-save .btn { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
+.sv-hint { margin-top: 6px; font-size: 11px; color: var(--muted); }
+
+@media (max-width: 860px) {
+  .apv-live-card { inset-inline: 12px; bottom: 76px; width: auto; }
+  .sv-pop { position: fixed; inset-inline: 12px; top: auto; bottom: 76px; width: auto; }
+  .sv-name-input { font-size: 16px; }
+}
+@media (pointer: coarse) {
+  .apv-row-acts .btn, .apv-live-acts .btn, .sv-apply, .sv-del, .sv-save .btn, .pa-ask-approval-btn { min-height: 44px; }
+  .apv-live-x { width: 44px; height: 44px; }
+}

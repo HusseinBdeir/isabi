@@ -3055,6 +3055,7 @@
     sentinel_hub: 'Sentinels & Alerts',
     alerts: 'Sentinels & Alerts',
     alert_rules: 'Alerts & Thresholds',
+    approvals: 'Approvals Inbox',
     pbi: 'Dashboards & Reports',
     pbi_hub: 'Dashboards & Reports',
     statements: 'Printable Statements & SOA',

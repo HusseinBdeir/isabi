@@ -659,6 +659,59 @@
     applyTableColumnState(table);
   }
 
+  // Saved views (js/saved_views.js) keep a layout by header label, not by position, so a view still
+  // applies when a column is added or reordered later.
+  function exportLayout(table) {
+    if (!table || !table.dataset.colMgrId) return { hidden: [], shown: [], widths: {} };
+    const st = getOrCreateState(table.dataset.colMgrId, false);
+    const labels = extractHeaderLabels(table);
+    if (!st) return { hidden: [], shown: [], widths: {} };
+    const widths = {};
+    const widthsIdx = {};
+    (st.colWidths || new Map()).forEach((w, ci) => {
+      if (labels[ci]) widths[labels[ci]] = clampWidth(w);
+      widthsIdx[ci] = clampWidth(w);
+    });
+    return {
+      hidden: Array.from(st.hiddenCols || []).map(ci => labels[ci]).filter(Boolean),
+      shown: Array.from(st.shownCols || []).map(ci => labels[ci]).filter(Boolean),
+      widths,
+      // Positions too: header labels change with the language, the column order does not.
+      n: labels.length,
+      hiddenIdx: Array.from(st.hiddenCols || []),
+      shownIdx: Array.from(st.shownCols || []),
+      widthsIdx
+    };
+  }
+
+  function importLayout(table, layout) {
+    if (!table || !table.dataset.colMgrId || !layout || typeof layout !== 'object') return;
+    const tableId = table.dataset.colMgrId;
+    const labels = extractHeaderLabels(table);
+    const idxByLabel = new Map();
+    labels.forEach((l, i) => { if (!idxByLabel.has(l)) idxByLabel.set(l, i); });
+    const pick = arr => (Array.isArray(arr) ? arr : []).map(l => idxByLabel.get(String(l))).filter(i => i != null);
+    const asIdx = arr => (Array.isArray(arr) ? arr : []).map(Number).filter(i => Number.isInteger(i) && i >= 0 && i < labels.length);
+    // Labels first; when they do not match (another language) and the column count is the same, positions.
+    const listedLabels = (Array.isArray(layout.hidden) ? layout.hidden.length : 0) + (Array.isArray(layout.shown) ? layout.shown.length : 0);
+    const labelHits = pick(layout.hidden).length + pick(layout.shown).length;
+    const usePositions = Number(layout.n) === labels.length && labelHits < listedLabels;
+    TABLE_COL_STATE.delete(tableId);
+    const st = getOrCreateState(tableId, true);
+    st.hiddenCols = new Set(usePositions ? asIdx(layout.hiddenIdx) : pick(layout.hidden));
+    st.shownCols = new Set(usePositions ? asIdx(layout.shownIdx) : pick(layout.shown));
+    const byLabel = Object.entries(layout.widths && typeof layout.widths === 'object' ? layout.widths : {})
+      .map(([l, w]) => [idxByLabel.get(String(l)), w]).filter(([i]) => i != null);
+    const byIdx = Number(layout.n) === labels.length
+      ? Object.entries(layout.widthsIdx && typeof layout.widthsIdx === 'object' ? layout.widthsIdx : {}).map(([i, w]) => [Number(i), w]).filter(([i]) => Number.isInteger(i) && i >= 0 && i < labels.length)
+      : [];
+    const widthEntries = byLabel.length >= byIdx.length ? byLabel : byIdx;
+    if (widthEntries.length) snapshotBaseWidthsIfNeeded(table, st);
+    widthEntries.forEach(([i, w]) => st.colWidths.set(i, clampWidth(w)));
+    if (!isStateCustomized(st)) TABLE_COL_STATE.delete(tableId);
+    applyTableColumnState(table);
+  }
+
   function resetTableToDefault(table) {
     if (!table) return;
     const tableId = table.dataset.colMgrId;
@@ -1082,6 +1135,10 @@
         }
         existing = mgr;
       }
+      // Saved views sit beside "Columns" on workspace tables (not inside forms or the 360 inspector).
+      if (window.MFG_SAVED_VIEWS && !table.closest('#recordInspector, #entryModal, #inspModifyDrawer')) {
+        try { window.MFG_SAVED_VIEWS.mount(existing, table, tableId); } catch (_) {}
+      }
 
       if (openPopoverTableId === tableId) {
         const pop = existing.querySelector('.tbl-col-popover');
@@ -1248,6 +1305,8 @@
     resetSingleColumnWidth,
     resetTableToDefault,
     resetAllTablesToDefault,
+    exportLayout,
+    importLayout,
     isSingleCorporationScope,
     getStateForTable: table => table ? getOrCreateState(table.dataset.colMgrId, false) : null,
     getEffectiveHiddenCols: table => table ? computeEffectiveHidden(table, getOrCreateState(table.dataset.colMgrId, false), extractHeaderLabels(table).length).eff : new Set()
