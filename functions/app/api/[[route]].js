@@ -33,6 +33,7 @@ import {
   handleEdgeTts
 } from '../../_lib/gemini.js';
 import { handleTelematics } from '../../_lib/telematics.js';
+import { handlePushApi } from '../../_lib/web_push.js';
 import { handleKioskOptions, handleKioskPunchFeed, handleKioskVerify } from '../../_lib/kiosk_verify.js';
 import {
   applyEdgeCors,
@@ -160,7 +161,11 @@ async function routeAppApi(context) {
     return handleVerifyOverride(request, env, session, body, url);
   }
   if (subPath === '/auth/override-requests' && (request.method === 'POST' || request.method === 'GET')) {
-    return handleOverrideRequests(request, env, session, body, url);
+    return handleOverrideRequests(request, env, session, body, url, context);
+  }
+  // Web Push for approval requests (config, subscribe, unsubscribe); a no-op until the VAPID key is set.
+  if (parts[0] === 'push') {
+    return handlePushApi(request, env, session, body, subPath);
   }
   if (subPath === '/saved-views' && (request.method === 'POST' || request.method === 'GET')) {
     return handleSavedViews(request, env, session, body);

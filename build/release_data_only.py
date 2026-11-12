@@ -57,8 +57,8 @@ MANIFEST_RE = re.compile(r"__MFG_SEED_MANIFEST=(\{.*\});")
 INDEX_MANIFEST_RE = re.compile(rb"(js/seed_manifest\.js\?v=[0-9][0-9.]*)(?:&amp;d=[0-9a-f]+)?")
 STMT_RE = re.compile(r"^\s*(INSERT OR REPLACE INTO|INSERT INTO|DELETE FROM)\s+\"?([A-Za-z0-9_]+)\"?", re.I)
 # store document, sign-in sessions, seats and PINs, plus the Edge runtime tables (export_d1_seed.EDGE_RUNTIME_TABLES):
-# remote override requests, the override audit trail and per-seat saved views
-EDGE_OWNED = {"edge_kv_store", "auth_sessions", "users", "override_requests", "saved_views", "override_audit"}
+# remote override requests, the override audit trail, per-seat saved views and Web Push subscriptions
+EDGE_OWNED = {"edge_kv_store", "auth_sessions", "users", "override_requests", "saved_views", "override_audit", "push_subscriptions"}
 
 
 def sha10(data: bytes) -> str:

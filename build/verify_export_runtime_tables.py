@@ -1,7 +1,7 @@
 """Offline gate: Edge runtime tables never travel from a local SQLite DB into live D1.
 
-export_d1_seed.EDGE_RUNTIME_TABLES (override_requests, saved_views, override_audit) are written only by the
-Edge API. This check runs export_all on a throwaway DB, with the two Phase 5 tables added to the parsed schema
+export_d1_seed.EDGE_RUNTIME_TABLES (override_requests, saved_views, override_audit, push_subscriptions) are written
+only by the Edge API. This check runs export_all on a throwaway DB, with the lazily created tables added to the parsed schema
 to simulate a future migration that lists them, and asserts:
   - a FULL export emits no INSERT or DELETE for any runtime table, but still exports ordinary tables;
   - a DELTA export whose previous manifest holds runtime-table row keys emits no DELETE for them, while a
@@ -55,6 +55,7 @@ def parse_with_runtime(text):
     cols = orig_parse(text)
     cols.setdefault("override_requests", ["id", "status", "caller_user_id"])
     cols.setdefault("saved_views", ["id", "user_id", "table_key"])
+    cols.setdefault("push_subscriptions", ["id", "endpoint", "user_id"])
     return cols
 
 
@@ -64,13 +65,16 @@ eds.fetch_live_cloud_store = lambda offline=False: {}
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="isabi-runtime-tables-"))
 try:
     ok("override_audit is listed in 0001_schema.sql (so it needs the guard today)", "override_audit" in orig_parse(eds.SCHEMA_SQL.read_text(encoding="utf-8")))
+    ok("push_subscriptions is an Edge runtime table", "push_subscriptions" in eds.EDGE_RUNTIME_TABLES)
     dbp = tmp / "local.db"
     conn = sqlite3.connect(str(dbp))
     conn.execute("CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT)")
     conn.execute("CREATE TABLE override_requests (id TEXT PRIMARY KEY, status TEXT, caller_user_id TEXT)")
     conn.execute("CREATE TABLE saved_views (id TEXT PRIMARY KEY, user_id TEXT, table_key TEXT)")
     conn.execute("CREATE TABLE override_audit (id TEXT PRIMARY KEY, created_at TEXT, caller_user_id TEXT)")
+    conn.execute("CREATE TABLE push_subscriptions (id TEXT PRIMARY KEY, endpoint TEXT, user_id TEXT)")
     conn.execute("INSERT INTO customers VALUES ('c-local-1', 'Acme')")
+    conn.execute("INSERT INTO push_subscriptions VALUES ('ps-local-1', 'https://fcm.googleapis.com/fcm/send/local-test', 'u-test')")
     conn.execute("INSERT INTO override_requests VALUES ('ovr-1-deadbeef', 'pending', 'u-test')")
     conn.execute("INSERT INTO saved_views VALUES ('sv-1-deadbeef', 'u-test', 'sales_tickets')")
     conn.execute("INSERT INTO override_audit VALUES ('ova-1-deadbeef', '2026-11-12T00:00:00.000Z', 'u-test')")
@@ -88,7 +92,7 @@ try:
 
     man = tmp / "manifest.json"
     prev = dict(meta["row_hashes"])
-    for t, pk in (("override_audit", "ova-live-1"), ("override_requests", "ovr-live-1"), ("saved_views", "sv-live-1"), ("customers", "c-vanished")):
+    for t, pk in (("override_audit", "ova-live-1"), ("override_requests", "ovr-live-1"), ("saved_views", "sv-live-1"), ("push_subscriptions", "ps-live-1"), ("customers", "c-vanished")):
         prev[eds.encode_row_key(t, (pk,))] = "0" * 64
     man.write_text(json.dumps({"row_hashes": prev}), encoding="utf-8")
     files_d, meta_d = eds.export_all(delta=True, offline=True, manifest_path=man, db_path=dbp,

@@ -101,7 +101,10 @@ jobs:
 
       - name: Apply idempotent D1 schema migrations
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
-        run: npx --yes wrangler@4 d1 execute isabi-ledger --remote --file=migrations/0001_schema.sql
+        run: |
+          for f in migrations/0[0-9][0-9][0-9]_*.sql; do
+            npx --yes wrangler@4 d1 execute isabi-ledger --remote --file="$f"
+          done
 
       - name: Deploy
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
