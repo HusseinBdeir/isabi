@@ -534,8 +534,25 @@
     { code: '622', name: 'Subcontracting, Hauling & General Services / خدمات خارجية ونقل', cls: '6 - Expenses', section: 'Operating Expenses', normal: 'D' },
     { code: '641', name: 'Staff Salaries, Wages & Daily Labor / الرواتب والأجور', cls: '6 - Expenses', section: 'Payroll & Personnel', normal: 'D' },
     { code: '701', name: 'Sales of Ready-Mix Concrete & Products / مبيعات الباطون والمنتجات', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
-    { code: '706', name: 'Pump, Transport & Hauling Revenue / إيرادات الضخ والنقل', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
+    { code: '706', name: 'Pump, Transport & Hauling Revenue / إيرادات الضخ والنقل', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
+    { code: '758', name: 'Other Operating Income (Scrap & Sundry Sales) / إيرادات تشغيلية أخرى', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
   ];
+
+  // Revenue class of a Manufacturing sales ticket (rule lives in app.js: sale / recharge / other_income).
+  const saleRevClass = r => {
+    const api = (typeof window !== 'undefined') ? window.__mfgRevenueClass : null;
+    return (api && typeof api.classOf === 'function') ? api.classOf(r) : 'sale';
+  };
+  // Expense account of this statement pack that a recharged cost is credited to (the cost it recovers).
+  // A truck or machine passed to a group company lands on 622 on purpose: this pack books Capital Expenditures
+  // vouchers to 622 (see expAcct below), so the transfer is credited to the account its purchase was debited to.
+  const rechargeExpenseAcct = prod => {
+    const p = String(prod || '');
+    if (/salar|wage|payroll/i.test(p)) return '641';
+    if (/diesel|mazout|benzin|gasoline|fuel/i.test(p)) return '601';
+    if (/oil|grease|filter|tire|tyre|wheel|battery|hammer|spare|repair|maint/i.test(p)) return '615';
+    return '622';
+  };
 
   function getRdlIndustryForCo(normCo) {
     const c = String(normCo || 'ALL');
@@ -1183,7 +1200,8 @@
           is_cash: isCash,
           is_credit: isCredit,
           is_barter: isBarter,
-          is_return: sign <= 0
+          is_return: sign <= 0,
+          rev_class: saleRevClass(r)
         };
       });
 
@@ -1775,7 +1793,11 @@
       const desc = isMfg
         ? `${r.product || 'Concrete'} · ${fmtNum(r.qty, 1)} m³ · ${r.site || ''}`.trim()
         : `${r.product || dt.rcptDescDef} · ${fmtNum(r.qty, dt.qtyDp)} ${dt.qtyUnit}${r.site ? ' · ' + r.site : ''}`.trim();
-      const revAcct = /pump|haul|trans/i.test(String(r.product || '')) ? '706' : '701';
+      // A recharged cost credits the expense it recovers and scrap credits other income, so neither lands in sales.
+      const revCls = isMfg ? (r.rev_class || 'sale') : 'sale';
+      const revAcct = revCls === 'recharge'
+        ? rechargeExpenseAcct(r.product)
+        : (revCls === 'other_income' ? '758' : (/pump|haul|trans/i.test(String(r.product || '')) ? '706' : '701'));
       const recAcct = r.is_barter ? '467' : '411';
       if (tot > 0) {
         pushJe(d, ref, r.is_barter ? 'Barter Sale' : 'Sales', recAcct, cust, desc, tot, 0);
@@ -2482,7 +2504,7 @@
       entry.total += signed;
     });
 
-    const revCodes = ['701', '706'];
+    const revCodes = byAcctBucket.has('758') ? ['701', '706', '758'] : ['701', '706'];
     const expCodes = ['601', '615', '622', '641'];
     const sumCols = (codes) => {
       const m = { total: 0 };
@@ -3851,10 +3873,12 @@
     const exps = ctx.expAll.filter(r => matchYm(rowDate(r, ctx.basis)));
     const pays = ctx.payAll.filter(r => matchYm(rowDate(r, ctx.basis)));
 
-    const subSales = sales.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0);
+    // Recharged costs are not sales: they leave the sales line and net against the expense line (same net result).
+    const subRecharge = sales.reduce((s, r) => s + (r.rev_class === 'recharge' ? (Number(r.total_usd || 0) - Number(r.vat_usd || 0)) : 0), 0);
+    const subSales = sales.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0) - subRecharge;
     const subRm = rms.reduce((s, r) => s + Number(r.total_usd || 0), 0);
     const subFuel = fuels.reduce((s, r) => s + Number(r.total_usd || 0), 0);
-    const subExp = exps.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0);
+    const subExp = exps.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0) - subRecharge;
     const subPay = pays.reduce((s, r) => s + Number(r.net_usd || r.paid_usd || 0), 0);
 
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
@@ -4910,7 +4934,7 @@
       let rev701 = 0, rev706 = 0, exp601 = 0, exp615 = 0, exp622 = 0, exp641 = 0;
       jes.forEach(j => {
         if (j.acct_code === '701') rev701 += (j.credit - j.debit);
-        else if (j.acct_code === '706') rev706 += (j.credit - j.debit);
+        else if (j.acct_code === '706' || j.acct_code === '758') rev706 += (j.credit - j.debit);
         else if (j.acct_code === '601') exp601 += (j.debit - j.credit);
         else if (j.acct_code === '615') exp615 += (j.debit - j.credit);
         else if (j.acct_code === '622') exp622 += (j.debit - j.credit);
@@ -5516,9 +5540,10 @@
       const fuels = ctx.fuelAll.filter(r => matchYm(rowDate(r, ctx.basis)));
       const exps = ctx.expAll.filter(r => matchYm(rowDate(r, ctx.basis)));
       const pays = ctx.payAll.filter(r => matchYm(rowDate(r, ctx.basis)));
-      const subSales = sales.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0);
+      const subRecharge = sales.reduce((s, r) => s + (r.rev_class === 'recharge' ? (Number(r.total_usd || 0) - Number(r.vat_usd || 0)) : 0), 0);
+      const subSales = sales.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0) - subRecharge;
       const subDirect = rms.reduce((s, r) => s + Number(r.total_usd || 0), 0) + fuels.reduce((s, r) => s + Number(r.total_usd || 0), 0);
-      const subOpex = exps.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0) + pays.reduce((s, r) => s + Number(r.net_usd || r.paid_usd || 0), 0);
+      const subOpex = exps.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0) + pays.reduce((s, r) => s + Number(r.net_usd || r.paid_usd || 0), 0) - subRecharge;
       const netSub = subSales - (subDirect + subOpex);
       const totalVouchers = sales.length + rms.length + fuels.length + exps.length + pays.length;
       tieCheck = { balanced: true, varianceUsd: 0, kind: 'recon' };

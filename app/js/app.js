@@ -1420,7 +1420,7 @@
     if (!SEED || !SEED.records) return [];
     const m = modelOverride || (typeof getModel === 'function' ? getModel() : null) || ((SEED.models && SEED.models['manufacturing-group']) || {});
     const glCustList = (STATE.customRecords && STATE.customRecords.gl_accounts) || [];
-    const curRev = String((SEED && SEED._customRev) || 0) + ':' + glCustList.length + ':' + glCustList.map(x => (x && x.modified_at) || '').join(',');
+    const curRev = String((SEED && SEED._customRev) || 0) + ':' + ((SEED.records.sales_tickets || []).length) + ':' + glCustList.length + ':' + glCustList.map(x => (x && x.modified_at) || '').join(',');
     if (_lastGlSyncModelRef === m && _lastGlSyncCustomRev === curRev && Array.isArray(SEED.records.gl_accounts) && SEED.records.gl_accounts.length >= 46) {
       return SEED.records.gl_accounts;
     }
@@ -1428,7 +1428,7 @@
     _lastGlSyncCustomRev = curRev;
 
     const tbByCode = new Map();
-    ((m && m.gl_tb) || []).forEach(r => {
+    getReclassifiedGlTb(m).forEach(r => {
       if (r && r.Code != null) tbByCode.set(String(r.Code).trim(), r);
     });
     const legCountByCode = new Map();
@@ -1955,9 +1955,10 @@
     return `${DOW_SHORT[dtObj.getDay()]} ${String(d).padStart(2, '0')} ${MONTH_SHORT[m - 1]} ${y}`;
   }
 
-  function daxKeyForWindow(fromISO, toISO) {
-    const key = `${fromISO}..${toISO}`;
-    const MAP = {
+  // Stored period totals (SEED.models.*.periods) and the fixed date window each key was computed for.
+  // (Kept inside a function: daxKeyForWindow is reached during start-up, before constants here are initialised.)
+  function storedPeriodKeyByWindow() {
+    return {
       '2026-01-01..2026-12-31': 'ytd',
       '2026-10-01..2026-10-31': 'mtd',
       '2026-09-01..2026-09-30': 'sep2026',
@@ -1966,7 +1967,19 @@
       '2025-01-01..2025-12-31': 'fy2025',
       '2024-01-01..2024-12-31': 'fy2024'
     };
-    return MAP[key] || null;
+  }
+  function daxKeyForWindow(fromISO, toISO) {
+    return storedPeriodKeyByWindow()[`${fromISO}..${toISO}`] || null;
+  }
+  // The window a stored period key covers: { all: true } for the whole history, { from, to } for a fixed window,
+  // null for a key this build does not know (then nothing may be assumed about it).
+  function storedPeriodWindow(key) {
+    if (key === 'all') return { all: true };
+    const byWindow = storedPeriodKeyByWindow();
+    const hit = Object.keys(byWindow).find(w => byWindow[w] === key);
+    if (!hit) return null;
+    const [from, to] = hit.split('..');
+    return { from, to };
   }
 
   let _grainCatalogCache = null;
@@ -2490,6 +2503,468 @@
     if (!s || s.voided || ticketSign(s) === 0) return false;
     return /^diesel(\s*trans)?$|^mazout$/i.test(String(s.product || '').trim()) && Number(s.qty || 0) !== 0;
   }
+  // ══ Revenue class of a sales ticket (deterministic rule, never AI) ═══════════════════════════════════════════════
+  // An Unregistered ticket is not always a sale. Decided in this order:
+  //   1. the ticket's own revenue_class ('sale' | 'recharge' | 'other_income'), set by the Group Transfer entry or by
+  //      an accountant on the ticket (works on any sale type);
+  //   2. Unregistered tickets only: the product's unreg_class in the product registry, when set;
+  //   3. scrap (Iron / Scrap) = 'other_income'; an excavation service = 'sale'; registry type Material = 'sale';
+  //      a product the registry does not know = 'sale' when it looks like quarry material; everything else
+  //      (diesel, oil, parts, salary, insurance, transport ...) = 'recharge'.
+  // 'recharge'     = a cost passed on to another company at cost: not sales, it reduces the seller's expenses.
+  // 'other_income' = scrap and sundry sold: not sales, shown as other income.
+  // Only reporting figures move. The ticket, the cash it brought in and what the customer owes are untouched, and
+  // operating profit is the same before and after (sales and expenses drop by the same recharge amount).
+  const REVENUE_CLASSES = ['sale', 'recharge', 'other_income'];
+  // Check-only switch (build/verify_group_transfer.mjs): while on, figures are computed as before the rule, so the
+  // gate can prove that operating profit, cash and balances are identical with and without it. Never set by the app.
+  let _revClassBypass = false;
+  const _SCRAP_PRODUCT_RE = /^(iron|scrap(\s+\S.*)?|scrap\s*iron|hadid)$/i;
+  const _SERVICE_SALE_RE = /\bexcavation\b/i;
+  let _unregClsRev = -1;
+  let _unregClsLen = -1;
+  const _unregClsCache = new Map();
+  function unregisteredProductClass(prodName, uomHint) {
+    const raw = String(prodName || '').trim();
+    const rev = (SEED && SEED._customRev) || 0;
+    const pLen = ((SEED && SEED.records && SEED.records.products) || []).length;
+    if (_unregClsRev !== rev || _unregClsLen !== pLen) { _unregClsCache.clear(); _unregClsRev = rev; _unregClsLen = pLen; }
+    const ck = raw.toLowerCase() + '\u0001' + String(uomHint || '').toLowerCase();
+    const hit = _unregClsCache.get(ck);
+    if (hit) return hit;
+    const p = raw ? productByName(raw) : null;
+    const explicit = String((p && p.unreg_class) || '').trim().toLowerCase();
+    let cls;
+    if (REVENUE_CLASSES.includes(explicit)) cls = explicit;
+    else if (!raw) cls = 'sale';
+    else if (_SCRAP_PRODUCT_RE.test(raw)) cls = 'other_income';
+    else if (_SERVICE_SALE_RE.test(raw)) cls = 'sale';
+    else {
+      // The product registry carries the ledger account its sales are credited to. It decides first:
+      //   an expense account (class 6: Salaries, Insurance ...) = a cost passed on;
+      //   a revenue account other than Sales of goods (transport, services, rent, discounts) = stays a sale;
+      //   any other account (VAT collected ...) = left as it is today;
+      //   Sales of goods (701) or no account = by product type: Material stays a sale, anything else is a cost passed on.
+      const revCode = productLedgerCode(p && p.revenue_account);
+      const t = String((p && p.type) || '').trim().toLowerCase();
+      if (revCode && revCode.charAt(0) === '6') cls = 'recharge';
+      else if (revCode && revCode !== '701') cls = 'sale';
+      else if (/diesel|mazout|benzin|gasoline|\boil\b|grease/i.test(raw)) cls = 'recharge'; // fuel and lubricants, whatever the type field says
+      else if (t) cls = t === 'material' ? 'sale' : 'recharge';
+      else cls = isAggregateMaterialProduct(raw, uomHint) ? 'sale' : 'recharge';
+    }
+    _unregClsCache.set(ck, cls);
+    return cls;
+  }
+  // "61121 Fuel" -> "61121". Empty when the registry holds no account.
+  function productLedgerCode(v) {
+    const m = /^\s*(\d{2,6})\b/.exec(String(v == null ? '' : v));
+    return m ? m[1] : '';
+  }
+  // A company of the group named as the customer of a ticket. Matches the company's short name or its legal name,
+  // ignoring case, spaces and punctuation ("Shacman Lebanon s.a.l" is Shacman). Returns the directory row or null.
+  const _partyNameKey = v => String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9؀-ۿ]+/g, '');
+  let _groupPartyKeyMap = null;
+  function groupCompanyByPartyName(name) {
+    const k = _partyNameKey(name);
+    if (!k) return null;
+    if (!_groupPartyKeyMap) {
+      _groupPartyKeyMap = new Map();
+      BASE_COMPANY_DIRECTORY.forEach(c => {
+        [c.name, c.label, String(c.label || '').replace(/\s*\(.*\)\s*$/, '')].forEach(n => {
+          const nk = _partyNameKey(n);
+          if (nk && !_groupPartyKeyMap.has(nk)) _groupPartyKeyMap.set(nk, c);
+        });
+      });
+    }
+    return _groupPartyKeyMap.get(k) || null;
+  }
+  // Is the product a fixed asset (a truck, a machine)? The product registry says so: its purchase account is class 2.
+  let _fixedAssetProdRev = -1;
+  let _fixedAssetProdLen = -1;
+  const _fixedAssetProdCache = new Map();
+  function isFixedAssetProduct(prodName) {
+    const raw = String(prodName || '');
+    if (!raw) return false;
+    const rev = (SEED && SEED._customRev) || 0;
+    const pLen = ((SEED && SEED.records && SEED.records.products) || []).length;
+    if (_fixedAssetProdRev !== rev || _fixedAssetProdLen !== pLen) { _fixedAssetProdCache.clear(); _fixedAssetProdRev = rev; _fixedAssetProdLen = pLen; }
+    let hit = _fixedAssetProdCache.get(raw);
+    if (hit === undefined) {
+      const p = productByName(raw.trim());
+      hit = productLedgerCode(p && p.purchase_account).charAt(0) === '2';
+      _fixedAssetProdCache.set(raw, hit);
+    }
+    return hit;
+  }
+  // A truck or machine passed to another company of the group on an ordinary ticket (owner decision 2026-11-12, the
+  // Shacman trucks WTC passed to Shacman): the item is a fixed asset in the product registry and the customer is a
+  // company of the group other than the seller. It is a Group Transfer, not a sale: it nets against the seller's
+  // purchase of that asset. Returns the receiving company's name, or '' when the ticket is not such a transfer.
+  // The same truck sold to an outside customer stays a sale.
+  function groupAssetTransferReceiver(s) {
+    if (!s || !s.customer || !isFixedAssetProduct(s.product)) return '';
+    const co = groupCompanyByPartyName(s.customer);
+    if (!co || _partyNameKey(co.name) === _partyNameKey(s.company)) return '';
+    return co.name;
+  }
+  function saleRevenueClass(s) {
+    if (!s || _revClassBypass) return 'sale';
+    if (s.revenue_class) {
+      const own = String(s.revenue_class).trim().toLowerCase();
+      if (REVENUE_CLASSES.includes(own)) return own;
+    }
+    // A fixed asset, on any sale type: a transfer only when it goes to a company of the group, otherwise a sale.
+    if (isFixedAssetProduct(s.product)) return groupAssetTransferReceiver(s) ? 'recharge' : 'sale';
+    if (s.sale_type !== 'Unregistered') return 'sale';
+    return unregisteredProductClass(s.product, s.uom);
+  }
+  // The company of the group a recharge ticket was passed to: the receiver stamped by the Group Transfer entry, else
+  // the customer when it is a company of the group. '' for a cost passed on to an outside party.
+  function groupTransferReceiverName(s) {
+    if (!s) return '';
+    if (s.group_transfer_to) return String(s.group_transfer_to);
+    const co = groupCompanyByPartyName(s.customer);
+    return (co && _partyNameKey(co.name) !== _partyNameKey(s.company)) ? co.name : '';
+  }
+  // Ledger account fixed-asset purchases are booked to (the account mapped to Capital Expenditures).
+  function capexLedgerCode() {
+    const sp = CANONICAL_GL_AUTOMATION_SPEC.find(x => x && Array.isArray(x.mapped_categories) && x.mapped_categories.includes('Capital Expenditures'));
+    return sp ? String(sp.code) : '';
+  }
+  // Ledger account a recharge is credited to (the expense it recovers), so sales (701) and that expense both drop.
+  function rechargeContraGlCode(s) {
+    const own = String((s && s.recharge_gl_code) || '').trim();
+    if (/^6\d{1,5}$/.test(own)) return own;
+    const raw = String((s && s.product) || '').trim();
+    const p = raw ? productByName(raw) : null;
+    const t = String((p && p.type) || '').trim().toLowerCase();
+    // The registry's own purchase account wins when it is an expense account; the name rules are the fallback.
+    const purCode = productLedgerCode(p && p.purchase_account);
+    // A fixed asset passed on is credited to the asset account its purchase was booked to, so the asset nets out.
+    if (purCode && purCode.charAt(0) === '2') return capexLedgerCode() || purCode;
+    if (purCode && purCode.charAt(0) === '6' && purCode !== '601') return purCode;
+    if (/diesel|mazout|benzin|gasoline|fuel/i.test(raw)) return '61121';
+    if (/salar|wage|payroll/i.test(raw)) return '6311';
+    if (/insurance/i.test(raw)) return '6268';
+    if (/transport|haul|freight/i.test(raw)) return '62611';
+    if (/repair|maintenance/i.test(raw)) return '6262';
+    if (/electric|telecom|internet|phone|water/i.test(raw)) return '62615';
+    if (t === 'oil' || t === 'grease' || t === 'spare parts' || /oil|grease|filter|tire|tyre|wheel|battery|hammer|spare/i.test(raw)) return '6122';
+    if (t === 'consumables') return '6112';
+    return '6269';
+  }
+  const OTHER_INCOME_GL_CODE = '758';
+  const OTHER_INCOME_GL_NAME = 'Other operating income (scrap and sundry sales)';
+  function _emptyReclassBucket() {
+    return { rows: 0, loads: 0, pickup_loads: 0, delivery_loads: 0, unreg_loads: 0, net: 0, ttc: 0, vat: 0, mat: 0, trans: 0, cash: 0, credit: 0, cash_ttc: 0, credit_ttc: 0 };
+  }
+  function _addReclassRow(b, s, sgn) {
+    const ttc = Number(s.total_ttc != null ? s.total_ttc : s.total || 0) * sgn;
+    const vat = Number(s.vat || 0) * sgn;
+    const net = Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0))) * sgn;
+    const tr = Number(s.trans_price || 0) * sgn;
+    const mat = Number(s.price != null ? s.price : (Number(s.total || 0) - Number(s.trans_price || 0))) * sgn;
+    b.rows += 1;
+    if (sgn === 1 && !s._is_statement_adj) {
+      b.loads += 1;
+      // Same split as the KPI engine: Pickup, Delivery, everything else counts as Unregistered.
+      if (s.sale_type === 'Pickup') b.pickup_loads += 1;
+      else if (s.sale_type === 'Delivery') b.delivery_loads += 1;
+      else b.unreg_loads += 1;
+    }
+    b.net += net; b.ttc += ttc; b.vat += vat; b.mat += mat; b.trans += tr;
+    if (isCashSaleTicket(s)) { b.cash += net; b.cash_ttc += ttc; }
+    else if (isCreditSaleTicket(s)) { b.credit += net; b.credit_ttc += ttc; }
+  }
+  // Totals of the tickets that are not sales, for one company scope. Reads the same filtered ticket list every KPI
+  // reads (company, seat, Official Books, period, date basis), so it always subtracts exactly what was counted.
+  const _revReclassWeak = new WeakMap();
+  function computeRevenueReclass(coKey, opts = {}) {
+    const basis = opts.basis || 'tx';
+    const empty = {
+      recharge: _emptyReclassBucket(), other_income: _emptyReclassBucket(), byMonth: new Map(),
+      seed: { recharge: _emptyReclassBucket(), other_income: _emptyReclassBucket() }, byMonthSeed: new Map(),
+      byGl: new Map(), ready: false
+    };
+    const list = SEED && SEED.records && SEED.records.sales_tickets;
+    if (_revClassBypass || !Array.isArray(list) || !list.length) return empty;
+    const rows = filterRecords(list, {
+      ignoreSearch: true, basis, company: coKey || STATE.company,
+      ignorePeriod: Boolean(opts.ignorePeriod), ignoreBookScope: Boolean(opts.ignoreBookScope)
+    });
+    const wk = basis;
+    let perRows = _revReclassWeak.get(rows);
+    if (perRows && perRows[wk]) return perRows[wk];
+    // Two sets of totals. The plain ones cover every ticket and go with figures that include app entries (the KPI
+    // engine, anything rebuilt from the records). The "seed" ones leave out tickets entered in the app since the
+    // last data load and go with figures that are stored as loaded (stored period totals, stored month rows, the
+    // stored trial balance), which do not contain those tickets.
+    const out = {
+      recharge: _emptyReclassBucket(), other_income: _emptyReclassBucket(), byMonth: new Map(),
+      seed: { recharge: _emptyReclassBucket(), other_income: _emptyReclassBucket() }, byMonthSeed: new Map(),
+      byGl: new Map(), ready: true
+    };
+    const monthBucket = (map, ymNo) => {
+      let mb = map.get(ymNo);
+      if (!mb) { mb = { recharge: _emptyReclassBucket(), other_income: _emptyReclassBucket() }; map.set(ymNo, mb); }
+      return mb;
+    };
+    for (let i = 0; i < rows.length; i++) {
+      const s = rows[i];
+      const cls = saleRevenueClass(s);
+      if (cls === 'sale') continue;
+      const sgn = ticketSign(s);
+      if (sgn === 0) continue;
+      const isApp = isAppRecord(s);
+      _addReclassRow(out[cls], s, sgn);
+      if (!isApp) _addReclassRow(out.seed[cls], s, sgn);
+      const ds = String(recordDateFor(s, basis) || '').slice(0, 10);
+      const ymNo = ds.length >= 7 ? ds.slice(0, 4) + ds.slice(5, 7) : '';
+      if (/^\d{6}$/.test(ymNo)) {
+        _addReclassRow(monthBucket(out.byMonth, ymNo)[cls], s, sgn);
+        if (!isApp) _addReclassRow(monthBucket(out.byMonthSeed, ymNo)[cls], s, sgn);
+      }
+      // Ledger move. The seeded trial balance holds only the rows of the last data load, each credited to its
+      // product's own revenue account. So: rows entered in the app since then are not in it (no move), and a row
+      // already credited to an expense account is already netted (no move). Only a class 7 credit is moved.
+      if (isApp) continue;
+      const pRow = s.product ? productByName(s.product) : null;
+      const fromCode = productLedgerCode(pRow && pRow.revenue_account) || '701';
+      if (fromCode.charAt(0) !== '7') continue;
+      const net = Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0))) * sgn;
+      const toCode = cls === 'recharge' ? rechargeContraGlCode(s) : OTHER_INCOME_GL_CODE;
+      if (toCode === fromCode) continue;
+      const mk = fromCode + '>' + toCode;
+      out.byGl.set(mk, (out.byGl.get(mk) || 0) + net);
+    }
+    if (!perRows) { perRows = {}; _revReclassWeak.set(rows, perRows); }
+    perRows[wk] = out;
+    return out;
+  }
+  // Takes recharges and other income out of the sales figures of one KPI object and nets recharges against expenses.
+  // Never touched: cash and credit splits (cash and receivables), AR / AP, cash flow, quantities, operating profit.
+  function applyRevenueReclassToKpi(k, coKey, basis, opts) {
+    if (!k) return k;
+    let rc;
+    if (opts && opts.storedKey) {
+      // Totals read straight from a stored period: the tickets taken out must be those of that stored period's
+      // own fixed window (stored "mtd" is a fixed month, not the current one), whatever period is active on screen.
+      const win = storedPeriodWindow(String(opts.storedKey));
+      const all = computeRevenueReclass(coKey, { basis: 'tx', ignorePeriod: true });
+      // Stored totals hold the last data load only, so only that load's tickets are taken out (the "seed" totals).
+      if (!win || !all.seed) rc = { recharge: _emptyReclassBucket(), other_income: _emptyReclassBucket(), ready: false };
+      else if (win.all) rc = { recharge: all.seed.recharge, other_income: all.seed.other_income, ready: all.ready };
+      else {
+        const fromYm = win.from.slice(0, 4) + win.from.slice(5, 7);
+        const toYm = win.to.slice(0, 4) + win.to.slice(5, 7);
+        rc = { recharge: _emptyReclassBucket(), other_income: _emptyReclassBucket(), ready: all.ready };
+        all.byMonthSeed.forEach((mb, ym) => {
+          if (ym < fromYm || ym > toYm) return;
+          ['recharge', 'other_income'].forEach(cls => { Object.keys(rc[cls]).forEach(f => { rc[cls][f] += mb[cls][f]; }); });
+        });
+      }
+    } else {
+      rc = computeRevenueReclass(coKey, { basis });
+    }
+    const R = rc.recharge, O = rc.other_income;
+    k.sales_incl_reclass = round2(Number(k.gross_sales || 0));
+    k.sales_ttc_incl_reclass = round2(Number(k.sales_ttc || 0)); // base of the cash / credit shares (all tickets)
+    k.expenses_incl_reclass = round2(Number(k.expenses || 0));
+    k.recharged_costs = round2(R.net);
+    k.other_income = round2(O.net);
+    k.recharge_tickets = R.rows;
+    k.other_income_tickets = O.rows;
+    k.reclass_ready = Boolean(rc.ready);
+    if (!R.rows && !O.rows) return k;
+    const sub = (key, v) => { if (v && k[key] != null) k[key] = round2(Number(k[key] || 0) - v); };
+    // VAT charged on a ticket that is not a sale is still output VAT owed (ledger account 4427), so the VAT figure is
+    // left whole and the VAT-inclusive totals drop by the ex-VAT amount. (Unregistered tickets carry no VAT.)
+    sub('sales_ttc', (R.ttc - R.vat) + (O.ttc - O.vat));
+    sub('sales_rep_date', (R.ttc - R.vat) + (O.ttc - O.vat));
+    sub('gross_sales', R.net + O.net);
+    sub('net_sales', R.mat + O.mat);
+    sub('trans_rev', R.trans + O.trans);
+    sub('gross_margin', R.mat + O.mat);
+    sub('loads', R.loads + O.loads);
+    sub('pickup_loads', R.pickup_loads + O.pickup_loads);
+    sub('delivery_loads', R.delivery_loads + O.delivery_loads);
+    sub('unregistered_loads', R.unreg_loads + O.unreg_loads);
+    sub('expenses', R.net);
+    sub('expenses_ex_vat', R.net);
+    sub('exp_rep_date', R.net);
+    finishKpiRatios(k);
+    return k;
+  }
+  // Same rule on one row of the monthly trend (row keys are the seeded month keys).
+  // mb = the month's tickets on the date the row's main columns use; mbRep = the month's tickets by reporting date,
+  // for the row's reporting-date columns (sales_rep, exp_rep). A ticket can fall in two different months.
+  function applyRevenueReclassToMonthRow(row, mb, mbRep) {
+    if (!row || (!mb && !mbRep)) return row;
+    const zero = _emptyReclassBucket();
+    const R = mb ? mb.recharge : zero, O = mb ? mb.other_income : zero;
+    const Rr = mbRep ? mbRep.recharge : zero, Or = mbRep ? mbRep.other_income : zero;
+    if (!R.rows && !O.rows && !Rr.rows && !Or.rows) return row;
+    const out = Object.assign({}, row);
+    const sub = (key, v) => { if (v && out[key] != null && Number.isFinite(Number(out[key]))) out[key] = round2(Number(out[key]) - v); };
+    // Output VAT stays whole (see applyRevenueReclassToKpi): VAT-inclusive columns drop by the ex-VAT amount.
+    sub('sales_ttc', (R.ttc - R.vat) + (O.ttc - O.vat));
+    sub('sales_rep', (Rr.ttc - Rr.vat) + (Or.ttc - Or.vat));
+    sub('exp_rep', Rr.net);
+    sub('gross_sales', R.net + O.net);
+    sub('net_sales', R.mat + O.mat);
+    sub('trans_rev', R.trans + O.trans);
+    sub('gross_margin', R.mat + O.mat);
+    sub('loads', R.loads + O.loads);
+    sub('pickup_loads', R.pickup_loads + O.pickup_loads);
+    sub('delivery_loads', R.delivery_loads + O.delivery_loads);
+    sub('expenses', R.net);
+    out.recharged_costs = round2(R.net);
+    out.other_income = round2(O.net);
+    return out;
+  }
+  // Trial balance of a Manufacturing model with recharges moved from Sales (701) to the expense they recover and
+  // scrap moved to other income (758). Debits and credits move by equal amounts, so the balance check is unchanged.
+  const _glReclassWeak = new WeakMap();
+  function getReclassifiedGlTb(m) {
+    const tb = (m && Array.isArray(m.gl_tb)) ? m.gl_tb : [];
+    // Not during start-up: the ledger registry is synced once before this part of the script has initialised.
+    if (!_iifeBooted || !tb.length || !SEED || !SEED.models) return tb;
+    let mk = '';
+    for (const key of ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group']) {
+      if (SEED.models[key] === m) { mk = key; break; }
+    }
+    if (!mk) return tb;
+    const rc = computeRevenueReclass(mk, { basis: 'tx', ignorePeriod: true, ignoreBookScope: true });
+    if (!rc.byGl.size) return tb;
+    const cached = _glReclassWeak.get(tb);
+    if (cached && cached.rc === rc) return cached.out;
+    const out = tb.map(r => Object.assign({}, r));
+    const byCode = new Map(out.map(r => [String(r.Code).trim(), r]));
+    const credit = (code, amt, name, cls) => {
+      if (!amt) return;
+      let r = byCode.get(code);
+      if (!r) {
+        const sp = CANONICAL_GL_AUTOMATION_SPEC.find(x => x.code === code);
+        r = { Code: code, Account: name || (sp && sp.name) || `Account ${code}`, Class: cls || Number(String(code).charAt(0)), debit: 0, credit: 0, balance: 0 };
+        out.push(r);
+        byCode.set(code, r);
+      }
+      r.credit = round2(Number(r.credit || 0) + amt);
+      r.balance = round2(Number(r.debit || 0) - Number(r.credit || 0));
+    };
+    rc.byGl.forEach((amt, moveKey) => {
+      const a = round2(amt);
+      if (!a) return;
+      const [fromCode, toCode] = String(moveKey).split('>');
+      // Take the credit off the revenue account it was posted to, and put it on the expense (or other income) account.
+      credit(fromCode, -a, '', 7);
+      credit(toCode, a, toCode === OTHER_INCOME_GL_CODE ? OTHER_INCOME_GL_NAME : '', Number(String(toCode).charAt(0)) || 6);
+    });
+    // Same order as the seeded ledger (plain text order of the code), so classes stay together.
+    out.sort((a, b) => (String(a.Code) < String(b.Code) ? -1 : (String(a.Code) > String(b.Code) ? 1 : 0)));
+    _glReclassWeak.set(tb, { rc, out });
+    return out;
+  }
+
+  // ══ Group Transfer entry: one form for a cost passed to another company of the group ═══════════════════════════════
+  // Posts the sender's recharge ticket (Unregistered, revenue_class 'recharge': not a sale, it nets the sender's
+  // expense) and, when the receiver is a Manufacturing company the seat may post to, the receiver's expense with the
+  // sender as supplier. Both rows carry the same group_transfer_id. A receiver in another industry books its own side.
+  const _MFG_COMPANY_RE = /^(wtc|bbconstruction|lions\s*transport)$/i;
+  function groupTransferExpenseClass(product) {
+    const p = String(product || '');
+    if (/diesel|mazout/i.test(p)) return ['Fuel', 'Diesel'];
+    if (/benzin|gasoline/i.test(p)) return ['Fuel', 'Gasoline (Benzine)'];
+    if (/grease/i.test(p)) return ['Oils & Lubricants', 'Grease & Lubrication'];
+    if (/hydraulic/i.test(p)) return ['Oils & Lubricants', 'Hydraulic Oil (68)'];
+    if (/\boil\b/i.test(p)) return ['Oils & Lubricants', 'Engine Oil (15W-40)'];
+    if (/insurance/i.test(p)) return ['Insurance, Permits & Taxes', 'Fleet & Operational Insurance'];
+    if (/tire|tyre|wheel/i.test(p)) return ['Spare Parts', 'Tires, Tubes & Rims'];
+    return ['', ''];
+  }
+  // Options of the form, each list ranked by how often it was used on past recharges (never alphabetical).
+  function groupTransferOptions() {
+    const cat = getCompanyCatalog();
+    const allowed = allowedCompanyNames();
+    const senders = cat.filter(c => (c.industry || 'Manufacturing') === 'Manufacturing' && allowed.includes(c.name)).map(c => c.name);
+    const groupNames = cat.map(c => c.name);
+    const groupNorm = new Set(groupNames.map(n => norm(n)));
+    const buyerCount = new Map();
+    const itemCount = new Map();
+    const methodCount = new Map([['Cash', 0], ['Credit', 0]]);
+    ((SEED.records && SEED.records.sales_tickets) || []).forEach(s => {
+      if (!s || s.voided || !_MFG_COMPANY_RE.test(String(s.company || '').trim()) || saleRevenueClass(s) !== 'recharge') return;
+      // The receiver by its short or legal name ("Shacman Lebanon s.a.l" counts for Shacman).
+      const toName = groupTransferReceiverName(s);
+      const cn = norm(toName || s.customer);
+      if (!groupNorm.has(cn)) return;
+      buyerCount.set(cn, (buyerCount.get(cn) || 0) + 1);
+      const pn = String(s.product || '').trim();
+      if (pn) itemCount.set(pn, (itemCount.get(pn) || 0) + 1);
+      const mth = isCashSaleTicket(s) ? 'Cash' : (isCreditSaleTicket(s) ? 'Credit' : '');
+      if (mth) methodCount.set(mth, methodCount.get(mth) + 1);
+    });
+    const buyers = groupNames
+      .map((n, i) => ({ name: n, count: buyerCount.get(norm(n)) || 0, i }))
+      .sort((a, b) => (b.count - a.count) || (a.i - b.i));
+    const itemSeen = new Set();
+    const items = [];
+    Array.from(itemCount.entries()).sort((a, b) => b[1] - a[1]).forEach(([n, c]) => {
+      if (itemSeen.has(norm(n))) return;
+      itemSeen.add(norm(n));
+      const p = productByName(n);
+      items.push({ name: n, count: c, meta: (p && p.uom) || '' });
+    });
+    ((SEED.records && SEED.records.products) || []).forEach(p => {
+      if (!p || p.voided || !p.name || itemSeen.has(norm(p.name))) return;
+      if (unregisteredProductClass(p.name, p.uom) !== 'recharge') return;
+      itemSeen.add(norm(p.name));
+      items.push({ name: p.name, count: 0, meta: p.uom || '' });
+    });
+    const fIdx = getFreqIndex();
+    const categories = uniqSorted(((SEED.records && SEED.records.expense_categories) || []).map(c => c && c.name)
+      .concat(((SEED.records && SEED.records.expenses) || []).filter(e => e && !e.voided && _MFG_COMPANY_RE.test(String(e.company || '').trim())).map(e => e.category)), fIdx && fIdx.category);
+    const subcategories = uniqSorted(((SEED.records && SEED.records.expense_subcategories) || []).map(s => s && s.name)
+      .concat(((SEED.records && SEED.records.expenses) || []).filter(e => e && !e.voided && _MFG_COMPANY_RE.test(String(e.company || '').trim())).map(e => e.subcategory)), fIdx && fIdx.subcategory);
+    const methods = methodCount.get('Credit') > methodCount.get('Cash') ? ['Credit', 'Cash'] : ['Cash', 'Credit'];
+    return { senders, buyers, items, methods, categories, subcategories };
+  }
+  // What one transfer will post, from the sender, the receiver and the item (pure: reads registries, changes nothing).
+  function resolveGroupTransferPlan(fromCo, toCo, product) {
+    const cat = getCompanyCatalog();
+    const fromRow = cat.find(c => norm(c.name) === norm(fromCo));
+    const toRow = cat.find(c => norm(c.name) === norm(toCo));
+    const prodRow = product ? productByName(product) : null;
+    const productName = (prodRow && prodRow.name) || String(product || '').trim();
+    const senderOk = Boolean(fromRow && (fromRow.industry || 'Manufacturing') === 'Manufacturing');
+    const buyerInGroup = Boolean(toRow);
+    const buyerIsMfg = Boolean(toRow && (toRow.industry || 'Manufacturing') === 'Manufacturing');
+    const seatCanPostBuyer = Boolean(toRow && allowedCompanyNames().includes(toRow.name));
+    const expCls = groupTransferExpenseClass(productName);
+    return {
+      senderOk,
+      senderName: fromRow ? fromRow.name : String(fromCo || '').trim(),
+      buyerInGroup,
+      buyerName: toRow ? toRow.name : String(toCo || '').trim(),
+      buyerIsMfg,
+      seatCanPostBuyer,
+      mirror: Boolean(senderOk && buyerIsMfg && seatCanPostBuyer && norm(fromCo) !== norm(toCo)),
+      productName,
+      // What the form accepts: any cost. Refused are only what the company sells as its product (quarry material)
+      // and scrap, which belong on a Sales Ticket. A name the registry does not know (water, a repair bill) and a
+      // service such as transport are accepted: the ticket is stamped as a cost passed on, which wins over the rule.
+      productClass: !productName ? '' : (!prodRow ? 'recharge'
+        : (unregisteredProductClass(productName, prodRow.uom) === 'other_income' ? 'other_income'
+          : (String(prodRow.type || '').trim().toLowerCase() === 'material' ? 'sale' : 'recharge'))),
+      // Fuel moves the diesel tank ledgers by its litres, so litres are required for it.
+      needsLitres: /diesel|mazout|benzin|gasoline/i.test(productName),
+      uom: (prodRow && prodRow.uom) || (/diesel|mazout|benzin|gasoline|oil/i.test(productName) ? 'Litre' : 'Unit'),
+      defaultCategory: expCls[0],
+      defaultSubcategory: expCls[1]
+    };
+  }
+
   function isPendingPriceExpense(x) {
     return Boolean(x && !x.voided && x.price_pending);
   }
@@ -3710,6 +4185,9 @@
       return indKpi;
     }
 
+    // Recharges and scrap leave the sales figures here, once, on the same date basis the figures above ended on.
+    applyRevenueReclassToKpi(computed, coKey, (STATE.basis === 'rep' && (offScope || range || hasAnyFinMod)) ? 'rep' : 'tx');
+
     if (_kpiRangeCacheMap.size > 64) _kpiRangeCacheMap.clear();
     _kpiRangeCacheMap.set(cacheKey, computed);
     return computed;
@@ -4787,6 +5265,24 @@
       ? getCanonicalCounterpartyRollups()
       : null;
     const mMap = canon && canon.hasSales ? (STATE.basis === 'rep' ? canon.monthlyRepByModel[mk] : canon.monthlyTxByModel[mk]) : null;
+    // Recharges and scrap leave each month's sales, and recharges net against that month's expenses (Manufacturing only).
+    // Seeded month rows carry transaction-date columns plus reporting-date columns (sales_rep, exp_rep); under
+    // Official Books every column is rebuilt on the active date basis. Each column gets the tickets of its own date.
+    const isMfgMonthly = ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].includes(mk);
+    // Stored month rows hold the last data load only (take out that load's tickets); under Official Books the rows
+    // are rebuilt from the records, app entries included (take out every ticket).
+    const offMonthly = isOfficialScopeActive();
+    const monthMapKey = offMonthly ? 'byMonth' : 'byMonthSeed';
+    const reclassTxByMonth = isMfgMonthly ? computeRevenueReclass(mk, { basis: 'tx', ignorePeriod: true })[monthMapKey] : null;
+    const reclassRepByMonth = isMfgMonthly ? computeRevenueReclass(mk, { basis: 'rep', ignorePeriod: true })[monthMapKey] : null;
+    const reclassRow = row => {
+      if (!isMfgMonthly || !row || (!reclassTxByMonth.size && !reclassRepByMonth.size)) return row;
+      const ymNo = String(row.YearMonthNo || monthLabelToYm(row['Year Month']).replace('-', ''));
+      const repMb = reclassRepByMonth.get(ymNo);
+      const mainMb = (offMonthly && STATE.basis === 'rep') ? repMb : reclassTxByMonth.get(ymNo);
+      // Under Official Books every column, sales_rep included, was rebuilt on the active basis.
+      return applyRevenueReclassToMonthRow(row, mainMb, offMonthly ? mainMb : repMb);
+    };
     if (isOfficialScopeActive()) {
       const coOpt = mk === 'manufacturing-group' ? 'manufacturing-group' : mk;
       const offSales = filterRecords(SEED.records.sales_tickets, { ignorePeriod: true, ignoreSearch: true, company: coOpt });
@@ -4852,7 +5348,7 @@
           gross_margin: round2(bk.net_sales - bk.raw_cost),
           operating_profit: opProf
         });
-      });
+      }).map(reclassRow);
     }
     return sliced.map(r => {
       const ymNo = String(r.YearMonthNo || monthLabelToYm(r['Year Month']).replace('-', ''));
@@ -4863,7 +5359,7 @@
         cash_sales_ttc: cashTtc,
         credit_sales_ttc: credTtc
       });
-    });
+    }).map(reclassRow);
   }
 
   // ---- Interactive Segmented Date Control & Date/Period Facilitator Engine ----
@@ -7940,6 +8436,7 @@
     const isRawPriceForm = form === 'pricerule_raw' || form === 'pricerule_haul';
     if (isRawPriceForm || form === 'pricerule_comm') form = 'pricerule';
     if (form === 'extended') form = 'external';
+    if (form === 'grouptransfer') form = 'expense'; // a Group Transfer is entered by whoever enters expenses
     u = u || activeUser();
     const role = String(u.role || '').trim();
     if (/^Custom/i.test(role)) {
@@ -9305,6 +9802,34 @@
     return !finOnlyTables.includes(tableKey);
   }
   window.__mfgFilterRecords = filterRecords;
+  // Revenue class of sales tickets (sale / recharge / other income) for the dashboards, statements and day cockpit.
+  window.__mfgRevenueClass = {
+    classOf: saleRevenueClass,
+    receiverOf: groupTransferReceiverName,
+    productClass: unregisteredProductClass,
+    contraGlCode: rechargeContraGlCode,
+    reclass: computeRevenueReclass,
+    glTb: getReclassifiedGlTb,
+    otherIncomeGlCode: OTHER_INCOME_GL_CODE,
+    // For screens that read one company's stored period totals directly (company comparison): the same rule on a
+    // copy. storedKey is the key of the stored period the totals came from ('all' when the screen fell back to it).
+    adjustStoredPeriod: (coKey, periodTotals, storedKey) => applyRevenueReclassToKpi(Object.assign({}, periodTotals || {}), coKey, 'tx', { storedKey: storedKey || 'all' }),
+    adjustStoredMonths: (coKey, monthRows) => {
+      const tx = computeRevenueReclass(coKey, { basis: 'tx', ignorePeriod: true }).byMonthSeed;
+      const rep = computeRevenueReclass(coKey, { basis: 'rep', ignorePeriod: true }).byMonthSeed;
+      return (monthRows || []).map(row => {
+        if (!row) return row;
+        const ymNo = String(row.YearMonthNo || monthLabelToYm(row['Year Month']).replace('-', ''));
+        return applyRevenueReclassToMonthRow(row, tx.get(ymNo), rep.get(ymNo));
+      });
+    },
+    setBypassForCheck: on => {
+      _revClassBypass = Boolean(on);
+      _kpiRangeCacheMap.clear();
+      _lastGlSyncCustomRev = -1;
+      return _revClassBypass;
+    }
+  };
   window.__mfgCanAccessTable = canAccessTable;
 
   const RDL_VERTICAL_INDUSTRY = {
@@ -42107,7 +42632,7 @@
     const m = getModel();
     const k = getKPI();
     const q = STATE.search.trim().toLowerCase();
-    const tbAll = m.gl_tb || [];
+    const tbAll = getReclassifiedGlTb(m);
     const tb = sortRows(!q ? tbAll : tbAll.filter(r => `${r.Code} ${r.Account} ${r.Class}`.toLowerCase().includes(q)), 'gl', 'Code', 'asc');
     let totDr = 0, totCr = 0;
     tbAll.forEach(r => { totDr += Number(r.debit || 0); totCr += Number(r.credit || 0); });
@@ -42276,7 +42801,7 @@
     const m = getModel();
     const k = getKPI();
     const q = STATE.search.trim().toLowerCase();
-    const tbAll = m.gl_tb || [];
+    const tbAll = getReclassifiedGlTb(m);
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
     const classMap = new Map();
@@ -73302,7 +73827,7 @@
     let bodyHtml = '';
 
     if (code === '02') {
-      const tb = m.gl_tb || [];
+      const tb = getReclassifiedGlTb(m);
       bodyHtml = stTable([
         { label: 'Code', key: 'Code', mono: true }, { label: 'Account', key: 'Account' }, { label: 'Class', key: 'Class' },
         { label: 'Debit ($)', key: 'debit', r: true, fmt: C.usd2 }, { label: 'Credit ($)', key: 'credit', r: true, fmt: C.usd2 }, { label: 'Balance ($)', key: 'balance', r: true, fmt: v => `<strong>${fmtUSD(v, 2)}</strong>` }
@@ -73322,13 +73847,15 @@
             <tr><td class="mono">GM</td><td><strong>GROSS MARGIN</strong></td><td class="r"><strong>${fmtUSD(k.gross_margin, 2)}</strong></td><td class="r"><strong>${fmtPct(k.gm_pct, k.gross_margin, k.net_sales)}</strong></td></tr>
             <tr><td class="mono">61/62</td><td>Plant &amp; Fleet Operating Expenses (Ex-VAT)</td><td class="r">(${fmtUSD(opexExVat, 2)})</td><td class="r">${fmtPct((opexExVat || 0) / (k.net_sales || 1))}</td></tr>
             <tr><td class="mono">641</td><td>Staff Salaries &amp; Workforce Wages Paid</td><td class="r">(${fmtUSD(k.salaries_paid, 2)})</td><td class="r">${fmtPct((k.salaries_paid || 0) / (k.net_sales || 1))}</td></tr>
+            ${Number(k.other_income || 0) ? `<tr><td class="mono">758</td><td>Other Income (Scrap &amp; Sundry Sales)</td><td class="r">${fmtUSD(k.other_income, 2)}</td><td class="r">${fmtPct((k.other_income || 0) / (k.net_sales || 1))}</td></tr>` : ''}
           </tbody>
           <tfoot>
             <tr><td colspan="2">OPERATING PROFIT (CASH VIEW)</td><td class="r">${fmtUSD(k.operating_profit, 2)}</td><td class="r">${fmtPct(k.op_margin_pct, k.operating_profit, k.net_sales)}</td></tr>
           </tfoot>
         </table>`;
     } else if (code === '04') {
-      const tb = (m.gl_tb || []).filter(r => Number(r.Class) >= 1 && Number(r.Class) <= 5);
+      // Same ledger as statement 02: a fixed asset passed to a group company is credited to its asset account (class 2).
+      const tb = getReclassifiedGlTb(m).filter(r => Number(r.Class) >= 1 && Number(r.Class) <= 5);
       const cls = n => tb.filter(r => Number(r.Class) === n);
       const names = { 1: 'Class 1 · Capital, Reserves & Long-Term Liabilities', 2: 'Class 2 · Fixed Assets', 3: 'Class 3 · Inventories', 4: 'Class 4 · Receivables, Payables & VAT', 5: 'Class 5 · Cash, Bank & Till' };
       bodyHtml = [1, 2, 3, 4, 5].map(n => `
@@ -73484,7 +74011,11 @@
       ], tb, [{ v: `TREASURY, LOANS & PARTNER ACCOUNTS · TILL ${fmtUSD(k.cash_till, 2)} · NET CASH FLOW ${fmtUSD(k.net_cash_flow, 2)}`, span: 3 }, { v: fmtUSD(sum(tb, 'debit'), 2), r: true }, { v: fmtUSD(sum(tb, 'credit'), 2), r: true }, { v: fmtUSD(sum(tb, 'balance'), 2), r: true }]);
     } else if (code === '22') {
       const ents = [['WTC', 'wtc'], ['BBConstruction', 'bbconstruction'], ['Lions Transport', 'lionstransport'], ['Group', 'manufacturing-group']];
-      const kk = key => ((SEED.models[key] || {}).periods || {})[STATE.period] || {};
+      // Stored period totals of each company, with costs passed on and scrap out of sales like every other page.
+      const kk = key => {
+        const hit = ((SEED.models[key] || {}).periods || {})[STATE.period];
+        return hit ? applyRevenueReclassToKpi(Object.assign({}, hit), key, 'tx', { storedKey: STATE.period }) : {};
+      };
       const metric = (label, key, fmt) => ({ label, ...Object.fromEntries(ents.map(([n, kkey]) => [kkey, modelHasLedger(kkey) ? fmt(kk(kkey)[key]) : '—'])) });
       const rows = [
         metric('Sales TTC', 'sales_ttc', C.usd0), metric('Net Sales ex-VAT', 'net_sales', C.usd0), metric('Loads', 'loads', C.num0), metric('Tons Sold', 'tons_sold', C.num0), metric('Avg Price TTC', 'avg_price_ttc', C.usd2),
@@ -76746,7 +77277,7 @@
 
     if (window.MFG_FORMS && !['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement'].includes(fType)) {
       return cockpitHtml + window.MFG_FORMS.renderExtendedFormBody(fType, { SEED, STATE }, {
-        allowedCompanyNames, defaultEntryCompany, customerNames, supplierNames, siteNames, equipmentNames, driverNames, getFreqIndex, uniqSorted, domainProductMetaItems, resolveStaffShiftForDate, getFrequentFxConversionPresets, malfunctionItemMeta, getMalfunctionQuickItems
+        allowedCompanyNames, defaultEntryCompany, customerNames, supplierNames, siteNames, equipmentNames, driverNames, getFreqIndex, uniqSorted, domainProductMetaItems, resolveStaffShiftForDate, getFrequentFxConversionPresets, malfunctionItemMeta, getMalfunctionQuickItems, groupTransferOptions
       });
     }
 
@@ -85331,6 +85862,63 @@
         setHint('hint_ot_region', siteVal && effReg ? `Mapped from site "${siteVal}": ${effReg}` : '', siteVal && effReg ? 'ok' : '');
         return { effReg, rulesCount: rules.length };
       }
+      if (STATE.modalForm === 'grouptransfer') {
+        const fromCo = val('f_company') || defaultEntryCompany();
+        const toCo = val('f_gt_to');
+        const product = val('f_product');
+        const amt = round2(num('f_amount'));
+        const plan = resolveGroupTransferPlan(fromCo, toCo, product);
+        const prodKey = norm(plan.productName) + '|' + norm(plan.buyerName);
+        const gtMemo = $('gtLiveCalc');
+        if (gtMemo && prodKey !== gtMemo.dataset.gtKey) {
+          // A new item or receiver refills the receiver's expense class, unless the user typed their own.
+          // The memo sits on the form itself, so it starts clean each time the form opens.
+          const prevDef = [gtMemo.dataset.gtCat || '', gtMemo.dataset.gtSub || ''];
+          gtMemo.dataset.gtKey = prodKey;
+          gtMemo.dataset.gtCat = plan.defaultCategory;
+          gtMemo.dataset.gtSub = plan.defaultSubcategory;
+          if ($('f_category') && (!val('f_category') || val('f_category') === prevDef[0])) $('f_category').value = plan.defaultCategory;
+          if ($('f_subcategory') && (!val('f_subcategory') || val('f_subcategory') === prevDef[1])) $('f_subcategory').value = plan.defaultSubcategory;
+        }
+        setFieldVisible('wrap_gt_category', plan.mirror);
+        setFieldVisible('wrap_gt_subcategory', plan.mirror);
+        const sameCo = Boolean(toCo && norm(toCo) === norm(fromCo));
+        const wrongItem = Boolean(plan.productName && plan.productClass !== 'recharge');
+        setHint('hint_gt_to', sameCo ? 'Pick a different company than the sender.' : '', sameCo ? 'warn' : '');
+        setHint('hint_gt_item', wrongItem
+          ? (plan.productClass === 'sale' ? 'This is a product you sell. Enter it on a Sales Ticket.' : 'This is scrap. Enter it on a Sales Ticket.')
+          : '', wrongItem ? 'warn' : '');
+        const strip = $('gtLiveContextStrip');
+        if (strip) {
+          if (!toCo || !plan.productName) {
+            strip.hidden = true;
+            strip.innerHTML = '';
+          } else {
+            strip.hidden = false;
+            strip.className = 'att-contract-strip' + ((sameCo || wrongItem) ? ' is-warn' : ' is-ok');
+            strip.innerHTML = `
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span class="badge badge-info">Cost Passed On · Not a Sale</span>
+                <span class="badge ${plan.mirror ? 'badge-brass' : 'badge-warn'}">${plan.mirror ? 'Both Sides Posted' : 'Sender Side Only'}</span>
+                ${plan.mirror ? '' : `<span class="muted">${plan.buyerIsMfg ? 'Your seat cannot post to the receiver. The receiver enters its own expense.' : 'The receiver enters its own expense in its books.'}</span>`}
+              </div>
+              <div class="att-contract-metrics">
+                <span><small>From</small><b>${esc(plan.senderName)}</b></span>
+                <span><small>To</small><b>${esc(plan.buyerName)}</b></span>
+                <span><small>Sender Recovers</small><b>${fmtUSD(amt, 2)}</b></span>
+                <span><small>Settlement</small><b>${val('f_method') === 'Cash' ? 'Paid Now' : 'On Account'}</b></span>
+              </div>
+            `;
+          }
+        }
+        setText('calc_gt_sales', 'No Change');
+        setText('calc_gt_sender', amt > 0 ? '-' + fmtUSD(amt, 2) : '$0.00');
+        setText('calc_gt_receiver', amt > 0 ? '+' + fmtUSD(amt, 2) : '$0.00');
+        setText('calc_gt_group', '$0.00');
+        commonDateChecks([]);
+        renderAdminLockBar();
+        return { company: fromCo, toCo, product: plan.productName, amount: amt, qty: num('f_qty'), plan };
+      }
       if (STATE.modalForm === 'jv') {
         const jvt = val('f_jvtype') || 'distribution';
         const site = val('f_site');
@@ -90573,7 +91161,7 @@
       if (!val('f_date')) addErr('f_date', 'Date is required.');
       else if (date > today && !/^pricerule/.test(f) && f !== 'logistics' && f !== 'recurringexpense' && f !== 'staffassignment' && !(editCtx && date === origEditDate)) addErr('f_date', 'Future dates are not allowed.');
       else if (date < MIN_DATE && !(editCtx && date === origEditDate)) addErr('f_date', 'Date is before the books opened (' + MIN_DATE + ').');
-      else if (!skipLockedPendBackdate && isAlertRuleEnabled('G_BACKDATE_NOTE') && daysBetween(date, today) > bdDaysLimit && !notes && ['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement'].includes(f)) addErr('f_notes', `Back-dated more than ${fmtNum(bdDaysLimit, 0)} days: add a note explaining why.`);
+      else if (!skipLockedPendBackdate && isAlertRuleEnabled('G_BACKDATE_NOTE') && daysBetween(date, today) > bdDaysLimit && !notes && ['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement', 'grouptransfer'].includes(f)) addErr('f_notes', `Back-dated more than ${fmtNum(bdDaysLimit, 0)} days: add a note explaining why.`);
       if (!skipLockedPendRepdate && isAlertRuleEnabled('G_REPDATE_GAP') && val('f_repdate') && Math.abs(daysBetween(date, repDate)) > repGapLimit && !notes) addErr('f_notes', `Reporting Date is more than ${fmtNum(repGapLimit, 0)} days from Transaction Date: add a note explaining why.`);
     }
     const customBlocks = evaluateFormCustomAlerts(f, c).filter(h => h.blocks);
@@ -91412,7 +92000,7 @@
         if (dup) addErr('f_product', `Product "${universalMainValue('products', dup) || nm}" already exists in the Universal Product Registry. Duplicate names are not allowed.`);
       }
       if (!(tf > 0)) addErr('f_tonfactor', 'Ton Conversion Factor (> 0) is required.');
-      record = { ...base, name: nm, uom: val('f_uom') || 'm³', type: val('f_prodtype') || 'Material', ton_factor: tf || 1, list_price: round2(num('f_unitprice')), ticket_product: !!($('f_ticketprod') && $('f_ticketprod').checked), fuel_item: !!($('f_fuelitem') && $('f_fuelitem').checked), input_product: !!($('f_inputprod') && $('f_inputprod').checked) };
+      record = { ...base, name: nm, uom: val('f_uom') || 'm³', type: val('f_prodtype') || 'Material', ton_factor: tf || 1, list_price: round2(num('f_unitprice')), ticket_product: !!($('f_ticketprod') && $('f_ticketprod').checked), fuel_item: !!($('f_fuelitem') && $('f_fuelitem').checked), input_product: !!($('f_inputprod') && $('f_inputprod').checked), ...($('f_unreg_class') ? { unreg_class: REVENUE_CLASSES.includes(val('f_unreg_class')) ? val('f_unreg_class') : '' } : {}) };
     } else if (f === 'item') {
       const nm = val('f_item_name');
       if (!nm) addErr('f_item_name', 'Item / Part Name is required.');
@@ -92412,6 +93000,97 @@
           reference: val('f_reference')
         };
       }
+    } else if (f === 'grouptransfer') {
+      const toCo = val('f_gt_to');
+      const amt = round2(num('f_amount'));
+      const plan = resolveGroupTransferPlan(company, toCo, val('f_product'));
+      const mth = val('f_method') === 'Credit' ? 'Credit' : 'Cash';
+      const ref = val('f_reference');
+      const expCat = val('f_category'), expSub = val('f_subcategory');
+      if (!plan.senderOk) addErr('f_company', 'The sending company must be a Manufacturing company.');
+      if (!toCo) addErr('f_gt_to', 'Receiving company is required.');
+      else if (norm(toCo) === norm(company)) addErr('f_gt_to', 'Pick a different company than the sender.');
+      else if (!plan.buyerInGroup) addErr('f_gt_to', 'Pick a company of the group.');
+      if (!plan.productName) addErr('f_product', 'Say what is passed on.');
+      else if (plan.productClass !== 'recharge') addErr('f_product', plan.productClass === 'sale' ? 'This is a product you sell. Enter it on a Sales Ticket.' : 'This is scrap. Enter it on a Sales Ticket.');
+      if (!(amt > 0)) addErr('f_amount', 'Amount above zero is required.');
+      if (plan.needsLitres && !(num('f_qty') > 0)) addErr('f_qty', 'Litres are required for fuel.');
+      if (!ref) addErr('f_reference', 'Reference is required (tanker ticket or invoice number).');
+      else {
+        const gtDup = ticketExists(company, ref, 'sales', repDate || date);
+        if (gtDup && gtDup.blocked) addErr('f_reference', `Reference ${ref} is already used on ${gtDup.label} ${gtDup.row.ticket_no} dated ${gtDup.dateStr}.`);
+      }
+      if (plan.mirror && !expCat) addErr('f_category', 'Receiver expense category is required.');
+      if (plan.mirror && !expSub) addErr('f_subcategory', 'Receiver expense subcategory is required.');
+      if (plan.mirror && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+        // The receiver's books get a row too, so the receiver's closed periods are respected as well.
+        const bGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(plan.buyerName, date, repDate, { industry: 'Manufacturing' });
+        if (bGuard && bGuard.blocked) addErr(bGuard.field === 'rep_date' ? 'f_repdate' : 'f_date', `${plan.buyerName}: ${bGuard.message}`);
+      }
+      const qty = num('f_qty') > 0 ? round2(num('f_qty')) : 1;
+      const gid = uid('gt');
+      crKey = 'sales_tickets';
+      record = {
+        ...base,
+        id: uid('sa'),
+        name: `TRANSFER ${date} ${plan.senderName} to ${plan.buyerName}${ref ? ' #' + ref : ''}`,
+        ticket_no: ref,
+        rep_date: repDate,
+        sale_type: 'Unregistered',
+        transport_by: 'Unregistered',
+        customer: plan.buyerName,
+        product: plan.productName,
+        site: '',
+        truck_owner: '',
+        truck: '',
+        driver: '',
+        uom: plan.uom,
+        qty,
+        unit_price: Math.round((amt / qty) * 10000) / 10000,
+        price: amt,
+        trans_unit_price: 0,
+        trans_price: 0,
+        tip: 0,
+        discount: 0,
+        total: amt,
+        vat: 0,
+        total_ttc: amt,
+        method: mth,
+        vat_invoice: '',
+        external_invoice: '',
+        reference: ref,
+        time: '12:00',
+        overtime: false,
+        revenue_class: 'recharge',
+        group_transfer_id: gid,
+        group_transfer_side: 'sender',
+        group_transfer_to: plan.buyerName,
+        ...(plan.mirror ? {
+          _group_transfer_mirror: {
+            ...base,
+            id: uid('ex'),
+            company: plan.buyerName,
+            name: `EXP ${date} ${plan.senderName}`,
+            rep_date: repDate,
+            category: expCat,
+            subcategory: expSub,
+            supplier: plan.senderName,
+            equipment: '',
+            for_equipment: false,
+            stored_in_warehouse: false,
+            item_count: 1,
+            item_summary: `${qty}x ${plan.productName} (from ${plan.senderName})`,
+            method: mth,
+            qty,
+            amount: amt,
+            price_pending: false,
+            reference: ref,
+            group_transfer_id: gid,
+            group_transfer_side: 'receiver',
+            group_transfer_from: plan.senderName
+          }
+        } : {})
+      };
     } else if (f === 'jv') {
       const jvt = val('f_jvtype') || 'distribution', st = val('f_site'), pt = val('f_counterparty');
       if (!st) addErr('f_site', 'JV Site is required.');
@@ -92908,6 +93587,31 @@
         }
       }
     }
+    // A row that is one side of a Group Transfer keeps its money facts in step with the other company's row:
+    // notes and reference can change here; amount, dates, settlement and parties change by voiding and re-entering.
+    if (record && editCtx && editCtx.orig && editCtx.orig.group_transfer_id && (crKey === 'sales_tickets' || crKey === 'expenses')
+      && findGroupTransferCounterpart(crKey, editCtx.orig, false)) {
+      const o = editCtx.orig;
+      const amtOf = x => round2(Number(x.total != null ? x.total : (x.amount || 0)));
+      const d10 = v => String(v || '').slice(0, 10);
+      // The form rebuilds totals from quantity x unit price, which can differ from the posted amount by rounding
+      // (a few cents). Within that margin the posted figures are kept exactly; beyond it the change is refused.
+      const roundingOnly = Math.abs(amtOf(record) - amtOf(o)) <= 0.05 && Math.abs(Number(record.qty || 0) - Number(o.qty || 0)) < 0.0005;
+      if (roundingOnly) {
+        ['qty', 'unit_price', 'price', 'total', 'vat', 'total_ttc', 'amount'].forEach(key => { if (o[key] != null && record[key] != null) record[key] = o[key]; });
+      }
+      const moneyChanged = !roundingOnly
+        || d10(record.date) !== d10(o.date)
+        || d10(record.rep_date || record.date) !== d10(o.rep_date || o.date)
+        || String(record.method || '') !== String(o.method || '')
+        || norm(record.company) !== norm(o.company)
+        || (crKey === 'sales_tickets'
+          ? (norm(record.customer) !== norm(o.customer) || norm(record.product) !== norm(o.product) || String(record.sale_type || '') !== String(o.sale_type || ''))
+          : norm(record.supplier) !== norm(o.supplier));
+      if (moneyChanged) {
+        addErr($('f_amount') ? 'f_amount' : 'f_date', 'This row is one side of a Group Transfer. To change the amount, dates, settlement or companies, void the transfer and enter it again.');
+      }
+    }
     return { errors, fieldErrors, record, crKey };
   }
 
@@ -93126,6 +93830,8 @@
       const pairOwKm = record._pair_ow_km;
       const pairRtKm = record._pair_rt_km;
       const assignSiteReg = record._assign_site_region;
+      const groupTransferMirror = record._group_transfer_mirror;
+      delete record._group_transfer_mirror;
       delete record._staged_expense_items;
       delete record._staged_repair_items;
       delete record._post_as_paired_return;
@@ -93226,6 +93932,13 @@
       } else {
         if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
         STATE.customRecords[crKey].unshift(record);
+        // Group Transfer: the receiver's expense is saved and synced with the sender's ticket, in the same step.
+        if (groupTransferMirror && crKey === 'sales_tickets') {
+          groupTransferMirror.modified_at = record.modified_at;
+          if (!Array.isArray(STATE.customRecords.expenses)) STATE.customRecords.expenses = [];
+          STATE.customRecords.expenses.unshift(groupTransferMirror);
+          preExtraApiPosts.push(['expenses', groupTransferMirror]);
+        }
       }
       // Cross-persist linked drivers & default drivers when saving Truck Owners (suppliers), Trucks (equipment), or Drivers
       if (crKey === 'suppliers' && Array.isArray(record.driver_rows) && record.driver_rows.length) {
@@ -93866,6 +94579,30 @@
     return null;
   }
 
+  // The other row of a Group Transfer: the receiver's expense for a sender ticket, the sender's ticket for an expense.
+  // Both rows are app entries carrying one group_transfer_id. wantVoided picks the live or the voided counterpart.
+  function findGroupTransferCounterpart(crKey, row, wantVoided) {
+    const gid = row && row.group_transfer_id;
+    const other = crKey === 'sales_tickets' ? 'expenses' : (crKey === 'expenses' ? 'sales_tickets' : '');
+    if (!gid || !other) return null;
+    const hit = (STATE.customRecords[other] || []).find(x => x && x.group_transfer_id === gid && Boolean(x.voided) === Boolean(wantVoided));
+    return hit ? { crKey: other, row: hit } : null;
+  }
+  // A transfer is voided or restored as a whole, so the seat must be allowed on the other company and that
+  // company's period must be open. Returns a message when the action must be refused.
+  function groupTransferCounterpartBlock(peer) {
+    if (!peer || !peer.row) return '';
+    const co = peer.row.company || '';
+    if (co && !allowedCompanyNames().includes(co)) {
+      return `This row is one side of a Group Transfer with ${co}. A seat with access to both companies must do this.`;
+    }
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+      const g = window.MFG_AI_EDGE.checkPeriodCloseGuard(co || STATE.company, peer.row.date || '', peer.row.rep_date || '', { industry: 'Manufacturing' });
+      if (g && g.blocked) return `${co}: ${g.message}`;
+    }
+    return '';
+  }
+
   function restoreVoidedRecord(crKey, id) {
     if (!canVoid()) { toast('Only Supervisor, Admin, or authorized Custom seats can void or restore records', 'err'); return; }
     const q = String(id == null ? '' : id).trim();
@@ -93898,6 +94635,10 @@
         return false;
       }
     }
+    // Group Transfer check first: a refused restore must leave nothing changed.
+    const gtRestorePeer = findGroupTransferCounterpart(crKey, r, true);
+    const gtRestoreBlock = groupTransferCounterpartBlock(gtRestorePeer);
+    if (gtRestoreBlock) { toast(gtRestoreBlock, 'err'); return false; }
     if (archivedSeed && SEED.records && Array.isArray(SEED.records[crKey])) {
       const cleanSeed = Object.assign({}, archivedSeed, { voided: false });
       delete cleanSeed.voided_by;
@@ -93915,6 +94656,15 @@
       delete r.voided_at;
     }
     const extraRestorePosts = [];
+    if (gtRestorePeer) {
+      // Group Transfer: the other company's row comes back with this one.
+      gtRestorePeer.row.voided = false;
+      gtRestorePeer.row.restored_at = restoreStampIso;
+      gtRestorePeer.row.modified_at = restoreStampIso;
+      delete gtRestorePeer.row.voided_by;
+      delete gtRestorePeer.row.voided_at;
+      extraRestorePosts.push([gtRestorePeer.crKey, gtRestorePeer.row]);
+    }
     if (crKey === 'expenses' || crKey === 'equipment_repairs') {
       const childKey = crKey === 'expenses' ? 'expense_items' : 'repair_items';
       const idField = crKey === 'expenses' ? 'expense_id' : 'repair_id';
@@ -94000,6 +94750,9 @@
         return;
       }
     }
+    const gtVoidPeer = findGroupTransferCounterpart(crKey, r || seedRow, false);
+    const gtVoidBlock = groupTransferCounterpartBlock(gtVoidPeer);
+    if (gtVoidBlock) { toast(gtVoidBlock, 'err'); return; }
     if (!(opts && opts.bypassStepUp) && window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
       const targetRowForStep = r || seedRow;
       const voidCo = (targetRowForStep && targetRowForStep.company) || STATE.company || 'WTC';
@@ -94047,6 +94800,16 @@
       list.unshift(r);
     }
     const extraVoidPosts = [];
+    if (gtVoidPeer) {
+      // Group Transfer: the other company's row is voided with this one, so neither side is left on its own.
+      gtVoidPeer.row.voided = true;
+      gtVoidPeer.row.voided_by = who;
+      gtVoidPeer.row.voided_at = when;
+      delete gtVoidPeer.row.restored_at;
+      const peerSeed = ((SEED.records && SEED.records[gtVoidPeer.crKey]) || []).find(x => x && String(x.id) === String(gtVoidPeer.row.id));
+      if (peerSeed && peerSeed !== gtVoidPeer.row) { peerSeed.voided = true; peerSeed.voided_by = who; peerSeed.voided_at = when; }
+      extraVoidPosts.push([gtVoidPeer.crKey, gtVoidPeer.row]);
+    }
     if (crKey === 'expenses' || crKey === 'equipment_repairs') {
       const childKey = crKey === 'expenses' ? 'expense_items' : 'repair_items';
       const idField = crKey === 'expenses' ? 'expense_id' : 'repair_id';
@@ -95813,6 +96576,7 @@
       if ($('f_ticketprod')) $('f_ticketprod').checked = row.ticket_product !== false;
       if ($('f_fuelitem')) $('f_fuelitem').checked = Boolean(row.fuel_item);
       if ($('f_inputprod')) $('f_inputprod').checked = Boolean(row.input_product);
+      if ($('f_unreg_class')) setModalControlVal('f_unreg_class', REVENUE_CLASSES.includes(String(row.unreg_class || '')) ? row.unreg_class : '');
       if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
     } else if (form === 'expensecategory') {
       setModalControlVal('f_category', row.name || row.category || '');
@@ -132597,6 +133361,19 @@
     expenseSign: typeof expenseSign === 'function' ? expenseSign : null,
     getModel: typeof getModel === 'function' ? getModel : null,
     getKPI: typeof getKPI === 'function' ? getKPI : null,
+    getScopedMonthly: typeof getScopedMonthly === 'function' ? getScopedMonthly : null,
+    revenueClass: window.__mfgRevenueClass || null,
+    renderStatementSheet: typeof renderStatementSheet === 'function' ? renderStatementSheet : null,
+    resolveGroupTransferPlan: typeof resolveGroupTransferPlan === 'function' ? resolveGroupTransferPlan : null,
+    groupTransferOptions: typeof groupTransferOptions === 'function' ? groupTransferOptions : null,
+    openEntryModal: typeof openEntryModal === 'function' ? openEntryModal : null,
+    saveModalEntry: typeof saveModalEntry === 'function' ? saveModalEntry : null,
+    openEntryModalForRecord: typeof openEntryModalForRecord === 'function' ? openEntryModalForRecord : null,
+    closeEntryModal: typeof closeEntryModal === 'function' ? closeEntryModal : null,
+    voidRecord: typeof voidRecord === 'function' ? voidRecord : null,
+    restoreVoidedRecord: typeof restoreVoidedRecord === 'function' ? restoreVoidedRecord : null,
+    canEnterForm: typeof canEnterForm === 'function' ? canEnterForm : null,
+    isAppRecord: typeof isAppRecord === 'function' ? isAppRecord : null,
     ensureMultiIndustrySpineSeeded: typeof ensureMultiIndustrySpineSeeded === 'function' ? ensureMultiIndustrySpineSeeded : null,
     computeThreeLegPayablesBreakdown: typeof computeThreeLegPayablesBreakdown === 'function' ? computeThreeLegPayablesBreakdown : null,
     computeStaffPayrollRegister: typeof computeStaffPayrollRegister === 'function' ? computeStaffPayrollRegister : null,

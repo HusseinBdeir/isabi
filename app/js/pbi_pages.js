@@ -1467,7 +1467,7 @@
   // All 49 Relational Tables organized into 5 BU-Scoped Operational Domains + Dedicated 6 · Universal (All BUs) Shared Master Group
   const TABLE_CATALOG = [
     // 1 · Sales, Pricing & Receivables (5 BU-scoped)
-    { key: 'sales_tickets', group: '1 · Sales, Pricing & Receivables', label: 'Sales Tickets', dvn: 'bhf_salesticket', form: 'sales', cols: ['date', 'rep_date', 'ticket_no', 'company', 'sale_type', 'customer', 'product', 'site', 'truck', 'driver', 'overtime', 'qty', 'uom', 'unit_price', 'price', 'trans_price', 'vat', 'total_ttc', 'method'], relTables: ['customers', 'price_rules', 'products', 'sites', 'equipment', 'drivers', 'receipts', 'vat_invoices'], views: [{ id: 'all', label: 'All Sales Tickets' }, { id: 'delivery', label: 'Delivery Loads', fn: r => /deliv/i.test(r.sale_type) }, { id: 'pickup', label: 'Pick-up (Material Only)', fn: r => /pick/i.test(r.sale_type) }, { id: 'overtime', label: 'Overtime Loads', fn: r => Boolean(r.overtime) }, { id: 'credit', label: 'Credit / Account', fn: r => !/cash/i.test(r.method) }, { id: 'iva', label: 'IVA / VAT 11%', fn: r => r.iva || Number(r.vat || 0) > 0 }] },
+    { key: 'sales_tickets', group: '1 · Sales, Pricing & Receivables', label: 'Sales Tickets', dvn: 'bhf_salesticket', form: 'sales', cols: ['date', 'rep_date', 'ticket_no', 'company', 'sale_type', 'customer', 'product', 'site', 'truck', 'driver', 'overtime', 'qty', 'uom', 'unit_price', 'price', 'trans_price', 'vat', 'total_ttc', 'method'], relTables: ['customers', 'price_rules', 'products', 'sites', 'equipment', 'drivers', 'receipts', 'vat_invoices'], views: [{ id: 'all', label: 'All Sales Tickets' }, { id: 'delivery', label: 'Delivery Loads', fn: r => /deliv/i.test(r.sale_type) }, { id: 'pickup', label: 'Pick-up (Material Only)', fn: r => /pick/i.test(r.sale_type) }, { id: 'overtime', label: 'Overtime Loads', fn: r => Boolean(r.overtime) }, { id: 'credit', label: 'Credit / Account', fn: r => !/cash/i.test(r.method) }, { id: 'iva', label: 'IVA / VAT 11%', fn: r => r.iva || Number(r.vat || 0) > 0 }, { id: 'recharges', label: 'Group Transfers & Recharges', fn: r => Boolean(window.__mfgRevenueClass) && window.__mfgRevenueClass.classOf(r) === 'recharge' }, { id: 'other_income', label: 'Scrap & Other Income', fn: r => Boolean(window.__mfgRevenueClass) && window.__mfgRevenueClass.classOf(r) === 'other_income' }] },
     { key: 'receipts', group: '1 · Sales, Pricing & Receivables', label: 'Customer Receipts (AR)', dvn: 'bhf_mfgcustomerreceipt', form: 'receipt', cols: ['date', 'rep_date', 'name', 'company', 'customer', 'method', 'kind', 'amount', 'discount', 'vat_invoice', 'record_ticket', 'reference', 'notes'], relTables: ['customers', 'sales_tickets', 'vat_invoices', 'credit_terms'], views: [{ id: 'all', label: 'All Customer Receipts' }, { id: 'cash', label: 'Cash / Check', fn: r => /cash|check|cheque/i.test(r.method || '') }, { id: 'disc', label: 'With Discount / Rebate', fn: r => Number(r.discount || 0) > 0 }] },
     { key: 'vat_invoices', group: '1 · Sales, Pricing & Receivables', label: 'VAT 11% Tax Invoices', dvn: 'bhf_vatinvoice', form: 'vatinvoice', cols: ['invoice_no', 'date', 'company', 'customer', 'start_date', 'end_date', 'net_amount', 'vat_amount', 'total_ttc', 'tickets_count', 'notes'], relTables: ['customers', 'sales_tickets', 'receipts'], views: [{ id: 'all', label: 'All VAT Invoices' }] },
     { key: 'price_rules', group: '1 · Sales, Pricing & Receivables', label: 'Price & Commission Agreements', dvn: 'bhf_pricerule', form: 'pricerule', cols: ['company', 'rule_type', 'customer', 'supplier', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'total1', 'qty2', 'adj2', 'total2', 'start_date', 'end_date', 'matched_tickets'], relTables: ['customers', 'suppliers', 'products', 'sites', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'Sales & Commission Agreements', fn: r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '') }, { id: 'active', label: 'Active Sales Agreements', fn: r => !r.end_date && !/^(Purchase Price \(Site\)|Transport Price \(Site\)|Commission)$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'sales', label: 'Customer Delivery & Pickup', fn: r => /sale|pickup|deliv/i.test(r.rule_type || '') && !/^commission$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'list', label: 'List Prices', fn: r => /list/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'commission', label: 'Commission Rules', fn: r => /^commission$/i.test(r.rule_type || ''), cols: ['company', 'supplier', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_all', label: 'Raw & Site Haulage Agreements', fn: r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_active', label: 'Active Raw & Haulage', fn: r => !r.end_date && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_purch', label: 'Site Material Cost Rules', fn: r => r.rule_type === 'Purchase Price (Site)', cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_haul', label: 'Site Haulage Rate Rules', fn: r => r.rule_type === 'Transport Price (Site)', cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }] },
@@ -5627,8 +5627,8 @@
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Sales & Revenue (Click any card to drill into its page)', [
             { label: 'Total Sales', value: fmtUSD(sc(k.sales_ttc), 0), sub: fmtNum(sc(k.loads), 0) + ' weighbridge loads', tone: 'brass', navPage: 'p04_sales' },
-            { label: 'Cash Sales', value: fmtUSD(sc(k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales), 0), sub: fmtPct(null, k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales, k.sales_ttc) + ' of Total Sales', tone: 'good', navPage: 'p04_sales' },
-            { label: 'Credit Sales', value: fmtUSD(sc(k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales), 0), sub: fmtPct(null, k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales, k.sales_ttc) + ' of Total Sales', navPage: 'p04_sales' },
+            { label: 'Cash Sales', value: fmtUSD(sc(k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales), 0), sub: fmtPct(null, k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales, k.sales_ttc_incl_reclass != null ? k.sales_ttc_incl_reclass : k.sales_ttc) + ' of Total Sales', tone: 'good', navPage: 'p04_sales' },
+            { label: 'Credit Sales', value: fmtUSD(sc(k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales), 0), sub: fmtPct(null, k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales, k.sales_ttc_incl_reclass != null ? k.sales_ttc_incl_reclass : k.sales_ttc) + ' of Total Sales', navPage: 'p04_sales' },
             { label: 'Transport Revenue', value: fmtUSD(sc(k.trans_rev), 0), sub: fmtNum(sc(k.delivery_loads), 0) + ' delivery loads', navPage: 'p04_sales' },
             { label: 'Tons Sold', value: fmtNum(sc(k.tons_sold), 0) + ' t', sub: fmtNum(sc(k.qty_sold), 0) + ' m³ sold', navPage: 'p04_sales' },
             { label: 'Avg Price / m³', value: fmtUSD(k.avg_price_ttc, 2), sub: fmtUSD(sc(k.loads ? k.sales_ttc / k.loads : 0), 0) + ' avg / load', navPage: 'p05_pricing' }
@@ -5726,16 +5726,28 @@
       const hasWtc = allowedNames.includes('WTC');
       const hasBbc = allowedNames.includes('BBConstruction');
       const hasLt = allowedNames.includes('Lions Transport');
-      const wRaw = ((SEED.models.wtc || {}).periods || {})[STATE.period] || ((SEED.models.wtc || {}).periods || {}).all || {};
-      const bRaw = ((SEED.models.bbconstruction || {}).periods || {})[STATE.period] || ((SEED.models.bbconstruction || {}).periods || {}).all || {};
-      const lRaw = ((SEED.models.lionstransport || {}).periods || {})[STATE.period] || ((SEED.models.lionstransport || {}).periods || {}).all || {};
-      const gRaw = ((SEED.models['manufacturing-group'] || {}).periods || {})[STATE.period] || ((SEED.models['manufacturing-group'] || {}).periods || {}).all || {};
+      // Stored period totals per company, with costs passed on and scrap taken out of sales (same rule as every page).
+      const rcApi = window.__mfgRevenueClass || null;
+      const storedPeriod = mk => {
+        const ps = (SEED.models[mk] || {}).periods || {};
+        const hit = ps[STATE.period];
+        const raw = hit || ps.all || {};
+        return rcApi ? rcApi.adjustStoredPeriod(mk, raw, hit ? STATE.period : 'all') : raw;
+      };
+      const storedMonths = mk => {
+        const rows = ((SEED.models[mk] || {}).monthly || []).slice(-12);
+        return rcApi ? rcApi.adjustStoredMonths(mk, rows) : rows;
+      };
+      const wRaw = storedPeriod('wtc');
+      const bRaw = storedPeriod('bbconstruction');
+      const lRaw = storedPeriod('lionstransport');
+      const gRaw = storedPeriod('manufacturing-group');
       const w = hasWtc ? wRaw : {};
       const b = hasBbc ? bRaw : {};
       const l = hasLt ? lRaw : {};
       const g = (hasWtc && hasBbc) ? gRaw : (hasWtc ? w : (hasBbc ? b : l));
-      const wM = hasWtc ? ((SEED.models.wtc || {}).monthly || []).slice(-12) : [];
-      const bM = hasBbc ? ((SEED.models.bbconstruction || {}).monthly || []).slice(-12) : [];
+      const wM = hasWtc ? storedMonths('wtc') : [];
+      const bM = hasBbc ? storedMonths('bbconstruction') : [];
       const baseMonths = wM.length ? wM : bM;
       const compMonths = baseMonths.map(wm => {
         const bm = bM.find(x => x['Year Month'] === wm['Year Month']) || {};
@@ -5957,8 +5969,8 @@
             { label: 'Total Sales', value: fmtUSD(sc(k.sales_ttc), 0), sub: fmtNum(sc(k.loads), 0) + ' weighbridge loads', tone: 'brass' },
             { label: 'Material Sales', value: fmtUSD(round2(sc(k.sales_ttc) - sc(k.trans_rev)), 0), sub: 'Aggregate grade value' },
             { label: 'Transport Revenue', value: fmtUSD(sc(k.trans_rev), 0), sub: 'Delivery haulage billed' },
-            { label: 'Cash Sales', value: fmtUSD(sc(k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales), 0), sub: fmtPct(null, k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales, k.sales_ttc) + ' of Sales', tone: 'good' },
-            { label: 'Credit Sales', value: fmtUSD(sc(k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales), 0), sub: fmtPct(null, k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales, k.sales_ttc) + ' of Sales' },
+            { label: 'Cash Sales', value: fmtUSD(sc(k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales), 0), sub: fmtPct(null, k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales, k.sales_ttc_incl_reclass != null ? k.sales_ttc_incl_reclass : k.sales_ttc) + ' of Sales', tone: 'good' },
+            { label: 'Credit Sales', value: fmtUSD(sc(k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales), 0), sub: fmtPct(null, k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales, k.sales_ttc_incl_reclass != null ? k.sales_ttc_incl_reclass : k.sales_ttc) + ' of Sales' },
             { label: 'Active Customers', value: fmtNum(custRows.filter(c => Number(c.loads || 0) > 0).length), sub: 'Billed in selected period' }
           ])}
           ${kpiBand('2 · Weighbridge Loads, Tonnage & Unit Realisation', [
@@ -8845,7 +8857,7 @@
     // PAGE 16: FINANCIAL GL & SOA (Lebanese CoA Classes 1–7 + Double-Entry Tie)
     // =========================================================================
     else if (activePageId === 'p16_financial') {
-      const tbAll = m.gl_tb || [];
+      const tbAll = window.__mfgRevenueClass ? window.__mfgRevenueClass.glTb(m) : (m.gl_tb || []);
       const tb = tbAll.filter(r => {
         if (!matchSearch(r)) return false;
         if (sl.glClass && String(r.Class) !== String(sl.glClass)) return false;
@@ -8870,8 +8882,17 @@
         { code: '6011', name: 'Raw Material Purchases (Leg 1)', amt: -(k.raw_mat_cost || 0), pct: fmtPct(null, k.raw_mat_cost, k.net_sales) },
         { code: '6111', name: 'Subcontracted Raw Haulage (Leg 2)', amt: -(k.raw_haulage || 0), pct: fmtPct(null, k.raw_haulage, k.net_sales) },
         { code: 'GM', name: 'GROSS MARGIN', amt: k.gross_margin || 0, pct: fmtPct(k.gm_pct, k.gross_margin, k.net_sales), bold: true },
-        { code: '61/62', name: 'Operating, Fleet & Plant Expenses', amt: -(k.expenses || 0), pct: fmtPct(null, k.expenses, k.net_sales) },
+        ...(Number(k.recharged_costs || 0)
+          ? [
+              { code: '61/62', name: 'Operating, Fleet & Plant Expenses (Before Recharges)', amt: -(Number(k.expenses || 0) + Number(k.recharged_costs || 0)), pct: fmtPct(null, Number(k.expenses || 0) + Number(k.recharged_costs || 0), k.net_sales) },
+              { code: '61/62', name: 'Less: Costs Recharged to Other Companies', amt: Number(k.recharged_costs || 0), pct: fmtPct(null, k.recharged_costs, k.net_sales) },
+              { code: '61/62', name: 'NET OPERATING, FLEET & PLANT EXPENSES', amt: -(k.expenses || 0), pct: fmtPct(null, k.expenses, k.net_sales), bold: true }
+            ]
+          : [{ code: '61/62', name: 'Operating, Fleet & Plant Expenses', amt: -(k.expenses || 0), pct: fmtPct(null, k.expenses, k.net_sales) }]),
         { code: '6411', name: 'Staff Salaries & Overtime Paid', amt: -(k.salaries_paid || 0), pct: fmtPct(null, k.salaries_paid, k.net_sales) },
+        ...(Number(k.other_income || 0)
+          ? [{ code: '758', name: 'Other Income (Scrap & Sundry Sales)', amt: Number(k.other_income || 0), pct: fmtPct(null, k.other_income, k.net_sales) }]
+          : []),
         { code: 'OP', name: 'OPERATING PROFIT (CASH VIEW)', amt: k.operating_profit || 0, pct: fmtPct(k.op_margin_pct, k.operating_profit, k.net_sales), bold: true }
       ];
 
@@ -13542,7 +13563,7 @@
       ? activeSlicerPairs.map(([kName, vVal]) => _pbiFormatSlicerPair(kName, vVal, 'fr')).join(', ')
       : '';
 
-    const tbAll = Array.isArray(m.gl_tb) ? m.gl_tb : [];
+    const tbAll = window.__mfgRevenueClass ? window.__mfgRevenueClass.glTb(m) : (Array.isArray(m.gl_tb) ? m.gl_tb : []);
     const tbFiltered = tbAll.filter(r => {
       if (!matchSearch(r)) return false;
       if (sl.glClass && String(r.Class) !== String(sl.glClass)) return false;
@@ -13617,10 +13638,16 @@
     } else if (pageId === 'p02_companies') {
       const allowed = typeof ctx.allowedCompanyNames === 'function' ? ctx.allowedCompanyNames() : ['WTC', 'BBConstruction', 'Lions Transport'];
       const pKey = STATE.period || 'all';
+      const rcApiCo = window.__mfgRevenueClass || null;
+      const storedCoPeriod = mk => {
+        const ps = (SEED.models && SEED.models[mk] && SEED.models[mk].periods) || {};
+        const raw = ps[pKey] || ps.all || {};
+        return rcApiCo ? rcApiCo.adjustStoredPeriod(mk, raw, ps[pKey] ? pKey : 'all') : raw;
+      };
       const buDefs = [
-        { name: 'WTC', kp: ((SEED.models && SEED.models.wtc && SEED.models.wtc.periods) || {})[pKey] || ((SEED.models && SEED.models.wtc && SEED.models.wtc.periods) || {}).all || {} },
-        { name: 'BBConstruction', kp: ((SEED.models && SEED.models.bbconstruction && SEED.models.bbconstruction.periods) || {})[pKey] || ((SEED.models && SEED.models.bbconstruction && SEED.models.bbconstruction.periods) || {}).all || {} },
-        { name: 'Lions Transport', kp: ((SEED.models && SEED.models.lionstransport && SEED.models.lionstransport.periods) || {})[pKey] || ((SEED.models && SEED.models.lionstransport && SEED.models.lionstransport.periods) || {}).all || {} }
+        { name: 'WTC', kp: storedCoPeriod('wtc') },
+        { name: 'BBConstruction', kp: storedCoPeriod('bbconstruction') },
+        { name: 'Lions Transport', kp: storedCoPeriod('lionstransport') }
       ].filter(b => allowed.includes(b.name));
       const totSales = round2(buDefs.reduce((s, b) => s + Number(b.kp.sales_ttc || 0), 0));
       const totOp = round2(buDefs.reduce((s, b) => s + Number(b.kp.operating_profit || 0), 0));

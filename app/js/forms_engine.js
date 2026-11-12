@@ -72,6 +72,9 @@
       forms: [
         { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', hubView: 'raw', pbiPage: 'p04_quarry', title: 'New Raw Material Ticket' },
         { id: 'expense', label: 'Expense', badge: 'bhf_expense', crKey: 'expenses', hubView: 'expenses', pbiPage: 'p07_ap', title: 'New Expense' },
+        // One entry for a cost passed to another company of the group: posts the sender's recharge ticket (not a sale)
+        // and, when the receiver is a Manufacturing company, the receiver's expense. Table = Sales Tickets view "Group Transfers & Recharges".
+        { id: 'grouptransfer', label: 'Group Transfer', badge: 'bhf_grouptransfer', crKey: 'sales_tickets', hubView: 'sales', pbiPage: 'p16_financial', title: 'New Group Transfer (Cost Passed to Another Company)' },
         { id: 'recurringexpense', label: 'Recurring Expense', badge: 'bhf_recurringexpense', crKey: 'recurring_expenses', hubView: 'recurring_expenses', pbiPage: 'p07_ap', title: 'New Recurring Expense Schedule' },
         { id: 'warehousestock', label: 'Warehouse Shelf Adjust', badge: 'bhf_warehousemovement', crKey: 'warehouse_movements', hubView: 'warehouse', pbiPage: 'p07_ap', title: 'Warehouse Shelf Stock & Adjustment' },
         { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', hubView: 'suppliers', pbiPage: 'p07_ap', title: 'New Supplier Settlement' },
@@ -1230,6 +1233,7 @@
           ${fld('Product Type *', sel('f_prodtype', [['Material', 'Material (Aggregate / Concrete / Block)'], ['Fuel', 'Fuel (Diesel)'], ['Lubricant', 'Lubricant / Oil'], ['Service', 'Service / Transport'], ['Part', 'Spare Part']], 'Material'))}
           ${fld('Ton Conversion Factor (1 m³ = X Tons) *', inp('f_tonfactor', 'number', '1.50', 'step="0.01" min="0.1"'))}
           ${fld('Standard List Price ($)', inp('f_unitprice', 'number', '', 'step="0.01" min="0"'))}
+          ${fld('On an Unregistered Ticket', sel('f_unreg_class', [['', 'Automatic (By Product Type)'], ['recharge', 'Cost Passed On (Not a Sale)'], ['sale', 'Sale'], ['other_income', 'Other Income (Scrap)']], ''), { id: 'wrap_f_unreg_class' })}
           <div class="form-field check-field"><input type="checkbox" id="f_ticketprod" checked><label for="f_ticketprod">Show on Sales / Raw Material tickets</label></div>
           <div class="form-field check-field"><input type="checkbox" id="f_fuelitem"><label for="f_fuelitem">Show on Fuel & Lubricant Intake</label></div>
           <div class="form-field check-field"><input type="checkbox" id="f_inputprod"><label for="f_inputprod">Raw Input Material</label></div>
@@ -2472,6 +2476,40 @@
           <div><small id="lbl_tr_c2">Loan Given Now</small><b id="calc_tr_c2">$0.00</b></div>
           <div><small id="lbl_tr_c3">Loan Balance After</small><b id="calc_tr_c3">—</b></div>
           <div><small id="lbl_tr_c4">Treasury Leg</small><b id="calc_tr_c4">Company Lends (Outflow)</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'grouptransfer') {
+      const gt = (helpers && typeof helpers.groupTransferOptions === 'function')
+        ? helpers.groupTransferOptions()
+        : { senders: comps, buyers: [], items: [], methods: ['Cash', 'Credit'], categories: [], subcategories: [] };
+      const senders = (gt.senders && gt.senders.length) ? gt.senders : comps;
+      const fromCo = senders.includes(company) ? company : (senders[0] || company);
+      const methodLabel = { Cash: 'Cash (Paid Now)', Credit: 'On Account (Settle Later)' };
+      const methodOpts = (gt.methods && gt.methods.length ? gt.methods : ['Cash', 'Credit']).map(m => [m, methodLabel[m] || m]);
+      return `
+        ${adminHeaderHtml}
+        <div class="form-grid-3">
+          ${fld('From Company *', sel('f_company', senders, fromCo), { id: 'wrap_f_company', hidden: isSingleBuScope && senders.includes(company) })}
+          ${lockedDateField('Transaction Date *')}
+          ${collapsibleRepDateField()}
+          ${fld('To Company *', sel('f_gt_to', [['', 'Select receiving company...']].concat((gt.buyers || []).map(b => [b.name, b.name])), ''), { id: 'wrap_gt_to', hintId: 'hint_gt_to', hint: '' })}
+          ${fld('What Is Passed On *', inp('f_product', 'text', '', 'list="dl_gt_items" placeholder="Diesel, oil or the cost passed on..."') + dlMeta('dl_gt_items', (gt.items || []).map(i => [i.name, i.meta || ''])), { id: 'wrap_gt_item', hintId: 'hint_gt_item', hint: '' })}
+          ${fld('Quantity', inp('f_qty', 'number', '', 'step="0.01" min="0" placeholder="Litres or pieces (optional)"'), { id: 'wrap_gt_qty' })}
+          ${fld('Amount (USD) *', inp('f_amount', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_gt_amount', hintId: 'hint_gt_amount', hint: '' })}
+          ${fld('Settlement *', sel('f_method', methodOpts, methodOpts[0][0]), { id: 'wrap_gt_method' })}
+          ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Tanker ticket or invoice number"'), { id: 'wrap_gt_ref' })}
+          ${fld('Receiver Expense Category *', inp('f_category', 'text', '', 'list="dl_gt_categories" placeholder="Select category..."') + dl('dl_gt_categories', gt.categories || []), { id: 'wrap_gt_category', hidden: true })}
+          ${fld('Receiver Expense Subcategory *', inp('f_subcategory', 'text', '', 'list="dl_gt_subcats" placeholder="Select subcategory..."') + dl('dl_gt_subcats', gt.subcategories || []), { id: 'wrap_gt_subcategory', hidden: true })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional remark"'), { span: true })}
+          <div id="gtLiveContextStrip" class="att-contract-strip" hidden style="grid-column:1 / -1"></div>
+        </div>
+        <div class="live-calc" id="gtLiveCalc">
+          <div><small>Sender Sales</small><b id="calc_gt_sales">No Change</b></div>
+          <div><small>Sender Expenses</small><b id="calc_gt_sender">$0.00</b></div>
+          <div><small>Receiver Expenses</small><b id="calc_gt_receiver">$0.00</b></div>
+          <div><small>Group Expenses</small><b id="calc_gt_group">$0.00</b></div>
         </div>
       `;
     }
