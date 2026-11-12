@@ -42,6 +42,39 @@ SUB_DIRS = [
     "vendor",
 ]
 
+# Offline regression gates run before every sync (about 4 s together; none touches the network or live D1).
+# (repo, path inside it, interpreter). A gate missing from the tree is reported as SKIP, so this file can merge
+# before the branch that adds the gate; a gate that exists and fails stops the sync.
+RELEASE_GATES = [
+    ("isabi-app", "build/verify_workbook_cache.py", "python"),       # top-up workbook cache + lazy openpyxl
+    ("isabi-app", "build/verify_sharepoint_hash_skip.py", "python"), # Graph quickXorHash re-read skip
+    ("isabi-app", "build/verify_legacy_id_sunset.py", "python"),     # legacy_id_map sunset gate
+    ("isabi", "build/verify_legacy_id_hits.mjs", "node"),            # Edge legacy_id_hits counter
+]
+
+
+def run_release_gates() -> None:
+    if os.environ.get("ISABI_SKIP_RELEASE_GATES") == "1" or "--skip-release-gates" in sys.argv:
+        print("WARN: release gates skipped (--skip-release-gates / ISABI_SKIP_RELEASE_GATES=1)")
+        return
+    roots = {"isabi-app": APP_SRC_ROOT, "isabi": ISABI_ROOT}
+    for repo, rel, interp in RELEASE_GATES:
+        script = os.path.join(roots[repo], *rel.split("/"))
+        if not os.path.isfile(script):
+            print(f"SKIP: release gate {repo}/{rel} is not in this tree")
+            continue
+        exe = sys.executable if interp == "python" else (shutil.which("node") or "node")
+        chk = subprocess.run([exe, script], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=roots[repo])
+        tail = (chk.stdout.strip().splitlines() or ["(no output)"])[-1]
+        if chk.returncode != 0:
+            print(f"ERROR: release gate {repo}/{rel} failed (exit {chk.returncode}) in sync_app.py!", file=sys.stderr)
+            if chk.stdout:
+                print(chk.stdout[-6000:], file=sys.stderr)
+            if chk.stderr:
+                print(chk.stderr[-3000:], file=sys.stderr)
+            raise SystemExit(chk.returncode or 1)
+        print(f"OK: release gate {repo}/{rel}: {tail}")
+
 
 def verify_shell_version_parity() -> str:
     sw_path = os.path.join(APP_SRC_ROOT, "sw.js")
@@ -93,6 +126,8 @@ def sync_command_app() -> int:
             raise SystemExit(chk.returncode)
         if chk.stdout.strip():
             print(chk.stdout.strip())
+
+    run_release_gates()
 
     os.makedirs(APP_OUT, exist_ok=True)
     copied = 0
