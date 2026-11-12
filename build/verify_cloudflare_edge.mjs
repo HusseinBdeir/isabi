@@ -2290,7 +2290,8 @@ finally:
     const verifyKeepFace = await httpReq('POST', '/app/api/auth/login', { email: 'edge28face@bhfirms.com', method: 'Face ID', verify_only: true, face_descriptor: vec28 }, { 'X-ISABI-Session': ownerToken, 'CF-Connecting-IP': '198.51.100.102' });
     verifyKeepStatuses.push(`verify:${verifyKeepFace.status}`);
     // Another seat's checked PIN resets the IP key, so the 429 below can only come from the seat's own key.
-    await httpReq('POST', '/app/api/auth/login', { email: 'edge28pinonly@bhfirms.com', pin: '2947', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.102' });
+    const verifyKeepReset = await httpReq('POST', '/app/api/auth/login', { email: 'edge28pinonly@bhfirms.com', pin: '2947', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.102' });
+    verifyKeepStatuses.push(`reset:${verifyKeepReset.status}`);
     const verifyKeepFifth = await httpReq('POST', '/app/api/auth/login', { email: 'edge28face@bhfirms.com', pin: '0000', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.102' });
     verifyKeepStatuses.push(verifyKeepFifth.status);
     // (l) same for a face-alone SIGN-IN of that seat: it never resets the seat's own PIN key.
@@ -2301,9 +2302,30 @@ finally:
     }
     const signinKeepFace = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', face_descriptor: vec28 }, { 'CF-Connecting-IP': '198.51.100.103' });
     signinKeepStatuses.push(`face:${signinKeepFace.status}`);
-    await httpReq('POST', '/app/api/auth/login', { email: 'edge28pinonly@bhfirms.com', pin: '2947', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.103' });
+    const signinKeepReset = await httpReq('POST', '/app/api/auth/login', { email: 'edge28pinonly@bhfirms.com', pin: '2947', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.103' });
+    signinKeepStatuses.push(`reset:${signinKeepReset.status}`);
     const signinKeepFifth = await httpReq('POST', '/app/api/auth/login', { email: 'edge28face@bhfirms.com', pin: '0000', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.103' });
     signinKeepStatuses.push(signinKeepFifth.status);
+    // (m) a seat with a blank email has no PIN key to throttle on: a PIN is never checked through the face
+    // lookup for it (401 even with its correct PIN), while Face ID alone still signs it in.
+    const vecBlank = Array.from({ length: 128 }, (_, i) => Number((Math.sin((i + 3) * 0.71) * 0.2).toFixed(5)));
+    await httpReq('POST', '/app/api/users', {
+      user: {
+        id: 'u-edge28-blank',
+        email: ' ',
+        full_name: 'Edge Blank Email',
+        role: 'Entry',
+        companies: 'WTC',
+        auth_mode: 'either',
+        pin_code: '5938',
+        status: 'Active',
+        face_samples: [vecBlank],
+        face_updated_at: '2026-11-08T18:05:00.000Z'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const blankPin = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID + PIN 2FA', face_descriptor: vecBlank, pin: '5938' }, { 'CF-Connecting-IP': '198.51.100.104' });
+    const blankFace = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', face_descriptor: vecBlank }, { 'CF-Connecting-IP': '198.51.100.104' });
+    const blankEmailStatuses = [`pin:${blankPin.status}${blankPin.json?.token ? '+token' : ''}`, `face:${blankFace.status}`];
 
     consoleErrors.length = 0;
     await sendCdp('Network.clearBrowserCookies');
@@ -2440,7 +2462,7 @@ finally:
         thumbImgCount = document.querySelectorAll('#enrolThumbStrip img').length;
 
         if (window.MFG_I18N && typeof window.MFG_I18N.setLang === 'function' && typeof window.MFG_I18N.auditDom === 'function') {
-          const isSyntheticTestName = txt => /^(EF|ET|EP|ES|FV|WQ)$|Verify Suite|WTC Quarry Dispatch|Empty Scope Seat|Edge Test|Edge Face|Edge TwoFactor|Edge PinOnly|Edge SixDigit|Face Verify|Both 2FA|Scope Escape/i.test(String(txt || '').trim());
+          const isSyntheticTestName = txt => /^(EF|ET|EP|ES|FV|WQ)$|Verify Suite|WTC Quarry Dispatch|Empty Scope Seat|Edge Test|Edge Face|Edge TwoFactor|Edge PinOnly|Edge SixDigit|Edge Blank Email|Face Verify|Both 2FA|Scope Escape/i.test(String(txt || '').trim());
           const arItems = window.MFG_I18N.auditDom(document.getElementById('workspace'), 'ar').items.filter(it => !isSyntheticTestName(it.text));
           const frItems = window.MFG_I18N.auditDom(document.getElementById('workspace'), 'fr').items.filter(it => !isSyntheticTestName(it.text));
           arAuditCount = arItems.length;
@@ -2653,8 +2675,9 @@ finally:
       pinViaFaceStatuses.join(',') === '401,401,401,401,face:200,429' &&
       verifyMissStatuses[5] === 'pin:200' &&
       emaillessPinStatuses.join(',') === '401,401,401,401,429,right:429' &&
-      verifyKeepStatuses.join(',') === '401,401,401,401,verify:200,429' &&
-      signinKeepStatuses.join(',') === '401,401,401,401,face:200,429' &&
+      verifyKeepStatuses.join(',') === '401,401,401,401,verify:200,reset:200,429' &&
+      signinKeepStatuses.join(',') === '401,401,401,401,face:200,reset:200,429' &&
+      blankEmailStatuses.join(',') === 'pin:401,face:200' &&
       e28Flow?.bootOk === true &&
       e28Flow.stBoot?.authed === false &&
       e28Flow.stBoot?.enrolledSeats?.length === 0 &&
@@ -2727,7 +2750,8 @@ finally:
           verifyMiss: verifyMissStatuses,
           emaillessPin: emaillessPinStatuses,
           verifyKeep: verifyKeepStatuses,
-          signinKeep: signinKeepStatuses
+          signinKeep: signinKeepStatuses,
+          blankEmail: blankEmailStatuses
         },
         e28Flow
       }));
