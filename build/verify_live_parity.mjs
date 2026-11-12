@@ -17,8 +17,10 @@
  *      drawers (including Mfg `#aieMfgVoiceStrip` + `#aieMfgOpenBatchBtn` ->
  *      `#aiBatchIntakeModal`, sibling `#aieIndVoiceStrip`, `#treasuryForecastModal`,
  *      `#inventoryOptimizerModal`, `#tabletKeysModal`, `#rolePermissionsMatrixPanel`).
- *   E. Release-log `#id` code + DOM/visibility audit across every `live` release,
- *      plus optional `--sync-release-log` status-line updater.
+ *   E. Release-log `#id` code + DOM/visibility audit across every `live` release
+ *      (`#id:conditional` = code presence only), plus optional `--sync-release-log`
+ *      status-line updater (never rewrites a hand-written status line).
+ *      Release log: THEO_RELEASE_LOG, `--release-log`, else ~/bhfirms/memory.
  */
 
 import { execFileSync, spawn } from 'node:child_process';
@@ -27,6 +29,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { cmpVer, parseReleaseLog, syncReleaseLogStatusLines } from './_release_log.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ISABI_ROOT = path.resolve(__dirname, '..');
@@ -37,12 +40,12 @@ function parseArgs(argv) {
     syncReleaseLog: false,
     allowLiveLlm: false,
     skipEdgeHttp: false,
+    // THEO memory folder (Cloudflare memory vault). Absent in CI: Phase E is skipped and Phase A
+    // compares the live shell with the repo heads only (it still runs and passes).
     releaseLogPath: process.env.THEO_RELEASE_LOG || path.join(
       os.homedir(),
-      'OneDrive - BHFIRMS',
-      'System',
-      'System',
-      'THEO',
+      'bhfirms',
+      'memory',
       'ISABICommandReleasesReference.md'
     ),
     devRepoPath: process.env.ISABI_APP_REPO || path.resolve(ISABI_ROOT, '..', 'isabi-app'),
@@ -73,7 +76,8 @@ const APP_ORIGIN_BASE = `${ORIGIN}${APP_BASE_PATH}`;
 
 const NON_DOM_PROSE_TOKENS = new Set([
   'idx', // v19.6.240 prose reference to SharePoint workbook `#idx` suffixes
-  'hsp_expenses' // Hospitality hub route alias (`targetHubView: 'hsp_expenses'` -> `expenses`)
+  'hsp_expenses', // Hospitality hub route alias (`targetHubView: 'hsp_expenses'` -> `expenses`)
+  'NNN' // v19.6.262 prose: voucher reference format `#NNN`
 ]);
 
 // Hidden <input type="file"> or master-checkbox sub-controls that live in DOM with 0x0 or clipped styling
@@ -117,21 +121,6 @@ function info(name, detail = '') {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-function parseVerTuple(v) {
-  const m = String(v || '').match(/v?(\d+)\.(\d+)\.(\d+)/);
-  if (!m) return [0, 0, 0];
-  return [Number(m[1]), Number(m[2]), Number(m[3])];
-}
-
-function cmpVer(a, b) {
-  const ta = parseVerTuple(a);
-  const tb = parseVerTuple(b);
-  for (let i = 0; i < 3; i++) {
-    if (ta[i] !== tb[i]) return ta[i] - tb[i];
-  }
-  return 0;
-}
-
 function extractShellVer(text) {
   const m = String(text || '').match(/v19\.\d+\.\d+/);
   return m ? m[0] : '';
@@ -159,34 +148,6 @@ function readWtFileVer(repoDir, relPath) {
   } catch (_) {
     return '';
   }
-}
-
-function parseReleaseLog(logPath) {
-  if (!logPath || !fs.existsSync(logPath)) return { exists: false, entries: [], lines: [] };
-  const raw = fs.readFileSync(logPath, 'utf8');
-  const lines = raw.split(/\r?\n/);
-  const entries = [];
-  for (let i = 0; i < lines.length; i++) {
-    const ln = lines[i];
-    const m = ln.match(/^- \*\*(v19\.\d+\.\d+)([^*]+)\*\*/);
-    if (!m) continue;
-    const ver = m[1];
-    const title = (m[1] + m[2]).trim();
-    const ids = [];
-    const idRe = /`#([A-Za-z][A-Za-z0-9_-]{2,})`/g;
-    let im;
-    while ((im = idRe.exec(ln)) !== null) {
-      if (!ids.includes(im[1])) ids.push(im[1]);
-    }
-    let statusLineIdx = -1;
-    let statusText = '';
-    if (i + 1 < lines.length && /^\s+(?:-\s+)?\*Status\b/.test(lines[i + 1])) {
-      statusLineIdx = i + 1;
-      statusText = lines[i + 1].trim();
-    }
-    entries.push({ ver, title, ids, lineIdx: i, statusLineIdx, statusText });
-  }
-  return { exists: true, entries, lines };
 }
 
 async function fetchHttpProbe(urlStr, method = 'GET') {
@@ -264,74 +225,6 @@ function buildDeterministicAiStubPayload(postBodyStr) {
     draft_fr: 'Veuillez confirmer le solde prevu dans les meilleurs delais.'
   };
   return JSON.stringify(responseObj);
-}
-
-function syncReleaseLogStatusLines(logPath, liveVer, liveCodeMissingByVer) {
-  if (!logPath || !fs.existsSync(logPath)) return { updated: 0 };
-  const raw = fs.readFileSync(logPath, 'utf8');
-  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
-  const lines = raw.split(/\r?\n/);
-  const today = new Date().toISOString().slice(0, 10);
-  const out = [];
-  let updated = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const ln = lines[i];
-    out.push(ln);
-    const m = ln.match(/^- \*\*(v19\.\d+\.\d+)\b/);
-    if (!m) continue;
-    const ver = m[1];
-    const hasExistingStatus = (i + 1 < lines.length) && /^\s+(?:-\s+)?\*Status\b/.test(lines[i + 1]);
-    const existingStatusLine = hasExistingStatus ? lines[i + 1] : '';
-    const isRecentOrPending = cmpVer(ver, 'v19.6.240') >= 0 || cmpVer(ver, liveVer) > 0 || hasExistingStatus;
-
-    if (!isRecentOrPending) continue;
-
-    const miss = liveCodeMissingByVer.get(ver) || [];
-    const isLiveClean = cmpVer(ver, liveVer) <= 0 && miss.length === 0;
-    // Preserve curated provenance/superseded notes when the release is already marked live/deployed/superseded
-    if (
-      hasExistingStatus &&
-      isLiveClean &&
-      !/\b(pending sync|not yet synced|partial on)\b/i.test(existingStatusLine) &&
-      /\b(live on|deployed live|deployed as part of|committed and deployed|historical superseded sync|dropped one release later)\b/i.test(existingStatusLine)
-    ) {
-      out.push(existingStatusLine);
-      i++; // consume preserved curated status line
-      continue;
-    }
-
-    let desiredStatus;
-    if (isLiveClean) {
-      desiredStatus = `  *Status ${today}: live on isabisystems.com/app (shell ${liveVer}; parity gate verified).*`;
-    } else if (cmpVer(ver, liveVer) <= 0 && miss.length > 0) {
-      desiredStatus = `  *Status ${today}: partial on isabisystems.com/app (shell ${liveVer}; missing anchors: ${miss.slice(0, 6).join(', ')}).*`;
-    } else {
-      desiredStatus = `  *Status ${today}: pending sync (live shell is ${liveVer}).*`;
-    }
-
-    if (Buffer.byteLength(desiredStatus, 'utf8') > 2400) {
-      desiredStatus = desiredStatus.slice(0, 2380) + '...*';
-    }
-
-    if (hasExistingStatus) {
-      if (existingStatusLine !== desiredStatus) {
-        out.push(desiredStatus);
-        updated++;
-      } else {
-        out.push(existingStatusLine);
-      }
-      i++; // consume old status line
-    } else {
-      out.push(desiredStatus);
-      updated++;
-    }
-  }
-
-  if (updated > 0) {
-    fs.writeFileSync(logPath, out.join(eol), 'utf8');
-  }
-  return { updated };
 }
 
 async function main() {
@@ -1129,7 +1022,7 @@ async function main() {
       const seenDomSet = new Set(reachState.seenDomIds);
       const seenVisSet = new Set(reachState.seenVisIds);
 
-      const liveCodeMissingByVer = new Map();
+      const liveCodeMissingByHeader = new Map(); // keyed by entry line: some versions have several entries
       const allLiveCodeMissing = [];
       const unreachableLiveIds = [];
 
@@ -1141,7 +1034,7 @@ async function main() {
             missInCode.push(id);
           }
         }
-        liveCodeMissingByVer.set(entry.ver, missInCode);
+        liveCodeMissingByHeader.set(entry.headerLine, missInCode);
 
         if (cmpVer(entry.ver, liveVer) <= 0) {
           for (const mId of missInCode) {
@@ -1149,6 +1042,7 @@ async function main() {
           }
           for (const id of entry.ids) {
             if (NON_DOM_PROSE_TOKENS.has(id)) continue;
+            if (entry.conditional.has(id)) continue;
             if (walkedViewsSet.has(id)) continue;
             if (seenVisSet.has(id)) continue;
             if (NON_VISUAL_DOM_IDS.has(id) && seenDomSet.has(id)) continue;
@@ -1178,7 +1072,7 @@ async function main() {
       }
 
       if (OPTS.syncReleaseLog) {
-        const syncRes = syncReleaseLogStatusLines(OPTS.releaseLogPath, liveVer, liveCodeMissingByVer);
+        const syncRes = syncReleaseLogStatusLines(OPTS.releaseLogPath, liveVer, liveCodeMissingByHeader);
         info('phaseE-sync-release-log', `Updated ${syncRes.updated} status line(s) in ${OPTS.releaseLogPath}`);
       }
     }
