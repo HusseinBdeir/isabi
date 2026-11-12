@@ -499,6 +499,9 @@
     sessions: lsGet('isabi_mfg_sessions_v2', null) || [],
     customRecords: lsGet('isabi_mfg_custom_recs_v2', null) || {},
     _purgedOverrideIds: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_purged_overrides_v1', null) : null) || [],
+    // Positional Manufacturing ids this browser upgraded or dropped and has not yet reported to the Edge
+    // (`_legacyPosUpgrades` in the sync patch; counts only). Feeds the sunset of the legacyPosRe upgrade path.
+    _legacyPosUpgrades: (!IS_AUTOMATED_TEST ? Math.max(0, Math.floor(Number(lsGet('isabi_mfg_legacy_pos_upgrades_v1', 0)) || 0)) : 0),
     industryCustomRows: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_ind_custom_rows_v1', null) : null) || {},
     _indCustomRev: 0,
     indTablesSearch: '',
@@ -103533,6 +103536,7 @@
         if (Array.isArray(STATE._purgedOverrideIds) && STATE._purgedOverrideIds.length) {
           appStoreSetRaw('isabi_mfg_purged_overrides_v1', JSON.stringify(STATE._purgedOverrideIds.slice(-2000)));
         }
+        appStoreSetRaw('isabi_mfg_legacy_pos_upgrades_v1', String(Math.max(0, Math.floor(Number(STATE._legacyPosUpgrades) || 0))));
         appStoreSetRaw('isabi_mfg_ind_row_edits_v1', JSON.stringify(getIndustryRowEditStore()));
         appStoreSetRaw('isabi_mfg_ind_custom_rows_v1', JSON.stringify(offloadIndustryCustomRowBlobs(getIndustryCustomRowsStore())));
       }
@@ -103972,6 +103976,7 @@
             if (cands.length === 1 && cands[0].id) {
               const newId = String(cands[0].id);
               upgradedSeedIds.set(k + ':' + rid, newId);
+              STATE._legacyPosUpgrades = (Number(STATE._legacyPosUpgrades) || 0) + 1;
               if (Array.isArray(STATE._purgedOverrideIds) && !STATE._purgedOverrideIds.includes(k + ':' + rid)) {
                 STATE._purgedOverrideIds.push(k + ':' + rid);
               }
@@ -103986,8 +103991,12 @@
               removedAny = true;
             }
           }
-          if (!sRow) return false;
-          const refR = (r._seed_orig && typeof r._seed_orig === 'object') ? r._seed_orig : r;
+          if (!sRow) {
+            // A positional id the upgrade could not match is dropped: report it too, it means a device still held one.
+            if (legacyPosRe.test(rid)) STATE._legacyPosUpgrades = (Number(STATE._legacyPosUpgrades) || 0) + 1;
+            return false;
+          }
+          const refR =(r._seed_orig && typeof r._seed_orig === 'object') ? r._seed_orig : r;
           if (refR.date && sRow.date && String(refR.date).slice(0, 10) !== String(sRow.date).slice(0, 10)) return false;
           if (refR.ticket_no && sRow.ticket_no && String(refR.ticket_no).trim() !== String(sRow.ticket_no).trim()) return false;
           if (refR.name && sRow.name && !legacyFallbackNameRe.test(String(refR.name).trim()) && String(refR.name).trim() !== String(sRow.name).trim()) return false;
@@ -105065,6 +105074,9 @@
       stepUpAudits: Array.isArray(STATE.stepUpAudits) ? STATE.stepUpAudits.slice(0, 300) : [],
       customRecords: trimmed,
       _purgedOverrideIds: Array.isArray(STATE._purgedOverrideIds) ? STATE._purgedOverrideIds.slice(-2000) : [],
+      // Always sent (0 included): the Edge starts the Manufacturing sunset window at the first shell that reports,
+      // then strips the field so it is never stored (isabi functions/_lib/legacy_ids.js takeMfgLegacySignals).
+      _legacyPosUpgrades: Math.max(0, Math.floor(Number(STATE._legacyPosUpgrades) || 0)),
       industryRowEdits: withoutTillOwnedEdits(getIndustryRowEditStore()),
       industryCustomRows: typeof offloadIndustryCustomRowBlobs === 'function' ? offloadIndustryCustomRowBlobs(withoutTillOwnedRows(getIndustryCustomRowsStore())) : withoutTillOwnedRows(getIndustryCustomRowsStore()),
       kioskPunches: sanitizeKioskPunchesList(STATE.kioskPunches).slice(0, 300),
@@ -105828,6 +105840,9 @@
       saveLocalAuthAndRecords();
       STATE.cloudStatus = '● Cloud Live';
       STATE.cloudUpdatedAt = remote.updatedAt || '';
+      // An unreported positional-id upgrade is itself a reason to push: otherwise a device whose upgrade left its
+      // records equal to the cloud would hold the count back and the Edge sunset window could open too early.
+      if (!pushChanges && (Number(STATE._legacyPosUpgrades) || 0) > 0) pushChanges = true;
 
       if (pushChanges || !docs[CLOUD_DOC_KEY]) {
         setPendingCloudPush(true);
@@ -105863,6 +105878,14 @@
             continue;
           }
           casSucceeded = true;
+          // The Edge has counted what this push reported; keep only what was added since the payload was built.
+          const sentLegacyPos = Number(payload._legacyPosUpgrades) || 0;
+          if (sentLegacyPos > 0) {
+            STATE._legacyPosUpgrades = Math.max(0, (Number(STATE._legacyPosUpgrades) || 0) - sentLegacyPos);
+            if (!IS_AUTOMATED_TEST) {
+              try { appStoreSetRaw('isabi_mfg_legacy_pos_upgrades_v1', String(STATE._legacyPosUpgrades)); } catch (_) {}
+            }
+          }
           STATE.cloudUpdatedAt = (putJson && putJson.updatedAt) || payload.updatedAt;
           if (_localPushSeq === seqBeforePayload && !STATE.pushAfterSync) {
             setPendingCloudPush(false);
@@ -131860,6 +131883,7 @@
     window.__getCustomRecords = () => STATE.customRecords;
     window.__mergeCustomRecords = incoming => mergeCustomRecords(incoming);
     window.__cloudPayload = () => cloudPayload();
+    window.__syncWithCloud = (p) => syncWithCloud(p);   // build/verify_legacy_pos_report.mjs drives the push loop
     window.__mergeIndustryRowEdits = incoming => mergeIndustryRowEdits(incoming);
     window.__mergeIndustryCustomRows = incoming => mergeIndustryCustomRows(incoming);
     window.__applyIndustryDomRowEdits = root => applyIndustryDomRowEdits(root);
