@@ -90623,6 +90623,36 @@
     window.addEventListener('mousedown', cleanup, true);
   }
 
+  // Root fix for detached select carets. The select upgrade below wraps each <select>
+  // in a width:100% .pa-select-wrap and pins the caret to the wrap's end edge, so a
+  // picker narrower than its row (its own width, an inline toolbar) would leave the
+  // caret floating at the far end of the row. Once a wrap is laid out, a select
+  // narrower than its wrap marks it .pa-select-hug and the wrap takes the select's
+  // width. One-way (a hugged wrap is not measured again, so it cannot oscillate);
+  // hidden pickers wait for their first layout; runs after layout, never forces one.
+  let _selectFitObserver = null;
+  function observeSelectWrapFit(wrap) {
+    if (!wrap || typeof ResizeObserver !== 'function') return;
+    if (!_selectFitObserver) {
+      _selectFitObserver = new ResizeObserver(entries => {
+        const hug = [];
+        for (const en of entries) {
+          const w = en.target;
+          const sel = w.isConnected ? w.querySelector(':scope > select') : null;
+          if (!sel) { _selectFitObserver.unobserve(w); continue; }
+          const ww = w.getBoundingClientRect().width;
+          const sw = sel.getBoundingClientRect().width;
+          if (ww >= 1 && sw >= 1 && sw < ww - 2) hug.push(w);
+        }
+        hug.forEach(w => {
+          w.classList.add('pa-select-hug');
+          _selectFitObserver.unobserve(w);
+        });
+      });
+    }
+    _selectFitObserver.observe(wrap);
+  }
+
   function wireModalSuggestions(body) {
     if (!body) return;
     const closeAll = exceptMenu => {
@@ -91101,6 +91131,7 @@
       wrap.className = 'pa-suggest-wrap pa-select-wrap';
       selEl.parentNode.insertBefore(wrap, selEl);
       wrap.appendChild(selEl);
+      if (!wrap.closest('.form-field')) observeSelectWrapFit(wrap);
 
       const clearBtn = document.createElement('button');
       clearBtn.type = 'button';
@@ -91208,6 +91239,34 @@
       clearBtn.addEventListener('mousedown', onSelClearActivate);
       clearBtn.addEventListener('click', onSelClearActivate);
 
+      // A hugged picker's menu grows past its box to fit names. Keep it on screen:
+      // natural side first, then the other edge, else the side with more room with
+      // the width capped to that room. Re-run when filtering changes the rows.
+      const fitHugMenu = () => {
+        if (!wrap.classList.contains('pa-select-hug') || menu.hidden) return;
+        try {
+          const vw = window.innerWidth || 800;
+          const pad = 8;
+          const fits = r => r.left >= pad && r.right <= vw - pad;
+          wrap.classList.remove('menu-flip-x');
+          menu.style.maxWidth = '';
+          menu.style.minWidth = '';
+          if (fits(menu.getBoundingClientRect())) return;
+          wrap.classList.add('menu-flip-x');
+          if (fits(menu.getBoundingClientRect())) return;
+          const wr = wrap.getBoundingClientRect();
+          const roomGrowRight = vw - pad - wr.left;
+          const roomGrowLeft = wr.right - pad;
+          const growRight = roomGrowRight >= roomGrowLeft;
+          const rtl = getComputedStyle(wrap).direction === 'rtl';
+          // Natural side: LTR grows right (left-anchored), RTL grows left (right-anchored).
+          wrap.classList.toggle('menu-flip-x', rtl ? growRight : !growRight);
+          const cap = Math.max(160, Math.floor(growRight ? roomGrowRight : roomGrowLeft));
+          menu.style.maxWidth = cap + 'px';
+          menu.style.minWidth = Math.min(Math.round(wr.width), cap) + 'px';
+        } catch (_) {}
+      };
+
       const openSelectMenu = () => {
         if (selEl.disabled || (selEl.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(selEl.id))) {
           closeAll(null);
@@ -91295,6 +91354,7 @@
         renderRows('');
         menu.hidden = false;
         wrap.classList.add('open');
+        fitHugMenu();
         try {
           const selRow = rowsBox.querySelector('.pa-suggest-item.is-selected');
           if (selRow && rowsBox.scrollHeight > rowsBox.clientHeight) {
@@ -91305,7 +91365,7 @@
         if (filterInput) {
           filterInput.addEventListener('mousedown', ev => ev.stopPropagation());
           filterInput.addEventListener('click', ev => ev.stopPropagation());
-          filterInput.addEventListener('input', () => renderRows(filterInput.value));
+          filterInput.addEventListener('input', () => { renderRows(filterInput.value); fitHugMenu(); });
           filterInput.addEventListener('keydown', ev => {
             if (ev.key === 'ArrowDown' && currentMatches.length) {
               ev.preventDefault();
@@ -136781,6 +136841,7 @@
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
     selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
     setView: typeof setView === 'function' ? setView : null,
+    upgradeSelects: typeof wireModalSuggestions === 'function' ? wireModalSuggestions : null,
     contextFormForView: typeof contextFormForView === 'function' ? contextFormForView : null,
     filterRecords: typeof filterRecords === 'function' ? filterRecords : null,
     periodRange: typeof periodRange === 'function' ? periodRange : null,
