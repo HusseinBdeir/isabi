@@ -1410,6 +1410,14 @@
             <div class="geo-modal-map-canvas" id="modalSiteMapCanvas"></div>
           </div>
           <div class="form-field span-3" id="sitePriceAgreementsWrap" hidden></div>
+          ${fld('Site Status', sel('f_site_status', [['open', 'Open'], ['closed', 'Closed']], 'open'), {
+            id: 'wrap_site_status',
+            hidden: true,
+            hint: 'Closing a site ends its open price agreements on the end date. Reopening restores them.',
+            hintId: 'hint_site_status'
+          })}
+          ${fld('End Date (Last Open Day)', inp('f_site_end_date', 'date', ''), { id: 'wrap_site_end_date', hidden: true })}
+          <div class="form-field span-3 site-life-impact" id="siteLifecycleImpact" hidden></div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
       `;

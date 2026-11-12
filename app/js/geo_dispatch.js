@@ -2039,7 +2039,8 @@
   function getUnifiedSiteStats(SEED, STATE) {
     const rec = (SEED && SEED.records) || {};
     const cr = (STATE && STATE.customRecords) || {};
-    const rev = `${(rec.sites || []).length}:${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(cr.sales_tickets || []).length}:${(cr.raw_purchases || []).length}:${(cr.sites || []).length}:${GEO_STORE.updatedAt || ''}`;
+    const tRev = (SEED && SEED._tableRev) || {};
+    const rev = `${(rec.sites || []).length}:${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(cr.sales_tickets || []).length}:${(cr.raw_purchases || []).length}:${(cr.sites || []).length}:${GEO_STORE.updatedAt || ''}:${(SEED && SEED._customRev) || 0}:${tRev.sales_tickets || 0}:${tRev.raw_purchases || 0}:${tRev.sites || 0}:${(SEED && SEED._recordsReady) ? 1 : 0}${(SEED && SEED._recordsLoadFailed) ? 'f' : ''}`;
     if (_siteStatsCache.rev === rev) return _siteStatsCache;
 
     const map = new Map();
@@ -2048,9 +2049,20 @@
       const nk = norm(clean);
       if (!nk) return null;
       if (!map.has(nk)) {
-        map.set(nk, { name: clean, sales: 0, raw: 0, total: 0, region: '', lat: null, lng: null, isJv: false });
+        map.set(nk, { name: clean, sales: 0, raw: 0, total: 0, region: '', lat: null, lng: null, isJv: false, lastDate: '' });
       }
       return map.get(nk);
+    };
+    // Latest load date per site and across the books, read by getSiteLifecycle. Takes the later of the
+    // transaction date and the reporting date, because agreement pricing reads the reporting date when set.
+    let refDate = '';
+    const noteLoadDate = (e, t) => {
+      [t && t.date, t && t.rep_date].forEach(v => {
+        const d = String(v || '').slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+        if (d > e.lastDate) e.lastDate = d;
+        if (d > refDate) refDate = d;
+      });
     };
 
     const allSites = (cr.sites || []).concat(rec.sites || []);
@@ -2071,7 +2083,7 @@
       if (t.id && seenSales.has(t.id)) return;
       if (t.id) seenSales.add(t.id);
       const e = ensure(t.site);
-      if (e) { e.sales += 1; e.total += 1; }
+      if (e) { e.sales += 1; e.total += 1; noteLoadDate(e, t); }
     });
 
     const seenRaw = new Set();
@@ -2080,12 +2092,114 @@
       if (t.id && seenRaw.has(t.id)) return;
       if (t.id) seenRaw.add(t.id);
       const e = ensure(t.site);
-      if (e) { e.raw += 1; e.total += 1; }
+      if (e) { e.raw += 1; e.total += 1; noteLoadDate(e, t); }
     });
 
     const list = Array.from(map.values()).sort((a, b) => b.total - a.total);
-    _siteStatsCache = { rev, list, byNorm: map };
+    // Loads are known only once the ticket records actually loaded (not on a failed or pending load)
+    const loadsKnown = Boolean(SEED && SEED._recordsReady === true && !SEED._recordsLoadFailed && Array.isArray(rec.sales_tickets) && Array.isArray(rec.raw_purchases));
+    _siteStatsCache = { rev, list, byNorm: map, refDate: loadsKnown ? refDate : '', loadsKnown };
     return _siteStatsCache;
+  }
+
+  // ==================== SITE LIFECYCLE (Active / Dormant / Closed) ====================
+  // Deterministic, read-only. Closed: the end date has passed, or status is Closed with no end date
+  // (the same rule as isSiteClosedOnDate in app.js, used by the entry forms). Dormant: a Manufacturing site
+  // with no sales or raw load in the SITE_DORMANT_DAYS before today (owner rule 2026-11-12: measured from
+  // today, not from the latest load in the books). A dormant site's open price agreements are closed by
+  // runDormantAgreementSweep in app.js. A site added in the app inside that window stays Active until
+  // its first load. Other industries have no load signal: their sites are Active or Closed only.
+  const SITE_DORMANT_DAYS = 90;
+  const SITE_LIFE_RANK = { active: 0, dormant: 1, closed: 2 };
+
+  function geoTodayIso() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function geoIsoAddDays(iso, n) {
+    const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return '';
+    return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + n)).toISOString().slice(0, 10);
+  }
+
+  function isSiteRecordClosedOn(s, dateIso) {
+    if (!s) return false;
+    const eff = String(dateIso || geoTodayIso()).slice(0, 10);
+    const sEnd = s.end_date ? String(s.end_date).slice(0, 10) : '';
+    if (sEnd && sEnd >= '1900-01-01' && sEnd < eff) return true;
+    if (!sEnd && /^closed$/i.test(String(s.status || '').trim())) return true;
+    return false;
+  }
+
+  function getSiteLifecycle(s, SEED, STATE, opts = {}) {
+    const today = String(opts.today || geoTodayIso()).slice(0, 10);
+    const stats = opts.stats || getUnifiedSiteStats(SEED, STATE);
+    const st = (s && s.name) ? stats.byNorm.get(norm(s.name)) : null;
+    const lastDate = (st && st.lastDate) || '';
+    const rawEnd = (s && s.end_date) ? String(s.end_date).slice(0, 10) : '';
+    const endDate = rawEnd >= '1900-01-01' ? rawEnd : '';
+    const base = { state: 'active', lastDate, endDate, closesOn: '', isNew: false, activityKnown: false };
+    if (!s) return base;
+    if (isSiteRecordClosedOn(s, today)) return Object.assign(base, { state: 'closed' });
+    base.closesOn = endDate && endDate >= today ? endDate : '';
+    const isMfgSite = !s._multiIndustrySeed && (!s._industry || s._industry === 'Manufacturing');
+    // No tickets loaded yet (records hydrate after the shell) or no load signal for this industry: never claim dormancy
+    if (!isMfgSite || !stats.refDate) return base;
+    // stats.refDate only says the ticket records loaded; the 90 days run back from today
+    base.activityKnown = true;
+    if (lastDate && lastDate >= geoIsoAddDays(today, -SITE_DORMANT_DAYS)) return base;
+    // Creation stamp only: a seed site edited in the app carries _seed_orig and a fresh entered_at that is not its birth date
+    const created = s._seed_orig ? '' : String(s._createdAt || s.entered_at || '').slice(0, 10);
+    if (!lastDate && /^\d{4}-\d{2}-\d{2}$/.test(created) && created >= geoIsoAddDays(today, -SITE_DORMANT_DAYS)) {
+      return Object.assign(base, { isNew: true });
+    }
+    return Object.assign(base, { state: 'dormant' });
+  }
+
+  function siteLifecycleTip(lc) {
+    if (!lc) return '';
+    const parts = [];
+    if (lc.state === 'closed') {
+      parts.push(lc.endDate ? `Closed: ${lc.endDate}` : 'Closed');
+    } else if (lc.state === 'dormant') {
+      parts.push(`No load in ${SITE_DORMANT_DAYS} days`);
+    } else if (lc.isNew) {
+      parts.push('New site, no loads yet');
+    }
+    if (lc.lastDate) parts.push(`Last Load: ${lc.lastDate}`);
+    else if (lc.state !== 'active' && lc.activityKnown) parts.push('No loads recorded');
+    if (lc.closesOn) parts.push(`Closes: ${lc.closesOn}`);
+    return parts.join(' · ');
+  }
+
+  // Header strip: one element per count so each "N Word" piece translates on its own
+  function siteLifeKpiHtml(life) {
+    if (!life) return '';
+    const c = life.counts || {};
+    const item = (st, n, word, tip) => `<span class="geo-life-kpi-item is-${st}" data-ui-tip="${esc(tip)}"><span class="geo-life-dot is-${st}" aria-hidden="true"></span><span>${n} ${word}</span></span>`;
+    const parts = [item('active', c.active || 0, 'Active', life.activityKnown ? `Load in the last ${SITE_DORMANT_DAYS} days, or added recently` : 'Open sites')];
+    if (life.activityKnown) parts.push(item('dormant', c.dormant || 0, 'Dormant', `No load in ${SITE_DORMANT_DAYS} days`));
+    if (c.closed) parts.push(item('closed', c.closed, 'Closed', 'End date passed'));
+    return `<span class="geo-kpi-pill geo-life-kpi" id="geoSiteLifeKpi">${parts.join('')}</span>`;
+  }
+
+  function getSiteLifecycleIndex(siteRows, SEED, STATE, opts = {}) {
+    const stats = getUnifiedSiteStats(SEED, STATE);
+    const today = String(opts.today || geoTodayIso()).slice(0, 10);
+    const byNorm = new Map();
+    const counts = { active: 0, dormant: 0, closed: 0 };
+    let activityKnown = false;
+    (siteRows || []).forEach(s => {
+      if (!s || s.voided || !s.name) return;
+      const nk = norm(s.name);
+      if (byNorm.has(nk)) return;
+      const lc = getSiteLifecycle(s, SEED, STATE, { stats, today });
+      byNorm.set(nk, lc);
+      counts[lc.state] += 1;
+      if (lc.activityKnown) activityKnown = true;
+    });
+    return { byNorm, counts, activityKnown, refDate: stats.refDate || '', today, dormantDays: SITE_DORMANT_DAYS };
   }
 
   function parseTicketTimestampMs(dateIso, timeStr, fallbackNoon = true) {
@@ -2304,13 +2418,17 @@
     }).addTo(map);
   }
 
-  function makeSvgPinIcon(L, color, label, isBu) {
+  function makeSvgPinIcon(L, color, label, isBu, lifeState) {
+    const isClosedPin = !isBu && lifeState === 'closed';
     const svg = isBu
       ? `<svg width="26" height="30" viewBox="0 0 26 30" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13 1C6.925 1 2 5.925 2 12c0 7.75 11 17 11 17s11-9.25 11-17c0-6.075-4.925-11-11-11z" fill="#081124" stroke="#D9A54A" stroke-width="2"/><rect x="8.5" y="7.5" width="9" height="9" rx="1.5" fill="#D9A54A"/></svg>`
-      : `<svg width="20" height="24" viewBox="0 0 20 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 1C5.03 1 1 5.03 1 10c0 6.2 9 13 9 13s9-6.8 9-13c0-4.97-4.03-9-9-9z" fill="${color}" stroke="#FFFFFF" stroke-width="1.6"/><circle cx="10" cy="10" r="3.2" fill="#FFFFFF"/></svg>`;
+      : (isClosedPin
+        ? `<svg width="20" height="24" viewBox="0 0 20 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 1.8C5.47 1.8 1.8 5.47 1.8 10c0 5.8 8.2 12 8.2 12s8.2-6.2 8.2-12c0-4.53-3.67-8.2-8.2-8.2z" fill="#FFFFFF" stroke="#7A889B" stroke-width="1.8"/><path d="M7.2 7.2l5.6 5.6M12.8 7.2l-5.6 5.6" stroke="#7A889B" stroke-width="1.6" stroke-linecap="round"/></svg>`
+        : `<svg width="20" height="24" viewBox="0 0 20 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 1C5.03 1 1 5.03 1 10c0 6.2 9 13 9 13s9-6.8 9-13c0-4.97-4.03-9-9-9z" fill="${color}" stroke="#FFFFFF" stroke-width="1.6"/><circle cx="10" cy="10" r="3.2" fill="#FFFFFF"/></svg>`);
     const showLbl = Boolean(label);
+    const lifeCls = (!isBu && (lifeState === 'closed' || lifeState === 'dormant')) ? ` is-${lifeState}` : '';
     return L.divIcon({
-      className: 'geo-pin-marker',
+      className: `geo-pin-marker${lifeCls}`,
       iconSize: isBu ? [26, 36] : [20, 30],
       iconAnchor: isBu ? [13, 28] : [10, 23],
       popupAnchor: [0, -22],
@@ -2449,6 +2567,9 @@
     const activeSites = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => inIndGeo(s) && s.name);
     const mappedRegionsCnt = regions.filter(r => (r.zone_type === 'circle' && r.radius_km > 0) || Boolean(r.zone_geojson)).length;
     const pinnedSitesCnt = activeSites.filter(s => s.latitude != null && s.longitude != null && s.latitude !== '' && s.longitude !== '').length;
+    const siteLife = getSiteLifecycleIndex(activeSites, SEED, STATE);
+    const lifeOf = s => siteLife.byNorm.get(norm(s && s.name)) || { state: 'active', lastDate: '', endDate: '', closesOn: '' };
+    const lifeRank = s => SITE_LIFE_RANK[lifeOf(s).state] || 0;
 
     // Group member sites and BUs per region (including spatial containment!)
     const sitesByReg = new Map();
@@ -2459,7 +2580,8 @@
       if (!st) return 0;
       return resolveGeoSiteCat(s) === 'customer' ? (st.sales || 0) : (st.raw || 0);
     };
-    activeSites.slice().sort((a, b) => siteFreqScore(b) - siteFreqScore(a)).forEach(s => {
+    // Active sites first, then dormant, closed last; frequency order inside each group
+    activeSites.slice().sort((a, b) => (lifeRank(a) - lifeRank(b)) || (siteFreqScore(b) - siteFreqScore(a))).forEach(s => {
       const rk = norm(s.region || s.geo_zone);
       if (rk) {
         sitesByReg.set(rk, (sitesByReg.get(rk) || 0) + 1);
@@ -2556,11 +2678,15 @@
             ? `${rCnt.toLocaleString('en-US')} raw ${rCnt === 1 ? 'load' : 'loads'}`
             : `${sCntLoads.toLocaleString('en-US')} sales ${sCntLoads === 1 ? 'load' : 'loads'}`))
         : '';
+      const lc = lifeOf(s);
+      const lifeTip = siteLifecycleTip(lc);
+      const itemTip = [loadBreakTip, lifeTip].filter(Boolean).join(' · ');
       return `
-        <button type="button" class="geo-reg-site-item" data-geo-inspect-site="${esc(s.id)}"${loadBreakTip ? ` data-ui-tip="${esc(loadBreakTip)}"` : ''}>
+        <button type="button" class="geo-reg-site-item${lc.state !== 'active' ? ` is-${lc.state}` : ''}" data-geo-inspect-site="${esc(s.id)}" data-site-life="${lc.state}"${itemTip ? ` data-ui-tip="${esc(itemTip)}"` : ''}>
           <span class="geo-dot ${dotCls}"></span>
           <span class="geo-reg-site-name">${esc(s.name)}</span>
           ${specLbl ? `<span class="geo-reg-site-cat ${specCls}">${esc(specLbl)}</span>` : ''}
+          ${lc.state !== 'active' ? `<span class="geo-site-life-tag is-${lc.state}">${lc.state === 'closed' ? 'Closed' : 'Dormant'}</span>` : ''}
           ${metaLbl ? `<span class="geo-reg-site-meta">${esc(metaLbl)}</span>` : ''}
         </button>
       `;
@@ -2638,6 +2764,7 @@
             <div class="geo-studio-kpis">
               <span class="geo-kpi-pill">${regions.length} Regions (${mappedRegionsCnt} Mapped)</span>
               <span class="geo-kpi-pill">${activeSites.length} Sites (${pinnedSitesCnt} Pinned)</span>
+              ${siteLifeKpiHtml(siteLife)}
             </div>
           </div>
           <div class="geo-studio-controls-right">
@@ -2681,6 +2808,7 @@
                   const isAct = norm(STUDIO.selectedRegion) === rk;
                   const memberSites = sitesByRegList.get(rk) || [];
                   const sCnt = memberSites.length;
+                  const sActiveCnt = memberSites.filter(ms => lifeOf(ms).state === 'active').length;
                   const matchedSites = (q && !rk.includes(q)) ? memberSites.filter(s => norm(s.name).includes(q)) : memberSites;
                   const showSublist = (isAct || Boolean(q && matchedSites.length > 0)) && matchedSites.length > 0;
                   const buHits = busByReg.get(rk) || [];
@@ -2700,6 +2828,7 @@
                         <div class="geo-reg-card-sub">
                           ${buHits.map(b => `<span class="geo-reg-bu-tag">${esc(b)}</span>`).join('')}
                           <span class="geo-reg-sites-cnt">${sCnt} ${sCnt === 1 ? 'Site' : 'Sites'}${sCnt > 0 ? ' ' + chevronSvg(showSublist) : ''}</span>
+                          ${sCnt > 0 && sActiveCnt < sCnt ? `<span class="geo-reg-life-cnt" data-ui-tip="Excludes dormant and closed sites">${sActiveCnt} Active</span>` : ''}
                           ${otRate ? `<span>OT $${round2(otRate)}</span>` : ''}
                         </div>
                       </button>
@@ -2758,7 +2887,9 @@
                         ${selRegMemberSites.slice(0, 10).map(ms => {
                           const mJv = isMfg && Boolean(ms.is_jv || /\bjv\b/i.test(ms.name || ''));
                           const mDot = mJv ? 'dual' : 'site';
-                          return `<button type="button" class="geo-focus-site-chip" data-geo-inspect-site="${esc(ms.id)}"><span class="geo-dot ${mDot}"></span>${esc(ms.name)}</button>`;
+                          const mLc = lifeOf(ms);
+                          const mTip = siteLifecycleTip(mLc);
+                          return `<button type="button" class="geo-focus-site-chip${mLc.state !== 'active' ? ` is-${mLc.state}` : ''}" data-geo-inspect-site="${esc(ms.id)}" data-site-life="${mLc.state}"${mTip ? ` data-ui-tip="${esc(mTip)}"` : ''}><span class="geo-dot ${mDot}"></span>${esc(ms.name)}</button>`;
                         }).join('')}
                         ${selRegMemberSites.length > 10 ? `<span class="geo-focus-site-more">+${selRegMemberSites.length - 10} more below</span>` : ''}
                       </div>
@@ -2939,6 +3070,7 @@
       STUDIO.pinFilter = 'all';
     }
     if (STUDIO.pinFilter !== 'bu' && STUDIO.pinFilter !== 'trucks') {
+      const pinLife = getSiteLifecycleIndex(sites, SEED, STATE);
       sites.forEach(s => {
         if (s.latitude == null || s.longitude == null || s.latitude === '' || s.longitude === '') return;
         const lat = Number(s.latitude), lng = Number(s.longitude);
@@ -2961,9 +3093,13 @@
         const color = isJvSite ? '#7C3AED' : (hasRaw && !hasSales ? '#059669' : (!hasRaw && hasSales ? '#2563EB' : '#2356A8'));
         const totalLoads = isMfg ? Number(st.total || (st.raw || 0) + (st.sales || 0)) : 0;
         const showTopLabel = selRegNorm || totalLoads >= 700;
+        const pinLc = pinLife.byNorm.get(norm(s.name)) || { state: 'active', lastDate: '', endDate: '', closesOn: '' };
         const marker = L.marker([lat, lng], {
-          icon: makeSvgPinIcon(L, color, showTopLabel ? s.name : '', false)
+          icon: makeSvgPinIcon(L, color, showTopLabel ? s.name : '', false, pinLc.state),
+          zIndexOffset: pinLc.state === 'closed' ? -400 : (pinLc.state === 'dormant' ? -200 : 0)
         }).addTo(lg);
+        const lifeWord = pinLc.state === 'closed' ? 'Closed' : (pinLc.state === 'dormant' ? 'Dormant' : 'Active');
+        const lifeLine = `<div class="geo-pop-life is-${pinLc.state}">Status: <b>${lifeWord}</b>${pinLc.state === 'closed' && pinLc.endDate ? ` <span>(${esc(pinLc.endDate)})</span>` : ''}</div>${pinLc.lastDate ? `<div>Last Load: <b>${esc(pinLc.lastDate)}</b></div>` : ''}${pinLc.closesOn ? `<div>Closes: <b>${esc(pinLc.closesOn)}</b></div>` : ''}`;
 
         const wtcEst = isMfg ? estimateLegKm({ type: 'bu', name: 'WTC' }, { type: 'site', name: s.name }, SEED) : null;
         const bbcEst = isMfg ? estimateLegKm({ type: 'bu', name: 'BBConstruction' }, { type: 'site', name: s.name }, SEED) : null;
@@ -2985,6 +3121,7 @@
           <div style="min-width:190px;font-family:inherit;font-size:12px;line-height:1.45">
             <div style="font-weight:700;font-size:13px">${esc(s.name)}</div>
             <div style="color:#64748B">Region Zone: <b>${esc(s.region || s.geo_zone || 'Unassigned')}</b></div>
+            ${lifeLine}
             ${partyLines}
             ${isMfg ? loadsLine : ''}
             ${wtcEst && wtcEst.available ? `<div>From WTC: <b>${wtcEst.oneWayKm.toFixed(1)} km</b> (RT ${wtcEst.roundTripKm.toFixed(1)} km)</div>` : ''}
@@ -5273,6 +5410,11 @@
     getConfigStamp: () => String(GEO_STORE.updatedAt || ''),
     setPairKmOverride,
     getUnifiedSiteStats,
+    SITE_DORMANT_DAYS,
+    isSiteRecordClosedOn,
+    getSiteLifecycle,
+    getSiteLifecycleIndex,
+    siteLifecycleTip,
     getUnifiedSiteMetaItems,
     getSiteLast24hTickets,
     collectAllRecentTickets24h,

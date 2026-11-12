@@ -10668,7 +10668,29 @@
       "Site not found.": "الموقع غير موجود.",
       "That site name belongs to a place in another Region. Pick that Region or change the name.": "اسم هذا الموقع يعود إلى مكان في منطقة أخرى. اختر تلك المنطقة أو غيّر الاسم.",
       "Move its customers back to the area site before voiding this site.": "أعد عملاءه إلى موقع المنطقة قبل إلغاء هذا الموقع.",
-      "Customers were moved out of this area to their own sites. Move them back before voiding it.": "نُقل عملاء من هذه المنطقة إلى مواقعهم الخاصة. أعِدهم إليها قبل إلغائها."
+      "Customers were moved out of this area to their own sites. Move them back before voiding it.": "نُقل عملاء من هذه المنطقة إلى مواقعهم الخاصة. أعِدهم إليها قبل إلغائها.",
+      "Dormant": "خامل",
+      "Last Load": "آخر نقلة",
+      "Site Status": "حالة الموقع",
+      "End Date (Last Open Day)": "تاريخ الانتهاء (آخر يوم عمل)",
+      "Last Open Day": "آخر يوم عمل",
+      "Closes": "تاريخ الإغلاق",
+      "Clear date (leave Open)": "مسح التاريخ (يبقى مفتوحاً)",
+      "Loads are still loading": "النقلات قيد التحميل",
+      "Ticket records did not load": "لم يتم تحميل سجلات النقلات",
+      "Ticket records did not load. Reload the page to close a site.": "لم يتم تحميل سجلات النقلات. أعد تحميل الصفحة لإغلاق موقع.",
+      "Loads are still loading. Try again in a moment.": "النقلات قيد التحميل. حاول مجدداً بعد لحظات.",
+      "1 agreement on this site belongs to a company your seat cannot change": "اتفاقية واحدة على هذا الموقع تعود لشركة لا يمكن لمقعدك تعديلها",
+      "No load in 90 days": "لا نقلات منذ 90 يوماً",
+      "New site, no loads yet": "موقع جديد، لا نقلات بعد",
+      "No loads recorded": "لا نقلات مسجلة",
+      "Excludes dormant and closed sites": "يستثني المواقع الخاملة والمغلقة",
+      "Load in the last 90 days, or added recently": "نقلة خلال آخر 90 يوماً، أو أُضيف حديثاً",
+      "Open sites": "المواقع المفتوحة",
+      "End date passed": "تجاوز تاريخ الانتهاء",
+      "Closing a site ends its open price agreements on the end date. Reopening restores them.": "إغلاق الموقع ينهي اتفاقيات الأسعار المفتوحة عليه في تاريخ الانتهاء. إعادة فتحه تعيدها.",
+      "Enter the end date (the last day the site was open).": "أدخل تاريخ الانتهاء (آخر يوم كان فيه الموقع مفتوحاً).",
+      "Enter a valid end date.": "أدخل تاريخ انتهاء صالحاً."
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -21318,7 +21340,29 @@
       "Site not found.": "Site introuvable.",
       "That site name belongs to a place in another Region. Pick that Region or change the name.": "Ce nom de site correspond à un lieu d'une autre région. Choisissez cette région ou changez le nom.",
       "Move its customers back to the area site before voiding this site.": "Remettez ses clients sur le site de zone avant d'annuler ce site.",
-      "Customers were moved out of this area to their own sites. Move them back before voiding it.": "Des clients ont été déplacés de cette zone vers leurs propres sites. Remettez-les avant de l'annuler."
+      "Customers were moved out of this area to their own sites. Move them back before voiding it.": "Des clients ont été déplacés de cette zone vers leurs propres sites. Remettez-les avant de l'annuler.",
+      "Dormant": "Inactif",
+      "Last Load": "Dernier voyage",
+      "Site Status": "Statut du site",
+      "End Date (Last Open Day)": "Date de fin (dernier jour ouvert)",
+      "Last Open Day": "Dernier jour ouvert",
+      "Closes": "Fermeture",
+      "Clear date (leave Open)": "Effacer la date (laisser ouvert)",
+      "Loads are still loading": "Voyages en cours de chargement",
+      "Ticket records did not load": "Les bons n'ont pas été chargés",
+      "Ticket records did not load. Reload the page to close a site.": "Les bons n'ont pas été chargés. Rechargez la page pour clôturer un site.",
+      "Loads are still loading. Try again in a moment.": "Voyages en cours de chargement. Réessayez dans un instant.",
+      "1 agreement on this site belongs to a company your seat cannot change": "1 accord de ce site appartient à une société que votre poste ne peut pas modifier",
+      "No load in 90 days": "Aucun voyage depuis 90 jours",
+      "New site, no loads yet": "Nouveau site, aucun voyage pour l'instant",
+      "No loads recorded": "Aucun voyage enregistré",
+      "Excludes dormant and closed sites": "Hors sites inactifs et clôturés",
+      "Load in the last 90 days, or added recently": "Voyage dans les 90 derniers jours, ou ajouté récemment",
+      "Open sites": "Sites ouverts",
+      "End date passed": "Date de fin dépassée",
+      "Closing a site ends its open price agreements on the end date. Reopening restores them.": "La clôture d'un site met fin à ses accords de prix ouverts à la date de fin. La réouverture les rétablit.",
+      "Enter the end date (the last day the site was open).": "Saisissez la date de fin (dernier jour d'ouverture du site).",
+      "Enter a valid end date.": "Saisissez une date de fin valide."
     }
   };
 
@@ -21674,6 +21718,7 @@
     "check": ["فحص", "contrôle"],
     "request": ["طلب", "Demande"],
     "requests": ["طلبات", "Demandes"],
+    "dormant": ["خامل", "inactif(s)"],
   };
 
   const SEARCH_TERMS = {
@@ -24511,6 +24556,31 @@
 
     m = trimmed.match(/^sites created here must be located inside\s+(.+?)\.$/i);
     if (m) return lang === 'ar' ? `يجب أن تقع المواقع المنشأة هنا داخل ${m[1]}.` : `les sites créés ici doivent être situés dans ${m[1]}.`;
+
+    // Site lifecycle: Edit Site closure preview, save toasts and end-date guard
+    m = trimmed.match(/^The site has loads up to\s+(\S+)\.\s+The end date must be on or after it\.$/i);
+    if (m) return lang === 'ar' ? `لدى الموقع نقلات حتى ${m[1]}. يجب أن يكون تاريخ الانتهاء في هذا اليوم أو بعده.` : `Le site a des voyages jusqu'au ${m[1]}. La date de fin doit être ce jour-là ou après.`;
+    m = trimmed.match(/^Ends\s+(\d+)\s+open price agreements?\s+on\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `ينهي ${m[1]} من اتفاقيات الأسعار المفتوحة في ${m[2]}` : `Met fin à ${m[1]} accord(s) de prix ouvert(s) le ${m[2]}`;
+    m = trimmed.match(/^Reopens\s+(\d+)\s+price agreements?\s+ended by this closure$/i);
+    if (m) return lang === 'ar' ? `يعيد فتح ${m[1]} من اتفاقيات الأسعار التي أنهاها هذا الإغلاق` : `Rouvre ${m[1]} accord(s) de prix clôturé(s) par cette fermeture`;
+    m = trimmed.match(/^(\d+)\s+agreements?\s+starts?\s+after the end date and stays?\s+unchanged$/i);
+    if (m) return lang === 'ar' ? `${m[1]} من الاتفاقيات تبدأ بعد تاريخ الانتهاء وتبقى دون تغيير` : `${m[1]} accord(s) commençant après la date de fin, inchangé(s)`;
+    m = trimmed.match(/^(\d+)\s+price agreements?\s+ended on\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `تم إنهاء ${m[1]} من اتفاقيات الأسعار في ${m[2]}` : `${m[1]} accord(s) de prix clôturé(s) le ${m[2]}`;
+    m = trimmed.match(/^Loads after the end date:\s+the last load is\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `نقلات بعد تاريخ الانتهاء: آخر نقلة في ${m[1]}` : `Voyages après la date de fin : dernier voyage le ${m[1]}`;
+    m = trimmed.match(/^(\d+)\s+agreements on this site belong to companies your seat cannot change$/i);
+    if (m) return lang === 'ar' ? `${m[1]} من الاتفاقيات على هذا الموقع تعود لشركات لا يمكن لمقعدك تعديلها` : `${m[1]} accords de ce site appartiennent à des sociétés que votre poste ne peut pas modifier`;
+    m = trimmed.match(/^(\d+)\s+price agreements?\s+reopened$/i);
+    if (m) return lang === 'ar' ? `أعيد فتح ${m[1]} من اتفاقيات الأسعار` : `${m[1]} accord(s) de prix rouvert(s)`;
+    // Dormant sites: agreements closed after 90 days without a load (sweep toasts and the Edit Site line)
+    m = trimmed.match(/^(\d+)\s+price agreements?\s+closed: no load at the site in 90 days$/i);
+    if (m) return lang === 'ar' ? `أُغلق ${m[1]} من اتفاقيات الأسعار: لا نقلات على الموقع منذ 90 يوماً` : `${m[1]} accord(s) de prix clôturé(s) : aucun voyage sur le site depuis 90 jours`;
+    m = trimmed.match(/^(\d+)\s+price agreements?\s+reopened or extended: a load came in within 90 days$/i);
+    if (m) return lang === 'ar' ? `أعيد فتح أو تمديد ${m[1]} من اتفاقيات الأسعار: وصلت نقلة خلال 90 يوماً` : `${m[1]} accord(s) de prix rouvert(s) ou prolongé(s) : un voyage est arrivé dans les 90 jours`;
+    m = trimmed.match(/^(\d+)\s+price agreements?\s+closed after 90 days without a load$/i);
+    if (m) return lang === 'ar' ? `أُغلق ${m[1]} من اتفاقيات الأسعار بعد 90 يوماً بلا نقلات` : `${m[1]} accord(s) de prix clôturé(s) après 90 jours sans voyage`;
 
     m = trimmed.match(/^Verified inside\s+(.+?)\.$/i);
     if (m) return lang === 'ar' ? `تم التحقق داخل ${m[1]}.` : `Vérifié dans ${m[1]}.`;

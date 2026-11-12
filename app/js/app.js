@@ -6103,7 +6103,7 @@
     product: ['product', 'Product', 'item'],
     grade: ['product', 'Product'],
     method: ['method'],
-    status: ['status', 'gps_status'],
+    status: ['status', 'gps_status', 'lifecycle'],
     category: ['category', 'category1', 'cost_class', 'supplier_role'],
     capacity: ['capacity'],
     cap: ['capacity'],
@@ -6130,6 +6130,8 @@
     iva: 'IVA (VAT)',
     mof_no: 'MOF Tax #',
     gps_status: 'GPS Pin',
+    lifecycle: 'Status',
+    last_load: 'Last Load',
     default_driver: 'Default Driver',
     companies_list: 'Assigned BUs',
     loads_hauled: 'Loads Hauled',
@@ -6621,7 +6623,7 @@
 
   function isNumericColKey(colKey) {
     const k = String(colKey || '');
-    if (/^(cost_class|cost_bucket|working_days|assigned_trucks|trucksStr|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|shift_basis_lbl|display_type|sal_status_lbl)$/i.test(k)) return false;
+    if (/^(cost_class|cost_bucket|working_days|assigned_trucks|trucksStr|companies_list|trucks_list|drivers_list|gps_status|lifecycle|last_load|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|shift_basis_lbl|display_type|sal_status_lbl)$/i.test(k)) return false;
     if (isBooleanColKey(k)) return false;
     return /price|cost|amount|total|vat_amount|^vat$|limit|salary|balance|remaining|haul|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|in_usd|out_usd|net_usd|open_usd|close_usd|in_lbp|out_lbp|net_lbp|close_lbp|close_combined|rec_usd|gave_usd|owes_usd|owes_lbp|ext_received_usd|ext_gave_usd|ext_owes_usd|ext_owes_lbp|usd_delta|lbp_delta|^lbp$|entries_cnt|overtime_rate|ot_bonus|l_per_100km|flag_count|qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|trips|km_run|debit|credit|earnings|paid|base|ot_hrs|ot_pay|late_hrs|late_ded|absent_days|abs_ded|site_allow|ar_current|ar_1_60|ar_60_plus|ap_material|ap_haulage|ap_expense|ap_settled|ap_on_credit|opening_ap|opening_ar|credit_sales_ttc|cash_sales_ttc|cash_expense|settlements_paid|sales_ttc|net_sum|tons_sold|qty_sold|trans_rev|tally|leave_days|extra_usd|payroll_impact_usd|unmatched_usd|vouchers|accrued|outstanding|paid_fifo|logs_cnt|ot_logs|late_logs|vac_days|sick_days|net_att_impact|reimbursement|deduction|overtime_multiplier/i.test(k);
   }
@@ -11669,6 +11671,7 @@
     return touchedCount;
   }
 
+
   // ==================== AREA-AS-SITE CHECK & CUSTOMER SITE SWITCH ====================
   // A delivery site shared by several unrelated customers is usually a town or district, not one
   // physical place. The check flags such a site. The switch gives one customer its own site inside a
@@ -12244,6 +12247,524 @@
       setSinglePlace: setAreaSiteSinglePlace,
       applySplits: applySiteCustomerSplits
     };
+  }
+
+  // ---- Close Site: end the site's open price agreements on its end date, and undo it on reopen ----
+  // Deterministic. Only agreements this closure shortened carry _site_closure_id (plus the end date they had before),
+  // so reopening the site or moving its end date restores exactly those rows and nothing else. The Edit Site form
+  // refuses an end date before the site's last load, so no posted ticket ever falls outside its agreement.
+  // Ticket records arrive after the shell and can fail to load: never judge a closure date without them
+  function siteLoadsReady() {
+    return Boolean(SEED && SEED._recordsReady === true && !SEED._recordsLoadFailed && SEED.records
+      && Array.isArray(SEED.records.sales_tickets) && Array.isArray(SEED.records.raw_purchases));
+  }
+
+  // Latest load on any of the given site names, read fresh (no cache) from seed and app tickets.
+  // Uses the later of the ticket date and the reporting date: agreement pricing reads the reporting date.
+  function siteLastLoadDate(...siteNames) {
+    const keys = new Set(siteNames.map(n => norm(n)).filter(Boolean));
+    if (!keys.size) return '';
+    let last = '';
+    const scan = arr => {
+      if (!Array.isArray(arr)) return;
+      for (let i = 0; i < arr.length; i++) {
+        const t = arr[i];
+        if (!t || t.voided || !t.site || !keys.has(norm(t.site))) continue;
+        const d1 = String(t.date || '').slice(0, 10);
+        const d2 = String(t.rep_date || '').slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d1) && d1 > last) last = d1;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d2) && d2 > last) last = d2;
+      }
+    };
+    ['sales_tickets', 'raw_purchases'].forEach(tk => {
+      scan(SEED.records && SEED.records[tk]);
+      scan(STATE.customRecords && STATE.customRecords[tk]);
+    });
+    return last;
+  }
+
+  function isSiteRowMfg(site) {
+    return Boolean(site) && !site._multiIndustrySeed && (!site._industry || site._industry === 'Manufacturing');
+  }
+
+  function planSiteAgreementClosure(site, opts = {}) {
+    const out = { changes: [], ending: 0, restoring: 0, laterStarts: 0, endDate: '', outOfScope: 0 };
+    if (!site || !site.name) return out;
+    // Agreements follow a closure only for Manufacturing sites, the one industry whose loads the end date is checked against
+    if (!isSiteRowMfg(site)) return out;
+    const siteId = String(site.id || '');
+    const names = new Set([site.name].concat(opts.altNames || []).map(n => norm(n)).filter(Boolean));
+    const closing = /^closed$/i.test(String(site.status || '').trim());
+    const rawEnd = closing ? String(site.end_date || '').slice(0, 10) : '';
+    const endDate = /^\d{4}-\d{2}-\d{2}$/.test(rawEnd) && rawEnd >= '1900-01-01' ? rawEnd : '';
+    out.endDate = endDate;
+    const targetInd = site._industry || (site._multiIndustrySeed ? '' : 'Manufacturing') || getActiveIndustry();
+    const isTargetMfg = targetInd === 'Manufacturing';
+    // Seat scope: an agreement of a company this seat cannot change blocks the closure (counted, never changed silently)
+    let allowedCos = null;
+    let allowsAllCos = true;
+    try {
+      const seatCoNames = allowedCompanyNames() || [];
+      allowedCos = new Set(seatCoNames.map(n => norm(n)).filter(Boolean));
+      const mfgCos = (getCompanyCatalog() || []).filter(c => c && (c.industry || 'Manufacturing') === 'Manufacturing').map(c => norm(c.name)).filter(Boolean);
+      allowsAllCos = mfgCos.length > 0 && mfgCos.every(c => allowedCos.has(c));
+    } catch (_) {
+      allowedCos = null;
+    }
+    const seen = new Set();
+    const pool = ((STATE.customRecords && STATE.customRecords.price_rules) || []).concat((SEED.records && SEED.records.price_rules) || []);
+    pool.forEach(r => {
+      if (!r) return;
+      const rid = String(r.id || '');
+      if (rid) {
+        if (seen.has(rid)) return;
+        seen.add(rid);
+      }
+      if (r.voided || !r.site || !names.has(norm(r.site))) return;
+      if (isTargetMfg ? (Boolean(r._multiIndustrySeed) || (r._industry && r._industry !== 'Manufacturing')) : r._industry !== targetInd) return;
+      const curEnd = r.end_date ? String(r.end_date).slice(0, 10) : '';
+      const ownClosure = Boolean(siteId) && String(r._site_closure_id || '') === siteId;
+      const baseEnd = ownClosure ? String(r._site_closure_prev_end || '').slice(0, 10) : curEnd;
+      let toEnd = baseEnd;
+      let mark = false;
+      if (endDate) {
+        const start = String(r.start_date || '').slice(0, 10);
+        if (start && start > endDate) {
+          out.laterStarts += 1;
+        } else if (!baseEnd || baseEnd > endDate) {
+          toEnd = endDate;
+          mark = true;
+        }
+      }
+      // A restored agreement never overlaps a later agreement of the same series (added while the site was closed)
+      let cappedBy = '';
+      if (!mark && ownClosure) {
+        const rStart = String(r.start_date || '').slice(0, 10);
+        let nextStart = '';
+        const seenPeer = new Set();
+        pool.forEach(p => {
+          if (!p || p === r || p.voided) return;
+          const pid = String(p.id || '');
+          if (pid && (pid === rid || seenPeer.has(pid))) return;
+          if (pid) seenPeer.add(pid);
+          const ps = String(p.start_date || '').slice(0, 10);
+          // Only agreements starting after the closure date (added while closed); older overlaps are restored as they were
+          if (!ps || !(ps > rStart) || (curEnd && !(ps > curEnd)) || (nextStart && ps >= nextStart)) return;
+          if (!isSameChronologicalSeries('price_rules', r, p)) return;
+          nextStart = ps;
+          cappedBy = pid;
+        });
+        if (nextStart) {
+          const cap = prevDayISO(nextStart);
+          if (!toEnd || toEnd > cap) toEnd = cap;
+          else cappedBy = '';
+        }
+      }
+      if (toEnd === curEnd && mark === ownClosure) return;
+      const ruleCo = String(r.company || '').trim();
+      if (allowedCos && !(ruleCo ? allowedCos.has(norm(ruleCo)) : allowsAllCos)) out.outOfScope += 1;
+      out.changes.push({ row: r, id: rid, fromEnd: curEnd, toEnd, mark, prevEnd: baseEnd, cappedBy, prevExplicit: ownClosure ? Boolean(r._site_closure_prev_explicit) : Boolean(r._explicitEnd) });
+      if (mark) out.ending += 1;
+      else out.restoring += 1;
+    });
+    return out;
+  }
+
+  function applySiteAgreementClosure(site, origSite, extraApiPosts) {
+    const plan = planSiteAgreementClosure(site, { altNames: origSite && origSite.name ? [origSite.name] : [] });
+    if (!plan.changes.length) return plan;
+    if (!Array.isArray(STATE.customRecords.price_rules)) STATE.customRecords.price_rules = [];
+    const seedArr = (SEED.records && Array.isArray(SEED.records.price_rules)) ? SEED.records.price_rules : [];
+    const stampIso = new Date().toISOString();
+    const who = (activeUser() && activeUser().email) || '';
+    plan.changes.forEach(ch => {
+      // _reopenedExplicitly tells sync and the seed re-apply (_preserveClosedEffectiveDates) that a cleared end date is deliberate
+      const patch = ch.mark
+        ? { end_date: ch.toEnd, _explicitEnd: true, _reopenedExplicitly: false, _site_closure_id: String(site.id || ''), _site_closure_prev_end: ch.prevEnd, _site_closure_prev_explicit: ch.prevExplicit, _site_closure_at: stampIso }
+        : Object.assign(
+          { end_date: ch.toEnd, _explicitEnd: ch.cappedBy ? false : ch.prevExplicit, _reopenedExplicitly: !ch.toEnd, _site_closure_id: '', _site_closure_prev_end: '', _site_closure_prev_explicit: false, _site_closure_at: '' },
+          ch.cappedBy ? { _auto_closed_by_id: ch.cappedBy } : {}
+        );
+      patch.modified_at = stampIso;
+      if (who) patch.modified_by = who;
+      Object.assign(ch.row, patch);
+      if (ch.id) {
+        const sIdx = seedArr.findIndex(x => x && String(x.id) === ch.id);
+        if (sIdx >= 0 && seedArr[sIdx] !== ch.row) Object.assign(seedArr[sIdx], patch);
+        const cIdx = STATE.customRecords.price_rules.findIndex(x => x && String(x.id) === ch.id);
+        if (cIdx >= 0) {
+          if (STATE.customRecords.price_rules[cIdx] !== ch.row) Object.assign(STATE.customRecords.price_rules[cIdx], ch.row, patch);
+        } else {
+          STATE.customRecords.price_rules.unshift(Object.assign({}, ch.row));
+        }
+      }
+      if (Array.isArray(extraApiPosts)) extraApiPosts.push(['price_rules', Object.assign({}, ch.row)]);
+    });
+    if (!SEED._tableRev) SEED._tableRev = {};
+    SEED._tableRev.price_rules = (SEED._tableRev.price_rules || 0) + 1;
+    SEED._customRev = (SEED._customRev || 0) + 1;
+    _filterRecordsWeakCache = new WeakMap();
+    return plan;
+  }
+
+  // ---- Dormant sites close their price agreements (owner rule 2026-11-12) ----
+  // A Manufacturing price agreement tied to a site closes once nothing has happened on it for the dormancy window
+  // (MFG_GEO.SITE_DORMANT_DAYS, 90) counted back from today: no sales or raw load at its site, no start, no deliberate
+  // reopen. Its end date is the last day of that window (last activity + 90), so every load already posted stays
+  // inside it. A customer who comes back later needs a new agreement: the closed one stays closed. A load that turns
+  // up later inside the window (a late top-up, a back-dated ticket) moves the end date out again, or reopens it.
+  // Only rows this sweep closed carry _dormant_close_end (the end it set) and the end they had before, so the undo
+  // restores exactly those rows. Deterministic and idempotent: every device that runs it writes the same values.
+  function dormantAgreementDays() {
+    const n = window.MFG_GEO && Number(window.MFG_GEO.SITE_DORMANT_DAYS);
+    return n > 0 ? n : 90;
+  }
+
+  function isoPlusDays(iso, n) {
+    const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return '';
+    return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + n)).toISOString().slice(0, 10);
+  }
+
+  function dormantIso(v) {
+    const d = String(v || '').slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= '1900-01-01' ? d : '';
+  }
+
+  // Sorted load dates per site (later of ticket and reporting date, like siteLastLoadDate). App copies are read
+  // first so a voided app copy hides its seed row.
+  function buildSiteLoadDatesIndex() {
+    const byNorm = new Map();
+    const seen = new Set();
+    ['sales_tickets', 'raw_purchases'].forEach(tk => {
+      [STATE.customRecords && STATE.customRecords[tk], SEED.records && SEED.records[tk]].forEach(arr => {
+        if (!Array.isArray(arr)) return;
+        for (let i = 0; i < arr.length; i++) {
+          const t = arr[i];
+          if (!t || !t.site) continue;
+          if (t.id != null && t.id !== '') {
+            const k = tk + ':' + t.id;
+            if (seen.has(k)) continue;
+            seen.add(k);
+          }
+          if (t.voided) continue;
+          const d1 = dormantIso(t.date);
+          const d2 = dormantIso(t.rep_date);
+          const d = d1 > d2 ? d1 : d2;
+          if (!d) continue;
+          const nk = norm(t.site);
+          if (!nk) continue;
+          let list = byNorm.get(nk);
+          if (!list) { list = []; byNorm.set(nk, list); }
+          list.push(d);
+        }
+      });
+    });
+    byNorm.forEach(list => list.sort());
+    return byNorm;
+  }
+
+  function lastDateOnOrBefore(sorted, cap) {
+    if (!sorted || !sorted.length) return '';
+    if (!cap) return sorted[sorted.length - 1];
+    let lo = 0;
+    let hi = sorted.length - 1;
+    let hit = '';
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (sorted[mid] <= cap) { hit = sorted[mid]; lo = mid + 1; } else hi = mid - 1;
+    }
+    return hit;
+  }
+
+  function planDormantAgreementClosure(todayIso, opts = {}) {
+    const out = { changes: [], closing: 0, moving: 0, reopening: 0, outOfScope: 0, today: '' };
+    const today = dormantIso(todayIso) || todayISO();
+    out.today = today;
+    const days = dormantAgreementDays();
+    const cutoff = isoPlusDays(today, -days);
+    const loadIdx = opts.loadIndex || buildSiteLoadDatesIndex();
+    let allowedCos = null;
+    let allowsAllCos = true;
+    try {
+      allowedCos = new Set((allowedCompanyNames() || []).map(n => norm(n)).filter(Boolean));
+      const mfgCos = (getCompanyCatalog() || []).filter(c => c && (c.industry || 'Manufacturing') === 'Manufacturing').map(c => norm(c.name)).filter(Boolean);
+      allowsAllCos = mfgCos.length > 0 && mfgCos.every(c => allowedCos.has(c));
+    } catch (_) {
+      allowedCos = null;
+    }
+    const seen = new Set();
+    const pool = [];
+    ((STATE.customRecords && STATE.customRecords.price_rules) || []).concat((SEED.records && SEED.records.price_rules) || []).forEach(r => {
+      if (!r) return;
+      const rid = String(r.id || '');
+      if (rid) {
+        if (seen.has(rid)) return;
+        seen.add(rid);
+      }
+      if (!r.voided) pool.push(r);
+    });
+    // A restored or moved end never overlaps a later agreement of the same series added while this one was closed
+    const laterPeerCap = (r, afterIso) => {
+      const rStart = dormantIso(r.start_date);
+      let nextStart = '';
+      let by = '';
+      pool.forEach(p => {
+        if (p === r) return;
+        const ps = dormantIso(p.start_date);
+        if (!ps || !(ps > rStart) || (afterIso && !(ps > afterIso)) || (nextStart && ps >= nextStart)) return;
+        if (!isSameChronologicalSeries('price_rules', r, p)) return;
+        nextStart = ps;
+        by = String(p.id || '');
+      });
+      return nextStart ? { cap: prevDayISO(nextStart), by } : null;
+    };
+    pool.forEach(r => {
+      if (!r.site || r._multiIndustrySeed || (r._industry && r._industry !== 'Manufacturing')) return;
+      if (r._site_closure_id) return;   // a closed site owns these end dates (Close Site)
+      const ruleCo = String(r.company || '').trim();
+      if (allowedCos && !(ruleCo ? allowedCos.has(norm(ruleCo)) : allowsAllCos)) {
+        out.outOfScope += 1;
+        return;
+      }
+      const start = dormantIso(r.start_date);
+      const curEnd = dormantIso(r.end_date);
+      const ownEnd = dormantIso(r._dormant_close_end);
+      const marked = Boolean(ownEnd) && curEnd === ownEnd;
+      const dates = loadIdx.get(norm(r.site)) || null;
+      const maxOf = (...vals) => vals.reduce((a, b) => (b && b > a ? b : a), '');
+      // Entering an agreement in the app is activity too, even when its start date is back-dated. A books row edited
+      // in the app (_seed_orig) gets a fresh entered_at from the form: that is an edit, not an entry.
+      const entered = r._seed_orig ? '' : dormantIso(r.entered_at || r._createdAt);
+      if (marked) {
+        // Loads after the end date are outside this agreement: they never reopen it. A person's reopen counted at
+        // closing time (_dormant_touched_on) stays part of the activity.
+        const act = maxOf(lastDateOnOrBefore(dates, ownEnd), start, entered, dormantIso(r._dormant_touched_on));
+        // Only new evidence (a load added or voided inside the window) changes a closure. Never today's date alone:
+        // two devices a day apart would otherwise close and reopen the same row on every sync.
+        if (act && act === dormantIso(r._dormant_last_activity)) return;
+        const prevEnd = dormantIso(r._dormant_prev_end);
+        const target = act ? isoPlusDays(act, days) : '';
+        let toEnd = '';
+        let reopen = false;
+        if (!target || target >= today || (prevEnd && prevEnd <= target)) {
+          reopen = true;
+          toEnd = prevEnd;
+        } else {
+          toEnd = target;
+        }
+        const peer = laterPeerCap(r, ownEnd);
+        let cappedBy = '';
+        if (peer && (!toEnd || toEnd > peer.cap)) { toEnd = peer.cap; cappedBy = peer.by; }
+        if (!reopen && toEnd === ownEnd) return;
+        out.changes.push({ row: r, id: String(r.id || ''), kind: reopen ? 'reopen' : 'move', fromEnd: curEnd, toEnd, act, prevEnd, prevExplicit: Boolean(r._dormant_prev_explicit), cappedBy });
+        if (reopen) out.reopening += 1; else out.moving += 1;
+        return;
+      }
+      if (curEnd && curEnd < today) return;   // already ended
+      // A deliberate reopen or end-date change by a person counts as activity (never the sweep's own writes)
+      const touched = ((r._reopenedExplicitly && !r._dormant_reopened_auto) || ownEnd) && r.modified_at && String(r.modified_at) !== String(r._dormant_auto_at || '');
+      const touchedOn = touched ? dormantIso(r.modified_at) : '';
+      const act = maxOf(lastDateOnOrBefore(dates, ''), start, entered, touchedOn);
+      if (!act || act >= cutoff) return;
+      const toEnd = isoPlusDays(act, days);
+      if (curEnd && curEnd <= toEnd) return;
+      out.changes.push({ row: r, id: String(r.id || ''), kind: 'close', fromEnd: curEnd, toEnd, act, touchedOn, prevEnd: curEnd, prevExplicit: Boolean(r._explicitEnd), cappedBy: '' });
+      out.closing += 1;
+    });
+    return out;
+  }
+
+  function writePriceRulePatch(row, id, patch, extraApiPosts) {
+    if (!Array.isArray(STATE.customRecords.price_rules)) STATE.customRecords.price_rules = [];
+    const seedArr = (SEED.records && Array.isArray(SEED.records.price_rules)) ? SEED.records.price_rules : [];
+    Object.assign(row, patch);
+    if (id) {
+      const sIdx = seedArr.findIndex(x => x && String(x.id) === id);
+      if (sIdx >= 0 && seedArr[sIdx] !== row) Object.assign(seedArr[sIdx], patch);
+      const cIdx = STATE.customRecords.price_rules.findIndex(x => x && String(x.id) === id);
+      if (cIdx >= 0) {
+        if (STATE.customRecords.price_rules[cIdx] !== row) Object.assign(STATE.customRecords.price_rules[cIdx], row, patch);
+      } else {
+        STATE.customRecords.price_rules.unshift(Object.assign({}, row));
+      }
+    }
+    if (Array.isArray(extraApiPosts)) extraApiPosts.push(['price_rules', Object.assign({}, row)]);
+  }
+
+  function applyDormantAgreementClosure(plan, extraApiPosts) {
+    if (!plan || !plan.changes.length) return plan;
+    const stampIso = new Date().toISOString();
+    plan.changes.forEach(ch => {
+      // _dormant_auto_at equals modified_at on the sweep's own writes, so they never count as a person's activity
+      const patch = ch.kind === 'reopen'
+        ? Object.assign(
+          // _reopenedExplicitly on every reopen so sync keeps it (_preserveClosedEffectiveDates); _dormant_reopened_auto
+          // keeps it from counting as a person's reopen
+          { end_date: ch.toEnd, _explicitEnd: ch.cappedBy ? false : ch.prevExplicit, _reopenedExplicitly: true, _dormant_reopened_auto: true, _dormant_close_end: '', _dormant_prev_end: '', _dormant_prev_explicit: false, _dormant_last_activity: '', _dormant_closed_at: '', _dormant_touched_on: '' },
+          ch.cappedBy ? { _auto_closed_by_id: ch.cappedBy } : {}
+        )
+        : Object.assign(
+          { end_date: ch.toEnd, _explicitEnd: true, _reopenedExplicitly: false, _dormant_reopened_auto: false, _dormant_close_end: ch.toEnd, _dormant_prev_end: ch.prevEnd, _dormant_prev_explicit: ch.prevExplicit, _dormant_last_activity: ch.act, _dormant_closed_at: ch.kind === 'close' ? stampIso : (ch.row._dormant_closed_at || stampIso),
+            _dormant_touched_on: ch.kind === 'close' ? (ch.touchedOn || '') : (ch.row._dormant_touched_on || '') },
+          ch.cappedBy ? { _auto_closed_by_id: ch.cappedBy } : {}
+        );
+      patch.modified_at = stampIso;
+      patch._dormant_auto_at = stampIso;
+      patch.modified_by = 'ISABI (no load in 90 days)';
+      writePriceRulePatch(ch.row, ch.id, patch, extraApiPosts);
+    });
+    if (!SEED._tableRev) SEED._tableRev = {};
+    SEED._tableRev.price_rules = (SEED._tableRev.price_rules || 0) + 1;
+    SEED._customRev = (SEED._customRev || 0) + 1;
+    _filterRecordsWeakCache = new WeakMap();
+    return plan;
+  }
+
+  // Runs after the ticket records load and after every cloud sync, for a signed-in seat that may enter price
+  // agreements, on the companies of that seat. Never in a demo scope, never while an entry form is open.
+  let _dormantSweepTimer = null;
+  let _dormantSweepSig = '';
+  function dormantSweepAllowed() {
+    if (window.__MFG_NO_DORMANT_SWEEP) return false;
+    // Automated runs work on fixtures posted today on idle sites: the sweep is opt-in there (verify_site_lifecycle § 7)
+    if ((navigator.webdriver || window.__MFG_HEADLESS_TEST) && !window.__MFG_DORMANT_SWEEP_TEST) return false;
+    if (!STATE.authed || isDemoScopeActive() || !siteLoadsReady()) return false;
+    const u = activeUser();
+    if (!u) return false;
+    try {
+      const perms = getEffectivePermissions(u);
+      return Boolean(perms && perms.rights && perms.rights.enter_master);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function dormantSweepFormBusy() {
+    if (STATE.saving) return true;
+    const em = $('entryModal');
+    if (em && !em.hidden) return true;
+    const dr = $('inspModifyDrawer');
+    return Boolean(dr && !dr.hidden && dr.classList.contains('open'));
+  }
+
+  function scheduleDormantAgreementSweep(delayMs = 1500) {
+    if (_dormantSweepTimer) return;
+    _dormantSweepTimer = setTimeout(() => {
+      _dormantSweepTimer = null;
+      try { runDormantAgreementSweep(); } catch (e) { console.warn('Dormant agreement sweep skipped:', e); }
+    }, delayMs);
+  }
+
+  function runDormantAgreementSweep(opts = {}) {
+    if (!dormantSweepAllowed()) return null;
+    if (dormantSweepFormBusy()) {
+      scheduleDormantAgreementSweep(20000);
+      return null;
+    }
+    const today = dormantIso(opts.today) || todayISO();
+    const recs = SEED.records || {};
+    const cr = STATE.customRecords || {};
+    const lenOf = a => (Array.isArray(a) ? a.length : 0);
+    const sig = [today, SEED._customRev || 0, (SEED._tableRev && SEED._tableRev.price_rules) || 0,
+      lenOf(recs.sales_tickets), lenOf(recs.raw_purchases), lenOf(cr.sales_tickets), lenOf(cr.raw_purchases), lenOf(recs.price_rules), lenOf(cr.price_rules),
+      (activeUser() && activeUser().id) || ''].join('|');
+    if (!opts.force && sig === _dormantSweepSig) return null;
+    _dormantSweepSig = sig;
+    const plan = planDormantAgreementClosure(today);
+    if (!plan.changes.length) return plan;
+    const posts = [];
+    applyDormantAgreementClosure(plan, posts);
+    saveLocalAuthAndRecords();
+    const msgs = [];
+    if (plan.closing > 0) msgs.push(`${plan.closing} price ${plan.closing === 1 ? 'agreement' : 'agreements'} closed: no load at the site in 90 days`);
+    const kept = plan.reopening + plan.moving;
+    if (kept > 0) msgs.push(`${kept} price ${kept === 1 ? 'agreement' : 'agreements'} reopened or extended: a load came in within 90 days`);
+    if (msgs.length) toast(msgs.join(' · '), 'ok');
+    safeRender();
+    postRecordPairsChunked(posts).then(() => syncWithCloud(true)).catch(e => console.warn('Dormant agreement sweep push deferred:', e));
+    return plan;
+  }
+
+  // Agreements on these sites that the dormancy sweep closed (for the Edit Site line)
+  function countDormantClosedAgreements(...siteNames) {
+    const keys = new Set(siteNames.map(n => norm(n)).filter(Boolean));
+    if (!keys.size) return 0;
+    const seen = new Set();
+    let n = 0;
+    ((STATE.customRecords && STATE.customRecords.price_rules) || []).concat((SEED.records && SEED.records.price_rules) || []).forEach(r => {
+      if (!r) return;
+      const rid = String(r.id || '');
+      if (rid) {
+        if (seen.has(rid)) return;
+        seen.add(rid);
+      }
+      if (r.voided || !r.site || !keys.has(norm(r.site))) return;
+      const ownEnd = dormantIso(r._dormant_close_end);
+      if (ownEnd && dormantIso(r.end_date) === ownEnd) n += 1;
+    });
+    return n;
+  }
+  window.MFG_DORMANT_AGREEMENTS = {
+    plan: planDormantAgreementClosure,
+    run: runDormantAgreementSweep,
+    count: countDormantClosedAgreements,
+    allowed: dormantSweepAllowed
+  };
+
+  // Edit Site form: show the site's lifecycle, the end-date field when Closed, and what Save will do to its agreements
+  function syncSiteLifecycleFormUI() {
+    const wrap = $('wrap_site_status');
+    if (!wrap || wrap.hidden) return;
+    const editCtx = STATE.editingRecord;
+    const orig = (editCtx && editCtx.crKey === 'sites' && editCtx.orig) ? editCtx.orig : null;
+    const closing = val('f_site_status') === 'closed';
+    const endWrap = $('wrap_site_end_date');
+    if (endWrap) endWrap.hidden = !closing;
+    if (closing && $('f_site_end_date') && !val('f_site_end_date') && !(orig && /^closed$/i.test(String(orig.status || '').trim()) && !orig.end_date)) {
+      setModalControlVal('f_site_end_date', todayISO());
+    }
+    const box = $('siteLifecycleImpact');
+    if (!box) return;
+    const siteName = val('f_site') || (orig && orig.name) || '';
+    const isMfgSite = isSiteRowMfg(orig || {});
+    const loadsReady = siteLoadsReady();
+    const lastLoad = (isMfgSite && loadsReady) ? siteLastLoadDate(siteName, orig && orig.name) : '';
+    const endVal = val('f_site_end_date');
+    const draft = Object.assign({}, orig || {}, { name: siteName, status: closing ? 'Closed' : '', end_date: closing ? endVal : '' });
+    const plan = planSiteAgreementClosure(draft, { altNames: orig && orig.name ? [orig.name] : [] });
+    const lines = [];
+    const loadFailed = Boolean(SEED && SEED._recordsLoadFailed);
+    if (isMfgSite) {
+      if (!loadsReady) lines.push(loadFailed ? '<span>Ticket records did not load</span>' : '<span>Loads are still loading</span>');
+      else lines.push(lastLoad ? `<span>Last Load: <b class="mono">${esc(lastLoad)}</b></span>` : '<span>No loads recorded</span>');
+    }
+    const endChanged = closing && endVal && (!orig || String(orig.end_date || '').slice(0, 10) !== endVal || !/^closed$/i.test(String(orig.status || '').trim()));
+    const closureUnchanged = closing && !endChanged;
+    let isErr = false;
+    if (isMfgSite && endChanged && !loadsReady) {
+      isErr = true;
+      lines.push(loadFailed
+        ? '<span class="site-life-err">Ticket records did not load. Reload the page to close a site.</span>'
+        : '<span class="site-life-err">Loads are still loading. Try again in a moment.</span>');
+    } else if (closureUnchanged) {
+      if (lastLoad && endVal && lastLoad > endVal) lines.push(`<span class="site-life-err">Loads after the end date: the last load is ${esc(lastLoad)}</span>`);
+    } else if (closing && endVal && lastLoad && endVal < lastLoad) {
+      isErr = true;
+      lines.push(`<span class="site-life-err">The site has loads up to ${esc(lastLoad)}. The end date must be on or after it.</span>`);
+    } else if (plan.outOfScope > 0) {
+      isErr = true;
+      lines.push(`<span class="site-life-err">${plan.outOfScope === 1 ? '1 agreement on this site belongs to a company your seat cannot change' : `${plan.outOfScope} agreements on this site belong to companies your seat cannot change`}</span>`);
+    } else {
+      if (plan.ending > 0) lines.push(`<span>Ends ${plan.ending} open price ${plan.ending === 1 ? 'agreement' : 'agreements'} on ${esc(plan.endDate)}</span>`);
+      if (plan.restoring > 0) lines.push(`<span>Reopens ${plan.restoring} price ${plan.restoring === 1 ? 'agreement' : 'agreements'} ended by this closure</span>`);
+      if (closing && plan.laterStarts > 0) lines.push(`<span>${plan.laterStarts === 1 ? '1 agreement starts after the end date and stays unchanged' : `${plan.laterStarts} agreements start after the end date and stay unchanged`}</span>`);
+      const dormantClosed = (isMfgSite && !closing) ? countDormantClosedAgreements(siteName, orig && orig.name) : 0;
+      if (dormantClosed > 0) lines.push(`<span>${dormantClosed === 1 ? '1 price agreement closed after 90 days without a load' : `${dormantClosed} price agreements closed after 90 days without a load`}</span>`);
+    }
+    box.innerHTML = lines.join('<span class="site-life-sep" aria-hidden="true">·</span>');
+    box.classList.toggle('is-err', isErr);
+    box.hidden = lines.length === 0;
   }
 
   function syncSiteJvPartnershipRecords(siteRow, extraApiPosts) {
@@ -14635,6 +15156,8 @@
       if (savedEndIso) savedRow._reopenedExplicitly = false;
     } else if (savedEndIso !== origEndIso) {
       savedRow._explicitEnd = Boolean(savedEndIso);
+      // A person set the end date: a later reopen is theirs, not the dormancy sweep's
+      if (savedRow._dormant_reopened_auto) savedRow._dormant_reopened_auto = false;
       if (savedRow._explicitEnd) {
         savedRow._auto_closed_by_id = '';
         savedRow._reopenedExplicitly = false;
@@ -95418,6 +95941,44 @@
       const jvShareVal = isJvSite ? (Number(origSite.jv_share) || 50) : 0;
       const jvCoVal = isJvSite ? (origSite.jv_company || company || 'WTC') : '';
       const effSiteCat = (!isJvSite && !inclTrans && custVal && !supVal) ? 'customer' : 'supplier';
+      // Site Status (edit only): Closed needs an end date on or after the site's last load
+      const origSiteStatus = String((origSite && origSite.status) || '').trim();
+      const origSiteEnd = origSite && origSite.end_date ? String(origSite.end_date).slice(0, 10) : '';
+      let siteStatusVal = origSiteStatus;
+      let siteEndVal = origSiteEnd;
+      const lifeWrapEl = $('wrap_site_status');
+      if (origSite && lifeWrapEl && !lifeWrapEl.hidden) {
+        const closingNow = val('f_site_status') === 'closed';
+        const endIn = String(val('f_site_end_date') || '').trim().slice(0, 10);
+        if (closingNow) {
+          const legacyClosedNoEnd = /^closed$/i.test(origSiteStatus) && !origSiteEnd;
+          if (!endIn && !legacyClosedNoEnd) {
+            addErr('f_site_end_date', 'Enter the end date (the last day the site was open).');
+          } else if (endIn && !(/^\d{4}-\d{2}-\d{2}$/.test(endIn) && endIn >= '1900-01-01')) {
+            addErr('f_site_end_date', 'Enter a valid end date.');
+          } else if (endIn && isSiteRowMfg(origSite) && (endIn !== origSiteEnd || !/^closed$/i.test(origSiteStatus))) {
+            if (!siteLoadsReady()) {
+              addErr('f_site_end_date', SEED._recordsLoadFailed ? 'Ticket records did not load. Reload the page to close a site.' : 'Loads are still loading. Try again in a moment.');
+            } else {
+              const lastLd = siteLastLoadDate(nm, origSite.name);
+              if (lastLd && endIn < lastLd) addErr('f_site_end_date', `The site has loads up to ${lastLd}. The end date must be on or after it.`);
+            }
+          }
+          siteStatusVal = 'Closed';
+          siteEndVal = endIn;
+        } else {
+          siteStatusVal = /^closed$/i.test(origSiteStatus) ? '' : origSiteStatus;
+          siteEndVal = '';
+        }
+        const scopePlan = planSiteAgreementClosure(Object.assign({}, origSite, { name: nm || origSite.name, status: siteStatusVal, end_date: siteEndVal }), { altNames: [origSite.name] });
+        if (scopePlan.outOfScope > 0) {
+          addErr('f_site_status', scopePlan.outOfScope === 1
+            ? '1 agreement on this site belongs to a company your seat cannot change'
+            : `${scopePlan.outOfScope} agreements on this site belong to companies your seat cannot change`);
+        }
+      }
+      // A cleared end date is deliberate: sync and the seed re-apply must not put the old one back
+      const siteReopenFlag = (origSite && origSiteEnd && !siteEndVal) ? { _reopenedExplicitly: true } : (siteEndVal ? { _reopenedExplicitly: false } : {});
       record = {
         ...base,
         name: nm,
@@ -95432,6 +95993,9 @@
         latitude: siteLat,
         longitude: siteLng,
         is_jv: isJvSite,
+        status: siteStatusVal,
+        end_date: siteEndVal,
+        ...siteReopenFlag,
         ...(isJvSite ? { jv_partner: jvPartnerVal, jv_share: round2(jvShareVal), jv_company: jvCoVal } : { jv_partner: '', jv_share: 0, jv_company: '' })
       };
     } else if (f === 'equipment' || f === 'companyequipment') {
@@ -97168,6 +97732,7 @@
       delete record._assign_site_region;
       const saveStampIso = new Date().toISOString();
       record.modified_at = record.modified_at || saveStampIso;
+      let siteClosureToastSfx = '';
       const preExtraApiPosts = [];
       if (assignSiteReg && assignSiteReg.site && assignSiteReg.region) {
         ensureSiteHasRegion(assignSiteReg.site, assignSiteReg.region, assignSiteReg.supplier, preExtraApiPosts);
@@ -97525,6 +98090,18 @@
         const renameInd = editCtx.orig._industry || record._industry || getActiveIndustry();
         cascadeSiteRename(editCtx.orig.name, record.name, extraApiPosts, renameInd);
       }
+      // Re-saving a closed site with the same end date leaves its agreements alone (no silent re-closure)
+      const siteClosureSame = crKey === 'sites' && editCtx && editCtx.orig
+        && /^closed$/i.test(String(editCtx.orig.status || '').trim()) && /^closed$/i.test(String(record.status || '').trim())
+        && String(editCtx.orig.end_date || '').slice(0, 10) === String(record.end_date || '').slice(0, 10);
+      if (crKey === 'sites' && isEditingExisting && editCtx && editCtx.orig && !siteClosureSame) {
+        const closurePlan = applySiteAgreementClosure(record, editCtx.orig, extraApiPosts);
+        if (closurePlan && closurePlan.ending > 0) {
+          siteClosureToastSfx = ` · ${closurePlan.ending} price ${closurePlan.ending === 1 ? 'agreement' : 'agreements'} ended on ${closurePlan.endDate}`;
+        } else if (closurePlan && closurePlan.restoring > 0) {
+          siteClosureToastSfx = ` · ${closurePlan.restoring} price ${closurePlan.restoring === 1 ? 'agreement' : 'agreements'} reopened`;
+        }
+      }
       if (crKey === 'sites' && window.MFG_GEO) {
         if (isEditingExisting && editCtx && editCtx.orig && typeof window.MFG_GEO.clearLocationPin === 'function') {
           const origCat = resolveSiteCategory(editCtx.orig);
@@ -97876,7 +98453,7 @@
       } else if (isUpdatingPending && crKey === 'employments') {
         toast(`Final salary saved (${fmtUSD(record.amount, 2)}) · ${record.staff || record.name}`, 'ok');
       } else if (isEditingExisting) {
-        toast(`${(CR_LABEL[crKey] || 'Record').replace(/^./, ch => ch.toUpperCase())} updated · ${record.name}`, 'ok');
+        toast(`${(CR_LABEL[crKey] || 'Record').replace(/^./, ch => ch.toUpperCase())} updated · ${record.name}${siteClosureToastSfx}`, 'ok');
       } else {
         toast(`${CR_LABEL[crKey].replace(/^./, ch => ch.toUpperCase())} posted · ${record.name}`, 'ok');
       }
@@ -100026,6 +100603,19 @@
       setModalControlVal('f_lat', row.latitude != null && row.latitude !== '' ? row.latitude : '');
       setModalControlVal('f_lng', row.longitude != null && row.longitude !== '' ? row.longitude : '');
       if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
+      if ($('wrap_site_status') && $('f_site_status')) {
+        const rowEnd = row.end_date ? String(row.end_date).slice(0, 10) : '';
+        const rowClosed = /^closed$/i.test(String(row.status || '').trim()) || rowEnd >= '1900-01-01';
+        $('wrap_site_status').hidden = false;
+        if ($('hint_site_status')) $('hint_site_status').hidden = !isSiteRowMfg(row);
+        setModalControlVal('f_site_status', rowClosed ? 'closed' : 'open');
+        setModalControlVal('f_site_end_date', rowClosed ? rowEnd : '');
+        ['change', 'input'].forEach(evName => {
+          $('f_site_status').addEventListener(evName, syncSiteLifecycleFormUI);
+          if ($('f_site_end_date')) $('f_site_end_date').addEventListener(evName, syncSiteLifecycleFormUI);
+        });
+        syncSiteLifecycleFormUI();
+      }
     } else if (form === 'region') {
       const zType = row.zone_type || (row.radius_km != null && Number(row.radius_km) > 0 ? 'circle' : 'boundary');
       setModalControlVal('f_zone_type', zType);
@@ -108912,6 +109502,7 @@
       if (STATE.pushAfterSync) { STATE.pushAfterSync = false; syncWithCloud(true); }
       else if (STATE.pendingCloudPush) { scheduleCloudPushRetry(6000); }
       pullDoorTabletPunches(false);
+      scheduleDormantAgreementSweep();
     });
     return syncInFlight;
   }
@@ -137090,6 +137681,7 @@
           SEED._canonicalById = null;
           SEED._canonicalByMain = null;
           SEED._recordsReady = true;
+          SEED._recordsLoadFailed = false;
           if (indPayload) mergeIndustryLiveSpineIntoRecords();
           if (!isDemoSbx && shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
           invalidateAllSeedCaches();
@@ -137098,6 +137690,7 @@
         }
         window.MFG_SEED = SEED;
         try { window.dispatchEvent(new CustomEvent('mfg:records-seed-ready')); } catch (_) {}
+        scheduleDormantAgreementSweep(2500);
         if (STATE.authed || isAutoTest) {
           safeRender();
         } else {
@@ -137129,6 +137722,7 @@
         _seedHydrationPromise = null;
         if (!useAuthedApi) {
           SEED._recordsReady = true;
+          SEED._recordsLoadFailed = true;   // screens carry on; site closure and dormancy refuse to judge loads
           window.MFG_SEED = SEED;
         } else {
           const errMsg = String((err && err.message) || err || '');
@@ -137139,6 +137733,7 @@
             openAuthGate();
           } else if (STATE.authed) {
             SEED._recordsReady = true;
+            SEED._recordsLoadFailed = true;
             window.MFG_SEED = SEED;
           }
         }

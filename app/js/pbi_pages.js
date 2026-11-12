@@ -1627,8 +1627,11 @@
       { id: 'capex', label: 'Capital Expenditure', fn: r => deriveExpenseCostClass(r) === 'Capital Expenditure' }
     ] },
     { key: 'expense_subcategories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Subcategories', singularLabel: 'Expense Subcategory', dvn: 'bhf_expensesubcategory', form: 'expensecategory', cols: ['name', 'category', 'expenses_count', 'total_spent'], relTables: ['expense_categories', 'expenses', 'recurring_expenses'], views: [{ id: 'all', label: 'All Expense Subcategories' }] },
-    { key: 'sites', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_sites', label: 'Sites', singularLabel: 'Site', dvn: 'bhf_site', form: 'site', cols: ['name', 'supply_mode', 'region', 'supplier', 'customer', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'], relTables: ['regions', 'suppliers', 'customers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [
-      { id: 'all', label: 'All Sites', cols: ['name', 'supply_mode', 'region', 'supplier', 'customer', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'] },
+    { key: 'sites', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_sites', label: 'Sites', singularLabel: 'Site', dvn: 'bhf_site', form: 'site', cols: ['name', 'lifecycle', 'supply_mode', 'region', 'supplier', 'customer', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads', 'last_load'], relTables: ['regions', 'suppliers', 'customers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [
+      { id: 'all', label: 'All Sites', cols: ['name', 'lifecycle', 'supply_mode', 'region', 'supplier', 'customer', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads', 'last_load'] },
+      { id: 'life_active', label: 'Active', fn: r => siteLifeStatePbi(r) === 'active', cols: ['name', 'lifecycle', 'supply_mode', 'region', 'supplier', 'customer', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads', 'last_load'] },
+      { id: 'life_dormant', mfgOnly: true, label: 'Dormant', fn: r => siteLifeStatePbi(r) === 'dormant', cols: ['name', 'lifecycle', 'supply_mode', 'region', 'supplier', 'customer', 'active_rules', 'raw_loads', 'sales_loads', 'last_load'] },
+      { id: 'life_closed', label: 'Closed', fn: r => siteLifeStatePbi(r) === 'closed', cols: ['name', 'lifecycle', 'end_date', 'region', 'supplier', 'customer', 'is_jv', 'active_rules', 'raw_loads', 'sales_loads', 'last_load'] },
       { id: 'source', mfgOnly: true, label: 'Raw Activity', fn: (r, rel) => Boolean(r.supplier || r.is_jv || isBundledQuarrySitePbi(r) || ((rel && rel.siteByName[norm(r.name)] && rel.siteByName[norm(r.name)].raw_loads) || 0) > 0), cols: ['name', 'supply_mode', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads'] },
       { id: 'bundled', mfgOnly: true, label: 'Bundled (Mat + Trans)', fn: r => isBundledQuarrySitePbi(r), cols: ['name', 'supply_mode', 'region', 'supplier', 'gps_status', 'active_rules', 'raw_loads'] },
       { id: 'delivery', mfgOnly: true, label: 'Sales Activity', fn: (r, rel) => Boolean(r.customer || ((rel && rel.siteByName[norm(r.name)] && rel.siteByName[norm(r.name)].sales_loads) || 0) > 0), cols: ['name', 'region', 'customer', 'gps_status', 'latitude', 'longitude', 'active_rules', 'sales_loads'] },
@@ -1805,6 +1808,19 @@
     return Boolean(r && (r.includes_transport === true || r.includes_transport === 1 || r.haulage_mode === 'supplier_delivered'));
   }
 
+  // Site lifecycle (Active / Dormant / Closed) from the shared deterministic rule in js/geo_dispatch.js
+  function siteLifePbi(r) {
+    const G = typeof window !== 'undefined' ? window.MFG_GEO : null;
+    if (!r || !G || typeof G.getSiteLifecycle !== 'function') return null;
+    const seedObj = window.MFG_SEED || window.SEED || null;
+    const stObj = _activePbiState || window.STATE || null;
+    return seedObj ? G.getSiteLifecycle(r, seedObj, stObj) : null;
+  }
+  function siteLifeStatePbi(r) {
+    const lc = siteLifePbi(r);
+    return lc ? lc.state : 'active';
+  }
+
   function isBundledRawTicketPbi(r) {
     if (typeof window !== 'undefined' && window.MFG_QUARRY_SITE_MODE && typeof window.MFG_QUARRY_SITE_MODE.isBundledRawTicket === 'function') {
       return Boolean(window.MFG_QUARRY_SITE_MODE.isBundledRawTicket(r));
@@ -1856,6 +1872,15 @@
       return (v && v !== 0 && v !== 'No')
         ? `<span class="badge badge-warn tkt-ot-badge has-ico">${pbiIcon('warn')}<span>Reported</span></span>`
         : '<span class="muted">No</span>';
+    }
+    if (c === 'lifecycle' && tableKey === 'sites' && cell && cell !== '—') {
+      const lcSt = /^closed$/i.test(cell) ? 'closed' : (/^dormant$/i.test(cell) ? 'dormant' : 'active');
+      const lcTip = (typeof window !== 'undefined' && window.MFG_GEO && typeof window.MFG_GEO.siteLifecycleTip === 'function')
+        ? window.MFG_GEO.siteLifecycleTip(siteLifePbi(r))
+        : '';
+      const lcCls = lcSt === 'closed' ? 'badge-info site-life-badge is-closed' : (lcSt === 'dormant' ? 'badge-warn site-life-badge is-dormant' : 'badge-ok site-life-badge is-active');
+      const lcIco = lcSt === 'closed' ? 'lock' : (lcSt === 'dormant' ? 'clock' : 'check');
+      return `<span class="badge ${lcCls} tkt-ot-badge has-ico"${lcTip ? ` data-ui-tip="${esc(lcTip)}"` : ''}>${pbiIcon(lcIco)}<span>${esc(cell)}</span></span>`;
     }
     if (c === 'gps_status' && cell && cell !== '—') {
       const hasGps = /pinned|coordinates|verified|\d+\.\d+/i.test(cell) && !/^missing|unpinned|no/i.test(cell);
@@ -1928,7 +1953,7 @@
     return `<span class="badge ${isCust ? 'badge-info' : 'badge-brass'}">${esc(isCust ? 'Customer Delivery' : 'Supplier / Quarry')}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(code|ext_ref|ext_flow|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|supply_mode|linked_party|jv_partner|jv_share|working_days|workdays_label|day_schedule_summary|shift_code|is_bu_default|start_time|end_time|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(code|ext_ref|ext_flow|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|supply_mode|linked_party|jv_partner|jv_share|working_days|workdays_label|day_schedule_summary|shift_code|is_bu_default|start_time|end_time|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref|lifecycle|last_load)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -1959,6 +1984,7 @@
       case 'work_shifts':
         return { key: 'start_date', dir: 'desc' };
       case 'sites':
+        if (vw === 'life_dormant' || vw === 'life_closed') return { key: 'last_load', dir: 'desc' };
         return { key: vw === 'delivery' ? 'sales_loads' : 'raw_loads', dir: 'desc' };
       case 'regions':
         return { key: 'sites_count', dir: 'desc' };
@@ -3208,6 +3234,12 @@
       }
       if (tableKey === 'sites') {
         if (c === 'is_jv') return Boolean(r.is_jv);
+        if (c === 'lifecycle' || c === 'last_load') {
+          const lc = siteLifePbi(r);
+          if (c === 'last_load') return (lc && lc.lastDate) || null;
+          const stt = lc ? lc.state : 'active';
+          return stt === 'closed' ? 'Closed' : (stt === 'dormant' ? 'Dormant' : 'Active');
+        }
         const se = rel.siteByName[norm(r.name)];
         if (c === 'raw_loads') return se ? se.raw_loads : 0;
         if (c === 'sales_loads') return se ? se.sales_loads : 0;
@@ -10405,6 +10437,8 @@
     jv_share: 'Partner Share',
     is_jv: 'JV 50/50',
     gps_status: 'GPS Pin',
+    lifecycle: 'Status',
+    last_load: 'Last Load',
     sites_count: 'Sites Inside',
     corridor: 'Governorate',
     total_loads: 'Total Loads',
@@ -10713,8 +10747,11 @@
                     const se = rel.siteByName[norm(ms.name)] || {};
                     return Number(se.raw_loads || 0) + Number(se.sales_loads || 0);
                   };
-                  const memberSites = (re.sites || []).slice().sort((a, b) => memberSiteLoads(b) - memberSiteLoads(a));
+                  const lifeRankPbi = { active: 0, dormant: 1, closed: 2 };
+                  const memberLife = new Map((re.sites || []).map(ms => [ms, siteLifeStatePbi(ms)]));
+                  const memberSites = (re.sites || []).slice().sort((a, b) => (lifeRankPbi[memberLife.get(a)] - lifeRankPbi[memberLife.get(b)]) || (memberSiteLoads(b) - memberSiteLoads(a)));
                   const cnt = memberSites.length;
+                  const memberActiveCnt = memberSites.filter(ms => memberLife.get(ms) === 'active').length;
                   const explicitExp = Boolean(STATE.expandedRegions && STATE.expandedRegions[rk]);
                   const isExp = Boolean((STATE.expandAllRegions && cnt > 0) || explicitExp || (effSelReg && effSelReg !== '__unassigned__' && norm(effSelReg) === rk));
                   const previewNames = memberSites.slice(0, 3).map(ms => ms.name).join(', ');
@@ -10726,6 +10763,7 @@
                           return `<td class="r">
                             <div class="reg-sites-cell" style="justify-content:flex-end">
                               ${cnt > 0 ? `<span class="reg-sites-inline-list">${esc(previewNames)}${previewMoreCnt > 0 ? ` +${previewMoreCnt}` : ''}</span>` : ''}
+                              ${memberActiveCnt < cnt ? `<span class="geo-reg-life-cnt" data-ui-tip="Excludes dormant and closed sites">${fmtNum(memberActiveCnt)} Active</span>` : ''}
                               <button type="button" class="reg-sites-expand-pill${isExp ? ' active' : ''}${cnt === 0 ? ' is-zero' : ''}" data-reg-toggle-sites="${esc(r.name)}">${fmtNum(cnt)} ${cnt === 1 ? 'Site' : 'Sites'} ${regChevSvg(isExp)}</button>
                             </div>
                           </td>`;
@@ -10760,9 +10798,13 @@
                                         ? `${fmtNum(rLoads)} raw ${rLoads === 1 ? 'load' : 'loads'}`
                                         : `${fmtNum(sLoadsCnt)} sales ${sLoadsCnt === 1 ? 'load' : 'loads'}`))
                                     : '';
-                                  return `<button type="button" class="reg-exp-site-card" data-exp-inspect-site="${esc(ms.id)}"${loadBreakTip ? ` data-ui-tip="${esc(loadBreakTip)}"` : ''}>
+                                  const msLife = memberLife.get(ms) || 'active';
+                                  const msLifeTip = (msLife !== 'active' && window.MFG_GEO && typeof window.MFG_GEO.siteLifecycleTip === 'function') ? window.MFG_GEO.siteLifecycleTip(siteLifePbi(ms)) : '';
+                                  const msTip = [loadBreakTip, msLifeTip].filter(Boolean).join(' · ');
+                                  return `<button type="button" class="reg-exp-site-card${msLife !== 'active' ? ` is-${msLife}` : ''}" data-exp-inspect-site="${esc(ms.id)}" data-site-life="${msLife}"${msTip ? ` data-ui-tip="${esc(msTip)}"` : ''}>
                                     <b>${esc(ms.name)}</b>
                                     ${specLbl ? `<span class="reg-exp-site-cat ${specCls}">${specLbl}</span>` : ''}
+                                    ${msLife !== 'active' ? `<span class="geo-site-life-tag is-${msLife}">${msLife === 'closed' ? 'Closed' : 'Dormant'}</span>` : ''}
                                     ${sRulesCnt > 0 ? `<span class="mono reg-exp-site-rules">${fmtNum(sRulesCnt)} ${sRulesCnt === 1 ? 'rule' : 'rules'}</span>` : ''}
                                     ${sLoads > 0 ? `<span class="mono" style="font-size:0.7rem;color:var(--muted)">${fmtNum(sLoads)} ${sLoads === 1 ? 'load' : 'loads'}</span>` : ''}
                                   </button>`;
