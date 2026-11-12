@@ -1125,6 +1125,470 @@ export async function handleVerifyOverride(request, env, session, body, url) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Remote override approval (Phase 5): an Entry seat asks, any eligible approver signed in elsewhere
+// approves or denies with one tap. An approval writes the same override_audit row as the PIN path
+// (supervisor = approver), so the audit trail is identical.
+// ---------------------------------------------------------------------------
+const OVR_REQ_TTL_MS = 10 * 60 * 1000;
+const OVR_REQ_MAX_PENDING = 3;
+const OVR_REQ_MAX_PER_HOUR = 20;
+
+let _overrideRequestsSchemaReady = false;
+async function ensureOverrideRequestsSchema(db) {
+  if (!db || _overrideRequestsSchemaReady) return;
+  try {
+    await db.batch([
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS override_requests (
+           id TEXT PRIMARY KEY,
+           created_at TEXT NOT NULL DEFAULT '',
+           expires_at TEXT NOT NULL DEFAULT '',
+           status TEXT NOT NULL DEFAULT 'pending',
+           caller_user_id TEXT DEFAULT '',
+           caller_email TEXT DEFAULT '',
+           caller_name TEXT DEFAULT '',
+           caller_role TEXT DEFAULT '',
+           company TEXT DEFAULT '',
+           form_key TEXT DEFAULT '',
+           field_id TEXT DEFAULT '',
+           field_label TEXT DEFAULT '',
+           unlock_all INTEGER DEFAULT 0,
+           record_id TEXT DEFAULT '',
+           reason TEXT DEFAULT '',
+           decided_by_user_id TEXT DEFAULT '',
+           decided_by_email TEXT DEFAULT '',
+           decided_by_name TEXT DEFAULT '',
+           decided_by_role TEXT DEFAULT '',
+           decided_at TEXT DEFAULT '',
+           decision_note TEXT DEFAULT '',
+           audit_id TEXT DEFAULT '',
+           ip_hash TEXT DEFAULT ''
+         )`
+      ),
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_override_requests_status_exp ON override_requests (status, expires_at)'),
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_override_requests_caller_created ON override_requests (caller_user_id, created_at)')
+    ]);
+    _overrideRequestsSchemaReady = true;
+  } catch (_) {}
+}
+
+function randHex8() {
+  const b = crypto.getRandomValues(new Uint8Array(4));
+  return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+function sessionLikeFromUserRow(row) {
+  if (!row) return null;
+  return { sub: row.id, email: row.email, role: row.role, companies: row.companies, pbi: row.pbi_access || 'partial' };
+}
+
+function isActiveUserRow(row) {
+  return Boolean(row) && String(row.status || 'Active') !== 'Suspended';
+}
+
+async function loadUserRowById(db, id) {
+  const uid = String(id || '').trim();
+  if (!uid) return null;
+  return (await db.prepare('SELECT * FROM users WHERE id = ?1 LIMIT 1').bind(uid).first()) || null;
+}
+
+// Same caller/approver company rules as handleVerifyOverride, evaluated on fresh users rows.
+function overrideScopeAllows(callerSess, approverSess, company) {
+  const normCo = String(company || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (normCo && normCo !== 'all' && normCo !== 'all bus' && normCo !== 'shared') {
+    return canAccessSentinelScope(callerSess, company) && canAccessSentinelScope(approverSess, company);
+  }
+  if (normCo === 'all' || normCo === 'all bus') {
+    return isOwnerOrFullGroupSession(callerSess) && isOwnerOrFullGroupSession(approverSess);
+  }
+  return shareAnyAllowedCompany(callerSess, approverSess);
+}
+
+function isEligibleOverrideApprover(approverRow, reqRow, callerRow) {
+  if (!isActiveUserRow(approverRow) || !reqRow) return false;
+  if (String(approverRow.id || '') === String(reqRow.caller_user_id || '')) return false;
+  const apEmail = String(approverRow.email || '').trim().toLowerCase();
+  if (apEmail && apEmail === String(reqRow.caller_email || '').trim().toLowerCase()) return false;
+  if (!canUserRowAuthorizeOverride(approverRow, reqRow.field_id, Boolean(Number(reqRow.unlock_all)))) return false;
+  if (!isActiveUserRow(callerRow)) return false;
+  return overrideScopeAllows(sessionLikeFromUserRow(callerRow), sessionLikeFromUserRow(approverRow), reqRow.company);
+}
+
+function effectiveOverrideStatus(row, nowIso) {
+  const st = String(row.status || '');
+  if (st === 'pending' && String(row.expires_at || '') <= nowIso) return 'expired';
+  return st;
+}
+
+function publicOverrideRequest(row, nowIso = new Date().toISOString()) {
+  const decidedId = String(row.decided_by_user_id || '');
+  return {
+    id: row.id,
+    created_at: row.created_at,
+    expires_at: row.expires_at,
+    status: effectiveOverrideStatus(row, nowIso),
+    company: row.company || '',
+    form_key: row.form_key || '',
+    field_id: row.field_id || '',
+    field_label: row.field_label || '',
+    unlock_all: Boolean(Number(row.unlock_all)),
+    record_id: row.record_id || '',
+    reason: row.reason || '',
+    caller: {
+      user_id: row.caller_user_id || '',
+      email: row.caller_email || '',
+      full_name: row.caller_name || '',
+      role: row.caller_role || ''
+    },
+    decided_by: decidedId ? {
+      user_id: decidedId,
+      email: row.decided_by_email || '',
+      full_name: row.decided_by_name || '',
+      role: row.decided_by_role || ''
+    } : null,
+    decided_at: row.decided_at || null,
+    decision_note: row.decision_note || '',
+    audit_id: row.audit_id || null
+  };
+}
+
+async function sweepExpiredOverrideRequests(db, nowIso) {
+  try {
+    await db.prepare("UPDATE override_requests SET status = 'expired' WHERE status = 'pending' AND expires_at <= ?1").bind(nowIso).run();
+  } catch (_) {}
+}
+
+export async function handleOverrideRequests(request, env, session, body, url) {
+  if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+  if (isDemoHeader(request)) {
+    return jsonResponse({ ok: false, error: 'Override approval API is disabled for demo sandbox headers.' }, 403);
+  }
+  if (!env || !env.DB) return jsonResponse({ ok: false, error: 'Edge database unavailable.' }, 503);
+  const db = env.DB;
+  await ensureOverrideRequestsSchema(db);
+  const me = String(session.sub || '').trim();
+  if (!me) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const notFound = () => jsonResponse({ ok: false, error: 'Request not found.' }, 404);
+
+  const callerCache = new Map();
+  const callerRowFor = async (uid) => {
+    const k = String(uid || '');
+    if (!callerCache.has(k)) callerCache.set(k, await loadUserRowById(db, k));
+    return callerCache.get(k);
+  };
+
+  if (request.method === 'GET') {
+    const qp = (url && url.searchParams) || new URLSearchParams();
+    const id = String(qp.get('id') || '').trim();
+    if (id) {
+      const row = await db.prepare('SELECT * FROM override_requests WHERE id = ?1 LIMIT 1').bind(id.slice(0, 80)).first();
+      if (!row) return notFound();
+      if (String(row.caller_user_id || '') !== me) {
+        const ap = await loadUserRowById(db, me);
+        if (!isEligibleOverrideApprover(ap, row, await callerRowFor(row.caller_user_id))) return notFound();
+      }
+      return jsonResponse({ ok: true, request: publicOverrideRequest(row, nowIso) });
+    }
+    if (String(qp.get('status') || '').trim() === 'pending') {
+      await sweepExpiredOverrideRequests(db, nowIso);
+      const ap = await loadUserRowById(db, me);
+      if (!isActiveUserRow(ap)) return jsonResponse({ ok: true, requests: [] });
+      const res = await db.prepare(
+        "SELECT * FROM override_requests WHERE status = 'pending' AND expires_at > ?1 ORDER BY created_at DESC LIMIT 300"
+      ).bind(nowIso).all();
+      const out = [];
+      for (const row of (res.results || [])) {
+        if (out.length >= 50) break;
+        if (isEligibleOverrideApprover(ap, row, await callerRowFor(row.caller_user_id))) out.push(publicOverrideRequest(row, nowIso));
+      }
+      return jsonResponse({ ok: true, requests: out });
+    }
+    if (String(qp.get('mine') || '').trim() === '1') {
+      await sweepExpiredOverrideRequests(db, nowIso);
+      const since = new Date(nowMs - 86400000).toISOString();
+      const res = await db.prepare(
+        'SELECT * FROM override_requests WHERE caller_user_id = ?1 AND created_at > ?2 ORDER BY created_at DESC LIMIT 20'
+      ).bind(me, since).all();
+      return jsonResponse({ ok: true, requests: (res.results || []).map(r => publicOverrideRequest(r, nowIso)) });
+    }
+    return jsonResponse({ ok: false, error: 'Pass id, status=pending or mine=1.' }, 400);
+  }
+
+  if (request.method !== 'POST') return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405);
+  const op = String((body && body.op) || '').trim();
+
+  if (op === 'create') {
+    const company = String((body && body.company) || '').trim().slice(0, 80);
+    const formKey = String((body && body.form_key) || '').trim().slice(0, 60);
+    const fieldId = String((body && body.field_id) || '').trim().slice(0, 80);
+    const fieldLabel = String((body && body.field_label) || '').trim().slice(0, 120);
+    const unlockAll = Boolean(body && body.unlock_all === true);
+    const recordId = String((body && body.record_id) || '').trim().slice(0, 80);
+    const reason = String((body && body.reason) || '').trim().slice(0, 200);
+    if (!fieldId && !unlockAll) return jsonResponse({ ok: false, error: 'A field_id or unlock_all is required.' }, 400);
+
+    const callerRow = await loadUserRowById(db, me);
+    if (!isActiveUserRow(callerRow)) return jsonResponse({ ok: false, error: 'Your seat is not active.' }, 403);
+    const callerSess = sessionLikeFromUserRow(callerRow);
+    const normCo = company.toLowerCase().replace(/\s+/g, ' ');
+    if (normCo && normCo !== 'all' && normCo !== 'all bus' && normCo !== 'shared') {
+      if (!canAccessSentinelScope(callerSess, company)) {
+        return jsonResponse({ ok: false, error: 'Caller session is not authorized for this company scope.' }, 403);
+      }
+    } else if ((normCo === 'all' || normCo === 'all bus') && !isOwnerOrFullGroupSession(callerSess)) {
+      return jsonResponse({ ok: false, error: 'Group-wide override requires full-group Owner authorization.' }, 403);
+    }
+
+    const id = `ovr-${nowMs}-${randHex8()}`;
+    const expiresAt = new Date(nowMs + OVR_REQ_TTL_MS).toISOString();
+    const hourAgo = new Date(nowMs - 3600000).toISOString();
+    const ipHash = await hashClientIp(request);
+    const row = {
+      id, created_at: nowIso, expires_at: expiresAt, status: 'pending',
+      caller_user_id: me,
+      caller_email: String(callerRow.email || session.email || ''),
+      caller_name: String(callerRow.full_name || session.name || ''),
+      caller_role: String(callerRow.role || session.role || ''),
+      company, form_key: formKey, field_id: fieldId, field_label: fieldLabel,
+      unlock_all: unlockAll ? 1 : 0, record_id: recordId, reason
+    };
+    // Both limits are enforced inside the INSERT itself so two concurrent creates cannot both slip past them.
+    const ins = await db.prepare(
+      `INSERT INTO override_requests (
+         id, created_at, expires_at, status, caller_user_id, caller_email, caller_name, caller_role,
+         company, form_key, field_id, field_label, unlock_all, record_id, reason, ip_hash
+       ) SELECT ?1, ?2, ?3, 'pending', ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15
+       WHERE (SELECT COUNT(*) FROM override_requests WHERE caller_user_id = ?4 AND status = 'pending' AND expires_at > ?2) < ?16
+         AND (SELECT COUNT(*) FROM override_requests WHERE caller_user_id = ?4 AND created_at > ?17) < ?18`
+    ).bind(
+      id, nowIso, expiresAt, me, row.caller_email, row.caller_name, row.caller_role,
+      company, formKey, fieldId, fieldLabel, row.unlock_all, recordId, reason, ipHash,
+      OVR_REQ_MAX_PENDING, hourAgo, OVR_REQ_MAX_PER_HOUR
+    ).run();
+    if (!ins || !ins.meta || Number(ins.meta.changes || 0) < 1) {
+      const pend = await db.prepare(
+        "SELECT COUNT(*) AS n FROM override_requests WHERE caller_user_id = ?1 AND status = 'pending' AND expires_at > ?2"
+      ).bind(me, nowIso).first();
+      if (Number((pend && pend.n) || 0) >= OVR_REQ_MAX_PENDING) {
+        return jsonResponse({ ok: false, rate_limited: true, error: `You already have ${OVR_REQ_MAX_PENDING} requests waiting. Wait for an answer or cancel one first.` }, 429);
+      }
+      return jsonResponse({ ok: false, rate_limited: true, error: `You can send at most ${OVR_REQ_MAX_PER_HOUR} approval requests per hour.` }, 429);
+    }
+    return jsonResponse({ ok: true, request: publicOverrideRequest(row, nowIso) });
+  }
+
+  if (op === 'decide' || op === 'cancel') {
+    const id = String((body && body.id) || '').trim().slice(0, 80);
+    if (!id) return jsonResponse({ ok: false, error: 'Request id is required.' }, 400);
+    const row = await db.prepare('SELECT * FROM override_requests WHERE id = ?1 LIMIT 1').bind(id).first();
+    if (!row) return notFound();
+    const isCaller = String(row.caller_user_id || '') === me;
+    const conflict = () => jsonResponse({ ok: false, error: 'This request was already decided or has expired.' }, 409);
+
+    if (op === 'cancel') {
+      if (!isCaller) {
+        const ap = await loadUserRowById(db, me);
+        if (!isEligibleOverrideApprover(ap, row, await callerRowFor(row.caller_user_id))) return notFound();
+        return jsonResponse({ ok: false, error: 'Only the seat that sent this request can cancel it.' }, 403);
+      }
+      const r = await db.prepare(
+        "UPDATE override_requests SET status = 'cancelled', decided_at = ?2 WHERE id = ?1 AND caller_user_id = ?3 AND status = 'pending' AND expires_at > ?2"
+      ).bind(id, nowIso, me).run();
+      if (!r || !r.meta || Number(r.meta.changes || 0) < 1) return conflict();
+      const fresh = await db.prepare('SELECT * FROM override_requests WHERE id = ?1 LIMIT 1').bind(id).first();
+      return jsonResponse({ ok: true, request: publicOverrideRequest(fresh || row, nowIso) });
+    }
+
+    const decision = String((body && body.decision) || '').trim().toLowerCase();
+    if (decision !== 'approve' && decision !== 'deny') {
+      return jsonResponse({ ok: false, error: "decision must be 'approve' or 'deny'." }, 400);
+    }
+    const note = String((body && body.note) || '').trim().slice(0, 200);
+    const ap = await loadUserRowById(db, me);
+    if (isCaller) {
+      return jsonResponse({ ok: false, error: 'You cannot decide your own request. Another approver must answer it.' }, 403);
+    }
+    if (!isEligibleOverrideApprover(ap, row, await callerRowFor(row.caller_user_id))) return notFound();
+
+    const apId = String(ap.id || '');
+    const apEmail = String(ap.email || '');
+    const apName = String(ap.full_name || '');
+    const apRole = String(ap.role || '');
+
+    if (decision === 'deny') {
+      const r = await db.prepare(
+        `UPDATE override_requests SET status = 'denied', decided_by_user_id = ?2, decided_by_email = ?3, decided_by_name = ?4,
+           decided_by_role = ?5, decided_at = ?6, decision_note = ?7
+         WHERE id = ?1 AND status = 'pending' AND expires_at > ?6`
+      ).bind(id, apId, apEmail, apName, apRole, nowIso, note).run();
+      if (!r || !r.meta || Number(r.meta.changes || 0) < 1) return conflict();
+    } else {
+      await ensureOverrideAuditSchema(db);
+      const auditId = `ova-${nowMs}-${randHex8()}`;
+      // One D1 batch = one transaction: the status flip and the audit row land together or not at all,
+      // and the audit INSERT only fires when this call's UPDATE won the race (audit_id matches).
+      await db.batch([
+        db.prepare(
+          `UPDATE override_requests SET status = 'approved', decided_by_user_id = ?2, decided_by_email = ?3, decided_by_name = ?4,
+             decided_by_role = ?5, decided_at = ?6, decision_note = ?7, audit_id = ?8
+           WHERE id = ?1 AND status = 'pending' AND expires_at > ?6`
+        ).bind(id, apId, apEmail, apName, apRole, nowIso, note, auditId),
+        db.prepare(
+          `INSERT INTO override_audit (
+             id, created_at, caller_user_id, caller_email, caller_role,
+             supervisor_user_id, supervisor_email, supervisor_name, supervisor_role,
+             company, form_key, field_id, field_label, unlock_all, record_id, ip_hash
+           ) SELECT ?1, ?2, caller_user_id, caller_email, caller_role, ?3, ?4, ?5, ?6,
+             company, form_key, CASE WHEN field_id = '' AND unlock_all = 1 THEN '__all' ELSE field_id END,
+             field_label, unlock_all, record_id, ip_hash
+           FROM override_requests WHERE id = ?7 AND status = 'approved' AND audit_id = ?1`
+        ).bind(auditId, nowIso, apId, apEmail, apName, apRole, id)
+      ]);
+      const after = await db.prepare('SELECT * FROM override_requests WHERE id = ?1 LIMIT 1').bind(id).first();
+      if (!after || String(after.audit_id || '') !== auditId) return conflict();
+      return jsonResponse({ ok: true, request: publicOverrideRequest(after, nowIso) });
+    }
+    const fresh = await db.prepare('SELECT * FROM override_requests WHERE id = ?1 LIMIT 1').bind(id).first();
+    return jsonResponse({ ok: true, request: publicOverrideRequest(fresh || row, nowIso) });
+  }
+
+  return jsonResponse({ ok: false, error: 'Unknown op.' }, 400);
+}
+
+// ---------------------------------------------------------------------------
+// Per-seat saved table views (Phase 5). Strictly scoped to session.sub.
+// ---------------------------------------------------------------------------
+const SAVED_VIEW_KEY_RE = /^[A-Za-z0-9_.:\-]{1,80}$/;
+const SAVED_VIEW_MAX_PAYLOAD_BYTES = 16 * 1024;
+const SAVED_VIEW_MAX_PER_TABLE = 30;
+const SAVED_VIEW_MAX_PER_SEAT = 200;
+
+let _savedViewsSchemaReady = false;
+async function ensureSavedViewsSchema(db) {
+  if (!db || _savedViewsSchemaReady) return;
+  try {
+    await db.batch([
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS saved_views (
+           id TEXT PRIMARY KEY,
+           user_id TEXT NOT NULL DEFAULT '',
+           table_key TEXT NOT NULL DEFAULT '',
+           name TEXT NOT NULL DEFAULT '',
+           payload_json TEXT NOT NULL DEFAULT '{}',
+           use_count INTEGER DEFAULT 0,
+           last_used_at TEXT DEFAULT '',
+           created_at TEXT DEFAULT '',
+           updated_at TEXT DEFAULT ''
+         )`
+      ),
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_saved_views_user_table ON saved_views (user_id, table_key)')
+    ]);
+    _savedViewsSchemaReady = true;
+  } catch (_) {}
+}
+
+function publicSavedView(row) {
+  return {
+    id: row.id,
+    table_key: row.table_key,
+    name: row.name,
+    payload: safeJsonParse(row.payload_json, {}),
+    use_count: Number(row.use_count || 0),
+    last_used_at: row.last_used_at || null,
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null
+  };
+}
+
+export async function handleSavedViews(request, env, session, body) {
+  if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+  if (isDemoHeader(request)) {
+    return jsonResponse({ ok: false, error: 'Saved views are disabled for demo sandbox headers.' }, 403);
+  }
+  if (!env || !env.DB) return jsonResponse({ ok: false, error: 'Edge database unavailable.' }, 503);
+  const db = env.DB;
+  await ensureSavedViewsSchema(db);
+  const me = String(session.sub || '').trim();
+  if (!me) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+  const notFound = () => jsonResponse({ ok: false, error: 'Saved view not found.' }, 404);
+  const loadOwn = async (id) => (await db.prepare('SELECT * FROM saved_views WHERE id = ?1 AND user_id = ?2 LIMIT 1').bind(id, me).first()) || null;
+
+  if (request.method === 'GET') {
+    // Frequency-first: most-used views lead.
+    const res = await db.prepare(
+      'SELECT * FROM saved_views WHERE user_id = ?1 ORDER BY use_count DESC, last_used_at DESC, created_at DESC LIMIT 500'
+    ).bind(me).all();
+    return jsonResponse({ ok: true, views: (res.results || []).map(publicSavedView) });
+  }
+  if (request.method !== 'POST') return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405);
+
+  const op = String((body && body.op) || '').trim();
+  const nowIso = new Date().toISOString();
+
+  if (op === 'save') {
+    const id = String((body && body.id) || '').trim();
+    const tableKey = String((body && body.table_key) || '').trim();
+    const name = String((body && body.name) || '').trim();
+    const payload = body ? body.payload : undefined;
+    if (!SAVED_VIEW_KEY_RE.test(tableKey)) return jsonResponse({ ok: false, error: 'table_key must be 1 to 80 letters, digits or _ . : -' }, 400);
+    if (!name || name.length > 60) return jsonResponse({ ok: false, error: 'View name must be 1 to 60 characters.' }, 400);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return jsonResponse({ ok: false, error: 'payload must be a JSON object.' }, 400);
+    }
+    const payloadJson = JSON.stringify(payload);
+    if (new TextEncoder().encode(payloadJson).length > SAVED_VIEW_MAX_PAYLOAD_BYTES) {
+      return jsonResponse({ ok: false, error: 'View settings are too large (16 KB maximum).' }, 400);
+    }
+    let existing = null;
+    if (id) {
+      existing = await loadOwn(id.slice(0, 80));
+      if (!existing) return notFound();
+    }
+    if (!existing || existing.table_key !== tableKey) {
+      const perTable = await db.prepare('SELECT COUNT(*) AS n FROM saved_views WHERE user_id = ?1 AND table_key = ?2').bind(me, tableKey).first();
+      if (Number((perTable && perTable.n) || 0) >= SAVED_VIEW_MAX_PER_TABLE) {
+        return jsonResponse({ ok: false, error: `You can keep at most ${SAVED_VIEW_MAX_PER_TABLE} saved views per table. Delete one first.` }, 400);
+      }
+    }
+    if (!existing) {
+      const perSeat = await db.prepare('SELECT COUNT(*) AS n FROM saved_views WHERE user_id = ?1').bind(me).first();
+      if (Number((perSeat && perSeat.n) || 0) >= SAVED_VIEW_MAX_PER_SEAT) {
+        return jsonResponse({ ok: false, error: `You can keep at most ${SAVED_VIEW_MAX_PER_SEAT} saved views in total. Delete one first.` }, 400);
+      }
+      const newId = `sv-${Date.now()}-${randHex8()}`;
+      await db.prepare(
+        `INSERT INTO saved_views (id, user_id, table_key, name, payload_json, use_count, last_used_at, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, '', ?6, ?6)`
+      ).bind(newId, me, tableKey, name, payloadJson, nowIso).run();
+      return jsonResponse({ ok: true, view: publicSavedView(await loadOwn(newId)) });
+    }
+    await db.prepare(
+      'UPDATE saved_views SET table_key = ?3, name = ?4, payload_json = ?5, updated_at = ?6 WHERE id = ?1 AND user_id = ?2'
+    ).bind(existing.id, me, tableKey, name, payloadJson, nowIso).run();
+    return jsonResponse({ ok: true, view: publicSavedView(await loadOwn(existing.id)) });
+  }
+
+  if (op === 'delete' || op === 'used') {
+    const id = String((body && body.id) || '').trim().slice(0, 80);
+    if (!id) return jsonResponse({ ok: false, error: 'View id is required.' }, 400);
+    if (op === 'delete') {
+      const r = await db.prepare('DELETE FROM saved_views WHERE id = ?1 AND user_id = ?2').bind(id, me).run();
+      if (!r || !r.meta || Number(r.meta.changes || 0) < 1) return notFound();
+      return jsonResponse({ ok: true });
+    }
+    const r = await db.prepare(
+      'UPDATE saved_views SET use_count = COALESCE(use_count, 0) + 1, last_used_at = ?3 WHERE id = ?1 AND user_id = ?2'
+    ).bind(id, me, nowIso).run();
+    if (!r || !r.meta || Number(r.meta.changes || 0) < 1) return notFound();
+    return jsonResponse({ ok: true, view: publicSavedView(await loadOwn(id)) });
+  }
+
+  return jsonResponse({ ok: false, error: 'Unknown op.' }, 400);
+}
+
 export async function handleSeedGet(request, env, session, kindRaw) {
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox uses synthetic demo seeds.' }, 403);

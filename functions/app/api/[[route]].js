@@ -12,9 +12,11 @@ import {
   handleBlobs,
   handleIndustryDomainStore,
   handleKvDoc,
+  handleOverrideRequests,
   handlePhoneScan,
   handleRecordsGet,
   handleRecordsPost,
+  handleSavedViews,
   handleSeedGet,
   handleSentinelReviews,
   handleStaffBiometrics,
@@ -156,6 +158,12 @@ async function routeAppApi(context) {
 
   if (subPath === '/auth/verify-override' && (request.method === 'POST' || request.method === 'GET')) {
     return handleVerifyOverride(request, env, session, body, url);
+  }
+  if (subPath === '/auth/override-requests' && (request.method === 'POST' || request.method === 'GET')) {
+    return handleOverrideRequests(request, env, session, body, url);
+  }
+  if (subPath === '/saved-views' && (request.method === 'POST' || request.method === 'GET')) {
+    return handleSavedViews(request, env, session, body);
   }
 
   if (subPath === '/users' && request.method === 'GET') {

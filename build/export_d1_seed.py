@@ -63,6 +63,15 @@ WRAPPER_TABLES = {
     "sentinel_reviews",
 }
 
+# Tables the Edge API alone writes at runtime (lazily created there). They are never exported from a local
+# SQLite DB into live D1, whether or not they appear in 0001_schema.sql, and a delta never DELETEs their
+# live rows either: local test approvals, audit rows and saved views must not reach or overwrite live ones.
+EDGE_RUNTIME_TABLES = {
+    "override_requests",
+    "saved_views",
+    "override_audit",
+}
+
 MULTI_INDUSTRY_COMPANIES = (
     {"key": "bdeirholding", "name": "Bdeir Holding", "code": "BH", "industry": "Holding", "currency": "USD", "usd_rate": 89500.0, "min_date": "2024-01-01"},
     {"key": "blanca", "name": "Blanca", "code": "BL", "industry": "Hospitality", "currency": "USD", "usd_rate": 89500.0, "min_date": "2024-01-01"},
@@ -1111,7 +1120,7 @@ def collect_target_rows(
             staged_dicts[rk] = (table, pk_vals, merged)
 
     def _put(table: str, pk_vals: tuple[str, ...], stmt: str):
-        if any(v == "" for v in pk_vals):
+        if any(v == "" for v in pk_vals) or table in EDGE_RUNTIME_TABLES:
             return
         target_rows[encode_row_key(table, pk_vals)] = stmt
 
@@ -1128,7 +1137,7 @@ def collect_target_rows(
             r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
         ]
         for t in src_tables:
-            if t not in schema_cols or t in WRAPPER_TABLES:
+            if t not in schema_cols or t in WRAPPER_TABLES or t in EDGE_RUNTIME_TABLES:
                 continue
             pk_cols = TABLE_PK_COLS.get(t, ("id",))
             rows = conn.execute(f'SELECT * FROM "{t}"').fetchall()
@@ -1169,6 +1178,8 @@ def collect_target_rows(
 
     # Materialize staged relational & registry rows
     for rk, (t, pk_tuple, rd) in staged_dicts.items():
+        if t in EDGE_RUNTIME_TABLES:
+            continue
         target_rows[rk] = build_upsert_stmt(t, schema_cols[t], rd)
 
     # 3. Overlay live merged mfg_web_store state (overwriting matching PKs in-place with zero duplicate SQL)
@@ -1620,7 +1631,7 @@ def export_all(
                 delete_candidate_keys.add(prev_key)
         for del_key in sorted(delete_candidate_keys):
             tbl, pk_vals = decode_row_key(del_key)
-            if tbl not in valid_tables:
+            if tbl not in valid_tables or tbl in EDGE_RUNTIME_TABLES:
                 continue
             if tbl == "edge_kv_store":
                 del_stmt = build_delete_stmt(tbl, pk_vals, valid_tables)
@@ -1661,7 +1672,7 @@ def export_all(
     else:
         for del_key in sorted(explicit_delete_rks):
             tbl, pk_vals = decode_row_key(del_key)
-            if tbl in valid_tables and tbl != "edge_kv_store":
+            if tbl in valid_tables and tbl != "edge_kv_store" and tbl not in EDGE_RUNTIME_TABLES:
                 del_stmt = build_delete_stmt(tbl, pk_vals, valid_tables)
                 if del_stmt:
                     writer.add(del_stmt)
