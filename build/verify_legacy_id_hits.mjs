@@ -304,6 +304,20 @@ const mfgPatch = (extra, ts) => ({ op: 'patch', doc: 'mfg_web_store', ...(ts ? {
   ok('NEGATIVE: a report in a patch refused as a conflict is not counted (the browser resends it)', r3.conflict === true && hits(d1).mfg_upgrade === 3, hits(d1));
 }
 {
+  // A scoped (non-Owner) seat goes through enforceSyncRlsOnStoreDoc: the report must still be counted and never stored.
+  const { env, d1 } = freshEnv();
+  const ENTRY = { sub: 'u10', role: 'Entry', companies: 'WTC', email: 'entry@example.test' };
+  const { ctx, settle } = ctxCollector();
+  const body = mfgPatch({ _legacyPosUpgrades: 3, customRecords: { expenses: [{ id: 'ex12', company: 'WTC', date: '2026-11-10', amount: 5 }] } });
+  const res = await handleSync(syncReq(body), env, ENTRY, body, ctx);
+  await settle();
+  const j = await res.json();
+  const stored = d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key LIKE 'mfg_web_store%'").map(r => r.payload_json).join('');
+  ok('non-Owner seat: the sync saves, the report is counted, and it is never stored',
+    res.status === 200 && j.ok && !j.conflict && hits(d1).mfg_upgrade === 3 && stored.length > 0 && !stored.includes('_legacyPosUpgrades'),
+    { status: res.status, j, h: hits(d1), storedHasField: stored.includes('_legacyPosUpgrades') });
+}
+{
   const { env, d1 } = freshEnv();
   const { ctx, settle } = ctxCollector();
   const body = mfgPatch({});

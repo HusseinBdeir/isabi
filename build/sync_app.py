@@ -53,6 +53,28 @@ RELEASE_GATES = [
 ]
 
 
+GATE_TIMEOUT_S = 600   # a gate that hangs (e.g. OneDrive fetching a cloud-only workbook) stops the sync, not the PC
+
+
+def _node_runtime() -> tuple[str, dict] | None:
+    """node on PATH, else the same fallbacks as audit_showcase_i18n.find_node_runtime (VS Code's Electron)."""
+    env = dict(os.environ)
+    found = shutil.which("node")
+    if found:
+        return found, env
+    for c in (
+        os.path.join(os.path.expanduser("~"), ".local", "node", "node.exe"),
+        r"C:\Program Files\nodejs\node.exe",
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Microsoft VS Code", "Code.exe"),
+        r"C:\Program Files\Microsoft VS Code\Code.exe",
+    ):
+        if os.path.isfile(c):
+            if os.path.basename(c).lower() == "code.exe":
+                env["ELECTRON_RUN_AS_NODE"] = "1"
+            return c, env
+    return None
+
+
 def run_release_gates() -> None:
     if os.environ.get("ISABI_SKIP_RELEASE_GATES") == "1" or "--skip-release-gates" in sys.argv:
         print("WARN: release gates skipped (--skip-release-gates / ISABI_SKIP_RELEASE_GATES=1)")
@@ -63,8 +85,22 @@ def run_release_gates() -> None:
         if not os.path.isfile(script):
             print(f"SKIP: release gate {repo}/{rel} is not in this tree")
             continue
-        exe = sys.executable if interp == "python" else (shutil.which("node") or "node")
-        chk = subprocess.run([exe, script], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=roots[repo])
+        env = None
+        if interp == "python":
+            exe = sys.executable
+        else:
+            rt = _node_runtime()
+            if rt is None:
+                print(f"ERROR: release gate {repo}/{rel} needs Node.js, and none was found (PATH, ~/.local/node, "
+                      "Program Files, VS Code). Install Node 22.5+ or pass --skip-release-gates for this run.", file=sys.stderr)
+                raise SystemExit(1)
+            exe, env = rt
+        try:
+            chk = subprocess.run([exe, script], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                 cwd=roots[repo], env=env, timeout=GATE_TIMEOUT_S, stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired:
+            print(f"ERROR: release gate {repo}/{rel} did not finish within {GATE_TIMEOUT_S} s; sync stopped.", file=sys.stderr)
+            raise SystemExit(1)
         tail = (chk.stdout.strip().splitlines() or ["(no output)"])[-1]
         if chk.returncode != 0:
             print(f"ERROR: release gate {repo}/{rel} failed (exit {chk.returncode}) in sync_app.py!", file=sys.stderr)
