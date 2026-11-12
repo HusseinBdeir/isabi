@@ -2028,6 +2028,16 @@
 
   let _hubRelCache = null;
   let _hubRelStamp = '';
+  // The index is never changed after it is built, so the last few are kept: a company switch back to a scope
+  // that was open a moment ago reuses its index instead of rebuilding it (about 180 ms on the Manufacturing
+  // group). A kept index is keyed on its stamp (industry, company scope, seat, the seat's companies, book
+  // scope, table rights, data revision, table revisions and lengths) plus the shell's seat signature (the
+  // whole seat record and the cache revision), which is stricter than the stamp alone. Any data change moves
+  // the revision in every stamp, and any change to the seat or its rights moves the signature, so a kept
+  // index can never be served for newer data or to another seat. The shell empties the store on sign-out and
+  // whenever it drops its own caches (clearHubRelKept).
+  const HUB_REL_KEEP = 4;
+  const _hubRelKept = new Map();
   let _pbiOwnerSetsRev = -1;
   let _pbiSupSet = null;
   let _pbiCustSet = null;
@@ -2109,6 +2119,18 @@
     const payCutoffStamp = (stRef && stRef.payrollCutoffMode) || 'closed_month';
     const stamp = `${activeInd}|${singleBu}|${stCoStamp}|${activeSeatIdx}|${rlsCosStamp}|${offStamp}|${demoStamp}|${canSeePr ? 1 : 0}:${canSeeRawPr ? 1 : 0}|${SEED && SEED._recordsReady ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${payCutoffStamp}|${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.staff_roles || []).length}:${(rec.staff_assignments || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.regions || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.regions||0}:${tr.overtime_rates||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.staff_roles||0}:${tr.staff_assignments||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
     if (_hubRelCache && _hubRelStamp === stamp) return _hubRelCache;
+    // Not the index in use. Before building, look for one kept under the same stamp and the same seat record
+    // (the user switched company and came back). No seat signature from the shell means nothing is kept.
+    const seatSig = (typeof window !== 'undefined' && typeof window.__mfgSeatScopeSig === 'function' && !window.__MFG_SPEED_CACHES_OFF) ? window.__mfgSeatScopeSig() : null;
+    const keptKey = seatSig == null ? '' : `${stamp}||${seatSig}`;
+    const keptRel = keptKey ? _hubRelKept.get(keptKey) : null;
+    if (keptRel) {
+      _hubRelKept.delete(keptKey);
+      _hubRelKept.set(keptKey, keptRel);
+      _hubRelStamp = stamp;
+      _hubRelCache = keptRel;
+      return keptRel;
+    }
     _hubRelStamp = stamp;
     const rel = {
       custByName: {}, suppByName: {}, prodByName: {}, typeByName: {}, uomByName: {},
@@ -2908,6 +2930,10 @@
     }
 
     _hubRelCache = rel;
+    if (keptKey) {
+      _hubRelKept.set(keptKey, rel);
+      while (_hubRelKept.size > HUB_REL_KEEP) _hubRelKept.delete(_hubRelKept.keys().next().value);
+    }
     return rel;
   }
 
@@ -13937,6 +13963,7 @@
     deriveExpenseCostClass,
     getHubTableDefaultSort,
     getHubRelIndex,
+    clearHubRelKept: () => { _hubRelKept.clear(); },
     cellValue,
     renderChartPopHtml,
     renderPbiStudio,

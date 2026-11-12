@@ -910,8 +910,83 @@
   var _iifeBooted = false;
   let _companyCatalogCache = null;
   let _companyCatalogSig = '';
+
+  // ---- read pass ---------------------------------------------------------------------------------------
+  // renderApp() is one synchronous read of the model. While it runs, the company catalog is asked for
+  // thousands of times (per staff row, per table row, per badge), and each call rebuilt its signature: every
+  // seat's company list joined into one string, plus a full validation of the frequency index. Inside a read
+  // pass the catalog answers from the copy it validated earlier in the same pass, after an exact comparison
+  // of the same inputs that allocates nothing (data revision, cache revision, the company lists it merges and
+  // every seat's id and company text). Outside a pass, and whenever any of those differ, the original check
+  // runs. A new pass never trusts the memo of the pass before it.
+  // window.__MFG_SPEED_CACHES_OFF = true switches off every shortcut added for the screen-switch budget (this
+  // pass, the per-seat company memo, the per-table-pass lookup index and the kept indexes), so
+  // build/verify_speed_budget.mjs can render each screen both ways and require identical tables.
+  // (var, and read as "falsy = no pass open": these helpers are hoisted and may run before this line does.)
+  var _readPassDepth = 0;
+  var _readPassId = 0;
+  function withReadPass(fn) {
+    if (!_readPassDepth) _readPassId = (_readPassId || 0) + 1;
+    _readPassDepth = (_readPassDepth || 0) + 1;
+    try {
+      return fn();
+    } finally {
+      _readPassDepth--;
+    }
+  }
+  var _catPass;
+  function noteCompanyCatalogPass(out) {
+    if (!_readPassDepth || _inGetFreqIndex) return;
+    if (!_catPass) _catPass = { id: -1, out: null, rev: -1, win: -1, booted: false, freq: null, mfgCo: null, mfgCoLen: -1, seedCo: null, seedCoLen: -1, ep: false, epList: null, epLen: -1, users: null, ids: [], cos: [] };
+    const p = _catPass;
+    const mc = window.MFG_COMPANIES;
+    const sc = SEED && SEED.companies;
+    const el = STATE.enterprisePreviewCompanies;
+    const us = STATE.users || [];
+    p.id = _readPassId;
+    p.out = out;
+    p.rev = (SEED && SEED._customRev) || 0;
+    p.win = _WIN_REV || 0;
+    p.booted = _iifeBooted;
+    p.freq = _FREQ_IDX;
+    p.mfgCo = mc;
+    p.mfgCoLen = Array.isArray(mc) ? mc.length : 0;
+    p.seedCo = sc;
+    p.seedCoLen = Array.isArray(sc) ? sc.length : 0;
+    p.ep = Boolean(STATE.enterpriseScalePreview);
+    p.epList = el;
+    p.epLen = Array.isArray(el) ? el.length : 0;
+    p.users = STATE.users;
+    p.ids.length = us.length;
+    p.cos.length = us.length;
+    for (let i = 0; i < us.length; i++) {
+      p.ids[i] = us[i] && us[i].id;
+      p.cos[i] = us[i] && us[i].companies;
+    }
+  }
+  function companyCatalogPassHit() {
+    const p = _catPass;
+    if (!_readPassDepth || !p || _inGetFreqIndex || p.id !== _readPassId || !p.out || p.out !== _companyCatalogCache || window.__MFG_SPEED_CACHES_OFF) return false;
+    if (p.rev !== ((SEED && SEED._customRev) || 0) || p.win !== (_WIN_REV || 0) || p.booted !== _iifeBooted || p.freq !== _FREQ_IDX) return false;
+    const mc = window.MFG_COMPANIES;
+    if (p.mfgCo !== mc || p.mfgCoLen !== (Array.isArray(mc) ? mc.length : 0)) return false;
+    const sc = SEED && SEED.companies;
+    if (p.seedCo !== sc || p.seedCoLen !== (Array.isArray(sc) ? sc.length : 0)) return false;
+    if (p.ep !== Boolean(STATE.enterpriseScalePreview)) return false;
+    const el = STATE.enterprisePreviewCompanies;
+    if (p.epList !== el || p.epLen !== (Array.isArray(el) ? el.length : 0)) return false;
+    const us = STATE.users || [];
+    if (p.users !== STATE.users || us.length !== p.ids.length) return false;
+    for (let i = 0; i < us.length; i++) {
+      const u = us[i];
+      if ((u && u.id) !== p.ids[i] || (u && u.companies) !== p.cos[i]) return false;
+    }
+    return true;
+  }
+
   function getCompanyCatalog() {
-    const uPart = (STATE.users || []).map(u => `${(u && u.id) || ''}:${(u && u.companies) || ''}`).join(';');
+    if (companyCatalogPassHit()) return _companyCatalogCache;
+    const uPart =(STATE.users || []).map(u => `${(u && u.id) || ''}:${(u && u.companies) || ''}`).join(';');
     const mfgCoLen = Array.isArray(window.MFG_COMPANIES) ? window.MFG_COMPANIES.length : 0;
     const isSynthetic100Test = Array.isArray(window.MFG_COMPANIES) && window.MFG_COMPANIES.some(x => x && x.key === 'co_004');
     const seedCoLen = (SEED && Array.isArray(SEED.companies)) ? SEED.companies.length : 0;
@@ -920,7 +995,10 @@
     const fIdx = canQueryFreq ? getFreqIndex() : _FREQ_IDX;
     const freqKey = fIdx ? fIdx.key : (_inGetFreqIndex ? '__reentrant__' : '');
     const sig = `${(SEED && SEED._customRev) || 0}|${_WIN_REV || 0}|${mfgCoLen}|${isSynthetic100Test ? 1 : 0}|${seedCoLen}|${epLen}|${freqKey}|${uPart}`;
-    if (!_inGetFreqIndex && _companyCatalogCache && _companyCatalogSig === sig) return _companyCatalogCache;
+    if (!_inGetFreqIndex && _companyCatalogCache && _companyCatalogSig === sig) {
+      noteCompanyCatalogPass(_companyCatalogCache);
+      return _companyCatalogCache;
+    }
     const out = [];
     const seen = new Set();
     const pushCo = (raw) => {
@@ -973,6 +1051,7 @@
     if (!_inGetFreqIndex) {
       _companyCatalogSig = sig;
       _companyCatalogCache = out;
+      noteCompanyCatalogPass(out);
     }
     return out;
   }
@@ -6534,6 +6613,42 @@
     return VIEW_TABLE_KEY_MAP[v] || v;
   }
 
+  // One lookup-index resolution per table pass. MFG_PBI.getHubRelIndex() re-validates its cache on every call
+  // (the seat's company list, two permission checks, about 55 table revisions). Sorting and filtering asked for
+  // it once per cell and once per comparison: 64,000 times for one visit to the Suppliers registry, 0.9 s of
+  // a 1 s screen switch. A pass (one sort, one filter, one option list) only reads, so it resolves the index
+  // once. The memo is dropped when the pass ends and re-resolved inside a pass if the data revision, the
+  // company scope or the signed-in seat changes, so it can never outlive the state it was built for.
+  // (var, and read as "falsy = no pass open": these helpers are hoisted and may run before this line does.)
+  var _relPassDepth = 0;
+  var _relPassRel;
+  var _relPassRev = -1;
+  var _relPassCo = '';
+  var _relPassSeat = -1;
+  function withRelPass(fn) {
+    if (!_relPassDepth) _relPassRel = undefined;
+    _relPassDepth = (_relPassDepth || 0) + 1;
+    try {
+      return fn();
+    } finally {
+      _relPassDepth--;
+      if (!_relPassDepth) _relPassRel = undefined;
+    }
+  }
+  function hubRelForCell() {
+    const P = window.MFG_PBI;
+    if (!P || !P.getHubRelIndex) return null;
+    if (!_relPassDepth || window.__MFG_SPEED_CACHES_OFF) return P.getHubRelIndex(SEED);
+    const rev = SEED._customRev || 0;
+    if (_relPassRel === undefined || _relPassRev !== rev || _relPassCo !== STATE.company || _relPassSeat !== STATE.activeUserIdx) {
+      _relPassRel = P.getHubRelIndex(SEED) || null;
+      _relPassRev = rev;
+      _relPassCo = STATE.company;
+      _relPassSeat = STATE.activeUserIdx;
+    }
+    return _relPassRel;
+  }
+
   function resolveColVal(r, colKey, view) {
     if (!r || !colKey) return null;
     if (colKey === 'ext_ref' || colKey === 'ext_flow' || colKey === 'ext_received_usd' || colKey === 'ext_gave_usd' || colKey === 'ext_owes_usd' || colKey === 'ext_owes_lbp' || colKey === 'ext_notes') {
@@ -6585,7 +6700,7 @@
     }
     if (window.MFG_PBI && typeof window.MFG_PBI.cellValue === 'function') {
       const tk = viewToTableKey(view);
-      const rel = window.MFG_PBI.getHubRelIndex ? window.MFG_PBI.getHubRelIndex(SEED) : null;
+      const rel = hubRelForCell();
       if (rel) {
         const cv = window.MFG_PBI.cellValue(r, colKey, tk, rel);
         if (cv !== undefined) return cv;
@@ -6596,8 +6711,8 @@
 
   function resolveColTokens(r, colKey, view) {
     if (!r || !colKey) return [];
-    const rel = (window.MFG_PBI && window.MFG_PBI.getHubRelIndex) ? window.MFG_PBI.getHubRelIndex(SEED) : null;
     if (colKey === 'trucks_list' || colKey === 'drivers_list') {
+      const rel = hubRelForCell();
       const se = rel && rel.suppByName ? rel.suppByName[norm(r.name)] : null;
       const setOrArr = colKey === 'trucks_list'
         ? (se && se.trucks && se.trucks.size ? Array.from(se.trucks) : (Array.isArray(r.trucks) ? r.trucks : []))
@@ -6705,13 +6820,13 @@
     if (!cf) return rows || [];
     const activeEntries = Object.entries(cf).filter(([, spec]) => Boolean(spec && String(spec).trim()));
     if (!activeEntries.length) return rows || [];
-    return (rows || []).filter(r => {
+    return withRelPass(() => (rows || []).filter(r => {
       for (const [colKey, spec] of activeEntries) {
         const v = resolveColVal(r, colKey, view);
         if (!matchColFilterValue(v, spec, colKey, r, view)) return false;
       }
       return true;
-    });
+    }));
   }
 
   function parseSearchTokens(qRaw) {
@@ -6920,6 +7035,9 @@
   }
 
   function sortRows(rows, view, defKey, defDir) {
+    return withRelPass(() => sortRowsPass(rows, view, defKey, defDir));
+  }
+  function sortRowsPass(rows, view, defKey, defDir) {
     const rawPool = Array.isArray(rows) ? rows : [];
     if (view) _tablePoolCache[view] = rawPool;
     const hasColF = Boolean(view && hasActiveColFilters(view));
@@ -7102,6 +7220,9 @@
   }
 
   function buildNumericFilterOptions(pool, colKey, view) {
+    return withRelPass(() => buildNumericFilterOptionsPass(pool, colKey, view));
+  }
+  function buildNumericFilterOptionsPass(pool, colKey, view) {
     const canCache = view && pool === _tablePoolCache[view] && !STATE.search;
     const cacheKey = canCache ? `num|${view}|${colKey}|${pool.length}|${STATE.company}|${STATE.period}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis}|${SEED._customRev || 0}` : '';
     if (cacheKey && _colFilterOptsCache.has(cacheKey)) return _colFilterOptsCache.get(cacheKey);
@@ -7172,6 +7293,9 @@
   }
 
   function buildCategoricalFilterOptions(pool, colKey, view, maxItems = 75) {
+    return withRelPass(() => buildCategoricalFilterOptionsPass(pool, colKey, view, maxItems));
+  }
+  function buildCategoricalFilterOptionsPass(pool, colKey, view, maxItems = 75) {
     const canCache = view && pool === _tablePoolCache[view] && !STATE.search;
     const cacheKey = canCache ? `cat|${view}|${colKey}|${maxItems}|${pool.length}|${STATE.company}|${STATE.period}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis}|${SEED._customRev || 0}` : '';
     if (cacheKey && _colFilterOptsCache.has(cacheKey)) return _colFilterOptsCache.get(cacheKey);
@@ -9908,10 +10032,33 @@
     return 'overview';
   }
 
+  // The companies a seat may see. For a seat object the answer depends only on the seat's id, email, role and
+  // company text, the company catalog, the enterprise preview switch and the synthetic 100-company test list,
+  // so it is kept per seat object and reused while every one of those is unchanged (each is compared on every
+  // call; nothing is assumed). It used to be recomputed on every call: 14 regular expressions for an Owner
+  // seat, tens of thousands of times per screen. Callers get their own copy of the list.
+  // (Declared with var and created on first use: start-up code calls parseUserCompanies before this line runs.)
+  var _seatCompaniesMemo;
   function parseUserCompanies(userOrRaw) {
     const isUserObj = Boolean(userOrRaw && typeof userOrRaw === 'object' && !Array.isArray(userOrRaw));
-    const raw = isUserObj ? ensureCanonicalMultiIndustrySeat(userOrRaw).companies : userOrRaw;
+    if (!isUserObj || (userOrRaw.companies != null && typeof userOrRaw.companies !== 'string') || window.__MFG_SPEED_CACHES_OFF) {
+      return parseUserCompaniesUncached(userOrRaw, isUserObj, getCompanyCatalog());
+    }
     const cat = getCompanyCatalog();
+    const mc = window.MFG_COMPANIES;
+    const mcLen = Array.isArray(mc) ? mc.length : 0;
+    const ep = Boolean(STATE.enterpriseScalePreview);
+    if (!_seatCompaniesMemo) _seatCompaniesMemo = new WeakMap();
+    const m = _seatCompaniesMemo.get(userOrRaw);
+    if (m && m.cat === cat && m.id === userOrRaw.id && m.email === userOrRaw.email && m.role === userOrRaw.role && m.cos === userOrRaw.companies && m.ep === ep && m.mc === mc && m.mcLen === mcLen) {
+      return m.out.slice();
+    }
+    const out = parseUserCompaniesUncached(userOrRaw, true, cat);
+    _seatCompaniesMemo.set(userOrRaw, { cat, id: userOrRaw.id, email: userOrRaw.email, role: userOrRaw.role, cos: userOrRaw.companies, ep, mc, mcLen, out: out.slice() });
+    return out;
+  }
+  function parseUserCompaniesUncached(userOrRaw, isUserObj, cat) {
+    const raw = isUserObj ? ensureCanonicalMultiIndustrySeat(userOrRaw).companies : userOrRaw;
     if (STATE.enterpriseScalePreview && isUserObj && isOwner(userOrRaw)) {
       return cat.map(c => c.name);
     }
@@ -10002,6 +10149,33 @@
   }
   window.__mfgAllowedCompanyNames = allowedCompanyNames;
   window.__mfgIsOfficialScopeActive = isOfficialScopeActive;
+  // Everything about the signed-in seat that row-level security can read: the whole seat record (role, company
+  // list, book scope, custom rights, dashboard and statement tiers, hub pages), the cache revision and the
+  // book-scope switches. A cache that keeps more than its latest result adds this to its key, so a result
+  // computed for one seat, or before a change to its rights, is never served afterwards. Sign-in secrets and
+  // face templates are left out (they decide nothing about what a seat may see, and the signature is held in
+  // memory as a cache key); a long string (a large custom-rights document) goes in as its length plus a hash
+  // of its content, so two documents of the same length never look alike.
+  function seatScopeSig() {
+    const u = activeUser();
+    let seat = '';
+    try {
+      seat = JSON.stringify(u, (k, v) => {
+        if (/^(pin|pin_code|pin_hash|password)$/i.test(k)) return undefined;
+        if (Array.isArray(v) && v.length > 16 && typeof v[0] === 'number') return `#${v.length}`;
+        if (typeof v === 'string' && v.length > 4000) {
+          let h = 0x811c9dc5;
+          for (let i = 0; i < v.length; i++) { h ^= v.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+          return `#${v.length}:${(h >>> 0).toString(36)}`;
+        }
+        return v;
+      }) || '';
+    } catch (_) {
+      seat = `unreadable:${Date.now()}:${Math.random()}`;
+    }
+    return `${_WIN_REV || 0}|${STATE.activeUserIdx}|${isOfficialScopeActive(u) ? 1 : 0}|${STATE.officialBookScope ? 1 : 0}|${STATE.demoVisitor ? 1 : 0}|${STATE.enterpriseScalePreview ? 1 : 0}|${seat}`;
+  }
+  window.__mfgSeatScopeSig = seatScopeSig;
   function defaultEntryCompany() {
     const names = allowedCompanyNames();
     if (STATE.company === DEMO_COMPANY_KEY) {
@@ -41019,12 +41193,16 @@
   }
 
   let _WF_AUDIT_CACHE = null;
+  const _WF_AUDIT_KEPT = new Map();
   let _WF_MAP_CACHE = null;
 
   function buildWorkforceMapData(opts) {
     const auditOnly = Boolean(opts && opts.auditOnly);
-    const auditKey = `${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${SEED._customRev || 0}|${_WIN_REV}`;
-    const mapKey = `${auditKey}|${STATE.wfMapDate || ''}|${STATE.wfIncludeHaulers ? 1 : 0}|${STATE.wfRosterScope || 'day'}`;
+    // The audit is built from filterRecords(), which applies the book scope and the seat's companies; the
+    // Official Books switch moves no revision, so both are part of the key (without them the All Books audit
+    // kept being served after the switch: sidebar badge, Sentinel lists and the Workforce Map).
+    const auditKey = `${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${SEED._customRev || 0}|${_WIN_REV}|${isOfficialScopeActive() ? 1 : 0}|${STATE.activeUserIdx}|${(STATE.allowedCompanyNames || []).join(',')}`;
+    const mapKey =`${auditKey}|${STATE.wfMapDate || ''}|${STATE.wfIncludeHaulers ? 1 : 0}|${STATE.wfRosterScope || 'day'}`;
 
     if (auditOnly && _WF_AUDIT_CACHE && _WF_AUDIT_CACHE.key === auditKey) {
       return _WF_AUDIT_CACHE.val;
@@ -41036,6 +41214,19 @@
     const effDt = r => String((STATE.basis === 'tx' ? r.date : (r.rep_date || r.set_date || r.date)) || r.date || '').slice(0, 10);
 
     let audit = (_WF_AUDIT_CACHE && _WF_AUDIT_CACHE.key === auditKey) ? _WF_AUDIT_CACHE.val : null;
+    let keptKey = '';
+    if (!audit) {
+      // A scope audited a moment ago (the user switched company and came back) is reused; the key carries the
+      // signed-in seat and its rights, so one seat's audit is never served to another.
+      keptKey = `${auditKey}||${seatScopeSig()}`;
+      const kept = window.__MFG_SPEED_CACHES_OFF ? null : _WF_AUDIT_KEPT.get(keptKey);
+      if (kept) {
+        _WF_AUDIT_KEPT.delete(keptKey);
+        _WF_AUDIT_KEPT.set(keptKey, kept);
+        audit = kept;
+        _WF_AUDIT_CACHE = { key: auditKey, val: audit };
+      }
+    }
     if (!audit) {
       const salesPeriod = filterRecords(SEED.records.sales_tickets, { ignoreSearch: true });
       const rawPeriod = filterRecords(SEED.records.raw_purchases, { ignoreSearch: true });
@@ -41570,6 +41761,8 @@
         expByDate
       };
       _WF_AUDIT_CACHE = { key: auditKey, val: audit };
+      _WF_AUDIT_KEPT.set(keptKey, audit);
+      while (_WF_AUDIT_KEPT.size > 4) _WF_AUDIT_KEPT.delete(_WF_AUDIT_KEPT.keys().next().value);
     }
 
     if (auditOnly) return audit;
@@ -44719,12 +44912,14 @@
     'insurance company': 'Insurance Company'
   };
 
-  function resolveSisterEntityName(rawParty) {
+  function resolveSisterEntityName(rawParty, cat) {
     const s = String(rawParty || '').trim().toLowerCase().replace(/\s+/g, ' ');
     if (!s) return null;
     if (_IC_CO_ALIASES[s]) return _IC_CO_ALIASES[s];
-    const cat = getCompanyCatalog();
-    const hit = cat.find(c => c.name.toLowerCase() === s || c.key.toLowerCase() === s);
+    // A caller that resolves many rows passes the catalog it read once: getCompanyCatalog() re-checks its
+    // signature (every seat's company list, the frequency index) on each call.
+    const list = cat || getCompanyCatalog();
+    const hit = list.find(c => c.name.toLowerCase() === s || c.key.toLowerCase() === s);
     return hit ? hit.name : null;
   }
 
@@ -44758,13 +44953,14 @@
       : baseScoped;
 
     const legs = [];
+    const sisterCat = getCompanyCatalog();
     scoped.forEach(r => {
       if (!r || r.voided) return;
       const m = String(r.method || '').trim();
       const flowStr = String(r.flow || r.type || '').trim();
       if (/^extended$/i.test(String(r.kind || ''))) return;
       if (m === 'Config' || /^config$/i.test(flowStr) || m === 'Remove' || m === 'Adjusted') return;
-      const targetCo = resolveSisterEntityName(r.party || r.counterparty);
+      const targetCo = resolveSisterEntityName(r.party || r.counterparty, sisterCat);
       if (!targetCo || !r.company || targetCo === r.company) return;
       const dirStr = String(r.direction || flowStr || '').trim();
       const isOut = /^out|outflow|expense|withdraw|debit/i.test(dirStr) || (Number(r.out_usd || 0) > 0 && Number(r.in_usd || 0) === 0);
@@ -46193,12 +46389,13 @@
     const jvDists = filterRecords(SEED.records.jv_distributions || [], { ignoreCompany: true, includeGroupMfg: true });
 
     // Non-intercompany partner & shareholder treasury movements
+    const sisterCat = getCompanyCatalog();
     const partnerMoves = extList.filter(r => {
       if (!r || r.voided) return false;
       if (/^extended$/i.test(String(r.kind || ''))) return false;
       const m = String(r.method || '').trim();
       if (m === 'Config' || m === 'Remove' || m === 'Adjusted') return false;
-      const sister = resolveSisterEntityName(r.party || r.counterparty);
+      const sister = resolveSisterEntityName(r.party || r.counterparty, sisterCat);
       return !sister;
     });
 
@@ -102060,7 +102257,7 @@
         const viewId = targetKey ? ('tbl_' + targetKey) : '';
         const hasDate = Array.isArray(cols) && cols.includes('date');
         const hasStartDate = !hasDate && (targetKey === 'employments' || targetKey === 'staff_assignments' || targetKey === 'logistics_allowances' || targetKey === 'recurring_expenses') && Array.isArray(cols) && cols.includes('start_date');
-        scoped.sort((a, b) => {
+        withRelPass(() => scoped.sort((a, b) => {
           if (hasDate) {
             const da = recordDate(a), db = recordDate(b);
             if (da !== db) return db < da ? -1 : 1;
@@ -102078,7 +102275,7 @@
             if (Number.isFinite(va) && Number.isFinite(vb) && va !== vb) return vb - va;
           }
           return compareRowTie(a, b, hasStartDate ? 'start_date' : (sumCol || (hasDate ? 'date' : '')), viewId);
-        });
+        }));
       }
       const cleanBadge = String(relBadge || '')
         .replace(/^\s*(?:1:N|N:1|N:N)\s*/i, '')
@@ -115160,6 +115357,10 @@
     }
     closeTabletKeysModal();
     resetQuoteDrafts();
+    // Nothing kept for the seat that is leaving stays in memory (kept lookup indexes and workforce audits).
+    _WF_AUDIT_KEPT.clear();
+    _WF_AUDIT_CACHE = null;
+    if (window.MFG_PBI && typeof window.MFG_PBI.clearHubRelKept === 'function') window.MFG_PBI.clearHubRelKept();
     if (isDemoSandboxSession()) {
       try {
         for (let i = sessionStorage.length - 1; i >= 0; i--) {
@@ -130124,6 +130325,9 @@
   }
 
   function renderApp() {
+    return withReadPass(renderAppPass);
+  }
+  function renderAppPass() {
     STATE.renderPending = false;
     const popEl = $('mfgChartPopover');
     if (popEl && !popEl.hidden) popEl.hidden = true;
@@ -136158,6 +136362,8 @@
     _meterGuardCacheKey = '';
     _meterGuardCacheVal = null;
     _WF_MAP_CACHE = null;
+    _WF_AUDIT_KEPT.clear();
+    if (window.MFG_PBI && typeof window.MFG_PBI.clearHubRelKept === 'function') window.MFG_PBI.clearHubRelKept();
     _MAINT_IDX = null;
     _liveSentinelCache = null;
     _customAlertEvalCache = null;
