@@ -110811,6 +110811,9 @@
           return { status: '2fa-pin-pending', user: FACE_STATE.pendingPinUser, dist: 0.22 };
         }
         if (Date.now() < (FACE_STATE.edgeProbeCooldownUntil || 0)) {
+          if (Date.now() < (FACE_STATE.edgeProbeLockedUntil || 0)) {
+            setAuthHint('Face ID is paused after too many attempts. Sign in with your PIN.', 'warn');
+          }
           return { status: 'cooldown' };
         }
         const edgeNeeded = (opts && opts.videoEl && !FACE_STATE.pending2faUser) ? 2 : defaultNeeded;
@@ -110860,18 +110863,15 @@
             ? ` · Live ${liveProbe.method === 'turn3d' ? '3D Turn' : 'Blink'}`
             : '';
           const isEdgeStrictAuth = Boolean(rosterIsServerHeld() || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
-          const gateEmail = probeTargetEmail || norm(val('authEmailInput'));
+          // Only the seat already being confirmed (PIN-first `both` flow) is named; the email box is never sent,
+          // because the sign-in screen pre-fills it with the last seat and a face check must find the person in front.
+          const gateEmail = probeTargetEmail;
+          // Only a PIN already submitted (PIN-first `both` flow) rides along; a half-typed PIN box is never sent.
           const gatePin = (FACE_STATE.pending2faUser && (FACE_STATE.pending2faPin || FACE_STATE.pending2faUser.pin_code))
             ? String(FACE_STATE.pending2faPin || FACE_STATE.pending2faUser.pin_code).trim()
-            : String(val('authPinInput') || '').trim();
-          if (isEdgeStrictAuth && (!gateEmail || !gatePin)) {
-            FACE_STATE.lastLiveGateDescriptor = descArr;
-            FACE_STATE.lastLiveGateMethod = `Face ID + PIN 2FA${livenessTag}`;
-            FACE_STATE.lastLiveGateAt = Date.now();
-            setAuthStreak(edgeNeeded, edgeNeeded);
-            setAuthHint('Enter your email and Access PIN below to complete Face ID sign-in', 'ok');
-            return { status: 'awaiting-credentials', liveness: liveProbe.method };
-          }
+            : '';
+          // Face ID or PIN, never both (owner decision 2026-11-12): a live Face ID goes to the server on its
+          // own (email optional, the server identifies the seat); only a seat set to `both` asks for the PIN next.
           const methodLabel = FACE_STATE.pending2faUser
             ? `PIN + Face ID 2FA${livenessTag}`
             : (gatePin ? `Face ID + PIN 2FA${livenessTag}` : `Face ID${livenessTag}`);
@@ -110898,8 +110898,22 @@
             await completeFaceLogin(seatObj, 0.22, snapshotUrl, 'Face ID', { faceDescriptor: descArr, ignoreTypedPin: false });
             return { status: '2fa-pin-pending', user: seatObj, dist: 0.22 };
           }
+          if (isEdgeStrictAuth && jEdge && jEdge.two_factor_pin_required && !gatePin) {
+            // Seat set to `both`: keep the verified face for 30 s, stop probing for that window,
+            // and let the PIN form finish the sign-in.
+            FACE_STATE.edgeProbeStreak = 0;
+            FACE_STATE.edgeMissCount = 0;
+            FACE_STATE.edgeProbeCooldownUntil = Date.now() + 30000;
+            FACE_STATE.lastLiveGateDescriptor = descArr;
+            FACE_STATE.lastLiveGateMethod = `Face ID + PIN 2FA${livenessTag}`;
+            FACE_STATE.lastLiveGateAt = Date.now();
+            setAuthStreak(edgeNeeded, edgeNeeded);
+            setAuthHint('Enter your email and Access PIN below to complete Face ID sign-in', 'ok');
+            return { status: 'awaiting-credentials', liveness: liveProbe.method };
+          }
           if (rEdge && rEdge.ok && jEdge && jEdge.ok && jEdge.user && jEdge.user.email) {
             FACE_STATE.edgeProbeStreak = 0;
+            FACE_STATE.edgeMissCount = 0;
             FACE_STATE.pending2faPin = '';
             FACE_STATE.lastLiveGateDescriptor = null;
             _edgeCookieAuthed = true;
@@ -110917,8 +110931,26 @@
             return { status: 'verified', user: seatObj, dist: verifiedDist, method: methodLabel, liveness: liveProbe.method };
           }
           FACE_STATE.edgeProbeStreak = 0;
-          FACE_STATE.edgeProbeCooldownUntil = Date.now() + 750;
+          // Face misses never hammer the server: after 2 misses in a row (or a 429) the live camera stops
+          // and waits for a tap on "Tap for Face ID"; the PIN form keeps working the whole time.
+          const probeThrottled = Boolean(rEdge && rEdge.status === 429);
+          FACE_STATE.edgeMissCount = (FACE_STATE.edgeMissCount || 0) + 1;
+          FACE_STATE.edgeProbeCooldownUntil = Date.now() + (probeThrottled
+            ? Math.max(5, Number(jEdge && jEdge.retry_after_sec) || 60) * 1000
+            : 750);
+          FACE_STATE.edgeProbeLockedUntil = probeThrottled ? FACE_STATE.edgeProbeCooldownUntil : 0;
           setAuthStreak(0, edgeNeeded);
+          if (probeThrottled || FACE_STATE.edgeMissCount >= 2) {
+            FACE_STATE.edgeMissCount = 0;
+            if (FACE_STATE.camActive) {
+              FACE_STATE.authCamStoppedByUser = true;
+              stopAuthFaceScanner();
+            }
+          }
+          if (probeThrottled) {
+            setAuthHint('Face ID is paused after too many attempts. Sign in with your PIN.', 'warn');
+            return { status: 'rate-limited', retryAfterSec: Number(jEdge && jEdge.retry_after_sec) || 0 };
+          }
           if (jEdge && /requires PIN sign-in/i.test(String(jEdge.error || ''))) {
             setAuthHint('PIN sign-in active', 'warn');
             return { status: 'face-disabled' };
@@ -115302,6 +115334,14 @@
   }
 
   function openAuthGate(prefillEmail) {
+    // Every way back to the sign-in screen (sign-out, idle lock, session expiry) starts the next person clean:
+    // no carried-over face misses and no held face descriptor that could ride along with their PIN.
+    FACE_STATE.edgeMissCount = 0;
+    FACE_STATE.edgeProbeLockedUntil = 0;
+    FACE_STATE.lastLiveGateDescriptor = null;
+    FACE_STATE.lastLiveGateAt = 0;
+    FACE_STATE.lastVerifiedDescriptor = null;
+    FACE_STATE.pendingPinDescriptor = null;
     // A stakeholder balance card must not stay in the page once the seat signs out or the session ends.
     if (typeof closeHoldingExtendedShareCard === 'function') closeHoldingExtendedShareCard();
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.close === 'function') {
