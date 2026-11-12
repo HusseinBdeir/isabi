@@ -531,14 +531,15 @@ async function recordAuthFailure(db, ipHash, emailRaw) {
 }
 
 // opts.face: also clear the face-only key (a sign-in that verified a face);
-// opts.keepIp: leave the office-wide IP key alone (a face-without-PIN sign-in must not reset PIN-guess throttling).
+// opts.keepIp: leave the office-wide IP key alone (a face-without-PIN sign-in must not reset PIN-guess throttling);
+// opts.keepEmail: leave the seat's own PIN key alone (only a checked PIN may reset it).
 async function clearAuthFailure(db, ipHash, emailRaw, opts = {}) {
   if (!db || !ipHash) return;
   const emailClean = String(emailRaw || '').trim().toLowerCase();
   const keys = [];
   if (!opts.keepIp) keys.push(`rl:lock_ip:${ipHash}`);
   if (opts.face) keys.push(`rl:lock_face:${ipHash}`);
-  if (emailClean) keys.push(`rl:lock_em_ip:${ipHash}:${emailClean}`);
+  if (emailClean && !opts.keepEmail) keys.push(`rl:lock_em_ip:${ipHash}:${emailClean}`);
   if (!keys.length) return;
   try {
     const ph = keys.map((_, i) => `?${i + 1}`).join(',');
@@ -711,6 +712,19 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
       ? jsonResponse({ ok: false, error: 'This user seat is currently suspended.' }, 403)
       : failAuth('Invalid email or Access PIN.');
   }
+  // The seat was found by face (no email in the request) and a PIN is about to be checked: the seat's own
+  // PIN lock must hold here too, or leaving out the email would skip it.
+  if (!email && pin && row.email) {
+    const seatLock = await checkAuthLockout(env.DB, ipHash, row.email, false);
+    if (seatLock.locked) {
+      return jsonResponse({
+        ok: false,
+        rate_limited: true,
+        retry_after_sec: seatLock.retryAfterSec,
+        error: `Too many failed sign-in attempts. Please wait ${Math.max(1, Math.ceil(seatLock.retryAfterSec / 60))} minute(s).`
+      }, 429, { 'Retry-After': String(seatLock.retryAfterSec) });
+    }
+  }
 
   const wsFaceSettings = await readWorkspaceFaceSettings(env.DB);
   // No default PIN: a seat with no PIN on file cannot pass a PIN check until an Owner sets one.
@@ -848,7 +862,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   }
 
   if (isVerifyOnly) {
-    await clearAuthFailure(env.DB, ipHash, row.email, { face: verifiedFaceDist !== null, keepIp: !pinVerified && verifiedFaceDist !== null });
+    await clearAuthFailure(env.DB, ipHash, row.email, { face: verifiedFaceDist !== null, keepIp: !pinVerified && verifiedFaceDist !== null, keepEmail: !pinVerified && verifiedFaceDist !== null });
     const redactDist = isStepUp || Boolean(body && body.redact_dist === true) || !(callerSess && canManageUsersSeat(callerSess));
     const verifyOut = {
       ok: true,
@@ -889,7 +903,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
       ).bind(sessId, row.id, row.email, row.full_name, row.role, row.companies, device, nowIso, method, confidence, ipHash)
     ]),
-    clearAuthFailure(env.DB, ipHash, row.email, { face: verifiedFaceDist !== null, keepIp: !pinVerified && !allowOwnerImpersonation })
+    clearAuthFailure(env.DB, ipHash, row.email, { face: verifiedFaceDist !== null, keepIp: !pinVerified && !allowOwnerImpersonation, keepEmail: !pinVerified && !allowOwnerImpersonation })
   ]);
 
   const isHttps = new URL(request.url).protocol === 'https:';

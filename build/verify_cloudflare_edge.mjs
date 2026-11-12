@@ -2270,6 +2270,27 @@ finally:
     }
     const pinAfterVerifyMiss = await httpReq('POST', '/app/api/auth/login', { email: 'edge28pinonly@bhfirms.com', pin: '2947', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.100' });
     verifyMissStatuses.push(`pin:${pinAfterVerifyMiss.status}`);
+    // (j) email-less `Face ID + PIN 2FA` (seat found by face) still hits that seat's own PIN lock, even when
+    // other people's PIN sign-ins keep resetting the office IP key: the correct PIN after 5 misses is 429.
+    const emaillessPinStatuses = [];
+    for (let k = 0; k < 5; k++) {
+      const wp = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID + PIN 2FA', face_descriptor: vec28Both, pin: '0000' }, { 'CF-Connecting-IP': '198.51.100.101' });
+      emaillessPinStatuses.push(wp.status);
+      await httpReq('POST', '/app/api/auth/login', { email: 'edge28pinonly@bhfirms.com', pin: '2947', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.101' });
+    }
+    const emaillessRight = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID + PIN 2FA', face_descriptor: vec28Both, pin: '8249' }, { 'CF-Connecting-IP': '198.51.100.101' });
+    emaillessPinStatuses.push(`right:${emaillessRight.status}`);
+    // (k) a face-only verify success never resets a seat's PIN lock: 4 wrong PINs, verify_only face (200),
+    // then the 5th wrong PIN is 429.
+    const verifyKeepStatuses = [];
+    for (let k = 0; k < 4; k++) {
+      const wp = await httpReq('POST', '/app/api/auth/login', { email: 'edge28face@bhfirms.com', pin: '0000', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.102' });
+      verifyKeepStatuses.push(wp.status);
+    }
+    const verifyKeepFace = await httpReq('POST', '/app/api/auth/login', { email: 'edge28face@bhfirms.com', method: 'Face ID', verify_only: true, face_descriptor: vec28 }, { 'X-ISABI-Session': ownerToken, 'CF-Connecting-IP': '198.51.100.102' });
+    verifyKeepStatuses.push(`verify:${verifyKeepFace.status}`);
+    const verifyKeepFifth = await httpReq('POST', '/app/api/auth/login', { email: 'edge28face@bhfirms.com', pin: '0000', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.102' });
+    verifyKeepStatuses.push(verifyKeepFifth.status);
 
     consoleErrors.length = 0;
     await sendCdp('Network.clearBrowserCookies');
@@ -2618,6 +2639,8 @@ finally:
       faceClearStatuses.join(',') === '401,401,401,401,face:200,401,401,401,401' &&
       pinViaFaceStatuses.join(',') === '401,401,401,401,face:200,429' &&
       verifyMissStatuses[5] === 'pin:200' &&
+      emaillessPinStatuses.join(',') === '401,401,401,401,429,right:429' &&
+      verifyKeepStatuses.join(',') === '401,401,401,401,verify:200,429' &&
       e28Flow?.bootOk === true &&
       e28Flow.stBoot?.authed === false &&
       e28Flow.stBoot?.enrolledSeats?.length === 0 &&
@@ -2687,7 +2710,9 @@ finally:
           ipKeep: ipKeepStatuses,
           faceClear: faceClearStatuses,
           pinViaFace: pinViaFaceStatuses,
-          verifyMiss: verifyMissStatuses
+          verifyMiss: verifyMissStatuses,
+          emaillessPin: emaillessPinStatuses,
+          verifyKeep: verifyKeepStatuses
         },
         e28Flow
       }));
