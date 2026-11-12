@@ -606,11 +606,12 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   const faceDesc = body && body.face_descriptor;
   const isFaceMethod = /^face\s*id/i.test(method);
   const ipHash = await hashClientIp(request);
-  // Face ID without a PIN (not a step-up or verify), with or without an email: misses count on the
-  // face-only key, so faces at a sign-in screen can never lock PIN sign-in for the office IP.
-  const isFaceNoPin = Boolean(isFaceMethod && !pin && !(body && (body.verify_only === true || body.step_up === true)));
-  // ...and with no email either (anonymous probe): the answer never says which seat matched or why it was refused.
-  const isFaceProbe = Boolean(isFaceNoPin && !email);
+  // Any Face ID request that is not a step-up (sign-in screen, enrolment check, with or without an email or
+  // a PIN): misses count on the face-only key, so faces in front of a camera can never lock PIN sign-in for
+  // the office IP. (Named for the common case; a Face ID + PIN request counts here too.)
+  const isFaceNoPin = Boolean(isFaceMethod && !(body && body.step_up === true));
+  // Face ID with no email and no PIN (anonymous probe): the answer never says which seat matched or why.
+  const isFaceProbe = Boolean(isFaceNoPin && !email && !pin && !(body && body.verify_only === true));
 
   const lockState = await checkAuthLockout(env.DB, ipHash, email, isFaceNoPin);
   if (lockState.locked) {
@@ -728,6 +729,9 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
 
   let verifiedFaceDist = null;
   let pinUpgradeNeeded = false;
+  // Only a sign-in whose PIN was actually checked resets the office-wide IP lock (a dummy PIN sent with
+  // an `either` face is never checked, so it must not reset anything).
+  let pinVerified = false;
 
   if (!allowOwnerImpersonation) {
     if (isFaceMethod) {
@@ -778,6 +782,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
             : failAuth('Two-factor Access PIN is required.');
         }
         pinUpgradeNeeded = pinCheck.needsUpgrade;
+        pinVerified = true;
       }
     } else {
       if (authMode === 'face_only' && hasEnrolledBio) {
@@ -788,6 +793,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
         return failAuth('Invalid email or Access PIN.');
       }
       pinUpgradeNeeded = pinCheck.needsUpgrade;
+      pinVerified = true;
       const mustVerifyFace = (needsTwoFactor && hasEnrolledBio) || /face\s*id/i.test(method) || (body && body.face_descriptor !== undefined);
       if (needsTwoFactor && !hasEnrolledBio && /face\s*id/i.test(method)) {
         return failAuth('Face ID is not enrolled for this seat.');
@@ -829,7 +835,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   }
 
   if (isVerifyOnly) {
-    await clearAuthFailure(env.DB, ipHash, row.email);
+    await clearAuthFailure(env.DB, ipHash, row.email, { face: verifiedFaceDist !== null, keepIp: !pinVerified && verifiedFaceDist !== null });
     const redactDist = isStepUp || Boolean(body && body.redact_dist === true) || !(callerSess && canManageUsersSeat(callerSess));
     const verifyOut = {
       ok: true,
@@ -870,7 +876,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
       ).bind(sessId, row.id, row.email, row.full_name, row.role, row.companies, device, nowIso, method, confidence, ipHash)
     ]),
-    clearAuthFailure(env.DB, ipHash, row.email, { face: verifiedFaceDist !== null, keepIp: isFaceNoPin })
+    clearAuthFailure(env.DB, ipHash, row.email, { face: verifiedFaceDist !== null, keepIp: !pinVerified && !allowOwnerImpersonation })
   ]);
 
   const isHttps = new URL(request.url).protocol === 'https:';

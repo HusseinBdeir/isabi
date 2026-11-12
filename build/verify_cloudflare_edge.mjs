@@ -2219,6 +2219,38 @@ finally:
       face_descriptor: vec28Both
     }, { 'CF-Connecting-IP': '198.51.100.95' });
     bothFaceFirstStatuses.push(`pin:${bothPinStep.status}`);
+    // (f) a face sign-in without a PIN never resets the office-wide IP lock: 4 wrong PINs (4 different
+    // emails, so only the IP key reaches 5), a face sign-in (200), then the 5th wrong PIN is 429.
+    const ipKeepStatuses = [];
+    for (let k = 1; k <= 4; k++) {
+      const wp = await httpReq('POST', '/app/api/auth/login', { email: `nobody${k}@example.test`, pin: '0000', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.96' });
+      ipKeepStatuses.push(wp.status);
+    }
+    const ipKeepFace = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', face_descriptor: vec28 }, { 'CF-Connecting-IP': '198.51.100.96' });
+    ipKeepStatuses.push(`face:${ipKeepFace.status}`);
+    const ipKeepFifth = await httpReq('POST', '/app/api/auth/login', { email: 'nobody5@example.test', pin: '0000', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.96' });
+    ipKeepStatuses.push(ipKeepFifth.status);
+    // (f2) a dummy PIN sent with an `either` face is never checked, so it must not reset the IP lock either.
+    for (let k = 11; k <= 14; k++) {
+      const wp = await httpReq('POST', '/app/api/auth/login', { email: `nobody${k}@example.test`, pin: '0000', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.98' });
+      ipKeepStatuses.push(`d${wp.status}`);
+    }
+    const ipKeepDummy = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', pin: '1', face_descriptor: vec28 }, { 'CF-Connecting-IP': '198.51.100.98' });
+    const ipKeepAfterDummy = await httpReq('POST', '/app/api/auth/login', { email: 'nobody15@example.test', pin: '0000', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.98' });
+    ipKeepStatuses.push(`dummy:${ipKeepDummy.status}`, ipKeepAfterDummy.status);
+    // (g) a face sign-in clears the face-only lock: 4 imposter probes, the enrolled face (200), then 4 more
+    // imposter probes are all 401 (never 429).
+    const faceClearStatuses = [];
+    for (let k = 0; k < 4; k++) {
+      const ip1 = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', face_descriptor: vec28Imposter }, { 'CF-Connecting-IP': '198.51.100.97' });
+      faceClearStatuses.push(ip1.status);
+    }
+    const faceClearOk = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', face_descriptor: vec28 }, { 'CF-Connecting-IP': '198.51.100.97' });
+    faceClearStatuses.push(`face:${faceClearOk.status}`);
+    for (let k = 0; k < 4; k++) {
+      const ip2 = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', face_descriptor: vec28Imposter }, { 'CF-Connecting-IP': '198.51.100.97' });
+      faceClearStatuses.push(ip2.status);
+    }
 
     consoleErrors.length = 0;
     await sendCdp('Network.clearBrowserCookies');
@@ -2563,6 +2595,8 @@ finally:
       probeEmailLockStatus === 429 &&
       pinAfterEmailFaceLockRes.status === 200 &&
       bothFaceFirstStatuses.join(',') === '401p,401p,401p,401p,401p,401p,pin:200' &&
+      ipKeepStatuses.join(',') === '401,401,401,401,face:200,429,d401,d401,d401,d401,dummy:200,429' &&
+      faceClearStatuses.join(',') === '401,401,401,401,face:200,401,401,401,401' &&
       e28Flow?.bootOk === true &&
       e28Flow.stBoot?.authed === false &&
       e28Flow.stBoot?.enrolledSeats?.length === 0 &&
@@ -2628,7 +2662,9 @@ finally:
           pinAfterLock: [pinAfterFaceLockRes.status, pinAfterFaceLockRes.json?.error],
           emailLock: probeEmailLockStatus,
           pinAfterEmailLock: [pinAfterEmailFaceLockRes.status, pinAfterEmailFaceLockRes.json?.error],
-          bothFaceFirst: bothFaceFirstStatuses
+          bothFaceFirst: bothFaceFirstStatuses,
+          ipKeep: ipKeepStatuses,
+          faceClear: faceClearStatuses
         },
         e28Flow
       }));
