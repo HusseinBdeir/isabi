@@ -62,7 +62,29 @@ APP_ALLOWED_TOP = {
 APP_ALLOWED_DIRS = ("css", "js", "vendor")
 
 
+def check_deployed_shell_ver(root: pathlib.Path = ISABI_ROOT) -> str:
+    """The Edge caps the store's minShellVer at functions/_lib/deployed_shell.js, so it must name the shell in app/sw.js
+    that this deploy serves. A stale-high value would let devices be told to update to a shell that does not exist;
+    a stale-low one would stop nudging older devices. Run `python build/sync_app.py` to rewrite it."""
+    import re
+
+    sw = root / "app" / "sw.js"
+    ds = root / "functions" / "_lib" / "deployed_shell.js"
+    if not sw.is_file() or not ds.is_file():
+        return ""
+    m_sw = re.search(r"\bSHELL_CACHE\s*=\s*['\"]isabi-mfg-v([0-9.]+)['\"]", sw.read_text(encoding="utf-8", errors="replace"))
+    m_ds = re.search(r"export const DEPLOYED_SHELL_VER = '([0-9.]+)';", ds.read_text(encoding="utf-8", errors="replace"))
+    if not m_sw or not m_ds or m_sw.group(1) != m_ds.group(1):
+        raise RuntimeError(
+            "DEPLOYED SHELL GATE FAILED: functions/_lib/deployed_shell.js says "
+            f"{m_ds.group(1) if m_ds else '(unreadable)'} but app/sw.js serves {m_sw.group(1) if m_sw else '(unreadable)'}; "
+            "run python build/sync_app.py (it rewrites the file) and commit both."
+        )
+    return m_sw.group(1)
+
+
 def stage_pages_bundle(dest_dir: pathlib.Path) -> int:
+    check_deployed_shell_ver()
     dest_dir = dest_dir.resolve()
     if dest_dir == ISABI_ROOT.resolve():
         raise ValueError("Refusing to stage in-place over ISABI_ROOT")

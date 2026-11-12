@@ -5,7 +5,10 @@
 
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { compareShellVer, handleIndustryDomainStore, handleSync, holdMinShellVer } from '../functions/_lib/d1_store.js';
+import {
+  capMinShellVerForRead, compareShellVer, handleIndustryDomainStore, handleSync, holdMinShellVer
+} from '../functions/_lib/d1_store.js';
+import { DEPLOYED_SHELL_VER } from '../functions/_lib/deployed_shell.js';
 import {
   _resetLegacyIdHitsForTests, collectLegacyCandidates, isLegacyShapedId, isMfgLegacyPosId, recordLegacyIdHits,
   takeMfgLegacySignals
@@ -349,6 +352,54 @@ const mfgPatch = (extra, ts) => ({ op: 'patch', doc: 'mfg_web_store', ...(ts ? {
   const stored = JSON.parse(d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0].payload_json);
   ok('through /api/sync: an older shell\'s push saves but leaves the stored minShellVer at the newer version',
     r1.ok && r2.ok && !r2.conflict && stored.minShellVer === '19.6.265', { r1, r2, stored: stored.minShellVer });
+}
+
+// ...capped at the shell this deploy serves, so one bad push (any seat can push) cannot strand the value above it.
+{
+  const swVer = (readFileSync(new URL('../app/sw.js', import.meta.url), 'utf8').match(/SHELL_CACHE\s*=\s*'isabi-mfg-v([0-9.]+)'/) || [])[1];
+  ok('functions/_lib/deployed_shell.js names the shell app/sw.js serves', Boolean(swVer) && DEPLOYED_SHELL_VER === swVer, { DEPLOYED_SHELL_VER, swVer });
+  const a = holdMinShellVer({ minShellVer: '9999.0' }, { minShellVer: '19.6.264' }, '19.6.265');
+  const b = holdMinShellVer({ minShellVer: '19.6.260' }, { minShellVer: '9999.0' }, '19.6.265');
+  const c = holdMinShellVer({}, { minShellVer: '9999.0' }, '19.6.265');
+  const d = holdMinShellVer({ minShellVer: '19.6.263' }, { minShellVer: '19.6.264' }, '19.6.265');
+  const e = holdMinShellVer({ minShellVer: '9999.0' }, null, '');
+  const f = holdMinShellVer({ minShellVer: '9999.0' }, null, 'x<script>');
+  ok('the cap: an incoming or stored value above the deployed shell becomes the deployed shell; below it the floor rules',
+    a.minShellVer === '19.6.265' && b.minShellVer === '19.6.265' && c.minShellVer === '19.6.265' && d.minShellVer === '19.6.264', { a, b, c, d });
+  ok('no (or a junk) ceiling leaves the plain floor (local tests, an older deploy)', e.minShellVer === '9999.0' && f.minShellVer === '9999.0', { e, f });
+  const g = capMinShellVerForRead({ minShellVer: '9999.0' }, '19.6.265');
+  const h = capMinShellVerForRead({ minShellVer: '19.6.200' }, '19.6.265');
+  const i = capMinShellVerForRead({}, '19.6.265');
+  ok('reads: a served copy is capped, a lower value and a missing one are left alone',
+    g.minShellVer === '19.6.265' && h.minShellVer === '19.6.200' && !('minShellVer' in i), { g, h, i });
+
+  const above = '9999.0';
+  const { env, d1 } = freshEnv();
+  const { ctx, settle } = ctxCollector();
+  const p1 = mfgPatch({ minShellVer: above });
+  const r1 = await (await handleSync(syncReq(p1), env, OWNER, p1, ctx)).json();
+  await settle();
+  const stored1 = JSON.parse(d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0].payload_json);
+  ok('through /api/sync: a push above the deployed shell is stored as the deployed shell',
+    r1.ok && !r1.conflict && stored1.minShellVer === DEPLOYED_SHELL_VER, { r1, stored: stored1.minShellVer });
+
+  // A value already stranded above it (written before this fix): reads never serve it, the next push lowers it.
+  d1.exec(`UPDATE edge_kv_store SET payload_json = json_set(payload_json, '$.minShellVer', '${above}') WHERE doc_key = 'mfg_web_store'`);
+  const g1 = { op: 'get_mfg', doc: 'mfg_web_store' };
+  const rg = await (await handleSync(syncReq(g1), env, OWNER, g1, ctx)).json();
+  const stillStored = JSON.parse(d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0].payload_json).minShellVer;
+  ok('through /api/sync get_mfg: a stranded value is served capped, and the read writes nothing',
+    rg.ok && rg.docs.mfg_web_store.minShellVer === DEPLOYED_SHELL_VER && stillStored === above, { served: rg.docs && rg.docs.mfg_web_store.minShellVer, stillStored });
+  const stale = mfgPatch({ minShellVer: '19.6.200', updatedAt: new Date(Date.now() + 9000).toISOString() }, 'not-the-current-ts');
+  const rc = await (await handleSync(syncReq(stale), env, OWNER, stale, ctx)).json();
+  ok('through /api/sync conflict reply: the fresh copy it hands back is capped too',
+    rc.ok && rc.conflict && rc.docs.mfg_web_store.minShellVer === DEPLOYED_SHELL_VER, { rc: rc.conflict, served: rc.docs && rc.docs.mfg_web_store.minShellVer });
+  const p2 = mfgPatch({ minShellVer: '19.6.200', updatedAt: new Date(Date.now() + 12000).toISOString() }, rc.updatedAt);
+  const r2 = await (await handleSync(syncReq(p2), env, OWNER, p2, ctx)).json();
+  await settle();
+  const stored2 = JSON.parse(d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0].payload_json);
+  ok('through /api/sync: the next push (from an older shell) brings a stranded value down to the deployed shell',
+    r2.ok && !r2.conflict && stored2.minShellVer === DEPLOYED_SHELL_VER, { r2, stored: stored2.minShellVer });
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

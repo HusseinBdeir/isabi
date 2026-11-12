@@ -49,7 +49,10 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_workbook_cache.py", "python"),       # top-up workbook cache + lazy openpyxl
     ("isabi-app", "build/verify_sharepoint_hash_skip.py", "python"), # Graph quickXorHash re-read skip
     ("isabi-app", "build/verify_legacy_id_sunset.py", "python"),     # legacy_id_map sunset gate
-    ("isabi", "build/verify_legacy_id_hits.mjs", "node"),            # Edge legacy_id_hits counter
+    ("isabi", "build/verify_legacy_id_hits.mjs", "node"),            # Edge legacy_id_hits counter + minShellVer floor/cap
+    ("isabi", "build/verify_deployed_shell.py", "python"),           # deployed_shell.js = app/sw.js (minShellVer ceiling)
+    ("isabi-app", "build/verify_min_shell_ver_local.py", "python"),  # server.py minShellVer floor/cap
+    ("isabi-app", "build/verify_orphan_expense_lines.py", "python"), # top-up reconcile: orphan expense lines
 ]
 
 
@@ -142,6 +145,36 @@ def verify_shell_version_parity() -> str:
     return ver
 
 
+DEPLOYED_SHELL_JS = os.path.join(ISABI_ROOT, "functions", "_lib", "deployed_shell.js")
+_DEPLOYED_SHELL_RE = re.compile(r"export const DEPLOYED_SHELL_VER = '([0-9.]+)';")
+
+
+def render_deployed_shell_js(ver: str) -> str:
+    return (
+        "// The Command Center shell version this deploy serves (SHELL_CACHE in app/sw.js). Written by build/sync_app.py in\n"
+        "// the same pass that copies app/sw.js, and checked again by build/stage_pages_bundle.py before every deploy.\n"
+        "// It is the ceiling for the store's minShellVer (holdMinShellVer in d1_store.js). Do not edit by hand.\n"
+        f"export const DEPLOYED_SHELL_VER = '{ver}';\n"
+    )
+
+
+def write_deployed_shell_ver(ver: str) -> bool:
+    """Keeps functions/_lib/deployed_shell.js equal to the shell just copied into app/ (the Edge caps the store's
+    minShellVer at it). Returns True when the file changed."""
+    if not re.fullmatch(r"\d{1,4}(?:\.\d{1,6}){0,3}", ver):
+        raise SystemExit(f"ERROR: shell version {ver!r} is not a plain dotted version; deployed_shell.js not written")
+    want = render_deployed_shell_js(ver)
+    try:
+        with open(DEPLOYED_SHELL_JS, "r", encoding="utf-8") as f:
+            if f.read() == want:
+                return False
+    except FileNotFoundError:
+        pass
+    with open(DEPLOYED_SHELL_JS, "w", encoding="utf-8", newline="\n") as f:
+        f.write(want)
+    return True
+
+
 def sync_command_app() -> int:
     if not os.path.isdir(APP_SRC_ROOT):
         print(f"WARN: {APP_SRC_ROOT} not found, skipping app/ sync.")
@@ -227,6 +260,9 @@ def sync_command_app() -> int:
                     content = f.read()
                 if "@bhfirms.com" in content.lower():
                     raise SystemExit(f"ERROR: Internal @bhfirms.com address leaked into public bundle: {fpath}")
+
+    changed = write_deployed_shell_ver(ver)
+    print(f"OK: functions/_lib/deployed_shell.js {'set to' if changed else 'already at'} v{ver} (minShellVer ceiling)")
 
     print(f"OK: Synced {copied} Command Center files from {APP_SRC_ROOT} -> {APP_OUT}")
     return copied

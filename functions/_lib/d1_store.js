@@ -26,6 +26,7 @@ import {
   verifySeatPin
 } from './security.js';
 import { collectLegacyCandidates, scheduleLegacyIdHits, takeMfgLegacySignals } from './legacy_ids.js';
+import { DEPLOYED_SHELL_VER } from './deployed_shell.js';
 
 export const ALLOWED_TABLES = new Set([
   'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions',
@@ -82,7 +83,10 @@ export function isServerOwnedRowEditKey(editKey) {
 }
 
 // The store's minShellVer is a floor: every push stamps the pusher's own shell version, so an older device would
-// otherwise lower it again and the devices reading after it would never be nudged to update. Keep the higher value.
+// otherwise lower it again and the devices reading after it would never be nudged to update. Keep the higher value,
+// capped at the shell this deploy serves (DEPLOYED_SHELL_VER): any seat can push, so without the cap one bad value
+// (say 9999.0) would stick for good; with it, a stored value above the deployed shell comes back down on the next
+// push and is never served (capMinShellVerForRead).
 const SHELL_VER_RE = /^\d{1,4}(?:\.\d{1,6}){0,3}$/;
 export function compareShellVer(a, b) {
   const pa = String(a).split('.').map(Number);
@@ -93,13 +97,20 @@ export function compareShellVer(a, b) {
   }
   return 0;
 }
-export function holdMinShellVer(doc, prevDoc = null) {
+export function holdMinShellVer(doc, prevDoc = null, ceiling = DEPLOYED_SHELL_VER) {
   if (!doc || typeof doc !== 'object') return doc;
   const inc = SHELL_VER_RE.test(String(doc.minShellVer || '')) ? String(doc.minShellVer) : '';
   const prev = prevDoc && SHELL_VER_RE.test(String(prevDoc.minShellVer || '')) ? String(prevDoc.minShellVer) : '';
-  const keep = !inc ? prev : (!prev ? inc : (compareShellVer(inc, prev) >= 0 ? inc : prev));
+  let keep = !inc ? prev : (!prev ? inc : (compareShellVer(inc, prev) >= 0 ? inc : prev));
+  const cap = SHELL_VER_RE.test(String(ceiling || '')) ? String(ceiling) : '';
+  if (keep && cap && compareShellVer(keep, cap) > 0) keep = cap;
   if (keep) doc.minShellVer = keep;
   else delete doc.minShellVer;
+  return doc;
+}
+// A served copy of the store never carries a minShellVer above the deployed shell (nothing is written).
+export function capMinShellVerForRead(doc, ceiling = DEPLOYED_SHELL_VER) {
+  if (doc && typeof doc === 'object' && doc.minShellVer) holdMinShellVer(doc, null, ceiling);
   return doc;
 }
 
@@ -4064,6 +4075,7 @@ export async function handleSync(request, env, session, body, _ctx) {
     if (row && row.updated_at && !rawDocObj.updatedAt) rawDocObj.updatedAt = row.updated_at;
     if (targetKey === 'mfg_web_store') {
       await overlayCanonicalSubStoresOnMfgDoc(env.DB, rawDocObj);
+      capMinShellVerForRead(rawDocObj);
     }
     const docObj = targetKey === 'mfg_web_store' ? scopeStoreDocForSession(rawDocObj, session) : rawDocObj;
     return jsonResponse({ ok: true, edge: true, docs: { [targetKey]: docObj } });
@@ -4095,6 +4107,7 @@ export async function handleSync(request, env, session, body, _ctx) {
       const rawFresh = safeJsonParse(currentRow.payload_json, {});
       if (pKey === 'mfg_web_store') {
         await overlayCanonicalSubStoresOnMfgDoc(env.DB, rawFresh);
+        capMinShellVerForRead(rawFresh);
       }
       const freshDoc = pKey === 'mfg_web_store' ? scopeStoreDocForSession(rawFresh, session) : rawFresh;
       return jsonResponse({
@@ -4142,6 +4155,7 @@ export async function handleSync(request, env, session, body, _ctx) {
       const latestRaw = latestRow ? safeJsonParse(latestRow.payload_json, {}) : {};
       if (pKey === 'mfg_web_store') {
         await overlayCanonicalSubStoresOnMfgDoc(env.DB, latestRaw);
+        capMinShellVerForRead(latestRaw);
       }
       const latestScoped = pKey === 'mfg_web_store' ? scopeStoreDocForSession(latestRaw, session) : latestRaw;
       return jsonResponse({
