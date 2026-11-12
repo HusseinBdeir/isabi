@@ -7,7 +7,8 @@ import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { handleIndustryDomainStore, handleSync } from '../functions/_lib/d1_store.js';
 import {
-  _resetLegacyIdHitsForTests, collectLegacyCandidates, isLegacyShapedId, recordLegacyIdHits
+  _resetLegacyIdHitsForTests, collectLegacyCandidates, isLegacyShapedId, isMfgLegacyPosId, recordLegacyIdHits,
+  takeMfgLegacySignals
 } from '../functions/_lib/legacy_ids.js';
 
 class Stmt {
@@ -256,6 +257,61 @@ for (const [label, mapVal] of [['no legacy_id_map key', undefined], ['an empty l
   const body = { industryRowEdits: { 'IND::hsp_revenue::HSP-REV-0012': { company: 'Platinum' } } };
   await handleIndustryDomainStore(domainReq(body), env, OWNER, body);
   ok('a caller that passes no context still gets the hit recorded', hits(d1).submit === 1, hits(d1));
+}
+
+// 10. Manufacturing positional ids (separate kinds and window)
+console.log('\nManufacturing positional ids');
+ok('positional Manufacturing ids are recognised (st123, ex45-i2, wbmalf-wtc-7, wbrecur-bbc-3, dv-hld-exp-12)',
+  ['st123', 'ex45-i2', 'wbmalf-wtc-7', 'wbrecur-bbc-3', 'dv-hld-exp-12', 'exi9'].every(isMfgLegacyPosId));
+ok('NEGATIVE: stable and app ids never are (st_<hex>, wbmalf-wtc-<hex>, ex_<hex>-i2, ei-..., ex-...)',
+  !['st_ab12cd34ef56', 'wbmalf-wtc-a1b2c3d4e5', 'ex_0a1b2c3d4e5f-i2', 'ei-mwbxkr7q-trdm53', 'ex-mwalh9n6-2ciiy0', 'dv-hld-exp-0a1b2c3d', 'ST123', ''].some(isMfgLegacyPosId));
+{
+  const doc = { _legacyPosUpgrades: 1e9, customRecords: { expenses: [{ id: 'ex12' }, { id: 'ex_0a1b2c3d4e5f' }] } };
+  const s = takeMfgLegacySignals(doc);
+  ok('a huge reported count is clamped and the field is removed from the document',
+    s.reported && s.upgrade === 100000 && s.submit === 1 && !('_legacyPosUpgrades' in doc), s);
+  const s2 = takeMfgLegacySignals({ _legacyPosUpgrades: 'abc' });
+  const s3 = takeMfgLegacySignals({ _legacyPosUpgrades: -4 });
+  ok('NEGATIVE: a non-number is not a report; a negative counts as 0', !s2.reported && s3.reported && s3.upgrade === 0, { s2, s3 });
+}
+const mfgPatch = (extra, ts) => ({ op: 'patch', doc: 'mfg_web_store', ...(ts ? { ifMatchUpdatedAt: ts } : {}), patch: { mfg_web_store: Object.assign({
+  updatedAt: new Date().toISOString(),
+  customRecords: { sentinel_dummy: [{ id: 'st123' }, { id: 'st_ab12cd34ef56' }] }
+}, extra) } });
+{
+  const { env, d1 } = freshEnv();
+  const { ctx, settle } = ctxCollector();
+  const body = mfgPatch({ _legacyPosUpgrades: 3 });
+  const res = await handleSync(syncReq(body), env, OWNER, body, ctx);
+  await settle();
+  const j = await res.json();
+  ok('a reporting sync saves as before', res.status === 200 && j.ok && !j.conflict, j);
+  const h = hits(d1);
+  ok('the browser report lands as mfg_upgrade and the positional row as mfg_submit', h.mfg_upgrade === 3 && h.mfg_submit === 1, h);
+  ok('and NEGATIVE: Manufacturing ids never reach the sibling-industry kinds', !h.submit && !h.upgrade && !h.unverified, h);
+  ok('the Manufacturing window starts at that first report', d1.rows("SELECT * FROM legacy_id_hits WHERE day = 'since' AND kind = 'mfg_tracking'").length === 1);
+  const stored = d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key LIKE 'mfg_web_store%'").map(r => r.payload_json).join('');
+  ok('NEGATIVE: _legacyPosUpgrades is never stored in the document', stored.length > 0 && !stored.includes('_legacyPosUpgrades'), stored.slice(0, 120));
+  const body2 = mfgPatch({ _legacyPosUpgrades: 0, customRecords: {} }, j.updatedAt);
+  const { ctx: c2, settle: s2 } = ctxCollector();
+  await handleSync(syncReq(body2), env, OWNER, body2, c2);
+  await s2();
+  ok('a clean report (0) adds nothing and keeps one window start', hits(d1).mfg_upgrade === 3 && d1.rows("SELECT * FROM legacy_id_hits WHERE day = 'since' AND kind = 'mfg_tracking'").length === 1, hits(d1));
+  const conflict = mfgPatch({ _legacyPosUpgrades: 5 }, '1999-01-01T00:00:00.000Z');
+  const { ctx: c3, settle: s3 } = ctxCollector();
+  const r3 = await (await handleSync(syncReq(conflict), env, OWNER, conflict, c3)).json();
+  await s3();
+  ok('NEGATIVE: a report in a patch refused as a conflict is not counted (the browser resends it)', r3.conflict === true && hits(d1).mfg_upgrade === 3, hits(d1));
+}
+{
+  const { env, d1 } = freshEnv();
+  const { ctx, settle } = ctxCollector();
+  const body = mfgPatch({});
+  delete body.patch.mfg_web_store.customRecords;
+  await handleSync(syncReq(body), env, OWNER, body, ctx);
+  await settle();
+  ok('NEGATIVE: a shell that does not report never starts the Manufacturing window',
+    d1.rows("SELECT * FROM legacy_id_hits WHERE kind = 'mfg_tracking'").length === 0 && d1.rows("SELECT * FROM legacy_id_hits WHERE kind = 'tracking'").length === 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

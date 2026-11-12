@@ -25,7 +25,7 @@ import {
   verifyActiveEdgeSession,
   verifySeatPin
 } from './security.js';
-import { collectLegacyCandidates, scheduleLegacyIdHits } from './legacy_ids.js';
+import { collectLegacyCandidates, scheduleLegacyIdHits, takeMfgLegacySignals } from './legacy_ids.js';
 
 export const ALLOWED_TABLES = new Set([
   'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions',
@@ -4062,6 +4062,9 @@ export async function handleSync(request, env, session, body, _ctx) {
     const expectedTs = String(body.ifMatchUpdatedAt || '');
     // Old seed ids as the browser sent them, before the RLS merge adds stored rows (counted once the write lands).
     const legacyCandidates = pKey === 'mfg_web_store' ? collectLegacyCandidates(incomingDoc) : null;
+    // Manufacturing positional ids: reads the browser's report and removes it from the document before any
+    // write, so `_legacyPosUpgrades` is never stored (taken from every patch key, counted only for the store).
+    const mfgLegacySignals = takeMfgLegacySignals(incomingDoc);
 
     const currentRow = await readEdgeKvDoc(env.DB, pKey);
     const currentTs = currentRow ? String(currentRow.updated_at || '') : '';
@@ -4153,7 +4156,7 @@ export async function handleSync(request, env, session, body, _ctx) {
       }
     }
     if (legacyCandidates) {
-      const legacyHitsTask = scheduleLegacyIdHits(env, _ctx, legacyCandidates);
+      const legacyHitsTask = scheduleLegacyIdHits(env, _ctx, legacyCandidates, mfgLegacySignals);
       if (legacyHitsTask) await legacyHitsTask;
     }
 

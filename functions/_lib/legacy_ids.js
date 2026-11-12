@@ -18,6 +18,15 @@
  * new row that merely looks positional never holds the sunset back. If the map cannot be read, or the seed
  * carries none, a candidate counts as `unverified`, which also holds the sunset back: a missed hit would be
  * worse than a late sunset. Once the map is retired the counter has done its job and can be removed.
+ *
+ * Manufacturing (separate kinds, separate window; never mixed into the map's gate above)
+ *   mfg_submit   a Manufacturing custom record in a /api/sync patch whose id is still positional (`st123`,
+ *                `ex45-i2`, `wbmalf-wtc-7`): the shape the browser's legacyPosRe upgrade path exists for.
+ *                Stable seed ids can never match (stable_seed_ids.make_hash_id refuses an all-digit head).
+ *   mfg_upgrade  the browser's own count of positional ids it upgraded or dropped since its last
+ *                successful push (`_legacyPosUpgrades` in the patch; stripped here, never stored).
+ *   The Manufacturing window starts (`since` / `mfg_tracking`) at the first patch that carries
+ *   `_legacyPosUpgrades` at all, i.e. from a shell that can report; before that no clean day can accrue.
  */
 
 const SHAPE_RE = /^[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-\d{1,6}$/;
@@ -27,6 +36,9 @@ const PAD_RE = /^(.+)-0*(\d+)$/;
 const MAP_TTL_MS = 60 * 60 * 1000;
 const MISS_RETRY_MS = 5 * 60 * 1000;   // R2 error or no seed object: try again sooner than a full hour
 const MAX_CANDIDATES = 5000;
+// Same pattern as `legacyPosRe` in isabi-app js/app.js (the Manufacturing store upgrade).
+const MFG_LEGACY_POS_RE = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$/;
+const MFG_MAX_REPORTED = 100000;   // a browser's own upgrade count is clamped, never trusted to be huge
 
 let _keySet = null;        // Set of upper-cased map keys, or null when not loaded
 let _keySetAt = 0;
@@ -93,6 +105,41 @@ export function collectLegacyCandidates(source) {
     }
   }
   return res;
+}
+
+export function isMfgLegacyPosId(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  return Boolean(s) && s.length <= 64 && MFG_LEGACY_POS_RE.test(s);
+}
+
+/**
+ * Manufacturing signals in a /api/sync patch document, read before the RLS merge, and the report field
+ * removed from the document so it is never stored. Returns { reported, upgrade, submit }.
+ *   reported  true when the browser sent `_legacyPosUpgrades` (a shell that can report, even with 0)
+ *   upgrade   that count, as a whole number in [0, MFG_MAX_REPORTED]
+ *   submit    custom records whose own id is still positional
+ */
+export function takeMfgLegacySignals(doc) {
+  const out = { reported: false, upgrade: 0, submit: 0 };
+  if (!doc || typeof doc !== 'object') return out;
+  if (Object.prototype.hasOwnProperty.call(doc, '_legacyPosUpgrades')) {
+    const n = Number(doc._legacyPosUpgrades);
+    delete doc._legacyPosUpgrades;
+    if (Number.isFinite(n)) {
+      out.reported = true;
+      out.upgrade = Math.min(MFG_MAX_REPORTED, Math.max(0, Math.floor(n)));
+    }
+  }
+  const cr = doc.customRecords;
+  if (cr && typeof cr === 'object') {
+    for (const list of Object.values(cr)) {
+      if (!Array.isArray(list)) continue;
+      for (const r of list) {
+        if (r && typeof r === 'object' && isMfgLegacyPosId(r.id)) out.submit++;
+      }
+    }
+  }
+  return out;
 }
 
 async function loadLegacyKeySet(env) {
@@ -198,12 +245,48 @@ export async function recordLegacyIdHits(env, candidates) {
   return out;
 }
 
+/**
+ * Adds the Manufacturing signals to today's rows, and starts the Manufacturing window at the first
+ * reporting patch. Never throws. Returns what it wrote, for tests.
+ */
+export async function recordMfgLegacySignals(env, sig) {
+  const out = { mfg_submit: 0, mfg_upgrade: 0, started: false };
+  try {
+    if (!env || !env.DB || !sig) return out;
+    await ensureSchema(env.DB);
+    const nowIso = new Date().toISOString();
+    const day = nowIso.slice(0, 10);
+    const stmts = [];
+    if (sig.reported) {
+      stmts.push(env.DB.prepare("INSERT OR IGNORE INTO legacy_id_hits (day, kind, hits, updated_at) VALUES ('since', 'mfg_tracking', 0, ?1)").bind(nowIso));
+      out.started = true;
+    }
+    for (const [kind, n] of [['mfg_submit', sig.submit], ['mfg_upgrade', sig.upgrade]]) {
+      if (!(n > 0)) continue;
+      out[kind] = n;
+      stmts.push(
+        env.DB.prepare(
+          `INSERT INTO legacy_id_hits (day, kind, hits, updated_at) VALUES (?1, ?2, ?3, ?4)
+           ON CONFLICT(day, kind) DO UPDATE SET hits = hits + excluded.hits, updated_at = excluded.updated_at`
+        ).bind(day, kind, n, nowIso)
+      );
+    }
+    if (stmts.length) await env.DB.batch(stmts);
+  } catch (_) {}
+  return out;
+}
+
 /** Runs the count after the response when the platform allows it, so a sync never waits on it. */
-export function scheduleLegacyIdHits(env, ctx, candidates) {
+export function scheduleLegacyIdHits(env, ctx, candidates, mfgSignals = null) {
   const hasAny = candidates && ((candidates.submit && candidates.submit.size) || (candidates.upgrade && candidates.upgrade.size));
-  const task = hasAny ? recordLegacyIdHits(env, candidates) : (async () => {
+  const hasMfg = mfgSignals && (mfgSignals.reported || mfgSignals.submit > 0 || mfgSignals.upgrade > 0);
+  const task = (async () => {
+    let res;
+    if (hasAny) res = await recordLegacyIdHits(env, candidates);
     // Still create the table and the `since` row once per isolate, so the window starts at deploy.
-    try { if (env && env.DB) await ensureSchema(env.DB); } catch (_) {}
+    else { try { if (env && env.DB) await ensureSchema(env.DB); } catch (_) {} }
+    if (hasMfg) res = Object.assign(res || {}, { mfg: await recordMfgLegacySignals(env, mfgSignals) });
+    return res;
   })();
   if (ctx && typeof ctx.waitUntil === 'function') {
     ctx.waitUntil(task);
