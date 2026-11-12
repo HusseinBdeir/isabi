@@ -994,7 +994,8 @@ finally:
       user: { id: 'u-sup-escape', email: 'escape@bhfirms.com', full_name: 'Scope Escape', role: 'Supervisor', companies: 'WTC' }
     }, { 'X-ISABI-Session': bbcSupToken });
 
-    // Server-side 128-d Euclidean L2 Face ID + PIN verification (remote web never issues JWT on Face ID vector alone)
+    // Server-side 128-d Euclidean L2 Face ID verification. Face ID or PIN, never both (owner decision 2026-11-12):
+    // under the `either` default a matching Face ID alone signs in, with or without a typed email.
     const vecBase = Array.from({ length: 128 }, (_, i) => Number((Math.sin(i + 1) * 0.12).toFixed(5)));
     const vecNear = vecBase.map((v, i) => Number((v + (i % 2 === 0 ? 0.002 : -0.002)).toFixed(5)));
     const vecFar = Array.from({ length: 128 }, (_, i) => Number((Math.cos(i + 1) * 0.25).toFixed(5)));
@@ -1014,6 +1015,8 @@ finally:
     const faceWrongVec = await httpReq('POST', '/app/api/auth/login', { email: 'faceverify@bhfirms.com', pin: '7412', method: 'Face ID + PIN 2FA', face_descriptor: vecFar });
     const faceNoPin = await httpReq('POST', '/app/api/auth/login', { email: 'faceverify@bhfirms.com', method: 'Face ID', face_descriptor: vecNear });
     const faceGoodVec = await httpReq('POST', '/app/api/auth/login', { email: 'faceverify@bhfirms.com', pin: '7412', method: 'Face ID + PIN 2FA', face_descriptor: vecNear });
+    const faceNoEmail = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', face_descriptor: vecNear });
+    const faceStrangerNoEmail = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', face_descriptor: vecFar });
 
     if (
       unauthUsersPost.status === 401 &&
@@ -1039,16 +1042,22 @@ finally:
       supGrantOutScope.status === 403 &&
       faceNoVec.status === 401 &&
       faceWrongVec.status === 401 &&
-      faceNoPin.status === 401 &&
-      faceNoPin.json?.two_factor_pin_required === true &&
-      !faceNoPin.json?.token &&
+      faceNoPin.status === 200 &&
+      Boolean(faceNoPin.json?.token) &&
+      faceNoPin.json?.user?.email === 'faceverify@bhfirms.com' &&
       faceGoodVec.status === 200 &&
       Boolean(faceGoodVec.json?.token) &&
-      faceGoodVec.json?.user?.pin_code === undefined
+      faceGoodVec.json?.user?.pin_code === undefined &&
+      faceNoEmail.status === 200 &&
+      Boolean(faceNoEmail.json?.token) &&
+      faceNoEmail.json?.user?.email === 'faceverify@bhfirms.com' &&
+      faceStrangerNoEmail.status === 401 &&
+      !faceStrangerNoEmail.json?.token &&
+      !faceStrangerNoEmail.json?.user
     ) {
       pass(
         'edge-17-unauth-401-privilege-lock-faceid-and-cors',
-        '7 unauth endpoints=401, CSRF/CORS locked, weak PIN=400, Entry/Supervisor escalation blocked, Face ID requires PIN+128-d match'
+        '7 unauth endpoints=401, CSRF/CORS locked, weak PIN=400, Entry/Supervisor escalation blocked, Face ID alone signs in on a 128-d match (email optional), unknown face refused'
       );
     } else {
       fail('edge-17-unauth-401-privilege-lock-faceid-and-cors', JSON.stringify({
@@ -1163,7 +1172,8 @@ finally:
       };
     })()`);
 
-    // 19b (Adversarial + Positive): Cold-browser descriptor-only Face ID block + `auth_mode: 'both'` step-up 2FA enforcement
+    // 19b: Cold-browser descriptor-only Face ID signs in under `either` (Face ID or PIN, owner decision 2026-11-12)
+    // + `auth_mode: 'both'` seats still need the two
     const coldFaceOnly = await httpReq('POST', '/app/api/auth/login', {
       method: 'Face ID',
       face_descriptor: vecNear
@@ -1257,8 +1267,10 @@ finally:
       browserDemoCheck?.isDemoFn === true &&
       browserDemoCheck?.demoQuarantined === true &&
       browserDemoCheck?.storedSessTok === '' &&
-      coldFaceOnly.status === 400 &&
-      !coldFaceOnly.json?.token &&
+      coldFaceOnly.status === 200 &&
+      Boolean(coldFaceOnly.json?.token) &&
+      coldFaceOnly.json?.user?.email === 'faceverify@bhfirms.com' &&
+      coldFaceOnly.json?.user?.pin_code === undefined &&
       bothPinOnly.status === 401 &&
       bothPinOnly.json?.two_factor_face_required === true &&
       !bothPinOnly.json?.token &&
@@ -1282,7 +1294,7 @@ finally:
     ) {
       pass(
         'edge-19-demo-quarantine-2fa-coldface-geomerged-and-scoped-r2',
-        'Demo JWT quarantined, Demo AI same-origin gated, vector-only Face ID blocked (400), both-2FA verified, geo_config merged, empty-co blob scoped'
+        'Demo JWT quarantined, Demo AI same-origin gated, Face ID alone signs in an either seat (200), both-2FA verified, geo_config merged, empty-co blob scoped'
       );
     } else {
       fail('edge-19-demo-quarantine-2fa-coldface-geomerged-and-scoped-r2', JSON.stringify({
@@ -2084,6 +2096,11 @@ finally:
       pin: '482915',
       method: 'PIN'
     });
+    // Workspace `both`: a face alone (no email, no PIN) on an inheriting seat gets no session.
+    const wsDefaultBothFaceAloneRes = await httpReq('POST', '/app/api/auth/login', {
+      method: 'Face ID',
+      face_descriptor: vec28Inherit
+    }, { 'CF-Connecting-IP': '198.51.100.93' });
     await httpReq('POST', '/app/api/sync', {
       op: 'patch',
       doc: 'mfg_web_store',
@@ -2145,6 +2162,32 @@ finally:
       face_descriptor: vec28Imposter
     }, { 'CF-Connecting-IP': '198.51.100.90' });
 
+    // Face ID or PIN (owner decision 2026-11-12): anonymous face probes (no email, no PIN)
+    // (a) `both` seat: face verified, PIN still required, no token and no email leaked;
+    const probeBothRes = await httpReq('POST', '/app/api/auth/login', {
+      method: 'Face ID',
+      face_descriptor: vec28Both
+    }, { 'CF-Connecting-IP': '198.51.100.91' });
+    // (b) `pin_only` seat: refused with the same message as an unknown face (no seat oracle);
+    const probePinOnlyRes = await httpReq('POST', '/app/api/auth/login', {
+      method: 'Face ID',
+      face_descriptor: vec28PinOnly
+    }, { 'CF-Connecting-IP': '198.51.100.91' });
+    // (c) unknown faces lock only face probes on that IP, never PIN sign-in from the same IP.
+    let probeLockStatus = 0;
+    for (let k = 0; k < 6; k++) {
+      const pr = await httpReq('POST', '/app/api/auth/login', {
+        method: 'Face ID',
+        face_descriptor: vec28Imposter
+      }, { 'CF-Connecting-IP': '198.51.100.92' });
+      probeLockStatus = pr.status;
+    }
+    const pinAfterFaceLockRes = await httpReq('POST', '/app/api/auth/login', {
+      email: 'edge28pinonly@bhfirms.com',
+      pin: '2947',
+      method: 'PIN'
+    }, { 'CF-Connecting-IP': '198.51.100.92' });
+
     consoleErrors.length = 0;
     await sendCdp('Network.clearBrowserCookies');
     const remoteScript28 = await sendCdp('Page.addScriptToEvaluateOnNewDocument', {
@@ -2197,12 +2240,7 @@ finally:
       const vecBoundary = ${JSON.stringify(vec28Boundary)};
       const vecImp = ${JSON.stringify(vec28Imposter)};
 
-      // Negative Assertion 0: Pre-credential Face ID scan holds at awaiting-credentials (never unlocks on vector alone)
-      window.MFG_FACE_TEST.resetLiveness();
-      await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.29, yaw: -0.03, parallax3d: -0.014 });
-      await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.18, yaw: 0.0, parallax3d: 0.0 });
-      const fNoCreds = await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.29, yaw: 0.03, parallax3d: 0.014 });
-      const stAfterNoCreds = window.MFG_FACE_TEST.state();
+      // (Face ID alone with no email and no PIN is checked at the end of this flow: it now signs in.)
 
       // Enter Email + PIN on the server-held sign-in gate before scanning Face ID
       const emGateInp = document.getElementById('authEmailInput');
@@ -2379,6 +2417,29 @@ finally:
         sixDigitActiveEmail = (st6 && st6.activeEmail) || '';
       }
 
+      // Face ID or PIN, never both (owner decision 2026-11-12): sign out, clear both boxes, then a live
+      // Face ID alone (no email, no PIN) signs the enrolled seat in through the server.
+      let fNoCreds = null;
+      let stAfterNoCreds = null;
+      let noCredsSignedOut = false;
+      {
+        const signOutBtn2 = document.getElementById('signOutBtn') || document.querySelector('[data-action="signout"]');
+        if (signOutBtn2) signOutBtn2.click();
+        await new Promise(r => setTimeout(r, 400));
+        noCredsSignedOut = !window.MFG_FACE_TEST.state().authed;
+        const em2 = document.getElementById('authEmailInput');
+        const pin2 = document.getElementById('authPinInput');
+        if (em2) { em2.value = ''; em2.dispatchEvent(new Event('input', { bubbles: true })); }
+        if (pin2) { pin2.value = ''; pin2.dispatchEvent(new Event('input', { bubbles: true })); }
+        await new Promise(r => setTimeout(r, 820));
+        window.MFG_FACE_TEST.resetLiveness();
+        await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.29, yaw: -0.03, parallax3d: -0.014 });
+        await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.18, yaw: 0.0, parallax3d: 0.0 });
+        fNoCreds = await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.29, yaw: 0.03, parallax3d: 0.014 });
+        await new Promise(r => setTimeout(r, 300));
+        stAfterNoCreds = window.MFG_FACE_TEST.state();
+      }
+
       return {
         bootOk: true,
         stBoot,
@@ -2386,6 +2447,7 @@ finally:
         recordsReadyBefore,
         fNoCredsStatus: fNoCreds?.status,
         stAfterNoCreds,
+        noCredsSignedOut,
         f1Status: f1?.status,
         stAfterF1,
         hintAfterF1,
@@ -2451,14 +2513,30 @@ finally:
       authAllowPinOnlyRes.json?.verify_only === true &&
       imposterHttpRes.status === 401 &&
       imposterHttpRes.json?.face_dist === undefined &&
+      wsDefaultBothFaceAloneRes.status === 401 &&
+      wsDefaultBothFaceAloneRes.json?.two_factor_pin_required === true &&
+      !wsDefaultBothFaceAloneRes.json?.token &&
+      wsDefaultBothFaceAloneRes.json?.email === undefined &&
+      probeBothRes.status === 401 &&
+      probeBothRes.json?.two_factor_pin_required === true &&
+      !probeBothRes.json?.token &&
+      probeBothRes.json?.email === undefined &&
+      !probeBothRes.headers['set-cookie'] &&
+      probePinOnlyRes.status === 401 &&
+      probePinOnlyRes.json?.error === 'Face ID not recognized.' &&
+      !probePinOnlyRes.json?.token &&
+      probeLockStatus === 429 &&
+      pinAfterFaceLockRes.status === 200 &&
       e28Flow?.bootOk === true &&
       e28Flow.stBoot?.authed === false &&
       e28Flow.stBoot?.enrolledSeats?.length === 0 &&
       e28Flow.preAuthDeferred === true &&
       e28Flow.recordsReadyBefore === false &&
       e28Flow.stBoot?.confirmFrames === 3 &&
-      e28Flow.fNoCredsStatus === 'awaiting-credentials' &&
-      e28Flow.stAfterNoCreds?.authed === false &&
+      e28Flow.noCredsSignedOut === true &&
+      e28Flow.fNoCredsStatus === 'verified' &&
+      e28Flow.stAfterNoCreds?.authed === true &&
+      e28Flow.stAfterNoCreds?.activeEmail === 'edge28face@bhfirms.com' &&
       e28Flow.f1Status === 'edge-streak' &&
       e28Flow.stAfterF1?.authed === false &&
       !/not recognized/i.test(e28Flow.hintAfterF1 || '') &&
@@ -2506,6 +2584,13 @@ finally:
         full2fa: [fullLogin2faNoPinRes.status, fullLogin2faNoPinRes.json?.two_factor_pin_required],
         pinOnly: [unauthAllowPinOnlyRes.status, authAllowPinOnlyRes.status],
         impOracle: [imposterHttpRes.status, imposterHttpRes.json?.face_dist],
+        faceProbes: {
+          wsBothFace: [wsDefaultBothFaceAloneRes.status, wsDefaultBothFaceAloneRes.json],
+          both: [probeBothRes.status, probeBothRes.json, Boolean(probeBothRes.headers['set-cookie'])],
+          pinOnly: [probePinOnlyRes.status, probePinOnlyRes.json],
+          lock: probeLockStatus,
+          pinAfterLock: [pinAfterFaceLockRes.status, pinAfterFaceLockRes.json?.error]
+        },
         e28Flow
       }));
     }

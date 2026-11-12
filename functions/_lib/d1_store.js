@@ -415,11 +415,14 @@ async function readLockEntry(db, key) {
   return obj && typeof obj === 'object' ? obj : null;
 }
 
-async function checkAuthLockout(db, ipHash, emailRaw) {
+// Anonymous Face ID probes (no email, no PIN) count on their own per-IP key, so a camera that keeps
+// seeing an unknown face can never lock PIN sign-in for everyone behind the same office IP.
+async function checkAuthLockout(db, ipHash, emailRaw, faceProbe = false) {
   if (!db || !ipHash) return { locked: false, retryAfterSec: 0 };
   const nowMs = Date.now();
   const emailClean = String(emailRaw || '').trim().toLowerCase();
   const keys = [`rl:lock_ip:${ipHash}`];
+  if (faceProbe) keys.push(`rl:lock_face:${ipHash}`);
   if (emailClean) {
     keys.push(`rl:lock_em_ip:${ipHash}:${emailClean}`);
   }
@@ -477,6 +480,23 @@ async function bumpLockCounter(db, key, windowMs, nowMs, nowIso) {
   return parsed && typeof parsed === 'object' ? parsed : { fails: 1, windowStartMs: nowMs, lockedUntilMs: 0 };
 }
 
+async function recordFaceProbeFailure(db, ipHash) {
+  const memFace = checkSlidingRateLimit(`auth_fail_face:${ipHash}`, 5, 300000);
+  if (!db || !ipHash) {
+    return { throttled: !memFace.allowed, retryAfterSec: memFace.allowed ? 0 : 300 };
+  }
+  const nowMs = Date.now();
+  try {
+    const st = await bumpLockCounter(db, `rl:lock_face:${ipHash}`, LOCKOUT_WINDOW_MS, nowMs, new Date(nowMs).toISOString());
+    const until = Number(st.lockedUntilMs || 0);
+    return until > nowMs
+      ? { throttled: true, retryAfterSec: Math.max(1, Math.ceil((until - nowMs) / 1000)) }
+      : { throttled: false, retryAfterSec: 0 };
+  } catch (_) {
+    return { throttled: !memFace.allowed, retryAfterSec: memFace.allowed ? 0 : 300 };
+  }
+}
+
 async function recordAuthFailure(db, ipHash, emailRaw) {
   const emailClean = String(emailRaw || '').trim().toLowerCase();
   const memIp = checkSlidingRateLimit(`auth_fail_ip:${ipHash}`, 5, 300000);
@@ -510,10 +530,11 @@ async function recordAuthFailure(db, ipHash, emailRaw) {
   }
 }
 
-async function clearAuthFailure(db, ipHash, emailRaw) {
+async function clearAuthFailure(db, ipHash, emailRaw, clearFace = false) {
   if (!db || !ipHash) return;
   const emailClean = String(emailRaw || '').trim().toLowerCase();
   const keys = [`rl:lock_ip:${ipHash}`];
+  if (clearFace) keys.push(`rl:lock_face:${ipHash}`);
   if (emailClean) keys.push(`rl:lock_em_ip:${ipHash}:${emailClean}`);
   try {
     const ph = keys.map((_, i) => `?${i + 1}`).join(',');
@@ -581,8 +602,10 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   const faceDesc = body && body.face_descriptor;
   const isFaceMethod = /^face\s*id/i.test(method);
   const ipHash = await hashClientIp(request);
+  // Anonymous Face ID alone (no email, no PIN, not a step-up or verify): misses count on the face key only.
+  const isFaceProbe = Boolean(isFaceMethod && !email && !pin && !(body && (body.verify_only === true || body.step_up === true)));
 
-  const lockState = await checkAuthLockout(env.DB, ipHash, email);
+  const lockState = await checkAuthLockout(env.DB, ipHash, email, isFaceProbe);
   if (lockState.locked) {
     return jsonResponse({
       ok: false,
@@ -594,7 +617,13 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
 
   let row = null;
   const failAuth = async (errMsg, status = 401) => {
-    const res = await recordAuthFailure(env.DB, ipHash, email || (row && row.email) || '');
+    const res = isFaceProbe
+      ? await recordFaceProbeFailure(env.DB, ipHash)
+      : await recordAuthFailure(env.DB, ipHash, email || (row && row.email) || '');
+    if (isFaceProbe && !res.throttled) {
+      // Never tell an anonymous face probe which seat it matched or why it was refused.
+      return jsonResponse({ ok: false, error: 'Face ID not recognized.' }, 401);
+    }
     if (res.throttled) {
       return jsonResponse({
         ok: false,
@@ -638,7 +667,9 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
 
   if (email) {
     row = await env.DB.prepare('SELECT * FROM users WHERE lower(email) = ?1 LIMIT 1').bind(email).first();
-  } else if (isVerifyOnly && callerSess && isFaceMethod && isValidFaceVec(faceDesc)) {
+  } else if (isFaceMethod && isValidFaceVec(faceDesc) && (!isVerifyOnly || callerSess)) {
+    // Face ID or PIN (owner decision 2026-11-12): Face ID alone may sign in without a typed email,
+    // so the seat is identified 1:N against every active enrolled seat with a clear margin.
     const allActive = await loadAllActive();
     let bestCand = null;
     let bestDist = Infinity;
@@ -676,9 +707,9 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   const expectedPin = String(row.pin_code || '').trim();
   const hasEnrolledBio = safeJsonParse(row.face_samples, []).some(isValidFaceVec);
   const authMode = resolveServerSeatAuthMode(row, wsFaceSettings, hasEnrolledBio);
-  // Remote web sessions NEVER issue a JWT/cookie on a client-supplied 128-float vector alone:
-  // Face ID login on the web always requires Email + PIN + Face ID (`both`).
-  const needsTwoFactor = (!isVerifyOnly && isFaceMethod) || (authMode === 'both' && hasEnrolledBio) || /2fa/i.test(method);
+  // Face ID or PIN, never both (owner decision 2026-11-12): under `either` a verified Face ID alone
+  // signs in, and a PIN alone signs in. Only a seat or workspace set to `both` still asks for the two.
+  const needsTwoFactor = (authMode === 'both' && hasEnrolledBio) || /2fa/i.test(method);
   if (isStepUp && callerSess) {
     const rowIdMatch = String(row.id || '') === String(callerSess.sub || '');
     const rowEmMatch = String(row.email || '').trim().toLowerCase() === String(callerSess.email || '').trim().toLowerCase();
@@ -718,7 +749,9 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
       if (needsTwoFactor && (!isVerifyOnly || isStepUp)) {
         if (!pin) {
           if (!callerSess) {
-            const rl = await recordAuthFailure(env.DB, ipHash, email || row.email || '');
+            const rl = isFaceProbe
+              ? await recordFaceProbeFailure(env.DB, ipHash)
+              : await recordAuthFailure(env.DB, ipHash, email || row.email || '');
             if (rl.throttled) {
               return jsonResponse({
                 ok: false,
@@ -731,9 +764,10 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
           const pinReqOut = {
             ok: false,
             two_factor_pin_required: true,
-            email: row.email,
             error: 'Two-factor Access PIN is required.'
           };
+          // An anonymous face probe never learns which seat it matched.
+          if (!isFaceProbe || callerSess) pinReqOut.email = row.email;
           if (callerSess) {
             pinReqOut.full_name = row.full_name;
             pinReqOut.user = hydrateUserRow(row, true, true);
@@ -750,7 +784,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
       }
     } else {
       if (authMode === 'face_only' && hasEnrolledBio) {
-        return failAuth('This seat requires Face ID + PIN sign-in.');
+        return failAuth('This seat requires Face ID sign-in.');
       }
       const pinCheck = await verifySeatPin(pin, expectedPin);
       if (!pinCheck.ok) {
@@ -839,7 +873,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
       ).bind(sessId, row.id, row.email, row.full_name, row.role, row.companies, device, nowIso, method, confidence, ipHash)
     ]),
-    clearAuthFailure(env.DB, ipHash, row.email)
+    clearAuthFailure(env.DB, ipHash, row.email, isFaceProbe)
   ]);
 
   const isHttps = new URL(request.url).protocol === 'https:';
