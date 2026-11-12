@@ -2289,8 +2289,21 @@ finally:
     }
     const verifyKeepFace = await httpReq('POST', '/app/api/auth/login', { email: 'edge28face@bhfirms.com', method: 'Face ID', verify_only: true, face_descriptor: vec28 }, { 'X-ISABI-Session': ownerToken, 'CF-Connecting-IP': '198.51.100.102' });
     verifyKeepStatuses.push(`verify:${verifyKeepFace.status}`);
+    // Another seat's checked PIN resets the IP key, so the 429 below can only come from the seat's own key.
+    await httpReq('POST', '/app/api/auth/login', { email: 'edge28pinonly@bhfirms.com', pin: '2947', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.102' });
     const verifyKeepFifth = await httpReq('POST', '/app/api/auth/login', { email: 'edge28face@bhfirms.com', pin: '0000', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.102' });
     verifyKeepStatuses.push(verifyKeepFifth.status);
+    // (l) same for a face-alone SIGN-IN of that seat: it never resets the seat's own PIN key.
+    const signinKeepStatuses = [];
+    for (let k = 0; k < 4; k++) {
+      const wp = await httpReq('POST', '/app/api/auth/login', { email: 'edge28face@bhfirms.com', pin: '0000', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.103' });
+      signinKeepStatuses.push(wp.status);
+    }
+    const signinKeepFace = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', face_descriptor: vec28 }, { 'CF-Connecting-IP': '198.51.100.103' });
+    signinKeepStatuses.push(`face:${signinKeepFace.status}`);
+    await httpReq('POST', '/app/api/auth/login', { email: 'edge28pinonly@bhfirms.com', pin: '2947', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.103' });
+    const signinKeepFifth = await httpReq('POST', '/app/api/auth/login', { email: 'edge28face@bhfirms.com', pin: '0000', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.103' });
+    signinKeepStatuses.push(signinKeepFifth.status);
 
     consoleErrors.length = 0;
     await sendCdp('Network.clearBrowserCookies');
@@ -2641,6 +2654,7 @@ finally:
       verifyMissStatuses[5] === 'pin:200' &&
       emaillessPinStatuses.join(',') === '401,401,401,401,429,right:429' &&
       verifyKeepStatuses.join(',') === '401,401,401,401,verify:200,429' &&
+      signinKeepStatuses.join(',') === '401,401,401,401,face:200,429' &&
       e28Flow?.bootOk === true &&
       e28Flow.stBoot?.authed === false &&
       e28Flow.stBoot?.enrolledSeats?.length === 0 &&
@@ -2712,7 +2726,8 @@ finally:
           pinViaFace: pinViaFaceStatuses,
           verifyMiss: verifyMissStatuses,
           emaillessPin: emaillessPinStatuses,
-          verifyKeep: verifyKeepStatuses
+          verifyKeep: verifyKeepStatuses,
+          signinKeep: signinKeepStatuses
         },
         e28Flow
       }));

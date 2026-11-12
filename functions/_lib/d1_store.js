@@ -714,6 +714,10 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   }
   // The seat was found by face (no email in the request) and a PIN is about to be checked: the seat's own
   // PIN lock must hold here too, or leaving out the email would skip it.
+  if (!email && pin && !String(row.email || '').trim()) {
+    // A seat without an email has no PIN key to throttle on: never check its PIN through the face lookup.
+    return failAuth('Invalid email or Access PIN.', 401, { pinMiss: true });
+  }
   if (!email && pin && row.email) {
     const seatLock = await checkAuthLockout(env.DB, ipHash, row.email, false);
     if (seatLock.locked) {
