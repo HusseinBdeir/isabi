@@ -5,7 +5,7 @@
 
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { handleIndustryDomainStore, handleSync } from '../functions/_lib/d1_store.js';
+import { compareShellVer, handleIndustryDomainStore, handleSync, holdMinShellVer } from '../functions/_lib/d1_store.js';
 import {
   _resetLegacyIdHitsForTests, collectLegacyCandidates, isLegacyShapedId, isMfgLegacyPosId, recordLegacyIdHits,
   takeMfgLegacySignals
@@ -326,6 +326,29 @@ const mfgPatch = (extra, ts) => ({ op: 'patch', doc: 'mfg_web_store', ...(ts ? {
   await settle();
   ok('NEGATIVE: a shell that does not report never starts the Manufacturing window',
     d1.rows("SELECT * FROM legacy_id_hits WHERE kind = 'mfg_tracking'").length === 0 && d1.rows("SELECT * FROM legacy_id_hits WHERE kind = 'tracking'").length === 1);
+}
+
+// minShellVer is a floor: a push from an older shell never lowers it (so newer devices keep nudging old ones to update).
+{
+  ok('shell versions compare numerically, not as text',
+    compareShellVer('19.6.264', '19.6.99') === 1 && compareShellVer('19.6.26', '19.6.260') === -1 && compareShellVer('19.6', '19.6.0') === 0);
+  const a = holdMinShellVer({ minShellVer: '19.6.260' }, { minShellVer: '19.6.264' });
+  const b = holdMinShellVer({ minShellVer: '19.6.265' }, { minShellVer: '19.6.264' });
+  const c = holdMinShellVer({ minShellVer: 'x<script>' }, { minShellVer: '19.6.264' });
+  const d = holdMinShellVer({}, null);
+  ok('the floor keeps the higher of stored and incoming; junk never replaces a valid stored value',
+    a.minShellVer === '19.6.264' && b.minShellVer === '19.6.265' && c.minShellVer === '19.6.264' && !('minShellVer' in d), { a, b, c, d });
+
+  const { env, d1 } = freshEnv();
+  const { ctx, settle } = ctxCollector();
+  const first = mfgPatch({ minShellVer: '19.6.265' });
+  const r1 = await (await handleSync(syncReq(first), env, OWNER, first, ctx)).json();
+  const second = mfgPatch({ minShellVer: '19.6.260', updatedAt: new Date(Date.now() + 5000).toISOString() }, r1.updatedAt);
+  const r2 = await (await handleSync(syncReq(second), env, OWNER, second, ctx)).json();
+  await settle();
+  const stored = JSON.parse(d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0].payload_json);
+  ok('through /api/sync: an older shell\'s push saves but leaves the stored minShellVer at the newer version',
+    r1.ok && r2.ok && !r2.conflict && stored.minShellVer === '19.6.265', { r1, r2, stored: stored.minShellVer });
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

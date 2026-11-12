@@ -81,6 +81,28 @@ export function isServerOwnedRowEditKey(editKey) {
   return /(^|::)(HSP-REV-)?POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(editKey || ''));
 }
 
+// The store's minShellVer is a floor: every push stamps the pusher's own shell version, so an older device would
+// otherwise lower it again and the devices reading after it would never be nudged to update. Keep the higher value.
+const SHELL_VER_RE = /^\d{1,4}(?:\.\d{1,6}){0,3}$/;
+export function compareShellVer(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+export function holdMinShellVer(doc, prevDoc = null) {
+  if (!doc || typeof doc !== 'object') return doc;
+  const inc = SHELL_VER_RE.test(String(doc.minShellVer || '')) ? String(doc.minShellVer) : '';
+  const prev = prevDoc && SHELL_VER_RE.test(String(prevDoc.minShellVer || '')) ? String(prevDoc.minShellVer) : '';
+  const keep = !inc ? prev : (!prev ? inc : (compareShellVer(inc, prev) >= 0 ? inc : prev));
+  if (keep) doc.minShellVer = keep;
+  else delete doc.minShellVer;
+  return doc;
+}
+
 const LEGACY_PURGED_ENTRY_RE = /^[a-z_]+:(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$/;
 
 // Removes every client copy of a server-owned row from a store document before it is stored or mirrored,
@@ -4090,7 +4112,10 @@ export async function handleSync(request, env, session, body, _ctx) {
     if (pKey === 'mfg_web_store' && !isOwnerOrFullGroupSession(session)) {
       await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
     }
-    if (pKey === 'mfg_web_store') stripServerOwnedCustomRows(incomingDoc, prevDoc);
+    if (pKey === 'mfg_web_store') {
+      stripServerOwnedCustomRows(incomingDoc, prevDoc);
+      holdMinShellVer(incomingDoc, prevDoc);
+    }
     let newTs = String(incomingDoc.updatedAt || new Date().toISOString());
     if (newTs === currentTs) {
       const parsedMs = Date.parse(newTs);
