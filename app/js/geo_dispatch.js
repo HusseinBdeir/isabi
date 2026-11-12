@@ -1417,14 +1417,15 @@
       };
     }
     if (atlasHit) {
+      // Boundary atlas items carry name + geojson (no label / poly)
       const gov = canonGovernorateName(resolveGovernorateForPoint(atlasHit.lat, atlasHit.lng).label);
       return {
-        name: atlasHit.label,
-        zone_type: atlasHit.zone_type || (atlasHit.poly ? 'boundary' : 'circle'),
+        name: atlasHit.label || atlasHit.name,
+        zone_type: atlasHit.zone_type || (atlasHit.geojson ? 'boundary' : 'circle'),
         center_lat: Number(atlasHit.lat),
         center_lng: Number(atlasHit.lng),
         radius_km: Number(atlasHit.radius_km || 0),
-        zone_geojson: atlasHit.poly ? polyFromPairs(atlasHit.poly) : null,
+        zone_geojson: atlasHit.geojson || null,
         governorate: gov,
         isSeedRecord: false,
         row: null
@@ -1653,15 +1654,22 @@
     if (atlasHit) {
       const wtc = isMfg ? getCompanyHub('WTC', SEED) : null;
       const distKm = wtc ? round1(roadAdjustedKm(wtc.lat, wtc.lng, atlasHit.lat, atlasHit.lng)) : null;
-      return persistRegionZone({
-        name: atlasHit.label,
-        zone_type: atlasHit.zone_type || (atlasHit.poly ? 'boundary' : 'circle'),
+      // Boundary atlas items carry name + geojson (no label / poly); return the saved row, as for an existing one
+      const atlasName = atlasHit.label || atlasHit.name;
+      const saved = persistRegionZone({
+        name: atlasName,
+        zone_type: atlasHit.zone_type || (atlasHit.geojson ? 'boundary' : 'circle'),
         center_lat: atlasHit.lat,
         center_lng: atlasHit.lng,
         radius_km: atlasHit.radius_km || 0,
         distance_km: distKm,
-        zone_geojson: atlasHit.poly ? polyFromPairs(atlasHit.poly) : null
+        zone_geojson: atlasHit.geojson || null,
+        corridor: atlasHit.corridor,
+        code: atlasHit.code
       }, { SEED, STATE });
+      return saved
+        ? ((SEED.records.regions || []).find(r => isRowInGeoIndustry(r, activeInd) && norm(r.name) === norm(atlasName)) || null)
+        : null;
     }
     return null;
   }

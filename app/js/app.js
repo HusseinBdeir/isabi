@@ -7628,7 +7628,15 @@
     return Array.from(table.querySelectorAll('tr')).map(tr =>
       Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
         .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
-        .map(td => '"' + td.innerText.replace(/\s+/g, ' ').trim().replace(/"/g, '""') + '"').join(',')
+        .map(td => {
+          let txt = td.innerText;
+          if (td.querySelector('.ind-agr-pill')) {
+            const clone = td.cloneNode(true);
+            clone.querySelectorAll('.ind-agr-pill').forEach(n => n.remove());
+            txt = clone.textContent;
+          }
+          return '"' + String(txt || '').replace(/\s+/g, ' ').trim().replace(/"/g, '""') + '"';
+        }).join(',')
     ).join('\r\n');
   }
 
@@ -11573,7 +11581,29 @@
         if (isTargetMfg ? (Boolean(r._multiIndustrySeed) || (r._industry && r._industry !== 'Manufacturing')) : r._industry !== effTargetInd) return;
         const matchSite = Boolean(r.site && norm(r.site) === oldNorm);
         const matchOrigSite = Boolean(r.origin_site && norm(r.origin_site) === oldNorm);
+        // A row moved out of this area to a customer's own site is stored under the area's name (the move
+        // is applied at read time), so its saved form is renamed with the area: after a reload or on
+        // another device it then still follows the own site, and Move Back returns it to the new name
+        if (isTargetMfg && (tk === 'sales_tickets' || tk === 'price_rules') && !matchSite && !matchOrigSite
+          && r._split_from_site != null && norm(r._split_from_site) === oldNorm
+          && r._split_to && norm(r.site) === norm(r._split_to)) {
+          const saved = Object.assign({}, r, { site: cleanNew });
+          delete saved._split_from_site; delete saved._split_to; delete saved._split_at;
+          r._split_from_site = cleanNew;
+          if (rid) {
+            const cIdx = STATE.customRecords[tk].findIndex(x => x && String(x.id) === rid);
+            if (cIdx >= 0) STATE.customRecords[tk][cIdx] = saved;
+            else STATE.customRecords[tk].unshift(saved);
+          }
+          if (Array.isArray(extraApiPosts)) extraApiPosts.push([tk, Object.assign({}, saved)]);
+          tableChanged = true;
+          touchedCount++;
+          return;
+        }
         if (!matchSite && !matchOrigSite) return;
+        // A row the area-site split placed on this site follows the renamed site record by itself
+        // (applySiteCustomerSplits), so it is not copied into the saved overlay
+        if (matchSite && !matchOrigSite && r._split_from_site && r._split_to && norm(r._split_to) === oldNorm) return;
         if (matchSite) r.site = cleanNew;
         if (matchOrigSite) r.origin_site = cleanNew;
         if (seedArr && rid) {
@@ -11597,6 +11627,37 @@
         SEED._tableRev[tk] = (SEED._tableRev[tk] || 0) + 1;
       }
     });
+    if (isTargetMfg) {
+      // Own sites moved out of this area keep pointing at it under its new name, and so do the marks on
+      // their moved rows, so night pay, Move Back and the read-time pass follow the rename
+      const seedSites = (SEED && SEED.records && Array.isArray(SEED.records.sites)) ? SEED.records.sites : [];
+      if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+      const custSites = STATE.customRecords.sites;
+      const seenSites = new Set();
+      custSites.concat(seedSites).forEach(s => {
+        if (!s || !s.split_from || norm(s.split_from) !== oldNorm || !_areaSiteIsMfgRow(s)) return;
+        const sid = String(s.id || '');
+        if (sid) {
+          if (seenSites.has(sid)) return;
+          seenSites.add(sid);
+        }
+        s.split_from = cleanNew;
+        if (sid) {
+          seedSites.forEach(x => { if (x && String(x.id) === sid) x.split_from = cleanNew; });
+          const cIdx = custSites.findIndex(x => x && String(x.id) === sid);
+          if (cIdx >= 0) custSites[cIdx].split_from = cleanNew;
+          else custSites.unshift(Object.assign({}, s));
+        }
+        if (Array.isArray(extraApiPosts) && !s.voided) extraApiPosts.push(['sites', Object.assign({}, s)]);
+        touchedCount++;
+      });
+      ['sales_tickets', 'price_rules'].forEach(tk => {
+        [SEED && SEED.records && SEED.records[tk], STATE.customRecords[tk]].forEach(arr => {
+          if (!Array.isArray(arr)) return;
+          arr.forEach(r => { if (r && r._split_from_site != null && norm(r._split_from_site) === oldNorm) r._split_from_site = cleanNew; });
+        });
+      });
+    }
     if (touchedCount > 0 && SEED) {
       SEED._customRev = (SEED._customRev || 0) + 1;
       _filterRecordsWeakCache = new WeakMap();
@@ -11605,6 +11666,583 @@
       STATE.univConnPartyFilter = cleanNew;
     }
     return touchedCount;
+  }
+
+  // ==================== AREA-AS-SITE CHECK & CUSTOMER SITE SWITCH ====================
+  // A delivery site shared by several unrelated customers is usually a town or district, not one
+  // physical place. The check flags such a site. The switch gives one customer its own site inside a
+  // Region and moves that customer's price agreements and tickets to it. The move is stored once, on
+  // the new site record (split_from + split_customers + split_at), and applied at read time by
+  // applySiteCustomerSplits(), so rows a later top-up brings in under the old site name follow too
+  // and no ticket is rewritten. Amounts never change; night trip pay is protected (see evalOtTicket).
+  const _AREA_SITE_NOISE = new Set(['sal', 'sarl', 'srl', 's', 'a', 'r', 'l', 'co', 'company', 'ltd', 'est', 'majbal', 'beton', 'concrete', 'al', 'el', 'the', 'and']);
+  const _AREA_SITE_MFG_BUS = ['WTC', 'BBConstruction', 'Lions Transport'];
+  function _areaSiteTokens(s) {
+    return String(s || '').toLowerCase().replace(/[^a-z0-9؀-ۿ]+/g, ' ').trim().split(' ').filter(Boolean);
+  }
+  // One key per real customer: legal suffixes, generic plant words and the site's own name are dropped,
+  // so "Sabeh Beton", "Sabeh Beton S.R.L" and "sabeh Beton Choueifat" count once on site Choueifat.
+  function areaSiteCustomerKey(customer, siteName) {
+    const siteTok = new Set(_areaSiteTokens(siteName));
+    const all = _areaSiteTokens(customer);
+    const kept = all.filter(t => !siteTok.has(t) && !_AREA_SITE_NOISE.has(t));
+    return (kept.length ? kept : all).join(' ');
+  }
+  // The move sits on the Price Agreement, creates a site and re-points records: it needs all three rights
+  function canMoveCustomerSite() {
+    return canEnterForm('site') && canEnterForm('pricerule') && canModifyRecord();
+  }
+  function _areaSiteIsMfgRow(r) {
+    return Boolean(r) && !r._multiIndustrySeed && (!r._industry || r._industry === 'Manufacturing');
+  }
+  function _areaSiteHasSplit(s) {
+    return Boolean(s && !s.voided && s.split_from && Array.isArray(s.split_customers) && s.split_customers.length);
+  }
+  function _areaSiteIsDeliveryRule(r) {
+    return /^(Sales \(Delivery\)|Haulage \(Customer Site\))$/i.test(String((r && r.rule_type) || '').trim());
+  }
+  function _areaSiteIsPlaceName(name) {
+    const k = norm(name);
+    if (!k) return false;
+    const regs = (SEED && SEED.records && SEED.records.regions) || [];
+    if (regs.some(r => r && !r.voided && _areaSiteIsMfgRow(r) && norm(r.name) === k)) return true;
+    try {
+      return Boolean(window.MFG_GEO && typeof window.MFG_GEO.findAtlasRegionByName === 'function' && window.MFG_GEO.findAtlasRegionByName(name, SEED));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  let _areaSiteIdx = null;
+  function getAreaSiteIndex() {
+    const recs = (SEED && SEED.records) || {};
+    const u = (typeof activeUser === 'function' && activeUser()) || {};
+    const stamp = [
+      SEED._customRev || 0,
+      (recs.sales_tickets || []).length, (recs.price_rules || []).length, (recs.sites || []).length,
+      SEED._recordsReady ? 1 : 0, u.email || u.id || '', isOfficialScopeActive() ? 1 : 0
+    ].join('|');
+    if (_areaSiteIdx && _areaSiteIdx.stamp === stamp) return _areaSiteIdx;
+    const bySite = new Map();
+    const slot = (siteRaw, custRaw) => {
+      const sk = norm(siteRaw);
+      const ck = norm(custRaw);
+      if (!sk || !ck) return null;
+      if (!bySite.has(sk)) bySite.set(sk, { key: sk, name: String(siteRaw).trim(), customers: new Map() });
+      const e = bySite.get(sk);
+      if (!e.customers.has(ck)) e.customers.set(ck, { name: String(custRaw).trim(), loads: 0, rules: 0 });
+      return e.customers.get(ck);
+    };
+    // Only what this seat may see, in every Manufacturing entity and every period
+    const scope = { ignorePeriod: true, ignoreSearch: true, company: 'manufacturing-group' };
+    if (canAccessTable('sales_tickets')) {
+      filterRecords(recs.sales_tickets || [], Object.assign({ tableKey: 'sales_tickets' }, scope)).forEach(t => {
+        if (!t.site || !t.customer || t.is_internal_sale || isRemovedTicket(t)) return;
+        if (/pickup/i.test(String(t.sale_type || ''))) return;
+        const c = slot(t.site, t.customer);
+        if (c) c.loads += 1;
+      });
+    }
+    if (canAccessTable('price_rules')) {
+      filterRecords(recs.price_rules || [], Object.assign({ tableKey: 'price_rules' }, scope)).forEach(r => {
+        if (!r.site || !r.customer || !_areaSiteIsDeliveryRule(r)) return;
+        const c = slot(r.site, r.customer);
+        if (c) c.rules += 1;
+      });
+    }
+    const childrenByOld = new Map();
+    (recs.sites || []).forEach(s => {
+      if (!_areaSiteHasSplit(s) || !_areaSiteIsMfgRow(s)) return;
+      const ok = norm(s.split_from);
+      if (!childrenByOld.has(ok)) childrenByOld.set(ok, []);
+      childrenByOld.get(ok).push(s);
+    });
+    // A site every customer has already left still needs an entry, so its children stay reachable
+    childrenByOld.forEach((kids, ok) => {
+      if (!bySite.has(ok)) bySite.set(ok, { key: ok, name: String(kids[0].split_from).trim(), customers: new Map() });
+    });
+    bySite.forEach((e, sk) => {
+      const sObj = siteInfo(e.name);
+      const groups = new Map();
+      e.customers.forEach(c => {
+        c.key = areaSiteCustomerKey(c.name, e.name);
+        if (!groups.has(c.key)) groups.set(c.key, { key: c.key, names: [], loads: 0, rules: 0 });
+        const g = groups.get(c.key);
+        g.names.push(c.name);
+        g.loads += c.loads;
+        g.rules += c.rules;
+      });
+      e.site = sObj;
+      e.groups = groups;
+      // A name with fewer than 3 loads and no agreement is noise (a one-off drop), not a customer of the place
+      e.customerCount = Array.from(groups.values()).filter(g => g.loads >= 3 || g.rules > 0).length;
+      e.children = childrenByOld.get(sk) || [];
+      e.isJv = Boolean(sObj && (sObj.is_jv || sObj.jv));
+      e.isOwnPlant = _IS_OWN_BU_RE.test(e.name);
+      e.isSplitChild = _areaSiteHasSplit(sObj);
+      e.dismissed = Boolean(sObj && sObj.area_check === 'single');
+      e.isPlaceName = e.customerCount >= 2 ? _areaSiteIsPlaceName(e.name) : false;
+      e.flagged = !e.isJv && !e.isOwnPlant && !e.isSplitChild && !e.dismissed && (
+        e.customerCount >= 3
+        || (e.customerCount >= 2 && (e.isPlaceName || e.children.length > 0))
+        || (e.customerCount >= 1 && e.children.length > 0)
+      );
+    });
+    _areaSiteIdx = { stamp, bySite };
+    return _areaSiteIdx;
+  }
+  function describeAreaSite(siteName) {
+    const k = norm(siteName);
+    return k ? (getAreaSiteIndex().bySite.get(k) || null) : null;
+  }
+
+  // Region a company's night trip pay reads for a site, resolved exactly as payroll does (evalOtTicket)
+  function _areaSitePayRegion(company, siteName) {
+    const coN = norm(company || 'WTC');
+    const coMk = coN === 'bbconstruction' ? 'bbconstruction' : (coN === 'lions transport' ? 'lionstransport' : 'wtc');
+    const sr = (SEED.models && SEED.models[coMk] && SEED.models[coMk].site_regions) || null;
+    const sN = norm(siteName);
+    if (sr && Object.prototype.hasOwnProperty.call(sr, sN)) return norm(sr[sN] || '');
+    const sObj = siteInfo(siteName);
+    return norm((sObj && sObj.region) || '');
+  }
+  // The same, for each Manufacturing entity: kept on the customer's own site at the time of the move, so
+  // its pay does not depend on the area site record staying as it is
+  function _areaSitePayRegions(siteName) {
+    const out = {};
+    _AREA_SITE_MFG_BUS.forEach(co => { out[norm(co)] = _areaSitePayRegion(co, siteName); });
+    return out;
+  }
+  function _areaSiteTripRules(company, regionNorm) {
+    const coN = norm(company || 'WTC');
+    return ((SEED.records && SEED.records.overtime_rates) || []).filter(o =>
+      o && !o.voided && norm(o.company || 'WTC') === coN && (norm(o.region) || 'excluded') === regionNorm
+    );
+  }
+
+  // True when no live Manufacturing ticket, raw load or agreement sits on the site
+  function _areaSiteIsUnused(siteName) {
+    const k = norm(siteName);
+    const recs = (SEED && SEED.records) || {};
+    return !['sales_tickets', 'raw_purchases', 'price_rules'].some(tk =>
+      [recs[tk] || [], (STATE.customRecords && STATE.customRecords[tk]) || []].some(arr =>
+        arr.some(r => r && !r.voided && r.site && _areaSiteIsMfgRow(r) && norm(r.site) === k)));
+  }
+
+  function suggestCustomerSiteSwitch(siteName, customerName) {
+    const e = describeAreaSite(siteName);
+    const cust = String(customerName || '').trim();
+    const oldName = (e && e.name) || String(siteName || '').trim();
+    const custTok = new Set(_areaSiteTokens(cust));
+    const hasAreaInName = _areaSiteTokens(oldName).every(t => custTok.has(t));
+    const newSite = cust ? (hasAreaInName ? cust : `${cust} ${oldName}`) : '';
+    const sObj = siteInfo(oldName);
+    const region = _areaSiteIsPlaceName(oldName) ? oldName : ((sObj && sObj.region) || '');
+    const myKey = cust ? areaSiteCustomerKey(cust, oldName) : '';
+    const others = e
+      ? Array.from(e.customers.values())
+          .filter(c => norm(c.name) !== norm(cust))
+          .map(c => ({ name: c.name, loads: c.loads, rules: c.rules, same: Boolean(myKey && c.key === myKey) }))
+          .sort((a, b) => (b.same ? 1 : 0) - (a.same ? 1 : 0) || b.loads - a.loads || b.rules - a.rules)
+      : [];
+    return { oldSite: oldName, newSite, region, others };
+  }
+
+  function previewCustomerSiteSwitch(opts) {
+    const o = opts || {};
+    const oldSite = String(o.oldSite || '').trim();
+    const newSite = String(o.newSite || '').trim();
+    const regionIn = String(o.region || '').trim();
+    const custNames = [];
+    const custSet = new Set();
+    (Array.isArray(o.customers) ? o.customers : []).forEach(c => {
+      const nm = String(c || '').trim();
+      const k = norm(nm);
+      if (k && !custSet.has(k)) { custSet.add(k); custNames.push(nm); }
+    });
+    const fail = (code, reason) => ({ ok: false, code, reason });
+    if (getActiveIndustry() !== 'Manufacturing') return fail('industry', 'Site switches apply to Manufacturing delivery sites only.');
+    if (!(canMoveCustomerSite())) return fail('rights', 'Your seat cannot move records between sites.');
+    const oldObj = oldSite ? siteInfo(oldSite) : null;
+    if (!oldObj || !_areaSiteIsMfgRow(oldObj)) return fail('old_site', 'Pick the delivery site the customer is on now.');
+    if (oldObj.is_jv || oldObj.jv) return fail('old_site', 'A JV site cannot be split.');
+    if (_areaSiteHasSplit(oldObj)) return fail('old_site', `${oldObj.name} is already a customer's own site.`);
+    if (!custNames.length) return fail('customers_none', 'Pick the customer to move.');
+    if (!newSite) return fail('new_site_blank', 'New Site Name is required.');
+    if (norm(newSite) === norm(oldSite)) return fail('new_site_same', 'The new site needs a different name from the area.');
+    const newObj = siteInfo(newSite);
+    if (newObj) {
+      if (!_areaSiteIsMfgRow(newObj) || newObj.is_jv || newObj.jv) return fail('new_site_taken', `${newObj.name} cannot take a customer.`);
+      // Pay for a moved site follows the area it came from (evalOtTicket), so the target must be a site
+      // that already came from this area, or one nothing has been recorded on yet
+      const sameArea = Boolean(newObj.split_from && norm(newObj.split_from) === norm(oldSite));
+      // Not a site that came out of another area, nor an area other sites came out of: its own move would be lost
+      const isOtherAreasChild = Boolean(newObj.split_from && !sameArea);
+      const isAnAreaItself = ((SEED.records && SEED.records.sites) || []).some(s => s && !s.voided && s.split_from && _areaSiteIsMfgRow(s) && norm(s.split_from) === norm(newObj.name));
+      if (isOtherAreasChild || isAnAreaItself || (!sameArea && !_areaSiteIsUnused(newObj.name))) {
+        return fail('new_site_taken', `${newObj.name} already has its own records. Give the customer a new site name.`);
+      }
+    } else {
+      const dup = findUniversalDuplicate('sites', newSite, {});
+      if (dup) return fail('new_site_taken', `Site "${universalMainValue('sites', dup) || newSite}" already exists in another industry.`);
+    }
+    const region = regionIn || (newObj && newObj.region) || '';
+    if (!region) return fail('region_blank', 'Region is required.');
+    const regRes = (window.MFG_GEO && typeof window.MFG_GEO.resolveRegionRecordOrAtlas === 'function')
+      ? window.MFG_GEO.resolveRegionRecordOrAtlas(region, SEED)
+      : null;
+    if (!regRes) return fail('region_unknown', `"${region}" is not a Region on the map yet. Pick an existing Region, or add it first.`);
+    if (newObj && newObj.region && norm(newObj.region) !== norm(regRes.name)) {
+      return fail('region_mismatch', `${newObj.name} is already in Region ${newObj.region}.`);
+    }
+    // Same rule as the Site form: a site named after a place cannot sit in a Region that place is not in
+    if (!newObj && window.MFG_GEO && typeof window.MFG_GEO.validateSiteInsideRegion === 'function') {
+      const geo = window.MFG_GEO.validateSiteInsideRegion({ siteName: newSite, regionName: regRes.name }, SEED);
+      if (geo && !geo.ok) return fail('region_place', geo.reason || 'That site name belongs to a place in another Region.');
+    }
+    const oldN = norm(oldSite);
+    const recs = SEED.records || {};
+    // Another site may already hold one of these names for the same area
+    const clash = (recs.sites || []).find(s => _areaSiteHasSplit(s) && _areaSiteIsMfgRow(s) && norm(s.split_from) === oldN
+      && norm(s.name) !== norm(newSite) && s.split_customers.some(c => custSet.has(norm(c))));
+    if (clash) return fail('customers_moved', `${clash.split_customers.find(c => custSet.has(norm(c)))} was already moved to ${clash.name}.`);
+
+    const allowed = new Set(allowedCompanyNames().map(c => norm(c)));
+    const seenIds = new Set();
+    const hit = r => _areaSiteIsMfgRow(r) && !r.voided && r.site && norm(r._split_from_site || r.site) === oldN && custSet.has(norm(r.customer))
+      && (!r._split_from_site || norm(r.site) === norm(newSite));
+    let tickets = 0, rules = 0, nightTickets = 0, hiddenRows = 0, firstDate = '', lastDate = '';
+    const companies = new Set();
+    const nightByCo = new Map();
+    const walk = (tk, onRow) => {
+      [(STATE.customRecords && STATE.customRecords[tk]) || [], recs[tk] || []].forEach(arr => {
+        arr.forEach(r => {
+          if (!r) return;
+          const rid = r.id ? `${tk}:${r.id}` : '';
+          if (rid) { if (seenIds.has(rid)) return; seenIds.add(rid); }
+          if (!hit(r)) return;
+          if (r.company && !allowed.has(norm(r.company))) { hiddenRows += 1; return; }
+          if (r.company) companies.add(r.company);
+          onRow(r);
+        });
+      });
+    };
+    walk('sales_tickets', t => {
+      tickets += 1;
+      const d = String(t.date || '').slice(0, 10);
+      if (d) { if (!firstDate || d < firstDate) firstDate = d; if (!lastDate || d > lastDate) lastDate = d; }
+      if (Number(t.overtime || 0) > 0) {
+        nightTickets += 1;
+        const co = t.company || 'WTC';
+        nightByCo.set(co, (nightByCo.get(co) || 0) + 1);
+      }
+    });
+    walk('price_rules', () => { rules += 1; });
+    if (hiddenRows > 0) {
+      return fail('rights_hidden', `This move also touches ${hiddenRows} record${hiddenRows === 1 ? '' : 's'} of an entity outside your access. Ask an Owner to run it.`);
+    }
+    const siteWideRules = (recs.price_rules || []).filter(r => r && !r.voided && _areaSiteIsMfgRow(r) && norm(r.site) === oldN && !r.customer && _areaSiteIsDeliveryRule(r)).length;
+
+    // Night trip pay is set per Region. The new site is paid as the area site was for every load dated
+    // up to today, and after today for as long as its Region has no rate of its own in force
+    // (evalOtTicket reads site.split_from / split_at). Nothing is copied, no other site is touched.
+    const today = todayISO();
+    const newRegN = norm(regRes.name);
+    const payNotes = [];
+    const rateOf = x => Number(x.amount != null ? x.amount : x.usd_amount || 0);
+    const rateToday = list => list.reduce((a, x) => a + ((String(x.start_date || '2020-01-01').slice(0, 10) <= today && (!x.end_date || String(x.end_date).slice(0, 10) >= today)) ? rateOf(x) : 0), 0);
+    _AREA_SITE_MFG_BUS.forEach(co => {
+      if (!companies.has(co) && !nightByCo.has(co)) return;
+      const nightLoads = nightByCo.get(co) || 0;
+      const oldRegN = _areaSitePayRegion(co, oldSite);
+      if (oldRegN === newRegN) { payNotes.push({ company: co, mode: 'same', nightLoads }); return; }
+      const oldRules = oldRegN ? _areaSiteTripRules(co, oldRegN) : [];
+      const newRules = _areaSiteTripRules(co, newRegN);
+      const oldLabel = (oldRules[0] && oldRules[0].region) || (oldRegN === 'excluded' ? 'Excluded' : '');
+      if (rateToday(newRules) > 0) {
+        payNotes.push({ company: co, mode: 'own', nightLoads, fromRegion: oldLabel, toRegion: regRes.name, oldRate: rateToday(oldRules), newRate: rateToday(newRules) });
+      } else if (oldRules.length) {
+        payNotes.push({ company: co, mode: 'follow', nightLoads, fromRegion: oldLabel, toRegion: regRes.name, oldRate: rateToday(oldRules) });
+      } else {
+        payNotes.push({ company: co, mode: 'none', nightLoads, fromRegion: oldLabel, toRegion: regRes.name });
+      }
+    });
+
+    return {
+      ok: true, oldSite: oldObj.name, newSite: (newObj && newObj.name) || newSite, siteExists: Boolean(newObj),
+      region: regRes.name, regionExists: Boolean(regRes.isSeedRecord), customers: custNames,
+      tickets, rules, nightTickets, firstDate, lastDate, siteWideRules, payNotes
+    };
+  }
+
+  function _areaSitePersistSite(row, posts) {
+    row.modified_by = (activeUser() && activeUser().email) || 'admin';
+    row.modified_at = nextMonotonicIso();
+    if (!Array.isArray(SEED.records.sites)) SEED.records.sites = [];
+    if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+    const sIdx = SEED.records.sites.findIndex(x => x && String(x.id) === String(row.id));
+    if (sIdx >= 0) Object.assign(SEED.records.sites[sIdx], row);
+    else SEED.records.sites.unshift(row);
+    const cIdx = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(row.id));
+    if (cIdx >= 0) Object.assign(STATE.customRecords.sites[cIdx], row);
+    else STATE.customRecords.sites.unshift(Object.assign({}, row));
+    posts.push(['sites', Object.assign({}, row)]);
+    if (!SEED._tableRev) SEED._tableRev = {};
+    SEED._tableRev.sites = (SEED._tableRev.sites || 0) + 1;
+  }
+  function _areaSiteCommit(posts) {
+    applyCustomRecordsToSeed();
+    saveLocalAuthAndRecords();
+    renderApp();
+    postRecordPairsChunked(posts);
+    syncWithCloud(true);
+  }
+
+  function applyCustomerSiteSwitch(opts) {
+    const pv = previewCustomerSiteSwitch(opts);
+    if (!pv.ok) return pv;
+    const who = activeUser() || {};
+    const today = todayISO();
+    const posts = [];
+    const regRow = (window.MFG_GEO && typeof window.MFG_GEO.ensureRegionInSeed === 'function')
+      ? window.MFG_GEO.ensureRegionInSeed(pv.region, SEED, STATE)
+      : null;
+    if (!regRow) return { ok: false, code: 'region_unknown', reason: `"${pv.region}" could not be added as a Region.` };
+    if (!pv.regionExists) posts.push(['regions', Object.assign({}, regRow)]);
+    let row = siteInfo(pv.newSite);
+    if (row) {
+      const sameArea = norm(row.split_from) === norm(pv.oldSite);
+      const prevMoved = Array.isArray(row.split_customers) ? row.split_customers.slice() : [];
+      const merged = sameArea ? prevMoved.slice() : [];
+      pv.customers.forEach(c => { if (!merged.some(x => norm(x) === norm(c))) merged.push(c); });
+      row.split_customers = merged;
+      row.split_returned = (sameArea && Array.isArray(row.split_returned))
+        ? row.split_returned.filter(c => !merged.some(x => norm(x) === norm(c)))
+        : [];
+      if (!sameArea || !row.split_at) row.split_at = today;
+      // Each customer keeps the day it was moved: pay up to that day stays as the area site paid it
+      const dates = (sameArea && row.split_dates && typeof row.split_dates === 'object') ? Object.assign({}, row.split_dates) : {};
+      const already = new Set((sameArea && Array.isArray(prevMoved) ? prevMoved : []).map(c => norm(c)));
+      pv.customers.forEach(c => { if (!already.has(norm(c)) || !dates[norm(c)]) dates[norm(c)] = today; });
+      row.split_dates = dates;
+      if (!sameArea || !row.split_pay_regions) row.split_pay_regions = _areaSitePayRegions(pv.oldSite);
+      row.split_from = pv.oldSite;
+      if (!row.customer) row.customer = pv.customers[0];
+      if (!row.region) { row.region = pv.region; row.geo_zone = pv.region; }
+    } else {
+      row = {
+        id: uid('si'),
+        name: pv.newSite,
+        company: '',
+        date: today,
+        rep_date: today,
+        site_category: 'customer',
+        region: pv.region,
+        geo_zone: pv.region,
+        supplier: '',
+        customer: pv.customers[0],
+        includes_transport: false,
+        haulage_mode: 'separate',
+        latitude: null,
+        longitude: null,
+        is_jv: false,
+        jv_partner: '',
+        jv_share: 0,
+        jv_company: '',
+        notes: `Own site of ${pv.customers[0]}, moved out of the shared area site ${pv.oldSite} on ${today}.`,
+        source: 'app',
+        entered_by: who.full_name || 'Admin',
+        entered_by_email: who.email || '',
+        entered_at: new Date().toISOString(),
+        voided: false,
+        split_from: pv.oldSite,
+        split_customers: pv.customers.slice(),
+        split_returned: [],
+        split_at: today,
+        split_dates: pv.customers.reduce((acc, c) => { acc[norm(c)] = today; return acc; }, {}),
+        split_pay_regions: _areaSitePayRegions(pv.oldSite)
+      };
+    }
+    _areaSitePersistSite(row, posts);
+    _areaSiteCommit(posts);
+    return Object.assign({}, pv, { site: row });
+  }
+
+  // Puts the listed customers (or all of them) back on the area site. The site record stays, and
+  // remembers who went back (split_returned) so rows saved on it since then go back too.
+  function undoCustomerSiteSwitch(siteName, customers) {
+    if (!(canMoveCustomerSite())) return { ok: false, code: 'rights', reason: 'Your seat cannot move records between sites.' };
+    const row = siteInfo(siteName);
+    if (!_areaSiteHasSplit(row) || !_areaSiteIsMfgRow(row)) return { ok: false, code: 'undo_none', reason: 'Nothing was moved to this site.' };
+    const drop = Array.isArray(customers) && customers.length ? new Set(customers.map(c => norm(c))) : null;
+    const before = row.split_customers.slice();
+    const goingBack = drop ? before.filter(c => drop.has(norm(c))) : before;
+    if (!goingBack.length) return { ok: false, code: 'undo_none', reason: 'Nothing was moved to this site.' };
+    // Same boundary as the move itself: a seat cannot send back records of an entity it cannot access
+    const backSet = new Set(goingBack.map(c => norm(c)));
+    const allowed = new Set(allowedCompanyNames().map(c => norm(c)));
+    const childN = norm(row.name);
+    const seenIds = new Set();
+    let hiddenRows = 0;
+    ['sales_tickets', 'price_rules'].forEach(tk => {
+      [(STATE.customRecords && STATE.customRecords[tk]) || [], (SEED.records && SEED.records[tk]) || []].forEach(arr => {
+        arr.forEach(r => {
+          if (!r || r.voided || !r.site || !r.company || !_areaSiteIsMfgRow(r)) return;
+          const rid = r.id ? `${tk}:${r.id}` : '';
+          if (rid) { if (seenIds.has(rid)) return; seenIds.add(rid); }
+          if (norm(r.site) !== childN || !backSet.has(norm(r.customer))) return;
+          if (!allowed.has(norm(r.company))) hiddenRows += 1;
+        });
+      });
+    });
+    if (hiddenRows > 0) {
+      return { ok: false, code: 'rights_hidden', reason: `This move also touches ${hiddenRows} record${hiddenRows === 1 ? '' : 's'} of an entity outside your access. Ask an Owner to run it.` };
+    }
+    row.split_customers = before.filter(c => !backSet.has(norm(c)));
+    const returned = Array.isArray(row.split_returned) ? row.split_returned.slice() : [];
+    goingBack.forEach(c => { if (!returned.some(x => norm(x) === norm(c))) returned.push(c); });
+    row.split_returned = returned;
+    const posts = [];
+    _areaSitePersistSite(row, posts);
+    _areaSiteCommit(posts);
+    return { ok: true, site: row, oldSite: row.split_from, returned: goingBack };
+  }
+
+  // Marks a flagged site as one real place (several buyers on one project), or clears that mark
+  function setAreaSiteSinglePlace(siteName, isSingle) {
+    if (!(canMoveCustomerSite())) return { ok: false, code: 'rights', reason: 'Your seat cannot move records between sites.' };
+    const row = siteInfo(siteName);
+    if (!row || !_areaSiteIsMfgRow(row)) return { ok: false, code: 'site_missing', reason: 'Site not found.' };
+    if (isSingle) row.area_check = 'single';
+    else row.area_check = '';
+    const posts = [];
+    _areaSitePersistSite(row, posts);
+    _areaSiteCommit(posts);
+    return { ok: true, site: row };
+  }
+
+  // Read-time re-pointing. Runs after every custom-record overlay, over the loaded rows and the saved
+  // overlay copies alike (lookups read both stores, overlay first). Three cases per row:
+  //   1. it sits on an area site and its customer was moved: it goes to the customer's own site and is
+  //      marked (_split_from_site / _split_to), so it can be put back;
+  //   2. it carries a mark whose move no longer stands (undone, site voided): it goes back;
+  //   3. it was saved on the own site without a mark (edited or entered there) and the customer has
+  //      since been put back (site.split_returned): it goes back to the area site too.
+  // A row whose site a person changed to something else afterwards loses its mark and is left alone.
+  // Pay never reads these marks: evalOtTicket works from the site record.
+  function applySiteCustomerSplits() {
+    const recs = SEED && SEED.records;
+    if (!recs || !Array.isArray(recs.sites)) return 0;
+    const byOld = new Map();
+    const backTo = new Map();
+    recs.sites.forEach(s => {
+      if (!s || s.voided || !s.name || !s.split_from || !_areaSiteIsMfgRow(s)) return;
+      const oldN = norm(s.split_from);
+      if (!oldN || oldN === norm(s.name)) return;
+      const movedKeys = new Set();
+      (Array.isArray(s.split_customers) ? s.split_customers : []).forEach(c => {
+        const ck = norm(c);
+        if (!ck) return;
+        movedKeys.add(ck);
+        if (!byOld.has(oldN)) byOld.set(oldN, new Map());
+        const m = byOld.get(oldN);
+        if (!m.has(ck)) m.set(ck, s.name);
+      });
+      const backKeys = new Set();
+      (Array.isArray(s.split_returned) ? s.split_returned : []).forEach(c => {
+        const ck = norm(c);
+        if (ck && !movedKeys.has(ck)) backKeys.add(ck);
+      });
+      if (backKeys.size) backTo.set(norm(s.name), { from: String(s.split_from).trim(), names: backKeys });
+    });
+    // A voided own site (it is no longer in the loaded list) sends every customer it ever held back,
+    // so no row is left on a site name that no longer exists
+    ((STATE && STATE.customRecords && STATE.customRecords.sites) || []).forEach(s => {
+      if (!s || !s.voided || !s.name || !s.split_from || !_areaSiteIsMfgRow(s)) return;
+      const k = norm(s.name);
+      if (!k || k === norm(s.split_from) || backTo.has(k) || recs.sites.some(x => x && !x.voided && norm(x.name) === k)) return;
+      const names = new Set();
+      [s.split_customers, s.split_returned].forEach(list => (Array.isArray(list) ? list : []).forEach(c => { const ck = norm(c); if (ck) names.add(ck); }));
+      if (names.size) backTo.set(k, { from: String(s.split_from).trim(), names });
+    });
+    // Nothing to move and nothing to put back. A saved overlay copy can still carry a mark from a move
+    // that was undone on another device or before a reload, so those short lists are always looked at.
+    const idle = !byOld.size && !backTo.size && !SEED._siteSplitMarks;
+    if (idle && !['sales_tickets', 'price_rules'].some(tk =>
+      ((STATE && STATE.customRecords && STATE.customRecords[tk]) || []).some(r => r && r._split_from_site != null))) return 0;
+    const normCache = new Map();
+    const nrm = v => {
+      let k = normCache.get(v);
+      if (k === undefined) { k = norm(v); normCache.set(v, k); }
+      return k;
+    };
+    const clearMark = r => { delete r._split_from_site; delete r._split_to; delete r._split_at; };
+    let changed = 0;
+    let marks = 0;
+    ['sales_tickets', 'price_rules'].forEach(tk => {
+      let tblChanged = false;
+      [recs[tk], STATE && STATE.customRecords && STATE.customRecords[tk]].forEach(arr => {
+        if (!Array.isArray(arr)) return;
+        for (let i = 0; i < arr.length; i++) {
+          const r = arr[i];
+          if (!r || typeof r !== 'object' || !_areaSiteIsMfgRow(r)) continue;
+          const cur = r.site;
+          let src = cur;
+          let markValid = false;
+          if (r._split_from_site != null) {
+            if (r._split_to && cur && nrm(cur) === nrm(r._split_to)) { src = r._split_from_site; markValid = true; }
+            else clearMark(r);
+          }
+          if (!src) continue;
+          const ck = r.customer ? nrm(r.customer) : '';
+          const m = byOld.size ? byOld.get(nrm(src)) : null;
+          const to = (m && ck) ? m.get(ck) : null;
+          if (to) {
+            if (cur !== to) { r.site = to; changed += 1; tblChanged = true; }
+            r._split_from_site = src;
+            r._split_to = to;
+            delete r._split_at;
+            marks += 1;
+          } else if (markValid) {
+            r.site = src;
+            clearMark(r);
+            changed += 1;
+            tblChanged = true;
+          } else if (backTo.size && ck) {
+            const b = backTo.get(nrm(cur));
+            if (b && b.names.has(ck)) {
+              // Back to the area site, or straight on to the own site the customer was moved to since
+              const m2 = byOld.size ? byOld.get(nrm(b.from)) : null;
+              const to2 = m2 ? m2.get(ck) : null;
+              if (to2) { r.site = to2; r._split_from_site = b.from; r._split_to = to2; marks += 1; }
+              else r.site = b.from;
+              changed += 1;
+              tblChanged = true;
+            }
+          }
+        }
+      });
+      if (tblChanged) {
+        if (!SEED._tableRev) SEED._tableRev = {};
+        SEED._tableRev[tk] = (SEED._tableRev[tk] || 0) + 1;
+      }
+    });
+    SEED._siteSplitMarks = marks;
+    if (changed > 0) _filterRecordsWeakCache = new WeakMap();
+    return changed;
+  }
+  if (typeof window !== 'undefined') {
+    window.MFG_AREA_SITE = {
+      customerKey: areaSiteCustomerKey,
+      getIndex: getAreaSiteIndex,
+      describe: describeAreaSite,
+      suggest: suggestCustomerSiteSwitch,
+      preview: previewCustomerSiteSwitch,
+      apply: applyCustomerSiteSwitch,
+      undo: undoCustomerSiteSwitch,
+      setSinglePlace: setAreaSiteSinglePlace,
+      applySplits: applySiteCustomerSplits
+    };
   }
 
   function syncSiteJvPartnershipRecords(siteRow, extraApiPosts) {
@@ -33903,12 +34541,30 @@
 
   function cleanDomainCellText(tdEl) {
     if (!tdEl) return '';
-    if (!tdEl.querySelector || !tdEl.querySelector('.att-inline-badge, .sr-only')) {
+    if (!tdEl.querySelector || !tdEl.querySelector('.att-inline-badge, .sr-only, .ind-agr-pill')) {
       return (tdEl.textContent || '').trim();
     }
     const clone = tdEl.cloneNode(true);
-    clone.querySelectorAll('.att-inline-badge, .sr-only').forEach(n => n.remove());
+    clone.querySelectorAll('.att-inline-badge, .sr-only, .ind-agr-pill').forEach(n => n.remove());
     return (clone.textContent || '').trim();
+  }
+
+  // English text of a register cell (the translator keeps the original on each text node as __enText),
+  // without inline badges or agreement pills. Agreement matching compares cells with English data, so the
+  // register pills and the 360 Inspector both match on this text whatever the display language is.
+  function domainCellEnText(tdEl) {
+    if (!tdEl) return '';
+    let out = '';
+    const walker = document.createTreeWalker(tdEl, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const p = node.parentElement;
+        if (p && p.closest && p.closest('.att-inline-badge, .sr-only, .ind-agr-pill')) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let n;
+    while ((n = walker.nextNode())) out += (n.__enText !== undefined ? n.__enText : n.nodeValue) || '';
+    return out.replace(/\s+/g, ' ').trim();
   }
 
   function getCanonicalEnDomText(el) {
@@ -34046,13 +34702,15 @@
         if (hitTr && typeof openIndustryDomainInspector === 'function') {
           const tbl = hitTr.closest('table');
           const headers = getDomainTableEnHeaders(tbl);
-          const cells = Array.from(hitTr.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none').map(cleanDomainCellText);
+          const hitTds = Array.from(hitTr.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
+          const cells = hitTds.map(cleanDomainCellText);
           const cardEl = hitTr.closest('.panel-card, .panel');
           const tableTitle = getDomainCardCanonicalTitle(cardEl);
           openIndustryDomainInspector({
             ind: (domHit && domHit.ind) || getActiveIndustry(STATE.company),
             headers,
             cells,
+            matchCells: hitTds.map(domainCellEnText), // same English text as the register pill
             tableTitle,
             trEl: hitTr,
             domainTblKey: hitTr.getAttribute('data-ind-row-tbl') || parentTbl,
@@ -35583,10 +36241,27 @@
     // Pre-index driver night-trip overtime ([Staff Overtime T]) & site allowance activity dates
     const siteToReg = new Map();
     const siteRegLabel = new Map();
+    // A customer's own site that was moved out of a shared area site: where it came from, and when
+    const siteSplitOf = new Map();
     (recs.sites || []).forEach(st => {
       if (st && st.name && st.region) {
         siteToReg.set(norm(st.name), norm(st.region));
         siteRegLabel.set(norm(st.name), st.region);
+      }
+      if (st && !st.voided && st.name && st.split_from && /^\d{4}-\d{2}-\d{2}/.test(String(st.split_at || ''))
+        && !st._multiIndustrySeed && (!st._industry || st._industry === 'Manufacturing') && norm(st.split_from) !== norm(st.name)) {
+        // One move date per customer (split_dates); a record without it dates its listed customers by split_at
+        const dates = new Map();
+        const sAt = String(st.split_at).slice(0, 10);
+        (Array.isArray(st.split_customers) ? st.split_customers : []).forEach(c => { const ck = norm(c); if (ck) dates.set(ck, sAt); });
+        if (st.split_dates && typeof st.split_dates === 'object') {
+          Object.keys(st.split_dates).forEach(ck => { const dv = String(st.split_dates[ck] || '').slice(0, 10); if (/^\d{4}-\d{2}-\d{2}$/.test(dv)) dates.set(norm(ck), dv); });
+        }
+        siteSplitOf.set(norm(st.name), {
+          from: norm(st.split_from),
+          dates,
+          payRegions: (st.split_pay_regions && typeof st.split_pay_regions === 'object') ? st.split_pay_regions : null
+        });
       }
     });
     const otRulesByCoReg = new Map();
@@ -35730,16 +36405,40 @@
       const repShiftDate = hasCustomRep ? ((hr >= 18) ? shiftIsoPlus1(repDate) : repDate) : shiftDate;
       const coMk = coN === 'bbconstruction' ? 'bbconstruction' : (coN === 'lions transport' ? 'lionstransport' : 'wtc');
       const coSiteRegs = (SEED.models && SEED.models[coMk] && SEED.models[coMk].site_regions) || null;
-      const siteN = t.site ? norm(t.site) : '';
+      let siteN = t.site ? norm(t.site) : '';
       const isIntSale = Boolean(isSale && t.is_internal_sale);
-      const regN = (isIntSale || !siteN || siteN === 'excluded')
+      const rateDate = isSale ? repDate : (hasCustomRep ? repDate : shiftDate);
+      const regOfSite = sN => ((isIntSale || !sN || sN === 'excluded')
         ? 'excluded'
-        : ((coSiteRegs && Object.prototype.hasOwnProperty.call(coSiteRegs, siteN))
-            ? (coSiteRegs[siteN] || '')
-            : (siteToReg.get(siteN) || ''));
+        : ((coSiteRegs && Object.prototype.hasOwnProperty.call(coSiteRegs, sN))
+            ? (coSiteRegs[sN] || '')
+            : (siteToReg.get(sN) || '')));
+      let regN = regOfSite(siteN);
+      // A customer moved out of a shared area site to its own site (site.split_from, one date per
+      // customer in split_dates) is paid as the area site was: for every load dated up to the day of its
+      // move, and after it whenever its new Region has no night rate of its own in force on that date.
+      // So the move never changes pay, and no rate is copied. The rule reads the site record only, never
+      // a mark on the ticket, and only for the customers that were moved.
+      const moved = (isSale && !isIntSale && siteN) ? siteSplitOf.get(siteN) : null;
+      const movedAt = moved ? moved.dates.get(norm(t.customer)) : '';
+      if (movedAt) {
+        const ownRules = regN ? otRulesByCoReg.get(`${coN}|${regN}`) : null;
+        const ownRateInForce = Boolean(ownRules && ownRules.some(x => x.start <= rateDate && rateDate <= x.end && x.rate > 0));
+        if (rateDate <= movedAt || !ownRateInForce) {
+          siteN = moved.from;
+          // The area's Region is read live while the area site still resolves, so a later correction of
+          // that Region reprices moved and unmoved customers alike; the Region stored at move time
+          // (split_pay_regions) is used only once the area site no longer resolves.
+          const areaResolves = Boolean((coSiteRegs && Object.prototype.hasOwnProperty.call(coSiteRegs, siteN)) || siteToReg.has(siteN));
+          regN = areaResolves
+            ? regOfSite(siteN)
+            : ((moved.payRegions && Object.prototype.hasOwnProperty.call(moved.payRegions, coN))
+              ? String(moved.payRegions[coN] || '')
+              : '');
+        }
+      }
       if (!regN) return null;
       const regLabel = regN === 'excluded' ? 'Default / Unmapped' : ((siteN && siteRegLabel.get(siteN)) || titleWords(regN));
-      const rateDate = isSale ? repDate : (hasCustomRep ? repDate : shiftDate);
       const rules = otRulesByCoReg.get(`${coN}|${regN}`);
       if (!rules || !rules.length) return null;
       let rate = 0;
@@ -58095,6 +58794,76 @@
     });
   }
 
+  // Related Agreement count pills on the primary register rows of the 5 sibling industries (Real Estate
+  // properties and units, Hospitality memberships, Trading serial units, Insurance policies and carrier
+  // statements, Holding entities), in the hub and in the Tables explorer. The count comes from
+  // computeIndustryRelatedAgreementsInfo with the same headers and cells the row click hands the 360
+  // Inspector, so a pill and the inspector box always agree. A 0 pill is amber. Clicking it opens the
+  // inspector at its Related Agreements box. Runs after applyIndustryDomRowEdits so saved edits count.
+  // Holding's hub scorecard rows switch company on click (data-jump-co), so Holding entities get their
+  // pills on the Tables explorer register, whose rows open the inspector.
+  const IND_AGR_PILL_VIEWS = new Set(['re_properties', 're_units', 'hsp_memberships', 'trd_trucks', 'ins_policies', 'ins_statements']);
+  const IND_AGR_PILL_EXPLORER_TABS = new Set(['re_prop_tbl', 'hsp_memb_tbl', 'trd_vin_tbl', 'ins_pol_tbl', 'ins_stm_tbl', 'hld_entities_tbl']);
+  function applyIndustryRelatedAgreementPills(root) {
+    if (!root || !root.querySelectorAll) return;
+    const ind = getActiveIndustry(STATE.company);
+    if (!ind || ind === 'Manufacturing') return;
+    const tables = [];
+    const explorer = root.querySelector('#industryDomainTablesExplorer');
+    if (explorer && IND_AGR_PILL_EXPLORER_TABS.has(explorer.getAttribute('data-ind-tbl-active') || '')) {
+      const exTbl = explorer.querySelector('table.data-table');
+      if (exTbl) tables.push(exTbl);
+    }
+    if (IND_AGR_PILL_VIEWS.has(STATE.view)) {
+      const hubTbl = Array.from(root.querySelectorAll('.panel table.data-table, .panel-card table.data-table, .panel table.ledger-table, .panel-card table.ledger-table'))
+        .find(tb => !tb.closest('#industryDomainTablesExplorer') && !tb.closest('#industryPbiStudio') && !tb.closest('#industrySentinelsDetailPanel'));
+      if (hubTbl) tables.push(hubTbl);
+    }
+    if (!tables.length) return;
+    const pools = {};
+    const rowCoDefault = COMPANY_BU_MATCH[STATE.company] || (!/^industry:/i.test(String(STATE.company || '')) ? COMPANY_LABELS[STATE.company] : '') || '';
+    const tipLinked = 'Linked rate agreements. Click to review them.';
+    const tipNone = 'No rate agreement linked yet. Click to add one.';
+    for (const tbl of tables) {
+      tbl.setAttribute('data-ind-agr-pills', '1');
+      const headers = getDomainTableEnHeaders(tbl).map(h => String(h || '').replace(/\s*[▲▼]$/, '').trim());
+      const trs = tbl.querySelectorAll('tbody tr');
+      for (const tr of trs) {
+        if (tr.hasAttribute('data-rid') || tr.hasAttribute('data-jump-co') || tr.hasAttribute('data-no-ind-inspect') || tr.classList.contains('total-row') || tr.classList.contains('totals-row') || tr.style.display === 'none') continue;
+        const tds = Array.from(tr.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
+        if (tds.length < 2 || tds[0].hasAttribute('colspan')) continue;
+        const cells = tds.map(domainCellEnText);
+        const primaryId = String(tr.getAttribute('data-ind-row-id') || cells[0] || '').trim();
+        if (!primaryId) continue;
+        cells[0] = primaryId;
+        const info = computeIndustryRelatedAgreementsInfo({
+          ind,
+          headers,
+          cells,
+          primaryId,
+          secondaryLbl: String(cells[1] || cells[2] || COMPANY_LABELS[STATE.company] || ind).trim(),
+          rowCompany: tr.getAttribute('data-ind-row-co') || rowCoDefault,
+          pools
+        });
+        if (!info) return; // this seat cannot see rate agreements
+        const n = Math.max(0, Number(info.linkedCount) || 0);
+        let pill = tds[0].querySelector('.ind-agr-pill');
+        if (!pill) {
+          pill = document.createElement('button');
+          pill.type = 'button';
+          pill.className = 'ind-agr-pill';
+          pill.setAttribute('data-ind-agr-pill', '1');
+          tds[0].appendChild(pill);
+        }
+        pill.classList.toggle('is-zero', n === 0);
+        pill.setAttribute('data-ind-agr-count', String(n));
+        pill.setAttribute('data-ui-tip', n ? tipLinked : tipNone);
+        pill.setAttribute('aria-label', n ? tipLinked : tipNone);
+        pill.innerHTML = `${ic('pricing')}<span class="ind-agr-pill-n" data-no-i18n="1">${n}</span>`;
+      }
+    }
+  }
+
   function getIndustryCustomRowsStore() {
     if (!STATE.industryCustomRows || typeof STATE.industryCustomRows !== 'object') {
       STATE.industryCustomRows = (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_ind_custom_rows_v1', null) : null) || {};
@@ -71684,6 +72453,633 @@
     };
   }
 
+  // Related rate agreements for one sibling-industry register row (Real Estate leases, Hospitality tariffs,
+  // Trading price lists, Insurance carrier agreements, Holding partner splits and facilities).
+  // One deterministic matcher shared by the 360 Inspector box (#indInspRelatedAgreementsBox) and the
+  // register row count pills (applyIndustryRelatedAgreementPills), so both always show the same count.
+  // `linkedCount` counts direct links only; `isFallback` marks reference rows shown when nothing links.
+  // `pools` caches the industry computations across the rows of one render pass.
+  function computeIndustryRelatedAgreementsInfo(args = {}) {
+    const ind = args.ind || '';
+    const headers = Array.isArray(args.headers) ? args.headers : [];
+    const cells = Array.isArray(args.cells) ? args.cells : [];
+    const primaryId = String(args.primaryId || '').trim();
+    const secondaryLbl = String(args.secondaryLbl || '').trim();
+    const rowCompany = String(args.rowCompany || '').trim();
+    const pools = args.pools && typeof args.pools === 'object' ? args.pools : {};
+    const poolOf = (key, fn) => {
+      if (!Object.prototype.hasOwnProperty.call(pools, key)) pools[key] = fn();
+      return pools[key];
+    };
+    const canSeeRelAgr = Boolean(isOwner() || canModifyData() || canViewHub('pricing') || canViewHub('sales') || canViewHub('ledger'));
+    if (!canSeeRelAgr) return null;
+    const ownerSeat = isOwner();
+    const allowedCos = allowedCompanyNames();
+    const isDomCoAllowed = co => ownerSeat || !co || allowedCos.some(ac => norm(ac) === norm(co));
+    const singleDomCo = (!/^industry:/i.test(String(STATE.company || '')) && STATE.company && STATE.company !== 'all' && !(typeof isDemoScopeActive === 'function' && isDemoScopeActive()))
+      ? (COMPANY_BU_MATCH[STATE.company] || COMPANY_LABELS[STATE.company] || '')
+      : '';
+    const hideRelCo = Boolean(singleDomCo);
+    const valByHdr = re => {
+      const idx = headers.findIndex(h => re.test(String(h || '').trim()));
+      return idx >= 0 && cells[idx] != null ? String(cells[idx]).trim() : '';
+    };
+    const fmtWin = (sd, ed) => `${sd ? fmtDateDMY(sd) : 'Open'} to ${(!ed || /^open$/i.test(String(ed))) ? 'Open' : fmtDateDMY(ed)}`;
+    const isWinActive = ed => {
+      const s = String(ed || '').trim();
+      return !s || /^open$/i.test(s) || s.slice(0, 10) >= todayISO();
+    };
+
+    if (ind === 'Real Estate & Property' && typeof computeRealEstateOperations === 'function') {
+      const re = poolOf('re', () => computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) || {});
+      const propCell = valByHdr(/property|building|asset|tower|center/i) || secondaryLbl;
+      const unitCell = valByHdr(/^unit|shop|suite/i);
+      const tenantCell = valByHdr(/tenant|lessee|client/i);
+      const cleanRelKey = v => norm(v).replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim();
+      const RE_GENERIC_TOKENS = new Set(['commercial', 'center', 'unit', 'units', 'tower', 'building', 'plot', 'land', 'estate', 'complex', 'hub', 'block', 'floor', 'suite', 'showroom', 'luxury', 'residence', 'medical', 'pavillon', 'coastal', 'development', 'industrial', 'logistics', 'remittance', 'upkeep', 'ledger', 'pool', 'company', 'properties', 'sal']);
+      const propTokens = cleanRelKey(propCell).split(/\s+/).filter(tok => tok.length >= 4 && !RE_GENERIC_TOKENS.has(tok));
+      const allLeases = (re.leases || []).filter(l => l && !l.voided && !l._scheduleVoided && isDomCoAllowed(l.company));
+      let hits = allLeases.filter(l => {
+        if (singleDomCo && l.company && norm(l.company) !== norm(singleDomCo)) return false;
+        if (unitCell && l.unit && (norm(l.unit).includes(norm(unitCell)) || norm(unitCell).includes(norm(l.unit.replace(/\s*\([^)]*\)\s*/g, ''))))) return true;
+        if (tenantCell && !/vacant|available|remittance|ledger/i.test(tenantCell) && l.tenant) {
+          const lt = cleanRelKey(l.tenant);
+          const tc = cleanRelKey(tenantCell);
+          if (lt && tc && (lt === tc || tc.includes(lt) || lt.includes(tc))) return true;
+        }
+        if (propCell && l.property) {
+          const lp = cleanRelKey(l.property);
+          const pc = cleanRelKey(propCell);
+          if (lp && pc && (lp === pc || pc.includes(lp) || lp.includes(pc) || norm(l.property) === norm(primaryId))) return true;
+          if (propTokens.length) {
+            const lTokens = lp.split(/\s+/).filter(Boolean);
+            if (propTokens.some(tok => lTokens.includes(tok))) return true;
+          }
+        }
+        return false;
+      });
+      if (!hits.length && /^PROP-/i.test(primaryId)) {
+        const propObj = (re.properties || []).find(p => norm(p.id) === norm(primaryId) || norm(p.code) === norm(primaryId));
+        if (propObj) {
+          hits = allLeases.filter(l => (!singleDomCo || norm(l.company) === norm(singleDomCo)) && norm(l.property) === norm(propObj.name));
+        }
+      }
+      return {
+        linkedCount: hits.length,
+        isFallback: false,
+        title: 'Related Lease & Rent Agreements',
+        sub: `Chronological rent & escalation schedules linked to ${secondaryLbl || primaryId}`,
+        formKey: 're_leases',
+        newBtnLbl: '+ New Lease Schedule',
+        newPrefill: { company: rowCompany || singleDomCo || 'Properties', property: propCell || '', unit: unitCell || '', tenant: (!/vacant|available/i.test(tenantCell) ? tenantCell : '') },
+        cols: [...(hideRelCo ? [] : ['Entity']), 'Lease ID', 'Unit & Tenant', 'Period Net / TTC', 'Effective Window', 'Status'],
+        rows: hits.map(l => ({
+          id: l.id,
+          formKey: 're_leases',
+          co: l.company || 'Properties',
+          cells: [
+            ...(hideRelCo ? [] : [l.company || 'Properties']),
+            l.id,
+            `${l.unit || '-'} · ${l.tenant || '-'}`,
+            `${fmtUSD(l.net_period_usd || 0, 0)} (${l.vat_rate ? l.vat_rate + '% VAT · ' + fmtUSD(l.ttc_period_usd || 0, 0) : '0% VAT'})`,
+            fmtWin(l.start_date, l.end_date),
+            l.status || (isWinActive(l.end_date) ? 'Active' : 'Ended')
+          ],
+          active: isWinActive(l.end_date)
+        }))
+      };
+    }
+
+    if (ind === 'Hospitality & Resorts' && typeof computeHospitalityOperations === 'function') {
+      const hsp = poolOf('hsp', () => computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }) || {});
+      const tierCell = valByHdr(/tier|venue|outlet|unit|chalet|cabana|category/i) || secondaryLbl;
+      const targetResort = rowCompany || singleDomCo || valByHdr(/resort|company|entity/i);
+      const allTariffs = (hsp.tariffRows || []).filter(t => t && !t.voided && !t._scheduleVoided && isDomCoAllowed(t.company));
+      let hits = allTariffs.filter(t => {
+        if (singleDomCo && t.company && norm(t.company) !== norm(singleDomCo)) return false;
+        if (targetResort && t.company && norm(t.company) === norm(targetResort)) return true;
+        if (tierCell && t.tier && (norm(t.tier).includes(norm(tierCell)) || norm(tierCell).includes(norm(t.tier)))) return true;
+        return false;
+      });
+      return {
+        linkedCount: hits.length,
+        isFallback: false,
+        title: 'Related Seasonal & Daily Tariff Agreements',
+        sub: `Chronological chalet, cabana & venue rate schedules for ${targetResort || secondaryLbl}`,
+        formKey: 'hsp_tariffs',
+        newBtnLbl: '+ New Seasonal Tariff',
+        newPrefill: { company: targetResort || 'Blanca', tier: tierCell || '' },
+        cols: [...(hideRelCo ? [] : ['Resort']), 'Tariff ID', 'Tier & Season', 'Daily / Seasonal Rate', 'Effective Window', 'Status'],
+        rows: hits.map(t => ({
+          id: t.id,
+          formKey: 'hsp_tariffs',
+          co: t.company || 'Blanca',
+          cells: [
+            ...(hideRelCo ? [] : [t.company || 'Blanca']),
+            t.id,
+            `${t.tier || '-'} · ${t.season || '-'}`,
+            `${fmtUSD(t.daily_chalet_ttc_usd || t.nightly_rate_usd || 0, 0)}/day · ${fmtUSD(t.season_contract_usd || t.seasonal_rate_usd || 0, 0)}/season`,
+            fmtWin(t.start_date, t.end_date),
+            t.status || (isWinActive(t.end_date) ? 'Active' : 'Closed')
+          ],
+          active: isWinActive(t.end_date)
+        }))
+      };
+    }
+
+    if (ind === 'Automotive & Heavy Trading' && typeof computeTradingOperations === 'function') {
+      const trd = poolOf('trd', () => computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }) || {});
+      const modelCell = valByHdr(/model|family|item|segment|category/i) || secondaryLbl;
+      const targetCo = rowCompany || singleDomCo || valByHdr(/company|entity/i);
+      const allTargets = (trd.targetRows || []).filter(t => t && !t.voided && !t._scheduleVoided && isDomCoAllowed(t.company));
+      const hits = allTargets.filter(t => {
+        if (singleDomCo && t.company && norm(t.company) !== norm(singleDomCo)) return false;
+        if (targetCo && t.company && norm(t.company) !== norm(targetCo)) return false;
+        if (modelCell && t.segment) {
+          const mTokens = norm(modelCell).split(/\s+/).filter(tok => tok.length >= 4);
+          if (mTokens.some(tok => norm(t.segment).includes(tok))) return true;
+        }
+        return Boolean(targetCo && norm(t.company) === norm(targetCo));
+      });
+      return {
+        linkedCount: hits.length,
+        isFallback: false,
+        title: 'Related OEM Price List & Rebate Schedules',
+        sub: `Chronological unit list price & landed cost schedules for ${targetCo || secondaryLbl}`,
+        formKey: 'trd_targets',
+        newBtnLbl: '+ New Price Target',
+        newPrefill: { company: targetCo || 'Shacman', segment: modelCell || '' },
+        cols: [...(hideRelCo ? [] : ['Entity']), 'Schedule ID', 'Segment / Model', 'List Net / Landed Cost', 'Effective Window', 'Status'],
+        rows: hits.map(t => ({
+          id: t.id,
+          formKey: 'trd_targets',
+          co: t.company || 'Shacman',
+          cells: [
+            ...(hideRelCo ? [] : [t.company || 'Shacman']),
+            t.id,
+            `${t.segment || t.price_list || '-'}`,
+            `${fmtUSD(t.unit_net_usd || 0, 0)} Net · ${fmtUSD(t.unit_cost_usd || 0, 0)} Cost`,
+            fmtWin(t.start_date, t.end_date),
+            isWinActive(t.end_date) ? 'Active' : 'Closed'
+          ],
+          active: isWinActive(t.end_date)
+        }))
+      };
+    }
+
+    if (ind === 'Insurance & Brokerage' && typeof computeInsuranceOperations === 'function') {
+      const ins = poolOf('ins', () => computeInsuranceOperations({ ignorePeriod: true }) || {});
+      const explicitCarrier = valByHdr(/carrier|insurer/i);
+      const carrierCell = explicitCarrier || secondaryLbl;
+      const lineCell = valByHdr(/line|product|category/i);
+      const allAgr = (ins.agreements || []).filter(a => a && !a.voided && !a._scheduleVoided && isDomCoAllowed(a.company || 'Insurance Company'));
+      let hits = allAgr.filter(a => {
+        if (carrierCell && a.carrier && (norm(a.carrier) === norm(carrierCell) || norm(carrierCell).includes(norm(a.carrier)))) return true;
+        if (lineCell && a.line) {
+          const lk = norm(lineCell).split(/\s+/)[0];
+          if (lk && lk.length >= 2 && norm(a.line).startsWith(lk)) return true;
+        }
+        return false;
+      });
+      const insLinked = hits.length;
+      if (!hits.length && !explicitCarrier && !lineCell) hits = allAgr.slice(0, 6);
+      return {
+        linkedCount: insLinked,
+        isFallback: insLinked === 0 && hits.length > 0,
+        title: 'Related Carrier Commission Agreements',
+        sub: `Chronological brokerage commission & override schedules linked to ${carrierCell || primaryId}`,
+        formKey: 'ins_agreements',
+        newBtnLbl: '+ New Carrier Agreement',
+        newPrefill: { carrier: carrierCell || 'MedGulf', line: lineCell || '' },
+        cols: ['Agreement ID', 'Carrier & Line', 'New / Renewal %', 'Effective Window', 'Status'],
+        rows: hits.map(a => ({
+          id: a.id,
+          formKey: 'ins_agreements',
+          co: 'Insurance Company',
+          cells: [
+            a.id,
+            `${a.carrier || '-'} · ${a.line || '-'}`,
+            `${Number(a.new_bus_pct || 0).toFixed(1)}% New · ${Number(a.renewal_pct || 0).toFixed(1)}% Ren`,
+            fmtWin(a.start_date, a.end_date),
+            a.status || (isWinActive(a.end_date) ? 'Active' : 'Closed')
+          ],
+          active: isWinActive(a.end_date)
+        }))
+      };
+    }
+
+    if (ind === 'Holding & Treasury' && typeof computeHoldingSchedules === 'function') {
+      const hld = poolOf('hld', () => computeHoldingSchedules() || {});
+      const explicitEnt = valByHdr(/entities|entity|company|from|to|lender|borrower/i);
+      const partnerCell = valByHdr(/partner|stakeholder/i);
+      const entCell = explicitEnt || partnerCell || secondaryLbl;
+      const allPartners = (hld.partnerAgreements || []).filter(p => p && !p.voided && !p._scheduleVoided && isDomCoAllowed(p.entity || 'Bdeir Holding') && (!singleDomCo || !p.entity || norm(p.entity) === norm(singleDomCo)));
+      const pHits = allPartners.filter(p => !entCell || (explicitEnt && (norm(p.entity || '').includes(norm(explicitEnt)) || norm(explicitEnt).includes(norm(p.entity || '')))) || (partnerCell && (norm(p.partner || '').includes(norm(partnerCell)) || norm(partnerCell).includes(norm(p.partner || '')))));
+      const fHits = (hld.facilitySchedules || []).filter(f => f && !f.voided && !f._scheduleVoided && isDomCoAllowed(f.company) && (!singleDomCo || !f.company || norm(f.company) === norm(singleDomCo)) && (!entCell || (explicitEnt && (norm(f.company || '').includes(norm(explicitEnt)) || norm(explicitEnt).includes(norm(f.company || '')) || norm(f.lender || '').includes(norm(explicitEnt)))) || (partnerCell && norm(f.lender || '').includes(norm(partnerCell)))));
+      const mapPartnerRow = p => ({
+        id: p.id,
+        formKey: 'hld_partners',
+        co: p.entity || 'Bdeir Holding',
+        cells: [...(hideRelCo ? [] : [p.entity || 'Bdeir Holding']), p.id, `Partner Split · ${p.partner || '-'}`, `${Number(p.pct || 0).toFixed(1)}% Share (${fmtUSD(p.entitled_usd || 0, 0)})`, fmtWin(p.start_date, p.end_date), p.status || 'Active'],
+        active: isWinActive(p.end_date)
+      });
+      const combined = [
+        ...pHits.map(mapPartnerRow),
+        ...fHits.map(f => ({
+          id: f.id,
+          formKey: 'hld_loans',
+          co: f.company || 'Bdeir Holding',
+          cells: [...(hideRelCo ? [] : [f.company || 'Bdeir Holding']), f.id, `${f.type || 'Facility'} · ${f.lender || '-'}`, `${Number(f.interest_rate_pct || 0).toFixed(1)}% APR (${fmtUSD(f.balance_usd || 0, 0)} Bal)`, fmtWin(f.start_date, f.end_date), f.status || 'Active'],
+          active: isWinActive(f.end_date)
+        }))
+      ];
+      const hldRefOnly = !(combined.length || explicitEnt);
+      return {
+          linkedCount: combined.length,
+        isFallback: hldRefOnly && allPartners.length > 0,
+        title: 'Related Partner Split & Facility Rate Agreements',
+        sub: `Chronological equity split & credit facility rate schedules linked to ${entCell || primaryId}`,
+        formKey: 'hld_partners',
+        newBtnLbl: '+ New Partner Agreement',
+        newPrefill: { entity: entCell || singleDomCo || 'Bdeir Holding' },
+        cols: [...(hideRelCo ? [] : ['Entity']), 'Schedule ID', 'Counterparty & Scope', 'Agreed Rate / Split', 'Effective Window', 'Status'],
+          rows: hldRefOnly ? allPartners.slice(0, 4).map(mapPartnerRow) : combined
+      };
+    }
+    return null;
+  }
+
+  // ==================== DRAFT FROM QUOTE (Edit Site + the 5 sibling Related Agreements boxes) ====================
+  // A signed quote (PDF or photo) or a pasted WhatsApp quote is read into draft agreement rows by
+  // MFG_AI_EDGE.extractQuoteSchedule (fixed rules on the device first, ISABI AI only as a fallback).
+  // Each row opens the normal agreement form pre-filled; nothing is saved until the person posts it,
+  // so chronology (hard rule 12), price guards and permissions all still apply. Drafts live in memory only.
+  const QUOTE_DRAFT_SPECS = {
+    pricerule: { itemLbl: 'Product / Grade', rateLbl: 'Material Rate ($)', rate2Lbl: 'Haulage Rate ($)', units: ['m³', 'Ton', 'Truck'], hasRate2: true, candCol: 'product', rateHint: 'the material price per unit', rate2Hint: 'the transport or haulage price per unit, or null', kindLbl: 'Sales Agreement' },
+    pricerule_raw: { itemLbl: 'Raw Material / Grade', rateLbl: 'Material Rate ($)', rate2Lbl: '', units: ['m³', 'Ton', 'Truck'], hasRate2: false, candCol: 'product', rateHint: 'the material price per unit', kindLbl: 'Quarry or Haulage Agreement' },
+    re_leases: { itemLbl: 'Unit', rateLbl: 'Net Rent per Period ($)', rate2Lbl: 'Deposit ($)', units: ['Month', 'Quarter', 'Year'], hasRate2: true, candCol: 'unit', rateHint: 'the net rent per billing period', rate2Hint: 'the security deposit, or null', rate2Rx: /deposit|caution|guarantee|تأمين/i },
+    hsp_tariffs: { itemLbl: 'Tier / Unit', rateLbl: 'Seasonal Rate ($)', rate2Lbl: 'Nightly Rate ($)', units: [], hasRate2: true, candCol: 'tier', rateHint: 'the seasonal contract price', rate2Hint: 'the nightly or daily price, or null', rate2Units: ['Night', 'Day'], okUnits: ['Season', 'Night', 'Day'], rate1Units: ['Season'], rate2Below: true, rate2Rx: /night|nightly|daily|nuit|jour|ليلة|يومي/i },
+    trd_targets: { itemLbl: 'Category / Segment', rateLbl: 'Unit Net Price ($)', rate2Lbl: 'Unit Cost ($)', units: [], hasRate2: true, candCol: 'category', rateHint: 'the unit net selling price', rate2Hint: 'the unit cost price, or null', rate2Below: true, rate2Rx: /cost|co(?:û|u)t|fob|كلفة/i },
+    ins_agreements: { itemLbl: 'Line of Business', rateLbl: 'New Business (%)', rate2Lbl: 'Renewal (%)', units: [], pct: true, hasRate2: true, candCol: 'line', rateHint: 'the new business commission percent', rate2Hint: 'the renewal commission percent, or null', rate2Below: true, rate2Rx: /renewal|renouvellement|تجديد/i, itemStripRx: /new\s*business|affaires\s*nouvelles|أعمال\s*جديدة|commission/gi },
+    hld_partners: { itemLbl: 'Partner', rateLbl: 'Share (%)', rate2Lbl: '', units: [], pct: true, hasRate2: false, candCol: 'partner', rateHint: 'the partner share percent' }
+  };
+  const QD_STATE = { ctx: null, drafts: new Map(), busy: false, cur: null };
+
+  function quoteDraftCandidates(formKey) {
+    const uniq = arr => freqRankCandidates(QUOTE_DRAFT_SPECS[formKey] ? QUOTE_DRAFT_SPECS[formKey].candCol : 'product', arr.filter(Boolean));
+    try {
+      if (formKey === 'pricerule' || formKey === 'pricerule_raw') {
+        return uniq(((SEED.records && SEED.records.products) || []).filter(p => p && !p.voided && (typeof isRowInActiveIndustry !== 'function' || isRowInActiveIndustry(p))).map(p => p.name));
+      }
+      if (formKey === 're_leases') {
+        const re = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) || {};
+        return uniq([...(re.leases || []).map(l => l.unit), ...(re.units || []).map(u => u.unit_name)]);
+      }
+      if (formKey === 'hsp_tariffs') return uniq(((computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }) || {}).tariffRows || []).map(t => t.tier));
+      if (formKey === 'trd_targets') return uniq(((computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }) || {}).targetRows || []).map(t => t.category || t.segment));
+      if (formKey === 'ins_agreements') return uniq(((computeInsuranceOperations({ ignorePeriod: true }) || {}).agreements || []).map(a => a.line));
+      if (formKey === 'hld_partners') return uniq(((computeHoldingSchedules() || {}).partnerAgreements || []).map(p => p.partner));
+    } catch (_) {}
+    return [];
+  }
+
+  function quoteDraftRowPrefill(formKey, row, eff) {
+    const pf = {};
+    const put = (k, v) => { if (v != null && v !== '') pf[k] = v; };
+    if (formKey === 're_leases') {
+      // The quoted period sets Billing Frequency so a monthly rent is never billed as a quarterly one.
+      put('unit', row.item); put('net_period_usd', row.rate); put('deposit_usd', row.rate2);
+      put('frequency', ({ Month: 'Monthly', Quarter: 'Quarterly', Year: 'Annual' })[row.unit] || '');
+    }
+    else if (formKey === 'hsp_tariffs') { put('tier', row.item); put('seasonal_rate_usd', row.rate); put('nightly_rate_usd', row.rate2); }
+    else if (formKey === 'trd_targets') { put('category', row.item); put('segment', row.item); put('unit_net_usd', row.rate); put('unit_cost_usd', row.rate2); }
+    else if (formKey === 'ins_agreements') { put('line', row.item); put('new_bus_pct', row.rate); put('renewal_pct', row.rate2); }
+    else if (formKey === 'hld_partners') { put('partner', row.item); put('pct', row.rate); }
+    put('start_date', eff);
+    return pf;
+  }
+
+  function ensureQuoteDraftModal() {
+    let modal = $('quoteDraftModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'quoteDraftModal';
+    modal.className = 'modal-backdrop';
+    modal.hidden = true;
+    modal.innerHTML = '<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="quoteDraftTitle"><div class="modal-header"><div><span class="modal-eyebrow">ISABI Smart Entry</span><h2 id="quoteDraftTitle">Draft Agreements from a Quote</h2></div><button type="button" class="modal-close-btn" data-qd-close="1" aria-label="Close">✕</button></div><div class="modal-body" id="quoteDraftBody"></div></div>';
+    document.body.appendChild(modal);
+    if (typeof wireBackdropDismiss === 'function') wireBackdropDismiss(modal, closeQuoteDraftModal);
+    modal.addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.stopPropagation(); closeQuoteDraftModal(); } });
+    modal.addEventListener('click', ev => {
+      const t = ev.target;
+      if (!t || !t.closest) return;
+      if (t.closest('[data-qd-close]')) { ev.preventDefault(); closeQuoteDraftModal(); return; }
+      const kindBtn = t.closest('[data-qd-kind]');
+      if (kindBtn) {
+        ev.preventDefault();
+        const st = QD_STATE.cur;
+        if (st && !QD_STATE.busy) { syncQuoteDraftInputs(); st.formKey = kindBtn.getAttribute('data-qd-kind'); st.result = null; st.opened = new Set(); renderQuoteDraftModal(); }
+        return;
+      }
+      if (t.closest('[data-qd-read]')) { ev.preventDefault(); runQuoteDraftRead(); return; }
+      if (t.closest('[data-qd-discard]')) {
+        ev.preventDefault();
+        const st = QD_STATE.cur;
+        if (st) { QD_STATE.drafts.delete(st.key); QD_STATE.cur = newQuoteDraftState(QD_STATE.ctx); }
+        renderQuoteDraftModal();
+        return;
+      }
+      const revBtn = t.closest('[data-qd-review]');
+      if (revBtn) { ev.preventDefault(); reviewQuoteDraftRow(Number(revBtn.getAttribute('data-qd-review'))); }
+    });
+    modal.addEventListener('change', ev => {
+      const inp = ev.target;
+      if (inp && inp.id === 'quoteDraftFile') readQuoteDraftFile(inp.files && inp.files[0]);
+      if (inp && inp.id === 'quoteDraftEffFrom' && QD_STATE.cur) { QD_STATE.cur.effTouched = true; QD_STATE.cur.effFrom = inp.value; }
+    });
+    modal.addEventListener('input', ev => {
+      const inp = ev.target;
+      if (inp && inp.id === 'quoteDraftEffFrom' && QD_STATE.cur) { QD_STATE.cur.effTouched = true; QD_STATE.cur.effFrom = inp.value; }
+    });
+    return modal;
+  }
+
+  // Sign-out: the next seat on this tab must never see the previous seat's pasted quote, file or rows.
+  function resetQuoteDrafts() {
+    QD_STATE.drafts.clear();
+    QD_STATE.cur = null;
+    QD_STATE.ctx = null;
+    QD_STATE.busy = false;
+    QD_STATE.readSeq = (QD_STATE.readSeq || 0) + 1; // any read still in flight is now stale
+    const modal = $('quoteDraftModal');
+    if (modal) {
+      modal.hidden = true;
+      const body = $('quoteDraftBody');
+      if (body) body.innerHTML = '';
+    }
+  }
+
+  function newQuoteDraftState(ctx) {
+    return { key: ctx.key, formKey: ctx.kinds[0], text: '', file: null, result: null, effFrom: '', opened: new Set(), status: '', statusErr: false };
+  }
+
+  function openQuoteDraftModal(ctx) {
+    if (!ctx || !Array.isArray(ctx.kinds) || !ctx.kinds.length) return;
+    QD_STATE.ctx = ctx;
+    QD_STATE.cur = QD_STATE.drafts.get(ctx.key) || newQuoteDraftState(ctx);
+    if (!ctx.kinds.includes(QD_STATE.cur.formKey)) QD_STATE.cur.formKey = ctx.kinds[0];
+    QD_STATE.drafts.set(ctx.key, QD_STATE.cur);
+    const modal = ensureQuoteDraftModal();
+    modal.hidden = false;
+    renderQuoteDraftModal();
+    const first = $('quoteDraftText');
+    if (first && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) first.focus({ preventScroll: true });
+  }
+
+  function closeQuoteDraftModal() {
+    syncQuoteDraftInputs();
+    const modal = $('quoteDraftModal');
+    if (modal) modal.hidden = true;
+  }
+
+  // Keep what the person typed in the draft table when the dialog re-renders or closes.
+  function syncQuoteDraftInputs() {
+    const st = QD_STATE.cur;
+    if (!st) return;
+    const ta = $('quoteDraftText');
+    if (ta) st.text = ta.value;
+    const eff = $('quoteDraftEffFrom');
+    if (eff && st.effTouched) st.effFrom = eff.value;
+    if (st.result && Array.isArray(st.result.rows)) {
+      document.querySelectorAll('#quoteDraftBody tr[data-qd-row]').forEach(tr => {
+        const r = st.result.rows[Number(tr.getAttribute('data-qd-row'))];
+        if (!r) return;
+        const g = k => tr.querySelector(`[data-qd-f="${k}"]`);
+        const numOf = el => (el && String(el.value).trim() !== '' && Number.isFinite(Number(el.value))) ? Number(el.value) : null;
+        if (g('item')) r.item = g('item').value.trim();
+        if (g('unit')) r.unit = g('unit').value;
+        if (g('rate')) r.rate = numOf(g('rate'));
+        if (g('rate2')) r.rate2 = numOf(g('rate2'));
+      });
+    }
+  }
+
+  function renderQuoteDraftModal() {
+    const body = $('quoteDraftBody');
+    const st = QD_STATE.cur;
+    const ctx = QD_STATE.ctx;
+    if (!body || !st || !ctx) return;
+    const spec = QUOTE_DRAFT_SPECS[st.formKey] || QUOTE_DRAFT_SPECS.pricerule;
+    const res = st.result;
+    const cands = quoteDraftCandidates(st.formKey);
+    const dlId = 'dl_qd_items';
+    const rowsHtml = res && res.rows && res.rows.length ? res.rows.map((r, i) => {
+      const isLbp = r.currency === 'LBP';
+      const opened = st.opened.has(i);
+      return `
+        <tr data-qd-row="${i}" class="${opened ? 'is-opened' : ''}">
+          <td class="qd-quoted">${(!r.src && res.source === 'ai' && !res.fromFile) ? '<div class="qd-row-check">No matching quote line</div>' : ''}<span class="qd-src-line" dir="auto" data-no-i18n="1">${esc(r.src || r.quoted)}</span></td>
+          <td><input type="text" data-qd-f="item" list="${dlId}" value="${esc(r.item || '')}" aria-label="${esc(spec.itemLbl)}"></td>
+          ${spec.units.length ? `<td><select data-qd-f="unit" aria-label="Unit"><option value="">-</option>${spec.units.map(u => `<option value="${esc(u)}" ${r.unit === u ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></td>` : ''}
+          <td><input type="number" class="qd-num" data-qd-f="rate" step="0.01" min="0" value="${r.rate == null ? '' : esc(String(r.rate))}" aria-label="${esc(spec.rateLbl)}"></td>
+          ${spec.hasRate2 ? `<td><input type="number" class="qd-num" data-qd-f="rate2" step="0.01" min="0" value="${r.rate2 == null ? '' : esc(String(r.rate2))}" aria-label="${esc(spec.rate2Lbl)}"></td>` : ''}
+          <td>${isLbp ? '<span class="qd-row-check">Quoted in LBP: enter the USD rate</span>' : (r.needsCheck ? '<span class="qd-row-check">Check</span>' : '')}</td>
+          <td><button type="button" class="btn btn-sm ${opened ? 'btn-ghost-bar' : 'btn-primary'}" data-qd-review="${i}">${opened ? 'Opened' : 'Review &amp; Post'}</button></td>
+        </tr>`;
+    }).join('') : '';
+    body.innerHTML = `
+      ${ctx.targetLabel ? `<div class="qd-target" data-no-i18n="1">${esc(ctx.targetLabel)}</div>` : ''}
+      <p class="qd-intro">Paste the quote text or attach the signed quote. ISABI drafts one row per priced line. Nothing is saved until you post each agreement in its own form.</p>
+      ${ctx.kinds.length > 1 ? `<div class="qd-kind-bar" role="group" aria-label="Agreement type">${ctx.kinds.map(k => `<button type="button" class="filter-chip ${k === st.formKey ? 'active' : ''}" data-qd-kind="${esc(k)}" aria-pressed="${k === st.formKey ? 'true' : 'false'}">${esc((QUOTE_DRAFT_SPECS[k] || {}).kindLbl || k)}</button>`).join('')}</div>` : ''}
+      <div class="qd-input-grid">
+        <textarea id="quoteDraftText" placeholder="Paste the quote here, for example a WhatsApp message" aria-label="Quote text">${esc(st.text || '')}</textarea>
+        <label class="qd-file-box">
+          <span>Signed PDF or photo of the quote</span>
+          <input type="file" id="quoteDraftFile" accept="application/pdf,image/jpeg,image/png,image/webp,text/plain,.pdf,.jpg,.jpeg,.png,.webp,.txt">
+          ${st.file ? `<span class="qd-file-name" data-no-i18n="1">${esc(st.file.name)}</span>` : ''}
+        </label>
+      </div>
+      <div class="qd-actions">
+        <button type="button" class="btn btn-primary" data-qd-read="1" ${QD_STATE.busy ? 'disabled' : ''}>${ic('sparkles')} Read Quote</button>
+        <span class="qd-status ${st.statusErr ? 'is-err' : ''}" id="quoteDraftStatus" role="status">${esc(st.status || '')}</span>
+      </div>
+      ${res && res.rows && res.rows.length ? `
+        <div class="qd-head-row">
+          <label class="qd-eff">Effective From <input type="date" id="quoteDraftEffFrom" value="${esc(st.effFrom || '')}"></label>
+          <span class="badge ${res.source === 'ai' ? 'badge-brass' : 'badge-neutral'} qd-src">${res.source === 'ai' ? 'Read by ISABI AI' : 'Read on this device'}</span>
+        </div>
+        <datalist id="${dlId}">${cands.map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist>
+        <div class="qd-table-wrap">
+          <table class="qd-table" id="quoteDraftTable">
+            <thead><tr>
+              <th>As Quoted</th><th>${esc(spec.itemLbl)}</th>${spec.units.length ? '<th>Unit</th>' : ''}<th>${esc(spec.rateLbl)}</th>${spec.hasRate2 ? `<th>${esc(spec.rate2Lbl)}</th>` : ''}<th>Check</th><th></th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+        <div class="qd-note">Compare every row with its quote line before Review &amp; Post. Check marks a specific doubt about the name, unit or rate.</div>
+        ${res.fromFile ? '<div class="qd-note">Read from a file: lines ISABI AI skipped cannot be listed. Compare the row count with the quote.</div>' : ''}
+        ${res.fileUnreadable ? '<div class="qd-note">The attached file could not be read. These rows come from the pasted text.</div>' : ''}
+        ${res.fileNoRows ? '<div class="qd-note">ISABI AI read the attached file but found no usable prices. These rows come from the pasted text.</div>' : ''}
+        ${Array.isArray(res.unread) && res.unread.length ? `
+          <div class="qd-unread" id="quoteDraftUnread">
+            <b>Lines not read. Check them against the quote:</b>
+            <ul>${res.unread.map(u => `<li dir="auto" data-no-i18n="1">${esc(u)}</li>`).join('')}</ul>
+            ${res.unreadMore ? `<div class="qd-unread-more"><span>More lines not shown:</span> <b data-no-i18n="1">${res.unreadMore}</b></div>` : ''}
+          </div>
+        ` : ''}
+      ` : ''}
+      <div class="qd-footer">
+        ${res ? '<button type="button" class="btn btn-ghost-bar" data-qd-discard="1">Discard Draft</button>' : '<span></span>'}
+        <button type="button" class="btn btn-ghost-bar" data-qd-close="1">Close</button>
+      </div>
+    `;
+    if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom($('quoteDraftModal'));
+  }
+
+  function setQuoteDraftStatus(msg, isErr) {
+    const st = QD_STATE.cur;
+    if (!st) return;
+    st.status = msg;
+    st.statusErr = Boolean(isErr);
+    const el = $('quoteDraftStatus');
+    if (el) {
+      const lang = window.MFG_I18N && window.MFG_I18N.getLang ? window.MFG_I18N.getLang() : 'en';
+      el.textContent = (lang !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(msg, lang) : msg;
+      el.classList.toggle('is-err', Boolean(isErr));
+    }
+  }
+
+  function readQuoteDraftFile(file) {
+    const st = QD_STATE.cur;
+    if (!st || !file) return;
+    const name = String(file.name || 'quote');
+    if (/^text\/plain$/i.test(file.type) || /\.txt$/i.test(name)) {
+      file.text().then(txt => {
+        syncQuoteDraftInputs();
+        st.text = [st.text, String(txt || '')].filter(Boolean).join('\n').slice(0, 20000);
+        st.file = null;
+        renderQuoteDraftModal();
+      }).catch(() => setQuoteDraftStatus('This file could not be read.', true));
+      return;
+    }
+    if (!/^(application\/pdf|image\/(jpeg|png|webp))$/i.test(file.type)) {
+      setQuoteDraftStatus('Attach a PDF, a JPG, PNG or WEBP photo, or a text file.', true);
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setQuoteDraftStatus('This file is larger than 3 MB. Attach a smaller scan or photo.', true);
+      return;
+    }
+    const fr = new FileReader();
+    fr.onload = () => {
+      syncQuoteDraftInputs();
+      st.file = { name, mime: String(file.type).toLowerCase(), dataUrl: String(fr.result || '') };
+      st.status = '';
+      st.statusErr = false;
+      renderQuoteDraftModal();
+    };
+    fr.onerror = () => setQuoteDraftStatus('This file could not be read.', true);
+    fr.readAsDataURL(file);
+  }
+
+  async function runQuoteDraftRead() {
+    const st = QD_STATE.cur;
+    if (!st || QD_STATE.busy) return;
+    syncQuoteDraftInputs();
+    if (!String(st.text || '').trim() && !st.file) {
+      setQuoteDraftStatus('Paste the quote text or attach the quote first.', true);
+      return;
+    }
+    if (!window.MFG_AI_EDGE || typeof window.MFG_AI_EDGE.extractQuoteSchedule !== 'function') {
+      setQuoteDraftStatus('The quote reader is not available. Reload the page and try again.', true);
+      return;
+    }
+    const spec = QUOTE_DRAFT_SPECS[st.formKey] || QUOTE_DRAFT_SPECS.pricerule;
+    QD_STATE.busy = true;
+    // Each read has its own token: a read that outlives a sign-out or a newer read never clears `busy` for the
+    // read that is running now.
+    const readToken = (QD_STATE.readSeq = (QD_STATE.readSeq || 0) + 1);
+    const readBtn = document.querySelector('#quoteDraftBody [data-qd-read]');
+    if (readBtn) readBtn.disabled = true;
+    setQuoteDraftStatus('Reading the quote...', false);
+    const forKey = st.key;
+    const forKind = st.formKey;
+    let res = null;
+    try {
+      res = await window.MFG_AI_EDGE.extractQuoteSchedule({
+        text: st.text,
+        dataUrl: st.file ? st.file.dataUrl : '',
+        mimeType: st.file ? st.file.mime : '',
+        spec: Object.assign({}, spec, { candidates: quoteDraftCandidates(st.formKey).slice(0, 60) })
+      });
+    } catch (_) {
+      res = null;
+    } finally {
+      if (QD_STATE.readSeq === readToken) QD_STATE.busy = false;
+    }
+    if (QD_STATE.readSeq !== readToken) return; // superseded or signed out: the newer read owns the dialog
+    if (QD_STATE.cur !== st || st.key !== forKey || st.formKey !== forKind) {
+      // Another draft or agreement type took over during the read: drop this result, re-enable Read Quote.
+      if (QD_STATE.cur && $('quoteDraftModal') && !$('quoteDraftModal').hidden) renderQuoteDraftModal();
+      return;
+    }
+    if (!res || !res.ok) {
+      st.result = null;
+      st.status = (res && res.reason === 'file_unreadable')
+        ? 'This file type cannot be read here. Attach a PDF, JPG, PNG or WEBP.'
+        : ((res && res.aiTried) ? 'No priced lines were found. Check the quote, or enter the agreements by hand.' : 'No priced lines were found in the pasted text.');
+      st.statusErr = true;
+      renderQuoteDraftModal();
+      return;
+    }
+    // A rate quoted in LBP is never carried into a USD field: the person types the USD rate, and what they
+    // type is kept across re-renders like any other edit.
+    res.rows.forEach(r => {
+      if (r.currency === 'LBP') {
+        r.lbpRate = r.rate;
+        r.lbpRate2 = r.rate2;
+        r.rate = null;
+        r.rate2 = null;
+      }
+    });
+    st.result = res;
+    st.opened = new Set();
+    // The new quote's own date wins; a date the person typed is kept only when the new quote has none.
+    st.effFrom = res.effectiveFrom || (st.effTouched ? st.effFrom : '');
+    st.effTouched = false;
+    st.status = res.effectiveFrom ? 'Draft ready. Check each row, then Review & Post.' : 'Draft ready. Set the Effective From date, check each row, then Review & Post.';
+    st.statusErr = false;
+    renderQuoteDraftModal();
+  }
+
+  function reviewQuoteDraftRow(i) {
+    const st = QD_STATE.cur;
+    const ctx = QD_STATE.ctx;
+    if (!st || !ctx || !st.result) return;
+    syncQuoteDraftInputs();
+    const row = st.result.rows[i];
+    if (!row) return;
+    const eff = /^\d{4}-\d{2}-\d{2}$/.test(String(st.effFrom || '')) ? st.effFrom : '';
+    st.opened.add(i);
+    const srcNote = row.lineNo ? `Quote: pasted text (line ${row.lineNo})` : `Quote: ${st.result.fromFile && st.file ? st.file.name : 'pasted text'}`;
+    closeQuoteDraftModal();
+    if (ctx.mode === 'site') {
+      const base = typeof ctx.basePrefill === 'function' ? ctx.basePrefill() : (ctx.basePrefill || {});
+      const pf = Object.assign({}, base, { _quoteDraft: true, notes: srcNote });
+      if (row.item) pf.prod = row.item;
+      if (row.unit) pf.uom = row.unit;
+      if (row.rate != null) pf.unitprice = row.rate;
+      if (row.rate2 != null && st.formKey === 'pricerule') pf.transunitprice = row.rate2;
+      if (eff) pf.startdate = eff;
+      openEntryModal(st.formKey, pf, { label: st.formKey === 'pricerule_raw' ? 'Quarry / Haulage Agreement' : 'Sales Price Agreement' });
+      return;
+    }
+    if (typeof closeRecordInspector === 'function') closeRecordInspector();
+    const pf = Object.assign({}, ctx.basePrefill || {}, quoteDraftRowPrefill(st.formKey, row, eff), { notes: srcNote });
+    openIndustryDomainEntryModal(st.formKey, pf);
+  }
+
   function openIndustryDomainInspector(opts = {}) {
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
       window.MFG_ASK.closeDailyHandover();
@@ -71819,245 +73215,32 @@
       `;
     }).join('');
 
-    const relatedAgreementsInfo = (() => {
-      const canSeeRelAgr = Boolean(isOwner() || canModifyData() || canViewHub('pricing') || canViewHub('sales') || canViewHub('ledger'));
-      if (!canSeeRelAgr || isChronoDomainRow) return null;
-      const ownerSeat = isOwner();
-      const allowedCos = allowedCompanyNames();
-      const isDomCoAllowed = co => ownerSeat || !co || allowedCos.some(ac => norm(ac) === norm(co));
-      const singleDomCo = (!/^industry:/i.test(String(STATE.company || '')) && STATE.company && STATE.company !== 'all' && !(typeof isDemoScopeActive === 'function' && isDemoScopeActive()))
-        ? (COMPANY_BU_MATCH[STATE.company] || COMPANY_LABELS[STATE.company] || '')
-        : '';
-      const hideRelCo = Boolean(singleDomCo);
-      const valByHdr = re => {
-        const idx = headers.findIndex(h => re.test(String(h || '').trim()));
-        return idx >= 0 && cells[idx] != null ? String(cells[idx]).trim() : '';
-      };
-      const fmtWin = (sd, ed) => `${sd ? fmtDateDMY(sd) : 'Open'} to ${(!ed || /^open$/i.test(String(ed))) ? 'Open' : fmtDateDMY(ed)}`;
-      const isWinActive = ed => {
-        const s = String(ed || '').trim();
-        return !s || /^open$/i.test(s) || s.slice(0, 10) >= todayISO();
-      };
-
-      if (ind === 'Real Estate & Property' && typeof computeRealEstateOperations === 'function') {
-        const re = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) || {};
-        const propCell = valByHdr(/property|building|asset|tower|center/i) || secondaryLbl;
-        const unitCell = valByHdr(/^unit|shop|suite/i);
-        const tenantCell = valByHdr(/tenant|lessee|client/i);
-        const cleanRelKey = v => norm(v).replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim();
-        const RE_GENERIC_TOKENS = new Set(['commercial', 'center', 'unit', 'units', 'tower', 'building', 'plot', 'land', 'estate', 'complex', 'hub', 'block', 'floor', 'suite', 'showroom', 'luxury', 'residence', 'medical', 'pavillon', 'coastal', 'development', 'industrial', 'logistics', 'remittance', 'upkeep', 'ledger', 'pool', 'company', 'properties', 'sal']);
-        const propTokens = cleanRelKey(propCell).split(/\s+/).filter(tok => tok.length >= 4 && !RE_GENERIC_TOKENS.has(tok));
-        const allLeases = (re.leases || []).filter(l => l && !l.voided && !l._scheduleVoided && isDomCoAllowed(l.company));
-        let hits = allLeases.filter(l => {
-          if (singleDomCo && l.company && norm(l.company) !== norm(singleDomCo)) return false;
-          if (unitCell && l.unit && (norm(l.unit).includes(norm(unitCell)) || norm(unitCell).includes(norm(l.unit.replace(/\s*\([^)]*\)\s*/g, ''))))) return true;
-          if (tenantCell && !/vacant|available|remittance|ledger/i.test(tenantCell) && l.tenant) {
-            const lt = cleanRelKey(l.tenant);
-            const tc = cleanRelKey(tenantCell);
-            if (lt && tc && (lt === tc || tc.includes(lt) || lt.includes(tc))) return true;
-          }
-          if (propCell && l.property) {
-            const lp = cleanRelKey(l.property);
-            const pc = cleanRelKey(propCell);
-            if (lp && pc && (lp === pc || pc.includes(lp) || lp.includes(pc) || norm(l.property) === norm(primaryId))) return true;
-            if (propTokens.length) {
-              const lTokens = lp.split(/\s+/).filter(Boolean);
-              if (propTokens.some(tok => lTokens.includes(tok))) return true;
-            }
-          }
-          return false;
-        });
-        if (!hits.length && /^PROP-/i.test(primaryId)) {
-          const propObj = (re.properties || []).find(p => norm(p.id) === norm(primaryId) || norm(p.code) === norm(primaryId));
-          if (propObj) {
-            hits = allLeases.filter(l => (!singleDomCo || norm(l.company) === norm(singleDomCo)) && norm(l.property) === norm(propObj.name));
-          }
-        }
-        return {
-          title: 'Related Lease & Rent Agreements',
-          sub: `Chronological rent & escalation schedules linked to ${secondaryLbl || primaryId}`,
-          formKey: 're_leases',
-          newBtnLbl: '+ New Lease Schedule',
-          newPrefill: { company: rowCompany || singleDomCo || 'Properties', property: propCell || '', unit: unitCell || '', tenant: (!/vacant|available/i.test(tenantCell) ? tenantCell : '') },
-          cols: [...(hideRelCo ? [] : ['Entity']), 'Lease ID', 'Unit & Tenant', 'Period Net / TTC', 'Effective Window', 'Status'],
-          rows: hits.map(l => ({
-            id: l.id,
-            formKey: 're_leases',
-            co: l.company || 'Properties',
-            cells: [
-              ...(hideRelCo ? [] : [l.company || 'Properties']),
-              l.id,
-              `${l.unit || '-'} · ${l.tenant || '-'}`,
-              `${fmtUSD(l.net_period_usd || 0, 0)} (${l.vat_rate ? l.vat_rate + '% VAT · ' + fmtUSD(l.ttc_period_usd || 0, 0) : '0% VAT'})`,
-              fmtWin(l.start_date, l.end_date),
-              l.status || (isWinActive(l.end_date) ? 'Active' : 'Ended')
-            ],
-            active: isWinActive(l.end_date)
-          }))
-        };
-      }
-
-      if (ind === 'Hospitality & Resorts' && typeof computeHospitalityOperations === 'function') {
-        const hsp = computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }) || {};
-        const tierCell = valByHdr(/tier|venue|outlet|unit|chalet|cabana|category/i) || secondaryLbl;
-        const targetResort = rowCompany || singleDomCo || valByHdr(/resort|company|entity/i);
-        const allTariffs = (hsp.tariffRows || []).filter(t => t && !t.voided && !t._scheduleVoided && isDomCoAllowed(t.company));
-        let hits = allTariffs.filter(t => {
-          if (singleDomCo && t.company && norm(t.company) !== norm(singleDomCo)) return false;
-          if (targetResort && t.company && norm(t.company) === norm(targetResort)) return true;
-          if (tierCell && t.tier && (norm(t.tier).includes(norm(tierCell)) || norm(tierCell).includes(norm(t.tier)))) return true;
-          return false;
-        });
-        return {
-          title: 'Related Seasonal & Daily Tariff Agreements',
-          sub: `Chronological chalet, cabana & venue rate schedules for ${targetResort || secondaryLbl}`,
-          formKey: 'hsp_tariffs',
-          newBtnLbl: '+ New Seasonal Tariff',
-          newPrefill: { company: targetResort || 'Blanca', tier: tierCell || '' },
-          cols: [...(hideRelCo ? [] : ['Resort']), 'Tariff ID', 'Tier & Season', 'Daily / Seasonal Rate', 'Effective Window', 'Status'],
-          rows: hits.map(t => ({
-            id: t.id,
-            formKey: 'hsp_tariffs',
-            co: t.company || 'Blanca',
-            cells: [
-              ...(hideRelCo ? [] : [t.company || 'Blanca']),
-              t.id,
-              `${t.tier || '-'} · ${t.season || '-'}`,
-              `${fmtUSD(t.daily_chalet_ttc_usd || t.nightly_rate_usd || 0, 0)}/day · ${fmtUSD(t.season_contract_usd || t.seasonal_rate_usd || 0, 0)}/season`,
-              fmtWin(t.start_date, t.end_date),
-              t.status || (isWinActive(t.end_date) ? 'Active' : 'Closed')
-            ],
-            active: isWinActive(t.end_date)
-          }))
-        };
-      }
-
-      if (ind === 'Automotive & Heavy Trading' && typeof computeTradingOperations === 'function') {
-        const trd = computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }) || {};
-        const modelCell = valByHdr(/model|family|item|segment|category/i) || secondaryLbl;
-        const targetCo = rowCompany || singleDomCo || valByHdr(/company|entity/i);
-        const allTargets = (trd.targetRows || []).filter(t => t && !t.voided && !t._scheduleVoided && isDomCoAllowed(t.company));
-        const hits = allTargets.filter(t => {
-          if (singleDomCo && t.company && norm(t.company) !== norm(singleDomCo)) return false;
-          if (targetCo && t.company && norm(t.company) !== norm(targetCo)) return false;
-          if (modelCell && t.segment) {
-            const mTokens = norm(modelCell).split(/\s+/).filter(tok => tok.length >= 4);
-            if (mTokens.some(tok => norm(t.segment).includes(tok))) return true;
-          }
-          return Boolean(targetCo && norm(t.company) === norm(targetCo));
-        });
-        return {
-          title: 'Related OEM Price List & Rebate Schedules',
-          sub: `Chronological unit list price & landed cost schedules for ${targetCo || secondaryLbl}`,
-          formKey: 'trd_targets',
-          newBtnLbl: '+ New Price Target',
-          newPrefill: { company: targetCo || 'Shacman', segment: modelCell || '' },
-          cols: [...(hideRelCo ? [] : ['Entity']), 'Schedule ID', 'Segment / Model', 'List Net / Landed Cost', 'Effective Window', 'Status'],
-          rows: hits.map(t => ({
-            id: t.id,
-            formKey: 'trd_targets',
-            co: t.company || 'Shacman',
-            cells: [
-              ...(hideRelCo ? [] : [t.company || 'Shacman']),
-              t.id,
-              `${t.segment || t.price_list || '-'}`,
-              `${fmtUSD(t.unit_net_usd || 0, 0)} Net · ${fmtUSD(t.unit_cost_usd || 0, 0)} Cost`,
-              fmtWin(t.start_date, t.end_date),
-              isWinActive(t.end_date) ? 'Active' : 'Closed'
-            ],
-            active: isWinActive(t.end_date)
-          }))
-        };
-      }
-
-      if (ind === 'Insurance & Brokerage' && typeof computeInsuranceOperations === 'function') {
-        const ins = computeInsuranceOperations({ ignorePeriod: true }) || {};
-        const explicitCarrier = valByHdr(/carrier|insurer/i);
-        const carrierCell = explicitCarrier || secondaryLbl;
-        const lineCell = valByHdr(/line|product|category/i);
-        const allAgr = (ins.agreements || []).filter(a => a && !a.voided && !a._scheduleVoided && isDomCoAllowed(a.company || 'Insurance Company'));
-        let hits = allAgr.filter(a => {
-          if (carrierCell && a.carrier && (norm(a.carrier) === norm(carrierCell) || norm(carrierCell).includes(norm(a.carrier)))) return true;
-          if (lineCell && a.line) {
-            const lk = norm(lineCell).split(/\s+/)[0];
-            if (lk && lk.length >= 2 && norm(a.line).startsWith(lk)) return true;
-          }
-          return false;
-        });
-        if (!hits.length && !explicitCarrier && !lineCell) hits = allAgr.slice(0, 6);
-        return {
-          title: 'Related Carrier Commission Agreements',
-          sub: `Chronological brokerage commission & override schedules linked to ${carrierCell || primaryId}`,
-          formKey: 'ins_agreements',
-          newBtnLbl: '+ New Carrier Agreement',
-          newPrefill: { carrier: carrierCell || 'MedGulf', line: lineCell || '' },
-          cols: ['Agreement ID', 'Carrier & Line', 'New / Renewal %', 'Effective Window', 'Status'],
-          rows: hits.map(a => ({
-            id: a.id,
-            formKey: 'ins_agreements',
-            co: 'Insurance Company',
-            cells: [
-              a.id,
-              `${a.carrier || '-'} · ${a.line || '-'}`,
-              `${Number(a.new_bus_pct || 0).toFixed(1)}% New · ${Number(a.renewal_pct || 0).toFixed(1)}% Ren`,
-              fmtWin(a.start_date, a.end_date),
-              a.status || (isWinActive(a.end_date) ? 'Active' : 'Closed')
-            ],
-            active: isWinActive(a.end_date)
-          }))
-        };
-      }
-
-      if (ind === 'Holding & Treasury' && typeof computeHoldingSchedules === 'function') {
-        const hld = computeHoldingSchedules() || {};
-        const explicitEnt = valByHdr(/entities|entity|company|from|to|lender|borrower/i);
-        const partnerCell = valByHdr(/partner|stakeholder/i);
-        const entCell = explicitEnt || partnerCell || secondaryLbl;
-        const allPartners = (hld.partnerAgreements || []).filter(p => p && !p.voided && !p._scheduleVoided && isDomCoAllowed(p.entity || 'Bdeir Holding') && (!singleDomCo || !p.entity || norm(p.entity) === norm(singleDomCo)));
-        const pHits = allPartners.filter(p => !entCell || (explicitEnt && (norm(p.entity || '').includes(norm(explicitEnt)) || norm(explicitEnt).includes(norm(p.entity || '')))) || (partnerCell && (norm(p.partner || '').includes(norm(partnerCell)) || norm(partnerCell).includes(norm(p.partner || '')))));
-        const fHits = (hld.facilitySchedules || []).filter(f => f && !f.voided && !f._scheduleVoided && isDomCoAllowed(f.company) && (!singleDomCo || !f.company || norm(f.company) === norm(singleDomCo)) && (!entCell || (explicitEnt && (norm(f.company || '').includes(norm(explicitEnt)) || norm(explicitEnt).includes(norm(f.company || '')) || norm(f.lender || '').includes(norm(explicitEnt)))) || (partnerCell && norm(f.lender || '').includes(norm(partnerCell)))));
-        const mapPartnerRow = p => ({
-          id: p.id,
-          formKey: 'hld_partners',
-          co: p.entity || 'Bdeir Holding',
-          cells: [...(hideRelCo ? [] : [p.entity || 'Bdeir Holding']), p.id, `Partner Split · ${p.partner || '-'}`, `${Number(p.pct || 0).toFixed(1)}% Share (${fmtUSD(p.entitled_usd || 0, 0)})`, fmtWin(p.start_date, p.end_date), p.status || 'Active'],
-          active: isWinActive(p.end_date)
-        });
-        const combined = [
-          ...pHits.map(mapPartnerRow),
-          ...fHits.map(f => ({
-            id: f.id,
-            formKey: 'hld_loans',
-            co: f.company || 'Bdeir Holding',
-            cells: [...(hideRelCo ? [] : [f.company || 'Bdeir Holding']), f.id, `${f.type || 'Facility'} · ${f.lender || '-'}`, `${Number(f.interest_rate_pct || 0).toFixed(1)}% APR (${fmtUSD(f.balance_usd || 0, 0)} Bal)`, fmtWin(f.start_date, f.end_date), f.status || 'Active'],
-            active: isWinActive(f.end_date)
-          }))
-        ];
-        return {
-          title: 'Related Partner Split & Facility Rate Agreements',
-          sub: `Chronological equity split & credit facility rate schedules linked to ${entCell || primaryId}`,
-          formKey: 'hld_partners',
-          newBtnLbl: '+ New Partner Agreement',
-          newPrefill: { entity: entCell || singleDomCo || 'Bdeir Holding' },
-          cols: [...(hideRelCo ? [] : ['Entity']), 'Schedule ID', 'Counterparty & Scope', 'Agreed Rate / Split', 'Effective Window', 'Status'],
-          rows: (combined.length || explicitEnt) ? combined : allPartners.slice(0, 4).map(mapPartnerRow)
-        };
-      }
-      return null;
-    })();
+    // Match on the English cell text the register pills used (domainCellEnText), so the two counts agree in AR / FR.
+    const matchCells = (Array.isArray(opts.matchCells) && opts.matchCells.length === cells.length) ? opts.matchCells.slice() : cells.slice();
+    if (matchCells.length) matchCells[0] = primaryId;
+    const relatedAgreementsInfo = isChronoDomainRow ? null : computeIndustryRelatedAgreementsInfo({
+      ind,
+      headers,
+      cells: matchCells,
+      primaryId,
+      secondaryLbl: String(matchCells[1] || matchCells[2] || COMPANY_LABELS[STATE.company] || ind).trim(),
+      rowCompany
+    });
 
     const relatedAgreementsBoxHtml = relatedAgreementsInfo ? `
-      <div class="pa-subgrid-box" id="indInspRelatedAgreementsBox" data-rel-agr-count="${relatedAgreementsInfo.rows.length}">
+      <div class="pa-subgrid-box" id="indInspRelatedAgreementsBox" data-rel-agr-count="${relatedAgreementsInfo.rows.length}" data-rel-agr-linked="${relatedAgreementsInfo.linkedCount}">
         <div class="pa-subgrid-hdr">
           <div>
             <strong>${ic('pricing')} ${esc(relatedAgreementsInfo.title)}</strong>
             <span class="pa-subgrid-sub">${esc(relatedAgreementsInfo.sub)}</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <span class="badge ${relatedAgreementsInfo.rows.length ? 'badge-ok' : 'badge-neutral'}">${relatedAgreementsInfo.rows.length} ${relatedAgreementsInfo.rows.length === 1 ? 'Agreement' : 'Agreements'}</span>
+            <span class="badge ${relatedAgreementsInfo.linkedCount ? 'badge-ok' : 'badge-warn'}">${relatedAgreementsInfo.linkedCount} ${relatedAgreementsInfo.linkedCount === 1 ? 'Agreement' : 'Agreements'}</span>
             ${(canEditAny && !textOnlyLock) ? `<button type="button" class="btn btn-outline-bar btn-sm" data-ind-new-rel-agr="${esc(relatedAgreementsInfo.formKey)}">${esc(relatedAgreementsInfo.newBtnLbl)}</button>` : ''}
+            ${(canEditAny && !textOnlyLock) ? `<button type="button" class="btn btn-outline-bar btn-sm quote-draft-open-btn" data-quote-draft-open="${esc(relatedAgreementsInfo.formKey)}" data-ui-tip="Read a signed quote or a pasted WhatsApp quote into draft agreement rows for you to check and post">${ic('sparkles')} Draft from Quote</button>` : ''}
           </div>
         </div>
+        ${relatedAgreementsInfo.isFallback ? `<div class="rel-agr-fallback-note">No agreement links to this record yet. The group schedules below are shown for reference.</div>` : ''}
         <div class="table-wrap" style="max-height:220px">
           <table class="ledger-table">
             <thead>
@@ -72642,6 +73825,8 @@
           });
         }
         applyIndustryDomRowEdits($('workspace'));
+        // The cell rewrite above clears the first cell's agreement pill; recount with the saved values.
+        applyIndustryRelatedAgreementPills($('workspace'));
         closeRecordInspector();
         syncWithCloud(true);
         toast(`Saved changes to ${primaryId}`);
@@ -72748,6 +73933,19 @@
             const fk = btn.getAttribute('data-ind-new-rel-agr') || relatedAgreementsInfo.formKey;
             closeRecordInspector();
             openIndustryDomainEntryModal(fk, relatedAgreementsInfo.newPrefill || {});
+          });
+        });
+        relAgrBox.querySelectorAll('[data-quote-draft-open]').forEach(btn => {
+          btn.addEventListener('click', ev => {
+            ev.preventDefault();
+            const fk = btn.getAttribute('data-quote-draft-open') || relatedAgreementsInfo.formKey;
+            openQuoteDraftModal({
+              mode: 'domain',
+              key: `${ind}::${fk}::${primaryId}`,
+              kinds: [fk],
+              targetLabel: secondaryLbl || primaryId,
+              basePrefill: Object.assign({}, relatedAgreementsInfo.newPrefill || {})
+            });
           });
         });
         relAgrBox.querySelectorAll('[data-ind-open-rel-agr]').forEach(tr => {
@@ -82852,6 +84050,201 @@
     return { supplier, before, amount, disc, payableLeg, dupHit };
   }
 
+  // ---- Area-as-site notice + "Move to Own Site" panel on the Price Agreement form ----
+  const _AREA_SWITCH_ERR = {
+    industry: 'Site switches apply to Manufacturing delivery sites only.',
+    rights: 'Your seat cannot move records between sites.',
+    rights_hidden: 'This move also touches records of an entity outside your access. Ask an Owner to run it.',
+    undo_none: 'Nothing was moved to this site.',
+    site_missing: 'Site not found.',
+    old_site: 'This site cannot be split.',
+    customers_none: 'Pick the customer to move.',
+    customers_moved: 'That customer was already moved to another site.',
+    new_site_blank: 'New Site Name is required.',
+    new_site_same: 'The new site needs a different name from the area.',
+    new_site_taken: 'That site cannot take this customer.',
+    region_blank: 'Region is required.',
+    region_unknown: 'That Region is not on the map yet. Pick an existing Region.',
+    region_mismatch: 'That site already belongs to another Region.',
+    region_place: 'That site name belongs to a place in another Region. Pick that Region or change the name.'
+  };
+  function _areaSwitchPanelInputs() {
+    const panel = $('prAreaSwitchPanel');
+    if (!panel) return null;
+    const siteEl = panel.querySelector('[data-area-inp="site"]');
+    const regEl = panel.querySelector('[data-area-inp="region"]');
+    const also = Array.from(panel.querySelectorAll('input[data-area-also]')).filter(el => el.checked).map(el => el.getAttribute('data-area-also') || '');
+    return {
+      oldSite: panel.getAttribute('data-area-old') || '',
+      customer: panel.getAttribute('data-area-cust') || '',
+      newSite: siteEl ? String(siteEl.value || '').trim() : '',
+      region: regEl ? String(regEl.value || '').trim() : '',
+      also
+    };
+  }
+  function refreshAreaSwitchPreview() {
+    const box = $('prAreaPreview');
+    const inp = _areaSwitchPanelInputs();
+    if (!box || !inp) return null;
+    const pv = previewCustomerSiteSwitch({ oldSite: inp.oldSite, newSite: inp.newSite, region: inp.region, customers: [inp.customer].concat(inp.also) });
+    const applyBtn = document.querySelector('#prAreaSwitchPanel [data-area-switch-apply]');
+    if (applyBtn) applyBtn.disabled = !pv.ok;
+    if (!pv.ok) {
+      box.innerHTML = `<div class="pr-area-err" data-area-err="${esc(pv.code || '')}">${esc(_AREA_SWITCH_ERR[pv.code] || pv.reason || 'This move cannot run.')}</div>`;
+      return pv;
+    }
+    const lines = [];
+    lines.push(`<div class="pr-area-line"><span>Price agreements moved:</span> <b>${pv.rules}</b> <span class="pr-area-sep">·</span> <span>Loads moved:</span> <b>${pv.tickets}</b>${pv.firstDate ? ` <small class="mono">${esc(fmtDateDMY(pv.firstDate))} - ${esc(fmtDateDMY(pv.lastDate))}</small>` : ''}</div>`);
+    lines.push(`<div class="pr-area-line"><span>Area site</span> <b>${esc(pv.oldSite)}</b> <span class="pr-area-sep">·</span> <span>New site</span> <b>${esc(pv.newSite)}</b> <span class="pr-area-sep">·</span> <span>Region</span> <b>${esc(pv.region)}</b></div>`);
+    lines.push(`<div class="pr-area-line is-ok"><span>No price, quantity or total changes.</span></div>`);
+    pv.payNotes.forEach(n => {
+      if (n.mode === 'follow') {
+        lines.push(`<div class="pr-area-line"><b>${esc(n.company)}</b> <span>night trip pay stays the same. It keeps following the rate of Region</span> <b>${esc(n.fromRegion)}</b> <span>until Region</span> <b>${esc(n.toRegion)}</b> <span>gets its own rate.</span></div>`);
+      } else if (n.mode === 'own') {
+        lines.push(`<div class="pr-area-line is-warn"><b>${esc(n.company)}</b> <span>night trip pay: loads up to today keep the pay they had. Later loads follow the rate of Region</span> <b>${esc(n.toRegion)}</b> <small class="mono">${esc(fmtUSD(n.newRate, 2))}${Math.abs(n.newRate - n.oldRate) > 0.004 ? ' / ' + esc(fmtUSD(n.oldRate, 2)) : ''}</small></div>`);
+      }
+    });
+    if (pv.siteWideRules > 0) {
+      lines.push(`<div class="pr-area-line is-warn"><b>${pv.siteWideRules}</b> <span>agreements on the area site have no customer and stay there.</span></div>`);
+    }
+    if (pv.siteExists) lines.push(`<div class="pr-area-line"><span>This site already exists. The customer is added to it.</span></div>`);
+    if (!pv.regionExists) lines.push(`<div class="pr-area-line"><span>This Region is new. It is added from the map boundary.</span></div>`);
+    box.innerHTML = lines.join('');
+    return pv;
+  }
+  function renderPriceRuleAreaSiteStrip(siteName, customerName) {
+    const wrap = $('prAreaSiteWrap');
+    if (!wrap) return;
+    const hide = () => {
+      if (!wrap.hidden || wrap.innerHTML) { wrap.hidden = true; wrap.innerHTML = ''; }
+      FORM_UI.areaSwitch = null;
+    };
+    if (!siteName || getActiveIndustry() !== 'Manufacturing') { hide(); return; }
+    const e = describeAreaSite(siteName);
+    if (!e || !e.flagged) { hide(); return; }
+    const ui = FORM_UI.areaSwitch || (FORM_UI.areaSwitch = {});
+    const cust = String(customerName || '').trim();
+    const canSwitch = canMoveCustomerSite();
+    const key = [e.key, norm(cust), e.customerCount, e.customers.size, ui.open ? 1 : 0, canSwitch ? 1 : 0, SEED._customRev || 0].join('|');
+    if (ui.key === key && !wrap.hidden) {
+      // Same notice: never rebuild under a person typing in the panel, only refresh the figures
+      if (ui.open) refreshAreaSwitchPreview();
+      return;
+    }
+    ui.key = key;
+    const sug = suggestCustomerSiteSwitch(e.name, cust);
+    let panelHtml = '';
+    if (ui.open && canSwitch && cust) {
+      const chips = sug.others.slice(0, 24).map(o => `
+        <label class="pr-area-chip${o.same ? ' is-same' : ''}">
+          <input type="checkbox" class="pr-area-inp" data-area-also="${esc(o.name)}"${o.same ? ' checked' : ''}>
+          <span class="pr-area-chip-name">${esc(o.name)}</span>
+          <small class="mono">${o.loads}</small>
+        </label>`).join('');
+      panelHtml = `
+        <div class="pr-area-panel" id="prAreaSwitchPanel" data-area-old="${esc(e.name)}" data-area-cust="${esc(cust)}">
+          <div class="pr-area-grid">
+            <label class="pr-area-fld"><span class="pa-fld-lbl">New Site Name</span>
+              <input type="text" class="pr-area-inp" data-area-inp="site" value="${esc(sug.newSite)}" autocomplete="off"></label>
+            <label class="pr-area-fld"><span class="pa-fld-lbl">Region</span>
+              <input type="text" class="pr-area-inp" data-area-inp="region" list="dl_pr_regions" value="${esc(sug.region)}" autocomplete="off"></label>
+          </div>
+          ${chips ? `<div class="pr-area-others"><span class="pa-fld-lbl">Same customer under another name? Tick it to move it too.</span><div class="pr-area-chips">${chips}</div></div>` : ''}
+          <div class="pr-area-preview" id="prAreaPreview" aria-live="polite"></div>
+          <div class="pr-area-actions">
+            <button type="button" class="btn btn-primary" data-area-switch-apply="1">Move Now</button>
+            <button type="button" class="btn" data-area-switch-cancel="1">Cancel</button>
+          </div>
+        </div>`;
+    }
+    const actionHtml = !canSwitch
+      ? ''
+      : (cust
+          ? (ui.open ? '' : `<button type="button" class="btn btn-sm site-rule-add-btn is-brass pr-area-open-btn" data-area-switch-open="1">Move to Own Site</button>`)
+          : `<span class="pr-area-hint">Pick the customer to move it to its own site.</span>`);
+    wrap.hidden = false;
+    wrap.innerHTML = `
+      <div class="pr-area-strip" id="prAreaSiteStrip" data-area-site="${esc(e.name)}" data-area-count="${e.customerCount}">
+        <div class="pr-area-head">
+          <span class="pr-area-ic">${ic('pin')}</span>
+          <div class="pr-area-msg"><b>${esc(e.name)}</b> <span>looks like an area, not one place.</span> <b>${e.customerCount}</b> <span>customers take deliveries there.</span></div>
+          ${actionHtml}
+        </div>
+        ${panelHtml}
+      </div>`;
+    if (ui.open) refreshAreaSwitchPreview();
+  }
+  function runAreaSwitchFromPanel() {
+    const inp = _areaSwitchPanelInputs();
+    if (!inp) return null;
+    const cleanBefore = !isEntryModalDirty();
+    const res = applyCustomerSiteSwitch({ oldSite: inp.oldSite, newSite: inp.newSite, region: inp.region, customers: [inp.customer].concat(inp.also) });
+    if (!res.ok) {
+      toast(_AREA_SWITCH_ERR[res.code] || res.reason || 'This move cannot run.', 'err');
+      refreshAreaSwitchPreview();
+      return res;
+    }
+    FORM_UI.areaSwitch = null;
+    // The open agreement now sits on the new site: show it, and do not count that as an unsaved edit
+    const siteEl = $('f_site');
+    if (siteEl && norm(siteEl.value) === norm(res.oldSite)) {
+      siteEl.value = res.newSite;
+      if (siteEl.dataset && siteEl.dataset.initVal !== undefined) siteEl.dataset.initVal = res.newSite;
+    }
+    const edit = STATE.editingRecord;
+    if (edit && edit.crKey === 'price_rules' && edit.orig && norm(edit.orig.site) === norm(res.oldSite)
+      && res.customers.some(c => norm(c) === norm(edit.orig.customer))) {
+      edit.orig.site = res.newSite;
+    }
+    FORM_UI.lastSite = '';
+    FORM_UI.lastCustomer = '';
+    recalcForm();
+    if (cleanBefore) {
+      FORM_UI.initialModalSig = getEntryModalStateSignature();
+      FORM_UI.userInteracted = false;
+    }
+    toast(`✓ Moved to Own Site: ${res.newSite}`);
+    return res;
+  }
+  // Banner inside the Site form's Related Price Agreements panel
+  function renderAreaSiteBannerHtml(siteName) {
+    if (!siteName || getActiveIndustry() !== 'Manufacturing') return '';
+    const canSwitch = canMoveCustomerSite();
+    const sObj = siteInfo(siteName);
+    if (_areaSiteHasSplit(sObj)) {
+      const armed = Boolean(FORM_UI.areaUndoArmed);
+      return `
+        <div class="pr-area-strip site-area-banner is-child" data-area-site="${esc(sObj.name)}">
+          <div class="pr-area-head">
+            <span class="pr-area-ic">${ic('pin')}</span>
+            <div class="pr-area-msg"><span>Moved here from the area site</span> <b>${esc(sObj.split_from)}</b><span>:</span> <b>${esc(sObj.split_customers.join(', '))}</b></div>
+            ${canSwitch ? `<button type="button" class="btn btn-sm${armed ? ' pr-area-undo-armed' : ''}" data-area-undo="1">${armed ? 'Confirm Move Back' : 'Move Back'}</button>` : ''}
+          </div>
+        </div>`;
+    }
+    const e = describeAreaSite(siteName);
+    if (!e) return '';
+    if (e.dismissed && e.customerCount >= 2) {
+      return `
+        <div class="pr-area-strip site-area-banner is-quiet" data-area-site="${esc(e.name)}">
+          <div class="pr-area-head">
+            <span class="pr-area-ic">${ic('check')}</span>
+            <div class="pr-area-msg"><span>Marked as one place.</span> <b>${e.customerCount}</b> <span>customers take deliveries here.</span></div>
+            ${canSwitch ? `<button type="button" class="btn btn-sm" data-area-single="0">Check Again</button>` : ''}
+          </div>
+        </div>`;
+    }
+    if (!e.flagged) return '';
+    return `
+      <div class="pr-area-strip site-area-banner" data-area-site="${esc(e.name)}" data-area-count="${e.customerCount}">
+        <div class="pr-area-head">
+          <span class="pr-area-ic">${ic('pin')}</span>
+          <div class="pr-area-msg"><b>Probably a Region.</b> <b>${e.customerCount}</b> <span>customers take deliveries here.</span> <span>Open a customer's price agreement below to move it to its own site.</span></div>
+          ${canSwitch ? `<button type="button" class="btn btn-sm" data-area-single="1">This Is One Place</button>` : ''}
+        </div>
+      </div>`;
+  }
+
   function renderSitePriceAgreementsSubgrid(siteName, origSiteName, siteRow, isEditingSite) {
     const wrapEl = $('sitePriceAgreementsWrap');
     if (!wrapEl) return;
@@ -83036,6 +84429,7 @@
     wrapEl.hidden = false;
     wrapEl.innerHTML = `
       <div class="pa-subgrid site-rules-subgrid" id="sitePriceAgreementsPanel" data-site-rules-total="${totalCnt}" data-site-rules-active="${activeCnt}">
+        ${renderAreaSiteBannerHtml(cleanOrig || cleanSite)}
         <div class="site-rules-toolbar">
           <div class="site-rules-head-left">
             <div class="site-rules-title-row">
@@ -83071,6 +84465,7 @@
             <div class="site-rules-actions">
               ${canAddRaw ? `<button type="button" class="btn btn-sm site-rule-add-btn" data-site-new-rule="pricerule_raw">+ Quarry / Haulage Rule</button>` : ''}
               ${canAddSales ? `<button type="button" class="btn btn-sm site-rule-add-btn is-brass" data-site-new-rule="pricerule">+ Sales Rule</button>` : ''}
+              ${(canAddRaw || canAddSales) ? `<button type="button" class="btn btn-sm site-rule-hub-btn quote-draft-open-btn" data-site-quote-draft="1" data-ui-tip="Read a signed quote or a pasted WhatsApp quote into draft agreement rows for you to check and post">${ic('sparkles')} Draft from Quote</button>` : ''}
               ${totalCnt > 0 ? `<button type="button" class="btn btn-sm site-rule-hub-btn" data-site-open-rules-hub="1" data-ui-tip="Open Price Agreements filtered to ${esc(cleanSite || cleanOrig)}">Price Rules ↗</button>` : ''}
             </div>
           </div>
@@ -84389,6 +85784,7 @@
             $('f_site_region').value = '';
           }
         }
+        renderPriceRuleAreaSiteStrip((showSite && showCustomer && !isRawDomain) ? val('f_site') : '', val('f_customer'));
         if (!FORM_UI.hydrating && prProduct !== FORM_UI.lastProduct) {
           FORM_UI.lastProduct = prProduct;
           const pInfo = productInfo(prProduct);
@@ -88981,6 +90377,7 @@
     FORM_UI.convPrimarySide = ''; FORM_UI.convRateFromAmounts = false;
     FORM_UI.openLoanTab = ''; FORM_UI.lastLoanCp = ''; FORM_UI.openLoanSearch = '';
     FORM_UI.siteRuleTab = 'all'; FORM_UI.siteRuleSearch = ''; FORM_UI.siteRulesAllEntities = false;
+    FORM_UI.areaSwitch = null; FORM_UI.areaUndoArmed = false;
     FORM_UI.malfCatScope = 'all'; FORM_UI.lastMalfItem = val('f_malf_item'); FORM_UI.lastMalfCo = val('f_company'); FORM_UI.malfUomManual = false;
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
       window.MFG_GEO.cleanupTicketOriginMiniMap();
@@ -89627,6 +91024,40 @@
           recalcForm();
           return;
         }
+        const areaBtn = ev.target && ev.target.closest
+          ? ev.target.closest('[data-area-switch-open], [data-area-switch-cancel], [data-area-switch-apply], [data-area-single], [data-area-undo]')
+          : null;
+        if (areaBtn) {
+          ev.preventDefault();
+          const areaHost = areaBtn.closest('[data-area-site]');
+          const areaSiteName = areaHost ? (areaHost.getAttribute('data-area-site') || '') : '';
+          if (areaBtn.hasAttribute('data-area-switch-open')) {
+            FORM_UI.areaSwitch = { open: true, key: '' };
+            recalcForm();
+          } else if (areaBtn.hasAttribute('data-area-switch-cancel')) {
+            FORM_UI.areaSwitch = { open: false, key: '' };
+            recalcForm();
+          } else if (areaBtn.hasAttribute('data-area-switch-apply')) {
+            runAreaSwitchFromPanel();
+          } else if (areaBtn.hasAttribute('data-area-single')) {
+            const asSingle = areaBtn.getAttribute('data-area-single') === '1';
+            const sRes = setAreaSiteSinglePlace(areaSiteName, asSingle);
+            if (sRes.ok) toast(asSingle ? `✓ Marked as One Place: ${areaSiteName}` : `✓ Checked Again: ${areaSiteName}`);
+            else toast(_AREA_SWITCH_ERR[sRes.code] || sRes.reason, 'err');
+            recalcForm();
+          } else if (areaBtn.hasAttribute('data-area-undo')) {
+            if (!FORM_UI.areaUndoArmed) {
+              FORM_UI.areaUndoArmed = true;
+            } else {
+              FORM_UI.areaUndoArmed = false;
+              const uRes = undoCustomerSiteSwitch(areaSiteName);
+              if (uRes.ok) toast(`✓ Moved Back: ${uRes.oldSite}`);
+              else toast(_AREA_SWITCH_ERR[uRes.code] || uRes.reason, 'err');
+            }
+            recalcForm();
+          }
+          return;
+        }
         const siteRuleTabBtn = ev.target && ev.target.closest ? ev.target.closest('[data-site-rule-tab]') : null;
         if (siteRuleTabBtn) {
           ev.preventDefault();
@@ -89658,6 +91089,32 @@
             customer: siteRecObj && siteRecObj.customer ? siteRecObj.customer : ''
           };
           openEntryModal(targetForm, pf, { label: targetForm === 'pricerule_raw' ? 'Quarry / Haulage Agreement' : 'Sales Price Agreement' });
+          return;
+        }
+        const siteQuoteBtn = ev.target && ev.target.closest ? ev.target.closest('[data-site-quote-draft]') : null;
+        if (siteQuoteBtn) {
+          ev.preventDefault();
+          const origSiteName = String((STATE.editingRecord && STATE.editingRecord.crKey === 'sites' && STATE.editingRecord.orig && STATE.editingRecord.orig.name) || '').trim();
+          const curSiteName = String(val('f_site') || origSiteName).trim();
+          const siteRecObj = (STATE.editingRecord && STATE.editingRecord.crKey === 'sites' && STATE.editingRecord.orig)
+            || ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && isRowInActiveIndustry(s) && norm(s.name) === norm(curSiteName))
+            || null;
+          const kinds = ['pricerule', 'pricerule_raw'].filter(k => canEnterForm(k));
+          if (siteRecObj && siteRecObj.supplier && !siteRecObj.customer) kinds.reverse();
+          const fromSiteForm = STATE.modalForm === 'site';
+          openQuoteDraftModal({
+            mode: 'site',
+            key: `site::${norm(origSiteName || curSiteName)}`,
+            kinds,
+            targetLabel: curSiteName,
+            basePrefill: () => ({
+              site: curSiteName,
+              _origSiteOnDiscard: origSiteName,
+              _fromSiteFormSwitch: fromSiteForm,
+              supplier: siteRecObj && siteRecObj.supplier ? siteRecObj.supplier : '',
+              customer: siteRecObj && siteRecObj.customer ? siteRecObj.customer : ''
+            })
+          });
           return;
         }
         const siteRulesHubBtn = ev.target && ev.target.closest ? ev.target.closest('[data-site-open-rules-hub]') : null;
@@ -89708,7 +91165,12 @@
         } else if (ev.target && ev.target.id === 'siteRulesSearchInput') {
           FORM_UI.siteRuleSearch = ev.target.value || '';
           recalcForm();
+        } else if (ev.target && ev.target.classList && ev.target.classList.contains('pr-area-inp')) {
+          refreshAreaSwitchPreview();
         }
+      });
+      body.addEventListener('change', ev => {
+        if (ev.target && ev.target.classList && ev.target.classList.contains('pr-area-inp')) refreshAreaSwitchPreview();
       });
     }
 
@@ -94618,6 +96080,20 @@
     const archMap = SEED_VOIDED_ARCHIVE[crKey];
     const archivedSeed = archMap && (archMap.get(q) || (r && archMap.get(String(r.id))));
     const candRestore = r || archivedSeed;
+    // Restoring an own site that was voided while it still listed moved customers (a void made on an
+    // older version) must not run the move again by itself: they are recorded as moved back
+    if (crKey === 'sites') {
+      [r, archivedSeed].forEach(sr => {
+        // Only a row that is actually voided (or held in the voided archive) is reset; a stale Undo on a
+        // live own site must never move its customers back behind Move Back's checks
+        if (sr && sr === r && !r.voided) return;
+        if (!sr || !sr.split_from || !Array.isArray(sr.split_customers) || !sr.split_customers.length) return;
+        const back = Array.isArray(sr.split_returned) ? sr.split_returned.slice() : [];
+        sr.split_customers.forEach(c => { if (!back.some(x => norm(x) === norm(c))) back.push(c); });
+        sr.split_returned = back;
+        sr.split_customers = [];
+      });
+    }
     const candRestoreProbe = candRestore ? Object.assign({}, candRestore, { voided: false }) : null;
     if (candRestoreProbe && isEffectiveSeriesTable(crKey, candRestoreProbe) && candRestoreProbe.start_date) {
       const cStart = String(candRestoreProbe.start_date).slice(0, 10);
@@ -94740,6 +96216,22 @@
     const seedList = (SEED.records && SEED.records[crKey]) || [];
     const seedRow = seedList.find(matchRow);
     if (!r && !seedRow) { toast('Record not found', 'err'); return; }
+    // A customer's own site that still holds moved customers: voiding it would send their records back
+    // without the checks Move Back makes (rights, other entities). Move them back first.
+    if (crKey === 'sites' && _areaSiteHasSplit(seedRow || r) && _areaSiteIsMfgRow(seedRow || r)) {
+      toast('Move its customers back to the area site before voiding this site.', 'err');
+      return;
+    }
+    // An area that customers' own sites came out of: voiding it would leave their pay and Move Back
+    // pointing at a site that no longer exists. Move them back first.
+    if (crKey === 'sites' && _areaSiteIsMfgRow(seedRow || r)) {
+      const areaN = norm((seedRow || r).name);
+      const holdsOwnSites = Boolean(areaN) && seedList.some(s => s && !s.voided && _areaSiteHasSplit(s) && _areaSiteIsMfgRow(s) && norm(s.split_from) === areaN);
+      if (holdsOwnSites) {
+        toast('Customers were moved out of this area to their own sites. Move them back before voiding it.', 'err');
+        return;
+      }
+    }
     if (!UNIVERSAL_MAIN_SPEC[crKey] && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
       const targetRow = r || seedRow;
       const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(
@@ -95525,9 +97017,9 @@
           if (!t || !t.closest) return;
           if (t.closest('.modal-foot')) return;
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
-          if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
+          if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.classList.contains('pr-area-inp') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub]')) return;
+            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], .pr-area-strip')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -95792,6 +97284,13 @@
       if (Array.isArray(prefill.attachments) && prefill.attachments.length) {
         FORM_UI.attachments = prefill.attachments.map(a => Object.assign({}, a));
         renderEntryAttachmentsListUI();
+      }
+      // Draft from Quote rows (renderQuoteDraftModal): start date and rates of the quoted line.
+      if (prefill._quoteDraft && form === 'pricerule') {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(String(prefill.startdate || '')) && $('f_date')) $('f_date').value = prefill.startdate;
+        if (prefill.unitprice != null && prefill.unitprice !== '' && $('f_unitprice')) $('f_unitprice').value = String(prefill.unitprice);
+        if (prefill.transunitprice != null && prefill.transunitprice !== '' && $('f_transunitprice')) $('f_transunitprice').value = String(prefill.transunitprice);
+        if (prefill.uom && $('f_rateper') && STATE.modalGroupOverride !== 'raw') $('f_rateper').value = prefill.uom;
       }
       recalcForm();
     }
@@ -104621,6 +106120,7 @@
     enrichGlobalRateTables({ quiet: true });
     syncAllStaffCurrentFromLogs();
     applyUserEquipmentWindowsToTickets();
+    applySiteCustomerSplits();
     if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
       window.MFG_GEO.hydrateSeedGeo(SEED);
     }
@@ -111131,6 +112631,7 @@
       window.MFG_CMD_PALETTE.close({ clearCache: true });
     }
     closeTabletKeysModal();
+    resetQuoteDrafts();
     if (isDemoSandboxSession()) {
       try {
         for (let i = sessionStorage.length - 1; i >= 0; i--) {
@@ -127257,7 +128758,8 @@
 
       const indRow = t.closest('tr[data-ind-inspect-row]') || (getActiveIndustry(STATE.company) !== 'Manufacturing' ? t.closest('tbody tr') : null);
       if (indRow && container.contains(indRow) && !indRow.hasAttribute('data-no-ind-inspect') && !indRow.hasAttribute('data-rid') && !indRow.hasAttribute('data-ar-row') && !indRow.hasAttribute('data-staff-row') && !indRow.classList.contains('total-row') && !indRow.classList.contains('totals-row')) {
-        if (t.closest('[data-rel-key], button, a, input, select, label')) return;
+        const agrPillHit = t.closest('[data-ind-agr-pill]');
+        if (!agrPillHit && t.closest('[data-rel-key], button, a, input, select, label')) return;
         const explorerWrap = indRow.closest('#industryDomainTablesExplorer');
         const activeExplorerTbl = explorerWrap ? explorerWrap.getAttribute('data-ind-tbl-active') : '';
         const rowIdAttr = indRow.getAttribute('data-ind-row-id') || '';
@@ -127267,20 +128769,35 @@
         }
         const tbl = indRow.closest('table');
         const headers = getDomainTableEnHeaders(tbl).map(h => String(h || '').replace(/\s*[▲▼]$/, '').trim());
-        const cells = Array.from(indRow.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none').map(cleanDomainCellText);
+        const visTds = Array.from(indRow.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
+        const cells = visTds.map(cleanDomainCellText);
+        const matchCells = visTds.map(domainCellEnText);
         if (cells.length >= 2) {
-          if (indRow.getAttribute('data-ind-row-id')) cells[0] = indRow.getAttribute('data-ind-row-id');
+          if (indRow.getAttribute('data-ind-row-id')) {
+            cells[0] = indRow.getAttribute('data-ind-row-id');
+            matchCells[0] = cells[0];
+          }
           const cardEl = indRow.closest('.panel-card, .panel');
           const tableTitle = getDomainCardCanonicalTitle(cardEl);
           openIndustryDomainInspector({
             ind: getActiveIndustry(STATE.company),
             headers,
             cells,
+            matchCells,
             tableTitle,
             trEl: indRow,
             domainTblKey: indRow.getAttribute('data-ind-row-tbl') || '',
             rowCompany: indRow.getAttribute('data-ind-row-co') || ''
           });
+          if (agrPillHit) {
+            const relBox = $('indInspRelatedAgreementsBox');
+            if (relBox) {
+              relBox.classList.add('is-focus');
+              try { relBox.scrollIntoView({ block: 'start', behavior: 'auto' }); } catch (_) { relBox.scrollIntoView(); }
+              const firstAct = relBox.querySelector('[data-ind-open-rel-agr], [data-ind-new-rel-agr]');
+              if (firstAct && typeof firstAct.focus === 'function') firstAct.focus({ preventScroll: true });
+            }
+          }
         }
       }
     });
@@ -127290,6 +128807,7 @@
     wireWorkspaceDelegatedOnce(container);
     wireModalSuggestions(container);
     applyIndustryDomRowEdits(container);
+    applyIndustryRelatedAgreementPills(container);
     if (window.MFG_GEO && typeof window.MFG_GEO.wireGeoStudio === 'function') {
       window.MFG_GEO.wireGeoStudio(container, {
         SEED,
@@ -131880,6 +133398,7 @@
     window.__getInspectorTableKeys = () => Object.keys(INSPECT_LABELS);
     window.__voidRecord = (crKey, id) => voidRecord(crKey, id);
     window.__restoreVoidedRecord = (crKey, id) => restoreVoidedRecord(crKey, id);
+    window.__cascadeSiteRename = (oldName, newName) => cascadeSiteRename(oldName, newName, [], 'Manufacturing');
     window.__getCustomRecords = () => STATE.customRecords;
     window.__mergeCustomRecords = incoming => mergeCustomRecords(incoming);
     window.__cloudPayload = () => cloudPayload();

@@ -1010,6 +1010,7 @@
           ${fld(isCommForm ? 'Plant Owner / Beneficiary *' : (isRawForm ? 'Site Owner / Material Supplier *' : 'Supplier / Hauler *'), inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', prSupNames), { id: 'wrap_pr_supplier', hidden: !isCommForm && !isRawForm })}
           ${fld(isRawForm ? 'Source Site *' : 'Delivery Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', prSiteItems), { id: 'wrap_pr_site', hidden: isCommForm, hintId: 'hint_pr_site', hint: '' })}
           ${fld('Site Region *', inp('f_site_region', 'text', '', 'list="dl_pr_regions" placeholder="Select region for site haulage..."') + dl('dl_pr_regions', regNames), { id: 'wrap_pr_site_region', hidden: true, hintId: 'hint_pr_site_region', hint: 'Region and Site are both required when adding transportation with our trucks or associated 3rd-party haulers.' })}
+          <div class="form-field span-3" id="prAreaSiteWrap" hidden></div>
           <div class="form-field span-3 quarry-landed-callout" id="wrap_pr_incl_transport" hidden>
             <input type="checkbox" id="f_pr_incl_transport" hidden>
             <div><b>Supplier Provides Material + Transportation (Bundled Delivered Price):</b> Rate includes supplier delivery to plant; transport split unknown ($0 separate haulage · Region optional)</div>
