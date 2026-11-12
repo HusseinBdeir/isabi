@@ -111,6 +111,13 @@ const appJsSrcDir = [
   path.resolve(ROOT, '..', 'isabi-app', 'js'),
   path.resolve(ROOT, '..', '..', 'isabi-app', 'js')
 ].find(p => fs.existsSync(p)) || path.resolve(ROOT, '..', 'isabi-app', 'js');
+// The test seats come from the private staff roster in isabi-app; their sign-in emails are not written in this
+// public file (isabi-app/build/test_seats.json, private repository).
+const TEST_SEATS = (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(path.dirname(appJsSrcDir), 'build', 'test_seats.json'), 'utf8')); } catch (_) { return {}; }
+})();
+const ENTRY_EMAIL = String(TEST_SEATS.entry_email || '').trim().toLowerCase();
+if (!ENTRY_EMAIL) { console.error('isabi-app/build/test_seats.json (entry_email) not found next to this repository'); process.exit(2); }
 for (const kind of ['core', 'records', 'industries']) {
   const seedFile = path.join(appJsSrcDir, `seed_${kind}.json`);
   if (fs.existsSync(seedFile)) {
@@ -225,7 +232,7 @@ async function main() {
     const stRes = await httpReq('GET', '/app/api/status');
     const badLogin = await httpReq('POST', '/app/api/auth/login', { email: 'husseinbdeir@bhfirms.com', pin: '9999', method: 'PIN' });
     const ownerLogin = await httpReq('POST', '/app/api/auth/login', { email: 'husseinbdeir@bhfirms.com', pin: '1111', method: 'PIN', device: 'Verify Suite' });
-    const entryLogin = await httpReq('POST', '/app/api/auth/login', { email: 'sabahkassab@bhfirms.com', pin: '3333', method: 'PIN', device: 'Verify Suite' });
+    const entryLogin = await httpReq('POST', '/app/api/auth/login', { email: ENTRY_EMAIL, pin: '3333', method: 'PIN', device: 'Verify Suite' });
     const ownerToken = ownerLogin.json?.token || '';
     const entryToken = entryLogin.json?.token || '';
     const setCookieHdr = String(ownerLogin.headers['set-cookie'] || '');
@@ -598,7 +605,7 @@ async function main() {
     docTamper.customRecords.expenses.push({ id: 'exp-tamper-blanca', company: 'Blanca', date: '2026-11-08', amount: 9999 });
     if (Array.isArray(docTamper.users)) {
       docTamper.users = docTamper.users.map(u =>
-        String(u.email || '').toLowerCase() === 'sabahkassab@bhfirms.com'
+        String(u.email || '').toLowerCase() === ENTRY_EMAIL
           ? Object.assign({}, u, { role: 'Full Access (Owner)', companies: 'All' })
           : u
       );
@@ -614,7 +621,7 @@ async function main() {
     const bbcStillIntact = (checkBbcUntouched.json?.rows || []).some(r => r.id === bbcId && r.company === 'BBConstruction' && Number(r.total) === Number(bbcRow.total));
     const postTamperStore = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
     const ptDoc = postTamperStore.json?.docs?.mfg_web_store || {};
-    const sabahSeat = (ptDoc.users || []).find(u => String(u.email || '').toLowerCase() === 'sabahkassab@bhfirms.com');
+    const entrySeat = (ptDoc.users || []).find(u => String(u.email || '').toLowerCase() === ENTRY_EMAIL);
     const blancaInjected = (ptDoc.customRecords?.expenses || []).some(r => r.id === 'exp-tamper-blanca');
 
     // Step 4: Hard-remove `exp-dirty-diff-0` AND stable-seed override `ex_a1b2c3d4e5f6` from `customRecords.expenses`;
@@ -641,8 +648,8 @@ async function main() {
       row0InD1?.code === 'EXP-MODIFIED-CODE-999' &&
       bbcStillIntact &&
       !blancaInjected &&
-      sabahSeat &&
-      !String(sabahSeat.role || '').includes('Owner') &&
+      entrySeat &&
+      !String(entrySeat.role || '').includes('Owner') &&
       ms4.voidedRemoved >= 1 &&
       row0Voided?.voided === true &&
       seedOvrRow &&
@@ -654,7 +661,7 @@ async function main() {
       );
     } else {
       fail('edge-15-dirty-row-only-sync-void-and-lateral-rls', JSON.stringify({
-        ms2, row0Code: row0InD1?.code, bbcStillIntact, blancaInjected, sabahRole: sabahSeat?.role, ms4, voided: row0Voided?.voided
+        ms2, row0Code: row0InD1?.code, bbcStillIntact, blancaInjected, entryRole: entrySeat?.role, ms4, voided: row0Voided?.voided
       }));
     }
 
@@ -957,14 +964,14 @@ finally:
     // Entry self-POST privilege lock + weak PIN reject + single-BU Supervisor cross-BU/Owner escalation block
     const weakPinAttempt17 = await httpReq('POST', '/app/api/users', {
       user: {
-        email: 'sabahkassab@bhfirms.com',
+        email: ENTRY_EMAIL,
         full_name: 'Entry Test Seat',
         pin_code: '0000'
       }
     }, { 'X-ISABI-Session': entryToken });
     const entrySelfEscalate = await httpReq('POST', '/app/api/users', {
       user: {
-        email: 'sabahkassab@bhfirms.com',
+        email: ENTRY_EMAIL,
         full_name: 'Entry Test Seat',
         role: 'Full Access (Owner)',
         companies: 'All',
@@ -975,9 +982,9 @@ finally:
       }
     }, { 'X-ISABI-Session': entryToken });
     const usersAfterSelf = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
-    const sabahAfterSelf = (usersAfterSelf.json?.users || []).find(u => String(u.email || '').toLowerCase() === 'sabahkassab@bhfirms.com');
-    const sabahPinStill3333 = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+    const entryAfterSelf = (usersAfterSelf.json?.users || []).find(u => String(u.email || '').toLowerCase() === ENTRY_EMAIL);
+    const entryPinStill3333 = await httpReq('POST', '/app/api/auth/login', {
+      email: ENTRY_EMAIL,
       pin: '3333',
       method: 'PIN'
     });
@@ -1030,11 +1037,11 @@ finally:
       weakPinAttempt17.status === 400 &&
       entrySelfEscalate.status === 200 &&
       entrySelfEscalate.json?.lockedPrivileges === true &&
-      sabahAfterSelf?.role === 'Entry' &&
-      sabahAfterSelf?.companies === 'WTC' &&
-      sabahAfterSelf?.pin_code === undefined &&
-      sabahAfterSelf?.pin_redacted === true &&
-      sabahPinStill3333.status === 200 &&
+      entryAfterSelf?.role === 'Entry' &&
+      entryAfterSelf?.companies === 'WTC' &&
+      entryAfterSelf?.pin_code === undefined &&
+      entryAfterSelf?.pin_redacted === true &&
+      entryPinStill3333.status === 200 &&
       supEditOwner.status === 403 &&
       supGrantOutScope.status === 403 &&
       faceNoVec.status === 401 &&
@@ -1058,7 +1065,7 @@ finally:
         evilCors: evilCookiePost.headers['access-control-allow-origin'],
         goodCors: goodOriginGet.headers['access-control-allow-origin'],
         weakPin: weakPinAttempt17.status,
-        entrySelf: [entrySelfEscalate.status, sabahAfterSelf?.pin_code, sabahAfterSelf?.pin_redacted, sabahPinStill3333.status],
+        entrySelf: [entrySelfEscalate.status, entryAfterSelf?.pin_code, entryAfterSelf?.pin_redacted, entryPinStill3333.status],
         supEditOwner: supEditOwner.status,
         supGrantOutScope: supGrantOutScope.status,
         face: [faceNoVec.status, faceWrongVec.status, faceNoPin.status, faceGoodVec.status, faceGoodVec.json?.user?.pin_code]
@@ -1577,7 +1584,7 @@ finally:
       face_descriptor: vecNear
     }, { 'X-ISABI-Session': ownerToken });
     const logoutLogin = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+      email: ENTRY_EMAIL,
       pin: '3333',
       method: 'PIN'
     });
@@ -1806,12 +1813,12 @@ finally:
     });
     const tempOwnerTok26 = String(tempOwnerLogin26.json?.token || '');
     const impersBeforeLogout = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+      email: ENTRY_EMAIL,
       method: 'Owner Impersonation'
     }, { 'X-ISABI-Session': tempOwnerTok26 });
     await httpReq('POST', '/app/api/auth/logout', {}, { 'X-ISABI-Session': tempOwnerTok26 });
     const impersAfterLogout = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+      email: ENTRY_EMAIL,
       method: 'Owner Impersonation'
     }, { 'X-ISABI-Session': tempOwnerTok26 });
     const sidlessOwnerTok = mintTestJwt({
@@ -1824,7 +1831,7 @@ finally:
       'X-ISABI-Session': sidlessOwnerTok
     });
     const sidlessImpersRes = await httpReq('POST', '/app/api/auth/login', {
-      email: 'sabahkassab@bhfirms.com',
+      email: ENTRY_EMAIL,
       method: 'Owner Impersonation'
     }, { 'X-ISABI-Session': sidlessOwnerTok });
     await httpReq('POST', '/app/api/users', {
@@ -3075,7 +3082,7 @@ finally:
     }
     const e34OvAnon = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', field_id: 'f_price' });
     const e34OvDemo = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken, 'X-ISABI-Demo': '1' });
-    const e34OvSelfEntry = await httpReq('POST', '/app/api/auth/verify-override', { email: 'sabahkassab@bhfirms.com', pin: '3333', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
+    const e34OvSelfEntry = await httpReq('POST', '/app/api/auth/verify-override', { email: ENTRY_EMAIL, pin: '3333', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
     const e34OvCrossBu = await httpReq('POST', '/app/api/auth/verify-override', { email: 'site.bbc@bhfirms.com', pin: '6666', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
     const e34Ov2401 = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '2401', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
     const e34OvOk = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', form_tab: 'sales', field_id: 'f_price', record_id: 'ST-TEST-1' }, { 'X-ISABI-Session': entryToken });
@@ -3328,14 +3335,14 @@ finally:
     const e36UsersOwner = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
     const e36EntrySelfOnly = Array.isArray(e36UsersEntry.json?.users) &&
       e36UsersEntry.json.users.length === 1 &&
-      String(e36UsersEntry.json.users[0]?.email || '').toLowerCase() === 'sabahkassab@bhfirms.com' &&
+      String(e36UsersEntry.json.users[0]?.email || '').toLowerCase() === ENTRY_EMAIL &&
       e36UsersEntry.json.users[0]?.pin_code === undefined &&
       e36UsersEntry.json.users[0]?.face_samples === undefined;
     const e36OwnerRedacted = Array.isArray(e36UsersOwner.json?.users) &&
       e36UsersOwner.json.users.length >= 10 &&
       e36UsersOwner.json.users.every(u => u && u.pin_code === undefined && u.face_samples === undefined);
     const e36EntryTakeoverU1 = await httpReq('POST', '/app/api/users', {
-      user: { id: 'u1', email: 'sabahkassab@bhfirms.com', full_name: 'Sabah Takeover', role: 'Full Access (Owner)', companies: '*' }
+      user: { id: 'u1', email: ENTRY_EMAIL, full_name: 'Entry Takeover', role: 'Full Access (Owner)', companies: '*' }
     }, { 'X-ISABI-Session': entryToken });
 
     // Strict CORS on OPTIONS across /app/api/ask, /app/api/kiosk/verify, and /api/status

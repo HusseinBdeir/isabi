@@ -99,6 +99,10 @@ def run_release_gates() -> None:
                       "Program Files, VS Code). Install Node 22.5+ or pass --skip-release-gates for this run.", file=sys.stderr)
                 raise SystemExit(1)
             exe, env = rt
+        # Every gate is told which isabi tree is being released (the names gate scans it and must not skip it).
+        env = dict(env if env is not None else os.environ)
+        env["ISABI_ROOT"] = str(ISABI_ROOT)
+        env["ISABI_NAMES_REQUIRE_REPO"] = "1"
         try:
             chk = subprocess.run([exe, script], capture_output=True, text=True, encoding="utf-8", errors="replace",
                                  cwd=roots[repo], env=env, timeout=GATE_TIMEOUT_S, stdin=subprocess.DEVNULL)
