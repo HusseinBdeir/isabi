@@ -35938,3 +35938,151 @@ video::-webkit-media-controls-start-playback-button {
     height: 40px !important;
   }
 }
+
+/* Holding Extended: Share Stakeholder Balance Card (WhatsApp) */
+.hld-extd-party-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.hld-extd-party-cell > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hld-share-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--brass);
+  cursor: pointer;
+}
+.hld-share-btn:hover,
+.hld-share-btn:focus-visible {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+  outline: none;
+}
+.hld-share-btn svg {
+  width: 15px;
+  height: 15px;
+}
+@media (pointer: coarse) {
+  .hld-share-btn {
+    width: 36px;
+    height: 36px;
+  }
+}
+.modal-card.hld-share-card {
+  width: min(640px, 100%);
+}
+.hld-share-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.hld-share-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.hld-share-kpi > span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.hld-share-kpi > b {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hld-share-kpi.is-brass > b { color: var(--brass); }
+.hld-share-kpi.is-good > b { color: var(--good); }
+.hld-share-langbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.hld-share-lbl {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.hld-share-seg {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.hld-share-lang-btn {
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 0;
+  border-inline-end: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hld-share-lang-btn:last-child { border-inline-end: 0; }
+.hld-share-lang-btn.active {
+  background: var(--brass-tint);
+  color: var(--brass-strong);
+}
+@media (pointer: coarse) {
+  .hld-share-lang-btn { min-height: 36px; }
+  .hld-share-card .modal-close-btn { width: 36px; height: 36px; }
+  .hld-share-actions > .btn { min-height: 36px; }
+}
+.hld-share-text {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: clamp(160px, 34vh, 320px);
+  min-height: 140px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+  unicode-bidi: plaintext;
+}
+.hld-share-note {
+  margin: 8px 0 12px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.hld-share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+@media (max-width: 768px) {
+  .hld-share-text { font-size: 16px; }
+  .hld-share-actions > * { flex: 1 1 100%; justify-content: center; }
+}

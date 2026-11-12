@@ -44501,9 +44501,11 @@
     const hashMatch = nm.match(/#\d+[A-Za-z0-9-]*/);
     if (hashMatch) return hashMatch[0];
     const ref = String(r.reference || '').trim();
-    if (ref && !/^(none|null|extended\.?)$/i.test(ref) && !/^em\d+$/i.test(ref)) return ref.replace(/[—→]/g, '-');
+    // Internal record ids never show as a Ref: em<n> (positional seed ids) and em_<hex> (stable ids, v19.6.256).
+    const isInternalId = s => /^em\d+$/i.test(s) || /^em_[0-9a-f]+$/i.test(s);
+    if (ref && !/^(none|null|extended\.?)$/i.test(ref) && !isInternalId(ref)) return ref.replace(/[—→]/g, '-');
     const idStr = String(r.id || '').trim();
-    if (idStr && !/^em\d+$/i.test(idStr)) return idStr.slice(0, 18);
+    if (idStr && !isInternalId(idStr)) return idStr.slice(0, 18);
     return nm ? nm.replace(/^EXTD\s+\d{4}-\d{2}-\d{2}\s+/i, '').slice(0, 18) : '-';
   }
 
@@ -44760,7 +44762,7 @@
                   const posCls = p.position === 'Owes Holding' ? 'badge-brass' : (p.position === 'Holding Owes' ? 'badge-ok' : 'badge');
                   return `
                   <tr class="cf-stream-row ${focusParty && norm(focusParty) === norm(p.counterparty) ? 'is-active' : ''}" data-cf-focus-party="${esc(p.counterparty)}" data-ui-tip="Click to filter Extended Timeline to ${esc(p.counterparty)}">
-                    <td><strong data-no-i18n="1">${esc(p.counterparty)}</strong></td>
+                    <td><div class="hld-extd-party-cell"><strong data-no-i18n="1">${esc(p.counterparty)}</strong><button type="button" class="hld-share-btn" data-hld-share-card="${esc(p.counterparty)}" aria-label="Share balance card on WhatsApp" data-ui-tip="Share balance card on WhatsApp">${ic('send_msg')}</button></div></td>
                     <td class="r mono">${fmtNum(p.entries_cnt)}</td>
                     <td class="r mono">${Math.abs(p.rec_usd) >= 0.005 ? `<span style="color:var(--crit)">${fmtUSD(p.rec_usd, 2)}</span>` : '-'}</td>
                     <td class="r mono">${Math.abs(p.gave_usd) >= 0.005 ? `<span style="color:${p.gave_usd < 0 ? 'var(--crit)' : 'var(--good)'}">${fmtUSD(p.gave_usd, 2)}</span>` : '-'}</td>
@@ -44873,6 +44875,434 @@
       </div>
     `;
   }
+
+  // ---- Share Stakeholder Balance Card (WhatsApp) -------------------------------
+  // A plain-text EN / AR / FR balance confirmation for one Extended stakeholder,
+  // sent through WhatsApp for sign-off. Every figure comes from parseExtendedRow,
+  // accumulated exactly like computeHoldingExtendedSummary (no AI). The balance is
+  // all-time: the period and search filters never apply to a confirmation.
+  const HLD_SHARE_LANG_KEY = 'isabi_hld_share_lang_v1';
+  const HLD_SHARE_LANGS = ['en_ar', 'en', 'ar', 'fr'];
+  const HLD_SHARE_MAX_MOVES = 5;
+  const HLD_SHARE_TXT = {
+    en: {
+      title: 'Balance Confirmation',
+      colon: ': ',
+      asOf: 'Books updated to',
+      took: 'Took',
+      gave: 'Gave',
+      net: 'Net difference',
+      lbp: 'LBP balance',
+      toHolding: co => `owed to ${co}`,
+      byHolding: co => `owed by ${co}`,
+      settled: 'settled, nothing owed',
+      latest: 'Latest movements',
+      opening: 'Opening balance',
+      ask: 'Please reply OK to confirm this balance, or tell us which line differs.'
+    },
+    ar: {
+      title: 'تأكيد الرصيد',
+      colon: ': ',
+      asOf: 'الدفاتر محدّثة حتى',
+      took: 'المسحوب',
+      gave: 'المدفوع',
+      net: 'الفرق الصافي',
+      lbp: 'رصيد الليرة',
+      toHolding: co => `مستحق لصالح ${co}`,
+      byHolding: co => `مستحق على ${co}`,
+      settled: 'الحساب مسدد، لا رصيد مستحق',
+      latest: 'آخر الحركات',
+      opening: 'رصيد افتتاحي',
+      ask: 'يرجى الرد بكلمة "تمام" لتأكيد هذا الرصيد، أو إعلامنا بالسطر المختلف.'
+    },
+    fr: {
+      title: 'Confirmation de solde',
+      colon: ' : ',
+      asOf: 'Comptes à jour au',
+      took: 'Prélevé',
+      gave: 'Versé',
+      net: 'Écart net',
+      lbp: 'Solde en livres',
+      toHolding: co => `dû à ${co}`,
+      byHolding: co => `dû par ${co}`,
+      settled: 'soldé, aucun montant dû',
+      latest: 'Derniers mouvements',
+      opening: "Solde d'ouverture",
+      ask: 'Merci de répondre OK pour confirmer ce solde, ou de nous indiquer la ligne qui diffère.'
+    }
+  };
+
+  function hldShareOutward(s) {
+    return String(s == null ? '' : s).replace(/[—–→]/g, '-').replace(/\s+/g, ' ').trim();
+  }
+
+  function hldShareDmy(iso) {
+    const s = String(iso || '').slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s.slice(8, 10)}-${s.slice(5, 7)}-${s.slice(0, 4)}` : '-';
+  }
+
+  function hldShareUsd(v, lang) {
+    const r = round2(Number(v) || 0);
+    const neg = r < -0.004 ? '-' : '';
+    const n = Math.abs(r);
+    if (lang === 'fr') return `${neg}${n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+    return `${neg}$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  function hldShareLbp(v, lang) {
+    const r = Math.round(Number(v) || 0);
+    const neg = r < 0 ? '-' : '';
+    const n = Math.abs(r);
+    if (lang === 'fr') return `${neg}${n.toLocaleString('fr-FR')} LL`;
+    if (lang === 'ar') return `${neg}${n.toLocaleString('en-US')} ل.ل`;
+    return `${neg}${n.toLocaleString('en-US')} LL`;
+  }
+
+  function computeHoldingExtendedShareData(party) {
+    const isExtendedRow = r => Boolean(r && !r.voided && /^extended$/i.test(String(r.kind || '').trim()));
+    const partyOf = r => String(r.counterparty || r.party || 'Extended Stakeholder').trim() || 'Extended Stakeholder';
+    const all = filterRecords((SEED.records && SEED.records.external_movements) || [], { ignorePeriod: true, ignoreSearch: true, basis: 'tx' }).filter(isExtendedRow);
+    const pk = norm(party);
+    const rows = all.filter(r => norm(partyOf(r)) === pk);
+
+    // recUsd / gaveUsd / owesUsd mirror the Summary by Stakeholder columns (the app books an opening
+    // balance inside Gave). The message splits it out instead: openOwes* is the opening balance as an
+    // amount owed to Holding, gaveMoves* is Gave without it, so Net = Opening + Took - Gave (moves).
+    let recUsd = 0, gaveUsd = 0, owesUsd = 0, recLbp = 0, gaveLbp = 0, owesLbp = 0;
+    let openOwesUsd = 0, openOwesLbp = 0, gaveMovesUsd = 0, gaveMovesLbp = 0;
+    let hasLbp = false, hasOpening = false;
+    const parsed = rows.map(r => {
+      const a = parseExtendedRow(r);
+      recUsd = round2(recUsd + a.receivedUsd);
+      gaveUsd = round2(gaveUsd + a.gaveUsd);
+      owesUsd = round2(owesUsd + a.owesUsd);
+      recLbp = Math.round(recLbp + a.receivedLbp);
+      gaveLbp = Math.round(gaveLbp + a.gaveLbp);
+      owesLbp = Math.round(owesLbp + a.owesLbp);
+      if (a.isCfg) {
+        hasOpening = true;
+        openOwesUsd = round2(openOwesUsd + a.owesUsd);
+        openOwesLbp = Math.round(openOwesLbp + a.owesLbp);
+      } else {
+        gaveMovesUsd = round2(gaveMovesUsd + a.gaveUsd);
+        gaveMovesLbp = Math.round(gaveMovesLbp + a.gaveLbp);
+      }
+      if (Math.abs(a.receivedLbp) > 1 || Math.abs(a.gaveLbp) > 1 || Math.abs(a.owesLbp) > 1) hasLbp = true;
+      return { r, a };
+    });
+
+    const booksThrough = all.reduce((m, r) => {
+      const d = String(r.date || '').slice(0, 10);
+      return d > m ? d : m;
+    }, '');
+    // Outward Ref = a voucher number a person can recognise: "#NNN" in the name, or a reference someone
+    // typed. Never the record id (em_<hex>, em<n>, ex-<base36>-<rand> from + Extended Entry, DOM-<ms>).
+    // Only the exact machine shapes are dropped, so typed vouchers (INV-202611-001, HM-0042, TT_123456) still go out.
+    const machineId = s => /^em\d+$/i.test(s) || /^em_[0-9a-f]{10,16}$/i.test(s) || /^ex-[0-9a-z]{8}-[0-9a-z]{1,6}$/i.test(s) ||
+      /^DOM-\d{10,}$/i.test(s) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+    const outwardRef = r => {
+      // "#NNN" only from the import / domain names ("EXTD <date> <party> #12"), so a "#" inside a
+      // stakeholder's own name never stands in for the typed reference.
+      const nm = String(r.name || '').trim();
+      const cp = String(r.counterparty || r.party || '').trim();
+      const endsWithParty = cp && nm.toLowerCase().endsWith(cp.toLowerCase());
+      const h = /^EXTD?\s/i.test(nm) && !endsWithParty ? nm.match(/\s(#\d+[A-Za-z0-9-]*)$/) : null;
+      if (h) return h[1];
+      const ref = String(r.reference || '').trim();
+      if (!ref || /^(none|null|extended\.?|-)$/i.test(ref) || machineId(ref)) return '';
+      return ref;
+    };
+    const refNum = ref => {
+      const m = String(ref || '').match(/(\d+)(?!.*\d)/);
+      return m ? Number(m[1]) : -1;
+    };
+    // entered_at comes as "YYYY-MM-DD HH:MM:SS" (entry form) or ISO "YYYY-MM-DDTHH:MM:SS.sssZ" (domain form).
+    const ts = s => String(s || '').replace(' ', 'T').slice(0, 19);
+    const moves = parsed.slice().sort((x, y) =>
+      String(y.r.date || '').slice(0, 10).localeCompare(String(x.r.date || '').slice(0, 10)) ||
+      ts(y.r.entered_at).localeCompare(ts(x.r.entered_at)) ||
+      (refNum(outwardRef(y.r)) - refNum(outwardRef(x.r))) ||
+      String(y.r.id || '').localeCompare(String(x.r.id || ''))
+    ).slice(0, HLD_SHARE_MAX_MOVES).map(({ r, a }) => ({
+      date: String(r.date || '').slice(0, 10),
+      ref: outwardRef(r),
+      isCfg: a.isCfg,
+      isOut: a.isOut,
+      recUsd: a.receivedUsd,
+      gaveUsd: a.gaveUsd,
+      recLbp: a.receivedLbp,
+      gaveLbp: a.gaveLbp,
+      owesUsd: a.owesUsd,
+      owesLbp: a.owesLbp,
+      // The form's default note says nothing to the stakeholder; leave it out of the message.
+      notes: /^stakeholder ledger movement\.?$/i.test(a.cleanNotes || '') ? '' : a.cleanNotes
+    }));
+
+    const firstWithCo = rows.find(r => r && r.company);
+    return {
+      party: rows.length ? partyOf(rows[0]) : String(party || ''),
+      company: (firstWithCo && String(firstWithCo.company).trim()) || 'Bdeir Holding',
+      entries: rows.length,
+      recUsd,
+      gaveUsd,
+      owesUsd,
+      recLbp,
+      gaveLbp,
+      owesLbp,
+      hasOpening,
+      openOwesUsd,
+      openOwesLbp,
+      gaveMovesUsd,
+      gaveMovesLbp,
+      hasLbp,
+      booksThrough,
+      moves
+    };
+  }
+
+  function buildHoldingExtendedShareText(data, lang) {
+    if (!data) return '';
+    if (lang === 'en_ar') return `${buildHoldingExtendedShareText(data, 'en')}\n\n${buildHoldingExtendedShareText(data, 'ar')}`;
+    const L = HLD_SHARE_TXT[lang] ? lang : 'en';
+    const T = HLD_SHARE_TXT[L];
+    const coRaw = hldShareOutward(data.company || 'Bdeir Holding');
+    const co = L === 'ar' && /^bdeir\s+holding$/i.test(coRaw) ? 'بدير القابضة' : coRaw;
+    const usd = v => hldShareUsd(v, L);
+    const lbp = v => hldShareLbp(v, L);
+    // One phrase per currency; '' when that currency is settled. "Settled" is written only when
+    // BOTH currencies are settled, so a zero USD net beside an open LBP balance never reads as
+    // "nothing owed" (extendedPositionLabel in the app falls back to LBP the same way).
+    const side = (amt, isLbpAmt) => {
+      const eps = isLbpAmt ? 1 : 0.005;
+      if (amt > eps) return `${isLbpAmt ? lbp(amt) : usd(amt)} ${T.toHolding(co)}`;
+      if (amt < -eps) return `${isLbpAmt ? lbp(-amt) : usd(-amt)} ${T.byHolding(co)}`;
+      return '';
+    };
+    const positionBoth = (u, l) => {
+      const parts = [side(u, false), side(l, true)].filter(Boolean);
+      return parts.length ? parts.join(' + ') : `${usd(0)} (${T.settled})`;
+    };
+    const lbpOpen = Math.abs(data.owesLbp) > 1;
+    const usdOpen = Math.abs(data.owesUsd) >= 0.005;
+    const netUsdTxt = side(data.owesUsd, false) || (lbpOpen ? usd(0) : `${usd(0)} (${T.settled})`);
+    const netLbpTxt = side(data.owesLbp, true) || (usdOpen ? lbp(0) : `${lbp(0)} (${T.settled})`);
+    const amountOf = (u, l) => {
+      const parts = [];
+      if (Math.abs(u) >= 0.005) parts.push(usd(u));
+      if (Math.abs(l) > 1) parts.push(lbp(l));
+      return parts.length ? parts.join(' + ') : usd(0);
+    };
+
+    const lines = [];
+    lines.push(`*${co} · ${T.title}*`);
+    lines.push(`*${hldShareOutward(data.party)}*`);
+    lines.push(`${T.asOf}${T.colon}${hldShareDmy(data.booksThrough)}`);
+    lines.push('');
+    if (data.hasOpening) lines.push(`${T.opening}${T.colon}${positionBoth(data.openOwesUsd, data.openOwesLbp)}`);
+    lines.push(`${T.took}${T.colon}${usd(data.recUsd)}`);
+    lines.push(`${T.gave}${T.colon}${usd(data.gaveMovesUsd)}`);
+    lines.push(`${T.net}${T.colon}${netUsdTxt}`);
+    if (data.hasLbp) lines.push(`${T.lbp}${T.colon}${netLbpTxt}`);
+    if (data.moves && data.moves.length) {
+      lines.push('');
+      lines.push(`${T.latest}${T.colon.trimEnd()}`);
+      data.moves.forEach((m, i) => {
+        let what;
+        if (m.isCfg) {
+          what = `${T.opening} ${positionBoth(m.owesUsd, m.owesLbp)}`;
+        } else if (m.isOut) {
+          what = `${T.took} ${amountOf(m.recUsd, m.recLbp)}`;
+        } else {
+          what = `${T.gave} ${amountOf(m.gaveUsd, m.gaveLbp)}`;
+        }
+        const note = hldShareOutward(m.notes);
+        const noteTxt = note ? ` · ${note.length > 40 ? `${note.slice(0, 39).trimEnd()}…` : note}` : '';
+        const refTxt = m.ref ? ` · ${hldShareOutward(m.ref)}` : '';
+        lines.push(`${i + 1}. ${hldShareDmy(m.date)}${refTxt} · ${what}${noteTxt}`);
+      });
+    }
+    lines.push('');
+    lines.push(T.ask);
+    return lines.join('\n');
+  }
+
+  function hldShareSavedLang() {
+    try {
+      const v = localStorage.getItem(HLD_SHARE_LANG_KEY);
+      if (HLD_SHARE_LANGS.includes(v)) return v;
+    } catch (_) {}
+    return 'en_ar';
+  }
+
+  let _hldShareState = null;
+  let _hldShareKeyHandler = null;
+
+  function closeHoldingExtendedShareCard() {
+    const modal = $('hldExtShareModal');
+    if (modal) {
+      modal.hidden = true;
+      modal.innerHTML = '';
+    }
+    if (_hldShareKeyHandler) {
+      document.removeEventListener('keydown', _hldShareKeyHandler, true);
+      _hldShareKeyHandler = null;
+    }
+    const back = _hldShareState && _hldShareState.returnFocus;
+    _hldShareState = null;
+    if (back && typeof back.focus === 'function' && document.contains(back)) {
+      try { back.focus({ preventScroll: true }); } catch (_) {}
+    }
+  }
+
+  function renderHoldingExtendedShareCard() {
+    const modal = $('hldExtShareModal');
+    const st = _hldShareState;
+    if (!modal || !st) return;
+    const d = st.data;
+    const text = buildHoldingExtendedShareText(d, st.lang);
+    const waHref = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+    const langBtn = (key, label) => `<button type="button" class="hld-share-lang-btn ${st.lang === key ? 'active' : ''}" data-hld-share-lang="${key}" aria-pressed="${st.lang === key ? 'true' : 'false'}" data-no-i18n="1">${label}</button>`;
+    const owesCls = d.owesUsd > 0.005 ? 'is-brass' : (d.owesUsd < -0.005 ? 'is-good' : '');
+    modal.innerHTML = `
+      <div class="modal-card hld-share-card" role="dialog" aria-modal="true" aria-labelledby="hldShareTitle">
+        <div class="modal-header">
+          <div>
+            <span class="modal-eyebrow">Stakeholder Balance Card · WhatsApp</span>
+            <h2 id="hldShareTitle" data-no-i18n="1">${esc(d.party)}</h2>
+          </div>
+          <div class="modal-header-actions">
+            <button type="button" class="modal-close-btn" id="hldShareCloseBtn" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="hld-share-kpis">
+            ${d.hasOpening ? `<div class="hld-share-kpi"><span>Opening Balance</span><b class="mono" data-no-i18n="1">${esc([
+              Math.abs(d.openOwesUsd) >= 0.005 ? fmtSignedUSD(d.openOwesUsd, 2) : '',
+              Math.abs(d.openOwesLbp) > 1 ? fmtSignedLBP(d.openOwesLbp) : ''
+            ].filter(Boolean).join(' · ') || '$0.00')}</b></div>` : ''}
+            <div class="hld-share-kpi"><span>Received / Took ($)</span><b class="mono" data-no-i18n="1">${esc(fmtUSD(d.recUsd, 2))}</b></div>
+            <div class="hld-share-kpi"><span>${d.hasOpening ? 'Gave, excluding opening ($)' : 'Gave ($)'}</span><b class="mono" data-no-i18n="1">${esc(fmtUSD(d.gaveMovesUsd, 2))}</b></div>
+            <div class="hld-share-kpi ${owesCls}"><span>Difference / Owes ($)</span><b class="mono" data-no-i18n="1">${esc(Math.abs(d.owesUsd) >= 0.005 ? fmtSignedUSD(d.owesUsd, 2) : '$0.00')}</b></div>
+            ${d.hasLbp ? `<div class="hld-share-kpi"><span>Owes (LL)</span><b class="mono" data-no-i18n="1">${esc(Math.abs(d.owesLbp) > 1 ? fmtSignedLBP(d.owesLbp) : '0 LL')}</b></div>` : ''}
+          </div>
+          <div class="hld-share-langbar">
+            <span class="hld-share-lbl">Message Language</span>
+            <div class="hld-share-seg" role="group" aria-label="Message Language">
+              ${langBtn('en_ar', 'EN + عربي')}
+              ${langBtn('en', 'EN')}
+              ${langBtn('ar', 'عربي')}
+              ${langBtn('fr', 'FR')}
+            </div>
+          </div>
+          <textarea id="hldShareText" class="hld-share-text" rows="14" dir="${st.lang === 'ar' ? 'rtl' : 'auto'}" data-no-i18n="1" spellcheck="false" aria-label="Balance card message">${esc(text)}</textarea>
+          <p class="hld-share-note">All-time balance from the Extended ledger. The period and search filters do not apply.</p>
+          <div class="hld-share-actions">
+            <button type="button" class="btn btn-ghost-bar" id="hldShareCopyBtn">${ic('copy')} Copy Message</button>
+            ${canNativeShare ? `<button type="button" class="btn btn-ghost-bar" id="hldShareNativeBtn">${ic('external')} More Sharing Options</button>` : ''}
+            <a class="btn btn-primary" id="hldShareWaLink" href="${esc(waHref)}" target="_blank" rel="noopener noreferrer">${ic('send_msg')} Open WhatsApp</a>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const ta = $('hldShareText');
+    const wa = $('hldShareWaLink');
+    if (ta && wa) {
+      ta.addEventListener('input', () => wa.setAttribute('href', `https://wa.me/?text=${encodeURIComponent(ta.value)}`));
+    }
+    const closeBtn = $('hldShareCloseBtn');
+    if (closeBtn) closeBtn.addEventListener('click', closeHoldingExtendedShareCard);
+    modal.querySelectorAll('[data-hld-share-lang]').forEach(b => b.addEventListener('click', () => {
+      const lang = b.getAttribute('data-hld-share-lang');
+      if (!HLD_SHARE_LANGS.includes(lang) || !_hldShareState) return;
+      _hldShareState.lang = lang;
+      try { localStorage.setItem(HLD_SHARE_LANG_KEY, lang); } catch (_) {}
+      renderHoldingExtendedShareCard();
+      const again = modal.querySelector(`[data-hld-share-lang="${lang}"]`);
+      if (again) again.focus({ preventScroll: true });
+    }));
+    const copyBtn = $('hldShareCopyBtn');
+    if (copyBtn && ta) {
+      copyBtn.addEventListener('click', () => {
+        const done = () => toast('Balance card copied to clipboard', 'ok');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(ta.value).then(done).catch(() => {
+            ta.focus({ preventScroll: true });
+            ta.select();
+          });
+        } else {
+          ta.focus({ preventScroll: true });
+          ta.select();
+        }
+      });
+    }
+    const nativeBtn = $('hldShareNativeBtn');
+    if (nativeBtn && ta) {
+      nativeBtn.addEventListener('click', () => {
+        try {
+          const p = navigator.share({ text: ta.value });
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        } catch (_) {}
+      });
+    }
+    if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(modal); } catch (_) {}
+    }
+  }
+
+  function openHoldingExtendedShareCard(party, returnFocusEl) {
+    const data = computeHoldingExtendedShareData(party);
+    if (!data.entries) {
+      toast('No Extended entries for this stakeholder', 'warn');
+      return;
+    }
+    _hldShareState = { data, lang: hldShareSavedLang(), returnFocus: returnFocusEl || null };
+    let modal = $('hldExtShareModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'hldExtShareModal';
+      modal.className = 'modal-backdrop';
+      modal.hidden = true;
+      document.body.appendChild(modal);
+      modal.addEventListener('click', e => { if (e.target === modal) closeHoldingExtendedShareCard(); });
+    }
+    renderHoldingExtendedShareCard();
+    modal.hidden = false;
+    if (_hldShareKeyHandler) document.removeEventListener('keydown', _hldShareKeyHandler, true);
+    _hldShareKeyHandler = e => {
+      const m = $('hldExtShareModal');
+      if (!m || m.hidden) return;
+      const active = document.activeElement;
+      // Another overlay opened on top (e.g. Ctrl+K) owns the keyboard: leave its keys alone.
+      if (active && active !== document.body && !m.contains(active)) return;
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        e.preventDefault();
+        closeHoldingExtendedShareCard();
+        return;
+      }
+      if (e.key === 'Tab') {
+        // Keep Tab inside the dialog (aria-modal).
+        const focusables = Array.from(m.querySelectorAll('button, [href], textarea, input, select, [tabindex]:not([tabindex="-1"])'))
+          .filter(el => !el.disabled && el.offsetParent !== null);
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && (active === first || !m.contains(active))) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (active === last || !m.contains(active))) { e.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener('keydown', _hldShareKeyHandler, true);
+    const focusEl = $('hldShareCloseBtn');
+    if (focusEl) {
+      try { focusEl.focus({ preventScroll: true }); } catch (_) {}
+    }
+  }
+
+  window.MFG_EXTENDED_HELPER.computeShareData = computeHoldingExtendedShareData;
+  window.MFG_EXTENDED_HELPER.buildShareText = buildHoldingExtendedShareText;
+  window.MFG_EXTENDED_HELPER.openShareCard = openHoldingExtendedShareCard;
 
   function getIndAssetSelection(scopeKey) {
     return (STATE.indAssetFilter && STATE.indAssetFilter[scopeKey]) || 'ALL';
@@ -109659,6 +110089,8 @@
   }
 
   function openAuthGate(prefillEmail) {
+    // A stakeholder balance card must not stay in the page once the seat signs out or the session ends.
+    if (typeof closeHoldingExtendedShareCard === 'function') closeHoldingExtendedShareCard();
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.close === 'function') {
       window.MFG_CMD_PALETTE.close({ clearCache: true });
     }
@@ -126856,7 +127288,13 @@
       const target = $('tillRecentPanel') || $('pbiCfEntriesPanel');
       if (target) scrollWorkspaceTo(target, 10);
     }));
+    container.querySelectorAll('[data-hld-share-card]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      openHoldingExtendedShareCard(btn.getAttribute('data-hld-share-card') || '', btn);
+    }));
     container.querySelectorAll('[data-cf-focus-party]').forEach(el => el.addEventListener('click', ev => {
+      if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('[data-hld-share-card]')) return;
       ev.stopPropagation();
       const p = el.getAttribute('data-cf-focus-party') || '';
       STATE.cfFocusParty = STATE.cfFocusParty === p ? '' : p;
