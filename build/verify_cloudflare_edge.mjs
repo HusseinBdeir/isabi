@@ -2251,6 +2251,25 @@ finally:
       const ip2 = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', face_descriptor: vec28Imposter }, { 'CF-Connecting-IP': '198.51.100.97' });
       faceClearStatuses.push(ip2.status);
     }
+    // (h) a wrong PIN sent with a matching face (`Face ID + PIN 2FA`) counts on the PIN keys, so a face
+    // sign-in in between cannot reset PIN guessing: 4 wrong, face sign-in (200), 5th wrong = 429.
+    const pinViaFaceStatuses = [];
+    for (let k = 0; k < 4; k++) {
+      const wp = await httpReq('POST', '/app/api/auth/login', { email: 'edge28both@bhfirms.com', method: 'Face ID + PIN 2FA', face_descriptor: vec28Both, pin: '0000' }, { 'CF-Connecting-IP': '198.51.100.99' });
+      pinViaFaceStatuses.push(wp.status);
+    }
+    const pinViaFaceReset = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', face_descriptor: vec28 }, { 'CF-Connecting-IP': '198.51.100.99' });
+    pinViaFaceStatuses.push(`face:${pinViaFaceReset.status}`);
+    const pinViaFaceFifth = await httpReq('POST', '/app/api/auth/login', { email: 'edge28both@bhfirms.com', method: 'Face ID + PIN 2FA', face_descriptor: vec28Both, pin: '0000' }, { 'CF-Connecting-IP': '198.51.100.99' });
+    pinViaFaceStatuses.push(pinViaFaceFifth.status);
+    // (i) signed-in verify_only Face ID misses (enrolment check) never lock PIN sign-in for the IP.
+    const verifyMissStatuses = [];
+    for (let k = 0; k < 5; k++) {
+      const vm = await httpReq('POST', '/app/api/auth/login', { method: 'Face ID', verify_only: true, face_descriptor: vec28Imposter }, { 'X-ISABI-Session': ownerToken, 'CF-Connecting-IP': '198.51.100.100' });
+      verifyMissStatuses.push(vm.status);
+    }
+    const pinAfterVerifyMiss = await httpReq('POST', '/app/api/auth/login', { email: 'edge28pinonly@bhfirms.com', pin: '2947', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.100' });
+    verifyMissStatuses.push(`pin:${pinAfterVerifyMiss.status}`);
 
     consoleErrors.length = 0;
     await sendCdp('Network.clearBrowserCookies');
@@ -2597,6 +2616,8 @@ finally:
       bothFaceFirstStatuses.join(',') === '401p,401p,401p,401p,401p,401p,pin:200' &&
       ipKeepStatuses.join(',') === '401,401,401,401,face:200,429,d401,d401,d401,d401,dummy:200,429' &&
       faceClearStatuses.join(',') === '401,401,401,401,face:200,401,401,401,401' &&
+      pinViaFaceStatuses.join(',') === '401,401,401,401,face:200,429' &&
+      verifyMissStatuses[5] === 'pin:200' &&
       e28Flow?.bootOk === true &&
       e28Flow.stBoot?.authed === false &&
       e28Flow.stBoot?.enrolledSeats?.length === 0 &&
@@ -2664,7 +2685,9 @@ finally:
           pinAfterEmailLock: [pinAfterEmailFaceLockRes.status, pinAfterEmailFaceLockRes.json?.error],
           bothFaceFirst: bothFaceFirstStatuses,
           ipKeep: ipKeepStatuses,
-          faceClear: faceClearStatuses
+          faceClear: faceClearStatuses,
+          pinViaFace: pinViaFaceStatuses,
+          verifyMiss: verifyMissStatuses
         },
         e28Flow
       }));

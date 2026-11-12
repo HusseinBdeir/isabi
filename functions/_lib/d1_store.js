@@ -624,8 +624,10 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   }
 
   let row = null;
-  const failAuth = async (errMsg, status = 401) => {
-    const res = isFaceNoPin
+  // opts.pinMiss: a wrong PIN ALWAYS counts on the PIN keys (IP + email), whatever the method, so a
+  // `Face ID + PIN 2FA` request can never move PIN guessing onto the face key that face sign-ins reset.
+  const failAuth = async (errMsg, status = 401, opts = {}) => {
+    const res = (isFaceNoPin && !opts.pinMiss)
       ? await recordFaceProbeFailure(env.DB, ipHash)
       : await recordAuthFailure(env.DB, ipHash, email || (row && row.email) || '');
     if (isFaceProbe && !res.throttled) {
@@ -777,9 +779,20 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
         }
         const pinCheck = await verifySeatPin(pin, expectedPin);
         if (!pinCheck.ok) {
-          return isStepUp
-            ? jsonResponse({ ok: false, error: 'Two-factor Access PIN is required.' }, 403)
-            : failAuth('Two-factor Access PIN is required.');
+          if (isStepUp) {
+            // A wrong step-up PIN is counted too (it used to be free to retry).
+            const rl = await recordAuthFailure(env.DB, ipHash, row.email || '');
+            if (rl.throttled) {
+              return jsonResponse({
+                ok: false,
+                rate_limited: true,
+                retry_after_sec: rl.retryAfterSec,
+                error: `Too many failed sign-in attempts. Please wait ${Math.max(1, Math.ceil(rl.retryAfterSec / 60))} minute(s).`
+              }, 429, { 'Retry-After': String(rl.retryAfterSec) });
+            }
+            return jsonResponse({ ok: false, error: 'Two-factor Access PIN is required.' }, 403);
+          }
+          return failAuth('Two-factor Access PIN is required.', 401, { pinMiss: true });
         }
         pinUpgradeNeeded = pinCheck.needsUpgrade;
         pinVerified = true;
