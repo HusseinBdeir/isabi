@@ -24609,6 +24609,8 @@
     if (m) return lang === 'ar' ? `أُغلق ${m[1]} من اتفاقيات الأسعار: لا نقلات على الموقع منذ 90 يوماً` : `${m[1]} accord(s) de prix clôturé(s) : aucun voyage sur le site depuis 90 jours`;
     m = trimmed.match(/^(\d+)\s+price agreements?\s+reopened or extended: a load came in within 90 days$/i);
     if (m) return lang === 'ar' ? `أعيد فتح أو تمديد ${m[1]} من اتفاقيات الأسعار: وصلت نقلة خلال 90 يوماً` : `${m[1]} accord(s) de prix rouvert(s) ou prolongé(s) : un voyage est arrivé dans les 90 jours`;
+    m = trimmed.match(/^(\d+)\s+price agreements?\s+reopened or extended: a load or a new agreement within 90 days$/i);
+    if (m) return lang === 'ar' ? `أعيد فتح أو تمديد ${m[1]} من اتفاقيات الأسعار: نقلة أو اتفاقية جديدة خلال 90 يوماً` : `${m[1]} accord(s) de prix rouvert(s) ou prolongé(s) : un voyage ou un nouvel accord dans les 90 jours`;
     m = trimmed.match(/^(\d+)\s+price agreements?\s+closed after 90 days without a load$/i);
     if (m) return lang === 'ar' ? `أُغلق ${m[1]} من اتفاقيات الأسعار بعد 90 يوماً بلا نقلات` : `${m[1]} accord(s) de prix clôturé(s) après 90 jours sans voyage`;
 

@@ -12585,7 +12585,8 @@
   // A Manufacturing price agreement tied to a site closes once nothing has happened on it for the dormancy window
   // (MFG_GEO.SITE_DORMANT_DAYS, 90) counted back from today: no sales or raw load at its site, no start, no deliberate
   // reopen. Its end date is the last day of that window (last activity + 90), so every load already posted stays
-  // inside it. A customer who comes back later needs a new agreement: the closed one stays closed. A load that turns
+  // inside it. A customer who comes back later needs a new agreement: the closed one stays closed, but the new one
+  // reopens its partners on the site (dormantFamilyKey: the customer's transport line, the quarry's haulage). A load that turns
   // up later inside the window (a late top-up, a back-dated ticket) moves the end date out again, or reopens it.
   // Only rows this sweep closed carry _dormant_close_end (the end it set) and the end they had before, so the undo
   // restores exactly those rows. Deterministic and idempotent: every device that runs it writes the same values.
@@ -12651,6 +12652,17 @@
     return hit;
   }
 
+  // Agreements that open and close together on a site: '' when a row has no partners
+  function dormantFamilyKey(r) {
+    const site = norm(r && r.site);
+    if (!site) return '';
+    const co = norm(r.company);
+    const t = String(r.rule_type || '');
+    if (t === 'Purchase Price (Site)' || t === 'Transport Price (Site)') return 'q|' + co + '|' + site;
+    const cust = norm(r.customer);
+    return cust ? 'c|' + co + '|' + site + '|' + cust : '';
+  }
+
   function planDormantAgreementClosure(todayIso, opts = {}) {
     const out = { changes: [], closing: 0, moving: 0, reopening: 0, outOfScope: 0, today: '' };
     const today = dormantIso(todayIso) || todayISO();
@@ -12693,6 +12705,42 @@
       });
       return nextStart ? { cap: prevDayISO(nextStart), by } : null;
     };
+    // A new agreement keeps its partners open (owner decision 2026-11-12): a customer's agreements on a site (product
+    // lines, the product-less transport line, Customer Haulage) move together, and so do a quarry site's Purchase and
+    // Transport Price (Site) agreements, whoever hauls. Entering or starting any of them is activity for all of them,
+    // so a new sales line on an idle site reopens that customer's transport line instead of posting $0 transport.
+    // A newer version of the same agreement (same chronological series) replaces it instead: that never reopens it.
+    // Rows a Close Site owns never speak for their partners. A partner's start counts as written, future or not, like a
+    // row's own start: the result depends only on the data, never on which day a device runs it.
+    const familyRows = new Map();
+    pool.forEach(r => {
+      if (!r.site || r._multiIndustrySeed || (r._industry && r._industry !== 'Manufacturing')) return;
+      if (r._site_closure_id) return;
+      const fk = dormantFamilyKey(r);
+      if (!fk) return;
+      const s = dormantIso(r.start_date);
+      const e = r._seed_orig ? '' : dormantIso(r.entered_at || r._createdAt);
+      const a = s > e ? s : e;
+      if (!a) return;
+      let list = familyRows.get(fk);
+      if (!list) { list = []; familyRows.set(fk, list); }
+      list.push({ row: r, a });
+    });
+    const partnerActivity = r => {
+      const list = familyRows.get(dormantFamilyKey(r));
+      if (!list) return '';
+      // A closed site, or one with a closing date set, stays closed: a partner never reopens an agreement there. Read
+      // from the site record alone, never today's date, so devices on different dates agree.
+      const sObj = siteInfo(r.site);
+      if (sObj && (dormantIso(sObj.end_date) || /^closed$/i.test(String(sObj.status || '').trim()))) return '';
+      let best = '';
+      list.forEach(m => {
+        if (m.row === r || !(m.a > best)) return;
+        if (isSameChronologicalSeries('price_rules', r, m.row)) return;
+        best = m.a;
+      });
+      return best;
+    };
     pool.forEach(r => {
       if (!r.site || r._multiIndustrySeed || (r._industry && r._industry !== 'Manufacturing')) return;
       if (r._site_closure_id) return;   // a closed site owns these end dates (Close Site)
@@ -12710,10 +12758,12 @@
       // Entering an agreement in the app is activity too, even when its start date is back-dated. A books row edited
       // in the app (_seed_orig) gets a fresh entered_at from the form: that is an edit, not an entry.
       const entered = r._seed_orig ? '' : dormantIso(r.entered_at || r._createdAt);
+      const fam = partnerActivity(r);
       if (marked) {
         // Loads after the end date are outside this agreement: they never reopen it. A person's reopen counted at
-        // closing time (_dormant_touched_on) stays part of the activity.
-        const act = maxOf(lastDateOnOrBefore(dates, ownEnd), start, entered, dormantIso(r._dormant_touched_on));
+        // closing time (_dormant_touched_on) stays part of the activity, and so does a partner agreement entered or
+        // started at any time (the customer is back under a new agreement).
+        const act = maxOf(lastDateOnOrBefore(dates, ownEnd), start, entered, dormantIso(r._dormant_touched_on), fam);
         // Only new evidence (a load added or voided inside the window) changes a closure. Never today's date alone:
         // two devices a day apart would otherwise close and reopen the same row on every sync.
         if (act && act === dormantIso(r._dormant_last_activity)) return;
@@ -12739,7 +12789,7 @@
       // A deliberate reopen or end-date change by a person counts as activity (never the sweep's own writes)
       const touched = ((r._reopenedExplicitly && !r._dormant_reopened_auto) || ownEnd) && r.modified_at && String(r.modified_at) !== String(r._dormant_auto_at || '');
       const touchedOn = touched ? dormantIso(r.modified_at) : '';
-      const act = maxOf(lastDateOnOrBefore(dates, ''), start, entered, touchedOn);
+      const act = maxOf(lastDateOnOrBefore(dates, ''), start, entered, touchedOn, fam);
       if (!act || act >= cutoff) return;
       const toEnd = isoPlusDays(act, days);
       if (curEnd && curEnd <= toEnd) return;
@@ -12853,7 +12903,7 @@
     const msgs = [];
     if (plan.closing > 0) msgs.push(`${plan.closing} price ${plan.closing === 1 ? 'agreement' : 'agreements'} closed: no load at the site in 90 days`);
     const kept = plan.reopening + plan.moving;
-    if (kept > 0) msgs.push(`${kept} price ${kept === 1 ? 'agreement' : 'agreements'} reopened or extended: a load came in within 90 days`);
+    if (kept > 0) msgs.push(`${kept} price ${kept === 1 ? 'agreement' : 'agreements'} reopened or extended: a load or a new agreement within 90 days`);
     if (msgs.length) toast(msgs.join(' · '), 'ok');
     safeRender();
     postRecordPairsChunked(posts).then(() => syncWithCloud(true)).catch(e => console.warn('Dormant agreement sweep push deferred:', e));
