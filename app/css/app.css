@@ -34838,6 +34838,33 @@ video::-webkit-media-controls-start-playback-button {
   flex: 0 1 auto;
   vertical-align: middle;
 }
+/* The options menu is as wide as its wrap; let it grow to fit long option names
+   (site + region, counts) instead of shrinking with the hugged picker. */
+.geo-dist-selectors .pa-select-menu,
+#indPbiSlicerBar .pa-select-menu,
+.ind-specific-filter-bar .pa-select-menu {
+  min-width: max(100%, 260px);
+  width: max-content;
+  max-width: min(420px, calc(100vw - 32px));
+  right: auto;
+}
+[dir="rtl"] .geo-dist-selectors .pa-select-menu,
+[dir="rtl"] #indPbiSlicerBar .pa-select-menu,
+[dir="rtl"] .ind-specific-filter-bar .pa-select-menu {
+  left: auto;
+  right: 0;
+}
+@media (max-width: 768px) {
+  .ind-specific-filter-bar > .pa-select-wrap {
+    display: flex;
+    width: 100%;
+    flex: 1 1 100%;
+  }
+  .ind-specific-filter-bar > .pa-select-wrap > select {
+    width: 100%;
+    min-width: 0;
+  }
+}
 @media (max-width: 768px) {
   #indPbiDimSelect,
   #indPbiSearchInput,
