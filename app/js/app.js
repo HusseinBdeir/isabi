@@ -11581,7 +11581,29 @@
         if (isTargetMfg ? (Boolean(r._multiIndustrySeed) || (r._industry && r._industry !== 'Manufacturing')) : r._industry !== effTargetInd) return;
         const matchSite = Boolean(r.site && norm(r.site) === oldNorm);
         const matchOrigSite = Boolean(r.origin_site && norm(r.origin_site) === oldNorm);
+        // A row moved out of this area to a customer's own site is stored under the area's name (the move
+        // is applied at read time), so its saved form is renamed with the area: after a reload or on
+        // another device it then still follows the own site, and Move Back returns it to the new name
+        if (isTargetMfg && (tk === 'sales_tickets' || tk === 'price_rules') && !matchSite && !matchOrigSite
+          && r._split_from_site != null && norm(r._split_from_site) === oldNorm
+          && r._split_to && norm(r.site) === norm(r._split_to)) {
+          const saved = Object.assign({}, r, { site: cleanNew });
+          delete saved._split_from_site; delete saved._split_to; delete saved._split_at;
+          r._split_from_site = cleanNew;
+          if (rid) {
+            const cIdx = STATE.customRecords[tk].findIndex(x => x && String(x.id) === rid);
+            if (cIdx >= 0) STATE.customRecords[tk][cIdx] = saved;
+            else STATE.customRecords[tk].unshift(saved);
+          }
+          if (Array.isArray(extraApiPosts)) extraApiPosts.push([tk, Object.assign({}, saved)]);
+          tableChanged = true;
+          touchedCount++;
+          return;
+        }
         if (!matchSite && !matchOrigSite) return;
+        // A row the area-site split placed on this site follows the renamed site record by itself
+        // (applySiteCustomerSplits), so it is not copied into the saved overlay
+        if (matchSite && !matchOrigSite && r._split_from_site && r._split_to && norm(r._split_to) === oldNorm) return;
         if (matchSite) r.site = cleanNew;
         if (matchOrigSite) r.origin_site = cleanNew;
         if (seedArr && rid) {
@@ -11605,6 +11627,37 @@
         SEED._tableRev[tk] = (SEED._tableRev[tk] || 0) + 1;
       }
     });
+    if (isTargetMfg) {
+      // Own sites moved out of this area keep pointing at it under its new name, and so do the marks on
+      // their moved rows, so night pay, Move Back and the read-time pass follow the rename
+      const seedSites = (SEED && SEED.records && Array.isArray(SEED.records.sites)) ? SEED.records.sites : [];
+      if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+      const custSites = STATE.customRecords.sites;
+      const seenSites = new Set();
+      custSites.concat(seedSites).forEach(s => {
+        if (!s || !s.split_from || norm(s.split_from) !== oldNorm || !_areaSiteIsMfgRow(s)) return;
+        const sid = String(s.id || '');
+        if (sid) {
+          if (seenSites.has(sid)) return;
+          seenSites.add(sid);
+        }
+        s.split_from = cleanNew;
+        if (sid) {
+          seedSites.forEach(x => { if (x && String(x.id) === sid) x.split_from = cleanNew; });
+          const cIdx = custSites.findIndex(x => x && String(x.id) === sid);
+          if (cIdx >= 0) custSites[cIdx].split_from = cleanNew;
+          else custSites.unshift(Object.assign({}, s));
+        }
+        if (Array.isArray(extraApiPosts) && !s.voided) extraApiPosts.push(['sites', Object.assign({}, s)]);
+        touchedCount++;
+      });
+      ['sales_tickets', 'price_rules'].forEach(tk => {
+        [SEED && SEED.records && SEED.records[tk], STATE.customRecords[tk]].forEach(arr => {
+          if (!Array.isArray(arr)) return;
+          arr.forEach(r => { if (r && r._split_from_site != null && norm(r._split_from_site) === oldNorm) r._split_from_site = cleanNew; });
+        });
+      });
+    }
     if (touchedCount > 0 && SEED) {
       SEED._customRev = (SEED._customRev || 0) + 1;
       _filterRecordsWeakCache = new WeakMap();
@@ -11613,6 +11666,583 @@
       STATE.univConnPartyFilter = cleanNew;
     }
     return touchedCount;
+  }
+
+  // ==================== AREA-AS-SITE CHECK & CUSTOMER SITE SWITCH ====================
+  // A delivery site shared by several unrelated customers is usually a town or district, not one
+  // physical place. The check flags such a site. The switch gives one customer its own site inside a
+  // Region and moves that customer's price agreements and tickets to it. The move is stored once, on
+  // the new site record (split_from + split_customers + split_at), and applied at read time by
+  // applySiteCustomerSplits(), so rows a later top-up brings in under the old site name follow too
+  // and no ticket is rewritten. Amounts never change; night trip pay is protected (see evalOtTicket).
+  const _AREA_SITE_NOISE = new Set(['sal', 'sarl', 'srl', 's', 'a', 'r', 'l', 'co', 'company', 'ltd', 'est', 'majbal', 'beton', 'concrete', 'al', 'el', 'the', 'and']);
+  const _AREA_SITE_MFG_BUS = ['WTC', 'BBConstruction', 'Lions Transport'];
+  function _areaSiteTokens(s) {
+    return String(s || '').toLowerCase().replace(/[^a-z0-9؀-ۿ]+/g, ' ').trim().split(' ').filter(Boolean);
+  }
+  // One key per real customer: legal suffixes, generic plant words and the site's own name are dropped,
+  // so "Sabeh Beton", "Sabeh Beton S.R.L" and "sabeh Beton Choueifat" count once on site Choueifat.
+  function areaSiteCustomerKey(customer, siteName) {
+    const siteTok = new Set(_areaSiteTokens(siteName));
+    const all = _areaSiteTokens(customer);
+    const kept = all.filter(t => !siteTok.has(t) && !_AREA_SITE_NOISE.has(t));
+    return (kept.length ? kept : all).join(' ');
+  }
+  // The move sits on the Price Agreement, creates a site and re-points records: it needs all three rights
+  function canMoveCustomerSite() {
+    return canEnterForm('site') && canEnterForm('pricerule') && canModifyRecord();
+  }
+  function _areaSiteIsMfgRow(r) {
+    return Boolean(r) && !r._multiIndustrySeed && (!r._industry || r._industry === 'Manufacturing');
+  }
+  function _areaSiteHasSplit(s) {
+    return Boolean(s && !s.voided && s.split_from && Array.isArray(s.split_customers) && s.split_customers.length);
+  }
+  function _areaSiteIsDeliveryRule(r) {
+    return /^(Sales \(Delivery\)|Haulage \(Customer Site\))$/i.test(String((r && r.rule_type) || '').trim());
+  }
+  function _areaSiteIsPlaceName(name) {
+    const k = norm(name);
+    if (!k) return false;
+    const regs = (SEED && SEED.records && SEED.records.regions) || [];
+    if (regs.some(r => r && !r.voided && _areaSiteIsMfgRow(r) && norm(r.name) === k)) return true;
+    try {
+      return Boolean(window.MFG_GEO && typeof window.MFG_GEO.findAtlasRegionByName === 'function' && window.MFG_GEO.findAtlasRegionByName(name, SEED));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  let _areaSiteIdx = null;
+  function getAreaSiteIndex() {
+    const recs = (SEED && SEED.records) || {};
+    const u = (typeof activeUser === 'function' && activeUser()) || {};
+    const stamp = [
+      SEED._customRev || 0,
+      (recs.sales_tickets || []).length, (recs.price_rules || []).length, (recs.sites || []).length,
+      SEED._recordsReady ? 1 : 0, u.email || u.id || '', isOfficialScopeActive() ? 1 : 0
+    ].join('|');
+    if (_areaSiteIdx && _areaSiteIdx.stamp === stamp) return _areaSiteIdx;
+    const bySite = new Map();
+    const slot = (siteRaw, custRaw) => {
+      const sk = norm(siteRaw);
+      const ck = norm(custRaw);
+      if (!sk || !ck) return null;
+      if (!bySite.has(sk)) bySite.set(sk, { key: sk, name: String(siteRaw).trim(), customers: new Map() });
+      const e = bySite.get(sk);
+      if (!e.customers.has(ck)) e.customers.set(ck, { name: String(custRaw).trim(), loads: 0, rules: 0 });
+      return e.customers.get(ck);
+    };
+    // Only what this seat may see, in every Manufacturing entity and every period
+    const scope = { ignorePeriod: true, ignoreSearch: true, company: 'manufacturing-group' };
+    if (canAccessTable('sales_tickets')) {
+      filterRecords(recs.sales_tickets || [], Object.assign({ tableKey: 'sales_tickets' }, scope)).forEach(t => {
+        if (!t.site || !t.customer || t.is_internal_sale || isRemovedTicket(t)) return;
+        if (/pickup/i.test(String(t.sale_type || ''))) return;
+        const c = slot(t.site, t.customer);
+        if (c) c.loads += 1;
+      });
+    }
+    if (canAccessTable('price_rules')) {
+      filterRecords(recs.price_rules || [], Object.assign({ tableKey: 'price_rules' }, scope)).forEach(r => {
+        if (!r.site || !r.customer || !_areaSiteIsDeliveryRule(r)) return;
+        const c = slot(r.site, r.customer);
+        if (c) c.rules += 1;
+      });
+    }
+    const childrenByOld = new Map();
+    (recs.sites || []).forEach(s => {
+      if (!_areaSiteHasSplit(s) || !_areaSiteIsMfgRow(s)) return;
+      const ok = norm(s.split_from);
+      if (!childrenByOld.has(ok)) childrenByOld.set(ok, []);
+      childrenByOld.get(ok).push(s);
+    });
+    // A site every customer has already left still needs an entry, so its children stay reachable
+    childrenByOld.forEach((kids, ok) => {
+      if (!bySite.has(ok)) bySite.set(ok, { key: ok, name: String(kids[0].split_from).trim(), customers: new Map() });
+    });
+    bySite.forEach((e, sk) => {
+      const sObj = siteInfo(e.name);
+      const groups = new Map();
+      e.customers.forEach(c => {
+        c.key = areaSiteCustomerKey(c.name, e.name);
+        if (!groups.has(c.key)) groups.set(c.key, { key: c.key, names: [], loads: 0, rules: 0 });
+        const g = groups.get(c.key);
+        g.names.push(c.name);
+        g.loads += c.loads;
+        g.rules += c.rules;
+      });
+      e.site = sObj;
+      e.groups = groups;
+      // A name with fewer than 3 loads and no agreement is noise (a one-off drop), not a customer of the place
+      e.customerCount = Array.from(groups.values()).filter(g => g.loads >= 3 || g.rules > 0).length;
+      e.children = childrenByOld.get(sk) || [];
+      e.isJv = Boolean(sObj && (sObj.is_jv || sObj.jv));
+      e.isOwnPlant = _IS_OWN_BU_RE.test(e.name);
+      e.isSplitChild = _areaSiteHasSplit(sObj);
+      e.dismissed = Boolean(sObj && sObj.area_check === 'single');
+      e.isPlaceName = e.customerCount >= 2 ? _areaSiteIsPlaceName(e.name) : false;
+      e.flagged = !e.isJv && !e.isOwnPlant && !e.isSplitChild && !e.dismissed && (
+        e.customerCount >= 3
+        || (e.customerCount >= 2 && (e.isPlaceName || e.children.length > 0))
+        || (e.customerCount >= 1 && e.children.length > 0)
+      );
+    });
+    _areaSiteIdx = { stamp, bySite };
+    return _areaSiteIdx;
+  }
+  function describeAreaSite(siteName) {
+    const k = norm(siteName);
+    return k ? (getAreaSiteIndex().bySite.get(k) || null) : null;
+  }
+
+  // Region a company's night trip pay reads for a site, resolved exactly as payroll does (evalOtTicket)
+  function _areaSitePayRegion(company, siteName) {
+    const coN = norm(company || 'WTC');
+    const coMk = coN === 'bbconstruction' ? 'bbconstruction' : (coN === 'lions transport' ? 'lionstransport' : 'wtc');
+    const sr = (SEED.models && SEED.models[coMk] && SEED.models[coMk].site_regions) || null;
+    const sN = norm(siteName);
+    if (sr && Object.prototype.hasOwnProperty.call(sr, sN)) return norm(sr[sN] || '');
+    const sObj = siteInfo(siteName);
+    return norm((sObj && sObj.region) || '');
+  }
+  // The same, for each Manufacturing entity: kept on the customer's own site at the time of the move, so
+  // its pay does not depend on the area site record staying as it is
+  function _areaSitePayRegions(siteName) {
+    const out = {};
+    _AREA_SITE_MFG_BUS.forEach(co => { out[norm(co)] = _areaSitePayRegion(co, siteName); });
+    return out;
+  }
+  function _areaSiteTripRules(company, regionNorm) {
+    const coN = norm(company || 'WTC');
+    return ((SEED.records && SEED.records.overtime_rates) || []).filter(o =>
+      o && !o.voided && norm(o.company || 'WTC') === coN && (norm(o.region) || 'excluded') === regionNorm
+    );
+  }
+
+  // True when no live Manufacturing ticket, raw load or agreement sits on the site
+  function _areaSiteIsUnused(siteName) {
+    const k = norm(siteName);
+    const recs = (SEED && SEED.records) || {};
+    return !['sales_tickets', 'raw_purchases', 'price_rules'].some(tk =>
+      [recs[tk] || [], (STATE.customRecords && STATE.customRecords[tk]) || []].some(arr =>
+        arr.some(r => r && !r.voided && r.site && _areaSiteIsMfgRow(r) && norm(r.site) === k)));
+  }
+
+  function suggestCustomerSiteSwitch(siteName, customerName) {
+    const e = describeAreaSite(siteName);
+    const cust = String(customerName || '').trim();
+    const oldName = (e && e.name) || String(siteName || '').trim();
+    const custTok = new Set(_areaSiteTokens(cust));
+    const hasAreaInName = _areaSiteTokens(oldName).every(t => custTok.has(t));
+    const newSite = cust ? (hasAreaInName ? cust : `${cust} ${oldName}`) : '';
+    const sObj = siteInfo(oldName);
+    const region = _areaSiteIsPlaceName(oldName) ? oldName : ((sObj && sObj.region) || '');
+    const myKey = cust ? areaSiteCustomerKey(cust, oldName) : '';
+    const others = e
+      ? Array.from(e.customers.values())
+          .filter(c => norm(c.name) !== norm(cust))
+          .map(c => ({ name: c.name, loads: c.loads, rules: c.rules, same: Boolean(myKey && c.key === myKey) }))
+          .sort((a, b) => (b.same ? 1 : 0) - (a.same ? 1 : 0) || b.loads - a.loads || b.rules - a.rules)
+      : [];
+    return { oldSite: oldName, newSite, region, others };
+  }
+
+  function previewCustomerSiteSwitch(opts) {
+    const o = opts || {};
+    const oldSite = String(o.oldSite || '').trim();
+    const newSite = String(o.newSite || '').trim();
+    const regionIn = String(o.region || '').trim();
+    const custNames = [];
+    const custSet = new Set();
+    (Array.isArray(o.customers) ? o.customers : []).forEach(c => {
+      const nm = String(c || '').trim();
+      const k = norm(nm);
+      if (k && !custSet.has(k)) { custSet.add(k); custNames.push(nm); }
+    });
+    const fail = (code, reason) => ({ ok: false, code, reason });
+    if (getActiveIndustry() !== 'Manufacturing') return fail('industry', 'Site switches apply to Manufacturing delivery sites only.');
+    if (!(canMoveCustomerSite())) return fail('rights', 'Your seat cannot move records between sites.');
+    const oldObj = oldSite ? siteInfo(oldSite) : null;
+    if (!oldObj || !_areaSiteIsMfgRow(oldObj)) return fail('old_site', 'Pick the delivery site the customer is on now.');
+    if (oldObj.is_jv || oldObj.jv) return fail('old_site', 'A JV site cannot be split.');
+    if (_areaSiteHasSplit(oldObj)) return fail('old_site', `${oldObj.name} is already a customer's own site.`);
+    if (!custNames.length) return fail('customers_none', 'Pick the customer to move.');
+    if (!newSite) return fail('new_site_blank', 'New Site Name is required.');
+    if (norm(newSite) === norm(oldSite)) return fail('new_site_same', 'The new site needs a different name from the area.');
+    const newObj = siteInfo(newSite);
+    if (newObj) {
+      if (!_areaSiteIsMfgRow(newObj) || newObj.is_jv || newObj.jv) return fail('new_site_taken', `${newObj.name} cannot take a customer.`);
+      // Pay for a moved site follows the area it came from (evalOtTicket), so the target must be a site
+      // that already came from this area, or one nothing has been recorded on yet
+      const sameArea = Boolean(newObj.split_from && norm(newObj.split_from) === norm(oldSite));
+      // Not a site that came out of another area, nor an area other sites came out of: its own move would be lost
+      const isOtherAreasChild = Boolean(newObj.split_from && !sameArea);
+      const isAnAreaItself = ((SEED.records && SEED.records.sites) || []).some(s => s && !s.voided && s.split_from && _areaSiteIsMfgRow(s) && norm(s.split_from) === norm(newObj.name));
+      if (isOtherAreasChild || isAnAreaItself || (!sameArea && !_areaSiteIsUnused(newObj.name))) {
+        return fail('new_site_taken', `${newObj.name} already has its own records. Give the customer a new site name.`);
+      }
+    } else {
+      const dup = findUniversalDuplicate('sites', newSite, {});
+      if (dup) return fail('new_site_taken', `Site "${universalMainValue('sites', dup) || newSite}" already exists in another industry.`);
+    }
+    const region = regionIn || (newObj && newObj.region) || '';
+    if (!region) return fail('region_blank', 'Region is required.');
+    const regRes = (window.MFG_GEO && typeof window.MFG_GEO.resolveRegionRecordOrAtlas === 'function')
+      ? window.MFG_GEO.resolveRegionRecordOrAtlas(region, SEED)
+      : null;
+    if (!regRes) return fail('region_unknown', `"${region}" is not a Region on the map yet. Pick an existing Region, or add it first.`);
+    if (newObj && newObj.region && norm(newObj.region) !== norm(regRes.name)) {
+      return fail('region_mismatch', `${newObj.name} is already in Region ${newObj.region}.`);
+    }
+    // Same rule as the Site form: a site named after a place cannot sit in a Region that place is not in
+    if (!newObj && window.MFG_GEO && typeof window.MFG_GEO.validateSiteInsideRegion === 'function') {
+      const geo = window.MFG_GEO.validateSiteInsideRegion({ siteName: newSite, regionName: regRes.name }, SEED);
+      if (geo && !geo.ok) return fail('region_place', geo.reason || 'That site name belongs to a place in another Region.');
+    }
+    const oldN = norm(oldSite);
+    const recs = SEED.records || {};
+    // Another site may already hold one of these names for the same area
+    const clash = (recs.sites || []).find(s => _areaSiteHasSplit(s) && _areaSiteIsMfgRow(s) && norm(s.split_from) === oldN
+      && norm(s.name) !== norm(newSite) && s.split_customers.some(c => custSet.has(norm(c))));
+    if (clash) return fail('customers_moved', `${clash.split_customers.find(c => custSet.has(norm(c)))} was already moved to ${clash.name}.`);
+
+    const allowed = new Set(allowedCompanyNames().map(c => norm(c)));
+    const seenIds = new Set();
+    const hit = r => _areaSiteIsMfgRow(r) && !r.voided && r.site && norm(r._split_from_site || r.site) === oldN && custSet.has(norm(r.customer))
+      && (!r._split_from_site || norm(r.site) === norm(newSite));
+    let tickets = 0, rules = 0, nightTickets = 0, hiddenRows = 0, firstDate = '', lastDate = '';
+    const companies = new Set();
+    const nightByCo = new Map();
+    const walk = (tk, onRow) => {
+      [(STATE.customRecords && STATE.customRecords[tk]) || [], recs[tk] || []].forEach(arr => {
+        arr.forEach(r => {
+          if (!r) return;
+          const rid = r.id ? `${tk}:${r.id}` : '';
+          if (rid) { if (seenIds.has(rid)) return; seenIds.add(rid); }
+          if (!hit(r)) return;
+          if (r.company && !allowed.has(norm(r.company))) { hiddenRows += 1; return; }
+          if (r.company) companies.add(r.company);
+          onRow(r);
+        });
+      });
+    };
+    walk('sales_tickets', t => {
+      tickets += 1;
+      const d = String(t.date || '').slice(0, 10);
+      if (d) { if (!firstDate || d < firstDate) firstDate = d; if (!lastDate || d > lastDate) lastDate = d; }
+      if (Number(t.overtime || 0) > 0) {
+        nightTickets += 1;
+        const co = t.company || 'WTC';
+        nightByCo.set(co, (nightByCo.get(co) || 0) + 1);
+      }
+    });
+    walk('price_rules', () => { rules += 1; });
+    if (hiddenRows > 0) {
+      return fail('rights_hidden', `This move also touches ${hiddenRows} record${hiddenRows === 1 ? '' : 's'} of an entity outside your access. Ask an Owner to run it.`);
+    }
+    const siteWideRules = (recs.price_rules || []).filter(r => r && !r.voided && _areaSiteIsMfgRow(r) && norm(r.site) === oldN && !r.customer && _areaSiteIsDeliveryRule(r)).length;
+
+    // Night trip pay is set per Region. The new site is paid as the area site was for every load dated
+    // up to today, and after today for as long as its Region has no rate of its own in force
+    // (evalOtTicket reads site.split_from / split_at). Nothing is copied, no other site is touched.
+    const today = todayISO();
+    const newRegN = norm(regRes.name);
+    const payNotes = [];
+    const rateOf = x => Number(x.amount != null ? x.amount : x.usd_amount || 0);
+    const rateToday = list => list.reduce((a, x) => a + ((String(x.start_date || '2020-01-01').slice(0, 10) <= today && (!x.end_date || String(x.end_date).slice(0, 10) >= today)) ? rateOf(x) : 0), 0);
+    _AREA_SITE_MFG_BUS.forEach(co => {
+      if (!companies.has(co) && !nightByCo.has(co)) return;
+      const nightLoads = nightByCo.get(co) || 0;
+      const oldRegN = _areaSitePayRegion(co, oldSite);
+      if (oldRegN === newRegN) { payNotes.push({ company: co, mode: 'same', nightLoads }); return; }
+      const oldRules = oldRegN ? _areaSiteTripRules(co, oldRegN) : [];
+      const newRules = _areaSiteTripRules(co, newRegN);
+      const oldLabel = (oldRules[0] && oldRules[0].region) || (oldRegN === 'excluded' ? 'Excluded' : '');
+      if (rateToday(newRules) > 0) {
+        payNotes.push({ company: co, mode: 'own', nightLoads, fromRegion: oldLabel, toRegion: regRes.name, oldRate: rateToday(oldRules), newRate: rateToday(newRules) });
+      } else if (oldRules.length) {
+        payNotes.push({ company: co, mode: 'follow', nightLoads, fromRegion: oldLabel, toRegion: regRes.name, oldRate: rateToday(oldRules) });
+      } else {
+        payNotes.push({ company: co, mode: 'none', nightLoads, fromRegion: oldLabel, toRegion: regRes.name });
+      }
+    });
+
+    return {
+      ok: true, oldSite: oldObj.name, newSite: (newObj && newObj.name) || newSite, siteExists: Boolean(newObj),
+      region: regRes.name, regionExists: Boolean(regRes.isSeedRecord), customers: custNames,
+      tickets, rules, nightTickets, firstDate, lastDate, siteWideRules, payNotes
+    };
+  }
+
+  function _areaSitePersistSite(row, posts) {
+    row.modified_by = (activeUser() && activeUser().email) || 'admin';
+    row.modified_at = nextMonotonicIso();
+    if (!Array.isArray(SEED.records.sites)) SEED.records.sites = [];
+    if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+    const sIdx = SEED.records.sites.findIndex(x => x && String(x.id) === String(row.id));
+    if (sIdx >= 0) Object.assign(SEED.records.sites[sIdx], row);
+    else SEED.records.sites.unshift(row);
+    const cIdx = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(row.id));
+    if (cIdx >= 0) Object.assign(STATE.customRecords.sites[cIdx], row);
+    else STATE.customRecords.sites.unshift(Object.assign({}, row));
+    posts.push(['sites', Object.assign({}, row)]);
+    if (!SEED._tableRev) SEED._tableRev = {};
+    SEED._tableRev.sites = (SEED._tableRev.sites || 0) + 1;
+  }
+  function _areaSiteCommit(posts) {
+    applyCustomRecordsToSeed();
+    saveLocalAuthAndRecords();
+    renderApp();
+    postRecordPairsChunked(posts);
+    syncWithCloud(true);
+  }
+
+  function applyCustomerSiteSwitch(opts) {
+    const pv = previewCustomerSiteSwitch(opts);
+    if (!pv.ok) return pv;
+    const who = activeUser() || {};
+    const today = todayISO();
+    const posts = [];
+    const regRow = (window.MFG_GEO && typeof window.MFG_GEO.ensureRegionInSeed === 'function')
+      ? window.MFG_GEO.ensureRegionInSeed(pv.region, SEED, STATE)
+      : null;
+    if (!regRow) return { ok: false, code: 'region_unknown', reason: `"${pv.region}" could not be added as a Region.` };
+    if (!pv.regionExists) posts.push(['regions', Object.assign({}, regRow)]);
+    let row = siteInfo(pv.newSite);
+    if (row) {
+      const sameArea = norm(row.split_from) === norm(pv.oldSite);
+      const prevMoved = Array.isArray(row.split_customers) ? row.split_customers.slice() : [];
+      const merged = sameArea ? prevMoved.slice() : [];
+      pv.customers.forEach(c => { if (!merged.some(x => norm(x) === norm(c))) merged.push(c); });
+      row.split_customers = merged;
+      row.split_returned = (sameArea && Array.isArray(row.split_returned))
+        ? row.split_returned.filter(c => !merged.some(x => norm(x) === norm(c)))
+        : [];
+      if (!sameArea || !row.split_at) row.split_at = today;
+      // Each customer keeps the day it was moved: pay up to that day stays as the area site paid it
+      const dates = (sameArea && row.split_dates && typeof row.split_dates === 'object') ? Object.assign({}, row.split_dates) : {};
+      const already = new Set((sameArea && Array.isArray(prevMoved) ? prevMoved : []).map(c => norm(c)));
+      pv.customers.forEach(c => { if (!already.has(norm(c)) || !dates[norm(c)]) dates[norm(c)] = today; });
+      row.split_dates = dates;
+      if (!sameArea || !row.split_pay_regions) row.split_pay_regions = _areaSitePayRegions(pv.oldSite);
+      row.split_from = pv.oldSite;
+      if (!row.customer) row.customer = pv.customers[0];
+      if (!row.region) { row.region = pv.region; row.geo_zone = pv.region; }
+    } else {
+      row = {
+        id: uid('si'),
+        name: pv.newSite,
+        company: '',
+        date: today,
+        rep_date: today,
+        site_category: 'customer',
+        region: pv.region,
+        geo_zone: pv.region,
+        supplier: '',
+        customer: pv.customers[0],
+        includes_transport: false,
+        haulage_mode: 'separate',
+        latitude: null,
+        longitude: null,
+        is_jv: false,
+        jv_partner: '',
+        jv_share: 0,
+        jv_company: '',
+        notes: `Own site of ${pv.customers[0]}, moved out of the shared area site ${pv.oldSite} on ${today}.`,
+        source: 'app',
+        entered_by: who.full_name || 'Admin',
+        entered_by_email: who.email || '',
+        entered_at: new Date().toISOString(),
+        voided: false,
+        split_from: pv.oldSite,
+        split_customers: pv.customers.slice(),
+        split_returned: [],
+        split_at: today,
+        split_dates: pv.customers.reduce((acc, c) => { acc[norm(c)] = today; return acc; }, {}),
+        split_pay_regions: _areaSitePayRegions(pv.oldSite)
+      };
+    }
+    _areaSitePersistSite(row, posts);
+    _areaSiteCommit(posts);
+    return Object.assign({}, pv, { site: row });
+  }
+
+  // Puts the listed customers (or all of them) back on the area site. The site record stays, and
+  // remembers who went back (split_returned) so rows saved on it since then go back too.
+  function undoCustomerSiteSwitch(siteName, customers) {
+    if (!(canMoveCustomerSite())) return { ok: false, code: 'rights', reason: 'Your seat cannot move records between sites.' };
+    const row = siteInfo(siteName);
+    if (!_areaSiteHasSplit(row) || !_areaSiteIsMfgRow(row)) return { ok: false, code: 'undo_none', reason: 'Nothing was moved to this site.' };
+    const drop = Array.isArray(customers) && customers.length ? new Set(customers.map(c => norm(c))) : null;
+    const before = row.split_customers.slice();
+    const goingBack = drop ? before.filter(c => drop.has(norm(c))) : before;
+    if (!goingBack.length) return { ok: false, code: 'undo_none', reason: 'Nothing was moved to this site.' };
+    // Same boundary as the move itself: a seat cannot send back records of an entity it cannot access
+    const backSet = new Set(goingBack.map(c => norm(c)));
+    const allowed = new Set(allowedCompanyNames().map(c => norm(c)));
+    const childN = norm(row.name);
+    const seenIds = new Set();
+    let hiddenRows = 0;
+    ['sales_tickets', 'price_rules'].forEach(tk => {
+      [(STATE.customRecords && STATE.customRecords[tk]) || [], (SEED.records && SEED.records[tk]) || []].forEach(arr => {
+        arr.forEach(r => {
+          if (!r || r.voided || !r.site || !r.company || !_areaSiteIsMfgRow(r)) return;
+          const rid = r.id ? `${tk}:${r.id}` : '';
+          if (rid) { if (seenIds.has(rid)) return; seenIds.add(rid); }
+          if (norm(r.site) !== childN || !backSet.has(norm(r.customer))) return;
+          if (!allowed.has(norm(r.company))) hiddenRows += 1;
+        });
+      });
+    });
+    if (hiddenRows > 0) {
+      return { ok: false, code: 'rights_hidden', reason: `This move also touches ${hiddenRows} record${hiddenRows === 1 ? '' : 's'} of an entity outside your access. Ask an Owner to run it.` };
+    }
+    row.split_customers = before.filter(c => !backSet.has(norm(c)));
+    const returned = Array.isArray(row.split_returned) ? row.split_returned.slice() : [];
+    goingBack.forEach(c => { if (!returned.some(x => norm(x) === norm(c))) returned.push(c); });
+    row.split_returned = returned;
+    const posts = [];
+    _areaSitePersistSite(row, posts);
+    _areaSiteCommit(posts);
+    return { ok: true, site: row, oldSite: row.split_from, returned: goingBack };
+  }
+
+  // Marks a flagged site as one real place (several buyers on one project), or clears that mark
+  function setAreaSiteSinglePlace(siteName, isSingle) {
+    if (!(canMoveCustomerSite())) return { ok: false, code: 'rights', reason: 'Your seat cannot move records between sites.' };
+    const row = siteInfo(siteName);
+    if (!row || !_areaSiteIsMfgRow(row)) return { ok: false, code: 'site_missing', reason: 'Site not found.' };
+    if (isSingle) row.area_check = 'single';
+    else row.area_check = '';
+    const posts = [];
+    _areaSitePersistSite(row, posts);
+    _areaSiteCommit(posts);
+    return { ok: true, site: row };
+  }
+
+  // Read-time re-pointing. Runs after every custom-record overlay, over the loaded rows and the saved
+  // overlay copies alike (lookups read both stores, overlay first). Three cases per row:
+  //   1. it sits on an area site and its customer was moved: it goes to the customer's own site and is
+  //      marked (_split_from_site / _split_to), so it can be put back;
+  //   2. it carries a mark whose move no longer stands (undone, site voided): it goes back;
+  //   3. it was saved on the own site without a mark (edited or entered there) and the customer has
+  //      since been put back (site.split_returned): it goes back to the area site too.
+  // A row whose site a person changed to something else afterwards loses its mark and is left alone.
+  // Pay never reads these marks: evalOtTicket works from the site record.
+  function applySiteCustomerSplits() {
+    const recs = SEED && SEED.records;
+    if (!recs || !Array.isArray(recs.sites)) return 0;
+    const byOld = new Map();
+    const backTo = new Map();
+    recs.sites.forEach(s => {
+      if (!s || s.voided || !s.name || !s.split_from || !_areaSiteIsMfgRow(s)) return;
+      const oldN = norm(s.split_from);
+      if (!oldN || oldN === norm(s.name)) return;
+      const movedKeys = new Set();
+      (Array.isArray(s.split_customers) ? s.split_customers : []).forEach(c => {
+        const ck = norm(c);
+        if (!ck) return;
+        movedKeys.add(ck);
+        if (!byOld.has(oldN)) byOld.set(oldN, new Map());
+        const m = byOld.get(oldN);
+        if (!m.has(ck)) m.set(ck, s.name);
+      });
+      const backKeys = new Set();
+      (Array.isArray(s.split_returned) ? s.split_returned : []).forEach(c => {
+        const ck = norm(c);
+        if (ck && !movedKeys.has(ck)) backKeys.add(ck);
+      });
+      if (backKeys.size) backTo.set(norm(s.name), { from: String(s.split_from).trim(), names: backKeys });
+    });
+    // A voided own site (it is no longer in the loaded list) sends every customer it ever held back,
+    // so no row is left on a site name that no longer exists
+    ((STATE && STATE.customRecords && STATE.customRecords.sites) || []).forEach(s => {
+      if (!s || !s.voided || !s.name || !s.split_from || !_areaSiteIsMfgRow(s)) return;
+      const k = norm(s.name);
+      if (!k || k === norm(s.split_from) || backTo.has(k) || recs.sites.some(x => x && !x.voided && norm(x.name) === k)) return;
+      const names = new Set();
+      [s.split_customers, s.split_returned].forEach(list => (Array.isArray(list) ? list : []).forEach(c => { const ck = norm(c); if (ck) names.add(ck); }));
+      if (names.size) backTo.set(k, { from: String(s.split_from).trim(), names });
+    });
+    // Nothing to move and nothing to put back. A saved overlay copy can still carry a mark from a move
+    // that was undone on another device or before a reload, so those short lists are always looked at.
+    const idle = !byOld.size && !backTo.size && !SEED._siteSplitMarks;
+    if (idle && !['sales_tickets', 'price_rules'].some(tk =>
+      ((STATE && STATE.customRecords && STATE.customRecords[tk]) || []).some(r => r && r._split_from_site != null))) return 0;
+    const normCache = new Map();
+    const nrm = v => {
+      let k = normCache.get(v);
+      if (k === undefined) { k = norm(v); normCache.set(v, k); }
+      return k;
+    };
+    const clearMark = r => { delete r._split_from_site; delete r._split_to; delete r._split_at; };
+    let changed = 0;
+    let marks = 0;
+    ['sales_tickets', 'price_rules'].forEach(tk => {
+      let tblChanged = false;
+      [recs[tk], STATE && STATE.customRecords && STATE.customRecords[tk]].forEach(arr => {
+        if (!Array.isArray(arr)) return;
+        for (let i = 0; i < arr.length; i++) {
+          const r = arr[i];
+          if (!r || typeof r !== 'object' || !_areaSiteIsMfgRow(r)) continue;
+          const cur = r.site;
+          let src = cur;
+          let markValid = false;
+          if (r._split_from_site != null) {
+            if (r._split_to && cur && nrm(cur) === nrm(r._split_to)) { src = r._split_from_site; markValid = true; }
+            else clearMark(r);
+          }
+          if (!src) continue;
+          const ck = r.customer ? nrm(r.customer) : '';
+          const m = byOld.size ? byOld.get(nrm(src)) : null;
+          const to = (m && ck) ? m.get(ck) : null;
+          if (to) {
+            if (cur !== to) { r.site = to; changed += 1; tblChanged = true; }
+            r._split_from_site = src;
+            r._split_to = to;
+            delete r._split_at;
+            marks += 1;
+          } else if (markValid) {
+            r.site = src;
+            clearMark(r);
+            changed += 1;
+            tblChanged = true;
+          } else if (backTo.size && ck) {
+            const b = backTo.get(nrm(cur));
+            if (b && b.names.has(ck)) {
+              // Back to the area site, or straight on to the own site the customer was moved to since
+              const m2 = byOld.size ? byOld.get(nrm(b.from)) : null;
+              const to2 = m2 ? m2.get(ck) : null;
+              if (to2) { r.site = to2; r._split_from_site = b.from; r._split_to = to2; marks += 1; }
+              else r.site = b.from;
+              changed += 1;
+              tblChanged = true;
+            }
+          }
+        }
+      });
+      if (tblChanged) {
+        if (!SEED._tableRev) SEED._tableRev = {};
+        SEED._tableRev[tk] = (SEED._tableRev[tk] || 0) + 1;
+      }
+    });
+    SEED._siteSplitMarks = marks;
+    if (changed > 0) _filterRecordsWeakCache = new WeakMap();
+    return changed;
+  }
+  if (typeof window !== 'undefined') {
+    window.MFG_AREA_SITE = {
+      customerKey: areaSiteCustomerKey,
+      getIndex: getAreaSiteIndex,
+      describe: describeAreaSite,
+      suggest: suggestCustomerSiteSwitch,
+      preview: previewCustomerSiteSwitch,
+      apply: applyCustomerSiteSwitch,
+      undo: undoCustomerSiteSwitch,
+      setSinglePlace: setAreaSiteSinglePlace,
+      applySplits: applySiteCustomerSplits
+    };
   }
 
   function syncSiteJvPartnershipRecords(siteRow, extraApiPosts) {
@@ -35611,10 +36241,27 @@
     // Pre-index driver night-trip overtime ([Staff Overtime T]) & site allowance activity dates
     const siteToReg = new Map();
     const siteRegLabel = new Map();
+    // A customer's own site that was moved out of a shared area site: where it came from, and when
+    const siteSplitOf = new Map();
     (recs.sites || []).forEach(st => {
       if (st && st.name && st.region) {
         siteToReg.set(norm(st.name), norm(st.region));
         siteRegLabel.set(norm(st.name), st.region);
+      }
+      if (st && !st.voided && st.name && st.split_from && /^\d{4}-\d{2}-\d{2}/.test(String(st.split_at || ''))
+        && !st._multiIndustrySeed && (!st._industry || st._industry === 'Manufacturing') && norm(st.split_from) !== norm(st.name)) {
+        // One move date per customer (split_dates); a record without it dates its listed customers by split_at
+        const dates = new Map();
+        const sAt = String(st.split_at).slice(0, 10);
+        (Array.isArray(st.split_customers) ? st.split_customers : []).forEach(c => { const ck = norm(c); if (ck) dates.set(ck, sAt); });
+        if (st.split_dates && typeof st.split_dates === 'object') {
+          Object.keys(st.split_dates).forEach(ck => { const dv = String(st.split_dates[ck] || '').slice(0, 10); if (/^\d{4}-\d{2}-\d{2}$/.test(dv)) dates.set(norm(ck), dv); });
+        }
+        siteSplitOf.set(norm(st.name), {
+          from: norm(st.split_from),
+          dates,
+          payRegions: (st.split_pay_regions && typeof st.split_pay_regions === 'object') ? st.split_pay_regions : null
+        });
       }
     });
     const otRulesByCoReg = new Map();
@@ -35758,16 +36405,40 @@
       const repShiftDate = hasCustomRep ? ((hr >= 18) ? shiftIsoPlus1(repDate) : repDate) : shiftDate;
       const coMk = coN === 'bbconstruction' ? 'bbconstruction' : (coN === 'lions transport' ? 'lionstransport' : 'wtc');
       const coSiteRegs = (SEED.models && SEED.models[coMk] && SEED.models[coMk].site_regions) || null;
-      const siteN = t.site ? norm(t.site) : '';
+      let siteN = t.site ? norm(t.site) : '';
       const isIntSale = Boolean(isSale && t.is_internal_sale);
-      const regN = (isIntSale || !siteN || siteN === 'excluded')
+      const rateDate = isSale ? repDate : (hasCustomRep ? repDate : shiftDate);
+      const regOfSite = sN => ((isIntSale || !sN || sN === 'excluded')
         ? 'excluded'
-        : ((coSiteRegs && Object.prototype.hasOwnProperty.call(coSiteRegs, siteN))
-            ? (coSiteRegs[siteN] || '')
-            : (siteToReg.get(siteN) || ''));
+        : ((coSiteRegs && Object.prototype.hasOwnProperty.call(coSiteRegs, sN))
+            ? (coSiteRegs[sN] || '')
+            : (siteToReg.get(sN) || '')));
+      let regN = regOfSite(siteN);
+      // A customer moved out of a shared area site to its own site (site.split_from, one date per
+      // customer in split_dates) is paid as the area site was: for every load dated up to the day of its
+      // move, and after it whenever its new Region has no night rate of its own in force on that date.
+      // So the move never changes pay, and no rate is copied. The rule reads the site record only, never
+      // a mark on the ticket, and only for the customers that were moved.
+      const moved = (isSale && !isIntSale && siteN) ? siteSplitOf.get(siteN) : null;
+      const movedAt = moved ? moved.dates.get(norm(t.customer)) : '';
+      if (movedAt) {
+        const ownRules = regN ? otRulesByCoReg.get(`${coN}|${regN}`) : null;
+        const ownRateInForce = Boolean(ownRules && ownRules.some(x => x.start <= rateDate && rateDate <= x.end && x.rate > 0));
+        if (rateDate <= movedAt || !ownRateInForce) {
+          siteN = moved.from;
+          // The area's Region is read live while the area site still resolves, so a later correction of
+          // that Region reprices moved and unmoved customers alike; the Region stored at move time
+          // (split_pay_regions) is used only once the area site no longer resolves.
+          const areaResolves = Boolean((coSiteRegs && Object.prototype.hasOwnProperty.call(coSiteRegs, siteN)) || siteToReg.has(siteN));
+          regN = areaResolves
+            ? regOfSite(siteN)
+            : ((moved.payRegions && Object.prototype.hasOwnProperty.call(moved.payRegions, coN))
+              ? String(moved.payRegions[coN] || '')
+              : '');
+        }
+      }
       if (!regN) return null;
       const regLabel = regN === 'excluded' ? 'Default / Unmapped' : ((siteN && siteRegLabel.get(siteN)) || titleWords(regN));
-      const rateDate = isSale ? repDate : (hasCustomRep ? repDate : shiftDate);
       const rules = otRulesByCoReg.get(`${coN}|${regN}`);
       if (!rules || !rules.length) return null;
       let rate = 0;
@@ -83379,6 +84050,201 @@
     return { supplier, before, amount, disc, payableLeg, dupHit };
   }
 
+  // ---- Area-as-site notice + "Move to Own Site" panel on the Price Agreement form ----
+  const _AREA_SWITCH_ERR = {
+    industry: 'Site switches apply to Manufacturing delivery sites only.',
+    rights: 'Your seat cannot move records between sites.',
+    rights_hidden: 'This move also touches records of an entity outside your access. Ask an Owner to run it.',
+    undo_none: 'Nothing was moved to this site.',
+    site_missing: 'Site not found.',
+    old_site: 'This site cannot be split.',
+    customers_none: 'Pick the customer to move.',
+    customers_moved: 'That customer was already moved to another site.',
+    new_site_blank: 'New Site Name is required.',
+    new_site_same: 'The new site needs a different name from the area.',
+    new_site_taken: 'That site cannot take this customer.',
+    region_blank: 'Region is required.',
+    region_unknown: 'That Region is not on the map yet. Pick an existing Region.',
+    region_mismatch: 'That site already belongs to another Region.',
+    region_place: 'That site name belongs to a place in another Region. Pick that Region or change the name.'
+  };
+  function _areaSwitchPanelInputs() {
+    const panel = $('prAreaSwitchPanel');
+    if (!panel) return null;
+    const siteEl = panel.querySelector('[data-area-inp="site"]');
+    const regEl = panel.querySelector('[data-area-inp="region"]');
+    const also = Array.from(panel.querySelectorAll('input[data-area-also]')).filter(el => el.checked).map(el => el.getAttribute('data-area-also') || '');
+    return {
+      oldSite: panel.getAttribute('data-area-old') || '',
+      customer: panel.getAttribute('data-area-cust') || '',
+      newSite: siteEl ? String(siteEl.value || '').trim() : '',
+      region: regEl ? String(regEl.value || '').trim() : '',
+      also
+    };
+  }
+  function refreshAreaSwitchPreview() {
+    const box = $('prAreaPreview');
+    const inp = _areaSwitchPanelInputs();
+    if (!box || !inp) return null;
+    const pv = previewCustomerSiteSwitch({ oldSite: inp.oldSite, newSite: inp.newSite, region: inp.region, customers: [inp.customer].concat(inp.also) });
+    const applyBtn = document.querySelector('#prAreaSwitchPanel [data-area-switch-apply]');
+    if (applyBtn) applyBtn.disabled = !pv.ok;
+    if (!pv.ok) {
+      box.innerHTML = `<div class="pr-area-err" data-area-err="${esc(pv.code || '')}">${esc(_AREA_SWITCH_ERR[pv.code] || pv.reason || 'This move cannot run.')}</div>`;
+      return pv;
+    }
+    const lines = [];
+    lines.push(`<div class="pr-area-line"><span>Price agreements moved:</span> <b>${pv.rules}</b> <span class="pr-area-sep">·</span> <span>Loads moved:</span> <b>${pv.tickets}</b>${pv.firstDate ? ` <small class="mono">${esc(fmtDateDMY(pv.firstDate))} - ${esc(fmtDateDMY(pv.lastDate))}</small>` : ''}</div>`);
+    lines.push(`<div class="pr-area-line"><span>Area site</span> <b>${esc(pv.oldSite)}</b> <span class="pr-area-sep">·</span> <span>New site</span> <b>${esc(pv.newSite)}</b> <span class="pr-area-sep">·</span> <span>Region</span> <b>${esc(pv.region)}</b></div>`);
+    lines.push(`<div class="pr-area-line is-ok"><span>No price, quantity or total changes.</span></div>`);
+    pv.payNotes.forEach(n => {
+      if (n.mode === 'follow') {
+        lines.push(`<div class="pr-area-line"><b>${esc(n.company)}</b> <span>night trip pay stays the same. It keeps following the rate of Region</span> <b>${esc(n.fromRegion)}</b> <span>until Region</span> <b>${esc(n.toRegion)}</b> <span>gets its own rate.</span></div>`);
+      } else if (n.mode === 'own') {
+        lines.push(`<div class="pr-area-line is-warn"><b>${esc(n.company)}</b> <span>night trip pay: loads up to today keep the pay they had. Later loads follow the rate of Region</span> <b>${esc(n.toRegion)}</b> <small class="mono">${esc(fmtUSD(n.newRate, 2))}${Math.abs(n.newRate - n.oldRate) > 0.004 ? ' / ' + esc(fmtUSD(n.oldRate, 2)) : ''}</small></div>`);
+      }
+    });
+    if (pv.siteWideRules > 0) {
+      lines.push(`<div class="pr-area-line is-warn"><b>${pv.siteWideRules}</b> <span>agreements on the area site have no customer and stay there.</span></div>`);
+    }
+    if (pv.siteExists) lines.push(`<div class="pr-area-line"><span>This site already exists. The customer is added to it.</span></div>`);
+    if (!pv.regionExists) lines.push(`<div class="pr-area-line"><span>This Region is new. It is added from the map boundary.</span></div>`);
+    box.innerHTML = lines.join('');
+    return pv;
+  }
+  function renderPriceRuleAreaSiteStrip(siteName, customerName) {
+    const wrap = $('prAreaSiteWrap');
+    if (!wrap) return;
+    const hide = () => {
+      if (!wrap.hidden || wrap.innerHTML) { wrap.hidden = true; wrap.innerHTML = ''; }
+      FORM_UI.areaSwitch = null;
+    };
+    if (!siteName || getActiveIndustry() !== 'Manufacturing') { hide(); return; }
+    const e = describeAreaSite(siteName);
+    if (!e || !e.flagged) { hide(); return; }
+    const ui = FORM_UI.areaSwitch || (FORM_UI.areaSwitch = {});
+    const cust = String(customerName || '').trim();
+    const canSwitch = canMoveCustomerSite();
+    const key = [e.key, norm(cust), e.customerCount, e.customers.size, ui.open ? 1 : 0, canSwitch ? 1 : 0, SEED._customRev || 0].join('|');
+    if (ui.key === key && !wrap.hidden) {
+      // Same notice: never rebuild under a person typing in the panel, only refresh the figures
+      if (ui.open) refreshAreaSwitchPreview();
+      return;
+    }
+    ui.key = key;
+    const sug = suggestCustomerSiteSwitch(e.name, cust);
+    let panelHtml = '';
+    if (ui.open && canSwitch && cust) {
+      const chips = sug.others.slice(0, 24).map(o => `
+        <label class="pr-area-chip${o.same ? ' is-same' : ''}">
+          <input type="checkbox" class="pr-area-inp" data-area-also="${esc(o.name)}"${o.same ? ' checked' : ''}>
+          <span class="pr-area-chip-name">${esc(o.name)}</span>
+          <small class="mono">${o.loads}</small>
+        </label>`).join('');
+      panelHtml = `
+        <div class="pr-area-panel" id="prAreaSwitchPanel" data-area-old="${esc(e.name)}" data-area-cust="${esc(cust)}">
+          <div class="pr-area-grid">
+            <label class="pr-area-fld"><span class="pa-fld-lbl">New Site Name</span>
+              <input type="text" class="pr-area-inp" data-area-inp="site" value="${esc(sug.newSite)}" autocomplete="off"></label>
+            <label class="pr-area-fld"><span class="pa-fld-lbl">Region</span>
+              <input type="text" class="pr-area-inp" data-area-inp="region" list="dl_pr_regions" value="${esc(sug.region)}" autocomplete="off"></label>
+          </div>
+          ${chips ? `<div class="pr-area-others"><span class="pa-fld-lbl">Same customer under another name? Tick it to move it too.</span><div class="pr-area-chips">${chips}</div></div>` : ''}
+          <div class="pr-area-preview" id="prAreaPreview" aria-live="polite"></div>
+          <div class="pr-area-actions">
+            <button type="button" class="btn btn-primary" data-area-switch-apply="1">Move Now</button>
+            <button type="button" class="btn" data-area-switch-cancel="1">Cancel</button>
+          </div>
+        </div>`;
+    }
+    const actionHtml = !canSwitch
+      ? ''
+      : (cust
+          ? (ui.open ? '' : `<button type="button" class="btn btn-sm site-rule-add-btn is-brass pr-area-open-btn" data-area-switch-open="1">Move to Own Site</button>`)
+          : `<span class="pr-area-hint">Pick the customer to move it to its own site.</span>`);
+    wrap.hidden = false;
+    wrap.innerHTML = `
+      <div class="pr-area-strip" id="prAreaSiteStrip" data-area-site="${esc(e.name)}" data-area-count="${e.customerCount}">
+        <div class="pr-area-head">
+          <span class="pr-area-ic">${ic('pin')}</span>
+          <div class="pr-area-msg"><b>${esc(e.name)}</b> <span>looks like an area, not one place.</span> <b>${e.customerCount}</b> <span>customers take deliveries there.</span></div>
+          ${actionHtml}
+        </div>
+        ${panelHtml}
+      </div>`;
+    if (ui.open) refreshAreaSwitchPreview();
+  }
+  function runAreaSwitchFromPanel() {
+    const inp = _areaSwitchPanelInputs();
+    if (!inp) return null;
+    const cleanBefore = !isEntryModalDirty();
+    const res = applyCustomerSiteSwitch({ oldSite: inp.oldSite, newSite: inp.newSite, region: inp.region, customers: [inp.customer].concat(inp.also) });
+    if (!res.ok) {
+      toast(_AREA_SWITCH_ERR[res.code] || res.reason || 'This move cannot run.', 'err');
+      refreshAreaSwitchPreview();
+      return res;
+    }
+    FORM_UI.areaSwitch = null;
+    // The open agreement now sits on the new site: show it, and do not count that as an unsaved edit
+    const siteEl = $('f_site');
+    if (siteEl && norm(siteEl.value) === norm(res.oldSite)) {
+      siteEl.value = res.newSite;
+      if (siteEl.dataset && siteEl.dataset.initVal !== undefined) siteEl.dataset.initVal = res.newSite;
+    }
+    const edit = STATE.editingRecord;
+    if (edit && edit.crKey === 'price_rules' && edit.orig && norm(edit.orig.site) === norm(res.oldSite)
+      && res.customers.some(c => norm(c) === norm(edit.orig.customer))) {
+      edit.orig.site = res.newSite;
+    }
+    FORM_UI.lastSite = '';
+    FORM_UI.lastCustomer = '';
+    recalcForm();
+    if (cleanBefore) {
+      FORM_UI.initialModalSig = getEntryModalStateSignature();
+      FORM_UI.userInteracted = false;
+    }
+    toast(`✓ Moved to Own Site: ${res.newSite}`);
+    return res;
+  }
+  // Banner inside the Site form's Related Price Agreements panel
+  function renderAreaSiteBannerHtml(siteName) {
+    if (!siteName || getActiveIndustry() !== 'Manufacturing') return '';
+    const canSwitch = canMoveCustomerSite();
+    const sObj = siteInfo(siteName);
+    if (_areaSiteHasSplit(sObj)) {
+      const armed = Boolean(FORM_UI.areaUndoArmed);
+      return `
+        <div class="pr-area-strip site-area-banner is-child" data-area-site="${esc(sObj.name)}">
+          <div class="pr-area-head">
+            <span class="pr-area-ic">${ic('pin')}</span>
+            <div class="pr-area-msg"><span>Moved here from the area site</span> <b>${esc(sObj.split_from)}</b><span>:</span> <b>${esc(sObj.split_customers.join(', '))}</b></div>
+            ${canSwitch ? `<button type="button" class="btn btn-sm${armed ? ' pr-area-undo-armed' : ''}" data-area-undo="1">${armed ? 'Confirm Move Back' : 'Move Back'}</button>` : ''}
+          </div>
+        </div>`;
+    }
+    const e = describeAreaSite(siteName);
+    if (!e) return '';
+    if (e.dismissed && e.customerCount >= 2) {
+      return `
+        <div class="pr-area-strip site-area-banner is-quiet" data-area-site="${esc(e.name)}">
+          <div class="pr-area-head">
+            <span class="pr-area-ic">${ic('check')}</span>
+            <div class="pr-area-msg"><span>Marked as one place.</span> <b>${e.customerCount}</b> <span>customers take deliveries here.</span></div>
+            ${canSwitch ? `<button type="button" class="btn btn-sm" data-area-single="0">Check Again</button>` : ''}
+          </div>
+        </div>`;
+    }
+    if (!e.flagged) return '';
+    return `
+      <div class="pr-area-strip site-area-banner" data-area-site="${esc(e.name)}" data-area-count="${e.customerCount}">
+        <div class="pr-area-head">
+          <span class="pr-area-ic">${ic('pin')}</span>
+          <div class="pr-area-msg"><b>Probably a Region.</b> <b>${e.customerCount}</b> <span>customers take deliveries here.</span> <span>Open a customer's price agreement below to move it to its own site.</span></div>
+          ${canSwitch ? `<button type="button" class="btn btn-sm" data-area-single="1">This Is One Place</button>` : ''}
+        </div>
+      </div>`;
+  }
+
   function renderSitePriceAgreementsSubgrid(siteName, origSiteName, siteRow, isEditingSite) {
     const wrapEl = $('sitePriceAgreementsWrap');
     if (!wrapEl) return;
@@ -83563,6 +84429,7 @@
     wrapEl.hidden = false;
     wrapEl.innerHTML = `
       <div class="pa-subgrid site-rules-subgrid" id="sitePriceAgreementsPanel" data-site-rules-total="${totalCnt}" data-site-rules-active="${activeCnt}">
+        ${renderAreaSiteBannerHtml(cleanOrig || cleanSite)}
         <div class="site-rules-toolbar">
           <div class="site-rules-head-left">
             <div class="site-rules-title-row">
@@ -84917,6 +85784,7 @@
             $('f_site_region').value = '';
           }
         }
+        renderPriceRuleAreaSiteStrip((showSite && showCustomer && !isRawDomain) ? val('f_site') : '', val('f_customer'));
         if (!FORM_UI.hydrating && prProduct !== FORM_UI.lastProduct) {
           FORM_UI.lastProduct = prProduct;
           const pInfo = productInfo(prProduct);
@@ -89509,6 +90377,7 @@
     FORM_UI.convPrimarySide = ''; FORM_UI.convRateFromAmounts = false;
     FORM_UI.openLoanTab = ''; FORM_UI.lastLoanCp = ''; FORM_UI.openLoanSearch = '';
     FORM_UI.siteRuleTab = 'all'; FORM_UI.siteRuleSearch = ''; FORM_UI.siteRulesAllEntities = false;
+    FORM_UI.areaSwitch = null; FORM_UI.areaUndoArmed = false;
     FORM_UI.malfCatScope = 'all'; FORM_UI.lastMalfItem = val('f_malf_item'); FORM_UI.lastMalfCo = val('f_company'); FORM_UI.malfUomManual = false;
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
       window.MFG_GEO.cleanupTicketOriginMiniMap();
@@ -90155,6 +91024,40 @@
           recalcForm();
           return;
         }
+        const areaBtn = ev.target && ev.target.closest
+          ? ev.target.closest('[data-area-switch-open], [data-area-switch-cancel], [data-area-switch-apply], [data-area-single], [data-area-undo]')
+          : null;
+        if (areaBtn) {
+          ev.preventDefault();
+          const areaHost = areaBtn.closest('[data-area-site]');
+          const areaSiteName = areaHost ? (areaHost.getAttribute('data-area-site') || '') : '';
+          if (areaBtn.hasAttribute('data-area-switch-open')) {
+            FORM_UI.areaSwitch = { open: true, key: '' };
+            recalcForm();
+          } else if (areaBtn.hasAttribute('data-area-switch-cancel')) {
+            FORM_UI.areaSwitch = { open: false, key: '' };
+            recalcForm();
+          } else if (areaBtn.hasAttribute('data-area-switch-apply')) {
+            runAreaSwitchFromPanel();
+          } else if (areaBtn.hasAttribute('data-area-single')) {
+            const asSingle = areaBtn.getAttribute('data-area-single') === '1';
+            const sRes = setAreaSiteSinglePlace(areaSiteName, asSingle);
+            if (sRes.ok) toast(asSingle ? `✓ Marked as One Place: ${areaSiteName}` : `✓ Checked Again: ${areaSiteName}`);
+            else toast(_AREA_SWITCH_ERR[sRes.code] || sRes.reason, 'err');
+            recalcForm();
+          } else if (areaBtn.hasAttribute('data-area-undo')) {
+            if (!FORM_UI.areaUndoArmed) {
+              FORM_UI.areaUndoArmed = true;
+            } else {
+              FORM_UI.areaUndoArmed = false;
+              const uRes = undoCustomerSiteSwitch(areaSiteName);
+              if (uRes.ok) toast(`✓ Moved Back: ${uRes.oldSite}`);
+              else toast(_AREA_SWITCH_ERR[uRes.code] || uRes.reason, 'err');
+            }
+            recalcForm();
+          }
+          return;
+        }
         const siteRuleTabBtn = ev.target && ev.target.closest ? ev.target.closest('[data-site-rule-tab]') : null;
         if (siteRuleTabBtn) {
           ev.preventDefault();
@@ -90262,7 +91165,12 @@
         } else if (ev.target && ev.target.id === 'siteRulesSearchInput') {
           FORM_UI.siteRuleSearch = ev.target.value || '';
           recalcForm();
+        } else if (ev.target && ev.target.classList && ev.target.classList.contains('pr-area-inp')) {
+          refreshAreaSwitchPreview();
         }
+      });
+      body.addEventListener('change', ev => {
+        if (ev.target && ev.target.classList && ev.target.classList.contains('pr-area-inp')) refreshAreaSwitchPreview();
       });
     }
 
@@ -95172,6 +96080,20 @@
     const archMap = SEED_VOIDED_ARCHIVE[crKey];
     const archivedSeed = archMap && (archMap.get(q) || (r && archMap.get(String(r.id))));
     const candRestore = r || archivedSeed;
+    // Restoring an own site that was voided while it still listed moved customers (a void made on an
+    // older version) must not run the move again by itself: they are recorded as moved back
+    if (crKey === 'sites') {
+      [r, archivedSeed].forEach(sr => {
+        // Only a row that is actually voided (or held in the voided archive) is reset; a stale Undo on a
+        // live own site must never move its customers back behind Move Back's checks
+        if (sr && sr === r && !r.voided) return;
+        if (!sr || !sr.split_from || !Array.isArray(sr.split_customers) || !sr.split_customers.length) return;
+        const back = Array.isArray(sr.split_returned) ? sr.split_returned.slice() : [];
+        sr.split_customers.forEach(c => { if (!back.some(x => norm(x) === norm(c))) back.push(c); });
+        sr.split_returned = back;
+        sr.split_customers = [];
+      });
+    }
     const candRestoreProbe = candRestore ? Object.assign({}, candRestore, { voided: false }) : null;
     if (candRestoreProbe && isEffectiveSeriesTable(crKey, candRestoreProbe) && candRestoreProbe.start_date) {
       const cStart = String(candRestoreProbe.start_date).slice(0, 10);
@@ -95294,6 +96216,22 @@
     const seedList = (SEED.records && SEED.records[crKey]) || [];
     const seedRow = seedList.find(matchRow);
     if (!r && !seedRow) { toast('Record not found', 'err'); return; }
+    // A customer's own site that still holds moved customers: voiding it would send their records back
+    // without the checks Move Back makes (rights, other entities). Move them back first.
+    if (crKey === 'sites' && _areaSiteHasSplit(seedRow || r) && _areaSiteIsMfgRow(seedRow || r)) {
+      toast('Move its customers back to the area site before voiding this site.', 'err');
+      return;
+    }
+    // An area that customers' own sites came out of: voiding it would leave their pay and Move Back
+    // pointing at a site that no longer exists. Move them back first.
+    if (crKey === 'sites' && _areaSiteIsMfgRow(seedRow || r)) {
+      const areaN = norm((seedRow || r).name);
+      const holdsOwnSites = Boolean(areaN) && seedList.some(s => s && !s.voided && _areaSiteHasSplit(s) && _areaSiteIsMfgRow(s) && norm(s.split_from) === areaN);
+      if (holdsOwnSites) {
+        toast('Customers were moved out of this area to their own sites. Move them back before voiding it.', 'err');
+        return;
+      }
+    }
     if (!UNIVERSAL_MAIN_SPEC[crKey] && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
       const targetRow = r || seedRow;
       const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(
@@ -96079,9 +97017,9 @@
           if (!t || !t.closest) return;
           if (t.closest('.modal-foot')) return;
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
-          if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
+          if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.classList.contains('pr-area-inp') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft]')) return;
+            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], .pr-area-strip')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -105182,6 +106120,7 @@
     enrichGlobalRateTables({ quiet: true });
     syncAllStaffCurrentFromLogs();
     applyUserEquipmentWindowsToTickets();
+    applySiteCustomerSplits();
     if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
       window.MFG_GEO.hydrateSeedGeo(SEED);
     }
@@ -132459,6 +133398,7 @@
     window.__getInspectorTableKeys = () => Object.keys(INSPECT_LABELS);
     window.__voidRecord = (crKey, id) => voidRecord(crKey, id);
     window.__restoreVoidedRecord = (crKey, id) => restoreVoidedRecord(crKey, id);
+    window.__cascadeSiteRename = (oldName, newName) => cascadeSiteRename(oldName, newName, [], 'Manufacturing');
     window.__getCustomRecords = () => STATE.customRecords;
     window.__mergeCustomRecords = incoming => mergeCustomRecords(incoming);
     window.__cloudPayload = () => cloudPayload();
