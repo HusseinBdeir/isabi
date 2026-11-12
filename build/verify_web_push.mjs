@@ -19,7 +19,7 @@ import { onRequest } from '../functions/app/api/[[route]].js';
 import { signEdgeSession } from '../functions/_lib/security.js';
 import {
   b64uDecode, b64uEncode, buildOverridePushPayload, encryptAes128gcm, isAllowedPushEndpoint,
-  readVapidEnv, topicForRequest, vapidAuthorization, vapidReady
+  readVapidEnv, sendOverrideRequestPush, topicForRequest, vapidAuthorization, vapidReady
 } from '../functions/_lib/web_push.js';
 
 // ---- minimal D1 stand-in (same binding rules as build/verify_phase5_api.mjs; batch is one transaction) ----
@@ -348,6 +348,19 @@ console.log('\n[4] subscribe / unsubscribe');
   ok('the owning seat deletes its row', r.json.removed === 1 && subCount('endpoint = ?', good[0]) === 0, r.json);
   r = await api('push/unsubscribe', { method: 'POST', as: 't-owner1', body: { endpoint: 'https://evil.example.com/x' } });
   ok('NEGATIVE: unsubscribe also checks the allowlist', r.status === 400, r.json);
+  // The key the device subscribed with must be the current one; a renewed subscription inherits the language.
+  const kx = newUaKeys();
+  const kxKeys = { p256dh: b64uEncode(kx.pub), auth: b64uEncode(kx.auth) };
+  r = await api('push/subscribe', { method: 'POST', as: 't-sup-wtc', body: { endpoint: good[2], keys: kxKeys, server_key: mintVapid().VAPID_PUBLIC_KEY } });
+  ok('NEGATIVE: a subscription made with an older server key -> 409, not stored', r.status === 409 && r.json.stale_key === true && subCount('endpoint = ?', good[2]) === 0, r.json);
+  r = await api('push/subscribe', { method: 'POST', as: 't-sup-wtc', body: { endpoint: good[2], keys: kxKeys, server_key: V1.VAPID_PUBLIC_KEY, lang: 'ar' } });
+  ok('a subscription made with the current key is stored', r.status === 200 && r.json.stored === true && subCount('endpoint = ?', good[2]) === 1, r.json);
+  r = await api('push/subscribe', { method: 'POST', as: 't-sup-wtc', body: { endpoint: good[3], keys: kxKeys, replaces: good[2] } });
+  ok('a renewed subscription (replaces, no language) keeps the language and drops the old row',
+    r.status === 200 && subCount('endpoint = ?', good[2]) === 0 && d1.one('SELECT lang FROM push_subscriptions WHERE endpoint = ?', good[3]).lang === 'ar', r.json);
+  r = await api('push/subscribe', { method: 'POST', as: 't-owner1', body: { endpoint: good[4], keys: kxKeys, replaces: good[3] } });
+  ok('NEGATIVE: replaces never removes another seat\'s row', subCount('endpoint = ?', good[3]) === 1 && d1.one('SELECT lang FROM push_subscriptions WHERE endpoint = ?', good[4]).lang === 'en', r.json);
+  d1.exec(`DELETE FROM push_subscriptions WHERE endpoint IN ('${good[3]}', '${good[4]}')`);
   for (let i = 0; i < 12; i++) await subscribe('t-cap', { n: i });
   ok('per-seat cap keeps the 10 newest devices', subCount('user_id = ?', 't-cap') === 10, subCount('user_id = ?', 't-cap'));
   d1.exec("DELETE FROM push_subscriptions WHERE user_id = 't-cap'");
@@ -490,6 +503,27 @@ console.log('\n[5c] closing notifications');
   await api('auth/override-requests', { as: 't-sup-wtc', query: '?status=pending' });
   await settle();
   ok('an approver\'s inbox poll also closes expired requests', calls.length > 0 && d1.one('SELECT status FROM override_requests WHERE id = ?', re.id).status === 'expired');
+}
+
+console.log('\n[5c2] a request closed before its push went out, and the time budget');
+{
+  const deps = {
+    isEligible: (ap, caller, r) => ap && /owner|supervisor/i.test(ap.role) && ap.id !== r.caller_user_id && ap.status !== 'Suspended',
+    loadUserRowById: async (id) => d1.one('SELECT * FROM users WHERE id = ?', id) || null
+  };
+  d1.exec("UPDATE override_requests SET status = 'cancelled' WHERE status = 'pending'");
+  const r = await api('auth/override-requests', { method: 'POST', as: 't-entry-wtc', body: BASE });
+  await settle();
+  const row = d1.one('SELECT * FROM override_requests WHERE id = ?', r.json.request.id);
+  d1.db.prepare("UPDATE override_requests SET status = 'cancelled' WHERE id = ?").run(row.id);
+  calls = [];
+  const res = await sendOverrideRequestPush(env, row, 'new', deps);
+  const kinds = calls.map(c => JSON.parse(decryptPush(c.body, devices[c.url].ua).text));
+  ok('a "new" job that finds the request already withdrawn sends the close instead (no fresh banner after the close)',
+    res.sent > 0 && kinds.length > 0 && kinds.every(p => p.kind === 'apv_closed' && p.status === 'cancelled') && calls.every(c => c.headers.Urgency === 'normal'), kinds.map(p => p.kind));
+  calls = [];
+  const res2 = await sendOverrideRequestPush(env, Object.assign({}, row, { status: 'pending' }), 'closed', Object.assign({ budgetMs: -1 }, deps));
+  ok('past the time budget no new batch starts (the rest are counted as skipped)', calls.length === 0 && res2.attempted === 0 && res2.skipped > 0, res2);
 }
 
 console.log('\n[5d] payload builder fallbacks');

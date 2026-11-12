@@ -147,8 +147,10 @@ async function main() {
 
   const keys = await mintKeyPair();
   const values = { VAPID_PRIVATE_KEY: keys.privateKey, VAPID_PUBLIC_KEY: keys.publicKey, VAPID_SUBJECT: SUBJECT };
-  // Public key and subject first, private key last: a run that stops half way leaves the private key unset,
-  // so the server stays switched off (it needs all three) and the next run is not refused.
+  // Public key and subject first, private key last. A first run that stops half way leaves the private key
+  // unset, so the server stays off (it needs all three) and the next run is not refused. A --rotate run that
+  // stops half way leaves the new public key with the old private key: the server's pair check then keeps
+  // notifications off until --rotate is run again to the end.
   for (const n of ['VAPID_PUBLIC_KEY', 'VAPID_SUBJECT', 'VAPID_PRIVATE_KEY']) {
     const r = runWrangler(['pages', 'secret', 'put', n, `--project-name=${project}`], values[n]);
     if (r.code !== 0) {

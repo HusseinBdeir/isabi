@@ -169,6 +169,7 @@ const SESSION_MAX_AGE_MS = 14 * 86400000; // the Edge session lifetime (signEdge
 const SEND_CAP = 50;
 const SEND_TIMEOUT_MS = 8000;
 const PUSH_TTL_SEC = 600; // requests expire after 10 minutes
+const JOB_BUDGET_MS = 18000; // stop starting new batches after this (waitUntil work has about 30 s)
 
 /** Only real push services, over https on 443, with no credentials in the URL. */
 export function isAllowedPushEndpoint(raw) {
@@ -282,10 +283,31 @@ export async function handlePushApi(request, env, session, body, subPath) {
   if (!as || as.length !== 16 || auth.length > 40) {
     return jsonResponse({ ok: false, error: 'The device secret is not valid.' }, 400);
   }
+  // The key the device actually subscribed with: a subscription made under an older key would be refused by
+  // the push service, so it is not stored as if it were current (the client then subscribes again).
+  const serverKey = String((body && body.server_key) || '').trim();
+  if (serverKey) {
+    const sk = b64uDecode(serverKey);
+    if (!sk || b64uEncode(sk) !== cfg.publicKey) {
+      return jsonResponse({ ok: false, stale_key: true, error: 'This device subscribed with an older key.' }, 409);
+    }
+  }
   await ensurePushSchema(db);
   const nowIso = new Date().toISOString();
   const id = 'ps-' + (await sha256Hex(endpoint)).slice(0, 32);
-  const lang = normLang(body && body.lang);
+  // Language: as sent; otherwise kept from this device's row, or from the row it replaces (the browser renewed
+  // the subscription in the background, where the language is not known).
+  let lang = (body && typeof body.lang === 'string' && body.lang.trim()) ? normLang(body.lang) : '';
+  const replaces = String((body && body.replaces) || '').trim();
+  const ownLang = async (ep) => {
+    if (!ep || !isAllowedPushEndpoint(ep)) return '';
+    const r = await db.prepare('SELECT lang FROM push_subscriptions WHERE endpoint = ?1 AND user_id = ?2 LIMIT 1').bind(ep, me).first();
+    return r ? normLang(r.lang) : '';
+  };
+  if (!lang) lang = (await ownLang(endpoint)) || (await ownLang(replaces)) || 'en';
+  if (replaces && replaces !== endpoint && isAllowedPushEndpoint(replaces)) {
+    await db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?1 AND user_id = ?2').bind(replaces, me).run();
+  }
   const fp = await keyFingerprint(cfg.publicKey);
   const sid = String(session.sid || '').slice(0, 120);
   // One row per endpoint: the seat signed in on the device now owns it (a shared device follows its last seat).
@@ -417,7 +439,7 @@ export async function postWebPush(endpoint, bodyBytes, { authorization, ttl, urg
  * request to every eligible approver's devices. deps:
  *   isEligible(approverRow, callerRow, reqRow) -> boolean   (the Approvals Inbox rule from d1_store.js)
  *   loadUserRowById(id) -> users row | null
- *   fetchImpl (tests), nowMs (tests)
+ *   fetchImpl, nowMs, budgetMs (tests only)
  * Never throws. Returns { sent, removed, skipped } for the gate.
  */
 export async function sendOverrideRequestPush(env, reqRow, kind, deps = {}) {
@@ -495,9 +517,28 @@ export async function sendOverrideRequestPush(env, reqRow, kind, deps = {}) {
       return badgeFor.get(k);
     };
 
+    // Rows that cannot be delivered (old key, signed out) go first, whatever happens to the sends below.
+    const staleIds = Array.from(new Set(stale));
+    if (staleIds.length) {
+      await db.batch(staleIds.map(id => db.prepare('DELETE FROM push_subscriptions WHERE id = ?1').bind(id)));
+      out.removed += staleIds.length;
+    }
+
+    // A request answered or withdrawn while this job was starting must not raise a fresh "Approval needed"
+    // banner after its close: send the close instead (same tag, so it replaces whatever the device shows).
+    let sendRow = reqRow;
+    let sendKind = kind;
+    if (kind === 'new') {
+      try {
+        const cur = await db.prepare('SELECT status FROM override_requests WHERE id = ?1 LIMIT 1').bind(reqRow.id).first();
+        const st = cur ? String(cur.status || '') : 'cancelled';
+        if (st !== 'pending') { sendKind = 'closed'; sendRow = Object.assign({}, reqRow, { status: st }); }
+      } catch (_) { /* keep 'new' */ }
+    }
+
     const topic = await topicForRequest(reqRow.id);
     const expMs = Date.parse(String(reqRow.expires_at || ''));
-    const ttl = kind === 'new'
+    const ttl = sendKind === 'new'
       ? Math.max(30, Math.min(PUSH_TTL_SEC, Number.isFinite(expMs) ? Math.floor((expMs - nowMs) / 1000) : PUSH_TTL_SEC))
       : PUSH_TTL_SEC;
     const authCache = new Map();
@@ -507,45 +548,44 @@ export async function sendOverrideRequestPush(env, reqRow, kind, deps = {}) {
       return authCache.get(origin);
     };
 
-    const results = [];
+    // Batches of 10 in parallel, results written after each batch, and no new batch once the job has used its
+    // time budget (background work after a response is limited; a hanging push service must not starve it).
+    const startedAt = Date.now();
     for (let i = 0; i < recipients.length; i += 10) {
+      if (Date.now() - startedAt > (Number.isFinite(deps.budgetMs) ? deps.budgetMs : JOB_BUDGET_MS)) { out.skipped += recipients.length - i; break; }
       const chunk = recipients.slice(i, i + 10);
-      results.push(...await Promise.all(chunk.map(async ({ s, ap }) => {
+      const results = await Promise.all(chunk.map(async ({ s, ap }) => {
         out.attempted++;
         let status = 0;
         try {
-          const payload = buildOverridePushPayload(reqRow, kind, s.lang, await badge(ap));
+          const payload = buildOverridePushPayload(sendRow, sendKind, s.lang, await badge(ap));
           const bodyBytes = await encryptAes128gcm(s.p256dh, s.auth, JSON.stringify(payload));
           status = await postWebPush(s.endpoint, bodyBytes, {
             authorization: await authFor(s.endpoint),
             ttl,
-            urgency: kind === 'new' ? 'high' : 'normal',
+            urgency: sendKind === 'new' ? 'high' : 'normal',
             topic,
             fetchImpl: deps.fetchImpl
           });
         } catch (_) { status = 0; }
         return { s, status };
-      })));
-    }
-
-    const stmts = [];
-    for (const { s, status } of results) {
-      if (status === 404 || status === 410) {
-        stale.push(s.id); // the device unsubscribed or the subscription expired
-      } else if (status >= 200 && status < 300) {
-        out.sent++;
-        stmts.push(db.prepare('UPDATE push_subscriptions SET last_sent_at = ?2, last_status = ?3, fail_count = 0 WHERE id = ?1').bind(s.id, nowIso, status));
-      } else {
-        stmts.push(db.prepare('UPDATE push_subscriptions SET last_status = ?2, fail_count = COALESCE(fail_count, 0) + 1 WHERE id = ?1').bind(s.id, status));
+      }));
+      const stmts = [];
+      for (const { s, status } of results) {
+        if (status === 404 || status === 410) {
+          stmts.push(db.prepare('DELETE FROM push_subscriptions WHERE id = ?1').bind(s.id)); // unsubscribed or expired
+          out.removed++;
+        } else if (status >= 200 && status < 300) {
+          out.sent++;
+          stmts.push(db.prepare('UPDATE push_subscriptions SET last_sent_at = ?2, last_status = ?3, fail_count = 0 WHERE id = ?1').bind(s.id, nowIso, status));
+        } else {
+          stmts.push(db.prepare('UPDATE push_subscriptions SET last_status = ?2, fail_count = COALESCE(fail_count, 0) + 1 WHERE id = ?1').bind(s.id, status));
+        }
       }
+      // A subscription refused 5 times in a row (bad key, revoked) is dropped.
+      stmts.push(db.prepare('DELETE FROM push_subscriptions WHERE fail_count >= 5'));
+      await db.batch(stmts);
     }
-    for (const id of Array.from(new Set(stale))) {
-      stmts.push(db.prepare('DELETE FROM push_subscriptions WHERE id = ?1').bind(id));
-      out.removed++;
-    }
-    // A subscription refused 5 times in a row (bad key, revoked) is dropped.
-    stmts.push(db.prepare('DELETE FROM push_subscriptions WHERE fail_count >= 5'));
-    if (stmts.length) await db.batch(stmts);
   } catch (_) {
     // Notifications are best effort: the request itself already succeeded.
   }
