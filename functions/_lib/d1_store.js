@@ -530,12 +530,16 @@ async function recordAuthFailure(db, ipHash, emailRaw) {
   }
 }
 
-async function clearAuthFailure(db, ipHash, emailRaw, clearFace = false) {
+// opts.face: also clear the face-only key (a sign-in that verified a face);
+// opts.keepIp: leave the office-wide IP key alone (a face-without-PIN sign-in must not reset PIN-guess throttling).
+async function clearAuthFailure(db, ipHash, emailRaw, opts = {}) {
   if (!db || !ipHash) return;
   const emailClean = String(emailRaw || '').trim().toLowerCase();
-  const keys = [`rl:lock_ip:${ipHash}`];
-  if (clearFace) keys.push(`rl:lock_face:${ipHash}`);
+  const keys = [];
+  if (!opts.keepIp) keys.push(`rl:lock_ip:${ipHash}`);
+  if (opts.face) keys.push(`rl:lock_face:${ipHash}`);
   if (emailClean) keys.push(`rl:lock_em_ip:${ipHash}:${emailClean}`);
+  if (!keys.length) return;
   try {
     const ph = keys.map((_, i) => `?${i + 1}`).join(',');
     await db.prepare(`DELETE FROM edge_kv_store WHERE doc_key IN (${ph})`).bind(...keys).run();
@@ -602,10 +606,13 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   const faceDesc = body && body.face_descriptor;
   const isFaceMethod = /^face\s*id/i.test(method);
   const ipHash = await hashClientIp(request);
-  // Anonymous Face ID alone (no email, no PIN, not a step-up or verify): misses count on the face key only.
-  const isFaceProbe = Boolean(isFaceMethod && !email && !pin && !(body && (body.verify_only === true || body.step_up === true)));
+  // Face ID without a PIN (not a step-up or verify), with or without an email: misses count on the
+  // face-only key, so faces at a sign-in screen can never lock PIN sign-in for the office IP.
+  const isFaceNoPin = Boolean(isFaceMethod && !pin && !(body && (body.verify_only === true || body.step_up === true)));
+  // ...and with no email either (anonymous probe): the answer never says which seat matched or why it was refused.
+  const isFaceProbe = Boolean(isFaceNoPin && !email);
 
-  const lockState = await checkAuthLockout(env.DB, ipHash, email, isFaceProbe);
+  const lockState = await checkAuthLockout(env.DB, ipHash, email, isFaceNoPin);
   if (lockState.locked) {
     return jsonResponse({
       ok: false,
@@ -617,7 +624,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
 
   let row = null;
   const failAuth = async (errMsg, status = 401) => {
-    const res = isFaceProbe
+    const res = isFaceNoPin
       ? await recordFaceProbeFailure(env.DB, ipHash)
       : await recordAuthFailure(env.DB, ipHash, email || (row && row.email) || '');
     if (isFaceProbe && !res.throttled) {
@@ -748,19 +755,9 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
       verifiedFaceDist = Number(targetDist.toFixed(4));
       if (needsTwoFactor && (!isVerifyOnly || isStepUp)) {
         if (!pin) {
-          if (!callerSess) {
-            const rl = isFaceProbe
-              ? await recordFaceProbeFailure(env.DB, ipHash)
-              : await recordAuthFailure(env.DB, ipHash, email || row.email || '');
-            if (rl.throttled) {
-              return jsonResponse({
-                ok: false,
-                rate_limited: true,
-                retry_after_sec: rl.retryAfterSec,
-                error: `Too many failed sign-in attempts. Please wait ${Math.max(1, Math.ceil(rl.retryAfterSec / 60))} minute(s).`
-              }, 429, { 'Retry-After': String(rl.retryAfterSec) });
-            }
-          }
+          // The face itself was verified above, so this is not a failed attempt: nothing is counted
+          // (a `both` seat signing in face-first must never build up a lock). The PIN step that follows
+          // is counted as usual.
           const pinReqOut = {
             ok: false,
             two_factor_pin_required: true,
@@ -873,7 +870,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
       ).bind(sessId, row.id, row.email, row.full_name, row.role, row.companies, device, nowIso, method, confidence, ipHash)
     ]),
-    clearAuthFailure(env.DB, ipHash, row.email, isFaceProbe)
+    clearAuthFailure(env.DB, ipHash, row.email, { face: verifiedFaceDist !== null, keepIp: isFaceNoPin })
   ]);
 
   const isHttps = new URL(request.url).protocol === 'https:';

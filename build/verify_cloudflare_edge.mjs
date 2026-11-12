@@ -2187,6 +2187,38 @@ finally:
       pin: '2947',
       method: 'PIN'
     }, { 'CF-Connecting-IP': '198.51.100.92' });
+    // (d) same with an email but no PIN (the sign-in box pre-fills the last seat): still face-key only.
+    let probeEmailLockStatus = 0;
+    for (let k = 0; k < 6; k++) {
+      const pr = await httpReq('POST', '/app/api/auth/login', {
+        email: 'edge28face@bhfirms.com',
+        method: 'Face ID',
+        face_descriptor: vec28Imposter
+      }, { 'CF-Connecting-IP': '198.51.100.94' });
+      probeEmailLockStatus = pr.status;
+    }
+    const pinAfterEmailFaceLockRes = await httpReq('POST', '/app/api/auth/login', {
+      email: 'edge28pinonly@bhfirms.com',
+      pin: '2947',
+      method: 'PIN'
+    }, { 'CF-Connecting-IP': '198.51.100.94' });
+    // (e) a verified `both` face is never counted as a failure: six face-first checks in a row from one IP
+    // all ask for the PIN (never 429), and the PIN step then signs in.
+    const bothFaceFirstStatuses = [];
+    for (let k = 0; k < 6; k++) {
+      const p1 = await httpReq('POST', '/app/api/auth/login', {
+        method: 'Face ID',
+        face_descriptor: vec28Both
+      }, { 'CF-Connecting-IP': '198.51.100.95' });
+      bothFaceFirstStatuses.push(`${p1.status}${p1.json?.two_factor_pin_required ? 'p' : ''}`);
+    }
+    const bothPinStep = await httpReq('POST', '/app/api/auth/login', {
+      email: 'edge28both@bhfirms.com',
+      pin: '8249',
+      method: 'Face ID + PIN 2FA',
+      face_descriptor: vec28Both
+    }, { 'CF-Connecting-IP': '198.51.100.95' });
+    bothFaceFirstStatuses.push(`pin:${bothPinStep.status}`);
 
     consoleErrors.length = 0;
     await sendCdp('Network.clearBrowserCookies');
@@ -2417,8 +2449,9 @@ finally:
         sixDigitActiveEmail = (st6 && st6.activeEmail) || '';
       }
 
-      // Face ID or PIN, never both (owner decision 2026-11-12): sign out, clear both boxes, then a live
-      // Face ID alone (no email, no PIN) signs the enrolled seat in through the server.
+      // Face ID or PIN, never both (owner decision 2026-11-12): sign out, leave ANOTHER seat's email in the
+      // box (the sign-in screen pre-fills the last seat) and no PIN, then a live Face ID alone signs the
+      // person in front of the camera in through the server.
       let fNoCreds = null;
       let stAfterNoCreds = null;
       let noCredsSignedOut = false;
@@ -2429,7 +2462,7 @@ finally:
         noCredsSignedOut = !window.MFG_FACE_TEST.state().authed;
         const em2 = document.getElementById('authEmailInput');
         const pin2 = document.getElementById('authPinInput');
-        if (em2) { em2.value = ''; em2.dispatchEvent(new Event('input', { bubbles: true })); }
+        if (em2) { em2.value = 'edge28inherit@bhfirms.com'; em2.dispatchEvent(new Event('input', { bubbles: true })); }
         if (pin2) { pin2.value = ''; pin2.dispatchEvent(new Event('input', { bubbles: true })); }
         await new Promise(r => setTimeout(r, 820));
         window.MFG_FACE_TEST.resetLiveness();
@@ -2527,6 +2560,9 @@ finally:
       !probePinOnlyRes.json?.token &&
       probeLockStatus === 429 &&
       pinAfterFaceLockRes.status === 200 &&
+      probeEmailLockStatus === 429 &&
+      pinAfterEmailFaceLockRes.status === 200 &&
+      bothFaceFirstStatuses.join(',') === '401p,401p,401p,401p,401p,401p,pin:200' &&
       e28Flow?.bootOk === true &&
       e28Flow.stBoot?.authed === false &&
       e28Flow.stBoot?.enrolledSeats?.length === 0 &&
@@ -2589,7 +2625,10 @@ finally:
           both: [probeBothRes.status, probeBothRes.json, Boolean(probeBothRes.headers['set-cookie'])],
           pinOnly: [probePinOnlyRes.status, probePinOnlyRes.json],
           lock: probeLockStatus,
-          pinAfterLock: [pinAfterFaceLockRes.status, pinAfterFaceLockRes.json?.error]
+          pinAfterLock: [pinAfterFaceLockRes.status, pinAfterFaceLockRes.json?.error],
+          emailLock: probeEmailLockStatus,
+          pinAfterEmailLock: [pinAfterEmailFaceLockRes.status, pinAfterEmailFaceLockRes.json?.error],
+          bothFaceFirst: bothFaceFirstStatuses
         },
         e28Flow
       }));
