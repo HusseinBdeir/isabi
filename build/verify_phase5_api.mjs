@@ -189,6 +189,8 @@ console.log('\n[override requests] decide');
   ok('NEGATIVE: cross-company Supervisor cannot approve (404)', r.status === 404 && auditCount() === before, r);
   r = await ovr('t-sup-wtc', { op: 'decide', id: reqA.id, decision: 'maybe' });
   ok('NEGATIVE: bad decision value -> 400', r.status === 400, r);
+  r = await ovr('t-sup-bbc', { op: 'decide', id: reqA.id, decision: 'maybe' });
+  ok('NEGATIVE: ineligible seat with a bad decision still gets 404 (no oracle)', r.status === 404, r);
   r = await ovr('t-sup-wtc', { op: 'decide', id: reqA.id, decision: 'approve', note: 'ok ' + 'n'.repeat(400) });
   const dec = r.json && r.json.request;
   ok('eligible Supervisor approves', r.status === 200 && dec && dec.status === 'approved' && dec.decided_by && dec.decided_by.user_id === 't-sup-wtc'
@@ -423,6 +425,17 @@ console.log('\n[saved views]');
   ok('NEGATIVE: the 201st view on a seat -> 400', r.status === 400 && /200/.test(r.json.error), r.json);
   r = await sv('t-view-a', { op: 'save', table_key: 'tbl_new', name: 'seat A unaffected', payload: {} });
   ok('limits are per seat (seat A can still save)', r.status === 200, r.json);
+
+  for (let i = 0; i < 29; i++) await sv('t-view-a', { op: 'save', table_key: 'race_tbl', name: `r${i}`, payload: {} });
+  const race = await Promise.all([1, 2, 3].map(i => sv('t-view-a', { op: 'save', table_key: 'race_tbl', name: `race${i}`, payload: {} })));
+  ok('concurrent saves at 29 views: exactly one wins, the table stops at 30',
+    race.filter(x => x.status === 200).length === 1 && d1.one("SELECT COUNT(*) AS n FROM saved_views WHERE user_id = 't-view-a' AND table_key = 'race_tbl'").n === 30,
+    race.map(x => x.status));
+  const movable = r.json.view.id;   // seat A's view on tbl_new
+  r = await sv('t-view-a', { op: 'save', id: movable, table_key: 'race_tbl', name: 'move into full', payload: {} });
+  ok('NEGATIVE: moving a view into a full table -> 400', r.status === 400 && d1.one('SELECT table_key FROM saved_views WHERE id = ?', movable).table_key === 'tbl_new', r.json);
+  r = await sv('t-view-a', { op: 'save', id: movable, table_key: 'tbl_other', name: 'moved', payload: { m: 1 } });
+  ok('moving a view to a table with room works', r.status === 200 && r.json.view.table_key === 'tbl_other' && r.json.view.payload.m === 1, r.json);
 }
 
 console.log('\n[general]');

@@ -1402,16 +1402,17 @@ export async function handleOverrideRequests(request, env, session, body, url) {
       return jsonResponse({ ok: true, request: publicOverrideRequest(fresh || row, nowIso) });
     }
 
+    // Visibility first, then input validation, so a seat that cannot see the request learns nothing about it.
+    if (isCaller) {
+      return jsonResponse({ ok: false, error: 'You cannot decide your own request. Another approver must answer it.' }, 403);
+    }
+    const ap = await loadUserRowById(db, me);
+    if (!isEligibleOverrideApprover(ap, row, await callerRowFor(row.caller_user_id))) return notFound();
     const decision = String((body && body.decision) || '').trim().toLowerCase();
     if (decision !== 'approve' && decision !== 'deny') {
       return jsonResponse({ ok: false, error: "decision must be 'approve' or 'deny'." }, 400);
     }
     const note = String((body && body.note) || '').trim().slice(0, 200);
-    const ap = await loadUserRowById(db, me);
-    if (isCaller) {
-      return jsonResponse({ ok: false, error: 'You cannot decide your own request. Another approver must answer it.' }, 403);
-    }
-    if (!isEligibleOverrideApprover(ap, row, await callerRowFor(row.caller_user_id))) return notFound();
 
     const apId = String(ap.id || '');
     const apEmail = String(ap.email || '');
@@ -1547,27 +1548,34 @@ export async function handleSavedViews(request, env, session, body) {
       existing = await loadOwn(id.slice(0, 80));
       if (!existing) return notFound();
     }
-    if (!existing || existing.table_key !== tableKey) {
-      const perTable = await db.prepare('SELECT COUNT(*) AS n FROM saved_views WHERE user_id = ?1 AND table_key = ?2').bind(me, tableKey).first();
-      if (Number((perTable && perTable.n) || 0) >= SAVED_VIEW_MAX_PER_TABLE) {
-        return jsonResponse({ ok: false, error: `You can keep at most ${SAVED_VIEW_MAX_PER_TABLE} saved views per table. Delete one first.` }, 400);
-      }
-    }
+    const perTableErr = () => jsonResponse({ ok: false, error: `You can keep at most ${SAVED_VIEW_MAX_PER_TABLE} saved views per table. Delete one first.` }, 400);
+    const perSeatErr = () => jsonResponse({ ok: false, error: `You can keep at most ${SAVED_VIEW_MAX_PER_SEAT} saved views in total. Delete one first.` }, 400);
+    const countTable = async () => Number(((await db.prepare('SELECT COUNT(*) AS n FROM saved_views WHERE user_id = ?1 AND table_key = ?2').bind(me, tableKey).first()) || {}).n || 0);
     if (!existing) {
-      const perSeat = await db.prepare('SELECT COUNT(*) AS n FROM saved_views WHERE user_id = ?1').bind(me).first();
-      if (Number((perSeat && perSeat.n) || 0) >= SAVED_VIEW_MAX_PER_SEAT) {
-        return jsonResponse({ ok: false, error: `You can keep at most ${SAVED_VIEW_MAX_PER_SEAT} saved views in total. Delete one first.` }, 400);
-      }
+      // Both caps are enforced inside the INSERT so concurrent saves cannot overshoot them.
       const newId = `sv-${Date.now()}-${randHex8()}`;
-      await db.prepare(
+      const ins = await db.prepare(
         `INSERT INTO saved_views (id, user_id, table_key, name, payload_json, use_count, last_used_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, 0, '', ?6, ?6)`
-      ).bind(newId, me, tableKey, name, payloadJson, nowIso).run();
+         SELECT ?1, ?2, ?3, ?4, ?5, 0, '', ?6, ?6
+         WHERE (SELECT COUNT(*) FROM saved_views WHERE user_id = ?2 AND table_key = ?3) < ?7
+           AND (SELECT COUNT(*) FROM saved_views WHERE user_id = ?2) < ?8`
+      ).bind(newId, me, tableKey, name, payloadJson, nowIso, SAVED_VIEW_MAX_PER_TABLE, SAVED_VIEW_MAX_PER_SEAT).run();
+      if (!ins || !ins.meta || Number(ins.meta.changes || 0) < 1) {
+        return (await countTable()) >= SAVED_VIEW_MAX_PER_TABLE ? perTableErr() : perSeatErr();
+      }
       return jsonResponse({ ok: true, view: publicSavedView(await loadOwn(newId)) });
     }
-    await db.prepare(
-      'UPDATE saved_views SET table_key = ?3, name = ?4, payload_json = ?5, updated_at = ?6 WHERE id = ?1 AND user_id = ?2'
-    ).bind(existing.id, me, tableKey, name, payloadJson, nowIso).run();
+    if (existing.table_key !== tableKey) {
+      const upd = await db.prepare(
+        `UPDATE saved_views SET table_key = ?3, name = ?4, payload_json = ?5, updated_at = ?6 WHERE id = ?1 AND user_id = ?2
+           AND (SELECT COUNT(*) FROM saved_views WHERE user_id = ?2 AND table_key = ?3) < ?7`
+      ).bind(existing.id, me, tableKey, name, payloadJson, nowIso, SAVED_VIEW_MAX_PER_TABLE).run();
+      if (!upd || !upd.meta || Number(upd.meta.changes || 0) < 1) return perTableErr();
+    } else {
+      await db.prepare(
+        'UPDATE saved_views SET name = ?3, payload_json = ?4, updated_at = ?5 WHERE id = ?1 AND user_id = ?2'
+      ).bind(existing.id, me, name, payloadJson, nowIso).run();
+    }
     return jsonResponse({ ok: true, view: publicSavedView(await loadOwn(existing.id)) });
   }
 
