@@ -208,14 +208,7 @@ def main():
     else:
         sync_command_app()
 
-    # Sync OneDrive mirror if present
-    mirror_dir = os.path.join(os.path.expanduser('~'), 'OneDrive - BHFIRMS', 'System', 'System', 'ISABI', 'Website')
-    if os.path.isdir(mirror_dir):
-        import shutil
-        for mf in ('index.html', '404.html', f'{INDEXNOW_KEY}.txt', 'CNAME', 'robots.txt', 'sitemap.xml', 'sw.js', 'manifest.json', 'og-image.png', 'favicon.ico', 'favicon-dark.ico', 'icon.svg', 'icon-dark.svg', 'icon-maskable.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'):
-            msrc = os.path.join(ROOT, mf)
-            if os.path.exists(msrc):
-                shutil.copy2(msrc, os.path.join(mirror_dir, mf))
+    # The OneDrive Website\ mirror was retired 2026-11-13: GitHub + Cloudflare Pages hold the site.
 
     print(f"OK: Generated {OUT_HTML} ({len(full_html):,} bytes, JS syntax verified, 0 em-dashes/arrows)")
 

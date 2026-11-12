@@ -1,5 +1,5 @@
 # Renders LinkedIn Company Page brand assets (Palette C1: Light Gallery-Alabaster recommended + Dark Espresso variant)
-# Outputs upload-ready PNGs into OneDrive - BHFIRMS\System\System\ISABI\Brand\linkedin\
+# Outputs upload-ready PNGs into ~\bhfirms\memory\ISABI\Brand\linkedin\ (Cloudflare memory vault; left OneDrive 2026-11-13)
 import os
 import shutil
 import subprocess
@@ -13,7 +13,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EDGE = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 OUT_DIR = os.path.join(
     os.path.expanduser('~'),
-    'OneDrive - BHFIRMS', 'System', 'System', 'ISABI', 'Brand', 'linkedin'
+    'bhfirms', 'memory', 'ISABI', 'Brand', 'linkedin'
 )
 
 LOGO_LIGHT_HTML = """<!doctype html>
