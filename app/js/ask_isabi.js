@@ -3171,7 +3171,13 @@
           if (ths.length >= 2 && tableHeaders.length < 3) {
             const firstRow = tbl.querySelector('tbody tr');
             const sample = firstRow
-              ? Array.from(firstRow.querySelectorAll('td')).slice(0, 3).map(td => cleanOut(td.textContent)).filter(Boolean).join(' · ')
+              ? Array.from(firstRow.querySelectorAll('td')).slice(0, 3).map(td => {
+                  // Leave out the Related Agreement count pill so "MEM-001" is not read as "MEM-0013".
+                  if (!td.querySelector('.ind-agr-pill')) return cleanOut(td.textContent);
+                  const c = td.cloneNode(true);
+                  c.querySelectorAll('.ind-agr-pill').forEach(n => n.remove());
+                  return cleanOut(c.textContent);
+                }).filter(Boolean).join(' · ')
               : '';
             tableHeaders.push({ cols: ths.slice(0, 8), sample });
           }

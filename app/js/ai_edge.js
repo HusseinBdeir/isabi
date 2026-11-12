@@ -5920,7 +5920,694 @@
     }
   }
 
+  // ==================== DRAFT AGREEMENT ROWS FROM A QUOTE (hard rule 15) ====================
+  // A signed contractor quote (PDF or photo) or a pasted WhatsApp quote becomes draft agreement rows
+  // (item, unit, rate, second rate, Effective From) for a person to check and post one by one in the
+  // normal agreement form. Pasted text is read on the device first with fixed rules; ISABI AI is asked
+  // only when those rules find no priced line or the quote is a file. Nothing here writes a record.
+  const QUOTE_UNIT_RULES = [
+    { unit: 'm³', rx: /^(?:m3|m³|m\^3|cbm|cubic\s*met(?:er|re)s?|m(?:è|e)tres?\s*cubes?|متر(?!\s*(?:ال)?(?:مربع|طولي))|م3|م³)/i },
+    { unit: 'Ton', rx: /^(?:tons?|tonnes?|t|mt|طن)(?![a-z])/i },
+    { unit: 'Truck', rx: /^(?:trucks?|loads?|trips?|camions?|voyages?|نقلة|شاحنة|رحلة)/i },
+    { unit: 'Night', rx: /^(?:nights?|nightly|nuits?|ليلة)/i },
+    { unit: 'Day', rx: /^(?:days?|daily|jours?|journ(?:é|e)e|يوم)/i },
+    { unit: 'Season', rx: /^(?:seasons?|seasonal|saisons?|موسم)/i },
+    { unit: 'Month', rx: /^(?:months?|monthly|mois|mensuel|شهر)/i },
+    { unit: 'Quarter', rx: /^(?:quarters?|quarterly|trimestres?|trimestriel|فصل|ربع)/i },
+    { unit: 'Year', rx: /^(?:years?|yearly|annual(?:ly)?|annuel|annum|an|yrs?|p\.a\.?|سنة|سنوي)(?![a-z])/i }
+  ];
+  const QUOTE_MONTHS = {
+    jan: 1, janv: 1, january: 1, janvier: 1, feb: 2, fev: 2, 'fév': 2, february: 2, fevrier: 2, 'février': 2,
+    mar: 3, mars: 3, march: 3, apr: 4, avr: 4, april: 4, avril: 4, may: 5, mai: 5, jun: 6, june: 6, juin: 6,
+    jul: 7, july: 7, juil: 7, juillet: 7, aug: 8, august: 8, aout: 8, 'août': 8, sep: 9, sept: 9, september: 9, septembre: 9,
+    oct: 10, october: 10, octobre: 10, nov: 11, november: 11, novembre: 11, dec: 12, december: 12, 'déc': 12, decembre: 12, 'décembre': 12
+  };
+  // Totals and taxes are not price lines and are skipped quietly. Contact, bank, date and reference labels are
+  // skipped too, but a priced line that starts with one is listed under "Lines not read" so nothing priced
+  // vanishes. A label counts only when ":", "#", a number, "+" or the end of the line follows it, so
+  // "Mobile crane 450$", "Tax-free gravel 12$" or "Date palm seedlings 12$" are read as items.
+  const QUOTE_TOTAL_LINE_RX = /^\s*(?:[-*•·>]+\s*|\d{1,2}[.)]\s*)?(?:(?:total|sub-?total|grand\s*total|vat|tva|t\.v\.a\.?|tax(?:es)?|balance|deposit\s+paid)(?![a-z\-])\s*[:#.]?\s*(?:[\d$+(%]|usd|lbp|ll\b|l\.l|$)|المجموع|مجموع|ضريبة|الضريبة)/i;
+  const QUOTE_LABEL_LINE_RX = /^\s*(?:[-*•·>]+\s*|\d{1,2}[.)]\s*)?(?:tel|phone|mob(?:ile)?|fax|whatsapp|email|e-mail|date|ref|invoice|iban|account|swift|quote\s*(?:no|#|number))(?![a-z\-])\s*[:#.]?\s*(?:[\d+@]|$)/i;
+  // Kept for callers that only need "is this a skipped line".
+  const QUOTE_SKIP_LINE_RX = { test: s => QUOTE_TOTAL_LINE_RX.test(s) || QUOTE_LABEL_LINE_RX.test(s) };
+  const QUOTE_RATE2_HINT_RX = /(?:transport|haulage|delivery|freight|livraison|nightly|night|nuit|deposit|caution|cost|co(?:û|u)t|renewal|renouvellement|نقل|توصيل|ليلة|تأمين|كلفة|تجديد)/i;
+  const QUOTE_EFF_LABEL_RX = /(?:effective(?:\s*(?:date|from|as of))?|valid(?:ity)?\s*(?:from|as of)|starting(?:\s*from)?|start(?:\s*date)?|as of|from|(?:à|a)\s*partir\s*d[ue']|d(?:è|e)s\s*le|(?:à|a)\s*compter\s*d[ue']|ابتداء(?:ً)?\s*من|اعتبارا(?:ً)?\s*من|من\s*تاريخ)\s*[:\-]?\s*/gi;
+
+  function quoteIsoFromParts(y, m, d) {
+    let yy = Number(y);
+    if (yy < 100) yy += 2000;
+    const mm = Number(m);
+    const dd = Number(d);
+    if (!(yy >= 2000 && yy <= 2100 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31)) return '';
+    const iso = `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+    const t = Date.parse(iso + 'T00:00:00Z');
+    if (!Number.isFinite(t) || new Date(t).getUTCDate() !== dd) return '';
+    return iso;
+  }
+
+  // Lebanese quotes write dates day first (15/12/2026); a US order is taken only when the day-first reading is impossible.
+  function parseQuoteDateToken(raw) {
+    const s = normalizeDigits(String(raw || '')).trim().toLowerCase();
+    let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (m) return quoteIsoFromParts(m[1], m[2], m[3]);
+    m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(?!\d)/);
+    if (m) return quoteIsoFromParts(m[3], m[2], m[1]) || quoteIsoFromParts(m[3], m[1], m[2]);
+    m = s.match(/^(\d{1,2})(?:st|nd|rd|th|er)?\s+([a-zéèûô]+)\.?,?\s+(\d{2,4})/);
+    if (m && QUOTE_MONTHS[m[2]]) return quoteIsoFromParts(m[3], QUOTE_MONTHS[m[2]], m[1]);
+    m = s.match(/^([a-zéèûô]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{2,4})/);
+    if (m && QUOTE_MONTHS[m[1]]) return quoteIsoFromParts(m[3], QUOTE_MONTHS[m[1]], m[2]);
+    return '';
+  }
+
+  function findQuoteEffectiveDate(text) {
+    const src = normalizeDigits(String(text || ''));
+    QUOTE_EFF_LABEL_RX.lastIndex = 0;
+    let lm;
+    while ((lm = QUOTE_EFF_LABEL_RX.exec(src))) {
+      const iso = parseQuoteDateToken(src.slice(lm.index + lm[0].length, lm.index + lm[0].length + 32));
+      if (iso) return iso;
+    }
+    return '';
+  }
+
+  function quoteUnitAt(str) {
+    const s = String(str || '')
+      .replace(/^\s*(?:\/|per\b|par\b|pour\b|a\b|each\b|chaque\b|لكل|لل|بال)\s*/i, '')
+      .replace(/^\s*(?:le\b|la\b|the\b|l')\s*/i, '')
+      .trim();
+    for (const rule of QUOTE_UNIT_RULES) if (rule.rx.test(s)) return rule.unit;
+    return '';
+  }
+
+  const QUOTE_DATE_STRIP_RX = /\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b|\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b/g;
+  // Dates written with a month name ("1 December 2026", "Dec 1, 2026") are blanked like numeric dates.
+  const QUOTE_MONTH_ALT = Object.keys(QUOTE_MONTHS).sort((a, b) => b.length - a.length).join('|');
+  const QUOTE_DATE_WORD_RX = new RegExp('\\b\\d{1,2}(?:st|nd|rd|th|er)?\\s+(?:' + QUOTE_MONTH_ALT + ')\\.?,?\\s+\\d{2,4}\\b|\\b(?:' + QUOTE_MONTH_ALT + ')\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{2,4}\\b', 'gi');
+  // Unit words, longest form first so "monthly" is stripped whole (not "month" + "ly").
+  const QUOTE_UNIT_WORDS = 'm\\^?3|m³|cbm|tonnes?|tons?|t|trucks?|loads?|trips?|camions?|nightly|nights?|nuits?|daily|days?|jours?|seasonal|seasons?|saisons?|monthly|months?|mois|quarterly|quarters?|trimestres?|yearly|years?|yrs?|annually|annual|annum|ans?|ann(?:é|e)e';
+  // Arabic metre means cubic metre for aggregates, but never a square or running metre.
+  const QUOTE_AR_UNIT_WORDS = 'متر(?!\\s*(?:ال)?(?:مربع|طولي))(?:\\s*المكعب)?|طن|نقلة|ليلة|شهر|سنة';
+  // "per ton", "/ m3", "par mois", "monthly", "p.a.", "شهريا", "للمتر". A slash counts only after a space, a
+  // digit, "$", "%" or ")" so "Hilux A/T" keeps its name.
+  const QUOTE_UNIT_PHRASE_RX = new RegExp(
+    '(?:(?<=[\\s\\d$%)])\\/|^\\/|\\bper\\b|\\bpar\\b|\\beach\\b|\\bpour\\b|لكل)\\s*(?:le\\s+|la\\s+|the\\s+|l\')?(' + QUOTE_UNIT_WORDS + ')(?![\\p{L}\\d])'
+    + '|(?<![\\p{L}-])(annually|yearly|monthly|quarterly|nightly|p\\.a\\.|per\\s+annum)(?![\\p{L}\\d])'
+    + '|(شهريا|شهري|سنويا|سنوي|ليلي)'
+    + '|(?:لكل\\s*|لل|بال)(' + QUOTE_AR_UNIT_WORDS + ')(?![\\p{L}\\d])',
+    'giu'
+  );
+  // The unit phrase right after a price, to know where that price's words end.
+  const QUOTE_UNIT_AFTER_RX = new RegExp('^\\s*(?:\\/|per\\b|par\\b|each\\b|pour\\b|لكل|لل|بال)?\\s*(?:le\\s+|la\\s+|the\\s+|l\')?(?:' + QUOTE_UNIT_WORDS + '|' + QUOTE_AR_UNIT_WORDS + ')(?![\\p{L}\\d])', 'iu');
+  // Signals that a reading needs a person: magnitude words, other currencies, quantities.
+  const QUOTE_MAGNITUDE_RX = /(?:(?:[$]|us\$|usd)\s*\d+(?:[.,]\d+)?\s*(?:m|mn|bn|b)|\d+(?:[.,]\d+)?\s*(?:m|mn|bn|b)\s*(?:\$|usd))(?![a-z\d])|\b(?:thousands?|mille|milles|millions?|milliards?|billions?)\b|ألف|الف|آلاف|الاف|مليون|ملايين/i;
+  // Area prices (per m2 / sqm) are not period or volume rates.
+  const QUOTE_AREA_RX = /(?:m2|m²|sqm|sq\.?\s*m|square\s*met|square\s*f(?:oo|ee)t|ft2|sqft|sq\.?\s*ft)(?![a-z\d])|m(?:è|e)tres?\s*carr(?:é|e)s?|متر\s*مربع|المتر\s*المربع|م2|م²/i;
+  // Gross prices (VAT or TTC included, before a discount) go into Net fields only after a person checks them.
+  const QUOTE_GROSS_RX = /incl(?:\.|uding|uded|us)?\s*(?:\d+(?:[.,]\d+)?\s*%\s*)?(?:vat|tva|tax)|(?:vat|tva|tax)\s*incl|\bttc\b|less\s+discount|\bremise\b|including\s+(?:the\s+)?(?:service|syndic|charges|maintenance)|charges\s+comprises|شامل\s*(?:ال)?ضريبة/i;
+  // Delivered prices bundle material and transport; the split needs a person.
+  const QUOTE_DELIVERED_RX = /\bdelivered\b|livr(?:é|e)s?(?![a-z])|\bon\s*site\b|\bfranco\b|\bcif\b|واصل/i;
+  // Fractions of a period ("half-yearly", "bi-monthly", "semestriel") are not the base period.
+  const QUOTE_PREFIX_PERIOD_RX = /(?:semi|half|bi|tri|demi)[\s-]*(?:annual(?:ly)?|yearly|monthly|weekly|year|month|week)|bimensuel|semestriel|نصف\s*(?:سنوي|شهري)/i;
+  // Quantities inside the line ("Hilux (2)", "2 cars", "set of 4").
+  const QUOTE_MID_QTY_RX = /\(\s*\d{1,3}\s*\)|\b\d{1,3}\s+(?:cars?|vehicles?|units?|sets?|pairs?|pcs|pieces)\b|\bset\s+of\s+\d+|^\s*(?:two|three|four|five|six|seven|eight|nine|ten|twelve|deux|trois|quatre|cinq|six|dix)\s+[a-z]/i;
+  // A count written before the item ("2 x Hilux", "4 Tyres 1,200$") makes the price a total.
+  const QUOTE_LEAD_QTY_RX = /^\s*\d{1,4}\s*(?:x|×)?\s+[\p{L}]/iu;
+  const QUOTE_OTHER_CUR_RX = /[€£]|\beur(?:os?)?\b|\bgbp\b|\baed\b|\bsar\b|\bchf\b|درهم|ريال|يورو/i;
+  // Quantities: "x 2", "qty 3", "5 pcs", and a bare number followed by a unit ("3 nights 450$", "20m3 truck")
+  // which makes the price a total for that quantity rather than a unit rate.
+  const QUOTE_QTY_RX = /(?:^|\s)(?:x|×)\s*\d|\b(?:qty|quantity|quantit(?:é|e)|pcs|pieces?)\s*[:=]?\s*\d|\d\s*(?:pcs|pieces|units)\b|(?:^|[^\d.,\/$])\d+\s*(?:nights?|nuits?|days?|jours?|months?|mois|years?|ans|trucks?|loads?|trips?|tons?|tonnes?|m3|m³)(?![a-z\d])/i;
+  const QUOTE_VAT_WORD_RX = /vat|tva|t\.v\.a|tax|taxe|ضريبة|القيمة المضافة/i;
+  const QUOTE_FRENCH_RX = /\b(?:le|la|les|par|prix|tonne|mois|pour|du|des|chaque|livraison|loyer)\b|à/i;
+  // Arabic-Indic digits, the Arabic decimal mark (U+066B), thousands mark (U+066C), an Arabic comma used as a
+  // decimal mark between digits ("12،5"), and no-break spaces.
+  function normQuoteText(s) {
+    return normalizeDigits(String(s == null ? '' : s))
+      .replace(/٫/g, '.')
+      .replace(/٬/g, ',')
+      .replace(/(\d)،(\d{1,2})(?!\d)/g, '$1.$2')
+      .replace(/\u066A/g, '%')
+      .replace(/[\u200E\u200F\u202A-\u202E]/g, '')
+      .replace(/[\u00A0\u202F\u2009]/g, ' ');
+  }
+  // Number shapes, most specific first: 1.234,50 (European), 1,500 (comma thousands, never with a leading 0),
+  // 1.200.000 (dot thousands), 1 500 (space thousands), 0,750 and 13,5 (decimal comma), 12.5. Rates are never
+  // negative on the agreement forms, so a dash before a number is a separator, not a sign.
+  const QUOTE_NUM_BODY = '[1-9]\\d{0,2}(?:[\'’]\\d{3})+(?!\\d)|\\d{1,3}(?:\\.\\d{3})+,\\d{1,2}(?!\\d)|[1-9]\\d{0,2}(?:,\\d{3})+(?:\\.\\d+)?|\\d{1,3}(?:\\.\\d{3}){2,}(?![\\d,])|\\d{1,3}(?: \\d{3})+(?!\\d)|0,\\d+(?!\\d)|\\d+,\\d{1,2}(?!\\d)|\\d+(?:\\.\\d+)?';
+  const QUOTE_NUM_RX = new RegExp('(?<![A-Za-z\\d.,\'’])(US\\$|\\$|USD|U\\.S\\.D\\.?|LBP|L\\.L\\.?|LL|ل\\.ل\\.?|ليرة|دولار)?\\s*(' + QUOTE_NUM_BODY + ')\\s*(k(?![A-Za-z])|K(?![A-Za-z]))?\\s*((?:US\\$|\\$|USD|dollars?|LBP|L\\.L\\.?|LL)(?![A-Za-z])|ل\\.ل\\.?|ليرة|دولار|%)?', 'g');
+  const QUOTE_LBP_RX = /lbp|l\.?l\.?(?![a-z])|ل\.ل|ليرة/i;
+
+  // One number token to a value. `ambiguous` marks readings a person must confirm: any space or dot used as a
+  // thousands separator, and "1,250" in a French line (could be 1.25). `thousandsHint` (a currency sign or a
+  // per-unit phrase next to the number) lets "1.200" read as 1,200; without it "1.200" stays 1.2.
+  function quoteNumberValue(raw, thousandsHint, frenchLine) {
+    const s = String(raw || '').trim();
+    if (/['’]/.test(s)) return { val: Number(s.replace(/['’]/g, '')), ambiguous: true };
+    if (/^\d{1,3}(?:\.\d{3})+,\d{1,2}$/.test(s)) return { val: Number(s.replace(/\./g, '').replace(',', '.')), ambiguous: true };
+    if (/^0,\d+$/.test(s) || /^\d+,\d{1,2}$/.test(s)) return { val: Number(s.replace(',', '.')), ambiguous: false };
+    if (/ /.test(s)) return { val: Number(s.replace(/ /g, '')), ambiguous: true };
+    if (/^\d{1,3}(?:\.\d{3}){2,}$/.test(s)) return { val: Number(s.replace(/\./g, '')), ambiguous: true };
+    if (thousandsHint && /^[1-9]\d{0,2}\.\d{3}$/.test(s)) return { val: Number(s.replace('.', '')), ambiguous: true };
+    return { val: Number(s.replace(/,/g, '')), ambiguous: Boolean(frenchLine && /^[1-9]\d{0,2},\d{3}$/.test(s)) };
+  }
+
+  // Strict reading of one number returned by ISABI AI: exactly one non-negative number, followed only by unit
+  // words, "$" / USD / LBP / LL or "%". The prompt asks for no thousands separators, so "0.450" and "1.250" are
+  // decimals. A "k", a magnitude word, another currency or a second number rejects the value.
+  function parseQuoteNumberStrict(v) {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return Number.isFinite(v) && v >= 0 ? v : null;
+    const s = normQuoteText(v).trim();
+    if (/^-|\(\s*\d/.test(s)) return null;
+    const m = s.match(new RegExp('^(?:US\\$|\\$|USD|LBP|L\\.L\\.?|LL)?\\s*(' + QUOTE_NUM_BODY + ')'));
+    if (!m) return null;
+    const rest = s.slice(m[0].length)
+      .replace(new RegExp('(?:\\/|\\bper\\b|\\bpar\\b|\\beach\\b)?\\s*(?:' + QUOTE_UNIT_WORDS + ')(?![\\p{L}\\d])', 'giu'), ' ')
+      .replace(/US\$|\$|usd|dollars?|lbp|l\.?l\.?|ل\.ل\.?|ليرة|دولار|%/gi, ' ')
+      .replace(/[\s\/.,]+/g, '');
+    if (rest) return null;
+    const out = quoteNumberValue(m[1], false, false);
+    return Number.isFinite(out.val) && out.val >= 0 ? out.val : null;
+  }
+
+  function quoteLineLooksPriced(s) {
+    const t = String(s || '');
+    if (!/\d/.test(t)) return false;
+    if (/[$€£%]|usd|lbp|\bll\b|ل\.ل|ليرة|دولار|dollar/i.test(t)) return true;
+    return new RegExp(QUOTE_UNIT_PHRASE_RX.source, 'iu').test(t);
+  }
+
+  // One quote line to one draft row, or null. Safety rule: a row is "Ready" only when the line has a simple
+  // shape (one price, or two whose roles the words between them settle). Anything else is kept but flagged
+  // `ambiguous` so the dialog shows Check; a wrong number must never look Ready.
+  function parseQuoteLine(rawLine, spec) {
+    const isPct = Boolean(spec && spec.pct);
+    const hasRate2 = Boolean(spec && spec.hasRate2);
+    const line = normQuoteText(rawLine).trim();
+    if (!line || line.length > 240) return null;
+    if (QUOTE_TOTAL_LINE_RX.test(line) || QUOTE_LABEL_LINE_RX.test(line)) return null;
+    const frenchLine = QUOTE_FRENCH_RX.test(line);
+    // Dates (numeric or with a month name) are blanked with spaces of equal length; a price on a line that
+    // also carries "effective 1/12/2026" is still read.
+    const scan = line
+      .replace(QUOTE_DATE_STRIP_RX, m => ' '.repeat(m.length))
+      .replace(QUOTE_DATE_WORD_RX, m => ' '.repeat(m.length));
+    // spec.rate2Rx: words that name the second rate (haulage, nightly, deposit, unit cost, renewal);
+    // spec.rate2Units: units that belong to the second rate (a nightly price next to a seasonal one).
+    const rate2Rx = spec && spec.rate2Rx && typeof spec.rate2Rx.test === 'function' ? spec.rate2Rx : /transport|haulage|delivery|freight|livraison|نقل|توصيل/i;
+    const rate2Units = Array.isArray(spec && spec.rate2Units) ? spec.rate2Units : [];
+    const okUnits = Array.isArray(spec && spec.okUnits) ? spec.okUnits : (Array.isArray(spec && spec.units) ? spec.units : []);
+    const toks = [];
+    QUOTE_NUM_RX.lastIndex = 0;
+    let m;
+    while ((m = QUOTE_NUM_RX.exec(scan))) {
+      if (!m[2]) continue;
+      const pre = m[1] || '';
+      const post = m[4] || '';
+      const digitsOnly = m[2].replace(/[^\d]/g, '');
+      const isPctTok = post === '%';
+      const cur = /lbp|l\.l|^ll$|ل\.ل|ليرة/i.test(pre + post) ? 'LBP' : (/\$|usd|dollar|دولار/i.test(pre + post) ? 'USD' : '');
+      const numStart = m.index + m[0].indexOf(m[2]);
+      const rawAfter = scan.slice(m.index + m[0].length, m.index + m[0].length + 26);
+      const perUnitRaw = Boolean(quoteUnitAt(rawAfter) && /^\s*(?:\/|per\b|par\b|each\b|le\b|la\b|the\b|لكل|لل|بال)/i.test(rawAfter));
+      const endsLine = scan.slice(m.index + m[0].length).trim() === '';
+      const afterGrade = /\d[\/\-–]$/.test(scan.slice(0, numStart));
+      if (/ /.test(m[2]) && ((!cur && !perUnitRaw && !endsLine) || afterGrade)) {
+        // "Tier 1 100" is not 1,100 and "Unit 3/2 800$" is not 2,800: a space group reads as thousands only next to
+        // a currency sign, a per-unit phrase or at the end of the line, and never right after a grade.
+        QUOTE_NUM_RX.lastIndex = numStart + m[2].indexOf(' ') + 1;
+        continue;
+      }
+      if (!cur && !isPctTok && afterGrade) {
+        // The second half of a tight grade ("0/5", "3/4", "0-5") belongs to the item name. Right after a priced
+        // number it is a price range ("$9-12/m3"): keep the reading, flag it.
+        const prev = toks[toks.length - 1];
+        if (prev && prev.cur && numStart - prev.end <= 2) prev.ambiguous = true;
+        continue;
+      }
+      if (!cur && !isPctTok && !perUnitRaw && digitsOnly.length >= 7) continue; // phone or account number
+      const nv = isPctTok
+        ? { val: Number(/,/.test(m[2]) ? m[2].replace(/\./g, '').replace(',', '.') : m[2]), ambiguous: /[,.]\d{3}$/.test(m[2]) }
+        : quoteNumberValue(m[2], Boolean(cur) || perUnitRaw || endsLine, frenchLine);
+      let val = nv.val;
+      if (!Number.isFinite(val)) continue;
+      if (m[3]) val *= 1000;
+      // A price range ("9-10$", "12 - 14 $", "$9 to $10"): the lower bound is not a grade and the two values
+      // are of the same size.
+      const rangeM = scan.slice(0, numStart).match(/(?:^|[^\d\/\-–.,'’])(\d[\d,.'’]*)\s*(k)?\s*\$?\s*(?:[-–~]|to|and|or|ou|et|à|up\s+to|إلى|أو|و)\s*(?:US\$|\$|USD)?\s*$/i);
+      const rangeLo = rangeM ? quoteNumberValue(rangeM[1].replace(/[.,]$/, ''), true, frenchLine).val * (rangeM[2] ? 1000 : 1) : NaN;
+      // "28-32k$": the k of the upper bound applies to the lower one too.
+      const rangeLoK = (m[3] && rangeM && !rangeM[2]) ? rangeLo * 1000 : rangeLo;
+      const isRange = Number.isFinite(rangeLoK) && rangeLoK > 0 && rangeLoK < val && val / rangeLoK <= 3;
+      toks.push({
+        idx: m.index, end: m.index + m[0].length, len: m[0].length, val, cur, isPct: isPctTok, endsLine,
+        ambiguous: nv.ambiguous || isRange || (!cur && !isPctTok && val >= 10000) || val === 0
+      });
+    }
+    // Each price's words are read only up to the neighbouring numbers: the unit after a price stops at the next
+    // number, and the words before a price start after the previous price and its unit phrase. So "deposit 2400$,
+    // rent 1200$ per month" does not lend "deposit" to the rent.
+    toks.forEach((t, i) => {
+      const nextStart = i < toks.length - 1 ? toks[i + 1].idx : scan.length;
+      const after = scan.slice(t.end, Math.min(t.end + 26, nextStart));
+      t.unit = quoteUnitAt(after);
+      t.perUnit = Boolean(t.unit && /^\s*(?:\/|per\b|par\b|each\b|le\b|la\b|the\b|لكل|لل|بال)/i.test(after));
+      const ua = after.match(QUOTE_UNIT_AFTER_RX);
+      t.unitEnd = t.unit && ua ? t.end + ua[0].length : t.end;
+      // A bare unit word ("season", "nightly") with the next price right after it labels that next price, not
+      // this one: "season 4,800$ nightly 190$" is 4,800 per season and 190 per night.
+      if (t.unit && !t.perUnit && i < toks.length - 1 && scan.slice(t.unitEnd, nextStart).trim() === '') {
+        t.unit = '';
+        t.unitEnd = t.end;
+      }
+      t.tagged = Boolean(t.cur || t.isPct || t.perUnit);
+    });
+    const pricedCount = isPct ? toks.filter(t => t.isPct).length : toks.filter(t => !t.isPct && t.tagged).length;
+    toks.forEach((t, i) => {
+      // The words before a price start after the previous price, its unit and any cue word that price claimed.
+      const prevEnd = i ? Math.max(toks[i - 1].unitEnd, toks[i - 1].trailEnd || 0) : 0;
+      t.before = scan.slice(Math.max(prevEnd, t.idx - 24), t.idx);
+      // A cue after the price counts for it unless the next price follows the cue directly (then it labels that one).
+      const nextStart = i < toks.length - 1 ? toks[i + 1].idx : scan.length;
+      const trailing = scan.slice(t.unitEnd, nextStart);
+      const cue = trailing.match(rate2Rx);
+      // A role word after a price ("2400$ deposit, 1200$ monthly", "15% new business, 10% renewal") counts for that
+      // price only when it follows the price directly, ends at "," ";" ")" or the line end, and the line has two
+      // prices. "12$/m3 transport not included", "transport cost 4$" and "deposit of 2400$" do not qualify.
+      const cueWordEnd = cue ? cue.index + cue[0].length + ((trailing.slice(cue.index + cue[0].length).match(/^[\p{L}]*/u) || [''])[0].length) : 0;
+      t.trail2 = Boolean(cue && pricedCount >= 2 && trailing.slice(0, cue.index).trim() === '' && /^\s*(?:[,;)،.\/]|and\b|et\b|و|$)/i.test(scan.slice(t.unitEnd + cueWordEnd)));
+      t.trailEnd = t.trail2 ? t.unitEnd + cueWordEnd : 0;
+    });
+    // Role 1 = first rate, 2 = second rate, -1 = the words and the unit disagree.
+    const roleOf = t => {
+      const byHint = (rate2Rx.test(t.before) || t.trail2) ? 2 : 0;
+      const byUnit = (rate2Units.length && t.unit) ? (rate2Units.includes(t.unit) ? 2 : 1) : 0;
+      if (byHint && byUnit && byHint !== byUnit) return -1;
+      return byUnit || byHint || 1;
+    };
+    let use;
+    let mixAmb = false;
+    if (isPct) {
+      use = toks.filter(t => t.isPct);
+    } else {
+      const money = toks.filter(t => !t.isPct && t.tagged);
+      const perUnitToks = money.filter(t => t.perUnit);
+      if (perUnitToks.length) {
+        // Per-unit prices are the agreement rates. A lump amount on the same line ("min order 500$") is kept
+        // only when a word names it as the second rate (deposit, transport...); otherwise it is left out and the
+        // row is flagged.
+        const extra = money.filter(t => !t.perUnit);
+        const named = extra.filter(t => roleOf(t) === 2);
+        if (extra.length > named.length) mixAmb = true;
+        use = money.filter(t => t.perUnit || named.includes(t));
+      } else {
+        use = money;
+      }
+    }
+    let fallbackAmb = false;
+    if (!use.length && !isPct) {
+      // An untagged number closing the line: "Sand 0/5 : 12" (after a separator, read as is) or
+      // "Sand per m3 9" / "Shop 12 rent per year: 15 000" (after a unit phrase, flagged).
+      const lastTok = toks[toks.length - 1];
+      const lineHasUnit = new RegExp(QUOTE_UNIT_PHRASE_RX.source, 'iu').test(scan);
+      if (lastTok && !lastTok.isPct && lastTok.endsLine) {
+        if (/[:=\-–]\s*$/.test(scan.slice(0, lastTok.idx))) use = [lastTok];
+        else if (lineHasUnit) { use = [lastTok]; fallbackAmb = true; }
+      }
+    }
+    if (!use.length) return null;
+    let item = spec && spec.itemStripRx && typeof spec.itemStripRx.test === 'function' ? scan.replace(spec.itemStripRx, x => ' '.repeat(x.length)) : scan;
+    // Unit phrases anywhere on the line give the unit and are not part of the item name.
+    let lineUnit = '';
+    item = item.replace(new RegExp(QUOTE_UNIT_PHRASE_RX.source, 'giu'), (ph, w1, w2, w3, w4) => {
+      if (!lineUnit) lineUnit = quoteUnitAt(w1 || w2 || w3 || w4 || '');
+      return ' '.repeat(ph.length);
+    });
+    // Blank every money token (used or left out) and a bare unit word right after it ("1,200$ season").
+    const bareUnitRx = new RegExp('^\\s*(?:le\\s+|la\\s+|the\\s+)?(?:' + QUOTE_UNIT_WORDS + '|' + QUOTE_AR_UNIT_WORDS + ')(?![\\p{L}\\d])', 'iu');
+    toks.filter(t => t.tagged || use.includes(t)).sort((a, b) => b.idx - a.idx).forEach(t => {
+      let end = t.end;
+      const tail = item.slice(end).match(bareUnitRx);
+      if (tail) end += tail[0].length;
+      item = item.slice(0, t.idx) + ' '.repeat(end - t.idx) + item.slice(end);
+    });
+    item = item
+      .replace(QUOTE_RATE2_HINT_RX, ' ')
+      .replace(/^\s*(?:[-*•·>]+|\d{1,2}[.)]\s)\s*/, '')
+      .replace(/\b(?:price|prix|rate|tarif|unit price|min(?:imum)?(?:\s+order)?|vat|tva|t\.v\.a|excl\.?|incl\.?|ht|ttc|effective|valid(?:ity)?|starting|from)(?![\p{L}\d])/giu, ' ')
+      .replace(/السعر|سعر/g, ' ')
+      .replace(/[:=@|+()]+/g, ' ')
+      .replace(/\s+[-–,]\s*$/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+      .replace(/^[-–,;./\s،]+|[-–,;./\s،]+$/g, '');
+    if (!/[\p{L}]{2,}/u.test(item)) return null;
+    if (item.length > 80) item = item.slice(0, 80).trim();
+    let roleAmb = false;
+    let roleGuess = false;
+    // A role word after a price ("2400$ deposit, 1200$ monthly", "10% renewal", "28,000$ cost price") is read as
+    // labelling the NEXT price only when that price follows it directly; otherwise the row needs a person.
+    use.forEach(t => {
+      const i = toks.indexOf(t);
+      const nextStart = i < toks.length - 1 ? toks[i + 1].idx : scan.length;
+      const trailing = scan.slice(t.unitEnd, nextStart);
+      const cue = trailing.match(rate2Rx);
+      const afterCue = cue ? trailing.slice(cue.index + cue[0].length).replace(/^[\p{L}]*/u, '') : '';
+      if (cue && (i === toks.length - 1 || afterCue.replace(/[\s:=\-–]/g, '') !== '')) roleAmb = true;
+      // "2400$ deposit - 1200$ monthly": the word may close the first price or open the next one.
+      if (cue && i < toks.length - 1 && trailing.slice(0, cue.index).trim() === '' && /[\-–:]/.test(afterCue)) roleAmb = true;
+    });
+    // When the line names a second-rate unit (night, day) but no price carries it, the roles are a guess.
+    if (hasRate2 && rate2Units.length) {
+      const named2 = new Set();
+      scan.replace(new RegExp(QUOTE_UNIT_PHRASE_RX.source, 'giu'), (ph, w1, w2, w3, w4) => { const u = quoteUnitAt(w1 || w2 || w3 || w4 || ''); if (u) named2.add(u); return ph; });
+      (scan.match(/\b(?:nights?|nightly|nuits?|days?|daily|jours?)\b|ليلة|الليلة|يومي/gi) || []).forEach(w => { const u = quoteUnitAt(w.replace(/^ال/, '')); if (u) named2.add(u); });
+      const mentions2 = rate2Units.some(u => named2.has(u));
+      if (mentions2 && !use.some(t => roleOf(t) === 2)) roleAmb = true;
+    }
+    if (hasRate2 && use.length >= 2) {
+      const r0 = roleOf(use[0]);
+      const r1 = roleOf(use[1]);
+      if (r0 === 2 && r1 === 1) use = [use[1], use[0]];
+      else if (!(r0 === 1 && r1 === 2)) { roleAmb = true; roleGuess = true; } // same role twice, or words and unit disagree
+    }
+    const first = use[0];
+    let rate = first.val;
+    let rate2 = null;
+    if (use.length >= 2 && hasRate2 && !roleGuess) {
+      rate2 = use[1].val;
+    } else if (use.length === 1 && hasRate2) {
+      const r = roleOf(first);
+      if (r === 2) { rate2 = first.val; rate = null; }
+      if (r === -1) roleAmb = true;
+    }
+    const unit = (use.find(t => t.unit) || {}).unit || lineUnit || '';
+    // Kinds where the second rate is the smaller one (nightly < seasonal, cost < selling, renewal <= new).
+    const orderAmb = Boolean(spec && spec.rate2Below && rate != null && rate2 != null && rate2 > rate);
+    // spec.rate1Units: the first rate must carry one of these units or a matching word next to it
+    // (Hospitality: a price with no season, or per week / person / hour, is not a Seasonal Rate).
+    let rate1Amb = false;
+    if (rate != null && Array.isArray(spec && spec.rate1Units) && spec.rate1Units.length) {
+      const t1 = use[0];
+      const i1 = toks.indexOf(t1);
+      const nearAfter = scan.slice(t1.end, i1 < toks.length - 1 ? toks[i1 + 1].idx : scan.length);
+      const seasonWord = /season|saison|موسم/i.test(t1.before + ' ' + nearAfter);
+      if (!spec.rate1Units.includes(t1.unit) && !seasonWord) rate1Amb = true;
+    }
+    // Flags (each one alone sends the row to Check):
+    const extraUnnamed = use.length > 2 || (use.length >= 2 && !hasRate2);
+    const unitClash = use.length >= 2 && use[0].unit && use[1].unit && use[0].unit !== use[1].unit && !rate2Units.length;
+    const unitNotAllowed = okUnits.length > 0 && use.some(t => t.unit && !okUnits.includes(t.unit));
+    const firstIdx = Math.min(...use.map(t => t.idx));
+    // A number left on the line after the price ("Room 12 $ 90", "(min 10 m3)"), or a larger one before it
+    // ("Shacman 85000 per unit, registration 500$"), may be the real price.
+    const looseNumber = toks.some(t => !t.isPct && !use.includes(t) && (t.idx > firstIdx || (t.val > first.val && (t.val >= 1000 || !Number.isInteger(t.val)))));
+    const pctOnMoney = !isPct && toks.some(t => t.isPct && !QUOTE_VAT_WORD_RX.test(scan.slice(Math.max(0, t.idx - 16), t.end + 14)));
+    // More distinct periods or units named than prices ("rent per quarter, 1500$ per month", "6000$ per year
+    // payable per quarter"): which one the price belongs to needs a person.
+    const unitsNamed = new Set();
+    scan.replace(new RegExp(QUOTE_UNIT_PHRASE_RX.source, 'giu'), (ph, w1, w2, w3, w4) => { const u = quoteUnitAt(w1 || w2 || w3 || w4 || ''); if (u) unitsNamed.add(u); return ph; });
+    const unitOverload = unitsNamed.size > Math.max(1, use.length);
+    // Priced amounts on the line that no field took ("Sand 9$/m3, gravel 12$/m3, base 7$/m3"): the line is also
+    // listed under Lines not read so the other products are not lost behind one row.
+    // A price that took a trailing role word may be a second product ("12$/m3 transport. Gravel 14$/m3"): list the line too.
+    const partial = roleGuess || use.some(t => t.trail2) || toks.some(t => t.tagged && !t.isPct && !use.includes(t)) || use.length > (hasRate2 ? 2 : 1);
+    return {
+      partial,
+      quoted: item,
+      unit,
+      rate,
+      rate2,
+      currency: use.some(t => t.cur === 'LBP') ? 'LBP' : 'USD',
+      ambiguous: Boolean(
+        mixAmb || fallbackAmb || roleAmb || orderAmb || rate1Amb || extraUnnamed || unitClash || unitNotAllowed || looseNumber || pctOnMoney || unitOverload
+        || QUOTE_AREA_RX.test(scan) || QUOTE_LEAD_QTY_RX.test(scan) || QUOTE_MID_QTY_RX.test(scan)
+        || QUOTE_GROSS_RX.test(scan) || QUOTE_DELIVERED_RX.test(scan) || QUOTE_PREFIX_PERIOD_RX.test(scan)
+        || QUOTE_MAGNITUDE_RX.test(scan) || QUOTE_OTHER_CUR_RX.test(scan) || QUOTE_QTY_RX.test(scan)
+        || use.some(t => t.ambiguous)
+      )
+    };
+  }
+
+  function parseQuoteText(rawText, spec) {
+    const text = normQuoteText(rawText).replace(/\r/g, '');
+    // WhatsApp exports prefix each line with "[12/11/2026, 10:15] Name: " (iPhone), "12/11/2026, 10:15 - Name: "
+    // (Android) or "2026-11-12 10:15 - Name: ".
+    const lines = splitQuoteLines(text).map(x => x.ln);
+    const lineNos = splitQuoteLines(text).map(x => x.lineNo);
+    return parseQuoteLines(lines, lineNos, text, spec);
+  }
+
+  // Quote text to pieces with their 1-based line number (pieces split on ";" and "•" keep their line's number).
+  // Lines longer than 240 characters are shown as a 240-character window; `focus` (a character index, e.g. where
+  // the matched price sits) keeps that part visible, with "…" on the cut sides.
+  function clipQuoteLine(ln, focus) {
+    const t = String(ln || '');
+    if (t.length <= 240) return t;
+    const f = Number.isFinite(focus) ? focus : 0;
+    const start = Math.max(0, Math.min(f - 120, t.length - 238));
+    const end = Math.min(t.length, start + 238);
+    return (start > 0 ? '…' : '') + t.slice(start, end) + (end < t.length ? '…' : '');
+  }
+
+  function splitQuoteLines(text) {
+    const out = [];
+    String(text || '').split('\n').forEach((raw, i) => {
+      raw.split(/;|•/).forEach(piece => {
+        const ln = cleanQuoteLinePrefix(piece);
+        if (ln) out.push({ ln, lineNo: i + 1 });
+      });
+    });
+    return out;
+  }
+
+  function cleanQuoteLinePrefix(l) {
+    return String(l || '')
+        .replace(/^\s*\[\d{1,4}[\/.\-]\d{1,2}[\/.\-]\d{1,4},?\s*\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]\.?m\.?)?\]\s*[^:]{1,40}:\s*/i, '')
+        .replace(/^\s*\d{1,2}[/.]\d{1,2}[/.]\d{2,4},?\s+\d{1,2}:\d{2}(?:\s*[ap]\.?m\.?)?\s*-\s*[^:]{1,40}:\s*/i, '')
+        .replace(/^\s*\d{4}-\d{2}-\d{2},?\s+\d{1,2}:\d{2}(?::\d{2})?\s*-\s*[^:]{1,40}:\s*/, '')
+        .trim();
+  }
+
+  function parseQuoteLines(lines, lineNos, text, spec) {
+    const rows = [];
+    // Lines with a number that produced no row are returned as `unread` so the dialog can list them: no priced
+    // line disappears without the person seeing it. Totals and taxes are left out on purpose; contact and
+    // reference lines are listed only when they carry a price.
+    const unread = [];
+    for (let lineNo = 0; lineNo < lines.length; lineNo++) {
+      const ln = lines[lineNo];
+      if (rows.length >= 40) {
+        if (/\d/.test(ln)) unread.push(clipQuoteLine(ln));
+        continue;
+      }
+      const r = parseQuoteLine(ln, spec);
+      if (r) {
+        r.src = clipQuoteLine(ln);
+        r.srcFull = ln;
+        r.srcIdx = lineNo;
+        r.lineNo = lineNos[lineNo] || 0;
+        rows.push(r);
+        if (r.partial) unread.push(clipQuoteLine(ln));
+        continue;
+      }
+      if (QUOTE_TOTAL_LINE_RX.test(ln)) continue;
+      const priced = quoteLineLooksPriced(ln);
+      if (QUOTE_LABEL_LINE_RX.test(ln)) { if (priced) unread.push(clipQuoteLine(ln)); continue; }
+      const dateless = ln.replace(QUOTE_DATE_STRIP_RX, ' ').replace(QUOTE_DATE_WORD_RX, ' ');
+      if (/\d/.test(dateless) && (/[\p{L}]{2,}/u.test(ln) || quoteLineLooksPriced(dateless))) unread.push(clipQuoteLine(ln));
+    }
+    // Full (unclipped) candidate lines with their line numbers, for matching ISABI AI rows to pasted lines.
+    const fullUnread = [];
+    for (let k = 0; k < lines.length; k++) {
+      const c = clipQuoteLine(lines[k]);
+      if (unread.includes(c) && !rows.some(r => r.srcFull === lines[k])) fullUnread.push({ full: lines[k], lineNo: lineNos[k] || 0 });
+    }
+    const lineObjs = rows.map(r => ({ full: r.srcFull, lineNo: r.lineNo || 0 })).concat(fullUnread);
+    return { rows, effectiveFrom: findQuoteEffectiveDate(text), unread, lineObjs };
+  }
+
+  function sanitizeQuoteRows(rawRows, spec) {
+    const units = Array.isArray(spec && spec.units) ? spec.units : [];
+    const isPct = Boolean(spec && spec.pct);
+    const out = [];
+    const refused = [];
+    (Array.isArray(rawRows) ? rawRows : []).slice(0, 400).forEach(r => {
+      if (!r || typeof r !== 'object') return;
+      const quoted = String(r.quoted != null ? r.quoted : (r.item != null ? r.item : '')).replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 80);
+      if (!quoted) return;
+      const num = v => {
+        const n = parseQuoteNumberStrict(v); // one non-negative number or nothing; "abc", "12 to 14", -40 are dropped
+        if (n == null || n >= 1e7) return null;
+        if (isPct && n > 100) return null;
+        return round2(n);
+      };
+      const rate = num(r.rate);
+      const rate2 = spec && spec.hasRate2 ? num(r.rate2) : null;
+      const rate2Refused = Boolean(spec && spec.hasRate2 && r.rate2 != null && r.rate2 !== '' && rate2 == null);
+      if (rate == null && rate2 == null) {
+        refused.push(`${quoted} ${r.rate != null ? String(r.rate).slice(0, 40) : ''}`.trim());
+        return;
+      }
+      const unitRaw = String(r.unit || '').trim();
+      const unit = units.includes(unitRaw) ? unitRaw : (units.find(u => quoteUnitAt(unitRaw) === u) || '');
+      const lbp = /^lbp$/i.test(String(r.currency || '')) || QUOTE_LBP_RX.test(String(r.rate == null ? '' : r.rate)) || QUOTE_LBP_RX.test(String(r.rate2 == null ? '' : r.rate2));
+      const otherCur = Boolean(r.currency) && !/^\s*(?:usd|lbp|\$|us\$)\s*$/i.test(String(r.currency));
+      // The prompt asks for numbers without thousands separators: a "1,250" from the AI may be a French 1.25.
+      const sepAmb = [r.rate, r.rate2].some(v => typeof v === 'string' && /\d,\d{3}(?!\d)/.test(v));
+      out.push({ quoted, unit, rate, rate2, currency: lbp ? 'LBP' : 'USD', ambiguous: r.ambiguous === true || otherCur || sepAmb || rate2Refused, src: typeof r.src === 'string' ? r.src.slice(0, 240) : '', srcIdx: Number.isInteger(r.srcIdx) ? r.srcIdx : -1, lineNo: Number.isInteger(r.lineNo) ? r.lineNo : 0 });
+    });
+    // Rows refused here (no valid rate) are reported so the caller can list them; never silently dropped.
+    Object.defineProperty(out, 'refused', { value: refused, enumerable: false });
+    return out;
+  }
+
+  async function askQuoteAi(spec, text, dataUrl, mimeType) {
+    const cands = (Array.isArray(spec.candidates) ? spec.candidates : []).slice(0, 40).map(c => String(c).slice(0, 60));
+    const prompt = [
+      'You read a price quote for an ERP. Return JSON only, in this shape:',
+      '{"effective_from":"YYYY-MM-DD or empty","currency":"USD or LBP","rows":[{"item":"name as written","unit":"' + (spec.units || []).join(' | ') + ' or empty","rate":number,"rate2":number or null}]}',
+      'One row per priced line. rate = ' + (spec.rateHint || 'the unit price') + '. rate2 = ' + (spec.hasRate2 ? (spec.rate2Hint || 'the second price on the line') : 'always null') + '.',
+      'Write numbers without currency signs or thousands separators. Skip totals, VAT, taxes, phone numbers and dates. Never invent a row or a price.',
+      cands.length ? ('Known names an item may match: ' + cands.join('; ') + '.') : '',
+      dataUrl
+        ? ('The quote is the attached file.' + (text ? ' The pasted message below is context only:\n' + String(text).slice(0, 4000) : ''))
+        : ('Quote text:\n' + String(text).slice(0, 8000))
+    ].filter(Boolean).join('\n');
+    let reply = null;
+    const hook = isHeadlessEnv() ? window.__MFG_TEST_QUOTE_AI_REPLY : null; // test stub, headless runs only
+    if (hook != null) {
+      reply = typeof hook === 'function' ? hook({ prompt, hasFile: Boolean(dataUrl) }) : hook;
+    } else {
+      reply = await callAiEdgeJson('quote_schedule', prompt, dataUrl || '', mimeType || '');
+    }
+    if (!reply || typeof reply !== 'object') return null;
+    const effIso = /^\d{4}-\d{2}-\d{2}$/.test(String(reply.effective_from || '')) ? parseQuoteDateToken(reply.effective_from) : '';
+    const rows = sanitizeQuoteRows((Array.isArray(reply.rows) ? reply.rows : []).map(r => Object.assign({}, r, { currency: r && r.currency ? r.currency : reply.currency, ambiguous: true /* AI rows are never Ready: a person confirms each one */, src: '', srcIdx: -1, lineNo: 0 })), spec);
+    return { rows, effectiveFrom: effIso, refused: rows.refused || [] };
+  }
+
+  // spec: { pct, hasRate2, units, candidates, candCol, rateHint, rate2Hint }
+  async function extractQuoteSchedule(opts = {}) {
+    const spec = Object.assign({ units: [], candidates: [] }, opts.spec || {});
+    const textRaw = String(opts.text || '');
+    const text = textRaw.trim() ? textRaw.replace(/\s+$/, '') : '';
+    const dataUrl = String(opts.dataUrl || '');
+    const mimeType = String(opts.mimeType || '').toLowerCase();
+    let source = 'none';
+    let rows = [];
+    let effectiveFrom = '';
+    let aiTried = false;
+    let unread = [];
+    let localLines = [];
+    let localTextResult = null;
+    let fileUnreadable = false;
+    let fileNoRows = false;
+    let aiAnswered = false;
+    if (text && !dataUrl) {
+      const local = parseQuoteText(text, spec);
+      rows = sanitizeQuoteRows(local.rows, spec);
+      effectiveFrom = local.effectiveFrom;
+      // A line that made a row the sanitiser then refused (rate out of range, LBP of 10 million or more) is listed.
+      const kept = new Set(rows.map(r => r.srcIdx));
+      const dropped = local.rows.filter(r => !kept.has(r.srcIdx)).map(r => r.src);
+      if (rows.length) { source = 'local'; unread = dropped.concat(local.unread || []); }
+      localLines = local.lineObjs || [];
+    }
+    if (text && dataUrl) {
+      // Text and a file together: the file is the quote. Pasted lines are still used to show sources and list
+      // lines no AI row covers.
+      const localT = parseQuoteText(text, spec);
+      effectiveFrom = localT.effectiveFrom;
+      localLines = localT.lineObjs || [];
+      localTextResult = localT;
+    }
+    if (!rows.length && (dataUrl || text)) {
+      aiTried = true;
+      const inline = dataUrl ? extractAiEdgeInlinePart(dataUrl, mimeType) : null;
+      if (dataUrl && !inline) return { ok: false, reason: 'file_unreadable', rows: [], source, effectiveFrom, aiTried: false };
+      const ai = await askQuoteAi(spec, text, inline ? dataUrl : '', inline ? mimeType : '');
+      aiAnswered = Boolean(ai);
+      if (ai && ai.refused && ai.refused.length) unread = unread.concat(ai.refused);
+      if (ai && ai.rows.length) {
+        rows = ai.rows.slice(0, 40);
+        // AI rows past the first 40 are listed so no priced line is lost.
+        ai.rows.slice(40).forEach(r => unread.push(`${r.quoted} ${r.rate != null ? r.rate : ''}${r.rate2 != null ? ' / ' + r.rate2 : ''}`.trim()));
+        source = 'ai';
+        effectiveFrom = effectiveFrom || ai.effectiveFrom;
+        if (text) {
+          // One AI row covers at most one pasted line, preferring the line that names its item; only price numbers
+          // count (grades "0/5", ranges "3-4" and quantities "9 m3" do not). Lines left over are listed, and each
+          // AI row shows the pasted line it came from as its source.
+          const priceToks = ln => {
+            // Length-preserving blanks keep each number's position in the line.
+            const txt = normQuoteText(ln)
+              .replace(/\d+\s*[\/\-–]\s*\d+/g, m => ' '.repeat(m.length))
+              .replace(new RegExp('\\d+(?:[.,]\\d+)?\\s*(?:' + QUOTE_UNIT_WORDS + ')(?![\\p{L}\\d])', 'giu'), m => ' '.repeat(m.length));
+            const re = new RegExp(QUOTE_NUM_BODY, 'g');
+            const out = [];
+            let mm;
+            while ((mm = re.exec(txt))) out.push({ val: quoteNumberValue(mm[0], true, false).val, idx: mm.index });
+            return out;
+          };
+          const lineInfo = localLines.map(lo => { const pt = priceToks(lo.full); return { ln: lo.full, nums: pt.map(x => x.val), toks: pt, used: false, lineNo: lo.lineNo || 0 }; });
+          rows.forEach(r => {
+            const vals = [r.rate, r.rate2].filter(v => v != null);
+            const cands = lineInfo.filter(li => !li.used && vals.some(v => li.nums.includes(v)));
+            if (!cands.length) return;
+            const best = cands.slice().sort((a, b) => semanticSimilarity(r.quoted, b.ln) - semanticSimilarity(r.quoted, a.ln))[0];
+            best.used = true;
+            const hit = best.toks.find(x => vals.includes(x.val));
+            r.src = clipQuoteLine(best.ln, hit ? hit.idx : undefined);
+            r.lineNo = best.lineNo;
+          });
+          unread = unread.concat(lineInfo.filter(li => !li.used).map(li => clipQuoteLine(li.ln)));
+          // A quote in another currency read by the AI is never Ready.
+          if (QUOTE_OTHER_CUR_RX.test(text)) rows = rows.map(r => Object.assign({}, r, { ambiguous: true }));
+        }
+      }
+    }
+    if (!rows.length && dataUrl && localTextResult) {
+      const fb = sanitizeQuoteRows(localTextResult.rows, spec);
+      if (fb.length) {
+        const keptFb = new Set(fb.map(r => r.srcIdx));
+        const droppedFb = localTextResult.rows.filter(r => !keptFb.has(r.srcIdx)).map(r => r.src);
+        rows = fb;
+        source = 'local';
+        if (aiAnswered) fileNoRows = true; else fileUnreadable = true;
+        unread = unread.concat(droppedFb, localTextResult.unread || []);
+      }
+    }
+    const cands = Array.isArray(spec.candidates) ? spec.candidates : [];
+    rows = rows.map((r, i) => {
+      const ranked = cands.length ? rankCandidatesByScoreAndFreq(cands, r.quoted, spec.candCol || 'product', 0.5) : [];
+      const best = ranked[0];
+      const matchScore = best ? best.score : 0;
+      return Object.assign({}, r, {
+        n: i + 1,
+        item: best && matchScore >= 0.62 ? best.label : r.quoted,
+        matchScore,
+        needsCheck: Boolean(r.ambiguous || r.currency === 'LBP' || r.rate == null || r.rate === 0 || r.rate2 === 0 || r.rate === 0 || (cands.length && matchScore < 0.75) || (spec.units && spec.units.length && !r.unit))
+      });
+    });
+    return {
+      ok: rows.length > 0,
+      reason: rows.length ? '' : (aiTried ? 'nothing_found' : 'empty'),
+      source,
+      fromFile: Boolean(source === 'ai' && dataUrl),
+      fileUnreadable,
+      fileNoRows,
+      effectiveFrom,
+      rows,
+      unread: Array.from(new Set(unread)).slice(0, 200),
+      unreadMore: Math.max(0, Array.from(new Set(unread)).length - 200),
+      aiTried
+    };
+  }
+
   window.MFG_AI_EDGE = {
+    parseQuoteText,
+    sanitizeQuoteRows,
+    extractQuoteSchedule,
     resetTransientDemoInputs,
     init,
     syncAllSurfacesNow,

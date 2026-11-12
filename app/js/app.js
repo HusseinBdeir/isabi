@@ -7628,7 +7628,15 @@
     return Array.from(table.querySelectorAll('tr')).map(tr =>
       Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
         .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
-        .map(td => '"' + td.innerText.replace(/\s+/g, ' ').trim().replace(/"/g, '""') + '"').join(',')
+        .map(td => {
+          let txt = td.innerText;
+          if (td.querySelector('.ind-agr-pill')) {
+            const clone = td.cloneNode(true);
+            clone.querySelectorAll('.ind-agr-pill').forEach(n => n.remove());
+            txt = clone.textContent;
+          }
+          return '"' + String(txt || '').replace(/\s+/g, ' ').trim().replace(/"/g, '""') + '"';
+        }).join(',')
     ).join('\r\n');
   }
 
@@ -33903,12 +33911,30 @@
 
   function cleanDomainCellText(tdEl) {
     if (!tdEl) return '';
-    if (!tdEl.querySelector || !tdEl.querySelector('.att-inline-badge, .sr-only')) {
+    if (!tdEl.querySelector || !tdEl.querySelector('.att-inline-badge, .sr-only, .ind-agr-pill')) {
       return (tdEl.textContent || '').trim();
     }
     const clone = tdEl.cloneNode(true);
-    clone.querySelectorAll('.att-inline-badge, .sr-only').forEach(n => n.remove());
+    clone.querySelectorAll('.att-inline-badge, .sr-only, .ind-agr-pill').forEach(n => n.remove());
     return (clone.textContent || '').trim();
+  }
+
+  // English text of a register cell (the translator keeps the original on each text node as __enText),
+  // without inline badges or agreement pills. Agreement matching compares cells with English data, so the
+  // register pills and the 360 Inspector both match on this text whatever the display language is.
+  function domainCellEnText(tdEl) {
+    if (!tdEl) return '';
+    let out = '';
+    const walker = document.createTreeWalker(tdEl, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const p = node.parentElement;
+        if (p && p.closest && p.closest('.att-inline-badge, .sr-only, .ind-agr-pill')) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let n;
+    while ((n = walker.nextNode())) out += (n.__enText !== undefined ? n.__enText : n.nodeValue) || '';
+    return out.replace(/\s+/g, ' ').trim();
   }
 
   function getCanonicalEnDomText(el) {
@@ -34046,13 +34072,15 @@
         if (hitTr && typeof openIndustryDomainInspector === 'function') {
           const tbl = hitTr.closest('table');
           const headers = getDomainTableEnHeaders(tbl);
-          const cells = Array.from(hitTr.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none').map(cleanDomainCellText);
+          const hitTds = Array.from(hitTr.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
+          const cells = hitTds.map(cleanDomainCellText);
           const cardEl = hitTr.closest('.panel-card, .panel');
           const tableTitle = getDomainCardCanonicalTitle(cardEl);
           openIndustryDomainInspector({
             ind: (domHit && domHit.ind) || getActiveIndustry(STATE.company),
             headers,
             cells,
+            matchCells: hitTds.map(domainCellEnText), // same English text as the register pill
             tableTitle,
             trEl: hitTr,
             domainTblKey: hitTr.getAttribute('data-ind-row-tbl') || parentTbl,
@@ -58095,6 +58123,76 @@
     });
   }
 
+  // Related Agreement count pills on the primary register rows of the 5 sibling industries (Real Estate
+  // properties and units, Hospitality memberships, Trading serial units, Insurance policies and carrier
+  // statements, Holding entities), in the hub and in the Tables explorer. The count comes from
+  // computeIndustryRelatedAgreementsInfo with the same headers and cells the row click hands the 360
+  // Inspector, so a pill and the inspector box always agree. A 0 pill is amber. Clicking it opens the
+  // inspector at its Related Agreements box. Runs after applyIndustryDomRowEdits so saved edits count.
+  // Holding's hub scorecard rows switch company on click (data-jump-co), so Holding entities get their
+  // pills on the Tables explorer register, whose rows open the inspector.
+  const IND_AGR_PILL_VIEWS = new Set(['re_properties', 're_units', 'hsp_memberships', 'trd_trucks', 'ins_policies', 'ins_statements']);
+  const IND_AGR_PILL_EXPLORER_TABS = new Set(['re_prop_tbl', 'hsp_memb_tbl', 'trd_vin_tbl', 'ins_pol_tbl', 'ins_stm_tbl', 'hld_entities_tbl']);
+  function applyIndustryRelatedAgreementPills(root) {
+    if (!root || !root.querySelectorAll) return;
+    const ind = getActiveIndustry(STATE.company);
+    if (!ind || ind === 'Manufacturing') return;
+    const tables = [];
+    const explorer = root.querySelector('#industryDomainTablesExplorer');
+    if (explorer && IND_AGR_PILL_EXPLORER_TABS.has(explorer.getAttribute('data-ind-tbl-active') || '')) {
+      const exTbl = explorer.querySelector('table.data-table');
+      if (exTbl) tables.push(exTbl);
+    }
+    if (IND_AGR_PILL_VIEWS.has(STATE.view)) {
+      const hubTbl = Array.from(root.querySelectorAll('.panel table.data-table, .panel-card table.data-table, .panel table.ledger-table, .panel-card table.ledger-table'))
+        .find(tb => !tb.closest('#industryDomainTablesExplorer') && !tb.closest('#industryPbiStudio') && !tb.closest('#industrySentinelsDetailPanel'));
+      if (hubTbl) tables.push(hubTbl);
+    }
+    if (!tables.length) return;
+    const pools = {};
+    const rowCoDefault = COMPANY_BU_MATCH[STATE.company] || (!/^industry:/i.test(String(STATE.company || '')) ? COMPANY_LABELS[STATE.company] : '') || '';
+    const tipLinked = 'Linked rate agreements. Click to review them.';
+    const tipNone = 'No rate agreement linked yet. Click to add one.';
+    for (const tbl of tables) {
+      tbl.setAttribute('data-ind-agr-pills', '1');
+      const headers = getDomainTableEnHeaders(tbl).map(h => String(h || '').replace(/\s*[▲▼]$/, '').trim());
+      const trs = tbl.querySelectorAll('tbody tr');
+      for (const tr of trs) {
+        if (tr.hasAttribute('data-rid') || tr.hasAttribute('data-jump-co') || tr.hasAttribute('data-no-ind-inspect') || tr.classList.contains('total-row') || tr.classList.contains('totals-row') || tr.style.display === 'none') continue;
+        const tds = Array.from(tr.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
+        if (tds.length < 2 || tds[0].hasAttribute('colspan')) continue;
+        const cells = tds.map(domainCellEnText);
+        const primaryId = String(tr.getAttribute('data-ind-row-id') || cells[0] || '').trim();
+        if (!primaryId) continue;
+        cells[0] = primaryId;
+        const info = computeIndustryRelatedAgreementsInfo({
+          ind,
+          headers,
+          cells,
+          primaryId,
+          secondaryLbl: String(cells[1] || cells[2] || COMPANY_LABELS[STATE.company] || ind).trim(),
+          rowCompany: tr.getAttribute('data-ind-row-co') || rowCoDefault,
+          pools
+        });
+        if (!info) return; // this seat cannot see rate agreements
+        const n = Math.max(0, Number(info.linkedCount) || 0);
+        let pill = tds[0].querySelector('.ind-agr-pill');
+        if (!pill) {
+          pill = document.createElement('button');
+          pill.type = 'button';
+          pill.className = 'ind-agr-pill';
+          pill.setAttribute('data-ind-agr-pill', '1');
+          tds[0].appendChild(pill);
+        }
+        pill.classList.toggle('is-zero', n === 0);
+        pill.setAttribute('data-ind-agr-count', String(n));
+        pill.setAttribute('data-ui-tip', n ? tipLinked : tipNone);
+        pill.setAttribute('aria-label', n ? tipLinked : tipNone);
+        pill.innerHTML = `${ic('pricing')}<span class="ind-agr-pill-n" data-no-i18n="1">${n}</span>`;
+      }
+    }
+  }
+
   function getIndustryCustomRowsStore() {
     if (!STATE.industryCustomRows || typeof STATE.industryCustomRows !== 'object') {
       STATE.industryCustomRows = (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_ind_custom_rows_v1', null) : null) || {};
@@ -71684,6 +71782,633 @@
     };
   }
 
+  // Related rate agreements for one sibling-industry register row (Real Estate leases, Hospitality tariffs,
+  // Trading price lists, Insurance carrier agreements, Holding partner splits and facilities).
+  // One deterministic matcher shared by the 360 Inspector box (#indInspRelatedAgreementsBox) and the
+  // register row count pills (applyIndustryRelatedAgreementPills), so both always show the same count.
+  // `linkedCount` counts direct links only; `isFallback` marks reference rows shown when nothing links.
+  // `pools` caches the industry computations across the rows of one render pass.
+  function computeIndustryRelatedAgreementsInfo(args = {}) {
+    const ind = args.ind || '';
+    const headers = Array.isArray(args.headers) ? args.headers : [];
+    const cells = Array.isArray(args.cells) ? args.cells : [];
+    const primaryId = String(args.primaryId || '').trim();
+    const secondaryLbl = String(args.secondaryLbl || '').trim();
+    const rowCompany = String(args.rowCompany || '').trim();
+    const pools = args.pools && typeof args.pools === 'object' ? args.pools : {};
+    const poolOf = (key, fn) => {
+      if (!Object.prototype.hasOwnProperty.call(pools, key)) pools[key] = fn();
+      return pools[key];
+    };
+    const canSeeRelAgr = Boolean(isOwner() || canModifyData() || canViewHub('pricing') || canViewHub('sales') || canViewHub('ledger'));
+    if (!canSeeRelAgr) return null;
+    const ownerSeat = isOwner();
+    const allowedCos = allowedCompanyNames();
+    const isDomCoAllowed = co => ownerSeat || !co || allowedCos.some(ac => norm(ac) === norm(co));
+    const singleDomCo = (!/^industry:/i.test(String(STATE.company || '')) && STATE.company && STATE.company !== 'all' && !(typeof isDemoScopeActive === 'function' && isDemoScopeActive()))
+      ? (COMPANY_BU_MATCH[STATE.company] || COMPANY_LABELS[STATE.company] || '')
+      : '';
+    const hideRelCo = Boolean(singleDomCo);
+    const valByHdr = re => {
+      const idx = headers.findIndex(h => re.test(String(h || '').trim()));
+      return idx >= 0 && cells[idx] != null ? String(cells[idx]).trim() : '';
+    };
+    const fmtWin = (sd, ed) => `${sd ? fmtDateDMY(sd) : 'Open'} to ${(!ed || /^open$/i.test(String(ed))) ? 'Open' : fmtDateDMY(ed)}`;
+    const isWinActive = ed => {
+      const s = String(ed || '').trim();
+      return !s || /^open$/i.test(s) || s.slice(0, 10) >= todayISO();
+    };
+
+    if (ind === 'Real Estate & Property' && typeof computeRealEstateOperations === 'function') {
+      const re = poolOf('re', () => computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) || {});
+      const propCell = valByHdr(/property|building|asset|tower|center/i) || secondaryLbl;
+      const unitCell = valByHdr(/^unit|shop|suite/i);
+      const tenantCell = valByHdr(/tenant|lessee|client/i);
+      const cleanRelKey = v => norm(v).replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim();
+      const RE_GENERIC_TOKENS = new Set(['commercial', 'center', 'unit', 'units', 'tower', 'building', 'plot', 'land', 'estate', 'complex', 'hub', 'block', 'floor', 'suite', 'showroom', 'luxury', 'residence', 'medical', 'pavillon', 'coastal', 'development', 'industrial', 'logistics', 'remittance', 'upkeep', 'ledger', 'pool', 'company', 'properties', 'sal']);
+      const propTokens = cleanRelKey(propCell).split(/\s+/).filter(tok => tok.length >= 4 && !RE_GENERIC_TOKENS.has(tok));
+      const allLeases = (re.leases || []).filter(l => l && !l.voided && !l._scheduleVoided && isDomCoAllowed(l.company));
+      let hits = allLeases.filter(l => {
+        if (singleDomCo && l.company && norm(l.company) !== norm(singleDomCo)) return false;
+        if (unitCell && l.unit && (norm(l.unit).includes(norm(unitCell)) || norm(unitCell).includes(norm(l.unit.replace(/\s*\([^)]*\)\s*/g, ''))))) return true;
+        if (tenantCell && !/vacant|available|remittance|ledger/i.test(tenantCell) && l.tenant) {
+          const lt = cleanRelKey(l.tenant);
+          const tc = cleanRelKey(tenantCell);
+          if (lt && tc && (lt === tc || tc.includes(lt) || lt.includes(tc))) return true;
+        }
+        if (propCell && l.property) {
+          const lp = cleanRelKey(l.property);
+          const pc = cleanRelKey(propCell);
+          if (lp && pc && (lp === pc || pc.includes(lp) || lp.includes(pc) || norm(l.property) === norm(primaryId))) return true;
+          if (propTokens.length) {
+            const lTokens = lp.split(/\s+/).filter(Boolean);
+            if (propTokens.some(tok => lTokens.includes(tok))) return true;
+          }
+        }
+        return false;
+      });
+      if (!hits.length && /^PROP-/i.test(primaryId)) {
+        const propObj = (re.properties || []).find(p => norm(p.id) === norm(primaryId) || norm(p.code) === norm(primaryId));
+        if (propObj) {
+          hits = allLeases.filter(l => (!singleDomCo || norm(l.company) === norm(singleDomCo)) && norm(l.property) === norm(propObj.name));
+        }
+      }
+      return {
+        linkedCount: hits.length,
+        isFallback: false,
+        title: 'Related Lease & Rent Agreements',
+        sub: `Chronological rent & escalation schedules linked to ${secondaryLbl || primaryId}`,
+        formKey: 're_leases',
+        newBtnLbl: '+ New Lease Schedule',
+        newPrefill: { company: rowCompany || singleDomCo || 'Properties', property: propCell || '', unit: unitCell || '', tenant: (!/vacant|available/i.test(tenantCell) ? tenantCell : '') },
+        cols: [...(hideRelCo ? [] : ['Entity']), 'Lease ID', 'Unit & Tenant', 'Period Net / TTC', 'Effective Window', 'Status'],
+        rows: hits.map(l => ({
+          id: l.id,
+          formKey: 're_leases',
+          co: l.company || 'Properties',
+          cells: [
+            ...(hideRelCo ? [] : [l.company || 'Properties']),
+            l.id,
+            `${l.unit || '-'} · ${l.tenant || '-'}`,
+            `${fmtUSD(l.net_period_usd || 0, 0)} (${l.vat_rate ? l.vat_rate + '% VAT · ' + fmtUSD(l.ttc_period_usd || 0, 0) : '0% VAT'})`,
+            fmtWin(l.start_date, l.end_date),
+            l.status || (isWinActive(l.end_date) ? 'Active' : 'Ended')
+          ],
+          active: isWinActive(l.end_date)
+        }))
+      };
+    }
+
+    if (ind === 'Hospitality & Resorts' && typeof computeHospitalityOperations === 'function') {
+      const hsp = poolOf('hsp', () => computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }) || {});
+      const tierCell = valByHdr(/tier|venue|outlet|unit|chalet|cabana|category/i) || secondaryLbl;
+      const targetResort = rowCompany || singleDomCo || valByHdr(/resort|company|entity/i);
+      const allTariffs = (hsp.tariffRows || []).filter(t => t && !t.voided && !t._scheduleVoided && isDomCoAllowed(t.company));
+      let hits = allTariffs.filter(t => {
+        if (singleDomCo && t.company && norm(t.company) !== norm(singleDomCo)) return false;
+        if (targetResort && t.company && norm(t.company) === norm(targetResort)) return true;
+        if (tierCell && t.tier && (norm(t.tier).includes(norm(tierCell)) || norm(tierCell).includes(norm(t.tier)))) return true;
+        return false;
+      });
+      return {
+        linkedCount: hits.length,
+        isFallback: false,
+        title: 'Related Seasonal & Daily Tariff Agreements',
+        sub: `Chronological chalet, cabana & venue rate schedules for ${targetResort || secondaryLbl}`,
+        formKey: 'hsp_tariffs',
+        newBtnLbl: '+ New Seasonal Tariff',
+        newPrefill: { company: targetResort || 'Blanca', tier: tierCell || '' },
+        cols: [...(hideRelCo ? [] : ['Resort']), 'Tariff ID', 'Tier & Season', 'Daily / Seasonal Rate', 'Effective Window', 'Status'],
+        rows: hits.map(t => ({
+          id: t.id,
+          formKey: 'hsp_tariffs',
+          co: t.company || 'Blanca',
+          cells: [
+            ...(hideRelCo ? [] : [t.company || 'Blanca']),
+            t.id,
+            `${t.tier || '-'} · ${t.season || '-'}`,
+            `${fmtUSD(t.daily_chalet_ttc_usd || t.nightly_rate_usd || 0, 0)}/day · ${fmtUSD(t.season_contract_usd || t.seasonal_rate_usd || 0, 0)}/season`,
+            fmtWin(t.start_date, t.end_date),
+            t.status || (isWinActive(t.end_date) ? 'Active' : 'Closed')
+          ],
+          active: isWinActive(t.end_date)
+        }))
+      };
+    }
+
+    if (ind === 'Automotive & Heavy Trading' && typeof computeTradingOperations === 'function') {
+      const trd = poolOf('trd', () => computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }) || {});
+      const modelCell = valByHdr(/model|family|item|segment|category/i) || secondaryLbl;
+      const targetCo = rowCompany || singleDomCo || valByHdr(/company|entity/i);
+      const allTargets = (trd.targetRows || []).filter(t => t && !t.voided && !t._scheduleVoided && isDomCoAllowed(t.company));
+      const hits = allTargets.filter(t => {
+        if (singleDomCo && t.company && norm(t.company) !== norm(singleDomCo)) return false;
+        if (targetCo && t.company && norm(t.company) !== norm(targetCo)) return false;
+        if (modelCell && t.segment) {
+          const mTokens = norm(modelCell).split(/\s+/).filter(tok => tok.length >= 4);
+          if (mTokens.some(tok => norm(t.segment).includes(tok))) return true;
+        }
+        return Boolean(targetCo && norm(t.company) === norm(targetCo));
+      });
+      return {
+        linkedCount: hits.length,
+        isFallback: false,
+        title: 'Related OEM Price List & Rebate Schedules',
+        sub: `Chronological unit list price & landed cost schedules for ${targetCo || secondaryLbl}`,
+        formKey: 'trd_targets',
+        newBtnLbl: '+ New Price Target',
+        newPrefill: { company: targetCo || 'Shacman', segment: modelCell || '' },
+        cols: [...(hideRelCo ? [] : ['Entity']), 'Schedule ID', 'Segment / Model', 'List Net / Landed Cost', 'Effective Window', 'Status'],
+        rows: hits.map(t => ({
+          id: t.id,
+          formKey: 'trd_targets',
+          co: t.company || 'Shacman',
+          cells: [
+            ...(hideRelCo ? [] : [t.company || 'Shacman']),
+            t.id,
+            `${t.segment || t.price_list || '-'}`,
+            `${fmtUSD(t.unit_net_usd || 0, 0)} Net · ${fmtUSD(t.unit_cost_usd || 0, 0)} Cost`,
+            fmtWin(t.start_date, t.end_date),
+            isWinActive(t.end_date) ? 'Active' : 'Closed'
+          ],
+          active: isWinActive(t.end_date)
+        }))
+      };
+    }
+
+    if (ind === 'Insurance & Brokerage' && typeof computeInsuranceOperations === 'function') {
+      const ins = poolOf('ins', () => computeInsuranceOperations({ ignorePeriod: true }) || {});
+      const explicitCarrier = valByHdr(/carrier|insurer/i);
+      const carrierCell = explicitCarrier || secondaryLbl;
+      const lineCell = valByHdr(/line|product|category/i);
+      const allAgr = (ins.agreements || []).filter(a => a && !a.voided && !a._scheduleVoided && isDomCoAllowed(a.company || 'Insurance Company'));
+      let hits = allAgr.filter(a => {
+        if (carrierCell && a.carrier && (norm(a.carrier) === norm(carrierCell) || norm(carrierCell).includes(norm(a.carrier)))) return true;
+        if (lineCell && a.line) {
+          const lk = norm(lineCell).split(/\s+/)[0];
+          if (lk && lk.length >= 2 && norm(a.line).startsWith(lk)) return true;
+        }
+        return false;
+      });
+      const insLinked = hits.length;
+      if (!hits.length && !explicitCarrier && !lineCell) hits = allAgr.slice(0, 6);
+      return {
+        linkedCount: insLinked,
+        isFallback: insLinked === 0 && hits.length > 0,
+        title: 'Related Carrier Commission Agreements',
+        sub: `Chronological brokerage commission & override schedules linked to ${carrierCell || primaryId}`,
+        formKey: 'ins_agreements',
+        newBtnLbl: '+ New Carrier Agreement',
+        newPrefill: { carrier: carrierCell || 'MedGulf', line: lineCell || '' },
+        cols: ['Agreement ID', 'Carrier & Line', 'New / Renewal %', 'Effective Window', 'Status'],
+        rows: hits.map(a => ({
+          id: a.id,
+          formKey: 'ins_agreements',
+          co: 'Insurance Company',
+          cells: [
+            a.id,
+            `${a.carrier || '-'} · ${a.line || '-'}`,
+            `${Number(a.new_bus_pct || 0).toFixed(1)}% New · ${Number(a.renewal_pct || 0).toFixed(1)}% Ren`,
+            fmtWin(a.start_date, a.end_date),
+            a.status || (isWinActive(a.end_date) ? 'Active' : 'Closed')
+          ],
+          active: isWinActive(a.end_date)
+        }))
+      };
+    }
+
+    if (ind === 'Holding & Treasury' && typeof computeHoldingSchedules === 'function') {
+      const hld = poolOf('hld', () => computeHoldingSchedules() || {});
+      const explicitEnt = valByHdr(/entities|entity|company|from|to|lender|borrower/i);
+      const partnerCell = valByHdr(/partner|stakeholder/i);
+      const entCell = explicitEnt || partnerCell || secondaryLbl;
+      const allPartners = (hld.partnerAgreements || []).filter(p => p && !p.voided && !p._scheduleVoided && isDomCoAllowed(p.entity || 'Bdeir Holding') && (!singleDomCo || !p.entity || norm(p.entity) === norm(singleDomCo)));
+      const pHits = allPartners.filter(p => !entCell || (explicitEnt && (norm(p.entity || '').includes(norm(explicitEnt)) || norm(explicitEnt).includes(norm(p.entity || '')))) || (partnerCell && (norm(p.partner || '').includes(norm(partnerCell)) || norm(partnerCell).includes(norm(p.partner || '')))));
+      const fHits = (hld.facilitySchedules || []).filter(f => f && !f.voided && !f._scheduleVoided && isDomCoAllowed(f.company) && (!singleDomCo || !f.company || norm(f.company) === norm(singleDomCo)) && (!entCell || (explicitEnt && (norm(f.company || '').includes(norm(explicitEnt)) || norm(explicitEnt).includes(norm(f.company || '')) || norm(f.lender || '').includes(norm(explicitEnt)))) || (partnerCell && norm(f.lender || '').includes(norm(partnerCell)))));
+      const mapPartnerRow = p => ({
+        id: p.id,
+        formKey: 'hld_partners',
+        co: p.entity || 'Bdeir Holding',
+        cells: [...(hideRelCo ? [] : [p.entity || 'Bdeir Holding']), p.id, `Partner Split · ${p.partner || '-'}`, `${Number(p.pct || 0).toFixed(1)}% Share (${fmtUSD(p.entitled_usd || 0, 0)})`, fmtWin(p.start_date, p.end_date), p.status || 'Active'],
+        active: isWinActive(p.end_date)
+      });
+      const combined = [
+        ...pHits.map(mapPartnerRow),
+        ...fHits.map(f => ({
+          id: f.id,
+          formKey: 'hld_loans',
+          co: f.company || 'Bdeir Holding',
+          cells: [...(hideRelCo ? [] : [f.company || 'Bdeir Holding']), f.id, `${f.type || 'Facility'} · ${f.lender || '-'}`, `${Number(f.interest_rate_pct || 0).toFixed(1)}% APR (${fmtUSD(f.balance_usd || 0, 0)} Bal)`, fmtWin(f.start_date, f.end_date), f.status || 'Active'],
+          active: isWinActive(f.end_date)
+        }))
+      ];
+      const hldRefOnly = !(combined.length || explicitEnt);
+      return {
+          linkedCount: combined.length,
+        isFallback: hldRefOnly && allPartners.length > 0,
+        title: 'Related Partner Split & Facility Rate Agreements',
+        sub: `Chronological equity split & credit facility rate schedules linked to ${entCell || primaryId}`,
+        formKey: 'hld_partners',
+        newBtnLbl: '+ New Partner Agreement',
+        newPrefill: { entity: entCell || singleDomCo || 'Bdeir Holding' },
+        cols: [...(hideRelCo ? [] : ['Entity']), 'Schedule ID', 'Counterparty & Scope', 'Agreed Rate / Split', 'Effective Window', 'Status'],
+          rows: hldRefOnly ? allPartners.slice(0, 4).map(mapPartnerRow) : combined
+      };
+    }
+    return null;
+  }
+
+  // ==================== DRAFT FROM QUOTE (Edit Site + the 5 sibling Related Agreements boxes) ====================
+  // A signed quote (PDF or photo) or a pasted WhatsApp quote is read into draft agreement rows by
+  // MFG_AI_EDGE.extractQuoteSchedule (fixed rules on the device first, ISABI AI only as a fallback).
+  // Each row opens the normal agreement form pre-filled; nothing is saved until the person posts it,
+  // so chronology (hard rule 12), price guards and permissions all still apply. Drafts live in memory only.
+  const QUOTE_DRAFT_SPECS = {
+    pricerule: { itemLbl: 'Product / Grade', rateLbl: 'Material Rate ($)', rate2Lbl: 'Haulage Rate ($)', units: ['m³', 'Ton', 'Truck'], hasRate2: true, candCol: 'product', rateHint: 'the material price per unit', rate2Hint: 'the transport or haulage price per unit, or null', kindLbl: 'Sales Agreement' },
+    pricerule_raw: { itemLbl: 'Raw Material / Grade', rateLbl: 'Material Rate ($)', rate2Lbl: '', units: ['m³', 'Ton', 'Truck'], hasRate2: false, candCol: 'product', rateHint: 'the material price per unit', kindLbl: 'Quarry or Haulage Agreement' },
+    re_leases: { itemLbl: 'Unit', rateLbl: 'Net Rent per Period ($)', rate2Lbl: 'Deposit ($)', units: ['Month', 'Quarter', 'Year'], hasRate2: true, candCol: 'unit', rateHint: 'the net rent per billing period', rate2Hint: 'the security deposit, or null', rate2Rx: /deposit|caution|guarantee|تأمين/i },
+    hsp_tariffs: { itemLbl: 'Tier / Unit', rateLbl: 'Seasonal Rate ($)', rate2Lbl: 'Nightly Rate ($)', units: [], hasRate2: true, candCol: 'tier', rateHint: 'the seasonal contract price', rate2Hint: 'the nightly or daily price, or null', rate2Units: ['Night', 'Day'], okUnits: ['Season', 'Night', 'Day'], rate1Units: ['Season'], rate2Below: true, rate2Rx: /night|nightly|daily|nuit|jour|ليلة|يومي/i },
+    trd_targets: { itemLbl: 'Category / Segment', rateLbl: 'Unit Net Price ($)', rate2Lbl: 'Unit Cost ($)', units: [], hasRate2: true, candCol: 'category', rateHint: 'the unit net selling price', rate2Hint: 'the unit cost price, or null', rate2Below: true, rate2Rx: /cost|co(?:û|u)t|fob|كلفة/i },
+    ins_agreements: { itemLbl: 'Line of Business', rateLbl: 'New Business (%)', rate2Lbl: 'Renewal (%)', units: [], pct: true, hasRate2: true, candCol: 'line', rateHint: 'the new business commission percent', rate2Hint: 'the renewal commission percent, or null', rate2Below: true, rate2Rx: /renewal|renouvellement|تجديد/i, itemStripRx: /new\s*business|affaires\s*nouvelles|أعمال\s*جديدة|commission/gi },
+    hld_partners: { itemLbl: 'Partner', rateLbl: 'Share (%)', rate2Lbl: '', units: [], pct: true, hasRate2: false, candCol: 'partner', rateHint: 'the partner share percent' }
+  };
+  const QD_STATE = { ctx: null, drafts: new Map(), busy: false, cur: null };
+
+  function quoteDraftCandidates(formKey) {
+    const uniq = arr => freqRankCandidates(QUOTE_DRAFT_SPECS[formKey] ? QUOTE_DRAFT_SPECS[formKey].candCol : 'product', arr.filter(Boolean));
+    try {
+      if (formKey === 'pricerule' || formKey === 'pricerule_raw') {
+        return uniq(((SEED.records && SEED.records.products) || []).filter(p => p && !p.voided && (typeof isRowInActiveIndustry !== 'function' || isRowInActiveIndustry(p))).map(p => p.name));
+      }
+      if (formKey === 're_leases') {
+        const re = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) || {};
+        return uniq([...(re.leases || []).map(l => l.unit), ...(re.units || []).map(u => u.unit_name)]);
+      }
+      if (formKey === 'hsp_tariffs') return uniq(((computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }) || {}).tariffRows || []).map(t => t.tier));
+      if (formKey === 'trd_targets') return uniq(((computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }) || {}).targetRows || []).map(t => t.category || t.segment));
+      if (formKey === 'ins_agreements') return uniq(((computeInsuranceOperations({ ignorePeriod: true }) || {}).agreements || []).map(a => a.line));
+      if (formKey === 'hld_partners') return uniq(((computeHoldingSchedules() || {}).partnerAgreements || []).map(p => p.partner));
+    } catch (_) {}
+    return [];
+  }
+
+  function quoteDraftRowPrefill(formKey, row, eff) {
+    const pf = {};
+    const put = (k, v) => { if (v != null && v !== '') pf[k] = v; };
+    if (formKey === 're_leases') {
+      // The quoted period sets Billing Frequency so a monthly rent is never billed as a quarterly one.
+      put('unit', row.item); put('net_period_usd', row.rate); put('deposit_usd', row.rate2);
+      put('frequency', ({ Month: 'Monthly', Quarter: 'Quarterly', Year: 'Annual' })[row.unit] || '');
+    }
+    else if (formKey === 'hsp_tariffs') { put('tier', row.item); put('seasonal_rate_usd', row.rate); put('nightly_rate_usd', row.rate2); }
+    else if (formKey === 'trd_targets') { put('category', row.item); put('segment', row.item); put('unit_net_usd', row.rate); put('unit_cost_usd', row.rate2); }
+    else if (formKey === 'ins_agreements') { put('line', row.item); put('new_bus_pct', row.rate); put('renewal_pct', row.rate2); }
+    else if (formKey === 'hld_partners') { put('partner', row.item); put('pct', row.rate); }
+    put('start_date', eff);
+    return pf;
+  }
+
+  function ensureQuoteDraftModal() {
+    let modal = $('quoteDraftModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'quoteDraftModal';
+    modal.className = 'modal-backdrop';
+    modal.hidden = true;
+    modal.innerHTML = '<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="quoteDraftTitle"><div class="modal-header"><div><span class="modal-eyebrow">ISABI Smart Entry</span><h2 id="quoteDraftTitle">Draft Agreements from a Quote</h2></div><button type="button" class="modal-close-btn" data-qd-close="1" aria-label="Close">✕</button></div><div class="modal-body" id="quoteDraftBody"></div></div>';
+    document.body.appendChild(modal);
+    if (typeof wireBackdropDismiss === 'function') wireBackdropDismiss(modal, closeQuoteDraftModal);
+    modal.addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.stopPropagation(); closeQuoteDraftModal(); } });
+    modal.addEventListener('click', ev => {
+      const t = ev.target;
+      if (!t || !t.closest) return;
+      if (t.closest('[data-qd-close]')) { ev.preventDefault(); closeQuoteDraftModal(); return; }
+      const kindBtn = t.closest('[data-qd-kind]');
+      if (kindBtn) {
+        ev.preventDefault();
+        const st = QD_STATE.cur;
+        if (st && !QD_STATE.busy) { syncQuoteDraftInputs(); st.formKey = kindBtn.getAttribute('data-qd-kind'); st.result = null; st.opened = new Set(); renderQuoteDraftModal(); }
+        return;
+      }
+      if (t.closest('[data-qd-read]')) { ev.preventDefault(); runQuoteDraftRead(); return; }
+      if (t.closest('[data-qd-discard]')) {
+        ev.preventDefault();
+        const st = QD_STATE.cur;
+        if (st) { QD_STATE.drafts.delete(st.key); QD_STATE.cur = newQuoteDraftState(QD_STATE.ctx); }
+        renderQuoteDraftModal();
+        return;
+      }
+      const revBtn = t.closest('[data-qd-review]');
+      if (revBtn) { ev.preventDefault(); reviewQuoteDraftRow(Number(revBtn.getAttribute('data-qd-review'))); }
+    });
+    modal.addEventListener('change', ev => {
+      const inp = ev.target;
+      if (inp && inp.id === 'quoteDraftFile') readQuoteDraftFile(inp.files && inp.files[0]);
+      if (inp && inp.id === 'quoteDraftEffFrom' && QD_STATE.cur) { QD_STATE.cur.effTouched = true; QD_STATE.cur.effFrom = inp.value; }
+    });
+    modal.addEventListener('input', ev => {
+      const inp = ev.target;
+      if (inp && inp.id === 'quoteDraftEffFrom' && QD_STATE.cur) { QD_STATE.cur.effTouched = true; QD_STATE.cur.effFrom = inp.value; }
+    });
+    return modal;
+  }
+
+  // Sign-out: the next seat on this tab must never see the previous seat's pasted quote, file or rows.
+  function resetQuoteDrafts() {
+    QD_STATE.drafts.clear();
+    QD_STATE.cur = null;
+    QD_STATE.ctx = null;
+    QD_STATE.busy = false;
+    QD_STATE.readSeq = (QD_STATE.readSeq || 0) + 1; // any read still in flight is now stale
+    const modal = $('quoteDraftModal');
+    if (modal) {
+      modal.hidden = true;
+      const body = $('quoteDraftBody');
+      if (body) body.innerHTML = '';
+    }
+  }
+
+  function newQuoteDraftState(ctx) {
+    return { key: ctx.key, formKey: ctx.kinds[0], text: '', file: null, result: null, effFrom: '', opened: new Set(), status: '', statusErr: false };
+  }
+
+  function openQuoteDraftModal(ctx) {
+    if (!ctx || !Array.isArray(ctx.kinds) || !ctx.kinds.length) return;
+    QD_STATE.ctx = ctx;
+    QD_STATE.cur = QD_STATE.drafts.get(ctx.key) || newQuoteDraftState(ctx);
+    if (!ctx.kinds.includes(QD_STATE.cur.formKey)) QD_STATE.cur.formKey = ctx.kinds[0];
+    QD_STATE.drafts.set(ctx.key, QD_STATE.cur);
+    const modal = ensureQuoteDraftModal();
+    modal.hidden = false;
+    renderQuoteDraftModal();
+    const first = $('quoteDraftText');
+    if (first && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) first.focus({ preventScroll: true });
+  }
+
+  function closeQuoteDraftModal() {
+    syncQuoteDraftInputs();
+    const modal = $('quoteDraftModal');
+    if (modal) modal.hidden = true;
+  }
+
+  // Keep what the person typed in the draft table when the dialog re-renders or closes.
+  function syncQuoteDraftInputs() {
+    const st = QD_STATE.cur;
+    if (!st) return;
+    const ta = $('quoteDraftText');
+    if (ta) st.text = ta.value;
+    const eff = $('quoteDraftEffFrom');
+    if (eff && st.effTouched) st.effFrom = eff.value;
+    if (st.result && Array.isArray(st.result.rows)) {
+      document.querySelectorAll('#quoteDraftBody tr[data-qd-row]').forEach(tr => {
+        const r = st.result.rows[Number(tr.getAttribute('data-qd-row'))];
+        if (!r) return;
+        const g = k => tr.querySelector(`[data-qd-f="${k}"]`);
+        const numOf = el => (el && String(el.value).trim() !== '' && Number.isFinite(Number(el.value))) ? Number(el.value) : null;
+        if (g('item')) r.item = g('item').value.trim();
+        if (g('unit')) r.unit = g('unit').value;
+        if (g('rate')) r.rate = numOf(g('rate'));
+        if (g('rate2')) r.rate2 = numOf(g('rate2'));
+      });
+    }
+  }
+
+  function renderQuoteDraftModal() {
+    const body = $('quoteDraftBody');
+    const st = QD_STATE.cur;
+    const ctx = QD_STATE.ctx;
+    if (!body || !st || !ctx) return;
+    const spec = QUOTE_DRAFT_SPECS[st.formKey] || QUOTE_DRAFT_SPECS.pricerule;
+    const res = st.result;
+    const cands = quoteDraftCandidates(st.formKey);
+    const dlId = 'dl_qd_items';
+    const rowsHtml = res && res.rows && res.rows.length ? res.rows.map((r, i) => {
+      const isLbp = r.currency === 'LBP';
+      const opened = st.opened.has(i);
+      return `
+        <tr data-qd-row="${i}" class="${opened ? 'is-opened' : ''}">
+          <td class="qd-quoted">${(!r.src && res.source === 'ai' && !res.fromFile) ? '<div class="qd-row-check">No matching quote line</div>' : ''}<span class="qd-src-line" dir="auto" data-no-i18n="1">${esc(r.src || r.quoted)}</span></td>
+          <td><input type="text" data-qd-f="item" list="${dlId}" value="${esc(r.item || '')}" aria-label="${esc(spec.itemLbl)}"></td>
+          ${spec.units.length ? `<td><select data-qd-f="unit" aria-label="Unit"><option value="">-</option>${spec.units.map(u => `<option value="${esc(u)}" ${r.unit === u ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></td>` : ''}
+          <td><input type="number" class="qd-num" data-qd-f="rate" step="0.01" min="0" value="${r.rate == null ? '' : esc(String(r.rate))}" aria-label="${esc(spec.rateLbl)}"></td>
+          ${spec.hasRate2 ? `<td><input type="number" class="qd-num" data-qd-f="rate2" step="0.01" min="0" value="${r.rate2 == null ? '' : esc(String(r.rate2))}" aria-label="${esc(spec.rate2Lbl)}"></td>` : ''}
+          <td>${isLbp ? '<span class="qd-row-check">Quoted in LBP: enter the USD rate</span>' : (r.needsCheck ? '<span class="qd-row-check">Check</span>' : '')}</td>
+          <td><button type="button" class="btn btn-sm ${opened ? 'btn-ghost-bar' : 'btn-primary'}" data-qd-review="${i}">${opened ? 'Opened' : 'Review &amp; Post'}</button></td>
+        </tr>`;
+    }).join('') : '';
+    body.innerHTML = `
+      ${ctx.targetLabel ? `<div class="qd-target" data-no-i18n="1">${esc(ctx.targetLabel)}</div>` : ''}
+      <p class="qd-intro">Paste the quote text or attach the signed quote. ISABI drafts one row per priced line. Nothing is saved until you post each agreement in its own form.</p>
+      ${ctx.kinds.length > 1 ? `<div class="qd-kind-bar" role="group" aria-label="Agreement type">${ctx.kinds.map(k => `<button type="button" class="filter-chip ${k === st.formKey ? 'active' : ''}" data-qd-kind="${esc(k)}" aria-pressed="${k === st.formKey ? 'true' : 'false'}">${esc((QUOTE_DRAFT_SPECS[k] || {}).kindLbl || k)}</button>`).join('')}</div>` : ''}
+      <div class="qd-input-grid">
+        <textarea id="quoteDraftText" placeholder="Paste the quote here, for example a WhatsApp message" aria-label="Quote text">${esc(st.text || '')}</textarea>
+        <label class="qd-file-box">
+          <span>Signed PDF or photo of the quote</span>
+          <input type="file" id="quoteDraftFile" accept="application/pdf,image/jpeg,image/png,image/webp,text/plain,.pdf,.jpg,.jpeg,.png,.webp,.txt">
+          ${st.file ? `<span class="qd-file-name" data-no-i18n="1">${esc(st.file.name)}</span>` : ''}
+        </label>
+      </div>
+      <div class="qd-actions">
+        <button type="button" class="btn btn-primary" data-qd-read="1" ${QD_STATE.busy ? 'disabled' : ''}>${ic('sparkles')} Read Quote</button>
+        <span class="qd-status ${st.statusErr ? 'is-err' : ''}" id="quoteDraftStatus" role="status">${esc(st.status || '')}</span>
+      </div>
+      ${res && res.rows && res.rows.length ? `
+        <div class="qd-head-row">
+          <label class="qd-eff">Effective From <input type="date" id="quoteDraftEffFrom" value="${esc(st.effFrom || '')}"></label>
+          <span class="badge ${res.source === 'ai' ? 'badge-brass' : 'badge-neutral'} qd-src">${res.source === 'ai' ? 'Read by ISABI AI' : 'Read on this device'}</span>
+        </div>
+        <datalist id="${dlId}">${cands.map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist>
+        <div class="qd-table-wrap">
+          <table class="qd-table" id="quoteDraftTable">
+            <thead><tr>
+              <th>As Quoted</th><th>${esc(spec.itemLbl)}</th>${spec.units.length ? '<th>Unit</th>' : ''}<th>${esc(spec.rateLbl)}</th>${spec.hasRate2 ? `<th>${esc(spec.rate2Lbl)}</th>` : ''}<th>Check</th><th></th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+        <div class="qd-note">Compare every row with its quote line before Review &amp; Post. Check marks a specific doubt about the name, unit or rate.</div>
+        ${res.fromFile ? '<div class="qd-note">Read from a file: lines ISABI AI skipped cannot be listed. Compare the row count with the quote.</div>' : ''}
+        ${res.fileUnreadable ? '<div class="qd-note">The attached file could not be read. These rows come from the pasted text.</div>' : ''}
+        ${res.fileNoRows ? '<div class="qd-note">ISABI AI read the attached file but found no usable prices. These rows come from the pasted text.</div>' : ''}
+        ${Array.isArray(res.unread) && res.unread.length ? `
+          <div class="qd-unread" id="quoteDraftUnread">
+            <b>Lines not read. Check them against the quote:</b>
+            <ul>${res.unread.map(u => `<li dir="auto" data-no-i18n="1">${esc(u)}</li>`).join('')}</ul>
+            ${res.unreadMore ? `<div class="qd-unread-more"><span>More lines not shown:</span> <b data-no-i18n="1">${res.unreadMore}</b></div>` : ''}
+          </div>
+        ` : ''}
+      ` : ''}
+      <div class="qd-footer">
+        ${res ? '<button type="button" class="btn btn-ghost-bar" data-qd-discard="1">Discard Draft</button>' : '<span></span>'}
+        <button type="button" class="btn btn-ghost-bar" data-qd-close="1">Close</button>
+      </div>
+    `;
+    if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom($('quoteDraftModal'));
+  }
+
+  function setQuoteDraftStatus(msg, isErr) {
+    const st = QD_STATE.cur;
+    if (!st) return;
+    st.status = msg;
+    st.statusErr = Boolean(isErr);
+    const el = $('quoteDraftStatus');
+    if (el) {
+      const lang = window.MFG_I18N && window.MFG_I18N.getLang ? window.MFG_I18N.getLang() : 'en';
+      el.textContent = (lang !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(msg, lang) : msg;
+      el.classList.toggle('is-err', Boolean(isErr));
+    }
+  }
+
+  function readQuoteDraftFile(file) {
+    const st = QD_STATE.cur;
+    if (!st || !file) return;
+    const name = String(file.name || 'quote');
+    if (/^text\/plain$/i.test(file.type) || /\.txt$/i.test(name)) {
+      file.text().then(txt => {
+        syncQuoteDraftInputs();
+        st.text = [st.text, String(txt || '')].filter(Boolean).join('\n').slice(0, 20000);
+        st.file = null;
+        renderQuoteDraftModal();
+      }).catch(() => setQuoteDraftStatus('This file could not be read.', true));
+      return;
+    }
+    if (!/^(application\/pdf|image\/(jpeg|png|webp))$/i.test(file.type)) {
+      setQuoteDraftStatus('Attach a PDF, a JPG, PNG or WEBP photo, or a text file.', true);
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setQuoteDraftStatus('This file is larger than 3 MB. Attach a smaller scan or photo.', true);
+      return;
+    }
+    const fr = new FileReader();
+    fr.onload = () => {
+      syncQuoteDraftInputs();
+      st.file = { name, mime: String(file.type).toLowerCase(), dataUrl: String(fr.result || '') };
+      st.status = '';
+      st.statusErr = false;
+      renderQuoteDraftModal();
+    };
+    fr.onerror = () => setQuoteDraftStatus('This file could not be read.', true);
+    fr.readAsDataURL(file);
+  }
+
+  async function runQuoteDraftRead() {
+    const st = QD_STATE.cur;
+    if (!st || QD_STATE.busy) return;
+    syncQuoteDraftInputs();
+    if (!String(st.text || '').trim() && !st.file) {
+      setQuoteDraftStatus('Paste the quote text or attach the quote first.', true);
+      return;
+    }
+    if (!window.MFG_AI_EDGE || typeof window.MFG_AI_EDGE.extractQuoteSchedule !== 'function') {
+      setQuoteDraftStatus('The quote reader is not available. Reload the page and try again.', true);
+      return;
+    }
+    const spec = QUOTE_DRAFT_SPECS[st.formKey] || QUOTE_DRAFT_SPECS.pricerule;
+    QD_STATE.busy = true;
+    // Each read has its own token: a read that outlives a sign-out or a newer read never clears `busy` for the
+    // read that is running now.
+    const readToken = (QD_STATE.readSeq = (QD_STATE.readSeq || 0) + 1);
+    const readBtn = document.querySelector('#quoteDraftBody [data-qd-read]');
+    if (readBtn) readBtn.disabled = true;
+    setQuoteDraftStatus('Reading the quote...', false);
+    const forKey = st.key;
+    const forKind = st.formKey;
+    let res = null;
+    try {
+      res = await window.MFG_AI_EDGE.extractQuoteSchedule({
+        text: st.text,
+        dataUrl: st.file ? st.file.dataUrl : '',
+        mimeType: st.file ? st.file.mime : '',
+        spec: Object.assign({}, spec, { candidates: quoteDraftCandidates(st.formKey).slice(0, 60) })
+      });
+    } catch (_) {
+      res = null;
+    } finally {
+      if (QD_STATE.readSeq === readToken) QD_STATE.busy = false;
+    }
+    if (QD_STATE.readSeq !== readToken) return; // superseded or signed out: the newer read owns the dialog
+    if (QD_STATE.cur !== st || st.key !== forKey || st.formKey !== forKind) {
+      // Another draft or agreement type took over during the read: drop this result, re-enable Read Quote.
+      if (QD_STATE.cur && $('quoteDraftModal') && !$('quoteDraftModal').hidden) renderQuoteDraftModal();
+      return;
+    }
+    if (!res || !res.ok) {
+      st.result = null;
+      st.status = (res && res.reason === 'file_unreadable')
+        ? 'This file type cannot be read here. Attach a PDF, JPG, PNG or WEBP.'
+        : ((res && res.aiTried) ? 'No priced lines were found. Check the quote, or enter the agreements by hand.' : 'No priced lines were found in the pasted text.');
+      st.statusErr = true;
+      renderQuoteDraftModal();
+      return;
+    }
+    // A rate quoted in LBP is never carried into a USD field: the person types the USD rate, and what they
+    // type is kept across re-renders like any other edit.
+    res.rows.forEach(r => {
+      if (r.currency === 'LBP') {
+        r.lbpRate = r.rate;
+        r.lbpRate2 = r.rate2;
+        r.rate = null;
+        r.rate2 = null;
+      }
+    });
+    st.result = res;
+    st.opened = new Set();
+    // The new quote's own date wins; a date the person typed is kept only when the new quote has none.
+    st.effFrom = res.effectiveFrom || (st.effTouched ? st.effFrom : '');
+    st.effTouched = false;
+    st.status = res.effectiveFrom ? 'Draft ready. Check each row, then Review & Post.' : 'Draft ready. Set the Effective From date, check each row, then Review & Post.';
+    st.statusErr = false;
+    renderQuoteDraftModal();
+  }
+
+  function reviewQuoteDraftRow(i) {
+    const st = QD_STATE.cur;
+    const ctx = QD_STATE.ctx;
+    if (!st || !ctx || !st.result) return;
+    syncQuoteDraftInputs();
+    const row = st.result.rows[i];
+    if (!row) return;
+    const eff = /^\d{4}-\d{2}-\d{2}$/.test(String(st.effFrom || '')) ? st.effFrom : '';
+    st.opened.add(i);
+    const srcNote = row.lineNo ? `Quote: pasted text (line ${row.lineNo})` : `Quote: ${st.result.fromFile && st.file ? st.file.name : 'pasted text'}`;
+    closeQuoteDraftModal();
+    if (ctx.mode === 'site') {
+      const base = typeof ctx.basePrefill === 'function' ? ctx.basePrefill() : (ctx.basePrefill || {});
+      const pf = Object.assign({}, base, { _quoteDraft: true, notes: srcNote });
+      if (row.item) pf.prod = row.item;
+      if (row.unit) pf.uom = row.unit;
+      if (row.rate != null) pf.unitprice = row.rate;
+      if (row.rate2 != null && st.formKey === 'pricerule') pf.transunitprice = row.rate2;
+      if (eff) pf.startdate = eff;
+      openEntryModal(st.formKey, pf, { label: st.formKey === 'pricerule_raw' ? 'Quarry / Haulage Agreement' : 'Sales Price Agreement' });
+      return;
+    }
+    if (typeof closeRecordInspector === 'function') closeRecordInspector();
+    const pf = Object.assign({}, ctx.basePrefill || {}, quoteDraftRowPrefill(st.formKey, row, eff), { notes: srcNote });
+    openIndustryDomainEntryModal(st.formKey, pf);
+  }
+
   function openIndustryDomainInspector(opts = {}) {
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
       window.MFG_ASK.closeDailyHandover();
@@ -71819,245 +72544,32 @@
       `;
     }).join('');
 
-    const relatedAgreementsInfo = (() => {
-      const canSeeRelAgr = Boolean(isOwner() || canModifyData() || canViewHub('pricing') || canViewHub('sales') || canViewHub('ledger'));
-      if (!canSeeRelAgr || isChronoDomainRow) return null;
-      const ownerSeat = isOwner();
-      const allowedCos = allowedCompanyNames();
-      const isDomCoAllowed = co => ownerSeat || !co || allowedCos.some(ac => norm(ac) === norm(co));
-      const singleDomCo = (!/^industry:/i.test(String(STATE.company || '')) && STATE.company && STATE.company !== 'all' && !(typeof isDemoScopeActive === 'function' && isDemoScopeActive()))
-        ? (COMPANY_BU_MATCH[STATE.company] || COMPANY_LABELS[STATE.company] || '')
-        : '';
-      const hideRelCo = Boolean(singleDomCo);
-      const valByHdr = re => {
-        const idx = headers.findIndex(h => re.test(String(h || '').trim()));
-        return idx >= 0 && cells[idx] != null ? String(cells[idx]).trim() : '';
-      };
-      const fmtWin = (sd, ed) => `${sd ? fmtDateDMY(sd) : 'Open'} to ${(!ed || /^open$/i.test(String(ed))) ? 'Open' : fmtDateDMY(ed)}`;
-      const isWinActive = ed => {
-        const s = String(ed || '').trim();
-        return !s || /^open$/i.test(s) || s.slice(0, 10) >= todayISO();
-      };
-
-      if (ind === 'Real Estate & Property' && typeof computeRealEstateOperations === 'function') {
-        const re = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) || {};
-        const propCell = valByHdr(/property|building|asset|tower|center/i) || secondaryLbl;
-        const unitCell = valByHdr(/^unit|shop|suite/i);
-        const tenantCell = valByHdr(/tenant|lessee|client/i);
-        const cleanRelKey = v => norm(v).replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim();
-        const RE_GENERIC_TOKENS = new Set(['commercial', 'center', 'unit', 'units', 'tower', 'building', 'plot', 'land', 'estate', 'complex', 'hub', 'block', 'floor', 'suite', 'showroom', 'luxury', 'residence', 'medical', 'pavillon', 'coastal', 'development', 'industrial', 'logistics', 'remittance', 'upkeep', 'ledger', 'pool', 'company', 'properties', 'sal']);
-        const propTokens = cleanRelKey(propCell).split(/\s+/).filter(tok => tok.length >= 4 && !RE_GENERIC_TOKENS.has(tok));
-        const allLeases = (re.leases || []).filter(l => l && !l.voided && !l._scheduleVoided && isDomCoAllowed(l.company));
-        let hits = allLeases.filter(l => {
-          if (singleDomCo && l.company && norm(l.company) !== norm(singleDomCo)) return false;
-          if (unitCell && l.unit && (norm(l.unit).includes(norm(unitCell)) || norm(unitCell).includes(norm(l.unit.replace(/\s*\([^)]*\)\s*/g, ''))))) return true;
-          if (tenantCell && !/vacant|available|remittance|ledger/i.test(tenantCell) && l.tenant) {
-            const lt = cleanRelKey(l.tenant);
-            const tc = cleanRelKey(tenantCell);
-            if (lt && tc && (lt === tc || tc.includes(lt) || lt.includes(tc))) return true;
-          }
-          if (propCell && l.property) {
-            const lp = cleanRelKey(l.property);
-            const pc = cleanRelKey(propCell);
-            if (lp && pc && (lp === pc || pc.includes(lp) || lp.includes(pc) || norm(l.property) === norm(primaryId))) return true;
-            if (propTokens.length) {
-              const lTokens = lp.split(/\s+/).filter(Boolean);
-              if (propTokens.some(tok => lTokens.includes(tok))) return true;
-            }
-          }
-          return false;
-        });
-        if (!hits.length && /^PROP-/i.test(primaryId)) {
-          const propObj = (re.properties || []).find(p => norm(p.id) === norm(primaryId) || norm(p.code) === norm(primaryId));
-          if (propObj) {
-            hits = allLeases.filter(l => (!singleDomCo || norm(l.company) === norm(singleDomCo)) && norm(l.property) === norm(propObj.name));
-          }
-        }
-        return {
-          title: 'Related Lease & Rent Agreements',
-          sub: `Chronological rent & escalation schedules linked to ${secondaryLbl || primaryId}`,
-          formKey: 're_leases',
-          newBtnLbl: '+ New Lease Schedule',
-          newPrefill: { company: rowCompany || singleDomCo || 'Properties', property: propCell || '', unit: unitCell || '', tenant: (!/vacant|available/i.test(tenantCell) ? tenantCell : '') },
-          cols: [...(hideRelCo ? [] : ['Entity']), 'Lease ID', 'Unit & Tenant', 'Period Net / TTC', 'Effective Window', 'Status'],
-          rows: hits.map(l => ({
-            id: l.id,
-            formKey: 're_leases',
-            co: l.company || 'Properties',
-            cells: [
-              ...(hideRelCo ? [] : [l.company || 'Properties']),
-              l.id,
-              `${l.unit || '-'} · ${l.tenant || '-'}`,
-              `${fmtUSD(l.net_period_usd || 0, 0)} (${l.vat_rate ? l.vat_rate + '% VAT · ' + fmtUSD(l.ttc_period_usd || 0, 0) : '0% VAT'})`,
-              fmtWin(l.start_date, l.end_date),
-              l.status || (isWinActive(l.end_date) ? 'Active' : 'Ended')
-            ],
-            active: isWinActive(l.end_date)
-          }))
-        };
-      }
-
-      if (ind === 'Hospitality & Resorts' && typeof computeHospitalityOperations === 'function') {
-        const hsp = computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }) || {};
-        const tierCell = valByHdr(/tier|venue|outlet|unit|chalet|cabana|category/i) || secondaryLbl;
-        const targetResort = rowCompany || singleDomCo || valByHdr(/resort|company|entity/i);
-        const allTariffs = (hsp.tariffRows || []).filter(t => t && !t.voided && !t._scheduleVoided && isDomCoAllowed(t.company));
-        let hits = allTariffs.filter(t => {
-          if (singleDomCo && t.company && norm(t.company) !== norm(singleDomCo)) return false;
-          if (targetResort && t.company && norm(t.company) === norm(targetResort)) return true;
-          if (tierCell && t.tier && (norm(t.tier).includes(norm(tierCell)) || norm(tierCell).includes(norm(t.tier)))) return true;
-          return false;
-        });
-        return {
-          title: 'Related Seasonal & Daily Tariff Agreements',
-          sub: `Chronological chalet, cabana & venue rate schedules for ${targetResort || secondaryLbl}`,
-          formKey: 'hsp_tariffs',
-          newBtnLbl: '+ New Seasonal Tariff',
-          newPrefill: { company: targetResort || 'Blanca', tier: tierCell || '' },
-          cols: [...(hideRelCo ? [] : ['Resort']), 'Tariff ID', 'Tier & Season', 'Daily / Seasonal Rate', 'Effective Window', 'Status'],
-          rows: hits.map(t => ({
-            id: t.id,
-            formKey: 'hsp_tariffs',
-            co: t.company || 'Blanca',
-            cells: [
-              ...(hideRelCo ? [] : [t.company || 'Blanca']),
-              t.id,
-              `${t.tier || '-'} · ${t.season || '-'}`,
-              `${fmtUSD(t.daily_chalet_ttc_usd || t.nightly_rate_usd || 0, 0)}/day · ${fmtUSD(t.season_contract_usd || t.seasonal_rate_usd || 0, 0)}/season`,
-              fmtWin(t.start_date, t.end_date),
-              t.status || (isWinActive(t.end_date) ? 'Active' : 'Closed')
-            ],
-            active: isWinActive(t.end_date)
-          }))
-        };
-      }
-
-      if (ind === 'Automotive & Heavy Trading' && typeof computeTradingOperations === 'function') {
-        const trd = computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }) || {};
-        const modelCell = valByHdr(/model|family|item|segment|category/i) || secondaryLbl;
-        const targetCo = rowCompany || singleDomCo || valByHdr(/company|entity/i);
-        const allTargets = (trd.targetRows || []).filter(t => t && !t.voided && !t._scheduleVoided && isDomCoAllowed(t.company));
-        const hits = allTargets.filter(t => {
-          if (singleDomCo && t.company && norm(t.company) !== norm(singleDomCo)) return false;
-          if (targetCo && t.company && norm(t.company) !== norm(targetCo)) return false;
-          if (modelCell && t.segment) {
-            const mTokens = norm(modelCell).split(/\s+/).filter(tok => tok.length >= 4);
-            if (mTokens.some(tok => norm(t.segment).includes(tok))) return true;
-          }
-          return Boolean(targetCo && norm(t.company) === norm(targetCo));
-        });
-        return {
-          title: 'Related OEM Price List & Rebate Schedules',
-          sub: `Chronological unit list price & landed cost schedules for ${targetCo || secondaryLbl}`,
-          formKey: 'trd_targets',
-          newBtnLbl: '+ New Price Target',
-          newPrefill: { company: targetCo || 'Shacman', segment: modelCell || '' },
-          cols: [...(hideRelCo ? [] : ['Entity']), 'Schedule ID', 'Segment / Model', 'List Net / Landed Cost', 'Effective Window', 'Status'],
-          rows: hits.map(t => ({
-            id: t.id,
-            formKey: 'trd_targets',
-            co: t.company || 'Shacman',
-            cells: [
-              ...(hideRelCo ? [] : [t.company || 'Shacman']),
-              t.id,
-              `${t.segment || t.price_list || '-'}`,
-              `${fmtUSD(t.unit_net_usd || 0, 0)} Net · ${fmtUSD(t.unit_cost_usd || 0, 0)} Cost`,
-              fmtWin(t.start_date, t.end_date),
-              isWinActive(t.end_date) ? 'Active' : 'Closed'
-            ],
-            active: isWinActive(t.end_date)
-          }))
-        };
-      }
-
-      if (ind === 'Insurance & Brokerage' && typeof computeInsuranceOperations === 'function') {
-        const ins = computeInsuranceOperations({ ignorePeriod: true }) || {};
-        const explicitCarrier = valByHdr(/carrier|insurer/i);
-        const carrierCell = explicitCarrier || secondaryLbl;
-        const lineCell = valByHdr(/line|product|category/i);
-        const allAgr = (ins.agreements || []).filter(a => a && !a.voided && !a._scheduleVoided && isDomCoAllowed(a.company || 'Insurance Company'));
-        let hits = allAgr.filter(a => {
-          if (carrierCell && a.carrier && (norm(a.carrier) === norm(carrierCell) || norm(carrierCell).includes(norm(a.carrier)))) return true;
-          if (lineCell && a.line) {
-            const lk = norm(lineCell).split(/\s+/)[0];
-            if (lk && lk.length >= 2 && norm(a.line).startsWith(lk)) return true;
-          }
-          return false;
-        });
-        if (!hits.length && !explicitCarrier && !lineCell) hits = allAgr.slice(0, 6);
-        return {
-          title: 'Related Carrier Commission Agreements',
-          sub: `Chronological brokerage commission & override schedules linked to ${carrierCell || primaryId}`,
-          formKey: 'ins_agreements',
-          newBtnLbl: '+ New Carrier Agreement',
-          newPrefill: { carrier: carrierCell || 'MedGulf', line: lineCell || '' },
-          cols: ['Agreement ID', 'Carrier & Line', 'New / Renewal %', 'Effective Window', 'Status'],
-          rows: hits.map(a => ({
-            id: a.id,
-            formKey: 'ins_agreements',
-            co: 'Insurance Company',
-            cells: [
-              a.id,
-              `${a.carrier || '-'} · ${a.line || '-'}`,
-              `${Number(a.new_bus_pct || 0).toFixed(1)}% New · ${Number(a.renewal_pct || 0).toFixed(1)}% Ren`,
-              fmtWin(a.start_date, a.end_date),
-              a.status || (isWinActive(a.end_date) ? 'Active' : 'Closed')
-            ],
-            active: isWinActive(a.end_date)
-          }))
-        };
-      }
-
-      if (ind === 'Holding & Treasury' && typeof computeHoldingSchedules === 'function') {
-        const hld = computeHoldingSchedules() || {};
-        const explicitEnt = valByHdr(/entities|entity|company|from|to|lender|borrower/i);
-        const partnerCell = valByHdr(/partner|stakeholder/i);
-        const entCell = explicitEnt || partnerCell || secondaryLbl;
-        const allPartners = (hld.partnerAgreements || []).filter(p => p && !p.voided && !p._scheduleVoided && isDomCoAllowed(p.entity || 'Bdeir Holding') && (!singleDomCo || !p.entity || norm(p.entity) === norm(singleDomCo)));
-        const pHits = allPartners.filter(p => !entCell || (explicitEnt && (norm(p.entity || '').includes(norm(explicitEnt)) || norm(explicitEnt).includes(norm(p.entity || '')))) || (partnerCell && (norm(p.partner || '').includes(norm(partnerCell)) || norm(partnerCell).includes(norm(p.partner || '')))));
-        const fHits = (hld.facilitySchedules || []).filter(f => f && !f.voided && !f._scheduleVoided && isDomCoAllowed(f.company) && (!singleDomCo || !f.company || norm(f.company) === norm(singleDomCo)) && (!entCell || (explicitEnt && (norm(f.company || '').includes(norm(explicitEnt)) || norm(explicitEnt).includes(norm(f.company || '')) || norm(f.lender || '').includes(norm(explicitEnt)))) || (partnerCell && norm(f.lender || '').includes(norm(partnerCell)))));
-        const mapPartnerRow = p => ({
-          id: p.id,
-          formKey: 'hld_partners',
-          co: p.entity || 'Bdeir Holding',
-          cells: [...(hideRelCo ? [] : [p.entity || 'Bdeir Holding']), p.id, `Partner Split · ${p.partner || '-'}`, `${Number(p.pct || 0).toFixed(1)}% Share (${fmtUSD(p.entitled_usd || 0, 0)})`, fmtWin(p.start_date, p.end_date), p.status || 'Active'],
-          active: isWinActive(p.end_date)
-        });
-        const combined = [
-          ...pHits.map(mapPartnerRow),
-          ...fHits.map(f => ({
-            id: f.id,
-            formKey: 'hld_loans',
-            co: f.company || 'Bdeir Holding',
-            cells: [...(hideRelCo ? [] : [f.company || 'Bdeir Holding']), f.id, `${f.type || 'Facility'} · ${f.lender || '-'}`, `${Number(f.interest_rate_pct || 0).toFixed(1)}% APR (${fmtUSD(f.balance_usd || 0, 0)} Bal)`, fmtWin(f.start_date, f.end_date), f.status || 'Active'],
-            active: isWinActive(f.end_date)
-          }))
-        ];
-        return {
-          title: 'Related Partner Split & Facility Rate Agreements',
-          sub: `Chronological equity split & credit facility rate schedules linked to ${entCell || primaryId}`,
-          formKey: 'hld_partners',
-          newBtnLbl: '+ New Partner Agreement',
-          newPrefill: { entity: entCell || singleDomCo || 'Bdeir Holding' },
-          cols: [...(hideRelCo ? [] : ['Entity']), 'Schedule ID', 'Counterparty & Scope', 'Agreed Rate / Split', 'Effective Window', 'Status'],
-          rows: (combined.length || explicitEnt) ? combined : allPartners.slice(0, 4).map(mapPartnerRow)
-        };
-      }
-      return null;
-    })();
+    // Match on the English cell text the register pills used (domainCellEnText), so the two counts agree in AR / FR.
+    const matchCells = (Array.isArray(opts.matchCells) && opts.matchCells.length === cells.length) ? opts.matchCells.slice() : cells.slice();
+    if (matchCells.length) matchCells[0] = primaryId;
+    const relatedAgreementsInfo = isChronoDomainRow ? null : computeIndustryRelatedAgreementsInfo({
+      ind,
+      headers,
+      cells: matchCells,
+      primaryId,
+      secondaryLbl: String(matchCells[1] || matchCells[2] || COMPANY_LABELS[STATE.company] || ind).trim(),
+      rowCompany
+    });
 
     const relatedAgreementsBoxHtml = relatedAgreementsInfo ? `
-      <div class="pa-subgrid-box" id="indInspRelatedAgreementsBox" data-rel-agr-count="${relatedAgreementsInfo.rows.length}">
+      <div class="pa-subgrid-box" id="indInspRelatedAgreementsBox" data-rel-agr-count="${relatedAgreementsInfo.rows.length}" data-rel-agr-linked="${relatedAgreementsInfo.linkedCount}">
         <div class="pa-subgrid-hdr">
           <div>
             <strong>${ic('pricing')} ${esc(relatedAgreementsInfo.title)}</strong>
             <span class="pa-subgrid-sub">${esc(relatedAgreementsInfo.sub)}</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <span class="badge ${relatedAgreementsInfo.rows.length ? 'badge-ok' : 'badge-neutral'}">${relatedAgreementsInfo.rows.length} ${relatedAgreementsInfo.rows.length === 1 ? 'Agreement' : 'Agreements'}</span>
+            <span class="badge ${relatedAgreementsInfo.linkedCount ? 'badge-ok' : 'badge-warn'}">${relatedAgreementsInfo.linkedCount} ${relatedAgreementsInfo.linkedCount === 1 ? 'Agreement' : 'Agreements'}</span>
             ${(canEditAny && !textOnlyLock) ? `<button type="button" class="btn btn-outline-bar btn-sm" data-ind-new-rel-agr="${esc(relatedAgreementsInfo.formKey)}">${esc(relatedAgreementsInfo.newBtnLbl)}</button>` : ''}
+            ${(canEditAny && !textOnlyLock) ? `<button type="button" class="btn btn-outline-bar btn-sm quote-draft-open-btn" data-quote-draft-open="${esc(relatedAgreementsInfo.formKey)}" data-ui-tip="Read a signed quote or a pasted WhatsApp quote into draft agreement rows for you to check and post">${ic('sparkles')} Draft from Quote</button>` : ''}
           </div>
         </div>
+        ${relatedAgreementsInfo.isFallback ? `<div class="rel-agr-fallback-note">No agreement links to this record yet. The group schedules below are shown for reference.</div>` : ''}
         <div class="table-wrap" style="max-height:220px">
           <table class="ledger-table">
             <thead>
@@ -72642,6 +73154,8 @@
           });
         }
         applyIndustryDomRowEdits($('workspace'));
+        // The cell rewrite above clears the first cell's agreement pill; recount with the saved values.
+        applyIndustryRelatedAgreementPills($('workspace'));
         closeRecordInspector();
         syncWithCloud(true);
         toast(`Saved changes to ${primaryId}`);
@@ -72748,6 +73262,19 @@
             const fk = btn.getAttribute('data-ind-new-rel-agr') || relatedAgreementsInfo.formKey;
             closeRecordInspector();
             openIndustryDomainEntryModal(fk, relatedAgreementsInfo.newPrefill || {});
+          });
+        });
+        relAgrBox.querySelectorAll('[data-quote-draft-open]').forEach(btn => {
+          btn.addEventListener('click', ev => {
+            ev.preventDefault();
+            const fk = btn.getAttribute('data-quote-draft-open') || relatedAgreementsInfo.formKey;
+            openQuoteDraftModal({
+              mode: 'domain',
+              key: `${ind}::${fk}::${primaryId}`,
+              kinds: [fk],
+              targetLabel: secondaryLbl || primaryId,
+              basePrefill: Object.assign({}, relatedAgreementsInfo.newPrefill || {})
+            });
           });
         });
         relAgrBox.querySelectorAll('[data-ind-open-rel-agr]').forEach(tr => {
@@ -83071,6 +83598,7 @@
             <div class="site-rules-actions">
               ${canAddRaw ? `<button type="button" class="btn btn-sm site-rule-add-btn" data-site-new-rule="pricerule_raw">+ Quarry / Haulage Rule</button>` : ''}
               ${canAddSales ? `<button type="button" class="btn btn-sm site-rule-add-btn is-brass" data-site-new-rule="pricerule">+ Sales Rule</button>` : ''}
+              ${(canAddRaw || canAddSales) ? `<button type="button" class="btn btn-sm site-rule-hub-btn quote-draft-open-btn" data-site-quote-draft="1" data-ui-tip="Read a signed quote or a pasted WhatsApp quote into draft agreement rows for you to check and post">${ic('sparkles')} Draft from Quote</button>` : ''}
               ${totalCnt > 0 ? `<button type="button" class="btn btn-sm site-rule-hub-btn" data-site-open-rules-hub="1" data-ui-tip="Open Price Agreements filtered to ${esc(cleanSite || cleanOrig)}">Price Rules ↗</button>` : ''}
             </div>
           </div>
@@ -89660,6 +90188,32 @@
           openEntryModal(targetForm, pf, { label: targetForm === 'pricerule_raw' ? 'Quarry / Haulage Agreement' : 'Sales Price Agreement' });
           return;
         }
+        const siteQuoteBtn = ev.target && ev.target.closest ? ev.target.closest('[data-site-quote-draft]') : null;
+        if (siteQuoteBtn) {
+          ev.preventDefault();
+          const origSiteName = String((STATE.editingRecord && STATE.editingRecord.crKey === 'sites' && STATE.editingRecord.orig && STATE.editingRecord.orig.name) || '').trim();
+          const curSiteName = String(val('f_site') || origSiteName).trim();
+          const siteRecObj = (STATE.editingRecord && STATE.editingRecord.crKey === 'sites' && STATE.editingRecord.orig)
+            || ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && isRowInActiveIndustry(s) && norm(s.name) === norm(curSiteName))
+            || null;
+          const kinds = ['pricerule', 'pricerule_raw'].filter(k => canEnterForm(k));
+          if (siteRecObj && siteRecObj.supplier && !siteRecObj.customer) kinds.reverse();
+          const fromSiteForm = STATE.modalForm === 'site';
+          openQuoteDraftModal({
+            mode: 'site',
+            key: `site::${norm(origSiteName || curSiteName)}`,
+            kinds,
+            targetLabel: curSiteName,
+            basePrefill: () => ({
+              site: curSiteName,
+              _origSiteOnDiscard: origSiteName,
+              _fromSiteFormSwitch: fromSiteForm,
+              supplier: siteRecObj && siteRecObj.supplier ? siteRecObj.supplier : '',
+              customer: siteRecObj && siteRecObj.customer ? siteRecObj.customer : ''
+            })
+          });
+          return;
+        }
         const siteRulesHubBtn = ev.target && ev.target.closest ? ev.target.closest('[data-site-open-rules-hub]') : null;
         if (siteRulesHubBtn) {
           ev.preventDefault();
@@ -95527,7 +96081,7 @@
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
           if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub]')) return;
+            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft]')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -95792,6 +96346,13 @@
       if (Array.isArray(prefill.attachments) && prefill.attachments.length) {
         FORM_UI.attachments = prefill.attachments.map(a => Object.assign({}, a));
         renderEntryAttachmentsListUI();
+      }
+      // Draft from Quote rows (renderQuoteDraftModal): start date and rates of the quoted line.
+      if (prefill._quoteDraft && form === 'pricerule') {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(String(prefill.startdate || '')) && $('f_date')) $('f_date').value = prefill.startdate;
+        if (prefill.unitprice != null && prefill.unitprice !== '' && $('f_unitprice')) $('f_unitprice').value = String(prefill.unitprice);
+        if (prefill.transunitprice != null && prefill.transunitprice !== '' && $('f_transunitprice')) $('f_transunitprice').value = String(prefill.transunitprice);
+        if (prefill.uom && $('f_rateper') && STATE.modalGroupOverride !== 'raw') $('f_rateper').value = prefill.uom;
       }
       recalcForm();
     }
@@ -111131,6 +111692,7 @@
       window.MFG_CMD_PALETTE.close({ clearCache: true });
     }
     closeTabletKeysModal();
+    resetQuoteDrafts();
     if (isDemoSandboxSession()) {
       try {
         for (let i = sessionStorage.length - 1; i >= 0; i--) {
@@ -127257,7 +127819,8 @@
 
       const indRow = t.closest('tr[data-ind-inspect-row]') || (getActiveIndustry(STATE.company) !== 'Manufacturing' ? t.closest('tbody tr') : null);
       if (indRow && container.contains(indRow) && !indRow.hasAttribute('data-no-ind-inspect') && !indRow.hasAttribute('data-rid') && !indRow.hasAttribute('data-ar-row') && !indRow.hasAttribute('data-staff-row') && !indRow.classList.contains('total-row') && !indRow.classList.contains('totals-row')) {
-        if (t.closest('[data-rel-key], button, a, input, select, label')) return;
+        const agrPillHit = t.closest('[data-ind-agr-pill]');
+        if (!agrPillHit && t.closest('[data-rel-key], button, a, input, select, label')) return;
         const explorerWrap = indRow.closest('#industryDomainTablesExplorer');
         const activeExplorerTbl = explorerWrap ? explorerWrap.getAttribute('data-ind-tbl-active') : '';
         const rowIdAttr = indRow.getAttribute('data-ind-row-id') || '';
@@ -127267,20 +127830,35 @@
         }
         const tbl = indRow.closest('table');
         const headers = getDomainTableEnHeaders(tbl).map(h => String(h || '').replace(/\s*[▲▼]$/, '').trim());
-        const cells = Array.from(indRow.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none').map(cleanDomainCellText);
+        const visTds = Array.from(indRow.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
+        const cells = visTds.map(cleanDomainCellText);
+        const matchCells = visTds.map(domainCellEnText);
         if (cells.length >= 2) {
-          if (indRow.getAttribute('data-ind-row-id')) cells[0] = indRow.getAttribute('data-ind-row-id');
+          if (indRow.getAttribute('data-ind-row-id')) {
+            cells[0] = indRow.getAttribute('data-ind-row-id');
+            matchCells[0] = cells[0];
+          }
           const cardEl = indRow.closest('.panel-card, .panel');
           const tableTitle = getDomainCardCanonicalTitle(cardEl);
           openIndustryDomainInspector({
             ind: getActiveIndustry(STATE.company),
             headers,
             cells,
+            matchCells,
             tableTitle,
             trEl: indRow,
             domainTblKey: indRow.getAttribute('data-ind-row-tbl') || '',
             rowCompany: indRow.getAttribute('data-ind-row-co') || ''
           });
+          if (agrPillHit) {
+            const relBox = $('indInspRelatedAgreementsBox');
+            if (relBox) {
+              relBox.classList.add('is-focus');
+              try { relBox.scrollIntoView({ block: 'start', behavior: 'auto' }); } catch (_) { relBox.scrollIntoView(); }
+              const firstAct = relBox.querySelector('[data-ind-open-rel-agr], [data-ind-new-rel-agr]');
+              if (firstAct && typeof firstAct.focus === 'function') firstAct.focus({ preventScroll: true });
+            }
+          }
         }
       }
     });
@@ -127290,6 +127868,7 @@
     wireWorkspaceDelegatedOnce(container);
     wireModalSuggestions(container);
     applyIndustryDomRowEdits(container);
+    applyIndustryRelatedAgreementPills(container);
     if (window.MFG_GEO && typeof window.MFG_GEO.wireGeoStudio === 'function') {
       window.MFG_GEO.wireGeoStudio(container, {
         SEED,

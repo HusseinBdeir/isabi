@@ -36125,3 +36125,105 @@ video::-webkit-media-controls-start-playback-button {
   .hld-share-text { font-size: 16px; }
   .hld-share-actions > * { flex: 1 1 100%; justify-content: center; }
 }
+
+/* ==================== Related Agreement count pills on sibling-industry register rows ==================== */
+.ind-agr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-inline-start: 6px;
+  padding: 0 6px;
+  height: 18px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.ind-agr-pill svg { width: 11px; height: 11px; flex: 0 0 11px; }
+.ind-agr-pill:hover,
+.ind-agr-pill:focus-visible {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+  outline: none;
+}
+.ind-agr-pill.is-zero {
+  border-color: var(--warn);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+#indInspRelatedAgreementsBox.is-focus {
+  box-shadow: 0 0 0 2px var(--brass);
+  border-radius: 8px;
+}
+.rel-agr-fallback-note {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--warn-bg);
+  color: var(--ink);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.quote-draft-open-btn svg { width: 13px; height: 13px; vertical-align: -2px; }
+
+/* ==================== Draft from Quote (signed quote or WhatsApp text to draft agreement rows) ==================== */
+#quoteDraftModal.modal-backdrop { z-index: 1300; }
+#quoteDraftModal .modal-card { width: min(920px, calc(100vw - 24px)); }
+#quoteDraftModal .modal-body { padding: 14px 20px 18px; display: flex; flex-direction: column; gap: 12px; }
+.qd-intro { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.qd-kind-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+.qd-input-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 220px); gap: 10px; align-items: stretch; }
+.qd-input-grid textarea {
+  width: 100%; min-width: 0; min-height: 112px; resize: vertical; box-sizing: border-box;
+  padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 7px;
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; line-height: 1.45;
+}
+.qd-file-box {
+  display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 0;
+  padding: 10px; border: 1px dashed var(--line-strong); border-radius: 7px; background: var(--surface-2);
+  font-size: 11.5px; color: var(--muted); text-align: center;
+}
+.qd-file-box input[type="file"] { max-width: 100%; font-size: 11.5px; }
+.qd-file-name { font-weight: 700; color: var(--ink); word-break: break-all; }
+.qd-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.qd-status { font-size: 12px; color: var(--muted); min-height: 16px; }
+.qd-status.is-err { color: var(--crit); font-weight: 600; }
+.qd-head-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+.qd-eff { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; font-weight: 700; }
+.qd-eff input { height: 30px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--ink); font-family: var(--mono); }
+.qd-src { font-size: 11px; }
+.qd-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 8px; max-height: 340px; overflow-y: auto; }
+.qd-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.qd-table th { position: sticky; top: 0; background: var(--surface-2); text-align: start; padding: 6px 8px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.qd-table td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.qd-table tr:last-child td { border-bottom: 0; }
+.qd-table input, .qd-table select { width: 100%; min-width: 0; box-sizing: border-box; height: 28px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--ink); font-size: 12px; }
+.qd-table input.qd-num { font-family: var(--mono); text-align: end; min-width: 72px; }
+.qd-quoted { color: var(--muted); font-size: 11px; max-width: 220px; overflow-wrap: anywhere; }
+.qd-row-check { font-size: 10.5px; font-weight: 700; color: var(--warn); }
+.qd-table tr.is-opened td { background: var(--good-bg); }
+.qd-note { font-size: 11.5px; color: var(--muted); }
+.qd-footer { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding-top: 4px; }
+@media (max-width: 720px) {
+  .qd-input-grid { grid-template-columns: minmax(0, 1fr); }
+  #quoteDraftModal .modal-body { padding: 12px; }
+  .qd-input-grid textarea, .qd-eff input, .qd-table input, .qd-table select { font-size: 16px !important; }
+}
+.qd-target { font-size: 13px; font-weight: 700; color: var(--ink); }
+.qd-unread { font-size: 11.5px; padding: 8px 10px; border-radius: 7px; background: var(--warn-bg); color: var(--ink); }
+.qd-unread ul { margin: 4px 0 0; padding-inline-start: 18px; }
+.qd-unread li { overflow-wrap: anywhere; color: var(--muted); }
+.qd-table td.qd-quoted { min-width: 140px; max-width: 340px; unicode-bidi: plaintext; text-align: start; }
+.qd-unread ul { max-height: 180px; overflow-y: auto; overscroll-behavior: contain; }
+.qd-unread li { unicode-bidi: plaintext; text-align: start; }
+.qd-unread-more { margin-top: 4px; font-weight: 600; }
+.qd-table td.qd-quoted { unicode-bidi: normal; }
+.qd-table td.qd-quoted .qd-src-line { unicode-bidi: plaintext; display: block; }
