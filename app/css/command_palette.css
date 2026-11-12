@@ -877,6 +877,174 @@ html.phone-scan-companion #mobileSearchBtn {
   }
 }
 
+/* 6B. Tab-to-Filter: inline table chip, per-row filter affordance & scope-bar hint */
+.cmdp-filter-chip[hidden],
+.cmdp-foot-keys > span[hidden] {
+  display: none !important;
+}
+
+.cmdp-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 46%;
+  height: 27px;
+  padding-inline: 8px 3px;
+  border-radius: 999px;
+  border: 1px solid var(--brass, #B88228);
+  background: rgba(184, 130, 40, 0.16);
+  color: #7C5310;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.cmdp-chip-ico {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.cmdp-chip-ico svg.ic {
+  width: 13px;
+  height: 13px;
+}
+
+.cmdp-chip-lbl {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmdp-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.cmdp-chip-x:hover {
+  background: rgba(184, 130, 40, 0.26);
+}
+
+:root[data-theme="dark"] .cmdp-filter-chip {
+  background: rgba(217, 165, 74, 0.2);
+  border-color: #D9A54A;
+  color: #F3C979;
+}
+
+:root[data-theme="dark"] .cmdp-chip-x:hover {
+  background: rgba(217, 165, 74, 0.3);
+}
+
+.cmdp-dialog.is-filter-mode .cmdp-search-ico,
+.cmdp-dialog.is-filter-mode .cmdp-filter-pills {
+  display: none;
+}
+
+.cmdp-filter-hint {
+  display: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted, #6B5D50);
+}
+
+.cmdp-dialog.is-filter-mode .cmdp-filter-hint {
+  display: inline-block;
+}
+
+:root[data-theme="dark"] .cmdp-filter-hint {
+  color: #BBA995;
+}
+
+.cmdp-item-filter {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: 1px solid rgba(184, 130, 40, 0.38);
+  background: var(--surface, #FFFFFF);
+  color: var(--brass-strong, #9E6D1B);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.cmdp-item-filter svg.ic {
+  width: 13px;
+  height: 13px;
+}
+
+.cmdp-item:hover .cmdp-item-filter,
+.cmdp-item.is-active .cmdp-item-filter {
+  display: inline-flex;
+}
+
+.cmdp-item-filter:hover {
+  border-color: var(--brass, #B88228);
+  background: rgba(184, 130, 40, 0.18);
+}
+
+@media (pointer: coarse) {
+  .cmdp-item-filter {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+  }
+}
+
+:root[data-theme="dark"] .cmdp-item-filter {
+  background: #271E17;
+  border-color: rgba(217, 165, 74, 0.38);
+  color: #E5B968;
+}
+
+.cmdp-badge.kind-filter {
+  background: rgba(184, 130, 40, 0.12);
+  border-color: rgba(184, 130, 40, 0.30);
+  color: #7C5310;
+}
+
+:root[data-theme="dark"] .cmdp-badge.kind-filter {
+  background: rgba(217, 165, 74, 0.16);
+  border-color: rgba(217, 165, 74, 0.34);
+  color: #F3C979;
+}
+
+@media (max-width: 540px) {
+  .cmdp-filter-chip {
+    max-width: 42%;
+  }
+  /* The filter button already marks a table row on phones; drop the redundant kind badge so titles keep their room */
+  .cmdp-item-right .cmdp-item-filter ~ .cmdp-badge.kind-table,
+  .cmdp-item-right .cmdp-item-filter ~ .cmdp-badge.kind-statement {
+    display: none;
+  }
+  .cmdp-item-right .cmdp-badge:not(.kind-table):not(.kind-filter):not(.kind-statement) {
+    display: inline-block;
+    max-width: 104px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 /* 7. Workspace Table Panel Arrival Highlight (C1 Warm Brass Ring · Zero Navy Fills) */
 @keyframes cmdpTargetPanelPulse {
   0% {

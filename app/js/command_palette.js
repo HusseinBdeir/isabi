@@ -18,6 +18,16 @@
   let _cachedIndex = null;
   let _cachedIndexKey = '';
 
+  // Tab-to-Filter: a highlighted table result becomes an inline chip, the typed text becomes that table's filter
+  let _filterTarget = null;
+  let _filterPrevQuery = '';
+  let _filterIndexRef = null;
+  const FILTER_SUGGEST_LIMIT = 12;
+  const FILTER_FACET_SKIP_KEY_RE = /^(id|notes|company|companies_list|bu|voided)$|date|(^|_)(time|at)$/i;
+  const FILTER_FACET_REF_KEY_RE = /plate|truck|equipment|serial|vin|chassis|code|ref|ticket|invoice|voucher|doc_no|_no$/i;
+  const FILTER_FACET_SERIAL_KEY_RE = /ticket|invoice|voucher|doc_no|reference|^ref$|_ref$/i;
+  const FILTER_SVG ='<svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 5h16.8l-6.5 7.7v5.5l-3.8 1.9v-7.4z"/></svg>';
+
   const FREQ_STORAGE_PREFIX = 'isabi_cmdp_freq_v1::';
 
   const MFG_ONLY_TABLES = new Set([
@@ -46,9 +56,9 @@
 
   const DOMAIN_TABLES_BY_IND = {
     'Holding & Treasury': [
-      { key: 'hld_entities_tbl', domKey: 'hld_interactions', label: '14-Entity Group Scorecard', view: 'hld_entities', panelId: 'hldEntitiesScorecardPanel' },
+      { key: 'hld_entities_tbl', domKey: 'hld_interactions', label: '14-Entity Group Scorecard', view: 'hld_entities', panelId: 'hldEntitiesScorecardPanel', noFilter: true },
       { key: 'hld_open_ic_tbl', domKey: 'hld_interactions', label: 'Intercompany Repayment Ledger', view: 'hld_open_recon', panelId: 'hldOpenReconPanel' },
-      { key: 'hld_pairs_tbl', domKey: 'hld_interactions', label: 'Sister Pair Matrix', view: 'hld_due_matrix', panelId: 'hldDueMatrixPanel' },
+      { key: 'hld_pairs_tbl', domKey: 'hld_interactions', label: 'Sister Pair Matrix', view: 'hld_due_matrix', panelId: 'hldDueMatrixPanel', noFilter: true },
       { key: 'hld_partners_tbl', domKey: 'hld_partners', label: 'Partner Splits & Agreements', view: 'hld_partners', panelId: 'hldPartnerChronoPanel' },
       { key: 'hld_extended_tbl', domKey: 'external_movements', label: 'Extended Stakeholder Ledger', view: 'hld_extended', panelId: 'hldExtendedEntriesPanel' },
       { key: 'hld_loans_tbl', domKey: 'hld_loans', label: 'Facility Rate Schedules', view: 'hld_loans', panelId: 'hldFacilitySchedulesPanel' }
@@ -116,7 +126,11 @@
     expenses: { view: 'expenses', panelId: 'expPanel' },
     expense_items: { view: 'expenses', panelId: 'expItemsTicketPanel' },
     recurring_expenses: { view: 'recurring_expenses', panelId: 'recurringExpPanel' },
-    documents: { view: 'documents', panelId: 'documentsPanel' },
+    documents: {
+      view: 'documents',
+      panelId: 'documentsPanel',
+      facetCols: ['name', 'doc_type', 'title', 'counterparty', 'reference', 'parent_label', 'file_name', 'status']
+    },
     settlements: { view: 'suppliers', panelId: 'settlePanel' },
     warehouse_movements: { view: 'warehouse', panelId: 'warehouseMovesPanel' },
     repair_items: { view: 'warehouse_parts', panelId: 'whRepairPartsPanel' },
@@ -144,7 +158,7 @@
     customers: { view: 'reg_customers', panelId: 'univRegPanel', univRegKey: 'customers' },
     suppliers: { view: 'reg_suppliers', panelId: 'univRegPanel', univRegKey: 'suppliers' },
     sites: { view: 'reg_sites', panelId: 'sitesRegPanel' },
-    regions: { view: 'reg_regions', panelId: 'regionsRegPanel' },
+    regions: { view: 'reg_regions', panelId: 'regionsRegPanel', searchKey: 'regionsSearch' },
     products: { view: 'reg_products', panelId: 'univRegPanel', univRegKey: 'products' },
     product_types: { view: 'reg_products', panelId: 'univRegPanel', univRegKey: 'product_types' },
     items: { view: 'reg_items', panelId: 'univRegPanel', univRegKey: 'items' },
@@ -594,6 +608,7 @@
   }
 
   let _suppressAutoTableUsage = false;
+  let _suppressAllUsage = false;
   let _pendingUnivRegKey = '';
 
   function recordUsage(kind, key) {
@@ -601,6 +616,7 @@
       _ctx.STATE.activeUnivRegKey = _pendingUnivRegKey;
       _pendingUnivRegKey = '';
     }
+    if (_suppressAllUsage) return;
     if (!_ctx || !_ctx.STATE || !_ctx.STATE.authed || !kind || !key) return;
     if (_suppressAutoTableUsage && kind === 'table') return;
     try {
@@ -855,6 +871,66 @@
     });
   }
 
+  // Statement parameters a Tab chip can set: the statement's own picker lists (dates, period, year and month stay on the statement)
+  const STMT_PICK_PARAM_ORDER = ['customer', 'supplier', 'driver', 'staff', 'account', 'invoiceNo', 'ticketId', 'receiptId', 'category', 'equipment', 'equipType', 'product', 'site'];
+  const STMT_DOC_PARAMS = new Set(['invoiceNo', 'ticketId', 'receiptId']);
+  const STMT_NON_PICK_PARAMS = new Set(['from', 'to', 'asof', 'period', 'year', 'month']);
+  // Registers whose rows come from one ledger only: [statement engine row list, field] per picker
+  const STMT_VALUE_SOURCES = {
+    '08': { customer: ['salesAll', 'customer'], product: ['salesAll', 'product'], site: ['salesAll', 'site'] },
+    '09': { supplier: ['expAll', 'supplier'], category: ['expAll', 'category'] },
+    '11': { supplier: ['rmAll', 'supplier'] },
+    '12': { driver: ['fuelAll', 'driver'], equipment: ['fuelAll', 'equip'], equipType: ['fuelAll', 'equip_type'] }
+  };
+
+  // A signed-in seat inside the Demo Company still holds its live Manufacturing ledgers in memory. The palette lists
+  // only sandbox rows there, so the chip offers and accepts no Manufacturing statement value in that scope.
+  // The public sandbox session runs on the synthetic seed and keeps the chip.
+  function stmtChipBlockedForScope(landInd) {
+    const STATE = _ctx && _ctx.STATE;
+    if (!STATE || STATE.company !== DEMO_COMPANY_KEY) return false;
+    if (STATE.demoVisitor) return false;
+    try {
+      if (/[?&](autologin|demo)=1(&|$)/.test(String(window.location.search || ''))) return false;
+    } catch (_) {}
+    return (landInd || 'Manufacturing') === 'Manufacturing';
+  }
+
+  function stmtPickKeys(rdlMeta) {
+    const params = (rdlMeta && Array.isArray(rdlMeta.params)) ? rdlMeta.params : [];
+    return STMT_PICK_PARAM_ORDER.filter(k => params.indexOf(k) >= 0);
+  }
+
+  // Sibling pickers put back to "All" when the chip sets one, so the statement opens on exactly what the chip names
+  function stmtResetKeys(rdlMeta) {
+    const params = (rdlMeta && Array.isArray(rdlMeta.params)) ? rdlMeta.params : [];
+    return params.filter(k => !STMT_NON_PICK_PARAMS.has(k) && !STMT_DOC_PARAMS.has(k));
+  }
+
+  // Runs inside the statement's landing scope (after any industry switch): the value is set only if this seat's
+  // statement picker lists it there, so a stale or foreign value can never be forced into a statement.
+  function applyStatementParamSelection(rdlMeta, sel, pctx) {
+    const rdlApi = (typeof window !== 'undefined') ? window.MFG_RDL : null;
+    if (!rdlApi || typeof rdlApi.buildRdlContext !== 'function' || typeof rdlApi.getParamComboConfig !== 'function') return false;
+    if (!sel || stmtPickKeys(rdlMeta).indexOf(sel.key) < 0) return false;
+    // Same preconditions as the suggestions: the seat's company limits are on STATE and the scope may carry a value
+    if (!Array.isArray(pctx.STATE.allowedCompanyNames)) return false;
+    if (stmtChipBlockedForScope((_ctx.getActiveIndustry && _ctx.getActiveIndustry(pctx.STATE.company)) || 'Manufacturing')) return false;
+    try {
+      const rctx = rdlApi.buildRdlContext(pctx.SEED, pctx.STATE);
+      const cfg = rdlApi.getParamComboConfig(sel.key, rctx);
+      const want = String(sel.value);
+      if (!cfg || want === 'ALL' || !cfg.options.some(o => String(o.value) === want)) return false;
+      stmtResetKeys(rdlMeta).forEach(k => {
+        if (k !== sel.key) rctx.rdl.params[k] = 'ALL';
+      });
+      rctx.rdl.params[sel.key] = want;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function makeCandidate(spec) {
     const variants = spec.titleRaw
       ? [String(spec.titleEn || '').trim()].filter(Boolean)
@@ -896,6 +972,7 @@
       exactSet,
       hay,
       hayWords,
+      filterable: spec.filterable || null,
       run: spec.run
     };
   }
@@ -1004,6 +1081,21 @@
         exactAliases,
         aliases: `${aliasStr} ${meta.singularLabel || ''} table register جدول سجل`,
         extraHay: cleanGroup,
+        filterable: {
+          kind: 'seed',
+          view: targetView,
+          panelId: targetSpec ? targetSpec.panelId : '',
+          fallbackKey: meta.key,
+          searchKey: (targetSpec && targetSpec.univConnTableKey)
+            ? 'univConnSearch'
+            : ((SIDEBAR_TABLE_TARGET_MAP[meta.key] && SIDEBAR_TABLE_TARGET_MAP[meta.key].searchKey) || 'search'),
+          tableKey: meta.key,
+          universal: Boolean(meta.universal),
+          forceInd: targetInd,
+          facetCols: (SIDEBAR_TABLE_TARGET_MAP[meta.key] && SIDEBAR_TABLE_TARGET_MAP[meta.key].facetCols) || null,
+          cols: Array.isArray(meta.cols) ? meta.cols : [],
+          rowsFn: () => rows
+        },
         run: () => {
           recordUsage('table', meta.key);
           if (targetSpec && targetSpec.forceInd) {
@@ -1065,6 +1157,18 @@
           exactAliases,
           aliases: `${aliasStr} table register جدول سجل`,
           extraHay: ind,
+          filterable: tab.noFilter ? null : {
+            kind: 'dom',
+            view: tab.view,
+            panelId: tab.panelId || '',
+            fallbackKey: tab.domKey || tab.key,
+            searchKey: 'search',
+            forceInd: ind,
+            domTabKey: tab.key,
+            coColIdx: -1,
+            cellRows: [],
+            cellRowIds: []
+          },
           run: () => {
             recordUsage('table', tab.key);
             ensureIndustryScope(ind, pctx);
@@ -1258,10 +1362,12 @@
           freq: usageScore('statement', code) + indBoost(targetInd) + (1000 - idx * 25),
           exactAliases: [code, `#${code}`, `statement ${code}`, r.name || '', r.title || '', r.ar || '', r.fr || ''],
           aliases: `${aliasStr} ${r.ar || ''} ${r.fr || ''} statement report print pdf rdl كشف تقرير طباعة relevé état rapport`,
-          run: () => {
+          filterable: stmtPickKeys(r).length ? { kind: 'stmt', code, targetInd, paramKeys: stmtPickKeys(r), resetKeys: stmtResetKeys(r) } : null,
+          run: sel => {
             recordUsage('statement', code);
             if (targetInd) ensureIndustryScope(targetInd, pctx);
             pctx.STATE.activeStatement = code;
+            if (sel && sel.key) applyStatementParamSelection(r, sel, pctx);
             _ctx.setView('statements');
           }
         }));
@@ -1411,6 +1517,13 @@
           const dsTableTitle = ds.tableTitle || tab.label || '';
           let keptCount = 0;
           let validRowCnt = 0;
+          const domTblRef = (typeof domTableItemByKey !== 'undefined' && domTableItemByKey) ? domTableItemByKey.get(tab.key) : null;
+          const domFacetRows = (domTblRef && domTblRef.filterable) ? domTblRef.filterable.cellRows : null;
+          if (domFacetRows) {
+            domFacetRows.length = 0;
+            domTblRef.filterable.cellRowIds.length = 0;
+            domTblRef.filterable.coColIdx = coColIdx;
+          }
 
           ds.rows.forEach((rawCells, rIdx) => {
             if (!Array.isArray(rawCells) || !rawCells.length) return;
@@ -1444,6 +1557,10 @@
               return;
             }
             validRowCnt++;
+            if (domFacetRows) {
+              domFacetRows.push(cells);
+              domTblRef.filterable.cellRowIds.push(origRowId);
+            }
             const labelParts = cells.slice(0, 4).map(c => String(c || '').trim()).filter(Boolean);
             const titleDisp = labelParts.slice(0, 2).join(' · ') || rowId;
             const subRaw = labelParts.slice(2, 4).join(' · ');
@@ -1495,7 +1612,6 @@
               if (visRef && visRef !== rowId) pushExactRef(visRef, fallbackHit);
             }
           });
-          const domTblRef = (typeof domTableItemByKey !== 'undefined' && domTableItemByKey) ? domTableItemByKey.get(tab.key) : null;
           if (domTblRef) {
             domTblRef.subRaw = `${validRowCnt.toLocaleString('en-US')}`;
             domTblRef.freq = usageScore('table', tab.key) + indBoost(ind) + Math.min(40000, validRowCnt * 25);
@@ -1697,6 +1813,659 @@
     };
   }
 
+  // ==========================================================================
+  // Tab-to-Filter: Tab on a highlighted table result pins it as an inline chip;
+  // the typed text (or a frequency-ranked value of that table) opens the sidebar
+  // hub & panel with the table filter already applied. 100% deterministic.
+  // ==========================================================================
+  const SEARCH_PLACEHOLDER_EN = 'Search tables, forms, reports, clients, plates, or ticket #...';
+  const FILTER_PLACEHOLDER_EN = 'Type a client, plate, material, or reference to filter this table...';
+
+  const STMT_PLACEHOLDER_EN = 'Type a customer, supplier, driver, account, or document number for this statement...';
+  const FILTER_HINT_EN = 'Narrow this table before it opens';
+  const STMT_HINT_EN = 'Choose who or what this statement is for before it opens';
+  const FILTER_TAB_HINT_EN = 'Filter table';
+  const STMT_TAB_HINT_EN = 'Set parameter';
+  const FILTER_CHIP_X_EN = 'Remove table filter';
+  const STMT_CHIP_X_EN = 'Remove statement parameter';
+
+  function isFilterableItem(it) {
+    return Boolean(it && (it.kind === 'table' || it.kind === 'statement') && it.filterable && typeof it.run === 'function');
+  }
+
+  function isStatementTarget(it) {
+    return Boolean(it && it.kind === 'statement' && it.filterable && it.filterable.kind === 'stmt');
+  }
+
+  // Runs fn with STATE pointed at the scope the statement will land in (same temporary switch as the access check),
+  // and puts the live scope and the statement's own parameters back afterwards, whatever fn does.
+  function withStatementLandingScope(f, pctx, fn) {
+    const STATE = pctx.STATE;
+    const curInd = (_ctx.getActiveIndustry && _ctx.getActiveIndustry(STATE.company)) || 'Manufacturing';
+    const savedCompany = STATE.company;
+    const savedDemoInd = STATE.demoCompanyIndustry;
+    const savedRdl = STATE.rdl;
+    const savedParams = (savedRdl && savedRdl.params) ? Object.assign({}, savedRdl.params) : null;
+    const cross = Boolean(f.targetInd && f.targetInd !== curInd);
+    try {
+      if (cross) {
+        if (pctx.isDemoCompany) {
+          STATE.demoCompanyIndustry = f.targetInd;
+        } else {
+          const scopes = pctx.permittedScopesByInd.get(f.targetInd) || [];
+          if (!scopes[0]) return null;
+          STATE.company = scopes[0];
+        }
+      }
+      return fn();
+    } finally {
+      STATE.company = savedCompany;
+      STATE.demoCompanyIndustry = savedDemoInd;
+      if (!savedRdl) {
+        try { delete STATE.rdl; } catch (_) {}
+      } else {
+        STATE.rdl = savedRdl;
+        if (savedParams) {
+          Object.keys(savedRdl.params).forEach(k => {
+            if (!(k in savedParams)) delete savedRdl.params[k];
+          });
+          Object.assign(savedRdl.params, savedParams);
+        }
+      }
+    }
+  }
+
+  // Values of the pinned statement's own pickers, read through the statement engine in the landing scope:
+  // the same list, the same seat and company limits and the same usage order the statement itself offers.
+  function buildStatementParamOptions(target) {
+    const f = target && target.filterable;
+    const pctx = _cachedIndex ? _cachedIndex.pctx : null;
+    const rdlApi = (typeof window !== 'undefined') ? window.MFG_RDL : null;
+    if (!f || !pctx || !_ctx || !rdlApi || typeof rdlApi.buildRdlContext !== 'function' || typeof rdlApi.getParamComboConfig !== 'function') return [];
+    // Never read the statement engine before the seat's company limits are on STATE
+    if (!Array.isArray(pctx.STATE.allowedCompanyNames)) return [];
+    if (stmtChipBlockedForScope(f.targetInd || (_ctx.getActiveIndustry && _ctx.getActiveIndustry(pctx.STATE.company)) || 'Manufacturing')) return [];
+    let built = null;
+    try {
+      built = withStatementLandingScope(f, pctx, () => {
+        const rctx = rdlApi.buildRdlContext(pctx.SEED, pctx.STATE);
+        if (f._optsRef === rctx.customers && Array.isArray(f._opts)) return f._opts;
+        const perKey = [];
+        f.paramKeys.forEach((k, kIdx) => {
+          const cfg = rdlApi.getParamComboConfig(k, rctx);
+          if (!cfg || !Array.isArray(cfg.options)) return;
+          const isDoc = STMT_DOC_PARAMS.has(k);
+          // A register reads one ledger while its picker lists every party: keep only the values that ledger carries,
+          // so a suggested name never opens an empty register
+          const src = (STMT_VALUE_SOURCES[f.code] || {})[k];
+          let liveCount = null;
+          if (src && Array.isArray(rctx[src[0]])) {
+            liveCount = new Map();
+            rctx[src[0]].forEach(row => {
+              if (!row || row.is_receipt_row || row[src[1]] == null) return;
+              const v = String(row[src[1]]);
+              liveCount.set(v, (liveCount.get(v) || 0) + 1);
+            });
+          }
+          let rank = 0;
+          cfg.options.forEach(o => {
+            if (!o || o.value === 'ALL' || o.value == null || o.value === '') return;
+            if (liveCount && !liveCount.has(String(o.value))) return;
+            const main = String(o.main || o.label || o.value);
+            const code = (o.code && o.code !== 'ALL') ? String(o.code) : '';
+            perKey.push({
+              key: k,
+              keyIdx: kIdx,
+              rank: rank++,
+              count: liveCount ? (liveCount.get(String(o.value)) || 0) : 0,
+              value: String(o.value),
+              paramLabelEn: String(cfg.label || ''),
+              isDoc,
+              codeRef: code ? normRefCode(code) : '',
+              main,
+              title: code ? `${code} · ${main}` : main,
+              fill: code ? `${code} ${main}` : main,
+              meta: isDoc ? String(o.meta || '') : '',
+              hayRaw: `${code} ${main} ${o.q || ''}`,
+              norm: null,
+              exactA: null,
+              exactB: null
+            });
+          });
+        });
+        // One list across the statement's pickers. A register with several pickers ranks every value by its row count in
+        // that register's ledger; a single-picker statement keeps the picker's own usage order (count is 0 for all)
+        perKey.sort((a, b) => (b.count - a.count) || (a.rank - b.rank) || (a.keyIdx - b.keyIdx));
+        f._optsRef = rctx.customers;
+        f._opts = perKey;
+        return perKey;
+      });
+    } catch (_) {
+      built = null;
+    }
+    return built || [];
+  }
+
+  // Hard Rule 11: exact value first, then the statement picker's own usage order, never alphabetical
+  function searchStatementParamOptions(target, rawTerm) {
+    const opts = buildStatementParamOptions(target);
+    const qn = normSearch(rawTerm);
+    if (!qn) return opts.slice(0, FILTER_SUGGEST_LIMIT);
+    const toks = qn.split(' ');
+    const qRef = normRefCode(rawTerm);
+    const exact = [];
+    const rest = [];
+    for (let i = 0; i < opts.length; i++) {
+      const o = opts[i];
+      if (o.norm === null) {
+        o.norm = normSearch(o.hayRaw);
+        o.exactA = normSearch(o.fill);
+        o.exactB = normSearch(o.main);
+      }
+      let ok = true;
+      for (let t = 0; t < toks.length; t++) {
+        if (!o.norm.includes(toks[t])) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) continue;
+      if (o.exactA === qn || o.exactB === qn || (o.codeRef && o.codeRef === qRef)) {
+        if (exact.length < FILTER_SUGGEST_LIMIT) exact.push(o);
+      } else if (rest.length < FILTER_SUGGEST_LIMIT) {
+        rest.push(o);
+      }
+    }
+    return exact.concat(rest).slice(0, FILTER_SUGGEST_LIMIT);
+  }
+
+  function facetTextOf(val, colKey) {
+    if (val == null || val === '' || typeof val === 'boolean' || typeof val === 'object') return '';
+    const isRefCol = Boolean(colKey && FILTER_FACET_REF_KEY_RE.test(colKey));
+    if (typeof val === 'number') {
+      return (isRefCol && Number.isInteger(val) && val > 9) ? String(val) : '';
+    }
+    const s = String(val).replace(/\s+/g, ' ').trim();
+    if (s.length < 2 || s.length > 64) return '';
+    if (s.indexOf(':') >= 0 || s.indexOf('"') >= 0 || s.indexOf('<') >= 0) return '';
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return '';
+    if (/^[\d\s.,%$+\-/()]+$/.test(s)) return (isRefCol && /^\d{2,24}$/.test(s)) ? s : '';
+    // Internal option codes (same_equipment) and measured figures ("0 LL", "1.08x (Optimal)") are not names to filter by
+    if (/^[a-z0-9]+(_[a-z0-9]+)+$/.test(s)) return '';
+    if (/^[\d(+\-]/.test(s) && /\s/.test(s)) return '';
+    // Auto-generated record labels ("Loan 2026-08-10 ... #792", "CRD-20240101-...", "OIL-0007") are one-off ids, not filter values
+    if (/\d{4}-\d{2}-\d{2}/.test(s) || /(^|[^0-9])20\d{2}(0[1-9]|1[0-2])([0-2]\d|3[01])([^0-9]|$)/.test(s)) return '';
+    if (/^[A-Z]{2,6}(-\d{4})?-\d{3,5}$/.test(s)) return '';
+    return s;
+  }
+
+  // Rows the landing table is about to show: this seat's permitted rows, narrowed to the company scope and
+  // date range the hub will open in, so a suggested value never leads to an empty table.
+  function getLandingFacetRows(f) {
+    const permitted = (typeof f.rowsFn === 'function' ? f.rowsFn() : null) || [];
+    const pctx = _cachedIndex ? _cachedIndex.pctx : null;
+    if (!permitted.length || !pctx || !_ctx || !_ctx.STATE) return permitted;
+    const STATE = _ctx.STATE;
+    const curInd = (_ctx.getActiveIndustry && _ctx.getActiveIndustry(STATE.company)) || 'Manufacturing';
+    let scopeKey = STATE.company;
+    let landInd = curInd;
+    if (f.forceInd && f.forceInd !== curInd) {
+      if (pctx.isDemoCompany) return permitted;
+      const scopes = pctx.permittedScopesByInd.get(f.forceInd) || [];
+      if (!scopes[0]) return permitted;
+      scopeKey = scopes[0];
+      landInd = f.forceInd;
+    }
+    if (f.universal) {
+      const rawList = (pctx.SEED && pctx.SEED.records && pctx.SEED.records[f.tableKey]) || [];
+      const hasMultiSeed = Boolean(rawList._hasMultiIndustrySeed);
+      return permitted.filter(r => {
+        if (r._industry && r._industry !== landInd) return false;
+        if (hasMultiSeed && (r._industry || 'Manufacturing') !== landInd) return false;
+        return true;
+      });
+    }
+    if (typeof _ctx.filterRecords !== 'function') return permitted;
+    const rawList = (pctx.SEED && pctx.SEED.records && pctx.SEED.records[f.tableKey]) || [];
+    let scoped = [];
+    try {
+      scoped = _ctx.filterRecords(rawList, {
+        company: scopeKey,
+        ignoreSearch: true,
+        tableKey: f.tableKey,
+        user: pctx.user
+      }) || [];
+    } catch (_) {
+      return permitted;
+    }
+    const permittedSet = new Set(permitted);
+    return scoped.filter(r => permittedSet.has(r));
+  }
+
+  function getLandingFacetCellRows(f) {
+    const cellRows = f.cellRows || [];
+    if (!cellRows.length || !_ctx || !_ctx.STATE) return cellRows;
+    const STATE = _ctx.STATE;
+    const curInd = (_ctx.getActiveIndustry && _ctx.getActiveIndustry(STATE.company)) || 'Manufacturing';
+    if (f.forceInd && f.forceInd !== curInd) return cellRows;
+    // Already inside this industry: keep only the permitted rows the hub register lists for the live company scope and dates
+    if (f.domTabKey && Array.isArray(f.cellRowIds) && typeof _ctx.buildIndustryDomainTableRegister === 'function') {
+      const savedSearch = STATE.search;
+      try {
+        STATE.search = '';
+        const live = _ctx.buildIndustryDomainTableRegister(f.forceInd, f.domTabKey);
+        if (live && Array.isArray(live.rows)) {
+          const liveIds = new Set();
+          for (let i = 0; i < live.rows.length; i++) {
+            const lr = live.rows[i];
+            if (Array.isArray(lr) && lr.length) liveIds.add(String(lr._rid || lr[0] || '').trim());
+          }
+          return cellRows.filter((cells, i) => liveIds.has(f.cellRowIds[i]));
+        }
+      } catch (_) {
+        /* fall through to the company-column narrowing */
+      } finally {
+        STATE.search = savedSearch;
+      }
+    }
+    if (!(f.coColIdx >= 0)) return cellRows;
+    const buName = _ctx.COMPANY_BU_MATCH ? _ctx.COMPANY_BU_MATCH[STATE.company] : '';
+    if (!buName) return cellRows;
+    const want = normCoKey(buName);
+    return cellRows.filter(cells => {
+      const co = normCoKey(cells[f.coColIdx]);
+      return !co || co === want;
+    });
+  }
+
+  // Values of the pinned table, counted over the rows this seat is permitted to see (same scoped rows as the index).
+  // A column counts as naming something (client, plate, material, site) when it carries enough distinct values;
+  // short option lists (unit, method, status) stay searchable by typing but never lead the before-typing list.
+  function buildFilterFacets(target) {
+    const f = target && target.filterable;
+    if (!f) return [];
+    const st = (_ctx && _ctx.STATE) || {};
+    const facetsKey = [st.company, st.demoCompanyIndustry, st.period, st.dateFilter, st.dateFrom, st.dateTo, st.basis].join('|');
+    if (Array.isArray(f._facets) && f._facetsKey === facetsKey) return f._facets;
+    const tally = new Map();
+    const colDistinct = new Map();
+    let rowCnt = 0;
+    const bump = (label, rowSeen, colId) => {
+      const k = label.toLowerCase();
+      let dset = colDistinct.get(colId);
+      if (!dset) {
+        dset = new Set();
+        colDistinct.set(colId, dset);
+      }
+      dset.add(k);
+      if (rowSeen.indexOf(k) >= 0) return;
+      rowSeen.push(k);
+      const hit = tally.get(k);
+      if (hit) {
+        hit.count++;
+        if (hit.cols.indexOf(colId) < 0) hit.cols.push(colId);
+      } else {
+        tally.set(k, { label, count: 1, norm: null, cols: [colId], named: false });
+      }
+    };
+    if (f.kind === 'seed') {
+      const u = (_ctx && _ctx.activeUser) ? _ctx.activeUser() : null;
+      const hideTax = Boolean(_ctx && _ctx.canSeeTaxBreakdown && !_ctx.canSeeTaxBreakdown(u));
+      const rows = getLandingFacetRows(f);
+      const cols = (f.facetCols || f.cols || []).filter(ck => ck
+        && !FILTER_FACET_SKIP_KEY_RE.test(ck)
+        && !(hideTax && /vat|tax|iva/i.test(ck)));
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r) continue;
+        rowCnt++;
+        const rowSeen = [];
+        for (let c = 0; c < cols.length; c++) {
+          const txt = facetTextOf(r[cols[c]], cols[c]);
+          if (txt) bump(txt, rowSeen, cols[c]);
+        }
+      }
+    } else {
+      const cellRows = getLandingFacetCellRows(f);
+      for (let i = 0; i < cellRows.length; i++) {
+        const cells = cellRows[i];
+        if (!Array.isArray(cells)) continue;
+        rowCnt++;
+        const rowSeen = [];
+        const lim = Math.min(cells.length, 9);
+        for (let c = 1; c < lim; c++) {
+          const raw = cells[c];
+          if (typeof raw !== 'string' || !raw) continue;
+          const parts = raw.indexOf(' · ') >= 0 ? raw.split(' · ') : [raw];
+          for (let p = 0; p < parts.length; p++) {
+            const txt = facetTextOf(parts[p], '');
+            if (txt) bump(txt, rowSeen, c);
+          }
+        }
+      }
+    }
+    const namedMin = Math.min(8, Math.max(2, Math.ceil(rowCnt / 4)));
+    const namedCols = new Set();
+    const serialCols = new Set();
+    colDistinct.forEach((dset, colId) => {
+      if (dset.size >= namedMin) namedCols.add(colId);
+      // A document-number column where nearly every row carries its own value (ticket #, voucher #) is a serial,
+      // not a filter value; name, plate and chassis columns stay even when unique (registries list one row per name)
+      if (rowCnt > 200 && dset.size > rowCnt * 0.9 && typeof colId === 'string' && FILTER_FACET_SERIAL_KEY_RE.test(colId)) serialCols.add(colId);
+    });
+    // Belt and braces on top of the row scoping: never suggest a company this seat cannot open
+    const pctxNow = _cachedIndex ? _cachedIndex.pctx : null;
+    const blockedCo = label => {
+      if (!pctxNow || pctxNow.demoActive) return false;
+      const nk = normCoKey(label);
+      return Boolean(nk) && pctxNow.catalogByNormName.has(nk) && !pctxNow.allowedCosNormSet.has(nk);
+    };
+    const out = [];
+    tally.forEach(fc => {
+      if (fc.cols.every(colId => serialCols.has(colId))) return;
+      if (blockedCo(fc.label)) return;
+      fc.named = fc.cols.some(colId => namedCols.has(colId));
+      out.push(fc);
+    });
+    out.sort((a, b) => b.count - a.count);
+    f._facets = out;
+    f._facetsKey = facetsKey;
+    return out;
+  }
+
+  // Hard Rule 11: exact value first, then operational frequency (row count in the pinned table), never alphabetical
+  function searchFilterFacets(target, rawTerm) {
+    const facets = buildFilterFacets(target);
+    const qn = normSearch(rawTerm);
+    if (!qn) {
+      const named = facets.filter(fc => fc.named);
+      const pool = named.length >= 3 ? named : facets;
+      return pool.slice(0, FILTER_SUGGEST_LIMIT).map(fc => ({ label: fc.label, count: fc.count, isExact: false }));
+    }
+    const toks = qn.split(' ');
+    const exact = [];
+    const rest = [];
+    for (let i = 0; i < facets.length; i++) {
+      const fc = facets[i];
+      if (fc.norm === null) fc.norm = normSearch(fc.label);
+      let ok = true;
+      for (let t = 0; t < toks.length; t++) {
+        if (!fc.norm.includes(toks[t])) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) continue;
+      if (fc.norm === qn) {
+        exact.push({ label: fc.label, count: fc.count, isExact: true });
+      } else if (rest.length < FILTER_SUGGEST_LIMIT) {
+        rest.push({ label: fc.label, count: fc.count, isExact: false });
+      }
+    }
+    return exact.concat(rest).slice(0, FILTER_SUGGEST_LIMIT);
+  }
+
+  function getFilterTarget() {
+    if (!_filterTarget) return null;
+    const idx = buildSearchIndex();
+    if (!idx) {
+      _filterTarget = null;
+      return null;
+    }
+    if (_filterIndexRef !== idx) {
+      const wantId = _filterTarget.id;
+      _filterTarget = idx.items.find(x => x.id === wantId && isFilterableItem(x)) || null;
+      _filterIndexRef = idx;
+    }
+    return _filterTarget;
+  }
+
+  function syncFootHints() {
+    if (typeof document === 'undefined') return;
+    const tabHint = document.getElementById('cmdPaletteTabHint');
+    const backHint = document.getElementById('cmdPaletteBackHint');
+    const inFilter = Boolean(_filterTarget);
+    const cur = _currentItems[_activeIdx];
+    if (tabHint) {
+      tabHint.hidden = inFilter || !isFilterableItem(cur);
+      if (!tabHint.hidden) setEnglishText(document.getElementById('cmdPaletteTabHintLbl'), isStatementTarget(cur) ? STMT_TAB_HINT_EN : FILTER_TAB_HINT_EN);
+    }
+    if (backHint) backHint.hidden = !inFilter;
+  }
+
+  // Swaps a translated label for another English source string and lets the i18n layer re-translate it
+  function setEnglishText(el, en) {
+    if (!el || el.__cmdpEn === en) return;
+    el.__cmdpEn = en;
+    el.textContent = en;
+    translateElementIfNeeded(el.parentNode || el);
+  }
+
+  function setEnglishAttr(el, attr, en) {
+    if (!el || el['__cmdpEnAttr_' + attr] === en) return;
+    el['__cmdpEnAttr_' + attr] = en;
+    try {
+      delete el['__enAttr_' + attr];
+      delete el['__enAttrApp_' + attr];
+    } catch (_) {}
+    el.setAttribute(attr, en);
+  }
+
+  function syncFilterChrome() {
+    if (typeof document === 'undefined') return;
+    const dlg = document.getElementById('cmdPaletteDialog');
+    if (!dlg) return;
+    const on = Boolean(_filterTarget);
+    dlg.classList.toggle('is-filter-mode', on);
+    const chip = document.getElementById('cmdPaletteFilterChip');
+    const chipLbl = document.getElementById('cmdPaletteFilterChipLbl');
+    if (chip) chip.hidden = !on;
+    if (chipLbl) chipLbl.textContent = on ? String(_filterTarget.titleEn || '') : '';
+    const isStmt = on && isStatementTarget(_filterTarget);
+    dlg.classList.toggle('is-stmt-mode', isStmt);
+    setEnglishAttr(document.getElementById('cmdPaletteInput'), 'placeholder', on ? (isStmt ? STMT_PLACEHOLDER_EN : FILTER_PLACEHOLDER_EN) : SEARCH_PLACEHOLDER_EN);
+    if (on) {
+      setEnglishAttr(document.getElementById('cmdPaletteFilterChipX'), 'aria-label', isStmt ? STMT_CHIP_X_EN : FILTER_CHIP_X_EN);
+      setEnglishText(document.getElementById('cmdPaletteFilterHint'), isStmt ? STMT_HINT_EN : FILTER_HINT_EN);
+    }
+    translateElementIfNeeded(dlg);
+    syncFootHints();
+  }
+
+  function enterFilterMode(item) {
+    if (!_isOpen || !isFilterableItem(item)) return false;
+    const inp = document.getElementById('cmdPaletteInput');
+    const clearBtn = document.getElementById('cmdPaletteClearBtn');
+    if (!_filterTarget) _filterPrevQuery = _currentQuery;
+    _filterTarget = item;
+    _filterIndexRef = _cachedIndex;
+    _currentQuery = '';
+    if (inp) inp.value = '';
+    if (clearBtn) clearBtn.hidden = true;
+    _activeIdx = 0;
+    syncFilterChrome();
+    renderResults();
+    if (inp) {
+      try { inp.focus({ preventScroll: true }); } catch (_) {}
+    }
+    return true;
+  }
+
+  function exitFilterMode() {
+    if (!_filterTarget) return false;
+    const prevId = _filterTarget.id;
+    const inp = document.getElementById('cmdPaletteInput');
+    const clearBtn = document.getElementById('cmdPaletteClearBtn');
+    _filterTarget = null;
+    _filterIndexRef = null;
+    _currentQuery = _filterPrevQuery || '';
+    _filterPrevQuery = '';
+    if (inp) inp.value = _currentQuery;
+    if (clearBtn) clearBtn.hidden = !_currentQuery;
+    _activeIdx = 0;
+    syncFilterChrome();
+    if (_isOpen) {
+      renderResults();
+      const backIdx = _currentItems.findIndex(x => x && x.id === prevId);
+      if (backIdx > 0) {
+        _activeIdx = backIdx;
+        syncActiveRowDom();
+      }
+      if (inp) {
+        try { inp.focus({ preventScroll: true }); } catch (_) {}
+      }
+    }
+    return true;
+  }
+
+  function applyFilterAndOpen(target, rawTerm, picked) {
+    if (!isFilterableItem(target)) return false;
+    if (isStatementTarget(target)) {
+      // A statement takes only a value its own picker lists; with none highlighted it opens as it is
+      activateItem(target, (picked && picked.stmtSel) ? picked.stmtSel : null);
+      return true;
+    }
+    const term = String(rawTerm == null ? '' : rawTerm).replace(/\s+/g, ' ').trim();
+    const f = target.filterable;
+    activateItem(target);
+    if (!term || !_ctx || !_ctx.STATE) return true;
+    const STATE = _ctx.STATE;
+    if (f.view && STATE.view !== f.view) return true;
+    STATE[f.searchKey || 'search'] = term;
+    STATE.shown = {};
+    const E = (typeof window !== 'undefined') ? window.MFG_ENTERPRISE : null;
+    if (E && typeof E.renderApp === 'function') {
+      E.renderApp();
+    } else if (typeof _ctx.setView === 'function') {
+      _suppressAllUsage = true;
+      try {
+        _ctx.setView(STATE.view, { reset: false, noPush: true });
+      } finally {
+        _suppressAllUsage = false;
+      }
+    }
+    focusWorkspaceTablePanel(f.panelId, f.fallbackKey);
+    return true;
+  }
+
+  function renderStatementModeResults(resultsEl, target) {
+    const term = String(_currentQuery || '').replace(/\s+/g, ' ').trim();
+    const sugg = searchStatementParamOptions(target, term);
+    const allDocs = sugg.length > 0 && sugg.every(o => o.isDoc);
+    const secEn = term ? 'Matching Values' : (allDocs ? 'Latest Records' : 'Most-Used Values');
+    const items = sugg.map((o, i) => ({
+      id: `stmtparam:${i}`,
+      kind: 'filter',
+      typed: false,
+      filterTerm: o.fill,
+      stmtSel: { key: o.key, value: o.value },
+      opt: o
+    }));
+    _currentItems = items;
+    if (_activeIdx >= items.length) _activeIdx = 0;
+
+    if (!items.length) {
+      resultsEl.innerHTML = `
+        <div class="cmdp-empty">
+          <div class="cmdp-empty-title"><span>${escHtml(target.titleEn)}</span></div>
+          <div class="cmdp-empty-sub">${term ? 'No matching value for this statement. Press Enter to open it as it is.' : 'Press Enter to open this statement as it is.'}</div>
+        </div>
+      `;
+      translateElementIfNeeded(resultsEl);
+      syncFootHints();
+      return;
+    }
+
+    let html = `<div class="cmdp-group-hdr"><span>${escHtml(secEn)}</span></div>`;
+    for (let i = 0; i < items.length; i++) {
+      const o = items[i].opt;
+      const subHtml = `<span>${escHtml(o.paramLabelEn)}</span>${o.meta ? ` <span data-no-i18n="1">&middot; ${escHtml(o.meta)}</span>` : ''}`;
+      html += `
+        <button type="button" class="cmdp-item${i === _activeIdx ? ' is-active' : ''}" role="option" aria-selected="${i === _activeIdx ? 'true' : 'false'}" data-cmdp-idx="${i}">
+          <span class="cmdp-item-ico" aria-hidden="true">${iconSvg('statements')}</span>
+          <span class="cmdp-item-body">
+            <span class="cmdp-item-title"><span data-no-i18n="1">${escHtml(o.title)}</span></span>
+            <span class="cmdp-item-sub">${subHtml}</span>
+          </span>
+          <span class="cmdp-item-right">
+            <span class="cmdp-badge kind-statement">Statement</span>
+          </span>
+        </button>
+      `;
+    }
+    resultsEl.innerHTML = html;
+    translateElementIfNeeded(resultsEl);
+    syncFootHints();
+  }
+
+  function renderFilterModeResults(resultsEl, target) {
+    if (isStatementTarget(target)) {
+      renderStatementModeResults(resultsEl, target);
+      return;
+    }
+    const term = String(_currentQuery || '').replace(/\s+/g, ' ').trim();
+    const sugg = searchFilterFacets(target, term);
+    const items = [];
+    if (term) {
+      items.push({ id: 'filter:typed', kind: 'filter', typed: true, filterTerm: term, sectionEn: 'Apply Filter' });
+    }
+    const suggSec = term ? 'Matching Values' : 'Most-Used Values';
+    for (let i = 0; i < sugg.length; i++) {
+      items.push({ id: `filter:value:${i}`, kind: 'filter', typed: false, filterTerm: sugg[i].label, count: sugg[i].count, sectionEn: suggSec });
+    }
+    _currentItems = items;
+    if (_activeIdx >= items.length) _activeIdx = 0;
+
+    if (!items.length) {
+      resultsEl.innerHTML = `
+        <div class="cmdp-empty">
+          <div class="cmdp-empty-title"><span>${escHtml(target.titleEn)}</span></div>
+          <div class="cmdp-empty-sub">Press Enter to open the table without a filter, or type to narrow it first.</div>
+        </div>
+      `;
+      translateElementIfNeeded(resultsEl);
+      syncFootHints();
+      return;
+    }
+
+    const whereParts = [];
+    if (target.subEn) whereParts.push(`<span>${escHtml(target.subEn)}</span>`);
+    if (target.subTabEn) whereParts.push(`<span>${escHtml(target.subTabEn)}</span>`);
+    whereParts.push(`<span>${escHtml(target.titleEn)}</span>`);
+    const whereHtml = whereParts.join(' <span data-no-i18n="1">&middot;</span> ');
+
+    let html = '';
+    let lastSec = '';
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.sectionEn !== lastSec) {
+        lastSec = it.sectionEn;
+        html += `<div class="cmdp-group-hdr"><span>${escHtml(it.sectionEn)}</span></div>`;
+      }
+      const titleHtml = it.typed
+        ? `<span>Filter by</span> <span data-no-i18n="1">&ldquo;${escHtml(it.filterTerm)}&rdquo;</span>`
+        : `<span data-no-i18n="1">${escHtml(it.filterTerm)}</span>`;
+      const subHtml = it.typed
+        ? whereHtml
+        : `<span>Records</span> <span data-no-i18n="1">&middot;</span> <span class="cmdp-val-count" data-no-i18n="1">${Number(it.count || 0).toLocaleString('en-US')}</span>`;
+      html += `
+        <button type="button" class="cmdp-item${i === _activeIdx ? ' is-active' : ''}" role="option" aria-selected="${i === _activeIdx ? 'true' : 'false'}" data-cmdp-idx="${i}">
+          <span class="cmdp-item-ico" aria-hidden="true">${FILTER_SVG}</span>
+          <span class="cmdp-item-body">
+            <span class="cmdp-item-title">${titleHtml}</span>
+            <span class="cmdp-item-sub">${subHtml}</span>
+          </span>
+          <span class="cmdp-item-right">
+            <span class="cmdp-badge kind-filter">Filter</span>
+          </span>
+        </button>
+      `;
+    }
+    resultsEl.innerHTML = html;
+    translateElementIfNeeded(resultsEl);
+    syncFootHints();
+  }
+
   function ensureModalDom() {
     if (typeof document === 'undefined') return null;
     let modal = document.getElementById('cmdPaletteModal');
@@ -1714,6 +2483,11 @@
       <div class="cmdp-dialog" id="cmdPaletteDialog">
         <div class="cmdp-search-row">
           <span class="cmdp-search-ico" aria-hidden="true">${iconSvg('search')}</span>
+          <span class="cmdp-filter-chip" id="cmdPaletteFilterChip" hidden>
+            <span class="cmdp-chip-ico" aria-hidden="true">${FILTER_SVG}</span>
+            <span class="cmdp-chip-lbl" id="cmdPaletteFilterChipLbl"></span>
+            <button type="button" class="cmdp-chip-x" id="cmdPaletteFilterChipX" aria-label="Remove table filter">&#10005;</button>
+          </span>
           <input type="search" id="cmdPaletteInput" class="cmdp-input" autocomplete="off" spellcheck="false" placeholder="Search tables, forms, reports, clients, plates, or ticket #..." aria-label="Global Search">
           <button type="button" id="cmdPaletteClearBtn" class="cmdp-clear-btn" aria-label="Clear search" hidden>&#10005;</button>
           <button type="button" id="cmdPaletteCloseBtn" class="cmdp-esc-btn" aria-label="Close search" data-no-i18n="1"><span data-no-i18n="1">Esc</span></button>
@@ -1727,6 +2501,7 @@
             <button type="button" class="cmdp-filter-pill" data-cmdp-cat="statements"><span>Statements</span></button>
             <button type="button" class="cmdp-filter-pill" data-cmdp-cat="records"><span>Records</span></button>
           </div>
+          <span class="cmdp-filter-hint" id="cmdPaletteFilterHint">Narrow this table before it opens</span>
           <span class="cmdp-scope-pill" id="cmdPaletteScopePill" data-no-i18n="1"></span>
         </div>
         <div class="cmdp-results" id="cmdPaletteResults" role="listbox" aria-label="Matching Results"></div>
@@ -1734,6 +2509,8 @@
           <div class="cmdp-foot-keys">
             <span><kbd data-no-i18n="1">&uarr;&darr;</kbd> <span>Navigate</span></span>
             <span><kbd data-no-i18n="1">&crarr;</kbd> <span>Open</span></span>
+            <span id="cmdPaletteTabHint" hidden><kbd data-no-i18n="1">Tab</kbd> <span id="cmdPaletteTabHintLbl">Filter table</span></span>
+            <span id="cmdPaletteBackHint" hidden><kbd data-no-i18n="1">&#9003;</kbd> <span>Back to search</span></span>
             <span><kbd data-no-i18n="1">Esc</kbd> <span>Close</span></span>
           </div>
           <span>Ranked by operational usage</span>
@@ -1748,6 +2525,14 @@
         e.preventDefault();
         close();
       }
+    });
+    // Escape steps out of the chip first even when focus sits on a button inside the dialog
+    modal.addEventListener('keydown', e => {
+      if (e.key !== 'Escape' || !_filterTarget) return;
+      if (e.target && e.target.id === 'cmdPaletteInput') return;
+      e.preventDefault();
+      e.stopPropagation();
+      exitFilterMode();
     });
 
     const inp = document.getElementById('cmdPaletteInput');
@@ -1776,9 +2561,48 @@
             _activeIdx = (_activeIdx - 1 + _currentItems.length) % _currentItems.length;
             syncActiveRowDom();
           }
+        } else if (e.key === 'Tab' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+          if (_filterTarget) {
+            // Inside the chip: Shift+Tab steps back to search, Tab completes the highlighted value
+            e.preventDefault();
+            if (e.shiftKey) {
+              exitFilterMode();
+            } else {
+              const cur = _currentItems[_activeIdx];
+              if (cur && cur.kind === 'filter' && !cur.typed && cur.filterTerm && cur.filterTerm !== inp.value) {
+                inp.value = cur.filterTerm;
+                _currentQuery = cur.filterTerm;
+                _activeIdx = 0;
+                if (clearBtn) clearBtn.hidden = false;
+                renderResults();
+                // Two parties can read the same once accents and letter forms are folded: stay on the one completed
+                if (cur.stmtSel) {
+                  const keepIdx = _currentItems.findIndex(x => x && x.stmtSel && x.stmtSel.key === cur.stmtSel.key && x.stmtSel.value === cur.stmtSel.value);
+                  if (keepIdx > 0) {
+                    _activeIdx = keepIdx;
+                    syncActiveRowDom();
+                  }
+                }
+              }
+            }
+          } else if (!e.shiftKey && isFilterableItem(_currentItems[_activeIdx])) {
+            e.preventDefault();
+            enterFilterMode(_currentItems[_activeIdx]);
+          }
+        } else if (e.key === 'Backspace' && _filterTarget && !inp.value) {
+          e.preventDefault();
+          exitFilterMode();
         } else if (e.key === 'Enter') {
           e.preventDefault();
-          if (_currentItems.length && _currentItems[_activeIdx]) {
+          if (_filterTarget) {
+            const target = getFilterTarget();
+            const cur = _currentItems[_activeIdx];
+            if (target) {
+              applyFilterAndOpen(target, (cur && cur.kind === 'filter') ? cur.filterTerm : _currentQuery, cur);
+            } else {
+              exitFilterMode();
+            }
+          } else if (_currentItems.length && _currentItems[_activeIdx]) {
             activateItem(_currentItems[_activeIdx]);
           } else if (_currentQuery.trim()) {
             askIsabi(_currentQuery.trim());
@@ -1786,7 +2610,11 @@
         } else if (e.key === 'Escape') {
           e.preventDefault();
           e.stopPropagation();
-          close();
+          if (_filterTarget) {
+            exitFilterMode();
+          } else {
+            close();
+          }
         }
       });
     }
@@ -1800,6 +2628,14 @@
         clearBtn.hidden = true;
         renderResults();
         try { inp.focus({ preventScroll: true }); } catch (_) {}
+      });
+    }
+
+    const chipX = document.getElementById('cmdPaletteFilterChipX');
+    if (chipX) {
+      chipX.addEventListener('click', e => {
+        e.preventDefault();
+        exitFilterMode();
       });
     }
 
@@ -1833,6 +2669,7 @@
           resultsEl.querySelectorAll('.cmdp-item').forEach((el, i) => {
             el.classList.toggle('is-active', i === _activeIdx);
           });
+          syncFootHints();
         }
       });
       resultsEl.addEventListener('click', e => {
@@ -1842,12 +2679,26 @@
           askIsabi(_currentQuery.trim());
           return;
         }
+        // Touch / mouse path into the same filter chip as Tab
+        const filterBtn = e.target && e.target.closest ? e.target.closest('[data-cmdp-filter-idx]') : null;
+        if (filterBtn && !_filterTarget) {
+          e.preventDefault();
+          e.stopPropagation();
+          const fIdx = Number(filterBtn.getAttribute('data-cmdp-filter-idx'));
+          if (Number.isFinite(fIdx)) enterFilterMode(_currentItems[fIdx]);
+          return;
+        }
         const row = e.target && e.target.closest ? e.target.closest('[data-cmdp-idx]') : null;
         if (!row) return;
         const idxNum = Number(row.getAttribute('data-cmdp-idx'));
-        if (Number.isFinite(idxNum) && _currentItems[idxNum]) {
-          activateItem(_currentItems[idxNum]);
+        if (!Number.isFinite(idxNum) || !_currentItems[idxNum]) return;
+        if (_filterTarget) {
+          const target = getFilterTarget();
+          if (target) applyFilterAndOpen(target, _currentItems[idxNum].filterTerm, _currentItems[idxNum]);
+          else exitFilterMode();
+          return;
         }
+        activateItem(_currentItems[idxNum]);
       });
     }
 
@@ -1872,6 +2723,7 @@
         try { el.scrollIntoView({ block: 'nearest' }); } catch (_) {}
       }
     });
+    syncFootHints();
   }
 
   function syncScopePill() {
@@ -1894,6 +2746,24 @@
     if (!resultsEl) return;
     syncScopePill();
 
+    if (_filterTarget) {
+      const target = getFilterTarget();
+      if (target) {
+        renderFilterModeResults(resultsEl, target);
+        return;
+      }
+      // The pinned table left this seat's permitted index (scope, role or sign-out change)
+      const inp = document.getElementById('cmdPaletteInput');
+      const clearBtn = document.getElementById('cmdPaletteClearBtn');
+      _currentQuery = _filterPrevQuery || '';
+      _filterPrevQuery = '';
+      _filterIndexRef = null;
+      if (inp) inp.value = _currentQuery;
+      if (clearBtn) clearBtn.hidden = !_currentQuery;
+      _activeIdx = 0;
+      syncFilterChrome();
+    }
+
     const res = search(_currentQuery, { category: _catFilter });
     _currentItems = res.items || [];
     if (_activeIdx >= _currentItems.length) _activeIdx = 0;
@@ -1914,6 +2784,7 @@
         </div>
       `;
       translateElementIfNeeded(resultsEl);
+      syncFootHints();
       return;
     }
 
@@ -1936,6 +2807,9 @@
       const indBadgeHtml = it.industry
         ? `<span class="cmdp-badge">${escHtml(it.industry)}</span>`
         : '';
+      const filterBtnHtml = isFilterableItem(it)
+        ? `<span class="cmdp-item-filter" role="button" data-cmdp-filter-idx="${i}" aria-label="${isStatementTarget(it) ? 'Set a parameter for this statement' : 'Filter this table'}">${FILTER_SVG}</span>`
+        : '';
 
       html += `
         <button type="button" class="cmdp-item${i === _activeIdx ? ' is-active' : ''}" role="option" aria-selected="${i === _activeIdx ? 'true' : 'false'}" data-cmdp-idx="${i}">
@@ -1945,6 +2819,7 @@
             <span class="cmdp-item-sub">${subParts.join(' <span data-no-i18n="1">&middot;</span> ')}</span>
           </span>
           <span class="cmdp-item-right">
+            ${filterBtnHtml}
             ${indBadgeHtml}
             <span class="cmdp-badge kind-${escHtml(it.kind)}">${escHtml(it.badgeEn)}</span>
           </span>
@@ -1954,9 +2829,10 @@
 
     resultsEl.innerHTML = html;
     translateElementIfNeeded(resultsEl);
+    syncFootHints();
   }
 
-  function activateItem(item) {
+  function activateItem(item, runArg) {
     if (!item || typeof item.run !== 'function') return;
     close();
     if (_ctx) {
@@ -1975,7 +2851,7 @@
         try { _ctx.closeRecordInspector(); } catch (_) {}
       }
     }
-    item.run();
+    item.run(runArg);
   }
 
   function askIsabi(questionText) {
@@ -2012,6 +2888,13 @@
 
     const inp = document.getElementById('cmdPaletteInput');
     const clearBtn = document.getElementById('cmdPaletteClearBtn');
+    if (_filterTarget) {
+      // Re-opening always starts from plain search; the chip never carries over
+      if (inp) inp.value = _filterPrevQuery || '';
+      _filterTarget = null;
+      _filterPrevQuery = '';
+      _filterIndexRef = null;
+    }
     if (typeof options.query === 'string') {
       _currentQuery = options.query;
       if (inp) inp.value = _currentQuery;
@@ -2023,7 +2906,7 @@
     _activeIdx = 0;
     _isOpen = true;
     modal.hidden = false;
-    translateElementIfNeeded(modal);
+    syncFilterChrome();
     renderResults();
 
     if (inp && options.focus !== false) {
@@ -2037,11 +2920,39 @@
     return true;
   }
 
+  function filterTableById(itemId, term) {
+    if (!_isOpen) return false;
+    const idx = buildSearchIndex();
+    const hit = idx ? idx.items.find(x => x.id === itemId) : null;
+    if (!enterFilterMode(hit)) return false;
+    if (typeof term === 'string' && term) {
+      const inp = document.getElementById('cmdPaletteInput');
+      const clearBtn = document.getElementById('cmdPaletteClearBtn');
+      if (inp) inp.value = term;
+      _currentQuery = term;
+      _activeIdx = 0;
+      if (clearBtn) clearBtn.hidden = false;
+      renderResults();
+    }
+    return true;
+  }
+
   function close(opts) {
     _isOpen = false;
     _catFilter = 'all';
     const modal = document.getElementById('cmdPaletteModal');
     if (modal) modal.hidden = true;
+    if (_filterTarget) {
+      const inpF = document.getElementById('cmdPaletteInput');
+      const clearF = document.getElementById('cmdPaletteClearBtn');
+      _currentQuery = _filterPrevQuery || '';
+      if (inpF) inpF.value = _currentQuery;
+      if (clearF) clearF.hidden = !_currentQuery;
+      _filterTarget = null;
+      _filterPrevQuery = '';
+      _filterIndexRef = null;
+      syncFilterChrome();
+    }
     if (opts && opts.clearCache) {
       _cachedIndexKey = '';
       _cachedIndex = null;
@@ -2128,6 +3039,9 @@
     close,
     toggle,
     isOpen: () => Boolean(_isOpen),
+    isFilterMode: () => Boolean(_filterTarget),
+    filterTable: filterTableById,
+    exitFilterMode,
     search,
     askIsabi,
     recordUsage,
