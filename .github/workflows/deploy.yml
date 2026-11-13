@@ -27,6 +27,7 @@ on:
 
 permissions:
   # write: the run takes the release lock (the ref refs/locks/release; build/release_lock.py). Nothing else is pushed.
+  # The token is not kept in .git/config (persist-credentials: false); only the three release-lock steps get it.
   contents: write
 
 concurrency:
@@ -47,6 +48,7 @@ jobs:
           # part of this commit.
           fetch-depth: 0
           filter: blob:none
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -81,10 +83,18 @@ jobs:
       # 10 minutes for a session's release to finish, then takes the lock and records this commit; when the lock stays
       # held, nothing below goes live (a warning: that session deploys a commit containing main). An expired lock whose
       # live deploy is not part of this commit fails the run (deploying would roll that work back).
+      # Production deploys come from main only (a dispatch on another branch runs the checks and stops here).
       - name: Release lock
         id: lock
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
-        run: python3 build/release_lock.py ci-acquire --sha "$GITHUB_SHA" --wait 600 --holder "GitHub Actions run ${{ github.run_id }}"
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && github.ref == 'refs/heads/main'
+        env:
+          GH_LOCK_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_LOCK_TOKEN" | base64 -w0)"
+          python3 build/release_lock.py ci-acquire --sha "$GITHUB_SHA" --wait 600 --holder "GitHub Actions run ${{ github.run_id }}"
 
       - name: Stage allowlisted Pages bundle
         shell: bash
@@ -124,7 +134,14 @@ jobs:
 
       - name: Release lock still held
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && steps.lock.outputs.deploy == 'true'
-        run: python3 build/release_lock.py renew --ttl 30
+        env:
+          GH_LOCK_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_LOCK_TOKEN" | base64 -w0)"
+          python3 build/release_lock.py renew --ttl 30
 
       - name: Deploy
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && steps.lock.outputs.deploy == 'true'
@@ -132,7 +149,16 @@ jobs:
 
       - name: Give the release lock back
         if: always() && steps.lock.outputs.deploy == 'true'
-        run: python3 build/release_lock.py release
+        env:
+          GH_LOCK_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_LOCK_TOKEN" | base64 -w0)"
+          for i in 1 2 3; do python3 build/release_lock.py release && exit 0; sleep 15; done
+          echo "::error::Could not give the release lock back; it expires 40 minutes after this run's last renew."
+          exit 1
 
       - name: Live probe
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && steps.lock.outputs.deploy == 'true'

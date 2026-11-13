@@ -199,6 +199,17 @@ def main() -> int:
         check("cannot be read" in raises_lock(RL.ci_acquire, A, main_tip(A), wait_s=0), "an unreadable lock stops the workflow")
         git(B, "push", "-q", "origin", f":{RL.LOCK_REF}")
 
+        # 11b. a remote that refuses the lock push fails the workflow run loudly (round 2, M1)
+        hook = origin / "hooks" / "pre-receive"
+        hook.write_text("#!/bin/sh\necho refused >&2\nexit 1\n", encoding="utf-8", newline="\n")
+        hook.chmod(0o755)
+        git(origin, "config", "core.hooksPath", str(origin / "hooks"))  # a global hooksPath would hide it
+        ok, fail, msg = quiet(RL.ci_acquire, A, main_tip(A), wait_s=0)
+        check(ok is False and fail is True and "cannot take the release lock" in msg, "workflow: a lock it cannot write fails the run")
+        hook.unlink()
+        if not ok and RL.read_remote_lock(A)[0]:
+            git(B, "push", "-q", "origin", f":{RL.LOCK_REF}")
+
         # 12. bypass
         os.environ["ISABI_RELEASE_LOCK"] = "off"
         check(quiet(RL.require_release_lock, B, purpose="x") is None, "ISABI_RELEASE_LOCK=off bypasses the lock")

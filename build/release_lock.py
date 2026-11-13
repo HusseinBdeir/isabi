@@ -259,6 +259,10 @@ def unpushed_deploys(info: dict, cwd: Path) -> list[dict]:
     return [] if _in(cwd, last["sha"], f"{REMOTE}/main") else [last]
 
 
+def _same_lock(now_sha: str, seen_sha: str) -> bool:
+    return (now_sha or "") == (seen_sha or "")
+
+
 def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, holder: str = "") -> tuple[bool, bool, str]:
     """For the push-to-main workflow: take the lock like any session, waiting up to wait_s for a session to finish
     (a session releases right after pushing main, so this is usually a minute or two), then record `sha` as the
@@ -279,8 +283,12 @@ def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, hold
                 acquire(cwd, holder=holder or f"GitHub Actions {sha[:7]}", purpose="push-to-main deploy",
                         version=_worktree_shell_version(cwd), ttl_min=30, takeover=True, quiet=True)
                 got = True
-            except LockError as exc:  # lost a race: someone took it first; wait like below
+            except LockError as exc:
                 got, last_msg = False, str(exc)
+                # A lost race leaves the lock changed. Unchanged (or still free) means this run cannot write the
+                # lock at all (token, permissions, network): fail loudly instead of never deploying again.
+                if _same_lock(read_remote_lock(cwd)[0], lsha):
+                    return False, True, f"cannot take the release lock (the push of {LOCK_REF} failed): {exc}"
             if got:
                 try:
                     claim_deploy(cwd, sha, "push-to-main deploy")
@@ -290,7 +298,8 @@ def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, hold
                         release(cwd, force=True, quiet=True)
                     except LockError:
                         pass
-                    return False, False, f"not deployed: {exc} (a newer push has its own run)"
+                    newer = "does not contain origin/main" in str(exc)
+                    return False, not newer, (f"not deployed: {exc}" + (" (a newer push has its own run)" if newer else ""))
         else:
             last = last_deploy(info)
             if last and last["sha"] == sha:
@@ -399,6 +408,12 @@ def release(cwd: Path = ISABI_ROOT, *, force: bool = False, quiet: bool = False)
     _drop_token(cwd)
     if not quiet:
         print("Release lock released.")
+        last = last_deploy(info)
+        main_sha = _git(["rev-parse", f"{REMOTE}/main"], cwd, check=False).stdout.strip()
+        if last and main_sha and main_sha != last["sha"]:
+            print(f"NOTE: live is {last['sha'][:7]} but origin/main is {main_sha[:7]}. If the push-to-main run for "
+                  f"{main_sha[:7]} gave up waiting for this lock, re-run it (GitHub, Actions, Deploy to Cloudflare Pages, "
+                  "Run workflow on main) or deploy origin/main.")
     return True
 
 
