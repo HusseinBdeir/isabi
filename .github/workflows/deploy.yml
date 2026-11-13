@@ -66,11 +66,16 @@ jobs:
           node --no-warnings build/verify_release_log_sync.mjs
           python3 build/verify_deploy_cli.py
           python3 build/verify_release_lock.py
-          python3 build/verify_release_batch.py
           node --check build/verify_cloudflare_edge.mjs
           # The log goes outside the checkout: everything in the checkout is what gets deployed.
           node --no-warnings build/verify_kiosk_cloud.mjs > "$RUNNER_TEMP/kiosk-checks.log" || { tail -n 40 "$RUNNER_TEMP/kiosk-checks.log"; exit 1; }
           tail -n 1 "$RUNNER_TEMP/kiosk-checks.log"
+
+      # Its own step with its own limit: this gate runs many hundreds of git commands against local bare
+      # repositories, and must never eat into the time this job needs to wait for the release lock and deploy.
+      - name: Batched release gate (build/release_batch.py, offline)
+        timeout-minutes: 10
+        run: python3 build/verify_release_batch.py
 
       - name: Shell version in this commit
         id: ver

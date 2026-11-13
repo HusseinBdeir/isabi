@@ -62,7 +62,9 @@ Commands
   python build/release_batch.py drop <entry> --reason "<which gate failed>" [--reset]
   python build/release_batch.py done
   python build/release_batch.py abort
-  python build/release_batch.py leave --id <entry>
+  python build/release_batch.py leave --id <entry> [--force]
+ship and wait end with one line, `RESULT: <STATE>: ...`: LEADER (you hold the lock: run the release steps), SHIPPED
+(live), LEFT_OUT (why), WAITING (run the same command again), TURN (run take now), HALF_FORMED (run abort), GONE.
 Test: python build/verify_release_batch.py
 """
 from __future__ import annotations
@@ -104,6 +106,7 @@ SHIPPED_KEEP_H = 24     # a shipped entry its session never collected is cleared
 DEAD_KEEP_DAYS = 7      # left-out, unreadable and abandoned waiting entries are cleared after this long
 HEAD_START_S = 60       # a waiter that is Nth in line leads only after the lock has been free N * this long
 DEFAULT_WAIT_S = 540    # under the 10 minute limit of a foreground command; run again to keep waiting
+TAKE_BUDGET_S = 180     # ship does not start forming a batch with less than this left after a long wait
 POLL_S = 20
 _IDENT = {"GIT_AUTHOR_NAME": "ISABI release batch", "GIT_AUTHOR_EMAIL": "release-batch@isabi.invalid",
           "GIT_COMMITTER_NAME": "ISABI release batch", "GIT_COMMITTER_EMAIL": "release-batch@isabi.invalid"}
@@ -493,7 +496,7 @@ def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
 
 def _remember(cwd: Path, entry: dict) -> None:
     rec = _local_json(cwd, JOINED_FILE)
-    cutoff = RL._iso(RL._now() - dt.timedelta(days=2))
+    cutoff = RL._iso(RL._now() - dt.timedelta(days=DEAD_KEEP_DAYS + 1))  # as long as an entry can stay in the line
     rec = {k: v for k, v in rec.items() if str(v.get("queuedAt", "")) >= cutoff}
     rec[entry["id"]] = _pub(entry)
     _write_local_json(cwd, JOINED_FILE, rec)
@@ -520,11 +523,17 @@ def _parts_on_main(cwd: Path, entry: dict) -> bool:
     return True
 
 
-def leave(cwd: Path, entry_id: str) -> None:
+def leave(cwd: Path, entry_id: str, *, force: bool = False) -> None:
     line = read_line(cwd)
     e = _find(line, entry_id)
     if not e:
         raise BatchError(f"{entry_id} is not in the line (run status)")
+    if e.get("state") == "left_out" and e["id"] not in _local_json(cwd, JOINED_FILE) and not force:
+        # A left-out entry is the record that its commits failed (and of the gates they need): while it is in the
+        # line, nothing built on those commits ships. Clearing it is for the session that owns the change.
+        raise BatchError(f"{e['id']} ({e.get('summary')}) was left out and this worktree did not join it: {e.get('note') or 'no reason given'}. "
+                         f"Its session ({e.get('holder', '?')}) clears it by joining again with the fix, or with leave. "
+                         "--force only when the owner says that change is abandoned.")
     lock_sha, lock = RL.read_remote_lock(cwd)
     if lock_sha and e.get("state") == "waiting" and (e.get("batch") or {}).get("lockId") == lock.get("lockId"):
         raise BatchError(f"{e['id']} is in the batch being released now by {(e.get('batch') or {}).get('holder', '?')}: "
@@ -551,6 +560,16 @@ def poll_once(cwd: Path, entry_id: str, *, known: dict | None = None, free_for_s
     e = _find(line, entry_id)
     lock_sha, lock = RL.read_remote_lock(cwd)
     free = not lock_sha or RL.is_expired(lock, RL.TAKEOVER_GRACE_MIN)
+    mine = _local_json(cwd, BATCH_FILE)
+    if mine and lock_sha and RL.held_by_me(lock, cwd) and lock.get("lockId") == mine.get("lockId"):
+        # The release this entry would wait for is this worktree's own (a ship that was cut off while taking, or one
+        # run again after it became the leader): never report it as waiting on itself.
+        if mine.get("forming"):
+            return "HALF_FORMED", ("this worktree holds the release lock for a batch that was cut off while forming. "
+                                   "Run: python build/release_batch.py abort, then ship again."), False
+        shell = mine.get("shell")
+        return "LEADER", (f"this worktree leads batch {('v' + shell) if shell else '(no shell change)'} with "
+                          f"{len(mine.get('entries') or [])} change(s): carry on with the release steps (or abort)."), False
 
     if e is None:
         rec = known or _local_json(cwd, JOINED_FILE).get(entry_id)
@@ -640,7 +659,7 @@ def wait(cwd: Path, entry_id: str, *, wait_s: int = DEFAULT_WAIT_S, poll_s: int 
             done_entry = next((e for e in read_line(cwd) if e["id"] == entry_id and e.get("state") == "shipped"), None)
             if done_entry:
                 _delete_entry(cwd, done_entry)
-        if state in ("SHIPPED", "LEFT_OUT", "GONE", "TURN"):
+        if state in ("SHIPPED", "LEFT_OUT", "GONE", "TURN", "LEADER", "HALF_FORMED"):
             return state, msg
         if not quiet and msg != shown:
             print(msg, flush=True)
@@ -846,6 +865,10 @@ def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], 
     for x in read_line(cwd):
         if x.get("state") == "left_out":
             block(x, str(x.get("note") or "left out of an earlier batch"))
+        elif x.get("state") == "waiting" and _is_stale(x):
+            # Skipped because its session has gone quiet: it must not ship behind that session's back through a
+            # change built on top of it either.
+            block(x, f"no sign of its session ({x.get('holder', '?')}) for {STALE_AFTER_MIN // 60} h")
     for x, why in out.values():
         block(x, why)
     while True:
@@ -888,9 +911,9 @@ def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], 
                 continue
             who = built_on(m)
             if who:
-                why = (f"it is built on top of {who[0]} ({who[1]}), which was left out: {who[2]}. Rebase it without those "
-                       f"commits, or join again once that change has shipped. If this branch already holds the fix, clear "
-                       f"the old entry first: release_batch.py leave --id {who[0]}")
+                why = (f"it is built on top of {who[0]} ({who[1]}), which is not shipping: {who[2]}. Rebase it without "
+                       "those commits, or join again once that change has shipped or its own session has rejoined it "
+                       "with the fix (only that session clears its entry)")
                 out[m["id"]] = (m, why)
                 block(m, why)
                 grew = True
@@ -1209,12 +1232,19 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
     _require_clean(cwd, "isabi")
     _require_clean(app, "isabi-app")
     entry = join(cwd, holder=holder, summary=summary, app_branch=app_branch, site_branch=site_branch, gates=gates, quiet=quiet)
-    deadline = time.monotonic() + max(0, wait_s)
+    started = time.monotonic()
+    deadline = started + max(0, wait_s)
     while True:
         left = max(0, int(deadline - time.monotonic()))
         state, msg = wait(cwd, entry["id"], wait_s=left, poll_s=poll_s, known=entry, quiet=quiet)
+        if state == "LEADER":
+            return state, msg, _local_json(cwd, BATCH_FILE) or None
         if state != "TURN":
             return state, msg, None
+        if time.monotonic() - started > 60 and deadline - time.monotonic() < TAKE_BUDGET_S:
+            # Forming a batch takes minutes on a loaded PC. Starting it at the end of a long wait risks the command
+            # being cut off with the lock held: hand the turn back to the session to run take on its own clock.
+            return "TURN", msg + " Too little of this command's time is left to form the batch safely.", None
         try:
             batch = take(cwd, holder=holder, version=version, quiet=quiet)
         except BatchError:
@@ -1308,6 +1338,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("abort", help="leader: give the batch up before it is live")
     lv = sub.add_parser("leave", help="take an entry out of the line")
     lv.add_argument("--id", required=True)
+    lv.add_argument("--force", action="store_true",
+                    help="clear a left-out entry another session joined (only when the owner says that change is abandoned)")
     args = ap.parse_args(argv)
     if getattr(args, "wait", 0) < 0 or getattr(args, "wait", 0) > 3600:  # noqa: PLR2004
         ap.error("--wait must be 0 to 3600 seconds")
@@ -1325,7 +1357,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"RESULT: {state}: {msg}")
             if state == "WAITING":
                 print("Still in line. Run the same ship command again to keep waiting (the place is kept).")
-            return 3 if state in ("LEFT_OUT", "GONE") else 0
+            elif state == "TURN":
+                print(f'Lead the batch now, in the background or with a long timeout (it can take minutes):\n'
+                      f'  python build/release_batch.py take --holder "{args.holder}"')
+            return 3 if state in ("LEFT_OUT", "GONE", "HALF_FORMED") else 0
         elif args.cmd == "join":
             join(cwd, holder=args.holder, summary=args.summary, app_branch=args.app_branch, site_branch=args.site_branch,
                  gates=args.gate)
@@ -1334,7 +1369,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"RESULT: {state}: {msg}")
             if state == "TURN":
                 print('Lead the batch: python build/release_batch.py take --holder "<session>"')
-            return 3 if state in ("LEFT_OUT", "GONE") else 0
+            return 3 if state in ("LEFT_OUT", "GONE", "HALF_FORMED") else 0
         elif args.cmd == "take":
             batch = take(cwd, holder=args.holder, version=args.version)
             if batch["entries"]:
@@ -1349,7 +1384,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "abort":
             abort(cwd)
         else:
-            leave(cwd, args.id)
+            leave(cwd, args.id, force=args.force)
     except RL.LockError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

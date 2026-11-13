@@ -226,6 +226,10 @@ def main() -> int:  # noqa: PLR0915
         check("line1 A" in text(appA / "js" / "app.js") and is_ancestor(appA, sha_a), "the change's own commit is in the batch")
         check((entry(B, eA["id"]).get("batch") or {}).get("lockId") == lock.get("lockId"), "the entry is marked as in the batch being released")
         check("already leads" in raises(RB.take, A, holder="session A")[1], "a leader cannot start a second batch")
+        st, _msg, again = RB.ship(A, holder="session A", summary="A change", app_branch="wt/a", wait_s=0, poll_s=0, quiet=True)
+        check(RB.poll_once(A, eA["id"])[0] == "LEADER" and st == "LEADER" and [e["id"] for e in again["entries"]] == [eA["id"]]
+              and RB.poll_once(B, eA["id"])[0] == "IN_BATCH",
+              "asked again from the leader's own worktree, ship says LEADER: it never waits on itself")
 
         # 4. three changes finish while A is releasing: they wait in line
         sha_b = feature(appB, "wt/b", {"js/other.js": "other B\n"}, stamp="19.6.102")
@@ -463,6 +467,9 @@ def main() -> int:  # noqa: PLR0915
         check(RL.read_remote_lock(A)[1].get("holder") == "session B" and RB._local_json(B, RB.BATCH_FILE).get("forming") is True
               and "half-formed" in raises(RB.take, B, holder="session B")[1] and "half-formed" in raises(RB.done, B)[1],
               "if the lock could not be given back, the half-formed batch is on record")
+        st, msg, _free = RB.poll_once(B, eB2["id"])
+        check(st == "HALF_FORMED" and "abort" in msg and RB.wait(B, eB2["id"], wait_s=0, poll_s=0, quiet=True)[0] == "HALF_FORMED",
+              "a session whose take was cut off is told to abort, not that it is waiting on its own release")
         os.environ[LIVE] = "19.6.104"
         quiet(RB.abort, B)
         check(RL.read_remote_lock(A) == ("", {}) and not RB._local_json(B, RB.BATCH_FILE), "abort frees a lock left by a half-formed batch")
@@ -565,6 +572,9 @@ def main() -> int:  # noqa: PLR0915
               and eT4["id"] in s5_now.get("note", "") and "verify_t4 failed" in s5_now.get("note", "")
               and RL.read_remote_lock(A) == ("", {}) and not is_ancestor(appE, sha_t4),
               "a change built on one dropped in an earlier batch is left out, with that batch's reason")
+        kind, msg = raises(RB.leave, E, eT4["id"])
+        check(kind == "BatchError" and "did not join" in msg and "verify_t4 failed" in msg and entry(A, eT4["id"]).get("state") == "left_out",
+              "another session cannot clear a left-out entry to get its own change through")
         quiet(RB.leave, D, eT4["id"])
         tick()
         eS5b = quiet(RB.join, E, holder="session E", summary="S5 with the fix", app_branch="wt/s5")
@@ -575,6 +585,24 @@ def main() -> int:  # noqa: PLR0915
         quiet(RB.abort, E)
         for sess, ent in ((E, eS5b), (E, eS4)):
             quiet(RB.leave, sess, ent["id"])
+
+        # 13e5. a change whose session has gone quiet does not ship through a change built on it either
+        sha_t6 = feature(appD, "wt/t6", {"js/t6.js": "t6\n"})
+        tick()
+        eT6 = quiet(RB.join, D, holder="session D", summary="T6, session gone quiet", app_branch="wt/t6")
+        tick(4 * 3600)
+        stacked(appE, "wt/s6", "wt/t6", {"js/s6.js": "s6\n"})
+        tick()
+        eS6 = quiet(RB.join, E, holder="session E", summary="S6 on the quiet T6", app_branch="wt/s6")
+        tick()
+        b6 = quiet(RB.take, E, holder="session E")
+        s6_now = entry(A, eS6["id"])
+        check(b6["entries"] == [] and s6_now.get("state") == "left_out" and "built on top of" in s6_now.get("note", "")
+              and "no sign of its session" in s6_now.get("note", "") and entry(A, eT6["id"]).get("state") == "waiting"
+              and RL.read_remote_lock(A) == ("", {}) and not is_ancestor(appE, sha_t6),
+              "a quiet session's change is not carried live by a change built on top of it")
+        quiet(RB.leave, E, eS6["id"])
+        quiet(RB.leave, D, eT6["id"])
 
         # 13f. a leader pushed isabi-app main, never deployed, and stopped: not SHIPPED; the next batch takes it live
         feature(appA, "wt/m2", {"js/m2.js": "m2\n"})
