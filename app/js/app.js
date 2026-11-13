@@ -12235,7 +12235,8 @@
   function _areaSiteIsDeliveryRule(r) {
     return /^(Sales \(Delivery\)|Haulage \(Customer Site\))$/i.test(String((r && r.rule_type) || '').trim());
   }
-  function _areaSiteIsPlaceName(name) {
+  // A Region record or a map boundary of that name: the Region a customer's own site is proposed in
+  function _areaSiteIsRegionName(name) {
     const k = norm(name);
     if (!k) return false;
     const regs = (SEED && SEED.records && SEED.records.regions) || [];
@@ -12245,6 +12246,18 @@
     } catch (_) {
       return false;
     }
+  }
+  // The whole site name is a town in the app's place list (map boundaries and the Lebanese place list).
+  // Region records are left out on purpose: many Regions are named after the one site they were drawn for.
+  function _areaSiteIsTownName(name) {
+    try {
+      return Boolean(window.MFG_GEO && typeof window.MFG_GEO.isKnownTownName === 'function' && window.MFG_GEO.isKnownTownName(name));
+    } catch (_) {
+      return false;
+    }
+  }
+  function _areaSiteIsPlaceName(name) {
+    return _areaSiteIsRegionName(name) || _areaSiteIsTownName(name);
   }
 
   let _areaSiteIdx = null;
@@ -12316,10 +12329,13 @@
       e.isSplitChild = _areaSiteHasSplit(sObj);
       e.dismissed = Boolean(sObj && sObj.area_check === 'single');
       e.isPlaceName = e.customerCount >= 2 ? _areaSiteIsPlaceName(e.name) : false;
+      // One customer on a site named after a town: the site is the town, so it can never get a real pin
+      e.isTownSite = e.customerCount === 1 && !e.children.length && _areaSiteIsTownName(e.name);
       e.flagged = !e.isJv && !e.isOwnPlant && !e.isSplitChild && !e.dismissed && (
         e.customerCount >= 3
         || (e.customerCount >= 2 && (e.isPlaceName || e.children.length > 0))
         || (e.customerCount >= 1 && e.children.length > 0)
+        || e.isTownSite
       );
     });
     _areaSiteIdx = { stamp, bySite };
@@ -12371,7 +12387,7 @@
     const hasAreaInName = _areaSiteTokens(oldName).every(t => custTok.has(t));
     const newSite = cust ? (hasAreaInName ? cust : `${cust} ${oldName}`) : '';
     const sObj = siteInfo(oldName);
-    const region = _areaSiteIsPlaceName(oldName) ? oldName : ((sObj && sObj.region) || '');
+    const region = _areaSiteIsRegionName(oldName) ? oldName : ((sObj && sObj.region) || '');
     const myKey = cust ? areaSiteCustomerKey(cust, oldName) : '';
     const others = e
       ? Array.from(e.customers.values())
@@ -88128,7 +88144,11 @@
       <div class="pr-area-strip" id="prAreaSiteStrip" data-area-site="${esc(e.name)}" data-area-count="${e.customerCount}">
         <div class="pr-area-head">
           <span class="pr-area-ic">${ic('pin')}</span>
-          <div class="pr-area-msg"><b>${esc(e.name)}</b> <span>looks like an area, not one place.</span> <b>${e.customerCount}</b> <span>customers take deliveries there.</span></div>
+          <div class="pr-area-msg"><b>${esc(e.name)}</b> ${e.isTownSite
+            ? '<span>is a town, not one place.</span>'
+            : '<span>looks like an area, not one place.</span>'} ${e.customerCount === 1
+            ? '<span>One customer takes deliveries there.</span>'
+            : `<b>${e.customerCount}</b> <span>customers take deliveries there.</span>`}</div>
           ${actionHtml}
         </div>
         ${panelHtml}
@@ -88185,12 +88205,14 @@
     }
     const e = describeAreaSite(siteName);
     if (!e) return '';
-    if (e.dismissed && e.customerCount >= 2) {
+    if (e.dismissed && (e.customerCount >= 2 || e.isTownSite)) {
       return `
         <div class="pr-area-strip site-area-banner is-quiet" data-area-site="${esc(e.name)}">
           <div class="pr-area-head">
             <span class="pr-area-ic">${ic('check')}</span>
-            <div class="pr-area-msg"><span>Marked as one place.</span> <b>${e.customerCount}</b> <span>customers take deliveries here.</span></div>
+            <div class="pr-area-msg"><span>Marked as one place.</span> ${e.customerCount === 1
+              ? '<span>One customer takes deliveries here.</span>'
+              : `<b>${e.customerCount}</b> <span>customers take deliveries here.</span>`}</div>
             ${canSwitch ? `<button type="button" class="btn btn-sm" data-area-single="0">Check Again</button>` : ''}
           </div>
         </div>`;
@@ -88200,7 +88222,11 @@
       <div class="pr-area-strip site-area-banner" data-area-site="${esc(e.name)}" data-area-count="${e.customerCount}">
         <div class="pr-area-head">
           <span class="pr-area-ic">${ic('pin')}</span>
-          <div class="pr-area-msg"><b>Probably a Region.</b> <b>${e.customerCount}</b> <span>customers take deliveries here.</span> <span>Open a customer's price agreement below to move it to its own site.</span></div>
+          <div class="pr-area-msg">${e.isTownSite
+            ? `<b>Named after a town.</b> <span>One customer takes deliveries here.</span> <span>Open its price agreement below to move it to its own site, so it can have its own pin.</span>`
+            : `<b>Probably a Region.</b> ${e.customerCount === 1
+              ? '<span>One customer takes deliveries here.</span>'
+              : `<b>${e.customerCount}</b> <span>customers take deliveries here.</span>`} <span>Open a customer's price agreement below to move it to its own site.</span>`}</div>
           ${canSwitch ? `<button type="button" class="btn btn-sm" data-area-single="1">This Is One Place</button>` : ''}
         </div>
       </div>`;
@@ -90281,7 +90307,7 @@
         if (regHintEl) {
           if (regObj) {
             const govTxt = regObj.governorate && norm(regObj.governorate) !== norm(regObj.name) ? ` (${regObj.governorate})` : '';
-            regHintEl.textContent = `Region ${regObj.name}${govTxt} active · sites created here must be located inside ${regObj.name}.`;
+            regHintEl.innerHTML = `<span>Region</span> <b data-no-i18n="1">${esc(regObj.name)}${esc(govTxt)}</b> <span>is active. Sites created here must be located inside it.</span>`;
           } else if (inclTrans) {
             regHintEl.textContent = 'Optional while supplier delivers material + transport. Required later if we haul with our trucks or 3rd-party haulers.';
           } else {
@@ -90315,8 +90341,8 @@
               bannerEl.hidden = false;
               bannerEl.className = 'form-field span-3 site-geo-banner is-ok';
               const govPart = geoCheck.governorate && norm(geoCheck.governorate) !== norm(geoCheck.region || curReg) ? ` (${esc(geoCheck.governorate)})` : '';
-              bannerEl.innerHTML = `<span>✓ Geographic Containment Verified: <b>${esc(siteInp.value.trim())}</b> is inside Region <b>${esc(geoCheck.region || curReg)}</b>${govPart} · GPS ${Number(geoCheck.lat).toFixed(4)}, ${Number(geoCheck.lng).toFixed(4)}</span>`;
-              if (nameHintEl) nameHintEl.textContent = `Verified inside ${geoCheck.region || curReg}.`;
+              bannerEl.innerHTML = `<span><span aria-hidden="true">✓ </span><span>Geographic Containment Verified:</span> <b data-no-i18n="1">${esc(siteInp.value.trim())}</b> <span>is inside Region</span> <b data-no-i18n="1">${esc(geoCheck.region || curReg)}</b>${govPart ? `<span data-no-i18n="1">${govPart}</span>` : ''}<span aria-hidden="true"> · </span><span>GPS</span> <span dir="ltr" style="unicode-bidi:isolate" data-no-i18n="1">${Number(geoCheck.lat).toFixed(4)}, ${Number(geoCheck.lng).toFixed(4)}</span></span>`;
+              if (nameHintEl) nameHintEl.innerHTML = `<span>Verified inside</span> <b data-no-i18n="1">${esc(geoCheck.region || curReg)}</b>`;
             } else if (inclTrans && !curReg && siteInp && siteInp.value.trim()) {
               bannerEl.hidden = false;
               bannerEl.className = 'form-field span-3 site-geo-banner is-ok';
@@ -90325,7 +90351,10 @@
             } else {
               bannerEl.hidden = true;
               bannerEl.innerHTML = '';
-              if (nameHintEl) nameHintEl.textContent = curReg ? `Must be located inside ${curReg}.` : (inclTrans ? 'Region optional while supplier delivers material + transport.' : 'Must be located inside the selected Region.');
+              if (nameHintEl) {
+                if (curReg) nameHintEl.innerHTML = `<span>Must be located inside</span> <b data-no-i18n="1">${esc(curReg)}</b>`;
+                else nameHintEl.textContent = inclTrans ? 'Region optional while supplier delivers material + transport.' : 'Must be located inside the selected Region.';
+              }
             }
           }
         }
@@ -101513,6 +101542,11 @@
       if (prefill.region && $('f_region') && form === 'site') {
         $('f_region').value = prefill.region;
         $('f_region').dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      if (prefill.maplink && form === 'site' && $('f_site_coord_paste')) {
+        const linkInp = $('f_site_coord_paste');
+        linkInp.value = String(prefill.maplink);
+        if (typeof linkInp._applyMapLink === 'function') linkInp._applyMapLink(true);
       }
       if (prefill.pricePending && $('f_price_pending')) {
         $('f_price_pending').value = '1';
@@ -134559,7 +134593,7 @@
         e.stopPropagation();
         const pf = {};
         let hasPf = false;
-        ['co', 'eq', 'def', 'part', 'sub', 'disp', 'party', 'cost', 'notes', 'item', 'oil', 'repsrc', 'storewh', 'trtype', 'extkind', 'loanside', 'loan', 'usd', 'region'].forEach(k => {
+        ['co', 'eq', 'def', 'part', 'sub', 'disp', 'party', 'cost', 'notes', 'item', 'oil', 'repsrc', 'storewh', 'trtype', 'extkind', 'loanside', 'loan', 'usd', 'region', 'maplink'].forEach(k => {
           const attr = 'data-prefill-' + k;
           if (openModalBtn.hasAttribute(attr)) {
             pf[k] = openModalBtn.getAttribute(attr) || '';

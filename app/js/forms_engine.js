@@ -1382,6 +1382,12 @@
       return `
         <div class="form-grid-3">
           ${haulDeckHtml}
+          ${fld('Paste Map or WhatsApp Link', `<div class="geo-link-paste-row"><span class="geo-link-paste-ic" aria-hidden="true">${ic('pin')}</span>${inp('f_site_coord_paste', 'text', '', 'inputmode="url" spellcheck="false" enterkeyhint="done" placeholder="WhatsApp location, Google Maps link, Plus Code or coordinates"')}</div>`, {
+            id: 'wrap_site_map_link',
+            span: true,
+            cls: 'geo-link-paste-field',
+            afterHtml: '<div class="geo-link-status" id="siteMapLinkStatus" role="status" aria-live="polite" hidden></div>'
+          })}
           ${fld(defBundled ? 'Region (Optional · Supplier Delivers)' : 'Region *', inp('f_region', 'text', '', `list="dl_regions" placeholder="${defBundled ? 'Optional region (required only if we/3P haul)...' : 'Select region or click map zone...'}"`) + dl('dl_regions', regNames), {
             id: 'wrap_site_region',
             hint: defBundled
@@ -1397,7 +1403,6 @@
           })}
           ${fld('Latitude (GPS)', inp('f_lat', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
           ${fld('Longitude (GPS)', inp('f_lng', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
-          ${fld('Quick Paste Coords / Maps URL', inp('f_site_coord_paste', 'text', '', 'placeholder="Paste lat, lng or Maps link"'))}
           <div class="form-field span-3" id="siteRegionConsistencyBanner" hidden></div>
           <div class="geo-modal-map-wrap">
             <div class="geo-modal-map-bar">

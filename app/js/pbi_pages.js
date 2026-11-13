@@ -10301,7 +10301,7 @@
         ` : ''}
 
         ${(meta.key === 'sites' || meta.key === 'regions') && window.MFG_GEO && typeof window.MFG_GEO.renderGeoStudioHtml === 'function'
-          ? window.MFG_GEO.renderGeoStudioHtml({ metaKey: meta.key, STATE, SEED, rel })
+          ? window.MFG_GEO.renderGeoStudioHtml({ metaKey: meta.key, STATE, SEED, rel, canAddSite: typeof canEnterForm === 'function' ? canEnterForm('site') : false })
           : ''}
 
         <div class="pa-table-control-deck ${visibleViews.length > 1 && visibleViews.length <= 4 ? 'is-inline-deck' : ''}">
@@ -10801,7 +10801,7 @@
     return `
       <div class="panel-card sites-regions-hub" id="univRegPanel">
         ${window.MFG_GEO && typeof window.MFG_GEO.renderGeoStudioHtml === 'function'
-          ? window.MFG_GEO.renderGeoStudioHtml({ metaKey: 'sites', STATE, SEED, rel })
+          ? window.MFG_GEO.renderGeoStudioHtml({ metaKey: 'sites', STATE, SEED, rel, canAddSite: typeof canEnterForm === 'function' ? canEnterForm('site') : false })
           : ''}
 
         <section class="srh-subpanel" id="regionsRegPanel" aria-label="Regions and Zones Table">
@@ -11405,7 +11405,7 @@
         ` : ''}
 
         ${(meta.key === 'sites' || meta.key === 'regions') && window.MFG_GEO && typeof window.MFG_GEO.renderGeoStudioHtml === 'function'
-          ? window.MFG_GEO.renderGeoStudioHtml({ metaKey: meta.key, STATE, SEED, rel })
+          ? window.MFG_GEO.renderGeoStudioHtml({ metaKey: meta.key, STATE, SEED, rel, canAddSite: typeof canEnterForm === 'function' ? canEnterForm('site') : false })
           : ''}
 
         <div class="pa-table-control-deck ${views.length > 1 && views.length <= 4 ? 'is-inline-deck' : ''}">
