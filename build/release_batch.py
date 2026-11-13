@@ -30,7 +30,8 @@ site serves that version or a later one; it then clears its own entry. Entries n
 after pushing) counts as shipped only on evidence that it is live; otherwise the next batch takes it live.
 A change built on top of another waiting change carries that change's commits: both are in the batch. When the lower
 one is left out (rule 1) or dropped (rule 2), the upper one is left out with it and the batch is built again, so no
-part of a left-out change ships through another, in either repo.
+part of a left-out change ships through another: in either repo, in this batch or a later one (as long as the
+left-out entry is in the line; its session replaces it by joining again, or anyone clears it with leave).
 A session waiting in line refreshes its entry every 10 minutes; an entry with no sign of life for 3 hours is
 skipped by leaders (never shipped behind its session's back) until that session joins again.
 The line is ordered by the second each change joined, by each PC's own clock: a skewed clock can change the order
@@ -817,10 +818,41 @@ def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], 
     out: dict[str, tuple[dict, str]] = dict(exclude or {})
     given = set(out)
     shipped: set[str] = set()
+    repos = {"app": app, "site": cwd}
+    # Commits that must not ship: every part of every change that is left out, in this batch or in an earlier one
+    # (its entry in the line still says left_out). (kind, commit) -> (entry id, summary, why it was left out).
+    blocked: dict[tuple[str, str], tuple[str, str, str]] = {}
+
+    def block(x: dict, why: str) -> None:
+        for kind in repos:
+            sha = (x.get(kind) or {}).get("sha")
+            if sha:
+                blocked.setdefault((kind, sha), (x["id"], str(x.get("summary") or ""), why))
+
+    def in_batch_only(kind: str, sha: str, ref: str) -> bool:
+        """Is this commit contained in `ref` without being on main (where it would be released already)?"""
+        repo = repos[kind]
+        return _known_commit(repo, sha) and not RL._in(repo, sha, f"{RL.REMOTE}/main") and RL._in(repo, sha, ref)
+
+    def built_on(m: dict) -> tuple[str, str, str] | None:
+        """The left-out change whose commits this change's branches contain, if any (m's branches were fetched by
+        _merge_entry, so every ancestor of them is known here)."""
+        for (kind, sha), who in blocked.items():
+            msha = (m.get(kind) or {}).get("sha")
+            if msha and who[0] != m["id"] and in_batch_only(kind, sha, msha):
+                return who
+        return None
+
+    for x in read_line(cwd):
+        if x.get("state") == "left_out":
+            block(x, str(x.get("note") or "left out of an earlier batch"))
+    for x, why in out.values():
+        block(x, why)
     while True:
-        # One pass builds the batch from origin/main without everything left out so far. A change left out in a pass
-        # may have commits in the batch already, through a change built on top of it: that change is left out too
-        # and the batch is built again, so nothing of a left-out change ever ships (in either repo).
+        # One pass builds the batch from origin/main without everything left out so far. A change left out may have
+        # commits in the batch through a change built on top of it (on either of its halves, in this batch or a
+        # later one): that change is left out too and the batch is built again, so nothing of a left-out change
+        # ever ships through another. Exclusions only grow, so this ends.
         for repo in (cwd, app):
             _run(["checkout", "-q", "--no-track", "-B", branch, f"{RL.REMOTE}/main"], repo)
         merged: list[dict] = []
@@ -849,22 +881,25 @@ def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], 
                 bump = bump or "app" in brought
             else:
                 out[cur["id"]] = (cur, why)
+                block(cur, why)
         grew = False
-        for xid, (x, xwhy) in list(out.items()):
-            for kind, repo in (("app", app), ("site", cwd)):
-                sha = (x.get(kind) or {}).get("sha")
-                if not sha or not _known_commit(repo, sha) or RL._in(repo, sha, f"{RL.REMOTE}/main") or not RL._in(repo, sha, "HEAD"):
-                    continue
-                carriers = [m for m in merged if m["id"] not in out and (m.get(kind) or {}).get("sha")
-                            and RL._in(repo, sha, m[kind]["sha"])]
-                if not carriers:
-                    raise BatchError(f"{xid} was left out but its commit {sha[:7]} is still in the batch and no change in the "
-                                     "batch accounts for it; not building a batch that ships it. Run abort and status.")
-                for m in carriers:
-                    out[m["id"]] = (m, f"it is built on top of {xid} ({x.get('summary')}), which was left out: {xwhy}")
-                    grew = True
+        for m in live:
+            if m["id"] in out or m["id"] in shipped:
+                continue
+            who = built_on(m)
+            if who:
+                why = (f"it is built on top of {who[0]} ({who[1]}), which was left out: {who[2]}. Rebase it without those "
+                       f"commits, or join again once that change has shipped. If this branch already holds the fix, clear "
+                       f"the old entry first: release_batch.py leave --id {who[0]}")
+                out[m["id"]] = (m, why)
+                block(m, why)
+                grew = True
         if not grew:
             break
+    for (kind, sha), who in blocked.items():  # the invariant, checked on what was actually built
+        if in_batch_only(kind, sha, "HEAD"):
+            raise BatchError(f"{who[0]} was left out but its commit {sha[:7]} is still in the batch; not building a batch "
+                             "that ships it.")
     notes += pass_notes
     for xid, (x, why) in out.items():
         if xid in given:
@@ -904,8 +939,25 @@ def _give_up(cwd: Path, lock_id: str) -> bool:
         print(f"WARN: the release lock is still held ({str(exc).splitlines()[0]}). Run: python build/release_batch.py abort",
               file=sys.stderr)
         return False
+    _reset_batch_worktrees(cwd, f"release/batch-{lock_id[:8]}")
     _write_local_json(cwd, BATCH_FILE, None)
     return True
+
+
+def _reset_batch_worktrees(cwd: Path, branch: str) -> None:
+    """Put the batch branch back to a clean state in both worktrees: a half-built batch, and what sync_app.py wrote
+    for it (tracked edits and new files in isabi/app), must not ride along into the session's own branch or its next
+    release. Only where the batch branch is checked out: that branch is this tool's own."""
+    try:
+        pair = (cwd, app_root(cwd))
+    except RL.LockError:
+        pair = (cwd,)
+    for repo in pair:
+        if branch and _out(["branch", "--show-current"], repo, check=False) == branch:
+            _run(["merge", "--abort"], repo, check=False)
+            _run(["reset", "--hard", "-q"], repo, check=False)
+            if repo == cwd:
+                _run(["clean", "-fdq", "--", SITE_GENERATED_DIR], cwd, check=False)
 
 
 def take(cwd: Path = ISABI_ROOT, *, holder: str, version: str = "", ttl_min: int = RL.DEFAULT_TTL_MIN,
@@ -1044,8 +1096,14 @@ def drop(cwd: Path, entry_id: str, *, reason: str, reset: bool = False, quiet: b
         _run(["merge", "--abort"], repo, check=False)
         _run(["reset", "--hard", "-q"], repo)
     # A change built on top of the dropped one carries its commits: _assemble leaves it out with it.
-    new = _assemble(cwd, app, lock, batch["holder"], cands, batch["version"],
-                    exclude={hit["id"]: (hit, f"gates failed in the batch: {reason}")})
+    try:
+        new = _assemble(cwd, app, lock, batch["holder"], cands, batch["version"],
+                        exclude={hit["id"]: (hit, f"gates failed in the batch: {reason}")})
+    except BaseException:
+        # Never leave a batch record that still lists the dropped change with the lock held: give the batch up
+        # (the remaining changes go back to waiting; the dropped one stays left out).
+        _give_up(cwd, batch["lockId"])
+        raise
     new["left_out"] = [*batch.get("left_out", []), {"id": hit["id"], "holder": hit.get("holder"), "summary": hit.get("summary"),
                                                       "why": f"gates failed in the batch: {reason}"}, *new["left_out"]]
     if not new["entries"]:
@@ -1134,13 +1192,7 @@ def abort(cwd: Path = ISABI_ROOT, *, quiet: bool = False) -> None:
         except RL.LockError as exc:
             print(f"WARN: could not unmark the line ({str(exc).splitlines()[0]}); the marks go stale with the lock.", file=sys.stderr)
         RL.release(cwd, quiet=True)
-        # What sync_app.py wrote for this batch (tracked edits and new files in isabi/app) must not ride along into
-        # the session's own branch or its next release. Only on the batch branch, which is this tool's own.
-        for repo in (cwd, app_root(cwd)):
-            if batch.get("branch") and _out(["branch", "--show-current"], repo, check=False) == batch["branch"]:
-                _run(["merge", "--abort"], repo, check=False)
-                _run(["reset", "--hard", "-q"], repo, check=False)
-        _run(["clean", "-fdq", "--", SITE_GENERATED_DIR], cwd, check=False)
+    _reset_batch_worktrees(cwd, batch.get("branch") or "")  # whoever holds the lock now: the files here are this batch's
     _write_local_json(cwd, BATCH_FILE, None)
     if not quiet:
         print("Batch given up: its changes are back in the line" + (" and the release lock is free." if mine else

@@ -111,6 +111,18 @@ def feature(repo: pathlib.Path, branch: str, files: dict[str, str], stamp: str =
     return git(repo, "rev-parse", "HEAD")
 
 
+def stacked(repo: pathlib.Path, branch: str, base: str, files: dict[str, str]) -> str:
+    """A change on its own pushed branch built on top of another session's pushed branch (not on main)."""
+    git(repo, "fetch", "-q", "origin")
+    git(repo, "checkout", "-q", "-B", branch, f"origin/{base}")
+    for rel, body in files.items():
+        put(repo / rel, body)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", branch)
+    git(repo, "push", "-q", "-f", "origin", branch)
+    return git(repo, "rev-parse", "HEAD")
+
+
 def release_as_leader(site: pathlib.Path, *, deploy: bool = True, live: bool = True) -> str:
     """What the leader does after `take`: sync_app.py (shell into isabi/app + deployed_shell.js), commit, claim the
     deploy in the lock (deploy=), push isabi-app main then isabi main; the live site then serves it (live=).
@@ -522,6 +534,46 @@ def main() -> int:  # noqa: PLR0915
               "no half of the left-out change is in the batch; the unrelated change still ships")
         quiet(RB.abort, E)
         for sess, ent in ((E, eS3), (C, eU), (D, eT2)):
+            quiet(RB.leave, sess, ent["id"])
+
+        # 13e3. a change built on BOTH halves of another: dropping the lower one takes the upper one out, no crash
+        sha_t4 = feature(appD, "wt/t4", {"js/t4.js": "t4\n"})
+        sha_t4s = feature(D, "wt/t4-site", {"functions/t4.js": "t4\n"})
+        stacked(appE, "wt/s4", "wt/t4", {"js/s4.js": "s4\n"})
+        stacked(E, "wt/s4-site", "wt/t4-site", {"functions/s4.js": "s4\n"})
+        tick()
+        eT4 = quiet(RB.join, D, holder="session D", summary="T4 change", app_branch="wt/t4", site_branch="wt/t4-site")
+        tick()
+        eS4 = quiet(RB.join, E, holder="session E", summary="S4 on both halves of T4", app_branch="wt/s4", site_branch="wt/s4-site")
+        tick()
+        b4 = quiet(RB.take, E, holder="session E")
+        b4b = quiet(RB.drop, E, eT4["id"], reason="verify_t4 failed", reset=True)
+        s4_now = entry(A, eS4["id"])
+        check([e["id"] for e in b4["entries"]] == [eT4["id"], eS4["id"]] and b4b["entries"] == [] and s4_now.get("state") == "left_out"
+              and "built on top of" in s4_now.get("note", "") and RL.read_remote_lock(A) == ("", {}) and not RB._local_json(E, RB.BATCH_FILE)
+              and not is_ancestor(appE, sha_t4) and not is_ancestor(E, sha_t4s),
+              "dropping a change takes out the one built on both of its halves; neither repo keeps the dropped commits")
+
+        # 13e4. the same in a LATER batch: a change built on one that was dropped earlier does not carry it live
+        stacked(appE, "wt/s5", "wt/t4", {"js/s5.js": "s5\n"})
+        tick()
+        eS5 = quiet(RB.join, E, holder="session E", summary="S5 on the dropped T4", app_branch="wt/s5")
+        tick()
+        b5 = quiet(RB.take, E, holder="session E")
+        s5_now = entry(A, eS5["id"])
+        check(b5["entries"] == [] and s5_now.get("state") == "left_out" and "built on top of" in s5_now.get("note", "")
+              and eT4["id"] in s5_now.get("note", "") and "verify_t4 failed" in s5_now.get("note", "")
+              and RL.read_remote_lock(A) == ("", {}) and not is_ancestor(appE, sha_t4),
+              "a change built on one dropped in an earlier batch is left out, with that batch's reason")
+        quiet(RB.leave, D, eT4["id"])
+        tick()
+        eS5b = quiet(RB.join, E, holder="session E", summary="S5 with the fix", app_branch="wt/s5")
+        tick()
+        b5b = quiet(RB.take, E, holder="session E")
+        check([e["id"] for e in b5b["entries"]] == [eS5b["id"]] and is_ancestor(appE, sha_t4),
+              "once the old left-out entry is cleared, the branch that holds its commits can ship")
+        quiet(RB.abort, E)
+        for sess, ent in ((E, eS5b), (E, eS4)):
             quiet(RB.leave, sess, ent["id"])
 
         # 13f. a leader pushed isabi-app main, never deployed, and stopped: not SHIPPED; the next batch takes it live
