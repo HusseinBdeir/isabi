@@ -6197,6 +6197,23 @@ td.pbi-cell-amber {
 }
 .ws-retire-btn:hover, .ws-retire-btn:focus-visible { background: var(--chart-amber, #C96A22); color: #fff; }
 .ws-retire-btn.is-armed { background: var(--chart-crit, #C8333B); border-color: var(--chart-crit, #C8333B); color: #fff; }
+/* Staff Clocking Another Shift (#wrongShiftPanel) */
+#wrongShiftPanel { margin-bottom: 14px; }
+#wrongShiftTable td { vertical-align: top; }
+.ws-guess-pill {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--chart-good, #1F7A4C);
+  color: var(--chart-good, #1F7A4C);
+  white-space: nowrap;
+}
+.ws-assign-btn { white-space: nowrap; }
+.ws-clash-note { font-size: 10.5px; color: var(--chart-amber, #C96A22); font-weight: 600; white-space: nowrap; }
+.ws-assign-all-btn.is-armed { background: var(--chart-crit, #C8333B); border-color: var(--chart-crit, #C8333B); color: #fff; }
 @media (max-width: 560px) {
   .ws-tl-row { grid-template-columns: minmax(84px, 32%) minmax(0, 1fr) 62px; gap: 8px; }
   .ws-tl-ticks i { display: none; }

@@ -29193,13 +29193,63 @@
   const WS_RETIRE_IDLE_DAYS = 90;
   const WS_RETIRE_CLOCKED_DAYS = 10;
   const WS_RETIRE_MATCH_MIN = 45;
+  const wsShiftKeyOf = (co, code) => `${norm(co || 'WTC')}|${norm(normalizeShiftCodeAlias(code || ''))}`;
+  const wsClockDiff = (x, y) => ((((x - y) % 1440) + 1440 + 720) % 1440) - 720;
+
+  // Which open shift of a company a clocked day belongs to: the shift whose planned start that date (version in
+  // force, dated / weekday exceptions; workShiftPlannedWindowOn) is nearest the clock-in, within 45 minutes.
+  // Shared by "End This Shift" and "Staff Clocking Another Shift" so both read a day the same way.
+  // peersByCo: Map(norm company -> open shift rows). Returns (coN, isoDate, inMinutes, maxMin = 45) -> { shift, plan, dIn } | null.
+  function makeWorkShiftClockMatcher(peersByCo) {
+    const dowCache = new Map();
+    const peerPlanCache = new Map();
+    // When each shift first existed (earliest version of its company + code): a timing edit makes a new version
+    // but must not change which of two equal shifts wins a tie (red-team round 5).
+    const firstStart = new Map();
+    ((SEED && SEED.records && SEED.records.work_shifts) || []).forEach(r => {
+      if (!r || r.voided || !r.start_date) return;
+      const k = wsShiftKeyOf(r.company, r.shift_code || r.shift_id || r.name);
+      const s0 = String(r.start_date).slice(0, 10);
+      if (!firstStart.has(k) || s0 < firstStart.get(k)) firstStart.set(k, s0);
+    });
+    const firstStartOf = p => firstStart.get(wsShiftKeyOf(p.company, p.shift_code || p.shift_id || p.name)) || String(p.start_date || '').slice(0, 10);
+    // Equal distance (e.g. two shifts that both start 07:00 on Saturday) goes to the shift with more staff,
+    // then the company default, so an unused shift is not credited with the default's days.
+    // Equal rank: the older shift (earlier start), then the id, so the result never depends on table order.
+    const rank = p => Number(p.associated_staff_count || 0) * 2 + (p.is_bu_default ? 1 : 0);
+    const before = (p, q) => {
+      const rp = rank(p);
+      const rq = rank(q);
+      if (rp !== rq) return rp > rq;
+      const sp = firstStartOf(p), sq = firstStartOf(q);
+      if (sp !== sq) return sp < sq;
+      return String(p.id) < String(q.id);
+    };
+    return (coN, d, inM, maxMin = WS_RETIRE_MATCH_MIN) => {
+      const peers = peersByCo.get(coN);
+      if (!peers || peers.length < 1 || inM == null || !d) return null;
+      let best = null;
+      let bestPlan = null;
+      let bestDist = Infinity;
+      peers.forEach(p => {
+        const pk = `${p.id}|${d}`;
+        let plan = peerPlanCache.get(pk);
+        if (plan === undefined) { plan = workShiftPlannedWindowOn(p, d, dowCache); peerPlanCache.set(pk, plan); }
+        if (!plan) return;
+        const dist = Math.abs(wsClockDiff(inM, plan.s));
+        if (dist < bestDist || (dist === bestDist && best && before(p, best))) { bestDist = dist; best = p; bestPlan = plan; }
+      });
+      return (best && bestDist <= maxMin) ? { shift: best, plan: bestPlan, dIn: wsClockDiff(inM, bestPlan.s) } : null;
+    };
+  }
+
   function getWorkShiftRetireInfo(shiftRows, peerRows) {
     const out = new Map();
     const rows = (shiftRows || []).filter(r => r && r.id && !r.voided);
     if (!rows.length) return out;
     const today = todayISO();
     const cutoff = shiftIsoDateByDays(today, -WS_RETIRE_IDLE_DAYS);
-    const keyOf = (co, code) => `${norm(co || 'WTC')}|${norm(normalizeShiftCodeAlias(code || ''))}`;
+    const keyOf = wsShiftKeyOf;
     const wanted = new Set(rows.map(r => keyOf(r.company, r.shift_code || r.shift_id || r.name)));
     const wantedCos = new Set(rows.map(r => norm(r.company || 'WTC')));
     const peersByCo = new Map();
@@ -29211,19 +29261,7 @@
       peersByCo.get(coN).push(p);
     });
     const clockedHere = new Map();
-    const dowCache = new Map();
-    const peerPlanCache = new Map();
-    // When each shift first existed (earliest version of its company + code): a timing edit makes a new version
-    // but must not change which of two equal shifts wins a tie (red-team round 5).
-    const firstStart = new Map();
-    ((SEED && SEED.records && SEED.records.work_shifts) || []).forEach(r => {
-      if (!r || r.voided || !r.start_date) return;
-      const k = keyOf(r.company, r.shift_code || r.shift_id || r.name);
-      const s0 = String(r.start_date).slice(0, 10);
-      if (!firstStart.has(k) || s0 < firstStart.get(k)) firstStart.set(k, s0);
-    });
-    const firstStartOf = p => firstStart.get(keyOf(p.company, p.shift_code || p.shift_id || p.name)) || String(p.start_date || '').slice(0, 10);
-    const cd = (x, y) => ((((x - y) % 1440) + 1440 + 720) % 1440) - 720;
+    const matchDay = makeWorkShiftClockMatcher(peersByCo);
     const lastSeen = new Map();
     ((SEED && SEED.records && SEED.records.attendance) || []).forEach(a => {
       if (!a || a.voided) return;
@@ -29233,33 +29271,10 @@
         if (wanted.has(k) && d && (!lastSeen.has(k) || d > lastSeen.get(k))) lastSeen.set(k, d);
       }
       if (!d || d < cutoff || d > today) return;
-      const peers = peersByCo.get(norm(a.company || 'WTC'));
-      if (!peers || peers.length < 1) return;
       const inM = parseClockMinutes(a.in_time || a.check_in || '');
       if (inM == null) return;
-      let best = null;
-      let bestDist = Infinity;
-      // Equal distance (e.g. two shifts that both start 07:00 on Saturday) goes to the shift with more staff,
-      // then the company default, so an unused shift is not credited with the default's days.
-      // Equal rank: the older shift (earlier start), then the id, so the result never depends on table order.
-      const rank = p => Number(p.associated_staff_count || 0) * 2 + (p.is_bu_default ? 1 : 0);
-      const before = (p, q) => {
-        const rp = rank(p);
-        const rq = rank(q);
-        if (rp !== rq) return rp > rq;
-        const sp = firstStartOf(p), sq = firstStartOf(q);
-        if (sp !== sq) return sp < sq;
-        return String(p.id) < String(q.id);
-      };
-      peers.forEach(p => {
-        const pk = `${p.id}|${d}`;
-        let plan = peerPlanCache.get(pk);
-        if (plan === undefined) { plan = workShiftPlannedWindowOn(p, d, dowCache); peerPlanCache.set(pk, plan); }
-        if (!plan) return;
-        const dist = Math.abs(cd(inM, plan.s));
-        if (dist < bestDist || (dist === bestDist && best && before(p, best))) { bestDist = dist; best = p; }
-      });
-      if (best && bestDist <= WS_RETIRE_MATCH_MIN) clockedHere.set(best.id, (clockedHere.get(best.id) || 0) + 1);
+      const hit = matchDay(norm(a.company || 'WTC'), d, inM);
+      if (hit) clockedHere.set(hit.shift.id, (clockedHere.get(hit.shift.id) || 0) + 1);
     });
     const ws = ensureWorkSchedulesState();
     const ovSeen = new Map();
@@ -29294,6 +29309,203 @@
   }
 
   window.__mfgGetWorkShiftRetireInfo = getWorkShiftRetireInfo;
+
+  // Staff Clocking Another Shift (owner idea 2026-11-13, after v19.6.324): active staff whose clocked days in the
+  // last 90 days mostly start near another open shift of their company than the one they are on. "On" = their
+  // assigned shift (staff rule), else the company default, which is what Staff per Shift and the clocked strip
+  // count. Days matched with the same matcher as End This Shift, but up to 4 hours from a planned start (the
+  // clocked strip's "another window" bound), since a night worker who clocks in at 20:30 still works Night Shift.
+  // Only days on some shift's workday count; days under a dated shift override of the person are left out (that
+  // plan was deliberate). Flag: 10+ days nearest the other shift and more than half of the counted days. Staff
+  // on a Custom shift are left out. Display and one-click assign; arithmetic only.
+  const WS_WRONG_MIN_DAYS = 10;
+  const WS_WRONG_MIN_SHARE = 0.5;
+  function getStaffOnWrongShift(peerRows) {
+    const out = [];
+    const peersByCo = new Map();
+    (peerRows || []).forEach(p => {
+      if (!p || p.voided || p.end_date || !p.id) return;
+      const coN = norm(p.company || 'WTC');
+      if (!peersByCo.has(coN)) peersByCo.set(coN, []);
+      peersByCo.get(coN).push(p);
+    });
+    if (!peersByCo.size) return out;
+    const today = todayISO();
+    const cutoff = shiftIsoDateByDays(today, -WS_RETIRE_IDLE_DAYS);
+    const ws = ensureWorkSchedulesState();
+    const codeOf = r => norm(normalizeShiftCodeAlias((r && (r.shift_code || r.shift_id || r.name)) || ''));
+    const isEndedEmp = e => e.status === 'Ended' || e.status === 'Inactive' || e.status === 'Terminated'
+      || Boolean(e.end_date && String(e.end_date).slice(0, 10) < today);
+    // Staff rules are keyed by name only: a name employed in two companies cannot be assigned safely from here.
+    const nameCos = new Map();
+    ((SEED && SEED.records && SEED.records.employments) || []).forEach(e => {
+      if (!e || e.voided || isEndedEmp(e)) return;
+      const sk = norm(e.staff || e.name || '');
+      if (!sk) return;
+      if (!nameCos.has(sk)) nameCos.set(sk, new Set());
+      nameCos.get(sk).add(norm(e.company || 'WTC'));
+    });
+    const staffMap = new Map();
+    ((SEED && SEED.records && SEED.records.employments) || []).forEach(e => {
+      if (!e || e.voided || isEndedEmp(e)) return;
+      const coN = norm(e.company || 'WTC');
+      if (!peersByCo.has(coN)) return;
+      const nm = String(e.staff || e.name || '').trim();
+      const sk = norm(nm);
+      if (!sk || staffMap.has(`${coN}|${sk}`)) return;
+      const rule = ws.staffRules && ws.staffRules[sk] && !ws.staffRules[sk].reset_default ? ws.staffRules[sk] : null;
+      const rid = rule && rule.shift_id ? normalizeShiftCodeAlias(rule.shift_id) : '';
+      if (rid === 'custom') return;
+      const overrides = (rule && Array.isArray(rule.shift_overrides) ? rule.shift_overrides : [])
+        .filter(o => o && o.start_date)
+        .map(o => [String(o.start_date).slice(0, 10), String(o.end_date || o.start_date).slice(0, 10)]);
+      const peers = peersByCo.get(coN) || [];
+      const onRow = rid ? (peers.find(p => codeOf(p) === norm(rid)) || null) : (peers.find(p => p.is_bu_default) || null);
+      const clash = (nameCos.get(sk) || new Set()).size > 1 ? 'name' : (rule && rule.company && norm(rule.company) !== coN ? 'rule' : '');
+      staffMap.set(`${coN}|${sk}`, { name: nm, company: e.company || 'WTC', coN, rid, hasRule: Boolean(rule), onRow, clash, overrides, clocked: 0, by: new Map() });
+    });
+    if (!staffMap.size) return out;
+    const matchDay = makeWorkShiftClockMatcher(peersByCo);
+    const ownDowCache = new Map();
+    const ownPlanCache = new Map();
+    const addDay = (st, shift, plan, inM, a) => {
+      st.clocked += 1;
+      let acc = st.by.get(shift.id);
+      if (!acc) { acc = { shift, n: 0, dIn: [], dOut: [], planS: [], planE: [] }; st.by.set(shift.id, acc); }
+      acc.n += 1;
+      acc.dIn.push(wsClockDiff(inM, plan.s));
+      acc.planS.push(plan.s);
+      const outM = parseClockMinutes(a.out_time || a.check_out || '');
+      if (outM != null && outM !== inM) { acc.dOut.push(wsClockDiff(outM, plan.e)); acc.planE.push(plan.e); }
+    };
+    ((SEED && SEED.records && SEED.records.attendance) || []).forEach(a => {
+      if (!a || a.voided) return;
+      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      if (!d || d < cutoff || d > today) return;
+      if (/^(extra|config)/i.test(String(a.type || a.status || ''))) return;
+      const st = staffMap.get(`${norm(a.company || 'WTC')}|${norm(a.staff)}`);
+      if (!st) return;
+      const inM = parseClockMinutes(a.in_time || a.check_in || '');
+      if (inM == null) return;
+      if (st.overrides.some(o => d >= o[0] && d <= o[1])) return;
+      const hit = matchDay(st.coN, d, inM, WS_ACT_OTHER_WINDOW_MIN);
+      // On time for their own shift that day (up to an hour early, within its grace): an own-shift day, even if
+      // another shift starts nearer (an 07:25 arrival on an 08:00 shift is not an Extended Day worker), unless the
+      // nearer shift has them on time too (07:05 on a 07:00 shift is an Extended Day worker; red-team round 2).
+      if (st.onRow) {
+        const pk = `${st.onRow.id}|${d}`;
+        let own = ownPlanCache.get(pk);
+        if (own === undefined) { own = workShiftPlannedWindowOn(st.onRow, d, ownDowCache); ownPlanCache.set(pk, own); }
+        if (own) {
+          const dOwn = wsClockDiff(inM, own.s);
+          const otherOnTime = Boolean(hit && hit.shift !== st.onRow && Math.abs(hit.dIn) <= hit.plan.grace && Math.abs(hit.dIn) < Math.abs(dOwn));
+          if (dOwn >= -60 && dOwn <= own.grace && !otherOnTime) { addDay(st, st.onRow, own, inM, a); return; }
+        }
+      }
+      if (!hit) return;
+      addDay(st, hit.shift, hit.plan, inM, a);
+    });
+    const median = arr => {
+      if (!arr.length) return null;
+      const s = arr.slice().sort((x, y) => x - y);
+      const mid = Math.floor(s.length / 2);
+      return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+    };
+    // Name of a shift code in a company from any stored version (an assigned shift may have ended since).
+    const shiftNameOf = (coN, code) => {
+      const hit = ((SEED && SEED.records && SEED.records.work_shifts) || [])
+        .filter(r => r && !r.voided && norm(r.company || 'WTC') === coN && codeOf(r) === norm(code))
+        .sort((x, y) => String(y.start_date || '').localeCompare(String(x.start_date || '')))[0];
+      return hit ? (hit.name || hit.shift_name || code) : code;
+    };
+    staffMap.forEach(st => {
+      if (st.clocked < WS_WRONG_MIN_DAYS || !st.by.size) return;
+      let top = null;
+      st.by.forEach(acc => {
+        if (!top || acc.n > top.n || (acc.n === top.n && String(acc.shift.id) < String(top.shift.id))) top = acc;
+      });
+      if (!top || top.n < WS_WRONG_MIN_DAYS || top.n / st.clocked <= WS_WRONG_MIN_SHARE) return;
+      const onRow = st.onRow;
+      const onCode = st.rid ? norm(st.rid) : codeOf(onRow);
+      if (onCode && onCode === codeOf(top.shift)) return;
+      // What the attendance rules apply to new punches today (an unassigned person gets a guessed shift).
+      let effCode = '';
+      try { effCode = norm(normalizeShiftCodeAlias(getStaffWorkRule(st.name, st.company).shift_id || '')); } catch (_) { effCode = ''; }
+      const mIn = median(top.dIn);
+      const mOut = median(top.dOut);
+      const pS = median(top.planS);
+      const pE = median(top.planE);
+      out.push({
+        staff: st.name,
+        company: st.company,
+        onId: onRow ? onRow.id : '',
+        onName: onRow ? (onRow.name || onRow.shift_name || '') : (st.rid ? shiftNameOf(st.coN, st.rid) : ''),
+        hasRule: st.hasRule,
+        clash: st.clash,
+        targetGrace: top.shift.grace_min,
+        targetEarlyGrace: top.shift.early_leave_grace_min,
+        onHow: st.rid ? 'assigned' : 'default',
+        targetId: top.shift.id,
+        targetCode: normalizeShiftCodeAlias(top.shift.shift_code || top.shift.shift_id || ''),
+        targetName: top.shift.name || top.shift.shift_name || '',
+        targetWin: top.shift.split_enabled && top.shift.split_window_label
+          ? top.shift.split_window_label
+          : `${top.shift.start_time || ''}-${top.shift.end_time || ''}`,
+        days: top.n,
+        clocked: st.clocked,
+        share: Math.round((top.n / st.clocked) * 100),
+        guessed: !st.rid && effCode === codeOf(top.shift),
+        typIn: (mIn != null && pS != null) ? Math.round(pS + mIn) : null,
+        typOut: (mOut != null && pE != null) ? Math.round(pE + mOut) : null
+      });
+    });
+    out.sort((a, b) => (b.days - a.days) || a.staff.localeCompare(b.staff));
+    return out;
+  }
+
+  window.__mfgGetStaffOnWrongShift = getStaffOnWrongShift;
+
+  // Same rights as ending a shift: shift entry plus the right to modify data (changes a stored staff rule).
+  function canAssignStaffShift(u) {
+    return canRetireWorkShift(u);
+  }
+
+  // Assign one or more listed staff to the shift they clock. Re-checks each person against the live list, so a
+  // stale button (another device assigned them, a shift ended) does nothing. Returns { ok, done: [...] }.
+  function assignStaffToClockedShift(items) {
+    if (!canAssignStaffShift()) return { ok: false, error: 'You do not have rights to change shifts', done: [] };
+    ensureWorkShiftsSeeded();
+    const allowed = new Set(allowedCompanyNames().map(n => norm(n)));
+    const want = (items || []).filter(x => x && x.staff && x.company && x.shiftId && allowed.has(norm(x.company)));
+    if (!want.length) return { ok: false, error: 'You do not have rights to change shifts', done: [] };
+    const pool = ((SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [])
+      .filter(r => r && !r.voided && !r.end_date && want.some(x => norm(x.company) === norm(r.company || 'WTC')))
+      .map(r => hydrateWorkShiftRowComputed(r));
+    const live = getStaffOnWrongShift(pool);
+    const done = [];
+    want.forEach(x => {
+      const hit = live.find(r => norm(r.staff) === norm(x.staff) && norm(r.company) === norm(x.company) && String(r.targetId) === String(x.shiftId));
+      if (!hit || !hit.targetCode || hit.clash) return;
+      const patch = { shift_id: hit.targetCode, company: hit.company };
+      // A person with no saved rule carries the old shift's grace; give them the new shift's (a saved rule keeps
+      // whatever grace was set for that person).
+      if (!hit.hasRule && hit.targetGrace != null) {
+        patch.grace_min = Number(hit.targetGrace);
+        patch.early_leave_grace_min = Number(hit.targetEarlyGrace != null ? hit.targetEarlyGrace : hit.targetGrace);
+      }
+      const res = saveStaffWorkRule(hit.staff, patch, { deferSave: true });
+      if (res && res.ok) done.push({ staff: hit.staff, company: hit.company, shiftName: hit.targetName, key: norm(hit.staff), rule: res.rule });
+    });
+    if (!done.length) return { ok: false, error: 'Already on that shift or no longer listed', done };
+    done.forEach(d => postWorkScheduleMutation({ op: 'upsert_staff_rule', key: d.key, item: d.rule }));
+    if (SEED) SEED._workShiftsSeededRev = '';
+    ensureWorkShiftsSeeded();
+    saveLocalAuthAndRecords();
+    syncWithCloud(true);
+    return { ok: true, done };
+  }
+
+  window.__mfgAssignStaffToClockedShift = assignStaffToClockedShift;
 
   function retireUnusedWorkShift(shiftRowId) {
     if (!canRetireWorkShift()) return { ok: false, error: 'You do not have rights to change shifts' };
@@ -41910,10 +42122,62 @@
             retire: getWorkShiftRetireInfo(wsChartBase, activeWs)
           });
           const wsShowCo = new Set(wsChartBase.map(r => String(r.company || ''))).size > 1;
+          // Staff Clocking Another Shift (owner idea 2026-11-13): who clocks nearest another shift than the one
+          // they are on, with one-click Assign.
+          // The search box narrows registers, not this list (it would drop candidate shifts and the default).
+          const wrongShiftRows = getStaffOnWrongShift(filterRecords(allWs, { ignorePeriod: true, ignoreSearch: true }).filter(r => !r.end_date));
+          const wsCanAssign = canAssignStaffShift();
+          const wrongAssignable = wrongShiftRows.filter(r => !r.clash).length;
+          const wrongShowCo = new Set(wrongShiftRows.map(r => String(r.company || ''))).size > 1;
+          const wsHm = m => (m == null ? '' : `${String(Math.floor((((m % 1440) + 1440) % 1440) / 60)).padStart(2, '0')}:${String((((m % 1440) + 1440) % 1440) % 60).padStart(2, '0')}`);
+          const wrongShiftHtml = !wrongShiftRows.length ? '' : `
+            <div class="panel-card" id="wrongShiftPanel">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-title"><span>${ic('swap')} Staff Clocking Another Shift</span></div>
+                  <span class="ph-sub">Most of their clocked days in the last 90 days start near another shift. Assign moves lateness and overtime of new punches to that shift; past attendance rows stay as they are.</span>
+                </div>
+                ${wsCanAssign && wrongAssignable > 1 ? `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="btn btn-primary ws-assign-all-btn" data-ws-assign-all="1">Assign All</button></div>` : ''}
+              </div>
+              <div class="table-wrap">
+                <table class="ledger-table" id="wrongShiftTable">
+                  <thead>
+                    <tr>
+                      <th>Staff Member</th>
+                      ${wrongShowCo ? '<th>Co.</th>' : ''}
+                      <th>On Now</th>
+                      <th>Clocks Nearest</th>
+                      <th class="r">Days There, Last 90 Days</th>
+                      <th>Typical In / Out</th>
+                      ${wsCanAssign ? '<th></th>' : ''}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${wrongShiftRows.map(r => `
+                      <tr data-ws-wrong-staff="${esc(r.staff)}" data-ws-wrong-co="${esc(r.company)}" data-ws-wrong-shift="${esc(r.targetId)}">
+                        <td><strong>${esc(r.staff)}</strong></td>
+                        ${wrongShowCo ? `<td>${coBadge(r.company)}</td>` : ''}
+                        <td>${esc(r.onName || '-')}<div class="drv-sub">${r.onHow === 'default' ? '<span>Company Default</span>' : '<span>Assigned</span>'}</div></td>
+                        <td><strong>${esc(r.targetName)}</strong> <span class="mono">${esc(r.targetWin)}</span>${r.guessed ? `<div class="drv-sub"><span class="ws-guess-pill" data-ui-tip="Attendance already applies this shift to new punches by guessing from recent clock times. It is not assigned, so the shift charts count this person on the company default.">Guessed by Attendance</span></div>` : ''}</td>
+                        <td class="r mono">${fmtNum(r.days, 0)} / ${fmtNum(r.clocked, 0)} <small>(${fmtNum(r.share, 0)}%)</small></td>
+                        <td class="mono">${r.typIn != null && r.typOut != null ? `${wsHm(r.typIn)} / ${wsHm(r.typOut)}` : '-'}</td>
+                        ${wsCanAssign ? `<td class="r">${r.clash === 'name'
+                          ? `<span class="ws-clash-note" data-ui-tip="Shift rules are kept per name. This name is also employed in another company, so set the shift from the staff schedule instead.">Same Name in Another Company</span>`
+                          : r.clash
+                          ? `<span class="ws-clash-note" data-ui-tip="This person's saved shift rule names another company. Set the shift from the staff schedule instead.">Rule Saved Under Another Company</span>`
+                          : `<button type="button" class="btn kiosk-mini-btn ws-assign-btn" data-ws-assign="1">Assign</button>`}</td>` : ''}
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
           return `
             ${(window.MFG_PBI && typeof window.MFG_PBI.renderWorkShiftsVisualsSection === 'function')
-              ? window.MFG_PBI.renderWorkShiftsVisualsSection({ shifts: wsChartRows, showCo: wsShowCo, canRetire: wsCanRetire })
+              ? window.MFG_PBI.renderWorkShiftsVisualsSection({ shifts: wsChartRows, showCo: wsShowCo, canRetire: wsCanAssign })
               : ''}
+            ${wrongShiftHtml}
 
             <div class="panel-card" id="payShiftTimingsPanel">
               <div class="panel-head">
@@ -136439,6 +136703,56 @@
         } else {
           toast(wsUiT((res && res.error) || 'Shift not found or already ended'), 'err');
         }
+        renderApp();
+      });
+    });
+    // Staff Clocking Another Shift: Assign one row at once; Assign All arms first (click again within 5 seconds).
+    const wsAssignToast = res => {
+      if (res && res.ok) {
+        const names = res.done.map(d => `${d.staff} (${d.shiftName})`);
+        toast(`${wsUiT(res.done.length > 1 ? 'Shifts assigned' : 'Shift assigned')}: ${names.slice(0, 4).join(', ')}${names.length > 4 ? ` +${names.length - 4}` : ''}`, 'ok');
+      } else {
+        toast(wsUiT((res && res.error) || 'Already on that shift or no longer listed'), 'err');
+      }
+    };
+    container.querySelectorAll('[data-ws-assign]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const tr = btn.closest('tr[data-ws-wrong-staff]');
+        if (!tr) return;
+        wsAssignToast(assignStaffToClockedShift([{
+          staff: tr.getAttribute('data-ws-wrong-staff') || '',
+          company: tr.getAttribute('data-ws-wrong-co') || '',
+          shiftId: tr.getAttribute('data-ws-wrong-shift') || ''
+        }]));
+        renderApp();
+      });
+    });
+    container.querySelectorAll('[data-ws-assign-all]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (btn.getAttribute('data-armed') !== '1') {
+          btn.setAttribute('data-armed', '1');
+          btn.classList.add('is-armed');
+          btn.textContent = wsUiT('Click Again to Assign All');
+          clearTimeout(btn._wsAssignT);
+          btn._wsAssignT = setTimeout(() => {
+            btn.removeAttribute('data-armed');
+            btn.classList.remove('is-armed');
+            btn.textContent = wsUiT('Assign All');
+          }, 5000);
+          return;
+        }
+        clearTimeout(btn._wsAssignT);
+        const panel = btn.closest('#wrongShiftPanel') || container;
+        const items = Array.from(panel.querySelectorAll('tr[data-ws-wrong-staff]')).filter(tr => tr.querySelector('[data-ws-assign]')).map(tr => ({
+          staff: tr.getAttribute('data-ws-wrong-staff') || '',
+          company: tr.getAttribute('data-ws-wrong-co') || '',
+          shiftId: tr.getAttribute('data-ws-wrong-shift') || ''
+        }));
+        wsAssignToast(assignStaffToClockedShift(items));
         renderApp();
       });
     });
