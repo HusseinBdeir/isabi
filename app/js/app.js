@@ -7072,8 +7072,17 @@
     return _NUM_COLLATOR.compare(na, nb);
   }
 
+  // The rows each register's filters and column filters show (sorted, before paging), for its Chart view.
+  const _tableShownRows = {};
+  const _regPanelRows = {};
+  function regPanelRows(panelId, rows, shownKey) {
+    if (panelId) _regPanelRows[panelId] = { rows: Array.isArray(rows) ? rows : [], shownKey: shownKey || '' };
+    return rows;
+  }
   function sortRows(rows, view, defKey, defDir) {
-    return withRelPass(() => sortRowsPass(rows, view, defKey, defDir));
+    const out = withRelPass(() => sortRowsPass(rows, view, defKey, defDir));
+    if (view) _tableShownRows[view] = out;
+    return out;
   }
   function sortRowsPass(rows, view, defKey, defDir) {
     const rawPool = Array.isArray(rows) ? rows : [];
@@ -46373,7 +46382,9 @@
         ${chartSvg}
       </div>
 
-      ${submode === 'entities' ? `
+      ${submode === 'entities' ? (() => {
+        regPanelRows('hldEntitiesScorecardPanel', entities.map(e => ({ name: e.name, industry: e.industry, sector: e.sector, loads: Number(e.k.loads || 0), sales_ttc: Number(e.k.sales_ttc || 0), gross_margin: Number(e.k.gross_margin || 0), expenses: round2(Number(e.k.expenses || 0) + Number(e.k.salaries || 0)), operating_profit: Number(e.k.operating_profit || 0), ar_balance: Number(e.k.ar_balance || 0), ap_balance: Number(e.k.ap_balance || 0) })));
+        return `
       <div class="panel-card" id="hldEntitiesScorecardPanel">
         <div class="panel-head">
           <div class="panel-title"><span>${ic('hld_entities')} SUBSIDIARY &amp; HOLDING ENTITY SCORECARDS (${entities.length} ENTITIES ACROSS 6 INDUSTRIES)</span></div>
@@ -46433,8 +46444,8 @@
             </tfoot>
           </table>
         </div>
-      </div>
-      ` : `
+      </div>`;
+      })() : `
       <div class="panel-card" id="hldConsolidatedPnlPanel">
         <div class="panel-head">
           <div class="panel-title"><span>${ic('hld_consolidation')} CONSOLIDATED 6-INDUSTRY GROUP P&amp;L &amp; INTERCOMPANY ELIMINATION SCHEDULE</span></div>
@@ -46592,7 +46603,7 @@
     `;
 
     if (submode === 'due_matrix') {
-      const bList = icRes.byBilateral || [];
+      const bList = regPanelRows('hldDueMatrixPanel', icRes.byBilateral || []);
       return `
         ${kpiHeader}
         <div class="panel-card" id="hldDueMatrixPanel">
@@ -46656,6 +46667,7 @@
 
     if (submode === 'open_recon') {
       const openList = icRes.openRows;
+      regPanelRows('hldOpenReconPanel', openList.map(x => Object.assign({}, x, { _rid: (x.primaryRow && x.primaryRow.id) || '' })), 'hld_open_recon');
       const shownOpen = openList.slice(0, shownCount('hld_open_recon'));
       return `
         ${kpiHeader}
@@ -46739,6 +46751,7 @@
       `;
     }
 
+    regPanelRows('hldInteractionsPanel', filteredRows.map(x => Object.assign({}, x, { _rid: (x.primaryRow && x.primaryRow.id) || '' })), 'hld_interactions');
     const shownMain = filteredRows.slice(0, shownCount('hld_interactions'));
     const sumGiven = round2(filteredRows.reduce((s, x) => s + (x.givenUsd || 0), 0));
     const sumPaidBack = round2(filteredRows.reduce((s, x) => s + (x.paidBackUsd || 0), 0));
@@ -47096,7 +47109,7 @@
     `;
 
     const hldSched = computeHoldingSchedules();
-    const chronoPrts = hldSched.partnerAgreements || [];
+    const chronoPrts = regPanelRows('hldPartnerChronoPanel', hldSched.partnerAgreements || []);
     const sumPrtEnt = round2(chronoPrts.reduce((a, r) => a + Number(r.entitled_usd || 0), 0));
     const sumPrtDrw = round2(chronoPrts.reduce((a, r) => a + Number(r.drawn_usd || 0), 0));
     const sumPrtOpn = round2(chronoPrts.reduce((a, r) => a + Number(r.open_usd || 0), 0));
@@ -47154,6 +47167,7 @@
     `;
 
     if (submode === 'distributions') {
+      regPanelRows('hldJvAgreementsPanel', jvRules);
       return `
         ${kpiHtml}
         <div class="panel-card" id="hldJvAgreementsPanel" style="margin-bottom:14px">
@@ -47206,6 +47220,7 @@
       `;
     }
 
+    regPanelRows('hldPartnersTablePanel', partners.map(p => Object.assign({}, p, { _companies_str: Array.from(p.companies || []).join(', ') })), 'hld_partners');
     const shownPartners = partners.slice(0, shownCount('hld_partners'));
     return `
       ${kpiHtml}
@@ -48229,6 +48244,7 @@
     `;
 
     if (submode === 'assets') {
+      regPanelRows('hldAssetsPanel', assetExps.map(x => Object.assign({}, x, { _asset_amount: Number(x.total || x.amount || 0), _asset_cat: [x.category, x.subcategory].filter(Boolean).join(' · ') || 'Capital Outlay' })), 'hld_assets');
       const shownAssets = assetExps.slice(0, shownCount('hld_assets'));
       return `
         ${kpiHtml}
@@ -48281,8 +48297,9 @@
       `;
     }
 
+    regPanelRows('hldLoansPanel', loansList.map(l => Object.assign({}, l, { _loan_amt: Number(l.principal_usd || l.amount_usd || l.amount || l.total || 0), _loan_date: l.date || l.start_date || '', _loan_party: l.counterparty || l.party || l.borrower || '', _loan_dir: String(l.side || l.type || l.direction || 'Loan Given') })), 'hld_loans');
     const shownLoans = loansList.slice(0, shownCount('hld_loans'));
-    const hldFacs = (computeHoldingSchedules().facilitySchedules || []).filter(f => selParty === 'ALL' || f.lender === selParty || f.company === selParty);
+    const hldFacs = regPanelRows('hldFacilitySchedulesPanel', (computeHoldingSchedules().facilitySchedules || []).filter(f => selParty === 'ALL' || f.lender === selParty || f.company === selParty));
     const hideFacCo = STATE.company === 'bdeirholding';
     const facCoStyle = hideFacCo ? ' style="display:none"' : '';
     const sumFacPrin = round2(hldFacs.reduce((a, r) => a + Number(r.principal_usd || 0), 0));
@@ -48803,6 +48820,7 @@
         if (f === 'launa') return r.company === 'La Una';
         return true;
       });
+      regPanelRows('hspPosPanel', filteredPos, 'hsp_pos');
       const shownPos = filteredPos.slice(0, shownCount('hsp_pos'));
       const sumBilled = round2(filteredPos.reduce((a, r) => a + r.pos_billed_ttc, 0));
       const sumCash = round2(filteredPos.reduce((a, r) => a + r.cash_usd, 0));
@@ -48901,6 +48919,7 @@
         if (f === 'input_vat') return r.direction === 'Input VAT';
         return true;
       });
+      regPanelRows('hspVatPanel', filteredVat, 'hsp_vat');
       const shownVat = filteredVat.slice(0, shownCount('hsp_vat'));
       const sumHt = round2(filteredVat.reduce((a, r) => a + r.ht_usd, 0));
       const sumVat = round2(filteredVat.reduce((a, r) => a + r.vat_usd, 0));
@@ -48990,6 +49009,7 @@
       if (f === 'events') return r.category === 'Events & Weddings';
       return true;
     });
+    regPanelRows('hspRevenuePanel', filteredRev, 'hsp_revenue');
     const shownRev = filteredRev.slice(0, shownCount('hsp_revenue'));
     const sumRooms = filteredRev.reduce((a, r) => a + Number(r.rooms || 0), 0);
     const sumCovers = filteredRev.reduce((a, r) => a + Number(r.covers || 0), 0);
@@ -49165,6 +49185,7 @@
         if (f === 'pending') return r.open_payable_usd > 0;
         return true;
       });
+      regPanelRows('hspPartnersPanel', filteredPartners.map(r => Object.assign({}, r, { _partner_share_usd: round2(Number(r.operator_share_usd || 0) + Number(r.coinvest_share_usd || 0)) })), 'hsp_partners');
       const shownPartners = filteredPartners.slice(0, shownCount('hsp_partners'));
       const sumPool = round2(filteredPartners.reduce((a, r) => a + r.gross_pool_usd, 0));
       const sumHold = round2(filteredPartners.reduce((a, r) => a + r.holding_share_usd, 0));
@@ -49261,6 +49282,8 @@
       if (f === 'paid') return r.balance_usd <= 0;
       return true;
     });
+    regPanelRows('hspMembershipsPanel', filteredMem, 'hsp_memberships');
+    regPanelRows('hspTariffsPanel', hsp.tariffRows || []);
     const shownMem = filteredMem.slice(0, shownCount('hsp_memberships'));
     const sumCont = round2(filteredMem.reduce((a, r) => a + r.contract_usd, 0));
     const sumPaid = round2(filteredMem.reduce((a, r) => a + r.paid_usd, 0));
@@ -49472,6 +49495,7 @@
         if (f === 'kitchen') return /kitchen|seafood|banquet|ballroom/i.test(r.category);
         return true;
       });
+      regPanelRows('hspMenuPanel', filteredMenu, 'hsp_menu');
       const shownMenu = filteredMenu.slice(0, shownCount('hsp_menu'));
       const sumUnits = filteredMenu.reduce((a, r) => a + r.units_sold, 0);
       const sumRevHt = round2(filteredMenu.reduce((a, r) => a + r.price_ht * r.units_sold, 0));
@@ -49567,6 +49591,7 @@
       if (f === 'transfers') return Math.abs(r.transfers_net_usd) > 0;
       return true;
     });
+    regPanelRows('hspStockPanel', filteredStk, 'hsp_stock');
     const shownStk = filteredStk.slice(0, shownCount('hsp_stock'));
     const sumOpen = round2(filteredStk.reduce((a, r) => a + r.opening_usd, 0));
     const sumPur = round2(filteredStk.reduce((a, r) => a + r.purchases_in_usd, 0));
@@ -49767,6 +49792,7 @@
         if (f === 'completed') return r.status === 'Completed';
         return true;
       });
+      regPanelRows('hspMaintPanel', filteredMaint, 'hsp_maint');
       const shownMaint = filteredMaint.slice(0, shownCount('hsp_maint'));
       const sumDown = round2(filteredMaint.reduce((a, r) => a + r.downtime_hrs, 0));
       const sumCost = round2(filteredMaint.reduce((a, r) => a + r.cost_usd, 0));
@@ -49856,6 +49882,7 @@
       if (f === 'solar') return r.solar_offset_pct >= 30;
       return true;
     });
+    regPanelRows('hspEnergyPanel', filteredNrg, 'hsp_energy');
     const shownNrg = filteredNrg.slice(0, shownCount('hsp_energy'));
     const sumTank = filteredNrg.reduce((a, r) => a + r.tank_level_l, 0);
     const sumRefill = filteredNrg.reduce((a, r) => a + r.refill_l, 0);
@@ -50384,6 +50411,7 @@
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
+      regPanelRows('trdReceivablesPanel', filteredAr, 'trd_receivables');
       const shownAr = filteredAr.slice(0, shownCount('trd_receivables'));
       const sumInv = round2(filteredAr.reduce((a, r) => a + r.invoiced_ttc, 0));
       const sumSet = round2(filteredAr.reduce((a, r) => a + r.settled_usd, 0));
@@ -50484,6 +50512,7 @@
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
+      regPanelRows('trdTargetsPanel', filteredTgt, 'trd_targets');
       const shownTgt = filteredTgt.slice(0, shownCount('trd_targets'));
       const sumTgt = round2(filteredTgt.reduce((a, r) => a + r.target_ttc, 0));
       const sumAct = round2(filteredTgt.reduce((a, r) => a + r.actual_ttc, 0));
@@ -50576,6 +50605,7 @@
       if (f === 'korri') return r.company === 'Korri Auto';
       return true;
     });
+    regPanelRows('trdSalesPanel', filteredSales, 'trd_sales');
     const shownSales = filteredSales.slice(0, shownCount('trd_sales'));
     const sumQty = filteredSales.reduce((a, r) => a + r.qty, 0);
     const sumNet = round2(filteredSales.reduce((a, r) => a + r.net_usd, 0));
@@ -50748,6 +50778,7 @@
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
+      regPanelRows('trdLandedPanel', filteredLc, 'trd_landed');
       const shownLc = filteredLc.slice(0, shownCount('trd_landed'));
       const sumFrt = round2(filteredLc.reduce((a, r) => a + r.freight_usd, 0));
       const sumCus = round2(filteredLc.reduce((a, r) => a + r.customs_usd, 0));
@@ -50847,6 +50878,7 @@
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
+      regPanelRows('trdGrnPanel', filteredGrn, 'trd_grn');
       const shownGrn = filteredGrn.slice(0, shownCount('trd_grn'));
       const sumLines = filteredGrn.reduce((a, r) => a + r.lines_cnt, 0);
       const sumRecQty = filteredGrn.reduce((a, r) => a + r.qty_received, 0);
@@ -50941,6 +50973,7 @@
       if (f === 'korri') return r.company === 'Korri Auto';
       return true;
     });
+    regPanelRows('trdPurchasesPanel', filteredImp, 'trd_purchases');
     const shownImp = filteredImp.slice(0, shownCount('trd_purchases'));
     const sumOrd = filteredImp.reduce((a, r) => a + r.ordered_qty, 0);
     const sumRec = filteredImp.reduce((a, r) => a + r.received_qty, 0);
@@ -51131,6 +51164,7 @@
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
+      regPanelRows('trdWarrantyPanel', filteredWar, 'trd_warranty');
       const shownWar = filteredWar.slice(0, shownCount('trd_warranty'));
       const sumParts = round2(filteredWar.reduce((a, r) => a + r.parts_cost_usd, 0));
       const sumLabor = round2(filteredWar.reduce((a, r) => a + r.labor_usd, 0));
@@ -51225,6 +51259,7 @@
       if (f === 'korri') return r.company === 'Korri Auto';
       return true;
     });
+    regPanelRows('trdTrucksPanel', filteredUnits, 'trd_trucks');
     const shownUnits = filteredUnits.slice(0, shownCount('trd_trucks'));
     const sumFob = round2(filteredUnits.reduce((a, r) => a + r.fob_usd, 0));
     const sumAdd = round2(filteredUnits.reduce((a, r) => a + r.landed_add_usd, 0));
@@ -51388,6 +51423,7 @@
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
+      regPanelRows('trdMovementsPanel', filteredMov, 'trd_movements');
       const shownMov = filteredMov.slice(0, shownCount('trd_movements'));
       const sumQty = filteredMov.reduce((a, r) => a + r.qty, 0);
       const sumTot = round2(filteredMov.reduce((a, r) => a + r.total_usd, 0));
@@ -51477,6 +51513,7 @@
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
+      regPanelRows('trdReconPanel', filteredRec, 'trd_recon');
       const shownRec = filteredRec.slice(0, shownCount('trd_recon'));
       const sumRows = filteredRec.reduce((a, r) => a + r.rows_checked, 0);
       const sumLive = round2(filteredRec.reduce((a, r) => a + r.live_app_usd, 0));
@@ -51563,6 +51600,7 @@
       if (f === 'korri') return r.company === 'Korri Auto';
       return true;
     });
+    regPanelRows('trdStockPanel', filteredStk, 'trd_stock');
     const shownStk = filteredStk.slice(0, shownCount('trd_stock'));
     const sumOnHand = filteredStk.reduce((a, r) => a + r.on_hand, 0);
     const sumReorder = filteredStk.reduce((a, r) => a + r.reorder_min, 0);
@@ -110239,12 +110277,791 @@
   function settleChartRowsAtPageBottom(container, view) {
     if (!container || CHART_FIRST_VIEWS.has(view)) return 0;
     const rows = Array.from(container.children).filter(el => el.id && /ChartsRow$/.test(el.id));
-    if (!rows.length) return 0;
-    // Already settled (the rows are the last blocks, in order): leave the DOM untouched.
-    const tail = Array.from(container.children).slice(-rows.length);
-    if (tail.every((el, i) => el === rows[i])) return 0;
-    rows.forEach(row => container.appendChild(row));
-    return rows.length;
+    let moved = 0;
+    if (rows.length) {
+      // Already settled (the rows are the last blocks, in order): leave the DOM untouched.
+      const tail = Array.from(container.children).slice(-rows.length);
+      if (!tail.every((el, i) => el === rows[i])) {
+        rows.forEach(row => container.appendChild(row));
+        moved = rows.length;
+      }
+    }
+    mountHubChartsHead(container, rows);
+    mountHubChartsJump(container, rows);
+    return moved;
+  }
+
+  // ---- Chart preferences per seat (fold state, register Table / Chart mode, choice frequency) -------------
+  // Kept in this device's store under the seat's key (session store inside the demo scopes, like every
+  // other app preference). Display only: nothing here is synced or posted.
+  function chartPrefsKey() {
+    const u = activeUser() || {};
+    const seat = String(u.email || u.id || ('seat' + (STATE.activeUserIdx || 0))).toLowerCase().replace(/[^a-z0-9@._-]/g, '');
+    return 'isabi_mfg_chart_prefs_v1_' + seat;
+  }
+  function readChartPrefs() {
+    let p = null;
+    try { p = JSON.parse(appStoreGetRaw(chartPrefsKey()) || 'null'); } catch (_) { p = null; }
+    if (!p || typeof p !== 'object') p = {};
+    if (!p.reg || typeof p.reg !== 'object') p.reg = {};
+    if (!p.freq || typeof p.freq !== 'object') p.freq = {};
+    return p;
+  }
+  function writeChartPrefs(p) {
+    try { appStoreSetRaw(chartPrefsKey(), JSON.stringify(p)); } catch (_) {}
+  }
+
+  // ---- Charts heading (fold) and the Charts jump pill in the hub header ------------------------------------
+  function hubChartsFoldBtnHtml(folded) {
+    return `${ic(folded ? 'eye' : 'eye_off')}<span>${folded ? 'Show Charts' : 'Hide Charts'}</span>`;
+  }
+  function mountHubChartsHead(container, rows) {
+    if (!rows.length) return;
+    const folded = Boolean(readChartPrefs().folded);
+    let head = $('hubChartsHead');
+    if (!head || head.parentNode !== container) {
+      if (head) head.remove();
+      head = document.createElement('div');
+      head.id = 'hubChartsHead';
+      head.className = 'hub-charts-head no-print';
+      head.innerHTML = `<span class="hub-charts-title">${ic('pbi')}<span>Charts</span></span>` +
+        `<button type="button" class="btn btn-ghost-bar hub-charts-fold" id="hubChartsFoldBtn" data-ui-tip="Hide or show the charts on every page"></button>`;
+    }
+    const btn = head.querySelector('#hubChartsFoldBtn');
+    btn.innerHTML = hubChartsFoldBtnHtml(folded);
+    btn.setAttribute('aria-expanded', folded ? 'false' : 'true');
+    btn.setAttribute('aria-controls', rows.map(r => r.id).join(' '));
+    if (head.nextElementSibling !== rows[0]) container.insertBefore(head, rows[0]);
+    rows.forEach(r => { r.hidden = folded; });
+  }
+  function mountHubChartsJump(container, rows) {
+    const old = $('hubChartsJumpBtn');
+    if (old) {
+      const oldBar = old.closest('.hub-charts-jumpbar');
+      old.remove();
+      if (oldBar) oldBar.remove();
+    }
+    if (!rows.length) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'hubChartsJumpBtn';
+    btn.className = 'hub-charts-jump no-print';
+    btn.setAttribute('data-ui-tip', 'Jump to the charts at the bottom of this page');
+    btn.innerHTML = `${ic('pbi')}<span>Charts</span>${ic('chevron_down')}`;
+    const bar = $('hubSubtabBar');
+    if (bar) {
+      bar.appendChild(btn);
+      return;
+    }
+    // A hub with a single view has no header bar: the pill gets a slim bar of its own at the top.
+    const strip = document.createElement('div');
+    strip.className = 'hub-charts-jumpbar no-print';
+    strip.appendChild(btn);
+    const firstBlock = Array.from(container.children).find(el => !el.classList.contains('demo-company-vertical-bar') && el.id !== 'demoCompanyVerticalBar');
+    container.insertBefore(strip, firstBlock || container.firstChild);
+  }
+  function setHubChartsFolded(folded) {
+    const p = readChartPrefs();
+    p.folded = Boolean(folded);
+    writeChartPrefs(p);
+    const container = $('workspace');
+    if (!container) return;
+    const rows = Array.from(container.children).filter(el => el.id && /ChartsRow$/.test(el.id));
+    mountHubChartsHead(container, rows);
+    const head = $('hubChartsHead');
+    if (head && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') window.MFG_I18N.translateDom(head);
+  }
+
+  // ---- Table / Chart switch on each register ------------------------------------------------------------
+  // A register is a panel with a CSV button and a sortable table (`th(view, ...)`). Its chart is drawn from
+  // `_tableShownRows[view]` (filled by sortRows during this render): every row the register's filters and
+  // column filters show, not only the rows painted on screen. Arithmetic stays deterministic: a number
+  // column is offered as a measure only when its cells agree row for row with what the table shows AND its
+  // sum over every row equals the register's own TOTAL for that column.
+  const REG_CHART_MAX_BARS = 14;
+  const REG_CHART_TOP_N = 12;
+  function getRegisterRowsMeta(view, panel) {
+    if (view && Array.isArray(_tableShownRows[view])) {
+      return { rows: _tableShownRows[view], limit: Number(shownCount(view)) || 0, sortView: view };
+    }
+    const id = (panel && panel.id) ? panel.id : view;
+    const entry = id ? _regPanelRows[id] : null;
+    if (entry && Array.isArray(entry.rows)) {
+      return {
+        rows: entry.rows,
+        limit: entry.shownKey ? (Number(shownCount(entry.shownKey)) || 0) : 0,
+        sortView: ''
+      };
+    }
+    return null;
+  }
+  function isTemplateHiddenCell(el) {
+    return Boolean(el && el.style && el.style.display === 'none');
+  }
+  function tableTemplateThs(table) {
+    const tr = table ? table.querySelector('thead tr') : null;
+    return tr ? Array.from(tr.children).filter(el => el.tagName === 'TH' && !isTemplateHiddenCell(el)) : [];
+  }
+  function rowTemplateTds(tr) {
+    return tr ? Array.from(tr.children).filter(el => !isTemplateHiddenCell(el)) : [];
+  }
+  function tableDataTrs(table) {
+    if (!table) return [];
+    const tbody = (table.tBodies && table.tBodies[0]) || table.querySelector('tbody');
+    if (!tbody) return [];
+    const all = tbody.rows;
+    const rrows = [];
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].classList.contains('rrow')) rrows.push(all[i]);
+    }
+    if (rrows.length) return rrows;
+    const out = [];
+    for (let i = 0; i < all.length; i++) {
+      const tr = all[i];
+      if (tr.classList.contains('empty-row') || tr.classList.contains('totals-row')) continue;
+      if (tr.querySelector('.show-more-btn, [data-show-more]')) continue;
+      if (tr.children.length <= 1) continue;
+      out.push(tr);
+    }
+    return out;
+  }
+  function englishTextOf(el) {
+    if (!el) return '';
+    let out = '';
+    try {
+      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = w.nextNode())) {
+        out += (n.__enText !== undefined ? n.__enText : n.nodeValue) || '';
+      }
+    } catch (_) {}
+    if (!out && el.textContent) out = el.textContent;
+    return out.replace(/\s+/g, ' ').trim();
+  }
+  function regColVal(r, key, view, sortView) {
+    if (!r) return undefined;
+    if (sortView === 'sales') {
+      const sgn = ticketSign(r);
+      if (key === 'qty') return sgn * ticketProductQty(r);
+      if (key === 'price' || key === 'trans_price' || key === 'total' || key === 'vat' || key === 'total_ttc') {
+        const showTaxCols = Boolean((canSeeTaxBreakdown() && STATE.showSalesTaxBreakdown) || isOfficialScopeActive());
+        const matRaw = sgn * Number(r.price || 0);
+        const trRaw = sgn * Number(r.trans_price || 0);
+        const netVal = sgn * Number(r.total != null ? r.total : (Number(r.price || 0) + Number(r.trans_price || 0)));
+        const vatVal = sgn * Number(r.vat || 0);
+        const ttcVal = round2(sgn * Number(r.total_ttc != null ? r.total_ttc : (Number(r.total || 0) + Number(r.vat || 0))));
+        if (key === 'total_ttc') return ttcVal;
+        if (key === 'total') return netVal;
+        if (key === 'vat') return vatVal;
+        const trDisp = trRaw !== 0
+          ? ((Math.abs(vatVal) > 0 && (matRaw + trRaw) !== 0) ? round2(ttcVal * (trRaw / (matRaw + trRaw))) : round2(trRaw))
+          : 0;
+        if (key === 'trans_price') return showTaxCols ? trRaw : trDisp;
+        if (key === 'price') return showTaxCols ? matRaw : round2(ttcVal - trDisp);
+      }
+    } else if (sortView === 'raw') {
+      const rSgn = rawSign(r);
+      if (key === 'qty') return rSgn * ticketMeters(r);
+      if (key === 'cost') return isPendingPriceRaw(r) ? 0 : rSgn * Number(r.cost || 0);
+      if (key === 'trans_cost') return rSgn * Number(r.trans_cost || 0);
+      if (key === 'total') return rSgn * Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)));
+    } else if (sortView === 'saleshaul') {
+      const sgn = ticketSign(r);
+      if (key === 'qty') return sgn * ticketProductQty(r);
+      if (key === 'trans_price') return sgn * Number(r.trans_price || 0);
+    } else if (sortView === 'expenses') {
+      if (key === 'amount') return isPendingPriceExpense(r) ? 0 : expenseSign(r) * Number(r.amount || 0);
+    }
+    return sortView ? resolveColVal(r, key, sortView) : r[key];
+  }
+  function findRegSwitchMount(panel) {
+    const expBtn = Array.from(panel.querySelectorAll('[data-export-csv]')).find(b => b.closest('.panel-card, .panel') === panel);
+    if (expBtn && expBtn.parentNode) return { parent: expBtn.parentNode, before: expBtn };
+    const head = Array.from(panel.querySelectorAll('.panel-head')).find(h => h.closest('.panel-card, .panel') === panel);
+    if (!head) return null;
+    let actions = Array.from(head.querySelectorAll('.panel-actions')).find(a => a.closest('.panel-card, .panel') === panel);
+    if (!actions) {
+      const last = head.lastElementChild;
+      if (last && last.tagName === 'DIV' && !last.querySelector('.panel-title, h1, h2, h3, h4') && last.querySelector('.btn, input, select')) {
+        actions = last;
+      } else {
+        actions = document.createElement('div');
+        actions.className = 'panel-actions';
+        head.appendChild(actions);
+      }
+    }
+    const primary = Array.from(actions.children).find(el => el.matches('.btn-primary, [data-open-modal], [data-ind-open-new]'));
+    return { parent: actions, before: primary || null };
+  }
+  function regChartPanels(container) {
+    const out = [];
+    const seenPanels = new Set();
+    const seenViews = new Set();
+    container.querySelectorAll('.panel-card, .panel').forEach(panel => {
+      if (seenPanels.has(panel) || !container.contains(panel)) return;
+      const table = Array.from(panel.querySelectorAll('table')).find(t => t.closest('.panel-card, .panel') === panel);
+      if (!table || !table.querySelector('thead')) return;
+      const thEl = table.querySelector('thead th[data-sort-view]');
+      const sortView = thEl ? String(thEl.getAttribute('data-sort-view') || '') : '';
+      const view = sortView || (panel.id && _regPanelRows[panel.id] ? panel.id : '');
+      if (!view || seenViews.has(view)) return;
+      const meta = getRegisterRowsMeta(view, panel);
+      if (!meta || !registerRowsMatchTable(table, view, meta.rows, meta.limit)) return;
+      const mount = findRegSwitchMount(panel);
+      if (!mount || !mount.parent) return;
+      seenPanels.add(panel);
+      seenViews.add(view);
+      out.push({ panel, view, mount, table });
+    });
+    return out;
+  }
+  // The chart may only draw what the table lists. The painted rows must be the cached rows (all of them,
+  // or exactly one page of them), and the first and last painted rows must be the same records: by id
+  // where the row carries one, else by the text of a cell of the row.
+  function regRowFingerprintOk(table, view, tr, r, sortView) {
+    if (!tr || !r) return false;
+    const rid = tr.getAttribute('data-rid') || tr.getAttribute('data-ind-row-id');
+    const rowId = r._rid != null ? r._rid : r.id;
+    if (rid && rowId != null && rowId !== '') return String(rowId) === rid;
+    const ths = tableTemplateThs(table);
+    const tds = rowTemplateTds(tr);
+    let agree = 0;
+    const usedTds = new Set();
+    if (sortView) {
+      for (let idx = 0; idx < ths.length; idx++) {
+        const key = ths[idx].getAttribute('data-sort-key');
+        if (!key || ths[idx].getAttribute('data-sort-view') !== sortView) continue;
+        const v = regColVal(r, key, view, sortView);
+        const td = tds[idx];
+        if (!td || v == null || v === '' || typeof v === 'boolean') continue;
+        if (typeof v === 'string' && ISO_DATE_RX.test(v)) continue;
+        if (typeof v === 'number') {
+          const tdTxt = englishTextOf(td);
+          const p = parseDisplayedNumber(tdTxt);
+          if (p.bad || p.empty) continue;
+          if (Math.abs(p.n - v) <= Math.max(0.011, Math.abs(v) * 1e-6) || Math.abs(p.n - round2(v)) <= (p.dp === 0 ? 0.501 : 0.011) || (/%/.test(tdTxt) && Math.abs(p.n - v * 100) <= 0.11)) agree += 1;
+          continue;
+        }
+        const shown = englishTextOf(td).toLowerCase();
+        const want = String(v).replace(/\s+/g, ' ').trim().toLowerCase();
+        if (want && (shown === want || (want.length >= 2 && shown.includes(want)))) agree += 1;
+      }
+      return agree >= 2 || (agree >= 1 && Object.keys(r).length <= 3);
+    }
+    const keys = Object.keys(r || {});
+    for (let ki = 0; ki < keys.length && agree < 2; ki++) {
+      const k = keys[ki];
+      const v = r[k];
+      if (v == null || v === '' || typeof v === 'object' || typeof v === 'boolean') continue;
+      if (typeof v === 'string' && ISO_DATE_RX.test(v)) {
+        const dmy = fmtDateDMY(v).toLowerCase();
+        const ym = v.slice(0, 7).toLowerCase();
+        for (let idx = 0; idx < tds.length; idx++) {
+          if (usedTds.has(idx)) continue;
+          const shown = englishTextOf(tds[idx]).toLowerCase();
+          if (shown.includes(dmy) || shown.includes(v.toLowerCase()) || shown.includes(ym)) {
+            usedTds.add(idx);
+            agree += 1;
+            break;
+          }
+        }
+        continue;
+      }
+      if (typeof v === 'number') {
+        if (!Number.isFinite(v)) continue;
+        for (let idx = 0; idx < tds.length; idx++) {
+          if (usedTds.has(idx)) continue;
+          const p = parseDisplayedNumber(englishTextOf(tds[idx]));
+          if (p.bad || p.empty) continue;
+          if (Math.abs(p.n - v) <= Math.max(0.011, Math.abs(v) * 1e-6) || Math.abs(p.n - round2(v)) <= (p.dp === 0 ? 0.501 : 0.011)) {
+            usedTds.add(idx);
+            agree += 1;
+            break;
+          }
+        }
+        continue;
+      }
+      const want = String(v).replace(/\s+/g, ' ').trim().toLowerCase();
+      if (!want || want.length < 2) continue;
+      for (let idx = 0; idx < tds.length; idx++) {
+        if (usedTds.has(idx)) continue;
+        const shown = englishTextOf(tds[idx]).toLowerCase();
+        if (shown === want || (want.length >= 3 && shown.includes(want))) {
+          usedTds.add(idx);
+          agree += 1;
+          break;
+        }
+      }
+    }
+    return agree >= 2 || (agree >= 1 && keys.length <= 3);
+  }
+  function registerRowsMatchTable(table, view, rows, limitOpt) {
+    if (!table || !Array.isArray(rows)) return false;
+    const domRows = tableDataTrs(table);
+    const n = domRows.length;
+    if (!rows.length) return n === 0;
+    if (!n || n > rows.length) return false;
+    const limit = limitOpt !== undefined ? limitOpt : (Number(shownCount(view)) || 0);
+    if (n !== rows.length && (!limit || n !== limit)) return false;
+    const thSort = table.querySelector('thead th[data-sort-view]');
+    const sortView = thSort ? String(thSort.getAttribute('data-sort-view') || '') : '';
+    return regRowFingerprintOk(table, view, domRows[0], rows[0], sortView) && (n === 1 || regRowFingerprintOk(table, view, domRows[n - 1], rows[n - 1], sortView));
+  }
+  function mountRegisterChartSwitches(container) {
+    if (!container) return;
+    const prefs = readChartPrefs();
+    regChartPanels(container).forEach(({ panel, view, mount, table }) => {
+      table.setAttribute('data-regc-table', view);
+      panel.setAttribute('data-regc-panel', view);
+      const isChart = Boolean(prefs.reg[view] && prefs.reg[view].mode === 'chart');
+      if (!panel.querySelector('.reg-view-switch')) {
+        const sw = document.createElement('div');
+        sw.className = 'reg-view-switch no-print';
+        sw.setAttribute('role', 'group');
+        sw.setAttribute('aria-label', 'Table or Chart');
+        sw.innerHTML =
+          `<button type="button" class="reg-view-btn${isChart ? '' : ' active'}" data-regc-mode="table" data-regc-view="${esc(view)}" aria-pressed="${isChart ? 'false' : 'true'}" data-ui-tip="Show this register as a table">${ic('table')}<span>Table</span></button>` +
+          `<button type="button" class="reg-view-btn${isChart ? ' active' : ''}" data-regc-mode="chart" data-regc-view="${esc(view)}" aria-pressed="${isChart ? 'true' : 'false'}" data-ui-tip="Show this register as a chart of the rows the filters show">${ic('pbi')}<span>Chart</span></button>`;
+        if (mount.before && mount.before.parentNode === mount.parent) mount.parent.insertBefore(sw, mount.before);
+        else mount.parent.appendChild(sw);
+      }
+      if (isChart) applyRegisterChartMode(panel, view, table, true);
+    });
+  }
+
+  const REG_ID_KEY_RX = /(^|_)(id|no|ref|serial|number|seq|idx|index|code|phone|mof|vin|plate)$/i;
+  const REG_NOTES_KEY_RX = /(^|_)(notes?|comments?|remark|remarks|memo|technical_notes|backfill_status)$/i;
+  const ISO_DATE_RX = /^\d{4}-\d{2}(-\d{2})?/;
+  function parseDisplayedNumber(txt) {
+    const s = String(txt || '').replace(/\u00a0/g, ' ').trim();
+    if (!s || /^[-\u2014\u2013]$/.test(s)) return { empty: true };
+    const paren = s.startsWith('(') && s.endsWith(')');
+    const core = paren ? s.slice(1, -1).trim() : s;
+    const m = core.match(/^([+-])?\s*\$?\s*([+-])?\s*([0-9][0-9,]*(?:\.([0-9]+))?)\s*([A-Za-z%\u00b3\/.\- ]{0,24})$/);
+    if (!m) return { bad: true };
+    const n = Number(m[3].replace(/,/g, ''));
+    if (!Number.isFinite(n)) return { bad: true };
+    const sign = m[1] || m[2] || (paren ? '-' : '');
+    return { n: sign === '-' ? -n : n, money: /\$/.test(core), dp: m[4] ? m[4].length : 0 };
+  }
+  // The register's own TOTAL cell for a column (only a cell that spans exactly that column).
+  function registerFootCell(table, idx, tplCount) {
+    const tr = table.querySelector('tfoot tr');
+    if (!tr) return null;
+    const cells = Array.from(tr.children).filter(el => !isTemplateHiddenCell(el));
+    let totalOrigSpan = 0;
+    let found = null;
+    for (const td of cells) {
+      const span = Number(td.getAttribute('data-col-orig-span') || td.getAttribute('colspan') || 1) || 1;
+      if (idx >= totalOrigSpan && idx < totalOrigSpan + span) found = span === 1 ? td : null;
+      totalOrigSpan += span;
+    }
+    if (tplCount && totalOrigSpan !== tplCount) return null;
+    return found;
+  }
+  function collectRowCandidateKeys(rows) {
+    const keys = [];
+    const seen = new Set();
+    const limit = Math.min(rows.length, 25);
+    for (let i = 0; i < limit; i++) {
+      const r = rows[i];
+      if (!r || typeof r !== 'object') continue;
+      Object.keys(r).forEach(k => {
+        if (k === '_rid' || k === 'id' || seen.has(k)) return;
+        const v = r[k];
+        if (v != null && (typeof v === 'object' || typeof v === 'function')) return;
+        seen.add(k);
+        keys.push(k);
+      });
+    }
+    return keys;
+  }
+  function inferPlainThKey(table, thEl, idx, label, rows, sample, domRows, tplCount, usedKeys) {
+    const candKeys = collectRowCandidateKeys(rows);
+    const probeRows = domRows.slice(0, 15);
+    const foot = registerFootCell(table, idx, tplCount);
+    const shownTot = foot ? parseDisplayedNumber(englishTextOf(foot)) : { bad: true };
+    const lblTokens = label.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 2);
+    let bestKey = '';
+    let bestScore = -1;
+    for (let ki = 0; ki < candKeys.length; ki++) {
+      const k = candKeys[ki];
+      if (usedKeys.has(k)) continue;
+      let nums = 0, dates = 0, strs = 0, filled = 0;
+      const distinct = new Set();
+      for (let i = 0; i < sample.length; i++) {
+        const v = sample[i] ? sample[i][k] : undefined;
+        if (v == null || v === '') continue;
+        filled += 1;
+        if (typeof v === 'number' && Number.isFinite(v)) nums += 1;
+        else if (typeof v === 'string' && ISO_DATE_RX.test(v)) dates += 1;
+        else if (typeof v === 'string' || typeof v === 'boolean') { strs += 1; if (distinct.size <= 80) distinct.add(String(v)); }
+      }
+      if (!filled) continue;
+      if (dates / filled >= 0.8) {
+        let matched = 0, mismatch = 0;
+        for (let i = 0; i < probeRows.length; i++) {
+          const td = rowTemplateTds(probeRows[i])[idx];
+          const v = rows[i] ? rows[i][k] : undefined;
+          if (!td || !v) continue;
+          const shown = englishTextOf(td).toLowerCase();
+          const dmy = fmtDateDMY(String(v)).toLowerCase();
+          const iso = String(v).toLowerCase();
+          const ym = iso.slice(0, 7);
+          if (shown.includes(dmy) || shown.includes(iso) || shown.includes(ym)) matched += 1;
+          else if (/\d{2}-\d{2}-\d{4}|\d{4}-\d{2}/.test(shown)) mismatch += 1;
+        }
+        if (matched > 0 && mismatch === 0) {
+          const score = 100 + matched + (k.startsWith('_') ? 5 : 0);
+          if (score > bestScore) { bestScore = score; bestKey = k; }
+        }
+        continue;
+      }
+      if (nums / filled >= 0.8 && !REG_ID_KEY_RX.test(k) && !shownTot.bad && !shownTot.empty) {
+        let sum = 0;
+        for (let i = 0; i < rows.length; i++) sum += Number(rows[i] ? rows[i][k] : 0) || 0;
+        const totTol = (shownTot.dp >= 2 ? 0.011 : (shownTot.dp === 1 ? 0.051 : 0.501)) + Math.abs(sum) * 1e-9;
+        if (Math.abs(shownTot.n - sum) > totTol) continue;
+        let compared = 0, agree = true;
+        for (let i = 0; i < domRows.length && agree; i++) {
+          const td = rowTemplateTds(domRows[i])[idx];
+          const v = Number(rows[i] ? rows[i][k] : NaN);
+          if (!td) continue;
+          const shown = parseDisplayedNumber(englishTextOf(td));
+          if (shown.empty) { if (Number.isFinite(v) && Math.abs(v) > 0.005) agree = false; continue; }
+          if (shown.bad || !Number.isFinite(v)) { agree = false; break; }
+          const tol = Math.max(0.011, Math.abs(v) * 1e-6, shown.dp === 0 ? 0.501 : 0);
+          if (Math.abs(shown.n - v) > tol && Math.abs(shown.n - round2(v)) > tol) agree = false;
+          compared += 1;
+        }
+        if (agree && compared > 0) {
+          const score = 200 + compared + (k.startsWith('_') ? 5 : 0);
+          if (score > bestScore) { bestScore = score; bestKey = k; }
+        }
+        continue;
+      }
+      if (strs / filled >= 0.8 && distinct.size >= 1 && distinct.size <= 60 && !REG_ID_KEY_RX.test(k) && !REG_NOTES_KEY_RX.test(k)) {
+        let exact = 0, matched = 0, mismatch = 0, hasBadge = false;
+        for (let i = 0; i < probeRows.length; i++) {
+          const td = rowTemplateTds(probeRows[i])[idx];
+          const v = rows[i] ? rows[i][k] : undefined;
+          if (!td || v == null || v === '') continue;
+          if (td.querySelector('.co-badge, .badge')) hasBadge = true;
+          const shown = englishTextOf(td).toLowerCase();
+          const want = String(v).replace(/\s+/g, ' ').trim().toLowerCase();
+          if (!want) continue;
+          const commaHit = want.includes(', ') && want.split(',').map(p => p.trim()).filter(Boolean).every(part => shown.includes(part));
+          if (shown === want) { exact += 1; matched += 1; }
+          else if ((want.length >= 2 && shown.includes(want)) || commaHit) matched += 1;
+          else mismatch += 1;
+        }
+        const kLow = k.toLowerCase();
+        const lblHit = lblTokens.some(t => kLow.includes(t)) ? 10 : 0;
+        if (matched >= Math.min(2, probeRows.length) && mismatch === 0 && (exact > 0 || hasBadge || lblHit > 0)) {
+          const score = 50 + exact * 3 + matched + lblHit + (k.startsWith('_') ? 4 : 0);
+          if (score > bestScore) { bestScore = score; bestKey = k; }
+        }
+      }
+    }
+    if (bestKey) usedKeys.add(bestKey);
+    return bestKey;
+  }
+  // Columns of a register, typed from its rows and checked against the cells and TOTAL it shows.
+  function analyseRegisterColumns(table, view, rows, sortView) {
+    const ths = tableTemplateThs(table);
+    const domRows = tableDataTrs(table).slice(0, 60);
+    const step = Math.max(1, Math.ceil(rows.length / 400));
+    const sample = step > 1 ? rows.filter((_, i) => i % step === 0) : rows;
+    const cols = [];
+    const usedKeys = new Set();
+    ths.forEach((thEl, idx) => {
+      const fb = thEl.querySelector('.th-filter-btn');
+      const rawLbl = (fb && fb.getAttribute('data-th-filter-label')) || englishTextOf(thEl.querySelector('.th-lbl') || thEl);
+      const declaredKey = sortView ? (thEl.getAttribute('data-sort-view') === sortView ? thEl.getAttribute('data-sort-key') : '') : '';
+      const key = declaredKey || (sortView ? '' : inferPlainThKey(table, thEl, idx, String(rawLbl || '').trim(), rows, sample, domRows, ths.length, usedKeys));
+      if (!key) return;
+      thEl.setAttribute('data-regc-col-key', key);
+      const label = String(rawLbl || key).trim();
+      let nums = 0, dates = 0, strs = 0, filled = 0;
+      const distinct = new Set();
+      sample.forEach(r => {
+        const v = regColVal(r, key, view, sortView);
+        if (v == null || v === '') return;
+        filled += 1;
+        if (typeof v === 'number' && Number.isFinite(v)) nums += 1;
+        else if (typeof v === 'string' && ISO_DATE_RX.test(v)) dates += 1;
+        else if (typeof v === 'string' || typeof v === 'boolean') { strs += 1; if (distinct.size <= 80) distinct.add(String(v)); }
+      });
+      const col = { key, label, idx, kind: '', hiddenCol: thEl.classList.contains('tbl-col-hidden'), distinctCount: distinct.size };
+      if (filled && dates / filled >= 0.8) col.kind = 'date';
+      else if (filled && nums / filled >= 0.8 && !REG_ID_KEY_RX.test(key)) {
+        let compared = 0, agree = true, money = /\$|usd/i.test(label);
+        for (let i = 0; i < domRows.length && agree; i++) {
+          const tr = domRows[i];
+          const r = rows[i];
+          if (!r) break;
+          const rid = tr.getAttribute('data-rid') || tr.getAttribute('data-ind-row-id');
+          const rowId = r._rid != null ? r._rid : r.id;
+          if (rid && rowId != null && rowId !== '' && String(rowId) !== rid) { agree = false; break; }
+          const td = rowTemplateTds(tr)[idx];
+          if (!td) continue;
+          const tdTxt = englishTextOf(td);
+          const shown = parseDisplayedNumber(tdTxt);
+          const v = Number(regColVal(r, key, view, sortView));
+          if (shown.empty) { if (Number.isFinite(v) && Math.abs(v) > 0.005) agree = false; continue; }
+          if (shown.bad && Number.isFinite(v) && Math.abs(v) <= 0.005 && /^(pending price|incl\.\s*in\s*mat)/i.test(tdTxt)) { compared += 1; continue; }
+          if (shown.bad || !Number.isFinite(v)) { agree = false; break; }
+          if (shown.money) money = true;
+          const tol = Math.max(0.011, Math.abs(v) * 1e-6, shown.dp === 0 ? 0.501 : 0);
+          if (Math.abs(shown.n - v) > tol && Math.abs(shown.n - round2(v)) > tol) agree = false;
+          compared += 1;
+        }
+        if (agree && compared > 0) {
+          const foot = registerFootCell(table, idx, ths.length);
+          const shownTot = foot ? parseDisplayedNumber(englishTextOf(foot)) : { bad: true };
+          if (!shownTot.bad && !shownTot.empty) {
+            let sum = 0;
+            for (let i = 0; i < rows.length; i++) sum += Number(regColVal(rows[i], key, view, sortView)) || 0;
+            const tol = (shownTot.dp >= 2 ? 0.011 : (shownTot.dp === 1 ? 0.051 : 0.501)) + Math.abs(sum) * 1e-9;
+            if (Math.abs(shownTot.n - sum) <= tol) {
+              col.kind = 'measure';
+              col.money = money || shownTot.money;
+              col.nonZero = Math.abs(sum) > 0.005 || rows.some(r => Math.abs(Number(regColVal(r, key, view, sortView)) || 0) > 0.005);
+            }
+          }
+        }
+      } else if (filled && strs / filled >= 0.8 && distinct.size >= 1 && distinct.size <= 60 && !REG_ID_KEY_RX.test(key) && !REG_NOTES_KEY_RX.test(key)) {
+        col.kind = 'group';
+      }
+      if (col.kind) cols.push(col);
+    });
+    return cols;
+  }
+  function regChartFreqOrder(view, kind, options) {
+    const f = (readChartPrefs().freq[view] || {})[kind] || {};
+    return options.map((o, i) => ({ o, i, c: Number(f[o.key] || 0) }))
+      .sort((a, b) => (b.c - a.c) || (a.i - b.i))
+      .map(x => x.o);
+  }
+  // A choice counts once it has stood for a moment (arrow keys on a closed list fire a change per step).
+  const _regFreqTimers = {};
+  function bumpRegChartFreqSoon(view, kind, key) {
+    const id = view + '|' + kind;
+    clearTimeout(_regFreqTimers[id]);
+    const storeKey = chartPrefsKey();
+    _regFreqTimers[id] = setTimeout(() => {
+      delete _regFreqTimers[id];
+      if (chartPrefsKey() !== storeKey) return;
+      const p = readChartPrefs();
+      if (!p.freq[view]) p.freq[view] = {};
+      if (!p.freq[view][kind]) p.freq[view][kind] = {};
+      p.freq[view][kind][key] = Number(p.freq[view][kind][key] || 0) + 1;
+      writeChartPrefs(p);
+    }, 1200);
+  }
+  // Column analysis is kept per register for the same rows, data revision, date basis and seat, so a
+  // re-render (search keystroke, sync tick) does not redo the full pass.
+  const _regChartAnalysis = new Map();
+  const _regChartLastCols = new Map();
+  function regChartColumns(table, view, rows, sortView) {
+    const idAt = i => { const r = rows[i]; return r ? String((r._rid != null ? r._rid : r.id) != null ? (r._rid != null ? r._rid : r.id) : (r.name || r.staff || r.customer || r.supplier || i)) : ''; };
+    const sig = [
+      SEED._customRev || 0, STATE.basis, chartPrefsKey(), sortView || '', rows.length,
+      idAt(0), idAt(rows.length >> 1), idAt(rows.length - 1),
+      JSON.stringify((STATE.colFilters && STATE.colFilters[view]) || {}), String(STATE.search || ''), String(STATE.chipFilter || ''),
+      STATE.company, STATE.period, JSON.stringify(STATE.sortBy && STATE.sortBy[view] || {})
+    ].join('|');
+    const hit = _regChartAnalysis.get(view);
+    if (hit && hit.sig === sig && hit.len === rows.length) return hit.cols;
+    const cols = analyseRegisterColumns(table, view, rows, sortView);
+    if (_regChartAnalysis.size > 24) _regChartAnalysis.clear();
+    _regChartAnalysis.set(view, { sig, len: rows.length, cols });
+    if (_regChartLastCols.size > 24) _regChartLastCols.clear();
+    _regChartLastCols.set(view + '|' + STATE.company, cols);
+    return cols;
+  }
+  function buildRegisterChartHtml(view, table, panel) {
+    const meta = getRegisterRowsMeta(view, panel);
+    const rows = meta ? meta.rows : [];
+    if (!meta || !registerRowsMatchTable(table, view, rows, meta.limit)) {
+      return `<div class="reg-chart-empty">Nothing to chart for the rows shown</div>`;
+    }
+    const cols = rows.length ? regChartColumns(table, view, rows, meta.sortView) : (_regChartLastCols.get(view + '|' + STATE.company) || []);
+    const dateCol = cols.find(c => c.kind === 'date' && (c.key === 'date' || c.key === '_loan_date')) || cols.find(c => c.kind === 'date');
+    const rawGroups = cols.filter(c => c.kind === 'group').slice()
+      .sort((a, b) => ((b.distinctCount > 1 ? 1 : 0) - (a.distinctCount > 1 ? 1 : 0)) || ((a.hiddenCol ? 1 : 0) - (b.hiddenCol ? 1 : 0)) || (a.idx - b.idx));
+    const groupOpts = (dateCol ? [{ key: '__month', label: 'Month', dateKey: dateCol.key }] : []).concat(rawGroups);
+    const measureOpts = cols.filter(c => c.kind === 'measure').concat([{ key: '__count', label: 'Rows' }]);
+    const pref = readChartPrefs().reg[view] || {};
+    const groups = regChartFreqOrder(view, 'g', groupOpts);
+    const measures = regChartFreqOrder(view, 'm', measureOpts);
+    const opt = (list, cur) => list.map(o => `<option value="${esc(o.key)}"${cur && o.key === cur.key ? ' selected' : ''}>${esc(o.label)}</option>`).join('');
+    if (!rows.length) {
+      if (groups.length) {
+        const g = groups.find(o => o.key === pref.group) || groups[0];
+        const defMeasure = measureOpts.find(o => o.money && o.nonZero) || measureOpts[measureOpts.length - 1];
+        const m = measures.find(o => o.key === pref.measure) || defMeasure;
+        return `
+          <div class="reg-chart-controls">
+            <label class="reg-chart-field"><span>Measure</span><select data-plain-options="1" data-regc-measure="${esc(view)}">${opt(measures, m)}</select></label>
+            <label class="reg-chart-field"><span>Group By</span><select data-plain-options="1" data-regc-group="${esc(view)}">${opt(groups, g)}</select></label>
+            <span class="reg-chart-total"><span>Total</span> <b class="mono">${esc(m.key === '__count' ? '0' : (m.money ? '$0.00' : '0.00'))}</b> <span class="mu">· <span class="mono">0</span> <span>Rows</span></span></span>
+          </div>
+          <div class="reg-chart-empty">Nothing to chart for the rows shown</div>`;
+      }
+      return `<div class="reg-chart-empty">Nothing to chart for the rows shown</div>`;
+    }
+    if (!groups.length) {
+      return `<div class="reg-chart-empty">Nothing to chart for the rows shown</div>`;
+    }
+    const g = groups.find(o => o.key === pref.group) || groups[0];
+    const defMeasure = measureOpts.find(o => o.money && o.nonZero) || measureOpts[measureOpts.length - 1];
+    const m = measures.find(o => o.key === pref.measure) || defMeasure;
+    const valOf = r => (m.key === '__count' ? 1 : Number(regColVal(r, m.key, view, meta.sortView)) || 0);
+    const fmtVal = v => (m.key === '__count' ? fmtNum(v, 0) : (m.money ? fmtUSD(v, 2) : fmtNum(v, 2)));
+    const boolLabel = v => (v === true ? 'Yes' : (v === false ? 'No' : v));
+    // The total is over every row the filters show, so it reads the same as the register's own TOTAL.
+    // When the bars cannot show every row (no date, months before the latest 14, groups beyond the top
+    // 12 are folded into "Other"), the amount the bars do show is printed beside it.
+    const total = rows.reduce((a, r) => a + valOf(r), 0);
+    let charted = total;
+    let body = '';
+    let note = '';
+    if (g.key === '__month') {
+      const byYm = new Map();
+      rows.forEach(r => {
+        const ym = String(regColVal(r, g.dateKey, view, meta.sortView) || '').slice(0, 7);
+        if (!/^\d{4}-\d{2}$/.test(ym)) return;
+        byYm.set(ym, (byYm.get(ym) || 0) + valOf(r));
+      });
+      let items = Array.from(byYm.keys()).sort().map(ym => ({
+        label: `${MONTH_SHORT[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`,
+        raw: byYm.get(ym),
+        v: round2(byYm.get(ym))
+      }));
+      if (items.length > REG_CHART_MAX_BARS) { items = items.slice(-REG_CHART_MAX_BARS); note = 'Latest 14 Months'; }
+      charted = items.reduce((a, it) => a + it.raw, 0);
+      const P = window.MFG_PBI || {};
+      if (items.some(it => it.v < -0.005) && typeof P.buildHorizontalBarChart === 'function') {
+        // Negative months read as negative (a column chart draws heights as absolute values).
+        body = P.buildHorizontalBarChart(items, 'label', 'v', fmtVal, { maxItems: REG_CHART_MAX_BARS, sort: false, allowZero: true, rank: false });
+      } else if (typeof P.buildClusteredColumnSvg === 'function') {
+        body = P.buildClusteredColumnSvg(items, [{ key: 'v', label: m.label, color: 'var(--chart-navy, #2356A8)', fmt: v => fmtVal(v) }], { labelKey: 'label', isMoney: Boolean(m.money), maxBars: REG_CHART_MAX_BARS, height: 230 });
+      }
+    } else {
+      const byVal = new Map();
+      rows.forEach(r => {
+        const raw = boolLabel(regColVal(r, g.key, view, meta.sortView));
+        const k = raw == null || raw === '' ? '(Blank)' : String(raw);
+        byVal.set(k, (byVal.get(k) || 0) + valOf(r));
+      });
+      let items = Array.from(byVal.entries()).map(([label, raw]) => ({ label, raw, v: round2(raw) }))
+        .sort((a, b) => (Math.abs(b.raw) - Math.abs(a.raw)) || (b.raw - a.raw));
+      if (items.length > REG_CHART_TOP_N) {
+        // A real "Other" group joins the folded bar, so the chart never shows two bars called Other.
+        const realOther = items.filter(it => /^other$/i.test(it.label));
+        const pool = items.filter(it => !/^other$/i.test(it.label));
+        const keep = pool.slice(0, REG_CHART_TOP_N - 1);
+        const rest = pool.slice(REG_CHART_TOP_N - 1).concat(realOther).reduce((a, it) => a + it.raw, 0);
+        items = keep.concat([{ label: 'Other', raw: rest, v: round2(rest) }]);
+      }
+      charted = items.reduce((a, it) => a + it.raw, 0);
+      body = (window.MFG_PBI && typeof window.MFG_PBI.buildHorizontalBarChart === 'function')
+        ? window.MFG_PBI.buildHorizontalBarChart(items, 'label', 'v', fmtVal, { maxItems: REG_CHART_TOP_N, sort: false, allowZero: true })
+        : '';
+    }
+    const inChart = Math.abs(round2(charted) - round2(total)) > 0.005
+      ? ` <span class="badge badge-warn"><span>In Chart</span> <span class="mono">${esc(fmtVal(round2(charted)))}</span></span>` : '';
+    return `
+      <div class="reg-chart-controls">
+        <label class="reg-chart-field"><span>Measure</span><select data-plain-options="1" data-regc-measure="${esc(view)}">${opt(measures, m)}</select></label>
+        <label class="reg-chart-field"><span>Group By</span><select data-plain-options="1" data-regc-group="${esc(view)}">${opt(groups, g)}</select></label>
+        <span class="reg-chart-total"><span>Total</span> <b class="mono">${esc(fmtVal(round2(total)))}</b> <span class="mu">· <span class="mono">${fmtNum(rows.length)}</span> <span>Rows</span></span>${note ? ` <span class="badge badge-info">${esc(note)}</span>` : ''}${inChart}</span>
+      </div>
+      <div class="reg-chart-body">${body}</div>`;
+  }
+  function applyRegisterChartMode(panel, view, table, isChart) {
+    if (!panel) return;
+    const tbl = table || panel.querySelector(`table[data-regc-table="${CSS.escape(view)}"]`) || panel.querySelector(`table thead th[data-sort-view="${CSS.escape(view)}"]`)?.closest('table');
+    const wrap = tbl ? (tbl.closest('.table-wrap') || tbl) : null;
+    let box = panel.querySelector(`.reg-chart[data-regc-chart="${CSS.escape(view)}"]`);
+    if (!isChart) {
+      if (box) box.remove();
+      if (wrap) { wrap.hidden = false; wrap.classList.remove('reg-chart-hidden-table'); }
+      return;
+    }
+    if (!tbl || !wrap) return;
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'reg-chart';
+      box.setAttribute('data-regc-chart', view);
+      wrap.parentNode.insertBefore(box, wrap.nextSibling);
+    }
+    box.innerHTML = withRelPass(() => buildRegisterChartHtml(view, tbl, panel));
+    wrap.hidden = true;
+    wrap.classList.add('reg-chart-hidden-table');
+  }
+  function setRegisterChartPref(view, patch) {
+    const p = readChartPrefs();
+    p.reg[view] = Object.assign({}, p.reg[view] || {}, patch);
+    writeChartPrefs(p);
+  }
+  function refreshRegisterChartPanel(view, refocusAttr) {
+    const panel = document.querySelector(`#workspace [data-regc-panel="${CSS.escape(view)}"]`);
+    if (!panel) return;
+    const isChart = (readChartPrefs().reg[view] || {}).mode === 'chart';
+    panel.querySelectorAll('.reg-view-btn').forEach(b => {
+      const on = (b.getAttribute('data-regc-mode') === 'chart') === isChart;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    applyRegisterChartMode(panel, view, null, isChart);
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') window.MFG_I18N.translateDom(panel);
+    if (refocusAttr) {
+      const sel = panel.querySelector(`[${refocusAttr}="${CSS.escape(view)}"]`);
+      if (sel) { try { sel.focus({ preventScroll: true }); } catch (_) {} }
+    }
+  }
+  let _chartToolsWired = false;
+  function wireChartToolsOnce() {
+    if (_chartToolsWired) return;
+    _chartToolsWired = true;
+    document.addEventListener('click', e => {
+      const t = e.target && typeof e.target.closest === 'function' ? e.target : null;
+      if (!t) return;
+      const jump = t.closest('#hubChartsJumpBtn');
+      if (jump) {
+        e.preventDefault();
+        if (readChartPrefs().folded) setHubChartsFolded(false);
+        const head = $('hubChartsHead');
+        if (head) scrollWorkspaceTo(head, 8);
+        return;
+      }
+      const fold = t.closest('#hubChartsFoldBtn');
+      if (fold) {
+        e.preventDefault();
+        setHubChartsFolded(!readChartPrefs().folded);
+        return;
+      }
+      const modeBtn = t.closest('#workspace [data-regc-mode][data-regc-view]');
+      if (modeBtn) {
+        e.preventDefault();
+        const view = modeBtn.getAttribute('data-regc-view');
+        setRegisterChartPref(view, { mode: modeBtn.getAttribute('data-regc-mode') === 'chart' ? 'chart' : 'table' });
+        refreshRegisterChartPanel(view);
+      }
+    });
+    document.addEventListener('change', e => {
+      const sel = e.target && typeof e.target.closest === 'function' ? e.target.closest('#workspace [data-regc-measure], #workspace [data-regc-group]') : null;
+      if (!sel) return;
+      const isMeasure = sel.hasAttribute('data-regc-measure');
+      const attr = isMeasure ? 'data-regc-measure' : 'data-regc-group';
+      const view = sel.getAttribute(attr);
+      const key = String(sel.value || '');
+      setRegisterChartPref(view, isMeasure ? { measure: key } : { group: key });
+      bumpRegChartFreqSoon(view, isMeasure ? 'm' : 'g', key);
+      refreshRegisterChartPanel(view, attr);
+    });
   }
 
   function setContainerHtmlPreservingActiveInput(container, newHtml) {
@@ -131343,6 +132160,8 @@
       : null;
     _lastWorkspaceScrollScope = curWsScope;
 
+    for (const k in _tableShownRows) delete _tableShownRows[k];
+    for (const k in _regPanelRows) delete _regPanelRows[k];
     let wsHtml = '';
     switch (STATE.view) {
       case 'overview': wsHtml = renderOverview(); break;
@@ -131508,6 +132327,8 @@
       );
       setContainerHtmlPreservingActiveInput(container, wsHtml);
       settleChartRowsAtPageBottom(container, STATE.view);
+      wireChartToolsOnce();
+      try { withRelPass(() => mountRegisterChartSwitches(container)); } catch (err) { console.warn('register chart switch', err); }
       if (keepLiveKioskVid) {
         const nextKioskVid = $('kioskAttVideo');
         if (nextKioskVid && nextKioskVid !== liveKioskVid && nextKioskVid.parentNode) {

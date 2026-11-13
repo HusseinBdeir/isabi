@@ -10752,7 +10752,22 @@
       "Closing USD Till": "رصيد صندوق الدولار الختامي",
       "Net Cash Over the Dates": "صافي النقد خلال الفترة",
       "Start Till": "رصيد الصندوق الافتتاحي",
-      "Net Cash is the change over the selected dates, not a balance: the USD till at the start of the dates plus the Net Cash gives the USD till at the end.": "صافي النقد هو التغيّر خلال التواريخ المحددة وليس رصيداً: رصيد صندوق الدولار في بداية التواريخ مضافاً إليه صافي النقد يساوي رصيد صندوق الدولار في نهايتها."
+      "Net Cash is the change over the selected dates, not a balance: the USD till at the start of the dates plus the Net Cash gives the USD till at the end.": "صافي النقد هو التغيّر خلال التواريخ المحددة وليس رصيداً: رصيد صندوق الدولار في بداية التواريخ مضافاً إليه صافي النقد يساوي رصيد صندوق الدولار في نهايتها.",
+      "In Chart": "في الرسم",
+      "Charts": "الرسوم البيانية",
+      "Chart": "رسم بياني",
+      "Hide Charts": "إخفاء الرسوم البيانية",
+      "Show Charts": "إظهار الرسوم البيانية",
+      "Hide or show the charts on every page": "إخفاء الرسوم البيانية أو إظهارها في كل الصفحات",
+      "Jump to the charts at the bottom of this page": "الانتقال إلى الرسوم البيانية أسفل هذه الصفحة",
+      "Table or Chart": "جدول أو رسم بياني",
+      "Show this register as a table": "عرض هذا السجل كجدول",
+      "Show this register as a chart of the rows the filters show": "عرض هذا السجل كرسم بياني للسطور الظاهرة حسب عوامل التصفية",
+      "Group By": "التجميع حسب",
+      "Latest 14 Months": "آخر 14 شهراً",
+      "Top 12": "أعلى 12",
+      "Nothing to chart for the rows shown": "لا شيء يمكن عرضه بيانياً للسطور الظاهرة",
+      "(Blank)": "(فارغ)"
     },
     fr: {
       "Shift Windows Across the Day": "Plages horaires des postes sur la journée",
@@ -21486,7 +21501,22 @@
       "Closing USD Till": "Caisse USD de clôture",
       "Net Cash Over the Dates": "Flux net sur la période",
       "Start Till": "Solde caisse début",
-      "Net Cash is the change over the selected dates, not a balance: the USD till at the start of the dates plus the Net Cash gives the USD till at the end.": "Le flux net est la variation sur les dates choisies, pas un solde : la caisse USD au début des dates plus le flux net donne la caisse USD à la fin."
+      "Net Cash is the change over the selected dates, not a balance: the USD till at the start of the dates plus the Net Cash gives the USD till at the end.": "Le flux net est la variation sur les dates choisies, pas un solde : la caisse USD au début des dates plus le flux net donne la caisse USD à la fin.",
+      "In Chart": "Dans le graphique",
+      "Charts": "Graphiques",
+      "Chart": "Graphique",
+      "Hide Charts": "Masquer les graphiques",
+      "Show Charts": "Afficher les graphiques",
+      "Hide or show the charts on every page": "Masquer ou afficher les graphiques sur toutes les pages",
+      "Jump to the charts at the bottom of this page": "Aller aux graphiques en bas de cette page",
+      "Table or Chart": "Tableau ou graphique",
+      "Show this register as a table": "Afficher ce registre sous forme de tableau",
+      "Show this register as a chart of the rows the filters show": "Afficher ce registre en graphique des lignes retenues par les filtres",
+      "Group By": "Regrouper par",
+      "Latest 14 Months": "14 derniers mois",
+      "Top 12": "12 premiers",
+      "Nothing to chart for the rows shown": "Rien à représenter pour les lignes affichées",
+      "(Blank)": "(Vide)"
     }
   };
 

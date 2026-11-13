@@ -14155,6 +14155,8 @@
     clearHubRelKept: () => { _hubRelKept.clear(); },
     cellValue,
     renderChartPopHtml,
+    buildClusteredColumnSvg,
+    buildHorizontalBarChart,
     renderPbiStudio,
     renderModuleAnalytics,
     renderTablesHub,
