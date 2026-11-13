@@ -4221,6 +4221,14 @@ td.td-has-sel-dot > .void-btn.row-void-hover { right: 22px; }
 .empty-row td { text-align: center; color: var(--muted); padding: 22px 14px !important; white-space: normal !important; font-size: 12.5px; line-height: 1.5; }
 .app-strip { padding: 8px 20px; background: var(--warn-bg); border-bottom: 1px solid var(--warn); font-size: 12px; color: var(--ink); display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
 .app-strip span { font-variant-numeric: tabular-nums; }
+/* Cash Flow: app cash entries with no workbook row at the last workbook update */
+.cf-app-only-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 14px; background: var(--warn-bg); border-bottom: 1px solid var(--line); font-size: 12px; color: var(--ink); }
+.cf-app-only-strip .cf-app-only-count { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid var(--warn); border-radius: 999px; font-weight: 600; white-space: nowrap; }
+.cf-app-only-strip .cf-app-only-txt { flex: 1 1 260px; min-width: 0; color: var(--ink-2, var(--ink)); }
+.cf-app-only-strip .cf-app-only-figs { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+.cf-app-only-strip .cf-app-only-figs b.crit { color: var(--crit); }
+.cf-app-only-strip .cf-app-only-figs b.good { color: var(--good); }
+.cf-app-only-strip .cf-app-only-btn { padding: 3px 10px; font-size: 11.5px; white-space: nowrap; }
 .app-pill { border-color: rgba(240, 144, 69, .55); }
 .mini-table-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 0 20px 16px; }
 .mini-table-grid .panel-card { margin: 0; }

@@ -7750,6 +7750,121 @@
     return out;
   }
 
+  // ---- App cash entries the accounting workbooks do not carry (as of the last workbook update) ----------------------
+  // Each workbook update pairs every app entry with its workbook row and retires the app copy. A cash entry of a
+  // workbook company that is still active, was keyed before that update ran and is dated on or before its last day
+  // found no workbook row: it is missing from the workbooks, or a second copy of something they book differently,
+  // and the till counts it on top of the workbook figures (live case 2026-11-11: WTC till -$29,657.03).
+  // Read-only: nothing here changes a figure, it only names those rows for the strip, the chip and the hub badge.
+  const WORKBOOK_COMPANY_NAMES = ['WTC', 'BBConstruction'];
+  const APP_ONLY_CASH_KEYS = ['sales_tickets', 'receipts', 'expenses', 'settlements', 'salaries', 'external_movements', 'loans', 'loan_settlements'];
+  const APP_ONLY_FULL_FIN_KEYS = new Set(['salaries', 'external_movements', 'loans', 'loan_settlements']);
+
+  let _wbCutoffMemo = null;
+  function getWorkbookUpdateCutoff() {
+    const genIso = String(SEED.generated_at || SEED_MANIFEST.generated_at || '');
+    const grpDaily = SEED.models && SEED.models['manufacturing-group'] && SEED.models['manufacturing-group'].cash_flow_sheet && SEED.models['manufacturing-group'].cash_flow_sheet.daily;
+    const memoKey = `${genIso}|${Array.isArray(grpDaily) ? grpDaily.length : -1}`;
+    if (_wbCutoffMemo && _wbCutoffMemo.key === memoKey) return _wbCutoffMemo.val;
+    const val = computeWorkbookUpdateCutoff(genIso);
+    _wbCutoffMemo = { key: memoKey, val };
+    return val;
+  }
+  function computeWorkbookUpdateCutoff(genIso) {
+    const genMs = Date.parse(genIso);
+    const genDay = genIso.slice(0, 10);
+    if (!isFinite(genMs) || !/^\d{4}-\d{2}-\d{2}$/.test(genDay)) return null;
+    // Last day the workbooks' cash sheet reaches: an update run in the morning stops at the day before.
+    let lastDay = '';
+    ['manufacturing-group', 'wtc', 'bbconstruction'].forEach(mk => {
+      const daily = SEED.models && SEED.models[mk] && SEED.models[mk].cash_flow_sheet && SEED.models[mk].cash_flow_sheet.daily;
+      if (!Array.isArray(daily)) return;
+      for (let i = 0; i < daily.length; i++) {
+        const d = String((daily[i] && daily[i][0]) || '').slice(0, 10);
+        if (d > lastDay && d <= genDay) lastDay = d;
+      }
+    });
+    return { cutoff: /^\d{4}-\d{2}-\d{2}$/.test(lastDay) ? lastDay : genDay, genMs };
+  }
+
+  // When an entry was keyed in the app, read from its own id (`se-<time in base 36>-<6 chars>`). A workbook row
+  // edited in the app keeps its workbook id (and carries `source: 'app'` plus the edit time), so it has no keyed
+  // time here and is never listed: it is a workbook figure, not an entry on top of them. (`_seed_orig` is no
+  // test for that: an app entry that was voided and reopened carries one too.)
+  function appRecordCreatedMs(r) {
+    const mId = /^[a-z]{2}-([0-9a-z]+)-[0-9a-z]{6}$/.exec(String((r && r.id) || ''));
+    const fromId = mId ? parseInt(mId[1], 36) : NaN;
+    return isFinite(fromId) && fromId > 1.6e12 && fromId < 4.1e12 ? fromId : NaN;
+  }
+
+  function appRowMovesMoney(r) {
+    const usd = Number(r.amount != null ? r.amount : (r.total != null ? r.total : (r.total_ttc != null ? r.total_ttc : (r.principal != null ? r.principal : r.usd_amount)))) || 0;
+    return Math.abs(usd) > 0.005 || Math.abs(Number(r.usd_amount || 0)) > 0.005 || Math.abs(Number(r.lbp_amount || 0)) > 1;
+  }
+
+  function isCashMovingAppRow(key, r) {
+    if (key === 'sales_tickets') return isCashSaleTicket(r) && ticketSign(r) !== 0;
+    if (key === 'expenses') return isCashExpense(r) && expenseSign(r) !== 0;
+    if (key === 'receipts') {
+      const mth = String(r.method || '').trim();
+      const knd = receiptKind(r);
+      return knd === 'Settlement' || knd === 'VAT received' || mth === 'Rent' || mth === 'VATRent';
+    }
+    if (key === 'settlements') {
+      const knd = settlementKind(r);
+      return knd === 'Payment' || knd === 'VAT paid';
+    }
+    return APP_ONLY_FULL_FIN_KEYS.has(key);
+  }
+
+  let _appOnlyCashIdx = null;
+  function getAppOnlyCashIndex() {
+    const cut = isDemoScopeActive() ? null : getWorkbookUpdateCutoff();
+    const sig = `${SEED._customRev || 0}|${STATE._customRev || 0}|${cut ? cut.cutoff + '|' + cut.genMs : 'none'}`;
+    if (_appOnlyCashIdx && _appOnlyCashIdx.sig === sig) return _appOnlyCashIdx;
+    const rows = [];
+    if (cut) {
+      APP_ONLY_CASH_KEYS.forEach(key => {
+        const arr = (STATE.customRecords && STATE.customRecords[key]) || [];
+        for (let i = 0; i < arr.length; i++) {
+          const r = arr[i];
+          if (!r || r.voided || r._absorbedSeedTwin || !isAppRecord(r)) continue;
+          if (!WORKBOOK_COMPANY_NAMES.includes(String(r.company || 'WTC').trim() || 'WTC')) continue;
+          const day = String(r.date || r.start_date || '').slice(0, 10);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > cut.cutoff) continue;
+          const madeMs = appRecordCreatedMs(r);
+          if (!isFinite(madeMs) || madeMs > cut.genMs) continue;
+          if (!isCashMovingAppRow(key, r) || !appRowMovesMoney(r)) continue;
+          rows.push({ key, r });
+        }
+      });
+    }
+    _appOnlyCashIdx = { sig, rows, cutoff: cut ? cut.cutoff : '' };
+    return _appOnlyCashIdx;
+  }
+
+  function getScopedAppOnlyCashRows(u) {
+    u = u || activeUser();
+    const idx = getAppOnlyCashIndex();
+    if (!idx.rows.length || !u) return [];
+    if (typeof getActiveIndustry === 'function' && getActiveIndustry(STATE.company) !== 'Manufacturing') return [];
+    if (isOfficialScopeActive(u)) return [];
+    const allowed = allowedCompanyNames(u);
+    const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    return idx.rows.filter(x => {
+      if (!matchesCashScopeCompany(x.r, STATE.company, allowed)) return false;
+      if (!canAccessTable(x.key, u)) return false;
+      return fullFin || !APP_ONLY_FULL_FIN_KEYS.has(x.key);
+    });
+  }
+
+  function getCashAppOnlyExceptionBadge(u) {
+    u = u || activeUser();
+    if (!canViewView('cashflow', u)) return null;
+    const n = getScopedAppOnlyCashRows(u).length;
+    return n > 0 ? { text: `${fmtNum(n)} Unmatched`, cls: 'warn' } : null;
+  }
+
   function tableToCsv(table) {
     return Array.from(table.querySelectorAll('tr')).map(tr =>
       Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
@@ -9219,6 +9334,7 @@
     if (hubId === 'fleet') return getFleetExceptionBadge(u) || getDieselExceptionBadge(u);
     if (hubId === 'payroll') return getPendingSalaryExceptionBadge(u) || getWorkforceMapExceptionBadge(u);
     if (hubId === 'ledger') return getLedgerExceptionBadge(u, k);
+    if (hubId === 'cashflow') return getCashAppOnlyExceptionBadge(u);
     if (hubId === 'hld_interactions') return getHoldingOpenReconExceptionBadge(u);
     if (hubId === 'hsp_memberships') return getHospitalityMembershipExceptionBadge(u);
     if (hubId === 'hsp_stock') return getHospitalityStockExceptionBadge(u);
@@ -9544,7 +9660,7 @@
       title: HUB_TITLES.cashflow,
       group: 'books',
       tabs: [
-        { view: 'cashflow', match: ['cashflow', 'cashflow_analytics'], label: 'Cash Flow & Till', icon: 'cashflow' },
+        { view: 'cashflow', match: ['cashflow', 'cashflow_analytics'], label: 'Cash Flow & Till', icon: 'cashflow', badgeFn: u => getCashAppOnlyExceptionBadge(u) },
         { view: 'external', label: 'External Entries', icon: 'external' },
         { view: 'ledger_treasury', label: 'Loans & Settlements', icon: 'ledger_treasury' },
         { view: 'conversions', label: 'FX Conversions', icon: 'conversions' }
@@ -43508,7 +43624,22 @@
       drillScopedMoves._streamCounts = streamCounts;
     }
 
-    const cfChip = (!isHoldingCf && STATE.chipFilter === 'cf_extd') ? 'all' : (STATE.chipFilter || 'all');
+    // App cash entries with no workbook row at the last workbook update: listed whatever the period or drill focus.
+    const appOnlyScoped = getScopedAppOnlyCashRows(u);
+    const appOnlyKeys = appOnlyScoped.length ? new Set(appOnlyScoped.map(x => `${x.key}:${x.r.id}`)) : null;
+    const appOnlyMoves = appOnlyKeys
+      ? buildCashTillMoves({ user: u, ignorePeriod: true }).filter(mv => mv && mv.rkey && appOnlyKeys.has(`${mv.rkey}:${mv.id}`))
+      : [];
+    let appOnlyInUsd = 0, appOnlyOutUsd = 0, appOnlyLbp = 0;
+    for (let i = 0; i < appOnlyMoves.length; i++) {
+      appOnlyInUsd += appOnlyMoves[i].in_usd;
+      appOnlyOutUsd += appOnlyMoves[i].out_usd;
+      appOnlyLbp += appOnlyMoves[i].lbp;
+    }
+    const appOnlyCutoff = appOnlyMoves.length ? getAppOnlyCashIndex().cutoff : '';
+
+    const cfChip = ((!isHoldingCf && STATE.chipFilter === 'cf_extd') || (STATE.chipFilter === 'cf_app_only' && (!appOnlyMoves.length || isDailyMode))) ? 'all' : (STATE.chipFilter || 'all');
+    const chipBaseMoves = cfChip === 'cf_app_only' ? appOnlyMoves : drillScopedMoves;
     const matchCfChip = mRow => {
       if (cfChip === 'cf_in' && mRow.dir !== 'IN') return false;
       if (cfChip === 'cf_out' && mRow.dir !== 'OUT') return false;
@@ -43523,8 +43654,8 @@
       return true;
     };
     const chipFilteredMoves = !q
-      ? _getChipFilteredRows(drillScopedMoves, 'cf_moves', cfChip, matchCfChip)
-      : drillScopedMoves.filter(mRow => matchCfChip(mRow) && `${mRow.date} ${fmtDateDMY(mRow.date)} ${mRow.company} ${mRow.cat} ${mRow.party} ${mRow.detail} ${mRow.ref} ${mRow.method}`.toLowerCase().includes(q));
+      ? _getChipFilteredRows(chipBaseMoves, 'cf_moves', cfChip, matchCfChip)
+      : chipBaseMoves.filter(mRow => matchCfChip(mRow) && `${mRow.date} ${fmtDateDMY(mRow.date)} ${mRow.company} ${mRow.cat} ${mRow.party} ${mRow.detail} ${mRow.ref} ${mRow.method}`.toLowerCase().includes(q));
     const sortedMoves = !isDailyMode ? sortRows(chipFilteredMoves, 'cf_moves', 'date', 'desc') : chipFilteredMoves;
     const shownMoves = !isDailyMode ? sortedMoves.slice(0, shownCount('cf_moves')) : [];
     let mvInUsd = 0, mvOutUsd = 0, mvLbpSum = 0;
@@ -43782,6 +43913,7 @@
                 ${fullFin && isHoldingCf ? chip('cf_extd', `Extended (${fmtNum(streamCounts.extd)})`) : ''}
                 ${chip('cf_fx', `FX Conversions (${fmtNum(streamCounts.fx)})`)}
                 ${chip('cf_lbp', 'LBP (LL)')}
+                ${appOnlyMoves.length ? chip('cf_app_only', `Not in Workbooks (${fmtNum(appOnlyMoves.length)})`) : ''}
               ` : `
                 ${chip('all', `All Days (${fmtNum(allDailyRows.length)})`)}
                 ${chip('cf_day_nonzero', 'Drawer ≠ $0')}
@@ -43801,6 +43933,21 @@
             `}
           </div>
         </div>
+
+        ${appOnlyMoves.length ? `
+        <div class="cf-app-only-strip" id="cfAppOnlyStrip" role="status">
+          <span class="badge badge-warn cf-app-only-count"><b>${fmtNum(appOnlyMoves.length)}</b> <span>App Entries Not in the Workbooks</span></span>
+          <span class="cf-app-only-txt"><span>Keyed here, with no matching workbook row at the last update. The till counts them on top of the workbook figures.</span></span>
+          <span class="cf-app-only-figs">
+            <span><span>Workbooks Updated To</span> <b>${esc(fmtDateDMY(appOnlyCutoff))}</b></span>
+            <span><span>Out:</span> <b class="crit">${fmtUSD(appOnlyOutUsd, 2)}</b></span>
+            <span><span>In:</span> <b class="good">${fmtUSD(appOnlyInUsd, 2)}</b></span>
+            ${Math.abs(appOnlyLbp) > 1 ? `<span><span>LBP:</span> <b>${fmtSignedLBP(appOnlyLbp)}</b></span>` : ''}
+          </span>
+          ${cfChip === 'cf_app_only'
+            ? '<button type="button" class="btn cf-app-only-btn" data-chip="all">Show All Entries</button>'
+            : '<button type="button" class="btn cf-app-only-btn" data-cf-app-only-show="1">Show Entries</button>'}
+        </div>` : ''}
 
         ${showGroupSplit ? `
         <div class="sales-entity-recon" role="region" aria-label="Cash Till by Entity">
@@ -130636,6 +130783,7 @@
     setExceptionPill('navCountExpenses', getHubExceptionBadge('expenses', user, k, sentinelsOpen));
     setExceptionPill('navCountFleet', getHubExceptionBadge(slot2Hub, user, k, sentinelsOpen));
     setExceptionPill('navCountPayroll', getHubExceptionBadge('payroll', user, k, sentinelsOpen));
+    setExceptionPill('navCountCashflow', getHubExceptionBadge('cashflow', user, k, sentinelsOpen));
     setExceptionPill('navCountTB', getHubExceptionBadge('ledger', user, k, sentinelsOpen));
 
     if (window.innerWidth <= 860) renderMobileSubnav(user, k, sentinelsOpen);
@@ -131412,6 +131560,15 @@
         if (!canViewView('alert_rules', activeUser())) return;
         e.stopPropagation();
         openAlertRuleTuner(openAlertRuleBtn.getAttribute('data-open-alert-rule') || '');
+        return;
+      }
+
+      const appOnlyShowBtn = t.closest('[data-cf-app-only-show]');
+      if (appOnlyShowBtn && container.contains(appOnlyShowBtn)) {
+        STATE.cfEntryMode = 'entries';
+        STATE.chipFilter = 'cf_app_only';
+        STATE.shown = {};
+        renderApp();
         return;
       }
 
@@ -137861,6 +138018,7 @@
     renderApp: typeof renderApp === 'function' ? renderApp : null,
     customRecords: () => STATE.customRecords,
     refreshCustomRecords: () => { applyCustomRecordsToSeed(); invalidateAllSeedCaches(); },
+    appOnlyCash: { index: getAppOnlyCashIndex, scoped: getScopedAppOnlyCashRows, badge: getCashAppOnlyExceptionBadge, cutoff: getWorkbookUpdateCutoff, createdMs: appRecordCreatedMs },
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null,
     STATE,
     state: STATE,
