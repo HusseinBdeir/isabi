@@ -22,9 +22,10 @@
   let _camTimer = null;
   let _camActive = false;
   let _faceStreak = [];
-  let _earHist = [];
-  let _parallaxHist = [];
-  let _yawHist = [];
+  let _livenessHist = [];
+  let _streakStartedAt = 0;
+  let _missedFrames = 0;
+  let _lastPadResult = null;
   let _verifiedFaceVec = null;
   let _briefState = { lang: '', open: false, loading: false, data: null };
   let _testClockHour = null;
@@ -376,9 +377,9 @@
       vid.srcObject = null;
     }
     _faceStreak = [];
-    _earHist = [];
-    _parallaxHist = [];
-    _yawHist = [];
+    _livenessHist = [];
+    _streakStartedAt = 0;
+    _lastPadResult = null;
   }
 
   function recordStepUpAudit(user, spec, authMethod) {
@@ -501,11 +502,30 @@
     }
   }
 
-  function evaluateStepUpLiveness(det) {
+  function hasLiveVideoPixels(videoEl) {
+    return Boolean(videoEl && (((Number(videoEl.videoWidth) || 0) > 0 && (Number(videoEl.videoHeight) || 0) > 0) || ((Number(videoEl.width) || 0) > 0 && (Number(videoEl.height) || 0) > 0 && videoEl.data)));
+  }
+
+  function evaluateStepUpLiveness(det, videoEl, evalCfg = {}) {
     const st = C && C.getState ? C.getState() : window.STATE;
-    if (st && st.faceSettings && st.faceSettings.liveness === false) return true;
-    if (!det) return false;
-    if (det.syntheticLivenessOk === true && isLoopbackTestEnv() && navigator.webdriver) return true;
+    const hasLivePixels = hasLiveVideoPixels(videoEl);
+    const enforceLiveVideo = hasLivePixels || Boolean(videoEl);
+    if (!det) return { ok: false, spoofSuspected: false };
+    if (det.syntheticLivenessOk === true && !enforceLiveVideo && isLoopbackTestEnv() && navigator.webdriver) {
+      return { ok: true, spoofSuspected: false, method: 'synthetic-test' };
+    }
+
+    const pad = (hasLivePixels && window.Face && typeof window.Face.analyzePad === 'function')
+      ? window.Face.analyzePad(videoEl, det)
+      : { evaluated: false, frameSpoof: false, score: 0, reasons: [] };
+    if (pad && pad.evaluated) _lastPadResult = pad;
+
+    if (st && st.faceSettings && st.faceSettings.liveness === false) {
+      if (pad && pad.frameSpoof) {
+        return { ok: false, spoofSuspected: true, reason: 'pad_spoof', padReasons: pad.reasons || [], method: '' };
+      }
+      return { ok: true, spoofSuspected: false, method: 'multi-frame' };
+    }
 
     const ear = typeof det.ear === 'number'
       ? det.ear
@@ -514,53 +534,118 @@
       ? det.pose
       : (det.landmarks && window.Face && window.Face.pose ? window.Face.pose(det.landmarks) : null);
 
-    if (typeof ear === 'number' && ear > 0) _earHist.push(ear);
-    if (pose && typeof pose.parallax3d === 'number') _parallaxHist.push(pose.parallax3d);
-    if (pose && typeof pose.yaw === 'number') _yawHist.push(pose.yaw);
-
-    if (_earHist.length > 18) _earHist = _earHist.slice(-18);
-    if (_parallaxHist.length > 18) _parallaxHist = _parallaxHist.slice(-18);
-    if (_yawHist.length > 18) _yawHist = _yawHist.slice(-18);
-
-    if (_earHist.length >= 3) {
-      const minEar = Math.min(..._earHist);
-      const maxEar = Math.max(..._earHist);
-      if ((maxEar - minEar) >= 0.012 && maxEar >= 0.21) return true;
+    if (ear == null && !pose) {
+      return (pad && pad.frameSpoof)
+        ? { ok: false, spoofSuspected: true, reason: 'pad_spoof', padReasons: pad.reasons || [], method: '' }
+        : { ok: false, spoofSuspected: false, reason: 'no-landmarks', method: '' };
     }
-    if (_parallaxHist.length >= 2 && _yawHist.length >= 2) {
-      const pSpan = Math.max(..._parallaxHist) - Math.min(..._parallaxHist);
-      const ySpan = Math.max(..._yawHist) - Math.min(..._yawHist);
-      if (pSpan >= 0.008 && ySpan >= 0.014) return true;
+
+    const now = Date.now();
+    const box = det.box || null;
+    const boxW = box && Number(box.width) > 0 ? Number(box.width) : null;
+    const boxCx = (box && boxW != null) ? (Number(box.x || 0) + boxW * 0.5) : null;
+    const boxCy = (box && Number(box.height) > 0) ? (Number(box.y || 0) + Number(box.height) * 0.5) : null;
+
+    _livenessHist = _livenessHist.filter(h => (now - h.t) <= 6000);
+    _livenessHist.push({
+      t: now,
+      ear: typeof ear === 'number' ? ear : null,
+      yaw: pose && typeof pose.yaw === 'number' ? pose.yaw : null,
+      parallax3d: pose && typeof pose.parallax3d === 'number' ? pose.parallax3d : null,
+      pitch: pose && typeof pose.pitch === 'number' ? pose.pitch : null,
+      parallaxPitch3d: pose && typeof pose.parallaxPitch3d === 'number' ? pose.parallaxPitch3d : null,
+      boxCx,
+      boxCy,
+      boxW,
+      landmarkModel: det.landmarkModel || '',
+      padEvaluated: Boolean(pad && pad.evaluated),
+      frameSpoof: Boolean(pad && pad.frameSpoof),
+      padScore: pad && pad.evaluated ? Number(pad.score || 0) : 0,
+      padReasons: pad && Array.isArray(pad.reasons) ? pad.reasons : []
+    });
+    if (_livenessHist.length > 28) _livenessHist = _livenessHist.slice(-28);
+
+    if (window.Face && typeof window.Face.evaluatePassiveLiveness === 'function') {
+      const res = window.Face.evaluatePassiveLiveness(_livenessHist, {
+        mode: String((st && st.faceSettings && st.faceSettings.livenessMode) || 'blink_or_turn'),
+        requireRealtimeCadence: enforceLiveVideo,
+        minFrames: Number(evalCfg.minFrames || (enforceLiveVideo ? 4 : 3)),
+        minSpanMs: Number(evalCfg.minSpanMs != null ? evalCfg.minSpanMs : (enforceLiveVideo ? 600 : 0))
+      });
+      if (res && res.spoofSuspected) {
+        _livenessHist = [];
+      }
+      return res;
     }
-    return false;
+    return { ok: false, spoofSuspected: Boolean(pad && pad.frameSpoof), padReasons: (pad && pad.reasons) || [], method: '' };
   }
 
-  async function processStepUpDetection(det) {
-    if (!_activeChallenge || !det || !det.descriptor) return { ok: false, reason: 'no_face' };
+  async function processStepUpDetection(det, videoEl) {
+    if (!_activeChallenge) return { ok: false, reason: 'no_challenge' };
+    if (det && det.multiple) {
+      _faceStreak = [];
+      _livenessHist = [];
+      _streakStartedAt = 0;
+      _missedFrames = 0;
+      updateStreakUi(0, tr('One person in frame at a time'), 'is-err');
+      return { ok: false, reason: 'multiple_faces' };
+    }
+    if (!det || !det.descriptor) {
+      _missedFrames += 1;
+      if (!videoEl || _missedFrames >= 2) {
+        _faceStreak = [];
+        _livenessHist = [];
+        _streakStartedAt = 0;
+        if (_activeChallenge.showCamera) {
+          updateStreakUi(0, tr('Look at the camera to confirm your identity'), '');
+        }
+      }
+      return { ok: false, reason: 'no_face' };
+    }
+    _missedFrames = 0;
     const vec = Array.from(det.descriptor);
     if (!isFiniteVec128(vec)) return { ok: false, reason: 'invalid_descriptor' };
 
+    const hasLivePixels = hasLiveVideoPixels(videoEl);
+    const enforceLiveVideo = hasLivePixels || Boolean(videoEl);
     if (_faceStreak.length > 0) {
       const prev = _faceStreak[_faceStreak.length - 1];
-      if (euclidean128(vec, prev) > 0.34) {
+      if (euclidean128(vec, prev) > 0.26) {
         _faceStreak = [];
+        _livenessHist = [];
+        _streakStartedAt = 0;
       }
     }
+    if (_faceStreak.length === 0) _streakStartedAt = Date.now();
     _faceStreak.push(vec);
-    const livenessOk = evaluateStepUpLiveness(det);
-    const needed = 3;
-    updateStreakUi((_faceStreak.length / needed) * 100, tr('Hold steady for biometric confirmation...'), '');
+    if (_faceStreak.length > 8) _faceStreak = _faceStreak.slice(-8);
 
-    if (_faceStreak.length < needed) {
+    const needed = enforceLiveVideo ? 4 : 3;
+    const minSpanMs = enforceLiveVideo ? 600 : 0;
+    const lv = evaluateStepUpLiveness(det, videoEl, { minFrames: needed, minSpanMs });
+    if (lv && lv.spoofSuspected) {
+      _faceStreak = [];
+      _streakStartedAt = 0;
+      updateStreakUi(15, tr('Screen or photo detected. Look directly at the camera.'), 'is-err');
+      return { ok: false, reason: 'spoof_detected', padReasons: lv.padReasons || [] };
+    }
+
+    const elapsedOk = !minSpanMs || ((Date.now() - (_streakStartedAt || Date.now())) >= minSpanMs);
+    if (_faceStreak.length < needed || !elapsedOk) {
+      updateStreakUi(Math.min(80, (_faceStreak.length / needed) * 80), tr('Hold steady for biometric confirmation...'), '');
       return { ok: false, reason: 'stabilizing', streak: _faceStreak.length };
     }
-    if (!livenessOk) {
-      updateStreakUi(85, tr('Blink naturally or turn slightly to confirm liveness'), '');
+    if (!lv || !lv.ok) {
+      updateStreakUi(85, tr('Hold naturally in front of the camera'), '');
       return { ok: false, reason: 'liveness_pending' };
     }
 
-    _verifiedFaceVec = avgVectors(_faceStreak.slice(-needed));
+    _verifiedFaceVec = (window.Face && typeof window.Face.averageDescriptors === 'function')
+      ? (window.Face.averageDescriptors(_faceStreak.slice(-needed)) || avgVectors(_faceStreak.slice(-needed)))
+      : avgVectors(_faceStreak.slice(-needed));
     _faceStreak = [];
+    _livenessHist = [];
+    _streakStartedAt = 0;
     const wrap = $('suaCamWrap');
     if (wrap) wrap.classList.add('is-verified');
     updateStreakUi(100, tr('Live Face ID captured'), 'is-ok');
@@ -622,11 +707,11 @@
         try {
           if (vid.readyState >= 2 && vid.videoWidth > 0 && window.Face && window.Face.ready && !_verifiedFaceVec) {
             const det = await window.Face.detectOne(vid);
-            if (det) await processStepUpDetection(det);
+            await processStepUpDetection(det, vid);
           }
         } catch (_) {}
         if (_camActive) {
-          _camTimer = setTimeout(tick, 110);
+          _camTimer = setTimeout(tick, 95);
         }
       };
       _camTimer = setTimeout(tick, 140);
@@ -641,9 +726,10 @@
   function resetFaceAfterFailedAttempt() {
     _verifiedFaceVec = null;
     _faceStreak = [];
-    _earHist = [];
-    _parallaxHist = [];
-    _yawHist = [];
+    _livenessHist = [];
+    _streakStartedAt = 0;
+    _missedFrames = 0;
+    _lastPadResult = null;
     const wrap = $('suaCamWrap');
     if (wrap) wrap.classList.remove('is-verified');
     if (_activeChallenge && _activeChallenge.showCamera) {
@@ -885,9 +971,9 @@
     modal.dir = curLang() === 'ar' ? 'rtl' : 'ltr';
     _verifiedFaceVec = null;
     _faceStreak = [];
-    _earHist = [];
-    _parallaxHist = [];
-    _yawHist = [];
+    _livenessHist = [];
+    _streakStartedAt = 0;
+    _lastPadResult = null;
 
     const policyBadge = (effMode === 'both' && hasFace)
       ? tr('Face ID + PIN 2FA Required')
@@ -1310,6 +1396,8 @@
         }
         return last;
       },
+      processLiveDetection: (det, videoEl) => processStepUpDetection(det, videoEl),
+      resetFaceState: () => resetFaceAfterFailedAttempt(),
       submitPin: async pin => {
         const inp = $('suaPinInput');
         if (inp) inp.value = String(pin || '');

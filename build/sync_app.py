@@ -65,6 +65,7 @@ RELEASE_GATES = [
     ("isabi", "build/verify_gemini_tier_routing.mjs", "node"),       # semantic tier routing + Gemini 4 hygiene
     ("isabi", "build/verify_release_log_sync.mjs", "node"),          # parity gate's release-log status sync keeps hand-written lines
     ("isabi-app", "build/verify_face_or_pin_local.py", "python"),    # server.py sign-in: Face ID or PIN, never both
+    ("isabi-app", "build/verify_face_pad_unit.mjs", "node"),        # passive Face ID liveness + PAD + source bypass guards
     ("isabi-app", "build/verify_workbook_agreement_rules.py", "python"),  # top-up: price agreements + VAT invoices follow the workbook sheets
     ("isabi-app", "build/verify_staff_contract_sync.py", "python"),  # top-up: staff contracts by rule + back-pay notice
 ]

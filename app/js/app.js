@@ -554,6 +554,11 @@
     busy: false,
     streakUser: null,
     streakCount: 0,
+    streakStartedAt: 0,
+    streakVecs: [],
+    edgeProbeStartedAt: 0,
+    edgeProbeVecs: [],
+    detectorStreak: 0,
     bestDist: 9,
     secondDist: 9,
     lastBlinkAt: 0,
@@ -561,6 +566,7 @@
     eyeClosedSeen: false,
     livenessUser: '',
     livenessHistory: [],
+    lastPadResult: null,
     pending2faUser: null,
     pendingPinUser: null,
     cooldownUntil: 0,
@@ -112519,11 +112525,104 @@
     FACE_STATE.eyeClosedSeen = false;
     FACE_STATE.livenessUser = '';
     FACE_STATE.livenessHistory = [];
+    FACE_STATE.streakStartedAt = 0;
+    FACE_STATE.streakVecs = [];
+    FACE_STATE.edgeProbeStartedAt = 0;
+    FACE_STATE.edgeProbeVecs = [];
+    FACE_STATE.detectorStreak = 0;
+    FACE_STATE.lastPadResult = null;
   }
 
-  // Anti-screenshot liveness verifier: Option 1 (Eye Blink EAR dip+recovery) + Option 2 (3D Head-Turn Parallax)
+  function faceTr(s) {
+    return (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(s) : s;
+  }
+
+  function hasLiveVideoPixels(opts) {
+    const v = opts && opts.videoEl;
+    return Boolean(v && ((Number(v.videoWidth) || 0) > 0 || (Number(v.width) || 0) > 0 && v.data));
+  }
+
+  // Shared passive liveness & on-device PAD accumulator used across #authGate, Kiosk Station Admin,
+  // Wall Attendance Kiosk, and Enrolment Studio. Never issues interactive/random challenges.
+  function recordAndEvalFaceLiveness(bufState, det, opts = {}, evalCfg = {}) {
+    const now = Date.now();
+    const hasLivePixels = hasLiveVideoPixels(opts);
+    const enforceLiveVideo = hasLivePixels || Boolean(opts && opts.videoEl);
+    const pad = (hasLivePixels && window.Face && typeof window.Face.analyzePad === 'function')
+      ? window.Face.analyzePad(opts.videoEl, det)
+      : { evaluated: false, frameSpoof: false, score: 0, reasons: [] };
+    if (bufState) bufState.lastPadResult = pad;
+
+    const ear = (det && typeof det.ear === 'number')
+      ? det.ear
+      : (det && det.landmarks && window.Face && window.Face.ear ? window.Face.ear(det.landmarks) : null);
+    const poseObj = (det && det.pose && typeof det.pose === 'object')
+      ? det.pose
+      : (det && det.landmarks && window.Face && window.Face.pose ? window.Face.pose(det.landmarks) : null);
+
+    if (ear == null && !poseObj) {
+      return pad.frameSpoof
+        ? { ok: false, spoofSuspected: true, reason: 'pad_spoof', padReasons: pad.reasons, method: '' }
+        : { ok: false, reason: 'no-landmarks', spoofSuspected: false, method: '' };
+    }
+
+    const lvCfg = (window.Face && ((window.Face.config && window.Face.config.liveness) || (window.Face.CONFIG && window.Face.CONFIG.liveness))) || {};
+    const windowMs = Number(evalCfg.windowMs || (Number(lvCfg.windowSec || 6) * 1000));
+    const box = det && det.box ? det.box : null;
+    const boxW = box && Number(box.width) > 0 ? Number(box.width) : null;
+    const boxCx = (box && boxW != null) ? (Number(box.x || 0) + boxW * 0.5) : null;
+    const boxCy = (box && Number(box.height) > 0) ? (Number(box.y || 0) + Number(box.height) * 0.5) : null;
+
+    if (!Array.isArray(bufState.livenessHistory)) bufState.livenessHistory = [];
+    bufState.livenessHistory = bufState.livenessHistory.filter(h => (now - h.t) <= windowMs);
+    bufState.livenessHistory.push({
+      t: now,
+      ear: typeof ear === 'number' ? ear : null,
+      yaw: poseObj && typeof poseObj.yaw === 'number' ? poseObj.yaw : null,
+      parallax3d: poseObj && typeof poseObj.parallax3d === 'number' ? poseObj.parallax3d : null,
+      pitch: poseObj && typeof poseObj.pitch === 'number' ? poseObj.pitch : null,
+      parallaxPitch3d: poseObj && typeof poseObj.parallaxPitch3d === 'number' ? poseObj.parallaxPitch3d : null,
+      boxCx,
+      boxCy,
+      boxW,
+      landmarkModel: (det && det.landmarkModel) || '',
+      padEvaluated: Boolean(pad.evaluated),
+      frameSpoof: Boolean(pad.frameSpoof),
+      padScore: Number(pad.score || 0),
+      padReasons: Array.isArray(pad.reasons) ? pad.reasons : []
+    });
+    if (bufState.livenessHistory.length > 36) {
+      bufState.livenessHistory = bufState.livenessHistory.slice(-36);
+    }
+
+    const res = (window.Face && typeof window.Face.evaluatePassiveLiveness === 'function')
+      ? window.Face.evaluatePassiveLiveness(bufState.livenessHistory, {
+          mode: String(evalCfg.mode || STATE.faceSettings.livenessMode || 'blink_or_turn'),
+          requireRealtimeCadence: enforceLiveVideo,
+          minFrames: Number(evalCfg.minFrames || (enforceLiveVideo ? 4 : 3)),
+          minSpanMs: Number(evalCfg.minSpanMs != null ? evalCfg.minSpanMs : (enforceLiveVideo ? 550 : 0))
+        })
+      : { ok: false, spoofSuspected: Boolean(pad.frameSpoof), method: '' };
+
+    if (res.spoofSuspected && bufState) {
+      bufState.livenessHistory = [];
+      bufState.lastBlinkAt = 0;
+      bufState.lastTurnAt = 0;
+    }
+    return res;
+  }
+
+  // Passive real-person liveness + anti-spoof verifier: biomechanical blink OR positively-coupled 3D head-turn parallax + PAD
   function livenessStep(det, matchedEmail, opts = {}) {
+    const hasLivePixels = hasLiveVideoPixels(opts);
+    const enforceLiveVideo = hasLivePixels || Boolean(opts && opts.videoEl);
     if (STATE.faceSettings.liveness === false) {
+      if (hasLivePixels && window.Face && typeof window.Face.analyzePad === 'function') {
+        const pad = window.Face.analyzePad(opts.videoEl, det);
+        if (pad && pad.frameSpoof) {
+          return { ok: false, spoofSuspected: true, reason: 'pad_spoof', padReasons: pad.reasons, method: '' };
+        }
+      }
       return { ok: true, method: 'multi-frame', detail: 'Liveness check disabled by owner policy' };
     }
     const hasLandmarkPayload = !!(det && (det.landmarks || typeof det.ear === 'number' || (det.pose && typeof det.pose === 'object')));
@@ -112532,7 +112631,6 @@
       return { ok: true, method: 'synthetic-descriptor' };
     }
 
-    const now = Date.now();
     const userKey = norm(matchedEmail || '');
     if (userKey && FACE_STATE.livenessUser !== userKey) {
       const wasAnonPrewarm = FACE_STATE.livenessUser === '__edge_face__';
@@ -112545,105 +112643,11 @@
       }
     }
 
-    const ear = (det && typeof det.ear === 'number')
-      ? det.ear
-      : (det && det.landmarks && window.Face && window.Face.ear ? window.Face.ear(det.landmarks) : null);
-    const poseObj = (det && det.pose && typeof det.pose === 'object')
-      ? det.pose
-      : (det && det.landmarks && window.Face && window.Face.pose ? window.Face.pose(det.landmarks) : null);
-
-    if (ear == null && !poseObj) {
-      return { ok: false, reason: 'no-landmarks' };
-    }
-
-    const lvCfg = (window.Face && ((window.Face.config && window.Face.config.liveness) || (window.Face.CONFIG && window.Face.CONFIG.liveness))) || {};
-    const windowMs = Number(lvCfg.windowSec || 6) * 1000;
-    const earClosedThr = Number(lvCfg.earClosed || 0.228);
-    const earOpenThr = Number(lvCfg.earOpen || 0.240);
-    const earDropMin = Number(lvCfg.earDropMin || 0.024);
-    const yawSpanMin = Number(lvCfg.yawSpanMin || 0.020);
-    const parallaxSpanMin = Number(lvCfg.parallaxSpanMin || 0.010);
-    const earVarMin = Number(lvCfg.earVarianceMin || 0.005);
-
-    FACE_STATE.livenessHistory = (FACE_STATE.livenessHistory || []).filter(h => (now - h.t) <= windowMs);
-    FACE_STATE.livenessHistory.push({
-      t: now,
-      ear: typeof ear === 'number' ? ear : null,
-      yaw: poseObj && typeof poseObj.yaw === 'number' ? poseObj.yaw : null,
-      parallax3d: poseObj && typeof poseObj.parallax3d === 'number' ? poseObj.parallax3d : null,
-      pitch: poseObj && typeof poseObj.pitch === 'number' ? poseObj.pitch : null
+    return recordAndEvalFaceLiveness(FACE_STATE, det, opts, {
+      mode: String(STATE.faceSettings.livenessMode || 'blink_or_turn'),
+      minFrames: enforceLiveVideo ? 4 : 3,
+      minSpanMs: enforceLiveVideo ? 550 : 0
     });
-    if (FACE_STATE.livenessHistory.length > 24) {
-      FACE_STATE.livenessHistory = FACE_STATE.livenessHistory.slice(-24);
-    }
-
-    const hist = FACE_STATE.livenessHistory;
-    const isRealHardwareVideo = !!(opts && opts.videoEl && det && det.landmarks);
-    // Option 1: Blink detection — absolute threshold (closed <= 0.228 then open >= 0.240) OR relative blink dip (>= 0.024 drop + >= 0.015 recovery)
-    if (typeof ear === 'number' && ear > 0) {
-      if (ear <= (isRealHardwareVideo ? 0.242 : earClosedThr)) {
-        FACE_STATE.eyeClosedSeen = true;
-      } else if (FACE_STATE.eyeClosedSeen && ear >= (isRealHardwareVideo ? 0.232 : earOpenThr)) {
-        FACE_STATE.lastBlinkAt = now;
-        FACE_STATE.eyeClosedSeen = false;
-      }
-      const ears = hist.map(h => h.ear).filter(v => typeof v === 'number' && v > 0);
-      if (ears.length >= 3) {
-        let minIdx = 0;
-        for (let i = 1; i < ears.length; i++) {
-          if (ears[i] < ears[minIdx]) minIdx = i;
-        }
-        const minEar = ears[minIdx];
-        const maxBefore = minIdx > 0 ? Math.max(...ears.slice(0, minIdx)) : ears[0];
-        const maxAfter = minIdx < ears.length - 1 ? Math.max(...ears.slice(minIdx + 1)) : ears[ears.length - 1];
-        const reqDrop = isRealHardwareVideo ? 0.010 : earDropMin;
-        const reqRec = isRealHardwareVideo ? 0.008 : 0.015;
-        if ((maxBefore - minEar) >= reqDrop && (maxAfter - minEar) >= reqRec && maxAfter >= 0.205) {
-          FACE_STATE.lastBlinkAt = now;
-        }
-      }
-    }
-
-    // Option 2: 3D Head-Turn Parallax — true 3D nose-tip projection vs eye-bridge parallax + non-rigid eye variance
-    const yaws = hist.map(h => h.yaw).filter(v => typeof v === 'number');
-    const parallaxes = hist.map(h => h.parallax3d).filter(v => typeof v === 'number');
-    const pitches = hist.map(h => h.pitch).filter(v => typeof v === 'number');
-    const earsAll = hist.map(h => h.ear).filter(v => typeof v === 'number' && v > 0);
-    const yawSpan = yaws.length >= 2 ? (Math.max(...yaws) - Math.min(...yaws)) : 0;
-    const parallaxSpan = parallaxes.length >= 2 ? (Math.max(...parallaxes) - Math.min(...parallaxes)) : 0;
-    const pitchSpan = pitches.length >= 2 ? (Math.max(...pitches) - Math.min(...pitches)) : 0;
-    const earSpan = earsAll.length >= 2 ? (Math.max(...earsAll) - Math.min(...earsAll)) : 0;
-
-    // A rigid 2D phone screenshot tilted in front of the camera has near-zero 3D nose-vs-eye parallax AND zero eye-aspect change.
-    // On a real live hardware camera feed (isRealHardwareVideo), natural 3D micro-parallax + live facial micro-jitter across frames proves liveness without forcing a 5s+ wait.
-    if (
-      (parallaxSpan >= parallaxSpanMin && yawSpan >= yawSpanMin) ||
-      (yawSpan >= yawSpanMin && earSpan >= earVarMin && parallaxSpan >= 0.006) ||
-      ((pitchSpan + parallaxSpan) >= 0.014 && earSpan >= earVarMin) ||
-      (isRealHardwareVideo && hist.length >= 2)
-    ) {
-      FACE_STATE.lastTurnAt = now;
-    }
-
-    const blinkPassed = (now - (FACE_STATE.lastBlinkAt || 0)) < windowMs;
-    const turnPassed = (now - (FACE_STATE.lastTurnAt || 0)) < windowMs;
-    const mode = String(STATE.faceSettings.livenessMode || 'blink_or_turn');
-
-    if (mode === 'blink') {
-      return { ok: blinkPassed, method: blinkPassed ? 'blink' : '', blinkPassed, turnPassed, yawSpan, parallaxSpan, earSpan };
-    }
-    if (mode === 'turn3d') {
-      return { ok: turnPassed, method: turnPassed ? 'turn3d' : '', blinkPassed, turnPassed, yawSpan, parallaxSpan, earSpan };
-    }
-    return {
-      ok: blinkPassed || turnPassed,
-      method: blinkPassed ? (turnPassed ? 'blink+turn3d' : 'blink') : (turnPassed ? 'turn3d' : ''),
-      blinkPassed,
-      turnPassed,
-      yawSpan,
-      parallaxSpan,
-      earSpan
-    };
   }
 
   async function completeFaceLogin(user, dist, snapshotUrl, methodLabel, opts = {}) {
@@ -112725,6 +112729,8 @@
   async function handleAuthDescriptor(det, snapshotUrl, opts = {}) {
     if (opts && opts.liveCamera && STATE.authed) return { status: 'already-authed' };
     const defaultNeeded = Math.max(3, Number(STATE.faceSettings.confirmFrames || 3));
+    const hasLivePixels = hasLiveVideoPixels(opts);
+    const enforceLiveVideo = hasLivePixels || Boolean(opts && opts.videoEl);
     const enrolled = usableFaces();
     const isEdgeBioActive = Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
     const hasRedactedEdgeBioSeats = Boolean(
@@ -112738,7 +112744,11 @@
     if (!enrolled.length && !hasRedactedEdgeBioSeats) {
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
+      FACE_STATE.streakStartedAt = 0;
+      FACE_STATE.streakVecs = [];
       FACE_STATE.edgeProbeStreak = 0;
+      FACE_STATE.edgeProbeStartedAt = 0;
+      FACE_STATE.edgeProbeVecs = [];
       FACE_STATE.detectorStreak = 0;
       setAuthStreak(0, defaultNeeded);
       setAuthHint('', '');
@@ -112749,12 +112759,20 @@
       if (!FACE_STATE.modelLoadingStartedAt) FACE_STATE.modelLoadingStartedAt = Date.now();
       ensureFaceModelsLoaded().catch(() => {});
       const probeTargetEmail = FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : '';
-      livenessStep(det, probeTargetEmail || '__edge_face__', opts);
+      const stage1Live = livenessStep(det, probeTargetEmail || '__edge_face__', opts);
+      if (stage1Live && stage1Live.spoofSuspected) {
+        FACE_STATE.detectorStreak = 0;
+        if (!FACE_STATE.pendingPinUser) {
+          setAuthStreak(0, defaultNeeded);
+          setAuthHint(faceTr('Screen or photo detected. Look directly at the camera.'), 'warn');
+        }
+        return { status: 'spoof-detected', modelLoading: true, livenessStatus: 'pad-spoof', livenessDetail: stage1Live };
+      }
       const isLiveVideoSingleFace = Boolean(opts && opts.videoEl && !det.multiple);
       if (isLiveVideoSingleFace) {
         FACE_STATE.detectorStreak = (FACE_STATE.detectorStreak || 0) + 1;
         if (!FACE_STATE.pendingPinUser) {
-          const liveNeeded = FACE_STATE.pending2faUser ? defaultNeeded : 2;
+          const liveNeeded = enforceLiveVideo ? Math.max(4, defaultNeeded) : defaultNeeded;
           setAuthStreak(1, liveNeeded);
         }
       }
@@ -112774,6 +112792,8 @@
       FACE_STATE.missedFrames = (FACE_STATE.missedFrames || 0) + 1;
       if (!FACE_STATE.edgeProbeStreak || FACE_STATE.missedFrames >= 4) {
         FACE_STATE.edgeProbeStreak = 0;
+        FACE_STATE.edgeProbeStartedAt = 0;
+        FACE_STATE.edgeProbeVecs = [];
       }
       if (!FACE_STATE.detectorStreak || FACE_STATE.missedFrames >= 4) {
         FACE_STATE.detectorStreak = 0;
@@ -112781,8 +112801,13 @@
       if ((!FACE_STATE.streakCount && !FACE_STATE.edgeProbeStreak && !FACE_STATE.detectorStreak) || FACE_STATE.missedFrames >= 4) {
         FACE_STATE.streakUser = null;
         FACE_STATE.streakCount = 0;
+        FACE_STATE.streakStartedAt = 0;
+        FACE_STATE.streakVecs = [];
         FACE_STATE.edgeProbeStreak = 0;
+        FACE_STATE.edgeProbeStartedAt = 0;
+        FACE_STATE.edgeProbeVecs = [];
         FACE_STATE.detectorStreak = 0;
+        if (FACE_STATE.missedFrames >= 4) resetLivenessState();
         if (!FACE_STATE.pendingPinUser) {
           setAuthStreak(0, defaultNeeded);
           setAuthHint(FACE_STATE.pending2faUser ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}` : (FACE_STATE.camActive ? 'Look at camera for automatic Face ID' : ''), '');
@@ -112794,13 +112819,17 @@
     if (det.multiple) {
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
+      FACE_STATE.streakStartedAt = 0;
+      FACE_STATE.streakVecs = [];
       FACE_STATE.edgeProbeStreak = 0;
+      FACE_STATE.edgeProbeStartedAt = 0;
+      FACE_STATE.edgeProbeVecs = [];
       FACE_STATE.detectorStreak = 0;
+      resetLivenessState();
       setAuthStreak(0, defaultNeeded);
       setAuthHint('One person in frame at a time', 'warn');
       return { status: 'multiple' };
     }
-    const hadDetectorLock = Boolean(opts && opts.videoEl && (FACE_STATE.detectorStreak || 0) >= 1);
     FACE_STATE.detectorStreak = 0;
 
     const descArr = (det.descriptor && det.descriptor.length === 128)
@@ -112809,10 +112838,8 @@
 
     const baseThr = Number(STATE.faceSettings.threshold || 0.50);
     const m = enrolled.length ? window.Face.match(det.descriptor, enrolled) : { best: null, bestDist: Infinity, secondDist: Infinity };
-    // On a real hardware camera feed (opts.videoEl), 2 consecutive strong matches + live landmarks unlock immediately (Kiosk 4 parity)
-    const needed = (opts && opts.videoEl && !FACE_STATE.pending2faUser && m && m.bestDist <= (baseThr - 0.03))
-      ? 2
-      : defaultNeeded;
+    const needed = enforceLiveVideo ? Math.max(4, defaultNeeded) : defaultNeeded;
+    const minSpanMs = enforceLiveVideo ? 650 : 0;
     // When a live webcam already matched a user on frame 1+, allow a +0.06 head-turn/blink tolerance for that same user so movement never resets the streak
     const isSameStreakUserOnLiveVideo = !!(opts && opts.videoEl && FACE_STATE.streakUser && FACE_STATE.streakCount >= 1 && m && m.best && norm(m.best.email) === norm(FACE_STATE.streakUser.email));
     const cfg = Object.assign({}, window.Face.CONFIG, {
@@ -112835,6 +112862,8 @@
         const minFrac = Number(STATE.faceSettings.minFaceFrac || 0.14);
         if (det.faceSizeFrac != null && det.faceSizeFrac < minFrac) {
           FACE_STATE.edgeProbeStreak = 0;
+          FACE_STATE.edgeProbeStartedAt = 0;
+          FACE_STATE.edgeProbeVecs = [];
           setAuthStreak(0, defaultNeeded);
           setAuthHint('Move slightly closer', 'warn');
           return { status: 'too-small' };
@@ -112855,15 +112884,39 @@
           }
           return { status: 'cooldown' };
         }
-        const edgeNeeded = (opts && opts.videoEl && !FACE_STATE.pending2faUser) ? 2 : defaultNeeded;
+        const edgeNeeded = enforceLiveVideo ? Math.max(4, defaultNeeded) : defaultNeeded;
         const probeTargetEmail = FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : '';
-        const liveProbe = livenessStep(det, probeTargetEmail || '__edge_face__', opts);
-        if (hadDetectorLock && !FACE_STATE.edgeProbeStreak) {
-          FACE_STATE.edgeProbeStreak = 1;
+        if (!Array.isArray(FACE_STATE.edgeProbeVecs)) FACE_STATE.edgeProbeVecs = [];
+        FACE_STATE.edgeProbeVecs.push(descArr);
+        if (FACE_STATE.edgeProbeVecs.length > edgeNeeded) {
+          FACE_STATE.edgeProbeVecs = FACE_STATE.edgeProbeVecs.slice(-edgeNeeded);
         }
-        FACE_STATE.edgeProbeStreak = (FACE_STATE.edgeProbeStreak || 0) + 1;
+        if (window.Face && window.Face.checkDescriptorStability && !window.Face.checkDescriptorStability(FACE_STATE.edgeProbeVecs, 0.26)) {
+          resetLivenessState();
+          FACE_STATE.edgeProbeVecs = [descArr];
+          FACE_STATE.edgeProbeStreak = 1;
+          FACE_STATE.edgeProbeStartedAt = Date.now();
+        } else {
+          if (!FACE_STATE.edgeProbeStreak || !FACE_STATE.edgeProbeStartedAt) FACE_STATE.edgeProbeStartedAt = Date.now();
+          FACE_STATE.edgeProbeStreak = (FACE_STATE.edgeProbeStreak || 0) + 1;
+        }
+        const liveProbe = livenessStep(det, probeTargetEmail || '__edge_face__', opts);
+        const edgeElapsedOk = !enforceLiveVideo || ((Date.now() - (FACE_STATE.edgeProbeStartedAt || Date.now())) >= minSpanMs);
 
-        if (FACE_STATE.edgeProbeStreak < edgeNeeded) {
+        if (liveProbe.spoofSuspected) {
+          FACE_STATE.edgeProbeStreak = 0;
+          FACE_STATE.edgeProbeStartedAt = 0;
+          FACE_STATE.edgeProbeVecs = [];
+          setAuthStreak(0, edgeNeeded);
+          setAuthHint(faceTr('Screen or photo detected. Look directly at the camera.'), 'warn');
+          return { status: 'spoof-detected', livenessStatus: 'pad-spoof', livenessDetail: liveProbe, count: 0, needed: edgeNeeded };
+        }
+
+        if (FACE_STATE.edgeProbeStreak < edgeNeeded || !edgeElapsedOk) {
+          if (FACE_STATE.edgeProbeStreak >= edgeNeeded && !edgeElapsedOk) {
+            FACE_STATE.edgeProbeStreak = edgeNeeded - 1;
+            FACE_STATE.edgeProbeVecs = FACE_STATE.edgeProbeVecs.slice(-Math.max(1, edgeNeeded - 1));
+          }
           setAuthStreak(FACE_STATE.edgeProbeStreak, edgeNeeded);
           setAuthHint(
             FACE_STATE.pending2faUser
@@ -112876,16 +112929,13 @@
 
         if (!liveProbe.ok) {
           FACE_STATE.edgeProbeStreak = edgeNeeded - 1;
+          FACE_STATE.edgeProbeVecs = FACE_STATE.edgeProbeVecs.slice(-Math.max(1, edgeNeeded - 1));
           setAuthStreak(FACE_STATE.edgeProbeStreak, edgeNeeded);
-          const liveMode = String(STATE.faceSettings.livenessMode || 'blink_or_turn');
-          const promptMsg = (FACE_STATE.pending2faUser && liveMode === 'blink')
-            ? `Blink once to confirm ${FACE_STATE.pending2faUser.full_name}`
-            : ((FACE_STATE.pending2faUser && liveMode === 'turn3d')
-              ? `Turn slightly to confirm ${FACE_STATE.pending2faUser.full_name}`
-              : 'Blink or turn slightly to confirm');
-          setAuthHint(promptMsg, 'warn');
+          setAuthHint(faceTr('Hold naturally in front of the camera'), 'warn');
           return { status: 'awaiting-blink', livenessStatus: 'awaiting-liveness', livenessDetail: liveProbe, count: FACE_STATE.edgeProbeStreak, needed: edgeNeeded };
         }
+
+        const submitEdgeDesc = (window.Face && window.Face.averageDescriptors ? window.Face.averageDescriptors(FACE_STATE.edgeProbeVecs) : null) || descArr;
 
         if (FACE_STATE.edgeProbeBusy) {
           setAuthStreak(edgeNeeded, edgeNeeded);
@@ -112919,7 +112969,7 @@
             pin: gatePin || undefined,
             method: methodLabel,
             confidence: 92,
-            face_descriptor: descArr,
+            face_descriptor: submitEdgeDesc,
             device: 'Edge Face ID'
           };
           const rEdge = await edgeApiFetch('./api/auth/login', {
@@ -112930,20 +112980,24 @@
           const jEdge = rEdge ? await rEdge.json().catch(() => null) : null;
           if (jEdge && jEdge.two_factor_pin_required && jEdge.user && jEdge.user.email) {
             FACE_STATE.edgeProbeStreak = 0;
+            FACE_STATE.edgeProbeStartedAt = 0;
+            FACE_STATE.edgeProbeVecs = [];
             const uIdx = STATE.users.findIndex(u => norm(u.email) === norm(jEdge.user.email));
             const seatObj = uIdx >= 0 ? mergeUserRow(STATE.users[uIdx], jEdge.user) : ensureCanonicalMultiIndustrySeat(jEdge.user);
             if (uIdx >= 0) STATE.users[uIdx] = seatObj; else STATE.users.push(seatObj);
-            FACE_STATE.lastVerifiedDescriptor = descArr;
-            await completeFaceLogin(seatObj, 0.22, snapshotUrl, 'Face ID', { faceDescriptor: descArr, ignoreTypedPin: false });
+            FACE_STATE.lastVerifiedDescriptor = submitEdgeDesc;
+            await completeFaceLogin(seatObj, 0.22, snapshotUrl, 'Face ID', { faceDescriptor: submitEdgeDesc, ignoreTypedPin: false });
             return { status: '2fa-pin-pending', user: seatObj, dist: 0.22 };
           }
           if (isEdgeStrictAuth && jEdge && jEdge.two_factor_pin_required && !gatePin) {
             // Seat set to `both`: keep the verified face for 30 s, stop probing for that window,
             // and let the PIN form finish the sign-in.
             FACE_STATE.edgeProbeStreak = 0;
+            FACE_STATE.edgeProbeStartedAt = 0;
+            FACE_STATE.edgeProbeVecs = [];
             FACE_STATE.edgeMissCount = 0;
             FACE_STATE.edgeProbeCooldownUntil = Date.now() + 30000;
-            FACE_STATE.lastLiveGateDescriptor = descArr;
+            FACE_STATE.lastLiveGateDescriptor = submitEdgeDesc;
             FACE_STATE.lastLiveGateMethod = `Face ID + PIN 2FA${livenessTag}`;
             FACE_STATE.lastLiveGateAt = Date.now();
             setAuthStreak(edgeNeeded, edgeNeeded);
@@ -112952,6 +113006,8 @@
           }
           if (rEdge && rEdge.ok && jEdge && jEdge.ok && jEdge.user && jEdge.user.email) {
             FACE_STATE.edgeProbeStreak = 0;
+            FACE_STATE.edgeProbeStartedAt = 0;
+            FACE_STATE.edgeProbeVecs = [];
             FACE_STATE.edgeMissCount = 0;
             FACE_STATE.pending2faPin = '';
             FACE_STATE.lastLiveGateDescriptor = null;
@@ -112964,12 +113020,14 @@
             if (isEdgeStrictAuth) { delete seatObj.pin_code; seatObj.pin_redacted = true; }
             if (uIdx >= 0) STATE.users[uIdx] = seatObj; else STATE.users.push(seatObj);
             const verifiedDist = (typeof jEdge.face_dist === 'number' && Number.isFinite(jEdge.face_dist)) ? jEdge.face_dist : 0.20;
-            FACE_STATE.lastVerifiedDescriptor = descArr;
+            FACE_STATE.lastVerifiedDescriptor = submitEdgeDesc;
             setAuthHint(`✓ Face ID verified · ${seatObj.full_name}`, 'ok');
-            await completeFaceLogin(seatObj, verifiedDist, snapshotUrl, methodLabel, { faceDescriptor: descArr, serverToken: jEdge.token || '1' });
+            await completeFaceLogin(seatObj, verifiedDist, snapshotUrl, methodLabel, { faceDescriptor: submitEdgeDesc, serverToken: jEdge.token || '1' });
             return { status: 'verified', user: seatObj, dist: verifiedDist, method: methodLabel, liveness: liveProbe.method };
           }
           FACE_STATE.edgeProbeStreak = 0;
+          FACE_STATE.edgeProbeStartedAt = 0;
+          FACE_STATE.edgeProbeVecs = [];
           // Face misses never hammer the server: after 2 misses in a row (or a 429) the live camera stops
           // and waits for a tap on "Tap for Face ID"; the PIN form keeps working the whole time.
           const probeThrottled = Boolean(rEdge && rEdge.status === 429);
@@ -112998,6 +113056,8 @@
           return { status: 'unknown', match: m };
         } catch (_) {
           FACE_STATE.edgeProbeStreak = 0;
+          FACE_STATE.edgeProbeStartedAt = 0;
+          FACE_STATE.edgeProbeVecs = [];
           FACE_STATE.edgeProbeCooldownUntil = Date.now() + 750;
           setAuthStreak(0, edgeNeeded);
           setAuthHint('Face not recognized', 'crit');
@@ -113015,6 +113075,9 @@
       FACE_STATE.weakFrames = 0;
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
+      FACE_STATE.streakStartedAt = 0;
+      FACE_STATE.streakVecs = [];
+      resetLivenessState();
       setAuthStreak(0, needed);
       if (dec.status === 'too-small') setAuthHint('Move slightly closer', 'warn');
       else if (dec.status === 'ambiguous') setAuthHint('Hold still to confirm match', 'warn');
@@ -113028,6 +113091,8 @@
     if (seatMode === 'pin_only' && !FACE_STATE.pending2faUser) {
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
+      FACE_STATE.streakStartedAt = 0;
+      FACE_STATE.streakVecs = [];
       setAuthStreak(0, needed);
       setAuthHint(`Enter PIN below for ${dec.best.name}`, 'warn');
       return { status: 'face-disabled', best: dec.best, dist: m.bestDist };
@@ -113048,6 +113113,8 @@
     if (FACE_STATE.pending2faUser && norm(dec.best.email) !== norm(FACE_STATE.pending2faUser.email)) {
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
+      FACE_STATE.streakStartedAt = 0;
+      FACE_STATE.streakVecs = [];
       setAuthStreak(0, needed);
       if (STATE.faceSettings.sound && window.Face && window.Face.Sound) window.Face.Sound.playWarn();
       setAuthHint(`Expected ${FACE_STATE.pending2faUser.full_name}, saw ${dec.best.name}`, 'crit');
@@ -113056,41 +113123,74 @@
 
     if (FACE_STATE.streakUser && norm(FACE_STATE.streakUser.email) === norm(dec.best.email)) {
       FACE_STATE.streakCount += 1;
+      if (!Array.isArray(FACE_STATE.streakVecs)) FACE_STATE.streakVecs = [];
+      if (descArr) {
+        FACE_STATE.streakVecs.push(descArr);
+        if (FACE_STATE.streakVecs.length > needed) FACE_STATE.streakVecs = FACE_STATE.streakVecs.slice(-needed);
+        if (window.Face && window.Face.checkDescriptorStability && !window.Face.checkDescriptorStability(FACE_STATE.streakVecs, 0.26)) {
+          resetLivenessState();
+          FACE_STATE.streakCount = 1;
+          FACE_STATE.streakVecs = [descArr];
+          FACE_STATE.streakStartedAt = Date.now();
+        }
+      }
+      if (!FACE_STATE.streakStartedAt) FACE_STATE.streakStartedAt = Date.now();
     } else {
+      if (FACE_STATE.streakUser) resetLivenessState();
       FACE_STATE.streakUser = dec.best;
-      FACE_STATE.streakCount = (hadDetectorLock && needed === 2) ? 2 : 1;
+      FACE_STATE.streakCount = 1;
+      FACE_STATE.streakStartedAt = Date.now();
+      FACE_STATE.streakVecs = descArr ? [descArr] : [];
     }
     FACE_STATE.bestDist = m.bestDist;
     FACE_STATE.secondDist = m.secondDist;
 
-    // Evaluate anti-screenshot liveness on every matching frame (blink dip+recovery OR 3D head-turn parallax)
+    // Evaluate passive liveness & pixel-level PAD on every matching frame
     const liveRes = livenessStep(det, dec.best.email, opts);
+    const localElapsedOk = !enforceLiveVideo || ((Date.now() - (FACE_STATE.streakStartedAt || Date.now())) >= minSpanMs);
 
-    if (FACE_STATE.streakCount < needed) {
+    if (liveRes.spoofSuspected) {
+      FACE_STATE.streakUser = null;
+      FACE_STATE.streakCount = 0;
+      FACE_STATE.streakStartedAt = 0;
+      FACE_STATE.streakVecs = [];
+      setAuthStreak(0, needed);
+      setAuthHint(faceTr('Screen or photo detected. Look directly at the camera.'), 'warn');
+      return { status: 'spoof-detected', livenessStatus: 'pad-spoof', livenessDetail: liveRes, count: 0, needed, best: dec.best, dist: m.bestDist };
+    }
+
+    if (FACE_STATE.streakCount < needed || !localElapsedOk) {
+      if (FACE_STATE.streakCount >= needed && !localElapsedOk) {
+        FACE_STATE.streakCount = needed - 1;
+        FACE_STATE.streakVecs = FACE_STATE.streakVecs.slice(-Math.max(1, needed - 1));
+      }
       setAuthStreak(FACE_STATE.streakCount, needed);
       setAuthHint(`Verifying ${dec.best.name}…`, liveRes.ok ? 'ok' : 'warn');
       return { status: 'streak', count: FACE_STATE.streakCount, needed, livenessOk: liveRes.ok, best: dec.best, dist: m.bestDist };
     }
 
     if (!liveRes.ok) {
-      // Hold streak at needed - 1 until the live person blinks or turns their head slightly (rejects static/tilted 2D screenshots)
+      // Hold streak at needed - 1 until natural blink or coupled 3D parallax confirms a real person
       FACE_STATE.streakCount = needed - 1;
+      FACE_STATE.streakVecs = FACE_STATE.streakVecs.slice(-Math.max(1, needed - 1));
       setAuthStreak(FACE_STATE.streakCount, needed);
-      const liveMode = String(STATE.faceSettings.livenessMode || 'blink_or_turn');
-      const promptMsg = liveMode === 'blink'
-        ? `Blink once to confirm ${dec.best.name}`
-        : (liveMode === 'turn3d'
-          ? `Turn slightly to confirm ${dec.best.name}`
-          : 'Blink or turn slightly to confirm');
-      setAuthHint(promptMsg, 'warn');
+      setAuthHint(faceTr('Hold naturally in front of the camera'), 'warn');
       return { status: 'awaiting-blink', livenessStatus: 'awaiting-liveness', livenessDetail: liveRes, count: FACE_STATE.streakCount, needed, best: dec.best, dist: m.bestDist };
     }
 
-    // Confirmed across consecutive frames + live anti-screenshot liveness!
+    const submitLocalDesc = (window.Face && window.Face.averageDescriptors && FACE_STATE.streakVecs.length
+      ? window.Face.averageDescriptors(FACE_STATE.streakVecs)
+      : null) || descArr;
+
+    // Confirmed across consecutive frames + passive liveness + PAD!
     FACE_STATE.streakUser = null;
     FACE_STATE.streakCount = 0;
+    FACE_STATE.streakStartedAt = 0;
+    FACE_STATE.streakVecs = [];
     FACE_STATE.edgeProbeStreak = 0;
-    if (descArr) FACE_STATE.lastVerifiedDescriptor = descArr;
+    FACE_STATE.edgeProbeStartedAt = 0;
+    FACE_STATE.edgeProbeVecs = [];
+    if (submitLocalDesc) FACE_STATE.lastVerifiedDescriptor = submitLocalDesc;
     setAuthStreak(needed, needed);
     const livenessTag = liveRes.method && liveRes.method !== 'synthetic-descriptor' && liveRes.method !== 'multi-frame'
       ? ` · Live ${liveRes.method === 'turn3d' ? '3D Turn' : 'Blink'}`
@@ -113100,7 +113200,7 @@
     if (!snapshotUrl && opts && opts.videoEl && window.Face && window.Face.snapshot) {
       try { snapshotUrl = window.Face.snapshot(opts.videoEl); } catch (_) {}
     }
-    const loginRes = await completeFaceLogin(matchedUser, m.bestDist, snapshotUrl, methodLabel, { faceDescriptor: descArr });
+    const loginRes = await completeFaceLogin(matchedUser, m.bestDist, snapshotUrl, methodLabel, { faceDescriptor: submitLocalDesc });
     if (loginRes === '2fa_pin_pending') {
       return { status: '2fa-pin-pending', user: matchedUser, dist: m.bestDist, method: methodLabel, liveness: liveRes.method };
     }
@@ -113167,7 +113267,7 @@
       }
     }
     if (!STATE.authed && FACE_STATE.camActive) {
-      const nextTickMs = (window.Face && !window.Face.ready) ? 80 : 16;
+      const nextTickMs = (window.Face && !window.Face.ready) ? 90 : 85;
       FACE_STATE.loopTimer = setTimeout(authFaceTick, nextTickMs);
     }
   }
@@ -115026,6 +115126,149 @@
     }
   }
 
+  function evaluateEnrolLiveMatch(enrolUser, det, videoEl, overlayEl, hudTel, hudDot) {
+    const prevSig = FACE_STATE.enrolLiveMatch
+      ? `${FACE_STATE.enrolLiveMatch.status}:${FACE_STATE.enrolLiveMatch.name}:${FACE_STATE.enrolLiveMatch.livenessOk}:${FACE_STATE.enrolLiveMatch.spoofSuspected}`
+      : 'none';
+    if (det && det.descriptor && window.Face && window.Face.match) {
+      const pool = usableFaces(enrolUser, { includeKioskStaff: true });
+      const m = window.Face.match(det.descriptor, pool);
+      const thr = Number(STATE.faceSettings.threshold || 0.50);
+      const confPct = m.best ? Math.max(50, Math.min(99, Math.round((1 - (m.bestDist / 1.25)) * 100))) : 0;
+      const canEdgeVerify = hasServerApi() && !isDemoSandboxSession() && STATE.users.some(u => u && u.status !== 'Suspended' && u.face_redacted && u.face_enrolled);
+      if (m.best && m.bestDist <= thr) {
+        const isTarget = (enrolUser.email && m.best.email && norm(m.best.email) === norm(enrolUser.email)) || norm(m.best.name) === norm(enrolUser.full_name);
+        const lv = livenessStep(det, m.best.email || m.best.name, { liveCamera: true, videoEl });
+        const spoofSuspected = Boolean(lv && lv.spoofSuspected);
+        const lvOk = !spoofSuspected && !!(lv && lv.ok && lv.method && lv.method !== 'multi-frame');
+        FACE_STATE.enrolLiveMatch = {
+          status: isTarget ? 'matched-target' : 'matched-other',
+          name: m.best.name,
+          confidence: confPct,
+          dist: m.bestDist,
+          livenessOk: lvOk,
+          spoofSuspected
+        };
+        if (overlayEl && window.Face.drawOverlay) {
+          window.Face.drawOverlay(overlayEl, videoEl, det, spoofSuspected ? '#ef4444' : (isTarget ? '#22c55e' : '#D9A54A'));
+        }
+        if (hudTel) {
+          hudTel.textContent = spoofSuspected
+            ? '⚠ SCREEN OR PHOTO DETECTED'
+            : (isTarget
+              ? `✓ VERIFIED: ${enrolUser.full_name.toUpperCase()} · ${confPct}%`
+              : `● MATCH: ${m.best.name.toUpperCase()} · ${confPct}%`);
+        }
+        if (hudDot) hudDot.className = (!spoofSuspected && isTarget) ? 'enrol-hud-dot live locked' : 'enrol-hud-dot live';
+      } else if (canEdgeVerify) {
+        const lvKey = (FACE_STATE.enrolLiveMatch && FACE_STATE.enrolLiveMatch.name) || enrolUser.email || enrolUser.full_name;
+        const lv = livenessStep(det, lvKey, { liveCamera: true, videoEl });
+        const spoofSuspected = Boolean(lv && lv.spoofSuspected);
+        const lvOk = !spoofSuspected && !!(lv && lv.ok && lv.method && lv.method !== 'multi-frame');
+        if (FACE_STATE.enrolLiveMatch) {
+          FACE_STATE.enrolLiveMatch.spoofSuspected = spoofSuspected;
+          if (spoofSuspected) {
+            FACE_STATE.enrolLiveMatch.livenessOk = false;
+          } else if ((FACE_STATE.enrolLiveMatch.status === 'matched-target' || FACE_STATE.enrolLiveMatch.status === 'matched-other') && lvOk) {
+            FACE_STATE.enrolLiveMatch.livenessOk = true;
+          }
+        }
+        if (!spoofSuspected && !FACE_STATE.enrolEdgeVerifyBusy && (Date.now() - (FACE_STATE.enrolEdgeVerifyAt || 0)) >= 700) {
+          const vecArr = Array.from(det.descriptor);
+          if (vecArr.length === 128) {
+            FACE_STATE.enrolEdgeVerifyBusy = true;
+            FACE_STATE.enrolEdgeVerifyAt = Date.now();
+            edgeApiFetch('./api/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ method: 'Face ID', verify_only: true, allow_pin_only_verify: true, face_descriptor: vecArr })
+            })
+              .then(r => (r.ok ? r.json() : null))
+              .then(j => {
+                if (STATE.view !== 'users' || !FACE_STATE.enrolCamActive || FACE_STATE.enrolRetakeSlot != null) return;
+                const curTarget = enrolTargetUser();
+                if (effectiveEnrolPoseCount(curTarget) < 3) return;
+                if (j && j.ok && j.user) {
+                  const edgeDist = Number.isFinite(Number(j.face_dist)) ? Number(j.face_dist) : 0.24;
+                  const edgeConf = Math.max(50, Math.min(99, Math.round((1 - (edgeDist / 1.25)) * 100)));
+                  const isTarget = (curTarget.email && j.user.email && norm(j.user.email) === norm(curTarget.email)) || norm(j.user.full_name) === norm(curTarget.full_name);
+                  FACE_STATE.enrolLiveMatch = {
+                    status: isTarget ? 'matched-target' : 'matched-other',
+                    name: j.user.full_name || curTarget.full_name,
+                    confidence: edgeConf,
+                    dist: edgeDist,
+                    livenessOk: !spoofSuspected && (Boolean(FACE_STATE.enrolLiveMatch && FACE_STATE.enrolLiveMatch.livenessOk) || lvOk),
+                    spoofSuspected
+                  };
+                } else {
+                  FACE_STATE.enrolLiveMatch = {
+                    status: 'unrecognized',
+                    name: '',
+                    confidence: 0,
+                    dist: 0.99,
+                    livenessOk: false,
+                    spoofSuspected
+                  };
+                }
+                syncEnrolPoseGuideOnlyDom();
+              })
+              .catch(() => {})
+              .finally(() => { FACE_STATE.enrolEdgeVerifyBusy = false; });
+          }
+        }
+        const curLm = FACE_STATE.enrolLiveMatch;
+        if (spoofSuspected) {
+          if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#ef4444');
+          if (hudTel) hudTel.textContent = '⚠ SCREEN OR PHOTO DETECTED';
+          if (hudDot) hudDot.className = 'enrol-hud-dot live';
+        } else if (curLm && curLm.status === 'matched-target') {
+          if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#22c55e');
+          if (hudTel) hudTel.textContent = `✓ VERIFIED: ${enrolUser.full_name.toUpperCase()} · ${curLm.confidence}%`;
+          if (hudDot) hudDot.className = 'enrol-hud-dot live locked';
+        } else if (curLm && curLm.status === 'matched-other') {
+          if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#D9A54A');
+          if (hudTel) hudTel.textContent = `● MATCH: ${String(curLm.name || '').toUpperCase()} · ${curLm.confidence}%`;
+          if (hudDot) hudDot.className = 'enrol-hud-dot live';
+        } else if (curLm && curLm.status === 'unrecognized') {
+          if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#ef4444');
+          if (hudTel) hudTel.textContent = '⚠ UNRECOGNIZED FACE';
+          if (hudDot) hudDot.className = 'enrol-hud-dot live';
+        } else {
+          if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#D9A54A');
+          if (hudTel) hudTel.textContent = 'LIVE VERIFY · CHECKING FACE ID';
+          if (hudDot) hudDot.className = 'enrol-hud-dot live';
+        }
+      } else {
+        FACE_STATE.enrolLiveMatch = {
+          status: 'unrecognized',
+          name: '',
+          confidence: confPct,
+          dist: m.best ? m.bestDist : 0.99,
+          livenessOk: false
+        };
+        if (overlayEl && window.Face.drawOverlay) {
+          window.Face.drawOverlay(overlayEl, videoEl, det, '#ef4444');
+        }
+        if (hudTel) hudTel.textContent = '⚠ UNRECOGNIZED FACE';
+        if (hudDot) hudDot.className = 'enrol-hud-dot live';
+      }
+    } else {
+      FACE_STATE.enrolLiveMatch = { status: 'no-face', name: '', confidence: 0, dist: 0, livenessOk: false };
+      if (overlayEl && window.Face.drawOverlay) {
+        window.Face.drawOverlay(overlayEl, videoEl, null, '#D9A54A');
+      }
+      if (hudTel) hudTel.textContent = 'LIVE VERIFY · LOOK AT CAMERA';
+      if (hudDot) hudDot.className = 'enrol-hud-dot live';
+    }
+    const nextSig = FACE_STATE.enrolLiveMatch
+      ? `${FACE_STATE.enrolLiveMatch.status}:${FACE_STATE.enrolLiveMatch.name}:${FACE_STATE.enrolLiveMatch.livenessOk}:${FACE_STATE.enrolLiveMatch.spoofSuspected}`
+      : 'none';
+    if (nextSig !== prevSig) {
+      syncEnrolPoseGuideOnlyDom();
+    }
+    return FACE_STATE.enrolLiveMatch;
+  }
+
   async function enrolFaceTick() {
     if (STATE.view !== 'users' || !FACE_STATE.enrolCamActive) return;
     const videoEl = $('enrolFaceVideo');
@@ -115067,129 +115310,7 @@
           FACE_STATE.autoEnrolStreak = 0;
         } else {
           // Automatic Live Recognition & Liveness Verification when 3/3 poses are saved
-          const prevSig = FACE_STATE.enrolLiveMatch
-            ? `${FACE_STATE.enrolLiveMatch.status}:${FACE_STATE.enrolLiveMatch.name}:${FACE_STATE.enrolLiveMatch.livenessOk}`
-            : 'none';
-          if (det && det.descriptor && window.Face && window.Face.match) {
-            const pool = usableFaces(enrolUser, { includeKioskStaff: true });
-            const m = window.Face.match(det.descriptor, pool);
-            const thr = Number(STATE.faceSettings.threshold || 0.50);
-            const confPct = m.best ? Math.max(50, Math.min(99, Math.round((1 - (m.bestDist / 1.25)) * 100))) : 0;
-            const canEdgeVerify = hasServerApi() && !isDemoSandboxSession() && STATE.users.some(u => u && u.status !== 'Suspended' && u.face_redacted && u.face_enrolled);
-            if (m.best && m.bestDist <= thr) {
-              const isTarget = (enrolUser.email && m.best.email && norm(m.best.email) === norm(enrolUser.email)) || norm(m.best.name) === norm(enrolUser.full_name);
-              const lv = livenessStep(det, m.best.email || m.best.name, { liveCamera: true });
-              const lvOk = !!(lv && lv.ok && lv.method && lv.method !== 'multi-frame');
-              FACE_STATE.enrolLiveMatch = {
-                status: isTarget ? 'matched-target' : 'matched-other',
-                name: m.best.name,
-                confidence: confPct,
-                dist: m.bestDist,
-                livenessOk: lvOk
-              };
-              if (overlayEl && window.Face.drawOverlay) {
-                window.Face.drawOverlay(overlayEl, videoEl, det, isTarget ? '#22c55e' : '#D9A54A');
-              }
-              if (hudTel) {
-                hudTel.textContent = isTarget
-                  ? `✓ VERIFIED: ${enrolUser.full_name.toUpperCase()} · ${confPct}%`
-                  : `● MATCH: ${m.best.name.toUpperCase()} · ${confPct}%`;
-              }
-              if (hudDot) hudDot.className = isTarget ? 'enrol-hud-dot live locked' : 'enrol-hud-dot live';
-            } else if (canEdgeVerify) {
-              const lvKey = (FACE_STATE.enrolLiveMatch && FACE_STATE.enrolLiveMatch.name) || enrolUser.email || enrolUser.full_name;
-              const lv = livenessStep(det, lvKey, { liveCamera: true });
-              const lvOk = !!(lv && lv.ok && lv.method && lv.method !== 'multi-frame');
-              if (FACE_STATE.enrolLiveMatch && (FACE_STATE.enrolLiveMatch.status === 'matched-target' || FACE_STATE.enrolLiveMatch.status === 'matched-other') && lvOk) {
-                FACE_STATE.enrolLiveMatch.livenessOk = true;
-              }
-              if (!FACE_STATE.enrolEdgeVerifyBusy && (Date.now() - (FACE_STATE.enrolEdgeVerifyAt || 0)) >= 700) {
-                const vecArr = Array.from(det.descriptor);
-                if (vecArr.length === 128) {
-                  FACE_STATE.enrolEdgeVerifyBusy = true;
-                  FACE_STATE.enrolEdgeVerifyAt = Date.now();
-                  edgeApiFetch('./api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ method: 'Face ID', verify_only: true, allow_pin_only_verify: true, face_descriptor: vecArr })
-                  })
-                    .then(r => (r.ok ? r.json() : null))
-                    .then(j => {
-                      if (STATE.view !== 'users' || !FACE_STATE.enrolCamActive || FACE_STATE.enrolRetakeSlot != null) return;
-                      const curTarget = enrolTargetUser();
-                      if (effectiveEnrolPoseCount(curTarget) < 3) return;
-                      if (j && j.ok && j.user) {
-                        const edgeDist = Number.isFinite(Number(j.face_dist)) ? Number(j.face_dist) : 0.24;
-                        const edgeConf = Math.max(50, Math.min(99, Math.round((1 - (edgeDist / 1.25)) * 100)));
-                        const isTarget = (curTarget.email && j.user.email && norm(j.user.email) === norm(curTarget.email)) || norm(j.user.full_name) === norm(curTarget.full_name);
-                        FACE_STATE.enrolLiveMatch = {
-                          status: isTarget ? 'matched-target' : 'matched-other',
-                          name: j.user.full_name || curTarget.full_name,
-                          confidence: edgeConf,
-                          dist: edgeDist,
-                          livenessOk: Boolean(FACE_STATE.enrolLiveMatch && FACE_STATE.enrolLiveMatch.livenessOk) || lvOk
-                        };
-                      } else {
-                        FACE_STATE.enrolLiveMatch = {
-                          status: 'unrecognized',
-                          name: '',
-                          confidence: 0,
-                          dist: 0.99,
-                          livenessOk: false
-                        };
-                      }
-                      syncEnrolPoseGuideOnlyDom();
-                    })
-                    .catch(() => {})
-                    .finally(() => { FACE_STATE.enrolEdgeVerifyBusy = false; });
-                }
-              }
-              const curLm = FACE_STATE.enrolLiveMatch;
-              if (curLm && curLm.status === 'matched-target') {
-                if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#22c55e');
-                if (hudTel) hudTel.textContent = `✓ VERIFIED: ${enrolUser.full_name.toUpperCase()} · ${curLm.confidence}%`;
-                if (hudDot) hudDot.className = 'enrol-hud-dot live locked';
-              } else if (curLm && curLm.status === 'matched-other') {
-                if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#D9A54A');
-                if (hudTel) hudTel.textContent = `● MATCH: ${String(curLm.name || '').toUpperCase()} · ${curLm.confidence}%`;
-                if (hudDot) hudDot.className = 'enrol-hud-dot live';
-              } else if (curLm && curLm.status === 'unrecognized') {
-                if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#ef4444');
-                if (hudTel) hudTel.textContent = '⚠ UNRECOGNIZED FACE';
-                if (hudDot) hudDot.className = 'enrol-hud-dot live';
-              } else {
-                if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#D9A54A');
-                if (hudTel) hudTel.textContent = 'LIVE VERIFY · CHECKING FACE ID';
-                if (hudDot) hudDot.className = 'enrol-hud-dot live';
-              }
-            } else {
-              FACE_STATE.enrolLiveMatch = {
-                status: 'unrecognized',
-                name: '',
-                confidence: confPct,
-                dist: m.best ? m.bestDist : 0.99,
-                livenessOk: false
-              };
-              if (overlayEl && window.Face.drawOverlay) {
-                window.Face.drawOverlay(overlayEl, videoEl, det, '#ef4444');
-              }
-              if (hudTel) hudTel.textContent = '⚠ UNRECOGNIZED FACE';
-              if (hudDot) hudDot.className = 'enrol-hud-dot live';
-            }
-          } else {
-            FACE_STATE.enrolLiveMatch = { status: 'no-face', name: '', confidence: 0, dist: 0, livenessOk: false };
-            if (overlayEl && window.Face.drawOverlay) {
-              window.Face.drawOverlay(overlayEl, videoEl, null, '#D9A54A');
-            }
-            if (hudTel) hudTel.textContent = 'LIVE VERIFY · LOOK AT CAMERA';
-            if (hudDot) hudDot.className = 'enrol-hud-dot live';
-          }
-          const nextSig = FACE_STATE.enrolLiveMatch
-            ? `${FACE_STATE.enrolLiveMatch.status}:${FACE_STATE.enrolLiveMatch.name}:${FACE_STATE.enrolLiveMatch.livenessOk}`
-            : 'none';
-          if (nextSig !== prevSig) {
-            syncEnrolPoseGuideOnlyDom();
-          }
+          evaluateEnrolLiveMatch(enrolUser, det, videoEl, overlayEl, hudTel, hudDot);
         }
       } catch (_) {
         /* ignore transient frame error */
@@ -118274,6 +118395,10 @@
     busy: false,
     streakStaff: '',
     streakCount: 0,
+    streakVecs: [],
+    streakStartedAt: 0,
+    livenessHistory: [],
+    lastPadResult: null,
     unknownStreak: 0,
     bestDist: 9,
     lastVideoTime: -1,
@@ -118307,6 +118432,10 @@
     busy: false,
     streakAdmin: '',
     streakCount: 0,
+    streakVecs: [],
+    streakStartedAt: 0,
+    livenessHistory: [],
+    lastPadResult: null,
     missedFrames: 0,
     statusText: 'Look at the camera to verify Admin or Manager Face ID.',
     statusCls: '',
@@ -118770,6 +118899,10 @@
     KIOSK_ADMIN_MODAL_STATE.busy = false;
     KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
     KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
+    KIOSK_ADMIN_MODAL_STATE.streakVecs = [];
+    KIOSK_ADMIN_MODAL_STATE.streakStartedAt = 0;
+    KIOSK_ADMIN_MODAL_STATE.livenessHistory = [];
+    KIOSK_ADMIN_MODAL_STATE.lastPadResult = null;
     const v = $('ksaAdminFaceVideo');
     if (v && v.srcObject) {
       if (!keepSharedStream) {
@@ -118831,11 +118964,19 @@
       KIOSK_ADMIN_MODAL_STATE.missedFrames = 0;
       return { ok: false, reason: 'model-loading' };
     }
+    const resetKsaFaceAccumulators = () => {
+      KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
+      KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
+      KIOSK_ADMIN_MODAL_STATE.streakVecs = [];
+      KIOSK_ADMIN_MODAL_STATE.streakStartedAt = 0;
+      KIOSK_ADMIN_MODAL_STATE.livenessHistory = [];
+      KIOSK_ADMIN_MODAL_STATE.lastPadResult = null;
+      KIOSK_ADMIN_MODAL_STATE.edgeVerifyBusy = false;
+    };
     if (!det || !det.descriptor) {
       KIOSK_ADMIN_MODAL_STATE.missedFrames = (KIOSK_ADMIN_MODAL_STATE.missedFrames || 0) + 1;
       if (!opts.liveVideo || KIOSK_ADMIN_MODAL_STATE.missedFrames >= 3) {
-        KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
-        KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
+        resetKsaFaceAccumulators();
       }
       if (!KIOSK_ADMIN_MODAL_STATE.err) {
         KIOSK_ADMIN_MODAL_STATE.statusText = 'Position Admin or Manager face inside the oval guide';
@@ -118845,10 +118986,28 @@
       return { ok: false, reason: 'no-face' };
     }
     KIOSK_ADMIN_MODAL_STATE.missedFrames = 0;
-    const completeKioskAdminUnlock = (matchedSeat, fallbackName, isFullAdmin, isEnrolAllowed) => {
+    const hasLivePixels = hasLiveVideoPixels(opts);
+    const enforceLiveVideo = hasLivePixels || Boolean(opts && opts.videoEl);
+    const shouldEvalLiveness = !opts.instant && STATE.faceSettings.liveness !== false && (enforceLiveVideo || Boolean(det.landmarks || typeof det.ear === 'number' || (det.pose && typeof det.pose === 'object')));
+    const needFrames = opts.instant ? 1 : (enforceLiveVideo ? 4 : (opts.liveVideo ? 3 : 2));
+    const minSpanMs = (!opts.instant && enforceLiveVideo) ? 600 : 0;
+    const evalKsaLivenessOrPad = () => {
+      if (shouldEvalLiveness) {
+        return recordAndEvalFaceLiveness(KIOSK_ADMIN_MODAL_STATE, det, opts, { minFrames: needFrames, minSpanMs });
+      }
+      if (!opts.instant && hasLivePixels && window.Face && typeof window.Face.analyzePad === 'function') {
+        const padOnly = window.Face.analyzePad(opts.videoEl, det);
+        KIOSK_ADMIN_MODAL_STATE.lastPadResult = padOnly;
+        if (padOnly && padOnly.frameSpoof) {
+          return { ok: false, spoofSuspected: true, reason: 'pad_spoof', padReasons: padOnly.reasons || [] };
+        }
+      }
+      return { ok: true, spoofSuspected: false };
+    };
+
+    const completeKioskAdminUnlock = (matchedSeat, fallbackName, isFullAdmin, isEnrolAllowed, preVerifiedEdge = false) => {
       if (!isEnrolAllowed) {
-        KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
-        KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
+        resetKsaFaceAccumulators();
         KIOSK_ADMIN_MODAL_STATE.err = matchedSeat
           ? `Access denied: ${fallbackName} (${matchedSeat.role || 'Viewer'}) is not authorized for Station Admin or Staff Enrolment.`
           : `Access denied: ${fallbackName} is a company employee, not an ISABI Entry or Admin user. Only ISABI Entry Operators, Supervisors, or Admins can enrol staff.`;
@@ -118861,22 +119020,58 @@
       }
       const effSeat = matchedSeat || activeUser();
       const adminName = (effSeat && effSeat.full_name) || fallbackName;
-      if (KIOSK_ADMIN_MODAL_STATE.streakAdmin === adminName) {
-        KIOSK_ADMIN_MODAL_STATE.streakCount += 1;
-      } else {
-        KIOSK_ADMIN_MODAL_STATE.streakAdmin = adminName;
-        KIOSK_ADMIN_MODAL_STATE.streakCount = 1;
+      if (!opts.instant && !preVerifiedEdge) {
+        const curVec = Array.from(det.descriptor);
+        if (KIOSK_ADMIN_MODAL_STATE.streakAdmin === adminName) {
+          KIOSK_ADMIN_MODAL_STATE.streakCount += 1;
+          if (!KIOSK_ADMIN_MODAL_STATE.streakStartedAt) KIOSK_ADMIN_MODAL_STATE.streakStartedAt = Date.now();
+          KIOSK_ADMIN_MODAL_STATE.streakVecs.push(curVec);
+          if (KIOSK_ADMIN_MODAL_STATE.streakVecs.length > 8) {
+            KIOSK_ADMIN_MODAL_STATE.streakVecs = KIOSK_ADMIN_MODAL_STATE.streakVecs.slice(-8);
+          }
+          if (window.Face && typeof window.Face.checkDescriptorStability === 'function' && !window.Face.checkDescriptorStability(KIOSK_ADMIN_MODAL_STATE.streakVecs, 0.26)) {
+            KIOSK_ADMIN_MODAL_STATE.streakCount = 1;
+            KIOSK_ADMIN_MODAL_STATE.streakVecs = [curVec];
+            KIOSK_ADMIN_MODAL_STATE.streakStartedAt = Date.now();
+            KIOSK_ADMIN_MODAL_STATE.livenessHistory = [];
+          }
+        } else {
+          KIOSK_ADMIN_MODAL_STATE.streakAdmin = adminName;
+          KIOSK_ADMIN_MODAL_STATE.streakCount = 1;
+          KIOSK_ADMIN_MODAL_STATE.streakVecs = [curVec];
+          KIOSK_ADMIN_MODAL_STATE.streakStartedAt = Date.now();
+          KIOSK_ADMIN_MODAL_STATE.livenessHistory = [];
+        }
+        const lv = evalKsaLivenessOrPad();
+        if (lv && lv.spoofSuspected) {
+          KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
+          KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
+          KIOSK_ADMIN_MODAL_STATE.streakVecs = [];
+          KIOSK_ADMIN_MODAL_STATE.streakStartedAt = 0;
+          KIOSK_ADMIN_MODAL_STATE.err = faceTr('Screen or photo detected. Look directly at the camera.');
+          KIOSK_ADMIN_MODAL_STATE.statusText = KIOSK_ADMIN_MODAL_STATE.err;
+          KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
+          syncKioskAdminFaceDomInPlace();
+          return { ok: false, reason: 'spoof-detected', padReasons: lv.padReasons || [] };
+        }
+        const elapsedOk = !minSpanMs || ((Date.now() - (KIOSK_ADMIN_MODAL_STATE.streakStartedAt || Date.now())) >= minSpanMs);
+        if (KIOSK_ADMIN_MODAL_STATE.streakCount < needFrames || !elapsedOk) {
+          KIOSK_ADMIN_MODAL_STATE.err = '';
+          KIOSK_ADMIN_MODAL_STATE.statusText = isFullAdmin ? `Verifying Admin ${adminName}...` : `Verifying Entry Operator ${adminName}...`;
+          KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
+          syncKioskAdminFaceDomInPlace();
+          return { ok: false, reason: 'building-streak', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames, admin: adminName, role: isFullAdmin ? 'admin' : 'entry' };
+        }
+        if (shouldEvalLiveness && !(lv && lv.ok)) {
+          KIOSK_ADMIN_MODAL_STATE.streakCount = needFrames - 1;
+          KIOSK_ADMIN_MODAL_STATE.err = '';
+          KIOSK_ADMIN_MODAL_STATE.statusText = faceTr('Hold naturally in front of the camera');
+          KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
+          syncKioskAdminFaceDomInPlace();
+          return { ok: false, reason: 'awaiting-liveness', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames, admin: adminName, role: isFullAdmin ? 'admin' : 'entry' };
+        }
       }
-      const needFrames = opts.instant ? 1 : (opts.liveVideo ? 2 : 2);
-      if (KIOSK_ADMIN_MODAL_STATE.streakCount < needFrames) {
-        KIOSK_ADMIN_MODAL_STATE.err = '';
-        KIOSK_ADMIN_MODAL_STATE.statusText = isFullAdmin ? `Verifying Admin ${adminName}...` : `Verifying Entry Operator ${adminName}...`;
-        KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
-        syncKioskAdminFaceDomInPlace();
-        return { ok: false, reason: 'building-streak', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames, admin: adminName, role: isFullAdmin ? 'admin' : 'entry' };
-      }
-      KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
-      KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
+      resetKsaFaceAccumulators();
       KIOSK_ADMIN_MODAL_STATE.err = '';
       const opAllowedCos = allowedCompanyNames(effSeat);
       const openEnrolDirectly = !isFullAdmin || KIOSK_ADMIN_MODAL_STATE.targetAction === 'enrol';
@@ -118905,8 +119100,7 @@
     };
 
     const failUnrecognized = (reason) => {
-      KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
-      KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
+      resetKsaFaceAccumulators();
       KIOSK_ADMIN_MODAL_STATE.err = reason === 'no-pool'
         ? 'No Face ID profiles enrolled yet.'
         : (reason === 'multiple'
@@ -118937,7 +119131,7 @@
         const isFullAdmin = isAuthorizedKioskAdminFace(dec.best);
         const isEnrolAllowed = isFullAdmin || isAuthorizedKioskStaffEnrolFace(dec.best);
         const matchedSeat = resolveIsabiSeatForFaceEntry(dec.best);
-        return completeKioskAdminUnlock(matchedSeat, dec.best.name, isFullAdmin, isEnrolAllowed);
+        return completeKioskAdminUnlock(matchedSeat, dec.best.name, isFullAdmin, isEnrolAllowed, false);
       }
     }
 
@@ -118946,8 +119140,64 @@
       if (Date.now() < (KIOSK_ADMIN_MODAL_STATE.edgeCooldownUntil || 0)) {
         return { ok: false, reason: 'cooldown' };
       }
-      const vecArr = Array.from(det.descriptor);
-      if (vecArr.length === 128) {
+      const rawVec = Array.from(det.descriptor);
+      if (rawVec.length === 128) {
+        if (!opts.instant) {
+          if (KIOSK_ADMIN_MODAL_STATE.streakAdmin === '__edge_probe__') {
+            KIOSK_ADMIN_MODAL_STATE.streakCount += 1;
+            KIOSK_ADMIN_MODAL_STATE.streakVecs.push(rawVec);
+            if (KIOSK_ADMIN_MODAL_STATE.streakVecs.length > 8) {
+              KIOSK_ADMIN_MODAL_STATE.streakVecs = KIOSK_ADMIN_MODAL_STATE.streakVecs.slice(-8);
+            }
+            if (window.Face && typeof window.Face.checkDescriptorStability === 'function' && !window.Face.checkDescriptorStability(KIOSK_ADMIN_MODAL_STATE.streakVecs, 0.26)) {
+              KIOSK_ADMIN_MODAL_STATE.streakCount = 1;
+              KIOSK_ADMIN_MODAL_STATE.streakVecs = [rawVec];
+              KIOSK_ADMIN_MODAL_STATE.streakStartedAt = Date.now();
+              KIOSK_ADMIN_MODAL_STATE.livenessHistory = [];
+            }
+          } else {
+            KIOSK_ADMIN_MODAL_STATE.streakAdmin = '__edge_probe__';
+            KIOSK_ADMIN_MODAL_STATE.streakCount = 1;
+            KIOSK_ADMIN_MODAL_STATE.streakVecs = [rawVec];
+            KIOSK_ADMIN_MODAL_STATE.streakStartedAt = Date.now();
+            KIOSK_ADMIN_MODAL_STATE.livenessHistory = [];
+          }
+          const lv = evalKsaLivenessOrPad();
+          if (lv && lv.spoofSuspected) {
+            KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
+            KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
+            KIOSK_ADMIN_MODAL_STATE.streakVecs = [];
+            KIOSK_ADMIN_MODAL_STATE.streakStartedAt = 0;
+            KIOSK_ADMIN_MODAL_STATE.err = faceTr('Screen or photo detected. Look directly at the camera.');
+            KIOSK_ADMIN_MODAL_STATE.statusText = KIOSK_ADMIN_MODAL_STATE.err;
+            KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
+            syncKioskAdminFaceDomInPlace();
+            return { ok: false, reason: 'spoof-detected', padReasons: lv.padReasons || [] };
+          }
+          const elapsedOk = !minSpanMs || ((Date.now() - (KIOSK_ADMIN_MODAL_STATE.streakStartedAt || Date.now())) >= minSpanMs);
+          if (KIOSK_ADMIN_MODAL_STATE.streakCount < needFrames || !elapsedOk) {
+            KIOSK_ADMIN_MODAL_STATE.err = '';
+            KIOSK_ADMIN_MODAL_STATE.statusText = 'Verifying Admin Face ID...';
+            KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
+            syncKioskAdminFaceDomInPlace();
+            return { ok: false, reason: 'building-streak', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames };
+          }
+          if (shouldEvalLiveness && !(lv && lv.ok)) {
+            KIOSK_ADMIN_MODAL_STATE.streakCount = needFrames - 1;
+            KIOSK_ADMIN_MODAL_STATE.err = '';
+            KIOSK_ADMIN_MODAL_STATE.statusText = faceTr('Hold naturally in front of the camera');
+            KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
+            syncKioskAdminFaceDomInPlace();
+            return { ok: false, reason: 'awaiting-liveness', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames };
+          }
+        }
+        if (KIOSK_ADMIN_MODAL_STATE.edgeVerifyBusy) {
+          return { ok: false, reason: 'verifying' };
+        }
+        KIOSK_ADMIN_MODAL_STATE.edgeVerifyBusy = true;
+        const vecArr = (!opts.instant && KIOSK_ADMIN_MODAL_STATE.streakVecs.length && window.Face && typeof window.Face.averageDescriptors === 'function')
+          ? (window.Face.averageDescriptors(KIOSK_ADMIN_MODAL_STATE.streakVecs) || rawVec)
+          : rawVec;
         return edgeApiFetch('./api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -118955,6 +119205,9 @@
         })
           .then(r => (r.ok ? r.json() : null))
           .then(j => {
+            if (!KIOSK_ADMIN_MODAL_STATE.open || KIOSK_ADMIN_MODAL_STATE.unlocked) {
+              return { ok: false, reason: 'closed' };
+            }
             if (!j || !j.ok || !j.user) {
               KIOSK_ADMIN_MODAL_STATE.edgeCooldownUntil = Date.now() + 650;
               return failUnrecognized('unrecognized');
@@ -118975,11 +119228,14 @@
             };
             const isFullAdmin = isAuthorizedKioskAdminFace(entry);
             const isEnrolAllowed = isFullAdmin || isAuthorizedKioskStaffEnrolFace(entry);
-            return completeKioskAdminUnlock(matchedSeat, entry.name, isFullAdmin, isEnrolAllowed);
+            return completeKioskAdminUnlock(matchedSeat, entry.name, isFullAdmin, isEnrolAllowed, !opts.instant);
           })
           .catch(() => {
             KIOSK_ADMIN_MODAL_STATE.edgeCooldownUntil = Date.now() + 650;
             return failUnrecognized('unrecognized');
+          })
+          .finally(() => {
+            KIOSK_ADMIN_MODAL_STATE.edgeVerifyBusy = false;
           });
       }
     }
@@ -119003,7 +119259,7 @@
       KIOSK_ADMIN_MODAL_STATE.busy = false;
     }
     if (KIOSK_ADMIN_MODAL_STATE.open && !KIOSK_ADMIN_MODAL_STATE.unlocked && KIOSK_ADMIN_MODAL_STATE.camActive) {
-      KIOSK_ADMIN_MODAL_STATE.loopTimer = setTimeout(kioskAdminFaceTick, 45);
+      KIOSK_ADMIN_MODAL_STATE.loopTimer = setTimeout(kioskAdminFaceTick, 85);
     }
   }
 
@@ -124841,6 +125097,10 @@
     KIOSK_ATT_STATE.busy = false;
     KIOSK_ATT_STATE.streakStaff = '';
     KIOSK_ATT_STATE.streakCount = 0;
+    KIOSK_ATT_STATE.streakVecs = [];
+    KIOSK_ATT_STATE.streakStartedAt = 0;
+    KIOSK_ATT_STATE.livenessHistory = [];
+    KIOSK_ATT_STATE.lastPadResult = null;
     KIOSK_ATT_STATE.unknownStreak = 0;
     KIOSK_ATT_STATE.lastVideoTime = -1;
     KIOSK_ATT_STATE.lastTimeMoveAt = 0;
@@ -125129,12 +125389,19 @@
       KIOSK_ATT_STATE.unknownStreak = 0;
       return { ok: false, reason: 'model-loading' };
     }
+    const resetKioskAttAccumulators = () => {
+      KIOSK_ATT_STATE.streakStaff = '';
+      KIOSK_ATT_STATE.streakCount = 0;
+      KIOSK_ATT_STATE.streakVecs = [];
+      KIOSK_ATT_STATE.streakStartedAt = 0;
+      KIOSK_ATT_STATE.livenessHistory = [];
+      KIOSK_ATT_STATE.lastPadResult = null;
+    };
     if (!det || !det.descriptor) {
       KIOSK_ATT_STATE.missedFrames = (KIOSK_ATT_STATE.missedFrames || 0) + 1;
       KIOSK_ATT_STATE.unknownStreak = 0;
       if (!opts.liveVideo || KIOSK_ATT_STATE.missedFrames >= 3) {
-        KIOSK_ATT_STATE.streakStaff = '';
-        KIOSK_ATT_STATE.streakCount = 0;
+        resetKioskAttAccumulators();
       }
       KIOSK_ATT_STATE.statusText = 'Position your face inside the oval guide to clock in or out';
       KIOSK_ATT_STATE.statusCls = '';
@@ -125156,8 +125423,7 @@
     if (!dec.ok || !dec.best) {
       KIOSK_ATT_STATE.missedFrames = (KIOSK_ATT_STATE.missedFrames || 0) + 1;
       if (!opts.liveVideo || KIOSK_ATT_STATE.missedFrames >= 3) {
-        KIOSK_ATT_STATE.streakStaff = '';
-        KIOSK_ATT_STATE.streakCount = 0;
+        resetKioskAttAccumulators();
       }
       // On live video without opts.instant, ignore low-score background/ceiling-light detections (detScore < 0.42 or bestDist > 0.65)
       // and require 2 consecutive unknown face frames before showing the amber "Face not recognized" banner.
@@ -125184,21 +125450,67 @@
     KIOSK_ATT_STATE.unknownStreak = 0;
 
     const matchedName = dec.best.name;
+    const hasLivePixels = hasLiveVideoPixels(opts);
+    const enforceLiveVideo = hasLivePixels || Boolean(opts && opts.videoEl);
+    const shouldEvalLiveness = Boolean(opts.liveVideo && !opts.instant && STATE.faceSettings.liveness !== false && (enforceLiveVideo || det.landmarks || typeof det.ear === 'number' || (det.pose && typeof det.pose === 'object')));
+    const needFrames = opts.instant ? 1 : (shouldEvalLiveness ? 3 : (opts.liveVideo ? 2 : Math.max(2, Number(STATE.faceSettings.confirmFrames || 3))));
+    const minSpanMs = (shouldEvalLiveness && enforceLiveVideo) ? 500 : 0;
+
+    const curVec = Array.from(det.descriptor);
     if (KIOSK_ATT_STATE.streakStaff === matchedName) {
       KIOSK_ATT_STATE.streakCount += 1;
+      KIOSK_ATT_STATE.streakVecs.push(curVec);
+      if (KIOSK_ATT_STATE.streakVecs.length > 8) {
+        KIOSK_ATT_STATE.streakVecs = KIOSK_ATT_STATE.streakVecs.slice(-8);
+      }
+      if (window.Face && typeof window.Face.checkDescriptorStability === 'function' && !window.Face.checkDescriptorStability(KIOSK_ATT_STATE.streakVecs, 0.26)) {
+        KIOSK_ATT_STATE.streakCount = 1;
+        KIOSK_ATT_STATE.streakVecs = [curVec];
+        KIOSK_ATT_STATE.streakStartedAt = Date.now();
+        KIOSK_ATT_STATE.livenessHistory = [];
+      }
     } else {
       KIOSK_ATT_STATE.streakStaff = matchedName;
       KIOSK_ATT_STATE.streakCount = 1;
+      KIOSK_ATT_STATE.streakVecs = [curVec];
+      KIOSK_ATT_STATE.streakStartedAt = Date.now();
+      KIOSK_ATT_STATE.livenessHistory = [];
     }
-    const needFrames = opts.instant ? 1 : (opts.liveVideo ? 2 : Math.max(2, Number(STATE.faceSettings.confirmFrames || 3)));
-    if (KIOSK_ATT_STATE.streakCount < needFrames) {
+
+    let lv = { ok: true, spoofSuspected: false };
+    if (shouldEvalLiveness) {
+      lv = recordAndEvalFaceLiveness(KIOSK_ATT_STATE, det, opts, { minFrames: needFrames, minSpanMs });
+    } else if (!opts.instant && hasLivePixels && window.Face && typeof window.Face.analyzePad === 'function') {
+      const padOnly = window.Face.analyzePad(opts.videoEl, det);
+      KIOSK_ATT_STATE.lastPadResult = padOnly;
+      if (padOnly && padOnly.frameSpoof) {
+        lv = { ok: false, spoofSuspected: true, reason: 'pad_spoof', padReasons: padOnly.reasons || [] };
+      }
+    }
+    if (!opts.instant && lv && lv.spoofSuspected) {
+      KIOSK_ATT_STATE.streakCount = 0;
+      KIOSK_ATT_STATE.streakStaff = '';
+      KIOSK_ATT_STATE.streakVecs = [];
+      KIOSK_ATT_STATE.streakStartedAt = 0;
+      KIOSK_ATT_STATE.statusText = faceTr('Screen or photo detected. Step in front of the camera.');
+      KIOSK_ATT_STATE.statusCls = 'warn';
+      return { ok: false, reason: 'spoof-detected', padReasons: lv.padReasons || [] };
+    }
+
+    const elapsedOk = !minSpanMs || ((Date.now() - (KIOSK_ATT_STATE.streakStartedAt || Date.now())) >= minSpanMs);
+    if (KIOSK_ATT_STATE.streakCount < needFrames || !elapsedOk) {
       KIOSK_ATT_STATE.statusText = `Recognizing ${matchedName}...`;
       KIOSK_ATT_STATE.statusCls = 'ok';
       return { ok: false, reason: 'building-streak', streak: KIOSK_ATT_STATE.streakCount, needFrames, staff: matchedName };
     }
+    if (shouldEvalLiveness && !(lv && lv.ok)) {
+      KIOSK_ATT_STATE.streakCount = needFrames - 1;
+      KIOSK_ATT_STATE.statusText = faceTr('Verifying live presence...');
+      KIOSK_ATT_STATE.statusCls = 'ok';
+      return { ok: false, reason: 'awaiting-liveness', streak: KIOSK_ATT_STATE.streakCount, needFrames, staff: matchedName };
+    }
 
-    KIOSK_ATT_STATE.streakCount = 0;
-    KIOSK_ATT_STATE.streakStaff = '';
+    resetKioskAttAccumulators();
     const recentGuard = checkKioskRecentPunchGuard(matchedName, opts);
     // Only capture a new camera snapshot when recording a fresh punch (never on <5m repeat looks)
     if (!recentGuard && opts.videoEl && window.Face && window.Face.snapshot) {
@@ -138207,12 +138519,36 @@
           detScore: liveOpts.detScore != null ? liveOpts.detScore : 0.96,
           faceSizeFrac: liveOpts.faceSizeFrac != null ? liveOpts.faceSizeFrac : 0.26,
           ear: liveOpts.ear != null ? liveOpts.ear : null,
-          pose: liveOpts.pose || (liveOpts.yaw != null || liveOpts.parallax3d != null
-            ? { yaw: Number(liveOpts.yaw || 0), parallax3d: Number(liveOpts.parallax3d || 0), pitch: Number(liveOpts.pitch || 0) }
+          pose: liveOpts.pose || (liveOpts.yaw != null || liveOpts.parallax3d != null || liveOpts.parallaxPitch3d != null
+            ? { yaw: Number(liveOpts.yaw || 0), parallax3d: Number(liveOpts.parallax3d || 0), pitch: Number(liveOpts.pitch || 0), parallaxPitch3d: liveOpts.parallaxPitch3d != null ? Number(liveOpts.parallaxPitch3d) : undefined }
             : null),
           landmarks: liveOpts.landmarks || null,
-          multiple: false
+          box: liveOpts.box || null,
+          landmarkModel: liveOpts.landmarkModel || '',
+          padEyeBox: liveOpts.padEyeBox || null,
+          multiple: Boolean(liveOpts.multiple)
         }, '', { liveCamera: true, requireLiveness: true, videoEl: liveOpts.videoEl || undefined }),
+      evalEnrolLiveFrame: (vec, liveOpts = {}) => {
+        const enrolUser = enrolTargetUser();
+        if (!enrolUser) return null;
+        const det = vec ? {
+          descriptor: vec,
+          detScore: liveOpts.detScore != null ? liveOpts.detScore : 0.96,
+          faceSizeFrac: liveOpts.faceSizeFrac != null ? liveOpts.faceSizeFrac : 0.26,
+          ear: liveOpts.ear != null ? liveOpts.ear : null,
+          pose: liveOpts.pose || (liveOpts.yaw != null || liveOpts.parallax3d != null || liveOpts.parallaxPitch3d != null
+            ? { yaw: Number(liveOpts.yaw || 0), parallax3d: Number(liveOpts.parallax3d || 0), pitch: Number(liveOpts.pitch || 0), parallaxPitch3d: liveOpts.parallaxPitch3d != null ? Number(liveOpts.parallaxPitch3d) : undefined }
+            : null),
+          landmarks: liveOpts.landmarks || null,
+          box: liveOpts.box || null,
+          landmarkModel: liveOpts.landmarkModel || '',
+          padEyeBox: liveOpts.padEyeBox || null,
+          multiple: Boolean(liveOpts.multiple)
+        } : null;
+        const hudTel = $('enrolHudTelemetry');
+        const matchRes = evaluateEnrolLiveMatch(enrolUser, det, liveOpts.videoEl || $('enrolFaceVideo'), $('enrolFaceOverlay'), hudTel, $('enrolHudDot'));
+        return Object.assign({}, matchRes || {}, { hudText: hudTel ? hudTel.textContent : '' });
+      },
       setPending2faUser: email => {
         FACE_STATE.pending2faUser = email ? (STATE.users.find(x => norm(x.email) === norm(email)) || null) : null;
         return FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : null;
@@ -138386,6 +138722,12 @@
         score: opts.detScore != null ? Number(opts.detScore) : 0.96,
         detScore: opts.detScore != null ? Number(opts.detScore) : 0.96,
         faceSizeFrac: opts.faceSizeFrac != null ? Number(opts.faceSizeFrac) : 0.26,
+        ear: opts.ear != null ? opts.ear : undefined,
+        pose: opts.pose || undefined,
+        landmarks: opts.landmarks || undefined,
+        box: opts.box || undefined,
+        landmarkModel: opts.landmarkModel || undefined,
+        padEyeBox: opts.padEyeBox || undefined,
         multiple: false
       }, opts),
       getKioskAttCameraState: () => ({
@@ -138402,7 +138744,18 @@
         statusCls: KIOSK_ATT_STATE.statusCls
       }),
       triggerCameraWatchdogRestart: reason => scheduleKioskAttCameraWatchdogRestart(reason || 'manual-test'),
-      feedAdminFaceDescriptor: (vec, opts = {}) => handleKioskAdminFaceDescriptor({ descriptor: vec, detScore: 0.96, faceSizeFrac: 0.26, multiple: false }, opts),
+      feedAdminFaceDescriptor: (vec, opts = {}) => handleKioskAdminFaceDescriptor({
+        descriptor: vec,
+        detScore: opts.detScore != null ? Number(opts.detScore) : 0.96,
+        faceSizeFrac: opts.faceSizeFrac != null ? Number(opts.faceSizeFrac) : 0.26,
+        ear: opts.ear != null ? opts.ear : undefined,
+        pose: opts.pose || undefined,
+        landmarks: opts.landmarks || undefined,
+        box: opts.box || undefined,
+        landmarkModel: opts.landmarkModel || undefined,
+        padEyeBox: opts.padEyeBox || undefined,
+        multiple: false
+      }, opts),
       getDefaultAdminFaceDescriptor: () => {
         const pool = getKioskFacePoolWithAdminSeed();
         const hit = pool.find(p => p && isAuthorizedKioskAdminFace(p) && Array.isArray(p.samples) && p.samples.length && Array.isArray(p.samples[0]) && p.samples[0].length === 128);
