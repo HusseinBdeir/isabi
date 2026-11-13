@@ -3534,3 +3534,74 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
 .site-life-impact .site-life-err { color: #A4521A; font-weight: 600; }
 [data-theme="dark"] .site-life-impact .site-life-err { color: #FCD34D; }
 .site-life-impact .site-life-sep { opacity: 0.45; }
+
+/* Regions with No Shape (Map rail): the ticket pin boxes cannot check a pin in these Regions */
+.geo-shapeless {
+  border-bottom: 1px solid var(--line);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  flex: 0 1 auto;
+}
+.geo-shapeless-head {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(201, 106, 34, 0.38);
+  background: rgba(201, 106, 34, 0.08);
+  color: var(--ink);
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: start;
+}
+.geo-shapeless-head:hover { background: rgba(201, 106, 34, 0.14); }
+[data-theme="dark"] .geo-shapeless-head { background: rgba(201, 106, 34, 0.16); border-color: rgba(252, 211, 77, 0.35); }
+.geo-shapeless-ic { display: inline-flex; color: #C96A22; }
+[data-theme="dark"] .geo-shapeless-ic { color: #FCD34D; }
+.geo-shapeless-ic svg { width: 14px; height: 14px; }
+.geo-shapeless-title { flex: 1 1 auto; min-width: 0; }
+.geo-shapeless-note { font-size: 0.7rem; color: var(--ink-soft, var(--muted)); line-height: 1.35; }
+.geo-shapeless-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 210px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  min-height: 0;
+}
+.geo-shapeless-row {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.geo-shapeless-row.is-previewing { border-color: rgba(201, 106, 34, 0.6); background: rgba(201, 106, 34, 0.06); }
+[data-theme="dark"] .geo-shapeless-row.is-previewing { background: rgba(201, 106, 34, 0.14); }
+.geo-shapeless-name { font-size: 0.78rem; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+.geo-shapeless-meta { font-size: 0.7rem; color: var(--ink-soft, var(--muted)); display: flex; flex-wrap: wrap; gap: 2px 0; align-items: baseline; }
+.geo-shapeless-num { color: var(--ink); font-weight: 700; }
+.geo-shapeless-co { font-size: 0.66rem; opacity: 0.8; }
+.geo-shapeless-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.geo-shapeless-actions .geo-mini-btn { max-width: 100%; white-space: normal; text-align: start; }
+.geo-shapeless-actions .geo-mini-btn.active { border-color: #C96A22; box-shadow: inset 0 0 0 1px #C96A22; }
+.geo-shapeless-hint { font-size: 0.68rem; color: var(--muted); }
+.geo-shapeless-preview { border-top: 1px dashed var(--line); padding-top: 5px; display: flex; flex-direction: column; gap: 5px; }
+.geo-shapeless-preview-lines { display: flex; flex-direction: column; gap: 2px; font-size: 0.7rem; color: var(--ink-soft, var(--muted)); }
+.geo-shapeless-preview-lines .is-warn { color: #A4521A; }
+[data-theme="dark"] .geo-shapeless-preview-lines .is-warn { color: #FCD34D; }
+@media (max-width: 860px) {
+  .geo-shapeless-list { max-height: 260px; }
+  .geo-shapeless-actions .geo-mini-btn { min-height: 34px; }
+}

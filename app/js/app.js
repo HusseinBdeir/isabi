@@ -9163,6 +9163,10 @@
     u = u || activeUser();
     return !!getEffectivePermissions(u).rights.modify_data;
   }
+  // Map, Regions with No Shape: giving an existing Region a shape is a change to that record
+  window.MFG_CAN_SHAPE_REGIONS = u => canEnterForm('region', u) && canModifyData(u);
+  // Map: night trip pay per Region is a payroll rate, shown only to a seat that may read overtime_rates
+  window.MFG_CAN_SEE_NIGHT_RATES = u => canAccessTable('overtime_rates', u);
   function canModifyTextOnly(u) {
     u = u || activeUser();
     const r = getEffectivePermissions(u).rights;
@@ -82016,12 +82020,16 @@
     `;
   }
 
-  // Sales Ticket: when the Delivery site picked has no pin, one paste box under Site pins it while the order is
-  // taken (parseMapLink). The pin is saved to the site record; its Region is never changed here (the Region sets
-  // night trip pay): a site with no Region, or a point outside it, is left for Edit Site.
-  function renderTicketSitePinBarHtml() {
-    return `<div id="tktSitePinBar" class="tkt-site-pin-bar" hidden>
-      <label class="tkt-site-pin-lbl" for="tktSitePinPasteInp">${ic('pin')} <span>No pin on this site yet. Paste the customer's WhatsApp location or a map link.</span></label>
+  // Sales Ticket (Delivery site) and Raw Material Ticket (quarry / source site): when the site picked has no pin,
+  // one paste box under Site pins it while the ticket is taken (parseMapLink), so haulage km and fuel figures read
+  // a real distance. The pin is saved to the site record; its Region is never changed here (the Region sets night
+  // trip pay): a site with no Region, or a point outside it, is left for Edit Site.
+  function renderTicketSitePinBarHtml(side) {
+    const lbl = side === 'raw'
+      ? 'No pin on this quarry yet. Paste its WhatsApp location or a map link.'
+      : "No pin on this site yet. Paste the customer's WhatsApp location or a map link.";
+    return `<div id="tktSitePinBar" class="tkt-site-pin-bar" data-side="${side === 'raw' ? 'raw' : 'sales'}" hidden>
+      <label class="tkt-site-pin-lbl" for="tktSitePinPasteInp">${ic('pin')} <span>${lbl}</span></label>
       <div class="tkt-site-pin-row">
         <input type="text" id="tktSitePinPasteInp" autocomplete="off" spellcheck="false" inputmode="url" placeholder="Paste Map or WhatsApp Link">
         <button type="button" class="btn btn-ghost btn-sm" id="tktSitePinSaveBtn" hidden>${ic('pin')} <span>Save Pin</span></button>
@@ -82029,12 +82037,15 @@
       <div id="tktSitePinStatus" class="geo-link-status" role="status" aria-live="polite" hidden></div>
     </div>`;
   }
-  function _tktPinMfgSiteRow(name) {
+  function _tktPinMfgSiteRow(name, side) {
     const k = norm(name);
     if (!k) return null;
     const rows = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => s && !s.voided && norm(s.name) === k
       && !s._multiIndustrySeed && (!s._industry || s._industry === 'Manufacturing'));
-    // A delivery site and a quarry can share a name: the ticket's Destination Site is the customer one
+    // A delivery site and a quarry can share a name: a Sales Ticket's Destination Site is the customer one,
+    // a Raw Material Ticket's Site the quarry / source one
+    // (a name that is only a delivery site gets no quarry box)
+    if (side === 'raw') return rows.find(s => resolveSiteCategory(s) !== 'customer') || null;
     return rows.find(s => resolveSiteCategory(s) === 'customer') || rows[0] || null;
   }
   function _tktPinHasPin(row) {
@@ -82054,15 +82065,13 @@
     const region = String(row.region || '').trim();
     if (!region) return { action: 'refuse', code: 'no_region' };
     const G = window.MFG_GEO;
-    if (!G || typeof G.isPointInsideNamedRegion !== 'function' || typeof G.resolveRegionRecordOrAtlas !== 'function') {
+    if (!G || typeof G.isPointInsideNamedRegion !== 'function' || typeof G.regionHasShape !== 'function') {
       return { action: 'refuse', code: 'outside_region', region };
     }
     // Only a Region with a drawn shape (boundary, or a circle around a real centre) can be checked; one with no shape
-    // is kept as it is like any other, and the pin is saved (the Region, and so night trip pay, never changes here)
-    const regObj = G.resolveRegionRecordOrAtlas(region, SEED);
-    const regRow = regObj && regObj.row;
-    const hasShape = Boolean(regObj && (regObj.zone_geojson
-      || (regObj.zone_type === 'circle' && Number(regObj.radius_km) > 0 && (!regRow || (regRow.center_lat != null && regRow.center_lat !== '')))));
+    // is kept as it is like any other, and the pin is saved (the Region, and so night trip pay, never changes here).
+    // The Map lists those Regions (Regions with No Shape) so each can be given a shape once.
+    const hasShape = G.regionHasShape(region, SEED);
     if (hasShape && !G.isPointInsideNamedRegion(parsed.lat, parsed.lng, region, SEED)) {
       return { action: 'refuse', code: 'outside_region', region };
     }
@@ -82082,7 +82091,7 @@
     row.latitude = nLat;
     row.longitude = nLng;
     // Same write as Edit Site, with the site's own Region passed explicitly so it is kept as it is
-    G.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category, name: row.name, lat: nLat, lng: nLng, region }, { SEED, STATE, userEmail: activeUser().email });
+    G.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category || resolveSiteCategory(row), name: row.name, lat: nLat, lng: nLng, region }, { SEED, STATE, userEmail: activeUser().email });
     if (String(row.region || '').trim() !== region) row.region = region;
     // Stamped after persistLocationPin, which writes its own stamps on the same row
     row.modified_by = activeUser().email;
@@ -82099,15 +82108,17 @@
     }
     return true;
   }
-  window.MFG_TKT_SITE_PIN = { decide: decideTicketSitePin, canPin: canPinSiteFromTicket, siteRow: _tktPinMfgSiteRow };
-  function syncTicketSitePinBar(company, site, isDelivery) {
+  window.MFG_TKT_SITE_PIN = { decide: decideTicketSitePin, canPin: canPinSiteFromTicket, siteRow: (name, side) => _tktPinMfgSiteRow(name, side) };
+  // show: a Delivery Sales Ticket, or a standard Raw Material Ticket; side: 'sales' | 'raw' (which site row is meant)
+  function syncTicketSitePinBar(company, site, show) {
     const bar = $('tktSitePinBar');
     if (!bar) return;
+    const side = bar.dataset.side === 'raw' ? 'raw' : 'sales';
     const inp = $('tktSitePinPasteInp');
     const statusEl = $('tktSitePinStatus');
     const saveBtn = $('tktSitePinSaveBtn');
     const siteKey = norm(site);
-    const row = (isDelivery && siteKey) ? _tktPinMfgSiteRow(site) : null;
+    const row = (show && siteKey) ? _tktPinMfgSiteRow(site, side) : null;
     if (bar.dataset.site !== siteKey) {
       // Another site: start clean
       bar.dataset.site = siteKey;
@@ -82131,7 +82142,7 @@
     };
     const vb = x => `<b class="geo-link-val" dir="auto" data-no-i18n="1">${esc(x)}</b>`;
     const doSave = () => {
-      const cur = _tktPinMfgSiteRow(val('f_site'));
+      const cur = _tktPinMfgSiteRow(val('f_site'), side);
       if (!pending || !cur || norm(cur.name) !== pending.siteKey) return;
       const p = pending;
       pending = null;
@@ -82154,7 +82165,7 @@
       if (saveBtn) saveBtn.hidden = true;
       if (!raw.trim()) { setStatus('', ''); inp.removeAttribute('aria-invalid'); return; }
       const G = window.MFG_GEO;
-      const cur = _tktPinMfgSiteRow(val('f_site'));
+      const cur = _tktPinMfgSiteRow(val('f_site'), side);
       if (!G || !cur || typeof G.parseMapLink !== 'function') return;
       const co = bar.dataset.company || val('f_company') || 'WTC';
       const hub = typeof G.getCompanyHub === 'function' ? G.getCompanyHub(co, SEED) : null;
@@ -82707,7 +82718,7 @@
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', customerNames()), { id: 'wrap_f_customer', hintId: 'hint_customer', hint: '' })}
           ${renderTicketDispositionBarHtml('sales')}
           ${renderOriginDispatchBarHtml(company, 'sales')}
-          ${fld('Destination Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', activeDeliverySiteMetaItems(company, today, '', '')), { id: 'wrap_f_site', hidden: true, hintId: 'hint_site', hint: '', afterHtml: renderTicketSitePinBarHtml() })}
+          ${fld('Destination Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', activeDeliverySiteMetaItems(company, today, '', '')), { id: 'wrap_f_site', hidden: true, hintId: 'hint_site', hint: '', afterHtml: renderTicketSitePinBarHtml('sales') })}
           ${fld('Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type truck..."') + dl('dl_equip', truckNames()), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
           ${fld('Truck Owner (Hauler) *', inp('f_truckowner', 'text', '', 'list="dl_truckowners" placeholder="Auto-filled from Truck..."') + dl('dl_truckowners', truckOwnerNames()), { id: 'wrap_f_truckowner', lockField: 'f_truckowner', lockReason: 'Auto-populated from the selected Truck; auto-unlocks if truck has no registered owner', hintId: 'hint_truckowner', hint: '' })}
           ${fld('Driver *', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Pick Truck first..." readonly') + dl('dl_drivers', []), { id: 'wrap_f_driver', hidden: true, lockField: 'f_driver', lockReason: 'Locked to the active driver in the Equipment Log — update Equipment Log if absent or changed', hintId: 'hint_driver', hint: '' })}
@@ -82792,7 +82803,7 @@
           ${renderOriginDispatchBarHtml(effRawCo, 'raw')}
           <input type="hidden" id="f_raw_bundled" value="${(pendRawEditRow && isBundledRawTicket(pendRawEditRow)) ? '1' : '0'}">
           <div id="rawBundledModeBanner" class="form-field span-3 quarry-landed-callout" hidden></div>
-          ${fld('Site *', inp('f_site', 'text', pendRawEditRow ? (pendRawEditRow.site || '') : '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', siteMetaItems('raw')), { id: 'wrap_f_site', ...(pendRawEditRow ? { lockField: 'f_site', lockReason: 'Locked while entering final supplier invoice price' } : {}), hintId: 'hint_site', hint: '' })}
+          ${fld('Site *', inp('f_site', 'text', pendRawEditRow ? (pendRawEditRow.site || '') : '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', siteMetaItems('raw')), { id: 'wrap_f_site', ...(pendRawEditRow ? { lockField: 'f_site', lockReason: 'Locked while entering final supplier invoice price' } : { afterHtml: renderTicketSitePinBarHtml('raw') }), hintId: 'hint_site', hint: '' })}
           ${fld('Site Region *', inp('f_site_region', 'text', '', 'list="dl_raw_site_regions" placeholder="Select region to enable haulage..."') + dl('dl_raw_site_regions', regionNames()), { id: 'wrap_f_site_region', hidden: true, hintId: 'hint_raw_site_region', hint: 'Region and Site must both be specified when adding transportation in our trucks or associated 3rd-party haulers.' })}
           ${fld('Site Owner (Material Payee)', inp('f_siteowner', 'text', pendRawEditRow ? (pendRawEditRow.site_owner || '') : '', 'list="dl_suppliers" placeholder="Select or type site owner..."') + dl('dl_suppliers', supplierNames('raw_owner')), { id: 'wrap_f_siteowner', lockField: 'f_siteowner', lockReason: 'Locked to the Site default supplier when configured', hintId: 'hint_owner', hint: '' })}
           ${fld('Truck *', inp('f_truck', 'text', pendRawEditRow ? (pendRawEditRow.truck || '') : '', 'list="dl_equip" placeholder="Select or type truck..."') + dl('dl_equip', truckNames()), { id: 'wrap_f_truck', ...(pendRawEditRow ? { lockField: 'f_truck', lockReason: 'Locked while entering final supplier invoice price' } : {}), hintId: 'hint_truck', hint: '' })}
@@ -86793,6 +86804,8 @@
         ? `Region ${enteredSiteReg} will be saved onto ${site} to enable haulage tracking.`
         : 'Region and Site must both be specified when adding transportation in our trucks or associated 3rd-party haulers.', enteredSiteReg ? 'ok' : 'warn');
     }
+    // Quarry with no pin: the same paste box as the Sales Ticket (haulage km and fuel figures then read a real distance)
+    syncTicketSitePinBar(company, site, !pendRawEditRowEarly && FORM_UI.ticketDisposition === 'standard');
 
     const wrapTruckLbl = document.querySelector('#wrap_f_truck .pa-fld-lbl');
     if (wrapTruckLbl) wrapTruckLbl.textContent = isSuppDeliv ? 'Truck (Optional · Supplier Plate)' : 'Truck *';

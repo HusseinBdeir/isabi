@@ -1576,6 +1576,202 @@
     return k.length >= 3 && getTownKeySet().has(k);
   }
 
+  // A Region that a pin can be checked against: a drawn boundary or polygon, or a circle around a real centre.
+  // The ticket pin boxes (MFG_TKT_SITE_PIN.decide) save any pin on a Region without one, so the Map lists those.
+  function regionHasShape(regionName, SEED, explicitInd) {
+    const o = resolveRegionRecordOrAtlas(regionName, SEED, explicitInd);
+    if (!o) return false;
+    const row = o.row;
+    return Boolean(o.zone_geojson
+      || (o.zone_type === 'circle' && Number(o.radius_km) > 0 && (!row || (row.center_lat != null && row.center_lat !== ''))));
+  }
+
+  // Ready shapes stay town-sized (under the 180 km² line findContainingRegion ranks by): a district-sized shape on a
+  // small Region would make it the Region of every later pin in that district
+  const SHAPE_FIT_MIN_KM = 1.5;
+  const SHAPE_FIT_MAX_KM = 6;
+  const SHAPE_READY_MAX_KM2 = 180;
+  let _shapelessCache = { key: '', list: null };
+  const _geoTodayIso = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const _hasSitePin = s => Boolean(s && s.latitude != null && s.latitude !== '' && s.longitude != null && s.longitude !== ''
+    && Number.isFinite(Number(s.latitude)) && Number.isFinite(Number(s.longitude)));
+
+  // Regions with no shape in the active industry, most-used first (loads at their sites, then sites), each with
+  // its sites, pins, night trip rates in force today and up to two ready shapes: the smallest map boundary that
+  // holds every pinned site (or the boundary of the same name, or of the place the name points to), and a circle
+  // around the pinned sites. Read-only; nothing is saved here.
+  function getShapelessRegions(SEED, STATE, explicitInd) {
+    const ind = explicitInd || getGeoActiveIndustry();
+    if (!SEED || !SEED.records) return [];
+    hydrateSeedGeo(SEED);
+    const rec = SEED.records;
+    const stats = getUnifiedSiteStats(SEED, STATE);
+    const today = _geoTodayIso();
+    const key = `${ind}|${SEED._geoHydratedStamp || ''}|${stats.rev || ''}|${today}|${(rec.overtime_rates || []).length}|${SEED._customRev || 0}`;
+    if (_shapelessCache.key === key && _shapelessCache.list) return _shapelessCache.list;
+    const isMfg = ind === 'Manufacturing';
+    const regions = (rec.regions || []).filter(r => isRowInGeoIndustry(r, ind) && String(r.name || '').trim());
+    const recNames = new Set(regions.map(r => norm(r.name)));
+    const sitesByReg = new Map();
+    (rec.sites || []).forEach(s => {
+      if (!isRowInGeoIndustry(s, ind) || !s.name) return;
+      const rk = norm(s.region || s.geo_zone);
+      if (!rk) return;
+      if (!sitesByReg.has(rk)) sitesByReg.set(rk, new Map());
+      const byName = sitesByReg.get(rk);
+      const sk = norm(s.name);
+      // One entry per site name (a quarry and a delivery site can share one); a pinned row wins
+      if (!byName.has(sk) || (!_hasSitePin(byName.get(sk)) && _hasSitePin(s))) byName.set(sk, s);
+    });
+    const nightByReg = new Map();
+    if (isMfg) {
+      (rec.overtime_rates || []).forEach(o => {
+        if (!o || o.voided || !o.region) return;
+        const amt = Number(o.amount != null ? o.amount : o.usd_amount || 0);
+        const st = String(o.start_date || '2020-01-01').slice(0, 10);
+        const en = String(o.end_date || '2035-12-31').slice(0, 10);
+        if (!(amt > 0) || st > today || en < today) return;
+        const rk = norm(o.region);
+        if (!nightByReg.has(rk)) nightByReg.set(rk, new Map());
+        const co = String(o.company || 'WTC').trim() || 'WTC';
+        const coK = norm(co);
+        const m = nightByReg.get(rk);
+        // Same rule as payroll (resolveSiteTripRate): every rate in force today for the Region and company adds up
+        if (!m.has(coK)) m.set(coK, { company: co, rate: 0 });
+        m.get(coK).rate = round2(m.get(coK).rate + amt);
+      });
+    }
+    const atlas = getFullBoundaryAtlas().filter(a => a && a.geojson && !/governorate/i.test(String(a.kind || '')));
+    const atlasUsable = a => {
+      // A boundary that is already another Region's own name is that Region's shape: never offered twice
+      if (recNames.has(norm(a.name))) return false;
+      return !(Array.isArray(a.aliases) && a.aliases.some(x => recNames.has(norm(x))));
+    };
+    const smallestHolding = pts => {
+      let best = null;
+      atlas.forEach(a => {
+        if (!atlasUsable(a)) return;
+        const gj = parseZoneGeoJson(a.geojson);
+        if (!gj || !pts.every(p => pointInGeoJson(p[0], p[1], gj))) return;
+        const area = regionAreaKm2(atlasItemAsRegion(a));
+        if (!(area > 0) || area >= SHAPE_READY_MAX_KM2 || /district/i.test(String(a.kind || ''))) return;
+        if (!best || area < best.area) best = { a, area };
+      });
+      return best;
+    };
+    const seen = new Set();
+    const out = [];
+    regions.forEach(r => {
+      const rk = norm(r.name);
+      if (seen.has(rk)) return;
+      seen.add(rk);
+      if (regionHasShape(r.name, SEED, ind)) return;
+      const members = Array.from((sitesByReg.get(rk) || new Map()).values());
+      const pinned = members.filter(_hasSitePin);
+      const pts = pinned.map(s => [Number(s.latitude), Number(s.longitude)]);
+      const loads = members.reduce((acc, s) => acc + Number(((stats.byNorm && stats.byNorm.get(norm(s.name))) || {}).total || 0), 0);
+      let boundary = null;
+      // No SEED: the per-boundary site count (enrichAtlasItem) is not needed here
+      const byName = findAtlasRegionByName(r.name);
+      const pick = (a, how, area) => ({
+        name: a.name, kind: String(a.kind || ''), how, areaKm2: round1(area != null ? area : regionAreaKm2(atlasItemAsRegion(a))),
+        lat: Number(a.lat), lng: Number(a.lng), geojson: a.geojson, corridor: a.corridor || '', code: a.code || ''
+      });
+      if (byName && byName.geojson && !/governorate/i.test(String(byName.kind || ''))) {
+        boundary = pick(byName, 'name');
+      } else if (pts.length) {
+        const hit = smallestHolding(pts);
+        if (hit) boundary = pick(hit.a, 'sites', hit.area);
+      } else {
+        const pl = resolvePlaceLocation(r.name, SEED);
+        if (pl && Number.isFinite(pl.lat) && Number.isFinite(pl.lng)) {
+          const hit = smallestHolding([[pl.lat, pl.lng]]);
+          if (hit) boundary = pick(hit.a, 'place', hit.area);
+        }
+      }
+      let circle = null;
+      if (pts.length) {
+        const cLat = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+        const cLng = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+        const far = pts.reduce((m, p) => Math.max(m, haversineKm(cLat, cLng, p[0], p[1])), 0);
+        const radius = Math.min(SHAPE_FIT_MAX_KM, Math.max(SHAPE_FIT_MIN_KM, round1(far * 1.2 + 0.5)));
+        circle = { center_lat: round5(cLat), center_lng: round5(cLng), radius_km: radius };
+      }
+      const nm = nightByReg.get(rk);
+      out.push({
+        id: r.id || '',
+        name: r.name,
+        sites: members.length,
+        pinned: pinned.length,
+        loads,
+        nightRates: nm ? Array.from(nm.values()).map(x => ({ company: x.company, rate: x.rate })).sort((a, b) => b.rate - a.rate) : [],
+        boundary,
+        circle
+      });
+    });
+    out.sort((a, b) => (b.loads - a.loads) || (b.sites - a.sites) || (b.pinned - a.pinned));
+    _shapelessCache = { key, list: out };
+    return out;
+  }
+
+  // What a ready shape would hold before it is saved: the Region's own pinned sites inside it; pinned sites of other
+  // Regions inside it whose working Region stays; and pinned sites with no saved Region whose working Region (the one
+  // the map fills in, region || geo_zone, which tickets and night trip pay read) becomes this Region once it has a
+  // shape. That last count is worked out by trying the shape on the Region record in memory and putting it back.
+  function getShapePreviewStats(regionName, spec, SEED, explicitInd) {
+    const ind = explicitInd || getGeoActiveIndustry();
+    const synth = {
+      zone_type: spec.zone_type,
+      center_lat: spec.center_lat,
+      center_lng: spec.center_lng,
+      radius_km: spec.radius_km || 0,
+      zone_geojson: spec.zone_geojson || null
+    };
+    const rk = norm(regionName);
+    const res = { ownIn: 0, ownPinned: 0, otherIn: 0, blankIn: 0, blankSites: [] };
+    const recs = (SEED && SEED.records) || {};
+    const regRow = (recs.regions || []).find(r => isRowInGeoIndustry(r, ind) && norm(r.name) === rk);
+    const sites = (recs.sites || []).filter(s => isRowInGeoIndustry(s, ind) && s.name && _hasSitePin(s));
+    // Sites with no saved Region and no fixed map Region: the map fills theirs from the Region records holding the pin
+    const filled = sites.filter(s => !String(s.region || '').trim()
+      && !(BASELINE_SITE_PINS[norm(s.name)] && BASELINE_SITE_PINS[norm(s.name)].region && ind === 'Manufacturing' && !s._multiIndustrySeed));
+    const before = new Map(filled.map(s => [s, findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, ind, { recordsOnly: true }).best || '']));
+    const after = new Map();
+    if (regRow) {
+      const keys = ['zone_type', 'center_lat', 'center_lng', 'radius_km', 'zone_geojson'];
+      const saved = {};
+      keys.forEach(k => { saved[k] = regRow[k]; });
+      try {
+        keys.forEach(k => { regRow[k] = synth[k]; });
+        filled.forEach(s => after.set(s, findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, ind, { recordsOnly: true }).best || ''));
+      } finally {
+        keys.forEach(k => { regRow[k] = saved[k]; });
+      }
+    }
+    const takes = new Set(filled.filter(s => after.has(s) && norm(after.get(s)) === rk && norm(before.get(s)) !== rk));
+    const seenSites = new Set();
+    sites.forEach(s => {
+      const sk = norm(s.name) + '|' + resolveGeoSiteCat(s);
+      if (seenSites.has(sk)) return;
+      seenSites.add(sk);
+      const sReg = norm(s.region || s.geo_zone);
+      const inside = isPointInRegion(Number(s.latitude), Number(s.longitude), synth);
+      if (sReg === rk) {
+        res.ownPinned++;
+        if (inside) res.ownIn++;
+      } else if (takes.has(s)) {
+        res.blankIn++;
+        res.blankSites.push(s.name);
+      } else if (inside) {
+        res.otherIn++;
+      }
+    });
+    return res;
+  }
+
   function isPointInsideNamedRegion(lat, lng, regionName, SEED) {
     if (lat == null || lng == null || !regionName) return true;
     const nLat = Number(lat), nLng = Number(lng);
@@ -1795,6 +1991,39 @@
     return 'supplier';
   }
 
+  // Site pins in the geo store: `<pfx><cat>:<name>` is the pin of that category's row; the plain `<pfx><name>` key
+  // carries no category in its key. When a quarry and a delivery site share a name (twins), a row reads only its own
+  // category's pin, so pinning one never moves the other's pin or Region (night trip pay).
+  function buildSiteCatsByName(sites) {
+    const m = new Map();
+    (sites || []).forEach(s => {
+      if (!s || s.voided || !s.name) return;
+      const k = geoIndStorePrefix(s._industry || 'Manufacturing') + norm(s.name);
+      if (!m.has(k)) m.set(k, new Set());
+      m.get(k).add(resolveGeoSiteCat(s));
+    });
+    return m;
+  }
+  function siteHasTwin(catsByName, s) {
+    const set = catsByName.get(geoIndStorePrefix(s._industry || 'Manufacturing') + norm(s.name));
+    return Boolean(set && set.size > 1);
+  }
+  const _storeCat = c => {
+    const v = String(c || '').trim().toLowerCase();
+    return (v === 'customer' || v === 'delivery' || v === 'sales') ? 'customer' : ((v === 'supplier' || v === 'quarry' || v === 'raw') ? 'supplier' : '');
+  };
+  function siteStoreEntryFor(pfx, nk, cat, hasTwin, noOtherCat) {
+    const own = GEO_STORE.sites[`${pfx}${cat}:${nk}`];
+    if (own) return own;
+    const plain = GEO_STORE.sites[pfx + nk];
+    // A plain entry written for the other twin is that twin's pin (with no twin it is this site's, recategorised or
+    // not; an old entry with no category is read as before)
+    const plainCat = plain ? _storeCat(plain.site_category) : '';
+    if (plain && (!hasTwin || !plainCat || plainCat === cat)) return plain;
+    if (hasTwin || noOtherCat) return null;
+    return GEO_STORE.sites[`${pfx}${cat === 'customer' ? 'supplier' : 'customer'}:${nk}`] || null;
+  }
+
   function hydrateSeedGeo(SEED, force = false) {
     if (!SEED || !SEED.records) return;
     const regions = SEED.records.regions || [];
@@ -1845,13 +2074,15 @@
     // 2. Hydrate Sites with baseline pins + user overrides + automatic zone containment
     //    (Preserve historical SharePoint s.region on non-app seed rows so closed-month Driver OT parity stays $0.00;
     //     expose spatial zone membership via s.geo_zone across Map Studio, site search hints, and KM estimation.)
+    const siteCatsByName = buildSiteCatsByName(sites);
     sites.forEach(s => {
       if (!s || !s.name) return;
       const nk = norm(s.name);
       const sInd = s._industry || 'Manufacturing';
       const sIsMfg = sInd === 'Manufacturing' && !s._multiIndustrySeed;
       const pfx = geoIndStorePrefix(sInd);
-      const ov = GEO_STORE.sites[pfx + nk] || GEO_STORE.sites[`${pfx}supplier:${nk}`] || GEO_STORE.sites[`${pfx}customer:${nk}`];
+      // A quarry and a delivery site can share a name: each reads only its own pin (and the Region saved with it)
+      const ov = siteStoreEntryFor(pfx, nk, resolveGeoSiteCat(s), siteHasTwin(siteCatsByName, s));
       const basePin = sIsMfg ? BASELINE_SITE_PINS[nk] : null;
       let geoZone = s.region || '';
       if (basePin && !s._pinCleared) {
@@ -1947,7 +2178,7 @@
     const rowCat = sRow ? resolveGeoSiteCat(sRow) : (prefCat || 'supplier');
     const pfx = geoIndStorePrefix(activeInd);
     const pinCleared = Boolean(sRow && sRow._pinCleared);
-    const ov = !pinCleared ? (GEO_STORE.sites[`${pfx}${rowCat}:${nk}`] || GEO_STORE.sites[pfx + nk]) : null;
+    const ov = !pinCleared ? siteStoreEntryFor(pfx, nk, rowCat, sites.some(s => norm(s.name) === nk && resolveGeoSiteCat(s) !== rowCat), true) : null;
     const basePin = (isMfg && !pinCleared) ? BASELINE_SITE_PINS[nk] : null;
     const lat = ov && ov.latitude != null ? Number(ov.latitude) : (sRow && sRow.latitude != null && sRow.latitude !== '' ? Number(sRow.latitude) : (basePin ? basePin.lat : null));
     const lng = ov && ov.longitude != null ? Number(ov.longitude) : (sRow && sRow.longitude != null && sRow.longitude !== '' ? Number(sRow.longitude) : (basePin ? basePin.lng : null));
@@ -2873,6 +3104,8 @@
     distFrom: 'bu:WTC',
     distTo: 'site:Choueifat',
     drawRegionName: '',
+    shapelessOpen: false,
+    shapePreview: null,
     searchDraft: null,    // { name, code, corridor, geojson, lat, lng, wtcKm }
     circleCenter: null,   // { lat, lng }
     circleRadiusKm: 1.5,
@@ -2992,6 +3225,101 @@
     `;
   }
 
+  const canSeeNightRatesNow = () => {
+    try {
+      return typeof window !== 'undefined' && typeof window.MFG_CAN_SEE_NIGHT_RATES === 'function' && window.MFG_CAN_SEE_NIGHT_RATES() === true;
+    } catch (_) {
+      return false;
+    }
+  };
+  const canShapeRegionsNow = () => {
+    try {
+      return typeof window !== 'undefined' && typeof window.MFG_CAN_SHAPE_REGIONS === 'function' && window.MFG_CAN_SHAPE_REGIONS() === true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  // Regions with No Shape (rail panel): the pin boxes on Sales and Raw Material Tickets cannot check a pin in these
+  // Regions, so each is listed with what rides on it and a way to give it a shape once. Saving a ready shape keeps
+  // every site's Region as it is (persistRegionZone keepSiteRegions).
+  function renderShapelessPanelHtml(list, SEED, activeInd, canShape) {
+    if (!list || !list.length) return '';
+    const open = STUDIO.shapelessOpen === true;
+    const prev = STUDIO.shapePreview;
+    const num = v => `<b class="geo-shapeless-num" data-no-i18n="1">${esc(v)}</b>`;
+    const chev = `<svg class="geo-exp-chev" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${open ? 'M2.5 7.5L6 4l3.5 3.5' : 'M2.5 4.5L6 8l3.5-3.5'}"/></svg>`;
+    const rows = !open ? '' : list.map(e => {
+      const isPrev = Boolean(prev && norm(prev.region) === norm(e.name));
+      const meta = [
+        `<span>${num(e.sites.toLocaleString('en-US'))} <span>${e.sites === 1 ? 'Site' : 'Sites'}</span></span>`,
+        `<span>${num(e.loads.toLocaleString('en-US'))} <span>${e.loads === 1 ? 'Load' : 'Loads'}</span></span>`,
+        `<span>${num(e.pinned.toLocaleString('en-US'))} <span>With a Pin</span></span>`
+      ];
+      if (e.nightRates.length && canSeeNightRatesNow()) {
+        meta.push(`<span><span>Night Trip Pay</span> ${e.nightRates.map(n => `${num('$' + round2(n.rate))}${e.nightRates.length > 1 ? ` <span class="geo-shapeless-co" data-no-i18n="1">${esc(n.company)}</span>` : ''}`).join(' ')}</span>`);
+      }
+      let actions = '';
+      if (canShape) {
+        const btns = [];
+        if (e.boundary) {
+          btns.push(`<button type="button" class="geo-mini-btn${isPrev && prev.kind === 'boundary' ? ' active' : ''}" data-geo-shapeless-fit="boundary" data-geo-shapeless-region="${esc(e.name)}" data-ui-tip="${esc(`${e.boundary.name} · ~${e.boundary.areaKm2} km²`)}"><span>Use Boundary</span> <b data-no-i18n="1">${esc(e.boundary.name)}</b></button>`);
+        }
+        if (e.circle) {
+          btns.push(`<button type="button" class="geo-mini-btn${isPrev && prev.kind === 'circle' ? ' active' : ''}" data-geo-shapeless-fit="circle" data-geo-shapeless-region="${esc(e.name)}"><span>Circle Around Sites</span> <b data-no-i18n="1">${esc(round1(e.circle.radius_km))} km</b></button>`);
+        }
+        if (e.id) btns.push(`<button type="button" class="geo-mini-btn" data-geo-shapeless-draw="${esc(e.id)}">Draw</button>`);
+        actions = `<div class="geo-shapeless-actions">${btns.join('')}</div>`;
+        if (!e.boundary && !e.circle) {
+          actions += `<div class="geo-shapeless-hint">No ready shape yet. Pin one of its sites, or draw it.</div>`;
+        }
+      }
+      let previewHtml = '';
+      if (isPrev && canShape && prev.spec) {
+        const st = getShapePreviewStats(e.name, prev.spec, SEED, activeInd);
+        const lines = [
+          `<span>${num(`${st.ownIn} / ${st.ownPinned}`)} <span>of its pinned sites inside</span></span>`
+        ];
+        if (st.otherIn) lines.push(`<span>${num(st.otherIn)} <span>sites of other Regions inside, their Region is kept</span></span>`);
+        if (st.blankIn) {
+          lines.push(`<span class="is-warn" data-ui-tip="${esc(st.blankSites.slice(0, 12).join(', '))}">${num(st.blankIn)} <span>sites with no Region inside will take this Region</span></span>`);
+        }
+        // A shape that holds none of the Region's own pinned sites is the wrong place: it cannot be saved from here
+        const misses = st.ownPinned > 0 && st.ownIn === 0;
+        if (misses) lines.push(`<span class="is-warn"><span>It holds none of its pinned sites. Draw it instead.</span></span>`);
+        previewHtml = `
+          <div class="geo-shapeless-preview" id="geoShapelessPreview" role="status" aria-live="polite">
+            <div class="geo-shapeless-preview-lines">${lines.join('')}</div>
+            <div class="geo-shapeless-actions">
+              <button type="button" class="geo-mini-btn primary" id="geoShapelessSaveBtn"${misses ? ' disabled aria-disabled="true"' : ''}>Save Shape</button>
+              <button type="button" class="geo-mini-btn" id="geoShapelessCancelBtn">Cancel</button>
+            </div>
+          </div>`;
+      }
+      return `
+        <div class="geo-shapeless-row${isPrev ? ' is-previewing' : ''}" data-geo-shapeless-row="${esc(e.name)}">
+          <div class="geo-shapeless-row-top">
+            <span class="geo-shapeless-name" data-no-i18n="1">${esc(e.name)}</span>
+          </div>
+          <div class="geo-shapeless-meta">${meta.join('<span class="geo-link-sep" aria-hidden="true"> · </span>')}</div>
+          ${actions}
+          ${previewHtml}
+        </div>`;
+    }).join('');
+    return `
+      <div class="geo-shapeless${open ? ' is-open' : ''}" id="geoShapelessPanel">
+        <button type="button" class="geo-shapeless-head" id="geoShapelessToggle" aria-expanded="${open ? 'true' : 'false'}" aria-controls="geoShapelessList">
+          <span class="geo-shapeless-ic" aria-hidden="true">${ic('warn')}</span>
+          <span class="geo-shapeless-title"><span>Regions with No Shape</span> ${num(list.length)}</span>
+          ${chev}
+        </button>
+        ${open ? `
+          <div class="geo-shapeless-note">A pin in these Regions cannot be checked. Give each one a shape once.</div>
+          <div class="geo-shapeless-list" id="geoShapelessList">${rows}</div>
+        ` : ''}
+      </div>`;
+  }
+
   function renderGeoStudioHtml(ctx) {
     const SEED = ctx.SEED;
     const STATE = ctx.STATE;
@@ -3012,6 +3340,7 @@
         STUDIO.pasteRaw = '';
         STUDIO.pasteHit = null;
         STUDIO._focusPasteLatLng = null;
+        STUDIO.shapePreview = null;
       }
     }
     STUDIO._lastHostKey = hostKey;
@@ -3065,7 +3394,9 @@
     });
 
     const otByReg = new Map();
-    if (isMfg) {
+    const canSeeOt = canSeeNightRatesNow();
+    // Night trip pay is a payroll rate: only a seat that may read overtime_rates sees it on the Map
+    if (isMfg && canSeeOt) {
       ((SEED && SEED.records && SEED.records.overtime_rates) || []).forEach(o => {
         if (o && !o.voided && o.region && Number(o.amount) > 0) {
           const rk = norm(o.region);
@@ -3212,12 +3543,18 @@
     const unassMatched = (q && !'unassigned'.includes(q)) ? unassignedSites.filter(s => norm(s.name).includes(q)) : unassignedSites;
     const showUnassSub = (isUnassignedAct || Boolean(q && unassMatched.length > 0)) && unassMatched.length > 0;
     const selRegMemberSites = selRegObj ? (sitesByRegList.get(norm(selRegObj.name)) || []) : [];
-    const selRegOt = (isMfg && selRegObj) ? (otByReg.get(norm(selRegObj.name)) || selRegObj.driver_ot_rate || null) : null;
+    const selRegOt = (isMfg && canSeeOt && selRegObj) ? (otByReg.get(norm(selRegObj.name)) || selRegObj.driver_ot_rate || null) : null;
     const scopedTruckCnt = (isMfg && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getScopedUnits === 'function')
       ? window.MFG_TELEMATICS.getScopedUnits().length
       : 0;
     if ((!isMfg && STUDIO.pinFilter !== 'all') || (STUDIO.pinFilter === 'trucks' && scopedTruckCnt === 0)) {
       STUDIO.pinFilter = 'all';
+    }
+    const shapelessList = STUDIO.collapsed ? [] : getShapelessRegions(SEED, STATE, activeInd);
+    const canShapeRegions = canShapeRegionsNow();
+    if (STUDIO.shapePreview && (!canShapeRegions || STUDIO.mode !== 'view'
+      || !shapelessList.some(e => norm(e.name) === norm(STUDIO.shapePreview.region)))) {
+      STUDIO.shapePreview = null;
     }
 
     return `
@@ -3258,6 +3595,7 @@
                 <input type="search" class="geo-rail-search" id="geoRegionSearch" value="${esc(STUDIO.regionSearch)}" placeholder="Search regions or sites...">
                 ${renderStudioMapLinkBoxHtml(SEED, activeInd, ctx.canAddSite === true)}
               </div>
+              ${renderShapelessPanelHtml(shapelessList, SEED, activeInd, canShapeRegions)}
               <div class="geo-regions-list" id="geoRegionsList">
                 <button type="button" class="geo-reg-card${!STUDIO.selectedRegion ? ' active' : ''}" data-geo-region="">
                   <div class="geo-reg-card-top">
@@ -3277,7 +3615,7 @@
                   const matchedSites = (q && !rk.includes(q)) ? memberSites.filter(s => norm(s.name).includes(q)) : memberSites;
                   const showSublist = (isAct || Boolean(q && matchedSites.length > 0)) && matchedSites.length > 0;
                   const buHits = busByReg.get(rk) || [];
-                  const otRate = isMfg ? (otByReg.get(rk) || r.driver_ot_rate || null) : null;
+                  const otRate = (isMfg && canSeeOt) ? (otByReg.get(rk) || r.driver_ot_rate || null) : null;
                   const isCirc = r.zone_type === 'circle' && Number(r.radius_km) > 0;
                   const isBnd = r.zone_type === 'boundary' && Boolean(r.zone_geojson);
                   const isPoly = Boolean(r.zone_geojson) && !isBnd;
@@ -3752,6 +4090,19 @@
       }).addTo(lg);
     }
 
+    // Regions with No Shape: the ready shape being looked at before Save Shape (nothing is saved yet)
+    const shp = STUDIO.shapePreview;
+    if (shp && shp.spec && STUDIO.mode === 'view') {
+      const prevStyle = { color: '#C96A22', fillColor: '#C96A22', fillOpacity: 0.16, weight: 2.5, dashArray: '6, 5', interactive: false };
+      let pLayer = null;
+      if (shp.spec.zone_type === 'circle' && shp.spec.center_lat != null && Number(shp.spec.radius_km) > 0) {
+        pLayer = L.circle([Number(shp.spec.center_lat), Number(shp.spec.center_lng)], Object.assign({ radius: Number(shp.spec.radius_km) * 1000 }, prevStyle)).addTo(lg);
+      } else if (shp.spec.zone_geojson) {
+        pLayer = L.geoJSON(shp.spec.zone_geojson, { style: prevStyle, interactive: false }).addTo(lg);
+      }
+      if (pLayer) { try { focusBounds = pLayer.getBounds(); } catch (_) {} }
+    }
+
     if (STUDIO.pasteHit && STUDIO.pasteHit.ok) {
       L.marker([STUDIO.pasteHit.lat, STUDIO.pasteHit.lng], {
         icon: makeSvgPinIcon(L, '#C0892F', 'Pasted Location', false),
@@ -3867,6 +4218,9 @@
       if (!isRowInGeoIndustry(s, activeInd) || s.latitude == null || s.longitude == null) return;
       if (isPointInRegion(Number(s.latitude), Number(s.longitude), row)) {
         insideCount++;
+        // A ready shape saved from Regions with No Shape moves no site that has a Region to another one (night trip
+        // pay); sites with no saved Region inside it take it when the map is applied, and its preview counts them
+        if (ctx.keepSiteRegions) return;
         // Region records only: this can fill the Region of an app site (night trip pay)
         const det = findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, activeInd, { recordsOnly: true });
         s.geo_zone = det.best || cleanName;
@@ -3932,14 +4286,20 @@
     const customSites = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.sites)) ? STATE.customRecords.sites : [];
     const pool = sites.concat(customSites);
     let row = (explicitSiteId && pool.find(s => isRowInGeoIndustry(s, activeInd) && String(s.id || '') === explicitSiteId))
+      || (normCat && pool.find(s => isRowInGeoIndustry(s, activeInd) && norm(s.name) === nk && resolveGeoSiteCat(s) === normCat))
       || pool.find(s => isRowInGeoIndustry(s, activeInd) && norm(s.name) === nk);
     const effCat = normCat || (row ? resolveGeoSiteCat(row) : 'supplier');
+    // A quarry and a delivery site with this name: the pin goes under this category's key only, so the plain name
+    // key (which an older pin of the other site may hold) is left as it is
+    const hasTwin = pool.some(s => isRowInGeoIndustry(s, activeInd) && norm(s.name) === nk && resolveGeoSiteCat(s) !== effCat);
 
     const pinEntry = { name: cleanName, site_category: effCat, latitude: nLat, longitude: nLng, region, updated_at: nowIso };
     if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
-    GEO_STORE.sites[storePfx + nk] = pinEntry;
+    if (!hasTwin) {
+      GEO_STORE.sites[storePfx + nk] = pinEntry;
+      delete GEO_STORE._deletedKeys[`sites:${storePfx}${nk}`];
+    }
     GEO_STORE.sites[`${storePfx}${effCat}:${nk}`] = pinEntry;
-    delete GEO_STORE._deletedKeys[`sites:${storePfx}${nk}`];
     delete GEO_STORE._deletedKeys[`sites:${storePfx}${effCat}:${nk}`];
     saveStoredConfig(true);
 
@@ -4008,7 +4368,10 @@
     const sites = (SEED && SEED.records && SEED.records.sites) || [];
     const oppRow = cat ? sites.find(s => isRowInGeoIndustry(s, effInd) && norm(s.name) === nk && resolveGeoSiteCat(s) !== cat && (!o.excludeId || String(s.id) !== String(o.excludeId))) : null;
     if (GEO_STORE.sites[storePfx + nk]) {
-      if (oppRow) {
+      const plainCat = _storeCat(GEO_STORE.sites[storePfx + nk].site_category);
+      // The plain key is handed to the other site of this name only when it was that site's pin (or carries no
+      // category, as before); this site's own pin is never given to its twin (pin, Region, night trip pay)
+      if (oppRow && (!plainCat || plainCat === resolveGeoSiteCat(oppRow))) {
         const oppCat = resolveGeoSiteCat(oppRow);
         if (!GEO_STORE.sites[`${storePfx}${oppCat}:${nk}`]) {
           GEO_STORE.sites[`${storePfx}${oppCat}:${nk}`] = Object.assign({}, GEO_STORE.sites[storePfx + nk], { site_category: oppCat });
@@ -4172,6 +4535,82 @@
         else if (typeof ctx.openInspector === 'function') ctx.openInspector('regions', rid);
       });
     });
+    // Regions with No Shape: open / close, look at a ready shape, save it (Region of every site kept), or draw it
+    const shapelessToggle = deck.querySelector('#geoShapelessToggle');
+    if (shapelessToggle) {
+      shapelessToggle.addEventListener('click', () => {
+        STUDIO.shapelessOpen = !STUDIO.shapelessOpen;
+        if (!STUDIO.shapelessOpen) STUDIO.shapePreview = null;
+        rerenderWorkspace();
+      });
+    }
+    const canShapeRegions = canShapeRegionsNow();
+    deck.querySelectorAll('[data-geo-shapeless-fit]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (!canShapeRegions) return;
+        const kind = btn.getAttribute('data-geo-shapeless-fit') === 'circle' ? 'circle' : 'boundary';
+        const regName = btn.getAttribute('data-geo-shapeless-region') || '';
+        const entry = getShapelessRegions(SEED, STATE).find(e => norm(e.name) === norm(regName));
+        if (!entry) return;
+        if (STUDIO.shapePreview && norm(STUDIO.shapePreview.region) === norm(regName) && STUDIO.shapePreview.kind === kind) {
+          STUDIO.shapePreview = null;
+        } else if (kind === 'circle' && entry.circle) {
+          STUDIO.shapePreview = { region: entry.name, kind, spec: { zone_type: 'circle', center_lat: entry.circle.center_lat, center_lng: entry.circle.center_lng, radius_km: entry.circle.radius_km, zone_geojson: null } };
+        } else if (kind === 'boundary' && entry.boundary) {
+          const b = entry.boundary;
+          STUDIO.shapePreview = { region: entry.name, kind, spec: { zone_type: 'boundary', center_lat: b.lat, center_lng: b.lng, radius_km: null, zone_geojson: b.geojson, corridor: b.corridor, code: b.code } };
+        } else {
+          return;
+        }
+        STUDIO.mode = 'view';
+        STUDIO._userPanned = false;
+        rerenderWorkspace();
+      });
+    });
+    const shapelessSaveBtn = deck.querySelector('#geoShapelessSaveBtn');
+    if (shapelessSaveBtn) {
+      shapelessSaveBtn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const p = STUDIO.shapePreview;
+        if (!p || !p.spec || !canShapeRegions) return;
+        // Still a Region with no shape (another device may have drawn it meanwhile)
+        if (regionHasShape(p.region, SEED)) {
+          STUDIO.shapePreview = null;
+          if (toast) toast('This Region already has a shape', 'warn');
+          rerenderWorkspace();
+          return;
+        }
+        const pst = getShapePreviewStats(p.region, p.spec, SEED);
+        if (pst.ownPinned > 0 && pst.ownIn === 0) return;
+        if (persistRegionZone(p.region, Object.assign({}, p.spec), Object.assign({}, ctx, { keepSiteRegions: true }))) {
+          STUDIO.shapePreview = null;
+          STUDIO.selectedRegion = p.region;
+          STUDIO._userPanned = false;
+          rerenderWorkspace();
+        }
+      });
+    }
+    const shapelessCancelBtn = deck.querySelector('#geoShapelessCancelBtn');
+    if (shapelessCancelBtn) {
+      shapelessCancelBtn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        STUDIO.shapePreview = null;
+        STUDIO._userPanned = false;
+        rerenderWorkspace();
+      });
+    }
+    deck.querySelectorAll('[data-geo-shapeless-draw]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const rid = btn.getAttribute('data-geo-shapeless-draw') || '';
+        if (!rid || !canShapeRegions) return;
+        STUDIO.shapePreview = null;
+        if (typeof ctx.editRecord === 'function') ctx.editRecord('regions', rid);
+        else if (typeof ctx.openInspector === 'function') ctx.openInspector('regions', rid);
+      });
+    });
+
     const focusCloseBtn = deck.querySelector('#geoFocusCloseBtn');
     if (focusCloseBtn) {
       focusCloseBtn.addEventListener('click', () => {
@@ -6102,6 +6541,9 @@
     renderMapLinkStatusHtml,
     olcDecodeFull,
     olcRecoverNearest,
+    regionHasShape,
+    getShapelessRegions,
+    getShapePreviewStats,
     persistRegionZone,
     persistLocationPin,
     clearLocationPin,
