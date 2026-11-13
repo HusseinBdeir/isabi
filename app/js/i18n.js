@@ -11162,7 +11162,22 @@
       "Pin it in Edit Site, where you can check the Region.": "ثبّته من تعديل الموقع، حيث يمكنك التحقق من المنطقة.",
       "This point is outside the site's Region": "هذه النقطة خارج منطقة الموقع",
       "Check the link, or pin it in Edit Site, where you can change the Region.": "تحقق من الرابط، أو ثبّته من تعديل الموقع حيث يمكنك تغيير المنطقة.",
-      "Pin saved on the site": "تم حفظ الدبوس على الموقع"
+      "Pin saved on the site": "تم حفظ الدبوس على الموقع",
+      "Back to Charts": "العودة إلى الرسوم البيانية",
+      "List every row again and go back to the charts at the bottom of the page": "عرض كل السطور مجدداً والعودة إلى الرسوم البيانية أسفل الصفحة",
+      "Explain These Rows": "شرح هذه السطور",
+      "ISABI reads only the rows listed and notes what stands out; every figure stays the register's own sum": "يقرأ ISABI السطور المعروضة فقط ويشير إلى ما يلفت النظر فيها؛ وكل رقم يبقى مجموع السجل نفسه",
+      "Rows Explained": "شرح السطور",
+      "Close the note": "إغلاق الملاحظة",
+      "Reading the listed rows": "جارٍ قراءة السطور المعروضة",
+      "No ISABI note right now. The figures below are the register's own.": "لا توجد ملاحظة من ISABI حالياً. الأرقام أدناه هي أرقام السجل نفسه.",
+      "Every figure is the register's own sum of the rows listed.": "كل رقم هو مجموع السجل نفسه للسطور المعروضة.",
+      "Largest Row": "أكبر سطر",
+      "Biggest Share": "الحصة الأكبر",
+      "Whole Register": "السجل كاملاً",
+      "Filtered": "مُصفّى",
+      "contains": "يحتوي على",
+      "Not Blank": "غير فارغ"
     },
     fr: {
       "Not split by borrower": "Non réparti par emprunteur",
@@ -22306,7 +22321,22 @@
       "Pin it in Edit Site, where you can check the Region.": "Épinglez-le dans Modifier le site, où vous pouvez vérifier la région.",
       "This point is outside the site's Region": "Ce point est en dehors de la région du site",
       "Check the link, or pin it in Edit Site, where you can change the Region.": "Vérifiez le lien, ou épinglez-le dans Modifier le site, où vous pouvez changer la région.",
-      "Pin saved on the site": "Emplacement enregistré sur le site"
+      "Pin saved on the site": "Emplacement enregistré sur le site",
+      "Back to Charts": "Retour aux graphiques",
+      "List every row again and go back to the charts at the bottom of the page": "Afficher de nouveau toutes les lignes et revenir aux graphiques en bas de la page",
+      "Explain These Rows": "Expliquer ces lignes",
+      "ISABI reads only the rows listed and notes what stands out; every figure stays the register's own sum": "ISABI lit uniquement les lignes affichées et signale ce qui ressort ; chaque chiffre reste la somme du registre lui-même",
+      "Rows Explained": "Lignes expliquées",
+      "Close the note": "Fermer la note",
+      "Reading the listed rows": "Lecture des lignes affichées",
+      "No ISABI note right now. The figures below are the register's own.": "Pas de note ISABI pour le moment. Les chiffres ci-dessous sont ceux du registre.",
+      "Every figure is the register's own sum of the rows listed.": "Chaque chiffre est la somme, faite par le registre, des lignes affichées.",
+      "Largest Row": "Ligne la plus élevée",
+      "Biggest Share": "Part la plus importante",
+      "Whole Register": "Registre entier",
+      "Filtered": "Filtré",
+      "contains": "contient",
+      "Not Blank": "Non vide"
     }
   };
 

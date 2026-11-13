@@ -7211,6 +7211,9 @@
   function regPanelRows(panelId, rows, shownKey, mapFn) {
     const src = Array.isArray(rows) ? rows : [];
     let chartRows = typeof mapFn === 'function' ? src.map(mapFn) : src;
+    // The panel's chart rows before the drill: a hub chart bar is matched against them, and Explain These
+    // Rows compares the listed rows with them.
+    const allChartRows = chartRows;
     let out = src;
     const drill = panelId ? getRegDrill(panelId) : null;
     if (drill) {
@@ -7218,7 +7221,7 @@
       out = src.filter((_, i) => keep[i]);
       chartRows = chartRows.filter((_, i) => keep[i]);
     }
-    if (panelId) _regPanelRows[panelId] = { rows: chartRows, shownKey: shownKey || '' };
+    if (panelId) _regPanelRows[panelId] = { rows: chartRows, all: allChartRows, shownKey: shownKey || '' };
     return out;
   }
   function sortRows(rows, view, defKey, defDir) {
@@ -113110,6 +113113,9 @@
     const step = Math.max(1, Math.ceil(rows.length / 400));
     const sample = step > 1 ? rows.filter((_, i) => i % step === 0) : rows;
     const cols = [];
+    // Every column whose key is known, typed or not (a hub chart bar can match any of them).
+    const allKeys = [];
+    cols.allKeys = allKeys;
     const usedKeys = new Set();
     ths.forEach((thEl, idx) => {
       const fb = thEl.querySelector('.th-filter-btn');
@@ -113119,6 +113125,7 @@
       if (!key) return;
       thEl.setAttribute('data-regc-col-key', key);
       const label = String(rawLbl || key).trim();
+      allKeys.push({ key, label, idx });
       let nums = 0, dates = 0, strs = 0, filled = 0;
       const distinct = new Set();
       sample.forEach(r => {
@@ -113378,7 +113385,7 @@
     const prev = getRegDrill(view);
     const conds = (prev ? prev.conds : []).filter(c => !(c.kind === it.kind && c.key === it.key));
     conds.push({ kind: it.kind, key: it.key, value: it.value, groupLabel: it.groupLabel, valueLabel: it.valueLabel });
-    STATE.regDrill[view] = { company: STATE.company, conds };
+    STATE.regDrill[view] = { company: STATE.company, conds, setAsideColFilters: (prev && prev.setAsideColFilters) || null };
     setRegisterChartPref(view, { mode: 'table' });
     STATE.shown = {};
     const pop = $('mfgChartPopover');
@@ -113395,6 +113402,7 @@
     if (strip) { try { strip.focus({ preventScroll: true }); } catch (_) {} }
   }
   function clearRegisterDrill(view, backToChart) {
+    restoreSetAsideColFilters(view);
     if (STATE.regDrill) delete STATE.regDrill[view];
     if (backToChart) setRegisterChartPref(view, { mode: 'chart' });
     STATE.shown = {};
@@ -113447,13 +113455,621 @@
           : `<b data-no-i18n="1">${esc(c.valueLabel || c.value)}</b>`;
         return `<span class="reg-drill-pill"><span>${esc(c.kind === 'month' ? 'Month' : (c.groupLabel || ''))}</span><span class="reg-drill-sep">:</span> ${valueHtml}</span>`;
       }).join('');
+      // A drill made from a hub chart at the foot of the page goes back to those charts; one made from the
+      // register's own chart goes back to that chart.
+      const backBtn = d.from === 'hub'
+        ? `<button type="button" class="reg-drill-btn" data-regc-drill-back="${esc(view)}" data-regc-drill-hub-back="1" data-ui-tip="List every row again and go back to the charts at the bottom of the page">${ic('pbi')}<span>Back to Charts</span></button>`
+        : `<button type="button" class="reg-drill-btn" data-regc-drill-back="${esc(view)}" data-ui-tip="Show the chart again with every row">${ic('pbi')}<span>Back to Chart</span></button>`;
+      const briefOpen = Boolean(regDrillBriefFor(view));
       strip.innerHTML =
         `<span class="reg-drill-lbl">${TH_FUNNEL_SVG}<span>Filtered From Chart</span></span>` +
         pills +
         `<span class="reg-drill-count mu"><span class="mono">${fmtNum(n)}</span> <span>Rows</span></span>` +
-        `<button type="button" class="reg-drill-btn" data-regc-drill-back="${esc(view)}" data-ui-tip="Show the chart again with every row">${ic('pbi')}<span>Back to Chart</span></button>` +
+        `<button type="button" class="reg-drill-btn reg-drill-explain" data-regc-drill-explain="${esc(view)}" aria-expanded="${briefOpen ? 'true' : 'false'}" data-ui-tip="ISABI reads only the rows listed and notes what stands out; every figure stays the register's own sum">${ic('sparkles')}<span>Explain These Rows</span></button>` +
+        backBtn +
         `<button type="button" class="reg-drill-btn reg-drill-clear" data-regc-drill-clear="${esc(view)}" data-ui-tip="List every row again">✕ <span>Clear</span></button>`;
+      mountRegisterDrillBrief(strip, view);
     });
+  }
+
+  // ---- Explain These Rows (owner idea 2026-11-13; hard rule 15: deterministic first, AI at the edge) -------
+  // The figures are worked out here from the register's own rows and sums (rows listed against the register
+  // before the drill, each money column's share, the largest row, the value that carries most of each
+  // column). ISABI is then asked for a two-line note that may only quote those figures. Without ISABI
+  // (offline, headless, demo, no answer) the figures stand on their own.
+  // The figures describe one exact set of listed rows, so the key carries every filter state and a
+  // fingerprint of the rows listed and of the register before the drill (count, first and last row): a
+  // chip, a custom date range or a data reload that changes the rows retires the note.
+  // Order-free (count, smallest and largest id), so sorting the register keeps the note.
+  function regRowsFingerprint(rows) {
+    if (!Array.isArray(rows)) return '-';
+    let lo = null, hi = null;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r) continue;
+      const id = String(r._rid != null ? r._rid : (r.id != null ? r.id : (r.name || r.staff || r.customer || '')));
+      if (lo === null || id < lo) lo = id;
+      if (hi === null || id > hi) hi = id;
+    }
+    return `${rows.length}:${lo}:${hi}`;
+  }
+  function regDrillBriefSig(view) {
+    const container = $('workspace');
+    const found = container ? findRegisterPanelAndTable(container, view) : null;
+    const meta = found ? getRegisterRowsMeta(view, found.panel) : null;
+    const before = found ? regRowsBeforeDrill(view, found.panel) : null;
+    return [regFilterSig(view), SEED._customRev || 0, typeof _WIN_REV === 'number' ? _WIN_REV : 0, STATE.basis, STATE.period, STATE.dateFrom || '', STATE.dateTo || '',
+      String(STATE.chipFilter || ''), String(STATE.search || ''), isOfficialScopeActive() ? 1 : 0, STATE.showSalesTaxBreakdown ? 1 : 0,
+      regRowsFingerprint(meta && meta.rows), regRowsFingerprint(before && before.rows)].join('|');
+  }
+  // A note belongs to the drill it was asked for (each drill is a new object): once that drill is cleared
+  // or replaced, even by the same bar, the note is gone and a late answer for it is dropped.
+  function regDrillBriefFor(view) {
+    const b = STATE.regDrillBrief && STATE.regDrillBrief[view];
+    const d = getRegDrill(view);
+    if (!b || !d || b.drill !== d || b.sig !== regDrillBriefSig(view)) return null;
+    return b;
+  }
+  function regBriefLang() {
+    return window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' ? window.MFG_I18N.getLang() : 'en';
+  }
+  // The rows of a register before its drill (and before its column filters, for a register sorted by
+  // sortRows), so the listed rows are compared with the whole register for the same dates and company.
+  function regRowsBeforeDrill(view, panel) {
+    const thOwn = panel ? panel.querySelector(`thead th[data-sort-view="${CSS.escape(view)}"]`) : null;
+    if (thOwn && Array.isArray(_tablePoolCache[view])) {
+      return { rows: _tablePoolCache[view], sortView: view };
+    }
+    const e = _regPanelRows[(panel && panel.id) || view] || _regPanelRows[view];
+    if (e && Array.isArray(e.all)) return { rows: e.all, sortView: '' };
+    return null;
+  }
+  // A share is printed only when it is a true share (0 to 100%): with returns or credits mixed in, a
+  // signed ratio can read -1400% or 130%, which is no share at all.
+  function regPct(part, whole) {
+    if (!Number.isFinite(part) || !Number.isFinite(whole) || Math.abs(whole) < 0.005) return '';
+    const ratio = part / whole;
+    if (ratio < -0.0005 || ratio > 1.0005) return '';
+    return `${(Math.round(Math.max(0, ratio) * 1000) / 10).toFixed(1)}%`;
+  }
+  function computeRegDrillFacts(view) {
+    const container = $('workspace');
+    const found = container ? findRegisterPanelAndTable(container, view) : null;
+    if (!found) return null;
+    const { panel, table } = found;
+    const meta = getRegisterRowsMeta(view, panel);
+    const rows = meta ? meta.rows : [];
+    const before = regRowsBeforeDrill(view, panel);
+    if (!rows.length || !before) return { facts: [], rows: [], cols: [] };
+    const sortView = meta.sortView;
+    const cols = withRelPass(() => (registerRowsMatchTable(table, view, rows, meta.limit) ? regChartColumns(table, view, rows, sortView) : []));
+    const drill = getRegDrill(view);
+    const drillKeys = new Set((drill ? drill.conds : []).map(c => c.key));
+    const measures = cols.filter(c => c.kind === 'measure' && c.nonZero)
+      .sort((a, b) => ((b.money ? 1 : 0) - (a.money ? 1 : 0)) || (a.idx - b.idx)).slice(0, 2);
+    const groups = cols.filter(c => c.kind === 'group' && !drillKeys.has(c.key)).slice(0, 6);
+    const val = (r, k) => Number(regColVal(r, k, view, sortView)) || 0;
+    const lbl = (r, k) => regDrillGroupLabel(regColVal(r, k, view, sortView));
+    const fmtM = (m, v) => (m.money ? fmtUSD(v, 2) : fmtNum(v, 2));
+    const facts = [];
+    withRelPass(() => {
+      const N = before.rows.length;
+      facts.push({ kind: 'rows', label: 'Rows', value: `${fmtNum(rows.length)} / ${fmtNum(N)}`, share: regPct(rows.length, N), en: `Rows listed: ${rows.length} of ${N} rows in the register (${regPct(rows.length, N)}).` });
+      measures.forEach(m => {
+        const listed = rows.reduce((a, r) => a + val(r, m.key), 0);
+        const whole = before.rows.reduce((a, r) => a + (Number(regColVal(r, m.key, view, before.sortView)) || 0), 0);
+        const avgListed = rows.length ? listed / rows.length : 0;
+        const avgWhole = N ? whole / N : 0;
+        facts.push({
+          kind: 'measure', label: m.label, value: `${fmtM(m, round2(listed))} / ${fmtM(m, round2(whole))}`, share: regPct(listed, whole),
+          en: `${m.label}: ${fmtM(m, round2(listed))} listed of ${fmtM(m, round2(whole))} in the register (${regPct(listed, whole)}); average per row ${fmtM(m, round2(avgListed))} listed against ${fmtM(m, round2(avgWhole))} in the register.`
+        });
+      });
+      const m0 = measures[0];
+      const nameCol = groups.find(g => g.distinctCount > 1) || groups[0] || cols.find(c => c.kind === 'group');
+      if (m0 && rows.length > 1) {
+        let top = null;
+        rows.forEach(r => { const v = val(r, m0.key); if (!top || Math.abs(v) > Math.abs(top.v)) top = { r, v }; });
+        // The largest row's weight among the listed rows, by size (returns count by their size too).
+        const absListed = rows.reduce((a, r) => a + Math.abs(val(r, m0.key)), 0);
+        const listed = top && top.v < 0 ? -absListed : absListed;
+        if (top) {
+          // The row's party or name when it has one (customer, supplier, staff...), else its first grouping value.
+          const r0 = top.r;
+          const party = r0 && [r0.customer, r0.supplier, r0.staff, r0.name, r0.driver, r0.equipment, r0.party, r0.tenant, r0.client, r0.description]
+            .find(x => typeof x === 'string' && x.trim());
+          const name = party ? String(party).trim().slice(0, 60) : (nameCol ? lbl(top.r, nameCol.key) : '');
+          const dateCol = cols.find(c => c.kind === 'date');
+          const d = dateCol ? String(regColVal(top.r, dateCol.key, view, sortView) || '').slice(0, 10) : '';
+          const who = [name, d ? fmtDateDMY(d) : ''].filter(Boolean).join(' · ');
+          facts.push({ kind: 'largest', label: 'Largest Row', sub: m0.label, value: `${who ? who + ' · ' : ''}${fmtM(m0, round2(top.v))}`, share: regPct(top.v, listed), noI18n: true,
+            en: `Largest row by ${m0.label}: ${who || 'one row'} at ${fmtM(m0, round2(top.v))}, ${regPct(top.v, listed)} of the listed ${m0.label}.` });
+        }
+      }
+      // The two columns (outside the drill) whose biggest value carries the most of the listed rows, each
+      // set against that value's share of the whole register.
+      const shares = [];
+      groups.forEach(g => {
+        const by = new Map();
+        rows.forEach(r => { const k = lbl(r, g.key); by.set(k, (by.get(k) || 0) + (m0 ? val(r, m0.key) : 1)); });
+        if (by.size < 2) return;
+        const ranked = Array.from(by.entries()).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+        const listedTot = Array.from(by.values()).reduce((a, v) => a + v, 0);
+        // Values of mixed sign (sales against returns) have no clean share: that column is left out.
+        if (Math.abs(listedTot) < 0.005 || ranked.some(([, v]) => Math.sign(v) && Math.sign(v) !== Math.sign(listedTot))) return;
+        shares.push({ g, topVal: ranked[0][0], topAmt: ranked[0][1], listedTot, distinct: ranked.length, ratio: Math.abs(ranked[0][1] / listedTot) });
+      });
+      shares.sort((a, b) => b.ratio - a.ratio).slice(0, 2).forEach(s => {
+        let wholeAmt = 0, wholeTot = 0;
+        before.rows.forEach(r => {
+          const amt = m0 ? (Number(regColVal(r, m0.key, view, before.sortView)) || 0) : 1;
+          wholeTot += amt;
+          if (regDrillGroupLabel(regColVal(r, s.g.key, view, before.sortView)) === s.topVal) wholeAmt += amt;
+        });
+        facts.push({ kind: 'group', label: 'Biggest Share', sub: s.g.label, value: s.topVal, share: regPct(s.topAmt, s.listedTot), whole: regPct(wholeAmt, wholeTot), noI18n: true,
+          en: `${s.g.label}: ${s.topVal} carries ${regPct(s.topAmt, s.listedTot)} of the listed ${m0 ? m0.label : 'rows'} (${s.distinct} different values)${regPct(wholeAmt, wholeTot) ? `, against ${regPct(wholeAmt, wholeTot)} in the whole register` : ''}.` });
+      });
+    });
+    return { facts, rows, cols: cols.filter(c => c.kind === 'group' || c.kind === 'measure' || c.kind === 'date').slice(0, 8), sortView };
+  }
+  function regDrillBriefPrompt(view, info) {
+    const d = getRegDrill(view);
+    const lang = regBriefLang();
+    const filterTxt = (d ? d.conds : []).map(c => `${c.kind === 'month' ? 'Month' : c.groupLabel} = ${c.valueLabel || c.value}`).join(' and ');
+    const sample = withRelPass(() => info.rows.slice(0, 30).map(r => info.cols.map(c => {
+      const v = regColVal(r, c.key, view, info.sortView);
+      return `${c.label}: ${v == null || v === '' ? '-' : (typeof v === 'number' ? round2(v) : String(v).slice(0, 40))}`;
+    }).join('; ')));
+    return [
+      `Language: ${lang === 'ar' ? 'Arabic' : (lang === 'fr' ? 'French' : 'English')}.`,
+      `A business user filtered a register of an ERP to the rows where ${filterTxt || 'a chart bar applies'}.`,
+      'Facts worked out by the system (the only figures you may quote, copy them exactly):',
+      ...info.facts.map(f => `- ${f.en}`),
+      `First ${sample.length} listed rows, for context only (do not add them up):`,
+      ...sample.map(s => `* ${s}`),
+      'Write at most two short lines (each under 170 characters) on what stands out in these rows against the rest of the register: a concentration, an outlier, a share far from the register\'s. Plain business words, no internal codes, no advice you cannot ground in the facts, no new numbers.',
+      'Return ONLY JSON {"note":["line 1","line 2"]} with zero em-dashes and zero arrows.'
+    ].join('\n');
+  }
+  function cleanBriefLine(s) {
+    return String(s || '').replace(/<[^>]*>/g, '').replace(/\s*[—–]\s*/g, ', ').replace(/\s*(→|->|=>)\s*/g, ', ').replace(/(,\s*){2,}/g, ', ').replace(/\s+/g, ' ').trim().slice(0, 240);
+  }
+  function regDrillBriefHtml(view, b) {
+    const facts = (b.facts || []).map(f => {
+      const head = f.sub
+        ? `<span class="reg-brief-k"><span>${esc(f.label)}</span> · <span>${esc(f.sub)}</span></span>`
+        : `<span class="reg-brief-k"><span>${esc(f.label)}</span></span>`;
+      const v = `<b class="reg-brief-v"${f.noI18n ? ' data-no-i18n="1"' : ''}>${esc(f.value)}</b>`;
+      const share = f.share ? ` <span class="mono reg-brief-share">${esc(f.share)}</span>` : '';
+      const whole = f.whole ? ` <span class="mu reg-brief-whole"><span>Whole Register</span> <span class="mono">${esc(f.whole)}</span></span>` : '';
+      return `<li>${head} ${v}${share}${whole}</li>`;
+    }).join('');
+    let note = '';
+    if (b.status === 'loading') note = `<div class="reg-brief-note mu"><span>Reading the listed rows</span>…</div>`;
+    // A note written in another language than the one now shown is not shown (the figures still are).
+    else if (b.status === 'ready' && b.note && b.note.length && b.lang === regBriefLang()) note = `<div class="reg-brief-note" data-no-i18n="1" dir="${b.lang === 'ar' ? 'rtl' : 'ltr'}">${b.note.map(l => `<p>${esc(l)}</p>`).join('')}</div>`;
+    else note = `<div class="reg-brief-note mu"><span>No ISABI note right now. The figures below are the register's own.</span></div>`;
+    return `<div class="reg-brief-hd">${ic('sparkles')}<span class="reg-brief-title">Rows Explained</span>` +
+      `<button type="button" class="reg-drill-btn reg-brief-close" data-regc-drill-brief-close="${esc(view)}" data-ui-tip="Close the note">✕ <span>Close</span></button></div>` +
+      note +
+      (facts ? `<ul class="reg-brief-facts">${facts}</ul>` : '') +
+      `<div class="reg-brief-ft mu"><span>Every figure is the register's own sum of the rows listed.</span></div>`;
+  }
+  function mountRegisterDrillBrief(strip, view) {
+    const b = regDrillBriefFor(view);
+    let box = strip.parentNode ? strip.parentNode.querySelector(`[data-regc-drill-brief="${CSS.escape(view)}"]`) : null;
+    if (!b) { if (box) box.remove(); return; }
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'reg-drill-brief';
+      box.setAttribute('data-regc-drill-brief', view);
+      box.setAttribute('role', 'region');
+      box.setAttribute('aria-label', 'Rows Explained');
+      strip.parentNode.insertBefore(box, strip.nextSibling);
+    }
+    box.innerHTML = regDrillBriefHtml(view, b);
+  }
+  function refreshRegisterDrillBrief(view) {
+    const box = document.querySelector(`#workspace [data-regc-drill-brief="${CSS.escape(view)}"]`);
+    const b = regDrillBriefFor(view);
+    if (!box || !b) return;
+    box.innerHTML = regDrillBriefHtml(view, b);
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') window.MFG_I18N.translateDom(box);
+  }
+  async function explainRegisterDrill(view) {
+    if (!STATE.regDrillBrief) STATE.regDrillBrief = {};
+    if (regDrillBriefFor(view)) { delete STATE.regDrillBrief[view]; renderApp(); return; }
+    const info = computeRegDrillFacts(view);
+    if (!info) return;
+    const sig = regDrillBriefSig(view);
+    const lang = regBriefLang();
+    const b = { sig, lang, drill: getRegDrill(view), facts: info.facts, status: 'loading', note: null };
+    STATE.regDrillBrief[view] = b;
+    renderApp();
+    const box = document.querySelector(`#workspace [data-regc-drill-brief="${CSS.escape(view)}"]`);
+    if (box) { try { box.scrollIntoView({ block: 'nearest' }); } catch (_) {} }
+    let ai = null;
+    const edge = window.MFG_AI_EDGE;
+    if (info.rows.length && edge && typeof edge.callAiEdgeJson === 'function') {
+      try { ai = await edge.callAiEdgeJson('drill_rows_brief', regDrillBriefPrompt(view, info), '', '', { tier: 'fast', timeoutMs: 9000 }); } catch (_) { ai = null; }
+    }
+    // The drill, the rows or the language may have changed while ISABI was answering: keep the note only
+    // when it still describes the rows listed. A dropped answer never leaves "Reading..." on screen.
+    if (STATE.regDrillBrief[view] !== b) return;
+    if (regDrillBriefFor(view) !== b || regBriefLang() !== lang) {
+      b.status = 'none';
+      b.note = [];
+      refreshRegisterDrillBrief(view);
+      return;
+    }
+    // A line may only quote figures the register worked out (hard rule 15): one with any other number is
+    // left out.
+    const lines = ai && Array.isArray(ai.note)
+      ? ai.note.map(cleanBriefLine).filter(Boolean).filter(l => briefLineNumbersGrounded(l, info, view)).slice(0, 2)
+      : [];
+    b.note = lines;
+    b.status = lines.length ? 'ready' : 'none';
+    refreshRegisterDrillBrief(view);
+  }
+  // Number tokens compared by their digits only, so 1,245 / 1 245 / 1245 and 12.5% / 12,5 % agree, and
+  // Arabic-Indic digits read as their Western twins.
+  function briefNumberTokens(s) {
+    const t = String(s || '')
+      .replace(/[٠-٩]/g, ch => String(ch.charCodeAt(0) - 0x0660))
+      .replace(/[۰-۹]/g, ch => String(ch.charCodeAt(0) - 0x06F0))
+      .replace(/[٫]/g, '.').replace(/[٬]/g, ',')
+      // A comma or semicolon followed by a space ends a figure ("$5,000.00, 41.7%" is two figures).
+      .replace(/[,;،]\s+/g, ' | ');
+    return (t.match(/\d(?:[\d  .,]|\s(?=\d{3}(?!\d)))*\d|\d/g) || []).map(x => x.replace(/\D/g, '').replace(/^0+(?=\d)/, '')).filter(Boolean);
+  }
+  function briefLineNumbersGrounded(line, info, view) {
+    const d = getRegDrill(view);
+    const allowedTxt = (info.facts || []).map(f => f.en).join(' ') + ' ' + (d ? d.conds.map(c => `${c.valueLabel || ''} ${c.value || ''}`).join(' ') : '');
+    const allowed = new Set(briefNumberTokens(allowedTxt));
+    return briefNumberTokens(line).every(tok => allowed.has(tok));
+  }
+
+  // ---- What a register's CSV says about its filters (owner idea 2026-11-13) -------------------------------
+  // A register exported while a chart drill, a column filter or the search box narrows it names those
+  // filters in the file name and in a first line, so a shared extract never passes for the full register.
+  function regColumnLabel(table, view, key) {
+    const th = table ? Array.from(table.querySelectorAll('thead th')).find(el =>
+      (el.getAttribute('data-sort-view') === view && el.getAttribute('data-sort-key') === key) || el.getAttribute('data-regc-col-key') === key) : null;
+    if (!th) return key;
+    const fb = th.querySelector('.th-filter-btn');
+    return String((fb && fb.getAttribute('data-th-filter-label')) || englishTextOf(th.querySelector('.th-lbl') || th) || key).trim();
+  }
+  // Returns { parts: ["Customer = ACME", ...], values: ["ACME", ...] } (values name the file).
+  function registerExportFilterParts(panel, tables, csvTarget) {
+    const views = [];
+    const add = v => { if (v && !views.includes(v)) views.push(v); };
+    if (panel && panel.getAttribute) add(panel.getAttribute('data-regc-panel'));
+    // A domain panel's drill is keyed on its panel id (the CSV button's target).
+    [panel && panel.id, csvTarget].forEach(v => { if (v && STATE.regDrill && STATE.regDrill[v]) add(v); });
+    tables.forEach(t => {
+      add(t.getAttribute('data-regc-table'));
+      t.querySelectorAll('thead th[data-sort-view]').forEach(th => add(th.getAttribute('data-sort-view')));
+    });
+    const parts = [];
+    const values = [];
+    views.forEach(view => {
+      const table = tables.find(t => t.getAttribute('data-regc-table') === view || t.querySelector(`thead th[data-sort-view="${CSS.escape(view)}"]`)) || tables[0];
+      const d = getRegDrill(view);
+      (d ? d.conds : []).forEach(c => {
+        parts.push(`${wsUiT(c.kind === 'month' ? 'Month' : (c.groupLabel || ''))} = ${c.valueLabel || c.value}`);
+        values.push(String(c.valueLabel || c.value || ''));
+      });
+      const cf = (STATE.colFilters && STATE.colFilters[view]) || {};
+      Object.keys(cf).forEach(key => {
+        const spec = String(cf[key] == null ? '' : cf[key]).trim();
+        if (!spec) return;
+        const lab = wsUiT(regColumnLabel(table, view, key));
+        if (spec === '__nonempty__') parts.push(`${lab} = ${wsUiT('Not Blank')}`);
+        else if (spec === '__empty__') parts.push(`${lab} = ${wsUiT('(Blank)')}`);
+        else if (/^(>=|<=|!=|>|<)\s*-?\d/.test(spec) || /^-?\d+(?:\.\d+)?\s*\.\.\s*-?\d/.test(spec)) parts.push(`${lab} ${spec}`);
+        else if (spec.startsWith('=')) parts.push(`${lab} = ${spec.slice(1).trim()}`);
+        else parts.push(`${lab} ${wsUiT('contains')} "${spec}"`);
+        if (!/^__/.test(spec)) values.push(spec.replace(/^=/, ''));
+      });
+    });
+    const q = String(STATE.search || '').trim();
+    if (q) { parts.push(`${wsUiT('Search')} = "${q}"`); values.push(q); }
+    return { parts, values };
+  }
+  // The filter values in a file name: letters and digits of any script, joined by "-", at most 48 characters.
+  function exportFilterSlug(values) {
+    const s = (values || []).map(v => String(v || '').normalize('NFC').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '')).filter(Boolean).join('_');
+    return s.length > 48 ? s.slice(0, 48).replace(/[-_]+$/, '') : s;
+  }
+
+  // ---- Hub charts at the foot of a page open the page's register drilled to a bar (owner idea 2026-11-13) --
+  // A bar of a chart row (`#*ChartsRow`) is made clickable only when its label is a month the register has
+  // rows in, or a value one of the register's columns holds; the drill then uses the register's own
+  // grouping rule, so the rows listed are exactly the rows carrying that value or month. The matching runs
+  // in idle time after a render and is kept per row list, so switching pages stays inside the speed budget.
+  const _hubDrillIndex = new Map();
+  let _hubDrillGen = 0;
+  let _hubDrillItems = [];
+  const HUB_DRILL_SCAN_ROWS = 600;
+  let _hubDrillCompany = null;
+  const HUB_BAR_OWN_ATTRS = new Set(['data-chart-pop', 'data-hub-drill-idx', 'data-ui-tip', 'data-series-idx']);
+  function hubBarTitle(el) {
+    try { const s = JSON.parse(el.getAttribute('data-chart-pop') || '{}'); return String(s.title || s.t || '').replace(/\s+/g, ' ').trim(); } catch (_) { return ''; }
+  }
+  // A month label is "2026-03", "Mar 2026", "March 2026" or "Mar '26": a 3-letter or full month name only,
+  // so a product such as "Marble 26" is never read as a month.
+  const HUB_MONTH_NAME_RX = /^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+'?(\d{2}|\d{4})$/i;
+  function hubBarMonth(label) {
+    const s = String(label || '').trim();
+    let m = s.match(/^(\d{4})-(\d{2})$/);
+    if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12) return `${m[1]}-${m[2]}`;
+    m = s.match(HUB_MONTH_NAME_RX);
+    if (m) {
+      const mi = MONTH_SHORT.findIndex(x => x.toLowerCase() === m[1].slice(0, 3).toLowerCase());
+      if (mi >= 0) return `${m[2].length === 2 ? '20' + m[2] : m[2]}-${String(mi + 1).padStart(2, '0')}`;
+    }
+    return '';
+  }
+  const hubNorm = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  function hubChartBars(container) {
+    const out = [];
+    Array.from(container.children).filter(el => el.id && /ChartsRow$/.test(el.id)).forEach(row => {
+      row.querySelectorAll('.pbi-bar-chart > .pbi-bar-item, .pbi-bar-chart > .pbi-cbar-item, svg g.pbi-chart-col').forEach(el => {
+        if (el.closest('.reg-chart')) return;
+        // A bar that already does something when clicked (the Cash Flow till bars open their own entries)
+        // keeps its own action: any data attribute beyond the chart popover means it has one.
+        if (Array.from(el.attributes).some(a => a.name.startsWith('data-') && !HUB_BAR_OWN_ATTRS.has(a.name))) return;
+        // A bar holding its own controls (End This Shift on a shift bar) is left alone too.
+        if (el.querySelector('button, a, input, select, textarea, [role="button"]')) return;
+        const title = hubBarTitle(el);
+        if (!title || title === '—' || /^other$/i.test(title)) return;
+        out.push({ el, title, month: hubBarMonth(title) });
+      });
+    });
+    return out;
+  }
+  function hubDrillRegisterViews(container) {
+    const views = [];
+    const add = v => { if (v && !views.includes(v)) views.push(v); };
+    const outside = el => !el.closest('[id$="ChartsRow"], .reg-chart');
+    container.querySelectorAll('[data-regc-panel]').forEach(p => { if (outside(p)) add(p.getAttribute('data-regc-panel')); });
+    container.querySelectorAll('table thead th[data-sort-view]').forEach(th => { if (outside(th)) add(th.getAttribute('data-sort-view')); });
+    const i = views.indexOf(STATE.view);
+    if (i > 0) { views.splice(i, 1); views.unshift(STATE.view); }
+    return views;
+  }
+  // The register a hub bar can open: its rows before the drill and the columns it shows. A register sorted
+  // by sortRows declares its keys on its headers. A domain panel's keys come from the same column analysis
+  // as its Chart view (the cells it paints checked against its rows); that analysis runs only in idle time
+  // (`analyse`), never in the render itself.
+  function hubDrillSource(container, view, analyse) {
+    const found = findRegisterPanelAndTable(container, view);
+    if (!found) return null;
+    const before = regRowsBeforeDrill(view, found.panel);
+    if (!before || !before.rows.length) return null;
+    const keys = [];
+    const seen = new Set();
+    const addKey = (key, label) => {
+      if (!key || seen.has(key) || REG_ID_KEY_RX.test(key) || REG_NOTES_KEY_RX.test(key)) return;
+      seen.add(key);
+      keys.push({ key, label: String(label || key).trim() });
+    };
+    const thLabelOf = th => { const fb = th.querySelector('.th-filter-btn'); return (fb && fb.getAttribute('data-th-filter-label')) || englishTextOf(th.querySelector('.th-lbl') || th); };
+    if (before.sortView) {
+      tableTemplateThs(found.table).forEach(th => { if (th.getAttribute('data-sort-view') === view) addKey(th.getAttribute('data-sort-key'), thLabelOf(th)); });
+    } else {
+      tableTemplateThs(found.table).forEach(th => addKey(th.getAttribute('data-regc-col-key'), thLabelOf(th)));
+      if (!keys.length && analyse) {
+        const meta = getRegisterRowsMeta(view, found.panel);
+        if (meta && meta.rows.length && registerRowsMatchTable(found.table, view, meta.rows, meta.limit)) {
+          const cols = withRelPass(() => regChartColumns(found.table, view, meta.rows, meta.sortView));
+          (cols.allKeys || cols).forEach(c => addKey(c.key, c.label));
+        }
+      }
+    }
+    if (!keys.length) return null;
+    return { view, rows: before.rows, sortView: before.sortView, keys };
+  }
+  // Kept per register under a signature of its rows (count and the ids of the first, middle and last row),
+  // the data revision, date basis, company and tax view, so a page that rebuilds its row list on every
+  // render still reuses the scan.
+  function hubIndexSig(src) {
+    const rows = src.rows;
+    const idAt = i => { const r = rows[i]; return r ? String(r._rid != null ? r._rid : (r.id != null ? r.id : (r.name || i))) : ''; };
+    return [src.view, src.sortView, SEED._customRev || 0, STATE.basis, STATE.company, STATE.period, rows.length, idAt(0), idAt(rows.length >> 1), idAt(rows.length - 1),
+      String(STATE.search || ''), isOfficialScopeActive() ? 1 : 0, STATE.showSalesTaxBreakdown ? 1 : 0, src.keys.map(k => k.key).join(',')].join('|');
+  }
+  function hubIndexFor(src) {
+    const sig = hubIndexSig(src);
+    let ix = _hubDrillIndex.get(src.view);
+    if (!ix || ix.sig !== sig) {
+      if (_hubDrillIndex.size > 24) _hubDrillIndex.clear();
+      ix = { sig, done: false, step: 0, dateKey: '', months: new Map(), folded: new Map(), byKey: new Map(src.keys.map(k => [k.key, new Map()])) };
+      // The date column: the one whose values are dates on most rows (the "date" column first).
+      const probe = src.rows.slice(0, 60);
+      const isDateKey = k => {
+        let n = 0, d = 0;
+        probe.forEach(r => { const v = regColVal(r, k, src.view, src.sortView); if (v == null || v === '') return; n += 1; if (typeof v === 'string' && ISO_DATE_RX.test(v)) d += 1; });
+        return n > 0 && d / n >= 0.8;
+      };
+      const dk = withRelPass(() => src.keys.map(k => k.key).sort((a, b) => (b === 'date' ? 1 : 0) - (a === 'date' ? 1 : 0)).find(isDateKey));
+      ix.dateKey = dk || '';
+      _hubDrillIndex.set(src.view, ix);
+    }
+    return ix;
+  }
+  // One slice of the scan: a block of rows over every column of the register.
+  function hubIndexStep(src, ix) {
+    const from = ix.step * HUB_DRILL_SCAN_ROWS;
+    const to = Math.min(src.rows.length, from + HUB_DRILL_SCAN_ROWS);
+    withRelPass(() => {
+      for (let i = from; i < to; i++) {
+        const r = src.rows[i];
+        if (ix.dateKey) {
+          const ym = String(regColVal(r, ix.dateKey, src.view, src.sortView) || '').slice(0, 7);
+          if (/^\d{4}-\d{2}$/.test(ym)) ix.months.set(ym, (ix.months.get(ym) || 0) + 1);
+        }
+        for (let k = 0; k < src.keys.length; k++) {
+          const key = src.keys[k].key;
+          if (key === ix.dateKey) continue;
+          const m = ix.byKey.get(key);
+          if (m.size > 6000) continue;
+          const v = regColVal(r, key, src.view, src.sortView);
+          // Text and Yes / No values only: an amount or a count is never what a bar is named after.
+          if (v == null || v === '' || typeof v === 'object' || typeof v === 'number') continue;
+          // Keyed on the exact label the drill compares (regDrillCondMatch), never a folded form.
+          const label = regDrillGroupLabel(v);
+          m.set(label, (m.get(label) || 0) + 1);
+        }
+      }
+    });
+    ix.step += 1;
+    if (to >= src.rows.length) ix.done = true;
+  }
+  function hubMatchBar(bar, srcs) {
+    for (const { src, ix } of srcs) {
+      if (bar.month) {
+        if (ix.dateKey && ix.months.get(bar.month)) {
+          return { view: src.view, kind: 'month', key: ix.dateKey, value: bar.month, groupLabel: 'Month', valueLabel: `${MONTH_SHORT[Number(bar.month.slice(5, 7)) - 1]} ${bar.month.slice(0, 4)}` };
+        }
+        continue;
+      }
+      // The bar's exact label first. Failing that, a label that differs only in case or spacing, and only
+      // when the column holds a single such spelling ("ACME" and "Acme" both present: not clickable).
+      let best = null;
+      src.keys.forEach(k => {
+        const m = ix.byKey.get(k.key);
+        const count = m ? m.get(bar.title) : 0;
+        if (count && (!best || count > best.count)) best = { k, label: bar.title, count };
+      });
+      if (!best) {
+        const n = hubNorm(bar.title);
+        src.keys.forEach(k => {
+          const m = ix.byKey.get(k.key);
+          if (!m) return;
+          const folded = ix.folded.get(k.key) || (() => {
+            const f = new Map();
+            m.forEach((c, label) => { const fk = hubNorm(label); const e = f.get(fk); if (e) { e.n += 1; } else f.set(fk, { label, count: c, n: 1 }); });
+            ix.folded.set(k.key, f);
+            return f;
+          })();
+          const hit = folded.get(n);
+          if (hit && hit.n === 1 && (!best || hit.count > best.count)) best = { k, label: hit.label, count: hit.count };
+        });
+      }
+      if (best) return { view: src.view, kind: 'value', key: best.k.key, value: best.label, groupLabel: best.k.label, valueLabel: best.label };
+    }
+    return null;
+  }
+  function markHubChartBars(container, gen, srcs) {
+    if (gen !== _hubDrillGen || !container.isConnected) return;
+    const bars = hubChartBars(container);
+    _hubDrillItems = [];
+    const coarse = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    bars.forEach(bar => {
+      const it = hubMatchBar(bar, srcs);
+      if (!it) return;
+      const idx = _hubDrillItems.push(it) - 1;
+      bar.el.setAttribute('data-hub-drill-idx', String(idx));
+      bar.el.setAttribute('role', 'button');
+      bar.el.setAttribute('tabindex', '0');
+      bar.el.setAttribute('data-ui-tip', 'List the rows of this bar in the table');
+      bar.el.classList.add('hub-drill-bar');
+    });
+    // The bars are marked after the page was translated: translate their new tip too.
+    if (_hubDrillItems.length && regBriefLang() !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+      Array.from(container.children).filter(el => el.id && /ChartsRow$/.test(el.id) && el.querySelector('[data-hub-drill-idx]')).forEach(row => window.MFG_I18N.translateDom(row));
+    }
+    const head = $('hubChartsHead');
+    if (head) {
+      let hint = head.querySelector('.hub-charts-hint');
+      if (_hubDrillItems.length && !hint) {
+        // The words are drawn from the (translated) label by CSS, not written as page text: the bars are
+        // marked in idle time, and the page's text must not depend on when that happens.
+        hint = document.createElement('span');
+        hint.className = 'hub-charts-hint mu';
+        hint.setAttribute('role', 'note');
+        hint.setAttribute('aria-label', coarse ? 'Tap a bar twice to list its rows in the table' : 'Click a bar to list its rows in the table');
+        hint.innerHTML = TH_FUNNEL_SVG;
+        const fold = head.querySelector('#hubChartsFoldBtn');
+        head.insertBefore(hint, fold || null);
+        if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') window.MFG_I18N.translateDom(hint);
+      } else if (!_hubDrillItems.length && hint) hint.remove();
+    }
+  }
+  function mountHubChartDrills(container) {
+    const gen = ++_hubDrillGen;
+    _hubDrillItems = [];
+    // The scans belong to one company's rows: a company switch lets them go.
+    if (_hubDrillCompany !== STATE.company) { _hubDrillIndex.clear(); _hubDrillCompany = STATE.company; }
+    if (!container || CHART_FIRST_VIEWS.has(STATE.view)) return;
+    if (!hubChartBars(container).length) return;
+    const views = hubDrillRegisterViews(container).slice(0, 4);
+    if (!views.length) return;
+    const pick = analyse => views.map(v => hubDrillSource(container, v, analyse)).filter(Boolean).map(src => ({ src, ix: hubIndexFor(src) }));
+    let srcs = pick(false);
+    // Every register already known and scanned: mark the bars now, in the render.
+    if (srcs.length === views.length && srcs.every(s => s.ix.done)) { markHubChartBars(container, gen, srcs); return; }
+    let analysed = false;
+    const ric = window.requestIdleCallback ? (cb => window.requestIdleCallback(cb, { timeout: 600 })) : (cb => setTimeout(cb, 30));
+    const tick = () => {
+      if (gen !== _hubDrillGen || !container.isConnected) return;
+      if (!analysed) {
+        analysed = true;
+        if (srcs.length < views.length) srcs = pick(true);
+        if (!srcs.length) return;
+        ric(tick);
+        return;
+      }
+      const t0 = performance.now();
+      for (const s of srcs) {
+        while (!s.ix.done && performance.now() - t0 < 10) hubIndexStep(s.src, s.ix);
+        if (!s.ix.done) break;
+      }
+      if (srcs.every(s => s.ix.done)) markHubChartBars(container, gen, srcs);
+      else ric(tick);
+    };
+    ric(tick);
+  }
+  function drillRegisterFromHubBar(idx) {
+    const it = _hubDrillItems[idx];
+    if (!it) return;
+    if (!STATE.regDrill) STATE.regDrill = {};
+    // A hub chart is drawn from every row, so its bar starts a new drill in place of any earlier one, and
+    // the register's column filters step aside (the bar was matched against the rows before them, so a
+    // column filter left on could list none of the bar's rows).
+    // They come back with Back to Charts or Clear.
+    const prevDrill = getRegDrill(it.view);
+    const setAside = (STATE.colFilters && STATE.colFilters[it.view]) || (prevDrill && prevDrill.setAsideColFilters) || null;
+    STATE.regDrill[it.view] = { company: STATE.company, from: 'hub', setAsideColFilters: setAside, conds: [{ kind: it.kind, key: it.key, value: it.value, groupLabel: it.groupLabel, valueLabel: it.valueLabel }] };
+    if (STATE.colFilters && STATE.colFilters[it.view]) delete STATE.colFilters[it.view];
+    setRegisterChartPref(it.view, { mode: 'table' });
+    STATE.shown = {};
+    const pop = $('mfgChartPopover');
+    if (pop) pop.hidden = true;
+    renderApp();
+    const strip = document.querySelector(`#workspace [data-regc-drill-strip="${CSS.escape(it.view)}"]`);
+    const target = strip || document.querySelector(`#workspace [data-regc-panel="${CSS.escape(it.view)}"]`);
+    if (target) scrollWorkspaceTo(target, 8);
+    const back = strip && strip.querySelector('[data-regc-drill-back]');
+    if (back) { try { back.focus({ preventScroll: true }); } catch (_) {} }
+  }
+  // The column filters a hub bar set aside, put back (only when no newer column filter was set since).
+  function restoreSetAsideColFilters(view) {
+    const d = getRegDrill(view);
+    if (!d || !d.setAsideColFilters) return;
+    if (!STATE.colFilters) STATE.colFilters = {};
+    const cur = STATE.colFilters[view];
+    if (!cur || !Object.values(cur).some(v => v && String(v).trim())) STATE.colFilters[view] = d.setAsideColFilters;
+  }
+  function backToHubCharts(view) {
+    restoreSetAsideColFilters(view);
+    if (STATE.regDrill) delete STATE.regDrill[view];
+    STATE.shown = {};
+    if (readChartPrefs().folded) { const p = readChartPrefs(); p.folded = false; writeChartPrefs(p); }
+    renderApp();
+    const head = $('hubChartsHead');
+    if (head) scrollWorkspaceTo(head, 8);
   }
   // A register whose filters (a bar drill or column filters) list fewer rows than it was given, but
   // whose TOTAL row was added up before those filters, gets that TOTAL redone over the rows listed.
@@ -113605,10 +114221,37 @@
         if (box) drillRegisterFromBar(box.getAttribute('data-regc-chart'), Number(drillBar.getAttribute('data-regc-drill-idx')));
         return;
       }
+      const hubBar = t.closest('#workspace [data-hub-drill-idx]');
+      if (hubBar) {
+        e.preventDefault();
+        // Touch: the first tap shows the bar's value (its popover), the second lists its rows.
+        if (_regLastPointerType === 'touch' && !hubBar.classList.contains('reg-drill-armed')) {
+          document.querySelectorAll('#workspace .hub-drill-bar.reg-drill-armed').forEach(el => el.classList.remove('reg-drill-armed'));
+          hubBar.classList.add('reg-drill-armed');
+          return;
+        }
+        drillRegisterFromHubBar(Number(hubBar.getAttribute('data-hub-drill-idx')));
+        return;
+      }
+      const drillExplain = t.closest('#workspace [data-regc-drill-explain]');
+      if (drillExplain) {
+        e.preventDefault();
+        explainRegisterDrill(drillExplain.getAttribute('data-regc-drill-explain'));
+        return;
+      }
+      const briefClose = t.closest('#workspace [data-regc-drill-brief-close]');
+      if (briefClose) {
+        e.preventDefault();
+        const v = briefClose.getAttribute('data-regc-drill-brief-close');
+        if (STATE.regDrillBrief) delete STATE.regDrillBrief[v];
+        renderApp();
+        return;
+      }
       const drillBack = t.closest('#workspace [data-regc-drill-back]');
       if (drillBack) {
         e.preventDefault();
-        clearRegisterDrill(drillBack.getAttribute('data-regc-drill-back'), true);
+        if (drillBack.hasAttribute('data-regc-drill-hub-back')) backToHubCharts(drillBack.getAttribute('data-regc-drill-back'));
+        else clearRegisterDrill(drillBack.getAttribute('data-regc-drill-back'), true);
         return;
       }
       const drillClear = t.closest('#workspace [data-regc-drill-clear]');
@@ -113619,6 +114262,13 @@
     });
     document.addEventListener('keydown', e => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
+      const hubBar = e.target && typeof e.target.closest === 'function' ? e.target.closest('#workspace [data-hub-drill-idx]') : null;
+      // Only the bar itself: a key pressed on a control inside it keeps that control's own action.
+      if (hubBar && e.target === hubBar) {
+        e.preventDefault();
+        drillRegisterFromHubBar(Number(hubBar.getAttribute('data-hub-drill-idx')));
+        return;
+      }
       const bar = e.target && typeof e.target.closest === 'function' ? e.target.closest('#workspace .reg-chart [data-regc-drill-idx]') : null;
       if (!bar) return;
       e.preventDefault();
@@ -137419,6 +138069,7 @@
       try { withRelPass(() => mountRegisterChartSwitches(container)); } catch (err) { console.warn('register chart switch', err); }
       // On its own, so a fault in any chart above can never leave a drill filtering rows with no strip.
       try { mountRegisterDrillStrips(container); } catch (err) { console.warn('register drill strip', err); }
+      try { mountHubChartDrills(container); } catch (err) { console.warn('hub chart drill', err); }
       if (keepLiveKioskVid) {
         const nextKioskVid = $('kioskAttVideo');
         if (nextKioskVid && nextKioskVid !== liveKioskVid && nextKioskVid.parentNode) {
@@ -138016,8 +138667,13 @@
         const panel = $(csvTarget) || exportCsvBtn.closest('.panel-card, .panel, .workspace') || $('workspace');
         const tables = panel ? Array.from(panel.querySelectorAll('table')) : [];
         if (!tables.length) { toast('Nothing to export', 'err'); return; }
-        const csv = tables.map(tableToCsv).join('\r\n\r\n');
-        downloadCsv(`ISABI_${exportCsvBtn.getAttribute('data-export-name') || csvTarget || 'export'}_${STATE.company}_${STATE.period}_${todayISO()}.csv`, csv);
+        // A register narrowed by a chart drill, a column filter or the search box says so in the file name
+        // and in a first line, so the extract never passes for the full register.
+        const filt = registerExportFilterParts(panel, tables, csvTarget);
+        const filtLine = filt.parts.length ? `"${(wsUiT('Filtered') + ': ' + filt.parts.join(' · ')).replace(/"/g, '""')}"\r\n` : '';
+        const csv = filtLine + tables.map(tableToCsv).join('\r\n\r\n');
+        const slug = filt.parts.length ? exportFilterSlug(filt.values) : '';
+        downloadCsv(`ISABI_${exportCsvBtn.getAttribute('data-export-name') || csvTarget || 'export'}${filt.parts.length ? '_Filtered' + (slug ? '_' + slug : '') : ''}_${STATE.company}_${STATE.period}_${todayISO()}.csv`, csv);
         toast('CSV downloaded');
         return;
       }
