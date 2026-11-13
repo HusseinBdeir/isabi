@@ -1,6 +1,13 @@
-# Assembles index.html for ISABI Systems PWA and runs quality checks
+"""assemble.py — Assembles index.html for the ISABI Systems Showcase PWA and runs static quality checks.
+
+Usage:
+  python build/assemble.py [--dry] [--skip-app-sync | --force-app-sync]
+                           [--skip-release-gates] [--skip-i18n-audit]
+"""
+import argparse
 import datetime
 import os
+import re
 import subprocess
 import sys
 
@@ -147,14 +154,127 @@ def build_sitemap_xml(lastmod_iso: str) -> str:
 </urlset>
 """
 
-def main():
-    full_html = f"{HEAD}<style>{CSS}</style>\n</head>\n<body>\n{BODY}\n<script>{JS}</script>\n</body>\n</html>\n"
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="build/assemble.py",
+        description="Assemble the ISABI Systems public showcase index.html, check JS syntax/i18n, and sync app/.",
+        allow_abbrev=False,
+    )
+    parser.add_argument(
+        "--dry",
+        "--dry-run",
+        dest="dry",
+        action="store_true",
+        help="Validate HTML in memory and print the build plan without writing files or running subprocesses.",
+    )
+    parser.add_argument(
+        "--skip-app-sync",
+        action="store_true",
+        help="Skip syncing isabi-app into app/ after building index.html.",
+    )
+    parser.add_argument(
+        "--force-app-sync",
+        action="store_true",
+        help="Run sync_command_app() even if ISABI_SKIP_APP_SYNC=1 is set in the environment.",
+    )
+    parser.add_argument(
+        "--skip-release-gates",
+        action="store_true",
+        help="Forward --skip-release-gates to sync_command_app().",
+    )
+    parser.add_argument(
+        "--skip-i18n-audit",
+        action="store_true",
+        help="Forward --skip-i18n-audit to sync_command_app().",
+    )
+    return parser
 
+
+def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    if args.skip_app_sync:
+        bad = [
+            flag
+            for enabled, flag in (
+                (args.force_app_sync, "--force-app-sync"),
+                (args.skip_release_gates, "--skip-release-gates"),
+                (args.skip_i18n_audit, "--skip-i18n-audit"),
+            )
+            if enabled
+        ]
+        if bad:
+            parser.error(f"--skip-app-sync cannot be combined with {', '.join(bad)}.")
+    return args
+
+
+def render_and_validate_showcase_html() -> str:
+    full_html = f"{HEAD}<style>{CSS}</style>\n</head>\n<body>\n{BODY}\n<script>{JS}</script>\n</body>\n</html>\n"
     # Check deliverable rules: no em dashes or unicode/ascii arrows in visible text
     for forbidden, label in [('\u2014', 'em dash'), ('\u2192', 'unicode arrow'), ('&mdash;', 'mdash entity'), ('&rarr;', 'rarr entity')]:
         if forbidden in full_html:
             print(f"ERROR: Found forbidden {label} ({forbidden!r}) in output HTML", file=sys.stderr)
             sys.exit(1)
+    return full_html
+
+
+def _inspect_404_stamp_status() -> tuple[str, str]:
+    sw_path = os.path.join(ROOT, 'sw.js')
+    p404_path = os.path.join(ROOT, '404.html')
+    if not (os.path.exists(sw_path) and os.path.exists(p404_path)):
+        return "(missing sw.js or 404.html)", "skip"
+    with open(sw_path, 'r', encoding='utf-8') as f_sw:
+        sw_src = f_sw.read()
+    m_ver = re.search(r"CACHE_NAME\s*=\s*'isabi-systems-pwa-v([^']+)'", sw_src)
+    if not m_ver:
+        return "(unparsed sw.js version)", "skip"
+    sw_ver = m_ver.group(1)
+    with open(p404_path, 'r', encoding='utf-8') as f_404:
+        raw_404 = f_404.read()
+    stamped_404 = re.sub(
+        r'(/(?:icon(?:-dark)?\.svg|favicon\.ico))(?:\?v=[0-9.]+)?',
+        rf'\1?v={sw_ver}',
+        raw_404,
+    )
+    status = "unchanged" if stamped_404 == raw_404 else f"UPDATE icon ?v={sw_ver}"
+    return f"v{sw_ver}", status
+
+
+def print_dry_run_plan(args: argparse.Namespace) -> int:
+    full_html = render_and_validate_showcase_html()
+    sw_ver_lbl, stamp_status = _inspect_404_stamp_status()
+    will_skip_sync = args.skip_app_sync or (
+        os.environ.get('ISABI_SKIP_APP_SYNC') == '1' and not args.force_app_sync
+    )
+    print("DRY RUN — 0 local writes or subprocesses")
+    print(f"  Output   : {OUT_HTML} ({len(full_html):,} bytes, 0 forbidden punctuation)")
+    print(f"  Showcase : {sw_ver_lbl} (404.html stamp: {stamp_status})")
+    print("  Steps    :")
+    print(f"    1. Write {OUT_HTML}, CNAME, robots.txt, sitemap.xml, {INDEXNOW_KEY}.txt, and check 404.html ({stamp_status})")
+    print("    2. Verify showcase JS syntax via `node --check`")
+    print("    3. Run Showcase trilingual i18n audit (`audit_showcase_i18n.run_showcase_i18n_audit`)")
+    if will_skip_sync:
+        reason = "--skip-app-sync" if args.skip_app_sync else "ISABI_SKIP_APP_SYNC=1"
+        print(f"    4. Command Center sync -> SKIP ({reason})")
+    else:
+        mods: list[str] = []
+        if args.force_app_sync:
+            mods.append("--force-app-sync")
+        if args.skip_release_gates:
+            mods.append("--skip-release-gates")
+        if args.skip_i18n_audit:
+            mods.append("--skip-i18n-audit")
+        mod_txt = f" ({', '.join(mods)})" if mods else ""
+        print(f"    4. Command Center sync -> RUN sync_command_app(){mod_txt}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_cli_args(argv)
+    if args.dry:
+        sys.exit(print_dry_run_plan(args))
+
+    full_html = render_and_validate_showcase_html()
 
     with open(OUT_HTML, 'wb') as f:
         f.write(full_html.replace('\r\n', '\n').encode('utf-8'))
@@ -171,13 +291,12 @@ def main():
     sw_path = os.path.join(ROOT, 'sw.js')
     p404_path = os.path.join(ROOT, '404.html')
     if os.path.exists(sw_path) and os.path.exists(p404_path):
-        import re as _re
         sw_src = open(sw_path, 'r', encoding='utf-8').read()
-        m_ver = _re.search(r"CACHE_NAME\s*=\s*'isabi-systems-pwa-v([^']+)'", sw_src)
+        m_ver = re.search(r"CACHE_NAME\s*=\s*'isabi-systems-pwa-v([^']+)'", sw_src)
         if m_ver:
             sw_ver = m_ver.group(1)
             raw_404 = open(p404_path, 'r', encoding='utf-8').read()
-            stamped_404 = _re.sub(
+            stamped_404 = re.sub(
                 r'(/(?:icon(?:-dark)?\.svg|favicon\.ico))(?:\?v=[0-9.]+)?',
                 rf'\1?v={sw_ver}',
                 raw_404,
@@ -203,14 +322,20 @@ def main():
         sys.exit(1)
 
     # Sync Command Center bundle into /isabi/app/ unless explicitly skipped
-    if '--skip-app-sync' in sys.argv or os.environ.get('ISABI_SKIP_APP_SYNC') == '1':
-        print("INFO: Skipped sync_command_app() (--skip-app-sync)")
+    if args.skip_app_sync or (os.environ.get('ISABI_SKIP_APP_SYNC') == '1' and not args.force_app_sync):
+        reason = "--skip-app-sync" if args.skip_app_sync else "ISABI_SKIP_APP_SYNC=1"
+        print(f"INFO: Skipped sync_command_app() ({reason})")
     else:
-        sync_command_app()
+        sync_command_app(
+            skip_release_gates=args.skip_release_gates,
+            skip_i18n_audit=args.skip_i18n_audit,
+        )
 
     # The OneDrive Website\ mirror was retired 2026-11-13: GitHub + Cloudflare Pages hold the site.
 
     print(f"OK: Generated {OUT_HTML} ({len(full_html):,} bytes, JS syntax verified, 0 em-dashes/arrows)")
+    return 0
+
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

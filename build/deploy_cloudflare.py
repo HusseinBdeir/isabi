@@ -8,8 +8,10 @@ configures Cloudflare DNS CNAMEs, and prints the exact 2 Cloudflare nameservers 
 Usage:
   python build/deploy_cloudflare.py [--dry] [--skip-seed | --seed | --delta | --full-seed]
                                     [--force-schema] [--force-r2-seeds] [--rotate-secrets]
-                                    [--skip-live-parity] [--no-sync-release-log] [--skip-indexnow] [--login]
-  python build/deploy_cloudflare.py --pages-only [--dry] [--skip-live-parity] [--no-sync-release-log] [--skip-indexnow] [--login]
+                                    [--skip-live-parity] [--no-sync-release-log] [--skip-indexnow]
+                                    [--allow-behind-origin] [--login]
+  python build/deploy_cloudflare.py --pages-only [--dry] [--skip-live-parity] [--no-sync-release-log]
+                                    [--skip-indexnow] [--allow-behind-origin] [--login]
   python build/deploy_cloudflare.py --configure-domain [--ping-indexnow] [--dry]
   python build/deploy_cloudflare.py --ping-indexnow [--dry]
   python build/deploy_cloudflare.py --check-seat-pins [--login] [--dry]
@@ -64,10 +66,16 @@ def save_edge_meta(meta: dict) -> None:
 def build_env() -> dict:
     env = os.environ.copy()
     env.pop("ELECTRON_RUN_AS_NODE", None)
-    node_dir = r"C:\Users\hbdei\.local\node"
-    py_dir = r"C:\Users\hbdei\.local\python312"
-    git_dir = r"C:\Users\hbdei\MinGit\cmd"
-    env["PATH"] = f"{node_dir};{py_dir};{git_dir};" + env.get("PATH", "")
+    extra_dirs = (
+        r"C:\Users\hbdei\.local\node",
+        r"C:\Users\hbdei\.local\python312",
+        r"C:\Users\hbdei\MinGit\cmd",
+    )
+    existing = [d for d in extra_dirs if os.path.isdir(d)]
+    if existing:
+        cur_path = env.get("PATH", "")
+        prefix = os.pathsep.join(existing)
+        env["PATH"] = f"{prefix}{os.pathsep}{cur_path}" if cur_path else prefix
     return env
 
 
@@ -1044,7 +1052,127 @@ def build_arg_parser() -> argparse.ArgumentParser:
     opts.add_argument("--skip-live-parity", action="store_true", help="Skip post-deploy build/verify_live_parity.mjs.")
     opts.add_argument("--no-sync-release-log", action="store_true", help="Run verify_live_parity.mjs without --sync-release-log.")
     opts.add_argument("--skip-indexnow", action="store_true", help="Skip post-deploy IndexNow ping.")
+    opts.add_argument(
+        "--allow-behind-origin",
+        action="store_true",
+        help="Allow deploying even when local HEAD is behind origin/main (or when origin/main cannot be fetched).",
+    )
     return parser
+
+
+def check_checkout_not_behind_origin(
+    repo_dir: pathlib.Path = ISABI_ROOT,
+    *,
+    allow_behind_origin: bool = False,
+    fetch: bool = True,
+    env: dict | None = None,
+) -> int:
+    """Verify local HEAD includes origin/main so an unpulled checkout cannot roll back live deploys."""
+    if allow_behind_origin:
+        print("WARN: Bypassing origin/main stale-checkout guard (--allow-behind-origin).")
+        return 0
+
+    git_env = env or build_env()
+    git_bin = shutil.which("git", path=git_env.get("PATH")) or "git"
+
+    if fetch:
+        try:
+            r_fetch = subprocess.run(
+                [git_bin, "fetch", "--quiet", "origin", "main"],
+                cwd=str(repo_dir),
+                env=git_env,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as ex:
+            print(
+                f"ERROR: Could not fetch origin/main to verify checkout freshness ({ex}). "
+                "Refusing to deploy without knowing whether HEAD is stale; retry when online or pass --allow-behind-origin.",
+                file=sys.stderr,
+            )
+            raise SystemExit(2) from ex
+        if r_fetch.returncode != 0:
+            detail = (r_fetch.stderr or r_fetch.stdout or "").strip() or f"exit {r_fetch.returncode}"
+            print(
+                f"ERROR: `git fetch --quiet origin main` failed ({detail}). "
+                "Refusing to deploy without verifying checkout freshness; pass --allow-behind-origin to override.",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+
+    try:
+        r_cnt = subprocess.run(
+            [git_bin, "rev-list", "--count", "HEAD..origin/main"],
+            cwd=str(repo_dir),
+            env=git_env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as ex:
+        print(
+            f"ERROR: Could not compare HEAD against origin/main ({ex}). "
+            "Pass --allow-behind-origin to override.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from ex
+
+    if r_cnt.returncode != 0:
+        detail = (r_cnt.stderr or r_cnt.stdout or "").strip() or f"exit {r_cnt.returncode}"
+        print(
+            f"ERROR: `git rev-list --count HEAD..origin/main` failed ({detail}). "
+            "Pass --allow-behind-origin to override.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+    try:
+        behind = int((r_cnt.stdout or "").strip())
+    except ValueError as ex:
+        print(
+            f"ERROR: Unexpected output from `git rev-list --count HEAD..origin/main`: {r_cnt.stdout!r}. "
+            "Pass --allow-behind-origin to override.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from ex
+
+    if behind > 0:
+        def _short_ref(ref: str) -> str:
+            r_ref = subprocess.run(
+                [git_bin, "rev-parse", "--short", ref],
+                cwd=str(repo_dir),
+                env=git_env,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
+                check=False,
+            )
+            return (r_ref.stdout or "").strip() or ref
+
+        head_sha = _short_ref("HEAD")
+        orig_sha = _short_ref("origin/main")
+        print(
+            f"ERROR: Local checkout ({head_sha}) is {behind} commit(s) behind origin/main ({orig_sha}). "
+            "Refusing to deploy stale code that would roll back live changes. "
+            "Run `git pull --rebase origin main` first, or pass --allow-behind-origin if intentional.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+    print("Checkout freshness verified: HEAD includes origin/main (0 commits behind).")
+    return 0
 
 
 def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -1088,6 +1216,7 @@ def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
         ("skip_live_parity", "--skip-live-parity"),
         ("no_sync_release_log", "--no-sync-release-log"),
         ("skip_indexnow", "--skip-indexnow"),
+        ("allow_behind_origin", "--allow-behind-origin"),
     )
     active_non_dry = [flag for attr, flag in flag_attr_map if getattr(args, attr)]
 
@@ -1191,6 +1320,11 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
         return 2
 
     steps: list[str] = [
+        (
+            "Stale-checkout guard -> BYPASS (--allow-behind-origin)"
+            if args.allow_behind_origin
+            else "Verify local HEAD is not behind origin/main (git fetch origin main + HEAD..origin/main == 0)"
+        ),
         "Verify Cloudflare auth" + (" (allow interactive --login)" if args.login else ""),
     ]
     if mode == "full-deploy":
@@ -1270,6 +1404,12 @@ def main(argv: list[str] | None = None):
         ok_parity = run_live_parity_gate(sync_release_log=not args.no_sync_release_log)
         sys.exit(0 if ok_parity else 1)
     env = build_env()
+    check_checkout_not_behind_origin(
+        ISABI_ROOT,
+        allow_behind_origin=args.allow_behind_origin,
+        fetch=True,
+        env=env,
+    )
     ok, acct_id = ensure_logged_in(env, login=args.login)
     if not ok:
         sys.exit(2)

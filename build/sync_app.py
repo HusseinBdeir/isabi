@@ -1,6 +1,10 @@
 """sync_app.py — Syncs the ISABI Command Center PWA bundle (from bhfirms/isabi-app) into bhfirms/isabi/app/.
 Ensures https://isabisystems.com/app/ serves the exact verified Command Center assets.
+
+Usage:
+  python build/sync_app.py [--dry] [--skip-release-gates] [--skip-i18n-audit]
 """
+import argparse
 import os
 import re
 import shutil
@@ -51,7 +55,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_legacy_id_sunset.py", "python"),     # legacy_id_map sunset gate
     ("isabi", "build/verify_legacy_id_hits.mjs", "node"),            # Edge legacy_id_hits counter + minShellVer floor/cap
     ("isabi", "build/verify_deployed_shell.py", "python"),           # deployed_shell.js = app/sw.js (minShellVer ceiling)
-    ("isabi", "build/verify_deploy_cli.py", "python"),              # deploy_cloudflare.py argparse + --dry gate
+    ("isabi", "build/verify_deploy_cli.py", "python"),              # build/*.py CLI argparse + --dry + stale-checkout gate
     ("isabi-app", "build/verify_min_shell_ver_local.py", "python"),  # server.py minShellVer floor/cap
     ("isabi-app", "build/verify_orphan_expense_lines.py", "python"), # top-up reconcile: orphan expense lines
     ("isabi-app", "build/verify_sum_twins.py", "python"),            # top-up reconcile: one app row = several workbook rows
@@ -83,8 +87,8 @@ def _node_runtime() -> tuple[str, dict] | None:
     return None
 
 
-def run_release_gates() -> None:
-    if os.environ.get("ISABI_SKIP_RELEASE_GATES") == "1" or "--skip-release-gates" in sys.argv:
+def run_release_gates(*, skip_release_gates: bool = False) -> None:
+    if skip_release_gates or os.environ.get("ISABI_SKIP_RELEASE_GATES") == "1":
         print("WARN: release gates skipped (--skip-release-gates / ISABI_SKIP_RELEASE_GATES=1)")
         return
     roots = {"isabi-app": APP_SRC_ROOT, "isabi": ISABI_ROOT}
@@ -193,7 +197,7 @@ def rederive_deployed_shell_ver(app_out: str | None = None) -> tuple[str, bool]:
     return m.group(1), write_deployed_shell_ver(m.group(1))
 
 
-def sync_command_app() -> int:
+def sync_command_app(*, skip_release_gates: bool = False, skip_i18n_audit: bool = False) -> int:
     if not os.path.isdir(APP_SRC_ROOT):
         print(f"WARN: {APP_SRC_ROOT} not found, skipping app/ sync.")
         return 0
@@ -202,7 +206,7 @@ def sync_command_app() -> int:
     print(f"OK: Shell version parity verified (v{ver} across sw.js, index.html, manifest.json)")
 
     audit_script = os.path.join(APP_SRC_ROOT, "build", "audit_i18n.py")
-    if os.path.isfile(audit_script) and os.environ.get("ISABI_SKIP_I18N_AUDIT") != "1" and "--skip-i18n-audit" not in sys.argv:
+    if os.path.isfile(audit_script) and not skip_i18n_audit and os.environ.get("ISABI_SKIP_I18N_AUDIT") != "1":
         chk = subprocess.run([sys.executable, audit_script], capture_output=True, text=True, encoding="utf-8")
         if chk.returncode != 0:
             print("ERROR: Command Center i18n gate failed in sync_app.py!", file=sys.stderr)
@@ -220,7 +224,7 @@ def sync_command_app() -> int:
     if cur_changed:
         print(f"OK: functions/_lib/deployed_shell.js re-derived from the current app/sw.js (v{cur_ver})")
 
-    run_release_gates()
+    run_release_gates(skip_release_gates=skip_release_gates)
 
     os.makedirs(APP_OUT, exist_ok=True)
     copied = 0
@@ -292,5 +296,109 @@ def sync_command_app() -> int:
     return copied
 
 
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="build/sync_app.py",
+        description="Sync the ISABI Command Center PWA bundle from isabi-app into isabi/app/.",
+        allow_abbrev=False,
+    )
+    parser.add_argument(
+        "--dry",
+        "--dry-run",
+        dest="dry",
+        action="store_true",
+        help="Print the sync plan and verify shell version parity without running gates or writing files.",
+    )
+    parser.add_argument(
+        "--skip-release-gates",
+        action="store_true",
+        help="Skip offline RELEASE_GATES before syncing.",
+    )
+    parser.add_argument(
+        "--skip-i18n-audit",
+        action="store_true",
+        help="Skip isabi-app/build/audit_i18n.py before syncing.",
+    )
+    return parser
+
+
+def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_arg_parser().parse_args(argv)
+
+
+def _count_syncable_files(src_root: str) -> int:
+    total = 0
+    for fname in TOP_FILES:
+        if os.path.isfile(os.path.join(src_root, fname)):
+            total += 1
+    for dname in SUB_DIRS:
+        src_dir = os.path.join(src_root, dname)
+        if not os.path.isdir(src_dir):
+            continue
+        for root, _, files in os.walk(src_dir):
+            rel = os.path.relpath(root, src_dir)
+            for fname in files:
+                if dname == "js" and rel == "." and fname in EXCLUDED_JS_FILES:
+                    continue
+                total += 1
+    return total
+
+
+def print_dry_run_plan(args: argparse.Namespace) -> int:
+    print("DRY RUN — 0 local writes or subprocesses")
+    print(f"  Source   : {APP_SRC_ROOT}")
+    print(f"  Target   : {APP_OUT}")
+    if not os.path.isdir(APP_SRC_ROOT):
+        print("  Status   : source directory not found (sync would warn and skip)")
+        return 0
+
+    ver = verify_shell_version_parity()
+    file_count = _count_syncable_files(APP_SRC_ROOT)
+    want_ds = render_deployed_shell_js(ver)
+    try:
+        with open(DEPLOYED_SHELL_JS, "r", encoding="utf-8") as f:
+            ds_matches = f.read() == want_ds
+    except FileNotFoundError:
+        ds_matches = False
+
+    skip_i18n = args.skip_i18n_audit or os.environ.get("ISABI_SKIP_I18N_AUDIT") == "1"
+    skip_gates = args.skip_release_gates or os.environ.get("ISABI_SKIP_RELEASE_GATES") == "1"
+    audit_script = os.path.join(APP_SRC_ROOT, "build", "audit_i18n.py")
+    if skip_i18n:
+        i18n_step = "Command Center i18n audit -> SKIP (--skip-i18n-audit / ISABI_SKIP_I18N_AUDIT=1)"
+    elif not os.path.isfile(audit_script):
+        i18n_step = f"Command Center i18n audit -> SKIP ({audit_script} not found)"
+    else:
+        i18n_step = f"Command Center i18n audit -> RUN {audit_script}"
+
+    gates_step = (
+        "Offline release gates -> SKIP (--skip-release-gates / ISABI_SKIP_RELEASE_GATES=1)"
+        if skip_gates
+        else f"Offline release gates -> RUN {len(RELEASE_GATES)} RELEASE_GATES checks"
+    )
+    ds_status = "unchanged" if ds_matches else f"UPDATE to v{ver}"
+
+    print(f"  Shell    : v{ver} (sw.js, index.html, manifest.json ?v= parity OK)")
+    print("  Steps    :")
+    print(f"    1. {i18n_step}")
+    print(f"    2. {gates_step}")
+    print(
+        f"    3. Copy {file_count} public files to {APP_OUT}, stamp deployed_shell.js ({ds_status}), "
+        "write empty local_dev_roster.js stub, remove retired seeds, and verify zero @bhfirms.com leaks"
+    )
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_cli_args(argv)
+    if args.dry:
+        sys.exit(print_dry_run_plan(args))
+    sync_command_app(
+        skip_release_gates=args.skip_release_gates,
+        skip_i18n_audit=args.skip_i18n_audit,
+    )
+    return 0
+
+
 if __name__ == "__main__":
-    sync_command_app()
+    sys.exit(main())

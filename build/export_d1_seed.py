@@ -12,9 +12,14 @@ Capabilities:
 Important Cloudflare D1 rule:
   Remote `wrangler d1 execute --remote --file=...` wraps each file in an implicit transaction
   and rejects explicit `BEGIN TRANSACTION` / `COMMIT`. Each batch stays <= 720 KB & <= 550 statements.
+
+Usage:
+  python build/export_d1_seed.py [--dry] [--delta | --full] [--offline] [--no-snapshot]
+                                 [--commit-manifest] [--apply-local]
 """
 from __future__ import annotations
 
+import argparse
 import base64
 import copy
 import datetime as dt
@@ -856,7 +861,7 @@ def _fetch_legacy_relay_store() -> dict:
 
 
 def fetch_live_cloud_store(offline: bool = False) -> dict:
-    if not offline and "--offline" not in sys.argv:
+    if not offline:
         edge_doc = _fetch_edge_store()
         relay_doc = _fetch_legacy_relay_store()
         merged = merge_mfg_web_stores(edge_doc, relay_doc)
@@ -1099,7 +1104,7 @@ def collect_target_rows(
 
     if include_snapshot is None:
         try:
-            use_snap = (db_path.resolve() == DB_PATH.resolve()) and ("--no-snapshot" not in sys.argv)
+            use_snap = db_path.resolve() == DB_PATH.resolve()
         except Exception:
             use_snap = False
     else:
@@ -1765,12 +1770,141 @@ def apply_local_wrangler(batch_files: list[pathlib.Path]):
             )
 
 
-if __name__ == "__main__":
-    is_delta = "--delta" in sys.argv
-    is_offline = "--offline" in sys.argv
-    batches, _meta = export_all(delta=is_delta, offline=is_offline)
-    if "--commit-manifest" in sys.argv:
+def _manifest_has_row_hashes(path: pathlib.Path) -> tuple[bool, int]:
+    if not path.is_file():
+        return False, 0
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return False, 0
+    hashes = data.get("row_hashes")
+    if isinstance(hashes, dict) and hashes:
+        return True, len(hashes)
+    return False, 0
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="build/export_d1_seed.py",
+        description="Export ISABI SQLite, snapshot/spine seeds, and live cloud store into Cloudflare D1 SQL batches.",
+        allow_abbrev=False,
+    )
+    parser.add_argument(
+        "--dry",
+        "--dry-run",
+        dest="dry",
+        action="store_true",
+        help="Print the export plan from file metadata without network calls, snapshot unpacking, or file writes.",
+    )
+    parser.add_argument(
+        "--delta",
+        action="store_true",
+        help="Emit SHA-256 delta against exports/d1_seed_manifest.json (errors if the manifest is missing/empty).",
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Force a full D1 export instead of a delta export (default when --delta is omitted).",
+    )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Skip live Edge/Relay pull and read cached exports/mfg_web_store_snapshot.json if present.",
+    )
+    parser.add_argument(
+        "--no-snapshot",
+        action="store_true",
+        help="Skip overlaying data/mfg_snapshot.json and js/seed_industries.json on top of data/mfg.db.",
+    )
+    parser.add_argument(
+        "--commit-manifest",
+        action="store_true",
+        help="Promote exports/d1_batches/pending_manifest.json to exports/d1_seed_manifest.json after export.",
+    )
+    parser.add_argument(
+        "--apply-local",
+        action="store_true",
+        help="Apply schema and exported batches to local Wrangler Miniflare D1 after export.",
+    )
+    return parser
+
+
+def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    if args.delta and args.full:
+        parser.error("--delta cannot be combined with --full.")
+    return args
+
+
+def print_dry_run_plan(args: argparse.Namespace) -> int:
+    has_manifest, manifest_rows = _manifest_has_row_hashes(COMMITTED_MANIFEST_JSON)
+    if args.delta and not has_manifest:
+        print(
+            f"ERROR: --delta requested, but `{COMMITTED_MANIFEST_JSON}` is missing or empty (pass --full for a full export).",
+            file=sys.stderr,
+        )
+        return 2
+
+    schema_tables = 0
+    if SCHEMA_SQL.is_file():
+        schema_tables = len(parse_schema_columns(SCHEMA_SQL.read_text(encoding="utf-8")))
+
+    db_status = f"present ({DB_PATH.stat().st_size:,} bytes)" if DB_PATH.is_file() else "missing"
+    snap_status = f"present ({SNAPSHOT_JSON.stat().st_size:,} bytes)" if SNAPSHOT_JSON.is_file() else "missing"
+    ind_status = f"present ({SEED_INDUSTRIES_JSON.stat().st_size:,} bytes)" if SEED_INDUSTRIES_JSON.is_file() else "missing"
+    cache_status = f"present ({LIVE_CACHE_JSON.stat().st_size:,} bytes)" if LIVE_CACHE_JSON.is_file() else "missing"
+    man_status = f"present ({manifest_rows:,} rows)" if has_manifest else "missing"
+    mode_lbl = "DELTA" if args.delta else "FULL"
+
+    print("DRY RUN — 0 remote or local writes")
+    print(f"  Mode     : {mode_lbl}")
+    print(f"  Schema   : {SCHEMA_SQL} ({schema_tables} tables)")
+    print(f"  SQLite   : {DB_PATH} ({db_status})")
+    print(f"  Manifest : {COMMITTED_MANIFEST_JSON} ({man_status})")
+    print("  Steps    :")
+    if args.offline:
+        print(f"    1. Cloud store -> OFFLINE (--offline; read {LIVE_CACHE_JSON.name}: {cache_status})")
+    else:
+        print(f"    1. Cloud store -> LIVE PULL (Edge `/app/api/sync` + legacy relay, union-merge, cache `{LIVE_CACHE_JSON.name}`)")
+    if args.no_snapshot:
+        print("    2. Snapshot & industry overlay -> SKIP (--no-snapshot; SQLite rows + live cloud store only)")
+    else:
+        print(f"    2. Snapshot & industry overlay -> INCLUDE (`mfg_snapshot.json`: {snap_status}; `seed_industries.json`: {ind_status})")
+    print(f"    3. Batch export ({mode_lbl}) -> write <=720 KB SQL batches + pending_manifest.json in {OUT_DIR}")
+    print(
+        "    4. Manifest promotion -> "
+        + (f"PROMOTE pending_manifest.json -> {COMMITTED_MANIFEST_JSON}" if args.commit_manifest else "KEEP pending_manifest.json only")
+    )
+    print("    5. Local Wrangler D1 -> " + ("APPLY schema + batches" if args.apply_local else "SKIP (pass --apply-local to apply)"))
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_cli_args(argv)
+    if args.dry:
+        sys.exit(print_dry_run_plan(args))
+    if args.delta:
+        has_manifest, _manifest_rows = _manifest_has_row_hashes(COMMITTED_MANIFEST_JSON)
+        if not has_manifest:
+            print(
+                f"ERROR: --delta requested, but `{COMMITTED_MANIFEST_JSON}` is missing or empty (pass --full for a full export).",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+    batches, _meta = export_all(
+        delta=args.delta,
+        offline=args.offline,
+        include_snapshot=(False if args.no_snapshot else None),
+    )
+    if args.commit_manifest:
         promote_pending_manifest()
         print(f"Committed D1 seed manifest -> {COMMITTED_MANIFEST_JSON}")
-    if "--apply-local" in sys.argv:
+    if args.apply_local:
         apply_local_wrangler(batches)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
