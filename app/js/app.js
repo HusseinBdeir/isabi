@@ -141,7 +141,7 @@
     const method = String((opts && opts.method) || 'GET').toUpperCase();
     const isAuthCheckUrl = /\/api\/auth\/(?:login|logout|me)(?:\b|\/|\?|$)/i.test(urlStr);
     const isReadOnlyAiOrScan = /\/api\/(?:ai-edge|ask|smart-scan)(?:\b|\/|\?|$)/i.test(urlStr);
-    const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|industry_domain_store|staff_biometrics|work_schedules|geo_config|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
+    const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|cashflow_behind|industry_domain_store|staff_biometrics|work_schedules|geo_config|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
     const inDemoSession = isDemoSandboxSession();
     const inDemoCo = !inDemoSession && STATE.company === DEMO_COMPANY_KEY;
     if ((inDemoSession || inDemoCo) && method !== 'GET' && method !== 'HEAD' && !isAuthCheckUrl && !isReadOnlyAiOrScan) {
@@ -158,6 +158,7 @@
         rows: [],
         reviews: {},
         rules: { overrides: {}, custom: [] },
+        cashflow_behind: null,
         records: {},
         industryCustomRows: {},
         industryRowEdits: {}
@@ -325,6 +326,7 @@
     cfFocusYm: '',
     cfFocusParty: '',
     cfChartGrain: 'monthly',
+    cashflowBehind: null,
     arChartMode: 'collections',
     salesChartMode: 'payment',
     payrollCutoffMode: 'closed_month',
@@ -7968,6 +7970,107 @@
     if (!canViewView('cashflow', u)) return null;
     const n = getScopedAppOnlyCashRows(u).length;
     return n > 0 ? { text: `${fmtNum(n)} Unmatched`, cls: 'warn' } : null;
+  }
+
+  let _cashflowBehindGen = 0;
+
+  async function loadCashflowBehindNotice() {
+    const myGen = ++_cashflowBehindGen;
+    if (!hasServerApi() || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) {
+      STATE.cashflowBehind = null;
+      return false;
+    }
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    try {
+      const r = await edgeApiFetch('./api/cashflow_behind', { signal: ctrl.signal });
+      if (!r) return false;
+      if (myGen !== _cashflowBehindGen || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) {
+        return false;
+      }
+      if (r.status === 401 || r.status === 403) {
+        if (STATE.cashflowBehind !== null) {
+          STATE.cashflowBehind = null;
+          if (STATE.view === 'cashflow') safeRender();
+        }
+        return false;
+      }
+      if (!r.ok) return false;
+      const d = await r.json().catch(() => null);
+      if (myGen !== _cashflowBehindGen || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) {
+        return false;
+      }
+      const nextVal = (d && d.cashflow_behind && typeof d.cashflow_behind === 'object') ? d.cashflow_behind : null;
+      if (JSON.stringify(STATE.cashflowBehind) !== JSON.stringify(nextVal)) {
+        STATE.cashflowBehind = nextVal;
+        if (STATE.view === 'cashflow') safeRender();
+      }
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  function getActiveCashflowBehindItems(u) {
+    u = u || activeUser();
+    if (!u || !isOwner(u) || isDemoScopeActive() || isOfficialScopeActive(u)) return [];
+    if ((typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing') !== 'Manufacturing') return [];
+    const b = STATE.cashflowBehind;
+    if (!b || b.status !== 'ok' || !Array.isArray(b.companies)) return [];
+    const curCoreHash = String((SEED_MANIFEST && SEED_MANIFEST.coreHash) || '').trim();
+    if (curCoreHash && String(b.core_hash || '').trim() !== curCoreHash) return [];
+    const cutObj = getWorkbookUpdateCutoff();
+    const seedCut = cutObj ? String(cutObj.cutoff || '').slice(0, 10) : '';
+    if (seedCut && String(b.cutoff || '').slice(0, 10) !== seedCut) return [];
+    const coScope = String(STATE.company || '').toLowerCase();
+    let wantKeys = [];
+    if (coScope === 'wtc') wantKeys = ['wtc'];
+    else if (coScope === 'bbconstruction') wantKeys = ['bbconstruction'];
+    else if (coScope === 'manufacturing-group' || coScope === 'all' || coScope === 'industry:manufacturing') wantKeys = ['wtc', 'bbconstruction'];
+    else return [];
+    const allowed = allowedCompanyNames(u).map(x => String(x || '').toLowerCase());
+    return b.companies.filter(c => {
+      if (!c || typeof c !== 'object') return false;
+      const ck = String(c.company_key || c.company || '').toLowerCase();
+      const cnameLow = String(c.company || ck).toLowerCase();
+      if (!wantKeys.includes(ck)) return false;
+      if (allowed.length && !allowed.includes(cnameLow)) return false;
+      if (Number(c.edited_day_count || 0) <= 0) return false;
+      if (seedCut && String(c.cutoff || '').slice(0, 10) !== seedCut) return false;
+      return true;
+    });
+  }
+
+  function renderCashflowBehindNoteHtml(items) {
+    if (!Array.isArray(items) || !items.length) return '';
+    const segs = items.map(c => {
+      const daysArr = Array.isArray(c.edited_days) ? c.edited_days : [];
+      const totalDays = Number(c.edited_day_count || daysArr.length || 0);
+      const shownDays = daysArr.slice(0, 3).map(d => fmtDateDMY(String((d && d.date) || ''))).filter(Boolean);
+      const extraDays = Math.max(0, totalDays - shownDays.length);
+      const dayLabel = shownDays.length ? shownDays.join(', ') + (extraDays > 0 ? ` (+${extraDays})` : '') : `${totalDays}`;
+      const seenP = new Set();
+      const parties = [];
+      for (let i = 0; i < daysArr.length && parties.length < 4; i++) {
+        const plist = daysArr[i] && Array.isArray(daysArr[i].parties) ? daysArr[i].parties : [];
+        for (let j = 0; j < plist.length && parties.length < 4; j++) {
+          const pn = String(plist[j] || '').trim();
+          if (pn && !seenP.has(pn.toLowerCase())) {
+            seenP.add(pn.toLowerCase());
+            parties.push(pn);
+          }
+        }
+      }
+      const netU = Number(c.edited_net_usd || 0);
+      const netL = Math.round(Number(c.edited_net_lbp || 0));
+      const usdCls = netU < -0.005 ? 'crit' : (netU > 0.005 ? 'good' : '');
+      return `<span class="cf-behind-co"><b data-no-i18n="1">${esc(c.company || c.company_key || '')}</b> <span>Days:</span> <b data-no-i18n="1">${esc(dayLabel)}</b>, <span>Net Difference:</span> <b class="${usdCls}" data-no-i18n="1">${esc(fmtSignedUSD(netU, 2))}</b>${Math.abs(netL) > 1 ? ` <b data-no-i18n="1">(${esc(fmtSignedLBP(netL))})</b>` : ''}${parties.length ? `, <span>Parties:</span> <span data-no-i18n="1">${esc(parties.join(', '))}</span>` : ''}</span>`;
+    });
+    const b = STATE.cashflowBehind || {};
+    const cutDay = String(b.cutoff || (items[0] && items[0].cutoff) || '').slice(0, 10);
+    return `<div class="cf-behind-note" id="cfWorkbookBehindNote" role="status"><span class="badge badge-warn cf-behind-badge"><span>Workbook Cash Edited Since Last Update</span></span> <span class="cf-behind-items">${segs.join('<span class="cf-behind-sep" aria-hidden="true"> · </span>')}</span> <span class="cf-behind-tail">${cutDay ? `<span>Workbooks Updated To</span> <b data-no-i18n="1">${esc(fmtDateDMY(cutDay))}</b><span class="cf-behind-sep" aria-hidden="true"> · </span>` : ''}<span>Run a workbook update to refresh ISABI.</span></span></div>`;
   }
 
   function tableToCsv(table) {
@@ -44961,6 +45064,8 @@
             `}
           </div>
         </div>
+
+        ${renderCashflowBehindNoteHtml(getActiveCashflowBehindItems(u))}
 
         ${appOnlyMoves.length ? `
         <div class="cf-app-only-strip" id="cfAppOnlyStrip" role="status">
@@ -112306,6 +112411,9 @@
             if (dId && dId.industryRowEdits && mergeIndustryRowEdits(dId.industryRowEdits)) idChanged = true;
             if (idChanged) saveLocalAuthAndRecords();
           }
+          if (STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser())) {
+            await loadCashflowBehindNotice();
+          }
         }
       } catch (_) { /* API not reachable */ }
     }
@@ -117777,6 +117885,8 @@
     if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.reset === 'function') window.MFG_APPROVALS.reset();
     if (window.MFG_SAVED_VIEWS && typeof window.MFG_SAVED_VIEWS.reset === 'function') window.MFG_SAVED_VIEWS.reset();
     STATE.authed = false;
+    STATE.cashflowBehind = null;
+    _cashflowBehindGen++;
     window.__mfgSwResuming = false;
     document.documentElement.classList.remove('sw-resuming');
     FACE_STATE.pending2faUser = null;
@@ -117937,6 +118047,8 @@
     closeTabletKeysModal();
     resetQuoteDrafts();
     // Nothing kept for the seat that is leaving stays in memory (kept lookup indexes and workforce audits).
+    STATE.cashflowBehind = null;
+    _cashflowBehindGen++;
     _WF_AUDIT_KEPT.clear();
     _WF_AUDIT_CACHE = null;
     if (window.MFG_PBI && typeof window.MFG_PBI.clearHubRelKept === 'function') window.MFG_PBI.clearHubRelKept();
@@ -118411,6 +118523,11 @@
     renderApp();
     toastWelcome(finalAuthedUser, authMethod);
     syncWithCloud(true);
+    if (isOwner(finalAuthedUser) && !isDemoScopeActive() && !isDemoSandboxSession()) {
+      loadCashflowBehindNotice();
+    } else {
+      STATE.cashflowBehind = null;
+    }
     return true;
   }
 
