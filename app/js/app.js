@@ -6088,7 +6088,25 @@
     renderDateFacilitatorPopover();
   }
 
+  // Picks made inside the open date picker repaint the picker and the top-bar date pills at once and run the
+  // full page render a moment later (one render for a quick Year > Month > Day drill), so the picker never waits on the tables.
+  let _dateFilterRenderTimer = 0;
+  function cancelDeferredDateFilterRender() {
+    if (_dateFilterRenderTimer) {
+      clearTimeout(_dateFilterRenderTimer);
+      _dateFilterRenderTimer = 0;
+    }
+  }
+  function scheduleDeferredDateFilterRender() {
+    cancelDeferredDateFilterRender();
+    _dateFilterRenderTimer = setTimeout(() => {
+      _dateFilterRenderTimer = 0;
+      renderApp();
+    }, 220);
+  }
+
   function setDateFilter(opts = {}) {
+    const sigBefore = `${STATE.period}|${STATE.dateGrain}|${STATE.dateFrom}|${STATE.dateTo}`;
     if (opts.reset) {
       STATE.dateGrain = 'all';
       STATE.period = 'all';
@@ -6149,6 +6167,20 @@
         STATE.period = 'custom';
       }
     }
+    const sigAfter = `${STATE.period}|${STATE.dateGrain}|${STATE.dateFrom}|${STATE.dateTo}`;
+    if (opts.deferRender && !opts.reset && _dateFacState.open) {
+      if (sigAfter !== sigBefore) {
+        if (STATE.rdl) STATE.rdl._dateTouched = false;
+        STATE.shown = {};
+        STATE.pbiTablePage = {};
+        saveFilterState();
+        syncTopbarDateControls();
+        scheduleDeferredDateFilterRender();
+      }
+      renderDateFacilitatorPopover();
+      return;
+    }
+    cancelDeferredDateFilterRender();
     if (STATE.rdl) STATE.rdl._dateTouched = false;
     STATE.shown = {};
     STATE.pbiTablePage = {};
@@ -138363,13 +138395,13 @@
         const wholeShownMo = e.target.closest('[data-df-whole-shown-month]');
         if (wholeShownMo) {
           resetDateFacDrillState();
-          setDateFilter({ period: 'month:' + wholeShownMo.getAttribute('data-df-whole-shown-month') });
+          setDateFilter({ period: 'month:' + wholeShownMo.getAttribute('data-df-whole-shown-month'), deferRender: true });
           return;
         }
         const wholeShownYr = e.target.closest('[data-df-whole-shown-year]');
         if (wholeShownYr) {
           resetDateFacDrillState();
-          setDateFilter({ period: 'year:' + wholeShownYr.getAttribute('data-df-whole-shown-year') });
+          setDateFilter({ period: 'year:' + wholeShownYr.getAttribute('data-df-whole-shown-year'), deferRender: true });
           return;
         }
         const qBtn = e.target.closest('[data-df-quarter]');
@@ -138381,7 +138413,7 @@
           const m2 = m1 + 2;
           const fIso = `${qy}-${String(m1).padStart(2, '0')}-01`;
           const tIso = `${qy}-${String(m2).padStart(2, '0')}-${String(daysInMonth(qy, m2)).padStart(2, '0')}`;
-          setDateFilter({ from: fIso, to: tIso });
+          setDateFilter({ from: fIso, to: tIso, deferRender: true });
           return;
         }
         const yrActBtn = e.target.closest('[data-df-year-action]');
@@ -138414,7 +138446,16 @@
           const yr = Math.min(2030, Math.max(2024, Number(pickYrCard.getAttribute('data-df-pick-year')) || 2026));
           const isKeyboard = e.detail === 0;
           _dateFacState.viewYear = yr;
-          if (_dateFacState.lastPickedYear === yr) {
+          // One click drills into the months when this year is already the selected one (nothing to change);
+          // a year that changes the dates is applied on the first click and drilled on the second.
+          const yrRange = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE };
+          const yrFp = formatDateSegParts(yrRange.from, MIN_DATE);
+          const yrTp = formatDateSegParts(yrRange.to, MAX_DATE);
+          const yrTm = _dateFacState.targetMode;
+          const yrAlreadySelected = yrTm === 'grain'
+            ? (yrFp.iso === `${yr}-01-01` && (yrTp.iso === `${yr}-12-31` || (yr === Number(todayISO().slice(0, 4)) && yrTp.iso === todayISO())))
+            : (yrTm === 'to' ? yrTp.yrNum === yr : yrFp.yrNum === yr);
+          if (_dateFacState.lastPickedYear === yr || yrAlreadySelected) {
             resetDateFacDrillState();
             _dateFacState.tab = 'month';
             syncTopbarDateControls();
@@ -138425,17 +138466,17 @@
             }
             return;
           }
-          const r = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE };
+          const r = yrRange;
           if (_dateFacState.targetMode === 'grain') {
-            setDateFilter({ period: `year:${yr}` });
+            setDateFilter({ period: `year:${yr}`, deferRender: true });
           } else if (_dateFacState.targetMode === 'to') {
             const tp = formatDateSegParts(r.to, MAX_DATE);
             const nd = Math.min(tp.dayNum, daysInMonth(yr, tp.moNum));
-            setDateFilter({ to: `${yr}-${tp.mm}-${String(nd).padStart(2, '0')}` });
+            setDateFilter({ to: `${yr}-${tp.mm}-${String(nd).padStart(2, '0')}`, deferRender: true });
           } else {
             const fp = formatDateSegParts(r.from, MIN_DATE);
             const nd = Math.min(fp.dayNum, daysInMonth(yr, fp.moNum));
-            setDateFilter({ from: `${yr}-${fp.mm}-${String(nd).padStart(2, '0')}` });
+            setDateFilter({ from: `${yr}-${fp.mm}-${String(nd).padStart(2, '0')}`, deferRender: true });
           }
           if (_dateFacState.open) {
             _dateFacState.lastPickedYear = yr;
@@ -138484,7 +138525,15 @@
           const isKeyboard = e.detail === 0;
           _dateFacState.viewYear = yr;
           _dateFacState.viewMonth = mo;
-          if (_dateFacState.lastPickedMonth === ymKey) {
+          // Same rule as the year cards: a month that is already selected drills into its days on the first click
+          const moRange = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE };
+          const moFp = formatDateSegParts(moRange.from, MIN_DATE);
+          const moTp = formatDateSegParts(moRange.to, MAX_DATE);
+          const moTm = _dateFacState.targetMode;
+          const moAlreadySelected = moTm === 'grain'
+            ? (moFp.iso === `${ymKey}-01` && moTp.iso === `${ymKey}-${String(daysInMonth(yr, mo)).padStart(2, '0')}`)
+            : (moTm === 'to' ? (moTp.yrNum === yr && moTp.moNum === mo) : (moFp.yrNum === yr && moFp.moNum === mo));
+          if (_dateFacState.lastPickedMonth === ymKey || moAlreadySelected) {
             resetDateFacDrillState();
             _dateFacState.tab = 'day';
             syncTopbarDateControls();
@@ -138495,17 +138544,17 @@
             }
             return;
           }
-          const r = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE };
+          const r = moRange;
           if (_dateFacState.targetMode === 'grain') {
-            setDateFilter({ period: `month:${ymKey}` });
+            setDateFilter({ period: `month:${ymKey}`, deferRender: true });
           } else if (_dateFacState.targetMode === 'to') {
             const tp = formatDateSegParts(r.to, MAX_DATE);
             const nd = Math.min(tp.dayNum, daysInMonth(yr, mo));
-            setDateFilter({ to: `${yr}-${mm}-${String(nd).padStart(2, '0')}` });
+            setDateFilter({ to: `${yr}-${mm}-${String(nd).padStart(2, '0')}`, deferRender: true });
           } else {
             const fp = formatDateSegParts(r.from, MIN_DATE);
             const nd = Math.min(fp.dayNum, daysInMonth(yr, mo));
-            setDateFilter({ from: `${yr}-${mm}-${String(nd).padStart(2, '0')}` });
+            setDateFilter({ from: `${yr}-${mm}-${String(nd).padStart(2, '0')}`, deferRender: true });
           }
           if (_dateFacState.open) {
             _dateFacState.lastPickedYear = null;
@@ -138520,7 +138569,7 @@
         const pickWkBtn = e.target.closest('[data-df-pick-week]');
         if (pickWkBtn) {
           resetDateFacDrillState();
-          setDateFilter({ period: pickWkBtn.getAttribute('data-df-pick-week') });
+          setDateFilter({ period: pickWkBtn.getAttribute('data-df-pick-week'), deferRender: true });
           return;
         }
         const pickDayBtn = e.target.closest('[data-df-pick-day]');
@@ -138533,14 +138582,14 @@
           _dateFacState.viewMonth = dp.moNum;
           const r = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE };
           if (_dateFacState.targetMode === 'grain') {
-            setDateFilter({ period: `day:${iso}` });
+            setDateFilter({ period: `day:${iso}`, deferRender: true });
           } else if (_dateFacState.targetMode === 'to') {
-            if (iso < r.from) setDateFilter({ from: iso, to: r.from });
-            else setDateFilter({ from: r.from, to: iso });
+            if (iso < r.from) setDateFilter({ from: iso, to: r.from, deferRender: true });
+            else setDateFilter({ from: r.from, to: iso, deferRender: true });
           } else {
             _dateFacState.targetMode = 'to';
-            if (iso > r.to) setDateFilter({ from: iso, to: iso });
-            else setDateFilter({ from: iso, to: r.to });
+            if (iso > r.to) setDateFilter({ from: iso, to: iso, deferRender: true });
+            else setDateFilter({ from: iso, to: r.to, deferRender: true });
           }
           return;
         }
@@ -138549,7 +138598,7 @@
           resetDateFacDrillState();
           const v = preBtn.getAttribute('data-df-preset');
           if (v === 'all') setDateFilter({ reset: true });
-          else setDateFilter({ period: v });
+          else setDateFilter({ period: v, deferRender: true });
           return;
         }
         return;
