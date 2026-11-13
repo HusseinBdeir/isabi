@@ -35,6 +35,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 
 ISABI_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -769,9 +770,19 @@ def _mint_cli_edge_jwt(ttl_sec: int = 300) -> str:
     return f"{signing_input}.{_b64url_encode(sig)}"
 
 
+_EDGE_PULL_FAILURES: list[str] = []  # why the last live pull failed, named in the refusal message
+
+
+def _edge_pull_failed(msg: str) -> None:
+    _EDGE_PULL_FAILURES.append(msg)
+    print(f"WARN: live Edge pull: {msg}")
+
+
 def _fetch_edge_store() -> dict:
+    _EDGE_PULL_FAILURES.clear()
     cli_tok = _mint_cli_edge_jwt()
     if not cli_tok:
+        _edge_pull_failed("no Edge sign-in secret on this PC (ISABI_JWT_SECRET / exports/cloudflare_edge_meta.json jwt_secret)")
         return {}
     for edge_url in EDGE_SYNC_URLS:
         try:
@@ -787,8 +798,14 @@ def _fetch_edge_store() -> dict:
             )
             with urllib.request.urlopen(req, timeout=12) as resp:
                 if "json" not in (resp.headers.get("Content-Type") or "").lower():
+                    _edge_pull_failed(f"{edge_url} answered without JSON ({resp.headers.get('Content-Type')})")
                     continue
                 data = json.loads(resp.read().decode("utf-8"))
+            if isinstance(data, dict) and data.get("storeUnreadable"):
+                # The Edge serves an unreadable store as `{}` plus this flag (incident 2026-11-13). Every Edge URL reads
+                # the same database, so this is a failed pull, never an empty store to seed from.
+                _edge_pull_failed(f"the live store is unreadable ({edge_url}); repair it first (Users, Sync Cloud Now from an Owner browser)")
+                return {}
             docs = data.get("docs") if isinstance(data, dict) else None
             remote = (docs.get("mfg_web_store") if isinstance(docs, dict) else None) or (
                 data if isinstance(data, dict) and "customRecords" in data else {}
@@ -826,9 +843,23 @@ def _fetch_edge_store() -> dict:
                     pass
                 print(f"Pulled live Edge D1 mfg_web_store from {edge_url} (updatedAt={remote.get('updatedAt')})")
                 return remote
-        except Exception:
-            continue
+            _edge_pull_failed(f"{edge_url} answered without a store document")
+        except urllib.error.HTTPError as ex:
+            hint = " (this PC's jwt_secret is not the live one: copy it from the PC that last deployed)" if ex.code == 401 else ""
+            _edge_pull_failed(f"{edge_url} failed (HTTP {ex.code}){hint}")
+        except Exception as ex:
+            _edge_pull_failed(f"{edge_url} failed ({type(ex).__name__}: {ex})")
     return {}
+
+
+def _live_edge_head_of(edge_doc) -> str:
+    """The pulled store's head stamp, or "" when the pull did not return a real, whole store document."""
+    if not isinstance(edge_doc, dict) or edge_doc.get("_scopedForSession"):
+        # a company-scoped copy (non-Owner session) lacks other companies' rows: as stale as a failed pull
+        return ""
+    if isinstance(edge_doc.get("customRecords"), dict) and edge_doc.get("customRecords"):
+        return str(edge_doc.get("updatedAt") or "")
+    return ""
 
 
 def _fetch_legacy_relay_store() -> dict:
@@ -869,12 +900,16 @@ def fetch_live_cloud_store(offline: bool = False) -> dict:
     if not offline:
         edge_doc = _fetch_edge_store()
         # The live head this export may overwrite: only a store actually pulled from Edge just now counts
-        _LIVE_EDGE_HEAD_TS = str((edge_doc or {}).get("updatedAt") or "") if isinstance(edge_doc, dict) and edge_doc.get("customRecords") else ""
+        _LIVE_EDGE_HEAD_TS = _live_edge_head_of(edge_doc)
         relay_doc = _fetch_legacy_relay_store()
         merged = merge_mfg_web_stores(edge_doc, relay_doc)
-        if merged:
+        if merged and _LIVE_EDGE_HEAD_TS:
             OUT_DIR.parent.mkdir(parents=True, exist_ok=True)
             LIVE_CACHE_JSON.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
+            return merged
+        if merged:
+            # Edge pull failed: a relay-only copy never replaces the cache of the last live pull (release_data_only.py
+            # reads a fresh cache as proof that the export saw the live store)
             return merged
     if LIVE_CACHE_JSON.exists():
         return json.loads(LIVE_CACHE_JSON.read_text(encoding="utf-8"))
@@ -1699,6 +1734,25 @@ def collect_target_rows(
     return target_rows
 
 
+class StaleStoreRefused(SystemExit):
+    """The live store was not pulled from the Edge just now, and the caller did not ask for an offline export."""
+
+
+def _clear_export_out_dir(out_dir: pathlib.Path) -> None:
+    # A refused run leaves nothing a later upload could pick up (old batch files or an old pending manifest)
+    if out_dir.is_dir():
+        for fp in list(out_dir.glob("batch_*.sql")) + [out_dir / "pending_manifest.json"]:
+            try:
+                fp.unlink()
+            except FileNotFoundError:
+                pass
+
+
+# Incident follow-up 2026-11-13 (red-team note on `4b7ce82`): rows of the live tables (seats, sessions, app records,
+# punches, biometrics, Sentinel reviews, alert rules, sibling-industry rows) come from the pulled store. When the pull
+# failed, the store used here is a cached or relay-only copy: rows it lacks would become DELETEs and its older rows
+# would overwrite newer live ones. So an export without a live Edge pull is refused; `offline=True` (CLI `--offline`)
+# still builds one for local use, with no DELETE at all and a pending manifest that is never promoted.
 def export_all(
     delta: bool = False,
     offline: bool = False,
@@ -1706,15 +1760,30 @@ def export_all(
     db_path: pathlib.Path = DB_PATH,
     out_dir: pathlib.Path = OUT_DIR,
     include_snapshot: bool | None = None,
+    allow_stale_store: bool | None = None,
 ) -> tuple[list[pathlib.Path], dict]:
     schema_cols = parse_schema_columns(SCHEMA_SQL.read_text(encoding="utf-8"))
     valid_tables = set(schema_cols.keys())
     remote = fetch_live_cloud_store(offline=offline)
+    stale_store = not _LIVE_EDGE_HEAD_TS
+    if stale_store and not (offline if allow_stale_store is None else allow_stale_store):
+        _clear_export_out_dir(out_dir)
+        why = "; ".join(_EDGE_PULL_FAILURES) if (_EDGE_PULL_FAILURES and not offline) else "pull failed, store unreadable, or no Edge sign-in on this PC"
+        raise StaleStoreRefused(
+            f"ABORT: the live store was not pulled from the Edge ({why}). An export from a cached or relay copy could "
+            "delete live rows or overwrite newer ones, so no batch was written. Fix the pull and run again; a UI-only "
+            "deploy still works with deploy_cloudflare.py --skip-seed, and --offline builds a local-only export with no deletes."
+        )
+    if stale_store:
+        print("WARN: export built from a cached / relay copy of the store (not live): no DELETE is emitted and the "
+              "pending manifest is marked stale (never promoted). Do not upload these batches to the live database.")
     explicit_delete_rks: set[str] = set()
     target_rows = collect_target_rows(
         db_path, schema_cols, remote, include_snapshot=include_snapshot, explicit_delete_rks=explicit_delete_rks
     )
     explicit_delete_rks -= set(target_rows.keys())
+    if stale_store:
+        explicit_delete_rks = set()  # purge lists read from a stale copy are not acted on either
 
     cur_hashes = {rk: stmt_hash(stmt) for rk, stmt in target_rows.items()}
     prev_hashes: dict[str, str] = {}
@@ -1750,7 +1819,7 @@ def export_all(
         vanished_by_tbl: dict[str, list[list[str]]] = {}
         delete_candidate_keys = set(explicit_delete_rks)
         for prev_key in prev_hashes.keys():
-            if prev_key not in cur_hashes:
+            if prev_key not in cur_hashes and not stale_store:
                 delete_candidate_keys.add(prev_key)
         for del_key in sorted(delete_candidate_keys):
             tbl, pk_vals = decode_row_key(del_key)
@@ -1838,6 +1907,8 @@ def export_all(
         "store_head_ts": store_head_ts if store_written else "",
         # what the store holds after this run as far as the export knows (kept when the pull failed)
         "store_content_sha": _STORE_CONTENT_SHA if store_has_rows else prev_store_sha,
+        # built from a cached / relay copy (offline): promote_pending_manifest refuses it
+        "stale_store": stale_store,
     }
     pending_file = out_dir / "pending_manifest.json"
     pending_file.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
@@ -1857,6 +1928,20 @@ def promote_pending_manifest(
 ) -> bool:
     pending_file = out_dir / "pending_manifest.json"
     if not pending_file.exists():
+        return False
+    try:
+        pending = json.loads(pending_file.read_text(encoding="utf-8"))
+    except Exception:
+        pending = {}
+    # The committed manifest describes the live database; an offline export's hashes would make the next delta skip or
+    # delete the wrong rows. Only a manifest that says it came from a live pull is promoted (one written before this
+    # guard has no `stale_store` key and is refused: export again).
+    if not isinstance(pending, dict) or "row_hashes" not in pending:
+        print(f"Not promoting {pending_file.name}: it is unreadable or has no row hashes.")
+        return False
+    if pending.get("stale_store") is not False:
+        why = "it was built offline from a cached copy of the store" if pending.get("stale_store") else "it predates the live-pull check; run the export again"
+        print(f"Not promoting {pending_file.name}: {why}.")
         return False
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(pending_file, manifest_path)
@@ -1942,7 +2027,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--offline",
         action="store_true",
-        help="Skip live Edge/Relay pull and read cached exports/mfg_web_store_snapshot.json if present.",
+        help="Skip the live Edge/Relay pull and read cached exports/mfg_web_store_snapshot.json (local use only: no "
+        "DELETE, the store is not written, and the pending manifest is never promoted). Without it, a failed live "
+        "pull stops the export.",
     )
     parser.add_argument(
         "--no-snapshot",
@@ -1997,9 +2084,9 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
     print(f"  Manifest : {COMMITTED_MANIFEST_JSON} ({man_status})")
     print("  Steps    :")
     if args.offline:
-        print(f"    1. Cloud store -> OFFLINE (--offline; read {LIVE_CACHE_JSON.name}: {cache_status})")
+        print(f"    1. Cloud store -> OFFLINE (--offline; read {LIVE_CACHE_JSON.name}: {cache_status}; local only: 0 DELETE, manifest never promoted)")
     else:
-        print(f"    1. Cloud store -> LIVE PULL (Edge `/app/api/sync` + legacy relay, union-merge, cache `{LIVE_CACHE_JSON.name}`)")
+        print(f"    1. Cloud store -> LIVE PULL (Edge `/app/api/sync` + legacy relay, union-merge, cache `{LIVE_CACHE_JSON.name}`; a failed Edge pull stops the export)")
     if args.no_snapshot:
         print("    2. Snapshot & industry overlay -> SKIP (--no-snapshot; SQLite rows + live cloud store only)")
     else:
@@ -2032,8 +2119,10 @@ def main(argv: list[str] | None = None) -> int:
         include_snapshot=(False if args.no_snapshot else None),
     )
     if args.commit_manifest:
-        promote_pending_manifest()
-        print(f"Committed D1 seed manifest -> {COMMITTED_MANIFEST_JSON}")
+        if promote_pending_manifest():
+            print(f"Committed D1 seed manifest -> {COMMITTED_MANIFEST_JSON}")
+        else:
+            print(f"D1 seed manifest NOT committed ({COMMITTED_MANIFEST_JSON} unchanged).")
     if args.apply_local:
         apply_local_wrangler(batches)
     return 0

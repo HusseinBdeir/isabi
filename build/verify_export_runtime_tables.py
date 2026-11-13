@@ -59,7 +59,13 @@ def parse_with_runtime(text):
 
 
 eds.parse_schema_columns = parse_with_runtime
-eds.fetch_live_cloud_store = lambda offline=False: {}
+def fake_live_fetch(offline=False):
+    # A live pull of an empty store: since the stale-store guard, an export with no live head is refused
+    eds._LIVE_EDGE_HEAD_TS = "2026-11-13T00:00:00.000Z"
+    return {}
+
+
+eds.fetch_live_cloud_store = fake_live_fetch
 
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="isabi-runtime-tables-"))
 try:
@@ -77,7 +83,7 @@ try:
     conn.commit()
     conn.close()
 
-    files, meta = eds.export_all(delta=False, offline=True, manifest_path=tmp / "none.json", db_path=dbp,
+    files, meta = eds.export_all(delta=False, offline=False, manifest_path=tmp / "none.json", db_path=dbp,
                                  out_dir=tmp / "full", include_snapshot=False)
     full = stmts(files)
     ok("FULL: ordinary local rows are still exported", any(t == "customers" and "c-local-1" in ln for _, t, ln in full), full[:3])
@@ -91,7 +97,7 @@ try:
     for t, pk in (("override_audit", "ova-live-1"), ("override_requests", "ovr-live-1"), ("saved_views", "sv-live-1"), ("customers", "c-vanished")):
         prev[eds.encode_row_key(t, (pk,))] = "0" * 64
     man.write_text(json.dumps({"row_hashes": prev}), encoding="utf-8")
-    files_d, meta_d = eds.export_all(delta=True, offline=True, manifest_path=man, db_path=dbp,
+    files_d, meta_d = eds.export_all(delta=True, offline=False, manifest_path=man, db_path=dbp,
                                      out_dir=tmp / "delta", include_snapshot=False)
     delta = stmts(files_d)
     ok("DELTA: ran in delta mode", meta_d.get("delta_mode") is True, meta_d.get("delta_mode"))

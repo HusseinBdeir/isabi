@@ -57,6 +57,8 @@ RELEASE_GATES = [
     ("isabi", "build/verify_deployed_shell.py", "python"),           # deployed_shell.js = app/sw.js (minShellVer ceiling)
     ("isabi", "build/verify_deploy_cli.py", "python"),              # build/*.py CLI argparse + --dry + stale-checkout gate
     ("isabi", "build/verify_store_kv_guard.py", "python"),          # D1 seed never leaves the live store unparseable (staged swap)
+    ("isabi", "build/verify_seed_stale_store.py", "python"),        # D1 seed never deletes / overwrites live rows from a stale store copy
+    ("isabi", "build/verify_export_runtime_tables.py", "python"),   # D1 seed never touches Edge runtime tables
     ("isabi-app", "build/verify_min_shell_ver_local.py", "python"),  # server.py minShellVer floor/cap
     ("isabi-app", "build/verify_orphan_expense_lines.py", "python"), # top-up reconcile: orphan expense lines
     ("isabi-app", "build/verify_sum_twins.py", "python"),            # top-up reconcile: one app row = several workbook rows

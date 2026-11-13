@@ -83,7 +83,7 @@ def plan(doc: dict | None, head_ts: str) -> dict:
     return rows
 
 
-def run_export(doc, head_ts: str, out: pathlib.Path, manifest: pathlib.Path, delta: bool = True):
+def run_export(doc, head_ts: str, out: pathlib.Path, manifest: pathlib.Path, delta: bool = True, offline: bool = False):
     def fake_fetch(offline=False):
         eds._LIVE_EDGE_HEAD_TS = head_ts
         eds._STORE_RUN_ID = eds.new_store_run_id()
@@ -91,7 +91,7 @@ def run_export(doc, head_ts: str, out: pathlib.Path, manifest: pathlib.Path, del
     eds.fetch_live_cloud_store = fake_fetch
     eds.collect_target_rows = lambda *a, **k: plan(doc, head_ts)
     try:
-        files, meta = eds.export_all(delta=delta, offline=False, manifest_path=manifest, db_path=pathlib.Path(tempfile.gettempdir()) / "none.db", out_dir=out)
+        files, meta = eds.export_all(delta=delta, offline=offline, manifest_path=manifest, db_path=pathlib.Path(tempfile.gettempdir()) / "none.db", out_dir=out)
     finally:
         eds.fetch_live_cloud_store, eds.collect_target_rows = orig_fetch, orig_collect
     return files, meta
@@ -224,10 +224,16 @@ with tempfile.TemporaryDirectory() as td:
     files, meta = run_export(big, "T0", tdp / "b6b", manifest)
     text = "".join(f.read_text(encoding="utf-8") for f in files)
     check("delta with the same store document as last run: store left alone", "mfg_web_store" not in text and meta.get("store_content_sha") == m6.get("store_content_sha"))
-    files, meta = run_export(None, "", tdp / "b7", manifest)
+    refused = False
+    try:
+        run_export(None, "", tdp / "b7r", manifest)
+    except eds.StaleStoreRefused:
+        refused = True
+    check("failed pull: the export is refused (no batch file)", refused and not list((tdp / "b7r").glob("batch_*.sql")))
+    files, meta = run_export(None, "", tdp / "b7", manifest, offline=True)
     text = "".join(f.read_text(encoding="utf-8") for f in files)
-    check("failed pull: no statement touches the store or work schedules", "mfg_web_store" not in text and "work_schedules" not in text, text[:200])
-    check("failed pull: manifest has no store head", meta.get("store_head_ts") == "")
+    check("offline export: no statement touches the store or work schedules", "mfg_web_store" not in text and "work_schedules" not in text, text[:200])
+    check("offline export: manifest has no store head and is marked stale", meta.get("store_head_ts") == "" and meta.get("stale_store") is True)
 
 print(f"\n{PASSES} passed, {len(FAILS)} failed")
 sys.exit(1 if FAILS else 0)
