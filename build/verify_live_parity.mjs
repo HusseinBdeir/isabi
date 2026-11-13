@@ -81,6 +81,12 @@ const NON_DOM_PROSE_TOKENS = new Set([
 ]);
 
 // Hidden <input type="file"> or master-checkbox sub-controls that live in DOM with 0x0 or clipped styling
+// Anchors a later release removed on purpose (owner decisions); older release entries keep naming them.
+const RETIRED_RELEASE_ANCHORS = new Set([
+  // v19.6.289: studio shortcuts left the Cash Flow & Treasury tabs (they live on Overview, Dashboards and their own pages)
+  'cfWhatIfBtn', 'cfCollectionForecastBtn', 'cfPayablesOptimizerBtn', 'cfInventoryOptimizerBtn'
+]);
+
 const NON_VISUAL_DOM_IDS = new Set([
   'indEntryScanFileInput',
   'permSelectAllTabsPagesCb'
@@ -761,7 +767,7 @@ async function main() {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
         await sleep(80);
       }
-      await test('page-guide-and-tour', M, 'cashflow', () => {
+      const openTopbarPageGuide = () => {
         let b = $('topbarPageGuideBtn');
         if (b && vis(b)) {
           recordSeen(['topbarPageGuideBtn', 'topbarPageListenBtn'], 'topbar-direct');
@@ -773,7 +779,13 @@ async function main() {
           recordSeen(['topbarPageGuideBtn', 'topbarPageListenBtn'], 'topbar-more-menu');
         }
         return $('topbarPageGuideBtn');
-      }, ['pageGuidePopover', 'pgAskInput', 'pgMaturityBridgeCard', 'pgOpenWhatIfBtn', 'pgOpenCollectionForecastBtn', 'pgOpenPayablesOptimizerBtn', 'pgOpenTreasuryForecastBtn', 'pgOpenInventoryOptimizerBtn', 'pgWhatsappDraftInput'], {
+      };
+      // v19.6.289: the Page Guide footer offers only the studios that suit the page; Overview keeps all five.
+      await test('page-guide-studio-shortcuts', M, 'overview', openTopbarPageGuide,
+        ['pageGuidePopover', 'pgOpenWhatIfBtn', 'pgOpenCollectionForecastBtn', 'pgOpenPayablesOptimizerBtn', 'pgOpenTreasuryForecastBtn', 'pgOpenInventoryOptimizerBtn'], { wait: 350 });
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+      await sleep(80);
+      await test('page-guide-and-tour', M, 'cashflow', openTopbarPageGuide, ['pageGuidePopover', 'pgAskInput', 'pgMaturityBridgeCard', 'pgOpenTreasuryForecastBtn', 'pgWhatsappDraftInput'], {
         wait: 350,
         afterClick: async (row, captureExpected) => {
           const pg = $('pageGuidePopover');
@@ -1029,7 +1041,7 @@ async function main() {
       for (const entry of parsedLog.entries) {
         const missInCode = [];
         for (const id of entry.ids) {
-          if (NON_DOM_PROSE_TOKENS.has(id)) continue;
+          if (NON_DOM_PROSE_TOKENS.has(id) || RETIRED_RELEASE_ANCHORS.has(id)) continue;
           if (!servedCodeTokens.has(id) && !seenDomSet.has(id)) {
             missInCode.push(id);
           }
@@ -1041,7 +1053,7 @@ async function main() {
             allLiveCodeMissing.push(`${entry.ver}:#${mId}`);
           }
           for (const id of entry.ids) {
-            if (NON_DOM_PROSE_TOKENS.has(id)) continue;
+            if (NON_DOM_PROSE_TOKENS.has(id) || RETIRED_RELEASE_ANCHORS.has(id)) continue;
             if (entry.conditional.has(id)) continue;
             if (walkedViewsSet.has(id)) continue;
             if (seenVisSet.has(id)) continue;
