@@ -3949,6 +3949,26 @@
     return finishKpiRatios(out);
   }
 
+  // The day a cash ticket reaches the till: a workbook Night / PM ticket (loaded as 21:00) the next day, as on the
+  // daily till sheet (build/cashflow_workbook.py cash_sale_posting_date); every other ticket on its date.
+  function cashTillPostingDate(s) {
+    const d = String((s && s.date) || '').slice(0, 10);
+    if (!s || isAppRecord(s) || String(s.time || '').trim() !== '21:00' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    const p = d.split('-').map(Number);
+    return new Date(Date.UTC(p[0], p[1] - 1, p[2] + 1)).toISOString().slice(0, 10);
+  }
+
+  // JV partner cash of a workbook jv_distributions row (JV_Data): Stock = cash in, Revenue share paid = cash out, USD.
+  // 0 for a row keyed in the app (the till takes JV cash from the workbooks only) or of any other basis.
+  function jvTillUsd(jd) {
+    if (!jd || isAppRecord(jd)) return 0;
+    const basis = String(jd.basis || '').trim();
+    const amt = round2(Number(jd.amount != null ? jd.amount : (jd.total || 0)));
+    if (/^stock$/i.test(basis)) return amt;
+    if (/^revenue$/i.test(basis)) return -amt;
+    return 0;
+  }
+
   function computeCustomCashDeltas(coKey, range) {
     const allowed = allowedCompanyNames();
     const matchCo = r => matchesCashScopeCompany(r, coKey, allowed);
@@ -3975,9 +3995,11 @@
         const sgn = ticketSign(s);
         const net = Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0))) * sgn;
         const vat = Number(s.vat || 0) * sgn;
-        addMove(s.date, net >= 0 ? net : 0, net < 0 ? -net : 0, vat >= 0 ? Math.round(vat * 89500) : 0, vat < 0 ? Math.round(-vat * 89500) : 0, mult);
+        addMove(cashTillPostingDate(s), net >= 0 ? net : 0, net < 0 ? -net : 0, vat >= 0 ? Math.round(vat * 89500) : 0, vat < 0 ? Math.round(-vat * 89500) : 0, mult);
       }
     });
+    // No JV leg: JV cash in the till comes from the workbooks only (the top-up never refreshes jv_distributions, so an
+    // app edit or void of a workbook JV row would stay in the till after the workbook carries the same correction).
     forEachCashCustomDelta('receipts', matchCo, (r, mult) => {
       const mth = String(r.method || '').trim();
       const knd = receiptKind(r);
@@ -43187,7 +43209,8 @@
       _dailyTillCacheMap.clear();
       _cashMovesCacheKey = 'active';
     }
-    const baseScopeKey = `${effCo}|${allowedCompanyNames(u).join(',')}|${offScope ? 'OFF' : 'ALL'}|${fullFin ? 1 : 0}|${rate}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${SEED._recordsReady ? 1 : 0}`;
+    const jvRights = Boolean(opts.forceFullFin || canAccessTable('jv_distributions', u));
+    const baseScopeKey = `${effCo}|${allowedCompanyNames(u).join(',')}|${offScope ? 'OFF' : 'ALL'}|${fullFin ? 1 : 0}|${jvRights ? 1 : 0}|${rate}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${SEED._recordsReady ? 1 : 0}`;
     const cacheKey = `${baseScopeKey}|${range ? (range.from + '..' + range.to) : 'ALL'}`;
     if (_cashMovesCacheMap.has(cacheKey)) return _cashMovesCacheMap.get(cacheKey);
     if (range && _cashMovesCacheMap.has(baseScopeKey + '|ALL')) {
@@ -43242,9 +43265,12 @@
         const net = Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0))) * sgn;
         const vatL = Math.round(Number(s.vat || 0) * sgn * rate);
         const qtyStr = s.qty ? `${fmtNum(Number(s.qty), Number(s.qty) % 1 ? 1 : 0)} ${s.uom || 'm³'}` : '';
-        const det = [s.product, qtyStr, s.site ? `→ ${s.site}` : '', s.truck ? `Truck ${s.truck}` : '', cleanLedgerNote(s.notes)].filter(Boolean).join(' · ');
+        // A workbook Night / PM ticket (loaded as 21:00) reaches the till the next day, as on the daily till sheet.
+        const tillDate = cashTillPostingDate(s);
+        const nightTill = Boolean(tillDate) && tillDate !== String(s.date || '').slice(0, 10);
+        const det = [s.product, qtyStr, s.site ? `→ ${s.site}` : '', s.truck ? `Truck ${s.truck}` : '', nightTill ? `Night Ticket of ${fmtDateDMY(String(s.date).slice(0, 10))}` : '', cleanLedgerNote(s.notes)].filter(Boolean).join(' · ');
         pushMove({
-          id: s.id, rkey: 'sales_tickets', date: s.date, company: s.company,
+          id: s.id, rkey: 'sales_tickets', date: nightTill ? tillDate : s.date, company: s.company,
           stream: 'sales', cat: sgn < 0 ? 'Cash Sale Return' : 'Cash Sale',
           party: s.customer || 'Walk-in', partyRel: s.customer ? 'customers' : '',
           detail: det || 'Cash weighbridge dispatch',
@@ -43431,6 +43457,41 @@
           raw: ls
         });
       });
+
+      // JV partner cash (workbook JV_Data, same rule as the daily till sheet): a partner's revenue share paid
+      // leaves the till, a JV stock payment received comes in. USD only. The till takes JV cash from the workbook rows
+      // as loaded (computeCustomCashDeltas has no JV leg), so the register lists the workbook original of a row edited
+      // or voided in the app, and leaves out rows keyed in the app (jvTillUsd = 0).
+      if (jvRights) {
+        const jvAllowed = allowedCompanyNames(u);
+        const jvRows = filterRecords(SEED.records.jv_distributions || [], baseFilterOpts)
+          .map(jd => (jd && !isAppRecord(jd) ? (resolveSeedOrigRow('jv_distributions', jd) || jd) : jd));
+        const jvVoided = SEED_VOIDED_ARCHIVE.jv_distributions;
+        if (jvVoided && jvVoided.size) {
+          const listed = new Set(jvRows.map(jd => String((jd && jd.id) || '')));
+          jvVoided.forEach((orig, sid) => {
+            if (!orig || isAppRecord(orig) || listed.has(String(sid)) || listed.has(String(orig.id || ''))) return;
+            if (matchesCashScopeCompany(orig, effCo, jvAllowed)) jvRows.push(orig);
+          });
+        }
+        jvRows.forEach(jd => {
+          if (!jd) return;
+          const jvU = jvTillUsd(jd);
+          if (!jvU) return;
+          const isIn = /^stock$/i.test(String(jd.basis || '').trim());
+          pushMove({
+            id: jd.id, rkey: 'jv_distributions', date: jd.date, company: jd.company,
+            stream: 'jv', cat: isIn ? 'JV Stock Receipt' : 'JV Partner Share Paid',
+            party: jd.partner || jd.site || '—', partyRel: '',
+            detail: [jd.site, cleanLedgerNote(jd.notes)].filter(Boolean).join(' · ') || 'JV partner cash',
+            ref: shortVoucherRef(jd.name),
+            method: isIn ? 'JV In' : 'JV Out',
+            usd: jvU,
+            lbp: 0,
+            raw: jd
+          });
+        });
+      }
     }
 
     // 9. Dual-Currency FX Conversions (USD ↔ LBP)
@@ -43467,6 +43528,13 @@
     _cashMovesCacheMap.set(cacheKey, sliced);
     return sliced;
   }
+  // Read-only hook for the cash till gates (build/verify_cf_strip_totals.mjs); automated test browsers only.
+  if ((typeof navigator !== 'undefined' && navigator.webdriver) || window.__MFG_HEADLESS_TEST) window.__mfgCashTill = {
+    moves: opts => buildCashTillMoves(opts || {}),
+    daily: opts => buildDailyTillSheetRows(opts || {}),
+    sheet: co => { const mm = getModel(co); return (mm && mm.cash_flow_sheet) || null; },
+    setDates: (from, to) => setDateFilter({ from, to })
+  };
 
   function buildDailyTillSheetRows(opts = {}) {
     const u = opts.user || activeUser();
@@ -43883,7 +43951,7 @@
 
     let streamCounts = drillScopedMoves._streamCounts;
     if (!streamCounts) {
-      streamCounts = { sales: 0, exp: 0, loan: 0, sal: 0, ext: 0, extd: 0, fx: 0 };
+      streamCounts = { sales: 0, exp: 0, loan: 0, sal: 0, ext: 0, extd: 0, jv: 0, fx: 0 };
       for (let i = 0; i < drillScopedMoves.length; i++) {
         const sk = drillScopedMoves[i].stream;
         if (streamCounts[sk] != null) streamCounts[sk]++;
@@ -43905,7 +43973,7 @@
     }
     const appOnlyCutoff = appOnlyMoves.length ? getAppOnlyCashIndex().cutoff : '';
 
-    const cfChip = ((!isHoldingCf && STATE.chipFilter === 'cf_extd') || (STATE.chipFilter === 'cf_app_only' && (!appOnlyMoves.length || isDailyMode))) ? 'all' : (STATE.chipFilter || 'all');
+    const cfChip = ((!isHoldingCf && STATE.chipFilter === 'cf_extd') || (STATE.chipFilter === 'cf_jv' && (!fullFin || !streamCounts.jv)) || (STATE.chipFilter === 'cf_app_only' && (!appOnlyMoves.length || isDailyMode))) ? 'all' : (STATE.chipFilter || 'all');
     const chipBaseMoves = cfChip === 'cf_app_only' ? appOnlyMoves : drillScopedMoves;
     const matchCfChip = mRow => {
       if (cfChip === 'cf_in' && mRow.dir !== 'IN') return false;
@@ -43916,6 +43984,7 @@
       if (cfChip === 'cf_extd' && mRow.stream !== 'extd') return false;
       if (cfChip === 'cf_sal' && mRow.stream !== 'sal') return false;
       if (cfChip === 'cf_loan' && mRow.stream !== 'loan') return false;
+      if (cfChip === 'cf_jv' && mRow.stream !== 'jv') return false;
       if (cfChip === 'cf_fx' && mRow.stream !== 'fx') return false;
       if (cfChip === 'cf_lbp' && Math.abs(mRow.lbp) <= 1) return false;
       return true;
@@ -43945,7 +44014,8 @@
     }
     let mvUsdSum = round2(mvInUsd - mvOutUsd);
     const hasDrill = Boolean(focusDate || focusYm || focusParty);
-    const activeCfChip = STATE.chipFilter || 'all';
+    // The chip in effect (a chip left over from another scope or date range falls back to 'all' in cfChip).
+    const activeCfChip = cfChip;
     const isAllTimeWindow = !periodRange(STATE.period);
     const tbls = buildLiveCashFlowTables(cf, STATE.company, rate);
     const tSales = tbls.sales || { rows: [], totals: { usd: 0, lbp: 0 } };
@@ -43955,15 +44025,23 @@
     const tExt = tbls.external || { rows: [], totals: { exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 } };
     const tExtd = tbls.extended || { rows: [], totals: { usd: 0, lbp: 0 } };
     const tConv = tbls.conversion || { rows: [], totals: { from_amt: 0, to_amt: 0 } };
-    if (isAllTimeWindow && !hasDrill && !q && !hasActiveColFilters('cf_moves') && STATE.company !== 'lionstransport') {
+    // Unfiltered "All" on any dates (preset or typed range) reads the daily till sheet through getKPI, the same source as
+    // the Selected Period card: the sheet carries old-history offsets the entries cannot (build/cf_anchor.json). Only a
+    // Manufacturing scope has that sheet; elsewhere getKPI's cash figures are not dated, so a typed range sums the entries.
+    const cfStripFromSheet = !hasDrill && !q && !hasActiveColFilters('cf_moves') && STATE.company !== 'lionstransport';
+    const cfHasTillSheet = activeIndCf === 'Manufacturing' && Array.isArray(cf.daily) && cf.daily.length > 0;
+    // A seat without JV rights does not see the JV rows the sheet counts: its line sums what it is shown.
+    const cfJvHidden = cfHasTillSheet && !canAccessTable('jv_distributions', u)
+      && (SEED.records.jv_distributions || []).some(r => r && !r.voided && matchesCashScopeCompany(r, STATE.company, allowedNames));
+    if (cfStripFromSheet && activeCfChip === 'all' && fullFin && !cfJvHidden && (isAllTimeWindow || cfHasTillSheet)) {
+      mvInUsd = round2(Number(k.cash_in_usd != null ? k.cash_in_usd : mvInUsd));
+      mvOutUsd = round2(Number(k.cash_out_usd != null ? k.cash_out_usd : mvOutUsd));
+      mvUsdSum = round2(Number(k.net_cash_usd != null ? k.net_cash_usd : (mvInUsd - mvOutUsd)));
+      mvLbpSum = Math.round(Number(k.net_cash_lbp != null ? k.net_cash_lbp : mvLbpSum));
+    } else if (cfStripFromSheet && isAllTimeWindow) {
       const cdCo = computeCustomCashDeltas(STATE.company, null);
       const hasCoCustom = Math.abs(cdCo.liveInU) > 0.001 || Math.abs(cdCo.liveOutU) > 0.001 || Math.abs(cdCo.liveInL) > 1 || Math.abs(cdCo.liveOutL) > 1;
-      if (activeCfChip === 'all' && fullFin) {
-        mvInUsd = round2(Number(k.cash_in_usd != null ? k.cash_in_usd : mvInUsd));
-        mvOutUsd = round2(Number(k.cash_out_usd != null ? k.cash_out_usd : mvOutUsd));
-        mvUsdSum = round2(Number(k.net_cash_usd != null ? k.net_cash_usd : (mvInUsd - mvOutUsd)));
-        mvLbpSum = Math.round(Number(k.net_cash_lbp != null ? k.net_cash_lbp : mvLbpSum));
-      } else if (!hasCoCustom) {
+      if (!hasCoCustom) {
         if (activeCfChip === 'cf_sales' && tSales.totals) {
           mvUsdSum = round2(Number(tSales.totals.usd || 0));
           mvLbpSum = Math.round(Number(tSales.totals.lbp || 0));
@@ -44176,6 +44254,7 @@
                 ${fullFin ? chip('cf_sal', `Salary (${fmtNum(streamCounts.sal)})`) : ''}
                 ${fullFin ? chip('cf_ext', `External (${fmtNum(streamCounts.ext)})`) : ''}
                 ${fullFin && isHoldingCf ? chip('cf_extd', `Extended (${fmtNum(streamCounts.extd)})`) : ''}
+                ${fullFin && streamCounts.jv ? chip('cf_jv', `JV Partners (${fmtNum(streamCounts.jv)})`) : ''}
                 ${chip('cf_fx', `FX Conversions (${fmtNum(streamCounts.fx)})`)}
                 ${chip('cf_lbp', 'LBP (LL)')}
                 ${appOnlyMoves.length ? chip('cf_app_only', `Not in Workbooks (${fmtNum(appOnlyMoves.length)})`) : ''}
