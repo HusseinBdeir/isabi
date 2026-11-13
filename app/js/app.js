@@ -40194,7 +40194,7 @@
       };
       return `
         ${bannerHtml}
-        ${STATE.payrollPolicyOpen ? renderPayrollBiometricPolicySectionHtml() : ''}
+        ${renderPayrollBiometricPolicySectionHtml()}
         <div class="panel-card" id="payAttPanel">
           <div class="table-toolbar">
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -40540,8 +40540,6 @@
         })()}
 
         ${driverOtPanelHtml}
-
-        ${!STATE.payrollPolicyOpen ? renderPayrollBiometricPolicySectionHtml() : ''}
       `;
     }
 
