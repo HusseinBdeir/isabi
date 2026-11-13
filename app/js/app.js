@@ -28918,7 +28918,6 @@
       e && !e.voided && e.status !== 'Ended' && (!e.end_date || String(e.end_date).slice(0, 10) >= todayISO())
       && (!coNorm || norm(e.company || 'WTC') === coNorm)
     );
-    const ws = ensureWorkSchedulesState();
     const seen = new Set();
     let cnt = 0;
     emps.forEach(e => {
@@ -28926,8 +28925,9 @@
       const sk = norm(st);
       if (!sk || seen.has(sk)) return;
       seen.add(sk);
-      const rawRule = ws.staffRules && ws.staffRules[sk] && !ws.staffRules[sk].reset_default ? ws.staffRules[sk] : null;
-      const ruleShiftId = rawRule && rawRule.shift_id ? norm(rawRule.shift_id) : '';
+      // The shift the person is on (resolveStaffShiftAssignment, the same answer attendance uses).
+      const asg = resolveStaffShiftAssignment(st, e.company || co, { ruleOnly: true });
+      const ruleShiftId = asg.how === 'assigned' ? norm(asg.shiftId) : '';
       if (ruleShiftId && (ruleShiftId === codeNorm || ruleShiftId === nameNorm)) {
         cnt++;
       } else if (!ruleShiftId && isBuDef) {
@@ -29075,11 +29075,12 @@
     const out = new Map();
     const rows = (shiftRows || []).filter(r => r && r.id);
     if (!rows.length || !Array.isArray(attRows) || !attRows.length) return out;
-    const ws = ensureWorkSchedulesState();
     const byCoCode = new Map();
     const defByCo = new Map();
+    const coRawOf = new Map();
     rows.forEach(r => {
       const coN = norm(r.company || 'WTC');
+      if (!coRawOf.has(coN)) coRawOf.set(coN, String(r.company || 'WTC'));
       [r.shift_code, r.shift_id, r.name].forEach(k => {
         const kk = norm(normalizeShiftCodeAlias(k || ''));
         if (kk && !byCoCode.has(`${coN}|${kk}`)) byCoCode.set(`${coN}|${kk}`, r);
@@ -29091,8 +29092,8 @@
       const sk = norm(staff);
       const ck = `${sk}|${coN}`;
       if (staffShift.has(ck)) return staffShift.get(ck);
-      const rule = ws.staffRules && ws.staffRules[sk] && !ws.staffRules[sk].reset_default ? ws.staffRules[sk] : null;
-      const rid = rule && rule.shift_id ? norm(normalizeShiftCodeAlias(rule.shift_id)) : '';
+      const asg = resolveStaffShiftAssignment(staff, coRawOf.get(coN) || coN, { ruleOnly: true });
+      const rid = asg.how === 'assigned' ? norm(asg.shiftId) : '';
       const hit = rid ? (byCoCode.get(`${coN}|${rid}`) || null) : (defByCo.get(coN) || null);
       staffShift.set(ck, hit);
       return hit;
@@ -29344,19 +29345,11 @@
     if (!peersByCo.size) return out;
     const today = todayISO();
     const cutoff = shiftIsoDateByDays(today, -WS_RETIRE_IDLE_DAYS);
-    const ws = ensureWorkSchedulesState();
     const codeOf = r => norm(normalizeShiftCodeAlias((r && (r.shift_code || r.shift_id || r.name)) || ''));
     const isEndedEmp = e => e.status === 'Ended' || e.status === 'Inactive' || e.status === 'Terminated'
       || Boolean(e.end_date && String(e.end_date).slice(0, 10) < today);
-    // Staff rules are keyed by name only: a name employed in two companies cannot be assigned safely from here.
-    const nameCos = new Map();
-    ((SEED && SEED.records && SEED.records.employments) || []).forEach(e => {
-      if (!e || e.voided || isEndedEmp(e)) return;
-      const sk = norm(e.staff || e.name || '');
-      if (!sk) return;
-      if (!nameCos.has(sk)) nameCos.set(sk, new Set());
-      nameCos.get(sk).add(norm(e.company || 'WTC'));
-    });
+    // Rules are kept per company and person (staffRuleKey), so a name employed in two companies is listed and
+    // assigned per company.
     const staffMap = new Map();
     ((SEED && SEED.records && SEED.records.employments) || []).forEach(e => {
       if (!e || e.voided || isEndedEmp(e)) return;
@@ -29365,16 +29358,17 @@
       const nm = String(e.staff || e.name || '').trim();
       const sk = norm(nm);
       if (!sk || staffMap.has(`${coN}|${sk}`)) return;
-      const rule = ws.staffRules && ws.staffRules[sk] && !ws.staffRules[sk].reset_default ? ws.staffRules[sk] : null;
-      const rid = rule && rule.shift_id ? normalizeShiftCodeAlias(rule.shift_id) : '';
+      // The shift the person is on: one answer for every screen (resolveStaffShiftAssignment).
+      const asg = resolveStaffShiftAssignment(nm, e.company || 'WTC', { ruleOnly: true });
+      const rule = asg.rule;
+      const rid = asg.how === 'assigned' ? asg.shiftId : '';
       if (rid === 'custom') return;
       const overrides = (rule && Array.isArray(rule.shift_overrides) ? rule.shift_overrides : [])
         .filter(o => o && o.start_date)
         .map(o => [String(o.start_date).slice(0, 10), String(o.end_date || o.start_date).slice(0, 10)]);
       const peers = peersByCo.get(coN) || [];
       const onRow = rid ? (peers.find(p => codeOf(p) === norm(rid)) || null) : (peers.find(p => p.is_bu_default) || null);
-      const clash = (nameCos.get(sk) || new Set()).size > 1 ? 'name' : (rule && rule.company && norm(rule.company) !== coN ? 'rule' : '');
-      staffMap.set(`${coN}|${sk}`, { name: nm, company: e.company || 'WTC', coN, rid, hasRule: Boolean(rule), onRow, clash, overrides, clocked: 0, by: new Map() });
+      staffMap.set(`${coN}|${sk}`, { name: nm, company: e.company || 'WTC', coN, rid, hasRule: Boolean(rule), onRow, overrides, clocked: 0, by: new Map() });
     });
     if (!staffMap.size) return out;
     const matchDay = makeWorkShiftClockMatcher(peersByCo);
@@ -29440,9 +29434,6 @@
       const onRow = st.onRow;
       const onCode = st.rid ? norm(st.rid) : codeOf(onRow);
       if (onCode && onCode === codeOf(top.shift)) return;
-      // What the attendance rules apply to new punches today (an unassigned person gets a guessed shift).
-      let effCode = '';
-      try { effCode = norm(normalizeShiftCodeAlias(getStaffWorkRule(st.name, st.company).shift_id || '')); } catch (_) { effCode = ''; }
       const mIn = median(top.dIn);
       const mOut = median(top.dOut);
       const pS = median(top.planS);
@@ -29453,7 +29444,6 @@
         onId: onRow ? onRow.id : '',
         onName: onRow ? (onRow.name || onRow.shift_name || '') : (st.rid ? shiftNameOf(st.coN, st.rid) : ''),
         hasRule: st.hasRule,
-        clash: st.clash,
         targetGrace: top.shift.grace_min,
         targetEarlyGrace: top.shift.early_leave_grace_min,
         onHow: st.rid ? 'assigned' : 'default',
@@ -29466,7 +29456,6 @@
         days: top.n,
         clocked: st.clocked,
         share: Math.round((top.n / st.clocked) * 100),
-        guessed: !st.rid && effCode === codeOf(top.shift),
         typIn: (mIn != null && pS != null) ? Math.round(pS + mIn) : null,
         typOut: (mOut != null && pE != null) ? Math.round(pE + mOut) : null
       });
@@ -29497,7 +29486,7 @@
     const done = [];
     want.forEach(x => {
       const hit = live.find(r => norm(r.staff) === norm(x.staff) && norm(r.company) === norm(x.company) && String(r.targetId) === String(x.shiftId));
-      if (!hit || !hit.targetCode || hit.clash) return;
+      if (!hit || !hit.targetCode) return;
       const patch = { shift_id: hit.targetCode, company: hit.company };
       // A person with no saved rule carries the old shift's grace; give them the new shift's (a saved rule keeps
       // whatever grace was set for that person).
@@ -29506,7 +29495,7 @@
         patch.early_leave_grace_min = Number(hit.targetEarlyGrace != null ? hit.targetEarlyGrace : hit.targetGrace);
       }
       const res = saveStaffWorkRule(hit.staff, patch, { deferSave: true });
-      if (res && res.ok) done.push({ staff: hit.staff, company: hit.company, shiftName: hit.targetName, key: norm(hit.staff), rule: res.rule });
+      if (res && res.ok) done.push({ staff: hit.staff, company: hit.company, shiftName: hit.targetName, key: res.key, rule: res.rule });
     });
     if (!done.length) return { ok: false, error: 'Already on that shift or no longer listed', done };
     done.forEach(d => postWorkScheduleMutation({ op: 'upsert_staff_rule', key: d.key, item: d.rule }));
@@ -30079,8 +30068,13 @@
     const rangeFrom = s1 < s2 ? s1 : s2;
     const rangeTo = e1 > e2 ? e1 : e2;
 
-    // Identify all staff associated with this shift (explicitly assigned OR via BU default)
+    // Identify all staff on this shift (resolveStaffShiftAssignment: the saved shift, else the company default).
+    // associatedStaff holds names (attendance rows are matched by name within the company below); rulesOnShift
+    // the stored rules to bring in line with the new version.
     const associatedStaff = new Set();
+    const rulesOnShift = new Set();
+    const presetOnlyBf = Boolean(opts && Array.isArray(opts.limitWindows));
+    const isThisShift = sid => Boolean(sid) && (sid === codeNorm || sid === nameNorm || sid === norm(ref.id || ''));
     const emps = (SEED && SEED.records && SEED.records.employments) || [];
     emps.forEach(e => {
       if (!e || e.voided) return;
@@ -30089,29 +30083,32 @@
       if (!sk) return;
       const empCoNorm = norm(e.company || 'WTC');
       if (coNorm && empCoNorm !== coNorm) return;
-      const rawRule = ws.staffRules && ws.staffRules[sk] && !ws.staffRules[sk].reset_default ? ws.staffRules[sk] : null;
-      const rShift = rawRule && rawRule.shift_id ? norm(rawRule.shift_id) : '';
-      if (rShift && (rShift === codeNorm || rShift === nameNorm || rShift === norm(ref.id || ''))) {
+      const asg = resolveStaffShiftAssignment(st, e.company || 'WTC', { ruleOnly: true });
+      const rShift = asg.how === 'assigned' ? norm(asg.shiftId) : '';
+      if ((rShift && isThisShift(rShift)) || (!rShift && isBuDef)) {
         associatedStaff.add(sk);
-      } else if (!rShift && isBuDef) {
-        associatedStaff.add(sk);
+        if (asg.rule) rulesOnShift.add(presetOnlyBf ? asg.rule : ownStaffRuleForCompany(st, e.company || 'WTC', asg.rule));
       }
     });
-    Object.entries(ws.staffRules || {}).forEach(([sk, r]) => {
+    Object.entries(ws.staffRules || {}).forEach(([rk, r]) => {
       if (!r || r.reset_default) return;
       if (coNorm && r.company && norm(r.company) !== coNorm) return;
-      const rShift = norm(r.shift_id || '');
-      if (rShift && (rShift === codeNorm || rShift === nameNorm || rShift === norm(ref.id || ''))) {
-        associatedStaff.add(sk);
+      if (!staffRuleKeyMatchesCompany(rk, r)) return;
+      const bar = rk.indexOf('|');
+      const nmKey = bar >= 0 ? rk.slice(bar + 1) : norm(r.staff || rk);
+      // An older bare-name rule no longer applies where the person has a rule saved under the company.
+      if (bar < 0 && r.company && ws.staffRules[staffRuleKey(nmKey, r.company)]) return;
+      if (isThisShift(norm(r.shift_id || ''))) {
+        associatedStaff.add(nmKey);
+        rulesOnShift.add((bar < 0 && !presetOnlyBf && r.company) ? ownStaffRuleForCompany(r.staff || nmKey, r.company, r) : r);
       }
     });
 
-    let staffUpdated = 0;
+    const staffUpdated = associatedStaff.size;
     // A calendar preset (opts.limitWindows) changes only dated exceptions, which reach people through the shift
     // at resolve time: it must not copy this version's grace minutes or timings onto anyone's own rule.
     const presetOnly = Boolean(opts && Array.isArray(opts.limitWindows));
-    associatedStaff.forEach(sk => {
-      const existingRule = ws.staffRules[sk];
+    rulesOnShift.forEach(existingRule => {
       if (!presetOnly && existingRule && !existingRule.reset_default) {
         existingRule.grace_min = ref.grace_min != null ? ref.grace_min : existingRule.grace_min;
         existingRule.early_leave_grace_min = ref.early_leave_grace_min != null ? ref.early_leave_grace_min : existingRule.early_leave_grace_min;
@@ -30124,7 +30121,6 @@
         }
         existingRule.updated_at = new Date().toISOString();
       }
-      staffUpdated++;
     });
 
     const dateExcWindows = normalizeDateTimingsList((ref && ref.date_timings) || [])
@@ -42139,7 +42135,7 @@
           // The search box narrows registers, not this list (it would drop candidate shifts and the default).
           const wrongShiftRows = getStaffOnWrongShift(filterRecords(allWs, { ignorePeriod: true, ignoreSearch: true }).filter(r => !r.end_date));
           const wsCanAssign = canAssignStaffShift();
-          const wrongAssignable = wrongShiftRows.filter(r => !r.clash).length;
+          const wrongAssignable = wrongShiftRows.length;
           const wrongShowCo = new Set(wrongShiftRows.map(r => String(r.company || ''))).size > 1;
           const wsHm = m => (m == null ? '' : `${String(Math.floor((((m % 1440) + 1440) % 1440) / 60)).padStart(2, '0')}:${String((((m % 1440) + 1440) % 1440) % 60).padStart(2, '0')}`);
           const wrongShiftHtml = !wrongShiftRows.length ? '' : `
@@ -42170,14 +42166,10 @@
                         <td><strong>${esc(r.staff)}</strong></td>
                         ${wrongShowCo ? `<td>${coBadge(r.company)}</td>` : ''}
                         <td>${esc(r.onName || '-')}<div class="drv-sub">${r.onHow === 'default' ? '<span>Company Default</span>' : '<span>Assigned</span>'}</div></td>
-                        <td><strong>${esc(r.targetName)}</strong> <span class="mono">${esc(r.targetWin)}</span>${r.guessed ? `<div class="drv-sub"><span class="ws-guess-pill" data-ui-tip="Attendance already applies this shift to new punches by guessing from recent clock times. It is not assigned, so the shift charts count this person on the company default.">Guessed by Attendance</span></div>` : ''}</td>
+                        <td><strong>${esc(r.targetName)}</strong> <span class="mono">${esc(r.targetWin)}</span></td>
                         <td class="r mono">${fmtNum(r.days, 0)} / ${fmtNum(r.clocked, 0)} <small>(${fmtNum(r.share, 0)}%)</small></td>
                         <td class="mono">${r.typIn != null && r.typOut != null ? `${wsHm(r.typIn)} / ${wsHm(r.typOut)}` : '-'}</td>
-                        ${wsCanAssign ? `<td class="r">${r.clash === 'name'
-                          ? `<span class="ws-clash-note" data-ui-tip="Shift rules are kept per name. This name is also employed in another company, so set the shift from the staff schedule instead.">Same Name in Another Company</span>`
-                          : r.clash
-                          ? `<span class="ws-clash-note" data-ui-tip="This person's saved shift rule names another company. Set the shift from the staff schedule instead.">Rule Saved Under Another Company</span>`
-                          : `<button type="button" class="btn kiosk-mini-btn ws-assign-btn" data-ws-assign="1">Assign</button>`}</td>` : ''}
+                        ${wsCanAssign ? `<td class="r"><button type="button" class="btn kiosk-mini-btn ws-assign-btn" data-ws-assign="1">Assign</button></td>` : ''}
                       </tr>
                     `).join('')}
                   </tbody>
@@ -92677,7 +92669,7 @@
           ? `<span class="badge badge-warn">Already logged on ${esc(fmtDateDMY(attDate))}: ${esc(existingAttOnDate.map(a => a.type || a.status || 'Shift').join(', '))}</span>`
           : '';
         const cardEl = $('attStaffContractCard');
-        const hasStaffRule = curStaff ? hasExplicitStaffWorkRule(curStaff) : false;
+        const hasStaffRule = curStaff ? hasExplicitStaffWorkRule(curStaff, curCo) : false;
         const staffShiftCfg = curStaff ? resolveStaffShiftForDate(curStaff, curCo, attDate) : null;
         const attShiftWin = curStaff ? resolveStaffAttendanceDefaultWindow(curStaff, curCo, attDate) : null;
         const staffOtCfg = curStaff ? describeStaffOvertimeRule(curStaff, curCo, attDate) : null;
@@ -100144,7 +100136,7 @@
         const regH = isNoClock ? 0 : round2(Math.max(0, workedH - otH));
         const effType = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
         const tallyVal = otH > 0 ? otH : (ltH > 0 ? ltH : workedH);
-        const hasStaffRuleSave = st ? hasExplicitStaffWorkRule(st) : false;
+        const hasStaffRuleSave = st ? hasExplicitStaffWorkRule(st, company) : false;
         const staffShiftSave = (!isNoClock && !isCallout && st) ? resolveStaffAttendanceDefaultWindow(st, company, attDate) : null;
         const timingSave = (hasStaffRuleSave && staffShiftSave && inFmt && outFmt) ? evaluateShiftPunchTiming(st, company, attDate, inFmt, outFmt) : null;
         record = {
@@ -112798,8 +112790,10 @@
     if (remoteSched.staffRules && typeof remoteSched.staffRules === 'object') {
       Object.entries(remoteSched.staffRules).forEach(([rk, inc]) => {
         if (!inc || typeof inc !== 'object') return;
-        const key = norm(inc.staff || rk);
+        // Company keys (`<company>|<name>`, v19.6.343) stay as they are; a bare-name key is re-keyed by name.
+        const key = String(rk).indexOf('|') >= 0 ? norm(rk) : norm(inc.staff || rk);
         if (!key) return;
+        if (key.indexOf('|') >= 0 && !staffRuleKeyMatchesCompany(key, inc)) return;
         const cur = ws.staffRules[key];
         const inTs = String(inc.updated_at || '');
         const curTs = cur ? String(cur.updated_at || '') : '';
@@ -125193,8 +125187,7 @@
       const allStaff = getKioskStaffDirectory({ includeEnded: true });
       allStaff.forEach(s => {
         if (norm(s.company || '') !== coKey) return;
-        const sk = norm(s.name);
-        const raw = ws.staffRules[sk] || null;
+        const raw = getStaffRuleEntry(s.name, s.company).raw || null;
         const hasExplicitOther = raw && !raw.reset_default && raw.policy_group_id && normalizePolicyGroupIdAlias(raw.policy_group_id) !== prevDefId;
         if (!hasExplicitOther) {
           saveStaffWorkRule(s.name, {
@@ -125588,7 +125581,6 @@
         .filter(s => s && norm(s.company || co) === norm(co));
     } catch (_) { staff = []; }
     const headcount = new Map();
-    const rawRules = ensureWorkSchedulesState().staffRules || {};
     const seenStaff = new Set();
     staff.forEach(s => {
       const sk = norm(s.name);
@@ -125604,7 +125596,7 @@
         headcount.set(sid, (headcount.get(sid) || 0) + 1);
       }
       // Only timings set on the person themselves: the shift's own exceptions are counted with its headcount below.
-      const raw = rawRules[sk];
+      const raw = getStaffRuleEntry(s.name, co).raw;
       if (raw && !raw.reset_default && (raw.use_custom_day_timings || sid === 'custom')) {
         const hasOwn = (raw.day_timings && Object.keys(raw.day_timings).length) || raw.sat_diff_enabled || (Array.isArray(raw.date_timings) && raw.date_timings.length);
         if (hasOwn) {
@@ -126091,104 +126083,146 @@
     return { ok: true, voidedRows: voidedWsCount };
   }
 
-  function hasExplicitStaffWorkRule(staffName) {
-    const k = norm(staffName);
-    if (!k) return false;
-    const ws = ensureWorkSchedulesState();
-    return Boolean(ws.staffRules[k] && !ws.staffRules[k].reset_default);
-  }
-
-  let _habitualShiftCacheRev = '';
-  let _habitualNightCrewSet = new Set();
-  let _habitualExtCrewSet = new Set();
-
-  function ensureHabitualNightCrewSet() {
-    const attArr = (SEED.records && Array.isArray(SEED.records.attendance)) ? SEED.records.attendance : [];
-    const rev = `${attArr.length}|${STATE._customRev || 0}`;
-    if (rev === _habitualShiftCacheRev) return _habitualNightCrewSet;
-    _habitualShiftCacheRev = rev;
-    const byKey = new Map();
-    for (let i = 0; i < attArr.length; i++) {
-      const a = attArr[i];
-      if (!a || a.voided) continue;
-      const rawIn = a.in_time || a.check_in;
-      const rawOut = a.out_time || a.check_out;
-      if (!rawIn || !rawOut) continue;
-      const tin = fmtAttClockTime(rawIn);
-      const tout = fmtAttClockTime(rawOut);
-      if (!tin || !tout) continue;
-      const sk = norm(a.staff);
-      if (!sk) continue;
-      const ck = `${norm(a.company || 'WTC')}|${sk}`;
-      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
-      let arr = byKey.get(ck);
-      if (!arr) { arr = []; byKey.set(ck, arr); }
-      arr.push({ d, tin, tout, hrs: Number(a.work_hours || 0) });
+  // Staff rules are kept per company and staff member (owner 2026-11-13): key `<company>|<name>`, both
+  // normalised, so the same name employed in two companies has two rules and a save for one never moves the
+  // other. A rule saved before v19.6.343 sits under the bare name and keeps applying in every company of the person
+  // (as it did before) until that company's own key is written: a save always writes the company key, which then
+  // wins there, while the person's other companies keep the older rule. A company key is only trusted when the
+  // rule's own company agrees with it (a rule filed under another company's key is ignored).
+  let _staffActiveCosRev = '';
+  let _staffActiveCosMap = new Map();
+  function staffActiveCompaniesOf(staffName) {
+    const emps = (SEED && SEED.records && Array.isArray(SEED.records.employments)) ? SEED.records.employments : [];
+    const rev = `${emps.length}|${(SEED && SEED._customRev) || 0}|${todayISO()}`;
+    if (rev !== _staffActiveCosRev) {
+      _staffActiveCosRev = rev;
+      const today = todayISO();
+      const m = new Map();
+      for (let i = 0; i < emps.length; i++) {
+        const e = emps[i];
+        if (!e || e.voided) continue;
+        if (e.status === 'Ended' || e.status === 'Inactive' || e.status === 'Terminated') continue;
+        if (e.end_date && String(e.end_date).slice(0, 10) < today) continue;
+        const sk = norm(e.staff || e.name || '');
+        if (!sk) continue;
+        let set = m.get(sk);
+        if (!set) { set = new Map(); m.set(sk, set); }
+        const coRaw = String(e.company || 'WTC').trim() || 'WTC';
+        if (!set.has(norm(coRaw))) set.set(norm(coRaw), coRaw);
+      }
+      _staffActiveCosMap = m;
     }
-    const nightSet = new Set();
-    const extSet = new Set();
-    byKey.forEach((arr, ck) => {
-      if (arr.length < 3) return;
-      arr.sort((a, b) => a.d.localeCompare(b.d));
-      const recent = arr.length > 15 ? arr.slice(-15) : arr;
-      let nightCnt = 0;
-      let earlyOrExtCnt = 0;
-      for (let i = 0; i < recent.length; i++) {
-        const inMin = parseClockMinutes(recent[i].tin);
-        const outMin = parseClockMinutes(recent[i].tout);
-        if (inMin != null && inMin >= 17 * 60) {
-          nightCnt++;
-        } else if (inMin != null && inMin >= 5 * 60 && inMin <= 7 * 60 + 25) {
-          const spanHrs = (outMin != null && outMin > inMin) ? ((outMin - inMin) / 60) : Number(recent[i].hrs || 0);
-          if (inMin <= 7 * 60 + 15 || spanHrs >= 8.75) {
-            earlyOrExtCnt++;
-          }
-        }
-      }
-      if (nightCnt / recent.length >= 0.65) {
-        nightSet.add(ck);
-      } else if (earlyOrExtCnt / recent.length >= 0.55) {
-        extSet.add(ck);
-      }
-    });
-    _habitualNightCrewSet = nightSet;
-    _habitualExtCrewSet = extSet;
-    return nightSet;
+    return _staffActiveCosMap.get(norm(staffName)) || new Map();
   }
 
-  function inferHabitualStaffShiftId(staffName, company) {
-    ensureWorkShiftsSeeded();
-    const k = norm(staffName);
-    const prof = getStaffContractProfile(staffName, company);
-    const effCo = company || prof.company || 'WTC';
-    const buDef = getBuDefaultShift(effCo);
-    const fallbackId = (buDef && (buDef.shift_code || buDef.shift_id))
-      ? normalizeShiftCodeAlias(buDef.shift_code || buDef.shift_id)
-      : ((prof.hasContract && Number(prof.workingHours) >= 9) ? 'ext_7_4' : 'day_8_4');
-    if (!k) return fallbackId;
-    const coNorm = norm(effCo);
-    ensureHabitualNightCrewSet();
-    if (_habitualNightCrewSet.has(`${coNorm}|${k}`)) return 'night_7_3';
-    if (_habitualExtCrewSet.has(`${coNorm}|${k}`)) return 'ext_7_4';
-    if (prof.hasContract && Number(prof.workingHours) >= 9 && fallbackId === 'day_8_4') return 'ext_7_4';
-    return fallbackId;
+  function staffRuleKey(staffName, company) {
+    const sk = norm(staffName);
+    const ck = norm(company);
+    return sk && ck ? `${ck}|${sk}` : sk;
   }
+
+  // The company a rule is read or saved under when the caller gives none: the person's only active company,
+  // else the company an older rule names, else none (then the bare-name rule is used, as before).
+  function resolveStaffRuleCompany(staffName, company) {
+    const given = String(company || '').trim();
+    if (given) return given;
+    const cos = staffActiveCompaniesOf(staffName);
+    if (cos.size === 1) return Array.from(cos.values())[0];
+    const ws = ensureWorkSchedulesState();
+    const legacy = ws.staffRules[norm(staffName)];
+    if (legacy && legacy.company) return String(legacy.company).trim();
+    return '';
+  }
+
+  function legacyStaffRuleApplies(legacy) {
+    return Boolean(legacy && typeof legacy === 'object');
+  }
+
+  // Same test as the Edge (staffRuleKeyCompanyMismatch in d1_store.js): a company key holds only a rule of that company.
+  function staffRuleKeyMatchesCompany(rk, raw) {
+    const bar = String(rk || '').indexOf('|');
+    if (bar < 0 || !raw || typeof raw !== 'object') return true;
+    return Boolean(raw.company) && String(rk).slice(0, bar) === norm(raw.company);
+  }
+
+  // A shift backfill about to change a person's rule in one company: when that rule is still the older bare-name
+  // rule (shared by every company of the person), give the company its own copy first so the change stays there.
+  function ownStaffRuleForCompany(staffName, company, raw) {
+    if (!raw || !company) return raw;
+    const ws = ensureWorkSchedulesState();
+    const key = staffRuleKey(staffName, company);
+    if (!key || key === norm(staffName)) return raw;
+    if (ws.staffRules[key] === raw) return raw;
+    if (ws.staffRules[norm(staffName)] !== raw) return raw;
+    const copy = Object.assign({}, raw, { staff: raw.staff || staffName, company: String(company), updated_at: new Date().toISOString() });
+    ws.staffRules[key] = copy;
+    return copy;
+  }
+
+  // { key, raw, company }: the stored rule of a person in a company (raw may be a reset marker), and the key a
+  // save for that person and company writes.
+  function getStaffRuleEntry(staffName, company) {
+    const sk = norm(staffName);
+    if (!sk) return { key: '', raw: null, company: '' };
+    const ws = ensureWorkSchedulesState();
+    const co = resolveStaffRuleCompany(staffName, company);
+    const key = staffRuleKey(staffName, co);
+    const keyed = key !== sk ? ws.staffRules[key] : null;
+    if (keyed && typeof keyed === 'object' && staffRuleKeyMatchesCompany(key, keyed)) return { key, raw: keyed, company: co };
+    const legacy = ws.staffRules[sk];
+    if (legacy && legacyStaffRuleApplies(legacy)) return { key, raw: legacy, company: co };
+    return { key, raw: null, company: co };
+  }
+
+  // The saved rule of a person in a company, or null (none saved, or reset to the company default).
+  function getActiveStaffRule(staffName, company) {
+    const e = getStaffRuleEntry(staffName, company);
+    return e.raw && !e.raw.reset_default ? e.raw : null;
+  }
+
+  function hasExplicitStaffWorkRule(staffName, company) {
+    return Boolean(getActiveStaffRule(staffName, company));
+  }
+
+  // The shift a person is on (owner 2026-11-13, one answer for every screen): the shift saved for them, else
+  // their company's default shift (no default stored: Extended Day when the contract has 9+ hours a day, else
+  // Day Shift). Attendance rules, Staff per Shift, the clocked strip, End This Shift and shift timing backfills
+  // all read this. Clock times never assign a shift by themselves: Staff Clocking Another Shift proposes one and
+  // the owner assigns it. Returns { shiftId, how: 'assigned' | 'default', company, rule }.
+  function companyDefaultShiftIdFor(staffName, company) {
+    const buDef = getBuDefaultShift(company);
+    if (buDef && (buDef.shift_code || buDef.shift_id)) return normalizeShiftCodeAlias(buDef.shift_code || buDef.shift_id);
+    const prof = getStaffContractProfile(staffName, company);
+    return (prof.hasContract && Number(prof.workingHours) >= 9) ? 'ext_7_4' : 'day_8_4';
+  }
+
+  // With opts.ruleOnly the default's id is left '' (callers holding the company's default row, `is_bu_default`,
+  // map 'default' to it; this keeps shift seeding from calling itself).
+  function resolveStaffShiftAssignment(staffName, company, opts = {}) {
+    const e = getStaffRuleEntry(staffName, company);
+    const rule = e.raw && !e.raw.reset_default ? e.raw : null;
+    if (rule && rule.shift_id) {
+      return { shiftId: rule.shift_id === 'custom' ? 'custom' : normalizeShiftCodeAlias(rule.shift_id), how: 'assigned', company: String(company || e.company || rule.company || ''), rule };
+    }
+    if (opts.ruleOnly) return { shiftId: '', how: 'default', company: String(company || e.company || ''), rule };
+    const effCo = String(company || e.company || (rule && rule.company) || '').trim()
+      || (getStaffContractProfile(staffName, '').company || defaultEntryCompany() || 'WTC');
+    return { shiftId: companyDefaultShiftIdFor(staffName, effCo), how: 'default', company: effCo, rule };
+  }
+
+  window.__mfgResolveStaffShiftAssignment = resolveStaffShiftAssignment;
+  window.__mfgStaffRuleKey = staffRuleKey;
 
   function getStaffWorkRule(staffName, company) {
-    const k = norm(staffName);
-    const ws = ensureWorkSchedulesState();
-    const raw = (k && ws.staffRules[k]) ? ws.staffRules[k] : null;
-    const prof = getStaffContractProfile(staffName, company);
-    const effCo = company || (raw && raw.company) || prof.company || defaultEntryCompany();
+    const entry = getStaffRuleEntry(staffName, company);
+    const raw = entry.raw;
+    const prof = getStaffContractProfile(staffName, company || entry.company);
+    const effCo = company || entry.company || (raw && raw.company) || prof.company || defaultEntryCompany();
     const buDef = getBuDefaultShift(effCo);
-    const buDefShiftId = (buDef && (buDef.shift_code || buDef.shift_id))
-      ? normalizeShiftCodeAlias(buDef.shift_code || buDef.shift_id)
-      : ((prof.hasContract && Number(prof.workingHours) >= 9) ? 'ext_7_4' : 'day_8_4');
+    // One answer for the shift (resolveStaffShiftAssignment): the saved shift, else the company default.
     const defaultShiftId = (raw && !raw.reset_default && raw.shift_id)
       ? (raw.shift_id === 'custom' ? 'custom' : normalizeShiftCodeAlias(raw.shift_id))
-      : ((raw && raw.reset_default)
-        ? buDefShiftId
-        : inferHabitualStaffShiftId(staffName, effCo));
+      : companyDefaultShiftIdFor(staffName, effCo);
     const resolvedShiftRow = resolveShiftAtDate(defaultShiftId, effCo, todayISO()) || buDef;
     const policyGroups = getPolicyGroups(effCo);
     const defaultPkgId = inferDefaultPolicyGroupId(staffName, effCo, raw);
@@ -126250,6 +126284,8 @@
       perks: Array.isArray(matchedPkg.perks) ? matchedPkg.perks.slice() : ['Site Transport', 'Paid Leave'],
       updated_at: ''
     }, raw && !raw.reset_default ? raw : {});
+    // A rule is read for the company asked about (an older rule may name the company it was last saved under).
+    if (company || entry.company) base.company = company || entry.company;
     base.policy_group_id = String(base.policy_group_id || matchedPkg.id);
     base.grace_min = Math.max(0, Math.min(120, Number(base.grace_min != null ? base.grace_min : defGrace)));
     base.early_leave_grace_min = Math.max(0, Math.min(120, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : base.grace_min)));
@@ -126320,10 +126356,12 @@
 
   function saveStaffWorkRule(staffName, patch = {}, opts = {}) {
     _TIME24_WS_REV++; // the picker's shift / overtime quick times re-count after any staff rule change (bulk saves defer the server post)
-    const k = norm(staffName);
-    if (!k) return { ok: false, error: 'Staff member is required' };
+    if (!norm(staffName)) return { ok: false, error: 'Staff member is required' };
     const ws = ensureWorkSchedulesState();
-    const cur = getStaffWorkRule(staffName, patch.company);
+    // Saved under the person's company (staffRuleKey); the bare name only when the company cannot be told.
+    const entry = getStaffRuleEntry(staffName, patch.company);
+    const k = entry.key;
+    const cur = getStaffWorkRule(staffName, entry.company || patch.company);
     const nowIso = new Date().toISOString();
     let effectivePatch = Object.assign({}, patch);
     if (patch.apply_policy_group_id) {
@@ -126352,6 +126390,7 @@
       reset_default: false,
       updated_at: nowIso
     });
+    if (entry.company) next.company = entry.company;
     next.grace_min = Math.max(0, Math.min(120, Number(next.grace_min != null ? next.grace_min : 10)));
     if (effectivePatch.grace_min != null && effectivePatch.early_leave_grace_min == null) {
       next.early_leave_grace_min = next.grace_min;
@@ -126401,17 +126440,18 @@
       postWorkScheduleMutation({ op: 'upsert_staff_rule', key: k, item: next });
       syncWithCloud(true);
     }
-    return { ok: true, rule: next };
+    return { ok: true, rule: next, key: k };
   }
 
-  function resetStaffWorkRule(staffName) {
-    const k = norm(staffName);
-    if (!k) return { ok: false };
+  function resetStaffWorkRule(staffName, company) {
+    if (!norm(staffName)) return { ok: false };
     const ws = ensureWorkSchedulesState();
     const nowIso = new Date().toISOString();
-    const prevRule = ws.staffRules[k] && typeof ws.staffRules[k] === 'object' ? ws.staffRules[k] : null;
-    const staffEntry = getKioskStaffDirectory().find(s => norm(s.name) === k) || null;
-    const ruleCo = String((prevRule && prevRule.company) || (staffEntry && staffEntry.company) || defaultEntryCompany() || 'WTC');
+    const staffEntry = company ? null : (getKioskStaffDirectory().find(s => norm(s.name) === norm(staffName)) || null);
+    const entry = getStaffRuleEntry(staffName, company || (staffEntry && staffEntry.company) || '');
+    const k = entry.key;
+    const prevRule = entry.raw && typeof entry.raw === 'object' ? entry.raw : null;
+    const ruleCo = String(entry.company || (prevRule && prevRule.company) || (staffEntry && staffEntry.company) || defaultEntryCompany() || 'WTC');
     const tomb = { staff: staffName, company: ruleCo, reset_default: true, updated_at: nowIso };
     ws.staffRules[k] = tomb;
     recalcStaffTodayPunchAndAttendance(staffName);
@@ -126421,13 +126461,14 @@
     return { ok: true };
   }
 
-  function addStaffShiftOverride(staffName, ovSpec = {}) {
+  function addStaffShiftOverride(staffName, ovSpec = {}, company = '') {
+    const ruleCo = String(ovSpec.company || company || '').trim();
     const startD = String(ovSpec.start_date || todayISO()).slice(0, 10);
     const endD = String(ovSpec.end_date || startD).slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(startD) || !/^\d{4}-\d{2}-\d{2}$/.test(endD) || endD < startD) {
       return { ok: false, error: 'Valid start and end dates are required' };
     }
-    const cur = getStaffWorkRule(staffName);
+    const cur = getStaffWorkRule(staffName, ruleCo);
     const ov = {
       id: ovSpec.id || uid('sov'),
       shift_id: String(ovSpec.shift_id || 'night_7_3'),
@@ -126439,22 +126480,23 @@
     };
     const filtered = (cur.shift_overrides || []).filter(x => !(x.start_date === startD && x.end_date === endD));
     filtered.unshift(ov);
-    return saveStaffWorkRule(staffName, { shift_overrides: filtered.slice(0, 30) });
+    return saveStaffWorkRule(staffName, Object.assign(ruleCo ? { company: ruleCo } : {}, { shift_overrides: filtered.slice(0, 30) }));
   }
 
-  function removeStaffShiftOverride(staffName, ovId) {
-    const cur = getStaffWorkRule(staffName);
+  function removeStaffShiftOverride(staffName, ovId, company = '') {
+    const cur = getStaffWorkRule(staffName, company);
     const nextList = (cur.shift_overrides || []).filter(x => String(x.id) !== String(ovId));
-    return saveStaffWorkRule(staffName, { shift_overrides: nextList });
+    return saveStaffWorkRule(staffName, Object.assign(company ? { company } : {}, { shift_overrides: nextList }));
   }
 
-  function addStaffOtPass(staffName, passSpec = {}) {
+  function addStaffOtPass(staffName, passSpec = {}, company = '') {
+    const ruleCo = String(passSpec.company || company || '').trim();
     const startD = String(passSpec.start_date || todayISO()).slice(0, 10);
     const endD = String(passSpec.end_date || startD).slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(startD) || !/^\d{4}-\d{2}-\d{2}$/.test(endD) || endD < startD) {
       return { ok: false, error: 'Valid Overtime start and end dates are required' };
     }
-    const cur = getStaffWorkRule(staffName);
+    const cur = getStaffWorkRule(staffName, ruleCo);
     const pass = {
       id: passSpec.id || uid('otp'),
       start_date: startD,
@@ -126465,13 +126507,13 @@
     const filtered = (cur.ot_passes || []).filter(x => !(x.start_date === startD && x.end_date === endD));
     filtered.unshift(pass);
     const nextMode = passSpec.keepMode ? cur.ot_mode : 'date_range';
-    return saveStaffWorkRule(staffName, { ot_mode: nextMode, ot_passes: filtered.slice(0, 40) });
+    return saveStaffWorkRule(staffName, Object.assign(ruleCo ? { company: ruleCo } : {}, { ot_mode: nextMode, ot_passes: filtered.slice(0, 40) }));
   }
 
-  function removeStaffOtPass(staffName, passId) {
-    const cur = getStaffWorkRule(staffName);
+  function removeStaffOtPass(staffName, passId, company = '') {
+    const cur = getStaffWorkRule(staffName, company);
     const nextList = (cur.ot_passes || []).filter(x => String(x.id) !== String(passId));
-    return saveStaffWorkRule(staffName, { ot_passes: nextList });
+    return saveStaffWorkRule(staffName, Object.assign(company ? { company } : {}, { ot_passes: nextList }));
   }
 
   function resolveStaffShiftForDate(staffName, company, isoDate = todayISO()) {
@@ -126543,13 +126585,14 @@
       const datedShift = resolveShiftAtDate(rule.shift_id, effCo, dStr);
       const found = (datedShift ? normalizeShiftTypeObj(datedShift) : null) || types.find(t => t.id === rule.shift_id) || types[0];
       chosenShift = Object.assign({}, found);
-      if (hasExplicitStaffWorkRule(staffName) && Array.isArray(rule.custom_days) && rule.use_custom_days) {
+      const ownRule = hasExplicitStaffWorkRule(staffName, effCo);
+      if (ownRule && Array.isArray(rule.custom_days) && rule.use_custom_days) {
         chosenShift.days = rule.custom_days;
       }
-      if (hasExplicitStaffWorkRule(staffName) && rule.grace_min != null) {
+      if (ownRule && rule.grace_min != null) {
         chosenShift.grace_min = Number(rule.grace_min);
       }
-      if (hasExplicitStaffWorkRule(staffName) && rule.use_custom_day_timings) {
+      if (ownRule && rule.use_custom_day_timings) {
         chosenShift.day_timings = normalizeDayTimingsMap(rule.day_timings, rule.sat_diff_enabled, rule.sat_start_time, rule.sat_end_time);
         // Company calendar presets (holidays, Ramadan, winter hours) live on the shift and still reach a person
         // with their own timings; the person's own dated exception for the same span wins. Preset copies the
@@ -126700,7 +126743,7 @@
     const dStr = String(isoDate || todayISO()).slice(0, 10);
     const prof = getStaffContractProfile(staffName, company, dStr);
     const contractHrs = Number(prof.workingHours || 8);
-    const hasRule = staffName ? hasExplicitStaffWorkRule(staffName) : false;
+    const hasRule = staffName ? hasExplicitStaffWorkRule(staffName, company) : false;
     let sh = staffName ? resolveStaffShiftForDate(staffName, company, dStr) : null;
     if (sh && sh.id === 'off' && staffName) {
       const rule = getStaffWorkRule(staffName, company);
@@ -130937,7 +130980,10 @@
 
   function openStaffScheduleModal(staffName, opts = {}) {
     const fullDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
-    const entry = fullDir.find(s => norm(s.name) === norm(staffName)) || fullDir[0] || null;
+    // A name employed in two companies opens the company the row belongs to (rules are kept per company).
+    const wantCo = norm(opts.company || '');
+    const entry = (wantCo ? fullDir.find(s => norm(s.name) === norm(staffName) && norm(s.company || '') === wantCo) : null)
+      || fullDir.find(s => norm(s.name) === norm(staffName)) || fullDir[0] || null;
     if (!entry) {
       toast('Staff member not found', 'warn');
       return null;
@@ -131109,9 +131155,9 @@
             <div class="ssm-head-actions">
               ${prevStaff && nextStaff ? `
                 <div class="ssm-staff-stepper" role="group" aria-label="Switch Staff Member">
-                  <button type="button" class="btn kiosk-mini-btn" id="ssmPrevStaffBtn" data-switch-staff="${esc(prevStaff.name)}">‹ Prev</button>
+                  <button type="button" class="btn kiosk-mini-btn" id="ssmPrevStaffBtn" data-switch-staff="${esc(prevStaff.name)}" data-switch-staff-co="${esc(prevStaff.company || '')}">‹ Prev</button>
                   <span class="ssm-step-pos mono">${curIdx + 1}/${freshDir.length}</span>
-                  <button type="button" class="btn kiosk-mini-btn" id="ssmNextStaffBtn" data-switch-staff="${esc(nextStaff.name)}">Next ›</button>
+                  <button type="button" class="btn kiosk-mini-btn" id="ssmNextStaffBtn" data-switch-staff="${esc(nextStaff.name)}" data-switch-staff-co="${esc(nextStaff.company || '')}">Next ›</button>
                 </div>
               ` : ''}
               <button type="button" class="icon-btn" id="ssmCloseBtn" aria-label="Close">✕</button>
@@ -132023,7 +132069,7 @@
       modal.querySelectorAll('[data-switch-staff]').forEach(btn => {
         btn.addEventListener('click', () => {
           const targetName = btn.getAttribute('data-switch-staff') || '';
-          if (targetName) openStaffScheduleModal(targetName, Object.assign({}, opts, { studioTab: draftStudioSection }));
+          if (targetName) openStaffScheduleModal(targetName, Object.assign({}, opts, { company: btn.getAttribute('data-switch-staff-co') || '', studioTab: draftStudioSection }));
         });
       });
       modal.querySelectorAll('[data-ssm-studio-tab]').forEach(btn => {
@@ -132374,6 +132420,8 @@
           syncLiveInputs();
           const bu = sel.getAttribute('data-ssm-bu-policy-default') || entry.company;
           const grpId = sel.value || 'pkg_15_open_15d';
+          // Read before the backfill below saves a rule for everyone on the old default.
+          const hasExplicitRule = hasExplicitStaffWorkRule(entry.name, entry.company);
           const res = setCompanyDefaultPolicyGroup(bu, grpId, { backfill: true });
           if (res && res.ok) {
             if (norm(entry.company) === norm(bu) && !hasExplicitRule) {
@@ -132547,7 +132595,7 @@
         }
       });
       $('ssmResetBtn')?.addEventListener('click', () => {
-        resetStaffWorkRule(entry.name);
+        resetStaffWorkRule(entry.name, entry.company);
         toast(`Reset ${entry.name} to default shift, 10m Grace & No Overtime`, 'ok');
         closeStaffScheduleModal();
       });
@@ -135548,12 +135596,20 @@
     const today = todayISO();
     const coSet = new Set((companies || []).map(c => norm(c)));
     const out = [];
-    Object.values(ws.staffRules || {}).forEach(r => {
+    Object.entries(ws.staffRules || {}).forEach(([rk, r]) => {
       if (!r || r.reset_default || !r.staff) return;
-      if (coSet.size && !coSet.has(norm(r.company || ''))) return;
-      normalizeDateTimingsList(r.own_date_timings).forEach(it => {
-        if (it.end_date < today || !(it.start_shift_min || it.end_shift_min)) return;
-        out.push({ staff: r.staff, company: r.company || '', item: it });
+      if (!staffRuleKeyMatchesCompany(rk, r)) return;
+      const items = normalizeDateTimingsList(r.own_date_timings).filter(it => !(it.end_date < today || !(it.start_shift_min || it.end_shift_min)));
+      if (!items.length) return;
+      // An older bare-name rule applies in every active company of the person that has no rule of its own.
+      let cos = [r.company || ''];
+      if (rk.indexOf('|') < 0) {
+        const active = Array.from(staffActiveCompaniesOf(r.staff).values());
+        cos = (active.length ? active : [r.company || '']).filter(co => !co || !ws.staffRules[staffRuleKey(r.staff, co)]);
+      }
+      cos.forEach(co => {
+        if (coSet.size && !coSet.has(norm(co))) return;
+        items.forEach(it => out.push({ staff: r.staff, company: co, item: it }));
       });
     });
     return out.sort((a, b) => a.staff.localeCompare(b.staff));
@@ -136423,7 +136479,7 @@
       const effectiveSelId = hasMatch ? curShiftId : (staffShifts[0] ? staffShifts[0].id : 'day_8_4');
       return `
         <div class="kiosk-inline-type-cell">
-          <select class="kiosk-select kiosk-inline-shift-select" data-plain-options="1" data-inline-shift-staff="${esc(s.name)}" aria-label="Shift Type for ${esc(s.name)}">
+          <select class="kiosk-select kiosk-inline-shift-select" data-plain-options="1" data-inline-shift-staff="${esc(s.name)}" data-inline-staff-co="${esc(s.company || '')}" aria-label="Shift Type for ${esc(s.name)}">
             ${staffShifts.map(st => `<option value="${esc(st.id)}" ${effectiveSelId === st.id ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)})</option>`).join('')}
             <option value="custom" ${effectiveSelId === 'custom' ? 'selected' : ''}>Custom (${esc(ruleObj.custom_start || '08:00')}-${esc(ruleObj.custom_end || '16:00')})</option>
             <option value="__new_shift__">+ New Shift Type...</option>
@@ -136437,7 +136493,7 @@
       const staffPolicies = getPolicyGroups(s.company);
       return `
         <div class="kiosk-inline-type-cell">
-          <select class="kiosk-select kiosk-inline-policy-select" data-plain-options="1" data-inline-policy-group-staff="${esc(s.name)}" aria-label="Policy, Multipliers & Perks Group for ${esc(s.name)}">
+          <select class="kiosk-select kiosk-inline-policy-select" data-plain-options="1" data-inline-policy-group-staff="${esc(s.name)}" data-inline-staff-co="${esc(s.company || '')}" aria-label="Policy, Multipliers & Perks Group for ${esc(s.name)}">
             ${staffPolicies.map(grp => `<option value="${esc(grp.id)}" ${pg.id === grp.id ? 'selected' : ''}>${esc(grp.name)} (${esc(grp.short)})</option>`).join('')}
             <option value="__new_policy_group__">+ New Policy &amp; Perks Group...</option>
           </select>
@@ -136711,7 +136767,7 @@
                         const lp = latestByStaff.get(norm(s.name));
                         const onNow = isPunchActiveOnSite(lp, nowMs);
                         return `
-                          <tr class="kiosk-staff-row" data-staff-row="${esc(s.name)}" tabindex="0">
+                          <tr class="kiosk-staff-row" data-staff-row="${esc(s.name)}" data-staff-row-co="${esc(s.company || '')}" tabindex="0">
                             <td>
                               <div class="kiosk-staff-id-cell">
                                 <span class="kiosk-staff-avatar ${onNow ? 'is-onsite' : ''}">${esc(staffInitials(s.name))}${onNow ? '<span class="ksa-dot"></span>' : ''}</span>
@@ -136874,7 +136930,7 @@
                         }
                         const maxHoursCap = Number(ruleRow.ot_max_hours || 2);
                         return `
-                          <tr class="kiosk-staff-row" data-staff-row="${esc(s.name)}" tabindex="0">
+                          <tr class="kiosk-staff-row" data-staff-row="${esc(s.name)}" data-staff-row-co="${esc(s.company || '')}" tabindex="0">
                             <td>
                               <div class="kiosk-staff-id-cell">
                                 <span class="kiosk-staff-avatar ${onNow ? 'is-onsite' : ''}">${esc(staffInitials(s.name))}${onNow ? '<span class="ksa-dot"></span>' : ''}</span>
@@ -136891,13 +136947,13 @@
                             <td>${renderInlineShiftTypeCell(s, sh, lt.cutoffSummary)}</td>
                             <td>${renderInlinePolicyGroupCell(s, pg)}</td>
                             <td>
-                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="grace_min" aria-label="Tolerance minutes for ${esc(s.name)}">
+                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-staff-co="${esc(s.company || '')}" data-inline-late-field="grace_min" aria-label="Tolerance minutes for ${esc(s.name)}">
                                 ${tolSteps.map(m => `<option value="${m}" ${curTol === m ? 'selected' : ''}>${m} min</option>`).join('')}
                               </select>
                               ${lt.earlyGraceMin !== lt.graceMin ? `<div class="drv-sub mono">IN ${lt.graceMin}m · OUT ${lt.earlyGraceMin}m</div>` : ''}
                             </td>
                             <td>
-                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="late_when" aria-label="When lateness occurs for ${esc(s.name)}">
+                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-staff-co="${esc(s.company || '')}" data-inline-late-field="late_when" aria-label="When lateness occurs for ${esc(s.name)}">
                                 <option value="both" ${lt.lateWhen === 'both' ? 'selected' : ''}>IN + OUT</option>
                                 <option value="arrival_only" ${lt.lateWhen === 'arrival_only' ? 'selected' : ''}>IN Only</option>
                                 <option value="early_out_only" ${lt.lateWhen === 'early_out_only' ? 'selected' : ''}>OUT Only</option>
@@ -136905,7 +136961,7 @@
                               </select>
                             </td>
                             <td>
-                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="penalty_combo" aria-label="Lateness punishment for ${esc(s.name)}">
+                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-staff-co="${esc(s.company || '')}" data-inline-late-field="penalty_combo" aria-label="Lateness punishment for ${esc(s.name)}">
                                 <option value="exact_hours" ${penComboVal === 'exact_hours' ? 'selected' : ''}>Exact 1x</option>
                                 <option value="multiplier_1.5" ${penComboVal === 'multiplier_1.5' ? 'selected' : ''}>1.5x Rate</option>
                                 <option value="multiplier_2" ${penComboVal === 'multiplier_2' ? 'selected' : ''}>2.0x Rate</option>
@@ -136917,7 +136973,7 @@
                               </select>
                             </td>
                             <td>
-                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="no_clock_out_rule" aria-label="Single incomplete punch rule for ${esc(s.name)}">
+                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-staff-co="${esc(s.company || '')}" data-inline-late-field="no_clock_out_rule" aria-label="Single incomplete punch rule for ${esc(s.name)}">
                                 <option value="half_day" ${lt.noOutRule === 'half_day' ? 'selected' : ''}>Half Day (0.5d)</option>
                                 <option value="full_absence" ${lt.noOutRule === 'full_absence' ? 'selected' : ''}>Absent (1.0d)</option>
                                 <option value="deduct_2h" ${lt.noOutRule === 'deduct_2h' ? 'selected' : ''}>Deduct 2.0h</option>
@@ -136925,7 +136981,7 @@
                               </select>
                             </td>
                             <td>
-                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="ot_combo" aria-label="Overtime rule for ${esc(s.name)}">
+                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-staff-co="${esc(s.company || '')}" data-inline-late-field="ot_combo" aria-label="Overtime rule for ${esc(s.name)}">
                                 <option value="none" ${otComboVal === 'none' ? 'selected' : ''}>No Overtime</option>
                                 <option value="always" ${otComboVal === 'always' ? 'selected' : ''}>Open OT</option>
                                 <option value="max_2" ${otComboVal === 'max_2' ? 'selected' : ''}>Max ${fmtNum(maxHoursCap, 1)}h/d</option>
@@ -136992,7 +137048,7 @@
                               ? `Cap ${fmtNum(ruleRow.ot_max_hours || 2, 1)}h/day`
                               : (ot.activeToday ? 'Approved Today' : 'Date Pass')));
                         return `
-                          <tr class="kiosk-staff-row" data-staff-row="${esc(s.name)}" tabindex="0">
+                          <tr class="kiosk-staff-row" data-staff-row="${esc(s.name)}" data-staff-row-co="${esc(s.company || '')}" tabindex="0">
                             <td>
                               <div class="kiosk-staff-id-cell">
                                 <span class="kiosk-staff-avatar ${onNow ? 'is-onsite' : ''}">${esc(staffInitials(s.name))}${onNow ? '<span class="ksa-dot"></span>' : ''}</span>
@@ -137087,7 +137143,7 @@
                             ? `${ltP.noOutLabel}${p.raw_late_min > 0 ? ` · Late ${p.raw_late_min}m` : ''}${p.early_out_min > 0 ? ` · Early OUT ${p.early_out_min}m` : ''}`
                             : (p.penalty_leave_days >= 0.5 ? 'Half Day (0.5d Penalty)' : (p.late_hours > 0 ? `Late -${fmtNum(p.late_hours, 1)}h` : 'On Time')));
                         return `
-                          <tr class="kiosk-staff-row" data-staff-row="${esc(p.staff)}" tabindex="0">
+                          <tr class="kiosk-staff-row" data-staff-row="${esc(p.staff)}" data-staff-row-co="${esc(p.company || '')}" tabindex="0">
                             <td>
                               <div class="kiosk-staff-id-cell">
                                 <span class="kiosk-staff-avatar ${p.direction === 'IN' ? 'is-onsite' : ''}">${esc(staffInitials(p.staff))}</span>
@@ -138107,6 +138163,7 @@
     feedCard.querySelectorAll('[data-inline-shift-staff]').forEach(sel => {
       sel.addEventListener('change', () => {
         const stf = sel.getAttribute('data-inline-shift-staff') || '';
+        const stfCo = sel.getAttribute('data-inline-staff-co') || '';
         if (!stf) return;
         const val = sel.value || 'day_8_4';
         if (val === '__new_shift__') {
@@ -138115,11 +138172,11 @@
           return;
         }
         if (val === 'custom') {
-          openStaffScheduleModal(stf, { focusSection: 'shift' });
+          openStaffScheduleModal(stf, { focusSection: 'shift', company: stfCo });
           return;
         }
-        saveStaffWorkRule(stf, { shift_id: val });
-        const shUpd = resolveStaffShiftForDate(stf, '', todayISO());
+        saveStaffWorkRule(stf, Object.assign(stfCo ? { company: stfCo } : {}, { shift_id: val }));
+        const shUpd = resolveStaffShiftForDate(stf, stfCo, todayISO());
         toast(`Updated shift for ${stf} (${shUpd.name} · ${shUpd.windowLabel})`, 'ok');
         renderApp();
       });
@@ -138127,12 +138184,13 @@
     feedCard.querySelectorAll('[data-inline-policy-group-staff]').forEach(sel => {
       sel.addEventListener('change', () => {
         const stf = sel.getAttribute('data-inline-policy-group-staff') || '';
+        const stfCo = sel.getAttribute('data-inline-staff-co') || '';
         if (!stf) return;
         const val = sel.value || '';
         if (val === '__new_policy_group__') {
           openPolicyGroupModal('', null, grp => {
             if (grp && grp.id) {
-              saveStaffWorkRule(stf, { apply_policy_group_id: grp.id });
+              saveStaffWorkRule(stf, Object.assign(stfCo ? { company: stfCo } : {}, { apply_policy_group_id: grp.id }));
               toast(`Assigned ${grp.name} to ${stf}`, 'ok');
               renderApp();
             }
@@ -138141,8 +138199,8 @@
           return;
         }
         if (!val) return;
-        saveStaffWorkRule(stf, { apply_policy_group_id: val });
-        const pgUpd = describeStaffPolicyGroup(stf, '');
+        saveStaffWorkRule(stf, Object.assign(stfCo ? { company: stfCo } : {}, { apply_policy_group_id: val }));
+        const pgUpd = describeStaffPolicyGroup(stf, stfCo);
         toast(`Assigned ${pgUpd.name} (${pgUpd.summaryLine}) to ${stf}`, 'ok');
         renderApp();
       });
@@ -138152,14 +138210,16 @@
         if (e.target.closest('button, select, input, a, label, .pa-select-wrap, .pa-select-menu, .kiosk-inline-pin-form')) return;
         const stf = tr.getAttribute('data-staff-row') || '';
         if (!stf) return;
-        openStaffScheduleModal(stf, STATE.kioskAttFeedFilter === 'lateness' ? { focusSection: 'lateness' } : {});
+        const stfCo = tr.getAttribute('data-staff-row-co') || '';
+        openStaffScheduleModal(stf, Object.assign({ company: stfCo }, STATE.kioskAttFeedFilter === 'lateness' ? { focusSection: 'lateness' } : {}));
       });
       tr.addEventListener('keydown', e => {
         if (e.target !== tr) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           const stf = tr.getAttribute('data-staff-row') || '';
-          if (stf) openStaffScheduleModal(stf, STATE.kioskAttFeedFilter === 'lateness' ? { focusSection: 'lateness' } : {});
+          const stfCo = tr.getAttribute('data-staff-row-co') || '';
+          if (stf) openStaffScheduleModal(stf, Object.assign({ company: stfCo }, STATE.kioskAttFeedFilter === 'lateness' ? { focusSection: 'lateness' } : {}));
         }
       });
     });
@@ -138234,9 +138294,9 @@
       const cf = parts[1] === 'after_grace' ? 'after_grace' : 'shift_start';
       return { grace_min: gm, early_leave_grace_min: gm, late_count_from: cf };
     };
-    const buildOtComboPatchForStaff = (comboVal, stfName) => {
+    const buildOtComboPatchForStaff = (comboVal, stfName, stfCo = '') => {
       const cv = String(comboVal || 'none');
-      const curRule = getStaffWorkRule(stfName);
+      const curRule = getStaffWorkRule(stfName, stfCo);
       if (cv === 'always') return { ot_mode: 'always' };
       if (cv === 'max_2') return { ot_mode: 'max_hours', ot_max_hours: Number(curRule.ot_max_hours || 2) };
       if (cv === 'today_pass') {
@@ -138253,6 +138313,7 @@
     feedCard.querySelectorAll('[data-inline-late-staff]').forEach(sel => {
       sel.addEventListener('change', () => {
         const stf = sel.getAttribute('data-inline-late-staff') || '';
+        const stfCo = sel.getAttribute('data-inline-staff-co') || '';
         const fld = sel.getAttribute('data-inline-late-field') || '';
         if (!stf || !fld) return;
         let patch = {};
@@ -138266,17 +138327,17 @@
         } else if (fld === 'no_clock_out_rule') {
           patch = { no_clock_out_rule: sel.value || 'half_day' };
         } else if (fld === 'ot_combo') {
-          patch = buildOtComboPatchForStaff(sel.value, stf);
+          patch = buildOtComboPatchForStaff(sel.value, stf, stfCo);
           if (sel.value === 'date_range') openOtModalAfter = true;
         }
-        saveStaffWorkRule(stf, patch);
+        saveStaffWorkRule(stf, Object.assign(stfCo ? { company: stfCo } : {}, patch));
         if (fld === 'ot_combo') {
-          const otUpd = describeStaffOvertimeRule(stf, '', todayISO());
+          const otUpd = describeStaffOvertimeRule(stf, stfCo, todayISO());
           toast(`Updated overtime rule for ${stf} (${otUpd.badgeText})`, 'ok');
           renderApp();
-          if (openOtModalAfter) openStaffScheduleModal(stf, { focusSection: 'ot' });
+          if (openOtModalAfter) openStaffScheduleModal(stf, { focusSection: 'ot', company: stfCo });
         } else {
-          const ltUpd = describeStaffLatenessRule(stf, '', todayISO());
+          const ltUpd = describeStaffLatenessRule(stf, stfCo, todayISO());
           toast(`Updated lateness rule for ${stf} (${ltUpd.badgeLabel})`, 'ok');
           renderApp();
         }
@@ -138343,14 +138404,14 @@
           staffPatch = {
             apply_policy_group_id: pkgBulkVal,
             late_when: wEl ? wEl.value : 'both',
-            ...(otBulkVal && otBulkVal !== 'keep' ? buildOtComboPatchForStaff(otBulkVal, s.name) : {})
+            ...(otBulkVal && otBulkVal !== 'keep' ? buildOtComboPatchForStaff(otBulkVal, s.name, s.company) : {})
           };
         } else {
           staffPatch = otBulkVal && otBulkVal !== 'keep'
-            ? { ...baseBulkPatch, ...buildOtComboPatchForStaff(otBulkVal, s.name) }
+            ? { ...baseBulkPatch, ...buildOtComboPatchForStaff(otBulkVal, s.name, s.company) }
             : baseBulkPatch;
         }
-        saveStaffWorkRule(s.name, staffPatch, { deferSave: true });
+        saveStaffWorkRule(s.name, Object.assign({}, staffPatch, s.company ? { company: s.company } : {}), { deferSave: true });
       });
       if (targetStaff.length > 0) {
         saveLocalAuthAndRecords();
@@ -145223,14 +145284,16 @@
       savePolicyGroup: (spec = {}) => savePolicyGroup(spec),
       deletePolicyGroup: groupId => deletePolicyGroup(groupId),
       describeStaffPolicyGroup: (staff, co) => describeStaffPolicyGroup(staff, co),
-      hasExplicitStaffWorkRule: staff => hasExplicitStaffWorkRule(staff),
+      hasExplicitStaffWorkRule: (staff, co) => hasExplicitStaffWorkRule(staff, co),
       getStaffWorkRule: (staff, co) => getStaffWorkRule(staff, co),
       saveStaffWorkRule: (staff, patch = {}) => saveStaffWorkRule(staff, patch),
-      resetStaffWorkRule: staff => resetStaffWorkRule(staff),
-      addStaffShiftOverride: (staff, spec = {}) => addStaffShiftOverride(staff, spec),
-      removeStaffShiftOverride: (staff, id) => removeStaffShiftOverride(staff, id),
-      addStaffOtPass: (staff, spec = {}) => addStaffOtPass(staff, spec),
-      removeStaffOtPass: (staff, id) => removeStaffOtPass(staff, id),
+      resetStaffWorkRule: (staff, co) => resetStaffWorkRule(staff, co),
+      addStaffShiftOverride: (staff, spec = {}, co) => addStaffShiftOverride(staff, spec, co),
+      removeStaffShiftOverride: (staff, id, co) => removeStaffShiftOverride(staff, id, co),
+      addStaffOtPass: (staff, spec = {}, co) => addStaffOtPass(staff, spec, co),
+      removeStaffOtPass: (staff, id, co) => removeStaffOtPass(staff, id, co),
+      getStaffRuleKey: (staff, co) => staffRuleKey(staff, co),
+      resolveStaffShiftAssignment: (staff, co) => resolveStaffShiftAssignment(staff, co),
       resolveStaffShiftForDate: (staff, co, dateStr) => resolveStaffShiftForDate(staff, co, dateStr),
       computeShiftCalPresetRows: (presetId, year) => computeShiftCalPresetRows(presetId, year),
       holidayCalendars: () => HOLIDAY_CALENDARS.map(c => Object.assign({}, c)),
@@ -145275,7 +145338,10 @@
         (staffNames || []).forEach(nm => {
           const k = norm(nm);
           if (!k) return;
-          if (STATE.workSchedules && STATE.workSchedules.staffRules) delete STATE.workSchedules.staffRules[k];
+          if (STATE.workSchedules && STATE.workSchedules.staffRules) {
+            delete STATE.workSchedules.staffRules[k];
+            Object.keys(STATE.workSchedules.staffRules).forEach(rk => { if (rk.endsWith(`|${k}`)) delete STATE.workSchedules.staffRules[rk]; });
+          }
           if (STATE.staffBiometrics) delete STATE.staffBiometrics[k];
         });
         if (Array.isArray(shiftTypeIds) && shiftTypeIds.length && STATE.workSchedules && Array.isArray(STATE.workSchedules.shiftTypes)) {

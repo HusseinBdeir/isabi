@@ -2259,7 +2259,19 @@ function scopeWorkSchedulesForSession(wsObj, session) {
   };
 }
 
-function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRls) {
+// Staff rules are kept per company and person since Command Center v19.6.343: key `<company>|<name>`, both trimmed
+// and lower-cased. A rule whose own company disagrees with its key prefix is never stored (it would shadow or freeze
+// another company's rule for that person). Bare-name keys (older rules) are unaffected.
+export function staffRuleKeyCompanyMismatch(rk, rule) {
+  const key = String(rk || '');
+  const bar = key.indexOf('|');
+  if (bar < 0 || !rule || typeof rule !== 'object') return false;
+  const co = String(rule.company || '').trim().toLowerCase();
+  if (!co) return true;
+  return key.slice(0, bar) !== co;
+}
+
+export function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRls) {
   const prevWs = (prevWsRaw && typeof prevWsRaw === 'object') ? prevWsRaw : {};
   const nextWs = (nextWsRaw && typeof nextWsRaw === 'object') ? nextWsRaw : {};
 
@@ -2331,6 +2343,7 @@ function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRls) {
   const mergedRules = Object.assign({}, prevRules);
   for (const [rk, nr] of Object.entries(nextRules)) {
     if (!nr || typeof nr !== 'object') continue;
+    if (staffRuleKeyCompanyMismatch(rk, nr)) continue;
     const prevR = mergedRules[rk];
     const prevCo = String((prevR && prevR.company) || '').trim();
     const nextCo = String(nr.company || '').trim();
@@ -2693,6 +2706,8 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
       const prevRules = prevWs.staffRules || {};
       const nextRules = wsIn.staffRules || {};
       for (const [rk, nr] of Object.entries(nextRules)) {
+        // Skipped here and dropped by mergeWorkSchedulesDocs (never stored), so it cannot block the push either.
+        if (staffRuleKeyCompanyMismatch(rk, nr)) continue;
         const pr = prevRules[rk];
         const prevCo = String((pr && pr.company) || '').trim();
         const nextCo = String((nr && nr.company) || '').trim();
@@ -3798,7 +3813,7 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
         if (!pCo || !canAccessCompany(session, pCo)) safeRules[rk] = pv;
       }
       for (const [rk, iv] of Object.entries(iRules)) {
-        if (rk in safeRules || !iv || typeof iv !== 'object') continue;
+        if (rk in safeRules || !iv || typeof iv !== 'object' || staffRuleKeyCompanyMismatch(rk, iv)) continue;
         const iCo = String(iv.company || '').trim();
         if (iCo && canAccessCompany(session, iCo)) safeRules[rk] = iv;
       }
