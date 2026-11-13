@@ -20,7 +20,16 @@ collide; every later change to an entry is a compare-and-swap on the value this 
   take   take the release lock, check out `release/batch-<lock>` at origin/main in this isabi worktree and its sibling
          isabi-app, and merge every waiting change in line order. One shell version for the whole batch.
   drop   leader only: leave one change out (its gate failed) and rebuild the batch without it.
-  done   leader only, after deploy + push of both mains: remove the shipped entries and give the lock back.
+  done   leader only, after deploy + push of both mains: mark the entries shipped and give the lock back. Refused
+         until the batch is on both mains, the deploy recorded in the lock is the commit on isabi main, and the live
+         site serves the batch's shell version. On main is not live.
+
+A waiting session is told SHIPPED only when its entry is marked shipped (or its commits are on main) AND the live
+site serves that version or a later one; it then clears its own entry. Entries nobody collects go after 24 hours.
+A session waiting in line refreshes its entry every 10 minutes; an entry with no sign of life for 3 hours is
+skipped by leaders (never shipped behind its session's back) until that session joins again.
+The line is ordered by the second each change joined, by each PC's own clock: a skewed clock can change the order
+of a batch, never what ships.
 
 The two owner rules
   1. A change that does not merge cleanly with main plus the changes ahead of it is left out of that batch. Its entry
@@ -82,6 +91,10 @@ TEMP_INDEX = "isabi-release-batch.index"
 APP_STAMP_FILES = ("sw.js", "index.html", "manifest.json")
 SITE_GENERATED_DIR = "app"
 SITE_GENERATED_FILE = "functions/_lib/deployed_shell.js"
+STATES = ("waiting", "left_out", "shipped")
+STALE_AFTER_MIN = 180   # a waiting entry whose session gave no sign of life for this long is skipped, not shipped
+HEARTBEAT_S = 600       # a session waiting in line refreshes its entry this often
+SHIPPED_KEEP_H = 24     # a shipped entry its session never collected is cleared after this long
 HEAD_START_S = 60       # a waiter that is Nth in line leads only after the lock has been free N * this long
 DEFAULT_WAIT_S = 540    # under the 10 minute limit of a foreground command; run again to keep waiting
 POLL_S = 20
@@ -242,13 +255,14 @@ def _entry_commit(entry: dict, cwd: Path, parent: str = "") -> str:
 
 def _push_ref(ref: str, new_sha: str, expected_old: str, cwd: Path) -> bool:
     """Compare-and-swap on a remote ref, the same way as the lock: create = plain push that the server refuses when
-    the ref exists; replace and delete = --force-with-lease on the exact value this session read."""
+    the ref exists; replace and delete = --force-with-lease on the exact value this session read, with no "+" in the
+    refspec (a "+" makes git force the update and ignore a lease that does not match)."""
     if not expected_old and not new_sha:
         return False
     if not expected_old:
         args = ["push", "--porcelain", "--no-verify", RL.REMOTE, f"{new_sha}:{ref}"]
     else:
-        spec = f"+{new_sha}:{ref}" if new_sha else f":{ref}"
+        spec = f"{new_sha}:{ref}" if new_sha else f":{ref}"
         args = ["push", "--porcelain", "--no-verify", f"--force-with-lease={ref}:{expected_old}", RL.REMOTE, spec]
     return RL._git(args, cwd, check=False, timeout=90).returncode == 0
 
@@ -272,7 +286,7 @@ def read_line(cwd: Path = ISABI_ROOT) -> list[dict]:
             e = json.loads(raw.stdout) if raw.returncode == 0 else None
         except ValueError:
             e = None
-        if not isinstance(e, dict) or e.get("id") != name or e.get("state") not in ("waiting", "left_out"):
+        if not isinstance(e, dict) or e.get("id") != name or e.get("state") not in STATES:
             e = {"id": name, "state": "unreadable", "holder": "?", "summary": "(entry cannot be read)"}
         e["_ref"], e["_sha"] = f"{QUEUE_NS}/{name}", sha
         entries.append(e)
@@ -297,6 +311,53 @@ def _update_entry(cwd: Path, entry: dict, **changes) -> dict | None:
 
 def _delete_entry(cwd: Path, entry: dict) -> bool:
     return _push_ref(entry["_ref"], "", entry["_sha"], cwd)
+
+
+def _set_fields(cwd: Path, entry_id: str, changes: dict, *, only_if=None, tries: int = 4) -> dict | None:
+    """Write fields into the entry as it is on the remote NOW, retrying when another session wrote it in between (a
+    waiting session refreshes its entry while a leader marks it). None when the entry is gone, unreadable, or
+    `only_if(entry)` says the change no longer applies."""
+    for _ in range(max(1, tries)):
+        cur = next((e for e in read_line(cwd) if e["id"] == entry_id), None)
+        if cur is None or cur.get("state") not in STATES or (only_if is not None and not only_if(cur)):
+            return None
+        new = _update_entry(cwd, cur, **changes)
+        if new is not None:
+            return new
+    return None
+
+
+def _is_stale(entry: dict) -> bool:
+    seen = RL._parse_iso(entry.get("seenAt") or entry.get("queuedAt") or "")
+    return seen is None or seen + dt.timedelta(minutes=STALE_AFTER_MIN) <= RL._now()
+
+
+def _waiting(line: list[dict], keep: str = "") -> list[dict]:
+    """The entries a leader would ship, in line order: waiting, and their session seen recently (`keep` = an entry
+    counted even when stale: the one being asked about)."""
+    return [e for e in line if e.get("state") == "waiting" and (e["id"] == keep or not _is_stale(e))]
+
+
+def _touch(cwd: Path, entry_id: str) -> None:
+    """A sign of life from the entry's session (at most one write per HEARTBEAT_S / 2)."""
+    fresh = RL._now() - dt.timedelta(seconds=HEARTBEAT_S / 2)
+
+    def due(e: dict) -> bool:
+        seen = RL._parse_iso(e.get("seenAt") or "")
+        return e.get("state") == "waiting" and (seen is None or seen <= fresh)
+
+    try:
+        _set_fields(cwd, entry_id, {"seenAt": RL._iso(RL._now())}, only_if=due, tries=1)
+    except RL.LockError:
+        pass
+
+
+def _prune_shipped(cwd: Path) -> None:
+    cutoff = RL._now() - dt.timedelta(hours=SHIPPED_KEEP_H)
+    for e in read_line(cwd):
+        at = RL._parse_iso(e.get("shippedAt") or "")
+        if e.get("state") == "shipped" and (at is None or at <= cutoff):
+            _delete_entry(cwd, e)
 
 
 def _find(line: list[dict], entry_id: str) -> dict | None:
@@ -369,6 +430,7 @@ def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
         in_live_batch = bool(lock_sha) and (old.get("batch") or {}).get("lockId") == lock.get("lockId")
         unchanged = all((old.get(k) or {}).get("sha") == (parts.get(k) or {}).get("sha") for k in ("app", "site"))
         if old.get("state") == "waiting" and unchanged:
+            old = _set_fields(cwd, old["id"], {"seenAt": RL._iso(RL._now())}, only_if=lambda e: e.get("state") == "waiting") or old
             _remember(cwd, old)
             if not quiet:
                 print(f"Already in line: {old['id']} (place kept).")
@@ -386,6 +448,7 @@ def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
         "summary": summary,
         "gates": [g.strip() for g in gates if g and g.strip()],
         "queuedAt": RL._iso(now),
+        "seenAt": RL._iso(now),
         "state": "waiting",
         **parts,
     }
@@ -460,41 +523,69 @@ def poll_once(cwd: Path, entry_id: str, *, known: dict | None = None, free_for_s
     e = _find(line, entry_id)
     lock_sha, lock = RL.read_remote_lock(cwd)
     free = not lock_sha or RL.is_expired(lock, RL.TAKEOVER_GRACE_MIN)
+
+    def main_shell(rec: dict) -> str:
+        return shell_ver_of(_blob(cwd, f"{RL.REMOTE}/main:app/sw.js")) if (rec.get("app") or {}).get("sha") else ""
+
     if e is None:
         rec = known or _local_json(cwd, JOINED_FILE).get(entry_id)
         if rec and _parts_on_main(cwd, rec):
-            ver = shell_ver_of(_blob(cwd, f"{RL.REMOTE}/main:app/sw.js"))
-            return "SHIPPED", f"{entry_id} is on main (isabi main carries shell v{ver or '?'}).", free
+            return (*_live_verdict(entry_id, main_shell(rec), "another session"), free)
         return "GONE", (f"{entry_id} is not in the line and its commits are not on main: it was withdrawn, or this "
                         "worktree has no record of it. Run status; join again if it still has to ship."), free
+    if e.get("state") == "shipped":
+        return (*_live_verdict(e["id"], e.get("shippedVersion") or "", e.get("shippedBy") or "?"), free)
     if e.get("state") == "left_out":
         return "LEFT_OUT", (f"{e['id']} was left out by {e.get('leftOutBy', '?')}: {e.get('note') or 'no reason given'}. "
                             "Fix it (rebase onto origin/main), push, and join again."), free
     if e.get("state") != "waiting":
         return "GONE", f"{e['id']} cannot be read on the remote; leave --id {e['id']} and join again.", free
-    waiting = [x for x in line if x.get("state") == "waiting"]
+    waiting = _waiting(line, keep=e["id"])
     pos = next(i for i, x in enumerate(waiting) if x["id"] == e["id"])
     if not free:
         b = e.get("batch") or {}
         if b.get("lockId") == lock.get("lockId"):
             return "IN_BATCH", f"{e['id']} is in the batch {b.get('holder', '?')} is releasing as v{b.get('version') or '?'}.", free
         return "WAITING", f"{e['id']} is {pos + 1} of {len(waiting)} in line; release lock {RL.describe(lock)}.", free
+    if _parts_on_main(cwd, e):  # its leader pushed it to main and never ran done: say what live says
+        return (*_live_verdict(e["id"], main_shell(e), (e.get("batch") or {}).get("holder") or "another session"), free)
     if pos == 0 or free_for_s >= pos * HEAD_START_S:
         return "TURN", f"nothing is releasing and {e['id']} is {'first' if pos == 0 else 'next'} in line: lead the batch.", free
     return "WAITING", (f"nothing is releasing; {waiting[0].get('holder', '?')} is first in line and leads the batch "
                        f"({e['id']} goes with it)."), free
 
 
+def _live_verdict(entry_id: str, ver: str, by: str) -> tuple[str, str]:
+    """SHIPPED only when the live site serves the version the change went out in: on main is not live. A change
+    with no shell version (isabi-side only) has nothing to read on live; its leader's `done` checked the deploy."""
+    if not ver:
+        return "SHIPPED", f"{entry_id} is on main and deployed by {by} (no shell change)."
+    live = live_shell_version()
+    if live and _RE_VERSION.match(live) and _RE_VERSION.match(ver) and _vt(live) >= _vt(ver):
+        return "SHIPPED", f"{entry_id} is live: shipped in v{ver} by {by} (live serves v{live})."
+    return "WAITING", (f"{entry_id} is on main as v{ver}, but live serves v{live or '?'}: not live yet. Checking again; "
+                       "if it stays like this, run status (the deploy failed or was rolled back).")
+
+
 def wait(cwd: Path, entry_id: str, *, wait_s: int = DEFAULT_WAIT_S, poll_s: int = POLL_S, known: dict | None = None,
          quiet: bool = False) -> tuple[str, str]:
-    """Poll until the entry is SHIPPED, LEFT_OUT, GONE, or it is its TURN; WAITING when wait_s runs out."""
+    """Poll until the entry is SHIPPED (live), LEFT_OUT, GONE, or it is its TURN; WAITING when wait_s runs out.
+    While waiting, the entry is refreshed so leaders know its session is still there."""
     deadline = time.monotonic() + max(0, wait_s)
     free_since: float | None = None
+    touched: float | None = None
     shown = ""
     while True:
+        if touched is None or time.monotonic() - touched >= HEARTBEAT_S:
+            _touch(cwd, entry_id)
+            touched = time.monotonic()
         state, msg, free = poll_once(cwd, entry_id, known=known,
                                      free_for_s=(time.monotonic() - free_since) if free_since is not None else 0.0)
         free_since = (free_since if free_since is not None else time.monotonic()) if free else None
+        if state == "SHIPPED":  # collected by its own session: the entry has done its job
+            done_entry = next((e for e in read_line(cwd) if e["id"] == entry_id and e.get("state") == "shipped"), None)
+            if done_entry:
+                _delete_entry(cwd, done_entry)
         if state in ("SHIPPED", "LEFT_OUT", "GONE", "TURN"):
             return state, msg
         if not quiet and msg != shown:
@@ -574,9 +665,11 @@ def _normalised_site_commit(cwd: Path, sha: str) -> tuple[str, bool]:
     return commit, own_app
 
 
-def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[str]) -> tuple[bool, str]:
-    """Merge one entry's branches into the batch branches. All or nothing across the two repos."""
+def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[str]) -> tuple[bool, str, list[str]]:
+    """Merge one entry's branches into the batch branches. All or nothing across the two repos. Returns (merged
+    cleanly?, why not, which parts brought new commits: "app" / "site"; empty = all of it was already in the batch)."""
     before = {str(app): (app, _head(app)), str(cwd): (cwd, _head(cwd))}
+    brought: list[str] = []
 
     def undo() -> None:
         for repo, sha in before.values():
@@ -593,7 +686,7 @@ def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[s
              check=False, timeout=180)
         if not _known_commit(repo, sha):
             undo()
-            return False, f"{label} {branch} no longer has {sha[:7]} on {RL.REMOTE} (rewritten or deleted since it joined)"
+            return False, f"{label} {branch} no longer has {sha[:7]} on {RL.REMOTE} (rewritten or deleted since it joined)", []
         if RL._in(repo, sha, "HEAD"):
             continue
         if kind == "app":
@@ -609,8 +702,9 @@ def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[s
             detail = (", ".join(files[:6]) + (", ..." if len(files) > 6 else "")) if files else \
                 (r.stderr or r.stdout).decode("utf-8", errors="replace").strip()[:200]
             undo()
-            return False, (f"does not merge cleanly with main plus the changes ahead of it in the batch ({label}: {detail})")
-    return True, ""
+            return False, f"does not merge cleanly with main plus the changes ahead of it in the batch ({label}: {detail})", []
+        brought.append(kind)
+    return True, "", brought
 
 
 def _bump(app: Path, ver: str, count: int) -> None:
@@ -630,9 +724,16 @@ def _bump(app: Path, ver: str, count: int) -> None:
     _run(["commit", "-q", "-m", f"v{ver}: shell version (batch of {count})"], app, env_extra=_ident_env(app))
 
 
-def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], ver: str, *, mark: bool) -> dict:
+def _batch_branch(lock: dict) -> str:
+    return f"release/batch-{lock['lockId'][:8]}"
+
+
+def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], ver: str) -> dict:
     """Check out the batch branch at origin/main in both worktrees and merge the candidates in line order."""
-    branch = f"release/batch-{lock['lockId'][:8]}"
+    branch = _batch_branch(lock)
+    # app/ in isabi is sync_app.py output. Files it copied for an earlier or dropped batch are untracked, survive a
+    # checkout or reset, and the deploy stages app/ from disk: clear them (ignored seed files are kept).
+    _run(["clean", "-fdq", "--", SITE_GENERATED_DIR], cwd)
     for repo in (cwd, app):
         RL._fetch_main(repo)
         _run(["checkout", "-q", "--no-track", "-B", branch, f"{RL.REMOTE}/main"], repo)
@@ -642,21 +743,32 @@ def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], 
     merged: list[dict] = []
     left: list[dict] = []
     notes: list[str] = []
+    bump = False
     stamp = {"lockId": lock["lockId"], "holder": holder, "version": ver, "at": RL._iso(RL._now())}
     for e in cands:
-        cur = _update_entry(cwd, e, batch=stamp) if mark or (e.get("batch") or {}).get("lockId") != lock["lockId"] else e
+        cur = _set_fields(cwd, e["id"], {"batch": stamp}, only_if=lambda x: x.get("state") == "waiting")
         if cur is None:
             left.append({"id": e["id"], "holder": e.get("holder"), "summary": e.get("summary"),
                          "why": "it changed or was withdrawn while the batch was forming (still in line if it exists)"})
             continue
-        ok, why = _merge_entry(cwd, app, cur, base_ver, notes)
+        ok, why, brought = _merge_entry(cwd, app, cur, base_ver, notes)
+        if ok and not brought:
+            # All of it is on main already (a leader pushed it and never ran done): nothing to ship again.
+            on_main = shell_ver_of(_blob(cwd, f"{RL.REMOTE}/main:app/sw.js")) if (cur.get("app") or {}).get("sha") else ""
+            _set_fields(cwd, cur["id"], {"state": "shipped", "shippedVersion": on_main, "shippedAt": RL._iso(RL._now()),
+                                         "shippedBy": "an earlier release", "batch": None})
+            notes.append(f"{cur['id']} ({cur.get('summary')}) is already on main: marked shipped, not released again")
+            continue
         if ok:
             merged.append(cur)
+            bump = bump or "app" in brought
             continue
-        _update_entry(cwd, cur, state="left_out", note=why, leftOutBy=holder, leftOutAt=RL._iso(RL._now()), batch=None)
+        if _set_fields(cwd, cur["id"], {"state": "left_out", "note": why, "leftOutBy": holder,
+                                        "leftOutAt": RL._iso(RL._now()), "batch": None}) is None:
+            notes.append(f"{cur['id']}: could not write the left-out mark (it changed on the remote); tell {cur.get('holder')}")
         left.append({"id": cur["id"], "holder": cur.get("holder"), "summary": cur.get("summary"), "why": why})
     shell = ""
-    if any((e.get("app") or {}).get("sha") for e in merged):
+    if bump:
         _bump(app, ver, len(merged))
         shell = ver
     return {
@@ -666,10 +778,28 @@ def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], 
     }
 
 
-def _unmark(cwd: Path, lock_id: str, ids: list[str]) -> None:
+def _unmark(cwd: Path, lock_id: str) -> None:
+    """Every entry marked as in this lock's batch goes back to plain waiting."""
     for e in read_line(cwd):
-        if e["id"] in ids and e.get("state") == "waiting" and (e.get("batch") or {}).get("lockId") == lock_id:
-            _update_entry(cwd, e, batch=None)
+        if e.get("state") == "waiting" and (e.get("batch") or {}).get("lockId") == lock_id:
+            _set_fields(cwd, e["id"], {"batch": None}, only_if=lambda x: (x.get("batch") or {}).get("lockId") == lock_id)
+
+
+def _give_up(cwd: Path, lock_id: str) -> bool:
+    """A batch that could not be formed: unmark its entries and free the lock, each on its own, so a failure of one
+    never leaves the lock held. False when the lock could not be released (the batch file stays, so abort works)."""
+    try:
+        _unmark(cwd, lock_id)
+    except RL.LockError as exc:
+        print(f"WARN: could not unmark the line ({str(exc).splitlines()[0]}); the marks go stale with the lock.", file=sys.stderr)
+    try:
+        RL.release(cwd, quiet=True)
+    except RL.LockError as exc:
+        print(f"WARN: the release lock is still held ({str(exc).splitlines()[0]}). Run: python build/release_batch.py abort",
+              file=sys.stderr)
+        return False
+    _write_local_json(cwd, BATCH_FILE, None)
+    return True
 
 
 def take(cwd: Path = ISABI_ROOT, *, holder: str, version: str = "", ttl_min: int = RL.DEFAULT_TTL_MIN,
@@ -684,34 +814,39 @@ def take(cwd: Path = ISABI_ROOT, *, holder: str, version: str = "", ttl_min: int
     if old:
         lock_sha, lock = RL.read_remote_lock(cwd)
         if lock_sha and RL.held_by_me(lock, cwd) and lock.get("lockId") == old.get("lockId"):
+            if old.get("forming"):
+                raise BatchError("a batch was left half-formed here and still holds the release lock: run abort, then take again.")
             raise BatchError(f"this worktree already leads batch v{old.get('version')} ({len(old.get('entries') or [])} changes): "
                              "finish it (deploy, push, done) or give it up (abort).")
         _write_local_json(cwd, BATCH_FILE, None)  # a batch whose lock is gone
     _require_clean(cwd, "isabi")
     _require_clean(app, "isabi-app")
-    if not [e for e in read_line(cwd) if e.get("state") == "waiting"]:
+    if not _waiting(read_line(cwd)):
         if not quiet:
             print("Nothing is waiting in the line.")
         return {"entries": [], "left_out": [], "notes": [], "version": "", "shell": ""}
     lock = RL.acquire(cwd, holder=holder, purpose="batch release", ttl_min=ttl_min, quiet=True)
+    # Written before anything can fail, so `abort` can always free a lock this command took.
+    _write_local_json(cwd, BATCH_FILE, {"lockId": lock["lockId"], "holder": holder, "branch": _batch_branch(lock), "version": "",
+                                        "shell": "", "entries": [], "left_out": [], "notes": [], "forming": True})
     try:
-        cands = [e for e in read_line(cwd) if e.get("state") == "waiting"]  # the line as it is under the lock
+        line = read_line(cwd)  # the line as it is under the lock
+        cands = _waiting(line)
         for repo in (cwd, app):
             RL._fetch_main(repo)
         ver = batch_version(cwd, app, version)
-        batch = _assemble(cwd, app, lock, holder, cands, ver, mark=True)
+        batch = _assemble(cwd, app, lock, holder, cands, ver)
+        batch["notes"] += [f"{e['id']} ({e.get('summary')}; {e.get('holder')}) skipped: no sign of its session for "
+                           f"{STALE_AFTER_MIN // 60} h; it ships when that session joins again"
+                           for e in line if e.get("state") == "waiting" and _is_stale(e)]
     except BaseException:
-        try:
-            _unmark(cwd, lock["lockId"], [e["id"] for e in read_line(cwd)])
-            RL.release(cwd, quiet=True)
-        except RL.LockError:
-            pass
+        _give_up(cwd, lock["lockId"])
         raise
     if not batch["entries"]:
-        RL.release(cwd, quiet=True)
+        _give_up(cwd, lock["lockId"])
         if not quiet:
             _print_batch(cwd, app, batch)
-            print("Nothing merged: the release lock is free again.")
+            print("Nothing to release: the release lock is free again.")
         return batch
     RL.renew(cwd, ttl_min=ttl_min, quiet=True, extra={
         "version": f"v{batch['shell']}" if batch["shell"] else "no shell change",
@@ -752,6 +887,8 @@ def _leading(cwd: Path) -> tuple[dict, dict]:
     batch = _local_json(cwd, BATCH_FILE)
     if not batch:
         raise BatchError("this worktree does not lead a batch (take or ship starts one).")
+    if batch.get("forming"):
+        raise BatchError("the batch here was left half-formed: run abort (it frees the lock), then take again.")
     lock_sha, lock = RL.read_remote_lock(cwd)
     if not lock_sha or not RL.held_by_me(lock, cwd) or lock.get("lockId") != batch.get("lockId"):
         raise BatchError(f"the release lock is no longer this batch's ({RL.describe(lock) if lock_sha else 'nobody holds it'}): "
@@ -776,22 +913,24 @@ def drop(cwd: Path, entry_id: str, *, reason: str, reset: bool = False, quiet: b
         if _dirty(repo) and not reset:
             raise BatchError(f"{label} worktree {repo} has uncommitted changes (sync_app.py output?). The rebuild starts again "
                              "from origin/main: pass --reset to discard them and any commit made on the batch branch.")
-    line = read_line(cwd)
-    cur = _find(line, hit["id"])
-    if cur and (cur.get("batch") or {}).get("lockId") == batch["lockId"]:
-        _update_entry(cwd, cur, state="left_out", note=f"gates failed in the batch: {reason}", leftOutBy=batch["holder"],
-                      leftOutAt=RL._iso(RL._now()), batch=None)
+    in_line = next((e for e in read_line(cwd) if e["id"] == hit["id"]), None)
+    if in_line and in_line.get("state") == "waiting":
+        # Must be written before the rebuild: an entry still marked waiting would be led, or shipped, by its session.
+        if _set_fields(cwd, hit["id"], {"state": "left_out", "note": f"gates failed in the batch: {reason}",
+                                        "leftOutBy": batch["holder"], "leftOutAt": RL._iso(RL._now()), "batch": None},
+                       only_if=lambda x: x.get("state") == "waiting") is None:
+            raise BatchError(f"could not mark {hit['id']} as left out (it kept changing on the remote). Nothing was rebuilt: "
+                             "run status, then drop again.")
     keep = [e["id"] for e in batch["entries"] if e["id"] != hit["id"]]
     cands = [e for e in read_line(cwd) if e["id"] in keep and e.get("state") == "waiting"]
     for repo in (cwd, app):
         _run(["merge", "--abort"], repo, check=False)
         _run(["reset", "--hard", "-q"], repo)
-    new = _assemble(cwd, app, lock, batch["holder"], cands, batch["version"], mark=False)
+    new = _assemble(cwd, app, lock, batch["holder"], cands, batch["version"])
     new["left_out"] = [*batch.get("left_out", []), {"id": hit["id"], "holder": hit.get("holder"), "summary": hit.get("summary"),
                                                      "why": f"gates failed in the batch: {reason}"}, *new["left_out"]]
     if not new["entries"]:
-        RL.release(cwd, quiet=True)
-        _write_local_json(cwd, BATCH_FILE, None)
+        _give_up(cwd, batch["lockId"])
         if not quiet:
             _print_batch(cwd, app, new)
             print("Nothing left in the batch: the release lock is free again.")
@@ -826,18 +965,30 @@ def done(cwd: Path = ISABI_ROOT, *, quiet: bool = False) -> dict:
     if missing:
         raise BatchError("not on origin/main yet: " + "; ".join(missing) + ". Push isabi-app, then isabi "
                          "(git push origin HEAD:main), then run done again. The lock stays held.")
-    unpushed = RL.unpushed_deploys(lock, cwd)
-    if unpushed:
-        raise BatchError(f"the live deploy {unpushed[0]['sha'][:7]} is not on isabi origin/main: push it "
-                         "(git push origin HEAD:main), or deploy the commit that is on main, then run done again.")
+    # On main is not live. The sessions waiting on this batch are told "shipped" on the strength of these checks.
+    last = RL.last_deploy(lock)
+    site_tip = _out(["rev-parse", f"{RL.REMOTE}/main"], cwd)
+    if not last:
+        raise BatchError("the batch is on main but no deploy is recorded under this lock, so nothing says it went live. "
+                         "Deploy it (python build/deploy_cloudflare.py ...), then run done again. The lock stays held.")
+    if last["sha"] != site_tip:
+        raise BatchError(f"the last deploy under this lock is {last['sha'][:7]} but isabi origin/main is {site_tip[:7]}: what "
+                         "is live is not what is on main. Deploy the commit that is on main, then run done again.")
+    shell = batch.get("shell") or ""
+    if shell:
+        live = live_shell_version()
+        if live != shell:
+            raise BatchError(f"live serves shell v{live or '?'}, not v{shell}: the deploy has not gone live. Check the deploy "
+                             "(release_lock.py status), then run done again. The lock stays held.")
     ids = [e["id"] for e in batch["entries"]]
-    for e in read_line(cwd):
-        if e["id"] in ids and (e.get("batch") or {}).get("lockId") == batch["lockId"]:
-            _delete_entry(cwd, e)
+    for eid in ids:
+        _set_fields(cwd, eid, {"state": "shipped", "shippedVersion": shell, "shippedAt": RL._iso(RL._now()),
+                               "shippedBy": batch["holder"], "batch": None},
+                    only_if=lambda x: (x.get("batch") or {}).get("lockId") == batch["lockId"])
+    _prune_shipped(cwd)
     RL.release(cwd, quiet=True)
     _write_local_json(cwd, BATCH_FILE, None)
     if not quiet:
-        shell = batch.get("shell")
         print(f"Batch {('v' + shell) if shell else '(no shell change)'} shipped: {len(ids)} change{'s' if len(ids) != 1 else ''}; "
               "the release lock is free.")
         for e in batch["entries"]:
@@ -859,7 +1010,10 @@ def abort(cwd: Path = ISABI_ROOT, *, quiet: bool = False) -> None:
         raise BatchError("this batch is live and not on main: it cannot be given up. Push it to main and run done, or "
                          "deploy origin/main again and release the lock by hand (release_lock.py release --force).")
     if mine:
-        _unmark(cwd, batch["lockId"], [e["id"] for e in batch.get("entries") or []])
+        try:
+            _unmark(cwd, batch["lockId"])
+        except RL.LockError as exc:
+            print(f"WARN: could not unmark the line ({str(exc).splitlines()[0]}); the marks go stale with the lock.", file=sys.stderr)
         RL.release(cwd, quiet=True)
     _write_local_json(cwd, BATCH_FILE, None)
     if not quiet:
@@ -927,10 +1081,15 @@ def _print_status(st: dict) -> None:
         b = e.get("batch") or {}
         if e.get("state") == "left_out":
             where = f"LEFT OUT by {e.get('leftOutBy', '?')}: {e.get('note', '')}"
+        elif e.get("state") == "shipped":
+            ver = e.get("shippedVersion")
+            where = f"SHIPPED {('in v' + ver) if ver else '(no shell change)'} by {e.get('shippedBy', '?')}; not collected by its session yet"
         elif e.get("state") != "waiting":
             where = "UNREADABLE"
         elif lock and b.get("lockId") == lock.get("lockId"):
             where = f"in the batch being released as v{b.get('version') or '?'}"
+        elif _is_stale(e):
+            where = f"STALE: no sign of its session for {STALE_AFTER_MIN // 60} h; skipped until it joins again"
         else:
             where = "waiting"
         print(f"  {i}. [{e['id']}] {e.get('summary')} ({e.get('holder')}; {_parts_text(e)}): {where}")

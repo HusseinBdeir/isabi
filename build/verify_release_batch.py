@@ -111,19 +111,22 @@ def feature(repo: pathlib.Path, branch: str, files: dict[str, str], stamp: str =
     return git(repo, "rev-parse", "HEAD")
 
 
-def release_as_leader(site: pathlib.Path) -> str:
+def release_as_leader(site: pathlib.Path, *, deploy: bool = True, live: bool = True) -> str:
     """What the leader does after `take`: sync_app.py (shell into isabi/app + deployed_shell.js), commit, claim the
-    deploy in the lock, push isabi-app main then isabi main. Returns the shell version shipped."""
+    deploy in the lock (deploy=), push isabi-app main then isabi main; the live site then serves it (live=).
+    Returns the shell version shipped."""
     app = site.parent / "isabi-app"
     ver = RB.shell_ver_of((app / "sw.js").read_bytes())
     put(site / "app" / "sw.js", text(app / "sw.js"))
     put(site / "functions" / "_lib" / "deployed_shell.js", f"export const DEPLOYED_SHELL_VER = '{ver}';\n")
     git(site, "add", "-A")
     git(site, "commit", "-q", "--allow-empty", "-m", f"Command Center v{ver}")
-    quiet(RL.claim_deploy, site, git(site, "rev-parse", "HEAD"), "pages-only deploy")
+    if deploy:
+        quiet(RL.claim_deploy, site, git(site, "rev-parse", "HEAD"), "pages-only deploy")
     git(app, "push", "-q", "origin", "HEAD:main")
     git(site, "push", "-q", "origin", "HEAD:main")
-    os.environ[LIVE] = ver
+    if live:
+        os.environ[LIVE] = ver
     return ver
 
 
@@ -214,7 +217,7 @@ def main() -> int:  # noqa: PLR0915
 
         # 4. three changes finish while A is releasing: they wait in line
         sha_b = feature(appB, "wt/b", {"js/other.js": "other B\n"}, stamp="19.6.102")
-        sha_c = feature(appC, "wt/c", {"js/app.js": APP_JS.replace("line9\n", "line9 C\n")}, stamp="19.6.103")
+        sha_c = feature(appC, "wt/c", {"js/app.js": APP_JS.replace("line9\n", "line9 C\n"), "js/c_new.js": "new C\n"}, stamp="19.6.103")
         sha_cs = feature(C, "wt/c-site", {"functions/api.js": "a\nb C\nc\n", "app/sw.js": "hand edit\n",
                                          "functions/_lib/deployed_shell.js": "export const DEPLOYED_SHELL_VER = '19.6.103';\n"})
         sha_d = feature(appD, "wt/d", {"js/app.js": APP_JS.replace("line9\n", "line9 D\n")}, stamp="19.6.104")
@@ -235,12 +238,28 @@ def main() -> int:  # noqa: PLR0915
 
         # 5. A finishes
         check("not on origin/main yet" in raises(RB.done, A)[1] and RL.read_remote_lock(B)[0], "done is refused before the batch is on main; the lock stays held")
-        release_as_leader(A)
+        release_as_leader(A, deploy=False, live=False)
+        check("no deploy is recorded" in raises(RB.done, A)[1] and RL.read_remote_lock(B)[1].get("holder") == "session A"
+              and entry(B, eA["id"]).get("state") == "waiting",
+              "on main is not live: done is refused while no deploy is recorded, and the lock stays held")
+        check(RB.poll_once(B, eA["id"], known=eA)[0] == "IN_BATCH", "a change on main whose leader has not finished is not reported shipped")
+        quiet(RL.claim_deploy, A, git(A, "rev-parse", "HEAD"), "pages-only deploy")
+        check("live serves shell v19.6.100, not v19.6.101" in raises(RB.done, A)[1] and RL.read_remote_lock(B)[0],
+              "done is refused while the live site still serves the old shell")
+        os.environ[LIVE] = "19.6.101"
         tick()
         quiet(RB.done, A)
-        check(RL.read_remote_lock(B) == ("", {}) and line_ids(B) == [eB["id"], eC["id"], eD["id"]] and not RB._local_json(A, RB.BATCH_FILE),
-              "done removes the shipped entry and frees the lock; the waiting ones stay in line")
-        check(RB.poll_once(A, eA["id"], known=eA)[0] == "SHIPPED", "a shipped change reads as SHIPPED")
+        a_now = entry(B, eA["id"])
+        check(RL.read_remote_lock(B) == ("", {}) and line_ids(B, "waiting") == [eB["id"], eC["id"], eD["id"]] and not RB._local_json(A, RB.BATCH_FILE)
+              and a_now.get("state") == "shipped" and a_now.get("shippedVersion") == "19.6.101" and a_now.get("shippedBy") == "session A",
+              "done marks the entry shipped with its version and frees the lock; the waiting ones stay in line")
+        os.environ[LIVE] = "19.6.100"
+        st, msg, _free = RB.poll_once(A, eA["id"], known=eA)
+        check(st == "WAITING" and "live serves v19.6.100" in msg, "a waiting session is not told SHIPPED while live serves an older version")
+        os.environ[LIVE] = "19.6.101"
+        check(RB.wait(A, eA["id"], wait_s=0, poll_s=0, known=eA, quiet=True)[0] == "SHIPPED" and eA["id"] not in line_ids(B),
+              "once live serves it the session is told SHIPPED and its entry is cleared")
+        check(RB.poll_once(A, eA["id"], known=eA)[0] == "SHIPPED", "asking again after the entry is cleared still reads SHIPPED")
 
         # 6. whose turn
         check(RB.poll_once(B, eB["id"])[0] == "TURN", "the first in line leads the next batch")
@@ -273,6 +292,7 @@ def main() -> int:  # noqa: PLR0915
 
         # 8. owner rule 2: the combined gates fail; the change that broke them is dropped, the others still ship
         put(B / "app" / "sw.js", "sync_app output\n")
+        put(B / "app" / "js" / "c_new.js", "new C\n")  # sync_app.py copied the change's new file: untracked in isabi
         check("--reset" in raises(RB.drop, B, eC["id"], reason="verify_c failed")[1] and len(RB._local_json(B, RB.BATCH_FILE)["entries"]) == 2,
               "drop does not discard uncommitted work unless --reset is given")
         check("is not in this batch" in raises(RB.drop, B, eD["id"], reason="x", reset=True)[1], "only a change in the batch can be dropped")
@@ -283,6 +303,8 @@ def main() -> int:  # noqa: PLR0915
               "rule 2: the batch is rebuilt without the dropped change and keeps its version")
         check("line9 C" not in app_js and text(B / "functions" / "api.js") == API_JS and text(appB / "js" / "other.js") == "other B\n"
               and not RB._dirty(B) and not is_ancestor(appB, sha_c), "nothing of the dropped change is left in either repo")
+        check(not (B / "app" / "js" / "c_new.js").exists() and not (appB / "js" / "c_new.js").exists() and (B / "app" / "sw.js").exists(),
+              "files sync_app.py copied for the dropped change are cleared from isabi/app, so the deploy cannot ship them")
         c_now = entry(A, eC["id"])
         check(c_now.get("state") == "left_out" and "verify_c failed" in c_now.get("note", "") and RB.poll_once(C, eC["id"])[0] == "LEFT_OUT",
               "the dropped change's session is told which gate failed")
@@ -296,10 +318,16 @@ def main() -> int:  # noqa: PLR0915
               "a left-out change that joins again gets a fresh entry at the end of the line")
         release_as_leader(B)
         check("already live" in raises(RB.drop, B, eB["id"], reason="x", reset=True)[1], "a change cannot be dropped once the batch is live")
+        git(B, "commit", "-q", "--allow-empty", "-m", "a commit made after the deploy")
+        git(B, "push", "-q", "origin", "HEAD:main")
+        check("what is live is not what is on main" in raises(RB.done, B)[1] and RL.read_remote_lock(A)[0],
+              "done is refused when main moved past the commit that was deployed")
+        quiet(RL.claim_deploy, B, git(B, "rev-parse", "HEAD"), "pages-only deploy")
         tick()
         quiet(RB.done, B)
-        check(RL.read_remote_lock(A) == ("", {}) and line_ids(A) == [eC["id"], eD2["id"]] and line_ids(A, "waiting") == [eD2["id"]],
-              "done clears only what shipped: the left-out entry and the newcomer remain")
+        check(RL.read_remote_lock(A) == ("", {}) and line_ids(A, "waiting") == [eD2["id"]] and entry(A, eB["id"]).get("shippedVersion") == "19.6.102"
+              and entry(A, eC["id"]).get("state") == "left_out" and line_ids(A) == [eB["id"], eC["id"], eD2["id"]],
+              "done touches only what shipped: the left-out entry and the newcomer are as they were")
 
         # 10. a leader dies: its batch marks go stale and the next in line takes over
         feature(appE, "wt/e", {"js/extra.js": "extra E\n"})
@@ -370,7 +398,63 @@ def main() -> int:  # noqa: PLR0915
         release_as_leader(A)
         tick()
         quiet(RB.done, A)
-        check(RL.read_remote_lock(B) == ("", {}) and line_ids(A, "waiting") == [], "that batch finishes like any other")
+        check(RL.read_remote_lock(B) == ("", {}) and line_ids(A, "waiting") == [] and RB.poll_once(B, bA2["entries"][0]["id"])[0] == "SHIPPED",
+              "that batch finishes like any other")
+
+        # 13b. a leader that pushed and deployed but never ran done: nothing is released twice
+        feature(appE, "wt/e2", {"js/extra2.js": "extra E2\n"})
+        tick()
+        st, _msg, bE2 = RB.ship(E, holder="session E", summary="E2 change", app_branch="wt/e2", wait_s=0, poll_s=0, quiet=True)
+        eE2 = bE2["entries"][0]
+        release_as_leader(E)
+        check(st == "LEADER" and bE2["shell"] == "19.6.104" and RB.poll_once(B, eE2["id"], known=eE2)[0] == "IN_BATCH",
+              "while its leader still holds the lock a pushed change reads as IN_BATCH")
+        feature(appB, "wt/b2", {"js/other2.js": "other B2\n"})
+        tick()
+        eB2 = quiet(RB.join, B, holder="session B", summary="B2 change", app_branch="wt/b2")
+        tick(2 * 3600)
+        check(RB.poll_once(A, eE2["id"], known=eE2)[0] == "SHIPPED", "after that leader's lock expires its live change reads as SHIPPED, not as its turn")
+        bB3 = quiet(RB.take, B, holder="session B")
+        e2_now = entry(A, eE2["id"])
+        check([e["id"] for e in bB3["entries"]] == [eB2["id"]] and bB3["shell"] == "19.6.105" and e2_now.get("state") == "shipped"
+              and e2_now.get("shippedVersion") == "19.6.104" and any("already on main" in n for n in bB3["notes"]),
+              "the next leader marks the already-live change shipped and releases only what is new")
+        quiet(RB.abort, B)
+
+        # 13c. an entry whose session has gone quiet is skipped, not shipped behind its back
+        tick(4 * 3600)
+        nothing = quiet(RB.take, B, holder="session B")
+        check(nothing["entries"] == [] and RL.read_remote_lock(A) == ("", {}) and entry(A, eB2["id"]).get("state") == "waiting",
+              "an entry with no sign of life for 3 hours is not taken into a batch")
+        check(RB.poll_once(B, eB2["id"])[0] == "TURN", "its own session, back again, may still lead")
+        tick()
+        check(quiet(RB.join, B, holder="session B", summary="B2 change", app_branch="wt/b2")["id"] == eB2["id"]
+              and [e["id"] for e in RB._waiting(RB.read_line(A))] == [eB2["id"]], "joining again refreshes the entry in place")
+        stale_copy = entry(A, eB2["id"])
+        tick(400)
+        RB._touch(B, eB2["id"])
+        check(RB._update_entry(A, stale_copy, note="x") is None
+              and (RB._set_fields(A, eB2["id"], {"note": "x"}) or {}).get("note") == "x" and entry(B, eB2["id"]).get("seenAt") != stale_copy.get("seenAt"),
+              "a leader's write lands even when the waiting session refreshed the entry in between")
+
+        # 13d. a take that fails after taking the lock gives the lock back; if it cannot, abort can
+        os.environ[LIVE] = "unreadable"
+        kind, msg = raises(RB.take, B, holder="session B")
+        check(kind == "BatchError" and "cannot read the live shell version" in msg and RL.read_remote_lock(A) == ("", {})
+              and not RB._local_json(B, RB.BATCH_FILE) and not entry(A, eB2["id"]).get("batch"),
+              "a take that fails while forming frees the lock and unmarks the line")
+        give_up, RB._give_up = RB._give_up, (lambda *a, **k: False)
+        try:
+            raises(RB.take, B, holder="session B")
+        finally:
+            RB._give_up = give_up
+        check(RL.read_remote_lock(A)[1].get("holder") == "session B" and RB._local_json(B, RB.BATCH_FILE).get("forming") is True
+              and "half-formed" in raises(RB.take, B, holder="session B")[1] and "half-formed" in raises(RB.done, B)[1],
+              "if the lock could not be given back, the half-formed batch is on record")
+        os.environ[LIVE] = "19.6.104"
+        quiet(RB.abort, B)
+        check(RL.read_remote_lock(A) == ("", {}) and not RB._local_json(B, RB.BATCH_FILE), "abort frees a lock left by a half-formed batch")
+        quiet(RB.leave, B, eB2["id"])
 
         # 14. an entry that cannot be read never ships and never blocks
         blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=str(A), input=b"not json", capture_output=True, check=True).stdout.decode().strip()

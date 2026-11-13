@@ -103,6 +103,16 @@ def main() -> int:
         c = git(B, "commit-tree", tree, "-m", "race")
         check(RL._push_lock(c, "", B) is False, "a create race loses when the ref already exists (server-side compare)")
         check(RL._push_lock("", "0" * 40, B) is False, "a delete with a stale lease is refused")
+        # A replace must lose too when the lock moved since it was read. With "+" in the refspec git forced the push
+        # and ignored the lease (found 2026-11-13): a renew or a takeover could overwrite another session's lock.
+        stale = sha_b
+        quiet(RL.renew, A)  # the holder renews: the lock is a new commit now
+        moved = RL.read_remote_lock(B)[0]
+        check(moved != stale and RL._push_lock(c, stale, B) is False and RL.read_remote_lock(A)[0] == moved,
+              "a replace with a stale lease is refused and leaves the lock as it is")
+        check(RL._push_lock(c, moved, B) is True and git(A, "ls-remote", "origin", RL.LOCK_REF).split()[0] == c,
+              "a replace with the current value goes through")
+        git(B, "push", "-q", "--force", "origin", f"{moved}:{RL.LOCK_REF}")  # put A's lock back for the checks below
 
         # 3. the token is per worktree
         wt = tmp / "A-wt"

@@ -175,13 +175,15 @@ def _push_lock(new_sha: str, expected_old: str, cwd: Path) -> bool:
     Creating is a plain push (no force): a lock commit is an orphan, so it is never a fast-forward of an existing lock,
     and the server refuses the update when the ref exists (the update names the old value it expects). An empty
     --force-with-lease value is NOT used for this: it let a second session overwrite a held lock in the gate.
-    Replacing and deleting use --force-with-lease with the exact sha this session read."""
+    Replacing and deleting use --force-with-lease with the exact sha this session read. The refspec carries NO "+":
+    with "+" git forces the update and ignores a lease that does not match (a stale renew or takeover overwrote the
+    other session's lock; fixed 2026-11-13). A matching lease by itself allows the non-fast-forward update."""
     if not expected_old and not new_sha:
         return False
     if not expected_old:
         args = ["push", "--porcelain", "--no-verify", REMOTE, f"{new_sha}:{LOCK_REF}"]
     else:
-        spec = f"+{new_sha}:{LOCK_REF}" if new_sha else f":{LOCK_REF}"
+        spec = f"{new_sha}:{LOCK_REF}" if new_sha else f":{LOCK_REF}"
         args = ["push", "--porcelain", "--no-verify", f"--force-with-lease={LOCK_REF}:{expected_old}", REMOTE, spec]
     r = _git(args, cwd, check=False, timeout=90)
     return r.returncode == 0
