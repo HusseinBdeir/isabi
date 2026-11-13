@@ -9,9 +9,9 @@ Usage:
   python build/deploy_cloudflare.py [--dry] [--skip-seed | --seed | --delta | --full-seed]
                                     [--force-schema] [--force-r2-seeds] [--rotate-secrets]
                                     [--skip-live-parity] [--no-sync-release-log] [--skip-indexnow]
-                                    [--allow-behind-origin] [--login]
+                                    [--allow-behind-origin] [--allow-dirty] [--login]
   python build/deploy_cloudflare.py --pages-only [--dry] [--skip-live-parity] [--no-sync-release-log]
-                                    [--skip-indexnow] [--allow-behind-origin] [--login]
+                                    [--skip-indexnow] [--allow-behind-origin] [--allow-dirty] [--login]
   python build/deploy_cloudflare.py --configure-domain [--ping-indexnow] [--dry]
   python build/deploy_cloudflare.py --ping-indexnow [--dry]
   python build/deploy_cloudflare.py --check-seat-pins [--login] [--dry]
@@ -38,13 +38,16 @@ if str(BUILD_DIR) not in sys.path:
     sys.path.insert(0, str(BUILD_DIR))
 
 from export_d1_seed import COMMITTED_MANIFEST_JSON, DB_PATH, KV_CHUNK_CHARS, _chunk_str_for_kv, file_sha256, promote_pending_manifest, sql_lit
-from stage_pages_bundle import stage_pages_bundle
+from stage_pages_bundle import ROOT_ALLOWLIST, stage_pages_bundle
 
 ISABI_ROOT = BUILD_DIR.parent
 WRANGLER_TOML = ISABI_ROOT / "wrangler.toml"
 SCHEMA_SQL = ISABI_ROOT / "migrations" / "0001_schema.sql"
 BATCH_DIR = ISABI_ROOT / "exports" / "d1_batches"
 SECRET_STATE_FILE = ISABI_ROOT / "exports" / "cloudflare_edge_meta.json"
+DEPLOY_GUARD_PATHS: tuple[str, ...] = tuple(
+    dict.fromkeys(("app", "functions", "migrations", "wrangler.toml", "_redirects", *ROOT_ALLOWLIST))
+)
 
 
 def load_edge_meta() -> dict:
@@ -1079,7 +1082,105 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Allow deploying even when local HEAD is behind origin/main (or when origin/main cannot be fetched).",
     )
+    opts.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="Allow deploying even when deployable public/edge paths (app/, functions/, migrations/, wrangler.toml, root site files) have uncommitted edits.",
+    )
     return parser
+
+
+def _parse_git_porcelain_z(raw: str) -> list[str]:
+    """Parse `git status --porcelain=v1 -z` output into readable `<XY> <path>` entries."""
+    if not raw:
+        return []
+    tokens = raw.split("\0")
+    entries: list[str] = []
+    idx = 0
+    while idx < len(tokens):
+        entry = tokens[idx]
+        if not entry:
+            idx += 1
+            continue
+        status = entry[:2]
+        path = entry[3:] if len(entry) > 3 else ""
+        is_rename_or_copy = bool(status) and (status[0] in ("R", "C") or (len(status) > 1 and status[1] in ("R", "C")))
+        if is_rename_or_copy and idx + 1 < len(tokens) and tokens[idx + 1]:
+            orig_path = tokens[idx + 1]
+            entries.append(f"{status} {orig_path} -> {path}")
+            idx += 2
+        else:
+            entries.append(f"{status} {path}".strip())
+            idx += 1
+    return entries
+
+
+def check_deploy_paths_clean(
+    repo_dir: pathlib.Path = ISABI_ROOT,
+    *,
+    allow_dirty: bool = False,
+    env: dict | None = None,
+) -> int:
+    """Fail closed when deployable public/edge paths hold uncommitted edits unless --allow-dirty is set."""
+    if allow_dirty:
+        print("WARN: Bypassing uncommitted public/edge path guard (--allow-dirty).")
+        return 0
+
+    git_env = env or build_env()
+    git_bin = shutil.which("git", path=git_env.get("PATH")) or "git"
+
+    try:
+        r_st = subprocess.run(
+            [
+                git_bin,
+                "--literal-pathspecs",
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+                "--",
+                *DEPLOY_GUARD_PATHS,
+            ],
+            cwd=str(repo_dir),
+            env=git_env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as ex:
+        print(
+            f"ERROR: Could not inspect git working-tree cleanliness ({ex}). "
+            "Refusing to deploy without verifying public/edge paths are clean; pass --allow-dirty to override.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from ex
+
+    if r_st.returncode != 0:
+        detail = (r_st.stderr or r_st.stdout or "").strip() or f"exit {r_st.returncode}"
+        print(
+            f"ERROR: `git status` failed while checking deployable paths ({detail}). "
+            "Refusing to deploy without verifying public/edge paths are clean; pass --allow-dirty to override.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+    dirty = _parse_git_porcelain_z(r_st.stdout or "")
+    if dirty:
+        preview = ", ".join(dirty[:12]) + (f" (+{len(dirty) - 12} more)" if len(dirty) > 12 else "")
+        print(
+            f"ERROR: Working tree has {len(dirty)} uncommitted public/edge change(s): {preview}. "
+            "Refusing to deploy uncommitted files. Commit or stash first, use build/release_data_only.py "
+            "for data-only top-ups, or pass --allow-dirty if intentional.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+    print("Working-tree cleanliness verified: 0 uncommitted changes across public/edge deploy paths.")
+    return 0
 
 
 def check_checkout_not_behind_origin(
@@ -1239,6 +1340,7 @@ def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
         ("no_sync_release_log", "--no-sync-release-log"),
         ("skip_indexnow", "--skip-indexnow"),
         ("allow_behind_origin", "--allow-behind-origin"),
+        ("allow_dirty", "--allow-dirty"),
     )
     active_non_dry = [flag for attr, flag in flag_attr_map if getattr(args, attr)]
 
@@ -1343,6 +1445,11 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
 
     steps: list[str] = [
         (
+            "Dirty-tree guard -> BYPASS (--allow-dirty)"
+            if args.allow_dirty
+            else "Verify public/edge deploy paths have 0 uncommitted changes (git status --porcelain)"
+        ),
+        (
             "Stale-checkout guard -> BYPASS (--allow-behind-origin)"
             if args.allow_behind_origin
             else "Verify local HEAD is not behind origin/main (git fetch origin main + HEAD..origin/main == 0)"
@@ -1426,6 +1533,11 @@ def main(argv: list[str] | None = None):
         ok_parity = run_live_parity_gate(sync_release_log=not args.no_sync_release_log)
         sys.exit(0 if ok_parity else 1)
     env = build_env()
+    check_deploy_paths_clean(
+        ISABI_ROOT,
+        allow_dirty=args.allow_dirty,
+        env=env,
+    )
     check_checkout_not_behind_origin(
         ISABI_ROOT,
         allow_behind_origin=args.allow_behind_origin,

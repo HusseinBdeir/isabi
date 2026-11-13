@@ -1,5 +1,8 @@
 # Renders LinkedIn Company Page brand assets (Palette C1: Light Gallery-Alabaster recommended + Dark Espresso variant)
 # Outputs upload-ready PNGs into ~\bhfirms\memory\ISABI\Brand\linkedin\ (Cloudflare memory vault; left OneDrive 2026-11-13)
+from __future__ import annotations
+
+import argparse
 import os
 import shutil
 import subprocess
@@ -168,7 +171,32 @@ def build_cover_html(dark: bool = False) -> str:
 """
 
 
-def render_html(html: str, width: int, height: int, out_path: str, ud: str) -> None:
+def resolve_browser_bin() -> str | None:
+    for candidate in (
+        EDGE,
+        r'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
+    ):
+        if candidate and os.path.isfile(candidate):
+            return candidate
+    for name in ("msedge", "microsoft-edge", "google-chrome", "chromium", "chromium-browser"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def render_html(
+    html: str,
+    width: int,
+    height: int,
+    out_path: str,
+    ud: str,
+    *,
+    browser_bin: str | None = None,
+) -> None:
+    browser = browser_bin or resolve_browser_bin()
+    if not browser:
+        raise RuntimeError("No headless Edge/Chromium browser binary found.")
     tmp_html = os.path.join(ud, os.path.basename(out_path) + '.html')
     with open(tmp_html, 'w', encoding='utf-8') as f:
         f.write(html)
@@ -176,7 +204,7 @@ def render_html(html: str, width: int, height: int, out_path: str, ud: str) -> N
         os.remove(out_path)
     url = 'file:///' + tmp_html.replace('\\', '/')
     subprocess.run([
-        EDGE, '--headless=new', '--disable-gpu', '--no-first-run', '--hide-scrollbars',
+        browser, '--headless=new', '--disable-gpu', '--no-first-run', '--hide-scrollbars',
         f'--user-data-dir={os.path.join(ud, "prof_" + os.path.basename(out_path))}',
         f'--window-size={width},{height}', '--force-device-scale-factor=1',
         '--virtual-time-budget=8000', f'--screenshot={out_path}', url
@@ -265,33 +293,128 @@ def build_preview_html(logo_light_uri: str, cover_light_uri: str, logo_dark_uri:
 """
 
 
-def main():
-    os.makedirs(OUT_DIR, exist_ok=True)
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog='build/make_linkedin.py',
+        description='Render LinkedIn Company Page logo and cover PNG assets for ISABI Systems.',
+        allow_abbrev=False,
+    )
+    parser.add_argument(
+        '--dry',
+        '--dry-run',
+        dest='dry',
+        action='store_true',
+        help='Validate HTML templates in memory and print target PNG paths without creating directories or launching headless Edge.',
+    )
+    parser.add_argument(
+        '--out-dir',
+        default=None,
+        metavar='DIR',
+        help='Output directory for LinkedIn brand PNGs (default: ~/bhfirms/memory/ISABI/Brand/linkedin).',
+    )
+    parser.add_argument(
+        '--preview',
+        default=None,
+        metavar='PATH',
+        help='Optional output PNG path for the 1240x1010 composite LinkedIn page preview.',
+    )
+    return parser
+
+
+def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    if args.out_dir is not None and not str(args.out_dir).strip():
+        parser.error('--out-dir cannot be empty.')
+    if args.preview is not None and not str(args.preview).strip():
+        parser.error('--preview cannot be empty.')
+    return args
+
+
+def _planned_paths(out_dir: str) -> tuple[str, str, str, str]:
+    return (
+        os.path.join(out_dir, 'isabi-linkedin-logo-800.png'),
+        os.path.join(out_dir, 'isabi-linkedin-logo-dark-800.png'),
+        os.path.join(out_dir, 'isabi-linkedin-cover-2256x382.png'),
+        os.path.join(out_dir, 'isabi-linkedin-cover-dark-2256x382.png'),
+    )
+
+
+def _validate_templates_in_memory(logo_light: str, cover_light: str, logo_dark: str, cover_dark: str, preview_path: str | None) -> None:
+    if '<svg' not in LOGO_LIGHT_HTML or '<svg' not in LOGO_DARK_HTML:
+        raise RuntimeError('LinkedIn logo HTML templates are missing inline SVG markup.')
+    if not WORDMARK_HEADER_SVG or WORDMARK_HEADER_SVG not in build_cover_html(dark=False) or WORDMARK_HEADER_SVG not in build_cover_html(dark=True):
+        raise RuntimeError('LinkedIn cover HTML templates are missing WORDMARK_HEADER_SVG.')
+    if preview_path:
+        prev_html = build_preview_html(
+            'file:///' + logo_light.replace('\\', '/'),
+            'file:///' + cover_light.replace('\\', '/'),
+            'file:///' + logo_dark.replace('\\', '/'),
+            'file:///' + cover_dark.replace('\\', '/'),
+        )
+        if 'ISABI Systems' not in prev_html:
+            raise RuntimeError('LinkedIn preview HTML template is invalid.')
+
+
+def print_dry_run_plan(args: argparse.Namespace) -> int:
+    out_dir = os.path.abspath(args.out_dir) if args.out_dir else OUT_DIR
+    logo_light, logo_dark, cover_light, cover_dark = _planned_paths(out_dir)
+    prev_out = os.path.abspath(args.preview) if args.preview else None
+    _validate_templates_in_memory(logo_light, cover_light, logo_dark, cover_dark, prev_out)
+    browser = resolve_browser_bin()
+
+    print('DRY RUN: 0 local writes or browser renders')
+    print(f'  Out dir  : {out_dir}')
+    print(f'  Browser  : {browser or "(not found)"}')
+    print('  Outputs  :')
+    print(f'    1. {logo_light} (800x800)')
+    print(f'    2. {logo_dark} (800x800)')
+    print(f'    3. {cover_light} (2256x382)')
+    print(f'    4. {cover_dark} (2256x382)')
+    if prev_out:
+        print(f'    5. {prev_out} (1240x1010 preview)')
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_cli_args(argv)
+    if args.dry:
+        return print_dry_run_plan(args)
+
+    browser_bin = resolve_browser_bin()
+    if not browser_bin:
+        print('ERROR: No headless Edge/Chromium browser binary found for LinkedIn asset rendering.', file=sys.stderr)
+        return 2
+
+    out_dir = os.path.abspath(args.out_dir) if args.out_dir else OUT_DIR
+    os.makedirs(out_dir, exist_ok=True)
+    prev_out = os.path.abspath(args.preview) if args.preview else None
+    if prev_out:
+        prev_parent = os.path.dirname(prev_out)
+        if prev_parent:
+            os.makedirs(prev_parent, exist_ok=True)
+
     ud = tempfile.mkdtemp(prefix='isabi_li_')
     try:
-        logo_light = os.path.join(OUT_DIR, 'isabi-linkedin-logo-800.png')
-        logo_dark = os.path.join(OUT_DIR, 'isabi-linkedin-logo-dark-800.png')
-        cover_light = os.path.join(OUT_DIR, 'isabi-linkedin-cover-2256x382.png')
-        cover_dark = os.path.join(OUT_DIR, 'isabi-linkedin-cover-dark-2256x382.png')
+        logo_light, logo_dark, cover_light, cover_dark = _planned_paths(out_dir)
 
-        render_html(LOGO_LIGHT_HTML, 800, 800, logo_light, ud)
-        render_html(LOGO_DARK_HTML, 800, 800, logo_dark, ud)
-        render_html(build_cover_html(dark=False), 2256, 382, cover_light, ud)
-        render_html(build_cover_html(dark=True), 2256, 382, cover_dark, ud)
+        render_html(LOGO_LIGHT_HTML, 800, 800, logo_light, ud, browser_bin=browser_bin)
+        render_html(LOGO_DARK_HTML, 800, 800, logo_dark, ud, browser_bin=browser_bin)
+        render_html(build_cover_html(dark=False), 2256, 382, cover_light, ud, browser_bin=browser_bin)
+        render_html(build_cover_html(dark=True), 2256, 382, cover_dark, ud, browser_bin=browser_bin)
 
-        if '--preview' in sys.argv:
-            idx = sys.argv.index('--preview')
-            prev_out = sys.argv[idx + 1]
+        if prev_out:
             prev_html = build_preview_html(
                 'file:///' + logo_light.replace('\\', '/'),
                 'file:///' + cover_light.replace('\\', '/'),
                 'file:///' + logo_dark.replace('\\', '/'),
                 'file:///' + cover_dark.replace('\\', '/'),
             )
-            render_html(prev_html, 1240, 1010, prev_out, ud)
+            render_html(prev_html, 1240, 1010, prev_out, ud, browser_bin=browser_bin)
     finally:
         shutil.rmtree(ud, ignore_errors=True)
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
