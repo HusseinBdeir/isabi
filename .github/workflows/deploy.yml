@@ -72,7 +72,8 @@ jobs:
           tail -n 1 "$RUNNER_TEMP/kiosk-checks.log"
 
       # Its own step with its own limit: this gate runs many hundreds of git commands against local bare
-      # repositories, and must never eat into the time this job needs to wait for the release lock and deploy.
+      # repositories. A slow or hung run stops here after 10 minutes (the job then fails without deploying)
+      # instead of using up the time the job needs to wait for the release lock and deploy.
       - name: Batched release gate (build/release_batch.py, offline)
         timeout-minutes: 10
         run: python3 build/verify_release_batch.py

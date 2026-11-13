@@ -14,6 +14,7 @@ import os
 import pathlib
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -470,6 +471,12 @@ def main() -> int:  # noqa: PLR0915
         st, msg, _free = RB.poll_once(B, eB2["id"])
         check(st == "HALF_FORMED" and "abort" in msg and RB.wait(B, eB2["id"], wait_s=0, poll_s=0, quiet=True)[0] == "HALF_FORMED",
               "a session whose take was cut off is told to abort, not that it is waiting on its own release")
+        stub = RB._local_json(B, RB.BATCH_FILE)
+        RB._write_local_json(B, RB.BATCH_FILE, dict(stub, pid=os.getppid(), host=socket.gethostname()))  # a process that is alive
+        st, msg, _free = RB.poll_once(B, eB2["id"])
+        check(st == "WAITING" and "let it finish" in msg and "Do not abort" in msg and RB._pid_alive(os.getpid()) and not RB._pid_alive(0),
+              "while the take that is forming the batch is still running, the session is told to let it finish, not to abort it")
+        RB._write_local_json(B, RB.BATCH_FILE, stub)
         os.environ[LIVE] = "19.6.104"
         quiet(RB.abort, B)
         check(RL.read_remote_lock(A) == ("", {}) and not RB._local_json(B, RB.BATCH_FILE), "abort frees a lock left by a half-formed batch")
@@ -601,8 +608,34 @@ def main() -> int:  # noqa: PLR0915
               and "no sign of its session" in s6_now.get("note", "") and entry(A, eT6["id"]).get("state") == "waiting"
               and RL.read_remote_lock(A) == ("", {}) and not is_ancestor(appE, sha_t6),
               "a quiet session's change is not carried live by a change built on top of it")
+        check("did not join" in raises(RB.leave, E, eT6["id"])[1] and entry(A, eT6["id"]).get("state") == "waiting",
+              "nor can another session clear the quiet change's entry to get its own through")
         quiet(RB.leave, E, eS6["id"])
         quiet(RB.leave, D, eT6["id"])
+
+        # 13e6. a member of the batch that goes quiet while the gates run is still a member: a drop keeps the rest
+        feature(appD, "wt/p7", {"js/p7.js": "p7\n"})
+        tick()
+        eP7 = quiet(RB.join, D, holder="session D", summary="P7 change", app_branch="wt/p7")
+        tick(2 * 3600 + 50 * 60)
+        feature(appC, "wt/q7", {"js/q7.js": "q7\n"})
+        feature(appE, "wt/r7", {"js/r7.js": "r7\n"})
+        tick()
+        eQ7 = quiet(RB.join, C, holder="session C", summary="Q7 change", app_branch="wt/q7")
+        tick()
+        eR7 = quiet(RB.join, E, holder="session E", summary="R7 change", app_branch="wt/r7")
+        tick()
+        b7 = quiet(RB.take, E, holder="session E")
+        tick(20 * 60)  # the gates run; P7's session has now been quiet for over three hours
+        b7b = quiet(RB.drop, E, eQ7["id"], reason="verify_q7 failed", reset=True)
+        p7_now = entry(A, eP7["id"])
+        check([e["id"] for e in b7["entries"]] == [eP7["id"], eQ7["id"], eR7["id"]] and RB._is_stale(p7_now)
+              and [e["id"] for e in b7b["entries"]] == [eP7["id"], eR7["id"]] and p7_now.get("state") == "waiting"
+              and RL.read_remote_lock(A)[1].get("holder") == "session E" and (appE / "js" / "p7.js").exists() and not (appE / "js" / "q7.js").exists(),
+              "rule 2 holds when a member's session went quiet during the gates: the drop keeps the others and the lock")
+        quiet(RB.abort, E)
+        for sess, ent in ((D, eP7), (C, eQ7), (E, eR7)):
+            quiet(RB.leave, sess, ent["id"])
 
         # 13f. a leader pushed isabi-app main, never deployed, and stopped: not SHIPPED; the next batch takes it live
         feature(appA, "wt/m2", {"js/m2.js": "m2\n"})
@@ -661,6 +694,19 @@ def main() -> int:  # noqa: PLR0915
               and RB._local_json(B, RB.BATCH_FILE).get("branch") == "release/batch-other" and git(appB, "branch", "--show-current") == "wt/g1",
               "a second take in the same worktree stops without building a batch or touching the first one's lock and record")
         quiet(RB.abort, B)
+        fake_clock = [0.0]
+
+        def fake_mono() -> float:  # every look at the clock is 100 seconds later: the wait has used up the command
+            fake_clock[0] += 100.0
+            return fake_clock[0]
+
+        real_mono, RB._mono = RB._mono, fake_mono
+        try:
+            st, msg, _b = RB.ship(B, holder="session B", summary="G1 change", app_branch="wt/g1", wait_s=540, poll_s=0, quiet=True)
+        finally:
+            RB._mono = real_mono
+        check(st == "TURN" and "Too little" in msg and RL.read_remote_lock(A) == ("", {}) and not RB._local_json(B, RB.BATCH_FILE),
+              "at the end of a long wait ship hands the turn back instead of starting a batch it may not finish")
         quiet(RB.leave, B, eG["id"])
 
         # 13i. the line is kept short: each kind of entry is cleared by its own clock, and only when it is old enough

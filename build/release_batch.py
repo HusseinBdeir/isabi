@@ -31,7 +31,8 @@ after pushing) counts as shipped only on evidence that it is live; otherwise the
 A change built on top of another waiting change carries that change's commits: both are in the batch. When the lower
 one is left out (rule 1) or dropped (rule 2), the upper one is left out with it and the batch is built again, so no
 part of a left-out change ships through another: in either repo, in this batch or a later one (as long as the
-left-out entry is in the line; its session replaces it by joining again, or anyone clears it with leave).
+left-out entry is in the line; its own session replaces it by joining again with the fix, or clears it with leave).
+An entry is cleared only from the worktree that joined it (leave --force when the owner says a change is abandoned).
 A session waiting in line refreshes its entry every 10 minutes; an entry with no sign of life for 3 hours is
 skipped by leaders (never shipped behind its session's back) until that session joins again.
 The line is ordered by the second each change joined, by each PC's own clock: a skewed clock can change the order
@@ -110,6 +111,9 @@ TAKE_BUDGET_S = 180     # ship does not start forming a batch with less than thi
 POLL_S = 20
 _IDENT = {"GIT_AUTHOR_NAME": "ISABI release batch", "GIT_AUTHOR_EMAIL": "release-batch@isabi.invalid",
           "GIT_COMMITTER_NAME": "ISABI release batch", "GIT_COMMITTER_EMAIL": "release-batch@isabi.invalid"}
+
+
+_mono = time.monotonic  # the clock for waits and budgets (the gate swaps it to test them without waiting)
 
 
 class BatchError(RL.LockError):
@@ -496,8 +500,10 @@ def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
 
 def _remember(cwd: Path, entry: dict) -> None:
     rec = _local_json(cwd, JOINED_FILE)
-    cutoff = RL._iso(RL._now() - dt.timedelta(days=DEAD_KEEP_DAYS + 1))  # as long as an entry can stay in the line
-    rec = {k: v for k, v in rec.items() if str(v.get("queuedAt", "")) >= cutoff}
+    # Kept a month from the last time this worktree joined or refreshed it: far longer than a left-out entry lives in
+    # the line (a week), so the session that owns an entry can always clear it.
+    cutoff = RL._iso(RL._now() - dt.timedelta(days=30))
+    rec = {k: v for k, v in rec.items() if max(str(v.get("queuedAt", "")), str(v.get("seenAt", ""))) >= cutoff}
     rec[entry["id"]] = _pub(entry)
     _write_local_json(cwd, JOINED_FILE, rec)
 
@@ -528,11 +534,13 @@ def leave(cwd: Path, entry_id: str, *, force: bool = False) -> None:
     e = _find(line, entry_id)
     if not e:
         raise BatchError(f"{entry_id} is not in the line (run status)")
-    if e.get("state") == "left_out" and e["id"] not in _local_json(cwd, JOINED_FILE) and not force:
-        # A left-out entry is the record that its commits failed (and of the gates they need): while it is in the
-        # line, nothing built on those commits ships. Clearing it is for the session that owns the change.
-        raise BatchError(f"{e['id']} ({e.get('summary')}) was left out and this worktree did not join it: {e.get('note') or 'no reason given'}. "
-                         f"Its session ({e.get('holder', '?')}) clears it by joining again with the fix, or with leave. "
+    if e.get("state") in ("left_out", "waiting") and e["id"] not in _local_json(cwd, JOINED_FILE) and not force:
+        # An entry is the record of a change's commits and the gates they need. A left-out one says they failed; a
+        # waiting one whose session went quiet is skipped. While either is in the line nothing built on those commits
+        # ships, so clearing it is for the session that owns the change.
+        what = f"was left out ({e.get('note') or 'no reason given'})" if e.get("state") == "left_out" else "is waiting in line"
+        raise BatchError(f"{e['id']} ({e.get('summary')}) {what} and this worktree did not join it. Its session "
+                         f"({e.get('holder', '?')}) clears it with leave, or replaces it by joining again. "
                          "--force only when the owner says that change is abandoned.")
     lock_sha, lock = RL.read_remote_lock(cwd)
     if lock_sha and e.get("state") == "waiting" and (e.get("batch") or {}).get("lockId") == lock.get("lockId"):
@@ -548,8 +556,58 @@ def leave(cwd: Path, entry_id: str, *, force: bool = False) -> None:
 
 # ------------------------------------------------------------------------------------------------- waiting in line
 
+def _pid_alive(pid: int) -> bool:
+    """Is a process with this id running on this PC? (Never os.kill on Windows: there it terminates the process.)"""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes  # noqa: PLC0415
+
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            return bool(ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _own_batch(cwd: Path, lock_sha: str, lock: dict) -> tuple[str, str] | None:
+    """When the release an entry here would wait for is this worktree's own: (state, message). Never report a
+    session as waiting on itself.
+    LEADER       this worktree leads a formed batch
+    WAITING      a take or ship is forming the batch here right now (its process is alive): let it finish
+    HALF_FORMED  a take was cut off while forming and still holds the lock: abort frees it"""
+    mine = _local_json(cwd, BATCH_FILE)
+    if not (mine and lock_sha and RL.held_by_me(lock, cwd) and lock.get("lockId") == mine.get("lockId")):
+        return None
+    if not mine.get("forming"):
+        shell = mine.get("shell")
+        return "LEADER", (f"this worktree leads batch {('v' + shell) if shell else '(no shell change)'} with "
+                          f"{len(mine.get('entries') or [])} change(s): carry on with the release steps (or abort).")
+    try:
+        pid = int(mine.get("pid") or 0)
+    except (TypeError, ValueError):
+        pid = 0
+    if mine.get("host") == socket.gethostname() and pid != os.getpid() and _pid_alive(pid):
+        return "WAITING", (f"a take or ship is forming the batch in this worktree right now (process {pid}): let it "
+                           "finish, then run ship again. Do not abort it.")
+    return "HALF_FORMED", ("this worktree holds the release lock for a batch that was cut off while forming (the process "
+                           "that was forming it is gone). Run: python build/release_batch.py abort, then ship again.")
+
+
 def poll_once(cwd: Path, entry_id: str, *, known: dict | None = None, free_for_s: float = 0.0) -> tuple[str, str, bool]:
-    """Where one entry stands now: (state, message, lock free?).
+    """Where one entry stands now: (state, message, lock free?). LEADER and HALF_FORMED: see _own_batch.
     SHIPPED   its commits are on origin/main (another leader shipped it)
     LEFT_OUT  a leader left it out; the message says why
     TURN      nothing is releasing and it is this entry's turn to lead the batch
@@ -560,16 +618,9 @@ def poll_once(cwd: Path, entry_id: str, *, known: dict | None = None, free_for_s
     e = _find(line, entry_id)
     lock_sha, lock = RL.read_remote_lock(cwd)
     free = not lock_sha or RL.is_expired(lock, RL.TAKEOVER_GRACE_MIN)
-    mine = _local_json(cwd, BATCH_FILE)
-    if mine and lock_sha and RL.held_by_me(lock, cwd) and lock.get("lockId") == mine.get("lockId"):
-        # The release this entry would wait for is this worktree's own (a ship that was cut off while taking, or one
-        # run again after it became the leader): never report it as waiting on itself.
-        if mine.get("forming"):
-            return "HALF_FORMED", ("this worktree holds the release lock for a batch that was cut off while forming. "
-                                   "Run: python build/release_batch.py abort, then ship again."), False
-        shell = mine.get("shell")
-        return "LEADER", (f"this worktree leads batch {('v' + shell) if shell else '(no shell change)'} with "
-                          f"{len(mine.get('entries') or [])} change(s): carry on with the release steps (or abort)."), False
+    own = _own_batch(cwd, lock_sha, lock)
+    if own:
+        return own[0], own[1], False
 
     if e is None:
         rec = known or _local_json(cwd, JOINED_FILE).get(entry_id)
@@ -644,17 +695,17 @@ def wait(cwd: Path, entry_id: str, *, wait_s: int = DEFAULT_WAIT_S, poll_s: int 
          quiet: bool = False) -> tuple[str, str]:
     """Poll until the entry is SHIPPED (live), LEFT_OUT, GONE, or it is its TURN; WAITING when wait_s runs out.
     While waiting, the entry is refreshed so leaders know its session is still there."""
-    deadline = time.monotonic() + max(0, wait_s)
+    deadline = _mono() + max(0, wait_s)
     free_since: float | None = None
     touched: float | None = None
     shown = ""
     while True:
-        if touched is None or time.monotonic() - touched >= HEARTBEAT_S:
+        if touched is None or _mono() - touched >= HEARTBEAT_S:
             _touch(cwd, entry_id)
-            touched = time.monotonic()
+            touched = _mono()
         state, msg, free = poll_once(cwd, entry_id, known=known,
-                                     free_for_s=(time.monotonic() - free_since) if free_since is not None else 0.0)
-        free_since = (free_since if free_since is not None else time.monotonic()) if free else None
+                                     free_for_s=(_mono() - free_since) if free_since is not None else 0.0)
+        free_since = (free_since if free_since is not None else _mono()) if free else None
         if state == "SHIPPED":  # collected by its own session: the entry has done its job
             done_entry = next((e for e in read_line(cwd) if e["id"] == entry_id and e.get("state") == "shipped"), None)
             if done_entry:
@@ -664,7 +715,7 @@ def wait(cwd: Path, entry_id: str, *, wait_s: int = DEFAULT_WAIT_S, poll_s: int 
         if not quiet and msg != shown:
             print(msg, flush=True)
             shown = msg
-        if time.monotonic() >= deadline:
+        if _mono() >= deadline:
             return "WAITING", msg
         time.sleep(max(0, poll_s))
 
@@ -862,12 +913,14 @@ def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], 
                 return who
         return None
 
+    in_this_batch = {c["id"] for c in cands}
     for x in read_line(cwd):
         if x.get("state") == "left_out":
             block(x, str(x.get("note") or "left out of an earlier batch"))
-        elif x.get("state") == "waiting" and _is_stale(x):
+        elif x.get("state") == "waiting" and _is_stale(x) and x["id"] not in in_this_batch:
             # Skipped because its session has gone quiet: it must not ship behind that session's back through a
-            # change built on top of it either.
+            # change built on top of it either. Never a member of this batch: it was fresh when the batch formed,
+            # and the hours its gates take must not turn a later drop into the loss of the whole batch.
             block(x, f"no sign of its session ({x.get('holder', '?')}) for {STALE_AFTER_MIN // 60} h")
     for x, why in out.values():
         block(x, why)
@@ -1013,7 +1066,7 @@ def take(cwd: Path = ISABI_ROOT, *, holder: str, version: str = "", ttl_min: int
     # acquire is re-entrant for this worktree, so a second take or ship started here at the same moment gets the
     # same lock, and only one of the two may go on to build the batch.
     stub = {"lockId": lock["lockId"], "holder": holder, "branch": _batch_branch(lock), "version": "", "shell": "",
-            "entries": [], "left_out": [], "notes": [], "forming": True}
+            "entries": [], "left_out": [], "notes": [], "forming": True, "pid": os.getpid(), "host": socket.gethostname()}
     try:
         with open(RL.git_dir(cwd) / BATCH_FILE, "x", encoding="utf-8") as fh:
             fh.write(json.dumps(stub, ensure_ascii=False, indent=1) + "\n")
@@ -1227,21 +1280,28 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
          gates: tuple[str, ...] | list[str] = (), version: str = "", wait_s: int = DEFAULT_WAIT_S, poll_s: int = POLL_S,
          quiet: bool = False) -> tuple[str, str, dict | None]:
     """Join the line, then lead the batch when nothing is releasing, or wait for the batch this change goes out in.
-    Returns (LEADER | SHIPPED | LEFT_OUT | GONE | WAITING, message, the batch when LEADER)."""
+    Returns (state, message, the batch when LEADER). States: LEADER (this worktree holds the lock: run the release
+    steps), SHIPPED (live), LEFT_OUT, GONE, WAITING (run again), TURN (too little time left to form the batch here:
+    run take), HALF_FORMED (a take here was cut off: run abort)."""
     app = app_root(cwd)
+    # First of all: is the release already this worktree's own? (Its tree is then on the batch branch, maybe with
+    # sync_app.py output in it, and must not be asked to be clean.)
+    own = _own_batch(cwd, *RL.read_remote_lock(cwd))
+    if own:
+        return own[0], own[1], (_local_json(cwd, BATCH_FILE) or None) if own[0] == "LEADER" else None
     _require_clean(cwd, "isabi")
     _require_clean(app, "isabi-app")
     entry = join(cwd, holder=holder, summary=summary, app_branch=app_branch, site_branch=site_branch, gates=gates, quiet=quiet)
-    started = time.monotonic()
+    started = _mono()
     deadline = started + max(0, wait_s)
     while True:
-        left = max(0, int(deadline - time.monotonic()))
+        left = max(0, int(deadline - _mono()))
         state, msg = wait(cwd, entry["id"], wait_s=left, poll_s=poll_s, known=entry, quiet=quiet)
         if state == "LEADER":
             return state, msg, _local_json(cwd, BATCH_FILE) or None
         if state != "TURN":
             return state, msg, None
-        if time.monotonic() - started > 60 and deadline - time.monotonic() < TAKE_BUDGET_S:
+        if _mono() - started > 60 and deadline - _mono() < TAKE_BUDGET_S:
             # Forming a batch takes minutes on a loaded PC. Starting it at the end of a long wait risks the command
             # being cut off with the lock held: hand the turn back to the session to run take on its own clock.
             return "TURN", msg + " Too little of this command's time is left to form the batch safely.", None
@@ -1252,7 +1312,7 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
         except RL.LockError as exc:  # another waiter took the lock first, or an expired lock cannot be taken yet
             if not quiet:
                 print(str(exc).splitlines()[0], flush=True)
-            if time.monotonic() >= deadline:
+            if _mono() >= deadline:
                 return "WAITING", str(exc).splitlines()[0], None
             time.sleep(max(0, poll_s))
             continue
@@ -1263,7 +1323,7 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
             shell = batch.get("shell")
             return "LEADER", (f"you lead batch {('v' + shell) if shell else '(no shell change)'} with "
                               f"{len(batch['entries'])} change{'s' if len(batch['entries']) != 1 else ''}.{note}"), batch
-        if time.monotonic() >= deadline:  # nothing merged (this entry was left out): the next poll says why
+        if _mono() >= deadline:  # nothing merged (this entry was left out): the next poll says why
             state, msg, _free = poll_once(cwd, entry["id"], known=entry)
             return ("WAITING" if state in ("TURN", "IN_BATCH") else state), msg, None
 
