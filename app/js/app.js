@@ -93085,6 +93085,40 @@
             empStrip.innerHTML = `<span><b>${esc(curStaff)}</b> has no existing contract on file in ${esc(curCo)} · this entry establishes their ${isContract ? 'active contract' : 'freelance work log'}${salaryPending ? ' with <b>Salary Pending ($0.00)</b>' : ''}.</span>`;
           }
         }
+        const sameBox = $('empSameNameBox');
+        if (sameBox) {
+          const snConflict = getEmploymentSameNameConflict(isContract, curStaff, curCo, txDate, {
+            editOrig: getSameNameEditOrig(),
+            pendingSalary: Boolean(pendSalEditRow)
+          });
+          const choiceEl = $('f_same_name_choice');
+          const snKey = snConflict ? `${staffNameKey(curStaff)}|${staffNameKey(curCo)}` : '';
+          if (choiceEl && choiceEl.dataset.forKey !== snKey) {
+            choiceEl.value = '';
+            choiceEl.dataset.forKey = snKey;
+          }
+          const snChoice = choiceEl ? String(choiceEl.value || '') : '';
+          sameBox.hidden = !snConflict;
+          sameBox.classList.toggle('is-open', Boolean(snConflict) && !snChoice);
+          sameBox.classList.toggle('is-different', snChoice === 'different');
+          if (snConflict) {
+            setText('empSameNameWho', snConflict.staff);
+            setText('empSameNameMeta', [snConflict.role, snConflict.since ? fmtDateDMY(snConflict.since) : ''].filter(Boolean).join(' · '));
+            sameBox.querySelectorAll('[data-emp-same-name]').forEach(btn => {
+              const on = btn.getAttribute('data-emp-same-name') === snChoice;
+              btn.classList.toggle('active', on);
+              btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+            const diffEl = $('empSameNameDiff');
+            if (diffEl) diffEl.hidden = snChoice !== 'different';
+            if (snChoice === 'different') {
+              const sug = suggestDistinctStaffName(curStaff);
+              setText('empSameNameSuggest', sug);
+              const sugBtn = $('empSameNameSuggestBtn');
+              if (sugBtn) sugBtn.dataset.name = sug;
+            }
+          }
+        }
         const reimbAmt = (isContract && !salaryPending) ? Math.max(0, round2(num('f_reimb'))) : 0;
         const dedAmt = (isContract && !salaryPending) ? Math.max(0, round2(num('f_ded'))) : 0;
         const profPkg = round2((prof.monthlySalary || 0) + (prof.reimbursement || 0));
@@ -97441,6 +97475,34 @@
         }
       });
     });
+    body.querySelectorAll('[data-emp-same-name]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const choiceEl = $('f_same_name_choice');
+        if (!choiceEl) return;
+        const pick = btn.getAttribute('data-emp-same-name') || '';
+        const snCo = val('f_company') || defaultEntryCompany();
+        choiceEl.dataset.forKey = `${staffNameKey(val('f_staff'))}|${staffNameKey(snCo)}`;
+        choiceEl.value = choiceEl.value === pick ? '' : pick;
+        if (choiceEl.value === 'same') {
+          // Same person: take their stored spelling so the renewal closes their open contract.
+          const stEl = $('f_staff');
+          const hit = stEl ? getEmploymentSameNameConflict(STATE.modalForm === 'employment', stEl.value, snCo, val('f_date') || todayISO(), { editOrig: getSameNameEditOrig() }) : null;
+          if (hit && hit.staff && stEl.value !== hit.staff && staffNameKey(stEl.value) === staffNameKey(hit.staff)) stEl.value = hit.staff;
+        }
+        recalcForm();
+      });
+    });
+    $('empSameNameSuggestBtn')?.addEventListener('click', ev => {
+      ev.preventDefault();
+      const sug = ev.currentTarget.dataset.name || '';
+      const stEl = $('f_staff');
+      if (!stEl || !sug) return;
+      stEl.value = sug;
+      try { stEl.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+      recalcForm();
+      try { stEl.focus({ preventScroll: true }); } catch (_) {}
+    });
     body.querySelectorAll('[data-emp-salary-mode]').forEach(btn => {
       btn.addEventListener('click', ev => {
         ev.preventDefault();
@@ -100205,6 +100267,18 @@
       const st = val('f_staff');
       const amt = salaryPending ? 0 : round2(num('f_amount'));
       if (!st) addErr('f_staff', 'Staff is required.');
+      if (st) {
+        const snCo = company || defaultEntryCompany();
+        const snConflict = getEmploymentSameNameConflict(f === 'employment', st, snCo, date, {
+          editOrig: getSameNameEditOrig(),
+          pendingSalary: Boolean(pendSalEditRow)
+        });
+        if (snConflict) {
+          const snChoice = readEmploymentSameNameChoice(st, snCo);
+          if (snChoice === 'different') addErr('f_staff', 'Two people cannot share a name in one company. Add something to the name to tell them apart, or use the suggested name.');
+          else if (snChoice !== 'same') addErr('f_staff', 'Someone with this name already has an active contract in this company. Choose Same Person or Different Person below the Staff field.');
+        }
+      }
       if (pendSalEditRow) {
         if (!(amt > 0)) addErr('f_amount', f === 'employment' ? 'Enter the final salary or daily rate above zero.' : 'Enter the final freelance rate above zero.');
       } else if (!salaryPending && !(amt > 0)) {
@@ -103260,6 +103334,11 @@
       if (prefill.staff && $('f_staff')) {
         $('f_staff').value = prefill.staff;
         FORM_UI.lastAttStaff = '';
+        // Opened from that person's own record (New Contract): it is the same person, never ask.
+        if (prefill.samePerson && $('f_same_name_choice')) {
+          $('f_same_name_choice').value = 'same';
+          $('f_same_name_choice').dataset.forKey = `${staffNameKey(prefill.staff)}|${staffNameKey(val('f_company') || defaultEntryCompany())}`;
+        }
       }
       if (prefill.role && $('f_role')) $('f_role').value = prefill.role;
       if ((prefill.eq || prefill.equipment) && $('f_truck')) $('f_truck').value = prefill.eq || prefill.equipment;
@@ -109481,7 +109560,7 @@
       inspNewStaffContractBtn.addEventListener('click', () => {
         const stName = row.staff || row.name || '';
         closeRecordInspector();
-        openEntryModal('employment', { staff: stName, role: row.role || '', co: row.company || '' });
+        openEntryModal('employment', { staff: stName, role: row.role || '', co: row.company || '', samePerson: true });
       });
     }
     const inspNewSiteRawRuleBtn = $('inspNewSiteRawRuleBtn');
@@ -127440,6 +127519,104 @@
     return true;
   }
 
+  // Same-name guard (owner 2026-11-13): inside one company a name is a person's identity
+  // (shift rules, payroll, punches and Face ID are all keyed by company + name), so a second,
+  // different person with the name of someone already active there is refused at creation.
+  function staffNameKey(s) { return norm(s).replace(/\s+/g, ' '); }
+
+  function findActiveSameNameInCompany(name, company, opts = {}) {
+    const k = staffNameKey(name);
+    const co = staffNameKey(company);
+    if (!k || !co) return null;
+    const refDate = String(opts.refDate || todayISO()).slice(0, 10);
+    const skip = typeof opts.skip === 'function' ? opts.skip : null;
+    const emps = ((SEED.records && SEED.records.employments) || []).concat((STATE.customRecords && STATE.customRecords.employments) || []);
+    let hit = null;
+    for (const e of emps) {
+      if (!e || e.voided || staffNameKey(e.staff) !== k || staffNameKey(e.company || 'WTC') !== co) continue;
+      if (skip && skip(e)) continue;
+      const isFreelance = /freelance/i.test(String(e.type || ''));
+      if (opts.contractsOnly && isFreelance) continue;
+      if (!isEmploymentActiveToday(e, refDate)) continue;
+      if (!hit || String(e.start_date || e.date || '') > String(hit.start_date || hit.date || '')) hit = e;
+    }
+    if (!hit) return null;
+    return {
+      staff: String(hit.staff || name).trim(),
+      company: hit.company || company,
+      role: hit.role || '',
+      since: String(hit.start_date || hit.date || '').slice(0, 10),
+      kind: /freelance/i.test(String(hit.type || '')) ? 'freelance' : 'contract',
+      id: hit.id || ''
+    };
+  }
+
+  // Employment / Freelance forms: an entry whose name matches someone active in the same company
+  // must say whether it is that person (renewal, auto-closes the open contract) or a different person
+  // (refused until the name tells the two apart). A contract entry is asked about any active row,
+  // freelance included; a freelance entry only about contract holders, and never for a returning
+  // freelancer. An edit is asked only when it changes the person's name or company; Salary Pending
+  // completion is never asked.
+  function isSameNameEditOf(orig, staff, company) {
+    // A blank company on an older row is taken as the form's company.
+    return Boolean(orig && staffNameKey(orig.staff) === staffNameKey(staff) && (!String(orig.company || '').trim() || staffNameKey(orig.company) === staffNameKey(company)));
+  }
+
+  function getEmploymentSameNameConflict(isContract, staff, company, dateStr, opts = {}) {
+    if (!staff || !company || opts.pendingSalary) return null;
+    if (opts.editOrig && isSameNameEditOf(opts.editOrig, staff, company)) return null;
+    const day = String(dateStr || todayISO()).slice(0, 10);
+    const hit = findActiveSameNameInCompany(staff, company, {
+      refDate: day,
+      contractsOnly: !isContract,
+      skip: e => isSelfEditingRow(e, 'employments') || (isContract && String(e.start_date || '').slice(0, 10) === day)
+    });
+    if (!hit) return null;
+    if (!isContract) {
+      const k = staffNameKey(staff);
+      const c = staffNameKey(company);
+      const R = (SEED.records || {});
+      const C = (STATE.customRecords || {});
+      const flRows = (R.employments || []).concat(C.employments || []).filter(e => e && /freelance/i.test(String(e.type || '')))
+        .concat(R.freelance_entries || [], C.freelance_entries || []);
+      const returningFreelancer = flRows.some(e => e && !e.voided
+        && staffNameKey(e.staff) === k && staffNameKey(e.company || 'WTC') === c
+        && !isSelfEditingRow(e, 'employments') && !isSelfEditingRow(e, 'freelance_entries'));
+      if (returningFreelancer) return null;
+    }
+    return hit;
+  }
+
+  function getSameNameEditOrig() {
+    const ed = STATE.editingRecord;
+    return (ed && (ed.crKey === 'employments' || ed.crKey === 'freelance_entries')) ? (ed.orig || { staff: '', company: '' }) : null;
+  }
+
+  function readEmploymentSameNameChoice(staff, company) {
+    const el = $('f_same_name_choice');
+    if (!el) return '';
+    const key = `${staffNameKey(staff)}|${staffNameKey(company)}`;
+    return el.dataset.forKey === key ? String(el.value || '') : '';
+  }
+
+  function suggestDistinctStaffName(name) {
+    const clean = String(name || '').trim().replace(/\s+/g, ' ');
+    const base = clean.replace(/\s*\(\d+\)$/, '') || clean;
+    const used = new Set();
+    ['staff_members', 'employments', 'staff_assignments'].forEach(t => {
+      ((SEED.records && SEED.records[t]) || []).concat((STATE.customRecords && STATE.customRecords[t]) || []).forEach(r => {
+        if (r && !r.voided) used.add(staffNameKey(r.staff || r.name));
+      });
+    });
+    (STATE.users || []).forEach(u => { if (u && u.full_name) used.add(staffNameKey(u.full_name)); });
+    Object.keys((STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') ? STATE.staffBiometrics : {}).forEach(k => used.add(staffNameKey(k)));
+    for (let n = 2; n < 1000; n++) {
+      const cand = `${base} (${n})`;
+      if (!used.has(staffNameKey(cand))) return cand;
+    }
+    return `${base} (${uid('n').slice(-6)})`;
+  }
+
   function getStaffFaceSamplesAndThumbs(staffName, userObj = null) {
     const k = norm(staffName);
     const bio = (k && STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') ? STATE.staffBiometrics[k] : null;
@@ -129768,6 +129945,33 @@
       };
     }
 
+    let sameNameActive = findActiveSameNameInCompany(rawName, canonicalCo);
+    if (!sameNameActive) {
+      // The studio roster also counts staff registered in the app without a contract and named user seats.
+      const nameK = staffNameKey(rawName);
+      const coK = staffNameKey(canonicalCo);
+      // A name with any contract row in this company is decided by those rows above (ended = rehire allowed).
+      const hasCoEmp = allEmps.some(e => e && !e.voided && staffNameKey(e.staff) === nameK && staffNameKey(e.company || 'WTC') === coK);
+      let dirHit = null;
+      if (!hasCoEmp) try {
+        dirHit = getKioskStaffDirectory({ companyOverride: canonicalCo, strictCompanyScope: true, activeOnly: true, operatorUser })
+          .find(s => s && !s.isEndedContract && staffNameKey(s.name) === nameK && staffNameKey(s.company) === coK) || null;
+      } catch (_) { dirHit = null; }
+      if (dirHit) sameNameActive = { staff: String(dirHit.name || rawName).trim(), company: dirHit.company || canonicalCo, role: dirHit.role || '', since: '' };
+    }
+    if (sameNameActive) {
+      return {
+        ok: false,
+        reason: 'same-name-active',
+        error: 'Someone with this name is already active in this company. Open them from the list, or add something to the name to tell the two apart.',
+        existing: sameNameActive.staff,
+        company: canonicalCo,
+        role: sameNameActive.role,
+        since: sameNameActive.since,
+        suggestion: suggestDistinctStaffName(rawName)
+      };
+    }
+
     const rankedRoles = getFrequencyRankedRolesForEnrol(canonicalCo);
     const cleanRole = String((spec && (spec.role || spec.roleTitle)) || '').trim() || rankedRoles[0] || 'General Labour';
     const roleCat = resolveRoleCategory(cleanRole, 'Site & Operations') || 'Site & Operations';
@@ -130898,8 +131102,44 @@
         autoStartCam: true
       });
       if (!res.ok) {
+        if (errEl && res.reason === 'same-name-active') {
+          errEl.hidden = false;
+          errEl.classList.add('is-same-name');
+          errEl.innerHTML = `
+            <div class="sfe-ns-same-line"><span>Already active in this company:</span> <b>${esc(res.existing)}</b> <span class="sfe-ns-same-meta">${esc(res.company)}${res.role ? ` · ${esc(res.role)}` : ''}${res.since ? ` · ${esc(fmtDateDMY(res.since))}` : ''}</span></div>
+            <div class="sfe-ns-same-line"><span>If this is a different person, add something to the name (such as the father's name) so the two never share shift rules, payroll, punches or Face ID.</span></div>
+            <div class="sfe-ns-same-actions">
+              <button type="button" class="btn" id="sfeSameNameOpenBtn" data-staff="${esc(res.existing)}">${ic('user')} <span>Open Existing Person</span></button>
+              <button type="button" class="btn btn-primary" id="sfeSameNameSuggestBtn" data-name="${esc(res.suggestion)}"><span>Use Suggested Name</span> <b>${esc(res.suggestion)}</b></button>
+            </div>`;
+          $('sfeSameNameOpenBtn')?.addEventListener('click', ev => {
+            const who = ev.currentTarget.getAttribute('data-staff') || '';
+            errEl.hidden = true;
+            errEl.classList.remove('is-same-name');
+            errEl.innerHTML = '';
+            if (nmInp) nmInp.value = '';
+            STAFF_FACE_MODAL_STATE.newStaffOpen = false;
+            STAFF_FACE_MODAL_STATE.rosterSearch = '';
+            if (STAFF_FACE_MODAL_STATE.rosterCo && norm(STAFF_FACE_MODAL_STATE.rosterCo) !== norm(res.company)) STAFF_FACE_MODAL_STATE.rosterCo = res.company;
+            selectStaffForEnrolModal(who, { autoStartCam: false });
+            syncStaffFaceEnrolModalDom();
+          });
+          $('sfeSameNameSuggestBtn')?.addEventListener('click', ev => {
+            const sug = ev.currentTarget.getAttribute('data-name') || '';
+            if (nmInp && sug) {
+              nmInp.value = sug;
+              try { nmInp.focus({ preventScroll: true }); nmInp.setSelectionRange(sug.length, sug.length); } catch (_) {}
+            }
+            errEl.hidden = true;
+            errEl.classList.remove('is-same-name');
+            errEl.innerHTML = '';
+          });
+          toast(res.error, 'warn');
+          return;
+        }
         if (errEl) {
           errEl.hidden = false;
+          errEl.classList.remove('is-same-name');
           errEl.textContent = res.error || 'Could not register staff member';
         }
         toast(res.error || 'Could not register staff member', 'warn');
@@ -145356,6 +145596,9 @@
       clearStaffFaceId: staff => clearStaffFaceId(staff),
       openStaffFaceEnrolModal: (staff, opts = {}) => openStaffFaceEnrolModal(staff, opts),
       registerNewStaffForEnrol: (spec = {}) => registerNewStaffFromEnrolStudio(spec),
+      findActiveSameNameInCompany: (name, co, opts = {}) => findActiveSameNameInCompany(name, co, opts),
+      suggestDistinctStaffName: name => suggestDistinctStaffName(name),
+      getEmploymentSameNameConflict: (isContract, staff, co, dateStr, opts = {}) => getEmploymentSameNameConflict(isContract, staff, co, dateStr, opts),
       isAuthorizedKioskAdminFace: entry => isAuthorizedKioskAdminFace(entry),
       isAuthorizedKioskStaffEnrolFace: entry => isAuthorizedKioskStaffEnrolFace(entry),
       canUserEnrolStaff: u => canUserEnrolStaff(u),

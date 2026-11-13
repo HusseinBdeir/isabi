@@ -34625,6 +34625,47 @@ video::-webkit-media-controls-start-playback-button {
   justify-content: flex-end;
   gap: 8px;
 }
+.emp-same-name-box {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-inline-start: 3px solid #C96A22;
+  border-radius: 6px;
+  font-size: 11.8px;
+  line-height: 1.45;
+}
+.emp-same-name-box[hidden] { display: none; }
+.emp-same-name-box.is-open { background: rgba(201, 106, 34, 0.07); }
+.emp-same-name-box.is-different { border-inline-start-color: var(--bad, #B91C1C); }
+.emp-same-name-copy, .emp-same-name-diff > span { min-width: 0; overflow-wrap: anywhere; }
+.emp-same-name-meta { color: var(--muted); font-size: 11px; }
+.emp-same-name-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.emp-same-name-q { font-weight: 600; }
+.emp-same-name-pills { margin: 0; }
+.emp-same-name-diff { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.emp-same-name-diff[hidden] { display: none; }
+.emp-same-name-diff .btn { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.emp-same-name-diff .btn b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.sfe-ns-err.is-same-name {
+  display: grid;
+  gap: 6px;
+  color: var(--ink, #0F1E38);
+  font-weight: 500;
+  background: rgba(201, 106, 34, 0.08);
+  border-color: rgba(201, 106, 34, 0.32);
+  padding: 8px 10px;
+}
+.sfe-ns-err.is-same-name[hidden] { display: none; }
+.sfe-ns-same-line { line-height: 1.45; min-width: 0; overflow-wrap: anywhere; }
+.sfe-ns-same-line b { font-weight: 700; }
+.sfe-ns-same-meta { color: var(--muted, #64748B); font-size: 11px; }
+.sfe-ns-same-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.sfe-ns-same-actions .btn { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; max-width: 100%; }
+.sfe-ns-same-actions .btn b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
 .sfe-empty-add-btn {
   margin-top: 6px;
 }

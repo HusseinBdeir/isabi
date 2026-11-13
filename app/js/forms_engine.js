@@ -2274,6 +2274,22 @@
         : '<span id="lbl_emp_amount">Amount ($) *</span>';
       const amtInputHtml = `<div class="exp-amt-input-wrap" id="empAmtInputWrap">${inp('f_amount', 'number', empAmtVal, `step="0.01" min="0" inputmode="decimal" placeholder="${pendSalRow ? 'Enter final agreed amount...' : '0.00'}"`)}<button type="button" class="exp-switch-priced-btn" id="empSwitchToPricedBtn" data-emp-salary-mode="priced" hidden>${ic('dollar')} Enter ${isContract ? 'Salary' : 'Rate'}</button></div>`;
       const salaryModePillsHtml = pendSalRow ? '' : `<div class="exp-price-mode-bar" id="empSalaryModePills" role="group" aria-label="Salary availability"><button type="button" class="uom-qpill active" data-emp-salary-mode="priced">${isContract ? 'Enter Salary ($)' : 'Enter Rate ($)'}</button><button type="button" class="uom-qpill" data-emp-salary-mode="pending">Salary Pending ($0)</button></div>`;
+      const sameNameBoxHtml = pendSalRow ? '' : `
+            <div id="empSameNameBox" class="emp-same-name-box" role="group" aria-label="Same name check" hidden>
+              <input type="hidden" id="f_same_name_choice" value="">
+              <div class="emp-same-name-copy"><span>Someone with this name already has an active contract in this company:</span> <b id="empSameNameWho"></b> <span class="emp-same-name-meta" id="empSameNameMeta"></span></div>
+              <div class="emp-same-name-ask">
+                <span class="emp-same-name-q">Is this the same person?</span>
+                <span class="exp-price-mode-bar emp-same-name-pills">
+                  <button type="button" class="uom-qpill" data-emp-same-name="same" aria-pressed="false">Same Person</button>
+                  <button type="button" class="uom-qpill" data-emp-same-name="different" aria-pressed="false">Different Person</button>
+                </span>
+              </div>
+              <div class="emp-same-name-diff" id="empSameNameDiff" hidden>
+                <span>Two people cannot share a name in one company. Add something to the name to tell them apart, such as the father's name.</span>
+                <button type="button" class="btn btn-primary" id="empSameNameSuggestBtn"><span>Use Suggested Name</span> <b id="empSameNameSuggest"></b></button>
+              </div>
+            </div>`;
       const pendingBannerHtml = pendSalRow
         ? `<div class="exp-complete-pending-banner" id="empCompletePendingBanner"><span>${ic('lock')} Onboarding &amp; schedule fields on <b>${esc(empStaffVal || pendSalRow.name || pendSalRow.id)}</b> (${esc(pendSalRow.name || pendSalRow.id)}) are locked. Enter the final agreed <b>${isContract ? (/Daily/i.test(empPayVal) ? 'Daily Rate ($)' : 'Base Salary ($)') : 'Amount ($)'}</b> below.</span></div>`
         : '';
@@ -2290,7 +2306,7 @@
             ${fld('Role *', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_roles', roleMetaItems), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
             ${frozenRoleCatField(resolveRoleCat(empRoleVal))}
             ${fld('Pay Basis *', sel('f_paytype', [['Monthly', 'Monthly'], ['Daily', 'Daily']], empPayVal), pendSalRow ? { id: 'wrap_emp_paytype', lockField: 'f_paytype', lockReason: 'Locked to the pay basis recorded on onboarding' } : { id: 'wrap_emp_paytype' })}
-            <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
+            <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>${sameNameBoxHtml}
             <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
             ${fld(amtLbl, amtInputHtml, { id: 'wrap_emp_amount', hintId: 'hint_emp_salary', hint: '', afterHtml: salaryModePillsHtml })}
             ${fld('Transp. / Reimb. ($/mo)', inp('f_reimb', 'number', empReimbVal, 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"'), { id: 'wrap_emp_reimb' })}
@@ -2316,7 +2332,7 @@
           ${empCompanyField}
           ${fld('Work Date *', inp('f_date', 'date', empStartVal, pendSalRow ? 'readonly' : ''), pendSalRow ? { id: 'wrap_f_date', lockField: 'f_date', lockReason: 'Locked to the work date recorded on onboarding' } : { id: 'wrap_f_date' })}
           ${fld('Staff *', inp('f_staff', 'text', empStaffVal, `list="dl_staff" placeholder="Select or type staff..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_staff', staffMetaItems), pendSalRow ? { id: 'wrap_emp_staff', lockField: 'f_staff', lockReason: 'Locked to the onboarded worker', hintId: 'hint_emp_staff', hint: '' } : { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
-          <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
+          <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>${sameNameBoxHtml}
           <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
           ${fld('Role *', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_roles', roleMetaItems), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
           ${frozenRoleCatField(resolveRoleCat(empRoleVal))}
