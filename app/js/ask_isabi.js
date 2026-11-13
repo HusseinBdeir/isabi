@@ -2204,7 +2204,14 @@
         instantLocal: !isReasoningQuery(cleanQ) || /\b(why\s+is\s+cash\s+till|4,990|4990|negative)\b/i.test(cleanQ),
         topic: 'cash',
         title: `Cash Till, Treasury & FX · ${scope.fullScopeLabel}`,
-        answer: `Live physical till for <b>${esc(scope.scopeCoLabel)}</b> holds <b>${fmtMoney(k.cash_till_usd, 2)}</b> USD plus <b>${fmtLbp(k.cash_till_lbp)}</b> (combined <b>${fmtMoney(k.cash_till, 2)}</b> at <b>${fmtInt(fxRate, 0)} LBP/$</b>).${negTillNote}`,
+        // An industry whose cash book is not whole in ISABI yet has no till balance (owner 2026-11-13): never quote 0.
+        answer: k.till_tracked === false
+          ? (lang === 'ar'
+            ? `لا يوجد رصيد صندوق لـ <b>${esc(scope.scopeCoLabel)}</b> في ISABI بعد: دفتر النقد غير مكتمل${(k.till_missing || []).length ? ` (الناقص: ${esc(k.till_missing.map(x => (window.MFG_I18N && window.MFG_I18N.t) ? window.MFG_I18N.t(x, 'ar') : x).join('، '))})` : ''}. القيود المحمّلة حتى الآن: وارد <b>${fmtMoney(k.live_in_usd, 2)}</b> وصادر <b>${fmtMoney(k.live_out_usd, 2)}</b>.`
+            : (lang === 'fr'
+              ? `<b>${esc(scope.scopeCoLabel)}</b> n'a pas encore de solde de caisse dans ISABI : son livre de caisse est incomplet${(k.till_missing || []).length ? ` (manquant : ${esc(k.till_missing.map(x => (window.MFG_I18N && window.MFG_I18N.t) ? window.MFG_I18N.t(x, 'fr') : x).join(', '))})` : ''}. Écritures chargées à ce jour : entrées <b>${fmtMoney(k.live_in_usd, 2)}</b>, sorties <b>${fmtMoney(k.live_out_usd, 2)}</b>.`
+              : `<b>${esc(scope.scopeCoLabel)}</b> has no till balance in ISABI yet: its cash book is not complete${(k.till_missing || []).length ? ` (still missing: ${esc(k.till_missing.join(', '))})` : ''}. Cash entries loaded so far: In <b>${fmtMoney(k.live_in_usd, 2)}</b>, Out <b>${fmtMoney(k.live_out_usd, 2)}</b>.`))
+          : `Live physical till for <b>${esc(scope.scopeCoLabel)}</b> holds <b>${fmtMoney(k.cash_till_usd, 2)}</b> USD plus <b>${fmtLbp(k.cash_till_lbp)}</b> (combined <b>${fmtMoney(k.cash_till, 2)}</b> at <b>${fmtInt(fxRate, 0)} LBP/$</b>).${negTillNote}`,
         bullets: [
           `Period Cash Flow: Inflows <b>${fmtMoney(k.cash_inflow, 2)}</b> minus Outflows <b>${fmtMoney(k.cash_outflow, 2)}</b> = Net <b>${fmtMoney(k.net_cash_flow, 2)}</b>`,
           `Treasury Registers: <b>${fmtInt(loans.length)}</b> loan records · <b>${fmtInt(convs.length)}</b> FX conversions in period`
@@ -2241,7 +2248,7 @@
         answer: `Trial Balance variance for <b>${esc(scope.fullScopeLabel)}</b> is <b>${fmtMoney(tb, 2)}</b> (${tied ? '<b>100% TIED</b> across Classes 1 to 7' : '<b>VARIANCE DETECTED</b> - inspect General Ledger'}). Automated GL engine maps <b>45</b> accounts automatically across receivables, payables, cash tills, inventory, payroll, expenses, and revenue.`,
         bullets: canTax(user)
           ? [`Output VAT (11%): <b>${fmtMoney(k.sales_vat, 2)}</b> · Input VAT Receivable: <b>${fmtMoney(k.vat_receivable, 2)}</b> · GL Accounts Registered: <b>${fmtInt(glAccounts.length || 45)}</b>`]
-          : [`Cash Till: <b>${fmtMoney(k.cash_till, 2)}</b> · Open AR: <b>${fmtMoney(k.ar_balance, 2)}</b> · Open AP: <b>${fmtMoney(k.ap_balance, 2)}</b>`],
+          : [`Cash Till: <b>${k.till_tracked === false ? 'Not Tracked Yet' : fmtMoney(k.cash_till, 2)}</b> · Open AR: <b>${fmtMoney(k.ar_balance, 2)}</b> · Open AP: <b>${fmtMoney(k.ap_balance, 2)}</b>`],
         promptText: 'Would you like to open the General Ledger, COA Classes 1-7, or Automated GL Rules?',
         actions: [
           { type: 'view', view: 'ledger', label: 'General Ledger' },
@@ -2589,7 +2596,7 @@
       title: `Executive Briefing · ${scope.fullScopeLabel}`,
       answer: `Across <b>${esc(scope.fullScopeLabel)}</b>, ${salesLabel(user).toLowerCase()} stand at <b>${fmtMoney(k.sales_ttc, 0)}</b> (${fmtInt(k.loads)} loads), gross margin is <b>${fmtMoney(k.gross_margin, 0)}</b>, and operating profit is <b>${fmtMoney(k.operating_profit, 0)}</b>.`,
       bullets: [
-        `Working Capital: Open AR <b>${fmtMoney(k.ar_balance, 0)}</b> (<b>${fmtMoney(k.ar_60_plus, 0)}</b> past 60d) · Net Open AP <b>${fmtMoney(k.ap_balance, 0)}</b>${canHub('cashflow', user) ? ` · Cash Till <b>${fmtMoney(k.cash_till, 2)}</b>` : ''}`,
+        `Working Capital: Open AR <b>${fmtMoney(k.ar_balance, 0)}</b> (<b>${fmtMoney(k.ar_60_plus, 0)}</b> past 60d) · Net Open AP <b>${fmtMoney(k.ap_balance, 0)}</b>${canHub('cashflow', user) ? ` · Cash Till <b>${k.till_tracked === false ? 'Not Tracked Yet' : fmtMoney(k.cash_till, 2)}</b>` : ''}`,
         `Governance Queue: <b>${fmtInt(openAlerts.length)}</b> unreviewed Sentinel ${openAlerts.length === 1 ? 'alert' : 'alerts'} · <b>${fmtInt(pendingExp + pendingRaw)}</b> price-pending ($0.00) operational ${pendingExp + pendingRaw === 1 ? 'voucher' : 'vouchers'}`
       ],
       promptText: 'Which area would you like to drill into next?',
@@ -3367,6 +3374,9 @@
     const cashIn = Number(k.cash_inflow != null ? k.cash_inflow : (k.cash_in || 0));
     const cashOut = Number(k.cash_outflow != null ? k.cash_outflow : (k.cash_out || 0));
     const tillVal = Number(k.cash_till != null ? k.cash_till : (k.net_cash_flow || 0));
+    // An industry whose cash book is not whole in ISABI has no till yet: never explain a $0 till.
+    const tillOff = k.till_tracked === false;
+    const tillShown = tillOff ? 'Not Tracked Yet' : fmtMoney(tillVal, 2);
     const viewId = String(targetViewId || (snap && snap.viewId) || ((_ctx && _ctx.STATE && _ctx.STATE.view) || 'overview'));
     const useSnap = (snap && snap.viewId === viewId) ? snap : null;
     const screenTitle = VIEW_TITLE_MAP[viewId] || (useSnap && useSnap.pageTitle ? useSnap.pageTitle : 'ISABI Command Center');
@@ -3376,7 +3386,9 @@
     let rows = [];
 
     // Answer any specific metric or UI glossary question right in the first bullet
-    if (/cash\s*till|net\s*flow|-?\$?4,?990/i.test(cleanQ)) {
+    if (tillOff && /cash\s*till|net\s*flow/i.test(cleanQ)) {
+      bullets.push(`<b>Cash Till</b>: not tracked yet. This business's cash book is not complete in ISABI${(k.till_missing || []).length ? ` (still missing: ${esc(k.till_missing.join(', '))})` : ''}, so no till balance is shown; the Cash Flow page lists the cash entries loaded so far.`);
+    } else if (!tillOff && /cash\s*till|net\s*flow|-?\$?4,?990/i.test(cleanQ)) {
       bullets.push(`<b>Why Cash Till is ${fmtMoney(tillVal, 2)}</b>: Direct cash outflows (<b>${fmtMoney(k.cash_expense, 0)}</b> cash expenses + <b>${fmtMoney(k.settlements_paid, 0)}</b> supplier settlements = <b>${fmtMoney(cashOut, 0)}</b>) exceeded direct physical cash inflows (<b>${fmtMoney(k.cash_sales, 0)}</b> cash sales + <b>${fmtMoney(k.receipts_collected, 0)}</b> customer receipts = <b>${fmtMoney(cashIn, 0)}</b>). Because most revenue (<b>${fmtMoney(k.credit_sales, 0)}</b>) is billed on credit rather than paid into the physical till at dispatch, the cash drawer net flow is negative even while operating profit is <b>+${fmtMoney(k.operating_profit, 0)}</b>.`);
     }
     if (/app[- ]?entered|not\s+yet\s+in\s+the\s+book/i.test(cleanQ)) {
@@ -3393,14 +3405,14 @@
       const marginPct = k.sales_ttc > 0 ? ((k.gross_margin / k.sales_ttc) * 100).toFixed(1) : '0.0';
       const opPct = k.sales_ttc > 0 ? ((k.operating_profit / k.sales_ttc) * 100).toFixed(1) : '0.0';
 
-      bullets.push(`<b>Row 1 · 4 Executive Telemetry KPIs</b>: Displays <b>Consolidated Revenue (${fmtMoney(k.sales_ttc, 0)})</b> with monthly run-rate and Cash (<b>${fmtMoney(k.cash_sales, 0)}</b>) vs Credit (<b>${fmtMoney(k.credit_sales, 0)}</b>) composition bar; <b>Operating Cash Profit (${fmtMoney(k.operating_profit, 0)} · ${opPct}%)</b> with Raw Material, OpEx, and Profit share; <b>Cash Position & Velocity (${fmtMoney(tillVal, 2)})</b> with AR collection rate and Cash In (<b>${fmtMoney(cashIn, 0)}</b>) vs Out (<b>${fmtMoney(cashOut, 0)}</b>); and <b>Working Capital (${fmtMoney(k.ar_balance, 0)} Open AR vs ${fmtMoney(k.ap_balance, 0)} Open AP)</b>.`);
+      bullets.push(`<b>Row 1 · 4 Executive Telemetry KPIs</b>: Displays <b>Consolidated Revenue (${fmtMoney(k.sales_ttc, 0)})</b> with monthly run-rate and Cash (<b>${fmtMoney(k.cash_sales, 0)}</b>) vs Credit (<b>${fmtMoney(k.credit_sales, 0)}</b>) composition bar; <b>Operating Cash Profit (${fmtMoney(k.operating_profit, 0)} · ${opPct}%)</b> with Raw Material, OpEx, and Profit share; <b>Cash Position & Velocity (${tillShown})</b> with AR collection rate and Cash In (<b>${fmtMoney(cashIn, 0)}</b>) vs Out (<b>${fmtMoney(cashOut, 0)}</b>); and <b>Working Capital (${fmtMoney(k.ar_balance, 0)} Open AR vs ${fmtMoney(k.ap_balance, 0)} Open AP)</b>.`);
       bullets.push(`<b>Row 2 Left · Performance Trajectory & 5-Step P&L Value Bridge</b>: Plots monthly <b>Sales</b>, <b>Direct Cost</b>, and <b>Operating Profit</b> with peak-month callout and dashed run-rate line, anchored below by a clickable 5-step P&L waterfall (<b>Net Revenue - Direct Cost = Gross Margin - OpEx & Payroll = Cash Profit</b>) and unit economics spread.`);
       bullets.push(`<b>Row 2 Right · Operating Entities Scorecard & 3-Lens Executive Pulse</b>: Pairs entity-by-entity revenue share, margin, and ledger tie-out above an interactive <b>Executive Pulse</b> deck switching instantly between <b>Attention</b> (overdue AR, open sentinels, pending rate sign-offs, $0.00 book parity), <b>Top Clients</b> (concentration & 360° Inspector), and <b>Revenue Mix</b> (top grades & unit pricing).`);
 
       rows = [
         ['1. Consolidated Revenue', fmtMoney(k.sales_ttc, 0), `Cash ${fmtMoney(k.cash_sales, 0)} + Credit ${fmtMoney(k.credit_sales, 0)}`],
         ['2. Operating Cash Profit', `${fmtMoney(k.operating_profit, 0)} (${opPct}%)`, `Gross Margin ${fmtMoney(k.gross_margin, 0)} (${marginPct}%) minus OpEx & Payroll (${fmtMoney(expTotal, 0)})`],
-        ['3. Cash Position & Velocity', fmtMoney(tillVal, 2), `Cash In (${fmtMoney(cashIn, 0)}) minus Cash Out (${fmtMoney(cashOut, 0)})`],
+        ['3. Cash Position & Velocity', tillShown, `Cash In (${fmtMoney(cashIn, 0)}) minus Cash Out (${fmtMoney(cashOut, 0)})`],
         ['4. Working Capital (AR / AP)', `${fmtMoney(k.ar_balance, 0)} AR`, `Overdue >30d: ${fmtMoney(k.ar_overdue, 0)} · Open AP: ${fmtMoney(k.ap_balance, 0)}`],
         ['5. Scorecard & Executive Pulse', `${fmtInt(salesLoads)} loads (${fmtInt(salesTons, 0)} t)`, 'Switch between Attention, Top Clients, and Revenue Mix or click any entity row']
       ];
@@ -3472,7 +3484,7 @@
         bullets.push(`<b>Active Data Table</b>: Columns include <b>${esc(t0.cols.join(', '))}</b>${t0.sample ? ` (top row: ${esc(t0.sample)})` : ''}. Click any row to inspect or edit.`);
       }
       if (!bullets.length) {
-        bullets.push(`<b>Active Screen (${esc(screenTitle)})</b>: Displays live operational and financial registers for <b>${esc(scope.fullScopeLabel)}</b> with revenue of <b>${fmtMoney(k.sales_ttc, 0)}</b>, gross margin of <b>${fmtMoney(k.gross_margin, 0)}</b>, operating profit of <b>${fmtMoney(k.operating_profit, 0)}</b>, and cash till of <b>${fmtMoney(tillVal, 2)}</b>.`);
+        bullets.push(`<b>Active Screen (${esc(screenTitle)})</b>: Displays live operational and financial registers for <b>${esc(scope.fullScopeLabel)}</b> with revenue of <b>${fmtMoney(k.sales_ttc, 0)}</b>, gross margin of <b>${fmtMoney(k.gross_margin, 0)}</b>, operating profit of <b>${fmtMoney(k.operating_profit, 0)}</b>, and cash till of <b>${tillShown}</b>.`);
       }
     }
 
@@ -3493,7 +3505,7 @@
         ...(canView('cashflow', user) ? [{ type: 'view', view: 'cashflow', label: 'Cash Flow & Till' }] : [])
       ],
       followUps: [
-        `Why is Cash Till ${tillVal < 0 ? fmtMoney(tillVal, 2) : '-$4,990.00'}?`,
+        tillOff ? 'Why is the Cash Till not tracked yet?' : `Why is Cash Till ${tillVal < 0 ? fmtMoney(tillVal, 2) : '-$4,990.00'}?`,
         'Show overdue receivables',
         'Check open AI Sentinel alerts'
       ]
@@ -5855,6 +5867,8 @@
     let targetDate = (hoSnap && hoSnap.targetDate) || st.dailyOpsDate || (_ctx && typeof _ctx.todayISO === 'function' ? _ctx.todayISO() : '2026-11-06');
     let dayRevUsd = hoSnap ? Number(hoSnap.dayRevUsd || 0) : 0;
     let dayTxCount = hoSnap ? Number(hoSnap.dayTxCount || 0) : 0;
+    // A business whose cash book is not whole in ISABI has no till yet: say so, never speak $0.
+    let tillUntracked = Boolean(hoSnap && canViewBooks && hoSnap.closingTillUsd == null);
     let closingTillUsd = hoSnap && canViewBooks ? Number(hoSnap.closingTillUsd || 0) : null;
     let dayNetCash = hoSnap && canViewBooks ? Number(hoSnap.dayNetCash || 0) : null;
     let dayOpProfit = hoSnap && canViewBooks ? Number(hoSnap.dayOpProfit || 0) : null;
@@ -5895,6 +5909,7 @@
           dayRevUsd = Number(k.sales_ttc || 0);
           dayTxCount = Number(k.loads || 0);
           if (canViewBooks) {
+            tillUntracked = k.till_tracked === false;
             closingTillUsd = Number(k.cash_till || 0);
             dayOpProfit = Number(k.operating_profit || 0);
           }
@@ -5912,6 +5927,7 @@
           dayRevUsd = Number(snap.dayRevUsd || 0);
           dayTxCount = Number(snap.dayRevCount || 0);
           if (canViewBooks) {
+            tillUntracked = snap.closingTillUsd == null;
             closingTillUsd = Number(snap.closingTillUsd || 0);
             dayNetCash = Number(snap.dayNetCash || 0);
             dayOpProfit = Number(snap.dayOpProfit || 0);
@@ -5957,7 +5973,7 @@
         const netClause = roundedNet > 0
           ? `مع صافي تدفق نقدي داخل بقيمة ${formatSpokenMoney(dayNetCash, 'ar')}`
           : (roundedNet < 0 ? `بعد صافي تدفق نقدي خارج بقيمة ${netAbsMoney}` : 'مع تعادل التدفق النقدي لليوم');
-        sentences.push(`بلغ التحصيل النقدي ${formatSpokenMoney(totalCashIntakeUsd, 'ar')} مقابل ${formatSpokenMoney(creditSalesUsd, 'ar')} آجل؛ رصيد الصندوق النقدي ${tillMoney}، ${netClause}، والربح التشغيلي لليوم ${formatSpokenMoney(dayOpProfit, 'ar')}.`);
+        sentences.push(`بلغ التحصيل النقدي ${formatSpokenMoney(totalCashIntakeUsd, 'ar')} مقابل ${formatSpokenMoney(creditSalesUsd, 'ar')} آجل؛ ${tillUntracked ? 'رصيد الصندوق غير متتبَّع بعد' : `رصيد الصندوق النقدي ${tillMoney}`}، ${netClause}، والربح التشغيلي لليوم ${formatSpokenMoney(dayOpProfit, 'ar')}.`);
       } else if (hoSnap && (cashSalesUsd > 0 || creditSalesUsd > 0)) {
         sentences.push(`توزعت حركات المناوبة بين ${formatSpokenMoney(cashSalesUsd, 'ar')} نقداً و${formatSpokenMoney(creditSalesUsd, 'ar')} بالآجل.`);
       }
@@ -5987,7 +6003,7 @@
         const netClause = roundedNet > 0
           ? `avec une entrée nette de trésorerie de ${formatSpokenMoney(dayNetCash, 'fr')} sur la journée`
           : (roundedNet < 0 ? `après une sortie nette de trésorerie de ${netAbsMoney} sur la journée` : 'avec un flux net de trésorerie équilibré sur la journée');
-        sentences.push(`Les encaissements atteignent ${formatSpokenMoney(totalCashIntakeUsd, 'fr')} pour ${formatSpokenMoney(creditSalesUsd, 'fr')} à crédit ; la caisse s'établit à ${tillMoney}, ${netClause}, avec un résultat du jour de ${formatSpokenMoney(dayOpProfit, 'fr')}.`);
+        sentences.push(`Les encaissements atteignent ${formatSpokenMoney(totalCashIntakeUsd, 'fr')} pour ${formatSpokenMoney(creditSalesUsd, 'fr')} à crédit ; ${tillUntracked ? "la caisse n'est pas encore suivie" : `la caisse s'établit à ${tillMoney}`}, ${netClause}, avec un résultat du jour de ${formatSpokenMoney(dayOpProfit, 'fr')}.`);
       } else if (hoSnap && (cashSalesUsd > 0 || creditSalesUsd > 0)) {
         sentences.push(`L'activité du poste se répartit entre ${formatSpokenMoney(cashSalesUsd, 'fr')} au comptant et ${formatSpokenMoney(creditSalesUsd, 'fr')} à crédit.`);
       }
@@ -6017,7 +6033,7 @@
         const netClause = roundedNet > 0
           ? `with net cash inflow of ${formatSpokenMoney(dayNetCash, 'en')} for the day`
           : (roundedNet < 0 ? `after net cash outflow of ${netAbsMoney} for the day` : 'with even net cash movement for the day');
-        sentences.push(`Cash intake stands at ${formatSpokenMoney(totalCashIntakeUsd, 'en')} alongside ${formatSpokenMoney(creditSalesUsd, 'en')} credit billing; cash till stands at ${tillMoney}, ${netClause}, with day operating profit at ${formatSpokenMoney(dayOpProfit, 'en')}.`);
+        sentences.push(`Cash intake stands at ${formatSpokenMoney(totalCashIntakeUsd, 'en')} alongside ${formatSpokenMoney(creditSalesUsd, 'en')} credit billing; ${tillUntracked ? 'the cash till is not tracked yet' : `cash till stands at ${tillMoney}`}, ${netClause}, with day operating profit at ${formatSpokenMoney(dayOpProfit, 'en')}.`);
       } else if (hoSnap && (cashSalesUsd > 0 || creditSalesUsd > 0)) {
         sentences.push(`Shift intake splits into ${formatSpokenMoney(cashSalesUsd, 'en')} cash and ${formatSpokenMoney(creditSalesUsd, 'en')} credit billing.`);
       }
@@ -6049,7 +6065,7 @@
       revDeltaPct,
       anomalyCount,
       canViewBooks,
-      closingTillUsd: canViewBooks ? Math.round(closingTillUsd) : null,
+      closingTillUsd: canViewBooks && !tillUntracked ? Math.round(closingTillUsd) : null,
       dayNetCash: canViewBooks ? Math.round(dayNetCash) : null,
       dayOpProfit: canViewBooks ? Math.round(dayOpProfit) : null,
       openSentinelCount: openCount,
@@ -6266,7 +6282,7 @@
         isAllTime: true,
         cur: { revUsd: rev, netSalesUsd: net, directCostUsd: raw, grossMarginUsd: gm, gmPct: revBase > 0 ? roundPct((gm / den) * 100) : 0, opExUsd: opex, opProfitUsd: op, opMarginPct: revBase > 0 ? roundPct((op / den) * 100) : 0, txCount: Number(k.loads || 0), hasActivity: rev > 0 },
         prev: null,
-        books: { cashTillUsd: Number(k.cash_till || 0), arBalanceUsd: Number(k.ar_balance || 0), arOverdueUsd: Number(k.ar_overdue || 0) },
+        books: { cashTillUsd: k.till_tracked === false ? null : Number(k.cash_till || 0), arBalanceUsd: Number(k.ar_balance || 0), arOverdueUsd: Number(k.ar_overdue || 0) },
         topDriver: null,
         sentinels: { openCount: 0, critCount: 0, topTitle: '' }
       };
@@ -6338,7 +6354,8 @@
     const opPctRound = hasPositiveRev ? resolveUnclampedPct(cur, 'opProfitUsd', 'opMarginPct') : 0;
     const txCount = Math.round(Number(cur.txCount || 0));
 
-    const cashTillRound = canViewBooks ? Math.round(Number(snap.books && snap.books.cashTillUsd || 0)) : null;
+    // null = the business has no till balance yet (its cash book is not whole in ISABI); never shown as $0.
+    const cashTillRound = (canViewBooks && snap.books && snap.books.cashTillUsd != null) ? Math.round(Number(snap.books.cashTillUsd)) : null;
     const arBalRound = canViewBooks ? Math.round(Number(snap.books && snap.books.arBalanceUsd || 0)) : null;
     const openCount = Number(snap.sentinels && snap.sentinels.openCount || 0);
     const critCount = Number(snap.sentinels && snap.sentinels.critCount || 0);
@@ -6378,11 +6395,11 @@
         const tillSp = formatSpokenMoney(cashTillRound, 'ar');
         const arSp = formatSpokenMoney(arBalRound, 'ar');
         if (openCount === 0) {
-          speechParts.push(`رصيد السيولة النقدية ${tillSp} مع ذمم مدينة مفتوحة بقيمة ${arSp}، وجميع الضوابط الرقابية سليمة.`);
-          bullets.push(`السيولة النقدية ${fmtCompactUsd(cashTillRound)} والذمم المدينة ${fmtCompactUsd(arBalRound)}؛ جميع الضوابط الرقابية سليمة (0 تنبيهات).`);
+          speechParts.push(`${cashTillRound === null ? 'رصيد الصندوق غير متتبَّع بعد' : `رصيد السيولة النقدية ${tillSp}`} مع ذمم مدينة مفتوحة بقيمة ${arSp}، وجميع الضوابط الرقابية سليمة.`);
+          bullets.push(`${cashTillRound === null ? 'الصندوق غير متتبَّع بعد' : `السيولة النقدية ${fmtCompactUsd(cashTillRound)}`} والذمم المدينة ${fmtCompactUsd(arBalRound)}؛ جميع الضوابط الرقابية سليمة (0 تنبيهات).`);
         } else {
-          speechParts.push(`رصيد السيولة النقدية ${tillSp} مع ذمم مدينة بقيمة ${arSp}، وتوجد ${openCount} تنبيهات رقابية نشطة أبرزها ${topSentinelTitle}.`);
-          bullets.push(`السيولة النقدية ${fmtCompactUsd(cashTillRound)} والذمم المدينة ${fmtCompactUsd(arBalRound)}؛ ${openCount} تنبيهات رقابية نشطة (${topSentinelTitle}).`);
+          speechParts.push(`${cashTillRound === null ? 'رصيد الصندوق غير متتبَّع بعد' : `رصيد السيولة النقدية ${tillSp}`} مع ذمم مدينة بقيمة ${arSp}، وتوجد ${openCount} تنبيهات رقابية نشطة أبرزها ${topSentinelTitle}.`);
+          bullets.push(`${cashTillRound === null ? 'الصندوق غير متتبَّع بعد' : `السيولة النقدية ${fmtCompactUsd(cashTillRound)}`} والذمم المدينة ${fmtCompactUsd(arBalRound)}؛ ${openCount} تنبيهات رقابية نشطة (${topSentinelTitle}).`);
         }
       } else if (openCount === 0) {
         speechParts.push('جميع الضوابط الرقابية سليمة مع صفر تنبيهات نشطة.');
@@ -6415,11 +6432,11 @@
         const tillSp = formatSpokenMoney(cashTillRound, 'fr');
         const arSp = formatSpokenMoney(arBalRound, 'fr');
         if (openCount === 0) {
-          speechParts.push(`La trésorerie s'établit à ${tillSp} avec ${arSp} de créances clients, et tous les contrôles Sentinel sont au vert.`);
-          bullets.push(`Trésorerie à ${fmtCompactUsd(cashTillRound)} et créances à ${fmtCompactUsd(arBalRound)} ; 0 alerte Sentinel active.`);
+          speechParts.push(`${cashTillRound === null ? "La caisse n'est pas encore suivie" : `La trésorerie s'établit à ${tillSp}`} avec ${arSp} de créances clients, et tous les contrôles Sentinel sont au vert.`);
+          bullets.push(`${cashTillRound === null ? 'Caisse pas encore suivie' : `Trésorerie à ${fmtCompactUsd(cashTillRound)}`} et créances à ${fmtCompactUsd(arBalRound)} ; 0 alerte Sentinel active.`);
         } else {
-          speechParts.push(`La trésorerie s'établit à ${tillSp} avec ${arSp} de créances, et ${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel active${openCount > 1 ? 's' : ''} à vérifier, dont ${topSentinelTitle}.`);
-          bullets.push(`Trésorerie à ${fmtCompactUsd(cashTillRound)} et créances à ${fmtCompactUsd(arBalRound)} ; ${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel (${topSentinelTitle}).`);
+          speechParts.push(`${cashTillRound === null ? "La caisse n'est pas encore suivie" : `La trésorerie s'établit à ${tillSp}`} avec ${arSp} de créances, et ${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel active${openCount > 1 ? 's' : ''} à vérifier, dont ${topSentinelTitle}.`);
+          bullets.push(`${cashTillRound === null ? 'Caisse pas encore suivie' : `Trésorerie à ${fmtCompactUsd(cashTillRound)}`} et créances à ${fmtCompactUsd(arBalRound)} ; ${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel (${topSentinelTitle}).`);
         }
       } else if (openCount === 0) {
         speechParts.push('Tous les contrôles Sentinel sont au vert avec zéro alerte active.');
@@ -6452,11 +6469,11 @@
         const tillSp = formatSpokenMoney(cashTillRound, 'en');
         const arSp = formatSpokenMoney(arBalRound, 'en');
         if (openCount === 0) {
-          speechParts.push(`Cash till stands at ${tillSp} alongside ${arSp} in open receivables, with all Sentinel controls clear.`);
-          bullets.push(`Liquidity & controls: cash till ${fmtCompactUsd(cashTillRound)}, open receivables ${fmtCompactUsd(arBalRound)}, and 0 active Sentinel flags.`);
+          speechParts.push(`${cashTillRound === null ? 'The cash till is not tracked yet' : `Cash till stands at ${tillSp}`} alongside ${arSp} in open receivables, with all Sentinel controls clear.`);
+          bullets.push(`Liquidity & controls: ${cashTillRound === null ? 'cash till not tracked yet' : `cash till ${fmtCompactUsd(cashTillRound)}`}, open receivables ${fmtCompactUsd(arBalRound)}, and 0 active Sentinel flags.`);
         } else {
-          speechParts.push(`Cash till stands at ${tillSp} alongside ${arSp} in open receivables, and ${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} require review, led by ${topSentinelTitle}.`);
-          bullets.push(`Liquidity & controls: cash till ${fmtCompactUsd(cashTillRound)}, open receivables ${fmtCompactUsd(arBalRound)}, and ${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} (${topSentinelTitle}).`);
+          speechParts.push(`${cashTillRound === null ? 'The cash till is not tracked yet' : `Cash till stands at ${tillSp}`} alongside ${arSp} in open receivables, and ${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} require review, led by ${topSentinelTitle}.`);
+          bullets.push(`Liquidity & controls: ${cashTillRound === null ? 'cash till not tracked yet' : `cash till ${fmtCompactUsd(cashTillRound)}`}, open receivables ${fmtCompactUsd(arBalRound)}, and ${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} (${topSentinelTitle}).`);
         }
       } else if (openCount === 0) {
         speechParts.push('All Sentinel operational controls are clear with zero active flags.');
@@ -6573,7 +6590,8 @@
       leadSentinel: sum.topSentinelTitle || null
     };
     if (sum.canViewBooks && sum.books) {
-      groundedPayload.cashTillUsd = sum.books.cashTillUsd;
+      if (sum.books.cashTillUsd == null) groundedPayload.cashTillNote = 'No till balance: this business\'s cash book is not complete in ISABI yet. Do not state a till figure.';
+      else groundedPayload.cashTillUsd = sum.books.cashTillUsd;
       groundedPayload.openReceivablesUsd = sum.books.arBalanceUsd;
     }
 
@@ -6867,7 +6885,9 @@
     const kpi4Html = sum.canViewBooks && sum.books
       ? `<div class="ceo-pv-kpi">
           <span class="ceo-pv-k">Cash &amp; AR</span>
-          <strong class="ceo-pv-v num" data-no-i18n="1">${esc(fmtCompactUsd(sum.books.cashTillUsd))}</strong>
+          ${sum.books.cashTillUsd == null
+            ? '<strong class="ceo-pv-v">Not Tracked Yet</strong>'
+            : `<strong class="ceo-pv-v num" data-no-i18n="1">${esc(fmtCompactUsd(sum.books.cashTillUsd))}</strong>`}
           <small class="ceo-pv-d num" data-no-i18n="1">${esc(fmtCompactUsd(sum.books.arBalanceUsd))}</small>
         </div>`
       : `<div class="ceo-pv-kpi">
@@ -13279,7 +13299,9 @@
       `Levers: Price ${lv.pricePct >= 0 ? '+' : ''}${lv.pricePct}%, Volume ${lv.volumePct >= 0 ? '+' : ''}${lv.volumePct}%, Direct Cost ${lv.directCostPct >= 0 ? '+' : ''}${lv.directCostPct}%, Overhead ${lv.overheadPct >= 0 ? '+' : ''}${lv.overheadPct}%, DSO ${lv.dsoDeltaDays >= 0 ? '+' : ''}${lv.dsoDeltaDays}d, FX ${Number(lv.fxRateLbp || 89500).toLocaleString('en-US')} LL/$`,
       `Baseline vs Simulated: Revenue ${fmtUsd(sum.base.revUsd)} to ${fmtUsd(sum.sim.revUsd)} (${d.revDeltaUsd >= 0 ? '+' : ''}${fmtUsd(d.revDeltaUsd)}, ${d.revDeltaPct >= 0 ? '+' : ''}${d.revDeltaPct}%), Gross Margin ${fmtUsd(sum.base.grossMarginUsd)} (${sum.base.gmPct}%) to ${fmtUsd(sum.sim.grossMarginUsd)} (${sum.sim.gmPct}%), Operating Profit ${fmtUsd(sum.base.opProfitUsd)} (${sum.base.opMarginPct}%) to ${fmtUsd(sum.sim.opProfitUsd)} (${sum.sim.opMarginPct}%, delta ${d.opProfitDeltaUsd >= 0 ? '+' : ''}${fmtUsd(d.opProfitDeltaUsd)})`,
       `4-Factor Profit Bridge (ties to $0.00): Price Effect ${fmtUsd(d.priceEffectUsd)}, Volume Effect ${fmtUsd(d.volumeEffectUsd)}, Direct Cost Effect ${fmtUsd(d.directCostEffectUsd)}, Overhead Effect ${fmtUsd(d.overheadEffectUsd)}`,
-      sum.canViewBooks
+      (sum.canViewBooks && sum.sim.projected30dCashUsd == null)
+        ? 'No 30-day till: this business\'s cash book is not complete in ISABI yet. Do not state or project a till figure.'
+        : sum.canViewBooks
         ? `30-Day Cash & Working Capital: Projected Till ${fmtUsd(sum.sim.projected30dCashUsd)} (${d.projected30dCashDeltaUsd >= 0 ? '+' : ''}${fmtUsd(d.projected30dCashDeltaUsd)} vs baseline, DSO ${sum.sim.dsoDays}d, WC Cash Shift ${fmtUsd(d.wcCashDeltaUsd)}, Runway ${sum.sim.runwayDays}d)`
         : 'Books & Treasury balances are restricted for this seat; discuss only revenue, volume, and unit break-even.',
       `Break-Even & Iso-Profit: Break-Even Volume ${be.breakEvenVolumeRatioPct != null ? be.breakEvenVolumeRatioPct + '% of baseline' : 'Contribution Margin <= 0'} | Iso-Profit Volume Delta Needed: ${be.isoProfitVolumeDeltaPct != null ? (be.isoProfitVolumeDeltaPct >= 0 ? '+' : '') + be.isoProfitVolumeDeltaPct + '%' : 'N/A'}`,
@@ -13415,7 +13437,9 @@
         </div>
         <div class="ceo-pv-kpi wi-kpi-card" data-wi-kpi="cash">
           <span class="ceo-pv-kpi-lbl">30-Day Projected Cash & Runway</span>
-          <strong class="ceo-pv-kpi-val num" data-no-i18n="1">${esc(fmtUsd(s.projected30dCashUsd))} <span class="wi-kpi-pct">(${s.runwayDays}d)</span></strong>
+          ${s.projected30dCashUsd == null
+            ? '<strong class="ceo-pv-kpi-val">Not Tracked Yet</strong>'
+            : `<strong class="ceo-pv-kpi-val num" data-no-i18n="1">${esc(fmtUsd(s.projected30dCashUsd))} <span class="wi-kpi-pct">(${s.runwayDays}d)</span></strong>`}
           <small class="ceo-pv-kpi-sub ${d.projected30dCashDeltaUsd > 0 ? 'pos' : (d.projected30dCashDeltaUsd < 0 ? 'neg' : '')}" data-no-i18n="1">WC ${esc(fmtSigned(d.wcCashDeltaUsd))} · DSO ${s.dsoDays}d</small>
         </div>
       `
@@ -18974,7 +18998,7 @@
       </div>
 
       <div class="cf-aging-foot">
-        <span><span>Till Liquidity</span>: <b class="num" data-no-i18n="1">${!red && s.closingCombinedTillUsd !== null ? `$${Math.round(s.closingCombinedTillUsd).toLocaleString('en-US')}` : 'Redacted'}</b></span>
+        <span><span>Till Liquidity</span>: ${!red && s.closingCombinedTillUsd !== null ? `<b class="num" data-no-i18n="1">$${Math.round(s.closingCombinedTillUsd).toLocaleString('en-US')}</b>` : (red ? '<b class="num" data-no-i18n="1">Redacted</b>' : '<b>Not Tracked Yet</b>')}</span>
         <span><span>Post-Urgent Till</span>: <b class="num ${!red && s.postReplenishTillUsd !== null && s.postReplenishTillUsd < 0 ? 'crit' : 'good'}" data-no-i18n="1">${!red && s.postReplenishTillUsd !== null ? `$${Math.round(s.postReplenishTillUsd).toLocaleString('en-US')}` : 'Redacted'}</b></span>
         <span><span>Carrying Drag</span>: <b class="num brass" data-no-i18n="1">${red ? 'Redacted' : `$${Math.round(s.annualCarryingDragUsd || 0).toLocaleString('en-US')}/yr`}</b></span>
       </div>

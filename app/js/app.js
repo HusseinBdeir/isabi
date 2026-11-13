@@ -4264,7 +4264,7 @@
     const t = range ? range.to : MAX_DATE;
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
     const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
-    const cacheKey = `${rawKey}|${coKey}|${allowedCompanyNames().join(',')}|${offScope ? 'OFF' : 'ALL'}|${STATE.basis}|${STATE.period}|${f}|${t}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${SEED._recordsReady ? 1 : 0}`;
+    const cacheKey = `${rawKey}|${coKey}|${allowedCompanyNames().join(',')}|${offScope ? 'OFF' : 'ALL'}|${STATE.basis}|${STATE.period}|${f}|${t}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${SEED._recordsReady ? 1 : 0}|${activeSeatFullFinKey()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}`;
     if (_kpiRangeCacheMap.has(cacheKey)) return _kpiRangeCacheMap.get(cacheKey);
 
     const txRaw = computeLocalKPI(m, range, 'tx', coKey);
@@ -19144,7 +19144,7 @@
         opExUsd, opProfitUsd,
         opMarginPct: revBase > 0 ? clampPct((opProfitUsd / den) * 100) : 0,
         txCount: Math.round(Number(icRes.matchedCount || totals.loads || 0)),
-        cashTillUsd: round2(Number(totals.cash_till || kSnap.cash_till || 0)),
+        cashTillUsd: kSnap.till_tracked === false ? null : round2(Number(totals.cash_till || 0)),
         arBalanceUsd: round2(Number(totals.ar_balance || 0)),
         arOverdueUsd: round2(Number(icRes.totalNetUnpaidUsd || 0)),
         hasActivity: true
@@ -19175,7 +19175,7 @@
         opExUsd, opProfitUsd,
         opMarginPct: revBase > 0 ? clampPct((opProfitUsd / den) * 100) : 0,
         txCount: Math.round((hsp.venueRows || []).length + (hsp.membershipRows || []).length),
-        cashTillUsd: round2(Number(kSnap.cash_till || 0)),
+        cashTillUsd: kSnap.till_tracked === false ? null : round2(Number(kSnap.cash_till || 0)),
         arBalanceUsd: round2(Number(s.totalMemArrears || 0)),
         arOverdueUsd: round2(Number(s.totalMemArrears || 0)),
         hasActivity: true
@@ -19202,7 +19202,7 @@
         opExUsd, opProfitUsd,
         opMarginPct: revBase > 0 ? clampPct((opProfitUsd / den) * 100) : 0,
         txCount: (trd.salesRows || []).filter(r => !r.is_gap).length,
-        cashTillUsd: round2(Number(kSnap.cash_till || 0)),
+        cashTillUsd: kSnap.till_tracked === false ? null : round2(Number(kSnap.cash_till || 0)),
         arBalanceUsd: round2(Number(s.grossArUsd || 0)),
         arOverdueUsd: round2(Math.max(0, Number(s.grossArUsd || 0) - Number(s.activePromisesUsd || 0))),
         hasActivity: true
@@ -19229,7 +19229,7 @@
         opExUsd, opProfitUsd,
         opMarginPct: revUsd > 0 ? clampPct((opProfitUsd / den) * 100) : 0,
         txCount: (re.leases || []).length,
-        cashTillUsd: round2(Number(kSnap.cash_till || 0)),
+        cashTillUsd: kSnap.till_tracked === false ? null : round2(Number(kSnap.cash_till || 0)),
         arBalanceUsd: round2(Number(s.openRentArUsd || 0) + Number(s.salesOpenUsd || 0)),
         arOverdueUsd: round2(Number(s.openRentArUsd || 0)),
         hasActivity: true
@@ -19260,7 +19260,7 @@
         opProfitUsd,
         opMarginPct: netRev > 0 ? clampPct((opProfitUsd / Math.max(1, netRev)) * 100) : 0,
         txCount: Math.round(Number(s.totalPolicyCount || (ins.policies || []).length)),
-        cashTillUsd: round2(Number(s.cashHeldUsd || 0)),
+        cashTillUsd: kSnap.till_tracked === false ? null : round2(Number(kSnap.cash_till || 0)),
         arBalanceUsd: round2(Number(s.openClientAr4112Usd || 0)),
         arOverdueUsd: 0,
         hasActivity: true
@@ -21399,12 +21399,14 @@
       formTargetFn: () => '',
       formValFn: () => {
         const k = getKPI() || {};
+        if (k.till_tracked === false) return null; // no till balance until the industry's cash book is whole
         const cur = Number(k.cash_till_usd != null ? k.cash_till_usd : (k.cash_till || 0));
         const isCash = norm(val('f_method') || 'Cash') === 'cash';
         return round2(cur - (isCash ? Math.max(0, num('f_amount')) : 0));
       },
       recordsFn: () => {
         const k = getKPI() || {};
+        if (k.till_tracked === false) return [];
         const bal = Number(k.cash_till_usd != null ? k.cash_till_usd : (k.cash_till || 0));
         const co = STATE.company === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[STATE.company] || 'WTC');
         return [{ id: 'cash_till_' + co, rid: 'cash_till', rkey: 'expenses', date: SEED_DATE || '', company: co, target: '', party: `${co} USD Cash Till`, detail: 'Live net cash balance', value: round2(bal) }];
@@ -21973,7 +21975,9 @@
         const formTarget = typeof spec.formTargetFn === 'function' ? spec.formTargetFn() : '';
         if (!matchesCustomAlertTarget(formTarget, cr.target)) return;
       }
-      const curVal = Number(spec.formValFn(calcRes || {}) || 0);
+      const rawFormVal = spec.formValFn(calcRes || {});
+      if (rawFormVal === null) return; // the metric has no value in this scope (e.g. an industry with no till yet)
+      const curVal = Number(rawFormVal || 0);
       if (!spec.allowZeroOrNeg && !(curVal > 0)) return;
       const thresh = Number(cr.threshold || 0);
       const op = cr.op === '<' ? '<' : '>';
@@ -44854,7 +44858,16 @@
     moves: opts => buildCashTillMoves(opts || {}),
     daily: opts => buildDailyTillSheetRows(opts || {}),
     sheet: co => { const mm = getModel(co); return (mm && mm.cash_flow_sheet) || null; },
-    setDates: (from, to) => setDateFilter({ from, to })
+    setDates: (from, to) => setDateFilter({ from, to }),
+    indMoves: (ind, co, o) => buildIndustryCashMoves(ind, co, o || {}),
+    kpi: co => getKPI(co),
+    rollup: () => computeEnterpriseRollup(),
+    liq: co => computeCashflowLiquiditySnapshot({ companyKey: co, canViewBooks: true }),
+    pageGuide: co => computeUniversalPageGuideSnapshot({ company: co, view: 'cashflow' }),
+    whatIf: co => computeWhatIfScenarioSnapshot({ company: co }),
+    runway: co => computeTreasuryRunwaySnapshot({ companyKey: co }),
+    handover: () => computeDailyHandoverSnapshot({}),
+    alertVal: key => (CUSTOM_ALERT_METRICS[key] && CUSTOM_ALERT_METRICS[key].formValFn ? CUSTOM_ALERT_METRICS[key].formValFn({}) : undefined)
   };
 
   function buildDailyTillSheetRows(opts = {}) {
@@ -45030,6 +45043,9 @@
     };
     if (fullFin) stripUnsplitBorrowLbp(out.borrowing);
     if (!STATE.customRecords || coKey === 'lionstransport') return out;
+    // Other industries build these tables from their full entry list (app edits, voids and app rows already in):
+    // applying the app deltas again would count every edit twice.
+    if (cf && cf._fromAllEntries) return out;
     const allowed = allowedCompanyNames();
     const matchCo = r => matchesCashScopeCompany(r, coKey, allowed, { excludeLions: true });
     const upsertNamed = (tbl, rawName, applyFn) => {
@@ -45343,6 +45359,31 @@
           <button type="button" class="btn cf-till-scrub-reset" id="cfTillScrubReset"${startIdx === lastIdx ? ' hidden' : ''}>Reset</button>
         </div>`;
     }
+    // Other industries without a whole cash book yet (siblingCashBook, owner 2026-11-13): no till balance anywhere. The
+    // cards show the cash entries loaded so far and the sheets still missing; the register lists those real entries.
+    const sibTillOff = !tillIsMfg && k.till_tracked === false;
+    const sibMissing = sibTillOff && Array.isArray(k.till_missing) ? k.till_missing : [];
+    const sibLoadedLbp = Math.abs(Number(k.live_in_lbp || 0)) > 1 || Math.abs(Number(k.live_out_lbp || 0)) > 1;
+    const sibTillOffCardsHtml = sibTillOff ? `${insightCard({
+            label: 'Cash Till',
+            badgeHtml: '<span class="cockpit-pill-tag warn">Not Tracked Yet</span>',
+            val: '<span>No Till Balance</span>',
+            sub: `<span>Loaded Entries</span> · In <b>${fmtUSDk(k.live_in_usd)}</b> · Out <b>${fmtUSDk(k.live_out_usd)}</b>${sibLoadedLbp ? ` · LBP In <b>${fmtLBPk(k.live_in_lbp)}</b> · Out <b>${fmtLBPk(k.live_out_lbp)}</b>` : ''}`,
+            tone: 'brass'
+          })}${insightCard({
+            label: 'Missing From the Cash Book',
+            badgeHtml: '<span class="cockpit-pill-tag warn">Not Loaded Yet</span>',
+            val: sibMissing.length ? `<span data-no-i18n="1">${fmtNum(sibMissing.length)}</span>` : '<span>Not Confirmed</span>',
+            sub: sibMissing.length
+              ? sibMissing.map(x => `<span>${esc(x)}</span>`).join('<span class="cf-till-sep" aria-hidden="true"> · </span>')
+              : '<span>The cash book has not been checked as complete yet.</span>',
+            tone: 'steel'
+          })}` : '';
+    const sibTillOffStripHtml = sibTillOff ? `
+        <div class="cf-till-start-strip cf-till-off-strip" id="cfSiblingTillOff" role="note">
+          ${ic('alert')}
+          <span class="cf-till-start-txt"><b>No Till Balance Yet</b><span class="cf-till-sep" aria-hidden="true">·</span><span>Only part of this business's cash book is in ISABI. The entries below are the real cash rows loaded so far, and the running balances count only those rows.</span></span>
+        </div>` : '';
     const q = STATE.search.trim().toLowerCase();
     const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
 
@@ -45358,7 +45399,8 @@
 
     const allMoves = buildCashTillMoves({ user: u });
     const allDailyRows = buildDailyTillSheetRows({ user: u });
-    const isDailyMode = STATE.cfEntryMode === 'daily';
+    // An industry without a whole cash book has no till, so no Daily Till Sheet of running balances either.
+    const isDailyMode = STATE.cfEntryMode === 'daily' && !sibTillOff;
 
     // Apply interactive drill focus (Day, Month, or Counterparty)
     const focusDate = STATE.cfFocusDate || '';
@@ -45521,7 +45563,7 @@
     const cfBridgeRange = periodRange(STATE.period);
     const cfBridgeToday = todayISO();
     const cashTillBridge = (kk, coKey, shownNet, liveU) => {
-      if (!kk || !Number.isFinite(Number(shownNet))) return null;
+      if (!kk || kk.till_tracked === false || !Number.isFinite(Number(shownNet))) return null;
       let openU, closeU;
       const coIsMfg = (typeof getActiveIndustry === 'function' ? getActiveIndustry(coKey) : 'Manufacturing') === 'Manufacturing';
       if (coIsMfg && kk.period_till_usd != null && kk.net_cash_usd != null) {
@@ -45630,7 +45672,7 @@
         })
       : '';
 
-    const isBridgeMonthly = STATE.cfBridgeMode === 'months';
+    const isBridgeMonthly = STATE.cfBridgeMode === 'months' && !sibTillOff;
     const cleanCfUsd = (v, eps = 0.5) => {
       const n = Number(v || 0);
       return Math.abs(n) < eps ? 0 : n;
@@ -45679,7 +45721,7 @@
           <div class="cockpit-title">Cash Flow &amp; Till</div>
         </div>
         <div class="cockpit-pills insight-grid">
-          ${insightCard({
+          ${sibTillOff ? sibTillOffCardsHtml : `${insightCard({
             label: 'USD Cash Till ($)',
             badgeHtml: tillBadgeHtml(Math.abs(tillUsd) < 0.005 ? 'Balanced $0' : 'Live Drawer', 'emerald'),
             val: `${fmtUSD(tillUsd, 2)} <small>USD</small>`,
@@ -45711,18 +45753,18 @@
             id: 'cfTillValTot',
             sub: `USD <b class="cf-till-tot-usd" data-no-i18n="1">${fmtUSD(tillUsd, 2)}</b> + LBP <b class="cf-till-tot-lbp" data-no-i18n="1">${fmtLBP(tillLbp)}</b> ÷ ${fmtNum(rate, 0)}`,
             tone: 'brass'
-          })}
+          })}`}
           ${insightCard({
             label: 'Selected Period Cash Flow',
             badge: esc(k.label || 'All-Time'),
             val: `${fmtUSD(k.net_cash_flow, 2)}`,
-            sub: `In <b>${fmtUSDk(k.cash_inflow)}</b> · Out <b>${fmtUSDk(k.cash_outflow)}</b> · USD <b>${fmtUSD(k.net_cash_usd, 2)}</b> · LBP <b>${fmtLBPk(k.net_cash_lbp)}</b>${tillIsMfg && k.period_till != null && k.net_cash_flow != null ? ` · Start Till <b>${fmtUSD(round2(Number(k.period_till) - Number(k.net_cash_flow)), 2)}</b>` : ''} · End Till <b>${fmtUSD(k.period_till, 2)}</b>`,
+            sub: `In <b>${fmtUSDk(k.cash_inflow)}</b> · Out <b>${fmtUSDk(k.cash_outflow)}</b> · USD <b>${fmtUSD(k.net_cash_usd, 2)}</b> · LBP <b>${fmtLBPk(k.net_cash_lbp)}</b>${tillIsMfg && k.period_till != null && k.net_cash_flow != null ? ` · Start Till <b>${fmtUSD(round2(Number(k.period_till) - Number(k.net_cash_flow)), 2)}</b>` : ''}${sibTillOff ? '' : ` · End Till <b>${fmtUSD(k.period_till, 2)}</b>`}`,
             tone: 'steel'
           })}
         </div>
       </div>
       ${tillScrubHtml}
-      ${tillStartStripHtml}
+      ${tillStartStripHtml}${sibTillOffStripHtml}
 
       <div class="panel-card" id="tillRecentPanel" style="margin-bottom:14px">
         <div class="panel-head cf-register-head">
@@ -45730,7 +45772,7 @@
             <div class="panel-title"><span>CASH TILL REGISTER</span></div>
             <div class="cf-mode-switch" role="tablist" aria-label="Cash Till View Mode">
               <button type="button" class="cf-mode-btn ${!isDailyMode ? 'active' : ''}" data-cf-mode="entries" role="tab" aria-selected="${!isDailyMode}">Individual Entries <span>(${fmtNum(allMoves.length)})</span></button>
-              <button type="button" class="cf-mode-btn ${isDailyMode ? 'active' : ''}" data-cf-mode="daily" role="tab" aria-selected="${isDailyMode}">Daily Till Sheet <span>(${fmtNum(allDailyRows.length)} Days)</span></button>
+              ${sibTillOff ? '' : `<button type="button" class="cf-mode-btn ${isDailyMode ? 'active' : ''}" data-cf-mode="daily" role="tab" aria-selected="${isDailyMode}">Daily Till Sheet <span>(${fmtNum(allDailyRows.length)} Days)</span></button>`}
             </div>
             <button type="button" class="btn cf-liquidity-brief-btn" id="cfLiquidityBriefBtn" data-page-guide-open="1" data-pg-source="cashflow" aria-expanded="false" data-ui-tip="Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing">Liquidity Brief</button>
             <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
@@ -45834,9 +45876,9 @@
               <button type="button" class="btn sales-recon-reset" data-jump-co="${esc(activeIndCf === 'Manufacturing' ? 'manufacturing-group' : ('industry:' + activeIndCf))}">Show All ${esc(activeIndCf === 'Manufacturing' ? 'Group' : activeIndCf)} (${indCosCf.length})</button>
             </div>
             <div class="sales-recon-metrics">
-              <span><small>USD Till ($)</small><b>${fmtUSD(tillUsd, 2)}</b></span>
+              ${sibTillOff ? '<span data-no-recon-sub="1"><small>Till</small><b>Not Tracked Yet</b></span>' : `<span><small>USD Till ($)</small><b>${fmtUSD(tillUsd, 2)}</b></span>
               <span><small>LBP Till (LL)</small><b>${fmtLBP(tillLbp)}</b></span>
-              <span><small>Combined Till</small><b class="brass">${fmtUSD(tillTot, 2)}</b></span>
+              <span><small>Combined Till</small><b class="brass">${fmtUSD(tillTot, 2)}</b></span>`}
               <span><small>Cash In ($)</small><b class="good">+${fmtUSD(isDailyMode ? dyInUsd : mvInUsd, 2)}</b></span>
               <span><small>Cash Out ($)</small><b class="crit">-${fmtUSD(isDailyMode ? dyOutUsd : mvOutUsd, 2)}</b></span>
               <span><small>Net Cash ($)</small><b>${fmtSignedUSD(isDailyMode ? dyNetUsd : mvUsdSum, 2)}</b></span>
@@ -45959,7 +46001,7 @@
         `}
       </div>
 
-      ${cfVisualsHtml}
+      ${sibTillOff ? '' : cfVisualsHtml}
 
       <div class="panel-card" id="tillBridgePanel" style="margin-bottom:14px">
         <div class="panel-head cf-register-head">
@@ -45967,7 +46009,7 @@
             <div class="panel-title"><span>${isBridgeMonthly ? 'MONTHLY CASH FLOW &amp; TILL PROGRESSION (OPERATING VS TREASURY SWEEPS)' : 'CUMULATIVE BOOK TILL RECONCILIATION BY CATEGORY (USD &amp; LBP)'}</span></div>
             <div class="cf-mode-switch" role="tablist" aria-label="Book Till Reconciliation Mode">
               <button type="button" class="cf-mode-btn ${!isBridgeMonthly ? 'active' : ''}" data-cf-bridge-mode="streams" role="tab" aria-selected="${!isBridgeMonthly}">By Stream <span>(${summaryRows.length} Categories)</span></button>
-              <button type="button" class="cf-mode-btn ${isBridgeMonthly ? 'active' : ''}" data-cf-bridge-mode="months" role="tab" aria-selected="${isBridgeMonthly}">Monthly Progression <span>(${fmtNum(progRows.length)} Months)</span></button>
+              ${sibTillOff ? '' : `<button type="button" class="cf-mode-btn ${isBridgeMonthly ? 'active' : ''}" data-cf-bridge-mode="months" role="tab" aria-selected="${isBridgeMonthly}">Monthly Progression <span>(${fmtNum(progRows.length)} Months)</span></button>`}
             </div>
           </div>
           <span class="panel-meta">${exportBtn('tillBridgePanel', isBridgeMonthly ? 'Monthly_Cash_Flow_Progression' : 'Cash_Till_Reconciliation')}</span>
@@ -46005,13 +46047,13 @@
             </tbody>
             <tfoot>
               <tr>
-                <td><b>CLOSING BOOK CASH TILL</b></td>
+                <td><b>${sibTillOff ? 'LOADED ENTRIES (NO TILL YET)' : 'CLOSING BOOK CASH TILL'}</b></td>
                 <td class="r"><b>${fmtUSD(k.live_in_usd != null ? k.live_in_usd : cf.live_till.in_usd, 2)}</b></td>
                 <td class="r"><b>${fmtUSD(k.live_out_usd != null ? k.live_out_usd : cf.live_till.out_usd, 2)}</b></td>
-                <td class="r"><b>${fmtUSD(liveUsd, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(sibTillOff ? round2(Number(k.live_in_usd || 0) - Number(k.live_out_usd || 0)) : liveUsd, 2)}</b></td>
                 <td class="r"><b>${fmtLBP(k.live_in_lbp != null ? k.live_in_lbp : cf.live_till.in_lbp)}</b></td>
                 <td class="r"><b>${fmtLBP(k.live_out_lbp != null ? k.live_out_lbp : cf.live_till.out_lbp)}</b></td>
-                <td class="r"><b>${fmtLBP(liveLbp)}</b></td>
+                <td class="r"><b>${fmtLBP(sibTillOff ? Math.round(Number(k.live_in_lbp || 0) - Number(k.live_out_lbp || 0)) : liveLbp)}</b></td>
               </tr>
             </tfoot>
           </table>
@@ -46405,7 +46447,7 @@
           })}
           ${insightCard({
             label: 'Working Capital Posture',
-            badge: `Till: ${fmtUSD(k.cash_till, 0)}`,
+            badge: `Till: ${fmtTillOrUntracked(k, 0)}`,
             val: `${fmtUSD((k.ar_balance || 0) - (k.ap_balance || 0), 0)} <small>Net AR−AP</small>`,
             sub: `Open AR <b>${fmtUSD(k.ar_balance, 0)}</b> vs Open AP <b>${fmtUSD(k.ap_balance, 0)}</b>`,
             tone: 'steel'
@@ -47572,7 +47614,7 @@
         operating_profit: op,
         ar_balance: rs.totalMemArrears,
         ap_balance: rs.totalOpenPartnerPayable,
-        cash_till: rs.totalMemPaid
+        cash_till: siblingTillForRollup('Hospitality & Resorts', key)
       };
     };
 
@@ -47591,7 +47633,7 @@
         operating_profit: round2(ts.totalSalesMargin - opEx),
         ar_balance: ts.grossArUsd,
         ap_balance: ts.unallocatedLandedUsd,
-        cash_till: ts.customerAdvancesUsd
+        cash_till: siblingTillForRollup('Automotive & Heavy Trading', key)
       };
     };
 
@@ -47613,7 +47655,7 @@
         operating_profit: round2(gm - ps.unrechargedUsd),
         ar_balance: round2(ps.openRentArUsd + ps.salesOpenUsd),
         ap_balance: ps.securityDepositsHeldUsd,
-        cash_till: ps.totalCollectedRentUsd
+        cash_till: siblingTillForRollup('Real Estate & Property', key)
       };
     };
 
@@ -47633,7 +47675,7 @@
         operating_profit: round2(is.netCommUsd + is.policyFees7064Usd - opEx),
         ar_balance: is.openClientAr4112Usd,
         ap_balance: is.payableToCarriers4017Usd,
-        cash_till: is.cashHeldUsd
+        cash_till: siblingTillForRollup('Insurance & Brokerage', 'insurance')
       };
     })();
 
@@ -47657,7 +47699,7 @@
           operating_profit: -hldExpTotal,
           ar_balance: 0,
           ap_balance: 0,
-          cash_till: 0
+          cash_till: siblingTillForRollup('Holding & Treasury', 'bdeirholding')
         }
       },
       { key: 'blanca', name: 'Blanca', industry: 'Hospitality & Resorts', sector: 'Beach Resort, Chalets & F&B', k: hspResortStats('blanca') },
@@ -47723,7 +47765,9 @@
       operating_profit: round2(entities.reduce((s, r) => s + Number(r.k.operating_profit || 0), 0)),
       ar_balance: round2(entities.reduce((s, r) => s + Number(r.k.ar_balance || 0), 0)),
       ap_balance: round2(entities.reduce((s, r) => s + Number(r.k.ap_balance || 0), 0)),
-      cash_till: round2((kGroup.cash_till || 0) + byIndustry.hsp.cash_till + byIndustry.trd.cash_till + byIndustry.re.cash_till + byIndustry.ins.cash_till)
+      cash_till: round2((kGroup.cash_till || 0) + byIndustry.hsp.cash_till + byIndustry.trd.cash_till + byIndustry.re.cash_till + byIndustry.ins.cash_till + byIndustry.hld.cash_till),
+      // true while any other industry has no whole cash book (siblingCashBook): group cash then counts tracked tills only
+      cash_partial: ['Holding & Treasury', 'Hospitality & Resorts', 'Automotive & Heavy Trading', 'Real Estate & Property', 'Insurance & Brokerage'].some(ind => !siblingCashBook(ind).tracked)
     };
 
     return {
@@ -47814,7 +47858,7 @@
           <div class="kpi-sub">6 Industries · 14 Active Subsidiaries</div>
         </div>
         <div class="kpi-card" data-jump-view="cashflow">
-          <div class="kpi-label">GROUP COMBINED CASH, TILL &amp; AR</div>
+          <div class="kpi-label">${totals.cash_partial ? 'GROUP CASH (TRACKED TILLS) &amp; AR' : 'GROUP COMBINED CASH, TILL &amp; AR'}</div>
           <div class="kpi-val brass">${fmtUSD(combinedCashTill, 0)}</div>
           <div class="kpi-sub">AR: <b>${fmtUSDk(totals.ar_balance)}</b> · AP: <b>${fmtUSDk(totals.ap_balance)}</b></div>
         </div>
@@ -56678,7 +56722,7 @@
           cls: opProf < 0 ? 'crit' : 'good', tip: 'Open Group P&L Schedule'
         },
         {
-          jump: 'cashflow', icon: 'cashflow', k: 'Cash & IC Pairing',
+          jump: 'cashflow', icon: 'cashflow', k: totals.cash_partial ? 'Cash (Tracked Tills) & IC Pairing' : 'Cash & IC Pairing',
           badge: hasIcActivity ? `${icRes.reconRatePct.toFixed(1)}% Paired` : 'No IC Entries', badgeTone: icRes.openCount > 0 ? 'brass' : 'good',
           v: fmtUSD(totals.cash_till, 0), subVal: `${fmtNum(icRes.matchedCount)} pairs`,
           segs: hasIcActivity ? [{ pct: icRes.reconRatePct, tone: 'emerald' }, { pct: Math.max(0, 100 - icRes.reconRatePct), tone: 'amber' }] : [{ pct: 0, tone: 'emerald' }],
@@ -57593,7 +57637,7 @@
           { label: 'Consolidated Net Profit', val: fmtUSD(entRollup.totals.operating_profit, 0), sub: 'Across all 14 entities & 6 verticals', cls: 'good' },
           { label: 'Given to Sisters ($)', val: fmtUSD(icData.totalGivenUsd, 0), sub: `Paid Back ${fmtUSD(icData.totalPaidBackUsd, 0)} (${(icData.overallRepayPct || 0).toFixed(1)}%)`, cls: 'brass' },
           { label: 'Net Unpaid Sister Debt', val: fmtUSD(icData.totalNetUnpaidUsd, 0), sub: `${fmtNum(icData.unpaidCorridorCount)} corridors open`, cls: 'warn' },
-          { label: 'Consolidated Cash & Bank', val: fmtUSD(entRollup.totals.cash_till, 0), sub: `Net AR ${fmtUSD(entRollup.totals.ar_balance, 0)}`, cls: 'good' }
+          { label: entRollup.totals.cash_partial ? 'Cash & Bank (Tracked Tills)' : 'Consolidated Cash & Bank', val: fmtUSD(entRollup.totals.cash_till, 0), sub: `Net AR ${fmtUSD(entRollup.totals.ar_balance, 0)}`, cls: 'good' }
         ],
         chartTitle: 'Consolidated Revenue & Operating Profit by Industry Vertical ($)',
         bars: indBars,
@@ -59188,7 +59232,9 @@
     const dayCashIn = round2(dayCashList.reduce((s, m) => s + Number(m.in_usd || 0), 0));
     const dayCashOut = round2(dayCashList.reduce((s, m) => s + Number(m.out_usd || 0), 0));
     const dayNetCash = round2(dayCashIn - dayCashOut);
-    const closingTillUsd = round2(cashMoves.filter(m => String(m.date || '').slice(0, 10) <= targetDate).reduce((s, m) => s + Number(m.in_usd || 0) - Number(m.out_usd || 0), 0));
+    // A running sum of a partial cash book is not a till: no till until the industry's cash book is whole.
+    const dopsTillOff = ind !== 'Manufacturing' && !siblingCashBook(ind).tracked;
+    const closingTillUsd = dopsTillOff ? null : round2(cashMoves.filter(m => String(m.date || '').slice(0, 10) <= targetDate).reduce((s, m) => s + Number(m.in_usd || 0) - Number(m.out_usd || 0), 0));
 
     const rawDopsSearch = STATE.dailyOpsSearch != null ? String(STATE.dailyOpsSearch) : String(STATE.dopsSearch || '');
     const dopsQ = norm(rawDopsSearch);
@@ -59340,7 +59386,7 @@
               <span class="dops-kpi-val" id="dopsKpiCashVal">${canViewBooks ? `${dayNetCash > 0 ? '+' : ''}${fmtUSD(dayNetCash, 0)}` : 'Restricted'}</span>
               <span class="dops-kpi-unit">${canViewBooks ? `Period In ${fmtUSDk(cashIn)} · Out ${fmtUSDk(cashOut)}` : 'Books Restricted'}</span>
             </div>
-            <div class="dops-kpi-sub">${canViewBooks ? `Day In <b>${fmtUSD(dayCashIn, 0)}</b> · Out <b>${fmtUSD(dayCashOut, 0)}</b> · Till <b>${fmtUSD(closingTillUsd, 0)}</b>` : 'Books Restricted'}</div>
+            <div class="dops-kpi-sub">${canViewBooks ? `Day In <b>${fmtUSD(dayCashIn, 0)}</b> · Out <b>${fmtUSD(dayCashOut, 0)}</b> · Till <b>${closingTillUsd === null ? 'Not Tracked Yet' : fmtUSD(closingTillUsd, 0)}</b>` : 'Books Restricted'}</div>
           </div>
 
           <div class="dops-kpi accent-plant" data-nav-jump="payroll" role="button" tabindex="0">
@@ -59843,6 +59889,66 @@
   // ============================================================================
   const _indGlModelCache = new Map();
 
+  // Cash books of the other five industries (owner 2026-11-13). A business shows a till only once ISABI holds its whole
+  // cash book; until then its Cash Flow lists the real dated cash rows loaded so far and names the sheets still missing,
+  // and no screen shows a till balance for it (the till cards say so, the group roll-up leaves it out). Set `tracked`
+  // when the top-up loads the missing sheets: the till is then the sum of the business's entries, so the cards, the
+  // register, the daily sheet and the till bridge agree by construction. Demo Company always shows its synthetic till.
+  function siblingCashBook(ind) {
+    // Inside the function: getKPI can run at start-up before a module-level const is initialised.
+    const books = {
+      'Holding & Treasury': { tracked: false, missing: [] },
+      // Venue rows are taken whole ("Cash & Card", POS); the card share must be split out before the till can be tracked.
+      'Hospitality & Resorts': { tracked: false, missing: ['Salaries', 'Supplier Payments', 'Partner Payouts', 'Most Expenses', 'Cash vs Card Split'] },
+      'Automotive & Heavy Trading': { tracked: false, missing: ['Customer Receipts', 'Supplier Payments', 'Salaries'] },
+      // Some receipts and works are bank wires (the Iraq remittance ledger): split bank from cash before tracking.
+      'Real Estate & Property': { tracked: false, missing: ['Expenses', 'Salaries', 'Bank vs Cash Split'] },
+      'Insurance & Brokerage': { tracked: false, missing: ['Insurer Remittance Dates'] }
+    };
+    const b = books[ind] || { tracked: false, missing: [] };
+    return { tracked: Boolean(b.tracked || isDemoScopeActive()), missing: b.missing.slice() };
+  }
+
+  // Cache-key part for the active seat's finance rights (External / Extended / Salary / Borrowing rows shown or not).
+  function activeSeatFullFinKey() {
+    const u = activeUser() || {};
+    return (isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin)) ? 'F1' : 'F0';
+  }
+
+  // A missing cash-book sheet name in the reader's language (the AR / FR sentences never carry English names).
+  function sheetNameIn(name, lang) {
+    try { return (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(name, lang) : name; } catch (_) { return name; }
+  }
+
+  // A till figure for display: 'Not Tracked Yet' for an industry whose cash book is not whole in ISABI (no $0 shown).
+  function fmtTillOrUntracked(k, dec = 0) {
+    return (k && k.till_tracked === false) ? 'Not Tracked Yet' : fmtUSD(k ? k.cash_till : 0, dec);
+  }
+
+  // In / Out of a sibling business's cash entries (all dates and the selected dates) and, when its book is tracked,
+  // its till (the sum of the entries up to the end of the dates). One source: buildIndustryCashMoves.
+  function sumIndustryCashMoves(ind, rawKey) {
+    const moves = buildIndustryCashMoves(ind, rawKey, { ignorePeriod: true });
+    const pr = periodRange(STATE.period);
+    const f = pr && pr.from ? String(pr.from) : '';
+    const t = pr && pr.to ? String(pr.to) : '';
+    const s = { liveInU: 0, liveOutU: 0, liveInL: 0, liveOutL: 0, perInU: 0, perOutU: 0, perInL: 0, perOutL: 0, uptoU: 0, uptoL: 0 };
+    for (let i = 0; i < moves.length; i++) {
+      const mv = moves[i];
+      if (!mv) continue;
+      const inL = mv.lbp > 0 ? mv.lbp : 0;
+      const outL = mv.lbp < 0 ? -mv.lbp : 0;
+      s.liveInU += mv.in_usd; s.liveOutU += mv.out_usd; s.liveInL += inL; s.liveOutL += outL;
+      const d = String(mv.date || '');
+      if (!t || (d && d <= t)) { s.uptoU += mv.usd; s.uptoL += mv.lbp; }
+      if ((!f || (d && d >= f)) && (!t || (d && d <= t))) {
+        s.perInU += mv.in_usd; s.perOutU += mv.out_usd; s.perInL += inL; s.perOutL += outL;
+      }
+    }
+    Object.keys(s).forEach(k => { s[k] = /L$/.test(k) ? Math.round(s[k]) : round2(s[k]); });
+    return s;
+  }
+
   function getIndustryKpiSnapshot(ind, rawKey, baseKpi) {
     const rollup = computeEnterpriseRollup();
     const kKey = rawKey === 'company4235' ? '4235company' : (rawKey === 'insuranceco' ? 'insurance' : rawKey);
@@ -59857,10 +59963,16 @@
     const src = (ind === 'Holding & Treasury')
       ? rollup.totals
       : (entHit ? entHit.k : (rollup.byIndustry[indKeyMap[ind]] || rollup.totals));
-    const demoFloorActive = isDemoScopeActive();
-    const cashTill = round2(Number(src.cash_till != null && (src.cash_till || !demoFloorActive) ? src.cash_till : 48500));
-    const cashIn = round2(Math.max(cashTill + Number(src.expenses || 0), Number(src.sales_ttc || 0) * 0.72, demoFloorActive ? 65000 : 0));
-    const cashOut = round2(Math.max(0, cashIn - cashTill));
+    const rate = 89500;
+    const book = siblingCashBook(ind);
+    const cs = sumIndustryCashMoves(ind, rawKey);
+    // A business without a whole cash book has no till: 0 here, and till_tracked tells the screens to say so.
+    const tillU = book.tracked ? round2(cs.liveInU - cs.liveOutU) : 0;
+    const tillL = book.tracked ? Math.round(cs.liveInL - cs.liveOutL) : 0;
+    const perTillU = book.tracked ? cs.uptoU : 0;
+    const perTillL = book.tracked ? cs.uptoL : 0;
+    const perNetU = round2(cs.perInU - cs.perOutU);
+    const perNetL = Math.round(cs.perInL - cs.perOutL);
     return Object.assign({}, baseKpi || {}, {
       loads: Number(src.loads || 0),
       sales_ttc: round2(Number(src.sales_ttc || 0)),
@@ -59872,44 +59984,99 @@
       operating_profit: round2(Number(src.operating_profit || 0)),
       ar_balance: round2(Number(src.ar_balance || 0)),
       ap_balance: round2(Number(src.ap_balance || 0)),
-      cash_till: cashTill,
-      cash_till_usd: cashTill,
-      cash_till_lbp: 0,
+      till_tracked: book.tracked,
+      till_missing: book.missing,
+      cash_till: round2(tillU + tillL / rate),
+      cash_till_usd: tillU,
+      cash_till_lbp: tillL,
       // this industry has no dated till sheet: never carry the borrowed Manufacturing period till
-      period_till: cashTill,
-      period_till_usd: cashTill,
-      period_till_lbp: 0,
-      cash_in_usd: cashIn,
-      cash_out_usd: cashOut,
-      net_cash_usd: cashTill,
-      net_cash_lbp: 0,
-      // nor the borrowed Manufacturing In / Out (till cards, Selected Period card): this industry's own figures
-      live_in_usd: cashIn,
-      live_out_usd: cashOut,
-      live_in_lbp: 0,
-      live_out_lbp: 0,
-      cash_in_lbp: 0,
-      cash_out_lbp: 0,
-      cash_inflow: cashIn,
-      cash_outflow: cashOut,
-      net_cash_flow: round2(cashIn - cashOut),
+      period_till: round2(perTillU + perTillL / rate),
+      period_till_usd: perTillU,
+      period_till_lbp: perTillL,
+      // nor the borrowed Manufacturing In / Out: this industry's own entries, all dates (live) and the selected dates
+      live_in_usd: cs.liveInU,
+      live_out_usd: cs.liveOutU,
+      live_in_lbp: cs.liveInL,
+      live_out_lbp: cs.liveOutL,
+      cash_in_usd: cs.perInU,
+      cash_out_usd: cs.perOutU,
+      cash_in_lbp: cs.perInL,
+      cash_out_lbp: cs.perOutL,
+      net_cash_usd: perNetU,
+      net_cash_lbp: perNetL,
+      cash_inflow: round2(cs.perInU + cs.perInL / rate),
+      cash_outflow: round2(cs.perOutU + cs.perOutL / rate),
+      net_cash_flow: round2(perNetU + perNetL / rate),
       tb_check: 0,
-      rate_lbp: 89500
+      rate_lbp: rate
     });
   }
 
+  // The till of a sibling business for the group roll-up: the sum of its entries when its cash book is tracked, else 0
+  // (an untracked business adds nothing to group cash rather than an invented figure).
+  function siblingTillForRollup(ind, rawKey) {
+    if (!siblingCashBook(ind).tracked) return 0;
+    const s = sumIndustryCashMoves(ind, rawKey);
+    return round2((s.liveInU - s.liveOutU) + (s.liveInL - s.liveOutL) / 89500);
+  }
+
+  // Every real dated cash row of a sibling business (owner 2026-11-13: no sample slices, no made-up amounts or dates).
+  // Seed rows carry the app's edits and drop its voids (by id); app-keyed rows come on top. With opts.baselineOnly the
+  // app-keyed rows are left out (the daily sheet adds them back from the full list, as for Manufacturing).
+  // Small content hash for cache keys (an edit that keeps the JSON length must still change the key).
+  function indCashStrHash(str) {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    return `${str.length}.${(h >>> 0).toString(36)}`;
+  }
+
   function buildIndustryCashMoves(ind, rawKey, opts = {}) {
-    const kSnap = getIndustryKpiSnapshot(ind, rawKey, {});
-    const coLbl = COMPANY_LABELS[rawKey] || (ind === 'Holding & Treasury' ? 'Bdeir Holding' : ind);
+    const effRawKey = rawKey || STATE.company || ('industry:' + ind);
+    const effScopeKey = effRawKey === DEMO_COMPANY_KEY ? ('industry:' + ind) : effRawKey;
+    const allowed = effRawKey === DEMO_COMPANY_KEY ? null : allowedCompanyNames(opts.user);
+    // External, Extended, Salary and Borrowing rows are for Owner / Supervisor / finance seats only, as in Manufacturing.
+    const u = opts.user || activeUser();
+    const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
+    const cacheKey = `${ind}|${effScopeKey}|${(allowed || []).join(',')}|${fullFin ? 1 : 0}|${isDemoScopeActive() ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${SEED._industryRev || 0}|${STATE._indCustomRev || 0}|${crCount}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}|${indCashStrHash(JSON.stringify(STATE.industryCustomRows || {}))}|${((SEED.records && SEED.records.sales_tickets) || []).length}`;
+    const _indCashMovesCache = buildIndustryCashMoves._cache || (buildIndustryCashMoves._cache = new Map());
+    let all = _indCashMovesCache.get(cacheKey);
+    if (!all) {
+      all = buildIndustryCashMovesAll(ind, effRawKey, effScopeKey, allowed, fullFin);
+      if (_indCashMovesCache.size > 24) _indCashMovesCache.clear();
+      _indCashMovesCache.set(cacheKey, all);
+    }
+    let rows = opts.baselineOnly ? all.filter(mv => !isAppRecord(mv.raw)) : all;
+    const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
+    if (range) {
+      rows = rows.filter(mv => !mv.date || ((!range.from || mv.date >= range.from) && (!range.to || mv.date <= range.to)));
+    }
+    return rows;
+  }
+
+  function buildIndustryCashMovesAll(ind, effRawKey, effScopeKey, allowed, fullFin) {
     const rows = [];
-    const addMv = (id, date, company, stream, cat, party, detail, ref, method, usdVal, lbpVal = 0, rkeyOverride = '', rawObj = null) => {
+    let forceRow = false;
+    const matchCo = r => matchesCashScopeCompany(r, effScopeKey, allowed);
+    // Domain rows voided from the Record Inspector live in the row-edit store (ind::table::id, voided): they leave the
+    // cash book like they leave the hub table.
+    const DOMAIN_RKEYS = new Set(['hsp_revenue', 'hsp_maint', 'hsp_vat', 'trd_sales', 'trd_purchases', 're_receipts', 're_workorders', 'ins_billing']);
+    const voidedDomainIds = new Set();
+    Object.entries(STATE.industryRowEdits || {}).forEach(([key, v]) => {
+      if (!v || !v.voided || key.indexOf(ind + '::') !== 0) return;
+      voidedDomainIds.add(key.slice(key.lastIndexOf('::') + 2).trim());
+    });
+    const addMv = (id, date, company, stream, cat, party, detail, ref, method, usdVal, lbpVal = 0, rkey = '', rawObj = null) => {
+      // A resort venue row backed by a sales ticket posts under 'sales_tickets': an inspector void of it applies too.
+      if ((DOMAIN_RKEYS.has(rkey) || (rkey === 'sales_tickets' && ind === 'Hospitality & Resorts')) && voidedDomainIds.has(String(id))) return;
       const uVal = round2(Number(usdVal || 0));
       const lVal = Math.round(Number(lbpVal || 0));
       if (Math.abs(uVal) < 0.01 && Math.abs(lVal) <= 1) return;
-      const dt = String(date || '2026-10-28').slice(0, 10);
-      rows.push({
+      const dt = String(date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return; // a cash row without a date cannot sit on a till day
+      const row = {
         id,
-        rkey: rkeyOverride || (stream === 'sales' ? 'sales_tickets' : (stream === 'exp' ? 'expenses' : 'external_movements')),
+        rkey: rkey || (stream === 'sales' ? 'sales_tickets' : (stream === 'exp' ? 'expenses' : 'external_movements')),
         date: dt,
         ym: dt.slice(0, 7),
         company,
@@ -59928,152 +60095,191 @@
         lbp: lVal,
         ticketId: '',
         raw: rawObj || { id, date: dt, company, party, notes: detail, total: Math.abs(uVal) }
-      });
+      };
+      if (forceRow || matchCo(row)) rows.push(row);
     };
 
-    if (ind === 'Holding & Treasury') {
-      const ic = computeIntercompanyInteractions({ ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod) });
-      (ic.interactions || []).filter(r => r.fromCo !== 'Bdeir Holding' && r.toCo !== 'Bdeir Holding').slice(0, 8).forEach((r, idx) => {
-        addMv(`hld-mv-${idx + 1}`, r.date || '2026-10-28', 'Bdeir Holding', 'ext', 'Intercompany Sister Transfer', `${r.fromCo} / ${r.toCo}`, `${r.matchType} · ${r.notes || 'Sister treasury clearing'}`, r.id || `IC-${100 + idx}`, 'Bank Wire', idx % 2 === 0 ? r.usd : -r.usd);
+    // Effective rows of a shared table: seed rows with the app's edits and voids applied by id, then app-keyed rows.
+    const customByKey = key => {
+      const over = new Map();
+      const app = [];
+      ((STATE.customRecords && STATE.customRecords[key]) || []).forEach(c => {
+        if (!c) return;
+        if (isAppRecord(c)) { if (!c.voided) app.push(c); } else over.set(String(c.id), c);
       });
-      ((SEED && SEED.records && SEED.records.external_movements) || []).forEach(ex => {
-        if (!ex || ex.voided || ex.company !== 'Bdeir Holding' || ex._multiIndustrySeed || isAppRecord(ex)) return;
-        const isExtd = /^extended$/i.test(String(ex.kind || ''));
-        const flowStr = String(ex.flow || ex.method || '').trim();
-        const isCfg = /^config$/i.test(flowStr);
-        const lbpRaw = Number(ex.lbp_amount || 0);
-        const usdRaw = lbpRaw ? Number(ex.usd_amount || 0) : Number(ex.usd_amount != null ? ex.usd_amount : (ex.amount || 0));
-        let usd = 0, lbp = 0, cat = '', methodLbl = '';
-        if (isCfg) {
-          usd = round2(usdRaw);
-          lbp = Math.round(lbpRaw);
-          cat = isExtd ? 'Extended Opening' : 'External Opening';
-          methodLbl = 'Opening';
-        } else {
-          const isOut = /out|expense|withdraw|debit/i.test(String(ex.direction || flowStr));
-          usd = isOut ? -round2(Math.abs(usdRaw)) : round2(Math.abs(usdRaw));
-          lbp = isOut ? -Math.round(Math.abs(lbpRaw)) : Math.round(Math.abs(lbpRaw));
-          cat = isExtd ? (isOut ? 'Extended Out' : 'Extended In') : (isOut ? 'External Out' : 'External In');
-          methodLbl = cat;
-        }
-        addMv(ex.id, ex.date, 'Bdeir Holding', isExtd ? 'extd' : 'ext', cat, ex.counterparty || (isExtd ? 'Extended Stakeholder' : 'External Treasury'), cleanLedgerNote(ex.notes) || cat, shortVoucherRef(ex.reference || ex.name || ex.id), methodLbl, usd, lbp, 'external_movements', ex);
+      return { over, app };
+    };
+    const effectiveRows = (key, seedRows, seen) => {
+      const { over, app } = customByKey(key);
+      const out = [];
+      (seedRows || []).forEach(r => {
+        if (!r || isAppRecord(r)) return;
+        const id = String(r.id);
+        if (seen) { if (seen.has(id)) return; seen.add(id); }
+        const e = over.get(id) || r;
+        if (!e.voided) out.push(e);
       });
-      if (isDemoScopeActive()) {
-        addMv('hld-mv-9', '2026-10-30', 'Bdeir Holding', 'loan', 'Partner Distribution Pool', 'Shareholder Pool (10 Slots)', 'Monthly group treasury settlement', 'HLD-4515-10', 'Bank Transfer', 42500);
-        addMv('hld-mv-10', '2026-10-29', 'Bdeir Holding', 'exp', 'Corporate Shared Services', 'Bdeir Holding HQ', 'Group audit, legal & cloud infrastructure', 'HLD-EXP-22', 'Cash', -14200);
-      }
-    } else if (ind === 'Hospitality & Resorts') {
-      // All dates when asked (like Holding above): the model's stored days are built once and cached for every
-      // period, so building them under the period of the moment changed the carried till with the date filter.
-      const hsp = computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), company: rawKey });
-      (hsp.venueRows || []).slice(0, 6).forEach((r, idx) => {
-        addMv(`hsp-mv-${idx + 1}`, r.date || '2026-10-28', r.company, 'sales', `${r.category} Close`, r.outlet, `${r.covers || 0} covers · POS Till Close Tied`, r.id, r.method || 'Cash', r.ttc_usd);
+      app.forEach(r => {
+        if (seen) { if (seen.has(String(r.id))) return; seen.add(String(r.id)); }
+        out.push(r);
       });
-      (hsp.membershipRows || []).slice(0, 3).forEach((m, idx) => {
-        addMv(`hsp-mem-${idx + 1}`, m.due_date || '2026-10-25', m.company, 'sales', 'Seasonal Membership Collection', m.member, `${m.unit} (${m.season})`, m.id, 'Cash', m.paid_usd);
+      return out;
+    };
+    const scopedSeed = key => ((SEED.records && SEED.records[key]) || []).filter(r => r && matchCo(r));
+
+    // ---- Domain rows of each industry (their own edit / void layer is applied by the compute* functions) ----
+    if (ind === 'Hospitality & Resorts') {
+      const hsp = computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true, company: effRawKey });
+      // Sales tickets keyed for a resort also appear as venue rows: they post below under the cash-sale rule only.
+      const ticketIds = new Set();
+      ((SEED.records && SEED.records.sales_tickets) || []).forEach(t => { if (t && matchCo(t)) ticketIds.add(String(t.id)); });
+      ((STATE.customRecords && STATE.customRecords.sales_tickets) || []).forEach(t => { if (t) ticketIds.add(String(t.id)); });
+      // Resort expenses reach ISABI only as repair work orders and diesel intakes (both from Expenses_Data) until the
+      // top-up loads the expense sheet itself; a resort with loaded expense rows takes those and not these.
+      const resortsWithExpenses = new Set(scopedSeed('expenses').map(e => String(e.company || '')));
+      const isDieselTxt = s => /diesel|mazout|generator fuel/i.test(String(s || ''));
+      (hsp.venueRows || []).forEach(r => {
+        if (!r || ticketIds.has(String(r.id))) return;
+        addMv(r.id, r.date, r.company, 'sales', r.category || 'Venue Revenue', r.outlet || r.company, cleanLedgerNote(r.notes) || 'Venue revenue', shortVoucherRef(r.id), r.method || 'Cash', Number(r.ttc_usd || 0), 0, 'hsp_revenue', r);
       });
-      (hsp.stockRows || []).slice(0, 3).forEach((st, idx) => {
-        addMv(`hsp-stk-${idx + 1}`, '2026-10-26', st.company, 'exp', 'Commissary & Cellar Replenishment', st.store, `Purchases In (${st.r3_ratio.toFixed(2)}x usage ratio)`, st.id, 'Cash', -round2(st.purchases_in_usd * 0.45));
+      (hsp.maintRows || []).forEach(r => {
+        if (!r || resortsWithExpenses.has(String(r.company || '')) || isDieselTxt(`${r.zone || ''} ${r.type || ''} ${r.asset || ''}`)) return;
+        addMv(r.id, r.date, r.company, 'exp', 'Repairs & Maintenance', r.vendor || 'Supplier', cleanLedgerNote(r.notes) || String(r.type || 'Repair'), shortVoucherRef(r.id), 'Cash', -Number(r.cost_usd || 0), 0, 'hsp_maint', r);
+      });
+      (hsp.vatRows || []).forEach(r => {
+        if (!r || r.category !== 'Generator Diesel Intake' || resortsWithExpenses.has(String(r.company || ''))) return;
+        const supHit = String(r.notes || '').match(/\(([^()]+)\)\s*$/);
+        addMv(r.id, r.date, r.company, 'exp', 'Generator Diesel', supHit ? supHit[1] : 'Diesel Supplier', 'Generator diesel intake', shortVoucherRef(r.doc_ref || r.id), 'Cash', -Number(r.ttc_usd || 0), 0, 'hsp_vat', r);
       });
     } else if (ind === 'Automotive & Heavy Trading') {
-      const trd = computeTradingOperations({ ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), company: rawKey });
-      (trd.salesRows || []).filter(r => !r.is_gap).slice(0, 6).forEach((r, idx) => {
-        addMv(`trd-mv-${idx + 1}`, r.date || '2026-10-28', r.company, 'sales', `Invoice Book ${r.book}`, r.customer, `${r.item} (Qty ${r.qty})`, r.id, r.payment_term === 'Cash' ? 'Cash' : 'Cheque / Wire', r.ttc_usd);
+      const trd = computeTradingOperations({ ignoreSearch: true, ignorePeriod: true, company: effRawKey });
+      // Invoices on credit are not cash; only a cash invoice is.
+      (trd.salesRows || []).forEach(r => {
+        if (!r || r.is_gap || String(r.payment_term || '') !== 'Cash') return;
+        addMv(r.id, r.date, r.company, 'sales', `Invoice Book ${r.book}`, r.customer, `${r.item} (Qty ${r.qty})`, r.id, 'Cash', Number(r.ttc_usd || 0), 0, 'trd_sales', r);
       });
-      (trd.importRows || []).slice(0, 4).forEach((im, idx) => {
-        const impCost = Number(im.landed_add_usd != null ? im.landed_add_usd : (Number(im.customs_usd || 0) + Number(im.freight_usd || 0) + Number(im.clearance_usd || 0))) || round2(Number(im.total_landed_usd || im.fob_usd || 0) * 0.12);
-        addMv(`trd-imp-${idx + 1}`, im.date || im.eta_date || '2026-10-22', im.company, 'exp', 'Import Customs & Freight', im.supplier, `${im.container_bl || im.container_ref || im.id} · ${im.origin || im.origin_port || 'Port'}`, im.id, 'LC / Wire', -round2(impCost));
+      (trd.importRows || []).forEach(im => {
+        if (!im) return;
+        const add = Number(im.landed_add_usd != null && Number(im.landed_add_usd) ? im.landed_add_usd : (Number(im.customs_usd || 0) + Number(im.freight_usd || 0) + Number(im.clearance_usd || 0)));
+        if (!(add > 0)) return;
+        addMv(im.id, im.date, im.company, 'exp', 'Import Customs & Freight', im.supplier, `${im.container_bl || im.container_ref || im.id} · ${im.origin || im.origin_port || 'Port'}`, im.id, 'Cash', -round2(add), 0, 'trd_purchases', im);
       });
     } else if (ind === 'Real Estate & Property') {
-      const re = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), company: rawKey });
-      (re.invoices || []).slice(0, 6).forEach((inv, idx) => {
-        addMv(`re-mv-${idx + 1}`, inv.date || '2026-10-25', inv.company, 'sales', 'Commercial & Residential Rent Receipt', inv.tenant, `${inv.property} · ${inv.period} (${inv.tax_seq || inv.seq_no || inv.id})`, inv.id, 'Bank / Cash', Number(inv.collected_usd || inv.paid_usd || inv.amount_ttc_usd || inv.ttc_usd || 0));
+      const re = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true, company: effRawKey });
+      (re.receipts || []).forEach(rc => {
+        if (!rc) return;
+        addMv(rc.id, rc.date, rc.company, 'sales', rc.type || 'Rent Receipt', rc.tenant, rc.property || 'Rent receipt', rc.id, rc.method || 'Cash', Number(rc.gross_usd || 0), 0, 're_receipts', rc);
       });
-      (re.workorders || re.workOrders || []).slice(0, 4).forEach((wo, idx) => {
-        addMv(`re-wo-${idx + 1}`, wo.date || '2026-10-21', wo.company, 'exp', 'Fit-Out & Building Work Order', wo.contractor, `${wo.property} · ${wo.unit} (${wo.category || wo.scope || 'Works'})`, wo.id, 'Cash', -Number(wo.actual_usd || 0));
+      (re.workorders || re.workOrders || []).forEach(wo => {
+        if (!wo) return;
+        addMv(wo.id, wo.date, wo.company, 'exp', wo.category || 'Building Works', wo.contractor, `${wo.property || ''}${wo.unit ? ' · ' + wo.unit : ''}`, wo.id, 'Cash', -Number(wo.actual_usd || 0), 0, 're_workorders', wo);
       });
-    } else {
-      const ins = computeInsuranceOperations({ ignorePeriod: Boolean(opts.ignorePeriod) });
-      (ins.billing || []).slice(0, 6).forEach((b, idx) => {
-        addMv(`ins-mv-${idx + 1}`, b.date || b.due_date || '2026-10-27', 'Insurance Company', 'sales', 'Policyholder Premium Collection', b.client, `Policy ${b.policy_no || b.policy_id || b.id} · ${b.carrier}`, b.id, 'Cash / Wire', Number(b.collected_usd || b.paid_usd || b.client_billed_4112_usd || b.gross_prem_usd || 0));
+    } else if (ind === 'Insurance & Brokerage') {
+      const ins = computeInsuranceOperations({ ignorePeriod: true });
+      (ins.billing || []).forEach(b => {
+        if (!b) return;
+        const got = Number(b.collected_usd || b.paid_usd || 0);
+        addMv(b.id, b.date, b.company || 'Insurance Company', 'sales', 'Premium Collection', b.client, `Policy ${b.policy_no || b.policy_id || b.id} · ${b.carrier || ''}`, b.receipt_ref && !/pending/i.test(b.receipt_ref) ? b.receipt_ref : b.id, 'Cash', got, 0, 'ins_billing', b);
       });
-      (ins.remittances || ins.statements || []).slice(0, 4).forEach((st, idx) => {
-        const remOut = Number(st.settled_to_carrier_usd || st.net_payable_4017_usd || st.statement_comm_usd || (isDemoScopeActive() ? 8500 : 0));
-        addMv(`ins-st-${idx + 1}`, st.next_due || '2026-10-24', 'Insurance Company', 'exp', 'Carrier Net Premium Remittance', st.carrier, `Bordereau ${st.period || st.settlement_mode || 'Monthly'}`, st.id, 'Bank Wire', -round2(remOut * 0.6));
-      });
+      // Remittances to insurers carry no payment date yet (see the missing sheets): not on a till day.
+    } else if (ind === 'Holding & Treasury' && isDemoScopeActive()) {
+      if (fullFin) addMv('hld-mv-9', '2026-10-30', 'Bdeir Holding', 'loan', 'Partner Distribution Pool', 'Shareholder Pool (10 Slots)', 'Monthly group treasury settlement', 'HLD-4515-10', 'Bank Transfer', 42500, 0, 'loans');
+      addMv('hld-mv-10', '2026-10-29', 'Bdeir Holding', 'exp', 'Corporate Shared Services', 'Bdeir Holding HQ', 'Group audit, legal & cloud infrastructure', 'HLD-EXP-22', 'Cash', -14200, 0, 'expenses');
     }
 
-    const effRawKey = rawKey || STATE.company || ('industry:' + ind);
-    const effScopeKey = effRawKey === DEMO_COMPANY_KEY ? ('industry:' + ind) : effRawKey;
-    const allowed = effRawKey === DEMO_COMPANY_KEY ? null : allowedCompanyNames(opts.user);
-    const matchCo = r => matchesCashScopeCompany(r, effScopeKey, allowed);
-    for (let ri = rows.length - 1; ri >= 0; ri--) {
-      if (!matchCo(rows[ri])) rows.splice(ri, 1);
-    }
+    // ---- Shared tables (Expenses & Payables, Payroll, Treasury), every industry ----
+    effectiveRows('sales_tickets', scopedSeed('sales_tickets'), null).forEach(t => {
+      if (!matchCo(t) || isRemovedTicket(t) || !isCashSaleTicket(t)) return;
+      const sgn = ticketSign(t);
+      if (!sgn) return;
+      addMv(t.id, t.date, t.company, 'sales', 'Cash Sale', t.customer || 'Cash Customer', t.product || t.notes || 'Cash sale', String(t.ticket_no || t.id || ''), t.method || 'Cash', salesCashMoveAmount(t), sgn * Number(t.vat || 0) * 89500, 'sales_tickets', t);
+    });
+    effectiveRows('receipts', scopedSeed('receipts'), null).forEach(rc => {
+      const mth = String(rc.method || '').trim();
+      const knd = receiptKind(rc);
+      if (knd !== 'Settlement' && knd !== 'VAT received' && mth !== 'Rent' && mth !== 'VATRent') return;
+      const lRaw = Number(rc.lbp_amount || 0);
+      const u = mth === 'Rent' ? -round2(Number(rc.usd_amount != null ? rc.usd_amount : rc.amount || 0))
+        : (knd === 'Settlement' ? round2(lRaw ? Number(rc.usd_amount || 0) : Number(rc.usd_amount != null ? rc.usd_amount : rc.amount || 0)) : 0);
+      const l = mth === 'VATRent' ? -Math.round(lRaw || ((Number(rc.amount || 0) + Number(rc.discount || 0)) * 89500))
+        : (knd === 'VAT received' ? Math.round(lRaw || (Number(rc.amount || 0) * 89500)) : Math.round(lRaw));
+      addMv(rc.id, rc.date, rc.company, 'sales', 'Customer Receipt', rc.customer || 'Customer', cleanLedgerNote(rc.notes) || 'Customer settlement', shortVoucherRef(rc.reference || rc.name || rc.id), mth || 'Cash', u, l, 'receipts', rc);
+    });
+    effectiveRows('expenses', scopedSeed('expenses'), null).forEach(e => {
+      if (e.price_pending || isCreditExpense(e)) return;
+      const sgn = expenseSign(e);
+      if (!sgn) return;
+      const lRaw = Number(e.lbp_amount || 0);
+      const u = -round2(sgn * (lRaw ? Number(e.usd_amount || 0) : Number(e.usd_amount != null ? e.usd_amount : e.amount || 0)));
+      addMv(e.id, e.date, e.company, 'exp', e.category || 'Cash Expense', e.supplier || e.subcategory || 'Expense', cleanLedgerNote(e.notes) || e.item_summary || 'Operating expense', shortVoucherRef(e.reference || e.name || e.id), e.method || 'Cash', u, -Math.round(sgn * lRaw), 'expenses', e);
+    });
+    effectiveRows('settlements', scopedSeed('settlements'), null).forEach(sp => {
+      const knd = settlementKind(sp);
+      if (knd !== 'Payment' && knd !== 'VAT paid') return;
+      const lRaw = Number(sp.lbp_amount || 0);
+      const u = knd === 'Payment' ? -round2(lRaw ? Number(sp.usd_amount || 0) : Number(sp.usd_amount != null ? sp.usd_amount : sp.amount || 0)) : 0;
+      const l = knd === 'Payment' ? -Math.round(lRaw) : -Math.round(lRaw || Math.round(Number(sp.amount || 0) * 89500));
+      addMv(sp.id, sp.date, sp.company, 'exp', 'Supplier Settlement', sp.supplier || 'Supplier', cleanLedgerNote(sp.notes) || 'Supplier payment', shortVoucherRef(sp.reference || sp.name || sp.id), sp.method || 'Payment', u, l, 'settlements', sp);
+    });
+    if (fullFin) effectiveRows('salaries', scopedSeed('salaries'), null).forEach(sa => {
+      const lRaw = Math.round(Number(sa.lbp_amount || 0));
+      const uRaw = Number(sa.lbp_amount ? Number(sa.usd_amount || 0) : (sa.usd_amount != null ? sa.usd_amount : sa.amount || 0));
+      const det = [sa.payroll_month ? `Payroll ${sa.payroll_month}` : '', cleanLedgerNote(sa.notes)].filter(Boolean).join(' · ');
+      addMv(sa.id, sa.date, sa.company, 'sal', (-uRaw > 0.004 || -lRaw > 1) ? 'Salary Refund' : 'Salary Paid', sa.staff || '—', det || 'Staff wage disbursement', shortVoucherRef(sa.reference || sa.name || sa.id), sa.method || 'Cash', -uRaw, -lRaw, 'salaries', sa);
+    });
+    if (fullFin) effectiveRows('loans', scopedSeed('loans'), null).forEach(ln => {
+      const isBorrowIn = /borrows/i.test(String(ln.direction || ''));
+      const lbpMag = Math.round(Math.abs(Number(ln.lbp_amount || 0)));
+      const usdMag = Math.abs(ln.lbp_amount ? Number(ln.usd_amount || 0) : Number(ln.usd_amount != null ? ln.usd_amount : ln.principal || 0));
+      addMv(ln.id, ln.date || ln.start_date, ln.company, 'loan', isBorrowIn ? 'Borrowing In' : 'Borrowing Out', ln.lender || ln.counterparty || ln.borrower || '—', [ln.direction || '', cleanLedgerNote(ln.notes)].filter(Boolean).join(' · ') || 'Borrowing principal', shortVoucherRef(ln.name || ln.id), isBorrowIn ? 'Borrow In' : 'Lend Out', isBorrowIn ? usdMag : -usdMag, isBorrowIn ? lbpMag : -lbpMag, 'loans', ln);
+    });
+    if (fullFin) effectiveRows('loan_settlements', scopedSeed('loan_settlements'), null).forEach(ls => {
+      const isIn = /inflow|drawdown/i.test(String(ls.method || ls.type || ''));
+      const lbpMag = Math.round(Math.abs(Number(ls.lbp_amount || 0)));
+      const usdMag = Math.abs(ls.lbp_amount ? Number(ls.usd_amount || 0) : Number(ls.usd_amount != null ? ls.usd_amount : ls.amount || 0));
+      addMv(ls.id, ls.date, ls.company, 'loan', isIn ? 'Borrowing Repayment In' : 'Borrowing Repayment Out', ls.borrower || ls.loan || ls.counterparty || '—', [ls.type || '', cleanLedgerNote(ls.notes)].filter(Boolean).join(' · ') || 'Borrowing settlement', shortVoucherRef(ls.name || ls.id), isIn ? 'Inflow' : 'Outflow', isIn ? usdMag : -usdMag, isIn ? lbpMag : -lbpMag, 'loan_settlements', ls);
+    });
+    // External and Extended movements: the shared table, then the sister companies' own External legs (resorts),
+    // which the top-up keeps beside it. An id is posted once.
+    const extSeen = new Set();
+    const sisterLegs = (SEED && SEED.industryLive && SEED.industryLive.holding && Array.isArray(SEED.industryLive.holding.sisterExternalLegs))
+      ? SEED.industryLive.holding.sisterExternalLegs.filter(r => r && matchCo(r)) : [];
+    const extRows = fullFin ? effectiveRows('external_movements', scopedSeed('external_movements').concat(sisterLegs), extSeen) : [];
+    extRows.forEach(ex => {
+      const flowStr = String(ex.flow || ex.type || ex.method || '').trim();
+      const isExtd = /extended/i.test(String(ex.kind || '')) || /^Extended\./i.test(String(ex.notes || ''));
+      const isCfg = /^config$/i.test(flowStr) || /^config$/i.test(String(ex.method || ''));
+      const lbpRaw = Math.abs(Number(ex.lbp_amount || 0));
+      // An LBP leg carries its USD equivalent in usd_amount: it moves pounds only.
+      const usdRaw = /^LBP$/i.test(String(ex.currency || '')) ? 0
+        : Math.abs(lbpRaw ? Number(ex.usd_amount || 0) : Number(ex.usd_amount != null ? ex.usd_amount : (ex.amount || 0)));
+      let usd, lbp, cat, methodLbl;
+      if (isCfg) {
+        usd = round2(Number(ex.usd_amount != null ? ex.usd_amount : ex.amount || 0));
+        lbp = Math.round(Number(ex.lbp_amount || 0));
+        cat = isExtd ? 'Extended Opening' : 'External Opening';
+        methodLbl = 'Opening';
+      } else {
+        const isOut = /out|expense|withdraw|debit/i.test(String(ex.direction || flowStr));
+        usd = isOut ? -usdRaw : usdRaw;
+        lbp = isOut ? -lbpRaw : lbpRaw;
+        cat = isExtd ? (isOut ? 'Extended Out' : 'Extended In') : (isOut ? 'External Out' : 'External In');
+        methodLbl = cat;
+      }
+      addMv(ex.id, ex.date, ex.company, isExtd ? 'extd' : 'ext', cat, ex.counterparty || ex.party || (isExtd ? 'Extended Stakeholder' : 'External Treasury'), cleanLedgerNote(ex.notes) || cat, shortVoucherRef(ex.reference || ex.name || ex.id), methodLbl, usd, lbp, 'external_movements', ex);
+    });
+    effectiveRows('conversions', scopedSeed('conversions'), null).forEach(cv => {
+      const d = convSignedDeltas(cv, 89500);
+      addMv(cv.id, cv.date, cv.company, 'fx', d.dirLabel || 'FX Conversion', 'FX Desk', cleanLedgerNote(cv.notes) || d.dirLabel || 'Currency exchange', shortVoucherRef(cv.reference || cv.name || cv.id), d.dirLabel || 'FX', d.usd, d.lbp, 'conversions', cv);
+    });
 
     if (isDemoScopeActive() && !rows.length) {
-      const fallbackCo = COMPANY_BU_MATCH[effScopeKey] || coLbl;
+      const fallbackCo = COMPANY_BU_MATCH[effScopeKey] || (ind === 'Holding & Treasury' ? 'Bdeir Holding' : ind);
       if (!Array.isArray(allowed) || !allowed.length || allowed.includes(fallbackCo)) {
-        addMv('ind-mv-1', '2026-10-28', fallbackCo, 'sales', 'Operating Cash Inflow', fallbackCo, 'Verified domain treasury receipt', 'DOC-001', 'Cash', kSnap.cash_in_usd || 75000);
-        addMv('ind-mv-2', '2026-10-27', fallbackCo, 'exp', 'Operating Cash Outflow', fallbackCo, 'Verified domain supplier settlement', 'DOC-002', 'Cash', -(kSnap.cash_out_usd || 26500));
+        forceRow = true;
+        addMv('ind-mv-1', '2026-10-28', fallbackCo, 'sales', 'Operating Cash Inflow', fallbackCo, 'Verified domain treasury receipt', 'DOC-001', 'Cash', 75000);
+        addMv('ind-mv-2', '2026-10-27', fallbackCo, 'exp', 'Operating Cash Outflow', fallbackCo, 'Verified domain supplier settlement', 'DOC-002', 'Cash', -26500);
       }
-    }
-
-    if (!opts.baselineOnly && STATE.customRecords) {
-      forEachCashCustomDelta('sales_tickets', matchCo, (t, mult) => {
-        if (isRemovedTicket(t) || !isCashSaleTicket(t)) return;
-        const sgn = ticketSign(t);
-        if (!sgn) return;
-        const u = round2(mult * salesCashMoveAmount(t));
-        const l = Math.round(mult * sgn * Number(t.vat || 0) * 89500);
-        addMv(t.id, t.date, t.company, 'sales', 'Cash Sale', t.customer || 'Cash Customer', t.product || t.notes || 'Cash sale', String(t.ticket_no || t.id || ''), t.method || 'Cash', u, l, 'sales_tickets', t);
-      });
-      forEachCashCustomDelta('receipts', matchCo, (rc, mult) => {
-        const mth = String(rc.method || '').trim();
-        const knd = receiptKind(rc);
-        if (knd !== 'Settlement' && knd !== 'VAT received' && mth !== 'Rent' && mth !== 'VATRent') return;
-        const lRaw = Number(rc.lbp_amount || 0);
-        const u = mth === 'Rent' ? -round2(mult * Number(rc.usd_amount != null ? rc.usd_amount : rc.amount || 0))
-          : (knd === 'Settlement' ? round2(mult * (lRaw ? Number(rc.usd_amount || 0) : Number(rc.usd_amount != null ? rc.usd_amount : rc.amount || 0))) : 0);
-        const l = mth === 'VATRent' ? -Math.round(mult * (lRaw || ((Number(rc.amount || 0) + Number(rc.discount || 0)) * 89500)))
-          : (knd === 'VAT received' ? Math.round(mult * (lRaw || (Number(rc.amount || 0) * 89500))) : Math.round(mult * lRaw));
-        addMv(rc.id, rc.date, rc.company, 'sales', 'Customer Receipt', rc.customer || 'Customer', rc.notes || 'Customer settlement', String(rc.reference || rc.id || ''), mth || 'Cash', u, l, 'receipts', rc);
-      });
-      forEachCashCustomDelta('expenses', matchCo, (e, mult) => {
-        if (e.price_pending || isCreditExpense(e)) return;
-        const sgn = expenseSign(e);
-        if (!sgn) return;
-        const lRaw = Number(e.lbp_amount || 0);
-        const u = -round2(mult * sgn * (lRaw ? Number(e.usd_amount || 0) : Number(e.usd_amount != null ? e.usd_amount : e.amount || 0)));
-        const l = -Math.round(mult * sgn * lRaw);
-        addMv(e.id, e.date, e.company, 'exp', e.category || 'Cash Expense', e.supplier || e.subcategory || 'Expense', e.notes || e.item_summary || 'Operating expense', String(e.reference || e.id || ''), e.method || 'Cash', u, l, 'expenses', e);
-      });
-      forEachCashCustomDelta('settlements', matchCo, (sp, mult) => {
-        const knd = settlementKind(sp);
-        if (knd !== 'Payment' && knd !== 'VAT paid') return;
-        const lRaw = Number(sp.lbp_amount || 0);
-        const u = knd === 'Payment' ? -round2(mult * (lRaw ? Number(sp.usd_amount || 0) : Number(sp.usd_amount != null ? sp.usd_amount : sp.amount || 0))) : 0;
-        const l = knd === 'Payment' ? -Math.round(mult * lRaw) : -Math.round(mult * (lRaw || Math.round(Number(sp.amount || 0) * 89500)));
-        addMv(sp.id, sp.date, sp.company, 'exp', 'Supplier Settlement', sp.supplier || 'Supplier', sp.notes || 'Supplier payment', String(sp.reference || sp.id || ''), sp.method || 'Payment', u, l, 'settlements', sp);
-      });
-      forEachCashCustomDelta('external_movements', matchCo, (ex, mult) => {
-        const flowStr = String(ex.flow || ex.type || '');
-        const isExtd = /extended/i.test(String(ex.kind || flowStr)) || /^Extended\./i.test(String(ex.notes || ''));
-        const isOut = /out|expense/i.test(String(ex.direction || flowStr));
-        const lRaw = Math.abs(Number(ex.lbp_amount || 0));
-        const uRaw = Math.abs(lRaw ? Number(ex.usd_amount || 0) : Number(ex.usd_amount != null ? ex.usd_amount : ex.amount || 0));
-        const sgn = isOut ? -1 : 1;
-        addMv(ex.id, ex.date, ex.company, isExtd ? 'extd' : 'ext', isExtd ? (isOut ? 'Extended Out' : 'Extended In') : (isOut ? 'External Out' : 'External In'), ex.counterparty || 'External Treasury', ex.notes || 'External movement', String(ex.reference || ex.id || ''), ex.direction || (isOut ? 'External Out' : 'External In'), mult * sgn * uRaw, mult * sgn * lRaw, 'external_movements', ex);
-      });
-      forEachCashCustomDelta('conversions', matchCo, (cv, mult) => {
-        const d = convSignedDeltas(cv, 89500);
-        addMv(cv.id, cv.date, cv.company, 'fx', d.dirLabel || 'FX Conversion', 'FX Desk', cv.notes || d.dirLabel || 'Currency exchange', String(cv.reference || cv.id || ''), d.dirLabel || 'FX', mult * d.usd, mult * d.lbp, 'conversions', cv);
-      });
-    }
-
-    const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
-    if (range) {
-      return rows.filter(mv => !mv.date || ((!range.from || mv.date >= range.from) && (!range.to || mv.date <= range.to)));
     }
     return rows;
   }
@@ -61372,7 +61578,7 @@
     const demoGl = isDemoScopeActive();
     // The model's cash moves, month rows and payables are read through the seat's companies and book scope, so both
     // are part of the key: a cached model never serves another seat (LAN sign-out, Owner Impersonation) or book.
-    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}`;
+    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${activeSeatFullFinKey()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}`;
     if (_indGlModelCache.has(cacheKey)) return _indGlModelCache.get(cacheKey);
     if (_indGlInFlight.has(cacheKey)) return baseModel || { periods: {}, monthly: [], products: [], customers: [], suppliers: [], sites: [], equipment: [], gl_tb: [], soa_stream: [] };
     _indGlInFlight.add(cacheKey);
@@ -61612,29 +61818,42 @@
       }
       return row;
     };
-    baseMoves.forEach(mv => {
+    // From the full entry list (cashMoves: seed with app edits and voids applied, plus app rows), so the stream
+    // rows add up to the Loaded Entries / till footer; buildLiveCashFlowTables adds nothing on top (_fromAllEntries).
+    cashMoves.forEach(mv => {
       const uAbs = Math.abs(Number(mv.usd || 0));
+      const lSigned = Math.round(Number(mv.lbp || 0));
       if (mv.stream === 'sales') {
         const r = upsertIndCfRow(indCfTables.sales, mv.party);
         r.usd = round2(r.usd + mv.usd);
+        r.lbp = Math.round((r.lbp || 0) + lSigned);
         indCfTables.sales.totals.usd = round2(indCfTables.sales.totals.usd + mv.usd);
+        indCfTables.sales.totals.lbp = Math.round((indCfTables.sales.totals.lbp || 0) + lSigned);
       } else if (mv.stream === 'exp') {
         const r = upsertIndCfRow(indCfTables.expenses, mv.party);
-        r.usd = round2(r.usd + uAbs);
-        indCfTables.expenses.totals.usd = round2(indCfTables.expenses.totals.usd + uAbs);
+        r.usd = round2(r.usd - Number(mv.usd || 0));
+        r.lbp = Math.round((r.lbp || 0) - lSigned);
+        indCfTables.expenses.totals.usd = round2(indCfTables.expenses.totals.usd - Number(mv.usd || 0));
+        indCfTables.expenses.totals.lbp = Math.round((indCfTables.expenses.totals.lbp || 0) - lSigned);
       } else if (mv.stream === 'loan') {
         const r = upsertIndCfRow(indCfTables.borrowing, mv.party);
-        if (mv.usd >= 0) {
+        if (mv.usd > 0 || (mv.usd === 0 && lSigned > 0)) {
           r.paid_usd = round2(r.paid_usd + uAbs);
+          r.paid_lbp = Math.round((r.paid_lbp || 0) + Math.abs(lSigned));
           indCfTables.borrowing.totals.paid_usd = round2(indCfTables.borrowing.totals.paid_usd + uAbs);
+          indCfTables.borrowing.totals.paid_lbp = Math.round((indCfTables.borrowing.totals.paid_lbp || 0) + Math.abs(lSigned));
         } else {
           r.rec_usd = round2(r.rec_usd + uAbs);
+          r.rec_lbp = Math.round((r.rec_lbp || 0) + Math.abs(lSigned));
           indCfTables.borrowing.totals.rec_usd = round2(indCfTables.borrowing.totals.rec_usd + uAbs);
+          indCfTables.borrowing.totals.rec_lbp = Math.round((indCfTables.borrowing.totals.rec_lbp || 0) + Math.abs(lSigned));
         }
       } else if (mv.stream === 'sal') {
         const r = upsertIndCfRow(indCfTables.salary, mv.party);
-        r.usd = round2(r.usd + uAbs);
-        indCfTables.salary.totals.usd = round2(indCfTables.salary.totals.usd + uAbs);
+        r.usd = round2(r.usd - Number(mv.usd || 0));
+        r.lbp = Math.round((r.lbp || 0) - lSigned);
+        indCfTables.salary.totals.usd = round2(indCfTables.salary.totals.usd - Number(mv.usd || 0));
+        indCfTables.salary.totals.lbp = Math.round((indCfTables.salary.totals.lbp || 0) - lSigned);
       } else if (mv.stream === 'ext') {
         const r = upsertIndCfRow(indCfTables.external, mv.party);
         const lAbs = Math.round(Math.abs(Number(mv.lbp || 0)));
@@ -61649,6 +61868,13 @@
           indCfTables.external.totals.exp_usd = round2(indCfTables.external.totals.exp_usd + uAbs);
           indCfTables.external.totals.exp_lbp = Math.round((indCfTables.external.totals.exp_lbp || 0) + lAbs);
         }
+      } else if (mv.stream === 'fx') {
+        const isU2L = Number(mv.usd || 0) < 0 || (Number(mv.usd || 0) === 0 && lSigned > 0);
+        const type = isU2L ? 'USD to LBP' : 'LBP to USD';
+        let row = indCfTables.conversion.rows.find(x => x && x.type === type);
+        if (!row) { row = { type, from_amt: 0, to_amt: 0 }; indCfTables.conversion.rows.push(row); }
+        if (isU2L) { row.from_amt = round2(row.from_amt + uAbs); row.to_amt = Math.round(row.to_amt + Math.abs(lSigned)); }
+        else { row.from_amt = Math.round(row.from_amt + Math.abs(lSigned)); row.to_amt = round2(row.to_amt + uAbs); }
       } else if (mv.stream === 'extd') {
         const owesU = round2(-Number(mv.usd || 0));
         const owesL = Math.round(-Number(mv.lbp || 0));
@@ -61798,7 +62024,8 @@
           out_lbp: 0
         },
         daily: Array.from(dailyByDate.values()),
-        tables: indCfTables
+        tables: indCfTables,
+        _fromAllEntries: true
       }
     });
     if (_indGlModelCache.size > 32) _indGlModelCache.clear();
@@ -61921,6 +62148,7 @@
       }
     });
     STATE.industryRowEdits = nextStore;
+    STATE._indCustomRev = (STATE._indCustomRev || 0) + 1; // KPI / cash caches key on it
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.invalidateCache === 'function') {
       window.MFG_CMD_PALETTE.invalidateCache();
     }
@@ -67642,6 +67870,8 @@
     let dayOpProfitRaw = 0;
     let pnlBridgeDiff = 0;
     let closingTillRaw = 0;
+    let hoTillOff = false;
+    const hoTillTxt = { en: 'not tracked yet', ar: 'غير متتبَّع بعد', fr: 'pas encore suivie' };
     let dayNetCashRaw = 0;
     let tbDiff = 0;
     let sentinels = [];
@@ -68010,6 +68240,8 @@
         pnlBridgeDiff = round2(Math.abs((dayRevUsd - dayDirectUsdRaw - dayExpUsdRaw) - dayOpProfitRaw));
         dayNetCashRaw = round2(dayCashIn - dayCashOut);
         closingTillRaw = round2(cashMoves.filter(m => String(m.date || '').slice(0, 10) <= targetDate).reduce((s, m) => s + safeNum(m.in_usd) - safeNum(m.out_usd), 0));
+        // An industry with no whole cash book has no till: the handover says so instead of quoting the partial sum.
+        if (targetInd !== 'Manufacturing' && !siblingCashBook(targetInd).tracked) hoTillOff = true;
 
         if (canViewBooks && typeof getIndustryGlModel === 'function') {
           const indGl = getIndustryGlModel(targetInd, evalCoKey);
@@ -68142,9 +68374,9 @@
         labelEn: 'Closing Cash Till',
         labelAr: 'رصيد الصندوق النقدي',
         labelFr: 'Solde Caisse Clôture',
-        valStr: fmtUSD(closingTillRaw, 0),
-        valAr: fmtUSD(closingTillRaw, 0),
-        valFr: fmtUSD(closingTillRaw, 0),
+        valStr: hoTillOff ? 'Not Tracked Yet' : fmtUSD(closingTillRaw, 0),
+        valAr: hoTillOff ? 'غير متتبَّع بعد' : fmtUSD(closingTillRaw, 0),
+        valFr: hoTillOff ? 'Pas encore suivi' : fmtUSD(closingTillRaw, 0),
         subEn: `Day Net ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} Priority` : 'Clear'}`,
         subAr: `صافي اليوم ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} أولوية` : 'سليم'}`,
         subFr: `Flux net ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} priorité(s)` : 'Conforme'}`,
@@ -68178,7 +68410,7 @@
         ? `${companyEn} recorded ${fmtUSD(dayRevUsd, 0)} across ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.en} on ${targetDate} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(1)}% ${priorLblEn} at ${fmtUSD(priorRevUsd, 0)}` : `7-day rolling mean ${fmtUSD(avg7RevUsd, 0)}`})${ahNoteEn}.`
         : `${companyEn} has $0 recorded revenue and 0 ${DOM_UNIT_SPEC.en} on ${targetDate} (${priorLblEn}: ${fmtUSD(priorRevUsd, 0)}; 7-day average: ${fmtUSD(avg7RevUsd, 0)})${ahNoteEn}.`,
       canViewBooks
-        ? `Cash intake reached ${fmtUSD(totalCashIntakeUsd, 0)} (${fmtUSD(cashSalesUsd, 0)} cash sales plus ${fmtUSD(arCollectedUsd, 0)} receivables collected) alongside ${fmtUSD(creditSalesUsd, 0)} credit billing; Day P&L bridge reconciles at ${fmtUSD(dayOpProfitRaw, 0)} operating profit ($0.00 variance) with ${fmtUSD(closingTillRaw, 0)} closing cash till.`
+        ? `Cash intake reached ${fmtUSD(totalCashIntakeUsd, 0)} (${fmtUSD(cashSalesUsd, 0)} cash sales plus ${fmtUSD(arCollectedUsd, 0)} receivables collected) alongside ${fmtUSD(creditSalesUsd, 0)} credit billing; Day P&L bridge reconciles at ${fmtUSD(dayOpProfitRaw, 0)} operating profit ($0.00 variance) ${hoTillOff ? 'with the closing cash till not tracked yet' : `with ${fmtUSD(closingTillRaw, 0)} closing cash till`}.`
         : `Shift commercial split stands at ${fmtUSD(cashSalesUsd, 0)} cash intake and ${fmtUSD(creditSalesUsd, 0)} credit billing across ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.en}${repShiftedCount > 0 ? `, with ${repShiftedCount} deferred reporting-date item(s)` : ''}.`,
       anomalyCount > 0
         ? `Handover priority #1: ${topAnomalyEn}${anomalies[1] ? `; next: ${anomalies[1].en}` : ''}.`
@@ -68192,7 +68424,7 @@
         ? `سجلت ${companyAr} إيرادات يومية بقيمة ${fmtUSD(dayRevUsd, 0)} عبر ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.ar} بتاريخ ${targetDate} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(1)}% ${priorLblAr} البالغ ${fmtUSD(priorRevUsd, 0)}` : `متوسط 7 أيام ${fmtUSD(avg7RevUsd, 0)}`})${ahNoteAr}.`
         : `سجلت ${companyAr} إيرادات $0 و0 ${DOM_UNIT_SPEC.ar} بتاريخ ${targetDate} (${priorLblAr}: ${fmtUSD(priorRevUsd, 0)}؛ متوسط 7 أيام: ${fmtUSD(avg7RevUsd, 0)})${ahNoteAr}.`,
       canViewBooks
-        ? `بلغ التحصيل النقدي ${fmtUSD(totalCashIntakeUsd, 0)} (${fmtUSD(cashSalesUsd, 0)} مبيعات نقدية + ${fmtUSD(arCollectedUsd, 0)} تحصيل ذمم) مقابل ${fmtUSD(creditSalesUsd, 0)} مبيعات آجلة؛ جسر أرباح وخسائر اليوم متطابق عند ربح تشغيلي ${fmtUSD(dayOpProfitRaw, 0)} (فارق $0.00) ورصيد صندوق ${fmtUSD(closingTillRaw, 0)}.`
+        ? `بلغ التحصيل النقدي ${fmtUSD(totalCashIntakeUsd, 0)} (${fmtUSD(cashSalesUsd, 0)} مبيعات نقدية + ${fmtUSD(arCollectedUsd, 0)} تحصيل ذمم) مقابل ${fmtUSD(creditSalesUsd, 0)} مبيعات آجلة؛ جسر أرباح وخسائر اليوم متطابق عند ربح تشغيلي ${fmtUSD(dayOpProfitRaw, 0)} (فارق $0.00) ورصيد صندوق ${hoTillOff ? hoTillTxt.ar : fmtUSD(closingTillRaw, 0)}.`
         : `توزعت حركات المناوبة بين ${fmtUSD(cashSalesUsd, 0)} مبيعات نقدية و${fmtUSD(creditSalesUsd, 0)} مبيعات آجلة عبر ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.ar}${repShiftedCount > 0 ? ` مع ${repShiftedCount} سجلات بتاريخ تصريح مؤجل` : ''}.`,
       anomalyCount > 0
         ? `الأولوية الأولى لتسليم المناوبة: ${topAnomalyAr}${anomalies[1] ? `؛ يليها: ${anomalies[1].ar}` : ''}.`
@@ -68206,7 +68438,7 @@
         ? `${companyFr} a enregistré ${fmtUSD(dayRevUsd, 0)} sur ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.fr} le ${targetDate} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(1)}% ${priorLblFr} à ${fmtUSD(priorRevUsd, 0)}` : `moyenne 7j ${fmtUSD(avg7RevUsd, 0)}`})${ahNoteFr}.`
         : `${companyFr} affiche $0 d activité et 0 ${DOM_UNIT_SPEC.fr} le ${targetDate} (${priorLblFr} : ${fmtUSD(priorRevUsd, 0)} ; moyenne 7j : ${fmtUSD(avg7RevUsd, 0)})${ahNoteFr}.`,
       canViewBooks
-        ? `Les encaissements atteignent ${fmtUSD(totalCashIntakeUsd, 0)} (${fmtUSD(cashSalesUsd, 0)} au comptant et ${fmtUSD(arCollectedUsd, 0)} de recouvrements clients) pour ${fmtUSD(creditSalesUsd, 0)} à crédit ; le pont résultat du jour cadre à ${fmtUSD(dayOpProfitRaw, 0)} ($0.00 d écart) avec ${fmtUSD(closingTillRaw, 0)} en caisse.`
+        ? `Les encaissements atteignent ${fmtUSD(totalCashIntakeUsd, 0)} (${fmtUSD(cashSalesUsd, 0)} au comptant et ${fmtUSD(arCollectedUsd, 0)} de recouvrements clients) pour ${fmtUSD(creditSalesUsd, 0)} à crédit ; le pont résultat du jour cadre à ${fmtUSD(dayOpProfitRaw, 0)} ($0.00 d écart) ${hoTillOff ? 'avec une caisse pas encore suivie' : `avec ${fmtUSD(closingTillRaw, 0)} en caisse`}.`
         : `La répartition du poste s établit à ${fmtUSD(cashSalesUsd, 0)} au comptant et ${fmtUSD(creditSalesUsd, 0)} à crédit sur ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.fr}${repShiftedCount > 0 ? `, dont ${repShiftedCount} écriture(s) différée(s)` : ''}.`,
       anomalyCount > 0
         ? `Priorité #1 de passation : ${topAnomalyFr}${anomalies[1] ? ` ; ensuite : ${anomalies[1].fr}` : ''}.`
@@ -68217,13 +68449,13 @@
 
     const drafts = {
       en: canViewBooks
-        ? `Shift handover (${companyEn} · ${targetDate}): Revenue ${fmtUSD(dayRevUsd, 0)} across ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.en} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(0)}% ${priorLblEn}` : 'Tx Date'}). Cash intake ${fmtUSD(totalCashIntakeUsd, 0)}, credit ${fmtUSD(creditSalesUsd, 0)}, day operating profit ${fmtUSD(dayOpProfitRaw, 0)}, closing cash till ${fmtUSD(closingTillRaw, 0)}. Priority: ${topAnomalyEn}.`
+        ? `Shift handover (${companyEn} · ${targetDate}): Revenue ${fmtUSD(dayRevUsd, 0)} across ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.en} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(0)}% ${priorLblEn}` : 'Tx Date'}). Cash intake ${fmtUSD(totalCashIntakeUsd, 0)}, credit ${fmtUSD(creditSalesUsd, 0)}, day operating profit ${fmtUSD(dayOpProfitRaw, 0)}, closing cash till ${hoTillOff ? hoTillTxt.en : fmtUSD(closingTillRaw, 0)}. Priority: ${topAnomalyEn}.`
         : `Shift handover (${companyEn} · ${targetDate}): ${fmtUSD(dayRevUsd, 0)} across ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.en} (Cash ${fmtUSD(cashSalesUsd, 0)}, Credit ${fmtUSD(creditSalesUsd, 0)}). Next shift priority: ${topAnomalyEn}.`,
       ar: canViewBooks
-        ? `تسليم المناوبة (${companyAr} · ${targetDate}): الإيرادات ${fmtUSD(dayRevUsd, 0)} عبر ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.ar} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(0)}% ${priorLblAr}` : 'تاريخ الحركة'}). التحصيل النقدي ${fmtUSD(totalCashIntakeUsd, 0)}، الآجل ${fmtUSD(creditSalesUsd, 0)}، الربح التشغيلي لليوم ${fmtUSD(dayOpProfitRaw, 0)}، ورصيد الصندوق ${fmtUSD(closingTillRaw, 0)}. الأولوية: ${topAnomalyAr}.`
+        ? `تسليم المناوبة (${companyAr} · ${targetDate}): الإيرادات ${fmtUSD(dayRevUsd, 0)} عبر ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.ar} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(0)}% ${priorLblAr}` : 'تاريخ الحركة'}). التحصيل النقدي ${fmtUSD(totalCashIntakeUsd, 0)}، الآجل ${fmtUSD(creditSalesUsd, 0)}، الربح التشغيلي لليوم ${fmtUSD(dayOpProfitRaw, 0)}، ورصيد الصندوق ${hoTillOff ? hoTillTxt.ar : fmtUSD(closingTillRaw, 0)}. الأولوية: ${topAnomalyAr}.`
         : `تسليم المناوبة (${companyAr} · ${targetDate}): ${fmtUSD(dayRevUsd, 0)} عبر ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.ar} (نقدي ${fmtUSD(cashSalesUsd, 0)}، آجل ${fmtUSD(creditSalesUsd, 0)}). أولوية الوردية القادمة: ${topAnomalyAr}.`,
       fr: canViewBooks
-        ? `Passation de poste (${companyFr} · ${targetDate}) : Activité ${fmtUSD(dayRevUsd, 0)} sur ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.fr} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(0)}% ${priorLblFr}` : 'Date opération'}). Encaissements ${fmtUSD(totalCashIntakeUsd, 0)}, crédit ${fmtUSD(creditSalesUsd, 0)}, résultat du jour ${fmtUSD(dayOpProfitRaw, 0)}, caisse clôture ${fmtUSD(closingTillRaw, 0)}. Priorité : ${topAnomalyFr}.`
+        ? `Passation de poste (${companyFr} · ${targetDate}) : Activité ${fmtUSD(dayRevUsd, 0)} sur ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.fr} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(0)}% ${priorLblFr}` : 'Date opération'}). Encaissements ${fmtUSD(totalCashIntakeUsd, 0)}, crédit ${fmtUSD(creditSalesUsd, 0)}, résultat du jour ${fmtUSD(dayOpProfitRaw, 0)}, caisse clôture ${hoTillOff ? hoTillTxt.fr : fmtUSD(closingTillRaw, 0)}. Priorité : ${topAnomalyFr}.`
         : `Passation de poste (${companyFr} · ${targetDate}) : ${fmtUSD(dayRevUsd, 0)} sur ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.fr} (Comptant ${fmtUSD(cashSalesUsd, 0)}, Crédit ${fmtUSD(creditSalesUsd, 0)}). Priorité équipe suivante : ${topAnomalyFr}.`
     };
 
@@ -68268,7 +68500,7 @@
       dayDirectUsd: canViewBooks ? dayDirectUsdRaw : null,
       dayExpUsd: canViewBooks ? dayExpUsdRaw : null,
       dayOpProfit: canViewBooks ? dayOpProfitRaw : null,
-      closingTillUsd: canViewBooks ? closingTillRaw : null,
+      closingTillUsd: canViewBooks && !hoTillOff ? closingTillRaw : null,
       dayNetCash: canViewBooks ? dayNetCashRaw : null,
       pnlBridgeBalanced,
       pnlBridgeVarianceUsd: pnlBridgeBalanced ? 0 : pnlBridgeDiff,
@@ -68309,7 +68541,7 @@
         creditSalesUsd,
         arCollectedUsd: canViewBooks ? arCollectedUsd : undefined,
         dayOpProfit: canViewBooks ? dayOpProfitRaw : undefined,
-        closingTillUsd: canViewBooks ? closingTillRaw : undefined,
+        closingTillUsd: canViewBooks && !hoTillOff ? closingTillRaw : undefined,
         afterHoursCount,
         afterHoursUsd,
         includeAfterHours,
@@ -68472,6 +68704,33 @@
     const dailyRows = buildDailyTillSheetRows({ user: u, company: reqCo });
 
     const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(ind, reqCo);
+    // An industry whose cash book is not whole in ISABI yet has no till (owner 2026-11-13): no balance, no projection.
+    // Same zeroed shape as a restricted seat so every reader hides the figures; tillUntracked carries the reason.
+    if (!isMfg && kpi.till_tracked === false) {
+      const miss = Array.isArray(kpi.till_missing) ? kpi.till_missing : [];
+      const zb = h => ({ horizonDays: h, arInUsd: 0, apOutUsd: 0, payrollOutUsd: 0, recurringOutUsd: 0, netUsd: 0, projectedTillUsd: 0 });
+      return {
+        scopeKey: `cf_untracked|${u ? u.id : 'anon'}|${ind}|${reqCo}|${buildGuideMutationSignature(ind, reqCo)}`,
+        industry: ind, companyKey: reqCo, companyLabel: coLabel, periodLabel: range.label || 'Active Period', asOfDate: anchorDate, fxRate,
+        rlsClamped: false, restricted: true, tillUntracked: true, tillMissing: miss.slice(),
+        canViewBooks: false, canExp: false, canPayroll: false,
+        closingUsd: 0, closingLbp: 0, closingCombinedUsd: 0, periodInUsd: 0, periodOutUsd: 0, periodNetUsd: 0, entryCount: 0, dailySheetDays: 0,
+        maturityBridge: { d7: zb(7), d14: zb(14), d30: zb(30) },
+        tieCheck: { class5BalanceUsd: 0, cashbookUsd: 0, varianceUsd: 0, tied: true },
+        topInflows: [], topOutflows: [],
+        headlineEn: `${coLabel} has no till balance in ISABI yet: its cash book is not complete${miss.length ? ` (still missing: ${miss.join(', ')})` : ''}.`,
+        headlineAr: `لا يوجد رصيد صندوق لـ ${coLabel} في ISABI بعد: دفتر النقد غير مكتمل${miss.length ? ` (الناقص: ${miss.map(x => sheetNameIn(x, 'ar')).join('، ')})` : ''}.`,
+        headlineFr: `${coLabel} n'a pas encore de solde de caisse dans ISABI : son livre de caisse est incomplet${miss.length ? ` (manquant : ${miss.map(x => sheetNameIn(x, 'fr')).join(', ')})` : ''}.`,
+        bulletsEn: ['The Cash Flow page lists the cash entries loaded so far. A till balance and a 30-day projection follow once the missing sheets are loaded.'],
+        bulletsAr: ['تعرض صفحة التدفق النقدي القيود النقدية المحمّلة حتى الآن. يظهر رصيد الصندوق وتوقع الثلاثين يوما بعد تحميل الأوراق الناقصة.'],
+        bulletsFr: ['La page Flux de trésorerie liste les écritures de caisse chargées à ce jour. Le solde de caisse et la projection à 30 jours suivront une fois les feuilles manquantes chargées.'],
+        drafts: {
+          en: `${coLabel} (${anchorDate}): no till balance yet, the cash book is not complete in ISABI.`,
+          ar: `${coLabel} (${anchorDate}): لا رصيد صندوق بعد، دفتر النقد غير مكتمل في ISABI.`,
+          fr: `${coLabel} (${anchorDate}) : pas encore de solde de caisse, le livre de caisse est incomplet dans ISABI.`
+        }
+      };
+    }
     const closingUsd = round2(safeNum(kpi.cash_till_usd != null ? kpi.cash_till_usd : kpi.cash_till));
     const latestDay = dailyRows.length ? dailyRows[0] : null;
     const closingLbp = Math.round(safeNum(latestDay ? latestDay.closing_lbp : (kpi.cash_till_lbp || 0)));
@@ -68896,7 +69155,7 @@
     const cfSnap = (isCashflowContext || canCash) ? computeCashflowLiquiditySnapshot({ company: reqCo, industry: ind, user: u }) : null;
 
     // 3. Extract live KPIs & domain insights tailored to the active view + industry
-    const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(reqCo);
+    const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(ind, reqCo);
     const items = typeof buildSentinelItems === 'function' ? buildSentinelItems() : [];
     const openSentinels = items.filter(it => it && it.severity && it.severity !== 'ok');
 
@@ -68912,7 +69171,18 @@
     let promptChipsFr = [];
     let quickActions = [];
 
-    if (!viewAllowed || rlsClamped || (isCashflowContext && cfSnap && cfSnap.restricted)) {
+    if (viewAllowed && !rlsClamped && isCashflowContext && cfSnap && cfSnap.tillUntracked) {
+      purposeEn = cfSnap.headlineEn;
+      purposeAr = cfSnap.headlineAr;
+      purposeFr = cfSnap.headlineFr;
+      kpis = [
+        { labelEn: 'Active Entity', labelAr: 'الكيان النشط', labelFr: 'Entité Active', value: coLabel, sub: ind, selector: '#workspace' },
+        { labelEn: 'Cash Till', labelAr: 'صندوق النقد', labelFr: 'Caisse espèces', value: 'Not Tracked Yet', sub: 'Missing From the Cash Book', selector: '#cfSiblingTillOff' }
+      ];
+      bulletsEn = cfSnap.bulletsEn.slice();
+      bulletsAr = cfSnap.bulletsAr.slice();
+      bulletsFr = cfSnap.bulletsFr.slice();
+    } else if (!viewAllowed || rlsClamped || (isCashflowContext && cfSnap && cfSnap.restricted)) {
       purposeEn = `Access to ${rawViewTitle} on ${coLabel} is restricted for your current seat permissions.`;
       purposeAr = `الوصول إلى ${rawViewTitle} في ${coLabel} مقيد لصلاحيات مقعدك الحالي.`;
       purposeFr = `L'accès à ${rawViewTitle} sur ${coLabel} est restreint pour les droits de votre siège actuel.`;
@@ -69135,7 +69405,7 @@
       // Universal fallback covering #overview, #daily_ops, #ledger, #statements, #pbi, #sentinels, #kiosks, #users, #contracts, #tables, and all industry views
       const revVal = (canSales || canViewBooks) ? fmtUSD(safeNum(kpi.sales_ttc)) : 'Restricted';
       const opProfVal = canViewBooks ? fmtUSD(safeNum(kpi.operating_profit)) : 'Restricted';
-      const cashVal = canCash ? fmtUSD(safeNum(kpi.cash_till)) : 'Restricted';
+      const cashVal = canCash ? (kpi.till_tracked === false ? 'Not Tracked Yet' : fmtUSD(safeNum(kpi.cash_till))) : 'Restricted';
       const tbVar = canViewBooks ? fmtUSD(Math.abs(safeNum(kpi.tb_check || 0))) : 'Restricted';
       purposeEn = `Live ${rawViewTitle} command surface for ${coLabel} (${ind}), uniting real-time operational registers, deterministic Class 1-7 accounting tie-outs, and interactive drill-downs across ${range.label}.`;
       purposeAr = `واجهة التحكم الحية لـ ${rawViewTitle} في ${coLabel} (${ind})، تجمع السجلات التشغيلية الفورية ومطابقة المحاسبة للفئات 1-7 والاستكشاف التفاعلي خلال ${range.label}.`;
@@ -69264,15 +69534,16 @@
       periodLabel: range.label || 'Active Period',
       asOfDate: String(range.to || todayISO() || '2026-10-28').slice(0, 10),
       rlsClamped,
-      restricted: Boolean(!viewAllowed || rlsClamped || (isCashflowContext && cfSnap && cfSnap.restricted)),
+      restricted: Boolean(!viewAllowed || rlsClamped || (isCashflowContext && cfSnap && cfSnap.restricted && !cfSnap.tillUntracked)),
       canViewBooks,
       canExp,
       canPayroll,
       canCash,
       isCashflowContext,
       cashflowLiquidity: cfSnap || null,
-      maturityBridge: (cfSnap && cfSnap.maturityBridge) ? cfSnap.maturityBridge : null,
-      tieCheck: (cfSnap && cfSnap.tieCheck) ? cfSnap.tieCheck : null,
+      // An industry with no till yet has no 30-day till bridge or Class 5 tie to show (no zero-filled table).
+      maturityBridge: (cfSnap && cfSnap.maturityBridge && !cfSnap.tillUntracked) ? cfSnap.maturityBridge : null,
+      tieCheck: (cfSnap && cfSnap.tieCheck && !cfSnap.tillUntracked) ? cfSnap.tieCheck : null,
       purposeEn: scrubOutwardGuideText(purposeEn),
       purposeAr: scrubOutwardGuideText(purposeAr),
       purposeFr: scrubOutwardGuideText(purposeFr),
@@ -69668,6 +69939,8 @@
 
     const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(ind, reqCo);
     const cfSnap = computeCashflowLiquiditySnapshot({ company: reqCo, industry: ind, user: u });
+    // No till yet for an industry whose cash book is not whole (owner 2026-11-13): P&L only, no 30-day till or runway.
+    const tillOff = !isMfg && kpi.till_tracked === false;
     const ovr = (options.overrideBaseline && typeof options.overrideBaseline === 'object') ? options.overrideBaseline : null;
 
     const baseRev = Math.max(0, round2(ovr && ovr.revenueUsd !== undefined ? safeNum(ovr.revenueUsd) : safeNum(kpi.sales_ttc)));
@@ -69838,29 +70111,29 @@
       : `La marge sur coût variable unitaire est négative dans ce scénario ; ajustez le prix ou les coûts directs avant d'augmenter le volume.`;
 
     const headlineEn = scrubOutwardGuideText(
-      `${coLabel} What-If Scenario shifts Operating Profit by ${fmtSignedUsd(opProfitDeltaUsd)} (to ${fmtUSD(simOpProfit)}, ${simOpMarginPct}% margin) and 30-Day Cash Till by ${fmtSignedUsd(tillDeltaUsd)} (to ${fmtUSD(simProjected30dTillUsd)}, ${simRunwayDays}d runway).`
+      `${coLabel} What-If Scenario shifts Operating Profit by ${fmtSignedUsd(opProfitDeltaUsd)} (to ${fmtUSD(simOpProfit)}, ${simOpMarginPct}% margin)${tillOff ? '. No 30-day till yet: this business\'s cash book is not complete in ISABI.' : ` and 30-Day Cash Till by ${fmtSignedUsd(tillDeltaUsd)} (to ${fmtUSD(simProjected30dTillUsd)}, ${simRunwayDays}d runway).`}`
     );
     const headlineAr = scrubOutwardGuideText(
-      `يؤدي سيناريو المحاكاة لـ ${coLabel} إلى تغيير الربح التشغيلي بمقدار ${fmtSignedUsd(opProfitDeltaUsd)} (ليصل إلى ${fmtUSD(simOpProfit)}، بهامش ${simOpMarginPct}%) وتغيير السيولة المتوقعة لـ 30 يوما بمقدار ${fmtSignedUsd(tillDeltaUsd)} (إلى ${fmtUSD(simProjected30dTillUsd)}، تغطية ${simRunwayDays} يوما).`
+      `يؤدي سيناريو المحاكاة لـ ${coLabel} إلى تغيير الربح التشغيلي بمقدار ${fmtSignedUsd(opProfitDeltaUsd)} (ليصل إلى ${fmtUSD(simOpProfit)}، بهامش ${simOpMarginPct}%)${tillOff ? '. لا توقع للصندوق لـ 30 يوما بعد: دفتر النقد لهذه الشركة غير مكتمل في ISABI.' : ` وتغيير السيولة المتوقعة لـ 30 يوما بمقدار ${fmtSignedUsd(tillDeltaUsd)} (إلى ${fmtUSD(simProjected30dTillUsd)}، تغطية ${simRunwayDays} يوما).`}`
     );
     const headlineFr = scrubOutwardGuideText(
-      `Le scénario What-If sur ${coLabel} fait varier le résultat d'exploitation de ${fmtSignedUsd(opProfitDeltaUsd)} (à ${fmtUSD(simOpProfit)}, marge ${simOpMarginPct}%) et la caisse projetée à 30j de ${fmtSignedUsd(tillDeltaUsd)} (à ${fmtUSD(simProjected30dTillUsd)}, autonomie ${simRunwayDays}j).`
+      `Le scénario What-If sur ${coLabel} fait varier le résultat d'exploitation de ${fmtSignedUsd(opProfitDeltaUsd)} (à ${fmtUSD(simOpProfit)}, marge ${simOpMarginPct}%)${tillOff ? '. Pas encore de caisse projetée à 30 jours : le livre de caisse de cette activité est incomplet dans ISABI.' : ` et la caisse projetée à 30j de ${fmtSignedUsd(tillDeltaUsd)} (à ${fmtUSD(simProjected30dTillUsd)}, autonomie ${simRunwayDays}j).`}`
     );
 
     const bulletsEn = [
       scrubOutwardGuideText(`P&L Sensitivity Bridge: Price (${fmtSignedUsd(priceEffectUsd)}), Volume (${fmtSignedUsd(volumeEffectUsd)}), Direct Cost (${fmtSignedUsd(directCostEffectUsd)}), and Fixed Overhead (${fmtSignedUsd(adjOverheadEffectUsd)}) move Operating Profit from ${fmtUSD(baseOpProfit)} to ${fmtUSD(simOpProfit)}.`),
       scrubOutwardGuideText(isoTextEn),
-      scrubOutwardGuideText(`Working Capital & FX Runway: ${levers.dsoDeltaDays === 0 ? 'Unchanged DSO' : (levers.dsoDeltaDays < 0 ? Math.abs(levers.dsoDeltaDays) + 'd faster AR collection' : levers.dsoDeltaDays + 'd slower AR collection')} (${fmtSignedUsd(dsoCashImpactUsd)}) and LBP at ${fmtNum(levers.fxRateLbp)} LL/$ (${fmtSignedUsd(fxRevalDeltaUsd)}) project a 30-day till of ${fmtUSD(simProjected30dTillUsd)} (${simRunwayDays} days coverage).`)
+      scrubOutwardGuideText(tillOff ? 'No 30-day till projection yet: this business\'s cash book is not complete in ISABI.' : `Working Capital & FX Runway: ${levers.dsoDeltaDays === 0 ? 'Unchanged DSO' : (levers.dsoDeltaDays < 0 ? Math.abs(levers.dsoDeltaDays) + 'd faster AR collection' : levers.dsoDeltaDays + 'd slower AR collection')} (${fmtSignedUsd(dsoCashImpactUsd)}) and LBP at ${fmtNum(levers.fxRateLbp)} LL/$ (${fmtSignedUsd(fxRevalDeltaUsd)}) project a 30-day till of ${fmtUSD(simProjected30dTillUsd)} (${simRunwayDays} days coverage).`)
     ];
     const bulletsAr = [
       scrubOutwardGuideText(`جسر حساسية الأرباح: أثر السعر (${fmtSignedUsd(priceEffectUsd)})، والحجم (${fmtSignedUsd(volumeEffectUsd)})، والتكلفة المباشرة (${fmtSignedUsd(directCostEffectUsd)})، والمصاريف الثابتة (${fmtSignedUsd(adjOverheadEffectUsd)}) ينقل الربح التشغيلي من ${fmtUSD(baseOpProfit)} إلى ${fmtUSD(simOpProfit)}.`),
       scrubOutwardGuideText(isoTextAr),
-      scrubOutwardGuideText(`رأس المال العامل وسعر الصرف: تغير أيام التحصيل (${fmtSignedUsd(dsoCashImpactUsd)}) وسعر الصرف عند ${fmtNum(levers.fxRateLbp)} ل.ل/$ (${fmtSignedUsd(fxRevalDeltaUsd)}) يضع رصيد الصندوق المتوقع لـ 30 يوما عند ${fmtUSD(simProjected30dTillUsd)} (${simRunwayDays} يوما).`)
+      scrubOutwardGuideText(tillOff ? 'لا توقع لرصيد الصندوق لـ 30 يوما بعد: دفتر النقد لهذه الشركة غير مكتمل في ISABI.' : `رأس المال العامل وسعر الصرف: تغير أيام التحصيل (${fmtSignedUsd(dsoCashImpactUsd)}) وسعر الصرف عند ${fmtNum(levers.fxRateLbp)} ل.ل/$ (${fmtSignedUsd(fxRevalDeltaUsd)}) يضع رصيد الصندوق المتوقع لـ 30 يوما عند ${fmtUSD(simProjected30dTillUsd)} (${simRunwayDays} يوما).`)
     ];
     const bulletsFr = [
       scrubOutwardGuideText(`Pont de sensibilité P&L : l'effet Prix (${fmtSignedUsd(priceEffectUsd)}), Volume (${fmtSignedUsd(volumeEffectUsd)}), Coûts Directs (${fmtSignedUsd(directCostEffectUsd)}) et Charges Fixes (${fmtSignedUsd(adjOverheadEffectUsd)}) porte le résultat d'exploitation de ${fmtUSD(baseOpProfit)} à ${fmtUSD(simOpProfit)}.`),
       scrubOutwardGuideText(isoTextFr),
-      scrubOutwardGuideText(`BFR et Taux de Change : l'évolution du délai clients DSO (${fmtSignedUsd(dsoCashImpactUsd)}) et un taux LBP à ${fmtNum(levers.fxRateLbp)} LL/$ (${fmtSignedUsd(fxRevalDeltaUsd)}) projettent une caisse à 30j de ${fmtUSD(simProjected30dTillUsd)} (${simRunwayDays} jours d'autonomie).`)
+      scrubOutwardGuideText(tillOff ? 'Pas encore de projection de caisse à 30 jours : le livre de caisse de cette activité est incomplet dans ISABI.' : `BFR et Taux de Change : l'évolution du délai clients DSO (${fmtSignedUsd(dsoCashImpactUsd)}) et un taux LBP à ${fmtNum(levers.fxRateLbp)} LL/$ (${fmtSignedUsd(fxRevalDeltaUsd)}) projettent une caisse à 30j de ${fmtUSD(simProjected30dTillUsd)} (${simRunwayDays} jours d'autonomie).`)
     ];
 
     const drafts = {
@@ -69869,21 +70142,21 @@
         `1. *Scenario Levers*: Price ${fmtSignedPct(levers.pricePct)} | Volume ${fmtSignedPct(levers.volumePct)} | Direct Cost ${fmtSignedPct(levers.directCostPct)} | Overhead ${fmtSignedPct(levers.overheadPct)} | DSO ${levers.dsoDeltaDays >= 0 ? '+' : ''}${levers.dsoDeltaDays}d | FX ${fmtNum(levers.fxRateLbp)} LL/$`,
         `2. *Simulated P&L*: Revenue ${fmtUSD(simRev)} (${fmtSignedUsd(revDeltaUsd)}) | Gross Margin ${fmtUSD(simGrossMargin)} (${simGrossMarginPct}%) | Operating Profit ${fmtUSD(simOpProfit)} (${fmtSignedUsd(opProfitDeltaUsd)})`,
         `3. *Break-Even & Volume Tolerance*: ${bulletsEn[1]}`,
-        `4. *30-Day Treasury Runway*: Projected Till ${fmtUSD(simProjected30dTillUsd)} (${fmtSignedUsd(tillDeltaUsd)} vs baseline, ${simRunwayDays}d cash runway).`
+        tillOff ? '4. *30-Day Treasury Runway*: no till yet, the cash book is not complete in ISABI.' : `4. *30-Day Treasury Runway*: Projected Till ${fmtUSD(simProjected30dTillUsd)} (${fmtSignedUsd(tillDeltaUsd)} vs baseline, ${simRunwayDays}d cash runway).`
       ].join('\n'),
       ar: [
         `*${coLabel} - موجز محاكاة السيناريو والحساسية المالية (${range.label})*`,
         `1. *مؤشرات السيناريو*: السعر ${fmtSignedPct(levers.pricePct)} | الحجم ${fmtSignedPct(levers.volumePct)} | التكلفة المباشرة ${fmtSignedPct(levers.directCostPct)} | المصاريف الثابتة ${fmtSignedPct(levers.overheadPct)} | التحصيل ${levers.dsoDeltaDays >= 0 ? '+' : ''}${levers.dsoDeltaDays} يوم | الصرف ${fmtNum(levers.fxRateLbp)} ل.ل/$`,
         `2. *النتائج المالية المحاكاة*: الإيرادات ${fmtUSD(simRev)} (${fmtSignedUsd(revDeltaUsd)}) | مجمل الربح ${fmtUSD(simGrossMargin)} (${simGrossMarginPct}%) | الربح التشغيلي ${fmtUSD(simOpProfit)} (${fmtSignedUsd(opProfitDeltaUsd)})`,
         `3. *نقطة التعادل وتحمل الحجم*: ${bulletsAr[1]}`,
-        `4. *السيولة المتوقعة لـ 30 يوما*: رصيد الصندوق المتوقع ${fmtUSD(simProjected30dTillUsd)} (${fmtSignedUsd(tillDeltaUsd)} عن الأساس، تغطية ${simRunwayDays} يوما).`
+        tillOff ? '4. *السيولة المتوقعة لـ 30 يوما*: لا رصيد صندوق بعد، دفتر النقد غير مكتمل في ISABI.' : `4. *السيولة المتوقعة لـ 30 يوما*: رصيد الصندوق المتوقع ${fmtUSD(simProjected30dTillUsd)} (${fmtSignedUsd(tillDeltaUsd)} عن الأساس، تغطية ${simRunwayDays} يوما).`
       ].join('\n'),
       fr: [
         `*${coLabel} - Synthèse de Simulation What-If & Sensibilité (${range.label})*`,
         `1. *Leviers du Scénario* : Prix ${fmtSignedPct(levers.pricePct)} | Volume ${fmtSignedPct(levers.volumePct)} | Coûts Directs ${fmtSignedPct(levers.directCostPct)} | Charges Fixes ${fmtSignedPct(levers.overheadPct)} | DSO ${levers.dsoDeltaDays >= 0 ? '+' : ''}${levers.dsoDeltaDays}j | FX ${fmtNum(levers.fxRateLbp)} LL/$`,
         `2. *P&L Simulé* : Chiffre d'affaires ${fmtUSD(simRev)} (${fmtSignedUsd(revDeltaUsd)}) | Marge Brute ${fmtUSD(simGrossMargin)} (${simGrossMarginPct}%) | Résultat d'exploitation ${fmtUSD(simOpProfit)} (${fmtSignedUsd(opProfitDeltaUsd)})`,
         `3. *Seuil de Rentabilité* : ${bulletsFr[1]}`,
-        `4. *Trésorerie à 30 Jours* : Solde Caisse Projeté ${fmtUSD(simProjected30dTillUsd)} (${fmtSignedUsd(tillDeltaUsd)} vs base, autonomie ${simRunwayDays}j).`
+        tillOff ? '4. *Trésorerie à 30 Jours* : pas encore de caisse, le livre de caisse est incomplet dans ISABI.' : `4. *Trésorerie à 30 Jours* : Solde Caisse Projeté ${fmtUSD(simProjected30dTillUsd)} (${fmtSignedUsd(tillDeltaUsd)} vs base, autonomie ${simRunwayDays}j).`
       ].join('\n')
     };
 
@@ -69923,10 +70196,10 @@
       units: baseUnits,
       uom: domMeta.unitLabelEn,
       dsoDays: baseDsoDays,
-      closingCombinedTillUsd: baseCombinedTillUsd,
-      projected30dCashUsd: baseProjected30dTillUsd,
-      projected30dTillUsd: baseProjected30dTillUsd,
-      runwayDays: baseRunwayDays,
+      closingCombinedTillUsd: tillOff ? null : baseCombinedTillUsd,
+      projected30dCashUsd: tillOff ? null : baseProjected30dTillUsd,
+      projected30dTillUsd: tillOff ? null : baseProjected30dTillUsd,
+      runwayDays: tillOff ? null : baseRunwayDays,
       fxRateLbp: baseFxRate
     };
     const simObj = {
@@ -69942,10 +70215,10 @@
       units: simUnits,
       uom: domMeta.unitLabelEn,
       dsoDays: simDsoDays,
-      closingCombinedTillUsd: round2(baseCombinedTillUsd + fxRevalDeltaUsd),
-      projected30dCashUsd: simProjected30dTillUsd,
-      projected30dTillUsd: simProjected30dTillUsd,
-      runwayDays: simRunwayDays,
+      closingCombinedTillUsd: tillOff ? null : round2(baseCombinedTillUsd + fxRevalDeltaUsd),
+      projected30dCashUsd: tillOff ? null : simProjected30dTillUsd,
+      projected30dTillUsd: tillOff ? null : simProjected30dTillUsd,
+      runwayDays: tillOff ? null : simRunwayDays,
       fxRateLbp: levers.fxRateLbp
     };
 
@@ -70013,7 +70286,7 @@
         wcCashDeltaUsd,
         operatingCashFlow30dDeltaUsd,
         cashFlowTotalDeltaUsd,
-        projected30dCashDeltaUsd: tillDeltaUsd,
+        projected30dCashDeltaUsd: tillOff ? null : tillDeltaUsd,
         projected30dTillDeltaUsd: tillDeltaUsd,
         runwayDeltaDays,
         decompositionResidualUsd
@@ -70065,7 +70338,7 @@
       : ('#' + String(ALERT_RULE_CATALOG.length + getActiveCustomAlertRules().length + 1).padStart(2, '0'));
     const cleanName = scrubOutwardGuideText(`${snap.companyLabel} What-If Spend & Margin Guardrail`);
     const cleanWhy = scrubOutwardGuideText(
-      `What-If Scenario Guardrail (${snap.periodLabel}): keep 30d category spend within ${fmtUSD(monthlyBudgetCap)} to protect simulated ${snap.simulated.opMarginPct}% operating margin and ${fmtUSD(snap.simulated.projected30dTillUsd)} 30-day cash till.`
+      `What-If Scenario Guardrail (${snap.periodLabel}): keep 30d category spend within ${fmtUSD(monthlyBudgetCap)} to protect simulated ${snap.simulated.opMarginPct}% operating margin${snap.simulated.projected30dTillUsd == null ? '' : ` and ${fmtUSD(snap.simulated.projected30dTillUsd)} 30-day cash till`}.`
     );
     const ruleObj = {
       id: ruleId,
@@ -70976,10 +71249,13 @@
       const cfSnap = typeof computeCashflowLiquiditySnapshot === 'function'
         ? computeCashflowLiquiditySnapshot({ companyKey: reqCo, canViewBooks: true })
         : null;
-      const baseTill = round2(Number((cfSnap && cfSnap.closingCombinedUsd) || 145000));
-      const baseProj30 = round2(Number((cfSnap && cfSnap.projected30dClosingUsd) || (baseTill + baseline30dInflowUsd * 0.35)));
-      closingCombinedTillUsd = baseTill;
-      projected30dTillUsd = round2(baseProj30 + delta30dInflowUsd);
+      // No invented till: an industry without its whole cash book (cfSnap.tillUntracked) gets no till figures here.
+      const baseTill = (cfSnap && cfSnap.tillUntracked) ? null : round2(Number((cfSnap && cfSnap.closingCombinedUsd) || 145000));
+      if (baseTill !== null) {
+        const baseProj30 = round2(Number((cfSnap && cfSnap.projected30dClosingUsd) || (baseTill + baseline30dInflowUsd * 0.35)));
+        closingCombinedTillUsd = baseTill;
+        projected30dTillUsd = round2(baseProj30 + delta30dInflowUsd);
+      }
     }
 
     const callList = counterparties.slice(0, 10);
@@ -72420,10 +72696,13 @@
       insurance: 'ins_billing'
     };
     const targetHubView = domainHubByKey[indKey] || 'cashflow';
+    // A 13-week runway starts from the till: an industry with no till yet (cash book not whole) has none to project.
+    const trsyTillOff = !rlsClamped && canViewBooks && ind !== 'Manufacturing' && (getIndustryKpiSnapshot(ind, reqCo) || {}).till_tracked === false;
 
-    if (rlsClamped || !canViewBooks) {
+    if (rlsClamped || !canViewBooks || trsyTillOff) {
       return {
-        scopeKey: `trsy|restricted|${reqCo}|${u ? u.id : 'anon'}`,
+        scopeKey: `trsy|${trsyTillOff ? 'untracked' : 'restricted'}|${reqCo}|${u ? u.id : 'anon'}`,
+        tillUntracked: trsyTillOff,
         leverSig,
         industry: ind,
         companyKey: reqCo,
@@ -72489,12 +72768,12 @@
         },
         weeks: [],
         sweepSuggestions: [],
-        headlineEn: '13-week rolling cash-flow and liquidity runway telemetry is restricted to authorized treasury and finance seats for this entity scope.',
-        headlineAr: 'بيانات توقعات التدفقات النقدية ومدرج السيولة لـ 13 أسبوعاً مقيدة لمقاعد الخزينة والمالية المخولة ضمن هذا النطاق.',
-        headlineFr: 'Les prévisions de trésorerie et d autonomie sur 13 semaines sont réservées aux sièges trésorerie et finance autorisés pour ce périmètre.',
-        spokenEn: '13-week rolling cash-flow and liquidity runway telemetry is restricted for this seat or entity scope.',
-        spokenAr: 'بيانات توقعات التدفقات النقدية ومدرج السيولة لـ 13 أسبوعاً مقيدة لهذا المقعد أو النطاق.',
-        spokenFr: 'Les prévisions de trésorerie sur 13 semaines sont restreintes pour ce siège ou périmètre.',
+        headlineEn: trsyTillOff ? `${coLabel} has no till in ISABI yet (its cash book is not complete), so there is no 13-week runway to project.` : '13-week rolling cash-flow and liquidity runway telemetry is restricted to authorized treasury and finance seats for this entity scope.',
+        headlineAr: trsyTillOff ? `لا يوجد صندوق لـ ${coLabel} في ISABI بعد (دفتر النقد غير مكتمل)، لذلك لا يوجد مدرج سيولة لـ 13 أسبوعاً لتوقعه.` : 'بيانات توقعات التدفقات النقدية ومدرج السيولة لـ 13 أسبوعاً مقيدة لمقاعد الخزينة والمالية المخولة ضمن هذا النطاق.',
+        headlineFr: trsyTillOff ? `${coLabel} n'a pas encore de caisse dans ISABI (livre de caisse incomplet) : aucune autonomie sur 13 semaines à projeter.` : 'Les prévisions de trésorerie et d autonomie sur 13 semaines sont réservées aux sièges trésorerie et finance autorisés pour ce périmètre.',
+        spokenEn: trsyTillOff ? `${coLabel} has no till in ISABI yet, so there is no 13-week runway to project.` : '13-week rolling cash-flow and liquidity runway telemetry is restricted for this seat or entity scope.',
+        spokenAr: trsyTillOff ? `لا يوجد صندوق لـ ${coLabel} في ISABI بعد، لذلك لا يوجد مدرج سيولة لـ 13 أسبوعاً.` : 'بيانات توقعات التدفقات النقدية ومدرج السيولة لـ 13 أسبوعاً مقيدة لهذا المقعد أو النطاق.',
+        spokenFr: trsyTillOff ? `${coLabel} n'a pas encore de caisse dans ISABI : aucune autonomie sur 13 semaines à projeter.` : 'Les prévisions de trésorerie sur 13 semaines sont restreintes pour ce siège ou périmètre.',
         bulletsEn: [],
         bulletsAr: [],
         bulletsFr: [],
@@ -74143,8 +74422,11 @@
       try {
         STATE.company = reqCo;
         const cfSnap = computeCashflowLiquiditySnapshot({ user: u, canViewBooks: true });
-        closingCombinedTillUsd = round2(safeNum(cfSnap && (cfSnap.closingCombinedUsd != null ? cfSnap.closingCombinedUsd : cfSnap.closingUsd)));
-        postReplenishTillUsd = round2(closingCombinedTillUsd - urgent1_7dOrderUsd);
+        // No till yet (industry cash book not whole): leave both till figures empty rather than 0.
+        if (!(cfSnap && cfSnap.tillUntracked)) {
+          closingCombinedTillUsd = round2(safeNum(cfSnap && (cfSnap.closingCombinedUsd != null ? cfSnap.closingCombinedUsd : cfSnap.closingUsd)));
+          postReplenishTillUsd = round2(closingCombinedTillUsd - urgent1_7dOrderUsd);
+        }
       } finally {
         STATE.company = prevCo;
       }
@@ -78285,13 +78567,13 @@
         ${stTable([{ label: 'Code', key: 'Code', mono: true }, { label: 'Account', key: 'Account' }, { label: 'Debit ($)', key: 'debit', r: true, fmt: C.usd2 }, { label: 'Credit ($)', key: 'credit', r: true, fmt: C.usd2 }, { label: 'Net Balance ($)', key: 'balance', r: true, fmt: v => `<strong>${fmtUSD(v, 2)}</strong>` }],
           cls(n), [{ v: 'CLASS TOTAL', span: 2 }, { v: fmtUSD(sum(cls(n), 'debit'), 2), r: true }, { v: fmtUSD(sum(cls(n), 'credit'), 2), r: true }, { v: fmtUSD(sum(cls(n), 'balance'), 2), r: true }])}`).join('');
       const assets = sum(cls(2), 'balance') + sum(cls(3), 'balance') + sum(cls(5), 'balance') + Number(k.ar_balance || 0);
-      bodyHtml += `<div class="live-calc" style="margin-top:16px"><div><small>Open AR (Class 4 asset)</small><b>${fmtUSD(k.ar_balance, 0)}</b></div><div><small>Open AP (Class 4 liability)</small><b>${fmtUSD(k.ap_balance, 0)}</b></div><div><small>Cash Till</small><b>${fmtUSD(k.cash_till, 2)}</b></div><div><small>Classes 2+3+5 + AR</small><b>${fmtUSD(assets, 0)}</b></div></div>`;
+      bodyHtml += `<div class="live-calc" style="margin-top:16px"><div><small>Open AR (Class 4 asset)</small><b>${fmtUSD(k.ar_balance, 0)}</b></div><div><small>Open AP (Class 4 liability)</small><b>${fmtUSD(k.ap_balance, 0)}</b></div><div><small>Cash Till</small><b>${fmtTillOrUntracked(k, 2)}</b></div><div><small>Classes 2+3+5 + AR</small><b>${fmtUSD(assets, 0)}</b></div></div>`;
     } else if (code === '05') {
       const months = (m.monthly || []).slice(-12).map(r => ({ ...r, net: Number(r.cash_in || 0) - Number(r.cash_out || 0) }));
       bodyHtml = stTable([
         { label: 'Month', key: 'Year Month' }, { label: 'Sales TTC', key: 'sales_ttc', r: true, fmt: C.usd0 }, { label: 'Cash In', key: 'cash_in', r: true, fmt: C.usd0 }, { label: 'Cash Out', key: 'cash_out', r: true, fmt: C.usd0 },
         { label: 'Net Cash Flow', key: 'net', r: true, fmt: v => `<strong style="color:${v < 0 ? 'var(--crit)' : 'var(--good)'}">${fmtUSD(v, 0)}</strong>` }, { label: 'Raw Cost', key: 'raw_cost', r: true, fmt: C.usd0 }, { label: 'Expenses', key: 'expenses', r: true, fmt: C.usd0 }, { label: 'Salaries', key: 'salaries', r: true, fmt: C.usd0 }
-      ], months, [{ v: `PERIOD (${esc(k.label || 'All-Time')}) · TILL ${fmtUSD(k.cash_till, 2)}`, span: 2 }, { v: fmtUSD(k.cash_inflow, 0), r: true }, { v: fmtUSD(k.cash_outflow, 0), r: true }, { v: fmtUSD(k.net_cash_flow, 0), r: true }, { v: fmtUSD(k.raw_cost, 0), r: true }, { v: fmtUSD(k.expenses, 0), r: true }, { v: fmtUSD(k.salaries_paid, 0), r: true }]);
+      ], months, [{ v: `PERIOD (${esc(k.label || 'All-Time')}) · TILL ${fmtTillOrUntracked(k, 2)}`, span: 2 }, { v: fmtUSD(k.cash_inflow, 0), r: true }, { v: fmtUSD(k.cash_outflow, 0), r: true }, { v: fmtUSD(k.net_cash_flow, 0), r: true }, { v: fmtUSD(k.raw_cost, 0), r: true }, { v: fmtUSD(k.expenses, 0), r: true }, { v: fmtUSD(k.salaries_paid, 0), r: true }]);
     } else if (code === '06') {
       const lines = [
         ['Sales TTC', fmtUSD(k.sales_ttc, 2), `${fmtNum(k.loads)} loads · ${fmtNum(k.tons_sold, 0)} t · avg ${fmtUSD(k.avg_price_ttc, 2)}/unit`],
@@ -78301,7 +78583,7 @@
         ['Payroll', fmtUSD(k.salaries_paid, 2), `overtime bonus ${fmtUSD(k.overtime_bonus, 0)} · commission due ${fmtUSD(k.commission_due, 0)}`],
         ['Customer Receipts', fmtUSD(k.receipts, 2), `open AR ${fmtUSD(k.ar_balance, 2)} · overdue ${fmtUSD(k.ar_overdue, 0)} · DSO ${fmtNum(k.dso_days, 0)} d`],
         ['Supplier Settlements', fmtUSD(k.settlements_paid, 2), `open AP ${fmtUSD(k.ap_balance, 0)}`],
-        ['Cash Till', fmtUSD(k.cash_till, 2), `in ${fmtUSD(k.cash_inflow, 0)} · out ${fmtUSD(k.cash_outflow, 0)} · net ${fmtUSD(k.net_cash_flow, 0)}`],
+        ['Cash Till', fmtTillOrUntracked(k, 2), `in ${fmtUSD(k.cash_inflow, 0)} · out ${fmtUSD(k.cash_outflow, 0)} · net ${fmtUSD(k.net_cash_flow, 0)}`],
         ['Diesel', `${fmtNum(k.diesel_litres, 0)} L issued`, `purchased ${fmtNum(k.diesel_purchased, 0)} L · sold ${fmtNum(k.diesel_sold, 0)} L · tank ${fmtNum(k.diesel_in_tank, 0)} L`],
         ['Fleet', `${fmtNum(k.active_equip)} units`, `${fmtNum(k.trucks_used)} trucks used · ${fmtNum(k.own_fleet_loads)} own-fleet loads · ${fmtUSD(k.cost_per_ton, 2)}/t`],
         ['Gross Margin / Operating Profit', `${fmtUSD(k.gross_margin, 0)} / ${fmtUSD(k.operating_profit, 0)}`, `${fmtPct(k.gm_pct, k.gross_margin, k.net_sales)} GM · ${fmtPct(k.op_margin_pct, k.operating_profit, k.net_sales)} op margin`],
@@ -78430,7 +78712,7 @@
       const tb = (m.gl_tb || []).filter(r => [1, 5].includes(Number(r.Class)) || /^(16|17|45|455|53|51|512|5300)/.test(String(r.Code)));
       bodyHtml = stTable([
         { label: 'Code', key: 'Code', mono: true }, { label: 'Account', key: 'Account' }, { label: 'Class', key: 'Class' }, { label: 'Debit ($)', key: 'debit', r: true, fmt: C.usd2 }, { label: 'Credit ($)', key: 'credit', r: true, fmt: C.usd2 }, { label: 'Balance ($)', key: 'balance', r: true, fmt: v => `<strong>${fmtUSD(v, 2)}</strong>` }
-      ], tb, [{ v: `TREASURY, LOANS & PARTNER ACCOUNTS · TILL ${fmtUSD(k.cash_till, 2)} · NET CASH FLOW ${fmtUSD(k.net_cash_flow, 2)}`, span: 3 }, { v: fmtUSD(sum(tb, 'debit'), 2), r: true }, { v: fmtUSD(sum(tb, 'credit'), 2), r: true }, { v: fmtUSD(sum(tb, 'balance'), 2), r: true }]);
+      ], tb, [{ v: `TREASURY, LOANS & PARTNER ACCOUNTS · TILL ${fmtTillOrUntracked(k, 2)} · NET CASH FLOW ${fmtUSD(k.net_cash_flow, 2)}`, span: 3 }, { v: fmtUSD(sum(tb, 'debit'), 2), r: true }, { v: fmtUSD(sum(tb, 'credit'), 2), r: true }, { v: fmtUSD(sum(tb, 'balance'), 2), r: true }]);
     } else if (code === '22') {
       const ents = [['WTC', 'wtc'], ['BBConstruction', 'bbconstruction'], ['Lions Transport', 'lionstransport'], ['Group', 'manufacturing-group']];
       // Stored period totals of each company, with costs passed on and scrap out of sales like every other page.
@@ -137036,7 +137318,7 @@
         }
 
         // Append honest proportional micro-bar (<u class="recon-tile-bar">) & intuitive accounting sub-label (<em class="recon-tile-sub">)
-        if (!sp.querySelector('.recon-tile-sub')) {
+        if (!sp.querySelector('.recon-tile-sub') && !sp.hasAttribute('data-no-recon-sub')) {
           let barPct = 0;
           let subTxt = '';
           if (isUsd) {

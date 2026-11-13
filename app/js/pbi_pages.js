@@ -3403,6 +3403,8 @@
     }
     return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   }
+  // An industry whose cash book is not whole in ISABI has no till yet (till_tracked false): never show it as $0.
+  function tillOffK(k) { return Boolean(k && k.till_tracked === false); }
   function fmtUSD(v, decimals = 0) {
     const n = Number(v ?? 0);
     if (!Number.isFinite(n)) return String(v ?? '—');
@@ -5743,7 +5745,7 @@
             { label: 'Customer Receipts', value: fmtUSD(sc(k.receipts), 0), sub: 'DSO ' + fmtNum(k.dso_days, 0) + ' days', tone: 'good', navPage: 'p06_ar' },
             { label: '3-Leg Open AP', value: fmtUSD(k.ap_balance, 0), sub: 'Mat ' + fmtUSDk(k.ap_material) + ' · Haul ' + fmtUSDk(k.ap_haulage), navPage: 'p07_ap' },
             { label: 'Supplier Settlements', value: fmtUSD(k.settlements_paid, 0), sub: 'Applied against 3 legs', navPage: 'p07_ap' },
-            { label: 'Cash Till', value: fmtUSD(k.cash_till, 0), sub: 'Net Cash Flow ' + fmtUSDk(k.net_cash_flow), tone: Number(k.cash_till || 0) < 0 ? 'crit' : 'brass', navPage: 'p14_cashflow' }
+            { label: 'Cash Till', value: tillOffK(k) ? 'Not Tracked Yet' : fmtUSD(k.cash_till, 0), sub: 'Net Cash Flow ' + fmtUSDk(k.net_cash_flow), tone: Number(k.cash_till || 0) < 0 ? 'crit' : 'brass', navPage: 'p14_cashflow' }
           ])}
           ${kpiBand('4 · Fleet, Diesel Tank & Trial Balance Integrity', [
             { label: 'Active Equipment', value: fmtNum(k.active_equip), sub: fmtNum(k.trucks_used) + ' trucks dispatched', navPage: 'p10_fleet' },
@@ -8606,9 +8608,9 @@
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Cash Flow & Daily Plant Till', [
-            { label: 'USD Cash Till ($)', value: fmtUSD(cleanUsd(k.cash_till_usd != null ? k.cash_till_usd : k.cash_till), 2), sub: `In ${fmtUSD(k.cash_in_usd != null ? k.cash_in_usd : k.cash_inflow, 0)} · Out ${fmtUSD(k.cash_out_usd != null ? k.cash_out_usd : k.cash_outflow, 0)}`, tone: 'good' },
-            { label: 'LBP Cash Till (LL)', value: fmtLL(k.cash_till_lbp || 0), sub: `Rate ${fmtNum(rateLbp, 0)} LL/$`, tone: 'good' },
-            { label: 'Closing Cash Till', value: fmtUSD(cleanUsd(k.cash_till), 2), sub: 'Combined USD + LBP book till', tone: 'brass' },
+            { label: 'USD Cash Till ($)', value: tillOffK(k) ? 'Not Tracked Yet' : fmtUSD(cleanUsd(k.cash_till_usd != null ? k.cash_till_usd : k.cash_till), 2), sub: `In ${fmtUSD(k.cash_in_usd != null ? k.cash_in_usd : k.cash_inflow, 0)} · Out ${fmtUSD(k.cash_out_usd != null ? k.cash_out_usd : k.cash_outflow, 0)}`, tone: 'good' },
+            { label: 'LBP Cash Till (LL)', value: tillOffK(k) ? 'Not Tracked Yet' : fmtLL(k.cash_till_lbp || 0), sub: `Rate ${fmtNum(rateLbp, 0)} LL/$`, tone: 'good' },
+            { label: 'Closing Cash Till', value: tillOffK(k) ? 'Not Tracked Yet' : fmtUSD(cleanUsd(k.cash_till), 2), sub: 'Combined USD + LBP book till', tone: 'brass' },
             { label: 'Cash Inflows (Total)', value: fmtUSD(k.cash_inflow, 0), sub: 'Op. Sales/AR + Treasury/FX in', tone: 'good' },
             { label: 'Cash Outflows (Total)', value: fmtUSD(k.cash_outflow, 0), sub: 'Op. Exp/AP/Payroll + Sweeps out', tone: 'crit' },
             { label: 'Net Cash Flow', value: fmtUSD(cleanUsd(k.net_cash_flow), 2), sub: 'Inflows − Outflows in period', neg: true }
@@ -9350,7 +9352,7 @@
             { label: 'Output VAT 11% · Stmt #18', value: fmtUSD(k.sales_vat, 2), sub: 'Ties to Class 4427', tone: 'good' },
             { label: 'FIFO Open AR · Stmt #09/#11', value: fmtUSD(k.ar_balance, 2), sub: 'Ties to Class 4111', tone: 'good' },
             { label: '3-Leg Open AP · Stmt #10/#12', value: fmtUSD(k.ap_balance, 2), sub: 'Ties to Class 4011', tone: 'good' },
-            { label: 'Cash Till · Stmt #05', value: fmtUSD(k.cash_till, 2), sub: 'Ties to Class 5 Till', tone: 'good' },
+            { label: 'Cash Till · Stmt #05', value: tillOffK(k) ? 'Not Tracked Yet' : fmtUSD(k.cash_till, 2), sub: 'Ties to Class 5 Till', tone: 'good' },
             { label: 'Trial Balance · Stmt #02', value: fmtUSD(k.tb_check || 0, 2), sub: 'Double-Entry Variance $0.00', tone: 'brass' }
           ])}
         </div>
