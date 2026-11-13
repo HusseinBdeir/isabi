@@ -25,7 +25,11 @@ collide; every later change to an entry is a compare-and-swap on the value this 
          site serves the batch's shell version. On main is not live.
 
 A waiting session is told SHIPPED only when its entry is marked shipped (or its commits are on main) AND the live
-site serves that version or a later one; it then clears its own entry. Entries nobody collects go after 24 hours.
+site serves that version or a later one; it then clears its own entry. Entries nobody collects go after 24 hours
+(left-out and abandoned ones after a week). A change found on main that no leader marked shipped (its leader stopped
+after pushing) counts as shipped only on evidence that it is live; otherwise the next batch takes it live.
+A change built on top of another waiting change carries that change's commits: both are in the batch, and dropping
+the lower one warns that it still ships through the upper one.
 A session waiting in line refreshes its entry every 10 minutes; an entry with no sign of life for 3 hours is
 skipped by leaders (never shipped behind its session's back) until that session joins again.
 The line is ordered by the second each change joined, by each PC's own clock: a skewed clock can change the order
@@ -95,6 +99,7 @@ STATES = ("waiting", "left_out", "shipped")
 STALE_AFTER_MIN = 180   # a waiting entry whose session gave no sign of life for this long is skipped, not shipped
 HEARTBEAT_S = 600       # a session waiting in line refreshes its entry this often
 SHIPPED_KEEP_H = 24     # a shipped entry its session never collected is cleared after this long
+DEAD_KEEP_DAYS = 7      # left-out, unreadable and abandoned waiting entries are cleared after this long
 HEAD_START_S = 60       # a waiter that is Nth in line leads only after the lock has been free N * this long
 DEFAULT_WAIT_S = 540    # under the 10 minute limit of a foreground command; run again to keep waiting
 POLL_S = 20
@@ -352,11 +357,30 @@ def _touch(cwd: Path, entry_id: str) -> None:
         pass
 
 
-def _prune_shipped(cwd: Path) -> None:
-    cutoff = RL._now() - dt.timedelta(hours=SHIPPED_KEEP_H)
+def _id_time(entry_id: str) -> dt.datetime | None:
+    try:
+        return dt.datetime.strptime(entry_id.split("-")[0], "%Y%m%dT%H%M%SZ").replace(tzinfo=dt.timezone.utc)
+    except ValueError:
+        return None
+
+
+def _prune(cwd: Path) -> None:
+    """Clear entries that have done their job or were abandoned, so the line every waiting session reads stays short:
+    shipped and not collected for a day; left out, unreadable, or waiting with no sign of life for a week. An entry
+    whose age cannot be told is kept."""
+    now = RL._now()
     for e in read_line(cwd):
-        at = RL._parse_iso(e.get("shippedAt") or "")
-        if e.get("state") == "shipped" and (at is None or at <= cutoff):
+        state = e.get("state")
+        if state == "shipped":
+            at, keep = e.get("shippedAt"), dt.timedelta(hours=SHIPPED_KEEP_H)
+        elif state == "left_out":
+            at, keep = e.get("leftOutAt"), dt.timedelta(days=DEAD_KEEP_DAYS)
+        elif state == "waiting":
+            at, keep = e.get("seenAt") or e.get("queuedAt"), dt.timedelta(days=DEAD_KEEP_DAYS)
+        else:
+            at, keep = "", dt.timedelta(days=DEAD_KEEP_DAYS)
+        when = RL._parse_iso(at or "") or _id_time(e["id"])
+        if when is not None and when + keep <= now:
             _delete_entry(cwd, e)
 
 
@@ -524,13 +548,12 @@ def poll_once(cwd: Path, entry_id: str, *, known: dict | None = None, free_for_s
     lock_sha, lock = RL.read_remote_lock(cwd)
     free = not lock_sha or RL.is_expired(lock, RL.TAKEOVER_GRACE_MIN)
 
-    def main_shell(rec: dict) -> str:
-        return shell_ver_of(_blob(cwd, f"{RL.REMOTE}/main:app/sw.js")) if (rec.get("app") or {}).get("sha") else ""
-
     if e is None:
         rec = known or _local_json(cwd, JOINED_FILE).get(entry_id)
         if rec and _parts_on_main(cwd, rec):
-            return (*_live_verdict(entry_id, main_shell(rec), "another session"), free)
+            # Its entry was cleared (collected, or pruned a day after a leader's done checked the deploy).
+            bar = _app_main_shell(cwd) if (rec.get("app") or {}).get("sha") else ""
+            return (*_live_verdict(entry_id, bar, "another session"), free)
         return "GONE", (f"{entry_id} is not in the line and its commits are not on main: it was withdrawn, or this "
                         "worktree has no record of it. Run status; join again if it still has to ship."), free
     if e.get("state") == "shipped":
@@ -547,12 +570,39 @@ def poll_once(cwd: Path, entry_id: str, *, known: dict | None = None, free_for_s
         if b.get("lockId") == lock.get("lockId"):
             return "IN_BATCH", f"{e['id']} is in the batch {b.get('holder', '?')} is releasing as v{b.get('version') or '?'}.", free
         return "WAITING", f"{e['id']} is {pos + 1} of {len(waiting)} in line; release lock {RL.describe(lock)}.", free
-    if _parts_on_main(cwd, e):  # its leader pushed it to main and never ran done: say what live says
-        return (*_live_verdict(e["id"], main_shell(e), (e.get("batch") or {}).get("holder") or "another session"), free)
+    if _parts_on_main(cwd, e):
+        # Its leader pushed it to main and never ran done. SHIPPED only on evidence that it is live; without that it
+        # stays in line like any other change, and the next batch takes it live.
+        live_ok, bar = _live_evidence(cwd, e, (lock.get("deployed") or []) if lock_sha else [])
+        if live_ok:
+            by = (e.get("batch") or {}).get("holder") or "another session"
+            return "SHIPPED", (f"{e['id']} is live: pushed and deployed by {by}"
+                               f"{(' (live serves v' + bar + ' or later)') if bar else ' (no shell change)'}."), free
     if pos == 0 or free_for_s >= pos * HEAD_START_S:
         return "TURN", f"nothing is releasing and {e['id']} is {'first' if pos == 0 else 'next'} in line: lead the batch.", free
     return "WAITING", (f"nothing is releasing; {waiting[0].get('holder', '?')} is first in line and leads the batch "
                        f"({e['id']} goes with it)."), free
+
+
+def _app_main_shell(cwd: Path) -> str:
+    """The shell version on isabi-app origin/main (call after a fetch of that main, e.g. _parts_on_main)."""
+    return shell_ver_of(_blob(app_root(cwd), f"{RL.REMOTE}/main:sw.js"))
+
+
+def _live_evidence(cwd: Path, entry: dict, deployed: list) -> tuple[bool, str]:
+    """For an entry whose commits are all on origin/main but that no leader marked shipped: is there evidence it is
+    live? Returns (yes?, the shell version live had to reach, "" for an isabi-only change).
+    Command Center change: live serves at least the shell version isabi-app main carries (main holds the change, and
+    live is only ever built from main). isabi-only change: nothing on the live site can be read for it, so the
+    evidence is a deploy recorded in the lock (`deployed`: LOCK.json's list) whose commit contains the change."""
+    if (entry.get("app") or {}).get("sha"):
+        bar, live = _app_main_shell(cwd), live_shell_version()
+        ok = bool(bar and live and _RE_VERSION.match(bar) and _RE_VERSION.match(live) and _vt(live) >= _vt(bar))
+        return ok, bar
+    sha = (entry.get("site") or {}).get("sha") or ""
+    deps = [d for d in deployed or [] if isinstance(d, dict) and d.get("sha")]
+    last = deps[-1]["sha"] if deps else ""
+    return bool(sha and last and (last == sha or RL._in(cwd, sha, last))), ""
 
 
 def _live_verdict(entry_id: str, ver: str, by: str) -> tuple[str, str]:
@@ -665,11 +715,14 @@ def _normalised_site_commit(cwd: Path, sha: str) -> tuple[str, bool]:
     return commit, own_app
 
 
-def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[str]) -> tuple[bool, str, list[str]]:
+def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[str]) -> tuple[bool, str, list[str], bool]:
     """Merge one entry's branches into the batch branches. All or nothing across the two repos. Returns (merged
-    cleanly?, why not, which parts brought new commits: "app" / "site"; empty = all of it was already in the batch)."""
+    cleanly?, why not, which parts brought new commits: "app" / "site", is every part already on origin/main?).
+    A part that is in the batch already but NOT on main came in with a change ahead of it that was built on top of
+    it: it is part of this batch like any other, never "already released"."""
     before = {str(app): (app, _head(app)), str(cwd): (cwd, _head(cwd))}
     brought: list[str] = []
+    all_on_main = True
 
     def undo() -> None:
         for repo, sha in before.values():
@@ -686,7 +739,10 @@ def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[s
              check=False, timeout=180)
         if not _known_commit(repo, sha):
             undo()
-            return False, f"{label} {branch} no longer has {sha[:7]} on {RL.REMOTE} (rewritten or deleted since it joined)", []
+            return False, f"{label} {branch} no longer has {sha[:7]} on {RL.REMOTE} (rewritten or deleted since it joined)", [], False
+        if RL._in(repo, sha, f"{RL.REMOTE}/main"):
+            continue
+        all_on_main = False
         if RL._in(repo, sha, "HEAD"):
             continue
         if kind == "app":
@@ -702,9 +758,9 @@ def _merge_entry(cwd: Path, app: Path, entry: dict, base_ver: str, notes: list[s
             detail = (", ".join(files[:6]) + (", ..." if len(files) > 6 else "")) if files else \
                 (r.stderr or r.stdout).decode("utf-8", errors="replace").strip()[:200]
             undo()
-            return False, f"does not merge cleanly with main plus the changes ahead of it in the batch ({label}: {detail})", []
+            return False, f"does not merge cleanly with main plus the changes ahead of it in the batch ({label}: {detail})", [], False
         brought.append(kind)
-    return True, "", brought
+    return True, "", brought, all_on_main
 
 
 def _bump(app: Path, ver: str, count: int) -> None:
@@ -751,13 +807,20 @@ def _assemble(cwd: Path, app: Path, lock: dict, holder: str, cands: list[dict], 
             left.append({"id": e["id"], "holder": e.get("holder"), "summary": e.get("summary"),
                          "why": "it changed or was withdrawn while the batch was forming (still in line if it exists)"})
             continue
-        ok, why, brought = _merge_entry(cwd, app, cur, base_ver, notes)
-        if ok and not brought:
-            # All of it is on main already (a leader pushed it and never ran done): nothing to ship again.
-            on_main = shell_ver_of(_blob(cwd, f"{RL.REMOTE}/main:app/sw.js")) if (cur.get("app") or {}).get("sha") else ""
-            _set_fields(cwd, cur["id"], {"state": "shipped", "shippedVersion": on_main, "shippedAt": RL._iso(RL._now()),
-                                         "shippedBy": "an earlier release", "batch": None})
-            notes.append(f"{cur['id']} ({cur.get('summary')}) is already on main: marked shipped, not released again")
+        ok, why, brought, all_on_main = _merge_entry(cwd, app, cur, base_ver, notes)
+        if ok and all_on_main:
+            # A leader pushed it to main and never ran done. With evidence that it is live it is marked shipped and
+            # not released again; without, it stays in this batch, so this release takes it live.
+            live_ok, bar = _live_evidence(cwd, cur, (lock.get("tookOverFrom") or {}).get("deployed") or [])
+            if live_ok:
+                _set_fields(cwd, cur["id"], {"state": "shipped", "shippedVersion": bar, "shippedAt": RL._iso(RL._now()),
+                                             "shippedBy": "an earlier release", "batch": None})
+                notes.append(f"{cur['id']} ({cur.get('summary')}) is already on main and live: marked shipped, not released again")
+                continue
+            notes.append(f"{cur['id']} ({cur.get('summary')}) is on main but there is no sign it went live: it stays in "
+                         "this batch, which takes it live")
+            merged.append(cur)
+            bump = bump or bool((cur.get("app") or {}).get("sha"))
             continue
         if ok:
             merged.append(cur)
@@ -826,6 +889,9 @@ def take(cwd: Path = ISABI_ROOT, *, holder: str, version: str = "", ttl_min: int
             print("Nothing is waiting in the line.")
         return {"entries": [], "left_out": [], "notes": [], "version": "", "shell": ""}
     lock = RL.acquire(cwd, holder=holder, purpose="batch release", ttl_min=ttl_min, quiet=True)
+    if _local_json(cwd, BATCH_FILE):
+        # acquire is re-entrant for this worktree: a second take or ship started here while this one was checking.
+        raise BatchError("another take or ship is already forming a batch in this worktree; let it finish (the lock is its).")
     # Written before anything can fail, so `abort` can always free a lock this command took.
     _write_local_json(cwd, BATCH_FILE, {"lockId": lock["lockId"], "holder": holder, "branch": _batch_branch(lock), "version": "",
                                         "shell": "", "entries": [], "left_out": [], "notes": [], "forming": True})
@@ -927,7 +993,12 @@ def drop(cwd: Path, entry_id: str, *, reason: str, reset: bool = False, quiet: b
         _run(["merge", "--abort"], repo, check=False)
         _run(["reset", "--hard", "-q"], repo)
     new = _assemble(cwd, app, lock, batch["holder"], cands, batch["version"])
-    new["left_out"] = [*batch.get("left_out", []), {"id": hit["id"], "holder": hit.get("holder"), "summary": hit.get("summary"),
+    for kind, repo in (("app", app), ("site", cwd)):
+        sha = (hit.get(kind) or {}).get("sha")
+        if sha and _known_commit(repo, sha) and RL._in(repo, sha, "HEAD") and not RL._in(repo, sha, f"{RL.REMOTE}/main"):
+            new["notes"].append(f"WARNING: {hit['id']} is STILL IN THE BATCH: another change in it was built on top of its "
+                                f"commits ({kind} {sha[:7]}). Drop that change too, or the code just dropped ships with it.")
+    new["left_out"] =[*batch.get("left_out", []), {"id": hit["id"], "holder": hit.get("holder"), "summary": hit.get("summary"),
                                                      "why": f"gates failed in the batch: {reason}"}, *new["left_out"]]
     if not new["entries"]:
         _give_up(cwd, batch["lockId"])
@@ -985,7 +1056,7 @@ def done(cwd: Path = ISABI_ROOT, *, quiet: bool = False) -> dict:
         _set_fields(cwd, eid, {"state": "shipped", "shippedVersion": shell, "shippedAt": RL._iso(RL._now()),
                                "shippedBy": batch["holder"], "batch": None},
                     only_if=lambda x: (x.get("batch") or {}).get("lockId") == batch["lockId"])
-    _prune_shipped(cwd)
+    _prune(cwd)
     RL.release(cwd, quiet=True)
     _write_local_json(cwd, BATCH_FILE, None)
     if not quiet:
@@ -1015,6 +1086,8 @@ def abort(cwd: Path = ISABI_ROOT, *, quiet: bool = False) -> None:
         except RL.LockError as exc:
             print(f"WARN: could not unmark the line ({str(exc).splitlines()[0]}); the marks go stale with the lock.", file=sys.stderr)
         RL.release(cwd, quiet=True)
+        # What sync_app.py copied into app/ for this batch must not ride along with the next release from here.
+        _run(["clean", "-fdq", "--", SITE_GENERATED_DIR], cwd, check=False)
     _write_local_json(cwd, BATCH_FILE, None)
     if not quiet:
         print("Batch given up: its changes are back in the line" + (" and the release lock is free." if mine else

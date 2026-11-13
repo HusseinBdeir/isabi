@@ -456,6 +456,81 @@ def main() -> int:  # noqa: PLR0915
         check(RL.read_remote_lock(A) == ("", {}) and not RB._local_json(B, RB.BATCH_FILE), "abort frees a lock left by a half-formed batch")
         quiet(RB.leave, B, eB2["id"])
 
+        # 13e. a change built on top of another waiting change: both are in the batch, neither is "already released"
+        sha_t = feature(appD, "wt/t", {"js/t.js": "t\n"})
+        git(appE, "fetch", "-q", "origin")
+        git(appE, "checkout", "-q", "-B", "wt/s", "origin/wt/t")
+        put(appE / "js" / "s.js", "s\n")
+        git(appE, "add", "-A")
+        git(appE, "commit", "-q", "-m", "wt/s")
+        git(appE, "push", "-q", "-f", "origin", "wt/s")
+        tick()
+        eS = quiet(RB.join, E, holder="session E", summary="S on top of T", app_branch="wt/s")
+        tick()
+        eT = quiet(RB.join, D, holder="session D", summary="T change", app_branch="wt/t")
+        tick()
+        bS = quiet(RB.take, E, holder="session E")
+        t_now = entry(A, eT["id"])
+        check([e["id"] for e in bS["entries"]] == [eS["id"], eT["id"]] and t_now.get("state") == "waiting"
+              and (t_now.get("batch") or {}).get("lockId") == RL.read_remote_lock(A)[1].get("lockId") and RB.poll_once(D, eT["id"])[0] == "IN_BATCH",
+              "a change whose commits came in with one built on top of it is in the batch, not marked shipped")
+        bS2 = quiet(RB.drop, E, eS["id"], reason="verify_s failed", reset=True)
+        check([e["id"] for e in bS2["entries"]] == [eT["id"]] and entry(A, eT["id"]).get("state") == "waiting" and is_ancestor(appE, sha_t)
+              and (appE / "js" / "t.js").exists() and not (appE / "js" / "s.js").exists(),
+              "dropping the change on top keeps the one underneath in the batch on its own")
+        put(E / "app" / "js" / "s.js", "s\n")  # sync_app.py output of the batch about to be given up
+        quiet(RB.abort, E)
+        check(not (E / "app" / "js" / "s.js").exists() and entry(A, eT["id"]).get("state") == "waiting" and not entry(A, eT["id"]).get("batch"),
+              "abort clears what sync_app.py copied into isabi/app and puts the change back in line")
+        tick()
+        eS2 = quiet(RB.join, E, holder="session E", summary="S on top of T", app_branch="wt/s")
+        tick()
+        bT = quiet(RB.take, E, holder="session E")
+        bT2 = quiet(RB.drop, E, eT["id"], reason="verify_t failed", reset=True)
+        check([e["id"] for e in bT["entries"]] == [eT["id"], eS2["id"]] and [e["id"] for e in bT2["entries"]] == [eS2["id"]]
+              and any("STILL IN THE BATCH" in n for n in bT2["notes"]),
+              "dropping the change underneath warns that it still ships through the one built on it")
+        quiet(RB.abort, E)
+        quiet(RB.leave, E, eS2["id"])
+        quiet(RB.leave, D, eT["id"])
+
+        # 13f. a leader pushed isabi-app main, never deployed, and stopped: not SHIPPED; the next batch takes it live
+        feature(appA, "wt/m2", {"js/m2.js": "m2\n"})
+        tick()
+        st, _msg, bM = RB.ship(A, holder="session A", summary="M2 change", app_branch="wt/m2", wait_s=0, poll_s=0, quiet=True)
+        eM = bM["entries"][0]
+        git(appA, "push", "-q", "origin", "HEAD:main")  # isabi-app main only: no deploy, isabi main not pushed
+        tick(2 * 3600)
+        check(st == "LEADER" and bM["shell"] == "19.6.105" and RB.poll_once(C, eM["id"], known=eM)[0] == "TURN",
+              "a change on isabi-app main that never went live is not reported SHIPPED; it is still in line")
+        bM2 = quiet(RB.take, B, holder="session B")
+        check([e["id"] for e in bM2["entries"]] == [eM["id"]] and bM2["shell"] == "19.6.106" and entry(A, eM["id"]).get("state") == "waiting"
+              and any("no sign it went live" in n for n in bM2["notes"]),
+              "the next leader keeps it in the batch under a new version instead of marking it shipped")
+        release_as_leader(B)
+        tick()
+        quiet(RB.done, B)
+        check(entry(A, eM["id"]).get("shippedVersion") == "19.6.106" and RB.poll_once(C, eM["id"])[0] == "SHIPPED" and RL.read_remote_lock(A) == ("", {}),
+              "it is shipped once that batch is live")
+
+        # 13g. the same for an isabi-only change: being on main is not proof of a deploy
+        feature(A, "wt/so", {"functions/so.js": "so\n"})
+        tick()
+        st, _msg, bSO = RB.ship(A, holder="session A", summary="edge change", site_branch="wt/so", wait_s=0, poll_s=0, quiet=True)
+        eSO = bSO["entries"][0]
+        git(A, "push", "-q", "origin", "HEAD:main")  # pushed, no deploy recorded
+        tick(2 * 3600)
+        check(st == "LEADER" and RB.poll_once(C, eSO["id"], known=eSO)[0] == "TURN" and RB._live_evidence(C, eSO, [])[0] is False,
+              "an isabi-only change on main with no deploy on record is not reported SHIPPED")
+        bSO2 = quiet(RB.take, B, holder="session B")
+        release_as_leader(B)
+        tick()
+        quiet(RB.done, B)
+        git(C, "fetch", "-q", "origin")
+        check([e["id"] for e in bSO2["entries"]] == [eSO["id"]] and bSO2["shell"] == "" and RB.poll_once(C, eSO["id"])[0] == "SHIPPED"
+              and RB._live_evidence(C, eSO, [{"sha": git(B, "rev-parse", "HEAD")}])[0] is True,
+              "the next leader deploys it; a recorded deploy that contains the change is the evidence")
+
         # 14. an entry that cannot be read never ships and never blocks
         blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=str(A), input=b"not json", capture_output=True, check=True).stdout.decode().strip()
         tree = subprocess.run(["git", "mktree"], cwd=str(A), input=f"100644 blob {blob}\tENTRY.json\n".encode(), capture_output=True, check=True).stdout.decode().strip()
