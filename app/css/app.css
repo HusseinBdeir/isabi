@@ -26433,6 +26433,99 @@ label.exp-inline-bar-lbl {
   border: 1px solid var(--line);
   font-size: 11.6px;
 }
+.stm-exc-box {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  min-width: 0;
+  box-sizing: border-box;
+}
+.stm-exc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.stm-exc-subcard {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  min-width: 0;
+  box-sizing: border-box;
+}
+.stm-exc-subhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 12px;
+}
+.stm-exc-subhead strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+.stm-exc-subhead .muted {
+  font-size: 11px;
+}
+.stm-inline-time-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1.8fr);
+  gap: 8px;
+  align-items: end;
+}
+.stm-date-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+.stm-exc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.stm-exc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--brass);
+  background: var(--brass-tint);
+  color: var(--ink);
+  font-size: 11.5px;
+  line-height: 1.3;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.stm-exc-chip-rm {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 12px;
+  line-height: 1;
+}
+.stm-exc-chip-rm:hover {
+  color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .stm-inline-time-grid,
+  .stm-date-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #shiftTypeModal .modal-body > div[style*="grid-template-columns"],
+  #stmSplitRow {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
 
 @media (max-width: 860px) {
   .staff-enrol-grid,

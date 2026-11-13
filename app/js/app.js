@@ -17153,7 +17153,9 @@
       return { staffSynced: 1 };
     }
     if (crKey === 'work_shifts') {
-      return backfillShiftTimingChange(savedRow, editOrig, extraApiPosts, opts);
+      const skipBackfill = Boolean(savedRow && savedRow.backfill_enabled === false);
+      if (savedRow && 'backfill_enabled' in savedRow) delete savedRow.backfill_enabled;
+      return backfillShiftTimingChange(savedRow, editOrig, extraApiPosts, Object.assign({}, opts || {}, skipBackfill ? { skipBackfill: true } : {}));
     }
     if (crKey === 'credit_terms') {
       return backfillCreditTermsToCustomer(savedRow || editOrig, extraApiPosts);
@@ -28174,6 +28176,7 @@
   }
 
   const SHIFT_DAY_SHORT_NAMES = { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' };
+  const SHIFT_DAY_ORDER_KEYS = ['1', '2', '3', '4', '5', '6', '0'];
 
   function normalizeDayTimingsMap(rawMap, satDiffEnabled, satStart, satEnd) {
     const out = {};
@@ -28181,7 +28184,8 @@
     if (typeof src === 'string' && src.trim()) {
       try { src = JSON.parse(src); } catch (_) { src = null; }
     }
-    if (src && typeof src === 'object' && !Array.isArray(src)) {
+    const hasExplicitMap = Boolean(src && typeof src === 'object' && !Array.isArray(src));
+    if (hasExplicitMap) {
       Object.entries(src).forEach(([k, v]) => {
         const dIdx = String(k).trim();
         if (!/^[0-6]$/.test(dIdx) || !v || typeof v !== 'object') return;
@@ -28196,10 +28200,11 @@
         }
       });
     }
+    // Only synthesize legacy Saturday override when no explicit day_timings map object was supplied
     const isSatOn = satDiffEnabled === true || satDiffEnabled === 'Yes' || satDiffEnabled === 1 || satDiffEnabled === '1';
-    if (isSatOn) {
-      const sSt = fmtAttClockTime(satStart || (out['6'] && out['6'].start_time) || '07:00') || '07:00';
-      const sEt = fmtAttClockTime(satEnd || (out['6'] && out['6'].end_time) || '14:00') || '14:00';
+    if (!hasExplicitMap && isSatOn) {
+      const sSt = fmtAttClockTime(satStart || '07:00') || '07:00';
+      const sEt = fmtAttClockTime(satEnd || '14:00') || '14:00';
       out['6'] = {
         start_time: sSt,
         end_time: sEt,
@@ -28209,19 +28214,83 @@
     return out;
   }
 
-  function formatDayTimingsSummary(dayTimings, baseStartOrSatDiff = '08:00', baseEndOrSatStart = '16:00', maybeSatEnd = '') {
+  function normalizeDateTimingsList(rawList) {
+    let src = rawList;
+    if (typeof src === 'string' && src.trim()) {
+      try { src = JSON.parse(src); } catch (_) { src = []; }
+    }
+    if (!Array.isArray(src)) return [];
+    const bySpan = new Map();
+    src.forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      let sd = String(item.start_date || item.date || '').slice(0, 10);
+      let ed = String(item.end_date || sd || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(sd)) return;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ed)) ed = sd;
+      if (ed < sd) {
+        const tmp = sd;
+        sd = ed;
+        ed = tmp;
+      }
+      const st = fmtAttClockTime(item.start_time || item.start || '') || '';
+      const et = fmtAttClockTime(item.end_time || item.end || '') || '';
+      if (!st || !et) return;
+      const hrs = computeShiftWorkedHours(st, et) || 8.0;
+      const note = String(item.note || item.label || '').trim().slice(0, 60);
+      const id = String(item.id || `dt_${sd}_${ed}_${st.replace(':', '')}_${et.replace(':', '')}`);
+      bySpan.set(`${sd}|${ed}`, {
+        id,
+        start_date: sd,
+        end_date: ed,
+        start_time: st,
+        end_time: et,
+        hours: hrs,
+        note,
+        include_off_days: Boolean(item.include_off_days)
+      });
+    });
+    return Array.from(bySpan.values()).sort((a, b) =>
+      a.start_date.localeCompare(b.start_date) || a.end_date.localeCompare(b.end_date)
+    );
+  }
+
+  function formatShiftExceptionsSummary(dayTimings, dateTimings, _baseStart = '08:00', _baseEnd = '16:00') {
+    const dt = (dayTimings && typeof dayTimings === 'object' && !Array.isArray(dayTimings)) ? dayTimings : {};
+    const dList = normalizeDateTimingsList(dateTimings);
+    const parts = [];
+    const grouped = new Map();
+    SHIFT_DAY_ORDER_KEYS.forEach(k => {
+      const item = dt[k];
+      if (!item || !item.start_time || !item.end_time) return;
+      const sig = `${item.start_time}-${item.end_time}`;
+      if (!grouped.has(sig)) grouped.set(sig, { item, days: [] });
+      grouped.get(sig).days.push(SHIFT_DAY_SHORT_NAMES[k] || 'Day');
+    });
+    grouped.forEach(({ item, days }) => {
+      const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
+      parts.push(`${days.join(', ')} ${item.start_time}-${item.end_time}${hrs > 0 ? ` (${fmtNum(hrs, 1)}h)` : ''}`);
+    });
+    dList.forEach(dItem => {
+      const dateLbl = dItem.start_date === dItem.end_date
+        ? fmtDateDMY(dItem.start_date)
+        : `${fmtDateDMY(dItem.start_date)} to ${fmtDateDMY(dItem.end_date)}`;
+      const hrs = Number(dItem.hours || computeShiftWorkedHours(dItem.start_time, dItem.end_time) || 0);
+      const prefix = dItem.note ? `${dItem.note}: ` : '';
+      parts.push(`${prefix}${dateLbl} ${dItem.start_time}-${dItem.end_time}${hrs > 0 ? ` (${fmtNum(hrs, 1)}h)` : ''}`);
+    });
+    return parts.length ? parts.join(' · ') : 'Same Every Workday';
+  }
+
+  function formatDayTimingsSummary(dayTimings, baseStartOrSatDiff = '08:00', baseEndOrSatStart = '16:00', maybeSatEnd = '', maybeDateTimings = null) {
     let dt = (dayTimings && typeof dayTimings === 'object') ? Object.assign({}, dayTimings) : {};
     if (typeof baseStartOrSatDiff === 'boolean') {
-      dt = normalizeDayTimingsMap(dt, baseStartOrSatDiff, baseEndOrSatStart || '07:00', maybeSatEnd || '14:00');
+      if (baseStartOrSatDiff && Object.keys(dt).length === 0) {
+        dt = normalizeDayTimingsMap(null, true, baseEndOrSatStart || '07:00', maybeSatEnd || '14:00');
+      } else {
+        dt = normalizeDayTimingsMap(dt);
+      }
     }
-    const keys = ['1', '2', '3', '4', '5', '6', '0'].filter(k => dt[k] && dt[k].start_time && dt[k].end_time);
-    if (!keys.length) return 'Same Every Workday';
-    const parts = keys.map(k => {
-      const item = dt[k];
-      const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
-      return `${SHIFT_DAY_SHORT_NAMES[k] || 'Day'} ${item.start_time}-${item.end_time}${hrs > 0 ? ` (${fmtNum(hrs, 1)}h)` : ''}`;
-    });
-    return parts.join(' · ');
+    return formatShiftExceptionsSummary(dt, maybeDateTimings);
   }
 
   function getCompanyIndustryName(companyRaw) {
@@ -28263,7 +28332,7 @@
 
   function resolveShiftTimingForWeekday(shiftOrRule, dayIdx) {
     if (!shiftOrRule || typeof shiftOrRule !== 'object') {
-      return { start_time: '08:00', end_time: '16:00', hours: 8.0, overnight: false, isDaySpecific: false, dayName: '' };
+      return { start_time: '08:00', end_time: '16:00', hours: 8.0, overnight: false, isDaySpecific: false, isDateSpecific: false, dateTiming: null, forcesWorkday: false, dayName: '' };
     }
     const baseStart = fmtAttClockTime(shiftOrRule.start_time || shiftOrRule.custom_start || '08:00') || '08:00';
     const baseEnd = fmtAttClockTime(shiftOrRule.end_time || shiftOrRule.custom_end || '16:00') || '16:00';
@@ -28286,9 +28355,47 @@
       end_time: et,
       hours,
       overnight,
-      isDaySpecific: Boolean(dayEntry && (st !== baseStart || et !== baseEnd)),
+      isDaySpecific: Boolean(dayEntry && (Boolean(shiftOrRule.split_enabled) || st !== baseStart || et !== baseEnd)),
+      isDateSpecific: false,
+      dateTiming: null,
+      forcesWorkday: false,
       dayName: SHIFT_DAY_SHORT_NAMES[key] || ''
     };
+  }
+
+  function resolveShiftTimingForDate(shiftOrRule, isoDate, dayIdx) {
+    const dStr = String(isoDate || '').slice(0, 10);
+    if (shiftOrRule && typeof shiftOrRule === 'object' && /^\d{4}-\d{2}-\d{2}$/.test(dStr)) {
+      const dList = normalizeDateTimingsList(shiftOrRule.date_timings);
+      const matches = dList.filter(item => item.start_date <= dStr && dStr <= item.end_date);
+      if (matches.length) {
+        matches.sort((a, b) => {
+          const aSingle = a.start_date === a.end_date ? 1 : 0;
+          const bSingle = b.start_date === b.end_date ? 1 : 0;
+          if (bSingle !== aSingle) return bSingle - aSingle;
+          const sdCmp = b.start_date.localeCompare(a.start_date);
+          if (sdCmp !== 0) return sdCmp;
+          return a.end_date.localeCompare(b.end_date);
+        });
+        const m = matches[0];
+        const sMin = parseClockMinutes(m.start_time);
+        const eMin = parseClockMinutes(m.end_time);
+        const overnight = Boolean(sMin != null && eMin != null && eMin <= sMin);
+        const hours = Number(m.hours || computeShiftWorkedHours(m.start_time, m.end_time) || 8.0);
+        return {
+          start_time: m.start_time,
+          end_time: m.end_time,
+          hours,
+          overnight,
+          isDaySpecific: true,
+          isDateSpecific: true,
+          dateTiming: m,
+          forcesWorkday: Boolean(m.start_date === m.end_date || m.include_off_days),
+          dayName: SHIFT_DAY_SHORT_NAMES[String(dayIdx != null ? dayIdx : -1)] || ''
+        };
+      }
+    }
+    return resolveShiftTimingForWeekday(shiftOrRule, dayIdx);
   }
 
   function parseWorkdaysArrayFromLabel(rawDays, fallback = [1, 2, 3, 4, 5, 6]) {
@@ -28388,14 +28495,16 @@
     r.workdays_label = formatWorkdaysCompact(r.days);
     r.working_days = r.days.map(d => SHIFT_DAY_SHORT_NAMES[String(d)] || '').filter(Boolean).join(',');
     r.day_timings = normalizeDayTimingsMap(r.day_timings, r.sat_diff_enabled, r.sat_start_time, r.sat_end_time);
+    r.date_timings = normalizeDateTimingsList(r.date_timings);
     const satEntry = r.day_timings['6'] || null;
     r.sat_diff_enabled = Boolean(satEntry && (satEntry.start_time !== r.start_time || satEntry.end_time !== r.end_time));
     r.sat_start_time = satEntry ? satEntry.start_time : (r.sat_start_time || '07:00');
     r.sat_end_time = satEntry ? satEntry.end_time : (r.sat_end_time || '14:00');
-    r.has_day_timings = Object.keys(r.day_timings).length > 0;
+    r.has_day_timings = Object.keys(r.day_timings).length > 0 || r.date_timings.length > 0;
+    const excSummary = formatShiftExceptionsSummary(r.day_timings, r.date_timings, r.start_time, r.end_time);
     r.day_schedule_summary = isSplit
-      ? `Split ${r.split_window_label} (${fmtNum(r.hours, 1)}h)`
-      : formatDayTimingsSummary(r.day_timings, r.start_time, r.end_time);
+      ? `Split ${r.split_window_label} (${fmtNum(r.hours, 1)}h)${excSummary !== 'Same Every Workday' ? ` · ${excSummary}` : ''}`
+      : excSummary;
     r.grace_min = Math.max(0, Math.min(180, Number(r.grace_min != null ? r.grace_min : 10)));
     r.early_leave_grace_min = Math.max(0, Math.min(180, Number(r.early_leave_grace_min != null ? r.early_leave_grace_min : r.grace_min)));
     r.is_bu_default = Boolean(r.is_bu_default === true || r.is_bu_default === 'Yes' || r.is_bu_default === 1);
@@ -28410,7 +28519,7 @@
   }
 
   // Chart rows for the Attendance & Overtime shift charts (js/pbi_pages.js renderWorkShiftsVisualsSection):
-  // minutes-of-day windows for weekdays and Saturday (only when Saturday differs), plus other day exceptions.
+  // minutes-of-day windows for regular hours and any configured recurring weekday or specific-date exceptions.
   function buildWorkShiftChartRows(shiftRows) {
     const win = (a, b) => {
       const s = parseClockMinutes(a);
@@ -28422,26 +28531,57 @@
         ? win(ws.split_start_1, ws.split_end_1).concat(win(ws.split_start_2, ws.split_end_2))
         : win(ws.start_time, ws.end_time);
       const days = Array.isArray(ws.days) ? ws.days.map(Number) : [1, 2, 3, 4, 5, 6];
-      const satOff = !days.includes(6);
-      const satDiff = !satOff && !ws.split_enabled && Boolean(ws.sat_diff_enabled);
-      const sat = satDiff ? win(ws.sat_start_time, ws.sat_end_time) : null;
       const wkHours = Number(ws.scheduled_hours || ws.hours || 0);
-      const satHours = satDiff ? (computeShiftWorkedHours(ws.sat_start_time, ws.sat_end_time) || 0) : wkHours;
-      const dt = (ws.day_timings && typeof ws.day_timings === 'object') ? ws.day_timings : {};
-      const otherDays = ws.split_enabled ? [] : Object.keys(dt)
-        .filter(k => k !== '6' && days.includes(Number(k)) && dt[k] && (dt[k].start_time !== ws.start_time || dt[k].end_time !== ws.end_time))
-        .sort((x, y) => Number(x) - Number(y))
-        .map(k => ({ day: SHIFT_DAY_SHORT_NAMES[k] || k, win: `${dt[k].start_time}-${dt[k].end_time}`, hours: Number(dt[k].hours || computeShiftWorkedHours(dt[k].start_time, dt[k].end_time) || 0) }));
+      const dt = normalizeDayTimingsMap(ws.day_timings, ws.sat_diff_enabled, ws.sat_start_time, ws.sat_end_time);
+      const dList = normalizeDateTimingsList(ws.date_timings);
+
+      const weekdayMap = new Map();
+      SHIFT_DAY_ORDER_KEYS.forEach(k => {
+        const item = dt[k];
+        if (!days.includes(Number(k)) || !item) return;
+        if (item.start_time === ws.start_time && item.end_time === ws.end_time) return;
+        const sig = `${item.start_time}-${item.end_time}`;
+        if (!weekdayMap.has(sig)) weekdayMap.set(sig, { item, dayNames: [] });
+        weekdayMap.get(sig).dayNames.push(SHIFT_DAY_SHORT_NAMES[k] || k);
+      });
+      const weekdayGroups = Array.from(weekdayMap.values()).map(({ item, dayNames }) => {
+        const tag = dayNames.join(', ');
+        return {
+          tag,
+          fullLabel: tag,
+          segs: win(item.start_time, item.end_time),
+          hours: Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0),
+          win: `${item.start_time}-${item.end_time}`
+        };
+      });
+      const dateGroups = dList.map(item => {
+        const dateSpan = item.start_date === item.end_date
+          ? fmtDateDMY(item.start_date)
+          : `${fmtDateDMY(item.start_date)} to ${fmtDateDMY(item.end_date)}`;
+        return {
+          tag: item.note ? item.note.slice(0, 12) : (item.start_date === item.end_date ? fmtDateDMY(item.start_date) : 'Dates'),
+          fullLabel: item.note ? `${item.note}: ${dateSpan}` : dateSpan,
+          segs: win(item.start_time, item.end_time),
+          hours: Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0),
+          win: `${item.start_time}-${item.end_time}`
+        };
+      });
+
+      const allExc = weekdayGroups.concat(dateGroups);
+      const primary = allExc[0] || null;
+      const rest = allExc.slice(1);
       return {
         name: ws.shift_name || ws.name || 'Shift',
         company: ws.company || '',
         isDefault: Boolean(ws.is_bu_default),
         wk,
-        sat: sat && sat.length ? sat : null,
-        satOff,
+        sat: primary && primary.segs.length ? primary.segs : null,
+        excTag: primary ? primary.tag : '',
+        excFullLabel: primary ? (primary.fullLabel || primary.tag) : '',
+        satOff: false,
         wkHours,
-        satHours,
-        otherDays,
+        satHours: primary ? primary.hours : wkHours,
+        otherDays: rest.map(x => ({ day: x.fullLabel || x.tag, win: x.win, hours: x.hours })),
         workdays: ws.workdays_label || '',
         staff: Number(ws.associated_staff_count || 0),
         effDate: ws.start_date ? fmtDateDMY(ws.start_date) : ''
@@ -28547,6 +28687,7 @@
         matchingSeed.end_time = st.end_time || matchingSeed.end_time;
         matchingSeed.grace_min = st.grace_min != null ? st.grace_min : matchingSeed.grace_min;
         if (st.day_timings) matchingSeed.day_timings = st.day_timings;
+        if (Array.isArray(st.date_timings)) matchingSeed.date_timings = normalizeDateTimingsList(st.date_timings);
         if (st.sat_diff_enabled != null) matchingSeed.sat_diff_enabled = st.sat_diff_enabled;
         if (st.sat_start_time) matchingSeed.sat_start_time = st.sat_start_time;
         if (st.sat_end_time) matchingSeed.sat_end_time = st.sat_end_time;
@@ -28570,6 +28711,7 @@
         sat_start_time: st.sat_start_time || '07:00',
         sat_end_time: st.sat_end_time || '14:00',
         day_timings: st.day_timings || {},
+        date_timings: normalizeDateTimingsList(st.date_timings),
         start_date: st.start_date || '2025-01-01',
         end_date: st.end_date || '',
         tone: st.tone || 'emerald',
@@ -28711,6 +28853,7 @@
           grace_min: st.grace_min != null ? st.grace_min : 10,
           early_leave_grace_min: st.early_leave_grace_min != null ? st.early_leave_grace_min : 10,
           day_timings: st.day_timings || {},
+          date_timings: normalizeDateTimingsList(st.date_timings),
           sat_diff_enabled: Boolean(st.sat_diff_enabled),
           sat_start_time: st.sat_start_time || '07:00',
           sat_end_time: st.sat_end_time || '14:00',
@@ -28766,12 +28909,18 @@
     const ws = ensureWorkSchedulesState();
     if (savedRow && !savedRow.voided && (!savedRow.end_date || String(savedRow.end_date).slice(0, 10) >= todayISO())) {
       const targetStId = savedRow.shift_code || savedRow.shift_id || savedRow.id;
-      const stIdx = ws.shiftTypes.findIndex(s => s && (norm(s.id) === norm(targetStId) || norm(s.name) === nameNorm));
-      const stPayload = {
+      const stIdx = ws.shiftTypes.findIndex(s => s && norm(s.company || 'WTC') === coNorm && (norm(s.id) === norm(targetStId) || norm(s.name) === nameNorm));
+      const stPayload = normalizeShiftTypeObj(Object.assign({}, stIdx >= 0 ? ws.shiftTypes[stIdx] : {}, {
         id: stIdx >= 0 ? ws.shiftTypes[stIdx].id : targetStId,
         company: co,
         name: savedRow.name,
         short: savedRow.short || String(savedRow.name || 'Shift').split(/\s+/)[0].slice(0, 10),
+        split_enabled: Boolean(savedRow.split_enabled),
+        split_start_1: savedRow.split_start_1 || '',
+        split_end_1: savedRow.split_end_1 || '',
+        split_start_2: savedRow.split_start_2 || '',
+        split_end_2: savedRow.split_end_2 || '',
+        split_window_label: savedRow.split_window_label || '',
         start_time: savedRow.start_time,
         end_time: savedRow.end_time,
         hours: savedRow.hours,
@@ -28783,15 +28932,21 @@
         sat_start_time: savedRow.sat_start_time || '07:00',
         sat_end_time: savedRow.sat_end_time || '14:00',
         day_timings: savedRow.day_timings || {},
+        date_timings: normalizeDateTimingsList(savedRow.date_timings),
         start_date: savedRow.start_date || todayISO(),
         end_date: savedRow.end_date || '',
         is_bu_default: Boolean(savedRow.is_bu_default),
         tone: savedRow.tone || (savedRow.overnight ? 'indigo' : 'amber'),
         voided: false,
         updated_at: new Date().toISOString()
-      };
+      }));
       if (stIdx >= 0) ws.shiftTypes[stIdx] = Object.assign({}, ws.shiftTypes[stIdx], stPayload);
       else ws.shiftTypes.push(stPayload);
+    }
+
+    if (opts && opts.skipBackfill) {
+      if (SEED) SEED._workShiftsSeededRev = '';
+      return { staffUpdated: 0, attUpdated: 0, punchesUpdated: 0, rangeFrom: '', rangeTo: '' };
     }
 
     const s1 = savedRow && savedRow.start_date ? String(savedRow.start_date).slice(0, 10) : '2025-01-01';
@@ -28834,16 +28989,27 @@
       if (existingRule && !existingRule.reset_default) {
         existingRule.grace_min = ref.grace_min != null ? ref.grace_min : existingRule.grace_min;
         existingRule.early_leave_grace_min = ref.early_leave_grace_min != null ? ref.early_leave_grace_min : existingRule.early_leave_grace_min;
-        existingRule.day_timings = Object.assign({}, ref.day_timings || {});
-        existingRule.sat_diff_enabled = Boolean(ref.sat_diff_enabled);
-        existingRule.sat_start_time = ref.sat_start_time || '07:00';
-        existingRule.sat_end_time = ref.sat_end_time || '14:00';
+        if (!existingRule.use_custom_day_timings) {
+          existingRule.day_timings = Object.assign({}, ref.day_timings || {});
+          existingRule.date_timings = normalizeDateTimingsList(ref.date_timings);
+          existingRule.sat_diff_enabled = Boolean(ref.sat_diff_enabled);
+          existingRule.sat_start_time = ref.sat_start_time || '07:00';
+          existingRule.sat_end_time = ref.sat_end_time || '14:00';
+        }
         existingRule.updated_at = new Date().toISOString();
       }
       staffUpdated++;
     });
 
-    // Backfill kiosk punches in [rangeFrom, rangeTo] for associated staff
+    const dateExcWindows = normalizeDateTimingsList((ref && ref.date_timings) || [])
+      .concat(normalizeDateTimingsList((editOrig && editOrig.date_timings) || []));
+    const inBackfillWindow = dStr => {
+      if (!dStr) return false;
+      if (dStr >= rangeFrom && dStr <= rangeTo) return true;
+      return dateExcWindows.some(w => w.start_date <= dStr && dStr <= w.end_date);
+    };
+
+    // Backfill kiosk punches in [rangeFrom, rangeTo] (or matching date exception ranges) for associated staff
     let punchesUpdated = 0;
     if (Array.isArray(STATE.kioskPunches)) {
       STATE.kioskPunches.forEach(p => {
@@ -28852,7 +29018,7 @@
         if (!sk || !associatedStaff.has(sk)) return;
         if (coNorm && p.company && norm(p.company) !== coNorm) return;
         const pDate = String(p.shift_date || p.date || '').slice(0, 10);
-        if (!pDate || pDate < rangeFrom || pDate > rangeTo) return;
+        if (!inBackfillWindow(pDate)) return;
         const shiftOnDate = resolveStaffShiftForDate(p.staff, p.company || co, pDate);
         p.shift_id = shiftOnDate.id;
         p.shift_label = shiftOnDate.badgeLabel;
@@ -28895,7 +29061,7 @@
       const matchesExplicitShift = a.shift_id && (norm(a.shift_id) === codeNorm || norm(a.shift_id) === nameNorm);
       if (!associatedStaff.has(sk) && !matchesExplicitShift) continue;
       const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
-      if (!d || d < rangeFrom || d > rangeTo) continue;
+      if (!inBackfillWindow(d)) continue;
 
       const shiftOnDate = resolveStaffShiftForDate(a.staff, a.company || co, d);
       const schedH = shiftOnDate.isWorkday ? Number(shiftOnDate.hours || 8) : 0;
@@ -40833,7 +40999,7 @@
               <div class="panel-head">
                 <div>
                   <div class="panel-title"><span>${ic('clock')} UNIVERSAL ATTENDANCE STRUCTURE &amp; PER-COMPANY DEFAULTS</span></div>
-                  <span class="ph-sub">Customize each company's default regular shift, default policy &amp; perks group (${esc(activeBuList.join(', '))}), split or Saturday hours, and Effective Date backfills</span>
+                  <span class="ph-sub">Customize each company's default regular shift, default policy &amp; perks group (${esc(activeBuList.join(', '))}), split, weekday, or date-specific hours, and Effective Date backfills</span>
                 </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
                   ${exportBtn('payShiftTimingsPanel', 'Regular_Shift_Timings')}
@@ -40854,7 +41020,11 @@
                         <div class="ssm-field" style="margin:0">
                           <label style="font-size:11px"><b>Default Shift</b></label>
                           <select class="kiosk-select" data-pay-bu-default="${esc(bu)}" data-plain-options="1">
-                            ${buShiftOpts.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)}${st.sat_diff_enabled ? ` · Sat ${esc(st.sat_start_time)}-${esc(st.sat_end_time)}` : ''})</option>`).join('')}
+                            ${buShiftOpts.map(st => {
+                              const stExc = formatShiftExceptionsSummary(st.day_timings, st.date_timings, st.start_time, st.end_time);
+                              const excOpt = stExc !== 'Same Every Workday' ? ` · ${stExc}` : '';
+                              return `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)}${esc(excOpt)})</option>`;
+                            }).join('')}
                           </select>
                         </div>
                         <div class="ssm-field" style="margin:0">
@@ -40883,7 +41053,7 @@
                       ${th('pay_work_shifts', 'End (24h)', 'end_time')}
                       ${th('pay_work_shifts', 'Hrs', 'scheduled_hours', 'r')}
                       ${th('pay_work_shifts', 'Workdays', 'workdays_label')}
-                      ${th('pay_work_shifts', 'Day-Specific Timing', 'day_schedule_summary')}
+                      ${th('pay_work_shifts', 'Timing Exceptions', 'day_schedule_summary')}
                       ${th('pay_work_shifts', 'IN Grace', 'grace_min', 'r')}
                       ${th('pay_work_shifts', 'OUT Grace', 'early_leave_grace_min', 'r')}
                       ${th('pay_work_shifts', 'Staff', 'associated_staff_count', 'r')}
@@ -90193,28 +90363,85 @@
           ? Math.round(((computeShiftWorkedHours(inT, outT) || 4.0) + (computeShiftWorkedHours(splitS2, splitE2) || 4.0)) * 100) / 100
           : (computeShiftWorkedHours(inT, outT) || 8.0);
         const satDiff = val('f_sat_diff') === 'Yes';
-        const satStart = val('f_sat_start') || '07:00';
-        const satEnd = val('f_sat_end') || '14:00';
         const matrixBox = $('wrap_ws_day_matrix');
-        const satStartWrap = $('wrap_ws_sat_start');
-        const satEndWrap = $('wrap_ws_sat_end');
-        if (satStartWrap) satStartWrap.hidden = !satDiff;
-        if (satEndWrap) satEndWrap.hidden = !satDiff;
         if (matrixBox) matrixBox.hidden = !satDiff;
+        const renderWsDateChips = list => {
+          const box = $('ws_date_timings_list');
+          if (!box) return;
+          if (!list.length) {
+            box.innerHTML = `<span class="muted" style="font-size:11.5px">No specific calendar date overrides added yet.</span>`;
+            return;
+          }
+          box.innerHTML = list.map(item => {
+            const dLbl = item.start_date === item.end_date
+              ? fmtDateDMY(item.start_date)
+              : `${fmtDateDMY(item.start_date)} to ${fmtDateDMY(item.end_date)}`;
+            const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
+            return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dLbl)} · <b class="mono">${esc(item.start_time)}-${esc(item.end_time)}</b>${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}</span><button type="button" class="stm-exc-chip-rm" data-ws-rm-date="${esc(item.id)}" aria-label="Remove date timing">✕</button></span>`;
+          }).join('');
+        };
+        const dtWrap = $('wrap_ws_date_timings');
+        if (dtWrap && !dtWrap.dataset.wsDtWired) {
+          dtWrap.dataset.wsDtWired = '1';
+          $('ws_dt_from')?.addEventListener('change', e => {
+            const fd = String(e.target.value || '').slice(0, 10);
+            const toEl = $('ws_dt_to');
+            if (toEl && fd && (!toEl.value || toEl.value < fd)) toEl.value = fd;
+          });
+          $('wsAddDateExcBtn')?.addEventListener('click', () => {
+            const fd = String($('ws_dt_from')?.value || '').slice(0, 10);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(fd)) {
+              toast('Choose a From Date first', 'warn');
+              $('ws_dt_from')?.focus();
+              return;
+            }
+            const rawTd = String($('ws_dt_to')?.value || fd).slice(0, 10);
+            const td = /^\d{4}-\d{2}-\d{2}$/.test(rawTd) ? rawTd : fd;
+            const sd = fd <= td ? fd : td;
+            const ed = fd <= td ? td : fd;
+            const stD = normalize24hClockTime($('ws_dt_start')?.value || '09:00', '09:00');
+            const etD = normalize24hClockTime($('ws_dt_end')?.value || '15:00', '15:00');
+            const noteD = String($('ws_dt_note')?.value || '').trim().slice(0, 60);
+            const curList = normalizeDateTimingsList($('f_date_timings_json')?.value || '[]');
+            const nextList = normalizeDateTimingsList(curList.concat([{
+              id: uid('sdt'),
+              start_date: sd,
+              end_date: ed,
+              start_time: stD,
+              end_time: etD,
+              note: noteD,
+              include_off_days: sd === ed
+            }]));
+            if ($('f_date_timings_json')) $('f_date_timings_json').value = JSON.stringify(nextList);
+            if ($('ws_dt_from')) $('ws_dt_from').value = '';
+            if ($('ws_dt_to')) $('ws_dt_to').value = '';
+            if ($('ws_dt_note')) $('ws_dt_note').value = '';
+            if ($('f_sat_diff') && $('f_sat_diff').value !== 'Yes') $('f_sat_diff').value = 'Yes';
+            recalcForm();
+          });
+          $('ws_date_timings_list')?.addEventListener('click', e => {
+            const rmBtn = e.target.closest('[data-ws-rm-date]');
+            if (!rmBtn) return;
+            const did = rmBtn.getAttribute('data-ws-rm-date') || '';
+            const curList = normalizeDateTimingsList($('f_date_timings_json')?.value || '[]');
+            const nextList = curList.filter(item => String(item.id) !== String(did));
+            if ($('f_date_timings_json')) $('f_date_timings_json').value = JSON.stringify(nextList);
+            recalcForm();
+          });
+        }
         const dayMap = {};
         if (satDiff) {
           ['1', '2', '3', '4', '5', '6', '0'].forEach(dIdx => {
-            const dIn = val(`f_day_in_${dIdx}`);
-            const dOut = val(`f_day_out_${dIdx}`);
+            const dIn = fmtAttClockTime(val(`f_day_in_${dIdx}`)) || '';
+            const dOut = fmtAttClockTime(val(`f_day_out_${dIdx}`)) || '';
             if (dIn && dOut) {
               dayMap[dIdx] = { start_time: dIn, end_time: dOut, hours: computeShiftWorkedHours(dIn, dOut) || 7.0 };
             }
           });
-          if (!dayMap['6'] && satStart && satEnd) {
-            dayMap['6'] = { start_time: satStart, end_time: satEnd, hours: computeShiftWorkedHours(satStart, satEnd) || 7.0 };
-          }
         }
+        const dateList = satDiff ? normalizeDateTimingsList(val('f_date_timings_json') || '[]') : [];
         if ($('f_day_timings_json')) $('f_day_timings_json').value = JSON.stringify(dayMap);
+        renderWsDateChips(dateList);
         const editOrigWs = (STATE.editingRecord && STATE.editingRecord.crKey === 'work_shifts') ? STATE.editingRecord.orig : null;
         if (shName) {
           const bounds = getChronologicalSeriesBounds('work_shifts', { company: curCo, shift_code: shCode, name: shName, start_date: startDt, end_date: endDt }, editOrigWs);
@@ -90246,12 +90473,15 @@
           }
         }
         const winLbl = isSplit ? `${inT}-${outT} + ${splitS2}-${splitE2} (${fmtNum(durHrs, 1)}h)` : `${inT} - ${outT} (${fmtNum(durHrs, 1)}h)`;
-        const daySum = isSplit ? `Split ${inT}-${outT} + ${splitS2}-${splitE2}` : formatDayTimingsSummary(dayMap, inT, outT);
+        const rawExcSum = formatShiftExceptionsSummary(dayMap, dateList, inT, isSplit ? splitE2 : outT);
+        const daySum = rawExcSum !== 'Same Every Workday'
+          ? rawExcSum
+          : (isSplit ? `Split ${inT}-${outT} + ${splitS2}-${splitE2}` : rawExcSum);
         setText('calc_ws_window', winLbl);
         setText('calc_ws_day_diff', daySum);
         setText('calc_ws_staff_cnt', `${isBuDef ? 'Company Default' : 'Optional'} · ${fmtNum(assocCnt)} Staff`);
         setText('calc_ws_eff_win', `${fmtDateDMY(startDt)} to ${endDt ? fmtDateDMY(endDt) : 'Open'}`);
-        return { shName, shCode, isBuDef, isSplit, inT, outT, splitS2, splitE2, durHrs, dayMap };
+        return { shName, shCode, isBuDef, isSplit, inT, outT, splitS2, splitE2, durHrs, dayMap, dateList };
       }
       if (STATE.modalForm === 'fxrate') {
         const curr = String(val('f_currency') || 'LBP').trim().toUpperCase();
@@ -97660,10 +97890,30 @@
       const workdaysRaw = val('f_working_days') || 'Mon,Tue,Wed,Thu,Fri,Sat';
       const daysArr = parseWorkdaysArrayFromLabel(workdaysRaw, [1, 2, 3, 4, 5, 6]);
       const satDiff = val('f_sat_diff') === 'Yes';
-      const satStart = fmtAttClockTime(val('f_sat_start') || '07:00') || '07:00';
-      const satEnd = fmtAttClockTime(val('f_sat_end') || '14:00') || '14:00';
-      const rawDayJson = val('f_day_timings_json') || '';
-      const dayTimings = normalizeDayTimingsMap(rawDayJson, satDiff, satStart, satEnd);
+      const rawDayJson = val('f_day_timings_json') || '{}';
+      const dayTimings = satDiff ? normalizeDayTimingsMap(rawDayJson) : {};
+      let dateTimings = satDiff ? normalizeDateTimingsList(val('f_date_timings_json') || '[]') : [];
+      if (satDiff) {
+        const pendingFd = String(val('ws_dt_from') || '').slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(pendingFd)) {
+          const rawTd = String(val('ws_dt_to') || pendingFd).slice(0, 10);
+          const td = /^\d{4}-\d{2}-\d{2}$/.test(rawTd) ? rawTd : pendingFd;
+          const sd = pendingFd <= td ? pendingFd : td;
+          const ed = pendingFd <= td ? td : pendingFd;
+          dateTimings = normalizeDateTimingsList(dateTimings.concat([{
+            id: uid('sdt'),
+            start_date: sd,
+            end_date: ed,
+            start_time: normalize24hClockTime(val('ws_dt_start') || '09:00', '09:00'),
+            end_time: normalize24hClockTime(val('ws_dt_end') || '15:00', '15:00'),
+            note: String(val('ws_dt_note') || '').trim().slice(0, 60),
+            include_off_days: sd === ed
+          }]));
+        }
+        if (!Object.keys(dayTimings).length && !dateTimings.length) {
+          addErr('f_sat_diff', 'Select at least one weekday or add a specific date timing exception.');
+        }
+      }
       if (!shName) addErr('f_shift_name', 'Shift Name is required.');
       if (!inT) addErr('f_in_time', 'Regular Start Time is required.');
       if (!outT) addErr('f_out_time', 'Regular End Time is required.');
@@ -97701,10 +97951,11 @@
         grace_min: graceMin,
         early_leave_grace_min: earlyGraceMin,
         ot_mode: val('f_ot_mode') || 'none',
-        sat_diff_enabled: satDiff || Boolean(dayTimings['6']),
-        sat_start_time: (dayTimings['6'] && dayTimings['6'].start_time) || satStart,
-        sat_end_time: (dayTimings['6'] && dayTimings['6'].end_time) || satEnd,
+        sat_diff_enabled: Boolean(dayTimings['6']),
+        sat_start_time: (dayTimings['6'] && dayTimings['6'].start_time) || '07:00',
+        sat_end_time: (dayTimings['6'] && dayTimings['6'].end_time) || '14:00',
         day_timings: dayTimings,
+        date_timings: dateTimings,
         start_date: date,
         end_date: endDate,
         backfill_enabled: !$('f_backfill_shift') || Boolean($('f_backfill_shift').checked)
@@ -102132,16 +102383,19 @@
       setModalControlVal('f_grace_min', row.grace_min != null ? row.grace_min : 10);
       setModalControlVal('f_early_grace_min', row.early_leave_grace_min != null ? row.early_leave_grace_min : (row.grace_min != null ? row.grace_min : 10));
       const dtMap = normalizeDayTimingsMap(row.day_timings, row.sat_diff_enabled, row.sat_start_time, row.sat_end_time);
-      const hasAnyDayDiff = Boolean(row.sat_diff_enabled || Object.keys(dtMap).length > 0);
+      const dtDates = normalizeDateTimingsList(row.date_timings);
+      const hasAnyDayDiff = Boolean(Object.keys(dtMap).length > 0 || dtDates.length > 0);
       setModalControlVal('f_sat_diff', hasAnyDayDiff ? 'Yes' : 'No');
-      setModalControlVal('f_sat_start', (dtMap['6'] && dtMap['6'].start_time) || row.sat_start_time || '07:00');
-      setModalControlVal('f_sat_end', (dtMap['6'] && dtMap['6'].end_time) || row.sat_end_time || '14:00');
       ['1', '2', '3', '4', '5', '6', '0'].forEach(dIdx => {
         const dSpec = dtMap[dIdx];
         if ($(`f_day_in_${dIdx}`)) $(`f_day_in_${dIdx}`).value = dSpec ? dSpec.start_time : '';
         if ($(`f_day_out_${dIdx}`)) $(`f_day_out_${dIdx}`).value = dSpec ? dSpec.end_time : '';
       });
       if ($('f_day_timings_json')) $('f_day_timings_json').value = JSON.stringify(dtMap);
+      if ($('f_date_timings_json')) $('f_date_timings_json').value = JSON.stringify(dtDates);
+      if ($('ws_dt_from')) $('ws_dt_from').value = '';
+      if ($('ws_dt_to')) $('ws_dt_to').value = '';
+      if ($('ws_dt_note')) $('ws_dt_note').value = '';
       if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
     } else if (form === 'site') {
       const inclTrS = isSupplierDeliveredSite(row);
@@ -102840,7 +103094,7 @@
       const ended = Boolean(row.end_date && String(row.end_date).slice(0, 10) < todayISO());
       return {
         tone: ended ? 'warn' : 'info',
-        text: `Shift & Clock Timing · ${row.name || 'Shift'} (${row.company || 'WTC'}${row.is_bu_default ? ' · BU Default' : ''}): Regular ${row.start_time}-${row.end_time} (${fmtNum(row.hours || 8, 1)}h)  |  Day-Specific: ${row.day_schedule_summary || 'Standard All Days'}  |  Associated Staff: ${fmtNum(row.associated_staff_count || 0)}  |  Effective: ${fmtDateDMY(row.start_date)} to ${row.end_date ? fmtDateDMY(row.end_date) : 'Open'}`
+        text: `Shift & Clock Timing · ${row.name || 'Shift'} (${row.company || 'WTC'}${row.is_bu_default ? ' · BU Default' : ''}): Regular ${row.start_time}-${row.end_time} (${fmtNum(row.hours || 8, 1)}h)  |  Timing Exceptions: ${row.day_schedule_summary || 'Same Every Workday'}  |  Associated Staff: ${fmtNum(row.associated_staff_count || 0)}  |  Effective: ${fmtDateDMY(row.start_date)} to ${row.end_date ? fmtDateDMY(row.end_date) : 'Open'}`
       };
     }
     if (key === 'employments') {
@@ -103348,7 +103602,7 @@
         pill: row.is_bu_default ? `BU DEFAULT · ${row.company || 'WTC'}` : (ended ? 'HISTORICAL WINDOW' : 'ACTIVE SHIFT'),
         cards: [
           { lbl: 'REGULAR CLOCK WINDOW', tag: row.is_bu_default ? 'BU DEFAULT' : 'SHIFT TIMING', tone: 'good', val: `${row.start_time} - ${row.end_time}`, sub1: `${fmtNum(row.hours || 8, 1)}h · Workdays: ${row.workdays_label || 'Mon-Sat'}`, sub2: `IN Tol: ${row.grace_min || 10}m · OUT Tol: ${row.early_leave_grace_min || 10}m`, pct: 95 },
-          { lbl: 'DAY-SPECIFIC TIMINGS (SAT)', tag: row.sat_diff_enabled ? 'CUSTOM DAY' : 'UNIFORM', tone: row.sat_diff_enabled ? 'info' : 'good', val: row.day_schedule_summary || 'Standard All Days', sub1: row.sat_diff_enabled ? `Saturday: ${row.sat_start_time}-${row.sat_end_time}` : 'Same timing on all workdays', sub2: `Entity: ${row.company || 'WTC'}`, pct: 90 },
+          { lbl: 'TIMING EXCEPTIONS', tag: row.has_day_timings ? 'CUSTOM TIMING' : 'UNIFORM', tone: row.has_day_timings ? 'info' : 'good', val: row.day_schedule_summary || 'Same Every Workday', sub1: row.has_day_timings ? 'Weekday / Date Overrides Active' : 'Same timing on all workdays', sub2: `Entity: ${row.company || 'WTC'}`, pct: 90 },
           { lbl: 'ASSOCIATED STAFF & BACKFILL', tag: `${fmtNum(row.associated_staff_count || 0)} STAFF`, tone: 'info', val: `${fmtNum(row.associated_staff_count || 0)} Staff`, sub1: row.is_bu_default ? `Default for all ${row.company || 'WTC'} staff` : 'Assigned to this shift', sub2: 'Changes backfill from Effective Date', pct: 88 },
           { lbl: 'EFFECTIVE WINDOW', tag: ended ? 'HISTORICAL' : 'OPEN', tone: ended ? 'warn' : 'good', val: fmtDateDMY(row.start_date), sub1: `Start: ${fmtDateDMY(row.start_date)}`, sub2: `End: ${row.end_date ? fmtDateDMY(row.end_date) : 'Open (Active)'}`, pct: ended ? 60 : 100 }
         ]
@@ -104659,9 +104913,6 @@
         { key: 'end_time', label: 'Regular End Time (OUT) *', type: 'text', sec: 2, placeholder: '16:00' },
         { key: 'grace_min', label: 'Clock-IN Tolerance (min)', type: 'number', step: '1', sec: 2 },
         { key: 'early_leave_grace_min', label: 'Clock-OUT Tolerance (min)', type: 'number', step: '1', sec: 2 },
-        { key: 'sat_diff_enabled', label: 'Different Timing on Saturday', type: 'bool', sec: 2 },
-        { key: 'sat_start_time', label: 'Saturday Start Time (IN)', type: 'text', sec: 2, placeholder: '07:00' },
-        { key: 'sat_end_time', label: 'Saturday End Time (OUT)', type: 'text', sec: 2, placeholder: '14:00' },
         { key: 'start_date', label: 'Effective Start Date *', type: 'date', sec: 2 },
         { key: 'end_date', label: 'Effective End Date (Blank = Open)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
@@ -105189,6 +105440,14 @@
     if (key === 'employments') {
       hidden.add('equipment');
       hidden.add('truck');
+    }
+    if (key === 'work_shifts') {
+      hidden.add('day_timings');
+      hidden.add('date_timings');
+      hidden.add('sat_diff_enabled');
+      hidden.add('sat_start_time');
+      hidden.add('sat_end_time');
+      hidden.add('has_day_timings');
     }
     if (key === 'attendance') {
       hidden.add('rep_date');
@@ -122318,10 +122577,12 @@
     const nameStr = String(base.name || 'Custom Shift').trim() || 'Custom Shift';
     const shortStr = String(base.short || nameStr.split(/\s+/)[0] || 'Shift').trim().slice(0, 12);
     const dayTimings = normalizeDayTimingsMap(base.day_timings, base.sat_diff_enabled, base.sat_start_time, base.sat_end_time);
+    const dateTimings = normalizeDateTimingsList(base.date_timings);
     const satSpec = dayTimings['6'] || null;
     const satDiff = Boolean(satSpec && (satSpec.start_time !== effStart || satSpec.end_time !== effEnd));
     const graceM = Math.max(0, Math.min(180, Number(base.grace_min != null ? base.grace_min : 10)));
     const earlyGraceM = Math.max(0, Math.min(180, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : graceM)));
+    const excSummary = formatShiftExceptionsSummary(dayTimings, dateTimings, effStart, effEnd);
     return {
       id: String(normId),
       shift_code: String(normId),
@@ -122346,7 +122607,11 @@
       sat_start_time: satSpec ? satSpec.start_time : (base.sat_start_time || '07:00'),
       sat_end_time: satSpec ? satSpec.end_time : (base.sat_end_time || '14:00'),
       day_timings: dayTimings,
-      day_schedule_summary: isSplit ? `Split ${splitWinLbl} (${fmtNum(durHrs, 1)}h)` : formatDayTimingsSummary(dayTimings, effStart, effEnd),
+      date_timings: dateTimings,
+      has_day_timings: Object.keys(dayTimings).length > 0 || dateTimings.length > 0,
+      day_schedule_summary: isSplit
+        ? `Split ${splitWinLbl} (${fmtNum(durHrs, 1)}h)${excSummary !== 'Same Every Workday' ? ` · ${excSummary}` : ''}`
+        : excSummary,
       start_date: String(base.start_date || '2025-01-01').slice(0, 10),
       end_date: String(base.end_date || '').slice(0, 10),
       tone: ['amber', 'indigo', 'sapphire', 'emerald'].includes(base.tone) ? base.tone : (overnight ? 'indigo' : 'amber'),
@@ -122476,6 +122741,7 @@
       sat_start_time: normalized.sat_start_time,
       sat_end_time: normalized.sat_end_time,
       day_timings: normalized.day_timings,
+      date_timings: normalized.date_timings,
       start_date: effStart,
       end_date: effEnd,
       date: effStart,
@@ -122519,26 +122785,60 @@
     return { ok: true, shiftType: normalized, workShiftRow: wsRow, backfill: bf };
   }
 
-  function deleteShiftType(shiftId) {
+  function deleteShiftType(shiftId, companyOpt = '') {
     const id = String(shiftId || '');
-    if (!id || DEFAULT_SHIFT_TYPES.some(d => d.id === id)) {
+    const normCode = normalizeShiftCodeAlias(id);
+    if (!id || DEFAULT_SHIFT_TYPES.some(d => d.id === id || d.id === normCode)) {
       return { ok: false, error: 'Built-in shift types cannot be deleted (you can edit their timing)' };
     }
     const ws = ensureWorkSchedulesState();
     const nowIso = new Date().toISOString();
-    const idx = ws.shiftTypes.findIndex(s => s && String(s.id) === id);
-    if (idx < 0) return { ok: false, error: 'Shift type not found' };
-    ws.shiftTypes[idx] = Object.assign({}, ws.shiftTypes[idx], { voided: true, updated_at: nowIso });
+    const coOptNorm = companyOpt ? norm(companyOpt) : '';
+    const idx = ws.shiftTypes.findIndex(s => s && !s.voided && (String(s.id) === id || normalizeShiftCodeAlias(s.id) === normCode) && (!coOptNorm || norm(s.company || 'WTC') === coOptNorm));
+    let delCo = String(companyOpt || '').trim();
+    if (idx >= 0) {
+      if (!delCo) delCo = String(ws.shiftTypes[idx].company || '').trim();
+      ws.shiftTypes[idx] = Object.assign({}, ws.shiftTypes[idx], { voided: true, updated_at: nowIso });
+    }
+    const delCoNorm = delCo ? norm(delCo) : '';
+    if (!Array.isArray(STATE.customRecords.work_shifts)) STATE.customRecords.work_shifts = [];
+    let voidedWsCount = 0;
+    const voidRows = [
+      ...((SEED && SEED.records && SEED.records.work_shifts) || []),
+      ...STATE.customRecords.work_shifts
+    ];
+    voidRows.forEach(r => {
+      if (!r || r.voided) return;
+      const rCode = normalizeShiftCodeAlias(r.shift_code || r.shift_id || r.id || '');
+      if (rCode !== normCode && String(r.id || '') !== id) return;
+      if (delCoNorm && r.company && norm(r.company) !== delCoNorm) return;
+      r.voided = true;
+      r.voided_at = nowIso;
+      r.modified_at = nowIso;
+      if (r.id) {
+        const ci = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(r.id));
+        if (ci >= 0) Object.assign(STATE.customRecords.work_shifts[ci], r);
+        else STATE.customRecords.work_shifts.unshift(Object.assign({}, r));
+        postRecordToLocalApi('work_shifts', r);
+      }
+      voidedWsCount++;
+    });
+    if (idx < 0 && voidedWsCount === 0) return { ok: false, error: 'Shift type not found' };
     Object.values(ws.staffRules).forEach(r => {
-      if (r && r.shift_id === id) {
+      if (r && (r.shift_id === id || normalizeShiftCodeAlias(r.shift_id || '') === normCode) && (!delCoNorm || !r.company || norm(r.company) === delCoNorm)) {
         r.shift_id = 'day_8_4';
         r.updated_at = nowIso;
       }
     });
+    if (SEED) {
+      SEED._workShiftsSeededRev = '';
+      SEED._customRev = (SEED._customRev || 0) + 1;
+      if (SEED._tableRev) SEED._tableRev.work_shifts = (SEED._tableRev.work_shifts || 0) + 1;
+    }
     saveLocalAuthAndRecords();
-    postWorkScheduleMutation({ op: 'upsert_shift', item: ws.shiftTypes[idx] });
+    if (idx >= 0) postWorkScheduleMutation({ op: 'upsert_shift', item: ws.shiftTypes[idx] });
     syncWithCloud(true);
-    return { ok: true };
+    return { ok: true, voidedRows: voidedWsCount };
   }
 
   function hasExplicitStaffWorkRule(staffName) {
@@ -122675,6 +122975,7 @@
       sat_start_time: (resolvedShiftRow && resolvedShiftRow.sat_start_time) || '07:00',
       sat_end_time: (resolvedShiftRow && resolvedShiftRow.sat_end_time) || '14:00',
       day_timings: Object.assign({}, (resolvedShiftRow && resolvedShiftRow.day_timings) || {}),
+      date_timings: normalizeDateTimingsList(resolvedShiftRow && resolvedShiftRow.date_timings),
       use_custom_day_timings: false,
       grace_min: defGrace,
       early_leave_grace_min: (raw && !raw.reset_default && raw.early_leave_grace_min != null)
@@ -122729,6 +123030,8 @@
       ? Array.from(new Set(base.custom_days.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))).sort((a, b) => a - b)
       : [1, 2, 3, 4, 5, 6];
     base.day_timings = normalizeDayTimingsMap(base.day_timings, base.sat_diff_enabled, base.sat_start_time, base.sat_end_time);
+    base.date_timings = normalizeDateTimingsList(base.date_timings);
+    base.sat_diff_enabled = Boolean(base.day_timings['6'] && (base.day_timings['6'].start_time !== base.custom_start || base.day_timings['6'].end_time !== base.custom_end));
     base.shift_overrides = Array.isArray(base.shift_overrides) ? base.shift_overrides.filter(o => o && o.start_date) : [];
     base.ot_passes = Array.isArray(base.ot_passes) ? base.ot_passes.filter(p => p && p.start_date) : [];
     return base;
@@ -122830,6 +123133,11 @@
     if (Array.isArray(next.custom_days)) {
       next.custom_days = Array.from(new Set(next.custom_days.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))).sort((a, b) => a - b);
     }
+    next.day_timings = normalizeDayTimingsMap(next.day_timings, next.sat_diff_enabled, next.sat_start_time, next.sat_end_time);
+    next.date_timings = normalizeDateTimingsList(next.date_timings);
+    next.sat_diff_enabled = Boolean(next.day_timings['6']);
+    next.sat_start_time = (next.day_timings['6'] && next.day_timings['6'].start_time) || fmtAttClockTime(next.sat_start_time || '07:00') || '07:00';
+    next.sat_end_time = (next.day_timings['6'] && next.day_timings['6'].end_time) || fmtAttClockTime(next.sat_end_time || '14:00') || '14:00';
     next.shift_overrides = Array.isArray(next.shift_overrides) ? next.shift_overrides.filter(o => o && o.start_date) : [];
     next.ot_passes = Array.isArray(next.ot_passes) ? next.ot_passes.filter(p => p && p.start_date) : [];
     ws.staffRules[k] = next;
@@ -122977,6 +123285,7 @@
         sat_start_time: rule.sat_start_time,
         sat_end_time: rule.sat_end_time,
         day_timings: rule.day_timings,
+        date_timings: rule.date_timings,
         tone: 'emerald'
       });
     } else {
@@ -122991,9 +123300,10 @@
       }
       if (hasExplicitStaffWorkRule(staffName) && rule.use_custom_day_timings) {
         chosenShift.day_timings = normalizeDayTimingsMap(rule.day_timings, rule.sat_diff_enabled, rule.sat_start_time, rule.sat_end_time);
-        chosenShift.sat_diff_enabled = Boolean(rule.sat_diff_enabled);
-        chosenShift.sat_start_time = rule.sat_start_time || '07:00';
-        chosenShift.sat_end_time = rule.sat_end_time || '14:00';
+        chosenShift.date_timings = normalizeDateTimingsList(rule.date_timings);
+        chosenShift.sat_diff_enabled = Boolean(chosenShift.day_timings['6']);
+        chosenShift.sat_start_time = (chosenShift.day_timings['6'] && chosenShift.day_timings['6'].start_time) || rule.sat_start_time || '07:00';
+        chosenShift.sat_end_time = (chosenShift.day_timings['6'] && chosenShift.day_timings['6'].end_time) || rule.sat_end_time || '14:00';
       }
     }
 
@@ -123006,17 +123316,26 @@
     chosenShift.regular_hours = regHours;
     chosenShift.regular_overnight = regOvernight;
 
-    const isWorkday = activeOv ? true : (wk.dayIdx < 0 ? true : chosenShift.days.includes(wk.dayIdx));
-    // Apply weekday-specific timing (e.g. Saturday 07:00-14:00) when scheduled on that day
+    let isWorkday = activeOv ? true : (wk.dayIdx < 0 ? true : chosenShift.days.includes(wk.dayIdx));
+    // Apply specific calendar date / range timing (takes priority) or weekday-specific timing
     let isDaySpecific = false;
-    if (isWorkday && !activeOv && wk.dayIdx >= 0) {
-      const dayTiming = resolveShiftTimingForWeekday(chosenShift, wk.dayIdx);
-      if (dayTiming && dayTiming.isDaySpecific) {
-        chosenShift.start_time = dayTiming.start_time;
-        chosenShift.end_time = dayTiming.end_time;
-        chosenShift.hours = dayTiming.hours;
-        chosenShift.overnight = dayTiming.overnight;
+    let isDateSpecific = false;
+    let dateTimingNote = '';
+    if (!activeOv && wk.dayIdx >= 0) {
+      const resolvedTiming = resolveShiftTimingForDate(chosenShift, dStr, wk.dayIdx);
+      if (resolvedTiming && resolvedTiming.isDateSpecific && resolvedTiming.forcesWorkday) {
+        isWorkday = true;
+      }
+      if (isWorkday && resolvedTiming && resolvedTiming.isDaySpecific) {
+        chosenShift.start_time = resolvedTiming.start_time;
+        chosenShift.end_time = resolvedTiming.end_time;
+        chosenShift.hours = resolvedTiming.hours;
+        chosenShift.overnight = resolvedTiming.overnight;
+        chosenShift.split_enabled = false;
+        chosenShift.split_window_label = '';
         isDaySpecific = true;
+        isDateSpecific = Boolean(resolvedTiming.isDateSpecific);
+        dateTimingNote = (resolvedTiming.dateTiming && resolvedTiming.dateTiming.note) || '';
       }
     }
     const winSuffix = chosenShift.overnight ? ' (+1d)' : '';
@@ -123026,18 +123345,19 @@
     const regWindowLabel = (chosenShift.split_enabled && chosenShift.split_window_label)
       ? chosenShift.split_window_label
       : `${regStart}-${regEnd}${regOvernight ? ' (+1d)' : ''}`;
-    const satInfo = chosenShift.sat_diff_enabled
-      ? `Sat ${chosenShift.sat_start_time || '07:00'}-${chosenShift.sat_end_time || '14:00'}`
-      : '';
+    const excSummary = formatShiftExceptionsSummary(chosenShift.day_timings, chosenShift.date_timings, regStart, regEnd);
+    const excInfo = excSummary !== 'Same Every Workday' ? excSummary : '';
     const badgeLabel = `${chosenShift.name} · ${regWindowLabel}`;
-    const dayScheduleSub = satInfo
-      ? `${regWindowLabel} · ${satInfo}`
+    const dayScheduleSub = excInfo
+      ? `${regWindowLabel} · ${excInfo}`
       : `${regWindowLabel} · ${formatWorkdaysCompact(chosenShift.days)}`;
     return Object.assign({}, chosenShift, {
       isOverride: Boolean(activeOv),
       overrideObj: activeOv,
       isWorkday,
       isDaySpecific,
+      isDateSpecific,
+      dateTimingNote,
       windowLabel,
       regWindowLabel,
       dayScheduleSub,
@@ -127319,12 +127639,34 @@
       ? rule.custom_days.slice()
       : (activeShiftObj ? activeShiftObj.days.slice() : [1, 2, 3, 4, 5, 6]);
     let draftUseCustomDays = Boolean(rule.use_custom_days);
-    let draftSatDiff = Boolean(rule.sat_diff_enabled || (activeShiftObj && activeShiftObj.sat_diff_enabled));
-    let draftSatStart = normalize24hClockTime(rule.sat_start_time || (activeShiftObj && activeShiftObj.sat_start_time) || '07:00', '07:00');
-    let draftSatEnd = normalize24hClockTime(rule.sat_end_time || (activeShiftObj && activeShiftObj.sat_end_time) || '14:00', '14:00');
-    let draftDayTimings = normalizeDayTimingsMap(rule.day_timings || (activeShiftObj && activeShiftObj.day_timings), draftSatDiff, draftSatStart, draftSatEnd);
     let draftUseCustomDayTimings = Boolean(rule.use_custom_day_timings);
-    let draftExpandAllDays = false;
+    let draftDayTimings = normalizeDayTimingsMap(
+      rule.use_custom_day_timings ? rule.day_timings : (rule.day_timings || (activeShiftObj && activeShiftObj.day_timings)),
+      rule.use_custom_day_timings ? rule.sat_diff_enabled : (rule.sat_diff_enabled || (activeShiftObj && activeShiftObj.sat_diff_enabled)),
+      rule.sat_start_time || (activeShiftObj && activeShiftObj.sat_start_time) || '07:00',
+      rule.sat_end_time || (activeShiftObj && activeShiftObj.sat_end_time) || '14:00'
+    );
+    let draftDateTimings = normalizeDateTimingsList(
+      rule.use_custom_day_timings
+        ? rule.date_timings
+        : ((rule.date_timings && rule.date_timings.length) ? rule.date_timings : (activeShiftObj && activeShiftObj.date_timings))
+    );
+    let draftHasTimingExc = Object.keys(draftDayTimings).length > 0 || draftDateTimings.length > 0;
+    let draftRawDayInputs = {};
+    const resetDraftRawDayInputsFromTimings = () => {
+      draftRawDayInputs = {};
+      Object.keys(draftDayTimings || {}).forEach(k => {
+        const it = draftDayTimings[k];
+        if (it) draftRawDayInputs[String(k)] = { inVal: it.start_time || '', outVal: it.end_time || '' };
+      });
+    };
+    resetDraftRawDayInputsFromTimings();
+    let draftExcQuickDay = '';
+    let draftPendingDateFrom = '';
+    let draftPendingDateTo = '';
+    let draftPendingDateStart = '09:00';
+    let draftPendingDateEnd = '15:00';
+    let draftPendingDateNote = '';
     let draftShowShiftTable = Boolean(opts.openShiftTable);
     let draftStudioSection = ['all', 'shift', 'policy', 'lateness', 'ot'].includes(opts.studioTab) ? opts.studioTab : 'all';
     let draftOtMode = rule.ot_mode || 'none';
@@ -127363,7 +127705,6 @@
       const initials = String(entry.name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('') || 'ST';
       const cDur = computeShiftWorkedHours(draftCustomStart, draftCustomEnd) || 8.0;
       const cOvernight = Boolean(parseClockMinutes(draftCustomEnd) != null && parseClockMinutes(draftCustomStart) != null && parseClockMinutes(draftCustomEnd) <= parseClockMinutes(draftCustomStart));
-      const satDur = computeShiftWorkedHours(draftSatStart, draftSatEnd) || 7.0;
       const dayOrder = [1, 2, 3, 4, 5, 6, 0];
       const curShiftObj = draftShiftId === 'custom'
         ? { name: draftCustomName || 'Custom Shift', start_time: draftCustomStart, end_time: draftCustomEnd, hours: cDur }
@@ -127374,7 +127715,7 @@
       const workShiftRows = ((SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [])
         .filter(r => r && !r.voided && buCoNormSet.has(norm(r.company || 'WTC')))
         .map(r => hydrateWorkShiftRowComputed(r));
-      const dayTimingsSummaryTxt = formatDayTimingsSummary(draftDayTimings, draftSatDiff, draftSatStart, draftSatEnd);
+      const dayTimingsSummaryTxt = formatShiftExceptionsSummary(draftHasTimingExc ? draftDayTimings : {}, draftHasTimingExc ? draftDateTimings : [], curShiftObj.start_time, curShiftObj.end_time);
       const startMinVal = parseClockMinutes(curShiftObj.start_time) ?? 480;
       const endMinRaw = parseClockMinutes(curShiftObj.end_time) ?? 960;
       const endMinVal = endMinRaw <= startMinVal ? (endMinRaw + 1440) : endMinRaw;
@@ -127439,7 +127780,7 @@
                 <div class="ssm-live-kpi">
                   <span class="ssm-lk-lbl">Regular Shift</span>
                   <strong class="mono">${esc(curShiftObj.name)} · ${esc(curShiftObj.split_enabled && curShiftObj.split_window_label ? curShiftObj.split_window_label : `${curShiftObj.start_time}-${curShiftObj.end_time}`)}</strong>
-                  <span class="ssm-lk-sub mono">${fmtNum(curShiftObj.hours || cDur, 1)}h${draftSatDiff ? ` · Sat ${esc(draftSatStart)}-${esc(draftSatEnd)}` : ` · ${esc(formatWorkdaysCompact(draftDays))}`}</span>
+                  <span class="ssm-lk-sub mono">${fmtNum(curShiftObj.hours || cDur, 1)}h${dayTimingsSummaryTxt !== 'Same Every Workday' ? ` · ${esc(dayTimingsSummaryTxt)}` : ` · ${esc(formatWorkdaysCompact(draftDays))}`}</span>
                 </div>
                 <div class="ssm-live-kpi">
                   <span class="ssm-lk-lbl">Policy &amp; Perks Group</span>
@@ -127487,8 +127828,8 @@
             <div class="ssm-section" id="ssmShiftSection" ${showSec('shift') ? '' : 'hidden'}>
               <div class="ssm-sec-head" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
                 <div>
-                  <strong>1. Regular Shift &amp; Day-Specific Clock Timing</strong>
-                  <span class="muted" style="margin-left:8px">Choose this employee's regular shift, Saturday early schedule, or manage BU shift defaults</span>
+                  <strong>1. Regular Shift &amp; Timing Exceptions</strong>
+                  <span class="muted" style="margin-left:8px">Choose this employee's regular shift, weekday or specific-date timing exceptions, or manage BU shift defaults</span>
                 </div>
                 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
                   <button type="button" class="btn kiosk-mini-btn ${draftShowShiftTable ? 'btn-primary' : ''}" id="ssmToggleShiftTableBtn">
@@ -127500,14 +127841,14 @@
               <div class="ssm-shift-cards">
                 ${liveShiftTypes.map(st => {
                   const isBuDefForCo = Boolean(getBuDefaultShift(entry.company)?.shift_code === st.id);
-                  const stDaySum = formatDayTimingsSummary(st.day_timings, st.sat_diff_enabled, st.sat_start_time, st.sat_end_time);
+                  const stDaySum = formatShiftExceptionsSummary(st.day_timings, st.date_timings, st.start_time, st.end_time);
                   return `
                   <button type="button" class="ssm-shift-card ${draftShiftId === st.id ? 'active' : ''}" data-tone="${esc(st.tone)}" data-ssm-shift="${esc(st.id)}">
                     <span class="ssm-sc-top">
                       <b>${esc(st.name)}${isBuDefForCo ? ` <span class="badge badge-brass" style="font-size:9.5px;padding:1px 5px;margin-left:3px">${esc(entry.company)} Default</span>` : ''}</b>
                       <span class="ssm-sc-hrs mono">${fmtNum(st.hours, 1)}h</span>
                     </span>
-                    <span class="ssm-sc-win mono">${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time} - ${st.end_time}${st.overnight ? ' (+1d)' : ''}`)}${!st.split_enabled && stDaySum !== 'Same Every Workday' ? ` · ${esc(stDaySum)}` : ''}</span>
+                    <span class="ssm-sc-win mono">${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time} - ${st.end_time}${st.overnight ? ' (+1d)' : ''}`)}${stDaySum !== 'Same Every Workday' ? ` · ${esc(stDaySum)}` : ''}</span>
                   </button>
                 `;
                 }).join('')}
@@ -127614,61 +127955,91 @@
                 </div>
               </div>
 
-              <!-- DAY-SPECIFIC SHIFT TIMING (SATURDAY EARLY START / EARLY LEAVE + PER-WEEKDAY) -->
+              <!-- TIMING EXCEPTIONS (RECURRING WEEKDAYS & SPECIFIC CALENDAR DATES) -->
               <div class="ssm-ot-subpanel" id="ssmDaySpecificPanel" style="margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev)">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
                   <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:12.5px;margin:0">
-                    <input type="checkbox" id="ssmSatDiffChk" ${draftSatDiff ? 'checked' : ''}>
-                    <span>Different timing by day (e.g. Saturday start earlier &amp; leave earlier)</span>
+                    <input type="checkbox" id="ssmDiffExcChk" ${draftHasTimingExc ? 'checked' : ''}>
+                    <span>Different timing on specific weekdays or dates</span>
                   </label>
-                  <div style="display:flex;gap:6px;align-items:center">
-                    <span class="badge ${draftSatDiff ? 'badge-brass' : ''}" id="ssmDayTimingBadge">${esc(dayTimingsSummaryTxt)}</span>
-                    ${draftSatDiff ? `
-                      <button type="button" class="btn kiosk-mini-btn" id="ssmToggleWeekdayGridBtn">
-                        ${draftExpandAllDays ? 'Hide Mon-Sun Grid' : 'All Weekdays (Mon-Sun)'}
-                      </button>
-                    ` : ''}
-                  </div>
+                  <span class="badge ${draftHasTimingExc && dayTimingsSummaryTxt !== 'Same Every Workday' ? 'badge-brass' : ''}" id="ssmDayTimingBadge">${esc(dayTimingsSummaryTxt)}</span>
                 </div>
-                ${draftSatDiff ? `
-                  <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:8px">
-                    <div class="ssm-field">
-                      <label for="ssmSatStart">Saturday Start (24h)</label>
-                      <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="07:00" class="pa-time24-input mono" id="ssmSatStart" value="${esc(draftSatStart)}" style="width:92px">
+                ${draftHasTimingExc ? `
+                  <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+                    <div class="stm-exc-subcard">
+                      <div class="stm-exc-subhead">
+                        <strong>Recurring Weekday(s) (Mon-Sun)</strong>
+                        <span class="muted">Enter Start/End for any weekday, or pick a weekday to quick-fill</span>
+                      </div>
+                      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px">
+                        <select id="ssmExcQuickDay" class="kiosk-select" data-plain-options="1" style="height:28px;font-size:11.5px;min-width:130px">
+                          <option value="" ${draftExcQuickDay === '' ? 'selected' : ''}>Select Weekday...</option>
+                          ${dayOrder.map(dIdx => `<option value="${dIdx}" ${String(dIdx) === String(draftExcQuickDay) ? 'selected' : ''}>${ATT_WEEKDAYS[dIdx]}</option>`).join('')}
+                        </select>
+                        <button type="button" class="kiosk-qchip" data-ssm-day-preset="07:00|14:00">07:00-14:00</button>
+                        <button type="button" class="kiosk-qchip" data-ssm-day-preset="08:30|13:30">08:30-13:30</button>
+                        <button type="button" class="kiosk-qchip" data-ssm-day-preset="09:00|15:00">09:00-15:00</button>
+                      </div>
+                      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-top:8px">
+                        ${dayOrder.map(dIdx => {
+                          const dtObj = draftDayTimings && draftDayTimings[String(dIdx)] ? draftDayTimings[String(dIdx)] : null;
+                          const rawPair = draftRawDayInputs && draftRawDayInputs[String(dIdx)] ? draftRawDayInputs[String(dIdx)] : null;
+                          const inVal = rawPair ? rawPair.inVal : (dtObj ? dtObj.start_time : '');
+                          const outVal = rawPair ? rawPair.outVal : (dtObj ? dtObj.end_time : '');
+                          return `
+                            <div class="ssm-field" style="background:var(--bg);padding:6px;border-radius:6px;border:1px solid var(--line)">
+                              <label style="font-size:11px;font-weight:700">${ATT_WEEKDAYS[dIdx]} Override</label>
+                              <div style="display:flex;gap:4px;align-items:center">
+                                <input type="text" data-time24="1" data-optional-time="1" data-ssm-day-in="${dIdx}" class="pa-time24-input mono" placeholder="${esc(curShiftObj.start_time)}" value="${esc(inVal)}" style="width:62px;font-size:11.5px;padding:3px 5px">
+                                <span class="muted">-</span>
+                                <input type="text" data-time24="1" data-optional-time="1" data-ssm-day-out="${dIdx}" class="pa-time24-input mono" placeholder="${esc(curShiftObj.end_time)}" value="${esc(outVal)}" style="width:62px;font-size:11.5px;padding:3px 5px">
+                              </div>
+                            </div>
+                          `;
+                        }).join('')}
+                      </div>
                     </div>
-                    <div class="ssm-field">
-                      <label for="ssmSatEnd">Saturday End (24h)</label>
-                      <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="14:00" class="pa-time24-input mono" id="ssmSatEnd" value="${esc(draftSatEnd)}" style="width:92px">
-                    </div>
-                    <div class="ssm-field">
-                      <label>Saturday Hours</label>
-                      <div class="ssm-calc-pill mono" id="ssmSatDurPill">${fmtNum(satDur, 1)}h · Early Saturday</div>
-                    </div>
-                    <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding-bottom:2px">
-                      <span class="muted" style="font-size:11.5px">Presets:</span>
-                      <button type="button" class="kiosk-qchip ${draftSatStart === '07:00' && draftSatEnd === '14:00' ? 'active' : ''}" data-ssm-sat-preset="07:00|14:00">Sat 07:00-14:00 (7h)</button>
-                      <button type="button" class="kiosk-qchip ${draftSatStart === '07:00' && draftSatEnd === '13:00' ? 'active' : ''}" data-ssm-sat-preset="07:00|13:00">Sat 07:00-13:00 (6h)</button>
-                      <button type="button" class="kiosk-qchip ${draftSatStart === '07:30' && draftSatEnd === '14:30' ? 'active' : ''}" data-ssm-sat-preset="07:30|14:30">Sat 07:30-14:30 (7h)</button>
-                      <button type="button" class="kiosk-qchip ${draftSatStart === '06:00' && draftSatEnd === '13:00' ? 'active' : ''}" data-ssm-sat-preset="06:00|13:00">Sat 06:00-13:00 (7h)</button>
+                    <div class="stm-exc-subcard">
+                      <div class="stm-exc-subhead">
+                        <strong>Specific Calendar Date / Date Range</strong>
+                        <span class="muted">Overrides regular and weekday hours on selected date(s)</span>
+                      </div>
+                      <div class="stm-date-grid" style="margin-top:6px">
+                        <div class="ssm-field">
+                          <label for="ssmDateExcFrom">From Date</label>
+                          <input type="date" id="ssmDateExcFrom" value="${esc(draftPendingDateFrom)}">
+                        </div>
+                        <div class="ssm-field">
+                          <label for="ssmDateExcTo">To Date</label>
+                          <input type="date" id="ssmDateExcTo" value="${esc(draftPendingDateTo)}">
+                        </div>
+                        <div class="ssm-field">
+                          <label for="ssmDateExcStart">Start (24h)</label>
+                          <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="ssmDateExcStart" value="${esc(draftPendingDateStart)}">
+                        </div>
+                        <div class="ssm-field">
+                          <label for="ssmDateExcEnd">End (24h)</label>
+                          <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="ssmDateExcEnd" value="${esc(draftPendingDateEnd)}">
+                        </div>
+                      </div>
+                      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:6px">
+                        <div class="ssm-field" style="flex:1;min-width:150px">
+                          <label for="ssmDateExcNote">Reason / Label (Optional)</label>
+                          <input type="text" id="ssmDateExcNote" maxlength="60" placeholder="e.g. Ramadan / Holiday Eve" value="${esc(draftPendingDateNote)}">
+                        </div>
+                        <button type="button" class="btn kiosk-mini-btn btn-primary" id="ssmAddDateExcBtn">+ Add Date</button>
+                      </div>
+                      <div class="stm-exc-chips" style="margin-top:8px">
+                        ${draftDateTimings.length ? draftDateTimings.map(item => {
+                          const dLbl = item.start_date === item.end_date
+                            ? fmtDateDMY(item.start_date)
+                            : `${fmtDateDMY(item.start_date)} to ${fmtDateDMY(item.end_date)}`;
+                          const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
+                          return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dLbl)} · <b class="mono">${esc(item.start_time)}-${esc(item.end_time)}</b>${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}</span><button type="button" class="stm-exc-chip-rm" data-ssm-rm-date-exc="${esc(item.id)}" aria-label="Remove date timing">✕</button></span>`;
+                        }).join('') : `<span class="muted" style="font-size:11.5px">No specific calendar date overrides added yet.</span>`}
+                      </div>
                     </div>
                   </div>
-                  ${draftExpandAllDays ? `
-                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)">
-                      ${dayOrder.map(dIdx => {
-                        const dtObj = draftDayTimings && draftDayTimings[String(dIdx)] ? draftDayTimings[String(dIdx)] : (dIdx === 6 ? { start_time: draftSatStart, end_time: draftSatEnd } : null);
-                        return `
-                          <div class="ssm-field" style="background:var(--bg);padding:6px;border-radius:6px;border:1px solid var(--line)">
-                            <label style="font-size:11px;font-weight:700">${ATT_WEEKDAYS[dIdx]} Override (Optional)</label>
-                            <div style="display:flex;gap:4px;align-items:center">
-                              <input type="text" data-time24="1" data-optional-time="1" data-ssm-day-in="${dIdx}" class="pa-time24-input mono" placeholder="${esc(curShiftObj.start_time)}" value="${esc(dtObj ? dtObj.start_time : '')}" style="width:62px;font-size:11.5px;padding:3px 5px">
-                              <span class="muted">-</span>
-                              <input type="text" data-time24="1" data-optional-time="1" data-ssm-day-out="${dIdx}" class="pa-time24-input mono" placeholder="${esc(curShiftObj.end_time)}" value="${esc(dtObj ? dtObj.end_time : '')}" style="width:62px;font-size:11.5px;padding:3px 5px">
-                            </div>
-                          </div>
-                        `;
-                      }).join('')}
-                    </div>
-                  ` : ''}
                 ` : ''}
               </div>
 
@@ -127693,7 +128064,11 @@
                         <div class="ssm-field" style="margin:0">
                           <label style="font-size:10.5px">Default Shift</label>
                           <select class="kiosk-select" data-ssm-bu-default="${esc(bu)}" data-plain-options="1" style="height:29px;font-size:11.5px">
-                            ${buShiftTypes.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)}${st.sat_diff_enabled ? ` · Sat ${esc(st.sat_start_time)}-${esc(st.sat_end_time)}` : ''})</option>`).join('')}
+                            ${buShiftTypes.map(st => {
+                              const stExc = formatShiftExceptionsSummary(st.day_timings, st.date_timings, st.start_time, st.end_time);
+                              const excOpt = stExc !== 'Same Every Workday' ? ` · ${stExc}` : '';
+                              return `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)}${esc(excOpt)})</option>`;
+                            }).join('')}
                           </select>
                         </div>
                         <div class="ssm-field" style="margin:0">
@@ -127714,7 +128089,7 @@
                         <th>Shift Name</th>
                         <th>BU Default</th>
                         <th>Regular Start / End</th>
-                        <th>Saturday / Day Timing</th>
+                        <th>Timing Exceptions</th>
                         <th>Effective Date</th>
                         <th class="r">Staff</th>
                         <th>Action</th>
@@ -127722,9 +128097,6 @@
                     </thead>
                     <tbody>
                       ${workShiftRows.map(ws => {
-                        const hasSat = Boolean(ws.sat_diff_enabled || (ws.day_timings && ws.day_timings['6']));
-                        const satS = ws.sat_start_time || (ws.day_timings && ws.day_timings['6'] && ws.day_timings['6'].start_time) || '07:00';
-                        const satE = ws.sat_end_time || (ws.day_timings && ws.day_timings['6'] && ws.day_timings['6'].end_time) || '14:00';
                         return `
                           <tr data-ssm-ws-row="${esc(ws.id)}">
                             <td>${coBadge(ws.company || 'WTC')}</td>
@@ -127745,14 +128117,9 @@
                               </div>
                             </td>
                             <td>
-                              <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-                                <label style="display:flex;align-items:center;gap:3px;font-size:11px;margin:0;cursor:pointer">
-                                  <input type="checkbox" data-ssm-row-sat-chk="${esc(ws.id)}" ${hasSat ? 'checked' : ''}>
-                                  <span>Sat</span>
-                                </label>
-                                <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-sat-start="${esc(ws.id)}" value="${esc(satS)}" style="width:54px;height:26px;font-size:11px;padding:2px 4px" ${hasSat ? '' : 'disabled'}>
-                                <span>-</span>
-                                <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-sat-end="${esc(ws.id)}" value="${esc(satE)}" style="width:54px;height:26px;font-size:11px;padding:2px 4px" ${hasSat ? '' : 'disabled'}>
+                              <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+                                <span class="badge ${ws.has_day_timings ? 'badge-brass' : ''}">${esc(ws.day_schedule_summary || 'Same Every Workday')}</span>
+                                <button type="button" class="btn kiosk-mini-btn" data-ssm-customize-ws="${esc(ws.shift_code || ws.id)}" data-ssm-customize-co="${esc(ws.company || entry.company)}">Customize</button>
                               </div>
                             </td>
                             <td>
@@ -127791,13 +128158,13 @@
                         </td>
                         <td>
                           <div style="display:flex;gap:4px;align-items:center">
-                            <label style="display:flex;align-items:center;gap:3px;font-size:11px;margin:0;cursor:pointer">
-                              <input type="checkbox" id="ssmNewShiftSatChk">
-                              <span>Sat</span>
-                            </label>
-                            <input type="text" data-time24="1" id="ssmNewShiftSatStart" class="pa-time24-input mono" value="07:00" style="width:54px;height:26px;font-size:11px;padding:2px 4px">
+                            <select id="ssmNewShiftExcDay" class="kiosk-select" data-plain-options="1" style="height:26px;font-size:11px;padding:2px 4px">
+                              <option value="">No Day Exc.</option>
+                              ${dayOrder.map(dIdx => `<option value="${dIdx}">${ATT_WEEKDAYS[dIdx]}</option>`).join('')}
+                            </select>
+                            <input type="text" data-time24="1" id="ssmNewShiftExcStart" class="pa-time24-input mono" value="07:00" style="width:54px;height:26px;font-size:11px;padding:2px 4px" disabled>
                             <span>-</span>
-                            <input type="text" data-time24="1" id="ssmNewShiftSatEnd" class="pa-time24-input mono" value="14:00" style="width:54px;height:26px;font-size:11px;padding:2px 4px">
+                            <input type="text" data-time24="1" id="ssmNewShiftExcEnd" class="pa-time24-input mono" value="14:00" style="width:54px;height:26px;font-size:11px;padding:2px 4px" disabled>
                           </div>
                         </td>
                         <td>
@@ -128262,33 +128629,39 @@
           const rawWe = String($('ssmOtWinEnd').value || '').trim();
           draftOtWinEnd = rawWe ? normalize24hClockTime(rawWe, '') : '';
         }
-        if ($('ssmSatDiffChk')) {
-          draftSatDiff = Boolean($('ssmSatDiffChk').checked);
-          draftUseCustomDayTimings = true;
-        }
-        if ($('ssmSatStart')) draftSatStart = normalize24hClockTime($('ssmSatStart').value, draftSatStart || '07:00');
-        if ($('ssmSatEnd')) draftSatEnd = normalize24hClockTime($('ssmSatEnd').value, draftSatEnd || '14:00');
-        const nextDtMap = Object.assign({}, draftDayTimings || {});
-        if (draftSatDiff) {
-          nextDtMap['6'] = { start_time: draftSatStart, end_time: draftSatEnd };
-        } else {
-          delete nextDtMap['6'];
-        }
-        modal.querySelectorAll('[data-ssm-day-in]').forEach(inp => {
-          const dIdxStr = String(inp.getAttribute('data-ssm-day-in') || '');
-          const outInp = modal.querySelector(`[data-ssm-day-out="${dIdxStr}"]`);
-          const rawIn = String(inp.value || '').trim();
-          const rawOut = String((outInp && outInp.value) || '').trim();
-          if (rawIn && rawOut) {
-            nextDtMap[dIdxStr] = {
-              start_time: normalize24hClockTime(rawIn, '08:00'),
-              end_time: normalize24hClockTime(rawOut, '16:00')
-            };
-          } else if (dIdxStr !== '6') {
-            delete nextDtMap[dIdxStr];
+        if ($('ssmDiffExcChk')) draftHasTimingExc = Boolean($('ssmDiffExcChk').checked);
+        if ($('ssmExcQuickDay')) draftExcQuickDay = $('ssmExcQuickDay').value || '';
+        if ($('ssmDateExcFrom')) draftPendingDateFrom = String($('ssmDateExcFrom').value || '').slice(0, 10);
+        if ($('ssmDateExcTo')) draftPendingDateTo = String($('ssmDateExcTo').value || '').slice(0, 10);
+        if ($('ssmDateExcStart')) draftPendingDateStart = normalize24hClockTime($('ssmDateExcStart').value || '09:00', '09:00');
+        if ($('ssmDateExcEnd')) draftPendingDateEnd = normalize24hClockTime($('ssmDateExcEnd').value || '15:00', '15:00');
+        if ($('ssmDateExcNote')) draftPendingDateNote = String($('ssmDateExcNote').value || '');
+        if ($('ssmDiffExcChk') && $('ssmDiffExcChk').checked) {
+          const dayInputs = modal.querySelectorAll('[data-ssm-day-in]');
+          if (dayInputs.length) {
+            const nextDtMap = {};
+            const nextRawMap = {};
+            dayInputs.forEach(inp => {
+              const dIdxStr = String(inp.getAttribute('data-ssm-day-in') || '');
+              const outInp = modal.querySelector(`[data-ssm-day-out="${dIdxStr}"]`);
+              const rawIn = String(inp.value || '').trim();
+              const rawOut = String((outInp && outInp.value) || '').trim();
+              nextRawMap[dIdxStr] = { inVal: rawIn, outVal: rawOut };
+              if (rawIn && rawOut) {
+                const stC = normalize24hClockTime(rawIn, '08:00');
+                const etC = normalize24hClockTime(rawOut, '16:00');
+                nextRawMap[dIdxStr] = { inVal: stC, outVal: etC };
+                nextDtMap[dIdxStr] = {
+                  start_time: stC,
+                  end_time: etC,
+                  hours: computeShiftWorkedHours(stC, etC) || 8.0
+                };
+              }
+            });
+            draftRawDayInputs = nextRawMap;
+            draftDayTimings = nextDtMap;
           }
-        });
-        draftDayTimings = nextDtMap;
+        }
       };
 
       $('ssmCloseBtn')?.addEventListener('click', closeStaffScheduleModal);
@@ -128511,42 +128884,95 @@
           renderModalInner();
         });
       });
-      $('ssmSatDiffChk')?.addEventListener('change', e => {
-        draftSatDiff = Boolean(e.target.checked);
+      $('ssmDiffExcChk')?.addEventListener('change', e => {
+        draftHasTimingExc = Boolean(e.target.checked);
         draftUseCustomDayTimings = true;
-        if (draftSatDiff) {
-          draftDayTimings = Object.assign({}, draftDayTimings || {}, { '6': { start_time: draftSatStart, end_time: draftSatEnd } });
-        } else {
+        if (!draftHasTimingExc) {
           draftDayTimings = {};
+          draftRawDayInputs = {};
+          draftDateTimings = [];
         }
         renderModalInner();
       });
-      $('ssmToggleWeekdayGridBtn')?.addEventListener('click', () => {
-        syncLiveInputs();
-        draftExpandAllDays = !draftExpandAllDays;
-        renderModalInner();
+      $('ssmExcQuickDay')?.addEventListener('change', e => {
+        draftExcQuickDay = e.target.value || '';
       });
-      modal.querySelectorAll('[data-ssm-sat-preset]').forEach(btn => {
+      modal.querySelectorAll('[data-ssm-day-preset]').forEach(btn => {
         btn.addEventListener('click', () => {
           syncLiveInputs();
-          const [ps, pe] = String(btn.getAttribute('data-ssm-sat-preset') || '07:00|14:00').split('|');
-          draftSatDiff = true;
+          if (!draftExcQuickDay) {
+            toast('Select a weekday first before applying a preset', 'warn');
+            $('ssmExcQuickDay')?.focus();
+            return;
+          }
+          const [ps, pe] = String(btn.getAttribute('data-ssm-day-preset') || '07:00|14:00').split('|');
+          const stC = normalize24hClockTime(ps, '07:00');
+          const etC = normalize24hClockTime(pe, '14:00');
+          draftHasTimingExc = true;
           draftUseCustomDayTimings = true;
-          draftSatStart = normalize24hClockTime(ps, '07:00');
-          draftSatEnd = normalize24hClockTime(pe, '14:00');
-          draftDayTimings = Object.assign({}, draftDayTimings || {}, { '6': { start_time: draftSatStart, end_time: draftSatEnd } });
-          renderModalInner();
-        });
-      });
-      ['ssmSatStart', 'ssmSatEnd'].forEach(id => {
-        $(id)?.addEventListener('change', () => {
-          syncLiveInputs();
+          draftDayTimings = Object.assign({}, draftDayTimings || {}, {
+            [String(draftExcQuickDay)]: {
+              start_time: stC,
+              end_time: etC,
+              hours: computeShiftWorkedHours(stC, etC) || 8.0
+            }
+          });
+          draftRawDayInputs = Object.assign({}, draftRawDayInputs || {}, {
+            [String(draftExcQuickDay)]: { inVal: stC, outVal: etC }
+          });
           renderModalInner();
         });
       });
       modal.querySelectorAll('[data-ssm-day-in], [data-ssm-day-out]').forEach(inp => {
         inp.addEventListener('change', () => {
+          draftUseCustomDayTimings = true;
+          const dKey = inp.getAttribute('data-ssm-day-in') || inp.getAttribute('data-ssm-day-out') || '';
           syncLiveInputs();
+          const pair = draftRawDayInputs[String(dKey)] || { inVal: '', outVal: '' };
+          // Only re-render when both IN & OUT are filled or both are cleared, so Tab from IN -> empty OUT preserves focus & text
+          if ((pair.inVal && pair.outVal) || (!pair.inVal && !pair.outVal)) {
+            renderModalInner();
+          }
+        });
+      });
+      $('ssmDateExcFrom')?.addEventListener('change', e => {
+        const fd = String(e.target.value || '').slice(0, 10);
+        const toEl = $('ssmDateExcTo');
+        if (toEl && fd && (!toEl.value || toEl.value < fd)) toEl.value = fd;
+      });
+      $('ssmAddDateExcBtn')?.addEventListener('click', () => {
+        syncLiveInputs();
+        const fd = String(draftPendingDateFrom || '').slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fd)) {
+          toast('Choose a From Date first', 'warn');
+          $('ssmDateExcFrom')?.focus();
+          return;
+        }
+        const td = /^\d{4}-\d{2}-\d{2}$/.test(draftPendingDateTo) ? draftPendingDateTo : fd;
+        const sd = fd <= td ? fd : td;
+        const ed = fd <= td ? td : fd;
+        draftHasTimingExc = true;
+        draftUseCustomDayTimings = true;
+        draftDateTimings = normalizeDateTimingsList((draftDateTimings || []).concat([{
+          id: uid('sdt'),
+          start_date: sd,
+          end_date: ed,
+          start_time: draftPendingDateStart || '09:00',
+          end_time: draftPendingDateEnd || '15:00',
+          note: String(draftPendingDateNote || '').trim().slice(0, 60),
+          include_off_days: sd === ed
+        }]));
+        draftPendingDateFrom = '';
+        draftPendingDateTo = '';
+        draftPendingDateNote = '';
+        renderModalInner();
+      });
+      modal.querySelectorAll('[data-ssm-rm-date-exc]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const did = btn.getAttribute('data-ssm-rm-date-exc') || '';
+          draftUseCustomDayTimings = true;
+          draftDateTimings = (draftDateTimings || []).filter(item => String(item.id) !== String(did));
           renderModalInner();
         });
       });
@@ -128609,14 +129035,29 @@
           renderModalInner();
         });
       });
-      modal.querySelectorAll('[data-ssm-row-sat-chk]').forEach(chk => {
-        chk.addEventListener('change', () => {
-          const wsId = chk.getAttribute('data-ssm-row-sat-chk') || '';
-          const sInp = modal.querySelector(`[data-ssm-row-sat-start="${wsId}"]`);
-          const eInp = modal.querySelector(`[data-ssm-row-sat-end="${wsId}"]`);
-          if (sInp) sInp.disabled = !chk.checked;
-          if (eInp) eInp.disabled = !chk.checked;
+      modal.querySelectorAll('[data-ssm-customize-ws]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const code = btn.getAttribute('data-ssm-customize-ws') || '';
+          const co = btn.getAttribute('data-ssm-customize-co') || entry.company;
+          openShiftTypeModal(code, {
+            company: co,
+            onSaved: savedSt => {
+              if (savedSt && draftShiftId === savedSt.id && !draftUseCustomDayTimings) {
+                draftDayTimings = normalizeDayTimingsMap(savedSt.day_timings, savedSt.sat_diff_enabled, savedSt.sat_start_time, savedSt.sat_end_time);
+                draftDateTimings = normalizeDateTimingsList(savedSt.date_timings);
+                draftHasTimingExc = Object.keys(draftDayTimings).length > 0 || draftDateTimings.length > 0;
+                resetDraftRawDayInputsFromTimings();
+              }
+              renderModalInner();
+            }
+          });
         });
+      });
+      $('ssmNewShiftExcDay')?.addEventListener('change', e => {
+        const hasExcDay = Boolean(e.target.value);
+        if ($('ssmNewShiftExcStart')) $('ssmNewShiftExcStart').disabled = !hasExcDay;
+        if ($('ssmNewShiftExcEnd')) $('ssmNewShiftExcEnd').disabled = !hasExcDay;
       });
       modal.querySelectorAll('[data-ssm-save-shift-row]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -128627,18 +129068,13 @@
           if (!orig) return;
           const stInp = modal.querySelector(`[data-ssm-row-start="${wsId}"]`);
           const etInp = modal.querySelector(`[data-ssm-row-end="${wsId}"]`);
-          const satChk = modal.querySelector(`[data-ssm-row-sat-chk="${wsId}"]`);
-          const satSInp = modal.querySelector(`[data-ssm-row-sat-start="${wsId}"]`);
-          const satEInp = modal.querySelector(`[data-ssm-row-sat-end="${wsId}"]`);
           const effInp = modal.querySelector(`[data-ssm-row-effdate="${wsId}"]`);
           const newStart = normalize24hClockTime(stInp ? stInp.value : orig.start_time, orig.start_time || '08:00');
           const newEnd = normalize24hClockTime(etInp ? etInp.value : orig.end_time, orig.end_time || '16:00');
-          const newSatDiff = Boolean(satChk && satChk.checked);
-          const newSatS = normalize24hClockTime(satSInp ? satSInp.value : '07:00', '07:00');
-          const newSatE = normalize24hClockTime(satEInp ? satEInp.value : '14:00', '14:00');
           const effDate = String((effInp && effInp.value) || orig.start_date || today).slice(0, 10);
-          const nextDayMap = normalizeDayTimingsMap(orig.day_timings, newSatDiff, newSatS, newSatE);
-          if (!newSatDiff) delete nextDayMap['6'];
+          const nextDayMap = normalizeDayTimingsMap(orig.day_timings, orig.sat_diff_enabled, orig.sat_start_time, orig.sat_end_time);
+          const nextDateList = normalizeDateTimingsList(orig.date_timings);
+          const hasSat = Boolean(nextDayMap['6']);
           const res = saveShiftType({
             id: orig.shift_code || orig.id,
             name: orig.shift_name,
@@ -128651,22 +129087,24 @@
             days: Array.isArray(orig.days) ? orig.days : parseWorkdaysArrayFromLabel(orig.workdays_label || 'Mon-Sat'),
             grace_min: orig.grace_min != null ? orig.grace_min : 10,
             early_leave_grace_min: orig.early_leave_grace_min != null ? orig.early_leave_grace_min : 10,
-            sat_diff_enabled: newSatDiff,
-            sat_start_time: newSatS,
-            sat_end_time: newSatE,
+            sat_diff_enabled: hasSat,
+            sat_start_time: hasSat ? nextDayMap['6'].start_time : '07:00',
+            sat_end_time: hasSat ? nextDayMap['6'].end_time : '14:00',
             day_timings: nextDayMap,
+            date_timings: nextDateList,
             tone: orig.tone || 'amber',
             backfill: true
           });
           if (res && res.ok) {
-            const bf = res.backfill || { updatedRules: 0, updatedAtt: 0, updatedPunches: 0 };
-            if (draftShiftId === (orig.shift_code || orig.id)) {
-              draftSatDiff = newSatDiff;
-              draftSatStart = newSatS;
-              draftSatEnd = newSatE;
+            const bf = res.backfill || { staffUpdated: 0, attUpdated: 0, punchesUpdated: 0 };
+            if (draftShiftId === (orig.shift_code || orig.id) && !draftUseCustomDayTimings) {
               draftDayTimings = nextDayMap;
+              draftDateTimings = nextDateList;
+              draftHasTimingExc = Object.keys(nextDayMap).length > 0 || nextDateList.length > 0;
+              resetDraftRawDayInputsFromTimings();
             }
-            toast(`Updated ${orig.shift_name} (${newStart}-${newEnd}${newSatDiff ? ` · Sat ${newSatS}-${newSatE}` : ''}) effective ${fmtDateDMY(effDate)} · Backfilled ${bf.updatedRules || 0} staff & ${(bf.updatedAtt || 0) + (bf.updatedPunches || 0)} attendance logs`, 'ok');
+            const excSum = formatShiftExceptionsSummary(nextDayMap, nextDateList);
+            toast(`Updated ${orig.shift_name} (${newStart}-${newEnd}${excSum !== 'Same Every Workday' ? ` · ${excSum}` : ''}) effective ${fmtDateDMY(effDate)} · Backfilled ${bf.staffUpdated || 0} staff & ${(bf.attUpdated || 0) + (bf.punchesUpdated || 0)} attendance logs`, 'ok');
             renderModalInner();
           }
         });
@@ -128683,9 +129121,12 @@
         const isDef = Boolean($('ssmNewShiftDef')?.checked);
         const stVal = normalize24hClockTime($('ssmNewShiftStart')?.value || '08:00', '08:00');
         const etVal = normalize24hClockTime($('ssmNewShiftEnd')?.value || '16:00', '16:00');
-        const satDiffVal = Boolean($('ssmNewShiftSatChk')?.checked);
-        const satSVal = normalize24hClockTime($('ssmNewShiftSatStart')?.value || '07:00', '07:00');
-        const satEVal = normalize24hClockTime($('ssmNewShiftSatEnd')?.value || '14:00', '14:00');
+        const excDayVal = String($('ssmNewShiftExcDay')?.value || '').trim();
+        const excSVal = normalize24hClockTime($('ssmNewShiftExcStart')?.value || '07:00', '07:00');
+        const excEVal = normalize24hClockTime($('ssmNewShiftExcEnd')?.value || '14:00', '14:00');
+        const initDayMap = excDayVal
+          ? { [excDayVal]: { start_time: excSVal, end_time: excEVal, hours: computeShiftWorkedHours(excSVal, excEVal) || 7.0 } }
+          : {};
         const effVal = String($('ssmNewShiftEffDate')?.value || today).slice(0, 10);
         const newCode = nmVal.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || uid('shf');
         const res = saveShiftType({
@@ -128700,19 +129141,21 @@
           days: [1, 2, 3, 4, 5, 6],
           grace_min: draftGrace || 10,
           early_leave_grace_min: draftEarlyGrace || 10,
-          sat_diff_enabled: satDiffVal,
-          sat_start_time: satSVal,
-          sat_end_time: satEVal,
-          day_timings: satDiffVal ? { '6': { start_time: satSVal, end_time: satEVal } } : {},
+          sat_diff_enabled: excDayVal === '6',
+          sat_start_time: excDayVal === '6' ? excSVal : '07:00',
+          sat_end_time: excDayVal === '6' ? excEVal : '14:00',
+          day_timings: initDayMap,
+          date_timings: [],
           tone: 'emerald',
           backfill: true
         });
         if (res && res.ok) {
           draftShiftId = res.shiftType.id;
-          draftSatDiff = satDiffVal;
-          draftSatStart = satSVal;
-          draftSatEnd = satEVal;
-          draftDayTimings = satDiffVal ? { '6': { start_time: satSVal, end_time: satEVal } } : {};
+          draftDayTimings = initDayMap;
+          draftDateTimings = [];
+          draftHasTimingExc = Boolean(excDayVal);
+          draftUseCustomDayTimings = false;
+          resetDraftRawDayInputsFromTimings();
           toast(`Added shift "${nmVal}" for ${coVal}${isDef ? ' (set as BU Default)' : ''} effective ${fmtDateDMY(effVal)}`, 'ok');
           renderModalInner();
         }
@@ -128786,10 +129229,10 @@
             if (st) {
               if (!draftUseCustomDays) draftDays = st.days.slice();
               if (!draftUseCustomDayTimings) {
-                draftSatDiff = Boolean(st.sat_diff_enabled);
-                draftSatStart = st.sat_start_time || '07:00';
-                draftSatEnd = st.sat_end_time || '14:00';
-                draftDayTimings = normalizeDayTimingsMap(st.day_timings, draftSatDiff, draftSatStart, draftSatEnd);
+                draftDayTimings = normalizeDayTimingsMap(st.day_timings, st.sat_diff_enabled, st.sat_start_time, st.sat_end_time);
+                draftDateTimings = normalizeDateTimingsList(st.date_timings);
+                draftHasTimingExc = Object.keys(draftDayTimings).length > 0 || draftDateTimings.length > 0;
+                resetDraftRawDayInputsFromTimings();
               }
             }
           }
@@ -129077,6 +129520,14 @@
 
       $('ssmSaveBtn')?.addEventListener('click', () => {
         syncLiveInputs();
+        if (draftHasTimingExc) {
+          const halfEntry = Object.entries(draftRawDayInputs || {}).find(([, p]) => p && (Boolean(p.inVal) !== Boolean(p.outVal)));
+          if (halfEntry) {
+            const dIdx = Number(halfEntry[0]);
+            toast(`Enter both Start and End time for ${ATT_WEEKDAYS[dIdx] || 'weekday'}, or clear both.`, 'warn');
+            return;
+          }
+        }
         if (draftOtMode === 'date_range') {
           const pendingS = String($('ssmPassStart')?.value || '').slice(0, 10);
           const pendingE = String($('ssmPassEnd')?.value || pendingS).slice(0, 10);
@@ -129089,6 +129540,23 @@
             }
           }
         }
+        if (draftHasTimingExc && /^\d{4}-\d{2}-\d{2}$/.test(draftPendingDateFrom)) {
+          const td = /^\d{4}-\d{2}-\d{2}$/.test(draftPendingDateTo) ? draftPendingDateTo : draftPendingDateFrom;
+          const sd = draftPendingDateFrom <= td ? draftPendingDateFrom : td;
+          const ed = draftPendingDateFrom <= td ? td : draftPendingDateFrom;
+          draftDateTimings = normalizeDateTimingsList((draftDateTimings || []).concat([{
+            id: uid('sdt'),
+            start_date: sd,
+            end_date: ed,
+            start_time: draftPendingDateStart || '09:00',
+            end_time: draftPendingDateEnd || '15:00',
+            note: String(draftPendingDateNote || '').trim().slice(0, 60),
+            include_off_days: sd === ed
+          }]));
+        }
+        const finalDayMap = draftHasTimingExc ? normalizeDayTimingsMap(draftDayTimings) : {};
+        const finalDateList = draftHasTimingExc ? normalizeDateTimingsList(draftDateTimings) : [];
+        const hasSat = Boolean(finalDayMap['6']);
         saveStaffWorkRule(entry.name, {
           company: entry.company,
           shift_id: draftShiftId,
@@ -129098,11 +129566,12 @@
           custom_end: draftCustomEnd,
           custom_days: draftDays,
           use_custom_days: draftUseCustomDays || draftShiftId === 'custom',
-          sat_diff_enabled: draftSatDiff,
-          sat_start_time: draftSatStart,
-          sat_end_time: draftSatEnd,
-          day_timings: draftDayTimings,
-          use_custom_day_timings: draftUseCustomDayTimings || draftSatDiff || Object.keys(draftDayTimings || {}).length > 0,
+          sat_diff_enabled: hasSat,
+          sat_start_time: hasSat ? finalDayMap['6'].start_time : '07:00',
+          sat_end_time: hasSat ? finalDayMap['6'].end_time : '14:00',
+          day_timings: finalDayMap,
+          date_timings: finalDateList,
+          use_custom_day_timings: draftUseCustomDayTimings,
           grace_min: draftGrace,
           early_leave_grace_min: draftEarlyGrace,
           late_when: draftLateWhen,
@@ -129151,8 +129620,11 @@
   function closeShiftTypeModal() {
     const m = $('shiftTypeModal');
     if (m) m.hidden = true;
-    document.body.classList.remove('modal-open');
-    if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
+    const ssm = $('staffScheduleModal');
+    if (!ssm || ssm.hidden) {
+      document.body.classList.remove('modal-open');
+      if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
+    }
   }
 
   function openShiftTypeModal(shiftId = '', opts = {}) {
@@ -129169,9 +129641,37 @@
     const initEnd1 = existing ? (initSplit ? (existing.split_end_1 || '15:00') : (existing.end_time || '16:00')) : '16:00';
     const initSplitS2 = (existing && existing.split_start_2) || '19:00';
     const initSplitE2 = (existing && existing.split_end_2) || '23:00';
-    const initSatDiff = Boolean(existing && (existing.sat_diff_enabled || (existing.day_timings && existing.day_timings['6'])));
-    const initSatStart = (existing && (existing.sat_start_time || (existing.day_timings && existing.day_timings['6'] && existing.day_timings['6'].start_time))) || '07:00';
-    const initSatEnd = (existing && (existing.sat_end_time || (existing.day_timings && existing.day_timings['6'] && existing.day_timings['6'].end_time))) || '14:00';
+    const initDayMap = existing
+      ? normalizeDayTimingsMap(existing.day_timings, existing.sat_diff_enabled, existing.sat_start_time, existing.sat_end_time)
+      : {};
+    let draftDateTimings = existing ? normalizeDateTimingsList(existing.date_timings) : [];
+    const hasInitExceptions = Object.keys(initDayMap).length > 0 || draftDateTimings.length > 0;
+    const initGroupedDayWin = [];
+    const _seenWin = new Map();
+    SHIFT_DAY_ORDER_KEYS.forEach(dk => {
+      const w = initDayMap[dk];
+      if (!w) return;
+      const sig = `${w.start_time}|${w.end_time}`;
+      if (!_seenWin.has(sig)) {
+        const g = { sig, start_time: w.start_time, end_time: w.end_time, days: [] };
+        _seenWin.set(sig, g);
+        initGroupedDayWin.push(g);
+      }
+      _seenWin.get(sig).days.push(Number(dk));
+    });
+    let draftSelectedExcDays = initGroupedDayWin.length ? initGroupedDayWin[0].days.slice() : [];
+    let initExcStart = initGroupedDayWin.length ? initGroupedDayWin[0].start_time : '07:00';
+    let initExcEnd = initGroupedDayWin.length ? initGroupedDayWin[0].end_time : '14:00';
+    let draftExtraDayMap = {};
+    initGroupedDayWin.slice(1).forEach(g => {
+      g.days.forEach(dIdx => {
+        draftExtraDayMap[String(dIdx)] = {
+          start_time: g.start_time,
+          end_time: g.end_time,
+          hours: computeShiftWorkedHours(g.start_time, g.end_time) || 8.0
+        };
+      });
+    });
     const initEffDate = (existing && existing.start_date) || todayISO();
     const curCoDef = getBuDefaultShift(defCo);
     const initIsBuDef = Boolean(existing && ((curCoDef && normalizeShiftCodeAlias(curCoDef.shift_code) === existing.id) || existing.is_bu_default));
@@ -129189,12 +129689,73 @@
       document.body.appendChild(modal);
     }
 
+    const buildEffectiveDraftDayMap = () => {
+      const out = Object.assign({}, draftExtraDayMap);
+      const isDiffOn = Boolean($('stmDiffChk')?.checked);
+      if (!isDiffOn) return {};
+      const stClock = normalize24hClockTime($('stmExcStart')?.value || initExcStart, initExcStart);
+      const etClock = normalize24hClockTime($('stmExcEnd')?.value || initExcEnd, initExcEnd);
+      if (draftSelectedExcDays.length && stClock && etClock) {
+        const hrs = computeShiftWorkedHours(stClock, etClock) || 8.0;
+        draftSelectedExcDays.forEach(dIdx => {
+          out[String(dIdx)] = { start_time: stClock, end_time: etClock, hours: hrs };
+        });
+      }
+      return out;
+    };
+
+    const renderWeekdayRuleChipsHtml = () => {
+      const grouped = new Map();
+      SHIFT_DAY_ORDER_KEYS.forEach(dk => {
+        const w = draftExtraDayMap[dk];
+        if (!w || !w.start_time || !w.end_time) return;
+        const sig = `${w.start_time}|${w.end_time}`;
+        if (!grouped.has(sig)) grouped.set(sig, { sig, start_time: w.start_time, end_time: w.end_time, days: [] });
+        grouped.get(sig).days.push(dk);
+      });
+      if (!grouped.size) return '';
+      return Array.from(grouped.values()).map(g => {
+        const dayLbl = g.days.map(k => SHIFT_DAY_SHORT_NAMES[k] || 'Day').join(', ');
+        const hrs = computeShiftWorkedHours(g.start_time, g.end_time) || 0;
+        return `<span class="stm-exc-chip"><span><b>${esc(dayLbl)}</b> ${esc(g.start_time)}-${esc(g.end_time)}${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}</span><button type="button" class="stm-exc-chip-rm" data-stm-rm-day-sig="${esc(g.sig)}" aria-label="Remove weekday timing">✕</button></span>`;
+      }).join('');
+    };
+
+    const renderDateRuleChipsHtml = () => {
+      if (!draftDateTimings.length) {
+        return `<div class="muted" style="font-size:11.5px">No specific calendar date overrides added yet.</div>`;
+      }
+      return draftDateTimings.map(item => {
+        const dateLbl = item.start_date === item.end_date
+          ? fmtDateDMY(item.start_date)
+          : `${fmtDateDMY(item.start_date)} to ${fmtDateDMY(item.end_date)}`;
+        const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
+        return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dateLbl)} · <b class="mono">${esc(item.start_time)}-${esc(item.end_time)}</b>${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}</span><button type="button" class="stm-exc-chip-rm" data-stm-rm-date="${esc(item.id)}" aria-label="Remove date timing">✕</button></span>`;
+      }).join('');
+    };
+
+    const refreshStmExceptionsUi = () => {
+      const wBox = $('stmWeekdayRulesList');
+      if (wBox) wBox.innerHTML = renderWeekdayRuleChipsHtml();
+      const dBox = $('stmDateRulesList');
+      if (dBox) dBox.innerHTML = renderDateRuleChipsHtml();
+      const badge = $('stmExcLiveBadge');
+      if (badge) {
+        const isDiff = Boolean($('stmDiffChk')?.checked);
+        const effDayMap = isDiff ? buildEffectiveDraftDayMap() : {};
+        const effDates = isDiff ? draftDateTimings : [];
+        const sumTxt = formatShiftExceptionsSummary(effDayMap, effDates);
+        badge.textContent = sumTxt;
+        badge.className = `badge ${(isDiff && sumTxt !== 'Same Every Workday') ? 'badge-brass' : ''}`;
+      }
+    };
+
     modal.innerHTML = `
-      <div class="modal-card" style="max-width:620px">
+      <div class="modal-card" style="width:min(660px,95vw);max-width:660px">
         <div class="modal-head">
           <div>
             <div class="modal-title">${ic('clock')} ${existing ? `Customize ${esc(existing.name)} (${esc(defCo)})` : 'New Shift &amp; Clock Timing'}</div>
-            <div class="modal-sub">Universal shift structure customizable per company: set single or split hours, Saturday overrides, and Effective Date backfill</div>
+            <div class="modal-sub">Universal shift structure customizable per company: set single or split hours, weekday or specific-date timing exceptions, and Effective Date backfill</div>
           </div>
           <button type="button" class="icon-btn" id="stmCloseBtn" aria-label="Close">✕</button>
         </div>
@@ -129270,26 +129831,77 @@
               </label>
             </div>
           </div>
-          <div style="padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev)">
-            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px;cursor:pointer;margin:0">
-              <input type="checkbox" id="stmSatDiff" ${initSatDiff ? 'checked' : ''}>
-              <span>Different timing on Saturday / specific days (e.g. Saturday early start &amp; early leave)</span>
-            </label>
-            <div id="stmSatRow" style="display:${initSatDiff ? 'grid' : 'none'};grid-template-columns:1fr 1fr 1.2fr;gap:10px;margin-top:8px">
-              <div class="ssm-field">
-                <label for="stmSatStart">Saturday Start (24h)</label>
-                <input type="text" data-time24="1" class="pa-time24-input mono" id="stmSatStart" value="${esc(normalize24hClockTime(initSatStart, '07:00'))}">
-              </div>
-              <div class="ssm-field">
-                <label for="stmSatEnd">Saturday End (24h)</label>
-                <input type="text" data-time24="1" class="pa-time24-input mono" id="stmSatEnd" value="${esc(normalize24hClockTime(initSatEnd, '14:00'))}">
-              </div>
-              <div class="ssm-field">
-                <label>Quick Preset</label>
-                <div style="display:flex;gap:4px;flex-wrap:wrap">
-                  <button type="button" class="kiosk-qchip" data-stm-sat-preset="07:00|14:00">07:00-14:00</button>
-                  <button type="button" class="kiosk-qchip" data-stm-sat-preset="08:30|13:30">08:30-13:30</button>
+          <div class="stm-exc-box">
+            <div class="stm-exc-head">
+              <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px;cursor:pointer;margin:0">
+                <input type="checkbox" id="stmDiffChk" ${hasInitExceptions ? 'checked' : ''}>
+                <span>Different timing on specific weekdays or dates</span>
+              </label>
+              <span class="badge ${hasInitExceptions ? 'badge-brass' : ''}" id="stmExcLiveBadge">${esc(formatShiftExceptionsSummary(initDayMap, draftDateTimings))}</span>
+            </div>
+            <div id="stmDiffBody" style="display:${hasInitExceptions ? 'flex' : 'none'};flex-direction:column;gap:10px;margin-top:10px">
+              <div class="stm-exc-subcard">
+                <div class="stm-exc-subhead">
+                  <strong>Recurring Weekday(s)</strong>
+                  <span class="muted">Select which weekday(s) follow a different clock window</span>
                 </div>
+                <div class="ssm-day-pills" id="stmExcDaysBar" style="margin-top:6px">
+                  ${[1, 2, 3, 4, 5, 6, 0].map(dIdx => `
+                    <button type="button" class="ssm-day-pill ${draftSelectedExcDays.includes(dIdx) ? 'active' : ''}" data-stm-exc-day="${dIdx}">${ATT_WEEKDAYS[dIdx]}</button>
+                  `).join('')}
+                </div>
+                <div class="stm-inline-time-grid" style="margin-top:8px">
+                  <div class="ssm-field">
+                    <label for="stmExcStart">Start (24h)</label>
+                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmExcStart" value="${esc(normalize24hClockTime(initExcStart, '07:00'))}">
+                  </div>
+                  <div class="ssm-field">
+                    <label for="stmExcEnd">End (24h)</label>
+                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmExcEnd" value="${esc(normalize24hClockTime(initExcEnd, '14:00'))}">
+                  </div>
+                  <div class="ssm-field">
+                    <label>Quick Preset &amp; Window</label>
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+                      <button type="button" class="kiosk-qchip" data-stm-exc-preset="07:00|14:00">07:00-14:00</button>
+                      <button type="button" class="kiosk-qchip" data-stm-exc-preset="08:30|13:30">08:30-13:30</button>
+                      <button type="button" class="kiosk-qchip" data-stm-exc-preset="09:00|15:00">09:00-15:00</button>
+                      <button type="button" class="btn kiosk-mini-btn" id="stmAddWeekdayRuleBtn">+ Add Weekday Window</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="stm-exc-chips" id="stmWeekdayRulesList" style="margin-top:6px">${renderWeekdayRuleChipsHtml()}</div>
+              </div>
+              <div class="stm-exc-subcard">
+                <div class="stm-exc-subhead">
+                  <strong>Specific Calendar Date / Date Range</strong>
+                  <span class="muted">Overrides regular and weekday hours on selected date(s)</span>
+                </div>
+                <div class="stm-date-grid" style="margin-top:8px">
+                  <div class="ssm-field">
+                    <label for="stmDateFrom">From Date</label>
+                    <input type="date" id="stmDateFrom" value="">
+                  </div>
+                  <div class="ssm-field">
+                    <label for="stmDateTo">To Date</label>
+                    <input type="date" id="stmDateTo" value="">
+                  </div>
+                  <div class="ssm-field">
+                    <label for="stmDateStart">Start (24h)</label>
+                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmDateStart" value="09:00">
+                  </div>
+                  <div class="ssm-field">
+                    <label for="stmDateEnd">End (24h)</label>
+                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmDateEnd" value="15:00">
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:6px">
+                  <div class="ssm-field" style="flex:1;min-width:160px">
+                    <label for="stmDateNote">Reason / Label (Optional)</label>
+                    <input type="text" id="stmDateNote" maxlength="60" placeholder="e.g. Ramadan / Holiday Eve">
+                  </div>
+                  <button type="button" class="btn kiosk-mini-btn btn-primary" id="stmAddDateRuleBtn">+ Add Date</button>
+                </div>
+                <div class="stm-exc-chips" id="stmDateRulesList" style="margin-top:8px">${renderDateRuleChipsHtml()}</div>
               </div>
             </div>
           </div>
@@ -129348,18 +129960,110 @@
         if ($('stmSplitE2')) $('stmSplitE2').value = e2;
       });
     });
-    $('stmSatDiff')?.addEventListener('change', e => {
-      const rEl = $('stmSatRow');
-      if (rEl) rEl.style.display = e.target.checked ? 'grid' : 'none';
+    $('stmDiffChk')?.addEventListener('change', e => {
+      const bEl = $('stmDiffBody');
+      if (bEl) bEl.style.display = e.target.checked ? 'flex' : 'none';
+      refreshStmExceptionsUi();
     });
-    modal.querySelectorAll('[data-stm-sat-preset]').forEach(btn => {
+    modal.querySelectorAll('[data-stm-exc-day]').forEach(btn => {
       btn.addEventListener('click', () => {
-        const [ps, pe] = String(btn.getAttribute('data-stm-sat-preset') || '07:00|14:00').split('|');
-        if ($('stmSatDiff')) $('stmSatDiff').checked = true;
-        if ($('stmSatRow')) $('stmSatRow').style.display = 'grid';
-        if ($('stmSatStart')) $('stmSatStart').value = ps;
-        if ($('stmSatEnd')) $('stmSatEnd').value = pe;
+        const d = Number(btn.getAttribute('data-stm-exc-day'));
+        if (draftSelectedExcDays.includes(d)) draftSelectedExcDays = draftSelectedExcDays.filter(x => x !== d);
+        else draftSelectedExcDays = draftSelectedExcDays.concat([d]).sort((a, b) => a - b);
+        btn.classList.toggle('active', draftSelectedExcDays.includes(d));
+        if ($('stmDiffChk') && draftSelectedExcDays.length && !$('stmDiffChk').checked) {
+          $('stmDiffChk').checked = true;
+          if ($('stmDiffBody')) $('stmDiffBody').style.display = 'flex';
+        }
+        refreshStmExceptionsUi();
       });
+    });
+    ['stmExcStart', 'stmExcEnd'].forEach(id => {
+      $(id)?.addEventListener('change', refreshStmExceptionsUi);
+      $(id)?.addEventListener('input', refreshStmExceptionsUi);
+    });
+    modal.querySelectorAll('[data-stm-exc-preset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const [ps, pe] = String(btn.getAttribute('data-stm-exc-preset') || '07:00|14:00').split('|');
+        if ($('stmDiffChk')) $('stmDiffChk').checked = true;
+        if ($('stmDiffBody')) $('stmDiffBody').style.display = 'flex';
+        if ($('stmExcStart')) $('stmExcStart').value = ps;
+        if ($('stmExcEnd')) $('stmExcEnd').value = pe;
+        refreshStmExceptionsUi();
+      });
+    });
+    $('stmAddWeekdayRuleBtn')?.addEventListener('click', () => {
+      if (!draftSelectedExcDays.length) {
+        toast('Select at least one weekday first', 'warn');
+        return;
+      }
+      const stClock = normalize24hClockTime($('stmExcStart')?.value || initExcStart, initExcStart);
+      const etClock = normalize24hClockTime($('stmExcEnd')?.value || initExcEnd, initExcEnd);
+      const hrs = computeShiftWorkedHours(stClock, etClock) || 8.0;
+      draftSelectedExcDays.forEach(dIdx => {
+        draftExtraDayMap[String(dIdx)] = { start_time: stClock, end_time: etClock, hours: hrs };
+      });
+      draftSelectedExcDays = [];
+      modal.querySelectorAll('[data-stm-exc-day]').forEach(b => b.classList.remove('active'));
+      refreshStmExceptionsUi();
+    });
+    $('stmWeekdayRulesList')?.addEventListener('click', e => {
+      const rmBtn = e.target.closest('[data-stm-rm-day-sig]');
+      if (!rmBtn) return;
+      const sig = rmBtn.getAttribute('data-stm-rm-day-sig') || '';
+      Object.keys(draftExtraDayMap).forEach(k => {
+        const w = draftExtraDayMap[k];
+        if (w && `${w.start_time}|${w.end_time}` === sig) delete draftExtraDayMap[k];
+      });
+      refreshStmExceptionsUi();
+    });
+    $('stmDateFrom')?.addEventListener('change', e => {
+      const fd = String(e.target.value || '').slice(0, 10);
+      const toEl = $('stmDateTo');
+      if (toEl && fd && (!toEl.value || toEl.value < fd)) toEl.value = fd;
+    });
+    const capturePendingDateFromInputs = () => {
+      const fd = String($('stmDateFrom')?.value || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fd)) return false;
+      const rawTd = String($('stmDateTo')?.value || fd).slice(0, 10);
+      const td = /^\d{4}-\d{2}-\d{2}$/.test(rawTd) ? rawTd : fd;
+      const sd = fd <= td ? fd : td;
+      const ed = fd <= td ? td : fd;
+      const stD = normalize24hClockTime($('stmDateStart')?.value || '09:00', '09:00');
+      const etD = normalize24hClockTime($('stmDateEnd')?.value || '15:00', '15:00');
+      const noteD = String($('stmDateNote')?.value || '').trim().slice(0, 60);
+      draftDateTimings = normalizeDateTimingsList(draftDateTimings.concat([{
+        id: uid('sdt'),
+        start_date: sd,
+        end_date: ed,
+        start_time: stD,
+        end_time: etD,
+        note: noteD,
+        include_off_days: sd === ed
+      }]));
+      if ($('stmDateFrom')) $('stmDateFrom').value = '';
+      if ($('stmDateTo')) $('stmDateTo').value = '';
+      if ($('stmDateNote')) $('stmDateNote').value = '';
+      return true;
+    };
+    $('stmAddDateRuleBtn')?.addEventListener('click', () => {
+      const fd = String($('stmDateFrom')?.value || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fd)) {
+        toast('Choose a From Date first', 'warn');
+        $('stmDateFrom')?.focus();
+        return;
+      }
+      if ($('stmDiffChk')) $('stmDiffChk').checked = true;
+      if ($('stmDiffBody')) $('stmDiffBody').style.display = 'flex';
+      capturePendingDateFromInputs();
+      refreshStmExceptionsUi();
+    });
+    $('stmDateRulesList')?.addEventListener('click', e => {
+      const rmBtn = e.target.closest('[data-stm-rm-date]');
+      if (!rmBtn) return;
+      const did = rmBtn.getAttribute('data-stm-rm-date') || '';
+      draftDateTimings = draftDateTimings.filter(item => String(item.id) !== String(did));
+      refreshStmExceptionsUi();
     });
     modal.querySelectorAll('[data-stm-day]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -129377,10 +130081,12 @@
     });
     $('stmDeleteBtn')?.addEventListener('click', () => {
       if (!existing) return;
-      const r = deleteShiftType(existing.id);
+      const delCo = String($('stmCompany')?.value || existing.company || defCo || '').trim();
+      const r = deleteShiftType(existing.id, delCo);
       if (r.ok) {
         toast(`Removed shift type ${existing.name}`);
         closeShiftTypeModal();
+        if (typeof opts.onSaved === 'function') opts.onSaved(null);
       } else {
         toast(r.error || 'Cannot delete', 'warn');
       }
@@ -129397,14 +130103,24 @@
       const gr = Number($('stmGrace')?.value || 10);
       const effDt = String($('stmStartDate')?.value || todayISO()).slice(0, 10);
       const isBuDef = Boolean($('stmBuDefault')?.checked);
-      const satDiff = Boolean($('stmSatDiff')?.checked);
-      const satStart = normalize24hClockTime($('stmSatStart')?.value || '07:00', '07:00');
-      const satEnd = normalize24hClockTime($('stmSatEnd')?.value || '14:00', '14:00');
+      const isDiffOn = Boolean($('stmDiffChk')?.checked);
       const doBackfill = Boolean($('stmBackfill')?.checked);
       if (!nm) {
         toast('Enter a shift type name', 'warn');
         return;
       }
+      let finalDayMap = {};
+      let finalDateList = [];
+      if (isDiffOn) {
+        capturePendingDateFromInputs();
+        finalDayMap = buildEffectiveDraftDayMap();
+        finalDateList = normalizeDateTimingsList(draftDateTimings);
+        if (!Object.keys(finalDayMap).length && !finalDateList.length) {
+          toast('Select at least one weekday or add a specific date override, or uncheck timing exceptions.', 'warn');
+          return;
+        }
+      }
+      const hasSat = Boolean(finalDayMap['6']);
       const res = saveShiftType({
         id: existing ? existing.id : (nm.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || uid('shf')),
         name: nm,
@@ -129421,20 +130137,24 @@
         end_time: isSplit ? spE2 : et,
         days: draftDays,
         grace_min: gr,
-        sat_diff_enabled: satDiff,
-        sat_start_time: satStart,
-        sat_end_time: satEnd,
-        day_timings: satDiff ? { '6': { start_time: satStart, end_time: satEnd } } : {},
+        sat_diff_enabled: hasSat,
+        sat_start_time: hasSat ? finalDayMap['6'].start_time : '07:00',
+        sat_end_time: hasSat ? finalDayMap['6'].end_time : '14:00',
+        day_timings: finalDayMap,
+        date_timings: finalDateList,
         tone: draftTone,
         backfill: doBackfill
       });
       if (res.ok) {
-        const bf = res.backfill || { updatedRules: 0, updatedAtt: 0, updatedPunches: 0 };
+        const bf = res.backfill || { staffUpdated: 0, attUpdated: 0, punchesUpdated: 0 };
         const winTxt = res.shiftType.split_enabled && res.shiftType.split_window_label
           ? res.shiftType.split_window_label
           : `${res.shiftType.start_time}-${res.shiftType.end_time}`;
-        toast(`Saved ${co} shift: ${res.shiftType.name} (${winTxt}${satDiff ? ` · Sat ${satStart}-${satEnd}` : ''}) effective ${fmtDateDMY(effDt)}${doBackfill ? ` · Backfilled ${bf.updatedRules || 0} staff` : ''}`, 'ok');
+        const excSummary = formatShiftExceptionsSummary(res.shiftType.day_timings, res.shiftType.date_timings);
+        const excTxt = excSummary !== 'Same Every Workday' ? ` · ${excSummary}` : '';
+        toast(`Saved ${co} shift: ${res.shiftType.name} (${winTxt}${excTxt}) effective ${fmtDateDMY(effDt)}${doBackfill ? ` · Backfilled ${bf.staffUpdated || 0} staff` : ''}`, 'ok');
         closeShiftTypeModal();
+        if (typeof opts.onSaved === 'function') opts.onSaved(res.shiftType);
       } else {
         toast(res.error || 'Could not save shift type', 'err');
       }
@@ -130266,7 +130986,8 @@
                 <div class="shift-types-strip">
                   ${shiftTypesCatalog.map(st => {
                     const assignedCnt = staffDir.filter(s => (getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4') === st.id).length;
-                    const satNote = st.sat_diff_enabled ? ` · Sat ${st.sat_start_time}-${st.sat_end_time}` : '';
+                    const excSum = formatShiftExceptionsSummary(st.day_timings, st.date_timings, st.start_time, st.end_time);
+                    const satNote = excSum !== 'Same Every Workday' ? ` · ${excSum}` : '';
                     return `
                       <button type="button" class="shift-type-card" data-tone="${esc(st.tone)}" data-edit-shift-type="${esc(st.id)}">
                         <div class="stc-head">
@@ -138666,9 +139387,9 @@
         saveLocalAuthAndRecords();
         if (STATE.view === 'kiosks') renderApp();
       },
-      getShiftTypes: () => getShiftTypes(),
+      getShiftTypes: co => getShiftTypes(co),
       saveShiftType: (spec = {}) => saveShiftType(spec),
-      deleteShiftType: shiftId => deleteShiftType(shiftId),
+      deleteShiftType: (shiftId, co) => deleteShiftType(shiftId, co),
       getPolicyGroups: () => getPolicyGroups(),
       savePolicyGroup: (spec = {}) => savePolicyGroup(spec),
       deletePolicyGroup: groupId => deletePolicyGroup(groupId),
@@ -138696,7 +139417,7 @@
       closeStaffFaceEnrolModal: () => closeStaffFaceEnrolModal(),
       openStaffScheduleModal: (staff, opts = {}) => openStaffScheduleModal(staff, opts),
       closeStaffScheduleModal: () => closeStaffScheduleModal(),
-      openShiftTypeModal: shiftId => openShiftTypeModal(shiftId),
+      openShiftTypeModal: (shiftId, opts = {}) => openShiftTypeModal(shiftId, opts),
       closeShiftTypeModal: () => closeShiftTypeModal(),
       openPolicyGroupModal: (groupId, seedSpec) => openPolicyGroupModal(groupId, seedSpec),
       closePolicyGroupModal: () => closePolicyGroupModal(),

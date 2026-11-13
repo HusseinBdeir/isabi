@@ -2059,15 +2059,13 @@
             ['after_hours', 'After Scheduled Shift Hours'],
             ['early_and_late', 'Early Arrival + Late Stay']
           ], 'none'), { id: 'wrap_ws_otmode' })}
-          ${secHdr('2. Day-Specific Shift Timings (Saturday / Weekday Overrides)', 'Set different start and leave times for Saturday or other weekdays (for example starting earlier and leaving earlier on Saturday)')}
-          ${fld('Different Timing by Day (e.g. Saturday)', sel('f_sat_diff', [
+          ${secHdr('2. Shift Timing Exceptions (Selected Weekdays or Specific Dates)', 'Configure different start and leave hours for specific weekdays or calendar dates / ranges (e.g. Friday schedule, Ramadan, holidays)')}
+          ${fld('Different Timing on Specific Weekdays or Dates', sel('f_sat_diff', [
             ['No', 'No (Same Timing Every Scheduled Workday)'],
-            ['Yes', 'Yes (Custom Timing for Saturday / Specific Days)']
-          ], 'No'), { id: 'wrap_ws_sat_diff' })}
-          ${fld('Saturday Start Time (IN)', inp('f_sat_start', 'time', '07:00'), { id: 'wrap_ws_sat_start' })}
-          ${fld('Saturday End Time (OUT)', inp('f_sat_end', 'time', '14:00'), { id: 'wrap_ws_sat_end' })}
+            ['Yes', 'Yes (Selected Weekdays and/or Specific Dates)']
+          ], 'No'), { id: 'wrap_ws_sat_diff', span: true })}
           <div class="form-field span-3" id="wrap_ws_day_matrix">
-            <label>Optional Other Weekday Overrides (Leave blank to use Regular Start/End Time)</label>
+            <label>Recurring Weekday Exceptions (Leave blank to use Regular Start/End Time)</label>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:6px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev-2)">
               ${[
                 { idx: '1', lbl: 'Monday' },
@@ -2088,18 +2086,48 @@
                 </div>
               `).join('')}
             </div>
+            <div id="wrap_ws_date_timings" style="margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev-2)">
+              <label style="display:block;margin-bottom:6px">Specific Calendar Date / Date Range Exceptions</label>
+              <div class="stm-date-grid">
+                <div class="ssm-field">
+                  <label for="ws_dt_from">From Date</label>
+                  <input type="date" id="ws_dt_from" value="">
+                </div>
+                <div class="ssm-field">
+                  <label for="ws_dt_to">To Date</label>
+                  <input type="date" id="ws_dt_to" value="">
+                </div>
+                <div class="ssm-field">
+                  <label for="ws_dt_start">Start (24h)</label>
+                  <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="ws_dt_start" value="09:00">
+                </div>
+                <div class="ssm-field">
+                  <label for="ws_dt_end">End (24h)</label>
+                  <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="ws_dt_end" value="15:00">
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:6px">
+                <div class="ssm-field" style="flex:1;min-width:160px">
+                  <label for="ws_dt_note">Reason / Label (Optional)</label>
+                  <input type="text" id="ws_dt_note" maxlength="60" placeholder="e.g. Ramadan / Holiday Eve">
+                </div>
+                <button type="button" class="btn kiosk-mini-btn btn-primary" id="wsAddDateExcBtn">+ Add Date</button>
+              </div>
+              <div class="stm-exc-chips" id="ws_date_timings_list" style="margin-top:8px"></div>
+            </div>
             <input type="hidden" id="f_day_timings_json" value="">
+            <input type="hidden" id="f_date_timings_json" value="[]">
           </div>
           ${secHdr('3. Retroactive Backfill & Notes', 'When shift timings change, associated staff schedules and attendance records from Effective Start Date onward are automatically updated')}
           <div class="form-field check-field span-3" id="wrap_ws_backfill">
             <input type="checkbox" id="f_backfill_shift" checked>
             <label for="f_backfill_shift" id="lbl_backfill_shift">Backfill all staff associated with this shift (and BU default staff) plus attendance records from the Effective Start Date</label>
           </div>
-          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Reason for shift timing update, seasonal Saturday schedule, or BU policy note..."'), { id: 'wrap_ws_notes', span: true })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="e.g. Standard quarry & plant shift, holiday or seasonal hours..."'), { id: 'wrap_ws_notes', span: true })}
         </div>
         <div class="live-calc" id="workShiftLiveCalc">
           <div><small>Regular Window</small><b id="calc_ws_window">08:00 - 16:00 (8.0h)</b></div>
-          <div><small>Day-Specific Timing</small><b id="calc_ws_day_diff">Standard All Days</b></div>
+          <div><small>Timing Exceptions</small><b id="calc_ws_day_diff">Same Every Workday</b></div>
           <div><small>BU Default &amp; Staff</small><b id="calc_ws_staff_cnt">Custom Shift</b></div>
           <div><small>Effective Window</small><b id="calc_ws_eff_win">Open</b></div>
         </div>

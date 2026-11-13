@@ -1574,7 +1574,7 @@
     { key: 'work_shifts', group: '4 · Payroll, Attendance & Workforce', navView: 'payroll_attendance', label: 'Regular Shift & Clock Timings', singularLabel: 'Shift & Clock Timing', dvn: 'bhf_workshift', form: 'workshift', pbiPage: 'p12_payroll', chronoSeries: true, seriesKeys: ['company', 'shift_code'], cols: ['name', 'company', 'is_bu_default', 'start_time', 'end_time', 'hours', 'day_schedule_summary', 'workdays_label', 'grace_min', 'early_leave_grace_min', 'associated_staff_count', 'status', 'start_date', 'end_date', 'notes'], relTables: ['attendance', 'employments', 'staff_members'], views: [
       { id: 'all', label: 'All Shifts' },
       { id: 'bu_defaults', label: 'BU Defaults', fn: r => Boolean(r && (r.is_bu_default === true || r.is_bu_default === 'Yes' || r.is_bu_default === 1)) },
-      { id: 'day_diff', label: 'Day-Specific (Sat)', fn: r => Boolean(r && (r.sat_diff_enabled || (r.day_timings && Object.keys(r.day_timings).length > 0))) },
+      { id: 'day_diff', label: 'Custom Day / Date Timing', fn: r => Boolean(r && (r.has_day_timings || r.sat_diff_enabled || (r.day_timings && Object.keys(r.day_timings).length > 0) || (Array.isArray(r.date_timings) && r.date_timings.length > 0))) },
       { id: 'active', label: 'Current Active', fn: r => !r.end_date || String(r.end_date).slice(0, 10) >= localTodayPbi() },
       { id: 'historical', label: 'Historical Windows', fn: r => Boolean(r.end_date && String(r.end_date).slice(0, 10) < localTodayPbi()) }
     ] },
@@ -3150,10 +3150,10 @@
       }
       if (c === 'day_schedule_summary') {
         if (r.day_schedule_summary) return r.day_schedule_summary;
-        if (r.sat_diff_enabled && r.sat_start_time && r.sat_end_time) {
-          return `Sat ${r.sat_start_time}-${r.sat_end_time}`;
+        if (typeof formatShiftExceptionsSummary === 'function') {
+          return formatShiftExceptionsSummary(r.day_timings, r.date_timings);
         }
-        return 'Standard All Days';
+        return 'Same Every Workday';
       }
       if (c === 'workdays_label') {
         return r.workdays_label || r.working_days || 'Mon-Sat';
@@ -10578,7 +10578,7 @@
     is_bu_default: 'BU Default',
     start_time: 'Start (IN)',
     end_time: 'End (OUT)',
-    day_schedule_summary: 'Day-Specific Schedule',
+    day_schedule_summary: 'Timing Exceptions',
     workdays_label: 'Workdays',
     grace_min: 'IN Tol. (m)',
     early_leave_grace_min: 'OUT Tol. (m)',
@@ -13025,7 +13025,7 @@
   }
 
   // Work shifts (Payroll & Workforce > Attendance & Overtime): a 24-hour timeline of when each
-  // active shift runs (weekdays + Saturday when it differs) and a staff-per-shift bar chart.
+  // active shift runs (regular hours + weekday or date-specific exceptions) and a staff-per-shift bar chart.
   // ctx.shifts rows are prepared in js/app.js (buildWorkShiftChartRows): windows are [startMin, endMin]
   // pairs on a 0..1440 clock; endMin <= startMin means the window runs past midnight.
   function renderWorkShiftsVisualsSection(ctx) {
@@ -13058,12 +13058,19 @@
           <span></span>
         </div>
         ${shifts.map(r => {
-          const satDiffers = Array.isArray(r.sat) && r.sat.length > 0;
+          const excDiffers = Array.isArray(r.sat) && r.sat.length > 0;
+          const excLabel = r.excFullLabel || r.excTag || 'Timing Exception';
+          const excTag = r.excTag || 'Exc';
           const popRows = [
-            { label: 'Weekdays', value: `${winsTxt(r.wk) || '-'} (${fmtNum(r.wkHours, 1)}h)`, color: C.steel },
-            { label: 'Saturday', value: r.satOff ? 'Off' : (satDiffers ? `${winsTxt(r.sat)} (${fmtNum(r.satHours, 1)}h)` : `${winsTxt(r.wk) || '-'} (${fmtNum(r.wkHours, 1)}h)`), color: satDiffers ? C.brass : '' }
+            { label: 'Regular Hours', value: `${winsTxt(r.wk) || '-'} (${fmtNum(r.wkHours, 1)}h)`, color: C.steel }
           ];
+          if (excDiffers) {
+            popRows.push({ label: excLabel, value: `${winsTxt(r.sat)} (${fmtNum(r.satHours, 1)}h)`, color: C.brass });
+          }
           (r.otherDays || []).forEach(od => popRows.push({ label: od.day, value: `${od.win} (${fmtNum(od.hours, 1)}h)` }));
+          if (!excDiffers && !(r.otherDays && r.otherDays.length)) {
+            popRows.push({ label: 'Timing Exceptions', value: 'Same Every Workday' });
+          }
           if (r.workdays) popRows.push({ label: 'Workdays', value: r.workdays });
           popRows.push({ label: 'Active Staff', value: fmtNum(r.staff, 0) });
           if (r.effDate) popRows.push({ label: 'Effective From', value: r.effDate });
@@ -13071,11 +13078,11 @@
           return `
             <div class="ws-tl-row" data-chart-pop="${encodeChartPop(pop)}">
               <span class="ws-tl-lbl"><b>${esc(r.name)}</b>${subOf(r) ? ` <small>${esc(subOf(r))}</small>` : ''}</span>
-              <div class="ws-tl-lane${satDiffers ? ' has-sat' : ''}">
+              <div class="ws-tl-lane${excDiffers ? ' has-sat' : ''}">
                 ${segsHtml(r.wk, 'wk')}
-                ${satDiffers ? segsHtml(r.sat, 'sat') : ''}
+                ${excDiffers ? segsHtml(r.sat, 'sat') : ''}
               </div>
-              <span class="ws-tl-val"><b>${fmtNum(r.wkHours, 1)}h</b>${satDiffers ? `<small><span>Sat</span> ${fmtNum(r.satHours, 1)}h</small>` : ''}</span>
+              <span class="ws-tl-val"><b>${fmtNum(r.wkHours, 1)}h</b>${excDiffers ? `<small><span>${esc(excTag)}</span> ${fmtNum(r.satHours, 1)}h</small>` : ''}</span>
             </div>
           `;
         }).join('')}
@@ -13095,7 +13102,7 @@
             badge: subOf(r) || r.company || '',
             rows: [
               { label: 'Active Staff', value: fmtNum(n, 0), color: C.navy },
-              { label: 'Weekdays', value: `${winsTxt(r.wk) || '-'} (${fmtNum(r.wkHours, 1)}h)` }
+              { label: 'Regular Hours', value: `${winsTxt(r.wk) || '-'} (${fmtNum(r.wkHours, 1)}h)` }
             ].concat(totStaff > 0 ? [{ label: 'Share', value: `${((n / totStaff) * 100).toFixed(1)}%` }] : [])
              .concat(r.effDate ? [{ label: 'Effective From', value: r.effDate }] : [])
           };
@@ -13113,9 +13120,9 @@
     return `
       <div class="pbi-grid-2" id="workShiftsChartsRow" style="margin-bottom:14px">
         ${pbiPanel('Shift Windows Across the Day', timelineHtml, {
-          subtitle: 'When each active shift runs on the 24-hour clock, weekdays and Saturday',
-          legend: [{ label: 'Weekdays', color: C.steel }].concat(
-            shifts.some(r => Array.isArray(r.sat) && r.sat.length) ? [{ label: 'Saturday', color: C.brass }] : []
+          subtitle: 'When each active shift runs on the 24-hour clock, regular hours and timing exceptions',
+          legend: [{ label: 'Regular Hours', color: C.steel }].concat(
+            shifts.some(r => Array.isArray(r.sat) && r.sat.length) ? [{ label: 'Timing Exception', color: C.brass }] : []
           )
         })}
         ${pbiPanel('Staff per Shift', staffHtml, {

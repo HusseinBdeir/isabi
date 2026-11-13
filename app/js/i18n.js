@@ -2633,7 +2633,7 @@
       "Day Operator": "مشغّل النهار",
       "Day P&L and Cash Till balances require Treasury & General Ledger hub permissions.": "تتطلب أرصدة أرباح اليوم وصندوق النقد صلاحيات مركزي السيولة والأستاذ العام.",
       "Day Records": "سجلات اليوم",
-      "Day Shift": "الوردية النهارية",
+      "Day Shift": "الدوام الصباحي",
       "Day Shift (06:00–17:59) · + Overtime?": "وردية نهارية (06:00–17:59) · + إضافي؟",
       "Day Shift (08:00-16:00 · Sat 07:00-14:00)": "وردية نهارية (08:00-16:00 · السبت 07:00-14:00)",
       "Day Shift / Split Shift / Morning": "وردية نهارية / مجزأة / صباحية",
@@ -3392,7 +3392,7 @@
       "Extended (Reserve / Special)": "موسّع (احتياطي / خاص)",
       "Extended (Stakeholder Ledger)": "ممتد (دفتر أصحاب العلاقة)",
       "Extended Config": "رصيد تأسيسي (ذمم ممتدة)",
-      "Extended Day": "دوام نهاري ممدد",
+      "Extended Day": "دوام ممدد",
       "Extended Day (07:00-16:00 · Sat 07:00-14:00)": "دوام نهاري ممتد (07:00-16:00 · السبت 07:00-14:00)",
       "Extended Difference / Owes ($)": "فرق ذمم حسابات الممتد ($)",
       "Extended Entry": "قيد موسع",
@@ -5710,7 +5710,7 @@
       "No": "لا",
       "No $0.00 haulage trips match the current filter.": "لا توجد نقلات بسعر $0.00 تطابق التصفية الحالية.",
       "No (Additional / Optional Shift)": "لا (وردية إضافية / اختيارية)",
-      "No (Same Timing Every Scheduled Workday)": "لا (نفس التوقيت لكل أيام العمل المجدولة)",
+      "No (Same Timing Every Scheduled Workday)": "لا (نفس التوقيت في كل يوم عمل مجدول)",
       "No Active Alert": "لا يوجد تنبيه نشط",
       "No Assigned Driver": "بدون سائق معيّن",
       "No Backfill Impact": "لا يوجد أثر رجعي",
@@ -5858,7 +5858,7 @@
       "Off-hours window (22:00 to 06:00): this authorization will be flagged in Executive Sentinels.": "خارج ساعات الدوام (22:00 إلى 06:00): سيتم تسجيل هذا التفويض في تنبيهات الرقابة التنفيذية.",
       "Office & Facility": "المكتب والمرافق",
       "Office Electronics": "إلكترونيات مكتبية",
-      "Office Mon-Fri": "دوام إداري الإثنين–الجمعة",
+      "Office Mon-Fri": "مكتب الإثنين - الجمعة",
       "Office and computer equipment": "معدات مكتبية ومعلوماتية",
       "Official / Legal Name": "الاسم الرسمي / القانوني",
       "Official 4235 VAT Collected": "ضريبة 4235 الرسمية المحصّلة",
@@ -7445,7 +7445,7 @@
       "Regular": "منتظم",
       "Regular + extra hours": "ساعات عادية + إضافية",
       "Regular End Time (OUT) *": "وقت الانصراف الاعتيادي (خروج) *",
-      "Regular Hours": "الساعات العادية",
+      "Regular Hours": "الساعات الاعتيادية",
       "Regular Shift & Clock Timings": "أوقات الدوام الرسمي والورديات",
       "Regular Shift (Contract)": "وردية اعتيادية (حسب العقد)",
       "Regular Start / End": "البداية / النهاية المعتادة",
@@ -8548,7 +8548,7 @@
       "Split / Early Shift": "وردية مجزأة / مبكرة",
       "Split Invoice": "تجزئة الفاتورة",
       "Split Presets": "قوالب الدوام المجزأ",
-      "Split Shift": "دوام مجزأ (فترتان)",
+      "Split Shift": "دوام متقطع",
       "Split-Invoice Clustering": "تجزئة الفواتير المتقاربة",
       "Spoiled paper ticket": "إيصال ورقي تالف",
       "Spoken Executive Briefing Ready": "الملخص الصوتي التنفيذي جاهز",
@@ -10790,7 +10790,139 @@
       "Record voided, with the back-pay rows of this salary voucher": "أُلغي القيد مع أسطر المستحقات بأثر رجعي في سند الراتب هذا",
       "Record restored, with the back-pay rows of this salary voucher": "استُعيد القيد مع أسطر المستحقات بأثر رجعي في سند الراتب هذا",
       "Till on This Day": "الصندوق في هذا اليوم",
-      "Drag to replay the till day by day": "اسحب لاستعراض رصيد الصندوق يوماً بيوم"
+      "Drag to replay the till day by day": "اسحب لاستعراض رصيد الصندوق يوماً بيوم",
+      "+ Add Date": "+ إضافة تاريخ",
+      "+ Add Weekday Window": "+ إضافة دوام ليوم",
+      "Custom Day / Date Timing": "توقيت مخصص حسب اليوم / التاريخ",
+      "Timing Exceptions": "استثناءات التوقيت",
+      "Remove date timing": "إزالة توقيت التاريخ",
+      "Remove weekday timing": "إزالة توقيت اليوم",
+      "Reason / Label (Optional)": "السبب / التسمية (اختياري)",
+      "Recurring Weekday Exceptions (Leave blank to use Regular Start/End Time)": "استثناءات أيام الأسبوع المتكررة (اتركه فارغاً لاستخدام التوقيت العادي)",
+      "Specific Calendar Date / Date Range Exceptions": "استثناءات تواريخ تقويمية محددة أو نطاقات تواريخ",
+      "Different timing on specific weekdays or dates": "توقيت مختلف في أيام أسبوع أو تواريخ محددة",
+      "Recurring Weekday(s)": "أيام الأسبوع المتكررة",
+      "Select which weekday(s) follow a different clock window": "اختر أيام الأسبوع التي تتبع توقيتاً مختلفاً",
+      "Quick Preset & Window": "نماذج سريعة وفترة الدوام",
+      "Specific Calendar Date / Date Range": "تاريخ محدد أو نطاق تاريخي",
+      "Overrides regular and weekday hours on selected date(s)": "يتجاوز الدوام العادي وأيام الأسبوع في التواريخ المحددة",
+      "No specific calendar date overrides added yet.": "لم تُضف أي استثناءات لتواريخ محددة بعد.",
+      "Recurring Weekday(s) (Mon-Sun)": "أيام الأسبوع المتكررة (الإثنين-الأحد)",
+      "Enter Start/End for any weekday, or pick a weekday to quick-fill": "أدخل البداية والنهاية لأي يوم أو اختر يوماً للتعبئة السريعة",
+      "Select Weekday...": "اختر يوم الأسبوع...",
+      "No Day Exc.": "بلا استثناء",
+      "1. Regular Shift & Timing Exceptions": "1. الدوام الأساسي واستثناءات التوقيت",
+      "SHIFT HOURS & TIMING EXCEPTIONS BY BU": "ساعات الدوام واستثناءات التوقيت حسب الشركة",
+      "Regular shift hours vs weekday or specific-date exception hours across active BU shifts": "ساعات الدوام العادي مقابل استثناءات أيام الأسبوع أو التواريخ المحددة عبر ورديات الشركات",
+      "2. Shift Timing Exceptions (Selected Weekdays or Specific Dates)": "2. استثناءات توقيت الدوام (أيام أسبوع مختارة أو تواريخ محددة)",
+      "Different Timing on Specific Weekdays or Dates": "توقيت مختلف لأيام أسبوع أو تواريخ محددة",
+      "Yes (Selected Weekdays and/or Specific Dates)": "نعم (أيام أسبوع مختارة و/أو تواريخ محددة)",
+      "Universal shift structure customizable per company: set single or split hours, weekday or specific-date timing exceptions, and Effective Date backfill": "هيكل ورديات موحد قابل للتخصيص لكل شركة: دوام واحد أو مقسوم، استثناءات أيام أسبوع أو تواريخ محددة، وتحديث رجعي من تاريخ السريان",
+      "Regular Start (24h)": "بدء الدوام العادي (24 ساعة)",
+      "Regular End (24h)": "انتهاء الدوام العادي (24 ساعة)",
+      "Window 1 Start (24h)": "بدء الفترة 1 (24 ساعة)",
+      "Window 1 End (24h)": "انتهاء الفترة 1 (24 ساعة)",
+      "Split Shift (Two Daily Windows, e.g. Morning / Lunch + Afternoon / Evening)": "دوام متقطع (فترتان يوميتان، مثل الصباح / الغداء + بعد الظهر / المساء)",
+      "Set as Company Default Shift": "تعيين كدوام افتراضي للشركة",
+      "Day Gold": "ذهبي نهاري",
+      "Indigo": "نيلي",
+      "Blue": "أزرق",
+      "Green": "أخضر",
+      "Backfill associated staff & attendance from Effective Date": "تطبيق التحديث بأثر رجعي على الموظفين وسجلات الحضور من تاريخ السريان",
+      "No specific calendar dates added yet.": "لم تُضف تواريخ تقويمية محددة بعد.",
+      "No weekday timing windows added yet.": "لم تُضف أوقات استثنائية لأيام الأسبوع بعد.",
+      "Configure different start and leave hours for specific weekdays or calendar dates / ranges (e.g. Friday schedule, Ramadan, holidays)": "اضبط ساعات بدء ومغادرة مختلفة لأيام أسبوع محددة أو تواريخ/نطاقات تقويمية (مثل دوام الجمعة، رمضان، العطل)",
+      "When each active shift runs on the 24-hour clock, regular hours and timing exceptions": "متى يبدأ وينتهي كل دوام على مدار 24 ساعة، مع الساعات الاعتيادية والاستثناءات",
+      "Timing Exception": "استثناء التوقيت",
+      "+ Add Shift": "+ إضافة وردية",
+      "2. Policy & Perks": "2. السياسة والمزايا",
+      "2. Policy & Perks Group (Multipliers, Vacation Days & Functions)": "2. مجموعة السياسة والمزايا (المضاعفات وأيام الإجازة والصلاحيات)",
+      "3. Lateness Tolerances, Scope & Single-Punch Rules": "3. مهل التأخير والنطاق وقواعد البصمة الواحدة",
+      "3. Tolerances": "3. مهل السماح",
+      "4. OT & Rotations": "4. الإضافي والمناوبات",
+      "4. Overtime Eligibility, Date Passes & Shift Rotations": "4. أهلية العمل الإضافي وتصاريح التواريخ ومناوبات الورديات",
+      "Allow overtime up to a daily hour cap or inside a specific clock window.": "السماح بالعمل الإضافي حتى حد ساعات يومي أو ضمن نطاق زمني محدد.",
+      "Any Late = Half Day (0.5d)": "أي تأخير = نصف يوم (0.5 يوم)",
+      "Any late arrival or early departure beyond tolerance converts the shift to Half Day (0.5d).": "أي حضور متأخر أو انصراف مبكر يتجاوز مهلة السماح يحوّل الوردية إلى نصف يوم (0.5 يوم).",
+      "Any lateness beyond tolerance deducts at least 1 full hour.": "أي تأخير يتجاوز مهلة السماح يخصم ساعة كاملة على الأقل.",
+      "Approve overtime only on selected single day(s) or a date range.": "الموافقة على العمل الإضافي في أيام محددة أو نطاق تواريخ محدد فقط.",
+      "Assume Full Shift (0 Ded.)": "افتراض وردية كاملة (بدون خصم)",
+      "Authorized overtime pays at": "يُحتسب العمل الإضافي المعتمد بمعدل",
+      "Authorized to receive paid overtime whenever working past shift hours.": "مخوّل بالحصول على أجر عمل إضافي عند العمل بعد ساعات الوردية.",
+      "Choose this employee's regular shift, weekday or specific-date timing exceptions, or manage BU shift defaults": "اختر الوردية الاعتيادية لهذا الموظف أو استثناءات أيام الأسبوع أو التواريخ المحددة أو إدارة افتراضيات الوحدة",
+      "Company Default Shift *": "وردية الشركة الافتراضية *",
+      "Company Shift & Policy Defaults": "افتراضيات الوردية والسياسة للشركة",
+      "Credit scheduled shift hours with no incomplete-punch penalty.": "احتساب ساعات الوردية المجدولة دون خصم على البصمة الناقصة.",
+      "Custom Timing": "توقيت مخصّص",
+      "Customize": "تخصيص",
+      "Deduct exact late or early-out time at 1x hourly rate.": "خصم وقت التأخير أو الخروج المبكر الفعلي بمعدل الساعة 1x.",
+      "Default shift automatically applies to all staff in this company unless overridden": "تُطبَّق الوردية الافتراضية تلقائياً على جميع موظفي هذه الشركة ما لم يُستثنَ",
+      "Defaults": "الافتراضيات",
+      "Drag IN / OUT handles or pick a preset window": "اسحب مقابض الدخول / الخروج أو اختر توقيتاً جاهزاً",
+      "Enrol 3-Pose Face ID": "تسجيل بصمة الوجه ثلاثية الوضعيات",
+      "Exact Hours (1x)": "ساعات دقيقة (1x)",
+      "From Shift Start / End": "من بداية / نهاية الوردية",
+      "How Late Minutes Are Counted": "كيفية احتساب دقائق التأخير",
+      "IN & OUT Cutoffs": "حدود الدخول والخروج",
+      "IN late after": "يُعدّ الدخول متأخراً بعد",
+      "If Only Clock-IN or Only Clock-OUT (Single / Incomplete Punch Rule)": "عند تسجيل الدخول فقط أو الخروج فقط (قاعدة البصمة الواحدة / الناقصة)",
+      "Included Perks, Allowances & Functions": "المزايا والبدلات والصلاحيات المشمولة",
+      "Interactive 24-Hour Shift Timeline": "الجدول الزمني التفاعلي للوردية (24 ساعة)",
+      "Interactive shift schedule, policy & perks group, multipliers, vacation days, tolerances, and biometric PIN studio": "جدول الورديات التفاعلي ومجموعة السياسة والمزايا والمضاعفات والإجازات ومهل السماح ورمز PIN البيومتري",
+      "Keep full day present but add a 2.0h incomplete-punch lateness penalty.": "إبقاء الحضور كيوم كامل مع إضافة خصم 2.0 ساعة تأخير للبصمة الناقصة.",
+      "Kiosk PIN": "رمز PIN للكشك",
+      "Late >= 60m = Half Day": "تأخير >= 60 د = نصف يوم",
+      "1x hours below 60m; converts to Half Day (0.5d) at 60m+.": "ساعات 1x لأقل من 60 د؛ يتحول إلى نصف يوم (0.5 يوم) عند 60 د فأكثر.",
+      "Late clock-outs record real departure time with 0h paid overtime.": "تسجيل الخروج المتأخر يثبّت وقت الانصراف الفعلي مع 0 س إضافي مدفوع.",
+      "Lateness Punishment Rule": "قاعدة خصم التأخير",
+      "Log late minutes on attendance without payroll deduction.": "تسجيل دقائق التأخير في الحضور بدون خصم من الراتب.",
+      "Max Hrs": "أقصى ساعات",
+      "Multipliers (Late / OT)": "المضاعفات (التأخير / الإضافي)",
+      "Only Beyond Cutoff": "بعد الحد الفاصل فقط",
+      "Only Clock-IN (missing OUT) or Only Clock-OUT (missing IN) counts as Half Day (0.5d deduction) until both punches are recorded.": "الدخول فقط (بدون خروج) أو الخروج فقط (بدون دخول) يُحتسب نصف يوم (خصم 0.5 يوم) حتى اكتمال البصمتين.",
+      "Only Clock-IN or Only Clock-OUT counts as 1 full day unpaid absence until both punches are recorded.": "الدخول فقط أو الخروج فقط يُحتسب غياب يوم كامل بدون أجر حتى اكتمال البصمتين.",
+      "Only IN/OUT: Full": "بصمة واحدة: يوم كامل",
+      "Penalize late or early-out hours at 1.5x or 2.0x hourly rate.": "خصم ساعات التأخير أو الخروج المبكر بمعدل 1.5x أو 2.0x من الأجر الساعي.",
+      "Regular Shift": "الوردية الاعتيادية",
+      "Round Up to Full Hour": "التقريب لأعلى ساعة كاملة",
+      "Save & Backfill": "حفظ وتحديث بأثر رجعي",
+      "Save Schedule, Policy & Perks": "حفظ الجدول والسياسة والمزايا",
+      "Scheduled Day Off": "يوم عطلة مجدول",
+      "Select a grouped policy package or customize lateness & overtime multipliers, allowable OT, annual leave, and staff perks": "اختر حزمة سياسة جاهزة أو خصّص مضاعفات التأخير والإضافي وساعات الإضافي والإجازة السنوية والمزايا",
+      "Set Default": "تعيين كافتراضي",
+      "Shift Structure": "هيكل الوردية",
+      "Sick (d):": "مرضية (ي):",
+      "Specific Day or Date Range": "يوم محدد أو نطاق تواريخ",
+      "Specific Hours Limit": "حد ساعات محدد",
+      "Temporary Shift Rotation (Specific Date or Range)": "مناوبة وردية مؤقتة (تاريخ أو نطاق محدد)",
+      "Track ($0)": "تتبع ($0)",
+      "Track Only ($0)": "تتبع فقط ($0)",
+      "Update PIN": "تحديث PIN",
+      "Whenever": "دائماً",
+      "Whenever (Open OT)": "دائماً (إضافي مفتوح)",
+      "Worked less than shift duration": "العمل أقل من مدة الوردية",
+      "hourly rate": "من الأجر الساعي",
+      "Mon Override": "استثناء الإثنين",
+      "Tue Override": "استثناء الثلاثاء",
+      "Wed Override": "استثناء الأربعاء",
+      "Thu Override": "استثناء الخميس",
+      "Fri Override": "استثناء الجمعة",
+      "Sat Override": "استثناء السبت",
+      "Sun Override": "استثناء الأحد",
+      "Monday Start Time (24h)": "وقت بدء الإثنين (24 س)",
+      "Monday End Time (24h)": "وقت انتهاء الإثنين (24 س)",
+      "Tuesday Start Time (24h)": "وقت بدء الثلاثاء (24 س)",
+      "Tuesday End Time (24h)": "وقت انتهاء الثلاثاء (24 س)",
+      "Wednesday Start Time (24h)": "وقت بدء الأربعاء (24 س)",
+      "Wednesday End Time (24h)": "وقت انتهاء الأربعاء (24 س)",
+      "Thursday Start Time (24h)": "وقت بدء الخميس (24 س)",
+      "Thursday End Time (24h)": "وقت انتهاء الخميس (24 س)",
+      "Friday Start Time (24h)": "وقت بدء الجمعة (24 س)",
+      "Friday End Time (24h)": "وقت انتهاء الجمعة (24 س)",
+      "Saturday Start Time (24h)": "وقت بدء السبت (24 س)",
+      "Saturday End Time (24h)": "وقت انتهاء السبت (24 س)",
+      "Sunday Start Time (24h)": "وقت بدء الأحد (24 س)",
+      "Sunday End Time (24h)": "وقت انتهاء الأحد (24 س)"
     },
     fr: {
       "Shift Windows Across the Day": "Plages horaires des postes sur la journée",
@@ -13405,7 +13537,7 @@
       "Day Operator": "Opérateur Jour",
       "Day P&L and Cash Till balances require Treasury & General Ledger hub permissions.": "Les soldes résultat du jour et caisse requièrent les droits Trésorerie et Grand Livre.",
       "Day Records": "Registres du jour",
-      "Day Shift": "Poste de Jour",
+      "Day Shift": "Poste de jour",
       "Day Shift (06:00–17:59) · + Overtime?": "Poste Jour (06:00–17:59) · + Heures Sup. ?",
       "Day Shift (08:00-16:00 · Sat 07:00-14:00)": "Poste de Jour (08:00-16:00 · Sam 07:00-14:00)",
       "Day Shift / Split Shift / Morning": "Poste Jour / Coupure / Matin",
@@ -14164,7 +14296,7 @@
       "Extended (Reserve / Special)": "Étendu (Réserve / Spécial)",
       "Extended (Stakeholder Ledger)": "Étendu (Grand livre parties prenantes)",
       "Extended Config": "Solde initial (Étendu)",
-      "Extended Day": "Journée Prolongée",
+      "Extended Day": "Journée prolongée",
       "Extended Day (07:00-16:00 · Sat 07:00-14:00)": "Journée Étendue (07:00-16:00 · Sam 07:00-14:00)",
       "Extended Difference / Owes ($)": "Différence / Solde dû Extended ($)",
       "Extended Entry": "Écriture étendue",
@@ -16482,7 +16614,7 @@
       "No": "Non",
       "No $0.00 haulage trips match the current filter.": "Aucun voyage à 0,00 $ ne correspond au filtre.",
       "No (Additional / Optional Shift)": "Non (Poste Supplémentaire / Optionnel)",
-      "No (Same Timing Every Scheduled Workday)": "Non (Même Horaire Chaque Jour Ouvré)",
+      "No (Same Timing Every Scheduled Workday)": "Non (même horaire chaque jour travaillé)",
       "No Active Alert": "Aucune alerte active",
       "No Assigned Driver": "Aucun chauffeur assigné",
       "No Backfill Impact": "Aucun impact rétroactif",
@@ -16630,7 +16762,7 @@
       "Off-hours window (22:00 to 06:00): this authorization will be flagged in Executive Sentinels.": "Plage hors horaires (22h00 a 06h00) : cette autorisation sera signalee dans les sentinelles.",
       "Office & Facility": "Bureau & Locaux",
       "Office Electronics": "Électronique de bureau",
-      "Office Mon-Fri": "Bureau Lun–Ven",
+      "Office Mon-Fri": "Bureau Lun-Ven",
       "Office and computer equipment": "Matériel de bureau et informatique",
       "Official / Legal Name": "Raison Sociale / Nom Légal",
       "Official 4235 VAT Collected": "TVA officielle 4235 encaissée",
@@ -18217,7 +18349,7 @@
       "Regular": "Régulier",
       "Regular + extra hours": "Heures normales + sup.",
       "Regular End Time (OUT) *": "Heure de Sortie Normale (OUT) *",
-      "Regular Hours": "Heures normales",
+      "Regular Hours": "Heures habituelles",
       "Regular Shift & Clock Timings": "Horaires Réguliers de Poste",
       "Regular Shift (Contract)": "Poste Régulier (Contrat)",
       "Regular Start / End": "Début / Fin Standard",
@@ -19320,7 +19452,7 @@
       "Split / Early Shift": "Poste Coupure / Matinal",
       "Split Invoice": "Ventiler la Facture",
       "Split Presets": "Préréglages Coupure",
-      "Split Shift": "Horaire Coupé",
+      "Split Shift": "Poste fractionné",
       "Split-Invoice Clustering": "Regroupement de factures fractionnées",
       "Spoiled paper ticket": "Bon papier abîmé",
       "Spoken Executive Briefing Ready": "Synthese vocale executive prete",
@@ -21562,7 +21694,139 @@
       "Record voided, with the back-pay rows of this salary voucher": "Écriture annulée, avec les lignes de rappel de ce bon de salaire",
       "Record restored, with the back-pay rows of this salary voucher": "Écriture rétablie, avec les lignes de rappel de ce bon de salaire",
       "Till on This Day": "Caisse à cette date",
-      "Drag to replay the till day by day": "Faites glisser pour rejouer la caisse jour par jour"
+      "Drag to replay the till day by day": "Faites glisser pour rejouer la caisse jour par jour",
+      "+ Add Date": "+ Ajouter date",
+      "+ Add Weekday Window": "+ Ajouter horaire jour",
+      "Custom Day / Date Timing": "Horaire personnalisé jour / date",
+      "Timing Exceptions": "Exceptions d’horaire",
+      "Remove date timing": "Supprimer l’horaire de date",
+      "Remove weekday timing": "Supprimer l’horaire du jour",
+      "Reason / Label (Optional)": "Motif / Libellé (Optionnel)",
+      "Recurring Weekday Exceptions (Leave blank to use Regular Start/End Time)": "Exceptions récurrentes par jour de semaine (laisser vide pour l’horaire habituel)",
+      "Specific Calendar Date / Date Range Exceptions": "Exceptions par date calendaire ou plage de dates",
+      "Different timing on specific weekdays or dates": "Horaire différent certains jours ou dates précises",
+      "Recurring Weekday(s)": "Jour(s) récurrent(s)",
+      "Select which weekday(s) follow a different clock window": "Sélectionnez les jours suivant un autre horaire",
+      "Quick Preset & Window": "Préréglages et plage",
+      "Specific Calendar Date / Date Range": "Date précise / Plage de dates",
+      "Overrides regular and weekday hours on selected date(s)": "Remplace les horaires standards et hebdomadaires aux dates choisies",
+      "No specific calendar date overrides added yet.": "Aucune exception de date ajoutée.",
+      "Recurring Weekday(s) (Mon-Sun)": "Jours récurrents (Lun-Dim)",
+      "Enter Start/End for any weekday, or pick a weekday to quick-fill": "Saisissez début/fin ou choisissez un jour pour préremplir",
+      "Select Weekday...": "Choisir un jour...",
+      "No Day Exc.": "Sans exc.",
+      "1. Regular Shift & Timing Exceptions": "1. Horaire principal et exceptions",
+      "SHIFT HOURS & TIMING EXCEPTIONS BY BU": "HEURES ET EXCEPTIONS D’HORAIRE PAR ENTITÉ",
+      "Regular shift hours vs weekday or specific-date exception hours across active BU shifts": "Heures standards vs exceptions hebdomadaires ou datées par entité",
+      "2. Shift Timing Exceptions (Selected Weekdays or Specific Dates)": "2. Exceptions d’horaire (jours choisis ou dates précises)",
+      "Different Timing on Specific Weekdays or Dates": "Horaire différent selon les jours ou dates",
+      "Yes (Selected Weekdays and/or Specific Dates)": "Oui (jours de semaine choisis et/ou dates précises)",
+      "Universal shift structure customizable per company: set single or split hours, weekday or specific-date timing exceptions, and Effective Date backfill": "Structure de poste personnalisable par société : continu ou coupé, exceptions hebdomadaires ou datées et rétroactivité",
+      "Regular Start (24h)": "Début habituel (24h)",
+      "Regular End (24h)": "Fin habituelle (24h)",
+      "Window 1 Start (24h)": "Début créneau 1 (24h)",
+      "Window 1 End (24h)": "Fin créneau 1 (24h)",
+      "Split Shift (Two Daily Windows, e.g. Morning / Lunch + Afternoon / Evening)": "Poste fractionné (deux créneaux quotidiens, ex. matin + après-midi/soir)",
+      "Set as Company Default Shift": "Définir comme poste par défaut de la société",
+      "Day Gold": "Or jour",
+      "Indigo": "Indigo",
+      "Blue": "Bleu",
+      "Green": "Vert",
+      "Backfill associated staff & attendance from Effective Date": "Rétro-appliquer au personnel associé et aux pointages depuis la date d’effet",
+      "No specific calendar dates added yet.": "Aucune date calendaire spécifique ajoutée.",
+      "No weekday timing windows added yet.": "Aucune exception de jour de semaine ajoutée.",
+      "Configure different start and leave hours for specific weekdays or calendar dates / ranges (e.g. Friday schedule, Ramadan, holidays)": "Configurer des horaires différents pour certains jours ou plages de dates (ex. vendredi, Ramadan, jours fériés)",
+      "When each active shift runs on the 24-hour clock, regular hours and timing exceptions": "Répartition des postes actifs sur 24 heures, heures habituelles et exceptions",
+      "Timing Exception": "Exception d’horaire",
+      "+ Add Shift": "+ Ajouter un poste",
+      "2. Policy & Perks": "2. Politique et avantages",
+      "2. Policy & Perks Group (Multipliers, Vacation Days & Functions)": "2. Groupe politique et avantages (multiplicateurs, congés et fonctions)",
+      "3. Lateness Tolerances, Scope & Single-Punch Rules": "3. Tolérances de retard, portée et règle de pointage unique",
+      "3. Tolerances": "3. Tolérances",
+      "4. OT & Rotations": "4. HS et rotations",
+      "4. Overtime Eligibility, Date Passes & Shift Rotations": "4. Éligibilité aux heures sup., pass par date et rotations",
+      "Allow overtime up to a daily hour cap or inside a specific clock window.": "Autoriser les HS jusqu'à un plafond journalier ou dans une plage horaire.",
+      "Any Late = Half Day (0.5d)": "Tout retard = Demi-journée (0,5j)",
+      "Any late arrival or early departure beyond tolerance converts the shift to Half Day (0.5d).": "Toute arrivée tardive ou départ anticipé hors tolérance convertit le poste en demi-journée (0,5j).",
+      "Any lateness beyond tolerance deducts at least 1 full hour.": "Tout retard dépassant la tolérance déduit au moins 1 heure complète.",
+      "Approve overtime only on selected single day(s) or a date range.": "Approuver les heures sup. uniquement pour des jours précis ou une plage de dates.",
+      "Assume Full Shift (0 Ded.)": "Supposer poste complet (0 déd.)",
+      "Authorized overtime pays at": "Les heures sup. autorisées sont payées à",
+      "Authorized to receive paid overtime whenever working past shift hours.": "Autorisé à recevoir des heures sup. payées après les heures du poste.",
+      "Choose this employee's regular shift, weekday or specific-date timing exceptions, or manage BU shift defaults": "Choisissez le poste habituel de cet employé, ses exceptions par jour ou par date, ou gérez les postes par défaut",
+      "Company Default Shift *": "Poste par défaut de l'entreprise *",
+      "Company Shift & Policy Defaults": "Postes et politiques par défaut de l'entreprise",
+      "Credit scheduled shift hours with no incomplete-punch penalty.": "Créditer les heures prévues sans pénalité pour pointage incomplet.",
+      "Custom Timing": "Horaire personnalisé",
+      "Customize": "Personnaliser",
+      "Deduct exact late or early-out time at 1x hourly rate.": "Déduire le temps exact de retard ou de départ anticipé au taux 1x.",
+      "Default shift automatically applies to all staff in this company unless overridden": "Le poste par défaut s'applique automatiquement à tout le personnel sauf exception",
+      "Defaults": "Par défaut",
+      "Drag IN / OUT handles or pick a preset window": "Faites glisser les poignées Entrée / Sortie ou choisissez un modèle",
+      "Enrol 3-Pose Face ID": "Enrôler Face ID 3 poses",
+      "Exact Hours (1x)": "Heures exactes (1x)",
+      "From Shift Start / End": "Depuis début / fin du poste",
+      "How Late Minutes Are Counted": "Mode de calcul des minutes de retard",
+      "IN & OUT Cutoffs": "Seuils d'entrée et de sortie",
+      "IN late after": "Entrée en retard après",
+      "If Only Clock-IN or Only Clock-OUT (Single / Incomplete Punch Rule)": "Si seulement Entrée ou seulement Sortie (règle du pointage incomplet)",
+      "Included Perks, Allowances & Functions": "Avantages, indemnités et fonctions inclus",
+      "Interactive 24-Hour Shift Timeline": "Frise horaire interactive sur 24 heures",
+      "Interactive shift schedule, policy & perks group, multipliers, vacation days, tolerances, and biometric PIN studio": "Planning interactif, politique et avantages, multiplicateurs, congés, tolérances et studio PIN biométrique",
+      "Keep full day present but add a 2.0h incomplete-punch lateness penalty.": "Compter la journée complète mais ajouter une pénalité de 2,0h pour pointage incomplet.",
+      "Kiosk PIN": "Code PIN borne",
+      "Late >= 60m = Half Day": "Retard >= 60m = Demi-journée",
+      "1x hours below 60m; converts to Half Day (0.5d) at 60m+.": "Heures 1x sous 60m ; converti en demi-journée (0,5j) dès 60m.",
+      "Late clock-outs record real departure time with 0h paid overtime.": "Les départs tardifs enregistrent l'heure réelle avec 0h supplémentaire payée.",
+      "Lateness Punishment Rule": "Règle de sanction du retard",
+      "Log late minutes on attendance without payroll deduction.": "Enregistrer les minutes de retard sans déduction salariale.",
+      "Max Hrs": "Max heures",
+      "Multipliers (Late / OT)": "Multiplicateurs (Retard / HS)",
+      "Only Beyond Cutoff": "Uniquement au-delà du seuil",
+      "Only Clock-IN (missing OUT) or Only Clock-OUT (missing IN) counts as Half Day (0.5d deduction) until both punches are recorded.": "Entrée seule ou Sortie seule compte comme demi-journée (déduction 0,5j) jusqu'aux deux pointages.",
+      "Only Clock-IN or Only Clock-OUT counts as 1 full day unpaid absence until both punches are recorded.": "Entrée seule ou Sortie seule compte comme 1 journée d'absence non payée jusqu'aux deux pointages.",
+      "Only IN/OUT: Full": "Pointage unique : Complet",
+      "Penalize late or early-out hours at 1.5x or 2.0x hourly rate.": "Pénaliser les heures de retard ou départ anticipé à 1,5x ou 2,0x le taux horaire.",
+      "Regular Shift": "Poste habituel",
+      "Round Up to Full Hour": "Arrondir à l'heure supérieure",
+      "Save & Backfill": "Enregistrer et recalculer",
+      "Save Schedule, Policy & Perks": "Enregistrer planning, politique et avantages",
+      "Scheduled Day Off": "Jour de repos prévu",
+      "Select a grouped policy package or customize lateness & overtime multipliers, allowable OT, annual leave, and staff perks": "Sélectionnez un pack de politique ou personnalisez les multiplicateurs, heures sup., congés et avantages",
+      "Set Default": "Définir par défaut",
+      "Shift Structure": "Structure du poste",
+      "Sick (d):": "Maladie (j) :",
+      "Specific Day or Date Range": "Jour précis ou plage de dates",
+      "Specific Hours Limit": "Limite d'heures spécifique",
+      "Temporary Shift Rotation (Specific Date or Range)": "Rotation temporaire de poste (date ou plage précise)",
+      "Track ($0)": "Suivi ($0)",
+      "Track Only ($0)": "Suivi uniquement ($0)",
+      "Update PIN": "Mettre à jour le PIN",
+      "Whenever": "Toujours",
+      "Whenever (Open OT)": "Toujours (HS ouvertes)",
+      "Worked less than shift duration": "Travaillé moins que la durée du poste",
+      "hourly rate": "du taux horaire",
+      "Mon Override": "Exception Lun",
+      "Tue Override": "Exception Mar",
+      "Wed Override": "Exception Mer",
+      "Thu Override": "Exception Jeu",
+      "Fri Override": "Exception Ven",
+      "Sat Override": "Exception Sam",
+      "Sun Override": "Exception Dim",
+      "Monday Start Time (24h)": "Heure début lundi (24h)",
+      "Monday End Time (24h)": "Heure fin lundi (24h)",
+      "Tuesday Start Time (24h)": "Heure début mardi (24h)",
+      "Tuesday End Time (24h)": "Heure fin mardi (24h)",
+      "Wednesday Start Time (24h)": "Heure début mercredi (24h)",
+      "Wednesday End Time (24h)": "Heure fin mercredi (24h)",
+      "Thursday Start Time (24h)": "Heure début jeudi (24h)",
+      "Thursday End Time (24h)": "Heure fin jeudi (24h)",
+      "Friday Start Time (24h)": "Heure début vendredi (24h)",
+      "Friday End Time (24h)": "Heure fin vendredi (24h)",
+      "Saturday Start Time (24h)": "Heure début samedi (24h)",
+      "Saturday End Time (24h)": "Heure fin samedi (24h)",
+      "Sunday Start Time (24h)": "Heure début dimanche (24h)",
+      "Sunday End Time (24h)": "Heure fin dimanche (24h)"
     }
   };
 
@@ -24828,6 +25092,152 @@
 
     m = trimmed.match(/^Linked\s+Customer:\s*([^|·]+)$/i);
     if (m) return lang === 'ar' ? `العميل المرتبط: ${m[1].trim()}` : `Client lié : ${m[1].trim()}`;
+
+    m = trimmed.match(/^Customize\s+(.+?)\s*\(([^)]+)\)$/i);
+    if (m) {
+      const sh = translateCore(m[1].trim(), lang, depth + 1);
+      const co = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `تخصيص ${sh} (${co})` : `Personnaliser ${sh} (${co})`;
+    }
+
+    m = trimmed.match(/^Customize\s+(.+)$/i);
+    if (m) {
+      const sh = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `تخصيص ${sh}` : `Personnaliser ${sh}`;
+    }
+
+    if (/^\d+(?:\.\d+)?x$/i.test(trimmed)) return trimmed;
+
+    m = trimmed.match(/^(\d+(?:\.\d+)?x)\s+OT$/i);
+    if (m) return lang === 'ar' ? `إضافي ${m[1]}` : `HS ${m[1]}`;
+
+    m = trimmed.match(/^(\d+)d\s+Vac\s*·\s*(\d+)d\s+Basis\s*·\s*(\d+)\s+Perks$/i);
+    if (m) return lang === 'ar' ? `إجازة ${m[1]} ي · أساس ${m[2]} ي · ${m[3]} مزايا` : `${m[1]}j congés · base ${m[2]}j · ${m[3]} avantages`;
+
+    m = trimmed.match(/^(\d+)\s+days\/yr$/i);
+    if (m) return lang === 'ar' ? `${m[1]} يوم/سنة` : `${m[1]} jours/an`;
+
+    m = trimmed.match(/^(\d+)d\s+Sick\s*·\s*(\d+)d\/mo$/i);
+    if (m) return lang === 'ar' ? `مرضية ${m[1]} ي · ${m[2]} ي/شهر` : `${m[1]}j maladie · ${m[2]}j/mois`;
+
+    m = trimmed.match(/^(\d+)d\s+Monthly$/i);
+    if (m) return lang === 'ar' ? `${m[1]} يوم شهرياً` : `${m[1]}j mensuel`;
+
+    m = trimmed.match(/^(\d+)d\s+Working$/i);
+    if (m) return lang === 'ar' ? `${m[1]} يوم عمل` : `${m[1]}j ouvrables`;
+
+    m = trimmed.match(/^(\d+)m\s+IN\s+Tol\.\s*·\s*(\d+)m\s+OUT\s+Tol\.$/i);
+    if (m) return lang === 'ar' ? `سماح دخول ${m[1]} د · سماح خروج ${m[2]} د` : `Tol. entrée ${m[1]}m · Tol. sortie ${m[2]}m`;
+
+    m = trimmed.match(/^IN\s*>\s*(\d{2}:\d{2})\s*·\s*OUT\s*<\s*(\d{2}:\d{2})$/i);
+    if (m) return lang === 'ar' ? `دخول > ${m[1]} · خروج < ${m[2]}` : `Entrée > ${m[1]} · Sortie < ${m[2]}`;
+
+    m = trimmed.match(/^IN\s+(\d{2}:\d{2})\s+to\s+OUT\s+(\d{2}:\d{2})\s*·\s*([\d.]+)h$/i);
+    if (m) return lang === 'ar' ? `دخول ${m[1]} إلى خروج ${m[2]} · ${m[3]} س` : `Entrée ${m[1]} à Sortie ${m[2]} · ${m[3]}h`;
+
+    m = trimmed.match(/^IN\s+(\d{2}:\d{2})$/);
+    if (m) return lang === 'ar' ? `دخول ${m[1]}` : `Entrée ${m[1]}`;
+
+    m = trimmed.match(/^OUT\s+(\d{2}:\d{2})$/);
+    if (m) return lang === 'ar' ? `خروج ${m[1]}` : `Sortie ${m[1]}`;
+
+    m = trimmed.match(/^Cutoff\s+(\d{2}:\d{2})$/i);
+    if (m) return lang === 'ar' ? `الحد الفاصل ${m[1]}` : `Limite ${m[1]}`;
+
+    m = trimmed.match(/^Arrival\s+after\s+(\d{2}:\d{2})$/i);
+    if (m) return lang === 'ar' ? `الوصول بعد ${m[1]}` : `Arrivée après ${m[1]}`;
+
+    m = trimmed.match(/^Departure\s+before\s+(\d{2}:\d{2})$/i);
+    if (m) return lang === 'ar' ? `المغادرة قبل ${m[1]}` : `Départ avant ${m[1]}`;
+
+    m = trimmed.match(/^After\s+(\d{2}:\d{2})\s+or\s+before\s+(\d{2}:\d{2})$/i);
+    if (m) return lang === 'ar' ? `بعد ${m[1]} أو قبل ${m[2]}` : `Après ${m[1]} ou avant ${m[2]}`;
+
+    m = trimmed.match(/^Count\s+from\s+(\d{2}:\d{2})\s*\/\s*(\d{2}:\d{2})\s+once\s+tolerance\s+is\s+exceeded$/i);
+    if (m) return lang === 'ar' ? `الاحتساب من ${m[1]} / ${m[2]} عند تجاوز مهلة السماح` : `Compter dès ${m[1]} / ${m[2]} si la tolérance est dépassée`;
+
+    m = trimmed.match(/^Count\s+only\s+minutes\s+after\s+(\d{2}:\d{2})\s+or\s+before\s+(\d{2}:\d{2})$/i);
+    if (m) return lang === 'ar' ? `احتساب الدقائق بعد ${m[1]} أو قبل ${m[2]} فقط` : `Compter uniquement les minutes après ${m[1]} ou avant ${m[2]}`;
+
+    m = trimmed.match(/^\((\d+)m\s+after\s+(\d{2}:\d{2})\)\s*·\s*OUT\s+early\s+before$/i);
+    if (m) return lang === 'ar' ? `(${m[1]} د بعد ${m[2]}) · خروج مبكر قبل` : `(${m[1]}m après ${m[2]}) · Sortie anticipée avant`;
+
+    m = trimmed.match(/^\((\d+)m\s+before\s+(\d{2}:\d{2})\)$/i);
+    if (m) return lang === 'ar' ? `(${m[1]} د قبل ${m[2]})` : `(${m[1]}m avant ${m[2]})`;
+
+    m = trimmed.match(/^Clock-IN\s+Tolerance\s*\(After\s+(\d{2}:\d{2})\)$/i);
+    if (m) return lang === 'ar' ? `سماح تسجيل الدخول (بعد ${m[1]})` : `Tolérance d'entrée (après ${m[1]})`;
+
+    m = trimmed.match(/^Clock-OUT\s+Tolerance\s*\(Before\s+(\d{2}:\d{2})\)$/i);
+    if (m) return lang === 'ar' ? `سماح تسجيل الخروج (قبل ${m[1]})` : `Tolérance de sortie (avant ${m[1]})`;
+
+    m = trimmed.match(/^Paid\s+at\s+([\d.]+x)\s+rate$/i);
+    if (m) return lang === 'ar' ? `مدفوع بمعدل ${m[1]}` : `Payé au taux ${m[1]}`;
+
+    m = trimmed.match(/^Multiplier\s*\(([\d.]+x)\)$/i);
+    if (m) return lang === 'ar' ? `مضاعف (${m[1]})` : `Multiplicateur (${m[1]})`;
+
+    m = trimmed.match(/^Deduct\s+([\d.]+)h\s+Lateness$/i);
+    if (m) return lang === 'ar' ? `خصم ${m[1]} س تأخير` : `Déduire ${m[1]}h de retard`;
+
+    m = trimmed.match(/^(Show|Hide)\s+BU\s+Shift\s+Table\s*\((\d+)\)$/i);
+    if (m) {
+      const isHide = /^hide/i.test(m[1]);
+      return lang === 'ar' ? `${isHide ? 'إخفاء' : 'إظهار'} جدول ورديات الوحدة (${m[2]})` : `${isHide ? 'Masquer' : 'Afficher'} le tableau des postes (${m[2]})`;
+    }
+
+    m = trimmed.match(/^([A-Za-z0-9 &.-]+?)\s+Default$/i);
+    if (m) {
+      const co = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `افتراضي ${co}` : `Défaut ${co}`;
+    }
+
+    m = trimmed.match(/^Apply\s+Policy\s*&\s*Rules\s+to\s+All\s+(.+?)\s+Staff$/i);
+    if (m) {
+      const co = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `تطبيق السياسة والقواعد على جميع موظفي ${co}` : `Appliquer la politique et les règles à tout le personnel ${co}`;
+    }
+
+    m = trimmed.match(/^Must\s+be\s+after\s+(\S+)\s+in\s+(.+)$/i);
+    if (m) {
+      const co = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `يجب أن يكون بعد ${m[1]} في ${co}` : `Doit être après le ${m[1]} dans ${co}`;
+    }
+
+    m = trimmed.match(/^Auto-closes\s+prior\s+Open\s+shift\s*\(([^)]+)\)\s+on\s+(\S+)\s*&\s*backfills\s+(\d+)\s+staff$/i);
+    if (m) {
+      const span = lang === 'ar' ? m[1].replace(/\bsince\b/i, 'منذ') : m[1].replace(/\bsince\b/i, 'depuis');
+      return lang === 'ar'
+        ? `يُغلق تلقائياً الوردية المفتوحة السابقة (${span}) بتاريخ ${m[2]} ويُحدّث ${m[3]} موظفاً بأثر رجعي`
+        : `Clôture auto le poste ouvert précédent (${span}) le ${m[2]} et recalcule ${m[3]} employés`;
+    }
+
+    m = trimmed.match(/^Late\s+(.+?)\s*·\s*(No\s+OT|OT\s+[\d.]+x(?:\s*\([^)]+\))?)(?:\s*·\s*(\d+)d\s+Vac)?$/i);
+    if (m) {
+      const lRaw = m[1].trim();
+      const otRaw = m[2].trim();
+      const vac = m[3];
+      const lOut = /track/i.test(lRaw)
+        ? (lang === 'ar' ? 'تأخير تتبّع ($0)' : 'Retard suivi ($0)')
+        : (/^\$/.test(lRaw) ? (lang === 'ar' ? `تأخير ${lRaw}` : `Retard ${lRaw}`) : (lang === 'ar' ? `تأخير ${lRaw}` : `Retard ${lRaw}`));
+      let otOut = '';
+      if (/no\s+ot/i.test(otRaw)) {
+        otOut = lang === 'ar' ? 'بدون إضافي' : 'Sans HS';
+      } else {
+        const otM = otRaw.match(/^OT\s+([\d.]+x)(?:\s*\(([^)]+)\))?$/i);
+        const rate = otM ? otM[1] : otRaw;
+        const pass = otM && otM[2] ? otM[2].trim() : '';
+        const passLoc = pass ? (
+          /open\s+ot/i.test(pass) ? (lang === 'ar' ? 'إضافي مفتوح' : 'HS ouvertes')
+          : (/date\s+pass/i.test(pass) ? (lang === 'ar' ? 'تصريح تاريخ' : 'Pass date') : translateCore(pass, lang, depth + 1))
+        ) : '';
+        otOut = lang === 'ar'
+          ? `إضافي ${rate}${passLoc ? ` (${passLoc})` : ''}`
+          : `HS ${rate}${passLoc ? ` (${passLoc})` : ''}`;
+      }
+      const vacOut = vac ? (lang === 'ar' ? ` · ${vac} ي إجازة` : ` · ${vac}j congés`) : '';
+      return `${lOut} · ${otOut}${vacOut}`;
+    }
 
     return null;
   }
