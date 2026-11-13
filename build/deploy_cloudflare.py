@@ -37,7 +37,10 @@ BUILD_DIR = pathlib.Path(__file__).resolve().parent
 if str(BUILD_DIR) not in sys.path:
     sys.path.insert(0, str(BUILD_DIR))
 
-from export_d1_seed import COMMITTED_MANIFEST_JSON, DB_PATH, KV_CHUNK_CHARS, _chunk_str_for_kv, file_sha256, promote_pending_manifest, sql_lit
+from export_d1_seed import (  # noqa: E402
+    COMMITTED_MANIFEST_JSON, DB_PATH, build_store_kv_stage_clear, build_store_kv_stage_stmts,
+    build_store_kv_stale_stage_clear, build_store_kv_swap, file_sha256, new_store_run_id, promote_pending_manifest, sql_lit,
+)
 from stage_pages_bundle import ROOT_ALLOWLIST, stage_pages_bundle
 
 ISABI_ROOT = BUILD_DIR.parent
@@ -319,6 +322,47 @@ def _upload_one_batch(bf: pathlib.Path, env: dict) -> str:
     return bf.name
 
 
+def read_live_store_rows(env: dict) -> list[dict] | None:
+    """Head + parts of the live store, or None when wrangler could not read them."""
+    chk = run_wrangler(
+        ["d1", "execute", "isabi-ledger", "--remote", "--json",
+         "--command=SELECT doc_key, payload_json, updated_at FROM edge_kv_store WHERE doc_key = 'mfg_web_store' OR doc_key LIKE 'mfg_web_store__part_%' ORDER BY doc_key"],
+        env,
+        check=False,
+    )
+    if chk.returncode != 0:
+        return None
+    try:
+        return json.loads(chk.stdout)[0].get("results") or []
+    except Exception:
+        return None
+
+
+def assert_live_store_parses(env: dict, after: str, expected_head_ts: str = "") -> str:
+    """Stop the deploy when the live store's chunks no longer join into valid JSON (incident 2026-11-13).
+    Reads twice before failing: a browser write is two steps (head, then parts) and a read can fall between them.
+    Returns the joined live text."""
+    last_err = ""
+    for attempt in range(3):
+        rows = read_live_store_rows(env)
+        if rows is None:
+            last_err = "wrangler could not read the store"
+        else:
+            try:
+                joined = "".join(str(x.get("payload_json") or "") for x in rows)
+                if rows:
+                    json.loads(joined)
+                head = next((x for x in rows if x.get("doc_key") == "mfg_web_store"), None)
+                if expected_head_ts and head and str(head.get("updated_at") or "") != expected_head_ts:
+                    print(f"NOTE: live store left as the browsers wrote it ({head.get('updated_at')}): a browser synced after the seed pulled it ({expected_head_ts}), so the seed's store write was skipped. It runs again at the next deploy.")
+                return joined
+            except Exception as exc:
+                last_err = str(exc)
+        if attempt < 2:
+            time.sleep(5)
+    raise SystemExit(f"ERROR: remote `mfg_web_store` does not parse after {after} ({last_err}); stop and repair before deploying (ISABICommandReference.md, grep `store chunk repair`).")
+
+
 def seed_remote_d1(
     env: dict,
     *,
@@ -380,6 +424,19 @@ def seed_remote_d1(
                 save_edge_meta(meta)
             if done == 1 or done % 15 == 0 or done == total:
                 print(f"  [{done}/{total}] {name} applied")
+        pending_fp = BATCH_DIR / "pending_manifest.json"
+        try:
+            pending = json.loads(pending_fp.read_text(encoding="utf-8"))
+        except Exception:
+            pending = {}
+        store_head_ts = str(pending.get("store_head_ts") or "")
+        live_text = assert_live_store_parses(env, "the D1 seed", store_head_ts)
+        # The manifest may only say "store written" when the live store now holds exactly what was staged; a skipped
+        # swap (browser write, or the stage cleared meanwhile) must make the next delta write the store again.
+        if store_head_ts and pending.get("store_content_sha"):
+            if hashlib.sha256(live_text.encode("utf-8")).hexdigest() != pending["store_content_sha"]:
+                pending["store_content_sha"] = ""
+                pending_fp.write_text(json.dumps(pending, ensure_ascii=False), encoding="utf-8")
 
     # Promote manifest ONLY after 100% of remote D1 batches succeed
     if promote_pending_manifest():
@@ -566,51 +623,27 @@ def migrate_remote_d1_pins_to_pbkdf2(env: dict):
         return
     kv_doc["users"] = cleaned_users
     clean_str = json.dumps(kv_doc, ensure_ascii=False)
-    chunks = _chunk_str_for_kv(clean_str, KV_CHUNK_CHARS, 64_000)
-    upd_at = str(kv_rows[0].get("updated_at") or "")
-    upd_by = str(kv_rows[0].get("updated_by") or "security_scrub")
-    rev = int(kv_rows[0].get("rev") or 1)
+    head_row = next((r for r in kv_rows if r.get("doc_key") == "mfg_web_store"), kv_rows[0])
+    upd_at = str(head_row.get("updated_at") or "")
+    upd_by = str(head_row.get("updated_by") or "security_scrub")
     # 2026-11-13 incident: this used to run one `wrangler d1 execute` per chunk (40+ calls, about 2 minutes) while
     # browsers kept syncing. A browser write landed half-way, the rest of the chunks then overwrote its tail and the
-    # live store no longer parsed. Now: ONE file, ONE call, and every statement only applies while the head row still
-    # carries the `updated_at` read above (our own writes keep that value). Tail first, head last. If anyone wrote in
-    # between, every statement is a no-op and the scrub simply runs again at the next deploy.
-    guard = f"(SELECT updated_at FROM edge_kv_store WHERE doc_key = 'mfg_web_store') = {sql_lit(upd_at)}"
-
-    def _guarded_upsert(key: str, payload: str) -> str:
-        return (
-            "INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) "
-            f"SELECT {sql_lit(key)}, {sql_lit(payload)}, {sql_lit(upd_at)}, {sql_lit(upd_by)}, {rev} WHERE {guard};\n"
-        )
-
-    expected_keys = {"mfg_web_store"}
-    kv_stmts: list[str] = []
-    for idx, ch in enumerate(chunks[1:], start=1):
-        pk = f"mfg_web_store__part_{idx:04d}"
-        expected_keys.add(pk)
-        kv_stmts.append(_guarded_upsert(pk, ch))
-    for old_r in kv_rows:
-        ok_key = str(old_r.get("doc_key") or "")
-        if ok_key and ok_key not in expected_keys:
-            kv_stmts.append(f"DELETE FROM edge_kv_store WHERE doc_key = {sql_lit(ok_key)} AND {guard};\n")
-    kv_stmts.append(_guarded_upsert("mfg_web_store", chunks[0]))
+    # live store no longer parsed. Now the same staged swap as the D1 seed (export_d1_seed.build_store_kv_swap): the
+    # cleaned document is staged under `mfg_web_store__next_NNNN` (no reader joins those), then ONE statement swaps it
+    # in, only while the head still carries the `updated_at` read above. Nothing relies on a file being applied whole;
+    # if a browser wrote in between, the swap is a no-op and the scrub simply runs again at the next deploy.
+    run_id = new_store_run_id()
+    stage = [stmt for _, stmt in build_store_kv_stage_stmts(clean_str, upd_at, upd_by, run_id)]
     with tempfile.TemporaryDirectory(prefix="isabi-d1-kv-") as td:
-        fp = pathlib.Path(td) / "kv_scrub.sql"
-        fp.write_bytes("".join(kv_stmts).encode("utf-8"))
+        fp = pathlib.Path(td) / "kv_scrub_stage.sql"
+        fp.write_bytes("".join(s + ";\n" for s in [build_store_kv_stale_stage_clear()] + stage).encode("utf-8"))
         run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={fp}"], env, check=True)
+        fp2 = pathlib.Path(td) / "kv_scrub_swap.sql"
+        fp2.write_bytes((build_store_kv_swap(len(stage) - 1, upd_at, run_id) + ";\n" + build_store_kv_stage_clear(run_id) + ";\n").encode("utf-8"))
+        run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={fp2}"], env, check=True)
     # Read back: the parts must join into valid JSON whether or not the guard let the scrub through.
-    chk = run_wrangler(
-        ["d1", "execute", "isabi-ledger", "--remote", "--json",
-         "--command=SELECT doc_key, payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store' OR doc_key LIKE 'mfg_web_store__part_%' ORDER BY doc_key"],
-        env,
-        check=False,
-    )
-    try:
-        chk_rows = json.loads(chk.stdout)[0].get("results") or []
-        json.loads("".join(str(x.get("payload_json") or "") for x in chk_rows))
-    except Exception as exc:
-        raise SystemExit(f"ERROR: remote `mfg_web_store` does not parse after the PIN scrub ({exc}); stop and repair before deploying.")
-    print(f"Scrubbed legacy PIN / face fields from remote D1 `edge_kv_store` in one guarded batch ({len(chunks)} chunk(s); no-op if a browser wrote meanwhile).")
+    assert_live_store_parses(env, "the PIN scrub", upd_at)
+    print(f"Scrubbed legacy PIN / face fields from remote D1 `edge_kv_store` with one guarded swap ({len(stage)} chunk(s); no-op if a browser wrote meanwhile).")
 
 
 def deploy_pages(env: dict):

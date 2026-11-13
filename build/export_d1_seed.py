@@ -29,6 +29,7 @@ import json
 import os
 import pathlib
 import re
+import secrets
 import shutil
 import sqlite3
 import subprocess
@@ -861,8 +862,14 @@ def _fetch_legacy_relay_store() -> dict:
 
 
 def fetch_live_cloud_store(offline: bool = False) -> dict:
+    global _LIVE_EDGE_HEAD_TS, _STORE_RUN_ID, _STORE_CONTENT_SHA
+    _LIVE_EDGE_HEAD_TS = ""
+    _STORE_RUN_ID = new_store_run_id()
+    _STORE_CONTENT_SHA = ""
     if not offline:
         edge_doc = _fetch_edge_store()
+        # The live head this export may overwrite: only a store actually pulled from Edge just now counts
+        _LIVE_EDGE_HEAD_TS = str((edge_doc or {}).get("updatedAt") or "") if isinstance(edge_doc, dict) and edge_doc.get("customRecords") else ""
         relay_doc = _fetch_legacy_relay_store()
         merged = merge_mfg_web_stores(edge_doc, relay_doc)
         if merged:
@@ -1091,6 +1098,111 @@ def build_delete_stmt(table: str, pk_vals: list[str], valid_tables: set[str]) ->
     return f"DELETE FROM {table} WHERE {where_sql}"
 
 
+# ---- Live store document (`edge_kv_store` `mfg_web_store` + `mfg_web_store__part_NNNN`) ----
+# Incident 2026-11-13: chunk writes spread over several calls left the joined chunks unparseable while a browser synced
+# (every device then synced an empty store). The export now never writes a live chunk directly:
+#   1. the new document is staged under `mfg_web_store__next_NNNN` (0000 = head), which no reader joins;
+#   2. ONE guarded INSERT ... SELECT swaps the staged rows in (head + parts), and blanks any older tail part past the
+#      new last one, so the joined text is valid JSON before and after that single, atomic statement;
+#   3. the staged rows are removed.
+# The swap only applies while the head row still carries the `updated_at` read at pull time (a browser write in
+# between wins whole). Without a pulled live head (Edge pull failed, or --offline from the cache) nothing is written.
+_LIVE_EDGE_HEAD_TS = ""
+_STORE_RUN_ID = ""  # set per export run (fetch_live_cloud_store / _store_run_id)
+_STORE_CONTENT_SHA = ""  # sha256 of the store document this run would write (delta skips the store when unchanged)
+STORE_KV_KEY = "mfg_web_store"
+STORE_KV_STAGE = f"{STORE_KV_KEY}__next_"
+
+
+def is_store_kv_doc_key(doc_key: str) -> bool:
+    return doc_key == STORE_KV_KEY or doc_key.startswith(f"{STORE_KV_KEY}__part_") or doc_key.startswith(STORE_KV_STAGE)
+
+
+def is_store_kv_row_key(rk: str) -> bool:
+    try:
+        tbl, pk_vals = decode_row_key(rk)
+    except Exception:
+        return False
+    return tbl == "edge_kv_store" and len(pk_vals) == 1 and is_store_kv_doc_key(pk_vals[0])
+
+
+def store_kv_head_guard(head_ts: str) -> str:
+    # A missing head (brand-new database) lets the write through; any other value must match the pulled head.
+    return (
+        f"COALESCE((SELECT updated_at FROM edge_kv_store WHERE doc_key = '{STORE_KV_KEY}'), {sql_lit(head_ts)}) "
+        f"= {sql_lit(head_ts)}"
+    )
+
+
+def new_store_run_id() -> str:
+    """`YYYYMMDDHHMMSS` (UTC) + 6 hex: each run stages under its own prefix, so two deploys never mix their chunks."""
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M%S") + secrets.token_hex(3)
+
+
+def _store_run_id() -> str:
+    global _STORE_RUN_ID
+    if not _STORE_RUN_ID:
+        _STORE_RUN_ID = new_store_run_id()
+    return _STORE_RUN_ID
+
+
+def _store_stage_prefix(run_id: str) -> str:
+    return f"{STORE_KV_STAGE}{run_id}_"
+
+
+def build_store_kv_stage_stmts(store_json: str, head_ts: str, updated_by: str, run_id: str) -> list[tuple[str, str]]:
+    """`(staged doc_key, stmt)` pairs that stage the whole document under `mfg_web_store__next_<run>_NNNN`
+    (0000 = head). Invisible to every reader; they may land in any number of batch files."""
+    chunks = _chunk_str_for_kv(store_json, KV_CHUNK_CHARS, 64_000)
+    pre = _store_stage_prefix(run_id)
+    return [
+        (
+            f"{pre}{i:04d}",
+            "INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) "
+            f"VALUES ({sql_lit(f'{pre}{i:04d}')}, {sql_lit(ch)}, {sql_lit(head_ts)}, {sql_lit(updated_by)}, 1)",
+        )
+        for i, ch in enumerate(chunks)
+    ]
+
+
+def build_store_kv_stage_clear(run_id: str) -> str:
+    """Removes this run's staged rows."""
+    pre = _store_stage_prefix(run_id)
+    return f"DELETE FROM edge_kv_store WHERE substr(doc_key, 1, {len(pre)}) = {sql_lit(pre)}"
+
+
+def build_store_kv_stale_stage_clear(max_age_hours: int = 24) -> str:
+    """Removes staged rows of runs started more than `max_age_hours` ago (aborted deploys); never a live run's."""
+    cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=max_age_hours)).strftime("%Y%m%d%H%M%S")
+    n = len(STORE_KV_STAGE)
+    return (
+        f"DELETE FROM edge_kv_store WHERE substr(doc_key, 1, {n}) = {sql_lit(STORE_KV_STAGE)} "
+        f"AND substr(doc_key, {n + 1}, 14) < {sql_lit(cutoff)}"
+    )
+
+
+def build_store_kv_swap(n_parts: int, head_ts: str, run_id: str) -> str:
+    """ONE statement: this run's staged head + parts become the live rows, and every older live part past `n_parts`
+    is blanked (an empty part joins as nothing). Applies only while the live head still carries `head_ts` AND every
+    one of this run's `n_parts + 1` staged rows is present; otherwise nothing changes."""
+    pre = _store_stage_prefix(run_id)
+    p = len(pre)
+    guard = (
+        f"{store_kv_head_guard(head_ts)} "
+        f"AND (SELECT count(*) FROM edge_kv_store WHERE substr(doc_key, 1, {p}) = {sql_lit(pre)}) = {n_parts + 1}"
+    )
+    last_part = f"{STORE_KV_KEY}__part_{n_parts:04d}"
+    return (
+        "INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) "
+        f"SELECT CASE WHEN substr(doc_key, {p + 1}) = '0000' THEN '{STORE_KV_KEY}' "
+        f"ELSE '{STORE_KV_KEY}__part_' || substr(doc_key, {p + 1}) END, payload_json, updated_at, updated_by, rev "
+        f"FROM edge_kv_store WHERE substr(doc_key, 1, {p}) = {sql_lit(pre)} AND {guard} "
+        "UNION ALL "
+        f"SELECT doc_key, '', updated_at, updated_by, rev FROM edge_kv_store "
+        f"WHERE substr(doc_key, 1, {len(STORE_KV_KEY) + 7}) = '{STORE_KV_KEY}__part_' AND doc_key > '{last_part}' AND {guard}"
+    )
+
+
 def collect_target_rows(
     db_path: pathlib.Path,
     schema_cols: dict[str, list[str]],
@@ -1099,6 +1211,8 @@ def collect_target_rows(
     explicit_delete_rks: set[str] | None = None,
 ) -> dict[str, str]:
     """Collect deduplicated canonical `(table, pk) -> SQL UPSERT` across SQLite + SharePoint snapshot + spine + live cloud state."""
+    global _STORE_CONTENT_SHA
+    _STORE_CONTENT_SHA = ""
     target_rows: dict[str, str] = {}
     staged_dicts: dict[str, tuple[str, tuple[str, ...], dict]] = {}
 
@@ -1533,7 +1647,8 @@ def collect_target_rows(
                 )
                 _put("industry_row_edits", (ek_s,), stmt)
 
-        if remote.get("workSchedules"):
+        # Only from a store pulled live just now: a relay-only or cached copy must not overwrite live schedules
+        if remote.get("workSchedules") and _LIVE_EDGE_HEAD_TS:
             ws_ts = str(remote.get("updatedAt") or "")
             stmt = (
                 f"INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) "
@@ -1569,24 +1684,17 @@ def collect_target_rows(
                 ku_c.pop("_d1_authoritative_id", None)
                 redacted_users.append(ku_c)
             kv_remote["users"] = redacted_users
-        raw_store_json = json.dumps(kv_remote, ensure_ascii=False)
-        kv_chunks = _chunk_str_for_kv(raw_store_json, KV_CHUNK_CHARS, 64_000)
-        upd_ts = str(remote.get("updatedAt") or "")
-        upd_by = str(remote.get("updatedBy") or "seed")
-        _put(
-            "edge_kv_store",
-            ("mfg_web_store",),
-            f"INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) "
-            f"VALUES ('mfg_web_store', {sql_lit(kv_chunks[0])}, {sql_lit(upd_ts)}, {sql_lit(upd_by)}, 1)",
-        )
-        for part_idx, chunk_str in enumerate(kv_chunks[1:], start=1):
-            part_key = f"mfg_web_store__part_{part_idx:04d}"
-            _put(
-                "edge_kv_store",
-                (part_key,),
-                f"INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) "
-                f"VALUES ({sql_lit(part_key)}, {sql_lit(chunk_str)}, {sql_lit(upd_ts)}, {sql_lit(upd_by)}, 1)",
-            )
+        head_ts = _LIVE_EDGE_HEAD_TS
+        if not head_ts:
+            print("Live store head not pulled from Edge (pull failed or --offline): `mfg_web_store` is left as it is in D1.")
+        else:
+            # Same stamp in the document and on the row, so browsers' compare-and-swap keeps matching
+            kv_remote["updatedAt"] = head_ts
+            raw_store_json = json.dumps(kv_remote, ensure_ascii=False)
+            _STORE_CONTENT_SHA = hashlib.sha256(raw_store_json.encode("utf-8")).hexdigest()
+            upd_by = str(remote.get("updatedBy") or "seed")
+            for doc_key, stmt in build_store_kv_stage_stmts(raw_store_json, head_ts, upd_by, _store_run_id()):
+                _put("edge_kv_store", (doc_key,), stmt)
 
     return target_rows
 
@@ -1610,12 +1718,14 @@ def export_all(
 
     cur_hashes = {rk: stmt_hash(stmt) for rk, stmt in target_rows.items()}
     prev_hashes: dict[str, str] = {}
+    prev_store_sha = ""
     use_delta = False
     if delta and manifest_path.exists():
         try:
             prev_data = json.loads(manifest_path.read_text(encoding="utf-8"))
             if isinstance(prev_data.get("row_hashes"), dict) and prev_data["row_hashes"]:
                 prev_hashes = prev_data["row_hashes"]
+                prev_store_sha = str(prev_data.get("store_content_sha") or "")
                 use_delta = True
         except Exception as ex:
             print(f"WARN: Could not parse previous D1 manifest ({ex}); falling back to full export.")
@@ -1624,6 +1734,14 @@ def export_all(
     emitted_deletes = 0
     emitted_upserts = 0
     skipped_unchanged = 0
+    # The store document is written whole (staged, then one guarded swap) or not at all: a delta that rewrote only
+    # the chunks whose hash moved since the last manifest could join new chunks with whatever browsers wrote since.
+    # Delta leaves the store alone when the document is the one the last export wrote.
+    store_head_ts = _LIVE_EDGE_HEAD_TS
+    store_has_rows = bool(store_head_ts) and any(is_store_kv_row_key(rk) for rk in target_rows)
+    store_unchanged = bool(use_delta and store_has_rows and prev_store_sha and prev_store_sha == _STORE_CONTENT_SHA)
+    store_written = store_has_rows and not store_unchanged
+    store_parts = sum(1 for rk in target_rows if is_store_kv_row_key(rk)) - 1 if store_written else 0
 
     if use_delta:
         # 1. Delete vanished relational rows + upgraded/purged live legacy PKs first; defer shrunk edge_kv_store tail chunks until after KV upserts.
@@ -1639,6 +1757,10 @@ def export_all(
             if tbl not in valid_tables or tbl in EDGE_RUNTIME_TABLES:
                 continue
             if tbl == "edge_kv_store":
+                if is_store_kv_row_key(del_key) or not store_head_ts:
+                    # Store chunks only change through the staged swap below, never one by one; and a pull that
+                    # failed must not read as "every live document vanished" (store or work schedules)
+                    continue
                 del_stmt = build_delete_stmt(tbl, pk_vals, valid_tables)
                 if del_stmt:
                     deferred_kv_deletes.append(del_stmt)
@@ -1663,8 +1785,14 @@ def export_all(
                         emitted_deletes += 1
 
         # 2. Upsert only newly added or modified rows (any field/code edit changes SHA-256)
+        if store_written:
+            writer.add(build_store_kv_stale_stage_clear())
         for rk, stmt in target_rows.items():
-            if prev_hashes.get(rk) == cur_hashes[rk]:
+            if is_store_kv_row_key(rk):
+                if not store_written:
+                    skipped_unchanged += 1
+                    continue
+            elif prev_hashes.get(rk) == cur_hashes[rk]:
                 skipped_unchanged += 1
                 continue
             writer.add(stmt)
@@ -1682,17 +1810,17 @@ def export_all(
                 if del_stmt:
                     writer.add(del_stmt)
                     emitted_deletes += 1
+        if store_written:
+            writer.add(build_store_kv_stale_stage_clear())
         for stmt in target_rows.values():
             writer.add(stmt)
             emitted_upserts += 1
-        # Clean up stale mfg_web_store__part_* tail chunks in the final batch AFTER all new chunks are inserted
-        if remote:
-            max_part = sum(1 for rk in target_rows if rk.startswith('["edge_kv_store","mfg_web_store__part_'))
-            writer.add(
-                f"DELETE FROM edge_kv_store WHERE doc_key LIKE 'mfg_web_store__part_%' "
-                f"AND doc_key > 'mfg_web_store__part_{max_part:04d}'"
-            )
 
+    # The live store changes in ONE statement, in its own last batch file, after every staged chunk has landed
+    if store_written:
+        writer.flush()
+        writer.add(build_store_kv_swap(store_parts, store_head_ts, _store_run_id()))
+        writer.add(build_store_kv_stage_clear(_store_run_id()))
     writer.flush()
 
     meta = {
@@ -1705,6 +1833,11 @@ def export_all(
         "skipped_unchanged": skipped_unchanged,
         "batch_count": len(writer.files),
         "row_hashes": cur_hashes,
+        # deploy_cloudflare.py compares this with the live head after the upload: a different value means a browser
+        # wrote in between and the store swap was (correctly) skipped
+        "store_head_ts": store_head_ts if store_written else "",
+        # what the store holds after this run as far as the export knows (kept when the pull failed)
+        "store_content_sha": _STORE_CONTENT_SHA if store_has_rows else prev_store_sha,
     }
     pending_file = out_dir / "pending_manifest.json"
     pending_file.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")

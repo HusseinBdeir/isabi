@@ -668,6 +668,14 @@ import json, pathlib, shutil, sqlite3, sys, tempfile
 sys.path.insert(0, r"${path.join(ROOT, 'build').replace(/\\/g, '\\\\')}")
 import export_d1_seed as eds
 
+def live(doc):
+    # stands in for a live Edge pull: the export only writes the store from a head it just pulled
+    def _f(offline=False):
+        eds._LIVE_EDGE_HEAD_TS = str(doc.get("updatedAt") or "")
+        eds._STORE_RUN_ID = eds.new_store_run_id()
+        return doc
+    return _f
+
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="isabi-d1-delta-test-"))
 try:
     dbp = tmp / "mini.db"
@@ -686,7 +694,7 @@ try:
         "updatedAt": "2026-11-08T10:00:00.000Z",
         "industryCustomRows": {"hosp_folios": [{"id": "fol-1", "code": "F-100", "company": "blanca", "rev": 1}]}
     }
-    eds.fetch_live_cloud_store = lambda offline=False: store_v1
+    eds.fetch_live_cloud_store = live(store_v1)
 
     # Run 1: Full seed + promote manifest
     files1, meta1 = eds.export_all(delta=True, manifest_path=man, db_path=dbp, out_dir=out)
@@ -704,7 +712,7 @@ try:
     conn.commit()
     conn.close()
     store_v2 = {"updatedAt": "2026-11-08T10:05:00.000Z", "industryCustomRows": {"hosp_folios": []}}
-    eds.fetch_live_cloud_store = lambda offline=False: store_v2
+    eds.fetch_live_cloud_store = live(store_v2)
     files3, meta3 = eds.export_all(delta=True, manifest_path=man, db_path=dbp, out_dir=out)
     sql3 = "\\n".join(f.read_text(encoding="utf-8") for f in files3)
     assert meta3["emitted_upserts"] == 2, f"expected st0 + mfg_web_store upserts, got {meta3}"
@@ -732,7 +740,7 @@ try:
         )
     conn_s.commit()
     conn_s.close()
-    eds.fetch_live_cloud_store = lambda offline=False: {"updatedAt": "2026-11-08T10:00:00.000Z"}
+    eds.fetch_live_cloud_store = live({"updatedAt": "2026-11-08T10:00:00.000Z"})
     eds.export_all(delta=True, manifest_path=man_s, db_path=dbp_s, out_dir=out_s)
     eds.promote_pending_manifest(out_dir=out_s, manifest_path=man_s)
 
@@ -778,7 +786,7 @@ try:
         json.dumps({"MEM-2025-001": "MEM-2025-a1b2c3d4e5", "AGR-001": "AGR-2026-f1e2d3c4b5"}),
         encoding="utf-8",
     )
-    eds.fetch_live_cloud_store = lambda offline=False: {
+    eds.fetch_live_cloud_store = live({
         "updatedAt": "2026-11-08T10:20:00.000Z",
         "industryRowEdits": {
             "Hospitality & Resorts::Memberships Register::MEM-2025-001": {
@@ -815,7 +823,7 @@ try:
                 {"id": "ex99-i2", "expense_id": "ex99", "date": "2026-11-08", "company": "WTC", "item": "Gasket", "total": 80.0}
             ]
         }
-    }
+    })
     files_u, _meta_u = eds.export_all(delta=False, manifest_path=man_u, db_path=dbp_u, out_dir=out_u)
     sql_u = "\\n".join(f.read_text(encoding="utf-8") for f in files_u)
     d1_u = sqlite3.connect(str(tmp / "d1_upgrade_check.db"))
@@ -903,16 +911,19 @@ try:
         ]}
     )
     assert len(m_users["users"]) == 2
-    eds.fetch_live_cloud_store = lambda offline=False: m_users
-    files6, _ = eds.export_all(delta=False, offline=True, manifest_path=tmp / "m6.json", db_path=dbp, out_dir=tmp / "b6", include_snapshot=False)
+    eds.fetch_live_cloud_store = live(m_users)
+    files6, _ = eds.export_all(delta=False, offline=False, manifest_path=tmp / "m6.json", db_path=dbp, out_dir=tmp / "b6", include_snapshot=False)
     sql6 = "\\n".join(bf.read_text(encoding="utf-8") for bf in files6)
-    assert sql6.find("DELETE FROM edge_kv_store WHERE doc_key LIKE 'mfg_web_store__part_%'") > sql6.find("'mfg_web_store__part_0001'") > 0
+    # the live store changes in one guarded swap statement, in the last batch file, after every staged chunk
+    assert "__part_' || substr" in files6[-1].read_text(encoding="utf-8") and sql6.find("__part_' || substr") > sql6.find("mfg_web_store__next_") > 0
     for bf in files6:
         d1_sim.executescript(bf.read_text(encoding="utf-8"))
     d1_sim.commit()
     r_u1 = d1_sim.execute("SELECT id, pin_code, role, face_samples, last_login_at FROM users WHERE email='husseinbdeir@bhfirms.com'").fetchone()
     r_op = d1_sim.execute("SELECT id, pin_code, status, companies, face_samples FROM users WHERE email='ops@bhfirms.com'").fetchone()
-    stale_cnt = d1_sim.execute("SELECT COUNT(*) FROM edge_kv_store WHERE doc_key='mfg_web_store__part_0005'").fetchone()[0]
+    stale_cnt = d1_sim.execute("SELECT COUNT(*) FROM edge_kv_store WHERE doc_key='mfg_web_store__part_0005' AND payload_json <> ''").fetchone()[0]
+    kv6 = "".join(r[0] for r in d1_sim.execute("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store' OR doc_key LIKE 'mfg_web_store__part_%' ORDER BY doc_key").fetchall())
+    assert len(json.loads(kv6)["users"]) == 2, "store does not parse after the swap"
     d1_sim.close()
     assert r_u1[1].startswith("pbkdf2$sha256$100000$") and r_u1 == ("u1", eds._hash_seed_pin("9876", "u1", "husseinbdeir@bhfirms.com"), "Full Access (Owner)", "[[0.9,0.8]]", "2026-11-08 14:00:00"), f"u1: {r_u1}"
     assert r_op == ("u-edge-1", "4321", "Suspended", "WTC", "[[0.5,0.5]]") and stale_cnt == 0, f"ops: {r_op}, stale={stale_cnt}"
