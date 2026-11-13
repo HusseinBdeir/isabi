@@ -537,7 +537,8 @@ def migrate_remote_d1_pins_to_pbkdf2(env: dict):
     raw_kv = "".join(str(x.get("payload_json") or "") for x in kv_rows)
     try:
         kv_doc = json.loads(raw_kv)
-    except Exception:
+    except Exception as exc:
+        print(f"WARNING: remote `mfg_web_store` does not parse ({exc}); PIN scrub skipped. The live store needs repair (see ISABICommandReference.md, grep `store chunk repair`).")
         kv_doc = None
     if not isinstance(kv_doc, dict) or not isinstance(kv_doc.get("users"), list):
         return
@@ -566,26 +567,47 @@ def migrate_remote_d1_pins_to_pbkdf2(env: dict):
     upd_at = str(kv_rows[0].get("updated_at") or "")
     upd_by = str(kv_rows[0].get("updated_by") or "security_scrub")
     rev = int(kv_rows[0].get("rev") or 1)
-    kv_stmts: list[str] = [
-        f"INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) VALUES ('mfg_web_store', {sql_lit(chunks[0])}, {sql_lit(upd_at)}, {sql_lit(upd_by)}, {rev});\n"
-    ]
+    # 2026-11-13 incident: this used to run one `wrangler d1 execute` per chunk (40+ calls, about 2 minutes) while
+    # browsers kept syncing. A browser write landed half-way, the rest of the chunks then overwrote its tail and the
+    # live store no longer parsed. Now: ONE file, ONE call, and every statement only applies while the head row still
+    # carries the `updated_at` read above (our own writes keep that value). Tail first, head last. If anyone wrote in
+    # between, every statement is a no-op and the scrub simply runs again at the next deploy.
+    guard = f"(SELECT updated_at FROM edge_kv_store WHERE doc_key = 'mfg_web_store') = {sql_lit(upd_at)}"
+
+    def _guarded_upsert(key: str, payload: str) -> str:
+        return (
+            "INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) "
+            f"SELECT {sql_lit(key)}, {sql_lit(payload)}, {sql_lit(upd_at)}, {sql_lit(upd_by)}, {rev} WHERE {guard};\n"
+        )
+
     expected_keys = {"mfg_web_store"}
+    kv_stmts: list[str] = []
     for idx, ch in enumerate(chunks[1:], start=1):
         pk = f"mfg_web_store__part_{idx:04d}"
         expected_keys.add(pk)
-        kv_stmts.append(
-            f"INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) VALUES ({sql_lit(pk)}, {sql_lit(ch)}, {sql_lit(upd_at)}, {sql_lit(upd_by)}, {rev});\n"
-        )
+        kv_stmts.append(_guarded_upsert(pk, ch))
     for old_r in kv_rows:
         ok_key = str(old_r.get("doc_key") or "")
         if ok_key and ok_key not in expected_keys:
-            kv_stmts.append(f"DELETE FROM edge_kv_store WHERE doc_key = {sql_lit(ok_key)};\n")
+            kv_stmts.append(f"DELETE FROM edge_kv_store WHERE doc_key = {sql_lit(ok_key)} AND {guard};\n")
+    kv_stmts.append(_guarded_upsert("mfg_web_store", chunks[0]))
     with tempfile.TemporaryDirectory(prefix="isabi-d1-kv-") as td:
-        for s_idx, stmt in enumerate(kv_stmts):
-            fp = pathlib.Path(td) / f"kv_{s_idx:04d}.sql"
-            fp.write_bytes(stmt.encode("utf-8"))
-            run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={fp}"], env, check=True)
-    print(f"Scrubbed legacy PIN fields from remote D1 `edge_kv_store` across {len(chunks)} chunk(s).")
+        fp = pathlib.Path(td) / "kv_scrub.sql"
+        fp.write_bytes("".join(kv_stmts).encode("utf-8"))
+        run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={fp}"], env, check=True)
+    # Read back: the parts must join into valid JSON whether or not the guard let the scrub through.
+    chk = run_wrangler(
+        ["d1", "execute", "isabi-ledger", "--remote", "--json",
+         "--command=SELECT doc_key, payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store' OR doc_key LIKE 'mfg_web_store__part_%' ORDER BY doc_key"],
+        env,
+        check=False,
+    )
+    try:
+        chk_rows = json.loads(chk.stdout)[0].get("results") or []
+        json.loads("".join(str(x.get("payload_json") or "") for x in chk_rows))
+    except Exception as exc:
+        raise SystemExit(f"ERROR: remote `mfg_web_store` does not parse after the PIN scrub ({exc}); stop and repair before deploying.")
+    print(f"Scrubbed legacy PIN / face fields from remote D1 `edge_kv_store` in one guarded batch ({len(chunks)} chunk(s); no-op if a browser wrote meanwhile).")
 
 
 def deploy_pages(env: dict):
