@@ -29045,8 +29045,13 @@
     const days = Array.isArray(ver.days) ? ver.days.map(Number) : [1, 2, 3, 4, 5, 6];
     // Same timing the attendance rules use: a dated exception first, then the weekday, then regular hours; an
     // exception replaces a split shift's two windows (resolveStaffShiftForDate does the same).
-    const t = resolveShiftTimingForDate(ver, d, dow);
-    // A closed date (holiday preset or closed exception) has no planned window, like a weekly day off. A
+    // Public holidays are per person (staffHolidayOn): holiday items an older version wrote on the shift do not
+    // change the shift's plan.
+    const verPlan = (Array.isArray(ver.date_timings) && ver.date_timings.some(isLegacyShiftHolidayItem))
+      ? Object.assign({}, ver, { date_timings: ver.date_timings.filter(it => !isLegacyShiftHolidayItem(it)) })
+      : ver;
+    const t = resolveShiftTimingForDate(verPlan, d, dow);
+    // A closed date (company closure or closed exception) has no planned window, like a weekly day off. A
     // shortened day (Ramadan / winter) comes back with its own start and end (first start, last end on a split).
     if (t && t.isOff) return null;
     const special = Boolean(t && t.isDaySpecific);
@@ -29139,6 +29144,8 @@
       const startSlot = Math.floor(inM / 30);
       const nSlots = Math.min(WS_ACT_SLOTS, Math.max(1, Math.ceil(((inM % 30) + len) / 30)));
       for (let i = 0; i < nSlots; i++) acc.slots[(startSlot + i) % WS_ACT_SLOTS] += 1;
+      // A public holiday this person receives: no planned window for them that day (holidays are per person).
+      if (staffHolidayOn(a.staff, a.company || sh.company, a.set_date || a.rep_date || a.date)) { acc.offDay += 1; return; }
       const dKey = `${sh.id}|${String(a.set_date || a.rep_date || a.date || '').slice(0, 10)}`;
       let plan = planCache.get(dKey);
       if (plan === undefined) {
@@ -112763,7 +112770,27 @@
         const cur = ws.companyPolicyDefaults[normKey];
         const curObj = cur && typeof cur === 'object' ? cur : (cur ? { group_id: String(cur), updated_at: '' } : null);
         if (!curObj || String(incObj.updated_at || '') > String(curObj.updated_at || '')) {
-          ws.companyPolicyDefaults[normKey] = Object.assign({}, curObj || {}, incObj);
+          const merged = Object.assign({}, curObj || {}, incObj);
+          // The holiday selection has its own clock (holidays.updated_at). An entry that arrives newer but
+          // carries no selection (a device on an older version rewrote it) or an older one (a device that had
+          // not synced changed the default policy) must not replace ours: keep ours and stamp the entry
+          // above the incoming one so the next sync sends it back.
+          const curHolTs = String((curObj && curObj.holidays && curObj.holidays.updated_at) || '');
+          const incHolTs = String((incObj.holidays && incObj.holidays.updated_at) || '');
+          if (curObj && curObj.holidays && (!incObj.holidays || curHolTs > incHolTs)) {
+            merged.holidays = curObj.holidays;
+            const incMs = Date.parse(String(incObj.updated_at || ''));
+            merged.updated_at = new Date(Math.max(Date.now(), Number.isFinite(incMs) ? incMs + 1000 : 0)).toISOString();
+          }
+          ws.companyPolicyDefaults[normKey] = merged;
+          _holidayCfgRev = (_holidayCfgRev || 0) + 1;
+          changed = true;
+        } else if (curObj && incObj.holidays
+          && String(incObj.holidays.updated_at || '') > String((curObj.holidays && curObj.holidays.updated_at) || '')) {
+          // Our entry is newer overall but the incoming holiday selection is newer than ours: take it, and
+          // stamp the entry so the combined record goes back up.
+          ws.companyPolicyDefaults[normKey] = Object.assign({}, curObj, { holidays: incObj.holidays, updated_at: new Date().toISOString() });
+          _holidayCfgRev = (_holidayCfgRev || 0) + 1;
           changed = true;
         }
       });
@@ -125157,7 +125184,9 @@
     const nextId = normalizePolicyGroupIdAlias(groupId) || 'pkg_15_open_15d';
     const prevDefId = getCompanyDefaultPolicyGroupId(co);
     const nowIso = new Date().toISOString();
-    ws.companyPolicyDefaults[coKey] = { company: co, group_id: nextId, updated_at: nowIso };
+    // Keep what else the business's entry holds (its holiday selection).
+    const prevCoDef = ws.companyPolicyDefaults[coKey];
+    ws.companyPolicyDefaults[coKey] = Object.assign({}, (prevCoDef && typeof prevCoDef === 'object') ? prevCoDef : {}, { company: co, group_id: nextId, updated_at: nowIso });
     const grpObj = getPolicyGroups(co).find(g => g.id === nextId) || DEFAULT_POLICY_GROUPS[0];
     let backfilledStaff = 0;
     if (opts.backfill !== false && grpObj) {
@@ -126549,6 +126578,27 @@
     let isDateSpecific = false;
     let dateTimingNote = '';
     let isClosedDay = false;
+    // Public holidays are per person: the business observes the holiday and this person is ticked to receive
+    // holidays (default: nobody). `holidays:<year>` items an older version wrote on the shift are left out, so
+    // a holiday never closes the day for someone who does not receive it. The holiday enters the dated
+    // exceptions as a closed item, so the person's or the shift's own exception on the same dates still wins.
+    if (!activeOv) {
+      const holNow = staffHolidayOn(staffName, effCo, dStr);
+      const hasLegacyHol = Array.isArray(chosenShift.date_timings) && chosenShift.date_timings.some(isLegacyShiftHolidayItem);
+      if (holNow || hasLegacyHol) {
+        const ownDates = normalizeDateTimingsList(chosenShift.date_timings).filter(it => !isLegacyShiftHolidayItem(it));
+        chosenShift.date_timings = holNow
+          ? normalizeDateTimingsList([{
+            id: `hol_${holNow.hol}_${holNow.start_date.replace(/-/g, '')}`,
+            start_date: holNow.start_date,
+            end_date: holNow.end_date,
+            day_off: true,
+            note: holNow.name,
+            preset: `hol:${holNow.year || holNow.start_date.slice(0, 4)}`
+          }].concat(ownDates))
+          : ownDates;
+      }
+    }
     if (!activeOv && wk.dayIdx >= 0) {
       const resolvedTiming = resolveShiftTimingForDate(chosenShift, dStr, wk.dayIdx);
       if (resolvedTiming && resolvedTiming.isOff) {
@@ -130917,6 +130967,9 @@
     let draftSickDays = Number(rule.sick_days != null ? rule.sick_days : 7);
     let draftWorkingDays = [26, 30].includes(Number(rule.working_days)) ? Number(rule.working_days) : 30;
     let draftPerks = Array.isArray(rule.perks) ? rule.perks.slice() : ['Site Transport', 'Paid Leave'];
+    // Public holidays are opt-in per person (default: does not receive them).
+    const savedHolidaysOn = staffReceivesHolidays(entry.name, entry.company);
+    let draftHolidaysOn = savedHolidaysOn;
     let draftLateHalfDayMin = Number(rule.late_half_day_after_min != null ? rule.late_half_day_after_min : 60);
     let draftNoClockOutRule = rule.no_clock_out_rule || 'half_day';
     const activeShiftObj = shiftTypes.find(t => t.id === draftShiftId);
@@ -131569,6 +131622,18 @@
                     </div>
                   </div>
                 </div>
+
+                <div class="ssm-comp-card" id="ssmHolidaysCard">
+                  <div class="ssm-comp-head">
+                    <label>Public Holidays</label>
+                    <span class="badge ${draftHolidaysOn ? 'badge-brass' : ''}">${draftHolidaysOn ? 'Receives Holidays' : 'No Holidays'}</span>
+                  </div>
+                  <div class="ssm-seg-pills">
+                    <button type="button" class="kiosk-qchip ${draftHolidaysOn ? '' : 'active'}" data-ssm-holidays="0">Works on Holidays</button>
+                    <button type="button" class="kiosk-qchip ${draftHolidaysOn ? 'active' : ''}" data-ssm-holidays="1">Receives Holidays</button>
+                  </div>
+                  <div class="muted" style="font-size:11px;margin-top:4px">Applies from today; holidays already past stay as they were counted. The holidays this business observes are chosen under Holidays &amp; Seasons.</div>
+                </div>
               </div>
 
               <div class="ssm-perks-box">
@@ -132125,6 +132190,14 @@
         btn.addEventListener('click', () => {
           syncLiveInputs();
           draftWorkingDays = Number(btn.getAttribute('data-ssm-workdays-basis') || 30) === 26 ? 26 : 30;
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-holidays]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftHolidaysOn = btn.getAttribute('data-ssm-holidays') === '1';
           renderModalInner();
         });
       });
@@ -132903,6 +132976,10 @@
           ot_passes: draftPasses,
           shift_overrides: draftOverrides
         });
+        if (draftHolidaysOn !== savedHolidaysOn) {
+          const hr = setStaffReceivesHolidays(entry.name, entry.company, draftHolidaysOn);
+          if (hr && hr.ok === false) toast(hr.error || 'Could not save the holiday setting', 'warn');
+        }
         toast(`Saved shift, policy & perks group, multipliers & rules for ${entry.name}`, 'ok');
         closeStaffScheduleModal();
       });
@@ -133556,8 +133633,497 @@
   // Punch Drift reads attendance rows against the window each person was planned on that date and lists
   // the people and crews who keep clocking 30+ minutes off it; ISABI AI only words the weekly brief.
 
+  // ---- Public holidays (owner rules 2026-11-13, v19.6.342) ----
+  // 1. One universal holiday list for the whole group. Every holiday is linked to the calendar it comes from
+  //    (HOLIDAY_MAP -> HOLIDAY_CALENDARS) and its dates are worked out by that calendar's rule.
+  // 2. Each business selects the holidays it observes from that list (per year), stored on the business:
+  //    workSchedules.companyPolicyDefaults[<company>].holidays = { years: { <year>: [items] }, staff: [keys] }.
+  // 3. Nobody receives holidays by default: a holiday closes the day only for the people ticked in `staff`.
+  // Holidays are resolved per person at read time (resolveStaffShiftForDate), never written on shifts, so they
+  // also reach a person on a custom shift. `holidays:<year>` items that v19.6.333 wrote on shifts are ignored
+  // per person and taken off the shifts the next time the business's holidays are applied.
+  const HOLIDAY_CALENDARS = [
+    { id: 'national', label: 'National' },
+    { id: 'christian_w', label: 'Christian (Western)' },
+    { id: 'christian_e', label: 'Christian (Eastern)' },
+    { id: 'islamic', label: 'Islamic' },
+    { id: 'other', label: 'Other' }
+  ];
+  // rule: ['fixed', month, day] | ['easter_w', offsetDays] | ['easter_e', offsetDays] | ['hijri', month, day, lengthDays]
+  const HOLIDAY_MAP = [
+    { key: 'new_year', name: "New Year's Day", cal: 'national', rule: ['fixed', 1, 1], on: true },
+    { key: 'armenian_xmas', name: 'Armenian Christmas', cal: 'christian_e', rule: ['fixed', 1, 6], on: true },
+    { key: 'st_maroun', name: 'Saint Maroun Day', cal: 'christian_w', rule: ['fixed', 2, 9], on: true },
+    { key: 'annunciation', name: 'Annunciation', cal: 'national', rule: ['fixed', 3, 25], on: true },
+    { key: 'labour', name: 'Labour Day', cal: 'national', rule: ['fixed', 5, 1], on: true },
+    { key: 'martyrs', name: "Martyrs' Day", cal: 'national', rule: ['fixed', 5, 6], on: false },
+    { key: 'liberation', name: 'Resistance and Liberation Day', cal: 'national', rule: ['fixed', 5, 25], on: false },
+    { key: 'assumption', name: 'Assumption Day', cal: 'christian_w', rule: ['fixed', 8, 15], on: true },
+    { key: 'independence', name: 'Independence Day', cal: 'national', rule: ['fixed', 11, 22], on: true },
+    { key: 'christmas', name: 'Christmas Day', cal: 'christian_w', rule: ['fixed', 12, 25], on: true },
+    { key: 'good_friday_w', name: 'Good Friday (Western)', cal: 'christian_w', rule: ['easter_w', -2], on: true },
+    { key: 'easter_monday_w', name: 'Easter Monday (Western)', cal: 'christian_w', rule: ['easter_w', 1], on: false },
+    { key: 'good_friday_o', name: 'Good Friday (Orthodox)', cal: 'christian_e', rule: ['easter_e', -2], on: true },
+    { key: 'easter_monday_o', name: 'Easter Monday (Orthodox)', cal: 'christian_e', rule: ['easter_e', 1], on: false },
+    { key: 'islamic_new_year', name: 'Islamic New Year', cal: 'islamic', rule: ['hijri', 1, 1, 1], on: true },
+    { key: 'ashura', name: 'Ashura', cal: 'islamic', rule: ['hijri', 1, 10, 1], on: true },
+    { key: 'mawlid', name: "Prophet's Birthday", cal: 'islamic', rule: ['hijri', 3, 12, 1], on: true },
+    { key: 'eid_fitr', name: 'Eid al-Fitr', cal: 'islamic', rule: ['hijri', 10, 1, 2], on: true },
+    { key: 'eid_adha', name: 'Eid al-Adha', cal: 'islamic', rule: ['hijri', 12, 10, 2], on: true }
+  ];
+
+  function holidayCalendarOf(calId) {
+    return HOLIDAY_CALENDARS.find(c => c.id === calId) || HOLIDAY_CALENDARS[HOLIDAY_CALENDARS.length - 1];
+  }
+
+  // `var`: resolveStaffShiftForDate can run before this line is reached at start-up.
+  var _holidayCfgRev = 0;
+  var _holidayIdxCache = null;
+
+  function normalizeHolidayItems(rawList) {
+    if (!Array.isArray(rawList)) return [];
+    const byKey = new Map();
+    rawList.forEach(it => {
+      if (!it || typeof it !== 'object') return;
+      const sd = String(it.start_date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(sd)) return;
+      let ed = String(it.end_date || sd).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ed) || ed < sd) ed = sd;
+      const hol = String(it.hol || '').trim().slice(0, 60) || `x_${sd.replace(/-/g, '')}_${ed.replace(/-/g, '')}`;
+      const cal = HOLIDAY_CALENDARS.some(c => c.id === it.cal) ? it.cal : 'other';
+      const item = { hol, cal, name: String(it.name || '').trim().slice(0, 60) || 'Holiday', start_date: sd, end_date: ed };
+      // When this holiday's date was last set by a person (empty: the calendar's own computed date).
+      const datedAt = String(it.dated_at || '').slice(0, 30);
+      if (datedAt) item.dated_at = datedAt;
+      byKey.set(hol, item);
+    });
+    return Array.from(byKey.values()).sort((a, b) => a.start_date.localeCompare(b.start_date) || a.hol.localeCompare(b.hol));
+  }
+
+  // Who receives holidays is dated (hard rule 12): people[<staff key>] = [{ from, to }], `to` empty while the
+  // person still receives them. Ticking someone starts a period (today, unless an earlier date is chosen on
+  // purpose); unticking ends it yesterday. A holiday already past therefore stays the way it was paid.
+  function normalizeHolidayPeople(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    const okDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d);
+    Object.keys(raw).forEach(k0 => {
+      const k = norm(k0);
+      if (!k || !Array.isArray(raw[k0])) return;
+      const ps = raw[k0]
+        .map(p => ({ from: String((p && p.from) || '').slice(0, 10), to: String((p && p.to) || '').slice(0, 10) }))
+        .filter(p => okDate(p.from) && (!p.to || (okDate(p.to) && p.to >= p.from)))
+        .sort((x, y) => x.from.localeCompare(y.from));
+      const merged = [];
+      ps.forEach(p => {
+        const last = merged[merged.length - 1];
+        if (last && (!last.to || shiftCalAddDays(last.to, 1) >= p.from)) {
+          if (last.to && (!p.to || p.to > last.to)) last.to = p.to;
+        } else {
+          merged.push({ from: p.from, to: p.to });
+        }
+      });
+      if (merged.length) out[k] = merged;
+    });
+    return out;
+  }
+
+  function holidayPeopleReceiveOn(periods, d) {
+    return Boolean(periods && periods.some(p => p.from <= d && (!p.to || d <= p.to)));
+  }
+
+  function holidayPeopleOpen(periods) {
+    return Boolean(periods && periods.some(p => !p.to));
+  }
+
+  // A copy of `people` with this person receiving holidays from `fromIso` on.
+  function holidayPeopleStart(people, key, fromIso) {
+    const next = Object.assign({}, people);
+    next[key] = (people[key] || []).concat([{ from: fromIso, to: '' }]);
+    return normalizeHolidayPeople(next);
+  }
+
+  // A copy of `people` with this person's open period ended on `lastDayIso` (a period that had not started is dropped).
+  function holidayPeopleStop(people, key, lastDayIso) {
+    const next = Object.assign({}, people);
+    const ps = (people[key] || []).map(p => (p.to ? p : (p.from > lastDayIso ? null : { from: p.from, to: lastDayIso }))).filter(Boolean);
+    if (ps.length) next[key] = ps;
+    else delete next[key];
+    return normalizeHolidayPeople(next);
+  }
+
+  // The business's stored holiday selection (a normalized copy; never the live object). `staff` lists the
+  // people who receive holidays now (an open period).
+  function getCompanyHolidayConfig(company) {
+    const ws = ensureWorkSchedulesState();
+    const entry = ws.companyPolicyDefaults[norm(company)];
+    const raw = (entry && typeof entry === 'object' && entry.holidays && typeof entry.holidays === 'object') ? entry.holidays : null;
+    const years = {};
+    if (raw && raw.years && typeof raw.years === 'object') {
+      Object.keys(raw.years).forEach(y => {
+        if (!/^\d{4}$/.test(y)) return;
+        const items = normalizeHolidayItems(raw.years[y]);
+        if (items.length) years[y] = items;
+      });
+    }
+    const people = normalizeHolidayPeople(raw && raw.people);
+    const staff = Object.keys(people).filter(k => holidayPeopleOpen(people[k]));
+    return { years, people, staff, updated_at: String((raw && raw.updated_at) || ''), exists: Boolean(raw) };
+  }
+
+  // Stores the selection on the business's entry and keeps whatever else that entry holds (default policy group).
+  function saveCompanyHolidayConfig(company, cfg) {
+    const ws = ensureWorkSchedulesState();
+    const co = String(company || '').trim();
+    const coKey = norm(co);
+    if (!coKey) return null;
+    const nowIso = new Date().toISOString();
+    const prev = ws.companyPolicyDefaults[coKey];
+    const prevObj = (prev && typeof prev === 'object') ? prev : (prev ? { group_id: String(prev) } : {});
+    const years = {};
+    Object.keys((cfg && cfg.years) || {}).forEach(y => {
+      const items = normalizeHolidayItems(cfg.years[y]);
+      if (/^\d{4}$/.test(y) && items.length) years[y] = items;
+    });
+    ws.companyPolicyDefaults[coKey] = Object.assign({}, prevObj, {
+      company: prevObj.company || co,
+      holidays: { years, people: normalizeHolidayPeople(cfg && cfg.people), updated_at: nowIso },
+      updated_at: nowIso
+    });
+    _holidayCfgRev = (_holidayCfgRev || 0) + 1;
+    return ws.companyPolicyDefaults[coKey];
+  }
+
+  // Per business: who receives holidays (and from when) and the observed dates, cached until a selection
+  // changes or syncs in.
+  function companyHolidayIndex(company) {
+    const ws = ensureWorkSchedulesState();
+    const src = ws.companyPolicyDefaults;
+    if (!_holidayIdxCache || _holidayIdxCache.src !== src || _holidayIdxCache.rev !== (_holidayCfgRev || 0)) {
+      _holidayIdxCache = { src, rev: (_holidayCfgRev || 0), byCo: new Map() };
+    }
+    const coKey = norm(company);
+    let idx = _holidayIdxCache.byCo.get(coKey);
+    if (idx === undefined) {
+      const entry = src[coKey];
+      if (entry && typeof entry === 'object' && entry.holidays) {
+        const cfg = getCompanyHolidayConfig(company);
+        const items = [];
+        Object.keys(cfg.years).forEach(y => cfg.years[y].forEach(it => items.push(Object.assign({ year: y }, it))));
+        idx = (items.length && Object.keys(cfg.people).length) ? { people: cfg.people, items } : null;
+      } else {
+        idx = null;
+      }
+      _holidayIdxCache.byCo.set(coKey, idx);
+    }
+    return idx;
+  }
+
+  // Ticked to receive holidays now.
+  function staffReceivesHolidays(staffName, company) {
+    return getCompanyHolidayConfig(company).staff.includes(norm(staffName));
+  }
+
+  // The holiday that closes this date for this person: their business observes it and they received holidays
+  // on that date. Null for everyone else (the default).
+  function staffHolidayOn(staffName, company, isoDate) {
+    const idx = companyHolidayIndex(company);
+    if (!idx) return null;
+    const periods = idx.people[norm(staffName)];
+    if (!periods) return null;
+    const d = String(isoDate || '').slice(0, 10);
+    if (!holidayPeopleReceiveOn(periods, d)) return null;
+    for (let i = 0; i < idx.items.length; i++) {
+      const it = idx.items[i];
+      if (it.start_date <= d && d <= it.end_date) return it;
+    }
+    return null;
+  }
+
+  function isLegacyShiftHolidayItem(it) {
+    return Boolean(it && typeof it.preset === 'string' && it.preset.indexOf('holidays:') === 0);
+  }
+
+  // One person's switch (staff schedule studio): receives holidays from today (or `fromIso`), or stops from
+  // today. Holidays already past keep the status they had, so attendance already paid is not re-worked
+  // (only a `fromIso` in the past does that, on purpose).
+  function setStaffReceivesHolidays(staffName, company, on, fromIso) {
+    const co = String(company || '').trim();
+    const k = norm(staffName);
+    if (!k || !co) return { ok: false, error: 'Staff member and business are required' };
+    const cfg = getCompanyHolidayConfig(co);
+    if (cfg.staff.includes(k) === Boolean(on)) return { ok: true, changed: false };
+    const today = todayISO();
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(String(fromIso || '')) ? String(fromIso) : today;
+    const people = on ? holidayPeopleStart(cfg.people, k, from) : holidayPeopleStop(cfg.people, k, shiftCalAddDays(today, -1));
+    saveCompanyHolidayConfig(co, { years: cfg.years, people });
+    const wins = [];
+    Object.keys(cfg.years).forEach(y => cfg.years[y].forEach(it => wins.push(it)));
+    const rc = recalcHolidayAttendance(co, (sk, d) => sk === k
+      && holidayPeopleReceiveOn(cfg.people[k], d) !== holidayPeopleReceiveOn(people[k], d)
+      && wins.some(w => w.start_date <= d && d <= w.end_date));
+    saveLocalAuthAndRecords();
+    postWorkScheduleMutation({ op: 'set_company_holidays', company: co });
+    syncWithCloud(true);
+    return { ok: true, changed: true, recalcRows: rc.attUpdated + rc.punchesUpdated, handKept: rc.handKept };
+  }
+
+  // Re-works attendance rows and kiosk punches already recorded for (person, date) pairs whose holiday status
+  // changed. Same figures as backfillShiftTimingChange writes; a row someone corrected by hand is left alone.
+  function recalcHolidayAttendance(company, shouldRecalc) {
+    const co = String(company || '').trim();
+    const coNorm = norm(co);
+    const today = todayISO();
+    let punchesUpdated = 0;
+    let attUpdated = 0;
+    let handKept = 0;
+    if (Array.isArray(STATE.kioskPunches)) {
+      STATE.kioskPunches.forEach(p => {
+        if (!p || p.voided || !p.staff) return;
+        if (norm(p.company || co) !== coNorm) return;
+        const pDate = String(p.shift_date || p.date || '').slice(0, 10);
+        if (!pDate || pDate > today || !shouldRecalc(norm(p.staff), pDate)) return;
+        const shiftOnDate = resolveStaffShiftForDate(p.staff, p.company || co, pDate);
+        p.shift_id = shiftOnDate.id;
+        p.shift_label = shiftOnDate.badgeLabel;
+        const inT = p.direction === 'IN' ? p.time : (p.in_time || '');
+        const outT = p.direction === 'OUT' ? p.time : (p.out_time || '');
+        const evalRes = evaluateShiftPunchTiming(p.staff, p.company || co, pDate, inT, outT, {
+          outDate: p.date,
+          inSameCalendarDay: pDate === String(p.date || pDate).slice(0, 10)
+        });
+        p.late_hours = Number(evalRes.billableLateHours ?? evalRes.lateHours ?? 0);
+        p.raw_late_hours = Number(evalRes.rawLateHours || 0);
+        p.raw_late_min = Number(evalRes.rawLateMin || 0);
+        p.penalty_leave_days = Number(evalRes.penaltyLeaveDays || 0);
+        p.penalty_status = evalRes.penaltyStatus || p.penalty_status;
+        p.penalty_summary = evalRes.penaltySummary || '';
+        p.late_cutoff = evalRes.lateCutoffTime || '';
+        p.early_out_cutoff = evalRes.earlyOutCutoffTime || '';
+        if (inT && outT) {
+          p.paired_hours = evalRes.workedHours;
+          p.overtime_hours = evalRes.overtimeHours;
+          p.unapproved_ot_hours = evalRes.unapprovedOtHours;
+        }
+        punchesUpdated++;
+      });
+    }
+    const attRows = (SEED && SEED.records && SEED.records.attendance) || [];
+    if (!Array.isArray(STATE.customRecords.attendance)) STATE.customRecords.attendance = [];
+    for (let i = 0; i < attRows.length; i++) {
+      const a = attRows[i];
+      if (!a || a.voided || !a.staff) continue;
+      if (/^(extra|config)/i.test(String(a.type || a.status || ''))) continue;
+      if (norm(a.company || 'WTC') !== coNorm) continue;
+      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      if (!d || d > today || !shouldRecalc(norm(a.staff), d)) continue;
+      if (a.modified_by) { handKept++; continue; }
+      const importFigures = a.origin === 'door_tablet' && Boolean(a.tab_sig) && attendanceFigureSig(a) === a.tab_sig;
+      const shiftOnDate = resolveStaffShiftForDate(a.staff, a.company || co, d);
+      const schedH = shiftOnDate.isWorkday ? Number(shiftOnDate.hours || 8) : 0;
+      let rowChanged = false;
+      if (a.shift_id !== shiftOnDate.id || a.shift_label !== shiftOnDate.badgeLabel || Number(a.scheduled_hours || 0) !== schedH) {
+        a.shift_id = shiftOnDate.id;
+        a.shift_label = shiftOnDate.badgeLabel;
+        a.scheduled_start = shiftOnDate.start_time;
+        a.scheduled_end = shiftOnDate.end_time;
+        a.scheduled_hours = schedH;
+        rowChanged = true;
+      }
+      const inT = fmtAttClockTime(a.in_time || a.check_in || '');
+      const outT = fmtAttClockTime(a.out_time || a.check_out || '');
+      if (inT || outT) {
+        const evalRes = evaluateShiftPunchTiming(a.staff, a.company || co, d, inT, outT);
+        const isPaired = Boolean(inT && outT);
+        const workedH = evalRes.workedHours;
+        const otH = isPaired ? evalRes.overtimeHours : 0;
+        const penLeaveDays = Number(evalRes.penaltyLeaveDays || 0);
+        const ltH = penLeaveDays > 0 ? 0 : Number(evalRes.lateHours || 0);
+        const effType = otH > 0 ? 'Overtime' : (penLeaveDays >= 1 ? 'Absence' : (penLeaveDays >= 0.5 ? 'Half Day' : (ltH > 0 ? 'Lateness' : 'Present')));
+        const effTally = otH > 0 ? otH : (penLeaveDays > 0 ? penLeaveDays : (ltH > 0 ? ltH : workedH));
+        if (Math.abs(Number(a.worked_hours || 0) - workedH) > 1e-4
+          || Math.abs(Number(a.overtime_hours || 0) - otH) > 1e-4
+          || Math.abs(Number(a.late_hours || 0) - ltH) > 1e-4
+          || Math.abs(Number(a.leave_days || 0) - penLeaveDays) > 1e-4
+          || a.type !== effType) {
+          a.worked_hours = workedH;
+          a.regular_hours = isPaired ? evalRes.regularHours : (workedH > 0 ? Math.min(schedH, workedH) : 0);
+          a.overtime_hours = otH;
+          a.unapproved_ot_hours = isPaired ? evalRes.unapprovedOtHours : 0;
+          a.late_hours = ltH;
+          a.raw_late_hours = Number(evalRes.rawLateHours || 0);
+          a.raw_late_min = Number(evalRes.rawLateMin || 0);
+          a.leave_days = penLeaveDays;
+          a.late_cutoff = evalRes.lateCutoffTime || '';
+          a.early_out_cutoff = evalRes.earlyOutCutoffTime || '';
+          a.penalty_summary = evalRes.penaltySummary || '';
+          a.type = effType;
+          a.status = effType;
+          a.tally = effTally;
+          rowChanged = true;
+        }
+      }
+      if (rowChanged) {
+        attUpdated++;
+        if (importFigures) a.tab_sig = attendanceFigureSig(a);
+        const cIdx = STATE.customRecords.attendance.findIndex(x => x && String(x.id) === String(a.id));
+        if (cIdx >= 0) Object.assign(STATE.customRecords.attendance[cIdx], a);
+        else STATE.customRecords.attendance.unshift(Object.assign({}, a));
+      }
+    }
+    if (attUpdated > 0 && SEED) {
+      if (SEED._tableRev) SEED._tableRev.attendance = (SEED._tableRev.attendance || 0) + 1;
+      SEED._customRev = (SEED._customRev || 0) + 1;
+    }
+    return { attUpdated, punchesUpdated, handKept };
+  }
+
+  // Holiday selections of the other businesses this seat can reach, for the same year: the dates a holiday
+  // already carries in the group (a corrected Eid date is offered to every business) and the days businesses
+  // added themselves (available to all).
+  function groupHolidayItemsForYear(year) {
+    const ws = ensureWorkSchedulesState();
+    const allowed = allowedCompanyNames();
+    const out = new Map();
+    Object.keys(ws.companyPolicyDefaults || {}).forEach(coKey => {
+      const entry = ws.companyPolicyDefaults[coKey];
+      if (!entry || typeof entry !== 'object' || !entry.holidays) return;
+      const coName = String(entry.company || coKey);
+      if (allowed.length && !allowed.some(n => norm(n) === norm(coName))) return;
+      const cfg = getCompanyHolidayConfig(coName);
+      (cfg.years[String(year)] || []).forEach(it => {
+        // Per holiday, the date set most recently wins (not the business saved most recently for another reason).
+        const cur = out.get(it.hol);
+        const itAt = String(it.dated_at || '');
+        const curAt = cur ? String(cur.dated_at || '') : '';
+        if (!cur || itAt > curAt || (itAt === curAt && cfg.updated_at > cur.updated_at)) {
+          out.set(it.hol, Object.assign({ updated_at: cfg.updated_at, company: coName }, it));
+        }
+      });
+    });
+    return out;
+  }
+
+  // Writes one year's holiday selection and the list of people who receive holidays for the chosen businesses.
+  // spec: { year, rows: [{ hol, cal, name, start_date, end_date, on, moved }], companies: [name],
+  //         staffOn: { '<co>|<staff>': bool }, staffFrom: iso (newly ticked people receive from this date; default today), remove }
+  function applyCompanyHolidays(spec) {
+    if (!canApplyShiftCalendar()) return { ok: false, error: 'You do not have rights to change shifts' };
+    const allowed = allowedCompanyNames();
+    const companies = (spec.companies || []).filter(co => co && (!allowed.length || allowed.some(n => norm(n) === norm(co))));
+    if (!companies.length) return { ok: false, error: 'Choose at least one business' };
+    const year = String(Number(spec.year) || Number(todayISO().slice(0, 4)));
+    const nextItems = spec.remove ? [] : normalizeHolidayItems((spec.rows || []).filter(r => r && r.on));
+    const staffOn = spec.staffOn || {};
+    const today = todayISO();
+    const staffFrom = /^\d{4}-\d{2}-\d{2}$/.test(String(spec.staffFrom || '')) ? String(spec.staffFrom) : today;
+    let businessesChanged = 0;
+    let recalcRows = 0;
+    let handKept = 0;
+    let staffNow = 0;
+    let legacyRemoved = 0;
+    const inAny = (items, d) => items.some(w => w.start_date <= d && d <= w.end_date);
+    const writeOne = (co, items, peopleIn) => {
+      const prev = getCompanyHolidayConfig(co);
+      const prevItems = prev.years[year] || [];
+      const people = normalizeHolidayPeople(peopleIn);
+      const years = Object.assign({}, prev.years);
+      if (items.length) years[year] = items;
+      else delete years[year];
+      if (JSON.stringify(prevItems) === JSON.stringify(items) && JSON.stringify(prev.people) === JSON.stringify(people)) return false;
+      saveCompanyHolidayConfig(co, { years, people });
+      // Only (person, date) pairs whose holiday status changed, up to today.
+      const otherPrev = [];
+      const otherNext = [];
+      Object.keys(prev.years).forEach(y => { if (y !== year) prev.years[y].forEach(it => { otherPrev.push(it); otherNext.push(it); }); });
+      const before = (sk, d) => holidayPeopleReceiveOn(prev.people[sk], d) && (inAny(prevItems, d) || inAny(otherPrev, d));
+      const after = (sk, d) => holidayPeopleReceiveOn(people[sk], d) && (inAny(items, d) || inAny(otherNext, d));
+      const rc = recalcHolidayAttendance(co, (sk, d) => before(sk, d) !== after(sk, d));
+      recalcRows += rc.attUpdated + rc.punchesUpdated;
+      handKept += rc.handKept;
+      return true;
+    };
+    const nowIso = new Date().toISOString();
+    const movedSet = new Set((spec.rows || []).filter(r => r && r.on && r.moved && r.hol).map(r => String(r.hol)));
+    // A date changed in this dialog is stamped now; an unchanged date keeps its stamp; a date taken over from
+    // the group keeps the group's stamp.
+    const stampItems = (items, prevItems) => items.map(it => {
+      const p = prevItems.find(x => x.hol === it.hol);
+      let at = '';
+      if (movedSet.has(it.hol)) at = nowIso;
+      else if (p && p.start_date === it.start_date && p.end_date === it.end_date) at = p.dated_at || '';
+      else at = it.dated_at || (p ? nowIso : '');
+      const o = Object.assign({}, it);
+      if (at) o.dated_at = at;
+      else delete o.dated_at;
+      return o;
+    });
+    companies.forEach(co => {
+      const prev = getCompanyHolidayConfig(co);
+      let people = prev.people;
+      Object.keys(staffOn).forEach(k => {
+        const cut = k.indexOf('|');
+        if (cut < 0 || norm(k.slice(0, cut)) !== norm(co)) return;
+        const sk = norm(k.slice(cut + 1));
+        if (!sk) return;
+        const open = holidayPeopleOpen(people[sk]);
+        // Newly ticked: receives from `staffFrom`. Unticked: stops from today; what is past stays.
+        if (staffOn[k] && !open) people = holidayPeopleStart(people, sk, staffFrom);
+        else if (!staffOn[k] && open) people = holidayPeopleStop(people, sk, shiftCalAddDays(today, -1));
+      });
+      staffNow += Object.keys(people).filter(sk => holidayPeopleOpen(people[sk])).length;
+      if (writeOne(co, stampItems(nextItems, prev.years[year] || []), people)) businessesChanged++;
+      // v19.6.333 wrote holidays on the shifts (they closed the day for everyone, and devices still on that
+      // version read them that way): take every year's off the business's shifts.
+      const legacyByTag = new Map();
+      getShiftTypes(co).forEach(st => getStoredShiftVersions(co, st.id).forEach(v => normalizeDateTimingsList(v.date_timings).forEach(it => {
+        if (!isLegacyShiftHolidayItem(it)) return;
+        if (!legacyByTag.has(it.preset)) legacyByTag.set(it.preset, new Set());
+        legacyByTag.get(it.preset).add(st.id);
+      })));
+      legacyByTag.forEach((codes, legacyTag) => {
+        const res = applyShiftCalendarPreset({ presetId: 'holidays', kind: 'closed', tag: legacyTag, rows: [],
+          targets: Array.from(codes).map(code => ({ company: co, code })), remove: true });
+        if (res && res.ok) legacyRemoved += Number(res.versionsChanged || 0);
+      });
+    });
+    // A holiday's date is one fact for the group: a date the user changed in this dialog (`moved`) is carried
+    // to the other businesses (within this seat's reach) that observe the same holiday that year. Dates that
+    // were only loaded are never pushed onto another business.
+    let datesCarried = 0;
+    const movedHols = new Set((spec.rows || []).filter(r => r && r.on && r.moved && r.hol).map(r => String(r.hol)));
+    if (!spec.remove && movedHols.size) {
+      const byHol = new Map(nextItems.filter(it => movedHols.has(it.hol)).map(it => [it.hol, it]));
+      const ws = ensureWorkSchedulesState();
+      Object.keys(ws.companyPolicyDefaults || {}).forEach(coKey => {
+        const entry = ws.companyPolicyDefaults[coKey];
+        if (!entry || typeof entry !== 'object' || !entry.holidays) return;
+        const coName = String(entry.company || coKey);
+        if (companies.some(c => norm(c) === norm(coName))) return;
+        if (allowed.length && !allowed.some(n => norm(n) === norm(coName))) return;
+        const cfg = getCompanyHolidayConfig(coName);
+        const cur = cfg.years[year] || [];
+        let moved = false;
+        const upd = cur.map(it => {
+          const src = byHol.get(it.hol);
+          if (src && (src.start_date !== it.start_date || src.end_date !== it.end_date)) {
+            moved = true;
+            return Object.assign({}, it, { start_date: src.start_date, end_date: src.end_date, dated_at: nowIso });
+          }
+          return it;
+        });
+        if (moved && writeOne(coName, upd, cfg.people)) datesCarried++;
+      });
+    }
+    saveLocalAuthAndRecords();
+    postWorkScheduleMutation({ op: 'set_company_holidays', companies });
+    syncWithCloud(true);
+    if (!spec.remove && businessesChanged) bumpShiftCalPresetFreq('holidays');
+    return { ok: true, businessesChanged, datesCarried, legacyRemoved, recalcRows, handKept, staffNow, holidays: nextItems.length };
+  }
+
   const SHIFT_CAL_PRESETS = [
-    { id: 'holidays', label: 'Public Holidays & Eids', sub: 'Closed days, Lebanon calendar', kind: 'closed' },
+    { id: 'holidays', label: 'Public Holidays & Eids', sub: 'One list, chosen per business and person', kind: 'closed' },
     { id: 'ramadan', label: 'Ramadan Hours', sub: 'Shorter days for the month', kind: 'hours', shortenBy: 2 },
     { id: 'winter', label: 'Winter Hours', sub: 'Shorter days, December to February', kind: 'hours', shortenBy: 1 },
     { id: 'closure', label: 'Company Closure', sub: 'Your own closed dates', kind: 'closed' }
@@ -133674,48 +134240,22 @@
     const rows = [];
     const hijri = (presetId === 'holidays' || presetId === 'ramadan') ? shiftCalHijriDays(y) : null;
     if (presetId === 'holidays') {
-      const fixed = [
-        ['new_year', "New Year's Day", 1, 1, true],
-        ['armenian_xmas', 'Armenian Christmas', 1, 6, true],
-        ['st_maroun', 'Saint Maroun Day', 2, 9, true],
-        ['annunciation', 'Annunciation', 3, 25, true],
-        ['labour', 'Labour Day', 5, 1, true],
-        ['martyrs', "Martyrs' Day", 5, 6, false],
-        ['liberation', 'Resistance and Liberation Day', 5, 25, false],
-        ['assumption', 'Assumption Day', 8, 15, true],
-        ['independence', 'Independence Day', 11, 22, true],
-        ['christmas', 'Christmas Day', 12, 25, true]
-      ];
-      fixed.forEach(([key, name, m, d, on]) => {
-        const iso = shiftCalIso(y, m, d);
-        rows.push({ key, name, start_date: iso, end_date: iso, on });
-      });
+      // The universal list: each holiday's dates come from the rule of the calendar it is linked to.
       const ew = westernEasterISO(y);
       const eo = orthodoxEasterISO(y);
-      rows.push({ key: 'good_friday_w', name: 'Good Friday (Western)', start_date: shiftCalAddDays(ew, -2), end_date: shiftCalAddDays(ew, -2), on: true });
-      rows.push({ key: 'easter_monday_w', name: 'Easter Monday (Western)', start_date: shiftCalAddDays(ew, 1), end_date: shiftCalAddDays(ew, 1), on: false });
-      rows.push({ key: 'good_friday_o', name: 'Good Friday (Orthodox)', start_date: shiftCalAddDays(eo, -2), end_date: shiftCalAddDays(eo, -2), on: true });
-      rows.push({ key: 'easter_monday_o', name: 'Easter Monday (Orthodox)', start_date: shiftCalAddDays(eo, 1), end_date: shiftCalAddDays(eo, 1), on: false });
-      if (hijri) {
-        const hijriHolidays = [
-          ['islamic_new_year', 'Islamic New Year', 1, 1, 1],
-          ['ashura', 'Ashura', 1, 10, 1],
-          ['mawlid', "Prophet's Birthday", 3, 12, 1],
-          ['eid_fitr', 'Eid al-Fitr', 10, 1, 2],
-          ['eid_adha', 'Eid al-Adha', 12, 10, 2]
-        ];
-        hijriHolidays.forEach(([key, name, hm, hd, len]) => {
-          hijri.filter(x => x.m === hm && x.d === hd && inYear(x.iso)).forEach((x, i) => {
-            rows.push({
-              key: i ? `${key}_${i + 1}` : key,
-              name,
-              start_date: x.iso,
-              end_date: shiftCalAddDays(x.iso, len - 1),
-              on: true
-            });
-          });
-        });
-      }
+      HOLIDAY_MAP.forEach(h => {
+        const kind = h.rule[0];
+        const push = (iso, len, i) => {
+          const key = i ? `${h.key}_${i + 1}` : h.key;
+          rows.push({ key, hol: key, cal: h.cal, name: h.name, start_date: iso, end_date: shiftCalAddDays(iso, (len || 1) - 1), on: h.on });
+        };
+        if (kind === 'fixed') push(shiftCalIso(y, h.rule[1], h.rule[2]), 1, 0);
+        else if (kind === 'easter_w') push(shiftCalAddDays(ew, h.rule[1]), 1, 0);
+        else if (kind === 'easter_e') push(shiftCalAddDays(eo, h.rule[1]), 1, 0);
+        else if (kind === 'hijri' && hijri) {
+          hijri.filter(x => x.m === h.rule[1] && x.d === h.rule[2] && inYear(x.iso)).forEach((x, i) => push(x.iso, h.rule[3], i));
+        }
+      });
       rows.sort((a, b) => a.start_date.localeCompare(b.start_date));
     } else if (presetId === 'ramadan' && hijri) {
       let run = null;
@@ -133970,7 +134510,14 @@
       unticked: new Set(),
       confirmArmed: false,
       removeArmed: false,
-      loadedExisting: false
+      loadedExisting: false,
+      mixed: false,
+      calRank: HOLIDAY_CALENDARS.slice(),
+      staffOn: {},
+      staffCache: null,
+      staffSearch: '',
+      staffFrom: todayISO(),
+      legacyItems: 0
     };
     const presetOf = id => SHIFT_CAL_PRESETS.find(p => p.id === id) || SHIFT_CAL_PRESETS[0];
     // Fresh: computed dates, past ones unticked (ticking them recalculates attendance already recorded).
@@ -133981,6 +134528,89 @@
       const today = todayISO();
       const tag = `${p.id}:${st.year}`;
       const computed = computeShiftCalPresetRows(st.presetId, st.year);
+      if (p.id === 'holidays') {
+        // The universal list for the year, with the dates the group already uses for each holiday, ticked from
+        // the chosen businesses' own selection (or, with none yet, the usual official days still ahead).
+        const group = groupHolidayItemsForYear(st.year);
+        const chosen = buList.filter(co => st.companies.has(co));
+        const sel = new Map();
+        const sigs = new Set();
+        chosen.forEach(co => {
+          const cfgCo = getCompanyHolidayConfig(co);
+          const items = cfgCo.years[String(st.year)] || [];
+          sigs.add(items.map(it => `${it.hol}@${it.start_date}`).join(','));
+          items.forEach(it => { if (!sel.has(it.hol)) sel.set(it.hol, Object.assign({ _ts: cfgCo.updated_at }, it)); });
+        });
+        // Holidays v19.6.333 wrote on the shifts count as the business's selection until applied again.
+        const legacy = [];
+        targetsNow().forEach(tg => tg.versions.forEach(v => normalizeDateTimingsList(v.date_timings).forEach(it => {
+          if (it.preset === tag && !legacy.some(x => x.start_date === it.start_date && x.end_date === it.end_date)) legacy.push(it);
+        })));
+        st.mixed = chosen.length > 1 && sigs.size > 1;
+        st.loadedExisting = sel.size > 0 || legacy.length > 0;
+        st.rows = computed.map(r => {
+          const row = Object.assign({}, r);
+          const g = group.get(r.hol);
+          if (g) {
+            row.start_date = g.start_date;
+            row.end_date = g.end_date;
+            row.dated_at = g.dated_at || '';
+          }
+          if (st.loadedExisting) {
+            const hit = sel.get(r.hol) || null;
+            const leg = hit ? null : legacy.find(it => !it._used && (it.start_date === row.start_date || (it.note && it.note === r.name)));
+            row.on = Boolean(hit || leg);
+            if (hit) {
+              // The business's own date, unless that holiday's date was set more recently in another business.
+              if (!(g && String(g.dated_at || '') > String(hit.dated_at || ''))) {
+                row.start_date = hit.start_date;
+                row.end_date = hit.end_date;
+                row.dated_at = hit.dated_at || '';
+              } else {
+                row.dated_at = g.dated_at || '';
+              }
+              row.name = hit.name || r.name;
+            } else if (leg) {
+              row.start_date = leg.start_date;
+              row.end_date = leg.end_date;
+              leg._used = true;
+            }
+          } else {
+            row.on = r.on && row.end_date >= today;
+          }
+          return row;
+        });
+        // Days a business added itself are on the list for every business.
+        group.forEach((it, hol) => {
+          if (st.rows.some(r => r.hol === hol)) return;
+          st.rows.push({ key: hol, hol, cal: it.cal, name: it.name, start_date: it.start_date, end_date: it.end_date, dated_at: it.dated_at || '', on: sel.has(hol), custom: true });
+        });
+        legacy.filter(it => !it._used).forEach(it => {
+          if (st.rows.some(r => r.start_date === it.start_date && r.end_date === it.end_date)) return;
+          st.rows.push({ key: uid('scp'), hol: '', cal: 'other', name: it.note || 'Holiday', start_date: it.start_date, end_date: it.end_date, on: true, custom: true });
+        });
+        st.rows.sort((a, b) => a.start_date.localeCompare(b.start_date));
+        // Dates as loaded: only a date changed in this dialog is carried to other businesses.
+        st.rows.forEach(r => { r.loaded_start = r.start_date; r.loaded_end = r.end_date; });
+        st.legacyItems = 0;
+        buList.filter(co => st.companies.has(co)).forEach(co => getShiftTypes(co).forEach(sty => getStoredShiftVersions(co, sty.id).forEach(v => {
+          st.legacyItems += normalizeDateTimingsList(v.date_timings).filter(isLegacyShiftHolidayItem).length;
+        })));
+        // Calendars this group selects from most come first (hard rule 11); the list order breaks ties.
+        const calUse = {};
+        const wsAll = ensureWorkSchedulesState().companyPolicyDefaults || {};
+        Object.keys(wsAll).forEach(ck => {
+          const e = wsAll[ck];
+          if (!e || typeof e !== 'object' || !e.holidays) return;
+          const cfg = getCompanyHolidayConfig(String(e.company || ck));
+          Object.keys(cfg.years).forEach(y => cfg.years[y].forEach(it => { calUse[it.cal] = (calUse[it.cal] || 0) + 1; }));
+        });
+        st.calRank = HOLIDAY_CALENDARS.map((c, i) => ({ c, i, n: calUse[c.id] || 0 })).sort((a, b) => (b.n - a.n) || (a.i - b.i)).map(x => x.c);
+        st.staffCache = null;
+        st.confirmArmed = false;
+        st.removeArmed = false;
+        return;
+      }
       const existing = new Map();
       targetsNow().forEach(tg => tg.versions.forEach(v => normalizeDateTimingsList(v.date_timings).forEach(it => {
         if (it.preset === tag && !existing.has(`${it.start_date}|${it.end_date}`)) existing.set(`${it.start_date}|${it.end_date}`, it);
@@ -134036,6 +134666,117 @@
         });
       });
       return out;
+    };
+    // Active staff of the chosen businesses with their shift and whether they receive holidays (saved state,
+    // then this dialog's ticks). Built once per business choice: the shift lookup per person is not free.
+    const staffNow = () => {
+      if (!st.staffCache) {
+        const chosen = new Set(buList.filter(co => st.companies.has(co)).map(co => norm(co)));
+        const cnt = new Map();
+        ((SEED && SEED.records && SEED.records.attendance) || []).forEach(a => {
+          if (!a || a.voided || !a.staff || !chosen.has(norm(a.company || 'WTC'))) return;
+          const k = `${norm(a.company || 'WTC')}|${norm(a.staff)}`;
+          cnt.set(k, (cnt.get(k) || 0) + 1);
+        });
+        const savedByCo = new Map();
+        const seen = new Set();
+        const list = [];
+        getKioskStaffDirectory({ activeOnly: true }).forEach(s => {
+          if (!s || !s.name || !chosen.has(norm(s.company || ''))) return;
+          const key = `${s.company}|${norm(s.name)}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          if (!savedByCo.has(s.company)) savedByCo.set(s.company, new Set(getCompanyHolidayConfig(s.company).staff));
+          const rule = getStaffWorkRule(s.name, s.company);
+          const stp = getShiftTypes(s.company).find(t => t.id === rule.shift_id);
+          list.push({
+            key,
+            name: s.name,
+            company: s.company,
+            gkey: `${s.company}|${rule.shift_id}`,
+            shiftName: rule.shift_id === 'custom' ? (rule.custom_name || 'Custom Shift') : (stp ? stp.name : 'Shift'),
+            saved: savedByCo.get(s.company).has(norm(s.name)),
+            n: cnt.get(`${norm(s.company)}|${norm(s.name)}`) || 0
+          });
+        });
+        st.staffCache = list;
+      }
+      return st.staffCache.map(s => Object.assign({}, s, { on: Object.prototype.hasOwnProperty.call(st.staffOn, s.key) ? Boolean(st.staffOn[s.key]) : s.saved }));
+    };
+    // Shift crews, largest first; inside a crew the people who clock most first (hard rule 11).
+    const staffGroupsNow = () => {
+      const groups = new Map();
+      staffNow().forEach(s => {
+        let g = groups.get(s.gkey);
+        if (!g) {
+          g = { gkey: s.gkey, shiftName: s.shiftName, company: s.company, staff: [] };
+          groups.set(s.gkey, g);
+        }
+        g.staff.push(s);
+      });
+      const out = Array.from(groups.values());
+      out.forEach(g => g.staff.sort((a, b) => (b.n - a.n) || a.name.localeCompare(b.name)));
+      return out.sort((a, b) => (b.staff.length - a.staff.length) || a.shiftName.localeCompare(b.shiftName));
+    };
+    const holidayPreviewNow = () => {
+      const chosen = buList.filter(co => st.companies.has(co));
+      const staff = staffNow();
+      const today = todayISO();
+      const next = normalizeHolidayItems(st.rows.filter(r => r.on));
+      const inAny = (items, d) => items.some(w => w.start_date <= d && d <= w.end_date);
+      const perCo = new Map();
+      const yday = shiftCalAddDays(today, -1);
+      chosen.forEach(co => {
+        const cfg = getCompanyHolidayConfig(co);
+        const prevAll = [];
+        const others = [];
+        Object.keys(cfg.years).forEach(y => cfg.years[y].forEach(it => {
+          prevAll.push(it);
+          if (y !== String(st.year)) others.push(it);
+        }));
+        let nextPeople = cfg.people;
+        staff.filter(s => norm(s.company) === norm(co)).forEach(s => {
+          const sk = norm(s.name);
+          const open = holidayPeopleOpen(nextPeople[sk]);
+          if (s.on && !open) nextPeople = holidayPeopleStart(nextPeople, sk, st.staffFrom);
+          else if (!s.on && open) nextPeople = holidayPeopleStop(nextPeople, sk, yday);
+        });
+        perCo.set(norm(co), { prevPeople: cfg.people, nextPeople, prevAll, nextAll: others.concat(next) });
+      });
+      let recalcAtt = 0;
+      let handAtt = 0;
+      ((SEED && SEED.records && SEED.records.attendance) || []).forEach(a => {
+        if (!a || a.voided || !a.staff) return;
+        const c = perCo.get(norm(a.company || 'WTC'));
+        if (!c) return;
+        const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+        if (!d || d > today) return;
+        const sk = norm(a.staff);
+        const before = holidayPeopleReceiveOn(c.prevPeople[sk], d) && inAny(c.prevAll, d);
+        const after = holidayPeopleReceiveOn(c.nextPeople[sk], d) && inAny(c.nextAll, d);
+        if (before === after) return;
+        if (a.modified_by) handAtt++;
+        else recalcAtt++;
+      });
+      const days = next.reduce((acc, r) => acc + Math.max(1, Math.round((Date.parse(`${r.end_date}T00:00:00Z`) - Date.parse(`${r.start_date}T00:00:00Z`)) / 86400000) + 1), 0);
+      // Other businesses that observe a holiday whose date differs from the one shown here: their date follows.
+      const group = groupHolidayItemsForYear(st.year);
+      const movedRows = st.rows.filter(r => r.on && r.hol && (r.start_date !== r.loaded_start || r.end_date !== r.loaded_end));
+      const carried = new Set();
+      const ws = ensureWorkSchedulesState().companyPolicyDefaults || {};
+      const allowed = allowedCompanyNames();
+      Object.keys(ws).forEach(ck => {
+        const e = ws[ck];
+        if (!e || typeof e !== 'object' || !e.holidays) return;
+        const coName = String(e.company || ck);
+        if (chosen.some(c => norm(c) === norm(coName))) return;
+        if (allowed.length && !allowed.some(n => norm(n) === norm(coName))) return;
+        (getCompanyHolidayConfig(coName).years[String(st.year)] || []).forEach(it => {
+          const src = movedRows.find(x => x.hol === it.hol);
+          if (src && (src.start_date !== it.start_date || src.end_date !== it.end_date)) carried.add(coName);
+        });
+      });
+      return { holidays: next.length, days, businesses: chosen.length, staffOn: staff.filter(s => s.on).length, staffAll: staff.length, recalcAtt, handAtt, carried: carried.size, groupSize: group.size };
     };
     const specNow = () => {
       const p = presetOf(st.presetId);
@@ -134101,14 +134842,53 @@
       const tg = targetsNow();
       const pv = previewNow();
       const hijriOk = Boolean(shiftCalHijriFormatter());
+      const isHol = p.id === 'holidays';
+      const hpv = isHol ? holidayPreviewNow() : null;
+      const prevBody = modal.querySelector('.scp-body');
+      const prevStaffBox = modal.querySelector('.scp-staff');
+      const keepBodyTop = prevBody ? prevBody.scrollTop : 0;
+      const keepStaffTop = prevStaffBox ? prevStaffBox.scrollTop : 0;
+      const calChipsHtml = isHol ? st.calRank.map(c => {
+        const rs = st.rows.filter(r => (r.cal || 'other') === c.id);
+        if (!rs.length) return '';
+        const onN = rs.filter(r => r.on).length;
+        return `<button type="button" class="kiosk-qchip scp-cal-chip ${onN === rs.length ? 'active' : ''}" data-scp-cal="${esc(c.id)}"><span>${esc(c.label)}</span> <b class="mono">${onN}/${rs.length}</b></button>`;
+      }).join('') : '';
+      const staffGroups = isHol ? staffGroupsNow() : [];
+      const sq = norm(st.staffSearch);
+      const staffHtml = isHol ? (staffGroups.length ? staffGroups.map(g => `
+        <div class="scp-staff-group" data-scp-staff-group="${esc(g.gkey)}">
+          <div class="scp-staff-ghead">
+            <span class="scp-shift-name" data-no-i18n="1">${esc(g.shiftName)}</span>
+            <span class="scp-shift-co" data-no-i18n="1">${esc(g.company)}</span>
+            <span class="scp-shift-cnt"><b class="mono">${g.staff.filter(s => s.on).length}/${g.staff.length}</b></span>
+            <button type="button" class="kiosk-qchip" data-scp-staff-all="${esc(g.gkey)}">All</button>
+            <button type="button" class="kiosk-qchip" data-scp-staff-none="${esc(g.gkey)}">None</button>
+          </div>
+          <div class="scp-staff-list">
+            ${g.staff.map(s => `
+              <label class="scp-staff-chip ${s.on ? 'on' : ''}" ${sq && !norm(s.name).includes(sq) ? 'hidden' : ''}>
+                <input type="checkbox" data-scp-staff="${esc(s.key)}" ${s.on ? 'checked' : ''}>
+                <span data-no-i18n="1">${esc(s.name)}</span>
+              </label>`).join('')}
+          </div>
+        </div>`).join('') : '<div class="muted">No active staff in the chosen businesses.</div>') : '';
+      const coStatusHtml = isHol ? buList.map(co => {
+        const cfg = getCompanyHolidayConfig(co);
+        const n = (cfg.years[String(st.year)] || []).length;
+        return `<span class="scp-co-stat ${st.companies.has(co) ? 'on' : ''}"><b data-no-i18n="1">${esc(co)}</b> ${n
+          ? `<span class="mono">${fmtNum(n)}</span> <span>holidays</span> · <span class="mono">${fmtNum(cfg.staff.length)}</span> <span>staff</span>`
+          : '<span>No selection yet</span>'}</span>`;
+      }).join('') : '';
       const rowsHtml = st.rows.length ? st.rows.map((r, i) => `
         <tr>
           <td class="c"><input type="checkbox" data-scp-row-on="${i}" ${r.on ? 'checked' : ''} aria-label="Include"></td>
+          ${isHol ? `<td><span class="badge scp-cal scp-cal-${esc(r.cal || 'other')}">${esc(holidayCalendarOf(r.cal).label)}</span></td>` : ''}
           <td><input type="text" class="scp-name" data-scp-row-name="${i}" maxlength="60" value="${esc(r.name)}"></td>
           <td><input type="date" data-scp-row-from="${i}" value="${esc(r.start_date)}"></td>
           <td><input type="date" data-scp-row-to="${i}" value="${esc(r.end_date)}"></td>
           <td class="c"><button type="button" class="stm-exc-chip-rm" data-scp-row-rm="${i}" aria-label="Remove date">✕</button></td>
-        </tr>`).join('') : `<tr><td colspan="5" class="muted">No dates yet. Add one below.</td></tr>`;
+        </tr>`).join('') : `<tr><td colspan="${isHol ? 6 : 5}" class="muted">No dates yet. Add one below.</td></tr>`;
       modal.innerHTML = `
         <div class="modal-card scp-card" style="width:min(760px,96vw);max-width:760px">
           <div class="modal-head">
@@ -134153,18 +134933,24 @@
                     <label for="scpFixedEnd">End (24h)</label>
                     <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="scpFixedEnd" value="${esc(st.fixedEnd)}">
                   </div>`}` : `
-                <div class="scp-closed-note"><span class="badge badge-brass">Closed</span> <span>No lateness or shortfall on these dates; hours worked count as day-off hours.</span></div>`}
+                <div class="scp-closed-note"><span class="badge badge-brass">Closed</span> <span>${isHol ? 'Closed only for the people ticked below: no lateness or shortfall on these dates; hours worked count as day-off hours.' : 'No lateness or shortfall on these dates; hours worked count as day-off hours.'}</span></div>`}
             </div>
-            <div class="scp-hint">${st.loadedExisting ? 'Loaded from the chosen shifts: this preset was applied before. Untick a date to take it off.' : 'Dates already past start unticked: ticking them recalculates attendance already recorded.'}</div>
+            ${isHol ? `
+              <div class="scp-hint">One holiday list for the whole group, each holiday linked to its calendar. Each business keeps its own selection, and a holiday applies only to the people ticked to receive it.</div>
+              <div class="scp-hint">${st.loadedExisting ? 'Loaded from the selection of the chosen businesses. Untick a holiday to take it off.' : 'No selection yet for the chosen businesses. Dates already past start unticked: ticking them recalculates attendance already recorded.'}</div>
+              ${st.mixed ? '<div class="scp-hint is-warn">The chosen businesses have different selections: applying gives each of them the ticked list. Choose one business to change only its own.</div>' : ''}
+              <div class="scp-cals" role="group" aria-label="Calendars">${calChipsHtml}</div>` : `
+              <div class="scp-hint">${st.loadedExisting ? 'Loaded from the chosen shifts: this preset was applied before. Untick a date to take it off.' : 'Dates already past start unticked: ticking them recalculates attendance already recorded.'}</div>`}
             ${(st.presetId === 'holidays' || st.presetId === 'ramadan') ? `<div class="scp-hint">${hijriOk ? 'Islamic dates follow the Umm al-Qura calendar and can move a day with the moon sighting: check them against the official announcement.' : 'This browser cannot compute Islamic dates: add them by hand below.'}</div>` : ''}
             <div class="table-wrap scp-dates-wrap">
               <table class="scp-dates">
-                <thead><tr><th class="c">Use</th><th>Name</th><th>From</th><th>To</th><th></th></tr></thead>
+                <thead><tr><th class="c">Use</th>${isHol ? '<th>Calendar</th>' : ''}<th>Name</th><th>From</th><th>To</th><th></th></tr></thead>
                 <tbody>${rowsHtml}</tbody>
               </table>
             </div>
             <div class="scp-add">
               <input type="text" id="scpAddName" maxlength="60" placeholder="Name, e.g. Factory maintenance">
+              ${isHol ? `<select id="scpAddCal" class="kiosk-select" data-plain-options="1" aria-label="Calendar">${st.calRank.map(c => `<option value="${esc(c.id)}" ${c.id === 'other' ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select>` : ''}
               <input type="date" id="scpAddFrom" aria-label="From">
               <input type="date" id="scpAddTo" aria-label="To">
               <button type="button" class="btn kiosk-mini-btn" id="scpAddBtn">+ Add Date</button>
@@ -134173,6 +134959,30 @@
             <div class="scp-cos" role="group" aria-label="Businesses">
               ${buList.map(co => `<button type="button" class="kiosk-qchip ${st.companies.has(co) ? 'active' : ''}" data-scp-co="${esc(co)}" data-no-i18n="1">${esc(co)}</button>`).join('')}
             </div>
+            ${isHol ? `
+            <div class="scp-co-status">${coStatusHtml}</div>
+            <div class="scp-section-head scp-staff-head">
+              <span>Who Receives These Holidays</span>
+              <b class="mono" id="scpStaffCount">${hpv.staffOn}/${hpv.staffAll}</b>
+              <input type="search" id="scpStaffSearch" class="scp-staff-search" maxlength="40" placeholder="Search staff" value="${esc(st.staffSearch)}" aria-label="Search staff">
+            </div>
+            <div class="scp-hint">Nobody receives holidays until ticked here. For everyone else these dates stay normal workdays.</div>
+            <div class="scp-staff-from">
+              <label for="scpStaffFrom">People ticked now receive holidays from</label>
+              <input type="date" id="scpStaffFrom" value="${esc(st.staffFrom)}" max="${esc(todayISO())}">
+              <span class="muted">Unticking stops them from today. Holidays already past keep the way they were counted.</span>
+            </div>
+            <div class="scp-staff">${staffHtml}</div>
+            <div class="scp-preview" id="scpPreview">
+              <span class="scp-pv-item"><b class="mono">${fmtNum(hpv.holidays)}</b> <span>holidays</span></span>
+              <span class="scp-pv-item"><b class="mono">${fmtNum(hpv.days)}</b> <span>days</span></span>
+              <span class="scp-pv-item"><b class="mono">${fmtNum(hpv.businesses)}</b> <span>businesses</span></span>
+              <span class="scp-pv-item ${hpv.staffOn ? '' : 'is-warn'}"><b class="mono">${fmtNum(hpv.staffOn)}</b> <span>staff receive them</span></span>
+              ${hpv.carried ? `<span class="scp-pv-item is-warn"><b class="mono">${fmtNum(hpv.carried)}</b> <span>other businesses observe a holiday whose date you changed: their date follows this one</span></span>` : ''}
+              ${st.legacyItems ? `<span class="scp-pv-item is-warn"><b class="mono">${fmtNum(st.legacyItems)}</b> <span>holiday dates an earlier version wrote on shifts are taken off (attendance on them is recalculated)</span></span>` : ''}
+              ${hpv.recalcAtt ? `<span class="scp-pv-item is-warn"><b class="mono">${fmtNum(hpv.recalcAtt)}</b> <span>attendance rows on past dates will be recalculated</span></span>` : ''}
+              ${hpv.handAtt ? `<span class="scp-pv-item"><b class="mono">${fmtNum(hpv.handAtt)}</b> <span>rows edited by hand (or with a file attached) stay as they are</span></span>` : ''}
+            </div>` : `
             <div class="scp-section-head">Shifts</div>
             <div class="scp-shifts">
               ${tg.length ? tg.map(t => `
@@ -134194,7 +135004,7 @@
               ${pv.overlapOwn ? `<span class="scp-pv-item is-warn"><b class="mono">${fmtNum(pv.overlapOwn)}</b> <span>hand-made date exceptions overlap (a narrower one still wins on its dates)</span></span>` : ''}
               ${pv.recalcAtt ? `<span class="scp-pv-item is-warn"><b class="mono">${fmtNum(pv.recalcAtt)}</b> <span>attendance rows on past dates will be recalculated</span></span>` : ''}
               ${pv.handAtt ? `<span class="scp-pv-item"><b class="mono">${fmtNum(pv.handAtt)}</b> <span>rows edited by hand (or with a file attached) stay as they are</span></span>` : ''}
-            </div>
+            </div>`}
           </div>
           <div class="modal-foot" style="justify-content:space-between">
             <div>
@@ -134202,7 +135012,7 @@
             </div>
             <div style="display:flex;gap:8px">
               <button type="button" class="btn" id="scpCancelBtn">Cancel</button>
-              ${canWrite ? `<button type="button" class="btn btn-primary" id="scpApplyBtn">${st.confirmArmed ? 'Confirm and Apply' : 'Apply to Shifts'}</button>` : '<span class="muted">View only: your seat cannot change shifts</span>'}
+              ${canWrite ? `<button type="button" class="btn btn-primary" id="scpApplyBtn">${st.confirmArmed ? 'Confirm and Apply' : (isHol ? 'Apply Holidays' : 'Apply to Shifts')}</button>` : '<span class="muted">View only: your seat cannot change shifts</span>'}
             </div>
           </div>
         </div>`;
@@ -134211,6 +135021,11 @@
       wireModalSuggestions(modal);
       stripNativeTitles(modal);
       wire();
+      // A tick redraws the dialog: keep the reader where they were in the lists.
+      const nextBody = modal.querySelector('.scp-body');
+      const nextStaffBox = modal.querySelector('.scp-staff');
+      if (nextBody && keepBodyTop) nextBody.scrollTop = keepBodyTop;
+      if (nextStaffBox && keepStaffTop) nextStaffBox.scrollTop = keepStaffTop;
     };
 
     const readInputs = () => {
@@ -134234,6 +135049,31 @@
 
     const runApply = remove => {
       readInputs();
+      if (st.presetId === 'holidays') {
+        if (!remove && !st.rows.some(r => r.on)) {
+          toast('Tick at least one date', 'warn');
+          return;
+        }
+        const companies = buList.filter(co => st.companies.has(co));
+        if (!companies.length) {
+          toast('Choose at least one business', 'warn');
+          return;
+        }
+        const rowsOut = st.rows.map(r => Object.assign({}, r, { moved: Boolean(r.hol) && (r.start_date !== r.loaded_start || r.end_date !== r.loaded_end) }));
+        const res = applyCompanyHolidays({ year: st.year, rows: rowsOut, companies, staffOn: Object.assign({}, st.staffOn), staffFrom: st.staffFrom, remove: Boolean(remove) });
+        if (!res.ok) {
+          toast(res.error || 'Could not apply the preset', 'err');
+          return;
+        }
+        if (!res.businessesChanged && !res.legacyRemoved && !res.datesCarried) {
+          toast(remove ? 'Nothing to remove: these businesses have no holidays for this year' : 'Nothing changed', 'warn');
+          return;
+        }
+        toast(remove ? 'Holidays removed for the chosen businesses' : 'Holidays applied to the chosen businesses', 'ok');
+        window.__lastShiftCalApply = res;
+        closeShiftCalPresetModal();
+        return;
+      }
       const spec = specNow();
       const targets = targetsNow().filter(t => t.on);
       if (!remove && !st.rows.some(r => r.on)) {
@@ -134309,8 +135149,17 @@
           return;
         }
         const td = String($('scpAddTo')?.value || '').slice(0, 10);
-        const nm = String($('scpAddName')?.value || '').trim().slice(0, 60) || 'Company Closure';
-        st.rows.push({ key: uid('scp'), name: nm, start_date: fd, end_date: /^\d{4}-\d{2}-\d{2}$/.test(td) && td >= fd ? td : fd, on: true, custom: true });
+        const holAdd = st.presetId === 'holidays';
+        const nm = String($('scpAddName')?.value || '').trim().slice(0, 60) || (holAdd ? 'Holiday' : 'Company Closure');
+        const rowAdd = { key: uid('scp'), name: nm, start_date: fd, end_date: /^\d{4}-\d{2}-\d{2}$/.test(td) && td >= fd ? td : fd, on: true, custom: true };
+        if (holAdd) {
+          // A day added by hand is linked to a calendar too, and joins the list every business selects from.
+          rowAdd.cal = String($('scpAddCal')?.value || 'other');
+          rowAdd.hol = `x_${uid('h')}`;
+          rowAdd.loaded_start = rowAdd.start_date;
+          rowAdd.loaded_end = rowAdd.end_date;
+        }
+        st.rows.push(rowAdd);
         st.rows.sort((a, b) => a.start_date.localeCompare(b.start_date));
         st.confirmArmed = false;
         st.removeArmed = false;
@@ -134324,6 +135173,57 @@
         loadRows();
         render();
       }));
+      modal.querySelectorAll('[data-scp-cal]').forEach(btn => btn.addEventListener('click', () => {
+        readInputs();
+        const calId = btn.getAttribute('data-scp-cal');
+        const rs = st.rows.filter(r => (r.cal || 'other') === calId);
+        const today = todayISO();
+        if (rs.length && rs.every(r => r.on)) {
+          rs.forEach(r => { r.on = false; });
+        } else {
+          // Dates still ahead; a calendar whose dates are all past is ticked whole (the count below says what
+          // attendance that recalculates).
+          const ahead = rs.filter(r => r.end_date >= today);
+          (ahead.length ? ahead : rs).forEach(r => { r.on = true; });
+        }
+        st.confirmArmed = false;
+        st.removeArmed = false;
+        render();
+      }));
+      modal.querySelectorAll('[data-scp-staff]').forEach(cb => cb.addEventListener('change', () => {
+        readInputs();
+        st.staffOn[cb.getAttribute('data-scp-staff')] = Boolean(cb.checked);
+        st.confirmArmed = false;
+        st.removeArmed = false;
+        render();
+      }));
+      modal.querySelectorAll('[data-scp-staff-all],[data-scp-staff-none]').forEach(btn => btn.addEventListener('click', () => {
+        readInputs();
+        const on = btn.hasAttribute('data-scp-staff-all');
+        const gkey = btn.getAttribute(on ? 'data-scp-staff-all' : 'data-scp-staff-none');
+        const sq = norm(st.staffSearch);
+        staffNow().filter(s => s.gkey === gkey && (!sq || norm(s.name).includes(sq))).forEach(s => { st.staffOn[s.key] = on; });
+        st.confirmArmed = false;
+        st.removeArmed = false;
+        render();
+      }));
+      $('scpStaffFrom')?.addEventListener('change', e => {
+        readInputs();
+        const v = String(e.target.value || '').slice(0, 10);
+        st.staffFrom = (/^\d{4}-\d{2}-\d{2}$/.test(v) && v <= todayISO()) ? v : todayISO();
+        st.confirmArmed = false;
+        st.removeArmed = false;
+        render();
+      });
+      // Search filters the names in place, so typing keeps the keyboard and the caret.
+      $('scpStaffSearch')?.addEventListener('input', e => {
+        st.staffSearch = String(e.target.value || '').slice(0, 40);
+        const sq = norm(st.staffSearch);
+        modal.querySelectorAll('.scp-staff-chip').forEach(chip => {
+          const nm = norm((chip.querySelector('span') || {}).textContent || '');
+          chip.hidden = Boolean(sq) && !nm.includes(sq);
+        });
+      });
       modal.querySelectorAll('[data-scp-shift]').forEach(cb => cb.addEventListener('change', () => {
         readInputs();
         const key = cb.getAttribute('data-scp-shift');
@@ -144333,6 +145233,16 @@
       removeStaffOtPass: (staff, id) => removeStaffOtPass(staff, id),
       resolveStaffShiftForDate: (staff, co, dateStr) => resolveStaffShiftForDate(staff, co, dateStr),
       computeShiftCalPresetRows: (presetId, year) => computeShiftCalPresetRows(presetId, year),
+      holidayCalendars: () => HOLIDAY_CALENDARS.map(c => Object.assign({}, c)),
+      getCompanyHolidayConfig: co => getCompanyHolidayConfig(co),
+      applyCompanyHolidays: spec => applyCompanyHolidays(spec),
+      staffHolidayOn: (staff, co, dateStr) => staffHolidayOn(staff, co, dateStr),
+      staffReceivesHolidays: (staff, co) => staffReceivesHolidays(staff, co),
+      setStaffReceivesHolidays: (staff, co, on, fromIso) => setStaffReceivesHolidays(staff, co, on, fromIso),
+      setCompanyDefaultPolicyGroupForTest: (co, gid) => setCompanyDefaultPolicyGroup(co, gid, { backfill: false }),
+      mergeWorkSchedulesForTest: remote => mergeWorkSchedules(remote),
+      saveCompanyHolidayConfigForTest: (co, cfg) => saveCompanyHolidayConfig(co, cfg),
+      getCompanyPolicyDefaultEntry: co => JSON.parse(JSON.stringify(ensureWorkSchedulesState().companyPolicyDefaults[norm(co)] || null)),
       listShiftCalTargets: co => listShiftCalTargets(co),
       applyShiftCalendarPreset: spec => applyShiftCalendarPreset(spec),
       getStoredShiftVersions: (co, code) => getStoredShiftVersions(co, code),
