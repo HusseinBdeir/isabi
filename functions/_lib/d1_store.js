@@ -2717,6 +2717,53 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
   return jsonResponse({ ok: true, saved: true, updated_at: nowIso });
 }
 
+export async function handleCashflowBehind(request, env, session, body, rawBytes = 0, bodyMeta = null) {
+  const isStrictOwner = Boolean(session && /\bowner\b/i.test(String(session.role || '')));
+  if (request.method === 'GET') {
+    if (isDemoHeader(request)) return jsonResponse({ ok: true, demo: true, cashflow_behind: null });
+    if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+    if (!isStrictOwner) return jsonResponse({ ok: false, error: 'Owner permissions required.' }, 403);
+    if (!env || !env.DB) return jsonResponse({ ok: true, cashflow_behind: null });
+    const row = await env.DB.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'cashflow_behind'").first();
+    return jsonResponse({ ok: true, cashflow_behind: row ? safeJsonParse(row.payload_json, null) : null });
+  }
+  if (request.method === 'POST') {
+    if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
+    if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+    if (!isStrictOwner) return jsonResponse({ ok: false, error: 'Owner permissions required.' }, 403);
+    const clen = Number(request.headers.get('Content-Length') || 0);
+    if (clen > 32768 || Number(rawBytes || 0) > 32768) {
+      return jsonResponse({ ok: false, error: 'Notice payload exceeds 32 KB limit.' }, 413);
+    }
+    if (bodyMeta && (bodyMeta.parseError || bodyMeta.emptyBody)) {
+      return jsonResponse({ ok: false, error: 'Valid non-empty JSON body required.' }, 400);
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return jsonResponse({ ok: false, error: 'Invalid cashflow_behind payload.' }, 400);
+    }
+    const hasWrapper = Object.prototype.hasOwnProperty.call(body, 'cashflow_behind');
+    const incoming = hasWrapper ? body.cashflow_behind : body;
+    const validObj = incoming && typeof incoming === 'object' && !Array.isArray(incoming) &&
+      typeof incoming.status === 'string' && incoming.status.trim().length > 0;
+    if (!(incoming === null && hasWrapper) && !validObj) {
+      return jsonResponse({ ok: false, error: 'Invalid cashflow_behind payload.' }, 400);
+    }
+    const rawJson = JSON.stringify(incoming);
+    if (new TextEncoder().encode(rawJson).length > 32768) {
+      return jsonResponse({ ok: false, error: 'Notice payload exceeds 32 KB limit.' }, 413);
+    }
+    if (!env || !env.DB) return jsonResponse({ ok: false, error: 'D1 not bound' }, 503);
+    const nowIso = new Date().toISOString();
+    await env.DB.prepare(
+      `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
+       VALUES (?1, ?2, ?3, 1)
+       ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1`
+    ).bind('cashflow_behind', rawJson, nowIso).run();
+    return jsonResponse({ ok: true, saved: true, updated_at: nowIso });
+  }
+  return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405);
+}
+
 export async function handleIndustryDomainStore(request, env, session, body, ctx = null) {
   if (!env || !env.DB) return jsonResponse({ ok: true, industryCustomRows: {}, industryRowEdits: {} });
   if (!session) {
@@ -4147,6 +4194,9 @@ export async function handleSync(request, env, session, body, _ctx) {
   const patchDocKeys = (body && body.op === 'patch' && body.patch && typeof body.patch === 'object') ? Object.keys(body.patch) : [];
   if (isKioskOwnedDoc(docKey) || patchDocKeys.some(isKioskOwnedDoc)) {
     return jsonResponse({ ok: false, error: 'This document is managed from Kiosks, Tablet Keys.' }, 403);
+  }
+  if (docKey === 'cashflow_behind' || patchDocKeys.includes('cashflow_behind')) {
+    return jsonResponse({ ok: false, error: 'Owner cashflow notice is managed from /api/cashflow_behind.' }, 403);
   }
 
   if (request.method === 'GET' || (body && (body.op === 'get_mfg' || body.op === 'get_control'))) {

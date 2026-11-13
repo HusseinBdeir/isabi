@@ -3999,6 +3999,76 @@ finally:
         direct404Html: [e38Direct404Html.status, e38Direct404Html.headers['x-robots-tag']]
       }));
     }
+
+    // 39. Owner-only /app/api/cashflow_behind + /app/api/sync 'cashflow_behind' 403 isolation
+    const cbUnauth = await httpReq('GET', '/app/api/cashflow_behind');
+    const cbDemoGet = await httpReq('GET', '/app/api/cashflow_behind', null, { 'X-ISABI-Demo': '1' });
+    const cbDemoUnauthPost = await httpReq('POST', '/app/api/cashflow_behind', { cashflow_behind: { status: 'ok' } }, { 'X-ISABI-Demo': '1' });
+    const cbDemoOwnerPost = await httpReq('POST', '/app/api/cashflow_behind', { cashflow_behind: { status: 'ok' } }, { 'X-ISABI-Session': ownerToken, 'X-ISABI-Demo': '1' });
+    const cbSupGet = await httpReq('GET', '/app/api/cashflow_behind', null, { 'X-ISABI-Session': bbcSupToken });
+    const cbSupPost = await httpReq('POST', '/app/api/cashflow_behind', { cashflow_behind: { status: 'ok' } }, { 'X-ISABI-Session': bbcSupToken });
+    const cbAllSupGet = typeof e29SupTok === 'string' && e29SupTok
+      ? await httpReq('GET', '/app/api/cashflow_behind', null, { 'X-ISABI-Session': e29SupTok })
+      : { status: 403 };
+    const cbSyncGet = await httpReq('POST', '/app/api/sync', { op: 'get', doc: 'cashflow_behind' }, { 'X-ISABI-Session': ownerToken });
+    const cbSyncPatch = await httpReq('POST', '/app/api/sync', { op: 'patch', doc: 'mfg_web_store', patch: { cashflow_behind: { status: 'ok' } } }, { 'X-ISABI-Session': ownerToken });
+    const cbTooBig = await httpReq('POST', '/app/api/cashflow_behind', { cashflow_behind: { status: 'ok', pad: 'x'.repeat(35000) } }, { 'X-ISABI-Session': ownerToken });
+    const cbUtf8Big = await httpReq('POST', '/app/api/cashflow_behind', { cashflow_behind: { status: 'ok', pad: 'ش'.repeat(18000) } }, { 'X-ISABI-Session': ownerToken });
+    const cbBadJson = await fetch(`http://127.0.0.1:${PORT}/app/api/cashflow_behind`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-ISABI-Session': ownerToken },
+      body: '{bad'
+    });
+    const cbEmptyStr = await fetch(`http://127.0.0.1:${PORT}/app/api/cashflow_behind`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-ISABI-Session': ownerToken },
+      body: ''
+    });
+    const cbEmptyObj = await httpReq('POST', '/app/api/cashflow_behind', {}, { 'X-ISABI-Session': ownerToken });
+    const cbEmptyWrap = await httpReq('POST', '/app/api/cashflow_behind', { cashflow_behind: {} }, { 'X-ISABI-Session': ownerToken });
+    const cbArr = await httpReq('POST', '/app/api/cashflow_behind', [], { 'X-ISABI-Session': ownerToken });
+    const cbClearPost = await httpReq('POST', '/app/api/cashflow_behind', { cashflow_behind: null }, { 'X-ISABI-Session': ownerToken });
+    const cbClearGet = await httpReq('GET', '/app/api/cashflow_behind', null, { 'X-ISABI-Session': ownerToken });
+    const cbNoticeSample = {
+      status: 'ok',
+      report_date: '2026-11-13',
+      cutoff: '2026-11-12',
+      core_hash: 'testcore01',
+      companies: [{ company: 'WTC', company_key: 'wtc', cutoff: '2026-11-12', edited_day_count: 1, edited_net_usd: -1100.0, edited_net_lbp: 0, added_day_count: 0, edited_days: [{ date: '2026-08-24', diff_in_usd: 0, diff_out_usd: 1100.0, diff_net_usd: -1100.0, diff_net_lbp: 0, parties: ['Haj Ibrahim'] }] }]
+    };
+    const cbOwnerPost = await httpReq('POST', '/app/api/cashflow_behind', { cashflow_behind: cbNoticeSample }, { 'X-ISABI-Session': ownerToken });
+    const cbOwnerGet = await httpReq('GET', '/app/api/cashflow_behind', null, { 'X-ISABI-Session': ownerToken });
+    if (
+      cbUnauth.status === 401 &&
+      cbDemoGet.status === 200 && cbDemoGet.json?.demo === true && cbDemoGet.json?.cashflow_behind === null &&
+      (cbDemoUnauthPost.status === 401 || cbDemoUnauthPost.status === 403) &&
+      cbDemoOwnerPost.status === 403 &&
+      cbSupGet.status === 403 && cbSupPost.status === 403 && cbAllSupGet.status === 403 &&
+      cbSyncGet.status === 403 && cbSyncPatch.status === 403 &&
+      cbTooBig.status === 413 && cbUtf8Big.status === 413 &&
+      cbBadJson.status === 400 && cbEmptyStr.status === 400 &&
+      cbEmptyObj.status === 400 && cbEmptyWrap.status === 400 && cbArr.status === 400 &&
+      cbClearPost.status === 200 && cbClearGet.status === 200 && cbClearGet.json?.cashflow_behind === null &&
+      cbOwnerPost.status === 200 &&
+      cbOwnerGet.status === 200 &&
+      cbOwnerGet.json?.cashflow_behind?.companies?.[0]?.edited_net_usd === -1100
+    ) {
+      pass(
+        'edge-39-cashflow-behind-owner-only-and-sync-guard',
+        'unauth=401, demo GET=200(null)/POST=401+403, Supervisors=403, /api/sync=403, invalid=400, >32KB ASCII+UTF8=413, clear=200(null), Owner POST+GET=200'
+      );
+    } else {
+      fail('edge-39-cashflow-behind-owner-only-and-sync-guard', JSON.stringify({
+        unauth: cbUnauth.status,
+        demo: [cbDemoGet.status, cbDemoGet.json, cbDemoUnauthPost.status, cbDemoOwnerPost.status],
+        sup: [cbSupGet.status, cbSupPost.status, cbAllSupGet.status],
+        sync: [cbSyncGet.status, cbSyncPatch.status],
+        big: [cbTooBig.status, cbUtf8Big.status],
+        bad: [cbBadJson.status, cbEmptyStr.status, cbEmptyObj.status, cbEmptyWrap.status, cbArr.status],
+        clear: [cbClearPost.status, cbClearGet.status, cbClearGet.json],
+        owner: [cbOwnerPost.status, cbOwnerGet.status, cbOwnerGet.json]
+      }));
+    }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
     killTree(edgeProc.pid);

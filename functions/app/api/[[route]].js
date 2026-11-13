@@ -10,6 +10,7 @@ import {
   handleAuthLogout,
   handleAuthMe,
   handleBlobs,
+  handleCashflowBehind,
   handleIndustryDomainStore,
   handleKvDoc,
   handleOverrideRequests,
@@ -52,27 +53,35 @@ const DEMO_EMPTY_GET_ROUTES = new Set([
   '/staff_biometrics',
   '/work_schedules',
   '/geo_config',
+  '/cashflow_behind',
   '/industry_domain_store'
 ]);
 
 const DEMO_AI_MAX_BYTES = 1572864; // 1.5 MB ceiling on unauthenticated Demo AI payloads
 const AUTHED_MAX_BODY_BYTES = 16777216; // 16 MB hard ceiling on authenticated sync/blob bodies
 
+const _UTF8_ENC = new TextEncoder();
+
 async function parseBodyWithSize(request, maxBytes = AUTHED_MAX_BODY_BYTES) {
-  if (request.method === 'GET' || request.method === 'HEAD') return { body: {}, rawBytes: 0, tooLarge: false };
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    return { body: {}, rawBytes: 0, tooLarge: false, parseError: false, emptyBody: false };
+  }
   const clen = Number(request.headers.get('Content-Length') || 0);
   if (clen > maxBytes) {
-    return { body: {}, rawBytes: clen, tooLarge: true };
+    return { body: {}, rawBytes: clen, tooLarge: true, parseError: false, emptyBody: false };
   }
   try {
     const txt = await request.text();
-    const rawBytes = txt ? txt.length : 0;
+    const rawBytes = txt ? _UTF8_ENC.encode(txt).length : 0;
     if (rawBytes > maxBytes) {
-      return { body: {}, rawBytes, tooLarge: true };
+      return { body: {}, rawBytes, tooLarge: true, parseError: false, emptyBody: false };
     }
-    return { body: txt ? JSON.parse(txt) : {}, rawBytes, tooLarge: false };
+    if (!txt || !txt.trim()) {
+      return { body: {}, rawBytes: 0, tooLarge: false, parseError: false, emptyBody: true };
+    }
+    return { body: JSON.parse(txt), rawBytes, tooLarge: false, parseError: false, emptyBody: false };
   } catch (_) {
-    return { body: {}, rawBytes: 0, tooLarge: false };
+    return { body: {}, rawBytes: 0, tooLarge: false, parseError: true, emptyBody: false };
   }
 }
 
@@ -101,7 +110,7 @@ async function routeAppApi(context) {
   }
 
   const bodyLimit = session ? AUTHED_MAX_BODY_BYTES : 6291456; // 6 MB pre-auth ceiling (covers 4 MB phone-scan page)
-  const { body, rawBytes, tooLarge } = await parseBodyWithSize(request, bodyLimit);
+  const { body, rawBytes, tooLarge, parseError, emptyBody } = await parseBodyWithSize(request, bodyLimit);
   if (tooLarge) {
     return jsonResponse({ ok: false, error: 'Request payload exceeds size limit.' }, 413);
   }
@@ -133,6 +142,7 @@ async function routeAppApi(context) {
       if (subPath === '/staff_biometrics') return jsonResponse({ ok: true, demo: true, staff_biometrics: {} });
       if (subPath === '/work_schedules') return jsonResponse({ ok: true, demo: true, work_schedules: null });
       if (subPath === '/geo_config') return jsonResponse({ ok: true, demo: true, config: null });
+      if (subPath === '/cashflow_behind') return jsonResponse({ ok: true, demo: true, cashflow_behind: null });
       if (subPath === '/industry_domain_store') return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
     }
     if (isDemoReq && request.method === 'POST' && (subPath === '/ask' || subPath === '/tts' || subPath === '/smart-scan' || subPath === '/ai-edge')) {
@@ -200,6 +210,10 @@ async function routeAppApi(context) {
 
   if (subPath === '/geo_config') {
     return handleKvDoc(request, env, session, 'geo_config', 'config', body);
+  }
+
+  if (subPath === '/cashflow_behind') {
+    return handleCashflowBehind(request, env, session, body, rawBytes, { parseError, emptyBody });
   }
 
   if (subPath === '/industry_domain_store') {
