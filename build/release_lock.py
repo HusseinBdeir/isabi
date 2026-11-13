@@ -41,6 +41,10 @@ Commands
   python build/release_lock.py ci-acquire --sha <commit>   (the workflow; writes deploy=true|false to GITHUB_OUTPUT)
 Bypass (only when the owner says so): ISABI_RELEASE_LOCK=off, or deploy_cloudflare.py --no-release-lock.
 Test: python build/verify_release_lock.py
+
+Batched releases (owner 2026-11-13): build/release_batch.py keeps a waiting line in front of this lock. A change that
+finishes while a release is running joins the line, and whoever takes the lock next ships everything in the line as one
+version (`release_batch.py ship`). The lock itself is unchanged: a batch leader is a holder like any other.
 """
 from __future__ import annotations
 
@@ -370,11 +374,14 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
 
 
 def renew(cwd: Path = ISABI_ROOT, *, ttl_min: int = DEFAULT_TTL_MIN, quiet: bool = False, deployed: dict | None = None,
-          _seen: tuple[str, dict] | None = None) -> dict:
+          extra: dict | None = None, _seen: tuple[str, dict] | None = None) -> dict:
+    """`extra` adds descriptive fields to the lock (release_batch.py: the batch's version, purpose and entries); it
+    can never change who holds the lock, when it expires or what was deployed under it."""
     sha, info = _seen or read_remote_lock(cwd)
     if not sha or not held_by_me(info, cwd):
         raise LockError(f"RELEASE LOCK: this worktree does not hold it ({describe(info) if sha else 'nobody holds it'}).")
     new = dict(info)
+    new.update({k: v for k, v in (extra or {}).items() if k not in ("lockId", "holder", "pc", "acquiredAt", "expiresAt", "deployed")})
     new["expiresAt"] = _iso(_now() + dt.timedelta(minutes=ttl_min))
     if deployed:
         new["deployed"] = [*(info.get("deployed") or []), deployed]
