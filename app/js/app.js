@@ -28456,13 +28456,24 @@
         sd = ed;
         ed = tmp;
       }
+      // A closed day (company holiday) carries no clock window: the date is not a workday for the shift.
+      const dayOff = item.day_off === true || item.day_off === 1 || item.day_off === '1' || item.day_off === 'Yes';
+      // A shortened day (Ramadan / winter preset): no fixed window, the day's own timing (weekday or regular,
+      // split windows kept) ends `shorten_min` minutes earlier. Resolved in resolveShiftTimingForDate.
+      const shortenMin = dayOff ? 0 : Math.max(0, Math.min(720, Math.round(Number(item.shorten_min || 0))));
+      // Signed offsets (Punch Drift dated rule): the day's own start / end moved by N minutes.
+      const startShift = dayOff ? 0 : Math.max(-720, Math.min(720, Math.round(Number(item.start_shift_min || 0))));
+      const endShift = dayOff ? 0 : Math.max(-720, Math.min(720, Math.round(Number(item.end_shift_min || 0))));
+      const relative = !dayOff && (shortenMin > 0 || startShift !== 0 || endShift !== 0);
+      // A closed or relative item may also carry a plain window: shells before v19.6.327 drop any item without
+      // one (and could save that loss back), so presets write a harmless fallback. Newer shells ignore it.
       const st = fmtAttClockTime(item.start_time || item.start || '') || '';
       const et = fmtAttClockTime(item.end_time || item.end || '') || '';
-      if (!st || !et) return;
-      const hrs = computeShiftWorkedHours(st, et) || 8.0;
+      if (!dayOff && !relative && (!st || !et)) return;
+      const hrs = (dayOff || relative) ? 0 : (computeShiftWorkedHours(st, et) || 8.0);
       const note = String(item.note || item.label || '').trim().slice(0, 60);
-      const id = String(item.id || `dt_${sd}_${ed}_${st.replace(':', '')}_${et.replace(':', '')}`);
-      bySpan.set(`${sd}|${ed}`, {
+      const id = String(item.id || (dayOff ? `dt_${sd}_${ed}_off` : (relative ? `dt_${sd}_${ed}_s${shortenMin}_${startShift}_${endShift}` :`dt_${sd}_${ed}_${st.replace(':', '')}_${et.replace(':', '')}`)));
+      const out = {
         id,
         start_date: sd,
         end_date: ed,
@@ -28471,11 +28482,45 @@
         hours: hrs,
         note,
         include_off_days: Boolean(item.include_off_days)
-      });
+      };
+      if (dayOff) out.day_off = true;
+      if (relative && shortenMin) out.shorten_min = shortenMin;
+      if (relative && startShift) out.start_shift_min = startShift;
+      if (relative && endShift) out.end_shift_min = endShift;
+      // Weekdays each offset applies on (Punch Drift: a Friday-only early leave moves Fridays only).
+      const dowList = raw => (Array.isArray(raw) ? Array.from(new Set(raw.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))).sort((a, b) => a - b) : null);
+      const sDows = startShift ? dowList(item.start_dows) : null;
+      const eDows = endShift ? dowList(item.end_dows) : null;
+      if (sDows && sDows.length) out.start_dows = sDows;
+      if (eDows && eDows.length) out.end_dows = eDows;
+      // Calendar preset tag (`<preset>:<year>`): set by the Holiday & Season Presets, removable as one batch.
+      const presetTag = String(item.preset || '').trim().slice(0, 40);
+      if (presetTag) out.preset = presetTag;
+      bySpan.set(`${sd}|${ed}`, out);
     });
     return Array.from(bySpan.values()).sort((a, b) =>
       a.start_date.localeCompare(b.start_date) || a.end_date.localeCompare(b.end_date)
     );
+  }
+
+  // Text of a relative dated exception: "2h shorter" (preset) or "start +45 min, end -30 min" (Punch Drift).
+  function fmtRelativeDateTimingText(item) {
+    if (item.shorten_min && !item.start_shift_min && !item.end_shift_min) {
+      return `${fmtNum(item.shorten_min / 60, item.shorten_min % 60 ? 1 : 0)}h shorter`;
+    }
+    const sgn = n => (n > 0 ? `+${n}` : `${n}`);
+    const out = [];
+    if (item.start_shift_min) out.push(`start ${sgn(item.start_shift_min)} min`);
+    const endDelta = Number(item.end_shift_min || 0) - Number(item.shorten_min || 0);
+    if (endDelta) out.push(`end ${sgn(endDelta)} min`);
+    return out.join(', ');
+  }
+
+  // Chip body for one dated exception: its clock window and hours, or "Closed" for a closed day.
+  function fmtDateTimingWindowHtml(item, hrs) {
+    if (item && item.day_off) return '<b class="mono">Closed</b>';
+    if (item && (item.shorten_min || item.start_shift_min || item.end_shift_min)) return `<b class="mono">${esc(fmtRelativeDateTimingText(item))}</b>`;
+    return `<b class="mono">${esc(item.start_time)}-${esc(item.end_time)}</b>${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}`;
   }
 
   function formatShiftExceptionsSummary(dayTimings, dateTimings, _baseStart = '08:00', _baseEnd = '16:00') {
@@ -28498,8 +28543,16 @@
       const dateLbl = dItem.start_date === dItem.end_date
         ? fmtDateDMY(dItem.start_date)
         : `${fmtDateDMY(dItem.start_date)} to ${fmtDateDMY(dItem.end_date)}`;
-      const hrs = Number(dItem.hours || computeShiftWorkedHours(dItem.start_time, dItem.end_time) || 0);
       const prefix = dItem.note ? `${dItem.note}: ` : '';
+      if (dItem.day_off) {
+        parts.push(`${prefix}${dateLbl} Closed`);
+        return;
+      }
+      if (dItem.shorten_min || dItem.start_shift_min || dItem.end_shift_min) {
+        parts.push(`${prefix}${dateLbl} ${fmtRelativeDateTimingText(dItem)}`);
+        return;
+      }
+      const hrs = Number(dItem.hours || computeShiftWorkedHours(dItem.start_time, dItem.end_time) || 0);
       parts.push(`${prefix}${dateLbl} ${dItem.start_time}-${dItem.end_time}${hrs > 0 ? ` (${fmtNum(hrs, 1)}h)` : ''}`);
     });
     return parts.length ? parts.join(' · ') : 'Same Every Workday';
@@ -28593,15 +28646,89 @@
       const dList = normalizeDateTimingsList(shiftOrRule.date_timings);
       const matches = dList.filter(item => item.start_date <= dStr && dStr <= item.end_date);
       if (matches.length) {
+        // Exact date first, then the narrowest range (a 3-day Eid closure inside a winter-hours season wins),
+        // then a closed day over a timing of the same width, then the later start.
+        // The width and closed-day steps apply only when a preset or closed item is among the matches, so two
+        // overlapping hand-made ranges resolve exactly as before (later start wins).
+        const spanDays = it => Math.round((Date.parse(`${it.end_date}T00:00:00Z`) - Date.parse(`${it.start_date}T00:00:00Z`)) / 86400000);
+        const presetAware = matches.some(it => it.preset || it.day_off || it.shorten_min);
         matches.sort((a, b) => {
           const aSingle = a.start_date === a.end_date ? 1 : 0;
           const bSingle = b.start_date === b.end_date ? 1 : 0;
           if (bSingle !== aSingle) return bSingle - aSingle;
+          if (presetAware) {
+            const spanCmp = spanDays(a) - spanDays(b);
+            if (spanCmp !== 0) return spanCmp;
+            const offCmp = (b.day_off ? 1 : 0) - (a.day_off ? 1 : 0);
+            if (offCmp !== 0) return offCmp;
+          }
           const sdCmp = b.start_date.localeCompare(a.start_date);
           if (sdCmp !== 0) return sdCmp;
           return a.end_date.localeCompare(b.end_date);
         });
         const m = matches[0];
+        if (m.day_off) {
+          // Closed on this date: no clock window, so the day is not a workday (see resolveStaffShiftForDate).
+          const base = resolveShiftTimingForWeekday(shiftOrRule, dayIdx);
+          return Object.assign({}, base, {
+            hours: 0,
+            isDaySpecific: false,
+            isDateSpecific: true,
+            isOff: true,
+            dateTiming: m,
+            forcesWorkday: false
+          });
+        }
+        if (m.shorten_min || m.start_shift_min || m.end_shift_min) {
+          // Relative day: the day's own timing (that weekday's window, else regular hours; a split shift keeps
+          // both windows) ends `shorten_min` earlier (Ramadan / winter preset) or has its start / end moved by
+          // `start_shift_min` / `end_shift_min` (Punch Drift dated rule). At least an hour stays. Off days stay off.
+          const base = resolveShiftTimingForWeekday(shiftOrRule, dayIdx);
+          const splitBase = Boolean(shiftOrRule.split_enabled) && !base.isDaySpecific;
+          const st0 = splitBase ? (fmtAttClockTime(shiftOrRule.split_start_1 || base.start_time) || base.start_time) : base.start_time;
+          const et0 = splitBase ? (fmtAttClockTime(shiftOrRule.split_end_2 || base.end_time) || base.end_time) : base.end_time;
+          const s0 = parseClockMinutes(st0);
+          let eMin = parseClockMinutes(et0);
+          if (s0 != null && eMin != null) {
+            if (eMin <= s0) eMin += 1440;
+            const clk = mm => `${String(Math.floor((((mm % 1440) + 1440) % 1440) / 60)).padStart(2, '0')}:${String((((mm % 1440) + 1440) % 1440) % 60).padStart(2, '0')}`;
+            const toAbs = (t, floor) => { let v = parseClockMinutes(t); if (v == null) return null; while (v < floor) v += 1440; return v; };
+            const e1Raw = splitBase ? toAbs(shiftOrRule.split_end_1, s0) : null;
+            // A start moved later never passes the end of the first window minus an hour.
+            const sCap = (e1Raw != null ? e1Raw : eMin) - 60;
+            const sMin = Math.min(sCap, s0 + Number(m.start_shift_min || 0));
+            const newE = Math.max(sMin + 60, eMin + Number(m.end_shift_min || 0) - Number(m.shorten_min || 0));
+            let split = null;
+            let endMin = newE;
+            let hours = Math.round(((newE - sMin) / 60) * 100) / 100;
+            if (splitBase) {
+              const e1 = e1Raw;
+              const s2 = e1 != null ? toAbs(shiftOrRule.split_start_2, e1) : null;
+              if (e1 != null && s2 != null && newE > s2) {
+                split = { split_start_1: clk(sMin), split_end_1: clk(e1), split_start_2: clk(s2), split_end_2: clk(newE) };
+                hours = Math.round((((e1 - sMin) + (newE - s2)) / 60) * 100) / 100;
+              } else if (e1 != null) {
+                // The cut reaches past the second window: one window that ends where the first one did, or earlier.
+                endMin = Math.min(newE, e1);
+                hours = Math.round(((endMin - sMin) / 60) * 100) / 100;
+              }
+            }
+            return {
+              start_time: clk(sMin),
+              end_time: clk(endMin),
+              hours,
+              overnight: endMin >= 1440,
+              isDaySpecific: true,
+              isDateSpecific: true,
+              isShortened: true,
+              split,
+              dateTiming: m,
+              forcesWorkday: false,
+              dayName: SHIFT_DAY_SHORT_NAMES[String(dayIdx != null ? dayIdx : -1)] || ''
+            };
+          }
+          return Object.assign({}, base, { isDateSpecific: true, dateTiming: m });
+        }
         const sMin = parseClockMinutes(m.start_time);
         const eMin = parseClockMinutes(m.end_time);
         const overnight = Boolean(sMin != null && eMin != null && eMin <= sMin);
@@ -28779,6 +28906,9 @@
     // Same timing the attendance rules use: a dated exception first, then the weekday, then regular hours; an
     // exception replaces a split shift's two windows (resolveStaffShiftForDate does the same).
     const t = resolveShiftTimingForDate(ver, d, dow);
+    // A closed date (holiday preset or closed exception) has no planned window, like a weekly day off. A
+    // shortened day (Ramadan / winter) comes back with its own start and end (first start, last end on a split).
+    if (t && t.isOff) return null;
     const special = Boolean(t && t.isDaySpecific);
     if (!days.includes(dow) && !(special && t.forcesWorkday)) return null;
     let s;
@@ -29166,15 +29296,20 @@
         };
       });
       const dateGroups = dList.map(item => {
+        if (item.shorten_min || item.start_shift_min || item.end_shift_min) {
+          // Regular hours, ending earlier (the per-weekday detail is in the attendance rules).
+          const t = resolveShiftTimingForDate(Object.assign({}, ws, { date_timings: [item] }), item.start_date, -1);
+          item = Object.assign({}, item, { start_time: t.start_time, end_time: t.end_time, hours: t.hours });
+        }
         const dateSpan = item.start_date === item.end_date
           ? fmtDateDMY(item.start_date)
           : `${fmtDateDMY(item.start_date)} to ${fmtDateDMY(item.end_date)}`;
         return {
           tag: item.note ? item.note.slice(0, 12) : (item.start_date === item.end_date ? fmtDateDMY(item.start_date) : 'Dates'),
           fullLabel: item.note ? `${item.note}: ${dateSpan}` : dateSpan,
-          segs: win(item.start_time, item.end_time),
-          hours: Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0),
-          win: `${item.start_time}-${item.end_time}`
+          segs: item.day_off ? [] : win(item.start_time, item.end_time),
+          hours: item.day_off ? 0 : Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0),
+          win: item.day_off ? 'Closed' : `${item.start_time}-${item.end_time}`
         };
       });
 
@@ -29613,9 +29748,12 @@
     });
 
     let staffUpdated = 0;
+    // A calendar preset (opts.limitWindows) changes only dated exceptions, which reach people through the shift
+    // at resolve time: it must not copy this version's grace minutes or timings onto anyone's own rule.
+    const presetOnly = Boolean(opts && Array.isArray(opts.limitWindows));
     associatedStaff.forEach(sk => {
       const existingRule = ws.staffRules[sk];
-      if (existingRule && !existingRule.reset_default) {
+      if (!presetOnly && existingRule && !existingRule.reset_default) {
         existingRule.grace_min = ref.grace_min != null ? ref.grace_min : existingRule.grace_min;
         existingRule.early_leave_grace_min = ref.early_leave_grace_min != null ? ref.early_leave_grace_min : existingRule.early_leave_grace_min;
         if (!existingRule.use_custom_day_timings) {
@@ -29632,8 +29770,15 @@
 
     const dateExcWindows = normalizeDateTimingsList((ref && ref.date_timings) || [])
       .concat(normalizeDateTimingsList((editOrig && editOrig.date_timings) || []));
+    // A calendar preset changes only its own dates: opts.limitWindows ([{ start_date, end_date }]) keeps the
+    // recalculation to those dates inside this row's validity, instead of every day the row covers.
+    const limitWins = (opts && Array.isArray(opts.limitWindows)) ? opts.limitWindows.filter(w => w && w.start_date) : null;
     const inBackfillWindow = dStr => {
       if (!dStr) return false;
+      if (limitWins) {
+        return dStr >= rangeFrom && dStr <= rangeTo
+          && limitWins.some(w => String(w.start_date).slice(0, 10) <= dStr && dStr <= String(w.end_date || w.start_date).slice(0, 10));
+      }
       if (dStr >= rangeFrom && dStr <= rangeTo) return true;
       return dateExcWindows.some(w => w.start_date <= dStr && dStr <= w.end_date);
     };
@@ -29678,6 +29823,7 @@
     const attRows = (SEED && SEED.records && SEED.records.attendance) || [];
     if (!Array.isArray(STATE.customRecords.attendance)) STATE.customRecords.attendance = [];
     let attUpdated = 0;
+    let handKept = 0;
     for (let i = 0; i < attRows.length; i++) {
       const a = attRows[i];
       if (!a || a.voided) continue;
@@ -29691,6 +29837,11 @@
       if (!associatedStaff.has(sk) && !matchesExplicitShift) continue;
       const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
       if (!inBackfillWindow(d)) continue;
+      // A preset never rewrites a row someone corrected by hand.
+      if (presetOnly && a.modified_by) {
+        handKept++;
+        continue;
+      }
 
       const shiftOnDate = resolveStaffShiftForDate(a.staff, a.company || co, d);
       const schedH = shiftOnDate.isWorkday ? Number(shiftOnDate.hours || 8) : 0;
@@ -29767,7 +29918,7 @@
       SEED._customRev = (SEED._customRev || 0) + 1;
     }
     if (SEED) SEED._workShiftsSeededRev = '';
-    return { staffUpdated, attUpdated, punchesUpdated, rangeFrom, rangeTo };
+    return { staffUpdated, attUpdated, punchesUpdated, handKept, rangeFrom, rangeTo };
   }
 
   function ensureStaffMembersSeeded() {
@@ -91095,7 +91246,7 @@
               ? fmtDateDMY(item.start_date)
               : `${fmtDateDMY(item.start_date)} to ${fmtDateDMY(item.end_date)}`;
             const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
-            return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dLbl)} · <b class="mono">${esc(item.start_time)}-${esc(item.end_time)}</b>${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}</span><button type="button" class="stm-exc-chip-rm" data-ws-rm-date="${esc(item.id)}" aria-label="Remove date timing">✕</button></span>`;
+            return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dLbl)} · ${fmtDateTimingWindowHtml(item, hrs)}</span><button type="button" class="stm-exc-chip-rm" data-ws-rm-date="${esc(item.id)}" aria-label="Remove date timing">✕</button></span>`;
           }).join('');
         };
         const dtWrap = $('wrap_ws_date_timings');
@@ -124483,7 +124634,12 @@
       }
       if (hasExplicitStaffWorkRule(staffName) && rule.use_custom_day_timings) {
         chosenShift.day_timings = normalizeDayTimingsMap(rule.day_timings, rule.sat_diff_enabled, rule.sat_start_time, rule.sat_end_time);
-        chosenShift.date_timings = normalizeDateTimingsList(rule.date_timings);
+        // Company calendar presets (holidays, Ramadan, winter hours) live on the shift and still reach a person
+        // with their own timings; the person's own dated exception for the same span wins. Preset copies the
+        // rule picked up earlier are dropped so removing a preset from the shift removes it for everyone.
+        const shiftPresetDates = normalizeDateTimingsList(found && found.date_timings).filter(it => it.preset);
+        const ruleOwnDates = normalizeDateTimingsList(rule.date_timings).filter(it => !it.preset);
+        chosenShift.date_timings = normalizeDateTimingsList(shiftPresetDates.concat(ruleOwnDates));
         chosenShift.sat_diff_enabled = Boolean(chosenShift.day_timings['6']);
         chosenShift.sat_start_time = (chosenShift.day_timings['6'] && chosenShift.day_timings['6'].start_time) || rule.sat_start_time || '07:00';
         chosenShift.sat_end_time = (chosenShift.day_timings['6'] && chosenShift.day_timings['6'].end_time) || rule.sat_end_time || '14:00';
@@ -124504,9 +124660,18 @@
     let isDaySpecific = false;
     let isDateSpecific = false;
     let dateTimingNote = '';
+    let isClosedDay = false;
     if (!activeOv && wk.dayIdx >= 0) {
       const resolvedTiming = resolveShiftTimingForDate(chosenShift, dStr, wk.dayIdx);
-      if (resolvedTiming && resolvedTiming.isDateSpecific && resolvedTiming.forcesWorkday) {
+      if (resolvedTiming && resolvedTiming.isOff) {
+        // Company closed on this date (holiday preset or a closed date exception): same path as a weekly day off,
+        // so no lateness or shortfall, and any hours worked count as off-day hours.
+        isWorkday = false;
+        isClosedDay = true;
+        isDateSpecific = true;
+        dateTimingNote = (resolvedTiming.dateTiming && resolvedTiming.dateTiming.note) || '';
+      }
+      if (!isClosedDay && resolvedTiming && resolvedTiming.isDateSpecific && resolvedTiming.forcesWorkday) {
         isWorkday = true;
       }
       if (isWorkday && resolvedTiming && resolvedTiming.isDaySpecific) {
@@ -124514,17 +124679,61 @@
         chosenShift.end_time = resolvedTiming.end_time;
         chosenShift.hours = resolvedTiming.hours;
         chosenShift.overnight = resolvedTiming.overnight;
-        chosenShift.split_enabled = false;
-        chosenShift.split_window_label = '';
+        if (resolvedTiming.split) {
+          // Shortened split day: both windows stay, the second one ends earlier.
+          Object.assign(chosenShift, resolvedTiming.split, { split_enabled: true });
+          chosenShift.split_window_label = `${resolvedTiming.split.split_start_1}-${resolvedTiming.split.split_end_1} + ${resolvedTiming.split.split_start_2}-${resolvedTiming.split.split_end_2}`;
+        } else {
+          chosenShift.split_enabled = false;
+          chosenShift.split_window_label = '';
+        }
         isDaySpecific = true;
         isDateSpecific = Boolean(resolvedTiming.isDateSpecific);
         dateTimingNote = (resolvedTiming.dateTiming && resolvedTiming.dateTiming.note) || '';
       }
     }
+    // A person's own dated offsets (Punch Drift "Next 4 Weeks"): applied last, on top of the day as resolved
+    // (season, hand-made exception, weekday), only on the weekdays each side drifts. Closed days stay closed.
+    let driftNote = '';
+    if (!activeOv && isWorkday && wk.dayIdx >= 0) {
+      const own = normalizeDateTimingsList(rule.own_date_timings).filter(it => it.start_date <= dStr && dStr <= it.end_date);
+      let sMove = 0;
+      let eMove = 0;
+      own.forEach(it => {
+        if (it.start_shift_min && (!it.start_dows || it.start_dows.includes(wk.dayIdx))) sMove += Number(it.start_shift_min);
+        if (it.end_shift_min && (!it.end_dows || it.end_dows.includes(wk.dayIdx))) eMove += Number(it.end_shift_min);
+        if ((it.start_shift_min || it.end_shift_min) && it.note) driftNote = it.note;
+      });
+      if (sMove || eMove) {
+        const sKey = chosenShift.split_enabled ? 'split_start_1' : 'start_time';
+        const eKey = chosenShift.split_enabled ? 'split_end_2' : 'end_time';
+        const s0 = parseClockMinutes(chosenShift[sKey] || chosenShift.start_time);
+        let e0 = parseClockMinutes(chosenShift[eKey] || chosenShift.end_time);
+        if (s0 != null && e0 != null) {
+          if (e0 <= s0) e0 += 1440;
+          const ns = s0 + sMove;
+          const ne = Math.max(ns + 60, e0 + eMove);
+          const clk = mm => `${String(Math.floor((((mm % 1440) + 1440) % 1440) / 60)).padStart(2, '0')}:${String((((mm % 1440) + 1440) % 1440) % 60).padStart(2, '0')}`;
+          if (chosenShift.split_enabled) {
+            chosenShift.split_start_1 = clk(ns);
+            chosenShift.split_end_2 = clk(ne);
+            chosenShift.split_window_label = `${chosenShift.split_start_1}-${chosenShift.split_end_1} + ${chosenShift.split_start_2}-${chosenShift.split_end_2}`;
+          }
+          chosenShift.start_time = clk(ns);
+          chosenShift.end_time = clk(ne);
+          chosenShift.hours = Math.max(0, Math.round((Number(chosenShift.hours || ((e0 - s0) / 60)) + (eMove - sMove) / 60) * 100) / 100);
+          chosenShift.overnight = (ne % 1440) <= (((ns % 1440) + 1440) % 1440);
+          isDaySpecific = true;
+          if (!dateTimingNote) dateTimingNote = driftNote;
+        }
+      }
+    }
     const winSuffix = chosenShift.overnight ? ' (+1d)' : '';
-    const windowLabel = (chosenShift.split_enabled && chosenShift.split_window_label)
-      ? chosenShift.split_window_label
-      : `${chosenShift.start_time} - ${chosenShift.end_time}${winSuffix}`;
+    const windowLabel = isClosedDay
+      ? 'Closed'
+      : ((chosenShift.split_enabled && chosenShift.split_window_label)
+        ? chosenShift.split_window_label
+        : `${chosenShift.start_time} - ${chosenShift.end_time}${winSuffix}`);
     const regWindowLabel = (chosenShift.split_enabled && chosenShift.split_window_label)
       ? chosenShift.split_window_label
       : `${regStart}-${regEnd}${regOvernight ? ' (+1d)' : ''}`;
@@ -124540,6 +124749,7 @@
       isWorkday,
       isDaySpecific,
       isDateSpecific,
+      isClosedDay,
       dateTimingNote,
       windowLabel,
       regWindowLabel,
@@ -128833,11 +129043,13 @@
       rule.sat_start_time || (activeShiftObj && activeShiftObj.sat_start_time) || '07:00',
       rule.sat_end_time || (activeShiftObj && activeShiftObj.sat_end_time) || '14:00'
     );
+    // Company calendar presets come from the shift at resolve time (Holidays & Seasons); they are not the
+    // person's own exceptions, so they are not listed (or removable) here.
     let draftDateTimings = normalizeDateTimingsList(
       rule.use_custom_day_timings
         ? rule.date_timings
         : ((rule.date_timings && rule.date_timings.length) ? rule.date_timings : (activeShiftObj && activeShiftObj.date_timings))
-    );
+    ).filter(it => !it.preset);
     let draftHasTimingExc = Object.keys(pruneDayTimingsToWorkdays(draftDayTimings, draftDays)).length > 0 || draftDateTimings.length > 0;
     let draftRawDayInputs = {};
     const resetDraftRawDayInputsFromTimings = () => {
@@ -129220,7 +129432,7 @@
                             ? fmtDateDMY(item.start_date)
                             : `${fmtDateDMY(item.start_date)} to ${fmtDateDMY(item.end_date)}`;
                           const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
-                          return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dLbl)} · <b class="mono">${esc(item.start_time)}-${esc(item.end_time)}</b>${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}</span><button type="button" class="stm-exc-chip-rm" data-ssm-rm-date-exc="${esc(item.id)}" aria-label="Remove date timing">✕</button></span>`;
+                          return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dLbl)} · ${fmtDateTimingWindowHtml(item, hrs)}</span><button type="button" class="stm-exc-chip-rm" data-ssm-rm-date-exc="${esc(item.id)}" aria-label="Remove date timing">✕</button></span>`;
                         }).join('') : `<span class="muted" style="font-size:11.5px">No specific calendar date overrides added yet.</span>`}
                       </div>
                     </div>
@@ -130980,7 +131192,7 @@
           ? fmtDateDMY(item.start_date)
           : `${fmtDateDMY(item.start_date)} to ${fmtDateDMY(item.end_date)}`;
         const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
-        return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dateLbl)} · <b class="mono">${esc(item.start_time)}-${esc(item.end_time)}</b>${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}</span><button type="button" class="stm-exc-chip-rm" data-stm-rm-date="${esc(item.id)}" aria-label="Remove date timing">✕</button></span>`;
+        return `<span class="stm-exc-chip"><span>${item.note ? `<b>${esc(item.note)}:</b> ` : ''}${esc(dateLbl)} · ${fmtDateTimingWindowHtml(item, hrs)}</span><button type="button" class="stm-exc-chip-rm" data-stm-rm-date="${esc(item.id)}" aria-label="Remove date timing">✕</button></span>`;
       }).join('');
     };
 
@@ -131443,6 +131655,1373 @@
     // The first render ran while the previous (hidden) form was still in the page, so its pills could read that
     // form's exceptions box; repaint from this form's own state.
     refreshStmExceptionsUi();
+    return modal;
+  }
+
+  // ===================== Holiday & Season Presets + Punch Drift (owner ideas 2026-11-13) =====================
+  // Presets write tagged date exceptions (`work_shifts.date_timings`, tag `<preset>:<year>`) onto every stored
+  // version of the chosen shifts in the chosen businesses: closed days for holidays, shorter windows for
+  // Ramadan and winter. Every date is computed here (Gregorian rules, Easter algorithms, the Umm al-Qura
+  // calendar of the browser for the Islamic dates) and shown with a tick box before anything is written.
+  // Punch Drift reads attendance rows against the window each person was planned on that date and lists
+  // the people and crews who keep clocking 30+ minutes off it; ISABI AI only words the weekly brief.
+
+  const SHIFT_CAL_PRESETS = [
+    { id: 'holidays', label: 'Public Holidays & Eids', sub: 'Closed days, Lebanon calendar', kind: 'closed' },
+    { id: 'ramadan', label: 'Ramadan Hours', sub: 'Shorter days for the month', kind: 'hours', shortenBy: 2 },
+    { id: 'winter', label: 'Winter Hours', sub: 'Shorter days, December to February', kind: 'hours', shortenBy: 1 },
+    { id: 'closure', label: 'Company Closure', sub: 'Your own closed dates', kind: 'closed' }
+  ];
+
+  function shiftCalSeatKey() {
+    const u = (typeof activeUser === 'function' && activeUser()) || {};
+    return String(u.id || u.email || 'anon').toLowerCase();
+  }
+
+  function shiftCalPresetFreq() {
+    try {
+      const raw = localStorage.getItem(`isabi_shift_cal_preset_freq_v1_${shiftCalSeatKey()}`);
+      const obj = raw ? JSON.parse(raw) : {};
+      return (obj && typeof obj === 'object') ? obj : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function bumpShiftCalPresetFreq(presetId) {
+    try {
+      const f = shiftCalPresetFreq();
+      f[presetId] = Number(f[presetId] || 0) + 1;
+      localStorage.setItem(`isabi_shift_cal_preset_freq_v1_${shiftCalSeatKey()}`, JSON.stringify(f));
+    } catch (_) {}
+  }
+
+  // Hard rule 11: the preset this seat applies most comes first; never alphabetical.
+  function getRankedShiftCalPresets() {
+    const f = shiftCalPresetFreq();
+    return SHIFT_CAL_PRESETS
+      .map((p, i) => ({ p, i, n: Number(f[p.id] || 0) }))
+      .sort((a, b) => (b.n - a.n) || (a.i - b.i))
+      .map(x => x.p);
+  }
+
+  function shiftCalIso(y, m, d) {
+    return new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10);
+  }
+
+  function shiftCalAddDays(iso, n) {
+    const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+  }
+
+  function westernEasterISO(y) {
+    const a = y % 19;
+    const b = Math.floor(y / 100);
+    const c = y % 100;
+    const d = Math.floor(b / 4);
+    const e = b % 4;
+    const f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4);
+    const k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31);
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    return shiftCalIso(y, month, day);
+  }
+
+  // Julian computus moved to the Gregorian calendar (+13 days, valid 1900 to 2099).
+  function orthodoxEasterISO(y) {
+    const a = y % 4;
+    const b = y % 7;
+    const c = y % 19;
+    const d = (19 * c + 15) % 30;
+    const e = (2 * a + 4 * b - d + 34) % 7;
+    const month = Math.floor((d + e + 114) / 31);
+    const day = ((d + e + 114) % 31) + 1;
+    return shiftCalAddDays(shiftCalIso(y, month, day), 13);
+  }
+
+  let _shiftCalHijriFmt;
+  function shiftCalHijriFormatter() {
+    if (_shiftCalHijriFmt !== undefined) return _shiftCalHijriFmt;
+    _shiftCalHijriFmt = null;
+    for (const cal of ['islamic-umalqura', 'islamic-civil', 'islamic']) {
+      try {
+        const fmt = new Intl.DateTimeFormat(`en-u-ca-${cal}-nu-latn`, { timeZone: 'UTC', month: 'numeric', day: 'numeric' });
+        if (/^islamic/.test(String(fmt.resolvedOptions().calendar || ''))) {
+          _shiftCalHijriFmt = fmt;
+          break;
+        }
+      } catch (_) {}
+    }
+    return _shiftCalHijriFmt;
+  }
+
+  // Hijri month and day for every date from 1 Dec of the year before to 31 Jan of the year after.
+  function shiftCalHijriDays(year) {
+    const fmt = shiftCalHijriFormatter();
+    if (!fmt) return null;
+    const out = [];
+    let iso = shiftCalIso(year - 1, 12, 1);
+    const stop = shiftCalIso(year + 1, 1, 31);
+    while (iso <= stop) {
+      const parts = fmt.formatToParts(new Date(`${iso}T12:00:00Z`));
+      const m = Number((parts.find(p => p.type === 'month') || {}).value);
+      const d = Number((parts.find(p => p.type === 'day') || {}).value);
+      if (m && d) out.push({ iso, m, d });
+      iso = shiftCalAddDays(iso, 1);
+    }
+    return out;
+  }
+
+  // Default rows of a preset for a year: [{ key, name, start_date, end_date, on }].
+  function computeShiftCalPresetRows(presetId, year) {
+    const y = Number(year) || Number(todayISO().slice(0, 4));
+    const inYear = iso => iso.slice(0, 4) === String(y);
+    const rows = [];
+    const hijri = (presetId === 'holidays' || presetId === 'ramadan') ? shiftCalHijriDays(y) : null;
+    if (presetId === 'holidays') {
+      const fixed = [
+        ['new_year', "New Year's Day", 1, 1, true],
+        ['armenian_xmas', 'Armenian Christmas', 1, 6, true],
+        ['st_maroun', 'Saint Maroun Day', 2, 9, true],
+        ['annunciation', 'Annunciation', 3, 25, true],
+        ['labour', 'Labour Day', 5, 1, true],
+        ['martyrs', "Martyrs' Day", 5, 6, false],
+        ['liberation', 'Resistance and Liberation Day', 5, 25, false],
+        ['assumption', 'Assumption Day', 8, 15, true],
+        ['independence', 'Independence Day', 11, 22, true],
+        ['christmas', 'Christmas Day', 12, 25, true]
+      ];
+      fixed.forEach(([key, name, m, d, on]) => {
+        const iso = shiftCalIso(y, m, d);
+        rows.push({ key, name, start_date: iso, end_date: iso, on });
+      });
+      const ew = westernEasterISO(y);
+      const eo = orthodoxEasterISO(y);
+      rows.push({ key: 'good_friday_w', name: 'Good Friday (Western)', start_date: shiftCalAddDays(ew, -2), end_date: shiftCalAddDays(ew, -2), on: true });
+      rows.push({ key: 'easter_monday_w', name: 'Easter Monday (Western)', start_date: shiftCalAddDays(ew, 1), end_date: shiftCalAddDays(ew, 1), on: false });
+      rows.push({ key: 'good_friday_o', name: 'Good Friday (Orthodox)', start_date: shiftCalAddDays(eo, -2), end_date: shiftCalAddDays(eo, -2), on: true });
+      rows.push({ key: 'easter_monday_o', name: 'Easter Monday (Orthodox)', start_date: shiftCalAddDays(eo, 1), end_date: shiftCalAddDays(eo, 1), on: false });
+      if (hijri) {
+        const hijriHolidays = [
+          ['islamic_new_year', 'Islamic New Year', 1, 1, 1],
+          ['ashura', 'Ashura', 1, 10, 1],
+          ['mawlid', "Prophet's Birthday", 3, 12, 1],
+          ['eid_fitr', 'Eid al-Fitr', 10, 1, 2],
+          ['eid_adha', 'Eid al-Adha', 12, 10, 2]
+        ];
+        hijriHolidays.forEach(([key, name, hm, hd, len]) => {
+          hijri.filter(x => x.m === hm && x.d === hd && inYear(x.iso)).forEach((x, i) => {
+            rows.push({
+              key: i ? `${key}_${i + 1}` : key,
+              name,
+              start_date: x.iso,
+              end_date: shiftCalAddDays(x.iso, len - 1),
+              on: true
+            });
+          });
+        });
+      }
+      rows.sort((a, b) => a.start_date.localeCompare(b.start_date));
+    } else if (presetId === 'ramadan' && hijri) {
+      let run = null;
+      const runs = [];
+      hijri.forEach(x => {
+        if (x.m === 9) {
+          if (!run) run = { start_date: x.iso, end_date: x.iso };
+          else run.end_date = x.iso;
+        } else if (run) {
+          runs.push(run);
+          run = null;
+        }
+      });
+      if (run) runs.push(run);
+      runs.filter(r => inYear(r.start_date) || inYear(r.end_date)).forEach((r, i) => {
+        rows.push({ key: i ? `ramadan_${i + 1}` : 'ramadan', name: 'Ramadan', start_date: r.start_date, end_date: r.end_date, on: true });
+      });
+    } else if (presetId === 'winter') {
+      const febEnd = shiftCalAddDays(shiftCalIso(y + 1, 3, 1), -1);
+      rows.push({ key: 'winter', name: 'Winter Hours', start_date: shiftCalIso(y, 12, 1), end_date: febEnd, on: true });
+    }
+    return rows;
+  }
+
+  function shiftCalMinutesToClock(min) {
+    const m = ((Math.round(min) % 1440) + 1440) % 1440;
+    return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  }
+
+  // The window a preset gives one stored shift version: its own start, shortened by N hours, or fixed hours.
+  function shiftCalWindowForShift(shiftRow, spec) {
+    if (spec.mode === 'fixed') {
+      const st = normalize24hClockTime(spec.fixedStart || '08:00', '08:00');
+      const et = normalize24hClockTime(spec.fixedEnd || '14:00', '14:00');
+      return { start_time: st, end_time: et };
+    }
+    const st = fmtAttClockTime((shiftRow.split_enabled ? shiftRow.split_start_1 : shiftRow.start_time) || '08:00') || '08:00';
+    const hrs = Number(shiftRow.hours || shiftRow.scheduled_hours || computeShiftWorkedHours(shiftRow.start_time, shiftRow.end_time) || 8);
+    const keep = Math.max(1, hrs - Math.max(0, Number(spec.shortenBy || 0)));
+    const sMin = parseClockMinutes(st);
+    return { start_time: st, end_time: shiftCalMinutesToClock((sMin == null ? 480 : sMin) + keep * 60) };
+  }
+
+  function canApplyShiftCalendar(u) {
+    u = u || activeUser();
+    if (!canEnterForm('workshift', u)) return false;
+    const perms = getEffectivePermissions(u);
+    return Boolean(perms && perms.rights && perms.rights.modify_data);
+  }
+
+  // Stored (non-void) versions of one shift in one company, oldest first.
+  function getStoredShiftVersions(company, shiftCode) {
+    ensureWorkShiftsSeeded();
+    const coN = norm(company);
+    const codeN = norm(normalizeShiftCodeAlias(shiftCode));
+    return ((SEED && SEED.records && SEED.records.work_shifts) || [])
+      .filter(r => r && !r.voided && norm(r.company || 'WTC') === coN
+        && norm(normalizeShiftCodeAlias(r.shift_code || r.shift_id || '')) === codeN)
+      .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
+  }
+
+  // Shifts a preset can be applied to in one company: shifts with a saved version in force today or later.
+  // A built-in shift never saved for the company has no record to carry dates and is left out (save it once).
+  function listShiftCalTargets(company) {
+    const today = todayISO();
+    return getShiftTypes(company).map(st => {
+      const versions = getStoredShiftVersions(company, st.id);
+      const current = versions.filter(r => (!r.start_date || String(r.start_date).slice(0, 10) <= today) && (!r.end_date || String(r.end_date).slice(0, 10) >= today)).pop()
+        || versions.filter(r => !r.end_date || String(r.end_date).slice(0, 10) >= today).pop() || null;
+      const staffCnt = countAssociatedStaffForShiftRow(Object.assign({}, current || st, { company, shift_code: st.id, name: st.name, is_bu_default: current ? current.is_bu_default : st.is_bu_default }));
+      return {
+        company,
+        code: st.id,
+        name: st.name,
+        hasStored: versions.length > 0,
+        open: Boolean(current),
+        staffCnt,
+        versions,
+        current
+      };
+    }).filter(t => t.open);
+  }
+
+  // What the preset does to one shift, in words: its regular window on those dates (relative presets keep each
+  // weekday's own timing and both split windows, so the regular window is the example shown).
+  function describeShiftCalEffect(target, spec) {
+    if (spec.kind === 'closed') return 'Closed';
+    const cur = target.current || {};
+    if (spec.mode === 'fixed') {
+      return `${normalize24hClockTime(spec.fixedStart || '08:00', '08:00')}-${normalize24hClockTime(spec.fixedEnd || '14:00', '14:00')}`;
+    }
+    const probe = Object.assign({}, cur, { date_timings: [{ start_date: '2000-01-03', end_date: '2000-01-03', shorten_min: Math.round(Number(spec.shortenBy || 0) * 60) }] });
+    const t = resolveShiftTimingForDate(probe, '2000-01-03', -1);
+    if (t && t.split) return `${t.split.split_start_1}-${t.split.split_end_1} + ${t.split.split_start_2}-${t.split.split_end_2}`;
+    return t ? `${t.start_time}-${t.end_time}` : '';
+  }
+
+  // The tagged items one shift version gets, clipped to the dates that version covers.
+  function buildShiftCalItemsForVersion(row, spec) {
+    const vFrom = String(row.start_date || '0000-01-01').slice(0, 10);
+    const vTo = String(row.end_date || '9999-12-31').slice(0, 10);
+    const win = (spec.kind === 'hours' && spec.mode === 'fixed') ? shiftCalWindowForShift(row, spec) : null;
+    const shortenMin = Math.round(Math.max(0, Number(spec.shortenBy || 0)) * 60);
+    const fallbackWin = {
+      start_time: fmtAttClockTime((row.split_enabled ? row.split_start_1 : row.start_time) || '08:00') || '08:00',
+      end_time: fmtAttClockTime((row.split_enabled ? row.split_end_2 : row.end_time) || '16:00') || '16:00'
+    };
+    const out = [];
+    spec.rows.forEach(r => {
+      if (!r.on || !/^\d{4}-\d{2}-\d{2}$/.test(r.start_date)) return;
+      const ed = /^\d{4}-\d{2}-\d{2}$/.test(r.end_date) && r.end_date >= r.start_date ? r.end_date : r.start_date;
+      const sd = r.start_date > vFrom ? r.start_date : vFrom;
+      const ce = ed < vTo ? ed : vTo;
+      if (sd > ce) return;
+      const item = {
+        id: `dtp_${spec.tag.replace(/[^a-z0-9]+/gi, '_')}_${sd.replace(/-/g, '')}_${ce.replace(/-/g, '')}`,
+        start_date: sd,
+        end_date: ce,
+        note: String(r.name || '').slice(0, 60),
+        preset: spec.tag,
+        include_off_days: false
+      };
+      if (spec.kind !== 'hours') {
+        // A one-day closure on a weekday this version does not work changes nothing, and shells before
+        // v19.6.327 would read its fallback window as a forced workday: leave it out.
+        if (sd === ce) {
+          const wdays = Array.isArray(row.days) && row.days.length ? row.days.map(Number) : [1, 2, 3, 4, 5, 6];
+          if (!wdays.includes(attDateWeekdayInfo(sd).dayIdx)) return;
+        }
+        item.day_off = true;
+        // Fallback window for shells before v19.6.327 (they keep an item only with a window): regular hours,
+        // i.e. what those shells planned before the preset. Newer shells read day_off.
+        item.start_time = fallbackWin.start_time;
+        item.end_time = fallbackWin.end_time;
+      } else if (win) {
+        item.start_time = win.start_time;
+        item.end_time = win.end_time;
+      } else if (shortenMin > 0) {
+        // Relative: each day keeps its own timing (weekday window, split windows) and ends earlier.
+        item.shorten_min = shortenMin;
+        const t0 = resolveShiftTimingForDate(Object.assign({}, row, { date_timings: [{ start_date: sd, end_date: sd, shorten_min: shortenMin }] }), sd, -1);
+        item.start_time = (t0 && t0.start_time) || fallbackWin.start_time;
+        item.end_time = (t0 && t0.end_time) || fallbackWin.end_time;
+      } else {
+        return;
+      }
+      out.push(item);
+    });
+    return out;
+  }
+
+  // Writes (or with spec.remove, takes away) one preset on the chosen shifts. Deterministic; returns counts.
+  function applyShiftCalendarPreset(spec) {
+    if (!canApplyShiftCalendar()) return { ok: false, error: 'You do not have rights to change shifts' };
+    const allowed = allowedCompanyNames();
+    const targets = (spec.targets || []).filter(t => !allowed.length || allowed.some(n => norm(n) === norm(t.company)));
+    if (!targets.length) return { ok: false, error: 'Choose at least one shift' };
+    if (!Array.isArray(STATE.customRecords.work_shifts)) STATE.customRecords.work_shifts = [];
+    const today = todayISO();
+    let versionsChanged = 0;
+    let shiftsChanged = 0;
+    let datesWritten = 0;
+    let keptOwn = 0;
+    let handKept = 0;
+    let recalcRows = 0;
+    const openItems = [];
+    targets.forEach(t => {
+      const versions = getStoredShiftVersions(t.company, t.code);
+      if (!versions.length) return;
+      // Future versions first and the version in force today last, so the shift catalog ends on today's version.
+      const ordered = versions.slice().sort((a, b) => {
+        const rank = r => {
+          const s = String(r.start_date || '').slice(0, 10);
+          const e = String(r.end_date || '').slice(0, 10);
+          if (e && e < today) return 0;
+          if (s > today) return 1;
+          return 2;
+        };
+        return rank(a) - rank(b);
+      });
+      let touchedThisShift = false;
+      ordered.forEach(row => {
+        const before = normalizeDateTimingsList(row.date_timings);
+        const kept = before.filter(it => it.preset !== spec.tag);
+        // A hand-made exception on exactly the same dates wins: the preset leaves that span alone, so the
+        // hand-made item also survives a later Remove.
+        const ownSpans = new Set(kept.filter(it => !it.preset).map(it => `${it.start_date}|${it.end_date}`));
+        const built = spec.remove ? [] : buildShiftCalItemsForVersion(row, spec);
+        const add = built.filter(it => !ownSpans.has(`${it.start_date}|${it.end_date}`));
+        keptOwn += built.length - add.length;
+        if (!add.length && kept.length === before.length) return;
+        const snap = Object.assign({}, row, { date_timings: before });
+        row.date_timings = normalizeDateTimingsList(add.concat(kept));
+        row.updated_at = new Date().toISOString();
+        hydrateWorkShiftRowComputed(row);
+        const ci = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(row.id));
+        if (ci >= 0) Object.assign(STATE.customRecords.work_shifts[ci], row);
+        else STATE.customRecords.work_shifts.unshift(Object.assign({}, row));
+        const changedWins = before.filter(it => it.preset === spec.tag).concat(add)
+          .map(it => ({ start_date: it.start_date, end_date: it.end_date }));
+        const bf = backfillShiftTimingChange(row, snap, null, { limitWindows: changedWins });
+        recalcRows += Number((bf && bf.attUpdated) || 0) + Number((bf && bf.punchesUpdated) || 0);
+        handKept += Number((bf && bf.handKept) || 0);
+        versionsChanged++;
+        datesWritten += add.length;
+        touchedThisShift = true;
+        const e = String(row.end_date || '').slice(0, 10);
+        if (!e || e >= today) openItems.push({ company: t.company, code: t.code });
+      });
+      if (touchedThisShift) shiftsChanged++;
+    });
+    if (SEED) SEED._workShiftsSeededRev = '';
+    ensureWorkShiftsSeeded();
+    saveLocalAuthAndRecords();
+    const ws = ensureWorkSchedulesState();
+    const posted = new Set();
+    openItems.forEach(o => {
+      const key = `${norm(o.company)}|${norm(o.code)}`;
+      if (posted.has(key)) return;
+      posted.add(key);
+      const item = (ws.shiftTypes || []).find(s => s && norm(s.company || 'WTC') === norm(o.company) && norm(normalizeShiftCodeAlias(s.id)) === norm(o.code));
+      if (item) postWorkScheduleMutation({ op: 'upsert_shift', item });
+    });
+    syncWithCloud(true);
+    if (!spec.remove && versionsChanged) bumpShiftCalPresetFreq(spec.presetId);
+    return { ok: true, versionsChanged, shiftsChanged, datesWritten, keptOwn, handKept, recalcRows };
+  }
+
+  function closeShiftCalPresetModal() {
+    const m = $('shiftCalPresetModal');
+    if (m) m.hidden = true;
+    document.body.classList.remove('modal-open');
+    if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
+  }
+
+  function openShiftCalPresetModal(opts = {}) {
+    ensureWorkShiftsSeeded();
+    const canWrite = canApplyShiftCalendar();
+    const ranked = getRankedShiftCalPresets();
+    const thisYear = Number(todayISO().slice(0, 4));
+    const buList = getActiveIndustryBuList(STATE.company);
+    const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
+    const st = {
+      presetId: opts.presetId || ranked[0].id,
+      year: thisYear,
+      mode: 'shorten',
+      shortenBy: 2,
+      fixedStart: '08:00',
+      fixedEnd: '14:00',
+      rows: [],
+      companies: new Set(scopedCo && buList.includes(scopedCo) ? [scopedCo] : buList),
+      unticked: new Set(),
+      confirmArmed: false,
+      removeArmed: false,
+      loadedExisting: false
+    };
+    const presetOf = id => SHIFT_CAL_PRESETS.find(p => p.id === id) || SHIFT_CAL_PRESETS[0];
+    // Fresh: computed dates, past ones unticked (ticking them recalculates attendance already recorded).
+    // Already applied: the dates the chosen shifts carry under this preset's tag, so applying again (a second
+    // Company Closure, an Eid date moved by a day) keeps what was there instead of wiping it.
+    const loadRows = () => {
+      const p = presetOf(st.presetId);
+      const today = todayISO();
+      const tag = `${p.id}:${st.year}`;
+      const computed = computeShiftCalPresetRows(st.presetId, st.year);
+      const existing = new Map();
+      targetsNow().forEach(tg => tg.versions.forEach(v => normalizeDateTimingsList(v.date_timings).forEach(it => {
+        if (it.preset === tag && !existing.has(`${it.start_date}|${it.end_date}`)) existing.set(`${it.start_date}|${it.end_date}`, it);
+      })));
+      st.shortenBy = p.shortenBy || st.shortenBy || 2;
+      st.mode = 'shorten';
+      if (existing.size) {
+        st.loadedExisting = true;
+        const used = new Set();
+        st.rows = computed.map(r => {
+          const k = `${r.start_date}|${r.end_date}`;
+          const hit = existing.get(k);
+          if (hit) used.add(k);
+          return Object.assign({}, r, { on: Boolean(hit), name: hit && hit.note ? hit.note : r.name });
+        });
+        existing.forEach((it, k) => {
+          if (used.has(k)) return;
+          st.rows.push({ key: uid('scp'), name: it.note || p.label, start_date: it.start_date, end_date: it.end_date, on: true, custom: true });
+        });
+        st.rows.sort((a, b) => a.start_date.localeCompare(b.start_date));
+        const sample = Array.from(existing.values())[0];
+        if (sample && sample.shorten_min) st.shortenBy = sample.shorten_min / 60;
+        else if (sample && sample.start_time && sample.end_time) {
+          st.mode = 'fixed';
+          st.fixedStart = sample.start_time;
+          st.fixedEnd = sample.end_time;
+        }
+      } else {
+        st.loadedExisting = false;
+        st.rows = computed.map(r => Object.assign({}, r, { on: r.on && r.end_date >= today }));
+      }
+      st.confirmArmed = false;
+      st.removeArmed = false;
+    };
+
+    let modal = $('shiftCalPresetModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'shiftCalPresetModal';
+      modal.className = 'modal-backdrop kiosk-submodal-backdrop';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      wireBackdropDismiss(modal, closeShiftCalPresetModal);
+      document.body.appendChild(modal);
+    }
+
+    const targetsNow = () => {
+      const out = [];
+      buList.filter(co => st.companies.has(co)).forEach(co => {
+        listShiftCalTargets(co).forEach(t => {
+          const key = `${co}|${t.code}`;
+          out.push(Object.assign({}, t, { key, on: !st.unticked.has(key) }));
+        });
+      });
+      return out;
+    };
+    const specNow = () => {
+      const p = presetOf(st.presetId);
+      return {
+        presetId: p.id,
+        kind: p.kind,
+        tag: `${p.id}:${st.year}`,
+        mode: st.mode,
+        shortenBy: st.shortenBy,
+        fixedStart: st.fixedStart,
+        fixedEnd: st.fixedEnd,
+        rows: st.rows
+      };
+    };
+    const previewNow = () => {
+      const spec = specNow();
+      const tg = targetsNow().filter(t => t.on);
+      let dates = 0;
+      let sameSpanOwn = 0;
+      let overlapOwn = 0;
+      let alreadyThere = 0;
+      tg.forEach(t => {
+        t.versions.forEach(v => {
+          const items = buildShiftCalItemsForVersion(v, spec);
+          const own = normalizeDateTimingsList(v.date_timings).filter(o => !o.preset);
+          const ownSpans = new Set(own.map(o => `${o.start_date}|${o.end_date}`));
+          if (normalizeDateTimingsList(v.date_timings).some(it => it.preset === spec.tag)) alreadyThere++;
+          items.forEach(it => {
+            if (ownSpans.has(`${it.start_date}|${it.end_date}`)) {
+              sameSpanOwn++;
+              return;
+            }
+            dates++;
+            overlapOwn += own.filter(o => o.start_date <= it.end_date && it.start_date <= o.end_date).length;
+          });
+        });
+      });
+      // Attendance already recorded on the ticked dates (up to today) in the chosen businesses: recalculated,
+      // except rows someone corrected by hand.
+      const today = todayISO();
+      const coSet = new Set(tg.map(x => norm(x.company)));
+      const onRows = st.rows.filter(r => r.on && r.start_date <= today);
+      let recalcAtt = 0;
+      let handAtt = 0;
+      if (onRows.length && coSet.size) {
+        ((SEED && SEED.records && SEED.records.attendance) || []).forEach(a => {
+          if (!a || a.voided || !coSet.has(norm(a.company || 'WTC'))) return;
+          const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+          if (!d || d > today || !onRows.some(r => r.start_date <= d && d <= (r.end_date || r.start_date))) return;
+          if (a.modified_by) handAtt++;
+          else recalcAtt++;
+        });
+      }
+      const days = st.rows.filter(r => r.on).reduce((acc, r) => {
+        const ed = r.end_date >= r.start_date ? r.end_date : r.start_date;
+        return acc + Math.max(1, Math.round((Date.parse(`${ed}T00:00:00Z`) - Date.parse(`${r.start_date}T00:00:00Z`)) / 86400000) + 1);
+      }, 0);
+      return { shifts: tg.length, dates, sameSpanOwn, overlapOwn, alreadyThere, recalcAtt, handAtt, days, staff: tg.reduce((a, t) => a + Number(t.staffCnt || 0), 0) };
+    };
+
+    const render = () => {
+      const p = presetOf(st.presetId);
+      const tg = targetsNow();
+      const pv = previewNow();
+      const hijriOk = Boolean(shiftCalHijriFormatter());
+      const rowsHtml = st.rows.length ? st.rows.map((r, i) => `
+        <tr>
+          <td class="c"><input type="checkbox" data-scp-row-on="${i}" ${r.on ? 'checked' : ''} aria-label="Include"></td>
+          <td><input type="text" class="scp-name" data-scp-row-name="${i}" maxlength="60" value="${esc(r.name)}"></td>
+          <td><input type="date" data-scp-row-from="${i}" value="${esc(r.start_date)}"></td>
+          <td><input type="date" data-scp-row-to="${i}" value="${esc(r.end_date)}"></td>
+          <td class="c"><button type="button" class="stm-exc-chip-rm" data-scp-row-rm="${i}" aria-label="Remove date">✕</button></td>
+        </tr>`).join('') : `<tr><td colspan="5" class="muted">No dates yet. Add one below.</td></tr>`;
+      modal.innerHTML = `
+        <div class="modal-card scp-card" style="width:min(760px,96vw);max-width:760px">
+          <div class="modal-head">
+            <div>
+              <div class="modal-title">${ic('calendar')} <span>Holiday &amp; Season Presets</span></div>
+              <div class="modal-sub">Closed days and shorter hours written on the chosen shifts in one step. Attendance treats a closed day like a weekly day off.</div>
+            </div>
+            <button type="button" class="icon-btn" id="scpCloseBtn" aria-label="Close">✕</button>
+          </div>
+          <div class="modal-body scp-body">
+            <div class="scp-presets" role="group" aria-label="Preset">
+              ${getRankedShiftCalPresets().map(x => `
+                <button type="button" class="scp-preset ${x.id === st.presetId ? 'active' : ''}" data-scp-preset="${esc(x.id)}">
+                  <strong>${esc(x.label)}</strong><small>${esc(x.sub)}</small>
+                </button>`).join('')}
+            </div>
+            <div class="scp-row">
+              <div class="ssm-field">
+                <label for="scpYear">Year</label>
+                <select id="scpYear" class="kiosk-select" data-plain-options="1">
+                  ${[thisYear, thisYear + 1, thisYear - 1].map(y => `<option value="${y}" ${y === st.year ? 'selected' : ''}>${y}</option>`).join('')}
+                </select>
+              </div>
+              ${p.kind === 'hours' ? `
+                <div class="ssm-field scp-mode">
+                  <label>Hours on these dates</label>
+                  <div class="scp-mode-pills" role="group" aria-label="Hours on these dates">
+                    <button type="button" class="kiosk-qchip ${st.mode === 'shorten' ? 'active' : ''}" data-scp-mode="shorten">Shorten each shift</button>
+                    <button type="button" class="kiosk-qchip ${st.mode === 'fixed' ? 'active' : ''}" data-scp-mode="fixed">Same hours for every shift</button>
+                  </div>
+                </div>
+                ${st.mode === 'shorten' ? `
+                  <div class="ssm-field">
+                    <label for="scpShortenBy">Hours shorter each day (each day keeps its own start; split shifts keep both windows)</label>
+                    <input type="number" id="scpShortenBy" min="0" max="8" step="0.5" value="${esc(String(st.shortenBy))}">
+                  </div>` : `
+                  <div class="ssm-field">
+                    <label for="scpFixedStart">Start (24h)</label>
+                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="scpFixedStart" value="${esc(st.fixedStart)}">
+                  </div>
+                  <div class="ssm-field">
+                    <label for="scpFixedEnd">End (24h)</label>
+                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="scpFixedEnd" value="${esc(st.fixedEnd)}">
+                  </div>`}` : `
+                <div class="scp-closed-note"><span class="badge badge-brass">Closed</span> <span>No lateness or shortfall on these dates; hours worked count as day-off hours.</span></div>`}
+            </div>
+            <div class="scp-hint">${st.loadedExisting ? 'Loaded from the chosen shifts: this preset was applied before. Untick a date to take it off.' : 'Dates already past start unticked: ticking them recalculates attendance already recorded.'}</div>
+            ${(st.presetId === 'holidays' || st.presetId === 'ramadan') ? `<div class="scp-hint">${hijriOk ? 'Islamic dates follow the Umm al-Qura calendar and can move a day with the moon sighting: check them against the official announcement.' : 'This browser cannot compute Islamic dates: add them by hand below.'}</div>` : ''}
+            <div class="table-wrap scp-dates-wrap">
+              <table class="scp-dates">
+                <thead><tr><th class="c">Use</th><th>Name</th><th>From</th><th>To</th><th></th></tr></thead>
+                <tbody>${rowsHtml}</tbody>
+              </table>
+            </div>
+            <div class="scp-add">
+              <input type="text" id="scpAddName" maxlength="60" placeholder="Name, e.g. Factory maintenance">
+              <input type="date" id="scpAddFrom" aria-label="From">
+              <input type="date" id="scpAddTo" aria-label="To">
+              <button type="button" class="btn kiosk-mini-btn" id="scpAddBtn">+ Add Date</button>
+            </div>
+            <div class="scp-section-head">Businesses</div>
+            <div class="scp-cos" role="group" aria-label="Businesses">
+              ${buList.map(co => `<button type="button" class="kiosk-qchip ${st.companies.has(co) ? 'active' : ''}" data-scp-co="${esc(co)}" data-no-i18n="1">${esc(co)}</button>`).join('')}
+            </div>
+            <div class="scp-section-head">Shifts</div>
+            <div class="scp-shifts">
+              ${tg.length ? tg.map(t => `
+                <label class="scp-shift ${t.on ? 'on' : ''}">
+                  <input type="checkbox" data-scp-shift="${esc(t.key)}" ${t.on ? 'checked' : ''}>
+                  <span class="scp-shift-name" data-no-i18n="1">${esc(t.name)}</span>
+                  <span class="scp-shift-co" data-no-i18n="1">${esc(t.company)}</span>
+                  <span class="scp-shift-cnt"><b class="mono">${fmtNum(t.staffCnt)}</b> <span>staff</span></span>
+                  <span class="scp-shift-eff mono">${esc(describeShiftCalEffect(t, specNow()))}</span>
+                </label>`).join('') : '<div class="muted">No shifts in the chosen businesses.</div>'}
+            </div>
+            <div class="scp-preview" id="scpPreview">
+              <span class="scp-pv-item"><b class="mono">${fmtNum(pv.days)}</b> <span>days</span></span>
+              <span class="scp-pv-item"><b class="mono">${fmtNum(pv.shifts)}</b> <span>shifts</span></span>
+              <span class="scp-pv-item"><b class="mono">${fmtNum(pv.staff)}</b> <span>staff</span></span>
+              <span class="scp-pv-item"><b class="mono">${fmtNum(pv.dates)}</b> <span>date exceptions to write</span></span>
+              ${pv.alreadyThere ? `<span class="scp-pv-item is-warn"><b class="mono">${fmtNum(pv.alreadyThere)}</b> <span>shift versions already carry this preset (it is replaced)</span></span>` : ''}
+              ${pv.sameSpanOwn ? `<span class="scp-pv-item is-warn"><b class="mono">${fmtNum(pv.sameSpanOwn)}</b> <span>hand-made exceptions on the same dates stay (they win)</span></span>` : ''}
+              ${pv.overlapOwn ? `<span class="scp-pv-item is-warn"><b class="mono">${fmtNum(pv.overlapOwn)}</b> <span>hand-made date exceptions overlap (a narrower one still wins on its dates)</span></span>` : ''}
+              ${pv.recalcAtt ? `<span class="scp-pv-item is-warn"><b class="mono">${fmtNum(pv.recalcAtt)}</b> <span>attendance rows on past dates will be recalculated</span></span>` : ''}
+              ${pv.handAtt ? `<span class="scp-pv-item"><b class="mono">${fmtNum(pv.handAtt)}</b> <span>rows edited by hand (or with a file attached) stay as they are</span></span>` : ''}
+            </div>
+          </div>
+          <div class="modal-foot" style="justify-content:space-between">
+            <div>
+              ${canWrite ? `<button type="button" class="btn ${st.removeArmed ? 'btn-danger' : ''}" id="scpRemoveBtn">${st.removeArmed ? 'Confirm Remove' : 'Remove This Preset'}</button>` : ''}
+            </div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn" id="scpCancelBtn">Cancel</button>
+              ${canWrite ? `<button type="button" class="btn btn-primary" id="scpApplyBtn">${st.confirmArmed ? 'Confirm and Apply' : 'Apply to Shifts'}</button>` : '<span class="muted">View only: your seat cannot change shifts</span>'}
+            </div>
+          </div>
+        </div>`;
+      modal.hidden = false;
+      document.body.classList.add('modal-open');
+      wireModalSuggestions(modal);
+      stripNativeTitles(modal);
+      wire();
+    };
+
+    const readInputs = () => {
+      modal.querySelectorAll('[data-scp-row-name]').forEach(inp => {
+        const i = Number(inp.getAttribute('data-scp-row-name'));
+        if (st.rows[i]) st.rows[i].name = String(inp.value || '').trim().slice(0, 60) || st.rows[i].name;
+      });
+      modal.querySelectorAll('[data-scp-row-from]').forEach(inp => {
+        const i = Number(inp.getAttribute('data-scp-row-from'));
+        if (st.rows[i] && /^\d{4}-\d{2}-\d{2}$/.test(inp.value)) st.rows[i].start_date = inp.value;
+      });
+      modal.querySelectorAll('[data-scp-row-to]').forEach(inp => {
+        const i = Number(inp.getAttribute('data-scp-row-to'));
+        if (st.rows[i] && /^\d{4}-\d{2}-\d{2}$/.test(inp.value)) st.rows[i].end_date = inp.value;
+      });
+      st.rows.forEach(r => { if (!r.end_date || r.end_date < r.start_date) r.end_date = r.start_date; });
+      if ($('scpShortenBy')) st.shortenBy = Math.max(0, Math.min(8, Number($('scpShortenBy').value || 0)));
+      if ($('scpFixedStart')) st.fixedStart = normalize24hClockTime($('scpFixedStart').value, st.fixedStart);
+      if ($('scpFixedEnd')) st.fixedEnd = normalize24hClockTime($('scpFixedEnd').value, st.fixedEnd);
+    };
+
+    const runApply = remove => {
+      readInputs();
+      const spec = specNow();
+      const targets = targetsNow().filter(t => t.on);
+      if (!remove && !st.rows.some(r => r.on)) {
+        toast('Tick at least one date', 'warn');
+        return;
+      }
+      if (!targets.length) {
+        toast('Choose at least one shift', 'warn');
+        return;
+      }
+      const res = applyShiftCalendarPreset(Object.assign({}, spec, { targets, remove: Boolean(remove) }));
+      if (!res.ok) {
+        toast(res.error || 'Could not apply the preset', 'err');
+        return;
+      }
+      if (!res.versionsChanged) {
+        toast(remove ? 'Nothing to remove: these shifts do not carry this preset' : 'Nothing changed', 'warn');
+        return;
+      }
+      toast(remove ? 'Preset removed from the chosen shifts' : 'Preset applied to the chosen shifts', 'ok');
+      window.__lastShiftCalApply = res;
+      closeShiftCalPresetModal();
+    };
+
+    const wire = () => {
+      $('scpCloseBtn')?.addEventListener('click', closeShiftCalPresetModal);
+      $('scpCancelBtn')?.addEventListener('click', closeShiftCalPresetModal);
+      modal.querySelectorAll('[data-scp-preset]').forEach(btn => btn.addEventListener('click', () => {
+        st.presetId = btn.getAttribute('data-scp-preset') || st.presetId;
+        st.mode = 'shorten';
+        loadRows();
+        render();
+      }));
+      $('scpYear')?.addEventListener('change', e => {
+        st.year = Number(e.target.value) || st.year;
+        loadRows();
+        render();
+      });
+      modal.querySelectorAll('[data-scp-mode]').forEach(btn => btn.addEventListener('click', () => {
+        readInputs();
+        st.mode = btn.getAttribute('data-scp-mode') === 'fixed' ? 'fixed' : 'shorten';
+        st.confirmArmed = false;
+        st.removeArmed = false;
+        render();
+      }));
+      modal.querySelectorAll('[data-scp-row-on]').forEach(cb => cb.addEventListener('change', () => {
+        readInputs();
+        const i = Number(cb.getAttribute('data-scp-row-on'));
+        if (st.rows[i]) st.rows[i].on = Boolean(cb.checked);
+        st.confirmArmed = false;
+        st.removeArmed = false;
+        render();
+      }));
+      modal.querySelectorAll('[data-scp-row-from],[data-scp-row-to],#scpShortenBy,#scpFixedStart,#scpFixedEnd').forEach(inp => inp.addEventListener('change', () => {
+        readInputs();
+        st.confirmArmed = false;
+        st.removeArmed = false;
+        render();
+      }));
+      modal.querySelectorAll('[data-scp-row-rm]').forEach(btn => btn.addEventListener('click', () => {
+        readInputs();
+        st.rows.splice(Number(btn.getAttribute('data-scp-row-rm')), 1);
+        st.confirmArmed = false;
+        st.removeArmed = false;
+        render();
+      }));
+      $('scpAddBtn')?.addEventListener('click', () => {
+        readInputs();
+        const fd = String($('scpAddFrom')?.value || '').slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fd)) {
+          toast('Choose a From Date first', 'warn');
+          $('scpAddFrom')?.focus();
+          return;
+        }
+        const td = String($('scpAddTo')?.value || '').slice(0, 10);
+        const nm = String($('scpAddName')?.value || '').trim().slice(0, 60) || 'Company Closure';
+        st.rows.push({ key: uid('scp'), name: nm, start_date: fd, end_date: /^\d{4}-\d{2}-\d{2}$/.test(td) && td >= fd ? td : fd, on: true, custom: true });
+        st.rows.sort((a, b) => a.start_date.localeCompare(b.start_date));
+        st.confirmArmed = false;
+        st.removeArmed = false;
+        render();
+      });
+      modal.querySelectorAll('[data-scp-co]').forEach(btn => btn.addEventListener('click', () => {
+        readInputs();
+        const co = btn.getAttribute('data-scp-co');
+        if (st.companies.has(co)) st.companies.delete(co);
+        else st.companies.add(co);
+        loadRows();
+        render();
+      }));
+      modal.querySelectorAll('[data-scp-shift]').forEach(cb => cb.addEventListener('change', () => {
+        readInputs();
+        const key = cb.getAttribute('data-scp-shift');
+        if (cb.checked) st.unticked.delete(key);
+        else st.unticked.add(key);
+        st.confirmArmed = false;
+        st.removeArmed = false;
+        render();
+      }));
+      $('scpApplyBtn')?.addEventListener('click', () => {
+        if (!st.confirmArmed) {
+          readInputs();
+          st.confirmArmed = true;
+          st.removeArmed = false;
+          render();
+          return;
+        }
+        runApply(false);
+      });
+      $('scpRemoveBtn')?.addEventListener('click', () => {
+        if (!st.removeArmed) {
+          readInputs();
+          st.confirmArmed = false;
+          st.removeArmed = true;
+          render();
+          return;
+        }
+        runApply(true);
+      });
+    };
+
+    loadRows();
+    render();
+    return modal;
+  }
+
+  // ----------------------------- Punch Drift -----------------------------
+  const PUNCH_DRIFT_PATTERNS = {
+    late_in: { label: 'Clocks in late', side: 'in', sign: 1 },
+    early_in: { label: 'Clocks in early', side: 'in', sign: -1 },
+    early_out: { label: 'Leaves early', side: 'out', sign: -1 },
+    late_out: { label: 'Leaves late', side: 'out', sign: 1 }
+  };
+
+  function punchDriftWrap(delta) {
+    let d = delta;
+    while (d > 720) d -= 1440;
+    while (d <= -720) d += 1440;
+    return d;
+  }
+
+  function punchDriftMedian(arr) {
+    if (!arr.length) return 0;
+    const s = arr.slice().sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+  }
+
+  function punchDriftRound15(min) {
+    return Math.round(min / 15) * 15;
+  }
+
+  // Deterministic digest: for each person, every worked day of the window is compared with the window the
+  // attendance rules planned for that date (resolveStaffShiftForDate: dated exception, weekday, regular).
+  // Chronic = at least `minDays` days off by `thresholdMin` or more in the same direction, on 60% of the
+  // days with a reading; or on given weekdays only (75% of those weekdays, 2+ times each).
+  function computePunchDriftDigest(opts = {}) {
+    const weeks = Math.max(1, Math.min(12, Number(opts.weeks || 4)));
+    const thr = Math.max(10, Math.min(180, Number(opts.thresholdMin || 30)));
+    const minDays = Math.max(2, Number(opts.minDays || 3));
+    const to = String(opts.to || todayISO()).slice(0, 10);
+    const from = shiftCalAddDays(to, -(weeks * 7 - 1));
+    const weekFrom = shiftCalAddDays(to, -6);
+    const allowedCos = (opts.companies && opts.companies.length ? opts.companies : getActiveIndustryBuList(STATE.company));
+    const coSet = new Set(allowedCos.map(c => norm(c)));
+    const viewerAllowed = allowedCompanyNames();
+    const viewerSet = new Set(viewerAllowed.map(c => norm(c)));
+    const rows = ((SEED && SEED.records && SEED.records.attendance) || []).filter(a => {
+      if (!a || a.voided) return false;
+      if (/^(extra|config)/i.test(String(a.type || a.status || ''))) return false;
+      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      if (!d || d < from || d > to) return false;
+      const coN = norm(a.company || 'WTC');
+      if (!coSet.has(coN)) return false;
+      if (viewerSet.size && !viewerSet.has(coN)) return false;
+      return Boolean(fmtAttClockTime(a.in_time || a.check_in || '') || fmtAttClockTime(a.out_time || a.check_out || ''));
+    });
+    const byPerson = new Map();
+    const shiftCache = new Map();
+    rows.forEach(a => {
+      const staff = String(a.staff || '').trim();
+      if (!staff) return;
+      const co = String(a.company || 'WTC').trim();
+      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      const ck = `${norm(staff)}|${norm(co)}|${d}`;
+      let sh = shiftCache.get(ck);
+      if (!sh) {
+        sh = resolveStaffShiftForDate(staff, co, d);
+        shiftCache.set(ck, sh);
+      }
+      if (!sh || !sh.isWorkday) return;
+      const plannedStart = parseClockMinutes(sh.start_time);
+      const plannedEnd = parseClockMinutes(sh.end_time);
+      const inT = fmtAttClockTime(a.in_time || a.check_in || '');
+      const outT = fmtAttClockTime(a.out_time || a.check_out || '');
+      const inMin = inT ? parseClockMinutes(inT) : null;
+      const outMin = outT ? parseClockMinutes(outT) : null;
+      const pk = `${norm(staff)}|${norm(co)}`;
+      if (!byPerson.has(pk)) byPerson.set(pk, { staff, company: co, days: new Map() });
+      const p = byPerson.get(pk);
+      // One reading per date: a second row of the same day keeps the earliest in and the latest out.
+      const prev = p.days.get(d);
+      const day = prev || { date: d, dow: attDateWeekdayInfo(d).dayIdx, shiftId: sh.id, shiftName: sh.name, split: Boolean(sh.split_enabled), plannedStart, plannedEnd, inMin: null, outMin: null, inT: '', outT: '' };
+      if (inMin != null && plannedStart != null && (day.inMin == null || punchDriftWrap(inMin - day.inMin) < 0)) {
+        day.inMin = inMin;
+        day.inT = inT;
+      }
+      if (outMin != null && plannedEnd != null && (day.outMin == null || punchDriftWrap(outMin - day.outMin) > 0)) {
+        day.outMin = outMin;
+        day.outT = outT;
+      }
+      p.days.set(d, day);
+    });
+
+    const findings = [];
+    byPerson.forEach(p => {
+      const days = Array.from(p.days.values());
+      const pats = [];
+      Object.entries(PUNCH_DRIFT_PATTERNS).forEach(([pid, def]) => {
+        const obs = days.filter(x => (def.side === 'in' ? x.inMin : x.outMin) != null);
+        if (obs.length < minDays) return;
+        const deltaOf = x => (def.side === 'in'
+          ? punchDriftWrap(x.inMin - x.plannedStart)
+          : punchDriftWrap(x.outMin - x.plannedEnd));
+        const hit = x => def.sign * deltaOf(x) >= thr;
+        const hits = obs.filter(hit);
+        let scope = '';
+        let dows = [];
+        if (hits.length >= minDays && hits.length / obs.length >= 0.6) {
+          scope = 'all';
+        } else {
+          const byDow = new Map();
+          obs.forEach(x => {
+            if (!byDow.has(x.dow)) byDow.set(x.dow, { n: 0, h: 0 });
+            const b = byDow.get(x.dow);
+            b.n++;
+            if (hit(x)) b.h++;
+          });
+          byDow.forEach((b, dow) => { if (b.n >= 2 && b.h >= 2 && b.h / b.n >= 0.75) dows.push(dow); });
+          const dowHits = hits.filter(x => dows.includes(x.dow)).length;
+          if (dows.length && dowHits >= Math.max(2, minDays - 1)) scope = 'weekday';
+          else dows = [];
+        }
+        if (!scope) return;
+        const used = scope === 'all' ? hits : hits.filter(x => dows.includes(x.dow));
+        pats.push({
+          id: pid,
+          label: def.label,
+          side: def.side,
+          scope,
+          dows: dows.sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)),
+          hits: used.length,
+          obs: scope === 'all' ? obs.length : obs.filter(x => dows.includes(x.dow)).length,
+          thisWeek: used.filter(x => x.date >= weekFrom).length,
+          medianMin: punchDriftMedian(used.map(deltaOf)),
+          medianActual: punchDriftMedian(used.map(x => (def.side === 'in' ? x.inMin : x.outMin)))
+        });
+      });
+      if (!pats.length) return;
+      const latest = days.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+      const allScope = pats.some(x => x.scope === 'all');
+      const dows = allScope ? [] : Array.from(new Set(pats.flatMap(x => x.dows))).sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+      findings.push({
+        staff: p.staff,
+        company: p.company,
+        split: Boolean(latest.split),
+        shiftId: latest.shiftId,
+        shiftName: latest.shiftName,
+        planned: `${shiftCalMinutesToClock(latest.plannedStart)}-${shiftCalMinutesToClock(latest.plannedEnd)}`,
+        patterns: pats,
+        scope: allScope ? 'all' : 'weekday',
+        dows,
+        daysRead: days.length,
+        thisWeek: pats.reduce((a, x) => Math.max(a, x.thisWeek), 0)
+      });
+    });
+
+    // Crews: two or more people of the same business and shift drifting the same way on the same days.
+    const crewMap = new Map();
+    findings.forEach(f => {
+      const sig = `${norm(f.company)}|${norm(f.shiftId)}|${f.patterns.map(x => `${x.id}:${x.scope}:${x.dows.join('.')}`).sort().join('+')}`;
+      if (!crewMap.has(sig)) crewMap.set(sig, []);
+      crewMap.get(sig).push(f);
+    });
+    const crews = [];
+    const inCrew = new Set();
+    crewMap.forEach(list => {
+      if (list.length < 2) return;
+      list.forEach(f => inCrew.add(f));
+      const f0 = list[0];
+      crews.push({
+        company: f0.company,
+        shiftId: f0.shiftId,
+        shiftName: f0.shiftName,
+        planned: f0.planned,
+        // The crew's median per side is what HR sees and what a crew conversion writes for every member.
+        patterns: f0.patterns.map(x => ({
+          id: x.id,
+          label: x.label,
+          side: x.side,
+          scope: x.scope,
+          dows: x.dows.slice(),
+          medianMin: punchDriftMedian(list.map(f => (f.patterns.find(y => y.id === x.id) || x).medianMin))
+        })),
+        scope: f0.scope,
+        dows: f0.dows,
+        members: list.map(f => f.staff).sort((a, b) => a.localeCompare(b)),
+        memberFindings: list,
+        thisWeek: list.reduce((a, f) => a + (f.thisWeek > 0 ? 1 : 0), 0)
+      });
+    });
+    const people = findings.filter(f => !inCrew.has(f));
+    const sizeOf = f => f.patterns.reduce((a, x) => a + x.hits * Math.abs(x.medianMin), 0);
+    crews.sort((a, b) => b.members.length - a.members.length || a.shiftName.localeCompare(b.shiftName));
+    people.sort((a, b) => sizeOf(b) - sizeOf(a));
+    return {
+      from,
+      to,
+      weekFrom,
+      weeks,
+      thresholdMin: thr,
+      minDays,
+      peopleRead: byPerson.size,
+      daysRead: Array.from(byPerson.values()).reduce((a, p) => a + p.days.size, 0),
+      findings,
+      crews,
+      people
+    };
+  }
+
+  function fmtPunchDriftDows(dows) {
+    return dows.map(d => ATT_WEEKDAYS[d] || '').filter(Boolean).join(', ');
+  }
+
+  // The minutes to move each side by: the median gap on the drifting side, to the nearest 15 minutes; the
+  // other side stays where it is planned.
+  // Each side carries the weekdays it drifts on (null = every workday).
+  function punchDriftShiftMinutes(finding) {
+    const inPat = finding.patterns.find(x => x.side === 'in');
+    const outPat = finding.patterns.find(x => x.side === 'out');
+    const daysOf = pat => (pat && pat.scope === 'weekday' && Array.isArray(pat.dows) && pat.dows.length ? pat.dows.slice() : null);
+    return {
+      start: inPat ? punchDriftRound15(inPat.medianMin) : 0,
+      startDows: daysOf(inPat),
+      end: outPat ? punchDriftRound15(outPat.medianMin) : 0,
+      endDows: daysOf(outPat)
+    };
+  }
+
+  // Turns a person's drift into a rule of their own. Weekday: each drifting weekday keeps its own planned
+  // window (a Saturday half day stays a half day) with only the drifting side moved. Next 4 Weeks: a dated
+  // relative rule (start / end moved on the weekdays each side drifts) stored apart from their timings and
+  // applied on top of the day as resolved (seasons, closed days), so the person keeps following later changes
+  // to their shift. Attendance figures stay rule-driven.
+  function convertPunchDriftToRule(finding, kind) {
+    if (!canApplyShiftCalendar()) return { ok: false, error: 'You do not have rights to change shifts' };
+    const allowed = allowedCompanyNames();
+    if (allowed.length && !allowed.some(n => norm(n) === norm(finding.company))) return { ok: false, error: 'You do not have rights to change shifts' };
+    const mv = punchDriftShiftMinutes(finding);
+    if (!mv.start && !mv.end) return { ok: false, error: 'Nothing to change' };
+    const cur = getStaffWorkRule(finding.staff, finding.company);
+    if (kind === 'weekday') {
+      const sh = resolveStaffShiftForDate(finding.staff, finding.company, todayISO());
+      if (sh && sh.split_enabled && !sh.isDaySpecific) return { ok: false, error: 'Split shifts: use Next 4 Weeks or edit the schedule' };
+      const base = Object.assign({}, sh || {}, {
+        start_time: (sh && sh.regular_start_time) || (sh && sh.start_time),
+        end_time: (sh && sh.regular_end_time) || (sh && sh.end_time),
+        date_timings: []
+      });
+      const dayMap = cur.use_custom_day_timings ? Object.assign({}, cur.day_timings || {}) : Object.assign({}, (sh && sh.day_timings) || {});
+      const workDays = (sh && Array.isArray(sh.days) && sh.days.length) ? sh.days : [1, 2, 3, 4, 5, 6];
+      const sDays = mv.start ? (mv.startDows || workDays) : [];
+      const eDays = mv.end ? (mv.endDows || workDays) : [];
+      const days = Array.from(new Set(sDays.concat(eDays)));
+      days.forEach(d => {
+        const w = resolveShiftTimingForWeekday(Object.assign({}, base, { day_timings: dayMap }), d);
+        const sMin = parseClockMinutes(w.start_time);
+        let eMin = parseClockMinutes(w.end_time);
+        if (sMin == null || eMin == null) return;
+        if (eMin <= sMin) eMin += 1440;
+        const ns = sMin + (sDays.includes(d) ? mv.start : 0);
+        const ne = Math.max(ns + 60, eMin + (eDays.includes(d) ? mv.end : 0));
+        const st = shiftCalMinutesToClock(ns);
+        const et = shiftCalMinutesToClock(ne);
+        dayMap[String(d)] = { start_time: st, end_time: et, hours: computeShiftWorkedHours(st, et) || Math.round(((ne - ns) / 60) * 100) / 100 };
+      });
+      const patch = { company: finding.company, use_custom_day_timings: true, day_timings: dayMap };
+      if (!cur.use_custom_day_timings) {
+        // First own timing: start from the shift's hand-made dated exceptions (presets keep coming from the shift).
+        patch.date_timings = normalizeDateTimingsList((sh && sh.date_timings) || []).filter(it => !it.preset);
+      }
+      return saveStaffWorkRule(finding.staff, patch);
+    }
+    const sd = todayISO();
+    const ed = shiftCalAddDays(sd, 27);
+    const own = normalizeDateTimingsList(cur.own_date_timings).filter(it => !(it.start_date === sd && it.end_date === ed));
+    const item = { id: uid('sdt'), start_date: sd, end_date: ed, note: 'Drift review', include_off_days: false };
+    if (mv.start) {
+      item.start_shift_min = mv.start;
+      if (mv.startDows) item.start_dows = mv.startDows;
+    }
+    if (mv.end) {
+      item.end_shift_min = mv.end;
+      if (mv.endDows) item.end_dows = mv.endDows;
+    }
+    return saveStaffWorkRule(finding.staff, { company: finding.company, own_date_timings: normalizeDateTimingsList(own.concat([item])) });
+  }
+
+  // Active "Next 4 Weeks" rules in the businesses a seat can see, for the Punch Drift list (view and remove).
+  function listActivePunchDriftRules(companies) {
+    const ws = ensureWorkSchedulesState();
+    const today = todayISO();
+    const coSet = new Set((companies || []).map(c => norm(c)));
+    const out = [];
+    Object.values(ws.staffRules || {}).forEach(r => {
+      if (!r || r.reset_default || !r.staff) return;
+      if (coSet.size && !coSet.has(norm(r.company || ''))) return;
+      normalizeDateTimingsList(r.own_date_timings).forEach(it => {
+        if (it.end_date < today || !(it.start_shift_min || it.end_shift_min)) return;
+        out.push({ staff: r.staff, company: r.company || '', item: it });
+      });
+    });
+    return out.sort((a, b) => a.staff.localeCompare(b.staff));
+  }
+
+  function removePunchDriftRule(staff, company, itemId) {
+    if (!canApplyShiftCalendar()) return { ok: false, error: 'You do not have rights to change shifts' };
+    const allowed = allowedCompanyNames();
+    if (allowed.length && !allowed.some(n => norm(n) === norm(company))) return { ok: false, error: 'You do not have rights to change shifts' };
+    const cur = getStaffWorkRule(staff, company);
+    const next = normalizeDateTimingsList(cur.own_date_timings).filter(it => String(it.id) !== String(itemId));
+    return saveStaffWorkRule(staff, { company, own_date_timings: next });
+  }
+
+  async function runPunchDriftBrief(dg) {
+    const edge = window.MFG_AI_EDGE;
+    if (!edge || typeof edge.callAiEdgeJson !== 'function' || !dg.findings.length) return { unavailable: true };
+    const lang = (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en';
+    const langName = lang === 'ar' ? 'Arabic' : (lang === 'fr' ? 'French' : 'English');
+    const lines = [];
+    dg.crews.slice(0, 8).forEach(c => {
+      lines.push(`CREW | ${c.company} | ${c.shiftName} planned ${c.planned} | ${c.members.length} people | ${c.patterns.map(x => `${x.id} median ${x.medianMin} min`).join(', ')} | ${c.scope === 'weekday' ? fmtPunchDriftDows(c.dows) : 'most workdays'}`);
+    });
+    dg.people.slice(0, 12).forEach(f => {
+      lines.push(`PERSON | ${f.staff} | ${f.company} | ${f.shiftName} planned ${f.planned} | ${f.patterns.map(x => `${x.id} on ${x.hits}/${x.obs} days, median ${x.medianMin} min`).join(', ')} | ${f.scope === 'weekday' ? fmtPunchDriftDows(f.dows) : 'most workdays'}`);
+    });
+    const prompt = [
+      'You are the HR attendance analyst of a company group. Write a short weekly punch drift brief for HR.',
+      `Window ${dg.from} to ${dg.to}; threshold ${dg.thresholdMin} min; ${dg.peopleRead} people read; ${dg.findings.length} flagged.`,
+      'Findings (computed by fixed rules; do not change any number, do not compute pay or overtime):',
+      lines.join('\n'),
+      `Reply in ${langName}. Return ONLY JSON {"headline": "one sentence", "bullets": ["at most 4 short bullets: which crews or people to look at first and whether the pattern looks like a schedule that should change or a punctuality issue"]}. No em dashes, no arrows.`
+    ].join('\n');
+    try {
+      const res = await edge.callAiEdgeJson('punch_drift_brief', prompt, '', '', { tier: 'fast', timeoutMs: 9000 });
+      const clean = s => (typeof edge.sanitizeOutward === 'function' ? edge.sanitizeOutward(String(s || '')) : String(s || '').replace(/—/g, ',').replace(/→/g, 'to'));
+      if (res && res.headline && Array.isArray(res.bullets) && res.bullets.length) {
+        return { headline: clean(res.headline), bullets: res.bullets.slice(0, 4).map(clean), ai: true };
+      }
+    } catch (_) {}
+    return { unavailable: true };
+  }
+
+  function closePunchDriftModal() {
+    const m = $('punchDriftModal');
+    if (m) m.hidden = true;
+    document.body.classList.remove('modal-open');
+    if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
+  }
+
+  function openPunchDriftModal(opts = {}) {
+    const canWrite = canApplyShiftCalendar();
+    const st = {
+      weeks: Number(opts.weeks || 4),
+      thresholdMin: Number(opts.thresholdMin || 30),
+      brief: null,
+      briefBusy: false,
+      armed: ''
+    };
+    let dg = null;
+    let modal = $('punchDriftModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'punchDriftModal';
+      modal.className = 'modal-backdrop kiosk-submodal-backdrop';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      wireBackdropDismiss(modal, closePunchDriftModal);
+      document.body.appendChild(modal);
+    }
+    const compute = () => {
+      dg = computePunchDriftDigest({ weeks: st.weeks, thresholdMin: st.thresholdMin });
+      window.__lastPunchDriftDigest = dg;
+    };
+    const patHtml = list => list.map(x => `<span class="pdr-pat" data-side="${esc(x.side)}"><span>${esc(x.label)}</span> <b class="mono">${x.medianMin > 0 ? '+' : ''}${fmtNum(x.medianMin)}</b> <span>min</span></span>`).join(' ');
+    const daysHtml = (scope, dows) => (scope === 'weekday'
+      ? `<span class="pdr-days">${dows.map(d => `<span class="pdr-day">${esc(ATT_WEEKDAYS[d] || '')}</span>`).join(' ')}</span>`
+      : '<span class="pdr-days">Most workdays</span>');
+    const dayChips = dows => (dows ? dows.map(d => `<span class="pdr-day">${esc(ATT_WEEKDAYS[d] || '')}</span>`).join(' ') : '<span class="pdr-day">Most workdays</span>');
+    const changeHtml = f => {
+      const mv = punchDriftShiftMinutes(f);
+      const sgn = n => (n > 0 ? `+${n}` : `${n}`);
+      return [
+        mv.start ? `<div class="pdr-chg"><span>Start</span> <b class="mono">${sgn(mv.start)}</b> <span>min</span> ${dayChips(mv.startDows)}</div>` : '',
+        mv.end ? `<div class="pdr-chg"><span>End</span> <b class="mono">${sgn(mv.end)}</b> <span>min</span> ${dayChips(mv.endDows)}</div>` : ''
+      ].join('');
+    };
+    const actionsHtml = (key, isSplit) => (canWrite ? `
+      <div class="pdr-actions">
+        ${isSplit ? '' : `<button type="button" class="btn kiosk-mini-btn ${st.armed === `${key}|weekday` ? 'btn-primary' : ''}" data-pdr-act="weekday" data-pdr-key="${esc(key)}">${st.armed === `${key}|weekday` ? 'Confirm Weekday Rule' : 'Weekday Rule'}</button>`}
+        <button type="button" class="btn kiosk-mini-btn ${st.armed === `${key}|dated` ? 'btn-primary' : ''}" data-pdr-act="dated" data-pdr-key="${esc(key)}">${st.armed === `${key}|dated` ? 'Confirm Next 4 Weeks' : 'Next 4 Weeks'}</button>
+      </div>` : '');
+    const render = () => {
+      const crewRows = dg.crews.map((c, i) => `
+        <tr class="pdr-crew">
+          <td><span class="badge badge-brass">Crew</span> <b data-no-i18n="1">${esc(c.shiftName)}</b><div class="pdr-sub" data-no-i18n="1">${esc(c.company)} · ${esc(c.members.join(', '))}</div></td>
+          <td class="mono">${esc(c.planned)}</td>
+          <td>${patHtml(c.patterns)}</td>
+          <td>${daysHtml(c.scope, c.dows)}</td>
+          <td>${changeHtml(c)}</td>
+          <td>${actionsHtml(`crew:${i}`, c.memberFindings.some(f => f.split))}</td>
+        </tr>`).join('');
+      const personRows = dg.people.map((f, i) => `
+        <tr>
+          <td><b data-no-i18n="1">${esc(f.staff)}</b><div class="pdr-sub" data-no-i18n="1">${esc(f.company)} · ${esc(f.shiftName)}</div></td>
+          <td class="mono">${esc(f.planned)}</td>
+          <td>${patHtml(f.patterns)}<div class="pdr-sub"><b class="mono">${fmtNum(f.patterns[0].hits)}</b>/<b class="mono">${fmtNum(f.patterns[0].obs)}</b> <span>days</span></div></td>
+          <td>${daysHtml(f.scope, f.dows)}</td>
+          <td>${changeHtml(f)}</td>
+          <td>${actionsHtml(`person:${i}`, f.split)}</td>
+        </tr>`).join('');
+      const brief = st.brief;
+      const activeRules = listActivePunchDriftRules(getActiveIndustryBuList(STATE.company));
+      modal.innerHTML = `
+        <div class="modal-card pdr-card" style="width:min(980px,97vw);max-width:980px">
+          <div class="modal-head">
+            <div>
+              <div class="modal-title">${ic('clock')} <span>Punch Drift</span></div>
+              <div class="modal-sub">People and crews who keep clocking in or out well away from the window their shift plans for that date. Read only until you turn a pattern into a rule; pay and overtime stay rule-driven.</div>
+            </div>
+            <button type="button" class="icon-btn" id="pdrCloseBtn" aria-label="Close">✕</button>
+          </div>
+          <div class="modal-body pdr-body">
+            <div class="pdr-controls">
+              <div class="pdr-ctl" role="group" aria-label="Period">
+                <span class="pdr-ctl-lbl">Period</span>
+                ${[[4, 'Last 4 Weeks'], [2, 'Last 2 Weeks'], [8, 'Last 8 Weeks']].map(([w, l]) => `<button type="button" class="kiosk-qchip ${st.weeks === w ? 'active' : ''}" data-pdr-weeks="${w}">${l}</button>`).join('')}
+              </div>
+              <div class="pdr-ctl" role="group" aria-label="Off by at least">
+                <span class="pdr-ctl-lbl">Off by at least</span>
+                ${[30, 15, 45, 60].map(m => `<button type="button" class="kiosk-qchip ${st.thresholdMin === m ? 'active' : ''}" data-pdr-thr="${m}"><b class="mono">${m}</b> <span>min</span></button>`).join('')}
+              </div>
+            </div>
+            <div class="pdr-kpis">
+              <span class="scp-pv-item"><b class="mono">${fmtNum(dg.peopleRead)}</b> <span>people read</span></span>
+              <span class="scp-pv-item"><b class="mono">${fmtNum(dg.daysRead)}</b> <span>worked days</span></span>
+              <span class="scp-pv-item ${dg.crews.length ? 'is-warn' : ''}"><b class="mono">${fmtNum(dg.crews.length)}</b> <span>crews</span></span>
+              <span class="scp-pv-item ${dg.findings.length ? 'is-warn' : ''}"><b class="mono">${fmtNum(dg.findings.length)}</b> <span>people flagged</span></span>
+              <span class="pdr-range mono" data-no-i18n="1">${esc(fmtDateDMY(dg.from))} - ${esc(fmtDateDMY(dg.to))}</span>
+            </div>
+            <div class="pdr-brief" id="pdrBrief">
+              <div class="pdr-brief-head">
+                <strong>Weekly Brief</strong>
+                <button type="button" class="btn kiosk-mini-btn" id="pdrBriefBtn" ${st.briefBusy ? 'disabled' : ''}>${ic('sparkles')} <span>${st.briefBusy ? 'Writing...' : 'Write with Ask ISABI'}</span></button>
+              </div>
+              ${brief && !brief.unavailable ? `<div class="pdr-brief-body" data-no-i18n="1"><p>${esc(brief.headline)}</p><ul>${brief.bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>` : (brief && brief.unavailable ? `<div class="muted">${dg.findings.length ? 'Ask ISABI could not be reached. The table below is the full digest.' : 'No chronic drift in this period.'}</div>` : '<div class="muted">Ask ISABI words the findings below into a short note for HR. It never changes a figure.</div>')}
+            </div>
+            ${dg.findings.length ? `
+              <div class="table-wrap pdr-table-wrap">
+                <table class="pdr-table">
+                  <thead><tr><th>Who</th><th>Planned</th><th>Drift (median)</th><th>Days</th><th>Change</th><th></th></tr></thead>
+                  <tbody>${crewRows}${personRows}</tbody>
+                </table>
+              </div>` : '<div class="pdr-empty">No chronic drift in this period.</div>'}
+            ${activeRules.length ? `
+              <div class="scp-section-head">Drift rules in force</div>
+              <div class="pdr-rules">
+                ${activeRules.map(r => `
+                  <div class="pdr-rule">
+                    <b data-no-i18n="1">${esc(r.staff)}</b>
+                    <span class="pdr-sub" data-no-i18n="1">${esc(r.company)}</span>
+                    <span class="mono" data-no-i18n="1">${esc(fmtDateDMY(r.item.start_date))} - ${esc(fmtDateDMY(r.item.end_date))}</span>
+                    <span class="mono">${esc(fmtRelativeDateTimingText(r.item))}</span>
+                    ${canWrite ? `<button type="button" class="btn kiosk-mini-btn ${st.armed === `rule:${r.item.id}` ? 'btn-primary' : ''}" data-pdr-rm-rule="${esc(r.item.id)}">${st.armed === `rule:${r.item.id}` ? 'Confirm Remove' : 'Remove'}</button>` : ''}
+                  </div>`).join('')}
+              </div>` : ''}
+          </div>
+          <div class="modal-foot" style="justify-content:flex-end">
+            <button type="button" class="btn" id="pdrDoneBtn">Close</button>
+          </div>
+        </div>`;
+      modal.hidden = false;
+      document.body.classList.add('modal-open');
+      stripNativeTitles(modal);
+      wire();
+    };
+    const findingsForKey = key => {
+      const [kind, idxRaw] = String(key || '').split(':');
+      const idx = Number(idxRaw);
+      if (kind === 'crew') {
+        const c = dg.crews[idx];
+        return c ? c.memberFindings.map(f => Object.assign({}, f, { patterns: c.patterns })) : [];
+      }
+      const f = dg.people[idx];
+      return f ? [f] : [];
+    };
+    const wire = () => {
+      $('pdrCloseBtn')?.addEventListener('click', closePunchDriftModal);
+      $('pdrDoneBtn')?.addEventListener('click', closePunchDriftModal);
+      modal.querySelectorAll('[data-pdr-weeks]').forEach(b => b.addEventListener('click', () => {
+        st.weeks = Number(b.getAttribute('data-pdr-weeks')) || 4;
+        st.brief = null;
+        st.armed = '';
+        compute();
+        render();
+      }));
+      modal.querySelectorAll('[data-pdr-thr]').forEach(b => b.addEventListener('click', () => {
+        st.thresholdMin = Number(b.getAttribute('data-pdr-thr')) || 30;
+        st.brief = null;
+        st.armed = '';
+        compute();
+        render();
+      }));
+      $('pdrBriefBtn')?.addEventListener('click', async () => {
+        if (st.briefBusy) return;
+        st.briefBusy = true;
+        render();
+        const snapshot = dg;
+        const brief = await runPunchDriftBrief(snapshot);
+        st.briefBusy = false;
+        if (snapshot === dg && !modal.hidden) {
+          st.brief = brief;
+          render();
+        }
+      });
+      modal.querySelectorAll('[data-pdr-rm-rule]').forEach(b => b.addEventListener('click', () => {
+        const rid = b.getAttribute('data-pdr-rm-rule') || '';
+        const key = `rule:${rid}`;
+        if (st.armed !== key) {
+          st.armed = key;
+          render();
+          return;
+        }
+        st.armed = '';
+        // Found again by its id (never by position, a sync may have reordered the list between the two clicks).
+        const r = listActivePunchDriftRules(getActiveIndustryBuList(STATE.company)).find(x => String(x.item.id) === String(rid));
+        const res = r ? removePunchDriftRule(r.staff, r.company, r.item.id) : null;
+        toast(res && res.ok ? 'Drift rule removed' : ((res && res.error) || 'Nothing changed'), res && res.ok ? 'ok' : 'warn');
+        compute();
+        render();
+      }));
+      modal.querySelectorAll('[data-pdr-act]').forEach(b => b.addEventListener('click', () => {
+        const act = b.getAttribute('data-pdr-act') === 'dated' ? 'dated' : 'weekday';
+        const key = b.getAttribute('data-pdr-key') || '';
+        const armKey = `${key}|${act}`;
+        if (st.armed !== armKey) {
+          st.armed = armKey;
+          render();
+          return;
+        }
+        st.armed = '';
+        const list = findingsForKey(key);
+        let okCnt = 0;
+        let lastErr = '';
+        list.forEach(f => {
+          const r = convertPunchDriftToRule(f, act);
+          if (r && r.ok) okCnt++;
+          else if (r && r.error) lastErr = r.error;
+        });
+        if (okCnt) toast(act === 'weekday' ? 'Weekday rule saved' : 'Dated rule saved for the next 4 weeks', 'ok');
+        else toast(lastErr || 'Nothing changed', 'warn');
+        st.brief = null;
+        compute();
+        render();
+      }));
+    };
+    compute();
+    render();
     return modal;
   }
 
@@ -132288,6 +133867,16 @@
                     <div class="stc-time">Custom Hours</div>
                     <div class="stc-sub">Add split, early, or custom shift</div>
                   </button>
+                  <button type="button" class="shift-type-card is-add is-tool" id="kioskShiftCalPresetBtn">
+                    <div class="stc-head"><strong>Holidays &amp; Seasons</strong></div>
+                    <div class="stc-time">Presets</div>
+                    <div class="stc-sub">Ramadan, Eids, public holidays, winter hours</div>
+                  </button>
+                  <button type="button" class="shift-type-card is-add is-tool" id="kioskPunchDriftBtn">
+                    <div class="stc-head"><strong>Punch Drift</strong></div>
+                    <div class="stc-time">Weekly Digest</div>
+                    <div class="stc-sub">Who keeps clocking 30+ min off plan</div>
+                  </button>
                 </div>
                 ${policyGroupsStripHtml}
 
@@ -132359,7 +133948,7 @@
                               const dayOt = describeStaffOvertimeRule(s.name, s.company, wd.iso);
                               const hasPass = Boolean(dayOt.pass && dayOt.activeToday);
                               const cellTxt = !dayShift.isWorkday
-                                ? 'Off'
+                                ? (dayShift.isClosedDay ? 'Closed' : 'Off')
                                 : (dayShift.split_enabled ? '11-15+19-23' : `${dayShift.start_time.slice(0, 5)}-${dayShift.end_time.slice(0, 5)}`);
                               return `
                                 <td class="c ${wd.isToday ? 'is-today-col' : ''}">
@@ -133952,6 +135541,14 @@
         openShiftTypeModal('');
       });
     }
+    $('kioskShiftCalPresetBtn')?.addEventListener('click', e => {
+      e.stopPropagation();
+      openShiftCalPresetModal();
+    });
+    $('kioskPunchDriftBtn')?.addEventListener('click', e => {
+      e.stopPropagation();
+      openPunchDriftModal();
+    });
     feedCard.querySelectorAll('[data-sched-shift-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
         STATE.kioskSchedShiftFilter = btn.getAttribute('data-sched-shift-filter') || 'all';
@@ -140733,7 +142330,17 @@
       addStaffOtPass: (staff, spec = {}) => addStaffOtPass(staff, spec),
       removeStaffOtPass: (staff, id) => removeStaffOtPass(staff, id),
       resolveStaffShiftForDate: (staff, co, dateStr) => resolveStaffShiftForDate(staff, co, dateStr),
-      resolveStaffAttendanceDefaultWindow: (staff, co, dateStr) => resolveStaffAttendanceDefaultWindow(staff, co, dateStr),
+      computeShiftCalPresetRows: (presetId, year) => computeShiftCalPresetRows(presetId, year),
+      listShiftCalTargets: co => listShiftCalTargets(co),
+      applyShiftCalendarPreset: spec => applyShiftCalendarPreset(spec),
+      getStoredShiftVersions: (co, code) => getStoredShiftVersions(co, code),
+      openShiftCalPresetModal: (opts = {}) => openShiftCalPresetModal(opts),
+      computePunchDriftDigest: (opts = {}) => computePunchDriftDigest(opts),
+      convertPunchDriftToRule: (finding, kind) => convertPunchDriftToRule(finding, kind),
+      openPunchDriftModal: (opts = {}) => openPunchDriftModal(opts),
+      listActivePunchDriftRules: cos => listActivePunchDriftRules(cos),
+      removePunchDriftRule: (staff, co, id) => removePunchDriftRule(staff, co, id),
+      resolveStaffAttendanceDefaultWindow:(staff, co, dateStr) => resolveStaffAttendanceDefaultWindow(staff, co, dateStr),
       describeStaffOvertimeRule: (staff, co, dateStr) => describeStaffOvertimeRule(staff, co, dateStr),
       evaluateShiftPunchTiming: (staff, co, dateStr, inTime, outTime, opts = {}) => evaluateShiftPunchTiming(staff, co, dateStr, inTime, outTime, opts),
       enrolStaffFacePose: (staff, vec, opts = {}) => enrolStaffFacePose(staff, vec, (opts && opts.thumb) || '', (opts && typeof opts.poseIndex === 'number') ? opts.poseIndex : null),
