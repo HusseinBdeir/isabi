@@ -26,7 +26,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # write: the run takes the release lock (the ref refs/locks/release; build/release_lock.py). Nothing else is pushed.
+  contents: write
 
 concurrency:
   group: cloudflare-pages-production
@@ -35,7 +36,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30  # up to 10 of them waiting for a session's release lock
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -76,13 +77,14 @@ jobs:
         if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
         run: echo "::notice::Checks passed. Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets to deploy on push."
 
-      # One release at a time (build/release_lock.py): when a session has deployed under the release lock and not yet
-      # pushed that commit to main, deploying this commit would roll its work back. Then nothing below goes live
-      # (a warning; the holder's own push deploys both). An expired lock in that state fails the run.
+      # One release at a time (build/release_lock.py): this run is a lock holder like any session. It waits up to
+      # 10 minutes for a session's release to finish, then takes the lock and records this commit; when the lock stays
+      # held, nothing below goes live (a warning: that session deploys a commit containing main). An expired lock whose
+      # live deploy is not part of this commit fails the run (deploying would roll that work back).
       - name: Release lock
         id: lock
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
-        run: python3 build/release_lock.py ci-check --sha "$GITHUB_SHA"
+        run: python3 build/release_lock.py ci-acquire --sha "$GITHUB_SHA" --wait 600 --holder "GitHub Actions run ${{ github.run_id }}"
 
       - name: Stage allowlisted Pages bundle
         shell: bash
@@ -120,9 +122,17 @@ jobs:
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && steps.lock.outputs.deploy == 'true'
         run: npx --yes wrangler@4 d1 execute isabi-ledger --remote --file=migrations/0001_schema.sql
 
+      - name: Release lock still held
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && steps.lock.outputs.deploy == 'true'
+        run: python3 build/release_lock.py renew --ttl 30
+
       - name: Deploy
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && steps.lock.outputs.deploy == 'true'
         run: npx --yes wrangler@4 pages deploy "$RUNNER_TEMP/pages-bundle" --project-name=isabi-systems --branch=main --commit-hash="$GITHUB_SHA" --commit-dirty=true
+
+      - name: Give the release lock back
+        if: always() && steps.lock.outputs.deploy == 'true'
+        run: python3 build/release_lock.py release
 
       - name: Live probe
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && steps.lock.outputs.deploy == 'true'

@@ -111,8 +111,18 @@ def _load_committed(mod_name: str):
 _MODS: dict = {}
 
 
+def lock_mod():
+    """build/release_lock.py as committed at HEAD (like the other helpers: uncommitted edits never run)."""
+    if "L" not in _MODS:
+        try:
+            _MODS["L"] = _load_committed("release_lock")
+        except subprocess.CalledProcessError:
+            raise SystemExit("ABORT: HEAD has no build/release_lock.py; rebase the release commit onto origin/main") from None
+    return _MODS["L"]
+
+
 def mods():
-    if not _MODS:
+    if not _MODS.get("D"):
         _MODS["E"] = _load_committed("export_d1_seed")  # first: deploy_cloudflare imports from it
         _MODS["D"] = _load_committed("deploy_cloudflare")
     return _MODS["E"], _MODS["D"]
@@ -466,6 +476,8 @@ def stage_pages(message: str = "", keep: bool = False) -> None:
             raise SystemExit(2)
         if acct and not env.get("CLOUDFLARE_ACCOUNT_ID"):
             env["CLOUDFLARE_ACCOUNT_ID"] = acct
+        # Last check before going live: still the lock holder, HEAD contains origin/main, HEAD recorded as live.
+        lock_mod().claim_deploy_or_exit(ISABI, head, "data-only pages", bypass=NO_RELEASE_LOCK)
         msg = message or f"Manufacturing top-up to {str(hm.get('generated_at') or '')[:10]} (data only)"
         print(f"Deploying Cloudflare Pages from {bundle} (functions from {wt}) at {head[:7]}...", flush=True)
         r = subprocess.run(
@@ -483,10 +495,6 @@ def stage_pages(message: str = "", keep: bool = False) -> None:
             print(r.stderr)
         if r.returncode != 0:
             raise SystemExit(r.returncode)
-        if not NO_RELEASE_LOCK:
-            import release_lock  # noqa: PLC0415
-
-            release_lock.record_deploy(ISABI, head, "data-only pages")
     finally:
         if not keep:
             shutil.rmtree(bundle, ignore_errors=True)
@@ -509,9 +517,7 @@ def main() -> None:
     NO_RELEASE_LOCK = a.no_release_lock
     if a.stage in ("upload", "r2", "pages"):
         # Live writes (D1, R2, Pages) happen one release at a time: build/release_lock.py.
-        import release_lock  # noqa: PLC0415
-
-        release_lock.require_release_lock(ISABI, purpose=f"data-only release ({a.stage})", bypass=a.no_release_lock)
+        lock_mod().require_release_lock(ISABI, purpose=f"data-only release ({a.stage})", bypass=a.no_release_lock)
     if a.stage == "status":
         stage_status()
     elif a.stage == "check":

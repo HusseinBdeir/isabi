@@ -1603,16 +1603,24 @@ def main(argv: list[str] | None = None):
     ok, acct_id = ensure_logged_in(env, login=args.login)
     if not ok:
         sys.exit(2)
-    def _record_deploy(what: str) -> None:
+    def _claim_deploy(what: str) -> None:
+        """Right before going live: still the lock holder, HEAD contains origin/main, HEAD recorded as the live deploy."""
         if args.no_release_lock:
             return
         head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(ISABI_ROOT), capture_output=True, text=True, check=False).stdout.strip()
-        if head:
-            release_lock.record_deploy(ISABI_ROOT, head, what + (" (with uncommitted files)" if args.allow_dirty else ""))
+        if not head:
+            print("ERROR: cannot read HEAD to record it in the release lock; not deploying.", file=sys.stderr)
+            sys.exit(2)
+        release_lock.claim_deploy_or_exit(
+            ISABI_ROOT,
+            head,
+            what + (" (with uncommitted files)" if args.allow_dirty else ""),
+            allow_behind=args.allow_behind_origin,
+        )
 
     if args.pages_only:
+        _claim_deploy("pages-only deploy")
         deploy_pages(env)
-        _record_deploy("pages-only deploy")
         warn_weak_seat_pins(env)
         configure_domain_and_dns(acct_id)
         cleanup_preview_deployments_and_purge_cache(acct_id)
@@ -1637,8 +1645,8 @@ def main(argv: list[str] | None = None):
         require_delta=args.delta,
     )
     migrate_remote_d1_pins_to_pbkdf2(env)
+    _claim_deploy("full deploy")
     deploy_pages(env)
-    _record_deploy("full deploy")
     warn_weak_seat_pins(env)
     configure_domain_and_dns(acct_id)
     cleanup_preview_deployments_and_purge_cache(acct_id)

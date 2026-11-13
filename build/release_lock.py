@@ -14,28 +14,31 @@ must create the ref; GitHub refuses it when the ref exists (the update carries t
 cannot both win). Renewing and releasing are pushes with --force-with-lease on the value this session saw, so a
 session can only change a lock it holds. Nothing in the working tree or the index is touched.
 
-The release order it enforces (deploy_cloudflare.py and release_data_only.py call `require_release_lock`):
+The release order it enforces (deploy_cloudflare.py and release_data_only.py call `require_release_lock` at the
+start and `claim_deploy_or_exit` right before each live upload):
   1. take the lock (the deploy script takes it by itself when it is free);
   2. fetch and rebase onto origin/main of both repos (the deploy scripts refuse a HEAD behind origin/main);
-  3. deploy (the deployed commit is written into the lock);
+  3. deploy: just before going live the script proves it still holds the lock, checks the commit contains the
+     current origin/main, and writes it into the lock as the live deploy;
   4. git push origin main (isabi-app, then isabi);
-  5. python build/release_lock.py release   (refused while a deployed commit is not on origin/main).
+  5. python build/release_lock.py release   (refused while the live deploy is not on origin/main).
 
 Only the latest deploy under a lock counts (a redeploy after a rebase supersedes the earlier one). A lock expires
-after its TTL (60 minutes by default; each deploy renews it). An expired lock is taken over by the next deploy only
-when its latest deploy is already on origin/main; otherwise `acquire --takeover` is needed, after checking what that
-session left unpushed.
+after its TTL (60 minutes by default; each deploy renews it) and is taken over only 10 minutes after that (clock skew
+between PCs), and only when its latest deploy is already on origin/main; otherwise `acquire --takeover` is needed,
+after checking what that session left unpushed. A lock that exists but cannot be read is never treated as free.
 
-The push-to-main workflow (.github/workflows/deploy.yml) runs `ci-check` before going live: when the lock's latest
-deploy is not part of the pushed commit, deploying it would roll that session's live work back, so the run skips the
-live steps with a warning (the holder's own push deploys both), or fails when that lock has expired.
+The push-to-main workflow (.github/workflows/deploy.yml) is one more holder: `ci-acquire` waits up to 10 minutes for
+a session's release, takes the lock, records the pushed commit; the workflow renews it right before going live and
+releases it at the end. It does not deploy when the lock stays held, and fails when an expired lock's live deploy is
+not part of the pushed commit (deploying would roll that work back).
 
 Commands
   python build/release_lock.py status [--json]          who holds it, and whether live and both mains match
   python build/release_lock.py acquire --holder "<session>" [--version v19.6.N] [--ttl 60] [--takeover]
   python build/release_lock.py renew [--ttl 60]
   python build/release_lock.py release [--force]
-  python build/release_lock.py ci-check --sha <commit>     (the workflow; writes deploy=true|false to GITHUB_OUTPUT)
+  python build/release_lock.py ci-acquire --sha <commit>   (the workflow; writes deploy=true|false to GITHUB_OUTPUT)
 Bypass (only when the owner says so): ISABI_RELEASE_LOCK=off, or deploy_cloudflare.py --no-release-lock.
 Test: python build/verify_release_lock.py
 """
@@ -65,7 +68,7 @@ SEEN_REF = "refs/isabi-release-lock/seen"  # local copy of the remote lock commi
 REMOTE = os.environ.get("ISABI_RELEASE_LOCK_REMOTE", "origin")
 TOKEN_FILE = "isabi-release-lock.json"  # in this worktree's own git dir: one holder per worktree
 DEFAULT_TTL_MIN = 60
-RENEW_BELOW_MIN = 20
+TAKEOVER_GRACE_MIN = 10  # an expired lock is taken over only this long after its expiry (clock skew between PCs)
 LIVE_BASE = "https://isabisystems.com"
 # Files compared between live, isabi origin/main and isabi-app origin/main (isabi path, isabi-app path, live path).
 COMPARE_FILES = (
@@ -88,8 +91,11 @@ def _git(args: list[str], cwd: Path, *, input_text: str | None = None, check: bo
         env.setdefault(k, v)
         env.setdefault(k.replace("AUTHOR", "COMMITTER"), v)
     # stdin goes as bytes: in text mode Windows would turn "\n" into "\r\n" (a tree entry named "LOCK.json\r").
-    rb = subprocess.run(["git", *args], cwd=str(cwd), input=(input_text or "").encode("utf-8"), capture_output=True,
-                        timeout=timeout, env=env)
+    try:
+        rb = subprocess.run(["git", *args], cwd=str(cwd), input=(input_text or "").encode("utf-8"), capture_output=True,
+                            timeout=timeout, env=env)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise LockError(f"git {' '.join(args[:3])} did not finish ({type(exc).__name__})") from None
     r = subprocess.CompletedProcess(rb.args, rb.returncode, rb.stdout.decode("utf-8", errors="replace"),
                                     rb.stderr.decode("utf-8", errors="replace"))
     if check and r.returncode != 0:
@@ -136,12 +142,17 @@ def read_remote_lock(cwd: Path = ISABI_ROOT) -> tuple[str, dict]:
         raise LockError(f"cannot read the release lock from {REMOTE} ({(r.stderr or r.stdout).strip()[:300]}); "
                         "refusing to deploy without knowing who holds it")
     sha = _git(["rev-parse", SEEN_REF], cwd).stdout.strip()
-    raw = _git(["cat-file", "blob", f"{sha}:LOCK.json"], cwd, check=False).stdout
+    # Fail closed: a lock that exists but cannot be read is never treated as free.
+    raw = _git(["cat-file", "blob", f"{sha}:LOCK.json"], cwd, check=False, timeout=90)
     try:
-        info = json.loads(raw)
+        info = json.loads(raw.stdout) if raw.returncode == 0 else None
     except ValueError:
-        info = {}
-    return sha, info if isinstance(info, dict) else {}
+        info = None
+    if not isinstance(info, dict) or not info.get("lockId") or not info.get("expiresAt"):
+        raise LockError(f"the release lock {sha[:7]} on {REMOTE} cannot be read ({(raw.stderr or 'bad LOCK.json').strip()[:200]}); "
+                        "refusing to treat it as free. Check it with `git fetch origin refs/locks/release` and "
+                        "`git show FETCH_HEAD:LOCK.json`; delete it only if it is broken: git push origin :refs/locks/release")
+    return sha, info
 
 
 def _make_lock_commit(info: dict, cwd: Path, parent: str = "") -> str:
@@ -190,9 +201,6 @@ def _token_path(cwd: Path) -> Path:
 
 
 def read_token(cwd: Path = ISABI_ROOT) -> dict:
-    env_id = os.environ.get("ISABI_RELEASE_LOCK_ID", "").strip()
-    if env_id:
-        return {"lockId": env_id}
     p = _token_path(cwd)
     try:
         tok = json.loads(p.read_text(encoding="utf-8"))
@@ -215,9 +223,9 @@ def _drop_token(cwd: Path) -> None:
 
 # ------------------------------------------------------------------------------------------------------ lock logic
 
-def is_expired(info: dict) -> bool:
+def is_expired(info: dict, grace_min: float = 0) -> bool:
     exp = _parse_iso(info.get("expiresAt", ""))
-    return exp is None or exp <= _now()
+    return exp is None or exp + dt.timedelta(minutes=grace_min) <= _now()
 
 
 def minutes_left(info: dict) -> float:
@@ -251,23 +259,49 @@ def unpushed_deploys(info: dict, cwd: Path) -> list[dict]:
     return [] if _in(cwd, last["sha"], f"{REMOTE}/main") else [last]
 
 
-def ci_check(cwd: Path, sha: str) -> tuple[bool, bool, str]:
-    """For the push-to-main workflow: (deploy?, blocked by an expired lock?, message). A push to main must not
-    overwrite a live deploy that a session made under the lock and has not pushed yet: when the lock's latest deploy
-    is not part of this commit, the workflow does not deploy (that session's own push will)."""
-    lsha, info = read_remote_lock(cwd)
-    if not lsha:
-        return True, False, "release lock free"
-    last = last_deploy(info)
-    if not last:
-        return True, False, f"release lock {describe(info)}; nothing deployed under it yet"
-    if last["sha"] == sha or _in(cwd, last["sha"], sha):
-        return True, False, f"release lock {describe(info)}; its live deploy {last['sha'][:7]} is part of this commit"
-    expired = is_expired(info)
-    return False, expired, (f"release lock {describe(info)}; its live deploy {last['sha'][:7]} is NOT part of {sha[:7]}: "
-                            "deploying this commit would roll it back, so it is not deployed here"
-                            + ("; the lock EXPIRED with that deploy unpushed: find that work and get it onto main"
-                               if expired else "; the lock holder's push to main will deploy both"))
+def ci_acquire(cwd: Path, sha: str, *, wait_s: int = 600, poll_s: int = 20, holder: str = "") -> tuple[bool, bool, str]:
+    """For the push-to-main workflow: take the lock like any session, waiting up to wait_s for a session to finish
+    (a session releases right after pushing main, so this is usually a minute or two), then record `sha` as the
+    deploy. Returns (deploy?, fail the run?, message). The workflow then renews the lock just before going live and
+    releases it at the end, so a session and the workflow can never deploy at the same time."""
+    import time  # noqa: PLC0415
+
+    deadline = time.monotonic() + max(0, wait_s)
+    while True:
+        lsha, info = read_remote_lock(cwd)
+        if not lsha or is_expired(info, TAKEOVER_GRACE_MIN):
+            last = last_deploy(info) if lsha else None
+            if last and not (last["sha"] == sha or _in(cwd, last["sha"], sha)):
+                return False, True, (f"release lock {describe(info)}: it expired with its latest deploy {last['sha'][:7]} "
+                                     f"live and not part of {sha[:7]}; deploying would roll that work back. Get that work "
+                                     "onto main (or take the lock over by hand), then re-run this workflow.")
+            try:
+                acquire(cwd, holder=holder or f"GitHub Actions {sha[:7]}", purpose="push-to-main deploy",
+                        version=_worktree_shell_version(cwd), ttl_min=30, takeover=True, quiet=True)
+                got = True
+            except LockError as exc:  # lost a race: someone took it first; wait like below
+                got, last_msg = False, str(exc)
+            if got:
+                try:
+                    claim_deploy(cwd, sha, "push-to-main deploy")
+                    return True, False, f"release lock taken for {sha[:7]}"
+                except LockError as exc:
+                    try:
+                        release(cwd, force=True, quiet=True)
+                    except LockError:
+                        pass
+                    return False, False, f"not deployed: {exc} (a newer push has its own run)"
+        else:
+            last = last_deploy(info)
+            if last and last["sha"] == sha:
+                return False, False, f"release lock {describe(info)}: that session already deployed {sha[:7]}; nothing to do here"
+            last_msg = f"release lock {describe(info)}"
+        if time.monotonic() >= deadline:
+            return False, False, (f"{last_msg}. Not deployed after waiting {wait_s // 60} min: that release is still "
+                                  "running. Its holder deploys a commit that contains main (the deploy scripts refuse "
+                                  "one behind main), or re-run this workflow once it is released.")
+        print(f"waiting for the release lock: {last_msg}", flush=True)
+        time.sleep(poll_s)
 
 
 def describe(info: dict) -> str:
@@ -292,7 +326,8 @@ def acquire(cwd: Path = ISABI_ROOT, *, holder: str = "", version: str = "", purp
     if info and held_by_me(info, cwd):
         return renew(cwd, ttl_min=ttl_min, quiet=quiet, _seen=(sha, info))
     if sha:
-        if not is_expired(info):
+        # A grace period after expiry: another PC's clock may run ahead of the holder's.
+        if not is_expired(info, TAKEOVER_GRACE_MIN):
             raise LockError(f"RELEASE LOCK: {describe(info)}.\nWait for that release to finish (its session pushes main, then "
                             "runs `python build/release_lock.py release`), or ask the owner. Do not deploy around it.")
         left_behind = unpushed_deploys(info, cwd)
@@ -355,8 +390,10 @@ def release(cwd: Path = ISABI_ROOT, *, force: bool = False, quiet: bool = False)
     left = unpushed_deploys(info, cwd)
     if left and not force:
         lst = ", ".join(f"{d['sha'][:7]} ({d.get('what', '')})" for d in left)
-        raise LockError(f"RELEASE LOCK: still held: deployed {lst} is not on origin/main yet. Push main first "
-                        "(git push origin HEAD:main), then release. --force only if that deploy was rolled back on purpose.")
+        raise LockError(f"RELEASE LOCK: still held: the live deploy {lst} is not on origin/main. Push it to main "
+                        "(git push origin HEAD:main), then release. If the push was refused and you rebased, the rebased "
+                        "commit is not what is live: deploy the rebased HEAD again (it is recorded here), push, then "
+                        "release. --force only if that deploy was rolled back on purpose.")
     if not _push_lock("", sha, cwd):
         raise LockError("RELEASE LOCK: it changed on the remote while releasing it; run status.")
     _drop_token(cwd)
@@ -380,18 +417,36 @@ def require_release_lock(cwd: Path = ISABI_ROOT, *, purpose: str, bypass: bool =
         raise SystemExit(2) from None
 
 
-def record_deploy(cwd: Path, sha: str, what: str) -> None:
-    """Write a deployed commit into the lock, so the lock cannot be released (or taken over) before it is on main."""
-    if os.environ.get("ISABI_RELEASE_LOCK", "").strip().lower() in ("off", "0", "no"):
+def claim_deploy(cwd: Path, sha: str, what: str, *, allow_behind: bool = False) -> dict:
+    """Call right BEFORE a live upload. Proves this worktree still holds the lock (raises if it was lost or taken
+    over), checks that `sha` contains the current origin/main (so nothing pushed since the lock was taken is rolled
+    back), and writes `sha` into the lock as its latest deploy, so the lock cannot be released or taken over, and the
+    push-to-main workflow will not deploy over it, until that commit is on main."""
+    rsha, info = read_remote_lock(cwd)
+    if not rsha or not held_by_me(info, cwd):
+        raise LockError(f"RELEASE LOCK: this worktree no longer holds it ({describe(info) if rsha else 'nobody holds it'}); "
+                        "not going live. Run the deploy again (it takes the lock when free).")
+    if not allow_behind:
+        _fetch_main(cwd)
+        if not _in(cwd, f"{REMOTE}/main", sha):
+            raise LockError(f"RELEASE LOCK: {sha[:7]} does not contain origin/main "
+                            f"({_git(['rev-parse', '--short', f'{REMOTE}/main'], cwd).stdout.strip()}): something reached main "
+                            "since this release started. Not going live; rebase onto origin/main and deploy again.")
+    new = renew(cwd, quiet=True, deployed={"sha": sha, "what": what, "at": _iso(_now())}, _seen=(rsha, info))
+    print(f"Release lock: {sha[:7]} recorded as the live deploy ({what}). After it: push main (isabi-app, then isabi), "
+          "then `python build/release_lock.py release`.", flush=True)
+    return new
+
+
+def claim_deploy_or_exit(cwd: Path, sha: str, what: str, *, bypass: bool = False, allow_behind: bool = False) -> None:
+    """claim_deploy for the deploy scripts: prints the reason and exits 2 instead of going live."""
+    if bypass or os.environ.get("ISABI_RELEASE_LOCK", "").strip().lower() in ("off", "0", "no"):
         return
     try:
-        rsha, info = read_remote_lock(cwd)
-        if rsha and held_by_me(info, cwd):
-            renew(cwd, quiet=True, deployed={"sha": sha, "what": what, "at": _iso(_now())}, _seen=(rsha, info))
-            print(f"Release lock: recorded deploy {sha[:7]} ({what}). Next: push main (isabi-app, then isabi), then "
-                  "`python build/release_lock.py release`.")
+        claim_deploy(cwd, sha, what, allow_behind=allow_behind)
     except LockError as exc:
-        print(f"WARN: could not record the deploy in the release lock ({exc}).")
+        print(f"ERROR: {exc}", file=sys.stderr, flush=True)
+        raise SystemExit(2) from None
 
 
 def _worktree_shell_version(cwd: Path) -> str:
@@ -523,22 +578,23 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--ttl", type=int, default=DEFAULT_TTL_MIN)
     rl = sub.add_parser("release", help="give the lock back after pushing main")
     rl.add_argument("--force", action="store_true", help="release even if a deployed commit is not on origin/main")
-    ci = sub.add_parser("ci-check", help="push-to-main workflow: may this commit be deployed?")
+    ci = sub.add_parser("ci-acquire", help="push-to-main workflow: wait for and take the lock, record this commit")
     ci.add_argument("--sha", required=True)
+    ci.add_argument("--wait", type=int, default=600, help="seconds to wait for a session's release (default 600)")
+    ci.add_argument("--holder", default="")
     args = ap.parse_args(argv)
-    if args.cmd == "ci-check":
+    if args.cmd == "ci-acquire":
         try:
-            ok, expired, msg = ci_check(ISABI_ROOT, args.sha)
+            ok, fail, msg = ci_acquire(ISABI_ROOT, args.sha, wait_s=args.wait, holder=args.holder)
         except LockError as exc:
-            print(f"::error::{exc}")
-            return 1
+            ok, fail, msg = False, True, str(exc)
         out = os.environ.get("GITHUB_OUTPUT", "")
         if out:
             with open(out, "a", encoding="utf-8") as fh:
                 fh.write(f"deploy={'true' if ok else 'false'}\n")
-        print(msg if ok else (f"::error::{msg}" if expired else f"::warning::{msg}"))
-        return 1 if expired else 0
-    if getattr(args, "ttl", 1) < 1 or getattr(args, "ttl", 1) > 240:
+        print(msg if ok else (f"::error::{msg}" if fail else f"::warning::{msg}"))
+        return 1 if fail else 0
+    if getattr(args, "ttl", 1) < 1 or getattr(args, "ttl", 1) > 240:  # noqa: PLR2004
         ap.error("--ttl must be 1 to 240 minutes")
     cwd = ISABI_ROOT
     try:
