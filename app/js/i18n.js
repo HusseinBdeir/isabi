@@ -21,6 +21,12 @@
   const DICT = {
     en: {},
     ar: {
+      "Shift Windows Across the Day": "أوقات الورديات على مدار اليوم",
+      "When each active shift runs on the 24-hour clock, weekdays and Saturday": "متى تعمل كل وردية نشطة على مدار 24 ساعة، في أيام الأسبوع ويوم السبت",
+      "Weekdays": "أيام الأسبوع",
+      "Staff per Shift": "الموظفون في كل وردية",
+      "Active staff on each shift; a timing change re-applies to them from its Effective Date": "الموظفون النشطون في كل وردية؛ أي تغيير في التوقيت يُطبَّق عليهم اعتبارًا من تاريخ السريان",
+      "No active shifts": "لا توجد ورديات نشطة",
       "#1 Grade:": "الصنف الأول:",
       "$/Ton": "$/طن",
       "$0 Trips": "نقلات $0",
@@ -10744,6 +10750,12 @@
       "The till is a running balance: it counts every cash entry from the first day up to the end date. The start date only filters the entries and the period cash flow.": "الصندوق رصيد تراكمي: يحتسب كل حركة نقدية من اليوم الأول حتى تاريخ النهاية. تاريخ البدء يصفّي الحركات والتدفق النقدي للفترة فقط."
     },
     fr: {
+      "Shift Windows Across the Day": "Plages horaires des postes sur la journée",
+      "When each active shift runs on the 24-hour clock, weekdays and Saturday": "Horaires de chaque poste actif sur 24 heures, en semaine et le samedi",
+      "Weekdays": "En semaine",
+      "Staff per Shift": "Personnel par poste",
+      "Active staff on each shift; a timing change re-applies to them from its Effective Date": "Personnel actif de chaque poste ; un changement d'horaire s'applique à eux dès sa date d'effet",
+      "No active shifts": "Aucun poste actif",
       "#1 Grade:": "Calibre n°1 :",
       "$/Ton": "$/Tonne",
       "$0 Trips": "Voyages 0 $",

@@ -28342,6 +28342,46 @@
     return r;
   }
 
+  // Chart rows for the Attendance & Overtime shift charts (js/pbi_pages.js renderWorkShiftsVisualsSection):
+  // minutes-of-day windows for weekdays and Saturday (only when Saturday differs), plus other day exceptions.
+  function buildWorkShiftChartRows(shiftRows) {
+    const win = (a, b) => {
+      const s = parseClockMinutes(a);
+      const e = parseClockMinutes(b);
+      return (s == null || e == null || s === e) ? [] : [[s, e]];
+    };
+    return (shiftRows || []).filter(Boolean).map(ws => {
+      const wk = ws.split_enabled
+        ? win(ws.split_start_1, ws.split_end_1).concat(win(ws.split_start_2, ws.split_end_2))
+        : win(ws.start_time, ws.end_time);
+      const days = Array.isArray(ws.days) ? ws.days.map(Number) : [1, 2, 3, 4, 5, 6];
+      const satOff = !days.includes(6);
+      const satDiff = !satOff && !ws.split_enabled && Boolean(ws.sat_diff_enabled);
+      const sat = satDiff ? win(ws.sat_start_time, ws.sat_end_time) : null;
+      const wkHours = Number(ws.scheduled_hours || ws.hours || 0);
+      const satHours = satDiff ? (computeShiftWorkedHours(ws.sat_start_time, ws.sat_end_time) || 0) : wkHours;
+      const dt = (ws.day_timings && typeof ws.day_timings === 'object') ? ws.day_timings : {};
+      const otherDays = ws.split_enabled ? [] : Object.keys(dt)
+        .filter(k => k !== '6' && days.includes(Number(k)) && dt[k] && (dt[k].start_time !== ws.start_time || dt[k].end_time !== ws.end_time))
+        .sort((x, y) => Number(x) - Number(y))
+        .map(k => ({ day: SHIFT_DAY_SHORT_NAMES[k] || k, win: `${dt[k].start_time}-${dt[k].end_time}`, hours: Number(dt[k].hours || computeShiftWorkedHours(dt[k].start_time, dt[k].end_time) || 0) }));
+      return {
+        name: ws.shift_name || ws.name || 'Shift',
+        company: ws.company || '',
+        isDefault: Boolean(ws.is_bu_default),
+        wk,
+        sat: sat && sat.length ? sat : null,
+        satOff,
+        wkHours,
+        satHours,
+        otherDays,
+        workdays: ws.workdays_label || '',
+        staff: Number(ws.associated_staff_count || 0),
+        effDate: ws.start_date ? fmtDateDMY(ws.start_date) : ''
+      };
+    });
+  }
+
   function ensureWorkShiftsSeeded() {
     if (!SEED || !SEED.records) return [];
     const rec = SEED.records;
@@ -40398,70 +40438,16 @@
           const sortedWs = sortRows(scopedWs, 'pay_work_shifts', 'start_date', 'desc');
           const shownWs = sortedWs.slice(0, shownCount('pay_work_shifts'));
           const activeWs = sortedWs.filter(r => !r.end_date);
-          const maxHrs = Math.max(10, ...activeWs.map(r => Number(r.scheduled_hours || 8)));
-          const maxStaff = Math.max(1, ...activeWs.map(r => Number(r.associated_staff_count || 0)));
           const sumWsStaff = sortedWs.reduce((a, r) => a + Number(r.associated_staff_count || 0), 0);
           const avgWsHrs = sortedWs.length ? (sortedWs.reduce((a, r) => a + Number(r.scheduled_hours || 0), 0) / sortedWs.length) : 8;
           const activeBuList = getActiveIndustryBuList();
           const liveShiftTypes = getShiftTypes();
+          const wsChartRows = buildWorkShiftChartRows(activeWs.slice(0, 8));
+          const wsShowCo = new Set(activeWs.slice(0, 8).map(r => String(r.company || ''))).size > 1;
           return `
-            <div class="grid-2" id="workShiftsChartsRow" style="margin-bottom:14px">
-              <div class="panel-card">
-                <div class="panel-head">
-                  <div>
-                    <div class="panel-title"><span>${ic('clock')} SHIFT HOURS &amp; DAY-SPECIFIC TIMINGS BY BU</span></div>
-                    <span class="ph-sub">Regular weekday hours vs Saturday / day-specific shift hours across active BU shifts</span>
-                  </div>
-                </div>
-                <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">
-                  ${activeWs.slice(0, 8).map(ws => {
-                    const regH = Number(ws.scheduled_hours || 8);
-                    const satObj = ws.day_timings && ws.day_timings['6'];
-                    const satH = satObj ? (computeShiftWorkedHours(satObj.start_time, satObj.end_time) || regH) : (ws.sat_diff_enabled ? (computeShiftWorkedHours(ws.sat_start_time, ws.sat_end_time) || regH) : regH);
-                    const pctReg = Math.min(100, Math.round((regH / maxHrs) * 100));
-                    const pctSat = Math.min(100, Math.round((satH / maxHrs) * 100));
-                    const winTxt = ws.split_enabled && ws.split_window_label ? ws.split_window_label : `${ws.start_time}-${ws.end_time}`;
-                    return `
-                      <div style="display:flex;flex-direction:column;gap:3px">
-                        <div style="display:flex;justify-content:space-between;font-size:12px">
-                          <span>${coBadge(ws.company)} <b>${esc(ws.shift_name)}</b> ${ws.is_bu_default ? '<span class="badge badge-brass" style="font-size:10px">BU Default</span>' : ''}</span>
-                          <span class="mono">${esc(winTxt)} (${fmtNum(regH, 1)}h)${satH !== regH ? ` · Sat ${fmtNum(satH, 1)}h` : ''}</span>
-                        </div>
-                        <div style="height:8px;background:var(--line);border-radius:4px;overflow:hidden;display:flex;gap:2px">
-                          <div style="width:${pctReg}%;background:var(--brass);border-radius:4px"></div>
-                          ${satH !== regH ? `<div style="width:${Math.max(8, pctSat)}%;background:var(--info);border-radius:4px"></div>` : ''}
-                        </div>
-                      </div>
-                    `;
-                  }).join('')}
-                </div>
-              </div>
-              <div class="panel-card">
-                <div class="panel-head">
-                  <div>
-                    <div class="panel-title"><span>${ic('payroll')} ASSOCIATED STAFF BY SHIFT &amp; BU DEFAULT</span></div>
-                    <span class="ph-sub">Active staff automatically backfilled when a shift timing changes from its Effective Date</span>
-                  </div>
-                </div>
-                <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">
-                  ${activeWs.slice(0, 8).map(ws => {
-                    const cnt = Number(ws.associated_staff_count || 0);
-                    const pct = Math.min(100, Math.max(4, Math.round((cnt / maxStaff) * 100)));
-                    return `
-                      <div style="display:flex;flex-direction:column;gap:3px">
-                        <div style="display:flex;justify-content:space-between;font-size:12px">
-                          <span>${coBadge(ws.company)} <b>${esc(ws.shift_name)}</b> <small class="muted">(${esc(ws.day_schedule_summary || 'Same Every Workday')})</small></span>
-                          <span class="mono"><b>${fmtNum(cnt)} staff</b> · Eff. ${esc(fmtDateDMY(ws.start_date))}</span>
-                        </div>
-                        <div style="height:8px;background:var(--line);border-radius:4px;overflow:hidden">
-                          <div style="width:${pct}%;height:100%;background:${ws.is_bu_default ? 'var(--brass)' : 'var(--ok)'};border-radius:4px"></div>
-                        </div>
-                      </div>
-                    `;
-                  }).join('')}
-                </div>
-              </div>
-            </div>
+            ${(window.MFG_PBI && typeof window.MFG_PBI.renderWorkShiftsVisualsSection === 'function')
+              ? window.MFG_PBI.renderWorkShiftsVisualsSection({ shifts: wsChartRows, showCo: wsShowCo })
+              : ''}
 
             <div class="panel-card" id="payShiftTimingsPanel">
               <div class="panel-head">

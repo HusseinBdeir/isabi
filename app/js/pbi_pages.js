@@ -13024,6 +13024,107 @@
     `;
   }
 
+  // Work shifts (Payroll & Workforce > Attendance & Overtime): a 24-hour timeline of when each
+  // active shift runs (weekdays + Saturday when it differs) and a staff-per-shift bar chart.
+  // ctx.shifts rows are prepared in js/app.js (buildWorkShiftChartRows): windows are [startMin, endMin]
+  // pairs on a 0..1440 clock; endMin <= startMin means the window runs past midnight.
+  function renderWorkShiftsVisualsSection(ctx) {
+    const shifts = ((ctx && ctx.shifts) || []).filter(Boolean);
+    const showCo = Boolean(ctx && ctx.showCo);
+    const DAY = 1440;
+    const pctOf = m => Math.round((Math.max(0, Math.min(DAY, m)) / DAY) * 10000) / 100;
+    const clock = m => {
+      const mm = ((Math.round(m) % DAY) + DAY) % DAY;
+      return `${String(Math.floor(mm / 60)).padStart(2, '0')}:${String(mm % 60).padStart(2, '0')}`;
+    };
+    const winsTxt = wins => (wins || []).map(w => `${clock(w[0])}-${clock(w[1])}`).join(' + ');
+    const segsHtml = (wins, cls) => (wins || []).map(w => {
+      const s = Number(w[0]);
+      const e = Number(w[1]);
+      if (!Number.isFinite(s) || !Number.isFinite(e)) return '';
+      const parts = e > s ? [[s, e, '']] : [[s, DAY, ' cut-end'], [0, e, ' cut-start']];
+      return parts.filter(p => p[1] > p[0]).map(p =>
+        `<i class="ws-tl-seg ${cls}${p[2]}" style="inset-inline-start:${pctOf(p[0])}%;width:${Math.max(0.6, pctOf(p[1]) - pctOf(p[0]))}%"></i>`
+      ).join('');
+    }).join('');
+    const subOf = r => [showCo ? r.company : '', r.isDefault ? 'BU Default' : ''].filter(Boolean).join(' · ');
+    const emptyHtml = `<div style="padding:18px;text-align:center;color:var(--muted);font-size:12px">No active shifts</div>`;
+
+    const timelineHtml = !shifts.length ? emptyHtml : `
+      <div class="ws-tl">
+        <div class="ws-tl-row ws-tl-axis" aria-hidden="true">
+          <span></span>
+          <div class="ws-tl-ticks">${[0, 6, 12, 18, 24].map(h => `<span style="inset-inline-start:${(h / 24) * 100}%">${String(h).padStart(2, '0')}<i>:00</i></span>`).join('')}</div>
+          <span></span>
+        </div>
+        ${shifts.map(r => {
+          const satDiffers = Array.isArray(r.sat) && r.sat.length > 0;
+          const popRows = [
+            { label: 'Weekdays', value: `${winsTxt(r.wk) || '-'} (${fmtNum(r.wkHours, 1)}h)`, color: C.steel },
+            { label: 'Saturday', value: r.satOff ? 'Off' : (satDiffers ? `${winsTxt(r.sat)} (${fmtNum(r.satHours, 1)}h)` : `${winsTxt(r.wk) || '-'} (${fmtNum(r.wkHours, 1)}h)`), color: satDiffers ? C.brass : '' }
+          ];
+          (r.otherDays || []).forEach(od => popRows.push({ label: od.day, value: `${od.win} (${fmtNum(od.hours, 1)}h)` }));
+          if (r.workdays) popRows.push({ label: 'Workdays', value: r.workdays });
+          popRows.push({ label: 'Active Staff', value: fmtNum(r.staff, 0) });
+          if (r.effDate) popRows.push({ label: 'Effective From', value: r.effDate });
+          const pop = { title: r.name, badge: subOf(r) || r.company || '', rows: popRows };
+          return `
+            <div class="ws-tl-row" data-chart-pop="${encodeChartPop(pop)}">
+              <span class="ws-tl-lbl"><b>${esc(r.name)}</b>${subOf(r) ? ` <small>${esc(subOf(r))}</small>` : ''}</span>
+              <div class="ws-tl-lane${satDiffers ? ' has-sat' : ''}">
+                ${segsHtml(r.wk, 'wk')}
+                ${satDiffers ? segsHtml(r.sat, 'sat') : ''}
+              </div>
+              <span class="ws-tl-val"><b>${fmtNum(r.wkHours, 1)}h</b>${satDiffers ? `<small><span>Sat</span> ${fmtNum(r.satHours, 1)}h</small>` : ''}</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+
+    const staffRows = shifts.slice().sort((a, b) => (Number(b.staff) || 0) - (Number(a.staff) || 0));
+    const maxStaff = Math.max(1, ...staffRows.map(r => Number(r.staff) || 0));
+    const totStaff = staffRows.reduce((a, r) => a + (Number(r.staff) || 0), 0);
+    const staffHtml = !staffRows.length ? emptyHtml : `
+      <div class="pbi-bar-chart">
+        ${staffRows.map(r => {
+          const n = Number(r.staff) || 0;
+          const pct = n > 0 ? Math.max(3, Math.min(100, Math.round((n / maxStaff) * 100))) : 0;
+          const pop = {
+            title: r.name,
+            badge: subOf(r) || r.company || '',
+            rows: [
+              { label: 'Active Staff', value: fmtNum(n, 0), color: C.navy },
+              { label: 'Weekdays', value: `${winsTxt(r.wk) || '-'} (${fmtNum(r.wkHours, 1)}h)` }
+            ].concat(totStaff > 0 ? [{ label: 'Share', value: `${((n / totStaff) * 100).toFixed(1)}%` }] : [])
+             .concat(r.effDate ? [{ label: 'Effective From', value: r.effDate }] : [])
+          };
+          return `
+            <div class="pbi-bar-item ws-staff-item" data-chart-pop="${encodeChartPop(pop)}">
+              <span class="pbi-bar-lbl">${esc(r.name)}${subOf(r) ? ` <small>· ${esc(subOf(r))}</small>` : ''}</span>
+              <div class="pbi-bar-lane"><div class="pbi-bar-fill" style="width:${pct}%;background:${C.navy}"></div></div>
+              <span class="pbi-bar-val${n ? '' : ' is-zero'}">${fmtNum(n, 0)}</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+
+    return `
+      <div class="pbi-grid-2" id="workShiftsChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('Shift Windows Across the Day', timelineHtml, {
+          subtitle: 'When each active shift runs on the 24-hour clock, weekdays and Saturday',
+          legend: [{ label: 'Weekdays', color: C.steel }].concat(
+            shifts.some(r => Array.isArray(r.sat) && r.sat.length) ? [{ label: 'Saturday', color: C.brass }] : []
+          )
+        })}
+        ${pbiPanel('Staff per Shift', staffHtml, {
+          subtitle: 'Active staff on each shift; a timing change re-applies to them from its Effective Date'
+        })}
+      </div>
+    `;
+  }
+
   function renderAllowancesVisualsSection(ctx) {
     const payMonths = (ctx && ctx.payMonths) || [];
     const siteStaffRows = ((ctx && ctx.siteStaffRows) || []).map(r => Object.assign({}, r, {
@@ -14077,6 +14178,7 @@
     renderDriversVisualsSection,
     renderPayrollVisualsSection,
     renderAttendanceVisualsSection,
+    renderWorkShiftsVisualsSection,
     renderAllowancesVisualsSection,
     renderJvVisualsSection,
     renderRawVisualsSection,

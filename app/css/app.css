@@ -6051,6 +6051,76 @@ td.pbi-cell-amber {
   text-align: right;
   min-width: 58px;
 }
+.pbi-bar-val.is-zero { color: var(--muted); font-weight: 600; }
+
+/* Shift windows timeline (Attendance & Overtime, #workShiftsChartsRow) */
+.ws-tl { padding: 6px 14px 12px; display: flex; flex-direction: column; gap: 6px; }
+.ws-tl-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 30%) minmax(0, 1fr) 66px;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  border-radius: 6px;
+}
+.ws-tl-row[data-chart-pop] { padding: 3px 4px; margin: 0 -4px; cursor: default; }
+.ws-tl-row[data-chart-pop]:hover { background: var(--surface-2); }
+.ws-tl-lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.ws-tl-lbl b { font-weight: 600; }
+.ws-tl-lbl small { color: var(--muted); font-weight: 400; margin-inline-start: 2px; }
+.ws-tl-axis { padding: 0 4px; margin: 0 -4px; }
+.ws-tl-ticks { position: relative; height: 14px; }
+.ws-tl-ticks span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+[dir="rtl"] .ws-tl-ticks span { transform: translateX(50%); }
+.ws-tl-ticks span:first-child { transform: none; }
+.ws-tl-ticks span:last-child { transform: translateX(-100%); }
+[dir="rtl"] .ws-tl-ticks span:last-child { transform: translateX(100%); }
+.ws-tl-lane {
+  position: relative;
+  height: 18px;
+  border-radius: 3px;
+  background:
+    linear-gradient(to right, var(--line) 1px, transparent 1px) 0 0 / 25% 100% repeat-x,
+    var(--surface-2);
+}
+.ws-tl-lane.has-sat { height: 24px; }
+.ws-tl-seg {
+  position: absolute;
+  top: 4px;
+  height: 10px;
+  border-radius: 4px;
+  background: var(--chart-steel, #4A90D9);
+}
+.ws-tl-lane.has-sat .ws-tl-seg.wk { top: 3px; height: 9px; }
+.ws-tl-seg.sat { top: 14px; height: 7px; background: var(--chart-brass, #C0892F); }
+.ws-tl-seg.cut-end { border-start-end-radius: 0; border-end-end-radius: 0; }
+.ws-tl-seg.cut-start { border-start-start-radius: 0; border-end-start-radius: 0; }
+.ws-tl-val {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.ws-tl-val small { font-size: 10px; color: var(--muted); }
+.ws-tl-ticks i { font-style: normal; }
+@media (max-width: 560px) {
+  .ws-tl-row { grid-template-columns: minmax(84px, 32%) minmax(0, 1fr) 62px; gap: 8px; }
+  .ws-tl-ticks i { display: none; }
+}
 
 /* Clustered Horizontal Bar Chart */
 .pbi-cbar-item {
