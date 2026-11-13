@@ -29,7 +29,10 @@ Order of a release (THEO runs it; each stage refuses when the one before it has 
   6. isabi:      python build/release_data_only.py upload      apply the delta to remote D1
   7. isabi:      python build/release_data_only.py r2          upload the changed private seeds to R2
   8. isabi:      python build/release_data_only.py pages       deploy the committed site from a clean worktree
-  9. git push origin main (both repos), then `status` to compare live with disk.
+  9. git push origin main (both repos), then `status` to compare live with disk,
+     then `python build/release_lock.py release`.
+`upload`, `r2` and `pages` hold the release lock (build/release_lock.py; taken when free, refused while another
+session holds it), and `pages` refuses a HEAD that does not contain origin/main (rebase the release commit first).
 `check` is read-only and can be run at any time. `status` prints what is live against what is on disk.
 """
 from __future__ import annotations
@@ -59,6 +62,7 @@ STMT_RE = re.compile(r"^\s*(INSERT OR REPLACE INTO|INSERT INTO|DELETE FROM)\s+\"
 # store document, sign-in sessions, seats and PINs, plus the Edge runtime tables (export_d1_seed.EDGE_RUNTIME_TABLES):
 # remote override requests, the override audit trail and per-seat saved views
 EDGE_OWNED = {"edge_kv_store", "auth_sessions", "users", "override_requests", "saved_views", "override_audit"}
+NO_RELEASE_LOCK = False  # set from --no-release-lock in main()
 
 
 def sha10(data: bytes) -> str:
@@ -455,6 +459,8 @@ def stage_pages(message: str = "", keep: bool = False) -> None:
             raise SystemExit("ABORT: app/index.html does not point at the new seed manifest")
         print(f"Public bundle: {n} allowlisted files from {head[:7]}")
         env = D.build_env()
+        # Under the release lock: a HEAD without origin/main would roll back what another session already shipped.
+        D.check_checkout_not_behind_origin(ISABI, allow_behind_origin=False, fetch=True, env=env)
         ok, acct = D.ensure_logged_in(env)
         if not ok:
             raise SystemExit(2)
@@ -477,6 +483,10 @@ def stage_pages(message: str = "", keep: bool = False) -> None:
             print(r.stderr)
         if r.returncode != 0:
             raise SystemExit(r.returncode)
+        if not NO_RELEASE_LOCK:
+            import release_lock  # noqa: PLC0415
+
+            release_lock.record_deploy(ISABI, head, "data-only pages")
     finally:
         if not keep:
             shutil.rmtree(bundle, ignore_errors=True)
@@ -493,7 +503,15 @@ def main() -> None:
     ap.add_argument("stage", choices=["status", "check", "commit", "export", "upload", "r2", "pages"])
     ap.add_argument("--message", default="", help="Commit / deployment message (default: derived from the seed date)")
     ap.add_argument("--keep", action="store_true", help="pages: keep the release worktree and bundle for inspection")
+    ap.add_argument("--no-release-lock", action="store_true", help="upload / r2 / pages without the release lock (owner only)")
     a = ap.parse_args()
+    global NO_RELEASE_LOCK
+    NO_RELEASE_LOCK = a.no_release_lock
+    if a.stage in ("upload", "r2", "pages"):
+        # Live writes (D1, R2, Pages) happen one release at a time: build/release_lock.py.
+        import release_lock  # noqa: PLC0415
+
+        release_lock.require_release_lock(ISABI, purpose=f"data-only release ({a.stage})", bypass=a.no_release_lock)
     if a.stage == "status":
         stage_status()
     elif a.stage == "check":

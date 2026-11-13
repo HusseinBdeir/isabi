@@ -9,9 +9,12 @@ Usage:
   python build/deploy_cloudflare.py [--dry] [--skip-seed | --seed | --delta | --full-seed]
                                     [--force-schema] [--force-r2-seeds] [--rotate-secrets]
                                     [--skip-live-parity] [--no-sync-release-log] [--skip-indexnow]
-                                    [--allow-behind-origin] [--allow-dirty] [--login]
+                                    [--allow-behind-origin] [--allow-dirty] [--no-release-lock] [--login]
   python build/deploy_cloudflare.py --pages-only [--dry] [--skip-live-parity] [--no-sync-release-log]
-                                    [--skip-indexnow] [--allow-behind-origin] [--allow-dirty] [--login]
+                                    [--skip-indexnow] [--allow-behind-origin] [--allow-dirty] [--no-release-lock] [--login]
+  A deploy holds the release lock (build/release_lock.py: one release at a time across sessions and PCs). It takes
+  the lock when free and records the deployed commit; after `git push origin main` run
+  `python build/release_lock.py release`.
   python build/deploy_cloudflare.py --configure-domain [--ping-indexnow] [--dry]
   python build/deploy_cloudflare.py --ping-indexnow [--dry]
   python build/deploy_cloudflare.py --check-seat-pins [--login] [--dry]
@@ -1120,6 +1123,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Allow deploying even when deployable public/edge paths (app/, functions/, migrations/, wrangler.toml, root site files) have uncommitted edits.",
     )
+    opts.add_argument(
+        "--no-release-lock",
+        action="store_true",
+        help="Deploy without holding the release lock (build/release_lock.py); only when the owner says so.",
+    )
     return parser
 
 
@@ -1374,6 +1382,7 @@ def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
         ("skip_indexnow", "--skip-indexnow"),
         ("allow_behind_origin", "--allow-behind-origin"),
         ("allow_dirty", "--allow-dirty"),
+        ("no_release_lock", "--no-release-lock"),
     )
     active_non_dry = [flag for attr, flag in flag_attr_map if getattr(args, attr)]
 
@@ -1489,6 +1498,12 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
         ),
         "Verify Cloudflare auth" + (" (allow interactive --login)" if args.login else ""),
     ]
+    steps.insert(
+        1,
+        "Release lock -> BYPASS (--no-release-lock)"
+        if args.no_release_lock
+        else "Hold the release lock (refs/locks/release on origin; taken when free, refused while another session holds it)",
+    )
     if mode == "full-deploy":
         steps.append("Ensure D1 (`isabi-ledger`), R2 (`isabi-vault`), wrangler.toml bindings, and Pages project (`isabi-systems`)")
         steps.append("Edge secrets -> " + ("ROTATE/UPLOAD" if args.rotate_secrets else "upload only if SHA-256 changed"))
@@ -1571,6 +1586,14 @@ def main(argv: list[str] | None = None):
         allow_dirty=args.allow_dirty,
         env=env,
     )
+    # The lock comes before the freshness check: once held, nobody else can deploy and then push main under us.
+    import release_lock  # noqa: PLC0415
+
+    release_lock.require_release_lock(
+        ISABI_ROOT,
+        purpose="pages-only deploy" if args.pages_only else "full deploy",
+        bypass=args.no_release_lock,
+    )
     check_checkout_not_behind_origin(
         ISABI_ROOT,
         allow_behind_origin=args.allow_behind_origin,
@@ -1580,8 +1603,16 @@ def main(argv: list[str] | None = None):
     ok, acct_id = ensure_logged_in(env, login=args.login)
     if not ok:
         sys.exit(2)
+    def _record_deploy(what: str) -> None:
+        if args.no_release_lock:
+            return
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(ISABI_ROOT), capture_output=True, text=True, check=False).stdout.strip()
+        if head:
+            release_lock.record_deploy(ISABI_ROOT, head, what + (" (with uncommitted files)" if args.allow_dirty else ""))
+
     if args.pages_only:
         deploy_pages(env)
+        _record_deploy("pages-only deploy")
         warn_weak_seat_pins(env)
         configure_domain_and_dns(acct_id)
         cleanup_preview_deployments_and_purge_cache(acct_id)
@@ -1607,6 +1638,7 @@ def main(argv: list[str] | None = None):
     )
     migrate_remote_d1_pins_to_pbkdf2(env)
     deploy_pages(env)
+    _record_deploy("full deploy")
     warn_weak_seat_pins(env)
     configure_domain_and_dns(acct_id)
     cleanup_preview_deployments_and_purge_cache(acct_id)
