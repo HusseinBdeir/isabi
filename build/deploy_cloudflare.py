@@ -112,8 +112,71 @@ def load_or_create_jwt_secret() -> str:
     return str(meta["jwt_secret"])
 
 
-def run_wrangler(args: list[str], env: dict, input_text: str | None = None, check: bool = True):
-    cmd = [wrangler_bin(env)] + args
+# Cloudflare API blips (seen 2026-11-13 15:21Z-16:06Z: 503 on `pages project list`, Functions publish
+# "Unknown internal error") end a deploy that a short wait would have carried through. run_wrangler retries a
+# command only when (a) running it twice is harmless and (b) its output reads as a Cloudflare-side failure.
+# Writes to D1 are never retried here (batch uploads keep their own loop in _upload_one_batch).
+WRANGLER_TRANSIENT_RE = re.compile(
+    r"\b(?:500|502|503|504|520|521|522|523|524|525|526|527|529|530)\b"
+    r"|no healthy upstream|unknown internal error|internal server error|service unavailable|bad gateway"
+    r"|gateway time-?out|temporarily unavailable|too many requests|\b429\b|rate limit"
+    r"|ECONNRESET|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|UND_ERR_\w+|socket hang up|fetch failed|network error"
+    r"|request timed out|timed out",
+    re.I,
+)
+WRANGLER_RETRY_DELAYS_S: tuple[float, ...] = (10.0, 30.0, 60.0)
+
+
+def wrangler_retry_delays() -> tuple[float, ...]:
+    """Back-off between attempts; ISABI_WRANGLER_RETRIES=<n> sets how many retries (0 turns them off)."""
+    raw = str(os.environ.get("ISABI_WRANGLER_RETRIES", "")).strip()
+    if not raw:
+        return WRANGLER_RETRY_DELAYS_S
+    try:
+        n = max(0, min(10, int(raw)))
+    except ValueError:
+        return WRANGLER_RETRY_DELAYS_S
+    base = list(WRANGLER_RETRY_DELAYS_S)
+    return tuple((base + [base[-1]] * 10)[:n])
+
+
+def wrangler_is_idempotent(args: list[str]) -> bool:
+    """True for wrangler commands that are safe to run again after an unclear failure."""
+    a = [str(x) for x in args]
+    head = " ".join(a[:3]).lower()
+    if a[:1] == ["whoami"]:
+        return True
+    if head.startswith(("pages project list", "pages deployment list", "d1 list", "r2 bucket list")):
+        return True
+    # A second `pages deploy` of the same bundle only adds one more deployment; secrets and R2 objects overwrite.
+    if head.startswith(("pages deploy", "pages secret put", "r2 object put", "r2 object get")):
+        return True
+    if a[:2] == ["d1", "execute"]:
+        cmd_args = [x for x in a if x.startswith("--command=")]
+        if cmd_args and not any(x.startswith("--file") for x in a):
+            sql = cmd_args[0][len("--command="):].strip().lower()
+            return sql.startswith(("select", "pragma")) and ";" not in sql.rstrip(";")
+    return False
+
+
+def wrangler_failure_is_transient(r) -> bool:
+    out = f"{getattr(r, 'stdout', '') or ''}\n{getattr(r, 'stderr', '') or ''}"
+    if re.search(r"\b(?:not authenticated|authentication error|10000|unauthori[sz]ed|forbidden|not found)\b", out, re.I) \
+            and not re.search(r"no healthy upstream|internal error|\b5\d\d\b", out, re.I):
+        return False
+    return bool(WRANGLER_TRANSIENT_RE.search(out))
+
+
+def wrangler_failure_reason(r, limit: int = 160) -> str:
+    """Last non-empty stderr line (the error), else the last stdout line."""
+    for stream in (getattr(r, "stderr", "") or "", getattr(r, "stdout", "") or ""):
+        lines = [ln.strip() for ln in stream.strip().splitlines() if ln.strip()]
+        if lines:
+            return lines[-1][:limit]
+    return f"exit {getattr(r, 'returncode', '?')}"
+
+
+def _run_wrangler_once(cmd: list[str], env: dict, input_text: str | None):
     return subprocess.run(
         cmd,
         cwd=str(ISABI_ROOT),
@@ -124,7 +187,36 @@ def run_wrangler(args: list[str], env: dict, input_text: str | None = None, chec
         text=True,
         encoding="utf-8",
         errors="replace",
-        check=check,
+        check=False,
+    )
+
+
+def run_wrangler(args: list[str], env: dict, input_text: str | None = None, check: bool = True, retry: bool | None = None):
+    cmd = [wrangler_bin(env)] + args
+    may_retry = wrangler_is_idempotent(args) if retry is None else bool(retry)
+    delays = wrangler_retry_delays() if may_retry else ()
+    r = _run_wrangler_once(cmd, env, input_text)
+    for i, delay in enumerate(delays, start=1):
+        if r.returncode == 0 or not wrangler_failure_is_transient(r):
+            break
+        reason = wrangler_failure_reason(r)
+        print(f"WARN: Cloudflare looks unavailable for `wrangler {' '.join(args[:3])}` ({reason}); retry {i}/{len(delays)} in {delay:.0f}s...")
+        time.sleep(delay)
+        r = _run_wrangler_once(cmd, env, input_text)
+    if check and r.returncode != 0:
+        raise subprocess.CalledProcessError(r.returncode, cmd, output=r.stdout, stderr=r.stderr)
+    return r
+
+
+class CloudflareListUnavailable(RuntimeError):
+    """A listing call failed, so whether the resource exists is unknown: never create or downgrade on it."""
+
+
+def _list_failed(what: str, r) -> CloudflareListUnavailable:
+    reason = wrangler_failure_reason(r, 200)
+    return CloudflareListUnavailable(
+        f"Could not list {what} (wrangler exit {r.returncode}: {reason}). Cloudflare may be having an outage; "
+        "nothing was created or changed. Re-run the deploy when the API answers again."
     )
 
 
@@ -208,14 +300,17 @@ def cf_api(method: str, path: str, token: str, payload: dict | None = None) -> d
 
 def ensure_d1_database(env: dict) -> str:
     r_list = run_wrangler(["d1", "list", "--json"], env, check=False)
-    if r_list.returncode == 0 and r_list.stdout.strip():
-        try:
-            dbs = json.loads(r_list.stdout)
-            for d in dbs:
-                if d.get("name") == "isabi-ledger" and d.get("uuid"):
-                    return str(d["uuid"])
-        except Exception:
-            pass
+    if r_list.returncode != 0 or not r_list.stdout.strip():
+        raise _list_failed("D1 databases", r_list)
+    try:
+        dbs = json.loads(r_list.stdout)
+    except Exception:
+        raise _list_failed("D1 databases (unreadable JSON)", r_list)
+    if not isinstance(dbs, list):
+        raise _list_failed("D1 databases (unexpected shape)", r_list)
+    for d in dbs:
+        if isinstance(d, dict) and d.get("name") == "isabi-ledger" and d.get("uuid"):
+            return str(d["uuid"])
 
     print("Creating Cloudflare D1 database `isabi-ledger`...")
     r_create = run_wrangler(["d1", "create", "isabi-ledger"], env, check=True)
@@ -231,10 +326,22 @@ def ensure_r2_bucket(env: dict) -> bool:
     if r_list.returncode == 0 and "isabi-vault" in combined:
         print("R2 bucket `isabi-vault` verified.")
         return True
+    # A failed listing is not "R2 is off": the D1 fallback rewrites wrangler.toml without the BUCKET binding,
+    # and that deploy cannot serve the private seeds. Take the fallback only when Cloudflare itself says R2
+    # is not enabled on the account (code 10042); any other failure stops the run with nothing changed.
+    r2_off_re = re.compile(r"\b10042\b|enable r2|r2 (?:is )?not enabled", re.I)
+    if r_list.returncode != 0 and not r2_off_re.search(combined):
+        raise _list_failed("R2 buckets", r_list)
     r_create = run_wrangler(["r2", "bucket", "create", "isabi-vault"], env, check=False)
+    create_out = (r_create.stdout or "") + "\n" + (r_create.stderr or "")
     if r_create.returncode == 0:
         print("Created R2 bucket `isabi-vault`.")
         return True
+    if re.search(r"already exists|\b10004\b", create_out, re.I):
+        print("R2 bucket `isabi-vault` verified (already exists).")
+        return True
+    if not r2_off_re.search(combined + "\n" + create_out):
+        raise _list_failed("R2 buckets (create)", r_create)
     print("INFO: R2 not yet enabled on Cloudflare account (using automatic D1 blob fallback until R2 is toggled on).")
     return False
 
@@ -269,11 +376,21 @@ bucket_name = "isabi-vault"
 
 def ensure_pages_project(env: dict):
     r_list = run_wrangler(["pages", "project", "list"], env, check=False)
-    if "isabi-systems" in ((r_list.stdout or "") + (r_list.stderr or "")):
+    if r_list.returncode == 0 and "isabi-systems" in ((r_list.stdout or "") + (r_list.stderr or "")):
         print("Cloudflare Pages project `isabi-systems` verified.")
         return
+    # A failed listing means "unknown", not "missing" (2026-11-13: a 503 made this create the live project
+    # 12 times and end the run). Stop instead of creating.
+    if r_list.returncode != 0:
+        raise _list_failed("Pages projects", r_list)
     print("Creating Cloudflare Pages project `isabi-systems`...")
-    run_wrangler(["pages", "project", "create", "isabi-systems", "--production-branch=main"], env, check=True)
+    r_create = run_wrangler(["pages", "project", "create", "isabi-systems", "--production-branch=main"], env, check=False)
+    create_out = (r_create.stdout or "") + "\n" + (r_create.stderr or "")
+    if r_create.returncode != 0 and re.search(r"already exists|8000002|name.*(taken|in use)", create_out, re.I):
+        print("Cloudflare Pages project `isabi-systems` verified (already exists).")
+        return
+    if r_create.returncode != 0:
+        raise subprocess.CalledProcessError(r_create.returncode, r_create.args, output=r_create.stdout, stderr=r_create.stderr)
 
 
 def upload_secrets(env: dict, *, rotate_secrets: bool = False):
@@ -1661,4 +1778,8 @@ def main(argv: list[str] | None = None):
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except CloudflareListUnavailable as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(3)

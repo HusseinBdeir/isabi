@@ -56,6 +56,7 @@ RELEASE_GATES = [
     ("isabi", "build/verify_legacy_id_hits.mjs", "node"),            # Edge legacy_id_hits counter + minShellVer floor/cap
     ("isabi", "build/verify_deployed_shell.py", "python"),           # deployed_shell.js = app/sw.js (minShellVer ceiling)
     ("isabi", "build/verify_deploy_cli.py", "python"),              # build/*.py CLI argparse + --dry + stale-checkout gate
+    ("isabi", "build/verify_deploy_retry.py", "python"),            # deploy rides out Cloudflare blips; a failed list never creates
     ("isabi", "build/verify_store_kv_guard.py", "python"),          # D1 seed never leaves the live store unparseable (staged swap)
     ("isabi", "build/verify_seed_stale_store.py", "python"),        # D1 seed never deletes / overwrites live rows from a stale store copy
     ("isabi", "build/verify_export_runtime_tables.py", "python"),   # D1 seed never touches Edge runtime tables
