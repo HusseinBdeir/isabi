@@ -95816,7 +95816,16 @@
           return `<button type="button" class="pa-time24-cell is-min-exact" data-t24-min="${mm}">:${mm}</button>`;
         }).join('');
 
-      const quickPresets = ['07:00', '08:00', '09:00', '14:00', '16:00', '17:00'];
+      // Quick times are ranked per field by stored usage when the menu opens (rankTime24FieldPresets, hard rule 11).
+      const renderTime24PresetChips = () => {
+        const box = menu.querySelector('[data-t24-presets]');
+        if (!box) return;
+        let ranked = [];
+        try { ranked = rankTime24FieldPresets(input, { limit: 6 }); } catch (_) { ranked = []; }
+        if (!ranked.length) ranked = ['07:00', '08:00', '09:00', '14:00', '16:00', '17:00'].map(t => ({ time: t, tip: '' }));
+        box.setAttribute('data-t24-family', ranked[0] && ranked[0].family ? ranked[0].family : 'generic');
+        box.innerHTML = ranked.map(p => `<button type="button" class="pa-time24-preset-chip mono" data-t24-preset="${esc(p.time)}"${p.tip ? ` data-ui-tip="${esc(p.tip)}"` : ''}${p.count != null ? ` data-t24-count="${esc(String(p.count))}"` : ''}>${esc(p.time)}</button>`).join('');
+      };
 
       menu.innerHTML = `
         <div class="pa-time24-hero">
@@ -95859,9 +95868,7 @@
           ${exactNonFiveMinHtml}
         </div>
         <div class="pa-time24-footer">
-          <div class="pa-time24-presets">
-            ${quickPresets.map(p => `<button type="button" class="pa-time24-preset-chip mono" data-t24-preset="${p}">${p}</button>`).join('')}
-          </div>
+          <div class="pa-time24-presets" data-t24-presets></div>
           <div class="pa-time24-foot-actions">
             ${isOptional ? '<button type="button" class="pa-time24-clear-btn" data-t24-clear="1">Clear</button>' : ''}
             <button type="button" class="pa-time24-done-btn" data-t24-done="1">Done</button>
@@ -95928,6 +95935,7 @@
       const openTimeMenu = () => {
         if (input.disabled || input.readOnly) return;
         closeAll(menu);
+        renderTime24PresetChips();
         menu.hidden = false;
         wrap.classList.add('open');
         positionMenuSmart();
@@ -96018,16 +96026,21 @@
         btn.addEventListener('click', pickMin);
       });
 
-      menu.querySelectorAll('[data-t24-preset]').forEach(btn => {
+      // Delegated: the chips are re-rendered on every open.
+      const presetBox = menu.querySelector('[data-t24-presets]');
+      if (presetBox) {
         const pickPreset = ev => {
+          const btn = ev.target && ev.target.closest ? ev.target.closest('[data-t24-preset]') : null;
+          if (!btn || !presetBox.contains(btn)) return;
           ev.preventDefault();
           ev.stopPropagation();
+          if (ev.type === 'click' && menu.hidden) return;
           const preset = btn.getAttribute('data-t24-preset') || '08:00';
           commitTimeValue(preset, true);
         };
-        btn.addEventListener('mousedown', pickPreset);
-        btn.addEventListener('click', pickPreset);
-      });
+        presetBox.addEventListener('mousedown', pickPreset);
+        presetBox.addEventListener('click', pickPreset);
+      }
 
       const doneBtn = menu.querySelector('[data-t24-done]');
       if (doneBtn) {
@@ -108873,7 +108886,7 @@
       </div>
 
       <!-- Inline Record Modification Drawer (Gated by Role Modify Data / Words Permission) -->
-      <div class="insp-modify-drawer" id="inspModifyDrawer" hidden>
+      <div class="insp-modify-drawer" id="inspModifyDrawer" data-t24-company="${esc(String((row && row.company) || ''))}" hidden>
         <div class="insp-modify-hdr">
           <div>
             <strong>${ic('edit')} Modify ${esc(INSPECT_LABELS[key] || key)} · ${esc(recTitle)}</strong>
@@ -125537,7 +125550,236 @@
       : `${fmtNum(p.hours, 1)}h · not in use yet`;
   }
 
+  // Frequency-first quick times in the 24-hour picker footer (hard rule 11): each time field ranks its chips by
+  // the times actually stored for that field, never a fixed row. Shift fields count every start or end once per
+  // active staff member who works it (collectShiftWindowUsage); overtime window fields count the staff rules that
+  // carry one; dispatch and attendance fields count stored records, rounded to the nearest quarter hour; any other
+  // field counts its own column across the record tables. The field's company ranks first, the rest of its
+  // industry breaks ties, and the old fixed row only fills what is still missing.
+  // var, not const/let: postWorkScheduleMutation and the picker can run before this line is evaluated.
+  var TIME24_PRESET_FILL = ['07:00', '08:00', '09:00', '14:00', '16:00', '17:00'];
+  var _TIME24_USAGE_CACHE = new Map();
+  var _TIME24_WS_REV = 0;
+  var _TIME24_LAST_SCAN = null; // stage timings of the last record count (read by the verify gate)
+  function resolveTime24FieldFamily(input) {
+    if (!input || !input.getAttribute) return { family: 'generic', col: '' };
+    const id = String(input.id || '');
+    const fieldKey = String(input.getAttribute('data-mod-field') || input.getAttribute('data-insp-edit-field') || '').trim();
+    if (id === 'ssmOtWinStart') return { family: 'ot_start', col: 'ot_window_start' };
+    if (id === 'ssmOtWinEnd') return { family: 'ot_end', col: 'ot_window_end' };
+    if (id === 'f_time' || fieldKey === 'time' || fieldKey === 'dispatch_time') return { family: 'dispatch', col: 'time' };
+    if (id === 'f_in' || fieldKey === 'in_time' || fieldKey === 'check_in') return { family: 'att_in', col: 'in_time' };
+    if (id === 'f_out' || fieldKey === 'out_time' || fieldKey === 'check_out') return { family: 'att_out', col: 'out_time' };
+    const sig = `${id} ${Array.from(input.attributes || []).map(a => a.name).join(' ')}`;
+    if (/(^|\s)(ssm|stm|scp|ws_dt_|f_in_time|f_out_time|f_split_|f_day_(in|out)_)|data-(ssm|ws|stm|scp)-/.test(sig)) {
+      if (/start|split_?s2|day-in|day_in|_in_time/i.test(sig)) return { family: 'shift_start', col: 'start_time' };
+      if (/end|split_?e2|day-out|day_out|_out_time/i.test(sig)) return { family: 'shift_end', col: 'end_time' };
+    }
+    const col = fieldKey || (/^f_[a-z0-9_]+$/.test(id) ? id.slice(2) : '');
+    return { family: 'generic', col };
+  }
+
+  function resolveTime24FieldCompany(input) {
+    const pick = v => String(v == null ? '' : v).trim();
+    try {
+      if (input && input.closest) {
+        const tagged = input.closest('[data-t24-company]');
+        if (tagged && pick(tagged.getAttribute('data-t24-company'))) return pick(tagged.getAttribute('data-t24-company'));
+        if (input.closest('#shiftTypeModal')) {
+          const stmCo = document.getElementById('stmCompany');
+          if (stmCo && pick(stmCo.value)) return pick(stmCo.value);
+        }
+        const host = input.closest('#entryModal, #inspModifyDrawer, form, .modal-backdrop');
+        const coEl = host ? host.querySelector('#f_company') : null;
+        if (coEl && pick(coEl.value)) return pick(coEl.value);
+      }
+    } catch (_) {}
+    try { return pick(defaultEntryCompany()); } catch (_) { return ''; }
+  }
+
+  function _time24QuarterBucket(raw) {
+    const m = parseClockMinutes(raw);
+    if (m == null) return '';
+    const q = (Math.round(m / 15) * 15) % 1440;
+    return `${String(Math.floor(q / 60)).padStart(2, '0')}:${String(q % 60).padStart(2, '0')}`;
+  }
+
+  // One Map per company (normalised name) of time -> weight for a record-backed family. Rebuilt only when a
+  // watched table changes (length or _tableRev) or a custom row is saved.
+  function _collectTime24RecordUsage(family, col) {
+    const rec = (SEED && SEED.records) || {};
+    const tr = (SEED && SEED._tableRev) || {};
+    const spec = family === 'dispatch'
+      ? { tables: ['sales_tickets', 'raw_purchases'], cols: ['time'], bucket: true }
+      : family === 'att_in'
+        ? { tables: ['attendance'], cols: ['in_time', 'check_in'], bucket: true }
+        : family === 'att_out'
+          ? { tables: ['attendance'], cols: ['out_time', 'check_out'], bucket: true }
+          : { tables: Object.keys(rec).filter(tk => tk !== 'journal_lines' && tk !== 'daily_totals'), cols: [col], bucket: false };
+    if (!spec.cols[0]) return new Map();
+    const tables = spec.tables.filter(tk => Array.isArray(rec[tk]) && rec[tk].length);
+    // Counts follow the seat's row-level security: an official-books seat counts official rows only, and no seat
+    // counts a company it cannot open (the chip tips would otherwise reveal off-book or other-company volume).
+    let offScope = false;
+    let allowedCos = null;
+    try { offScope = Boolean(isOfficialScopeActive()); } catch (_) { offScope = false; }
+    try {
+      const names = allowedCompanyNames();
+      if (Array.isArray(names) && names.length) allowedCos = new Set(names.map(norm));
+    } catch (_) { allowedCos = null; }
+    let seatSig = '';
+    try { seatSig = seatScopeSig(); } catch (_) { seatSig = `${offScope ? 1 : 0}|${allowedCos ? Array.from(allowedCos).join(',') : '*'}`; }
+    const revKey = `${(SEED && SEED._customRev) || 0}|${seatSig}|${offScope ? 1 : 0}|${tables.map(tk => `${tk}:${rec[tk].length}:${tr[tk] || 0}`).join(',')}`;
+    const cacheKey = `rec|${family}|${spec.cols.join('+')}`;
+    const hit = _TIME24_USAGE_CACHE.get(cacheKey);
+    if (hit && hit.revKey === revKey) return hit.byCo;
+    const _tB = performance.now();
+    const byCo = new Map();
+    // Tens of thousands of rows but only a handful of distinct companies and clock strings: normalise each once.
+    const coMemo = new Map();
+    const tMemo = new Map();
+    tables.forEach(tk => {
+      const rows = rec[tk];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r.voided) continue;
+        let raw = '';
+        for (let ci = 0; ci < spec.cols.length && !raw; ci++) raw = r[spec.cols[ci]] || '';
+        if (!raw || typeof raw !== 'string') continue;
+        let t = tMemo.get(raw);
+        if (t === undefined) {
+          t = spec.bucket ? _time24QuarterBucket(raw) : fmtAttClockTime(raw);
+          if (!t || !/^\d{2}:\d{2}$/.test(t)) t = '';
+          tMemo.set(raw, t);
+        }
+        if (!t) continue;
+        const coRaw = r.company || '';
+        let ck = coMemo.get(coRaw);
+        if (ck === undefined) { ck = norm(coRaw); coMemo.set(coRaw, ck); }
+        if (allowedCos && ck && !allowedCos.has(ck)) continue;
+        if (offScope && !isOfficialRecord(r, tk)) continue;
+        let m = byCo.get(ck);
+        if (!m) { m = new Map(); byCo.set(ck, m); }
+        m.set(t, (m.get(t) || 0) + 1);
+      }
+    });
+    _TIME24_USAGE_CACHE.set(cacheKey, { revKey, byCo });
+    _TIME24_LAST_SCAN = { scanMs: Math.round(performance.now() - _tB), rows: tables.reduce((a, tk) => a + rec[tk].length, 0) };
+    return byCo;
+  }
+
+  // time -> weight for one company's shift or overtime clock fields. Shift saves bump _TIME24_WS_REV through
+  // postWorkScheduleMutation; the 5-minute ceiling covers anything that changes the schedules another way.
+  function _collectTime24ShiftUsage(family, companyName) {
+    const co = String(companyName || '').trim();
+    const cacheKey = `ws|${family}|${norm(co)}`;
+    const now = Date.now();
+    const revKey = `${_TIME24_WS_REV}|${(SEED && SEED._customRev) || 0}`;
+    const hit = _TIME24_USAGE_CACHE.get(cacheKey);
+    if (hit && hit.revKey === revKey && now - hit.at < 300000) return hit.map;
+    const out = new Map();
+    const add = (t, w) => {
+      const f = fmtAttClockTime(t || '');
+      if (f && /^\d{2}:\d{2}$/.test(f) && w > 0) out.set(f, (out.get(f) || 0) + w);
+    };
+    if (co && (family === 'ot_start' || family === 'ot_end')) {
+      let staff = [];
+      try {
+        staff = getKioskStaffDirectory({ companyOverride: co, strictCompanyScope: true, activeOnly: true })
+          .filter(s => s && norm(s.company || co) === norm(co));
+      } catch (_) { staff = []; }
+      const seen = new Set();
+      staff.forEach(s => {
+        const sk = norm(s.name);
+        if (!sk || seen.has(sk)) return;
+        seen.add(sk);
+        let rule = null;
+        try { rule = getStaffWorkRule(s.name, co); } catch (_) { rule = null; }
+        if (rule) add(family === 'ot_start' ? rule.ot_window_start : rule.ot_window_end, 1);
+      });
+    } else if (co) {
+      const pools = collectShiftWindowUsage(co);
+      const wantStart = family === 'shift_start';
+      ['regular', 'exception'].forEach(pk => pools[pk].forEach((w, sig) => {
+        const [s, e] = sig.split('|');
+        add(wantStart ? s : e, w);
+      }));
+      pools.split.forEach((w, sig) => {
+        const [s1, e1, s2, e2] = sig.split('|');
+        if (wantStart) { add(s1, w); add(s2, w); } else { add(e1, w); add(e2, w); }
+      });
+    }
+    _TIME24_USAGE_CACHE.set(cacheKey, { revKey, at: now, map: out });
+    return out;
+  }
+
+  function rankTime24FieldPresets(input, opts = {}) {
+    const limit = Math.max(1, Number(opts.limit) || 6);
+    const fam = resolveTime24FieldFamily(input);
+    const co = String(opts.company != null ? opts.company : resolveTime24FieldCompany(input)).trim();
+    const isAll = !co || norm(co) === norm('All Companies') || norm(co) === norm('All BUs');
+    // The industry's company list comes from the company catalog, which rebuilds after a record change (about
+    // 110 ms on real data). Companies change rarely, so keep the list per company and seat for 5 minutes.
+    // Keyed by the companies the seat may open (the only seat input of getActiveIndustryBuList), not by
+    // seatScopeSig, which also carries the cache revision and so changes on every save.
+    let indCos = [];
+    let seatCos = '';
+    try { seatCos = (allowedCompanyNames() || []).map(norm).sort().join(','); } catch (_) { seatCos = ''; }
+    // "All Companies" resolves the industry from the hub scope (STATE.company), so the key carries it too.
+    let scopeInd = '';
+    if (isAll) { try { scopeInd = String(getActiveIndustry(STATE.company) || STATE.company || ''); } catch (_) { scopeInd = String(STATE.company || ''); } }
+    const indKey = `ind|${isAll ? `*:${norm(scopeInd)}` : norm(co)}|${seatCos}`;
+    const indHit = _TIME24_USAGE_CACHE.get(indKey);
+    if (indHit && Date.now() - indHit.at < 300000) {
+      indCos = indHit.list;
+    } else {
+      try { indCos = getActiveIndustryBuList(isAll ? '' : co) || []; } catch (_) { indCos = []; }
+      _TIME24_USAGE_CACHE.set(indKey, { at: Date.now(), list: indCos.slice() });
+    }
+    const coScore = new Map();
+    const indScore = new Map();
+    const addInto = (target, src) => { if (src) src.forEach((w, t) => target.set(t, (target.get(t) || 0) + w)); };
+    const isStaffFamily = /^(shift|ot)_/.test(fam.family);
+    if (isStaffFamily) {
+      const cos = Array.from(new Set(indCos.concat(isAll ? [] : [co])));
+      cos.forEach(c => {
+        const m = _collectTime24ShiftUsage(fam.family, c);
+        addInto(indScore, m);
+        if (!isAll && norm(c) === norm(co)) addInto(coScore, m);
+      });
+    } else {
+      const byCo = _collectTime24RecordUsage(fam.family, fam.col);
+      const indSet = new Set(indCos.map(norm));
+      byCo.forEach((m, ck) => {
+        if (isAll || indSet.has(ck) || !ck) addInto(indScore, m);
+        if (!isAll && ck === norm(co)) addInto(coScore, m);
+      });
+    }
+    const times = Array.from(new Set(Array.from(coScore.keys()).concat(Array.from(indScore.keys()), TIME24_PRESET_FILL)));
+    times.sort((a, b) => {
+      const ca = isAll ? (indScore.get(a) || 0) : (coScore.get(a) || 0);
+      const cb = isAll ? (indScore.get(b) || 0) : (coScore.get(b) || 0);
+      if (cb !== ca) return cb - ca;
+      const ia = indScore.get(a) || 0;
+      const ib = indScore.get(b) || 0;
+      if (ib !== ia) return ib - ia;
+      const fa = TIME24_PRESET_FILL.indexOf(a);
+      const fb = TIME24_PRESET_FILL.indexOf(b);
+      if (fa !== fb) return (fa < 0 ? 99 : fa) - (fb < 0 ? 99 : fb);
+      return a < b ? -1 : (a > b ? 1 : 0);
+    });
+    return times.slice(0, limit).map(t => {
+      const n = Math.floor(isAll ? (indScore.get(t) || 0) : (coScore.get(t) || 0));
+      const tip = n > 0
+        ? (isStaffFamily ? `Used by ${fmtNum(n)} staff` : `Used in ${fmtNum(n)} ${n === 1 ? 'entry' : 'entries'}`)
+        : 'Not in use yet';
+      return { time: t, count: n, unit: isStaffFamily ? 'staff' : 'entries', family: fam.family, company: co, tip };
+    });
+  }
+  if (typeof window !== 'undefined') window.MFG_TIME24_PRESETS = { rank: rankTime24FieldPresets, family: resolveTime24FieldFamily, company: resolveTime24FieldCompany, lastScan: () => _TIME24_LAST_SCAN };
+
   async function postWorkScheduleMutation(bodyObj) {
+    _TIME24_WS_REV++;
     if (!hasServerApi() || isDemoScopeActive()) return;
     try {
       const payload = Object.assign({}, bodyObj || {}, { work_schedules: ensureWorkSchedulesState() });
@@ -125932,6 +126174,7 @@
   }
 
   function saveStaffWorkRule(staffName, patch = {}, opts = {}) {
+    _TIME24_WS_REV++; // the picker's shift / overtime quick times re-count after any staff rule change (bulk saves defer the server post)
     const k = norm(staffName);
     if (!k) return { ok: false, error: 'Staff member is required' };
     const ws = ensureWorkSchedulesState();
@@ -130616,6 +130859,8 @@
       wireBackdropDismiss(modal, closeStaffScheduleModal);
       document.body.appendChild(modal);
     }
+    // The 24-hour pickers in this modal rank their quick times for this person's company.
+    modal.setAttribute('data-t24-company', entry.company || '');
 
     const renderModalInner = () => {
       ensureWorkShiftsSeeded();

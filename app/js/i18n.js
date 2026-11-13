@@ -25818,6 +25818,12 @@
       const night = m[4] ? (lang === 'ar' ? ' ليلية' : ' nuit') : '';
       return lang === 'ar' ? `${m[1]}-${m[2]} (${m[3]} س${night})` : `${m[1]}-${m[2]} (${m[3]} h${night})`;
     }
+    // Frequency-ranked quick times in the 24-hour picker (usage tip on each chip)
+    m = trimmed.match(/^Used\s+by\s+([\d,]+)\s+staff$/i);
+    if (m) return lang === 'ar' ? `يعمل به ${m[1]} موظف` : `Utilisé par ${m[1]} employé${m[1] === '1' ? '' : 's'}`;
+    m = trimmed.match(/^Used\s+in\s+([\d,]+)\s+entr(?:y|ies)$/i);
+    if (m) return lang === 'ar' ? `مستخدم في ${m[1]} قيد` : `Utilisé dans ${m[1]} saisie${m[1] === '1' ? '' : 's'}`;
+    if (/^Not\s+in\s+use\s+yet$/i.test(trimmed)) return lang === 'ar' ? 'غير مستخدم بعد' : 'Pas encore utilisé';
 
     m = trimmed.match(/^Late\s+(.+?)\s*·\s*(No\s+OT|OT\s+[\d.]+x(?:\s*\([^)]+\))?)(?:\s*·\s*(\d+)d\s+Vac)?$/i);
     if (m) {
