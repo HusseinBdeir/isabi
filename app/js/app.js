@@ -141,7 +141,7 @@
     const method = String((opts && opts.method) || 'GET').toUpperCase();
     const isAuthCheckUrl = /\/api\/auth\/(?:login|logout|me)(?:\b|\/|\?|$)/i.test(urlStr);
     const isReadOnlyAiOrScan = /\/api\/(?:ai-edge|ask|smart-scan)(?:\b|\/|\?|$)/i.test(urlStr);
-    const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|cashflow_behind|industry_domain_store|staff_biometrics|work_schedules|geo_config|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
+    const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|cashflow_behind|source_behind|industry_domain_store|staff_biometrics|work_schedules|geo_config|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
     const inDemoSession = isDemoSandboxSession();
     const inDemoCo = !inDemoSession && STATE.company === DEMO_COMPANY_KEY;
     if ((inDemoSession || inDemoCo) && method !== 'GET' && method !== 'HEAD' && !isAuthCheckUrl && !isReadOnlyAiOrScan) {
@@ -159,6 +159,7 @@
         reviews: {},
         rules: { overrides: {}, custom: [] },
         cashflow_behind: null,
+        source_behind: null,
         records: {},
         industryCustomRows: {},
         industryRowEdits: {}
@@ -327,6 +328,8 @@
     cfFocusParty: '',
     cfChartGrain: 'monthly',
     cashflowBehind: null,
+    sourceBehind: null,
+    behindDayPrev: null,
     arChartMode: 'collections',
     salesChartMode: 'payment',
     payrollCutoffMode: 'closed_month',
@@ -8056,43 +8059,166 @@
 
   let _cashflowBehindGen = 0;
 
-  async function loadCashflowBehindNotice() {
-    const myGen = ++_cashflowBehindGen;
-    if (!hasServerApi() || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) {
-      STATE.cashflowBehind = null;
-      return false;
-    }
+  // One Owner notice document: 'ok' with its value, 'denied' (401/403: drop what is held), or 'skip' (keep it).
+  async function fetchOwnerNoticeDoc(url, key) {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
     try {
-      const r = await edgeApiFetch('./api/cashflow_behind', { signal: ctrl.signal });
-      if (!r) return false;
-      if (myGen !== _cashflowBehindGen || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) {
-        return false;
-      }
-      if (r.status === 401 || r.status === 403) {
-        if (STATE.cashflowBehind !== null) {
-          STATE.cashflowBehind = null;
-          if (STATE.view === 'cashflow') safeRender();
-        }
-        return false;
-      }
-      if (!r.ok) return false;
+      const r = await edgeApiFetch(url, { signal: ctrl.signal });
+      if (!r) return { kind: 'skip' };
+      if (r.status === 401 || r.status === 403) return { kind: 'denied' };
+      if (!r.ok) return { kind: 'skip' };
       const d = await r.json().catch(() => null);
-      if (myGen !== _cashflowBehindGen || !STATE.authed || isDemoSandboxSession() || isDemoScopeActive() || !isOwner(activeUser())) {
-        return false;
-      }
-      const nextVal = (d && d.cashflow_behind && typeof d.cashflow_behind === 'object') ? d.cashflow_behind : null;
-      if (JSON.stringify(STATE.cashflowBehind) !== JSON.stringify(nextVal)) {
-        STATE.cashflowBehind = nextVal;
-        if (STATE.view === 'cashflow') safeRender();
-      }
-      return true;
+      return { kind: 'ok', val: (d && d[key] && typeof d[key] === 'object') ? d[key] : null };
     } catch (_) {
-      return false;
+      return { kind: 'skip' };
     } finally {
       clearTimeout(t);
     }
+  }
+
+  // Owner notices: Manufacturing workbook cash edits (#cashflow) and sibling Source workbook edits (#overview).
+  async function loadCashflowBehindNotice() {
+    const myGen = ++_cashflowBehindGen;
+    const ownerNow = () => STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser());
+    if (!hasServerApi() || !ownerNow()) {
+      STATE.cashflowBehind = null;
+      STATE.sourceBehind = null;
+      return false;
+    }
+    const [cfRes, srcRes] = await Promise.all([
+      fetchOwnerNoticeDoc('./api/cashflow_behind', 'cashflow_behind'),
+      fetchOwnerNoticeDoc('./api/source_behind', 'source_behind')
+    ]);
+    if (myGen !== _cashflowBehindGen || !ownerNow()) return false;
+    let changed = false;
+    const apply = (stateKey, res) => {
+      if (!res || res.kind === 'skip') return;
+      const nextVal = res.kind === 'ok' ? res.val : null;
+      if (JSON.stringify(STATE[stateKey]) !== JSON.stringify(nextVal)) {
+        STATE[stateKey] = nextVal;
+        changed = true;
+      }
+    };
+    apply('cashflowBehind', cfRes);
+    apply('sourceBehind', srcRes);
+    if (changed && (STATE.view === 'cashflow' || STATE.view === 'overview')) safeRender();
+    return cfRes.kind === 'ok';
+  }
+
+  // A date inside an Owner notice: one click shows that day (date filter, Cash Flow entries and till cards follow);
+  // a second click on the same day puts back the dates picked before the first notice day.
+  function renderBehindDayPill(iso) {
+    const d = String(iso || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return '';
+    // Pressed only when a second click has somewhere to go back to (the saved dates are not kept across reloads).
+    const on = STATE.period === `day:${d}` && Boolean(STATE.behindDayPrev && STATE.behindDayPrev.day === d);
+    return `<button type="button" class="cf-behind-day${on ? ' is-active' : ''}" data-behind-day="${esc(d)}" aria-pressed="${on ? 'true' : 'false'}" data-ui-tip="Show this day. Click again to go back."><span data-no-i18n="1">${esc(fmtDateDMY(d))}</span></button>`;
+  }
+
+  function jumpToBehindDay(dayIso, noteId) {
+    const day = String(dayIso || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+    const prev = STATE.behindDayPrev;
+    const onDay = STATE.period === `day:${day}`;
+    if (onDay) {
+      // Back to the dates saved by the first notice-day click; with none saved (a reload, or the day picked by
+      // hand in the top bar) a click still does something: it shows all dates.
+      const back = (prev && prev.day === day) ? prev : { period: 'all', dateGrain: 'all', dateFrom: '', dateTo: '' };
+      STATE.behindDayPrev = null;
+      STATE.period = back.period;
+      STATE.dateGrain = back.dateGrain;
+      STATE.dateFrom = back.dateFrom;
+      STATE.dateTo = back.dateTo;
+    } else {
+      // Stepping from one notice day to another keeps the dates the Owner had before the first one.
+      const steppingFromNoticeDay = Boolean(prev && STATE.period === `day:${prev.day}`);
+      STATE.behindDayPrev = steppingFromNoticeDay
+        ? Object.assign({}, prev, { day })
+        : { day, period: STATE.period, dateGrain: STATE.dateGrain, dateFrom: STATE.dateFrom, dateTo: STATE.dateTo };
+      STATE.period = `day:${day}`;
+      STATE.dateGrain = 'day';
+      STATE.dateFrom = '';
+      STATE.dateTo = '';
+    }
+    if (STATE.view === 'cashflow') {
+      STATE.cfFocusDate = '';
+      STATE.cfFocusYm = '';
+      STATE.cfFocusParty = '';
+      STATE.cfEntryMode = 'entries';
+      if (String(STATE.chipFilter || '').startsWith('cf_day_')) STATE.chipFilter = 'all';
+    }
+    // Keep the notice under the pointer so the same pill can be clicked again.
+    const ws = $('workspace');
+    const y = ws ? ws.scrollTop : 0;
+    const noteBefore = noteId ? document.getElementById(noteId) : null;
+    const beforeTop = (noteBefore && y > 0) ? noteBefore.getBoundingClientRect().top : null;
+    setDateFilter({});
+    syncTopbarDateControls();
+    if (ws) {
+      const noteAfter = noteId ? document.getElementById(noteId) : null;
+      if (noteAfter && beforeTop !== null) ws.scrollTop = Math.max(0, y + (noteAfter.getBoundingClientRect().top - beforeTop));
+      else if (ws.scrollTop !== y) ws.scrollTop = y;
+    }
+  }
+
+  // Sibling Source workbook notice (Owner only): rows of the five sibling Source workbooks edited, added or
+  // removed on or before the last update. Shown on the Executive Overview of the matching industry.
+  const SOURCE_BEHIND_INDUSTRY = {
+    hospitality: 'Hospitality & Resorts',
+    holding: 'Holding & Treasury',
+    trading: 'Automotive & Heavy Trading',
+    realestate: 'Real Estate & Property',
+    insurance: 'Insurance & Brokerage'
+  };
+
+  function getActiveSourceBehindItems(u, indOverride) {
+    u = u || activeUser();
+    if (!u || !isOwner(u) || isDemoScopeActive() || isOfficialScopeActive(u)) return [];
+    const ind = indOverride || (typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing');
+    if (!ind || ind === 'Manufacturing') return [];
+    const b = STATE.sourceBehind;
+    if (!b || b.status !== 'ok' || !Array.isArray(b.businesses)) return [];
+    // Fail closed: the notice is about one sibling seed and one cutoff; any other build hides it.
+    const curHash = String((SEED_MANIFEST && SEED_MANIFEST.industriesHash) || '').trim();
+    if (!curHash || String(b.industries_hash || '').trim() !== curHash) return [];
+    const seedCut = String((SEED._rawIndustryPayload && SEED._rawIndustryPayload.cutoff_date) || '').slice(0, 10);
+    if (!seedCut || String(b.cutoff || '').slice(0, 10) !== seedCut) return [];
+    const cat = getCompanyCatalog();
+    const byName = new Map(cat.map(c => [String(c.name || '').toLowerCase(), c]));
+    const scopeKey = String(STATE.company || '');
+    const scopeCo = scopeKey.startsWith('industry:') ? null : (cat.find(c => c.key === scopeKey) || null);
+    const allowed = allowedCompanyNames(u).map(x => String(x || '').toLowerCase());
+    const indAllowed = !allowed.length || cat.some(c => (c.industry || 'Manufacturing') === ind && allowed.includes(String(c.name || '').toLowerCase()));
+    return b.businesses.filter(x => {
+      if (!x || typeof x !== 'object') return false;
+      if (Number(x.changed_rows || 0) <= 0) return false;
+      const low = String(x.business || '').trim().toLowerCase();
+      if (!low) return false;
+      const co = byName.get(low) || null;
+      const xInd = co ? (co.industry || 'Manufacturing') : (SOURCE_BEHIND_INDUSTRY[String(x.industry_key || '')] || '');
+      if (xInd !== ind) return false;
+      if (co ? (allowed.length && !allowed.includes(low)) : !indAllowed) return false;
+      // A single company shows its own rows plus the rows its industry shares (no company of their own).
+      if (scopeCo && co && co.key !== scopeCo.key) return false;
+      return true;
+    });
+  }
+
+  function renderSourceBehindNoteHtml(items) {
+    if (!Array.isArray(items) || !items.length) return '';
+    const segs = items.map(x => {
+      const dates = (Array.isArray(x.changed_dates) ? x.changed_dates : []).map(d => String(d || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d));
+      const shown = dates.slice(0, 3);
+      const extra = Math.max(0, Number(x.changed_date_count || dates.length) - shown.length);
+      const labels = (Array.isArray(x.labels) ? x.labels : []).map(s => String(s || '').trim()).filter(Boolean).slice(0, 3);
+      const daysHtml = shown.length
+        ? `, <span>Days:</span> <span class="cf-behind-days">${shown.map(renderBehindDayPill).join('')}${extra > 0 ? `<b data-no-i18n="1">(+${extra})</b>` : ''}</span>`
+        : '';
+      return `<span class="cf-behind-co"><b data-no-i18n="1">${esc(x.business || '')}</b> <span>Rows Changed:</span> <b data-no-i18n="1">${esc(fmtNum(Number(x.changed_rows || 0)))}</b>${daysHtml}${labels.length ? `, <span>Items:</span> <span data-no-i18n="1">${esc(labels.join(', '))}</span>` : ''}</span>`;
+    });
+    const cutDay = String((STATE.sourceBehind && STATE.sourceBehind.cutoff) || '').slice(0, 10);
+    return `<div class="cf-behind-note ind-source-behind-note" id="indSourceBehindNote" role="status"><span class="badge badge-warn cf-behind-badge"><span>Source Workbook Edited Since Last Update</span></span> <span class="cf-behind-items">${segs.join('<span class="cf-behind-sep" aria-hidden="true"> · </span>')}</span> <span class="cf-behind-tail">${cutDay ? `<span>Workbooks Updated To</span> <b data-no-i18n="1">${esc(fmtDateDMY(cutDay))}</b><span class="cf-behind-sep" aria-hidden="true"> · </span>` : ''}<span>Run a workbook update to refresh ISABI.</span></span></div>`;
   }
 
   function getActiveCashflowBehindItems(u) {
@@ -8130,9 +8256,11 @@
     const segs = items.map(c => {
       const daysArr = Array.isArray(c.edited_days) ? c.edited_days : [];
       const totalDays = Number(c.edited_day_count || daysArr.length || 0);
-      const shownDays = daysArr.slice(0, 3).map(d => fmtDateDMY(String((d && d.date) || ''))).filter(Boolean);
+      const shownDays = daysArr.slice(0, 3).map(d => String((d && d.date) || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d));
       const extraDays = Math.max(0, totalDays - shownDays.length);
-      const dayLabel = shownDays.length ? shownDays.join(', ') + (extraDays > 0 ? ` (+${extraDays})` : '') : `${totalDays}`;
+      const dayHtml = shownDays.length
+        ? `<span class="cf-behind-days">${shownDays.map(renderBehindDayPill).join('')}${extraDays > 0 ? `<b data-no-i18n="1">(+${extraDays})</b>` : ''}</span>`
+        : `<b data-no-i18n="1">${esc(String(totalDays))}</b>`;
       const seenP = new Set();
       const parties = [];
       for (let i = 0; i < daysArr.length && parties.length < 4; i++) {
@@ -8148,7 +8276,7 @@
       const netU = Number(c.edited_net_usd || 0);
       const netL = Math.round(Number(c.edited_net_lbp || 0));
       const usdCls = netU < -0.005 ? 'crit' : (netU > 0.005 ? 'good' : '');
-      return `<span class="cf-behind-co"><b data-no-i18n="1">${esc(c.company || c.company_key || '')}</b> <span>Days:</span> <b data-no-i18n="1">${esc(dayLabel)}</b>, <span>Net Difference:</span> <b class="${usdCls}" data-no-i18n="1">${esc(fmtSignedUSD(netU, 2))}</b>${Math.abs(netL) > 1 ? ` <b data-no-i18n="1">(${esc(fmtSignedLBP(netL))})</b>` : ''}${parties.length ? `, <span>Parties:</span> <span data-no-i18n="1">${esc(parties.join(', '))}</span>` : ''}</span>`;
+      return `<span class="cf-behind-co"><b data-no-i18n="1">${esc(c.company || c.company_key || '')}</b> <span>Days:</span> ${dayHtml}, <span>Net Difference:</span> <b class="${usdCls}" data-no-i18n="1">${esc(fmtSignedUSD(netU, 2))}</b>${Math.abs(netL) > 1 ? ` <b data-no-i18n="1">(${esc(fmtSignedLBP(netL))})</b>` : ''}${parties.length ? `, <span>Parties:</span> <span data-no-i18n="1">${esc(parties.join(', '))}</span>` : ''}</span>`;
     });
     const b = STATE.cashflowBehind || {};
     const cutDay = String(b.cutoff || (items[0] && items[0].cutoff) || '').slice(0, 10);
@@ -57213,8 +57341,10 @@
     const sumEntGm = round2(indEntities.reduce((s, e) => s + Number(e.k.gross_margin || 0), 0));
     const sumEntOp = round2(indEntities.reduce((s, e) => s + Number(e.k.operating_profit || 0), 0));
     const entDen = Math.max(1, sumEntRev);
+    const sourceBehindHtml = indOverride && indOverride !== getActiveIndustry(STATE.company) ? '' : renderSourceBehindNoteHtml(getActiveSourceBehindItems(activeUser(), ind));
 
     return `
+      ${sourceBehindHtml}
       <section class="kpis kpis-4 ceo-kpis" aria-label="Executive Key Performance Indicators">
         ${kpiCards.map(renderCeoKpiCard).join('')}
       </section>
@@ -119230,6 +119360,8 @@
     if (window.MFG_SAVED_VIEWS && typeof window.MFG_SAVED_VIEWS.reset === 'function') window.MFG_SAVED_VIEWS.reset();
     STATE.authed = false;
     STATE.cashflowBehind = null;
+    STATE.sourceBehind = null;
+    STATE.behindDayPrev = null;
     _cashflowBehindGen++;
     window.__mfgSwResuming = false;
     document.documentElement.classList.remove('sw-resuming');
@@ -119392,6 +119524,8 @@
     resetQuoteDrafts();
     // Nothing kept for the seat that is leaving stays in memory (kept lookup indexes and workforce audits).
     STATE.cashflowBehind = null;
+    STATE.sourceBehind = null;
+    STATE.behindDayPrev = null;
     _cashflowBehindGen++;
     _WF_AUDIT_KEPT.clear();
     _WF_AUDIT_CACHE = null;
@@ -119871,6 +120005,7 @@
       loadCashflowBehindNotice();
     } else {
       STATE.cashflowBehind = null;
+      STATE.sourceBehind = null;
     }
     return true;
   }
@@ -138855,6 +138990,12 @@
       STATE.shown = {};
       STATE.pbiTablePage = {};
       rerenderAnchoredPayrollBar(barEl);
+    }));
+    container.querySelectorAll('[data-behind-day]').forEach(el => el.addEventListener('click', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const note = el.closest('.cf-behind-note');
+      jumpToBehindDay(el.getAttribute('data-behind-day') || '', note ? note.id : '');
     }));
     container.querySelectorAll('[data-cf-focus-date]').forEach(el => el.addEventListener('click', ev => {
       ev.stopPropagation();
