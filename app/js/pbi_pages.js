@@ -8556,7 +8556,7 @@
         <div class="pbi-grid-1">
           <div class="cf-explainer-bar" role="region" aria-label="How Plant Cash Till Works">
             <div class="cf-explainer-copy">
-              <strong>How Cash Till Works:</strong> Cash Sales &amp; AR Receipts flow <b>IN</b> while Cash Expenses, AP Settlements &amp; Payroll flow <b>OUT</b>; daily <b>Treasury Sweeps</b> transfer net cash to/from central treasury so physical cash on hand stays near <b>$0.00</b> (<span class="mono">USD + LBP ÷ ${fmtNum(rateLbp, 0)}</span>). <em>Click any bar or month to inspect its entries below.</em>
+              <strong>How Cash Till Works:</strong> Cash in: sales and customer payments. Cash out: expenses, supplier payments and wages. Each evening, extra cash moves to the safe. If the drawer is short, cash comes back from the safe to cover it. Either way, the drawer should close near $0. LBP is counted at <span class="mono">${fmtNum(rateLbp, 0)}</span> LL per $1. <em>Click any bar to see its entries.</em>
             </div>
             <div class="cf-grain-ctrl">
               <span class="cf-grain-lbl">Till Balance View</span>
@@ -11876,7 +11876,7 @@
       <div class="pbi-grid-1" style="margin-bottom:10px">
         <div class="cf-explainer-bar" role="region" aria-label="How Plant Cash Till Works">
           <div class="cf-explainer-copy">
-            <strong>How Cash Till Works:</strong> Cash Sales &amp; AR Receipts flow <b>IN</b> while Cash Expenses, AP Settlements &amp; Payroll flow <b>OUT</b>; daily <b>Treasury Sweeps</b> transfer net cash to/from central treasury so physical cash on hand stays near <b>$0.00</b> (<span class="mono">USD + LBP ÷ ${fmtNum(rateLbp, 0)}</span>). <em>Click any bar, month, stream or counterparty to filter the Cash Till Register.</em>
+            <strong>How Cash Till Works:</strong> Cash in: sales and customer payments. Cash out: expenses, supplier payments and wages. Each evening, extra cash moves to the safe. If the drawer is short, cash comes back from the safe to cover it. Either way, the drawer should close near $0. LBP is counted at <span class="mono">${fmtNum(rateLbp, 0)}</span> LL per $1. <em>Click any bar to see its entries.</em>
           </div>
           <div class="cf-grain-ctrl">
             <span class="cf-grain-lbl">Till Balance View</span>
