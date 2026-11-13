@@ -28424,6 +28424,20 @@
     return out;
   }
 
+  // One setting per weekday (owner 2026-11-13): on screen a day is off, on regular hours, or on its own hours,
+  // and only a workday shows or offers own hours. Display filter only: stored hours of a day the shift does not
+  // work are never deleted, because staff whose own custom_days include that day still work it on those hours
+  // (resolveStaffShiftForDate keeps the shift's day_timings with the person's days), and a save with backfill
+  // would otherwise re-score their past attendance.
+  function pruneDayTimingsToWorkdays(dayMap, workdays) {
+    const keep = new Set((Array.isArray(workdays) ? workdays : []).map(n => String(Number(n))));
+    const out = {};
+    Object.keys(dayMap || {}).forEach(k => {
+      if (keep.has(String(k)) && dayMap[k]) out[String(k)] = dayMap[k];
+    });
+    return out;
+  }
+
   function normalizeDateTimingsList(rawList) {
     let src = rawList;
     if (typeof src === 'string' && src.trim()) {
@@ -28710,8 +28724,9 @@
     r.sat_diff_enabled = Boolean(satEntry && (satEntry.start_time !== r.start_time || satEntry.end_time !== r.end_time));
     r.sat_start_time = satEntry ? satEntry.start_time : (r.sat_start_time || '07:00');
     r.sat_end_time = satEntry ? satEntry.end_time : (r.sat_end_time || '14:00');
-    r.has_day_timings = Object.keys(r.day_timings).length > 0 || r.date_timings.length > 0;
-    const excSummary = formatShiftExceptionsSummary(r.day_timings, r.date_timings, r.start_time, r.end_time);
+    r.has_day_timings = Object.keys(pruneDayTimingsToWorkdays(r.day_timings, r.days)).length > 0 || r.date_timings.length > 0;
+    // Summary lists workdays only (one setting per weekday); stored hours of other days are kept, not shown.
+    const excSummary = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(r.day_timings, r.days), r.date_timings, r.start_time, r.end_time);
     r.day_schedule_summary = isSplit
       ? `Split ${r.split_window_label} (${fmtNum(r.hours, 1)}h)${excSummary !== 'Same Every Workday' ? ` · ${excSummary}` : ''}`
       : excSummary;
@@ -41640,7 +41655,7 @@
                           <label style="font-size:11px"><b>Default Shift</b></label>
                           <select class="kiosk-select" data-pay-bu-default="${esc(bu)}" data-plain-options="1">
                             ${buShiftOpts.map(st => {
-                              const stExc = formatShiftExceptionsSummary(st.day_timings, st.date_timings, st.start_time, st.end_time);
+                              const stExc = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(st.day_timings, st.days), st.date_timings, st.start_time, st.end_time);
                               const excOpt = stExc !== 'Same Every Workday' ? ` · ${stExc}` : '';
                               return `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)}${esc(excOpt)})</option>`;
                             }).join('')}
@@ -91018,7 +91033,7 @@
         const durHrs = isSplit
           ? Math.round(((computeShiftWorkedHours(inT, outT) || 4.0) + (computeShiftWorkedHours(splitS2, splitE2) || 4.0)) * 100) / 100
           : (computeShiftWorkedHours(inT, outT) || 8.0);
-        const satDiff = val('f_sat_diff') === 'Yes';
+        let satDiff = val('f_sat_diff') === 'Yes';
         const matrixBox = $('wrap_ws_day_matrix');
         if (matrixBox) matrixBox.hidden = !satDiff;
         const renderWsDateChips = list => {
@@ -91039,6 +91054,17 @@
         const dtWrap = $('wrap_ws_date_timings');
         if (dtWrap && !dtWrap.dataset.wsDtWired) {
           dtWrap.dataset.wsDtWired = '1';
+          // "Different Timing = No" is an explicit clear of what the matrix shows, applied at once (as unticking
+          // the box in the two modals): visible workday hours and the dates go; hidden day-off hours stay.
+          $('f_sat_diff')?.addEventListener('change', e => {
+            if (e.target.value === 'Yes') return;
+            document.querySelectorAll('#wrap_ws_day_matrix [data-ws-day-cell]').forEach(cell => {
+              if (cell.hidden) return;
+              cell.querySelectorAll('input').forEach(inp => { inp.value = ''; inp.dataset.wsLoaded = ''; });
+            });
+            if ($('f_date_timings_json')) $('f_date_timings_json').value = '[]';
+            recalcForm();
+          });
           $('ws_dt_from')?.addEventListener('change', e => {
             const fd = String(e.target.value || '').slice(0, 10);
             const toEl = $('ws_dt_to');
@@ -91085,16 +91111,40 @@
             recalcForm();
           });
         }
+        // One setting per weekday: only scheduled workdays show an hours cell. A hidden cell keeps what an older
+        // row stored (staff with their own workdays may work that day); new hours can only go on a workday.
+        const wsWorkdays = parseWorkdaysArrayFromLabel(val('f_working_days') || 'Mon,Tue,Wed,Thu,Fri,Sat', [1, 2, 3, 4, 5, 6]);
+        document.querySelectorAll('#wrap_ws_day_matrix [data-ws-day-cell]').forEach(cell => {
+          const wasHidden = cell.hidden;
+          cell.hidden = !wsWorkdays.includes(Number(cell.getAttribute('data-ws-day-cell')));
+          // A day switched on that holds stored hours shows them: turn "Different Timing" to Yes so they are
+          // visible and saved (never dropped because the switch was on No).
+          if (wasHidden && !cell.hidden && !satDiff
+            && Array.from(cell.querySelectorAll('input')).some(inp => String(inp.dataset.wsLoaded || '').trim())) {
+            satDiff = true;
+            if ($('f_sat_diff')) $('f_sat_diff').value = 'Yes';
+            if (matrixBox) matrixBox.hidden = false;
+          }
+          // Hours typed into a day that is then switched off are dropped; hours loaded from the row stay.
+          // Clearing both fields of a visible day is an explicit clear: it becomes what that day keeps.
+          const cellInputs = Array.from(cell.querySelectorAll('input'));
+          if (cell.hidden) {
+            cellInputs.forEach(inp => { if (inp.dataset.wsLoaded !== inp.value) inp.value = inp.dataset.wsLoaded || ''; });
+          } else if (cellInputs.length && cellInputs.every(inp => !String(inp.value || '').trim())) {
+            cellInputs.forEach(inp => { inp.dataset.wsLoaded = ''; });
+          }
+        });
+        // Visible workday cells count only while "Different Timing" is Yes; a hidden day-off cell always carries
+        // its stored hours (never deleted as a side effect of a save).
         const dayMap = {};
-        if (satDiff) {
-          ['1', '2', '3', '4', '5', '6', '0'].forEach(dIdx => {
-            const dIn = fmtAttClockTime(val(`f_day_in_${dIdx}`)) || '';
-            const dOut = fmtAttClockTime(val(`f_day_out_${dIdx}`)) || '';
-            if (dIn && dOut) {
-              dayMap[dIdx] = { start_time: dIn, end_time: dOut, hours: computeShiftWorkedHours(dIn, dOut) || 7.0 };
-            }
-          });
-        }
+        ['1', '2', '3', '4', '5', '6', '0'].forEach(dIdx => {
+          if (!satDiff && wsWorkdays.includes(Number(dIdx))) return;
+          const dIn = fmtAttClockTime(val(`f_day_in_${dIdx}`)) || '';
+          const dOut = fmtAttClockTime(val(`f_day_out_${dIdx}`)) || '';
+          if (dIn && dOut) {
+            dayMap[dIdx] = { start_time: dIn, end_time: dOut, hours: computeShiftWorkedHours(dIn, dOut) || 7.0 };
+          }
+        });
         const dateList = satDiff ? normalizeDateTimingsList(val('f_date_timings_json') || '[]') : [];
         if ($('f_day_timings_json')) $('f_day_timings_json').value = JSON.stringify(dayMap);
         renderWsDateChips(dateList);
@@ -91129,7 +91179,7 @@
           }
         }
         const winLbl = isSplit ? `${inT}-${outT} + ${splitS2}-${splitE2} (${fmtNum(durHrs, 1)}h)` : `${inT} - ${outT} (${fmtNum(durHrs, 1)}h)`;
-        const rawExcSum = formatShiftExceptionsSummary(dayMap, dateList, inT, isSplit ? splitE2 : outT);
+        const rawExcSum = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(dayMap, wsWorkdays), dateList, inT, isSplit ? splitE2 : outT);
         const daySum = rawExcSum !== 'Same Every Workday'
           ? rawExcSum
           : (isSplit ? `Split ${inT}-${outT} + ${splitS2}-${splitE2}` : rawExcSum);
@@ -98547,7 +98597,9 @@
       const daysArr = parseWorkdaysArrayFromLabel(workdaysRaw, [1, 2, 3, 4, 5, 6]);
       const satDiff = val('f_sat_diff') === 'Yes';
       const rawDayJson = val('f_day_timings_json') || '{}';
-      const dayTimings = satDiff ? normalizeDayTimingsMap(rawDayJson) : {};
+      // f_day_timings_json already holds only what may be saved (visible days gated by "Different Timing",
+      // hidden day-off cells always), so it is read whatever satDiff says.
+      const dayTimings = normalizeDayTimingsMap(rawDayJson);
       let dateTimings = satDiff ? normalizeDateTimingsList(val('f_date_timings_json') || '[]') : [];
       if (satDiff) {
         const pendingFd = String(val('ws_dt_from') || '').slice(0, 10);
@@ -98566,9 +98618,8 @@
             include_off_days: sd === ed
           }]));
         }
-        if (!Object.keys(dayTimings).length && !dateTimings.length) {
-          addErr('f_sat_diff', 'Select at least one weekday or add a specific date timing exception.');
-        }
+        // "Different Timing = Yes" with nothing filled saves as same every workday (as the shift modal does),
+        // e.g. after clearing the only day that had its own hours.
       }
       if (!shName) addErr('f_shift_name', 'Shift Name is required.');
       if (!inT) addErr('f_in_time', 'Regular Start Time is required.');
@@ -103043,14 +103094,31 @@
       setModalControlVal('f_split_e2', row.split_end_2 || '23:00');
       setModalControlVal('f_grace_min', row.grace_min != null ? row.grace_min : 10);
       setModalControlVal('f_early_grace_min', row.early_leave_grace_min != null ? row.early_leave_grace_min : (row.grace_min != null ? row.grace_min : 10));
+      // Load the row's own workdays (it used to open on the Mon-Sat default and re-save any other set as Mon-Sat).
+      // A set that is none of the three choices gets its own option, so an untouched save keeps it.
+      const rowDaysArr = parseWorkdaysArrayFromLabel(row.days || row.working_days, [1, 2, 3, 4, 5, 6])
+        .slice().sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+      const rowDaysLbl = rowDaysArr.map(d => SHIFT_DAY_SHORT_NAMES[String(d)]).join(',');
+      const wdSel = $('f_working_days');
+      if (wdSel && rowDaysLbl) {
+        if (!Array.from(wdSel.options || []).some(o => o.value === rowDaysLbl)) {
+          const opt = document.createElement('option');
+          opt.value = rowDaysLbl;
+          opt.textContent = formatWorkdaysCompact(rowDaysArr);
+          wdSel.appendChild(opt);
+        }
+        setModalControlVal('f_working_days', rowDaysLbl);
+      }
       const dtMap = normalizeDayTimingsMap(row.day_timings, row.sat_diff_enabled, row.sat_start_time, row.sat_end_time);
       const dtDates = normalizeDateTimingsList(row.date_timings);
-      const hasAnyDayDiff = Boolean(Object.keys(dtMap).length > 0 || dtDates.length > 0);
+      // "Different Timing" opens on Yes only for what the form shows (workday hours or dates); hours of a day
+      // the row does not work sit in hidden cells and are saved either way.
+      const hasAnyDayDiff = Boolean(Object.keys(pruneDayTimingsToWorkdays(dtMap, rowDaysArr)).length > 0 || dtDates.length > 0);
       setModalControlVal('f_sat_diff', hasAnyDayDiff ? 'Yes' : 'No');
       ['1', '2', '3', '4', '5', '6', '0'].forEach(dIdx => {
         const dSpec = dtMap[dIdx];
-        if ($(`f_day_in_${dIdx}`)) $(`f_day_in_${dIdx}`).value = dSpec ? dSpec.start_time : '';
-        if ($(`f_day_out_${dIdx}`)) $(`f_day_out_${dIdx}`).value = dSpec ? dSpec.end_time : '';
+        if ($(`f_day_in_${dIdx}`)) $(`f_day_in_${dIdx}`).value = $(`f_day_in_${dIdx}`).dataset.wsLoaded = dSpec ? dSpec.start_time : '';
+        if ($(`f_day_out_${dIdx}`)) $(`f_day_out_${dIdx}`).value = $(`f_day_out_${dIdx}`).dataset.wsLoaded = dSpec ? dSpec.end_time : '';
       });
       if ($('f_day_timings_json')) $('f_day_timings_json').value = JSON.stringify(dtMap);
       if ($('f_date_timings_json')) $('f_date_timings_json').value = JSON.stringify(dtDates);
@@ -123495,7 +123563,7 @@
     const satDiff = Boolean(satSpec && (satSpec.start_time !== effStart || satSpec.end_time !== effEnd));
     const graceM = Math.max(0, Math.min(180, Number(base.grace_min != null ? base.grace_min : 10)));
     const earlyGraceM = Math.max(0, Math.min(180, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : graceM)));
-    const excSummary = formatShiftExceptionsSummary(dayTimings, dateTimings, effStart, effEnd);
+    const excSummary = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(dayTimings, daysArr), dateTimings, effStart, effEnd);
     return {
       id: String(normId),
       shift_code: String(normId),
@@ -123521,7 +123589,7 @@
       sat_end_time: satSpec ? satSpec.end_time : (base.sat_end_time || '14:00'),
       day_timings: dayTimings,
       date_timings: dateTimings,
-      has_day_timings: Object.keys(dayTimings).length > 0 || dateTimings.length > 0,
+      has_day_timings: Object.keys(pruneDayTimingsToWorkdays(dayTimings, daysArr)).length > 0 || dateTimings.length > 0,
       day_schedule_summary: isSplit
         ? `Split ${splitWinLbl} (${fmtNum(durHrs, 1)}h)${excSummary !== 'Same Every Workday' ? ` · ${excSummary}` : ''}`
         : excSummary,
@@ -124264,7 +124332,7 @@
     const regWindowLabel = (chosenShift.split_enabled && chosenShift.split_window_label)
       ? chosenShift.split_window_label
       : `${regStart}-${regEnd}${regOvernight ? ' (+1d)' : ''}`;
-    const excSummary = formatShiftExceptionsSummary(chosenShift.day_timings, chosenShift.date_timings, regStart, regEnd);
+    const excSummary = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(chosenShift.day_timings, chosenShift.days), chosenShift.date_timings, regStart, regEnd);
     const excInfo = excSummary !== 'Same Every Workday' ? excSummary : '';
     const badgeLabel = `${chosenShift.name} · ${regWindowLabel}`;
     const dayScheduleSub = excInfo
@@ -128570,7 +128638,7 @@
         ? rule.date_timings
         : ((rule.date_timings && rule.date_timings.length) ? rule.date_timings : (activeShiftObj && activeShiftObj.date_timings))
     );
-    let draftHasTimingExc = Object.keys(draftDayTimings).length > 0 || draftDateTimings.length > 0;
+    let draftHasTimingExc = Object.keys(pruneDayTimingsToWorkdays(draftDayTimings, draftDays)).length > 0 || draftDateTimings.length > 0;
     let draftRawDayInputs = {};
     const resetDraftRawDayInputsFromTimings = () => {
       draftRawDayInputs = {};
@@ -128580,6 +128648,8 @@
       });
     };
     resetDraftRawDayInputsFromTimings();
+    // Hours as stored when the schedule opened: a day switched off keeps only these (never hours typed here).
+    const ssmStoredDayTimings = Object.assign({}, draftDayTimings);
     let draftExcQuickDay = '';
     let draftPendingDateFrom = '';
     let draftPendingDateTo = '';
@@ -128634,7 +128704,7 @@
       const workShiftRows = ((SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [])
         .filter(r => r && !r.voided && buCoNormSet.has(norm(r.company || 'WTC')))
         .map(r => hydrateWorkShiftRowComputed(r));
-      const dayTimingsSummaryTxt = formatShiftExceptionsSummary(draftHasTimingExc ? draftDayTimings : {}, draftHasTimingExc ? draftDateTimings : [], curShiftObj.start_time, curShiftObj.end_time);
+      const dayTimingsSummaryTxt = formatShiftExceptionsSummary(draftHasTimingExc ? pruneDayTimingsToWorkdays(draftDayTimings, draftDays) : {}, draftHasTimingExc ? draftDateTimings : [], curShiftObj.start_time, curShiftObj.end_time);
       const startMinVal = parseClockMinutes(curShiftObj.start_time) ?? 480;
       const endMinRaw = parseClockMinutes(curShiftObj.end_time) ?? 960;
       const endMinVal = endMinRaw <= startMinVal ? (endMinRaw + 1440) : endMinRaw;
@@ -128760,7 +128830,7 @@
               <div class="ssm-shift-cards">
                 ${liveShiftTypes.map(st => {
                   const isBuDefForCo = Boolean(getBuDefaultShift(entry.company)?.shift_code === st.id);
-                  const stDaySum = formatShiftExceptionsSummary(st.day_timings, st.date_timings, st.start_time, st.end_time);
+                  const stDaySum = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(st.day_timings, st.days), st.date_timings, st.start_time, st.end_time);
                   return `
                   <button type="button" class="ssm-shift-card ${draftShiftId === st.id ? 'active' : ''}" data-tone="${esc(st.tone)}" data-ssm-shift="${esc(st.id)}">
                     <span class="ssm-sc-top">
@@ -128887,20 +128957,20 @@
                   <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
                     <div class="stm-exc-subcard">
                       <div class="stm-exc-subhead">
-                        <strong>Recurring Weekday(s) (Mon-Sun)</strong>
-                        <span class="muted">Enter Start/End for any weekday, or pick a weekday to quick-fill</span>
+                        <strong>Workdays With Different Hours</strong>
+                        <span class="muted">Blank keeps the regular hours; days off are not listed</span>
                       </div>
                       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px">
                         <select id="ssmExcQuickDay" class="kiosk-select" data-plain-options="1" style="height:28px;font-size:11.5px;min-width:130px">
                           <option value="" ${draftExcQuickDay === '' ? 'selected' : ''}>Select Weekday...</option>
-                          ${dayOrder.map(dIdx => `<option value="${dIdx}" ${String(dIdx) === String(draftExcQuickDay) ? 'selected' : ''}>${ATT_WEEKDAYS[dIdx]}</option>`).join('')}
+                          ${dayOrder.filter(dIdx => draftDays.includes(dIdx)).map(dIdx => `<option value="${dIdx}" ${String(dIdx) === String(draftExcQuickDay) ? 'selected' : ''}>${ATT_WEEKDAYS[dIdx]}</option>`).join('')}
                         </select>
                         <button type="button" class="kiosk-qchip" data-ssm-day-preset="07:00|14:00">07:00-14:00</button>
                         <button type="button" class="kiosk-qchip" data-ssm-day-preset="08:30|13:30">08:30-13:30</button>
                         <button type="button" class="kiosk-qchip" data-ssm-day-preset="09:00|15:00">09:00-15:00</button>
                       </div>
                       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-top:8px">
-                        ${dayOrder.map(dIdx => {
+                        ${dayOrder.filter(dIdx => draftDays.includes(dIdx)).map(dIdx => {
                           const dtObj = draftDayTimings && draftDayTimings[String(dIdx)] ? draftDayTimings[String(dIdx)] : null;
                           const rawPair = draftRawDayInputs && draftRawDayInputs[String(dIdx)] ? draftRawDayInputs[String(dIdx)] : null;
                           const inVal = rawPair ? rawPair.inVal : (dtObj ? dtObj.start_time : '');
@@ -128921,7 +128991,7 @@
                     <div class="stm-exc-subcard">
                       <div class="stm-exc-subhead">
                         <strong>Specific Calendar Date / Date Range</strong>
-                        <span class="muted">Overrides regular and weekday hours on selected date(s)</span>
+                        <span class="muted">Wins over the weekly hours on these dates; a single date is worked even on a day off</span>
                       </div>
                       <div class="stm-date-grid" style="margin-top:6px">
                         <div class="ssm-field">
@@ -128984,7 +129054,7 @@
                           <label style="font-size:10.5px">Default Shift</label>
                           <select class="kiosk-select" data-ssm-bu-default="${esc(bu)}" data-plain-options="1" style="height:29px;font-size:11.5px">
                             ${buShiftTypes.map(st => {
-                              const stExc = formatShiftExceptionsSummary(st.day_timings, st.date_timings, st.start_time, st.end_time);
+                              const stExc = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(st.day_timings, st.days), st.date_timings, st.start_time, st.end_time);
                               const excOpt = stExc !== 'Same Every Workday' ? ` · ${stExc}` : '';
                               return `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)}${esc(excOpt)})</option>`;
                             }).join('')}
@@ -129079,7 +129149,7 @@
                           <div style="display:flex;gap:4px;align-items:center">
                             <select id="ssmNewShiftExcDay" class="kiosk-select" data-plain-options="1" style="height:26px;font-size:11px;padding:2px 4px">
                               <option value="">No Day Exc.</option>
-                              ${dayOrder.map(dIdx => `<option value="${dIdx}">${ATT_WEEKDAYS[dIdx]}</option>`).join('')}
+                              ${dayOrder.filter(dIdx => dIdx !== 0).map(dIdx => `<option value="${dIdx}">${ATT_WEEKDAYS[dIdx]}</option>`).join('')}
                             </select>
                             <input type="text" data-time24="1" id="ssmNewShiftExcStart" class="pa-time24-input mono" value="07:00" style="width:54px;height:26px;font-size:11px;padding:2px 4px" disabled>
                             <span>-</span>
@@ -129558,7 +129628,9 @@
         if ($('ssmDiffExcChk') && $('ssmDiffExcChk').checked) {
           const dayInputs = modal.querySelectorAll('[data-ssm-day-in]');
           if (dayInputs.length) {
-            const nextDtMap = {};
+            // Fields exist only for scheduled workdays; hours of the other days are carried over untouched.
+            const offDays = [0, 1, 2, 3, 4, 5, 6].filter(d => !draftDays.includes(d));
+            const nextDtMap = pruneDayTimingsToWorkdays(draftDayTimings, offDays);
             const nextRawMap = {};
             dayInputs.forEach(inp => {
               const dIdxStr = String(inp.getAttribute('data-ssm-day-in') || '');
@@ -129807,7 +129879,8 @@
         draftHasTimingExc = Boolean(e.target.checked);
         draftUseCustomDayTimings = true;
         if (!draftHasTimingExc) {
-          draftDayTimings = {};
+          // Unticking clears what the box shows (workday hours and dates); hours of days off are kept.
+          draftDayTimings = pruneDayTimingsToWorkdays(draftDayTimings, [0, 1, 2, 3, 4, 5, 6].filter(d => !draftDays.includes(d)));
           draftRawDayInputs = {};
           draftDateTimings = [];
         }
@@ -129965,7 +130038,7 @@
               if (savedSt && draftShiftId === savedSt.id && !draftUseCustomDayTimings) {
                 draftDayTimings = normalizeDayTimingsMap(savedSt.day_timings, savedSt.sat_diff_enabled, savedSt.sat_start_time, savedSt.sat_end_time);
                 draftDateTimings = normalizeDateTimingsList(savedSt.date_timings);
-                draftHasTimingExc = Object.keys(draftDayTimings).length > 0 || draftDateTimings.length > 0;
+                draftHasTimingExc = Object.keys(pruneDayTimingsToWorkdays(draftDayTimings, draftDays)).length > 0 || draftDateTimings.length > 0;
                 resetDraftRawDayInputsFromTimings();
               }
               renderModalInner();
@@ -130019,10 +130092,10 @@
             if (draftShiftId === (orig.shift_code || orig.id) && !draftUseCustomDayTimings) {
               draftDayTimings = nextDayMap;
               draftDateTimings = nextDateList;
-              draftHasTimingExc = Object.keys(nextDayMap).length > 0 || nextDateList.length > 0;
+              draftHasTimingExc = Object.keys(pruneDayTimingsToWorkdays(nextDayMap, draftDays)).length > 0 || nextDateList.length > 0;
               resetDraftRawDayInputsFromTimings();
             }
-            const excSum = formatShiftExceptionsSummary(nextDayMap, nextDateList);
+            const excSum = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(nextDayMap, (res.shiftType && res.shiftType.days) || [1, 2, 3, 4, 5, 6]), nextDateList);
             toast(`Updated ${orig.shift_name} (${newStart}-${newEnd}${excSum !== 'Same Every Workday' ? ` · ${excSum}` : ''}) effective ${fmtDateDMY(effDate)} · Backfilled ${bf.staffUpdated || 0} staff & ${(bf.attUpdated || 0) + (bf.punchesUpdated || 0)} attendance logs`, 'ok');
             renderModalInner();
           }
@@ -130150,7 +130223,7 @@
               if (!draftUseCustomDayTimings) {
                 draftDayTimings = normalizeDayTimingsMap(st.day_timings, st.sat_diff_enabled, st.sat_start_time, st.sat_end_time);
                 draftDateTimings = normalizeDateTimingsList(st.date_timings);
-                draftHasTimingExc = Object.keys(draftDayTimings).length > 0 || draftDateTimings.length > 0;
+                draftHasTimingExc = Object.keys(pruneDayTimingsToWorkdays(draftDayTimings, draftDays)).length > 0 || draftDateTimings.length > 0;
                 resetDraftRawDayInputsFromTimings();
               }
             }
@@ -130356,8 +130429,27 @@
           syncLiveInputs();
           const dIdx = Number(btn.getAttribute('data-ssm-day'));
           draftUseCustomDays = true;
-          if (draftDays.includes(dIdx)) draftDays = draftDays.filter(x => x !== dIdx);
-          else draftDays = draftDays.concat([dIdx]).sort((a, b) => a - b);
+          if (draftDays.includes(dIdx)) {
+            // A day switched off shows no hours field (one setting per weekday). Hours stored when the schedule
+            // opened are kept (and come back if the day is switched on again); hours typed here are dropped, so
+            // nothing new is saved out of sight; a field cleared here stays cleared.
+            draftDays = draftDays.filter(x => x !== dIdx);
+            const dKeyOff = String(dIdx);
+            if (draftDayTimings && draftDayTimings[dKeyOff]) {
+              draftDayTimings = Object.assign({}, draftDayTimings);
+              if (ssmStoredDayTimings[dKeyOff]) draftDayTimings[dKeyOff] = ssmStoredDayTimings[dKeyOff];
+              else delete draftDayTimings[dKeyOff];
+            }
+            if (draftRawDayInputs && draftRawDayInputs[String(dIdx)]) {
+              draftRawDayInputs = Object.assign({}, draftRawDayInputs);
+              delete draftRawDayInputs[String(dIdx)];
+            }
+            if (String(draftExcQuickDay) === String(dIdx)) draftExcQuickDay = '';
+          } else {
+            draftDays = draftDays.concat([dIdx]).sort((a, b) => a - b);
+            // A day switched on with stored hours shows them: open the box so they are visible and saved.
+            if (draftDayTimings && draftDayTimings[String(dIdx)] && !draftHasTimingExc) draftHasTimingExc = true;
+          }
           renderModalInner();
         });
       });
@@ -130473,7 +130565,9 @@
             include_off_days: sd === ed
           }]));
         }
-        const finalDayMap = draftHasTimingExc ? normalizeDayTimingsMap(draftDayTimings) : {};
+        const finalDayMap = draftHasTimingExc
+          ? normalizeDayTimingsMap(draftDayTimings)
+          : pruneDayTimingsToWorkdays(normalizeDayTimingsMap(draftDayTimings), [0, 1, 2, 3, 4, 5, 6].filter(d => !draftDays.includes(d)));
         const finalDateList = draftHasTimingExc ? normalizeDateTimingsList(draftDateTimings) : [];
         const hasSat = Boolean(finalDayMap['6']);
         saveStaffWorkRule(entry.name, {
@@ -130564,7 +130658,7 @@
       ? normalizeDayTimingsMap(existing.day_timings, existing.sat_diff_enabled, existing.sat_start_time, existing.sat_end_time)
       : {};
     let draftDateTimings = existing ? normalizeDateTimingsList(existing.date_timings) : [];
-    const hasInitExceptions = Object.keys(initDayMap).length > 0 || draftDateTimings.length > 0;
+    const hasInitExceptions = Object.keys(pruneDayTimingsToWorkdays(initDayMap, draftDays)).length > 0 || draftDateTimings.length > 0;
     const initGroupedDayWin = [];
     const _seenWin = new Map();
     SHIFT_DAY_ORDER_KEYS.forEach(dk => {
@@ -130578,13 +130672,19 @@
       }
       _seenWin.get(sig).days.push(Number(dk));
     });
-    let draftSelectedExcDays = initGroupedDayWin.length ? initGroupedDayWin[0].days.slice() : [];
-    let initExcStart = initGroupedDayWin.length ? initGroupedDayWin[0].start_time : '07:00';
-    let initExcEnd = initGroupedDayWin.length ? initGroupedDayWin[0].end_time : '14:00';
+    // Every saved weekday window opens as a chip and the picker starts empty, so a day is never lit in both
+    // Active Workdays and the picker at once. Own hours of a day the shift does not work are kept out of sight
+    // in draftOffDayMap and saved unchanged (staff with their own workdays may work that day); switching the
+    // day on brings them back.
+    let draftSelectedExcDays = [];
+    let initExcStart = '07:00';
+    let initExcEnd = '14:00';
     let draftExtraDayMap = {};
-    initGroupedDayWin.slice(1).forEach(g => {
+    let draftOffDayMap = {};
+    initGroupedDayWin.forEach(g => {
       g.days.forEach(dIdx => {
-        draftExtraDayMap[String(dIdx)] = {
+        const target = draftDays.includes(dIdx) ? draftExtraDayMap : draftOffDayMap;
+        target[String(dIdx)] = {
           start_time: g.start_time,
           end_time: g.end_time,
           hours: computeShiftWorkedHours(g.start_time, g.end_time) || 8.0
@@ -130620,7 +130720,28 @@
           out[String(dIdx)] = { start_time: stClock, end_time: etClock, hours: hrs };
         });
       }
-      return out;
+      return pruneDayTimingsToWorkdays(out, draftDays);
+    };
+
+    // Active Workdays pills carry each day's own hours, so the week reads in one row.
+    const renderActiveDayPillsHtml = () => {
+      const eff = buildEffectiveDraftDayMap();
+      return [1, 2, 3, 4, 5, 6, 0].map(dIdx => {
+        const own = draftDays.includes(dIdx) ? eff[String(dIdx)] : null;
+        const ownTxt = own ? `${own.start_time}-${own.end_time}` : '';
+        return `<button type="button" class="ssm-day-pill ${draftDays.includes(dIdx) ? 'active' : ''} ${own ? 'has-own-hours' : ''}" data-stm-day="${dIdx}">${ATT_WEEKDAYS[dIdx]}${own ? ` <span class="stm-day-own mono">${esc(ownTxt)}</span>` : ''}</button>`;
+      }).join('');
+    };
+
+    // The picker offers only active workdays that have no own hours yet: one place per day.
+    const renderExcDayPickerHtml = () => {
+      const offered = [1, 2, 3, 4, 5, 6, 0].filter(dIdx => draftDays.includes(dIdx) && !draftExtraDayMap[String(dIdx)]);
+      if (!offered.length) {
+        return `<span class="muted" style="font-size:11.5px">Every active workday already has its own hours</span>`;
+      }
+      return offered.map(dIdx => `
+                    <button type="button" class="ssm-day-pill ${draftSelectedExcDays.includes(dIdx) ? 'active' : ''}" data-stm-exc-day="${dIdx}">${ATT_WEEKDAYS[dIdx]}</button>
+                  `).join('');
     };
 
     const renderWeekdayRuleChipsHtml = () => {
@@ -130656,6 +130777,10 @@
     const refreshStmExceptionsUi = () => {
       const wBox = $('stmWeekdayRulesList');
       if (wBox) wBox.innerHTML = renderWeekdayRuleChipsHtml();
+      const pBar = $('stmExcDaysBar');
+      if (pBar) pBar.innerHTML = renderExcDayPickerHtml();
+      const aBar = $('stmDaysBar');
+      if (aBar) aBar.innerHTML = renderActiveDayPillsHtml();
       const dBox = $('stmDateRulesList');
       if (dBox) dBox.innerHTML = renderDateRuleChipsHtml();
       const badge = $('stmExcLiveBadge');
@@ -130739,11 +130864,7 @@
           <div class="ssm-field">
             <label>Active Workdays</label>
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-              <div class="ssm-day-pills" id="stmDaysBar">
-                ${[1, 2, 3, 4, 5, 6, 0].map(dIdx => `
-                  <button type="button" class="ssm-day-pill ${draftDays.includes(dIdx) ? 'active' : ''}" data-stm-day="${dIdx}">${ATT_WEEKDAYS[dIdx]}</button>
-                `).join('')}
-              </div>
+              <div class="ssm-day-pills" id="stmDaysBar">${renderActiveDayPillsHtml()}</div>
               <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer;margin:0">
                 <input type="checkbox" id="stmBuDefault" ${initIsBuDef ? 'checked' : ''}>
                 <span>Set as Company Default Shift</span>
@@ -130756,19 +130877,15 @@
                 <input type="checkbox" id="stmDiffChk" ${hasInitExceptions ? 'checked' : ''}>
                 <span>Different timing on specific weekdays or dates</span>
               </label>
-              <span class="badge ${hasInitExceptions ? 'badge-brass' : ''}" id="stmExcLiveBadge">${esc(formatShiftExceptionsSummary(initDayMap, draftDateTimings))}</span>
+              <span class="badge ${hasInitExceptions ? 'badge-brass' : ''}" id="stmExcLiveBadge">${esc(formatShiftExceptionsSummary(draftExtraDayMap, draftDateTimings))}</span>
             </div>
             <div id="stmDiffBody" style="display:${hasInitExceptions ? 'flex' : 'none'};flex-direction:column;gap:10px;margin-top:10px">
               <div class="stm-exc-subcard">
                 <div class="stm-exc-subhead">
-                  <strong>Recurring Weekday(s)</strong>
-                  <span class="muted">Select which weekday(s) follow a different clock window</span>
+                  <strong>Workdays With Different Hours</strong>
+                  <span class="muted">Only active workdays without their own hours can be picked</span>
                 </div>
-                <div class="ssm-day-pills" id="stmExcDaysBar" style="margin-top:6px">
-                  ${[1, 2, 3, 4, 5, 6, 0].map(dIdx => `
-                    <button type="button" class="ssm-day-pill ${draftSelectedExcDays.includes(dIdx) ? 'active' : ''}" data-stm-exc-day="${dIdx}">${ATT_WEEKDAYS[dIdx]}</button>
-                  `).join('')}
-                </div>
+                <div class="ssm-day-pills" id="stmExcDaysBar" style="margin-top:6px">${renderExcDayPickerHtml()}</div>
                 <div class="stm-inline-time-grid" style="margin-top:8px">
                   <div class="ssm-field">
                     <label for="stmExcStart">Start (24h)</label>
@@ -130793,7 +130910,7 @@
               <div class="stm-exc-subcard">
                 <div class="stm-exc-subhead">
                   <strong>Specific Calendar Date / Date Range</strong>
-                  <span class="muted">Overrides regular and weekday hours on selected date(s)</span>
+                  <span class="muted">Wins over the weekly hours on these dates; a single date is worked even on a day off</span>
                 </div>
                 <div class="stm-date-grid" style="margin-top:8px">
                   <div class="ssm-field">
@@ -130882,20 +130999,27 @@
     $('stmDiffChk')?.addEventListener('change', e => {
       const bEl = $('stmDiffBody');
       if (bEl) bEl.style.display = e.target.checked ? 'flex' : 'none';
+      if (!e.target.checked) {
+        // Unticking clears what the box shows (workday windows, pending picks, dates) at once, so a later day
+        // switch cannot bring them back; hours of days the shift does not work stay in draftOffDayMap.
+        draftExtraDayMap = {};
+        draftSelectedExcDays = [];
+        draftDateTimings = [];
+      }
       refreshStmExceptionsUi();
     });
-    modal.querySelectorAll('[data-stm-exc-day]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const d = Number(btn.getAttribute('data-stm-exc-day'));
-        if (draftSelectedExcDays.includes(d)) draftSelectedExcDays = draftSelectedExcDays.filter(x => x !== d);
-        else draftSelectedExcDays = draftSelectedExcDays.concat([d]).sort((a, b) => a - b);
-        btn.classList.toggle('active', draftSelectedExcDays.includes(d));
-        if ($('stmDiffChk') && draftSelectedExcDays.length && !$('stmDiffChk').checked) {
-          $('stmDiffChk').checked = true;
-          if ($('stmDiffBody')) $('stmDiffBody').style.display = 'flex';
-        }
-        refreshStmExceptionsUi();
-      });
+    $('stmExcDaysBar')?.addEventListener('click', e => {
+      const btn = e.target.closest('[data-stm-exc-day]');
+      if (!btn) return;
+      const d = Number(btn.getAttribute('data-stm-exc-day'));
+      if (!draftDays.includes(d) || draftExtraDayMap[String(d)]) return;
+      if (draftSelectedExcDays.includes(d)) draftSelectedExcDays = draftSelectedExcDays.filter(x => x !== d);
+      else draftSelectedExcDays = draftSelectedExcDays.concat([d]).sort((a, b) => a - b);
+      if ($('stmDiffChk') && draftSelectedExcDays.length && !$('stmDiffChk').checked) {
+        $('stmDiffChk').checked = true;
+        if ($('stmDiffBody')) $('stmDiffBody').style.display = 'flex';
+      }
+      refreshStmExceptionsUi();
     });
     ['stmExcStart', 'stmExcEnd'].forEach(id => {
       $(id)?.addEventListener('change', refreshStmExceptionsUi);
@@ -130919,11 +131043,10 @@
       const stClock = normalize24hClockTime($('stmExcStart')?.value || initExcStart, initExcStart);
       const etClock = normalize24hClockTime($('stmExcEnd')?.value || initExcEnd, initExcEnd);
       const hrs = computeShiftWorkedHours(stClock, etClock) || 8.0;
-      draftSelectedExcDays.forEach(dIdx => {
+      draftSelectedExcDays.filter(dIdx => draftDays.includes(dIdx)).forEach(dIdx => {
         draftExtraDayMap[String(dIdx)] = { start_time: stClock, end_time: etClock, hours: hrs };
       });
       draftSelectedExcDays = [];
-      modal.querySelectorAll('[data-stm-exc-day]').forEach(b => b.classList.remove('active'));
       refreshStmExceptionsUi();
     });
     $('stmWeekdayRulesList')?.addEventListener('click', e => {
@@ -130984,13 +131107,34 @@
       draftDateTimings = draftDateTimings.filter(item => String(item.id) !== String(did));
       refreshStmExceptionsUi();
     });
-    modal.querySelectorAll('[data-stm-day]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const d = Number(btn.getAttribute('data-stm-day'));
-        if (draftDays.includes(d)) draftDays = draftDays.filter(x => x !== d);
-        else draftDays = draftDays.concat([d]).sort((a, b) => a - b);
-        btn.classList.toggle('active', draftDays.includes(d));
-      });
+    $('stmDaysBar')?.addEventListener('click', e => {
+      const btn = e.target.closest('[data-stm-day]');
+      if (!btn) return;
+      const d = Number(btn.getAttribute('data-stm-day'));
+      const dk = String(d);
+      if (draftDays.includes(d)) {
+        // A day switched off shows no hours and leaves the picker. Only hours that were stored when the form
+        // opened are set aside (and saved unchanged); hours added or changed in this form are dropped, so
+        // nothing new is saved out of sight. A chip removed earlier stays removed.
+        draftDays = draftDays.filter(x => x !== d);
+        if (draftExtraDayMap[dk]) {
+          if (initDayMap[dk]) draftOffDayMap[dk] = initDayMap[dk];
+          delete draftExtraDayMap[dk];
+        }
+        draftSelectedExcDays = draftSelectedExcDays.filter(x => x !== d);
+      } else {
+        draftDays = draftDays.concat([d]).sort((a, b) => a - b);
+        if (draftOffDayMap[dk]) {
+          draftExtraDayMap[dk] = draftOffDayMap[dk];
+          delete draftOffDayMap[dk];
+          // The restored hours must be visible (and saved): open the exceptions box if it was closed.
+          if ($('stmDiffChk') && !$('stmDiffChk').checked) {
+            $('stmDiffChk').checked = true;
+            if ($('stmDiffBody')) $('stmDiffBody').style.display = 'flex';
+          }
+        }
+      }
+      refreshStmExceptionsUi();
     });
     modal.querySelectorAll('[data-stm-tone]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -131028,16 +131172,22 @@
         toast('Enter a shift type name', 'warn');
         return;
       }
-      let finalDayMap = {};
+      if (!draftDays.length) {
+        toast('Switch on at least one workday', 'warn');
+        return;
+      }
+      // Hours set aside for days the shift does not work are always saved unchanged: the exceptions box only
+      // governs what it shows (workday windows and dates). To clear them, switch the day on (its hours show as
+      // a chip) and remove the chip.
+      const offDayKeep = pruneDayTimingsToWorkdays(draftOffDayMap, [0, 1, 2, 3, 4, 5, 6].filter(d => !draftDays.includes(d)));
+      let finalDayMap = offDayKeep;
       let finalDateList = [];
       if (isDiffOn) {
         capturePendingDateFromInputs();
-        finalDayMap = buildEffectiveDraftDayMap();
+        // An empty exceptions box saves as "same every workday" (e.g. after switching off the only day that had
+        // its own hours), instead of blocking the save.
+        finalDayMap = Object.assign({}, offDayKeep, buildEffectiveDraftDayMap());
         finalDateList = normalizeDateTimingsList(draftDateTimings);
-        if (!Object.keys(finalDayMap).length && !finalDateList.length) {
-          toast('Select at least one weekday or add a specific date override, or uncheck timing exceptions.', 'warn');
-          return;
-        }
       }
       const hasSat = Boolean(finalDayMap['6']);
       const res = saveShiftType({
@@ -131069,7 +131219,7 @@
         const winTxt = res.shiftType.split_enabled && res.shiftType.split_window_label
           ? res.shiftType.split_window_label
           : `${res.shiftType.start_time}-${res.shiftType.end_time}`;
-        const excSummary = formatShiftExceptionsSummary(res.shiftType.day_timings, res.shiftType.date_timings);
+        const excSummary = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(res.shiftType.day_timings, res.shiftType.days), res.shiftType.date_timings);
         const excTxt = excSummary !== 'Same Every Workday' ? ` · ${excSummary}` : '';
         toast(`Saved ${co} shift: ${res.shiftType.name} (${winTxt}${excTxt}) effective ${fmtDateDMY(effDt)}${doBackfill ? ` · Backfilled ${bf.staffUpdated || 0} staff` : ''}`, 'ok');
         closeShiftTypeModal();
@@ -131078,6 +131228,9 @@
         toast(res.error || 'Could not save shift type', 'err');
       }
     });
+    // The first render ran while the previous (hidden) form was still in the page, so its pills could read that
+    // form's exceptions box; repaint from this form's own state.
+    refreshStmExceptionsUi();
     return modal;
   }
 
@@ -131905,7 +132058,7 @@
                 <div class="shift-types-strip">
                   ${shiftTypesCatalog.map(st => {
                     const assignedCnt = staffDir.filter(s => (getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4') === st.id).length;
-                    const excSum = formatShiftExceptionsSummary(st.day_timings, st.date_timings, st.start_time, st.end_time);
+                    const excSum = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(st.day_timings, st.days), st.date_timings, st.start_time, st.end_time);
                     const satNote = excSum !== 'Same Every Workday' ? ` · ${excSum}` : '';
                     return `
                       <button type="button" class="shift-type-card" data-tone="${esc(st.tone)}" data-edit-shift-type="${esc(st.id)}">

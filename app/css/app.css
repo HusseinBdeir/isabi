@@ -26345,6 +26345,16 @@ label.exp-inline-bar-lbl {
   border-color: #F3CE85;
   color: #0B1730;
 }
+/* A workday on its own hours shows them inside its Active Workdays pill (one setting per weekday). */
+.ssm-day-pill .stm-day-own {
+  margin-inline-start: 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.55);
+  font-size: 10.4px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .ssm-grace-wrap {
   display: inline-flex;
   align-items: center;

@@ -10854,6 +10854,13 @@
       "Quick Preset & Window": "نماذج سريعة وفترة الدوام",
       "Specific Calendar Date / Date Range": "تاريخ محدد أو نطاق تاريخي",
       "Overrides regular and weekday hours on selected date(s)": "يتجاوز الدوام العادي وأيام الأسبوع في التواريخ المحددة",
+      "Workdays With Different Hours": "أيام عمل بدوام مختلف",
+      "Only active workdays without their own hours can be picked": "يمكن اختيار أيام العمل النشطة التي ليس لها دوام خاص فقط",
+      "Every active workday already has its own hours": "لكل يوم عمل نشط دوام خاص به بالفعل",
+      "Wins over the weekly hours on these dates; a single date is worked even on a day off": "يتقدّم على الدوام الأسبوعي في هذه التواريخ؛ والتاريخ المفرد يُعدّ يوم عمل حتى لو صادف يوم عطلة",
+      "Blank keeps the regular hours; days off are not listed": "الحقل الفارغ يبقي الدوام العادي؛ أيام العطلة غير مدرجة",
+      "Workdays With Different Hours (Leave blank to use Regular Start/End Time)": "أيام عمل بدوام مختلف (اتركه فارغاً لاستخدام التوقيت العادي)",
+      "Switch on at least one workday": "فعّل يوم عمل واحداً على الأقل",
       "No specific calendar date overrides added yet.": "لم تُضف أي استثناءات لتواريخ محددة بعد.",
       "Recurring Weekday(s) (Mon-Sun)": "أيام الأسبوع المتكررة (الإثنين-الأحد)",
       "Enter Start/End for any weekday, or pick a weekday to quick-fill": "أدخل البداية والنهاية لأي يوم أو اختر يوماً للتعبئة السريعة",
@@ -21835,6 +21842,13 @@
       "Quick Preset & Window": "Préréglages et plage",
       "Specific Calendar Date / Date Range": "Date précise / Plage de dates",
       "Overrides regular and weekday hours on selected date(s)": "Remplace les horaires standards et hebdomadaires aux dates choisies",
+      "Workdays With Different Hours": "Jours ouvrés à horaire différent",
+      "Only active workdays without their own hours can be picked": "Seuls les jours ouvrés actifs sans horaire propre peuvent être choisis",
+      "Every active workday already has its own hours": "Chaque jour ouvré actif a déjà son propre horaire",
+      "Wins over the weekly hours on these dates; a single date is worked even on a day off": "Prime sur l’horaire hebdomadaire à ces dates ; une date unique est travaillée même un jour de repos",
+      "Blank keeps the regular hours; days off are not listed": "Vide = horaire habituel ; les jours de repos ne sont pas listés",
+      "Workdays With Different Hours (Leave blank to use Regular Start/End Time)": "Jours ouvrés à horaire différent (laisser vide pour l’horaire habituel)",
+      "Switch on at least one workday": "Activez au moins un jour ouvré",
       "No specific calendar date overrides added yet.": "Aucune exception de date ajoutée.",
       "Recurring Weekday(s) (Mon-Sun)": "Jours récurrents (Lun-Dim)",
       "Enter Start/End for any weekday, or pick a weekday to quick-fill": "Saisissez début/fin ou choisissez un jour pour préremplir",
@@ -22861,6 +22875,21 @@
       if (lang === 'ar') return `${pfx}${m[3].trim()}`;
       const frBase = translateCore(m[2].trim(), 'fr', depth + 1);
       return `${pfx}${frBase}`;
+    }
+
+    // 0b. Shift timing exception segments (formatShiftExceptionsSummary): "Fri, Sat 07:00-14:00 (7.0h)" and
+    //     "<label>: 01-12-2026 to 05-12-2026 09:00-15:00 (6.0h)". Day names go through the dictionary; a label the
+    //     user typed is kept as typed; clock times and hours stay as they are.
+    m = trimmed.match(/^((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:,\s*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun))*)\s+(\d{2}:\d{2}-\d{2}:\d{2})(\s*\([\d.]+h\))?$/);
+    if (m) {
+      const days = m[1].split(/,\s*/).map(d => translateCore(d, lang, depth + 1)).join(lang === 'ar' ? '، ' : ', ');
+      return `${days} ${m[2]}${m[3] || ''}`;
+    }
+    m = trimmed.match(/^(?:(.+?):\s+)?(\d{2}-\d{2}-\d{4})(?:\s+to\s+(\d{2}-\d{2}-\d{4}))?\s+(\d{2}:\d{2}-\d{2}:\d{2})(\s*\([\d.]+h\))?$/);
+    if (m) {
+      const lbl = m[1] ? `${m[1]}: ` : '';
+      const span = m[3] ? `${m[2]} ${lang === 'ar' ? 'إلى' : 'au'} ${m[3]}` : m[2];
+      return `${lbl}${span} ${m[4]}${m[5] || ''}`;
     }
 
     // 1. Document Titles: "<View> · ISABI Command Center"

@@ -2070,7 +2070,7 @@
             ['Yes', 'Yes (Selected Weekdays and/or Specific Dates)']
           ], 'No'), { id: 'wrap_ws_sat_diff', span: true })}
           <div class="form-field span-3" id="wrap_ws_day_matrix">
-            <label>Recurring Weekday Exceptions (Leave blank to use Regular Start/End Time)</label>
+            <label>Workdays With Different Hours (Leave blank to use Regular Start/End Time)</label>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:6px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev-2)">
               ${[
                 { idx: '1', lbl: 'Monday' },
@@ -2081,7 +2081,7 @@
                 { idx: '6', lbl: 'Saturday' },
                 { idx: '0', lbl: 'Sunday' }
               ].map(d => `
-                <div style="display:flex;flex-direction:column;gap:3px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg-card)">
+                <div data-ws-day-cell="${d.idx}" style="display:flex;flex-direction:column;gap:3px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg-card)">
                   <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">${d.lbl}</span>
                   <div style="display:flex;align-items:center;gap:4px">
                     <input type="text" data-time24="1" data-optional-time="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="f_day_in_${d.idx}" data-ws-day-in="${d.idx}" style="font-size:11px;padding:3px 4px;width:100%" title="${d.lbl} Start Time (24h)">
