@@ -3520,6 +3520,44 @@
     return esc(JSON.stringify(spec));
   }
 
+  // Collision-free SVG label picker: candidates { key, x, y (baseline), fs, text, pri } are taken
+  // highest `pri` first and a label is kept only when its estimated box clears every kept label.
+  // Returns the Set of kept keys. Text is centred on x (text-anchor="middle").
+  function estimateSvgTextWidth(text, fs) {
+    let em = 0;
+    for (const ch of String(text || '')) {
+      if (/[,.'’:;| ]/.test(ch)) em += 0.3;
+      else if (ch === '-') em += 0.38;
+      else if (/[A-Z]/.test(ch)) em += 0.66;
+      else if (/[a-z]/.test(ch)) em += 0.54;
+      else em += 0.6;
+    }
+    return em * (Number(fs) || 9);
+  }
+  // `gapY` adds vertical clearance so labels on neighbouring bars of similar height do not print stacked flush.
+  function pickNonOverlappingLabels(cands, gap = 3, gapY = 0) {
+    const kept = [];
+    const keys = new Set();
+    (cands || []).slice().sort((a, b) => (b.pri || 0) - (a.pri || 0)).forEach(c => {
+      const fs = Number(c.fs) || 9;
+      const w = estimateSvgTextWidth(c.text, fs);
+      const box = { x0: c.x - w / 2 - gap / 2, x1: c.x + w / 2 + gap / 2, y0: c.y - fs - gapY / 2, y1: c.y + 2 + gapY / 2 };
+      if (kept.some(k => box.x0 < k.x1 && box.x1 > k.x0 && box.y0 < k.y1 && box.y1 > k.y0)) return;
+      kept.push(box);
+      keys.add(c.key);
+    });
+    return keys;
+  }
+  // Short money text for labels printed over chart bars: $950, $612K, $1.6M.
+  function fmtCompactUsdLabel(v) {
+    const n = Number(v) || 0;
+    const a = Math.abs(n);
+    const s = n < 0 ? '-' : '';
+    if (a >= 999500) return `${s}$${(a / 1e6).toFixed(a >= 9.95e6 ? 0 : 1).replace(/\.0$/, '')}M`;
+    if (a >= 999.5) return `${s}$${Math.round(a / 1000)}K`;
+    return `${s}$${Math.round(a)}`;
+  }
+
   function renderChartPopHtml(spec, activeIdx) {
     if (typeof spec === 'string') {
       try { spec = JSON.parse(spec); } catch (_) { return ''; }
@@ -8345,6 +8383,39 @@
         const grpW = plotW / items.length;
         const barW = Math.min(24, Math.max(isDaily ? 7 : 14, grpW * 0.58));
         const labelStep = isDaily ? Math.max(1, Math.ceil(items.length / 8)) : 1;
+        const lastIdx = items.length - 1;
+        const maxAbsVal = Math.max(Math.abs(minV), Math.abs(maxV));
+        const isSelItem = d => Boolean((d.ymIso && opts.selectedYm === d.ymIso) || (d.dateIso && opts.selectedDate === d.dateIso));
+        const barGeom = d => {
+          const yVal = yOf(d.val);
+          return { rectY: Math.min(yZero, yVal), rectH: Math.max(3, Math.abs(yVal - yZero)) };
+        };
+        // Value and date labels pass through the collision picker so neighbouring bars never print on top of
+        // each other: the latest day and the selected bar win, then the largest balances.
+        const valCands = [], xCands = [];
+        items.forEach((d, i) => {
+          const cx = padL + i * grpW + grpW / 2;
+          const isLast = i === lastIdx;
+          if (Math.abs(d.val) < 0.5) {
+            if (!isDaily || isLast) valCands.push({ key: i, x: cx, y: yZero - 8, fs: 8.6, text: '$0', pri: isLast ? 1e15 : 0 });
+          } else if (!isDaily || Math.abs(d.val) >= maxAbsVal * 0.35 || isLast) {
+            const isNeg = d.val <= -0.5;
+            const { rectY, rectH } = barGeom(d);
+            valCands.push({
+              key: i, x: cx, fs: 8.8,
+              y: isNeg ? Math.min(H - 22, rectY + rectH + 10) : Math.max(12, rectY - 5),
+              text: (d.val < 0 ? '-$' : '$') + Math.round(Math.abs(d.val)).toLocaleString('en-US'),
+              pri: (isLast ? 1e15 : 0) + Math.abs(d.val)
+            });
+          }
+          const isSel = isSelItem(d);
+          if (isSel || isLast || i % labelStep === 0) {
+            xCands.push({ key: i, x: cx, y: H - 10, fs: 9.2, text: String(d.shortLbl || ''), pri: isSel ? 4 : (isLast ? 3 : (i === 0 ? 2 : 1)) });
+          }
+        });
+        const valShown = pickNonOverlappingLabels(valCands, 4, 4);
+        const valCandByKey = new Map(valCands.map(c => [c.key, c]));
+        const xShown = pickNonOverlappingLabels(xCands, 4);
 
         const bars = items.map((d, i) => {
           const cx = padL + i * grpW + grpW / 2;
@@ -8353,31 +8424,22 @@
           const lbpUsdEq = Math.abs(Number(d.lbp || 0)) / rateNum;
           const isLbpDom = !isZeroBar && !isNeg && lbpUsdEq > Math.abs(Number(d.usd || 0)) + 1;
           const fill = isZeroBar ? C.good : (isNeg ? C.crit : (isLbpDom ? C.steel : C.navy));
-          const isSel = (d.ymIso && opts.selectedYm === d.ymIso) || (d.dateIso && opts.selectedDate === d.dateIso);
+          const isSel = isSelItem(d);
           const drillAttr = d.dateIso ? `data-cf-focus-date="${esc(d.dateIso)}"` : (d.ymIso ? `data-cf-focus-ym="${esc(d.ymIso)}"` : '');
 
           let barShape = '';
-          let valLbl = '';
           if (isZeroBar) {
             barShape = `<circle cx="${cx.toFixed(1)}" cy="${yZero.toFixed(1)}" r="${isDaily ? '3.2' : '4.2'}" fill="${C.good}" stroke="var(--surface)" stroke-width="1.2"/>`;
-            if (!isDaily || i === items.length - 1) {
-              valLbl = `<text x="${cx.toFixed(1)}" y="${(yZero - 8).toFixed(1)}" text-anchor="middle" font-size="8.6" font-weight="700" fill="${C.good}">$0</text>`;
-            }
           } else {
-            const yVal = yOf(d.val);
-            const rectY = Math.min(yZero, yVal);
-            const rectH = Math.max(3, Math.abs(yVal - yZero));
+            const { rectY, rectH } = barGeom(d);
             barShape = `<rect x="${(cx - barW / 2).toFixed(1)}" y="${rectY.toFixed(1)}" width="${barW.toFixed(1)}" height="${rectH.toFixed(1)}" rx="2.5" fill="${fill}"/>`;
-            const showVal = !isDaily || Math.abs(d.val) >= Math.max(Math.abs(minV), Math.abs(maxV)) * 0.35 || i === items.length - 1;
-            if (showVal) {
-              const txt = (d.val < 0 ? '-$' : '$') + Math.round(Math.abs(d.val)).toLocaleString('en-US');
-              const lblY = isNeg ? Math.min(H - 22, rectY + rectH + 10) : Math.max(12, rectY - 5);
-              valLbl = `<text x="${cx.toFixed(1)}" y="${lblY.toFixed(1)}" text-anchor="middle" font-size="8.8" font-weight="700" fill="${isNeg ? C.crit : 'var(--ink)'}">${txt}</text>`;
-            }
           }
+          const vc = valShown.has(i) ? valCandByKey.get(i) : null;
+          const valLbl = vc
+            ? `<text x="${vc.x.toFixed(1)}" y="${vc.y.toFixed(1)}" text-anchor="middle" font-size="${vc.fs}" font-weight="700" fill="${isZeroBar ? C.good : (isNeg ? C.crit : 'var(--ink)')}">${esc(vc.text)}</text>`
+            : '';
 
-          const showXAxisLbl = (i % labelStep === 0) || (i === items.length - 1);
-          const xLbl = showXAxisLbl
+          const xLbl = xShown.has(i)
             ? `<text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="9.2" font-weight="${isSel ? '800' : '500'}" fill="${isSel ? 'var(--brass)' : 'var(--muted)'}">${esc(d.shortLbl)}</text>`
             : '';
 
@@ -11778,6 +11840,39 @@
       const grpW = plotW / items.length;
       const barW = Math.min(24, Math.max(isDaily ? 7 : 14, grpW * 0.58));
       const labelStep = isDaily ? Math.max(1, Math.ceil(items.length / 8)) : 1;
+      const lastIdx = items.length - 1;
+      const maxAbsVal = Math.max(Math.abs(minV), Math.abs(maxV));
+      const isSelItem = d => Boolean((d.ymIso && chartOpts.selectedYm === d.ymIso) || (d.dateIso && chartOpts.selectedDate === d.dateIso));
+      const barGeom = d => {
+        const yVal = yOf(d.val);
+        return { rectY: Math.min(yZero, yVal), rectH: Math.max(3, Math.abs(yVal - yZero)) };
+      };
+      // Value and date labels pass through the collision picker so neighbouring bars never print on top of
+      // each other: the latest day and the selected bar win, then the largest balances.
+      const valCands = [], xCands = [];
+      items.forEach((d, i) => {
+        const cx = padL + i * grpW + grpW / 2;
+        const isLast = i === lastIdx;
+        if (Math.abs(d.val) < 0.5) {
+          if (!isDaily || isLast) valCands.push({ key: i, x: cx, y: yZero - 8, fs: 8.6, text: '$0', pri: isLast ? 1e15 : 0 });
+        } else if (!isDaily || Math.abs(d.val) >= maxAbsVal * 0.35 || isLast) {
+          const isNeg = d.val <= -0.5;
+          const { rectY, rectH } = barGeom(d);
+          valCands.push({
+            key: i, x: cx, fs: 8.8,
+            y: isNeg ? Math.min(H - 22, rectY + rectH + 10) : Math.max(12, rectY - 5),
+            text: (d.val < 0 ? '-$' : '$') + Math.round(Math.abs(d.val)).toLocaleString('en-US'),
+            pri: (isLast ? 1e15 : 0) + Math.abs(d.val)
+          });
+        }
+        const isSel = isSelItem(d);
+        if (isSel || isLast || i % labelStep === 0) {
+          xCands.push({ key: i, x: cx, y: H - 10, fs: 9.2, text: String(d.shortLbl || ''), pri: isSel ? 4 : (isLast ? 3 : (i === 0 ? 2 : 1)) });
+        }
+      });
+      const valShown = pickNonOverlappingLabels(valCands, 4, 4);
+      const valCandByKey = new Map(valCands.map(c => [c.key, c]));
+      const xShown = pickNonOverlappingLabels(xCands, 4);
 
       const bars = items.map((d, i) => {
         const cx = padL + i * grpW + grpW / 2;
@@ -11786,31 +11881,22 @@
         const lbpUsdEq = Math.abs(Number(d.lbp || 0)) / rateNum;
         const isLbpDom = !isZeroBar && !isNeg && lbpUsdEq > Math.abs(Number(d.usd || 0)) + 1;
         const fill = isZeroBar ? C.good : (isNeg ? C.crit : (isLbpDom ? C.steel : C.navy));
-        const isSel = (d.ymIso && chartOpts.selectedYm === d.ymIso) || (d.dateIso && chartOpts.selectedDate === d.dateIso);
+        const isSel = isSelItem(d);
         const drillAttr = d.dateIso ? `data-cf-focus-date="${esc(d.dateIso)}"` : (d.ymIso ? `data-cf-focus-ym="${esc(d.ymIso)}"` : '');
 
         let barShape = '';
-        let valLbl = '';
         if (isZeroBar) {
           barShape = `<circle cx="${cx.toFixed(1)}" cy="${yZero.toFixed(1)}" r="${isDaily ? '3.2' : '4.2'}" fill="${C.good}" stroke="var(--surface)" stroke-width="1.2"/>`;
-          if (!isDaily || i === items.length - 1) {
-            valLbl = `<text x="${cx.toFixed(1)}" y="${(yZero - 8).toFixed(1)}" text-anchor="middle" font-size="8.6" font-weight="700" fill="${C.good}">$0</text>`;
-          }
         } else {
-          const yVal = yOf(d.val);
-          const rectY = Math.min(yZero, yVal);
-          const rectH = Math.max(3, Math.abs(yVal - yZero));
+          const { rectY, rectH } = barGeom(d);
           barShape = `<rect x="${(cx - barW / 2).toFixed(1)}" y="${rectY.toFixed(1)}" width="${barW.toFixed(1)}" height="${rectH.toFixed(1)}" rx="2.5" fill="${fill}"/>`;
-          const showVal = !isDaily || Math.abs(d.val) >= Math.max(Math.abs(minV), Math.abs(maxV)) * 0.35 || i === items.length - 1;
-          if (showVal) {
-            const txt = (d.val < 0 ? '-$' : '$') + Math.round(Math.abs(d.val)).toLocaleString('en-US');
-            const lblY = isNeg ? Math.min(H - 22, rectY + rectH + 10) : Math.max(12, rectY - 5);
-            valLbl = `<text x="${cx.toFixed(1)}" y="${lblY.toFixed(1)}" text-anchor="middle" font-size="8.8" font-weight="700" fill="${isNeg ? C.crit : 'var(--ink)'}">${txt}</text>`;
-          }
         }
+        const vc = valShown.has(i) ? valCandByKey.get(i) : null;
+        const valLbl = vc
+          ? `<text x="${vc.x.toFixed(1)}" y="${vc.y.toFixed(1)}" text-anchor="middle" font-size="${vc.fs}" font-weight="700" fill="${isZeroBar ? C.good : (isNeg ? C.crit : 'var(--ink)')}">${esc(vc.text)}</text>`
+          : '';
 
-        const showXAxisLbl = (i % labelStep === 0) || (i === items.length - 1);
-        const xLbl = showXAxisLbl
+        const xLbl = xShown.has(i)
           ? `<text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="9.2" font-weight="${isSel ? '800' : '500'}" fill="${isSel ? 'var(--brass)' : 'var(--muted)'}">${esc(d.shortLbl)}</text>`
           : '';
 

@@ -44096,11 +44096,7 @@
             </div>
             <button type="button" class="btn cf-liquidity-brief-btn" id="cfLiquidityBriefBtn" data-page-guide-open="1" data-pg-source="cashflow" aria-expanded="false" data-ui-tip="Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing">Liquidity Brief</button>
             <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="cfCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="cashflow" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">Collection Forecast</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="cfPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="cashflow" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">Payables Optimizer</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="cfTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="cashflow" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow & Liquidity Runway Forecast Studio">13W Runway</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="cfInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="cashflow" aria-expanded="false" data-ui-tip="Open Inventory Turnover, Stock Reorder & Working-Capital Carrying-Cost Studio">Stock &amp; EOQ</button>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${canEnterForm('receipt', u) ? '<button type="button" class="btn" data-open-modal="receipt">+ AR Receipt</button>' : ''}
@@ -46421,7 +46417,6 @@
               <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
               <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
               <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Group Capital Allocation, Credit Headroom &amp; Carrying-Cost Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>
               ${exportBtn('hldDueMatrixPanel', 'Holding_Intercompany_Repayment_Matrix')}
               ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ Intercompany Entry</button>' : ''}
             </div>
@@ -46584,8 +46579,6 @@
             ${searchBox('Search company, IC ref, notes...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hld_interactions" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
               <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hld_interactions" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hld_interactions" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="hld_interactions" aria-expanded="false" data-ui-tip="Open Group Capital Allocation, Credit Headroom &amp; Carrying-Cost Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>
             ${exportBtn('hldInteractionsPanel', 'Holding_Intercompany_Repayment_Ledger')}
             ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ External Entry</button>' : ''}
           </div>
@@ -48846,8 +48839,6 @@
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search resort, outlet, category, notes...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hsp_revenue" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hsp_revenue" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hsp_revenue" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
             ${exportBtn('hspRevenuePanel', 'Hospitality_Venue_Revenue')}
             ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Venue Revenue Entry</button>' : ''}
           </div>
@@ -49116,8 +49107,6 @@
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search member, chalet unit, resort...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hsp_members" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hsp_members" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hsp_members" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
             ${exportBtn('hspMembershipsPanel', 'Hospitality_Seasonal_Memberships')}
             <button type="button" class="btn btn-outline-bar" data-ind-open-new="hsp_tariffs">+ Seasonal Tariff</button>
             ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Membership Contract</button>' : ''}
@@ -50245,8 +50234,6 @@
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
               ${searchBox('Search customer, entity, promise date...')}
               <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="trd_receivables" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="trd_receivables" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="trd_receivables" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
               ${exportBtn('trdReceivablesPanel', 'Trading_Receivables_Advances')}
               ${canEnterForm('receipt', u) ? '<button type="button" class="btn btn-primary" data-open-modal="receipt">+ Customer Settlement</button>' : ''}
             </div>
@@ -50440,8 +50427,6 @@
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search invoice, chassis, customer, book...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="trd_sales" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="trd_sales" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="trd_sales" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
             ${exportBtn('trdSalesPanel', 'Trading_Sales_Invoices')}
             ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Sales Invoice</button>' : ''}
           </div>
@@ -51869,8 +51854,6 @@
             <button type="button" class="${submode === 'receipts' ? 'active' : ''}" data-nav-jump="re_receipts">Tenant Receipts &amp; Advances (${data.receipts.length})</button>
           </div>
           <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="re_leases" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="re_leases" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="re_leases" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
           ${exportBtn(submode === 'invoicing' ? 're_invoicing' : submode === 'receipts' ? 're_receipts' : 're_leases')}
         </div>
       </div>
@@ -53347,8 +53330,6 @@
             <button type="button" class="${submode === 'items' ? 'active' : ''}" data-nav-jump="ins_items">Insured Items (${data.items.length})</button>
           </div>
           <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="ins_policies" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="ins_policies" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="ins_policies" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
           ${exportBtn(submode === 'renewals' ? 'ins_renewals' : (submode === 'items' ? 'ins_items' : 'ins_policies'))}
         </div>
       </div>
@@ -53620,8 +53601,6 @@
             <button type="button" class="${submode === 'statements' ? 'active' : ''}" data-nav-jump="ins_statements">Statement Recon (${data.statements.length})</button>
           </div>
           <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="ins_billing" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="ins_billing" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
-              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="ins_billing" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
           ${exportBtn(submode === 'remittances' ? 'ins_remittances' : (submode === 'statements' ? 'ins_statements' : 'ins_billing'))}
         </div>
       </div>
@@ -75787,12 +75766,6 @@
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <button type="button" class="btn cf-liquidity-brief-btn" id="cfLiquidityBriefBtn" data-page-guide-open="1" data-pg-source="cashflow" aria-expanded="false" data-ui-tip="Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing">Liquidity Brief</button>
-            <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="cfCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="cashflow" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">Collection Forecast</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="cfPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="cashflow" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">Payables Optimizer</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="cfTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="cashflow" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow & Liquidity Runway Forecast Studio">13W Runway</button>
             ${exportBtn('extEntriesPanel', 'External_Entries')}
             ${isHoldingExt ? `<button type="button" class="btn btn-ghost-bar" data-nav-jump="hld_extended" data-ui-tip="Open dedicated Holding Extended Stakeholder Ledger Hub">${ic('external')} Extended Ledger Hub (${fmtNum(extdCnt)})</button>` : ''}
             ${isHoldingExt && canEnterForm('external', u) ? '<button type="button" class="btn btn-primary" data-open-modal="extended" data-prefill-co="Bdeir Holding" data-prefill-extkind="Extended">+ Extended Entry</button>' : ''}
@@ -76032,12 +76005,6 @@
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <button type="button" class="btn cf-liquidity-brief-btn" id="cfLiquidityBriefBtn" data-page-guide-open="1" data-pg-source="cashflow" aria-expanded="false" data-ui-tip="Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing">Liquidity Brief</button>
-            <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="cfCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="cashflow" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">Collection Forecast</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="cfPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="cashflow" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">Payables Optimizer</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="cfTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="cashflow" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow & Liquidity Runway Forecast Studio">13W Runway</button>
             ${exportBtn('fxConversionsPanel', 'FX_Conversions')}
             ${canEnterForm('conversion', u) ? '<button type="button" class="btn btn-primary" data-open-modal="conversion">+ FX Conversion</button>' : ''}
           </div>
@@ -76232,11 +76199,6 @@
             </div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button type="button" class="btn cf-liquidity-brief-btn" id="cfLiquidityBriefBtn" data-page-guide-open="1" data-pg-source="cashflow" aria-expanded="false" data-ui-tip="Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing">Liquidity Brief</button>
-            <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="cfCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="cashflow" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">Collection Forecast</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="cfPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="cashflow" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">Payables Optimizer</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="cfTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="cashflow" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow & Liquidity Runway Forecast Studio">13W Runway</button>
             ${exportBtn('treasuryLoansPanel', 'Partner_Loans')}
             ${canEnterForm('treasury') ? '<button type="button" class="btn btn-primary" data-open-modal="treasury">+ Loan / Settlement</button>' : ''}

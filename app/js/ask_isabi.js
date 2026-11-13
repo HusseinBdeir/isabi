@@ -11769,6 +11769,20 @@
     return qaResult;
   }
 
+  // Owner 2026-11-13: a studio shortcut shows only on the pages it suits (same placement as the in-page buttons).
+  // Executive Overview and Dashboards keep all five.
+  const PAGE_GUIDE_STUDIO_VIEWS = {
+    whatif: ['overview', 'pbi'],
+    collection: ['overview', 'pbi', 'sales', 'customers', 'hld_due_matrix', 'hld_interactions', 'hsp_revenue', 'hsp_members', 'trd_receivables', 'trd_sales', 're_leases', 'ins_policies', 'ins_billing'],
+    payables: ['overview', 'pbi', 'expenses', 'recurring_expenses', 'suppliers', 'hld_due_matrix', 'hld_interactions'],
+    treasury: ['overview', 'pbi', 'cashflow', 'ledger_treasury', 'hld_due_matrix', 'hld_loans'],
+    inventory: ['overview', 'pbi', 'warehouse', 'warehouse_parts', 'hld_loans', 'hsp_stock', 'trd_stock', 're_properties', 're_workorders', 'ins_catalogue']
+  };
+  function pageGuideStudioFits(studio, viewId) {
+    const views = PAGE_GUIDE_STUDIO_VIEWS[studio];
+    return Boolean(views && views.includes(String(viewId || 'overview')));
+  }
+
   function openPageGuidePopover(anchorEl, prebuiltSummary, opts = {}) {
     if (typeof document === 'undefined') return null;
     ensureDailyBriefingI18nRegistered();
@@ -12007,11 +12021,11 @@
       <div class="ceo-pv-foot pg-pv-foot">
         <button type="button" class="ceo-pv-btn ${isSpeakingNow ? 'is-speaking' : ''}" id="pgListenBtn" data-pg-pv-speak="1" aria-pressed="${isSpeakingNow ? 'true' : 'false'}">${spkIco}<span>${esc(spkLbl)}</span></button>
         <button type="button" class="ceo-pv-btn" data-pg-next-tour="1"><span>Spotlight on Screen</span></button>
-        <button type="button" class="ceo-pv-btn" id="pgOpenWhatIfBtn" data-pg-open-whatif="1"><span>What-If Studio</span></button>
-        <button type="button" class="ceo-pv-btn" id="pgOpenCollectionForecastBtn" data-pg-open-collection="1"><span>Collection Forecast</span></button>
-        <button type="button" class="ceo-pv-btn" id="pgOpenPayablesOptimizerBtn" data-pg-open-payables="1"><span>Payables Optimizer</span></button>
-        <button type="button" class="ceo-pv-btn" id="pgOpenTreasuryForecastBtn" data-pg-open-treasury="1"><span>13W Runway</span></button>
-        <button type="button" class="ceo-pv-btn" id="pgOpenInventoryOptimizerBtn" data-pg-open-inventory="1"><span>Stock &amp; EOQ</span></button>
+        ${pageGuideStudioFits('whatif', sum.viewId) ? '<button type="button" class="ceo-pv-btn" id="pgOpenWhatIfBtn" data-pg-open-whatif="1"><span>What-If Studio</span></button>' : ''}
+        ${pageGuideStudioFits('collection', sum.viewId) ? '<button type="button" class="ceo-pv-btn" id="pgOpenCollectionForecastBtn" data-pg-open-collection="1"><span>Collection Forecast</span></button>' : ''}
+        ${pageGuideStudioFits('payables', sum.viewId) ? '<button type="button" class="ceo-pv-btn" id="pgOpenPayablesOptimizerBtn" data-pg-open-payables="1"><span>Payables Optimizer</span></button>' : ''}
+        ${pageGuideStudioFits('treasury', sum.viewId) ? '<button type="button" class="ceo-pv-btn" id="pgOpenTreasuryForecastBtn" data-pg-open-treasury="1"><span>13W Runway</span></button>' : ''}
+        ${pageGuideStudioFits('inventory', sum.viewId) ? '<button type="button" class="ceo-pv-btn" id="pgOpenInventoryOptimizerBtn" data-pg-open-inventory="1"><span>Stock &amp; EOQ</span></button>' : ''}
         <button type="button" class="ceo-pv-btn is-primary" data-pg-open-copilot="1">${icons ? icons.svg('sparkle') : AI_SVGS.sparkle}<span>Open in Full Copilot</span></button>
       </div>
     `;
