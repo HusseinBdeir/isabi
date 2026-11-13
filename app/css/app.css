@@ -4237,6 +4237,29 @@ td.td-has-sel-dot > .void-btn.row-void-hover { right: 22px; }
 .cf-till-start-strip > svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: var(--warn); }
 .cf-till-start-strip .cf-till-start-txt { min-width: 0; }
 .cf-till-start-strip .cf-till-sep { display: inline-block; margin: 0 6px; color: var(--muted); }
+/* Till on this day scrubber under the till cards (owner idea 2026-11-13) */
+.cf-till-scrub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: -4px 0 14px; padding: 8px 12px; background: var(--surface, var(--card)); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; color: var(--ink); }
+.cf-till-scrub .cf-till-scrub-lbl { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.cf-till-scrub .cf-till-scrub-lbl svg { width: 15px; height: 15px; color: var(--brass); flex-shrink: 0; }
+.cf-till-scrub .cf-till-scrub-edge { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cf-till-scrub .cf-till-scrub-range { --p: 100%; flex: 1 1 220px; min-width: 0; width: auto; height: 6px; margin: 8px 0; -webkit-appearance: none; appearance: none; border-radius: 999px; background: linear-gradient(to right, var(--brass) 0 var(--p), var(--line) var(--p) 100%); cursor: pointer; }
+html[dir="rtl"] .cf-till-scrub .cf-till-scrub-range { background: linear-gradient(to left, var(--brass) 0 var(--p), var(--line) var(--p) 100%); }
+.cf-till-scrub .cf-till-scrub-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--surface); border: 3px solid var(--brass); box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
+.cf-till-scrub .cf-till-scrub-range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 3px solid var(--brass); }
+.cf-till-scrub .cf-till-scrub-range:focus-visible { outline: 2px solid var(--brass); outline-offset: 4px; }
+.cf-till-scrub .cf-till-scrub-out { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+.cf-till-scrub .cf-till-scrub-out b.good { color: var(--good); }
+.cf-till-scrub .cf-till-scrub-out b.crit { color: var(--crit); }
+.cf-till-scrub .cf-till-scrub-reset { padding: 3px 10px; font-size: 11.5px; white-space: nowrap; }
+.cf-till-scrub .cf-till-scrub-reset[hidden] { display: none !important; }
+.cockpit-pill.cf-till-scrubbed .cockpit-pill-val { color: var(--brass); }
+.cockpit-pill.cf-till-sub-stale .cockpit-pill-sub { opacity: .45; }
+@media (max-width: 860px) {
+  .cf-till-scrub .cf-till-scrub-edge { display: none; }
+  .cf-till-scrub .cf-till-scrub-range { flex-basis: 100%; order: 2; }
+  .cf-till-scrub .cf-till-scrub-out { order: 3; }
+  .cf-till-scrub .cf-till-scrub-reset { order: 4; }
+}
 .app-pill { border-color: rgba(240, 144, 69, .55); }
 .mini-table-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 0 20px 16px; }
 .mini-table-grid .panel-card { margin: 0; }

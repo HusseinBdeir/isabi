@@ -3969,7 +3969,8 @@
     return 0;
   }
 
-  function computeCustomCashDeltas(coKey, range) {
+  // perDay (optional Map): collects each date's app-entry cash as [inU, outU, inL, outL] (till-on-this-day scrubber).
+  function computeCustomCashDeltas(coKey, range, perDay) {
     const allowed = allowedCompanyNames();
     const matchCo = r => matchesCashScopeCompany(r, coKey, allowed);
     const inWin = d => {
@@ -3989,6 +3990,12 @@
       liveInU += sIu; liveOutU += sOu; liveInL += sIl; liveOutL += sOl;
       if (inWin(dt)) { perInU += sIu; perOutU += sOu; perInL += sIl; perOutL += sOl; }
       if (upToEnd(dt)) { endNetU += (sIu - sOu); endNetL += (sIl - sOl); }
+      if (perDay) {
+        const dk = String(dt || '').slice(0, 10);
+        const cur = perDay.get(dk) || [0, 0, 0, 0];
+        cur[0] += sIu; cur[1] += sOu; cur[2] += sIl; cur[3] += sOl;
+        perDay.set(dk, cur);
+      }
     };
     forEachCashCustomDelta('sales_tickets', matchCo, (s, mult) => {
       if (isCashSaleTicket(s)) {
@@ -4185,6 +4192,51 @@
     k.cash_outflow = round2(ou + ol / rate);
     k.net_cash_flow = round2(nu + nl / rate);
     return k;
+  }
+
+  // Till on this day (owner idea 2026-11-13): the till at the close of each of the `days` days ending endIso, from the
+  // same sources as the dated till cards (applyCashFlowParityToKpi with a range ending that day): the daily till sheet
+  // up to that day plus the app cash entries up to that day. Null when the scope has no daily till sheet.
+  function computeTillDaySeries(rawKey, endIso, days = 90) {
+    const coKey = resolveEffectiveModelKey(rawKey);
+    const m = SEED.models[coKey] || {};
+    const cf = m.cash_flow_sheet;
+    if (!cf || !cf.live_till || !Array.isArray(cf.daily) || !cf.daily.length || !/^\d{4}-\d{2}-\d{2}$/.test(String(endIso || ''))) return null;
+    const rate = Number(cf.rate_lbp || 89500);
+    const perDay = new Map();
+    computeCustomCashDeltas(coKey, null, perDay);
+    const endMs = Date.parse(endIso + 'T00:00:00Z');
+    const dates = [];
+    for (let i = Math.max(1, days) - 1; i >= 0; i--) dates.push(new Date(endMs - i * 86400000).toISOString().slice(0, 10));
+    const start = dates[0];
+    let runU = 0, runL = 0;
+    const dayMoves = new Map();
+    const addDay = (d, iu, ou, il, ol) => {
+      // an undated app entry counts on every end date in the dated cards (computeCustomCashDeltas upToEnd): here too
+      if (!d || d < start) { runU += iu - ou; runL += il - ol; return; }
+      if (d > endIso) return;
+      const cur = dayMoves.get(d) || [0, 0, 0, 0];
+      cur[0] += iu; cur[1] += ou; cur[2] += il; cur[3] += ol;
+      dayMoves.set(d, cur);
+    };
+    for (let i = 0; i < cf.daily.length; i++) {
+      const row = cf.daily[i];
+      addDay(String(row[0] || '').slice(0, 10), Number(row[1] || 0), Number(row[2] || 0), Number(row[3] || 0), Number(row[4] || 0));
+    }
+    perDay.forEach((v, d) => addDay(d, v[0], v[1], v[2], v[3]));
+    const out = [];
+    for (let i = 0; i < dates.length; i++) {
+      const d = dates[i];
+      const mv = dayMoves.get(d) || [0, 0, 0, 0];
+      runU += mv[0] - mv[1];
+      runL += mv[2] - mv[3];
+      let usd = round2(runU);
+      let lbp = Math.round(runL);
+      if (Math.abs(usd) < 0.005) usd = 0;
+      if (Math.abs(lbp) <= 1) lbp = 0;
+      out.push({ date: d, usd, lbp, total: round2(usd + lbp / rate), in_usd: round2(mv[0]), out_usd: round2(mv[1]), in_lbp: Math.round(mv[2]), out_lbp: Math.round(mv[3]) });
+    }
+    return { rate, days: out };
   }
 
   function getKPI(coOverride) {
@@ -44186,6 +44238,51 @@
     return out;
   }
 
+  // Till on this day scrubber: series of the rendered Cash Flow page; the drag patches the three till cards in place.
+  let _cfTillScrub = null;
+  function applyCfTillScrub(idx) {
+    const sc = _cfTillScrub;
+    const rangeEl = $('cfTillScrubRange');
+    if (!sc || !rangeEl) return;
+    const i = Math.max(0, Math.min(sc.lastIdx, Math.round(Number(idx) || 0)));
+    const d = sc.days[i];
+    const atEnd = i === sc.lastIdx;
+    STATE.cfTillScrubDate = atEnd ? '' : d.date;
+    STATE.cfTillScrubKey = atEnd ? '' : sc.key;
+    const dateTxt = fmtDateDMY(d.date);
+    rangeEl.setAttribute('aria-valuetext', dateTxt);
+    rangeEl.style.setProperty('--p', `${((i / Math.max(1, sc.lastIdx)) * 100).toFixed(2)}%`);
+    const setTxt = (id, txt) => { const el = $(id); if (el) el.textContent = txt; };
+    setTxt('cfTillScrubDate', dateTxt);
+    setTxt('cfTillScrubIn', fmtUSD(d.in_usd, 2));
+    setTxt('cfTillScrubOut', fmtUSD(d.out_usd, 2));
+    const dayLbp = d.in_lbp - d.out_lbp;
+    setTxt('cfTillScrubLbp', Math.abs(dayLbp) > 1 ? fmtSignedLBP(dayLbp) : '0 LL');
+    const resetBtn = $('cfTillScrubReset');
+    if (resetBtn) resetBtn.hidden = atEnd;
+    const vals = [['cfTillValUsd', `${fmtUSD(d.usd, 2)} <small>USD</small>`], ['cfTillValLbp', `${fmtLBP(d.lbp)}`], ['cfTillValTot', `${fmtUSD(d.total, 2)} <small>TOTAL</small>`]];
+    vals.forEach(([id, html]) => {
+      const valEl = $(id);
+      if (!valEl) return;
+      const card = valEl.closest('.cockpit-pill');
+      if (valEl.dataset.cfScrubOrig == null) valEl.dataset.cfScrubOrig = valEl.innerHTML;
+      valEl.innerHTML = atEnd ? valEl.dataset.cfScrubOrig : html;
+      if (!card) return;
+      // The In / Out lines under the cards belong to the selected dates, not to the replayed day.
+      card.classList.toggle('cf-till-scrubbed', !atEnd);
+      card.classList.toggle('cf-till-sub-stale', !atEnd && id !== 'cfTillValTot');
+      const pill = card.querySelector('.cf-till-asof');
+      if (pill) {
+        if (pill.dataset.cfScrubOrig == null) pill.dataset.cfScrubOrig = pill.innerHTML;
+        pill.innerHTML = atEnd ? pill.dataset.cfScrubOrig : `<span data-no-i18n="1">${esc(dateTxt)}</span>`;
+      }
+      const totU = card.querySelector('.cf-till-tot-usd');
+      const totL = card.querySelector('.cf-till-tot-lbp');
+      if (totU) totU.textContent = fmtUSD(d.usd, 2);
+      if (totL) totL.textContent = fmtLBP(d.lbp);
+    });
+  }
+
   function renderCashFlowTill() {
     const u = activeUser();
     const m = getModel();
@@ -44213,8 +44310,8 @@
     const tillStartTip = 'The till is a running balance: it counts every cash entry from the first day up to the end date. The start date only filters the entries and the period cash flow.';
     const tillBadgeHtml = (fallbackTxt, fallbackCls) => {
       const main = tillAsOf
-        ? `<span class="cockpit-pill-tag ${esc(fallbackCls)}" data-ui-tip="Till balance at the end of this day"><span data-no-i18n="1">${esc(fmtDateDMY(tillAsOf))}</span></span>`
-        : `<span class="cockpit-pill-tag ${esc(fallbackCls)}">${esc(fallbackTxt)}</span>`;
+        ? `<span class="cockpit-pill-tag cf-till-asof ${esc(fallbackCls)}" data-ui-tip="Till balance at the end of this day"><span data-no-i18n="1">${esc(fmtDateDMY(tillAsOf))}</span></span>`
+        : `<span class="cockpit-pill-tag cf-till-asof ${esc(fallbackCls)}">${esc(fallbackTxt)}</span>`;
       const warn = tillStartSet
         ? `<span class="cockpit-pill-tag warn cf-till-warn-ic" role="img" data-ui-tip="${esc(tillStartTip)}" aria-label="${esc(tillStartTip)}">${ic('alert')}</span>`
         : '';
@@ -44225,6 +44322,40 @@
           ${ic('alert')}
           <span class="cf-till-start-txt"><b>Start Date Ignored by the Till</b><span class="cf-till-sep" aria-hidden="true">·</span>${tillAsOf ? `<span>Till balance at</span> <b data-no-i18n="1">${esc(fmtDateDMY(tillAsOf))}</b>` : '<span>Till balance today</span>'}<span class="cf-till-sep" aria-hidden="true">·</span><span>The till counts every cash entry from the first day, so the start date only filters the entries and the period cash flow.</span></span>
         </div>` : '';
+    // Till on this day (owner idea 2026-11-13): drag across the 90 days ending on the date the cards show and the USD,
+    // LBP and Combined cards replay the till at the close of each day (same figures as picking that day as the end
+    // date). Manufacturing scopes with a daily till sheet only; the drag patches the three cards in place.
+    const tillScrubEnd = tillAsOf || todayISO();
+    const tillScrubSeries = (tillIsMfg && !isOfficialScopeActive(u)) ? computeTillDaySeries(STATE.company, tillScrubEnd, 90) : null;
+    _cfTillScrub = null;
+    let tillScrubHtml = '';
+    if (tillScrubSeries && tillScrubSeries.days.length > 1) {
+      const sDays = tillScrubSeries.days;
+      const lastIdx = sDays.length - 1;
+      // The last stop is the date the cards already show: use their figures (the live till on today or later).
+      sDays[lastIdx] = Object.assign({}, sDays[lastIdx], { usd: round2(tillUsd), lbp: Math.round(tillLbp), total: round2(tillTot) });
+      // A picked day survives a re-render (sync, save) of the same company and end date only; picking new dates or
+      // another company shows that choice on the cards again.
+      const scrubKey = `${STATE.company}|${STATE.period}|${tillRange ? `${tillRange.from || ''}..${tillRange.to || ''}` : 'all'}|${tillScrubEnd}`;
+      _cfTillScrub = { days: sDays, rate, lastIdx, key: scrubKey };
+      const keepIdx = (STATE.cfTillScrubDate && STATE.cfTillScrubKey === scrubKey) ? sDays.findIndex(dd => dd.date === STATE.cfTillScrubDate) : -1;
+      const startIdx = keepIdx >= 0 ? keepIdx : lastIdx;
+      const sd = sDays[startIdx];
+      tillScrubHtml = `
+        <div class="cf-till-scrub" id="cfTillScrub" role="group" aria-label="Till on This Day">
+          <span class="cf-till-scrub-lbl">${ic('calendar')}<b>Till on This Day</b></span>
+          <span class="cf-till-scrub-edge" data-no-i18n="1">${esc(fmtDateDMY(sDays[0].date))}</span>
+          <input type="range" class="cf-till-scrub-range" id="cfTillScrubRange" min="0" max="${lastIdx}" step="1" value="${startIdx}" style="--p:${((startIdx / lastIdx) * 100).toFixed(2)}%" aria-label="Till on This Day" aria-valuetext="${esc(fmtDateDMY(sd.date))}" data-ui-tip="Drag to replay the till day by day">
+          <span class="cf-till-scrub-edge" data-no-i18n="1">${esc(fmtDateDMY(sDays[lastIdx].date))}</span>
+          <span class="cf-till-scrub-out" aria-live="polite">
+            <b class="cf-till-scrub-date" id="cfTillScrubDate" data-no-i18n="1">${esc(fmtDateDMY(sd.date))}</b>
+            <span><span>In</span> <b class="good" id="cfTillScrubIn" data-no-i18n="1">${fmtUSD(sd.in_usd, 2)}</b></span>
+            <span><span>Out</span> <b class="crit" id="cfTillScrubOut" data-no-i18n="1">${fmtUSD(sd.out_usd, 2)}</b></span>
+            <span><span>LBP</span> <b id="cfTillScrubLbp" data-no-i18n="1">${Math.abs(sd.in_lbp - sd.out_lbp) > 1 ? fmtSignedLBP(sd.in_lbp - sd.out_lbp) : '0 LL'}</b></span>
+          </span>
+          <button type="button" class="btn cf-till-scrub-reset" id="cfTillScrubReset"${startIdx === lastIdx ? ' hidden' : ''}>Reset</button>
+        </div>`;
+    }
     const q = STATE.search.trim().toLowerCase();
     const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
 
@@ -44553,6 +44684,7 @@
             badgeHtml: tillBadgeHtml(Math.abs(tillUsd) < 0.005 ? 'Balanced $0' : 'Live Drawer', 'emerald'),
             val: `${fmtUSD(tillUsd, 2)} <small>USD</small>`,
             valCls: 'emerald',
+            id: 'cfTillValUsd',
             pct: 100,
             sub: tillDated
               ? `${tillStartSet ? `Opening <b>${fmtUSDk(tillOpenUsd)}</b> · ` : ''}In <b>${fmtUSDk(k.cash_in_usd)}</b> · Out <b>${fmtUSDk(k.cash_out_usd)}</b>`
@@ -44564,6 +44696,7 @@
             badgeHtml: tillBadgeHtml(Math.abs(tillLbp) <= 1 ? 'Balanced 0 LL' : 'Pounds', 'emerald'),
             val: `${fmtLBP(tillLbp)}`,
             valCls: 'emerald',
+            id: 'cfTillValLbp',
             pct: 100,
             sub: tillDated
               ? `${tillStartSet ? `Opening <b>${fmtLBPk(tillOpenLbp)}</b> · ` : ''}In <b>${fmtLBPk(k.cash_in_lbp)}</b> · Out <b>${fmtLBPk(k.cash_out_lbp)}</b>`
@@ -44575,7 +44708,8 @@
             badgeHtml: tillBadgeHtml(`@ ${fmtNum(rate, 0)} LL/$`, 'brass'),
             val: `${fmtUSD(tillTot, 2)} <small>TOTAL</small>`,
             valCls: 'brass',
-            sub: `USD <b>${fmtUSD(tillUsd, 2)}</b> + LBP <b>${fmtLBP(tillLbp)}</b> ÷ ${fmtNum(rate, 0)}`,
+            id: 'cfTillValTot',
+            sub: `USD <b class="cf-till-tot-usd" data-no-i18n="1">${fmtUSD(tillUsd, 2)}</b> + LBP <b class="cf-till-tot-lbp" data-no-i18n="1">${fmtLBP(tillLbp)}</b> ÷ ${fmtNum(rate, 0)}`,
             tone: 'brass'
           })}
           ${insightCard({
@@ -44587,6 +44721,7 @@
           })}
         </div>
       </div>
+      ${tillScrubHtml}
       ${tillStartStripHtml}
 
       <div class="panel-card" id="tillRecentPanel" style="margin-bottom:14px">
@@ -58716,6 +58851,16 @@
       cash_out_usd: cashOut,
       net_cash_usd: cashTill,
       net_cash_lbp: 0,
+      // nor the borrowed Manufacturing In / Out (till cards, Selected Period card): this industry's own figures
+      live_in_usd: cashIn,
+      live_out_usd: cashOut,
+      live_in_lbp: 0,
+      live_out_lbp: 0,
+      cash_in_lbp: 0,
+      cash_out_lbp: 0,
+      cash_inflow: cashIn,
+      cash_outflow: cashOut,
+      net_cash_flow: round2(cashIn - cashOut),
       tb_check: 0,
       rate_lbp: 89500
     });
@@ -134368,6 +134513,17 @@
       });
     }
 
+    const cfTillScrubEl = container.querySelector('#cfTillScrubRange');
+    if (cfTillScrubEl) {
+      cfTillScrubEl.addEventListener('input', () => applyCfTillScrub(cfTillScrubEl.value));
+      if (Number(cfTillScrubEl.value) !== Number(cfTillScrubEl.max)) applyCfTillScrub(cfTillScrubEl.value);
+      const cfTillScrubReset = container.querySelector('#cfTillScrubReset');
+      if (cfTillScrubReset) cfTillScrubReset.addEventListener('click', () => {
+        cfTillScrubEl.value = cfTillScrubEl.max;
+        applyCfTillScrub(cfTillScrubEl.max);
+        cfTillScrubEl.focus({ preventScroll: true });
+      });
+    }
     container.querySelectorAll('[data-cf-mode]').forEach(btn => btn.addEventListener('click', () => {
       const nextMode = btn.getAttribute('data-cf-mode') || 'entries';
       if (STATE.cfEntryMode !== nextMode) {

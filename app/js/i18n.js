@@ -10783,7 +10783,9 @@
       "Overpaid": "مدفوع بالزيادة",
       "Paid Another Way": "مدفوع بطريقة أخرى",
       "Record voided, with the back-pay rows of this salary voucher": "أُلغي القيد مع أسطر المستحقات بأثر رجعي في سند الراتب هذا",
-      "Record restored, with the back-pay rows of this salary voucher": "استُعيد القيد مع أسطر المستحقات بأثر رجعي في سند الراتب هذا"
+      "Record restored, with the back-pay rows of this salary voucher": "استُعيد القيد مع أسطر المستحقات بأثر رجعي في سند الراتب هذا",
+      "Till on This Day": "الصندوق في هذا اليوم",
+      "Drag to replay the till day by day": "اسحب لاستعراض رصيد الصندوق يوماً بيوم"
     },
     fr: {
       "Shift Windows Across the Day": "Plages horaires des postes sur la journée",
@@ -21548,7 +21550,9 @@
       "Overpaid": "Trop-perçu",
       "Paid Another Way": "Payé autrement",
       "Record voided, with the back-pay rows of this salary voucher": "Écriture annulée, avec les lignes de rappel de ce bon de salaire",
-      "Record restored, with the back-pay rows of this salary voucher": "Écriture rétablie, avec les lignes de rappel de ce bon de salaire"
+      "Record restored, with the back-pay rows of this salary voucher": "Écriture rétablie, avec les lignes de rappel de ce bon de salaire",
+      "Till on This Day": "Caisse à cette date",
+      "Drag to replay the till day by day": "Faites glisser pour rejouer la caisse jour par jour"
     }
   };
 
