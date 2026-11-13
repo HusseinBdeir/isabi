@@ -324,6 +324,7 @@
     cfEntryMode: 'entries',
     cfBridgeMode: 'streams',
     cfFocusDate: '',
+    cfFocusDateFromScrub: false,
     cfFocusYm: '',
     cfFocusParty: '',
     cfChartGrain: 'monthly',
@@ -4105,6 +4106,10 @@
     return { liveInU, liveOutU, liveInL, liveOutL, perInU, perOutU, perInL, perOutL, endNetU, endNetL };
   }
 
+  // Workbook FX conversions accumulate tiny +/- 1-5 LL rounding dust ($0.000056); treat <= 5 LL as zero so
+  // daily cumulative balances and live balances do not jump between 0 LL and +2 LL across adjacent days.
+  const CF_LBP_DUST = 5;
+
   function applyCashFlowParityToKpi(k, m, range, coKey) {
     const cf = m && m.cash_flow_sheet;
     if (!cf || !cf.live_till) return k;
@@ -4116,7 +4121,7 @@
     let liveU = round2(Number(lt.usd || 0) + (cd.liveInU - cd.liveOutU));
     let liveL = Math.round(Number(lt.lbp || 0) + (cd.liveInL - cd.liveOutL));
     if (Math.abs(liveU) < 0.005) liveU = 0;
-    if (Math.abs(liveL) <= 1) liveL = 0;
+    if (Math.abs(liveL) <= CF_LBP_DUST) liveL = 0;
 
     let iu = 0, ou = 0, il = 0, ol = 0, perTillU = liveU, perTillL = liveL;
     if (!range) {
@@ -4181,7 +4186,7 @@
     if (Math.abs(nu) < 0.005) nu = 0;
     if (Math.abs(nl) <= 1) nl = 0;
     if (Math.abs(perTillU) < 0.005) perTillU = 0;
-    if (Math.abs(perTillL) <= 1) perTillL = 0;
+    if (Math.abs(perTillL) <= CF_LBP_DUST) perTillL = 0;
 
     k.rate_lbp = rate;
     k.cash_till_usd = liveU;
@@ -4245,7 +4250,7 @@
       let usd = round2(runU);
       let lbp = Math.round(runL);
       if (Math.abs(usd) < 0.005) usd = 0;
-      if (Math.abs(lbp) <= 1) lbp = 0;
+      if (Math.abs(lbp) <= CF_LBP_DUST) lbp = 0;
       out.push({ date: d, usd, lbp, total: round2(usd + lbp / rate), in_usd: round2(mv[0]), out_usd: round2(mv[1]), in_lbp: Math.round(mv[2]), out_lbp: Math.round(mv[3]) });
     }
     return { rate, days: out };
@@ -45638,11 +45643,48 @@
 
   // Till on this day scrubber: series of the rendered Cash Flow page; the drag patches the three till cards in place.
   let _cfTillScrub = null;
+  let _cfTillScrubDragging = false;
+  let _cfTillScrubLangHooked = false;
+  function cfTrText(s) {
+    return (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(s) : s;
+  }
+  let _cfTillScrubFlushTmr = null;
+  function ensureCfTillScrubGlobalListeners() {
+    if (_cfTillScrubLangHooked) return;
+    _cfTillScrubLangHooked = true;
+    const endDrag = () => {
+      if (!_cfTillScrubDragging) return;
+      _cfTillScrubDragging = false;
+      if (STATE.renderPending) {
+        STATE.renderPending = false;
+        safeRender();
+        if (STATE.renderPending && !_cfTillScrubFlushTmr) {
+          _cfTillScrubFlushTmr = setTimeout(() => {
+            _cfTillScrubFlushTmr = null;
+            if (!_cfTillScrubDragging && STATE.renderPending) {
+              STATE.renderPending = false;
+              safeRender();
+            }
+          }, 420);
+        }
+      }
+    };
+    window.addEventListener('pointerup', endDrag, true);
+    window.addEventListener('pointercancel', endDrag, true);
+    window.addEventListener('mouseup', endDrag, true);
+    window.addEventListener('touchend', endDrag, true);
+    window.addEventListener('blur', endDrag, true);
+    window.addEventListener('mfg:lang-changed', () => {
+      const rangeEl = $('cfTillScrubRange');
+      if (_cfTillScrub && rangeEl) applyCfTillScrub(rangeEl.value);
+    });
+  }
   function applyCfTillScrub(idx) {
     const sc = _cfTillScrub;
     const rangeEl = $('cfTillScrubRange');
     if (!sc || !rangeEl) return;
     const i = Math.max(0, Math.min(sc.lastIdx, Math.round(Number(idx) || 0)));
+    if (String(rangeEl.value) !== String(i)) rangeEl.value = String(i);
     const d = sc.days[i];
     const atEnd = i === sc.lastIdx;
     STATE.cfTillScrubDate = atEnd ? '' : d.date;
@@ -45650,34 +45692,85 @@
     const dateTxt = fmtDateDMY(d.date);
     rangeEl.setAttribute('aria-valuetext', dateTxt);
     rangeEl.style.setProperty('--p', `${((i / Math.max(1, sc.lastIdx)) * 100).toFixed(2)}%`);
+    const prevBtn = $('cfTillScrubPrev');
+    const nextBtn = $('cfTillScrubNext');
+    if (prevBtn) prevBtn.disabled = i <= 0;
+    if (nextBtn) nextBtn.disabled = i >= sc.lastIdx;
     const setTxt = (id, txt) => { const el = $(id); if (el) el.textContent = txt; };
     setTxt('cfTillScrubDate', dateTxt);
+    setTxt('cfTillScrubUsd', fmtUSD(d.usd, 2));
     setTxt('cfTillScrubIn', fmtUSD(d.in_usd, 2));
     setTxt('cfTillScrubOut', fmtUSD(d.out_usd, 2));
     const dayLbp = d.in_lbp - d.out_lbp;
     setTxt('cfTillScrubLbp', Math.abs(dayLbp) > 1 ? fmtSignedLBP(dayLbp) : '0 LL');
+    const dayBtn = $('cfTillScrubDayBtn');
+    if (dayBtn) {
+      const isFocused = (STATE.cfFocusDate || '') === d.date;
+      dayBtn.classList.toggle('active', isFocused);
+      dayBtn.setAttribute('aria-pressed', isFocused ? 'true' : 'false');
+      dayBtn.textContent = cfTrText(isFocused ? 'Showing Day' : 'Day Entries');
+    }
     const resetBtn = $('cfTillScrubReset');
-    if (resetBtn) resetBtn.hidden = atEnd;
-    const vals = [['cfTillValUsd', `${fmtUSD(d.usd, 2)} <small>USD</small>`], ['cfTillValLbp', `${fmtLBP(d.lbp)}`], ['cfTillValTot', `${fmtUSD(d.total, 2)} <small>TOTAL</small>`]];
-    vals.forEach(([id, html]) => {
-      const valEl = $(id);
+    if (resetBtn) resetBtn.hidden = atEnd && !(STATE.cfFocusDateFromScrub && STATE.cfFocusDate);
+    const meta = sc.atEndMeta || { tillUsd: d.usd, tillLbp: d.lbp, tillTot: d.total, rate: sc.rate, tillAsOf: '' };
+    const cardSpecs = [
+      { id: 'cfTillValUsd', num: fmtUSD(d.usd, 2), unitKey: 'USD', restHtml: () => `${fmtUSD(meta.tillUsd, 2)} <small>${esc(cfTrText('USD'))}</small>`, pillRestHtml: () => meta.tillAsOf ? `<span data-no-i18n="1">${esc(fmtDateDMY(meta.tillAsOf))}</span>` : esc(cfTrText(Math.abs(meta.tillUsd) < 0.005 ? 'Balanced $0' : 'Live Drawer')) },
+      { id: 'cfTillValLbp', num: fmtLBP(d.lbp), unitKey: '', restHtml: () => `${fmtLBP(meta.tillLbp)}`, pillRestHtml: () => meta.tillAsOf ? `<span data-no-i18n="1">${esc(fmtDateDMY(meta.tillAsOf))}</span>` : esc(cfTrText(Math.abs(meta.tillLbp) <= CF_LBP_DUST ? 'Balanced 0 LL' : 'Pounds')) },
+      { id: 'cfTillValTot', num: fmtUSD(d.total, 2), unitKey: 'TOTAL', restHtml: () => `${fmtUSD(meta.tillTot, 2)} <small>${esc(cfTrText('TOTAL'))}</small>`, pillRestHtml: () => meta.tillAsOf ? `<span data-no-i18n="1">${esc(fmtDateDMY(meta.tillAsOf))}</span>` : `@ ${fmtNum(meta.rate, 0)} LL/$` }
+    ];
+    cardSpecs.forEach(spec => {
+      const valEl = $(spec.id);
       if (!valEl) return;
       const card = valEl.closest('.cockpit-pill');
-      if (valEl.dataset.cfScrubOrig == null) valEl.dataset.cfScrubOrig = valEl.innerHTML;
-      valEl.innerHTML = atEnd ? valEl.dataset.cfScrubOrig : html;
+      if (atEnd) {
+        valEl.innerHTML = spec.restHtml();
+        delete valEl.dataset.cfScrubNum;
+      } else {
+        if (valEl.dataset.cfScrubNum !== '1') {
+          valEl.innerHTML = spec.unitKey
+            ? `<span class="cf-scrub-num" data-no-i18n="1"></span> <small data-cf-scrub-unit="${esc(spec.unitKey)}"></small>`
+            : `<span class="cf-scrub-num" data-no-i18n="1"></span>`;
+          valEl.dataset.cfScrubNum = '1';
+        }
+        const numSpan = valEl.querySelector('.cf-scrub-num');
+        if (numSpan) numSpan.textContent = spec.num;
+        const unitEl = valEl.querySelector('[data-cf-scrub-unit]');
+        if (unitEl) {
+          const wantUnit = cfTrText(spec.unitKey);
+          if (unitEl.textContent !== wantUnit) unitEl.textContent = wantUnit;
+        }
+      }
       if (!card) return;
       // The In / Out lines under the cards belong to the selected dates, not to the replayed day.
       card.classList.toggle('cf-till-scrubbed', !atEnd);
-      card.classList.toggle('cf-till-sub-stale', !atEnd && id !== 'cfTillValTot');
+      card.classList.toggle('cf-till-sub-stale', !atEnd && spec.id !== 'cfTillValTot');
       const pill = card.querySelector('.cf-till-asof');
       if (pill) {
-        if (pill.dataset.cfScrubOrig == null) pill.dataset.cfScrubOrig = pill.innerHTML;
-        pill.innerHTML = atEnd ? pill.dataset.cfScrubOrig : `<span data-no-i18n="1">${esc(dateTxt)}</span>`;
+        if (atEnd) {
+          pill.innerHTML = spec.pillRestHtml();
+          delete pill.dataset.cfScrubNum;
+        } else {
+          if (pill.dataset.cfScrubNum !== '1') {
+            pill.innerHTML = '<span class="cf-scrub-pill-date" data-no-i18n="1"></span>';
+            pill.dataset.cfScrubNum = '1';
+          }
+          const pillSpan = pill.querySelector('.cf-scrub-pill-date');
+          if (pillSpan) pillSpan.textContent = dateTxt;
+        }
       }
       const totU = card.querySelector('.cf-till-tot-usd');
       const totL = card.querySelector('.cf-till-tot-lbp');
       if (totU) totU.textContent = fmtUSD(d.usd, 2);
       if (totL) totL.textContent = fmtLBP(d.lbp);
+    });
+    // Keep the single-entity strip consistent with the top till cards while scrubbed.
+    const singleSpecs = [['usd', fmtUSD(d.usd, 2)], ['lbp', fmtLBP(d.lbp)], ['tot', fmtUSD(d.total, 2)]];
+    singleSpecs.forEach(([key, txt]) => {
+      const el = document.querySelector(`.sales-recon-single [data-cf-single-till="${key}"]`);
+      if (!el) return;
+      if (el.dataset.cfScrubOrig == null) el.dataset.cfScrubOrig = el.textContent;
+      el.textContent = atEnd ? el.dataset.cfScrubOrig : txt;
+      el.classList.toggle('cf-till-scrubbed', !atEnd);
     });
   }
 
@@ -45735,23 +45828,36 @@
       // A picked day survives a re-render (sync, save) of the same company and end date only; picking new dates or
       // another company shows that choice on the cards again.
       const scrubKey = `${STATE.company}|${STATE.period}|${tillRange ? `${tillRange.from || ''}..${tillRange.to || ''}` : 'all'}|${tillScrubEnd}`;
-      _cfTillScrub = { days: sDays, rate, lastIdx, key: scrubKey };
+      _cfTillScrub = { days: sDays, rate, lastIdx, key: scrubKey, atEndMeta: { tillUsd, tillLbp, tillTot, rate, tillAsOf } };
       const keepIdx = (STATE.cfTillScrubDate && STATE.cfTillScrubKey === scrubKey) ? sDays.findIndex(dd => dd.date === STATE.cfTillScrubDate) : -1;
       const startIdx = keepIdx >= 0 ? keepIdx : lastIdx;
       const sd = sDays[startIdx];
+      const dayFocused = (STATE.cfFocusDate || '') === sd.date;
       tillScrubHtml = `
         <div class="cf-till-scrub" id="cfTillScrub" role="group" aria-label="Till on This Day">
-          <span class="cf-till-scrub-lbl">${ic('calendar')}<b>Till on This Day</b></span>
-          <span class="cf-till-scrub-edge" data-no-i18n="1">${esc(fmtDateDMY(sDays[0].date))}</span>
-          <input type="range" class="cf-till-scrub-range" id="cfTillScrubRange" min="0" max="${lastIdx}" step="1" value="${startIdx}" style="--p:${((startIdx / lastIdx) * 100).toFixed(2)}%" aria-label="Till on This Day" aria-valuetext="${esc(fmtDateDMY(sd.date))}" data-ui-tip="Drag to replay the till day by day">
-          <span class="cf-till-scrub-edge" data-no-i18n="1">${esc(fmtDateDMY(sDays[lastIdx].date))}</span>
-          <span class="cf-till-scrub-out" aria-live="polite">
-            <b class="cf-till-scrub-date" id="cfTillScrubDate" data-no-i18n="1">${esc(fmtDateDMY(sd.date))}</b>
-            <span><span>In</span> <b class="good" id="cfTillScrubIn" data-no-i18n="1">${fmtUSD(sd.in_usd, 2)}</b></span>
-            <span><span>Out</span> <b class="crit" id="cfTillScrubOut" data-no-i18n="1">${fmtUSD(sd.out_usd, 2)}</b></span>
-            <span><span>LBP</span> <b id="cfTillScrubLbp" data-no-i18n="1">${Math.abs(sd.in_lbp - sd.out_lbp) > 1 ? fmtSignedLBP(sd.in_lbp - sd.out_lbp) : '0 LL'}</b></span>
-          </span>
-          <button type="button" class="btn cf-till-scrub-reset" id="cfTillScrubReset"${startIdx === lastIdx ? ' hidden' : ''}>Reset</button>
+          <div class="cf-till-scrub-top">
+            <span class="cf-till-scrub-lbl">${ic('calendar')}<b>Till on This Day</b></span>
+            <div class="cf-till-scrub-track">
+              <button type="button" class="btn cf-till-scrub-step" id="cfTillScrubPrev" aria-label="Previous day"${startIdx <= 0 ? ' disabled' : ''}><span data-no-i18n="1">&#x2039;</span></button>
+              <span class="cf-till-scrub-edge" data-no-i18n="1">${esc(fmtDateDMY(sDays[0].date))}</span>
+              <input type="range" class="cf-till-scrub-range" id="cfTillScrubRange" min="0" max="${lastIdx}" step="1" value="${startIdx}" style="--p:${((startIdx / lastIdx) * 100).toFixed(2)}%" aria-label="Till on This Day" aria-valuetext="${esc(fmtDateDMY(sd.date))}" data-ui-tip="Drag to replay the till day by day">
+              <span class="cf-till-scrub-edge" data-no-i18n="1">${esc(fmtDateDMY(sDays[lastIdx].date))}</span>
+              <button type="button" class="btn cf-till-scrub-step" id="cfTillScrubNext" aria-label="Next day"${startIdx >= lastIdx ? ' disabled' : ''}><span data-no-i18n="1">&#x203A;</span></button>
+            </div>
+          </div>
+          <div class="cf-till-scrub-bar">
+            <span class="cf-till-scrub-out" aria-live="polite">
+              <b class="cf-till-scrub-date" id="cfTillScrubDate" data-no-i18n="1">${esc(fmtDateDMY(sd.date))}</b>
+              <span class="cf-till-scrub-kv"><span>Till</span> <b id="cfTillScrubUsd" data-no-i18n="1">${fmtUSD(sd.usd, 2)}</b></span>
+              <span class="cf-till-scrub-kv"><span>In</span> <b class="good" id="cfTillScrubIn" data-no-i18n="1">${fmtUSD(sd.in_usd, 2)}</b></span>
+              <span class="cf-till-scrub-kv"><span>Out</span> <b class="crit" id="cfTillScrubOut" data-no-i18n="1">${fmtUSD(sd.out_usd, 2)}</b></span>
+              <span class="cf-till-scrub-kv"><span>LBP</span> <b id="cfTillScrubLbp" data-no-i18n="1">${Math.abs(sd.in_lbp - sd.out_lbp) > 1 ? fmtSignedLBP(sd.in_lbp - sd.out_lbp) : '0 LL'}</b></span>
+            </span>
+            <span class="cf-till-scrub-acts">
+              <button type="button" class="btn cf-till-scrub-daybtn${dayFocused ? ' active' : ''}" id="cfTillScrubDayBtn" aria-pressed="${dayFocused ? 'true' : 'false'}">${dayFocused ? 'Showing Day' : 'Day Entries'}</button>
+              <button type="button" class="btn cf-till-scrub-reset" id="cfTillScrubReset"${(startIdx === lastIdx && !(STATE.cfFocusDateFromScrub && STATE.cfFocusDate)) ? ' hidden' : ''}>Reset</button>
+            </span>
+          </div>
         </div>`;
     }
     // Other industries without a whole cash book yet (siblingCashBook, owner 2026-11-13): no till balance anywhere. The
@@ -46130,7 +46236,7 @@
           })}
           ${insightCard({
             label: 'LBP Cash Till (LL)',
-            badgeHtml: tillBadgeHtml(Math.abs(tillLbp) <= 1 ? 'Balanced 0 LL' : 'Pounds', 'emerald'),
+            badgeHtml: tillBadgeHtml(Math.abs(tillLbp) <= CF_LBP_DUST ? 'Balanced 0 LL' : 'Pounds', 'emerald'),
             val: `${fmtLBP(tillLbp)}`,
             valCls: 'emerald',
             id: 'cfTillValLbp',
@@ -46271,9 +46377,9 @@
               <button type="button" class="btn sales-recon-reset" data-jump-co="${esc(activeIndCf === 'Manufacturing' ? 'manufacturing-group' : ('industry:' + activeIndCf))}">Show All ${esc(activeIndCf === 'Manufacturing' ? 'Group' : activeIndCf)} (${indCosCf.length})</button>
             </div>
             <div class="sales-recon-metrics">
-              ${sibTillOff ? '<span data-no-recon-sub="1"><small>Till</small><b>Not Tracked Yet</b></span>' : `<span><small>USD Till ($)</small><b>${fmtUSD(tillUsd, 2)}</b></span>
-              <span><small>LBP Till (LL)</small><b>${fmtLBP(tillLbp)}</b></span>
-              <span><small>Combined Till</small><b class="brass">${fmtUSD(tillTot, 2)}</b></span>`}
+              ${sibTillOff ? '<span data-no-recon-sub="1"><small>Till</small><b>Not Tracked Yet</b></span>' : `<span><small>USD Till ($)</small><b data-cf-single-till="usd">${fmtUSD(tillUsd, 2)}</b></span>
+              <span><small>LBP Till (LL)</small><b data-cf-single-till="lbp">${fmtLBP(tillLbp)}</b></span>
+              <span><small>Combined Till</small><b class="brass" data-cf-single-till="tot">${fmtUSD(tillTot, 2)}</b></span>`}
               <span><small>Cash In ($)</small><b class="good">+${fmtUSD(isDailyMode ? dyInUsd : mvInUsd, 2)}</b></span>
               <span><small>Cash Out ($)</small><b class="crit">-${fmtUSD(isDailyMode ? dyOutUsd : mvOutUsd, 2)}</b></span>
               <span><small>Net Cash ($)</small><b>${fmtSignedUSD(isDailyMode ? dyNetUsd : mvUsdSum, 2)}</b></span>
@@ -112768,7 +112874,7 @@
   let lastPointerDownAt = 0;
 
   function uiBusy() {
-    if (Date.now() - lastPointerDownAt < 400) return true;
+    if (_cfTillScrubDragging || Date.now() - lastPointerDownAt < 400) return true;
     const m = $('entryModal');
     if (m && !m.hidden) return true;
     const ins = $('recordInspector');
@@ -112779,7 +112885,7 @@
     if ((STATE.view === 'users' && STATE.userFormDirty) || FACE_STATE.enrolCamActive || KIOSK_ATT_STATE.camActive || KIOSK_ATT_STATE.camStarting || STAFF_FACE_MODAL_STATE.camActive) return true;
     if (document.querySelector('.pa-suggest-wrap.open, .rdl-combo.open, #companySwitch.open, #nuCompanySelector.open')) return true;
     const a = document.activeElement;
-    return !!(a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName) && a.id !== 'aiInput');
+    return !!(a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName) && a.id !== 'aiInput' && a.id !== 'cfTillScrubRange');
   }
   function safeRender() {
     if (uiBusy()) { STATE.renderPending = true; return; }
@@ -119379,6 +119485,10 @@
     STATE.company = DEMO_COMPANY_KEY;
     STATE.demoCompanyIndustry = indId;
     if (!prevDemo) syncDemoScopeDataState();
+    STATE.cfTillScrubDate = '';
+    STATE.cfTillScrubKey = '';
+    STATE.cfFocusDate = '';
+    STATE.cfFocusDateFromScrub = false;
     STATE.shown = {};
     STATE.pbiTablePage = {};
     let nextView = resolveIndustryCompatibleView(STATE.view, indId);
@@ -119432,6 +119542,12 @@
     const nextDemo = isDemoScopeActive();
     if (prevDemo !== nextDemo) {
       syncDemoScopeDataState();
+    }
+    if (prevCompany !== coKey) {
+      STATE.cfTillScrubDate = '';
+      STATE.cfTillScrubKey = '';
+      STATE.cfFocusDate = '';
+      STATE.cfFocusDateFromScrub = false;
     }
     STATE.shown = {};
     STATE.pbiTablePage = {};
@@ -140288,10 +140404,53 @@
 
     const cfTillScrubEl = container.querySelector('#cfTillScrubRange');
     if (cfTillScrubEl) {
+      ensureCfTillScrubGlobalListeners();
+      const startScrubDrag = () => { _cfTillScrubDragging = true; };
+      cfTillScrubEl.addEventListener('pointerdown', startScrubDrag);
+      cfTillScrubEl.addEventListener('mousedown', startScrubDrag);
+      cfTillScrubEl.addEventListener('touchstart', startScrubDrag, { passive: true });
       cfTillScrubEl.addEventListener('input', () => applyCfTillScrub(cfTillScrubEl.value));
       if (Number(cfTillScrubEl.value) !== Number(cfTillScrubEl.max)) applyCfTillScrub(cfTillScrubEl.value);
+      const cfTillScrubPrev = container.querySelector('#cfTillScrubPrev');
+      if (cfTillScrubPrev) cfTillScrubPrev.addEventListener('click', () => {
+        applyCfTillScrub(Number(cfTillScrubEl.value) - 1);
+      });
+      const cfTillScrubNext = container.querySelector('#cfTillScrubNext');
+      if (cfTillScrubNext) cfTillScrubNext.addEventListener('click', () => {
+        applyCfTillScrub(Number(cfTillScrubEl.value) + 1);
+      });
+      const cfTillScrubDayBtn = container.querySelector('#cfTillScrubDayBtn');
+      if (cfTillScrubDayBtn) cfTillScrubDayBtn.addEventListener('click', () => {
+        const sc = _cfTillScrub;
+        const idxNow = sc ? Math.max(0, Math.min(sc.lastIdx, Math.round(Number(cfTillScrubEl.value) || 0))) : 0;
+        const dNow = sc && sc.days[idxNow];
+        if (!dNow) return;
+        const nextFocus = (STATE.cfFocusDate === dNow.date) ? '' : dNow.date;
+        STATE.cfFocusDate = nextFocus;
+        STATE.cfFocusDateFromScrub = Boolean(nextFocus);
+        STATE.cfFocusYm = '';
+        if (nextFocus) STATE.cfEntryMode = 'entries';
+        if (String(STATE.chipFilter || '').startsWith('cf_day_')) STATE.chipFilter = 'all';
+        STATE.shown = {};
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+      });
       const cfTillScrubReset = container.querySelector('#cfTillScrubReset');
       if (cfTillScrubReset) cfTillScrubReset.addEventListener('click', () => {
+        if (STATE.cfFocusDateFromScrub && STATE.cfFocusDate) {
+          STATE.cfFocusDate = '';
+          STATE.cfFocusDateFromScrub = false;
+          STATE.cfTillScrubDate = '';
+          STATE.cfTillScrubKey = '';
+          STATE.shown = {};
+          const ws = $('workspace');
+          const y = ws ? ws.scrollTop : 0;
+          renderApp();
+          if (ws) ws.scrollTop = y;
+          return;
+        }
         cfTillScrubEl.value = cfTillScrubEl.max;
         applyCfTillScrub(cfTillScrubEl.max);
         cfTillScrubEl.focus({ preventScroll: true });
@@ -140414,6 +140573,7 @@
       ev.stopPropagation();
       const dt = el.getAttribute('data-cf-focus-date') || '';
       STATE.cfFocusDate = STATE.cfFocusDate === dt ? '' : dt;
+      STATE.cfFocusDateFromScrub = false;
       STATE.cfFocusYm = '';
       STATE.cfEntryMode = 'entries';
       if (String(STATE.chipFilter || '').startsWith('cf_day_')) STATE.chipFilter = 'all';
@@ -140464,7 +140624,7 @@
     container.querySelectorAll('[data-cf-clear-drill]').forEach(btn => btn.addEventListener('click', ev => {
       ev.stopPropagation();
       const kind = btn.getAttribute('data-cf-clear-drill') || 'all';
-      if (kind === 'date' || kind === 'all') STATE.cfFocusDate = '';
+      if (kind === 'date' || kind === 'all') { STATE.cfFocusDate = ''; STATE.cfFocusDateFromScrub = false; }
       if (kind === 'ym' || kind === 'all') STATE.cfFocusYm = '';
       if (kind === 'party' || kind === 'all') STATE.cfFocusParty = '';
       STATE.shown = {};
@@ -142098,6 +142258,7 @@
     if (view !== 'kiosks' && KIOSK_ATT_STATE.camActive) {
       stopKioskAttCamera();
     }
+    const prevView = STATE.view;
     STATE.view = view;
     if (UNIV_VIEW_TO_TABLE_KEY[view]) {
       STATE.activeUnivRegKey = UNIV_VIEW_TO_TABLE_KEY[view];
@@ -142123,6 +142284,11 @@
       STATE.cfEntryMode = 'entries';
       STATE.cfBridgeMode = 'streams';
       STATE.cfFocusDate = '';
+      STATE.cfFocusDateFromScrub = false;
+      if (view !== prevView) {
+        STATE.cfTillScrubDate = '';
+        STATE.cfTillScrubKey = '';
+      }
       STATE.cfFocusYm = '';
       STATE.cfFocusParty = '';
     }
@@ -144373,7 +144539,7 @@
     '.grain-btn', '.basis-btn', '.date-seg-part', '.entity-picker-trigger', '.entity-picker-act-btn',
     '.ask-isabi-trigger', '.mobile-theme-btn', '#themeToggleBtn', '#signOutBtn', '#authShowcaseLink',
     '.sales-recon-card', '.recon-co-pill', '.rel-link', '.inspector-cell[data-edit-field]',
-    '.row-sel-dot', '.lsb-btn', '#topbarEyebrow', '#topbarTitle', '#sidebarNav .nav-item'
+    '.row-sel-dot', '.lsb-btn', '#topbarEyebrow', '#topbarTitle', '#sidebarNav .nav-item', '#cfTillScrubRange'
   ].join(', ');
 
   function stripOneNativeTitle(el, skipRailCheck = false) {
@@ -145791,6 +145957,8 @@
     buildDailyTillSheetRows: typeof buildDailyTillSheetRows === 'function' ? buildDailyTillSheetRows : null,
     selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
     setView: typeof setView === 'function' ? setView : null,
+    safeRender: typeof safeRender === 'function' ? safeRender : null,
+    uiBusy: typeof uiBusy === 'function' ? uiBusy : null,
     upgradeSelects: typeof wireModalSuggestions === 'function' ? wireModalSuggestions : null,
     contextFormForView: typeof contextFormForView === 'function' ? contextFormForView : null,
     filterRecords: typeof filterRecords === 'function' ? filterRecords : null,

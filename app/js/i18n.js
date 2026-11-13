@@ -11195,7 +11195,14 @@
       "Whole Register": "السجل كاملاً",
       "Filtered": "مُصفّى",
       "contains": "يحتوي على",
-      "Not Blank": "غير فارغ"
+      "Not Blank": "غير فارغ",
+      "Previous day": "اليوم السابق",
+      "Next day": "اليوم التالي",
+      "Day Entries": "قيود اليوم",
+      "Showing Day": "عرض اليوم",
+      "Balanced $0": "متوازن $0",
+      "Balanced 0 LL": "متوازن 0 ل.ل",
+      "Pounds": "ليرة"
     },
     fr: {
       "Not split by borrower": "Non réparti par emprunteur",
@@ -22372,7 +22379,14 @@
       "Whole Register": "Registre entier",
       "Filtered": "Filtré",
       "contains": "contient",
-      "Not Blank": "Non vide"
+      "Not Blank": "Non vide",
+      "Previous day": "Jour précédent",
+      "Next day": "Jour suivant",
+      "Day Entries": "Écritures du jour",
+      "Showing Day": "Jour affiché",
+      "Balanced $0": "Équilibré 0 $",
+      "Balanced 0 LL": "Équilibré 0 LL",
+      "Pounds": "Livres"
     }
   };
 
