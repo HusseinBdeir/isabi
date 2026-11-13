@@ -10747,7 +10747,12 @@
       "Till balance today": "رصيد الصندوق اليوم",
       "The till counts every cash entry from the first day, so the start date only filters the entries and the period cash flow.": "يحتسب الصندوق كل حركة نقدية منذ اليوم الأول، لذلك يقتصر تاريخ البدء على تصفية الحركات والتدفق النقدي للفترة.",
       "Till balance at the end of this day": "رصيد الصندوق في نهاية هذا اليوم",
-      "The till is a running balance: it counts every cash entry from the first day up to the end date. The start date only filters the entries and the period cash flow.": "الصندوق رصيد تراكمي: يحتسب كل حركة نقدية من اليوم الأول حتى تاريخ النهاية. تاريخ البدء يصفّي الحركات والتدفق النقدي للفترة فقط."
+      "The till is a running balance: it counts every cash entry from the first day up to the end date. The start date only filters the entries and the period cash flow.": "الصندوق رصيد تراكمي: يحتسب كل حركة نقدية من اليوم الأول حتى تاريخ النهاية. تاريخ البدء يصفّي الحركات والتدفق النقدي للفترة فقط.",
+      "Opening USD Till": "رصيد صندوق الدولار الافتتاحي",
+      "Closing USD Till": "رصيد صندوق الدولار الختامي",
+      "Net Cash Over the Dates": "صافي النقد خلال الفترة",
+      "Start Till": "رصيد الصندوق الافتتاحي",
+      "Net Cash is the change over the selected dates, not a balance: the USD till at the start of the dates plus the Net Cash gives the USD till at the end.": "صافي النقد هو التغيّر خلال التواريخ المحددة وليس رصيداً: رصيد صندوق الدولار في بداية التواريخ مضافاً إليه صافي النقد يساوي رصيد صندوق الدولار في نهايتها."
     },
     fr: {
       "Shift Windows Across the Day": "Plages horaires des postes sur la journée",
@@ -21476,7 +21481,12 @@
       "Till balance today": "Solde de caisse aujourd'hui",
       "The till counts every cash entry from the first day, so the start date only filters the entries and the period cash flow.": "La caisse cumule chaque mouvement depuis le premier jour : la date de début ne filtre que les mouvements et le flux de trésorerie de la période.",
       "Till balance at the end of this day": "Solde de caisse à la fin de cette journée",
-      "The till is a running balance: it counts every cash entry from the first day up to the end date. The start date only filters the entries and the period cash flow.": "La caisse est un solde cumulé : elle compte chaque mouvement depuis le premier jour jusqu'à la date de fin. La date de début ne filtre que les mouvements et le flux de trésorerie de la période."
+      "The till is a running balance: it counts every cash entry from the first day up to the end date. The start date only filters the entries and the period cash flow.": "La caisse est un solde cumulé : elle compte chaque mouvement depuis le premier jour jusqu'à la date de fin. La date de début ne filtre que les mouvements et le flux de trésorerie de la période.",
+      "Opening USD Till": "Caisse USD d’ouverture",
+      "Closing USD Till": "Caisse USD de clôture",
+      "Net Cash Over the Dates": "Flux net sur la période",
+      "Start Till": "Solde caisse début",
+      "Net Cash is the change over the selected dates, not a balance: the USD till at the start of the dates plus the Net Cash gives the USD till at the end.": "Le flux net est la variation sur les dates choisies, pas un solde : la caisse USD au début des dates plus le flux net donne la caisse USD à la fin."
     }
   };
 

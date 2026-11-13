@@ -44073,6 +44073,71 @@
     }
     const latestDayClose = sortedDaily.length ? sortedDaily[0] : { close_usd: liveUsd, close_lbp: liveLbp, close_combined: liveTot };
 
+    // Till bridge (owner idea 2026-11-13): Opening USD Till + Net Cash = Closing USD Till over the dates in effect, so a
+    // large Net Cash reads as the change over the dates, not a balance. USD, the currency of the Net Cash figure.
+    // Manufacturing reads the daily till sheet through getKPI (period_till_usd = till at the end of the dates); other
+    // scopes add up the seat's till entries. Shown only when the Net Cash on screen is that whole movement (no chip,
+    // search, drill or column filter), so the three figures always add up.
+    const cfBridgeRange = periodRange(STATE.period);
+    const cfBridgeToday = todayISO();
+    const cashTillBridge = (kk, coKey, shownNet, liveU) => {
+      if (!kk || !Number.isFinite(Number(shownNet))) return null;
+      let openU, closeU;
+      const coIsMfg = (typeof getActiveIndustry === 'function' ? getActiveIndustry(coKey) : 'Manufacturing') === 'Manufacturing';
+      if (coIsMfg && kk.period_till_usd != null && kk.net_cash_usd != null) {
+        // A window ending today or later closes on the live till, the figure the USD Till tile shows (as the till cards).
+        // The bridge needs that live till to equal the sheet's till at today (period_till_usd), or this window's Opening
+        // would not be the Closing of the window before it: when they differ, show no bridge.
+        const endsBeforeToday = Boolean(cfBridgeRange && cfBridgeRange.to && cfBridgeRange.to < cfBridgeToday);
+        if (!endsBeforeToday && (liveU == null || Math.abs(Number(liveU) - Number(kk.period_till_usd)) > 0.01)) return null;
+        closeU = round2(Number(kk.period_till_usd));
+        openU = round2(closeU - Number(kk.net_cash_usd));
+      } else {
+        const f = cfBridgeRange ? String(cfBridgeRange.from || '') : '';
+        const t = cfBridgeRange ? String(cfBridgeRange.to || '') : '';
+        const mvAll = buildCashTillMoves({ user: u, company: coKey, ignorePeriod: true });
+        let before = 0, upto = 0;
+        for (let i = 0; i < mvAll.length; i++) {
+          const mv = mvAll[i];
+          if (!mv || !mv.date) continue;
+          if (f && mv.date < f) before += Number(mv.usd || 0);
+          if (!t || mv.date <= t) upto += Number(mv.usd || 0);
+        }
+        openU = round2(before);
+        closeU = round2(upto);
+        // These scopes have no dated till: the USD Till tile always shows today's till. The bridge's Closing must be that
+        // figure, so the entries must add up to it over all dates and up to the end date (no entry after the window).
+        let allU = 0;
+        for (let i = 0; i < mvAll.length; i++) allU += Number((mvAll[i] && mvAll[i].usd) || 0);
+        if (Math.abs(round2(allU) - Number(liveU || 0)) > 0.01) return null;
+        if (Math.abs(closeU - Number(liveU || 0)) > 0.01) return null;
+      }
+      const netU = round2(closeU - openU);
+      if (Math.abs(netU - Number(shownNet)) > 0.01) return null;
+      const fromIso = cfBridgeRange && cfBridgeRange.from && cfBridgeRange.from !== MIN_DATE ? String(cfBridgeRange.from) : '';
+      if (fromIso && fromIso > cfBridgeToday) return null; // a window wholly in the future has no till yet
+      const toRaw = cfBridgeRange && cfBridgeRange.to ? String(cfBridgeRange.to) : cfBridgeToday;
+      const toIso = toRaw > cfBridgeToday ? cfBridgeToday : toRaw;
+      return { openU, netU, closeU, fromIso, toIso };
+    };
+    const cashTillBridgeHtml = (br, compact) => {
+      if (!br) return '';
+      const tip = 'Net Cash is the change over the selected dates, not a balance: the USD till at the start of the dates plus the Net Cash gives the USD till at the end.';
+      const netCls = br.netU < -0.005 ? 'crit' : (br.netU > 0.005 ? 'good' : '');
+      return `<div class="cf-till-bridge${compact ? ' compact' : ''}" role="note" data-ui-tip="${esc(tip)}" data-open-u="${br.openU}" data-net-u="${br.netU}" data-close-u="${br.closeU}">
+          <span class="cf-tb-term"><small><span>Opening USD Till</span>${br.fromIso ? ` <span class="cf-tb-date" data-no-i18n="1">${esc(fmtDateDMY(br.fromIso))}</span>` : ''}</small><b>${fmtUSD(br.openU, 2)}</b></span>
+          <span class="cf-tb-op" aria-hidden="true">+</span>
+          <span class="cf-tb-term"><small><span>Net Cash Over the Dates</span></small><b class="${netCls}">${fmtSignedUSD(br.netU, 2)}</b></span>
+          <span class="cf-tb-op" aria-hidden="true">=</span>
+          <span class="cf-tb-term"><small><span>Closing USD Till</span> <span class="cf-tb-date" data-no-i18n="1">${esc(fmtDateDMY(br.toIso))}</span></small><b class="brass">${fmtUSD(br.closeU, 2)}</b></span>
+        </div>`;
+    };
+    const cfBridgeUnfiltered = !q && !hasDrill && !hasActiveColFilters(isDailyMode ? 'cf_daily' : 'cf_moves')
+      && (isDailyMode ? (STATE.chipFilter || 'all') === 'all' : activeCfChip === 'all');
+    const singleTillBridge = showSingleEntityBanner && cfBridgeUnfiltered ? cashTillBridge(k, STATE.company, isDailyMode ? dyNetUsd : mvUsdSum, liveUsd) : null;
+    const wtcTillBridge = showGroupSplit ? cashTillBridge(wtcK, 'wtc', wtcK && wtcK.net_cash_usd, wtcK && wtcK.cash_till_usd) : null;
+    const bbcTillBridge = showGroupSplit ? cashTillBridge(bbcK, 'bbconstruction', bbcK && bbcK.net_cash_usd, bbcK && bbcK.cash_till_usd) : null;
+
     const filtName = rows => !q ? rows : rows.filter(r => String(r.name || r.type || '').toLowerCase().includes(q));
     const u2lRow = (tConv.rows || []).find(r => /USD to LBP/i.test(r.type)) || { from_amt: 0, to_amt: 0 };
     const l2uRow = (tConv.rows || []).find(r => /LBP to USD/i.test(r.type)) || { from_amt: 0, to_amt: 0 };
@@ -44195,7 +44260,7 @@
             label: 'Selected Period Cash Flow',
             badge: esc(k.label || 'All-Time'),
             val: `${fmtUSD(k.net_cash_flow, 2)}`,
-            sub: `In <b>${fmtUSDk(k.cash_inflow)}</b> · Out <b>${fmtUSDk(k.cash_outflow)}</b> · USD <b>${fmtUSD(k.net_cash_usd, 2)}</b> · LBP <b>${fmtLBPk(k.net_cash_lbp)}</b> · End Till <b>${fmtUSD(k.period_till, 2)}</b>`,
+            sub: `In <b>${fmtUSDk(k.cash_inflow)}</b> · Out <b>${fmtUSDk(k.cash_outflow)}</b> · USD <b>${fmtUSD(k.net_cash_usd, 2)}</b> · LBP <b>${fmtLBPk(k.net_cash_lbp)}</b>${tillIsMfg && k.period_till != null && k.net_cash_flow != null ? ` · Start Till <b>${fmtUSD(round2(Number(k.period_till) - Number(k.net_cash_flow)), 2)}</b>` : ''} · End Till <b>${fmtUSD(k.period_till, 2)}</b>`,
             tone: 'steel'
           })}
         </div>
@@ -44289,6 +44354,7 @@
               <span><small>Cash Out ($)</small><b class="crit">-${fmtUSD(wtcK.cash_out_usd, 2)}</b></span>
               <span><small>Net Cash ($)</small><b>${fmtSignedUSD(wtcK.net_cash_usd, 2)}</b></span>
             </div>
+            ${cashTillBridgeHtml(wtcTillBridge, true)}
           </div>
           <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
             <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>Plant Cash Flow &amp; Till</b><span class="sales-recon-act">Filter BBC Only →</span></div>
@@ -44298,6 +44364,7 @@
               <span><small>Cash Out ($)</small><b class="crit">-${fmtUSD(bbcK.cash_out_usd, 2)}</b></span>
               <span><small>Net Cash ($)</small><b>${fmtSignedUSD(bbcK.net_cash_usd, 2)}</b></span>
             </div>
+            ${cashTillBridgeHtml(bbcTillBridge, true)}
           </div>
         </div>` : (showSingleEntityBanner ? `
         <div class="sales-entity-recon single">
@@ -44315,6 +44382,7 @@
               <span><small>Cash Out ($)</small><b class="crit">-${fmtUSD(isDailyMode ? dyOutUsd : mvOutUsd, 2)}</b></span>
               <span><small>Net Cash ($)</small><b>${fmtSignedUSD(isDailyMode ? dyNetUsd : mvUsdSum, 2)}</b></span>
             </div>
+            ${cashTillBridgeHtml(singleTillBridge, false)}
           </div>
         </div>` : '')}
 
