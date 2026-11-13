@@ -109,6 +109,18 @@ try:
     r = dc.run_wrangler(["pages", "deploy", "x"], ENV, check=False)
     check(r.returncode == 1 and len(f.calls) == 1, "Project not found is not retried", str(f.calls))
 
+    # 2b. Red-team round 1 lows: progress numbers are not status codes, whole-token heads, log footer, D1 blip
+    compile_err = subprocess.CompletedProcess([], 1, "Uploading... (523/523)", "✘ [ERROR] Build failed with 1 error:\n  functions/app/api/[[route]].js:12:3: ERROR: Unexpected \"}\"")
+    check(not dc.wrangler_failure_is_transient(compile_err), "Upload progress '(523/523)' beside a compile error is not an outage")
+    check(dc.wrangler_failure_is_transient(subprocess.CompletedProcess([], 1, "", "status code: 502 Bad Gateway")), "'status code: 502' counts as an outage")
+    check(not dc.wrangler_is_idempotent(["pages", "deployment", "delete", "abc"]), "`pages deployment delete` is not treated as `pages deploy`")
+    check(dc.wrangler_is_idempotent(["pages", "deployment", "list", "--project-name=isabi-systems"]), "`pages deployment list` stays retryable")
+    with_footer = subprocess.CompletedProcess([], 1, "", "✘ [ERROR] Service Unavailable [code: 503]\n\n🪵  Logs were written to \"C:\\Users\\x\\wrangler-2026.log\"")
+    check("Service Unavailable" in dc.wrangler_failure_reason(with_footer), "Retry notice skips wrangler's log-file footer", dc.wrangler_failure_reason(with_footer))
+    f = use(Fake({"d1 execute isabi-ledger": [(1, "", "✘ [ERROR] D1_ERROR: Network connection lost."), OK]}))
+    r = dc.run_wrangler(["d1", "execute", "isabi-ledger", "--remote", "--json", "--command=SELECT 1"], ENV, check=False)
+    check(r.returncode == 0 and len(f.calls) == 2, "D1 'Network connection lost' on a read-only SELECT is retried", str(f.calls))
+
     # 3. Retry budget, then check=True raises
     f = use(Fake({"pages deploy": [E503]}))
     raised = False

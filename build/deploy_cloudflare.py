@@ -116,12 +116,14 @@ def load_or_create_jwt_secret() -> str:
 # "Unknown internal error") end a deploy that a short wait would have carried through. run_wrangler retries a
 # command only when (a) running it twice is harmless and (b) its output reads as a Cloudflare-side failure.
 # Writes to D1 are never retried here (batch uploads keep their own loop in _upload_one_batch).
+# Status numbers count only in a status context ("[code: 503]", "status 502", "HTTP 504"), never bare, so upload
+# progress such as "Uploading... (523/523)" next to a compile error is not read as an outage.
 WRANGLER_TRANSIENT_RE = re.compile(
-    r"\b(?:500|502|503|504|520|521|522|523|524|525|526|527|529|530)\b"
+    r"\[code:\s*(?:5\d\d|429|8000000)\]|\bstatus(?:\s*code)?\s*[:=]?\s*(?:5\d\d|429)\b|\bHTTP(?:/[\d.]+)?\s+(?:5\d\d|429)\b"
     r"|no healthy upstream|unknown internal error|internal server error|service unavailable|bad gateway"
-    r"|gateway time-?out|temporarily unavailable|too many requests|\b429\b|rate limit"
+    r"|gateway time-?out|temporarily unavailable|too many requests|rate limit"
     r"|ECONNRESET|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|UND_ERR_\w+|socket hang up|fetch failed|network error"
-    r"|request timed out|timed out",
+    r"|network connection lost|request timed out|timed out",
     re.I,
 )
 WRANGLER_RETRY_DELAYS_S: tuple[float, ...] = (10.0, 30.0, 60.0)
@@ -143,13 +145,15 @@ def wrangler_retry_delays() -> tuple[float, ...]:
 def wrangler_is_idempotent(args: list[str]) -> bool:
     """True for wrangler commands that are safe to run again after an unclear failure."""
     a = [str(x) for x in args]
-    head = " ".join(a[:3]).lower()
     if a[:1] == ["whoami"]:
         return True
-    if head.startswith(("pages project list", "pages deployment list", "d1 list", "r2 bucket list")):
-        return True
-    # A second `pages deploy` of the same bundle only adds one more deployment; secrets and R2 objects overwrite.
-    if head.startswith(("pages deploy", "pages secret put", "r2 object put", "r2 object get")):
+    # Whole-token matches only: `pages deploy` must not also cover `pages deployment delete`.
+    safe_heads = (
+        ["pages", "project", "list"], ["pages", "deployment", "list"], ["d1", "list"], ["r2", "bucket", "list"],
+        # A second `pages deploy` of the same bundle only adds one more deployment; secrets and R2 objects overwrite.
+        ["pages", "deploy"], ["pages", "secret", "put"], ["r2", "object", "put"], ["r2", "object", "get"],
+    )
+    if any(a[:len(h)] == h for h in safe_heads):
         return True
     if a[:2] == ["d1", "execute"]:
         cmd_args = [x for x in a if x.startswith("--command=")]
@@ -162,15 +166,18 @@ def wrangler_is_idempotent(args: list[str]) -> bool:
 def wrangler_failure_is_transient(r) -> bool:
     out = f"{getattr(r, 'stdout', '') or ''}\n{getattr(r, 'stderr', '') or ''}"
     if re.search(r"\b(?:not authenticated|authentication error|10000|unauthori[sz]ed|forbidden|not found)\b", out, re.I) \
-            and not re.search(r"no healthy upstream|internal error|\b5\d\d\b", out, re.I):
+            and not re.search(r"no healthy upstream|internal error|\[code:\s*5\d\d\]", out, re.I):
         return False
     return bool(WRANGLER_TRANSIENT_RE.search(out))
 
 
 def wrangler_failure_reason(r, limit: int = 160) -> str:
-    """Last non-empty stderr line (the error), else the last stdout line."""
+    """Last non-empty stderr line (the error), else the last stdout line; wrangler's log-file footer is skipped."""
     for stream in (getattr(r, "stderr", "") or "", getattr(r, "stdout", "") or ""):
-        lines = [ln.strip() for ln in stream.strip().splitlines() if ln.strip()]
+        lines = [
+            ln.strip() for ln in stream.strip().splitlines()
+            if ln.strip() and not re.match(r"^(?:\W\s*)?Logs were written to", ln.strip(), re.I)
+        ]
         if lines:
             return lines[-1][:limit]
     return f"exit {getattr(r, 'returncode', '?')}"
