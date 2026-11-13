@@ -6146,10 +6146,57 @@ td.pbi-cell-amber {
   color: var(--ink);
 }
 .ws-tl-val small { font-size: 10px; color: var(--muted); }
+.ws-tl-val small.ws-tl-act-h { color: var(--chart-good, #1F7A4C); font-weight: 600; }
 .ws-tl-ticks i { font-style: normal; }
+/* Clocked strip under the planned bar: one cell per half hour, opacity = share of clocked days present */
+.ws-tl-lanes { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ws-tl-act {
+  position: relative;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.ws-tl-act i { position: absolute; top: 0; bottom: 0; background: var(--chart-good, #1F7A4C); }
+/* "End This Shift" inside an empty Staff per Shift track */
+.pbi-bar-item.has-retire { align-items: center; }
+.pbi-bar-lane.ws-retire-lane {
+  height: auto;
+  min-height: 22px;
+  overflow: visible;
+  background: transparent;
+  border: 1px dashed var(--line);
+  padding: 2px 4px;
+  padding-inline-start: 8px;
+  gap: 8px;
+  justify-content: space-between;
+}
+.ws-retire-note { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ws-clocked-lane { border-style: solid; border-color: transparent; background: var(--surface-2); }
+.ws-clocked-lane .ws-retire-note { color: var(--chart-good, #1F7A4C); font-weight: 600; }
+.ws-retire-btn {
+  flex: none;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--chart-amber, #C96A22);
+  background: transparent;
+  color: var(--chart-amber, #C96A22);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ws-retire-btn:hover, .ws-retire-btn:focus-visible { background: var(--chart-amber, #C96A22); color: #fff; }
+.ws-retire-btn.is-armed { background: var(--chart-crit, #C8333B); border-color: var(--chart-crit, #C8333B); color: #fff; }
 @media (max-width: 560px) {
   .ws-tl-row { grid-template-columns: minmax(84px, 32%) minmax(0, 1fr) 62px; gap: 8px; }
   .ws-tl-ticks i { display: none; }
+  .ws-retire-note { display: none; }
+  .pbi-bar-lane.ws-retire-lane { justify-content: flex-end; }
+  .pbi-bar-lane.ws-clocked-lane { justify-content: flex-start; }
+  .ws-clocked-lane .ws-retire-note { display: block; }
 }
 
 /* Clustered Horizontal Bar Chart */

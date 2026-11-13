@@ -13049,6 +13049,44 @@
     }).join('');
     const subOf = r => [showCo ? r.company : '', r.isDefault ? 'BU Default' : ''].filter(Boolean).join(' · ');
     const emptyHtml = `<div style="padding:18px;text-align:center;color:var(--muted);font-size:12px">No active shifts</div>`;
+    const canRetire = Boolean(ctx && ctx.canRetire);
+    // Clocked strip: one cell per half hour, opacity = share of the shift's clocked days present then.
+    const hasAct = r => Boolean(r.act && Number(r.act.days) > 0 && Array.isArray(r.act.share));
+    const anyAct = shifts.some(hasAct);
+    const actHtml = r => {
+      if (!hasAct(r)) return '';
+      const n = r.act.share.length || 48;
+      const w = 100 / n;
+      // Opacity follows the busiest half hour of this shift, so the shape reads even when staff cover day and night.
+      const peak = Math.max(0.0001, ...r.act.share.map(x => Number(x) || 0));
+      return `<div class="ws-tl-act" aria-hidden="true">${r.act.share.map((s, i) => {
+        const v = Number(s) || 0;
+        if (v < 0.03) return '';
+        const rel = Math.min(1, v / peak);
+        const op = Math.round((0.12 + 0.88 * rel * rel) * 100) / 100;
+        return `<i style="inset-inline-start:${Math.round(i * w * 100) / 100}%;width:${Math.round(w * 100) / 100}%;opacity:${op}"></i>`;
+      }).join('')}</div>`;
+    };
+    const pctTxt = (n, d) => (d > 0 ? `${fmtNum(n, 0)} (${Math.round((n / d) * 100)}%)` : fmtNum(n, 0));
+    const actPopRows = r => {
+      if (!hasAct(r)) return [];
+      const a = r.act;
+      const rows = [
+        { label: 'Clocked Days', value: fmtNum(a.days, 0), color: C.good },
+        { label: 'Average Clocked', value: `${fmtNum(a.avgWorkedH, 1)}h` }
+      ];
+      if (a.typIn != null && a.typOut != null) rows.push({ label: 'Typical In / Out', value: `${clock(a.typIn)} / ${clock(a.typOut)}` });
+      if (a.onPlan > 0) {
+        rows.push({ label: 'Late Starts', value: pctTxt(a.late, a.onPlan), color: a.late ? C.amber : '' });
+        rows.push({ label: 'Early Leaves', value: pctTxt(a.early, a.onPlan), color: a.early ? C.amber : '' });
+        rows.push({ label: 'Past Shift End', value: `${fmtNum(a.pastEndH, 1)}h` });
+        rows.push({ label: 'Paid as Overtime', value: `${fmtNum(a.otPaidH, 1)}h` });
+        rows.push({ label: 'Past Shift End, Not Paid', value: `${fmtNum(a.unpaidH, 1)}h`, color: a.unpaidH > 0 ? C.crit : '' });
+      }
+      if (a.otherWin > 0) rows.push({ label: 'Days on Another Window', value: fmtNum(a.otherWin, 0) });
+      if (a.offDay > 0) rows.push({ label: 'Clocked on a Day Off', value: fmtNum(a.offDay, 0) });
+      return rows;
+    };
 
     const timelineHtml = !shifts.length ? emptyHtml : `
       <div class="ws-tl">
@@ -13074,15 +13112,19 @@
           if (r.workdays) popRows.push({ label: 'Workdays', value: r.workdays });
           popRows.push({ label: 'Active Staff', value: fmtNum(r.staff, 0) });
           if (r.effDate) popRows.push({ label: 'Effective From', value: r.effDate });
+          actPopRows(r).forEach(x => popRows.push(x));
           const pop = { title: r.name, badge: subOf(r) || r.company || '', rows: popRows };
           return `
             <div class="ws-tl-row" data-chart-pop="${encodeChartPop(pop)}">
               <span class="ws-tl-lbl"><b>${esc(r.name)}</b>${subOf(r) ? ` <small>${esc(subOf(r))}</small>` : ''}</span>
-              <div class="ws-tl-lane${excDiffers ? ' has-sat' : ''}">
-                ${segsHtml(r.wk, 'wk')}
-                ${excDiffers ? segsHtml(r.sat, 'sat') : ''}
+              <div class="ws-tl-lanes">
+                <div class="ws-tl-lane${excDiffers ? ' has-sat' : ''}">
+                  ${segsHtml(r.wk, 'wk')}
+                  ${excDiffers ? segsHtml(r.sat, 'sat') : ''}
+                </div>
+                ${actHtml(r)}
               </div>
-              <span class="ws-tl-val"><b>${fmtNum(r.wkHours, 1)}h</b>${excDiffers ? `<small><span>${esc(excTag)}</span> ${fmtNum(r.satHours, 1)}h</small>` : ''}</span>
+              <span class="ws-tl-val"><b>${fmtNum(r.wkHours, 1)}h</b>${excDiffers ? `<small><span>${esc(excTag)}</span> ${fmtNum(r.satHours, 1)}h</small>` : ''}${hasAct(r) ? `<small class="ws-tl-act-h">${fmtNum(r.act.avgWorkedH, 1)}h</small>` : ''}</span>
             </div>
           `;
         }).join('')}
@@ -13105,11 +13147,24 @@
               { label: 'Regular Hours', value: `${winsTxt(r.wk) || '-'} (${fmtNum(r.wkHours, 1)}h)` }
             ].concat(totStaff > 0 ? [{ label: 'Share', value: `${((n / totStaff) * 100).toFixed(1)}%` }] : [])
              .concat(r.effDate ? [{ label: 'Effective From', value: r.effDate }] : [])
+             .concat(r.retire && r.retire.since ? [{ label: 'No Staff Since', value: r.retire.since, color: C.amber }] : [])
+             .concat(Number(r.clockedHere) > 0 ? [{ label: 'Days Clocked Here, Last 90 Days', value: fmtNum(r.clockedHere, 0), color: C.good }] : [])
           };
+          const retireHere = Boolean(canRetire && r.retire && r.id && !n);
+          // No one assigned, yet staff on other shifts clock this window: say so instead of offering to end it.
+          const clockedNote = !n && !r.retire && Number(r.clockedHere) > 0;
+          const laneHtml = retireHere
+            ? `<div class="pbi-bar-lane ws-retire-lane">
+                <span class="ws-retire-note">${r.retire.since ? `<span>No Staff Since</span> ${esc(r.retire.since)}` : '<span>No Staff for 90+ Days</span>'}</span>
+                <button type="button" class="ws-retire-btn" data-ws-retire="${esc(r.id)}">End This Shift</button>
+              </div>`
+            : (clockedNote
+              ? `<div class="pbi-bar-lane ws-retire-lane ws-clocked-lane"><span class="ws-retire-note"><span>Days Clocked Here, Last 90 Days</span>: ${fmtNum(r.clockedHere, 0)}</span></div>`
+              : `<div class="pbi-bar-lane"><div class="pbi-bar-fill" style="width:${pct}%;background:${C.navy}"></div></div>`);
           return `
-            <div class="pbi-bar-item ws-staff-item" data-chart-pop="${encodeChartPop(pop)}">
+            <div class="pbi-bar-item ws-staff-item${retireHere ? ' has-retire' : ''}" data-chart-pop="${encodeChartPop(pop)}">
               <span class="pbi-bar-lbl">${esc(r.name)}${subOf(r) ? ` <small>· ${esc(subOf(r))}</small>` : ''}</span>
-              <div class="pbi-bar-lane"><div class="pbi-bar-fill" style="width:${pct}%;background:${C.navy}"></div></div>
+              ${laneHtml}
               <span class="pbi-bar-val${n ? '' : ' is-zero'}">${fmtNum(n, 0)}</span>
             </div>
           `;
@@ -13120,13 +13175,17 @@
     return `
       <div class="pbi-grid-2" id="workShiftsChartsRow" style="margin-bottom:14px">
         ${pbiPanel('Shift Windows Across the Day', timelineHtml, {
-          subtitle: 'When each active shift runs on the 24-hour clock, regular hours and timing exceptions',
+          subtitle: anyAct
+            ? 'Planned window of each active shift; the green strip shows when staff were clocked in over the selected dates'
+            : 'When each active shift runs on the 24-hour clock, regular hours and timing exceptions',
           legend: [{ label: 'Regular Hours', color: C.steel }].concat(
             shifts.some(r => Array.isArray(r.sat) && r.sat.length) ? [{ label: 'Timing Exception', color: C.brass }] : []
-          )
+          ).concat(anyAct ? [{ label: 'Clocked In', color: C.good }] : [])
         })}
         ${pbiPanel('Staff per Shift', staffHtml, {
-          subtitle: 'Active staff on each shift; a timing change re-applies to them from its Effective Date'
+          subtitle: (canRetire && staffRows.some(r => r.retire && !Number(r.staff)))
+            ? 'Active staff on each shift; a shift with no staff for 90+ days can be ended here'
+            : 'Active staff on each shift; a timing change re-applies to them from its Effective Date'
         })}
       </div>
     `;

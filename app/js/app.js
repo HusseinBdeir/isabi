@@ -28728,9 +28728,395 @@
     return r;
   }
 
+  // Planned vs clocked (owner idea 2026-11-13): for each active shift, the attendance rows of the selected
+  // dates whose staff work it. A row the app stamped with a shift counts for that shift; any other row counts
+  // for the staff member's shift today (the rule Staff per Shift uses). Out of those rows: the share of clocked
+  // days present in each half hour of the day, and, against that weekday's planned window, late starts, early
+  // leaves and time past the shift end next to the overtime the rows paid. A day clocked more than 4 hours
+  // away from the planned start counts as another window and stays out of the late / early figures. Display only.
+  const WS_ACT_SLOTS = 48;
+  const WS_ACT_OTHER_WINDOW_MIN = 240;
+  function workShiftPlannedWindowOn(sh, isoDate, dowCache) {
+    const d = String(isoDate || '').slice(0, 10);
+    let dow = dowCache ? dowCache.get(d) : undefined;
+    if (dow === undefined) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+      dow = m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay() : -1;
+      if (dowCache) dowCache.set(d, dow);
+    }
+    if (dow < 0) return null;
+    // The version of this shift in force on that date (a timing change closes the old version; red-team round 3),
+    // falling back to the row given when the company has no dated row for it.
+    let ver = sh;
+    let lookupGaveThisRow = false;
+    if (sh.shift_code && sh.company) {
+      const v = resolveShiftAtDate(sh.shift_code, sh.company, d);
+      lookupGaveThisRow = v === sh;
+      // Only a stored dated row of this shift (never the universal archetype resolveShiftAtDate falls back to).
+      if (v && v.start_date && norm(v.company || '') === norm(sh.company) && norm(normalizeShiftCodeAlias(v.shift_code || v.shift_id || '')) === norm(normalizeShiftCodeAlias(sh.shift_code))) ver = v;
+    }
+    // No stored version in force (a date before the shift existed, or a gap between versions): the shift had no
+    // window that day; attendance used the company default then (red-team round 4). When the lookup itself
+    // returned this row (the company default, which attendance falls back to even before its own start), keep
+    // its window (red-team round 5).
+    if (ver === sh && !lookupGaveThisRow && sh.start_date && d < String(sh.start_date).slice(0, 10)) return null;
+    const days = Array.isArray(ver.days) ? ver.days.map(Number) : [1, 2, 3, 4, 5, 6];
+    // Same timing the attendance rules use: a dated exception first, then the weekday, then regular hours; an
+    // exception replaces a split shift's two windows (resolveStaffShiftForDate does the same).
+    const t = resolveShiftTimingForDate(ver, d, dow);
+    const special = Boolean(t && t.isDaySpecific);
+    if (!days.includes(dow) && !(special && t.forcesWorkday)) return null;
+    let s;
+    let e;
+    if (ver.split_enabled && !special) {
+      s = parseClockMinutes(ver.split_start_1);
+      e = parseClockMinutes(ver.split_end_2);
+    } else {
+      s = parseClockMinutes(t && t.start_time ? t.start_time : ver.start_time);
+      e = parseClockMinutes(t && t.end_time ? t.end_time : ver.end_time);
+    }
+    if (s == null || e == null || s === e) return null;
+    const grace = Number(ver.grace_min != null ? ver.grace_min : 10);
+    const eGrace = Number(ver.early_leave_grace_min != null ? ver.early_leave_grace_min : grace);
+    return { s, e, grace: Number.isFinite(grace) ? grace : 10, eGrace: Number.isFinite(eGrace) ? eGrace : 10 };
+  }
+
+  function buildWorkShiftActuals(shiftRows, attRows) {
+    const out = new Map();
+    const rows = (shiftRows || []).filter(r => r && r.id);
+    if (!rows.length || !Array.isArray(attRows) || !attRows.length) return out;
+    const ws = ensureWorkSchedulesState();
+    const byCoCode = new Map();
+    const defByCo = new Map();
+    rows.forEach(r => {
+      const coN = norm(r.company || 'WTC');
+      [r.shift_code, r.shift_id, r.name].forEach(k => {
+        const kk = norm(normalizeShiftCodeAlias(k || ''));
+        if (kk && !byCoCode.has(`${coN}|${kk}`)) byCoCode.set(`${coN}|${kk}`, r);
+      });
+      if (r.is_bu_default && !defByCo.has(coN)) defByCo.set(coN, r);
+    });
+    const staffShift = new Map();
+    const shiftOfStaff = (staff, coN) => {
+      const sk = norm(staff);
+      const ck = `${sk}|${coN}`;
+      if (staffShift.has(ck)) return staffShift.get(ck);
+      const rule = ws.staffRules && ws.staffRules[sk] && !ws.staffRules[sk].reset_default ? ws.staffRules[sk] : null;
+      const rid = rule && rule.shift_id ? norm(normalizeShiftCodeAlias(rule.shift_id)) : '';
+      const hit = rid ? (byCoCode.get(`${coN}|${rid}`) || null) : (defByCo.get(coN) || null);
+      staffShift.set(ck, hit);
+      return hit;
+    };
+    const dowCache = new Map();
+    const planCache = new Map();
+    const rowShift = new Map();
+    // The attendance view has already normalised clock times to HH:MM; parse those directly.
+    const clockMin = v => {
+      const s = typeof v === 'string' ? v : String(v || '');
+      if (s.length === 5 && s.charCodeAt(2) === 58) {
+        const h = (s.charCodeAt(0) - 48) * 10 + (s.charCodeAt(1) - 48);
+        const m = (s.charCodeAt(3) - 48) * 10 + (s.charCodeAt(4) - 48);
+        if (h >= 0 && h < 24 && m >= 0 && m < 60) return h * 60 + m;
+      }
+      return s ? parseClockMinutes(s) : null;
+    };
+    const cd = (x, y) => ((((x - y) % 1440) + 1440 + 720) % 1440) - 720;
+    const median = arr => {
+      if (!arr.length) return null;
+      const a = arr.slice().sort((x, y) => x - y);
+      const mid = Math.floor(a.length / 2);
+      return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+    };
+    attRows.forEach(a => {
+      if (!a || a.voided) return;
+      if (/^(extra|config)/i.test(String(a.type || a.status || ''))) return;
+      const inM = clockMin(a.in_time || a.check_in || '');
+      if (inM == null) return;
+      const outM = clockMin(a.out_time || a.check_out || '');
+      if (outM == null || inM === outM) return;
+      const sid = String(a.shift_id || '').trim();
+      const rawKey = `${sid}\u0001${a.staff || ''}\u0001${a.company || ''}`;
+      let sh = rowShift.get(rawKey);
+      if (sh === undefined) {
+        const coN = norm(a.company || 'WTC');
+        sh = sid ? (byCoCode.get(`${coN}|${norm(normalizeShiftCodeAlias(sid))}`) || null) : shiftOfStaff(a.staff, coN);
+        rowShift.set(rawKey, sh);
+      }
+      if (!sh) return;
+      let acc = out.get(sh.id);
+      if (!acc) {
+        acc = { days: 0, slots: new Array(WS_ACT_SLOTS).fill(0), workedMin: 0, onPlan: 0, late: 0, early: 0, pastEndMin: 0, otPaidH: 0, otherWin: 0, offDay: 0, dIn: [], dOut: [], planS: [], planE: [] };
+        out.set(sh.id, acc);
+      }
+      const len = ((outM - inM) % 1440 + 1440) % 1440;
+      acc.days += 1;
+      acc.workedMin += len;
+      const startSlot = Math.floor(inM / 30);
+      const nSlots = Math.min(WS_ACT_SLOTS, Math.max(1, Math.ceil(((inM % 30) + len) / 30)));
+      for (let i = 0; i < nSlots; i++) acc.slots[(startSlot + i) % WS_ACT_SLOTS] += 1;
+      const dKey = `${sh.id}|${String(a.set_date || a.rep_date || a.date || '').slice(0, 10)}`;
+      let plan = planCache.get(dKey);
+      if (plan === undefined) {
+        plan = workShiftPlannedWindowOn(sh, a.set_date || a.rep_date || a.date, dowCache);
+        planCache.set(dKey, plan);
+      }
+      if (!plan) { acc.offDay += 1; return; }
+      const dIn = cd(inM, plan.s);
+      if (Math.abs(dIn) > WS_ACT_OTHER_WINDOW_MIN) { acc.otherWin += 1; return; }
+      const dOut = cd(outM, plan.e);
+      acc.onPlan += 1;
+      if (dIn > plan.grace) acc.late += 1;
+      if (dOut < -plan.eGrace) acc.early += 1;
+      if (dOut > 0) acc.pastEndMin += dOut;
+      acc.otPaidH += Math.max(0, Number(a.overtime_hours || 0) || 0);
+      acc.dIn.push(dIn);
+      acc.dOut.push(dOut);
+      acc.planS.push(plan.s);
+      acc.planE.push(plan.e);
+    });
+    out.forEach((acc, id) => {
+      const mIn = median(acc.dIn);
+      const mOut = median(acc.dOut);
+      const pS = median(acc.planS);
+      const pE = median(acc.planE);
+      const pastEndH = Math.round((acc.pastEndMin / 60) * 10) / 10;
+      const otPaidH = Math.round(acc.otPaidH * 10) / 10;
+      out.set(id, {
+        days: acc.days,
+        share: acc.slots.map(c => (acc.days ? c / acc.days : 0)),
+        avgWorkedH: acc.days ? Math.round((acc.workedMin / acc.days / 60) * 10) / 10 : 0,
+        onPlan: acc.onPlan,
+        late: acc.late,
+        early: acc.early,
+        pastEndH,
+        otPaidH,
+        unpaidH: Math.max(0, Math.round((pastEndH - otPaidH) * 10) / 10),
+        otherWin: acc.otherWin,
+        offDay: acc.offDay,
+        typIn: (mIn != null && pS != null) ? Math.round(pS + mIn) : null,
+        typOut: (mOut != null && pE != null) ? Math.round(pE + mOut) : null
+      });
+    });
+    return out;
+  }
+
+  window.__mfgBuildWorkShiftActuals = buildWorkShiftActuals;
+
+  // "End This Shift" (owner idea 2026-11-13): an open shift that is not the company default, has no staff on
+  // it today, started 90+ days ago, and has no attendance row stamped with it and no dated staff override on it
+  // in the last 90 days. Ending it sets its End Date (hard rule 12; the edit form reopens it) and flags it
+  // `retired_unused_at`, so the shift charts and the company's shift pickers stop listing it.
+  // A shift nobody is assigned to can still be the window people really work (WTC 2026-11-13: Night Shift had
+  // 0 staff while Day Shift staff clocked 19:00-07:00 on 2,500 days). So a day clocked in the last 90 days
+  // whose clock-in is nearest this shift's planned start among the company's open shifts, and within 45
+  // minutes of it, counts as `clockedHere`; 10 or more of those days keep "End This Shift" off.
+  const WS_RETIRE_IDLE_DAYS = 90;
+  const WS_RETIRE_CLOCKED_DAYS = 10;
+  const WS_RETIRE_MATCH_MIN = 45;
+  function getWorkShiftRetireInfo(shiftRows, peerRows) {
+    const out = new Map();
+    const rows = (shiftRows || []).filter(r => r && r.id && !r.voided);
+    if (!rows.length) return out;
+    const today = todayISO();
+    const cutoff = shiftIsoDateByDays(today, -WS_RETIRE_IDLE_DAYS);
+    const keyOf = (co, code) => `${norm(co || 'WTC')}|${norm(normalizeShiftCodeAlias(code || ''))}`;
+    const wanted = new Set(rows.map(r => keyOf(r.company, r.shift_code || r.shift_id || r.name)));
+    const wantedCos = new Set(rows.map(r => norm(r.company || 'WTC')));
+    const peersByCo = new Map();
+    (Array.isArray(peerRows) && peerRows.length ? peerRows : rows).forEach(p => {
+      if (!p || p.voided || p.end_date) return;
+      const coN = norm(p.company || 'WTC');
+      if (!wantedCos.has(coN)) return;
+      if (!peersByCo.has(coN)) peersByCo.set(coN, []);
+      peersByCo.get(coN).push(p);
+    });
+    const clockedHere = new Map();
+    const dowCache = new Map();
+    const peerPlanCache = new Map();
+    // When each shift first existed (earliest version of its company + code): a timing edit makes a new version
+    // but must not change which of two equal shifts wins a tie (red-team round 5).
+    const firstStart = new Map();
+    ((SEED && SEED.records && SEED.records.work_shifts) || []).forEach(r => {
+      if (!r || r.voided || !r.start_date) return;
+      const k = keyOf(r.company, r.shift_code || r.shift_id || r.name);
+      const s0 = String(r.start_date).slice(0, 10);
+      if (!firstStart.has(k) || s0 < firstStart.get(k)) firstStart.set(k, s0);
+    });
+    const firstStartOf = p => firstStart.get(keyOf(p.company, p.shift_code || p.shift_id || p.name)) || String(p.start_date || '').slice(0, 10);
+    const cd = (x, y) => ((((x - y) % 1440) + 1440 + 720) % 1440) - 720;
+    const lastSeen = new Map();
+    ((SEED && SEED.records && SEED.records.attendance) || []).forEach(a => {
+      if (!a || a.voided) return;
+      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      if (a.shift_id) {
+        const k = keyOf(a.company, a.shift_id);
+        if (wanted.has(k) && d && (!lastSeen.has(k) || d > lastSeen.get(k))) lastSeen.set(k, d);
+      }
+      if (!d || d < cutoff || d > today) return;
+      const peers = peersByCo.get(norm(a.company || 'WTC'));
+      if (!peers || peers.length < 1) return;
+      const inM = parseClockMinutes(a.in_time || a.check_in || '');
+      if (inM == null) return;
+      let best = null;
+      let bestDist = Infinity;
+      // Equal distance (e.g. two shifts that both start 07:00 on Saturday) goes to the shift with more staff,
+      // then the company default, so an unused shift is not credited with the default's days.
+      // Equal rank: the older shift (earlier start), then the id, so the result never depends on table order.
+      const rank = p => Number(p.associated_staff_count || 0) * 2 + (p.is_bu_default ? 1 : 0);
+      const before = (p, q) => {
+        const rp = rank(p);
+        const rq = rank(q);
+        if (rp !== rq) return rp > rq;
+        const sp = firstStartOf(p), sq = firstStartOf(q);
+        if (sp !== sq) return sp < sq;
+        return String(p.id) < String(q.id);
+      };
+      peers.forEach(p => {
+        const pk = `${p.id}|${d}`;
+        let plan = peerPlanCache.get(pk);
+        if (plan === undefined) { plan = workShiftPlannedWindowOn(p, d, dowCache); peerPlanCache.set(pk, plan); }
+        if (!plan) return;
+        const dist = Math.abs(cd(inM, plan.s));
+        if (dist < bestDist || (dist === bestDist && best && before(p, best))) { bestDist = dist; best = p; }
+      });
+      if (best && bestDist <= WS_RETIRE_MATCH_MIN) clockedHere.set(best.id, (clockedHere.get(best.id) || 0) + 1);
+    });
+    const ws = ensureWorkSchedulesState();
+    const ovSeen = new Map();
+    Object.keys(ws.staffRules || {}).forEach(sk => {
+      const rule = ws.staffRules[sk];
+      (rule && Array.isArray(rule.shift_overrides) ? rule.shift_overrides : []).forEach(o => {
+        if (!o || !o.shift_id || o.shift_id === 'off' || o.shift_id === 'custom') return;
+        const d = String(o.end_date || o.start_date || '').slice(0, 10);
+        const nk = norm(normalizeShiftCodeAlias(o.shift_id));
+        rows.forEach(r => {
+          if (norm(r.company || 'WTC') !== norm(rule.company || r.company || 'WTC')) return;
+          const k = keyOf(r.company, r.shift_code || r.shift_id || r.name);
+          if (k.split('|')[1] !== nk) return;
+          if (d && (!ovSeen.has(k) || d > ovSeen.get(k))) ovSeen.set(k, d);
+        });
+      });
+    });
+    rows.forEach(r => {
+      const k = keyOf(r.company, r.shift_code || r.shift_id || r.name);
+      const start = String(r.start_date || '').slice(0, 10);
+      const seen = [lastSeen.get(k) || '', ovSeen.get(k) || ''].sort().pop() || '';
+      const here = clockedHere.get(r.id) || 0;
+      const eligible = !r.end_date
+        && !r.is_bu_default
+        && Number(r.associated_staff_count || 0) === 0
+        && (!start || start <= cutoff)
+        && (!seen || seen < cutoff)
+        && here < WS_RETIRE_CLOCKED_DAYS;
+      out.set(r.id, { eligible, since: seen || start || '', clockedHere: here });
+    });
+    return out;
+  }
+
+  window.__mfgGetWorkShiftRetireInfo = getWorkShiftRetireInfo;
+
+  function retireUnusedWorkShift(shiftRowId) {
+    if (!canRetireWorkShift()) return { ok: false, error: 'You do not have rights to change shifts' };
+    ensureWorkShiftsSeeded();
+    const pool = (SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [];
+    const row = pool.find(r => r && !r.voided && String(r.id) === String(shiftRowId));
+    if (!row || row.end_date) return { ok: false, error: 'Shift not found or already ended' };
+    const rowCoN = norm(row.company || 'WTC');
+    if (!allowedCompanyNames().some(n => norm(n) === rowCoN)) return { ok: false, error: 'You do not have rights to change shifts' };
+    hydrateWorkShiftRowComputed(row);
+    const peers = pool.filter(r => r && !r.voided && !r.end_date && norm(r.company || 'WTC') === rowCoN);
+    const info = getWorkShiftRetireInfo([row], peers).get(row.id);
+    if (!info || !info.eligible) return { ok: false, error: 'This shift has staff or attendance in the last 90 days' };
+    const nowIso = new Date().toISOString();
+    const u = activeUser() || {};
+    const endIso = todayISO();
+    // Same close markers as an explicit End Date, so a sync merge keeps the end (_preserveClosedEffectiveDates).
+    Object.assign(row, {
+      end_date: endIso,
+      _explicitEnd: true,
+      _reopenedExplicitly: false,
+      _auto_closed_by_id: '',
+      retired_unused_at: nowIso,
+      retired_end_date: endIso,
+      retired_by: u.full_name || '',
+      modified_by: u.full_name || '',
+      modified_by_email: u.email || '',
+      modified_at: nowIso
+    });
+    hydrateWorkShiftRowComputed(row);
+    if (!Array.isArray(STATE.customRecords.work_shifts)) STATE.customRecords.work_shifts = [];
+    const ci = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(row.id));
+    if (ci >= 0) Object.assign(STATE.customRecords.work_shifts[ci], row);
+    else STATE.customRecords.work_shifts.unshift(Object.assign({}, row));
+    if (SEED) SEED._workShiftsSeededRev = '';
+    ensureWorkShiftsSeeded();
+    saveLocalAuthAndRecords();
+    syncWithCloud(true);
+    return { ok: true, row };
+  }
+
+  // Ending an existing shift changes a stored record: entry rights for shifts plus the right to modify data.
+  function canRetireWorkShift(u) {
+    u = u || activeUser();
+    if (!canEnterForm('workshift', u)) return false;
+    const perms = getEffectivePermissions(u);
+    return Boolean(perms && perms.rights && perms.rights.modify_data);
+  }
+
+  // Ended by "End This Shift" and not changed since: the End Date is still the one that action set (a row
+  // reopened and later given another End Date is an ordinary closed row again).
+  function isRetiredWorkShiftRow(r) {
+    if (!r || r.voided || !r.retired_unused_at || !r.end_date) return false;
+    // No 'not after today' test: a device whose clock is behind still treats the row as ended (round 2).
+    return String(r.end_date).slice(0, 10) === String(r.retired_end_date || '').slice(0, 10);
+  }
+
+  // A group of rows of one shift (one company) is ended when one was ended by "End This Shift" and no other row
+  // is open or still in force today or later (a new dated version brings the shift back while it runs).
+  function isWorkShiftGroupEnded(rows) {
+    const list = (rows || []).filter(r => r && !r.voided);
+    const ended = list.filter(isRetiredWorkShiftRow);
+    if (!ended.length) return false;
+    const today = todayISO();
+    return !list.some(r => !isRetiredWorkShiftRow(r) && (!r.end_date || String(r.end_date).slice(0, 10) >= today));
+  }
+
+  function wsUiT(msg) {
+    const lang = window.MFG_I18N && window.MFG_I18N.getLang ? window.MFG_I18N.getLang() : 'en';
+    return (lang !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(msg, lang) : msg;
+  }
+
+  // Shift codes a company ended through "End This Shift" and has not reopened (no open row of that code).
+  function getRetiredShiftCodes(companyRaw) {
+    const coN = norm(companyRaw || 'WTC');
+    const list = ((SEED && SEED.records && SEED.records.work_shifts) || []).filter(r => r && !r.voided && norm(r.company || 'WTC') === coN);
+    const byCode = new Map();
+    list.forEach(r => {
+      const code = normalizeShiftCodeAlias(r.shift_code || r.shift_id || r.id || '');
+      if (!byCode.has(code)) byCode.set(code, []);
+      byCode.get(code).push(r);
+    });
+    const retired = new Set();
+    // Names of ended shifts and the codes still open: a shift type linked to an ended shift only by name (a
+    // modal-made type keeps a random id) leaves the pickers too, unless its own code has an open row.
+    retired.names = new Set();
+    retired.openCodes = new Set();
+    byCode.forEach((rows, code) => {
+      if (isWorkShiftGroupEnded(rows)) {
+        retired.add(code);
+        rows.forEach(r => { if (r.name && isRetiredWorkShiftRow(r)) retired.names.add(norm(r.name)); });
+      }
+      const today = todayISO();
+      if (rows.some(r => !r.end_date || String(r.end_date).slice(0, 10) >= today)) retired.openCodes.add(code);
+    });
+    return retired;
+  }
+
   // Chart rows for the Attendance & Overtime shift charts (js/pbi_pages.js renderWorkShiftsVisualsSection):
   // minutes-of-day windows for regular hours and any configured recurring weekday or specific-date exceptions.
-  function buildWorkShiftChartRows(shiftRows) {
+  function buildWorkShiftChartRows(shiftRows, opts = {}) {
+    const actuals = opts.actuals instanceof Map ? opts.actuals : null;
+    const retire = opts.retire instanceof Map ? opts.retire : null;
     const win = (a, b) => {
       const s = parseClockMinutes(a);
       const e = parseClockMinutes(b);
@@ -28780,10 +29166,15 @@
       const allExc = weekdayGroups.concat(dateGroups);
       const primary = allExc[0] || null;
       const rest = allExc.slice(1);
+      const ret = retire ? retire.get(ws.id) : null;
       return {
+        id: ws.id,
         name: ws.shift_name || ws.name || 'Shift',
         company: ws.company || '',
         isDefault: Boolean(ws.is_bu_default),
+        act: actuals ? (actuals.get(ws.id) || null) : null,
+        retire: ret && ret.eligible ? { since: ret.since ? fmtDateDMY(ret.since) : '' } : null,
+        clockedHere: ret ? Number(ret.clockedHere || 0) : 0,
         wk,
         sat: primary && primary.segs.length ? primary.segs : null,
         excTag: primary ? primary.tag : '',
@@ -28886,6 +29277,19 @@
       const co = st.company || 'WTC';
       const bridgeId = stId.startsWith('ws_') ? stId : `ws_st_${stId}_${norm(co).replace(/[^a-z0-9]+/g, '')}`;
       if (voidedIds.has(bridgeId) || customById.has(bridgeId) || byId.has(bridgeId)) return;
+      // A shift the company ended with "End This Shift" stays ended: its saved timing does not reopen it.
+      // Custom rows count here too: right after a reload they are merged only further down, and an ended seed
+      // row is not in rec.work_shifts yet (red-team 2026-11-13).
+      const stCodeNorm = norm(normalizeShiftCodeAlias(stId));
+      const coRowsById = new Map();
+      rec.work_shifts.concat(customList).forEach(r => {
+        if (!r || r.voided || norm(r.company || 'WTC') !== norm(co)) return;
+        // Same match as matchingSeed below: by code or by name (a modal-made type keeps a random id).
+        if (norm(normalizeShiftCodeAlias(r.shift_code || r.shift_id || '')) !== stCodeNorm && !(st.name && norm(r.name || '') === norm(st.name))) return;
+        coRowsById.set(String(r.id || coRowsById.size), r);
+      });
+      const coRows = Array.from(coRowsById.values());
+      if (isWorkShiftGroupEnded(coRows)) return;
       const matchingSeed = rec.work_shifts.find(r =>
         r && !r.voided
         && norm(r.company || 'WTC') === norm(co)
@@ -41198,11 +41602,16 @@
           const avgWsHrs = sortedWs.length ? (sortedWs.reduce((a, r) => a + Number(r.scheduled_hours || 0), 0) / sortedWs.length) : 8;
           const activeBuList = getActiveIndustryBuList();
           const liveShiftTypes = getShiftTypes();
-          const wsChartRows = buildWorkShiftChartRows(activeWs.slice(0, 8));
-          const wsShowCo = new Set(activeWs.slice(0, 8).map(r => String(r.company || ''))).size > 1;
+          const wsChartBase = activeWs.slice(0, 8);
+          const wsCanRetire = canRetireWorkShift();
+          const wsChartRows = buildWorkShiftChartRows(wsChartBase, {
+            actuals: buildWorkShiftActuals(activeWs, attAll),
+            retire: getWorkShiftRetireInfo(wsChartBase, activeWs)
+          });
+          const wsShowCo = new Set(wsChartBase.map(r => String(r.company || ''))).size > 1;
           return `
             ${(window.MFG_PBI && typeof window.MFG_PBI.renderWorkShiftsVisualsSection === 'function')
-              ? window.MFG_PBI.renderWorkShiftsVisualsSection({ shifts: wsChartRows, showCo: wsShowCo })
+              ? window.MFG_PBI.renderWorkShiftsVisualsSection({ shifts: wsChartRows, showCo: wsShowCo, canRetire: wsCanRetire })
               : ''}
 
             <div class="panel-card" id="payShiftTimingsPanel">
@@ -123156,13 +123565,19 @@
     });
     const buDef = getBuDefaultShift(targetCo);
     const buDefCode = normalizeShiftCodeAlias((buDef && (buDef.shift_code || buDef.shift_id)) || '');
+    // Shifts the company ended with "End This Shift" leave its pickers until a row of that code is reopened.
+    const retiredCodes = getRetiredShiftCodes(targetCo);
+    retiredCodes.delete(buDefCode);
     const out = [];
     DEFAULT_SHIFT_TYPES.forEach(def => {
       const ov = customById.get(def.id);
-      out.push(normalizeShiftTypeObj(Object.assign({ company: targetCo }, ov || def), def));
       customById.delete(def.id);
+      if (retiredCodes.has(def.id)) return;
+      out.push(normalizeShiftTypeObj(Object.assign({ company: targetCo }, ov || def), def));
     });
-    customById.forEach(custom => {
+    customById.forEach((custom, code) => {
+      if (retiredCodes.has(code)) return;
+      if (retiredCodes.names && custom && custom.name && retiredCodes.names.has(norm(custom.name)) && !(retiredCodes.openCodes && retiredCodes.openCodes.has(code))) return;
       if (custom && !custom.voided) {
         const cCoNorm = norm(custom.company || '');
         if (!cCoNorm || cCoNorm === norm('All BUs') || cCoNorm === norm('All Companies') || cCoNorm === coNorm) {
@@ -132778,6 +133193,33 @@
           backfillShiftTimingChange(targetRow, { fromDate: todayISO() });
         }
         toast(`Set ${(stObj && stObj.name) || shiftCode} as default shift for ${bu}`, 'ok');
+        renderApp();
+      });
+    });
+    container.querySelectorAll('[data-ws-retire]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        // Click once to arm, again within 5 seconds to end the shift (same as Void).
+        if (btn.getAttribute('data-armed') !== '1') {
+          btn.setAttribute('data-armed', '1');
+          btn.classList.add('is-armed');
+          btn.textContent = wsUiT('Click Again to End');
+          clearTimeout(btn._wsRetireT);
+          btn._wsRetireT = setTimeout(() => {
+            btn.removeAttribute('data-armed');
+            btn.classList.remove('is-armed');
+            btn.textContent = wsUiT('End This Shift');
+          }, 5000);
+          return;
+        }
+        clearTimeout(btn._wsRetireT);
+        const res = retireUnusedWorkShift(btn.getAttribute('data-ws-retire') || '');
+        if (res && res.ok) {
+          toast(`${wsUiT('Shift ended')}: ${res.row.name || res.row.shift_name || ''} (${res.row.company || ''})`, 'ok');
+        } else {
+          toast(wsUiT((res && res.error) || 'Shift not found or already ended'), 'err');
+        }
         renderApp();
       });
     });
