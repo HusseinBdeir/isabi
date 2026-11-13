@@ -3835,6 +3835,22 @@ function chunkStringSurrogateSafe(str, maxChars) {
   return chunks.length ? chunks : [''];
 }
 
+// A stored document read back from its head + `__part_` rows. `unreadable` when a row exists but the stitched text is
+// empty or does not parse to a plain object (torn parts, incident 2026-11-13); `obj` is then `{}`, never a guess.
+function parseStoredKvDoc(row) {
+  if (!row) return { obj: {}, unreadable: false };
+  const raw = String(row.payload_json || '');
+  const parsed = raw === '' ? null : safeJsonParse(raw, null);
+  const isObj = Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed);
+  return { obj: isObj ? parsed : {}, unreadable: !isObj };
+}
+
+// Parts with no head row: readEdgeKvDoc returns null (a new workspace), but the store is damaged, not new.
+async function hasOrphanKvParts(db, key) {
+  const r = await db.prepare('SELECT 1 AS x FROM edge_kv_store WHERE doc_key LIKE ?1 LIMIT 1').bind(`${key}__part_%`).first();
+  return Boolean(r);
+}
+
 async function readEdgeKvDoc(db, key) {
   const rows = await db.prepare(
     'SELECT doc_key, payload_json, updated_at, rev FROM edge_kv_store WHERE doc_key = ?1 OR doc_key LIKE ?2 ORDER BY doc_key ASC'
@@ -4139,14 +4155,24 @@ export async function handleSync(request, env, session, body, _ctx) {
       return jsonResponse({ ok: false, error: 'Owner permissions required for control store.' }, 403);
     }
     const row = await readEdgeKvDoc(env.DB, targetKey);
-    const rawDocObj = row ? safeJsonParse(row.payload_json, {}) : {};
+    // A stored document that does not parse (torn __part_ rows, incident 2026-11-13) is flagged, never passed off
+    // as an empty store: scripts check `storeUnreadable` and refuse to write back. The document stays `{}` so a
+    // browser holding the full store still syncs; only an Owner / full-group save may rewrite it (patch below).
+    const parsedRow = parseStoredKvDoc(row);
+    const rawDocObj = parsedRow.obj;
+    const storeUnreadable = parsedRow.unreadable || (!row && await hasOrphanKvParts(env.DB, targetKey));
+    if (storeUnreadable) {
+      console.error(`[sync] ${targetKey} is unreadable (${row ? String(row.payload_json || '').length + ' chars stitched' : 'parts without a head row'})`);
+    }
     if (row && row.updated_at && !rawDocObj.updatedAt) rawDocObj.updatedAt = row.updated_at;
     if (targetKey === 'mfg_web_store') {
       await overlayCanonicalSubStoresOnMfgDoc(env.DB, rawDocObj);
       capMinShellVerForRead(rawDocObj);
     }
     const docObj = targetKey === 'mfg_web_store' ? scopeStoreDocForSession(rawDocObj, session) : rawDocObj;
-    return jsonResponse({ ok: true, edge: true, docs: { [targetKey]: docObj } });
+    const getResp = { ok: true, edge: true, docs: { [targetKey]: docObj } };
+    if (storeUnreadable) getResp.storeUnreadable = true;
+    return jsonResponse(getResp);
   }
 
   if (isDemoHeader(request)) {
@@ -4171,22 +4197,31 @@ export async function handleSync(request, env, session, body, _ctx) {
     const currentRow = await readEdgeKvDoc(env.DB, pKey);
     const currentTs = currentRow ? String(currentRow.updated_at || '') : '';
 
+    const currentParsed = parseStoredKvDoc(currentRow);
+
     if (expectedTs && currentTs && expectedTs !== currentTs) {
-      const rawFresh = safeJsonParse(currentRow.payload_json, {});
+      const rawFresh = currentParsed.obj;
       if (pKey === 'mfg_web_store') {
         await overlayCanonicalSubStoresOnMfgDoc(env.DB, rawFresh);
         capMinShellVerForRead(rawFresh);
       }
       const freshDoc = pKey === 'mfg_web_store' ? scopeStoreDocForSession(rawFresh, session) : rawFresh;
-      return jsonResponse({
-        ok: true,
-        conflict: true,
-        updatedAt: currentTs,
-        docs: { [pKey]: freshDoc }
-      });
+      const conflictResp = { ok: true, conflict: true, updatedAt: currentTs, docs: { [pKey]: freshDoc } };
+      if (currentParsed.unreadable) conflictResp.storeUnreadable = true;
+      return jsonResponse(conflictResp);
     }
 
-    let prevDoc = currentRow ? safeJsonParse(currentRow.payload_json, null) : null;
+    // An unreadable store can only be rewritten by a session that sees the whole store (Owner / full group). A
+    // company-scoped seat would otherwise turn its own slice into the whole document: the row-level guard keeps other
+    // companies' rows from the previous document, and an unreadable one has none. The browser keeps its changes and
+    // retries (`Cloud read-only (503)`), and goes through once an Owner device has saved.
+    if (pKey === 'mfg_web_store' && !isOwnerOrFullGroupSession(session)
+      && ((currentRow && currentParsed.unreadable) || (!currentRow && await hasOrphanKvParts(env.DB, pKey)))) {
+      console.error(`[sync] refused a company-scoped save onto an unreadable ${pKey} (${String((session && session.email) || '')})`);
+      return jsonResponse({ ok: false, storeUnreadable: true, error: 'The shared store is being repaired; your changes stay on this device and sync once it is.' }, 503);
+    }
+
+    let prevDoc = currentRow ? (currentParsed.unreadable ? null : currentParsed.obj) : null;
     if (pKey === 'mfg_web_store') {
       prevDoc = await overlayCanonicalSubStoresOnMfgDoc(env.DB, prevDoc || {});
     }
@@ -4220,18 +4255,21 @@ export async function handleSync(request, env, session, body, _ctx) {
     );
     if (kvRes && kvRes.conflict) {
       const latestRow = await readEdgeKvDoc(env.DB, pKey);
-      const latestRaw = latestRow ? safeJsonParse(latestRow.payload_json, {}) : {};
+      const latestParsed = parseStoredKvDoc(latestRow);
+      const latestRaw = latestParsed.obj;
       if (pKey === 'mfg_web_store') {
         await overlayCanonicalSubStoresOnMfgDoc(env.DB, latestRaw);
         capMinShellVerForRead(latestRaw);
       }
       const latestScoped = pKey === 'mfg_web_store' ? scopeStoreDocForSession(latestRaw, session) : latestRaw;
-      return jsonResponse({
+      const latestResp = {
         ok: true,
         conflict: true,
         updatedAt: latestRow ? String(latestRow.updated_at || '') : '',
         docs: { [pKey]: latestScoped }
-      });
+      };
+      if (latestParsed.unreadable) latestResp.storeUnreadable = true;
+      return jsonResponse(latestResp);
     }
 
     let mirrorStats = undefined;
