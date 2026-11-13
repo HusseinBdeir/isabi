@@ -11152,7 +11152,17 @@
       "Cash (Tracked Tills) & IC Pairing": "النقد (الصناديق المتتبَّعة) ومطابقة المعاملات البينية",
       "Cash vs Card Split": "فصل النقد عن البطاقات",
       "Bank vs Cash Split": "فصل المصرف عن النقد",
-      "Why is the Cash Till not tracked yet?": "لماذا رصيد الصندوق غير متتبَّع بعد؟"
+      "Why is the Cash Till not tracked yet?": "لماذا رصيد الصندوق غير متتبَّع بعد؟",
+      "No pin on this site yet. Paste the customer's WhatsApp location or a map link.": "لا يوجد دبوس لهذا الموقع بعد. الصق موقع الزبون على واتساب أو رابط خريطة.",
+      "Save Pin": "حفظ الدبوس",
+      "The pin was not saved.": "لم يتم حفظ الدبوس.",
+      "Pinned": "تم التثبيت",
+      "Region kept": "بقيت المنطقة",
+      "This site has no Region yet, and the Region sets night trip pay.": "لا توجد منطقة لهذا الموقع بعد، والمنطقة هي التي تحدد بدل الرحلات الليلية.",
+      "Pin it in Edit Site, where you can check the Region.": "ثبّته من تعديل الموقع، حيث يمكنك التحقق من المنطقة.",
+      "This point is outside the site's Region": "هذه النقطة خارج منطقة الموقع",
+      "Check the link, or pin it in Edit Site, where you can change the Region.": "تحقق من الرابط، أو ثبّته من تعديل الموقع حيث يمكنك تغيير المنطقة.",
+      "Pin saved on the site": "تم حفظ الدبوس على الموقع"
     },
     fr: {
       "Not split by borrower": "Non réparti par emprunteur",
@@ -22286,7 +22296,17 @@
       "Cash (Tracked Tills) & IC Pairing": "Trésorerie (caisses suivies) & rapprochement intragroupe",
       "Cash vs Card Split": "Répartition espèces / carte",
       "Bank vs Cash Split": "Répartition banque / espèces",
-      "Why is the Cash Till not tracked yet?": "Pourquoi la caisse n'est-elle pas encore suivie ?"
+      "Why is the Cash Till not tracked yet?": "Pourquoi la caisse n'est-elle pas encore suivie ?",
+      "No pin on this site yet. Paste the customer's WhatsApp location or a map link.": "Ce site n'a pas encore d'emplacement. Collez la position WhatsApp du client ou un lien de carte.",
+      "Save Pin": "Enregistrer l'emplacement",
+      "The pin was not saved.": "L'emplacement n'a pas été enregistré.",
+      "Pinned": "Épinglé",
+      "Region kept": "Région conservée",
+      "This site has no Region yet, and the Region sets night trip pay.": "Ce site n'a pas encore de région, et la région fixe la prime des trajets de nuit.",
+      "Pin it in Edit Site, where you can check the Region.": "Épinglez-le dans Modifier le site, où vous pouvez vérifier la région.",
+      "This point is outside the site's Region": "Ce point est en dehors de la région du site",
+      "Check the link, or pin it in Edit Site, where you can change the Region.": "Vérifiez le lien, ou épinglez-le dans Modifier le site, où vous pouvez changer la région.",
+      "Pin saved on the site": "Emplacement enregistré sur le site"
     }
   };
 

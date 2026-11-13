@@ -756,6 +756,34 @@
 [data-theme="dark"] .geo-link-note { color: #F5B97A; }
 .geo-link-note.is-dup { color: #B91C1C; }
 [data-theme="dark"] .geo-link-note.is-dup { color: #FCA5A5; }
+/* Sales Ticket: pin an unpinned delivery site while taking the order */
+.tkt-site-pin-bar {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px dashed rgba(192, 137, 47, 0.55);
+  border-radius: 9px;
+  background: rgba(192, 137, 47, 0.06);
+  min-width: 0;
+}
+.tkt-site-pin-bar[hidden] { display: none !important; }
+.tkt-site-pin-lbl {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+  margin: 0 0 6px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.tkt-site-pin-lbl svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--brass, #C0892F); margin-top: 1px; }
+.tkt-site-pin-row { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.tkt-site-pin-row > input { flex: 1 1 auto; min-width: 0; width: 100%; }
+.tkt-site-pin-row > .btn { flex: 0 0 auto; white-space: nowrap; }
+.tkt-site-pin-row > .btn[hidden] { display: none !important; }
+.tkt-site-pin-row > .btn svg { width: 14px; height: 14px; }
 .geo-link-actions {
   display: flex;
   align-items: center;

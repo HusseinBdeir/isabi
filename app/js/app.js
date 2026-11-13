@@ -81644,6 +81644,202 @@
     `;
   }
 
+  // Sales Ticket: when the Delivery site picked has no pin, one paste box under Site pins it while the order is
+  // taken (parseMapLink). The pin is saved to the site record; its Region is never changed here (the Region sets
+  // night trip pay): a site with no Region, or a point outside it, is left for Edit Site.
+  function renderTicketSitePinBarHtml() {
+    return `<div id="tktSitePinBar" class="tkt-site-pin-bar" hidden>
+      <label class="tkt-site-pin-lbl" for="tktSitePinPasteInp">${ic('pin')} <span>No pin on this site yet. Paste the customer's WhatsApp location or a map link.</span></label>
+      <div class="tkt-site-pin-row">
+        <input type="text" id="tktSitePinPasteInp" autocomplete="off" spellcheck="false" inputmode="url" placeholder="Paste Map or WhatsApp Link">
+        <button type="button" class="btn btn-ghost btn-sm" id="tktSitePinSaveBtn" hidden>${ic('pin')} <span>Save Pin</span></button>
+      </div>
+      <div id="tktSitePinStatus" class="geo-link-status" role="status" aria-live="polite" hidden></div>
+    </div>`;
+  }
+  function _tktPinMfgSiteRow(name) {
+    const k = norm(name);
+    if (!k) return null;
+    const rows = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => s && !s.voided && norm(s.name) === k
+      && !s._multiIndustrySeed && (!s._industry || s._industry === 'Manufacturing'));
+    // A delivery site and a quarry can share a name: the ticket's Destination Site is the customer one
+    return rows.find(s => resolveSiteCategory(s) === 'customer') || rows[0] || null;
+  }
+  function _tktPinHasPin(row) {
+    const ok = v => v != null && String(v).trim() !== '' && Number.isFinite(Number(v));
+    return Boolean(row && ok(row.latitude) && ok(row.longitude));
+  }
+  function canPinSiteFromTicket(u) {
+    u = u || activeUser();
+    return canEnterForm('site', u) || canModifyData(u);
+  }
+  // Pure decision for a parsed link on the ticket's site (also used by build/verify_ticket_site_pin.mjs)
+  function decideTicketSitePin(row, parsed) {
+    if (!row) return { action: 'none', code: 'no_site' };
+    if (_tktPinHasPin(row)) return { action: 'none', code: 'has_pin' };
+    if (!parsed || !parsed.ok) return { action: 'error', code: (parsed && parsed.code) || 'unrecognized' };
+    if (parsed.outsideLebanon) return { action: 'refuse', code: 'outside_lebanon' };
+    const region = String(row.region || '').trim();
+    if (!region) return { action: 'refuse', code: 'no_region' };
+    const G = window.MFG_GEO;
+    if (!G || typeof G.isPointInsideNamedRegion !== 'function' || typeof G.resolveRegionRecordOrAtlas !== 'function') {
+      return { action: 'refuse', code: 'outside_region', region };
+    }
+    // Only a Region with a drawn shape (boundary, or a circle around a real centre) can be checked; one with no shape
+    // is kept as it is like any other, and the pin is saved (the Region, and so night trip pay, never changes here)
+    const regObj = G.resolveRegionRecordOrAtlas(region, SEED);
+    const regRow = regObj && regObj.row;
+    const hasShape = Boolean(regObj && (regObj.zone_geojson
+      || (regObj.zone_type === 'circle' && Number(regObj.radius_km) > 0 && (!regRow || (regRow.center_lat != null && regRow.center_lat !== '')))));
+    if (hasShape && !G.isPointInsideNamedRegion(parsed.lat, parsed.lng, region, SEED)) {
+      return { action: 'refuse', code: 'outside_region', region };
+    }
+    const doubtful = Boolean(parsed.approx || parsed.mapView || parsed.lowPrecision || parsed.swapped);
+    return { action: doubtful ? 'confirm' : 'save', code: doubtful ? 'doubtful' : 'ok', region };
+  }
+  function saveTicketSitePin(row, lat, lng) {
+    const G = window.MFG_GEO;
+    if (!row || !G || typeof G.persistLocationPin !== 'function' || !canPinSiteFromTicket()) return false;
+    if (_tktPinHasPin(row)) return false;
+    const region = String(row.region || '').trim();
+    if (!region) return false;
+    const nLat = Math.round(Number(lat) * 1e5) / 1e5;
+    const nLng = Math.round(Number(lng) * 1e5) / 1e5;
+    if (!Number.isFinite(nLat) || !Number.isFinite(nLng)) return false;
+    row._pinCleared = false;
+    row.latitude = nLat;
+    row.longitude = nLng;
+    // Same write as Edit Site, with the site's own Region passed explicitly so it is kept as it is
+    G.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category, name: row.name, lat: nLat, lng: nLng, region }, { SEED, STATE, userEmail: activeUser().email });
+    if (String(row.region || '').trim() !== region) row.region = region;
+    // Stamped after persistLocationPin, which writes its own stamps on the same row
+    row.modified_by = activeUser().email;
+    row.modified_at = nextMonotonicIso();
+    if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+    const cIdx = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(row.id));
+    if (cIdx >= 0) Object.assign(STATE.customRecords.sites[cIdx], row);
+    else STATE.customRecords.sites.unshift(Object.assign({}, row));
+    applyCustomRecordsToSeed();
+    saveLocalAuthAndRecords();
+    if (!window.__fastInspectorModifyTest) {
+      postRecordToLocalApi('sites', row);
+      syncWithCloud(true);
+    }
+    return true;
+  }
+  window.MFG_TKT_SITE_PIN = { decide: decideTicketSitePin, canPin: canPinSiteFromTicket, siteRow: _tktPinMfgSiteRow };
+  function syncTicketSitePinBar(company, site, isDelivery) {
+    const bar = $('tktSitePinBar');
+    if (!bar) return;
+    const inp = $('tktSitePinPasteInp');
+    const statusEl = $('tktSitePinStatus');
+    const saveBtn = $('tktSitePinSaveBtn');
+    const siteKey = norm(site);
+    const row = (isDelivery && siteKey) ? _tktPinMfgSiteRow(site) : null;
+    if (bar.dataset.site !== siteKey) {
+      // Another site: start clean
+      bar.dataset.site = siteKey;
+      bar.dataset.saved = '';
+      if (inp) { inp.value = ''; delete inp.dataset.lastVal; inp.removeAttribute('aria-invalid'); }
+      if (statusEl) { statusEl.hidden = true; statusEl.innerHTML = ''; statusEl.className = 'geo-link-status'; }
+      if (saveBtn) saveBtn.hidden = true;
+    }
+    const justSaved = bar.dataset.saved === siteKey && siteKey;
+    bar.hidden = !(row && canPinSiteFromTicket() && (justSaved || !_tktPinHasPin(row)));
+    bar.dataset.company = company || '';
+    if (!inp || inp.dataset.wired === '1') return;
+    inp.dataset.wired = '1';
+    let pending = null;
+    let debounceT = 0;
+    const setStatus = (html, tone) => {
+      if (!statusEl) return;
+      statusEl.hidden = !html;
+      statusEl.className = 'geo-link-status' + (tone ? ' ' + tone : '');
+      statusEl.innerHTML = html || '';
+    };
+    const vb = x => `<b class="geo-link-val" dir="auto" data-no-i18n="1">${esc(x)}</b>`;
+    const doSave = () => {
+      const cur = _tktPinMfgSiteRow(val('f_site'));
+      if (!pending || !cur || norm(cur.name) !== pending.siteKey) return;
+      const p = pending;
+      pending = null;
+      if (saveBtn) saveBtn.hidden = true;
+      if (!saveTicketSitePin(cur, p.lat, p.lng)) {
+        setStatus(`<span class="geo-link-ic is-crit">${ic('warn')}</span><span class="geo-link-msg"><span>The pin was not saved.</span></span>`, 'is-crit');
+        return;
+      }
+      bar.dataset.saved = p.siteKey;
+      inp.value = '';
+      setStatus(`<span class="geo-link-ic is-ok">${ic('check')}</span><span class="geo-link-msg"><span class="geo-link-parts"><span>Pinned</span> ${vb(cur.name)}<span class="geo-link-sep" aria-hidden="true"> · </span><span>Region kept</span> ${vb(p.region)}${p.hubLine || ''}</span></span>`, 'is-ok');
+      toast('Pin saved on the site', 'ok');
+      try { recalcForm(); } catch (_) {}
+    };
+    const apply = force => {
+      const raw = String(inp.value || '');
+      if (!force && raw === inp.dataset.lastVal) return;
+      inp.dataset.lastVal = raw;
+      pending = null;
+      if (saveBtn) saveBtn.hidden = true;
+      if (!raw.trim()) { setStatus('', ''); inp.removeAttribute('aria-invalid'); return; }
+      const G = window.MFG_GEO;
+      const cur = _tktPinMfgSiteRow(val('f_site'));
+      if (!G || !cur || typeof G.parseMapLink !== 'function') return;
+      const co = bar.dataset.company || val('f_company') || 'WTC';
+      const hub = typeof G.getCompanyHub === 'function' ? G.getCompanyHub(co, SEED) : null;
+      const ref = hub ? { lat: hub.lat, lng: hub.lng, label: hub.name } : null;
+      const parsed = G.parseMapLink(raw, { SEED, ref });
+      const dec = decideTicketSitePin(cur, parsed);
+      if (dec.action === 'error') {
+        inp.setAttribute('aria-invalid', 'true');
+        setStatus(G.renderMapLinkStatusHtml(parsed || { ok: false, code: 'unrecognized' }), dec.code === 'short_link' ? 'is-warn' : 'is-crit');
+        return;
+      }
+      inp.removeAttribute('aria-invalid');
+      if (dec.action === 'none') { setStatus('', ''); return; }
+      const info = typeof G.getMapLinkReferenceInfo === 'function'
+        ? G.getMapLinkReferenceInfo(parsed.lat, parsed.lng, SEED, { industry: 'Manufacturing', company: co, excludeId: cur.id || '' })
+        : null;
+      if (info) { info.region = String(cur.region || '').trim(); info.governorate = ''; }
+      if (dec.action === 'refuse') {
+        const why = dec.code === 'outside_lebanon'
+          ? '<span>Outside Lebanon. Check the link.</span> <span>The pin was not saved.</span>'
+          : (dec.code === 'no_region'
+            ? '<span>This site has no Region yet, and the Region sets night trip pay.</span> <span>Pin it in Edit Site, where you can check the Region.</span>'
+            : `<span>This point is outside the site's Region</span> ${vb(dec.region)}<span aria-hidden="true">.</span> <span>Check the link, or pin it in Edit Site, where you can change the Region.</span>`);
+        setStatus(`<span class="geo-link-ic is-warn">${ic('warn')}</span><span class="geo-link-msg"><span class="geo-link-parts"><span class="geo-link-src">${esc(parsed.sourceLabel || '')}</span> ${vb(parsed.lat.toFixed(5) + ', ' + parsed.lng.toFixed(5))}</span><span class="geo-link-notes"><span class="geo-link-note">${why}</span></span></span>`, 'is-warn');
+        return;
+      }
+      const hubLine = (info && info.hub)
+        ? `<span class="geo-link-sep" aria-hidden="true"> · </span><span>Distance from</span> ${vb(info.hub.name)} ${vb(info.hub.oneWayKm.toFixed(1) + ' km')} <span>one way</span>`
+        : '';
+      pending = { siteKey: norm(cur.name), lat: parsed.lat, lng: parsed.lng, region: dec.region, hubLine };
+      const dup = Boolean(info && info.nearest && info.nearest.duplicateRisk);
+      if (dec.action === 'confirm' || dup) {
+        // A doubtful point (map view, low precision, swapped, approximate) or another site within 150 m: one more tap
+        setStatus(G.renderMapLinkStatusHtml(parsed, info), 'is-warn');
+        if (saveBtn) saveBtn.hidden = false;
+        return;
+      }
+      doSave();
+    };
+    inp.addEventListener('paste', () => { setTimeout(() => apply(false), 0); });
+    inp.addEventListener('input', ev => {
+      ev.stopPropagation();
+      clearTimeout(debounceT);
+      debounceT = setTimeout(() => apply(false), 220);
+    });
+    inp.addEventListener('change', ev => { ev.stopPropagation(); clearTimeout(debounceT); apply(false); });
+    inp.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        ev.stopPropagation();
+        clearTimeout(debounceT);
+        apply(true);
+      }
+    });
+    if (saveBtn) saveBtn.addEventListener('click', ev => { ev.preventDefault(); ev.stopPropagation(); doSave(); });
+  }
+
   function syncTicketSeriesFieldBar(side, sCtx) {
     const connBar = $('tktSeriesConnBar');
     const fldBar = $('tktSeriesFieldBar');
@@ -82139,7 +82335,7 @@
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', customerNames()), { id: 'wrap_f_customer', hintId: 'hint_customer', hint: '' })}
           ${renderTicketDispositionBarHtml('sales')}
           ${renderOriginDispatchBarHtml(company, 'sales')}
-          ${fld('Destination Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', activeDeliverySiteMetaItems(company, today, '', '')), { id: 'wrap_f_site', hidden: true, hintId: 'hint_site', hint: '' })}
+          ${fld('Destination Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', activeDeliverySiteMetaItems(company, today, '', '')), { id: 'wrap_f_site', hidden: true, hintId: 'hint_site', hint: '', afterHtml: renderTicketSitePinBarHtml() })}
           ${fld('Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type truck..."') + dl('dl_equip', truckNames()), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
           ${fld('Truck Owner (Hauler) *', inp('f_truckowner', 'text', '', 'list="dl_truckowners" placeholder="Auto-filled from Truck..."') + dl('dl_truckowners', truckOwnerNames()), { id: 'wrap_f_truckowner', lockField: 'f_truckowner', lockReason: 'Auto-populated from the selected Truck; auto-unlocks if truck has no registered owner', hintId: 'hint_truckowner', hint: '' })}
           ${fld('Driver *', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Pick Truck first..." readonly') + dl('dl_drivers', []), { id: 'wrap_f_driver', hidden: true, lockField: 'f_driver', lockReason: 'Locked to the active driver in the Equipment Log — update Equipment Log if absent or changed', hintId: 'hint_driver', hint: '' })}
@@ -85869,6 +86065,7 @@
       }
     }
     setHint('hint_site', isDelivery ? (site ? '' : 'Required on Delivery') : '', (FORM_UI.postAttempted && isDelivery && !site) ? 'crit' : '');
+    syncTicketSitePinBar(company, site, isDelivery && !isUnreg);
 
     // 6. Quantity Lock & Tier 1/2/3 + Client/Site Agreement Truck Size Override
     let tier = { tier: 0, adj: 0, transAdj: 0 };
@@ -97588,7 +97785,7 @@
     });
 
     body.querySelectorAll('input, select').forEach(el => {
-      if (el.id === 'originInlineKmInp') return;
+      if (el.id === 'originInlineKmInp' || el.id === 'tktSitePinPasteInp') return;
       // Clicking a policy-locked input/select opens the Admin Privilege Unlock Process
       el.addEventListener('mousedown', ev => {
         if (el.id === 'f_fxrate') return;
@@ -98905,7 +99102,8 @@
       );
       let siteReg = val('f_region');
       if (!siteReg && siteLat != null && siteLng != null && window.MFG_GEO && typeof window.MFG_GEO.findContainingRegion === 'function') {
-        const hitReg = window.MFG_GEO.findContainingRegion(siteLat, siteLng, SEED);
+        // Region records only: a blank Region is never filled from a map boundary nobody chose (night trip pay)
+        const hitReg = window.MFG_GEO.findContainingRegion(siteLat, siteLng, SEED, undefined, { recordsOnly: true });
         if (hitReg && hitReg.name) siteReg = hitReg.name;
       }
       if (!inclTrans && !siteReg && nm && window.MFG_GEO && typeof window.MFG_GEO.resolvePlaceLocation === 'function') {
@@ -101986,7 +102184,7 @@
     body.querySelectorAll('input, select, textarea').forEach(el => {
       if (!el.id && !el.name) return;
       if (el.type === 'file') return;
-      if (el.classList.contains('pa-select-filter') || el.classList.contains('co-multi-search') || el.classList.contains('aie-voice-input') || el.id === 'openLoansSearchInput' || el.id === 'siteRulesSearchInput') return;
+      if (el.classList.contains('pa-select-filter') || el.classList.contains('co-multi-search') || el.classList.contains('aie-voice-input') || el.id === 'openLoansSearchInput' || el.id === 'siteRulesSearchInput' || el.id === 'tktSitePinPasteInp') return;
       const key = el.id || el.name;
       const v = el.type === 'checkbox' ? (el.checked ? '1' : '0') : String(el.value == null ? '' : el.value).trim();
       parts.push(key + '=' + v);

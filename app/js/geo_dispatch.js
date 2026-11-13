@@ -1276,108 +1276,123 @@
     return (!ind || ind === 'Manufacturing') ? '' : (norm(ind) + '::');
   }
 
-  function findContainingRegion(lat, lng, SEED, explicitInd) {
+  // Synthetic Region from a boundary-atlas item (atlas items carry name + geojson, older shapes label + poly)
+  function atlasItemAsRegion(a) {
+    if (!a) return null;
+    const gj = a.geojson ? parseZoneGeoJson(a.geojson) : (a.poly ? polyFromPairs(a.poly) : null);
+    return {
+      name: a.name || a.label || '',
+      zone_type: a.zone_type || (gj ? 'boundary' : 'circle'),
+      center_lat: a.lat,
+      center_lng: a.lng,
+      radius_km: a.radius_km || 0,
+      zone_geojson: gj
+    };
+  }
+
+  // Region for a point. A Region record that holds the point always wins (the Region sets night trip pay, so a
+  // map boundary never outranks one); a map boundary (town / district) is used only when no Region record holds
+  // the point. opts.recordsOnly: Region records only (start-up fill of a blank site Region, pay-relevant).
+  function findContainingRegion(lat, lng, SEED, explicitInd, opts) {
     const regions = ((SEED && SEED.records && SEED.records.regions) || []);
-    const matches = [];
+    const recMatches = [];
     const seen = new Set();
     for (let i = 0; i < regions.length; i++) {
       const r = regions[i];
       if (!isRowInGeoIndustry(r, explicitInd)) continue;
       if (isPointInRegion(lat, lng, r)) {
         const areaKm2 = regionAreaKm2(r);
-        matches.push({ region: r.name, areaKm2, tier: areaKm2 < 180 ? 0 : 2, row: r });
+        recMatches.push({ region: r.name, areaKm2, tier: areaKm2 < 180 ? 0 : 2, row: r });
         seen.add(norm(r.name));
       }
     }
-    const atlas = getFullBoundaryAtlas();
-    for (let i = 0; i < atlas.length; i++) {
-      const a = atlas[i];
-      const nk = norm(a.label || a.key);
-      if (!nk || seen.has(nk)) continue;
-      const syntheticReg = {
-        name: a.label,
-        zone_type: a.zone_type || (a.poly ? 'boundary' : 'circle'),
-        center_lat: a.lat,
-        center_lng: a.lng,
-        radius_km: a.radius_km || 0,
-        zone_geojson: a.poly ? polyFromPairs(a.poly) : null
-      };
-      if (isPointInRegion(lat, lng, syntheticReg)) {
-        const areaKm2 = regionAreaKm2(syntheticReg);
-        matches.push({ region: a.label, areaKm2, tier: areaKm2 < 350 ? 1 : 2, row: syntheticReg });
-        seen.add(nk);
+    recMatches.sort((a, b) => (a.tier - b.tier) || (a.areaKm2 - b.areaKm2));
+    const atlasMatches = [];
+    if (!(opts && opts.recordsOnly)) {
+      const atlas = getFullBoundaryAtlas();
+      for (let i = 0; i < atlas.length; i++) {
+        const a = atlas[i];
+        const syntheticReg = atlasItemAsRegion(a);
+        const nk = norm(syntheticReg && syntheticReg.name);
+        if (!nk || seen.has(nk) || !syntheticReg.zone_geojson) continue;
+        if (isPointInRegion(lat, lng, syntheticReg)) {
+          atlasMatches.push({ region: syntheticReg.name, areaKm2: regionAreaKm2(syntheticReg), row: syntheticReg });
+          seen.add(nk);
+        }
       }
+      atlasMatches.sort((a, b) => a.areaKm2 - b.areaKm2);
     }
-    matches.sort((a, b) => (a.tier - b.tier) || (a.areaKm2 - b.areaKm2));
+    const matches = recMatches.concat(atlasMatches);
     return {
       best: matches[0] ? matches[0].region : '',
       name: matches[0] ? matches[0].region : '',
+      fromAtlas: !recMatches.length && atlasMatches.length > 0,
       matches: matches.map(m => m.region)
     };
   }
 
   const LEBANON_PLACE_GAZETTEER = [
     // Beirut
-    { place: 'Beirut', region: 'Beirut', governorate: 'Beirut', lat: 33.8938, lng: 35.5018, aliases: ['beyrouth'] },
-    { place: 'Hamra', region: 'Beirut', governorate: 'Beirut', lat: 33.8962, lng: 35.4832, aliases: ['ras beirut', 'verdun', 'raouche', 'ramlet el baida', 'ain el mreisseh', 'clemenceau'] },
-    { place: 'Achrafieh', region: 'Beirut', governorate: 'Beirut', lat: 33.8886, lng: 35.5208, aliases: ['ashrafieh', 'badaro', 'mathaf', 'gemmayzeh', 'mar mikhael', 'sodeco', 'quarantina', 'karantina', 'downtown beirut', 'solidere', 'mazraa', 'tariq el jdideh'] },
+    { place: 'Beirut', region: 'Beirut', governorate: 'Beirut', ar: ['بيروت'], lat: 33.8938, lng: 35.5018, aliases: ['beyrouth'] },
+    { place: 'Hamra', region: 'Beirut', governorate: 'Beirut', ar: ['الحمرا', 'الحمراء', 'رأس بيروت', 'فردان', 'الروشة', 'عين المريسة'], lat: 33.8962, lng: 35.4832, aliases: ['ras beirut', 'verdun', 'raouche', 'ramlet el baida', 'ain el mreisseh', 'clemenceau'] },
+    { place: 'Achrafieh', region: 'Beirut', governorate: 'Beirut', ar: ['الأشرفية', 'الجميزة', 'مار مخايل', 'الكرنتينا', 'طريق الجديدة', 'بدارو'], lat: 33.8886, lng: 35.5208, aliases: ['ashrafieh', 'badaro', 'mathaf', 'gemmayzeh', 'mar mikhael', 'sodeco', 'quarantina', 'karantina', 'downtown beirut', 'solidere', 'mazraa', 'tariq el jdideh'] },
     // Metn (Mount Lebanon)
-    { place: 'Metn', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8980, lng: 35.5950, aliases: ['el metn', 'matn'] },
-    { place: 'Fanar', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8825, lng: 35.5658, aliases: ['al fanar', 'ain saade', 'mansourieh', 'beit mery', 'mkalles'] },
-    { place: 'Dekwaneh', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8794, lng: 35.5433, aliases: ['dekweneh', 'jisr el bacha', 'slav'] },
-    { place: 'Sin El Fil', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8732, lng: 35.5390, aliases: ['sin el-fil', 'horsh tabet'] },
-    { place: 'Borj Hammoud', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8936, lng: 35.5403, aliases: ['bourj hammoud', 'dora', 'bauchrieh', 'jdeideh', 'sed el bauchrieh'] },
-    { place: 'Zalka', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8989, lng: 35.5504, aliases: ['jal el dib', 'bkennaya'] },
-    { place: 'Antelias', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.9140, lng: 35.5695, aliases: ['naccache', 'rabieh', 'mezher', 'kornet chehwan', 'cornet chehwan', 'bikfaya'] },
-    { place: 'Dbayeh', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.9325, lng: 35.5715, aliases: ['dhour choueir', 'zaarour'] },
-    { place: 'Aawkar', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.9278, lng: 35.5794, aliases: ['awkar', 'belello'] },
-    { place: 'Bsalim', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.9022, lng: 35.5950, aliases: ['majzoub'] },
-    { place: 'Broummana', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8885, lng: 35.6370, aliases: ['broumana', 'baabdat', 'bhersaf'] },
+    { place: 'Metn', region: 'Metn', governorate: 'Mount Lebanon', ar: ['المتن'], lat: 33.8980, lng: 35.5950, aliases: ['el metn', 'matn'] },
+    { place: 'Fanar', region: 'Metn', governorate: 'Mount Lebanon', ar: ['الفنار', 'عين سعادة', 'المنصورية', 'بيت مري', 'المكلس'], lat: 33.8825, lng: 35.5658, aliases: ['al fanar', 'ain saade', 'mansourieh', 'beit mery', 'mkalles'] },
+    { place: 'Dekwaneh', region: 'Metn', governorate: 'Mount Lebanon', ar: ['الدكوانة', 'جسر الباشا'], lat: 33.8794, lng: 35.5433, aliases: ['dekweneh', 'jisr el bacha', 'slav'] },
+    { place: 'Sin El Fil', region: 'Metn', governorate: 'Mount Lebanon', ar: ['سن الفيل', 'حرش تابت'], lat: 33.8732, lng: 35.5390, aliases: ['sin el-fil', 'horsh tabet'] },
+    { place: 'Borj Hammoud', region: 'Metn', governorate: 'Mount Lebanon', ar: ['برج حمود', 'البوشرية'], lat: 33.8936, lng: 35.5403, aliases: ['bourj hammoud', 'dora', 'bauchrieh', 'jdeideh', 'sed el bauchrieh'] },
+    { place: 'Zalka', region: 'Metn', governorate: 'Mount Lebanon', ar: ['الزلقا', 'جل الديب'], lat: 33.8989, lng: 35.5504, aliases: ['jal el dib', 'bkennaya'] },
+    { place: 'Antelias', region: 'Metn', governorate: 'Mount Lebanon', ar: ['أنطلياس', 'بكفيا'], lat: 33.9140, lng: 35.5695, aliases: ['naccache', 'rabieh', 'mezher', 'kornet chehwan', 'cornet chehwan', 'bikfaya'] },
+    { place: 'Dbayeh', region: 'Metn', governorate: 'Mount Lebanon', ar: ['ضبية', 'ضبيه', 'ضهور الشوير'], lat: 33.9325, lng: 35.5715, aliases: ['dhour choueir', 'zaarour'] },
+    { place: 'Aawkar', region: 'Metn', governorate: 'Mount Lebanon', ar: ['عوكر'], lat: 33.9278, lng: 35.5794, aliases: ['awkar', 'belello'] },
+    { place: 'Bsalim', region: 'Metn', governorate: 'Mount Lebanon', ar: ['بصاليم'], lat: 33.9022, lng: 35.5950, aliases: ['majzoub'] },
+    { place: 'Broummana', region: 'Metn', governorate: 'Mount Lebanon', ar: ['برمانا', 'بعبدات'], lat: 33.8885, lng: 35.6370, aliases: ['broumana', 'baabdat', 'bhersaf'] },
     // Keserwan (Mount Lebanon)
-    { place: 'Keserwan', region: 'Keserwan', governorate: 'Mount Lebanon', lat: 33.9820, lng: 35.6450, aliases: ['kesrouan', 'kesserwan'] },
-    { place: 'Zouk Mosbeh', region: 'Keserwan', governorate: 'Mount Lebanon', lat: 33.9565, lng: 35.6125, aliases: ['zouk', 'zouk mikael', 'kaslik', 'adma', 'jeita', 'ballouneh', 'ajaltoun', 'feytroun', 'faraya', 'kfardebian', 'harissa', 'ghazir'] },
-    { place: 'Jounieh', region: 'Keserwan', governorate: 'Mount Lebanon', lat: 33.9808, lng: 35.6178, aliases: ['maameltein', 'tabarja', 'safra', 'bouar'] },
+    { place: 'Keserwan', region: 'Keserwan', governorate: 'Mount Lebanon', ar: ['كسروان'], lat: 33.9820, lng: 35.6450, aliases: ['kesrouan', 'kesserwan'] },
+    { place: 'Zouk Mosbeh', region: 'Keserwan', governorate: 'Mount Lebanon', ar: ['ذوق مصبح', 'ذوق مكايل', 'الكسليك', 'جعيتا', 'فاريا', 'حريصا', 'غزير'], lat: 33.9565, lng: 35.6125, aliases: ['zouk', 'zouk mikael', 'kaslik', 'adma', 'jeita', 'ballouneh', 'ajaltoun', 'feytroun', 'faraya', 'kfardebian', 'harissa', 'ghazir'] },
+    { place: 'Jounieh', region: 'Keserwan', governorate: 'Mount Lebanon', ar: ['جونية', 'جونيه', 'المعاملتين', 'طبرجا'], lat: 33.9808, lng: 35.6178, aliases: ['maameltein', 'tabarja', 'safra', 'bouar'] },
     // Jbeil (Mount Lebanon)
-    { place: 'Jbeil', region: 'Jbeil', governorate: 'Mount Lebanon', lat: 34.1230, lng: 35.6519, aliases: ['byblos', 'amchit', 'blat', 'mastita', 'fidar', 'kartaba', 'annaya'] },
-    { place: 'Halat', region: 'Jbeil', governorate: 'Mount Lebanon', lat: 34.0806, lng: 35.6478, aliases: ['nahr ibrahim'] },
+    { place: 'Jbeil', region: 'Jbeil', governorate: 'Mount Lebanon', ar: ['جبيل', 'عمشيت'], lat: 34.1230, lng: 35.6519, aliases: ['byblos', 'amchit', 'blat', 'mastita', 'fidar', 'kartaba', 'annaya'] },
+    { place: 'Halat', region: 'Jbeil', governorate: 'Mount Lebanon', ar: ['حالات', 'نهر إبراهيم'], lat: 34.0806, lng: 35.6478, aliases: ['nahr ibrahim'] },
     // Baabda (Mount Lebanon)
-    { place: 'Baabda', region: 'Baabda', governorate: 'Mount Lebanon', lat: 33.8339, lng: 35.5442, aliases: ['louaize', 'jamhour', 'yarze', 'kahale', 'araya', 'aaraya', 'bsaba', 'furn el chebbak', 'chiyah', 'haret hreik', 'ghobeiry', 'bir hassan'] },
-    { place: 'Hazmieh', region: 'Baabda', governorate: 'Mount Lebanon', lat: 33.8548, lng: 35.5370, aliases: ['mar takla'] },
-    { place: 'Hadath', region: 'Baabda', governorate: 'Mount Lebanon', lat: 33.8330, lng: 35.5240, aliases: ['laylakeh', 'baabda hadath'] },
+    { place: 'Baabda', region: 'Baabda', governorate: 'Mount Lebanon', ar: ['بعبدا', 'الجمهور', 'اليرزة', 'الكحالة', 'فرن الشباك', 'الشياح', 'حارة حريك', 'الغبيري', 'بئر حسن'], lat: 33.8339, lng: 35.5442, aliases: ['louaize', 'jamhour', 'yarze', 'kahale', 'araya', 'aaraya', 'bsaba', 'furn el chebbak', 'chiyah', 'haret hreik', 'ghobeiry', 'bir hassan'] },
+    { place: 'Hazmieh', region: 'Baabda', governorate: 'Mount Lebanon', ar: ['الحازمية'], lat: 33.8548, lng: 35.5370, aliases: ['mar takla'] },
+    { place: 'Hadath', region: 'Baabda', governorate: 'Mount Lebanon', ar: ['الحدث', 'الليلكي'], lat: 33.8330, lng: 35.5240, aliases: ['laylakeh', 'baabda hadath'] },
     // Aley (Mount Lebanon)
-    { place: 'Aley', region: 'Aley', governorate: 'Mount Lebanon', lat: 33.8053, lng: 35.6000, aliases: ['bhamdoun', 'sofar', 'souk el gharb', 'mechref'] },
-    { place: 'Choueifat', region: 'Aley', governorate: 'Mount Lebanon', lat: 33.8160, lng: 35.5120, aliases: ['choueifet', 'aramoun', 'bchamoun', 'dohat aramoun'] },
-    { place: 'Khaldeh', region: 'Aley', governorate: 'Mount Lebanon', lat: 33.7885, lng: 35.4795, aliases: ['khalde', 'ouzai'] },
+    { place: 'Aley', region: 'Aley', governorate: 'Mount Lebanon', ar: ['عاليه', 'بحمدون', 'صوفر', 'سوق الغرب'], lat: 33.8053, lng: 35.6000, aliases: ['bhamdoun', 'sofar', 'souk el gharb', 'mechref'] },
+    { place: 'Choueifat', region: 'Aley', governorate: 'Mount Lebanon', ar: ['الشويفات', 'عرمون', 'بشامون', 'دوحة عرمون'], lat: 33.8160, lng: 35.5120, aliases: ['choueifet', 'aramoun', 'bchamoun', 'dohat aramoun'] },
+    { place: 'Khaldeh', region: 'Aley', governorate: 'Mount Lebanon', ar: ['خلدة', 'الأوزاعي'], lat: 33.7885, lng: 35.4795, aliases: ['khalde', 'ouzai'] },
     // Chouf (Mount Lebanon)
-    { place: 'Chouf', region: 'Chouf', governorate: 'Mount Lebanon', lat: 33.6650, lng: 35.5100, aliases: ['shouf', 'beiteddine', 'deir el qamar', 'baakline', 'barja', 'ketermaya'] },
-    { place: 'Damour', region: 'Chouf', governorate: 'Mount Lebanon', lat: 33.7330, lng: 35.4520, aliases: ['naameh', 'haret el naameh'] },
-    { place: 'Jiyeh', region: 'Chouf', governorate: 'Mount Lebanon', lat: 33.6669, lng: 35.4244, aliases: ['jiye', 'jadra', 'rmeileh', 'wadi el zeina'] },
-    { place: 'Sibline', region: 'Chouf', governorate: 'Mount Lebanon', lat: 33.6214, lng: 35.4328, aliases: ['siblini'] },
+    { place: 'Chouf', region: 'Chouf', governorate: 'Mount Lebanon', ar: ['الشوف', 'بيت الدين', 'دير القمر', 'بعقلين', 'برجا', 'كترمايا'], lat: 33.6650, lng: 35.5100, aliases: ['shouf', 'beiteddine', 'deir el qamar', 'baakline', 'barja', 'ketermaya'] },
+    { place: 'Damour', region: 'Chouf', governorate: 'Mount Lebanon', ar: ['الدامور', 'الناعمة', 'حارة الناعمة'], lat: 33.7330, lng: 35.4520, aliases: ['naameh', 'haret el naameh'] },
+    { place: 'Jiyeh', region: 'Chouf', governorate: 'Mount Lebanon', ar: ['الجية', 'الجدرا', 'الرميلة'], lat: 33.6669, lng: 35.4244, aliases: ['jiye', 'jadra', 'rmeileh', 'wadi el zeina'] },
+    { place: 'Sibline', region: 'Chouf', governorate: 'Mount Lebanon', ar: ['سبلين'], lat: 33.6214, lng: 35.4328, aliases: ['siblini'] },
     // South Lebanon (Saida / Tyre / Jezzine)
-    { place: 'Saida', region: 'Saida', governorate: 'South Lebanon', lat: 33.5614, lng: 35.3758, aliases: ['sidon', 'sayda', 'abra', 'hlalieh', 'majdelyoun', 'bramieh', 'maghdouche', 'miyeh w miyeh', 'zahrani'] },
-    { place: 'Ghaziyeh', region: 'Saida', governorate: 'South Lebanon', lat: 33.5175, lng: 35.3685, aliases: ['ghaziye'] },
-    { place: 'Sarafand', region: 'Saida', governorate: 'South Lebanon', lat: 33.4495, lng: 35.2995, aliases: ['aqbieh', 'saksakieh', 'adloun'] },
-    { place: 'Tyre', region: 'Tyre', governorate: 'South Lebanon', lat: 33.2705, lng: 35.2038, aliases: ['sour', 'abbassieh', 'qana', 'naqoura', 'bazourieh', 'jwaya'] },
-    { place: 'Jezzine', region: 'Jezzine', governorate: 'South Lebanon', lat: 33.5417, lng: 35.5844, aliases: ['bkassine', 'roum', 'lebaa'] },
+    { place: 'Saida', region: 'Saida', governorate: 'South Lebanon', ar: ['صيدا', 'عبرا', 'الهلالية', 'مجدليون', 'مغدوشة', 'الزهراني'], lat: 33.5614, lng: 35.3758, aliases: ['sidon', 'sayda', 'abra', 'hlalieh', 'majdelyoun', 'bramieh', 'maghdouche', 'miyeh w miyeh', 'zahrani'] },
+    { place: 'Ghaziyeh', region: 'Saida', governorate: 'South Lebanon', ar: ['الغازية'], lat: 33.5175, lng: 35.3685, aliases: ['ghaziye'] },
+    { place: 'Sarafand', region: 'Saida', governorate: 'South Lebanon', ar: ['الصرفند', 'عدلون'], lat: 33.4495, lng: 35.2995, aliases: ['aqbieh', 'saksakieh', 'adloun'] },
+    { place: 'Tyre', region: 'Tyre', governorate: 'South Lebanon', ar: ['صور', 'العباسية', 'قانا', 'الناقورة'], lat: 33.2705, lng: 35.2038, aliases: ['sour', 'abbassieh', 'qana', 'naqoura', 'bazourieh', 'jwaya'] },
+    { place: 'Jezzine', region: 'Jezzine', governorate: 'South Lebanon', ar: ['جزين'], lat: 33.5417, lng: 35.5844, aliases: ['bkassine', 'roum', 'lebaa'] },
     // Nabatieh
-    { place: 'Nabatieh', region: 'Nabatieh', governorate: 'Nabatieh', lat: 33.3772, lng: 35.4836, aliases: ['nabatiye', 'kfar remen', 'habbouch', 'doueir', 'ansar'] },
-    { place: 'Bint Jbeil', region: 'Bint Jbeil', governorate: 'Nabatieh', lat: 33.1194, lng: 35.4333, aliases: ['tebnine'] },
-    { place: 'Marjayoun', region: 'Marjayoun', governorate: 'Nabatieh', lat: 33.3611, lng: 35.5914, aliases: ['khiam', 'kfar kila'] },
-    { place: 'Hasbaya', region: 'Hasbaya', governorate: 'Nabatieh', lat: 33.3978, lng: 35.6850, aliases: ['chebaa'] },
+    { place: 'Nabatieh', region: 'Nabatieh', governorate: 'Nabatieh', ar: ['النبطية', 'كفررمان', 'حبوش', 'الدوير', 'أنصار'], lat: 33.3772, lng: 35.4836, aliases: ['nabatiye', 'kfar remen', 'habbouch', 'doueir', 'ansar'] },
+    { place: 'Bint Jbeil', region: 'Bint Jbeil', governorate: 'Nabatieh', ar: ['بنت جبيل', 'تبنين'], lat: 33.1194, lng: 35.4333, aliases: ['tebnine'] },
+    { place: 'Marjayoun', region: 'Marjayoun', governorate: 'Nabatieh', ar: ['مرجعيون', 'الخيام'], lat: 33.3611, lng: 35.5914, aliases: ['khiam', 'kfar kila'] },
+    { place: 'Hasbaya', region: 'Hasbaya', governorate: 'Nabatieh', ar: ['حاصبيا', 'شبعا'], lat: 33.3978, lng: 35.6850, aliases: ['chebaa'] },
     // Bekaa & Baalbek-Hermel
-    { place: 'Zahle', region: 'Zahle', governorate: 'Bekaa', lat: 33.8463, lng: 35.9020, aliases: ['zahleh', 'ferzol', 'saadnayel', 'taalabaya', 'kab elias', 'bar elias', 'anjar', 'riyak', 'ksara', 'jdita'] },
-    { place: 'Chtaura', region: 'Zahle', governorate: 'Bekaa', lat: 33.8165, lng: 35.8535, aliases: ['shtaura'] },
-    { place: 'West Bekaa', region: 'West Bekaa', governorate: 'Bekaa', lat: 33.6550, lng: 35.7520, aliases: ['joub jannine', 'kefraya', 'machghara', 'saghbine', 'qaraoun'] },
-    { place: 'Rachaiya', region: 'Rachaiya', governorate: 'Bekaa', lat: 33.5015, lng: 35.8445, aliases: ['rachaya'] },
-    { place: 'Baalbek', region: 'Baalbek', governorate: 'Baalbek-Hermel', lat: 34.0058, lng: 36.2181, aliases: ['baalbeck', 'brital', 'douris', 'chmistar', 'deir el ahmar', 'labweh', 'arsal', 'ras baalbek', 'nabi chit'] },
-    { place: 'Hermel', region: 'Hermel', governorate: 'Baalbek-Hermel', lat: 34.3942, lng: 36.3847, aliases: ['qaa'] },
+    { place: 'Zahle', region: 'Zahle', governorate: 'Bekaa', ar: ['زحلة', 'سعدنايل', 'تعلبايا', 'قب الياس', 'بر الياس', 'عنجر', 'رياق'], lat: 33.8463, lng: 35.9020, aliases: ['zahleh', 'ferzol', 'saadnayel', 'taalabaya', 'kab elias', 'bar elias', 'anjar', 'riyak', 'ksara', 'jdita'] },
+    { place: 'Chtaura', region: 'Zahle', governorate: 'Bekaa', ar: ['شتورة'], lat: 33.8165, lng: 35.8535, aliases: ['shtaura'] },
+    { place: 'West Bekaa', region: 'West Bekaa', governorate: 'Bekaa', ar: ['البقاع الغربي', 'جب جنين', 'القرعون'], lat: 33.6550, lng: 35.7520, aliases: ['joub jannine', 'kefraya', 'machghara', 'saghbine', 'qaraoun'] },
+    { place: 'Rachaiya', region: 'Rachaiya', governorate: 'Bekaa', ar: ['راشيا'], lat: 33.5015, lng: 35.8445, aliases: ['rachaya'] },
+    { place: 'Baalbek', region: 'Baalbek', governorate: 'Baalbek-Hermel', ar: ['بعلبك', 'عرسال', 'دير الأحمر'], lat: 34.0058, lng: 36.2181, aliases: ['baalbeck', 'brital', 'douris', 'chmistar', 'deir el ahmar', 'labweh', 'arsal', 'ras baalbek', 'nabi chit'] },
+    { place: 'Hermel', region: 'Hermel', governorate: 'Baalbek-Hermel', ar: ['الهرمل'], lat: 34.3942, lng: 36.3847, aliases: ['qaa'] },
     // North Lebanon & Akkar
-    { place: 'Tripoli', region: 'Tripoli', governorate: 'North Lebanon', lat: 34.4367, lng: 35.8497, aliases: ['trablous', 'el mina', 'beddawi', 'qalamoun'] },
-    { place: 'Batroun', region: 'Batroun', governorate: 'North Lebanon', lat: 34.2553, lng: 35.6581, aliases: ['kfarabida', 'tannourine', 'selaata', 'hamat'] },
-    { place: 'Chekka', region: 'Chekka', governorate: 'North Lebanon', lat: 34.3270, lng: 35.7270, aliases: ['herri'] },
-    { place: 'Koura', region: 'Koura', governorate: 'North Lebanon', lat: 34.3000, lng: 35.8150, aliases: ['amioun', 'anfeh', 'kfarhazir', 'deddeh', 'zakroun'] },
-    { place: 'Zgharta', region: 'Zgharta', governorate: 'North Lebanon', lat: 34.3989, lng: 35.8944, aliases: ['ehden', 'mezyara'] },
-    { place: 'Akkar', region: 'Akkar', governorate: 'Akkar', lat: 34.5440, lng: 36.0797, aliases: ['halba', 'qoubaiyat', 'bebnine', 'abdeh'] }
+    { place: 'Tripoli', region: 'Tripoli', governorate: 'North Lebanon', ar: ['طرابلس', 'البداوي', 'القلمون'], lat: 34.4367, lng: 35.8497, aliases: ['trablous', 'el mina', 'beddawi', 'qalamoun'] },
+    { place: 'Batroun', region: 'Batroun', governorate: 'North Lebanon', ar: ['البترون', 'تنورين', 'سلعاتا'], lat: 34.2553, lng: 35.6581, aliases: ['kfarabida', 'tannourine', 'selaata', 'hamat'] },
+    { place: 'Chekka', region: 'Chekka', governorate: 'North Lebanon', ar: ['شكا'], lat: 34.3270, lng: 35.7270, aliases: ['herri'] },
+    { place: 'Koura', region: 'Koura', governorate: 'North Lebanon', ar: ['الكورة', 'أميون', 'أنفة'], lat: 34.3000, lng: 35.8150, aliases: ['amioun', 'anfeh', 'kfarhazir', 'deddeh', 'zakroun'] },
+    { place: 'Zgharta', region: 'Zgharta', governorate: 'North Lebanon', ar: ['زغرتا', 'إهدن'], lat: 34.3989, lng: 35.8944, aliases: ['ehden', 'mezyara'] },
+    { place: 'Akkar', region: 'Akkar', governorate: 'Akkar', ar: ['عكار', 'حلبا', 'القبيات', 'ببنين'], lat: 34.5440, lng: 36.0797, aliases: ['halba', 'qoubaiyat', 'bebnine', 'abdeh'] }
   ];
 
   function canonGovernorateName(g) {
@@ -1410,7 +1425,7 @@
         center_lat: cLat,
         center_lng: cLng,
         radius_km: Number(seedHit.radius_km || (atlasHit && atlasHit.radius_km) || 0),
-        zone_geojson: seedHit.zone_geojson || (atlasHit && atlasHit.poly ? polyFromPairs(atlasHit.poly) : null),
+        zone_geojson: seedHit.zone_geojson || (atlasHit ? atlasItemAsRegion(atlasHit).zone_geojson : null),
         governorate: gov,
         isSeedRecord: true,
         row: seedHit
@@ -1516,15 +1531,29 @@
   const TOWN_NAME_EXTRA = [
     'Kmatieh', 'Kmatiyeh', 'Burj Al Barajneh', 'Bourj El Barajneh', 'Borj El Brajneh', 'Nahr El Mot', 'Naher El Mot',
     'Gisr Al Bacha', 'Mar Elias', 'Ouzai', 'Jnah', 'Tayouneh', 'Doha Aramoun', 'Kfarchima', 'Mreijeh', 'Sabra',
-    'Sinn El Fil', 'Jdeideh', 'Bauchrieh', 'Zouk', 'South', 'North', 'Jnoub', 'Chamal', 'Bekaa'
+    'Sinn El Fil', 'Jdeideh', 'Bauchrieh', 'Zouk', 'South', 'North', 'Jnoub', 'Chamal', 'Bekaa',
+    'Sinai', 'Sinay', 'Zrarieh', 'Ansarieh',
+    // Arabic script
+    'برج البراجنة', 'نهر الموت', 'مار الياس', 'الطيونة', 'كفرشيما', 'المريجة', 'صبرا',
+    'الجنوب', 'الشمال', 'البقاع', 'صيناي', 'الزرارية', 'الأنصارية'
   ];
+  // One Arabic spelling: no vowel marks or tatweel, one alef, final ta marbuta as ha, alef maqsura as ya, and
+  // the article "al" off a word longer than the article
+  function foldArabicToken(t) {
+    return t.replace(/[ً-ٰٟـ]/g, '')
+      .replace(/[أإآٱ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي')
+      .replace(/^ال(?=.{2,})/, '');
+  }
   // Same key for common spellings of one name: case, accents, the article (al / el / l), doubled letters,
-  // ou / o / u, iyeh / ieh and a final h
+  // ou / o / u, iyeh / ieh and a final h; Arabic script through foldArabicToken
   function foldTownKey(s) {
     return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
       .replace(/[^a-z0-9؀-ۿ]+/g, ' ').trim().split(' ')
-      .filter(t => t && t !== 'al' && t !== 'el' && t !== 'l')
-      .map(t => t.replace(/ou/g, 'u').replace(/o/g, 'u').replace(/(.)\1+/g, '$1').replace(/iye/g, 'ie').replace(/(.{3,})h$/, '$1'))
+      .filter(t => t && t !== 'al' && t !== 'el' && t !== 'l' && t !== 'ال')
+      .map(t => (/[؀-ۿ]/.test(t)
+        ? foldArabicToken(t)
+        : t.replace(/ou/g, 'u').replace(/o/g, 'u').replace(/(.)\1+/g, '$1').replace(/iye/g, 'ie').replace(/(.{3,})h$/, '$1')))
+      .filter(Boolean)
       .join(' ');
   }
   // Place-list aliases that are also common family names: a customer's own site named after its owner
@@ -1536,7 +1565,7 @@
     const set = new Set();
     const add = (v) => { const k = foldTownKey(v); if (k.length >= 3 && !TOWN_NAME_SKIP.has(k)) set.add(k); };
     getFullBoundaryAtlas().forEach(it => { add(it.name); (it.aliases || []).forEach(add); });
-    LEBANON_PLACE_GAZETTEER.forEach(g => { add(g.place); (g.aliases || []).forEach(add); });
+    LEBANON_PLACE_GAZETTEER.forEach(g => { add(g.place); (g.aliases || []).forEach(add); (g.ar || []).forEach(add); });
     TOWN_NAME_EXTRA.forEach(add);
     _townKeySet = set;
     return set;
@@ -1556,15 +1585,8 @@
     if (isPointInRegion(nLat, nLng, regObj)) return true;
     const atlasHit = findAtlasRegionByName(regionName);
     if (atlasHit) {
-      const synth = {
-        name: atlasHit.label,
-        zone_type: atlasHit.zone_type || (atlasHit.poly ? 'boundary' : 'circle'),
-        center_lat: atlasHit.lat,
-        center_lng: atlasHit.lng,
-        radius_km: atlasHit.radius_km || 0,
-        zone_geojson: atlasHit.poly ? polyFromPairs(atlasHit.poly) : null
-      };
-      if (isPointInRegion(nLat, nLng, synth)) return true;
+      const synth = atlasItemAsRegion(atlasHit);
+      if (synth && isPointInRegion(nLat, nLng, synth)) return true;
     }
     const q = norm(regionName);
     const govCanon = canonGovernorateName(regionName);
@@ -1733,7 +1755,7 @@
     const lng = Number(ov && ov.lng != null ? ov.lng : base.lng);
     let region = (ov && ov.region) || base.region || '';
     if (SEED && SEED.records && SEED.records.regions) {
-      const det = findContainingRegion(lat, lng, SEED);
+      const det = findContainingRegion(lat, lng, SEED, undefined, { recordsOnly: true });
       if (det.best) region = det.best;
     }
     return { name: canon, label: (ov && ov.label) || base.label || canon, lat, lng, region };
@@ -1746,7 +1768,7 @@
   function setCompanyHubPin(buName, lat, lng, SEED, explicitRegion) {
     const canon = BU_LIST.find(b => norm(b) === norm(buName)) || buName || 'WTC';
     const nLat = round5(lat), nLng = round5(lng);
-    const det = SEED ? findContainingRegion(nLat, nLng, SEED) : { best: '' };
+    const det = SEED ? findContainingRegion(nLat, nLng, SEED, undefined, { recordsOnly: true }) : { best: '' };
     const region = explicitRegion || det.best || (DEFAULT_BU_HUBS[canon] && DEFAULT_BU_HUBS[canon].region) || '';
     GEO_STORE.companyHubs[norm(canon)] = {
       name: canon,
@@ -1843,7 +1865,8 @@
         if (ov.region) { s.region = ov.region; geoZone = ov.region; }
       }
       if (s.latitude != null && s.longitude != null && !geoZone) {
-        const det = findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, sInd);
+        // Region records only: this can fill the Region of an app site (night trip pay), as before the atlas fix
+        const det = findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, sInd, { recordsOnly: true });
         if (det.best) geoZone = det.best;
       }
       if (!s.region && s.source === 'app' && geoZone) {
@@ -3844,7 +3867,8 @@
       if (!isRowInGeoIndustry(s, activeInd) || s.latitude == null || s.longitude == null) return;
       if (isPointInRegion(Number(s.latitude), Number(s.longitude), row)) {
         insideCount++;
-        const det = findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, activeInd);
+        // Region records only: this can fill the Region of an app site (night trip pay)
+        const det = findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, activeInd, { recordsOnly: true });
         s.geo_zone = det.best || cleanName;
         if (s.source === 'app' && (!s.region || norm(det.best) === nk)) s.region = det.best || cleanName;
       }
@@ -3899,7 +3923,8 @@
     const normCat = (explicitSiteCat === 'customer' || explicitSiteCat === 'delivery' || explicitSiteCat === 'sales')
       ? 'customer'
       : ((explicitSiteCat === 'supplier' || explicitSiteCat === 'quarry' || explicitSiteCat === 'raw') ? 'supplier' : '');
-    const det = findContainingRegion(nLat, nLng, SEED, activeInd);
+    // Region records only: a save never fills a blank site Region from a map boundary nobody chose (night trip pay)
+    const det = findContainingRegion(nLat, nLng, SEED, activeInd, { recordsOnly: true });
     const region = explicitRegion || det.best || '';
     const nowIso = new Date().toISOString();
 
@@ -4093,7 +4118,7 @@
           if (STUDIO.mode === 'pin' && !parsed.outsideLebanon) {
             STUDIO.pinLat = parsed.lat;
             STUDIO.pinLng = parsed.lng;
-            STUDIO.pinRegion = studioPinRegionFor(parsed.lat, parsed.lng, SEED, det.best || '');
+            STUDIO.pinRegion = studioPinRegionFor(parsed.lat, parsed.lng, SEED, studioPinRecordRegion(parsed.lat, parsed.lng, SEED));
           }
         }
         rerenderWorkspace();
@@ -4547,7 +4572,7 @@
         if (sRow && sRow.latitude != null && sRow.longitude != null) {
           STUDIO.pinLat = Number(sRow.latitude);
           STUDIO.pinLng = Number(sRow.longitude);
-          STUDIO.pinRegion = sRow.region || findContainingRegion(STUDIO.pinLat, STUDIO.pinLng, SEED).best || '';
+          STUDIO.pinRegion = sRow.region || studioPinRecordRegion(STUDIO.pinLat, STUDIO.pinLng, SEED);
           const cp = deck.querySelector('#geoPinCoordPasteInp');
           if (cp) cp.value = `${STUDIO.pinLat}, ${STUDIO.pinLng}`;
           const rp = deck.querySelector('#geoPinRegionInp');
@@ -4578,7 +4603,7 @@
         if (parsed) {
           STUDIO.pinLat = parsed.lat;
           STUDIO.pinLng = parsed.lng;
-          STUDIO.pinRegion = studioPinRegionFor(parsed.lat, parsed.lng, SEED, findContainingRegion(parsed.lat, parsed.lng, SEED).best || STUDIO.pinRegion);
+          STUDIO.pinRegion = studioPinRegionFor(parsed.lat, parsed.lng, SEED, studioPinRecordRegion(parsed.lat, parsed.lng, SEED) || STUDIO.pinRegion);
           pinCoordPasteInp.value = `${parsed.lat}, ${parsed.lng}`;
           const rp = deck.querySelector('#geoPinRegionInp');
           if (rp) rp.value = STUDIO.pinRegion;
@@ -4732,8 +4757,7 @@
         } else if (STUDIO.mode === 'pin') {
           STUDIO.pinLat = lat;
           STUDIO.pinLng = lng;
-          const det = findContainingRegion(lat, lng, SEED);
-          STUDIO.pinRegion = studioPinRegionFor(lat, lng, SEED, det.best || '');
+          STUDIO.pinRegion = studioPinRegionFor(lat, lng, SEED, studioPinRecordRegion(lat, lng, SEED));
           const cp = deck.querySelector('#geoPinCoordPasteInp');
           if (cp) cp.value = `${lat}, ${lng}`;
           const rp = deck.querySelector('#geoPinRegionInp');
@@ -4834,6 +4858,12 @@
     if (STUDIO.pinTargetType !== 'bu' && cur && resolveRegionRecordOrAtlas(cur, SEED)
       && isPointInsideNamedRegion(lat, lng, cur, SEED)) return cur;
     return fallback;
+  }
+
+  // Region a Studio pin proposes when none is kept: Region records only. Save Location Pin writes it on the site
+  // (persistLocationPin), so a map boundary nobody chose never becomes a site's Region (night trip pay).
+  function studioPinRecordRegion(lat, lng, SEED) {
+    return findContainingRegion(lat, lng, SEED, getGeoActiveIndustry(), { recordsOnly: true }).best || '';
   }
 
   // + New Site / Edit Site: one paste box fills GPS, Region and (when blank) Site Name, then reports distance.
