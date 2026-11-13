@@ -10970,7 +10970,14 @@
       "Saturday Start Time (24h)": "وقت بدء السبت (24 س)",
       "Saturday End Time (24h)": "وقت انتهاء السبت (24 س)",
       "Sunday Start Time (24h)": "وقت بدء الأحد (24 س)",
-      "Sunday End Time (24h)": "وقت انتهاء الأحد (24 س)"
+      "Sunday End Time (24h)": "وقت انتهاء الأحد (24 س)",
+      "Tap a bar twice to list its rows in the table": "اضغط على العمود مرتين لعرض سطوره في الجدول",
+      "Click a bar to list its rows in the table": "انقر على عمود لعرض سطوره في الجدول",
+      "List the rows of this bar in the table": "عرض سطور هذا العمود في الجدول",
+      "Filtered From Chart": "مُصفّى من الرسم البياني",
+      "Back to Chart": "العودة إلى الرسم البياني",
+      "Show the chart again with every row": "إظهار الرسم البياني مجدداً بكل السطور",
+      "List every row again": "عرض كل السطور مجدداً"
     },
     fr: {
       "Shift Windows Across the Day": "Plages horaires des postes sur la journée",
@@ -21922,7 +21929,14 @@
       "Saturday Start Time (24h)": "Heure début samedi (24h)",
       "Saturday End Time (24h)": "Heure fin samedi (24h)",
       "Sunday Start Time (24h)": "Heure début dimanche (24h)",
-      "Sunday End Time (24h)": "Heure fin dimanche (24h)"
+      "Sunday End Time (24h)": "Heure fin dimanche (24h)",
+      "Tap a bar twice to list its rows in the table": "Touchez deux fois une barre pour lister ses lignes dans le tableau",
+      "Click a bar to list its rows in the table": "Cliquez sur une barre pour lister ses lignes dans le tableau",
+      "List the rows of this bar in the table": "Lister les lignes de cette barre dans le tableau",
+      "Filtered From Chart": "Filtré depuis le graphique",
+      "Back to Chart": "Retour au graphique",
+      "Show the chart again with every row": "Réafficher le graphique avec toutes les lignes",
+      "List every row again": "Lister de nouveau toutes les lignes"
     }
   };
 

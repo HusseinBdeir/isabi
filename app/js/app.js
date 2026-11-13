@@ -440,6 +440,7 @@
     renderPending: false,
     sortBy: {},
     colFilters: {},
+    regDrill: {},
     shown: {},
     cloudStatus: 'Connecting...',
     cloudUpdatedAt: '',
@@ -6939,7 +6940,14 @@
     return disp.toLowerCase().includes(want);
   }
 
+  // A chart drill counts as a filter here, so every "nothing filtered" shortcut (cached totals, the
+  // till sheet) steps aside while one is on.
+  // The filter state of a register (column filters + chart drill) as a cache key part.
+  function regFilterSig(view) {
+    return JSON.stringify([(STATE.colFilters && STATE.colFilters[view]) || {}, getRegDrill(view) || null, String(STATE.company || '')]);
+  }
   function hasActiveColFilters(view) {
+    if (view && getRegDrill(view)) return true;
     const cf = STATE.colFilters && STATE.colFilters[view];
     if (!cf) return false;
     return Object.values(cf).some(v => Boolean(v && String(v).trim()));
@@ -7167,9 +7175,48 @@
   // The rows each register's filters and column filters show (sorted, before paging), for its Chart view.
   const _tableShownRows = {};
   const _regPanelRows = {};
-  function regPanelRows(panelId, rows, shownKey) {
-    if (panelId) _regPanelRows[panelId] = { rows: Array.isArray(rows) ? rows : [], shownKey: shownKey || '' };
-    return rows;
+  // Bar drill from a register's chart: clicking a bar (or a month) keeps only that bar's rows in the
+  // register. The test is the chart's own grouping rule (same value function, same Yes / No and (Blank)
+  // labels, same YYYY-MM month), so the rows listed always add up to the bar that was clicked. Kept per
+  // register for the session and only for the company it was made in.
+  function getRegDrill(view) {
+    const d = view && STATE.regDrill ? STATE.regDrill[view] : null;
+    if (!d || d.company !== STATE.company) return null;
+    return d;
+  }
+  function regDrillGroupLabel(v) {
+    const raw = v === true ? 'Yes' : (v === false ? 'No' : v);
+    return raw == null || raw === '' ? '(Blank)' : String(raw);
+  }
+  // A drill is a list of conditions (one per bar clicked: a second bar clicked on the chart of a drilled
+  // register narrows it further), and a row stays only when it meets every one.
+  function regDrillCondMatch(r, c, view, sortView) {
+    if (c.kind === 'month') return String(regColVal(r, c.key, view, sortView) || '').slice(0, 7) === c.value;
+    return regDrillGroupLabel(regColVal(r, c.key, view, sortView)) === c.value;
+  }
+  function regDrillMatch(r, d, view, sortView) {
+    if (!r || !d || !Array.isArray(d.conds) || !d.conds.length) return false;
+    for (let i = 0; i < d.conds.length; i++) {
+      if (!regDrillCondMatch(r, d.conds[i], view, sortView)) return false;
+    }
+    return true;
+  }
+  // A domain panel hands its rows here before it draws its table and TOTAL. With a bar drill on that
+  // panel, the rows that are not in the bar are taken out and the caller draws from what comes back, so
+  // its count, paging and TOTAL follow. `mapFn` builds the chart row of a source row when the chart reads
+  // extra fields; the source rows are returned.
+  function regPanelRows(panelId, rows, shownKey, mapFn) {
+    const src = Array.isArray(rows) ? rows : [];
+    let chartRows = typeof mapFn === 'function' ? src.map(mapFn) : src;
+    let out = src;
+    const drill = panelId ? getRegDrill(panelId) : null;
+    if (drill) {
+      const keep = chartRows.map(r => regDrillMatch(r, drill, panelId, ''));
+      out = src.filter((_, i) => keep[i]);
+      chartRows = chartRows.filter((_, i) => keep[i]);
+    }
+    if (panelId) _regPanelRows[panelId] = { rows: chartRows, shownKey: shownKey || '' };
+    return out;
   }
   function sortRows(rows, view, defKey, defDir) {
     const out = withRelPass(() => sortRowsPass(rows, view, defKey, defDir));
@@ -7179,8 +7226,11 @@
   function sortRowsPass(rows, view, defKey, defDir) {
     const rawPool = Array.isArray(rows) ? rows : [];
     if (view) _tablePoolCache[view] = rawPool;
-    const hasColF = Boolean(view && hasActiveColFilters(view));
-    const filteredRows = hasColF ? applyColFiltersForView(rawPool, view) : rawPool;
+    const colFOn = Boolean(view && hasActiveColFilters(view));
+    const drill = view ? getRegDrill(view) : null;
+    const hasColF = Boolean(colFOn || drill);
+    let filteredRows = colFOn ? applyColFiltersForView(rawPool, view) : rawPool;
+    if (drill) filteredRows = filteredRows.filter(r => regDrillMatch(r, drill, view, view));
     const resolvedDefDir = defDir || (isDefaultDescSortKey(defKey) ? 'desc' : 'asc');
     if (view && defKey) _defaultSortBy[view] = { key: defKey, dir: resolvedDefDir };
     const s = STATE.sortBy[view] || { key: defKey, dir: resolvedDefDir };
@@ -24611,7 +24661,12 @@
     const filteredSales = _getChipFilteredRows(base, `sales:${STATE.chipFilter}`, chipPredicate);
     const rows = sortRows(filteredSales, 'sales', 'date', 'desc');
     const shown = rows.slice(0, shownCount('sales'));
-    const salesAggKey = `${SEED._customRev || 0}|${_WIN_REV}`;
+    // With column filters or a chart drill on, the register's figures (TOTAL, loads, mix) add up the rows it
+    // lists. The result is kept on the unfiltered list under the filter state, so keystrokes and sync ticks
+    // with the same filter do not redo the pass.
+    const salesFilt = hasActiveColFilters('sales');
+    const salesAggSrc = salesFilt ? rows : filteredSales;
+    const salesAggKey = `${SEED._customRev || 0}|${_WIN_REV}${salesFilt ? '|' + regFilterSig('sales') : ''}`;
     let sAgg = filteredSales._salesAgg && filteredSales._salesAgg.key === salesAggKey ? filteredSales._salesAgg : null;
     if (!sAgg) {
       let _saleLoads = 0, _sumQty = 0, _sumAggQty = 0, _sumTons = 0, _sumMat = 0, _sumTr = 0, _sumMatTtc = 0, _sumTrTtc = 0, _sumNet = 0, _sumVat = 0, _sumTtc = 0, _sumCash = 0, _sumCredit = 0, _sumCashTtc = 0, _sumCreditTtc = 0, _sumDisc = 0;
@@ -24624,8 +24679,8 @@
         WTC: { loads: 0, net: 0, matTtc: 0, trTtc: 0, cash: 0, credit: 0, cashTtc: 0, creditTtc: 0, vat: 0, ttc: 0, disc: 0 },
         BBConstruction: { loads: 0, net: 0, matTtc: 0, trTtc: 0, cash: 0, credit: 0, cashTtc: 0, creditTtc: 0, vat: 0, ttc: 0, disc: 0 }
       };
-      for (let i = 0; i < filteredSales.length; i++) {
-        const r = filteredSales[i];
+      for (let i = 0; i < salesAggSrc.length; i++) {
+        const r = salesAggSrc[i];
         const sgn = ticketSign(r);
         if (sgn === 1) {
           _saleLoads += 1;
@@ -25214,7 +25269,11 @@
     const shChip = (key, label) => `<button type="button" class="filter-chip ${STATE.salesHaulFilter === key ? 'active' : ''}" data-saleshaul-chip="${esc(key)}">${label}</button>`;
     const siteChip = (key, label) => `<button type="button" class="filter-chip ${STATE.rawSiteFilter === key ? 'active' : ''}" data-rawsite-chip="${esc(key)}">${label}</button>`;
 
-    let rAgg = filteredRaw._rawAgg && filteredRaw._rawAgg.key === rawRevKey ? filteredRaw._rawAgg : null;
+    // Same as Sales: with column filters or a chart drill on, the cards and TOTAL add up the rows listed.
+    const rawFilt = hasActiveColFilters('raw');
+    const rawAggSrc = rawFilt ? rows : filteredRaw;
+    const rawAggKey = rawFilt ? `${rawRevKey}|${regFilterSig('raw')}` : rawRevKey;
+    let rAgg = filteredRaw._rawAgg && filteredRaw._rawAgg.key === rawAggKey ? filteredRaw._rawAgg : null;
     if (!rAgg) {
       let _sumQty = 0, _sumTons = 0, _sumMat = 0, _sumHaul = 0, _sumTot = 0;
       const _byCo = {
@@ -25228,8 +25287,8 @@
       const _rawProdMap = new Map();
       const _rawHaulerSet = new Set();
       const _rawTruckSet = new Set();
-      for (let i = 0; i < filteredRaw.length; i++) {
-        const r = filteredRaw[i];
+      for (let i = 0; i < rawAggSrc.length; i++) {
+        const r = rawAggSrc[i];
         if (isRemovedTicket(r)) continue;
         const rSgn = rawSign(r);
         if (rSgn === 0) continue;
@@ -25275,7 +25334,7 @@
         if (r.truck) _rawTruckSet.add(r.truck);
       }
       rAgg = {
-        key: rawRevKey,
+        key: rawAggKey,
         sumQty: _sumQty, sumTons: _sumTons, sumMat: _sumMat, sumHaul: _sumHaul, sumTot: _sumTot,
         byCo: _byCo, fleetRawLoads: _fleetRawLoads, thirdRawLoads: _thirdRawLoads, otRawLoads: _otRawLoads,
         bundledLoads: _bundledLoads, bundledQty: _bundledQty, bundledTons: _bundledTons, bundledMat: _bundledMat,
@@ -33567,7 +33626,7 @@
     ensureItemsCatalogSeeded();
     const k = getKPI();
     const base = filterRecords(SEED.records.expenses);
-    const hasExpColFilters = Boolean(STATE.colFilters && STATE.colFilters.expenses && Object.keys(STATE.colFilters.expenses).length);
+    const hasExpColFilters = Boolean((STATE.colFilters && STATE.colFilters.expenses && Object.keys(STATE.colFilters.expenses).length) || getRegDrill('expenses'));
     const isDefaultExpAgg = !String(STATE.search || '').trim() && (STATE.chipFilter || 'all') === 'all' && !hasExpColFilters;
     const expCacheKey = isDefaultExpAgg
       ? `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._tableRev && SEED._tableRev.expenses) || 0}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.dateMode}|${STATE.officialBookScope ? 1 : 0}|${base.length}|${base[0] ? (base[0].id + ':' + base[0].amount + ':' + base[0].pending_price) : ''}|${base[base.length - 1] ? (base[base.length - 1].id + ':' + base[base.length - 1].amount + ':' + base[base.length - 1].pending_price) : ''}|${(SEED.records.expenses || []).length}|${(SEED.records.expense_items || []).length}|${(SEED.records.items || []).length}`
@@ -47160,7 +47219,12 @@
       </div>
 
       ${submode === 'entities' ? (() => {
-        regPanelRows('hldEntitiesScorecardPanel', entities.map(e => ({ name: e.name, industry: e.industry, sector: e.sector, loads: Number(e.k.loads || 0), sales_ttc: Number(e.k.sales_ttc || 0), gross_margin: Number(e.k.gross_margin || 0), expenses: round2(Number(e.k.expenses || 0) + Number(e.k.salaries || 0)), operating_profit: Number(e.k.operating_profit || 0), ar_balance: Number(e.k.ar_balance || 0), ap_balance: Number(e.k.ap_balance || 0) })));
+        const ents = regPanelRows('hldEntitiesScorecardPanel', entities, '', e => ({ name: e.name, industry: e.industry, sector: e.sector, loads: Number(e.k.loads || 0), sales_ttc: Number(e.k.sales_ttc || 0), gross_margin: Number(e.k.gross_margin || 0), expenses: round2(Number(e.k.expenses || 0) + Number(e.k.salaries || 0)), operating_profit: Number(e.k.operating_profit || 0), ar_balance: Number(e.k.ar_balance || 0), ap_balance: Number(e.k.ap_balance || 0) }));
+        // Filtered from the chart: the TOTAL adds up the entities listed, not the whole group.
+        const entSum = f => round2(ents.reduce((a, e) => a + Number(f(e) || 0), 0));
+        const entFoot = getRegDrill('hldEntitiesScorecardPanel')
+          ? { loads: entSum(e => e.k.loads), sales: entSum(e => e.k.sales_ttc), gm: entSum(e => e.k.gross_margin), opex: entSum(e => round2(Number(e.k.expenses || 0) + Number(e.k.salaries || 0))), op: entSum(e => e.k.operating_profit), ar: entSum(e => e.k.ar_balance), ap: entSum(e => e.k.ap_balance) }
+          : { loads: totals.loads, sales: grossEntitySalesTtc, gm: grossEntityMargin, opex: round2(totals.expenses + totals.salaries), op: grossEntityOpProfit, ar: totals.ar_balance, ap: totals.ap_balance };
         return `
       <div class="panel-card" id="hldEntitiesScorecardPanel">
         <div class="panel-head">
@@ -47187,7 +47251,7 @@
               </tr>
             </thead>
             <tbody>
-              ${entities.map(e => {
+              ${ents.map(e => {
                 const opEx = round2(Number(e.k.expenses || 0) + Number(e.k.salaries || 0));
                 return `
                   <tr class="rrow" data-jump-co="${esc(e.key)}">
@@ -47208,14 +47272,14 @@
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="3"><strong>CONSOLIDATED GROUP TOTAL (${entities.length} ENTITIES · 6 INDUSTRIES)</strong></td>
-                <td class="r mono"><strong>${fmtNum(totals.loads)}</strong></td>
-                <td class="r mono"><strong>${fmtUSD(grossEntitySalesTtc, 2)}</strong></td>
-                <td class="r mono"><strong>${fmtUSD(grossEntityMargin, 2)}</strong></td>
-                <td class="r mono"><strong>${fmtUSD(round2(totals.expenses + totals.salaries), 2)}</strong></td>
-                <td class="r mono"><strong>${fmtSignedUSD(grossEntityOpProfit, 2)}</strong></td>
-                <td class="r mono"><strong>${fmtUSD(totals.ar_balance, 2)}</strong></td>
-                <td class="r mono"><strong>${fmtUSD(totals.ap_balance, 2)}</strong></td>
+                <td colspan="3"><strong>CONSOLIDATED GROUP TOTAL (${ents.length} ENTITIES · 6 INDUSTRIES)</strong></td>
+                <td class="r mono"><strong>${fmtNum(entFoot.loads)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(entFoot.sales, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(entFoot.gm, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(entFoot.opex, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtSignedUSD(entFoot.op, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(entFoot.ar, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(entFoot.ap, 2)}</strong></td>
                 <td></td>
               </tr>
             </tfoot>
@@ -47289,7 +47353,7 @@
     const repaidRowsCount = icRes.interactions.filter(x => x.repayRole === 'repaid').length;
     const unpaidCorridorRowsCount = icRes.interactions.filter(x => (x.corridorRepayPct || 0) < 15).length;
 
-    const filteredRows = icRes.interactions.filter(x => {
+    let filteredRows = icRes.interactions.filter(x => {
       if (STATE.chipFilter === 'given') return x.repayRole === 'given';
       if (STATE.chipFilter === 'repaid') return x.repayRole === 'repaid';
       if (STATE.chipFilter === 'unpaid_corridors') return (x.corridorRepayPct || 0) < 15;
@@ -47381,6 +47445,18 @@
 
     if (submode === 'due_matrix') {
       const bList = regPanelRows('hldDueMatrixPanel', icRes.byBilateral || []);
+      // Filtered from the chart: the TOTAL adds up the pairs listed.
+      const bFoot = (() => {
+        if (!getRegDrill('hldDueMatrixPanel')) return icRes;
+        const s = f => bList.reduce((a, c) => a + Number(f(c) || 0), 0);
+        const given = round2(s(c => c.givenUsd));
+        const paid = round2(s(c => c.paidBackUsd));
+        return {
+          totalCount: s(c => c.totalCount), totalGivenUsd: given, totalPaidBackUsd: paid,
+          overallRepayPct: given > 0 ? (paid / given) * 100 : 0,
+          totalNetUnpaidUsd: round2(s(c => c.netUnpaidUsd)), matchedCount: s(c => c.matchedCount)
+        };
+      })();
       return `
         ${kpiHeader}
         <div class="panel-card" id="hldDueMatrixPanel">
@@ -47427,13 +47503,13 @@
               <tfoot>
                 <tr class="totals-row">
                   <td colspan="2"><strong>TOTAL SISTER REPAYMENT MATRIX (${bList.length} PAIRS)</strong></td>
-                  <td class="r mono"><strong>${fmtNum(icRes.totalCount)} transfers</strong></td>
-                  <td class="r mono"><strong>${fmtUSD(icRes.totalGivenUsd, 2)}</strong></td>
-                  <td class="r mono good"><strong>${fmtUSD(icRes.totalPaidBackUsd, 2)}</strong></td>
-                  <td class="r mono"><strong>${icRes.overallRepayPct.toFixed(1)}%</strong></td>
-                  <td class="r mono warn"><strong>${fmtUSD(icRes.totalNetUnpaidUsd, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtNum(bFoot.totalCount)} transfers</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(bFoot.totalGivenUsd, 2)}</strong></td>
+                  <td class="r mono good"><strong>${fmtUSD(bFoot.totalPaidBackUsd, 2)}</strong></td>
+                  <td class="r mono"><strong>${bFoot.overallRepayPct.toFixed(1)}%</strong></td>
+                  <td class="r mono warn"><strong>${fmtUSD(bFoot.totalNetUnpaidUsd, 2)}</strong></td>
                   <td><strong>Net Unpaid Across Group</strong></td>
-                  <td class="r mono"><strong>${fmtNum(icRes.matchedCount)} / ${fmtNum(icRes.totalCount)}</strong></td>
+                  <td class="r mono"><strong>${fmtNum(bFoot.matchedCount)} / ${fmtNum(bFoot.totalCount)}</strong></td>
                 </tr>
               </tfoot>
             </table>
@@ -47443,8 +47519,7 @@
     }
 
     if (submode === 'open_recon') {
-      const openList = icRes.openRows;
-      regPanelRows('hldOpenReconPanel', openList.map(x => Object.assign({}, x, { _rid: (x.primaryRow && x.primaryRow.id) || '' })), 'hld_open_recon');
+      const openList = regPanelRows('hldOpenReconPanel', icRes.openRows, 'hld_open_recon', x => Object.assign({}, x, { _rid: (x.primaryRow && x.primaryRow.id) || '' }));
       const shownOpen = openList.slice(0, shownCount('hld_open_recon'));
       return `
         ${kpiHeader}
@@ -47528,7 +47603,7 @@
       `;
     }
 
-    regPanelRows('hldInteractionsPanel', filteredRows.map(x => Object.assign({}, x, { _rid: (x.primaryRow && x.primaryRow.id) || '' })), 'hld_interactions');
+    filteredRows = regPanelRows('hldInteractionsPanel', filteredRows, 'hld_interactions', x => Object.assign({}, x, { _rid: (x.primaryRow && x.primaryRow.id) || '' }));
     const shownMain = filteredRows.slice(0, shownCount('hld_interactions'));
     const sumGiven = round2(filteredRows.reduce((s, x) => s + (x.givenUsd || 0), 0));
     const sumPaidBack = round2(filteredRows.reduce((s, x) => s + (x.paidBackUsd || 0), 0));
@@ -47944,12 +48019,12 @@
     `;
 
     if (submode === 'distributions') {
-      regPanelRows('hldJvAgreementsPanel', jvRules);
+      const jvList = regPanelRows('hldJvAgreementsPanel', jvRules);
       return `
         ${kpiHtml}
         <div class="panel-card" id="hldJvAgreementsPanel" style="margin-bottom:14px">
           <div class="panel-head">
-            <div class="panel-title"><span>${ic('hld_distributions')} JOINT VENTURE &amp; PROFIT-SPLIT AGREEMENTS (${fmtNum(jvRules.length)})</span></div>
+            <div class="panel-title"><span>${ic('hld_distributions')} JOINT VENTURE &amp; PROFIT-SPLIT AGREEMENTS (${fmtNum(jvList.length)})</span></div>
             <div style="display:flex;gap:6px;align-items:center">
               ${exportBtn('hldJvAgreementsPanel', 'Holding_JV_Agreements')}
               ${canEnterForm('jv', u) ? '<button type="button" class="btn btn-primary" data-open-modal="jv">+ New JV Partnership</button>' : ''}
@@ -47970,7 +48045,7 @@
                 </tr>
               </thead>
               <tbody>
-                ${jvRules.length ? jvRules.map(j => `
+                ${jvList.length ? jvList.map(j => `
                   <tr class="rrow" data-rkey="jv_partnerships" data-rid="${esc(j.id)}">
                     <td class="mono"><strong>${esc(j.name || j.id)}</strong></td>
                     <td>${coBadge(j.company)}</td>
@@ -47985,8 +48060,8 @@
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="4"><strong>TOTAL JV AGREEMENTS (${fmtNum(jvRules.length)})</strong></td>
-                  <td class="r mono"><strong>${jvRules.length ? fmtNum(jvRules.reduce((s, j) => s + Number(j.partner_pct || j.share_pct || 50), 0) / jvRules.length, 1) + '% avg' : '0.0%'}</strong></td>
+                  <td colspan="4"><strong>TOTAL JV AGREEMENTS (${fmtNum(jvList.length)})</strong></td>
+                  <td class="r mono"><strong>${jvList.length ? fmtNum(jvList.reduce((s, j) => s + Number(j.partner_pct || j.share_pct || 50), 0) / jvList.length, 1) + '% avg' : '0.0%'}</strong></td>
                   <td colspan="3"></td>
                 </tr>
               </tfoot>
@@ -47997,13 +48072,18 @@
       `;
     }
 
-    regPanelRows('hldPartnersTablePanel', partners.map(p => Object.assign({}, p, { _companies_str: Array.from(p.companies || []).join(', ') })), 'hld_partners');
-    const shownPartners = partners.slice(0, shownCount('hld_partners'));
+    const partnersList = regPanelRows('hldPartnersTablePanel', partners, 'hld_partners', p => Object.assign({}, p, { _companies_str: Array.from(p.companies || []).join(', ') }));
+    const shownPartners = partnersList.slice(0, shownCount('hld_partners'));
+    // Filtered from the chart: the TOTAL adds up the partner accounts listed.
+    const prtDrill = Boolean(getRegDrill('hldPartnersTablePanel'));
+    const prtFootMoves = prtDrill ? partnersList.reduce((a, p) => a + Number(p.count || 0), 0) : partnerMoves.length;
+    const prtFootIn = prtDrill ? round2(partnersList.reduce((a, p) => a + Number(p.inUsd || 0), 0)) : totInUsd;
+    const prtFootOut = prtDrill ? round2(partnersList.reduce((a, p) => a + Number(p.outUsd || 0), 0)) : totOutUsd;
     return `
       ${kpiHtml}
       <div class="panel-card" id="hldPartnersTablePanel">
         <div class="panel-head">
-          <div class="panel-title"><span>${ic('hld_partners')} PARTNER &amp; STAKEHOLDER CAPITAL LEDGER (${fmtNum(partners.length)} ACCOUNTS)</span></div>
+          <div class="panel-title"><span>${ic('hld_partners')} PARTNER &amp; STAKEHOLDER CAPITAL LEDGER (${fmtNum(partnersList.length)} ACCOUNTS)</span></div>
           <div style="display:flex;gap:6px;align-items:center">
             ${searchBox('Search partner, stakeholder...')}
             ${exportBtn('hldPartnersTablePanel', 'Holding_Partner_Capital_Ledger')}
@@ -48035,15 +48115,15 @@
                   <td class="mono">${esc(fmtDateDMY(p.lastDate))} <button type="button" class="btn-ind-wf" data-ind-workflow="hld_partner_split" data-wf-partner="${esc(p.partner)}" data-wf-pool="${Math.max(1000, Math.round(Math.abs(p.inUsd - p.outUsd) || 50000))}">+ Split</button></td>
                 </tr>
               `).join('') : emptyRow(7, 'No partner entries match the current filter')}
-              ${showMoreRow('hld_partners', partners.length, 7)}
+              ${showMoreRow('hld_partners', partnersList.length, 7)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="2"><strong>TOTAL PARTNER ACCOUNTS (${fmtNum(partners.length)})</strong></td>
-                <td class="r mono"><strong>${fmtNum(partnerMoves.length)}</strong></td>
-                <td class="r mono"><strong>${fmtUSD(totInUsd, 2)}</strong></td>
-                <td class="r mono"><strong>${fmtUSD(totOutUsd, 2)}</strong></td>
-                <td class="r mono"><strong>${fmtSignedUSD(totInUsd - totOutUsd, 2)}</strong></td>
+                <td colspan="2"><strong>TOTAL PARTNER ACCOUNTS (${fmtNum(partnersList.length)})</strong></td>
+                <td class="r mono"><strong>${fmtNum(prtFootMoves)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(prtFootIn, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(prtFootOut, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtSignedUSD(prtFootIn - prtFootOut, 2)}</strong></td>
                 <td></td>
               </tr>
             </tfoot>
@@ -49021,13 +49101,14 @@
     `;
 
     if (submode === 'assets') {
-      regPanelRows('hldAssetsPanel', assetExps.map(x => Object.assign({}, x, { _asset_amount: Number(x.total || x.amount || 0), _asset_cat: [x.category, x.subcategory].filter(Boolean).join(' · ') || 'Capital Outlay' })), 'hld_assets');
-      const shownAssets = assetExps.slice(0, shownCount('hld_assets'));
+      const assetList = regPanelRows('hldAssetsPanel', assetExps, 'hld_assets', x => Object.assign({}, x, { _asset_amount: Number(x.total || x.amount || 0), _asset_cat: [x.category, x.subcategory].filter(Boolean).join(' · ') || 'Capital Outlay' }));
+      const assetFootUsd = getRegDrill('hldAssetsPanel') ? round2(assetList.reduce((a, x) => a + Number(x.total || x.amount || 0), 0)) : assetTotalUsd;
+      const shownAssets = assetList.slice(0, shownCount('hld_assets'));
       return `
         ${kpiHtml}
         <div class="panel-card" id="hldAssetsPanel">
           <div class="panel-head">
-            <div class="panel-title"><span>${ic('hld_assets')} INVESTMENTS, CAPEX &amp; GROUP ASSET VOUCHERS (${fmtNum(assetExps.length)})</span></div>
+            <div class="panel-title"><span>${ic('hld_assets')} INVESTMENTS, CAPEX &amp; GROUP ASSET VOUCHERS (${fmtNum(assetList.length)})</span></div>
             <div style="display:flex;gap:6px;align-items:center">
               ${searchBox('Search asset, supplier, category...')}
               ${exportBtn('hldAssetsPanel', 'Holding_Group_Assets_Capex')}
@@ -49059,12 +49140,12 @@
                     <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc(cleanNotesText(x.notes) || '—')}</td>
                   </tr>
                 `).join('') : emptyRow(7, 'No capital or asset outlays in selected scope')}
-                ${showMoreRow('hld_assets', assetExps.length, 7)}
+                ${showMoreRow('hld_assets', assetList.length, 7)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="5"><strong>TOTAL CAPITAL &amp; ASSET OUTLAYS (${fmtNum(assetExps.length)} VOUCHERS)</strong></td>
-                  <td class="r mono"><strong>${fmtUSD(assetTotalUsd, 2)}</strong></td>
+                  <td colspan="5"><strong>TOTAL CAPITAL &amp; ASSET OUTLAYS (${fmtNum(assetList.length)} VOUCHERS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(assetFootUsd, 2)}</strong></td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -49074,8 +49155,9 @@
       `;
     }
 
-    regPanelRows('hldLoansPanel', loansList.map(l => Object.assign({}, l, { _loan_amt: Number(l.principal_usd || l.amount_usd || l.amount || l.total || 0), _loan_date: l.date || l.start_date || '', _loan_party: l.counterparty || l.party || l.borrower || '', _loan_dir: String(l.side || l.type || l.direction || 'Loan Given') })), 'hld_loans');
-    const shownLoans = loansList.slice(0, shownCount('hld_loans'));
+    const loanRows = regPanelRows('hldLoansPanel', loansList, 'hld_loans', l => Object.assign({}, l, { _loan_amt: Number(l.principal_usd || l.amount_usd || l.amount || l.total || 0), _loan_date: l.date || l.start_date || '', _loan_party: l.counterparty || l.party || l.borrower || '', _loan_dir: String(l.side || l.type || l.direction || 'Loan Given') }));
+    const loanFootUsd = getRegDrill('hldLoansPanel') ? round2(loanRows.reduce((a, l) => a + Number(l.principal_usd || l.amount_usd || l.amount || l.total || 0), 0)) : round2(givenUsd + takenUsd);
+    const shownLoans = loanRows.slice(0, shownCount('hld_loans'));
     const hldFacs = regPanelRows('hldFacilitySchedulesPanel', (computeHoldingSchedules().facilitySchedules || []).filter(f => selParty === 'ALL' || f.lender === selParty || f.company === selParty));
     const hideFacCo = STATE.company === 'bdeirholding';
     const facCoStyle = hideFacCo ? ' style="display:none"' : '';
@@ -49087,7 +49169,7 @@
       ${kpiHtml}
       <div class="panel-card" id="hldLoansPanel">
         <div class="panel-head">
-          <div class="panel-title"><span>${ic('hld_loans')} GROUP LOANS GIVEN / TAKEN &amp; FACILITY SCHEDULE (${fmtNum(loansList.length)})</span></div>
+          <div class="panel-title"><span>${ic('hld_loans')} GROUP LOANS GIVEN / TAKEN &amp; FACILITY SCHEDULE (${fmtNum(loanRows.length)})</span></div>
           <div style="display:flex;gap:6px;align-items:center">
             ${searchBox('Search borrower, lender, loan ref...')}
             ${exportBtn('hldLoansPanel', 'Holding_Group_Loans')}
@@ -49125,12 +49207,12 @@
                   </tr>
                 `;
               }).join('') : emptyRow(7, 'No loans registered in current scope')}
-              ${showMoreRow('hld_loans', loansList.length, 7)}
+              ${showMoreRow('hld_loans', loanRows.length, 7)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="5"><strong>TOTAL LOAN FACILITIES (${fmtNum(loansList.length)})</strong></td>
-                <td class="r mono"><strong>${fmtUSD(givenUsd + takenUsd, 2)}</strong></td>
+                <td colspan="5"><strong>TOTAL LOAN FACILITIES (${fmtNum(loanRows.length)})</strong></td>
+                <td class="r mono"><strong>${fmtUSD(loanFootUsd, 2)}</strong></td>
                 <td></td>
               </tr>
             </tfoot>
@@ -49591,13 +49673,13 @@
     `;
 
     if (submode === 'pos') {
-      const filteredPos = hsp.posRows.filter(r => {
+      let filteredPos = hsp.posRows.filter(r => {
         if (f === 'variance') return Math.abs(r.variance_usd) > 0.5;
         if (f === 'balanced') return Math.abs(r.variance_usd) <= 0.5;
         if (f === 'launa') return r.company === 'La Una';
         return true;
       });
-      regPanelRows('hspPosPanel', filteredPos, 'hsp_pos');
+      filteredPos = regPanelRows('hspPosPanel', filteredPos, 'hsp_pos');
       const shownPos = filteredPos.slice(0, shownCount('hsp_pos'));
       const sumBilled = round2(filteredPos.reduce((a, r) => a + r.pos_billed_ttc, 0));
       const sumCash = round2(filteredPos.reduce((a, r) => a + r.cash_usd, 0));
@@ -49690,13 +49772,13 @@
     }
 
     if (submode === 'vat') {
-      const filteredVat = hsp.vatRows.filter(r => {
+      let filteredVat = hsp.vatRows.filter(r => {
         if (f === 'taxable_11') return r.direction === 'Output VAT';
         if (f === 'never_vat') return r.direction.includes('Exempt');
         if (f === 'input_vat') return r.direction === 'Input VAT';
         return true;
       });
-      regPanelRows('hspVatPanel', filteredVat, 'hsp_vat');
+      filteredVat = regPanelRows('hspVatPanel', filteredVat, 'hsp_vat');
       const shownVat = filteredVat.slice(0, shownCount('hsp_vat'));
       const sumHt = round2(filteredVat.reduce((a, r) => a + r.ht_usd, 0));
       const sumVat = round2(filteredVat.reduce((a, r) => a + r.vat_usd, 0));
@@ -49779,14 +49861,14 @@
       `;
     }
 
-    const filteredRev = hsp.venueRows.filter(r => {
+    let filteredRev = hsp.venueRows.filter(r => {
       if (f === 'chalets') return r.category === 'Chalet Rental';
       if (f === 'restaurant') return r.category === 'Restaurant F&B' || r.category === 'Shisha & Lounge';
       if (f === 'beach') return r.category === 'Beach Entrance' || r.category === 'Valet & Services';
       if (f === 'events') return r.category === 'Events & Weddings';
       return true;
     });
-    regPanelRows('hspRevenuePanel', filteredRev, 'hsp_revenue');
+    filteredRev = regPanelRows('hspRevenuePanel', filteredRev, 'hsp_revenue');
     const shownRev = filteredRev.slice(0, shownCount('hsp_revenue'));
     const sumRooms = filteredRev.reduce((a, r) => a + Number(r.rooms || 0), 0);
     const sumCovers = filteredRev.reduce((a, r) => a + Number(r.covers || 0), 0);
@@ -49956,13 +50038,12 @@
     `;
 
     if (submode === 'partners') {
-      const filteredPartners = hsp.partnerSplitRows.filter(r => {
+      const filteredPartners = regPanelRows('hspPartnersPanel', hsp.partnerSplitRows.filter(r => {
         if (f === 'active') return r.status === 'Active Split';
         if (f === 'settled') return r.status === 'Settled';
         if (f === 'pending') return r.open_payable_usd > 0;
         return true;
-      });
-      regPanelRows('hspPartnersPanel', filteredPartners.map(r => Object.assign({}, r, { _partner_share_usd: round2(Number(r.operator_share_usd || 0) + Number(r.coinvest_share_usd || 0)) })), 'hsp_partners');
+      }), 'hsp_partners', r => Object.assign({}, r, { _partner_share_usd: round2(Number(r.operator_share_usd || 0) + Number(r.coinvest_share_usd || 0)) }));
       const shownPartners = filteredPartners.slice(0, shownCount('hsp_partners'));
       const sumPool = round2(filteredPartners.reduce((a, r) => a + r.gross_pool_usd, 0));
       const sumHold = round2(filteredPartners.reduce((a, r) => a + r.holding_share_usd, 0));
@@ -50053,14 +50134,14 @@
       `;
     }
 
-    const filteredMem = hsp.membershipRows.filter(r => {
+    let filteredMem = hsp.membershipRows.filter(r => {
       if (f === 'overdue') return r.status === 'Overdue Arrears';
       if (f === 'partial') return r.balance_usd > 0;
       if (f === 'paid') return r.balance_usd <= 0;
       return true;
     });
-    regPanelRows('hspMembershipsPanel', filteredMem, 'hsp_memberships');
-    regPanelRows('hspTariffsPanel', hsp.tariffRows || []);
+    filteredMem = regPanelRows('hspMembershipsPanel', filteredMem, 'hsp_memberships');
+    const tariffList = regPanelRows('hspTariffsPanel', hsp.tariffRows || []);
     const shownMem = filteredMem.slice(0, shownCount('hsp_memberships'));
     const sumCont = round2(filteredMem.reduce((a, r) => a + r.contract_usd, 0));
     const sumPaid = round2(filteredMem.reduce((a, r) => a + r.paid_usd, 0));
@@ -50146,7 +50227,7 @@
       </div>
       <div class="panel-card" id="hspTariffsPanel" style="margin-top:14px">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
-          <div class="panel-title"><span>${ic('hsp_memberships')} EFFECTIVE RESORT SEASONAL TARIFF SCHEDULES (${fmtNum((hsp.tariffRows || []).length)})</span></div>
+          <div class="panel-title"><span>${ic('hsp_memberships')} EFFECTIVE RESORT SEASONAL TARIFF SCHEDULES (${fmtNum(tariffList.length)})</span></div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${exportBtn('hspTariffsPanel', 'Hospitality_Seasonal_Tariff_Schedules')}
             <button type="button" class="btn btn-primary" data-ind-open-new="hsp_tariffs">+ Seasonal Tariff</button>
@@ -50168,7 +50249,7 @@
               </tr>
             </thead>
             <tbody>
-              ${(hsp.tariffRows || []).length ? (hsp.tariffRows || []).map(t => `
+              ${tariffList.length ? tariffList.map(t => `
                 <tr class="rrow" data-ind-row-tbl="hsp_tariffs" data-ind-row-id="${esc(t.id)}" data-ind-row-co="${esc(t.company)}">
                   <td class="mono"><strong>${esc(t.id)}</strong>${renderDomainRowAttBadgeHtml('hsp_tariffs', t.id)}</td>
                   <td${coStyle}>${coBadge(t.company)}</td>
@@ -50184,9 +50265,9 @@
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="${hideCo ? 4 : 5}"><strong>TOTAL SEASONAL TARIFF SCHEDULES (${fmtNum((hsp.tariffRows || []).length)})</strong></td>
-                <td class="r mono"><strong>${fmtUSD((hsp.tariffRows || []).reduce((a, r) => a + Number(r.season_contract_usd || 0), 0), 2)}</strong></td>
-                <td class="r mono"><strong>${fmtUSD((hsp.tariffRows || []).reduce((a, r) => a + Number(r.daily_chalet_ttc_usd || 0), 0), 2)}</strong></td>
+                <td colspan="${hideCo ? 4 : 5}"><strong>TOTAL SEASONAL TARIFF SCHEDULES (${fmtNum(tariffList.length)})</strong></td>
+                <td class="r mono"><strong>${fmtUSD(tariffList.reduce((a, r) => a + Number(r.season_contract_usd || 0), 0), 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(tariffList.reduce((a, r) => a + Number(r.daily_chalet_ttc_usd || 0), 0), 2)}</strong></td>
                 <td colspan="2"></td>
               </tr>
             </tfoot>
@@ -50265,14 +50346,14 @@
     `;
 
     if (submode === 'menu') {
-      const filteredMenu = hsp.menuRows.filter(r => {
+      let filteredMenu = hsp.menuRows.filter(r => {
         if (f === 'star') return r.menu_class.startsWith('Star');
         if (f === 'high_cost') return r.food_cost_pct >= 35;
         if (f === 'bar') return /bar|cocktail/i.test(r.category);
         if (f === 'kitchen') return /kitchen|seafood|banquet|ballroom/i.test(r.category);
         return true;
       });
-      regPanelRows('hspMenuPanel', filteredMenu, 'hsp_menu');
+      filteredMenu = regPanelRows('hspMenuPanel', filteredMenu, 'hsp_menu');
       const shownMenu = filteredMenu.slice(0, shownCount('hsp_menu'));
       const sumUnits = filteredMenu.reduce((a, r) => a + r.units_sold, 0);
       const sumRevHt = round2(filteredMenu.reduce((a, r) => a + r.price_ht * r.units_sold, 0));
@@ -50361,14 +50442,14 @@
       `;
     }
 
-    const filteredStk = hsp.stockRows.filter(r => {
+    let filteredStk = hsp.stockRows.filter(r => {
       if (f === 'r3_alert') return r.r3_ratio > 1.18;
       if (f === 'cellar') return /cellar|bar/i.test(r.store);
       if (f === 'kitchen') return /kitchen|commissary|pantry/i.test(r.store);
       if (f === 'transfers') return Math.abs(r.transfers_net_usd) > 0;
       return true;
     });
-    regPanelRows('hspStockPanel', filteredStk, 'hsp_stock');
+    filteredStk = regPanelRows('hspStockPanel', filteredStk, 'hsp_stock');
     const shownStk = filteredStk.slice(0, shownCount('hsp_stock'));
     const sumOpen = round2(filteredStk.reduce((a, r) => a + r.opening_usd, 0));
     const sumPur = round2(filteredStk.reduce((a, r) => a + r.purchases_in_usd, 0));
@@ -50562,14 +50643,14 @@
     `;
 
     if (submode === 'maint') {
-      const filteredMaint = hsp.maintRows.filter(r => {
+      let filteredMaint = hsp.maintRows.filter(r => {
         if (f === 'open') return r.status === 'Open Work Order';
         if (f === 'urgent') return r.priority === 'Urgent' || r.priority === 'High';
         if (f === 'preventive') return r.type.startsWith('Preventive');
         if (f === 'completed') return r.status === 'Completed';
         return true;
       });
-      regPanelRows('hspMaintPanel', filteredMaint, 'hsp_maint');
+      filteredMaint = regPanelRows('hspMaintPanel', filteredMaint, 'hsp_maint');
       const shownMaint = filteredMaint.slice(0, shownCount('hsp_maint'));
       const sumDown = round2(filteredMaint.reduce((a, r) => a + r.downtime_hrs, 0));
       const sumCost = round2(filteredMaint.reduce((a, r) => a + r.cost_usd, 0));
@@ -50653,13 +50734,13 @@
       `;
     }
 
-    const filteredNrg = hsp.energyRows.filter(r => {
+    let filteredNrg = hsp.energyRows.filter(r => {
       if (f === 'r4_spike') return r.l_per_hr > r.rated_l_hr * 1.15;
       if (f === 'refill') return r.refill_l > 0;
       if (f === 'solar') return r.solar_offset_pct >= 30;
       return true;
     });
-    regPanelRows('hspEnergyPanel', filteredNrg, 'hsp_energy');
+    filteredNrg = regPanelRows('hspEnergyPanel', filteredNrg, 'hsp_energy');
     const shownNrg = filteredNrg.slice(0, shownCount('hsp_energy'));
     const sumTank = filteredNrg.reduce((a, r) => a + r.tank_level_l, 0);
     const sumRefill = filteredNrg.reduce((a, r) => a + r.refill_l, 0);
@@ -51180,7 +51261,7 @@
     `;
 
     if (submode === 'receivables') {
-      const filteredAr = trd.receivableRows.filter(r => {
+      let filteredAr = trd.receivableRows.filter(r => {
         if (f === 'gross_ar') return r.gross_ar_usd > 0;
         if (f === 'advances') return r.advance_usd > 0;
         if (f === 'promises') return r.promise_usd > 0;
@@ -51188,7 +51269,7 @@
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
-      regPanelRows('trdReceivablesPanel', filteredAr, 'trd_receivables');
+      filteredAr = regPanelRows('trdReceivablesPanel', filteredAr, 'trd_receivables');
       const shownAr = filteredAr.slice(0, shownCount('trd_receivables'));
       const sumInv = round2(filteredAr.reduce((a, r) => a + r.invoiced_ttc, 0));
       const sumSet = round2(filteredAr.reduce((a, r) => a + r.settled_usd, 0));
@@ -51283,13 +51364,13 @@
     }
 
     if (submode === 'targets') {
-      const filteredTgt = trd.targetRows.filter(r => {
+      let filteredTgt = trd.targetRows.filter(r => {
         if (f === 'exceeded') return r.attainment_pct >= 100;
         if (f === 'shacman') return r.company === 'Shacman';
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
-      regPanelRows('trdTargetsPanel', filteredTgt, 'trd_targets');
+      filteredTgt = regPanelRows('trdTargetsPanel', filteredTgt, 'trd_targets');
       const shownTgt = filteredTgt.slice(0, shownCount('trd_targets'));
       const sumTgt = round2(filteredTgt.reduce((a, r) => a + r.target_ttc, 0));
       const sumAct = round2(filteredTgt.reduce((a, r) => a + r.actual_ttc, 0));
@@ -51374,7 +51455,7 @@
       `;
     }
 
-    const filteredSales = trd.salesRows.filter(r => {
+    let filteredSales = trd.salesRows.filter(r => {
       if (f === 'trucks') return r.category === 'Heavy Truck Sale';
       if (f === 'parts') return r.category !== 'Heavy Truck Sale' && !r.is_gap;
       if (f === 'gaps') return r.is_gap;
@@ -51382,7 +51463,7 @@
       if (f === 'korri') return r.company === 'Korri Auto';
       return true;
     });
-    regPanelRows('trdSalesPanel', filteredSales, 'trd_sales');
+    filteredSales = regPanelRows('trdSalesPanel', filteredSales, 'trd_sales');
     const shownSales = filteredSales.slice(0, shownCount('trd_sales'));
     const sumQty = filteredSales.reduce((a, r) => a + r.qty, 0);
     const sumNet = round2(filteredSales.reduce((a, r) => a + r.net_usd, 0));
@@ -51548,14 +51629,14 @@
     `;
 
     if (submode === 'landed') {
-      const filteredLc = trd.landedRows.filter(r => {
+      let filteredLc = trd.landedRows.filter(r => {
         if (f === 'unallocated') return r.unallocated_usd > 0;
         if (f === 'allocated') return r.unallocated_usd === 0;
         if (f === 'shacman') return r.company === 'Shacman';
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
-      regPanelRows('trdLandedPanel', filteredLc, 'trd_landed');
+      filteredLc = regPanelRows('trdLandedPanel', filteredLc, 'trd_landed');
       const shownLc = filteredLc.slice(0, shownCount('trd_landed'));
       const sumFrt = round2(filteredLc.reduce((a, r) => a + r.freight_usd, 0));
       const sumCus = round2(filteredLc.reduce((a, r) => a + r.customs_usd, 0));
@@ -51650,12 +51731,12 @@
     }
 
     if (submode === 'grn') {
-      const filteredGrn = trd.grnRows.filter(r => {
+      let filteredGrn = trd.grnRows.filter(r => {
         if (f === 'shacman') return r.company === 'Shacman';
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
-      regPanelRows('trdGrnPanel', filteredGrn, 'trd_grn');
+      filteredGrn = regPanelRows('trdGrnPanel', filteredGrn, 'trd_grn');
       const shownGrn = filteredGrn.slice(0, shownCount('trd_grn'));
       const sumLines = filteredGrn.reduce((a, r) => a + r.lines_cnt, 0);
       const sumRecQty = filteredGrn.reduce((a, r) => a + r.qty_received, 0);
@@ -51743,14 +51824,14 @@
       `;
     }
 
-    const filteredImp = trd.importRows.filter(r => {
+    let filteredImp = trd.importRows.filter(r => {
       if (f === 'backorder') return r.backorder_qty > 0;
       if (f === 't5_pending') return r.status.includes('Pending');
       if (f === 'shacman') return r.company === 'Shacman';
       if (f === 'korri') return r.company === 'Korri Auto';
       return true;
     });
-    regPanelRows('trdPurchasesPanel', filteredImp, 'trd_purchases');
+    filteredImp = regPanelRows('trdPurchasesPanel', filteredImp, 'trd_purchases');
     const shownImp = filteredImp.slice(0, shownCount('trd_purchases'));
     const sumOrd = filteredImp.reduce((a, r) => a + r.ordered_qty, 0);
     const sumRec = filteredImp.reduce((a, r) => a + r.received_qty, 0);
@@ -51933,7 +52014,7 @@
     `;
 
     if (submode === 'warranty') {
-      const filteredWar = trd.warrantyRows.filter(r => {
+      let filteredWar = trd.warrantyRows.filter(r => {
         if (f === 'open') return r.status !== 'Completed';
         if (f === 'pdi') return r.job_type.includes('PDI');
         if (f === 'warranty') return r.job_type.includes('Warranty');
@@ -51941,7 +52022,7 @@
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
-      regPanelRows('trdWarrantyPanel', filteredWar, 'trd_warranty');
+      filteredWar = regPanelRows('trdWarrantyPanel', filteredWar, 'trd_warranty');
       const shownWar = filteredWar.slice(0, shownCount('trd_warranty'));
       const sumParts = round2(filteredWar.reduce((a, r) => a + r.parts_cost_usd, 0));
       const sumLabor = round2(filteredWar.reduce((a, r) => a + r.labor_usd, 0));
@@ -52028,7 +52109,7 @@
       `;
     }
 
-    const filteredUnits = trd.serialUnits.filter(r => {
+    let filteredUnits = trd.serialUnits.filter(r => {
       if (f === 'available') return r.status === 'In Showroom' || r.status === 'In PDI';
       if (f === 'reserved') return r.status === 'Reserved';
       if (f === 'sold') return r.status === 'Sold & Delivered';
@@ -52036,7 +52117,7 @@
       if (f === 'korri') return r.company === 'Korri Auto';
       return true;
     });
-    regPanelRows('trdTrucksPanel', filteredUnits, 'trd_trucks');
+    filteredUnits = regPanelRows('trdTrucksPanel', filteredUnits, 'trd_trucks');
     const shownUnits = filteredUnits.slice(0, shownCount('trd_trucks'));
     const sumFob = round2(filteredUnits.reduce((a, r) => a + r.fob_usd, 0));
     const sumAdd = round2(filteredUnits.reduce((a, r) => a + r.landed_add_usd, 0));
@@ -52194,13 +52275,13 @@
     `;
 
     if (submode === 'movements') {
-      const filteredMov = trd.movementRows.filter(r => {
+      let filteredMov = trd.movementRows.filter(r => {
         if (f === 'ic') return r.type.includes('Inter-Company');
         if (f === 'shacman') return r.company === 'Shacman';
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
-      regPanelRows('trdMovementsPanel', filteredMov, 'trd_movements');
+      filteredMov = regPanelRows('trdMovementsPanel', filteredMov, 'trd_movements');
       const shownMov = filteredMov.slice(0, shownCount('trd_movements'));
       const sumQty = filteredMov.reduce((a, r) => a + r.qty, 0);
       const sumTot = round2(filteredMov.reduce((a, r) => a + r.total_usd, 0));
@@ -52285,12 +52366,12 @@
     }
 
     if (submode === 'recon') {
-      const filteredRec = trd.reconRows.filter(r => {
+      let filteredRec = trd.reconRows.filter(r => {
         if (f === 'shacman') return r.company === 'Shacman';
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
-      regPanelRows('trdReconPanel', filteredRec, 'trd_recon');
+      filteredRec = regPanelRows('trdReconPanel', filteredRec, 'trd_recon');
       const shownRec = filteredRec.slice(0, shownCount('trd_recon'));
       const sumRows = filteredRec.reduce((a, r) => a + r.rows_checked, 0);
       const sumLive = round2(filteredRec.reduce((a, r) => a + r.live_app_usd, 0));
@@ -52371,13 +52452,13 @@
       `;
     }
 
-    const filteredStk = trd.stockRows.filter(r => {
+    let filteredStk = trd.stockRows.filter(r => {
       if (f === 'low_stock') return r.is_low;
       if (f === 'shacman') return r.company === 'Shacman';
       if (f === 'korri') return r.company === 'Korri Auto';
       return true;
     });
-    regPanelRows('trdStockPanel', filteredStk, 'trd_stock');
+    filteredStk = regPanelRows('trdStockPanel', filteredStk, 'trd_stock');
     const shownStk = filteredStk.slice(0, shownCount('trd_stock'));
     const sumOnHand = filteredStk.reduce((a, r) => a + r.on_hand, 0);
     const sumReorder = filteredStk.reduce((a, r) => a + r.reorder_min, 0);
@@ -111593,6 +111674,9 @@
         if (mount.before && mount.before.parentNode === mount.parent) mount.parent.insertBefore(sw, mount.before);
         else mount.parent.appendChild(sw);
       }
+      if ((getRegDrill(view) || hasActiveColFilters(view)) && table.querySelector(`thead th[data-sort-view="${CSS.escape(view)}"]`)) {
+        refreshFilteredRegisterTotals(table, view);
+      }
       if (isChart) applyRegisterChartMode(panel, view, table, true);
     });
   }
@@ -111836,7 +111920,7 @@
     const sig = [
       SEED._customRev || 0, STATE.basis, chartPrefsKey(), sortView || '', rows.length,
       idAt(0), idAt(rows.length >> 1), idAt(rows.length - 1),
-      JSON.stringify((STATE.colFilters && STATE.colFilters[view]) || {}), String(STATE.search || ''), String(STATE.chipFilter || ''),
+      JSON.stringify((STATE.colFilters && STATE.colFilters[view]) || {}), JSON.stringify(getRegDrill(view) || null), String(STATE.search || ''), String(STATE.chipFilter || ''),
       STATE.company, STATE.period, JSON.stringify(STATE.sortBy && STATE.sortBy[view] || {})
     ].join('|');
     const hit = _regChartAnalysis.get(view);
@@ -111848,7 +111932,10 @@
     _regChartLastCols.set(view + '|' + STATE.company, cols);
     return cols;
   }
+  // What each bar of a register's chart stands for, in drawing order, so a click can list its rows.
+  const _regChartDrillItems = new Map();
   function buildRegisterChartHtml(view, table, panel) {
+    _regChartDrillItems.delete(view);
     const meta = getRegisterRowsMeta(view, panel);
     const rows = meta ? meta.rows : [];
     if (!meta || !registerRowsMatchTable(table, view, rows, meta.limit)) {
@@ -111887,7 +111974,6 @@
     const m = measures.find(o => o.key === pref.measure) || defMeasure;
     const valOf = r => (m.key === '__count' ? 1 : Number(regColVal(r, m.key, view, meta.sortView)) || 0);
     const fmtVal = v => (m.key === '__count' ? fmtNum(v, 0) : (m.money ? fmtUSD(v, 2) : fmtNum(v, 2)));
-    const boolLabel = v => (v === true ? 'Yes' : (v === false ? 'No' : v));
     // The total is over every row the filters show, so it reads the same as the register's own TOTAL.
     // When the bars cannot show every row (no date, months before the latest 14, groups beyond the top
     // 12 are folded into "Other"), the amount the bars do show is printed beside it.
@@ -111905,13 +111991,17 @@
       let items = Array.from(byYm.keys()).sort().map(ym => ({
         label: `${MONTH_SHORT[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`,
         raw: byYm.get(ym),
-        v: round2(byYm.get(ym))
+        v: round2(byYm.get(ym)),
+        ym
       }));
       if (items.length > REG_CHART_MAX_BARS) { items = items.slice(-REG_CHART_MAX_BARS); note = 'Latest 14 Months'; }
       charted = items.reduce((a, it) => a + it.raw, 0);
+      _regChartDrillItems.set(view, items.map(it => ({ kind: 'month', key: g.dateKey, groupLabel: g.label, value: it.ym, valueLabel: it.label })));
       const P = window.MFG_PBI || {};
-      if (items.some(it => it.v < -0.005) && typeof P.buildHorizontalBarChart === 'function') {
-        // Negative months read as negative (a column chart draws heights as absolute values).
+      const coarse = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+      if ((coarse || items.some(it => it.v < -0.005)) && typeof P.buildHorizontalBarChart === 'function') {
+        // Negative months read as negative (a column chart draws heights as absolute values). On a touch
+        // screen months are listed as rows too, so each month is a full-width tap target.
         body = P.buildHorizontalBarChart(items, 'label', 'v', fmtVal, { maxItems: REG_CHART_MAX_BARS, sort: false, allowZero: true, rank: false });
       } else if (typeof P.buildClusteredColumnSvg === 'function') {
         body = P.buildClusteredColumnSvg(items, [{ key: 'v', label: m.label, color: 'var(--chart-navy, #2356A8)', fmt: v => fmtVal(v) }], { labelKey: 'label', isMoney: Boolean(m.money), maxBars: REG_CHART_MAX_BARS, height: 230 });
@@ -111919,34 +112009,40 @@
     } else {
       const byVal = new Map();
       rows.forEach(r => {
-        const raw = boolLabel(regColVal(r, g.key, view, meta.sortView));
-        const k = raw == null || raw === '' ? '(Blank)' : String(raw);
+        // Same grouping rule as the bar drill (regDrillGroupLabel), so a clicked bar lists exactly its rows.
+        const k = regDrillGroupLabel(regColVal(r, g.key, view, meta.sortView));
         byVal.set(k, (byVal.get(k) || 0) + valOf(r));
       });
-      let items = Array.from(byVal.entries()).map(([label, raw]) => ({ label, raw, v: round2(raw) }))
+      let items = Array.from(byVal.entries()).map(([label, raw]) => ({ label, raw, v: round2(raw), drillValue: label }))
         .sort((a, b) => (Math.abs(b.raw) - Math.abs(a.raw)) || (b.raw - a.raw));
       if (items.length > REG_CHART_TOP_N) {
         // A real "Other" group joins the folded bar, so the chart never shows two bars called Other.
+        // The folded bar holds several values, so it cannot be clicked through to one.
         const realOther = items.filter(it => /^other$/i.test(it.label));
         const pool = items.filter(it => !/^other$/i.test(it.label));
         const keep = pool.slice(0, REG_CHART_TOP_N - 1);
         const rest = pool.slice(REG_CHART_TOP_N - 1).concat(realOther).reduce((a, it) => a + it.raw, 0);
-        items = keep.concat([{ label: 'Other', raw: rest, v: round2(rest) }]);
+        items = keep.concat([{ label: 'Other', raw: rest, v: round2(rest), drillValue: null }]);
       }
       charted = items.reduce((a, it) => a + it.raw, 0);
+      _regChartDrillItems.set(view, items.map(it => (it.drillValue == null ? null
+        : { kind: 'value', key: g.key, groupLabel: g.label, value: it.drillValue, valueLabel: it.label })));
       body = (window.MFG_PBI && typeof window.MFG_PBI.buildHorizontalBarChart === 'function')
         ? window.MFG_PBI.buildHorizontalBarChart(items, 'label', 'v', fmtVal, { maxItems: REG_CHART_TOP_N, sort: false, allowZero: true })
         : '';
     }
     const inChart = Math.abs(round2(charted) - round2(total)) > 0.005
       ? ` <span class="badge badge-warn"><span>In Chart</span> <span class="mono">${esc(fmtVal(round2(charted)))}</span></span>` : '';
+    const drillItems = _regChartDrillItems.get(view) || [];
+    const canDrill = Boolean(body) && drillItems.some(Boolean);
     return `
       <div class="reg-chart-controls">
         <label class="reg-chart-field"><span>Measure</span><select data-plain-options="1" data-regc-measure="${esc(view)}">${opt(measures, m)}</select></label>
         <label class="reg-chart-field"><span>Group By</span><select data-plain-options="1" data-regc-group="${esc(view)}">${opt(groups, g)}</select></label>
         <span class="reg-chart-total"><span>Total</span> <b class="mono">${esc(fmtVal(round2(total)))}</b> <span class="mu">· <span class="mono">${fmtNum(rows.length)}</span> <span>Rows</span></span>${note ? ` <span class="badge badge-info">${esc(note)}</span>` : ''}${inChart}</span>
       </div>
-      <div class="reg-chart-body">${body}</div>`;
+      <div class="reg-chart-body">${body}</div>
+      ${canDrill ? `<div class="reg-chart-hint mu">${TH_FUNNEL_SVG}<span>${(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? 'Tap a bar twice to list its rows in the table' : 'Click a bar to list its rows in the table'}</span></div>` : ''}`;
   }
   function applyRegisterChartMode(panel, view, table, isChart) {
     if (!panel) return;
@@ -111966,8 +112062,197 @@
       wrap.parentNode.insertBefore(box, wrap.nextSibling);
     }
     box.innerHTML = withRelPass(() => buildRegisterChartHtml(view, tbl, panel));
+    markRegisterChartBars(box, view);
     wrap.hidden = true;
     wrap.classList.add('reg-chart-hidden-table');
+  }
+  // Each bar (a row of the bar list, or a month column) becomes a button that lists that bar's rows.
+  // Bars are drawn in the order of the items, one element each; on any other count nothing is marked.
+  function markRegisterChartBars(box, view) {
+    const items = _regChartDrillItems.get(view) || [];
+    const body = box.querySelector('.reg-chart-body');
+    if (!body || !items.length) return;
+    const bars = Array.from(body.querySelectorAll('.pbi-bar-chart > .pbi-bar-item, svg > g.pbi-chart-col'));
+    if (bars.length !== items.length) return;
+    bars.forEach((el, i) => {
+      if (!items[i]) return;
+      el.setAttribute('data-regc-drill-idx', String(i));
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '0');
+      el.setAttribute('data-ui-tip', 'List the rows of this bar in the table');
+      el.classList.add('reg-drill-bar');
+    });
+  }
+  function drillRegisterFromBar(view, idx) {
+    const items = _regChartDrillItems.get(view) || [];
+    const it = items[idx];
+    if (!it) return;
+    if (!STATE.regDrill) STATE.regDrill = {};
+    // The chart of a drilled register is drawn from the drilled rows, so its bar narrows the drill: the
+    // new condition joins the ones already in place (a bar of the same grouping replaces that one).
+    const prev = getRegDrill(view);
+    const conds = (prev ? prev.conds : []).filter(c => !(c.kind === it.kind && c.key === it.key));
+    conds.push({ kind: it.kind, key: it.key, value: it.value, groupLabel: it.groupLabel, valueLabel: it.valueLabel });
+    STATE.regDrill[view] = { company: STATE.company, conds };
+    setRegisterChartPref(view, { mode: 'table' });
+    STATE.shown = {};
+    const pop = $('mfgChartPopover');
+    if (pop) pop.hidden = true;
+    renderApp();
+    const panel = document.querySelector(`#workspace [data-regc-panel="${CSS.escape(view)}"]`) || document.querySelector(`#workspace [data-regc-drill-strip="${CSS.escape(view)}"]`);
+    const ws = $('workspace');
+    if (panel && ws) {
+      const pr = panel.getBoundingClientRect();
+      const wr = ws.getBoundingClientRect();
+      if (pr.top < wr.top || pr.top > wr.top + wr.height * 0.6) scrollWorkspaceTo(panel, 8);
+    }
+    const strip = document.querySelector(`#workspace [data-regc-drill-strip="${CSS.escape(view)}"] [data-regc-drill-back]`);
+    if (strip) { try { strip.focus({ preventScroll: true }); } catch (_) {} }
+  }
+  function clearRegisterDrill(view, backToChart) {
+    if (STATE.regDrill) delete STATE.regDrill[view];
+    if (backToChart) setRegisterChartPref(view, { mode: 'chart' });
+    STATE.shown = {};
+    renderApp();
+  }
+  // The panel and table of a register, found without the chart's own checks, so a drilled register can
+  // always show its strip and be cleared (a drill must never become a filter nobody can see).
+  function findRegisterPanelAndTable(container, view) {
+    let panel = container.querySelector(`[data-regc-panel="${CSS.escape(view)}"]`);
+    let table = panel ? panel.querySelector(`table[data-regc-table="${CSS.escape(view)}"]`) : null;
+    if (!panel || !table) {
+      const th = container.querySelector(`table thead th[data-sort-view="${CSS.escape(view)}"]`);
+      if (th) {
+        table = th.closest('table');
+        const wrapEl = table.closest('.table-wrap') || table;
+        panel = table.closest('.panel-card, .panel') || wrapEl.parentElement;
+      } else {
+        const byId = document.getElementById(view);
+        if (byId && container.contains(byId)) {
+          panel = byId;
+          table = Array.from(byId.querySelectorAll('table')).find(t => t.closest('.panel-card, .panel') === byId) || null;
+        }
+      }
+    }
+    return panel && table ? { panel, table } : null;
+  }
+  function mountRegisterDrillStrips(container) {
+    const drills = STATE.regDrill || {};
+    Object.keys(drills).forEach(view => {
+      const d = getRegDrill(view);
+      if (!d) return;
+      const found = findRegisterPanelAndTable(container, view);
+      if (!found) return;
+      const { panel, table } = found;
+      const wrap = table.closest('.table-wrap') || table;
+      if (!wrap.parentNode) return;
+      const meta = getRegisterRowsMeta(view, panel);
+      const n = meta ? meta.rows.length : tableDataTrs(table).length;
+      let strip = panel.querySelector(`[data-regc-drill-strip="${CSS.escape(view)}"]`);
+      if (!strip) {
+        strip = document.createElement('div');
+        strip.className = 'reg-drill-strip';
+        strip.setAttribute('data-regc-drill-strip', view);
+        strip.setAttribute('role', 'status');
+        wrap.parentNode.insertBefore(strip, wrap);
+      }
+      const pills = d.conds.map(c => {
+        const valueHtml = c.kind === 'month'
+          ? `<b class="mono">${esc(c.valueLabel || c.value)}</b>`
+          : `<b data-no-i18n="1">${esc(c.valueLabel || c.value)}</b>`;
+        return `<span class="reg-drill-pill"><span>${esc(c.kind === 'month' ? 'Month' : (c.groupLabel || ''))}</span><span class="reg-drill-sep">:</span> ${valueHtml}</span>`;
+      }).join('');
+      strip.innerHTML =
+        `<span class="reg-drill-lbl">${TH_FUNNEL_SVG}<span>Filtered From Chart</span></span>` +
+        pills +
+        `<span class="reg-drill-count mu"><span class="mono">${fmtNum(n)}</span> <span>Rows</span></span>` +
+        `<button type="button" class="reg-drill-btn" data-regc-drill-back="${esc(view)}" data-ui-tip="Show the chart again with every row">${ic('pbi')}<span>Back to Chart</span></button>` +
+        `<button type="button" class="reg-drill-btn reg-drill-clear" data-regc-drill-clear="${esc(view)}" data-ui-tip="List every row again">✕ <span>Clear</span></button>`;
+    });
+  }
+  // A register whose filters (a bar drill or column filters) list fewer rows than it was given, but
+  // whose TOTAL row was added up before those filters, gets that TOTAL redone over the rows listed.
+  // A TOTAL cell is redone only when it is proven to be the plain sum of its column: every listed cell
+  // agrees with the row value, and the cell equals the sum over the rows before the filters. Any other
+  // TOTAL (averages, ratios, a different basis) is left as it is.
+  // Sum of a column over a register's rows before its filters, kept per row list, column, date basis and
+  // data revision, so keystrokes and sync ticks on a filtered register do not re-add the whole list.
+  const _regPoolSumCache = new WeakMap();
+  function regPoolColumnSum(pool, key, view) {
+    const sig = `${view}|${key}|${STATE.basis}|${SEED._customRev || 0}|${pool.length}|${STATE.showSalesTaxBreakdown ? 1 : 0}|${isOfficialScopeActive() ? 1 : 0}`;
+    let m = _regPoolSumCache.get(pool);
+    if (m && m.has(sig)) return m.get(sig);
+    let s = 0;
+    for (let i = 0; i < pool.length; i++) s += Number(regColVal(pool[i], key, view, view)) || 0;
+    if (!m) { m = new Map(); _regPoolSumCache.set(pool, m); }
+    if (m.size > 40) m.clear();
+    m.set(sig, s);
+    return s;
+  }
+  function refreshFilteredRegisterTotals(table, view) {
+    const shown = _tableShownRows[view];
+    const pool = _tablePoolCache[view];
+    if (!table || !Array.isArray(shown) || !Array.isArray(pool) || shown.length === pool.length) return 0;
+    const ths = tableTemplateThs(table);
+    const domRows = tableDataTrs(table).slice(0, 60);
+    let changed = 0;
+    ths.forEach((thEl, idx) => {
+      if (thEl.getAttribute('data-sort-view') !== view) return;
+      const key = thEl.getAttribute('data-sort-key');
+      if (!key || REG_ID_KEY_RX.test(key)) return;
+      const foot = registerFootCell(table, idx, ths.length);
+      if (!foot) return;
+      const leaf = foot.querySelector('b, strong') || foot;
+      if (leaf.children.length) return;
+      const ftxt = englishTextOf(leaf);
+      if (ftxt !== englishTextOf(foot)) return;
+      const shownTot = parseDisplayedNumber(ftxt);
+      if (shownTot.bad || shownTot.empty) return;
+      let compared = 0;
+      for (let i = 0; i < domRows.length; i++) {
+        const td = rowTemplateTds(domRows[i])[idx];
+        const r = shown[i];
+        if (!td || !r) return;
+        const v = Number(regColVal(r, key, view, view));
+        const p = parseDisplayedNumber(englishTextOf(td));
+        if (p.empty) { if (Number.isFinite(v) && Math.abs(v) > 0.005) return; continue; }
+        if (p.bad || !Number.isFinite(v)) return;
+        const tol = Math.max(0.011, Math.abs(v) * 1e-6, p.dp === 0 ? 0.501 : 0);
+        if (Math.abs(p.n - v) > tol && Math.abs(p.n - round2(v)) > tol) return;
+        compared += 1;
+      }
+      if (!compared && shown.length) return;
+      let shownSum = 0;
+      for (let i = 0; i < shown.length; i++) shownSum += Number(regColVal(shown[i], key, view, view)) || 0;
+      const tolOf = s => (shownTot.dp >= 2 ? 0.011 : (shownTot.dp === 1 ? 0.051 : 0.501)) + Math.abs(s) * 1e-9;
+      // Already the total of the rows listed (the register adds up its filtered rows): nothing to do.
+      if (Math.abs(shownTot.n - shownSum) <= tolOf(shownSum)) return;
+      const poolSum = regPoolColumnSum(pool, key, view);
+      if (Math.abs(shownTot.n - poolSum) > tolOf(poolSum)) return;
+      const t0 = ftxt.trim();
+      const suffix = (t0.match(/[0-9]\)?([A-Za-z%³\/.\- ]{0,24})$/) || [])[1] || '';
+      const paren = /^\(.*\)/.test(t0);
+      const plus = /^\+/.test(t0);
+      const absTxt = shownTot.money ? fmtUSD(Math.abs(shownSum), shownTot.dp) : fmtNum(Math.abs(shownSum), shownTot.dp);
+      const neg = shownSum < 0 && !/^\$?0(?:\.0+)?$/.test(absTxt);
+      leaf.textContent = (neg ? (paren ? `(${absTxt})` : `-${absTxt}`) : ((plus ? '+' : '') + absTxt)) + suffix;
+      foot.classList.add('reg-foot-filtered');
+      changed += 1;
+    });
+    if (changed) {
+      // The row count in the TOTAL label, when it is the count of rows before the filters.
+      const first = table.querySelector('tfoot tr > td');
+      if (first) {
+        const before = fmtNum(pool.length);
+        const walker = document.createTreeWalker(first, NodeFilter.SHOW_TEXT);
+        let n;
+        while ((n = walker.nextNode())) {
+          const rx = new RegExp('(^|[^0-9,.])' + before.replace(/[.,]/g, '\\$&') + '(?![0-9,.])');
+          if (rx.test(n.nodeValue)) { n.nodeValue = n.nodeValue.replace(rx, '$1' + fmtNum(shown.length)); break; }
+        }
+      }
+    }
+    return changed;
   }
   function setRegisterChartPref(view, patch) {
     const p = readChartPrefs();
@@ -111991,9 +112276,11 @@
     }
   }
   let _chartToolsWired = false;
+  let _regLastPointerType = '';
   function wireChartToolsOnce() {
     if (_chartToolsWired) return;
     _chartToolsWired = true;
+    document.addEventListener('pointerdown', e => { _regLastPointerType = e.pointerType || ''; }, { capture: true, passive: true });
     document.addEventListener('click', e => {
       const t = e.target && typeof e.target.closest === 'function' ? e.target : null;
       if (!t) return;
@@ -112017,7 +112304,41 @@
         const view = modeBtn.getAttribute('data-regc-view');
         setRegisterChartPref(view, { mode: modeBtn.getAttribute('data-regc-mode') === 'chart' ? 'chart' : 'table' });
         refreshRegisterChartPanel(view);
+        return;
       }
+      const drillBar = t.closest('#workspace .reg-chart [data-regc-drill-idx]');
+      if (drillBar) {
+        e.preventDefault();
+        const box = drillBar.closest('.reg-chart[data-regc-chart]');
+        // On a touch screen a tap first picks the bar (its value shows in the popover); a second tap on
+        // the same bar lists its rows, so reading a bar never filters the register by accident.
+        if (_regLastPointerType === 'touch' && !drillBar.classList.contains('reg-drill-armed')) {
+          if (box) box.querySelectorAll('.reg-drill-armed').forEach(el => el.classList.remove('reg-drill-armed'));
+          drillBar.classList.add('reg-drill-armed');
+          return;
+        }
+        if (box) drillRegisterFromBar(box.getAttribute('data-regc-chart'), Number(drillBar.getAttribute('data-regc-drill-idx')));
+        return;
+      }
+      const drillBack = t.closest('#workspace [data-regc-drill-back]');
+      if (drillBack) {
+        e.preventDefault();
+        clearRegisterDrill(drillBack.getAttribute('data-regc-drill-back'), true);
+        return;
+      }
+      const drillClear = t.closest('#workspace [data-regc-drill-clear]');
+      if (drillClear) {
+        e.preventDefault();
+        clearRegisterDrill(drillClear.getAttribute('data-regc-drill-clear'), false);
+      }
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const bar = e.target && typeof e.target.closest === 'function' ? e.target.closest('#workspace .reg-chart [data-regc-drill-idx]') : null;
+      if (!bar) return;
+      e.preventDefault();
+      const box = bar.closest('.reg-chart[data-regc-chart]');
+      if (box) drillRegisterFromBar(box.getAttribute('data-regc-chart'), Number(bar.getAttribute('data-regc-drill-idx')));
     });
     document.addEventListener('change', e => {
       const sel = e.target && typeof e.target.closest === 'function' ? e.target.closest('#workspace [data-regc-measure], #workspace [data-regc-group]') : null;
@@ -134077,6 +134398,8 @@
       settleChartRowsAtPageBottom(container, STATE.view);
       wireChartToolsOnce();
       try { withRelPass(() => mountRegisterChartSwitches(container)); } catch (err) { console.warn('register chart switch', err); }
+      // On its own, so a fault in any chart above can never leave a drill filtering rows with no strip.
+      try { mountRegisterDrillStrips(container); } catch (err) { console.warn('register drill strip', err); }
       if (keepLiveKioskVid) {
         const nextKioskVid = $('kioskAttVideo');
         if (nextKioskVid && nextKioskVid !== liveKioskVid && nextKioskVid.parentNode) {

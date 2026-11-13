@@ -37253,6 +37253,68 @@ video::-webkit-media-controls-start-playback-button {
 }
 .reg-chart-total { margin-inline-start: auto; font-size: 12px; }
 .reg-chart-empty { padding: 22px; text-align: center; color: var(--muted); font-size: 12px; }
+/* Click a bar to list its rows */
+.reg-chart .reg-drill-bar { cursor: pointer; border-radius: 6px; outline: none; }
+.reg-chart .pbi-bar-item.reg-drill-bar:hover,
+.reg-chart .pbi-bar-item.reg-drill-bar:focus-visible { background: rgba(192, 137, 47, 0.10); box-shadow: inset 0 0 0 1px rgba(192, 137, 47, 0.45); }
+.reg-chart g.reg-drill-bar:hover .pbi-col-hit,
+.reg-chart g.reg-drill-bar:focus-visible .pbi-col-hit { fill: rgba(192, 137, 47, 0.12); stroke: rgba(192, 137, 47, 0.55); stroke-width: 1; }
+.reg-chart-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 11.5px;
+}
+.reg-drill-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border: 1px solid rgba(192, 137, 47, 0.45);
+  border-radius: 8px;
+  background: rgba(192, 137, 47, 0.08);
+  font-size: 12px;
+}
+.reg-drill-lbl { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: var(--brass); }
+.reg-drill-pill { color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.reg-drill-sep { margin-inline-end: 2px; }
+.reg-drill-count { font-size: 11.5px; }
+.reg-drill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.reg-drill-strip .reg-drill-btn:first-of-type { margin-inline-start: auto; }
+.reg-drill-btn:hover, .reg-drill-btn:focus-visible { border-color: var(--brass); }
+tfoot td.reg-foot-filtered { box-shadow: inset 0 2px 0 rgba(192, 137, 47, 0.55); }
+/* Touch: a first tap picks the bar (its value shows), a second tap lists its rows. */
+.reg-chart .reg-drill-bar.reg-drill-armed { background: rgba(192, 137, 47, 0.16); box-shadow: inset 0 0 0 1px var(--brass); }
+.reg-chart g.reg-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); stroke: var(--brass); stroke-width: 1; }
+@media (pointer: coarse) {
+  .reg-chart .pbi-bar-item.reg-drill-bar { min-height: 40px; }
+}
+@media (max-width: 860px) {
+  .reg-drill-btn { min-height: 40px; }
+  .reg-drill-strip .reg-drill-btn:first-of-type { margin-inline-start: 0; }
+}
+@media print {
+  /* A filtered register prints with its filter named; only the buttons drop out. */
+  .reg-drill-btn { display: none !important; }
+}
 @media (max-width: 860px) {
   .reg-view-btn, .hub-charts-fold { min-height: 40px; }
   .hub-charts-jump { min-height: 40px; align-self: center; box-shadow: -8px 0 10px -6px rgba(15, 30, 56, 0.18); }
