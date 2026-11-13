@@ -21,6 +21,8 @@
   const DICT = {
     en: {},
     ar: {
+      "Not split by borrower": "غير موزّع على المقترضين",
+      "Cash the workbook books under Borrowing without a borrower (mostly ticket tips in LL). It is in the TOTAL once.": "نقد يسجّله دفتر العمل ضمن الاقتراض من دون مقترض (معظمه إكراميات التذاكر بالليرة). يُحتسب مرة واحدة في المجموع.",
       "Shift Windows Across the Day": "أوقات الورديات على مدار اليوم",
       "When each active shift runs on the 24-hour clock, weekdays and Saturday": "متى تعمل كل وردية نشطة على مدار 24 ساعة، في أيام الأسبوع ويوم السبت",
       "Weekdays": "أيام الأسبوع",
@@ -11009,6 +11011,8 @@
       "Days Clocked Here, Last 90 Days": "أيام التسجيل هنا، آخر 90 يومًا"
     },
     fr: {
+      "Not split by borrower": "Non réparti par emprunteur",
+      "Cash the workbook books under Borrowing without a borrower (mostly ticket tips in LL). It is in the TOTAL once.": "Trésorerie que le classeur inscrit sous Emprunts sans emprunteur (surtout des pourboires de tickets en LL). Elle figure une seule fois dans le TOTAL.",
       "Shift Windows Across the Day": "Plages horaires des postes sur la journée",
       "When each active shift runs on the 24-hour clock, weekdays and Saturday": "Horaires de chaque poste actif sur 24 heures, en semaine et le samedi",
       "Weekdays": "En semaine",

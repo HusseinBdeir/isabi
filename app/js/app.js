@@ -44835,6 +44835,31 @@
     return out;
   }
 
+  // BBConstruction's workbook model has no borrower filter on its LL "Paid" measure (company cash in, mostly ticket
+  // tips), so older stored tables repeat that one company-wide figure on every BBConstruction borrower row while the
+  // TOTAL carries it once (and the group table carries the copies too). Take the copies off the borrower rows; the
+  // TOTAL keeps the figure and the Borrowing table shows it once as "Not split by borrower". Only acts when the rows
+  // exceed the total by exactly the repeated copies, so a clean table (build/cashflow_workbook.py since 2026-11-13)
+  // is left as it is.
+  function stripUnsplitBorrowLbp(tbl) {
+    const bt = ((((SEED.models || {}).bbconstruction || {}).cash_flow_sheet || {}).tables || {}).borrowing;
+    if (!tbl || !Array.isArray(tbl.rows) || !bt || !Array.isArray(bt.rows) || !bt.totals) return 0;
+    const unsplit = Math.round(Number(bt.totals.paid_lbp || 0));
+    if (!unsplit) return 0;
+    const copies = bt.rows.filter(r => r && Math.round(Number(r.paid_lbp || 0)) === unsplit).map(r => norm(r.name));
+    if (copies.length < 2) return 0;
+    const rowSum = tbl.rows.reduce((a, r) => a + Math.round(Number((r && r.paid_lbp) || 0)), 0);
+    const excess = rowSum - Math.round(Number((tbl.totals && tbl.totals.paid_lbp) || 0));
+    if (Math.abs(excess - unsplit * (copies.length - 1)) > 5) return 0;
+    let n = 0;
+    tbl.rows.forEach(r => {
+      if (!r || !copies.includes(norm(r.name))) return;
+      r.paid_lbp = Math.round(Number(r.paid_lbp || 0)) - unsplit;
+      n++;
+    });
+    return n;
+  }
+
   function buildLiveCashFlowTables(cf, coKey, rate) {
     const u = activeUser();
     const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
@@ -44852,6 +44877,7 @@
       extended: fullFin ? cloneTbl(src.extended, { usd: 0, lbp: 0 }) : { rows: [], totals: { usd: 0, lbp: 0 } },
       conversion: cloneTbl(src.conversion, { from_amt: 0, to_amt: 0 })
     };
+    if (fullFin) stripUnsplitBorrowLbp(out.borrowing);
     if (!STATE.customRecords || coKey === 'lionstransport') return out;
     const allowed = allowedCompanyNames();
     const matchCo = r => matchesCashScopeCompany(r, coKey, allowed, { excludeLions: true });
@@ -45418,6 +45444,19 @@
     const salesShown = filtName(tSales.rows || []).slice(0, shownCount('cf_sales_t'));
     const expsShown = filtName(tExps.rows || []).slice(0, shownCount('cf_exps_t'));
     const borShown = filtName(tBor.rows || []).slice(0, shownCount('cf_bor_t'));
+    // What the TOTAL carries but no borrower row does (BBConstruction's LL cash in that its workbook model does not
+    // split by borrower): one line, so the rows add up to the TOTAL. Hidden while a name search is typed.
+    const borRem = (() => {
+      const sum = f => (tBor.rows || []).reduce((a, r) => a + Number((r && r[f]) || 0), 0);
+      const o = {
+        rec_usd: round2(Number(tBor.totals.rec_usd || 0) - sum('rec_usd')),
+        rec_lbp: Math.round(Number(tBor.totals.rec_lbp || 0) - sum('rec_lbp')),
+        paid_usd: round2(Number(tBor.totals.paid_usd || 0) - sum('paid_usd')),
+        paid_lbp: Math.round(Number(tBor.totals.paid_lbp || 0) - sum('paid_lbp'))
+      };
+      o.show = !q && (Math.abs(o.rec_usd) >= 1 || Math.abs(o.paid_usd) >= 1 || Math.abs(o.rec_lbp) >= 100000 || Math.abs(o.paid_lbp) >= 100000);
+      return o;
+    })();
     const salShown = filtName(tSal.rows || []).slice(0, shownCount('cf_sal_t'));
     const extShown = filtName(tExt.rows || []).slice(0, shownCount('cf_ext_t'));
     const extdShown = filtName(tExtd.rows || []);
@@ -45963,7 +46002,15 @@
                     <td class="r">${r.rec_lbp ? fmtLBP(r.rec_lbp) : '—'}</td>
                     <td class="r">${r.paid_usd ? fmtUSD(r.paid_usd, 0) : '—'}</td>
                     <td class="r">${r.paid_lbp ? fmtLBP(r.paid_lbp) : '—'}</td>
-                  </tr>`).join('') || emptyRow(5, 'No borrowing rows')}
+                  </tr>`).join('') || (borRem.show ? '' : emptyRow(5, 'No borrowing rows'))}
+                ${borRem.show ? `
+                  <tr class="cf-bor-unsplit" id="cfBorUnsplitRow" data-ui-tip="Cash the workbook books under Borrowing without a borrower (mostly ticket tips in LL). It is in the TOTAL once.">
+                    <td><em>Not split by borrower</em></td>
+                    <td class="r">${borRem.rec_usd ? fmtUSD(borRem.rec_usd, 0) : '—'}</td>
+                    <td class="r">${borRem.rec_lbp ? fmtLBP(borRem.rec_lbp) : '—'}</td>
+                    <td class="r">${borRem.paid_usd ? fmtUSD(borRem.paid_usd, 0) : '—'}</td>
+                    <td class="r">${borRem.paid_lbp ? fmtLBP(borRem.paid_lbp) : '—'}</td>
+                  </tr>` : ''}
                 ${showMoreRow('cf_bor_t', filtName(tBor.rows || []).length, 5)}
               </tbody>
               <tfoot>
