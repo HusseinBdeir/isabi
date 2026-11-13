@@ -56,6 +56,7 @@ jobs:
           node --check build/verify_live_parity.mjs
           node --check build/_release_log.mjs
           node --no-warnings build/verify_release_log_sync.mjs
+          python3 build/verify_deploy_cli.py
           node --check build/verify_cloudflare_edge.mjs
           # The log goes outside the checkout: everything in the checkout is what gets deployed.
           node --no-warnings build/verify_kiosk_cloud.mjs > "$RUNNER_TEMP/kiosk-checks.log" || { tail -n 40 "$RUNNER_TEMP/kiosk-checks.log"; exit 1; }

@@ -6,8 +6,16 @@ deploys Pages + Functions, attaches custom domains (`isabisystems.com`, `www.isa
 configures Cloudflare DNS CNAMEs, and prints the exact 2 Cloudflare nameservers for Namecheap.
 
 Usage:
-  python build/deploy_cloudflare.py [--skip-seed] [--seed] [--full-seed] [--force-schema] [--rotate-secrets] [--login]
+  python build/deploy_cloudflare.py [--dry] [--skip-seed | --seed | --delta | --full-seed]
+                                    [--force-schema] [--force-r2-seeds] [--rotate-secrets]
+                                    [--skip-live-parity] [--no-sync-release-log] [--skip-indexnow] [--login]
+  python build/deploy_cloudflare.py --pages-only [--dry] [--skip-live-parity] [--no-sync-release-log] [--skip-indexnow] [--login]
+  python build/deploy_cloudflare.py --configure-domain [--ping-indexnow] [--dry]
+  python build/deploy_cloudflare.py --ping-indexnow [--dry]
+  python build/deploy_cloudflare.py --check-seat-pins [--login] [--dry]
+  python build/deploy_cloudflare.py --parity-only [--no-sync-release-log] [--dry]
 """
+import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
@@ -103,7 +111,7 @@ def run_wrangler(args: list[str], env: dict, input_text: str | None = None, chec
     )
 
 
-def ensure_logged_in(env: dict) -> tuple[bool, str]:
+def ensure_logged_in(env: dict, *, login: bool = False) -> tuple[bool, str]:
     r = run_wrangler(["whoami"], env, check=False)
     if r.returncode != 0:
         time.sleep(2)
@@ -120,7 +128,7 @@ def ensure_logged_in(env: dict) -> tuple[bool, str]:
                 acct_id = m.group(1)
         return True, acct_id
 
-    if "--login" in sys.argv or sys.stdin.isatty():
+    if login or sys.stdin.isatty():
         print("Opening browser for one-time Cloudflare OAuth authorization (`wrangler login`)...")
         subprocess.run([wrangler_bin(env), "login"], cwd=str(ISABI_ROOT), env=env, check=True)
         r2 = run_wrangler(["whoami"], env, check=False)
@@ -251,7 +259,7 @@ def ensure_pages_project(env: dict):
     run_wrangler(["pages", "project", "create", "isabi-systems", "--production-branch=main"], env, check=True)
 
 
-def upload_secrets(env: dict):
+def upload_secrets(env: dict, *, rotate_secrets: bool = False):
     jwt_sec = load_or_create_jwt_secret()
     gem_key = read_gemini_key()
     meta = load_edge_meta()
@@ -259,7 +267,7 @@ def upload_secrets(env: dict):
     vt_email = str(os.environ.get("VT_GPS_EMAIL") or meta.get("vt_gps_email") or "").strip()
     vt_pass = str(os.environ.get("VT_GPS_PASSWORD") or meta.get("vt_gps_password") or "").strip()
     sec_sha = hashlib.sha256(f"{jwt_sec}|{gem_key}|{vt_hash}|{vt_email}|{vt_pass}".encode("utf-8")).hexdigest()
-    if "--rotate-secrets" not in sys.argv and meta.get("last_secrets_sha256") == sec_sha:
+    if not rotate_secrets and meta.get("last_secrets_sha256") == sec_sha:
         print("Edge secrets unchanged; skipping redundant secret upload.")
         return
 
@@ -300,12 +308,19 @@ def _upload_one_batch(bf: pathlib.Path, env: dict) -> str:
     return bf.name
 
 
-def seed_remote_d1(env: dict):
+def seed_remote_d1(
+    env: dict,
+    *,
+    force_schema: bool = False,
+    skip_seed: bool = False,
+    full_seed: bool = False,
+    require_delta: bool = False,
+):
     schema_sha = file_sha256(SCHEMA_SQL)
     db_sha = file_sha256(DB_PATH)
     meta = load_edge_meta()
 
-    if "--force-schema" in sys.argv or meta.get("last_schema_sha256") != schema_sha:
+    if force_schema or meta.get("last_schema_sha256") != schema_sha:
         print("Applying 0001_schema.sql to remote D1 `isabi-ledger`...")
         run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={SCHEMA_SQL}", "-y"], env, check=True)
         meta = load_edge_meta()
@@ -314,11 +329,16 @@ def seed_remote_d1(env: dict):
     else:
         print(f"Schema 0001_schema.sql unchanged ({schema_sha[:12]}); skipping remote DDL.")
 
-    if "--skip-seed" in sys.argv:
+    if skip_seed:
         print("Skipping D1 data seed (--skip-seed passed; 0 D1 row writes).")
         return
 
-    use_delta = ("--full-seed" not in sys.argv) and COMMITTED_MANIFEST_JSON.exists()
+    if require_delta and not COMMITTED_MANIFEST_JSON.exists():
+        raise SystemExit(
+            f"ERROR: --delta requested, but `{COMMITTED_MANIFEST_JSON}` is missing (refusing to fall back to a full seed)."
+        )
+
+    use_delta = (not full_seed) and COMMITTED_MANIFEST_JSON.exists()
     exp_cmd = [sys.executable, str(ISABI_ROOT / "build" / "export_d1_seed.py")]
     if use_delta:
         exp_cmd.append("--delta")
@@ -360,7 +380,7 @@ def seed_remote_d1(env: dict):
     save_edge_meta(meta)
 
 
-def upload_r2_private_seeds(env: dict, r2_enabled: bool):
+def upload_r2_private_seeds(env: dict, r2_enabled: bool, *, force_r2_seeds: bool = False):
     if not r2_enabled:
         print("WARN: R2 bucket `isabi-vault` unavailable; skipping private seed upload.")
         return
@@ -370,7 +390,7 @@ def upload_r2_private_seeds(env: dict, r2_enabled: bool):
         return
     meta = load_edge_meta()
     r2_shas = dict(meta.get("r2_seed_shas") or {})
-    force_upload = "--force-r2-seeds" in sys.argv
+    force_upload = force_r2_seeds
     for kind in ("core", "records", "industries"):
         src = app_js_dir / f"seed_{kind}.json"
         if not src.is_file():
@@ -967,39 +987,301 @@ def run_live_parity_gate(sync_release_log: bool = True) -> bool:
     return True
 
 
-def main():
-    if "--configure-domain" in sys.argv:
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="build/deploy_cloudflare.py",
+        description="Provision and deploy ISABI Systems (Pages, Edge Functions, D1, R2, domains, IndexNow).",
+        allow_abbrev=False,
+    )
+    parser.add_argument(
+        "--dry",
+        "--dry-run",
+        dest="dry",
+        action="store_true",
+        help="Print the execution plan from local files without running Wrangler, network calls, or state writes.",
+    )
+
+    modes = parser.add_argument_group("modes (default: full provision + D1/R2 + Pages deploy)")
+    modes.add_argument(
+        "--configure-domain",
+        action="store_true",
+        help="Configure custom domains, DNS CNAMEs, edge 301 redirect, Email Routing, and purge CDN cache.",
+    )
+    modes.add_argument(
+        "--ping-indexnow",
+        action="store_true",
+        help="Ping IndexNow for https://isabisystems.com/ (standalone or combined with --configure-domain).",
+    )
+    modes.add_argument(
+        "--check-seat-pins",
+        action="store_true",
+        help="Read-only check that active D1 seat PINs are PBKDF2-SHA256 hashed.",
+    )
+    modes.add_argument(
+        "--parity-only",
+        action="store_true",
+        help="Run post-deploy build/verify_live_parity.mjs only.",
+    )
+    modes.add_argument(
+        "--pages-only",
+        action="store_true",
+        help="Deploy Pages + Edge Functions bundle, domain/DNS, cache purge, parity gate, and IndexNow (skips D1/R2/secrets).",
+    )
+
+    opts = parser.add_argument_group("deploy, D1, R2, secret & gate modifiers")
+    opts.add_argument("--login", action="store_true", help="Allow interactive `wrangler login` if Cloudflare auth is missing/expired.")
+    opts.add_argument("--skip-seed", action="store_true", help="Skip D1 data seed (0 D1 row writes).")
+    opts.add_argument("--seed", action="store_true", help="Explicitly enable D1 data seed (default behavior).")
+    opts.add_argument(
+        "--delta",
+        action="store_true",
+        help="Require SHA-256 delta D1 seed (errors if exports/d1_seed_manifest.json is missing).",
+    )
+    opts.add_argument("--full-seed", action="store_true", help="Force full D1 data seed instead of SHA-256 delta.")
+    opts.add_argument("--force-schema", action="store_true", help="Re-apply migrations/0001_schema.sql even if SHA-256 is unchanged.")
+    opts.add_argument("--force-r2-seeds", action="store_true", help="Re-upload private R2 seed_*.json even if SHA-256 is unchanged.")
+    opts.add_argument("--rotate-secrets", action="store_true", help="Re-upload Edge secrets even if SHA-256 is unchanged.")
+    opts.add_argument("--skip-live-parity", action="store_true", help="Skip post-deploy build/verify_live_parity.mjs.")
+    opts.add_argument("--no-sync-release-log", action="store_true", help="Run verify_live_parity.mjs without --sync-release-log.")
+    opts.add_argument("--skip-indexnow", action="store_true", help="Skip post-deploy IndexNow ping.")
+    return parser
+
+
+def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+
+    if args.skip_seed and (args.seed or args.delta or args.full_seed):
+        parser.error("--skip-seed cannot be combined with --seed, --delta, or --full-seed.")
+    if args.delta and args.full_seed:
+        parser.error("--delta cannot be combined with --full-seed.")
+    if args.skip_live_parity and args.no_sync_release_log:
+        parser.error("--skip-live-parity cannot be combined with --no-sync-release-log.")
+
+    primary_modes = [
+        flag
+        for enabled, flag in (
+            (args.configure_domain, "--configure-domain"),
+            (args.check_seat_pins, "--check-seat-pins"),
+            (args.parity_only, "--parity-only"),
+            (args.pages_only, "--pages-only"),
+        )
+        if enabled
+    ]
+    if len(primary_modes) > 1:
+        parser.error(f"Conflicting mode flags: {', '.join(primary_modes)} cannot be combined.")
+
+    flag_attr_map = (
+        ("configure_domain", "--configure-domain"),
+        ("ping_indexnow", "--ping-indexnow"),
+        ("check_seat_pins", "--check-seat-pins"),
+        ("parity_only", "--parity-only"),
+        ("pages_only", "--pages-only"),
+        ("login", "--login"),
+        ("skip_seed", "--skip-seed"),
+        ("seed", "--seed"),
+        ("delta", "--delta"),
+        ("full_seed", "--full-seed"),
+        ("force_schema", "--force-schema"),
+        ("force_r2_seeds", "--force-r2-seeds"),
+        ("rotate_secrets", "--rotate-secrets"),
+        ("skip_live_parity", "--skip-live-parity"),
+        ("no_sync_release_log", "--no-sync-release-log"),
+        ("skip_indexnow", "--skip-indexnow"),
+    )
+    active_non_dry = [flag for attr, flag in flag_attr_map if getattr(args, attr)]
+
+    if args.configure_domain:
+        bad = [f for f in active_non_dry if f not in ("--configure-domain", "--ping-indexnow")]
+        if bad:
+            parser.error(f"--configure-domain cannot be combined with {', '.join(bad)}.")
+    elif args.ping_indexnow:
+        bad = [f for f in active_non_dry if f != "--ping-indexnow"]
+        if bad:
+            parser.error(f"--ping-indexnow (without --configure-domain) cannot be combined with {', '.join(bad)}.")
+    elif args.check_seat_pins:
+        bad = [f for f in active_non_dry if f not in ("--check-seat-pins", "--login")]
+        if bad:
+            parser.error(f"--check-seat-pins cannot be combined with {', '.join(bad)}.")
+    elif args.parity_only:
+        bad = [f for f in active_non_dry if f not in ("--parity-only", "--no-sync-release-log")]
+        if bad:
+            parser.error(f"--parity-only cannot be combined with {', '.join(bad)}.")
+    elif args.pages_only:
+        d1_r2_sec = [
+            f
+            for f in (
+                "--skip-seed",
+                "--seed",
+                "--delta",
+                "--full-seed",
+                "--force-schema",
+                "--force-r2-seeds",
+                "--rotate-secrets",
+            )
+            if f in active_non_dry
+        ]
+        if d1_r2_sec:
+            parser.error(f"--pages-only cannot be combined with {', '.join(d1_r2_sec)}.")
+
+    return args
+
+
+def _read_sw_header_line() -> str:
+    sw_path = ISABI_ROOT / "app" / "sw.js"
+    if not sw_path.is_file():
+        return "(missing app/sw.js)"
+    try:
+        lines = sw_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        return lines[0].strip() if lines else "(empty app/sw.js)"
+    except OSError:
+        return "(unreadable app/sw.js)"
+
+
+def print_dry_run_plan(args: argparse.Namespace) -> int:
+    meta = load_edge_meta()
+    sw_line = _read_sw_header_line()
+    schema_sha = file_sha256(SCHEMA_SQL) if SCHEMA_SQL.is_file() else ""
+    last_schema_sha = str(meta.get("last_schema_sha256") or "")
+    manifest_exists = COMMITTED_MANIFEST_JSON.exists()
+
+    if args.configure_domain:
+        mode = "configure-domain" + (" + ping-indexnow" if args.ping_indexnow else "")
+    elif args.ping_indexnow:
+        mode = "ping-indexnow"
+    elif args.check_seat_pins:
+        mode = "check-seat-pins"
+    elif args.parity_only:
+        mode = "parity-only"
+    elif args.pages_only:
+        mode = "pages-only"
+    else:
+        mode = "full-deploy"
+
+    print("DRY RUN — 0 remote or local writes")
+    print(f"  Checkout : {ISABI_ROOT}")
+    print(f"  Shell    : {sw_line}")
+    print(f"  Mode     : {mode}")
+
+    if args.configure_domain:
+        print("  Steps    :")
+        print("    1. Configure Cloudflare Zone, custom domains, DNS CNAMEs, edge 301 redirect, Email Routing & purge CDN cache")
+        print("    2. IndexNow ping -> " + ("RUN" if args.ping_indexnow else "SKIP"))
+        return 0
+    if args.ping_indexnow:
+        print("  Steps    :")
+        print("    1. Ping IndexNow for https://isabisystems.com/")
+        return 0
+    if args.check_seat_pins:
+        print("  Steps    :")
+        print("    1. Verify Cloudflare auth" + (" (allow interactive --login)" if args.login else ""))
+        print("    2. Read-only D1 check: verify active users.pin_code rows are PBKDF2-SHA256 hashed")
+        return 0
+    if args.parity_only:
+        sync_flag = "with --sync-release-log" if not args.no_sync_release_log else "without --sync-release-log"
+        print("  Steps    :")
+        print(f"    1. Run build/verify_live_parity.mjs ({sync_flag})")
+        return 0
+
+    if mode == "full-deploy" and args.delta and not manifest_exists:
+        print(
+            f"ERROR: --delta requested, but `{COMMITTED_MANIFEST_JSON}` is missing (refusing to fall back to a full seed).",
+            file=sys.stderr,
+        )
+        return 2
+
+    steps: list[str] = [
+        "Verify Cloudflare auth" + (" (allow interactive --login)" if args.login else ""),
+    ]
+    if mode == "full-deploy":
+        steps.append("Ensure D1 (`isabi-ledger`), R2 (`isabi-vault`), wrangler.toml bindings, and Pages project (`isabi-systems`)")
+        steps.append("Edge secrets -> " + ("ROTATE/UPLOAD" if args.rotate_secrets else "upload only if SHA-256 changed"))
+        app_js_dir = ISABI_ROOT.parent / "isabi-app" / "js"
+        r2_shas = dict(meta.get("r2_seed_shas") or {})
+        if not app_js_dir.is_dir():
+            steps.append(f"R2 private seeds -> SKIP (`{app_js_dir}` not present)")
+        else:
+            r2_parts: list[str] = []
+            for kind in ("core", "records", "industries"):
+                src = app_js_dir / f"seed_{kind}.json"
+                if not src.is_file():
+                    r2_parts.append(f"{kind}:missing")
+                else:
+                    sha = file_sha256(src)
+                    if args.force_r2_seeds or r2_shas.get(kind) != sha:
+                        r2_parts.append(f"{kind}:UPLOAD({sha[:10]})")
+                    else:
+                        r2_parts.append(f"{kind}:unchanged({sha[:10]})")
+            steps.append("R2 private seeds -> " + ", ".join(r2_parts))
+        if not schema_sha:
+            steps.append("D1 schema -> MISSING (migrations/0001_schema.sql)")
+        elif args.force_schema or last_schema_sha != schema_sha:
+            steps.append(f"D1 schema -> APPLY ({schema_sha[:12]})")
+        else:
+            steps.append(f"D1 schema -> unchanged ({schema_sha[:12]}), skip")
+        if args.skip_seed:
+            steps.append("D1 data seed -> SKIP (--skip-seed)")
+        elif args.full_seed or not manifest_exists:
+            reason = "--full-seed" if args.full_seed else "no committed d1_seed_manifest.json"
+            steps.append(f"D1 data seed -> FULL ({reason})")
+        else:
+            steps.append("D1 data seed -> DELTA (exports/d1_seed_manifest.json present)")
+        steps.append("Migrate any legacy remote D1 users/edge_kv_store PINs to PBKDF2-SHA256")
+    steps.append("Stage allowlisted public bundle (`stage_pages_bundle.py`) and deploy Cloudflare Pages + Edge Functions")
+    steps.append("Check remote active seat PINs are PBKDF2-SHA256 hashed")
+    steps.append("Configure custom domains, DNS CNAMEs, edge 301 redirect, Email Routing & clean old preview deployments + purge cache")
+    if args.skip_live_parity:
+        steps.append("Live parity gate -> SKIP (--skip-live-parity)")
+    else:
+        sync_flag = "with --sync-release-log" if not args.no_sync_release_log else "without --sync-release-log"
+        steps.append(f"Live parity gate -> RUN build/verify_live_parity.mjs ({sync_flag})")
+    steps.append("IndexNow ping -> " + ("SKIP (--skip-indexnow)" if args.skip_indexnow else "RUN"))
+
+    print("  Steps    :")
+    for idx, desc in enumerate(steps, 1):
+        print(f"    {idx}. {desc}")
+    return 0
+
+
+def main(argv: list[str] | None = None):
+    args = parse_cli_args(argv)
+    if args.dry:
+        sys.exit(print_dry_run_plan(args))
+    if args.configure_domain:
         configure_domain_and_dns(
             os.environ.get("CLOUDFLARE_ACCOUNT_ID") or "",
             allow_zone_create=False,
             purge_cache=True,
         )
-        if "--ping-indexnow" in sys.argv:
+        if args.ping_indexnow:
             ping_indexnow()
         return
-    if "--ping-indexnow" in sys.argv:
+    if args.ping_indexnow:
         ping_indexnow()
         return
-    if "--check-seat-pins" in sys.argv:
+    if args.check_seat_pins:
         env = build_env()
+        ok, _acct_id = ensure_logged_in(env, login=args.login)
+        if not ok:
+            sys.exit(2)
         warn_weak_seat_pins(env)
         return
-    if "--parity-only" in sys.argv:
-        ok_parity = run_live_parity_gate(sync_release_log=("--no-sync-release-log" not in sys.argv))
+    if args.parity_only:
+        ok_parity = run_live_parity_gate(sync_release_log=not args.no_sync_release_log)
         sys.exit(0 if ok_parity else 1)
     env = build_env()
-    ok, acct_id = ensure_logged_in(env)
+    ok, acct_id = ensure_logged_in(env, login=args.login)
     if not ok:
         sys.exit(2)
-    if "--pages-only" in sys.argv:
+    if args.pages_only:
         deploy_pages(env)
         warn_weak_seat_pins(env)
         configure_domain_and_dns(acct_id)
         cleanup_preview_deployments_and_purge_cache(acct_id)
-        if "--skip-live-parity" not in sys.argv:
-            if not run_live_parity_gate(sync_release_log=("--no-sync-release-log" not in sys.argv)):
+        if not args.skip_live_parity:
+            if not run_live_parity_gate(sync_release_log=not args.no_sync_release_log):
                 sys.exit(1)
-        if "--skip-indexnow" not in sys.argv:
+        if not args.skip_indexnow:
             ping_indexnow()
         print("\nPAGES + EDGE FUNCTIONS BUNDLE DEPLOYMENT COMPLETE!")
         return
@@ -1007,18 +1289,24 @@ def main():
     r2_ok = ensure_r2_bucket(env)
     stamp_wrangler_toml(d1_uuid, r2_ok)
     ensure_pages_project(env)
-    upload_secrets(env)
-    upload_r2_private_seeds(env, r2_ok)
-    seed_remote_d1(env)
+    upload_secrets(env, rotate_secrets=args.rotate_secrets)
+    upload_r2_private_seeds(env, r2_ok, force_r2_seeds=args.force_r2_seeds)
+    seed_remote_d1(
+        env,
+        force_schema=args.force_schema,
+        skip_seed=args.skip_seed,
+        full_seed=args.full_seed,
+        require_delta=args.delta,
+    )
     migrate_remote_d1_pins_to_pbkdf2(env)
     deploy_pages(env)
     warn_weak_seat_pins(env)
     configure_domain_and_dns(acct_id)
     cleanup_preview_deployments_and_purge_cache(acct_id)
-    if "--skip-live-parity" not in sys.argv:
-        if not run_live_parity_gate(sync_release_log=("--no-sync-release-log" not in sys.argv)):
+    if not args.skip_live_parity:
+        if not run_live_parity_gate(sync_release_log=not args.no_sync_release_log):
             sys.exit(1)
-    if "--skip-indexnow" not in sys.argv:
+    if not args.skip_indexnow:
         ping_indexnow()
     print("\nOPTION A CLOUDFLARE EDGE DEPLOYMENT COMPLETE!")
     print("Production URL:             https://isabisystems.com/")

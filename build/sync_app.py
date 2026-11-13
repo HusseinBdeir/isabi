@@ -51,6 +51,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_legacy_id_sunset.py", "python"),     # legacy_id_map sunset gate
     ("isabi", "build/verify_legacy_id_hits.mjs", "node"),            # Edge legacy_id_hits counter + minShellVer floor/cap
     ("isabi", "build/verify_deployed_shell.py", "python"),           # deployed_shell.js = app/sw.js (minShellVer ceiling)
+    ("isabi", "build/verify_deploy_cli.py", "python"),              # deploy_cloudflare.py argparse + --dry gate
     ("isabi-app", "build/verify_min_shell_ver_local.py", "python"),  # server.py minShellVer floor/cap
     ("isabi-app", "build/verify_orphan_expense_lines.py", "python"), # top-up reconcile: orphan expense lines
     ("isabi-app", "build/verify_sum_twins.py", "python"),            # top-up reconcile: one app row = several workbook rows
