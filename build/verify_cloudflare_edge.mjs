@@ -4069,6 +4069,61 @@ finally:
         owner: [cbOwnerPost.status, cbOwnerGet.status, cbOwnerGet.json]
       }));
     }
+
+    // 40. Owner-only /app/api/source_behind (sibling Source workbook notice): same guards, own document
+    const sbUnauth = await httpReq('GET', '/app/api/source_behind');
+    const sbUnauthPost = await httpReq('POST', '/app/api/source_behind', { source_behind: { status: 'ok' } });
+    const sbAllSupGet = typeof e29SupTok === 'string' && e29SupTok
+      ? await httpReq('GET', '/app/api/source_behind', null, { 'X-ISABI-Session': e29SupTok })
+      : { status: 403 };
+    const sbDemoGet = await httpReq('GET', '/app/api/source_behind', null, { 'X-ISABI-Demo': '1' });
+    const sbDemoOwnerPost = await httpReq('POST', '/app/api/source_behind', { source_behind: { status: 'ok' } }, { 'X-ISABI-Session': ownerToken, 'X-ISABI-Demo': '1' });
+    const sbSupGet = await httpReq('GET', '/app/api/source_behind', null, { 'X-ISABI-Session': bbcSupToken });
+    const sbSupPost = await httpReq('POST', '/app/api/source_behind', { source_behind: { status: 'ok' } }, { 'X-ISABI-Session': bbcSupToken });
+    const sbSyncGet = await httpReq('POST', '/app/api/sync', { op: 'get', doc: 'source_behind' }, { 'X-ISABI-Session': ownerToken });
+    const sbSyncPatch = await httpReq('POST', '/app/api/sync', { op: 'patch', doc: 'mfg_web_store', patch: { source_behind: { status: 'ok' } } }, { 'X-ISABI-Session': ownerToken });
+    const sbTooBig = await httpReq('POST', '/app/api/source_behind', { source_behind: { status: 'ok', pad: 'x'.repeat(35000) } }, { 'X-ISABI-Session': ownerToken });
+    const sbWrongWrap = await httpReq('POST', '/app/api/source_behind', { cashflow_behind: null }, { 'X-ISABI-Session': ownerToken });
+    const sbEmptyWrap = await httpReq('POST', '/app/api/source_behind', { source_behind: {} }, { 'X-ISABI-Session': ownerToken });
+    const sbSample = {
+      status: 'ok', report_date: '2026-11-13', cutoff: '2026-11-06', industries_hash: 'testind001',
+      businesses: [{ business: 'Blanca', industry_key: 'hospitality', changed_rows: 2, edited_rows: 2, added_rows: 0, removed_rows: 0, changed_date_count: 1, changed_dates: ['2026-11-02'], labels: ['Chalet 4'] }]
+    };
+    const sbOwnerPost = await httpReq('POST', '/app/api/source_behind', { source_behind: sbSample }, { 'X-ISABI-Session': ownerToken });
+    const sbOwnerGet = await httpReq('GET', '/app/api/source_behind', null, { 'X-ISABI-Session': ownerToken });
+    const cbAfterSb = await httpReq('GET', '/app/api/cashflow_behind', null, { 'X-ISABI-Session': ownerToken });
+    const sbClearPost = await httpReq('POST', '/app/api/source_behind', { source_behind: null }, { 'X-ISABI-Session': ownerToken });
+    const sbClearGet = await httpReq('GET', '/app/api/source_behind', null, { 'X-ISABI-Session': ownerToken });
+    const cbAfterSbClear = await httpReq('GET', '/app/api/cashflow_behind', null, { 'X-ISABI-Session': ownerToken });
+    if (
+      sbUnauth.status === 401 && sbUnauthPost.status === 401 && sbAllSupGet.status === 403 &&
+      sbDemoGet.status === 200 && sbDemoGet.json?.demo === true && sbDemoGet.json?.source_behind === null &&
+      sbDemoOwnerPost.status === 403 &&
+      sbSupGet.status === 403 && sbSupPost.status === 403 &&
+      sbSyncGet.status === 403 && sbSyncPatch.status === 403 &&
+      sbTooBig.status === 413 && sbWrongWrap.status === 400 && sbEmptyWrap.status === 400 &&
+      sbOwnerPost.status === 200 && sbOwnerGet.status === 200 &&
+      sbOwnerGet.json?.source_behind?.businesses?.[0]?.business === 'Blanca' &&
+      cbAfterSb.json?.cashflow_behind?.core_hash === 'testcore01' &&
+      sbClearPost.status === 200 && sbClearGet.json?.source_behind === null &&
+      cbAfterSbClear.json?.cashflow_behind?.core_hash === 'testcore01'
+    ) {
+      pass(
+        'edge-40-source-behind-owner-only-and-sync-guard',
+        'unauth=401, demo GET=200(null)/POST=403, Supervisor=403, /api/sync=403, invalid=400, >32KB=413, Owner POST+GET=200, own document (cashflow_behind untouched by its writes and clears)'
+      );
+    } else {
+      fail('edge-40-source-behind-owner-only-and-sync-guard', JSON.stringify({
+        unauth: [sbUnauth.status, sbUnauthPost.status, sbAllSupGet.status],
+        demo: [sbDemoGet.status, sbDemoGet.json, sbDemoOwnerPost.status],
+        sup: [sbSupGet.status, sbSupPost.status],
+        sync: [sbSyncGet.status, sbSyncPatch.status],
+        bad: [sbTooBig.status, sbWrongWrap.status, sbEmptyWrap.status],
+        owner: [sbOwnerPost.status, sbOwnerGet.status, sbOwnerGet.json],
+        cf: [cbAfterSb.json, cbAfterSbClear.json],
+        clear: [sbClearPost.status, sbClearGet.json]
+      }));
+    }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
     killTree(edgeProc.pid);

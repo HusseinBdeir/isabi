@@ -54,6 +54,7 @@ const DEMO_EMPTY_GET_ROUTES = new Set([
   '/work_schedules',
   '/geo_config',
   '/cashflow_behind',
+  '/source_behind',
   '/industry_domain_store'
 ]);
 
@@ -143,6 +144,7 @@ async function routeAppApi(context) {
       if (subPath === '/work_schedules') return jsonResponse({ ok: true, demo: true, work_schedules: null });
       if (subPath === '/geo_config') return jsonResponse({ ok: true, demo: true, config: null });
       if (subPath === '/cashflow_behind') return jsonResponse({ ok: true, demo: true, cashflow_behind: null });
+      if (subPath === '/source_behind') return jsonResponse({ ok: true, demo: true, source_behind: null });
       if (subPath === '/industry_domain_store') return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
     }
     if (isDemoReq && request.method === 'POST' && (subPath === '/ask' || subPath === '/tts' || subPath === '/smart-scan' || subPath === '/ai-edge')) {
@@ -212,8 +214,8 @@ async function routeAppApi(context) {
     return handleKvDoc(request, env, session, 'geo_config', 'config', body);
   }
 
-  if (subPath === '/cashflow_behind') {
-    return handleCashflowBehind(request, env, session, body, rawBytes, { parseError, emptyBody });
+  if (subPath === '/cashflow_behind' || subPath === '/source_behind') {
+    return handleCashflowBehind(request, env, session, body, rawBytes, { parseError, emptyBody }, subPath.slice(1));
   }
 
   if (subPath === '/industry_domain_store') {
