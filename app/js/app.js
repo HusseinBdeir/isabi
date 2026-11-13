@@ -41939,8 +41939,29 @@
           ? `<span class="att-impact-pos">+${fmtUSD(n, 2)}</span>`
           : `<span class="att-impact-neg">-${fmtUSD(Math.abs(n), 2)}</span>`;
       };
+      // Reminder (owner 2026-11-13, after v19.6.343): staff who clock another shift but are timed against the
+      // company default (nobody is guessed onto a shift any more). Shown until they are assigned or the pattern
+      // stops; the button jumps to Staff Clocking Another Shift below. Same list and scope as that panel.
+      const wsReminderHtml = (() => {
+        let rows = [];
+        try {
+          ensureWorkShiftsSeeded();
+          const wsAll = ((SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [])
+            .filter(r => r && !r.voided)
+            .map(r => hydrateWorkShiftRowComputed(r));
+          rows = getStaffOnWrongShift(filterRecords(wsAll, { ignorePeriod: true, ignoreSearch: true }).filter(r => !r.end_date))
+            .filter(r => r.onHow === 'default');
+        } catch (_) { rows = []; }
+        if (!rows.length) return '';
+        return `<div class="ws-reminder-note" id="wrongShiftReminder" role="status">
+          <span class="ws-reminder-icon" aria-hidden="true">${ic('warn')}</span>
+          <span class="ws-reminder-text"><span>Staff timed against the company default while they clock another shift:</span> <b class="mono">${fmtNum(rows.length, 0)}</b> <span class="ws-reminder-sub">Assign them before their next shift.</span></span>
+          <button type="button" class="btn kiosk-mini-btn ws-reminder-btn" data-scroll-panel="wrongShiftPanel">Review and Assign</button>
+        </div>`;
+      })();
       return `
         ${bannerHtml}
+        ${wsReminderHtml}
         ${renderPayrollBiometricPolicySectionHtml()}
         <div class="panel-card" id="payAttPanel">
           <div class="table-toolbar">
