@@ -2122,6 +2122,7 @@
           ${fld('Payment Method *', sel('f_method', [['Cash', 'Cash'], ['Bank', 'Bank Transfer']], 'Cash'), { id: 'wrap_sal_method' })}
           <div id="salStaffMonthCard" class="att-contract-strip is-muted">Select a <b>Staff</b> and <b>Payroll Month</b> above to view their monthly contract salary, attendance overtime/deductions, amount already paid, and remaining balance or advance status.</div>
           <div id="salQuickFillBar" class="att-preset-bar" hidden></div>
+          <div id="salBackpayStrip" class="att-contract-strip is-warn" hidden></div>
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { hintId: 'hint_sal_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'))}
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}

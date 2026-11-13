@@ -39476,6 +39476,7 @@
     const months = Array.from(new Set([...was.usd.keys(), ...now.usd.keys()])).filter(ym => ym <= closedYm).sort();
     let usd = 0, lbp = 0;
     const hit = [];
+    const byMonth = [];
     months.forEach(ym => {
       const du = (now.usd.get(ym) || 0) - (was.usd.get(ym) || 0);
       const dl = (now.lbp.get(ym) || 0) - (was.lbp.get(ym) || 0);
@@ -39483,26 +39484,320 @@
         hit.push(ym);
         usd += Math.round(du * 100) / 100;
         lbp += Math.round(dl);
+        byMonth.push({ ym, usd: Math.round(du * 100) / 100, lbp: Math.round(dl) });
       }
     });
     if (!hit.length) return null;
-    return { usd: round2(usd), lbp: Math.round(lbp), from: hit[0], to: hit[hit.length - 1] };
+    return { usd: round2(usd), lbp: Math.round(lbp), from: hit[0], to: hit[hit.length - 1], months: byMonth };
+  }
+  // `_backpay_months` keeps the per-month split as plain text ("2026-09:50:0;2026-10:868.75:0"), written the same way
+  // by the top-up (topup_from_sharepoint.stamp_backpay), so the salary voucher can pay each closed month its own share.
+  function encodeBackpayMonths(months) {
+    return (months || []).map(m => `${m.ym}:${round2(Number(m.usd) || 0)}:${Math.round(Number(m.lbp) || 0)}`).join(';');
+  }
+  function decodeBackpayMonths(txt) {
+    const out = [];
+    String(txt || '').split(';').forEach(part => {
+      const m = part.trim().match(/^(\d{4}-\d{2}):(-?[\d.]+):(-?\d+)$/);
+      if (m) out.push({ ym: m[1], usd: round2(Number(m[2])), lbp: Math.round(Number(m[3])) });
+    });
+    return out;
   }
   function stampContractBackpay(record, bp, source) {
     if (!record || !bp) return;
+    const rid = String(record.id || '');
+    const cArr = (STATE.customRecords && STATE.customRecords.employments) || [];
+    const cRow = rid ? cArr.find(x => x && String(x.id) === rid) : null;
+    const sRow = rid ? ((SEED.records && SEED.records.employments) || []).find(x => x && String(x.id) === rid) : null;
+    // The notice this contract already carries is carried whole into the new one, with its id (and the ids it carried),
+    // so rows that paid it keep counting and a second edit never drops money still owed. The top-up does the same
+    // (topup_from_sharepoint.stamp_backpay).
+    const prevRow = [record, cRow, sRow].find(x => x && x._backpay_on) || null;
+    const byYm = new Map();
+    const add = m => {
+      const cur = byYm.get(m.ym) || { ym: m.ym, usd: 0, lbp: 0 };
+      byYm.set(m.ym, { ym: m.ym, usd: round2(cur.usd + m.usd), lbp: Math.round(cur.lbp + m.lbp) });
+    };
+    (bp.months || []).forEach(m => add({ ym: m.ym, usd: round2(m.usd), lbp: Math.round(m.lbp) }));
+    let carried = [];
+    if (prevRow) {
+      backpayTrustedMonths(prevRow).months.forEach(add);
+      carried = backpayCarriedIds(prevRow).concat([backpayStampKey(prevRow)]);
+    }
+    const months = Array.from(byYm.values()).sort((a, b) => a.ym.localeCompare(b.ym));
     const fields = {
-      _backpay_usd: bp.usd, _backpay_lbp: bp.lbp, _backpay_from: bp.from, _backpay_to: bp.to,
+      _backpay_usd: months.length ? round2(months.reduce((s, m) => s + m.usd, 0)) : bp.usd,
+      _backpay_lbp: months.length ? Math.round(months.reduce((s, m) => s + m.lbp, 0)) : bp.lbp,
+      _backpay_from: months.length ? months[0].ym : bp.from,
+      _backpay_to: months.length ? months[months.length - 1].ym : bp.to,
+      _backpay_months: encodeBackpayMonths(months),
+      _backpay_id: uid('bp'),
+      _backpay_carried: Array.from(new Set(carried.filter(Boolean))).join(';'),
+      _backpay_first_on: prevRow ? String(prevRow._backpay_first_on || prevRow._backpay_on).slice(0, 10) : todayISO(),
       _backpay_on: todayISO(), _backpay_source: source
     };
     Object.assign(record, fields);
-    const rid = String(record.id || '');
     if (!rid) return;
-    const cArr = (STATE.customRecords && STATE.customRecords.employments) || [];
-    const cRow = cArr.find(x => x && String(x.id) === rid);
     if (cRow && cRow !== record) Object.assign(cRow, fields);
-    const sRow = ((SEED.records && SEED.records.employments) || []).find(x => x && String(x.id) === rid);
     if (sRow && sRow !== record) Object.assign(sRow, fields);
   }
+  // ---- Paying back pay on the salary voucher (owner idea 2026-11-13) ----
+  // A recent stamp is still owed until salary payments carrying its contract id and stamp key cover each closed month's
+  // share. The voucher pays the share of each month as its own salary payment (payroll month = that closed month), so
+  // the month positions, the staff ledger and the top-up's row matching all read it as an ordinary salary row. Only
+  // the positive shares are offered (a pay cut is not taken back from a voucher). A stamp without a per-month split
+  // (made before the split was kept) is booked to its last month.
+  function backpaySinceIso() {
+    const d = new Date(todayISO() + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() - BACKPAY_SHOW_DAYS);
+    return d.toISOString().slice(0, 10);
+  }
+  function backpayStampKey(c) {
+    if (c && c._backpay_id) return String(c._backpay_id);
+    return `${String((c && c._backpay_on) || '').slice(0, 10)}|${round2(Number(c && c._backpay_usd) || 0)}|${Math.round(Number(c && c._backpay_lbp) || 0)}`;
+  }
+  // Ids of earlier notices this one carried: rows that paid them count toward this one.
+  function backpayCarriedIds(c) {
+    return String((c && c._backpay_carried) || '').split(';').map(x => x.trim()).filter(Boolean);
+  }
+  // The notice's months (gross, the months that gained only). The split is trusted only when it adds up to the notice
+  // (an older client may have changed the total alone); otherwise the whole notice sits on its last month.
+  function backpayTrustedMonths(c) {
+    let months = decodeBackpayMonths(c && c._backpay_months);
+    const splitOk = months.length
+      && Math.abs(months.reduce((s, m) => s + m.usd, 0) - (Number(c._backpay_usd) || 0)) < 0.011
+      && Math.abs(months.reduce((s, m) => s + m.lbp, 0) - (Number(c._backpay_lbp) || 0)) < 1.5;
+    if (!splitOk) months = [{ ym: String((c && (c._backpay_to || c._backpay_from)) || '').slice(0, 7), usd: round2(Number(c && c._backpay_usd) || 0), lbp: Math.round(Number(c && c._backpay_lbp) || 0) }];
+    months = months.filter(m => /^\d{4}-\d{2}$/.test(m.ym)).map(m => ({ ym: m.ym, usd: Math.max(0, m.usd), lbp: Math.max(0, m.lbp) }))
+      .filter(m => m.usd >= 0.005 || m.lbp >= 1);
+    return { months, split: splitOk ? 'months' : 'last_month' };
+  }
+  // Salary rows that paid back pay (they carry backpay_stamp) for one staff member and company, including rows a top-up
+  // has since replaced by their workbook twin: absorbed in the browser (_absorbedSeedTwin) or kept as a top-up
+  // tombstone (voided_by "system-topup-..."; build/reconcile_cloud_store.py keeps the tags on it). `replaced` lists the
+  // replaced ones, whose untagged workbook twins must not be counted again as other payments.
+  function backpayTaggedRows(company, staff) {
+    const co = _bpNorm(company || 'WTC'), sk = _bpNorm(staff);
+    const seen = new Set();
+    const live = [], replaced = [];
+    const mine = r => r && r.backpay_stamp && _bpNorm(r.staff) === sk && _bpNorm(r.company || 'WTC') === co;
+    ((SEED.records && SEED.records.salaries) || []).forEach(r => {
+      if (!mine(r) || r.voided) return;
+      seen.add(String(r.id));
+      live.push(r);
+    });
+    ((STATE.customRecords && STATE.customRecords.salaries) || []).forEach(r => {
+      if (!mine(r) || seen.has(String(r.id))) return;
+      // replaced 1-to-1 (system-topup tombstone) or by several workbook rows ("Workbook match (N workbook rows)", twin_of)
+      const isReplaced = (!r.voided && r._absorbedSeedTwin) || (r.voided && /^(system-topup|Workbook match)/.test(String(r.voided_by || '')));
+      if (!isReplaced) return;
+      seen.add(String(r.id));
+      replaced.push(r);
+    });
+    return { all: live.concat(replaced), replaced };
+  }
+  // Back pay already paid another way for one closed month (a plain voucher, the form's "Settle ... Left" pill, a
+  // workbook Salary_Data row): what the month's untagged salary rows paid beyond what the month earned without the back
+  // pay. "Earned" is the staff ledger's contract arithmetic now (staffContractEarningsByMonth, the same figure the
+  // notice was measured with) minus the back pay, plus the month's bonuses, site transport and freelance pay as the
+  // salary form counts them. The month's own salary paid late is therefore never taken for back pay.
+  function backpayMonthBasis(c, ym) {
+    const co = c.company || 'WTC', sk = _bpNorm(c.staff), con = _bpNorm(co);
+    const fxM = getLbpFxRate(`${ym}-15`) || DEFAULT_LBP_FX_RATE;
+    const closed = backpayClosedYm();
+    const att = ((SEED.records && SEED.records.attendance) || []).filter(a => a && !a.voided && _bpNorm(a.staff) === sk && _bpNorm(a.company || 'WTC') === con);
+    const earn = staffContractEarningsByMonth(staffContractsFor(co, c.staff), att, ym > closed ? ym : closed);
+    let extras = 0;
+    if (typeof computeStaffMonthPayrollPosition === 'function') {
+      try {
+        const pos = computeStaffMonthPayrollPosition(c.staff, co, ym, todayISO());
+        if (pos) extras = round2((Number(pos.extraUsd) || 0) + (Number(pos.logUsd) || 0) + (Number(pos.flUsd) || 0));
+      } catch (_) { extras = 0; }
+    }
+    const since = String(c._backpay_first_on || c._backpay_on || '').slice(0, 10);
+    let before = 0, after = 0;
+    // the workbook twins of back-pay rows a top-up replaced are that same back pay, not another payment
+    const replacedRows = backpayTaggedRows(co, c.staff).replaced;
+    // several-row matches name their workbook rows (twin_of); 1-to-1 replacements are found by date and amount
+    const twinIds = new Set(replacedRows.flatMap(r => (Array.isArray(r.twin_of) ? r.twin_of : (r.twin_of ? [r.twin_of] : [])).map(String)));
+    const twinsLeft = replacedRows.filter(r => !r.twin_of).map(r => ({ d: String(r.date || '').slice(0, 10), a: Number(r.amount) || 0 }));
+    ((SEED.records && SEED.records.salaries) || []).forEach(p => {
+      if (!p || p.voided || p.backpay_stamp || String(p.payroll_month || '').slice(0, 7) !== ym
+        || _bpNorm(p.staff) !== sk || _bpNorm(p.company || 'WTC') !== con) return;
+      if (twinIds.has(String(p.id))) return;
+      const tw = twinsLeft.findIndex(t => t.d === String(p.date || '').slice(0, 10) && Math.abs(t.a - (Number(p.amount) || 0)) < 0.5);
+      if (tw >= 0) { twinsLeft.splice(tw, 1); return; }
+      if (String(p.date || '').slice(0, 10) >= since) after += Number(p.amount) || 0;
+      else before += Number(p.amount) || 0;
+    });
+    return { earnedUsd: round2((earn.usd.get(ym) || 0) + (earn.lbp.get(ym) || 0) / fxM + extras), paidBeforeUsd: round2(before), paidAfterUsd: round2(after), fx: fxM };
+  }
+  // `budget` (optional, shared across the notices of one staff member) records how much of each month's extra payments
+  // earlier notices already used, so one payment is never counted twice. `pending` ({ ym, usd }) is the open voucher's
+  // own payment for a month.
+  function backpayStatusOf(c, budget, pending) {
+    if (!c || !c._backpay_on) return null;
+    const key = backpayStampKey(c);
+    const keys = new Set([key].concat(backpayCarriedIds(c)));
+    const cid = String(c.id || '');
+    const { months, split } = backpayTrustedMonths(c);
+    const paid = cid ? backpayTaggedRows(c.company || 'WTC', c.staff).all.filter(s => String(s.backpay_contract_id || '') === cid
+      && keys.has(String(s.backpay_stamp || ''))) : [];
+    const paidBy = new Map();
+    paid.forEach(p => {
+      const ym = String(p.payroll_month || '').slice(0, 7);
+      const v = paidBy.get(ym) || { usd: 0, lbp: 0 };
+      v.usd = round2(v.usd + (Number(p.usd_amount) || 0));
+      v.lbp = Math.round(v.lbp + (Number(p.lbp_amount) || 0));
+      paidBy.set(ym, v);
+    });
+    let settledElsewhere = false;
+    const lines = months.map(m => {
+      const pd = paidBy.get(m.ym) || { usd: 0, lbp: 0 };
+      let usd = Math.max(0, round2(m.usd - pd.usd));
+      let lbp = Math.max(0, Math.round(m.lbp - pd.lbp));
+      if (!(usd >= 0.005 || lbp >= 1)) return { ym: m.ym, usd, lbp };
+      const basis = backpayMonthBasis(c, m.ym);
+      // the back pay of every listed notice of this staff member on this month (this notice's alone when measured alone)
+      const shareUsd = budget && budget.has(`share|${m.ym}`) ? budget.get(`share|${m.ym}`) : round2(m.usd + m.lbp / basis.fx);
+      const used = budget && budget.has(m.ym) ? budget.get(m.ym) : 0;
+      // payments on or after the (first) notice first make up what the month was short of before the notice; the
+      // rest is back pay paid another way. A surplus the month already had before the notice never counts.
+      const shortBefore = Math.max(0, round2(Math.max(0, basis.earnedUsd - shareUsd) - basis.paidBeforeUsd));
+      const extra = round2(basis.paidAfterUsd + (pending && pending.ym === m.ym ? (Number(pending.usd) || 0) : 0) - shortBefore - used);
+      const want = round2(usd + lbp / basis.fx);
+      const take = Math.max(0, Math.min(extra, want));
+      if (take >= 0.005) {
+        settledElsewhere = true;
+        // the extra payment covers the dollar share first, then the lira share at the month's rate
+        const fromUsd = Math.min(usd, take);
+        usd = round2(usd - fromUsd);
+        lbp = Math.max(0, Math.round(lbp - (take - fromUsd) * basis.fx));
+      }
+      if (budget) budget.set(m.ym, round2(used + take));
+      return { ym: m.ym, usd, lbp };
+    }).filter(l => l.usd >= 0.005 || l.lbp >= 1);
+    const sum = (arr, k) => arr.reduce((s, x) => s + (Number(x[k]) || 0), 0);
+    const dueUsd = round2(sum(months, 'usd')), dueLbp = Math.round(sum(months, 'lbp'));
+    const paidUsd = round2(sum(paid, 'usd_amount')), paidLbp = Math.round(sum(paid, 'lbp_amount'));
+    return {
+      contract: c, key, split, lines, settledElsewhere,
+      dueUsd, dueLbp, paidUsd, paidLbp,
+      leftUsd: round2(sum(lines, 'usd')), leftLbp: Math.round(sum(lines, 'lbp')),
+      overUsd: Math.max(0, round2(paidUsd - dueUsd)), overLbp: Math.max(0, paidLbp - dueLbp),
+      open: lines.length > 0
+    };
+  }  // A notice stays listed while it is recent (the Payroll strip's 45 days) or while it still has money to pay.
+  function backpayListed(e, since) {
+    return Boolean(e && !e.voided && e._backpay_on
+      && (Math.abs(Number(e._backpay_usd || 0)) >= 0.005 || Math.abs(Number(e._backpay_lbp || 0)) >= 1))
+      && (String(e._backpay_on).slice(0, 10) >= since || (backpayStatusOf(e) || {}).open === true);
+  }
+  // Statuses of many notices, oldest first, sharing one month budget per staff member and company.
+  function backpayStatusesOf(rows, pending) {
+    const budgets = new Map();
+    const out = new Map();
+    (rows || []).slice().sort((a, b) => String(a._backpay_on || '').localeCompare(String(b._backpay_on || '')))
+      .forEach(e => {
+        const bk = `${_bpNorm(e.company || 'WTC')}|${_bpNorm(e.staff)}`;
+        if (!budgets.has(bk)) {
+          const b = new Map();
+          // every notice of this staff member and company, listed or not (an older paid one still holds its share)
+          ((SEED.records && SEED.records.employments) || []).filter(x => x && !x.voided && x._backpay_on
+            && `${_bpNorm(x.company || 'WTC')}|${_bpNorm(x.staff)}` === bk).forEach(x => backpayTrustedMonths(x).months.forEach(m => {
+            const k = `share|${m.ym}`;
+            b.set(k, round2((b.get(k) || 0) + m.usd + m.lbp / (getLbpFxRate(`${m.ym}-15`) || DEFAULT_LBP_FX_RATE)));
+          }));
+          budgets.set(bk, b);
+        }
+        out.set(e, backpayStatusOf(e, budgets.get(bk), pending));
+      });
+    return out;
+  }
+  // Back pay still owed to one staff member at one company. `pending` is the open voucher's own month payment.
+  function backpayOwedFor(company, staff, pending) {
+    if (!_bpNorm(staff)) return [];
+    const since = backpaySinceIso();
+    const co = _bpNorm(company), sk = _bpNorm(staff);
+    const rows = ((SEED.records && SEED.records.employments) || [])
+      .filter(e => e && _bpNorm(e.staff) === sk && _bpNorm(e.company || 'WTC') === co && backpayListed(e, since));
+    const st = backpayStatusesOf(rows, pending);
+    return rows.map(e => st.get(e))
+      .filter(s => s && s.open)
+      .sort((a, b) => String(a.contract._backpay_from || '').localeCompare(String(b.contract._backpay_from || '')));
+  }
+  // The salary payment rows a voucher adds for the back pay it carries, one per closed month and contract stamp.
+  function buildBackpayVoucherLines(owed, base, staff, method, voucherId, fxDate) {
+    const fx = getLbpFxRate(fxDate || todayISO()) || DEFAULT_LBP_FX_RATE;
+    const out = [];
+    (owed || []).forEach(st => st.lines.forEach(l => {
+      out.push(Object.assign({}, base, {
+        id: uid('sa'),
+        name: `SAL ${l.ym} ${staff} BACKPAY`,
+        payroll_month: l.ym,
+        staff,
+        method,
+        usd_amount: l.usd,
+        lbp_amount: l.lbp,
+        amount: round2(l.usd + (l.lbp ? l.lbp / fx : 0)),
+        backpay_contract_id: String(st.contract.id || ''),
+        backpay_stamp: st.key,
+        backpay_voucher: voucherId
+      }));
+    }));
+    return out;
+  }
+  function backpayOwedTotals(owed) {
+    return {
+      usd: round2((owed || []).reduce((s, x) => s + x.leftUsd, 0)),
+      lbp: Math.round((owed || []).reduce((s, x) => s + x.leftLbp, 0))
+    };
+  }
+  function backpayMoneyText(usd, lbp) {
+    const parts = [];
+    if (Math.abs(Number(usd || 0)) >= 0.005) parts.push(fmtUSD(usd, 2));
+    if (Math.abs(Number(lbp || 0)) >= 1) parts.push(`${fmtNum(lbp, 0)} LL`);
+    return parts.join(' + ') || fmtUSD(0, 2);
+  }
+  // The strip on the salary form: what is owed, and the lines this voucher will add when the back pay is on it.
+  function renderSalaryBackpayStrip(company, staff, isBonus) {
+    const el = $('salBackpayStrip');
+    if (!el) return;
+    const editing = Boolean(STATE.editingRecord);
+    const owed = (!isBonus && !editing)
+      ? backpayOwedFor(company, staff, { ym: val('f_paymonth') || (val('f_date') || todayISO()).slice(0, 7), usd: Math.max(0, num('f_amount')) })
+      : [];
+    if (!owed.length) {
+      FORM_UI.salBackpayOn = false;
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    const tot = backpayOwedTotals(owed);
+    const on = Boolean(FORM_UI.salBackpayOn);
+    const lines = owed.flatMap(st => st.lines.map(l => ({ ym: l.ym, usd: l.usd, lbp: l.lbp })));
+    const lastOnly = owed.some(st => st.split === 'last_month');
+    const thisPay = num('f_amount');
+    const voucherUsd = round2(thisPay + (on ? tot.usd + (tot.lbp ? tot.lbp / (getLbpFxRate(val('f_date') || todayISO()) || DEFAULT_LBP_FX_RATE) : 0) : 0));
+    el.hidden = false;
+    el.className = `att-contract-strip ${on ? 'is-ok' : 'is-warn'}`;
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;width:100%">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          ${ic('alert')} <strong>${on ? 'Back Pay on This Voucher' : 'Back Pay Owed'}</strong>
+          <b id="salBackpayTotal">+${esc(backpayMoneyText(tot.usd, tot.lbp))}</b>
+          <button type="button" class="att-preset-pill ${on ? 'active' : ''}" id="salBackpayToggleBtn" data-sal-backpay="${on ? 'off' : 'on'}">${on ? 'Remove from This Voucher' : 'Add to This Voucher'}</button>
+        </div>
+        <div class="att-contract-metrics" id="salBackpayLines">
+          ${lines.map(l => `<span data-bp-month="${esc(l.ym)}"><small>${esc(formatPayrollMonthLabel(l.ym))}</small><b>${esc(backpayMoneyText(l.usd, l.lbp))}</b></span>`).join('')}
+          ${on ? `<span><small>Voucher Total</small><b class="emerald" id="salBackpayVoucherTotal">${fmtUSD(voucherUsd, 2)}</b></span>` : ''}
+        </div>
+      </div>
+      <div class="ph-sub" style="width:100%"><span>${on
+        ? 'Each closed month is paid as its own line, so those months settle.'
+        : 'A backdated pay change raised what closed payroll months earned.'}</span>${lastOnly ? ' <span>Booked to the last month (no monthly split on file).</span>' : ''}</div>`;
+  }
+
   function backpayToastText(bp, staff) {
     const span = bp.from === bp.to ? formatPayrollMonthLabel(bp.from) : `${formatPayrollMonthLabel(bp.from)} to ${formatPayrollMonthLabel(bp.to)}`;
     const parts = [];
@@ -39511,21 +39806,28 @@
     return `Back pay for closed payroll months: ${parts.join(' and ') || fmtSignedUSD(0, 2)} · ${staff} · ${span}`;
   }
   function renderBackpayNoticePanel(empRows) {
-    const since = (() => {
-      const d = new Date(todayISO() + 'T00:00:00Z');
-      d.setUTCDate(d.getUTCDate() - BACKPAY_SHOW_DAYS);
-      return d.toISOString().slice(0, 10);
-    })();
+    const since = backpaySinceIso();
     const rows = (empRows || [])
-      .filter(e => e && !e.voided && e._backpay_on && String(e._backpay_on).slice(0, 10) >= since
-        && (Math.abs(Number(e._backpay_usd || 0)) >= 0.005 || Math.abs(Number(e._backpay_lbp || 0)) >= 1))
+      .filter(e => backpayListed(e, since))
       .sort((a, b) => String(b._backpay_on).localeCompare(String(a._backpay_on)) || Math.abs(Number(b._backpay_usd || 0)) - Math.abs(Number(a._backpay_usd || 0)));
     if (!rows.length) return '';
     const showCo = STATE.company === 'manufacturing-group' || String(STATE.company || '').startsWith('industry:');
     const totUsd = rows.reduce((s, e) => s + Number(e._backpay_usd || 0), 0);
     const totLbp = rows.reduce((s, e) => s + Number(e._backpay_lbp || 0), 0);
     const anyLbp = rows.some(e => Math.abs(Number(e._backpay_lbp || 0)) >= 1);
-    const cols = 5 + (showCo ? 1 : 0) + (anyLbp ? 1 : 0);
+    const canPay = canEnterForm('salary');
+    const stOf = backpayStatusesOf(rows);
+    const totLeftUsd = round2(rows.reduce((s, e) => s + ((stOf.get(e) || {}).leftUsd || 0), 0));
+    const totLeftLbp = Math.round(rows.reduce((s, e) => s + ((stOf.get(e) || {}).leftLbp || 0), 0));
+    const cols = 7 + (showCo ? 1 : 0) + (anyLbp ? 1 : 0);
+    const owedCell = st => {
+      if (!st || (!(st.dueUsd >= 0.005) && !(st.dueLbp >= 1))) return '<span class="badge badge-neutral">Nothing to Pay</span>';
+      if (st.overUsd >= 0.005 || st.overLbp >= 1) return `<span class="badge badge-crit">Overpaid</span> <b>${esc(backpayMoneyText(st.overUsd, st.overLbp))}</b>`;
+      if (!st.open) return st.paidUsd >= 0.005 || st.paidLbp >= 1
+        ? `<span class="badge badge-ok">${ic('check')} Paid in Full</span>`
+        : `<span class="badge badge-ok">${ic('check')} Paid Another Way</span>`;
+      return `<b>${esc(backpayMoneyText(st.leftUsd, st.leftLbp))}</b>`;
+    };
     return `
       <div class="panel-card" id="payBackpayPanel">
         <div class="panel-head">
@@ -39545,10 +39847,14 @@
                 <th class="r">Back Pay (USD)</th>
                 ${anyLbp ? '<th class="r">Back Pay (LBP)</th>' : ''}
                 <th>Noticed On</th>
+                <th class="r">Still Owed</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              ${rows.map(e => `
+              ${rows.map(e => {
+                const st = stOf.get(e);
+                return `
                 <tr class="rrow" data-rkey="employments" data-rid="${esc(e.id)}">
                   <td>${esc(e.staff || '')} <span class="badge ${e._backpay_source === 'app' ? 'badge-info' : 'badge-brass'}">${e._backpay_source === 'app' ? 'Entered in App' : 'Workbook Top-Up'}</span></td>
                   ${showCo ? `<td>${esc(e.company || '')}</td>` : ''}
@@ -39557,13 +39863,18 @@
                   <td class="r"><b>${fmtSignedUSD(Number(e._backpay_usd || 0), 2)}</b></td>
                   ${anyLbp ? `<td class="r">${Number(e._backpay_lbp || 0) ? fmtNum(Number(e._backpay_lbp), 0) : ''}</td>` : ''}
                   <td class="mono">${esc(String(e._backpay_on).slice(0, 10))}</td>
-                </tr>`).join('')}
+                  <td class="r" data-bp-owed>${owedCell(st)}</td>
+                  <td class="r">${canPay && st && st.open ? `<button type="button" class="btn btn-sm" data-pay-backpay-staff="${esc(e.staff || '')}" data-pay-backpay-company="${esc(e.company || 'WTC')}">Pay Back Pay</button>` : ''}</td>
+                </tr>`;
+              }).join('')}
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="${cols - (anyLbp ? 3 : 2)}"><b>TOTAL</b></td>
+                <td colspan="${cols - (anyLbp ? 5 : 4)}"><b>TOTAL</b></td>
                 <td class="r"><b>${fmtSignedUSD(totUsd, 2)}</b></td>
                 ${anyLbp ? `<td class="r"><b>${fmtNum(totLbp, 0)}</b></td>` : ''}
+                <td></td>
+                <td class="r"><b>${esc(backpayMoneyText(totLeftUsd, totLeftLbp))}</b></td>
                 <td></td>
               </tr>
             </tfoot>
@@ -39574,6 +39885,8 @@
   window.__mfgBackpay = {
     staffContractEarningsByMonth, computeContractBackpay, staffContractsFor, renderBackpayNoticePanel, backpayClosedYm,
     backpayBeforeSet, toastText: backpayToastText,
+    statusOf: backpayStatusOf, owedFor: backpayOwedFor, encodeMonths: encodeBackpayMonths, decodeMonths: decodeBackpayMonths,
+    monthBasis: backpayMonthBasis,
     openContract: id => openRecordFromTableRow('employments', id)
   };
 
@@ -87999,6 +88312,11 @@
             }
           }
           FORM_UI.lastSalStaffMonthKey = salStaffMoKey;
+          const salBpKey = `${norm(curCo)}|${norm(curStaff)}`;
+          // a different staff member or company takes the back pay off (it belongs to the one it was added for)
+          if (FORM_UI.lastSalBackpayKey && !FORM_UI.lastSalBackpayKey.endsWith('|') && FORM_UI.lastSalBackpayKey !== salBpKey) FORM_UI.salBackpayOn = false;
+          FORM_UI.lastSalBackpayKey = salBpKey;
+          renderSalaryBackpayStrip(curCo, curStaff, isBonus);
           const effThisPay = num('f_amount');
           const pos = computeStaffMonthPayrollPosition(curStaff, curCo, payMonth, txDate);
           const cardEl = $('salStaffMonthCard');
@@ -93706,6 +94024,7 @@
     FORM_UI.lastAttStaff = ''; FORM_UI.lastAttShiftKey = ''; FORM_UI.lastAttDate = val('f_date'); FORM_UI.lastAttTimeKey = '';
     FORM_UI.lastEmpRole = ''; FORM_UI.lastStaffRoleName = '';
     FORM_UI.lastSalStaffMonthKey = '';
+    FORM_UI.salBackpayOn = false; FORM_UI.lastSalBackpayKey = '';
     FORM_UI.wasPricePending = false; FORM_UI.methodBeforePending = '';
     FORM_UI.originMode = 'company'; FORM_UI.originBu = ''; FORM_UI.originPriorDisposition = 'keep'; FORM_UI.lastAutoFilledOriginTicket = '';
     FORM_UI.originMiniMapOpen = false; FORM_UI.originMapTarget = 'dest'; FORM_UI.originKmEditOpen = false;
@@ -94084,6 +94403,13 @@
             }
             recalcForm();
           }
+          return;
+        }
+        const salBpBtn = ev.target && ev.target.closest ? ev.target.closest('[data-sal-backpay]') : null;
+        if (salBpBtn) {
+          ev.preventDefault();
+          FORM_UI.salBackpayOn = salBpBtn.getAttribute('data-sal-backpay') === 'on';
+          recalcForm();
           return;
         }
         const salBtn = ev.target && ev.target.closest ? ev.target.closest('[data-sal-quick]') : null;
@@ -97360,8 +97686,13 @@
     } else if (f === 'salary') {
       const st = val('f_staff'), amt = round2(num('f_amount'));
       const salType = val('f_sal_type') || 'payment';
+      // Back pay carried on this voucher: measured again at Post, never taken from the screen
+      const salBpOwed = (salType !== 'bonus' && FORM_UI.salBackpayOn && st && !STATE.editingRecord)
+        ? backpayOwedFor(company, st, { ym: val('f_paymonth') || date.slice(0, 7), usd: Math.max(0, amt) })
+        : [];
       if (!st) addErr('f_staff', 'Staff is required.');
-      if (!(amt > 0)) addErr('f_usd', (salType === 'bonus' ? 'Bonus' : 'Salary') + ' Amount > 0 is required.');
+      if (!(amt > 0) && !salBpOwed.length) addErr('f_usd', (salType === 'bonus' ? 'Bonus' : 'Salary') + ' Amount > 0 is required.');
+      if (amt < 0) addErr('f_usd', 'Salary Amount cannot be negative.');
       if (salType === 'bonus') {
         const eUsd = round2(Math.max(0, num('f_usd')));
         const eLbp = Math.round(Math.max(0, num('f_lbp')));
@@ -97397,7 +97728,7 @@
       } else {
         const payMoVal = val('f_paymonth') || date.slice(0, 7);
         const salMthVal = val('f_method') || 'Cash';
-        const salDup = findSameDayVoucherDuplicate('salary', {
+        const salDup = amt > 0 ? findSameDayVoucherDuplicate('salary', {
           company,
           date,
           staff: st,
@@ -97405,11 +97736,24 @@
           payrollMonth: payMoVal,
           method: salMthVal,
           amount: amt
-        });
+        }) : null;
         if (salDup && !($('f_dupok') && $('f_dupok').checked)) {
           addErr('f_dupok', `Same-day duplicate salary payment detected (${salDup.summary}). Tick the confirmation box if this second voucher is intentional.`);
         }
         record = { ...base, name: `SAL ${payMoVal} ${st}`, rep_date: repDate, payroll_month: payMoVal, staff: st, method: salMthVal, usd_amount: round2(num('f_usd')), lbp_amount: round2(num('f_lbp')), amount: amt, ...(salDup ? { duplicate_confirmed: true } : {}) };
+        if (salBpOwed.length) {
+          const bpLines = buildBackpayVoucherLines(salBpOwed, Object.assign({}, base, { rep_date: repDate }), st, salMthVal, record.id, date);
+          if (amt > 0) {
+            record.backpay_voucher = record.id;
+            record._backpay_lines = bpLines;
+          } else {
+            // back pay only: the first month's line is the voucher's own row
+            record = bpLines[0];
+            record.id = record.backpay_voucher;
+            bpLines.slice(1).forEach(l => { l.backpay_voucher = record.id; });
+            record._backpay_lines = bpLines.slice(1);
+          }
+        }
       }
     } else if (f === 'attendance') {
       const st = val('f_staff');
@@ -98711,6 +99055,8 @@
       const assignSiteReg = record._assign_site_region;
       const groupTransferMirror = record._group_transfer_mirror;
       delete record._group_transfer_mirror;
+      const salaryBackpayLines = Array.isArray(record._backpay_lines) ? record._backpay_lines : [];
+      delete record._backpay_lines;
       delete record._staged_expense_items;
       delete record._staged_repair_items;
       delete record._post_as_paired_return;
@@ -98832,6 +99178,14 @@
           if (!Array.isArray(STATE.customRecords.expenses)) STATE.customRecords.expenses = [];
           STATE.customRecords.expenses.unshift(groupTransferMirror);
           preExtraApiPosts.push(['expenses', groupTransferMirror]);
+        }
+        // Back pay on a salary voucher: one salary payment per closed month, saved and synced with the voucher
+        if (salaryBackpayLines.length && crKey === 'salaries') {
+          salaryBackpayLines.forEach(line => {
+            line.modified_at = record.modified_at;
+            STATE.customRecords.salaries.unshift(line);
+            preExtraApiPosts.push(['salaries', line]);
+          });
         }
       }
       // Cross-persist linked drivers & default drivers when saving Truck Owners (suppliers), Trucks (equipment), or Drivers
@@ -99504,6 +99858,14 @@
     const hit = (STATE.customRecords[other] || []).find(x => x && x.group_transfer_id === gid && Boolean(x.voided) === Boolean(wantVoided));
     return hit ? { crKey: other, row: hit } : null;
   }
+  // The other rows of a salary voucher that carried back pay (one salary row per closed month, all with one
+  // backpay_voucher). wantVoided picks the live or the voided rows.
+  function salaryVoucherPeers(crKey, row, wantVoided) {
+    const vid = row && row.backpay_voucher;
+    if (crKey !== 'salaries' || !vid) return [];
+    return (STATE.customRecords.salaries || []).filter(x => x && x !== row && String(x.id) !== String(row.id)
+      && String(x.backpay_voucher || '') === String(vid) && Boolean(x.voided) === Boolean(wantVoided));
+  }
   // A transfer is voided or restored as a whole, so the seat must be allowed on the other company and that
   // company's period must be open. Returns a message when the action must be refused.
   function groupTransferCounterpartBlock(peer) {
@@ -99595,6 +99957,18 @@
       delete gtRestorePeer.row.voided_at;
       extraRestorePosts.push([gtRestorePeer.crKey, gtRestorePeer.row]);
     }
+    // A salary voucher that carried back pay comes back with the rows its own void took down (a row voided on its
+    // own before stays voided)
+    const bpRestorePeers = salaryVoucherPeers(crKey, r, true).filter(p => r && String(p.voided_with_voucher || '') === String(r.id));
+    bpRestorePeers.forEach(p => {
+      p.voided = false;
+      delete p.voided_with_voucher;
+      p.restored_at = restoreStampIso;
+      p.modified_at = restoreStampIso;
+      delete p.voided_by;
+      delete p.voided_at;
+      extraRestorePosts.push(['salaries', p]);
+    });
     if (crKey === 'expenses' || crKey === 'equipment_repairs') {
       const childKey = crKey === 'expenses' ? 'expense_items' : 'repair_items';
       const idField = crKey === 'expenses' ? 'expense_id' : 'repair_id';
@@ -99650,7 +100024,7 @@
     saveLocalAuthAndRecords();
     renderApp();
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || (archivedSeed && (archivedSeed.name || archivedSeed.ticket_no)) || q;
-    toast('✓ Record restored · ' + label, 'ok');
+    toast(bpRestorePeers.length ? 'Record restored, with the back-pay rows of this salary voucher' : '✓ Record restored · ' + label, 'ok');
     if (r) postRecordToLocalApi(crKey, r);
     postRecordPairsChunked(extraRestorePosts);
     syncWithCloud(true);
@@ -99756,6 +100130,18 @@
       if (peerSeed && peerSeed !== gtVoidPeer.row) { peerSeed.voided = true; peerSeed.voided_by = who; peerSeed.voided_at = when; }
       extraVoidPosts.push([gtVoidPeer.crKey, gtVoidPeer.row]);
     }
+    // A salary voucher that carried back pay: its other rows (one per closed month) go with it
+    const bpVoidPeers = salaryVoucherPeers(crKey, r || seedRow, false);
+    bpVoidPeers.forEach(p => {
+      p.voided = true;
+      p.voided_by = who;
+      p.voided_at = when;
+      p.voided_with_voucher = String((r || seedRow).id || '');
+      delete p.restored_at;
+      const pSeed = ((SEED.records && SEED.records.salaries) || []).find(x => x && String(x.id) === String(p.id));
+      if (pSeed && pSeed !== p) { pSeed.voided = true; pSeed.voided_by = who; pSeed.voided_at = when; }
+      extraVoidPosts.push(['salaries', p]);
+    });
     if (crKey === 'expenses' || crKey === 'equipment_repairs') {
       const childKey = crKey === 'expenses' ? 'expense_items' : 'repair_items';
       const idField = crKey === 'expenses' ? 'expense_id' : 'repair_id';
@@ -99862,7 +100248,7 @@
     renderApp();
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || q;
     const targetId = (r && r.id) || q;
-    toast('Record voided · ' + label, 'ok', { onUndo: () => restoreVoidedRecord(crKey, targetId) });
+    toast(bpVoidPeers.length ? 'Record voided, with the back-pay rows of this salary voucher' : 'Record voided · ' + label, 'ok', { onUndo: () => restoreVoidedRecord(crKey, targetId) });
     postRecordToLocalApi(crKey, r);
     postRecordPairsChunked(extraVoidPosts);
     syncWithCloud(true);
@@ -100534,6 +100920,7 @@
       if (prefill.qty != null && $('f_qty')) $('f_qty').value = String(prefill.qty);
       if (prefill.ticket && $('f_ticketno')) $('f_ticketno').value = prefill.ticket;
       if (prefill.driver && $('f_driver')) $('f_driver').value = prefill.driver;
+      if (prefill.addBackpay && form === 'salary') { FORM_UI.salBackpayOn = true; FORM_UI.lastSalBackpayKey = ''; }
       if (prefill.staff && $('f_staff')) {
         $('f_staff').value = prefill.staff;
         FORM_UI.lastAttStaff = '';
@@ -132739,6 +133126,19 @@
     container.addEventListener('click', e => {
       const t = e.target;
       if (!t || typeof t.closest !== 'function') return;
+
+      // Payroll back-pay strip: open a salary voucher for that staff member with the back pay already on it
+      const payBpBtn = t.closest('[data-pay-backpay-staff]');
+      if (payBpBtn && container.contains(payBpBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        openEntryModal('salary', {
+          company: payBpBtn.getAttribute('data-pay-backpay-company') || 'WTC',
+          staff: payBpBtn.getAttribute('data-pay-backpay-staff') || '',
+          addBackpay: true
+        });
+        return;
+      }
 
       const printBtn = t.closest('[data-print-ticket]');
       if (printBtn && container.contains(printBtn)) {

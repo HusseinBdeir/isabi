@@ -10767,7 +10767,23 @@
       "Latest 14 Months": "آخر 14 شهراً",
       "Top 12": "أعلى 12",
       "Nothing to chart for the rows shown": "لا شيء يمكن عرضه بيانياً للسطور الظاهرة",
-      "(Blank)": "(فارغ)"
+      "(Blank)": "(فارغ)",
+      "Back Pay on This Voucher": "المستحق بأثر رجعي على هذا السند",
+      "Back Pay Owed": "مستحق بأثر رجعي غير مدفوع",
+      "Add to This Voucher": "إضافة إلى هذا السند",
+      "Remove from This Voucher": "إزالة من هذا السند",
+      "Voucher Total": "مجموع السند",
+      "Each closed month is paid as its own line, so those months settle.": "يُدفع كل شهر مقفل في سطر مستقل، فتُسوّى تلك الأشهر.",
+      "A backdated pay change raised what closed payroll months earned.": "رفع تعديل رواتب بأثر رجعي ما استحقته أشهر رواتب مقفلة.",
+      "Booked to the last month (no monthly split on file).": "قُيّد على الشهر الأخير (لا يوجد توزيع شهري مسجّل).",
+      "Still Owed": "المتبقي المستحق",
+      "Pay Back Pay": "دفع المستحق بأثر رجعي",
+      "Nothing to Pay": "لا شيء للدفع",
+      "Salary Amount cannot be negative.": "لا يمكن أن يكون مبلغ الراتب سالباً.",
+      "Overpaid": "مدفوع بالزيادة",
+      "Paid Another Way": "مدفوع بطريقة أخرى",
+      "Record voided, with the back-pay rows of this salary voucher": "أُلغي القيد مع أسطر المستحقات بأثر رجعي في سند الراتب هذا",
+      "Record restored, with the back-pay rows of this salary voucher": "استُعيد القيد مع أسطر المستحقات بأثر رجعي في سند الراتب هذا"
     },
     fr: {
       "Shift Windows Across the Day": "Plages horaires des postes sur la journée",
@@ -21516,7 +21532,23 @@
       "Latest 14 Months": "14 derniers mois",
       "Top 12": "12 premiers",
       "Nothing to chart for the rows shown": "Rien à représenter pour les lignes affichées",
-      "(Blank)": "(Vide)"
+      "(Blank)": "(Vide)",
+      "Back Pay on This Voucher": "Rappel de salaire sur ce bon",
+      "Back Pay Owed": "Rappel de salaire dû",
+      "Add to This Voucher": "Ajouter à ce bon",
+      "Remove from This Voucher": "Retirer de ce bon",
+      "Voucher Total": "Total du bon",
+      "Each closed month is paid as its own line, so those months settle.": "Chaque mois clôturé est payé sur sa propre ligne, ce qui solde ces mois.",
+      "A backdated pay change raised what closed payroll months earned.": "Un changement de paie rétroactif a augmenté ce que des mois de paie clôturés ont gagné.",
+      "Booked to the last month (no monthly split on file).": "Imputé au dernier mois (aucune répartition mensuelle enregistrée).",
+      "Still Owed": "Reste dû",
+      "Pay Back Pay": "Payer le rappel",
+      "Nothing to Pay": "Rien à payer",
+      "Salary Amount cannot be negative.": "Le montant du salaire ne peut pas être négatif.",
+      "Overpaid": "Trop-perçu",
+      "Paid Another Way": "Payé autrement",
+      "Record voided, with the back-pay rows of this salary voucher": "Écriture annulée, avec les lignes de rappel de ce bon de salaire",
+      "Record restored, with the back-pay rows of this salary voucher": "Écriture rétablie, avec les lignes de rappel de ce bon de salaire"
     }
   };
 
