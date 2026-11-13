@@ -123708,6 +123708,155 @@
     return out;
   }
 
+  // Frequency-first clock-window presets (hard rule 11). Every window a company actually uses is counted
+  // once per active staff member who works it: a shift type's regular, split, weekday and date windows
+  // weigh by its headcount (plus a small floor so a defined but unassigned shift still ranks), and a
+  // staff member's own custom window, custom weekday/date timings and custom date overrides add one each.
+  // The company's counts rank first, the rest of its industry breaks ties and fills gaps, and the seed
+  // windows only fill what is still missing on a company with no history.
+  const SHIFT_WINDOW_PRESET_SEEDS = {
+    regular: ['07:00|15:00', '08:00|16:00', '08:00|17:00', '09:00|17:00', '07:00|16:00', '19:00|03:00'],
+    exception: ['07:00|14:00', '08:30|13:30', '09:00|15:00', '07:00|13:00'],
+    split: ['11:00|15:00|19:00|23:00', '08:00|12:30|14:30|18:00']
+  };
+  function collectShiftWindowUsage(companyName) {
+    const pools = { regular: new Map(), exception: new Map(), split: new Map() };
+    const co = String(companyName || '').trim();
+    if (!co) return pools;
+    const bump = (pool, sig, w) => {
+      if (!sig || !(w > 0)) return;
+      pools[pool].set(sig, (pools[pool].get(sig) || 0) + w);
+    };
+    const winSig = (s, e) => {
+      const sf = fmtAttClockTime(s || '');
+      const ef = fmtAttClockTime(e || '');
+      return (sf && ef && sf !== ef) ? `${sf}|${ef}` : '';
+    };
+    const bumpTimings = (dayMap, dateList, w) => {
+      Object.keys(dayMap || {}).forEach(k => {
+        const it = dayMap[k];
+        if (it) bump('exception', winSig(it.start_time, it.end_time), w);
+      });
+      (dateList || []).forEach(it => {
+        if (!it || it.voided || it.day_off || it.is_off) return;
+        // Relative items (shorten / shift by minutes) are not a fixed clock window, so they never become a preset.
+        if (it.shorten_min != null || it.start_shift_min != null || it.end_shift_min != null) return;
+        bump('exception', winSig(it.start_time, it.end_time), w);
+      });
+    };
+    let staff = [];
+    try {
+      staff = getKioskStaffDirectory({ companyOverride: co, strictCompanyScope: true, activeOnly: true })
+        .filter(s => s && norm(s.company || co) === norm(co));
+    } catch (_) { staff = []; }
+    const headcount = new Map();
+    const rawRules = ensureWorkSchedulesState().staffRules || {};
+    const seenStaff = new Set();
+    staff.forEach(s => {
+      const sk = norm(s.name);
+      if (!sk || seenStaff.has(sk)) return;
+      seenStaff.add(sk);
+      let rule = null;
+      try { rule = getStaffWorkRule(s.name, co); } catch (_) { rule = null; }
+      if (!rule) return;
+      const sid = rule.shift_id === 'custom' ? 'custom' : normalizeShiftCodeAlias(rule.shift_id || '');
+      if (sid === 'custom') {
+        bump('regular', winSig(rule.custom_start, rule.custom_end), 1);
+      } else if (sid) {
+        headcount.set(sid, (headcount.get(sid) || 0) + 1);
+      }
+      // Only timings set on the person themselves: the shift's own exceptions are counted with its headcount below.
+      const raw = rawRules[sk];
+      if (raw && !raw.reset_default && (raw.use_custom_day_timings || sid === 'custom')) {
+        const hasOwn = (raw.day_timings && Object.keys(raw.day_timings).length) || raw.sat_diff_enabled || (Array.isArray(raw.date_timings) && raw.date_timings.length);
+        if (hasOwn) {
+          bumpTimings(normalizeDayTimingsMap(raw.day_timings, raw.sat_diff_enabled, raw.sat_start_time, raw.sat_end_time), normalizeDateTimingsList(raw.date_timings), 1);
+        }
+      }
+      (rule.shift_overrides || []).forEach(ov => {
+        if (ov && ov.shift_id === 'custom') bump('regular', winSig(ov.custom_start, ov.custom_end), 1);
+      });
+    });
+    let types = [];
+    try { types = getShiftTypes(co); } catch (_) { types = []; }
+    types.forEach(t => {
+      if (!t || t.voided) return;
+      const w = (headcount.get(t.id) || 0) + 0.01;
+      if (t.split_enabled) {
+        const a = winSig(t.split_start_1, t.split_end_1);
+        const b = winSig(t.split_start_2, t.split_end_2);
+        if (a && b) bump('split', `${a}|${b}`, w);
+      } else {
+        bump('regular', winSig(t.start_time, t.end_time), w);
+      }
+      bumpTimings(t.day_timings, t.date_timings, w);
+    });
+    return pools;
+  }
+
+  // usageMemo: pass one Map per modal open so each company is counted once (never cached across saves).
+  function rankShiftWindowPresets(kind, companyName, opts = {}) {
+    const pool = ['regular', 'exception', 'split'].includes(kind) ? kind : 'regular';
+    const limit = Math.max(1, Number(opts.limit) || (pool === 'regular' ? 6 : 3));
+    const exclude = new Set((opts.exclude || []).filter(Boolean));
+    const memo = opts.usageMemo instanceof Map ? opts.usageMemo : new Map();
+    const getShiftWindowUsage = c => {
+      const k = norm(c);
+      if (!memo.has(k)) memo.set(k, collectShiftWindowUsage(c));
+      return memo.get(k);
+    };
+    const co = String(companyName || '').trim();
+    const isAll = !co || norm(co) === norm('All Companies') || norm(co) === norm('All BUs');
+    const indCos = getActiveIndustryBuList(isAll ? '' : co);
+    const coScore = new Map();
+    const indScore = new Map();
+    indCos.forEach(c => {
+      const p = getShiftWindowUsage(c)[pool];
+      p.forEach((w, sig) => {
+        indScore.set(sig, (indScore.get(sig) || 0) + w);
+        if (!isAll && norm(c) === norm(co)) coScore.set(sig, (coScore.get(sig) || 0) + w);
+      });
+    });
+    if (!isAll && !indCos.some(c => norm(c) === norm(co))) {
+      getShiftWindowUsage(co)[pool].forEach((w, sig) => coScore.set(sig, (coScore.get(sig) || 0) + w));
+    }
+    const seeds = SHIFT_WINDOW_PRESET_SEEDS[pool] || [];
+    const sigs = Array.from(new Set(Array.from(coScore.keys()).concat(Array.from(indScore.keys()), seeds)))
+      .filter(sig => !exclude.has(sig));
+    sigs.sort((a, b) => {
+      const ca = isAll ? (indScore.get(a) || 0) : (coScore.get(a) || 0);
+      const cb = isAll ? (indScore.get(b) || 0) : (coScore.get(b) || 0);
+      if (cb !== ca) return cb - ca;
+      const ia = indScore.get(a) || 0;
+      const ib = indScore.get(b) || 0;
+      if (ib !== ia) return ib - ia;
+      const sa = seeds.indexOf(a);
+      const sb = seeds.indexOf(b);
+      return (sa < 0 ? 99 : sa) - (sb < 0 ? 99 : sb);
+    });
+    return sigs.slice(0, limit).map(sig => {
+      const parts = sig.split('|');
+      const staffN = Math.floor(isAll ? (indScore.get(sig) || 0) : (coScore.get(sig) || 0));
+      if (pool === 'split') {
+        const [s1, e1, s2, e2] = parts;
+        const hrs = (computeShiftWorkedHours(s1, e1) || 0) + (computeShiftWorkedHours(s2, e2) || 0);
+        return { sig, s1, e1, s2, e2, hours: Math.round(hrs * 100) / 100, staff: staffN, label: `${s1}-${e1} + ${s2}-${e2}` };
+      }
+      const [s, e] = parts;
+      const hrs = computeShiftWorkedHours(s, e) || 0;
+      const sMin = parseClockMinutes(s);
+      const eMin = parseClockMinutes(e);
+      return { sig, s, e, hours: Math.round(hrs * 100) / 100, overnight: sMin != null && eMin != null && eMin <= sMin, staff: staffN, label: `${s}-${e}` };
+    });
+  }
+
+  function shiftWindowPresetTip(p) {
+    if (!p) return '';
+    return p.staff > 0
+      ? `${fmtNum(p.hours, 1)}h · used by ${fmtNum(p.staff)} staff`
+      : `${fmtNum(p.hours, 1)}h · not in use yet`;
+  }
+
   async function postWorkScheduleMutation(bodyObj) {
     if (!hasServerApi() || isDemoScopeActive()) return;
     try {
@@ -128649,6 +128798,10 @@
     const shiftTypes = getShiftTypes(entry.company);
     const today = todayISO();
     const focusDate = opts.focusDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.focusDate) ? opts.focusDate : today;
+    // Preset windows ranked by how many of the company's staff work them (hard rule 11); counted once per open.
+    const ssmUsageMemo = new Map();
+    const ssmRegularPresets = rankShiftWindowPresets('regular', entry.company, { usageMemo: ssmUsageMemo, limit: 6 });
+    const ssmExcPresets = rankShiftWindowPresets('exception', entry.company, { usageMemo: ssmUsageMemo, limit: 3 });
 
     let draftShiftId = rule.shift_id || 'day_8_4';
     let draftPolicyGroupId = rule.policy_group_id || 'pkg_15_open_15d';
@@ -128915,14 +129068,12 @@
                   const lbl = h === 24 ? '24:00' : `${String(h).padStart(2, '0')}:00`;
                   return `<span class="ssm-tl-tick mono" style="left:${pct.toFixed(2)}%"><i></i><b>${lbl}</b></span>`;
                 }).join('');
-                const customPresets = [
-                  { s: '07:00', e: '15:00', lbl: '07:00-15:00 (8h)' },
-                  { s: '08:00', e: '16:00', lbl: '08:00-16:00 (8h)' },
-                  { s: '08:00', e: '17:00', lbl: '08:00-17:00 (9h)' },
-                  { s: '09:00', e: '17:00', lbl: '09:00-17:00 (8h)' },
-                  { s: '07:00', e: '16:00', lbl: '07:00-16:00 (9h)' },
-                  { s: '19:00', e: '03:00', lbl: '19:00-03:00 (8h Night)' }
-                ];
+                const customPresets = ssmRegularPresets.map(p => ({
+                  s: p.s,
+                  e: p.e,
+                  tip: shiftWindowPresetTip(p),
+                  lbl: `${p.s}-${p.e} (${fmtNum(p.hours, p.hours % 1 ? 1 : 0)}h${p.overnight ? ' Night' : ''})`
+                }));
                 return `
                   <div class="ssm-timeline-studio" id="ssmInteractiveTimeline">
                     <div class="ssm-tl-header">
@@ -128965,7 +129116,7 @@
                         <span class="ssm-cp-lbl">Quick 24h Windows:</span>
                         <div class="ssm-cp-chips">
                           ${customPresets.map(cp => `
-                            <button type="button" class="kiosk-qchip mono ${tlSStr === cp.s && tlEStr === cp.e ? 'active' : ''}" data-ssm-custom-preset="${cp.s}|${cp.e}">${cp.lbl}</button>
+                            <button type="button" class="kiosk-qchip mono ${tlSStr === cp.s && tlEStr === cp.e ? 'active' : ''}" data-ssm-custom-preset="${esc(cp.s)}|${esc(cp.e)}" data-ui-tip="${esc(cp.tip)}">${esc(cp.lbl)}</button>
                           `).join('')}
                         </div>
                       </div>
@@ -129012,9 +129163,7 @@
                           <option value="" ${draftExcQuickDay === '' ? 'selected' : ''}>Select Weekday...</option>
                           ${dayOrder.filter(dIdx => draftDays.includes(dIdx)).map(dIdx => `<option value="${dIdx}" ${String(dIdx) === String(draftExcQuickDay) ? 'selected' : ''}>${ATT_WEEKDAYS[dIdx]}</option>`).join('')}
                         </select>
-                        <button type="button" class="kiosk-qchip" data-ssm-day-preset="07:00|14:00">07:00-14:00</button>
-                        <button type="button" class="kiosk-qchip" data-ssm-day-preset="08:30|13:30">08:30-13:30</button>
-                        <button type="button" class="kiosk-qchip" data-ssm-day-preset="09:00|15:00">09:00-15:00</button>
+                        ${ssmExcPresets.map(p => `<button type="button" class="kiosk-qchip mono" data-ssm-day-preset="${esc(p.s)}|${esc(p.e)}" data-ui-tip="${esc(shiftWindowPresetTip(p))}">${esc(p.label)}</button>`).join('')}
                       </div>
                       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-top:8px">
                         ${dayOrder.filter(dIdx => draftDays.includes(dIdx)).map(dIdx => {
@@ -130743,6 +130892,20 @@
     const initIsBuDef = Boolean(existing && ((curCoDef && normalizeShiftCodeAlias(curCoDef.shift_code) === existing.id) || existing.is_bu_default));
     const viewerAllowed = allowedCompanyNames();
     const allAllowedCos = getCompanyCatalog().map(c => c.name).filter(nm => !viewerAllowed.length || viewerAllowed.includes(nm));
+    // Preset chips ranked by how many staff work each window (hard rule 11), re-ranked on Company Scope change.
+    const stmUsageMemo = new Map();
+    // live = read the open form; false at first render (a previous open may have left stale inputs in the DOM).
+    const stmRegularSig = (live = true) => {
+      const s = normalize24hClockTime((live && $('stmStart')?.value) || initStart1, initStart1);
+      const e = normalize24hClockTime((live && $('stmEnd')?.value) || initEnd1, initEnd1);
+      return `${s}|${e}`;
+    };
+    const stmExcPresetList = (co, live = true) => rankShiftWindowPresets('exception', co, { usageMemo: stmUsageMemo, exclude: [stmRegularSig(live)] });
+    const stmExcPresetChipsHtml = list => list.map(p => `<button type="button" class="kiosk-qchip mono" data-stm-exc-preset="${esc(p.s)}|${esc(p.e)}" data-ui-tip="${esc(shiftWindowPresetTip(p))}">${esc(p.label)}</button>`).join('');
+    const stmSplitPresetChipsHtml = co => rankShiftWindowPresets('split', co, { usageMemo: stmUsageMemo, limit: 2 })
+      .map(p => `<button type="button" class="kiosk-qchip mono" data-stm-split-preset="${esc(p.s1)}|${esc(p.e1)}|${esc(p.s2)}|${esc(p.e2)}" data-ui-tip="${esc(shiftWindowPresetTip(p))}">${esc(p.label)}</button>`).join('');
+    const initExcPresets = stmExcPresetList(defCo, false);
+    const initDateWin = initExcPresets[0] || { s: '09:00', e: '15:00' };
 
     let modal = $('shiftTypeModal');
     if (!modal) {
@@ -130901,10 +131064,7 @@
               </div>
               <div class="ssm-field">
                 <label>Split Presets</label>
-                <div style="display:flex;gap:4px;flex-wrap:wrap">
-                  <button type="button" class="kiosk-qchip" data-stm-split-preset="11:00|15:00|19:00|23:00">11-15 + 19-23</button>
-                  <button type="button" class="kiosk-qchip" data-stm-split-preset="08:00|12:30|14:30|18:00">08-12:30 + 14:30-18</button>
-                </div>
+                <div style="display:flex;gap:4px;flex-wrap:wrap" id="stmSplitPresetChips">${stmSplitPresetChipsHtml(defCo)}</div>
               </div>
             </div>
           </div>
@@ -130945,9 +131105,7 @@
                   <div class="ssm-field">
                     <label>Quick Preset &amp; Window</label>
                     <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
-                      <button type="button" class="kiosk-qchip" data-stm-exc-preset="07:00|14:00">07:00-14:00</button>
-                      <button type="button" class="kiosk-qchip" data-stm-exc-preset="08:30|13:30">08:30-13:30</button>
-                      <button type="button" class="kiosk-qchip" data-stm-exc-preset="09:00|15:00">09:00-15:00</button>
+                      <span id="stmExcPresetChips" style="display:contents">${stmExcPresetChipsHtml(initExcPresets)}</span>
                       <button type="button" class="btn kiosk-mini-btn" id="stmAddWeekdayRuleBtn">+ Add Weekday Window</button>
                     </div>
                   </div>
@@ -130970,11 +131128,11 @@
                   </div>
                   <div class="ssm-field">
                     <label for="stmDateStart">Start (24h)</label>
-                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmDateStart" value="09:00">
+                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmDateStart" value="${esc(initDateWin.s)}">
                   </div>
                   <div class="ssm-field">
                     <label for="stmDateEnd">End (24h)</label>
-                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmDateEnd" value="15:00">
+                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmDateEnd" value="${esc(initDateWin.e)}">
                   </div>
                 </div>
                 <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:6px">
@@ -131030,18 +131188,25 @@
       if ($('stmStartLbl')) $('stmStartLbl').textContent = isSp ? 'Window 1 Start (24h)' : 'Regular Start (24h)';
       if ($('stmEndLbl')) $('stmEndLbl').textContent = isSp ? 'Window 1 End (24h)' : 'Regular End (24h)';
     });
-    modal.querySelectorAll('[data-stm-split-preset]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const [s1, e1, s2, e2] = String(btn.getAttribute('data-stm-split-preset') || '11:00|15:00|19:00|23:00').split('|');
-        if ($('stmSplitChk')) $('stmSplitChk').checked = true;
-        if ($('stmSplitRow')) $('stmSplitRow').style.display = 'grid';
-        if ($('stmStartLbl')) $('stmStartLbl').textContent = 'Window 1 Start (24h)';
-        if ($('stmEndLbl')) $('stmEndLbl').textContent = 'Window 1 End (24h)';
-        if ($('stmStart')) $('stmStart').value = s1;
-        if ($('stmEnd')) $('stmEnd').value = e1;
-        if ($('stmSplitS2')) $('stmSplitS2').value = s2;
-        if ($('stmSplitE2')) $('stmSplitE2').value = e2;
-      });
+    $('stmCompany')?.addEventListener('change', e => {
+      const co = String(e.target.value || defCo);
+      const exBox = $('stmExcPresetChips');
+      if (exBox) exBox.innerHTML = stmExcPresetChipsHtml(stmExcPresetList(co));
+      const spBox = $('stmSplitPresetChips');
+      if (spBox) spBox.innerHTML = stmSplitPresetChipsHtml(co);
+    });
+    $('stmSplitPresetChips')?.addEventListener('click', ev => {
+      const btn = ev.target.closest('[data-stm-split-preset]');
+      if (!btn) return;
+      const [s1, e1, s2, e2] = String(btn.getAttribute('data-stm-split-preset') || '11:00|15:00|19:00|23:00').split('|');
+      if ($('stmSplitChk')) $('stmSplitChk').checked = true;
+      if ($('stmSplitRow')) $('stmSplitRow').style.display = 'grid';
+      if ($('stmStartLbl')) $('stmStartLbl').textContent = 'Window 1 Start (24h)';
+      if ($('stmEndLbl')) $('stmEndLbl').textContent = 'Window 1 End (24h)';
+      if ($('stmStart')) $('stmStart').value = s1;
+      if ($('stmEnd')) $('stmEnd').value = e1;
+      if ($('stmSplitS2')) $('stmSplitS2').value = s2;
+      if ($('stmSplitE2')) $('stmSplitE2').value = e2;
     });
     $('stmDiffChk')?.addEventListener('change', e => {
       const bEl = $('stmDiffBody');
@@ -131072,15 +131237,15 @@
       $(id)?.addEventListener('change', refreshStmExceptionsUi);
       $(id)?.addEventListener('input', refreshStmExceptionsUi);
     });
-    modal.querySelectorAll('[data-stm-exc-preset]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const [ps, pe] = String(btn.getAttribute('data-stm-exc-preset') || '07:00|14:00').split('|');
-        if ($('stmDiffChk')) $('stmDiffChk').checked = true;
-        if ($('stmDiffBody')) $('stmDiffBody').style.display = 'flex';
-        if ($('stmExcStart')) $('stmExcStart').value = ps;
-        if ($('stmExcEnd')) $('stmExcEnd').value = pe;
-        refreshStmExceptionsUi();
-      });
+    $('stmExcPresetChips')?.addEventListener('click', ev => {
+      const btn = ev.target.closest('[data-stm-exc-preset]');
+      if (!btn) return;
+      const [ps, pe] = String(btn.getAttribute('data-stm-exc-preset') || '07:00|14:00').split('|');
+      if ($('stmDiffChk')) $('stmDiffChk').checked = true;
+      if ($('stmDiffBody')) $('stmDiffBody').style.display = 'flex';
+      if ($('stmExcStart')) $('stmExcStart').value = ps;
+      if ($('stmExcEnd')) $('stmExcEnd').value = pe;
+      refreshStmExceptionsUi();
     });
     $('stmAddWeekdayRuleBtn')?.addEventListener('click', () => {
       if (!draftSelectedExcDays.length) {
@@ -140583,6 +140748,7 @@
       openStaffScheduleModal: (staff, opts = {}) => openStaffScheduleModal(staff, opts),
       closeStaffScheduleModal: () => closeStaffScheduleModal(),
       openShiftTypeModal: (shiftId, opts = {}) => openShiftTypeModal(shiftId, opts),
+      rankShiftWindowPresets: (kind, co, opts = {}) => rankShiftWindowPresets(kind, co, opts),
       closeShiftTypeModal: () => closeShiftTypeModal(),
       openPolicyGroupModal: (groupId, seedSpec) => openPolicyGroupModal(groupId, seedSpec),
       closePolicyGroupModal: () => closePolicyGroupModal(),

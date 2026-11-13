@@ -25399,6 +25399,18 @@
         : `Clôture auto le poste ouvert précédent (${span}) le ${m[2]} et recalcule ${m[3]} employés`;
     }
 
+    // Frequency-ranked shift window presets (chip label + usage tip)
+    m = trimmed.match(/^([\d.]+)h\s*·\s*(?:used\s+by\s+([\d,]+)\s+staff|(not\s+in\s+use\s+yet))$/i);
+    if (m) {
+      if (m[3]) return lang === 'ar' ? `${m[1]} س · غير مستخدمة بعد` : `${m[1]} h · pas encore utilisé`;
+      return lang === 'ar' ? `${m[1]} س · يعمل بها ${m[2]} موظف` : `${m[1]} h · utilisé par ${m[2]} employés`;
+    }
+    m = trimmed.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})\s*\(([\d.]+)h(\s+Night)?\)$/i);
+    if (m) {
+      const night = m[4] ? (lang === 'ar' ? ' ليلية' : ' nuit') : '';
+      return lang === 'ar' ? `${m[1]}-${m[2]} (${m[3]} س${night})` : `${m[1]}-${m[2]} (${m[3]} h${night})`;
+    }
+
     m = trimmed.match(/^Late\s+(.+?)\s*·\s*(No\s+OT|OT\s+[\d.]+x(?:\s*\([^)]+\))?)(?:\s*·\s*(\d+)d\s+Vac)?$/i);
     if (m) {
       const lRaw = m[1].trim();
