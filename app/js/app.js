@@ -43819,6 +43819,36 @@
     const liveUsd = Number(k.cash_till_usd != null ? k.cash_till_usd : 0);
     const liveLbp = Math.round(Number(k.cash_till_lbp != null ? k.cash_till_lbp : 0));
     const liveTot = Number(k.cash_till != null ? k.cash_till : 0);
+    // Till cards follow the date selector (owner 2026-11-13): the balance at the end date of the selected
+    // window. A till is a running balance, so the start date cannot apply to it; a pill says so when one is set.
+    // Only a Manufacturing scope has its own dated till (the daily till sheet); the other industries borrow the
+    // Manufacturing model in getKPI, so their dated figures are not theirs and the cards stay on their own till.
+    // A window ending today or later shows the live till itself (the summed sheet can differ by rounding).
+    const tillRange = periodRange(STATE.period);
+    const tillIsMfg = (typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing') === 'Manufacturing';
+    const tillDated = Boolean(tillRange && tillIsMfg && k.period_till_usd != null);
+    const tillAsOf = tillDated && tillRange.to && tillRange.to < todayISO() ? tillRange.to : '';
+    const tillStartSet = tillDated && Boolean(tillRange.from) && tillRange.from > MIN_DATE;
+    const tillUsd = tillAsOf ? Number(k.period_till_usd || 0) : liveUsd;
+    const tillLbp = tillAsOf ? Math.round(Number(k.period_till_lbp || 0)) : liveLbp;
+    const tillTot = tillAsOf ? Number(k.period_till != null ? k.period_till : round2(tillUsd + tillLbp / rate)) : liveTot;
+    const tillOpenUsd = tillStartSet ? round2(tillUsd - (Number(k.cash_in_usd || 0) - Number(k.cash_out_usd || 0))) : 0;
+    const tillOpenLbp = tillStartSet ? Math.round(tillLbp - (Number(k.cash_in_lbp || 0) - Number(k.cash_out_lbp || 0))) : 0;
+    const tillStartTip = 'The till is a running balance: it counts every cash entry from the first day up to the end date. The start date only filters the entries and the period cash flow.';
+    const tillBadgeHtml = (fallbackTxt, fallbackCls) => {
+      const main = tillAsOf
+        ? `<span class="cockpit-pill-tag ${esc(fallbackCls)}" data-ui-tip="Till balance at the end of this day"><span data-no-i18n="1">${esc(fmtDateDMY(tillAsOf))}</span></span>`
+        : `<span class="cockpit-pill-tag ${esc(fallbackCls)}">${esc(fallbackTxt)}</span>`;
+      const warn = tillStartSet
+        ? `<span class="cockpit-pill-tag warn cf-till-warn-ic" role="img" data-ui-tip="${esc(tillStartTip)}" aria-label="${esc(tillStartTip)}">${ic('alert')}</span>`
+        : '';
+      return warn ? `<span class="cf-till-badges">${main}${warn}</span>` : main;
+    };
+    const tillStartStripHtml = tillStartSet ? `
+        <div class="cf-till-start-strip" id="cfTillStartWarn" role="note">
+          ${ic('alert')}
+          <span class="cf-till-start-txt"><b>Start Date Ignored by the Till</b><span class="cf-till-sep" aria-hidden="true">·</span>${tillAsOf ? `<span>Till balance at</span> <b data-no-i18n="1">${esc(fmtDateDMY(tillAsOf))}</b>` : '<span>Till balance today</span>'}<span class="cf-till-sep" aria-hidden="true">·</span><span>The till counts every cash entry from the first day, so the start date only filters the entries and the period cash flow.</span></span>
+        </div>` : '';
     const q = STATE.search.trim().toLowerCase();
     const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
 
@@ -44069,31 +44099,32 @@
         <div class="cockpit-pills insight-grid">
           ${insightCard({
             label: 'USD Cash Till ($)',
-            badge: Math.abs(liveUsd) < 0.005 ? 'Balanced $0' : 'Live Drawer',
-            badgeCls: 'emerald',
-            val: `${fmtUSD(liveUsd, 2)} <small>USD</small>`,
+            badgeHtml: tillBadgeHtml(Math.abs(tillUsd) < 0.005 ? 'Balanced $0' : 'Live Drawer', 'emerald'),
+            val: `${fmtUSD(tillUsd, 2)} <small>USD</small>`,
             valCls: 'emerald',
             pct: 100,
-            sub: `In <b>${fmtUSDk(k.live_in_usd != null ? k.live_in_usd : k.cash_in_usd)}</b> · Out <b>${fmtUSDk(k.live_out_usd != null ? k.live_out_usd : k.cash_out_usd)}</b>`,
+            sub: tillDated
+              ? `${tillStartSet ? `Opening <b>${fmtUSDk(tillOpenUsd)}</b> · ` : ''}In <b>${fmtUSDk(k.cash_in_usd)}</b> · Out <b>${fmtUSDk(k.cash_out_usd)}</b>`
+              : `In <b>${fmtUSDk(k.live_in_usd != null ? k.live_in_usd : k.cash_in_usd)}</b> · Out <b>${fmtUSDk(k.live_out_usd != null ? k.live_out_usd : k.cash_out_usd)}</b>`,
             tone: 'emerald'
           })}
           ${insightCard({
             label: 'LBP Cash Till (LL)',
-            badge: Math.abs(liveLbp) <= 1 ? 'Balanced 0 LL' : 'Pounds',
-            badgeCls: 'emerald',
-            val: `${fmtLBP(liveLbp)}`,
+            badgeHtml: tillBadgeHtml(Math.abs(tillLbp) <= 1 ? 'Balanced 0 LL' : 'Pounds', 'emerald'),
+            val: `${fmtLBP(tillLbp)}`,
             valCls: 'emerald',
             pct: 100,
-            sub: `In <b>${fmtLBPk(k.live_in_lbp != null ? k.live_in_lbp : k.cash_in_lbp)}</b> · Out <b>${fmtLBPk(k.live_out_lbp != null ? k.live_out_lbp : k.cash_out_lbp)}</b>`,
+            sub: tillDated
+              ? `${tillStartSet ? `Opening <b>${fmtLBPk(tillOpenLbp)}</b> · ` : ''}In <b>${fmtLBPk(k.cash_in_lbp)}</b> · Out <b>${fmtLBPk(k.cash_out_lbp)}</b>`
+              : `In <b>${fmtLBPk(k.live_in_lbp != null ? k.live_in_lbp : k.cash_in_lbp)}</b> · Out <b>${fmtLBPk(k.live_out_lbp != null ? k.live_out_lbp : k.cash_out_lbp)}</b>`,
             tone: 'emerald'
           })}
           ${insightCard({
             label: 'Combined Cash Till',
-            badge: `@ ${fmtNum(rate, 0)} LL/$`,
-            badgeCls: 'brass',
-            val: `${fmtUSD(liveTot, 2)} <small>TOTAL</small>`,
+            badgeHtml: tillBadgeHtml(`@ ${fmtNum(rate, 0)} LL/$`, 'brass'),
+            val: `${fmtUSD(tillTot, 2)} <small>TOTAL</small>`,
             valCls: 'brass',
-            sub: `USD <b>${fmtUSD(liveUsd, 2)}</b> + LBP <b>${fmtLBP(liveLbp)}</b> ÷ ${fmtNum(rate, 0)}`,
+            sub: `USD <b>${fmtUSD(tillUsd, 2)}</b> + LBP <b>${fmtLBP(tillLbp)}</b> ÷ ${fmtNum(rate, 0)}`,
             tone: 'brass'
           })}
           ${insightCard({
@@ -44105,6 +44136,7 @@
           })}
         </div>
       </div>
+      ${tillStartStripHtml}
 
       <div class="panel-card" id="tillRecentPanel" style="margin-bottom:14px">
         <div class="panel-head cf-register-head">
@@ -44187,7 +44219,7 @@
           <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
             <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>Plant Cash Flow &amp; Till</b><span class="sales-recon-act">Filter WTC Only →</span></div>
             <div class="sales-recon-metrics">
-              <span><small>Combined Till</small><b class="brass">${fmtUSD(wtcK.cash_till, 2)}</b></span>
+              <span><small>Combined Till</small><b class="brass">${fmtUSD(tillAsOf && wtcK.period_till != null ? wtcK.period_till : wtcK.cash_till, 2)}</b></span>
               <span><small>Cash In ($)</small><b class="good">+${fmtUSD(wtcK.cash_in_usd, 2)}</b></span>
               <span><small>Cash Out ($)</small><b class="crit">-${fmtUSD(wtcK.cash_out_usd, 2)}</b></span>
               <span><small>Net Cash ($)</small><b>${fmtSignedUSD(wtcK.net_cash_usd, 2)}</b></span>
@@ -44196,7 +44228,7 @@
           <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
             <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>Plant Cash Flow &amp; Till</b><span class="sales-recon-act">Filter BBC Only →</span></div>
             <div class="sales-recon-metrics">
-              <span><small>Combined Till</small><b class="brass">${fmtUSD(bbcK.cash_till, 2)}</b></span>
+              <span><small>Combined Till</small><b class="brass">${fmtUSD(tillAsOf && bbcK.period_till != null ? bbcK.period_till : bbcK.cash_till, 2)}</b></span>
               <span><small>Cash In ($)</small><b class="good">+${fmtUSD(bbcK.cash_in_usd, 2)}</b></span>
               <span><small>Cash Out ($)</small><b class="crit">-${fmtUSD(bbcK.cash_out_usd, 2)}</b></span>
               <span><small>Net Cash ($)</small><b>${fmtSignedUSD(bbcK.net_cash_usd, 2)}</b></span>
@@ -44211,9 +44243,9 @@
               <button type="button" class="btn sales-recon-reset" data-jump-co="${esc(activeIndCf === 'Manufacturing' ? 'manufacturing-group' : ('industry:' + activeIndCf))}">Show All ${esc(activeIndCf === 'Manufacturing' ? 'Group' : activeIndCf)} (${indCosCf.length})</button>
             </div>
             <div class="sales-recon-metrics">
-              <span><small>USD Till ($)</small><b>${fmtUSD(liveUsd, 2)}</b></span>
-              <span><small>LBP Till (LL)</small><b>${fmtLBP(liveLbp)}</b></span>
-              <span><small>Combined Till</small><b class="brass">${fmtUSD(liveTot, 2)}</b></span>
+              <span><small>USD Till ($)</small><b>${fmtUSD(tillUsd, 2)}</b></span>
+              <span><small>LBP Till (LL)</small><b>${fmtLBP(tillLbp)}</b></span>
+              <span><small>Combined Till</small><b class="brass">${fmtUSD(tillTot, 2)}</b></span>
               <span><small>Cash In ($)</small><b class="good">+${fmtUSD(isDailyMode ? dyInUsd : mvInUsd, 2)}</b></span>
               <span><small>Cash Out ($)</small><b class="crit">-${fmtUSD(isDailyMode ? dyOutUsd : mvOutUsd, 2)}</b></span>
               <span><small>Net Cash ($)</small><b>${fmtSignedUSD(isDailyMode ? dyNetUsd : mvUsdSum, 2)}</b></span>
@@ -58192,6 +58224,10 @@
       cash_till: cashTill,
       cash_till_usd: cashTill,
       cash_till_lbp: 0,
+      // this industry has no dated till sheet: never carry the borrowed Manufacturing period till
+      period_till: cashTill,
+      period_till_usd: cashTill,
+      period_till_lbp: 0,
       cash_in_usd: cashIn,
       cash_out_usd: cashOut,
       net_cash_usd: cashTill,

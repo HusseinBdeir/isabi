@@ -10729,7 +10729,13 @@
       "Presets": "فترات جاهزة",
       "Open period": "فترة مفتوحة",
       "Select a calendar year to filter full-year books": "اختر سنة تقويمية لتصفية دفاتر السنة الكاملة",
-      "Select a year to set": "اختر سنة لتحديد"
+      "Select a year to set": "اختر سنة لتحديد",
+      "Start Date Ignored by the Till": "الصندوق لا يأخذ تاريخ البدء بالاعتبار",
+      "Till balance at": "رصيد الصندوق في",
+      "Till balance today": "رصيد الصندوق اليوم",
+      "The till counts every cash entry from the first day, so the start date only filters the entries and the period cash flow.": "يحتسب الصندوق كل حركة نقدية منذ اليوم الأول، لذلك يقتصر تاريخ البدء على تصفية الحركات والتدفق النقدي للفترة.",
+      "Till balance at the end of this day": "رصيد الصندوق في نهاية هذا اليوم",
+      "The till is a running balance: it counts every cash entry from the first day up to the end date. The start date only filters the entries and the period cash flow.": "الصندوق رصيد تراكمي: يحتسب كل حركة نقدية من اليوم الأول حتى تاريخ النهاية. تاريخ البدء يصفّي الحركات والتدفق النقدي للفترة فقط."
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -21440,7 +21446,13 @@
       "Presets": "Raccourcis",
       "Open period": "Période ouverte",
       "Select a calendar year to filter full-year books": "Sélectionnez une année civile pour filtrer l'exercice complet",
-      "Select a year to set": "Sélectionnez une année pour définir"
+      "Select a year to set": "Sélectionnez une année pour définir",
+      "Start Date Ignored by the Till": "Date de début ignorée par la caisse",
+      "Till balance at": "Solde de caisse au",
+      "Till balance today": "Solde de caisse aujourd'hui",
+      "The till counts every cash entry from the first day, so the start date only filters the entries and the period cash flow.": "La caisse cumule chaque mouvement depuis le premier jour : la date de début ne filtre que les mouvements et le flux de trésorerie de la période.",
+      "Till balance at the end of this day": "Solde de caisse à la fin de cette journée",
+      "The till is a running balance: it counts every cash entry from the first day up to the end date. The start date only filters the entries and the period cash flow.": "La caisse est un solde cumulé : elle compte chaque mouvement depuis le premier jour jusqu'à la date de fin. La date de début ne filtre que les mouvements et le flux de trésorerie de la période."
     }
   };
 

@@ -4229,6 +4229,14 @@ td.td-has-sel-dot > .void-btn.row-void-hover { right: 22px; }
 .cf-app-only-strip .cf-app-only-figs b.crit { color: var(--crit); }
 .cf-app-only-strip .cf-app-only-figs b.good { color: var(--good); }
 .cf-app-only-strip .cf-app-only-btn { padding: 3px 10px; font-size: 11.5px; white-space: nowrap; }
+/* Till cards follow the date selector; the start date cannot apply to a running balance (owner 2026-11-13) */
+.cf-till-badges { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.cockpit-pill-tag.cf-till-warn-ic { display: inline-flex; align-items: center; padding: 1px 4px; cursor: help; }
+.cockpit-pill-tag.cf-till-warn-ic svg { width: 12px; height: 12px; }
+.cf-till-start-strip { display: flex; align-items: flex-start; gap: 8px; margin: -4px 0 14px; padding: 8px 12px; background: var(--warn-bg); border: 1px solid var(--warn); border-radius: 8px; font-size: 12px; line-height: 1.45; color: var(--ink); }
+.cf-till-start-strip > svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: var(--warn); }
+.cf-till-start-strip .cf-till-start-txt { min-width: 0; }
+.cf-till-start-strip .cf-till-sep { display: inline-block; margin: 0 6px; color: var(--muted); }
 .app-pill { border-color: rgba(240, 144, 69, .55); }
 .mini-table-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 0 20px 16px; }
 .mini-table-grid .panel-card { margin: 0; }
