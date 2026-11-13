@@ -10724,7 +10724,12 @@
       "Noticed On": "تاريخ الرصد",
       "Entered in App": "أُدخل في التطبيق",
       "Workbook Top-Up": "تحديث من دفاتر العمل",
-      "Back Pay": "مستحق بأثر رجعي"
+      "Back Pay": "مستحق بأثر رجعي",
+      "Whole Period": "كامل الفترة",
+      "Presets": "فترات جاهزة",
+      "Open period": "فترة مفتوحة",
+      "Select a calendar year to filter full-year books": "اختر سنة تقويمية لتصفية دفاتر السنة الكاملة",
+      "Select a year to set": "اختر سنة لتحديد"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -21430,7 +21435,12 @@
       "Noticed On": "Relevé le",
       "Entered in App": "Saisi dans l'application",
       "Workbook Top-Up": "Mise à jour des classeurs",
-      "Back Pay": "Rappel de salaire"
+      "Back Pay": "Rappel de salaire",
+      "Whole Period": "Période entière",
+      "Presets": "Raccourcis",
+      "Open period": "Période ouverte",
+      "Select a calendar year to filter full-year books": "Sélectionnez une année civile pour filtrer l'exercice complet",
+      "Select a year to set": "Sélectionnez une année pour définir"
     }
   };
 

@@ -5338,11 +5338,6 @@
         sliced = upTo.length ? upTo.slice(-Math.min(6, maxCount)) : allM.slice(-maxCount);
       }
     }
-    // Month rows of another industry (buildIndustryMonthlyRows): the Manufacturing ticket overlays below would
-    // resolve to the Manufacturing group model in that scope and lay its sales over these rows.
-    if (monthlyList && monthlyList._industry && monthlyList._industry !== 'Manufacturing') {
-      return sliced.map(r => Object.assign({}, r));
-    }
     let mk = '';
     for (const [k, mv] of Object.entries((SEED && SEED.models) || {})) {
       if (mv && mv.monthly === monthlyList) { mk = k; break; }
@@ -5452,13 +5447,19 @@
   // ---- Interactive Segmented Date Control & Date/Period Facilitator Engine ----
   const _dateFacState = {
     open: false,
-    tab: 'day',          // 'day' | 'month' | 'week' | 'year'
+    tab: 'day',          // 'day' | 'month' | 'year' | 'week'
     targetMode: 'from',  // 'from' | 'to' | 'grain'
     activePart: 'day',   // 'day' | 'month' | 'year'
     viewYear: 2026,
     viewMonth: 10,
-    scope: 'top'         // 'top' | 'pbi'
+    scope: 'top',        // 'top' | 'pbi'
+    lastPickedYear: null,
+    lastPickedMonth: null
   };
+  function resetDateFacDrillState() {
+    _dateFacState.lastPickedYear = null;
+    _dateFacState.lastPickedMonth = null;
+  }
   let _dateActivityCacheKey = '';
   let _dateActivityCacheVal = null;
   const daysInMonth = lastDayOfMonth;
@@ -5688,6 +5689,7 @@
 
   function closeDateFacilitator() {
     _dateFacState.open = false;
+    resetDateFacDrillState();
     _dateFacState.lockedLeft = null;
     _dateFacState.lockedTop = null;
     _dateFacState.lockedScope = '';
@@ -5955,8 +5957,8 @@
         <div class="df-tabs" role="tablist" aria-label="Date Picker View">
           <button type="button" role="tab" aria-selected="${tab === 'day'}" class="df-tab ${tab === 'day' ? 'active' : ''}" data-df-switch-tab="day">Day</button>
           <button type="button" role="tab" aria-selected="${tab === 'month'}" class="df-tab ${tab === 'month' ? 'active' : ''}" data-df-switch-tab="month">Month</button>
-          <button type="button" role="tab" aria-selected="${tab === 'week'}" class="df-tab ${tab === 'week' ? 'active' : ''}" data-df-switch-tab="week">Week</button>
           <button type="button" role="tab" aria-selected="${tab === 'year'}" class="df-tab ${tab === 'year' ? 'active' : ''}" data-df-switch-tab="year">Year</button>
+          <button type="button" role="tab" aria-selected="${tab === 'week'}" class="df-tab ${tab === 'week' ? 'active' : ''}" data-df-switch-tab="week">Week</button>
         </div>
         <div class="df-target-group" role="group" aria-label="Selection Target">
           <button type="button" class="df-target-btn ${tm === 'grain' ? 'active' : ''}" data-df-target="grain" title="1-click selects entire Single Day, Week, Month, or Year">Whole Period</button>
@@ -5974,6 +5976,9 @@
         </div>
       </div>
     `;
+    if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(pop); } catch (_) {}
+    }
     pop.hidden = false;
     positionDateFacilitator();
   }
@@ -5984,6 +5989,7 @@
     const focusIso = opts.focusIso || (targetMode === 'to' ? r.to : r.from);
     const p = formatDateSegParts(focusIso, targetMode === 'to' ? MAX_DATE : MIN_DATE);
     _dateFacState.open = true;
+    resetDateFacDrillState();
     if (opts.tab) _dateFacState.tab = opts.tab;
     if (opts.targetMode) _dateFacState.targetMode = opts.targetMode;
     if (opts.activePart) _dateFacState.activePart = opts.activePart;
@@ -43161,9 +43167,7 @@
     const effCo = opts.company || STATE.company;
     const effInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(effCo) : 'Manufacturing';
     if (effInd && effInd !== 'Manufacturing' && typeof buildIndustryCashMoves === 'function') {
-      // Pass the period options on: the daily till sheet asks for all dates (ignorePeriod) to carry the till
-      // forward, and without them a month filter dropped the app entries of every other month from the till.
-      return buildIndustryCashMoves(effInd, effCo, { ignorePeriod: opts.ignorePeriod, range: opts.range, user: opts.user });
+      return buildIndustryCashMoves(effInd, effCo);
     }
     const m = getModel(effCo);
     const cf = (m && m.cash_flow_sheet) || { rate_lbp: 89500 };
@@ -43502,15 +43506,11 @@
     const cdAll = computeCustomCashDeltas(effCo, null);
     const customNetUsdAll = round2(cdAll.liveInU - cdAll.liveOutU);
     const customNetLbpAll = Math.round(cdAll.liveInL - cdAll.liveOutL);
-    // A sibling-industry model's stored days are its baseline cash moves, which may be none at all. Its till always
-    // starts at $0 from those days plus the app entries (like its month rows): never from live_till, which for Bdeir
-    // Holding is the whole group's till, Manufacturing included.
-    const isSiblingCf = Boolean(m && m._industry && m._industry !== 'Manufacturing');
-    const targetFinalUsd = (!isSiblingCf && cf.live_till && cf.live_till.usd != null) ? round2(Number(cf.live_till.usd) + customNetUsdAll) : null;
-    const targetFinalLbp = (!isSiblingCf && cf.live_till && cf.live_till.lbp != null) ? Math.round(Number(cf.live_till.lbp) + customNetLbpAll) : null;
+    const targetFinalUsd = (cf.live_till && cf.live_till.usd != null) ? round2(Number(cf.live_till.usd) + customNetUsdAll) : null;
+    const targetFinalLbp = (cf.live_till && cf.live_till.lbp != null) ? Math.round(Number(cf.live_till.lbp) + customNetLbpAll) : null;
 
     const dayMap = new Map();
-    if (SEED._recordsReady && fullFin && !dailySrc.length && !isSiblingCf) {
+    if (SEED._recordsReady && fullFin && !dailySrc.length) {
       movesByDate.forEach((md, iso) => {
         dayMap.set(iso, { iu: round2(md.iu), ou: round2(md.ou), il: Math.round(md.il), ol: Math.round(md.ol) });
       });
@@ -43536,8 +43536,8 @@
     }
 
     const sortedDates = Array.from(dayMap.keys()).sort();
-    let runUsd = (SEED._recordsReady && fullFin && !dailySrc.length && !isSiblingCf && targetFinalUsd !== null) ? round2(targetFinalUsd - totalMovesNetU) : 0;
-    let runLbp = (SEED._recordsReady && fullFin && !dailySrc.length && !isSiblingCf && targetFinalLbp !== null) ? Math.round(targetFinalLbp - totalMovesNetL) : 0;
+    let runUsd = (SEED._recordsReady && fullFin && !dailySrc.length && targetFinalUsd !== null) ? round2(targetFinalUsd - totalMovesNetU) : 0;
+    let runLbp = (SEED._recordsReady && fullFin && !dailySrc.length && targetFinalLbp !== null) ? Math.round(targetFinalLbp - totalMovesNetL) : 0;
     const out = [];
     for (let i = 0; i < sortedDates.length; i++) {
       const iso = sortedDates[i];
@@ -57473,12 +57473,8 @@
     const expTotal = round2(expRows.reduce((s, r) => s + Number(r.total_ttc || r.amount || 0), 0) || Number(kSnap.opEx || 0));
     const opProfit = round2(revUsd - directUsd - Number(kSnap.opEx || 0));
     const marginPct = revUsd > 0 ? Math.round((opProfit / revUsd) * 100) : 0;
-    // cashMoves are all dates (the closing till carries from the first one); the Period In / Out card counts only the
-    // moves inside the selected period.
-    const cfPeriod = periodRange(STATE.period);
-    const periodMoves = cfPeriod ? cashMoves.filter(m => m.date && m.date >= cfPeriod.from && m.date <= cfPeriod.to) : cashMoves;
-    const cashIn = round2(periodMoves.reduce((s, m) => s + Number(m.in_usd || 0), 0));
-    const cashOut = round2(periodMoves.reduce((s, m) => s + Number(m.out_usd || 0), 0));
+    const cashIn = round2(cashMoves.reduce((s, m) => s + Number(m.in_usd || 0), 0));
+    const cashOut = round2(cashMoves.reduce((s, m) => s + Number(m.out_usd || 0), 0));
     const otHours = round2(attRows.reduce((s, a) => s + Number(a.overtime_hours || 0), 0));
 
     const dayRevRows = revEvents.filter(e => e.date === targetDate);
@@ -58257,9 +58253,7 @@
         addMv('hld-mv-10', '2026-10-29', 'Bdeir Holding', 'exp', 'Corporate Shared Services', 'Bdeir Holding HQ', 'Group audit, legal & cloud infrastructure', 'HLD-EXP-22', 'Cash', -14200);
       }
     } else if (ind === 'Hospitality & Resorts') {
-      // All dates when asked (like Holding above): the model's stored days are built once and cached for every
-      // period, so building them under the period of the moment changed the carried till with the date filter.
-      const hsp = computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), company: rawKey });
+      const hsp = computeHospitalityOperations({ ignoreSearch: true, company: rawKey });
       (hsp.venueRows || []).slice(0, 6).forEach((r, idx) => {
         addMv(`hsp-mv-${idx + 1}`, r.date || '2026-10-28', r.company, 'sales', `${r.category} Close`, r.outlet, `${r.covers || 0} covers · POS Till Close Tied`, r.id, r.method || 'Cash', r.ttc_usd);
       });
@@ -58270,7 +58264,7 @@
         addMv(`hsp-stk-${idx + 1}`, '2026-10-26', st.company, 'exp', 'Commissary & Cellar Replenishment', st.store, `Purchases In (${st.r3_ratio.toFixed(2)}x usage ratio)`, st.id, 'Cash', -round2(st.purchases_in_usd * 0.45));
       });
     } else if (ind === 'Automotive & Heavy Trading') {
-      const trd = computeTradingOperations({ ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), company: rawKey });
+      const trd = computeTradingOperations({ ignoreSearch: true, company: rawKey });
       (trd.salesRows || []).filter(r => !r.is_gap).slice(0, 6).forEach((r, idx) => {
         addMv(`trd-mv-${idx + 1}`, r.date || '2026-10-28', r.company, 'sales', `Invoice Book ${r.book}`, r.customer, `${r.item} (Qty ${r.qty})`, r.id, r.payment_term === 'Cash' ? 'Cash' : 'Cheque / Wire', r.ttc_usd);
       });
@@ -58279,7 +58273,7 @@
         addMv(`trd-imp-${idx + 1}`, im.date || im.eta_date || '2026-10-22', im.company, 'exp', 'Import Customs & Freight', im.supplier, `${im.container_bl || im.container_ref || im.id} · ${im.origin || im.origin_port || 'Port'}`, im.id, 'LC / Wire', -round2(impCost));
       });
     } else if (ind === 'Real Estate & Property') {
-      const re = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), company: rawKey });
+      const re = computeRealEstateOperations({ ignoreSearch: true, company: rawKey });
       (re.invoices || []).slice(0, 6).forEach((inv, idx) => {
         addMv(`re-mv-${idx + 1}`, inv.date || '2026-10-25', inv.company, 'sales', 'Commercial & Residential Rent Receipt', inv.tenant, `${inv.property} · ${inv.period} (${inv.tax_seq || inv.seq_no || inv.id})`, inv.id, 'Bank / Cash', Number(inv.collected_usd || inv.paid_usd || inv.amount_ttc_usd || inv.ttc_usd || 0));
       });
@@ -58287,7 +58281,7 @@
         addMv(`re-wo-${idx + 1}`, wo.date || '2026-10-21', wo.company, 'exp', 'Fit-Out & Building Work Order', wo.contractor, `${wo.property} · ${wo.unit} (${wo.category || wo.scope || 'Works'})`, wo.id, 'Cash', -Number(wo.actual_usd || 0));
       });
     } else {
-      const ins = computeInsuranceOperations({ ignorePeriod: Boolean(opts.ignorePeriod) });
+      const ins = computeInsuranceOperations();
       (ins.billing || []).slice(0, 6).forEach((b, idx) => {
         addMv(`ins-mv-${idx + 1}`, b.date || b.due_date || '2026-10-27', 'Insurance Company', 'sales', 'Policyholder Premium Collection', b.client, `Policy ${b.policy_no || b.policy_id || b.id} · ${b.carrier}`, b.id, 'Cash / Wire', Number(b.collected_usd || b.paid_usd || b.client_billed_4112_usd || b.gross_prem_usd || 0));
       });
@@ -59541,132 +59535,11 @@
     if (typeof _indGlModelCache !== 'undefined' && _indGlModelCache) _indGlModelCache.clear();
   }
 
-  // Month rows of a Hospitality, Holding, Trading, Real Estate or Insurance scope. Those scopes take the Manufacturing
-  // group model as their base, so without this their Cash Flow and Payables month charts showed Manufacturing's months.
-  // Cash columns come from the same cash moves as the daily till sheet (transaction date, USD and LBP kept apart, the
-  // month-end till carried forward from $0 like the daily sheet); accrued and settled payables come from the scope's
-  // own expense and supplier settlement records. Sales and cost columns stay at 0: no sibling screen reads them from
-  // here. The array is tagged with its industry so getScopedMonthly never lays Manufacturing tickets over it.
-  // Gate: build/verify_sibling_monthly.mjs.
-  function buildIndustryMonthlyRows(ind, rawKey, cashMoves, rate = 89500) {
-    const byYm = new Map();
-    const bucket = iso => {
-      const ds = String(iso || '').slice(0, 10);
-      // A malformed date (month 13, year 0202) would stretch the month walk below past every real month.
-      if (!/^(20\d{2})-(0[1-9]|1[0-2])-\d{2}$/.test(ds) || ds < MIN_DATE || ds > MAX_DATE) return null;
-      const ymNo = ds.slice(0, 4) + ds.slice(5, 7);
-      if (!byYm.has(ymNo)) {
-        byYm.set(ymNo, {
-          in_usd: 0, out_usd: 0, in_lbp: 0, out_lbp: 0,
-          cash_sales: 0, receipts: 0, cash_expenses: 0, salaries: 0,
-          expenses: 0, credit_expenses: 0, settlements_paid: 0
-        });
-      }
-      return byYm.get(ymNo);
-    };
-    // A move dated before the calendar (MIN_DATE) has no month row but still sits in the daily till: carry it as
-    // the opening balance so every month-end till keeps equal to the daily close.
-    let openU = 0, openL = 0;
-    (cashMoves || []).forEach(mv => {
-      const ds = String((mv && mv.date) || '').slice(0, 10);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(ds) && ds < MIN_DATE) {
-        openU += Number(mv.in_usd || 0) - Number(mv.out_usd || 0);
-        openL += Math.round(Number(mv.lbp || 0));
-        return;
-      }
-      const b = bucket(mv && mv.date);
-      if (!b) return;
-      const lbp = Math.round(Number(mv.lbp || 0));
-      b.in_usd += Number(mv.in_usd || 0);
-      b.out_usd += Number(mv.out_usd || 0);
-      if (lbp > 0) b.in_lbp += lbp; else b.out_lbp += -lbp;
-      const eqIn = Number(mv.in_usd || 0) + (lbp > 0 ? lbp / rate : 0);
-      const eqOut = Number(mv.out_usd || 0) + (lbp < 0 ? -lbp / rate : 0);
-      // Operating split of the Inflows vs Outflows chart (op in = cash_sales + receipts, op out = cash_expenses +
-      // settlements_paid + salaries). Supplier payments are left out of cash_expenses: settlements_paid carries them.
-      if (mv.stream === 'sales') {
-        if (mv.rkey === 'sales_tickets') b.cash_sales += eqIn; else b.receipts += eqIn;
-      } else if (mv.stream === 'exp') {
-        if (mv.rkey !== 'settlements') b.cash_expenses += eqOut;
-      } else if (mv.stream === 'sal') {
-        b.salaries += eqOut;
-      }
-    });
-    const scopeKey = rawKey || ('industry:' + ind);
-    const recOpts = { company: scopeKey, ignorePeriod: true, ignoreSearch: true };
-    filterRecords((SEED.records && SEED.records.expenses) || [], recOpts).forEach(x => {
-      if (!x || x.voided || x.price_pending || expenseKind(x) === 'VAT') return;
-      const sgn = expenseSign(x);
-      if (!sgn) return;
-      const b = bucket(x.date);
-      if (!b) return;
-      const amt = sgn * Number(x.amount || 0);
-      b.expenses += amt;
-      if (isApCreditExpense(x)) b.credit_expenses += amt;
-    });
-    filterRecords((SEED.records && SEED.records.settlements) || [], recOpts).forEach(sp => {
-      if (!sp || sp.voided || settlementKind(sp) !== 'Payment') return;
-      const b = bucket(sp.date);
-      if (b) b.settlements_paid += Number(sp.amount || 0);
-    });
-
-    const keys = Array.from(byYm.keys()).sort();
-    const out = [];
-    if (keys.length) {
-      // Every month from the first to the last movement, so the till carries across quiet months.
-      let y = Number(keys[0].slice(0, 4)), mo = Number(keys[0].slice(4, 6));
-      const lastKey = keys[keys.length - 1];
-      let runU = round2(openU), runL = Math.round(openL);
-      for (let guard = 0; guard < 600; guard++) {
-        const ymNo = `${y}${String(mo).padStart(2, '0')}`;
-        const b = byYm.get(ymNo) || bucket(`${y}-${String(mo).padStart(2, '0')}-01`);
-        const inU = round2(b.in_usd), outU = round2(b.out_usd);
-        const inL = Math.round(b.in_lbp), outL = Math.round(b.out_lbp);
-        runU = round2(runU + inU - outU);
-        runL = Math.round(runL + inL - outL);
-        const tillU = Math.abs(runU) < 0.05 ? 0 : runU;
-        const tillL = Math.abs(runL) <= 5 ? 0 : runL;
-        out.push({
-          YearMonthNo: Number(ymNo),
-          'Year Month': `${MONTH_SHORT[mo - 1]} ${y}`,
-          sales_ttc: 0, gross_sales: 0, net_sales: 0, sales_vat: 0, sales_rep: 0, loads: 0,
-          raw_cost: 0, exp_rep: 0, gross_margin: 0, operating_profit: 0,
-          cash_sales: round2(b.cash_sales),
-          receipts: round2(b.receipts),
-          cash_expenses: round2(b.cash_expenses),
-          salaries: round2(b.salaries),
-          expenses: round2(b.expenses),
-          credit_expenses: round2(b.credit_expenses),
-          settlements_paid: round2(b.settlements_paid),
-          cash_in_usd: inU,
-          cash_out_usd: outU,
-          net_cash_usd: round2(inU - outU),
-          cash_in_lbp: inL,
-          cash_out_lbp: outL,
-          net_cash_lbp: inL - outL,
-          cash_in: round2(inU + inL / rate),
-          cash_out: round2(outU + outL / rate),
-          net_cash: round2((inU - outU) + (inL - outL) / rate),
-          till_usd: tillU,
-          till_lbp: tillL,
-          cash_till: round2(tillU + tillL / rate)
-        });
-        if (ymNo === lastKey) break;
-        mo += 1;
-        if (mo > 12) { mo = 1; y += 1; }
-      }
-    }
-    Object.defineProperty(out, '_industry', { value: ind, enumerable: false });
-    return out;
-  }
-
   const _indGlInFlight = new Set();
   function getIndustryGlModel(ind, rawKey, baseModel) {
     ensureMultiIndustrySpineSeeded();
     const demoGl = isDemoScopeActive();
-    // The model's cash moves, month rows and payables are read through the seat's companies and book scope, so both
-    // are part of the key: a cached model never serves another seat (LAN sign-out, Owner Impersonation) or book.
-    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}`;
+    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}`;
     if (_indGlModelCache.has(cacheKey)) return _indGlModelCache.get(cacheKey);
     if (_indGlInFlight.has(cacheKey)) return baseModel || { periods: {}, monthly: [], products: [], customers: [], suppliers: [], sites: [], equipment: [], gl_tb: [], soa_stream: [] };
     _indGlInFlight.add(cacheKey);
@@ -59874,12 +59747,8 @@
     const glTb = makeBalancedTb(rawTb);
     const baseMoves = buildIndustryCashMoves(ind, rawKey, { baselineOnly: true, ignorePeriod: true });
     const cashMoves = buildIndustryCashMoves(ind, rawKey, { ignorePeriod: true });
-    // The stored day rows hold the baseline only, like the Manufacturing workbook sheet: buildDailyTillSheetRows
-    // adds the app entries on top, so building them from cashMoves counted every app cash entry twice in the till.
-    // The month rows take the same two parts, so the month-end till equals the daily sheet's month-end close.
-    const tillMoves = baseMoves.concat(cashMoves.filter(mv => mv && isAppRecord(mv.raw)));
     const dailyByDate = new Map();
-    baseMoves.forEach(mv => {
+    cashMoves.forEach(mv => {
       const cur = dailyByDate.get(mv.date) || [mv.date, 0, 0, 0, 0];
       cur[1] = round2(cur[1] + mv.in_usd);
       cur[2] = round2(cur[2] + mv.out_usd);
@@ -60073,8 +59942,6 @@
       products: indProducts,
       sites: indSites,
       equipment: indEquipment,
-      // The base is the Manufacturing group model (resolveEffectiveModelKey), so its months are replaced, never kept.
-      monthly: buildIndustryMonthlyRows(ind, rawKey, tillMoves),
       gl_tb: glTb,
       gl_trial_balance: glTb,
       glTied: Math.abs(glTb.reduce((s, a) => s + Number(a.debit || 0) - Number(a.credit || 0), 0)) < 0.01,
@@ -135603,11 +135470,13 @@
         }
         const stepPerBtn = e.target.closest('[data-df-step-period]');
         if (stepPerBtn) {
+          resetDateFacDrillState();
           stepCurrentPeriodWindow(Number(stepPerBtn.getAttribute('data-df-step-period')) || 1);
           return;
         }
         const tabBtn = e.target.closest('[data-df-switch-tab]');
         if (tabBtn) {
+          resetDateFacDrillState();
           _dateFacState.tab = tabBtn.getAttribute('data-df-switch-tab') || 'day';
           syncTopbarDateControls();
           renderDateFacilitatorPopover();
@@ -135615,6 +135484,7 @@
         }
         const tgtBtn = e.target.closest('[data-df-target]');
         if (tgtBtn) {
+          resetDateFacDrillState();
           _dateFacState.targetMode = tgtBtn.getAttribute('data-df-target') || 'from';
           syncTopbarDateControls();
           renderDateFacilitatorPopover();
@@ -135622,12 +135492,14 @@
         }
         const vyBtn = e.target.closest('[data-df-view-year]');
         if (vyBtn) {
+          resetDateFacDrillState();
           _dateFacState.viewYear = Number(vyBtn.getAttribute('data-df-view-year')) || 2026;
           renderDateFacilitatorPopover();
           return;
         }
         const stepVyBtn = e.target.closest('[data-df-step-view-year]');
         if (stepVyBtn) {
+          resetDateFacDrillState();
           const d = Number(stepVyBtn.getAttribute('data-df-step-view-year')) || 1;
           _dateFacState.viewYear = Math.min(2030, Math.max(2024, (_dateFacState.viewYear || 2026) + d));
           renderDateFacilitatorPopover();
@@ -135635,12 +135507,14 @@
         }
         const vmBtn = e.target.closest('[data-df-view-month]');
         if (vmBtn) {
+          resetDateFacDrillState();
           _dateFacState.viewMonth = Number(vmBtn.getAttribute('data-df-view-month')) || 1;
           renderDateFacilitatorPopover();
           return;
         }
         const calNavBtn = e.target.closest('[data-df-cal-nav]');
         if (calNavBtn) {
+          resetDateFacDrillState();
           const d = Number(calNavBtn.getAttribute('data-df-cal-nav')) || 1;
           const totalMo = Math.min(2030 * 12 + 11, Math.max(2024 * 12, (_dateFacState.viewYear || 2026) * 12 + ((_dateFacState.viewMonth || 1) - 1) + d));
           _dateFacState.viewYear = Math.floor(totalMo / 12);
@@ -135650,16 +135524,19 @@
         }
         const wholeShownMo = e.target.closest('[data-df-whole-shown-month]');
         if (wholeShownMo) {
+          resetDateFacDrillState();
           setDateFilter({ period: 'month:' + wholeShownMo.getAttribute('data-df-whole-shown-month') });
           return;
         }
         const wholeShownYr = e.target.closest('[data-df-whole-shown-year]');
         if (wholeShownYr) {
+          resetDateFacDrillState();
           setDateFilter({ period: 'year:' + wholeShownYr.getAttribute('data-df-whole-shown-year') });
           return;
         }
         const qBtn = e.target.closest('[data-df-quarter]');
         if (qBtn) {
+          resetDateFacDrillState();
           const q = Number(qBtn.getAttribute('data-df-quarter')) || 1;
           const qy = Number(qBtn.getAttribute('data-df-qyear')) || _dateFacState.viewYear || 2026;
           const m1 = (q - 1) * 3 + 1;
@@ -135672,6 +135549,7 @@
         const yrActBtn = e.target.closest('[data-df-year-action]');
         if (yrActBtn) {
           e.stopPropagation();
+          resetDateFacDrillState();
           const act = yrActBtn.getAttribute('data-df-year-action');
           const yr = Math.min(2030, Math.max(2024, Number(yrActBtn.getAttribute('data-df-year')) || 2026));
           _dateFacState.viewYear = yr;
@@ -135680,39 +135558,61 @@
             setDateFilter({ period: `year:${yr}` });
           } else if (act === 'months') {
             _dateFacState.tab = 'month';
+            syncTopbarDateControls();
             renderDateFacilitatorPopover();
           } else if (act === 'to') {
             const tp = formatDateSegParts(r.to, MAX_DATE);
             const nd = Math.min(tp.dayNum, daysInMonth(yr, tp.moNum));
-            setDateFilter({ from: r.from, to: `${yr}-${tp.mm}-${String(nd).padStart(2, '0')}` });
+            setDateFilter({ to: `${yr}-${tp.mm}-${String(nd).padStart(2, '0')}` });
           } else {
             const fp = formatDateSegParts(r.from, MIN_DATE);
             const nd = Math.min(fp.dayNum, daysInMonth(yr, fp.moNum));
-            setDateFilter({ from: `${yr}-${fp.mm}-${String(nd).padStart(2, '0')}`, to: r.to });
+            setDateFilter({ from: `${yr}-${fp.mm}-${String(nd).padStart(2, '0')}` });
           }
           return;
         }
         const pickYrCard = e.target.closest('[data-df-pick-year]');
         if (pickYrCard && !e.target.closest('[data-df-pick-month]')) {
           const yr = Math.min(2030, Math.max(2024, Number(pickYrCard.getAttribute('data-df-pick-year')) || 2026));
+          const isKeyboard = e.detail === 0;
           _dateFacState.viewYear = yr;
+          if (_dateFacState.lastPickedYear === yr) {
+            resetDateFacDrillState();
+            _dateFacState.tab = 'month';
+            syncTopbarDateControls();
+            renderDateFacilitatorPopover();
+            if (isKeyboard) {
+              const firstMo = pop.querySelector('.df-month-card[data-df-pick-month]');
+              if (firstMo) firstMo.focus();
+            }
+            return;
+          }
           const r = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE };
           if (_dateFacState.targetMode === 'grain') {
             setDateFilter({ period: `year:${yr}` });
           } else if (_dateFacState.targetMode === 'to') {
             const tp = formatDateSegParts(r.to, MAX_DATE);
             const nd = Math.min(tp.dayNum, daysInMonth(yr, tp.moNum));
-            setDateFilter({ from: r.from, to: `${yr}-${tp.mm}-${String(nd).padStart(2, '0')}` });
+            setDateFilter({ to: `${yr}-${tp.mm}-${String(nd).padStart(2, '0')}` });
           } else {
             const fp = formatDateSegParts(r.from, MIN_DATE);
             const nd = Math.min(fp.dayNum, daysInMonth(yr, fp.moNum));
-            setDateFilter({ from: `${yr}-${fp.mm}-${String(nd).padStart(2, '0')}`, to: r.to });
+            setDateFilter({ from: `${yr}-${fp.mm}-${String(nd).padStart(2, '0')}` });
+          }
+          if (_dateFacState.open) {
+            _dateFacState.lastPickedYear = yr;
+            _dateFacState.lastPickedMonth = null;
+            if (isKeyboard) {
+              const sameYr = pop.querySelector(`.df-year-card[data-df-pick-year="${yr}"]`);
+              if (sameYr) sameYr.focus();
+            }
           }
           return;
         }
         const moActBtn = e.target.closest('[data-df-month-action]');
         if (moActBtn) {
           e.stopPropagation();
+          resetDateFacDrillState();
           const act = moActBtn.getAttribute('data-df-month-action');
           const yr = Math.min(2030, Math.max(2024, Number(moActBtn.getAttribute('data-df-year')) || _dateFacState.viewYear || 2026));
           const mo = Math.min(12, Math.max(1, Number(moActBtn.getAttribute('data-df-month')) || 1));
@@ -135724,15 +135624,16 @@
             setDateFilter({ period: `month:${yr}-${mm}` });
           } else if (act === 'days') {
             _dateFacState.tab = 'day';
+            syncTopbarDateControls();
             renderDateFacilitatorPopover();
           } else if (act === 'to') {
             const tp = formatDateSegParts(r.to, MAX_DATE);
             const nd = Math.min(tp.dayNum, daysInMonth(yr, mo));
-            setDateFilter({ from: r.from, to: `${yr}-${mm}-${String(nd).padStart(2, '0')}` });
+            setDateFilter({ to: `${yr}-${mm}-${String(nd).padStart(2, '0')}` });
           } else {
             const fp = formatDateSegParts(r.from, MIN_DATE);
             const nd = Math.min(fp.dayNum, daysInMonth(yr, mo));
-            setDateFilter({ from: `${yr}-${mm}-${String(nd).padStart(2, '0')}`, to: r.to });
+            setDateFilter({ from: `${yr}-${mm}-${String(nd).padStart(2, '0')}` });
           }
           return;
         }
@@ -135741,29 +135642,52 @@
           const yr = Math.min(2030, Math.max(2024, Number(pickMoCard.getAttribute('data-df-pick-year')) || _dateFacState.viewYear || 2026));
           const mo = Math.min(12, Math.max(1, Number(pickMoCard.getAttribute('data-df-pick-month')) || 1));
           const mm = String(mo).padStart(2, '0');
+          const ymKey = `${yr}-${mm}`;
+          const isKeyboard = e.detail === 0;
           _dateFacState.viewYear = yr;
           _dateFacState.viewMonth = mo;
+          if (_dateFacState.lastPickedMonth === ymKey) {
+            resetDateFacDrillState();
+            _dateFacState.tab = 'day';
+            syncTopbarDateControls();
+            renderDateFacilitatorPopover();
+            if (isKeyboard) {
+              const firstDay = pop.querySelector('.df-cal-day:not(.is-outside):not([disabled])') || pop.querySelector('.df-cal-day:not([disabled])');
+              if (firstDay) firstDay.focus();
+            }
+            return;
+          }
           const r = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE };
           if (_dateFacState.targetMode === 'grain') {
-            setDateFilter({ period: `month:${yr}-${mm}` });
+            setDateFilter({ period: `month:${ymKey}` });
           } else if (_dateFacState.targetMode === 'to') {
             const tp = formatDateSegParts(r.to, MAX_DATE);
             const nd = Math.min(tp.dayNum, daysInMonth(yr, mo));
-            setDateFilter({ from: r.from, to: `${yr}-${mm}-${String(nd).padStart(2, '0')}` });
+            setDateFilter({ to: `${yr}-${mm}-${String(nd).padStart(2, '0')}` });
           } else {
             const fp = formatDateSegParts(r.from, MIN_DATE);
             const nd = Math.min(fp.dayNum, daysInMonth(yr, mo));
-            setDateFilter({ from: `${yr}-${mm}-${String(nd).padStart(2, '0')}`, to: r.to });
+            setDateFilter({ from: `${yr}-${mm}-${String(nd).padStart(2, '0')}` });
+          }
+          if (_dateFacState.open) {
+            _dateFacState.lastPickedYear = null;
+            _dateFacState.lastPickedMonth = ymKey;
+            if (isKeyboard) {
+              const sameMo = pop.querySelector(`.df-month-card[data-df-pick-month="${mo}"]`);
+              if (sameMo) sameMo.focus();
+            }
           }
           return;
         }
         const pickWkBtn = e.target.closest('[data-df-pick-week]');
         if (pickWkBtn) {
+          resetDateFacDrillState();
           setDateFilter({ period: pickWkBtn.getAttribute('data-df-pick-week') });
           return;
         }
         const pickDayBtn = e.target.closest('[data-df-pick-day]');
         if (pickDayBtn) {
+          resetDateFacDrillState();
           const iso = normalizeValidFilterDate(pickDayBtn.getAttribute('data-df-pick-day'), null);
           if (!iso) return;
           const dp = formatDateSegParts(iso);
@@ -135784,6 +135708,7 @@
         }
         const preBtn = e.target.closest('[data-df-preset]');
         if (preBtn) {
+          resetDateFacDrillState();
           const v = preBtn.getAttribute('data-df-preset');
           if (v === 'all') setDateFilter({ reset: true });
           else setDateFilter({ period: v });
@@ -135805,6 +135730,14 @@
         const part = segBtn.getAttribute('data-date-part') || 'day';
         stepDateEndpointByPart(endKey, part, e.key === 'ArrowUp' ? 1 : -1);
         return;
+      }
+      if (_dateFacState.open && (e.key === 'Enter' || e.key === ' ')) {
+        const roleBtn = e.target && e.target.closest ? e.target.closest('#dateFacilitatorPopover [role="button"]') : null;
+        if (roleBtn) {
+          e.preventDefault();
+          roleBtn.click();
+          return;
+        }
       }
       if (e.key === 'Escape' && _dateFacState.open) {
         e.preventDefault();
@@ -138319,7 +138252,6 @@
     renderIndustryDomainTablesExplorer: typeof renderIndustryDomainTablesExplorer === 'function' ? renderIndustryDomainTablesExplorer : null,
     INDUSTRY_PBI_PAGES_SPEC: typeof INDUSTRY_PBI_PAGES_SPEC !== 'undefined' ? INDUSTRY_PBI_PAGES_SPEC : null,
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
-    buildDailyTillSheetRows: typeof buildDailyTillSheetRows === 'function' ? buildDailyTillSheetRows : null,
     selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
     setView: typeof setView === 'function' ? setView : null,
     upgradeSelects: typeof wireModalSuggestions === 'function' ? wireModalSuggestions : null,

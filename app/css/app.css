@@ -19043,6 +19043,8 @@ th.sortable.col-filtered {
   gap: 5px;
   min-height: 82px;
   box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
   transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
 }
 
@@ -19237,6 +19239,8 @@ th.sortable.col-filtered {
   flex-direction: column;
   justify-content: space-between;
   gap: 3px;
+  user-select: none;
+  -webkit-user-select: none;
   transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
 }
 
