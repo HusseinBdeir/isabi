@@ -487,12 +487,42 @@ def main() -> int:  # noqa: PLR0915
         tick()
         bT = quiet(RB.take, E, holder="session E")
         bT2 = quiet(RB.drop, E, eT["id"], reason="verify_t failed", reset=True)
-        check([e["id"] for e in bT["entries"]] == [eT["id"], eS2["id"]] and [e["id"] for e in bT2["entries"]] == [eS2["id"]]
-              and any("STILL IN THE BATCH" in n for n in bT2["notes"]),
-              "dropping the change underneath warns that it still ships through the one built on it")
-        quiet(RB.abort, E)
+        s2_now = entry(A, eS2["id"])
+        check([e["id"] for e in bT["entries"]] == [eT["id"], eS2["id"]] and bT2["entries"] == [] and s2_now.get("state") == "left_out"
+              and "built on top of" in s2_now.get("note", "") and "verify_t failed" in s2_now.get("note", "")
+              and RL.read_remote_lock(A) == ("", {}) and not RB._local_json(E, RB.BATCH_FILE) and not is_ancestor(appE, sha_t),
+              "dropping the change underneath also leaves out the one built on it: the dropped code cannot ship through it")
         quiet(RB.leave, E, eS2["id"])
         quiet(RB.leave, D, eT["id"])
+
+        # 13e2. rule 1 across both repos: T (app + site) is left out for its site half; S is built on T's app half
+        sha_t2 = feature(appD, "wt/t2", {"js/t2.js": "t2\n"})
+        feature(D, "wt/t2-site", {"functions/api.js": "a\nb T2\nc A2\n"})
+        git(appE, "fetch", "-q", "origin")
+        git(appE, "checkout", "-q", "-B", "wt/s3", "origin/wt/t2")
+        put(appE / "js" / "s3.js", "s3\n")
+        git(appE, "add", "-A")
+        git(appE, "commit", "-q", "-m", "wt/s3")
+        git(appE, "push", "-q", "-f", "origin", "wt/s3")
+        feature(C, "wt/u", {"functions/api.js": "a\nb U\nc A2\n"})
+        tick()
+        eS3 = quiet(RB.join, E, holder="session E", summary="S3 on top of T2", app_branch="wt/s3")
+        tick()
+        eU = quiet(RB.join, C, holder="session C", summary="U edge change", site_branch="wt/u")
+        tick()
+        eT2 = quiet(RB.join, D, holder="session D", summary="T2 change", app_branch="wt/t2", site_branch="wt/t2-site")
+        tick()
+        bU = quiet(RB.take, E, holder="session E")
+        check([e["id"] for e in bU["entries"]] == [eU["id"]] and {x["id"] for x in bU["left_out"]} == {eT2["id"], eS3["id"]}
+              and bU["shell"] == "" and entry(A, eT2["id"]).get("state") == "left_out"
+              and "built on top of" in entry(A, eS3["id"]).get("note", ""),
+              "a change left out for one repo takes the change built on its other half out with it")
+        check(not is_ancestor(appE, sha_t2) and not (appE / "js" / "t2.js").exists() and not (appE / "js" / "s3.js").exists()
+              and text(E / "functions" / "api.js") == "a\nb U\nc A2\n",
+              "no half of the left-out change is in the batch; the unrelated change still ships")
+        quiet(RB.abort, E)
+        for sess, ent in ((E, eS3), (C, eU), (D, eT2)):
+            quiet(RB.leave, sess, ent["id"])
 
         # 13f. a leader pushed isabi-app main, never deployed, and stopped: not SHIPPED; the next batch takes it live
         feature(appA, "wt/m2", {"js/m2.js": "m2\n"})
@@ -530,6 +560,71 @@ def main() -> int:  # noqa: PLR0915
         check([e["id"] for e in bSO2["entries"]] == [eSO["id"]] and bSO2["shell"] == "" and RB.poll_once(C, eSO["id"])[0] == "SHIPPED"
               and RB._live_evidence(C, eSO, [{"sha": git(B, "rev-parse", "HEAD")}])[0] is True,
               "the next leader deploys it; a recorded deploy that contains the change is the evidence")
+
+        # 13h. two takes at once in one worktree: only one builds the batch, and the other does not give the lock away
+        feature(appB, "wt/g1", {"js/g1.js": "g1\n"})
+        tick()
+        eG = quiet(RB.join, B, holder="session B", summary="G1 change", app_branch="wt/g1")
+        real_acquire = RL.acquire
+
+        def racing_acquire(cwd, **kw):  # the other run took the same (re-entrant) lock and wrote its batch file first
+            info = real_acquire(cwd, **kw)
+            RB._write_local_json(cwd, RB.BATCH_FILE, {"lockId": info["lockId"], "branch": "release/batch-other", "forming": True, "entries": []})
+            return info
+
+        RL.acquire = racing_acquire
+        try:
+            kind, msg = raises(RB.take, B, holder="session B")
+        finally:
+            RL.acquire = real_acquire
+        check(kind == "BatchError" and "already forming a batch" in msg and RL.read_remote_lock(A)[1].get("holder") == "session B"
+              and RB._local_json(B, RB.BATCH_FILE).get("branch") == "release/batch-other" and git(appB, "branch", "--show-current") == "wt/g1",
+              "a second take in the same worktree stops without building a batch or touching the first one's lock and record")
+        quiet(RB.abort, B)
+        quiet(RB.leave, B, eG["id"])
+
+        # 13i. the line is kept short: each kind of entry is cleared by its own clock, and only when it is old enough
+        def garbage(name: str) -> None:
+            blob_ = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=str(A), input=b"not json", capture_output=True, check=True).stdout.decode().strip()
+            tree_ = subprocess.run(["git", "mktree"], cwd=str(A), input=f"100644 blob {blob_}\tENTRY.json\n".encode(), capture_output=True, check=True).stdout.decode().strip()
+            git(A, "push", "-q", "origin", f"{git(A, 'commit-tree', tree_, '-m', 'bad')}:{RB.QUEUE_NS}/{name}")
+
+        feature(appD, "wt/p1", {"js/p1.js": "p1\n"})
+        feature(appE, "wt/q1", {"js/q1.js": "q1\n"})
+        feature(appC, "wt/r1", {"js/r1.js": "r1\n"})
+        tick()
+        eP = quiet(RB.join, D, holder="session D", summary="P1 waiting", app_branch="wt/p1")["id"]
+        eQ = quiet(RB.join, E, holder="session E", summary="Q1 left out", app_branch="wt/q1")["id"]
+        eR = quiet(RB.join, C, holder="session C", summary="R1 in a batch", app_branch="wt/r1")["id"]
+        RB._set_fields(A, eQ, {"state": "left_out", "leftOutAt": RL._iso(RL._now()), "leftOutBy": "t", "note": "n"})
+        RB._set_fields(A, eR, {"batch": {"lockId": "LOCKX", "holder": "t", "version": "1"}})
+        bad_old, bad_new = "20000101T000000Z-bad00001", f"{RL._now().strftime('%Y%m%dT%H%M%SZ')}-bad00002"
+        garbage(bad_old)
+        garbage(bad_new)
+        old_left, shipped_recent, shipped_older = ids_c[0], eSO["id"], eM["id"]
+        before = set(line_ids(A))
+        tick(23 * 3600)
+        RB._prune(A, "LOCKX")
+        ids = set(line_ids(A))
+        check({shipped_recent, shipped_older, old_left, bad_old, bad_new, eP, eQ, eR} <= before and shipped_recent in ids and shipped_older not in ids
+              and bad_old not in ids and bad_new in ids and {eP, eQ, eR, old_left} <= ids,
+              "a shipped entry is kept for 23 hours and cleared after 24; an unreadable one from years ago is cleared")
+        tick(2 * 3600)
+        RB._prune(A, "LOCKX")
+        ids = set(line_ids(A))
+        check(shipped_recent not in ids and {eP, eQ, eR, old_left, bad_new} <= ids, "after 25 hours the shipped entry is cleared and nothing else")
+        tick(6 * 86400 - 2 * 3600 - 600)  # 23 h + 2 h + this = 6 days 23 hours less 10 minutes since they joined
+        RB._prune(A, "LOCKX")
+        ids = set(line_ids(A))
+        check({eP, eQ, eR, bad_new} <= ids and old_left not in ids,
+              "six days and 23 hours on, waiting, left-out and unreadable entries are all kept (the one left out earlier is past its week)")
+        tick(3600 + 1200)  # 7 days and 10 minutes since they joined
+        RB._prune(A, "LOCKX")
+        ids = set(line_ids(A))
+        check(eP not in ids and eQ not in ids and bad_new not in ids and eR in ids,
+              "after a week they are cleared, except the entry in the batch being released")
+        RB._prune(A)
+        check(eR not in line_ids(A), "that entry goes too once no release holds it")
 
         # 14. an entry that cannot be read never ships and never blocks
         blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=str(A), input=b"not json", capture_output=True, check=True).stdout.decode().strip()
