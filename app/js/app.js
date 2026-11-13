@@ -39275,6 +39275,221 @@
   window.__mfgGetPayrollStaffStatus = () => STATE.payrollStaffStatus || 'all';
   const _attNormWeakMap = new WeakMap();
 
+  // ---- Back pay from backdated pay changes (owner idea 2026-11-13) ----
+  // A contract change whose months reach into closed payroll months (every month before the seed date's month) changes
+  // what those months earned. The amount is the staff ledger's own contract arithmetic, mirrored line for line from
+  // build/reconcile_5_ledgers_snapshot.py staff_contract_earnings, on the staff's contracts before and after the change
+  // over the same attendance, so the app and the top-up report the same figure. Trip overtime, site transport and extras
+  // do not depend on the contract and cancel out. The top-up stamps workbook changes (_backpay_source 'workbook'); a save
+  // in the app stamps 'app'. The Payroll hub lists stamps from the last BACKPAY_SHOW_DAYS days.
+  const BACKPAY_SHOW_DAYS = 45;
+  const _bpNorm = s => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
+  function backpayClosedYm() {
+    return shiftYearMonth(String(SEED_DATE || todayISO()).slice(0, 7), -1);
+  }
+  function staffContractEarningsByMonth(contracts, attRows, closedYm) {
+    const closedEnd = getPayrollMonthBounds(closedYm).mEnd;
+    const usd = new Map();
+    const lbp = new Map();
+    const attByYm = new Map();
+    (attRows || []).forEach(a => {
+      if (!a || a.voided) return;
+      const ym = String(a.month || String(a.date || '').slice(0, 7)).slice(0, 7);
+      if (!ym || ym > closedYm) return;
+      if (!attByYm.has(ym)) attByYm.set(ym, []);
+      attByYm.get(ym).push(a);
+    });
+    const byYm = new Map();
+    (contracts || []).forEach(e => {
+      if (!e || e.voided) return;
+      const cs = String(e.start_date || '2025-01-01').slice(0, 10);
+      const ce = String(e.end_date || '2030-12-31').slice(0, 10);
+      const ceEff = ce < closedEnd ? ce : closedEnd;
+      if (cs.slice(0, 7) > ceEff.slice(0, 7)) return;
+      const sY = Number(cs.slice(0, 4)), sM = Number(cs.slice(5, 7)), sD = Number(cs.slice(8, 10));
+      const rY = Number(ce.slice(0, 4)), rM = Number(ce.slice(5, 7)), rD = Number(ce.slice(8, 10));
+      const eY = Number(ceEff.slice(0, 4)), eM = Number(ceEff.slice(5, 7));
+      let y = sY, m = sM;
+      while (y < eY || (y === eY && m <= eM)) {
+        const ym = `${y}-${String(m).padStart(2, '0')}`;
+        const dim = new Date(Date.UTC(y, m, 0)).getUTCDate();
+        const uS = (y === sY && m === sM) ? sD - 1 : 0;
+        const uE = (y === rY && m === rM) ? dim - rD : 0;
+        if (!byYm.has(ym)) byYm.set(ym, []);
+        byYm.get(ym).push({ e, unatt: uS + uE });
+        m += 1;
+        if (m > 12) { m = 1; y += 1; }
+      }
+    });
+    const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+    let cumVac = 0, cumVabs = 0;
+    Array.from(byYm.keys()).sort().forEach(ym => {
+      const clist = byYm.get(ym);
+      const atts = attByYm.get(ym) || [];
+      let otH = 0, ltH = 0, abD = 0, vacD = 0, cfgVac = 0, skD = 0;
+      atts.forEach(a => {
+        const tn = _bpNorm(a.type);
+        if (!tn.startsWith('site ')) {
+          otH += num(num(a.overtime_hours) || (tn === 'overtime' ? num(a.tally) : 0));
+          ltH += num(num(a.late_hours) || (tn === 'lateness' ? num(a.tally) : 0));
+        }
+        const tp = String(a.type || '').trim();
+        const tl = num(a.tally);
+        if (/^config\s*vac/i.test(tp)) cfgVac += tl;
+        else if (/^(absence|absent|half\s*day)$/i.test(tp) && a.pay_treatment !== 'paid') abD += num(a.leave_days) || (/half/i.test(tp) ? 0.5 : (tl || 1));
+        else if (/^(vacabsence|paid\s*leave)$/i.test(tp)) vacD += num(a.leave_days) || tl;
+        else if (/^sick/i.test(tp)) skD += num(a.leave_days) || (tl || 1);
+      });
+      const vacA = vacD + cfgVac;
+      if (ym.endsWith('-01')) cumVac += clist.reduce((s, c) => s + num(c.e.vacation_days), 0);
+      cumVabs += clist.length * vacA;
+      const unaccEach = (cumVac - cumVabs < 0) ? Math.min(vacA, cumVabs - cumVac) : 0;
+      clist.forEach(({ e, unatt }) => {
+        const wd = num(e.working_days) || 30;
+        const wh = num(e.working_hours) || 8;
+        const ext = num(e.extended);
+        const otm = (e.overtime_multiplier != null && e.overtime_multiplier !== '' ? num(e.overtime_multiplier) : 1) || 1;
+        const ltm = (e.lateness_multiplier != null && e.lateness_multiplier !== '' ? num(e.lateness_multiplier) : 1) || 1;
+        const su0 = num(e.salary_usd), sl0 = num(e.salary_lbp);
+        const su = su0 + (ext && wd ? ext * (su0 / wd) : 0);
+        const sl = sl0 + (ext && wd ? ext * (sl0 / wd) : 0);
+        const ru = num(e.reimbursement), rl = num(e.reimbursement_lbp);
+        const du = num(e.deduction), dl = num(e.deduction_lbp);
+        const dru = su / wd, drl = sl / wd, hru = su / (wd * wh), hrl = sl / (wd * wh);
+        const eU = su + ru + (otH * otm * hru) - (ltH * ltm * hru) - ((abD + unaccEach + unatt) * dru) - ((abD + vacD + skD + unatt) * du);
+        const eL = sl + rl + (otH * otm * hrl) - (ltH * ltm * hrl) - ((abD + unaccEach + unatt) * drl) - ((abD + vacD + skD + unatt) * dl);
+        usd.set(ym, (usd.get(ym) || 0) + eU);
+        lbp.set(ym, (lbp.get(ym) || 0) + eL);
+      });
+    });
+    return { usd, lbp };
+  }
+  function staffContractsFor(company, staff) {
+    const co = _bpNorm(company), sk = _bpNorm(staff);
+    return ((SEED.records && SEED.records.employments) || [])
+      .filter(e => e && !e.voided && _bpNorm(e.staff) === sk && _bpNorm(e.company || 'WTC') === co)
+      .map(e => Object.assign({}, e));
+  }
+  // The contracts as they were before a save: the staff's other contracts under the saved name and company, plus the
+  // edited row as it was, moved to that name and company (a spelling fix or a company move is not a pay change; the
+  // top-up renames the contract before it compares, the same way). `origRow` is null for a new contract.
+  function backpayBeforeSet(company, staff, editedIds, origRow) {
+    const skip = new Set((editedIds || []).filter(Boolean).map(String));
+    const out = staffContractsFor(company, staff).filter(e => !skip.has(String(e.id)));
+    if (origRow && !origRow.voided) out.push(Object.assign({}, origRow, { staff, company }));
+    return out;
+  }
+  function computeContractBackpay(company, staff, beforeContracts, afterContracts) {
+    const closedYm = backpayClosedYm();
+    const co = _bpNorm(company), sk = _bpNorm(staff);
+    if (!sk || !/^\d{4}-\d{2}$/.test(closedYm)) return null;
+    const att = ((SEED.records && SEED.records.attendance) || []).filter(a => a && !a.voided && _bpNorm(a.staff) === sk && _bpNorm(a.company || 'WTC') === co);
+    const was = staffContractEarningsByMonth(beforeContracts, att, closedYm);
+    const now = staffContractEarningsByMonth(afterContracts, att, closedYm);
+    const months = Array.from(new Set([...was.usd.keys(), ...now.usd.keys()])).filter(ym => ym <= closedYm).sort();
+    let usd = 0, lbp = 0;
+    const hit = [];
+    months.forEach(ym => {
+      const du = (now.usd.get(ym) || 0) - (was.usd.get(ym) || 0);
+      const dl = (now.lbp.get(ym) || 0) - (was.lbp.get(ym) || 0);
+      if (Math.abs(du) >= 0.005 || Math.abs(dl) >= 1) {
+        hit.push(ym);
+        usd += Math.round(du * 100) / 100;
+        lbp += Math.round(dl);
+      }
+    });
+    if (!hit.length) return null;
+    return { usd: round2(usd), lbp: Math.round(lbp), from: hit[0], to: hit[hit.length - 1] };
+  }
+  function stampContractBackpay(record, bp, source) {
+    if (!record || !bp) return;
+    const fields = {
+      _backpay_usd: bp.usd, _backpay_lbp: bp.lbp, _backpay_from: bp.from, _backpay_to: bp.to,
+      _backpay_on: todayISO(), _backpay_source: source
+    };
+    Object.assign(record, fields);
+    const rid = String(record.id || '');
+    if (!rid) return;
+    const cArr = (STATE.customRecords && STATE.customRecords.employments) || [];
+    const cRow = cArr.find(x => x && String(x.id) === rid);
+    if (cRow && cRow !== record) Object.assign(cRow, fields);
+    const sRow = ((SEED.records && SEED.records.employments) || []).find(x => x && String(x.id) === rid);
+    if (sRow && sRow !== record) Object.assign(sRow, fields);
+  }
+  function backpayToastText(bp, staff) {
+    const span = bp.from === bp.to ? formatPayrollMonthLabel(bp.from) : `${formatPayrollMonthLabel(bp.from)} to ${formatPayrollMonthLabel(bp.to)}`;
+    const parts = [];
+    if (Math.abs(Number(bp.usd || 0)) >= 0.005) parts.push(fmtSignedUSD(bp.usd, 2));
+    if (Math.abs(Number(bp.lbp || 0)) >= 1) parts.push(`${bp.lbp > 0 ? '+' : '-'}${fmtNum(Math.abs(bp.lbp), 0)} LL`);
+    return `Back pay for closed payroll months: ${parts.join(' and ') || fmtSignedUSD(0, 2)} · ${staff} · ${span}`;
+  }
+  function renderBackpayNoticePanel(empRows) {
+    const since = (() => {
+      const d = new Date(todayISO() + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() - BACKPAY_SHOW_DAYS);
+      return d.toISOString().slice(0, 10);
+    })();
+    const rows = (empRows || [])
+      .filter(e => e && !e.voided && e._backpay_on && String(e._backpay_on).slice(0, 10) >= since
+        && (Math.abs(Number(e._backpay_usd || 0)) >= 0.005 || Math.abs(Number(e._backpay_lbp || 0)) >= 1))
+      .sort((a, b) => String(b._backpay_on).localeCompare(String(a._backpay_on)) || Math.abs(Number(b._backpay_usd || 0)) - Math.abs(Number(a._backpay_usd || 0)));
+    if (!rows.length) return '';
+    const showCo = STATE.company === 'manufacturing-group' || String(STATE.company || '').startsWith('industry:');
+    const totUsd = rows.reduce((s, e) => s + Number(e._backpay_usd || 0), 0);
+    const totLbp = rows.reduce((s, e) => s + Number(e._backpay_lbp || 0), 0);
+    const anyLbp = rows.some(e => Math.abs(Number(e._backpay_lbp || 0)) >= 1);
+    const cols = 5 + (showCo ? 1 : 0) + (anyLbp ? 1 : 0);
+    return `
+      <div class="panel-card" id="payBackpayPanel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title"><span>${ic('alert')} Back Pay from Backdated Pay Changes</span></div>
+            <span class="ph-sub">Contract changes that reach into closed payroll months (last 45 days)</span>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Staff</th>
+                ${showCo ? '<th>Company</th>' : ''}
+                <th>From Month</th>
+                <th>To Month</th>
+                <th class="r">Back Pay (USD)</th>
+                ${anyLbp ? '<th class="r">Back Pay (LBP)</th>' : ''}
+                <th>Noticed On</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(e => `
+                <tr class="rrow" data-rkey="employments" data-rid="${esc(e.id)}">
+                  <td>${esc(e.staff || '')} <span class="badge ${e._backpay_source === 'app' ? 'badge-info' : 'badge-brass'}">${e._backpay_source === 'app' ? 'Entered in App' : 'Workbook Top-Up'}</span></td>
+                  ${showCo ? `<td>${esc(e.company || '')}</td>` : ''}
+                  <td>${esc(formatPayrollMonthLabel(e._backpay_from))}</td>
+                  <td>${esc(formatPayrollMonthLabel(e._backpay_to))}</td>
+                  <td class="r"><b>${fmtSignedUSD(Number(e._backpay_usd || 0), 2)}</b></td>
+                  ${anyLbp ? `<td class="r">${Number(e._backpay_lbp || 0) ? fmtNum(Number(e._backpay_lbp), 0) : ''}</td>` : ''}
+                  <td class="mono">${esc(String(e._backpay_on).slice(0, 10))}</td>
+                </tr>`).join('')}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="${cols - (anyLbp ? 3 : 2)}"><b>TOTAL</b></td>
+                <td class="r"><b>${fmtSignedUSD(totUsd, 2)}</b></td>
+                ${anyLbp ? `<td class="r"><b>${fmtNum(totLbp, 0)}</b></td>` : ''}
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>`;
+  }
+  window.__mfgBackpay = {
+    staffContractEarningsByMonth, computeContractBackpay, staffContractsFor, renderBackpayNoticePanel, backpayClosedYm,
+    backpayBeforeSet, toastText: backpayToastText,
+    openContract: id => openRecordFromTableRow('employments', id)
+  };
+
   function renderPayroll(subMode = 'main') {
     const k = getKPI();
     const { fleet, pricing } = sentinelSlice();
@@ -40636,6 +40851,7 @@
         : '';
       return `
         ${bannerHtml}
+        ${renderBackpayNoticePanel(empAll)}
         ${(pendingSalaryRows.length > 0 || STATE.chipFilter === 'pending_salary') ? renderPendingSalaryQueuePanel(pendingSalaryRows) : ''}
         <div class="panel-card" id="payEmpPanel">
           <div class="table-toolbar">
@@ -40835,6 +41051,7 @@
 
     return `
       ${bannerHtml}
+      ${renderBackpayNoticePanel(empAll)}
 
       <div class="panel-card" id="paySalPanel">
         <div class="table-toolbar">
@@ -98180,6 +98397,20 @@
       delete record._assign_site_region;
       const saveStampIso = new Date().toISOString();
       record.modified_at = record.modified_at || saveStampIso;
+      // Back pay: the staff's contracts as they stand before this save touches anything (the predecessor auto-close
+      // and the chronology sync below change them too).
+      const bpPendRow = (crKey === 'employments' && STATE.editingPendingSalaryId) ? findEmploymentRecordById(STATE.editingPendingSalaryId) : null;
+      const bpOrigRow = (isEditingExisting && editCtx && editCtx.crKey === 'employments' && editCtx.orig)
+        ? editCtx.orig
+        : (bpPendRow ? Object.assign({}, bpPendRow) : null);
+      const backpayCtx = (crKey === 'employments' && record && record.staff)
+        ? {
+            company: record.company || 'WTC',
+            staff: record.staff,
+            before: backpayBeforeSet(record.company || 'WTC', record.staff, [record.id, editCtx && editCtx.id, bpOrigRow && bpOrigRow.id, STATE.editingPendingSalaryId], bpOrigRow)
+          }
+        : null;
+      let backpayHit = null;
       let siteClosureToastSfx = '';
       const preExtraApiPosts = [];
       if (assignSiteReg && assignSiteReg.site && assignSiteReg.region) {
@@ -98832,6 +99063,15 @@
         backfillEffectiveLogChange(crKey, record, editOrigModal, extraApiPosts, { touchedPeers: touchedModalPeers });
         applyCustomRecordsToSeed();
       }
+      if (backpayCtx) {
+        try {
+          backpayHit = computeContractBackpay(backpayCtx.company, backpayCtx.staff, backpayCtx.before, staffContractsFor(backpayCtx.company, backpayCtx.staff));
+          if (backpayHit) stampContractBackpay(record, backpayHit, 'app');
+        } catch (bpErr) {
+          backpayHit = null;
+          console.warn('[backpay] not computed', bpErr);
+        }
+      }
       stampBatchModifiedAt(extraApiPosts, crKey, record);
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
       STATE.saving = false;
@@ -98905,6 +99145,7 @@
       } else {
         toast(`${CR_LABEL[crKey].replace(/^./, ch => ch.toUpperCase())} posted · ${record.name}`, 'ok');
       }
+      if (backpayHit) toast(backpayToastText(backpayHit, record.staff || record.name), 'warn');
       renderApp();
       await postRecordToLocalApi(crKey, record);
       await postRecordPairsChunked(extraApiPosts);
@@ -107568,6 +107809,13 @@
         }
         if (!window.__fastInspectorModifyTest) {
           const inspExtraPosts = inspSiteCascadePosts.slice();
+          // Back pay: the row was edited in place, so the contracts before the change are the seed's others plus the
+          // row as it was (origRowSnap), when it belonged to the same staff and company.
+          let inspBackpayCtx = null;
+          if (key === 'employments' && row.staff) {
+            const bpCo = row.company || 'WTC';
+            inspBackpayCtx = { company: bpCo, staff: row.staff, before: backpayBeforeSet(bpCo, row.staff, [row.id], origRowSnap || null) };
+          }
           let touchedInspPeers = [];
           if (isEffInspTbl && row.start_date) {
             touchedInspPeers = syncChronologicalSeriesNeighbors(key, row, origRowSnap, inspExtraPosts);
@@ -107577,6 +107825,16 @@
             backfillEffectiveLogChange(key, row, origRowSnap, inspExtraPosts, { touchedPeers: touchedInspPeers });
             applyCustomRecordsToSeed();
           }
+          let inspBackpayHit = null;
+          if (inspBackpayCtx) {
+            try {
+              inspBackpayHit = computeContractBackpay(inspBackpayCtx.company, inspBackpayCtx.staff, inspBackpayCtx.before, staffContractsFor(inspBackpayCtx.company, inspBackpayCtx.staff));
+              if (inspBackpayHit) stampContractBackpay(row, inspBackpayHit, 'app');
+            } catch (bpErr) {
+              inspBackpayHit = null;
+              console.warn('[backpay] not computed', bpErr);
+            }
+          }
           stampBatchModifiedAt(inspExtraPosts, key, row);
           saveLocalAuthAndRecords();
           renderApp();
@@ -107584,6 +107842,7 @@
           postRecordPairsChunked(inspExtraPosts);
           syncWithCloud(true);
           toast(changedCount ? `✓ Record modified (${changedCount} field${changedCount === 1 ? '' : 's'} updated)` : '✓ Record saved');
+          if (inspBackpayHit) toast(backpayToastText(inspBackpayHit, row.staff || row.name), 'warn');
           showRecordInspector(key, row.id || row.name || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
         }
       });

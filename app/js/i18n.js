@@ -10714,7 +10714,17 @@
       "In Official Books, diesel is shown as an expense when bought.": "في الدفاتر الرسمية، يظهر المازوت كمصروف عند شرائه.",
       "Some diesel drawn here has no diesel purchase in these books, so it carries no cost.": "بعض المازوت المسحوب هنا لا يقابله شراء مازوت في هذه الدفاتر، لذا لا كلفة له.",
       "A diesel tank in this scope has more diesel drawn than bought in these books, so its stock shows below zero until the missing purchases are entered.": "خزان مازوت ضمن هذا النطاق سُحب منه أكثر مما اشتُري في هذه الدفاتر، لذا يظهر مخزونه دون الصفر حتى تُدخل المشتريات الناقصة.",
-      "Tank Revaluation": "إعادة تقييم الخزان"
+      "Tank Revaluation": "إعادة تقييم الخزان",
+      "Back Pay from Backdated Pay Changes": "الأجور المستحقة بأثر رجعي من تعديلات الرواتب",
+      "Contract changes that reach into closed payroll months (last 45 days)": "تعديلات عقود تطال أشهر رواتب مقفلة (آخر 45 يوماً)",
+      "From Month": "من شهر",
+      "To Month": "إلى شهر",
+      "Back Pay (USD)": "المستحق بأثر رجعي (دولار)",
+      "Back Pay (LBP)": "المستحق بأثر رجعي (ل.ل.)",
+      "Noticed On": "تاريخ الرصد",
+      "Entered in App": "أُدخل في التطبيق",
+      "Workbook Top-Up": "تحديث من دفاتر العمل",
+      "Back Pay": "مستحق بأثر رجعي"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -21410,7 +21420,17 @@
       "In Official Books, diesel is shown as an expense when bought.": "Dans les livres officiels, le gasoil figure en charge à l'achat.",
       "Some diesel drawn here has no diesel purchase in these books, so it carries no cost.": "Une partie du gasoil consommé ici n'a pas d'achat de gasoil dans ces livres, elle n'a donc pas de coût.",
       "A diesel tank in this scope has more diesel drawn than bought in these books, so its stock shows below zero until the missing purchases are entered.": "Une cuve de ce périmètre a plus de gasoil consommé qu'acheté dans ces livres : son stock reste sous zéro jusqu'à la saisie des achats manquants.",
-      "Tank Revaluation": "Réévaluation de la cuve"
+      "Tank Revaluation": "Réévaluation de la cuve",
+      "Back Pay from Backdated Pay Changes": "Rappels de salaire issus de changements de paie rétroactifs",
+      "Contract changes that reach into closed payroll months (last 45 days)": "Changements de contrat touchant des mois de paie clôturés (45 derniers jours)",
+      "From Month": "Du mois",
+      "To Month": "Au mois",
+      "Back Pay (USD)": "Rappel (USD)",
+      "Back Pay (LBP)": "Rappel (LBP)",
+      "Noticed On": "Relevé le",
+      "Entered in App": "Saisi dans l'application",
+      "Workbook Top-Up": "Mise à jour des classeurs",
+      "Back Pay": "Rappel de salaire"
     }
   };
 
@@ -23267,6 +23287,19 @@
 
     m = trimmed.match(/^Gross malfunction volume\s+([\d.,]+)\s*L\s*\((\d+)\s+entries\)\s*vs\s+([\d.,]+)\s*L total company diesel used\s*=\s*([\d.,]+%)\s+in selected period\s*\(threshold\s*>=\s*([\d.,]+%)\)\.\s*Net tank discrepancy across all types:\s*([+-]?[\d.,]+)\s*L\.?$/i);
     if (m) return lang === 'ar' ? `إجمالي حجم أعطال المازوت ${m[1]} ليتر (${m[2]} قيداً) مقابل ${m[3]} ليتر استهلاك الشركة الكلي = ${m[4]} في الفترة المحددة (الحد الرقابي >= ${m[5]}). صافي فرق الخزان: ${m[6]} ليتر.` : `Volume brut d'écarts gasoil ${m[1]} L (${m[2]} écritures) vs ${m[3]} L consommés = ${m[4]} sur la période (seuil >= ${m[5]}). Écart net cuve : ${m[6]} L.`;
+
+    // Back pay toast after a contract change that reaches closed payroll months (backpayToastText in js/app.js)
+    m = trimmed.match(/^Back pay for closed payroll months: ((?:[+-]?\$[\d,.]+|[+-][\d,]+ LL)(?: and [+-][\d,]+ LL)?) · (.+) · ([A-Z][a-z]{2} \d{4})(?: to ([A-Z][a-z]{2} \d{4}))?$/);
+    if (m) {
+      const amt = lang === 'ar'
+        ? m[1].replace(/ LL$/, ' ل.ل.').replace(' and ', ' و ')
+        : m[1].replace(/ LL$/, ' LBP').replace(' and ', ' et ');
+      const fromM = translateMonthTokens(m[3], lang);
+      const toM = m[4] ? translateMonthTokens(m[4], lang) : '';
+      return lang === 'ar'
+        ? `مستحق بأثر رجعي لأشهر رواتب مقفلة: ${amt} · ${m[2]} · ${fromM}${toM ? ` إلى ${toM}` : ''}`
+        : `Rappel de salaire sur des mois de paie clôturés : ${amt} · ${m[2]} · ${fromM}${toM ? ` à ${toM}` : ''}`;
+    }
 
     // Delivery breakeven Sentinel (site net-back across all sites, fuel at the latest diesel price)
     m = trimmed.match(/^([\d,]+) delivery and haulage agreements in force across ([\d,]+) sites, each checked against pickup price plus fuel for the round trip: ([\d,]+) below breakeven \((-?\$[\d.,]+) lost on ([\d,]+) own-fleet loads in the last 90 days\) · ([\d,]+) lose on night trips only · ([\d,]+) without a pinned distance(?: · ([\d,]+) costed from the Region's centre \(site not pinned\))?\.(?: Latest diesel price: (.+)\.| (No priced diesel delivery on file)\.)?$/i);
