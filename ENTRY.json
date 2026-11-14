@@ -3,6 +3,12 @@
   "branch": "wt/same-name-rec3",
   "sha": "f20205b16821a52f1cf5d80a8d32ef50a683be86"
  },
+ "batch": {
+  "at": "2026-11-14T19:05:37Z",
+  "holder": "wt-att-policy-shift-ui",
+  "lockId": "bcac3c4b5be84cf3aa2d0ead661eb441",
+  "version": "19.6.356"
+ },
  "gates": [
   "isabi-app: node build/verify_same_name_guard.mjs",
   "isabi: node build/verify_same_name_edge.mjs"
