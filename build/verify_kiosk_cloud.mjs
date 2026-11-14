@@ -837,5 +837,175 @@ console.log('till sales posted to venue revenue from a date the Owner sets');
   ok('no em dash or arrow in stored text', !/[—→]/.test(JSON.stringify(revRows())));
 }
 
+console.log('door tablet same-name guard & fatherName on sync and roster');
+{
+  const vec = seed => Array.from({ length: 128 }, (_, i) => Math.cos(seed * 29 + i) * 0.25);
+
+  // Seed active & switched-off door rows, active staff_members register row, and active employment row at LAUNA
+  let r = await call({
+    op: 'sync',
+    site: 'LAUNA',
+    staff: [
+      { id: 'sn-door-on', name: 'Rami Edge Active', fatherName: 'Karim', active: true },
+      { id: 'sn-door-off', name: 'Nader Edge Off', fatherName: 'Salim', active: true },
+    ],
+  }, { key: KEY_LAUNA });
+  const rOff = await call({
+    op: 'sync',
+    site: 'LAUNA',
+    staff: [{ id: 'sn-door-off', name: 'Nader Edge Off', fatherName: 'Salim', active: false }],
+  }, { key: KEY_LAUNA });
+  ok('seed door active & switched-off rows accepted', r.json.staff.includes('sn-door-on') && r.json.staff.includes('sn-door-off') && rOff.json.staff.includes('sn-door-off'), [r.json, rOff.json]);
+
+  d1.exec(`CREATE TABLE IF NOT EXISTS employments (id TEXT PRIMARY KEY, staff TEXT DEFAULT '', company TEXT DEFAULT '', role TEXT DEFAULT '', type TEXT DEFAULT '', start_date TEXT DEFAULT '', end_date TEXT DEFAULT '', status TEXT DEFAULT 'Active', voided INTEGER DEFAULT 0, payload_json TEXT DEFAULT '{}');`);
+  d1.exec(`INSERT OR REPLACE INTO staff_members (id, name, father_name, company, role, status, voided)
+    VALUES ('sm-edge-launa', 'Tarek Edge Register', 'Fadi', 'La Una', 'Waiter', 'Active', 0)`);
+  d1.exec(`INSERT OR REPLACE INTO employments (id, staff, company, role, type, start_date, end_date, status, voided)
+    VALUES ('emp-edge-launa', 'Sami Edge Contract', 'La Una', 'Cook', 'Contract', '2026-01-01', '', 'Active', 0)`);
+
+  // Attempt to sync new door staff clashing with active door, switched-off door, staff register, active contract, and 2nd batch clone
+  r = await call({
+    op: 'sync',
+    site: 'LAUNA',
+    staff: [
+      { id: 'loc-dup-1', name: '  rami edge   active ', fatherName: 'Hassan' },
+      { id: 'loc-dup-2', name: 'Nader Edge Off', fatherName: 'Adel' },
+      { id: 'loc-dup-3', name: 'Tarek Edge Register', fatherName: 'Youssef' },
+      { id: 'loc-dup-4', name: 'Sami Edge Contract', fatherName: '' },
+      { id: 'loc-batch-ok', name: 'Walid Batch Unique', fatherName: 'Moussa' },
+      { id: 'loc-batch-dup', name: 'walid batch unique', fatherName: 'Hadi' },
+    ],
+    faces: [
+      { id: 'loc-dup-1:1', staffId: 'loc-dup-1', sample: 1, descriptor: vec(11) },
+      { id: 'loc-dup-3:1', staffId: 'loc-dup-3', sample: 1, descriptor: vec(12) },
+      { id: 'loc-batch-ok:1', staffId: 'loc-batch-ok', sample: 1, descriptor: vec(13) },
+      { id: 'loc-batch-dup:1', staffId: 'loc-batch-dup', sample: 1, descriptor: vec(14) },
+    ],
+    punches: [
+      { id: 'p-rej-1', staffId: 'loc-dup-1', staffName: 'Rami Edge Active', ts: DAY + 'T08:00:00.000Z', day: DAY, direction: 'in', method: 'pin' },
+      { id: 'p-ok-batch', staffId: 'loc-batch-ok', staffName: 'Walid Batch Unique', ts: DAY + 'T08:01:00.000Z', day: DAY, direction: 'in', method: 'pin' },
+    ],
+  }, { key: KEY_LAUNA });
+
+  const rejMap = new Map((r.json.rejectedStaff || []).map(x => [x.id, x]));
+  ok('NEGATIVE: active door clash is rejected with father-based suggestion',
+    rejMap.has('loc-dup-1') && rejMap.get('loc-dup-1').existingKind === 'door' && rejMap.get('loc-dup-1').existingActive === true
+    && rejMap.get('loc-dup-1').existingName === 'Rami Edge Active'
+    && rejMap.get('loc-dup-1').suggestedName === 'rami edge active (Hassan)',
+    rejMap.get('loc-dup-1'));
+  ok('NEGATIVE: switched-off door clash is rejected with existingActive=false',
+    rejMap.has('loc-dup-2') && rejMap.get('loc-dup-2').existingActive === false
+    && rejMap.get('loc-dup-2').suggestedName === 'Nader Edge Off (Adel)',
+    rejMap.get('loc-dup-2'));
+  ok('NEGATIVE: staff_members register clash is rejected (existingKind=staff)',
+    rejMap.has('loc-dup-3') && rejMap.get('loc-dup-3').existingKind === 'staff',
+    rejMap.get('loc-dup-3'));
+  ok('NEGATIVE: active employment clash without father suggests "(2)"',
+    rejMap.has('loc-dup-4') && rejMap.get('loc-dup-4').existingKind === 'contract'
+    && rejMap.get('loc-dup-4').suggestedName === 'Sami Edge Contract (2)',
+    rejMap.get('loc-dup-4'));
+  ok('first new name in batch succeeds while second duplicate in same batch is rejected',
+    r.json.staff.includes('loc-batch-ok') && !r.json.staff.includes('loc-batch-dup')
+    && rejMap.has('loc-batch-dup') && rejMap.get('loc-batch-dup').existingKind === 'batch',
+    { accepted: r.json.staff, batchDup: rejMap.get('loc-batch-dup') });
+  ok('faces and punches for rejected staff are rejected and never written to D1',
+    (r.json.rejectedFaces || []).includes('loc-dup-1:1') && (r.json.rejectedFaces || []).includes('loc-dup-3:1')
+    && (r.json.rejectedFaces || []).includes('loc-batch-dup:1') && !(r.json.faces || []).includes('loc-dup-1:1')
+    && (r.json.rejectedPunches || []).includes('p-rej-1') && !(r.json.punches || []).includes('p-rej-1')
+    && (r.json.punches || []).includes('p-ok-batch')
+    && d1.rows("SELECT id FROM kiosk_punches_ext WHERE id = 'p-rej-1'").length === 0,
+    { rejF: r.json.rejectedFaces, rejP: r.json.rejectedPunches, okP: r.json.punches });
+
+  // Switching an OFF row back ON fails if an active row now holds that name, and succeeds when free
+  r = await call({ op: 'sync', site: 'LAUNA', staff: [{ id: 'sn-door-off', name: 'Nader Edge Off', active: true }] }, { key: KEY_LAUNA });
+  ok('switching switched-off row back on succeeds when name is free', r.json.staff.includes('sn-door-off') && !(r.json.rejectedStaff || []).length, r.json);
+  await call({ op: 'sync', site: 'LAUNA', staff: [{ id: 'sn-door-off', name: 'Nader Edge Off', active: false }] }, { key: KEY_LAUNA });
+  await call({ op: 'sync', site: 'LAUNA', staff: [{ id: 'sn-door-off', name: 'Rami Edge Active', active: true }] }, { key: KEY_LAUNA })
+    .then(resSwitch => {
+      ok('NEGATIVE: switching switched-off row back on under a taken active name is rejected',
+        (resSwitch.json.rejectedStaff || []).some(x => x.id === 'sn-door-off'), resSwitch.json);
+    });
+
+  // Switching sn-door-off back ON with its UNCHANGED own name fails when another active row holds that name
+  d1.exec(`INSERT OR REPLACE INTO staff_members (id, name, father_name, company, role, status, voided)
+    VALUES ('sm-nader-conflict', 'Nader Edge Off', 'Adel', 'La Una', 'Waiter', 'Active', 0)`);
+  const resOwnSwitch = await call({ op: 'sync', site: 'LAUNA', staff: [{ id: 'sn-door-off', name: 'Nader Edge Off', active: true }] }, { key: KEY_LAUNA });
+  ok('NEGATIVE: switching switched-off row back on with its unchanged own name is rejected when active homonym exists',
+    (resOwnSwitch.json.rejectedStaff || []).some(x => x.id === 'sn-door-off')
+    && !(resOwnSwitch.json.staff || []).includes('sn-door-off'),
+    resOwnSwitch.json);
+
+  // Active freelance_entries row at the site rejects duplicate door Add staff & punch sync
+  d1.exec(`CREATE TABLE IF NOT EXISTS freelance_entries (id TEXT PRIMARY KEY, staff TEXT DEFAULT '', company TEXT DEFAULT '', date TEXT DEFAULT '', amount REAL DEFAULT 0, status TEXT DEFAULT 'Active', voided INTEGER DEFAULT 0, payload_json TEXT DEFAULT '{}');`);
+  d1.exec(`INSERT OR REPLACE INTO freelance_entries (id, staff, company, date, amount, status, voided)
+    VALUES ('fl-edge-launa', 'Hani Edge Freelance', 'La Una', '2026-11-12', 80, 'Active', 0)`);
+  const flSyncRes = await call({
+    op: 'sync',
+    site: 'LAUNA',
+    staff: [{ id: 'loc-fl-dup', name: 'Hani Edge Freelance', fatherName: 'Tarek' }],
+    punches: [{ id: 'p-fl-dup', staffId: 'loc-fl-dup', staffName: 'Hani Edge Freelance', ts: DAY + 'T08:15:00.000Z', day: DAY, direction: 'in', method: 'pin' }],
+  }, { key: KEY_LAUNA });
+  const flRej = (flSyncRes.json.rejectedStaff || []).find(x => x.id === 'loc-fl-dup');
+  ok('NEGATIVE: active freelance_entries row rejects duplicate door staff & punch sync (existingKind=freelance)',
+    flRej && flRej.existingKind === 'freelance' && flRej.suggestedName === 'Hani Edge Freelance (Tarek)'
+    && (flSyncRes.json.rejectedPunches || []).includes('p-fl-dup') && !(flSyncRes.json.punches || []).includes('p-fl-dup'),
+    flSyncRes.json);
+
+  // Roster carries fatherName from both door rows and staff_members register
+  const rost = (await call({ op: 'roster', site: 'LAUNA', includeInactive: true }, { key: KEY_LAUNA })).json;
+  const rDoor = (rost.staff || []).find(s => s.id === 'sn-door-on');
+  const rReg = (rost.staff || []).find(s => s.id === 'sm-edge-launa');
+  ok('roster includes fatherName from both door row and staff_members register',
+    rDoor && rDoor.fatherName === 'Karim' && rReg && rReg.fatherName === 'Fadi',
+    { rDoor, rReg });
+
+  // Regression: unknown inactive local row (loc-*) is acked as deactivated no-op (no clash, no duplicate D1 insert) and its punches are refused;
+  // staff_members register stays company-scoped; employments missing father_name falls back to staff_members.father_name; faces fatherName feeds suggestion.
+  d1.exec(`INSERT OR REPLACE INTO staff_members (id, name, father_name, company, role, status, voided)
+    VALUES ('sm-edge-empfb', 'Sami Edge Contract', 'Walid', 'La Una', 'Cook', 'Active', 0)`);
+  const rost2 = (await call({ op: 'roster', site: 'LAUNA', includeInactive: true }, { key: KEY_LAUNA })).json;
+  const rEmpFb = (rost2.staff || []).find(s => s.name === 'Sami Edge Contract');
+  const rPlant = (rost2.staff || []).find(s => s.name === 'Plant Person');
+  const rBlanca = (rost2.staff || []).find(s => s.name === 'Other Resort');
+  ok('register company scoping excludes other companies and falls back to staff_members.father_name on employments',
+    !rPlant && !rBlanca && rEmpFb && rEmpFb.fatherName === 'Walid',
+    { rPlant, rBlanca, rEmpFb });
+
+  const deadRes = await call({
+    op: 'sync',
+    site: 'LAUNA',
+    staff: [{ id: 'loc-dead-off', name: 'Rami Edge Active', active: false }],
+    punches: [{ id: 'p-dead-off', staffId: 'loc-dead-off', staffName: 'Rami Edge Active', ts: DAY + 'T09:00:00.000Z', day: DAY, direction: 'in', method: 'pin' }],
+  }, { key: KEY_LAUNA });
+  ok('unknown switched-off local staff acked as deactivated no-op without writing duplicate row and refuses punch',
+    deadRes.status === 200 && (deadRes.json.staff || []).includes('loc-dead-off')
+    && !(deadRes.json.rejectedStaff || []).some(x => x.id === 'loc-dead-off')
+    && d1.rows("SELECT person_id FROM kiosk_biometrics WHERE person_id = 'loc-dead-off'").length === 0
+    && (deadRes.json.rejectedPunches || []).includes('p-dead-off'),
+    { status: deadRes.status, json: deadRes.json });
+
+  const faceFatRes = await call({
+    op: 'sync',
+    site: 'LAUNA',
+    staff: [{ id: 'loc-face-fat', name: 'Rami Edge Active' }],
+    faces: [{ id: 'loc-face-fat:1', staffId: 'loc-face-fat', fatherName: 'Mahmoud', sample: 1, descriptor: vec(15) }],
+  }, { key: KEY_LAUNA });
+  const fRej = (faceFatRes.json.rejectedStaff || []).find(x => x.id === 'loc-face-fat');
+  ok('faces payload fatherName supplies suggestedName when staff record omits fatherName',
+    fRej && fRej.suggestedName === 'Rami Edge Active (Mahmoud)', fRej);
+
+  const sneakRes = await call({
+    op: 'sync',
+    site: 'LAUNA',
+    punches: [{ id: 'p-sneak-1', staffId: 'loc-sneak-1', staffName: 'Rami Edge Active', ts: DAY + 'T09:05:00.000Z', day: DAY, direction: 'in', method: 'pin' }],
+  }, { key: KEY_LAUNA });
+  ok('NEGATIVE: punch-only sync for unregistered loc- id with clashing active name is rejected and not written',
+    sneakRes.status === 200
+    && (sneakRes.json.rejectedPunches || []).includes('p-sneak-1')
+    && !(sneakRes.json.punches || []).includes('p-sneak-1')
+    && d1.rows("SELECT id FROM kiosk_punches_ext WHERE id = 'p-sneak-1'").length === 0,
+    sneakRes.json);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

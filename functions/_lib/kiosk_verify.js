@@ -150,6 +150,15 @@ async function ensureKioskSchema(db) {
       )`
     )
   ]);
+  for (const tbl of ['kiosk_biometrics', 'staff_members']) {
+    try {
+      const cols = await db.prepare(`PRAGMA table_info(${tbl})`).all();
+      const names = new Set((cols.results || []).map(r => String(r.name)));
+      if (names.size > 0 && !names.has('father_name')) {
+        await db.prepare(`ALTER TABLE ${tbl} ADD COLUMN father_name TEXT DEFAULT ''`).run();
+      }
+    } catch (_) {}
+  }
   _kioskSchemaReady = true;
 }
 
@@ -310,23 +319,102 @@ function posCompanyOf(siteKey) {
 function siteCompanyOf(siteKey) {
   return Object.prototype.hasOwnProperty.call(KIOSK_SITE_COMPANY, siteKey) ? KIOSK_SITE_COMPANY[siteKey] : '';
 }
+function normKioskNameKey(v) {
+  return String(v === null || v === undefined ? '' : v).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function suggestKioskDistinctName(baseName, fatherName, usedNormNames) {
+  const base = cleanText(baseName, 120);
+  if (!base) return '';
+  const fat = cleanText(fatherName, 60);
+  const used = usedNormNames || new Set();
+  if (fat) {
+    const withFather = cleanText(`${base} (${fat})`, 120);
+    if (!used.has(normKioskNameKey(withFather))) return withFather;
+    for (let i = 2; i < 100; i++) {
+      const cand = cleanText(`${base} (${fat} ${i})`, 120);
+      if (!used.has(normKioskNameKey(cand))) return cand;
+    }
+  }
+  for (let i = 2; i < 100; i++) {
+    const cand = cleanText(`${base} (${i})`, 120);
+    if (!used.has(normKioskNameKey(cand))) return cand;
+  }
+  return cleanText(`${base} (2)`, 120);
+}
+
 // The staff register of a site's company, split into people who are on (active, not voided) and ids
 // that are switched off there. Someone switched off in the register is off at the door too, for the
 // roster and for server-side matching alike. The register is optional: without it both lists are empty.
 async function readStaffRegister(db, company) {
   const on = [];
   const offIds = new Set();
-  if (!company) return { on, offIds };
+  const activeEmpNames = new Map();
+  const regFatherByName = new Map();
+  if (!company) return { on, offIds, activeEmpNames };
   try {
-    const res = await db.prepare('SELECT id, name, role, status, voided FROM staff_members WHERE company = ?1 LIMIT 4000').bind(company).all();
+    let res;
+    try {
+      res = await db.prepare('SELECT id, name, father_name, role, status, voided, payload_json FROM staff_members WHERE LOWER(TRIM(company)) = LOWER(TRIM(?1)) LIMIT 4000').bind(company).all();
+    } catch (_) {
+      res = await db.prepare('SELECT * FROM staff_members WHERE LOWER(TRIM(company)) = LOWER(TRIM(?1)) LIMIT 4000').bind(company).all();
+    }
     for (const sm of (res.results || [])) {
       const sid = String(sm.id || '').trim();
+      const smPayload = sm.payload_json && typeof sm.payload_json === 'string' ? safeParseJson(sm.payload_json, null) : null;
+      const smFather = cleanText(sm.father_name || (smPayload && smPayload.father_name) || '', 80);
+      const smNameKey = normKioskNameKey(sm.name);
       const status = String(sm.status === null || sm.status === undefined ? '' : sm.status).trim().toLowerCase();
-      if (Number(sm.voided) === 0 && (status === 'active' || status === '')) on.push({ id: sid, name: sm.name, role: sm.role });
-      else offIds.add(sid);
+      if (Number(sm.voided) === 0 && (status === 'active' || status === '')) {
+        if (smNameKey && smFather && !regFatherByName.has(smNameKey)) regFatherByName.set(smNameKey, smFather);
+        on.push({ id: sid, name: sm.name, fatherName: smFather, role: sm.role });
+      } else {
+        offIds.add(sid);
+      }
     }
   } catch (_) { /* no staff register in this database */ }
-  return { on, offIds };
+  try {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const loadActiveCompanyRows = async (tbl, isContractTbl) => {
+      const res = await db.prepare(
+        `SELECT * FROM ${tbl} WHERE LOWER(TRIM(company)) = LOWER(TRIM(?1)) AND COALESCE(voided, 0) = 0 LIMIT 4000`
+      ).bind(company).all();
+      for (const row of (res.results || [])) {
+        let obj = Object.assign({}, row);
+        if (row.payload_json && typeof row.payload_json === 'string') {
+          const p = safeParseJson(row.payload_json, null);
+          if (p && typeof p === 'object') {
+            for (const [k, v] of Object.entries(p)) {
+              if (obj[k] === undefined || obj[k] === null || obj[k] === '') obj[k] = v;
+            }
+          }
+        }
+        if (obj.voided || Number(obj.voided) === 1 || obj.archived) continue;
+        const st = String(obj.status || 'Active').trim().toLowerCase();
+        if (st === 'ended' || st === 'closed' || st === 'terminated' || st === 'inactive' || st === 'cancelled') continue;
+        const ed = String(obj.end_date || '').trim().slice(0, 10);
+        if (ed && ed < todayIso) continue;
+        const nm = cleanText(obj.staff || obj.name, 120);
+        const nk = normKioskNameKey(nm);
+        if (nk && !activeEmpNames.has(nk)) {
+          const kind = !isContractTbl || /freelance/i.test(String(obj.type || '')) ? 'freelance' : 'contract';
+          activeEmpNames.set(nk, {
+            id: String(obj.id || '').trim(),
+            name: nm,
+            fatherName: cleanText(obj.father_name || regFatherByName.get(nk) || '', 80),
+            kind
+          });
+        }
+      }
+    };
+    try {
+      await loadActiveCompanyRows('employments', true);
+    } catch (_) { /* employments table optional in isolated kiosk tests */ }
+    try {
+      await loadActiveCompanyRows('freelance_entries', false);
+    } catch (_) { /* freelance_entries table optional in isolated tests */ }
+  } catch (_) { /* employments table optional in isolated kiosk tests */ }
+  return { on, offIds, activeEmpNames };
 }
 const ATTENDANCE_OPS = new Set(['sync', 'push', 'roster', 'verify']);
 const ATTENDANCE_SUFFIX = '__att';
@@ -1502,11 +1590,210 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
     const syncedPunches = [];
     const rejectedPunches = [];
     const syncedFaces = [];
+    const rejectedFaces = [];
+    const rejectedStaff = [];
+    const rejectedStaffIds = new Set();
+    const acceptedStaffIds = [];
+
+    const existingBioRes = await env.DB.prepare('SELECT * FROM kiosk_biometrics WHERE site_key = ?1').bind(bioSite).all();
+    const bioById = new Map();
+    for (const r of (existingBioRes.results || [])) bioById.set(String(r.person_id || '').trim(), r);
+    const register = await readStaffRegister(env.DB, siteCompanyOf(siteKey));
+    const regOnById = new Map(register.on.map(sm => [sm.id, sm]));
+
+    const usedNormNames = new Set();
+    for (const r of bioById.values()) {
+      if (register.offIds.has(String(r.person_id || '').trim())) continue;
+      const rk = normKioskNameKey(r.name);
+      if (rk) usedNormNames.add(rk);
+    }
+    for (const sm of register.on) {
+      const rk = normKioskNameKey(sm.name);
+      if (rk) usedNormNames.add(rk);
+    }
+    for (const nk of register.activeEmpNames.keys()) usedNormNames.add(nk);
+
+    const findKioskNameClash = (sid, candName, exRow, metaActive) => {
+      const nk = normKioskNameKey(candName);
+      if (!nk) return null;
+      // Updating an existing door row is allowed unless renaming it or switching a switched-off row back on collides with an active row.
+      const isRename = exRow && normKioskNameKey(exRow.name) !== nk;
+      if (exRow && !isRename && metaActive !== true) return null;
+      if (exRow && !isRename && Number(exRow.active) !== 0) return null;
+      for (const r of bioById.values()) {
+        const rid = String(r.person_id || '').trim();
+        if (rid === sid || register.offIds.has(rid)) continue;
+        if (exRow && !isRename && Number(r.active) === 0) continue;
+        if (normKioskNameKey(r.name) === nk) {
+          return {
+            existingId: rid,
+            existingName: r.name || rid,
+            existingFather: cleanText(r.father_name, 80),
+            existingActive: Number(r.active) !== 0,
+            existingKind: 'door'
+          };
+        }
+      }
+      const regSelf = regOnById.get(sid);
+      if (regSelf && normKioskNameKey(regSelf.name) === nk) return null;
+      for (const sm of register.on) {
+        if (sm.id === sid) continue;
+        if (normKioskNameKey(sm.name) === nk) {
+          return {
+            existingId: sm.id,
+            existingName: sm.name || sm.id,
+            existingFather: cleanText(sm.fatherName, 80),
+            existingActive: true,
+            existingKind: 'staff'
+          };
+        }
+      }
+      const empHit = register.activeEmpNames.get(nk);
+      if (empHit) {
+        return {
+          existingId: empHit.id || '',
+          existingName: empHit.name || candName,
+          existingFather: empHit.fatherName || '',
+          existingActive: true,
+          existingKind: empHit.kind || 'contract'
+        };
+      }
+      return null;
+    };
+
+    // Validate staff & face-only records first so punches for rejected staff never land.
+    const faceFatherBySid = new Map();
+    for (const f of faces) {
+      if (!f || !f.staffId) continue;
+      const fSid = String(f.staffId).trim();
+      const ff = cleanText(f.fatherName !== undefined ? f.fatherName : f.father_name, 80);
+      if (fSid && ff && !faceFatherBySid.has(fSid)) faceFatherBySid.set(fSid, ff);
+    }
+    const acceptedBatchNames = new Map();
+    const staffMetaById = new Map();
+    const deactivatedNoOpIds = new Set();
+    for (const st of staffIn) {
+      if (!st || !st.id) continue;
+      const sid = String(st.id).trim();
+      if (!SAFE_ID_RE.test(sid)) continue;
+      const ex = bioById.get(sid) || null;
+      if (st.active === false && !ex) {
+        deactivatedNoOpIds.add(sid);
+        acceptedStaffIds.push(sid);
+        continue;
+      }
+      const candName = cleanText(st.name || (ex ? ex.name : ''), 120);
+      const hasStFather = st.fatherName !== undefined || st.father_name !== undefined;
+      const rawStFather = hasStFather ? cleanText(st.fatherName !== undefined ? st.fatherName : st.father_name, 80) : '';
+      const candFather = hasStFather
+        ? (rawStFather || faceFatherBySid.get(sid) || '')
+        : (faceFatherBySid.get(sid) || cleanText(ex ? ex.father_name : '', 80));
+      const nk = normKioskNameKey(candName);
+      const batchHit = nk ? acceptedBatchNames.get(nk) : null;
+      const clash = (batchHit && batchHit.id !== sid)
+        ? { existingId: batchHit.id, existingName: batchHit.name, existingFather: batchHit.fatherName || '', existingActive: true, existingKind: 'batch' }
+        : findKioskNameClash(sid, candName, ex, st.active);
+      if (clash) {
+        rejectedStaffIds.add(sid);
+        rejectedStaff.push({
+          id: sid,
+          staffId: sid,
+          name: candName,
+          fatherName: candFather,
+          reason: 'same_name_conflict',
+          existingId: clash.existingId,
+          existingName: clash.existingName,
+          existingFather: clash.existingFather,
+          existingActive: clash.existingActive,
+          existingKind: clash.existingKind,
+          suggestedName: suggestKioskDistinctName(candName, candFather, usedNormNames),
+          error: 'Duplicate staff name blocked by server.'
+        });
+        continue;
+      }
+      if (nk) {
+        usedNormNames.add(nk);
+        acceptedBatchNames.set(nk, { id: sid, name: candName, fatherName: candFather });
+      }
+      staffMetaById.set(sid, st);
+      acceptedStaffIds.push(sid);
+    }
+
+    const byStaff = new Map();
+    for (const sid of staffMetaById.keys()) {
+      byStaff.set(sid, []);
+    }
+    for (const f of faces) {
+      if (!f || !f.staffId || !f.id) continue;
+      const sid = String(f.staffId).trim();
+      const fid = String(f.id);
+      if (!SAFE_ID_RE.test(sid) || !SAFE_ID_RE.test(fid)) continue;
+      if (rejectedStaffIds.has(sid) || deactivatedNoOpIds.has(sid)) {
+        rejectedFaces.push(fid);
+        continue;
+      }
+      if (!staffMetaById.has(sid) && f.staffName) {
+        const ex = bioById.get(sid) || null;
+        const candName = cleanText(f.staffName, 120);
+        const candFather = cleanText(f.fatherName !== undefined ? f.fatherName : (f.father_name !== undefined ? f.father_name : (ex ? ex.father_name : '')), 80);
+        const nk = normKioskNameKey(candName);
+        const batchHit = nk ? acceptedBatchNames.get(nk) : null;
+        const clash = (batchHit && batchHit.id !== sid)
+          ? { existingId: batchHit.id, existingName: batchHit.name, existingFather: batchHit.fatherName || '', existingActive: true, existingKind: 'batch' }
+          : findKioskNameClash(sid, candName, ex);
+        if (clash) {
+          rejectedStaffIds.add(sid);
+          rejectedFaces.push(fid);
+          rejectedStaff.push({
+            id: sid,
+            staffId: sid,
+            name: candName,
+            fatherName: candFather,
+            reason: 'same_name_conflict',
+            existingId: clash.existingId,
+            existingName: clash.existingName,
+            existingFather: clash.existingFather,
+            existingActive: clash.existingActive,
+            existingKind: clash.existingKind,
+            suggestedName: suggestKioskDistinctName(candName, candFather, usedNormNames),
+            error: 'Duplicate staff name blocked by server.'
+          });
+          continue;
+        }
+        if (nk) {
+          usedNormNames.add(nk);
+          acceptedBatchNames.set(nk, { id: sid, name: candName, fatherName: candFather });
+        }
+      }
+      if (!byStaff.has(sid)) byStaff.set(sid, []);
+      byStaff.get(sid).push(f);
+      syncedFaces.push(fid);
+    }
 
     for (const p of punches) {
       if (!p || !p.id) continue;
       const pid = String(p.id).trim();
       if (!SAFE_ID_RE.test(pid)) continue;
+      const pSid = String(p.staffId || '').trim();
+      const isKnownPunchSid = Boolean(
+        pSid && (
+          bioById.has(pSid)
+          || staffMetaById.has(pSid)
+          || byStaff.has(pSid)
+          || regOnById.has(pSid)
+          || register.offIds.has(pSid)
+        )
+      );
+      let punchNameClash = false;
+      if (pSid && !isKnownPunchSid && p.staffName) {
+        const pNk = normKioskNameKey(p.staffName);
+        const pBatch = pNk ? acceptedBatchNames.get(pNk) : null;
+        punchNameClash = Boolean((pBatch && pBatch.id !== pSid) || findKioskNameClash(pSid, p.staffName, null));
+      }
+      if (pSid && (rejectedStaffIds.has(pSid) || deactivatedNoOpIds.has(pSid) || punchNameClash)) {
+        rejectedPunches.push(pid);
+        continue;
+      }
       const ex = await env.DB.prepare('SELECT rev, site_key FROM kiosk_punches_ext WHERE id = ?1').bind(pid).first();
       if (ex && ex.site_key !== siteKey) { rejectedPunches.push(pid); continue; }   // a punch id belongs to the site that first sent it
       const inRev = Number(p.rev || 0);
@@ -1518,7 +1805,7 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
         ).bind(
           pid,
           siteKey,
-          String(p.staffId || ''),
+          pSid,
           cleanText(p.staffName, 120),   // stored with single spaces, so people are compared the same way everywhere
           String(p.ts || ''),
           String(p.day || ''),
@@ -1533,32 +1820,18 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
       syncedPunches.push(pid);
     }
 
-    // Seed/merge staff metadata + group face samples by staffId
-    const staffMetaById = new Map();
-    for (const st of staffIn) {
-      if (!st || !st.id) continue;
-      const sid = String(st.id).trim();
-      if (SAFE_ID_RE.test(sid)) staffMetaById.set(sid, st);
-    }
-    const byStaff = new Map();
-    for (const sid of staffMetaById.keys()) {
-      byStaff.set(sid, []);
-    }
-    for (const f of faces) {
-      if (!f || !f.staffId || !f.id) continue;
-      const sid = String(f.staffId).trim();
-      if (!SAFE_ID_RE.test(sid) || !SAFE_ID_RE.test(String(f.id))) continue;
-      if (!byStaff.has(sid)) byStaff.set(sid, []);
-      byStaff.get(sid).push(f);
-      syncedFaces.push(String(f.id));
-    }
     for (const [sid, list] of byStaff.entries()) {
-      const ex = await env.DB.prepare('SELECT * FROM kiosk_biometrics WHERE site_key = ?1 AND person_id = ?2').bind(bioSite, sid).first();
+      const ex = bioById.get(sid) || null;
       const meta = staffMetaById.get(sid) || {};
       const exSamples = ex ? safeParseJson(ex.face_samples, []).filter(isValidVec128) : [];
       let pinHash = String(meta.pinhash || (ex ? ex.pinhash : '') || '').trim().toLowerCase();
       let staffName = String(meta.name || (ex ? ex.name : '') || '').slice(0, 120);
       let officialName = String(meta.officialName || meta.official_name || (ex ? ex.official_name : '') || '').slice(0, 120);
+      const hasMetaFather = meta.fatherName !== undefined || meta.father_name !== undefined;
+      const rawMetaFather = hasMetaFather ? cleanText(meta.fatherName !== undefined ? meta.fatherName : meta.father_name, 80) : '';
+      let fatherVal = hasMetaFather
+        ? (rawMetaFather || faceFatherBySid.get(sid) || '')
+        : (faceFatherBySid.get(sid) || cleanText(ex ? ex.father_name : '', 80));
       let roleVal = String(meta.role || (ex ? ex.role : '') || 'staff').slice(0, 40);
       let deptVal = String(meta.dept || (ex ? ex.dept : '') || '').slice(0, 80);
       // A manager switches a person off or back on at the door (the tablet sends `active` only for
@@ -1570,24 +1843,30 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
       }
       for (const item of list) {
         if (item.staffName) staffName = String(item.staffName).slice(0, 120);
+        if (item.fatherName || item.father_name) fatherVal = cleanText(item.fatherName || item.father_name, 80);
         if (item.role) roleVal = String(item.role).slice(0, 40);
         if (item.dept) deptVal = String(item.dept).slice(0, 80);
         if (item.pinhash && String(item.pinhash).length === 64) pinHash = String(item.pinhash).toLowerCase();
         if (isValidVec128(item.descriptor)) {
-          const slot = Math.max(1, Math.min(5, Number(item.sample || (sampleMap.size + 1))));
+          const rawSlot = Number(item.sample);
+          const fallbackSlot = sampleMap.size + 1;
+          const slot = (Number.isFinite(rawSlot) && rawSlot >= 1)
+            ? Math.max(1, Math.min(5, Math.trunc(rawSlot)))
+            : Math.max(1, Math.min(5, fallbackSlot));
           sampleMap.set(slot, item.descriptor);
         }
       }
       const mergedVecs = Array.from(sampleMap.entries()).sort((a, b) => a[0] - b[0]).map(e => e[1]);
       await env.DB.prepare(
         `INSERT OR REPLACE INTO kiosk_biometrics
-         (site_key, person_id, name, official_name, role, dept, active, pinhash, pin_salt, face_samples, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
+         (site_key, person_id, name, official_name, father_name, role, dept, active, pinhash, pin_salt, face_samples, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
       ).bind(
         bioSite,
         sid,
         staffName || sid,
         officialName,
+        fatherVal,
         roleVal,
         deptVal,
         activeVal,
@@ -1598,7 +1877,19 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
       ).run();
     }
 
-    return kioskJson({ ok: true, punches: syncedPunches, faces: syncedFaces, staff: Array.from(staffMetaById.keys()), rejectedPunches, syncedPunches, syncedFaces, punchesAccepted: syncedPunches, facesAccepted: syncedFaces });
+    return kioskJson({
+      ok: true,
+      punches: syncedPunches,
+      faces: syncedFaces,
+      staff: acceptedStaffIds,
+      rejectedPunches,
+      rejectedStaff,
+      rejectedFaces,
+      syncedPunches,
+      syncedFaces,
+      punchesAccepted: syncedPunches,
+      facesAccepted: syncedFaces
+    });
   }
 
   // ---- 7. Attendance Roster Pull (`roster`, supporting `redact: true` & `restore: true`) ----
@@ -1620,6 +1911,7 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
     // People voided or made inactive in the staff register drop off the roster even if they were enrolled at the door.
     const register = await readStaffRegister(env.DB, siteBu);
     const offIds = register.offIds;
+    const regFatherById = new Map(register.on.map(sm => [sm.id, sm.fatherName || '']));
     {
       {
         const known = new Set(kioskRows.map(r => r.person_id));
@@ -1628,7 +1920,7 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
           if (!SAFE_ID_RE.test(sid) || known.has(sid)) continue;
           known.add(sid);
           staff.push({
-            id: sid, name: sm.name || sid, officialName: '', role: sm.role || '', dept: '', active: true,
+            id: sid, name: sm.name || sid, officialName: '', fatherName: sm.fatherName || '', role: sm.role || '', dept: '', active: true,
             hasPin: false, has_pin: false, has_face: false, faceSamples: 0, serverSamples: 0
           });
         }
@@ -1636,10 +1928,11 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
     }
     for (const r of kioskRows) {
       if (offIds.has(r.person_id)) continue;   // off in the staff register: not on the roster, and not for the tablet to switch back on
+      const fatherName = cleanText(r.father_name || regFatherById.get(r.person_id) || '', 80);
       if (Number(r.active) === 0) {
         if (includeInactive) {
           staff.push({
-            id: r.person_id, name: r.name || r.person_id, officialName: r.official_name || '', role: r.role || '', dept: r.dept || '',
+            id: r.person_id, name: r.name || r.person_id, officialName: r.official_name || '', fatherName, role: r.role || '', dept: r.dept || '',
             active: false, hasPin: false, has_pin: false, has_face: false, faceSamples: 0, serverSamples: 0
           });
         }
@@ -1650,6 +1943,7 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
         id: r.person_id,
         name: r.name || r.person_id,
         officialName: r.official_name || '',
+        fatherName,
         role: r.role || '',
         dept: r.dept || '',
         active: Number(r.active) !== 0,
