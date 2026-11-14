@@ -312,6 +312,7 @@ _LEGACY_PURGED_ENTRY_D1_RE = re.compile(
     r"|dv-(?:hld|ins)-(?:exp|sal|set|rec)-[0-9a-f]{8,16})(?:-i\d+)?"
     r"@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z)$"
 )
+_TRUSTED_BARE_PURGE_D1_RE = re.compile(r"^[a-z_]+:[A-Za-z0-9_.:-]+$")
 
 
 def _add_purged_token_d1(
@@ -319,31 +320,46 @@ def _add_purged_token_d1(
     purged_bare: set[str],
     purged_timed: dict[str, str],
     purged_timed_ms: dict[str, int],
+    allow_trusted_bare: bool = False,
 ) -> None:
     ps = str(raw_p or "").strip()
-    if not ps or not _LEGACY_PURGED_ENTRY_D1_RE.match(ps):
+    if not ps:
         return
-    if "@" in ps:
-        bk, ts = ps.split("@", 1)
-        ms = _iso_ms_d1(ts)
-        if ms <= 0:
-            return
-        prev_ts = purged_timed.get(bk)
-        if not prev_ts or ms >= _iso_ms_d1(prev_ts):
-            purged_timed[bk] = ts
-            purged_timed_ms[bk] = ms
-    else:
-        purged_bare.add(ps)
+    if _LEGACY_PURGED_ENTRY_D1_RE.match(ps):
+        if "@" in ps:
+            bk, ts = ps.split("@", 1)
+            ms = _iso_ms_d1(ts)
+            if ms <= 0:
+                return
+            prev_ts = purged_timed.get(bk)
+            if not prev_ts or ms >= _iso_ms_d1(prev_ts):
+                purged_timed[bk] = ts
+                purged_timed_ms[bk] = ms
+        else:
+            purged_bare.add(ps)
+    elif allow_trusted_bare and "@" not in ps and _TRUSTED_BARE_PURGE_D1_RE.match(ps):
+        rid_part = ps.split(":", 1)[1]
+        if not (_SEED_TX_D1_RE.match(rid_part) and not _LEGACY_POS_D1_RE.match(rid_part)):
+            purged_bare.add(ps)
 
 
-def _collect_purged_state_d1(raw_lists: list) -> tuple[set[str], dict[str, str], dict[str, int]]:
+def _collect_purged_state_d1(
+    raw_lists: list,
+    allow_trusted_bare: bool = False,
+) -> tuple[set[str], dict[str, str], dict[str, int]]:
     purged_bare: set[str] = set()
     purged_timed: dict[str, str] = {}
     purged_timed_ms: dict[str, int] = {}
     for src_list in raw_lists:
         if isinstance(src_list, list):
             for item in src_list:
-                _add_purged_token_d1(item, purged_bare, purged_timed, purged_timed_ms)
+                _add_purged_token_d1(
+                    item,
+                    purged_bare,
+                    purged_timed,
+                    purged_timed_ms,
+                    allow_trusted_bare=allow_trusted_bare,
+                )
     return purged_bare, purged_timed, purged_timed_ms
 
 
@@ -708,7 +724,8 @@ def merge_mfg_web_stores(doc_a: dict | None, doc_b: dict | None) -> dict:
     out["updatedAt"] = max(ts_a, ts_b)
 
     purged_bare, purged_timed, purged_timed_ms = _collect_purged_state_d1(
-        [newer.get("_purgedOverrideIds"), older.get("_purgedOverrideIds")]
+        [newer.get("_purgedOverrideIds"), older.get("_purgedOverrideIds")],
+        allow_trusted_bare=True,
     )
     merged_purged = sorted(purged_bare | {f"{bk}@{ts}" for bk, ts in purged_timed.items()})[-2000:]
     if merged_purged:

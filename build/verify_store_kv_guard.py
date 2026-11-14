@@ -293,6 +293,26 @@ with tempfile.TemporaryDirectory() as td:
     )
     m7_ids = [r["id"] for r in (m7.get("customRecords", {}).get("raw_purchases") or [])]
     check("merge_mfg_web_stores drops stale @ISO override while keeping post-purge edit", m7_ids == ["rp_d7970d45b599"], str(m7_ids))
+    m7_bare = eds.merge_mfg_web_stores(
+        {
+            "updatedAt": "2026-11-14T16:15:00.000Z",
+            "_purgedOverrideIds": ["price_rules:pr0", "raw_purchases:rp_d7970d45b511"],
+            "customRecords": {"price_rules": [], "raw_purchases": []},
+        },
+        {
+            "updatedAt": "2026-11-14T16:00:00.000Z",
+            "customRecords": {
+                "price_rules": [{"id": "pr0", "rev": 1}],
+                "raw_purchases": [{"id": "rp_d7970d45b511", "ticket_no": "18021"}],
+            },
+        },
+    )
+    m7_bare_ok = (
+        m7_bare.get("_purgedOverrideIds") == ["price_rules:pr0"]
+        and (m7_bare.get("customRecords", {}).get("price_rules") or []) == []
+        and [r["id"] for r in (m7_bare.get("customRecords", {}).get("raw_purchases") or [])] == ["rp_d7970d45b511"]
+    )
+    check("merge_mfg_web_stores keeps trusted bare purge price_rules:pr0 and rejects untimed hash TX token", m7_bare_ok, str(m7_bare))
 
 print(f"\n{PASSES} passed, {len(FAILS)} failed")
 sys.exit(1 if FAILS else 0)

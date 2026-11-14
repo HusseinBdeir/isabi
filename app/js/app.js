@@ -69,6 +69,7 @@
   let _stateRef = null;
   let _usersApiHydratedOnce = false;
   let _usersHydrateInFlight = null;
+  let _authSessionEpoch = 0;
   let _edgeSessionToken = '';
   let _edgeCookieAuthed = false;
   if (!PARAMS.get('autologin') && (IS_LOCAL || window.__ISABI_TEST_EDGE || PARAMS.get('demo') !== '1')) {
@@ -116037,17 +116038,24 @@
     _lastCloudSyncStartedAt = Date.now();
     const shouldPush = Boolean(pushChanges || STATE.pushAfterSync || STATE.pendingCloudPush);
     STATE.pushAfterSync = false;
-    syncInFlight = doSync(shouldPush).finally(() => {
-      syncInFlight = null;
+    const runEpoch = _authSessionEpoch;
+    let runPromise = null;
+    runPromise = doSync(shouldPush).finally(() => {
+      if (syncInFlight === runPromise) syncInFlight = null;
+      if (!isDemoSandboxSession() && rosterIsServerHeld() && (!STATE.authed || runEpoch !== _authSessionEpoch)) {
+        return;
+      }
       if (STATE.pushAfterSync) { STATE.pushAfterSync = false; syncWithCloud(true); }
       else if (STATE.pendingCloudPush) { scheduleCloudPushRetry(6000); }
       pullDoorTabletPunches(false);
       scheduleDormantAgreementSweep();
     });
+    syncInFlight = runPromise;
     return syncInFlight;
   }
 
   function applyServerUsersPayload(usersArr, payloadObj) {
+    if (!isDemoSandboxSession() && rosterIsServerHeld() && !STATE.authed) return false;
     _usersApiHydratedOnce = true;
     if (payloadObj && payloadObj.faceSettings && typeof payloadObj.faceSettings === 'object') {
       const rFs = payloadObj.faceSettings;
@@ -116100,6 +116108,7 @@
     if (!hasServerApi() || isDemoSandboxSession()) return Promise.resolve(false);
     if (rosterIsServerHeld() && !STATE.authed) return Promise.resolve(false);
     if (_usersHydrateInFlight) return _usersHydrateInFlight;
+    const hydrateEpoch = _authSessionEpoch;
     const earlyP = window.__ISABI_EARLY_USERS_PROMISE;
     if (earlyP) window.__ISABI_EARLY_USERS_PROMISE = null;
     const ctrl = new AbortController();
@@ -116108,17 +116117,22 @@
     const dataP = (earlyP && !navigator.webdriver && !window.__MFG_HEADLESS_TEST)
       ? Promise.resolve(earlyP).then(d => (d && Array.isArray(d.users)) ? d : fetchFreshUsers()).catch(() => fetchFreshUsers())
       : fetchFreshUsers();
-    _usersHydrateInFlight = dataP
+    let p = null;
+    p = dataP
       .then(d => {
         clearTimeout(t);
+        if (hydrateEpoch !== _authSessionEpoch || (!isDemoSandboxSession() && rosterIsServerHeld() && !STATE.authed)) {
+          return false;
+        }
         if (d && Array.isArray(d.users)) return applyServerUsersPayload(d.users, d);
         return false;
       })
       .catch(() => false)
       .finally(() => {
         clearTimeout(t);
-        _usersHydrateInFlight = null;
+        if (_usersHydrateInFlight === p) _usersHydrateInFlight = null;
       });
+    _usersHydrateInFlight = p;
     return _usersHydrateInFlight;
   }
 
@@ -116128,6 +116142,8 @@
       updateCloudBadges();
       return;
     }
+    const syncEpoch = _authSessionEpoch;
+    const abortedByAuthChange = () => Boolean(!isDemoSandboxSession() && rosterIsServerHeld() && (!STATE.authed || syncEpoch !== _authSessionEpoch));
     const isEdgeActive = Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
     // Verify active HttpOnly cookie session on Edge hosts when needed
     if (isEdgeActive && STATE.authed && !_edgeSessionToken && !_edgeCookieAuthed && !isDemoSandboxSession()) {
@@ -116135,8 +116151,10 @@
       const tMe = setTimeout(() => ctrlMe.abort(), 6000);   // a dead network must not hold the rest of the sync open
       try {
         const rMe = await edgeApiFetch('./api/auth/me', { signal: ctrlMe.signal });
+        if (abortedByAuthChange()) return;
         if (rMe && rMe.ok) {
           const jMe = await rMe.json().catch(() => null);
+          if (abortedByAuthChange()) return;
           if (jMe && jMe.authenticated) _edgeCookieAuthed = true;
         }
       } catch (_) {
@@ -116153,60 +116171,77 @@
           const t = setTimeout(() => ctrl.abort(), 6000);
           const rLocal = await edgeApiFetch('./api/users', { signal: ctrl.signal });
           clearTimeout(t);
+          if (abortedByAuthChange()) return;
           if (rLocal.ok) {
             const dLocal = await rLocal.json();
+            if (abortedByAuthChange()) return;
             if (Array.isArray(dLocal.users)) {
               applyServerUsersPayload(dLocal.users, dLocal);
             }
           }
         }
+        if (abortedByAuthChange()) return;
         if (!isEdgeActive || STATE.authed || isDemoSandboxSession()) {
           const ctrlSr = new AbortController();
           const tSr = setTimeout(() => ctrlSr.abort(), 5000);
           const rSr = await edgeApiFetch('./api/sentinel_reviews', { signal: ctrlSr.signal });
           clearTimeout(tSr);
+          if (abortedByAuthChange()) return;
           if (rSr.ok) {
             const dSr = await rSr.json();
+            if (abortedByAuthChange()) return;
             if (dSr && dSr.reviews && mergeSentinelReviews(dSr.reviews)) {
               saveLocalAuthAndRecords();
             }
           }
+          if (abortedByAuthChange()) return;
           const ctrlAr = new AbortController();
           const tAr = setTimeout(() => ctrlAr.abort(), 5000);
           const rAr = await edgeApiFetch('./api/alert_rules', { signal: ctrlAr.signal });
           clearTimeout(tAr);
+          if (abortedByAuthChange()) return;
           if (rAr.ok) {
             const dAr = await rAr.json();
+            if (abortedByAuthChange()) return;
             if (dAr && mergeAlertRules(dAr)) {
               saveLocalAuthAndRecords();
             }
           }
+          if (abortedByAuthChange()) return;
           const ctrlSb = new AbortController();
           const tSb = setTimeout(() => ctrlSb.abort(), 5000);
           const rSb = await edgeApiFetch('./api/staff_biometrics', { signal: ctrlSb.signal });
           clearTimeout(tSb);
+          if (abortedByAuthChange()) return;
           if (rSb.ok) {
             const dSb = await rSb.json();
+            if (abortedByAuthChange()) return;
             if (dSb && dSb.staff_biometrics && mergeStaffBiometrics(dSb.staff_biometrics)) {
               saveLocalAuthAndRecords();
             }
           }
+          if (abortedByAuthChange()) return;
           const ctrlWs = new AbortController();
           const tWs = setTimeout(() => ctrlWs.abort(), 5000);
           const rWs = await edgeApiFetch('./api/work_schedules', { signal: ctrlWs.signal });
           clearTimeout(tWs);
+          if (abortedByAuthChange()) return;
           if (rWs.ok) {
             const dWs = await rWs.json();
+            if (abortedByAuthChange()) return;
             if (dWs && dWs.work_schedules && mergeWorkSchedules(dWs.work_schedules)) {
               saveLocalAuthAndRecords();
             }
           }
+          if (abortedByAuthChange()) return;
           const ctrlGeo = new AbortController();
           const tGeo = setTimeout(() => ctrlGeo.abort(), 5000);
           const rGeo = await edgeApiFetch('./api/geo_config', { signal: ctrlGeo.signal });
           clearTimeout(tGeo);
+          if (abortedByAuthChange()) return;
           if (rGeo.ok) {
             const dGeo = await rGeo.json();
+            if (abortedByAuthChange()) return;
             if (dGeo && dGeo.config && window.MFG_GEO && typeof window.MFG_GEO.importGeoConfig === 'function') {
               if (window.MFG_GEO.importGeoConfig(dGeo.config)) {
                 if (typeof window.MFG_GEO.hydrateSeedGeo === 'function') window.MFG_GEO.hydrateSeedGeo(SEED, true);
@@ -116214,19 +116249,24 @@
               }
             }
           }
+          if (abortedByAuthChange()) return;
           const ctrlId = new AbortController();
           const tId = setTimeout(() => ctrlId.abort(), 5000);
           const rId = await edgeApiFetch('./api/industry_domain_store', { signal: ctrlId.signal });
           clearTimeout(tId);
+          if (abortedByAuthChange()) return;
           if (rId.ok) {
             const dId = await rId.json();
+            if (abortedByAuthChange()) return;
             let idChanged = false;
             if (dId && dId.industryCustomRows && mergeIndustryCustomRows(dId.industryCustomRows)) idChanged = true;
             if (dId && dId.industryRowEdits && mergeIndustryRowEdits(dId.industryRowEdits)) idChanged = true;
             if (idChanged) saveLocalAuthAndRecords();
           }
+          if (abortedByAuthChange()) return;
           if (STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser())) {
             await loadCashflowBehindNotice();
+            if (abortedByAuthChange()) return;
           }
         }
       } catch (_) { /* API not reachable */ }
@@ -116274,6 +116314,7 @@
       }
 
       const store = await getRes.json();
+      if (abortedByAuthChange()) return;
       const docs = (store && store.docs) || store || {};
       const remote = docs[CLOUD_DOC_KEY] || (store && store.customRecords ? store : {});
       const isScopedRemote = Boolean(remote && remote._scopedForSession);
@@ -116420,6 +116461,7 @@
         let expectedUpdatedAt = docs[CLOUD_DOC_KEY] ? String(remote.updatedAt || '') : '';
         let casSucceeded = false;
         for (let casAttempt = 0; casAttempt < 3; casAttempt++) {
+          if (abortedByAuthChange()) return;
           const seqBeforePayload = _localPushSeq;
           const payload = cloudPayload();
           const ctrl2 = new AbortController();
@@ -116433,12 +116475,14 @@
             signal: ctrl2.signal
           });
           clearTimeout(timer2);
+          if (abortedByAuthChange()) return;
           if (!putRes.ok) {
             STATE.cloudStatus = '● Cloud read-only (' + putRes.status + ')';
             scheduleCloudPushRetry(6000);
             break;
           }
           const putJson = await putRes.json().catch(() => null);
+          if (abortedByAuthChange()) return;
           if (putJson && putJson.conflict) {
             const cDocs = (putJson.docs && typeof putJson.docs === 'object') ? putJson.docs : {};
             const freshRemote = cDocs[CLOUD_DOC_KEY] || {};
@@ -116478,6 +116522,7 @@
       updateCloudBadges();
       if (changed) safeRender();
     } catch (_) {
+      if (abortedByAuthChange()) return;
       STATE.cloudStatus = navigator.onLine ? '● Relay unreachable' : '● Offline Cache';
       updateCloudBadges();
       if (pushChanges || STATE.pendingCloudPush) {
@@ -121715,6 +121760,7 @@
     STATE.sourceBehind = null;
     STATE.behindDayPrev = null;
     _cashflowBehindGen++;
+    _authSessionEpoch++;
     window.__mfgSwResuming = false;
     document.documentElement.classList.remove('sw-resuming');
     FACE_STATE.pending2faUser = null;
@@ -121879,6 +121925,7 @@
     STATE.sourceBehind = null;
     STATE.behindDayPrev = null;
     _cashflowBehindGen++;
+    _authSessionEpoch++;
     _WF_AUDIT_KEPT.clear();
     _WF_AUDIT_CACHE = null;
     if (window.MFG_PBI && typeof window.MFG_PBI.clearHubRelKept === 'function') window.MFG_PBI.clearHubRelKept();
@@ -121923,6 +121970,8 @@
         STATE.users = [];
         STATE.activeUserIdx = 0;
         _usersApiHydratedOnce = false;
+        _usersHydrateInFlight = null;
+        syncInFlight = null;
         try { appStoreRemoveRaw('isabi_mfg_users_v2'); } catch (_) {}
         SEED.records = {};
         SEED.models = {};
@@ -150824,10 +150873,12 @@
       ? (SEED_MANIFEST.demoIndustries || './js/seed_demo_industries.json')
       : (useAuthedApi ? (SEED_MANIFEST.apiIndustries || './api/seed/industries') : (SEED_MANIFEST.industries || './js/seed_industries.json'));
 
+    const seedEpoch = _authSessionEpoch;
     _seedHydrationPromise = (async () => {
       try {
         const indFetchPromise = fetchSeedPayloadJson(industriesUrl, useAuthedApi).catch(() => null);
         const corePayload = await fetchSeedPayloadJson(coreUrl, useAuthedApi);
+        if (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch)) return SEED;
         await unpackPackedRecordsIntoSeed(corePayload, shouldYield);
         if (_demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSbx) {
           normalizeDistinctSiteCategories(_demoCompanyLiveSnap);
@@ -150870,6 +150921,7 @@
               ])
             : Promise.resolve(null)
         ]);
+        if (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch)) return SEED;
         if (demoBundlePayloads && !_demoCompanySandboxSeed && !_preloadedDemoBundle) {
           const [dCore, dRec, dInd] = demoBundlePayloads;
           if (dCore || dRec || dInd) {
