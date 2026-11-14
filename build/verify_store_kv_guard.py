@@ -235,5 +235,64 @@ with tempfile.TemporaryDirectory() as td:
     check("offline export: no statement touches the store or work schedules", "mfg_web_store" not in text and "work_schedules" not in text, text[:200])
     check("offline export: manifest has no store head and is marked stale", meta.get("store_head_ts") == "" and meta.get("stale_store") is True)
 
+    print("7. Stale hash-override @ISO purge emission & deterministic merge filtering")
+    t7_db = tdp / "t7_seed.db"
+    c7 = sqlite3.connect(str(t7_db))
+    c7.executescript(eds.SCHEMA_SQL.read_text(encoding="utf-8"))
+    c7.execute(
+        "INSERT INTO raw_purchases (id, company, date, rep_date, site_owner, ticket_no, total, method, source, voided) "
+        "VALUES ('rp_d7970d45b511', 'WTC', '2026-11-14', '2026-11-14', 'Sibline', '18021', 100.0, 'Credit', 'workbook', 0)"
+    )
+    c7.commit()
+    c7.close()
+    t7_remote = {
+        "updatedAt": "2026-11-14T10:00:00Z",
+        "customRecords": {
+            "raw_purchases": [
+                {
+                    "id": "rp_d7970d45b511", "company": "WTC", "date": "2026-11-14",
+                    "supplier": "Sibline", "ticket_no": "18022", "amount": 100.0,
+                    "modified_at": "2026-11-14T07:34:01Z",
+                    "_seed_orig": {"id": "rp_d7970d45b511", "date": "2026-11-14", "ticket_no": "99999"},
+                }
+            ]
+        },
+    }
+    eds._LIVE_EDGE_HEAD_TS = "2026-11-14T10:00:00Z"
+    eds._STORE_RUN_ID = "run7a"
+    tr7_a = eds.collect_target_rows(t7_db, schema_cols, t7_remote, include_snapshot=False)
+    sha7_a = eds._STORE_CONTENT_SHA
+    eds._STORE_RUN_ID = "run7b"
+    tr7_b = eds.collect_target_rows(t7_db, schema_cols, t7_remote, include_snapshot=False)
+    sha7_b = eds._STORE_CONTENT_SHA
+    kv_sql7 = tr7_a.get(eds.encode_row_key("edge_kv_store", ("mfg_web_store__next_run7a_0000",)), "") or tr7_a.get(eds.encode_row_key("edge_kv_store", ("mfg_web_store",)), "")
+    check(
+        "stale-anchor hash override emits deterministic @ISO purge token (not bare ID, matching store_content_sha across runs)",
+        "raw_purchases:rp_d7970d45b511@2026-11-14T10:00:00.000Z" in kv_sql7 and sha7_a == sha7_b and bool(sha7_a),
+        sha7_a,
+    )
+    m7 = eds.merge_mfg_web_stores(
+        {
+            "updatedAt": "2026-11-14T15:03:37.000Z",
+            "_purgedOverrideIds": ["raw_purchases:rp_d7970d45b511@2026-11-14T15:03:37.000Z"],
+            "customRecords": {
+                "raw_purchases": [
+                    {"id": "rp_d7970d45b599", "modified_at": "2026-11-14T16:00:00Z"},
+                ]
+            },
+        },
+        {
+            "updatedAt": "2026-11-14T08:00:00.000Z",
+            "_purgedOverrideIds": ["raw_purchases:rp_d7970d45b599@2026-11-14T14:00:00.000Z"],
+            "customRecords": {
+                "raw_purchases": [
+                    {"id": "rp_d7970d45b511", "ticket_no": "18022", "modified_at": "2026-11-14T07:34:01Z"},
+                ]
+            },
+        },
+    )
+    m7_ids = [r["id"] for r in (m7.get("customRecords", {}).get("raw_purchases") or [])]
+    check("merge_mfg_web_stores drops stale @ISO override while keeping post-purge edit", m7_ids == ["rp_d7970d45b599"], str(m7_ids))
+
 print(f"\n{PASSES} passed, {len(FAILS)} failed")
 sys.exit(1 if FAILS else 0)

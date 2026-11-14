@@ -292,6 +292,79 @@ def _rec_purge_ms(r: dict) -> int:
     )
 
 
+_LEGACY_POS_D1_RE = re.compile(
+    r"^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+"
+    r"|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+"
+    r"|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$"
+)
+_SEED_TX_D1_RE = re.compile(
+    r"^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)(?:\d+|_[0-9a-f]{10,16})"
+    r"|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+"
+    r"|dv-(?:hld|ins)-(?:exp|sal|set|rec)-(?:\d+|[0-9a-f]{8,16}))(?:-i\d+)?$"
+)
+_LEGACY_PURGED_ENTRY_D1_RE = re.compile(
+    r"^[a-z_]+:(?:(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+"
+    r"|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+"
+    r"|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?"
+    r"(?:@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z)?"
+    r"|(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)_[0-9a-f]{10,16}"
+    r"|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+"
+    r"|dv-(?:hld|ins)-(?:exp|sal|set|rec)-[0-9a-f]{8,16})(?:-i\d+)?"
+    r"@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z)$"
+)
+
+
+def _add_purged_token_d1(
+    raw_p: object,
+    purged_bare: set[str],
+    purged_timed: dict[str, str],
+    purged_timed_ms: dict[str, int],
+) -> None:
+    ps = str(raw_p or "").strip()
+    if not ps or not _LEGACY_PURGED_ENTRY_D1_RE.match(ps):
+        return
+    if "@" in ps:
+        bk, ts = ps.split("@", 1)
+        ms = _iso_ms_d1(ts)
+        if ms <= 0:
+            return
+        prev_ts = purged_timed.get(bk)
+        if not prev_ts or ms >= _iso_ms_d1(prev_ts):
+            purged_timed[bk] = ts
+            purged_timed_ms[bk] = ms
+    else:
+        purged_bare.add(ps)
+
+
+def _collect_purged_state_d1(raw_lists: list) -> tuple[set[str], dict[str, str], dict[str, int]]:
+    purged_bare: set[str] = set()
+    purged_timed: dict[str, str] = {}
+    purged_timed_ms: dict[str, int] = {}
+    for src_list in raw_lists:
+        if isinstance(src_list, list):
+            for item in src_list:
+                _add_purged_token_d1(item, purged_bare, purged_timed, purged_timed_ms)
+    return purged_bare, purged_timed, purged_timed_ms
+
+
+def _is_purged_by_state_d1(
+    ck: str,
+    row_id_s: str,
+    row_obj: dict,
+    purged_bare: set[str],
+    purged_timed_ms: dict[str, int],
+) -> bool:
+    if isinstance(row_obj, dict) and row_obj.get("_reopenedExplicitly"):
+        return False
+    ek = f"{ck}:{row_id_s}"
+    if ek in purged_bare:
+        return True
+    cutoff = purged_timed_ms.get(ek)
+    if cutoff is not None:
+        return _rec_purge_ms(row_obj) <= cutoff
+    return False
+
+
 def _record_tie_key(r: dict) -> tuple[int, str, int, int, str]:
     ed = str(r.get("end_date") or "").strip()[:10]
     has_closed_end = 1 if ("1900-01-01" <= ed < "2030-01-01") else 0
@@ -634,14 +707,14 @@ def merge_mfg_web_stores(doc_a: dict | None, doc_b: dict | None) -> dict:
     out = copy.deepcopy(newer)
     out["updatedAt"] = max(ts_a, ts_b)
 
-    purged_overrides: set[str] = set()
-    for src_p in (newer.get("_purgedOverrideIds") or [], older.get("_purgedOverrideIds") or []):
-        if isinstance(src_p, list):
-            for pid_item in src_p:
-                if pid_item:
-                    purged_overrides.add(str(pid_item))
-    if purged_overrides:
-        out["_purgedOverrideIds"] = sorted(purged_overrides)
+    purged_bare, purged_timed, purged_timed_ms = _collect_purged_state_d1(
+        [newer.get("_purgedOverrideIds"), older.get("_purgedOverrideIds")]
+    )
+    merged_purged = sorted(purged_bare | {f"{bk}@{ts}" for bk, ts in purged_timed.items()})[-2000:]
+    if merged_purged:
+        out["_purgedOverrideIds"] = merged_purged
+    else:
+        out.pop("_purgedOverrideIds", None)
 
     # 1. Users (deduplicate by normalized email first so Edge + Relay seats never emit colliding UNIQUE(email) rows)
     u_map: dict[str, dict] = {}
@@ -681,7 +754,7 @@ def merge_mfg_web_stores(doc_a: dict | None, doc_b: dict | None) -> dict:
                 rid = str(r["id"]).strip()
                 if not rid:
                     continue
-                if f"{tk}:{rid}" in purged_overrides and not r.get("_reopenedExplicitly"):
+                if _is_purged_by_state_d1(tk, rid, r, purged_bare, purged_timed_ms):
                     continue
                 rmap[rid] = copy.deepcopy(r)
                 rorder.append(rid)
@@ -690,7 +763,7 @@ def merge_mfg_web_stores(doc_a: dict | None, doc_b: dict | None) -> dict:
                 rid = str(r["id"]).strip()
                 if not rid:
                     continue
-                if f"{tk}:{rid}" in purged_overrides and not r.get("_reopenedExplicitly"):
+                if _is_purged_by_state_d1(tk, rid, r, purged_bare, purged_timed_ms):
                     continue
                 if rid not in rmap:
                     rmap[rid] = copy.deepcopy(r)
@@ -1919,26 +1992,8 @@ def collect_target_rows(
 
         cr = remote.get("customRecords") or {}
         if isinstance(cr, dict) and cr:
-            _legacy_pos_re = re.compile(
-                r"^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+"
-                r"|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+"
-                r"|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$"
-            )
-            _seed_tx_re = re.compile(
-                r"^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)(?:\d+|_[0-9a-f]{10,16})"
-                r"|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+"
-                r"|dv-(?:hld|ins)-(?:exp|sal|set|rec)-(?:\d+|[0-9a-f]{8,16}))(?:-i\d+)?$"
-            )
-            _legacy_purged_entry_re = re.compile(
-                r"^[a-z_]+:(?:(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+"
-                r"|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+"
-                r"|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?"
-                r"(?:@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z)?"
-                r"|(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)_[0-9a-f]{10,16}"
-                r"|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+"
-                r"|dv-(?:hld|ins)-(?:exp|sal|set|rec)-[0-9a-f]{8,16})(?:-i\d+)?"
-                r"@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z)$"
-            )
+            _legacy_pos_re = _LEGACY_POS_D1_RE
+            _seed_tx_re = _SEED_TX_D1_RE
             _stable_exp_child_re = re.compile(
                 r"^(?:ex_[0-9a-f]{10,16}|dv-(?:hld|ins)-(?:exp|rec)-[0-9a-f]{8,16}|wbrecur-(?:wtc|bbc)-[0-9a-f]{8,16})-i\d+$"
             )
@@ -1973,39 +2028,9 @@ def collect_target_rows(
                         return False
                 return True
 
-            purged_bare: set[str] = set()
-            purged_timed: dict[str, str] = {}
-
-            def _add_purged_item(raw_p: object) -> None:
-                ps = str(raw_p or "").strip()
-                if not ps or not _legacy_purged_entry_re.match(ps):
-                    return
-                if "@" in ps:
-                    bk, ts = ps.split("@", 1)
-                    prev_ts = purged_timed.get(bk)
-                    if not prev_ts or _iso_ms_d1(ts) >= _iso_ms_d1(prev_ts):
-                        purged_timed[bk] = ts
-                else:
-                    purged_bare.add(ps)
-
-            if isinstance(remote.get("_purgedOverrideIds"), list):
-                for _p in remote["_purgedOverrideIds"]:
-                    _add_purged_item(_p)
-
-            purged_timed_ms: dict[str, int] = {
-                bk: ms for bk, ms in ((b, _iso_ms_d1(t)) for b, t in purged_timed.items()) if ms > 0
-            }
-
-            def _is_purged_rec(ck: str, row_id_s: str, row_obj: dict) -> bool:
-                if row_obj.get("_reopenedExplicitly"):
-                    return False
-                ek = f"{ck}:{row_id_s}"
-                if ek in purged_bare:
-                    return True
-                cutoff = purged_timed_ms.get(ek)
-                if cutoff is not None:
-                    return _rec_purge_ms(row_obj) <= cutoff
-                return False
+            purged_bare, purged_timed, purged_timed_ms = _collect_purged_state_d1(
+                [remote.get("_purgedOverrideIds")]
+            )
 
             upgraded_map: dict[tuple[str, str], str] = {}
             ordered_cr_keys = list(cr.keys())
@@ -2013,9 +2038,19 @@ def collect_target_rows(
                 ordered_cr_keys.remove("expense_items")
                 ordered_cr_keys.insert(ordered_cr_keys.index("expenses") + 1, "expense_items")
 
-            def _mark_purged_legacy(ck: str, row_id_s: str) -> None:
+            def _mark_purged_legacy(ck: str, row_id_s: str, rec_obj: dict | None = None) -> None:
                 entry = f"{ck}:{row_id_s}"
-                _add_purged_item(entry)
+                if not _LEGACY_PURGED_ENTRY_D1_RE.match(entry) and _seed_tx_re.match(row_id_s):
+                    p_ms = max(
+                        _rec_purge_ms(rec_obj) if isinstance(rec_obj, dict) else 0,
+                        _iso_ms_d1(remote.get("updatedAt")),
+                    )
+                    if p_ms > 0:
+                        p_iso = dt.datetime.fromtimestamp(p_ms / 1000.0, tz=dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                    else:
+                        p_iso = "2026-01-01T00:00:00.000Z"
+                    entry = f"{entry}@{p_iso}"
+                _add_purged_token_d1(entry, purged_bare, purged_timed, purged_timed_ms)
                 if explicit_delete_rks is not None:
                     ct = CR_KEY_TO_TABLE.get(ck, ck)
                     if ct in schema_cols and len(TABLE_PK_COLS.get(ct, ("id",))) == 1 and row_id_s:
@@ -2052,16 +2087,16 @@ def collect_target_rows(
                             if m_sfx:
                                 next_cid = f"{up_p}{m_sfx.group(1)}"
                                 if next_cid != rid:
-                                    _mark_purged_legacy(cr_key, rid)
+                                    _mark_purged_legacy(cr_key, rid, rec)
                                 rid = next_cid
                                 rec["id"] = rid
                         if _stable_exp_child_re.match(rid):
                             p_eid = str(rec.get("expense_id") or re.sub(r"-i\d+$", "", rid))
                             if p_eid not in valid_exp_parents:
-                                _mark_purged_legacy(cr_key, rid)
+                                _mark_purged_legacy(cr_key, rid, rec)
                                 continue
                             rec["expense_id"] = p_eid
-                            if _is_purged_rec(cr_key, rid, rec):
+                            if _is_purged_by_state_d1(cr_key, rid, rec, purged_bare, purged_timed_ms):
                                 continue
                             if rid not in dedup_by_id:
                                 dedup_by_id[rid] = rec
@@ -2096,7 +2131,7 @@ def collect_target_rows(
                         if len(cands) == 1 and cands[0].get("id"):
                             new_id = str(cands[0]["id"])
                             upgraded_map[(cr_key, rid)] = new_id
-                            _mark_purged_legacy(cr_key, rid)
+                            _mark_purged_legacy(cr_key, rid, rec)
                             if isinstance(orig, dict):
                                 if _fallback_nm_re.match(str(orig.get("name") or "").strip()) and cands[0].get("name"):
                                     if str(rec.get("name") or "").strip() == str(orig.get("name") or "").strip():
@@ -2106,17 +2141,17 @@ def collect_target_rows(
                             rec["id"] = new_id
                             rid = new_id
                         else:
-                            _mark_purged_legacy(cr_key, rid)
+                            _mark_purged_legacy(cr_key, rid, rec)
                             continue
 
                     if _seed_tx_re.match(rid):
                         s_row = t_seeds.get(rid)
                         ref_r = rec.get("_seed_orig") if isinstance(rec.get("_seed_orig"), dict) else rec
                         if not _anchor_matches(ref_r, s_row):
-                            _mark_purged_legacy(cr_key, rid)
+                            _mark_purged_legacy(cr_key, rid, rec)
                             continue
 
-                    if _is_purged_rec(cr_key, rid, rec):
+                    if _is_purged_by_state_d1(cr_key, rid, rec, purged_bare, purged_timed_ms):
                         continue
 
                     if rid not in dedup_by_id:

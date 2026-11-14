@@ -402,5 +402,118 @@ const mfgPatch = (extra, ts) => ({ op: 'patch', doc: 'mfg_web_store', ...(ts ? {
     r2.ok && !r2.conflict && stored2.minShellVer === DEPLOYED_SHELL_VER, { r2, stored: stored2.minShellVer });
 }
 
+// 11. @ISO timed purge strips overrides, restores D1 seed rows from R2, and scopes BU RLS via D1 fallback
+console.log('\nTimed @ISO purge & R2/D1 relational seed restoration');
+{
+  const REC_SEED = {
+    _s: ['WTC', 'BBConstruction', 'Sibline', 'Credit'],
+    records: {
+      raw_purchases: {
+        c: ['id', 'company', 'date', 'rep_date', 'site_owner', 'ticket_no', 'total', 'method', 'source'],
+        sc: [0, 1, 0, 0, 1, 0, 0, 1, 0],
+        hr: 1,
+        r: [
+          ['rp_d7970d45b511', 0, '2026-11-14', '2026-11-14', 2, '18021', 100, 3, 'workbook'],
+          ['rp_d7970d45b512', 0, '2026-11-14', '2026-11-14', 2, '18030', 200, 3, 'workbook'],
+          ['rp_bbc000000001', 1, '2026-11-14', '2026-11-14', 2, '19001', 300, 3, 'workbook']
+        ]
+      }
+    }
+  };
+  const multiBucket = {
+    async get(key) {
+      const src = key === 'seeds/seed_industries.json' ? SEED : (key === 'seeds/seed_records.json' ? REC_SEED : null);
+      if (!src) return null;
+      const txt = JSON.stringify(src);
+      return { async text() { return txt; }, async json() { return JSON.parse(txt); } };
+    }
+  };
+  const { env, d1 } = freshEnv({ bucket: multiBucket });
+  d1.exec(
+    "INSERT INTO raw_purchases (id, company, date, rep_date, site_owner, ticket_no, total, method, source, voided) VALUES " +
+    "('rp_d7970d45b511', 'WTC', '2026-11-14', '2026-11-14', 'Sibline', '18021', 100, 'Credit', 'workbook', 0)," +
+    "('rp_d7970d45b512', 'WTC', '2026-11-14', '2026-11-14', 'Sibline', '18030', 200, 'Credit', 'workbook', 0)," +
+    "('rp_bbc000000001', 'BBConstruction', '2026-11-14', '2026-11-14', 'Sibline', '19001', 300, 'Credit', 'workbook', 0)"
+  );
+  const { ctx: c1, settle: s1 } = ctxCollector();
+  const ovrRows = [
+    {
+      id: 'rp_d7970d45b511', company: 'WTC', date: '2026-11-14', site_owner: 'Sibline',
+      ticket_no: '18022', total: 100, voided: false, modified_by: 'u1', modified_at: '2026-11-14T07:34:01Z'
+    },
+    {
+      id: 'rp_d7970d45b512', company: 'WTC', date: '2026-11-14', site_owner: 'Sibline',
+      ticket_no: '18030', total: 200, voided: true, voided_at: '2026-11-14T08:00:00Z', modified_by: 'u1'
+    },
+    {
+      id: 'rp-app-deleted-1', company: 'WTC', date: '2026-11-14', site_owner: 'Sibline',
+      ticket_no: '99901', total: 50, voided: false, source: 'app'
+    }
+  ];
+  const p1 = {
+    op: 'patch', doc: 'mfg_web_store',
+    patch: { mfg_web_store: { updatedAt: '2026-11-14T10:00:00.000Z', customRecords: { raw_purchases: ovrRows } } }
+  };
+  const r1 = await (await handleSync(syncReq(p1), env, OWNER, p1, c1)).json();
+  await s1();
+  const row11Edited = d1.rows("SELECT ticket_no, voided FROM raw_purchases WHERE id = 'rp_d7970d45b511'")[0];
+  const row12Voided = d1.rows("SELECT voided FROM raw_purchases WHERE id = 'rp_d7970d45b512'")[0];
+  ok('precondition: seed overrides mirror to D1 raw_purchases (edited ticket_no & voided flag)',
+    r1.ok && row11Edited?.ticket_no === '18022' && row12Voided?.voided === 1, { r1, row11Edited, row12Voided });
+
+  // Push @ISO purge tokens while a stale client still sends the overridden & voided seed rows (and drops the app-only row)
+  const { ctx: c2, settle: s2 } = ctxCollector();
+  const p2 = {
+    op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: r1.updatedAt,
+    patch: {
+      mfg_web_store: {
+        updatedAt: '2026-11-14T15:03:37.000Z',
+        _purgedOverrideIds: [
+          'raw_purchases:rp_d7970d45b511@2026-11-14T15:03:37.000Z',
+          'raw_purchases:rp_d7970d45b512@2026-11-14T15:03:37.000Z'
+        ],
+        customRecords: { raw_purchases: ovrRows.slice(0, 2) }
+      }
+    }
+  };
+  const r2 = await (await handleSync(syncReq(p2), env, OWNER, p2, c2)).json();
+  await s2();
+  const storedAfterPurge = JSON.parse(d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0].payload_json);
+  const row11Restored = d1.rows("SELECT ticket_no, voided, modified_by FROM raw_purchases WHERE id = 'rp_d7970d45b511'")[0];
+  const row12Restored = d1.rows("SELECT ticket_no, voided, modified_by FROM raw_purchases WHERE id = 'rp_d7970d45b512'")[0];
+  const appRowVoided = d1.rows("SELECT voided FROM raw_purchases WHERE id = 'rp-app-deleted-1'")[0];
+  ok('timed @ISO purge strips both stale overrides from KV and restores both D1 seed rows from R2 while voiding app-only row',
+    r2.ok && (storedAfterPurge.customRecords?.raw_purchases || []).length === 0 &&
+      row11Restored?.ticket_no === '18021' && row11Restored?.voided === 0 && row11Restored?.modified_by === '' &&
+      row12Restored?.ticket_no === '18030' && row12Restored?.voided === 0 && appRowVoided?.voided === 1,
+    { kvLen: (storedAfterPurge.customRecords?.raw_purchases || []).length, row11Restored, row12Restored, appRowVoided });
+
+  // Single-BU WTC Supervisor submits newer @ISO purge tokens for a WTC row and a BBConstruction row (absent from prevDoc.customRecords)
+  const SUP_WTC = { sub: 'u-sup-wtc', role: 'Supervisor', companies: 'WTC', email: 'supwtc@example.test' };
+  const { ctx: c3, settle: s3 } = ctxCollector();
+  const p3 = {
+    op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: r2.updatedAt,
+    patch: {
+      mfg_web_store: {
+        updatedAt: '2026-11-14T16:00:00.000Z',
+        _purgedOverrideIds: [
+          'raw_purchases:rp_d7970d45b511@2026-11-14T16:00:00.000Z',
+          'raw_purchases:rp_bbc000000001@2026-11-14T16:00:00.000Z'
+        ],
+        customRecords: { raw_purchases: [] }
+      }
+    }
+  };
+  const r3 = await (await handleSync(syncReq(p3), env, SUP_WTC, p3, c3)).json();
+  await s3();
+  const storedRls = JSON.parse(d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0].payload_json);
+  const purgedArrRls = storedRls._purgedOverrideIds || [];
+  ok('single-BU Supervisor retains in-BU @ISO token (via D1 fallback lookup, collapsing older @T1) and drops cross-BU token',
+    r3.ok && purgedArrRls.includes('raw_purchases:rp_d7970d45b511@2026-11-14T16:00:00.000Z') &&
+      !purgedArrRls.includes('raw_purchases:rp_d7970d45b511@2026-11-14T15:03:37.000Z') &&
+      !purgedArrRls.includes('raw_purchases:rp_bbc000000001@2026-11-14T16:00:00.000Z'),
+    { purgedArrRls });
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

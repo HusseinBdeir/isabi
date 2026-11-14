@@ -249,7 +249,7 @@ const CANON_COMPANY_MAP = {
   'bdeir insurance brokerage': 'Insurance Company'
 };
 
-const POS_SEED_ID_RE = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)(?:\d+|_[0-9a-f]{10,16})|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-(?:\d+|[0-9a-f]{8,16}))$/;
+const POS_SEED_ID_RE = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)(?:\d+|_[0-9a-f]{10,16})|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-(?:\d+|[0-9a-f]{8,16}))(?:-i\d+)?$/;
 const LEGACY_POS_SEED_ID_RE = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$/;
 
 export function canonicalizeCompanyName(raw) {
@@ -3052,7 +3052,135 @@ async function execBatchedStmts(db, stmts, chunkSize = 80) {
   }
 }
 
-export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayload = null, session = null) {
+const SEED_RECORDS_BUCKET_TABLES = new Set([
+  'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses', 'receipts', 'customer_receipts',
+  'settlements', 'supplier_payments', 'salaries', 'salary_payments', 'attendance',
+  'external_movements', 'loan_settlements', 'loans', 'conversions', 'daily_totals', 'expense_items'
+]);
+const SPINE_BUCKET_TABLES = new Set([
+  'expenses', 'recurring_expenses', 'salaries', 'salary_payments', 'settlements', 'supplier_payments'
+]);
+
+async function loadBucketSeedJson(r2Cache, env, r2Key) {
+  if (r2Cache.has(r2Key)) return r2Cache.get(r2Key);
+  let parsed = null;
+  try {
+    if (env && env.BUCKET && typeof env.BUCKET.get === 'function') {
+      const obj = await env.BUCKET.get(r2Key);
+      if (obj) {
+        parsed = typeof obj.json === 'function' ? await obj.json() : JSON.parse(await obj.text());
+      }
+    }
+  } catch (_) {
+    parsed = null;
+  }
+  r2Cache.set(r2Key, parsed);
+  return parsed;
+}
+
+function findPackedSeedRowById(doc, mode, tableKeys, crKey, canonTable, targetId) {
+  if (!doc || typeof doc !== 'object') return { found: false, row: null, hasTable: false };
+  const mapRoot = mode === 'industries' ? doc.tables : doc.records;
+  if (!mapRoot || typeof mapRoot !== 'object') return { found: false, row: null, hasTable: false };
+  const pool = Array.isArray(doc._s) ? doc._s : [];
+  let hasTable = false;
+
+  for (const tk of tableKeys) {
+    const tbl = mapRoot[tk];
+    if (!tbl) continue;
+    hasTable = true;
+    if (Array.isArray(tbl)) {
+      for (const r of tbl) {
+        if (r && typeof r === 'object' && String(r.id || '').trim() === targetId) {
+          return { found: true, row: Object.assign({}, r), hasTable: true };
+        }
+      }
+      continue;
+    }
+    if (!Array.isArray(tbl.c) || !Array.isArray(tbl.r)) continue;
+    const cols = tbl.c;
+    const sc = Array.isArray(tbl.sc) ? tbl.sc : [];
+    const pf = typeof tbl.p === 'string' ? tbl.p : '';
+    const hr = Boolean(tbl.hr);
+    const idIdx = cols.indexOf('id');
+    const isSales = crKey === 'sales_tickets' || canonTable === 'sales_tickets';
+
+    for (let idx = 0; idx < tbl.r.length; idx++) {
+      const arr = tbl.r[idx];
+      if (!Array.isArray(arr)) continue;
+      let rid = '';
+      if (idIdx >= 0) {
+        const rawId = arr[idIdx];
+        const decId = (sc[idIdx] && typeof rawId === 'number' && rawId >= 0 && rawId < pool.length) ? pool[rawId] : rawId;
+        rid = String(decId == null ? '' : decId).trim();
+      } else if (pf) {
+        rid = `${pf}${idx}`;
+      }
+      if (rid !== targetId) continue;
+
+      const unpacked = {};
+      if (pf) unpacked.id = `${pf}${idx}`;
+      for (let ci = 0; ci < cols.length && ci < arr.length; ci++) {
+        let val = arr[ci];
+        if (val === null || val === undefined) continue;
+        if (sc[ci] && typeof val === 'number' && val >= 0 && val < pool.length) {
+          val = pool[val];
+        }
+        unpacked[cols[ci]] = val;
+      }
+      if (!unpacked.id) unpacked.id = targetId;
+      if (hr && crKey !== 'attendance' && unpacked.rep_date === undefined && unpacked.date !== undefined) {
+        unpacked.rep_date = unpacked.date;
+      }
+      if (isSales && unpacked.total_ttc === undefined && unpacked.total !== undefined) {
+        unpacked.total_ttc = unpacked.total;
+      }
+      return { found: true, row: unpacked, hasTable: true };
+    }
+  }
+  return { found: false, row: null, hasTable };
+}
+
+async function lookupSeedRowFromBucket(r2Cache, env, crKey, canonTable, targetId) {
+  if (env && env._seedRowsByTable && typeof env._seedRowsByTable === 'object' && env._seedRowsByTable[canonTable]) {
+    const hit = env._seedRowsByTable[canonTable][targetId];
+    return { found: Boolean(hit), row: hit ? Object.assign({}, hit) : null, hasSeedSource: true };
+  }
+  if (!env || !env.BUCKET || typeof env.BUCKET.get !== 'function') {
+    return { found: false, row: null, hasSeedSource: false };
+  }
+
+  const baseKeys = Array.from(new Set([
+    crKey,
+    canonTable,
+    ...(canonTable === 'loans' ? ['loan_settlements'] : []),
+    ...(crKey === 'loan_settlements' ? ['loans'] : []),
+    ...(canonTable === 'staff_members' ? ['staff'] : [])
+  ].filter(Boolean)));
+
+  const candidates = [];
+  if (targetId.startsWith('dv-') && SPINE_BUCKET_TABLES.has(crKey)) {
+    const spineKeys = Array.from(new Set([`spine.${crKey}`, `spine.${canonTable}`]));
+    candidates.push({ r2Key: 'seeds/seed_industries.json', mode: 'industries', tableKeys: spineKeys });
+  }
+  if (SEED_RECORDS_BUCKET_TABLES.has(crKey) || SEED_RECORDS_BUCKET_TABLES.has(canonTable)) {
+    candidates.push({ r2Key: 'seeds/seed_records.json', mode: 'records', tableKeys: baseKeys });
+  }
+  candidates.push({ r2Key: 'seeds/seed_core.json', mode: 'records', tableKeys: baseKeys });
+
+  let sawSeedSource = false;
+  for (const cand of candidates) {
+    const doc = await loadBucketSeedJson(r2Cache, env, cand.r2Key);
+    const res = findPackedSeedRowById(doc, cand.mode, cand.tableKeys, crKey, canonTable, targetId);
+    if (res.hasTable) sawSeedSource = true;
+    if (res.found && res.row) {
+      return { found: true, row: res.row, hasSeedSource: true };
+    }
+  }
+  return { found: false, row: null, hasSeedSource: sawSeedSource };
+}
+
+export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayload = null, session = null, env = null) {
   const stats = {
     upsertedRecords: 0,
     voidedRemoved: 0,
@@ -3077,6 +3205,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
     const allCrKeys = Array.from(new Set([...Object.keys(prevCr), ...Object.keys(cr)]));
     const dirtyByTable = new Map();
     const removedToVoid = [];
+    const r2SeedCache = new Map();
 
     for (const crKey of allCrKeys) {
       const canonTable = CR_KEY_TO_TABLE[crKey] || crKey;
@@ -3123,14 +3252,47 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
         for (const [prevId, prevEntry] of prevMap.entries()) {
           if (seenIds.has(prevId)) continue;
           const pr = prevEntry.row;
-          if (!pr || pr.voided) continue;
-          if (POS_SEED_ID_RE.test(prevId) || pr._seed_orig || pr.source === 'workbook') continue;
+          if (!pr) continue;
           if (restrictRls) {
             const prCo = String(pr.company || '').trim();
             if (isUniversal && !canManageSeats) continue;
             if ((!isUniversal && !prCo) || (prCo && !canAccessCompany(session, prCo))) continue;
           }
-          removedToVoid.push({ canonTable, id: prevId });
+          const seedHit = await lookupSeedRowFromBucket(r2SeedCache, env, crKey, canonTable, prevId);
+          if (seedHit.found && seedHit.row) {
+            const srCo = String(seedHit.row.company || '').trim();
+            if (restrictRls && ((srCo && !canAccessCompany(session, srCo)) || (!isUniversal && !srCo))) continue;
+            const restored = Object.assign({}, seedHit.row, { voided: Boolean(seedHit.row.voided) });
+            if (!dirtyByTable.has(canonTable)) dirtyByTable.set(canonTable, []);
+            dirtyByTable.get(canonTable).push(restored);
+            continue;
+          }
+          if (pr._seed_orig && typeof pr._seed_orig === 'object' && !pr._is_app_record && pr.source !== 'app') {
+            const restored = Object.assign({}, pr, pr._seed_orig, { id: prevId, voided: Boolean(pr._seed_orig.voided) });
+            delete restored._seed_orig;
+            delete restored.voided_at;
+            delete restored.voided_by;
+            delete restored.restored_at;
+            delete restored.modified_at;
+            delete restored.modified_by;
+            delete restored.updated_at;
+            if (!dirtyByTable.has(canonTable)) dirtyByTable.set(canonTable, []);
+            dirtyByTable.get(canonTable).push(restored);
+            continue;
+          }
+          if (POS_SEED_ID_RE.test(prevId) || pr.source === 'workbook') {
+            if (pr.voided) {
+              const restored = Object.assign({}, pr, { voided: false });
+              delete restored.voided_at;
+              delete restored.voided_by;
+              if (!dirtyByTable.has(canonTable)) dirtyByTable.set(canonTable, []);
+              dirtyByTable.get(canonTable).push(restored);
+            }
+            continue;
+          }
+          if (!pr.voided) {
+            removedToVoid.push({ canonTable, id: prevId });
+          }
         }
       }
     }
@@ -3717,14 +3879,27 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
     const prevCrForPurge = (prev.customRecords && typeof prev.customRecords === 'object') ? prev.customRecords : {};
     for (const rawItem of incomingDoc._purgedOverrideIds) {
       const s = String(rawItem || '').trim();
-      if (!s || !LEGACY_PURGED_ENTRY_RE.test(s) || prevPurgedSet.has(s) || s.includes('@')) continue;
-      const colon = s.indexOf(':');
-      const tbl = s.slice(0, colon);
-      const rid = s.slice(colon + 1);
+      if (!s || !LEGACY_PURGED_ENTRY_RE.test(s) || prevPurgedSet.has(s)) continue;
+      const atIdx = s.indexOf('@');
+      if (atIdx >= 0 && _purgeStampMs(s.slice(atIdx + 1)) <= 0) continue;
+      const base = atIdx >= 0 ? s.slice(0, atIdx) : s;
+      const colon = base.indexOf(':');
+      const tbl = base.slice(0, colon);
+      const rid = base.slice(colon + 1);
       const pArr = Array.isArray(prevCrForPurge[tbl]) ? prevCrForPurge[tbl] : [];
       const pr = pArr.find(x => x && String(x.id || '').trim() === rid);
-      const prCo = String((pr && pr.company) || '').trim();
-      if (pr && prCo && canAccessCompany(session, prCo)) {
+      let prCo = String((pr && pr.company) || '').trim();
+      if (!prCo && db) {
+        const canonTbl = CR_KEY_TO_TABLE[tbl] || tbl;
+        if (ALLOWED_TABLES.has(canonTbl)) {
+          const cols = await getTableColumns(db, canonTbl);
+          if (cols.has('company')) {
+            const dRow = await db.prepare(`SELECT company FROM ${canonTbl} WHERE id = ?1 LIMIT 1`).bind(rid).first();
+            prCo = String((dRow && dRow.company) || '').trim();
+          }
+        }
+      }
+      if (prCo && canAccessCompany(session, prCo)) {
         prevPurgedSet.add(s);
         safePurged.push(s);
       }
@@ -4420,7 +4595,7 @@ export async function handleSync(request, env, session, body, _ctx) {
 
     let mirrorStats = undefined;
     if (pKey === 'mfg_web_store') {
-      mirrorStats = await mirrorStoreDeltaToD1Tables(env.DB, incomingDoc, prevDoc, session);
+      mirrorStats = await mirrorStoreDeltaToD1Tables(env.DB, incomingDoc, prevDoc, session, env);
       if (mirrorStats && mirrorStats.error) {
         try {
           if (currentRow) {
