@@ -550,6 +550,81 @@
   _stateRef = STATE;
   if (typeof window !== 'undefined') window.STATE = STATE;
 
+  const LEGACY_OR_TIMED_PURGED_RE = /^[a-z_]+:(?:(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?(?:@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z)?|(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)_[0-9a-f]{10,16}|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-[0-9a-f]{8,16})(?:-i\d+)?@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z)$/;
+  function normalizePurgedOverrideList(rawList) {
+    if (!Array.isArray(rawList) || !rawList.length) return [];
+    const bareSeen = new Set();
+    const timedBest = new Map();
+    const out = [];
+    for (const item of rawList) {
+      const s = String(item || '').trim();
+      if (!s || !LEGACY_OR_TIMED_PURGED_RE.test(s)) continue;
+      const atIdx = s.indexOf('@');
+      if (atIdx < 0) {
+        if (!bareSeen.has(s)) {
+          bareSeen.add(s);
+          out.push(s);
+        }
+      } else {
+        const base = s.slice(0, atIdx);
+        const tsStr = s.slice(atIdx + 1);
+        const ms = Date.parse(tsStr);
+        if (!Number.isFinite(ms)) continue;
+        const prev = timedBest.get(base);
+        if (!prev) {
+          const slot = { idx: out.length, tok: s, ms };
+          timedBest.set(base, slot);
+          out.push(s);
+        } else if (ms >= prev.ms) {
+          prev.ms = ms;
+          prev.tok = s;
+          out[prev.idx] = s;
+        }
+      }
+    }
+    return out.slice(-2000);
+  }
+  function buildPurgeLookup(rawList) {
+    const bare = new Set();
+    const timed = new Map();
+    for (const item of (Array.isArray(rawList) ? rawList : [])) {
+      const s = String(item || '').trim();
+      if (!s || !LEGACY_OR_TIMED_PURGED_RE.test(s)) continue;
+      const atIdx = s.indexOf('@');
+      if (atIdx < 0) {
+        bare.add(s);
+      } else {
+        const base = s.slice(0, atIdx);
+        const ms = Date.parse(s.slice(atIdx + 1));
+        if (Number.isFinite(ms)) {
+          const prev = timed.get(base);
+          if (prev == null || ms > prev) timed.set(base, ms);
+        }
+      }
+    }
+    return { bare, timed };
+  }
+  function _recPurgeMutationMs(r) {
+    if (!r || typeof r !== 'object') return 0;
+    return Math.max(
+      _stampMs(_recModTs(r)),
+      _stampMs(r.voided_at),
+      _stampMs(r.entered_at),
+      _stampMs(r._updatedAt),
+      _stampMs(r._createdAt)
+    );
+  }
+  function isRecordPurgedByEntry(tableKey, r, purgeLookup) {
+    if (!r || !purgeLookup) return false;
+    if (r._reopenedExplicitly) return false;
+    const key = String(tableKey || '') + ':' + String(r.id == null ? '' : r.id);
+    if (purgeLookup.bare && purgeLookup.bare.has(key)) return true;
+    if (purgeLookup.timed && purgeLookup.timed.has(key)) {
+      return _recPurgeMutationMs(r) <= purgeLookup.timed.get(key);
+    }
+    return false;
+  }
+
   const FACE_POSES = [
     'Look straight at the camera',
     'Turn your head slightly LEFT — just a little, keep both eyes on the camera',
@@ -39160,7 +39235,7 @@
     const mSal = isPendSal ? 0 : (mSalRaw + (extDays && wDays > 0 ? (extDays * (mSalRaw / wDays)) : 0));
     const otMult = Number(best.overtime_multiplier || 0) > 0 ? Number(best.overtime_multiplier) : 1.0;
     const ltMult = Number(best.lateness_multiplier || 0) > 0 ? Number(best.lateness_multiplier) : 1.0;
-    const dailyRate = isPendSal ? 0 : (dRateIn > 0 ? dRateIn : (mSal > 0 ? (mSal / wDays) : 25));
+    const dailyRate = isPendSal ? 0 : (dRateIn > 0 ? dRateIn : (mSal > 0 ? (mSal / wDays) : 0));
     const hourlyRate = isPendSal ? 0 : (mSal > 0 ? (mSal / (wDays * wHrs)) : (dailyRate / wHrs));
     const outProf = {
       hasContract: true,
@@ -41765,15 +41840,19 @@
       .sort((a, b) => String(b._backpay_on).localeCompare(String(a._backpay_on)) || Math.abs(Number(b._backpay_usd || 0)) - Math.abs(Number(a._backpay_usd || 0)));
     if (!rows.length) return '';
     const showCo = STATE.company === 'manufacturing-group' || String(STATE.company || '').startsWith('industry:');
-    const totUsd = rows.reduce((s, e) => s + Number(e._backpay_usd || 0), 0);
-    const totLbp = rows.reduce((s, e) => s + Number(e._backpay_lbp || 0), 0);
+    const isNegNotice = e => Number((e && e._backpay_usd) || 0) < -0.005 || Number((e && e._backpay_lbp) || 0) < -0.5;
+    const posUsd = round2(rows.reduce((s, e) => s + (isNegNotice(e) ? 0 : Math.max(0, Number(e._backpay_usd || 0))), 0));
+    const negUsd = round2(rows.reduce((s, e) => s + (Number(e._backpay_usd || 0) < -0.005 ? Number(e._backpay_usd || 0) : 0), 0));
+    const posLbp = Math.round(rows.reduce((s, e) => s + (isNegNotice(e) ? 0 : Math.max(0, Number(e._backpay_lbp || 0))), 0));
+    const negLbp = Math.round(rows.reduce((s, e) => s + (Number(e._backpay_lbp || 0) < -0.5 ? Number(e._backpay_lbp || 0) : 0), 0));
     const anyLbp = rows.some(e => Math.abs(Number(e._backpay_lbp || 0)) >= 1);
     const canPay = canEnterForm('salary');
     const stOf = backpayStatusesOf(rows);
     const totLeftUsd = round2(rows.reduce((s, e) => s + ((stOf.get(e) || {}).leftUsd || 0), 0));
     const totLeftLbp = Math.round(rows.reduce((s, e) => s + ((stOf.get(e) || {}).leftLbp || 0), 0));
     const cols = 7 + (showCo ? 1 : 0) + (anyLbp ? 1 : 0);
-    const owedCell = st => {
+    const owedCell = (st, e) => {
+      if (isNegNotice(e)) return '<span class="badge badge-warn">Pay Reduction</span>';
       if (!st || (!(st.dueUsd >= 0.005) && !(st.dueLbp >= 1))) return '<span class="badge badge-neutral">Nothing to Pay</span>';
       if (st.overUsd >= 0.005 || st.overLbp >= 1) return `<span class="badge badge-crit">Overpaid</span> <b>${esc(backpayMoneyText(st.overUsd, st.overLbp))}</b>`;
       if (!st.open) return st.paidUsd >= 0.005 || st.paidLbp >= 1
@@ -41782,7 +41861,7 @@
       return `<b>${esc(backpayMoneyText(st.leftUsd, st.leftLbp))}</b>`;
     };
     return `
-      <div class="panel-card" id="payBackpayPanel">
+      <div class="pending-price-queue-card" id="payBackpayPanel" style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px;border-inline-start:4px solid var(--brass)">
         <div class="panel-head">
           <div>
             <div class="panel-title"><span>${ic('alert')} Back Pay from Backdated Pay Changes</span></div>
@@ -41816,16 +41895,16 @@
                   <td class="r"><b>${fmtSignedUSD(Number(e._backpay_usd || 0), 2)}</b></td>
                   ${anyLbp ? `<td class="r">${Number(e._backpay_lbp || 0) ? fmtNum(Number(e._backpay_lbp), 0) : ''}</td>` : ''}
                   <td class="mono">${esc(String(e._backpay_on).slice(0, 10))}</td>
-                  <td class="r" data-bp-owed>${owedCell(st)}</td>
-                  <td class="r">${canPay && st && st.open ? `<button type="button" class="btn btn-sm" data-pay-backpay-staff="${esc(e.staff || '')}" data-pay-backpay-company="${esc(e.company || 'WTC')}">Pay Back Pay</button>` : ''}</td>
+                  <td class="r" data-bp-owed>${owedCell(st, e)}</td>
+                  <td class="r">${!isNegNotice(e) && canPay && st && st.open ? `<button type="button" class="btn btn-sm" data-pay-backpay-staff="${esc(e.staff || '')}" data-pay-backpay-company="${esc(e.company || 'WTC')}">Pay Back Pay</button>` : ''}</td>
                 </tr>`;
               }).join('')}
             </tbody>
             <tfoot>
               <tr>
                 <td colspan="${cols - (anyLbp ? 5 : 4)}"><b>TOTAL</b></td>
-                <td class="r"><b>${fmtSignedUSD(totUsd, 2)}</b></td>
-                ${anyLbp ? `<td class="r"><b>${fmtNum(totLbp, 0)}</b></td>` : ''}
+                <td class="r"><b>${fmtSignedUSD(posUsd, 2)}</b>${Math.abs(negUsd) >= 0.005 ? ` <small class="muted">(${fmtSignedUSD(negUsd, 2)})</small>` : ''}</td>
+                ${anyLbp ? `<td class="r"><b>${fmtNum(posLbp, 0)}</b>${Math.abs(negLbp) >= 1 ? ` <small class="muted">(${fmtNum(negLbp, 0)})</small>` : ''}</td>` : ''}
                 <td></td>
                 <td class="r"><b>${esc(backpayMoneyText(totLeftUsd, totLeftLbp))}</b></td>
                 <td></td>
@@ -41837,7 +41916,7 @@
   }
   window.__mfgBackpay = {
     staffContractEarningsByMonth, computeContractBackpay, staffContractsFor, renderBackpayNoticePanel, backpayClosedYm,
-    backpayBeforeSet, toastText: backpayToastText,
+    backpayBeforeSet, toastText: backpayToastText, getStaffContractProfile,
     statusOf: backpayStatusOf, owedFor: backpayOwedFor, encodeMonths: encodeBackpayMonths, decodeMonths: decodeBackpayMonths,
     monthBasis: backpayMonthBasis,
     openContract: id => openRecordFromTableRow('employments', id)
@@ -112627,9 +112706,7 @@
       });
       if (filtered.length !== arr.length) STATE.customRecords[k] = filtered;
     });
-    const legacyPurgedEntryRe = /^[a-z_]+:(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$/;
-    if (!Array.isArray(STATE._purgedOverrideIds)) STATE._purgedOverrideIds = [];
-    else STATE._purgedOverrideIds = STATE._purgedOverrideIds.filter(x => legacyPurgedEntryRe.test(String(x || '').trim()));
+    STATE._purgedOverrideIds = normalizePurgedOverrideList(STATE._purgedOverrideIds);
     if (SEED._recordsReady) {
       const posRe = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)(?:\d+|_[0-9a-f]{10,16})|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-(?:\d+|[0-9a-f]{8,16}))(?:-i\d+)?$/;
       const legacyPosRe = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$/;
@@ -112671,7 +112748,7 @@
                 const sfx = rid.slice(rid.lastIndexOf('-i'));
                 const nextChildId = newExpId + sfx;
                 if (nextChildId !== rid) {
-                  if (legacyPurgedEntryRe.test(k + ':' + rid) && Array.isArray(STATE._purgedOverrideIds) && !STATE._purgedOverrideIds.includes(k + ':' + rid)) {
+                  if (LEGACY_OR_TIMED_PURGED_RE.test(k + ':' + rid) && Array.isArray(STATE._purgedOverrideIds) && !STATE._purgedOverrideIds.includes(k + ':' + rid)) {
                     STATE._purgedOverrideIds.push(k + ':' + rid);
                   }
                   rid = nextChildId;
@@ -112799,14 +112876,44 @@
       });
     }
     if (STATE._purgedOverrideIds.length && STATE.customRecords) {
-      const purgedSet = new Set(STATE._purgedOverrideIds);
+      const purgeLookup = buildPurgeLookup(STATE._purgedOverrideIds);
       Object.keys(STATE.customRecords).forEach(k => {
         const arr = STATE.customRecords[k];
         if (!Array.isArray(arr) || !arr.length) return;
-        const kept = arr.filter(r => !r || r._reopenedExplicitly || !purgedSet.has(k + ':' + String(r.id == null ? '' : r.id)));
+        const purgedRows = [];
+        const kept = arr.filter(r => {
+          if (!r || !isRecordPurgedByEntry(k, r, purgeLookup)) return true;
+          purgedRows.push(r);
+          return false;
+        });
         if (kept.length !== arr.length) {
           STATE.customRecords[k] = kept;
           removedAny = true;
+          const sList = SEED && SEED.records && Array.isArray(SEED.records[k]) ? SEED.records[k] : null;
+          purgedRows.forEach(pr => {
+            const rid = String(pr.id == null ? '' : pr.id);
+            if (!rid) return;
+            const origSnap = (SEED_ORIG_ARCHIVE[k] && SEED_ORIG_ARCHIVE[k].get(rid))
+              || (SEED_VOIDED_ARCHIVE[k] && SEED_VOIDED_ARCHIVE[k].get(rid))
+              || ((pr._seed_orig && typeof pr._seed_orig === 'object' && !isAppRecord(pr)) ? Object.assign({}, pr._seed_orig, { id: rid, voided: false }) : null);
+            if (SEED_VOIDED_ARCHIVE[k] && SEED_VOIDED_ARCHIVE[k].has(rid)) SEED_VOIDED_ARCHIVE[k].delete(rid);
+            if (!sList) return;
+            const sIdx = sList.findIndex(x => x && String(x.id) === rid);
+            if (origSnap) {
+              if (sIdx >= 0) {
+                Object.keys(sList[sIdx]).forEach(kk => { delete sList[sIdx][kk]; });
+                Object.assign(sList[sIdx], origSnap, { voided: Boolean(origSnap.voided) });
+              } else {
+                sList.push(Object.assign({}, origSnap, { voided: Boolean(origSnap.voided) }));
+              }
+              if (SEED._tableRev) SEED._tableRev[k] = (SEED._tableRev[k] || 0) + 1;
+              SEED._customRev = (SEED._customRev || 0) + 1;
+            } else if (isAppRecord(pr) && sIdx >= 0) {
+              sList.splice(sIdx, 1);
+              if (SEED._tableRev) SEED._tableRev[k] = (SEED._tableRev[k] || 0) + 1;
+              SEED._customRev = (SEED._customRev || 0) + 1;
+            }
+          });
         }
       });
     }
@@ -113103,8 +113210,8 @@
   function mergeCustomRecords(remote) {
     if (!remote || typeof remote !== 'object') return false;
     ensureUniversalCanonicalIndex();
-    if (!Array.isArray(STATE._purgedOverrideIds)) STATE._purgedOverrideIds = [];
-    const purgedSet = new Set(STATE._purgedOverrideIds);
+    STATE._purgedOverrideIds = normalizePurgedOverrideList(STATE._purgedOverrideIds);
+    const purgeLookup = buildPurgeLookup(STATE._purgedOverrideIds);
     let changed = false;
     const allMergeKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {}), ...Object.keys(remote || {})]));
     allMergeKeys.forEach(k => {
@@ -113114,7 +113221,7 @@
       const byId = new Map(mine.map(r => [r.id, r]));
       inc.forEach(r => {
         if (!r || !r.id) return;
-        if (purgedSet.has(k + ':' + String(r.id)) && !r._reopenedExplicitly) return;
+        if (isRecordPurgedByEntry(k, r, purgeLookup)) return;
         let cur = byId.get(r.id);
         if (!cur && !r.voided && k === 'receipts') {
           const rDate = String(r.date || '').slice(0, 10);
@@ -115859,23 +115966,14 @@
     }
     let purgedAdded = false;
     if (Array.isArray(remote._purgedOverrideIds) && remote._purgedOverrideIds.length) {
-      const legacyPurgedEntryRe = /^[a-z_]+:(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$/;
-      if (!Array.isArray(STATE._purgedOverrideIds)) STATE._purgedOverrideIds = [];
-      const seenPurged = new Set(STATE._purgedOverrideIds);
-      remote._purgedOverrideIds.forEach(pid => {
-        const ps = String(pid || '').trim();
-        if (ps && legacyPurgedEntryRe.test(ps) && !seenPurged.has(ps)) {
-          STATE._purgedOverrideIds.push(ps);
-          seenPurged.add(ps);
-          purgedAdded = true;
-        }
-      });
-      if (STATE._purgedOverrideIds.length > 2000) {
-        STATE._purgedOverrideIds = STATE._purgedOverrideIds.slice(-2000);
-      }
+      const prevPurged = normalizePurgedOverrideList(STATE._purgedOverrideIds);
+      const nextPurged = normalizePurgedOverrideList(prevPurged.concat(remote._purgedOverrideIds));
+      purgedAdded = nextPurged.length !== prevPurged.length || nextPurged.some((v, i) => v !== prevPurged[i]);
+      STATE._purgedOverrideIds = nextPurged;
     }
-    if (remote.customRecords && mergeCustomRecords(remote.customRecords)) { changed = true; applyCustomRecordsToSeed(); }
-    else if (purgedAdded && sanitizeUniversalCustomRecords()) { changed = true; applyCustomRecordsToSeed(); }
+    const mergedCr = Boolean(remote.customRecords && mergeCustomRecords(remote.customRecords));
+    const purgedClean = Boolean(purgedAdded && sanitizeUniversalCustomRecords());
+    if (mergedCr || purgedClean) { changed = true; applyCustomRecordsToSeed(); }
     if (remote.industryRowEdits && mergeIndustryRowEdits(remote.industryRowEdits)) { changed = true; }
     if (remote.industryCustomRows && mergeIndustryCustomRows(remote.industryCustomRows)) { changed = true; }
     if (Array.isArray(remote.kioskPunches) && mergeKioskPunches(remote.kioskPunches)) { changed = true; }
@@ -150660,6 +150758,9 @@
     openEntryModal: typeof openEntryModal === 'function' ? openEntryModal : null,
     closeEntryModal: typeof closeEntryModal === 'function' ? closeEntryModal : null,
     openAdminUnlockPrompt: typeof openAdminUnlockPrompt === 'function' ? openAdminUnlockPrompt : null,
+    applyRemoteStore: typeof mergeRemoteMfgDoc === 'function' ? mergeRemoteMfgDoc : null,
+    mergeRemoteMfgDoc: typeof mergeRemoteMfgDoc === 'function' ? mergeRemoteMfgDoc : null,
+    sanitizeUniversalCustomRecords: typeof sanitizeUniversalCustomRecords === 'function' ? sanitizeUniversalCustomRecords : null,
     getFormUi: () => FORM_UI
   };
   window.MFG_TEST_EXPORTS = Object.assign(window.MFG_TEST_EXPORTS || {}, window.MFG_ENTERPRISE);

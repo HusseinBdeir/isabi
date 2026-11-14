@@ -114,7 +114,29 @@ export function capMinShellVerForRead(doc, ceiling = DEPLOYED_SHELL_VER) {
   return doc;
 }
 
-const LEGACY_PURGED_ENTRY_RE = /^[a-z_]+:(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$/;
+const LEGACY_PURGED_ENTRY_RE = /^[a-z_]+:(?:(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?(?:@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z)?|(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)_[0-9a-f]{10,16}|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-[0-9a-f]{8,16})(?:-i\d+)?@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z)$/;
+
+function _purgeStampMs(s) {
+  const v = String(s || '').trim();
+  if (!v) return 0;
+  const ms = Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v) ? v.replace(' ', 'T') + 'Z' : v);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function _recPurgeMs(r) {
+  if (!r || typeof r !== 'object') return 0;
+  return Math.max(
+    _purgeStampMs(r.modified_at),
+    _purgeStampMs(r.updated_at),
+    _purgeStampMs(r.price_entered_at),
+    _purgeStampMs(r.salary_entered_at),
+    _purgeStampMs(r.restored_at),
+    _purgeStampMs(r.voided_at),
+    _purgeStampMs(r.entered_at),
+    _purgeStampMs(r._updatedAt),
+    _purgeStampMs(r._createdAt)
+  );
+}
 
 // Removes every client copy of a server-owned row from a store document before it is stored or mirrored,
 // so one client's copy never reaches the other clients through the shared store.
@@ -135,25 +157,59 @@ export function stripServerOwnedCustomRows(doc, prevDoc = null) {
     }
   }
   const purgedList = [];
-  const purgedSeen = new Set();
+  const bareSeen = new Set();
+  const timedBest = new Map();
   for (const src of [prevDoc && prevDoc._purgedOverrideIds, doc._purgedOverrideIds]) {
     if (!Array.isArray(src)) continue;
     for (const item of src) {
       const s = String(item || '').trim();
-      if (s && LEGACY_PURGED_ENTRY_RE.test(s) && !purgedSeen.has(s)) {
-        purgedSeen.add(s);
-        purgedList.push(s);
+      if (!s || !LEGACY_PURGED_ENTRY_RE.test(s)) continue;
+      const atIdx = s.indexOf('@');
+      if (atIdx < 0) {
+        if (!bareSeen.has(s)) {
+          bareSeen.add(s);
+          purgedList.push(s);
+        }
+      } else {
+        const base = s.slice(0, atIdx);
+        const ms = _purgeStampMs(s.slice(atIdx + 1));
+        if (!ms) continue;
+        const prevEntry = timedBest.get(base);
+        if (!prevEntry) {
+          const slot = { idx: purgedList.length, ms };
+          timedBest.set(base, slot);
+          purgedList.push(s);
+        } else if (ms >= prevEntry.ms) {
+          prevEntry.ms = ms;
+          purgedList[prevEntry.idx] = s;
+        }
       }
     }
   }
   if (purgedList.length) {
     doc._purgedOverrideIds = purgedList.slice(-2000);
-    const purgedSet = new Set(doc._purgedOverrideIds);
+    const bareSet = new Set();
+    const timedMap = new Map();
+    for (const entry of doc._purgedOverrideIds) {
+      const atIdx = entry.indexOf('@');
+      if (atIdx < 0) bareSet.add(entry);
+      else {
+        const base = entry.slice(0, atIdx);
+        const ms = _purgeStampMs(entry.slice(atIdx + 1));
+        if (ms && (!timedMap.has(base) || ms > timedMap.get(base))) timedMap.set(base, ms);
+      }
+    }
     const cr = doc.customRecords;
     if (cr && typeof cr === 'object') {
       for (const k of Object.keys(cr)) {
         if (Array.isArray(cr[k])) {
-          cr[k] = cr[k].filter(r => !r || r._reopenedExplicitly || !purgedSet.has(`${k}:${String(r.id == null ? '' : r.id).trim()}`));
+          cr[k] = cr[k].filter(r => {
+            if (!r || r._reopenedExplicitly) return true;
+            const key = `${k}:${String(r.id == null ? '' : r.id).trim()}`;
+            if (bareSet.has(key)) return false;
+            if (timedMap.has(key)) return _recPurgeMs(r) > timedMap.get(key);
+            return true;
+          });
         }
       }
     }
@@ -3661,7 +3717,7 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
     const prevCrForPurge = (prev.customRecords && typeof prev.customRecords === 'object') ? prev.customRecords : {};
     for (const rawItem of incomingDoc._purgedOverrideIds) {
       const s = String(rawItem || '').trim();
-      if (!s || !LEGACY_PURGED_ENTRY_RE.test(s) || prevPurgedSet.has(s)) continue;
+      if (!s || !LEGACY_PURGED_ENTRY_RE.test(s) || prevPurgedSet.has(s) || s.includes('@')) continue;
       const colon = s.indexOf(':');
       const tbl = s.slice(0, colon);
       const rid = s.slice(colon + 1);
@@ -4186,7 +4242,8 @@ function scopeStoreDocForSession(docObj, session) {
     copyDoc._purgedOverrideIds = docObj._purgedOverrideIds.filter(raw => {
       const s = String(raw || '').trim();
       if (!LEGACY_PURGED_ENTRY_RE.test(s)) return false;
-      const rid = s.slice(s.indexOf(':') + 1);
+      const base = s.split('@')[0];
+      const rid = base.slice(base.indexOf(':') + 1);
       if (rid.startsWith('dv-hld-')) return canAccessCompany(session, 'Bdeir Holding');
       if (rid.startsWith('dv-ins-')) return canAccessCompany(session, 'Insurance Company');
       if (rid.startsWith('wbmalf-wtc-') || rid.startsWith('wbrecur-wtc-')) return canAccessCompany(session, 'WTC');
