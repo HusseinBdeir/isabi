@@ -10439,6 +10439,25 @@
       "● OK": "● سليم",
       "● Ready (Local)": "● جاهز (محلي)",
       "● Ready (Sign In)": "● جاهز (سجّل الدخول)",
+      "Father's Name": "اسم الأب",
+      "Father's Name (Optional)": "اسم الأب (اختياري)",
+      "Optional father's name": "اسم الأب اختياري",
+      "Father": "الأب",
+      "Father Name": "اسم الأب",
+      "Father:": "الأب:",
+      "e.g. Mohammad": "مثلاً: محمد",
+      "Locked to the father's name recorded on onboarding": "مقفل على اسم الأب المسجّل عند التعيين",
+      "Please update to the latest ISABI app version before syncing changes.": "يرجى التحديث إلى أحدث إصدار من تطبيق ISABI قبل مزامنة التغييرات.",
+      "Duplicate active staff name blocked by server.": "تم حظر تكرار اسم الموظف النشط من الخادم.",
+      "Same-name check blocked sync": "حظر فحص تشابه الأسماء المزامنة",
+      "Refresh app to sync": "حدّث التطبيق للمزامنة",
+      "Business Unit": "وحدة الأعمال",
+      "Business Unit *": "وحدة الأعمال *",
+      "Role / Job Title": "الدور / المسمى الوظيفي",
+      "Role / Job Title *": "الدور / المسمى الوظيفي *",
+      "Creates active roster profile & opens 3-Pose Face ID capture": "ينشئ ملفاً نشطاً في السجل ويفتح التقاط بصمة الوجه من 3 زوايا",
+      "● Refresh app to sync": "● حدّث التطبيق للمزامنة",
+      "● Same-name check blocked sync": "● أوقف التحقق من تشابه الأسماء المزامنة",
       "● Sign-in required": "● تسجيل الدخول مطلوب",
       "⚠ UNRECOGNIZED FACE": "⚠ وجه غير معروف",
       "✓ AI Smart Scan Extracted:": "✓ استخراج المسح الذكي:",
@@ -22134,6 +22153,25 @@
       "● OK": "● OK",
       "● Ready (Local)": "● Prêt (Local)",
       "● Ready (Sign In)": "● Prêt (Connexion)",
+      "Father's Name": "Nom du père",
+      "Father's Name (Optional)": "Nom du père (Optionnel)",
+      "Optional father's name": "Nom du père optionnel",
+      "Father": "Père",
+      "Father Name": "Nom du père",
+      "Father:": "Père :",
+      "e.g. Mohammad": "ex. Mohammad",
+      "Locked to the father's name recorded on onboarding": "Verrouillé sur le nom du père enregistré à l'embauche",
+      "Please update to the latest ISABI app version before syncing changes.": "Veuillez mettre à jour vers la dernière version de l'application ISABI avant de synchroniser les modifications.",
+      "Duplicate active staff name blocked by server.": "Nom d'employé actif en double bloqué par le serveur.",
+      "Same-name check blocked sync": "Le contrôle d'homonymie a bloqué la synchronisation",
+      "Refresh app to sync": "Actualisez l'application pour synchroniser",
+      "Business Unit": "Unité opérationnelle",
+      "Business Unit *": "Unité opérationnelle *",
+      "Role / Job Title": "Rôle / Poste",
+      "Role / Job Title *": "Rôle / Poste *",
+      "Creates active roster profile & opens 3-Pose Face ID capture": "Crée un profil actif au registre et ouvre la capture Face ID en 3 poses",
+      "● Refresh app to sync": "● Actualisez l'application pour synchroniser",
+      "● Same-name check blocked sync": "● Synchronisation bloquée par doublon de nom",
       "● Sign-in required": "● Connexion requise",
       "⚠ UNRECOGNIZED FACE": "⚠ VISAGE NON RECONNU",
       "✓ AI Smart Scan Extracted:": "✓ Extraction Smart Scan IA :",
@@ -23996,7 +24034,7 @@
       let count = 0;
       if (recs) {
         const tables = [
-          'customers', 'suppliers', 'staff_members', 'drivers', 'sites', 'regions',
+          'customers', 'suppliers', 'staff_members', 'employments', 'drivers', 'sites', 'regions',
           'products', 'items', 'equipment', 'users', 'bank_accounts',
           'cash_movements', 'external_movements',
           're_properties', 're_tenants', 're_leases', 're_sales',
@@ -24012,7 +24050,7 @@
             if (!r || typeof r !== 'object') continue;
             const vals = [
               r.name, r.full_name, r.code, r.plate, r.short_name, r.customer, r.supplier, r.site,
-              r.tenant, r.buyer, r.carrier, r.client, r.insured, r.property, r.counterparty, r.partner, r.party
+              r.staff, r.father_name, r.tenant, r.buyer, r.carrier, r.client, r.insured, r.property, r.counterparty, r.partner, r.party
             ];
             for (let vi = 0; vi < vals.length; vi++) {
               const v = vals[vi];
@@ -27559,6 +27597,15 @@
 
     m = trimmed.match(/^WTC Own Trucks\s*\((.+)\)$/i);
     if (m) return { out: lang === 'ar' ? `شاحنات WTC الخاصة (${m[1]})` : `Camions Propres WTC (${m[1]})`, ok: true };
+
+    m = trimmed.match(/^Father:\s*(.+)$/i);
+    if (m) return { out: lang === 'ar' ? `الأب: ${m[1]}` : `Père : ${m[1]}`, ok: true };
+
+    m = trimmed.match(/^Restricted to your assigned Business Unit\s*\((.+)\)$/i);
+    if (m) return { out: lang === 'ar' ? `محصور بوحدة الأعمال المخصّصة لك (${m[1]})` : `Limité à votre unité opérationnelle (${m[1]})`, ok: true };
+
+    m = trimmed.match(/^(●\s*)?Refresh app to sync\s*\((v[\d.]+\+?)\)$/i);
+    if (m) return { out: (m[1] ? '● ' : '') + (lang === 'ar' ? `حدّث التطبيق للمزامنة (${m[2]})` : `Actualisez l'application pour synchroniser (${m[2]})`), ok: true };
 
     const cntHit = translateCountNoun(trimmed, lang);
     if (cntHit) return { out: cntHit, ok: true };

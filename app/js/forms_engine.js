@@ -929,34 +929,76 @@
       'Hazmieh', 'Hadath', 'Ghaziyeh', 'Sarafand', 'Dekwaneh', 'Jiyeh', 'Sibline', 'Borj Hammoud', 'Aawkar', 'Halat'
     ]), fIdx && fIdx.region);
     const adminHeaderHtml = `<div id="paAdminUnlockBox" hidden></div>`;
+    const normFormCo = co => {
+      const s = String(co || '').trim();
+      if (!s || /^all$/i.test(s) || /^manufacturing-group$/i.test(s) || /^industry:/i.test(s)) return '';
+      const cc = (typeof window !== 'undefined' && typeof window.__mfgCanonCompany === 'function') ? window.__mfgCanonCompany(s) : s;
+      return norm(cc);
+    };
+    const activeFormCo = normFormCo(company);
     const empByStaff = {};
+    const empByStaffCo = {};
+    const empCosByStaff = {};
     (rec.employments || []).forEach(e => {
       if (!e || e.voided) return;
       const sn = norm(e.staff || e.name);
       if (!sn) return;
-      const prev = empByStaff[sn];
       const isCur = String(e.status || '').toLowerCase() === 'current';
-      const prevCur = prev && String(prev.status || '').toLowerCase() === 'current';
-      if (!prev || (isCur && !prevCur) || (isCur === prevCur && String(e.start_date || '') > String(prev.start_date || ''))) {
-        empByStaff[sn] = e;
+      const pickBetter = prev => {
+        const prevCur = prev && String(prev.status || '').toLowerCase() === 'current';
+        return !prev || (isCur && !prevCur) || (isCur === prevCur && String(e.start_date || '') > String(prev.start_date || ''));
+      };
+      if (pickBetter(empByStaff[sn])) empByStaff[sn] = e;
+      const ec = normFormCo(e.company);
+      if (ec) {
+        if (!empCosByStaff[sn]) empCosByStaff[sn] = new Set();
+        empCosByStaff[sn].add(ec);
+        const ck = `${ec}|${sn}`;
+        if (pickBetter(empByStaffCo[ck])) empByStaffCo[ck] = e;
       }
     });
     const staffMasterByNorm = {};
+    const staffMasterByCo = {};
+    const staffMasterUnscopedAmbig = new Set();
+    const staffMasterAnyAmbig = new Set();
+    const staffMasterCos = {};
     (rec.staff_members || []).forEach(sm => {
       if (!sm || sm.voided) return;
       const sk = norm(sm.name || sm.staff);
-      if (sk && !staffMasterByNorm[sk]) staffMasterByNorm[sk] = sm;
+      if (!sk) return;
+      const sc = normFormCo(sm.company);
+      if (sc) {
+        const ck = `${sc}|${sk}`;
+        if (!staffMasterByCo[ck]) staffMasterByCo[ck] = sm;
+        if (!staffMasterCos[sk]) staffMasterCos[sk] = new Set();
+        staffMasterCos[sk].add(sc);
+        if (staffMasterCos[sk].size > 1) staffMasterAnyAmbig.add(sk);
+      } else {
+        if (staffMasterByNorm[sk]) staffMasterUnscopedAmbig.add(sk);
+        else staffMasterByNorm[sk] = sm;
+      }
     });
     const staffMetaItems = staffNames.map(n => {
       const nk = norm(n);
-      const e = empByStaff[nk];
-      const sm = staffMasterByNorm[nk];
-      const coForShift = (e && e.company) || company;
+      const singleCoEmp = !(empCosByStaff[nk] && empCosByStaff[nk].size > 1);
+      const e = activeFormCo
+        ? (empByStaffCo[`${activeFormCo}|${nk}`] || null)
+        : (singleCoEmp ? (empByStaff[nk] || null) : null);
+      const sm = activeFormCo
+        ? (staffMasterByCo[`${activeFormCo}|${nk}`] || (!staffMasterUnscopedAmbig.has(nk) ? staffMasterByNorm[nk] : null))
+        : (!staffMasterUnscopedAmbig.has(nk) && staffMasterByNorm[nk]
+            ? staffMasterByNorm[nk]
+            : (!staffMasterAnyAmbig.has(nk) && staffMasterCos[nk] && staffMasterCos[nk].size === 1
+                ? staffMasterByCo[`${Array.from(staffMasterCos[nk])[0]}|${nk}`]
+                : null));
+      const coForShift = (e && e.company) || (sm && sm.company) || company;
       const sh = (fType === 'attendance' && helpers && typeof helpers.resolveStaffShiftForDate === 'function')
         ? helpers.resolveStaffShiftForDate(n, coForShift, today)
         : null;
       const parts = [];
       if (sh && sh.badgeLabel && sh.id !== 'off') parts.push(sh.badgeLabel);
+      const fatherName = String((sm && sm.father_name) || (e && e.father_name) || '').trim();
+      if (fatherName) parts.push(`Father: ${fatherName}`);
       if (e) {
         if (e.role || e.position || (sm && sm.role)) parts.push(e.role || e.position || sm.role);
         const fxHelper = (typeof window !== 'undefined' && window.MFG_FX) ? window.MFG_FX : null;
@@ -1970,7 +2012,9 @@
       return `
         <div class="form-grid-3">
           ${secHdr('1. Staff Identity (Universal Registry · All BUs)')}
+          ${fld('Business Unit *', sel('f_staff_company', comps, company), { id: 'wrap_f_staff_company', hidden: Array.isArray(comps) && comps.length <= 1 })}
           ${fld('Staff Name *', inp('f_staff', 'text', '', 'placeholder="Full staff member name"'))}
+          ${fld("Father's Name", inp('f_father_name', 'text', '', 'placeholder="Optional father\'s name"'))}
           ${fld('Phone', inp('f_phone', 'text', '', 'placeholder="+961 ..."'))}
           ${fld('Civil ID or Permit #', inp('f_reference', 'text', '', 'placeholder="Civil ID, NSSF or work permit #..."'))}
           ${secHdr('2. Initial Role & Equipment Assignment (Logged by Effective Date)', 'Future role, equipment, and contract changes are tracked chronologically in Role & Equipment Log and Employment Contract')}
@@ -2254,6 +2298,7 @@
       const empStartVal = pendSalRow ? String(pendSalRow.start_date || pendSalRow.date || today).slice(0, 10) : today;
       const empEndVal = pendSalRow ? String(pendSalRow.end_date || '').slice(0, 10) : '';
       const empStaffVal = pendSalRow ? String(pendSalRow.staff || '') : '';
+      const empFatherVal = pendSalRow ? String(pendSalRow.father_name || '') : '';
       const empRoleVal = pendSalRow ? String(pendSalRow.role || '') : '';
       const empPayVal = pendSalRow
         ? (pendSalRow.pay_type || (/Daily/i.test(String(pendSalRow.type || '')) ? 'Daily' : (isContract ? 'Monthly' : 'Daily')))
@@ -2277,7 +2322,7 @@
       const sameNameBoxHtml = pendSalRow ? '' : `
             <div id="empSameNameBox" class="emp-same-name-box" role="group" aria-label="Same name check" hidden>
               <input type="hidden" id="f_same_name_choice" value="">
-              <div class="emp-same-name-copy"><span>Someone with this name already has an active contract in this company:</span> <b id="empSameNameWho"></b> <span class="emp-same-name-meta" id="empSameNameMeta"></span></div>
+              <div class="emp-same-name-copy"><span>Someone with this name already has an active contract in this company:</span> <b id="empSameNameWho" data-no-i18n="1"></b> <span class="emp-same-name-meta" id="empSameNameMeta" data-no-i18n="1"></span></div>
               <div class="emp-same-name-ask">
                 <span class="emp-same-name-q">Is this the same person?</span>
                 <span class="exp-price-mode-bar emp-same-name-pills">
@@ -2287,7 +2332,7 @@
               </div>
               <div class="emp-same-name-diff" id="empSameNameDiff" hidden>
                 <span>Two people cannot share a name in one company. Add something to the name to tell them apart, such as the father's name.</span>
-                <button type="button" class="btn btn-primary" id="empSameNameSuggestBtn"><span>Use Suggested Name</span> <b id="empSameNameSuggest"></b></button>
+                <button type="button" class="btn btn-primary" id="empSameNameSuggestBtn"><span>Use Suggested Name</span> <b id="empSameNameSuggest" data-no-i18n="1"></b></button>
               </div>
             </div>`;
       const pendingBannerHtml = pendSalRow
@@ -2303,6 +2348,7 @@
             ${fld('Start Date *', inp('f_date', 'date', empStartVal, pendSalRow ? 'readonly' : ''), pendSalRow ? { id: 'wrap_f_date', lockField: 'f_date', lockReason: 'Locked to the start date recorded on onboarding' } : { id: 'wrap_f_date' })}
             ${fld('End Date', inp('f_enddate', 'date', empEndVal, pendSalRow ? 'readonly' : ''), pendSalRow ? { id: 'wrap_emp_enddate', lockField: 'f_enddate', lockReason: 'Locked to the end date recorded on onboarding' } : { id: 'wrap_emp_enddate' })}
             ${fld('Staff *', inp('f_staff', 'text', empStaffVal, `list="dl_staff" placeholder="Select or type staff..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_staff', staffMetaItems), pendSalRow ? { id: 'wrap_emp_staff', lockField: 'f_staff', lockReason: 'Locked to the onboarded staff member', hintId: 'hint_emp_staff', hint: '' } : { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
+            ${fld("Father's Name", inp('f_father_name', 'text', empFatherVal, `placeholder="Optional father's name"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_father', lockField: 'f_father_name', lockReason: "Locked to the father's name recorded on onboarding" } : { id: 'wrap_emp_father' })}
             ${fld('Role *', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_roles', roleMetaItems), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
             ${frozenRoleCatField(resolveRoleCat(empRoleVal))}
             ${fld('Pay Basis *', sel('f_paytype', [['Monthly', 'Monthly'], ['Daily', 'Daily']], empPayVal), pendSalRow ? { id: 'wrap_emp_paytype', lockField: 'f_paytype', lockReason: 'Locked to the pay basis recorded on onboarding' } : { id: 'wrap_emp_paytype' })}
@@ -2332,6 +2378,7 @@
           ${empCompanyField}
           ${fld('Work Date *', inp('f_date', 'date', empStartVal, pendSalRow ? 'readonly' : ''), pendSalRow ? { id: 'wrap_f_date', lockField: 'f_date', lockReason: 'Locked to the work date recorded on onboarding' } : { id: 'wrap_f_date' })}
           ${fld('Staff *', inp('f_staff', 'text', empStaffVal, `list="dl_staff" placeholder="Select or type staff..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_staff', staffMetaItems), pendSalRow ? { id: 'wrap_emp_staff', lockField: 'f_staff', lockReason: 'Locked to the onboarded worker', hintId: 'hint_emp_staff', hint: '' } : { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
+          ${fld("Father's Name", inp('f_father_name', 'text', empFatherVal, `placeholder="Optional father's name"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_father', lockField: 'f_father_name', lockReason: "Locked to the father's name recorded on onboarding" } : { id: 'wrap_emp_father' })}
           <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>${sameNameBoxHtml}
           <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
           ${fld('Role *', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_roles', roleMetaItems), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}

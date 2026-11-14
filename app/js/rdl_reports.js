@@ -3265,14 +3265,57 @@
 
   function render10PayrollRegister(meta, ctx) {
     const p = ctx.rdl.params;
+    const rdlSeedRecs = (typeof window !== 'undefined' && window.MFG_SEED && window.MFG_SEED.records) || {};
+    const normStaffNm = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const normCoNm = c => {
+      const s = String(c || '').trim();
+      if (!s) return '';
+      const cc = (typeof window !== 'undefined' && typeof window.__mfgCanonCompany === 'function') ? window.__mfgCanonCompany(s) : s;
+      return String(cc || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    };
+    const fatherByCoName = new Map();
+    const fatherByName = new Map();
+    (rdlSeedRecs.staff_members || []).concat(rdlSeedRecs.employments || []).forEach(sm => {
+      if (!sm || sm.voided) return;
+      const nm = normStaffNm(sm.name || sm.staff);
+      const fn = String(sm.father_name || '').trim();
+      if (!nm || !fn) return;
+      const co = normCoNm(sm.company);
+      if (co) {
+        const ck = `${co}|${nm}`;
+        if (!fatherByCoName.has(ck)) fatherByCoName.set(ck, fn);
+      }
+      const prev = fatherByName.get(nm);
+      if (!prev) fatherByName.set(nm, { fn, ambiguous: false });
+      else if (prev.fn.toLowerCase() !== fn.toLowerCase()) prev.ambiguous = true;
+    });
+    const ctxSingleCo = (ctx && ctx.co && !RDL_GROUP_COMPANIES[ctx.co]) ? ctx.co : '';
+    const staffCellHtml = (nm, co) => {
+      const s = String(nm || '').trim();
+      const nk = normStaffNm(s);
+      const ck = normCoNm(co || ctxSingleCo);
+      const any = fatherByName.get(nk);
+      const fn = s ? ((ck && fatherByCoName.get(`${ck}|${nk}`)) || (!any || any.ambiguous ? '' : any.fn) || '') : '';
+      const alreadyHas = fn && s.toLowerCase().includes('(' + fn.toLowerCase() + ')');
+      return esc(s || '-') + (fn && !alreadyHas ? ` <small style="font-weight:400;color:#64748b">(${esc(fn)})</small>` : '');
+    };
     const rows = ctx.payAll.filter(r => {
       if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
       if (p.staff && p.staff !== 'ALL' && r.staff !== p.staff) return false;
       return true;
     }).sort((a, b) => rowDate(b, ctx.basis).localeCompare(rowDate(a, ctx.basis)));
 
+    const rdlCoRaw = String((ctx && ctx.co) || '').trim();
+    const rdlPayCo = !rdlCoRaw || rdlCoRaw === 'ALL'
+      ? 'manufacturing-group'
+      : (rdlCoRaw === 'Hospitality Group' ? 'industry:Hospitality & Resorts'
+        : (rdlCoRaw === 'Trading Group' ? 'industry:Automotive & Heavy Trading'
+          : (rdlCoRaw === 'Real Estate Group' ? 'industry:Real Estate & Property'
+            : (rdlCoRaw === '4235 Company S.A.L' ? '4235company'
+              : (rdlCoRaw === 'Insurance Company' ? 'insurance'
+                : rdlCoRaw.toLowerCase().replace(/\s+/g, ''))))));
     const regCalc = (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function')
-      ? window.__mfgComputeStaffPayrollRegister({ activeRange: { from: p.from, to: p.to } })
+      ? window.__mfgComputeStaffPayrollRegister({ company: rdlPayCo, ignoreSearch: true, activeRange: { from: p.from, to: p.to } })
       : null;
     const staffEarnRows = ((regCalc && regCalc.staffRows) || []).filter(sr => {
       if (!sr) return false;
@@ -3314,7 +3357,7 @@
             const dedTot = Number(sr.late_ded || 0) + Number(sr.abs_ded || 0) + Number(sr.ded || 0);
             return `
             <tr>
-              <td class="bold">${esc(sr.staff || '-')}</td>
+              <td class="bold">${staffCellHtml(sr.staff, sr.company)}</td>
               <td>${esc(sr.company || 'WTC')}</td>
               <td class="num">${fmtUsd(sr.base || 0, 2)}</td>
               <td class="num">${sr.reimb ? fmtUsd(sr.reimb, 2) : '-'}</td>
@@ -3359,7 +3402,7 @@
           ${viewRows.map(r => `
             <tr>
               <td class="mono">${esc(rowDate(r, ctx.basis))}</td>
-              <td class="bold">${esc(r.staff || '-')}</td>
+              <td class="bold">${staffCellHtml(r.staff, r.company)}</td>
               <td>${esc(r.role || '-')}</td>
               <td>${esc(r.type || 'Cash')}</td>
               <td class="num bold">${fmtUsd(r.paid_usd, 2)}</td>

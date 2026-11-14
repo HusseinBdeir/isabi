@@ -1641,13 +1641,13 @@
     { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region', dvn: 'bhf_region', form: 'region', cols: ['name', 'sites_count', 'corridor', 'zone_shape', 'distance_km', 'overtime_rate', 'total_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
     { key: 'equipment', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', singularLabel: 'Equipment', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
     { key: 'drivers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', singularLabel: 'Driver', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] },
-    { key: 'staff_members', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_staff', label: 'Staff Members', singularLabel: 'Staff Member', dvn: 'bhf_staffmember', form: 'staff', cols: ['name', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'active_salary_usd', 'salary_status', 'total_earned', 'total_paid', 'rem_payment'], relTables: ['staff_roles', 'staff_assignments', 'employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'loans'], views: [
+    { key: 'staff_members', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_staff', label: 'Staff Members', singularLabel: 'Staff Member', dvn: 'bhf_staffmember', form: 'staff', cols: ['name', 'father_name', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'active_salary_usd', 'salary_status', 'total_earned', 'total_paid', 'rem_payment'], relTables: ['staff_roles', 'staff_assignments', 'employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'loans'], views: [
       { id: 'all', label: 'All Staff Members' },
-      { id: 'open_rem', label: 'Remaining Payment > $0', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Number(sr.rem_payment || 0) > 0.5; } },
-      { id: 'active_contracts', label: 'Active Contracted', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Number(sr.active_contracts_count || 0) > 0; } },
-      { id: 'pending_salary', label: 'Pending Salary ($0)', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Boolean(sr.has_pending_salary); } },
-      { id: 'drivers_ops', label: 'Drivers & Operators', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Boolean(sr.is_driver_op || /driver|operat|loader|excavat|crusher|truck/i.test(String(r.role || r.role_category || r.worker_category || sr.role || ''))); } },
-      { id: 'uncontracted', label: 'Registry Only (No Contract)', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Number(sr.contracts_count || 0) === 0; } }
+      { id: 'open_rem', label: 'Remaining Payment > $0', fn: (r, rel) => { const sr = lookupRelStaffPbi(rel, r) || {}; return Number(sr.rem_payment || 0) > 0.5; } },
+      { id: 'active_contracts', label: 'Active Contracted', fn: (r, rel) => { const sr = lookupRelStaffPbi(rel, r) || {}; return Number(sr.active_contracts_count || 0) > 0; } },
+      { id: 'pending_salary', label: 'Pending Salary ($0)', fn: (r, rel) => { const sr = lookupRelStaffPbi(rel, r) || {}; return Boolean(sr.has_pending_salary); } },
+      { id: 'drivers_ops', label: 'Drivers & Operators', fn: (r, rel) => { const sr = lookupRelStaffPbi(rel, r) || {}; return Boolean(sr.is_driver_op || /driver|operat|loader|excavat|crusher|truck/i.test(String(r.role || r.role_category || r.worker_category || sr.role || ''))); } },
+      { id: 'uncontracted', label: 'Registry Only (No Contract)', fn: (r, rel) => { const sr = lookupRelStaffPbi(rel, r) || {}; return Number(sr.contracts_count || 0) === 0; } }
     ] },
     { key: 'staff_roles', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_roles', label: 'Staff Roles', singularLabel: 'Staff Role', dvn: 'bhf_staffrole', form: 'staffrole', cols: ['name', 'role_category', 'pay_basis', 'operates_equipment', 'staff_count', 'active_assignments_count', 'contracts_count', 'notes'], relTables: ['staff_members', 'staff_assignments', 'employments'], views: [
       { id: 'all', label: 'All Staff Roles' },
@@ -2135,10 +2135,28 @@
     const rel = {
       custByName: {}, suppByName: {}, prodByName: {}, typeByName: {}, uomByName: {},
       siteByName: {}, siteByCatKey: {}, regByName: {}, equipByName: {}, drvByName: {}, catByName: {},
-      subcatByName: {}, subcatByKey: {}, staffByName: {}, roleByName: {}, vatInvByNo: {}, loanByName: {}
+      subcatByName: {}, subcatByKey: {}, staffByName: {}, staffByKey: {}, roleByName: {}, vatInvByNo: {}, loanByName: {}
     };
     const subcatKey = (cat, sub) => `${norm(cat)}|${norm(sub)}`;
     const ensure = (map, k, init) => { const nk = norm(k); if (!nk) return null; if (!map[nk]) map[nk] = init(); return map[nk]; };
+    const staffCoNorm = co => {
+      const s = String(co == null ? '' : co).trim();
+      if (!s) return '';
+      return norm((typeof window !== 'undefined' && typeof window.__mfgCanonCompany === 'function') ? window.__mfgCanonCompany(s) : s);
+    };
+    const ensureStaffTargets = (name, co) => {
+      const out = [];
+      const u = ensure(rel.staffByName, name, initStaff);
+      if (u) out.push(u);
+      const ck = staffCoNorm(co);
+      const nk = norm(name);
+      if (ck && nk) {
+        const sk = `${ck}|${nk}`;
+        if (!rel.staffByKey[sk]) rel.staffByKey[sk] = initStaff();
+        out.push(rel.staffByKey[sk]);
+      }
+      return out;
+    };
     const ensureSiteCat = (cat, nm) => {
       const nk = norm(nm);
       if (!nk) return null;
@@ -2729,14 +2747,16 @@
     (rec.staff_members || []).forEach(sm => {
       if (!inIndDim(sm)) return;
       const sName = sm.name || sm.staff;
-      const st = ensure(rel.staffByName, sName, initStaff);
-      if (st) {
+      const smCo = sm.company || singleBu;
+      ensureStaffTargets(sName, smCo).forEach(st => {
+        if (sm.company && st.companies) st.companies.add(sm.company);
+        if (sm.father_name && !st.father_name) st.father_name = sm.father_name;
         if (sm.role && !st.role) st.role = sm.role;
         if (sm.role_category && !st.role_category) st.role_category = sm.role_category;
         if (sm.phone && !st.phone) st.phone = sm.phone;
         if (sm.default_equipment && !st.default_equipment) st.default_equipment = sm.default_equipment;
         if (/driver|operat/i.test(String(sm.role_category || sm.worker_category || sm.role || ''))) st.is_driver_op = true;
-      }
+      });
       if (sm.role && sName) {
         const re = ensure(rel.roleByName, sm.role, initRole);
         if (re) re.staff.add(norm(sName));
@@ -2745,10 +2765,9 @@
     (rec.staff_assignments || []).forEach(sa => {
       if (!inInd(sa)) return;
       const sName = sa.staff || sa.name;
-      const st = ensure(rel.staffByName, sName, initStaff);
       const ended = sa.status === 'Ended' || Boolean(sa.end_date && String(sa.end_date).slice(0, 10) < seedDateIso);
       const sStart = String(sa.start_date || sa.date || '').slice(0, 10);
-      if (st) {
+      ensureStaffTargets(sName, sa.company || singleBu).forEach(st => {
         if (sa.company) st.companies.add(sa.company);
         if (!ended && (!st.active_assign_start || sStart >= st.active_assign_start)) {
           st.active_assign_start = sStart;
@@ -2759,7 +2778,7 @@
           st.role = sa.role;
         }
         if (/driver|operat|loader|excavat|crusher|truck/i.test(String(sa.role || sa.role_category || ''))) st.is_driver_op = true;
-      }
+      });
       if (sa.role) {
         const re = ensure(rel.roleByName, sa.role, initRole);
         if (re) {
@@ -2772,89 +2791,96 @@
     (rec.employments || []).forEach(emp => {
       if (!inInd(emp)) return;
       const sName = emp.staff || emp.name;
-      const st = ensure(rel.staffByName, sName, initStaff);
-      if (!st) return;
-      st.contracts_count++;
-      if (emp.company) st.companies.add(emp.company);
+      const targets = ensureStaffTargets(sName, emp.company || singleBu);
+      if (!targets.length) return;
+      const ended = emp.status === 'Ended' || Boolean(emp.end_date && String(emp.end_date).slice(0, 10) < seedDateIso);
+      const mBaseUsd = !ended
+        ? ((window.MFG_FX && typeof window.MFG_FX.contractMonthlyUsd === 'function')
+          ? Number(window.MFG_FX.contractMonthlyUsd(emp) || 0)
+          : Number(emp.salary_usd || emp.daily_rate || emp.amount || 0))
+        : 0;
+      const mReimbUsd = !ended
+        ? ((window.MFG_FX && typeof window.MFG_FX.contractReimbUsd === 'function')
+          ? Number(window.MFG_FX.contractReimbUsd(emp) || 0)
+          : Number(emp.reimbursement || 0))
+        : 0;
+      targets.forEach(st => {
+        st.contracts_count++;
+        if (emp.father_name && !st.father_name) st.father_name = emp.father_name;
+        if (emp.company) st.companies.add(emp.company);
+        if (emp.role) st.role = emp.role;
+        if (!ended) {
+          st.active_contracts_count++;
+          if (emp.salary_pending) st.has_pending_salary = true;
+          if (/free|daily/i.test(String(emp.type || emp.pay_type || ''))) st.has_daily_contract = true;
+          st.active_base_usd = round2((st.active_base_usd || 0) + mBaseUsd);
+          st.active_reimb_usd = round2((st.active_reimb_usd || 0) + mReimbUsd);
+          st.active_salary_usd = round2(st.active_salary_usd + mBaseUsd + mReimbUsd);
+        }
+        if (/driver|operat|loader|excavat|crusher|truck/i.test(String(emp.role || ''))) st.is_driver_op = true;
+      });
       if (emp.role) {
-        st.role = emp.role;
         const re = ensure(rel.roleByName, emp.role, initRole);
         if (re) {
           re.contracts_count++;
           if (sName) re.staff.add(norm(sName));
         }
       }
-      const ended = emp.status === 'Ended' || Boolean(emp.end_date && String(emp.end_date).slice(0, 10) < seedDateIso);
-      if (!ended) {
-        st.active_contracts_count++;
-        if (emp.salary_pending) st.has_pending_salary = true;
-        if (/free|daily/i.test(String(emp.type || emp.pay_type || ''))) st.has_daily_contract = true;
-        const mBaseUsd = (window.MFG_FX && typeof window.MFG_FX.contractMonthlyUsd === 'function')
-          ? Number(window.MFG_FX.contractMonthlyUsd(emp) || 0)
-          : Number(emp.salary_usd || emp.daily_rate || emp.amount || 0);
-        const mReimbUsd = (window.MFG_FX && typeof window.MFG_FX.contractReimbUsd === 'function')
-          ? Number(window.MFG_FX.contractReimbUsd(emp) || 0)
-          : Number(emp.reimbursement || 0);
-        st.active_base_usd = round2((st.active_base_usd || 0) + mBaseUsd);
-        st.active_reimb_usd = round2((st.active_reimb_usd || 0) + mReimbUsd);
-        st.active_salary_usd = round2(st.active_salary_usd + mBaseUsd + mReimbUsd);
-      }
-      if (/driver|operat|loader|excavat|crusher|truck/i.test(String(emp.role || ''))) st.is_driver_op = true;
     });
     (rec.salaries || []).forEach(sal => {
       if (!inInd(sal)) return;
-      const st = ensure(rel.staffByName, sal.staff, initStaff);
-      if (st) {
+      const vUsd = (window.MFG_FX && typeof window.MFG_FX.voucherUsd === 'function')
+        ? Number(window.MFG_FX.voucherUsd(sal) || 0)
+        : Number(sal.amount || sal.usd_amount || 0);
+      ensureStaffTargets(sal.staff, sal.company || singleBu).forEach(st => {
         st.payments_count++;
         if (sal.company) st.companies.add(sal.company);
-        const vUsd = (window.MFG_FX && typeof window.MFG_FX.voucherUsd === 'function')
-          ? Number(window.MFG_FX.voucherUsd(sal) || 0)
-          : Number(sal.amount || sal.usd_amount || 0);
         st.total_paid = round2(st.total_paid + vUsd);
-      }
+      });
     });
     (rec.attendance || []).forEach(att => {
       if (!inInd(att) || /^config/i.test(String(att.type || att.status || ''))) return;
-      const st = ensure(rel.staffByName, att.staff, initStaff);
-      if (st) {
+      ensureStaffTargets(att.staff, att.company || singleBu).forEach(st => {
         st.attendance_days++;
         if (att.company) st.companies.add(att.company);
-      }
+      });
     });
     (rec.freelance_entries || []).forEach(fl => {
       if (!inInd(fl)) return;
-      const st = ensure(rel.staffByName, fl.staff, initStaff);
-      if (st) {
+      ensureStaffTargets(fl.staff, fl.company || singleBu).forEach(st => {
         if (fl.company) st.companies.add(fl.company);
         st.has_daily_contract = true;
-      }
+      });
     });
     (rec.logistics_allowances || []).forEach(lg => {
       if (!inInd(lg)) return;
-      const st = ensure(rel.staffByName, lg.staff, initStaff);
-      if (st) {
+      ensureStaffTargets(lg.staff, lg.company || singleBu).forEach(st => {
         if (lg.company) st.companies.add(lg.company);
         if (lg.equipment && !st.default_equipment) st.default_equipment = lg.equipment;
-      }
+      });
     });
     (rec.company_drivers || []).forEach(cd => {
       if (!inInd(cd)) return;
-      const st = ensure(rel.staffByName, cd.staff || cd.driver, initStaff);
-      if (st) {
+      ensureStaffTargets(cd.staff || cd.driver, cd.company || singleBu).forEach(st => {
         st.is_driver_op = true;
         if (!st.role) st.role = 'Driver';
         if (cd.company) st.companies.add(cd.company);
-      }
+      });
     });
     (rec.drivers || []).forEach(drv => {
       if (!inIndDim(drv)) return;
-      const st = rel.staffByName[norm(drv.name || drv.driver)];
-      if (st) {
+      const nk = norm(drv.name || drv.driver);
+      if (!nk) return;
+      const dCk = staffCoNorm(drv.company || singleBu);
+      const drvTargets = [];
+      if (rel.staffByName[nk]) drvTargets.push(rel.staffByName[nk]);
+      if (dCk && rel.staffByKey[`${dCk}|${nk}`]) drvTargets.push(rel.staffByKey[`${dCk}|${nk}`]);
+      drvTargets.forEach(st => {
         st.is_driver_op = true;
         if (!st.role) st.role = 'Driver';
         if (drv.phone && !st.phone) st.phone = drv.phone;
         if (drv.truck && !st.default_equipment) st.default_equipment = drv.truck;
-      }
+      });
     });
     if (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function') {
       const stObj = _activePbiState || (typeof window !== 'undefined' ? window.STATE : null);
@@ -2866,7 +2892,7 @@
         cutoffMode: payCutoffStamp
       });
       if (payReg && Array.isArray(payReg.staffRows)) {
-        Object.values(rel.staffByName).forEach(st => {
+        Object.values(rel.staffByName).concat(Object.values(rel.staffByKey)).forEach(st => {
           st.total_earned = 0;
           st.total_paid = 0;
           st.rem_payment = 0;
@@ -2876,18 +2902,18 @@
         });
         payReg.staffRows.forEach(sr => {
           if (!sr || !sr.staff) return;
-          const st = ensure(rel.staffByName, sr.staff, initStaff);
-          if (!st) return;
-          st.total_earned = round2((st.total_earned || 0) + Number(sr.earnings || 0));
-          st.total_paid = round2((st.total_paid || 0) + Number(sr.paid || 0));
-          st.rem_payment = round2((st.rem_payment || 0) + Number(sr.balance || 0));
-          st.advances = round2((st.advances || 0) + Number(sr.advances || 0));
-          st.rem_usd = round2((st.rem_usd || 0) + Number(sr.rem_usd || 0));
-          st.rem_lbp = Math.round((st.rem_lbp || 0) + Number(sr.rem_lbp || 0));
+          ensureStaffTargets(sr.staff, sr.company || singleBu).forEach(st => {
+            st.total_earned = round2((st.total_earned || 0) + Number(sr.earnings || 0));
+            st.total_paid = round2((st.total_paid || 0) + Number(sr.paid || 0));
+            st.rem_payment = round2((st.rem_payment || 0) + Number(sr.balance || 0));
+            st.advances = round2((st.advances || 0) + Number(sr.advances || 0));
+            st.rem_usd = round2((st.rem_usd || 0) + Number(sr.rem_usd || 0));
+            st.rem_lbp = Math.round((st.rem_lbp || 0) + Number(sr.rem_lbp || 0));
+          });
         });
       }
     }
-    Object.values(rel.staffByName).forEach(st => {
+    Object.values(rel.staffByName).concat(Object.values(rel.staffByKey)).forEach(st => {
       st.companies_list = singleBu || Array.from(st.companies).join(', ') || 'All BUs (Ready)';
       st.salary_status = st.has_pending_salary
         ? 'Pending ($0)'
@@ -3306,7 +3332,7 @@
         if (c === 'expenses_count' || c === 'total_spent') return 0;
       }
       if (tableKey === 'employments') {
-        const st = rel.staffByName[norm(r.staff || r.name)];
+        const st = lookupRelStaffPbi(rel, r);
         if (st && st[c] != null) return st[c];
       }
       if (tableKey === 'staff_roles') {
@@ -3316,10 +3342,11 @@
         if (c === 'contracts_count') return re ? re.contracts_count : 0;
       }
       if (tableKey === 'staff_members') {
-        const st = rel.staffByName[norm(r.name || r.staff)];
+        const st = lookupRelStaffPbi(rel, r);
         const effRole = (st && st.active_role) || r.role || (st && st.role) || 'Staff';
         const re = rel.roleByName && rel.roleByName[norm(effRole)];
         if (c === 'name') return r.name || r.staff || '';
+        if (c === 'father_name') return r.father_name || (st && st.father_name) || null;
         if (c === 'role') return effRole;
         if (c === 'role_category') return (re && re.category) || (st && st.role_category) || r.role_category || inferRoleCatPbi(effRole);
         if (c === 'phone') return r.phone || (st && st.phone) || null;
@@ -3359,6 +3386,17 @@
       .replace(/"/g, '&quot;');
   }
   function norm(s) { return String(s == null ? '' : s).trim().toLowerCase(); }
+  function lookupRelStaffPbi(rel, r) {
+    if (!rel || !r) return null;
+    const nm = norm(r.staff || r.name);
+    if (!nm) return null;
+    const rawCo = String(r.company || '').trim();
+    const cCo = rawCo
+      ? norm((typeof window !== 'undefined' && typeof window.__mfgCanonCompany === 'function') ? window.__mfgCanonCompany(rawCo) : rawCo)
+      : '';
+    if (cCo && rel.staffByKey && rel.staffByKey[`${cCo}|${nm}`]) return rel.staffByKey[`${cCo}|${nm}`];
+    return (rel.staffByName && rel.staffByName[nm]) || null;
+  }
   function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
   function uniq(arr, freqMap) {
     const seen = new Set();
@@ -10140,7 +10178,7 @@
     const rlsScopedRaw = filterRecords(rawList, { ignorePeriod: true, ignoreSearch: true, ignoreCompany: isUniv, ignoreRls: isUniv });
     const searchCols = meta.key === 'sites'
       ? Array.from(new Set(meta.cols.concat(['supplier', 'customer', 'site_category', 'linked_party'])))
-      : (meta.key === 'staff_members' ? Array.from(new Set(meta.cols.concat(['role_category', 'phone', 'reference']))) : meta.cols);
+      : (meta.key === 'staff_members' ? Array.from(new Set(meta.cols.concat(['father_name', 'role_category', 'phone', 'reference']))) : meta.cols);
     const baseFiltered = filterRecords(rawList, {
       cols: searchCols,
       tableKey: meta.key,
@@ -10474,6 +10512,7 @@
   }
 
   const HUB_COL_LABELS = {
+    father_name: "Father's Name",
     contracts_count: 'Contracts',
     vacation_days: 'Vac Days',
     payable_leg: 'Payable Leg',
@@ -11311,7 +11350,7 @@
     const rawList = (SEED.records && SEED.records[meta.key]) || [];
     const searchCols = meta.key === 'sites'
       ? Array.from(new Set(meta.cols.concat(['supplier', 'customer', 'site_category', 'linked_party'])))
-      : (meta.key === 'staff_members' ? Array.from(new Set(meta.cols.concat(['role_category', 'phone', 'reference']))) : meta.cols);
+      : (meta.key === 'staff_members' ? Array.from(new Set(meta.cols.concat(['father_name', 'role_category', 'phone', 'reference']))) : meta.cols);
     const activeIndUreg = (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function')
       ? window.__mfgGetActiveIndustry()
       : 'Manufacturing';

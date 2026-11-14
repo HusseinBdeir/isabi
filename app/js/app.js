@@ -224,6 +224,41 @@
     'Properties', '4235 Company S.A.L',
     'Insurance Company'
   ];
+  const CANON_COMPANY_MAP = {
+    wtc: 'WTC',
+    'wtc (world trading & construction)': 'WTC',
+    bbconstruction: 'BBConstruction',
+    'bb construction': 'BBConstruction',
+    bbc: 'BBConstruction',
+    lionstransport: 'Lions Transport',
+    'lions transport': 'Lions Transport',
+    lions: 'Lions Transport',
+    bdeirholding: 'Bdeir Holding',
+    'bdeir holding': 'Bdeir Holding',
+    blanca: 'Blanca',
+    launa: 'La Una',
+    'la una': 'La Una',
+    palms: 'Palms',
+    voile: 'Voile',
+    platinum: 'Platinum',
+    korriauto: 'Korri Auto',
+    'korri auto': 'Korri Auto',
+    shacman: 'Shacman',
+    properties: 'Properties',
+    '4235company': '4235 Company S.A.L',
+    '4235 company s.a.l': '4235 Company S.A.L',
+    '4235': '4235 Company S.A.L',
+    insurance: 'Insurance Company',
+    'insurance company': 'Insurance Company',
+    'bdeir insurance brokerage': 'Insurance Company'
+  };
+  function canonCompany(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    const k = s.toLowerCase().replace(/\s+/g, ' ');
+    return CANON_COMPANY_MAP[k] || s;
+  }
+  if (typeof window !== 'undefined') window.__mfgCanonCompany = canonCompany;
   function ensureCanonicalMultiIndustrySeat(u) {
     if (!u || typeof u !== 'object') return u;
     const uid = String(u.id || '').trim().toLowerCase();
@@ -29056,6 +29091,7 @@
       return true;
     });
     const pool = matching.length ? matching : (!coNorm ? [] : rows.filter(r => {
+      if (r.company) return false;
       const s = String(r.start_date || r.date || '').slice(0, 10);
       const e = String(r.end_date || '').slice(0, 10);
       return (!s || s <= dt) && (!e || e >= dt);
@@ -29064,22 +29100,29 @@
     return pool.slice().sort((a, b) => String(b.start_date || b.date || '').localeCompare(String(a.start_date || a.date || '')))[0];
   }
 
-  function syncStaffCurrentFromLogs(staffRaw) {
+  function syncStaffCurrentFromLogs(staffRaw, companyRaw) {
     const sk = norm(staffRaw);
     if (!sk || !SEED || !SEED.records) return;
     const today = todayISO();
-    const activeAssign = resolveStaffAssignmentAtDate(staffRaw, today, '');
+    const reqCo = companyRaw ? norm(canonCompany(companyRaw)) : '';
     const allAssigns = ((SEED.records.staff_assignments || []).concat((STATE.customRecords && STATE.customRecords.staff_assignments) || []))
       .filter(r => r && !r.voided && norm(r.staff) === sk)
       .sort((a, b) => String(b.start_date || b.date || '').localeCompare(String(a.start_date || a.date || '')));
-    const latestOpenAssign = allAssigns.find(r => r.status !== 'Ended' && (!r.end_date || String(r.end_date).slice(0, 10) >= today)) || activeAssign || allAssigns[0] || null;
     const allEmps = ((SEED.records.employments || []).concat((STATE.customRecords && STATE.customRecords.employments) || []))
       .filter(e => e && !e.voided && norm(e.staff || e.name) === sk)
       .sort((a, b) => String(b.start_date || b.date || '').localeCompare(String(a.start_date || a.date || '')));
-    const latestEmp = allEmps.find(e => e.status !== 'Ended' && (!e.end_date || String(e.end_date).slice(0, 10) >= today)) || allEmps[0] || null;
 
     const applyToProfile = sm => {
       if (!sm || sm.voided) return;
+      const smCoRaw = sm.company || companyRaw || '';
+      const smCo = smCoRaw ? norm(canonCompany(smCoRaw)) : '';
+      if (reqCo && sm.company && norm(canonCompany(sm.company)) !== reqCo) return;
+      const activeAssign = resolveStaffAssignmentAtDate(staffRaw, today, smCoRaw);
+      const smAssigns = smCo ? allAssigns.filter(r => !r.company || norm(canonCompany(r.company)) === smCo) : allAssigns;
+      const latestOpenAssign = smAssigns.find(r => r.status !== 'Ended' && (!r.end_date || String(r.end_date).slice(0, 10) >= today)) || activeAssign || smAssigns[0] || null;
+      const smEmps = smCo ? allEmps.filter(e => !e.company || norm(canonCompany(e.company)) === smCo) : allEmps;
+      const latestEmp = smEmps.find(e => e.status !== 'Ended' && (!e.end_date || String(e.end_date).slice(0, 10) >= today)) || smEmps[0] || null;
+
       const nextRole = (latestOpenAssign && latestOpenAssign.role) || (latestEmp && latestEmp.role) || sm.role || '';
       const nextCat = resolveRoleCategory(nextRole, (latestOpenAssign && latestOpenAssign.role_category) || sm.role_category || sm.worker_category || '');
       if (nextRole) sm.role = nextRole;
@@ -29099,8 +29142,14 @@
 
   function syncAllStaffCurrentFromLogs() {
     if (!SEED || !SEED.records || !Array.isArray(SEED.records.staff_members)) return;
+    const seenStaff = new Set();
     SEED.records.staff_members.forEach(sm => {
-      if (sm && !sm.voided && (sm.name || sm.staff)) syncStaffCurrentFromLogs(sm.name || sm.staff);
+      if (!sm || sm.voided) return;
+      const nm = sm.name || sm.staff;
+      const nk = norm(nm);
+      if (!nk || seenStaff.has(nk)) return;
+      seenStaff.add(nk);
+      syncStaffCurrentFromLogs(nm);
     });
   }
 
@@ -30870,11 +30919,38 @@
       const s = String(v || '').trim();
       return !s || s === '(Unassigned)' || s === '-' || /^remove$/i.test(s);
     };
+    const cosByName = new Map();
+    const trackStaffCo = (rawName, rawCo) => {
+      if (skipName(rawName)) return;
+      const nk = norm(String(rawName).trim());
+      const ck = rawCo ? norm(canonCompany(rawCo)) : '';
+      if (!nk || !ck) return;
+      if (!cosByName.has(nk)) cosByName.set(nk, new Set());
+      cosByName.get(nk).add(ck);
+    };
+    (rec.staff_members || []).forEach(r => { if (r && !r.voided && r.company) trackStaffCo(r.name || r.staff, r.company); });
+    customList.forEach(r => { if (r && !r.voided) trackStaffCo(r.name || r.staff, r.company); });
+    (rec.company_drivers || []).forEach(cd => { if (cd && !cd.voided) trackStaffCo(cd.staff || cd.driver, cd.company || 'WTC'); });
+    (rec.employments || []).forEach(e => { if (e && !e.voided) trackStaffCo(e.staff || e.name, e.company || 'WTC'); });
+    (rec.salaries || []).forEach(s => { if (s && !s.voided) trackStaffCo(s.staff, s.company); });
+    (rec.attendance || []).forEach(a => { if (a && !a.voided) trackStaffCo(a.staff, a.company); });
+    (rec.freelance_entries || []).forEach(f => { if (f && !f.voided) trackStaffCo(f.staff, f.company || 'WTC'); });
+    (rec.logistics_allowances || []).forEach(l => { if (l && !l.voided) trackStaffCo(l.staff, l.company); });
+    (rec.staff_assignments || []).forEach(sa => { if (sa && !sa.voided) trackStaffCo(sa.staff, sa.company); });
+    const splitNames = new Set();
+    cosByName.forEach((set, nk) => { if (set.size > 1) splitNames.add(nk); });
+    const staffEntryKey = (nameK, rawCo) => {
+      if (!nameK) return '';
+      if (!splitNames.has(nameK)) return nameK;
+      const ck = rawCo ? norm(canonCompany(rawCo)) : '';
+      return ck ? `${nameK}@@${ck}` : nameK;
+    };
+
     const voidedNames = new Set();
     const customKeepKeys = new Set();
     customList.forEach(r => {
       if (!r) return;
-      const k = norm(r.name || r.staff);
+      const k = staffEntryKey(norm(r.name || r.staff), r.company);
       if (!k) return;
       if (r.voided) voidedNames.add(k);
       else customKeepKeys.add(k);
@@ -30892,13 +30968,19 @@
     const touchName = (rawName, patch) => {
       if (skipName(rawName)) return;
       const nm = String(rawName).trim();
-      const k = norm(nm);
+      const rawK = norm(nm);
+      const co = (patch && patch.company) ? canonCompany(patch.company) : '';
+      if (splitNames.has(rawK) && !co) return;
+      const k = staffEntryKey(rawK, co);
       if (!k || voidedNames.has(k)) return;
       let cur = discovered.get(k);
       if (!cur) {
-        const dm = drvMeta.get(k) || {};
+        const dm = drvMeta.get(rawK) || {};
         cur = {
           name: nm,
+          nameKey: rawK,
+          company: co,
+          father_name: '',
           role: '',
           role_category: '',
           phone: dm.phone || '',
@@ -30909,7 +30991,9 @@
         };
         discovered.set(k, cur);
       }
+      if (co && !cur.company) cur.company = co;
       if (patch) {
+        if (patch.father_name && !cur.father_name) cur.father_name = patch.father_name;
         if (patch.role) cur.role = patch.role;
         if (patch.phone) cur.phone = patch.phone;
         if (patch.default_equipment && !cur.default_equipment) cur.default_equipment = patch.default_equipment;
@@ -30921,42 +31005,49 @@
 
     (rec.company_drivers || []).forEach(cd => {
       if (!cd || cd.voided) return;
-      touchName(cd.staff || cd.driver, { isCoDriver: true, default_equipment: cd.equipment || '' });
+      touchName(cd.staff || cd.driver, { company: cd.company || 'WTC', isCoDriver: true, default_equipment: cd.equipment || '' });
     });
     const sortedEmps = (rec.employments || []).filter(e => e && !e.voided).slice().sort((a, b) => String(a.start_date || a.date || '').localeCompare(String(b.start_date || b.date || '')));
     sortedEmps.forEach(e => {
       const isFl = /free|daily/i.test(String(e.type || e.pay_type || ''));
       touchName(e.staff || e.name, {
+        company: e.company || 'WTC',
+        father_name: cleanFatherName(e.father_name || ''),
         role: e.role || '',
         phone: e.phone || '',
         hasEmp: !isFl,
         isFreelance: isFl
       });
     });
-    (rec.salaries || []).forEach(s => { if (s && !s.voided) touchName(s.staff); });
-    (rec.attendance || []).forEach(a => { if (a && !a.voided) touchName(a.staff); });
-    (rec.freelance_entries || []).forEach(f => { if (f && !f.voided) touchName(f.staff, { isFreelance: true }); });
+    (rec.salaries || []).forEach(s => { if (s && !s.voided) touchName(s.staff, { company: s.company || '' }); });
+    (rec.attendance || []).forEach(a => { if (a && !a.voided) touchName(a.staff, { company: a.company || '' }); });
+    (rec.freelance_entries || []).forEach(f => { if (f && !f.voided) touchName(f.staff, { company: f.company || 'WTC', father_name: cleanFatherName(f.father_name || ''), isFreelance: true }); });
     (rec.logistics_allowances || []).forEach(l => {
-      if (l && !l.voided) touchName(l.staff, { default_equipment: l.equipment || '' });
+      if (l && !l.voided) touchName(l.staff, { company: l.company || '', default_equipment: l.equipment || '' });
     });
     (rec.staff_assignments || []).forEach(sa => {
-      if (sa && !sa.voided) touchName(sa.staff, { role: sa.role || '', default_equipment: sa.equipment || '' });
+      if (sa && !sa.voided) touchName(sa.staff, { company: sa.company || '', role: sa.role || '', default_equipment: sa.equipment || '' });
     });
 
     // Drop auto-seeded rows whose underlying operational records were removed/voided (unless explicitly kept in customRecords)
     for (let i = rec.staff_members.length - 1; i >= 0; i--) {
       const r = rec.staff_members[i];
       if (!r || r.voided) { rec.staff_members.splice(i, 1); continue; }
-      const k = norm(r.name || r.staff);
-      if (!k || voidedNames.has(k)) { rec.staff_members.splice(i, 1); continue; }
+      const rawK = norm(r.name || r.staff);
+      const k = staffEntryKey(rawK, r.company);
+      if (!rawK || voidedNames.has(k) || (r.source === 'seed' && splitNames.has(rawK) && !r.company)) { rec.staff_members.splice(i, 1); continue; }
       if (r.source === 'seed' && !customKeepKeys.has(k) && !discovered.has(k)) {
         rec.staff_members.splice(i, 1);
       }
     }
 
+    const isInactiveSm = r => Boolean(r && (r.archived || /^(ended|closed|terminated|inactive|cancelled)$/i.test(String(r.status || '').trim())));
+    const byId = new Map();
     const byKey = new Map();
     rec.staff_members.forEach(r => {
-      const k = norm(r.name || r.staff);
+      if (r && r.id != null) byId.set(String(r.id), r);
+      if (isInactiveSm(r)) return;
+      const k = staffEntryKey(norm(r.name || r.staff), r.company);
       if (k && !byKey.has(k)) byKey.set(k, r);
     });
 
@@ -30969,19 +31060,24 @@
       const existing = byKey.get(k);
       if (existing) {
         if (!existing.staff) existing.staff = existing.name;
+        if (!existing.company && info.company) existing.company = info.company;
         if (!existing.role && effRole) existing.role = effRole;
         const resolvedExistingCat = resolveRoleCategory(existing.role || effRole, existing.role_category || existing.worker_category || inferredCat);
         existing.role_category = resolvedExistingCat;
         existing.worker_category = resolvedExistingCat;
+        if (!existing.father_name && info.father_name) existing.father_name = info.father_name;
         if (!existing.phone && info.phone) existing.phone = info.phone;
         if (!existing.default_equipment && info.default_equipment) existing.default_equipment = info.default_equipment;
         return;
       }
-      const slug = k.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || String(byKey.size + 1);
+      const slugSrc = k.indexOf('@@') >= 0 ? k.replace('@@', '_') : k;
+      const slug = slugSrc.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || String(byKey.size + 1);
       const newRec = {
         id: 'stf_seed_' + slug,
         name: info.name,
         staff: info.name,
+        company: info.company || '',
+        father_name: info.father_name || '',
         role: effRole,
         role_category: inferredCat,
         worker_category: inferredCat,
@@ -30999,16 +31095,20 @@
     customList.forEach(r => {
       if (!r || r.voided) return;
       const nm = String(r.name || r.staff || '').trim();
-      const k = norm(nm);
+      const k = staffEntryKey(norm(nm), r.company);
       if (!k) return;
       const cat = resolveRoleCategory(r.role, r.role_category || r.worker_category || 'Site & Operations') || 'Site & Operations';
-      const existing = byKey.get(k);
+      const byIdHit = r.id != null ? byId.get(String(r.id)) : null;
+      const existing = byIdHit || (isInactiveSm(r) ? null : byKey.get(k));
       if (existing) {
         Object.assign(existing, r, { name: nm, staff: nm, role_category: cat, worker_category: cat, id: existing.id || r.id });
+        if (existing.id != null) byId.set(String(existing.id), existing);
+        if (!isInactiveSm(existing) && !byKey.has(k)) byKey.set(k, existing);
       } else {
         const clone = Object.assign({ role_category: cat, worker_category: cat, role: '', phone: '', default_equipment: '', reference: '', notes: '' }, r, { name: nm, staff: nm, role_category: cat, worker_category: cat, voided: false });
         rec.staff_members.unshift(clone);
-        byKey.set(k, clone);
+        if (clone.id != null) byId.set(String(clone.id), clone);
+        if (!isInactiveSm(clone)) byKey.set(k, clone);
       }
     });
 
@@ -31020,16 +31120,27 @@
     return rec.staff_members;
   }
 
-  function resolveStaffMember(nameRaw) {
+  function resolveStaffMember(nameRaw, companyRaw = '') {
     const nm = String(nameRaw || '').trim();
     if (!nm) return null;
     ensureStaffMembersSeeded();
     const k = norm(nm);
-    const customHit = (STATE.customRecords && Array.isArray(STATE.customRecords.staff_members))
-      ? STATE.customRecords.staff_members.find(r => r && !r.voided && norm(r.name || r.staff) === k)
-      : null;
-    if (customHit) return customHit;
-    return (SEED.records.staff_members || []).find(r => r && !r.voided && norm(r.name || r.staff) === k) || null;
+    const coK = companyRaw ? norm(canonCompany(companyRaw)) : '';
+    const pickFrom = arr => {
+      if (!Array.isArray(arr) || !arr.length) return null;
+      const matches = arr.filter(r => r && !r.voided && norm(r.name || r.staff) === k);
+      if (!matches.length) return null;
+      if (coK) {
+        const activeCoHit = matches.find(r => !r.archived && r.company && norm(canonCompany(r.company)) === coK);
+        if (activeCoHit) return activeCoHit;
+        const anyCoHit = matches.find(r => r.company && norm(canonCompany(r.company)) === coK);
+        if (anyCoHit) return anyCoHit;
+        const unscoped = matches.find(r => !String(r.company || '').trim());
+        if (unscoped) return unscoped;
+      }
+      return matches[0];
+    };
+    return pickFrom(STATE.customRecords && STATE.customRecords.staff_members) || pickFrom(SEED.records && SEED.records.staff_members) || null;
   }
 
   function normalizeMalfUom(raw) {
@@ -92792,7 +92903,8 @@
       if (STATE.modalForm === 'staff') {
         ensureStaffMembersSeeded();
         const editId = (STATE.editingRecord && STATE.editingRecord.crKey === 'staff_members') ? STATE.editingRecord.id : '';
-        const dup = syncUniversalMainDupHint('f_staff', 'staff_members', 'Staff', { excludeId: editId });
+        const staffCo = val('f_staff_company') || val('f_company') || defaultEntryCompany();
+        const dup = syncUniversalMainDupHint('f_staff', 'staff_members', 'Staff', { excludeId: editId, company: staffCo });
         const curRole = val('f_role');
         const resolvedCat = resolveRoleCategory(curRole, '');
         if ($('f_emp_cat')) $('f_emp_cat').value = resolvedCat;
@@ -92804,8 +92916,9 @@
           const nm = val('f_staff');
           if (dup && !editId) {
             const k = norm(dup.name || dup.staff || nm);
-            const empCnt = ((SEED.records && SEED.records.employments) || []).filter(e => e && !e.voided && norm(e.staff || e.name) === k).length;
-            const salCnt = ((SEED.records && SEED.records.salaries) || []).filter(s => s && !s.voided && norm(s.staff) === k).length;
+            const dupCoNorm = dup.company ? norm(canonCompany(dup.company)) : norm(staffCo);
+            const empCnt = ((SEED.records && SEED.records.employments) || []).filter(e => e && !e.voided && norm(e.staff || e.name) === k && (!dupCoNorm || norm(canonCompany(e.company || 'WTC')) === dupCoNorm)).length;
+            const salCnt = ((SEED.records && SEED.records.salaries) || []).filter(s => s && !s.voided && norm(s.staff) === k && (!dupCoNorm || !s.company || norm(canonCompany(s.company)) === dupCoNorm)).length;
             strip.innerHTML = `<span style="color:var(--warn)">${ic('warn')} <b>${esc(dup.name || nm)}</b> is already registered in the Universal Staff Registry (${fmtNum(empCnt)} contract${empCnt === 1 ? '' : 's'} · ${fmtNum(salCnt)} salary voucher${salCnt === 1 ? '' : 's'}). Open <b>4. Payroll &amp; Workforce</b> to log a role change, company contract, or pay voucher.</span>`;
           } else {
             strip.innerHTML = `<span><b>Universal Staff Profile:</b> Shared across all corporations (WTC, BBConstruction, Lions Transport). Future role, equipment, and contract changes are tracked chronologically under <b>4. Payroll &amp; Workforce</b>.</span>`;
@@ -92854,7 +92967,7 @@
         if (curStaff !== FORM_UI.lastAttStaff && !editOrigSa) {
           FORM_UI.lastAttStaff = curStaff;
           const activeSa = curStaff ? resolveStaffAssignmentAtDate(curStaff, startDt, curCo) : null;
-          const sm = curStaff ? resolveStaffMember(curStaff) : null;
+          const sm = curStaff ? resolveStaffMember(curStaff, curCo) : null;
           if ($('f_role') && !val('f_role')) {
             const defRole = (activeSa && activeSa.role) || (sm && sm.role) || '';
             if (defRole) $('f_role').value = defRole;
@@ -93697,7 +93810,7 @@
           const roleEl = $('f_role');
           if (roleEl) {
             const canAutoRole = !val('f_role') || (roleEl.dataset.autoFilledRole === '1' && val('f_role') === (roleEl.dataset.autoFilledRoleVal || ''));
-            const stMemRow = curStaff ? ((SEED.records && SEED.records.staff_members) || []).find(s => s && !s.voided && norm(s.name || s.staff) === norm(curStaff)) : null;
+            const stMemRow = curStaff ? resolveStaffMember(curStaff, curCo) : null;
             const suggestedRole = (prof.hasContract && prof.role)
               ? prof.role
               : ((stMemRow && stMemRow.role) ? stMemRow.role : (eqInfo.registeredUnits.some(u => u.fromDriverReg) ? 'Driver' : ''));
@@ -93710,6 +93823,23 @@
                 roleEl.value = '';
                 delete roleEl.dataset.autoFilledRole;
                 delete roleEl.dataset.autoFilledRoleVal;
+              }
+            }
+          }
+          const fatherEl = $('f_father_name');
+          if (fatherEl && !STATE.editingRecord) {
+            const stFather = getStaffFatherName(curStaff, curCo);
+            const isDiffPicked = readEmploymentSameNameChoice(curStaff, curCo) === 'different';
+            const canAutoFather = !isDiffPicked && (!fatherEl.value.trim() || fatherEl.dataset.autofilled === '1');
+            if (canAutoFather) {
+              if (stFather) {
+                fatherEl.value = stFather;
+                fatherEl.dataset.autofilled = '1';
+                fatherEl.dataset.prevAutofill = stFather;
+              } else {
+                fatherEl.value = '';
+                delete fatherEl.dataset.autofilled;
+                delete fatherEl.dataset.prevAutofill;
               }
             }
           }
@@ -93836,7 +93966,7 @@
             const diffEl = $('empSameNameDiff');
             if (diffEl) diffEl.hidden = snChoice !== 'different';
             if (snChoice === 'different') {
-              const sug = suggestDistinctStaffName(curStaff);
+              const sug = suggestDistinctStaffName(curStaff, val('f_father_name'));
               setText('empSameNameSuggest', sug);
               const sugBtn = $('empSameNameSuggestBtn');
               if (sugBtn) sugBtn.dataset.name = sug;
@@ -98213,9 +98343,27 @@
           const stEl = $('f_staff');
           const hit = stEl ? getEmploymentSameNameConflict(STATE.modalForm === 'employment', stEl.value, snCo, val('f_date') || todayISO(), { editOrig: getSameNameEditOrig() }) : null;
           if (hit && hit.staff && stEl.value !== hit.staff && staffNameKey(stEl.value) === staffNameKey(hit.staff)) stEl.value = hit.staff;
+          const fatherEl = $('f_father_name');
+          if (fatherEl && !fatherEl.value.trim() && fatherEl.dataset.prevAutofill) {
+            fatherEl.value = fatherEl.dataset.prevAutofill;
+            fatherEl.dataset.autofilled = '1';
+          }
+        } else if (choiceEl.value === 'different') {
+          const fatherEl = $('f_father_name');
+          if (fatherEl && fatherEl.dataset.autofilled === '1') {
+            fatherEl.dataset.prevAutofill = fatherEl.value;
+            fatherEl.value = '';
+            delete fatherEl.dataset.autofilled;
+          }
         }
         recalcForm();
       });
+    });
+    $('f_father_name')?.addEventListener('input', ev => {
+      const el = ev.currentTarget;
+      delete el.dataset.autofilled;
+      delete el.dataset.prevAutofill;
+      el.dataset.userEdited = '1';
     });
     $('empSameNameSuggestBtn')?.addEventListener('click', ev => {
       ev.preventDefault();
@@ -99265,6 +99413,12 @@
     if (!r) return '';
     const m = norm(universalMainValue(crKey, r));
     if (!m) return '';
+    if (crKey === 'staff_members') {
+      const inactive = Boolean(r.archived || /^(ended|closed|terminated|inactive|cancelled)$/i.test(String(r.status || '').trim()));
+      if (inactive && r.id != null && String(r.id).trim()) return 'inactive|' + String(r.id).trim();
+      const coKey = r.company ? norm(canonCompany(r.company)) : '';
+      return (inactive ? 'inactive|' : '') + coKey + '|' + m;
+    }
     if (crKey === 'expense_subcategories') return norm(r.category) + '|' + m;
     if (crKey === 'fx_rates') return norm(r.currency || 'LBP') + '|' + m;
     if ((crKey === 'sites' || crKey === 'regions') && r._industry && r._industry !== 'Manufacturing') {
@@ -99297,6 +99451,14 @@
           ? (!r._multiIndustrySeed && (!r._industry || r._industry === 'Manufacturing'))
           : r._industry === targetInd;
         if (!inPart) continue;
+      }
+      if (crKey === 'staff_members') {
+        if (r.archived || /^(ended|closed|terminated|inactive|cancelled)$/i.test(String(r.status || '').trim())) continue;
+        const qCo = opts.company ? norm(canonCompany(opts.company)) : '';
+        if (qCo) {
+          const rCo = r.company ? norm(canonCompany(r.company)) : '';
+          if (!rCo || rCo !== qCo) continue;
+        }
       }
       const rMain = norm(universalMainValue(crKey, r));
       if (crKey === 'expense_subcategories') {
@@ -99369,7 +99531,8 @@
     const origEditRepDate = editCtx && editCtx.orig ? String(editCtx.orig.rep_date || editCtx.orig.set_date || origEditDate || '').slice(0, 10) : '';
     const isUniversalForm = ['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(f);
     const needsDate = !['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(f);
-    if ((!isUniversalForm || f === 'staff') && company && !allowedCompanyNames().includes(company)) addErr('f_company', 'Your seat cannot post to ' + (company || 'that company') + '.');
+    const staffCoForSeatCheck = f === 'staff' ? (val('f_staff_company') || (editCtx && editCtx.orig && editCtx.orig.company) || company || defaultEntryCompany()) : company;
+    if ((!isUniversalForm || f === 'staff') && staffCoForSeatCheck && !allowedCompanyNames().includes(staffCoForSeatCheck)) addErr(f === 'staff' ? 'f_staff_company' : 'f_company', 'Your seat cannot post to ' + (staffCoForSeatCheck || 'that company') + '.');
     if (needsDate) {
       if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
         const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(company || STATE.company, date, repDate, {
@@ -100513,17 +100676,20 @@
       const assignStartRaw = val('f_assign_start');
       const assignStart = assignStartRaw || date;
       const exclId = (editCtx && editCtx.crKey === 'staff_members') ? editCtx.id : '';
+      const staffCo = val('f_staff_company') || (editCtx && editCtx.orig && editCtx.orig.company) || company || defaultEntryCompany();
       if (!nm) addErr('f_staff', 'Staff Name is required.');
       else {
-        const dup = findUniversalDuplicate('staff_members', nm, { excludeId: exclId });
+        const dup = findUniversalDuplicate('staff_members', nm, { excludeId: exclId, company: staffCo });
         if (dup) addErr('f_staff', `Staff "${universalMainValue('staff_members', dup) || nm}" already exists in the Universal Staff Registry. Duplicate names are not allowed.`);
       }
       if (!roleVal) addErr('f_role', 'Role is required.');
       if (!assignStartRaw) addErr('f_assign_start', 'Effective Start Date is required.');
       record = {
         ...base,
+        company: staffCo,
         name: nm,
         staff: nm,
+        father_name: cleanFatherName(val('f_father_name')),
         role: roleVal,
         role_category: roleCat,
         worker_category: roleCat,
@@ -101004,17 +101170,21 @@
           extra_usd: 0,
           tally: tallyVal
         };
-        if (matchesTimingSave) record.tab_sig = attendanceFigureSig(record);
+        const isDoorTabletEditSave = Boolean(editCtx && editCtx.crKey === 'attendance' && editCtx.orig && editCtx.orig.origin === 'door_tablet');
+        if (matchesTimingSave && !isDoorTabletEditSave) record.tab_sig = attendanceFigureSig(record);
       }
     } else if (f === 'freelance' || f === 'employment') {
       const pendSalEditRow = STATE.editingPendingSalaryId ? findEmploymentRecordById(STATE.editingPendingSalaryId) : null;
       const salaryPending = !pendSalEditRow && val('f_salary_pending') === '1';
       const st = val('f_staff');
+      const fatherVal = cleanFatherName(val('f_father_name'));
       const amt = salaryPending ? 0 : round2(num('f_amount'));
       if (!st) addErr('f_staff', 'Staff is required.');
+      let samePersonConfirmed = false;
+      let snConflict = null;
       if (st) {
         const snCo = company || defaultEntryCompany();
-        const snConflict = getEmploymentSameNameConflict(f === 'employment', st, snCo, date, {
+        snConflict = getEmploymentSameNameConflict(f === 'employment', st, snCo, date, {
           editOrig: getSameNameEditOrig(),
           pendingSalary: Boolean(pendSalEditRow)
         });
@@ -101022,6 +101192,7 @@
           const snChoice = readEmploymentSameNameChoice(st, snCo);
           if (snChoice === 'different') addErr('f_staff', 'Two people cannot share a name in one company. Add something to the name to tell them apart, or use the suggested name.');
           else if (snChoice !== 'same') addErr('f_staff', 'Someone with this name already has an active contract in this company. Choose Same Person or Different Person below the Staff field.');
+          else samePersonConfirmed = true;
         }
       }
       if (pendSalEditRow) {
@@ -101033,8 +101204,11 @@
       if (!payType) addErr('f_paytype', 'Pay Basis is required.');
       let empRoleVal = val('f_role');
       if (!empRoleVal && st) {
-        const stMem = ((SEED.records && SEED.records.staff_members) || []).find(s => s && !s.voided && norm(s.name || s.staff) === norm(st));
-        const stEmp = ((SEED.records && SEED.records.employments) || []).find(e => e && !e.voided && norm(e.staff) === norm(st) && e.role);
+        const snCoKey = norm(canonCompany(company || defaultEntryCompany()));
+        const stMem = resolveStaffMember(st, company || defaultEntryCompany());
+        const empList = ((SEED.records && SEED.records.employments) || []).concat((STATE.customRecords && STATE.customRecords.employments) || []);
+        const stEmp = empList.find(e => e && !e.voided && norm(e.staff) === norm(st) && norm(canonCompany(e.company || 'WTC')) === snCoKey && e.role)
+          || empList.find(e => e && !e.voided && norm(e.staff) === norm(st) && e.role);
         empRoleVal = (stMem && stMem.role) || (stEmp && stEmp.role) || '';
         if (empRoleVal && $('f_role')) $('f_role').value = empRoleVal;
       }
@@ -101042,10 +101216,11 @@
       if (f === 'employment') {
         const endDate = val('f_enddate');
         if (endDate && endDate < date) addErr('f_enddate', 'End Date cannot be before Start Date.');
-        const sameDayContract = st && ((SEED.records && SEED.records.employments) || []).find(e =>
+        const allEmpsSameDay = ((SEED.records && SEED.records.employments) || []).concat((STATE.customRecords && STATE.customRecords.employments) || []);
+        const sameDayContract = st && (samePersonConfirmed || !snConflict) && allEmpsSameDay.find(e =>
           e && !e.voided
           && !isSelfEditingRow(e, 'employments')
-          && norm(e.company || 'WTC') === norm(company)
+          && norm(canonCompany(e.company || 'WTC')) === norm(canonCompany(company))
           && norm(e.staff) === norm(st)
           && String(e.start_date || '').slice(0, 10) === date
         );
@@ -101065,6 +101240,7 @@
             date,
             rep_date: repDate,
             staff: st,
+            father_name: fatherVal || cleanFatherName(pendSalEditRow.father_name || ''),
             role: val('f_role'),
             role_category: resolveRoleCategory(val('f_role'), ''),
             pay_type: payType,
@@ -101095,6 +101271,7 @@
             ...base,
             name: (origEmp && origEmp.name) ? origEmp.name : `EMPL-${date.replace(/-/g, '')}-${empSlug}-${empSeq}`,
             staff: st,
+            father_name: fatherVal,
             role: val('f_role'),
             role_category: resolveRoleCategory(val('f_role'), ''),
             pay_type: payType,
@@ -101113,7 +101290,8 @@
             salary_pending: Boolean(salaryPending),
             start_date: date,
             end_date: endDate || '',
-            status: effStatus
+            status: effStatus,
+            ...(samePersonConfirmed ? { same_person_confirmed: true } : {})
           };
         }
       } else if (pendSalEditRow) {
@@ -101122,6 +101300,7 @@
           date,
           rep_date: repDate,
           staff: st,
+          father_name: fatherVal || cleanFatherName(pendSalEditRow.father_name || ''),
           role: val('f_role'),
           pay_type: payType,
           type: 'Freelance',
@@ -101138,7 +101317,7 @@
           ...(adminOverrides.length ? { admin_overrides: adminOverrides } : {})
         });
       } else {
-        record = { ...base, name: `FRL ${st}`, staff: st, role: val('f_role'), role_category: resolveRoleCategory(val('f_role'), ''), pay_type: payType, type: 'Freelance', salary_usd: 0, daily_rate: salaryPending ? 0 : (/Daily/i.test(payType) ? amt : 0), base_salary: salaryPending ? 0 : amt, amount: salaryPending ? 0 : amt, salary_pending: Boolean(salaryPending), start_date: date, status: 'Active' };
+        record = { ...base, name: `FRL ${st}`, staff: st, father_name: fatherVal, role: val('f_role'), role_category: resolveRoleCategory(val('f_role'), ''), pay_type: payType, type: 'Freelance', salary_usd: 0, daily_rate: salaryPending ? 0 : (/Daily/i.test(payType) ? amt : 0), base_salary: salaryPending ? 0 : amt, amount: salaryPending ? 0 : amt, salary_pending: Boolean(salaryPending), start_date: date, status: 'Active', ...(samePersonConfirmed ? { same_person_confirmed: true } : {}) };
       }
     } else if (f === 'logistics') {
       const st = val('f_staff');
@@ -102111,19 +102290,160 @@
     syncFormValidationUI(normalized, true);
   }
 
-  async function postRecordToLocalApi(crKey, record) {
+  function quarantineSameNameRejectedRecord(tblName, conflictId, errObj, remoteCr) {
+    const crBucket = STATE.customRecords || {};
+    const validTbls = ['employments', 'freelance_entries', 'staff_members'];
+    const candTbls = (tblName && Array.isArray(crBucket[tblName]))
+      ? [tblName]
+      : validTbls.filter(t => Array.isArray(crBucket[t]) && crBucket[t].length);
+    if (!candTbls.length) return false;
+    const cid = String(conflictId || (errObj && (errObj.conflictId || errObj.id)) || '').trim();
+    const targetStaffK = errObj && errObj.staff ? staffNameKey(errObj.staff) : '';
+    const targetCoK = errObj && errObj.company ? staffNameKey(canonCompany(errObj.company)) : '';
+    let removedAny = false;
+    STATE._quarantinedSameNameRecords = Array.isArray(STATE._quarantinedSameNameRecords) ? STATE._quarantinedSameNameRecords : [];
+    candTbls.forEach(t => {
+      const list = crBucket[t];
+      if (!Array.isArray(list) || !list.length) return;
+      const remArr = (remoteCr && Array.isArray(remoteCr[t])) ? remoteCr[t] : [];
+      const remById = new Map(remArr.filter(r => r && r.id).map(r => [String(r.id).trim(), r]));
+      let idx = cid ? list.findIndex(r => r && String(r.id || '').trim() === cid) : -1;
+      if (idx < 0 && targetStaffK) {
+        const matches = [];
+        list.forEach((r, i) => {
+          if (!r || r.voided) return;
+          const rk = staffNameKey(r.name || r.staff);
+          if (rk !== targetStaffK) return;
+          const rc = r.company ? staffNameKey(canonCompany(r.company)) : '';
+          if (targetCoK && rc && rc !== targetCoK) return;
+          matches.push({ i, isLocalOnly: !remById.has(String(r.id || '').trim()) });
+        });
+        const localMatch = matches.find(m => m.isLocalOnly);
+        idx = localMatch ? localMatch.i : (matches.length ? matches[0].i : -1);
+      }
+      if (idx < 0) return;
+      const rejected = list[idx];
+      const rejId = rejected && rejected.id ? String(rejected.id).trim() : '';
+      STATE._quarantinedSameNameRecords.unshift({
+        table: t,
+        at: new Date().toISOString(),
+        error: (errObj && errObj.error) || 'Duplicate active staff name blocked by server.',
+        record: rejected
+      });
+      if (STATE._quarantinedSameNameRecords.length > 20) STATE._quarantinedSameNameRecords.length = 20;
+      const priorRemote = rejId ? remById.get(rejId) : null;
+      if (priorRemote) {
+        list[idx] = Object.assign({}, priorRemote);
+      } else {
+        list.splice(idx, 1);
+      }
+      if (SEED.records && Array.isArray(SEED.records[t]) && rejId && !priorRemote) {
+        const seedArr = SEED.records[t];
+        for (let si = seedArr.length - 1; si >= 0; si--) {
+          if (seedArr[si] && String(seedArr[si].id || '').trim() === rejId) seedArr.splice(si, 1);
+        }
+      }
+      removedAny = true;
+    });
+    if (removedAny) {
+      SEED._customRev = (SEED._customRev || 0) + 1;
+      applyCustomRecordsToSeed();
+      invalidateAllSeedCaches();
+      ensureStaffMembersSeeded();
+      saveLocalAuthAndRecords();
+    }
+    return removedAny;
+  }
+
+  function _cloneSameNameSnapRow(r) {
+    if (!r || typeof r !== 'object') return r;
+    try { return typeof structuredClone === 'function' ? structuredClone(r) : JSON.parse(JSON.stringify(r)); }
+    catch (_) { return Object.assign({}, r); }
+  }
+
+  function captureStaffSameNameSnapshot(tables, staffNames) {
+    const custom = {};
+    const seedSmall = {};
+    const seedLarge = {};
+    const largeKeys = new Set(['salaries', 'attendance']);
+    const targets = new Set((staffNames || []).map(staffNameKey).filter(Boolean));
+    for (const k of (tables || [])) {
+      const hadKey = Boolean(STATE.customRecords && Object.prototype.hasOwnProperty.call(STATE.customRecords, k));
+      const cArr = (STATE.customRecords && Array.isArray(STATE.customRecords[k])) ? STATE.customRecords[k] : null;
+      custom[k] = { hadKey, rows: cArr ? cArr.map(_cloneSameNameSnapRow) : null };
+      const sArr = (SEED.records && Array.isArray(SEED.records[k])) ? SEED.records[k] : null;
+      if (!sArr) continue;
+      if (largeKeys.has(k)) {
+        const hits = [];
+        for (let i = 0; i < sArr.length; i++) {
+          const r = sArr[i];
+          if (r && targets.has(staffNameKey(r.staff || r.name))) hits.push([i, Object.assign({}, r)]);
+        }
+        seedLarge[k] = { len: sArr.length, hits };
+      } else {
+        seedSmall[k] = sArr.map(r => (r && typeof r === 'object' ? Object.assign({}, r) : r));
+      }
+    }
+    return { custom, seedSmall, seedLarge };
+  }
+
+  function restoreStaffSameNameSnapshot(snap) {
+    if (!snap) return;
+    if (!STATE.customRecords || typeof STATE.customRecords !== 'object') STATE.customRecords = {};
+    for (const [k, ent] of Object.entries(snap.custom || {})) {
+      if (!ent.hadKey) delete STATE.customRecords[k];
+      else STATE.customRecords[k] = Array.isArray(ent.rows) ? ent.rows.map(_cloneSameNameSnapRow) : ent.rows;
+    }
+    if (SEED && SEED.records) {
+      for (const [k, rows] of Object.entries(snap.seedSmall || {})) {
+        SEED.records[k] = Array.isArray(rows) ? rows.map(r => (r && typeof r === 'object' ? Object.assign({}, r) : r)) : rows;
+      }
+      for (const [k, info] of Object.entries(snap.seedLarge || {})) {
+        const arr = SEED.records[k];
+        if (!Array.isArray(arr)) continue;
+        if (arr.length > info.len) arr.length = info.len;
+        for (const [idx, rowSnap] of (info.hits || [])) {
+          if (idx >= 0 && idx < arr.length) arr[idx] = Object.assign({}, rowSnap);
+        }
+      }
+      if (SEED._tableRev) {
+        for (const k of Object.keys(snap.custom || {})) SEED._tableRev[k] = (SEED._tableRev[k] || 0) + 1;
+      }
+      SEED._staffMembersSeededRev = '';
+      SEED._customRev = (SEED._customRev || 0) + 1;
+    }
+    applyCustomRecordsToSeed();
+    if (typeof invalidateAllSeedCaches === 'function') invalidateAllSeedCaches();
+    ensureStaffMembersSeeded();
+    saveLocalAuthAndRecords();
+  }
+
+  async function postRecordToLocalApi(crKey, record, opts = {}) {
     const tblName = CR_TABLE[crKey] || (/^[a-z][a-z0-9_]*$/.test(String(crKey || '')) ? String(crKey) : '');
-    if (!hasServerApi() || isDemoScopeActive() || !tblName || !record || !record.id) return;
+    if (!hasServerApi() || isDemoScopeActive() || !tblName || !record || !record.id) return { ok: true };
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 8000);
-      await edgeApiFetch('./api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: tblName, record }), signal: ctrl.signal });
+      const res = await edgeApiFetch('./api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: tblName, record }), signal: ctrl.signal });
       clearTimeout(t);
+      if (res && res.status === 409) {
+        const err = await res.json().catch(() => null);
+        if (err && err.code === 'same_name_conflict') {
+          if (!(opts && opts.deferRender)) {
+            quarantineSameNameRejectedRecord(tblName, err.conflictId || err.id || record.id, err, null);
+            toast(err.error || 'Duplicate active staff name blocked by server.', 'err');
+            renderApp();
+          }
+          return { ok: false, blockedSameName: true, table: tblName, id: record.id, err };
+        }
+      }
+      return { ok: Boolean(!res || res.ok) };
     } catch (_) { /* offline or static host */ }
+    return { ok: true };
   }
 
-  async function postRecordPairsChunked(pairs, concurrency = 8) {
-    if (!Array.isArray(pairs) || !pairs.length) return;
+  async function postRecordPairsChunked(pairs, concurrency = 8, opts = {}) {
+    if (!Array.isArray(pairs) || !pairs.length) return { ok: true, blockedSameName: false };
     const dedup = [];
     const seen = new Set();
     for (let i = pairs.length - 1; i >= 0; i--) {
@@ -102137,8 +102457,11 @@
     dedup.reverse();
     for (let i = 0; i < dedup.length; i += concurrency) {
       const chunk = dedup.slice(i, i + concurrency);
-      await Promise.all(chunk.map(([ek, er]) => postRecordToLocalApi(ek, er)));
+      const chunkRes = await Promise.all(chunk.map(([ek, er]) => postRecordToLocalApi(ek, er, opts)));
+      const hit = chunkRes.find(r => r && r.blockedSameName);
+      if (hit) return { ok: false, blockedSameName: true, table: hit.table, id: hit.id, err: hit.err };
     }
+    return { ok: true, blockedSameName: false };
   }
 
   async function saveModalEntry(evOrOpts) {
@@ -102220,6 +102543,21 @@
       delete record._assign_site_region;
       const saveStampIso = new Date().toISOString();
       record.modified_at = record.modified_at || saveStampIso;
+      const sameNameSaveSnap = (['employments', 'freelance_entries', 'staff_members'].includes(crKey) && hasServerApi() && !isDemoScopeActive())
+        ? captureStaffSameNameSnapshot(
+            ['employments', 'freelance_entries', 'staff_members', 'staff_roles', 'staff_assignments', 'documents', 'salaries', 'attendance'],
+            [record.staff, record.name, editCtx && editCtx.orig && (editCtx.orig.staff || editCtx.orig.name)]
+          )
+        : null;
+      const preSaveSameNameIds = sameNameSaveSnap
+        ? new Set(
+            ['employments', 'freelance_entries', 'staff_members', 'staff_roles', 'staff_assignments', 'documents', 'salaries', 'attendance'].flatMap(t =>
+              ((STATE.customRecords && STATE.customRecords[t]) || []).concat((SEED.records && SEED.records[t]) || [])
+                .filter(r => r && r.id != null)
+                .map(r => `${t}:${String(r.id)}`)
+            )
+          )
+        : null;
       // Back pay: the staff's contracts as they stand before this save touches anything (the predecessor auto-close
       // and the chronology sync below change them too).
       const bpPendRow = (crKey === 'employments' && STATE.editingPendingSalaryId) ? findEmploymentRecordById(STATE.editingPendingSalaryId) : null;
@@ -102479,13 +102817,41 @@
         syncCatRows('staff_assignments', 'role');
         syncCatRows('employments', 'role');
       }
+      if ((crKey === 'employments' || crKey === 'freelance_entries') && record.staff && record.father_name) {
+        ensureStaffMembersSeeded();
+        const fNorm = norm(record.staff);
+        const fCoNorm = norm(canonCompany(record.company || 'WTC'));
+        const fVal = cleanFatherName(record.father_name);
+        if (fVal) {
+          if (!Array.isArray(STATE.customRecords.staff_members)) STATE.customRecords.staff_members = [];
+          const matchCoSm = s => s && !s.voided && !s.archived && norm(s.name || s.staff) === fNorm && s.company && norm(canonCompany(s.company)) === fCoNorm;
+          const matchBlankSm = s => s && !s.voided && !s.archived && norm(s.name || s.staff) === fNorm && !s.company;
+          const smHit = STATE.customRecords.staff_members.find(matchCoSm)
+            || ((SEED.records && SEED.records.staff_members) || []).find(matchCoSm)
+            || (isOwner()
+              ? (STATE.customRecords.staff_members.find(matchBlankSm) || ((SEED.records && SEED.records.staff_members) || []).find(matchBlankSm))
+              : null);
+          if (smHit && (!smHit.father_name || isEditingExisting)) {
+            smHit.father_name = fVal;
+            if (!smHit.company && record.company && isOwner()) smHit.company = canonCompany(record.company);
+            if (crKey === 'employments' && record.id && !smHit.enrolled_emp_id) smHit.enrolled_emp_id = record.id;
+            smHit.same_person_confirmed = true;
+            const cIdx = STATE.customRecords.staff_members.findIndex(s => s && String(s.id) === String(smHit.id));
+            if (cIdx >= 0) Object.assign(STATE.customRecords.staff_members[cIdx], smHit);
+            else STATE.customRecords.staff_members.unshift(Object.assign({}, smHit));
+            extraApiPosts.push(['staff_members', Object.assign({}, smHit)]);
+          }
+        }
+      }
       if (crKey === 'staff_members') {
         const initAssignStart = String(record._init_assign_start || record.assign_start || record.date || todayISO()).slice(0, 10);
         delete record._init_assign_start;
         if (!isEditingExisting && (record.role || record.default_equipment)) {
           if (!Array.isArray(STATE.customRecords.staff_assignments)) STATE.customRecords.staff_assignments = [];
           const hasExistingSa = ((SEED.records && SEED.records.staff_assignments) || []).concat(STATE.customRecords.staff_assignments || []).some(sa =>
-            sa && !sa.voided && norm(sa.staff) === norm(record.name) && String(sa.start_date || '').slice(0, 10) === initAssignStart
+            sa && !sa.voided && norm(sa.staff) === norm(record.name)
+            && norm(canonCompany(sa.company || 'WTC')) === norm(canonCompany(record.company || defaultEntryCompany() || 'WTC'))
+            && String(sa.start_date || '').slice(0, 10) === initAssignStart
           );
           if (!hasExistingSa) {
             const stSlug = String(record.name || 'STAFF').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 14) || 'STAFF';
@@ -102978,8 +103344,36 @@
       }
       if (backpayHit) toast(backpayToastText(backpayHit, record.staff || record.name), 'warn');
       renderApp();
-      await postRecordToLocalApi(crKey, record);
-      await postRecordPairsChunked(extraApiPosts);
+      const rollbackSaveOnSameName = (tblName, conflictId, errObj) => {
+        const qTbl = (errObj && errObj.table) || tblName;
+        const qId = (errObj && (errObj.conflictId || errObj.id)) || conflictId;
+        const canonQTbl = qTbl === 'staff' ? 'staff_members' : (qTbl === 'freelance' ? 'freelance_entries' : qTbl);
+        if (sameNameSaveSnap) restoreStaffSameNameSnapshot(sameNameSaveSnap);
+        if (!preSaveSameNameIds || !preSaveSameNameIds.has(`${canonQTbl}:${String(qId || '')}`)) {
+          quarantineSameNameRejectedRecord(qTbl, qId, errObj, null);
+        }
+        toast((errObj && errObj.error) || 'Duplicate active staff name blocked by server.', 'err');
+        renderApp();
+      };
+      const mainPostRes = await postRecordToLocalApi(crKey, record, { deferRender: Boolean(sameNameSaveSnap) });
+      if (mainPostRes && mainPostRes.blockedSameName) {
+        rollbackSaveOnSameName(mainPostRes.table || CR_TABLE[crKey] || crKey, mainPostRes.id || record.id, mainPostRes.err);
+        return;
+      }
+      const extraPostRes = await postRecordPairsChunked(extraApiPosts, 8, { deferRender: Boolean(sameNameSaveSnap) });
+      if (extraPostRes && extraPostRes.blockedSameName) {
+        if (sameNameSaveSnap && hasServerApi() && !isDemoScopeActive()) {
+          if (!isEditingExisting && !isUpdatingPending) {
+            await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
+          } else if (editCtx && editCtx.orig && String(editCtx.orig.id || '') === String(record.id || '')) {
+            await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { same_person_confirmed: true }), { deferRender: true });
+          } else if (bpPendRow && String(bpPendRow.id || '') === String(record.id || '')) {
+            await postRecordToLocalApi(crKey, Object.assign({}, bpPendRow, { same_person_confirmed: true }), { deferRender: true });
+          }
+        }
+        rollbackSaveOnSameName(extraPostRes.table || CR_TABLE[crKey] || crKey, extraPostRes.id || record.id, extraPostRes.err);
+        return;
+      }
       syncWithCloud(true);
     } finally {
       STATE.saving = false;
@@ -104061,8 +104455,9 @@
       }
     } else if (prefill && typeof prefill === 'object') {
       const pfCo = prefill.co || prefill.company;
-      if (pfCo && $('f_company') && allowedCompanyNames().includes(pfCo)) {
-        $('f_company').value = pfCo;
+      if (pfCo && ($('f_company') || $('f_staff_company')) && allowedCompanyNames().includes(pfCo)) {
+        if ($('f_company')) $('f_company').value = pfCo;
+        if ($('f_staff_company')) $('f_staff_company').value = pfCo;
       }
       if (prefill.malfCat && form === 'malfunction') {
         syncMalfunctionScopeDom(prefill.malfCat, Boolean(prefill.malfItem || prefill.item));
@@ -104845,6 +105240,11 @@
       }
     } else if (form === 'employment' || form === 'freelance') {
       setModalControlVal('f_staff', row.staff || '');
+      if ($('f_father_name')) {
+        const fhVal = row.father_name || getStaffFatherName(row.staff || '', row.company || '');
+        setModalControlVal('f_father_name', fhVal);
+        if (fhVal) $('f_father_name').dataset.userEdited = '1';
+      }
       setModalControlVal('f_role', row.role || '');
       setModalControlVal('f_emp_cat', resolveRoleCategory(row.role || '', row.role_category || ''));
       const payBasis = row.pay_type || (/Daily/i.test(String(row.type || '')) ? 'Daily' : 'Monthly');
@@ -105109,7 +105509,19 @@
       setModalControlVal('f_min_stock', row.min_stock != null ? row.min_stock : 0);
       setModalControlVal('f_notes', row.notes || '');
     } else if (form === 'staff') {
+      if ($('f_staff_company')) {
+        const stCo = row.company || defaultEntryCompany();
+        const selCo = $('f_staff_company');
+        if (stCo && !Array.from(selCo.options || []).some(o => o.value === stCo)) {
+          const opt = document.createElement('option');
+          opt.value = stCo;
+          opt.textContent = stCo;
+          selCo.insertBefore(opt, selCo.firstChild);
+        }
+        setModalControlVal('f_staff_company', stCo);
+      }
       setModalControlVal('f_staff', row.name || row.staff || '');
+      setModalControlVal('f_father_name', row.father_name || '');
       setModalControlVal('f_role', row.role || '');
       setModalControlVal('f_emp_cat', resolveRoleCategory(row.role || '', row.role_category || row.worker_category || ''));
       setModalControlVal('f_phone', row.phone || '');
@@ -107668,6 +108080,7 @@
       ],
       staff_members: [
         { key: 'name', label: 'Staff Name *', type: 'text', sec: 1, getVal: r => r.name || r.staff || '' },
+        { key: 'father_name', label: "Father's Name", type: 'text', sec: 1, placeholder: "Optional father's name" },
         { key: 'role', label: 'Role *', type: 'combo', dl: 'dl_insp_roles', sec: 1, placeholder: 'Select or type role...' },
         { key: 'phone', label: 'Phone', type: 'tel', sec: 1, placeholder: '+961 ...' },
         { key: 'default_equipment', label: 'Assigned Equipment', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
@@ -111007,7 +111420,7 @@
             toast(`${UNIVERSAL_MAIN_SPEC[key].label} Name cannot be blank.`, 'err');
             return;
           }
-          const dup = findUniversalDuplicate(key, mainVal, { excludeId: row.id, plateNo: candidate.plate_no, category: candidate.category });
+          const dup = findUniversalDuplicate(key, mainVal, { excludeId: row.id, plateNo: candidate.plate_no, category: candidate.category, company: candidate.company || '' });
           if (dup) {
             toast(`Duplicate ${UNIVERSAL_MAIN_SPEC[key].label} "${mainVal}" already exists · modification blocked.`, 'err');
             return;
@@ -111369,7 +111782,7 @@
                 row.status = effStInsp;
               }
               row.tally = Number(row.overtime_hours || 0) > 0 ? Number(row.overtime_hours || 0) : (Number(row.late_hours || 0) > 0 ? Number(row.late_hours || 0) : Number(row.worked_hours || 0));
-              if (row.tab_sig) row.tab_sig = attendanceFigureSig(row);
+              if (row.tab_sig && row.origin !== 'door_tablet') row.tab_sig = attendanceFigureSig(row);
             } else {
               row.regular_hours = round2(Math.max(0, Number(row.worked_hours || 0) - Number(row.overtime_hours || 0)));
             }
@@ -116477,6 +116890,27 @@
           clearTimeout(timer2);
           if (abortedByAuthChange()) return;
           if (!putRes.ok) {
+            const putErr = await putRes.json().catch(() => null);
+            if (putRes.status === 426 && putErr && putErr.code === 'shell_outdated') {
+              setPendingCloudPush(false);
+              STATE.cloudStatus = '● Refresh app to sync (v' + String(putErr.minSyncShellVer || window.__MFG_SHELL_VER || '19.6.346') + '+)';
+              if (!STATE._shellOutdatedToasted) {
+                STATE._shellOutdatedToasted = true;
+                toast('Please update to the latest ISABI app version before syncing changes.', 'warn');
+              }
+              try { navigator.serviceWorker && navigator.serviceWorker.getRegistration && navigator.serviceWorker.getRegistration().then(r => r && r.update && r.update()); } catch (_) {}
+              break;
+            }
+            if (putRes.status === 409 && putErr && putErr.code === 'same_name_conflict') {
+              const removed = quarantineSameNameRejectedRecord(putErr.table, putErr.conflictId || putErr.id, putErr, remote.customRecords || {});
+              toast(putErr.error || 'Duplicate active staff name blocked by server.', 'err');
+              STATE.cloudStatus = '● Same-name check blocked sync';
+              if (removed && casAttempt < 2) {
+                continue;
+              }
+              setPendingCloudPush(false);
+              break;
+            }
             STATE.cloudStatus = '● Cloud read-only (' + putRes.status + ')';
             scheduleCloudPushRetry(6000);
             break;
@@ -116493,6 +116927,7 @@
             continue;
           }
           casSucceeded = true;
+          STATE.cloudStatus = '● Cloud Live';
           // The Edge has counted what this push reported; keep only what was added since the payload was built.
           const sentLegacyPos = Number(payload._legacyPosUpgrades) || 0;
           if (sentLegacyPos > 0) {
@@ -130016,22 +130451,107 @@
   // (shift rules, payroll, punches and Face ID are all keyed by company + name), so a second,
   // different person with the name of someone already active there is refused at creation.
   function staffNameKey(s) { return norm(s).replace(/\s+/g, ' '); }
+  function cleanFatherName(s) { return String(s || '').trim().replace(/\s+/g, ' '); }
+
+  let _staffFatherIdxRev = '';
+  let _staffFatherIdx = null;
+  function getStaffFatherIndex() {
+    const sRec = (SEED && SEED.records) || {};
+    const cRec = (STATE && STATE.customRecords) || {};
+    const tRev = (SEED && SEED._tableRev) || {};
+    const rev = `${SEED && SEED._recordsReady ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${tRev.staff_members || 0}|${tRev.employments || 0}|${tRev.freelance_entries || 0}|${(sRec.staff_members || []).length}|${(sRec.employments || []).length}|${(sRec.freelance_entries || []).length}|${(cRec.staff_members || []).length}|${(cRec.employments || []).length}|${(cRec.freelance_entries || []).length}`;
+    if (_staffFatherIdx && _staffFatherIdxRev === rev) return _staffFatherIdx;
+    const byCo = new Map();
+    const unscoped = new Map();
+    const any = new Map();
+    const pools = [
+      cRec.staff_members || [],
+      sRec.staff_members || [],
+      cRec.employments || [],
+      sRec.employments || [],
+      cRec.freelance_entries || [],
+      sRec.freelance_entries || []
+    ];
+    for (const arr of pools) {
+      for (const r of arr) {
+        if (!r || r.voided) continue;
+        const nk = staffNameKey(r.name || r.staff);
+        if (!nk) continue;
+        const fn = cleanFatherName(r.father_name || '');
+        if (!fn) continue;
+        if (!any.has(nk)) any.set(nk, fn);
+        const rCoRaw = String(r.company || '').trim();
+        const rCoK = rCoRaw ? staffNameKey(canonCompany(rCoRaw)) : '';
+        if (rCoK) {
+          const ck = nk + '|' + rCoK;
+          if (!byCo.has(ck)) byCo.set(ck, fn);
+        } else if (!unscoped.has(nk)) {
+          unscoped.set(nk, fn);
+        }
+      }
+    }
+    _staffFatherIdx = { byCo, unscoped, any };
+    _staffFatherIdxRev = rev;
+    return _staffFatherIdx;
+  }
+
+  function getStaffFatherName(staffName, company = '') {
+    const k = staffNameKey(staffName);
+    if (!k) return '';
+    const coK = company ? staffNameKey(canonCompany(company)) : '';
+    const idx = getStaffFatherIndex();
+    if (coK) return idx.byCo.get(k + '|' + coK) || idx.unscoped.get(k) || '';
+    return idx.any.get(k) || '';
+  }
 
   function findActiveSameNameInCompany(name, company, opts = {}) {
     const k = staffNameKey(name);
-    const co = staffNameKey(company);
+    const co = staffNameKey(canonCompany(company));
     if (!k || !co) return null;
     const refDate = String(opts.refDate || todayISO()).slice(0, 10);
     const skip = typeof opts.skip === 'function' ? opts.skip : null;
-    const emps = ((SEED.records && SEED.records.employments) || []).concat((STATE.customRecords && STATE.customRecords.employments) || []);
+    const R = SEED.records || {};
+    const C = STATE.customRecords || {};
+    const emps = (R.employments || []).concat(C.employments || []);
     let hit = null;
+    let hasAnyNonVoidedEmpInCo = false;
     for (const e of emps) {
-      if (!e || e.voided || staffNameKey(e.staff) !== k || staffNameKey(e.company || 'WTC') !== co) continue;
+      if (!e || e.voided || staffNameKey(e.staff) !== k || staffNameKey(canonCompany(e.company || 'WTC')) !== co) continue;
       if (skip && skip(e)) continue;
+      hasAnyNonVoidedEmpInCo = true;
       const isFreelance = /freelance/i.test(String(e.type || ''));
       if (opts.contractsOnly && isFreelance) continue;
       if (!isEmploymentActiveToday(e, refDate)) continue;
       if (!hit || String(e.start_date || e.date || '') > String(hit.start_date || hit.date || '')) hit = e;
+    }
+    if (!hit && !opts.contractsOnly) {
+      const flRows = (R.freelance_entries || []).concat(C.freelance_entries || []);
+      for (const fl of flRows) {
+        if (!fl || fl.voided || staffNameKey(fl.staff) !== k || staffNameKey(canonCompany(fl.company || 'WTC')) !== co) continue;
+        if (isSelfEditingRow(fl, 'freelance_entries')) continue;
+        if (!isEmploymentActiveToday(fl, refDate)) continue;
+        if (!hit || String(fl.start_date || fl.date || '') > String(hit.start_date || hit.date || '')) {
+          hit = Object.assign({}, fl, { type: fl.type || 'Freelance' });
+        }
+      }
+    }
+    if (!hit && !hasAnyNonVoidedEmpInCo) {
+      const smRows = (R.staff_members || []).concat(C.staff_members || []);
+      for (const sm of smRows) {
+        if (!sm || sm.voided || sm.archived) continue;
+        const smId = String(sm.id || '').trim();
+        if (smId.startsWith('stf_seed_') || sm.source === 'seed') continue;
+        if (/^(ended|closed|terminated|inactive|cancelled)$/i.test(String(sm.status || 'Active').trim())) continue;
+        if (staffNameKey(sm.name || sm.staff) !== k || !sm.company || staffNameKey(canonCompany(sm.company)) !== co) continue;
+        return {
+          staff: String(sm.name || sm.staff || name).trim(),
+          company: sm.company || company,
+          role: sm.role || '',
+          since: String(sm.date || sm.assign_start || '').slice(0, 10),
+          kind: 'staff',
+          id: smId
+        };
+      }
     }
     if (!hit) return null;
     return {
@@ -130052,7 +130572,7 @@
   // completion is never asked.
   function isSameNameEditOf(orig, staff, company) {
     // A blank company on an older row is taken as the form's company.
-    return Boolean(orig && staffNameKey(orig.staff) === staffNameKey(staff) && (!String(orig.company || '').trim() || staffNameKey(orig.company) === staffNameKey(company)));
+    return Boolean(orig && staffNameKey(orig.staff) === staffNameKey(staff) && (!String(orig.company || '').trim() || staffNameKey(canonCompany(orig.company)) === staffNameKey(canonCompany(company))));
   }
 
   function getEmploymentSameNameConflict(isContract, staff, company, dateStr, opts = {}) {
@@ -130062,7 +130582,7 @@
     const hit = findActiveSameNameInCompany(staff, company, {
       refDate: day,
       contractsOnly: !isContract,
-      skip: e => isSelfEditingRow(e, 'employments') || (isContract && String(e.start_date || '').slice(0, 10) === day)
+      skip: e => isSelfEditingRow(e, 'employments')
     });
     if (!hit) return null;
     if (!isContract) {
@@ -130092,17 +130612,32 @@
     return el.dataset.forKey === key ? String(el.value || '') : '';
   }
 
-  function suggestDistinctStaffName(name) {
+  function suggestDistinctStaffName(name, fatherOrOpts = '') {
     const clean = String(name || '').trim().replace(/\s+/g, ' ');
     const base = clean.replace(/\s*\(\d+\)$/, '') || clean;
+    const rawFather = typeof fatherOrOpts === 'string'
+      ? fatherOrOpts
+      : ((fatherOrOpts && (fatherOrOpts.fatherName || fatherOrOpts.father_name || fatherOrOpts.father)) || '');
+    const father = cleanFatherName(rawFather);
     const used = new Set();
-    ['staff_members', 'employments', 'staff_assignments'].forEach(t => {
+    ['staff_members', 'employments', 'staff_assignments', 'freelance_entries'].forEach(t => {
       ((SEED.records && SEED.records[t]) || []).concat((STATE.customRecords && STATE.customRecords[t]) || []).forEach(r => {
         if (r && !r.voided) used.add(staffNameKey(r.staff || r.name));
       });
     });
     (STATE.users || []).forEach(u => { if (u && u.full_name) used.add(staffNameKey(u.full_name)); });
     Object.keys((STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') ? STATE.staffBiometrics : {}).forEach(k => used.add(staffNameKey(k)));
+    if (father) {
+      const fParen = ` (${father.toLowerCase()})`;
+      if (!base.toLowerCase().endsWith(fParen)) {
+        const direct = `${base} (${father})`;
+        if (!used.has(staffNameKey(direct))) return direct;
+        for (let n = 2; n < 1000; n++) {
+          const cand = `${base} (${father} ${n})`;
+          if (!used.has(staffNameKey(cand))) return cand;
+        }
+      }
+    }
     for (let n = 2; n < 1000; n++) {
       const cand = `${base} (${n})`;
       if (!used.has(staffNameKey(cand))) return cand;
@@ -130344,6 +130879,7 @@
     };
 
     // 1. Contract Workforce per Company (Active + Ended/Inactive contracts, strictly filtered by operator's allowedCos)
+    const dirCoKey = (co, k) => `${norm(canonCompany(co || 'WTC'))}|${k}`;
     const activeEmps = [];
     const activeStaffKeys = new Set();
     const endedEmpsMap = new Map();
@@ -130353,47 +130889,75 @@
       const nm = String(emp.staff || emp.name || '').trim();
       const k = norm(nm);
       if (!k || nm === '(Unassigned)') return;
-      const empCo = emp.company || 'WTC';
+      const empCo = canonCompany(emp.company || 'WTC') || (emp.company || 'WTC');
       if (allowedCos.length && !allowedCos.includes(empCo)) return;
       if (scopedCo && empCo !== scopedCo) return;
       if (indCoSet && indCoSet.size > 0 && !indCoSet.has(empCo)) return;
+      const ck = dirCoKey(empCo, k);
       if (isEmploymentActiveToday(emp, today)) {
-        if (!activeStaffKeys.has(k)) {
-          activeStaffKeys.add(k);
-          activeEmps.push({ emp, nm, k, empCo, isActive: true });
+        if (!activeStaffKeys.has(ck)) {
+          activeStaffKeys.add(ck);
+          activeEmps.push({ emp, nm, k, ck, empCo, isActive: true });
         }
       } else if (includeEnded) {
-        const prev = endedEmpsMap.get(k);
+        const prev = endedEmpsMap.get(ck);
         const curEnd = String(emp.end_date || emp.start_date || '');
         const prevEnd = prev ? String(prev.emp.end_date || prev.emp.start_date || '') : '';
         if (!prev || curEnd >= prevEnd) {
-          endedEmpsMap.set(k, { emp, nm, k, empCo, isActive: false });
+          endedEmpsMap.set(ck, { emp, nm, k, ck, empCo, isActive: false });
         }
       }
     });
-    activeStaffKeys.forEach(k => endedEmpsMap.delete(k));
+    activeStaffKeys.forEach(ck => endedEmpsMap.delete(ck));
 
     // 1b. Include newly registered staff_members (created via Smart Entry or Enrol Studio) in the operator's allowed BUs
     const allAssigns = ((SEED.records && SEED.records.staff_assignments) || []).concat((STATE.customRecords && STATE.customRecords.staff_assignments) || []);
     const allStaffMembers = ((SEED.records && SEED.records.staff_members) || []).concat((STATE.customRecords && STATE.customRecords.staff_members) || []);
     allStaffMembers.forEach(sm => {
       if (!sm || sm.voided) return;
+      const smInactive = Boolean(sm.archived || /^(ended|closed|terminated|inactive|cancelled)$/i.test(String(sm.status || '').trim()));
       const nm = String(sm.name || sm.staff || '').trim();
       const k = norm(nm);
-      if (!k || activeStaffKeys.has(k) || endedEmpsMap.has(k)) return;
-      const isAppSm = Boolean(sm.source === 'app' || sm.is_app || (STATE.customRecords && Array.isArray(STATE.customRecords.staff_members) && STATE.customRecords.staff_members.some(c => c && !c.voided && norm(c.name || c.staff) === k)));
+      if (!k) return;
+      const isAppSm = Boolean(sm.source === 'app' || sm.is_app || (STATE.customRecords && Array.isArray(STATE.customRecords.staff_members) && STATE.customRecords.staff_members.some(c => c && !c.voided && !c.archived && !/^(ended|closed|terminated|inactive|cancelled)$/i.test(String(c.status || '').trim()) && norm(c.name || c.staff) === k && (!sm.company || !c.company || norm(canonCompany(sm.company)) === norm(canonCompany(c.company))))));
       if (!isAppSm && !sm.company) return;
-      const matchSa = allAssigns.find(sa => sa && !sa.voided && norm(sa.staff) === k && sa.company);
-      const smCo = sm.company || (matchSa && matchSa.company) || (isAppSm ? (scopedCo || defCo) : '');
+      const rawSmCoHint = sm.company ? (canonCompany(sm.company) || sm.company) : '';
+      const matchSa = allAssigns.find(sa => sa && !sa.voided && norm(sa.staff) === k && sa.company && (!rawSmCoHint || norm(canonCompany(sa.company)) === norm(rawSmCoHint)));
+      const rawSmCo = sm.company || (matchSa && matchSa.company) || (isAppSm ? (scopedCo || defCo) : '');
+      const smCo = rawSmCo ? (canonCompany(rawSmCo) || rawSmCo) : '';
       if (!smCo) return;
       if (allowedCos.length && !allowedCos.includes(smCo)) return;
       if (scopedCo && smCo !== scopedCo) return;
       if (indCoSet && indCoSet.size > 0 && !indCoSet.has(smCo)) return;
-      activeStaffKeys.add(k);
+      const ck = dirCoKey(smCo, k);
+      if (activeStaffKeys.has(ck) || endedEmpsMap.has(ck)) return;
+      if (smInactive) {
+        if (includeEnded) {
+          endedEmpsMap.set(ck, {
+            emp: {
+              id: sm.id || ('sm-' + k),
+              staff: nm,
+              father_name: sm.father_name || '',
+              company: smCo,
+              role: sm.role || (matchSa && matchSa.role) || 'Staff',
+              status: sm.status || (sm.archived ? 'Archived' : 'Ended'),
+              working_hours: 8
+            },
+            nm,
+            k,
+            ck,
+            empCo: smCo,
+            isActive: false
+          });
+        }
+        return;
+      }
+      activeStaffKeys.add(ck);
       activeEmps.push({
         emp: {
           id: sm.id || ('sm-' + k),
           staff: nm,
+          father_name: sm.father_name || '',
           company: smCo,
           role: sm.role || (matchSa && matchSa.role) || 'Active Staff',
           status: 'Active',
@@ -130401,6 +130965,7 @@
         },
         nm,
         k,
+        ck,
         empCo: smCo,
         isActive: true
       });
@@ -130411,9 +130976,11 @@
       if (!u || u.status === 'Suspended' || isGenericTerminalSeat(u)) return;
       const nm = String(u.full_name || '').trim();
       const k = norm(nm);
-      if (!k || seen.has(k)) return;
+      if (!k) return;
       const uCos = parseUserCompanies(u);
-      const matchingEmp = activeEmps.find(x => x.k === k) || endedEmpsMap.get(k) || null;
+      const matchingEmp = activeEmps.find(x => x.k === k && (!scopedCo || x.empCo === scopedCo))
+        || Array.from(endedEmpsMap.values()).find(x => x.k === k && (!scopedCo || x.empCo === scopedCo))
+        || null;
       const uAllowedCos = allowedCos.length ? uCos.filter(c => allowedCos.includes(c)) : uCos.slice();
       if (allowedCos.length && !matchingEmp && !uAllowedCos.length && !(viewerIsOwner && isAdminUser(u))) {
         return;
@@ -130425,8 +130992,6 @@
         const hasIndAccess = Boolean(matchingEmp && indCoSet.has(matchingEmp.empCo)) || uAllowedCos.some(c => indCoSet.has(c)) || (viewerIsOwner && isAdminUser(u));
         if (!hasIndAccess) return;
       }
-      seen.add(k);
-      const bio = bioMap[k] || null;
       const co = matchingEmp
         ? matchingEmp.empCo
         : ((scopedCo && (uAllowedCos.includes(scopedCo) || (viewerIsOwner && isAdminUser(u))))
@@ -130434,6 +130999,10 @@
           : ((indCoSet && indCoSet.size > 0)
             ? (uAllowedCos.find(c => indCoSet.has(c)) || defCo)
             : (uAllowedCos[0] || defCo)));
+      const ck = dirCoKey(co, k);
+      if (seen.has(ck)) return;
+      seen.add(ck);
+      const bio = bioMap[k] || null;
       const explicitPin = String((bio && bio.pin_code) || u.pin_code || '').trim();
       const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
       const shiftToday = resolveStaffShiftForDate(nm, co, today);
@@ -130443,6 +131012,7 @@
       out.push({
         id: u.id,
         name: nm,
+        fatherName: getStaffFatherName(nm, co),
         email: u.email || '',
         company: co,
         role: matchingEmp ? (matchingEmp.emp.role || matchingEmp.emp.type || u.role || 'Staff') : (u.role || 'Management'),
@@ -130480,11 +131050,11 @@
     activeEmps
       .slice()
       .sort(sortByFreq)
-      .forEach(({ emp, nm, k, empCo }) => {
-        if (seen.has(k)) return;
-        seen.add(k);
+      .forEach(({ emp, nm, k, ck, empCo }) => {
+        if (seen.has(ck)) return;
+        seen.add(ck);
         const u = humanUsersByNorm.get(k) || null;
-        const sm = resolveStaffMember(nm);
+        const sm = resolveStaffMember(nm, empCo);
         const bio = bioMap[k] || null;
         const explicitPin = String((bio && bio.pin_code) || (u && u.pin_code) || '').trim();
         const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
@@ -130495,6 +131065,7 @@
         out.push({
           id: emp.id || ('emp-' + k),
           name: nm,
+          fatherName: getStaffFatherName(nm, empCo) || cleanFatherName(emp.father_name || ''),
           email: u ? (u.email || '') : '',
           company: empCo,
           role: emp.role || (sm && sm.role) || emp.type || 'Active Staff',
@@ -130519,11 +131090,11 @@
     if (includeEnded && endedEmpsMap.size > 0) {
       Array.from(endedEmpsMap.values())
         .sort(sortByFreq)
-        .forEach(({ emp, nm, k, empCo }) => {
-          if (seen.has(k)) return;
-          seen.add(k);
+        .forEach(({ emp, nm, k, ck, empCo }) => {
+          if (seen.has(ck)) return;
+          seen.add(ck);
           const u = humanUsersByNorm.get(k) || null;
-          const sm = resolveStaffMember(nm);
+          const sm = resolveStaffMember(nm, empCo);
           const bio = bioMap[k] || null;
           const explicitPin = String((bio && bio.pin_code) || (u && u.pin_code) || '').trim();
           const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
@@ -130534,6 +131105,7 @@
           out.push({
             id: emp.id || ('emp-ended-' + k),
             name: nm,
+            fatherName: getStaffFatherName(nm, empCo) || cleanFatherName(emp.father_name || ''),
             email: u ? (u.email || '') : '',
             company: empCo,
             role: emp.role || (sm && sm.role) || emp.type || 'Staff',
@@ -132344,7 +132916,7 @@
       const freqOrdered = [];
       for (const s of base) {
         const nl = String(s.name || '').toLowerCase();
-        const hay = `${nl} ${String(s.company || '').toLowerCase()} ${String(s.role || '').toLowerCase()}`;
+        const hay = `${nl} ${String(s.fatherName || '').toLowerCase()} ${String(s.company || '').toLowerCase()} ${String(s.role || '').toLowerCase()}`;
         if (nl === ql) exact.push(s);
         else if (hay.includes(ql)) freqOrdered.push(s);
       }
@@ -132489,6 +133061,7 @@
       } catch (_) { dirHit = null; }
       if (dirHit) sameNameActive = { staff: String(dirHit.name || rawName).trim(), company: dirHit.company || canonicalCo, role: dirHit.role || '', since: '' };
     }
+    const cleanFather = cleanFatherName((spec && (spec.fatherName || spec.father_name)) || '');
     if (sameNameActive) {
       return {
         ok: false,
@@ -132498,7 +133071,7 @@
         company: canonicalCo,
         role: sameNameActive.role,
         since: sameNameActive.since,
-        suggestion: suggestDistinctStaffName(rawName)
+        suggestion: suggestDistinctStaffName(rawName, cleanFather)
       };
     }
 
@@ -132520,19 +133093,46 @@
     if (!Array.isArray(SEED.records.staff_assignments)) SEED.records.staff_assignments = [];
     if (!Array.isArray(SEED.records.employments)) SEED.records.employments = [];
 
-    // 1. Upsert staff_members record
-    let smRec = STATE.customRecords.staff_members.find(r => r && !r.voided && norm(r.name || r.staff) === targetKey)
-      || SEED.records.staff_members.find(r => r && !r.voided && norm(r.name || r.staff) === targetKey);
+    const enrolRegSnap = (hasServerApi() && !isDemoScopeActive())
+      ? {
+          tables: captureStaffSameNameSnapshot(['staff_members', 'staff_assignments', 'employments'], [rawName]),
+          preIds: new Set(
+            ['staff_members', 'staff_assignments', 'employments'].flatMap(t =>
+              ((STATE.customRecords && STATE.customRecords[t]) || []).concat((SEED.records && SEED.records[t]) || [])
+                .filter(r => r && r.id != null)
+                .map(r => `${t}:${String(r.id)}`)
+            )
+          ),
+          modal: {
+            selectedStaff: STAFF_FACE_MODAL_STATE.selectedStaff,
+            staffName: STAFF_FACE_MODAL_STATE.staffName,
+            step: STAFF_FACE_MODAL_STATE.step,
+            rosterCo: STAFF_FACE_MODAL_STATE.rosterCo,
+            newStaffOpen: STAFF_FACE_MODAL_STATE.newStaffOpen,
+            statusText: STAFF_FACE_MODAL_STATE.statusText,
+            statusCls: STAFF_FACE_MODAL_STATE.statusCls
+          }
+        }
+      : null;
+
+    // 1. Upsert staff_members record (company-scoped and active/non-archived only)
+    const isSmActive = r => r && !r.voided && !r.archived
+      && !/^(ended|closed|terminated|inactive|cancelled)$/.test(String(r.status || 'Active').trim().toLowerCase());
+    let smRec = STATE.customRecords.staff_members.find(r => isSmActive(r) && norm(r.name || r.staff) === targetKey && norm(r.company || '') === norm(canonicalCo))
+      || SEED.records.staff_members.find(r => isSmActive(r) && norm(r.name || r.staff) === targetKey && norm(r.company || '') === norm(canonicalCo));
     const cleanName = (smRec && (smRec.name || smRec.staff)) ? String(smRec.name || smRec.staff).trim() : rawName;
     if (smRec) {
       smRec.company = canonicalCo;
+      smRec.status = smRec.status || 'Active';
+      smRec.archived = false;
+      if (cleanFather) smRec.father_name = cleanFather;
       smRec.role = cleanRole || smRec.role || 'General Labour';
       smRec.role_category = roleCat;
       smRec.worker_category = roleCat;
       if (cleanPhone) smRec.phone = cleanPhone;
       smRec.modified_by = whoEmail;
       smRec.modified_at = nowIso;
-      const cIdx = STATE.customRecords.staff_members.findIndex(r => r && norm(r.name || r.staff) === targetKey);
+      const cIdx = STATE.customRecords.staff_members.findIndex(r => r && r.id === smRec.id);
       if (cIdx >= 0) Object.assign(STATE.customRecords.staff_members[cIdx], smRec);
       else STATE.customRecords.staff_members.unshift(Object.assign({}, smRec));
     } else {
@@ -132540,7 +133140,10 @@
         id: uid('stf'),
         name: cleanName,
         staff: cleanName,
+        father_name: cleanFather,
         company: canonicalCo,
+        status: 'Active',
+        archived: false,
         date: today,
         rep_date: today,
         role: cleanRole,
@@ -132567,6 +133170,7 @@
       sa && !sa.voided && norm(sa.staff) === targetKey && norm(sa.company || canonicalCo) === norm(canonicalCo)
     );
     const stSlug = String(cleanName || 'STAFF').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 14) || 'STAFF';
+    let createdSaRec = null;
     if (!hasSa) {
       const saRec = {
         id: uid('sa'),
@@ -132591,16 +133195,18 @@
       };
       STATE.customRecords.staff_assignments.unshift(saRec);
       SEED.records.staff_assignments.unshift(Object.assign({}, saRec));
-      postRecordToLocalApi('staff_assignments', saRec);
+      createdSaRec = saRec;
     }
 
     // 3. Ensure active employments contract row in canonicalCo (with salary_pending: true so HR/Supervisor can finalize pay rate later)
     let empRec = allEmps.find(e =>
-      e && !e.voided
+      e && !e.voided && !e.archived
       && norm(e.staff) === targetKey
       && norm(e.company || 'WTC') === norm(canonicalCo)
-      && String(e.status || 'Active').toLowerCase() !== 'ended'
+      && !/^(ended|closed|terminated|inactive|cancelled)$/.test(String(e.status || 'Active').trim().toLowerCase())
     );
+    let empToPost = null;
+    let createdNewEmp = false;
     if (!empRec) {
       const empSeq = String((allEmps.filter(e => e && norm(e.staff) === targetKey).length) + 1).padStart(3, '0');
       empRec = {
@@ -132610,6 +133216,7 @@
         date: today,
         rep_date: today,
         staff: cleanName,
+        father_name: cleanFather,
         role: cleanRole,
         role_category: roleCat,
         pay_type: 'Monthly',
@@ -132637,12 +133244,35 @@
         entered_at: nowIso,
         voided: false
       };
+      if (smRec && smRec.id) empRec.enrolled_staff_id = smRec.id;
+      if (smRec) {
+        smRec.enrolled_emp_id = empRec.id;
+        const smCIdx = STATE.customRecords.staff_members.findIndex(r => r && r.id === smRec.id);
+        if (smCIdx >= 0) STATE.customRecords.staff_members[smCIdx].enrolled_emp_id = empRec.id;
+        const smSIdx = SEED.records.staff_members.findIndex(r => r && r.id === smRec.id);
+        if (smSIdx >= 0) SEED.records.staff_members[smSIdx].enrolled_emp_id = empRec.id;
+      }
       STATE.customRecords.employments.unshift(empRec);
       SEED.records.employments.unshift(Object.assign({}, empRec));
-      postRecordToLocalApi('employments', empRec);
+      createdNewEmp = true;
+      empToPost = empRec;
+    } else if (cleanFather && !empRec.father_name) {
+      empRec.father_name = cleanFather;
+      const eCustomIdx = STATE.customRecords.employments.findIndex(e => e && e.id === empRec.id);
+      if (eCustomIdx >= 0) STATE.customRecords.employments[eCustomIdx].father_name = cleanFather;
+      const eSeedIdx = SEED.records.employments.findIndex(e => e && e.id === empRec.id);
+      if (eSeedIdx >= 0) SEED.records.employments[eSeedIdx].father_name = cleanFather;
+      empToPost = empRec;
     }
 
-    postRecordToLocalApi('staff_members', smRec);
+    if (empRec && empRec.id) {
+      smRec.enrolled_emp_id = empRec.id;
+      const smCIdx = STATE.customRecords.staff_members.findIndex(r => r && r.id === smRec.id);
+      if (smCIdx >= 0) STATE.customRecords.staff_members[smCIdx].enrolled_emp_id = empRec.id;
+      const smSIdx = SEED.records.staff_members.findIndex(r => r && r.id === smRec.id);
+      if (smSIdx >= 0) SEED.records.staff_members[smSIdx].enrolled_emp_id = empRec.id;
+    }
+
     SEED._staffMembersSeededRev = '';
     if (SEED._tableRev) {
       SEED._tableRev.staff_members = (SEED._tableRev.staff_members || 0) + 1;
@@ -132653,9 +133283,65 @@
     invalidateAllSeedCaches();
     ensureStaffMembersSeeded();
     saveLocalAuthAndRecords();
-    syncWithCloud(true);
+    const rollbackEnrolRegistration = (tblName, conflictId, errObj) => {
+      try { if (typeof stopStaffEnrolModalCamera === 'function') stopStaffEnrolModalCamera(); } catch (_) {}
+      const qTbl = (errObj && errObj.table) || tblName;
+      const qId = (errObj && (errObj.conflictId || errObj.id)) || conflictId;
+      const canonQTbl = qTbl === 'staff' ? 'staff_members' : qTbl;
+      if (enrolRegSnap && enrolRegSnap.tables) restoreStaffSameNameSnapshot(enrolRegSnap.tables);
+      if (!enrolRegSnap || !enrolRegSnap.preIds || !enrolRegSnap.preIds.has(`${canonQTbl}:${String(qId || '')}`)) {
+        quarantineSameNameRejectedRecord(qTbl, qId, errObj, null);
+      }
+      if (enrolRegSnap && enrolRegSnap.modal && STAFF_FACE_MODAL_STATE) {
+        STAFF_FACE_MODAL_STATE.selectedStaff = enrolRegSnap.modal.selectedStaff;
+        STAFF_FACE_MODAL_STATE.staffName = enrolRegSnap.modal.staffName || '';
+        STAFF_FACE_MODAL_STATE.step = enrolRegSnap.modal.step || 'roster';
+        STAFF_FACE_MODAL_STATE.rosterCo = enrolRegSnap.modal.rosterCo;
+        STAFF_FACE_MODAL_STATE.newStaffOpen = enrolRegSnap.modal.newStaffOpen;
+      }
+      const errMsg = (errObj && errObj.error) || 'Duplicate active staff name blocked by server.';
+      if (STAFF_FACE_MODAL_STATE && STAFF_FACE_MODAL_STATE.open) {
+        STAFF_FACE_MODAL_STATE.statusText = errMsg;
+        STAFF_FACE_MODAL_STATE.statusCls = 'err';
+        if (typeof syncStaffFaceEnrolModalDom === 'function') syncStaffFaceEnrolModalDom();
+      }
+      toast(errMsg, 'err');
+      renderApp();
+    };
+    const persistPromise = (async () => {
+      let postedNewEmp = false;
+      if (empToPost) {
+        const rEmp = await postRecordToLocalApi('employments', empToPost, { deferRender: Boolean(enrolRegSnap) });
+        if (rEmp && rEmp.blockedSameName) {
+          rollbackEnrolRegistration(rEmp.table || 'employments', rEmp.id || empToPost.id, rEmp.err);
+          return { ok: false, blockedSameName: true, err: rEmp.err };
+        }
+        postedNewEmp = Boolean(createdNewEmp && (!rEmp || rEmp.ok));
+      }
+      const rSm = await postRecordToLocalApi('staff_members', smRec, { deferRender: Boolean(enrolRegSnap) });
+      if (rSm && rSm.blockedSameName) {
+        if (postedNewEmp && empToPost) {
+          await postRecordToLocalApi('employments', Object.assign({}, empToPost, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
+        }
+        rollbackEnrolRegistration(rSm.table || 'staff_members', rSm.id || smRec.id, rSm.err);
+        return { ok: false, blockedSameName: true, err: rSm.err };
+      }
+      if (createdSaRec) {
+        const rSa = await postRecordToLocalApi('staff_assignments', createdSaRec, { deferRender: Boolean(enrolRegSnap) });
+        if (rSa && rSa.blockedSameName) {
+          if (postedNewEmp && empToPost) {
+            await postRecordToLocalApi('employments', Object.assign({}, empToPost, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
+          }
+          rollbackEnrolRegistration(rSa.table || 'staff_assignments', rSa.id || createdSaRec.id, rSa.err);
+          return { ok: false, blockedSameName: true, err: rSa.err };
+        }
+      }
+      syncWithCloud(true);
+      return { ok: true };
+    })();
+    STATE._lastEnrolPersistPromise = persistPromise;
 
-    if (STAFF_FACE_MODAL_STATE.open && (!spec || spec.openCapture !== false)) {
+    if (STAFF_FACE_MODAL_STATE.open && (!spec || spec.openCapture !== false) && !(spec && spec.deferCaptureUntilPersist)) {
       STAFF_FACE_MODAL_STATE.newStaffOpen = false;
       STAFF_FACE_MODAL_STATE.rosterSearch = '';
       if (STAFF_FACE_MODAL_STATE.rosterCo && norm(STAFF_FACE_MODAL_STATE.rosterCo) !== norm(canonicalCo)) {
@@ -132762,12 +133448,13 @@
       const pillCls = isProtAdmin ? 'is-done' : (isDone ? 'is-done' : (isPartial ? 'is-partial' : 'is-missing'));
       const pillTxt = isProtAdmin ? 'Protected Admin Seat' : (isDone ? '✓ 3/3 Enrolled' : (isPartial ? `${fc}/3 Poses` : 'Enrol Face ID'));
       const roleTxt = s.role && norm(s.role) !== 'active staff' ? s.role : (s.isEndedContract ? 'Inactive' : 'Staff');
+      const fnDisp = s.fatherName && !String(s.name || '').toLowerCase().includes('(' + String(s.fatherName).toLowerCase() + ')') ? ` · Father: ${s.fatherName}` : '';
       return `
         <button type="button" class="sfe-staff-card ${isDone ? 'is-enrolled' : ''} ${isPicked ? 'is-current' : ''} ${isProtAdmin ? 'is-protected-seat' : ''}" data-sfe-pick-staff="${esc(s.name)}" ${isProtAdmin ? 'data-sfe-protected-seat="1"' : ''}>
           <span class="sfe-avatar ${isDone ? 'is-done' : ''}">${esc(getStaffInitialsMonogram(s.name))}</span>
           <span class="sfe-card-main">
             <strong class="sfe-card-name">${esc(s.name)}</strong>
-            <span class="sfe-card-sub">${esc(s.company)} · ${esc(roleTxt)}${s.hasExplicitPin ? ' · PIN Set' : ''}</span>
+            <span class="sfe-card-sub">${esc(s.company)}${esc(fnDisp)} · ${esc(roleTxt)}${s.hasExplicitPin ? ' · PIN Set' : ''}</span>
           </span>
           <span class="sfe-card-right">
             <span class="sfe-status-pill ${pillCls}">${pillTxt}</span>
@@ -133478,6 +134165,10 @@
                     <input type="text" id="sfeNewStaffName" class="sfe-search-input" placeholder="e.g. Rami Kassis" autocomplete="off" spellcheck="false">
                   </label>
                   <label class="sfe-ns-field">
+                    <span>Father's Name (Optional)</span>
+                    <input type="text" id="sfeNewStaffFather" class="sfe-search-input" placeholder="e.g. Mohammad" autocomplete="off" spellcheck="false">
+                  </label>
+                  <label class="sfe-ns-field">
                     <span>Business Unit *</span>
                     <select id="sfeNewStaffCo" class="kiosk-select sfe-ns-select" data-native-select="1" ${opAllowedCos.length <= 1 ? 'disabled' : ''}>
                       ${opAllowedCos.map(c => `<option value="${esc(c)}" ${c === (defaultScopedCo || opAllowedCos[0]) ? 'selected' : ''}>${esc(c)}</option>`).join('')}
@@ -133612,35 +134303,42 @@
     $('sfeNewStaffCancelBtn')?.addEventListener('click', () => {
       STAFF_FACE_MODAL_STATE.newStaffOpen = false;
       const errEl = $('sfeNewStaffErr');
-      if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+      if (errEl) { errEl.hidden = true; errEl.classList.remove('is-same-name'); errEl.textContent = ''; }
+      const fatherInp = $('sfeNewStaffFather');
+      if (fatherInp) fatherInp.value = '';
       syncStaffFaceEnrolModalDom();
     });
     $('sfeNewStaffCo')?.addEventListener('change', () => {
       syncStaffFaceEnrolModalDom();
     });
-    const commitNewStaffFromStudio = () => {
+    const commitNewStaffFromStudio = async () => {
       const nmInp = $('sfeNewStaffName');
+      const fatherInp = $('sfeNewStaffFather');
       const coSel = $('sfeNewStaffCo');
       const roleInp = $('sfeNewStaffRole');
       const phInp = $('sfeNewStaffPhone');
       const errEl = $('sfeNewStaffErr');
+      const saveBtn = $('sfeNewStaffSaveBtn');
+      const waitPersist = hasServerApi() && !isDemoScopeActive();
       const res = registerNewStaffFromEnrolStudio({
         name: nmInp ? nmInp.value : '',
+        fatherName: fatherInp ? fatherInp.value : '',
         company: coSel ? coSel.value : '',
         role: roleInp ? roleInp.value : 'General Labour',
         phone: phInp ? phInp.value : '',
-        autoStartCam: true
+        autoStartCam: !waitPersist,
+        deferCaptureUntilPersist: waitPersist
       });
       if (!res.ok) {
         if (errEl && res.reason === 'same-name-active') {
           errEl.hidden = false;
           errEl.classList.add('is-same-name');
           errEl.innerHTML = `
-            <div class="sfe-ns-same-line"><span>Already active in this company:</span> <b>${esc(res.existing)}</b> <span class="sfe-ns-same-meta">${esc(res.company)}${res.role ? ` · ${esc(res.role)}` : ''}${res.since ? ` · ${esc(fmtDateDMY(res.since))}` : ''}</span></div>
+            <div class="sfe-ns-same-line"><span>Already active in this company:</span> <b data-no-i18n="1">${esc(res.existing)}</b> <span class="sfe-ns-same-meta" data-no-i18n="1">${esc(res.company)}${res.role ? ` · ${esc(res.role)}` : ''}${res.since ? ` · ${esc(fmtDateDMY(res.since))}` : ''}</span></div>
             <div class="sfe-ns-same-line"><span>If this is a different person, add something to the name (such as the father's name) so the two never share shift rules, payroll, punches or Face ID.</span></div>
             <div class="sfe-ns-same-actions">
               <button type="button" class="btn" id="sfeSameNameOpenBtn" data-staff="${esc(res.existing)}">${ic('user')} <span>Open Existing Person</span></button>
-              <button type="button" class="btn btn-primary" id="sfeSameNameSuggestBtn" data-name="${esc(res.suggestion)}"><span>Use Suggested Name</span> <b>${esc(res.suggestion)}</b></button>
+              <button type="button" class="btn btn-primary" id="sfeSameNameSuggestBtn" data-name="${esc(res.suggestion)}"><span>Use Suggested Name</span> <b data-no-i18n="1">${esc(res.suggestion)}</b></button>
             </div>`;
           $('sfeSameNameOpenBtn')?.addEventListener('click', ev => {
             const who = ev.currentTarget.getAttribute('data-staff') || '';
@@ -133648,6 +134346,7 @@
             errEl.classList.remove('is-same-name');
             errEl.innerHTML = '';
             if (nmInp) nmInp.value = '';
+            if (fatherInp) fatherInp.value = '';
             STAFF_FACE_MODAL_STATE.newStaffOpen = false;
             STAFF_FACE_MODAL_STATE.rosterSearch = '';
             if (STAFF_FACE_MODAL_STATE.rosterCo && norm(STAFF_FACE_MODAL_STATE.rosterCo) !== norm(res.company)) STAFF_FACE_MODAL_STATE.rosterCo = res.company;
@@ -133675,13 +134374,61 @@
         toast(res.error || 'Could not register staff member', 'warn');
         return;
       }
+      if (waitPersist && STATE._lastEnrolPersistPromise) {
+        if (saveBtn) saveBtn.disabled = true;
+        let pRes = null;
+        try {
+          pRes = await STATE._lastEnrolPersistPromise;
+        } finally {
+          if (saveBtn) saveBtn.disabled = false;
+        }
+        if (pRes && pRes.blockedSameName) {
+          const srvErr = (pRes.err && pRes.err.error) || 'Duplicate active staff name blocked by server.';
+          if (errEl) {
+            errEl.hidden = false;
+            errEl.classList.remove('is-same-name');
+            errEl.textContent = srvErr;
+          }
+          return;
+        }
+        if (STAFF_FACE_MODAL_STATE.open) {
+          STAFF_FACE_MODAL_STATE.newStaffOpen = false;
+          STAFF_FACE_MODAL_STATE.rosterSearch = '';
+          if (STAFF_FACE_MODAL_STATE.rosterCo && norm(STAFF_FACE_MODAL_STATE.rosterCo) !== norm(res.company)) {
+            STAFF_FACE_MODAL_STATE.rosterCo = res.company;
+          }
+          selectStaffForEnrolModal(res.staff, { autoStartCam: true });
+          STAFF_FACE_MODAL_STATE.statusText = `✓ Registered ${res.staff} in ${res.company} (${res.role}). Now capture 3 Face ID poses below.`;
+          STAFF_FACE_MODAL_STATE.statusCls = 'ok';
+          syncStaffFaceEnrolModalDom();
+        }
+      }
       if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
       if (nmInp) nmInp.value = '';
+      if (fatherInp) fatherInp.value = '';
       if (phInp) phInp.value = '';
-      toast(`Registered ${res.staff} (${res.company} · ${res.role}) — ready for 3-pose Face ID`, 'ok');
+      toast(`Registered ${res.staff} (${res.company} · ${res.role}) · ready for 3-pose Face ID`, 'ok');
     };
     $('sfeNewStaffSaveBtn')?.addEventListener('click', commitNewStaffFromStudio);
+    $('sfeNewStaffFather')?.addEventListener('input', () => {
+      const errEl = $('sfeNewStaffErr');
+      const sugBtn = $('sfeSameNameSuggestBtn');
+      const nmInp = $('sfeNewStaffName');
+      const fatherInp = $('sfeNewStaffFather');
+      if (errEl && !errEl.hidden && errEl.classList.contains('is-same-name') && sugBtn && nmInp && fatherInp) {
+        const sug = suggestDistinctStaffName(nmInp.value, fatherInp.value);
+        sugBtn.setAttribute('data-name', sug);
+        const b = sugBtn.querySelector('b');
+        if (b) b.textContent = sug;
+      }
+    });
     $('sfeNewStaffName')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitNewStaffFromStudio();
+      }
+    });
+    $('sfeNewStaffFather')?.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
         e.preventDefault();
         commitNewStaffFromStudio();
@@ -149076,7 +149823,8 @@
       openStaffFaceEnrolModal: (staff, opts = {}) => openStaffFaceEnrolModal(staff, opts),
       registerNewStaffForEnrol: (spec = {}) => registerNewStaffFromEnrolStudio(spec),
       findActiveSameNameInCompany: (name, co, opts = {}) => findActiveSameNameInCompany(name, co, opts),
-      suggestDistinctStaffName: name => suggestDistinctStaffName(name),
+      suggestDistinctStaffName: (name, fatherOrOpts) => suggestDistinctStaffName(name, fatherOrOpts),
+      getStaffFatherName: (name, co) => getStaffFatherName(name, co),
       getEmploymentSameNameConflict: (isContract, staff, co, dateStr, opts = {}) => getEmploymentSameNameConflict(isContract, staff, co, dateStr, opts),
       isAuthorizedKioskAdminFace: entry => isAuthorizedKioskAdminFace(entry),
       isAuthorizedKioskStaffEnrolFace: entry => isAuthorizedKioskStaffEnrolFace(entry),
