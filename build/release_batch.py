@@ -436,7 +436,7 @@ def _remote_branch(repo: Path, branch: str, label: str) -> str:
 
 
 def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str = "", site_branch: str = "",
-         gates: tuple[str, ...] | list[str] = (), quiet: bool = False) -> dict:
+         gates: tuple[str, ...] | list[str] = (), quiet: bool = False, force: bool = False) -> dict:
     """Put a finished, pushed change in the line. Joining again with the same commits keeps its place."""
     holder, summary = holder.strip(), " ".join(summary.split())
     if not holder or not summary:
@@ -458,10 +458,18 @@ def join(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
     if not parts:
         raise BatchError("everything named is already on origin/main: nothing to release.")
     lock_sha, lock = RL.read_remote_lock(cwd)
+    joined_here = _local_json(cwd, JOINED_FILE)
     for old in read_line(cwd):
         same = [k for k in parts if (old.get(k) or {}).get("branch") == parts[k]["branch"]]
         if not same:
             continue
+        if old.get("state") in ("waiting", "left_out") and old["id"] not in joined_here and old.get("holder") != holder and not force:
+            # The same rule as leave: refreshing or replacing another session's entry would ship its commits behind
+            # its back (a quiet one) or put failed commits back in line (a left-out one).
+            what = f"was left out ({old.get('note') or 'no reason given'})" if old.get("state") == "left_out" else "is waiting in line"
+            raise BatchError(f"{old['id']} ({old.get('summary')}) is for the same branch ({parts[same[0]]['branch']}), {what}, and "
+                             f"belongs to {old.get('holder', '?')}: only that session joins it again or clears it. "
+                             "--force only when the owner says so.")
         in_live_batch = bool(lock_sha) and (old.get("batch") or {}).get("lockId") == lock.get("lockId")
         unchanged = all((old.get(k) or {}).get("sha") == (parts.get(k) or {}).get("sha") for k in ("app", "site"))
         if old.get("state") == "waiting" and unchanged:
@@ -599,7 +607,8 @@ def _own_batch(cwd: Path, lock_sha: str, lock: dict) -> tuple[str, str] | None:
         pid = int(mine.get("pid") or 0)
     except (TypeError, ValueError):
         pid = 0
-    if mine.get("host") == socket.gethostname() and pid != os.getpid() and _pid_alive(pid):
+    # A lock past its expiry is not being worked under (a process id can also be reused by something long-lived).
+    if not RL.is_expired(lock, 0) and mine.get("host") == socket.gethostname() and pid != os.getpid() and _pid_alive(pid):
         return "WAITING", (f"a take or ship is forming the batch in this worktree right now (process {pid}): let it "
                            "finish, then run ship again. Do not abort it.")
     return "HALF_FORMED", ("this worktree holds the release lock for a batch that was cut off while forming (the process "
@@ -1278,7 +1287,7 @@ def abort(cwd: Path = ISABI_ROOT, *, quiet: bool = False) -> None:
 
 def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str = "", site_branch: str = "",
          gates: tuple[str, ...] | list[str] = (), version: str = "", wait_s: int = DEFAULT_WAIT_S, poll_s: int = POLL_S,
-         quiet: bool = False) -> tuple[str, str, dict | None]:
+         quiet: bool = False, force: bool = False) -> tuple[str, str, dict | None]:
     """Join the line, then lead the batch when nothing is releasing, or wait for the batch this change goes out in.
     Returns (state, message, the batch when LEADER). States: LEADER (this worktree holds the lock: run the release
     steps), SHIPPED (live), LEFT_OUT, GONE, WAITING (run again), TURN (too little time left to form the batch here:
@@ -1291,7 +1300,8 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
         return own[0], own[1], (_local_json(cwd, BATCH_FILE) or None) if own[0] == "LEADER" else None
     _require_clean(cwd, "isabi")
     _require_clean(app, "isabi-app")
-    entry = join(cwd, holder=holder, summary=summary, app_branch=app_branch, site_branch=site_branch, gates=gates, quiet=quiet)
+    entry = join(cwd, holder=holder, summary=summary, app_branch=app_branch, site_branch=site_branch, gates=gates, quiet=quiet,
+                 force=force)
     started = _mono()
     deadline = started + max(0, wait_s)
     while True:
@@ -1370,6 +1380,8 @@ def _add_ship_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--site-branch", default="", help="pushed isabi branch holding site-side changes (functions/, build/)")
     p.add_argument("--gate", action="append", default=[], metavar="CMD",
                    help='a gate this change needs on the batch, e.g. "isabi-app: node build/verify_x.mjs" (repeatable)')
+    p.add_argument("--force", action="store_true",
+                   help="replace an entry for the same branch that another session joined (only when the owner says so)")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1399,7 +1411,7 @@ def main(argv: list[str] | None = None) -> int:
     lv = sub.add_parser("leave", help="take an entry out of the line")
     lv.add_argument("--id", required=True)
     lv.add_argument("--force", action="store_true",
-                    help="clear a left-out entry another session joined (only when the owner says that change is abandoned)")
+                    help="clear a waiting or left-out entry another session joined (only when the owner says that change is abandoned)")
     args = ap.parse_args(argv)
     if getattr(args, "wait", 0) < 0 or getattr(args, "wait", 0) > 3600:  # noqa: PLR2004
         ap.error("--wait must be 0 to 3600 seconds")
@@ -1413,17 +1425,18 @@ def main(argv: list[str] | None = None) -> int:
                 _print_status(st)
         elif args.cmd == "ship":
             state, msg, _batch = ship(cwd, holder=args.holder, summary=args.summary, app_branch=args.app_branch,
-                                      site_branch=args.site_branch, gates=args.gate, version=args.version, wait_s=args.wait)
+                                      site_branch=args.site_branch, gates=args.gate, version=args.version, wait_s=args.wait,
+                                      force=args.force)
             print(f"RESULT: {state}: {msg}")
             if state == "WAITING":
-                print("Still in line. Run the same ship command again to keep waiting (the place is kept).")
+                print("Run the same ship command again to keep waiting (a place in line is kept).")
             elif state == "TURN":
                 print(f'Lead the batch now, in the background or with a long timeout (it can take minutes):\n'
                       f'  python build/release_batch.py take --holder "{args.holder}"')
             return 3 if state in ("LEFT_OUT", "GONE", "HALF_FORMED") else 0
         elif args.cmd == "join":
             join(cwd, holder=args.holder, summary=args.summary, app_branch=args.app_branch, site_branch=args.site_branch,
-                 gates=args.gate)
+                 gates=args.gate, force=args.force)
         elif args.cmd == "wait":
             state, msg = wait(cwd, args.id, wait_s=args.wait)
             print(f"RESULT: {state}: {msg}")

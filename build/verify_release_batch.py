@@ -227,10 +227,12 @@ def main() -> int:  # noqa: PLR0915
         check("line1 A" in text(appA / "js" / "app.js") and is_ancestor(appA, sha_a), "the change's own commit is in the batch")
         check((entry(B, eA["id"]).get("batch") or {}).get("lockId") == lock.get("lockId"), "the entry is marked as in the batch being released")
         check("already leads" in raises(RB.take, A, holder="session A")[1], "a leader cannot start a second batch")
+        put(A / "app" / "sw.js", "sync_app output\n")  # the leader has run sync_app.py: its tree is not clean
         st, _msg, again = RB.ship(A, holder="session A", summary="A change", app_branch="wt/a", wait_s=0, poll_s=0, quiet=True)
+        git(A, "checkout", "-q", "--", "app/sw.js")
         check(RB.poll_once(A, eA["id"])[0] == "LEADER" and st == "LEADER" and [e["id"] for e in again["entries"]] == [eA["id"]]
               and RB.poll_once(B, eA["id"])[0] == "IN_BATCH",
-              "asked again from the leader's own worktree, ship says LEADER: it never waits on itself")
+              "asked again from the leader's own worktree (sync output and all), ship says LEADER: it never waits on itself")
 
         # 4. three changes finish while A is releasing: they wait in line
         sha_b = feature(appB, "wt/b", {"js/other.js": "other B\n"}, stamp="19.6.102")
@@ -610,6 +612,9 @@ def main() -> int:  # noqa: PLR0915
               "a quiet session's change is not carried live by a change built on top of it")
         check("did not join" in raises(RB.leave, E, eT6["id"])[1] and entry(A, eT6["id"]).get("state") == "waiting",
               "nor can another session clear the quiet change's entry to get its own through")
+        check("belongs to session D" in raises(RB.join, E, holder="session E", summary="x", app_branch="wt/t6")[1]
+              and RB._is_stale(entry(A, eT6["id"])) and line_ids(A, "waiting") == [eT6["id"]],
+              "or join the quiet change's branch itself to take its entry over")
         quiet(RB.leave, E, eS6["id"])
         quiet(RB.leave, D, eT6["id"])
 
