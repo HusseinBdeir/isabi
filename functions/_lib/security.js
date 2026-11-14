@@ -319,7 +319,7 @@ const ENTITY_ALIAS_MAP = {
   'bdeir insurance brokerage': 'insurance company'
 };
 
-function canonEntityKey(raw) {
+export function canonEntityKey(raw) {
   const k = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
   return ENTITY_ALIAS_MAP[k] || k;
 }
@@ -389,6 +389,36 @@ export function canManageUsersSeat(session) {
   if (!session) return false;
   const role = String(session.role || '').toLowerCase();
   return role.includes('owner') || role.includes('supervisor') || session.sub === 'u1' || session.sub === 'u2';
+}
+
+export function canWriteWorkSchedulesSession(session) {
+  if (!session) return false;
+  if (isOwnerOrFullGroupSession(session)) return true;
+  const sub = String(session.sub || session.id || session.user_id || '').trim().toLowerCase();
+  if (sub === 'u1' || sub === 'u2') return true;
+  const role = String(session.role || '').trim().toLowerCase();
+  if (role === 'custom') {
+    let perms = session.custom_perms;
+    if (typeof perms === 'string') {
+      try { perms = JSON.parse(perms); } catch (_) { perms = null; }
+    }
+    if (perms && typeof perms === 'object') {
+      const rights = (perms.rights && typeof perms.rights === 'object') ? perms.rights : perms;
+      const forms = (perms.forms && typeof perms.forms === 'object') ? perms.forms : perms;
+      const canMod = Boolean(rights.modify_data);
+      const canForm = Boolean(
+        rights.enter_master || rights.enter_payroll_jv
+        || forms.enter_master || forms.enter_payroll_jv
+        || forms.enter_workshift || forms.workshift
+      );
+      return canMod && canForm;
+    }
+    if (typeof session.ws_write === 'boolean') return session.ws_write;
+    return false;
+  }
+  if (/\bowner\b|full\s+access|\badmin\b/i.test(role)) return true;
+  if (role.includes('supervisor') && role.includes('entry')) return true;
+  return false;
 }
 
 export function normalizeIpForRateLimit(rawIp) {
