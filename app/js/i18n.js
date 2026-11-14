@@ -11798,7 +11798,52 @@
       "You do not have rights to delete shifts for this company": "ليس لديك صلاحيات حذف الورديات لهذه الشركة",
       "You do not have rights to edit shifts for this company": "ليس لديك صلاحيات تعديل الورديات لهذه الشركة",
       "You do not have rights to update policy defaults for this company": "ليس لديك صلاحيات تحديث افتراضيات السياسة لهذه الشركة",
-      "You do not have rights to update work rules for this company": "ليس لديك صلاحيات تحديث قواعد العمل لهذه الشركة"
+      "You do not have rights to update work rules for this company": "ليس لديك صلاحيات تحديث قواعد العمل لهذه الشركة",
+      "No Active Contract on File": "لا يوجد عقد نشط مسجل",
+      "No Active Contract": "لا يوجد عقد نشط",
+      "Bonus / Extra": "مكافأة / إضافي",
+      "Enter Final Salary First": "أدخل الراتب النهائي أولاً",
+      "After This Advance": "بعد هذه السلفة",
+      "Unadvanced Base": "الأساسي غير المُسلَّف",
+      "OT & Adj.": "إضافي وتعديلات",
+      "Advance Over Net": "سلفة فوق الصافي",
+      "Left After This": "المتبقي بعد هذه الدفعة",
+      "Remaining Due": "المستحق المتبقي",
+      "Earned So Far": "المستحق حتى الآن",
+      "Advance Receipt": "إيصال سلفة راتب",
+      "Salary / Advance Voucher": "سند راتب / سلفة",
+      "Voucher Summary": "ملخص السند",
+      "Paid Date": "تاريخ الدفع",
+      "Advance Month": "شهر السلفة",
+      "Amount Paid": "المبلغ المدفوع",
+      "Cumulative Paid": "المدفوع التراكمي",
+      "Contract Base": "الراتب الأساسي التعاقدي",
+      "Remaining Balance": "الرصيد المتبقي",
+      "Advance Balance": "رصيد السلفة",
+      "Print Voucher": "طباعة السند",
+      "Copy Receipt": "نسخ الإيصال",
+      "Share Receipt": "مشاركة الإيصال",
+      "Receipt copied to clipboard": "تم نسخ الإيصال إلى الحافظة",
+      "Bilingual EN + عربي": "ثنائي اللغة EN + عربي",
+      "EN + عربي": "EN + عربي",
+      "Salary Advance": "سلفة راتب",
+      "1 row edited": "1 صف معدّل",
+      "1 row added": "1 صف مضاف",
+      "1 row removed": "1 صف محذوف",
+      "1 row changed": "1 صف متغيّر",
+      "No OT/Leave logged": "لا إضافي ولا إجازات مسجّلة",
+      "/ No contract": "/ بدون عقد",
+      "Settlement / Advance Status": "حالة التسوية / السلفة",
+      "Base / Transp. & Reimb.": "الأساسي / النقل والبدلات",
+      "Open Staff Loan / Advance:": "سلفة / قرض موظف مفتوح:",
+      "Uncontracted Payment": "دفعة بدون عقد",
+      "Disbursements": "المدفوعات",
+      "Show All Group (3)": "عرض كامل المجموعة (3)",
+      "Staff Voucher Reference": "مرجع سند الموظف",
+      "WhatsApp Summary": "ملخص واتساب",
+      "Language Mode": "وضع اللغة",
+      "Recipient Phone": "هاتف المستلم",
+      "No phone on file (WhatsApp opens contact picker)": "لا يوجد رقم مسجل (سيفتح واتساب اختيار جهة الاتصال)"
     },
     fr: {
       "Not split by borrower": "Non réparti par emprunteur",
@@ -23578,7 +23623,52 @@
       "You do not have rights to delete shifts for this company": "Vous n'avez pas les droits pour supprimer les postes de cette société",
       "You do not have rights to edit shifts for this company": "Vous n'avez pas les droits pour modifier les postes de cette société",
       "You do not have rights to update policy defaults for this company": "Vous n'avez pas les droits pour mettre à jour les paramètres par défaut de cette société",
-      "You do not have rights to update work rules for this company": "Vous n'avez pas les droits pour mettre à jour les règles de travail de cette société"
+      "You do not have rights to update work rules for this company": "Vous n'avez pas les droits pour mettre à jour les règles de travail de cette société",
+      "No Active Contract on File": "Aucun contrat actif au dossier",
+      "No Active Contract": "Aucun contrat actif",
+      "Bonus / Extra": "Prime / Bonus",
+      "Enter Final Salary First": "Saisir d'abord le salaire final",
+      "After This Advance": "Après cette avance",
+      "Unadvanced Base": "Base non avancée",
+      "OT & Adj.": "HS & Ajust.",
+      "Advance Over Net": "Avance sur net",
+      "Left After This": "Reste après ceci",
+      "Remaining Due": "Reste dû",
+      "Earned So Far": "Acquis à ce jour",
+      "Advance Receipt": "Reçu d'avance",
+      "Salary / Advance Voucher": "Bon de salaire / d'avance",
+      "Voucher Summary": "Résumé du bon",
+      "Paid Date": "Date de paiement",
+      "Advance Month": "Mois de l'avance",
+      "Amount Paid": "Montant payé",
+      "Cumulative Paid": "Cumul payé",
+      "Contract Base": "Salaire de base",
+      "Remaining Balance": "Solde restant",
+      "Advance Balance": "Solde d'avance",
+      "Print Voucher": "Imprimer le bon",
+      "Copy Receipt": "Copier le reçu",
+      "Share Receipt": "Partager le reçu",
+      "Receipt copied to clipboard": "Reçu copié dans le presse-papiers",
+      "Bilingual EN + عربي": "Bilingue EN + عربي",
+      "EN + عربي": "EN + عربي",
+      "Salary Advance": "Avance sur salaire",
+      "1 row edited": "1 ligne modifiée",
+      "1 row added": "1 ligne ajoutée",
+      "1 row removed": "1 ligne supprimée",
+      "1 row changed": "1 ligne modifiée",
+      "No OT/Leave logged": "Aucune HS ni absence",
+      "/ No contract": "/ sans contrat",
+      "Settlement / Advance Status": "Statut règlement / avance",
+      "Base / Transp. & Reimb.": "Base / Transp. & remb.",
+      "Open Staff Loan / Advance:": "Prêt / avance employé ouvert :",
+      "Uncontracted Payment": "Paiement hors contrat",
+      "Disbursements": "Décaissements",
+      "Show All Group (3)": "Afficher tout le groupe (3)",
+      "Staff Voucher Reference": "Référence du bon",
+      "WhatsApp Summary": "Résumé WhatsApp",
+      "Language Mode": "Langue du reçu",
+      "Recipient Phone": "Téléphone du destinataire",
+      "No phone on file (WhatsApp opens contact picker)": "Aucun numéro au dossier (WhatsApp ouvrira la sélection de contact)"
     }
   };
 
@@ -25943,7 +26033,7 @@
     m = trimmed.match(/^(\d+)\s+Plant\s*·\s*(\d+)\s+Out\s*·\s*(\d+)\s+Abs$/i);
     if (m) return lang === 'ar' ? `${m[1]} بالمصنع · ${m[2]} خارجي · ${m[3]} غياب` : `${m[1]} Centrale · ${m[2]} Ext. · ${m[3]} Abs.`;
 
-    m = trimmed.match(/^Partial\s*·\s*(\$[\d.,]+)\s*rem$/i);
+    m = trimmed.match(/^Partial\s*·\s*([+-]?\$[\d.,-]+)\s*rem$/i);
     if (m) return lang === 'ar' ? `جزئي · متبقٍ ${m[1]}` : `Partiel · reste ${m[1]}`;
 
     m = trimmed.match(/^(\$[\d.,]+)\s+Incl\.$/i);
@@ -26366,49 +26456,271 @@
       return lang === 'ar' ? `${m[1]} أشهر عقد نشطة${pkg}${vac}` : `${m[1]} mois de contrat actifs${pkg}${vac}`;
     }
 
-    m = trimmed.match(/^([A-Za-z]+\s+\d{4})\s+Net Earned:\s*(\$[\d.,-]+)\s*\|\s*Paid:\s*(\$[\d.,-]+)\s*\|\s*Rem:\s*(\$[\d.,-]+)$/i);
+    const translatePayrollPeriodRef = (raw, targetLang) => {
+      const s = String(raw || '').trim();
+      if (!s || s === '—' || s === '-' || s.toLowerCase() === 'month') {
+        return targetLang === 'ar' ? 'هذا الشهر' : 'ce mois';
+      }
+      return translateDatePhrase(s, targetLang) || translateMonthTokens(s, targetLang) || s;
+    };
+
+    m = trimmed.match(/^((?:[A-Za-z]+\s+\d{4}|\d{4}-\d{2}|—|-|month))\s+Net Earned:\s*([+-]?\$[\d.,-]+)\s*\|\s*Paid:\s*([+-]?\$[\d.,-]+)\s*\|\s*Rem:\s*([+-]?\$[\d.,-]+)$/i);
     if (m) {
-      const d = translateDatePhrase(m[1], lang) || m[1];
+      const d = translatePayrollPeriodRef(m[1], lang);
       return lang === 'ar' ? `${d} صافي المستحق: ${m[2]} | المدفوع: ${m[3]} | المتبقي: ${m[4]}` : `${d} Net acquis : ${m[2]} | Payé : ${m[3]} | Reste : ${m[4]}`;
     }
-    m = trimmed.match(/^([A-Za-z]+\s+\d{4})\s+Net Earned:\s*(\$[\d.,-]+)\s*·\s*(.+)$/i);
+    m = trimmed.match(/^((?:[A-Za-z]+\s+\d{4}|\d{4}-\d{2}|—|-|month))\s+Net Earned:\s*([+-]?\$[\d.,-]+)\s*·\s*(.+)$/i);
     if (m) {
-      const d = translateDatePhrase(m[1], lang) || m[1];
+      const d = translatePayrollPeriodRef(m[1], lang);
       let tail = m[3].trim();
       let tm = tail.match(/^Paid in full\s*\(([^)]+)\)$/i);
       if (tm) tail = lang === 'ar' ? `مدفوع بالكامل (${tm[1]})` : `Payé intégralement (${tm[1]})`;
-      tm = tail.match(/^Paid through this entry:\s*(\$[\d.,-]+)\s*\((\$[\d.,-]+)\s+remaining then\s*·\s*(\$[\d.,-]+)\s+remaining now\)$/i);
+      tm = tail.match(/^Paid through this entry:\s*([+-]?\$[\d.,-]+)\s*\(([+-]?\$[\d.,-]+)\s+remaining then\s*·\s*([+-]?\$[\d.,-]+)\s+remaining now\)$/i);
       if (tm) tail = lang === 'ar' ? `المدفوع حتى هذا القيد: ${tm[1]} (المتبقي حينها ${tm[2]} · المتبقي حالياً ${tm[3]})` : `Payé jusqu'à cette écriture : ${tm[1]} (${tm[2]} restant alors · ${tm[3]} restant aujourd'hui)`;
-      tm = tail.match(/^Cumulative paid:\s*(\$[\d.,-]+)\s*\(([+-]?\$[\d.,-]+)\s+above month net\)$/i);
+      tm = tail.match(/^Cumulative paid:\s*([+-]?\$[\d.,-]+)\s*\(([+-]?\$[\d.,-]+)\s+above month net\)$/i);
       if (tm) tail = lang === 'ar' ? `المدفوع التراكمي: ${tm[1]} (${tm[2]} فوق صافي الشهر)` : `Cumul payé : ${tm[1]} (${tm[2]} au-dessus du net mensuel)`;
+      tm = tail.match(/^Cumulative Paid:\s*([+-]?\$[\d.,-]+)\s*·\s*(Remaining|Advance Over Net):\s*([+-]?\$[\d.,-]+)$/i);
+      if (tm) {
+        const lbl = tm[2].toLowerCase().startsWith('advance')
+          ? (lang === 'ar' ? 'سلفة فوق الصافي' : 'Avance au-dessus du net')
+          : (lang === 'ar' ? 'المتبقي' : 'Reste');
+        tail = lang === 'ar' ? `المدفوع التراكمي: ${tm[1]} · ${lbl}: ${tm[3]}` : `Cumul payé : ${tm[1]} · ${lbl} : ${tm[3]}`;
+      }
       return lang === 'ar' ? `${d} صافي المستحق: ${m[2]} · ${tail}` : `${d} Net acquis : ${m[2]} · ${tail}`;
     }
-    m = trimmed.match(/^Paid on(?:\s+(\S+))?\s+in advance for\s+([^·]+?)\s*·\s*Contract Base:\s*([+-]?\$[\d.,-]+)$/i);
+    m = trimmed.match(/^Contract (?:Net|Base):\s*([+-]?\$[\d.,-]+)\s*·\s*Cumulative Paid:\s*([+-]?\$[\d.,-]+)\s*·\s*(Remaining|Advance Over Net):\s*([+-]?\$[\d.,-]+)$/i);
+    if (m) {
+      const lbl = m[3].toLowerCase().startsWith('advance')
+        ? (lang === 'ar' ? 'سلفة فوق الصافي' : 'Avance au-dessus du net')
+        : (lang === 'ar' ? 'المتبقي' : 'Reste');
+      return lang === 'ar'
+        ? `صافي العقد: ${m[1]} · المدفوع التراكمي: ${m[2]} · ${lbl}: ${m[4]}`
+        : `Net contractuel : ${m[1]} · Cumul payé : ${m[2]} · ${lbl} : ${m[4]}`;
+    }
+    m = trimmed.match(/^Paid(?:\s+on(?:\s+(?!in\s+advance\b)(\S+))?)?\s+in advance for\s+([^·]+?)\s*·\s*Contract (?:Base|Net):\s*([+-]?\$[\d.,-]+)$/i);
     if (m) {
       const m2 = m[2].trim();
       const onDateAr = m[1] ? ` بتاريخ ${m[1]}` : '';
       const onDateFr = m[1] ? ` le ${m[1]}` : '';
-      if (m2.toLowerCase() === 'month') {
-        return lang === 'ar'
-          ? `مدفوع${onDateAr} كسلفة مسبقة لهذا الشهر · الراتب الأساسي التعاقدي: ${m[3]}`
-          : `Payé${onDateFr} d'avance pour le mois · Salaire de base contractuel : ${m[3]}`;
-      }
-      const d = translateDatePhrase(m2, lang) || m2;
+      const d = translatePayrollPeriodRef(m2, lang);
+      const forAr = d === 'هذا الشهر' ? 'لهذا الشهر' : `لشهر ${d}`;
       return lang === 'ar'
-        ? `مدفوع${onDateAr} كسلفة مسبقة لشهر ${d} · الراتب الأساسي التعاقدي: ${m[3]}`
+        ? `مدفوع${onDateAr} كسلفة مسبقة ${forAr} · الراتب الأساسي التعاقدي: ${m[3]}`
         : `Payé${onDateFr} d'avance pour ${d} · Salaire de base contractuel : ${m[3]}`;
     }
-    m = trimmed.match(/^No active contract on file for\s+(.+?)\s*·\s*Month total paid:\s*([+-]?\$[\d.,-]+)$/i);
+    m = trimmed.match(/^No active (?:employment )?contract(?: on file)?(?: for\s+(.+?))?\s*·\s*(?:Month total paid|Paid(?:\s+so\s+far)?):\s*([+-]?\$[\d.,-]+)$/i);
     if (m) {
-      return lang === 'ar'
-        ? `لا يوجد عقد نشط مسجل لـ ${m[1]} · إجمالي المدفوع للشهر: ${m[2]}`
-        : `Aucun contrat actif au dossier pour ${m[1]} · Total versé sur le mois : ${m[2]}`;
+      return m[1]
+        ? (lang === 'ar'
+            ? `لا يوجد عقد نشط مسجل لـ ${m[1].trim()} · إجمالي المدفوع للشهر: ${m[2]}`
+            : `Aucun contrat actif au dossier pour ${m[1].trim()} · Total versé sur le mois : ${m[2]}`)
+        : (lang === 'ar'
+            ? `لا يوجد عقد نشط · إجمالي المدفوع للشهر: ${m[2]}`
+            : `Aucun contrat actif · Total versé sur le mois : ${m[2]}`);
     }
-    m = trimmed.match(/^Active contract has Salary Pending\s*\(([^)]+)\)\s*·\s*Paid as advance\s*\(([^)]+)\)\s*until final salary is entered$/i);
+    m = trimmed.match(/^(?:Active contract has\s+)?Salary Pending\s*\(([^)]+)\)\s*·\s*Paid(?:\s+as\s+advance)?\s*(?:\(([^)]+)\)|([+-]?\$[\d.,-]+))(?:\s*until final salary is entered)?$/i);
     if (m) {
+      const advAmt = m[2] || m[3] || '$0.00';
       return lang === 'ar'
-        ? `العقد النشط براتب قيد التحديد (${m[1]}) · مدفوع كسلفة (${m[2]}) لحين إدخال الراتب النهائي`
-        : `Contrat actif avec salaire en attente (${m[1]}) · Versé en avance (${m[2]}) jusqu'à saisie du salaire final`;
+        ? `العقد النشط براتب قيد التحديد (${m[1]}) · مدفوع كسلفة (${advAmt}) لحين إدخال الراتب النهائي`
+        : `Contrat actif avec salaire en attente (${m[1]}) · Versé en avance (${advAmt}) jusqu'à saisie du salaire final`;
+    }
+    m = trimmed.match(/^Future Advance\s*\(([^)]+)\)$/i);
+    if (m) {
+      return lang === 'ar' ? `سلفة مسبقة (${translatePayrollPeriodRef(m[1], 'ar')})` : `Avance Anticipée (${translatePayrollPeriodRef(m[1], 'fr')})`;
+    }
+    m = trimmed.match(/^Bonus\s*\/\s*Extra Pay\s*\(([+-]?[+-]?\$[\d.,-]+)\s+added to\s+([^)]+)\)$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[2], lang);
+      return lang === 'ar' ? `مكافأة / بدل إضافي (${m[1]} مضاف إلى ${d})` : `Prime / Bonus (${m[1]} ajouté à ${d})`;
+    }
+    m = trimmed.match(/^Bonus\s*\/\s*Extra Pay\s*·\s*Adds to\s+(.+?)\s+Net Earned$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[1], lang);
+      return lang === 'ar' ? `مكافأة / بدل إضافي · يضاف إلى صافي مستحق ${d}` : `Prime / Bonus · Ajouté au net acquis (${d})`;
+    }
+    m = trimmed.match(/^Bonus\s+(\+?[+-]?\$[\d.,-]+)$/i);
+    if (m) return lang === 'ar' ? `مكافأة ${m[1]}` : `Prime ${m[1]}`;
+
+    m = trimmed.match(/^Uncontracted Payment\s*\(([+-]?\$[\d.,-]+)\)$/i);
+    if (m) return lang === 'ar' ? `دفعة بدون عقد (${m[1]})` : `Paiement hors contrat (${m[1]})`;
+
+    m = trimmed.match(/^Salary Pending\s*\(([+-]?\$[\d.,-]+)(?:\s+Base)?\)$/i);
+    if (m) return lang === 'ar' ? `الراتب قيد التحديد (${m[1]})` : `Salaire en attente (${m[1]})`;
+
+    m = trimmed.match(/^Advance\s*\(([+-]?\$[\d.,-]+)\s*·\s*Salary Pending\)$/i);
+    if (m) return lang === 'ar' ? `سلفة (${m[1]} · الراتب قيد التحديد)` : `Avance (${m[1]} · salaire en attente)`;
+
+    m = trimmed.match(/^Advance Payment\s*·\s*Future Month\s*\(([^)]+)\)\s*·\s*Advancing\s+([+-]?\$[\d.,-]+)$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[1], lang);
+      return lang === 'ar' ? `دفعة سلفة · شهر مستقبلي (${d}) · سلفة ${m[2]}` : `Paiement d'avance · Mois futur (${d}) · Avance ${m[2]}`;
+    }
+    m = trimmed.match(/^Advance Payment\s*·\s*Future Month\s*\(([^)]+)\)\s*·\s*([+-]?\$[\d.,-]+)\s+Due Now$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[1], lang);
+      return lang === 'ar' ? `دفعة سلفة · شهر مستقبلي (${d}) · المستحق الآن ${m[2]}` : `Paiement d'avance · Mois futur (${d}) · Dû maintenant ${m[2]}`;
+    }
+    m = trimmed.match(/^Salary Advance\s*·\s*([+-]?[+-]?\$[\d.,-]+)\s*\(([^)]+)\)$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[2], lang);
+      return lang === 'ar' ? `سلفة راتب · ${m[1]} (${d})` : `Avance sur salaire · ${m[1]} (${d})`;
+    }
+    m = trimmed.match(/^Advance\s*\/\s*Overpayment\s*\(([+-]?[+-]?\$[\d.,-]+)\s+above\s+([^)]+?)\s+Net\)$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[2], lang);
+      return lang === 'ar' ? `سلفة / دفعة زائدة (${m[1]} فوق صافي ${d})` : `Avance / Trop-perçu (${m[1]} au-dessus du net ${d})`;
+    }
+    m = trimmed.match(/^Advance\s+([+-]?[+-]?\$[\d.,-]+)\s+over Month Net$/i);
+    if (m) return lang === 'ar' ? `سلفة ${m[1]} فوق صافي الشهر` : `Avance ${m[1]} au-dessus du net mensuel`;
+
+    m = trimmed.match(/^(.+?)\s+Already Settled\s*\(([+-]?\$[\d.,-]+)\s+Remaining\)$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[1], lang);
+      return lang === 'ar' ? `${d} مسدّد بالكامل (المتبقي ${m[2]})` : `${d} déjà soldé (${m[2]} restant)`;
+    }
+    m = trimmed.match(/^Already in Advance\s*\(([+-]?[+-]?\$[\d.,-]+)\)$/i);
+    if (m) return lang === 'ar' ? `في حالة سلفة مسبقاً (${m[1]})` : `Déjà en avance (${m[1]})`;
+
+    m = trimmed.match(/^Settles\s+(.+?)\s+in Full\s*\(([+-]?\$[\d.,-]+)\s+Left\)$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[1], lang);
+      return lang === 'ar' ? `يسدّد ${d} بالكامل (المتبقي ${m[2]})` : `Solde ${d} intégralement (${m[2]} restant)`;
+    }
+    m = trimmed.match(/^(Settled|Full Settlement)\s*\(([+-]?\$[\d.,-]+)\s+Left\)$/i);
+    if (m) {
+      const lbl = m[1].toLowerCase().startsWith('full')
+        ? (lang === 'ar' ? 'تسوية كاملة' : 'Règlement complet')
+        : (lang === 'ar' ? 'مسدّد' : 'Soldé');
+      return lang === 'ar' ? `${lbl} (المتبقي ${m[2]})` : `${lbl} (${m[2]} restant)`;
+    }
+    m = trimmed.match(/^Partial Payment\s*·\s*([+-]?\$[\d.,-]+)\s+Remaining$/i);
+    if (m) return lang === 'ar' ? `دفعة جزئية · المتبقي ${m[1]}` : `Paiement partiel · ${m[1]} restant`;
+
+    m = trimmed.match(/^Partial\s*·\s*([+-]?\$[\d.,-]+)\s+Left$/i);
+    if (m) return lang === 'ar' ? `جزئي · المتبقي ${m[1]}` : `Partiel · ${m[1]} restant`;
+
+    m = trimmed.match(/^Remaining Due:\s*([+-]?\$[\d.,-]+)$/i);
+    if (m) return lang === 'ar' ? `المستحق المتبقي: ${m[1]}` : `Reste dû : ${m[1]}`;
+
+    m = trimmed.match(/^([+-]?\$[\d.,-]+)\s+Remaining$/i);
+    if (m) return lang === 'ar' ? `المتبقي ${m[1]}` : `${m[1]} restant`;
+
+    m = trimmed.match(/^Open Staff Loan\s*\/\s*Advance:\s*([+-]?\$[\d.,-]+)\s*\((\d+)\s+active\)$/i);
+    if (m) return lang === 'ar' ? `سلفة / قرض موظف مفتوح: ${m[1]} (${m[2]} نشط)` : `Prêt / avance employé ouvert : ${m[1]} (${m[2]} actif(s))`;
+
+    m = trimmed.match(/^(.+?)\s+Still Unpaid:\s*([+-]?\$[\d.,-]+)$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[1], lang);
+      return lang === 'ar' ? `${d} غير مسدّد بعد: ${m[2]}` : `${d} toujours impayé : ${m[2]}`;
+    }
+    m = trimmed.match(/^No active employment contract in\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `لا يوجد عقد عمل نشط في ${m[1]}` : `Aucun contrat de travail actif chez ${m[1]}`;
+
+    m = trimmed.match(/^Due Now\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `المستحق الآن (${translatePayrollPeriodRef(m[1], 'ar')})` : `Dû maintenant (${translatePayrollPeriodRef(m[1], 'fr')})`;
+
+    m = trimmed.match(/^Advanced\s*\((\d+)\)$/i);
+    if (m) return lang === 'ar' ? `المُسلَّف (${m[1]})` : `Avancé (${m[1]})`;
+
+    m = trimmed.match(/^Paid\s*\((\d+)\)$/i);
+    if (m) return lang === 'ar' ? `المدفوع (${m[1]})` : `Payé (${m[1]})`;
+
+    m = trimmed.match(/^([+-]?[+-]?\$[\d.,-]+)\s+Adv(?:\s*\(([^)]+)\))?$/i);
+    if (m) {
+      let inner = '';
+      if (m[2]) {
+        const sub = m[2].trim();
+        let sm = sub.match(/^([+-]?\$[\d.,-]+)\s+Base Left$/i);
+        if (sm) inner = lang === 'ar' ? ` (${sm[1]} متبقٍ من الأساسي)` : ` (${sm[1]} base restante)`;
+        else if ((sm = sub.match(/^([+-]?[+-]?\$[\d.,-]+)\s+Over Base$/i))) {
+          inner = lang === 'ar' ? ` (${sm[1]} فوق الأساسي)` : ` (${sm[1]} au-dessus de la base)`;
+        } else {
+          inner = ` (${sub})`;
+        }
+      }
+      return lang === 'ar' ? `${m[1]} سلفة${inner}` : `${m[1]} Av.${inner}`;
+    }
+    m = trimmed.match(/^Exact remaining balance for\s+(.+)$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[1], lang);
+      const forAr = d === 'هذا الشهر' ? 'لهذا الشهر' : `لشهر ${d}`;
+      return lang === 'ar' ? `الرصيد المتبقي الدقيق ${forAr}` : `Solde restant exact pour ${d}`;
+    }
+    m = trimmed.match(/^Paying\s+(.+?)\s+ahead of\s+(\S+)\s+\(Future-Month Salary Advance(?:\s+of\s+([+-]?\$[\d.,-]+)\s*·\s*leaves\s+([+-]?\$[\d.,-]+)\s+of\s+.+?\s+contract base once worked|\s+exceeds\s+.+?\s+contract base by\s+([+-]?[+-]?\$[\d.,-]+))\)$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[1], lang);
+      if (m[3] && m[4]) {
+        return lang === 'ar'
+          ? `دفع ${d} قبل ${m[2]} (سلفة راتب مستقبلية ${m[3]} · يتبقّى ${m[4]} من أساسي العقد عند العمل)`
+          : `Paiement de ${d} avant le ${m[2]} (avance future de ${m[3]} · laisse ${m[4]} du salaire de base une fois travaillé)`;
+      }
+      if (m[5]) {
+        return lang === 'ar'
+          ? `دفع ${d} قبل ${m[2]} (سلفة الراتب المستقبلية تتجاوز أساسي العقد بمقدار ${m[5]})`
+          : `Paiement de ${d} avant le ${m[2]} (l'avance future dépasse la base contractuelle de ${m[5]})`;
+      }
+    }
+    m = trimmed.match(/^(.+?)\s+has not started yet\s*\(Transaction Date:\s*(\S+)\)\s*·\s*([+-]?\$[\d.,-]+)\s+is earned or due now;\s*any payment logged here is a Future-Month Salary Advance$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[1], lang);
+      const subAr = d === 'هذا الشهر' ? d : `شهر ${d}`;
+      return lang === 'ar'
+        ? `${subAr} لم يبدأ بعد (تاريخ العملية: ${m[2]}) · المستحق الآن ${m[3]} وأي دفعة هنا تُسجّل كسلفة شهر مستقبلي`
+        : `${d} n'a pas encore commencé (date : ${m[2]}) · ${m[3]} acquis ou dû ; tout paiement saisi est une avance sur mois futur`;
+    }
+    m = trimmed.match(/^Exceeds\s+(.+?)\s+remaining salary\s*\(([+-]?\$[\d.,-]+)\)\s+by\s+([+-]?[+-]?\$[\d.,-]+)\s*·\s*creates an Advance\s*\/\s*Overpayment$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[1], lang);
+      return lang === 'ar'
+        ? `يتجاوز المتبقي من راتب ${d} (${m[2]}) بمقدار ${m[3]} · يُنشئ سلفة / دفعة زائدة`
+        : `Dépasse le solde restant de ${d} (${m[2]}) de ${m[3]} · crée une avance / trop-perçu`;
+    }
+    m = trimmed.match(/^Covers remaining base\s*\(([+-]?\$[\d.,-]+)\)\s*\+\s*([+-]?\$[\d.,-]+)\s+of\s+(.+?)\s+overtime\s*\/\s*site transport$/i);
+    if (m) {
+      const d = translatePayrollPeriodRef(m[3], lang);
+      return lang === 'ar'
+        ? `يغطي متبقي الأساسي (${m[1]}) + ${m[2]} من الإضافي / نقل المواقع لشهر ${d}`
+        : `Couvre le solde de base (${m[1]}) + ${m[2]} d'heures sup. / transport pour ${d}`;
+    }
+    m = trimmed.match(/^(.+?)\s+\(([^)]+)\)\s*·\s*Active contract with Salary Pending\s*\(([^)]+)\)$/i);
+    if (m) {
+      const roleTr = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar'
+        ? `${roleTr} (${m[2]}) · عقد نشط براتب قيد التحديد (${m[3]} لحين التعيين)`
+        : `${roleTr} (${m[2]}) · Contrat actif avec salaire en attente (${m[3]} jusqu'à définition)`;
+    }
+    m = trimmed.match(/^(.+?)\s+\(([^)]+)\)\s*·\s*Base\s+([+-]?\$[\d.,-]+)\/mo$/i);
+    if (m) {
+      const roleTr = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar'
+        ? `${roleTr} (${m[2]}) · الأساسي ${m[3]}/شهر`
+        : `${roleTr} (${m[2]}) · Base ${m[3]}/mois`;
+    }
+    m = trimmed.match(/^\/?\s*([+-]?\$[\d.,-]+)\s+base$/i);
+    if (m) {
+      const leadSlash = trimmed.startsWith('/') ? '/ ' : '';
+      return lang === 'ar' ? `${leadSlash}${m[1]} أساسي` : `${leadSlash}${m[1]} base`;
+    }
+    m = trimmed.match(/^\/\s*No contract$/i);
+    if (m) return lang === 'ar' ? '/ بدون عقد' : '/ sans contrat';
+    m = trimmed.match(/^(\d+)\s+row(?:s)?\s+(edited|added|removed|changed)$/i);
+    if (m) {
+      const cnt = Number(m[1]);
+      const kind = m[2].toLowerCase();
+      const mapAr = {
+        edited: cnt === 1 ? 'صف معدّل' : 'صفوف معدّلة',
+        added: cnt === 1 ? 'صف مضاف' : 'صفوف مضافة',
+        removed: cnt === 1 ? 'صف محذوف' : 'صفوف محذوفة',
+        changed: cnt === 1 ? 'صف متغيّر' : 'صفوف متغيّرة',
+      };
+      const mapFr = {
+        edited: cnt === 1 ? 'ligne modifiée' : 'lignes modifiées',
+        added: cnt === 1 ? 'ligne ajoutée' : 'lignes ajoutées',
+        removed: cnt === 1 ? 'ligne supprimée' : 'lignes supprimées',
+        changed: cnt === 1 ? 'ligne modifiée' : 'lignes modifiées',
+      };
+      return `${m[1]} ${lang === 'ar' ? mapAr[kind] : mapFr[kind]}`;
     }
     m = trimmed.match(/^Reporting Date\s+(\S+)\s+differs from Transaction Date\s+(\S+)\s+by\s+(\d+)\s+days?$/i);
     if (m) return lang === 'ar' ? `تاريخ التقرير ${m[1]} يختلف عن تاريخ العملية ${m[2]} بمقدار ${m[3]} يوماً` : `La date de reporting ${m[1]} diffère de la date d'opération ${m[2]} de ${m[3]} jours`;
@@ -27886,7 +28198,7 @@
     m = trimmed.match(/^Claimed\s+(\$[\d.,]+)\s*·\s*Approved\s+(\$[\d.,]+)$/i);
     if (m) return { out: lang === 'ar' ? `المطالب به ${m[1]} · المعتمد ${m[2]}` : `Réclamé ${m[1]} · Agréé ${m[2]}`, ok: true };
 
-    m = trimmed.match(/^Advance\s+([+-]?\$[\d.,]+)$/i);
+    m = trimmed.match(/^Advance\s+([+-]?[+-]?\$[\d.,-]+)$/i);
     if (m) return { out: lang === 'ar' ? `سلفة ${m[1]}` : `Avance ${m[1]}`, ok: true };
 
     m = trimmed.match(/^(.+?)\s+Cutover Audit$/i);

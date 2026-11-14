@@ -43722,7 +43722,7 @@
                   <td>${relLink('employments', s.staff, s.staff, true)}</td>
                   <td>${esc(s.method || 'Cash')}</td>
                   <td class="mono sal-paid-earned-cell"${s.sal_status_tip ? ` data-ui-tip="${esc(s.sal_status_tip)}"` : ''}>${monthEarnHtml}</td>
-                  <td><span class="badge ${esc(s.sal_status_cls || 'badge-info')}"${s.sal_status_tip ? ` data-ui-tip="${esc(s.sal_status_tip)}"` : ''}>${esc(s.sal_status_lbl || '—')}</span></td>
+                  <td><div class="sal-status-cell-wrap"><span class="badge ${esc(s.sal_status_cls || 'badge-info')}"${s.sal_status_tip ? ` data-ui-tip="${esc(s.sal_status_tip)}"` : ''}>${esc(s.sal_status_lbl || '-')}</span>${(!s.voided && canViewPayrollDollarAmounts()) ? `<button type="button" class="hld-share-btn sal-receipt-inline-btn" data-sal-receipt-id="${esc(s.id)}" title="${esc(s.is_advance_sal ? 'Advance Receipt' : 'Payment Receipt')}" aria-label="${esc(s.is_advance_sal ? 'Advance Receipt' : 'Payment Receipt')}">${ic('receipt')}</button>` : ''}</div></td>
                   <td class="r"><strong>${fmtUSD(rowSalUsd, 2)}</strong></td>
                 </tr>`;
               }).join('') || emptyRow(8, 'No salary payments match filter')}
@@ -51279,6 +51279,543 @@
   window.MFG_EXTENDED_HELPER.computeShareData = computeHoldingExtendedShareData;
   window.MFG_EXTENDED_HELPER.buildShareText = buildHoldingExtendedShareText;
   window.MFG_EXTENDED_HELPER.openShareCard = openHoldingExtendedShareCard;
+
+  // ==================== 1-Tap Bilingual Salary / Advance Voucher Receipt ====================
+  const SAL_RECEIPT_LANG_KEY = 'mfg_sal_receipt_lang_v1';
+  const SAL_RECEIPT_LANGS = ['en_ar', 'en', 'ar', 'fr'];
+  const SAL_RECEIPT_MONTHS_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+  const SAL_RECEIPT_MONTHS_FR = ['Janv.', 'Fév.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'];
+  let _salReceiptState = null;
+  let _salReceiptKeyHandler = null;
+
+  function sanitizeOutwardReceiptText(str) {
+    return String(str == null ? '' : str)
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2192\u2190\u21D2\u21D0]/g, '->')
+      .replace(/\bTHEO\b/gi, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function formatSalaryReceiptMonthForLang(ymRaw, lang) {
+    const ym = String(ymRaw || '').slice(0, 7);
+    const mm = ym.match(/^(\d{4})-(\d{2})$/);
+    if (mm) {
+      const mIdx = Number(mm[2]) - 1;
+      if (mIdx >= 0 && mIdx < 12) {
+        if (lang === 'ar') return `${SAL_RECEIPT_MONTHS_AR[mIdx]} ${mm[1]}`;
+        if (lang === 'fr') return `${SAL_RECEIPT_MONTHS_FR[mIdx]} ${mm[1]}`;
+      }
+      const enLbl = formatPayrollMonthLabel(ym);
+      return (!enLbl || enLbl === '—' || enLbl === '\u2014') ? ym : enLbl;
+    }
+    const clean = sanitizeOutwardReceiptText(ymRaw || '');
+    return clean || (lang === 'ar' ? 'هذا الشهر' : (lang === 'fr' ? 'Ce mois' : 'Current Month'));
+  }
+
+  function resolveStaffReceiptPhone(staffName, companyName) {
+    const prof = (typeof resolveStaffMember === 'function') ? resolveStaffMember(staffName, companyName) : null;
+    const candidates = [];
+    if (prof) candidates.push(prof.phone, prof.mobile, prof.whatsapp);
+    const sk = norm(staffName);
+    const ck = norm(companyName);
+    const scanTable = rows => {
+      (rows || []).forEach(r => {
+        if (!r || r.voided) return;
+        const rn = norm(r.staff || r.driver || r.name);
+        if (rn !== sk) return;
+        if (ck && r.company && norm(r.company) !== ck) return;
+        candidates.push(r.phone, r.mobile, r.whatsapp);
+      });
+    };
+    scanTable(SEED.records && SEED.records.employments);
+    scanTable(SEED.records && SEED.records.drivers);
+    for (const raw of candidates) {
+      let digits = String(raw || '').trim().replace(/^00/, '').replace(/\D+/g, '');
+      if (!digits) continue;
+      if (/^0(3|70|71|76|78|79|81)\d{6}$/.test(digits)) {
+        digits = '961' + digits.replace(/^0/, '');
+      } else if (/^(3\d{6}|(70|71|76|78|79|81)\d{6})$/.test(digits)) {
+        digits = '961' + digits;
+      }
+      if (digits.length >= 8 && digits.length <= 15) return digits;
+    }
+    return '';
+  }
+
+  function buildSalaryVoucherReceiptContext(salRowOrId) {
+    if (!canAccessTable('salaries') || !canViewPayrollDollarAmounts()) return null;
+    let row = null;
+    if (salRowOrId && typeof salRowOrId === 'object') {
+      row = salRowOrId;
+    } else {
+      const targetId = String(salRowOrId || '').trim();
+      if (!targetId) return null;
+      row = ((SEED.records && SEED.records.salaries) || []).find(r => r && String(r.id) === targetId) || null;
+      if (!row && STATE.customRecords && Array.isArray(STATE.customRecords.salaries)) {
+        row = STATE.customRecords.salaries.find(r => r && String(r.id) === targetId) || null;
+      }
+    }
+    if (!row || row.voided) return null;
+    const isDemoCoScope = String(STATE.company || '') === DEMO_COMPANY_KEY;
+    if (row.company && !isDemoCoScope) {
+      const allowed = allowedCompanyNames();
+      const rcNorm = norm(row.company);
+      if (!allowed.some(c => norm(c) === rcNorm)) return null;
+    }
+    if (isOfficialScopeActive() && !isOfficialRecord(row, 'salaries')) return null;
+
+    const txDate = String(row.date || row.rep_date || '').slice(0, 10);
+    const ym = String(row.payroll_month || txDate.slice(0, 7)).slice(0, 7);
+    const fxRate = getLbpFxRate(txDate || todayISO(), 'LBP');
+    const amountUsd = round2(salaryVoucherUsd895(row, fxRate));
+    const usdPart = round2(Number(row.usd_amount != null ? row.usd_amount : (Number(row.lbp_amount || 0) > 0 ? 0 : amountUsd)));
+    const lbpPart = Math.round(Number(row.lbp_amount || 0));
+    const co = String(row.company || 'WTC').trim();
+    const staff = String(row.staff || row.name || '').trim() || 'Staff Member';
+    const posDate = txDate ? `${txDate.slice(0, 7)}-15` : todayISO();
+    const pos = computeStaffMonthPayrollPosition(staff, co, ym, posDate, null, true);
+
+    const sk = norm(staff);
+    const ck = norm(co);
+    const rowId = String(row.id || '');
+    const allMonthVouchers = ((SEED.records && SEED.records.salaries) || []).filter(s =>
+      s && !s.voided
+      && norm(s.staff) === sk
+      && (!ck || !s.company || norm(s.company) === ck)
+      && (!isOfficialScopeActive() || isOfficialRecord(s, 'salaries'))
+      && String(s.payroll_month || (s.date || '').slice(0, 7)).slice(0, 7) === ym
+    ).slice().sort((a, b) => {
+      const da = String(a.date || ''), db = String(b.date || '');
+      if (da !== db) return da < db ? -1 : 1;
+      const ia = String(a.id || ''), ib = String(b.id || '');
+      return ia === ib ? 0 : (ia < ib ? -1 : 1);
+    });
+    let cumThroughUsd = 0;
+    let foundSelf = false;
+    for (const s of allMonthVouchers) {
+      const sFx = getLbpFxRate(String(s.date || s.rep_date || txDate || todayISO()).slice(0, 10), 'LBP');
+      cumThroughUsd = round2(cumThroughUsd + salaryVoucherUsd895(s, sFx));
+      if (rowId && String(s.id || '') === rowId) {
+        foundSelf = true;
+        break;
+      }
+    }
+    if (!foundSelf) cumThroughUsd = round2(cumThroughUsd + amountUsd);
+    const paidSoFarUsd = pos ? round2(pos.paidSoFar) : cumThroughUsd;
+
+    const txYm = txDate.slice(0, 7);
+    const isFut = Boolean(ym && txYm && ym > txYm);
+    const hasContract = Boolean(pos && pos.hasContract);
+    const salaryPending = Boolean(pos && pos.hasContract && pos.salaryPending);
+    const isBonus = /^extra/i.test(String(row.type || row.status || '')) || Boolean(row.is_bonus);
+
+    let posture = 'partial';
+    if (isBonus) posture = 'bonus';
+    else if (isFut && hasContract) posture = 'future_advance';
+    else if (salaryPending) posture = 'salary_pending';
+    else if (!hasContract) posture = 'no_contract';
+    else if (cumThroughUsd > pos.monthNetEarned + 1 || pos.remainingNet < -0.01) posture = 'advance_over_net';
+    else if (Math.abs(pos.monthNetEarned - cumThroughUsd) <= 25 || pos.remainingNet <= 0.01) posture = 'settled';
+
+    const isAdvanceVoucher = !isBonus && (posture === 'future_advance' || posture === 'salary_pending' || posture === 'advance_over_net' || isFut);
+    const baseNetUsd = hasContract ? round2(pos.baseNet) : 0;
+    const monthNetUsd = hasContract ? round2(pos.monthNetEarned) : 0;
+    const refBasisUsd = isFut ? baseNetUsd : monthNetUsd;
+    const remainingAfterUsd = (hasContract && !salaryPending) ? round2(Math.max(0, refBasisUsd - cumThroughUsd)) : 0;
+    const advanceBalanceUsd = (salaryPending || !hasContract)
+      ? cumThroughUsd
+      : round2(Math.max(0, cumThroughUsd - refBasisUsd));
+    const totalRemainingNowUsd = (hasContract && !salaryPending) ? round2(Math.max(0, refBasisUsd - paidSoFarUsd)) : 0;
+
+    const companyLabel = sanitizeOutwardReceiptText(COMPANY_BU_MATCH[COMPANY_KEY_BY_NAME[co] || norm(co)] || co);
+    const paidDateDmy = txDate ? fmtDateDMY(txDate) : '-';
+    const phoneDigits = resolveStaffReceiptPhone(staff, co);
+    const methodLabel = sanitizeOutwardReceiptText(row.method || 'Cash');
+    const voucherRef = sanitizeOutwardReceiptText(row.name || row.id || `SAL-${txDate || 'VOUCHER'}`);
+
+    return {
+      id: rowId,
+      voucherRef,
+      company: co,
+      companyLabel,
+      staff: sanitizeOutwardReceiptText(staff),
+      txDate,
+      paidDateDmy,
+      ym,
+      ymLabelEn: formatSalaryReceiptMonthForLang(ym, 'en'),
+      ymLabelAr: formatSalaryReceiptMonthForLang(ym, 'ar'),
+      ymLabelFr: formatSalaryReceiptMonthForLang(ym, 'fr'),
+      method: methodLabel,
+      fxRate,
+      amountUsd,
+      usdPart,
+      lbpPart,
+      cumThroughUsd,
+      paidSoFarUsd,
+      hasContract,
+      salaryPending,
+      isFutureMonth: isFut,
+      isAdvanceVoucher,
+      posture,
+      baseNetUsd,
+      monthNetUsd,
+      refBasisUsd,
+      remainingAfterUsd,
+      advanceBalanceUsd,
+      totalRemainingNowUsd,
+      phoneDigits,
+      openLoanBalanceUsd: pos ? round2(pos.openLoanBalance || 0) : 0,
+    };
+  }
+
+  function formatSalaryAdvanceReceiptBlock(ctx, lang) {
+    const dualSplit = ctx.lbpPart > 0
+      ? ` (${fmtUSD(ctx.usdPart, 2)} USD + ${fmtNum(ctx.lbpPart, 0)} LL)`
+      : '';
+    const contractLineEn = !ctx.hasContract
+      ? 'Contract Status: No Active Contract on File'
+      : (ctx.salaryPending
+          ? 'Contract Status: Salary Pending (Final salary not assigned)'
+          : (ctx.isFutureMonth
+              ? `Contract Base (${ctx.ymLabelEn}): ${fmtUSD(ctx.baseNetUsd, 2)}`
+              : `Month Net Earned (${ctx.ymLabelEn}): ${fmtUSD(ctx.monthNetUsd, 2)}`));
+    const contractLineAr = !ctx.hasContract
+      ? 'حالة العقد: لا يوجد عقد نشط مسجّل'
+      : (ctx.salaryPending
+          ? 'حالة العقد: الراتب قيد التحديد'
+          : (ctx.isFutureMonth
+              ? `الراتب الأساسي (${ctx.ymLabelAr}): ${fmtUSD(ctx.baseNetUsd, 2)}`
+              : `صافي مستحق الشهر (${ctx.ymLabelAr}): ${fmtUSD(ctx.monthNetUsd, 2)}`));
+    const contractLineFr = !ctx.hasContract
+      ? 'Statut contrat : Aucun contrat actif'
+      : (ctx.salaryPending
+          ? 'Statut contrat : Salaire en attente'
+          : (ctx.isFutureMonth
+              ? `Salaire de base (${ctx.ymLabelFr}) : ${fmtUSD(ctx.baseNetUsd, 2)}`
+              : `Net acquis du mois (${ctx.ymLabelFr}) : ${fmtUSD(ctx.monthNetUsd, 2)}`));
+
+    let balanceLineEn = `Remaining Balance (${ctx.ymLabelEn}): ${fmtUSD(ctx.remainingAfterUsd, 2)}`;
+    let balanceLineAr = `الرصيد المتبقي (${ctx.ymLabelAr}): ${fmtUSD(ctx.remainingAfterUsd, 2)}`;
+    let balanceLineFr = `Solde restant (${ctx.ymLabelFr}) : ${fmtUSD(ctx.remainingAfterUsd, 2)}`;
+
+    if (ctx.posture === 'future_advance') {
+      balanceLineEn = ctx.advanceBalanceUsd > 0.01
+        ? `Advance Over Contract Base: +${fmtUSD(ctx.advanceBalanceUsd, 2)} (Remaining Base: $0.00)`
+        : `Remaining ${ctx.ymLabelEn} Base (Once Worked): ${fmtUSD(ctx.remainingAfterUsd, 2)}`;
+      balanceLineAr = ctx.advanceBalanceUsd > 0.01
+        ? `سلفة فوق أساسي العقد: +${fmtUSD(ctx.advanceBalanceUsd, 2)} (المتبقي من الأساسي: $0.00)`
+        : `المتبقي من أساسي ${ctx.ymLabelAr} عند العمل: ${fmtUSD(ctx.remainingAfterUsd, 2)}`;
+      balanceLineFr = ctx.advanceBalanceUsd > 0.01
+        ? `Avance au-dessus du salaire de base : +${fmtUSD(ctx.advanceBalanceUsd, 2)} (Reste base : $0.00)`
+        : `Base restante ${ctx.ymLabelFr} (après travail) : ${fmtUSD(ctx.remainingAfterUsd, 2)}`;
+    } else if (ctx.posture === 'salary_pending') {
+      balanceLineEn = `Advance Held Pending Final Salary: ${fmtUSD(ctx.advanceBalanceUsd, 2)}`;
+      balanceLineAr = `إجمالي السلفة لحين تثبيت الراتب النهائي: ${fmtUSD(ctx.advanceBalanceUsd, 2)}`;
+      balanceLineFr = `Avance retenue en attente du salaire final : ${fmtUSD(ctx.advanceBalanceUsd, 2)}`;
+    } else if (ctx.posture === 'advance_over_net') {
+      balanceLineEn = `Advance / Overpayment Above Net: +${fmtUSD(ctx.advanceBalanceUsd, 2)} (Remaining Due: $0.00)`;
+      balanceLineAr = `سلفة / دفعة زائدة فوق الصافي: +${fmtUSD(ctx.advanceBalanceUsd, 2)} (المتبقي المستحق: $0.00)`;
+      balanceLineFr = `Avance / trop-perçu au-dessus du net : +${fmtUSD(ctx.advanceBalanceUsd, 2)} (Reste dû : $0.00)`;
+    } else if (ctx.posture === 'no_contract') {
+      balanceLineEn = `Total Paid for ${ctx.ymLabelEn} (Uncontracted): ${fmtUSD(ctx.cumThroughUsd, 2)}`;
+      balanceLineAr = `إجمالي المدفوع لشهر ${ctx.ymLabelAr} (بدون عقد): ${fmtUSD(ctx.cumThroughUsd, 2)}`;
+      balanceLineFr = `Total payé pour ${ctx.ymLabelFr} (hors contrat) : ${fmtUSD(ctx.cumThroughUsd, 2)}`;
+    }
+
+    if (lang === 'ar') {
+      const titleAr = ctx.isAdvanceVoucher ? 'سند سلفة راتب' : 'إيصال دفعة راتب';
+      const moLabelAr = ctx.isFutureMonth ? 'شهر السلفة' : 'شهر الراتب';
+      return [
+        `${ctx.companyLabel} - ${titleAr}`,
+        `الموظف: ${ctx.staff}`,
+        `المرجع: ${ctx.voucherRef}`,
+        `تاريخ الدفع: ${ctx.paidDateDmy}`,
+        `${moLabelAr}: ${ctx.ymLabelAr}`,
+        `طريقة الدفع: ${ctx.method}`,
+        `المبلغ المدفوع: ${fmtUSD(ctx.amountUsd, 2)}${dualSplit}`,
+        `المدفوع التراكمي للشهر: ${fmtUSD(ctx.cumThroughUsd, 2)}`,
+        contractLineAr,
+        balanceLineAr,
+      ].join('\n');
+    }
+    if (lang === 'fr') {
+      const titleFr = ctx.isAdvanceVoucher ? 'Reçu d\'avance sur salaire' : 'Reçu de paiement de salaire';
+      const moLabelFr = ctx.isFutureMonth ? 'Mois de l\'avance' : 'Mois de paie';
+      return [
+        `${ctx.companyLabel} - ${titleFr}`,
+        `Collaborateur : ${ctx.staff}`,
+        `Référence : ${ctx.voucherRef}`,
+        `Date de paiement : ${ctx.paidDateDmy}`,
+        `${moLabelFr} : ${ctx.ymLabelFr}`,
+        `Mode de règlement : ${ctx.method}`,
+        `Montant payé : ${fmtUSD(ctx.amountUsd, 2)}${dualSplit}`,
+        `Cumul payé sur le mois : ${fmtUSD(ctx.cumThroughUsd, 2)}`,
+        contractLineFr,
+        balanceLineFr,
+      ].join('\n');
+    }
+    const titleEn = ctx.isAdvanceVoucher ? 'Salary Advance Voucher Receipt' : 'Salary Payment Voucher Receipt';
+    const moLabelEn = ctx.isFutureMonth ? 'Advance Month' : 'Payroll Month';
+    return [
+      `${ctx.companyLabel} - ${titleEn}`,
+      `Staff: ${ctx.staff}`,
+      `Ref: ${ctx.voucherRef}`,
+      `Paid Date: ${ctx.paidDateDmy}`,
+      `${moLabelEn}: ${ctx.ymLabelEn}`,
+      `Method: ${ctx.method}`,
+      `Amount Paid: ${fmtUSD(ctx.amountUsd, 2)}${dualSplit}`,
+      `Cumulative Month Paid: ${fmtUSD(ctx.cumThroughUsd, 2)}`,
+      contractLineEn,
+      balanceLineEn,
+    ].join('\n');
+  }
+
+  function formatSalaryAdvanceReceiptMessage(ctx, langMode = 'en_ar') {
+    if (!ctx) return '';
+    const mode = langMode === 'bi' ? 'en_ar' : langMode;
+    let raw = '';
+    if (mode === 'en' || mode === 'ar' || mode === 'fr') {
+      raw = formatSalaryAdvanceReceiptBlock(ctx, mode);
+    } else {
+      raw = `${formatSalaryAdvanceReceiptBlock(ctx, 'en')}\n\n---\n\n${formatSalaryAdvanceReceiptBlock(ctx, 'ar')}`;
+    }
+    return sanitizeOutwardReceiptText(raw);
+  }
+
+  function renderSalaryReceiptPrintSlipHtml(ctx) {
+    const balanceLbl = ctx.advanceBalanceUsd > 0.01
+      ? 'Advance Balance / رصيد السلفة'
+      : 'Remaining Balance / الرصيد المتبقي';
+    const balanceVal = ctx.advanceBalanceUsd > 0.01
+      ? `+${fmtUSD(ctx.advanceBalanceUsd, 2)}`
+      : fmtUSD(ctx.remainingAfterUsd, 2);
+    const basisLbl = ctx.salaryPending
+      ? 'Contract Status / حالة العقد'
+      : (!ctx.hasContract ? 'Contract Status / حالة العقد' : (ctx.isFutureMonth ? 'Contract Base / الأساسي التعاقدي' : 'Month Net Earned / صافي الشهر'));
+    const basisVal = !ctx.hasContract
+      ? sanitizeOutwardReceiptText('No Active Contract - بدون عقد')
+      : (ctx.salaryPending ? sanitizeOutwardReceiptText('Salary Pending - الراتب قيد التحديد') : fmtUSD(ctx.refBasisUsd, 2));
+    return `
+      <div class="sal-slip-head">
+        <div>
+          <strong style="font-size:15px">${esc(ctx.companyLabel)}</strong>
+          <div style="font-size:12px;color:#475569">${esc(ctx.isAdvanceVoucher ? 'Salary Advance Voucher - سند سلفة راتب' : 'Salary Payment Receipt - إيصال دفعة راتب')}</div>
+        </div>
+        <div class="mono" style="text-align:right;font-size:11.5px">
+          <div>${esc(ctx.voucherRef)}</div>
+          <div>${esc(ctx.paidDateDmy)}</div>
+        </div>
+      </div>
+      <div class="sal-slip-grid">
+        <div class="sal-slip-cell"><span>Staff Member / الموظف</span><b>${esc(ctx.staff)}</b></div>
+        <div class="sal-slip-cell"><span>${ctx.isFutureMonth ? 'Advance Month / شهر السلفة' : 'Payroll Month / شهر الراتب'}</span><b>${esc(ctx.ymLabelEn)} - ${esc(ctx.ymLabelAr)}</b></div>
+        <div class="sal-slip-cell"><span>Amount Paid / المبلغ المدفوع</span><b class="mono">${esc(fmtUSD(ctx.amountUsd, 2))}${ctx.lbpPart > 0 ? esc(` (${fmtUSD(ctx.usdPart, 2)} + ${fmtNum(ctx.lbpPart, 0)} LL)`) : ''}</b></div>
+        <div class="sal-slip-cell"><span>Payment Method / طريقة الدفع</span><b>${esc(ctx.method)}</b></div>
+        <div class="sal-slip-cell"><span>${esc(basisLbl)}</span><b class="mono">${esc(basisVal)}</b></div>
+        <div class="sal-slip-cell"><span>Cumulative Paid / المدفوع التراكمي</span><b class="mono">${esc(fmtUSD(ctx.cumThroughUsd, 2))}</b></div>
+        <div class="sal-slip-cell" style="grid-column:1 / -1"><span>${esc(balanceLbl)}</span><b class="mono">${esc(balanceVal)}</b></div>
+      </div>
+      <div class="sal-slip-sigs">
+        <div class="sal-slip-sigbox">Prepared By / أُعد بواسطة</div>
+        <div class="sal-slip-sigbox">Staff Signature / توقيع المستلم</div>
+      </div>
+    `;
+  }
+
+  function closeSalaryAdvanceReceiptModal() {
+    const modal = $('salReceiptModal');
+    if (modal) modal.hidden = true;
+    document.body.classList.remove('printing-sal-receipt');
+    if (_salReceiptKeyHandler) {
+      document.removeEventListener('keydown', _salReceiptKeyHandler, true);
+      _salReceiptKeyHandler = null;
+    }
+    const rf = _salReceiptState && _salReceiptState.returnFocus;
+    _salReceiptState = null;
+    if (rf && typeof rf.focus === 'function' && document.contains(rf)) {
+      try { rf.focus({ preventScroll: true }); } catch (_) {}
+    }
+  }
+
+  function salReceiptSavedLang() {
+    try {
+      const v = localStorage.getItem(SAL_RECEIPT_LANG_KEY);
+      if (SAL_RECEIPT_LANGS.includes(v)) return v;
+    } catch (_) {}
+    return 'en_ar';
+  }
+
+  function renderSalaryAdvanceReceiptModal() {
+    const modal = $('salReceiptModal');
+    const st = _salReceiptState;
+    if (!modal || !st) return;
+    const ctx = st.ctx;
+    const text = formatSalaryAdvanceReceiptMessage(ctx, st.lang);
+    const waPrefix = ctx.phoneDigits ? `https://wa.me/${ctx.phoneDigits}?text=` : 'https://wa.me/?text=';
+    const waHref = `${waPrefix}${encodeURIComponent(text)}`;
+    const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+    const langBtn = (key, label) => `<button type="button" class="hld-share-lang-btn ${st.lang === key ? 'active' : ''}" data-sal-receipt-lang="${key}" aria-pressed="${st.lang === key ? 'true' : 'false'}" data-no-i18n="1">${label}</button>`;
+
+    const kpiMonthLbl = ctx.isFutureMonth ? 'Advance Month' : 'Payroll Month';
+    const kpiBasisLbl = !ctx.hasContract
+      ? 'Contract Status'
+      : (ctx.salaryPending ? 'Contract Status' : (ctx.isFutureMonth ? 'Contract Base' : 'Month Net Earned'));
+    const kpiBasisVal = !ctx.hasContract
+      ? 'No Active Contract'
+      : (ctx.salaryPending ? 'Salary Pending' : fmtUSD(ctx.refBasisUsd, 2));
+    const kpiBalLbl = ctx.advanceBalanceUsd > 0.01 ? 'Advance Balance' : 'Remaining Balance';
+    const kpiBalVal = ctx.advanceBalanceUsd > 0.01
+      ? `+${fmtUSD(ctx.advanceBalanceUsd, 2)}`
+      : (ctx.salaryPending ? fmtUSD(ctx.cumThroughUsd, 2) : fmtUSD(ctx.remainingAfterUsd, 2));
+    const kpiBalCls = ctx.advanceBalanceUsd > 0.01 ? 'is-brass' : (ctx.remainingAfterUsd <= 0.01 ? 'is-good' : '');
+
+    modal.innerHTML = `
+      <div class="modal-card hld-share-card sal-receipt-card" role="dialog" aria-modal="true" aria-labelledby="salReceiptTitle">
+        <div class="modal-header">
+          <div>
+            <span class="modal-eyebrow">${esc(ctx.isAdvanceVoucher ? 'Advance Receipt' : 'Salary / Advance Voucher')}</span>
+            <h2 id="salReceiptTitle" data-no-i18n="1">${esc(ctx.staff)} (${esc(ctx.company)})</h2>
+          </div>
+          <div class="modal-header-actions">
+            <button type="button" class="modal-close-btn" id="salReceiptCloseBtn" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="hld-share-kpis">
+            <div class="hld-share-kpi is-brass"><span>Amount Paid</span><b class="mono" data-no-i18n="1">${esc(fmtUSD(ctx.amountUsd, 2))}</b></div>
+            <div class="hld-share-kpi"><span>${esc(kpiMonthLbl)}</span><b class="mono" data-no-i18n="1">${esc(ctx.ymLabelEn)}</b></div>
+            <div class="hld-share-kpi"><span>${esc(kpiBasisLbl)}</span><b class="mono"${(!ctx.hasContract || ctx.salaryPending) ? '' : ' data-no-i18n="1"'}>${esc(kpiBasisVal)}</b></div>
+            <div class="hld-share-kpi ${kpiBalCls}"><span>${esc(kpiBalLbl)}</span><b class="mono" data-no-i18n="1">${esc(kpiBalVal)}</b></div>
+          </div>
+          <div class="hld-share-langbar">
+            <span class="hld-share-lbl">Message Language</span>
+            <div class="hld-share-seg" role="group" aria-label="Message Language">
+              ${langBtn('en_ar', 'EN + عربي')}
+              ${langBtn('en', 'EN')}
+              ${langBtn('ar', 'عربي')}
+              ${langBtn('fr', 'FR')}
+            </div>
+          </div>
+          <textarea id="salReceiptText" class="hld-share-text" rows="12" dir="${st.lang === 'ar' ? 'rtl' : 'auto'}" data-no-i18n="1" spellcheck="false" aria-label="Voucher Summary">${esc(text)}</textarea>
+          <div class="sal-receipt-phone-note">
+            <span>${esc('Paid Date')}: <b class="mono" data-no-i18n="1">${esc(ctx.paidDateDmy)}</b> · ${esc('Payment Method')}: <b data-no-i18n="1">${esc(ctx.method)}</b> · ${esc('Cumulative Paid')}: <b class="mono" data-no-i18n="1">${esc(fmtUSD(ctx.cumThroughUsd, 2))}</b></span>
+            <span>${ctx.phoneDigits ? `${esc('Recipient Phone')}: <b class="mono" data-no-i18n="1">+${esc(ctx.phoneDigits)}</b>` : esc('No phone on file (WhatsApp opens contact picker)')}</span>
+          </div>
+          <div class="hld-share-actions">
+            <button type="button" class="btn btn-ghost-bar" id="salReceiptPrintBtn">${ic('receipt')} Print Voucher</button>
+            <button type="button" class="btn btn-ghost-bar" id="salReceiptCopyBtn">${ic('copy')} Copy Receipt</button>
+            ${canNativeShare ? `<button type="button" class="btn btn-ghost-bar" id="salReceiptNativeBtn">${ic('external')} Share Receipt</button>` : ''}
+            <a class="btn btn-primary" id="salReceiptWaLink" href="${esc(waHref)}" target="_blank" rel="noopener noreferrer">${ic('send_msg')} Open WhatsApp</a>
+          </div>
+          <div id="salReceiptPrintSlip" class="sal-receipt-print-slip" data-no-i18n="1">${renderSalaryReceiptPrintSlipHtml(ctx)}</div>
+        </div>
+      </div>
+    `;
+
+    const ta = $('salReceiptText');
+    const wa = $('salReceiptWaLink');
+    if (ta && wa) {
+      ta.addEventListener('input', () => {
+        const cleanVal = sanitizeOutwardReceiptText(ta.value);
+        wa.setAttribute('href', `${waPrefix}${encodeURIComponent(cleanVal)}`);
+      });
+    }
+    const closeBtn = $('salReceiptCloseBtn');
+    if (closeBtn) closeBtn.addEventListener('click', closeSalaryAdvanceReceiptModal);
+    modal.querySelectorAll('[data-sal-receipt-lang]').forEach(b => b.addEventListener('click', () => {
+      const nextLang = b.getAttribute('data-sal-receipt-lang');
+      if (!SAL_RECEIPT_LANGS.includes(nextLang) || !_salReceiptState) return;
+      _salReceiptState.lang = nextLang;
+      try { localStorage.setItem(SAL_RECEIPT_LANG_KEY, nextLang); } catch (_) {}
+      renderSalaryAdvanceReceiptModal();
+      const again = modal.querySelector(`[data-sal-receipt-lang="${nextLang}"]`);
+      if (again) again.focus({ preventScroll: true });
+    }));
+    const printBtn = $('salReceiptPrintBtn');
+    if (printBtn) {
+      printBtn.addEventListener('click', () => {
+        document.body.classList.add('printing-sal-receipt');
+        try { window.print(); } catch (_) {}
+        setTimeout(() => document.body.classList.remove('printing-sal-receipt'), 500);
+      });
+    }
+    const copyBtn = $('salReceiptCopyBtn');
+    if (copyBtn && ta) {
+      copyBtn.addEventListener('click', () => {
+        const done = () => toast('Receipt copied to clipboard', 'ok');
+        const cleanCopy = sanitizeOutwardReceiptText(ta.value);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(cleanCopy).then(done).catch(() => {
+            ta.focus({ preventScroll: true });
+            ta.select();
+          });
+        } else {
+          ta.focus({ preventScroll: true });
+          ta.select();
+        }
+      });
+    }
+    const nativeBtn = $('salReceiptNativeBtn');
+    if (nativeBtn && ta) {
+      nativeBtn.addEventListener('click', () => {
+        try {
+          const p = navigator.share({ text: sanitizeOutwardReceiptText(ta.value) });
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        } catch (_) {}
+      });
+    }
+    if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(modal); } catch (_) {}
+    }
+  }
+
+  function openSalaryAdvanceReceiptModal(salRowOrId, opts = {}) {
+    const ctx = buildSalaryVoucherReceiptContext(salRowOrId);
+    if (!ctx) return false;
+    const reqLang = opts && SAL_RECEIPT_LANGS.includes(opts.lang) ? opts.lang : salReceiptSavedLang();
+    _salReceiptState = { ctx, lang: reqLang, returnFocus: (opts && opts.returnFocus) || document.activeElement || null };
+    let modal = $('salReceiptModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'salReceiptModal';
+      modal.className = 'modal-backdrop';
+      modal.hidden = true;
+      document.body.appendChild(modal);
+      modal.addEventListener('click', e => { if (e.target === modal) closeSalaryAdvanceReceiptModal(); });
+    }
+    renderSalaryAdvanceReceiptModal();
+    modal.hidden = false;
+    if (_salReceiptKeyHandler) document.removeEventListener('keydown', _salReceiptKeyHandler, true);
+    _salReceiptKeyHandler = e => {
+      const m = $('salReceiptModal');
+      if (!m || m.hidden) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && !m.contains(active)) return;
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        e.preventDefault();
+        closeSalaryAdvanceReceiptModal();
+        return;
+      }
+      if (e.key === 'Tab') {
+        const focusables = Array.from(m.querySelectorAll('button, [href], textarea, input, select, [tabindex]:not([tabindex="-1"])'))
+          .filter(el => !el.disabled && el.offsetParent !== null);
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && (active === first || !m.contains(active))) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (active === last || !m.contains(active))) { e.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener('keydown', _salReceiptKeyHandler, true);
+    const focusEl = $('salReceiptCloseBtn');
+    if (focusEl) {
+      try { focusEl.focus({ preventScroll: true }); } catch (_) {}
+    }
+    return true;
+  }
 
   function getIndAssetSelection(scopeKey) {
     return (STATE.indAssetFilter && STATE.indAssetFilter[scopeKey]) || 'ALL';
@@ -103344,6 +103881,12 @@
       }
       if (backpayHit) toast(backpayToastText(backpayHit, record.staff || record.name), 'warn');
       renderApp();
+      if (!isEditingExisting && !isUpdatingPending && crKey === 'salaries' && record && !record.voided && canViewPayrollDollarAmounts()) {
+        const _salRecCtx = buildSalaryVoucherReceiptContext(record);
+        if (_salRecCtx && _salRecCtx.isAdvanceVoucher) {
+          openSalaryAdvanceReceiptModal(record);
+        }
+      }
       const rollbackSaveOnSameName = (tblName, conflictId, errObj) => {
         const qTbl = (errObj && errObj.table) || tblName;
         const qId = (errObj && (errObj.conflictId || errObj.id)) || conflictId;
@@ -104187,6 +104730,20 @@
         printThermalBtn.onclick = null;
       }
     }
+    const salReceiptBtn = $('modalSalaryReceiptBtn');
+    if (salReceiptBtn) {
+      const canSalReceipt = Boolean(editTargetRow && editTargetCrKey === 'salaries' && !editTargetRow.voided && canViewPayrollDollarAmounts());
+      if (canSalReceipt) {
+        salReceiptBtn.hidden = false;
+        salReceiptBtn.onclick = () => {
+          const latestRec = resolveInspectorRecord('salaries', editTargetRow.id) || editTargetRow;
+          openSalaryAdvanceReceiptModal(latestRec, { returnFocus: salReceiptBtn });
+        };
+      } else {
+        salReceiptBtn.hidden = true;
+        salReceiptBtn.onclick = null;
+      }
+    }
     if (tabsWrap) tabsWrap.hidden = Boolean(pendingTargetRow || (editTargetRow && (form === 'site' || form === 'region')));
     const tabPermCheck = fId => ((editTargetRow && fId === form) || (opts && opts.indQuickTpl && fId === form))
       ? true
@@ -104734,6 +105291,8 @@
     if (openInspBtn) { openInspBtn.hidden = true; openInspBtn.onclick = null; }
     const printThermalBtn = $('modalPrintThermalBtn');
     if (printThermalBtn) { printThermalBtn.hidden = true; printThermalBtn.onclick = null; }
+    const salReceiptBtn = $('modalSalaryReceiptBtn');
+    if (salReceiptBtn) { salReceiptBtn.hidden = true; salReceiptBtn.onclick = null; }
     const tw = $('modalTabs');
     if (tw) tw.hidden = false;
     const modal = $('entryModal');
@@ -146573,6 +147132,11 @@
       ev.preventDefault();
       openHoldingExtendedShareCard(btn.getAttribute('data-hld-share-card') || '', btn);
     }));
+    container.querySelectorAll('[data-sal-receipt-id]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      openSalaryAdvanceReceiptModal(btn.getAttribute('data-sal-receipt-id') || '', { returnFocus: btn });
+    }));
     container.querySelectorAll('[data-cf-focus-party]').forEach(el => el.addEventListener('click', ev => {
       if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('[data-hld-share-card]')) return;
       ev.stopPropagation();
@@ -148203,13 +148767,14 @@
   }
 
   function setView(view, opts = {}) {
+    const _scrollPaySal = (view === 'payroll_salaries');
     if (view === 'cashflow_analytics') view = 'cashflow';
     if (view === 'sales_vat') view = 'customers';
     if (view === 'sales_analytics') view = 'sales';
     if (view === 'raw_analytics') view = 'raw';
     if (view === 'expenses_analytics') view = 'expenses';
     if (view === 'fleet_analytics') view = 'fleet_drivers';
-    if (view === 'payroll_analytics') view = 'payroll';
+    if (view === 'payroll_analytics' || view === 'payroll_salaries') view = 'payroll';
     if (view === 'jv') view = 'raw_jv';
     if (!VIEW_TITLES[view]) view = 'overview';
     view = resolveIndustryCompatibleView(view, getActiveIndustry(STATE.company));
@@ -148295,6 +148860,10 @@
     const ws = $('workspace');
     if (ws && ws.scrollTop !== 0) ws.scrollTop = 0;
     renderApp();
+    if (_scrollPaySal) {
+      const pPanel = $('paySalPanel');
+      if (pPanel && typeof scrollWorkspaceTo === 'function') scrollWorkspaceTo(pPanel, 10);
+    }
     if (STATE.authed && !IS_AUTOMATED_TEST && Date.now() - _lastCloudSyncStartedAt > 8000) {
       syncWithCloud(false);
     }
@@ -150306,7 +150875,11 @@
       getEffectiveHubPagePolicy: u => getEffectiveHubPagePolicy(u || activeUser()),
       getEffectivePermissions: u => getEffectivePermissions(u || activeUser()),
       getState: () => STATE,
-      selectSeatForEdit: (id, opts) => selectSeatForEdit(id, opts)
+      selectSeatForEdit: (id, opts) => selectSeatForEdit(id, opts),
+      buildSalaryVoucherReceiptContext: rowOrId => buildSalaryVoucherReceiptContext(rowOrId),
+      formatSalaryAdvanceReceiptMessage: (ctx, langMode) => formatSalaryAdvanceReceiptMessage(ctx, langMode),
+      openSalaryAdvanceReceiptModal: (rowOrId, opts = {}) => openSalaryAdvanceReceiptModal(rowOrId, opts),
+      closeSalaryAdvanceReceiptModal: () => closeSalaryAdvanceReceiptModal()
     };
 
     window.MFG_KIOSK_TEST = {

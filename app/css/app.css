@@ -37819,6 +37819,124 @@ video::-webkit-media-controls-start-playback-button {
   .hld-share-actions > * { flex: 1 1 100%; justify-content: center; }
 }
 
+/* ==================== 1-Tap Bilingual Advance / Salary Voucher Receipt ==================== */
+.sal-status-cell-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  max-width: 100%;
+}
+.sal-receipt-inline-btn {
+  width: 26px;
+  height: 26px;
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+}
+.sal-receipt-inline-btn:hover,
+.sal-receipt-inline-btn:focus-visible {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+  color: var(--brass-strong);
+}
+@media (pointer: coarse) {
+  .sal-receipt-inline-btn {
+    width: 36px;
+    height: 36px;
+  }
+}
+.sal-receipt-phone-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.sal-receipt-print-slip {
+  display: none;
+}
+@media print {
+  body.printing-sal-receipt .app-shell,
+  body.printing-sal-receipt .cockpit-banner,
+  body.printing-sal-receipt .modal-backdrop:not(#salReceiptModal),
+  body.printing-sal-receipt #salReceiptModal .modal-header,
+  body.printing-sal-receipt #salReceiptModal .hld-share-kpis,
+  body.printing-sal-receipt #salReceiptModal .hld-share-langbar,
+  body.printing-sal-receipt #salReceiptModal .hld-share-text,
+  body.printing-sal-receipt #salReceiptModal .sal-receipt-phone-note,
+  body.printing-sal-receipt #salReceiptModal .hld-share-actions {
+    display: none !important;
+  }
+  body.printing-sal-receipt #salReceiptModal {
+    position: static !important;
+    display: block !important;
+    background: #FFFFFF !important;
+    padding: 0 !important;
+  }
+  body.printing-sal-receipt #salReceiptModal .modal-card {
+    width: 100% !important;
+    max-width: none !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: #FFFFFF !important;
+    color: #111827 !important;
+    padding: 0 !important;
+  }
+  body.printing-sal-receipt #salReceiptModal .modal-body {
+    padding: 0 !important;
+  }
+  body.printing-sal-receipt #salReceiptPrintSlip {
+    display: block !important;
+    background: #FFFFFF !important;
+    color: #111827 !important;
+    padding: 16px;
+    font-family: system-ui, -apple-system, sans-serif;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+  }
+  .sal-slip-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    border-bottom: 2px solid #111827;
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+  }
+  .sal-slip-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+    margin-bottom: 14px;
+    font-size: 12.5px;
+  }
+  .sal-slip-cell {
+    border-bottom: 1px dashed #cbd5e1;
+    padding-bottom: 4px;
+  }
+  .sal-slip-cell > span {
+    display: block;
+    font-size: 10.5px;
+    color: #475569;
+  }
+  .sal-slip-sigs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+    margin-top: 24px;
+    padding-top: 12px;
+    font-size: 11.5px;
+  }
+  .sal-slip-sigbox {
+    border-top: 1px solid #334155;
+    padding-top: 4px;
+  }
+}
+
 /* ==================== Related Agreement count pills on sibling-industry register rows ==================== */
 .ind-agr-pill {
   display: inline-flex;
