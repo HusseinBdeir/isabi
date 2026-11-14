@@ -65,6 +65,7 @@ jobs:
           node --check build/_release_log.mjs
           node --no-warnings build/verify_release_log_sync.mjs
           python3 build/verify_deploy_cli.py
+          python3 build/verify_version_claims.py
           python3 build/verify_release_lock.py
           node --check build/verify_cloudflare_edge.mjs
           # The log goes outside the checkout: everything in the checkout is what gets deployed.

@@ -48948,6 +48948,168 @@
     };
   }
 
+  // Chromatic-only palette for sibling-industry hub footer charts (no #0F1F3D / black bars).
+  const SIB_CHART_CLR = {
+    blue: '#2356A8',
+    green: '#1F7A4C',
+    gold: '#C0892F',
+    steel: '#4A90D9',
+    copper: '#C96A22'
+  };
+  const SIB_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  function renderSiblingHubChartsRow(opts) {
+    const o = opts || {};
+    const P = window.MFG_PBI || {};
+    const rawPool = Array.isArray(o.rows)
+      ? o.rows
+      : (o.sortView && Array.isArray(_tablePoolCache[o.sortView]))
+        ? _tablePoolCache[o.sortView]
+        : (o.panelId && _regPanelRows[o.panelId] && Array.isArray(_regPanelRows[o.panelId].all))
+          ? _regPanelRows[o.panelId].all
+          : [];
+    const viewName = o.view || o.panelId || o.sortView || '';
+    const sortView = o.sortView || '';
+    const fmtKind = (kind, v) => {
+      if (kind === 'count' || kind === 'num' || kind === 'qty') return fmtNum(v, 0);
+      if (kind === 'hours') return `${fmtNum(v, 1)} h`;
+      if (kind === 'litres') return `${fmtNum(v, 0)} L`;
+      if (kind === 'kwh') return `${fmtNum(v, 0)} kWh`;
+      if (kind === 'pct') return `${Number(v || 0).toFixed(1)}%`;
+      if (kind === 'lbp') return `${fmtNum(v, 0)} LL`;
+      return fmtUSD(v, 0);
+    };
+    const isMoneyKind = kind => !kind || kind === 'usd' || kind === 'money';
+    const readVal = (r, spec) => {
+      if (!r) return 0;
+      if (typeof spec.getVal === 'function') return Number(spec.getVal(r)) || 0;
+      if (spec.valKey) {
+        const raw = typeof regColVal === 'function' ? regColVal(r, spec.valKey, viewName, sortView) : r[spec.valKey];
+        return Number(raw) || 0;
+      }
+      return 1;
+    };
+    const readGroup = (r, key) => {
+      if (!r || !key) return '';
+      const raw = typeof regColVal === 'function' ? regColVal(r, key, viewName, sortView) : r[key];
+      return typeof regDrillGroupLabel === 'function'
+        ? regDrillGroupLabel(raw)
+        : (raw == null || !String(raw).trim() ? 'Blank' : String(raw).trim());
+    };
+    const readMonthYm = (r, dateKey) => {
+      if (!r) return '';
+      const raw = typeof dateKey === 'function'
+        ? dateKey(r)
+        : (typeof regColVal === 'function' ? regColVal(r, dateKey || 'date', viewName, sortView) : r[dateKey || 'date']);
+      const s = String(raw || '').trim();
+      const iso = s.match(/^(\d{4})-(\d{2})/);
+      if (iso) return `${iso[1]}-${iso[2]}`;
+      const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}`;
+      return '';
+    };
+    const fmtYmLabel = ym => {
+      const m = String(ym || '').match(/^(\d{4})-(\d{2})$/);
+      if (!m) return ym;
+      const mi = Math.max(0, Math.min(11, Number(m[2]) - 1));
+      return `${SIB_MONTH_NAMES[mi]} ${m[1]}`;
+    };
+
+    const buildPanel = spec => {
+      if (!spec) return '';
+      const title = spec.title || 'Breakdown';
+      const sub = spec.sub || '';
+      const color = SIB_CHART_CLR[spec.color] || spec.color || SIB_CHART_CLR.blue;
+      const fmt = v => fmtKind(spec.fmt, v);
+      let body = '';
+      if (!rawPool.length) {
+        body = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:12px">No records in active filter</div>`;
+      } else if (spec.mode === 'month') {
+        const byYm = new Map();
+        rawPool.forEach(r => {
+          const ym = readMonthYm(r, spec.dateKey || 'date');
+          if (!ym) return;
+          const cur = byYm.get(ym) || { ym, val: 0, count: 0 };
+          cur.val += readVal(r, spec);
+          cur.count += 1;
+          byYm.set(ym, cur);
+        });
+        const months = Array.from(byYm.values())
+          .filter(m => Math.abs(m.val) > 0.005 || spec.allowZero)
+          .sort((a, b) => a.ym.localeCompare(b.ym))
+          .slice(-(spec.maxBars || 14))
+          .map(m => ({ label: fmtYmLabel(m.ym), val: round2(m.val), count: m.count }));
+        const hasNeg = months.some(m => m.val < -0.005);
+        if (!months.length) {
+          body = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:12px">No dated records in active filter</div>`;
+        } else if (hasNeg && typeof P.buildHorizontalBarChart === 'function') {
+          body = P.buildHorizontalBarChart(months, 'label', 'val', fmt, {
+            maxItems: spec.maxBars || 14,
+            sort: false,
+            rank: false,
+            color,
+            valLabel: spec.valLabel || 'Monthly Total'
+          });
+        } else if (typeof P.buildClusteredColumnSvg === 'function') {
+          body = P.buildClusteredColumnSvg(months, [
+            { key: 'val', label: spec.valLabel || 'Monthly Total', color, fmt: v => fmt(v) }
+          ], {
+            labelKey: 'label',
+            isMoney: isMoneyKind(spec.fmt),
+            decimals: 0,
+            maxBars: spec.maxBars || 14,
+            height: 215
+          });
+        }
+      } else {
+        const byCat = new Map();
+        rawPool.forEach(r => {
+          const lbl = readGroup(r, spec.groupKey);
+          if (!lbl) return;
+          const cur = byCat.get(lbl) || { label: lbl, val: 0, count: 0 };
+          cur.val += readVal(r, spec);
+          cur.count += 1;
+          byCat.set(lbl, cur);
+        });
+        const items = Array.from(byCat.values()).map(it => ({
+          label: it.label,
+          val: round2(it.val),
+          sub: `${fmtNum(it.count, 0)} ${it.count === 1 ? 'row' : 'rows'}`
+        }));
+        if (typeof P.buildHorizontalBarChart === 'function') {
+          body = P.buildHorizontalBarChart(items, 'label', 'val', fmt, {
+            maxItems: spec.maxItems || 10,
+            allowZero: Boolean(spec.allowZero),
+            sortAbs: Boolean(spec.sortAbs),
+            subKey: 'sub',
+            color,
+            valLabel: spec.valLabel || 'Total'
+          });
+        }
+      }
+      if (!body) body = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:12px">No chart data available</div>`;
+      return `
+        <div class="pbi-panel">
+          <div class="pbi-panel-hdr">
+            <div>
+              <div class="pbi-panel-title">${esc(title)}</div>
+              ${sub ? `<span class="pbi-panel-sub">${esc(sub)}</span>` : ''}
+            </div>
+          </div>
+          ${body}
+        </div>
+      `;
+    };
+
+    const marginBottom = o.marginBottom != null ? o.marginBottom : 14;
+    return `
+      <div class="pbi-grid-2" id="${esc(o.id)}" style="margin-bottom:${marginBottom}px">
+        ${buildPanel(o.left)}
+        ${buildPanel(o.right)}
+      </div>
+    `;
+  }
+
   function renderHoldingConsolidation(submode = 'main') {
     const u = activeUser();
     const rollup = computeEnterpriseRollup();
@@ -49045,16 +49207,6 @@
         </div>
       </div>
 
-      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-        <div class="panel-head" style="margin-bottom:10px">
-          <div class="panel-title"><span>${ic('hld_consolidation')} 6-INDUSTRY REVENUE, OPERATING PROFIT &amp; INTERCOMPANY ELIMINATION BRIDGE</span></div>
-          <span class="panel-meta">
-            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ Intercompany / External Entry</button>' : ''}
-          </span>
-        </div>
-        ${chartSvg}
-      </div>
-
       ${submode === 'entities' ? (() => {
         const ents = regPanelRows('hldEntitiesScorecardPanel', entities, '', e => ({ name: e.name, industry: e.industry, sector: e.sector, loads: Number(e.k.loads || 0), sales_ttc: Number(e.k.sales_ttc || 0), gross_margin: Number(e.k.gross_margin || 0), expenses: round2(Number(e.k.expenses || 0) + Number(e.k.salaries || 0)), operating_profit: Number(e.k.operating_profit || 0), ar_balance: Number(e.k.ar_balance || 0), ap_balance: Number(e.k.ap_balance || 0) }));
         // Filtered from the chart: the TOTAL adds up the entities listed, not the whole group.
@@ -49068,6 +49220,7 @@
           <div class="panel-title"><span>${ic('hld_entities')} SUBSIDIARY &amp; HOLDING ENTITY SCORECARDS (${entities.length} ENTITIES ACROSS 6 INDUSTRIES)</span></div>
           <div style="display:flex;gap:6px;align-items:center">
             ${exportBtn('hldEntitiesScorecardPanel', 'Holding_Subsidiary_Scorecards')}
+            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ Intercompany / External Entry</button>' : ''}
           </div>
         </div>
         <div class="table-wrap">
@@ -49122,8 +49275,23 @@
             </tfoot>
           </table>
         </div>
-      </div>`;
+      </div>
+      ${renderSiblingHubChartsRow({
+        id: 'hldEntitiesChartsRow',
+        panelId: 'hldEntitiesScorecardPanel',
+        left: { mode: 'group', groupKey: 'industry', valKey: 'sales_ttc', fmt: 'usd', color: 'blue', title: 'Group Revenue by Industry Vertical ($)', sub: 'Combined operating revenue TTC across the 6 group industries' },
+        right: { mode: 'group', groupKey: 'name', valKey: 'operating_profit', fmt: 'usd', color: 'green', title: 'Operating Profit by Subsidiary Entity ($)', sub: 'Net entity operating contribution across subsidiaries' }
+      })}`;
       })() : `
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:10px">
+          <div class="panel-title"><span>${ic('hld_consolidation')} 6-INDUSTRY REVENUE, OPERATING PROFIT &amp; INTERCOMPANY ELIMINATION BRIDGE</span></div>
+          <span class="panel-meta">
+            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ Intercompany / External Entry</button>' : ''}
+          </span>
+        </div>
+        ${chartSvg}
+      </div>
       <div class="panel-card" id="hldConsolidatedPnlPanel">
         <div class="panel-head">
           <div class="panel-title"><span>${ic('hld_consolidation')} CONSOLIDATED 6-INDUSTRY GROUP P&amp;L &amp; INTERCOMPANY ELIMINATION SCHEDULE</span></div>
@@ -49203,34 +49371,6 @@
       return true;
     });
 
-    const topBilateral = (icRes.byBilateral || []).slice(0, 6);
-    const maxBilatUsd = Math.max(1, ...topBilateral.map(c => c.givenUsd));
-    const pairSvgH = Math.max(120, 28 + topBilateral.length * 36);
-    const pairChartSvg = `
-      <svg viewBox="0 0 820 ${pairSvgH}" width="100%" height="${pairSvgH}" role="img" aria-label="Sister Company Repayment: Given vs Paid Back & Net Owed Chart" style="display:block;overflow:visible">
-        ${topBilateral.map((c, idx) => {
-          const y = 10 + idx * 34;
-          const totalW = Math.max(8, Math.round((c.givenUsd / maxBilatUsd) * 250));
-          const paidW = c.givenUsd > 0 ? Math.min(totalW, Math.round((c.paidBackUsd / c.givenUsd) * totalW)) : 0;
-          const unpaidW = Math.max(0, totalW - paidW);
-          const oweLabel = c.repayPct >= 80
-            ? `${c.repayPct.toFixed(1)}% Settled (${fmtUSDk(c.netUnpaidUsd)} net)`
-            : `${c.borrowerCo} owes ${fmtUSD(c.netUnpaidUsd, 0)}`;
-          const oweColor = c.repayPct >= 80 ? 'var(--good)' : (c.repayPct >= 15 ? 'var(--warn)' : 'var(--crit)');
-          return `
-            <g transform="translate(0,${y})">
-              <text x="0" y="15" fill="var(--ink)" font-size="11.5" font-weight="600">${esc(c.corridorLabel)} (${fmtNum(c.totalCount)})</text>
-              <rect x="195" y="2" width="250" height="18" rx="4" fill="var(--surface-2)" />
-              ${paidW > 0 ? `<rect x="195" y="2" width="${Math.max(3, paidW)}" height="18" rx="${unpaidW === 0 ? 4 : 0}" fill="#059669" />` : ''}
-              ${unpaidW > 0 ? `<rect x="${195 + paidW}" y="2" width="${Math.max(3, unpaidW)}" height="18" rx="${paidW === 0 ? 4 : 0}" fill="#d97706" />` : ''}
-              <text x="458" y="15" fill="var(--ink)" font-size="11" font-weight="600" font-family="var(--font-mono)">Paid ${esc(fmtUSD(c.paidBackUsd, 0))} of ${esc(fmtUSD(c.givenUsd, 0))} (${c.repayPct.toFixed(1)}%)</text>
-              <text x="815" y="15" text-anchor="end" fill="${oweColor}" font-size="11" font-weight="700" font-family="var(--font-mono)">${esc(oweLabel)}</text>
-            </g>
-          `;
-        }).join('')}
-      </svg>
-    `;
-
     const topUnpaidSummary = (icRes.byBilateral || [])
       .filter(c => c.repayPct < 80 && c.netUnpaidUsd >= 1000)
       .slice(0, 5)
@@ -49269,14 +49409,6 @@
           <div class="kpi-val ${icRes.openCount > 0 ? 'warn' : 'good'}">${fmtNum(icRes.openCount)}</div>
           <div class="kpi-sub">${icRes.byPendingCo.slice(0, 5).map(c => `${c.company}: ${fmtNum(c.count)}`).join(' · ') || 'All cleared'}</div>
         </div>
-      </div>
-
-      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-        <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('hld_interactions')} SISTER COMPANY REPAYMENT: GIVEN VS. PAID BACK &amp; NET OWED</span></div>
-          <span class="panel-meta">Green = Paid Back ($) · Amber = Unpaid Balance Still Owed ($)</span>
-        </div>
-        ${pairChartSvg}
       </div>
     `;
 
@@ -49352,6 +49484,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'hldInterDueChartsRow',
+          panelId: 'hldDueMatrixPanel',
+          left: { mode: 'group', groupKey: 'borrowerCo', valKey: 'netUnpaidUsd', fmt: 'usd', color: 'gold', title: 'Unpaid Intercompany Debt by Net Borrower ($)', sub: 'Open sister balance still owed across borrowing entities' },
+          right: { mode: 'group', groupKey: 'lenderCo', valKey: 'givenUsd', fmt: 'usd', color: 'blue', title: 'Total Funding Advanced by Net Lender ($)', sub: 'Cumulative intercompany advances extended by lending entity' }
+        })}
       `;
     }
 
@@ -49437,6 +49575,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'hldInterReconChartsRow',
+          panelId: 'hldOpenReconPanel',
+          left: { mode: 'month', dateKey: 'date', valKey: 'usd', fmt: 'usd', color: 'copper', title: 'Monthly Open Unmatched Intercompany Volume ($)', sub: 'Single-sided intercompany legs awaiting mirror booking by month' },
+          right: { mode: 'group', groupKey: 'pendingActionCo', valKey: 'usd', fmt: 'usd', color: 'gold', title: 'Open Exposure by Pending Mirror Entity ($)', sub: 'Entities holding unmatched single-sided intercompany items' }
+        })}
       `;
     }
 
@@ -49525,6 +49669,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'hldInterMainChartsRow',
+        panelId: 'hldInteractionsPanel',
+        left: { mode: 'month', dateKey: 'date', getVal: x => Number(x.givenUsd || 0) + Number(x.paidBackUsd || 0), fmt: 'usd', color: 'blue', title: 'Monthly Intercompany Transfers & Repayments ($)', sub: 'Combined sister funding advances and repayment settlements by month' },
+        right: { mode: 'group', groupKey: 'fromCo', getVal: x => Number(x.givenUsd || 0) + Number(x.paidBackUsd || 0), fmt: 'usd', color: 'green', title: 'Intercompany Flow Volume by Originating Entity ($)', sub: 'Gross outgoing and repayment transfers initiated by each entity' }
+      })}
     `;
   }
 
@@ -49729,28 +49879,6 @@
     const partners = Array.from(byPartnerMap.values()).sort((a, b) => (b.inUsd + b.outUsd) - (a.inUsd + a.outUsd));
     const totJvDistUsd = round2(jvDists.reduce((s, d) => s + Number(d.partner_share_usd || d.amount || d.total || 0), 0));
 
-    const topP = partners.slice(0, 5);
-    const maxPVal = Math.max(1, ...topP.map(p => Math.max(p.inUsd, p.outUsd)));
-    const pSvgH = Math.max(120, 28 + topP.length * 36);
-    const partnerChartSvg = `
-      <svg viewBox="0 0 760 ${pSvgH}" width="100%" height="${pSvgH}" role="img" aria-label="Partner Capital In vs Drawings Out Chart" style="display:block;overflow:visible">
-        ${topP.map((p, idx) => {
-          const y = 10 + idx * 34;
-          const inW = Math.round((p.inUsd / maxPVal) * 240);
-          const outW = Math.round((p.outUsd / maxPVal) * 240);
-          return `
-            <g transform="translate(0,${y})">
-              <text x="0" y="15" fill="var(--ink)" font-size="12" font-weight="600">${esc(p.partner.slice(0, 26))} (${fmtNum(p.count)})</text>
-              <rect x="210" y="3" width="${Math.max(3, inW)}" height="8" rx="3" fill="#059669" />
-              <rect x="210" y="13" width="${Math.max(3, outW)}" height="8" rx="3" fill="#dc2626" />
-              <text x="465" y="15" fill="var(--ink)" font-size="11.5" font-family="var(--font-mono)">In: ${esc(fmtUSD(p.inUsd, 0))} · Out: ${esc(fmtUSD(p.outUsd, 0))}</text>
-              <text x="755" y="15" text-anchor="end" fill="${p.netUsd >= 0 ? 'var(--good)' : 'var(--crit)'}" font-size="11.5" font-weight="700" font-family="var(--font-mono)">${esc(fmtSignedUSD(p.netUsd, 0))}</text>
-            </g>
-          `;
-        }).join('')}
-      </svg>
-    `;
-
     const kpiHtml = `
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card" data-jump-view="hld_partners">
@@ -49783,17 +49911,6 @@
           <div class="kpi-val">${fmtUSD(totJvDistUsd, 0)}</div>
           <div class="kpi-sub"><b>${fmtNum(jvDists.length)}</b> recorded profit-split settlements</div>
         </div>
-      </div>
-
-      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-        <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('hld_partners')} PARTNER &amp; SHAREHOLDER CURRENT ACCOUNTS (CAPITAL IN VS DRAWINGS OUT)</span></div>
-          <span class="panel-meta">
-            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-ghost-bar" data-open-modal="external">+ Partner Entry</button>' : ''}
-            ${canEnterForm('jv', u) ? '<button type="button" class="btn btn-primary" data-open-modal="jv">+ JV Agreement / Split</button>' : ''}
-          </span>
-        </div>
-        ${partnerChartSvg}
       </div>
     `;
 
@@ -49856,7 +49973,10 @@
     `;
 
     if (submode === 'distributions') {
-      const jvList = regPanelRows('hldJvAgreementsPanel', jvRules);
+      const jvList = regPanelRows('hldJvAgreementsPanel', jvRules, 'hld_distributions', j => Object.assign({}, j, {
+        _jv_partner: String(j.partner || j.supplier || '').trim(),
+        _jv_scope: String(j.product || j.site || j.scope || 'All Operations').trim()
+      }));
       return `
         ${kpiHtml}
         <div class="panel-card" id="hldJvAgreementsPanel" style="margin-bottom:14px">
@@ -49888,7 +50008,7 @@
                     <td>${coBadge(j.company)}</td>
                     <td><strong>${esc(j.partner || j.supplier || '—')}</strong></td>
                     <td>${esc(j.product || j.site || j.scope || 'All Operations')}</td>
-                    <td class="r mono"><strong>${fmtNum(Number(j.partner_pct || j.share_pct || 50), 1)}%</strong></td>
+                    <td class="r mono"><strong>${fmtNum(Number(j.partner_pct || j.share_pct || j.percentage || 50), 1)}%</strong></td>
                     <td class="mono">${esc(fmtDateDMY(j.start_date || j.date))}</td>
                     <td class="mono">${esc(j.end_date ? fmtDateDMY(j.end_date) : 'Open')}</td>
                     <td><span class="badge badge-good">${esc(j.status || 'Active')}</span></td>
@@ -49898,7 +50018,7 @@
               <tfoot>
                 <tr class="totals-row">
                   <td colspan="4"><strong>TOTAL JV AGREEMENTS (${fmtNum(jvList.length)})</strong></td>
-                  <td class="r mono"><strong>${jvList.length ? fmtNum(jvList.reduce((s, j) => s + Number(j.partner_pct || j.share_pct || 50), 0) / jvList.length, 1) + '% avg' : '0.0%'}</strong></td>
+                  <td class="r mono"><strong>${jvList.length ? fmtNum(jvList.reduce((s, j) => s + Number(j.partner_pct || j.share_pct || j.percentage || 50), 0) / jvList.length, 1) + '% avg' : '0.0%'}</strong></td>
                   <td colspan="3"></td>
                 </tr>
               </tfoot>
@@ -49906,6 +50026,17 @@
           </div>
         </div>
         ${chronoPartnerPanelHtml}
+        ${chronoPrts.length ? renderSiblingHubChartsRow({
+          id: 'hldDistributionsChartsRow',
+          panelId: 'hldPartnerChronoPanel',
+          left: { mode: 'group', groupKey: 'partner', valKey: 'entitled_usd', allowZero: true, fmt: 'usd', color: 'blue', title: 'Profit-Share Entitlement by Partner ($)', sub: 'Total contractual share entitled per partner across schedules' },
+          right: { mode: 'group', groupKey: 'entity', valKey: 'drawn_usd', allowZero: true, fmt: 'usd', color: 'green', title: 'Distributions Drawn by Operating Pool ($)', sub: 'Cumulative partner profit-share drawings by pool / entity' }
+        }) : renderSiblingHubChartsRow({
+          id: 'hldDistributionsChartsRow',
+          panelId: 'hldJvAgreementsPanel',
+          left: { mode: 'group', groupKey: '_jv_partner', fmt: 'count', color: 'blue', title: 'Joint-Venture Agreements by Partner', sub: 'Contracted profit-split agreements grouped by joint-venture partner' },
+          right: { mode: 'group', groupKey: '_jv_scope', fmt: 'count', color: 'green', title: 'Joint-Venture Agreements by Scope', sub: 'Active and closed profit-split agreements by quarry or project scope' }
+        })}
       `;
     }
 
@@ -49916,6 +50047,7 @@
     const prtFootMoves = prtDrill ? partnersList.reduce((a, p) => a + Number(p.count || 0), 0) : partnerMoves.length;
     const prtFootIn = prtDrill ? round2(partnersList.reduce((a, p) => a + Number(p.inUsd || 0), 0)) : totInUsd;
     const prtFootOut = prtDrill ? round2(partnersList.reduce((a, p) => a + Number(p.outUsd || 0), 0)) : totOutUsd;
+    const prtHasUsd = (totInUsd + totOutUsd) > 0.005;
     return `
       ${kpiHtml}
       <div class="panel-card" id="hldPartnersTablePanel">
@@ -49924,6 +50056,7 @@
           <div style="display:flex;gap:6px;align-items:center">
             ${searchBox('Search partner, stakeholder...')}
             ${exportBtn('hldPartnersTablePanel', 'Holding_Partner_Capital_Ledger')}
+            ${canEnterForm('jv', u) ? '<button type="button" class="btn btn-ghost-bar" data-open-modal="jv">+ JV Agreement / Split</button>' : ''}
             ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ Partner Entry</button>' : ''}
           </div>
         </div>
@@ -49968,6 +50101,17 @@
         </div>
       </div>
       ${chronoPartnerPanelHtml}
+      ${prtHasUsd ? renderSiblingHubChartsRow({
+        id: 'hldPartnersChartsRow',
+        panelId: 'hldPartnersTablePanel',
+        left: { mode: 'month', dateKey: 'lastDate', getVal: p => Number(p.inUsd || 0) + Number(p.outUsd || 0), fmt: 'usd', color: 'blue', title: 'Partner Activity Volume by Last Movement Month ($)', sub: 'Capital injections and drawings grouped by latest account activity month' },
+        right: { mode: 'group', groupKey: 'partner', getVal: p => Number(p.inUsd || 0) + Number(p.outUsd || 0), fmt: 'usd', color: 'green', title: 'Top Partners by Total Capital Movement ($)', sub: 'Combined capital in and drawings out per partner account' }
+      }) : renderSiblingHubChartsRow({
+        id: 'hldPartnersChartsRow',
+        panelId: 'hldPartnersTablePanel',
+        left: { mode: 'group', groupKey: 'partner', valKey: 'count', fmt: 'count', color: 'blue', title: 'Top Partners by Ledger Entry Volume', sub: 'Ranked stakeholder activity across external treasury and capital entries' },
+        right: { mode: 'group', groupKey: '_companies_str', valKey: 'count', fmt: 'count', color: 'green', title: 'Partner Ledger Entries by Entity Scope', sub: 'Movement count grouped by active operating entities per stakeholder' }
+      })}
     `;
   }
 
@@ -50230,11 +50374,11 @@
       </div>
 
       <div class="split-grid-2" style="margin-bottom:14px">
-        <div class="panel-card" id="hldExtendedStakeholdersPanel">
-          <div class="panel-head">
-            <div class="panel-title"><span>${ic('external')} EXTENDED · SUMMARY BY STAKEHOLDER (${fmtNum(partyRows.length)})</span></div>
-            <span class="panel-meta">${exportBtn('hldExtendedStakeholdersPanel', 'Holding_Extended_Stakeholders')}</span>
-          </div>
+      <div class="panel-card" id="hldExtendedStakeholdersPanel">
+        <div class="panel-head">
+          <div class="panel-title"><span>${ic('external')} EXTENDED · SUMMARY BY STAKEHOLDER (${fmtNum(partyRows.length)})</span></div>
+          <span class="panel-meta">${exportBtn('hldExtendedStakeholdersPanel', 'Holding_Extended_Stakeholders')}</span>
+        </div>
           <div class="table-wrap">
             <table class="ledger-table">
               <thead>
@@ -50278,7 +50422,7 @@
               </tfoot>
             </table>
           </div>
-        </div>
+      </div>
 
         <div class="panel-card" id="hldExtendedChartPanel" style="padding:14px 16px">
           <div class="panel-head" style="margin-bottom:8px">
@@ -50365,6 +50509,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'hldExtendedChartsRow',
+        sortView: 'hld_extd_parties',
+        left: { mode: 'group', groupKey: 'position', valKey: 'rec_usd', sortAbs: true, allowZero: true, fmt: 'usd', color: 'copper', title: 'Extended Exposure by Net Position ($)', sub: 'Stakeholder receivable vs payable exposure across open positions' },
+        right: { mode: 'group', groupKey: 'counterparty', valKey: 'owes_usd', sortAbs: true, allowZero: true, fmt: 'usd', color: 'blue', title: 'Top Extended Stakeholders by Net Difference ($)', sub: 'Net receivable (+) or payable (-) difference by counterparty' }
+      })}
     `;
   }
 
@@ -50855,39 +51005,16 @@
     const settleList = sortHoldingFirst(selParty === 'ALL' ? rawSettle : rawSettle.filter(r => getParty(r) === selParty));
     const assetExps = sortHoldingFirst(selParty === 'ALL' ? rawAssetExps : rawAssetExps.filter(r => getParty(r) === selParty));
 
+    const loanPrinUsd = l => Number(l.principal_usd || l.principal || l.usd_amount || l.amount_usd || l.amount || l.total || 0);
     let givenUsd = 0, takenUsd = 0;
     loansList.forEach(l => {
-      const amt = Number(l.principal_usd || l.amount_usd || l.amount || l.total || 0);
+      const amt = loanPrinUsd(l);
       if (/taken|payable|borrow/i.test(String(l.side || l.type || l.direction || ''))) takenUsd = round2(takenUsd + amt);
       else givenUsd = round2(givenUsd + amt);
     });
     const settledUsd = round2(settleList.reduce((s, x) => s + Number(x.amount_usd || x.amount || x.total || 0), 0));
     const netLoanOut = round2(givenUsd - settledUsd);
     const assetTotalUsd = round2(assetExps.reduce((s, x) => s + expenseSign(x) * Number(x.total || x.amount || 0), 0));
-
-    const chartRows = [
-      { label: 'Loans Given / Principal Disbursed', val: givenUsd, color: '#2563eb' },
-      { label: 'Loan Repayments & Settlements', val: settledUsd, color: '#059669' },
-      { label: 'Net Loan Principal Outstanding', val: Math.max(0, netLoanOut), color: '#d97706' },
-      { label: 'Capital, Asset & Strategic Outlays', val: Math.max(0, assetTotalUsd), color: '#7c3aed' }
-    ];
-    const maxChartVal = Math.max(1, ...chartRows.map(c => c.val));
-    const loanChartSvg = `
-      <svg viewBox="0 0 760 165" width="100%" height="165" role="img" aria-label="Loans, Settlements & Group Capital Exposure Chart" style="display:block;overflow:visible">
-        ${chartRows.map((c, idx) => {
-          const y = 12 + idx * 36;
-          const w = Math.max(4, Math.round((c.val / maxChartVal) * 410));
-          return `
-            <g transform="translate(0,${y})">
-              <text x="0" y="15" fill="var(--ink)" font-size="12" font-weight="600">${esc(c.label)}</text>
-              <rect x="235" y="2" width="410" height="18" rx="4" fill="var(--surface-2)" />
-              <rect x="235" y="2" width="${w}" height="18" rx="4" fill="${c.color}" />
-              <text x="658" y="15" fill="var(--ink)" font-size="12" font-weight="700" font-family="var(--font-mono)">${esc(fmtUSD(c.val, 0))}</text>
-            </g>
-          `;
-        }).join('')}
-      </svg>
-    `;
 
     const kpiHtml = `
       ${filterBarHtml}
@@ -50923,18 +51050,6 @@
           <div class="kpi-sub">Full double-entry SOA integration</div>
         </div>
       </div>
-
-      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-        <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('hld_loans')} GROUP LOAN FACILITIES, REPAYMENTS &amp; CAPITAL OUTLAYS</span></div>
-          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hld_loans" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="hld_loans" aria-expanded="false" data-ui-tip="Open Group Capital Allocation, Credit Headroom &amp; Carrying-Cost Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>
-            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="treasury">+ Loan / Settlement</button>' : ''}
-          </span>
-        </div>
-        ${loanChartSvg}
-      </div>
     `;
 
     if (submode === 'assets') {
@@ -50944,10 +51059,12 @@
       return `
         ${kpiHtml}
         <div class="panel-card" id="hldAssetsPanel">
-          <div class="panel-head">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div class="panel-title"><span>${ic('hld_assets')} INVESTMENTS, CAPEX &amp; GROUP ASSET VOUCHERS (${fmtNum(assetList.length)})</span></div>
-            <div style="display:flex;gap:6px;align-items:center">
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
               ${searchBox('Search asset, supplier, category...')}
+              <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hld_assets" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="hld_assets" aria-expanded="false" data-ui-tip="Open Group Capital Allocation, Credit Headroom &amp; Carrying-Cost Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>
               ${exportBtn('hldAssetsPanel', 'Holding_Group_Assets_Capex')}
               ${canEnterForm('expense', u) ? '<button type="button" class="btn btn-primary" data-open-modal="expense">+ Capital / Asset Voucher</button>' : ''}
             </div>
@@ -50989,11 +51106,17 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'hldAssetsChartsRow',
+          panelId: 'hldAssetsPanel',
+          left: { mode: 'month', dateKey: 'date', valKey: '_asset_amount', fmt: 'usd', color: 'blue', title: 'Monthly Capital Outlays & Asset Vouchers ($)', sub: 'CapEx and investment voucher volume by posting month' },
+          right: { mode: 'group', groupKey: '_asset_cat', valKey: '_asset_amount', fmt: 'usd', color: 'gold', title: 'Capital Spend by Asset Class ($)', sub: 'Breakdown across asset categories and capital voucher classes' }
+        })}
       `;
     }
 
-    const loanRows = regPanelRows('hldLoansPanel', loansList, 'hld_loans', l => Object.assign({}, l, { _loan_amt: Number(l.principal_usd || l.amount_usd || l.amount || l.total || 0), _loan_date: l.date || l.start_date || '', _loan_party: l.counterparty || l.party || l.borrower || '', _loan_dir: String(l.side || l.type || l.direction || 'Loan Given') }));
-    const loanFootUsd = getRegDrill('hldLoansPanel') ? round2(loanRows.reduce((a, l) => a + Number(l.principal_usd || l.amount_usd || l.amount || l.total || 0), 0)) : round2(givenUsd + takenUsd);
+    const loanRows = regPanelRows('hldLoansPanel', loansList, 'hld_loans', l => Object.assign({}, l, { _loan_amt: loanPrinUsd(l), _loan_date: l.date || l.start_date || '', _loan_party: l.counterparty || l.party || l.borrower || '', _loan_dir: String(l.side || l.type || l.direction || 'Loan Given') }));
+    const loanFootUsd = round2(loanRows.reduce((a, l) => a + loanPrinUsd(l), 0));
     const shownLoans = loanRows.slice(0, shownCount('hld_loans'));
     const hldFacs = regPanelRows('hldFacilitySchedulesPanel', (computeHoldingSchedules().facilitySchedules || []).filter(f => selParty === 'ALL' || f.lender === selParty || f.company === selParty));
     const hideFacCo = STATE.company === 'bdeirholding';
@@ -51005,10 +51128,12 @@
     return `
       ${kpiHtml}
       <div class="panel-card" id="hldLoansPanel">
-        <div class="panel-head">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div class="panel-title"><span>${ic('hld_loans')} GROUP LOANS GIVEN / TAKEN &amp; FACILITY SCHEDULE (${fmtNum(loanRows.length)})</span></div>
-          <div style="display:flex;gap:6px;align-items:center">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search borrower, lender, loan ref...')}
+            <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="indTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="hld_loans" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow &amp; Liquidity Runway Forecast Studio">${ic('cashflow')} 13W Runway</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="hld_loans" aria-expanded="false" data-ui-tip="Open Group Capital Allocation, Credit Headroom &amp; Carrying-Cost Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>
             ${exportBtn('hldLoansPanel', 'Holding_Group_Loans')}
             ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="treasury">+ Loan / Settlement</button>' : ''}
           </div>
@@ -51028,7 +51153,7 @@
             </thead>
             <tbody>
               ${shownLoans.length ? shownLoans.map(l => {
-                const amt = Number(l.principal_usd || l.amount_usd || l.amount || l.total || 0);
+                const amt = loanPrinUsd(l);
                 const dir = String(l.side || l.type || l.direction || 'Loan Given');
                 const wfLoan = getIndustryWorkflowPatch('hld_loans', l.id);
                 const loanDone = Boolean(wfLoan && wfLoan.status === 'Repayment Logged');
@@ -51111,6 +51236,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'hldLoansChartsRow',
+        panelId: 'hldLoansPanel',
+        left: { mode: 'month', dateKey: '_loan_date', valKey: '_loan_amt', fmt: 'usd', color: 'blue', title: 'Monthly Loan Facilities & Capital Advances ($)', sub: 'Loan disbursements and borrowings by origination month' },
+        right: { mode: 'group', groupKey: '_loan_party', valKey: '_loan_amt', fmt: 'usd', color: 'green', title: 'Loan Principal by Counterparty ($)', sub: 'Facility exposure grouped by lender or borrower counterparty' }
+      })}
     `;
   }
 
@@ -51436,37 +51567,6 @@
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
-    // Resort Revenue Breakdown SVG Chart
-    const byResort = hsp.activeResorts.map(res => {
-      const rows = hsp.venueRows.filter(r => r.company === res.name);
-      const chaletUsd = round2(rows.filter(r => r.category === 'Chalet Rental').reduce((a, r) => a + r.ttc_usd, 0));
-      const fnbUsd = round2(rows.filter(r => r.category === 'Restaurant F&B' || r.category === 'Shisha & Lounge').reduce((a, r) => a + r.ttc_usd, 0));
-      const beachEventsUsd = round2(rows.filter(r => r.category !== 'Chalet Rental' && r.category !== 'Restaurant F&B' && r.category !== 'Shisha & Lounge').reduce((a, r) => a + r.ttc_usd, 0));
-      const total = round2(chaletUsd + fnbUsd + beachEventsUsd);
-      return { ...res, chaletUsd, fnbUsd, beachEventsUsd, total };
-    });
-    const maxResortRev = Math.max(1, ...byResort.map(r => r.total));
-    const chartW = 780, chartH = 200;
-    const slotW = Math.floor((chartW - 70) / Math.max(1, byResort.length));
-    const barW = Math.min(34, Math.max(14, Math.floor((slotW - 22) / 3)));
-    const revSvgBars = byResort.map((r, i) => {
-      const gx = 55 + i * slotW;
-      const hChalet = Math.max(3, Math.round((r.chaletUsd / maxResortRev) * 125));
-      const hFnb = Math.max(3, Math.round((r.fnbUsd / maxResortRev) * 125));
-      const hEvent = Math.max(3, Math.round((r.beachEventsUsd / maxResortRev) * 125));
-      const baseY = 152;
-      return `
-        <g>
-          <rect x="${gx}" y="${baseY - hChalet}" width="${barW}" height="${hChalet}" rx="3" fill="#3B82F6"/>
-          <rect x="${gx + barW + 3}" y="${baseY - hFnb}" width="${barW}" height="${hFnb}" rx="3" fill="#10B981"/>
-          <rect x="${gx + (barW + 3) * 2}" y="${baseY - hEvent}" width="${barW}" height="${hEvent}" rx="3" fill="#F59E0B"/>
-          <text x="${gx + barW + 3}" y="${baseY - Math.max(hChalet, hFnb, hEvent) - 6}" text-anchor="middle" fill="var(--tx)" font-size="10" font-family="var(--font-mono)" font-weight="700">${fmtUSDk(r.total)}</text>
-          <text x="${gx + barW + 3}" y="170" text-anchor="middle" fill="var(--tx)" font-size="11" font-weight="700">${esc(r.name)}</text>
-          <text x="${gx + barW + 3}" y="184" text-anchor="middle" fill="var(--mu)" font-size="9.5">${r.chalets} Chalets · ${r.cabanas} Cabanas</text>
-        </g>
-      `;
-    }).join('');
-
     const chaletTotal = round2(hsp.venueRows.filter(r => r.category === 'Chalet Rental').reduce((a, r) => a + r.ttc_usd, 0));
     const fnbTotal = round2(hsp.venueRows.filter(r => r.category === 'Restaurant F&B' || r.category === 'Shisha & Lounge').reduce((a, r) => a + r.ttc_usd, 0));
     const beachEventTotal = round2(hsp.venueRows.filter(r => r.category === 'Beach Entrance' || r.category === 'Events & Weddings' || r.category === 'Valet & Services').reduce((a, r) => a + r.ttc_usd, 0));
@@ -51526,16 +51626,6 @@
 
       return `
         ${kpiHtml}
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('hsp_pos')} POS SHIFT CLOSE &amp; BILL-TO-COLLECTION RECONCILIATION</span></div>
-            <span class="panel-meta">Blue:Chalets · Green:Restaurant &amp; Bar · Amber:Beach &amp; Events</span>
-          </div>
-          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:195px;display:block" role="img" aria-label="Hospitality POS Shift Reconciliation Chart">
-            <line x1="40" y1="152" x2="${chartW - 20}" y2="152" stroke="var(--bd)" stroke-width="1"/>
-            ${revSvgBars}
-          </svg>
-        </div>
         <div class="panel-card" id="hspPosPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -51605,6 +51695,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'hspPosChartsRow',
+          panelId: 'hspPosPanel',
+          left: { mode: 'month', dateKey: 'date', valKey: 'pos_billed_ttc', fmt: 'usd', color: 'blue', title: 'Monthly POS Billed Shift Volume ($)', sub: 'Total terminal close sales across shift dates' },
+          right: { mode: 'group', groupKey: 'terminal', valKey: 'pos_billed_ttc', fmt: 'usd', color: 'green', title: 'POS Shift Close Revenue by Terminal ($)', sub: 'Collected till volume per resort terminal' }
+        })}
       `;
     }
 
@@ -51623,16 +51719,6 @@
 
       return `
         ${kpiHtml}
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('hsp_vat')} RESORT 11% VAT &amp; ZERO-VAT EXEMPTION GUARD (DIESEL &amp; TIPS EXEMPT)</span></div>
-            <span class="panel-meta">11% Output VAT vs Deductible Input VAT vs Zero-VAT Exempt</span>
-          </div>
-          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:195px;display:block" role="img" aria-label="Resort VAT Breakdown Chart">
-            <line x1="40" y1="152" x2="${chartW - 20}" y2="152" stroke="var(--bd)" stroke-width="1"/>
-            ${revSvgBars}
-          </svg>
-        </div>
         <div class="panel-card" id="hspVatPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -51695,6 +51781,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'hspVatChartsRow',
+          panelId: 'hspVatPanel',
+          left: { mode: 'month', dateKey: 'date', valKey: 'ttc_usd', fmt: 'usd', color: 'blue', title: 'Monthly Fiscal Volume TTC by Tax Date ($)', sub: 'Gross taxable and exempt activity across resort VAT posting months' },
+          right: { mode: 'group', groupKey: 'tax_rule', valKey: 'ttc_usd', fmt: 'usd', color: 'gold', title: 'Gross Volume by Tax Classification ($)', sub: '11% taxable operations vs Zero-VAT exempt diesel and tips' }
+        })}
       `;
     }
 
@@ -51715,16 +51807,6 @@
 
     return `
       ${kpiHtml}
-      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-        <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('hsp_revenue')} RESORT VENUE REVENUE BY PROPERTY &amp; PROFIT CENTER (CHALETS · F&amp;B · BEACH &amp; EVENTS)</span></div>
-          <span class="panel-meta">Blue:Chalets &amp; Suites · Green:Restaurant &amp; Shisha · Amber:Beach Gate &amp; Weddings</span>
-        </div>
-        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:195px;display:block" role="img" aria-label="Resort Venue Revenue Chart">
-          <line x1="40" y1="152" x2="${chartW - 20}" y2="152" stroke="var(--bd)" stroke-width="1"/>
-          ${revSvgBars}
-        </svg>
-      </div>
       <div class="panel-card" id="hspRevenuePanel">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -51795,6 +51877,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'hspRevChartsRow',
+        panelId: 'hspRevenuePanel',
+        left: { mode: 'month', dateKey: 'date', valKey: 'ttc_usd', fmt: 'usd', color: 'blue', title: 'Monthly Venue Revenue TTC ($)', sub: 'Resort chalets, dining, beach gate, and banquet revenue by month' },
+        right: { mode: 'group', groupKey: 'category', valKey: 'ttc_usd', fmt: 'usd', color: 'green', title: 'Venue Revenue by Profit Center ($)', sub: 'Revenue distribution across chalets, dining, lounge, beach, and events' }
+      })}
     `;
   }
 
@@ -51807,37 +51895,6 @@
     const collectionRatePct = s.totalMemContract > 0 ? round2((s.totalMemPaid / s.totalMemContract) * 100) : 100;
     const hideCo = hsp.activeResorts.length === 1;
     const coStyle = hideCo ? ' style="display:none"' : '';
-
-    const chartW = 780, chartH = 195;
-    const byResortMem = hsp.activeResorts.map(res => {
-      const mRows = hsp.membershipRows.filter(r => r.company === res.name);
-      const pRows = hsp.partnerSplitRows.filter(r => r.company === res.name);
-      const contractUsd = round2(mRows.reduce((a, r) => a + r.contract_usd, 0));
-      const paidUsd = round2(mRows.reduce((a, r) => a + r.paid_usd, 0));
-      const arrearsUsd = round2(mRows.reduce((a, r) => a + r.balance_usd, 0));
-      const poolUsd = round2(pRows.reduce((a, r) => a + r.gross_pool_usd, 0));
-      return { ...res, contractUsd, paidUsd, arrearsUsd, poolUsd };
-    });
-    const maxVal = Math.max(1, ...byResortMem.map(r => Math.max(r.contractUsd, r.poolUsd * 0.35)));
-    const slotW = Math.floor((chartW - 70) / Math.max(1, byResortMem.length));
-    const barW = Math.min(34, Math.max(14, Math.floor((slotW - 22) / 3)));
-    const memSvgBars = byResortMem.map((r, i) => {
-      const gx = 55 + i * slotW;
-      const hCont = Math.max(3, Math.round((r.contractUsd / maxVal) * 120));
-      const hPaid = Math.max(3, Math.round((r.paidUsd / maxVal) * 120));
-      const hArr = Math.max(3, Math.round((r.arrearsUsd / maxVal) * 120));
-      const baseY = 150;
-      return `
-        <g>
-          <rect x="${gx}" y="${baseY - hCont}" width="${barW}" height="${hCont}" rx="3" fill="#3B82F6"/>
-          <rect x="${gx + barW + 3}" y="${baseY - hPaid}" width="${barW}" height="${hPaid}" rx="3" fill="#10B981"/>
-          <rect x="${gx + (barW + 3) * 2}" y="${baseY - hArr}" width="${barW}" height="${hArr}" rx="3" fill="#F59E0B"/>
-          <text x="${gx + barW + 3}" y="${baseY - Math.max(hCont, hPaid, hArr) - 6}" text-anchor="middle" fill="var(--tx)" font-size="10" font-family="var(--font-mono)" font-weight="700">${fmtUSDk(r.contractUsd)}</text>
-          <text x="${gx + barW + 3}" y="168" text-anchor="middle" fill="var(--tx)" font-size="11" font-weight="700">${esc(r.name)}</text>
-          <text x="${gx + barW + 3}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9.5">Arrears ${fmtUSDk(r.arrearsUsd)}</text>
-        </g>
-      `;
-    }).join('');
 
     const kpiHtml = `
       <div class="kpi-grid" style="margin-bottom:14px">
@@ -51890,16 +51947,6 @@
 
       return `
         ${kpiHtml}
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('hsp_partners')} MULTI-PARTNER PROFIT SPLITS &amp; CHRONOLOGICAL CATEGORY AGREEMENTS (UP TO 10 SLOTS)</span></div>
-            <span class="panel-meta">Blue:Contract Value · Green:Collected Cash · Amber:Remaining Arrears</span>
-          </div>
-          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Resort Partner Splits Chart">
-            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-            ${memSvgBars}
-          </svg>
-        </div>
         <div class="panel-card" id="hspPartnersPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -51968,6 +52015,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'hspPartnerChartsRow',
+          panelId: 'hspPartnersPanel',
+          left: { mode: 'group', groupKey: 'category', valKey: 'gross_pool_usd', fmt: 'usd', color: 'blue', title: 'Partner Profit Pool by Category ($)', sub: 'Gross revenue pool across chronological resort profit centers' },
+          right: { mode: 'group', groupKey: 'status', valKey: 'gross_pool_usd', fmt: 'usd', color: 'green', title: 'Partner Split Agreements by Status ($)', sub: 'Active split agreements compared with settled pools' }
+        })}
       `;
     }
 
@@ -51986,16 +52039,6 @@
 
     return `
       ${kpiHtml}
-      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-        <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('hsp_memberships')} SEASONAL CHALET &amp; CABANA MEMBERSHIPS (CONTRACT VS COLLECTED VS ARREARS)</span></div>
-          <span class="panel-meta">Blue:Contract Value · Green:Paid Cash · Amber:Remaining Arrears</span>
-        </div>
-        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Seasonal Memberships Chart">
-          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-          ${memSvgBars}
-        </svg>
-      </div>
       <div class="panel-card" id="hspMembershipsPanel">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -52111,6 +52154,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'hspMemChartsRow',
+        panelId: 'hspMembershipsPanel',
+        left: { mode: 'month', dateKey: 'due_date', valKey: 'contract_usd', fmt: 'usd', color: 'blue', title: 'Membership Contract Volume by Due Month ($)', sub: 'Seasonal chalet and cabana contract value by installment due month' },
+        right: { mode: 'group', groupKey: 'season', valKey: 'contract_usd', fmt: 'usd', color: 'green', title: 'Membership Contracts by Season Window ($)', sub: 'Contract value across active and prior resort seasons' }
+      })}
     `;
   }
 
@@ -52123,29 +52172,6 @@
     const overallR3Ratio = s.totalStockUsage > 0 ? round2(s.totalStockPurchases / s.totalStockUsage) : 1.0;
     const hideCo = hsp.activeResorts.length === 1;
     const coStyle = hideCo ? ' style="display:none"' : '';
-
-    const chartW = 780, chartH = 195;
-    const chartStkRows = hsp.stockRows.slice(0, 12);
-    const maxStk = Math.max(1, ...chartStkRows.map(r => Math.max(r.purchases_in_usd, r.recipe_usage_usd, r.closing_usd)));
-    const slotW = Math.floor((chartW - 70) / Math.max(1, chartStkRows.length));
-    const barW = Math.min(28, Math.max(12, Math.floor((slotW - 18) / 3)));
-    const stkSvgBars = chartStkRows.map((r, i) => {
-      const gx = 50 + i * slotW;
-      const hPur = Math.max(3, Math.round((r.purchases_in_usd / maxStk) * 120));
-      const hUse = Math.max(3, Math.round((r.recipe_usage_usd / maxStk) * 120));
-      const hCls = Math.max(3, Math.round((r.closing_usd / maxStk) * 120));
-      const baseY = 150;
-      return `
-        <g>
-          <rect x="${gx}" y="${baseY - hPur}" width="${barW}" height="${hPur}" rx="3" fill="#3B82F6"/>
-          <rect x="${gx + barW + 3}" y="${baseY - hUse}" width="${barW}" height="${hUse}" rx="3" fill="#10B981"/>
-          <rect x="${gx + (barW + 3) * 2}" y="${baseY - hCls}" width="${barW}" height="${hCls}" rx="3" fill="${r.r3_ratio > 1.18 ? '#F59E0B' : '#06B6D4'}"/>
-          <text x="${gx + barW + 3}" y="${baseY - Math.max(hPur, hUse, hCls) - 6}" text-anchor="middle" fill="var(--tx)" font-size="9.5" font-family="var(--font-mono)" font-weight="700">${r.r3_ratio.toFixed(2)}x</text>
-          <text x="${gx + barW + 3}" y="168" text-anchor="middle" fill="var(--tx)" font-size="10.5" font-weight="700">${esc(r.company)}</text>
-          <text x="${gx + barW + 3}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9">${esc(r.store.split(' ')[0])}</text>
-        </g>
-      `;
-    }).join('');
 
     const kpiHtml = `
       <div class="kpi-grid" style="margin-bottom:14px">
@@ -52199,16 +52225,6 @@
 
       return `
         ${kpiHtml}
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('hsp_menu')} MENU ENGINEERING, RECIPE BOM COST &amp; GROSS MARGIN CONTRIBUTION</span></div>
-            <span class="panel-meta">Blue:Purchases In · Green:Recipe Usage · Cyan/Amber:Closing Stock &amp; Usage Ratio</span>
-          </div>
-          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Hospitality Menu Engineering Chart">
-            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-            ${stkSvgBars}
-          </svg>
-        </div>
         <div class="panel-card" id="hspMenuPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -52276,6 +52292,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'hspMenuChartsRow',
+          panelId: 'hspMenuPanel',
+          left: { mode: 'group', groupKey: 'category', getVal: r => round2(Number(r.price_ht || 0) * Number(r.units_sold || 0)), fmt: 'usd', color: 'blue', title: 'Menu Revenue HT by Outlet Category ($)', sub: 'Sold menu contribution grouped by kitchen, seafood, bar, and banquet' },
+          right: { mode: 'group', groupKey: 'menu_class', getVal: r => round2(Number(r.margin_usd || 0) * Number(r.units_sold || 0)), fmt: 'usd', color: 'green', title: 'Gross Margin by Menu Engineering Class ($)', sub: 'Margin contribution across Star, Plowhorse, Puzzle, and Dog classes' }
+        })}
       `;
     }
 
@@ -52296,16 +52318,6 @@
 
     return `
       ${kpiHtml}
-      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-        <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('hsp_stock')} KITCHEN, CELLAR &amp; BAR STOCK RECONCILIATION (PURCHASE-TO-CONSUMPTION RATIO)</span></div>
-          <span class="panel-meta">Blue:Purchases In · Green:Recipe Usage · Cyan/Amber:Closing Stock &amp; Usage Ratio</span>
-        </div>
-        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Hospitality Stock & Cellar Chart">
-          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-          ${stkSvgBars}
-        </svg>
-      </div>
       <div class="panel-card" id="hspStockPanel">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -52377,6 +52389,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'hspStockChartsRow',
+        panelId: 'hspStockPanel',
+        left: { mode: 'month', dateKey: 'date', valKey: 'closing_usd', fmt: 'usd', color: 'blue', title: 'Monthly Commissary & Cellar Closing Valuation ($)', sub: 'Physical closing inventory valuation by stock snapshot month' },
+        right: { mode: 'group', groupKey: 'item_group', valKey: 'purchases_in_usd', fmt: 'usd', color: 'gold', title: 'Commissary & Bar Purchases by Item Group ($)', sub: 'Direct procurement spend across kitchen, cellar, seafood, and bar groups' }
+      })}
     `;
   }
 
@@ -52419,28 +52437,6 @@
     const avgBurnLhr = s.totalRunHours > 0 ? round2(s.totalDieselUsedL / s.totalRunHours) : 0;
     const hideCo = hsp.activeResorts.length === 1;
     const coStyle = hideCo ? ' style="display:none"' : '';
-
-    const chartW = 780, chartH = 195;
-    const chartNrgRows = hsp.energyRows.slice(0, 12);
-    const maxLhr = Math.max(1, ...chartNrgRows.map(r => Math.max(r.l_per_hr, r.rated_l_hr)));
-    const slotW = Math.floor((chartW - 70) / Math.max(1, chartNrgRows.length));
-    const barW = Math.min(34, Math.max(14, Math.floor((slotW - 20) / 2)));
-    const nrgSvgBars = chartNrgRows.map((r, i) => {
-      const gx = 55 + i * slotW;
-      const hRated = Math.max(4, Math.round((r.rated_l_hr / maxLhr) * 120));
-      const hAct = Math.max(4, Math.round((r.l_per_hr / maxLhr) * 120));
-      const isSpike = r.l_per_hr > r.rated_l_hr * 1.15;
-      const baseY = 150;
-      return `
-        <g>
-          <rect x="${gx}" y="${baseY - hRated}" width="${barW}" height="${hRated}" rx="3" fill="#3B82F6"/>
-          <rect x="${gx + barW + 4}" y="${baseY - hAct}" width="${barW}" height="${hAct}" rx="3" fill="${isSpike ? '#EF4444' : '#10B981'}"/>
-          <text x="${gx + barW + 2}" y="${baseY - Math.max(hRated, hAct) - 6}" text-anchor="middle" fill="var(--tx)" font-size="10" font-family="var(--font-mono)" font-weight="700">${r.l_per_hr.toFixed(1)} L/h</text>
-          <text x="${gx + barW + 2}" y="168" text-anchor="middle" fill="var(--tx)" font-size="11" font-weight="700">${esc(r.company)}</text>
-          <text x="${gx + barW + 2}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9.5">Solar ${r.solar_offset_pct}% · ${fmtNum(r.tank_level_l)}L</text>
-        </g>
-      `;
-    }).join('');
 
     const kpiHtml = `
       ${window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderCrossIndustryStrip === 'function' ? window.MFG_TELEMATICS.renderCrossIndustryStrip('hsp_energy') : ''}
@@ -52494,16 +52490,6 @@
 
       return `
         ${kpiHtml}
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('hsp_maint')} VENUE REPAIRS, POOL PLANT, HVAC &amp; GENERATOR MAINTENANCE</span></div>
-            <span class="panel-meta">Blue:Rated L/hr Curve · Green:Normal Actual Burn · Red:Burn Rate Spike</span>
-          </div>
-          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Resort Maintenance & Utilities Chart">
-            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-            ${nrgSvgBars}
-          </svg>
-        </div>
         <div class="panel-card" id="hspMaintPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -52568,6 +52554,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'hspMaintChartsRow',
+          panelId: 'hspMaintPanel',
+          left: { mode: 'month', dateKey: 'date', valKey: 'cost_usd', fmt: 'usd', color: 'copper', title: 'Monthly Facility & Asset Maintenance Cost ($)', sub: 'Preventive and corrective maintenance spend across work order months' },
+          right: { mode: 'group', groupKey: 'zone', valKey: 'cost_usd', fmt: 'usd', color: 'blue', title: 'Maintenance Cost by Resort Zone ($)', sub: 'Repair and PM spend grouped by plant, pool, kitchen, and HVAC zone' }
+        })}
       `;
     }
 
@@ -52587,16 +52579,6 @@
 
     return `
       ${kpiHtml}
-      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-        <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('hsp_energy')} GENERATOR BURN RATE (L/HR) VS RATED CURVE &amp; SOLAR PV HYBRID OFFSET</span></div>
-          <span class="panel-meta">Blue:Rated L/hr Baseline · Green:Normal Burn · Red:Burn Spike (&gt;15% Over Rated)</span>
-        </div>
-        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Generator Burn Rate Chart">
-          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-          ${nrgSvgBars}
-        </svg>
-      </div>
       <div class="panel-card" id="hspEnergyPanel">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -52673,6 +52655,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'hspEnergyChartsRow',
+        panelId: 'hspEnergyPanel',
+        left: { mode: 'month', dateKey: 'date', valKey: 'diesel_used_l', fmt: 'litres', color: 'copper', title: 'Monthly Generator Diesel Consumption (L)', sub: 'Diesel burn across logged resort power plant operating months' },
+        right: { mode: 'group', groupKey: 'asset', valKey: 'diesel_used_l', fmt: 'litres', color: 'blue', title: 'Diesel Burn by Generator & Solar Plant (L)', sub: 'Fuel usage across individual resort generators and hybrid plants' }
+      })}
     `;
   }
 
@@ -53030,27 +53018,6 @@
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
-    const chartW = 780, chartH = 195;
-    const activeSales = trd.salesRows.filter(r => !r.is_gap);
-    const maxVal = Math.max(1, ...activeSales.map(r => r.ttc_usd));
-    const slotW = Math.floor((chartW - 70) / Math.max(1, activeSales.length));
-    const barW = Math.min(34, Math.max(14, Math.floor((slotW - 18) / 2)));
-    const salesSvgBars = activeSales.map((r, i) => {
-      const gx = 55 + i * slotW;
-      const hTtc = Math.max(6, Math.round((r.ttc_usd / maxVal) * 120));
-      const hCost = Math.max(4, Math.round((r.cost_usd / maxVal) * 120));
-      const baseY = 150;
-      return `
-        <g>
-          <rect x="${gx}" y="${baseY - hTtc}" width="${barW}" height="${hTtc}" rx="3" fill="#2563EB"/>
-          <rect x="${gx + barW + 4}" y="${baseY - hCost}" width="${barW}" height="${hCost}" rx="3" fill="#10B981"/>
-          <text x="${gx + barW + 2}" y="${baseY - hTtc - 6}" text-anchor="middle" fill="var(--tx)" font-size="10" font-family="var(--font-mono)" font-weight="700">${fmtUSDk(r.ttc_usd)}</text>
-          <text x="${gx + barW + 2}" y="168" text-anchor="middle" fill="var(--tx)" font-size="10.5" font-weight="700">${esc(r.id.replace('INV-', ''))}</text>
-          <text x="${gx + barW + 2}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9.5">${esc(r.company)} · ${r.margin_pct.toFixed(1)}% GM</text>
-        </g>
-      `;
-    }).join('');
-
     const gapRows = (trd.salesRows || []).filter(r => r && r.is_gap);
     const firstGapId = gapRows[0] ? String(gapRows[0].id || '') : '';
     const gapValText = s.invoiceGapCount > 0
@@ -53116,16 +53083,6 @@
 
       return `
         ${kpiHtml}
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('trd_receivables')} GROSS RECEIVABLES VS. CUSTOMER ADVANCES &amp; COLLECTION PROMISES</span></div>
-            <span class="panel-meta">Blue:Invoice Amount ($) · Green:Landed Cost COGS ($)</span>
-          </div>
-          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Trading Receivables & Margin Chart">
-            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-            ${salesSvgBars}
-          </svg>
-        </div>
         <div class="panel-card" id="trdReceivablesPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -53197,6 +53154,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'trdArChartsRow',
+          panelId: 'trdReceivablesPanel',
+          left: { mode: 'group', groupKey: 'customer', valKey: 'invoiced_ttc', fmt: 'usd', color: 'blue', title: 'Invoiced Trading Volume by Customer ($)', sub: 'Top customer billing accounts across Shacman and Korri Auto' },
+          right: { mode: 'group', groupKey: 'status', valKey: 'gross_ar_usd', allowZero: true, fmt: 'usd', color: 'gold', title: 'Gross Receivables & Collection Status ($)', sub: 'Open receivable exposure across collection and advance tiers' }
+        })}
       `;
     }
 
@@ -53215,16 +53178,6 @@
 
       return `
         ${kpiHtml}
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('trd_targets')} MONTHLY SALES TARGETS &amp; CHRONOLOGICAL EFFECTIVE-DATED PRICE LISTS</span></div>
-            <span class="panel-meta">Blue:Invoice Amount ($) · Green:Landed Cost COGS ($)</span>
-          </div>
-          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Trading Sales Targets Chart">
-            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-            ${salesSvgBars}
-          </svg>
-        </div>
         <div class="panel-card" id="trdTargetsPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -53289,6 +53242,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'trdTargetsChartsRow',
+          panelId: 'trdTargetsPanel',
+          left: { mode: 'group', groupKey: 'segment', valKey: 'actual_ttc', fmt: 'usd', color: 'blue', title: 'Actual Trading Sales by Product Segment ($)', sub: 'Realized sales revenue across heavy trucks and spare parts segments' },
+          right: { mode: 'group', groupKey: 'rep', valKey: 'target_ttc', fmt: 'usd', color: 'green', title: 'Sales Targets by Desk & Representative ($)', sub: 'Assigned quota commitments by sales representative' }
+        })}
       `;
     }
 
@@ -53311,16 +53270,6 @@
 
     return `
       ${kpiHtml}
-      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-        <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('trd_sales')} TRADING SALES INVOICES VS LANDED COST COGS &amp; GROSS MARGIN</span></div>
-          <span class="panel-meta">Blue:Sales Revenue ($) · Green:Landed Cost COGS ($)</span>
-        </div>
-        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Trading Sales Invoices vs Landed Cost Chart">
-          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-          ${salesSvgBars}
-        </svg>
-      </div>
       <div class="panel-card" id="trdSalesPanel">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -53395,6 +53344,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'trdSalesChartsRow',
+        panelId: 'trdSalesPanel',
+        left: { mode: 'month', dateKey: 'date', valKey: 'ttc_usd', fmt: 'usd', color: 'blue', title: 'Monthly Trading Sales Volume TTC ($)', sub: 'Heavy truck and spare parts invoiced revenue by month' },
+        right: { mode: 'group', groupKey: 'customer', valKey: 'ttc_usd', fmt: 'usd', color: 'green', title: 'Top Trading Customers by Invoiced Sales ($)', sub: 'Revenue concentration across truck fleet buyers and parts dealers' }
+      })}
     `;
   }
 
@@ -53406,28 +53361,6 @@
     const coStyle = hideCo ? ' style="display:none"' : '';
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
-
-    const chartW = 780, chartH = 195;
-    const chartImpRows = trd.importRows.slice(0, 12);
-    const maxImp = Math.max(1, ...chartImpRows.map(r => Number(r.total_landed_usd) || 0));
-    const slotW = Math.floor((chartW - 70) / Math.max(1, chartImpRows.length));
-    const barW = Math.min(36, Math.max(16, Math.floor((slotW - 18) / 2)));
-    const impSvgBars = chartImpRows.map((r, i) => {
-      const gx = 55 + i * slotW;
-      const hFob = Math.max(6, Math.round(((Number(r.fob_usd) || 0) / maxImp) * 120));
-      const hTot = Math.max(6, Math.round(((Number(r.total_landed_usd) || 0) / maxImp) * 120));
-      const baseY = 150;
-      const hasUnalloc = r.status.includes('Pending');
-      return `
-        <g>
-          <rect x="${gx}" y="${baseY - hFob}" width="${barW}" height="${hFob}" rx="3" fill="#3B82F6"/>
-          <rect x="${gx + barW + 4}" y="${baseY - hTot}" width="${barW}" height="${hTot}" rx="3" fill="${hasUnalloc ? '#F59E0B' : '#10B981'}"/>
-          <text x="${gx + barW + 2}" y="${baseY - hTot - 6}" text-anchor="middle" fill="var(--tx)" font-size="10" font-family="var(--font-mono)" font-weight="700">${fmtUSDk(r.total_landed_usd)}</text>
-          <text x="${gx + barW + 2}" y="168" text-anchor="middle" fill="var(--tx)" font-size="10.5" font-weight="700">${esc(r.id)}</text>
-          <text x="${gx + barW + 2}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9.5">${esc(r.company)} · +${fmtUSDk(r.landed_add_usd)} Landed</text>
-        </g>
-      `;
-    }).join('');
 
     const landedPct = s.totalFobUsd > 0 ? round2((s.totalLandedAddUsd / s.totalFobUsd) * 100) : 0;
     const kpiHtml = `
@@ -53484,16 +53417,6 @@
 
       return `
         ${kpiHtml}
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('trd_landed')} LANDED COST ALLOCATIONS: FREIGHT, CUSTOMS, CLEARANCE &amp; INSURANCE</span></div>
-            <span class="panel-meta">Blue:Supplier FOB ($) · Green:100% Allocated Landed Cost · Amber:Pending Allocation</span>
-          </div>
-          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Landed Cost Allocations Chart">
-            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-            ${impSvgBars}
-          </svg>
-        </div>
         <div class="panel-card" id="trdLandedPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -53564,6 +53487,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'trdLandedChartsRow',
+          panelId: 'trdLandedPanel',
+          left: { mode: 'month', dateKey: 'date', valKey: 'total_landed_add', fmt: 'usd', color: 'blue', title: 'Monthly Capitalized Landed Cost Additions ($)', sub: 'Sea freight, customs duty, port clearance, and insurance by month' },
+          right: { mode: 'group', groupKey: 'basis', valKey: 'total_landed_add', fmt: 'usd', color: 'gold', title: 'Landed Cost Vouchers by Allocation Basis ($)', sub: 'Distribution by cost-allocation driver across import shipments' }
+        })}
       `;
     }
 
@@ -53582,16 +53511,6 @@
 
       return `
         ${kpiHtml}
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('trd_grn')} WAREHOUSE GOODS RECEIPT NOTES (GRN) &amp; CAPITALIZED LANDED COST</span></div>
-            <span class="panel-meta">Blue:Supplier FOB ($) · Green:Capitalized Landed Value ($)</span>
-          </div>
-          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Goods Receipt Notes Chart">
-            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-            ${impSvgBars}
-          </svg>
-        </div>
         <div class="panel-card" id="trdGrnPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -53658,6 +53577,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'trdGrnChartsRow',
+          panelId: 'trdGrnPanel',
+          left: { mode: 'month', dateKey: 'date', valKey: 'landed_cost_usd', fmt: 'usd', color: 'blue', title: 'Monthly Goods Receipt Landed Value ($)', sub: 'Capitalized inventory receipts into trading warehouses by month' },
+          right: { mode: 'group', groupKey: 'warehouse', valKey: 'landed_cost_usd', fmt: 'usd', color: 'green', title: 'Goods Received by Warehouse ($)', sub: 'Capitalized value received across Al Ghazieh, Bchamoun, and showroom yards' }
+        })}
       `;
     }
 
@@ -53679,16 +53604,6 @@
 
     return `
       ${kpiHtml}
-      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-        <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('trd_purchases')} OVERSEAS IMPORT FILES: SUPPLIER FOB VS. CAPITALIZED LANDED COST</span></div>
-          <span class="panel-meta">Blue:Supplier FOB ($) · Green:Cleared Landed Cost · Amber:Pending Landed Allocation</span>
-        </div>
-        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Import Files & Landed Cost Chart">
-          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-          ${impSvgBars}
-        </svg>
-      </div>
       <div class="panel-card" id="trdPurchasesPanel">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -53759,6 +53674,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'trdPurchChartsRow',
+        panelId: 'trdPurchasesPanel',
+        left: { mode: 'month', dateKey: 'date', valKey: 'total_landed_usd', fmt: 'usd', color: 'blue', title: 'Monthly Overseas Import Purchases Landed ($)', sub: 'Import shipment capitalization across arrival and booking months' },
+        right: { mode: 'group', groupKey: 'supplier', valKey: 'total_landed_usd', fmt: 'usd', color: 'green', title: 'Import Volume by Overseas Supplier ($)', sub: 'Shaanxi, Weichai, OEM truck, tyre, and spare-parts supplier spend' }
+      })}
     `;
   }
 
@@ -53789,28 +53710,6 @@
     const coStyle = hideCo ? ' style="display:none"' : '';
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
-
-    const chartW = 780, chartH = 195;
-    const chartUnitRows = trd.serialUnits.slice(0, 12);
-    const maxPrice = Math.max(1, ...chartUnitRows.map(r => r.list_price_usd));
-    const slotW = Math.floor((chartW - 70) / Math.max(1, chartUnitRows.length));
-    const barW = Math.min(30, Math.max(12, Math.floor((slotW - 14) / 2)));
-    const unitSvgBars = chartUnitRows.map((r, i) => {
-      const gx = 55 + i * slotW;
-      const hLanded = Math.max(6, Math.round((r.landed_cost_usd / maxPrice) * 120));
-      const hList = Math.max(6, Math.round((r.list_price_usd / maxPrice) * 120));
-      const baseY = 150;
-      const col = r.status === 'Sold & Delivered' ? '#10B981' : (r.status === 'Reserved' ? '#F59E0B' : '#2563EB');
-      return `
-        <g>
-          <rect x="${gx}" y="${baseY - hLanded}" width="${barW}" height="${hLanded}" rx="3" fill="#64748B"/>
-          <rect x="${gx + barW + 3}" y="${baseY - hList}" width="${barW}" height="${hList}" rx="3" fill="${col}"/>
-          <text x="${gx + barW + 1}" y="${baseY - hList - 6}" text-anchor="middle" fill="var(--tx)" font-size="9.5" font-family="var(--font-mono)" font-weight="700">${fmtUSDk(r.list_price_usd)}</text>
-          <text x="${gx + barW + 1}" y="168" text-anchor="middle" fill="var(--tx)" font-size="10" font-weight="700">${esc(r.id)}</text>
-          <text x="${gx + barW + 1}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9">${esc(r.family.split(' ')[0])}</text>
-        </g>
-      `;
-    }).join('');
 
     const totUnitGm = round2(s.totalUnitsListUsd - s.totalUnitsLandedUsd);
     const kpiHtml = `
@@ -53867,16 +53766,6 @@
 
       return `
         ${kpiHtml}
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('trd_warranty')} PRE-DELIVERY INSPECTION (PDI), WORKSHOP SERVICE &amp; OEM WARRANTY RECOVERY</span></div>
-            <span class="panel-meta">Slate:Landed Cost ($) · Blue:Showroom · Amber:Reserved · Green:Sold &amp; Delivered</span>
-          </div>
-          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Showroom Units & PDI Chart">
-            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-            ${unitSvgBars}
-          </svg>
-        </div>
         <div class="panel-card" id="trdWarrantyPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -53943,6 +53832,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'trdWarrantyChartsRow',
+          panelId: 'trdWarrantyPanel',
+          left: { mode: 'month', dateKey: 'date', getVal: r => round2(Number(r.parts_cost_usd || 0) + Number(r.labor_usd || 0)), fmt: 'usd', color: 'copper', title: 'Monthly Workshop, PDI & Warranty Cost ($)', sub: 'Combined parts and service bay labor across workshop job months' },
+          right: { mode: 'group', groupKey: 'job_type', getVal: r => round2(Number(r.parts_cost_usd || 0) + Number(r.labor_usd || 0)), fmt: 'usd', color: 'blue', title: 'Workshop Cost by Job Type ($)', sub: 'Pre-delivery inspection, preventive service, and OEM warranty claims' }
+        })}
       `;
     }
 
@@ -53964,16 +53859,6 @@
 
     return `
       ${kpiHtml}
-      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-        <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('trd_trucks')} SHOWROOM &amp; SERIAL UNITS BY CHASSIS VIN: LANDED COST VS. SELLING PRICE</span></div>
-          <span class="panel-meta">Slate:Capitalized Landed Cost ($) · Blue:Showroom · Amber:Reserved · Green:Sold &amp; Delivered</span>
-        </div>
-        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Showroom Serial Units Chart">
-          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-          ${unitSvgBars}
-        </svg>
-      </div>
       <div class="panel-card" id="trdTrucksPanel">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -54044,6 +53929,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'trdTrucksChartsRow',
+        panelId: 'trdTrucksPanel',
+        left: { mode: 'group', groupKey: 'model', valKey: 'list_price_usd', fmt: 'usd', color: 'blue', title: 'Showroom & Serial Inventory by Model ($)', sub: 'List valuation across Shacman tractor, mixer, tipper, and equipment models' },
+        right: { mode: 'group', groupKey: 'status', valKey: 'list_price_usd', fmt: 'usd', color: 'green', title: 'Serial Chassis Valuation by Unit Status ($)', sub: 'Showroom, PDI, reserved, and sold unit inventory breakdown' }
+      })}
     `;
   }
 
@@ -54055,26 +53946,6 @@
     const coStyle = hideCo ? ' style="display:none"' : '';
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
-
-    const chartW = 780, chartH = 195;
-    const chartTrdStkRows = trd.stockRows.slice(0, 12);
-    const maxVal = Math.max(1, ...chartTrdStkRows.map(r => r.stock_val_usd));
-    const slotW = Math.floor((chartW - 70) / Math.max(1, chartTrdStkRows.length));
-    const barW = Math.min(44, Math.max(18, slotW - 18));
-    const stkSvgBars = chartTrdStkRows.map((r, i) => {
-      const gx = 55 + i * slotW;
-      const hVal = Math.max(6, Math.round((r.stock_val_usd / maxVal) * 120));
-      const baseY = 150;
-      const col = r.is_low ? '#EF4444' : '#2563EB';
-      return `
-        <g>
-          <rect x="${gx}" y="${baseY - hVal}" width="${barW}" height="${hVal}" rx="3" fill="${col}"/>
-          <text x="${gx + Math.floor(barW / 2)}" y="${baseY - hVal - 6}" text-anchor="middle" fill="var(--tx)" font-size="10" font-family="var(--font-mono)" font-weight="700">${fmtUSDk(r.stock_val_usd)}</text>
-          <text x="${gx + Math.floor(barW / 2)}" y="168" text-anchor="middle" fill="var(--tx)" font-size="10" font-weight="700">${esc(r.code.slice(0, 10))}</text>
-          <text x="${gx + Math.floor(barW / 2)}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9">${esc(r.warehouse)} (${r.on_hand})</text>
-        </g>
-      `;
-    }).join('');
 
     const kpiHtml = `
       <div class="kpi-grid" style="margin-bottom:14px">
@@ -54125,16 +53996,6 @@
 
       return `
         ${kpiHtml}
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('trd_movements')} WAREHOUSE STOCK MOVEMENTS &amp; INTER-COMPANY TRANSFERS</span></div>
-            <span class="panel-meta">Blue:Optimal Stock Valuation ($) · Red:Low-Stock Reorder Alert</span>
-          </div>
-          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Stock Movements Chart">
-            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-            ${stkSvgBars}
-          </svg>
-        </div>
         <div class="panel-card" id="trdMovementsPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -54199,6 +54060,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'trdMovementsChartsRow',
+          panelId: 'trdMovementsPanel',
+          left: { mode: 'month', dateKey: 'date', valKey: 'total_usd', fmt: 'usd', color: 'blue', title: 'Monthly Stock Movements & IC Transfers ($)', sub: 'Warehouse issues, receipts, and Shacman / Korri inter-company transfers' },
+          right: { mode: 'group', groupKey: 'type', valKey: 'total_usd', fmt: 'usd', color: 'gold', title: 'Stock Movement Volume by Type ($)', sub: 'Breakdown across inter-company transfers, workshop issues, and receipts' }
+        })}
       `;
     }
 
@@ -54217,16 +54084,6 @@
 
       return `
         ${kpiHtml}
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('trd_recon')} PARALLEL STOCK POSITION (1,077 ROWS) &amp; MONTHLY P&amp;L (268 ROWS) RECONCILIATION</span></div>
-            <span class="panel-meta">Blue:Optimal Stock Valuation ($) · Red:Low-Stock Reorder Alert</span>
-          </div>
-          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Parallel Stock & P&L Reconciliation Chart">
-            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-            ${stkSvgBars}
-          </svg>
-        </div>
         <div class="panel-card" id="trdReconPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -54286,6 +54143,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'trdReconChartsRow',
+          panelId: 'trdReconPanel',
+          left: { mode: 'group', groupKey: 'domain', valKey: 'live_app_usd', allowZero: true, fmt: 'usd', color: 'blue', title: 'Verified Live Value by Reconciliation Domain ($)', sub: 'Parallel stock position and monthly P&L ledger parity check' },
+          right: { mode: 'group', groupKey: 'period', valKey: 'rows_checked', allowZero: true, fmt: 'count', color: 'green', title: 'Verified Records by Reconciliation Period (Rows)', sub: 'Row-level reconciliation coverage across legacy comparison windows' }
+        })}
       `;
     }
 
@@ -54303,16 +54166,6 @@
 
     return `
       ${kpiHtml}
-      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-        <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('trd_stock')} MULTI-WAREHOUSE SPARE PARTS &amp; TYRES VALUATION (WEIGHTED-AVG COST &amp; REORDER GUARD)</span></div>
-          <span class="panel-meta">Blue:Optimal Stock Valuation ($) · Red:Low-Stock Reorder Alert</span>
-        </div>
-        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Spare Parts Stock Valuation Chart">
-          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
-          ${stkSvgBars}
-        </svg>
-      </div>
       <div class="panel-card" id="trdStockPanel">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -54379,6 +54232,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'trdStockChartsRow',
+        panelId: 'trdStockPanel',
+        left: { mode: 'group', groupKey: 'warehouse', valKey: 'stock_val_usd', fmt: 'usd', color: 'blue', title: 'Spare Parts Valuation by Warehouse ($)', sub: 'Weighted-average stock value across Al Ghazieh, Bchamoun, and showroom stores' },
+        right: { mode: 'group', groupKey: 'category', valKey: 'stock_val_usd', fmt: 'usd', color: 'green', title: 'Spare Parts Valuation by Category ($)', sub: 'Inventory capital distribution across tyres, filters, engine parts, and hydraulics' }
+      })}
     `;
   }
 
@@ -54867,6 +54726,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'reInvoicingChartsRow',
+          sortView: 're_invoicing',
+          left: { mode: 'month', dateKey: 'date', valKey: 'amount_ttc_usd', fmt: 'usd', color: 'blue', title: 'Monthly Period Rent Invoicing ($)', sub: 'Gross commercial and residential rent billed across period dates' },
+          right: { mode: 'group', groupKey: 'status', valKey: 'amount_ttc_usd', fmt: 'usd', color: 'green', title: 'Rent Invoicing by Settlement Status ($)', sub: 'Paid, partial, and open receivable status across billed rent invoices' }
+        })}
       `;
     }
 
@@ -54933,6 +54798,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'reReceiptsChartsRow',
+          sortView: 're_receipts',
+          left: { mode: 'month', dateKey: 'date', valKey: 'gross_usd', fmt: 'usd', color: 'blue', title: 'Monthly Tenant Receipts & Deposits ($)', sub: 'Gross rent collections, tenant advances, and security deposits by month' },
+          right: { mode: 'group', groupKey: 'method', valKey: 'gross_usd', fmt: 'usd', color: 'green', title: 'Tenant Receipts by Payment Method ($)', sub: 'Settlement volume across bank wire, cash till, and check channels' }
+        })}
       `;
     }
 
@@ -54940,36 +54811,10 @@
     const sumTtcPeriod = filteredLeases.reduce((a, r) => a + r.ttc_period_usd, 0);
     const sumAnnualTtc = filteredLeases.reduce((a, r) => a + r.annual_ttc_usd, 0);
     const sumDep = filteredLeases.reduce((a, r) => a + r.deposit_usd, 0);
-    const maxLeaseAnnual = Math.max(1, ...filteredLeases.map(r => r.annual_ttc_usd));
 
     return `
       ${bannerHtml}
-      <div class="grid-2" id="reLeaseChartsRow" style="margin-bottom:16px">
-        <div class="panel">
-          <div class="panel-head">
-            <div>
-              <h3>Annual Contracted Rent by Commercial Lease ($)</h3>
-              <p>Ranked by annualized rent contribution across 4235 Msaytbeh &amp; Properties portfolio</p>
-            </div>
-          </div>
-          <div style="padding:12px 16px">
-            <svg viewBox="0 0 560 210" style="width:100%;height:195px;display:block" role="img" aria-label="Annual Rent by Lease Chart">
-              ${filteredLeases.slice(0, 6).map((r, idx) => {
-                const y = 12 + idx * 32;
-                const w = Math.max(12, Math.round((r.annual_ttc_usd / maxLeaseAnnual) * 310));
-                const fill = r.company === '4235 Company S.A.L' ? '#0d9488' : '#2563eb';
-                return `
-                  <g transform="translate(0,${y})">
-                    <text x="4" y="15" font-size="11" font-weight="600" fill="currentColor">${esc(r.tenant.slice(0, 24))}</text>
-                    <rect x="175" y="3" width="${w}" height="18" rx="4" fill="${fill}" opacity="0.88"></rect>
-                    <text x="${182 + w}" y="16" font-size="11" font-family="monospace" font-weight="700" fill="currentColor">${fmtUSD(r.annual_ttc_usd, 0)}/yr</text>
-                  </g>
-                `;
-              }).join('')}
-            </svg>
-          </div>
-        </div>
-        <div class="panel">
+      <div class="panel" style="margin-bottom:16px">
           <div class="panel-head">
             <div>
               <h3>Lease Escalation &amp; VAT Compliance Summary</h3>
@@ -55004,7 +54849,6 @@
               <div class="kpi-sub">2026-05-05 Mazen $19,425 vs Infinitas $13,875</div>
             </div>
           </div>
-        </div>
       </div>
 
       <div class="panel">
@@ -55063,6 +54907,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'reLeaseChartsRow',
+        sortView: 're_leases',
+        left: { mode: 'group', groupKey: 'property', valKey: 'annual_ttc_usd', fmt: 'usd', color: 'blue', title: 'Contracted Annual Rent by Property ($)', sub: 'Annualized commercial and residential rent roll by portfolio asset' },
+        right: { mode: 'group', groupKey: 'tenant', valKey: 'annual_ttc_usd', fmt: 'usd', color: 'green', title: 'Contracted Annual Rent by Tenant ($)', sub: 'Top commercial and retail lease commitments across active contracts' }
+      })}
     `;
   }
 
@@ -55176,6 +55026,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'reInstalmentsChartsRow',
+          sortView: 're_instalments',
+          left: { mode: 'month', dateKey: 'due_date', valKey: 'scheduled_usd', fmt: 'usd', color: 'gold', title: 'Monthly Buyer Instalments Scheduled ($)', sub: 'Contracted deed milestone tranches by scheduled due month' },
+          right: { mode: 'group', groupKey: 'status', valKey: 'scheduled_usd', fmt: 'usd', color: 'blue', title: 'Buyer Instalments by Tranche Status ($)', sub: 'Paid, due soon, and overdue milestone exposure across active sales' }
+        })}
       `;
     }
 
@@ -55183,36 +55039,9 @@
     const sumPaid = filteredSales.reduce((a, r) => a + r.paid_usd, 0);
     const sumBal = filteredSales.reduce((a, r) => a + r.balance_usd, 0);
     const sumComm = filteredSales.reduce((a, r) => a + r.broker_comm_usd, 0);
-    const maxSaleVal = Math.max(1, ...filteredSales.map(r => r.contract_usd));
 
     return `
       ${bannerHtml}
-      <div class="panel" style="margin-bottom:16px">
-        <div class="panel-head">
-          <div>
-            <h3>Contracted Sale Value vs Collected Instalments by Buyer ($)</h3>
-            <p>Paid-to-date progress bar vs remaining deed transfer balance</p>
-          </div>
-        </div>
-        <div style="padding:12px 16px">
-          <svg viewBox="0 0 680 165" style="width:100%;height:155px;display:block" role="img" aria-label="Property Sales Progress Chart">
-            ${filteredSales.slice(0, 4).map((r, idx) => {
-              const y = 10 + idx * 36;
-              const wTotal = Math.max(20, Math.round((r.contract_usd / maxSaleVal) * 360));
-              const wPaid = Math.round((r.paid_usd / Math.max(1, r.contract_usd)) * wTotal);
-              return `
-                <g transform="translate(0,${y})">
-                  <text x="4" y="16" font-size="11" font-weight="600" fill="currentColor">${esc(r.buyer.slice(0, 28))}</text>
-                  <rect x="210" y="3" width="${wTotal}" height="18" rx="4" fill="rgba(148,163,184,0.25)"></rect>
-                  <rect x="210" y="3" width="${wPaid}" height="18" rx="4" fill="#10b981"></rect>
-                  <text x="${218 + wTotal}" y="16" font-size="11" font-family="monospace" font-weight="700" fill="currentColor">${fmtUSD(r.paid_usd, 0)} / ${fmtUSD(r.contract_usd, 0)}</text>
-                </g>
-              `;
-            }).join('')}
-          </svg>
-        </div>
-      </div>
-
       <div class="panel">
         <div class="panel-head">
           <div>
@@ -55269,6 +55098,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'reSalesChartsRow',
+        sortView: 're_sales',
+        left: { mode: 'month', dateKey: 'date', valKey: 'contract_usd', fmt: 'usd', color: 'blue', title: 'Monthly Property Sales Contracted ($)', sub: 'Executed unit and parcel disposal value by contract month' },
+        right: { mode: 'group', groupKey: 'deed_status', valKey: 'contract_usd', fmt: 'usd', color: 'green', title: 'Contracted Sales by Deed Transfer Stage ($)', sub: 'Title deed transfer vs client-advance staging across active buyers' }
+      })}
     `;
   }
 
@@ -55400,6 +55235,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'reUnitsChartsRow',
+          sortView: 're_units',
+          left: { mode: 'group', groupKey: 'property', valKey: 'annual_rent_usd', allowZero: true, fmt: 'usd', color: 'blue', title: 'Rentable Unit Roll by Property ($)', sub: 'Annualized unit rent potential across commercial and residential blocks' },
+          right: { mode: 'group', groupKey: 'occupancy', fmt: 'count', color: 'green', title: 'Building Units by Occupancy Status (Units)', sub: 'Occupied vs vacant and fit-out unit count across portfolio assets' }
+        })}
       `;
     }
 
@@ -55461,6 +55302,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'reValuationsChartsRow',
+          sortView: 're_valuations',
+          left: { mode: 'group', groupKey: 'property', valKey: 'net_share_val_usd', fmt: 'usd', color: 'blue', title: 'Group Share Valuation by Property ($)', sub: 'Certified share-adjusted market value (/2400) across appraised assets' },
+          right: { mode: 'group', groupKey: 'basis', valKey: 'gross_val_usd', fmt: 'usd', color: 'gold', title: 'Gross Appraisal Value by Methodology ($)', sub: '100% gross certified valuation grouped by appraisal methodology' }
+        })}
       `;
     }
 
@@ -55527,6 +55374,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'reOwnershipChartsRow',
+          sortView: 're_ownership',
+          left: { mode: 'group', groupKey: 'property', valKey: 'entitled_noi_usd', allowZero: true, fmt: 'usd', color: 'blue', title: 'Group-Entitled NOI by Property ($)', sub: 'Share-weighted net operating income across co-owned title deeds' },
+          right: { mode: 'group', groupKey: 'holder', valKey: 'entitled_noi_usd', allowZero: true, fmt: 'usd', color: 'green', title: 'Entitled NOI by Title Holder Pool ($)', sub: 'Net operating income allocation across /2400 cadastral deed pools' }
+        })}
       `;
     }
 
@@ -55535,36 +55388,9 @@
     const sumShare = filteredProps.reduce((a, r) => a + r.share_val_usd, 0);
     const sumRent = filteredProps.reduce((a, r) => a + r.annual_rent_usd, 0);
     const sumNoi = filteredProps.reduce((a, r) => a + r.annual_noi_usd, 0);
-    const maxPropVal = Math.max(1, ...filteredProps.map(r => r.lgb_gross_usd));
 
     return `
       ${bannerHtml}
-      <div class="panel" style="margin-bottom:16px">
-        <div class="panel-head">
-          <div>
-            <h3>Top Portfolio Assets: 100% Gross Valuation vs Group Share-Adjusted Value ($)</h3>
-            <p>Reflecting Lebanese cadastral /2400 co-ownership shares across Beirut, Keserwan, South Lebanon, Cannes &amp; Baghdad</p>
-          </div>
-        </div>
-        <div style="padding:12px 16px">
-          <svg viewBox="0 0 680 215" style="width:100%;height:200px;display:block" role="img" aria-label="Portfolio Valuation Bar Chart">
-            ${filteredProps.slice(0, 6).map((r, idx) => {
-              const y = 10 + idx * 32;
-              const wGross = Math.max(18, Math.round((r.lgb_gross_usd / maxPropVal) * 340));
-              const wShare = Math.max(6, Math.round((r.share_val_usd / maxPropVal) * 340));
-              return `
-                <g transform="translate(0,${y})">
-                  <text x="4" y="15" font-size="11" font-weight="600" fill="currentColor">${esc(r.name.slice(0, 30))}</text>
-                  <rect x="220" y="3" width="${wGross}" height="18" rx="4" fill="rgba(37,99,235,0.22)"></rect>
-                  <rect x="220" y="3" width="${wShare}" height="18" rx="4" fill="#2563eb"></rect>
-                  <text x="${228 + wGross}" y="16" font-size="11" font-family="monospace" font-weight="700" fill="currentColor">${fmtUSD(r.share_val_usd, 0)} (${fmtNum(r.deed_shares)}/2400)</text>
-                </g>
-              `;
-            }).join('')}
-          </svg>
-        </div>
-      </div>
-
       <div class="panel">
         <div class="panel-head">
           <div>
@@ -55623,6 +55449,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'rePropertiesChartsRow',
+        sortView: 're_properties',
+        left: { mode: 'group', groupKey: 'cadastry', valKey: 'share_val_usd', fmt: 'usd', color: 'blue', title: 'Share-Adjusted Portfolio Value by Region ($)', sub: 'Group /2400 equity value across Beirut, Keserwan, South, Cannes, and Baghdad' },
+        right: { mode: 'group', groupKey: 'status', valKey: 'lgb_gross_usd', fmt: 'usd', color: 'green', title: '100% Gross Valuation by Asset Status ($)', sub: 'Income-producing towers vs land bank and development assets' }
+      })}
     `;
   }
 
@@ -55739,41 +55571,20 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'reRechargesChartsRow',
+          sortView: 're_recharges',
+          left: { mode: 'group', groupKey: 'property', valKey: 'total_recharge_usd', fmt: 'usd', color: 'copper', title: 'Recoverable Tenant Recharges by Property ($)', sub: 'Generator diesel, chilled water, and municipal recharges by building' },
+          right: { mode: 'group', groupKey: 'status', valKey: 'total_recharge_usd', fmt: 'usd', color: 'gold', title: 'Tenant Recharges by Billing Status ($)', sub: 'Invoiced and settled recoveries vs unbilled tenant recharge items' }
+        })}
       `;
     }
 
     const sumBudget = filteredWo.reduce((a, r) => a + r.budget_usd, 0);
     const sumActual = filteredWo.reduce((a, r) => a + r.actual_usd, 0);
-    const maxWo = Math.max(1, ...filteredWo.map(r => Math.max(r.budget_usd, r.actual_usd)));
 
     return `
       ${bannerHtml}
-      <div class="panel" style="margin-bottom:16px">
-        <div class="panel-head">
-          <div>
-            <h3>Work Order Budget vs Actual Spend by Property ($)</h3>
-            <p>Structural improvements capitalized to Building Improvements vs routine facility repairs</p>
-          </div>
-        </div>
-        <div style="padding:12px 16px">
-          <svg viewBox="0 0 680 185" style="width:100%;height:175px;display:block" role="img" aria-label="Work Orders Budget vs Actual Chart">
-            ${filteredWo.slice(0, 5).map((r, idx) => {
-              const y = 10 + idx * 33;
-              const wBud = Math.max(14, Math.round((r.budget_usd / maxWo) * 340));
-              const wAct = Math.max(10, Math.round((r.actual_usd / maxWo) * 340));
-              return `
-                <g transform="translate(0,${y})">
-                  <text x="4" y="15" font-size="11" font-weight="600" fill="currentColor">${esc((r.id + ' · ' + r.unit).slice(0, 30))}</text>
-                  <rect x="220" y="2" width="${wBud}" height="9" rx="3" fill="rgba(148,163,184,0.45)"></rect>
-                  <rect x="220" y="13" width="${wAct}" height="9" rx="3" fill="${r.actual_usd > r.budget_usd ? '#ef4444' : '#0d9488'}"></rect>
-                  <text x="${228 + Math.max(wBud, wAct)}" y="16" font-size="11" font-family="monospace" font-weight="700" fill="currentColor">${fmtUSD(r.actual_usd, 0)} / ${fmtUSD(r.budget_usd, 0)}</text>
-                </g>
-              `;
-            }).join('')}
-          </svg>
-        </div>
-      </div>
-
       <div class="panel">
         <div class="panel-head">
           <div>
@@ -55828,6 +55639,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'reWorkordersChartsRow',
+        sortView: 're_workorders',
+        left: { mode: 'group', groupKey: 'property', valKey: 'actual_usd', fmt: 'usd', color: 'copper', title: 'Actual Work Order Spend by Property ($)', sub: 'Structural CAPEX fit-out and MEP maintenance incurred per asset' },
+        right: { mode: 'group', groupKey: 'contractor', valKey: 'budget_usd', fmt: 'usd', color: 'steel', title: 'Approved Work Order Budget by Contractor ($)', sub: 'Contracted engineering, HVAC, and renovation scope by vendor' }
+      })}
     `;
   }
 
@@ -56336,6 +56153,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'insRenewalsChartsRow',
+          sortView: 'ins_renewals',
+          left: { mode: 'group', groupKey: 'bucket', valKey: 'quoted_renewal_usd', fmt: 'usd', color: 'gold', title: 'Renewal Pipeline by Horizon Bucket ($)', sub: 'Quoted renewal premium across 0-30, 31-60, 61-90 day, and expired windows' },
+          right: { mode: 'group', groupKey: 'carrier', valKey: 'expiring_prem_usd', fmt: 'usd', color: 'blue', title: 'Expiring Premium by Carrier ($)', sub: 'Upcoming 90-day renewal exposure grouped by underwriting insurer' }
+        })}
       `;
     }
 
@@ -56398,6 +56221,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'insItemsChartsRow',
+          sortView: 'ins_items',
+          left: { mode: 'group', groupKey: 'category', valKey: 'sum_insured_usd', fmt: 'usd', color: 'steel', title: 'Sum Insured by Risk Schedule Category ($)', sub: 'Underwritten asset and census exposure across covered risk classes' },
+          right: { mode: 'group', groupKey: 'client', valKey: 'annual_prem_usd', fmt: 'usd', color: 'green', title: 'Allocated Premium by Insured Client ($)', sub: 'Annualized risk-schedule premium across insured corporate accounts' }
+        })}
       `;
     }
 
@@ -56406,36 +56235,9 @@
     const sumDisc = filteredPol.reduce((a, r) => a + r.discount_usd, 0);
     const sumNetComm = filteredPol.reduce((a, r) => a + r.net_comm_usd, 0);
     const sumPay4017 = filteredPol.reduce((a, r) => a + r.net_payable_4017_usd, 0);
-    const maxPolGwp = Math.max(1, ...filteredPol.map(r => Math.abs(r.gross_prem_usd)));
 
     return `
       ${bannerHtml}
-      <div class="panel" style="margin-bottom:16px">
-        <div class="panel-head">
-          <div>
-            <h3>Gross Written Premium vs Net Brokerage Commission by Policy &amp; Carrier ($)</h3>
-            <p>Carrier Payable stays strictly at Gross Premium minus Gross Commission; client discounts reduce broker commission yield only</p>
-          </div>
-        </div>
-        <div style="padding:12px 16px">
-          <svg viewBox="0 0 680 190" style="width:100%;height:180px;display:block" role="img" aria-label="Insurance GWP and Commission Chart">
-            ${filteredPol.slice(0, 5).map((r, idx) => {
-              const y = 10 + idx * 34;
-              const wGwp = Math.max(18, Math.round((Math.abs(r.gross_prem_usd) / maxPolGwp) * 320));
-              const wComm = Math.max(8, Math.round((Math.abs(r.net_comm_usd) / maxPolGwp) * 320));
-              return `
-                <g transform="translate(0,${y})">
-                  <text x="4" y="16" font-size="11" font-weight="600" fill="currentColor">${esc((r.id + ' · ' + r.carrier).slice(0, 32))}</text>
-                  <rect x="225" y="3" width="${wGwp}" height="18" rx="4" fill="rgba(37,99,235,0.22)"></rect>
-                  <rect x="225" y="3" width="${wComm}" height="18" rx="4" fill="#0d9488"></rect>
-                  <text x="${233 + wGwp}" y="16" font-size="11" font-family="monospace" font-weight="700" fill="currentColor">GWP ${fmtUSD(r.gross_prem_usd, 0)} · Net Comm ${fmtUSD(r.net_comm_usd, 0)}</text>
-                </g>
-              `;
-            }).join('')}
-          </svg>
-        </div>
-      </div>
-
       <div class="panel">
         <div class="panel-head">
           <div>
@@ -56494,6 +56296,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'insPoliciesChartsRow',
+        sortView: 'ins_policies',
+        left: { mode: 'group', groupKey: 'carrier', valKey: 'gross_prem_usd', fmt: 'usd', color: 'blue', title: 'Gross Written Premium by Carrier ($)', sub: 'Bound policies and mid-term endorsements placed across insurers' },
+        right: { mode: 'group', groupKey: 'line', valKey: 'net_comm_usd', fmt: 'usd', color: 'green', title: 'Net Brokerage Commission by Insurance Line ($)', sub: 'Retained commission yield net of broker-funded client discounts' }
+      })}
     `;
   }
 
@@ -56611,6 +56419,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'insRemittancesChartsRow',
+          sortView: 'ins_remittances',
+          left: { mode: 'group', groupKey: 'carrier', valKey: 'net_payable_4017_usd', fmt: 'usd', color: 'copper', title: 'Open Carrier Payable by Insurer ($)', sub: 'Net-of-commission bordereau balances payable per insurance carrier' },
+          right: { mode: 'group', groupKey: 'status', valKey: 'client_cash_held_usd', fmt: 'usd', color: 'green', title: 'Fiduciary Cash Held by Coverage Status ($)', sub: 'Collected client premium cash ring-fenced against carrier payables' }
+        })}
       `;
     }
 
@@ -56672,6 +56486,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'insStatementsChartsRow',
+          sortView: 'ins_statements',
+          left: { mode: 'group', groupKey: 'carrier', valKey: 'expected_comm_4117_usd', fmt: 'usd', color: 'blue', title: 'Expected Brokerage Commission by Carrier ($)', sub: 'Agreement-computed commission receivable across monthly statements' },
+          right: { mode: 'group', groupKey: 'status', valKey: 'statement_comm_usd', fmt: 'usd', color: 'gold', title: 'Carrier Statement Volume by Recon Status ($)', sub: 'Reconciled carrier bordereaux vs statements flagged with discrepancies' }
+        })}
       `;
     }
 
@@ -56735,6 +56555,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'insBillingChartsRow',
+        sortView: 'ins_billing',
+        left: { mode: 'month', dateKey: 'due_date', valKey: 'client_billed_4112_usd', fmt: 'usd', color: 'blue', title: 'Monthly Client Premium Instalments Billed ($)', sub: 'Net debit-note instalments scheduled across client due months' },
+        right: { mode: 'group', groupKey: 'status', valKey: 'client_billed_4112_usd', fmt: 'usd', color: 'copper', title: 'Billed Premiums by Collection Status ($)', sub: 'Paid, open, and overdue premium instalment schedules' }
+      })}
     `;
   }
 
@@ -56760,7 +56586,6 @@
     const sumDed = filteredClm.reduce((a, r) => a + r.deductible_usd, 0);
     const sumAppr = filteredClm.reduce((a, r) => a + r.approved_usd, 0);
     const sumPaid = filteredClm.reduce((a, r) => a + r.paid_by_insurer_usd, 0);
-    const maxClm = Math.max(1, ...filteredClm.map(r => r.claimed_usd));
 
     return `
       <div class="cockpit-banner">
@@ -56800,32 +56625,6 @@
           <div class="kpi-lbl">Paid by Carriers to Date</div>
           <div class="kpi-val mono">${fmtUSD(sumPaid, 0)}</div>
           <div class="kpi-sub">$26,600 approved/under assessment awaiting release</div>
-        </div>
-      </div>
-
-      <div class="panel" style="margin-bottom:16px">
-        <div class="panel-head">
-          <div>
-            <h3>Claimed Estimate vs Adjuster Approved Indemnity by File ($)</h3>
-            <p>Brokerage advocacy tracks surveyor assessment from First Notice of Loss (FNOL) through carrier discharge voucher</p>
-          </div>
-        </div>
-        <div style="padding:12px 16px">
-          <svg viewBox="0 0 680 185" style="width:100%;height:175px;display:block" role="img" aria-label="Insurance Claims Progression Chart">
-            ${filteredClm.slice(0, 5).map((r, idx) => {
-              const y = 10 + idx * 33;
-              const wClm = Math.max(16, Math.round((r.claimed_usd / maxClm) * 320));
-              const wApp = Math.max(6, Math.round((r.approved_usd / maxClm) * 320));
-              return `
-                <g transform="translate(0,${y})">
-                  <text x="4" y="16" font-size="11" font-weight="600" fill="currentColor">${esc((r.id + ' · ' + r.client).slice(0, 32))}</text>
-                  <rect x="225" y="3" width="${wClm}" height="18" rx="4" fill="rgba(245,158,11,0.25)"></rect>
-                  <rect x="225" y="3" width="${wApp}" height="18" rx="4" fill="#2563eb"></rect>
-                  <text x="${233 + wClm}" y="16" font-size="11" font-family="monospace" font-weight="700" fill="currentColor">Claimed ${fmtUSD(r.claimed_usd, 0)} · Approved ${fmtUSD(r.approved_usd, 0)}</text>
-                </g>
-              `;
-            }).join('')}
-          </svg>
         </div>
       </div>
 
@@ -56886,6 +56685,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'insClaimsChartsRow',
+        sortView: 'ins_claims',
+        left: { mode: 'month', dateKey: 'loss_date', valKey: 'claimed_usd', fmt: 'usd', color: 'gold', title: 'Monthly FNOL Claimed Estimates ($)', sub: 'Reported loss reserves grouped by incident date across active files' },
+        right: { mode: 'group', groupKey: 'status', valKey: 'claimed_usd', fmt: 'usd', color: 'blue', title: 'Claimed Loss Exposure by Settlement Status ($)', sub: 'FNOL notification, adjuster assessment, approved, and settled claims' }
+      })}
     `;
   }
 
@@ -56996,6 +56801,12 @@
             </table>
           </div>
         </div>
+        ${renderSiblingHubChartsRow({
+          id: 'insAgreementsChartsRow',
+          sortView: 'ins_agreements',
+          left: { mode: 'group', groupKey: 'carrier', fmt: 'count', color: 'steel', title: 'Commission Rate Windows by Carrier (Rules)', sub: 'Active and historical chronological commission schedules per insurer' },
+          right: { mode: 'group', groupKey: 'status', fmt: 'count', color: 'green', title: 'Commission Rate Windows by Status (Rules)', sub: 'Open active rate agreements vs auto-closed historical windows' }
+        })}
       `;
     }
 
@@ -57056,6 +56867,12 @@
           </table>
         </div>
       </div>
+      ${renderSiblingHubChartsRow({
+        id: 'insCatalogueChartsRow',
+        sortView: 'ins_catalogue',
+        left: { mode: 'group', groupKey: 'line_name', valKey: 'gwp_usd', fmt: 'usd', color: 'blue', title: 'Active Catalogue GWP by Insurance Line ($)', sub: 'Underwritten flagship product volume across standardized insurance lines' },
+        right: { mode: 'group', groupKey: 'carrier', valKey: 'active_policies', fmt: 'count', color: 'green', title: 'Active Policies by Lead Carrier (Policies)', sub: 'Bound policy count across lead underwriting carriers in the catalogue' }
+      })}
     `;
   }
 

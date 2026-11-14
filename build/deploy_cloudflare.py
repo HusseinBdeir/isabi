@@ -9,9 +9,11 @@ Usage:
   python build/deploy_cloudflare.py [--dry] [--skip-seed | --seed | --delta | --full-seed]
                                     [--force-schema] [--force-r2-seeds] [--rotate-secrets]
                                     [--skip-live-parity] [--no-sync-release-log] [--skip-indexnow]
-                                    [--allow-behind-origin] [--allow-dirty] [--no-release-lock] [--login]
+                                    [--allow-behind-origin] [--allow-dirty] [--allow-claimed-version]
+                                    [--no-release-lock] [--login]
   python build/deploy_cloudflare.py --pages-only [--dry] [--skip-live-parity] [--no-sync-release-log]
-                                    [--skip-indexnow] [--allow-behind-origin] [--allow-dirty] [--no-release-lock] [--login]
+                                    [--skip-indexnow] [--allow-behind-origin] [--allow-dirty]
+                                    [--allow-claimed-version] [--no-release-lock] [--login]
   A deploy holds the release lock (build/release_lock.py: one release at a time across sessions and PCs). It takes
   the lock when free and records the deployed commit; after `git push origin main` run
   `python build/release_lock.py release`.
@@ -1248,6 +1250,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Allow deploying even when deployable public/edge paths (app/, functions/, migrations/, wrangler.toml, root site files) have uncommitted edits.",
     )
     opts.add_argument(
+        "--allow-claimed-version",
+        action="store_true",
+        help="Allow deploying even when app/sw.js is unbumped or matches another session's unshipped wt/* claim or release lock.",
+    )
+    opts.add_argument(
         "--no-release-lock",
         action="store_true",
         help="Deploy without holding the release lock (build/release_lock.py); only when the owner says so.",
@@ -1463,6 +1470,380 @@ def check_checkout_not_behind_origin(
     return 0
 
 
+def parse_shell_version(raw: str | None) -> tuple[int, ...] | None:
+    """Parse an ISABI Command Center shell version (`isabi-mfg-v19.6.346` or `v19.6.346`) into ints."""
+    if not raw:
+        return None
+    txt = str(raw)
+    m = re.search(r"""\bSHELL_CACHE\s*=\s*['"]isabi-mfg-v(\d+(?:\.\d+)*)""", txt)
+    if not m:
+        m = re.search(r"""isabi-mfg-v(\d+(?:\.\d+)*)""", txt)
+    if not m:
+        m = re.fullmatch(r"""\s*v?(\d+(?:\.\d+)+)\s*""", txt)
+    if not m:
+        return None
+    try:
+        return tuple(int(part) for part in m.group(1).split("."))
+    except ValueError:
+        return None
+
+
+def format_shell_version(ver: tuple[int, ...] | None) -> str:
+    """Render a parsed version tuple as `v<major>.<minor>.<patch>`."""
+    if not ver:
+        return ""
+    return "v" + ".".join(str(part) for part in ver)
+
+
+def suggest_next_shell_version(main_ver: tuple[int, ...] | None, claims: list[dict] | None = None) -> str:
+    """Return the lowest free `v<major>.<minor>.<patch>` strictly above `origin/main` and all claims."""
+    peak = main_ver
+    for item in claims or ():
+        v = item.get("version_tuple") or parse_shell_version(item.get("version"))
+        if v is not None and (peak is None or v > peak):
+            peak = v
+    if not peak:
+        return ""
+    return format_shell_version((*peak[:-1], peak[-1] + 1))
+
+
+def resolve_app_repo_dir(
+    repo_dir: pathlib.Path = ISABI_ROOT,
+    app_repo_dir: pathlib.Path | None = None,
+) -> pathlib.Path | None:
+    """Locate the sibling `isabi-app` checkout/worktree using `.git` existence (file in worktrees)."""
+    if app_repo_dir is not None:
+        return app_repo_dir if (app_repo_dir / ".git").exists() else None
+    sibling = repo_dir.parent / "isabi-app"
+    if (sibling / ".git").exists():
+        return sibling
+    try:
+        same_as_root = repo_dir.resolve() == ISABI_ROOT.resolve()
+    except OSError:
+        same_as_root = False
+    if same_as_root:
+        home_cand = pathlib.Path.home() / "bhfirms" / "isabi-app"
+        if (home_cand / ".git").exists():
+            return home_cand
+    return None
+
+
+def _run_git_cmd(
+    args: list[str],
+    cwd: pathlib.Path,
+    *,
+    git_bin: str,
+    git_env: dict,
+    timeout: int = 20,
+) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [git_bin, *args],
+        cwd=str(cwd),
+        env=git_env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _fetch_main_and_wt(
+    cwd: pathlib.Path,
+    *,
+    label: str,
+    git_bin: str,
+    git_env: dict,
+) -> None:
+    try:
+        r_rem = _run_git_cmd(["remote", "get-url", "origin"], cwd, git_bin=git_bin, git_env=git_env, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as ex:
+        raise RuntimeError(f"Could not inspect `origin` remote in {label} ({ex}).") from ex
+    if r_rem.returncode != 0 or not (r_rem.stdout or "").strip():
+        raise RuntimeError(f"`origin` remote is missing in {label}; cannot verify unshipped version claims.")
+    try:
+        r_fetch = _run_git_cmd(
+            [
+                "fetch",
+                "--prune",
+                "--no-tags",
+                "--quiet",
+                "origin",
+                "+refs/heads/main:refs/remotes/origin/main",
+                "+refs/heads/wt/*:refs/remotes/origin/wt/*",
+            ],
+            cwd,
+            git_bin=git_bin,
+            git_env=git_env,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as ex:
+        raise RuntimeError(f"`git fetch` failed in {label} ({ex}).") from ex
+    if r_fetch.returncode != 0:
+        detail = (r_fetch.stderr or r_fetch.stdout or "").strip() or f"exit {r_fetch.returncode}"
+        raise RuntimeError(f"`git fetch` failed in {label} ({detail}).")
+
+
+def _git_blob_text(
+    cwd: pathlib.Path,
+    rev_path: str,
+    *,
+    git_bin: str,
+    git_env: dict,
+) -> str | None:
+    r = _run_git_cmd(["cat-file", "blob", rev_path], cwd, git_bin=git_bin, git_env=git_env, timeout=10)
+    return r.stdout if r.returncode == 0 else None
+
+
+def _is_ancestor(
+    cwd: pathlib.Path,
+    ancestor: str,
+    descendant: str,
+    *,
+    git_bin: str,
+    git_env: dict,
+) -> bool:
+    r = _run_git_cmd(["merge-base", "--is-ancestor", ancestor, descendant], cwd, git_bin=git_bin, git_env=git_env, timeout=10)
+    return r.returncode == 0
+
+
+def collect_unshipped_version_claims(
+    repo_dir: pathlib.Path = ISABI_ROOT,
+    *,
+    app_repo_dir: pathlib.Path | None = None,
+    fetch: bool = True,
+    include_lock: bool = True,
+    env: dict | None = None,
+) -> dict:
+    """Inspect local `app/sw.js`, `origin/main`, `origin/wt/*` across both repos, and `refs/locks/release`."""
+    git_env = env or build_env()
+    git_bin = shutil.which("git", path=git_env.get("PATH")) or "git"
+
+    resolved_app = resolve_app_repo_dir(repo_dir, app_repo_dir)
+    local_sw_path = repo_dir / "app" / "sw.js"
+    has_local_sw = local_sw_path.is_file()
+    local_ver = parse_shell_version(local_sw_path.read_text(encoding="utf-8", errors="replace")) if has_local_sw else None
+
+    if fetch and (has_local_sw or resolved_app is not None):
+        _fetch_main_and_wt(repo_dir, label=f"isabi ({repo_dir.name})", git_bin=git_bin, git_env=git_env)
+        if resolved_app is not None:
+            _fetch_main_and_wt(resolved_app, label=f"isabi-app ({resolved_app.name})", git_bin=git_bin, git_env=git_env)
+
+    main_sw_txt = _git_blob_text(repo_dir, "origin/main:app/sw.js", git_bin=git_bin, git_env=git_env)
+    main_ver = parse_shell_version(main_sw_txt)
+    if main_ver is None and resolved_app is not None:
+        app_main_txt = _git_blob_text(resolved_app, "origin/main:sw.js", git_bin=git_bin, git_env=git_env)
+        main_ver = parse_shell_version(app_main_txt)
+
+    if not has_local_sw and main_sw_txt is None and resolved_app is None:
+        return {
+            "skip": True,
+            "local_ver": None,
+            "main_ver": None,
+            "app_changed": False,
+            "claims": [],
+            "peer_claims": [],
+            "own_claims": [],
+            "suggested_next": "",
+        }
+
+    # Did app/ change relative to origin/main?
+    has_origin_app = _run_git_cmd(
+        ["rev-parse", "-q", "--verify", "origin/main:app"],
+        repo_dir,
+        git_bin=git_bin,
+        git_env=git_env,
+        timeout=10,
+    ).returncode == 0
+    if not has_origin_app:
+        app_changed = (repo_dir / "app").exists()
+    else:
+        r_diff = _run_git_cmd(
+            ["diff", "--quiet", "origin/main", "--", "app"],
+            repo_dir,
+            git_bin=git_bin,
+            git_env=git_env,
+            timeout=10,
+        )
+        # Exit 1 means app/ differs; anything > 1 is an unexpected git failure.
+        if r_diff.returncode not in (0, 1):
+            detail = (r_diff.stderr or r_diff.stdout or "").strip() or f"exit {r_diff.returncode}"
+            raise RuntimeError(f"Could not diff `app/` against origin/main ({detail}).")
+        app_changed = r_diff.returncode == 1
+
+    claims: list[dict] = []
+    targets: list[tuple[str, pathlib.Path, str]] = [("isabi", repo_dir, "app/sw.js")]
+    if resolved_app is not None:
+        targets.append(("isabi-app", resolved_app, "sw.js"))
+
+    for repo_label, rdir, sw_rel in targets:
+        r_main_ref = _run_git_cmd(["rev-parse", "-q", "--verify", "refs/remotes/origin/main"], rdir, git_bin=git_bin, git_env=git_env)
+        has_main_ref = r_main_ref.returncode == 0
+        r_head_ref = _run_git_cmd(["rev-parse", "-q", "--verify", "HEAD"], rdir, git_bin=git_bin, git_env=git_env)
+        has_head = r_head_ref.returncode == 0
+        r_refs = _run_git_cmd(
+            ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes/origin/wt/"],
+            rdir,
+            git_bin=git_bin,
+            git_env=git_env,
+            timeout=15,
+        )
+        if r_refs.returncode != 0:
+            detail = (r_refs.stderr or r_refs.stdout or "").strip() or f"exit {r_refs.returncode}"
+            raise RuntimeError(f"Could not list origin/wt/* refs in {repo_label} ({detail}).")
+
+        repo_main_txt = _git_blob_text(rdir, f"origin/main:{sw_rel}", git_bin=git_bin, git_env=git_env) if has_main_ref else None
+        repo_main_ver = parse_shell_version(repo_main_txt) or main_ver
+
+        for line in (r_refs.stdout or "").splitlines():
+            parts = line.strip().split(maxsplit=1)
+            if len(parts) != 2:
+                continue
+            refname, sha = parts
+            if has_main_ref and _is_ancestor(rdir, sha, "refs/remotes/origin/main", git_bin=git_bin, git_env=git_env):
+                continue
+            wt_txt = _git_blob_text(rdir, f"{sha}:{sw_rel}", git_bin=git_bin, git_env=git_env)
+            wt_ver = parse_shell_version(wt_txt)
+            if wt_ver is None:
+                continue
+            baseline = main_ver or repo_main_ver
+            if baseline is not None and wt_ver <= baseline:
+                continue
+            is_mine = bool(has_head and _is_ancestor(rdir, sha, "HEAD", git_bin=git_bin, git_env=git_env))
+            claims.append({
+                "source": "wt",
+                "repo": repo_label,
+                "ref": refname.removeprefix("refs/remotes/"),
+                "sha": sha[:10],
+                "version_tuple": wt_ver,
+                "version": format_shell_version(wt_ver),
+                "is_mine": is_mine,
+            })
+
+    if include_lock and fetch:
+        import release_lock  # noqa: PLC0415
+
+        try:
+            lock_sha, lock_info = release_lock.read_remote_lock(repo_dir)
+        except release_lock.LockError as ex:
+            raise RuntimeError(f"Could not inspect release lock for version claims ({ex}).") from ex
+        if lock_sha and lock_info and not release_lock.held_by_me(lock_info, repo_dir) and not release_lock.is_expired(lock_info, 0):
+            lock_ver = parse_shell_version(lock_info.get("version"))
+            if lock_ver is not None and (main_ver is None or lock_ver > main_ver):
+                claims.append({
+                    "source": "release_lock",
+                    "repo": "isabi",
+                    "ref": f"refs/locks/release ({lock_info.get('holder') or 'peer'})",
+                    "sha": lock_sha[:10],
+                    "version_tuple": lock_ver,
+                    "version": format_shell_version(lock_ver),
+                    "is_mine": False,
+                })
+
+    peer_claims = [c for c in claims if not c["is_mine"]]
+    own_claims = [c for c in claims if c["is_mine"]]
+    return {
+        "skip": False,
+        "local_ver": local_ver,
+        "main_ver": main_ver,
+        "app_changed": app_changed,
+        "claims": claims,
+        "peer_claims": peer_claims,
+        "own_claims": own_claims,
+        "suggested_next": suggest_next_shell_version(main_ver or local_ver, claims),
+    }
+
+
+def check_shell_version_claims(
+    repo_dir: pathlib.Path = ISABI_ROOT,
+    *,
+    app_repo_dir: pathlib.Path | None = None,
+    allow_claimed_version: bool = False,
+    fetch: bool = True,
+    include_lock: bool = True,
+    env: dict | None = None,
+) -> int:
+    """Refuse deploying an unbumped `app/sw.js` or a version claimed by another session's `wt/*` or release lock."""
+    if allow_claimed_version:
+        print("WARN: Bypassing shell version-claim guard (--allow-claimed-version).")
+        return 0
+
+    try:
+        info = collect_unshipped_version_claims(
+            repo_dir,
+            app_repo_dir=app_repo_dir,
+            fetch=fetch,
+            include_lock=include_lock,
+            env=env,
+        )
+    except RuntimeError as ex:
+        print(
+            f"ERROR: Shell version-claim check failed ({ex}). "
+            "Refusing to deploy without verifying unshipped version claims; pass --allow-claimed-version if intentional.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from ex
+
+    if info.get("skip"):
+        return 0
+
+    local_ver = info["local_ver"]
+    main_ver = info["main_ver"]
+    app_changed = info["app_changed"]
+    peer_claims = info["peer_claims"]
+    suggested = info["suggested_next"]
+
+    if local_ver is None:
+        if app_changed:
+            print(
+                "ERROR: `app/` changed relative to origin/main, but `app/sw.js` does not declare a valid `isabi-mfg-v<N>` version. "
+                "Stamp the Command Center shell version before deploying, or pass --allow-claimed-version if intentional.",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        return 0
+
+    local_str = format_shell_version(local_ver)
+    main_str = format_shell_version(main_ver) if main_ver else "(unknown)"
+
+    if main_ver is not None and local_ver < main_ver:
+        print(
+            f"ERROR: Local `app/sw.js` shell version ({local_str}) is older than origin/main ({main_str}). "
+            f"Suggested next free version: {suggested or local_str}. Rebase and bump `app/sw.js` before deploying, "
+            "or pass --allow-claimed-version if intentional.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+    if app_changed and main_ver is not None and local_ver <= main_ver:
+        print(
+            f"ERROR: `app/` changed relative to origin/main, but `app/sw.js` is still unbumped at {local_str} "
+            f"(origin/main is {main_str}). Bump to the next free shell version ({suggested}) first, "
+            "or pass --allow-claimed-version if intentional.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+    conflicts = [c for c in peer_claims if c["version_tuple"] == local_ver]
+    if conflicts:
+        desc = ", ".join(f"{c['repo']}:{c['ref']} ({c['sha']})" for c in conflicts)
+        print(
+            f"ERROR: Shell version {local_str} is already claimed and unshipped by peer session(s): {desc}. "
+            f"Restamp to {suggested} and re-sync before deploying, or pass --allow-claimed-version if intentional.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+    print(
+        f"Shell version claim check verified: {local_str} "
+        f"(origin/main {main_str}, appChanged={'yes' if app_changed else 'no'}, "
+        f"{len(peer_claims)} peer claim(s), 0 conflicts)."
+    )
+    return 0
+
+
 def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
@@ -1506,6 +1887,7 @@ def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
         ("skip_indexnow", "--skip-indexnow"),
         ("allow_behind_origin", "--allow-behind-origin"),
         ("allow_dirty", "--allow-dirty"),
+        ("allow_claimed_version", "--allow-claimed-version"),
         ("no_release_lock", "--no-release-lock"),
     )
     active_non_dry = [flag for attr, flag in flag_attr_map if getattr(args, attr)]
@@ -1616,6 +1998,11 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
             else "Verify public/edge deploy paths have 0 uncommitted changes (git status --porcelain)"
         ),
         (
+            "Shell version-claim guard -> BYPASS (--allow-claimed-version)"
+            if args.allow_claimed_version
+            else "Verify app/sw.js shell version is bumped above origin/main (when app/ changed) and unclaimed by peer wt/* or release lock"
+        ),
+        (
             "Stale-checkout guard -> BYPASS (--allow-behind-origin)"
             if args.allow_behind_origin
             else "Verify local HEAD is not behind origin/main (git fetch origin main + HEAD..origin/main == 0)"
@@ -1623,7 +2010,7 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
         "Verify Cloudflare auth" + (" (allow interactive --login)" if args.login else ""),
     ]
     steps.insert(
-        1,
+        2,
         "Release lock -> BYPASS (--no-release-lock)"
         if args.no_release_lock
         else "Hold the release lock (refs/locks/release on origin; taken when free, refused while another session holds it)",
@@ -1708,6 +2095,12 @@ def main(argv: list[str] | None = None):
     check_deploy_paths_clean(
         ISABI_ROOT,
         allow_dirty=args.allow_dirty,
+        env=env,
+    )
+    check_shell_version_claims(
+        ISABI_ROOT,
+        allow_claimed_version=args.allow_claimed_version,
+        fetch=True,
         env=env,
     )
     # The lock comes before the freshness check: once held, nobody else can deploy and then push main under us.

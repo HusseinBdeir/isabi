@@ -71,6 +71,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_staff_contract_sync.py", "python"),  # top-up: staff contracts by rule + back-pay notice
     ("isabi-app", "build/verify_source_behind.py", "python"),        # Owner notices: sibling payload + stale-notice clear after a top-up
     ("isabi", "build/verify_staff_rule_keys.mjs", "node"),           # staff rules per company: a rule filed under another company's key is never stored
+    ("isabi", "build/verify_version_claims.py", "python"),           # deploy guard: refuse unbumped or peer-claimed shell versions
 ]
 
 
