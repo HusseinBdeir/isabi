@@ -1196,7 +1196,7 @@ finally:
         id: 'u-both-2fa',
         email: 'both2fa@bhfirms.com',
         full_name: 'Both 2FA Supervisor',
-        role: 'Supervisor',
+        role: 'Supervisor + Entry',
         companies: 'WTC',
         pin_code: '8520',
         auth_mode: 'both',
@@ -1251,7 +1251,7 @@ finally:
         },
         updatedAt: tGeo3
       }
-    }, { 'X-ISABI-Session': bbcSupToken });
+    }, { 'X-ISABI-Session': String(bothCombinedOk.json?.token || '') });
     const geoMergedRes = await httpReq('GET', '/app/api/geo_config', null, { 'X-ISABI-Session': ownerToken });
     const gm = geoMergedRes.json?.config || {};
 
@@ -1918,7 +1918,7 @@ finally:
         shiftTypes: [{ id: 'shf-bbc-27', company: 'BBConstruction', name: 'BBC Shift 27', start_time: '06:00', end_time: '14:00', updated_at: ts27a }],
         policyGroups: [],
         companyPolicyDefaults: { BBConstruction: { policy_group_id: 'pkg_owner_ok', updated_at: ts27a } },
-        staffRules: { ali_bbc_27: { company: 'BBConstruction', shift_id: 'shf-bbc-27', updated_at: ts27a } }
+        staffRules: { 'bbconstruction|ali_bbc_27': { company: 'BBConstruction', shift_id: 'shf-bbc-27', updated_at: ts27a } }
       }
     }, { 'X-ISABI-Session': ownerToken });
 
@@ -1929,16 +1929,16 @@ finally:
     const wtcSyncDoc27a = wtcSyncGet27a.json?.docs?.mfg_web_store || {};
     const leakArDirect = (wtcArGet27.json?.custom || []).some(c => c && c.company === 'BBConstruction');
     const leakWsShiftDirect = (wtcWsGet27.json?.work_schedules?.shiftTypes || []).some(s => s && s.company === 'BBConstruction');
-    const leakWsRuleDirect = Boolean(wtcWsGet27.json?.work_schedules?.staffRules?.ali_bbc_27);
+    const leakWsRuleDirect = Boolean(wtcWsGet27.json?.work_schedules?.staffRules?.['bbconstruction|ali_bbc_27']);
     const leakWsDefDirect = Boolean(wtcWsGet27.json?.work_schedules?.companyPolicyDefaults?.BBConstruction);
     const leakSyncAr = (wtcSyncDoc27a.alertRules?.custom || []).some(c => c && c.company === 'BBConstruction');
-    const leakSyncWs = (wtcSyncDoc27a.workSchedules?.shiftTypes || []).some(s => s && s.company === 'BBConstruction') || Boolean(wtcSyncDoc27a.workSchedules?.staffRules?.ali_bbc_27);
+    const leakSyncWs = (wtcSyncDoc27a.workSchedules?.shiftTypes || []).some(s => s && s.company === 'BBConstruction') || Boolean(wtcSyncDoc27a.workSchedules?.staffRules?.['bbconstruction|ali_bbc_27']);
 
     // WTC Supervisor posts read-scoped `work_schedules` adding WTC shift + rule -> merges cleanly without clobbering BBC
     const wtcWsPayload27 = JSON.parse(JSON.stringify(wtcWsGet27.json?.work_schedules || { shiftTypes: [], policyGroups: [], companyPolicyDefaults: {}, staffRules: {} }));
     wtcWsPayload27.shiftTypes = [...(wtcWsPayload27.shiftTypes || []), { id: 'shf-wtc-direct-27', company: 'WTC', name: 'WTC Direct Shift', start_time: '08:00', end_time: '16:00', updated_at: ts27b }];
     wtcWsPayload27.staffRules = Object.assign({}, wtcWsPayload27.staffRules || {}, {
-      rami_wtc_27: { company: 'WTC', shift_id: 'shf-wtc-direct-27', updated_at: ts27b }
+      'wtc|rami_wtc_27': { company: 'WTC', shift_id: 'shf-wtc-direct-27', updated_at: ts27b }
     });
     const wtcWsPost27 = await httpReq('POST', '/app/api/work_schedules', {
       op: 'upsert_shift',
@@ -1951,7 +1951,7 @@ finally:
         shiftTypes: [],
         policyGroups: [],
         companyPolicyDefaults: {},
-        staffRules: { ali_bbc_27: { company: 'WTC', shift_id: 'shf-wtc-direct-27', updated_at: ts27c } }
+        staffRules: { 'bbconstruction|ali_bbc_27': { company: 'WTC', shift_id: 'shf-wtc-direct-27', updated_at: ts27c } }
       }
     }, { 'X-ISABI-Session': wtcSupTok });
 
@@ -1995,8 +1995,8 @@ finally:
       (ows.shiftTypes || []).some(s => s && s.id === 'shf-bbc-27') &&
       (ows.shiftTypes || []).some(s => s && s.id === 'shf-wtc-direct-27') &&
       (ows.shiftTypes || []).some(s => s && s.id === 'shf-wtc-sync-27') &&
-      ows.staffRules?.ali_bbc_27?.company === 'BBConstruction' &&
-      ows.staffRules?.rami_wtc_27?.company === 'WTC' &&
+      ows.staffRules?.['bbconstruction|ali_bbc_27']?.company === 'BBConstruction' &&
+      ows.staffRules?.['wtc|rami_wtc_27']?.company === 'WTC' &&
       Boolean(ows.companyPolicyDefaults?.BBConstruction) &&
       (osDoc.alertRules?.custom || []).some(c => c && c.id === 'ar-bbc-27') &&
       (osDoc.workSchedules?.shiftTypes || []).some(s => s && s.id === 'shf-bbc-27')
@@ -2011,8 +2011,8 @@ finally:
         statuses: [wtcWsPost27.status, wtcSpoofBbcRule27.status, wtcSyncPatch27.status],
         arIds: oaCust.map(c => c.id),
         wsShifts: (ows.shiftTypes || []).map(s => s.id),
-        aliCo: ows.staffRules?.ali_bbc_27?.company,
-        ramiCo: ows.staffRules?.rami_wtc_27?.company,
+        aliCo: ows.staffRules?.['bbconstruction|ali_bbc_27']?.company,
+        ramiCo: ows.staffRules?.['wtc|rami_wtc_27']?.company,
         bbcDef: Boolean(ows.companyPolicyDefaults?.BBConstruction)
       }));
     }
