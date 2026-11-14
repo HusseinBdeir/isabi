@@ -73,6 +73,7 @@ RELEASE_GATES = [
     ("isabi", "build/verify_staff_rule_keys.mjs", "node"),           # staff rules per company: a rule filed under another company's key is never stored
     ("isabi", "build/verify_version_claims.py", "python"),           # deploy guard: refuse unbumped or peer-claimed shell versions
     ("isabi", "build/verify_same_name_edge.mjs", "node"),            # server-side same-name guard, sync floor, and staff_members.father_name
+    ("isabi-app", "build/verify_i18n_templates.mjs", "node"),        # dynamic EN/AR/FR template & edge-case coverage (negative $, empty date, fallbacks)
 ]
 
 
