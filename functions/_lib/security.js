@@ -542,7 +542,7 @@ export async function verifyActiveEdgeSession(session, env) {
     if (!sub && !email) return null;
 
     const uRow = await env.DB.prepare(
-      'SELECT id, status, role, companies, pbi_access, statements_access FROM users WHERE id = ?1 OR lower(email) = ?2 LIMIT 1'
+      'SELECT id, status, role, companies, pbi_access, statements_access, custom_perms FROM users WHERE id = ?1 OR lower(email) = ?2 LIMIT 1'
     ).bind(sub, email).first();
 
     if (!uRow) {
@@ -558,11 +558,63 @@ export async function verifyActiveEdgeSession(session, env) {
       role: uRow.role != null ? uRow.role : session.role,
       companies: uRow.companies != null ? uRow.companies : session.companies,
       pbi: uRow.pbi_access != null ? uRow.pbi_access : session.pbi,
-      stmts: uRow.statements_access != null ? uRow.statements_access : session.stmts
+      stmts: uRow.statements_access != null ? uRow.statements_access : session.stmts,
+      custom_perms: uRow.custom_perms != null ? uRow.custom_perms : (session.custom_perms || '')
     });
   } catch (_) {
     return null;
   }
+}
+
+const ROLE_WRITE_PRESETS = Object.freeze({
+  'Full Access (Owner)': { modifyText: true, modifyData: true, voidData: true, enterDispatch: true, enterAccounting: true, enterMaster: true, enterPayrollJv: true },
+  'Supervisor + Entry': { modifyText: true, modifyData: true, voidData: true, enterDispatch: true, enterAccounting: true, enterMaster: true, enterPayrollJv: true },
+  'Supervisor': { modifyText: false, modifyData: false, voidData: true, enterDispatch: false, enterAccounting: false, enterMaster: false, enterPayrollJv: false },
+  'Entry': { modifyText: true, modifyData: false, voidData: false, enterDispatch: true, enterAccounting: true, enterMaster: true, enterPayrollJv: false },
+  'Sales': { modifyText: false, modifyData: false, voidData: false, enterDispatch: false, enterAccounting: true, enterMaster: false, enterPayrollJv: false },
+  'Custom': { modifyText: true, modifyData: true, voidData: true, enterDispatch: true, enterAccounting: true, enterMaster: true, enterPayrollJv: false }
+});
+
+/**
+ * Mirrors js/app.js getEffectivePermissions write/GPS/void capabilities for server-side enforcement.
+ */
+export function getSessionWritePerms(session) {
+  if (!session) {
+    return { roleKey: 'None', modifyText: false, modifyData: false, voidData: false, enterDispatch: false, enterAccounting: false, enterMaster: false, enterPayrollJv: false, canEnterAny: false };
+  }
+  if (session.sub === 'u1' || session.sub === 'u2') {
+    return Object.assign({ roleKey: 'Full Access (Owner)', canEnterAny: true }, ROLE_WRITE_PRESETS['Full Access (Owner)']);
+  }
+  const rawRole = String(session.role || '').trim();
+  let roleKey = 'Entry';
+  if (/^Custom/i.test(rawRole)) roleKey = 'Custom';
+  else if (/Owner|Full Access|Admin/i.test(rawRole)) roleKey = 'Full Access (Owner)';
+  else if (/Supervisor\s*\+\s*Entry/i.test(rawRole)) roleKey = 'Supervisor + Entry';
+  else if (/Supervisor/i.test(rawRole)) roleKey = 'Supervisor';
+  else if (/Sales/i.test(rawRole)) roleKey = 'Sales';
+  const out = Object.assign({}, ROLE_WRITE_PRESETS[roleKey] || ROLE_WRITE_PRESETS.Entry);
+  let rawCustom = session.custom_perms;
+  if (typeof rawCustom === 'string' && rawCustom.trim()) {
+    try { rawCustom = JSON.parse(rawCustom); } catch (_) { rawCustom = null; }
+  }
+  const customRights = (rawCustom && typeof rawCustom === 'object' && !Array.isArray(rawCustom) && rawCustom.rights && typeof rawCustom.rights === 'object')
+    ? rawCustom.rights
+    : null;
+  if (roleKey === 'Custom' && customRights) {
+    if ('modify_text' in customRights) out.modifyText = Boolean(customRights.modify_text);
+    if ('modify_data' in customRights) out.modifyData = Boolean(customRights.modify_data);
+    if ('void_data' in customRights) out.voidData = Boolean(customRights.void_data);
+    if ('enter_dispatch' in customRights) out.enterDispatch = Boolean(customRights.enter_dispatch);
+    if ('enter_accounting' in customRights) out.enterAccounting = Boolean(customRights.enter_accounting);
+    if ('enter_master' in customRights) out.enterMaster = Boolean(customRights.enter_master);
+    if ('enter_payroll_jv' in customRights) out.enterPayrollJv = Boolean(customRights.enter_payroll_jv);
+  } else if (customRights && typeof customRights.modify_text === 'boolean') {
+    out.modifyText = Boolean(customRights.modify_text);
+  }
+  if (out.modifyData) out.modifyText = true;
+  out.roleKey = roleKey;
+  out.canEnterAny = Boolean(out.enterDispatch || out.enterAccounting || out.enterMaster || out.enterPayrollJv);
+  return out;
 }
 
 export const DEFAULT_EDGE_SECURITY_HEADERS = Object.freeze({

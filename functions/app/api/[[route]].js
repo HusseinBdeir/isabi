@@ -35,6 +35,7 @@ import {
 } from '../../_lib/gemini.js';
 import { handleTelematics } from '../../_lib/telematics.js';
 import { handleKioskOptions, handleKioskPunchFeed, handleKioskVerify } from '../../_lib/kiosk_verify.js';
+import { handleResolveMapLink } from '../../_lib/map_link.js';
 import {
   applyEdgeCors,
   canAccessCompany,
@@ -135,6 +136,10 @@ async function routeAppApi(context) {
   const isDemoReq = request.headers.get('X-ISABI-Demo') === '1';
   if (isDemoReq && subPath === '/telematics' && request.method === 'GET') {
     return handleTelematics(request, env, null, url, body);
+  }
+  if (subPath === '/resolve-map-link') {
+    if (parseError) return jsonResponse({ ok: false, code: 'invalid_json', error: 'Malformed JSON body.' }, 400);
+    return handleResolveMapLink(request, env, body, session, { url });
   }
   if (!session) {
     if (isDemoReq && request.method === 'GET' && DEMO_EMPTY_GET_ROUTES.has(subPath)) {
