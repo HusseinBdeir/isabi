@@ -82,6 +82,57 @@ export function isServerOwnedRowEditKey(editKey) {
   return /(^|::)(HSP-REV-)?POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(editKey || ''));
 }
 
+function createPurgeOverrideAccumulator() {
+  const list = [];
+  const bareSeen = new Set();
+  const timedBest = new Map();
+  const parse = (rawItem) => {
+    const s = String(rawItem || '').trim();
+    if (!s || !LEGACY_PURGED_ENTRY_RE.test(s)) return null;
+    const atIdx = s.indexOf('@');
+    if (atIdx < 0) return { s, base: s, ms: 0, bare: true };
+    const ms = _purgeStampMs(s.slice(atIdx + 1));
+    if (!ms) return null;
+    return { s, base: s.slice(0, atIdx), ms, bare: false };
+  };
+  return {
+    parse,
+    wouldSkip(parsed) {
+      if (!parsed) return true;
+      if (parsed.bare) return bareSeen.has(parsed.s);
+      const prevEntry = timedBest.get(parsed.base);
+      return Boolean(prevEntry && parsed.ms <= prevEntry.ms);
+    },
+    pushParsed(parsed) {
+      if (!parsed) return false;
+      if (parsed.bare) {
+        if (bareSeen.has(parsed.s)) return false;
+        bareSeen.add(parsed.s);
+        list.push(parsed.s);
+        return true;
+      }
+      const prevEntry = timedBest.get(parsed.base);
+      if (!prevEntry) {
+        timedBest.set(parsed.base, { idx: list.length, ms: parsed.ms });
+        list.push(parsed.s);
+        return true;
+      }
+      if (parsed.ms > prevEntry.ms) {
+        list[prevEntry.idx] = null;
+        prevEntry.idx = list.length;
+        prevEntry.ms = parsed.ms;
+        list.push(parsed.s);
+        return true;
+      }
+      return false;
+    },
+    finalize(limit = 2000) {
+      const active = list.filter(Boolean);
+      return active.length > limit ? active.slice(-limit) : active;
+    }
+  };
+}
+
 // The store's minShellVer is a floor: every push stamps the pusher's own shell version, so an older device would
 // otherwise lower it again and the devices reading after it would never be nudged to update. Keep the higher value,
 // capped at the shell this deploy serves (DEPLOYED_SHELL_VER): any seat can push, so without the cap one bad value
@@ -156,38 +207,14 @@ export function stripServerOwnedCustomRows(doc, prevDoc = null) {
       if (isServerOwnedRowEditKey(ek)) delete ire[ek];
     }
   }
-  const purgedList = [];
-  const bareSeen = new Set();
-  const timedBest = new Map();
+  const purgeAcc = createPurgeOverrideAccumulator();
   for (const src of [prevDoc && prevDoc._purgedOverrideIds, doc._purgedOverrideIds]) {
     if (!Array.isArray(src)) continue;
-    for (const item of src) {
-      const s = String(item || '').trim();
-      if (!s || !LEGACY_PURGED_ENTRY_RE.test(s)) continue;
-      const atIdx = s.indexOf('@');
-      if (atIdx < 0) {
-        if (!bareSeen.has(s)) {
-          bareSeen.add(s);
-          purgedList.push(s);
-        }
-      } else {
-        const base = s.slice(0, atIdx);
-        const ms = _purgeStampMs(s.slice(atIdx + 1));
-        if (!ms) continue;
-        const prevEntry = timedBest.get(base);
-        if (!prevEntry) {
-          const slot = { idx: purgedList.length, ms };
-          timedBest.set(base, slot);
-          purgedList.push(s);
-        } else if (ms >= prevEntry.ms) {
-          prevEntry.ms = ms;
-          purgedList[prevEntry.idx] = s;
-        }
-      }
-    }
+    for (const item of src) purgeAcc.pushParsed(purgeAcc.parse(item));
   }
-  if (purgedList.length) {
-    doc._purgedOverrideIds = purgedList.slice(-2000);
+  const activePurged = purgeAcc.finalize(2000);
+  if (activePurged.length) {
+    doc._purgedOverrideIds = activePurged;
     const bareSet = new Set();
     const timedMap = new Map();
     for (const entry of doc._purgedOverrideIds) {
@@ -3870,22 +3897,18 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
   }
 
   // 2b. Protect _purgedOverrideIds against cross-BU deletion or non-legacy ID injection
-  const prevPurgedArr = Array.isArray(prev._purgedOverrideIds)
-    ? prev._purgedOverrideIds.map(x => String(x || '').trim()).filter(x => LEGACY_PURGED_ENTRY_RE.test(x))
-    : [];
-  const prevPurgedSet = new Set(prevPurgedArr);
-  const safePurged = prevPurgedArr.slice();
+  const purgeAcc = createPurgeOverrideAccumulator();
+  if (Array.isArray(prev._purgedOverrideIds)) {
+    for (const item of prev._purgedOverrideIds) purgeAcc.pushParsed(purgeAcc.parse(item));
+  }
   if (Array.isArray(incomingDoc._purgedOverrideIds)) {
     const prevCrForPurge = (prev.customRecords && typeof prev.customRecords === 'object') ? prev.customRecords : {};
     for (const rawItem of incomingDoc._purgedOverrideIds) {
-      const s = String(rawItem || '').trim();
-      if (!s || !LEGACY_PURGED_ENTRY_RE.test(s) || prevPurgedSet.has(s)) continue;
-      const atIdx = s.indexOf('@');
-      if (atIdx >= 0 && _purgeStampMs(s.slice(atIdx + 1)) <= 0) continue;
-      const base = atIdx >= 0 ? s.slice(0, atIdx) : s;
-      const colon = base.indexOf(':');
-      const tbl = base.slice(0, colon);
-      const rid = base.slice(colon + 1);
+      const parsed = purgeAcc.parse(rawItem);
+      if (!parsed || purgeAcc.wouldSkip(parsed)) continue;
+      const colon = parsed.base.indexOf(':');
+      const tbl = parsed.base.slice(0, colon);
+      const rid = parsed.base.slice(colon + 1);
       const pArr = Array.isArray(prevCrForPurge[tbl]) ? prevCrForPurge[tbl] : [];
       const pr = pArr.find(x => x && String(x.id || '').trim() === rid);
       let prCo = String((pr && pr.company) || '').trim();
@@ -3900,12 +3923,12 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
         }
       }
       if (prCo && canAccessCompany(session, prCo)) {
-        prevPurgedSet.add(s);
-        safePurged.push(s);
+        purgeAcc.pushParsed(parsed);
       }
     }
   }
-  if (safePurged.length) incomingDoc._purgedOverrideIds = safePurged.slice(-2000);
+  const safePurged = purgeAcc.finalize(2000);
+  if (safePurged.length) incomingDoc._purgedOverrideIds = safePurged;
   else delete incomingDoc._purgedOverrideIds;
 
   // 3. Protect industryCustomRows & industryRowEdits

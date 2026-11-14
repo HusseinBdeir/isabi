@@ -4124,6 +4124,395 @@ finally:
         clear: [sbClearPost.status, sbClearGet.json]
       }));
     }
+
+    // 41. R2->D1 seed restoration, @ISO purge chronology & >2k tail promotion, Supervisor D1 company fallback, & CDP mid-flight auth/seed rehydrate
+    const e41Seat = {
+      id: 'u-edge41-sup',
+      email: 'e41seat@bhfirms.com',
+      full_name: 'Edge41 WTC Supervisor',
+      role: 'Supervisor',
+      companies: 'WTC',
+      auth_mode: 'pin_only',
+      face_required: false,
+      pin_code: '7391',
+      status: 'Active'
+    };
+    const e41SeatRes = await httpReq('POST', '/app/api/users', { user: e41Seat }, { 'X-ISABI-Session': ownerToken });
+    const e41SupLogin = await httpReq('POST', '/app/api/auth/login', {
+      email: e41Seat.email,
+      pin: '7391',
+      method: 'PIN'
+    }, { 'CF-Connecting-IP': '198.51.100.245' });
+    const e41SupTok = String(e41SupLogin.json?.token || '');
+
+    const unpackR2Rows = (tblSpec, pool) => {
+      if (!tblSpec) return [];
+      if (Array.isArray(tblSpec)) return tblSpec.filter(Boolean);
+      const cols = Array.isArray(tblSpec.c) ? tblSpec.c : (Array.isArray(tblSpec.cols) ? tblSpec.cols : []);
+      const rows = Array.isArray(tblSpec.r) ? tblSpec.r : (Array.isArray(tblSpec.rows) ? tblSpec.rows : []);
+      const sc = Array.isArray(tblSpec.sc) ? tblSpec.sc : [];
+      const out = [];
+      for (const row of rows) {
+        if (!Array.isArray(row)) continue;
+        const obj = {};
+        for (let i = 0; i < cols.length && i < row.length; i++) {
+          let v = row[i];
+          if (sc[i] === 1 && typeof v === 'number' && Array.isArray(pool)) v = pool[v];
+          obj[cols[i]] = v;
+        }
+        if (obj.id) out.push(obj);
+      }
+      return out;
+    };
+
+    const e41SeedRecs = await httpReq('GET', '/app/api/seed/records', null, { 'X-ISABI-Session': ownerToken });
+    const e41SeedCore = await httpReq('GET', '/app/api/seed/core', null, { 'X-ISABI-Session': ownerToken });
+    const e41R2RpRows = unpackR2Rows(e41SeedRecs.json?.records?.raw_purchases, e41SeedRecs.json?._s);
+    const e41R2RpIds = new Set(e41R2RpRows.map(r => String(r.id).trim()));
+    const e41R2CustIds = new Set(unpackR2Rows(e41SeedCore.json?.records?.customers, e41SeedCore.json?._s).map(r => String(r.id).trim()));
+
+    const e41WtcRp0 = await httpReq('GET', '/app/api/records?table=raw_purchases&company=WTC&limit=200', null, { 'X-ISABI-Session': ownerToken });
+    const e41BbcRp0 = await httpReq('GET', '/app/api/records?table=raw_purchases&company=BBConstruction&limit=200', null, { 'X-ISABI-Session': ownerToken });
+    const e41Cust0 = await httpReq('GET', '/app/api/records?table=customers&company=all&limit=2000', null, { 'X-ISABI-Session': ownerToken });
+    const e41Store0 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const doc41Base = JSON.parse(JSON.stringify(e41Store0.json?.docs?.mfg_web_store || {}));
+    const cr41Base = (doc41Base.customRecords && typeof doc41Base.customRecords === 'object') ? doc41Base.customRecords : {};
+    const existingRp41 = new Set((cr41Base.raw_purchases || []).map(r => String(r?.id || '').trim()));
+    const existingCust41 = new Set((cr41Base.customers || []).map(r => String(r?.id || '').trim()));
+
+    const byNewestDate = (a, b) => String(b?.date || '').localeCompare(String(a?.date || ''));
+    let wtcSeedCands = (e41WtcRp0.json?.rows || []).filter(
+      r => r && !r.voided && r.id && e41R2RpIds.has(String(r.id).trim()) && !existingRp41.has(String(r.id).trim())
+    );
+    if (wtcSeedCands.length < 2) {
+      const wtcFromR2 = e41R2RpRows
+        .filter(r => r.company === 'WTC' && !r.voided && !existingRp41.has(String(r.id).trim()))
+        .sort(byNewestDate)
+        .slice(0, 2);
+      for (const row of wtcFromR2) {
+        await httpReq('POST', '/app/api/records', { table: 'raw_purchases', record: row }, { 'X-ISABI-Session': ownerToken });
+      }
+      const wtcRefetch = await httpReq('GET', '/app/api/records?table=raw_purchases&company=WTC&limit=200', null, { 'X-ISABI-Session': ownerToken });
+      wtcSeedCands = (wtcRefetch.json?.rows || []).filter(
+        r => r && !r.voided && r.id && e41R2RpIds.has(String(r.id).trim()) && !existingRp41.has(String(r.id).trim())
+      );
+    }
+    const wtcRpA = wtcSeedCands[0];
+    const wtcRpB = wtcSeedCands[1];
+    let bbcRp = (e41BbcRp0.json?.rows || []).find(
+      r => r && !r.voided && r.id && e41R2RpIds.has(String(r.id).trim()) && !existingRp41.has(String(r.id).trim())
+    );
+    if (!bbcRp) {
+      const bbcFromR2 = e41R2RpRows
+        .filter(r => r.company === 'BBConstruction' && !r.voided && !existingRp41.has(String(r.id).trim()))
+        .sort(byNewestDate)[0];
+      if (bbcFromR2) {
+        await httpReq('POST', '/app/api/records', { table: 'raw_purchases', record: bbcFromR2 }, { 'X-ISABI-Session': ownerToken });
+        const bbcRefetch = await httpReq('GET', '/app/api/records?table=raw_purchases&company=BBConstruction&limit=200', null, { 'X-ISABI-Session': ownerToken });
+        bbcRp = (bbcRefetch.json?.rows || []).find(
+          r => r && !r.voided && r.id === bbcFromR2.id
+        );
+      }
+    }
+    const custSeed = (e41Cust0.json?.rows || []).find(
+      r => r && !r.voided && r.id && r.name && e41R2CustIds.has(String(r.id).trim()) && !existingCust41.has(String(r.id).trim())
+    );
+    const appRpId = 'e41-app-rp-0001';
+    if (!e41SupTok || !wtcRpA || !wtcRpB || !bbcRp || !custSeed) {
+      fail('edge-41-r2-d1-seed-restore-iso-purge-rls-and-epoch-rehydrate', JSON.stringify({
+        e41SeatStatus: e41SeatRes.status,
+        hasSupTok: Boolean(e41SupTok),
+        wtcCands: wtcSeedCands.length,
+        hasBbcRp: Boolean(bbcRp),
+        hasCustSeed: Boolean(custSeed)
+      }));
+    } else {
+
+    const nextIsoAfter = (prevTs, offsetMs = 1000) => {
+      const p = Date.parse(prevTs || 0);
+      return new Date(Math.max(Date.now(), (Number.isFinite(p) ? p : 0) + offsetMs)).toISOString();
+    };
+
+    // (a.1) Owner overrides on wtcRpA, wtcRpB, custSeed + app-entered appRpId
+    const doc41S1 = JSON.parse(JSON.stringify(doc41Base));
+    doc41S1.updatedAt = nextIsoAfter(doc41Base.updatedAt, 1000);
+    doc41S1.customRecords = Object.assign({}, doc41S1.customRecords);
+    doc41S1.customRecords.raw_purchases = [
+      ...(Array.isArray(doc41S1.customRecords.raw_purchases) ? doc41S1.customRecords.raw_purchases : []),
+      Object.assign({}, wtcRpA, { ticket_no: 'E41-OVR-A', voided: false }),
+      Object.assign({}, wtcRpB, { ticket_no: 'E41-OVR-B', voided: false }),
+      { id: appRpId, company: 'WTC', date: '2099-01-01', rep_date: '2099-01-01', ticket_no: 'E41-APP-1', site_owner: 'E41 Test', total: 111 }
+    ];
+    doc41S1.customRecords.customers = [
+      ...(Array.isArray(doc41S1.customRecords.customers) ? doc41S1.customRecords.customers : []),
+      Object.assign({}, custSeed, { name: 'E41 OVERRIDDEN CUST', official_name: 'E41 OVR OFFICIAL', voided: false })
+    ];
+    const sync41S1 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      ifMatchUpdatedAt: String(doc41Base.updatedAt || ''),
+      awaitMirror: true,
+      patch: { mfg_web_store: doc41S1 }
+    }, { 'X-ISABI-Session': ownerToken });
+    const d1Wtc1 = await httpReq('GET', '/app/api/records?table=raw_purchases&company=WTC&limit=200', null, { 'X-ISABI-Session': ownerToken });
+    const d1Cust1 = await httpReq('GET', '/app/api/records?table=customers&company=all&limit=2000', null, { 'X-ISABI-Session': ownerToken });
+    const s1OvrOk =
+      sync41S1.status === 200 &&
+      (d1Wtc1.json?.rows || []).some(r => r.id === wtcRpA.id && r.ticket_no === 'E41-OVR-A' && !r.voided) &&
+      (d1Wtc1.json?.rows || []).some(r => r.id === wtcRpB.id && r.ticket_no === 'E41-OVR-B' && !r.voided) &&
+      (d1Wtc1.json?.rows || []).some(r => r.id === appRpId && r.ticket_no === 'E41-APP-1' && !r.voided) &&
+      (d1Cust1.json?.rows || []).some(r => r.id === custSeed.id && r.name === 'E41 OVERRIDDEN CUST' && !r.voided);
+
+    // (a.2) Owner purges wtcRpA@12:00Z + wtcRpB@12:00Z + forbidden bare wtcRpB, updates wtcRpB@13:00Z, omits custSeed & appRpId
+    const e41Get1 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const doc41S2 = JSON.parse(JSON.stringify(e41Get1.json?.docs?.mfg_web_store || {}));
+    doc41S2.updatedAt = nextIsoAfter(sync41S1.json?.updatedAt || doc41S2.updatedAt, 1000);
+    doc41S2._purgedOverrideIds = [
+      ...(Array.isArray(doc41S2._purgedOverrideIds) ? doc41S2._purgedOverrideIds : []),
+      `raw_purchases:${wtcRpA.id}@2026-11-14T12:00:00Z`,
+      `raw_purchases:${wtcRpB.id}@2026-11-14T12:00:00Z`,
+      `raw_purchases:${wtcRpB.id}`
+    ];
+    doc41S2.customRecords.raw_purchases = (doc41S2.customRecords?.raw_purchases || [])
+      .filter(r => r && r.id !== wtcRpA.id && r.id !== appRpId)
+      .map(r => (r.id === wtcRpB.id ? Object.assign({}, wtcRpB, { ticket_no: 'E41-OVR-B-13Z', modified_at: '2026-11-14T13:00:00Z', voided: false }) : r));
+    doc41S2.customRecords.customers = (doc41S2.customRecords?.customers || []).filter(r => r && r.id !== custSeed.id);
+    const sync41S2 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      ifMatchUpdatedAt: String(sync41S1.json?.updatedAt || ''),
+      awaitMirror: true,
+      patch: { mfg_web_store: doc41S2 }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e41Get2 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const kv2 = e41Get2.json?.docs?.mfg_web_store || {};
+    const d1Wtc2 = await httpReq('GET', '/app/api/records?table=raw_purchases&company=WTC&limit=200', null, { 'X-ISABI-Session': ownerToken });
+    const d1Cust2 = await httpReq('GET', '/app/api/records?table=customers&company=all&limit=2000', null, { 'X-ISABI-Session': ownerToken });
+    const r2RpARestored = (d1Wtc2.json?.rows || []).find(r => r.id === wtcRpA.id);
+    const d1RpB13 = (d1Wtc2.json?.rows || []).find(r => r.id === wtcRpB.id);
+    const d1AppVoided = (d1Wtc2.json?.rows || []).find(r => r.id === appRpId);
+    const r2CustRestored = (d1Cust2.json?.rows || []).find(r => r.id === custSeed.id);
+    const kvPurged2 = Array.isArray(kv2._purgedOverrideIds) ? kv2._purgedOverrideIds : [];
+    const s2RestoreOk =
+      sync41S2.status === 200 &&
+      kvPurged2.includes(`raw_purchases:${wtcRpA.id}@2026-11-14T12:00:00Z`) &&
+      kvPurged2.includes(`raw_purchases:${wtcRpB.id}@2026-11-14T12:00:00Z`) &&
+      !kvPurged2.includes(`raw_purchases:${wtcRpB.id}`) &&
+      !(kv2.customRecords?.raw_purchases || []).some(r => r && r.id === wtcRpA.id) &&
+      (kv2.customRecords?.raw_purchases || []).some(r => r && r.id === wtcRpB.id && r.ticket_no === 'E41-OVR-B-13Z') &&
+      r2RpARestored && !r2RpARestored.voided && String(r2RpARestored.ticket_no || '') === String(wtcRpA.ticket_no || '') &&
+      d1RpB13 && !d1RpB13.voided && d1RpB13.ticket_no === 'E41-OVR-B-13Z' &&
+      d1AppVoided?.voided === true &&
+      r2CustRestored && !r2CustRestored.voided && r2CustRestored.name === custSeed.name;
+
+    // (a.3) Follow-up Owner sync purges wtcRpB@14:00Z & omits it -> wtcRpB restores in D1
+    const doc41S3 = JSON.parse(JSON.stringify(kv2));
+    doc41S3.updatedAt = nextIsoAfter(sync41S2.json?.updatedAt || doc41S3.updatedAt, 1000);
+    doc41S3._purgedOverrideIds = [
+      ...(Array.isArray(doc41S3._purgedOverrideIds) ? doc41S3._purgedOverrideIds : []),
+      `raw_purchases:${wtcRpB.id}@2026-11-14T14:00:00Z`
+    ];
+    doc41S3.customRecords.raw_purchases = (doc41S3.customRecords?.raw_purchases || []).filter(r => r && r.id !== wtcRpB.id);
+    const sync41S3 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      ifMatchUpdatedAt: String(sync41S2.json?.updatedAt || ''),
+      awaitMirror: true,
+      patch: { mfg_web_store: doc41S3 }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e41Get3 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const kv3 = e41Get3.json?.docs?.mfg_web_store || {};
+    const d1Wtc3 = await httpReq('GET', '/app/api/records?table=raw_purchases&company=WTC&limit=200', null, { 'X-ISABI-Session': ownerToken });
+    const r2RpBRestored = (d1Wtc3.json?.rows || []).find(r => r.id === wtcRpB.id);
+    const kvPurged3 = Array.isArray(kv3._purgedOverrideIds) ? kv3._purgedOverrideIds : [];
+    const s3RestoreOk =
+      sync41S3.status === 200 &&
+      kvPurged3.includes(`raw_purchases:${wtcRpB.id}@2026-11-14T14:00:00Z`) &&
+      !kvPurged3.includes(`raw_purchases:${wtcRpB.id}@2026-11-14T12:00:00Z`) &&
+      !(kv3.customRecords?.raw_purchases || []).some(r => r && r.id === wtcRpB.id) &&
+      r2RpBRestored && !r2RpBRestored.voided && String(r2RpBRestored.ticket_no || '') === String(wtcRpB.ticket_no || '');
+
+    // (b) Supervisor (WTC-only) cross-BU @ISO D1 company fallback:
+    // Both wtcRpA & bbcRp are omitted from customRecords; D1 lookup keeps wtcRpA@15:00Z and drops bbcRp@15:00Z & nonexistent ID.
+    const e41SupGet = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': e41SupTok });
+    const doc41Sup = JSON.parse(JSON.stringify(e41SupGet.json?.docs?.mfg_web_store || {}));
+    doc41Sup.updatedAt = nextIsoAfter(sync41S3.json?.updatedAt || doc41Sup.updatedAt, 1000);
+    doc41Sup._purgedOverrideIds = [
+      ...(Array.isArray(doc41Sup._purgedOverrideIds) ? doc41Sup._purgedOverrideIds : []),
+      `raw_purchases:${wtcRpA.id}@2026-11-14T15:00:00Z`,
+      `raw_purchases:${bbcRp.id}@2026-11-14T15:00:00Z`,
+      'raw_purchases:rp_deadbeef9999@2026-11-14T15:00:00Z'
+    ];
+    const sync41Sup = await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      ifMatchUpdatedAt: String(sync41S3.json?.updatedAt || ''),
+      awaitMirror: true,
+      patch: { mfg_web_store: doc41Sup }
+    }, { 'X-ISABI-Session': e41SupTok });
+    const e41GetSupVerify = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const kvSupVerify = e41GetSupVerify.json?.docs?.mfg_web_store || {};
+    const kvPurgedSup = Array.isArray(kvSupVerify._purgedOverrideIds) ? kvSupVerify._purgedOverrideIds : [];
+    const supD1RlsOk =
+      sync41Sup.status === 200 &&
+      kvPurgedSup.includes(`raw_purchases:${wtcRpA.id}@2026-11-14T15:00:00Z`) &&
+      !kvPurgedSup.some(x => String(x).includes(bbcRp.id)) &&
+      !kvPurgedSup.some(x => String(x).includes('rp_deadbeef9999'));
+
+    // (a.4) >2,000-entry _purgedOverrideIds tail promotion through /app/api/sync
+    const curPurgedCount = kvPurgedSup.length;
+    const fill1Count = Math.max(10, 1995 - curPurgedCount);
+    const fillTokens1 = Array.from({ length: fill1Count }, (_, i) => `raw_purchases:rp_e41f${i.toString(16).padStart(8, '0')}@2026-11-14T10:00:00Z`);
+    const doc41F1 = JSON.parse(JSON.stringify(kvSupVerify));
+    doc41F1.updatedAt = nextIsoAfter(sync41Sup.json?.updatedAt || doc41F1.updatedAt, 1000);
+    doc41F1._purgedOverrideIds = [...kvPurgedSup, ...fillTokens1];
+    const sync41F1 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      ifMatchUpdatedAt: String(sync41Sup.json?.updatedAt || ''),
+      patch: { mfg_web_store: doc41F1 }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e41GetF1 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const kvF1 = e41GetF1.json?.docs?.mfg_web_store || {};
+    const kvPurgedF1 = Array.isArray(kvF1._purgedOverrideIds) ? kvF1._purgedOverrideIds : [];
+    const fillTokens2 = Array.from({ length: 80 }, (_, i) => `raw_purchases:rp_e41f${(fill1Count + i).toString(16).padStart(8, '0')}@2026-11-14T10:00:00Z`);
+    const doc41F2 = JSON.parse(JSON.stringify(kvF1));
+    doc41F2.updatedAt = nextIsoAfter(sync41F1.json?.updatedAt || doc41F2.updatedAt, 1000);
+    doc41F2._purgedOverrideIds = [...kvPurgedF1, ...fillTokens2, `raw_purchases:${wtcRpA.id}@2026-11-14T16:00:00Z`];
+    const sync41F2 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      ifMatchUpdatedAt: String(sync41F1.json?.updatedAt || ''),
+      patch: { mfg_web_store: doc41F2 }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e41GetF2 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const kvPurgedF2 = Array.isArray(e41GetF2.json?.docs?.mfg_web_store?._purgedOverrideIds) ? e41GetF2.json.docs.mfg_web_store._purgedOverrideIds : [];
+    const tailPromoteOk =
+      sync41F1.status === 200 &&
+      sync41F2.status === 200 &&
+      kvPurgedF1.indexOf(`raw_purchases:${wtcRpA.id}@2026-11-14T15:00:00Z`) >= 0 &&
+      kvPurgedF1.indexOf(`raw_purchases:${wtcRpA.id}@2026-11-14T15:00:00Z`) < 80 &&
+      kvPurgedF2.length === 2000 &&
+      kvPurgedF2[kvPurgedF2.length - 1] === `raw_purchases:${wtcRpA.id}@2026-11-14T16:00:00Z` &&
+      !kvPurgedF2.includes(`raw_purchases:${wtcRpA.id}@2026-11-14T15:00:00Z`);
+
+    // (c) CDP mid-flight /api/seed/records abort via openAuthGate + post-relogin & sign-out rehydration
+    await evalJs(`(async () => { if (window.caches) await caches.delete('isabi-mfg-data-v3'); })()`).catch(() => {});
+    const remoteScript41 = await sendCdp('Page.addScriptToEvaluateOnNewDocument', {
+      source: `
+        window.__ISABI_SIMULATE_REMOTE_HOST = true;
+        window.__ISABI_TEST_EDGE = true;
+        window.ISABI_HAS_EDGE_API = true;
+        try {
+          localStorage.removeItem('isabi_mfg_edge_sess_tok_v1');
+          sessionStorage.removeItem('isabi_mfg_sw_resume');
+        } catch (_) {}
+        const __e41OrigFetch = window.fetch.bind(window);
+        window.__e41MidRecordsHit = false;
+        window.__e41MidRecordsDone = false;
+        window.__e41ReleaseRecords = null;
+        window.fetch = function(input, init) {
+          const url = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
+          if (!window.__e41MidRecordsDone && url.includes('/api/seed/records')) {
+            window.__e41MidRecordsDone = true;
+            window.__e41MidRecordsHit = true;
+            return __e41OrigFetch(input, init).then(resp => new Promise(resolve => {
+              window.__e41ReleaseRecords = () => resolve(resp);
+            }));
+          }
+          return __e41OrigFetch(input, init);
+        };
+      `
+    });
+    let midState = { authed: true, recordsReady: true, recordKeys: -1 };
+    let relogin1 = { authed: false, recordsReady: false, salesCount: 0 };
+    let afterSignOut = { authed: true, recordsReady: true };
+    let relogin2 = { authed: false, recordsReady: false, salesCount: 0 };
+    try {
+      await sendCdp('Network.clearBrowserCookies');
+      await sendCdp('Network.setCookie', {
+        name: 'isabi_edge_sess',
+        value: e41SupTok,
+        domain: '127.0.0.1',
+        path: '/',
+        httpOnly: true
+      });
+      await sendCdp('Page.navigate', { url: `http://127.0.0.1:${PORT}/app/?nosse=1` });
+      let midReady = false;
+      for (let w = 0; w < 60; w++) {
+        midReady = await evalJs(`Boolean(window.__e41MidRecordsHit === true && typeof window.MFG_FACE_TEST?.openAuthGate === 'function')`).catch(() => false);
+        if (midReady) break;
+        await sleep(200);
+      }
+      if (midReady) {
+        await evalJs(`window.MFG_FACE_TEST.openAuthGate('')`);
+        await evalJs(`if (typeof window.__e41ReleaseRecords === 'function') window.__e41ReleaseRecords()`);
+        await sleep(250);
+        midState = await evalJs(`({
+          authed: Boolean(window.MFG_FACE_TEST?.state()?.authed),
+          recordsReady: Boolean(window.MFG_SEED?._recordsReady),
+          recordKeys: Object.keys(window.MFG_SEED?.records || {}).length
+        })`);
+        await evalJs(`(async () => await window.MFG_FACE_TEST.performLogin('e41seat@bhfirms.com', '7391'))()`);
+        for (let w = 0; w < 60; w++) {
+          relogin1 = await evalJs(`({
+            authed: Boolean(window.MFG_FACE_TEST?.state()?.authed),
+            recordsReady: Boolean(window.MFG_SEED?._recordsReady),
+            salesCount: Array.isArray(window.MFG_SEED?.records?.sales_tickets) ? window.MFG_SEED.records.sales_tickets.length : 0
+          })`).catch(() => relogin1);
+          if (relogin1.authed && relogin1.recordsReady && relogin1.salesCount > 0) break;
+          await sleep(200);
+        }
+        await evalJs(`(async () => { await window.MFG_FACE_TEST.signOut(); })()`);
+        await sleep(250);
+        afterSignOut = await evalJs(`({
+          authed: Boolean(window.MFG_FACE_TEST?.state()?.authed),
+          recordsReady: Boolean(window.MFG_SEED?._recordsReady)
+        })`);
+        await evalJs(`(async () => await window.MFG_FACE_TEST.performLogin('e41seat@bhfirms.com', '7391'))()`);
+        for (let w = 0; w < 60; w++) {
+          relogin2 = await evalJs(`({
+            authed: Boolean(window.MFG_FACE_TEST?.state()?.authed),
+            recordsReady: Boolean(window.MFG_SEED?._recordsReady),
+            salesCount: Array.isArray(window.MFG_SEED?.records?.sales_tickets) ? window.MFG_SEED.records.sales_tickets.length : 0
+          })`).catch(() => relogin2);
+          if (relogin2.authed && relogin2.recordsReady && relogin2.salesCount > 0) break;
+          await sleep(200);
+        }
+      }
+    } finally {
+      if (remoteScript41 && remoteScript41.identifier) {
+        await sendCdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: remoteScript41.identifier }).catch(() => {});
+      }
+    }
+    const cdpEpochOk =
+      !midState.authed && !midState.recordsReady && midState.recordKeys === 0 &&
+      relogin1.authed && relogin1.recordsReady && relogin1.salesCount > 0 &&
+      !afterSignOut.authed && !afterSignOut.recordsReady &&
+      relogin2.authed && relogin2.recordsReady && relogin2.salesCount > 0;
+
+    if (s1OvrOk && s2RestoreOk && s3RestoreOk && supD1RlsOk && tailPromoteOk && cdpEpochOk) {
+      pass(
+        'edge-41-r2-d1-seed-restore-iso-purge-rls-and-epoch-rehydrate',
+        `R2->D1 restore (raw_purchases + UUID customers + appRpId void) + @13Z>@12Z>@14Z chronology + Supervisor D1 company RLS + 2000-tail promote + CDP mid-flight openAuthGate/signOut rehydrate (${relogin2.salesCount} sales)`
+      );
+    } else {
+      fail('edge-41-r2-d1-seed-restore-iso-purge-rls-and-epoch-rehydrate', JSON.stringify({
+        s1OvrOk,
+        s2RestoreOk,
+        s3RestoreOk,
+        supD1RlsOk,
+        tailPromoteOk,
+        cdpEpochOk,
+        midState,
+        relogin1,
+        afterSignOut,
+        relogin2,
+        kvF2Len: kvPurgedF2.length,
+        kvF2Tail: kvPurgedF2[kvPurgedF2.length - 1]
+      }));
+    }
+    }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
     killTree(edgeProc.pid);

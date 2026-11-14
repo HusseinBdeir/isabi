@@ -121778,6 +121778,21 @@
     FACE_STATE.disambiguatePin = '';
     setAuthStreak(0, 3);
     const serverHeld = rosterIsServerHeld();
+    if (serverHeld && !isDemoSandboxSession()) {
+      _seedHydrationPromise = null;
+      if (!SEED._recordsReady) {
+        SEED.records = {};
+        SEED.models = {};
+        SEED.industryLive = null;
+        SEED._coreReady = false;
+        SEED._preAuthDeferred = true;
+        SEED._canonicalById = null;
+        SEED._canonicalByMain = null;
+        SEED._origModelMasters = null;
+        window.__mfgCoreSeedLoaded = false;
+        invalidateAllSeedCaches();
+      }
+    }
     if (hasServerApi() && !isDemoSandboxSession() && !serverHeld && !_usersApiHydratedOnce) {
       hydrateServerUsersOnce();
     }
@@ -121848,6 +121863,9 @@
       hydrateServerUsersOnce();
     }
     try { window.dispatchEvent(new CustomEvent('mfg:auth-gate-closed')); } catch (_) {}
+    if (!SEED._recordsReady) {
+      hydrateSeedData();
+    }
     const shouldKeepNonAuthCam = () => Boolean(
       FACE_STATE.enrolCamActive ||
       KIOSK_ATT_STATE.camActive ||
@@ -150874,11 +150892,15 @@
       : (useAuthedApi ? (SEED_MANIFEST.apiIndustries || './api/seed/industries') : (SEED_MANIFEST.industries || './js/seed_industries.json'));
 
     const seedEpoch = _authSessionEpoch;
-    _seedHydrationPromise = (async () => {
+    let myHydratePromise = null;
+    myHydratePromise = (async () => {
       try {
         const indFetchPromise = fetchSeedPayloadJson(industriesUrl, useAuthedApi).catch(() => null);
         const corePayload = await fetchSeedPayloadJson(coreUrl, useAuthedApi);
-        if (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch)) return SEED;
+        if (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch)) {
+          if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+          return SEED;
+        }
         await unpackPackedRecordsIntoSeed(corePayload, shouldYield);
         if (_demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSbx) {
           normalizeDistinctSiteCategories(_demoCompanyLiveSnap);
@@ -150921,7 +150943,10 @@
               ])
             : Promise.resolve(null)
         ]);
-        if (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch)) return SEED;
+        if (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch)) {
+          if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+          return SEED;
+        }
         if (demoBundlePayloads && !_demoCompanySandboxSeed && !_preloadedDemoBundle) {
           const [dCore, dRec, dInd] = demoBundlePayloads;
           if (dCore || dRec || dInd) {
@@ -150979,7 +151004,10 @@
         }
       } catch (err) {
         console.error('Seed hydration error:', err);
-        _seedHydrationPromise = null;
+        if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
+        if (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch)) {
+          return SEED;
+        }
         if (!useAuthedApi) {
           SEED._recordsReady = true;
           SEED._recordsLoadFailed = true;   // screens carry on; site closure and dormancy refuse to judge loads
@@ -151000,6 +151028,7 @@
       }
       return SEED;
     })();
+    _seedHydrationPromise = myHydratePromise;
     return _seedHydrationPromise;
   }
 

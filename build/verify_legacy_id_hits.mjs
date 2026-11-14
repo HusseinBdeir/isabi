@@ -6,7 +6,8 @@
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import {
-  capMinShellVerForRead, compareShellVer, handleIndustryDomainStore, handleSync, holdMinShellVer
+  capMinShellVerForRead, compareShellVer, handleIndustryDomainStore, handleSync, holdMinShellVer,
+  stripServerOwnedCustomRows
 } from '../functions/_lib/d1_store.js';
 import { DEPLOYED_SHELL_VER } from '../functions/_lib/deployed_shell.js';
 import {
@@ -513,6 +514,39 @@ console.log('\nTimed @ISO purge & R2/D1 relational seed restoration');
       !purgedArrRls.includes('raw_purchases:rp_d7970d45b511@2026-11-14T15:03:37.000Z') &&
       !purgedArrRls.includes('raw_purchases:rp_bbc000000001@2026-11-14T16:00:00.000Z'),
     { purgedArrRls });
+
+  // Refreshing slot 0 across >2,000 _purgedOverrideIds promotes it to the tail before .slice(-2000)
+  const filler2005 = Array.from({ length: 2005 }, (_, i) => {
+    const hex = (0x1000000000 + i).toString(16).padStart(10, '0');
+    return `raw_purchases:rp_${hex}@2026-11-14T01:00:00.000Z`;
+  });
+  const doc2005 = {
+    _purgedOverrideIds: [
+      ...filler2005,
+      'raw_purchases:rp_1000000000@2026-11-14T02:00:00.000Z'
+    ]
+  };
+  stripServerOwnedCustomRows(doc2005, null);
+  ok('refreshed @ISO token promotes to tail across 2000-entry _purgedOverrideIds cap',
+    doc2005._purgedOverrideIds.length === 2000 &&
+      doc2005._purgedOverrideIds[doc2005._purgedOverrideIds.length - 1] === 'raw_purchases:rp_1000000000@2026-11-14T02:00:00.000Z' &&
+      !doc2005._purgedOverrideIds.includes('raw_purchases:rp_1000000000@2026-11-14T01:00:00.000Z'),
+    { len: doc2005._purgedOverrideIds.length, tail: doc2005._purgedOverrideIds.at(-1) });
+
+  // Stale client echoing unchanged older @ISO fillers alongside 2 new entries must NOT evict newer prevDoc tail entry
+  const docEcho = {
+    _purgedOverrideIds: [
+      ...filler2005.slice(6),
+      'raw_purchases:rp_2000000001@2026-11-14T03:00:00.000Z',
+      'raw_purchases:rp_2000000002@2026-11-14T03:00:00.000Z'
+    ]
+  };
+  stripServerOwnedCustomRows(docEcho, doc2005);
+  ok('unchanged echoed @ISO tokens keep existing slot and never evict newer prevDoc tail entries',
+    docEcho._purgedOverrideIds.length === 2000 &&
+      docEcho._purgedOverrideIds.includes('raw_purchases:rp_1000000000@2026-11-14T02:00:00.000Z') &&
+      docEcho._purgedOverrideIds.at(-1) === 'raw_purchases:rp_2000000002@2026-11-14T03:00:00.000Z',
+    { len: docEcho._purgedOverrideIds.length, hasTarget: docEcho._purgedOverrideIds.includes('raw_purchases:rp_1000000000@2026-11-14T02:00:00.000Z'), tail: docEcho._purgedOverrideIds.at(-1) });
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
