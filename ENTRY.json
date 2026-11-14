@@ -3,6 +3,12 @@
   "branch": "wt/att-policy-shift-ui",
   "sha": "e2c8d9df17f4ea43e9008f21f1f55952289014c7"
  },
+ "batch": {
+  "at": "2026-11-14T19:05:37Z",
+  "holder": "wt-att-policy-shift-ui",
+  "lockId": "bcac3c4b5be84cf3aa2d0ead661eb441",
+  "version": "19.6.356"
+ },
  "gates": [
   "isabi-app: node build/verify_att_cards_ui.mjs --json",
   "isabi-app: node build/verify_att_minute_math.mjs",
