@@ -11530,7 +11530,91 @@
       "Map Pin": "دبوس الخريطة",
       "Pin Cleared": "تم مسح الدبوس",
       "Enter both GPS Latitude and GPS Longitude, or click Clear Pin.": "أدخل خط العرض وخط الطول معاً، أو اضغط مسح الدبوس.",
-      "GPS coordinates are outside Lebanon. Check the pinned location or map link.": "إحداثيات GPS خارج لبنان. تحقق من الموقع المثبت أو رابط الخريطة."
+      "GPS coordinates are outside Lebanon. Check the pinned location or map link.": "إحداثيات GPS خارج لبنان. تحقق من الموقع المثبت أو رابط الخريطة.",
+      "Save All Ready Circles": "حفظ كل الدوائر الجاهزة",
+      "Save All Ready Shapes": "حفظ كل الأشكال الجاهزة",
+      "Confirm Save Circles": "تأكيد حفظ الدوائر",
+      "Confirm Save Shapes": "تأكيد حفظ الأشكال",
+      "Regions with ready town circles": "مناطق بدوائر بلدات جاهزة",
+      "Regions with ready town shapes": "مناطق بأشكال بلدات جاهزة",
+      "of their pinned sites inside": "من مواقعها المثبتة في الداخل",
+      "Use Pasted Pin": "استخدم الدبوس الملصق",
+      "Pick on Map": "اختر على الخريطة",
+      "Paste pin link": "الصق رابط الدبوس",
+      "No ready shape yet. Paste a pin link, pick on the map, or draw it.": "لا يوجد شكل جاهز بعد. الصق رابط دبوس، أو اختر على الخريطة، أو ارسمها.",
+      "Click on the map to place a 1.5 km circle for": "انقر على الخريطة لوضع دائرة 1.5 كم لمنطقة",
+      "town circle ready to save": "دائرة بلدة جاهزة للحفظ",
+      "Point is outside Lebanon. Move or check the link.": "النقطة خارج لبنان. حرّكها أو تحقق من الرابط.",
+      "Point is outside Lebanon. Click inside Lebanon.": "النقطة خارج لبنان. انقر داخل لبنان.",
+      "Check the pin on the map before saving.": "تحقق من الدبوس على الخريطة قبل الحفظ.",
+      "Passing": "ناجحة",
+      "requiring action": "تتطلب إجراءً",
+      "custom rule hits": "تطابقات قواعد مخصصة",
+      "custom rule hits ·": "تطابقات قواعد مخصصة ·",
+      "Tune thresholds": "ضبط الحدود",
+      "Jump to Itemized Domain Audit Tables": "الانتقال إلى جداول تدقيق النطاق التفصيلية",
+      "Commercial": "تجاري",
+      "rule flagged for review · Evaluated": "قاعدة مرفوعة للمراجعة · تم التقييم",
+      "SCHEDULE CURRENT": "الجدول منتظم",
+      "ALL RECHARGED": "تمت إعادة فوترتها بالكامل",
+      "Daily Venue Revenue, Memberships & F&B Cost": "إيرادات المرافق اليومية والاشتراكات وتكلفة الأغذية والمشروبات",
+      "Shacman Heavy Trucks & Korri Auto Parts": "شاحنات شاكمان الثقيلة وقطع غيار كوري أوتو",
+      "ONE-SIDED INTERCOMPANY LEGS AWAITING MIRROR PAIRING": "أطراف قيود بينية من جهة واحدة بانتظار القيد المقابل",
+      "BILATERAL SISTER CORRIDORS: GIVEN VS PAID BACK": "المسارات الثنائية للشركات الشقيقة: الممنوح مقابل المسدّد",
+      "HOLDING SHARED-SERVICES OVERHEAD VOUCHERS": "سندات مصاريف الخدمات المشتركة للشركة القابضة",
+      "CENTRAL BORROWING FACILITIES & REPAYMENT SCHEDULE": "تسهيلات الاقتراض المركزية وجدول السداد",
+      "CONSOLIDATED SISTER SUB-ACCOUNT CONTROL TIE-OUT": "مطابقة حسابات المراقبة الفرعية الموحّدة للشركات الشقيقة",
+      "DAILY VENUE REVENUE & CHALET CUT-OFF VERIFICATION": "التحقق من إيرادات المرافق اليومية وإقفال الشاليهات",
+      "POS TILL DAILY CLOSES & DRAWER VARIANCE EXCEPTIONS": "إقفالات صناديق نقاط البيع اليومية واستثناءات فروقات الدرج",
+      "KITCHEN, BAR & CELLAR PURCHASE-TO-USAGE RATIO WATCHDOG": "مراقب نسبة المشتريات إلى الاستهلاك للمطبخ والبار والقبو",
+      "RESORT GENERATOR DIESEL L/HR BURN SPIKE & SOLAR LOGS": "ارتفاع استهلاك مازوت مولدات المنتجع (ليتر/ساعة) وسجلات الطاقة الشمسية",
+      "SEASONAL CHALET & CABANA MEMBERSHIP ARREARS QUEUE": "قائمة متأخرات اشتراكات الشاليهات والكبائن الموسمية",
+      "PHYSICAL INVOICE BOOK SEQUENCE GAPS & AUDIT TRAIL": "فجوات تسلسل دفاتر الفواتير الورقية ومسار التدقيق",
+      "LOW-MARGIN HEAVY TRUCK & SPARE PARTS INVOICES": "فواتير الشاحنات الثقيلة وقطع الغيار منخفضة الهامش",
+      "BELOW-REORDER SPARE PARTS SKUS ACROSS 5 WAREHOUSES": "أصناف قطع الغيار دون حد إعادة الطلب عبر 5 مستودعات",
+      "EXPIRING COMMERCIAL & RESIDENTIAL LEASES & ESCALATION QUEUE": "عقود الإيجار التجارية والسكنية القريبة الانتهاء وجدول الزيادات",
+      "UNBILLED ACTIVE LEASE PERIODS & OPEN RENT AR": "فترات الإيجار الفعالة غير المفوترة وذمم الإيجارات المفتوحة",
+      "COMPLETED TENANT-FAULT WORK ORDERS PENDING RECHARGE": "أوامر العمل المنجزة على نفقة المستأجر بانتظار إعادة الفوترة",
+      "30/60/90-DAY EXPIRING & LAPSED POLICY RENEWAL QUEUE": "قائمة تجديد البوالص المنتهية والقريبة الانتهاء (30/60/90 يوماً)",
+      "CARRIER COMMISSION STATEMENT DISCREPANCIES VS AGREEMENTS": "فروقات كشوف عمولات شركات التأمين مقابل الاتفاقيات",
+      "FIDUCIARY CASH HELD & CARRIER BORDEREAU REMITTANCES": "النقد الائتماني المحتفظ به وتحويلات جداول شركات التأمين",
+      "CLIENT REBATE / DISCOUNT VS GROSS COMMISSION AUDIT": "تدقيق حسومات العملاء مقابل إجمالي العمولة",
+      "ACTIVE CLAIMS FNOL, SURVEYORS & INSURER RECOVERY QUEUE": "قائمة المطالبات النشطة والإشعارات الأولية والخبراء واستردادات شركات التأمين",
+      "Account ID": "رقم الحساب",
+      "Actual vs Rated": "الفعلي مقابل المعياري",
+      "Area (m2)": "المساحة (م²)",
+      "Book #": "رقم الدفتر",
+      "Claim ID": "رقم المطالبة",
+      "Customer / Audit Note": "العميل / ملاحظة التدقيق",
+      "Directed Corridor": "المسار الموجّه",
+      "Generator Asset": "المولّد",
+      "Import File #": "رقم ملف الاستيراد",
+      "Instalment ID": "رقم القسط",
+      "Margin %": "الهامش %",
+      "Member Account": "حساب المشترك",
+      "Net Payable ($)": "صافي المستحق ($)",
+      "On Hand / Min": "المتوفر / الأدنى",
+      "POS Terminal": "جهاز نقطة البيع",
+      "Part Code": "رمز القطعة",
+      "Period Rent ($)": "إيجار الفترة ($)",
+      "Quoted ($)": "المسعّر ($)",
+      "Ratio": "النسبة",
+      "Remittance ID": "رقم الحوالة",
+      "Renewal ID": "رقم التجديد",
+      "Repay %": "نسبة السداد %",
+      "Sheet ID": "رقم الكشف",
+      "Statement ID": "رقم الكشف",
+      "Stock ID": "رقم الجرد",
+      "Stock Val ($)": "قيمة المخزون ($)",
+      "Store / Cellar": "المستودع / القبو",
+      "Supplier / Advisory": "المورّد / الاستشاري",
+      "Target Rent ($)": "الإيجار المستهدف ($)",
+      "Tie-Out Status": "حالة المطابقة",
+      "Transfers": "التحويلات",
+      "Unit / Floor": "الوحدة / الطابق",
+      "Venue / Outlet": "المرفق / المنفذ",
+      "Voucher ID": "رقم السند",
+      "Work Order #": "رقم أمر العمل"
     },
     fr: {
       "Not split by borrower": "Non réparti par emprunteur",
@@ -23042,7 +23126,91 @@
       "Map Pin": "Repère sur la carte",
       "Pin Cleared": "Repère effacé",
       "Enter both GPS Latitude and GPS Longitude, or click Clear Pin.": "Saisissez la latitude et la longitude GPS, ou cliquez sur Effacer le Repère.",
-      "GPS coordinates are outside Lebanon. Check the pinned location or map link.": "Les coordonnées GPS sont hors du Liban. Vérifiez l’emplacement ou le lien de carte."
+      "GPS coordinates are outside Lebanon. Check the pinned location or map link.": "Les coordonnées GPS sont hors du Liban. Vérifiez l’emplacement ou le lien de carte.",
+      "Save All Ready Circles": "Enregistrer tous les cercles prêts",
+      "Save All Ready Shapes": "Enregistrer toutes les formes prêtes",
+      "Confirm Save Circles": "Confirmer l'enregistrement des cercles",
+      "Confirm Save Shapes": "Confirmer l'enregistrement des formes",
+      "Regions with ready town circles": "régions avec cercles de localité prêts",
+      "Regions with ready town shapes": "régions avec formes de localité prêtes",
+      "of their pinned sites inside": "de leurs sites épinglés à l'intérieur",
+      "Use Pasted Pin": "Utiliser le repère collé",
+      "Pick on Map": "Choisir sur la carte",
+      "Paste pin link": "Coller le lien du repère",
+      "No ready shape yet. Paste a pin link, pick on the map, or draw it.": "Pas encore de forme prête. Collez un lien de repère, choisissez sur la carte, ou dessinez-la.",
+      "Click on the map to place a 1.5 km circle for": "Cliquez sur la carte pour placer un cercle de 1,5 km pour",
+      "town circle ready to save": "cercle de localité prêt à enregistrer",
+      "Point is outside Lebanon. Move or check the link.": "Ce point est hors du Liban. Déplacez-le ou vérifiez le lien.",
+      "Point is outside Lebanon. Click inside Lebanon.": "Ce point est hors du Liban. Cliquez à l'intérieur du Liban.",
+      "Check the pin on the map before saving.": "Vérifiez le repère sur la carte avant d'enregistrer.",
+      "Passing": "Conformes",
+      "requiring action": "action requise",
+      "custom rule hits": "règles personnalisées déclenchées",
+      "custom rule hits ·": "règles personnalisées déclenchées ·",
+      "Tune thresholds": "Régler les seuils",
+      "Jump to Itemized Domain Audit Tables": "Aller aux tableaux détaillés d'audit",
+      "Commercial": "Commercial",
+      "rule flagged for review · Evaluated": "règle signalée pour revue · Évalué",
+      "SCHEDULE CURRENT": "ÉCHÉANCIER À JOUR",
+      "ALL RECHARGED": "TOUT REFACTURÉ",
+      "Daily Venue Revenue, Memberships & F&B Cost": "Recettes journalières des sites, abonnements & coût F&B",
+      "Shacman Heavy Trucks & Korri Auto Parts": "Camions lourds Shacman & pièces détachées Korri Auto",
+      "ONE-SIDED INTERCOMPANY LEGS AWAITING MIRROR PAIRING": "ÉCRITURES INTER-SOCIÉTÉS UNILATÉRALES EN ATTENTE D'APPAIRAGE",
+      "BILATERAL SISTER CORRIDORS: GIVEN VS PAID BACK": "CORRIDORS BILATÉRAUX INTER-SOCIÉTÉS : VERSÉ VS REMBOURSÉ",
+      "HOLDING SHARED-SERVICES OVERHEAD VOUCHERS": "PIÈCES DE FRAIS GÉNÉRAUX ET SERVICES PARTAGÉS HOLDING",
+      "CENTRAL BORROWING FACILITIES & REPAYMENT SCHEDULE": "LIGNES D'EMPRUNT CENTRALISÉES & ÉCHÉANCIER DE REMBOURSEMENT",
+      "CONSOLIDATED SISTER SUB-ACCOUNT CONTROL TIE-OUT": "RAPPROCHEMENT CONSOLIDÉ DES SOUS-COMPTES INTER-SOCIÉTÉS",
+      "DAILY VENUE REVENUE & CHALET CUT-OFF VERIFICATION": "VÉRIFICATION DES RECETTES JOURNALIÈRES & CLÔTURE CHALETS",
+      "POS TILL DAILY CLOSES & DRAWER VARIANCE EXCEPTIONS": "CLÔTURES JOURNALIÈRES TPV & ÉCARTS DE CAISSE",
+      "KITCHEN, BAR & CELLAR PURCHASE-TO-USAGE RATIO WATCHDOG": "SENTINELLE DU RATIO ACHATS / CONSOMMATION CUISINE, BAR & CAVE",
+      "RESORT GENERATOR DIESEL L/HR BURN SPIKE & SOLAR LOGS": "SURCONSOMMATION GASOIL GROUPES (L/H) & RELEVÉS SOLAIRES",
+      "SEASONAL CHALET & CABANA MEMBERSHIP ARREARS QUEUE": "FILE D'ARRIÉRÉS D'ABONNEMENTS SAISONNIERS CHALETS & CABANAS",
+      "PHYSICAL INVOICE BOOK SEQUENCE GAPS & AUDIT TRAIL": "RUPTURES DE SÉQUENCE DES CARNETS DE FACTURES & PISTE D'AUDIT",
+      "LOW-MARGIN HEAVY TRUCK & SPARE PARTS INVOICES": "FACTURES CAMIONS LOURDS & PIÈCES DÉTACHÉES À FAIBLE MARGE",
+      "BELOW-REORDER SPARE PARTS SKUS ACROSS 5 WAREHOUSES": "RÉFÉRENCES PIÈCES SOUS SEUIL DE RÉAPPROVISIONNEMENT (5 DÉPÔTS)",
+      "EXPIRING COMMERCIAL & RESIDENTIAL LEASES & ESCALATION QUEUE": "BAUX COMMERCIAUX & RÉSIDENTIELS À ÉCHÉANCE & INDEXATIONS",
+      "UNBILLED ACTIVE LEASE PERIODS & OPEN RENT AR": "PÉRIODES LOCATIVES ACTIVES NON FACTURÉES & CRÉANCES DE LOYERS",
+      "COMPLETED TENANT-FAULT WORK ORDERS PENDING RECHARGE": "BONS DE TRAVAUX IMPUTABLES AUX LOCATAIRES EN ATTENTE DE REFACTURATION",
+      "30/60/90-DAY EXPIRING & LAPSED POLICY RENEWAL QUEUE": "FILE DE RENOUVELLEMENT DES POLICES ÉCHUES & À 30/60/90 JOURS",
+      "CARRIER COMMISSION STATEMENT DISCREPANCIES VS AGREEMENTS": "ÉCARTS DE RELEVÉS DE COMMISSIONS COMPAGNIES VS CONVENTIONS",
+      "FIDUCIARY CASH HELD & CARRIER BORDEREAU REMITTANCES": "FONDS FIDUCIAIRES DÉTENUS & REMISES BORDEREAUX COMPAGNIES",
+      "CLIENT REBATE / DISCOUNT VS GROSS COMMISSION AUDIT": "AUDIT DES REMISES CLIENTS VS COMMISSION BRUTE",
+      "ACTIVE CLAIMS FNOL, SURVEYORS & INSURER RECOVERY QUEUE": "SINISTRES ACTIFS, DÉCLARATIONS, EXPERTS & RECOURS COMPAGNIES",
+      "Account ID": "N° Compte",
+      "Actual vs Rated": "Réel vs Nominal",
+      "Area (m2)": "Surface (m²)",
+      "Book #": "Carnet n°",
+      "Claim ID": "N° Sinistre",
+      "Customer / Audit Note": "Client / Note d'audit",
+      "Directed Corridor": "Corridor orienté",
+      "Generator Asset": "Groupe électrogène",
+      "Import File #": "Dossier import n°",
+      "Instalment ID": "N° Échéance",
+      "Margin %": "Marge %",
+      "Member Account": "Compte membre",
+      "Net Payable ($)": "Net à payer ($)",
+      "On Hand / Min": "En stock / Min",
+      "POS Terminal": "Terminal TPV",
+      "Part Code": "Code pièce",
+      "Period Rent ($)": "Loyer période ($)",
+      "Quoted ($)": "Coté ($)",
+      "Ratio": "Ratio",
+      "Remittance ID": "N° Remise",
+      "Renewal ID": "N° Renouvellement",
+      "Repay %": "Remb. %",
+      "Sheet ID": "N° Feuille",
+      "Statement ID": "N° Relevé",
+      "Stock ID": "N° Stock",
+      "Stock Val ($)": "Val. stock ($)",
+      "Store / Cellar": "Magasin / Cave",
+      "Supplier / Advisory": "Fournisseur / Conseil",
+      "Target Rent ($)": "Loyer cible ($)",
+      "Tie-Out Status": "Statut de cadrage",
+      "Transfers": "Transferts",
+      "Unit / Floor": "Unité / Étage",
+      "Venue / Outlet": "Site / Point de vente",
+      "Voucher ID": "N° Pièce",
+      "Work Order #": "Bon de travail n°"
     }
   };
 
@@ -23679,7 +23847,7 @@
     if (/^[▲▼▾▴]?\s*[+-]?[$€£]?\s*[\d,.:/%×+-]+[kKMB]?(?:\s*\/\s*[+-]?[$€£]?\s*[\d,.:/%×+-]+[kKMB]?)?(\s*(USD|LBP|EUR|AED|LL|m³|m³\/load|t|kg|km|km\/h|kph|L|L\/km|L\/hr|L\/100km|V|UTC|hrs?|h|d|KB|MB|TB))?$/i.test(t)) return true;
     if (/^(https?:\/\/\S+|\S+@\S+\.\S+|[a-z0-9.-]+\.(com|org|net|io|gov\.lb)(\/\S*)?)$/i.test(t)) return true;
     if (/^\S+\.(svg|pdf|png|jpe?g|webp|csv|xlsx|json|zip)$/i.test(t)) return true;
-    if (/^S\d{1,2}$/.test(t)) return true;
+    if (/^[SHRTPI]\d{1,2}$/.test(t)) return true;
     // Equipment / VIN / Cadastry / Claim / Voucher / Ticket / Seat codes
     if (/^[A-Z]{1,6}[-#][A-Z0-9.,/#&-]*\d[A-Z0-9.,/#&-]*$/i.test(t)) return true;
     if (/^(Tb?\d+|SH\d+|EX\d+|LD\d+|DZ\d+|GR\d+|KA\s*#\d+|#\d+|\d{5,9})$/i.test(t)) return true;
@@ -25501,6 +25669,44 @@
     m = trimmed.match(/^Accrued automatically into Credit Leg 3\s*\((.+)\)$/i);
     if (m) return lang === 'ar' ? `مستحق تلقائياً ضمن الطرف الدائن 3 (${m[1]})` : `Provisionné automatiquement en Volet 3 (${m[1]})`;
 
+    m = trimmed.match(/^Saved\s+(\d+)\s+ready Region (circles?|shapes?)$/i);
+    if (m) {
+      const cnt = Number(m[1]);
+      const isShapes = /^shape/i.test(m[2]);
+      if (lang === 'ar') {
+        if (cnt === 1) return isShapes ? 'تم حفظ شكل منطقة واحد جاهز' : 'تم حفظ دائرة منطقة واحدة جاهزة';
+        return isShapes ? `تم حفظ ${m[1]} أشكال مناطق جاهزة` : `تم حفظ ${m[1]} دوائر مناطق جاهزة`;
+      }
+      if (cnt === 1) return isShapes ? '1 forme de région prête enregistrée' : '1 cercle de région prêt enregistré';
+      return isShapes ? `${m[1]} formes de région prêtes enregistrées` : `${m[1]} cercles de région prêts enregistrés`;
+    }
+
+    m = trimmed.match(/^(\d+)\s+Region shapes? saved locally only;\s*server sync will retry$/i);
+    if (m) {
+      const cnt = Number(m[1]);
+      if (lang === 'ar') {
+        return cnt === 1
+          ? 'تم حفظ شكل منطقة واحدة محلياً فقط؛ ستتم إعادة محاولة المزامنة مع الخادم'
+          : `تم حفظ ${m[1]} أشكال مناطق محلياً فقط؛ ستتم إعادة محاولة المزامنة مع الخادم`;
+      }
+      return cnt === 1
+        ? '1 forme de région enregistrée localement ; la synchronisation serveur réessaiera'
+        : `${m[1]} formes de région enregistrées localement ; la synchronisation serveur réessaiera`;
+    }
+
+    m = trimmed.match(/^Saved\s+(Circle\s*\([\d.]+\s*km\)|Map Boundary|Polygon Zone)\s+for\s+(.+?)\s*\((\d+)\s+pinned sites? inside\)$/i);
+    if (m) {
+      const cm = m[1].match(/^Circle\s*\(([\d.]+)\s*km\)$/i);
+      const shapeAr = cm ? `دائرة (${cm[1]} كم)` : (/Boundary/i.test(m[1]) ? 'حدود الخريطة' : 'نطاق مضلع');
+      const shapeFr = cm ? `Cercle (${cm[1]} km)` : (/Boundary/i.test(m[1]) ? 'Limite de carte' : 'Zone polygone');
+      const cnt = Number(m[3]);
+      const siteAr = cnt === 1 ? 'موقع واحد مثبت في الداخل' : (cnt === 2 ? 'موقعان مثبتان في الداخل' : `${cnt} مواقع مثبتة في الداخل`);
+      const siteFr = cnt <= 1 ? `${cnt} site épinglé à l'intérieur` : `${cnt} sites épinglés à l'intérieur`;
+      return lang === 'ar'
+        ? `تم حفظ ${shapeAr} لمنطقة ${m[2]} (${siteAr})`
+        : `${shapeFr} enregistré pour ${m[2]} (${siteFr})`;
+    }
+
     m = trimmed.match(/^Earned\s+(\$[\d.,]+)\s+Ex-VAT\s*·\s*Paid\s+(\$[\d.,]+)(.*)$/i);
     if (m) {
       const rest = m[3] ? translateCore(m[3].replace(/^\s*·\s*/, ''), lang, depth + 1) : '';
@@ -26547,6 +26753,67 @@
       }
       const vacOut = vac ? (lang === 'ar' ? ` · ${vac} ي إجازة` : ` · ${vac}j congés`) : '';
       return `${lOut} · ${otOut}${vacOut}`;
+    }
+
+    // Sibling industry overview banners & sentinel watchdogs
+    m = trimmed.match(/^(\d+)\s+Entities\s*·\s*(\$[\d.,]+[kKMB]?)\s+IC\s+eliminated$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} شركة · ${m[2]} مقاصة بينية`
+        : `${m[1]} entités · ${m[2]} IC éliminés`;
+    }
+    m = trimmed.match(/^GWP\s+(\$[\d.,]+[kKMB]?)\s*·\s*(\d+)\s+policies\s+breaching\s+commission\s+floor\s*·\s*([\d.,]+%)\s+Cov\s+fiduciary\s+cash\s+coverage$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `إجمالي الأقساط ${m[1]} · ${m[2]} بوالص دون الحد الأدنى للعمولة · تغطية نقدية ائتمانية ${m[3]}`
+        : `Primes brutes ${m[1]} · ${m[2]} police${Number(m[2]) === 1 ? '' : 's'} sous le plancher de commission · couv. trésorerie fiduciaire ${m[3]}`;
+    }
+    m = trimmed.match(/^(\d+)\s+Active\s+Flags?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} تنبيه${Number(m[1]) === 1 ? '' : 'ات'} نشطة`
+        : `${m[1]} alerte${Number(m[1]) === 1 ? '' : 's'} active${Number(m[1]) === 1 ? '' : 's'}`;
+    }
+    m = trimmed.match(/^(\d+)\s+Signed\s+Off$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} معتمد`
+        : `${m[1]} validé${Number(m[1]) <= 1 ? '' : 's'}`;
+    }
+    m = trimmed.match(/^(.+?)\s+operational\s+watchdogs\s*·$/i);
+    if (m) {
+      const ind = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar'
+        ? `مراقبو ${ind} التشغيليون ·`
+        : `Sentinelles opérationnelles ${ind} ·`;
+    }
+    m = trimmed.match(/^Total\s+Debits\s*\(([^)]+)\)\s+vs\s+Total\s+Credits\s*\(([^)]+)\)\s+across\s+all\s+(\d+)\s+(.+?)\s+double-entry\s+journal\s+lines:\s*variance\s+([$€£]?[+-]?[\d,]+(?:\.\d+)?)\.?$/i);
+    if (m) {
+      const ind = translateCore(m[4].trim(), lang, depth + 1);
+      return lang === 'ar'
+        ? `إجمالي المدين (${m[1]}) مقابل إجمالي الدائن (${m[2]}) عبر جميع قيود القيد المزدوج لـ ${ind} (${m[3]} قيد): الفرق ${m[5]}.`
+        : `Total Débits (${m[1]}) vs Total Crédits (${m[2]}) sur les ${m[3]} écritures en partie double ${ind} : écart ${m[5]}.`;
+    }
+    m = trimmed.match(/^All\s+(\d+)\s+directed\s+sister-company\s+corridors\s+reconciled\s+against\s+Lebanese\s+Chart\s+of\s+Accounts\s+double-entry\s+control\s+accounts\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تمت مطابقة جميع المسارات الموجّهة للشركات الشقيقة (${m[1]}) مقابل حسابات المراقبة في دليل الحسابات اللبناني ذي القيد المزدوج.`
+        : `Les ${m[1]} corridors inter-sociétés orientés sont rapprochés avec les comptes de contrôle du Plan Comptable Libanais en partie double.`;
+    }
+    m = trimmed.match(/^(.+?)\s+DOMAIN\s+AUDIT\s+WATCHDOGS\s*&\s*ITEMIZED\s+DRILL-DOWN\s*\((\d+)\s+RULES?\)$/i);
+    if (m) {
+      const ind = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar'
+        ? `مراقبو تدقيق نطاق ${ind} وجداول التفصيل (${m[2]} قواعد)`
+        : `SENTINELLES D'AUDIT ${ind.toUpperCase()} & TABLEAUX DÉTAILLÉS (${m[2]} RÈGLES)`;
+    }
+    m = trimmed.match(/^All\s+(.+?)\s+Industry\s*·\s*(.+)$/i);
+    if (m) {
+      const ind = translateCore(m[1].trim(), lang, depth + 1);
+      const rest = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar'
+        ? `كامل قطاع ${ind} · ${rest}`
+        : `Tout le secteur ${ind} · ${rest}`;
     }
 
     return null;

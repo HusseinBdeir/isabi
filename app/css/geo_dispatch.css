@@ -1641,6 +1641,10 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
 .leaflet-container.is-drawing-zone .leaflet-interactive {
   cursor: crosshair !important;
 }
+.leaflet-container.is-picking-seed-pin .leaflet-marker-icon,
+.leaflet-container.is-picking-seed-pin .leaflet-marker-shadow {
+  pointer-events: none !important;
+}
 
 .geo-modal-map-wrap {
   position: relative;
@@ -3671,9 +3675,27 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  flex: 0 0 auto;
 }
 .geo-shapeless-row.is-previewing { border-color: rgba(201, 106, 34, 0.6); background: rgba(201, 106, 34, 0.06); }
 [data-theme="dark"] .geo-shapeless-row.is-previewing { background: rgba(201, 106, 34, 0.14); }
+.geo-shapeless-row.is-picking { border-color: #C96A22; box-shadow: inset 0 0 0 1px rgba(201, 106, 34, 0.35); background: rgba(201, 106, 34, 0.05); }
+[data-theme="dark"] .geo-shapeless-row.is-picking { background: rgba(201, 106, 34, 0.12); }
+.geo-shapeless-batch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.geo-shapeless-batch.is-previewing {
+  border: 1px solid rgba(201, 106, 34, 0.55);
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: rgba(201, 106, 34, 0.06);
+}
+[data-theme="dark"] .geo-shapeless-batch.is-previewing { background: rgba(201, 106, 34, 0.14); }
+.geo-shapeless-batch .geo-shapeless-preview { border-top: 0; padding-top: 0; }
+.geo-shapeless-batch-names { font-size: 0.72rem; font-weight: 700; color: var(--ink); line-height: 1.35; overflow-wrap: anywhere; }
 .geo-shapeless-name { font-size: 0.78rem; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
 .geo-shapeless-meta { font-size: 0.7rem; color: var(--ink-soft, var(--muted)); display: flex; flex-wrap: wrap; gap: 2px 0; align-items: baseline; }
 .geo-shapeless-num { color: var(--ink); font-weight: 700; }
@@ -3682,6 +3704,28 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
 .geo-shapeless-actions .geo-mini-btn { max-width: 100%; white-space: normal; text-align: start; }
 .geo-shapeless-actions .geo-mini-btn.active { border-color: #C96A22; box-shadow: inset 0 0 0 1px #C96A22; }
 .geo-shapeless-hint { font-size: 0.68rem; color: var(--muted); }
+.geo-shapeless-seed-bar { display: flex; align-items: center; gap: 4px; margin-top: 2px; min-width: 0; }
+.geo-shapeless-paste-inp { flex: 1 1 auto; min-width: 0; height: 30px; font-size: 0.74rem; padding: 4px 8px; }
+.geo-shapeless-pick-banner {
+  font-size: 0.7rem;
+  color: #9A4A15;
+  background: rgba(201, 106, 34, 0.1);
+  border: 1px dashed rgba(201, 106, 34, 0.45);
+  border-radius: 6px;
+  padding: 4px 7px;
+  line-height: 1.35;
+}
+[data-theme="dark"] .geo-shapeless-pick-banner { color: #FCD34D; background: rgba(201, 106, 34, 0.18); }
+.geo-shapeless-seed-msg {
+  font-size: 0.69rem;
+  line-height: 1.35;
+  border-radius: 6px;
+  padding: 4px 7px;
+}
+.geo-shapeless-seed-msg.is-warn { color: #9A4A15; background: rgba(217, 119, 6, 0.12); border: 1px solid rgba(217, 119, 6, 0.35); }
+.geo-shapeless-seed-msg.is-crit { color: #B91C1C; background: rgba(220, 38, 38, 0.08); border: 1px solid rgba(220, 38, 38, 0.3); }
+[data-theme="dark"] .geo-shapeless-seed-msg.is-warn { color: #FCD34D; background: rgba(217, 119, 6, 0.18); }
+[data-theme="dark"] .geo-shapeless-seed-msg.is-crit { color: #FCA5A5; background: rgba(220, 38, 38, 0.18); }
 .geo-shapeless-preview { border-top: 1px dashed var(--line); padding-top: 5px; display: flex; flex-direction: column; gap: 5px; }
 .geo-shapeless-preview-lines { display: flex; flex-direction: column; gap: 2px; font-size: 0.7rem; color: var(--ink-soft, var(--muted)); }
 .geo-shapeless-preview-lines .is-warn { color: #A4521A; }
@@ -3691,4 +3735,5 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
   .geo-regions-rail.has-maplink-hit .geo-shapeless-list,
   .geo-regions-rail:has(#geoMapLinkStatus) .geo-shapeless-list { max-height: 105px; }
   .geo-shapeless-actions .geo-mini-btn { min-height: 34px; }
+  .geo-shapeless-paste-inp { height: 34px; font-size: 16px !important; }
 }

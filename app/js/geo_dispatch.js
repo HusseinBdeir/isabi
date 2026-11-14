@@ -1598,6 +1598,10 @@
   };
   const _hasSitePin = s => Boolean(s && s.latitude != null && s.latitude !== '' && s.longitude != null && s.longitude !== ''
     && Number.isFinite(Number(s.latitude)) && Number.isFinite(Number(s.longitude)));
+  const _geoKey = gj => {
+    const p = parseZoneGeoJson(gj);
+    return p ? JSON.stringify(p) : (gj ? String(gj).trim() : '');
+  };
 
   // Regions with no shape in the active industry, most-used first (loads at their sites, then sites), each with
   // its sites, pins, night trip rates in force today and up to two ready shapes: the smallest map boundary that
@@ -1645,10 +1649,19 @@
       });
     }
     const atlas = getFullBoundaryAtlas().filter(a => a && a.geojson && !/governorate/i.test(String(a.kind || '')));
+    const usedGeoKeys = new Set();
+    regions.forEach(r => {
+      if (!regionHasShape(r.name, SEED, ind)) return;
+      const o = resolveRegionRecordOrAtlas(r.name, SEED, ind);
+      const gk = _geoKey(o && o.zone_geojson);
+      if (gk) usedGeoKeys.add(gk);
+    });
     const atlasUsable = a => {
-      // A boundary that is already another Region's own name is that Region's shape: never offered twice
+      // A boundary already claimed by any active Region (by name, alias, or saved geometry) is never offered twice
       if (recNames.has(norm(a.name))) return false;
-      return !(Array.isArray(a.aliases) && a.aliases.some(x => recNames.has(norm(x))));
+      if (Array.isArray(a.aliases) && a.aliases.some(x => recNames.has(norm(x)))) return false;
+      const gk = _geoKey(a.geojson);
+      return !(gk && usedGeoKeys.has(gk));
     };
     const smallestHolding = pts => {
       let best = null;
@@ -1766,6 +1779,137 @@
         res.blankIn++;
         res.blankSites.push(s.name);
       } else if (inside) {
+        res.otherIn++;
+      }
+    });
+    return res;
+  }
+
+  // Regions with no shape whose ready boundary (< 180 km², keeping all own pinned sites) or auto-fitted
+  // town-sized site circle (SHAPE_FIT_MIN_KM..SHAPE_FIT_MAX_KM) holds every one of the Region's own pinned sites.
+  function getBatchReadyShapelessCircles(SEED, STATE, explicitInd) {
+    const ind = explicitInd || getGeoActiveIndustry();
+    const list = getShapelessRegions(SEED, STATE, ind);
+    const usedGeoKeys = new Set();
+    (((SEED && SEED.records && SEED.records.regions) || [])).forEach(r => {
+      if (!isRowInGeoIndustry(r, ind) || !String(r.name || '').trim()) return;
+      if (!regionHasShape(r.name, SEED, ind)) return;
+      const o = resolveRegionRecordOrAtlas(r.name, SEED, ind);
+      const gk = _geoKey(o && o.zone_geojson);
+      if (gk) usedGeoKeys.add(gk);
+    });
+    const holdingClaims = new Map();
+    list.forEach(e => {
+      const b = e && e.boundary;
+      if (b && b.how !== 'name' && b.geojson && Number(b.areaKm2) > 0 && Number(b.areaKm2) < SHAPE_READY_MAX_KM2 && !/district|governorate/i.test(String(b.kind || ''))) {
+        const bKey = _geoKey(b.geojson) || norm(b.name);
+        if (bKey) holdingClaims.set(bKey, (holdingClaims.get(bKey) || 0) + 1);
+      }
+    });
+    const pickedGeoKeys = new Set();
+    const ready = [];
+    list.forEach(e => {
+      if (regionHasShape(e.name, SEED, ind)) return;
+      const b = e.boundary;
+      const bKey = (b && b.geojson) ? (_geoKey(b.geojson) || norm(b.name)) : '';
+      const boundaryBusy = Boolean(
+        bKey && (
+          pickedGeoKeys.has(bKey)
+          || (b.how !== 'name' && (usedGeoKeys.has(bKey) || (holdingClaims.get(bKey) || 0) > 1))
+        )
+      );
+      if (!boundaryBusy && b && b.geojson && Number(b.areaKm2) > 0 && Number(b.areaKm2) < SHAPE_READY_MAX_KM2 && !/district|governorate/i.test(String(b.kind || ''))) {
+        const bSpec = {
+          zone_type: 'boundary',
+          center_lat: Number(b.lat),
+          center_lng: Number(b.lng),
+          radius_km: null,
+          zone_geojson: b.geojson,
+          corridor: b.corridor || '',
+          code: b.code || ''
+        };
+        const bStats = getShapePreviewStats(e.name, bSpec, SEED, ind);
+        if (bStats.ownPinned === 0 || bStats.ownIn === bStats.ownPinned) {
+          if (bKey) pickedGeoKeys.add(bKey);
+          ready.push({ entry: e, kind: 'boundary', spec: bSpec, stats: bStats });
+          return;
+        }
+      }
+      if (!e.circle || e.circle.center_lat == null || e.circle.center_lng == null) return;
+      const rKm = Number(e.circle.radius_km);
+      if (!Number.isFinite(rKm) || rKm < SHAPE_FIT_MIN_KM || rKm > SHAPE_FIT_MAX_KM) return;
+      const spec = {
+        zone_type: 'circle',
+        center_lat: Number(e.circle.center_lat),
+        center_lng: Number(e.circle.center_lng),
+        radius_km: rKm,
+        zone_geojson: null
+      };
+      const stats = getShapePreviewStats(e.name, spec, SEED, ind);
+      if (!(stats.ownPinned > 0 && stats.ownIn === stats.ownPinned)) return;
+      ready.push({ entry: e, kind: 'circle', spec, stats });
+    });
+    return ready;
+  }
+
+  // Combined zero-mutation preview stats across a batch of ready Region circles, single-counted across overlapping circles.
+  function getBatchShapePreviewStats(batchItems, SEED, explicitInd) {
+    const ind = explicitInd || getGeoActiveIndustry();
+    const items = Array.isArray(batchItems) ? batchItems : [];
+    const res = { regionsCount: items.length, totalOwnIn: 0, totalOwnPinned: 0, otherIn: 0, blankIn: 0, blankSites: [] };
+    if (!items.length || !SEED || !SEED.records) return res;
+    const recs = SEED.records;
+    const sites = (recs.sites || []).filter(s => isRowInGeoIndustry(s, ind) && s.name && _hasSitePin(s));
+    const filled = sites.filter(s => !String(s.region || '').trim()
+      && !(BASELINE_SITE_PINS[norm(s.name)] && BASELINE_SITE_PINS[norm(s.name)].region && ind === 'Manufacturing' && !s._multiIndustrySeed));
+    const before = new Map(filled.map(s => [s, findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, ind, { recordsOnly: true }).best || '']));
+    const after = new Map();
+    const targetSynths = new Map();
+    const restores = [];
+    const keys = ['zone_type', 'center_lat', 'center_lng', 'radius_km', 'zone_geojson'];
+    items.forEach(item => {
+      const regName = (item && item.entry && item.entry.name) || (item && item.region) || '';
+      const spec = item && item.spec;
+      if (!regName || !spec) return;
+      const rk = norm(regName);
+      const synth = {
+        zone_type: spec.zone_type,
+        center_lat: spec.center_lat,
+        center_lng: spec.center_lng,
+        radius_km: spec.radius_km || 0,
+        zone_geojson: spec.zone_geojson || null
+      };
+      targetSynths.set(rk, synth);
+      const regRow = (recs.regions || []).find(r => isRowInGeoIndustry(r, ind) && norm(r.name) === rk);
+      if (regRow) {
+        const saved = {};
+        keys.forEach(k => { saved[k] = regRow[k]; });
+        restores.push({ regRow, saved, synth });
+      }
+    });
+    res.regionsCount = targetSynths.size;
+    try {
+      restores.forEach(it => { keys.forEach(k => { it.regRow[k] = it.synth[k]; }); });
+      filled.forEach(s => after.set(s, findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, ind, { recordsOnly: true }).best || ''));
+    } finally {
+      restores.forEach(it => { keys.forEach(k => { it.regRow[k] = it.saved[k]; }); });
+    }
+    const synthList = Array.from(targetSynths.values());
+    const takes = new Set(filled.filter(s => after.has(s) && targetSynths.has(norm(after.get(s))) && norm(before.get(s)) !== norm(after.get(s))));
+    const seenSites = new Set();
+    sites.forEach(s => {
+      const sk = norm(s.name) + '|' + resolveGeoSiteCat(s);
+      if (seenSites.has(sk)) return;
+      seenSites.add(sk);
+      const sReg = norm(s.region || s.geo_zone);
+      const lat = Number(s.latitude), lng = Number(s.longitude);
+      if (sReg && targetSynths.has(sReg)) {
+        res.totalOwnPinned++;
+        if (isPointInRegion(lat, lng, targetSynths.get(sReg))) res.totalOwnIn++;
+      } else if (takes.has(s)) {
+        res.blankIn++;
+        res.blankSites.push(s.name);
+      } else if (synthList.some(synth => isPointInRegion(lat, lng, synth))) {
         res.otherIn++;
       }
     });
@@ -3110,6 +3254,10 @@
     drawRegionName: '',
     shapelessOpen: false,
     shapePreview: null,
+    shapelessBatchPreview: false,
+    shapelessPickRegion: '',
+    shapelessSeedFeedback: null,
+    _shapelessScrollTop: 0,
     searchDraft: null,    // { name, code, corridor, geojson, lat, lng, wtcKm }
     circleCenter: null,   // { lat, lng }
     circleRadiusKm: 1.5,
@@ -3129,6 +3277,9 @@
     previewLine: null,
     _userPanned: false,
     _lastHostKey: '',
+    _lastActiveInd: '',
+    _renderGen: 0,
+    _suppressPasteChangeUntil: 0,
     _jumpPendingTs: 0,
     _rerender: null
   };
@@ -3175,6 +3326,7 @@
     if (resetState) {
       STUDIO.selectedRegion = '';
       STUDIO._lastHostKey = '';
+      STUDIO._lastActiveInd = '';
       STUDIO._jumpPendingTs = 0;
       STUDIO._rerender = null;
     }
@@ -3244,17 +3396,64 @@
     }
   };
 
+  function clearShapelessTransientState() {
+    STUDIO.shapePreview = null;
+    STUDIO.shapelessBatchPreview = false;
+    STUDIO.shapelessPickRegion = '';
+    STUDIO.shapelessSeedFeedback = null;
+  }
+
   // Regions with No Shape (rail panel): the pin boxes on Sales and Raw Material Tickets cannot check a pin in these
   // Regions, so each is listed with what rides on it and a way to give it a shape once. Saving a ready shape keeps
   // every site's Region as it is (persistRegionZone keepSiteRegions).
-  function renderShapelessPanelHtml(list, SEED, activeInd, canShape) {
+  function renderShapelessPanelHtml(list, SEED, STATE, activeInd, canShape) {
     if (!list || !list.length) return '';
     const open = STUDIO.shapelessOpen === true;
     const prev = STUDIO.shapePreview;
     const num = v => `<b class="geo-shapeless-num" data-no-i18n="1">${esc(v)}</b>`;
     const chev = `<svg class="geo-exp-chev" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${open ? 'M2.5 7.5L6 4l3.5 3.5' : 'M2.5 4.5L6 8l3.5-3.5'}"/></svg>`;
+    const batchReady = (open && canShape) ? getBatchReadyShapelessCircles(SEED, STATE, activeInd) : [];
+    const hasBoundaryInBatch = batchReady.some(b => b.kind === 'boundary');
+    let batchHtml = '';
+    if (open && canShape && batchReady.length >= 2) {
+      if (STUDIO.shapelessBatchPreview) {
+        const bst = getBatchShapePreviewStats(batchReady, SEED, activeInd);
+        const batchSummaryNames = batchReady.map(b => (b.kind === 'boundary'
+          ? `${b.entry.name} (${(b.entry.boundary && b.entry.boundary.name) || 'Boundary'})`
+          : `${b.entry.name} (${round1(b.spec.radius_km)} km)`)).join(' · ');
+        const bLines = [
+          `<div class="geo-shapeless-batch-names" data-no-i18n="1">${esc(batchSummaryNames)}</div>`,
+          `<span>${num(bst.regionsCount)} <span>${hasBoundaryInBatch ? 'Regions with ready town shapes' : 'Regions with ready town circles'}</span></span>`,
+          `<span>${num(`${bst.totalOwnIn} / ${bst.totalOwnPinned}`)} <span>of their pinned sites inside</span></span>`
+        ];
+        if (bst.otherIn) bLines.push(`<span>${num(bst.otherIn)} <span>sites of other Regions inside, their Region is kept</span></span>`);
+        if (bst.blankIn) {
+          bLines.push(`<span class="is-warn" data-ui-tip="${esc(bst.blankSites.slice(0, 12).join(', '))}">${num(bst.blankIn)} <span>sites with no Region inside will take this Region</span></span>`);
+        }
+        batchHtml = `
+          <div class="geo-shapeless-batch is-previewing" id="geoShapelessBatchBar">
+            <div class="geo-shapeless-preview" id="geoShapelessBatchPreview" role="status" aria-live="polite">
+              <div class="geo-shapeless-preview-lines">${bLines.join('')}</div>
+              <div class="geo-shapeless-actions">
+                <button type="button" class="geo-mini-btn primary" id="geoShapelessBatchConfirmBtn"><span>${hasBoundaryInBatch ? 'Confirm Save Shapes' : 'Confirm Save Circles'}</span> ${num(batchReady.length)}</button>
+                <button type="button" class="geo-mini-btn" id="geoShapelessBatchCancelBtn">Cancel</button>
+              </div>
+            </div>
+          </div>`;
+      } else {
+        batchHtml = `
+          <div class="geo-shapeless-batch" id="geoShapelessBatchBar">
+            <button type="button" class="geo-mini-btn primary" id="geoShapelessBatchBtn"><span>${hasBoundaryInBatch ? 'Save All Ready Shapes' : 'Save All Ready Circles'}</span> ${num(batchReady.length)}</button>
+          </div>`;
+      }
+    }
+    const hasStudioPastedPin = Boolean(canShape && STUDIO.pasteHit && STUDIO.pasteHit.ok && !STUDIO.pasteHit.outsideLebanon
+      && isPointInLebanon(Number(STUDIO.pasteHit.lat), Number(STUDIO.pasteHit.lng)));
     const rows = !open ? '' : list.map(e => {
       const isPrev = Boolean(prev && norm(prev.region) === norm(e.name));
+      const isPicking = Boolean(canShape && STUDIO.shapelessPickRegion && norm(STUDIO.shapelessPickRegion) === norm(e.name));
+      const fb = (canShape && STUDIO.shapelessSeedFeedback && norm(STUDIO.shapelessSeedFeedback.region) === norm(e.name))
+        ? STUDIO.shapelessSeedFeedback : null;
       const meta = [
         `<span>${num(e.sites.toLocaleString('en-US'))} <span>${e.sites === 1 ? 'Site' : 'Sites'}</span></span>`,
         `<span>${num(e.loads.toLocaleString('en-US'))} <span>${e.loads === 1 ? 'Load' : 'Loads'}</span></span>`,
@@ -3264,6 +3463,9 @@
         meta.push(`<span><span>Night Trip Pay</span> ${e.nightRates.map(n => `${num('$' + round2(n.rate))}${e.nightRates.length > 1 ? ` <span class="geo-shapeless-co" data-no-i18n="1">${esc(n.company)}</span>` : ''}`).join(' ')}</span>`);
       }
       let actions = '';
+      let seedBarHtml = '';
+      let pickBannerHtml = '';
+      let seedMsgHtml = '';
       if (canShape) {
         const btns = [];
         if (e.boundary) {
@@ -3272,18 +3474,40 @@
         if (e.circle) {
           btns.push(`<button type="button" class="geo-mini-btn${isPrev && prev.kind === 'circle' ? ' active' : ''}" data-geo-shapeless-fit="circle" data-geo-shapeless-region="${esc(e.name)}"><span>Circle Around Sites</span> <b data-no-i18n="1">${esc(round1(e.circle.radius_km))} km</b></button>`);
         }
+        if (e.pinned === 0) {
+          if (hasStudioPastedPin) {
+            btns.push(`<button type="button" class="geo-mini-btn" data-geo-shapeless-use-pasted="${esc(e.name)}"><span>Use Pasted Pin</span> <b data-no-i18n="1">${esc(round1(SHAPE_FIT_MIN_KM))} km</b></button>`);
+          }
+          btns.push(`<button type="button" class="geo-mini-btn${isPicking ? ' active' : ''}" data-geo-shapeless-pick="${esc(e.name)}"><span>Pick on Map</span> <b data-no-i18n="1">${esc(round1(SHAPE_FIT_MIN_KM))} km</b></button>`);
+          const pasteVal = fb && fb.raw != null ? fb.raw
+            : (isPrev && prev.kind === 'seed_circle' && prev.raw != null ? prev.raw : '');
+          seedBarHtml = `
+            <div class="geo-shapeless-seed-bar">
+              <input type="text" class="geo-rail-search geo-shapeless-paste-inp" data-geo-shapeless-paste="${esc(e.name)}" value="${esc(pasteVal)}" placeholder="Paste pin link" aria-label="Paste pin link" inputmode="url" spellcheck="false" autocomplete="off" enterkeyhint="go">
+            </div>`;
+        }
         if (e.id) btns.push(`<button type="button" class="geo-mini-btn" data-geo-shapeless-draw="${esc(e.id)}">Draw</button>`);
         actions = `<div class="geo-shapeless-actions">${btns.join('')}</div>`;
         if (!e.boundary && !e.circle) {
-          actions += `<div class="geo-shapeless-hint">No ready shape yet. Pin one of its sites, or draw it.</div>`;
+          actions += `<div class="geo-shapeless-hint">${e.pinned === 0 ? 'No ready shape yet. Paste a pin link, pick on the map, or draw it.' : 'No ready shape yet. Pin one of its sites, or draw it.'}</div>`;
+        }
+        if (isPicking) {
+          pickBannerHtml = `<div class="geo-shapeless-pick-banner" id="geoShapelessPickBanner" role="status" aria-live="polite"><span>Click on the map to place a 1.5 km circle for</span> <b data-no-i18n="1">${esc(e.name)}</b></div>`;
+        }
+        if (fb && fb.html) {
+          seedMsgHtml = `<div class="geo-shapeless-seed-msg ${esc(fb.tone || 'is-warn')}" role="status" aria-live="polite">${fb.html}</div>`;
         }
       }
       let previewHtml = '';
       if (isPrev && canShape && prev.spec) {
         const st = getShapePreviewStats(e.name, prev.spec, SEED, activeInd);
-        const lines = [
-          `<span>${num(`${st.ownIn} / ${st.ownPinned}`)} <span>of its pinned sites inside</span></span>`
-        ];
+        const lines = [];
+        if (prev.seedWarn) lines.push(prev.seedWarn);
+        if (st.ownPinned > 0) {
+          lines.push(`<span>${num(`${st.ownIn} / ${st.ownPinned}`)} <span>of its pinned sites inside</span></span>`);
+        } else {
+          lines.push(`<span>${num(`${round1(prev.spec.radius_km || SHAPE_FIT_MIN_KM)} km`)} <span>town circle ready to save</span></span>`);
+        }
         if (st.otherIn) lines.push(`<span>${num(st.otherIn)} <span>sites of other Regions inside, their Region is kept</span></span>`);
         if (st.blankIn) {
           lines.push(`<span class="is-warn" data-ui-tip="${esc(st.blankSites.slice(0, 12).join(', '))}">${num(st.blankIn)} <span>sites with no Region inside will take this Region</span></span>`);
@@ -3301,12 +3525,15 @@
           </div>`;
       }
       return `
-        <div class="geo-shapeless-row${isPrev ? ' is-previewing' : ''}" data-geo-shapeless-row="${esc(e.name)}">
+        <div class="geo-shapeless-row${isPrev ? ' is-previewing' : ''}${isPicking ? ' is-picking' : ''}" data-geo-shapeless-row="${esc(e.name)}">
           <div class="geo-shapeless-row-top">
             <span class="geo-shapeless-name" data-no-i18n="1">${esc(e.name)}</span>
           </div>
           <div class="geo-shapeless-meta">${meta.join('<span class="geo-link-sep" aria-hidden="true"> · </span>')}</div>
           ${actions}
+          ${pickBannerHtml}
+          ${seedBarHtml}
+          ${seedMsgHtml}
           ${previewHtml}
         </div>`;
     }).join('');
@@ -3319,7 +3546,7 @@
         </button>
         ${open ? `
           <div class="geo-shapeless-note">A pin in these Regions cannot be checked. Give each one a shape once.</div>
-          <div class="geo-shapeless-list" id="geoShapelessList">${rows}</div>
+          <div class="geo-shapeless-list" id="geoShapelessList">${batchHtml}${rows}</div>
         ` : ''}
       </div>`;
   }
@@ -3344,11 +3571,18 @@
         STUDIO.pasteRaw = '';
         STUDIO.pasteHit = null;
         STUDIO._focusPasteLatLng = null;
-        STUDIO.shapePreview = null;
+        clearShapelessTransientState();
+        STUDIO._shapelessScrollTop = 0;
       }
     }
     STUDIO._lastHostKey = hostKey;
     STUDIO._jumpPendingTs = 0;
+    if (STUDIO._lastActiveInd && STUDIO._lastActiveInd !== activeInd) {
+      clearShapelessTransientState();
+      STUDIO.selectedRegion = '';
+    }
+    STUDIO._lastActiveInd = activeInd;
+    STUDIO._renderGen = (STUDIO._renderGen || 0) + 1;
     hydrateSeedGeo(SEED);
     const inIndGeo = r => isRowInGeoIndustry(r, activeInd);
     const regions = ((SEED && SEED.records && SEED.records.regions) || []).filter(inIndGeo);
@@ -3560,6 +3794,17 @@
       || !shapelessList.some(e => norm(e.name) === norm(STUDIO.shapePreview.region)))) {
       STUDIO.shapePreview = null;
     }
+    if (STUDIO.shapelessBatchPreview && (!canShapeRegions || STUDIO.mode !== 'view' || !STUDIO.shapelessOpen)) {
+      STUDIO.shapelessBatchPreview = false;
+    }
+    if (STUDIO.shapelessPickRegion && (!canShapeRegions || STUDIO.mode !== 'view' || !STUDIO.shapelessOpen
+      || !shapelessList.some(e => norm(e.name) === norm(STUDIO.shapelessPickRegion)))) {
+      STUDIO.shapelessPickRegion = '';
+    }
+    if (STUDIO.shapelessSeedFeedback && (!canShapeRegions || STUDIO.mode !== 'view' || !STUDIO.shapelessOpen
+      || !shapelessList.some(e => norm(e.name) === norm(STUDIO.shapelessSeedFeedback.region)))) {
+      STUDIO.shapelessSeedFeedback = null;
+    }
 
     return `
       <section class="geo-studio-deck" id="geoMapStudioDeck" aria-label="Regions and Sites Map">
@@ -3599,7 +3844,7 @@
                 <input type="search" class="geo-rail-search" id="geoRegionSearch" value="${esc(STUDIO.regionSearch)}" placeholder="Search regions or sites...">
                 ${renderStudioMapLinkBoxHtml(SEED, activeInd, ctx.canAddSite === true)}
               </div>
-              ${renderShapelessPanelHtml(shapelessList, SEED, activeInd, canShapeRegions)}
+              ${renderShapelessPanelHtml(shapelessList, SEED, STATE, activeInd, canShapeRegions)}
               <div class="geo-regions-list" id="geoRegionsList">
                 <button type="button" class="geo-reg-card${!STUDIO.selectedRegion ? ' active' : ''}" data-geo-region="">
                   <div class="geo-reg-card-top">
@@ -3803,7 +4048,7 @@
           circ.on('mouseout', resetCircStyle);
         }
         circ.on('click', ev => {
-          if (STUDIO.mode !== 'view') return;
+          if (STUDIO.mode !== 'view' || STUDIO.shapelessPickRegion) return;
           _lastZoneLayerClickTs = Date.now();
           L.DomEvent.stopPropagation(ev);
           STUDIO.selectedRegion = (isSel && ev.originalEvent && ev.originalEvent.isTrusted) ? '' : r.name;
@@ -3825,7 +4070,7 @@
             geoLayer.on('mouseout', resetPolyStyle);
           }
           geoLayer.on('click', ev => {
-            if (STUDIO.mode !== 'view') return;
+            if (STUDIO.mode !== 'view' || STUDIO.shapelessPickRegion) return;
             _lastZoneLayerClickTs = Date.now();
             L.DomEvent.stopPropagation(ev);
             STUDIO.selectedRegion = (isSel && ev.originalEvent && ev.originalEvent.isTrusted) ? '' : r.name;
@@ -3876,6 +4121,7 @@
     if (STUDIO.pinFilter === 'trucks' && liveTruckPinCnt === 0) {
       STUDIO.pinFilter = 'all';
     }
+    const pickModeActive = Boolean(STUDIO.mode === 'view' && STUDIO.shapelessPickRegion);
     if (STUDIO.pinFilter !== 'bu' && STUDIO.pinFilter !== 'trucks') {
       const pinLife = getSiteLifecycleIndex(sites, SEED, STATE);
       sites.forEach(s => {
@@ -3903,6 +4149,7 @@
         const pinLc = pinLife.byNorm.get(norm(s.name)) || { state: 'active', lastDate: '', endDate: '', closesOn: '' };
         const marker = L.marker([lat, lng], {
           icon: makeSvgPinIcon(L, color, showTopLabel ? s.name : '', false, pinLc.state),
+          interactive: !pickModeActive,
           zIndexOffset: pinLc.state === 'closed' ? -400 : (pinLc.state === 'dormant' ? -200 : 0)
         }).addTo(lg);
         const lifeWord = pinLc.state === 'closed' ? 'Closed' : (pinLc.state === 'dormant' ? 'Dormant' : 'Active');
@@ -3924,7 +4171,8 @@
           ? scopedRulePool.filter(r => r && !r.voided && !r._multiIndustrySeed && !/^commission$/i.test(String(r.rule_type || '').trim()) && (canSeeRawRulesGeo || !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim())) && norm(r.site) === norm(s.name)).length
           : 0;
         const loadsLine = `<div>Loads: <b>${st.raw}</b> Raw · <b>${st.sales}</b> Delivery</div>${canSeeSiteRules ? `<div>Price Agreements: <b>${siteRulesCnt}</b></div>` : ''}`;
-        marker.bindPopup(`
+        if (!pickModeActive) {
+          marker.bindPopup(`
           <div style="min-width:190px;font-family:inherit;font-size:12px;line-height:1.45">
             <div style="font-weight:700;font-size:13px">${esc(s.name)}</div>
             <div style="color:#64748B">Region Zone: <b>${esc(s.region || s.geo_zone || 'Unassigned')}</b></div>
@@ -3940,6 +4188,7 @@
             </div>
           </div>
         `);
+        }
       });
     }
 
@@ -3947,9 +4196,11 @@
     hubs.forEach(h => {
       const marker = L.marker([h.lat, h.lng], {
         icon: makeSvgPinIcon(L, '#D9A54A', h.name, true),
+        interactive: !pickModeActive,
         zIndexOffset: 900
       }).addTo(lg);
-      marker.bindPopup(`
+      if (!pickModeActive) {
+        marker.bindPopup(`
         <div style="min-width:190px;font-family:inherit;font-size:12px;line-height:1.45">
           <div style="font-weight:700;font-size:13px">${esc(h.label)}</div>
           <div>Business Unit: <b>${esc(h.name)}</b></div>
@@ -3961,6 +4212,7 @@
           </div>
         </div>
       `);
+      }
     });
 
     // 4b. Draw Live Fleet GPS & CAN-Bus Truck Pins
@@ -3971,8 +4223,9 @@
     // 5. Draw Live Draft Overlays (Search Boundary / Draggable Circle / Interactive Polygon / Pin)
     const containerEl = map.getContainer && map.getContainer();
     if (containerEl) {
-      const drawingActive = STUDIO.mode === 'circle' || (STUDIO.mode === 'polygon' && !STUDIO.polyLocked) || STUDIO.mode === 'pin';
+      const drawingActive = STUDIO.mode === 'circle' || (STUDIO.mode === 'polygon' && !STUDIO.polyLocked) || STUDIO.mode === 'pin' || pickModeActive;
       containerEl.classList.toggle('is-drawing-zone', drawingActive);
+      containerEl.classList.toggle('is-picking-seed-pin', pickModeActive);
     }
     if (STUDIO.previewLine) {
       try { map.removeLayer(STUDIO.previewLine); } catch (_) {}
@@ -4094,17 +4347,40 @@
       }).addTo(lg);
     }
 
-    // Regions with No Shape: the ready shape being looked at before Save Shape (nothing is saved yet)
+    // Regions with No Shape: the ready shape(s) being looked at before saving (nothing is saved yet)
     const shp = STUDIO.shapePreview;
     if (shp && shp.spec && STUDIO.mode === 'view') {
       const prevStyle = { color: '#C96A22', fillColor: '#C96A22', fillOpacity: 0.16, weight: 2.5, dashArray: '6, 5', interactive: false };
       let pLayer = null;
       if (shp.spec.zone_type === 'circle' && shp.spec.center_lat != null && Number(shp.spec.radius_km) > 0) {
         pLayer = L.circle([Number(shp.spec.center_lat), Number(shp.spec.center_lng)], Object.assign({ radius: Number(shp.spec.radius_km) * 1000 }, prevStyle)).addTo(lg);
+        if (shp.kind === 'seed_circle') {
+          L.circleMarker([Number(shp.spec.center_lat), Number(shp.spec.center_lng)], {
+            radius: 5, color: '#FFFFFF', weight: 1.5, fillColor: '#C96A22', fillOpacity: 1, interactive: false
+          }).addTo(lg);
+        }
       } else if (shp.spec.zone_geojson) {
         pLayer = L.geoJSON(shp.spec.zone_geojson, { style: prevStyle, interactive: false }).addTo(lg);
       }
       if (pLayer) { try { focusBounds = pLayer.getBounds(); } catch (_) {} }
+    } else if (STUDIO.shapelessBatchPreview && STUDIO.mode === 'view') {
+      const batchReady = getBatchReadyShapelessCircles(SEED, STATE);
+      const batchBounds = L.latLngBounds([]);
+      const prevStyle = { color: '#C96A22', fillColor: '#C96A22', fillOpacity: 0.14, weight: 2.2, dashArray: '6, 5', interactive: false };
+      batchReady.forEach(item => {
+        if (!item || !item.spec) return;
+        let bLayer = null;
+        if (item.spec.zone_type === 'circle' && item.spec.center_lat != null && Number(item.spec.radius_km) > 0) {
+          bLayer = L.circle([Number(item.spec.center_lat), Number(item.spec.center_lng)], Object.assign({ radius: Number(item.spec.radius_km) * 1000 }, prevStyle)).addTo(lg);
+        } else if (item.spec.zone_geojson) {
+          const gj = parseZoneGeoJson(item.spec.zone_geojson) || item.spec.zone_geojson;
+          if (gj) bLayer = L.geoJSON(gj, { style: prevStyle, interactive: false }).addTo(lg);
+        }
+        if (bLayer) {
+          try { batchBounds.extend(bLayer.getBounds()); } catch (_) {}
+        }
+      });
+      if (batchBounds.isValid()) focusBounds = batchBounds;
     }
 
     if (STUDIO.pasteHit && STUDIO.pasteHit.ok) {
@@ -4170,7 +4446,7 @@
       updated_at: nowIso
     };
     if (GEO_STORE._deletedKeys) delete GEO_STORE._deletedKeys['regions:' + storePfx + nk];
-    saveStoredConfig(true);
+    saveStoredConfig(!ctx.deferStoredConfigPush);
 
     const regions = (SEED.records && SEED.records.regions) || [];
     let row = regions.find(r => isRowInGeoIndustry(r, activeInd) && norm(r.name) === nk);
@@ -4216,7 +4492,7 @@
     }
 
     // Auto-assign any pinned Sites and Company BUs that fall inside this newly saved Zone (when unassigned or matching)
-    hydrateSeedGeo(SEED, true);
+    if (!ctx.deferHydrate) hydrateSeedGeo(SEED, true);
     let insideCount = 0;
     ((SEED.records && SEED.records.sites) || []).forEach(s => {
       if (!isRowInGeoIndustry(s, activeInd) || s.latitude == null || s.longitude == null) return;
@@ -4233,8 +4509,13 @@
     });
 
     SEED._customRev = (SEED._customRev || 0) + 1;
-    if (typeof postRecordToLocalApi === 'function') postRecordToLocalApi('regions', Object.assign({}, row, { modified_by: ctx.userEmail || 'app' }));
-    if (toast) toast(`Saved ${spec.zone_type === 'circle' ? `Circle (${round1(spec.radius_km)} km)` : (spec.zone_type === 'boundary' ? 'Map Boundary' : 'Polygon Zone')} for ${cleanName} (${insideCount} pinned sites inside)`, 'ok');
+    const apiPayload = Object.assign({}, row, { modified_by: ctx.userEmail || 'app' });
+    if (ctx.deferApiPost && Array.isArray(ctx.deferredApiRows)) {
+      ctx.deferredApiRows.push(apiPayload);
+    } else if (!ctx.deferApiPost && typeof postRecordToLocalApi === 'function') {
+      postRecordToLocalApi('regions', apiPayload);
+    }
+    if (toast && !ctx.silentToast) toast(`Saved ${spec.zone_type === 'circle' ? `Circle (${round1(spec.radius_km)} km)` : (spec.zone_type === 'boundary' ? 'Map Boundary' : 'Polygon Zone')} for ${cleanName} (${insideCount} pinned ${insideCount === 1 ? 'site' : 'sites'} inside)`, 'ok');
     return true;
   }
 
@@ -4420,6 +4701,7 @@
       btn.addEventListener('click', () => {
         const nextMode = btn.getAttribute('data-geo-mode') || 'view';
         STUDIO.mode = nextMode;
+        if (nextMode !== 'view') clearShapelessTransientState();
         if (nextMode === 'search') {
           STUDIO.drawRegionName = STUDIO.selectedRegion || '';
           STUDIO.searchDraft = STUDIO.selectedRegion ? findAtlasRegionByName(STUDIO.selectedRegion, SEED) : null;
@@ -4542,16 +4824,256 @@
         else if (typeof ctx.openInspector === 'function') ctx.openInspector('regions', rid);
       });
     });
-    // Regions with No Shape: open / close, look at a ready shape, save it (Region of every site kept), or draw it
+    // Regions with No Shape: open / close, look at a ready shape, batch ready circles, paste/pick 1.5 km circles, or draw
+    if (!deck.dataset._geoPasteGuard) {
+      deck.dataset._geoPasteGuard = '1';
+      const suppressBlurPaste = ev => {
+        const hit = ev.target && ev.target.closest && ev.target.closest('button, [data-geo-shapeless-pick], [data-geo-shapeless-draw], [data-geo-shapeless-fit], [data-geo-shapeless-use-pasted], #geoShapelessToggle');
+        if (hit && (!ev.target.closest || !ev.target.closest('[data-geo-shapeless-paste]'))) {
+          STUDIO._suppressPasteChangeUntil = Date.now() + 500;
+        }
+      };
+      deck.addEventListener('pointerdown', suppressBlurPaste, true);
+      deck.addEventListener('mousedown', suppressBlurPaste, true);
+    }
     const shapelessToggle = deck.querySelector('#geoShapelessToggle');
     if (shapelessToggle) {
       shapelessToggle.addEventListener('click', () => {
         STUDIO.shapelessOpen = !STUDIO.shapelessOpen;
-        if (!STUDIO.shapelessOpen) STUDIO.shapePreview = null;
+        if (!STUDIO.shapelessOpen) {
+          clearShapelessTransientState();
+          STUDIO._shapelessScrollTop = 0;
+        }
         rerenderWorkspace();
       });
     }
+    const shapelessListEl = deck.querySelector('#geoShapelessList');
+    if (shapelessListEl) {
+      if (STUDIO._shapelessScrollTop > 0) shapelessListEl.scrollTop = STUDIO._shapelessScrollTop;
+      shapelessListEl.addEventListener('scroll', () => { STUDIO._shapelessScrollTop = shapelessListEl.scrollTop; });
+    }
     const canShapeRegions = canShapeRegionsNow();
+    const batchBtn = deck.querySelector('#geoShapelessBatchBtn');
+    if (batchBtn) {
+      batchBtn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (!canShapeRegions) return;
+        const ready = getBatchReadyShapelessCircles(SEED, STATE);
+        if (ready.length < 2) return;
+        STUDIO.shapelessBatchPreview = true;
+        STUDIO.shapePreview = null;
+        STUDIO.shapelessPickRegion = '';
+        STUDIO.shapelessSeedFeedback = null;
+        STUDIO.mode = 'view';
+        STUDIO._userPanned = false;
+        rerenderWorkspace();
+      });
+    }
+    const batchConfirmBtn = deck.querySelector('#geoShapelessBatchConfirmBtn');
+    if (batchConfirmBtn) {
+      batchConfirmBtn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (!canShapeRegions) return;
+        const readyNow = getBatchReadyShapelessCircles(SEED, STATE).filter(item => !regionHasShape(item.entry.name, SEED));
+        let savedCount = 0;
+        let hasBoundarySaved = false;
+        const deferredApiRows = [];
+        readyNow.forEach(item => {
+          if (persistRegionZone(item.entry.name, Object.assign({}, item.spec), Object.assign({}, ctx, {
+            keepSiteRegions: true,
+            deferStoredConfigPush: true,
+            deferHydrate: true,
+            deferApiPost: true,
+            deferredApiRows,
+            silentToast: true
+          }))) {
+            savedCount++;
+            if (item.kind === 'boundary' || (item.spec && item.spec.zone_type !== 'circle')) hasBoundarySaved = true;
+          }
+        });
+        if (savedCount > 0) {
+          saveStoredConfig(true);
+          hydrateSeedGeo(SEED, true);
+          const savedWord = hasBoundarySaved
+            ? (savedCount === 1 ? 'shape' : 'shapes')
+            : (savedCount === 1 ? 'circle' : 'circles');
+          if (toast) toast(`Saved ${savedCount} ready Region ${savedWord}`, 'ok');
+          const postRec = ctx && typeof ctx.postRecordToLocalApi === 'function' ? ctx.postRecordToLocalApi : null;
+          if (deferredApiRows.length && postRec) {
+            (async () => {
+              let apiFailed = 0;
+              for (const apiRow of deferredApiRows) {
+                try {
+                  const res = await postRec('regions', apiRow);
+                  if (res === false || (res && res.ok === false)) apiFailed++;
+                } catch (_) {
+                  apiFailed++;
+                }
+              }
+              if (apiFailed > 0 && toast) {
+                toast(`${apiFailed} Region ${apiFailed === 1 ? 'shape' : 'shapes'} saved locally only; server sync will retry`, 'warn');
+              }
+            })();
+          }
+        }
+        clearShapelessTransientState();
+        STUDIO._userPanned = false;
+        rerenderWorkspace();
+      });
+    }
+    const batchCancelBtn = deck.querySelector('#geoShapelessBatchCancelBtn');
+    if (batchCancelBtn) {
+      batchCancelBtn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        STUDIO.shapelessBatchPreview = false;
+        STUDIO._userPanned = false;
+        rerenderWorkspace();
+      });
+    }
+    const applyShapelessSeedCoords = (regName, lat, lng, parsed, raw) => {
+      if (!canShapeRegions || !regName) return;
+      if (regionHasShape(regName, SEED)) {
+        clearShapelessTransientState();
+        if (toast) toast('This Region already has a shape', 'warn');
+        rerenderWorkspace();
+        return;
+      }
+      if ((parsed && parsed.outsideLebanon) || !isPointInLebanon(lat, lng)) {
+        if (STUDIO.shapePreview && norm(STUDIO.shapePreview.region) === norm(regName)) STUDIO.shapePreview = null;
+        STUDIO.shapelessSeedFeedback = {
+          region: regName,
+          raw: raw || '',
+          tone: 'is-crit',
+          html: '<span>Point is outside Lebanon. Move or check the link.</span>'
+        };
+        rerenderWorkspace();
+        return;
+      }
+      const cLat = round5(lat);
+      const cLng = round5(lng);
+      const spec = { zone_type: 'circle', center_lat: cLat, center_lng: cLng, radius_km: SHAPE_FIT_MIN_KM, zone_geojson: null };
+      const pst = getShapePreviewStats(regName, spec, SEED);
+      const isDoubtful = Boolean(parsed && (parsed.approx || parsed.mapView || parsed.lowPrecision || parsed.swapped));
+      STUDIO.shapelessSeedFeedback = null;
+      STUDIO.shapelessBatchPreview = false;
+      STUDIO.shapelessPickRegion = '';
+      if (!isDoubtful && pst.blankIn === 0 && pst.otherIn === 0) {
+        if (persistRegionZone(regName, spec, Object.assign({}, ctx, { keepSiteRegions: true }))) {
+          STUDIO.shapePreview = null;
+          STUDIO.selectedRegion = regName;
+          STUDIO._userPanned = false;
+          rerenderWorkspace();
+        }
+      } else {
+        STUDIO.shapePreview = {
+          region: regName,
+          kind: 'seed_circle',
+          spec,
+          raw: raw || '',
+          seedWarn: isDoubtful ? '<span class="is-warn">Check the pin on the map before saving.</span>' : ''
+        };
+        STUDIO.mode = 'view';
+        STUDIO._userPanned = false;
+        rerenderWorkspace();
+      }
+    };
+    const applyShapelessSeedLink = (regName, rawText) => {
+      if (!canShapeRegions || !regName) return;
+      const raw = String(rawText || '').trim();
+      if (!raw) {
+        if (STUDIO.shapelessSeedFeedback && norm(STUDIO.shapelessSeedFeedback.region) === norm(regName)) STUDIO.shapelessSeedFeedback = null;
+        if (STUDIO.shapePreview && norm(STUDIO.shapePreview.region) === norm(regName) && STUDIO.shapePreview.kind === 'seed_circle') STUDIO.shapePreview = null;
+        rerenderWorkspace();
+        return;
+      }
+      if (regionHasShape(regName, SEED)) {
+        clearShapelessTransientState();
+        if (toast) toast('This Region already has a shape', 'warn');
+        rerenderWorkspace();
+        return;
+      }
+      const activeInd = getGeoActiveIndustry();
+      const regLoc = resolvePlaceLocation(regName, SEED);
+      const hub = activeInd === 'Manufacturing' ? getCompanyHub(studioMapLinkCompany(), SEED) : null;
+      const ref = (regLoc && Number.isFinite(regLoc.lat) && Number.isFinite(regLoc.lng))
+        ? { lat: Number(regLoc.lat), lng: Number(regLoc.lng), label: regName }
+        : (hub ? { lat: hub.lat, lng: hub.lng, label: hub.name } : null);
+      const parsed = parseMapLink(raw, { SEED, ref });
+      if (!parsed || !parsed.ok) {
+        let tone = 'is-crit';
+        let html = '<span>No location found in this text.</span> <span>Paste a WhatsApp location, a Google Maps link, a Plus Code or coordinates.</span>';
+        if (parsed && parsed.code === 'short_link') {
+          tone = 'is-warn';
+          html = '<span>Short links cannot be read offline.</span> <span>Open the link, tap Share and copy the full link, or long-press the pin and copy its coordinates.</span>';
+        } else if (parsed && parsed.code === 'out_of_range') {
+          html = '<span>These coordinates are outside the valid range.</span>';
+        }
+        if (STUDIO.shapePreview && norm(STUDIO.shapePreview.region) === norm(regName)) STUDIO.shapePreview = null;
+        STUDIO.shapelessPickRegion = '';
+        STUDIO.shapelessBatchPreview = false;
+        STUDIO.shapelessSeedFeedback = { region: regName, raw, tone, html };
+        rerenderWorkspace();
+        return;
+      }
+      applyShapelessSeedCoords(regName, parsed.lat, parsed.lng, parsed, raw);
+    };
+    deck.querySelectorAll('[data-geo-shapeless-use-pasted]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (!canShapeRegions) return;
+        const regName = btn.getAttribute('data-geo-shapeless-use-pasted') || '';
+        const hit = STUDIO.pasteHit;
+        if (!regName || !hit || !hit.ok || hit.outsideLebanon) return;
+        applyShapelessSeedCoords(regName, Number(hit.lat), Number(hit.lng), hit, STUDIO.pasteRaw || '');
+      });
+    });
+    deck.querySelectorAll('[data-geo-shapeless-pick]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (!canShapeRegions) return;
+        const regName = btn.getAttribute('data-geo-shapeless-pick') || '';
+        const entry = getShapelessRegions(SEED, STATE).find(e => norm(e.name) === norm(regName));
+        if (!entry) return;
+        if (STUDIO.shapelessPickRegion && norm(STUDIO.shapelessPickRegion) === norm(entry.name)) {
+          STUDIO.shapelessPickRegion = '';
+        } else {
+          STUDIO.shapelessPickRegion = entry.name;
+          STUDIO.shapelessBatchPreview = false;
+          STUDIO.shapelessSeedFeedback = null;
+          if (STUDIO.shapePreview && norm(STUDIO.shapePreview.region) !== norm(entry.name)) STUDIO.shapePreview = null;
+          STUDIO.mode = 'view';
+        }
+        rerenderWorkspace();
+      });
+    });
+    deck.querySelectorAll('[data-geo-shapeless-paste]').forEach(inp => {
+      const regName = inp.getAttribute('data-geo-shapeless-paste') || '';
+      let lastAppliedVal = inp.value;
+      const runPaste = () => {
+        lastAppliedVal = inp.value;
+        applyShapelessSeedLink(regName, inp.value);
+      };
+      inp.addEventListener('click', ev => { ev.stopPropagation(); });
+      inp.addEventListener('paste', () => {
+        const gen = STUDIO._renderGen || 0;
+        setTimeout(() => {
+          if (!inp.isConnected || (STUDIO._renderGen || 0) !== gen || !STUDIO.shapelessOpen || STUDIO.mode !== 'view') return;
+          runPaste();
+        }, 0);
+      });
+      inp.addEventListener('change', () => {
+        if (Date.now() < (STUDIO._suppressPasteChangeUntil || 0)) return;
+        if (inp.value === lastAppliedVal) return;
+        runPaste();
+      });
+      inp.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          runPaste();
+        }
+      });
+    });
     deck.querySelectorAll('[data-geo-shapeless-fit]').forEach(btn => {
       btn.addEventListener('click', ev => {
         ev.stopPropagation();
@@ -4560,6 +5082,9 @@
         const regName = btn.getAttribute('data-geo-shapeless-region') || '';
         const entry = getShapelessRegions(SEED, STATE).find(e => norm(e.name) === norm(regName));
         if (!entry) return;
+        STUDIO.shapelessBatchPreview = false;
+        STUDIO.shapelessPickRegion = '';
+        STUDIO.shapelessSeedFeedback = null;
         if (STUDIO.shapePreview && norm(STUDIO.shapePreview.region) === norm(regName) && STUDIO.shapePreview.kind === kind) {
           STUDIO.shapePreview = null;
         } else if (kind === 'circle' && entry.circle) {
@@ -4583,7 +5108,7 @@
         if (!p || !p.spec || !canShapeRegions) return;
         // Still a Region with no shape (another device may have drawn it meanwhile)
         if (regionHasShape(p.region, SEED)) {
-          STUDIO.shapePreview = null;
+          clearShapelessTransientState();
           if (toast) toast('This Region already has a shape', 'warn');
           rerenderWorkspace();
           return;
@@ -4591,7 +5116,7 @@
         const pst = getShapePreviewStats(p.region, p.spec, SEED);
         if (pst.ownPinned > 0 && pst.ownIn === 0) return;
         if (persistRegionZone(p.region, Object.assign({}, p.spec), Object.assign({}, ctx, { keepSiteRegions: true }))) {
-          STUDIO.shapePreview = null;
+          clearShapelessTransientState();
           STUDIO.selectedRegion = p.region;
           STUDIO._userPanned = false;
           rerenderWorkspace();
@@ -4612,7 +5137,7 @@
         ev.stopPropagation();
         const rid = btn.getAttribute('data-geo-shapeless-draw') || '';
         if (!rid || !canShapeRegions) return;
-        STUDIO.shapePreview = null;
+        clearShapelessTransientState();
         if (typeof ctx.editRecord === 'function') ctx.editRecord('regions', rid);
         else if (typeof ctx.openInspector === 'function') ctx.openInspector('regions', rid);
       });
@@ -5209,6 +5734,40 @@
           const rp = deck.querySelector('#geoPinRegionInp');
           if (rp) rp.value = STUDIO.pinRegion;
           renderStudioMapLayers(L, map, ctx);
+        } else if (STUDIO.mode === 'view' && STUDIO.shapelessPickRegion) {
+          const pickReg = STUDIO.shapelessPickRegion;
+          if (!canShapeRegionsNow()) {
+            STUDIO.shapelessPickRegion = '';
+            rerenderWorkspace();
+            return;
+          }
+          if (regionHasShape(pickReg, SEED)) {
+            clearShapelessTransientState();
+            if (toast) toast('This Region already has a shape', 'warn');
+            rerenderWorkspace();
+            return;
+          }
+          if (!isPointInLebanon(lat, lng)) {
+            STUDIO.shapelessSeedFeedback = {
+              region: pickReg,
+              raw: '',
+              tone: 'is-crit',
+              html: '<span>Point is outside Lebanon. Click inside Lebanon.</span>'
+            };
+            STUDIO._userPanned = true;
+            rerenderWorkspace();
+            return;
+          }
+          STUDIO.shapelessPickRegion = '';
+          STUDIO.shapelessSeedFeedback = null;
+          STUDIO.shapelessBatchPreview = false;
+          STUDIO.shapePreview = {
+            region: pickReg,
+            kind: 'seed_circle',
+            spec: { zone_type: 'circle', center_lat: lat, center_lng: lng, radius_km: SHAPE_FIT_MIN_KM, zone_geojson: null }
+          };
+          STUDIO._userPanned = false;
+          rerenderWorkspace();
         } else if (STUDIO.mode === 'view' && STUDIO.selectedRegion && (Date.now() - _lastZoneLayerClickTs > 90)) {
           STUDIO.selectedRegion = '';
           STUDIO._userPanned = false;
@@ -6666,6 +7225,11 @@
         STUDIO.circleCenter = null;
         STUDIO.polyPoints = [];
         STUDIO.polyLocked = false;
+        clearShapelessTransientState();
+        STUDIO._userPanned = false;
+        if (typeof STUDIO._rerender === 'function') STUDIO._rerender();
+      } else if (STUDIO.shapePreview || STUDIO.shapelessBatchPreview || STUDIO.shapelessPickRegion || STUDIO.shapelessSeedFeedback) {
+        clearShapelessTransientState();
         STUDIO._userPanned = false;
         if (typeof STUDIO._rerender === 'function') STUDIO._rerender();
       } else if (STUDIO.selectedRegion) {
@@ -6729,6 +7293,8 @@
     regionHasShape,
     getShapelessRegions,
     getShapePreviewStats,
+    getBatchReadyShapelessCircles,
+    getBatchShapePreviewStats,
     persistRegionZone,
     persistLocationPin,
     clearLocationPin,
