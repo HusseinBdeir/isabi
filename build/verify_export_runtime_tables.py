@@ -104,6 +104,60 @@ try:
     ok("DELTA: a vanished ordinary row is still deleted", any(k == "DELETE FROM" and t == "customers" and "c-vanished" in ln for k, t, ln in delta), delta)
     bad = [ln[:80] for _, t, ln in delta if t in RUNTIME]
     ok("DELTA: no DELETE or upsert for live runtime-table rows held in the old manifest", not bad, bad)
+
+    # Single-line sql_lit & export_all round-trip tests for multiline/control chars (breaks release_data_only STMT_RE otherwise)
+    stress_vals = [
+        ("nl_basic", "line1\nline2"),
+        ("crlf_pair", "head\r\ntail"),
+        ("quotes_nl", "a'b\nc''d"),
+        ("only_nl", "\n"),
+        ("nul_byte", "before\x00after"),
+        ("stress_2000", "\n".join(f"r{i}" for i in range(2001))),
+    ]
+    rt_db = sqlite3.connect(":memory:")
+    rt_db.execute("CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT)")
+    lits_ok = True
+    lits_err = None
+    for k, s_val in stress_vals:
+        lit = eds.sql_lit(s_val)
+        if "\n" in lit or "\r" in lit or "\x00" in lit:
+            lits_ok = False
+            lits_err = f"control char leaked in literal for {k}: {lit[:80]!r}"
+            break
+        rt_db.execute(f"INSERT OR REPLACE INTO customers (id, name) VALUES ({eds.sql_lit(k)}, {lit})")
+        got = rt_db.execute("SELECT name FROM customers WHERE id = ?", (k,)).fetchone()[0]
+        if got != s_val:
+            lits_ok = False
+            lits_err = f"round-trip mismatch for {k}: len {len(got)} != {len(s_val)}"
+            break
+    ok("sql_lit: multiline/control chars encode single-line and SQLite round-trip identically", lits_ok, lits_err)
+
+    dbp_ml = tmp / "multiline.db"
+    conn_ml = sqlite3.connect(str(dbp_ml))
+    conn_ml.execute("CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT)")
+    for k, s_val in stress_vals:
+        conn_ml.execute("INSERT INTO customers (id, name) VALUES (?, ?)", (k, s_val))
+    conn_ml.commit()
+    conn_ml.close()
+    ml_files, _ = eds.export_all(delta=False, offline=False, manifest_path=tmp / "none_ml.json", db_path=dbp_ml,
+                                 out_dir=tmp / "ml_out", include_snapshot=False)
+    ml_bad = []
+    cust_cols = orig_parse(eds.SCHEMA_SQL.read_text(encoding="utf-8"))["customers"]
+    ml_rt_db = sqlite3.connect(":memory:")
+    ml_rt_db.execute(f"CREATE TABLE customers ({', '.join(f'{c} TEXT' for c in cust_cols)})")
+    for bf in ml_files:
+        for ln in bf.read_text(encoding="utf-8").split("\n"):
+            if not ln.strip():
+                continue
+            if "\r" in ln or "\x00" in ln or not STMT_RE.match(ln):
+                ml_bad.append(ln[:80])
+            ml_rt_db.execute(ln)
+    ml_rows = ml_rt_db.execute("SELECT id, name, payload_json FROM customers").fetchall()
+    ml_got = {k: name for k, name, _ in ml_rows}
+    ml_payload_ok = all(json.loads(pj)["name"] == dict(stress_vals).get(k) for k, _, pj in ml_rows)
+    ok("export_all: every emitted batch line matches STMT_RE with 0 CR/LF/NUL inside statements", not ml_bad, ml_bad[:3])
+    ok("export_all: exported multiline SQL round-trips all rows (col + payload_json) byte-for-byte in SQLite",
+       ml_payload_ok and all(ml_got.get(k) == v for k, v in stress_vals), f"matched {sum(ml_got.get(k) == v for k, v in stress_vals)}/{len(stress_vals)}")
 finally:
     eds.parse_schema_columns = orig_parse
     eds.fetch_live_cloud_store = orig_fetch

@@ -170,6 +170,15 @@ def decode_row_key(key_str: str) -> tuple[str, list[str]]:
     return str(arr[0]), [str(x) for x in arr[1:]]
 
 
+def _join_sql_concat(tokens: list[str]) -> str:
+    while len(tokens) > 1:
+        tokens = [
+            "(" + " || ".join(tokens[i:i + 16]) + ")" if len(tokens[i:i + 16]) > 1 else tokens[i]
+            for i in range(0, len(tokens), 16)
+        ]
+    return tokens[0]
+
+
 def sql_lit(val) -> str:
     if val is None:
         return "NULL"
@@ -185,7 +194,29 @@ def sql_lit(val) -> str:
         s = json.dumps(val, ensure_ascii=False)
     else:
         s = str(val)
-    return "'" + s.replace("'", "''") + "'"
+    if "\n" not in s and "\r" not in s and "\x00" not in s:
+        return "'" + s.replace("'", "''") + "'"
+    tokens: list[str] = []
+    buf: list[str] = []
+    ctrl: list[int] = []
+    for ch in s:
+        if ch in ("\r", "\n", "\x00"):
+            if buf:
+                tokens.append("'" + "".join(buf).replace("'", "''") + "'")
+                buf = []
+            ctrl.append(ord(ch))
+        else:
+            if ctrl:
+                for j in range(0, len(ctrl), 32):
+                    tokens.append("char(" + ",".join(str(c) for c in ctrl[j:j + 32]) + ")")
+                ctrl = []
+            buf.append(ch)
+    if buf:
+        tokens.append("'" + "".join(buf).replace("'", "''") + "'")
+    if ctrl:
+        for j in range(0, len(ctrl), 32):
+            tokens.append("char(" + ",".join(str(c) for c in ctrl[j:j + 32]) + ")")
+    return _join_sql_concat(tokens)
 
 
 def parse_schema_columns(schema_text: str) -> dict[str, list[str]]:

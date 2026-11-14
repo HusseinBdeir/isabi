@@ -11521,7 +11521,11 @@
       "Verified Records by Reconciliation Period (Rows)": "السجلات المتحققة حسب فترة المطابقة (صفوف)",
       "Warehouse issues, receipts, and Shacman / Korri inter-company transfers": "صرف المستودعات والاستلامات والتحويلات البينية بين شاكمان وكوري أوتو",
       "Weighted-average stock value across Al Ghazieh, Bchamoun, and showroom stores": "قيمة المخزون بالمتوسط المرجح عبر مخازن الغازية وبشامون وصالة العرض",
-      "Workshop Cost by Job Type ($)": "تكلفة الورشة حسب نوع العمل ($)"
+      "Workshop Cost by Job Type ($)": "تكلفة الورشة حسب نوع العمل ($)",
+      "Future Advance": "سلفة مسبقة",
+      "Salary Pending": "الراتب قيد التحديد",
+      "Advance (Salary Pending)": "سلفة (الراتب قيد التحديد)",
+      "Advance": "سلفة"
     },
     fr: {
       "Not split by borrower": "Non réparti par emprunteur",
@@ -23024,7 +23028,11 @@
       "Verified Records by Reconciliation Period (Rows)": "Enregistrements vérifiés par période de rapprochement (Lignes)",
       "Warehouse issues, receipts, and Shacman / Korri inter-company transfers": "Sorties, réceptions d'entrepôt et transferts intragroupes Shacman / Korri",
       "Weighted-average stock value across Al Ghazieh, Bchamoun, and showroom stores": "Valeur de stock au coût moyen pondéré entre Al Ghazieh, Bchamoun et le showroom",
-      "Workshop Cost by Job Type ($)": "Coût atelier par type d'intervention ($)"
+      "Workshop Cost by Job Type ($)": "Coût atelier par type d'intervention ($)",
+      "Future Advance": "Avance Anticipée",
+      "Salary Pending": "Salaire en Attente",
+      "Advance (Salary Pending)": "Avance (Salaire en Attente)",
+      "Advance": "Avance"
     }
   };
 
@@ -25760,6 +25768,33 @@
       tm = tail.match(/^Cumulative paid:\s*(\$[\d.,-]+)\s*\(([+-]?\$[\d.,-]+)\s+above month net\)$/i);
       if (tm) tail = lang === 'ar' ? `المدفوع التراكمي: ${tm[1]} (${tm[2]} فوق صافي الشهر)` : `Cumul payé : ${tm[1]} (${tm[2]} au-dessus du net mensuel)`;
       return lang === 'ar' ? `${d} صافي المستحق: ${m[2]} · ${tail}` : `${d} Net acquis : ${m[2]} · ${tail}`;
+    }
+    m = trimmed.match(/^Paid on(?:\s+(\S+))?\s+in advance for\s+([^·]+?)\s*·\s*Contract Base:\s*([+-]?\$[\d.,-]+)$/i);
+    if (m) {
+      const m2 = m[2].trim();
+      const onDateAr = m[1] ? ` بتاريخ ${m[1]}` : '';
+      const onDateFr = m[1] ? ` le ${m[1]}` : '';
+      if (m2.toLowerCase() === 'month') {
+        return lang === 'ar'
+          ? `مدفوع${onDateAr} كسلفة مسبقة لهذا الشهر · الراتب الأساسي التعاقدي: ${m[3]}`
+          : `Payé${onDateFr} d'avance pour le mois · Salaire de base contractuel : ${m[3]}`;
+      }
+      const d = translateDatePhrase(m2, lang) || m2;
+      return lang === 'ar'
+        ? `مدفوع${onDateAr} كسلفة مسبقة لشهر ${d} · الراتب الأساسي التعاقدي: ${m[3]}`
+        : `Payé${onDateFr} d'avance pour ${d} · Salaire de base contractuel : ${m[3]}`;
+    }
+    m = trimmed.match(/^No active contract on file for\s+(.+?)\s*·\s*Month total paid:\s*([+-]?\$[\d.,-]+)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `لا يوجد عقد نشط مسجل لـ ${m[1]} · إجمالي المدفوع للشهر: ${m[2]}`
+        : `Aucun contrat actif au dossier pour ${m[1]} · Total versé sur le mois : ${m[2]}`;
+    }
+    m = trimmed.match(/^Active contract has Salary Pending\s*\(([^)]+)\)\s*·\s*Paid as advance\s*\(([^)]+)\)\s*until final salary is entered$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `العقد النشط براتب قيد التحديد (${m[1]}) · مدفوع كسلفة (${m[2]}) لحين إدخال الراتب النهائي`
+        : `Contrat actif avec salaire en attente (${m[1]}) · Versé en avance (${m[2]}) jusqu'à saisie du salaire final`;
     }
     m = trimmed.match(/^Reporting Date\s+(\S+)\s+differs from Transaction Date\s+(\S+)\s+by\s+(\d+)\s+days?$/i);
     if (m) return lang === 'ar' ? `تاريخ التقرير ${m[1]} يختلف عن تاريخ العملية ${m[2]} بمقدار ${m[3]} يوماً` : `La date de reporting ${m[1]} diffère de la date d'opération ${m[2]} de ${m[3]} jours`;
