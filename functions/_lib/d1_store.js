@@ -2271,6 +2271,54 @@ export function staffRuleKeyCompanyMismatch(rk, rule) {
   return key.slice(0, bar) !== co;
 }
 
+export function mergeCompanyPolicyDefaultEntry(curRaw, incRaw) {
+  const curObj = (curRaw && typeof curRaw === 'object') ? curRaw : (curRaw ? { group_id: String(curRaw), updated_at: '' } : null);
+  const incObj = (incRaw && typeof incRaw === 'object') ? incRaw : (incRaw ? { group_id: String(incRaw), updated_at: '' } : null);
+  if (!curObj) return incObj;
+  if (!incObj) return curObj;
+  const curTs = String(curObj.updated_at || '');
+  const nxtTs = String(incObj.updated_at || '');
+  const curMs = Date.parse(curTs);
+  const incWinsOverall = !curTs || !nxtTs || nxtTs >= curTs;
+  const merged = incWinsOverall ? Object.assign({}, curObj, incObj) : Object.assign({}, incObj, curObj);
+  let bumpedMs = 0;
+
+  // Sub-clock 1: holidays (holidays.updated_at)
+  const curHolTs = String((curObj.holidays && curObj.holidays.updated_at) || '');
+  const incHolTs = String((incObj.holidays && incObj.holidays.updated_at) || '');
+  if (incWinsOverall) {
+    if (curObj.holidays && (!incObj.holidays || curHolTs > incHolTs)) {
+      merged.holidays = curObj.holidays;
+      const incMs = Date.parse(nxtTs);
+      bumpedMs = Math.max(bumpedMs, Date.now(), Number.isFinite(incMs) ? incMs + 1000 : 0);
+    }
+  } else if (incObj.holidays && (!curObj.holidays || incHolTs > curHolTs)) {
+    merged.holidays = incObj.holidays;
+    bumpedMs = Math.max(bumpedMs, Date.now(), Number.isFinite(curMs) ? curMs + 1000 : 0);
+  }
+
+  // Sub-clock 2: company effective-dated policy timeline (policy_timeline_updated_at)
+  const curTl = Array.isArray(curObj.policy_timeline) ? curObj.policy_timeline : null;
+  const incTl = Array.isArray(incObj.policy_timeline) ? incObj.policy_timeline : null;
+  const curTlTs = String(curObj.policy_timeline_updated_at || '');
+  const incTlTs = String(incObj.policy_timeline_updated_at || '');
+  if (incWinsOverall) {
+    if (curTl && (!incTl || curTlTs > incTlTs)) {
+      merged.policy_timeline = curTl;
+      merged.policy_timeline_updated_at = curTlTs;
+      const incMs = Date.parse(nxtTs);
+      bumpedMs = Math.max(bumpedMs, Date.now(), Number.isFinite(incMs) ? incMs + 1000 : 0);
+    }
+  } else if (incTl && (!curTl || incTlTs > curTlTs)) {
+    merged.policy_timeline = incTl;
+    merged.policy_timeline_updated_at = incTlTs;
+    bumpedMs = Math.max(bumpedMs, Date.now(), Number.isFinite(curMs) ? curMs + 1000 : 0);
+  }
+
+  if (bumpedMs > 0) merged.updated_at = new Date(bumpedMs).toISOString();
+  return merged;
+}
+
 export function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRls) {
   const prevWs = (prevWsRaw && typeof prevWsRaw === 'object') ? prevWsRaw : {};
   const nextWs = (nextWsRaw && typeof nextWsRaw === 'object') ? nextWsRaw : {};
@@ -2306,12 +2354,7 @@ export function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRl
   for (const [ck, nv] of Object.entries(nextDefs)) {
     if (!nv || typeof nv !== 'object') continue;
     if (restrictRls && (!session || !canAccessCompany(session, ck))) continue;
-    const cv = mergedDefs[ck];
-    const curTs = (cv && typeof cv === 'object') ? String(cv.updated_at || '') : '';
-    const nxtTs = String(nv.updated_at || '');
-    if (!cv || !curTs || !nxtTs || nxtTs >= curTs) {
-      mergedDefs[ck] = nv;
-    }
+    mergedDefs[ck] = mergeCompanyPolicyDefaultEntry(mergedDefs[ck], nv);
   }
 
   // 3. shiftTypes
@@ -3795,34 +3838,7 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
     if (prev.workSchedules || incomingDoc.workSchedules) {
       const pWs = (prev.workSchedules && typeof prev.workSchedules === 'object') ? prev.workSchedules : {};
       const iWs = (incomingDoc.workSchedules && typeof incomingDoc.workSchedules === 'object') ? incomingDoc.workSchedules : {};
-      const safeDefs = Object.assign({}, pWs.companyPolicyDefaults || {});
-      for (const [ck, cv] of Object.entries(iWs.companyPolicyDefaults || {})) {
-        if (canAccessCompany(session, ck)) safeDefs[ck] = cv;
-      }
-      const pShifts = Array.isArray(pWs.shiftTypes) ? pWs.shiftTypes : [];
-      const iShifts = Array.isArray(iWs.shiftTypes) ? iWs.shiftTypes : [];
-      const safeShifts = pShifts.filter(s => s && !canAccessCompany(session, s.company || ''));
-      for (const is of iShifts) {
-        if (is && is.company && canAccessCompany(session, is.company)) safeShifts.push(is);
-      }
-      const pRules = (pWs.staffRules && typeof pWs.staffRules === 'object') ? pWs.staffRules : {};
-      const iRules = (iWs.staffRules && typeof iWs.staffRules === 'object') ? iWs.staffRules : {};
-      const safeRules = {};
-      for (const [rk, pv] of Object.entries(pRules)) {
-        const pCo = pv && typeof pv === 'object' ? String(pv.company || '').trim() : '';
-        if (!pCo || !canAccessCompany(session, pCo)) safeRules[rk] = pv;
-      }
-      for (const [rk, iv] of Object.entries(iRules)) {
-        if (rk in safeRules || !iv || typeof iv !== 'object' || staffRuleKeyCompanyMismatch(rk, iv)) continue;
-        const iCo = String(iv.company || '').trim();
-        if (iCo && canAccessCompany(session, iCo)) safeRules[rk] = iv;
-      }
-      incomingDoc.workSchedules = {
-        shiftTypes: safeShifts,
-        policyGroups: Array.isArray(pWs.policyGroups) ? pWs.policyGroups : [],
-        companyPolicyDefaults: safeDefs,
-        staffRules: safeRules
-      };
+      incomingDoc.workSchedules = mergeWorkSchedulesDocs(pWs, iWs, session, true);
     }
   }
 
