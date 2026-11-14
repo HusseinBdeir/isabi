@@ -7016,17 +7016,25 @@
       { key: 'overtime_hours', label: 'OT Hrs', kind: 'numeric' },
       { key: 'late_hours', label: 'Late Hrs', kind: 'numeric' },
       { key: 'leave_days', label: 'Leave (d)', kind: 'numeric' },
-      { key: 'payroll_impact_usd', label: 'Pay Impact ($)', kind: 'numeric' }
+      { key: 'earned_usd', label: 'Earned (+$)', kind: 'numeric' },
+      { key: 'lost_usd', label: 'Lost (-$)', kind: 'numeric' },
+      { key: 'payroll_impact_usd', label: 'Net Impact ($)', kind: 'numeric' }
     ],
     pay_att_sum: [
-      { key: 'company', label: 'Company' },
       { key: 'staff', label: 'Staff Member' },
+      { key: 'company', label: 'Company' },
       { key: 'contract_status', label: 'Contract' },
       { key: 'logs_cnt', label: 'Logs', kind: 'numeric' },
       { key: 'ot_hrs', label: 'OT Hrs', kind: 'numeric' },
-      { key: 'ot_pay', label: 'OT Pay ($)', kind: 'numeric' },
+      { key: 'att_ot_pay', label: 'Shift OT ($)', kind: 'numeric' },
+      { key: 'trip_ot_cnt', label: 'OT Trips', kind: 'numeric' },
+      { key: 'trip_ot_pay', label: 'Driver OT ($)', kind: 'numeric' },
       { key: 'late_hrs', label: 'Late Hrs', kind: 'numeric' },
-      { key: 'absent_days', label: 'Absent Days', kind: 'numeric' }
+      { key: 'late_ded', label: 'Lateness ($)', kind: 'numeric' },
+      { key: 'absent_days', label: 'Absent Days', kind: 'numeric' },
+      { key: 'vac_days', label: 'Vac / Sick (d)', kind: 'numeric' },
+      { key: 'extras', label: 'Extras ($)', kind: 'numeric' },
+      { key: 'net_att_impact', label: 'Net OT/Att ($)', kind: 'numeric' }
     ],
     pay_emp: [
       { key: 'company', label: 'Company' },
@@ -7772,6 +7780,9 @@
         { key: 'iva', label: 'IVA (VAT)' },
         { key: 'ap_balance', label: 'AP Balance ($)', kind: 'numeric' }
       ];
+    }
+    if (Array.isArray(colsOverride) && colsOverride.length && typeof colsOverride[0] === 'object' && colsOverride[0].key) {
+      return colsOverride;
     }
     if (VIEW_COL_DEFS[view]) return VIEW_COL_DEFS[view];
     const cols = Array.isArray(colsOverride) && colsOverride.length
@@ -10987,6 +10998,22 @@
     }
   };
   window.__mfgCanAccessTable = canAccessTable;
+
+  function canViewPayrollDollarAmounts(u) {
+    u = u || activeUser();
+    if (!u || STATE.kioskLocked) return false;
+    if (isOwner(u)) return true;
+    const role = String(u.role || '');
+    const pbi = u.pbi_access || 'partial';
+    if (/Sales/i.test(role)) return false;
+    if (!canAccessTable('salaries', u)) return false;
+    if (!canViewView('payroll', u) && !canViewView('payroll_attendance', u)) return false;
+    if (/^Custom/i.test(role) || pbi === 'custom') {
+      const p = getEffectivePermissions(u);
+      return Boolean(p && ((p.rights && (p.rights.read_fin || p.rights.enter_payroll_jv)) || (p.dashboards && p.dashboards.dash_payroll_hr)));
+    }
+    return true;
+  }
 
   const RDL_VERTICAL_INDUSTRY = {
     '23': 'Holding & Treasury',
@@ -39056,12 +39083,20 @@
     return fallback;
   }
 
-  function computeShiftWorkedHours(inVal, outVal) {
+  function computeShiftWorkedHours(inVal, outVal, isPerMin = false) {
+    if (isPerMin && typeof parseClockMinutes === 'function') {
+      const inM = parseClockMinutes(inVal);
+      const outM = parseClockMinutes(outVal);
+      if (inM != null && outM != null && inM !== outM) {
+        const diffMin = outM > inM ? (outM - inM) : ((1440 - inM) + outM);
+        return Math.round((diffMin / 60) * 10000) / 10000;
+      }
+    }
     const inH = parseAttClockHour(inVal);
     const outH = parseAttClockHour(outVal);
     if (inH == null || outH == null || inH === outH) return 0;
     const raw = outH > inH ? (outH - inH) : ((24 - inH) + outH);
-    return Math.round(raw * 10) / 10;
+    return isPerMin ? (Math.round(raw * 6000) / 6000) : (Math.round(raw * 10) / 10);
   }
 
   const ATT_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -39159,6 +39194,81 @@
       payIdx.profCache.set(profKey, outProf);
     }
     return outProf;
+  }
+
+  function resolveAttRowEffectiveHoursAndMults(a) {
+    const attType = String((a && (a.type || a.status)) || 'Present').trim();
+    const tally = Number(a && a.tally != null ? a.tally : 0);
+    const isPerMin = Boolean(a && a.math_mode === 'per_minute');
+    let otH = Number(a && a.overtime_hours != null && a.overtime_hours > 0
+      ? a.overtime_hours
+      : (/^overtime$/i.test(attType) ? tally : 0));
+    if (isPerMin && a && a.approved_ot_min != null && Number.isFinite(Number(a.approved_ot_min))) {
+      const exactOtH = Math.max(0, Number(a.approved_ot_min) / 60);
+      if (a.overtime_hours == null || Math.abs(Number(a.overtime_hours) - exactOtH) <= 0.002) {
+        otH = exactOtH;
+      }
+    }
+    let ltH = Number(a && a.late_hours != null && a.late_hours > 0
+      ? a.late_hours
+      : (/^lateness$/i.test(attType) ? tally : 0));
+    if (isPerMin && a && a.billable_late_min != null && Number.isFinite(Number(a.billable_late_min))) {
+      const exactLtH = Math.max(0, Number(a.billable_late_min) / 60);
+      if (a.late_hours == null || Math.abs(Number(a.late_hours) - exactLtH) <= 0.002) {
+        ltH = exactLtH;
+      }
+    }
+    const isBaked = Boolean(a && a.late_mult_baked);
+    const otMultOverride = (a && a.math_mode && a.policy_ot_mult != null && Number(a.policy_ot_mult) > 0)
+      ? Number(a.policy_ot_mult)
+      : null;
+    const lateMultOverride = isBaked
+      ? 1.0
+      : ((a && a.math_mode && a.policy_late_mult != null && Number.isFinite(Number(a.policy_late_mult)))
+        ? Number(a.policy_late_mult)
+        : null);
+    return {
+      attType,
+      tally,
+      isPerMin,
+      otH: Math.max(0, otH),
+      ltH: Math.max(0, ltH),
+      otMultOverride,
+      lateMultOverride
+    };
+  }
+
+  function computeAttendanceRowDollarImpact(a, prof, opts = {}) {
+    const fxRate = Number(opts.fxRate || getLbpFxRate()) || 89500;
+    const eff = resolveAttRowEffectiveHoursAndMults(a);
+    const attType = eff.attType;
+    if (/^site\s*(?:present|off)$|^config/i.test(attType)) {
+      return { otH: 0, ltH: 0, lvD: 0, otPayUsd: 0, lateDedUsd: 0, absDedUsd: 0, extUsd: 0, earnedUsd: 0, lostUsd: 0, netImpactUsd: 0, otMultUsed: 1, lateMultUsed: 1 };
+    }
+    const isPendSal = Boolean(prof && prof.salaryPending);
+    const hrRate = isPendSal ? 0 : Number((prof && prof.hourlyRate) || 0);
+    const dailyRate = isPendSal ? 0 : Number((prof && prof.dailyRate) || 0);
+    const otMultUsed = eff.otMultOverride != null ? eff.otMultOverride : Number((prof && prof.otMultiplier) || 1);
+    const lateMultUsed = eff.lateMultOverride != null ? eff.lateMultOverride : Number((prof && prof.lateMultiplier) || 1);
+    const otPayUsd = isPendSal ? 0 : round2(eff.otH * hrRate * otMultUsed);
+    const lateDedUsd = isPendSal ? 0 : round2(eff.ltH * hrRate * lateMultUsed);
+    const tally = eff.tally;
+    const lvD = /^half\s*day$/i.test(attType)
+      ? (tally > 0 ? tally : 0.5)
+      : (/^vacabsence$|^paid\s*leave$/i.test(attType)
+        ? (Number(a && a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : (a && a.source === 'app' ? 1 : 0)))
+        : (/Absence|Sick|Leave|Unpaid/i.test(attType) ? (Number(a && a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : 1)) : 0));
+    const isUnpaidAbs = (/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType)) && (!a || a.pay_treatment !== 'paid');
+    const absDedUsd = (!isPendSal && isUnpaidAbs)
+      ? round2((lvD > 0 ? lvD : (/^half\s*day$/i.test(attType) ? 0.5 : 1)) * dailyRate)
+      : 0;
+    const extUsd = /^extra\s*usd$/i.test(attType)
+      ? round2(tally)
+      : (/^extra\s*lbp$/i.test(attType) ? round2(tally / fxRate) : 0);
+    const earnedUsd = round2(otPayUsd + extUsd);
+    const lostUsd = round2(lateDedUsd + absDedUsd);
+    const netImpactUsd = round2(earnedUsd - lostUsd);
+    return { otH: eff.otH, ltH: eff.ltH, lvD, otPayUsd, lateDedUsd, absDedUsd, extUsd, earnedUsd, lostUsd, netImpactUsd, otMultUsed, lateMultUsed };
   }
 
   function staffScheduledHours(staffName, company, onDate) {
@@ -40100,8 +40210,9 @@
         return;
       }
 
-      const otH = Number(a.overtime_hours != null && a.overtime_hours > 0 ? a.overtime_hours : (/^overtime$/i.test(attType) ? tally : 0));
-      const ltH = Number(a.late_hours != null && a.late_hours > 0 ? a.late_hours : (/^lateness$/i.test(attType) ? tally : 0));
+      const effAttH = resolveAttRowEffectiveHoursAndMults(a);
+      const otH = effAttH.otH;
+      const ltH = effAttH.ltH;
       s.ot_hrs += otH;
       if (otH > 0) s.ot_logs += 1;
       s.late_hrs += ltH;
@@ -40110,12 +40221,14 @@
       let otPayRow = 0, lateDedRow = 0, otPayU = 0, lateDedU = 0, otPayL = 0, lateDedL = 0;
       for (let ci = 0; ci < mcList.length; ci++) {
         const mc = mcList[ci];
-        otPayRow += otH * mc.hrRate * mc.otMult;
-        lateDedRow += ltH * mc.hrRate * mc.ltMult;
-        otPayU += otH * mc.hrRateU * mc.otMult;
-        lateDedU += ltH * mc.hrRateU * mc.ltMult;
-        otPayL += otH * mc.hrRateL * mc.otMult;
-        lateDedL += ltH * mc.hrRateL * mc.ltMult;
+        const rowOtMult = effAttH.otMultOverride != null ? effAttH.otMultOverride : mc.otMult;
+        const rowLtMult = effAttH.lateMultOverride != null ? effAttH.lateMultOverride : mc.ltMult;
+        otPayRow += otH * mc.hrRate * rowOtMult;
+        lateDedRow += ltH * mc.hrRate * rowLtMult;
+        otPayU += otH * mc.hrRateU * rowOtMult;
+        lateDedU += ltH * mc.hrRateU * rowLtMult;
+        otPayL += otH * mc.hrRateL * rowOtMult;
+        lateDedL += ltH * mc.hrRateL * rowLtMult;
       }
       s.att_ot_pay += otPayRow;
       s.late_ded += lateDedRow;
@@ -40902,15 +41015,20 @@
         const attType = String(a.type || a.status || 'Present');
         if (/^config/i.test(attType) || /^site\s*(?:present|off)$/i.test(attType)) return;
         const tally = Number(a.tally != null ? a.tally : 0);
-        const otH = Number(a.overtime_hours != null && a.overtime_hours > 0 ? a.overtime_hours : (/^overtime$/i.test(attType) ? tally : 0));
-        const ltH = Number(a.late_hours != null && a.late_hours > 0 ? a.late_hours : (/^lateness$/i.test(attType) ? tally : 0));
+        const effAttM = resolveAttRowEffectiveHoursAndMults(a);
+        const otH = effAttM.otH;
+        const ltH = effAttM.ltH;
+        const otMultEffM = effAttM.otMultOverride != null ? effAttM.otMultOverride : prof.otMultiplier;
+        const ltMultEffM = effAttM.lateMultOverride != null ? effAttM.lateMultOverride : prof.lateMultiplier;
+        const effOtRateM = prof.salaryPending ? 0 : (prof.hourlyRate * otMultEffM);
+        const effLtRateM = prof.salaryPending ? 0 : (prof.hourlyRate * ltMultEffM);
         const lvD = /^half\s*day$/i.test(attType)
           ? (tally > 0 ? tally : 0.5)
           : (/Absence|VacAbsence|Sick|Leave|Unpaid/i.test(attType) ? (tally > 0 ? tally : 1) : 0);
         otHrs = round2(otHrs + otH);
-        otPay = round2(otPay + round2(otH * prof.otHourlyRate));
+        otPay = round2(otPay + round2(otH * effOtRateM));
         lateHrs = round2(lateHrs + ltH);
-        lateDed = round2(lateDed + round2(ltH * prof.lateHourlyRate));
+        lateDed = round2(lateDed + round2(ltH * effLtRateM));
         if ((/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType)) && a.pay_treatment !== 'paid') {
           const dCnt = lvD > 0 ? lvD : (/^half\s*day$/i.test(attType) ? 0.5 : 1);
           absDays = round2(absDays + dCnt);
@@ -41751,11 +41869,12 @@
     const scopedStaffRows = _getChipFilteredRows(staffRows, 'pay_staff_status', statusMode, matchStaffStatus);
 
     // Normalize attendance fields & derive intuitive shift basis + $ payroll impact per row (attendance view only, WeakMap-cached)
-    const attNormKey = `${payIdx.rev}|${fxRate}|${today}`;
+    const attNormKey = `${payIdx.rev}|${_TIME24_WS_REV}|${fxRate}|${today}`;
     if (subMode === 'attendance') attAll.forEach(a => {
       if (_attNormWeakMap.get(a) === attNormKey) return;
-      const attType = String(a.type || a.status || 'Present');
-      const tally = Number(a.tally != null ? a.tally : 0);
+      const effAttH = resolveAttRowEffectiveHoursAndMults(a);
+      const attType = effAttH.attType;
+      const tally = effAttH.tally;
       const inFmt = fmtAttClockTime(a.in_time || a.check_in || '');
       const outFmt = fmtAttClockTime(a.out_time || a.check_out || '');
       const inH = parseAttClockHour(inFmt);
@@ -41764,10 +41883,13 @@
       const effAttDate = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
       const txAttDate = String(a.date || effAttDate || '').slice(0, 10);
       const wk = attDateWeekdayInfo(effAttDate);
-      const workedH = Number(a.worked_hours != null && a.worked_hours > 0 ? a.worked_hours : computeShiftWorkedHours(inFmt, outFmt));
-      const otH = Number(a.overtime_hours != null && a.overtime_hours > 0 ? a.overtime_hours : (/^overtime$/i.test(attType) ? tally : 0));
+      const isPerMinAtt = a.math_mode
+        ? a.math_mode === 'per_minute'
+        : (resolveStaffPolicyForDate(a.staff, a.company, effAttDate).math_mode === 'per_minute');
+      const workedH = Number(a.worked_hours != null && a.worked_hours > 0 ? a.worked_hours : computeShiftWorkedHours(inFmt, outFmt, isPerMinAtt));
+      const otH = effAttH.otH;
       const regH = Number(a.regular_hours != null && a.regular_hours > 0 ? a.regular_hours : (workedH > 0 ? round2(Math.max(0, workedH - otH)) : 0));
-      const ltH = Number(a.late_hours != null && a.late_hours > 0 ? a.late_hours : (/^lateness$/i.test(attType) ? tally : 0));
+      const ltH = effAttH.ltH;
       const lvD = /^config\s*vac/i.test(attType)
         ? tally
         : (/^half\s*day$/i.test(attType)
@@ -41845,11 +41967,11 @@
       }
 
       const prof = profOf(a.staff, a.company, effAttDate || today);
-      const otPayRow = round2(otH * prof.otHourlyRate);
-      const lateDedRow = round2(ltH * prof.lateHourlyRate);
-      const isUnpaidAbs = (/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType)) && !/^config/i.test(attType) && a.pay_treatment !== 'paid';
-      const absDedRow = isUnpaidAbs ? round2((lvD > 0 ? lvD : (/^half\s*day$/i.test(attType) ? 0.5 : 1)) * prof.dailyRate) : 0;
-      const impactUsd = round2(otPayRow + extUsd - lateDedRow - absDedRow);
+      const imp = computeAttendanceRowDollarImpact(a, prof, { fxRate });
+      const otPayRow = imp.otPayUsd;
+      const lateDedRow = imp.lateDedUsd;
+      const absDedRow = imp.absDedUsd;
+      const impactUsd = imp.netImpactUsd;
 
       a.type = attType;
       a.status = attType;
@@ -41870,6 +41992,11 @@
       a.late_hours = ltH;
       a.leave_days = lvD;
       a.extra_usd = extUsd;
+      a.ot_pay_usd = otPayRow;
+      a.late_ded_usd = lateDedRow;
+      a.abs_ded_usd = absDedRow;
+      a.earned_usd = imp.earnedUsd;
+      a.lost_usd = imp.lostUsd;
       a.payroll_impact_usd = impactUsd;
       a.shift_str = shiftStr;
       _attNormWeakMap.set(a, attNormKey);
@@ -42151,8 +42278,8 @@
     const isGroupScope = STATE.company === 'manufacturing-group';
 
     const byCoAtt = {
-      WTC: { n: 0, ot: 0, late: 0, leave: 0 },
-      BBConstruction: { n: 0, ot: 0, late: 0, leave: 0 }
+      WTC: { n: 0, ot: 0, late: 0, leave: 0, earned: 0, lost: 0, net: 0 },
+      BBConstruction: { n: 0, ot: 0, late: 0, leave: 0, earned: 0, lost: 0, net: 0 }
     };
     filteredAtt.forEach(a => {
       const b = byCoAtt[a.company];
@@ -42161,6 +42288,9 @@
         b.ot += Number(a.overtime_hours || 0);
         b.late += Number(a.late_hours || 0);
         if (!/^config/i.test(String(a.type || ''))) b.leave += Number(a.leave_days || 0);
+        b.earned = round2(b.earned + Number(a.earned_usd || 0));
+        b.lost = round2(b.lost + Number(a.lost_usd || 0));
+        b.net = round2(b.net + Number(a.payroll_impact_usd || 0));
       }
     });
 
@@ -42196,6 +42326,7 @@
     const saTotalFuelL = round2(siteStaffRowsBase.reduce((a, r) => a + Number(r.fuel_litres || 0), 0));
     const saTotalOtHrs = round2(siteStaffRowsBase.reduce((a, r) => a + Number(r.ot_hrs || 0), 0));
 
+    const canShowAttDollars = canViewPayrollDollarAmounts();
     const heroTitle = subMode === 'attendance'
       ? 'Attendance & Overtime'
       : (subMode === 'allowances'
@@ -42214,9 +42345,11 @@
             badge: `${fmtNum(otAttCount)} OT Logs`,
             badgeCls: 'brass',
             badgeChip: 'ot_att',
-            val: `${fmtNum(totalOtHrs, 1)} <small>hrs</small>`,
+            val: `${fmtNum(totalOtHrs, Math.abs((totalOtHrs * 10) - Math.round(totalOtHrs * 10)) > 0.01 ? 2 : 1)} <small>hrs</small>`,
             valCls: 'brass',
-            sub: `Overtime pay <b>${fmtUSD(totalOtPay, 0)}</b> · Driver trip &amp; OT bonus <b>${fmtUSD(k.overtime_bonus || 0, 0)}</b>`,
+            sub: canShowAttDollars
+              ? `Earned (+$) <b>+${fmtUSD(totalOtPay, 2)}</b> · Driver trip &amp; OT bonus <b>${fmtUSD(k.overtime_bonus || 0, 2)}</b>`
+              : `<b>${fmtNum(staffRows.filter(s => s.ot_hrs > 0).length)}</b> staff with logged overtime`,
             tone: 'brass'
           })}
           ${insightCard({
@@ -42224,9 +42357,11 @@
             badge: `${fmtNum(lateAttCount)} Late Logs`,
             badgeCls: totalLateHrs > 0 ? 'amber' : 'emerald',
             badgeChip: 'late_att',
-            val: `${fmtNum(totalLateHrs, 1)} <small>hrs</small>`,
+            val: `${fmtNum(totalLateHrs, Math.abs((totalLateHrs * 10) - Math.round(totalLateHrs * 10)) > 0.01 ? 2 : 1)} <small>hrs</small>`,
             valCls: totalLateHrs > 0 ? 'amber' : 'emerald',
-            sub: `Lateness deduction <b>${fmtUSD(totalLateDed, 0)}</b> across <b>${fmtNum(staffRows.filter(s => s.late_hrs > 0).length)}</b> staff`,
+            sub: canShowAttDollars
+              ? `Lost (-$) <b>-${fmtUSD(totalLateDed, 2)}</b> across <b>${fmtNum(staffRows.filter(s => s.late_hrs > 0).length)}</b> staff`
+              : `Logged across <b>${fmtNum(staffRows.filter(s => s.late_hrs > 0).length)}</b> staff`,
             tone: totalLateHrs > 0 ? 'amber' : 'emerald'
           })}
           ${insightCard({
@@ -42235,7 +42370,9 @@
             badgeCls: 'info',
             badgeChip: 'absent_att',
             val: `${fmtNum(totalAbsentDays, 0)} <small>Absent Days</small> · ${fmtNum(totalVacDays, 0)} <small>Vac/Sick d</small>`,
-            sub: `Absence deduction <b>${fmtUSD(filteredStaff.reduce((a, r) => a + r.abs_ded, 0), 0)}</b> · Extra tickets <b>${fmtNum(extraAttCount)}</b>`,
+            sub: canShowAttDollars
+              ? `Absence deduction <b>-${fmtUSD(filteredStaff.reduce((a, r) => a + r.abs_ded, 0), 2)}</b> · Extra tickets <b>${fmtNum(extraAttCount)}</b>`
+              : `Extra tickets <b>${fmtNum(extraAttCount)}</b>`,
             tone: 'steel'
           })}
           ${insightCard({
@@ -42403,14 +42540,31 @@
       const sumAttOt = filteredAtt.reduce((a, r) => a + Number(r.overtime_hours || 0), 0);
       const sumAttLate = filteredAtt.reduce((a, r) => a + Number(r.late_hours || 0), 0);
       const sumAttLeave = filteredAtt.reduce((a, r) => a + Number(r.leave_days || 0), 0);
+      const sumAttEarned = round2(filteredAtt.reduce((a, r) => a + Number(r.earned_usd || 0), 0));
+      const sumAttLost = round2(filteredAtt.reduce((a, r) => a + Number(r.lost_usd || 0), 0));
       const sumAttImpact = round2(filteredAtt.reduce((a, r) => a + Number(r.payroll_impact_usd || 0), 0));
       const fmtSignedImpact = v => {
         const n = round2(Number(v || 0));
         if (Math.abs(n) < 0.005) return '<span class="mu">$0.00</span>';
         return n > 0
-          ? `<span class="att-impact-pos">+${fmtUSD(n, 2)}</span>`
-          : `<span class="att-impact-neg">-${fmtUSD(Math.abs(n), 2)}</span>`;
+          ? `<span class="att-impact-pos att-earn-pos">+${fmtUSD(n, 2)}</span>`
+          : `<span class="att-impact-neg att-loss-neg">-${fmtUSD(Math.abs(n), 2)}</span>`;
       };
+      const fmtEarnedCell = v => {
+        const n = round2(Number(v || 0));
+        return n >= 0.005 ? `<span class="att-earn-pos">+${fmtUSD(n, 2)}</span>` : '<span class="mu">—</span>';
+      };
+      const fmtLostCell = v => {
+        const n = round2(Number(v || 0));
+        return n >= 0.005 ? `<span class="att-loss-neg">-${fmtUSD(n, 2)}</span>` : '<span class="mu">—</span>';
+      };
+      const fmtAttHrs = (v, isMin) => {
+        const num = Number(v || 0);
+        const dec = (isMin || Math.abs((num * 10) - Math.round(num * 10)) > 0.01) ? 2 : 1;
+        return fmtNum(num, dec);
+      };
+      const attColSpan = canShowAttDollars ? 16 : 13;
+      const attSumColSpan = canShowAttDollars ? 14 : 9;
       // Reminder (owner 2026-11-13, after v19.6.343): staff who clock another shift but are timed against the
       // company default (nobody is guessed onto a shift any more). Shown until they are assigned or the pattern
       // stops; the button jumps to Staff Clocking Another Shift below. Same list and scope as that panel.
@@ -42463,17 +42617,23 @@
             <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
               <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcAtt.n)} Attendance Logs</b><span class="sales-recon-act">Filter WTC Only →</span></div>
               <div class="sales-recon-metrics">
-                <span><small>Overtime Hrs</small><b class="brass">${fmtNum(wtcAtt.ot, 1)} hrs</b></span>
-                <span><small>Lateness Hrs</small><b>${fmtNum(wtcAtt.late, 1)} hrs</b></span>
+                <span><small>Overtime Hrs</small><b class="brass">${fmtAttHrs(wtcAtt.ot)} hrs</b></span>
+                <span><small>Lateness Hrs</small><b>${fmtAttHrs(wtcAtt.late)} hrs</b></span>
                 <span><small>Leave / Absent</small><b>${fmtNum(wtcAtt.leave, 1)} d</b></span>
+                ${canShowAttDollars ? `<span><small>Earned (+$)</small><b class="att-earn-pos">+${fmtUSD(wtcAtt.earned || 0, 2)}</b></span>` : ''}
+                ${canShowAttDollars ? `<span><small>Lost (-$)</small><b class="att-loss-neg">-${fmtUSD(wtcAtt.lost || 0, 2)}</b></span>` : ''}
+                ${canShowAttDollars ? `<span><small>Net Impact</small><b>${fmtSignedImpact(wtcAtt.net || 0)}</b></span>` : ''}
               </div>
             </div>
             <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
               <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcAtt.n)} Attendance Logs</b><span class="sales-recon-act">Filter BBC Only →</span></div>
               <div class="sales-recon-metrics">
-                <span><small>Overtime Hrs</small><b class="brass">${fmtNum(bbcAtt.ot, 1)} hrs</b></span>
-                <span><small>Lateness Hrs</small><b>${fmtNum(bbcAtt.late, 1)} hrs</b></span>
+                <span><small>Overtime Hrs</small><b class="brass">${fmtAttHrs(bbcAtt.ot)} hrs</b></span>
+                <span><small>Lateness Hrs</small><b>${fmtAttHrs(bbcAtt.late)} hrs</b></span>
                 <span><small>Leave / Absent</small><b>${fmtNum(bbcAtt.leave, 1)} d</b></span>
+                ${canShowAttDollars ? `<span><small>Earned (+$)</small><b class="att-earn-pos">+${fmtUSD(bbcAtt.earned || 0, 2)}</b></span>` : ''}
+                ${canShowAttDollars ? `<span><small>Lost (-$)</small><b class="att-loss-neg">-${fmtUSD(bbcAtt.lost || 0, 2)}</b></span>` : ''}
+                ${canShowAttDollars ? `<span><small>Net Impact</small><b>${fmtSignedImpact(bbcAtt.net || 0)}</b></span>` : ''}
               </div>
             </div>
           </div>
@@ -42486,18 +42646,21 @@
                 <button type="button" class="btn sales-recon-reset" data-jump-co="manufacturing-group">Show All Group (3)</button>
               </div>
               <div class="sales-recon-metrics">
-                <span><small>Work Hrs</small><b>${fmtNum(sumAttWorked, 1)} hrs</b></span>
-                <span><small>Overtime Hrs</small><b class="brass">${fmtNum(sumAttOt, 1)} hrs</b></span>
-                <span><small>Lateness Hrs</small><b>${fmtNum(sumAttLate, 1)} hrs</b></span>
+                <span><small>Work Hrs</small><b>${fmtAttHrs(sumAttWorked)} hrs</b></span>
+                <span><small>Overtime Hrs</small><b class="brass">${fmtAttHrs(sumAttOt)} hrs</b></span>
+                <span><small>Lateness Hrs</small><b>${fmtAttHrs(sumAttLate)} hrs</b></span>
                 <span><small>Leave / Absent</small><b>${fmtNum(sumAttLeave, 1)} d</b></span>
+                ${canShowAttDollars ? `<span><small>Earned (+$)</small><b class="att-earn-pos">+${fmtUSD(sumAttEarned, 2)}</b></span>` : ''}
+                ${canShowAttDollars ? `<span><small>Lost (-$)</small><b class="att-loss-neg">-${fmtUSD(sumAttLost, 2)}</b></span>` : ''}
+                ${canShowAttDollars ? `<span><small>Net Impact</small><b>${fmtSignedImpact(sumAttImpact)}</b></span>` : ''}
               </div>
             </div>
           </div>
           `}
-          ${renderColFilterBar('pay_att')}
+          ${renderColFilterBar('pay_att', canShowAttDollars ? null : VIEW_COL_DEFS.pay_att.filter(c => !/usd$/i.test(c.key)))}
           <div class="table-wrap">
             <table class="ledger-table">
-              <thead><tr>${th('pay_att', 'Set Date', 'eff_date')}${th('pay_att', 'Tx Date', 'tx_date')}${th('pay_att', 'Co.', 'company')}${th('pay_att', 'Staff', 'staff')}${th('pay_att', 'Category', 'display_type')}${th('pay_att', 'In', 'in_time')}${th('pay_att', 'Out', 'out_time')}${th('pay_att', 'Work Hrs', 'worked_hours', 'r')}${th('pay_att', 'Shift Basis', 'shift_basis_lbl')}${th('pay_att', 'OT Hrs', 'overtime_hours', 'r')}${th('pay_att', 'Late Hrs', 'late_hours', 'r')}${th('pay_att', 'Leave (d)', 'leave_days', 'r')}${th('pay_att', 'Pay Impact ($)', 'payroll_impact_usd', 'r')}${th('pay_att', 'Notes', 'notes')}</tr></thead>
+              <thead><tr>${th('pay_att', 'Set Date', 'eff_date')}${th('pay_att', 'Tx Date', 'tx_date')}${th('pay_att', 'Co.', 'company')}${th('pay_att', 'Staff', 'staff')}${th('pay_att', 'Category', 'display_type')}${th('pay_att', 'In', 'in_time')}${th('pay_att', 'Out', 'out_time')}${th('pay_att', 'Work Hrs', 'worked_hours', 'r')}${th('pay_att', 'Shift Basis', 'shift_basis_lbl')}${th('pay_att', 'OT Hrs', 'overtime_hours', 'r')}${th('pay_att', 'Late Hrs', 'late_hours', 'r')}${th('pay_att', 'Leave (d)', 'leave_days', 'r')}${canShowAttDollars ? `${th('pay_att', 'Earned (+$)', 'earned_usd', 'r')}${th('pay_att', 'Lost (-$)', 'lost_usd', 'r')}${th('pay_att', 'Net Impact ($)', 'payroll_impact_usd', 'r')}` : ''}${th('pay_att', 'Notes', 'notes')}</tr></thead>
               <tbody>
                 ${shownAtt.map(a => {
                   const tp = String(a.type || 'Present');
@@ -42507,6 +42670,13 @@
                   const outCell = a.out_time ? `${esc(a.out_time)}${a.is_overnight ? '<span class="att-nextday-tag" title="Overnight shift finishing next morning">+1d</span>' : ''}` : '—';
                   const effDtDisp = a.eff_date || a.set_date || a.rep_date || a.date;
                   const txDtDisp = a.tx_date || a.date || effDtDisp;
+                  const isPerMinRow = a.math_mode === 'per_minute';
+                  const otMinPill = (a.approved_ot_min != null && Number(a.approved_ot_min) > 0)
+                    ? Math.round(Number(a.approved_ot_min))
+                    : (isPerMinRow && Number(a.overtime_hours || 0) > 0 ? Math.round(Number(a.overtime_hours) * 60) : 0);
+                  const lateMinPill = (a.billable_late_min != null && Number(a.billable_late_min) > 0)
+                    ? Math.round(Number(a.billable_late_min))
+                    : (isPerMinRow && Number(a.late_hours || 0) > 0 ? Math.round(Number(a.late_hours) * 60) : 0);
                   return `
                   <tr class="rrow" data-rkey="attendance" data-rid="${esc(a.id)}">
                     <td class="mono" title="Reporting / Set Date (actual attendance day)">${esc(fmtDateDMY(effDtDisp))}${dayPill}${appCell(a, 'attendance')}</td>
@@ -42516,26 +42686,26 @@
                     <td><span class="badge ${badgeCls}">${esc(dispTp)}</span></td>
                     <td class="mono">${esc(a.in_time || '—')}</td>
                     <td class="mono">${outCell}</td>
-                    <td class="r">${a.worked_hours ? `<strong>${fmtNum(a.worked_hours, 1)}</strong>` : '—'}</td>
-                    <td><span class="att-basis-pill${a.is_callout ? ' is-callout' : ''}">${esc(a.shift_basis_lbl || '—')}</span></td>
-                    <td class="r">${a.overtime_hours ? `<strong style="color:var(--brass)">${fmtNum(a.overtime_hours, 1)}</strong>` : '—'}</td>
-                    <td class="r">${a.late_hours ? `<strong class="att-impact-neg">${fmtNum(a.late_hours, 1)}</strong>` : '—'}</td>
+                    <td class="r">${a.worked_hours ? `<strong>${fmtAttHrs(a.worked_hours, isPerMinRow)}</strong>` : '—'}</td>
+                    <td><span class="att-basis-pill${a.is_callout ? ' is-callout' : ''}">${esc(a.shift_basis_lbl || '—')}</span>${isPerMinRow ? ' <span class="att-math-pill">$/min</span>' : ''}</td>
+                    <td class="r">${a.overtime_hours ? `<strong style="color:var(--brass)">${fmtAttHrs(a.overtime_hours, isPerMinRow)}</strong>${otMinPill > 0 ? ` <span class="att-math-pill">${otMinPill}m</span>` : ''}` : '—'}</td>
+                    <td class="r">${a.late_hours ? `<strong class="att-impact-neg">${fmtAttHrs(a.late_hours, isPerMinRow)}</strong>${lateMinPill > 0 ? ` <span class="att-math-pill">${lateMinPill}m</span>` : ''}` : '—'}</td>
                     <td class="r">${a.leave_days ? fmtNum(a.leave_days, 1) : '—'}</td>
-                    <td class="r">${fmtSignedImpact(a.payroll_impact_usd)}</td>
+                    ${canShowAttDollars ? `<td class="r">${fmtEarnedCell(a.earned_usd)}</td><td class="r">${fmtLostCell(a.lost_usd)}</td><td class="r">${fmtSignedImpact(a.payroll_impact_usd)}</td>` : ''}
                     <td class="mu">${esc(a.notes || '—')}</td>
                   </tr>`;
-                }).join('') || emptyRow(14, 'No attendance records match filter')}
-                ${showMoreRow('pay_att', filteredAtt.length, 14)}
+                }).join('') || emptyRow(attColSpan, 'No attendance records match filter')}
+                ${showMoreRow('pay_att', filteredAtt.length, attColSpan)}
               </tbody>
               <tfoot>
                 <tr>
                   <td colspan="7"><b>TOTAL (${fmtNum(filteredAtt.length)} LOGS)</b></td>
-                  <td class="r"><b>${fmtNum(sumAttWorked, 1)} hrs</b></td>
+                  <td class="r"><b>${fmtAttHrs(sumAttWorked)} hrs</b></td>
                   <td></td>
-                  <td class="r"><b>${fmtNum(sumAttOt, 1)} hrs</b></td>
-                  <td class="r"><b>${fmtNum(sumAttLate, 1)} hrs</b></td>
+                  <td class="r"><b>${fmtAttHrs(sumAttOt)} hrs</b></td>
+                  <td class="r"><b>${fmtAttHrs(sumAttLate)} hrs</b></td>
                   <td class="r"><b>${fmtNum(sumAttLeave, 1)} d</b></td>
-                  <td class="r"><b>${sumAttImpact >= 0 ? `+${fmtUSD(sumAttImpact, 2)}` : `-${fmtUSD(Math.abs(sumAttImpact), 2)}`}</b></td>
+                  ${canShowAttDollars ? `<td class="r"><b class="att-earn-pos">+${fmtUSD(sumAttEarned, 2)}</b></td><td class="r"><b class="att-loss-neg">-${fmtUSD(sumAttLost, 2)}</b></td><td class="r"><b>${sumAttImpact >= 0 ? `+${fmtUSD(sumAttImpact, 2)}` : `-${fmtUSD(Math.abs(sumAttImpact), 2)}`}</b></td>` : ''}
                   <td></td>
                 </tr>
               </tfoot>
@@ -42551,19 +42721,21 @@
           <div class="panel-head">
             <div>
               <div class="panel-title"><span>STAFF ATTENDANCE, SHIFT OVERTIME, DRIVER TRIP OT &amp; LEAVE SUMMARY</span></div>
-              <span class="ph-sub">Shift overtime valued at contract multiplier · Driver night-trip overtime valued at regional trip rates ($5 / $7 / $10 / $14) · Click any employee to inspect 360° profile</span>
+              <span class="ph-sub">${canShowAttDollars
+                ? 'Shift overtime valued at contract multiplier · Driver night-trip overtime valued at regional trip rates ($5 / $7 / $10 / $14) · Click any employee to inspect 360° profile'
+                : 'Shift overtime hours, driver trip counts, lateness hours &amp; leave summary · Click any employee to inspect 360° profile'}</span>
             </div>
           </div>
           ${renderPayrollCutoffBarHtml('payrollAttCutoffBar', attStaffRowsBase, { actionsHtml: exportBtn('payAttStaffSumPanel', 'Staff_Attendance_Summary') })}
-          ${renderColFilterBar('pay_att_sum')}
+          ${renderColFilterBar('pay_att_sum', canShowAttDollars ? null : VIEW_COL_DEFS.pay_att_sum.filter(c => !['att_ot_pay', 'trip_ot_pay', 'late_ded', 'extras', 'net_att_impact'].includes(c.key)))}
           <div class="table-wrap">
             <table class="ledger-table">
               <thead>
                 <tr>
                   ${th('pay_att_sum', 'Staff Member', 'staff')}${th('pay_att_sum', 'Co.', 'company')}${th('pay_att_sum', 'Status', 'contract_status')}
-                  ${th('pay_att_sum', 'Logs', 'logs_cnt', 'r')}${th('pay_att_sum', 'OT Hrs', 'ot_hrs', 'r')}${th('pay_att_sum', 'Shift OT ($)', 'att_ot_pay', 'r')}
-                  ${th('pay_att_sum', 'OT Trips', 'trip_ot_cnt', 'r')}${th('pay_att_sum', 'Driver OT ($)', 'trip_ot_pay', 'r')}
-                  ${th('pay_att_sum', 'Late Hrs', 'late_hrs', 'r')}${th('pay_att_sum', 'Lateness ($)', 'late_ded', 'r')}${th('pay_att_sum', 'Absent Days', 'absent_days', 'r')}${th('pay_att_sum', 'Vac / Sick (d)', 'vac_days', 'r')}${th('pay_att_sum', 'Extras ($)', 'extras', 'r')}${th('pay_att_sum', 'Net OT/Att ($)', 'net_att_impact', 'r')}
+                  ${th('pay_att_sum', 'Logs', 'logs_cnt', 'r')}${th('pay_att_sum', 'OT Hrs', 'ot_hrs', 'r')}${canShowAttDollars ? th('pay_att_sum', 'Shift OT ($)', 'att_ot_pay', 'r') : ''}
+                  ${th('pay_att_sum', 'OT Trips', 'trip_ot_cnt', 'r')}${canShowAttDollars ? th('pay_att_sum', 'Driver OT ($)', 'trip_ot_pay', 'r') : ''}
+                  ${th('pay_att_sum', 'Late Hrs', 'late_hrs', 'r')}${canShowAttDollars ? th('pay_att_sum', 'Lateness ($)', 'late_ded', 'r') : ''}${th('pay_att_sum', 'Absent Days', 'absent_days', 'r')}${th('pay_att_sum', 'Vac / Sick (d)', 'vac_days', 'r')}${canShowAttDollars ? `${th('pay_att_sum', 'Extras ($)', 'extras', 'r')}${th('pay_att_sum', 'Net OT/Att ($)', 'net_att_impact', 'r')}` : ''}
                 </tr>
               </thead>
               <tbody>
@@ -42573,34 +42745,34 @@
                     <td>${coBadge(r.company)}</td>
                     <td><span class="badge ${r.is_active ? 'badge-ok' : 'badge-warn'}">${esc(r.contract_status)}</span></td>
                     <td class="r">${fmtNum(r.logs_cnt, 0)}</td>
-                    <td class="r">${r.ot_hrs ? `<strong>${fmtNum(r.ot_hrs, 1)}</strong>` : '-'}</td>
-                    <td class="r">${r.att_ot_pay ? `<strong>${fmtUSD(r.att_ot_pay, 2)}</strong>` : '-'}</td>
+                    <td class="r">${r.ot_hrs ? `<strong>${fmtAttHrs(r.ot_hrs)}</strong>` : '-'}</td>
+                    ${canShowAttDollars ? `<td class="r">${r.att_ot_pay ? `<strong>${fmtUSD(r.att_ot_pay, 2)}</strong>` : '-'}</td>` : ''}
                     <td class="r">${r.trip_ot_cnt ? fmtNum(r.trip_ot_cnt, 0) : '-'}</td>
-                    <td class="r">${r.trip_ot_pay ? fmtUSD(r.trip_ot_pay, 2) : '-'}</td>
-                    <td class="r">${r.late_hrs ? fmtNum(r.late_hrs, 1) : '-'}</td>
-                    <td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '-'}</td>
+                    ${canShowAttDollars ? `<td class="r">${r.trip_ot_pay ? fmtUSD(r.trip_ot_pay, 2) : '-'}</td>` : ''}
+                    <td class="r">${r.late_hrs ? fmtAttHrs(r.late_hrs) : '-'}</td>
+                    ${canShowAttDollars ? `<td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '-'}</td>` : ''}
                     <td class="r">${r.rec_absent_days ? fmtNum(r.rec_absent_days, 1) : '-'}</td>
                     <td class="r">${(r.vac_days + r.sick_days) ? fmtNum(r.vac_days + r.sick_days, 1) : '-'}</td>
-                    <td class="r">${r.extras ? fmtUSD(r.extras, 2) : '-'}</td>
-                    <td class="r ${r.net_att_impact < 0 ? 'pbi-neg' : ''}"><strong>${fmtUSD(r.net_att_impact, 2)}</strong></td>
+                    ${canShowAttDollars ? `<td class="r">${r.extras ? fmtUSD(r.extras, 2) : '-'}</td>` : ''}
+                    ${canShowAttDollars ? `<td class="r ${r.net_att_impact < 0 ? 'pbi-neg' : ''}"><strong>${fmtUSD(r.net_att_impact, 2)}</strong></td>` : ''}
                   </tr>
-                `).join('') || emptyRow(14, 'No staff attendance summary rows match filter')}
-                ${showMoreRow('pay_att_sum', filteredAttStaff.length, 14)}
+                `).join('') || emptyRow(attSumColSpan, 'No staff attendance summary rows match filter')}
+                ${showMoreRow('pay_att_sum', filteredAttStaff.length, attSumColSpan)}
               </tbody>
               <tfoot>
                 <tr>
                   <td colspan="3"><b>TOTAL (${fmtNum(filteredAttStaff.length)} STAFF)</b></td>
                   <td class="r"><b>${fmtNum(filteredAttStaff.reduce((a, r) => a + r.logs_cnt, 0), 0)}</b></td>
-                  <td class="r"><b>${fmtNum(filteredAttStaff.reduce((a, r) => a + r.ot_hrs, 0), 1)}</b></td>
-                  <td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.att_ot_pay, 0), 2)}</b></td>
+                  <td class="r"><b>${fmtAttHrs(filteredAttStaff.reduce((a, r) => a + r.ot_hrs, 0))}</b></td>
+                  ${canShowAttDollars ? `<td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.att_ot_pay, 0), 2)}</b></td>` : ''}
                   <td class="r"><b>${fmtNum(filteredAttStaff.reduce((a, r) => a + (r.trip_ot_cnt || 0), 0), 0)}</b></td>
-                  <td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.trip_ot_pay, 0), 2)}</b></td>
-                  <td class="r"><b>${fmtNum(filteredAttStaff.reduce((a, r) => a + r.late_hrs, 0), 1)}</b></td>
-                  <td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.late_ded, 0), 2)}</b></td>
+                  ${canShowAttDollars ? `<td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.trip_ot_pay, 0), 2)}</b></td>` : ''}
+                  <td class="r"><b>${fmtAttHrs(filteredAttStaff.reduce((a, r) => a + r.late_hrs, 0))}</b></td>
+                  ${canShowAttDollars ? `<td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.late_ded, 0), 2)}</b></td>` : ''}
                   <td class="r"><b>${fmtNum(filteredAttStaff.reduce((a, r) => a + r.rec_absent_days, 0), 1)}</b></td>
                   <td class="r"><b>${fmtNum(filteredAttStaff.reduce((a, r) => a + r.vac_days + r.sick_days, 0), 1)}</b></td>
-                  <td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.extras, 0), 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.net_att_impact, 0), 2)}</b></td>
+                  ${canShowAttDollars ? `<td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.extras, 0), 2)}</b></td>` : ''}
+                  ${canShowAttDollars ? `<td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.net_att_impact, 0), 2)}</b></td>` : ''}
                 </tr>
               </tfoot>
             </table>
@@ -42692,36 +42864,7 @@
                 </div>
               </div>
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;padding:10px 14px;background:var(--bg-elev);border-bottom:1px solid var(--line)" id="payBuDefaultBar">
-                ${activeBuList.map(bu => {
-                  const curDef = getBuDefaultShift(bu);
-                  const curDefCode = (curDef && curDef.shift_code) || 'day_8_4';
-                  const buShiftOpts = getShiftTypes(bu);
-                  const buPolicyOpts = getPolicyGroups(bu);
-                  const curPolDefId = getCompanyDefaultPolicyGroupId(bu);
-                  return `
-                    <div style="padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);display:flex;flex-direction:column;gap:6px">
-                      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">${coBadge(bu)} <span class="muted" style="font-size:11px;font-weight:600">Company Defaults</span></div>
-                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                        <div class="ssm-field" style="margin:0">
-                          <label style="font-size:11px"><b>Default Shift</b></label>
-                          <select class="kiosk-select" data-pay-bu-default="${esc(bu)}" data-plain-options="1">
-                            ${buShiftOpts.map(st => {
-                              const stExc = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(st.day_timings, st.days), st.date_timings, st.start_time, st.end_time);
-                              const excOpt = stExc !== 'Same Every Workday' ? ` · ${stExc}` : '';
-                              return `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)}${esc(excOpt)})</option>`;
-                            }).join('')}
-                          </select>
-                        </div>
-                        <div class="ssm-field" style="margin:0">
-                          <label style="font-size:11px"><b>Default Policy &amp; Perks</b></label>
-                          <select class="kiosk-select" data-pay-bu-policy-default="${esc(bu)}" data-plain-options="1">
-                            ${buPolicyOpts.map(pg => `<option value="${esc(pg.id)}" ${pg.id === curPolDefId ? 'selected' : ''}>${esc(pg.name)} (${esc(pg.short)})</option>`).join('')}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  `;
-                }).join('')}
+                ${activeBuList.map(bu => renderCompanyDefaultAttendanceCardHtml(bu, { attrPrefix: 'pay', title: 'Company Defaults' })).join('')}
               </div>
               ${renderColFilterBar('pay_work_shifts')}
               <div class="table-wrap">
@@ -93166,32 +93309,41 @@
           ? `<span class="badge badge-warn">Already logged on ${esc(fmtDateDMY(attDate))}: ${esc(existingAttOnDate.map(a => a.type || a.status || 'Shift').join(', '))}</span>`
           : '';
         const cardEl = $('attStaffContractCard');
-        const hasStaffRule = curStaff ? hasExplicitStaffWorkRule(curStaff, curCo) : false;
-        const staffShiftCfg = curStaff ? resolveStaffShiftForDate(curStaff, curCo, attDate) : null;
+        const canShowAttDollars = canViewPayrollDollarAmounts();
+        const resolvedAttPol = curStaff ? resolveStaffPolicyForDate(curStaff, curCo, attDate) : null;
         const attShiftWin = curStaff ? resolveStaffAttendanceDefaultWindow(curStaff, curCo, attDate) : null;
         const staffOtCfg = curStaff ? describeStaffOvertimeRule(curStaff, curCo, attDate) : null;
+        const polMathLabel = resolvedAttPol ? formatAttMathModeShort(resolvedAttPol.math_mode) : '0.1h';
+        const polOtThresh = resolvedAttPol ? Number(resolvedAttPol.ot_threshold_min != null ? resolvedAttPol.ot_threshold_min : 10) : 10;
         if (cardEl) {
           if (!curStaff) {
             cardEl.hidden = true;
             cardEl.innerHTML = '';
           } else if (prof.hasContract) {
             const canSetAttPend = Boolean(prof.salaryPending && prof.contractId && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance')));
+            const polOtMultDisp = resolvedAttPol && resolvedAttPol.rule ? Number(resolvedAttPol.rule.ot_multiplier || prof.otMultiplier || 1.5) : Number(prof.otMultiplier || 1);
+            const effOtHrRate = prof.salaryPending ? 0 : round2(prof.hourlyRate * polOtMultDisp);
+            const otRateDisp = prof.salaryPending
+              ? '$0.00/hr (Pending)'
+              : (resolvedAttPol && resolvedAttPol.math_mode === 'per_minute'
+                ? `${fmtUSD(effOtHrRate, 2)}/hr ($${(effOtHrRate / 60).toFixed(4)}/min)`
+                : `${fmtUSD(effOtHrRate, 2)}/hr (${polOtMultDisp}x)`);
             cardEl.hidden = false;
             cardEl.className = 'att-contract-strip' + ((existingLeaveRow && attMode === 'leave') || prof.salaryPending ? ' is-warn' : '');
             cardEl.innerHTML = `
-              <div><strong>${esc(prof.staff)}</strong> <span class="badge ${prof.status === 'Current' || prof.status === 'Active' ? 'badge-ok' : 'badge-warn'}">${esc(prof.status)}</span>${prof.salaryPending ? ` <span class="badge badge-warn">Salary Pending ($0.00)</span>${canSetAttPend ? ` <button type="button" class="att-preset-pill" data-set-pending-salary-id="${esc(prof.contractId)}">Enter Final Salary</button>` : ''}` : ''} ${dupWarnHtml}</div>
+              <div><strong>${esc(prof.staff)}</strong> <span class="badge ${prof.status === 'Current' || prof.status === 'Active' ? 'badge-ok' : 'badge-warn'}">${esc(prof.status)}</span>${prof.salaryPending && canShowAttDollars ? ` <span class="badge badge-warn">Salary Pending ($0.00)</span>${canSetAttPend ? ` <button type="button" class="att-preset-pill" data-set-pending-salary-id="${esc(prof.contractId)}">Enter Final Salary</button>` : ''}` : ''} ${dupWarnHtml}</div>
               <div class="att-contract-metrics">
-                <span><small>Monthly</small><b>${prof.salaryPending ? 'Pending ($0)' : `${fmtUSD(round2(prof.monthlySalary + (prof.reimbursement || 0)), 0)}${prof.reimbursement > 0 ? ` (${fmtUSD(prof.monthlySalary, 0)}+${fmtUSD(prof.reimbursement, 0)})` : ''}`}</b></span>
+                ${canShowAttDollars ? `<span><small>Monthly</small><b>${prof.salaryPending ? 'Pending ($0)' : `${fmtUSD(round2(prof.monthlySalary + (prof.reimbursement || 0)), 0)}${prof.reimbursement > 0 ? ` (${fmtUSD(prof.monthlySalary, 0)}+${fmtUSD(prof.reimbursement, 0)})` : ''}`}</b></span>` : ''}
                 <span><small>Schedule</small><b>${attShiftWin ? esc(attShiftWin.badgeLabel) : `${prof.workingDays}d × ${fmtNum(prof.workingHours, 1)}h`}</b></span>
-                <span><small>OT Policy</small><b>${hasStaffRule && staffOtCfg ? esc(staffOtCfg.badgeText) : 'Contract Rate'}</b></span>
-                <span><small>OT Rate</small><b>${prof.salaryPending ? '$0.00/hr (Pending)' : `${fmtUSD(prof.otHourlyRate, 2)}/hr (${prof.otMultiplier}×)`}</b></span>
-                <span><small>Daily</small><b>${prof.salaryPending ? '$0.00/d (Pending)' : `${fmtUSD(prof.dailyRate, 2)}/d`}</b></span>
+                <span><small>Math / OT Policy</small><b>${esc(polMathLabel)} · ${staffOtCfg ? esc(staffOtCfg.badgeText) : `OT >=${polOtThresh}m`}</b></span>
+                ${canShowAttDollars ? `<span><small>OT Rate</small><b>${otRateDisp}</b></span><span><small>Daily</small><b>${prof.salaryPending ? '$0.00/d (Pending)' : `${fmtUSD(prof.dailyRate, 2)}/d`}</b></span>` : ''}
               </div>
             `;
           } else {
             cardEl.hidden = false;
             cardEl.className = 'att-contract-strip is-warn';
-            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file · Shift: <b>${esc(attShiftWin ? attShiftWin.badgeLabel : '08:00-16:00 (8.0h)')}</b> · OT: <b>${esc(hasStaffRule && staffOtCfg ? staffOtCfg.badgeText : 'Fallback Rate')}</b> (${fmtUSD(prof.hourlyRate, 2)}/hr). ${dupWarnHtml}</span>`;
+            const rateStr = canShowAttDollars ? ` (${fmtUSD(prof.hourlyRate, 2)}/hr)` : '';
+            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file · Shift: <b>${esc(attShiftWin ? attShiftWin.badgeLabel : '08:00-16:00 (8.0h)')}</b> · Policy: <b>${esc(polMathLabel)} · ${esc(staffOtCfg ? staffOtCfg.badgeText : 'Fallback Rate')}</b>${rateStr}. ${dupWarnHtml}</span>`;
           }
         }
         setHint(
@@ -93235,7 +93387,7 @@
           const effDailyUnpaid = round2(prof.dailyRate + reimbDayDed);
           const dedUsd = lvPay === 'unpaid' ? round2(lvDays * effDailyUnpaid) : (reimbDayDed > 0 ? round2(lvDays * reimbDayDed) : 0);
           const typeDisp = lvType === 'Half Day' ? 'Half Day Off' : (lvType === 'VacAbsence' ? 'Paid Vacation' : (lvType === 'Sick Leave' ? 'Sick Leave' : 'Full Absence'));
-          setHint('hint_att_leave_pay', curStaff && dedUsd > 0
+          setHint('hint_att_leave_pay', (canShowAttDollars && curStaff && dedUsd > 0)
             ? (lvPay === 'unpaid'
               ? `Deducts ${fmtNum(lvDays, 1)}d × ${fmtUSD(effDailyUnpaid, 2)}/d${reimbDayDed > 0 ? ` (${fmtUSD(prof.dailyRate, 2)} base + ${fmtUSD(reimbDayDed, 2)} transp.)` : ''} = ${fmtUSD(dedUsd, 2)}`
               : `Paid base · deducts ${fmtNum(lvDays, 1)}d × ${fmtUSD(reimbDayDed, 2)}/d transp. reimb. = ${fmtUSD(dedUsd, 2)}`)
@@ -93243,13 +93395,17 @@
           const datePrefixLv = attDate !== txDate ? `${wk.short} ${fmtDateDMY(attDate).slice(0, 5)} · ` : '';
           setText('calc_att_type', typeDisp);
           setText('calc_att_math', `${datePrefixLv}${fmtNum(lvDays, 1)} day${lvDays === 1 ? '' : 's'} (No Clock)`);
-          setText('calc_att_rate', `${fmtUSD(prof.dailyRate, 2)}/day (${prof.workingDays}d mo.)${reimbDayDed > 0 ? ` · +${fmtUSD(reimbDayDed, 2)}/d reimb` : ''}`);
-          setText('calc_att_impact', dedUsd > 0 ? `-${fmtUSD(dedUsd, 2)} Deduction` : '$0.00 (Paid Leave)');
+          setText('calc_att_rate', canShowAttDollars
+            ? `${fmtUSD(prof.dailyRate, 2)}/day (${prof.workingDays}d mo.)${reimbDayDed > 0 ? ` · +${fmtUSD(reimbDayDed, 2)}/d reimb` : ''}`
+            : `Schedule Basis (${prof.workingDays}d mo.)`);
+          setText('calc_att_impact', canShowAttDollars
+            ? (dedUsd > 0 ? `-${fmtUSD(dedUsd, 2)} Deduction` : '$0.00 (Paid Leave)')
+            : (lvPay === 'unpaid' ? 'Unpaid Leave (Dollar view restricted)' : 'Paid Leave'));
           FORM_UI.lastAttTimeKey = '';
-          return { mode: 'leave', lvType: effSt, lvDays, dedUsd, attDate, txDate };
+          return { mode: 'leave', lvType: effSt, lvDays, dedUsd: canShowAttDollars ? dedUsd : null, attDate, txDate };
         }
 
-        // Shift Mode ('shift'): Time In & Time Out compared directly against the employee's contract shift
+        // Shift Mode ('shift'): Time In & Time Out compared directly against the employee's contract & effective policy
         const contractHrs = Number(prof.workingHours || 8);
         if (attDate !== FORM_UI.lastAttDate) {
           FORM_UI.lastAttDate = attDate;
@@ -93311,24 +93467,25 @@
 
         const inVal = isNoClock ? '' : val('f_in');
         const outVal = isNoClock ? '' : val('f_out');
-        const worked = isNoClock ? 0 : computeShiftWorkedHours(inVal, outVal);
+        const timingEval = (!isNoClock && !isCallout && curStaff && inVal && outVal)
+          ? evaluateShiftPunchTiming(curStaff, curCo, attDate, inVal, outVal, { internalCalc: true })
+          : null;
+        const worked = isNoClock ? 0 : (timingEval ? Number(timingEval.workedHours || 0) : computeShiftWorkedHours(inVal, outVal, Boolean(resolvedAttPol && resolvedAttPol.math_mode === 'per_minute')));
         const inH = parseAttClockHour(inVal);
         const outH = parseAttClockHour(outVal);
         const isOvernight = Boolean(!isNoClock && inH != null && outH != null && outH < inH);
-        const timingEval = (!isNoClock && !isCallout && hasStaffRule && curStaff && inVal && outVal)
-          ? evaluateShiftPunchTiming(curStaff, curCo, attDate, inVal, outVal)
-          : null;
         const evalUnapprovedOt = timingEval ? Number(timingEval.unapprovedOtHours ?? timingEval.unapproved_ot_hours ?? 0) : 0;
+        const decH = (timingEval && timingEval.mathMode === 'per_minute') || (resolvedAttPol && resolvedAttPol.math_mode === 'per_minute') ? 2 : 1;
         if (timingEval && evalUnapprovedOt > 0) {
-          setHint('hint_att_out', `${staffOtCfg ? staffOtCfg.badgeText : 'OT Restricted'} · ${fmtNum(evalUnapprovedOt, 1)}h extra not paid`, 'warn');
+          setHint('hint_att_out', `${staffOtCfg ? staffOtCfg.badgeText : 'OT Restricted'} · ${fmtNum(evalUnapprovedOt, decH)}h (${timingEval.unapprovedOtMin || 0}m) extra not paid`, 'warn');
         } else {
-          setHint('hint_att_out', isOvernight ? `Overnight (+1d) · ${fmtNum(worked, 1)}h` : '', isOvernight ? 'ok' : '');
+          setHint('hint_att_out', isOvernight ? `Overnight (+1d) · ${fmtNum(worked, decH)}h` : '', isOvernight ? 'ok' : '');
         }
 
         if (!isNoClock && $('f_worked_hours') && document.activeElement !== $('f_worked_hours')) {
           $('f_worked_hours').value = String(worked);
         }
-        const attTimeKey = `${curStaff}|${curCo}|${attDate}|${activePreset}|${inVal}|${outVal}|${sched}`;
+        const attTimeKey = `${curStaff}|${curCo}|${attDate}|${activePreset}|${inVal}|${outVal}|${sched}|${_TIME24_WS_REV}`;
         if (!isNoClock && attTimeKey !== FORM_UI.lastAttTimeKey) {
           FORM_UI.lastAttTimeKey = attTimeKey;
           const autoOt = timingEval ? Number(timingEval.overtimeHours ?? timingEval.overtime_hours ?? 0) : (Math.round(Math.max(0, worked - sched) * 10) / 10);
@@ -93346,21 +93503,45 @@
         const effSt = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
         if ($('f_status')) $('f_status').value = effSt;
 
-        const impactUsd = round2((otH * prof.otHourlyRate) - (ltH * prof.lateHourlyRate));
+        const matchesOtEval = Boolean(timingEval && Math.abs(otH - Number(timingEval.overtimeHours || 0)) <= 0.002);
+        const matchesLtEval = Boolean(timingEval && Math.abs(ltH - Number(timingEval.lateHours || 0)) <= 0.002);
+        const polRuleCalc = (timingEval && timingEval.rule) || (resolvedAttPol && resolvedAttPol.rule) || null;
+        const effOtMultCalc = (polRuleCalc && Number(polRuleCalc.ot_multiplier || 0) > 0) ? Number(polRuleCalc.ot_multiplier) : Number(prof.otMultiplier || 1);
+        const effLtMultCalc = polRuleCalc
+          ? (polRuleCalc.late_penalty_mode === 'none' ? 0 : (polRuleCalc.late_penalty_mode === 'multiplier' ? Number(polRuleCalc.late_multiplier || 1) : 1))
+          : Number(prof.lateMultiplier || 1);
+        const otRateUsdCalc = prof.salaryPending ? 0 : (prof.hourlyRate * effOtMultCalc);
+        const ltRateUsdCalc = prof.salaryPending ? 0 : (prof.hourlyRate * effLtMultCalc);
+        const otEarnedCalc = matchesOtEval ? Number(timingEval.otEarnedUsd || 0) : round2(otH * otRateUsdCalc);
+        const lateLostCalc = matchesLtEval ? Number(timingEval.lateLostUsd || 0) : round2(ltH * ltRateUsdCalc);
+        const impactUsd = round2(otEarnedCalc - lateLostCalc);
+        const otMinNote = matchesOtEval && timingEval.approvedOtMin > 0 ? ` / ${timingEval.approvedOtMin}m` : '';
+        const ltMinNote = matchesLtEval && timingEval.rawLateMin > 0 ? ` / ${timingEval.rawLateMin}m` : '';
         const typeLbl = otH > 0
-          ? (sched === 0 && !isNoClock ? `Call-Out / 100% OT (+${fmtNum(otH, 1)}h)` : `Overtime (+${fmtNum(otH, 1)}h)`)
-          : (ltH > 0 ? `Short / Late (-${fmtNum(ltH, 1)}h)` : 'Full Shift (On Time)');
+          ? (sched === 0 && !isNoClock ? `Call-Out / 100% OT (+${fmtNum(otH, decH)}h${otMinNote})` : `Overtime (+${fmtNum(otH, decH)}h${otMinNote})`)
+          : (ltH > 0 ? `Late (-${fmtNum(ltH, decH)}h${ltMinNote})` : 'Full Shift (On Time)');
         const datePrefixSh = attDate !== txDate ? `${wk.short} ${fmtDateDMY(attDate).slice(0, 5)} · ` : '';
         const mathLbl = datePrefixSh + (isNoClock
-          ? `Hours Tally · +${fmtNum(otH, 1)}h OT / -${fmtNum(ltH, 1)}h Late`
-          : `${inVal || '-'} to ${outVal || '-'}${isOvernight ? ' (+1d)' : ''} = ${fmtNum(worked, 1)}h (${isCallout ? 'Call-Out 0h Base' : fmtNum(sched, 1) + 'h Contract'})`);
+          ? `Hours Tally · +${fmtNum(otH, decH)}h OT / -${fmtNum(ltH, decH)}h Late`
+          : `${inVal || '-'} to ${outVal || '-'}${isOvernight ? ' (+1d)' : ''} = ${fmtNum(worked, decH)}h (${isCallout ? 'Call-Out 0h Base' : fmtNum(sched, 1) + 'h'}) · ${polMathLabel}${timingEval ? ` · OT >=${timingEval.otThresholdMin}m` : ''}`);
         setText('calc_att_type', typeLbl);
         setText('calc_att_math', mathLbl);
-        setText('calc_att_rate', `${fmtUSD(prof.otHourlyRate, 2)}/hr OT · ${fmtUSD(prof.lateHourlyRate, 2)}/hr Late`);
-        setText('calc_att_impact', impactUsd > 0
-          ? `+${fmtUSD(impactUsd, 2)} Overtime Pay`
-          : (impactUsd < 0 ? `-${fmtUSD(Math.abs(impactUsd), 2)} Deduction` : '$0.00 (Standard Shift)'));
-        return { mode: 'shift', worked, sched, otH, ltH, impactUsd };
+        if (canShowAttDollars) {
+          const isPerM = (timingEval && timingEval.mathMode === 'per_minute') || (resolvedAttPol && resolvedAttPol.math_mode === 'per_minute');
+          const effLtRateDisp = matchesLtEval && timingEval && timingEval.lateHourlyRate != null
+            ? (prof.salaryPending ? 0 : Number(timingEval.lateHourlyRate))
+            : ltRateUsdCalc;
+          setText('calc_att_rate', isPerM
+            ? `+$${(otRateUsdCalc / 60).toFixed(4)}/min OT · -$${(effLtRateDisp / 60).toFixed(4)}/min Late`
+            : `${fmtUSD(otRateUsdCalc, 2)}/hr OT · ${fmtUSD(effLtRateDisp, 2)}/hr Late`);
+          setText('calc_att_impact', otEarnedCalc > 0 || lateLostCalc > 0
+            ? `${otEarnedCalc > 0 ? `+${fmtUSD(otEarnedCalc, 2)} Earned` : ''}${otEarnedCalc > 0 && lateLostCalc > 0 ? ' / ' : ''}${lateLostCalc > 0 ? `-${fmtUSD(lateLostCalc, 2)} Lost` : ''}${otEarnedCalc > 0 && lateLostCalc > 0 ? ` (Net ${impactUsd >= 0 ? '+' : '-'}${fmtUSD(Math.abs(impactUsd), 2)})` : ''}`
+            : '$0.00 (Standard Shift)');
+        } else {
+          setText('calc_att_rate', `${polMathLabel} · OT >=${polOtThresh}m`);
+          setText('calc_att_impact', 'Dollar view restricted');
+        }
+        return { mode: 'shift', worked, sched, otH, ltH, impactUsd: canShowAttDollars ? impactUsd : null };
       }
       if (STATE.modalForm === 'employment' || STATE.modalForm === 'freelance') {
         const isContract = STATE.modalForm === 'employment';
@@ -100674,7 +100855,8 @@
         const outFmt = isNoClock ? '' : fmtAttClockTime(val('f_out'));
         const schedEl = $('f_sched_hours');
         const schedH = (isNoClock || isCallout) ? 0 : ((schedEl && String(schedEl.value).trim() !== '') ? Math.max(0, num('f_sched_hours')) : staffScheduledHours(st, company, attDate));
-        const workedH = isNoClock ? 0 : (num('f_worked_hours') > 0 ? num('f_worked_hours') : computeShiftWorkedHours(inFmt, outFmt));
+        const resolvedPolSave = st ? resolveStaffPolicyForDate(st, company, attDate) : null;
+        const workedH = isNoClock ? 0 : (num('f_worked_hours') > 0 ? num('f_worked_hours') : computeShiftWorkedHours(inFmt, outFmt, Boolean(resolvedPolSave && resolvedPolSave.math_mode === 'per_minute')));
         const otH = Math.max(0, num('f_hours'));
         const ltH = Math.max(0, num('f_late_hours'));
         if (!isNoClock && (!inFmt || !outFmt)) {
@@ -100695,9 +100877,17 @@
         const regH = isNoClock ? 0 : round2(Math.max(0, workedH - otH));
         const effType = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
         const tallyVal = otH > 0 ? otH : (ltH > 0 ? ltH : workedH);
-        const hasStaffRuleSave = st ? hasExplicitStaffWorkRule(st, company) : false;
         const staffShiftSave = (!isNoClock && !isCallout && st) ? resolveStaffAttendanceDefaultWindow(st, company, attDate) : null;
-        const timingSave = (hasStaffRuleSave && staffShiftSave && inFmt && outFmt) ? evaluateShiftPunchTiming(st, company, attDate, inFmt, outFmt) : null;
+        const timingSave = (!isNoClock && !isCallout && st && inFmt && outFmt)
+          ? evaluateShiftPunchTiming(st, company, attDate, inFmt, outFmt, { internalCalc: true })
+          : null;
+        const matchesOtSave = Boolean(timingSave && Math.abs(otH - Number(timingSave.overtimeHours || 0)) <= 0.002);
+        const matchesLtSave = Boolean(timingSave && Math.abs(ltH - Number(timingSave.lateHours || 0)) <= 0.002);
+        const matchesTimingSave = matchesOtSave && matchesLtSave;
+        const polRuleSave = (timingSave && timingSave.rule) || (resolvedPolSave && resolvedPolSave.rule) || {};
+        const effPolLateMultSave = polRuleSave.late_penalty_mode === 'none'
+          ? 0
+          : (polRuleSave.late_penalty_mode === 'multiplier' ? Number(polRuleSave.late_multiplier || 1) : 1);
         record = {
           ...base,
           name: `ATT ${attDate} ${st}`,
@@ -100719,10 +100909,22 @@
           overtime_hours: otH,
           unapproved_ot_hours: timingSave ? Number(timingSave.unapprovedOtHours ?? timingSave.unapproved_ot_hours ?? 0) : 0,
           late_hours: ltH,
+          raw_late_hours: matchesLtSave && timingSave ? Number(timingSave.rawLateHours || 0) : ltH,
+          raw_late_min: matchesLtSave && timingSave ? Number(timingSave.rawLateMin || 0) : Math.round(ltH * 60),
+          math_mode: timingSave ? timingSave.mathMode : (resolvedPolSave ? resolvedPolSave.math_mode : 'tenth_hour'),
+          approved_ot_min: matchesOtSave ? Number(timingSave.approvedOtMin || 0) : Math.round(otH * 60),
+          unapproved_ot_min: timingSave ? Number(timingSave.unapprovedOtMin || 0) : 0,
+          billable_late_min: matchesLtSave ? Number(timingSave.billableLateMin || 0) : Math.round(ltH * 60),
+          ot_threshold_min: timingSave ? Number(timingSave.otThresholdMin != null ? timingSave.otThresholdMin : 10) : (resolvedPolSave ? Number(resolvedPolSave.ot_threshold_min != null ? resolvedPolSave.ot_threshold_min : 10) : 10),
+          policy_ot_mult: Number(polRuleSave.ot_multiplier || 1.5),
+          policy_late_mult: effPolLateMultSave,
+          late_mult_baked: matchesLtSave,
+          manual_override: !isNoClock && !isCallout && Boolean(timingSave) && !matchesTimingSave,
           leave_days: 0,
           extra_usd: 0,
           tally: tallyVal
         };
+        if (matchesTimingSave) record.tab_sig = attendanceFigureSig(record);
       }
     } else if (f === 'freelance' || f === 'employment') {
       const pendSalEditRow = STATE.editingPendingSalaryId ? findEmploymentRecordById(STATE.editingPendingSalaryId) : null;
@@ -104994,10 +105196,14 @@
       // otherwise replace its late and overtime hours on open (it differs from the rule engine for a person
       // on the company default shift), and a correction typed back to those shown values would then look
       // like no change at Save and be dropped.
-      if (form === 'attendance' && row && row.origin === 'door_tablet' && val('f_att_mode') === 'shift' && FORM_UI.attPreset !== 'noclock') {
-        setModalControlVal('f_hours', Number(row.overtime_hours || 0));
-        setModalControlVal('f_late_hours', Number(row.late_hours || 0));
+      if (form === 'attendance' && row && val('f_att_mode') === 'shift' && FORM_UI.attPreset !== 'noclock'
+        && (row.origin === 'door_tablet' || row.manual_override || row.overtime_hours != null || row.late_hours != null)) {
+        if (row.overtime_hours != null) setModalControlVal('f_hours', Number(row.overtime_hours || 0));
+        if (row.late_hours != null) setModalControlVal('f_late_hours', Number(row.late_hours || 0));
         recalcForm();
+        if (row.worked_hours != null && Number(row.worked_hours) > 0) {
+          setModalControlVal('f_worked_hours', Number(row.worked_hours));
+        }
       }
     } finally {
       FORM_UI.hydrating = false;
@@ -107452,11 +107658,11 @@
         { key: 'status', label: 'Type *', type: 'select', options: ['Present', 'Overtime', 'Lateness', 'Absence', 'Absent', 'VacAbsence', 'Sick Leave', 'Leave', 'Half Day', 'Extra USD', 'Extra LBP', 'Config USD', 'Config LBP', 'Config VacAbsence'], sec: 1, getVal: r => r.type || r.status || 'Present' },
         { key: 'in_time', label: 'Time In', type: 'time', sec: 2, getVal: r => fmtAttClockTime(r.in_time || r.check_in || '') },
         { key: 'out_time', label: 'Time Out', type: 'time', sec: 2, getVal: r => fmtAttClockTime(r.out_time || r.check_out || '') },
-        { key: 'tally', label: 'Tally', type: 'number', step: '0.5', sec: 3 },
-        { key: 'worked_hours', label: 'Worked Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
-        { key: 'regular_hours', label: 'Regular Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
-        { key: 'overtime_hours', label: 'Overtime Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
-        { key: 'late_hours', label: 'Late Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
+        { key: 'tally', label: 'Tally', type: 'number', step: '0.01', sec: 3 },
+        { key: 'worked_hours', label: 'Worked Hours', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'regular_hours', label: 'Regular Hours', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'overtime_hours', label: 'Overtime Hours', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'late_hours', label: 'Late Hours', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'leave_days', label: 'Leave Days', type: 'number', step: '0.5', sec: 3 },
         { key: 'extra_usd', label: 'Extra USD ($)', type: 'number', step: '0.01', sec: 3, getVal: r => r.extra_usd ?? r.usd_amount ?? '' },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
@@ -107835,7 +108041,7 @@
   function enforceUneditedNumericInvariance(orig, updated, editedSet) {
     if (!orig || !updated) return updated;
     const pricingDrivers = new Set([
-      'qty', 'external_qty', 'litres', 'liters', 'days', 'days_count', 'hours', 'extra_hours', 'overtime_hours', 'worked_hours',
+      'qty', 'external_qty', 'litres', 'liters', 'days', 'days_count', 'hours', 'extra_hours', 'overtime_hours', 'worked_hours', 'late_hours',
       'unit_cost', 'trans_unit_cost', 'unit_price', 'trans_unit_price',
       'indiff_price', 'trans_indiff_price', 'mat_indiff', 'trans_indiff',
       'discount', 'tip', 'rate', 'rate_usd', 'base_salary', 'salary_usd', 'daily_rate', 'daily_usd',
@@ -111032,17 +111238,90 @@
               row.month = effSd.slice(0, 7);
             }
           }
-          if (('in_time' in pendingUpdates || 'out_time' in pendingUpdates) && !('worked_hours' in pendingUpdates)) {
+          const effAttDate = String(row.set_date || row.rep_date || row.date || '').slice(0, 10) || todayISO();
+          const rowTypeNow = String(row.type || row.status || 'Present');
+          const isLeaveRow = /Absence|VacAbsence|Half\s*Day|Sick|Leave|Unpaid|^Extra|^Config/i.test(rowTypeNow);
+          const inspPol = row.staff ? resolveStaffPolicyForDate(row.staff, row.company, effAttDate) : null;
+          const usePerMinInsp = Boolean((inspPol && inspPol.math_mode === 'per_minute') || row.math_mode === 'per_minute');
+          const clocksOrDateChanged = 'in_time' in pendingUpdates || 'out_time' in pendingUpdates || 'set_date' in pendingUpdates || 'date' in pendingUpdates || 'staff' in pendingUpdates;
+          const manualHoursChanged = 'overtime_hours' in pendingUpdates || 'late_hours' in pendingUpdates || 'worked_hours' in pendingUpdates;
+          if ((clocksOrDateChanged && !isLeaveRow) || manualHoursChanged) {
+            ['worked_hours', 'regular_hours', 'scheduled_hours', 'overtime_hours', 'unapproved_ot_hours', 'late_hours', 'raw_late_hours', 'raw_late_min', 'approved_ot_min', 'unapproved_ot_min', 'billable_late_min', 'ot_threshold_min', 'policy_ot_mult', 'policy_late_mult', 'tally'].forEach(k => editedKeySet.add(k));
+          }
+          if ('in_time' in pendingUpdates || 'out_time' in pendingUpdates) {
             const inF = fmtAttClockTime(row.in_time || '');
             const outF = fmtAttClockTime(row.out_time || '');
             row.in_time = inF;
             row.out_time = outF;
             row.check_in = inF;
             row.check_out = outF;
-            if (inF && outF) {
-              row.worked_hours = computeShiftWorkedHours(inF, outF);
-              row.regular_hours = round2(Math.max(0, row.worked_hours - Number(row.overtime_hours || 0)));
+          }
+          if (clocksOrDateChanged && !isLeaveRow) {
+            const inF = fmtAttClockTime(row.in_time || '');
+            const outF = fmtAttClockTime(row.out_time || '');
+            const isCalloutRow = Number(row.scheduled_hours || 0) === 0 && Boolean(inF && outF);
+            const timingInsp = (!manualHoursChanged && !isCalloutRow && row.staff && inF && outF)
+              ? evaluateShiftPunchTiming(row.staff, row.company, effAttDate, inF, outF, { internalCalc: true })
+              : null;
+            if (inF && outF && !('worked_hours' in pendingUpdates)) {
+              row.worked_hours = timingInsp ? Number(timingInsp.workedHours || 0) : computeShiftWorkedHours(inF, outF, usePerMinInsp);
             }
+            if (timingInsp && !manualHoursChanged && !row.manual_override) {
+              const polRuleInsp = timingInsp.rule || (inspPol && inspPol.rule) || {};
+              row.scheduled_hours = Number(timingInsp.scheduledHours || 0);
+              row.overtime_hours = Number(timingInsp.overtimeHours || 0);
+              row.unapproved_ot_hours = Number(timingInsp.unapprovedOtHours ?? timingInsp.unapproved_ot_hours ?? 0);
+              row.late_hours = Number(timingInsp.lateHours || 0);
+              row.raw_late_hours = Number(timingInsp.rawLateHours || 0);
+              row.raw_late_min = Number(timingInsp.rawLateMin || 0);
+              row.math_mode = timingInsp.mathMode || (inspPol ? inspPol.math_mode : 'tenth_hour');
+              row.approved_ot_min = Number(timingInsp.approvedOtMin || 0);
+              row.unapproved_ot_min = Number(timingInsp.unapprovedOtMin || 0);
+              row.billable_late_min = Number(timingInsp.billableLateMin || 0);
+              row.ot_threshold_min = Number(timingInsp.otThresholdMin != null ? timingInsp.otThresholdMin : 10);
+              row.policy_ot_mult = Number(polRuleInsp.ot_multiplier || 1.5);
+              row.policy_late_mult = Number(polRuleInsp.late_penalty_mode === 'multiplier' ? polRuleInsp.late_multiplier : (polRuleInsp.late_penalty_mode === 'none' ? 0 : 1));
+              row.late_mult_baked = true;
+              row.regular_hours = round2(Math.max(0, Number(row.worked_hours || 0) - Number(row.overtime_hours || 0)));
+              if (!('status' in pendingUpdates)) {
+                const effStInsp = Number(row.overtime_hours || 0) > 0 ? 'Overtime' : (Number(row.late_hours || 0) > 0 ? 'Lateness' : 'Present');
+                row.type = effStInsp;
+                row.status = effStInsp;
+              }
+              row.tally = Number(row.overtime_hours || 0) > 0 ? Number(row.overtime_hours || 0) : (Number(row.late_hours || 0) > 0 ? Number(row.late_hours || 0) : Number(row.worked_hours || 0));
+              if (row.tab_sig) row.tab_sig = attendanceFigureSig(row);
+            } else {
+              row.regular_hours = round2(Math.max(0, Number(row.worked_hours || 0) - Number(row.overtime_hours || 0)));
+            }
+          }
+          if (manualHoursChanged) {
+            const polRuleMan = (inspPol && inspPol.rule) || {};
+            if (!row.math_mode) row.math_mode = inspPol ? inspPol.math_mode : 'tenth_hour';
+            if ('overtime_hours' in pendingUpdates) {
+              row.overtime_hours = Math.max(0, Number(row.overtime_hours || 0));
+              row.approved_ot_min = Math.round(row.overtime_hours * 60);
+              row.manual_override = true;
+            }
+            if ('late_hours' in pendingUpdates) {
+              row.late_hours = Math.max(0, Number(row.late_hours || 0));
+              row.billable_late_min = Math.round(row.late_hours * 60);
+              row.raw_late_hours = row.late_hours;
+              row.raw_late_min = Math.round(row.late_hours * 60);
+              row.late_mult_baked = false;
+              row.manual_override = true;
+            }
+            row.policy_ot_mult = Number(polRuleMan.ot_multiplier || 1.5);
+            row.policy_late_mult = Number(polRuleMan.late_penalty_mode === 'multiplier' ? polRuleMan.late_multiplier : (polRuleMan.late_penalty_mode === 'none' ? 0 : 1));
+            row.regular_hours = round2(Math.max(0, Number(row.worked_hours || 0) - Number(row.overtime_hours || 0)));
+            if (!isLeaveRow && !('status' in pendingUpdates)) {
+              const effStMan = Number(row.overtime_hours || 0) > 0 ? 'Overtime' : (Number(row.late_hours || 0) > 0 ? 'Lateness' : 'Present');
+              row.type = effStMan;
+              row.status = effStMan;
+            }
+            if (!isLeaveRow) {
+              row.tally = Number(row.overtime_hours || 0) > 0 ? Number(row.overtime_hours || 0) : (Number(row.late_hours || 0) > 0 ? Number(row.late_hours || 0) : Number(row.worked_hours || 0));
+            }
+            delete row.tab_sig;
           }
         } else if (key === 'salaries') {
           if (('usd_amount' in pendingUpdates || 'lbp_amount' in pendingUpdates) && !('amount' in pendingUpdates)) {
@@ -113456,27 +113735,42 @@
         const incObj = typeof inc === 'object' ? inc : { group_id: String(inc), updated_at: '' };
         const cur = ws.companyPolicyDefaults[normKey];
         const curObj = cur && typeof cur === 'object' ? cur : (cur ? { group_id: String(cur), updated_at: '' } : null);
+        const curHolTs = String((curObj && curObj.holidays && curObj.holidays.updated_at) || '');
+        const incHolTs = String((incObj.holidays && incObj.holidays.updated_at) || '');
+        const curTl = (curObj && Array.isArray(curObj.policy_timeline)) ? curObj.policy_timeline : null;
+        const incTl = Array.isArray(incObj.policy_timeline) ? incObj.policy_timeline : null;
+        const curTlTs = String((curObj && curObj.policy_timeline_updated_at) || '');
+        const incTlTs = String(incObj.policy_timeline_updated_at || '');
         if (!curObj || String(incObj.updated_at || '') > String(curObj.updated_at || '')) {
           const merged = Object.assign({}, curObj || {}, incObj);
-          // The holiday selection has its own clock (holidays.updated_at). An entry that arrives newer but
-          // carries no selection (a device on an older version rewrote it) or an older one (a device that had
-          // not synced changed the default policy) must not replace ours: keep ours and stamp the entry
-          // above the incoming one so the next sync sends it back.
-          const curHolTs = String((curObj && curObj.holidays && curObj.holidays.updated_at) || '');
-          const incHolTs = String((incObj.holidays && incObj.holidays.updated_at) || '');
+          let bumpedMs = 0;
+          // The holiday selection and policy_timeline each carry independent clocks so older clients or
+          // separate updates cannot accidentally wipe them when touching another field on the company entry.
           if (curObj && curObj.holidays && (!incObj.holidays || curHolTs > incHolTs)) {
             merged.holidays = curObj.holidays;
             const incMs = Date.parse(String(incObj.updated_at || ''));
-            merged.updated_at = new Date(Math.max(Date.now(), Number.isFinite(incMs) ? incMs + 1000 : 0)).toISOString();
+            bumpedMs = Math.max(bumpedMs, Date.now(), Number.isFinite(incMs) ? incMs + 1000 : 0);
           }
+          if (curTl && (!incTl || curTlTs > incTlTs)) {
+            merged.policy_timeline = curTl;
+            merged.policy_timeline_updated_at = curTlTs;
+            const incMs = Date.parse(String(incObj.updated_at || ''));
+            bumpedMs = Math.max(bumpedMs, Date.now(), Number.isFinite(incMs) ? incMs + 1000 : 0);
+          }
+          if (bumpedMs > 0) merged.updated_at = new Date(bumpedMs).toISOString();
           ws.companyPolicyDefaults[normKey] = merged;
           _holidayCfgRev = (_holidayCfgRev || 0) + 1;
           changed = true;
-        } else if (curObj && incObj.holidays
-          && String(incObj.holidays.updated_at || '') > String((curObj.holidays && curObj.holidays.updated_at) || '')) {
-          // Our entry is newer overall but the incoming holiday selection is newer than ours: take it, and
-          // stamp the entry so the combined record goes back up.
-          ws.companyPolicyDefaults[normKey] = Object.assign({}, curObj, { holidays: incObj.holidays, updated_at: new Date().toISOString() });
+        } else if (curObj && ((incObj.holidays && incHolTs > curHolTs) || (incTl && (!curTl || incTlTs > curTlTs)))) {
+          const curMs = Date.parse(String(curObj.updated_at || ''));
+          const nextMs = Math.max(Date.now(), Number.isFinite(curMs) ? curMs + 1000 : 0);
+          const patch = { updated_at: new Date(nextMs).toISOString() };
+          if (incObj.holidays && incHolTs > curHolTs) patch.holidays = incObj.holidays;
+          if (incTl && (!curTl || incTlTs > curTlTs)) {
+            patch.policy_timeline = incTl;
+            patch.policy_timeline_updated_at = incTlTs;
+          }
+          ws.companyPolicyDefaults[normKey] = Object.assign({}, curObj, patch);
           _holidayCfgRev = (_holidayCfgRev || 0) + 1;
           changed = true;
         }
@@ -113498,6 +113792,7 @@
         }
       });
     }
+    if (changed) _TIME24_WS_REV++;
     return changed;
   }
 
@@ -125684,11 +125979,159 @@
     'bdeir holding': 'pkg_exec_21d'
   };
 
+  const ATT_MATH_MODES = ['per_minute', 'tenth_hour'];
+  function normalizeAttMathMode(v) {
+    return String(v || '').trim().toLowerCase() === 'per_minute' ? 'per_minute' : 'tenth_hour';
+  }
+  function normalizeOtCountFrom(v) {
+    return String(v || '').trim().toLowerCase() === 'after_threshold' ? 'after_threshold' : 'shift_end';
+  }
+  function clampAttThresholdMin(v, defVal = 10) {
+    const n = (v != null && v !== '' && Number.isFinite(Number(v))) ? Number(v) : Number(defVal);
+    return Math.max(0, Math.min(180, Math.round(Number.isFinite(n) ? n : 10)));
+  }
+  function formatAttMathModeLabel(mode) {
+    return normalizeAttMathMode(mode) === 'per_minute'
+      ? 'Exact Per-Minute ($ / Min)'
+      : '0.1h Decimal Hours (6-Min Steps)';
+  }
+  function formatAttMathModeShort(mode) {
+    return normalizeAttMathMode(mode) === 'per_minute' ? '$ / Min' : '0.1h Steps';
+  }
+  function normalizePolicyTimelineWindow(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const startD = String(raw.start_date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startD)) return null;
+    let endD = raw.end_date ? String(raw.end_date).slice(0, 10) : '';
+    if (endD && (!/^\d{4}-\d{2}-\d{2}$/.test(endD) || endD < startD)) endD = '';
+    const out = {
+      id: String(raw.id || uid('ptw')),
+      start_date: startD,
+      end_date: endD,
+      note: String(raw.note || '').trim().slice(0, 80),
+      updated_at: String(raw.updated_at || '')
+    };
+    if (raw.policy_group_id != null && String(raw.policy_group_id).trim() !== '') {
+      out.policy_group_id = normalizePolicyGroupIdAlias(raw.policy_group_id);
+    }
+    if (raw.math_mode != null && String(raw.math_mode).trim() !== '') {
+      out.math_mode = normalizeAttMathMode(raw.math_mode);
+    }
+    if (raw.ot_threshold_min != null && raw.ot_threshold_min !== '' && Number.isFinite(Number(raw.ot_threshold_min))) {
+      out.ot_threshold_min = clampAttThresholdMin(raw.ot_threshold_min, 10);
+    }
+    if (raw.ot_early_threshold_min != null && raw.ot_early_threshold_min !== '' && Number.isFinite(Number(raw.ot_early_threshold_min))) {
+      out.ot_early_threshold_min = clampAttThresholdMin(raw.ot_early_threshold_min, 15);
+    }
+    if (raw.ot_count_from != null && String(raw.ot_count_from).trim() !== '') {
+      out.ot_count_from = normalizeOtCountFrom(raw.ot_count_from);
+    }
+    if (raw.grace_min != null && raw.grace_min !== '' && Number.isFinite(Number(raw.grace_min))) {
+      out.grace_min = Math.max(0, Math.min(120, Math.round(Number(raw.grace_min))));
+    }
+    if (raw.early_leave_grace_min != null && raw.early_leave_grace_min !== '' && Number.isFinite(Number(raw.early_leave_grace_min))) {
+      out.early_leave_grace_min = Math.max(0, Math.min(120, Math.round(Number(raw.early_leave_grace_min))));
+    }
+    if (raw.late_when && ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(raw.late_when)) {
+      out.late_when = raw.late_when;
+    }
+    if (raw.late_count_from && ['shift_start', 'after_grace'].includes(raw.late_count_from)) {
+      out.late_count_from = raw.late_count_from;
+    }
+    if (raw.late_penalty_mode && ['exact_hours', 'multiplier', 'round_hour', 'tiered_half_day', 'half_day_any', 'none'].includes(raw.late_penalty_mode)) {
+      out.late_penalty_mode = raw.late_penalty_mode;
+    }
+    if (raw.late_multiplier != null && raw.late_multiplier !== '' && Number.isFinite(Number(raw.late_multiplier))) {
+      out.late_multiplier = Math.max(1, Math.min(5, Number(raw.late_multiplier)));
+    }
+    if (raw.late_half_day_after_min != null && raw.late_half_day_after_min !== '' && Number.isFinite(Number(raw.late_half_day_after_min))) {
+      out.late_half_day_after_min = Math.max(5, Math.min(360, Math.round(Number(raw.late_half_day_after_min))));
+    }
+    if (raw.no_clock_out_rule && ['half_day', 'full_absence', 'deduct_2h', 'auto_shift_end'].includes(raw.no_clock_out_rule)) {
+      out.no_clock_out_rule = raw.no_clock_out_rule;
+    }
+    if (raw.ot_mode && ['none', 'always', 'max_hours', 'date_range'].includes(raw.ot_mode)) {
+      out.ot_mode = raw.ot_mode;
+    }
+    if (raw.ot_multiplier != null && raw.ot_multiplier !== '' && Number.isFinite(Number(raw.ot_multiplier))) {
+      out.ot_multiplier = Math.max(1, Math.min(5, Number(raw.ot_multiplier)));
+    }
+    if (raw.ot_max_hours != null && raw.ot_max_hours !== '' && Number.isFinite(Number(raw.ot_max_hours))) {
+      out.ot_max_hours = Math.max(0, Number(raw.ot_max_hours));
+    }
+    if (raw.ot_window_start) out.ot_window_start = fmtAttClockTime(raw.ot_window_start);
+    if (raw.ot_window_end) out.ot_window_end = fmtAttClockTime(raw.ot_window_end);
+    return out;
+  }
+  function normalizePolicyTimelineList(list) {
+    if (!Array.isArray(list)) return [];
+    const seenIds = new Set();
+    const out = [];
+    list.forEach(item => {
+      const n = normalizePolicyTimelineWindow(item);
+      if (!n) return;
+      if (seenIds.has(n.id)) n.id = uid('ptw');
+      seenIds.add(n.id);
+      out.push(n);
+    });
+    out.sort((a, b) => a.start_date.localeCompare(b.start_date) || String(a.end_date || '9999').localeCompare(String(b.end_date || '9999')));
+    return out;
+  }
+  function upsertPolicyTimelineWindow(existingList, entrySpec = {}) {
+    const cleanEntry = normalizePolicyTimelineWindow(Object.assign({}, entrySpec, { updated_at: entrySpec.updated_at || new Date().toISOString() }));
+    if (!cleanEntry) return normalizePolicyTimelineList(existingList);
+    const list = normalizePolicyTimelineList(existingList).map(w => Object.assign({}, w));
+    const exactIdIdx = entrySpec.id ? list.findIndex(w => w.id === String(entrySpec.id)) : -1;
+    const sameSpanIdx = exactIdIdx >= 0
+      ? exactIdIdx
+      : list.findIndex(w => w.start_date === cleanEntry.start_date && (w.end_date || '') === (cleanEntry.end_date || ''));
+    if (sameSpanIdx >= 0) {
+      // Edit in place (Hard Rule 12) while keeping explicit gaps untouched.
+      list[sameSpanIdx] = Object.assign({}, list[sameSpanIdx], cleanEntry, { id: list[sameSpanIdx].id });
+      return normalizePolicyTimelineList(list);
+    }
+    // Auto-close any open predecessor starting strictly before the new start_date.
+    const prevDay = shiftIsoDateByDays(cleanEntry.start_date, -1);
+    for (let i = 0; i < list.length; i++) {
+      if (!list[i].end_date && list[i].start_date < cleanEntry.start_date) {
+        list[i].end_date = prevDay;
+      } else if (!list[i].end_date && list[i].start_date === cleanEntry.start_date && !cleanEntry.end_date) {
+        list[i] = Object.assign({}, list[i], cleanEntry, { id: list[i].id });
+        return normalizePolicyTimelineList(list);
+      }
+    }
+    // If an open-ended entry is inserted before an existing future window, cap it the day before that future window.
+    if (!cleanEntry.end_date) {
+      const nextLater = list.find(w => w.start_date > cleanEntry.start_date);
+      if (nextLater) {
+        cleanEntry.end_date = shiftIsoDateByDays(nextLater.start_date, -1);
+      }
+    }
+    list.push(cleanEntry);
+    return normalizePolicyTimelineList(list);
+  }
+  function matchPolicyTimelineAtDate(list, isoDate) {
+    const dStr = String(isoDate || todayISO()).slice(0, 10);
+    const normList = normalizePolicyTimelineList(list);
+    let best = null;
+    for (let i = 0; i < normList.length; i++) {
+      const w = normList[i];
+      if (w.start_date <= dStr && (!w.end_date || dStr <= w.end_date)) {
+        best = w;
+      }
+    }
+    return best;
+  }
+
   const DEFAULT_POLICY_GROUPS = [
     {
       id: 'pkg_15_open_15d',
       name: 'Standard 1.5x Open OT',
       short: '1.5x Open · 15d Vac',
+      math_mode: 'tenth_hour',
+      ot_threshold_min: 10,
+      ot_early_threshold_min: 15,
+      ot_count_from: 'shift_end',
       late_penalty_mode: 'multiplier',
       late_multiplier: 1.5,
       ot_multiplier: 1.5,
@@ -125709,6 +126152,10 @@
       id: 'pkg_15_pass_15d',
       name: 'Controlled 1.5x Date-Pass OT',
       short: '1.5x Pass · 15d Vac',
+      math_mode: 'tenth_hour',
+      ot_threshold_min: 10,
+      ot_early_threshold_min: 15,
+      ot_count_from: 'shift_end',
       late_penalty_mode: 'multiplier',
       late_multiplier: 1.5,
       ot_multiplier: 1.5,
@@ -125729,6 +126176,10 @@
       id: 'pkg_10_fixed_15d',
       name: 'Fixed 1.0x Standard',
       short: '1.0x No OT · 15d Vac',
+      math_mode: 'tenth_hour',
+      ot_threshold_min: 10,
+      ot_early_threshold_min: 15,
+      ot_count_from: 'shift_end',
       late_penalty_mode: 'exact_hours',
       late_multiplier: 1.0,
       ot_multiplier: 1.0,
@@ -125749,6 +126200,10 @@
       id: 'pkg_exec_21d',
       name: 'Executive & Salaried (21d)',
       short: 'OT 1.5x · 21d Vac',
+      math_mode: 'tenth_hour',
+      ot_threshold_min: 10,
+      ot_early_threshold_min: 15,
+      ot_count_from: 'shift_end',
       late_penalty_mode: 'none',
       late_multiplier: 1.0,
       ot_multiplier: 1.5,
@@ -125769,6 +126224,10 @@
       id: 'pkg_daily_26d',
       name: 'Daily / 26-Day Schedule',
       short: '1.0x · 7d Vac · 26d',
+      math_mode: 'tenth_hour',
+      ot_threshold_min: 10,
+      ot_early_threshold_min: 15,
+      ot_count_from: 'shift_end',
       late_penalty_mode: 'exact_hours',
       late_multiplier: 1.0,
       ot_multiplier: 1.0,
@@ -125805,6 +126264,10 @@
   function normalizePolicyGroupObj(raw, fallback = null) {
     const base = Object.assign({}, fallback || {}, raw || {});
     const nameStr = String(base.name || 'Custom Policy & Perks').trim() || 'Custom Policy & Perks';
+    const mathMode = normalizeAttMathMode(base.math_mode);
+    const otThresholdMin = clampAttThresholdMin(base.ot_threshold_min, 10);
+    const otEarlyThresholdMin = clampAttThresholdMin(base.ot_early_threshold_min, 15);
+    const otCountFrom = normalizeOtCountFrom(base.ot_count_from);
     const lateMult = Math.max(1, Math.min(5, Number(base.late_multiplier != null ? base.late_multiplier : 1.5)));
     const otMult = Math.max(1, Math.min(5, Number(base.ot_multiplier != null ? base.ot_multiplier : 1.5)));
     const latePenMode = ['exact_hours', 'multiplier', 'round_hour', 'tiered_half_day', 'half_day_any', 'none'].includes(base.late_penalty_mode)
@@ -125822,18 +126285,25 @@
     const perksArr = Array.isArray(base.perks)
       ? Array.from(new Set(base.perks.map(p => String(p || '').trim()).filter(Boolean)))
       : ['Site Transport', 'Paid Leave'];
+    const versionsArr = normalizePolicyTimelineList(base.versions);
     const otModeShort = otMode === 'always'
       ? 'Open OT'
       : (otMode === 'date_range' ? 'Date Pass' : (otMode === 'max_hours' ? `Max ${fmtNum(base.ot_max_hours || 2, 0)}h OT` : 'No OT'));
     const lateMultLbl = latePenMode === 'multiplier' ? `Late ${fmtNum(lateMult, lateMult % 1 ? 1 : 0)}x` : (latePenMode === 'none' ? 'Late $0' : 'Late 1x');
     const otMultLbl = otMode === 'none' ? 'No OT' : `OT ${fmtNum(otMult, otMult % 1 ? 1 : 0)}x (${otModeShort})`;
-    const summaryText = `${lateMultLbl} · ${otMultLbl} · ${vacDays}d Vac`;
+    const mathTag = mathMode === 'per_minute' ? '$ / Min' : '0.1h';
+    const otThreshTag = otMode !== 'none' && otThresholdMin !== 10 ? ` · OT >=${otThresholdMin}m` : '';
+    const summaryText = `${lateMultLbl} · ${otMultLbl} · ${vacDays}d Vac · ${mathTag}${otThreshTag}`;
     const coScope = String(base.company || 'All Companies').trim() || 'All Companies';
     return {
       id: String(base.id || uid('pkg')),
       name: nameStr,
-      short: String(base.short || `${fmtNum(otMult, 1)}x · ${otModeShort} · ${vacDays}d`).trim().slice(0, 26),
+      short: String(base.short || `${fmtNum(otMult, 1)}x · ${otModeShort} · ${mathTag}`).trim().slice(0, 26),
       company: coScope,
+      math_mode: mathMode,
+      ot_threshold_min: otThresholdMin,
+      ot_early_threshold_min: otEarlyThresholdMin,
+      ot_count_from: otCountFrom,
       late_penalty_mode: latePenMode,
       late_multiplier: lateMult,
       ot_multiplier: otMult,
@@ -125846,12 +126316,138 @@
       early_leave_grace_min: earlyGraceM,
       no_clock_out_rule: noOutRule,
       perks: perksArr,
+      versions: versionsArr,
       summaryText,
       tone: ['emerald', 'amber', 'sapphire', 'indigo', 'rose'].includes(base.tone) ? base.tone : 'emerald',
       isBuiltin: Boolean(base.isBuiltin || DEFAULT_POLICY_GROUPS.some(d => d.id === base.id)),
       voided: Boolean(base.voided),
       updated_at: String(base.updated_at || '')
     };
+  }
+
+  let _WS_POLICY_MEMO = null;
+  function _getWsPolicyMemo() {
+    const ws = ensureWorkSchedulesState();
+    const pgArr = ws.policyGroups || [];
+    const stArr = ws.shiftTypes || [];
+    let pgStamp = '';
+    for (let i = 0; i < pgArr.length; i++) {
+      const g = pgArr[i];
+      if (g) pgStamp += `${g.id || ''}:${g.updated_at || ''}:${g.voided ? 1 : 0}:${Array.isArray(g.versions) ? g.versions.length : 0};`;
+    }
+    const rev = `${_TIME24_WS_REV}|${(SEED && SEED._customRev) || 0}|${_GLOBAL_RATES_REV}|${STATE.enterpriseScalePreview ? 1 : 0}|${todayISO()}|${stArr.length}|${pgStamp}`;
+    if (
+      !_WS_POLICY_MEMO
+      || _WS_POLICY_MEMO.rev !== rev
+      || _WS_POLICY_MEMO.ws !== ws
+      || _WS_POLICY_MEMO.pg !== ws.policyGroups
+      || _WS_POLICY_MEMO.co !== ws.companyPolicyDefaults
+      || _WS_POLICY_MEMO.sr !== ws.staffRules
+      || _WS_POLICY_MEMO.st !== ws.shiftTypes
+    ) {
+      _WS_POLICY_MEMO = {
+        rev,
+        ws,
+        pg: ws.policyGroups,
+        co: ws.companyPolicyDefaults,
+        sr: ws.staffRules,
+        st: ws.shiftTypes,
+        policyGroups: new Map(),
+        pgAtDate: new Map(),
+        coDefAtDate: new Map(),
+        staffRule: new Map(),
+        staffPolAtDate: new Map()
+      };
+    }
+    return _WS_POLICY_MEMO;
+  }
+
+  function resolvePolicyGroupAtDate(groupOrId, companyOpt = '', isoDate = todayISO()) {
+    const useMemo = (typeof groupOrId !== 'object' || !groupOrId);
+    const gid = useMemo ? normalizePolicyGroupIdAlias(groupOrId) : String(groupOrId.id || '');
+    const dKey = String(isoDate || '').slice(0, 10) || todayISO();
+    const memo = useMemo ? _getWsPolicyMemo() : null;
+    const pgKey = useMemo ? `${gid}|${companyOpt ? norm(companyOpt) : ('@' + (STATE.company || ''))}|${dKey}` : '';
+    if (useMemo) {
+      const hit = memo.pgAtDate.get(pgKey);
+      if (hit) return Object.assign({}, hit);
+    }
+    const groups = getPolicyGroups(companyOpt || '');
+    const grp = (typeof groupOrId === 'object' && groupOrId && groupOrId.versions)
+      ? normalizePolicyGroupObj(groupOrId)
+      : (groups.find(g => g.id === gid) || groups[0] || normalizePolicyGroupObj(DEFAULT_POLICY_GROUPS[0]));
+    const win = matchPolicyTimelineAtDate(grp.versions, isoDate);
+    let res;
+    if (!win) {
+      res = Object.assign({}, grp, { activeVersion: null });
+    } else {
+      const merged = Object.assign({}, grp);
+      const copyKeys = [
+        'math_mode', 'ot_threshold_min', 'ot_early_threshold_min', 'ot_count_from',
+        'grace_min', 'early_leave_grace_min', 'late_when', 'late_count_from',
+        'late_penalty_mode', 'late_multiplier', 'late_half_day_after_min',
+        'no_clock_out_rule', 'ot_mode', 'ot_multiplier', 'ot_max_hours',
+        'ot_window_start', 'ot_window_end'
+      ];
+      copyKeys.forEach(k => {
+        if (win[k] !== undefined && win[k] !== null && win[k] !== '') merged[k] = win[k];
+      });
+      merged.activeVersion = win;
+      res = merged;
+    }
+    if (useMemo) {
+      if (memo.pgAtDate.size > 2048) memo.pgAtDate.clear();
+      memo.pgAtDate.set(pgKey, res);
+      return Object.assign({}, res);
+    }
+    return res;
+  }
+
+  function getCompanyDefaultPolicyEntry(companyRaw) {
+    const ws = ensureWorkSchedulesState();
+    const co = String(companyRaw || COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || 'WTC').trim();
+    const coKey = norm(co);
+    const saved = ws.companyPolicyDefaults && ws.companyPolicyDefaults[coKey];
+    return (saved && typeof saved === 'object') ? saved : (saved ? { group_id: String(saved), updated_at: '' } : null);
+  }
+
+  function resolveCompanyDefaultPolicyGroupAtDate(companyRaw, isoDate = todayISO()) {
+    const co = String(companyRaw || COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || 'WTC').trim();
+    const coDef = getCompanyDefaultPolicyEntry(co);
+    const dKey = String(isoDate || '').slice(0, 10) || todayISO();
+    const memo = _getWsPolicyMemo();
+    const ck = `${norm(co)}|${dKey}`;
+    const hit = memo.coDefAtDate.get(ck);
+    if (hit && hit.coDefRef === coDef) return Object.assign({}, hit.val);
+    const baseGroupId = getCompanyDefaultPolicyGroupId(co);
+    const win = coDef && Array.isArray(coDef.policy_timeline) ? matchPolicyTimelineAtDate(coDef.policy_timeline, isoDate) : null;
+    const effGroupId = normalizePolicyGroupIdAlias((win && win.policy_group_id) || baseGroupId) || 'pkg_15_open_15d';
+    const grp = resolvePolicyGroupAtDate(effGroupId, co, isoDate);
+    const out = Object.assign({}, grp, {
+      timelineWindow: win || null,
+      window: win || null,
+      entry: coDef || null,
+      source: win ? 'company_timeline' : 'company_default'
+    });
+    if (win) {
+      if (win.math_mode) out.math_mode = normalizeAttMathMode(win.math_mode);
+      if (win.ot_threshold_min != null) out.ot_threshold_min = clampAttThresholdMin(win.ot_threshold_min, out.ot_threshold_min);
+      if (win.ot_early_threshold_min != null) out.ot_early_threshold_min = clampAttThresholdMin(win.ot_early_threshold_min, out.ot_early_threshold_min);
+      if (win.ot_count_from) out.ot_count_from = normalizeOtCountFrom(win.ot_count_from);
+      if (win.late_penalty_mode) out.late_penalty_mode = win.late_penalty_mode;
+      if (win.late_multiplier != null) out.late_multiplier = Number(win.late_multiplier);
+      if (win.ot_multiplier != null) out.ot_multiplier = Number(win.ot_multiplier);
+      if (win.ot_mode) out.ot_mode = win.ot_mode;
+      if (win.grace_min != null) out.grace_min = Number(win.grace_min);
+    } else if (coDef && (!Array.isArray(coDef.policy_timeline) || coDef.policy_timeline.length === 0) && !grp.activeVersion) {
+      if (coDef.math_mode) out.math_mode = normalizeAttMathMode(coDef.math_mode);
+      if (coDef.ot_threshold_min != null) out.ot_threshold_min = clampAttThresholdMin(coDef.ot_threshold_min, out.ot_threshold_min);
+      if (coDef.ot_early_threshold_min != null) out.ot_early_threshold_min = clampAttThresholdMin(coDef.ot_early_threshold_min, out.ot_early_threshold_min);
+      if (coDef.ot_count_from) out.ot_count_from = normalizeOtCountFrom(coDef.ot_count_from);
+    }
+    if (memo.coDefAtDate.size > 2048) memo.coDefAtDate.clear();
+    memo.coDefAtDate.set(ck, { val: out, coDefRef: coDef });
+    return Object.assign({}, out);
   }
 
   function getCompanyDefaultPolicyGroupId(companyRaw) {
@@ -125868,40 +126464,218 @@
     return DEFAULT_COMPANY_POLICY_GROUP_MAP[coKey] || 'pkg_15_open_15d';
   }
 
+  function _rawStaffRuleHasLegacyMathFields(raw) {
+    if (!raw || typeof raw !== 'object' || raw.reset_default) return false;
+    return (
+      raw.math_mode != null
+      || raw.ot_threshold_min != null
+      || raw.ot_early_threshold_min != null
+      || raw.ot_count_from != null
+    );
+  }
+
+  function _rawStaffRuleHasLegacyPolicyFields(raw, companyDefaultGroupId) {
+    if (!raw || typeof raw !== 'object' || raw.reset_default) return false;
+    const rawGrpId = normalizePolicyGroupIdAlias(raw.policy_group_id);
+    if (rawGrpId && (!companyDefaultGroupId || rawGrpId !== normalizePolicyGroupIdAlias(companyDefaultGroupId))) {
+      return true;
+    }
+    return (
+      raw.late_penalty_mode != null
+      || raw.late_multiplier != null
+      || raw.ot_mode != null
+      || raw.ot_multiplier != null
+      || raw.ot_max_hours != null
+      || raw.vacation_days != null
+      || raw.sick_days != null
+      || raw.working_days != null
+      || raw.grace_min != null
+      || raw.early_leave_grace_min != null
+      || raw.no_clock_out_rule != null
+      || _rawStaffRuleHasLegacyMathFields(raw)
+    );
+  }
+
+  function _staffRuleHasExplicitCustomization(raw, companyDefaultGroupId, includeTimeline = false) {
+    if (!raw || typeof raw !== 'object' || raw.reset_default) return false;
+    if (raw.custom_policy_override === true || raw.custom_math_override === true) return true;
+    if (includeTimeline && Array.isArray(raw.policy_timeline) && raw.policy_timeline.length > 0) return true;
+    if (raw.follows_company_default === true) return false;
+    const rawGrpId = normalizePolicyGroupIdAlias(raw.policy_group_id);
+    if (rawGrpId && (!companyDefaultGroupId || rawGrpId !== normalizePolicyGroupIdAlias(companyDefaultGroupId))) {
+      return true;
+    }
+    if (!('custom_policy_override' in raw) && !('custom_math_override' in raw)) {
+      return _rawStaffRuleHasLegacyPolicyFields(raw, companyDefaultGroupId);
+    }
+    return false;
+  }
+
   function setCompanyDefaultPolicyGroup(companyRaw, groupId, opts = {}) {
+    _TIME24_WS_REV++;
     const ws = ensureWorkSchedulesState();
     const co = String(companyRaw || defaultEntryCompany() || 'WTC').trim();
     const coKey = norm(co);
     const nextId = normalizePolicyGroupIdAlias(groupId) || 'pkg_15_open_15d';
     const prevDefId = getCompanyDefaultPolicyGroupId(co);
     const nowIso = new Date().toISOString();
-    // Keep what else the business's entry holds (its holiday selection).
     const prevCoDef = ws.companyPolicyDefaults[coKey];
-    ws.companyPolicyDefaults[coKey] = Object.assign({}, (prevCoDef && typeof prevCoDef === 'object') ? prevCoDef : {}, { company: co, group_id: nextId, updated_at: nowIso });
-    const grpObj = getPolicyGroups(co).find(g => g.id === nextId) || DEFAULT_POLICY_GROUPS[0];
+    const prevObj = (prevCoDef && typeof prevCoDef === 'object') ? Object.assign({}, prevCoDef) : (prevCoDef ? { group_id: String(prevCoDef) } : {});
+    const grpObj = getPolicyGroups(co).find(g => g.id === nextId) || normalizePolicyGroupObj(DEFAULT_POLICY_GROUPS[0]);
+    const today = todayISO();
+    const effFrom = opts.effective_from && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.effective_from).slice(0, 10))
+      ? String(opts.effective_from).slice(0, 10)
+      : '';
+    const effTo = opts.effective_to && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.effective_to).slice(0, 10))
+      ? String(opts.effective_to).slice(0, 10)
+      : '';
+    let nextTimeline = normalizePolicyTimelineList(prevObj.policy_timeline);
+    let timelineTouched = false;
+
+    if (Array.isArray(opts.policy_timeline)) {
+      nextTimeline = normalizePolicyTimelineList(opts.policy_timeline);
+      timelineTouched = true;
+    }
+    if (effFrom) {
+      if (!nextTimeline.length && !Array.isArray(opts.policy_timeline) && prevDefId && effFrom > '2000-01-01') {
+        const prevGrp = getPolicyGroups(co).find(g => g.id === prevDefId) || normalizePolicyGroupObj(DEFAULT_POLICY_GROUPS[0]);
+        nextTimeline = upsertPolicyTimelineWindow(nextTimeline, {
+          id: 'co_base',
+          start_date: '2000-01-01',
+          end_date: shiftIsoDateByDays(effFrom, -1),
+          policy_group_id: prevDefId,
+          math_mode: normalizeAttMathMode(prevObj.math_mode || prevGrp.math_mode),
+          ot_threshold_min: clampAttThresholdMin(prevObj.ot_threshold_min != null ? prevObj.ot_threshold_min : prevGrp.ot_threshold_min, 10),
+          ot_early_threshold_min: clampAttThresholdMin(prevObj.ot_early_threshold_min != null ? prevObj.ot_early_threshold_min : prevGrp.ot_early_threshold_min, 15),
+          ot_count_from: normalizeOtCountFrom(prevObj.ot_count_from || prevGrp.ot_count_from),
+          note: 'Prior Baseline'
+        });
+      }
+      const nextMath = opts.math_mode != null ? normalizeAttMathMode(opts.math_mode) : grpObj.math_mode;
+      const nextThresh = opts.ot_threshold_min != null ? clampAttThresholdMin(opts.ot_threshold_min, 10) : grpObj.ot_threshold_min;
+      const nextEarlyThresh = opts.ot_early_threshold_min != null ? clampAttThresholdMin(opts.ot_early_threshold_min, 15) : grpObj.ot_early_threshold_min;
+      const nextCountFrom = opts.ot_count_from != null ? normalizeOtCountFrom(opts.ot_count_from) : grpObj.ot_count_from;
+      nextTimeline = upsertPolicyTimelineWindow(nextTimeline, {
+        id: opts.timeline_id || undefined,
+        start_date: effFrom,
+        end_date: effTo,
+        policy_group_id: nextId,
+        math_mode: nextMath,
+        ot_threshold_min: nextThresh,
+        ot_early_threshold_min: nextEarlyThresh,
+        ot_count_from: nextCountFrom,
+        note: String(opts.note || '')
+      });
+      timelineTouched = true;
+    }
+
+    const activeGroupIdForToday = (effFrom && effFrom > today) ? prevDefId : nextId;
+    const activeCoResolved = resolvePolicyGroupAtDate(activeGroupIdForToday, co, today);
+    const updatedCoEntry = Object.assign({}, prevObj, {
+      company: co,
+      group_id: activeGroupIdForToday,
+      updated_at: nowIso,
+      policy_timeline: nextTimeline
+    });
+    if (!effFrom) {
+      if (opts.math_mode != null) {
+        updatedCoEntry.math_mode = normalizeAttMathMode(opts.math_mode);
+      } else {
+        updatedCoEntry.math_mode = activeCoResolved.math_mode;
+      }
+      if (opts.ot_threshold_min != null) {
+        updatedCoEntry.ot_threshold_min = clampAttThresholdMin(opts.ot_threshold_min, 10);
+      }
+      if (opts.ot_early_threshold_min != null) {
+        updatedCoEntry.ot_early_threshold_min = clampAttThresholdMin(opts.ot_early_threshold_min, 15);
+      }
+      if (opts.ot_count_from != null) {
+        updatedCoEntry.ot_count_from = normalizeOtCountFrom(opts.ot_count_from);
+      }
+      if (!Array.isArray(opts.policy_timeline) && nextTimeline.length > 0) {
+        const actWin = matchPolicyTimelineAtDate(nextTimeline, today);
+        if (actWin) {
+          const updatedActWin = Object.assign({}, actWin, {
+            policy_group_id: nextId,
+            math_mode: updatedCoEntry.math_mode,
+            ot_threshold_min: opts.ot_threshold_min != null
+              ? updatedCoEntry.ot_threshold_min
+              : (actWin.ot_threshold_min != null ? clampAttThresholdMin(actWin.ot_threshold_min, 10) : grpObj.ot_threshold_min),
+            ot_early_threshold_min: opts.ot_early_threshold_min != null
+              ? updatedCoEntry.ot_early_threshold_min
+              : (actWin.ot_early_threshold_min != null ? clampAttThresholdMin(actWin.ot_early_threshold_min, 15) : grpObj.ot_early_threshold_min),
+            ot_count_from: opts.ot_count_from != null
+              ? updatedCoEntry.ot_count_from
+              : normalizeOtCountFrom(actWin.ot_count_from || grpObj.ot_count_from)
+          });
+          nextTimeline = normalizePolicyTimelineList(
+            nextTimeline.map(w => (w && w.id === actWin.id ? updatedActWin : w))
+          );
+          updatedCoEntry.policy_timeline = nextTimeline;
+          timelineTouched = true;
+        }
+      }
+    }
+    if (timelineTouched) updatedCoEntry.policy_timeline_updated_at = nowIso;
+    ws.companyPolicyDefaults[coKey] = updatedCoEntry;
+
     let backfilledStaff = 0;
+    const affectedStaffNames = [];
     if (opts.backfill !== false && grpObj) {
       const allStaff = getKioskStaffDirectory({ includeEnded: true });
       allStaff.forEach(s => {
         if (norm(s.company || '') !== coKey) return;
         const raw = getStaffRuleEntry(s.name, s.company).raw || null;
-        const hasExplicitOther = raw && !raw.reset_default && raw.policy_group_id && normalizePolicyGroupIdAlias(raw.policy_group_id) !== prevDefId;
+        const hasExplicitOther = _staffRuleHasExplicitCustomization(raw, prevDefId, true);
         if (!hasExplicitOther) {
-          saveStaffWorkRule(s.name, {
-            company: s.company,
-            apply_policy_group_id: grpObj.id
-          }, { deferSave: true });
-          backfilledStaff++;
+          affectedStaffNames.push(s.name);
+          if (!effFrom || effFrom <= today) {
+            const patchSpec = {
+              company: s.company,
+              apply_policy_group_id: activeGroupIdForToday,
+              follows_company_default: true
+            };
+            if (opts.math_mode != null) patchSpec.math_mode = normalizeAttMathMode(opts.math_mode);
+            if (opts.ot_threshold_min != null) patchSpec.ot_threshold_min = clampAttThresholdMin(opts.ot_threshold_min, 10);
+            if (opts.ot_early_threshold_min != null) patchSpec.ot_early_threshold_min = clampAttThresholdMin(opts.ot_early_threshold_min, 15);
+            if (opts.ot_count_from != null) patchSpec.ot_count_from = normalizeOtCountFrom(opts.ot_count_from);
+            saveStaffWorkRule(s.name, patchSpec, { deferSave: true, skipRecalc: true, fromCompanyDefault: true });
+            backfilledStaff++;
+          }
         }
       });
     }
+    let attBackfillRes = null;
+    if (opts.backfill !== false && !opts.skipAttBackfill) {
+      const bfFrom = effFrom || today;
+      if (bfFrom <= today || opts.includeFutureBackfill) {
+        attBackfillRes = backfillAttendancePolicyChange({
+          company: co,
+          staffNames: affectedStaffNames,
+          fromDate: bfFrom,
+          toDate: effTo,
+          deferSave: true
+        });
+      }
+    }
     saveLocalAuthAndRecords();
-    postWorkScheduleMutation({ op: 'set_company_policy_default', company: co, group_id: nextId, updated_at: nowIso });
+    postWorkScheduleMutation({
+      op: 'set_company_policy_default',
+      company: co,
+      group_id: activeGroupIdForToday,
+      policy_timeline: nextTimeline,
+      policy_timeline_updated_at: updatedCoEntry.policy_timeline_updated_at || nowIso,
+      updated_at: nowIso
+    });
     syncWithCloud(true);
-    return { ok: true, company: co, group: grpObj, backfilledStaff };
+    return { ok: true, company: co, group: grpObj, backfilledStaff, attBackfill: attBackfillRes, entry: updatedCoEntry };
   }
 
   function getPolicyGroups(companyOpt = '') {
+    const memo = _getWsPolicyMemo();
+    const cacheKey = companyOpt ? ('co:' + norm(companyOpt)) : ('scope:' + (STATE.company || ''));
+    const hit = memo.policyGroups.get(cacheKey);
+    if (hit) return hit.slice();
     const ws = ensureWorkSchedulesState();
     const rawScope = companyOpt || COMPANY_BU_MATCH[STATE.company] || '';
     const scopeBuList = getActiveIndustryBuList(rawScope || STATE.company);
@@ -125934,16 +126708,18 @@
       const bDef = b.id === coDefId ? 1 : 0;
       return bDef - aDef;
     });
-    return out;
+    if (memo.policyGroups.size > 512) memo.policyGroups.clear();
+    memo.policyGroups.set(cacheKey, out);
+    return out.slice();
   }
 
-  function inferDefaultPolicyGroupId(staffName, company, rawRule = null) {
+  function inferDefaultPolicyGroupId(staffName, company, rawRule = null, profOpt = null) {
     if (rawRule && !rawRule.reset_default && rawRule.policy_group_id) {
       return normalizePolicyGroupIdAlias(rawRule.policy_group_id);
     }
     const effCo = company || (rawRule && rawRule.company) || defaultEntryCompany() || 'WTC';
     const coDefPkgId = getCompanyDefaultPolicyGroupId(effCo);
-    const prof = getStaffContractProfile(staffName, effCo);
+    const prof = profOpt || getStaffContractProfile(staffName, effCo);
     const roleStr = String((prof && prof.role) || '').toLowerCase();
     const isSeniorRole = /\b(owner|manager|supervisor|engineer|accounting|accountant|chief|foreman|director|broker|underwriter|executive)\b/i.test(roleStr)
       || norm(staffName) === norm('Hussein Bdeir');
@@ -125969,15 +126745,17 @@
     return coDefPkgId;
   }
 
-  function syncStaffContractPolicyFields(staffName, company, patch = {}) {
+  function syncStaffContractPolicyFields(staffName, company, patch = {}, opts = {}) {
     const k = norm(staffName);
     if (!k || !SEED.records || !Array.isArray(SEED.records.employments)) return false;
+    if (opts && opts.effectiveFrom && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.effectiveFrom).slice(0, 10)) && String(opts.effectiveFrom).slice(0, 10) > todayISO()) {
+      return false;
+    }
     const coNorm = norm(company || '');
     const emps = SEED.records.employments.filter(e => e && !e.voided && norm(e.staff || e.name) === k);
     if (!emps.length) return false;
     const activeTarget = emps.find(e => (!coNorm || norm(e.company) === coNorm) && isEmploymentActiveToday(e))
-      || emps.find(e => isEmploymentActiveToday(e))
-      || emps[0];
+      || emps.find(e => isEmploymentActiveToday(e));
     if (!activeTarget) return false;
     let changed = false;
     if (patch.ot_multiplier != null && Number.isFinite(Number(patch.ot_multiplier))) {
@@ -126007,13 +126785,110 @@
   }
 
   function savePolicyGroup(spec = {}) {
+    _TIME24_WS_REV++;
     const ws = ensureWorkSchedulesState();
     const nowIso = new Date().toISOString();
+    const today = todayISO();
     const grpId = String(spec.id || uid('pkg'));
     const existingBuiltin = DEFAULT_POLICY_GROUPS.find(d => d.id === grpId) || null;
     const existingIdx = ws.policyGroups.findIndex(g => g && String(g.id) === grpId);
-    const prev = existingIdx >= 0 ? ws.policyGroups[existingIdx] : existingBuiltin;
-    const normalized = normalizePolicyGroupObj(Object.assign({}, prev || {}, spec, { id: grpId, voided: false, updated_at: nowIso }), existingBuiltin);
+    const prevRaw = existingIdx >= 0 ? ws.policyGroups[existingIdx] : existingBuiltin;
+    const prev = prevRaw ? normalizePolicyGroupObj(prevRaw, existingBuiltin) : null;
+    const effFrom = spec.effective_from && /^\d{4}-\d{2}-\d{2}$/.test(String(spec.effective_from).slice(0, 10))
+      ? String(spec.effective_from).slice(0, 10)
+      : '';
+    const effTo = spec.effective_to && /^\d{4}-\d{2}-\d{2}$/.test(String(spec.effective_to).slice(0, 10))
+      ? String(spec.effective_to).slice(0, 10)
+      : '';
+    if (effTo && effFrom && effTo < effFrom) {
+      return { ok: false, error: 'Effective End Date must be on or after Start Date' };
+    }
+
+    let nextVersions = Array.isArray(spec.versions)
+      ? normalizePolicyTimelineList(spec.versions)
+      : normalizePolicyTimelineList(prev && prev.versions);
+    const specMath = spec.math_mode != null ? normalizeAttMathMode(spec.math_mode) : (prev ? prev.math_mode : 'tenth_hour');
+    const specOtThresh = spec.ot_threshold_min != null ? clampAttThresholdMin(spec.ot_threshold_min, 10) : (prev ? prev.ot_threshold_min : 10);
+    const specOtEarly = spec.ot_early_threshold_min != null ? clampAttThresholdMin(spec.ot_early_threshold_min, 15) : (prev ? prev.ot_early_threshold_min : 15);
+    const specOtFrom = spec.ot_count_from != null ? normalizeOtCountFrom(spec.ot_count_from) : (prev ? prev.ot_count_from : 'shift_end');
+
+    if (effFrom) {
+      if (!nextVersions.length && !Array.isArray(spec.versions) && prev && effFrom > '2000-01-01') {
+        nextVersions = upsertPolicyTimelineWindow(nextVersions, {
+          id: 'pgv_base',
+          start_date: '2000-01-01',
+          end_date: shiftIsoDateByDays(effFrom, -1),
+          policy_group_id: grpId,
+          math_mode: prev.math_mode,
+          ot_threshold_min: prev.ot_threshold_min,
+          ot_early_threshold_min: prev.ot_early_threshold_min,
+          ot_count_from: prev.ot_count_from,
+          ot_multiplier: prev.ot_multiplier,
+          ot_mode: prev.ot_mode,
+          ot_max_hours: prev.ot_max_hours,
+          late_penalty_mode: prev.late_penalty_mode,
+          late_multiplier: prev.late_multiplier,
+          grace_min: prev.grace_min,
+          early_leave_grace_min: prev.early_leave_grace_min,
+          note: 'Opening Baseline'
+        });
+      }
+      nextVersions = upsertPolicyTimelineWindow(nextVersions, {
+        id: spec.version_id || undefined,
+        start_date: effFrom,
+        end_date: effTo,
+        policy_group_id: grpId,
+        math_mode: specMath,
+        ot_threshold_min: specOtThresh,
+        ot_early_threshold_min: specOtEarly,
+        ot_count_from: specOtFrom,
+        ot_multiplier: spec.ot_multiplier != null ? Number(spec.ot_multiplier) : (prev ? prev.ot_multiplier : 1.5),
+        ot_mode: spec.ot_mode || (prev ? prev.ot_mode : 'always'),
+        ot_max_hours: spec.ot_max_hours != null ? Number(spec.ot_max_hours) : (prev ? prev.ot_max_hours : 2),
+        late_penalty_mode: spec.late_penalty_mode || (prev ? prev.late_penalty_mode : 'multiplier'),
+        late_multiplier: spec.late_multiplier != null ? Number(spec.late_multiplier) : (prev ? prev.late_multiplier : 1.5),
+        grace_min: spec.grace_min != null ? Number(spec.grace_min) : (prev ? prev.grace_min : 10),
+        early_leave_grace_min: spec.early_leave_grace_min != null ? Number(spec.early_leave_grace_min) : (prev ? prev.early_leave_grace_min : 10),
+        note: String(spec.version_note || spec.note || '')
+      });
+    } else if (!Array.isArray(spec.versions) && nextVersions.length > 0) {
+      const actVer = matchPolicyTimelineAtDate(nextVersions, today);
+      if (actVer) {
+        const updatedActVer = Object.assign({}, actVer, {
+          policy_group_id: grpId,
+          math_mode: specMath,
+          ot_threshold_min: specOtThresh,
+          ot_early_threshold_min: specOtEarly,
+          ot_count_from: specOtFrom,
+          ot_multiplier: spec.ot_multiplier != null ? Number(spec.ot_multiplier) : (actVer.ot_multiplier != null ? actVer.ot_multiplier : (prev ? prev.ot_multiplier : 1.5)),
+          ot_mode: spec.ot_mode || actVer.ot_mode || (prev ? prev.ot_mode : 'always'),
+          ot_max_hours: spec.ot_max_hours != null ? Number(spec.ot_max_hours) : (actVer.ot_max_hours != null ? actVer.ot_max_hours : (prev ? prev.ot_max_hours : 2)),
+          late_penalty_mode: spec.late_penalty_mode || actVer.late_penalty_mode || (prev ? prev.late_penalty_mode : 'multiplier'),
+          late_multiplier: spec.late_multiplier != null ? Number(spec.late_multiplier) : (actVer.late_multiplier != null ? actVer.late_multiplier : (prev ? prev.late_multiplier : 1.5)),
+          grace_min: spec.grace_min != null ? Number(spec.grace_min) : (actVer.grace_min != null ? actVer.grace_min : (prev ? prev.grace_min : 10)),
+          early_leave_grace_min: spec.early_leave_grace_min != null ? Number(spec.early_leave_grace_min) : (actVer.early_leave_grace_min != null ? actVer.early_leave_grace_min : (prev ? prev.early_leave_grace_min : 10))
+        });
+        nextVersions = normalizePolicyTimelineList(
+          nextVersions.map(v => (v && v.id === actVer.id ? updatedActVer : v))
+        );
+      }
+    }
+
+    const activeSpecForToday = (effFrom && effFrom > today && prev)
+      ? Object.assign({}, prev, {
+          name: spec.name != null ? spec.name : prev.name,
+          short: spec.short != null ? spec.short : prev.short,
+          tone: spec.tone != null ? spec.tone : prev.tone,
+          company: spec.company != null ? spec.company : prev.company,
+          versions: nextVersions
+        })
+      : Object.assign({}, prev || {}, spec, { versions: nextVersions });
+
+    const normalized = normalizePolicyGroupObj(Object.assign({}, activeSpecForToday, {
+      id: grpId,
+      voided: false,
+      updated_at: nowIso
+    }), existingBuiltin);
     if (!normalized.name) {
       return { ok: false, error: 'Policy & Perks group name is required' };
     }
@@ -126021,38 +126896,61 @@
     else ws.policyGroups.push(normalized);
 
     let backfilledStaff = 0;
+    const affectedStaffNames = [];
     if (spec.backfill !== false) {
       const allStaff = getKioskStaffDirectory({ includeEnded: true });
       allStaff.forEach(s => {
         const curRule = getStaffWorkRule(s.name, s.company);
         if (curRule.policy_group_id === grpId) {
-          saveStaffWorkRule(s.name, {
-            company: s.company,
-            policy_group_id: grpId,
-            late_penalty_mode: normalized.late_penalty_mode,
-            late_multiplier: normalized.late_multiplier,
-            ot_multiplier: normalized.ot_multiplier,
-            ot_mode: normalized.ot_mode,
-            ot_max_hours: normalized.ot_max_hours,
-            vacation_days: normalized.vacation_days,
-            sick_days: normalized.sick_days,
-            working_days: normalized.working_days,
-            grace_min: normalized.grace_min,
-            early_leave_grace_min: normalized.early_leave_grace_min,
-            no_clock_out_rule: normalized.no_clock_out_rule,
-            perks: normalized.perks.slice()
-          }, { deferSave: true });
+          affectedStaffNames.push(s.name);
+          if (!effFrom || effFrom <= today) {
+            const todayResolved = resolvePolicyGroupAtDate(grpId, s.company, today);
+            saveStaffWorkRule(s.name, {
+              company: s.company,
+              policy_group_id: grpId,
+              late_penalty_mode: todayResolved.late_penalty_mode,
+              late_multiplier: todayResolved.late_multiplier,
+              ot_multiplier: todayResolved.ot_multiplier,
+              ot_mode: todayResolved.ot_mode,
+              ot_max_hours: todayResolved.ot_max_hours,
+              vacation_days: todayResolved.vacation_days,
+              sick_days: todayResolved.sick_days,
+              working_days: todayResolved.working_days,
+              grace_min: todayResolved.grace_min,
+              early_leave_grace_min: todayResolved.early_leave_grace_min,
+              no_clock_out_rule: todayResolved.no_clock_out_rule,
+              math_mode: todayResolved.math_mode,
+              ot_threshold_min: todayResolved.ot_threshold_min,
+              ot_early_threshold_min: todayResolved.ot_early_threshold_min,
+              ot_count_from: todayResolved.ot_count_from,
+              perks: todayResolved.perks.slice()
+            }, { deferSave: true, skipRecalc: true, fromPolicyGroup: true });
+          }
           backfilledStaff++;
         }
       });
     }
+    let attBackfillRes = null;
+    if (spec.backfill !== false && !spec.skipAttBackfill && affectedStaffNames.length > 0) {
+      const bfFrom = effFrom || today;
+      if (bfFrom <= today || spec.includeFutureBackfill) {
+        attBackfillRes = backfillAttendancePolicyChange({
+          company: spec.company && !/^all/i.test(String(spec.company)) ? spec.company : '',
+          staffNames: affectedStaffNames,
+          fromDate: bfFrom,
+          toDate: effTo,
+          deferSave: true
+        });
+      }
+    }
     saveLocalAuthAndRecords();
     postWorkScheduleMutation({ op: 'upsert_policy_group', item: normalized });
     syncWithCloud(true);
-    return { ok: true, policyGroup: normalized, group: normalized, backfilledStaff };
+    return { ok: true, policyGroup: normalized, group: normalized, backfilledStaff, attBackfill: attBackfillRes };
   }
 
   function deletePolicyGroup(groupId) {
+    _TIME24_WS_REV++;
     const id = String(groupId || '');
     if (!id || DEFAULT_POLICY_GROUPS.some(d => d.id === id)) {
       return { ok: false, error: 'Built-in Policy & Perks groups cannot be deleted (you can edit their multipliers & perks)' };
@@ -126072,6 +126970,412 @@
     postWorkScheduleMutation({ op: 'delete_policy_group', id });
     syncWithCloud(true);
     return { ok: true };
+  }
+
+  function resolveStaffPolicyForDate(staffName, company, dateStr) {
+    const dStr = /^\d{4}-\d{2}-\d{2}$/.test(String(dateStr || '').slice(0, 10))
+      ? String(dateStr).slice(0, 10)
+      : todayISO();
+    const memo = _getWsPolicyMemo();
+    const spKey = `${norm(staffName)}|${company ? norm(company) : ('@' + (STATE.company || ''))}|${dStr}`;
+    const spHit = memo.staffPolAtDate.get(spKey);
+    if (
+      spHit
+      && spHit.rawRef === getStaffRuleEntry(staffName, company).raw
+      && spHit.coDefRef === getCompanyDefaultPolicyEntry(spHit.effCo)
+    ) {
+      return Object.assign({}, spHit.val, { rule: Object.assign({}, spHit.val.rule) });
+    }
+    const rule = getStaffWorkRule(staffName, company);
+    const effCo = company || rule.company || defaultEntryCompany() || 'WTC';
+    const rawEntry = getStaffRuleEntry(staffName, effCo).raw;
+    const rawArgRef = getStaffRuleEntry(staffName, company).raw;
+    const staffTimeline = normalizePolicyTimelineList(rule.policy_timeline);
+    const matchedStaffWin = matchPolicyTimelineAtDate(staffTimeline, dStr);
+    const coResolved = resolveCompanyDefaultPolicyGroupAtDate(effCo, dStr);
+    const baseCoDefId = getCompanyDefaultPolicyGroupId(effCo);
+    const hasExplicitCustom = !matchedStaffWin && _staffRuleHasExplicitCustomization(rawEntry, baseCoDefId);
+    const hasCustomMath = Boolean(
+      hasExplicitCustom && (
+        rawEntry.custom_math_override === true
+        || (!('custom_math_override' in rawEntry) && _rawStaffRuleHasLegacyMathFields(rawEntry))
+      )
+    );
+    const hasCustomPolicy = Boolean(
+      hasExplicitCustom && (
+        rawEntry.custom_policy_override === true
+        || (!('custom_policy_override' in rawEntry) && _rawStaffRuleHasLegacyPolicyFields(rawEntry, baseCoDefId))
+      )
+    );
+
+    let grpId = coResolved.id;
+    let resolvedGrp = coResolved;
+    let sourceScope = coResolved.source === 'company_timeline' ? 'company_timeline' : 'company_default';
+    let matchedWin = matchedStaffWin || coResolved.timelineWindow || coResolved.window || null;
+
+    let mathMode = normalizeAttMathMode(resolvedGrp.math_mode);
+    let otThreshMin = clampAttThresholdMin(resolvedGrp.ot_threshold_min, 10);
+    let otEarlyThreshMin = clampAttThresholdMin(resolvedGrp.ot_early_threshold_min, 15);
+    let otCountFrom = normalizeOtCountFrom(resolvedGrp.ot_count_from);
+    let effectiveRule;
+
+    if (matchedStaffWin) {
+      grpId = normalizePolicyGroupIdAlias(matchedStaffWin.policy_group_id || rule.policy_group_id || coResolved.id);
+      resolvedGrp = resolvePolicyGroupAtDate(grpId, effCo, dStr);
+      sourceScope = 'staff_timeline';
+      mathMode = normalizeAttMathMode(matchedStaffWin.math_mode || resolvedGrp.math_mode);
+      otThreshMin = clampAttThresholdMin(matchedStaffWin.ot_threshold_min != null ? matchedStaffWin.ot_threshold_min : resolvedGrp.ot_threshold_min, 10);
+      otEarlyThreshMin = clampAttThresholdMin(matchedStaffWin.ot_early_threshold_min != null ? matchedStaffWin.ot_early_threshold_min : resolvedGrp.ot_early_threshold_min, 15);
+      otCountFrom = normalizeOtCountFrom(matchedStaffWin.ot_count_from || resolvedGrp.ot_count_from);
+      effectiveRule = Object.assign({}, rule, {
+        policy_group_id: grpId,
+        late_penalty_mode: matchedStaffWin.late_penalty_mode || resolvedGrp.late_penalty_mode || rule.late_penalty_mode,
+        late_multiplier: matchedStaffWin.late_multiplier != null ? matchedStaffWin.late_multiplier : (resolvedGrp.late_multiplier != null ? resolvedGrp.late_multiplier : rule.late_multiplier),
+        ot_multiplier: matchedStaffWin.ot_multiplier != null ? matchedStaffWin.ot_multiplier : (resolvedGrp.ot_multiplier != null ? resolvedGrp.ot_multiplier : rule.ot_multiplier),
+        ot_mode: matchedStaffWin.ot_mode || resolvedGrp.ot_mode || rule.ot_mode,
+        ot_max_hours: resolvedGrp.ot_max_hours != null ? resolvedGrp.ot_max_hours : rule.ot_max_hours,
+        grace_min: matchedStaffWin.grace_min != null ? matchedStaffWin.grace_min : (resolvedGrp.grace_min != null ? resolvedGrp.grace_min : rule.grace_min),
+        early_leave_grace_min: resolvedGrp.early_leave_grace_min != null ? resolvedGrp.early_leave_grace_min : rule.early_leave_grace_min,
+        no_clock_out_rule: resolvedGrp.no_clock_out_rule || rule.no_clock_out_rule,
+        vacation_days: resolvedGrp.vacation_days != null ? resolvedGrp.vacation_days : rule.vacation_days,
+        sick_days: resolvedGrp.sick_days != null ? resolvedGrp.sick_days : rule.sick_days,
+        working_days: resolvedGrp.working_days != null ? resolvedGrp.working_days : rule.working_days,
+        math_mode: mathMode,
+        ot_threshold_min: otThreshMin,
+        ot_early_threshold_min: otEarlyThreshMin,
+        ot_count_from: otCountFrom
+      });
+    } else if (hasExplicitCustom) {
+      grpId = normalizePolicyGroupIdAlias(rule.policy_group_id || coResolved.id);
+      const grpAtDate = resolvePolicyGroupAtDate(grpId, effCo, dStr);
+      resolvedGrp = grpAtDate;
+      if (grpAtDate.activeVersion) {
+        sourceScope = 'policy_group_version';
+        mathMode = hasCustomMath && rule.math_mode != null ? normalizeAttMathMode(rule.math_mode) : normalizeAttMathMode(grpAtDate.math_mode);
+        otThreshMin = hasCustomMath && rule.ot_threshold_min != null ? clampAttThresholdMin(rule.ot_threshold_min, 10) : clampAttThresholdMin(grpAtDate.ot_threshold_min, 10);
+        otEarlyThreshMin = hasCustomMath && rule.ot_early_threshold_min != null ? clampAttThresholdMin(rule.ot_early_threshold_min, 15) : clampAttThresholdMin(grpAtDate.ot_early_threshold_min, 15);
+        otCountFrom = hasCustomMath && rule.ot_count_from != null ? normalizeOtCountFrom(rule.ot_count_from) : normalizeOtCountFrom(grpAtDate.ot_count_from);
+        effectiveRule = hasCustomPolicy
+          ? Object.assign({}, rule, {
+              policy_group_id: grpId,
+              math_mode: mathMode,
+              ot_threshold_min: otThreshMin,
+              ot_early_threshold_min: otEarlyThreshMin,
+              ot_count_from: otCountFrom
+            })
+          : Object.assign({}, rule, {
+              policy_group_id: grpId,
+              late_penalty_mode: grpAtDate.late_penalty_mode || rule.late_penalty_mode,
+              late_multiplier: grpAtDate.late_multiplier != null ? grpAtDate.late_multiplier : rule.late_multiplier,
+              ot_multiplier: grpAtDate.ot_multiplier != null ? grpAtDate.ot_multiplier : rule.ot_multiplier,
+              ot_mode: grpAtDate.ot_mode || rule.ot_mode,
+              ot_max_hours: grpAtDate.ot_max_hours != null ? grpAtDate.ot_max_hours : rule.ot_max_hours,
+              grace_min: grpAtDate.grace_min != null ? grpAtDate.grace_min : rule.grace_min,
+              early_leave_grace_min: grpAtDate.early_leave_grace_min != null ? grpAtDate.early_leave_grace_min : rule.early_leave_grace_min,
+              no_clock_out_rule: grpAtDate.no_clock_out_rule || rule.no_clock_out_rule,
+              vacation_days: grpAtDate.vacation_days != null ? grpAtDate.vacation_days : rule.vacation_days,
+              sick_days: grpAtDate.sick_days != null ? grpAtDate.sick_days : rule.sick_days,
+              working_days: grpAtDate.working_days != null ? grpAtDate.working_days : rule.working_days,
+              math_mode: mathMode,
+              ot_threshold_min: otThreshMin,
+              ot_early_threshold_min: otEarlyThreshMin,
+              ot_count_from: otCountFrom
+            });
+      } else {
+        sourceScope = 'staff_rule';
+        mathMode = hasCustomMath && rule.math_mode != null ? normalizeAttMathMode(rule.math_mode) : normalizeAttMathMode(grpAtDate.math_mode);
+        otThreshMin = hasCustomMath && rule.ot_threshold_min != null ? clampAttThresholdMin(rule.ot_threshold_min, 10) : clampAttThresholdMin(grpAtDate.ot_threshold_min, 10);
+        otEarlyThreshMin = hasCustomMath && rule.ot_early_threshold_min != null ? clampAttThresholdMin(rule.ot_early_threshold_min, 15) : clampAttThresholdMin(grpAtDate.ot_early_threshold_min, 15);
+        otCountFrom = hasCustomMath && rule.ot_count_from != null ? normalizeOtCountFrom(rule.ot_count_from) : normalizeOtCountFrom(grpAtDate.ot_count_from);
+        effectiveRule = Object.assign({}, rule, {
+          policy_group_id: grpId,
+          math_mode: mathMode,
+          ot_threshold_min: otThreshMin,
+          ot_early_threshold_min: otEarlyThreshMin,
+          ot_count_from: otCountFrom
+        });
+      }
+    } else {
+      const inferredGrpId = normalizePolicyGroupIdAlias(rule.policy_group_id || inferDefaultPolicyGroupId(staffName, effCo, rawEntry) || coResolved.id);
+      const followsCoGroup = Boolean((rawEntry && rawEntry.follows_company_default) || inferredGrpId === baseCoDefId);
+      if (coResolved.window) {
+        sourceScope = 'company_timeline';
+        grpId = followsCoGroup ? coResolved.id : inferredGrpId;
+        resolvedGrp = followsCoGroup ? coResolved : resolvePolicyGroupAtDate(grpId, effCo, dStr);
+        mathMode = coResolved.window.math_mode ? normalizeAttMathMode(coResolved.window.math_mode) : normalizeAttMathMode(resolvedGrp.math_mode);
+        otThreshMin = coResolved.window.ot_threshold_min != null ? clampAttThresholdMin(coResolved.window.ot_threshold_min, 10) : clampAttThresholdMin(resolvedGrp.ot_threshold_min, 10);
+        otEarlyThreshMin = coResolved.window.ot_early_threshold_min != null ? clampAttThresholdMin(coResolved.window.ot_early_threshold_min, 15) : clampAttThresholdMin(resolvedGrp.ot_early_threshold_min, 15);
+        otCountFrom = coResolved.window.ot_count_from ? normalizeOtCountFrom(coResolved.window.ot_count_from) : normalizeOtCountFrom(resolvedGrp.ot_count_from);
+        const grpSwitchedByCoWin = followsCoGroup && grpId !== baseCoDefId;
+        effectiveRule = Object.assign({}, rule, {
+          policy_group_id: grpId,
+          late_penalty_mode: coResolved.window.late_penalty_mode || (grpSwitchedByCoWin ? resolvedGrp.late_penalty_mode : rule.late_penalty_mode),
+          late_multiplier: coResolved.window.late_multiplier != null ? coResolved.window.late_multiplier : (grpSwitchedByCoWin && resolvedGrp.late_multiplier != null ? resolvedGrp.late_multiplier : rule.late_multiplier),
+          ot_multiplier: coResolved.window.ot_multiplier != null ? coResolved.window.ot_multiplier : (grpSwitchedByCoWin && resolvedGrp.ot_multiplier != null ? resolvedGrp.ot_multiplier : rule.ot_multiplier),
+          ot_mode: coResolved.window.ot_mode || (grpSwitchedByCoWin ? resolvedGrp.ot_mode : rule.ot_mode),
+          ot_max_hours: grpSwitchedByCoWin && resolvedGrp.ot_max_hours != null ? resolvedGrp.ot_max_hours : rule.ot_max_hours,
+          grace_min: coResolved.window.grace_min != null ? coResolved.window.grace_min : rule.grace_min,
+          math_mode: mathMode,
+          ot_threshold_min: otThreshMin,
+          ot_early_threshold_min: otEarlyThreshMin,
+          ot_count_from: otCountFrom
+        });
+      } else {
+        grpId = inferredGrpId;
+        resolvedGrp = resolvePolicyGroupAtDate(grpId, effCo, dStr);
+        mathMode = normalizeAttMathMode(resolvedGrp.math_mode);
+        otThreshMin = clampAttThresholdMin(resolvedGrp.ot_threshold_min, 10);
+        otEarlyThreshMin = clampAttThresholdMin(resolvedGrp.ot_early_threshold_min, 15);
+        otCountFrom = normalizeOtCountFrom(resolvedGrp.ot_count_from);
+        if (resolvedGrp.activeVersion) {
+          sourceScope = 'policy_group_version';
+          const av = resolvedGrp.activeVersion;
+          effectiveRule = Object.assign({}, rule, {
+            policy_group_id: grpId,
+            late_penalty_mode: av.late_penalty_mode || rule.late_penalty_mode,
+            late_multiplier: av.late_multiplier != null ? av.late_multiplier : rule.late_multiplier,
+            ot_multiplier: av.ot_multiplier != null ? av.ot_multiplier : rule.ot_multiplier,
+            ot_mode: av.ot_mode || rule.ot_mode,
+            ot_max_hours: av.ot_max_hours != null ? av.ot_max_hours : rule.ot_max_hours,
+            grace_min: av.grace_min != null ? av.grace_min : rule.grace_min,
+            early_leave_grace_min: av.early_leave_grace_min != null ? av.early_leave_grace_min : rule.early_leave_grace_min,
+            no_clock_out_rule: av.no_clock_out_rule || rule.no_clock_out_rule,
+            vacation_days: av.vacation_days != null ? av.vacation_days : rule.vacation_days,
+            sick_days: av.sick_days != null ? av.sick_days : rule.sick_days,
+            working_days: av.working_days != null ? av.working_days : rule.working_days,
+            math_mode: mathMode,
+            ot_threshold_min: otThreshMin,
+            ot_early_threshold_min: otEarlyThreshMin,
+            ot_count_from: otCountFrom
+          });
+        } else {
+          sourceScope = 'company_default';
+          if (coResolved.entry && (!Array.isArray(coResolved.entry.policy_timeline) || coResolved.entry.policy_timeline.length === 0)) {
+            if (coResolved.entry.math_mode) mathMode = normalizeAttMathMode(coResolved.entry.math_mode);
+            if (coResolved.entry.ot_threshold_min != null) otThreshMin = clampAttThresholdMin(coResolved.entry.ot_threshold_min, otThreshMin);
+            if (coResolved.entry.ot_early_threshold_min != null) otEarlyThreshMin = clampAttThresholdMin(coResolved.entry.ot_early_threshold_min, otEarlyThreshMin);
+            if (coResolved.entry.ot_count_from) otCountFrom = normalizeOtCountFrom(coResolved.entry.ot_count_from);
+          }
+          effectiveRule = Object.assign({}, rule, {
+            policy_group_id: grpId,
+            math_mode: mathMode,
+            ot_threshold_min: otThreshMin,
+            ot_early_threshold_min: otEarlyThreshMin,
+            ot_count_from: otCountFrom
+          });
+        }
+      }
+    }
+
+    const outObj = {
+      date: dStr,
+      company: effCo,
+      group: resolvedGrp,
+      groupId: grpId,
+      groupName: resolvedGrp.name || grpId,
+      sourceScope,
+      matchedWindow: matchedWin,
+      math_mode: mathMode,
+      ot_threshold_min: otThreshMin,
+      ot_early_threshold_min: otEarlyThreshMin,
+      ot_count_from: otCountFrom,
+      rule: effectiveRule
+    };
+    if (memo.staffPolAtDate.size > 4096) memo.staffPolAtDate.clear();
+    memo.staffPolAtDate.set(spKey, {
+      val: outObj,
+      effCo,
+      rawRef: rawArgRef,
+      coDefRef: getCompanyDefaultPolicyEntry(effCo)
+    });
+    return Object.assign({}, outObj, { rule: Object.assign({}, outObj.rule) });
+  }
+
+  function backfillAttendancePolicyChange({ company = '', staffNames = null, fromDate = '', toDate = '', dryRun = false, deferSave = false, includeFuture = false, overridePolicy = null } = {}) {
+    const today = todayISO();
+    const startD = /^\d{4}-\d{2}-\d{2}$/.test(String(fromDate || '').slice(0, 10))
+      ? String(fromDate).slice(0, 10)
+      : today;
+    let endD = /^\d{4}-\d{2}-\d{2}$/.test(String(toDate || '').slice(0, 10))
+      ? String(toDate).slice(0, 10)
+      : today;
+    if (!includeFuture && endD > today) endD = today;
+    if (endD < startD) {
+      return { ok: true, dryRun: Boolean(dryRun), updatedRows: 0, skippedClosed: 0, skippedManual: 0, netDeltaUsd: 0, earnedDeltaUsd: 0, lostDeltaUsd: 0, fromDate: startD, toDate: endD, rows: [] };
+    }
+
+    const coNorm = norm(company || '');
+    if (Array.isArray(staffNames) && staffNames.length === 0) {
+      return { ok: true, dryRun: Boolean(dryRun), updatedRows: 0, skippedClosed: 0, skippedManual: 0, netDeltaUsd: 0, earnedDeltaUsd: 0, lostDeltaUsd: 0, fromDate: startD, toDate: endD, rows: [] };
+    }
+    const staffSet = (Array.isArray(staffNames) && staffNames.length)
+      ? new Set(staffNames.map(s => norm(s)).filter(Boolean))
+      : null;
+    const rows = Array.isArray(STATE.customRecords && STATE.customRecords.attendance)
+      ? STATE.customRecords.attendance
+      : [];
+    let updatedRows = 0;
+    let skippedClosed = 0;
+    let skippedManual = 0;
+    let netDeltaUsd = 0;
+    let earnedDeltaUsd = 0;
+    let lostDeltaUsd = 0;
+    const touchedIds = [];
+    const nowIso = new Date().toISOString();
+
+    for (let i = 0; i < rows.length; i++) {
+      const a = rows[i];
+      if (!a || a.voided) continue;
+      const attType = String(a.type || a.status || 'Present').trim();
+      if (/^(config|extra|site\s*(?:present|off)|vacabsence|paid\s*leave|sick)/i.test(attType)) continue;
+      if (coNorm && norm(a.company || '') !== coNorm) continue;
+      if (staffSet && !staffSet.has(norm(a.staff || ''))) continue;
+      const effD = String(a.set_date || a.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(effD) || effD < startD || effD > endD) continue;
+      const inT = fmtAttClockTime(a.in_time || a.check_in || '');
+      const outT = fmtAttClockTime(a.out_time || a.check_out || '');
+      if (!inT && !outT) continue;
+
+      const closeGuard = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
+        ? window.MFG_AI_EDGE.checkPeriodCloseGuard(a.company || company, effD, String(a.rep_date || effD).slice(0, 10))
+        : null;
+      if (closeGuard && closeGuard.blocked) {
+        skippedClosed++;
+        continue;
+      }
+
+      const isDoorTab = a.origin === 'door_tablet';
+      const isKioskCreated = /^Kiosk\b/i.test(String(a.notes || '')) || a.origin === 'wall_kiosk';
+      const isManualEdited = Boolean(a.manual_override) || (
+        isDoorTab
+          ? isHandOwnedTabletRow(a)
+          : (Boolean(a.modified_by) && !isKioskCreated && (!a.tab_sig || attendanceFigureSig(a) !== a.tab_sig))
+      );
+      if (isManualEdited) {
+        skippedManual++;
+        continue;
+      }
+
+      const evalRes = evaluateShiftPunchTiming(a.staff, a.company || company, effD, inT, outT, {
+        outDate: a.out_date || a.date || effD,
+        inSameCalendarDay: (effD === String(a.date || effD).slice(0, 10)),
+        overridePolicy
+      });
+      const prof = getStaffContractProfile(a.staff, a.company || company, effD);
+      const oldImp = computeAttendanceRowDollarImpact(a, prof);
+
+      const isPairedBoth = Boolean(inT && outT);
+      const workedH = Number(evalRes.workedHours || 0);
+      const otH = isPairedBoth ? Number(evalRes.overtimeHours || 0) : 0;
+      const unappOt = isPairedBoth ? Number(evalRes.unapprovedOtHours || 0) : 0;
+      const penLeaveDays = Number(evalRes.penaltyLeaveDays || 0);
+      const ltH = penLeaveDays > 0 ? 0 : Number(evalRes.lateHours || 0);
+      const effType = otH > 0
+        ? 'Overtime'
+        : (penLeaveDays >= 1
+          ? 'Absence'
+          : (penLeaveDays >= 0.5
+            ? 'Half Day'
+            : (ltH > 0 ? 'Lateness' : 'Present')));
+      const effTally = otH > 0 ? otH : (penLeaveDays > 0 ? penLeaveDays : (ltH > 0 ? ltH : workedH));
+
+      const nextFields = {
+        type: effType,
+        status: effType,
+        tally: effTally,
+        shift_id: evalRes.shift.id,
+        shift_label: evalRes.shift.badgeLabel,
+        scheduled_hours: evalRes.scheduledHours,
+        worked_hours: workedH,
+        regular_hours: isPairedBoth ? evalRes.regularHours : (workedH > 0 ? Math.min(evalRes.scheduledHours, workedH) : 0),
+        overtime_hours: otH,
+        unapproved_ot_hours: unappOt,
+        late_hours: ltH,
+        raw_late_hours: Number(evalRes.rawLateHours || 0),
+        raw_late_min: Number(evalRes.rawLateMin || 0),
+        leave_days: penLeaveDays,
+        no_out_rule: evalRes.isSinglePunch ? (evalRes.noOutRule || 'half_day') : '',
+        single_punch_type: evalRes.singlePunchType || '',
+        penalty_summary: evalRes.penaltySummary || '',
+        late_cutoff: evalRes.lateCutoffTime || '',
+        early_out_cutoff: evalRes.earlyOutCutoffTime || '',
+        math_mode: evalRes.mathMode || 'tenth_hour',
+        approved_ot_min: Number(evalRes.approvedOtMin || 0),
+        unapproved_ot_min: Number(evalRes.unapprovedOtMin || 0),
+        billable_late_min: Number(evalRes.billableLateMin || 0),
+        ot_threshold_min: Number(evalRes.otThresholdMin != null ? evalRes.otThresholdMin : 10),
+        policy_ot_mult: Number((evalRes.rule && evalRes.rule.ot_multiplier) || 1.5),
+        policy_late_mult: evalRes.rule && evalRes.rule.late_penalty_mode === 'none' ? 0 : (evalRes.rule && evalRes.rule.late_penalty_mode === 'multiplier' ? (Number(evalRes.rule.late_multiplier) || 1) : 1),
+        late_mult_baked: true
+      };
+
+      const simRow = Object.assign({}, a, nextFields);
+      const newImp = computeAttendanceRowDollarImpact(simRow, prof);
+      const figChanged = (
+        a.type !== effType
+        || Math.abs(Number(a.worked_hours || 0) - workedH) > 0.0005
+        || Math.abs(Number(a.overtime_hours || 0) - otH) > 0.0005
+        || Math.abs(Number(a.late_hours || 0) - ltH) > 0.0005
+        || Math.abs(Number(a.leave_days || 0) - penLeaveDays) > 0.001
+        || String(a.math_mode || '') !== String(nextFields.math_mode || '')
+        || Number(a.approved_ot_min || 0) !== nextFields.approved_ot_min
+        || Number(a.billable_late_min || 0) !== nextFields.billable_late_min
+        || Number(a.ot_threshold_min != null ? a.ot_threshold_min : 10) !== nextFields.ot_threshold_min
+        || Math.abs(newImp.netImpactUsd - oldImp.netImpactUsd) > 0.005
+      );
+      if (!figChanged) continue;
+
+      updatedRows++;
+      touchedIds.push(a.id);
+      earnedDeltaUsd = round2(earnedDeltaUsd + (newImp.earnedUsd - oldImp.earnedUsd));
+      lostDeltaUsd = round2(lostDeltaUsd + (newImp.lostUsd - oldImp.lostUsd));
+      netDeltaUsd = round2(netDeltaUsd + (newImp.netImpactUsd - oldImp.netImpactUsd));
+
+      if (!dryRun) {
+        Object.assign(a, nextFields, { modified_at: nowIso });
+        if (a.origin) a.tab_sig = attendanceFigureSig(a);
+      }
+    }
+
+    if (!dryRun && updatedRows > 0) {
+      applyCustomRecordsToSeed();
+      invalidateAllSeedCaches();
+      if (!deferSave) saveLocalAuthAndRecords();
+    }
+
+    return {
+      ok: true,
+      dryRun: Boolean(dryRun),
+      updatedRows,
+      skippedClosed,
+      skippedManual,
+      netDeltaUsd,
+      earnedDeltaUsd,
+      lostDeltaUsd,
+      fromDate: startD,
+      toDate: endD,
+      rows: touchedIds
+    };
+  }
+
+  function previewPolicyChangeImpact(spec = {}) {
+    const today = todayISO();
+    const fromD = /^\d{4}-\d{2}-\d{2}$/.test(String(spec.fromDate || '').slice(0, 10))
+      ? String(spec.fromDate).slice(0, 10)
+      : today;
+    const toD = /^\d{4}-\d{2}-\d{2}$/.test(String(spec.toDate || '').slice(0, 10))
+      ? String(spec.toDate).slice(0, 10)
+      : today;
+    return backfillAttendancePolicyChange({
+      company: spec.company || '',
+      staffNames: spec.staffNames || null,
+      fromDate: fromD,
+      toDate: toD,
+      dryRun: true,
+      deferSave: true,
+      includeFuture: Boolean(spec.includeFuture),
+      overridePolicy: spec.overridePolicy || null
+    });
   }
 
   function parseClockMinutes(hhmm) {
@@ -126616,13 +127920,42 @@
     _TIME24_WS_REV++;
     if (!hasServerApi() || isDemoScopeActive()) return;
     try {
-      const payload = Object.assign({}, bodyObj || {}, { work_schedules: ensureWorkSchedulesState() });
-      await edgeApiFetch('./api/work_schedules', {
+      const u = activeUser();
+      const fullWs = ensureWorkSchedulesState();
+      let wsPayload = fullWs;
+      if (!isOwner(u)) {
+        const allowedSet = new Set(allowedCompanyNames(u).map(n => norm(n)).filter(Boolean));
+        const scopedDefaults = {};
+        Object.entries(fullWs.companyPolicyDefaults || {}).forEach(([ck, cv]) => {
+          if (allowedSet.has(norm(ck))) scopedDefaults[ck] = cv;
+        });
+        const scopedRules = {};
+        Object.entries(fullWs.staffRules || {}).forEach(([rk, rv]) => {
+          if (rv && rv.company && allowedSet.has(norm(rv.company))) scopedRules[rk] = rv;
+        });
+        wsPayload = {
+          shiftTypes: (fullWs.shiftTypes || []).filter(s =>
+            s && s.company && !/^all(\s+(bus|companies))?$/i.test(String(s.company).trim()) && allowedSet.has(norm(s.company))
+          ),
+          policyGroups: [],
+          companyPolicyDefaults: scopedDefaults,
+          staffRules: scopedRules
+        };
+      }
+      const payload = Object.assign({}, bodyObj || {}, { work_schedules: wsPayload });
+      const res = await edgeApiFetch('./api/work_schedules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-    } catch (_) {}
+      if (!res || !res.ok) {
+        if (typeof toast === 'function') toast('Could not save schedule policy to server — refreshing latest state.', 'warn');
+        if (typeof syncWithCloud === 'function') syncWithCloud(true);
+      }
+    } catch (_) {
+      if (typeof toast === 'function') toast('Could not save schedule policy to server — refreshing latest state.', 'warn');
+      if (typeof syncWithCloud === 'function') syncWithCloud(true);
+    }
   }
 
   function saveShiftType(spec = {}) {
@@ -126913,6 +128246,12 @@
   function getStaffWorkRule(staffName, company) {
     const entry = getStaffRuleEntry(staffName, company);
     const raw = entry.raw;
+    const memo = _getWsPolicyMemo();
+    const srKey = `${norm(staffName)}|${company ? norm(company) : ('@' + (STATE.company || ''))}`;
+    const srHit = memo.staffRule.get(srKey);
+    if (srHit && srHit.rawRef === raw && srHit.coDefRef === getCompanyDefaultPolicyEntry(srHit.effCo)) {
+      return Object.assign({}, srHit.val);
+    }
     const prof = getStaffContractProfile(staffName, company || entry.company);
     const effCo = company || entry.company || (raw && raw.company) || prof.company || defaultEntryCompany();
     const buDef = getBuDefaultShift(effCo);
@@ -126921,33 +128260,64 @@
       ? (raw.shift_id === 'custom' ? 'custom' : normalizeShiftCodeAlias(raw.shift_id))
       : companyDefaultShiftIdFor(staffName, effCo);
     const resolvedShiftRow = resolveShiftAtDate(defaultShiftId, effCo, todayISO()) || buDef;
+    const coAtToday = resolveCompanyDefaultPolicyGroupAtDate(effCo, todayISO());
     const policyGroups = getPolicyGroups(effCo);
-    const defaultPkgId = inferDefaultPolicyGroupId(staffName, effCo, raw);
-    const matchedPkg = policyGroups.find(g => g.id === defaultPkgId) || policyGroups[0] || DEFAULT_POLICY_GROUPS[0];
+    const defaultPkgId = inferDefaultPolicyGroupId(staffName, effCo, raw, (company || entry.company) === effCo ? prof : null);
+    const matchedPkg = policyGroups.find(g => g.id === defaultPkgId) || coAtToday || policyGroups[0] || DEFAULT_POLICY_GROUPS[0];
+    const resolvedPkgToday = resolvePolicyGroupAtDate(matchedPkg.id, effCo, todayISO()) || matchedPkg;
+    const hasCoTl = Boolean(coAtToday.entry && Array.isArray(coAtToday.entry.policy_timeline) && coAtToday.entry.policy_timeline.length > 0);
+    const coDefMathMode = (coAtToday.window && coAtToday.window.math_mode)
+      || (!hasCoTl && coAtToday.entry && coAtToday.entry.math_mode)
+      || resolvedPkgToday.math_mode
+      || 'tenth_hour';
+    const coDefOtThresh = (coAtToday.window && coAtToday.window.ot_threshold_min != null)
+      ? coAtToday.window.ot_threshold_min
+      : ((!hasCoTl && coAtToday.entry && coAtToday.entry.ot_threshold_min != null) ? coAtToday.entry.ot_threshold_min : resolvedPkgToday.ot_threshold_min);
+    const coDefOtEarlyThresh = (coAtToday.window && coAtToday.window.ot_early_threshold_min != null)
+      ? coAtToday.window.ot_early_threshold_min
+      : ((!hasCoTl && coAtToday.entry && coAtToday.entry.ot_early_threshold_min != null) ? coAtToday.entry.ot_early_threshold_min : resolvedPkgToday.ot_early_threshold_min);
+    const coDefOtCountFrom = (coAtToday.window && coAtToday.window.ot_count_from)
+      || (!hasCoTl && coAtToday.entry && coAtToday.entry.ot_count_from)
+      || resolvedPkgToday.ot_count_from
+      || 'shift_end';
     const defGrace = resolvedShiftRow && resolvedShiftRow.grace_min != null
       ? Number(resolvedShiftRow.grace_min)
-      : (matchedPkg ? Number(matchedPkg.grace_min || 10) : 10);
+      : (resolvedPkgToday ? Number(resolvedPkgToday.grace_min || 10) : 10);
     const defEarlyGrace = resolvedShiftRow && resolvedShiftRow.early_leave_grace_min != null
       ? Number(resolvedShiftRow.early_leave_grace_min)
       : defGrace;
     const defVacDays = (prof.hasContract && prof.vacationDays != null && Number(prof.vacationDays) > 0)
       ? Number(prof.vacationDays)
-      : Number(matchedPkg.vacation_days != null ? matchedPkg.vacation_days : 15);
+      : Number(resolvedPkgToday.vacation_days != null ? resolvedPkgToday.vacation_days : 15);
     const defWorkDays = (prof.hasContract && Number(prof.workingDays) > 0)
       ? Number(prof.workingDays)
-      : Number(matchedPkg.working_days || 30);
+      : Number(resolvedPkgToday.working_days || 30);
     const defOtMult = (prof.hasContract && Number(prof.otMultiplier) > 0)
       ? Number(prof.otMultiplier)
-      : Number(matchedPkg.ot_multiplier || 1.5);
+      : Number(resolvedPkgToday.ot_multiplier || 1.5);
     const defLateMult = (prof.hasContract && Number(prof.lateMultiplier) > 1)
       ? Number(prof.lateMultiplier)
-      : Number(matchedPkg.late_multiplier || 1.5);
+      : Number(resolvedPkgToday.late_multiplier || 1.5);
+
+    const coDefaultGroupId = getCompanyDefaultPolicyGroupId(effCo);
+    const effectiveFollowsCoDef = Boolean(
+      !raw
+      || raw.reset_default
+      || (raw.follows_company_default
+        ? !(raw.custom_policy_override || raw.custom_math_override || (Array.isArray(raw.policy_timeline) && raw.policy_timeline.length > 0))
+        : !_staffRuleHasExplicitCustomization(raw, coDefaultGroupId, true))
+    );
 
     const base = Object.assign({
       staff: staffName || '',
       company: effCo,
       shift_id: defaultShiftId,
       policy_group_id: matchedPkg.id,
+      follows_company_default: effectiveFollowsCoDef,
+      custom_policy_override: Boolean(raw && !raw.reset_default && raw.custom_policy_override),
+      custom_math_override: Boolean(raw && !raw.reset_default && raw.custom_math_override),
+      policy_timeline: [],
+      policy_timeline_updated_at: '',
       custom_name: 'Custom Shift',
       custom_start: (resolvedShiftRow && resolvedShiftRow.start_time) || '08:00',
       custom_end: (resolvedShiftRow && resolvedShiftRow.end_time) || '16:00',
@@ -126964,26 +128334,39 @@
         : ((raw && !raw.reset_default && raw.grace_min != null) ? raw.grace_min : defEarlyGrace),
       late_when: 'both',
       late_count_from: 'shift_start',
-      late_penalty_mode: matchedPkg.late_penalty_mode || 'exact_hours',
+      late_penalty_mode: resolvedPkgToday.late_penalty_mode || 'exact_hours',
       late_multiplier: defLateMult,
       late_half_day_after_min: 60,
-      no_clock_out_rule: matchedPkg.no_clock_out_rule || 'half_day',
+      no_clock_out_rule: resolvedPkgToday.no_clock_out_rule || 'half_day',
+      math_mode: coDefMathMode,
+      ot_threshold_min: coDefOtThresh != null ? coDefOtThresh : 10,
+      ot_early_threshold_min: coDefOtEarlyThresh != null ? coDefOtEarlyThresh : 15,
+      ot_count_from: coDefOtCountFrom,
       shift_overrides: [],
-      ot_mode: matchedPkg.ot_mode || 'none',
+      ot_mode: resolvedPkgToday.ot_mode || 'none',
       ot_multiplier: defOtMult,
-      ot_max_hours: Number(matchedPkg.ot_max_hours != null ? matchedPkg.ot_max_hours : 2),
+      ot_max_hours: Number(resolvedPkgToday.ot_max_hours != null ? resolvedPkgToday.ot_max_hours : 2),
       ot_window_start: '',
       ot_window_end: '',
       ot_passes: [],
       vacation_days: defVacDays,
-      sick_days: Number(matchedPkg.sick_days != null ? matchedPkg.sick_days : 7),
+      sick_days: Number(resolvedPkgToday.sick_days != null ? resolvedPkgToday.sick_days : 7),
       working_days: defWorkDays,
-      perks: Array.isArray(matchedPkg.perks) ? matchedPkg.perks.slice() : ['Site Transport', 'Paid Leave'],
+      perks: Array.isArray(resolvedPkgToday.perks) ? resolvedPkgToday.perks.slice() : ['Site Transport', 'Paid Leave'],
       updated_at: ''
     }, raw && !raw.reset_default ? raw : {});
     // A rule is read for the company asked about (an older rule may name the company it was last saved under).
     if (company || entry.company) base.company = company || entry.company;
     base.policy_group_id = String(base.policy_group_id || matchedPkg.id);
+    base.follows_company_default = effectiveFollowsCoDef;
+    base.custom_policy_override = Boolean(raw && !raw.reset_default && raw.custom_policy_override);
+    base.custom_math_override = Boolean(raw && !raw.reset_default && raw.custom_math_override);
+    base.policy_timeline = normalizePolicyTimelineList(base.policy_timeline);
+    base.policy_timeline_updated_at = String(base.policy_timeline_updated_at || '');
+    base.math_mode = normalizeAttMathMode(base.math_mode || coDefMathMode);
+    base.ot_threshold_min = clampAttThresholdMin(base.ot_threshold_min, coDefOtThresh != null ? coDefOtThresh : 10);
+    base.ot_early_threshold_min = clampAttThresholdMin(base.ot_early_threshold_min, coDefOtEarlyThresh != null ? coDefOtEarlyThresh : 15);
+    base.ot_count_from = normalizeOtCountFrom(base.ot_count_from || coDefOtCountFrom);
     base.grace_min = Math.max(0, Math.min(120, Number(base.grace_min != null ? base.grace_min : defGrace)));
     base.early_leave_grace_min = Math.max(0, Math.min(120, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : base.grace_min)));
     base.late_when = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(base.late_when) ? base.late_when : 'both';
@@ -127017,13 +128400,16 @@
     base.sat_diff_enabled = Boolean(base.day_timings['6'] && (base.day_timings['6'].start_time !== base.custom_start || base.day_timings['6'].end_time !== base.custom_end));
     base.shift_overrides = Array.isArray(base.shift_overrides) ? base.shift_overrides.filter(o => o && o.start_date) : [];
     base.ot_passes = Array.isArray(base.ot_passes) ? base.ot_passes.filter(p => p && p.start_date) : [];
-    return base;
+    if (memo.staffRule.size > 4096) memo.staffRule.clear();
+    memo.staffRule.set(srKey, { val: base, rawRef: raw, effCo, coDefRef: getCompanyDefaultPolicyEntry(effCo) });
+    return Object.assign({}, base);
   }
 
-  function describeStaffPolicyGroup(staffName, company) {
-    const rule = getStaffWorkRule(staffName, company);
+  function describeStaffPolicyGroup(staffName, company, refDate = todayISO()) {
+    const resolved = resolveStaffPolicyForDate(staffName, company, refDate);
+    const rule = resolved.rule || getStaffWorkRule(staffName, company);
     const groups = getPolicyGroups(company || rule.company);
-    const matched = groups.find(g => g.id === rule.policy_group_id) || groups[0] || DEFAULT_POLICY_GROUPS[0];
+    const matched = resolved.group || groups.find(g => g.id === rule.policy_group_id) || groups[0] || DEFAULT_POLICY_GROUPS[0];
     const lateMultLbl = rule.late_penalty_mode === 'multiplier'
       ? `Late ${fmtNum(rule.late_multiplier || 1.5, (rule.late_multiplier || 1.5) % 1 ? 1 : 0)}x`
       : (rule.late_penalty_mode === 'none' ? 'Late $0' : 'Late 1x');
@@ -127035,6 +128421,12 @@
       : `OT ${fmtNum(rule.ot_multiplier || 1.5, (rule.ot_multiplier || 1.5) % 1 ? 1 : 0)}x (${otModeShort})`;
     const vacDays = Number(rule.vacation_days != null ? rule.vacation_days : 15);
     const perksList = Array.isArray(rule.perks) ? rule.perks : [];
+    const mathMode = normalizeAttMathMode(resolved.math_mode || rule.math_mode);
+    const otThresholdMin = clampAttThresholdMin(resolved.ot_threshold_min != null ? resolved.ot_threshold_min : rule.ot_threshold_min, 10);
+    const otEarlyThresholdMin = clampAttThresholdMin(resolved.ot_early_threshold_min != null ? resolved.ot_early_threshold_min : rule.ot_early_threshold_min, 15);
+    const otCountFrom = normalizeOtCountFrom(resolved.ot_count_from || rule.ot_count_from);
+    const mathModeLabel = formatAttMathModeLabel(mathMode);
+    const mathModeShort = formatAttMathModeShort(mathMode);
     return {
       id: matched ? matched.id : 'custom',
       name: matched ? matched.name : 'Custom Policy & Perks',
@@ -127042,11 +128434,19 @@
       tone: matched ? matched.tone : 'emerald',
       lateMultLbl,
       otMultLbl,
+      mathMode,
+      mathModeLabel,
+      mathModeShort,
+      otThresholdMin,
+      otEarlyThresholdMin,
+      otCountFrom,
+      sourceScope: resolved.sourceScope,
+      timelineCount: Array.isArray(rule.policy_timeline) ? rule.policy_timeline.length : 0,
       vacationDays: vacDays,
       sickDays: Number(rule.sick_days != null ? rule.sick_days : 7),
       workingDays: Number(rule.working_days || 30),
       perks: perksList,
-      summaryLine: `${lateMultLbl} · ${otMultLbl} · ${vacDays}d Vac`,
+      summaryLine: `${mathModeShort} · OT >=${otThresholdMin}m · ${lateMultLbl} · ${otMultLbl} · ${vacDays}d Vac`,
       perksLine: perksList.length ? perksList.slice(0, 3).join(' · ') : `${vacDays}d Annual Leave`
     };
   }
@@ -127058,11 +128458,32 @@
     // Saved under the person's company (staffRuleKey); the bare name only when the company cannot be told.
     const entry = getStaffRuleEntry(staffName, patch.company);
     const k = entry.key;
+    const rawExisting = entry.raw && !entry.raw.reset_default ? entry.raw : null;
     const cur = getStaffWorkRule(staffName, entry.company || patch.company);
     const nowIso = new Date().toISOString();
+    const today = todayISO();
+
+    const rawEffFrom = patch.effective_from != null ? patch.effective_from : opts.effective_from;
+    const rawEffTo = patch.effective_to != null ? patch.effective_to : opts.effective_to;
+    const effFrom = rawEffFrom && /^\d{4}-\d{2}-\d{2}$/.test(String(rawEffFrom).slice(0, 10))
+      ? String(rawEffFrom).slice(0, 10)
+      : '';
+    const effTo = rawEffTo && /^\d{4}-\d{2}-\d{2}$/.test(String(rawEffTo).slice(0, 10))
+      ? String(rawEffTo).slice(0, 10)
+      : '';
+    if (effTo && effFrom && effTo < effFrom) {
+      return { ok: false, error: 'Effective End Date must be on or after Start Date' };
+    }
+
     let effectivePatch = Object.assign({}, patch);
+    delete effectivePatch.effective_from;
+    delete effectivePatch.effective_to;
+    delete effectivePatch.timeline_note;
+    delete effectivePatch.timeline_id;
+
     if (patch.apply_policy_group_id) {
-      const grp = getPolicyGroups().find(g => g.id === patch.apply_policy_group_id);
+      const grp = resolvePolicyGroupAtDate(patch.apply_policy_group_id, entry.company || patch.company || cur.company, effFrom || today)
+        || getPolicyGroups(entry.company || patch.company || cur.company).find(g => g.id === patch.apply_policy_group_id);
       if (grp) {
         effectivePatch = Object.assign({
           policy_group_id: grp.id,
@@ -127077,19 +128498,163 @@
           grace_min: grp.grace_min,
           early_leave_grace_min: grp.early_leave_grace_min,
           no_clock_out_rule: grp.no_clock_out_rule,
+          math_mode: grp.math_mode,
+          ot_threshold_min: grp.ot_threshold_min,
+          ot_early_threshold_min: grp.ot_early_threshold_min,
+          ot_count_from: grp.ot_count_from,
           perks: grp.perks.slice()
         }, effectivePatch);
         delete effectivePatch.apply_policy_group_id;
       }
     }
-    const next = Object.assign({}, cur, effectivePatch, {
+
+    let nextTimeline = Array.isArray(effectivePatch.policy_timeline)
+      ? normalizePolicyTimelineList(effectivePatch.policy_timeline)
+      : normalizePolicyTimelineList(cur.policy_timeline);
+    let timelineTouched = Array.isArray(effectivePatch.policy_timeline);
+
+    if (effFrom) {
+      if (!nextTimeline.length && !Array.isArray(effectivePatch.policy_timeline) && effFrom > '2000-01-01') {
+        const priorDate = shiftIsoDateByDays(effFrom, -1);
+        const priorPol = resolveStaffPolicyForDate(staffName, entry.company || patch.company || cur.company, priorDate);
+        const priorRule = (priorPol && priorPol.rule) || cur;
+        nextTimeline = upsertPolicyTimelineWindow(nextTimeline, {
+          id: 'stf_base',
+          start_date: '2000-01-01',
+          end_date: priorDate,
+          policy_group_id: (priorPol && priorPol.groupId) || cur.policy_group_id,
+          math_mode: priorPol ? priorPol.math_mode : cur.math_mode,
+          ot_threshold_min: priorPol && priorPol.ot_threshold_min != null ? priorPol.ot_threshold_min : cur.ot_threshold_min,
+          ot_early_threshold_min: priorPol && priorPol.ot_early_threshold_min != null ? priorPol.ot_early_threshold_min : cur.ot_early_threshold_min,
+          ot_count_from: priorPol ? priorPol.ot_count_from : cur.ot_count_from,
+          ot_multiplier: priorRule.ot_multiplier,
+          ot_mode: priorRule.ot_mode,
+          late_penalty_mode: priorRule.late_penalty_mode,
+          late_multiplier: priorRule.late_multiplier,
+          grace_min: priorRule.grace_min,
+          note: 'Prior Baseline'
+        });
+      }
+      nextTimeline = upsertPolicyTimelineWindow(nextTimeline, {
+        id: patch.timeline_id || opts.timeline_id || undefined,
+        start_date: effFrom,
+        end_date: effTo,
+        policy_group_id: normalizePolicyGroupIdAlias(effectivePatch.policy_group_id || cur.policy_group_id),
+        math_mode: effectivePatch.math_mode != null ? normalizeAttMathMode(effectivePatch.math_mode) : cur.math_mode,
+        ot_threshold_min: effectivePatch.ot_threshold_min != null ? clampAttThresholdMin(effectivePatch.ot_threshold_min, cur.ot_threshold_min) : cur.ot_threshold_min,
+        ot_early_threshold_min: effectivePatch.ot_early_threshold_min != null ? clampAttThresholdMin(effectivePatch.ot_early_threshold_min, cur.ot_early_threshold_min) : cur.ot_early_threshold_min,
+        ot_count_from: effectivePatch.ot_count_from != null ? normalizeOtCountFrom(effectivePatch.ot_count_from) : cur.ot_count_from,
+        ot_multiplier: effectivePatch.ot_multiplier != null ? Number(effectivePatch.ot_multiplier) : cur.ot_multiplier,
+        ot_mode: effectivePatch.ot_mode || cur.ot_mode,
+        late_penalty_mode: effectivePatch.late_penalty_mode || cur.late_penalty_mode,
+        late_multiplier: effectivePatch.late_multiplier != null ? Number(effectivePatch.late_multiplier) : cur.late_multiplier,
+        grace_min: effectivePatch.grace_min != null ? Number(effectivePatch.grace_min) : cur.grace_min,
+        note: String(patch.timeline_note || opts.timeline_note || '')
+      });
+      timelineTouched = true;
+    }
+
+    const isFutureEffective = Boolean(effFrom && effFrom > today);
+    const patchHasMathFields = !isFutureEffective && (
+      patch.math_mode != null
+      || patch.ot_threshold_min != null
+      || patch.ot_early_threshold_min != null
+      || patch.ot_count_from != null
+    );
+    const patchHasPolicyFields = !isFutureEffective && (
+      patch.apply_policy_group_id != null
+      || patch.policy_group_id != null
+      || patch.late_penalty_mode != null
+      || patch.late_multiplier != null
+      || patch.ot_mode != null
+      || patch.ot_multiplier != null
+      || patch.ot_max_hours != null
+      || patch.vacation_days != null
+      || patch.sick_days != null
+      || patch.working_days != null
+      || patch.grace_min != null
+      || patch.early_leave_grace_min != null
+      || patch.no_clock_out_rule != null
+      || patchHasMathFields
+    );
+
+    if (!effFrom && !Array.isArray(effectivePatch.policy_timeline) && nextTimeline.length > 0 && patchHasPolicyFields
+      && !opts.fromCompanyDefault && !opts.fromPolicyGroup && effectivePatch.follows_company_default !== true) {
+      const actWin = matchPolicyTimelineAtDate(nextTimeline, today);
+      if (actWin) {
+        const updatedActWin = Object.assign({}, actWin, {
+          policy_group_id: normalizePolicyGroupIdAlias(effectivePatch.policy_group_id || actWin.policy_group_id || cur.policy_group_id),
+          math_mode: effectivePatch.math_mode != null ? normalizeAttMathMode(effectivePatch.math_mode) : normalizeAttMathMode(actWin.math_mode || cur.math_mode),
+          ot_threshold_min: effectivePatch.ot_threshold_min != null ? clampAttThresholdMin(effectivePatch.ot_threshold_min, cur.ot_threshold_min) : clampAttThresholdMin(actWin.ot_threshold_min != null ? actWin.ot_threshold_min : cur.ot_threshold_min, 10),
+          ot_early_threshold_min: effectivePatch.ot_early_threshold_min != null ? clampAttThresholdMin(effectivePatch.ot_early_threshold_min, cur.ot_early_threshold_min) : clampAttThresholdMin(actWin.ot_early_threshold_min != null ? actWin.ot_early_threshold_min : cur.ot_early_threshold_min, 15),
+          ot_count_from: effectivePatch.ot_count_from != null ? normalizeOtCountFrom(effectivePatch.ot_count_from) : normalizeOtCountFrom(actWin.ot_count_from || cur.ot_count_from),
+          ot_multiplier: effectivePatch.ot_multiplier != null ? Number(effectivePatch.ot_multiplier) : (actWin.ot_multiplier != null ? actWin.ot_multiplier : cur.ot_multiplier),
+          ot_mode: effectivePatch.ot_mode || actWin.ot_mode || cur.ot_mode,
+          late_penalty_mode: effectivePatch.late_penalty_mode || actWin.late_penalty_mode || cur.late_penalty_mode,
+          late_multiplier: effectivePatch.late_multiplier != null ? Number(effectivePatch.late_multiplier) : (actWin.late_multiplier != null ? actWin.late_multiplier : cur.late_multiplier),
+          grace_min: effectivePatch.grace_min != null ? Number(effectivePatch.grace_min) : (actWin.grace_min != null ? actWin.grace_min : cur.grace_min)
+        });
+        nextTimeline = normalizePolicyTimelineList(
+          nextTimeline.map(w => (w && w.id === actWin.id ? updatedActWin : w))
+        );
+        timelineTouched = true;
+      }
+    }
+
+    const applyFields = isFutureEffective
+      ? {}
+      : effectivePatch;
+
+    const next = Object.assign({}, cur, applyFields, {
       staff: cur.staff || staffName,
       reset_default: false,
+      policy_timeline: nextTimeline,
+      policy_timeline_updated_at: timelineTouched ? nowIso : (cur.policy_timeline_updated_at || ''),
       updated_at: nowIso
     });
     if (entry.company) next.company = entry.company;
+
+    if (opts.fromCompanyDefault || effectivePatch.follows_company_default === true) {
+      next.follows_company_default = true;
+      next.custom_policy_override = false;
+      next.custom_math_override = false;
+    } else if (opts.fromPolicyGroup) {
+      next.follows_company_default = rawExisting ? Boolean(rawExisting.follows_company_default) : false;
+      next.custom_policy_override = rawExisting ? Boolean(rawExisting.custom_policy_override) : false;
+      next.custom_math_override = rawExisting ? Boolean(rawExisting.custom_math_override) : false;
+    } else if (patchHasPolicyFields) {
+      next.follows_company_default = false;
+      next.custom_policy_override = true;
+      if (effectivePatch.custom_math_override === false) next.custom_math_override = false;
+      else if (effectivePatch.custom_math_override === true || patchHasMathFields) next.custom_math_override = true;
+      else next.custom_math_override = rawExisting ? Boolean(rawExisting.custom_math_override) : false;
+    } else if (!rawExisting) {
+      const customMathNow = !isFutureEffective && effectivePatch.custom_math_override === true;
+      next.custom_policy_override = false;
+      next.custom_math_override = customMathNow;
+      next.follows_company_default = !customMathNow && !(nextTimeline.length > 0);
+    } else {
+      const nextCustomPol = Boolean(rawExisting.custom_policy_override);
+      const nextCustomMath = isFutureEffective
+        ? Boolean(rawExisting.custom_math_override)
+        : (effectivePatch.custom_math_override === false
+            ? false
+            : (effectivePatch.custom_math_override === true || Boolean(rawExisting.custom_math_override)));
+      next.custom_policy_override = nextCustomPol;
+      next.custom_math_override = nextCustomMath;
+      next.follows_company_default = (nextCustomPol || nextCustomMath || nextTimeline.length > 0)
+        ? false
+        : ('follows_company_default' in rawExisting
+            ? Boolean(rawExisting.follows_company_default)
+            : !_staffRuleHasExplicitCustomization(rawExisting, getCompanyDefaultPolicyGroupId(entry.company || patch.company || cur.company)));
+    }
+
+    next.math_mode = normalizeAttMathMode(next.math_mode);
+    next.ot_threshold_min = clampAttThresholdMin(next.ot_threshold_min, 10);
+    next.ot_early_threshold_min = clampAttThresholdMin(next.ot_early_threshold_min, 15);
+    next.ot_count_from = normalizeOtCountFrom(next.ot_count_from);
     next.grace_min = Math.max(0, Math.min(120, Number(next.grace_min != null ? next.grace_min : 10)));
-    if (effectivePatch.grace_min != null && effectivePatch.early_leave_grace_min == null) {
+    if (applyFields.grace_min != null && applyFields.early_leave_grace_min == null) {
       next.early_leave_grace_min = next.grace_min;
     } else {
       next.early_leave_grace_min = Math.max(0, Math.min(120, Number(next.early_leave_grace_min != null ? next.early_leave_grace_min : next.grace_min)));
@@ -127128,7 +128693,17 @@
     next.shift_overrides = Array.isArray(next.shift_overrides) ? next.shift_overrides.filter(o => o && o.start_date) : [];
     next.ot_passes = Array.isArray(next.ot_passes) ? next.ot_passes.filter(p => p && p.start_date) : [];
     ws.staffRules[k] = next;
-    syncStaffContractPolicyFields(next.staff || staffName, next.company, next);
+    syncStaffContractPolicyFields(next.staff || staffName, next.company, next, { effectiveFrom: effFrom });
+    let attBackfill = null;
+    if (opts.backfillAtt && !opts.skipRecalc && (!effFrom || effFrom <= today || opts.includeFutureBackfill)) {
+      attBackfill = backfillAttendancePolicyChange({
+        company: next.company,
+        staffNames: [next.staff || staffName],
+        fromDate: effFrom || today,
+        toDate: effTo,
+        deferSave: true
+      });
+    }
     if (!opts.skipRecalc) {
       recalcStaffTodayPunchAndAttendance(next.staff || staffName);
     }
@@ -127137,11 +128712,12 @@
       postWorkScheduleMutation({ op: 'upsert_staff_rule', key: k, item: next });
       syncWithCloud(true);
     }
-    return { ok: true, rule: next, key: k };
+    return { ok: true, rule: next, key: k, attBackfill };
   }
 
   function resetStaffWorkRule(staffName, company) {
     if (!norm(staffName)) return { ok: false };
+    _TIME24_WS_REV++;
     const ws = ensureWorkSchedulesState();
     const nowIso = new Date().toISOString();
     const staffEntry = company ? null : (getKioskStaffDirectory().find(s => norm(s.name) === norm(staffName)) || null);
@@ -127504,9 +129080,17 @@
 
   function describeStaffOvertimeRule(staffName, company, refDate = todayISO()) {
     const dStr = String(refDate || todayISO()).slice(0, 10);
-    const rule = getStaffWorkRule(staffName, company);
+    const resolvedPol = resolveStaffPolicyForDate(staffName, company, dStr);
+    const rule = resolvedPol.rule || getStaffWorkRule(staffName, company);
     const otMult = Number(rule.ot_multiplier || 1.5);
     const otMultTag = `${fmtNum(otMult, otMult % 1 ? 1 : 0)}x`;
+    const mathMode = normalizeAttMathMode(resolvedPol.math_mode || rule.math_mode);
+    const mathModeLabel = formatAttMathModeLabel(mathMode);
+    const mathModeShort = formatAttMathModeShort(mathMode);
+    const otThresholdMin = clampAttThresholdMin(resolvedPol.ot_threshold_min != null ? resolvedPol.ot_threshold_min : rule.ot_threshold_min, 10);
+    const otEarlyThresholdMin = clampAttThresholdMin(resolvedPol.ot_early_threshold_min != null ? resolvedPol.ot_early_threshold_min : rule.ot_early_threshold_min, 15);
+    const otCountFrom = normalizeOtCountFrom(resolvedPol.ot_count_from || rule.ot_count_from);
+    const threshTag = otThresholdMin > 0 ? ` · >=${otThresholdMin}m` : ' · 1st Min';
     const activePass = (rule.ot_passes || []).find(p => p && p.start_date <= dStr && dStr <= (p.end_date || p.start_date)) || null;
     if (activePass && (rule.ot_mode === 'date_range' || rule.ot_mode === 'none')) {
       const sameDay = activePass.start_date === (activePass.end_date || activePass.start_date);
@@ -127517,8 +129101,14 @@
       return {
         mode: 'date_range',
         otMultiplier: otMult,
-        badgeText: `OT ${otMultTag}: ${dateLbl}${capLbl}`,
-        detailText: `Approved for ${dateLbl}${capLbl} at ${otMultTag}`,
+        mathMode,
+        mathModeLabel,
+        mathModeShort,
+        otThresholdMin,
+        otEarlyThresholdMin,
+        otCountFrom,
+        badgeText: `OT ${otMultTag}: ${dateLbl}${capLbl}${threshTag}`,
+        detailText: `Approved for ${dateLbl}${capLbl} at ${otMultTag} (${otThresholdMin}m start threshold)`,
         tone: 'emerald',
         activeToday: true,
         pass: activePass
@@ -127528,8 +129118,14 @@
       return {
         mode: 'always',
         otMultiplier: otMult,
-        badgeText: `OT ${otMultTag}: Whenever`,
-        detailText: `Open overtime authorized anytime beyond shift at ${otMultTag}`,
+        mathMode,
+        mathModeLabel,
+        mathModeShort,
+        otThresholdMin,
+        otEarlyThresholdMin,
+        otCountFrom,
+        badgeText: `OT ${otMultTag}: Whenever${threshTag}`,
+        detailText: `Open overtime authorized anytime beyond shift (${otThresholdMin}m threshold) at ${otMultTag}`,
         tone: 'emerald',
         activeToday: true
       };
@@ -127542,8 +129138,14 @@
       return {
         mode: 'max_hours',
         otMultiplier: otMult,
-        badgeText: `OT ${otMultTag}: ${capPart}${winPart}`,
-        detailText: `${cap > 0 ? `Up to ${fmtNum(cap, 1)}h/day` : 'Allowed'}${hasWin ? ` between ${rule.ot_window_start} and ${rule.ot_window_end}` : ' beyond shift'} at ${otMultTag}`,
+        mathMode,
+        mathModeLabel,
+        mathModeShort,
+        otThresholdMin,
+        otEarlyThresholdMin,
+        otCountFrom,
+        badgeText: `OT ${otMultTag}: ${capPart}${winPart}${threshTag}`,
+        detailText: `${cap > 0 ? `Up to ${fmtNum(cap, 1)}h/day` : 'Allowed'}${hasWin ? ` between ${rule.ot_window_start} and ${rule.ot_window_end}` : ' beyond shift'} (${otThresholdMin}m threshold) at ${otMultTag}`,
         tone: 'sapphire',
         activeToday: true
       };
@@ -127558,7 +129160,13 @@
         return {
           mode: 'date_range',
           otMultiplier: otMult,
-          badgeText: `OT ${otMultTag}: ${lbl}`,
+          mathMode,
+          mathModeLabel,
+          mathModeShort,
+          otThresholdMin,
+          otEarlyThresholdMin,
+          otCountFrom,
+          badgeText: `OT ${otMultTag}: ${lbl}${threshTag}`,
           detailText: `Scheduled OT pass (${lbl}); 0h paid OT today`,
           tone: 'amber',
           activeToday: false,
@@ -127568,6 +129176,12 @@
       return {
         mode: 'date_range',
         otMultiplier: otMult,
+        mathMode,
+        mathModeLabel,
+        mathModeShort,
+        otThresholdMin,
+        otEarlyThresholdMin,
+        otCountFrom,
         badgeText: `OT ${otMultTag}: Date Pass`,
         detailText: 'Date-range mode with no active date today (0h paid OT)',
         tone: 'muted',
@@ -127577,6 +129191,12 @@
     return {
       mode: 'none',
       otMultiplier: otMult,
+      mathMode,
+      mathModeLabel,
+      mathModeShort,
+      otThresholdMin,
+      otEarlyThresholdMin,
+      otCountFrom,
       badgeText: 'No Overtime',
       detailText: 'Late clock-out logs actual time with 0h paid overtime',
       tone: 'muted',
@@ -127593,9 +129213,10 @@
 
   function describeStaffLatenessRule(staffName, company, refDate = todayISO()) {
     const dStr = String(refDate || todayISO()).slice(0, 10);
-    const rule = getStaffWorkRule(staffName, company);
+    const resolvedPol = resolveStaffPolicyForDate(staffName, company, dStr);
+    const rule = resolvedPol.rule || getStaffWorkRule(staffName, company);
     const shift = resolveStaffShiftForDate(staffName, company, dStr);
-    const policyDesc = describeStaffPolicyGroup(staffName, company);
+    const policyDesc = describeStaffPolicyGroup(staffName, company, dStr);
     const graceMin = Math.max(0, Number(shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10)));
     const earlyGraceMin = Math.max(0, Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : graceMin));
     const schedStartMin = parseClockMinutes(shift.start_time) ?? 480;
@@ -127610,6 +129231,12 @@
     const mult = Number(rule.late_multiplier || 1.5);
     const hdMin = Number(rule.late_half_day_after_min || 60);
     const noOutRule = rule.no_clock_out_rule || 'half_day';
+    const mathMode = normalizeAttMathMode(resolvedPol.math_mode || rule.math_mode);
+    const mathModeLabel = formatAttMathModeLabel(mathMode);
+    const mathModeShort = formatAttMathModeShort(mathMode);
+    const otThresholdMin = clampAttThresholdMin(resolvedPol.ot_threshold_min != null ? resolvedPol.ot_threshold_min : rule.ot_threshold_min, 10);
+    const otEarlyThresholdMin = clampAttThresholdMin(resolvedPol.ot_early_threshold_min != null ? resolvedPol.ot_early_threshold_min : rule.ot_early_threshold_min, 15);
+    const otCountFrom = normalizeOtCountFrom(resolvedPol.ot_count_from || rule.ot_count_from);
 
     const whenLabels = {
       both: 'IN Late + OUT Early',
@@ -127697,11 +129324,18 @@
       noOutLabel,
       noOutShort,
       noOutTone,
+      mathMode,
+      mathModeLabel,
+      mathModeShort,
+      otThresholdMin,
+      otEarlyThresholdMin,
+      otCountFrom,
+      timelineCount: policyDesc.timelineCount,
       policyGroup: policyDesc,
       vacationDays: policyDesc.vacationDays,
       perks: policyDesc.perks,
-      badgeLabel: `${penaltyShort} · ${noOutShort}`,
-      badgeText: `${penaltyShort} · ${noOutShort}`,
+      badgeLabel: `${mathModeShort} · ${penaltyShort} · ${noOutShort}`,
+      badgeText: `${mathModeShort} · ${penaltyShort} · ${noOutShort}`,
       subText: `${toleranceBadge} · ${whenShortLabels[lateWhen] || whenShortLabels.both}`,
       tone
     };
@@ -127714,15 +129348,34 @@
 
   function evaluateShiftPunchTiming(staffName, company, shiftDate, inTime, outTime, opts = {}) {
     const dStr = String(shiftDate || todayISO()).slice(0, 10);
-    const rule = getStaffWorkRule(staffName, company);
+    const resolvedPol = resolveStaffPolicyForDate(staffName, company, dStr);
+    let rule = resolvedPol.rule || getStaffWorkRule(staffName, company);
+    if (opts && opts.overridePolicy && typeof opts.overridePolicy === 'object') {
+      const ov = opts.overridePolicy;
+      const inOvFrom = !ov.fromDate || dStr >= String(ov.fromDate).slice(0, 10);
+      const inOvTo = !ov.toDate || dStr <= String(ov.toDate).slice(0, 10);
+      const matchCo = !ov.company || norm(ov.company) === norm(company || resolvedPol.company || '');
+      const matchStaff = !Array.isArray(ov.staffNames) || !ov.staffNames.length || ov.staffNames.some(sn => norm(sn) === norm(staffName));
+      if (inOvFrom && inOvTo && matchCo && matchStaff) {
+        rule = Object.assign({}, rule, ov);
+      }
+    }
     const shift = resolveStaffShiftForDate(staffName, company, dStr);
+    const mathMode = normalizeAttMathMode(rule.math_mode != null ? rule.math_mode : resolvedPol.math_mode);
+    const isPerMin = mathMode === 'per_minute';
+    const otThresholdMin = clampAttThresholdMin(rule.ot_threshold_min != null ? rule.ot_threshold_min : resolvedPol.ot_threshold_min, 10);
+    const otEarlyThresholdMin = clampAttThresholdMin(rule.ot_early_threshold_min != null ? rule.ot_early_threshold_min : resolvedPol.ot_early_threshold_min, 15);
+    const otCountFrom = normalizeOtCountFrom(rule.ot_count_from != null ? rule.ot_count_from : resolvedPol.ot_count_from);
     const round1 = v => Math.round(Math.max(0, Number(v || 0)) * 10) / 10;
+    const round3 = v => Math.round(Math.max(0, Number(v || 0)) * 1000) / 1000;
+    const round4 = v => Math.round(Math.max(0, Number(v || 0)) * 10000) / 10000;
+    const roundH = v => (isPerMin ? round4(v) : round1(v));
 
     const schedStartMin = parseClockMinutes(shift.start_time) ?? 480;
     const schedEndRaw = parseClockMinutes(shift.end_time) ?? 960;
     const schedEndMin = schedEndRaw <= schedStartMin ? (schedEndRaw + 1440) : schedEndRaw;
     const schedDurMin = shift.isWorkday ? Math.max(0, schedEndMin - schedStartMin) : 0;
-    const scheduledHours = round1(schedDurMin / 60);
+    const scheduledHours = roundH(schedDurMin / 60);
 
     const graceMin = Math.max(0, Number(shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10)));
     const earlyGraceMin = Math.max(0, Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : graceMin));
@@ -127732,50 +129385,89 @@
     const countFrom = rule.late_count_from || 'shift_start';
     const penaltyMode = rule.late_penalty_mode || 'exact_hours';
     const mult = Number(rule.late_multiplier || 1.5);
+    const otMult = Number(rule.ot_multiplier || 1.5);
     const hdAfterMin = Number(rule.late_half_day_after_min || 60);
     const noOutRule = rule.no_clock_out_rule || 'half_day';
 
+    const prof = getStaffContractProfile(staffName, company || resolvedPol.company, dStr);
+    const isPendSal = Boolean(prof && prof.salaryPending);
+    const baseHourlyRate = isPendSal ? 0 : Number((prof && prof.hourlyRate) || 0);
+    const dailyRate = isPendSal ? 0 : Number((prof && prof.dailyRate) || 0);
+    const allowUsd = Boolean(opts && opts.internalCalc) || canViewPayrollDollarAmounts();
+
+    const buildDollarFields = (approvedOtMinVal, billableLateMinVal, billableLateHoursVal, penaltyLeaveDaysVal) => {
+      const otHrsCalc = isPerMin ? (approvedOtMinVal / 60) : round1(approvedOtMinVal / 60);
+      const lateHrsCalc = penaltyLeaveDaysVal > 0 ? 0 : (isPerMin ? (billableLateMinVal / 60) : billableLateHoursVal);
+      const otEarnedUsdRaw = isPendSal ? 0 : round2(otHrsCalc * baseHourlyRate * otMult);
+      const lateLostUsdRaw = isPendSal ? 0 : round2(lateHrsCalc * baseHourlyRate);
+      const absLostUsdRaw = (!isPendSal && penaltyLeaveDaysVal > 0) ? round2(penaltyLeaveDaysVal * dailyRate) : 0;
+      const netImpactUsdRaw = round2(otEarnedUsdRaw - lateLostUsdRaw - absLostUsdRaw);
+      const lateMultEff = penaltyMode === 'multiplier' ? mult : (penaltyMode === 'none' ? 0 : 1);
+      return {
+        otEarnedUsd: allowUsd ? otEarnedUsdRaw : null,
+        lateLostUsd: allowUsd ? lateLostUsdRaw : null,
+        absenceLostUsd: allowUsd ? absLostUsdRaw : null,
+        netImpactUsd: allowUsd ? netImpactUsdRaw : null,
+        hourlyRate: allowUsd ? round2(baseHourlyRate) : null,
+        otHourlyRate: allowUsd ? round2(baseHourlyRate * otMult) : null,
+        lateHourlyRate: allowUsd ? round2(baseHourlyRate * lateMultEff) : null,
+        perMinBaseUsd: allowUsd ? (baseHourlyRate / 60) : null,
+        perMinOtUsd: allowUsd ? ((baseHourlyRate * otMult) / 60) : null,
+        perMinLateUsd: allowUsd ? ((baseHourlyRate * lateMultEff) / 60) : null
+      };
+    };
+
     const computePenaltyFromRawMin = (rawMin, hasSingleIncompletePunch, singlePunchType = '') => {
       const cleanRawMin = Math.max(0, Math.round(Number(rawMin || 0)));
-      const rawLateHours = round1(cleanRawMin / 60);
+      const rawLateHours = roundH(cleanRawMin / 60);
+      let billableLateMin = 0;
       let billableLateHours = 0;
       let penaltyLeaveDays = 0;
       let penaltyStatus = 'On Time';
       let penaltySummary = 'On Time';
+      const decPlaces = isPerMin ? 2 : 1;
 
       if (cleanRawMin > 0) {
         if (penaltyMode === 'none') {
+          billableLateMin = 0;
           billableLateHours = 0;
           penaltyStatus = 'Late (Track Only)';
           penaltySummary = `Late ${cleanRawMin}m (Track Only, $0 Ded.)`;
         } else if (penaltyMode === 'half_day_any') {
           penaltyLeaveDays = 0.5;
+          billableLateMin = 0;
           billableLateHours = 0;
           penaltyStatus = 'Half Day';
           penaltySummary = `Late ${cleanRawMin}m = Half Day (0.5d)`;
         } else if (penaltyMode === 'tiered_half_day') {
           if (cleanRawMin >= hdAfterMin) {
             penaltyLeaveDays = 0.5;
+            billableLateMin = 0;
             billableLateHours = 0;
             penaltyStatus = 'Half Day';
             penaltySummary = `Late ${cleanRawMin}m (>=${hdAfterMin}m) = Half Day (0.5d)`;
           } else {
+            billableLateMin = cleanRawMin;
             billableLateHours = rawLateHours;
             penaltyStatus = 'Lateness';
-            penaltySummary = `Late ${cleanRawMin}m (-${fmtNum(billableLateHours, 1)}h)`;
+            penaltySummary = `Late ${cleanRawMin}m (-${fmtNum(billableLateHours, decPlaces)}h)`;
           }
         } else if (penaltyMode === 'round_hour') {
-          billableLateHours = Math.max(1, Math.ceil(cleanRawMin / 60));
+          const hrsUp = Math.max(1, Math.ceil(cleanRawMin / 60));
+          billableLateMin = hrsUp * 60;
+          billableLateHours = hrsUp;
           penaltyStatus = 'Lateness';
-          penaltySummary = `Late ${cleanRawMin}m -> Rounded -${fmtNum(billableLateHours, 1)}h`;
+          penaltySummary = `Late ${cleanRawMin}m = Rounded -${fmtNum(billableLateHours, 1)}h`;
         } else if (penaltyMode === 'multiplier') {
-          billableLateHours = round1((cleanRawMin / 60) * mult);
+          billableLateMin = round3(cleanRawMin * mult);
+          billableLateHours = roundH((cleanRawMin / 60) * mult);
           penaltyStatus = 'Lateness';
-          penaltySummary = `Late ${cleanRawMin}m x${fmtNum(mult, 1)} = -${fmtNum(billableLateHours, 1)}h`;
+          penaltySummary = `Late ${cleanRawMin}m x${fmtNum(mult, 1)} = -${fmtNum(billableLateHours, decPlaces)}h`;
         } else {
+          billableLateMin = cleanRawMin;
           billableLateHours = rawLateHours;
           penaltyStatus = 'Lateness';
-          penaltySummary = `Late ${cleanRawMin}m (-${fmtNum(billableLateHours, 1)}h)`;
+          penaltySummary = `Late ${cleanRawMin}m (-${fmtNum(billableLateHours, decPlaces)}h)`;
         }
       }
 
@@ -127789,6 +129481,7 @@
           : '';
         if (noOutRule === 'half_day') {
           penaltyLeaveDays = Math.max(penaltyLeaveDays, 0.5);
+          billableLateMin = 0;
           penaltyStatus = penaltyLeaveDays >= 1 ? 'Absence' : 'Half Day';
           noOutPenaltyText = `${singleLbl} = Half Day (0.5d)`;
           penaltySummary = lateDetail
@@ -127796,17 +129489,19 @@
             : noOutPenaltyText;
         } else if (noOutRule === 'full_absence') {
           penaltyLeaveDays = 1.0;
+          billableLateMin = 0;
           penaltyStatus = 'Absence';
           noOutPenaltyText = `${singleLbl} = Full Absence (1.0d)`;
           penaltySummary = lateDetail
             ? `${noOutPenaltyText} · ${lateDetail}`
             : noOutPenaltyText;
         } else if (noOutRule === 'deduct_2h') {
-          billableLateHours = round1(billableLateHours + 2.0);
+          billableLateMin = round3(billableLateMin + 120);
+          billableLateHours = roundH(billableLateHours + 2.0);
           penaltyStatus = 'Lateness';
           noOutPenaltyText = `${singleLbl} = +2.0h Lateness`;
           penaltySummary = lateDetail
-            ? `${lateDetail} + ${singleLbl} (+2.0h) = -${fmtNum(billableLateHours, 1)}h`
+            ? `${lateDetail} + ${singleLbl} (+2.0h) = -${fmtNum(billableLateHours, decPlaces)}h`
             : `${singleLbl} = -2.0h Lateness`;
         } else if (noOutRule === 'auto_shift_end') {
           noOutPenaltyText = `${singleLbl} = Auto Full Shift`;
@@ -127817,6 +129512,7 @@
       return {
         rawLateMin: cleanRawMin,
         rawLateHours,
+        billableLateMin: penaltyLeaveDays > 0 ? 0 : billableLateMin,
         billableLateHours,
         penaltyLeaveDays,
         penaltyStatus,
@@ -127830,9 +129526,14 @@
 
     // Case A: Neither Clock-IN nor Clock-OUT
     if (rawInMin == null && rawOutMin == null) {
-      return {
+      return Object.assign({
         shift,
         rule,
+        mathMode,
+        otThresholdMin,
+        otEarlyThresholdMin,
+        otCountFrom,
+        sourceScope: resolvedPol.sourceScope,
         hasIn: false,
         hasOut: false,
         isSinglePunch: false,
@@ -127843,6 +129544,8 @@
         lateHours: 0,
         rawLateHours: 0,
         rawLateMin: 0,
+        billableLateMin: 0,
+        billableLateHours: 0,
         arrivalLateMin: 0,
         earlyLeaveMin: 0,
         shortfallMin: 0,
@@ -127855,11 +129558,14 @@
         earlyOutCutoffTime,
         graceMin,
         earlyGraceMin,
+        rawExtraMin: 0,
         rawExtraHours: 0,
+        approvedOtMin: 0,
+        unapprovedOtMin: 0,
         overtimeHours: 0,
         unapprovedOtHours: 0,
         otReason: ''
-      };
+      }, buildDollarFields(0, 0, 0, 0));
     }
 
     // Case B: Either/Or Single Incomplete Punch (Only Clock-IN without OUT, OR Only Clock-OUT without IN)
@@ -127895,12 +129601,19 @@
 
       const penSingle = computePenaltyFromRawMin(effRawMinSingle, true, singlePunchType);
       const effWorkedSingle = noOutRule === 'half_day'
-        ? round1(scheduledHours * 0.5)
+        ? roundH(scheduledHours * 0.5)
         : (noOutRule === 'auto_shift_end' ? scheduledHours : 0);
+      const effLateH = penSingle.penaltyLeaveDays > 0 ? 0 : penSingle.billableLateHours;
+      const effLateMin = penSingle.penaltyLeaveDays > 0 ? 0 : penSingle.billableLateMin;
 
-      return {
+      return Object.assign({
         shift,
         rule,
+        mathMode,
+        otThresholdMin,
+        otEarlyThresholdMin,
+        otCountFrom,
+        sourceScope: resolvedPol.sourceScope,
         hasIn: rawInMin != null,
         hasOut: rawOutMin != null,
         isSinglePunch: true,
@@ -127908,9 +129621,10 @@
         scheduledHours,
         workedHours: effWorkedSingle,
         regularHours: effWorkedSingle,
-        lateHours: penSingle.penaltyLeaveDays > 0 ? 0 : penSingle.billableLateHours,
+        lateHours: effLateH,
         rawLateHours: penSingle.rawLateHours,
         rawLateMin: penSingle.rawLateMin,
+        billableLateMin: effLateMin,
         billableLateHours: penSingle.billableLateHours,
         arrivalLateMin,
         earlyLeaveMin,
@@ -127924,11 +129638,14 @@
         earlyOutCutoffTime,
         graceMin,
         earlyGraceMin,
+        rawExtraMin: 0,
         rawExtraHours: 0,
+        approvedOtMin: 0,
+        unapprovedOtMin: 0,
         overtimeHours: 0,
         unapprovedOtHours: 0,
         otReason: ''
-      };
+      }, buildDollarFields(0, effLateMin, effLateH, penSingle.penaltyLeaveDays));
     }
 
     // Case C: Both Clock-IN and Clock-OUT recorded
@@ -127950,24 +129667,33 @@
     }
 
     const workedMin = Math.max(0, Math.min(24 * 60, actualOutMin - actualInMin));
-    const workedHours = round1(workedMin / 60);
+    const workedHours = roundH(workedMin / 60);
 
     let inWindowMin = 0;
     let earlyLeaveMin = 0;
     let extraIntervals = [];
+    let rawOutsideMin = 0;
     if (!shift.isWorkday) {
       extraIntervals = [[actualInMin, actualOutMin]];
+      rawOutsideMin = Math.max(0, actualOutMin - actualInMin);
     } else {
       inWindowMin = intervalOverlapMinutes(actualInMin, actualOutMin, schedStartMin, schedEndMin);
       const rawEarlyOut = Math.max(0, schedEndMin - actualOutMin);
       earlyLeaveMin = rawEarlyOut > earlyGraceMin
         ? (countFrom === 'after_grace' ? Math.max(0, rawEarlyOut - earlyGraceMin) : rawEarlyOut)
         : 0;
-      if ((schedStartMin - actualInMin) >= 15) {
-        extraIntervals.push([actualInMin, Math.min(actualOutMin, schedStartMin)]);
+      const rawEarlyInWork = Math.max(0, Math.min(actualOutMin, schedStartMin) - actualInMin);
+      const rawLateOutWork = Math.max(0, actualOutMin - Math.max(actualInMin, schedEndMin));
+      rawOutsideMin = rawEarlyInWork + rawLateOutWork;
+      const earlyExtraMin = schedStartMin - actualInMin;
+      if (earlyExtraMin > 0 && earlyExtraMin >= otEarlyThresholdMin) {
+        const effEarlyEnd = Math.min(actualOutMin, otCountFrom === 'after_threshold' ? (schedStartMin - otEarlyThresholdMin) : schedStartMin);
+        if (effEarlyEnd > actualInMin) extraIntervals.push([actualInMin, effEarlyEnd]);
       }
-      if ((actualOutMin - schedEndMin) >= 10) {
-        extraIntervals.push([Math.max(actualInMin, schedEndMin), actualOutMin]);
+      const lateExtraMin = actualOutMin - schedEndMin;
+      if (lateExtraMin > 0 && lateExtraMin >= otThresholdMin) {
+        const effLateStart = Math.max(actualInMin, otCountFrom === 'after_threshold' ? (schedEndMin + otThresholdMin) : schedEndMin);
+        if (actualOutMin > effLateStart) extraIntervals.push([effLateStart, actualOutMin]);
       }
     }
 
@@ -127985,9 +129711,11 @@
     }
 
     const penOut = computePenaltyFromRawMin(effectiveRawLateMin, false);
-    const rawExtraMin = extraIntervals.reduce((acc, [s, e]) => acc + Math.max(0, e - s), 0);
-    const rawExtraHours = round1(rawExtraMin / 60);
+    const qualifyingExtraMin = extraIntervals.reduce((acc, [s, e]) => acc + Math.max(0, e - s), 0);
+    const rawExtraMin = Math.max(rawOutsideMin, qualifyingExtraMin);
+    const rawExtraHours = roundH(rawExtraMin / 60);
     const lateHours = penOut.penaltyLeaveDays > 0 ? 0 : penOut.billableLateHours;
+    const billableLateMinFinal = penOut.penaltyLeaveDays > 0 ? 0 : penOut.billableLateMin;
 
     let approvedOtMin = 0;
     let otReason = '';
@@ -127995,15 +129723,19 @@
 
     if (activePass && (rule.ot_mode === 'date_range' || rule.ot_mode === 'none')) {
       const capMin = Number(activePass.max_hours || 0) > 0 ? Math.round(Number(activePass.max_hours) * 60) : Infinity;
-      approvedOtMin = Math.min(rawExtraMin, capMin);
-      otReason = activePass.start_date === (activePass.end_date || activePass.start_date)
-        ? `Approved OT (${fmtDateDMY(activePass.start_date)})`
-        : `Approved OT (${fmtDateDMY(activePass.start_date)} to ${fmtDateDMY(activePass.end_date)})`;
+      approvedOtMin = Math.min(qualifyingExtraMin, capMin);
+      otReason = qualifyingExtraMin === 0 && rawExtraMin > 0
+        ? `Below OT threshold (${rawExtraMin}m < ${otThresholdMin}m)`
+        : (activePass.start_date === (activePass.end_date || activePass.start_date)
+          ? `Approved OT (${fmtDateDMY(activePass.start_date)})`
+          : `Approved OT (${fmtDateDMY(activePass.start_date)} to ${fmtDateDMY(activePass.end_date)})`);
     } else if (rule.ot_mode === 'always') {
-      approvedOtMin = rawExtraMin;
-      otReason = 'Anytime OT authorized';
+      approvedOtMin = qualifyingExtraMin;
+      otReason = qualifyingExtraMin === 0 && rawExtraMin > 0
+        ? `Below OT threshold (${rawExtraMin}m < ${otThresholdMin}m)`
+        : 'Anytime OT authorized';
     } else if (rule.ot_mode === 'max_hours') {
-      let eligibleMin = rawExtraMin;
+      let eligibleMin = qualifyingExtraMin;
       const winS = parseClockMinutes(rule.ot_window_start);
       const winE = parseClockMinutes(rule.ot_window_end);
       if (winS != null && winE != null) {
@@ -128013,11 +129745,13 @@
           winOverlap += intervalOverlapMinutes(es, ee, winS, wEndBase);
           winOverlap += intervalOverlapMinutes(es, ee, winS + 1440, wEndBase + 1440);
         });
-        eligibleMin = Math.min(rawExtraMin, winOverlap);
+        eligibleMin = Math.min(qualifyingExtraMin, winOverlap);
       }
       const capMin = Number(rule.ot_max_hours || 0) > 0 ? Math.round(Number(rule.ot_max_hours) * 60) : Infinity;
       approvedOtMin = Math.min(eligibleMin, capMin);
-      otReason = capMin < Infinity ? `OT cap ${round1(capMin / 60)}h/day` : 'OT window';
+      otReason = qualifyingExtraMin === 0 && rawExtraMin > 0
+        ? `Below OT threshold (${rawExtraMin}m < ${otThresholdMin}m)`
+        : (capMin < Infinity ? `OT cap ${round1(capMin / 60)}h/day` : 'OT window');
     } else if (rule.ot_mode === 'date_range') {
       approvedOtMin = 0;
       otReason = rawExtraMin > 0 ? 'Outside approved OT dates' : 'Date-range OT';
@@ -128026,13 +129760,19 @@
       otReason = rawExtraMin > 0 ? 'Unapproved late clock-out (No OT)' : 'No Overtime';
     }
 
-    const overtimeHours = round1(approvedOtMin / 60);
-    const unapprovedOtHours = round1(Math.max(0, rawExtraHours - overtimeHours));
-    const regularHours = shift.isWorkday ? round1(inWindowMin / 60) : 0;
+    const unapprovedOtMin = Math.max(0, rawExtraMin - approvedOtMin);
+    const overtimeHours = roundH(approvedOtMin / 60);
+    const unapprovedOtHours = isPerMin ? roundH(unapprovedOtMin / 60) : round1(Math.max(0, rawExtraHours - overtimeHours));
+    const regularHours = shift.isWorkday ? roundH(inWindowMin / 60) : 0;
 
-    return {
+    return Object.assign({
       shift,
       rule,
+      mathMode,
+      otThresholdMin,
+      otEarlyThresholdMin,
+      otCountFrom,
+      sourceScope: resolvedPol.sourceScope,
       hasIn: true,
       hasOut: true,
       isSinglePunch: false,
@@ -128044,6 +129784,7 @@
       lateHours,
       rawLateHours: penOut.rawLateHours,
       rawLateMin: penOut.rawLateMin,
+      billableLateMin: billableLateMinFinal,
       billableLateHours: penOut.billableLateHours,
       arrivalLateMin,
       earlyLeaveMin,
@@ -128057,11 +129798,14 @@
       earlyOutCutoffTime,
       graceMin,
       earlyGraceMin,
+      rawExtraMin,
       rawExtraHours,
+      approvedOtMin,
+      unapprovedOtMin,
       overtimeHours,
       unapprovedOtHours,
       otReason
-    };
+    }, buildDollarFields(approvedOtMin, billableLateMinFinal, lateHours, penOut.penaltyLeaveDays));
   }
 
   function inferShiftDateForInPunch(staffName, company, punchDate, punchTime) {
@@ -128723,17 +130467,23 @@
     const tally = Number(row.tally != null ? row.tally : 0);
     const inF = fmtAttClockTime(row.in_time || row.check_in || '');
     const outF = fmtAttClockTime(row.out_time || row.check_out || '');
-    const worked = Number(row.worked_hours != null && row.worked_hours > 0 ? row.worked_hours : computeShiftWorkedHours(inF, outF));
-    const ot = Number(row.overtime_hours != null && row.overtime_hours > 0 ? row.overtime_hours : (/^overtime$/i.test(type) ? tally : 0));
+    const eff = resolveAttRowEffectiveHoursAndMults(row);
+    const sigEffDate = String(row.set_date || row.rep_date || row.date || '').slice(0, 10);
+    const sigIsPerMin = row.math_mode
+      ? row.math_mode === 'per_minute'
+      : (resolveStaffPolicyForDate(row.staff, row.company, sigEffDate).math_mode === 'per_minute');
+    const worked = Number(row.worked_hours != null && row.worked_hours > 0 ? row.worked_hours : computeShiftWorkedHours(inF, outF, sigIsPerMin));
+    const ot = eff.otH;
     const reg = Number(row.regular_hours != null && row.regular_hours > 0 ? row.regular_hours : (worked > 0 ? round2(Math.max(0, worked - ot)) : 0));
-    const late = Number(row.late_hours != null && row.late_hours > 0 ? row.late_hours : (/^lateness$/i.test(type) ? tally : 0));
+    const late = eff.ltH;
     const leave = /^half\s*day$/i.test(type)
       ? (tally > 0 ? tally : 0.5)
       : ((/^vacabsence$|^paid\s*leave$/i.test(type) || /Absence|Sick|Leave|Unpaid/i.test(type))
         ? (Number(row.leave_days || 0) > 0 ? Number(row.leave_days) : (tally > 0 ? tally : 1))
         : 0);
+    const round4Sig = v => Math.round(Number(v || 0) * 10000) / 10000;
     return [inF, outF, type, tally, worked, reg, ot, Number(row.unapproved_ot_hours || 0), late, leave]
-      .map(v => (typeof v === 'number' ? String(round2(v)) : v)).join('|');
+      .map(v => (typeof v === 'number' ? String(round4Sig(v)) : v)).join('|');
   }
   // A row the import made that a person has since corrected is that person's: the import neither rewrites
   // nor withdraws it. A hand-signed row with no stamp at all is treated the same, to be safe.
@@ -128791,7 +130541,7 @@
     // figures back onto it, and every re-settle of an unchanged day would then restamp and resend the row.
     const sigOf = opts.origin
       ? row => attendanceFigureSig(row) + '|' + [row.shift_id, row.shift_label, row.scheduled_hours, row.penalty_summary, row.late_cutoff,
-        row.early_out_cutoff, row.no_out_rule, row.single_punch_type, row.raw_late_hours, row.raw_late_min, row.notes, Boolean(row.voided)].join('|')
+        row.early_out_cutoff, row.no_out_rule, row.single_punch_type, row.raw_late_hours, row.raw_late_min, row.math_mode, row.approved_ot_min, row.billable_late_min, row.ot_threshold_min, row.notes, Boolean(row.voided)].join('|')
       : row => JSON.stringify(Object.assign({}, row, { modified_at: '' }));
     const sigBefore = (attRec && opts.keepStampIfSame) ? sigOf(attRec) : null;
 
@@ -128833,10 +130583,21 @@
         ? penLeaveDays
         : (ltH > 0 ? ltH : workedH));
 
+    const polRule = evalRes.rule || {};
+    const polOtMult = Number(polRule.ot_multiplier || 1.5);
+    const polLateMult = Number(polRule.late_penalty_mode === 'multiplier' ? polRule.late_multiplier : (polRule.late_penalty_mode === 'none' ? 0 : 1));
+    const appOtMin = isPairedBoth ? Number(evalRes.approvedOtMin || 0) : 0;
+    const unappOtMin = isPairedBoth ? Number(evalRes.unapprovedOtMin || 0) : 0;
+    const billLateMin = penLeaveDays > 0 ? 0 : Number(evalRes.billableLateMin || 0);
+    const otThreshUsed = Number(evalRes.otThresholdMin != null ? evalRes.otThresholdMin : 10);
+
     // Synchronize live evaluation onto the punch object
     punch.late_hours = !isPairedBoth ? Number(evalRes.billableLateHours ?? evalRes.rawLateHours ?? ltH) : ltH;
     punch.raw_late_hours = rawLtH;
     punch.raw_late_min = rawLtMin;
+    punch.math_mode = evalRes.mathMode || 'tenth_hour';
+    punch.billable_late_min = billLateMin;
+    punch.ot_threshold_min = otThreshUsed;
     punch.penalty_leave_days = penLeaveDays;
     punch.penalty_status = evalRes.penaltyStatus || effType;
     punch.penalty_summary = evalRes.penaltySummary || '';
@@ -128848,10 +130609,14 @@
       punch.paired_hours = workedH;
       punch.overtime_hours = otH;
       punch.unapproved_ot_hours = unappOt;
+      punch.approved_ot_min = appOtMin;
+      punch.unapproved_ot_min = unappOtMin;
     } else {
       punch.paired_hours = null;
       punch.overtime_hours = 0;
       punch.unapproved_ot_hours = 0;
+      punch.approved_ot_min = 0;
+      punch.unapproved_ot_min = 0;
     }
 
     const clockLabel = isPairedBoth
@@ -128862,7 +130627,7 @@
     if (evalRes.penaltySummary && evalRes.penaltySummary !== 'On Time') {
       noteParts.push(evalRes.penaltySummary);
     }
-    if (unappOt > 0) noteParts.push(`${fmtNum(unappOt, 1)}h unapproved OT (0h paid)`);
+    if (unappOt > 0) noteParts.push(`${fmtNum(unappOt, evalRes.mathMode === 'per_minute' ? 2 : 1)}h unapproved OT (0h paid)`);
 
     if (!attRec) {
       attRec = {
@@ -128890,6 +130655,14 @@
         late_hours: ltH,
         raw_late_hours: rawLtH,
         raw_late_min: rawLtMin,
+        math_mode: evalRes.mathMode || 'tenth_hour',
+        approved_ot_min: appOtMin,
+        unapproved_ot_min: unappOtMin,
+        billable_late_min: billLateMin,
+        ot_threshold_min: otThreshUsed,
+        policy_ot_mult: polOtMult,
+        policy_late_mult: polLateMult,
+        late_mult_baked: true,
         leave_days: penLeaveDays,
         no_out_rule: punch.no_out_rule,
         single_punch_type: punch.single_punch_type,
@@ -128920,6 +130693,14 @@
       attRec.late_hours = ltH;
       attRec.raw_late_hours = rawLtH;
       attRec.raw_late_min = rawLtMin;
+      attRec.math_mode = evalRes.mathMode || 'tenth_hour';
+      attRec.approved_ot_min = appOtMin;
+      attRec.unapproved_ot_min = unappOtMin;
+      attRec.billable_late_min = billLateMin;
+      attRec.ot_threshold_min = otThreshUsed;
+      attRec.policy_ot_mult = polOtMult;
+      attRec.policy_late_mult = polLateMult;
+      attRec.late_mult_baked = true;
       attRec.leave_days = penLeaveDays;
       attRec.no_out_rule = punch.no_out_rule;
       attRec.single_punch_type = punch.single_punch_type;
@@ -131921,6 +133702,19 @@
     let draftOtWinEnd = rule.ot_window_end || '';
     let draftPasses = (rule.ot_passes || []).map(p => Object.assign({}, p));
     let draftOverrides = (rule.shift_overrides || []).map(o => Object.assign({}, o));
+    const todayResolvedStaffPol = resolveStaffPolicyForDate(entry.name, entry.company, today);
+    let draftCustomMathOverride = Boolean(rule.custom_math_override);
+    let draftMathMode = normalizeAttMathMode(draftCustomMathOverride && rule.math_mode ? rule.math_mode : todayResolvedStaffPol.math_mode);
+    let draftOtThreshMin = clampAttThresholdMin(draftCustomMathOverride && rule.ot_threshold_min != null ? rule.ot_threshold_min : todayResolvedStaffPol.ot_threshold_min, 10);
+    let draftOtEarlyThreshMin = clampAttThresholdMin(draftCustomMathOverride && rule.ot_early_threshold_min != null ? rule.ot_early_threshold_min : todayResolvedStaffPol.ot_early_threshold_min, 15);
+    let draftOtCountFrom = normalizeOtCountFrom(draftCustomMathOverride && rule.ot_count_from ? rule.ot_count_from : todayResolvedStaffPol.ot_count_from);
+    let draftPolicyTimeline = normalizePolicyTimelineList(rule.policy_timeline);
+    let draftPolicyTimelineEdited = false;
+    let draftPolEffFrom = '';
+    let draftPolEffTo = '';
+    let draftPolEffNote = '';
+    let draftPolEditWinId = '';
+    let draftPolBackfill = true;
 
     let modal = $('staffScheduleModal');
     if (!modal) {
@@ -131994,6 +133788,41 @@
       const extraCustomPerks = (draftPerks || []).filter(p => p && !knownPerkIds.has(p));
       const allPerkCatalog = AVAILABLE_STAFF_PERKS.concat(extraCustomPerks.map(p => ({ id: p, label: p, icon: 'check_circle' })));
       const showSec = key => draftStudioSection === 'all' || draftStudioSection === key;
+      const canShowSsmDollars = canViewPayrollDollarAmounts();
+      const ssmProf = canShowSsmDollars ? getStaffContractProfile(entry.name, entry.company, focusDate || today) : null;
+      const ssmHrRate = ssmProf && Number(ssmProf.hourlyRate || 0) > 0 ? Number(ssmProf.hourlyRate) : 0;
+      const ssmPreviewFrom = /^\d{4}-\d{2}-\d{2}$/.test(draftPolEffFrom) ? draftPolEffFrom : today;
+      const ssmPreviewTo = /^\d{4}-\d{2}-\d{2}$/.test(draftPolEffTo) ? draftPolEffTo : today;
+      const ssmPreviewRes = (draftPolBackfill && (
+        draftPolEffFrom
+        || draftCustomMathOverride !== Boolean(rule.custom_math_override)
+        || draftMathMode !== normalizeAttMathMode(rule.math_mode)
+        || draftOtThreshMin !== clampAttThresholdMin(rule.ot_threshold_min, 10)
+        || draftOtCountFrom !== normalizeOtCountFrom(rule.ot_count_from)
+        || draftPolicyGroupId !== (rule.policy_group_id || 'pkg_15_open_15d')
+      ))
+        ? previewPolicyChangeImpact({
+            company: entry.company,
+            staffNames: [entry.name],
+            fromDate: ssmPreviewFrom,
+            toDate: ssmPreviewTo,
+            overridePolicy: {
+              policy_group_id: draftPolicyGroupId,
+              math_mode: draftMathMode,
+              ot_threshold_min: draftOtThreshMin,
+              ot_early_threshold_min: draftOtEarlyThreshMin,
+              ot_count_from: draftOtCountFrom,
+              late_penalty_mode: draftLatePenaltyMode,
+              late_multiplier: draftLateMultiplier,
+              ot_multiplier: draftOtMultiplier,
+              ot_mode: draftOtMode,
+              ot_max_hours: draftOtMaxHours,
+              grace_min: draftGrace,
+              early_leave_grace_min: draftEarlyGrace,
+              no_clock_out_rule: draftNoClockOutRule
+            }
+          })
+        : null;
 
       modal.innerHTML = `
         <div class="modal-card staff-sched-modal-card">
@@ -132295,35 +134124,8 @@
                     <div class="muted" style="font-size:11.5px">Customize each company's default shift and default policy &amp; perks group, or change shift timings with an Effective Date to backfill associated staff</div>
                   </div>
                 </div>
-                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px;margin-bottom:10px;padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:6px" id="ssmBuDefaultBar">
-                  ${buCompanies.map(bu => {
-                    const curDef = getBuDefaultShift(bu);
-                    const curDefCode = (curDef && curDef.shift_code) || 'day_8_4';
-                    const buShiftTypes = getShiftTypes(bu);
-                    const buPolicyGroups = getPolicyGroups(bu);
-                    const curPolDefId = getCompanyDefaultPolicyGroupId(bu);
-                    return `
-                      <div style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;display:flex;flex-direction:column;gap:5px">
-                        <div style="display:flex;align-items:center;justify-content:space-between">${coBadge(bu)} <span class="muted" style="font-size:10.5px">Defaults</span></div>
-                        <div class="ssm-field" style="margin:0">
-                          <label style="font-size:10.5px">Default Shift</label>
-                          <select class="kiosk-select" data-ssm-bu-default="${esc(bu)}" data-plain-options="1" style="height:29px;font-size:11.5px">
-                            ${buShiftTypes.map(st => {
-                              const stExc = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(st.day_timings, st.days), st.date_timings, st.start_time, st.end_time);
-                              const excOpt = stExc !== 'Same Every Workday' ? ` · ${stExc}` : '';
-                              return `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)}${esc(excOpt)})</option>`;
-                            }).join('')}
-                          </select>
-                        </div>
-                        <div class="ssm-field" style="margin:0">
-                          <label style="font-size:10.5px">Default Policy &amp; Perks</label>
-                          <select class="kiosk-select" data-ssm-bu-policy-default="${esc(bu)}" data-plain-options="1" style="height:29px;font-size:11.5px">
-                            ${buPolicyGroups.map(pg => `<option value="${esc(pg.id)}" ${pg.id === curPolDefId ? 'selected' : ''}>${esc(pg.name)} (${esc(pg.short)})</option>`).join('')}
-                          </select>
-                        </div>
-                      </div>
-                    `;
-                  }).join('')}
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:8px;margin-bottom:10px;padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:6px" id="ssmBuDefaultBar">
+                  ${buCompanies.map(bu => renderCompanyDefaultAttendanceCardHtml(bu, { attrPrefix: 'ssm', title: 'Defaults' })).join('')}
                 </div>
                 <div class="table-wrap" style="max-height:260px">
                   <table class="ledger-table" id="ssmShiftTimingsTable" style="font-size:12px">
@@ -132538,6 +134340,19 @@
                   </div>
                   <div class="muted" style="font-size:11px;margin-top:4px">Applies from today; holidays already past stay as they were counted. The holidays this business observes are chosen under Holidays &amp; Seasons.</div>
                 </div>
+
+                <div class="ssm-comp-card" id="ssmMathModeCard">
+                  <div class="ssm-comp-head">
+                    <label for="ssmMathModeSelect">Calculation Precision</label>
+                    <span class="att-math-pill ${draftMathMode === 'per_minute' ? 'is-min' : ''}">${draftCustomMathOverride ? (draftMathMode === 'per_minute' ? 'Custom: $/min' : 'Custom: 0.1h') : `Inherit (${draftMathMode === 'per_minute' ? '$/min' : '0.1h'})`}</span>
+                  </div>
+                  <select id="ssmMathModeSelect" class="kiosk-select" data-plain-options="1">
+                    <option value="inherit" ${!draftCustomMathOverride ? 'selected' : ''}>Inherit Policy Group (${curPolicyGrp && curPolicyGrp.math_mode === 'per_minute' ? '$ / Min' : '0.1h Steps'})</option>
+                    <option value="per_minute" ${draftCustomMathOverride && draftMathMode === 'per_minute' ? 'selected' : ''}>Exact Per-Minute ($ / min)</option>
+                    <option value="tenth_hour" ${draftCustomMathOverride && draftMathMode === 'tenth_hour' ? 'selected' : ''}>Legacy 0.1h (6-Min Steps)</option>
+                  </select>
+                  ${canShowSsmDollars && ssmHrRate > 0 ? `<div class="muted mono" style="font-size:11px;margin-top:4px">Base ${fmtUSD(ssmHrRate, 2)}/hr · <b>${fmtUSD(ssmHrRate / 60, 4)}/min</b> · OT ${fmtUSD((ssmHrRate * Number(draftOtMultiplier || 1.5)) / 60, 4)}/min</div>` : ''}
+                </div>
               </div>
 
               <div class="ssm-perks-box">
@@ -132560,6 +134375,60 @@
                     `;
                   }).join('')}
                 </div>
+              </div>
+
+              <div class="att-policy-timeline-box" style="margin-top:8px">
+                <div class="ssm-comp-head" style="margin-bottom:6px">
+                  <label style="font-size:12px;font-weight:700">${draftPolEditWinId ? 'Edit Staff Policy Timeline Window' : 'Effective Date &amp; Staff Policy Timeline'}</label>
+                  ${draftPolEditWinId ? `<button type="button" class="btn kiosk-mini-btn" id="ssmCancelPolWinEditBtn">Cancel Edit</button>` : `<span class="muted" style="font-size:11px">Optional start date records a chronological math / policy change for ${esc(entry.name)}</span>`}
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1.4fr;gap:8px">
+                  <div class="ssm-field" style="margin:0">
+                    <label for="ssmPolEffFrom">Effective From</label>
+                    <input type="date" id="ssmPolEffFrom" value="${esc(draftPolEffFrom)}">
+                  </div>
+                  <div class="ssm-field" style="margin:0">
+                    <label for="ssmPolEffTo">Effective To (Optional)</label>
+                    <input type="date" id="ssmPolEffTo" value="${esc(draftPolEffTo)}">
+                  </div>
+                  <div class="ssm-field" style="margin:0">
+                    <label for="ssmPolEffNote">Timeline Note</label>
+                    <input type="text" id="ssmPolEffNote" value="${esc(draftPolEffNote)}" placeholder="e.g. Switch to $/min Nov 1">
+                  </div>
+                </div>
+                ${draftPolicyTimeline.length ? `
+                  <div class="att-policy-timeline-list" id="ssmPolTimelineList">
+                    ${draftPolicyTimeline.map(w => {
+                      const wm = normalizeAttMathMode(w.math_mode || 'tenth_hour');
+                      const wt = clampAttThresholdMin(w.ot_threshold_min, 10);
+                      const wGrp = livePolicyGroups.find(g => g.id === w.policy_group_id);
+                      const wFrom = fmtDateDMY(w.start_date);
+                      const wTo = w.end_date ? fmtDateDMY(w.end_date) : 'Present';
+                      return `<div class="att-policy-ver-row ${draftPolEditWinId === w.id ? 'is-editing' : ''}">
+                        <span class="mono"><b>${esc(wFrom)}</b> .. ${esc(wTo)}</span>
+                        <span class="att-math-pill ${wm === 'per_minute' ? 'is-min' : ''}">${wm === 'per_minute' ? '$ / Min' : '0.1h'}</span>
+                        <span>${esc(wGrp ? wGrp.name : (w.policy_group_id || 'Policy'))}</span>
+                        <span class="mono">OT ≥${wt}m</span>
+                        ${w.note ? `<span class="muted">${esc(w.note)}</span>` : '<span></span>'}
+                        <span style="display:inline-flex;gap:4px;margin-inline-start:auto">
+                          <button type="button" class="btn kiosk-mini-btn" data-ssm-pol-edit-win="${esc(w.id)}">Edit</button>
+                          <button type="button" class="btn kiosk-mini-btn" data-ssm-pol-del-win="${esc(w.id)}">Delete</button>
+                        </span>
+                      </div>`;
+                    }).join('')}
+                  </div>
+                ` : ''}
+                <label style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;margin-top:6px;cursor:pointer">
+                  <input type="checkbox" id="ssmPolBackfillChk" ${draftPolBackfill ? 'checked' : ''}>
+                  <span>Recalculate unlocked attendance logs from effective date</span>
+                </label>
+                ${ssmPreviewRes ? `
+                  <div class="att-backfill-preview" id="ssmPolBackfillPreview">
+                    ${draftPolEffFrom && draftPolEffFrom > today
+                      ? `<span>Scheduled for future date <b>${esc(fmtDateDMY(draftPolEffFrom))}</b> (active rule today stays unchanged until then).</span>`
+                      : `<span>Dry-Run Preview (${esc(fmtDateDMY(ssmPreviewRes.fromDate))}–${esc(fmtDateDMY(ssmPreviewRes.toDate))}): recalculates <b>${fmtNum(ssmPreviewRes.updatedRows)}</b> unlocked logs${canShowSsmDollars ? ` · Earned Δ <b class="att-earn-pos">${ssmPreviewRes.earnedDeltaUsd >= 0 ? '+' : ''}${fmtUSD(ssmPreviewRes.earnedDeltaUsd, 2)}</b> · Lost Δ <b class="att-loss-neg">${ssmPreviewRes.lostDeltaUsd >= 0 ? '+' : ''}${fmtUSD(ssmPreviewRes.lostDeltaUsd, 2)}</b> · Net Δ <b>${ssmPreviewRes.netDeltaUsd >= 0 ? '+' : '-'}${fmtUSD(Math.abs(ssmPreviewRes.netDeltaUsd), 2)}</b>` : ''}${(ssmPreviewRes.skippedClosed || ssmPreviewRes.skippedManual) ? ` (${fmtNum(ssmPreviewRes.skippedClosed)} closed skipped, ${fmtNum(ssmPreviewRes.skippedManual)} manual kept)` : ''}</span>`}
+                  </div>
+                ` : ''}
               </div>
             </div>
 
@@ -132597,13 +134466,13 @@
                 </div>
               </div>
 
-              <select id="ssmLateWhenSelect" hidden>
+              <select id="ssmLateWhenSelect" data-plain-options="1" hidden>
                 <option value="both" ${draftLateWhen === 'both' ? 'selected' : ''}>IN + OUT</option>
                 <option value="arrival_only" ${draftLateWhen === 'arrival_only' ? 'selected' : ''}>IN Only</option>
                 <option value="early_out_only" ${draftLateWhen === 'early_out_only' ? 'selected' : ''}>OUT Only</option>
                 <option value="short_hours" ${draftLateWhen === 'short_hours' ? 'selected' : ''}>Shift Hours</option>
               </select>
-              <select id="ssmLateCountFromSelect" hidden>
+              <select id="ssmLateCountFromSelect" data-plain-options="1" hidden>
                 <option value="shift_start" ${draftLateCountFrom === 'shift_start' ? 'selected' : ''}>From Shift Start</option>
                 <option value="after_grace" ${draftLateCountFrom === 'after_grace' ? 'selected' : ''}>After Grace</option>
               </select>
@@ -132740,6 +134609,33 @@
                   <div class="ot-mc-title"><span class="ot-dot amber"></span>Specific Day or Date Range</div>
                   <div class="ot-mc-desc">Approve overtime only on selected single day(s) or a date range.</div>
                 </button>
+              </div>
+
+              <div class="att-policy-timeline-box" style="margin-top:8px">
+                <div class="ssm-comp-head" style="margin-bottom:6px">
+                  <label style="font-size:12px;font-weight:700">Overtime Start Threshold &amp; Counting</label>
+                  <span class="badge mono">Past End ≥${draftOtThreshMin}m · Early ≥${draftOtEarlyThreshMin}m · ${draftOtCountFrom === 'after_threshold' ? 'After Thresh' : 'Shift End'}</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1.4fr 0.7fr 1.1fr;gap:10px;align-items:end">
+                  <div class="ssm-field" style="margin:0">
+                    <label for="ssmOtThreshMin">Past-End OT Threshold (min)</label>
+                    <div class="att-thresh-pills">
+                      ${[0, 5, 10, 15, 30].map(m => `<button type="button" class="kiosk-qchip mono ${draftOtThreshMin === m ? 'active' : ''}" data-ssm-ot-thresh="${m}">${m}m</button>`).join('')}
+                      <input type="number" id="ssmOtThreshMin" class="mono" min="0" max="180" step="1" value="${draftOtThreshMin}" style="width:56px">
+                    </div>
+                  </div>
+                  <div class="ssm-field" style="margin:0">
+                    <label for="ssmOtEarlyThreshMin">Early OT (min)</label>
+                    <input type="number" id="ssmOtEarlyThreshMin" class="mono" min="0" max="180" step="1" value="${draftOtEarlyThreshMin}">
+                  </div>
+                  <div class="ssm-field" style="margin:0">
+                    <label for="ssmOtCountFrom">Count OT From</label>
+                    <select id="ssmOtCountFrom" class="kiosk-select" data-plain-options="1">
+                      <option value="shift_end" ${draftOtCountFrom === 'shift_end' ? 'selected' : ''}>From Shift End</option>
+                      <option value="after_threshold" ${draftOtCountFrom === 'after_threshold' ? 'selected' : ''}>Only After Threshold</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
               ${draftOtMode === 'max_hours' ? `
@@ -132892,6 +134788,21 @@
         if ($('ssmDateExcStart')) draftPendingDateStart = normalize24hClockTime($('ssmDateExcStart').value || '09:00', '09:00');
         if ($('ssmDateExcEnd')) draftPendingDateEnd = normalize24hClockTime($('ssmDateExcEnd').value || '15:00', '15:00');
         if ($('ssmDateExcNote')) draftPendingDateNote = String($('ssmDateExcNote').value || '');
+        if ($('ssmMathModeSelect')) {
+          const mv = $('ssmMathModeSelect').value || 'inherit';
+          if (mv === 'inherit') draftCustomMathOverride = false;
+          else {
+            draftCustomMathOverride = true;
+            draftMathMode = normalizeAttMathMode(mv);
+          }
+        }
+        if ($('ssmOtThreshMin')) draftOtThreshMin = clampAttThresholdMin($('ssmOtThreshMin').value, 10);
+        if ($('ssmOtEarlyThreshMin')) draftOtEarlyThreshMin = clampAttThresholdMin($('ssmOtEarlyThreshMin').value, 15);
+        if ($('ssmOtCountFrom')) draftOtCountFrom = normalizeOtCountFrom($('ssmOtCountFrom').value);
+        if ($('ssmPolEffFrom')) draftPolEffFrom = String($('ssmPolEffFrom').value || '').trim().slice(0, 10);
+        if ($('ssmPolEffTo')) draftPolEffTo = String($('ssmPolEffTo').value || '').trim().slice(0, 10);
+        if ($('ssmPolEffNote')) draftPolEffNote = String($('ssmPolEffNote').value || '');
+        if ($('ssmPolBackfillChk')) draftPolBackfill = Boolean($('ssmPolBackfillChk').checked);
         if ($('ssmDiffExcChk') && $('ssmDiffExcChk').checked) {
           const dayInputs = modal.querySelectorAll('[data-ssm-day-in]');
           if (dayInputs.length) {
@@ -132962,7 +134873,7 @@
       });
 
       const applyPolicyGroupToDraft = grpId => {
-        const grp = getPolicyGroups().find(g => g.id === grpId);
+        const grp = getPolicyGroups(entry.company).find(g => g.id === grpId);
         if (!grp) return;
         draftPolicyGroupId = grp.id;
         draftLatePenaltyMode = grp.late_penalty_mode;
@@ -132977,7 +134888,87 @@
         draftEarlyGrace = grp.early_leave_grace_min;
         draftNoClockOutRule = grp.no_clock_out_rule;
         draftPerks = grp.perks.slice();
+        draftCustomMathOverride = false;
+        draftMathMode = normalizeAttMathMode(grp.math_mode);
+        draftOtThreshMin = clampAttThresholdMin(grp.ot_threshold_min, 10);
+        draftOtEarlyThreshMin = clampAttThresholdMin(grp.ot_early_threshold_min, 15);
+        draftOtCountFrom = normalizeOtCountFrom(grp.ot_count_from);
       };
+
+      $('ssmMathModeSelect')?.addEventListener('change', () => {
+        syncLiveInputs();
+        if (!draftCustomMathOverride) {
+          const g = getPolicyGroups(entry.company).find(x => x.id === draftPolicyGroupId) || resolveCompanyDefaultPolicyGroupAtDate(entry.company, today);
+          if (g) {
+            draftMathMode = normalizeAttMathMode(g.math_mode);
+            draftOtThreshMin = clampAttThresholdMin(g.ot_threshold_min, 10);
+            draftOtEarlyThreshMin = clampAttThresholdMin(g.ot_early_threshold_min, 15);
+            draftOtCountFrom = normalizeOtCountFrom(g.ot_count_from);
+          }
+        }
+        renderModalInner();
+      });
+      modal.querySelectorAll('[data-ssm-ot-thresh]').forEach(btn => btn.addEventListener('click', () => {
+        syncLiveInputs();
+        draftCustomMathOverride = true;
+        draftOtThreshMin = clampAttThresholdMin(btn.getAttribute('data-ssm-ot-thresh'), 10);
+        renderModalInner();
+      }));
+      $('ssmOtThreshMin')?.addEventListener('change', () => {
+        syncLiveInputs();
+        draftCustomMathOverride = true;
+        renderModalInner();
+      });
+      $('ssmOtEarlyThreshMin')?.addEventListener('change', () => {
+        syncLiveInputs();
+        draftCustomMathOverride = true;
+        renderModalInner();
+      });
+      $('ssmOtCountFrom')?.addEventListener('change', () => {
+        syncLiveInputs();
+        draftCustomMathOverride = true;
+        renderModalInner();
+      });
+      $('ssmPolEffFrom')?.addEventListener('change', () => { syncLiveInputs(); renderModalInner(); });
+      $('ssmPolEffTo')?.addEventListener('change', () => { syncLiveInputs(); renderModalInner(); });
+      $('ssmPolBackfillChk')?.addEventListener('change', () => { syncLiveInputs(); renderModalInner(); });
+      $('ssmCancelPolWinEditBtn')?.addEventListener('click', () => {
+        draftPolEditWinId = '';
+        draftPolEffFrom = '';
+        draftPolEffTo = '';
+        draftPolEffNote = '';
+        renderModalInner();
+      });
+      modal.querySelectorAll('[data-ssm-pol-edit-win]').forEach(btn => btn.addEventListener('click', () => {
+        syncLiveInputs();
+        const wid = btn.getAttribute('data-ssm-pol-edit-win') || '';
+        const w = draftPolicyTimeline.find(x => String(x.id) === String(wid));
+        if (!w) return;
+        draftPolEditWinId = w.id;
+        draftPolEffFrom = w.start_date || '';
+        draftPolEffTo = w.end_date || '';
+        draftPolEffNote = w.note || '';
+        if (w.policy_group_id) draftPolicyGroupId = w.policy_group_id;
+        draftCustomMathOverride = true;
+        if (w.math_mode) draftMathMode = normalizeAttMathMode(w.math_mode);
+        if (w.ot_threshold_min != null) draftOtThreshMin = clampAttThresholdMin(w.ot_threshold_min, 10);
+        if (w.ot_early_threshold_min != null) draftOtEarlyThreshMin = clampAttThresholdMin(w.ot_early_threshold_min, 15);
+        if (w.ot_count_from) draftOtCountFrom = normalizeOtCountFrom(w.ot_count_from);
+        renderModalInner();
+      }));
+      modal.querySelectorAll('[data-ssm-pol-del-win]').forEach(btn => btn.addEventListener('click', () => {
+        syncLiveInputs();
+        const wid = btn.getAttribute('data-ssm-pol-del-win') || '';
+        draftPolicyTimeline = draftPolicyTimeline.filter(x => String(x.id) !== String(wid));
+        draftPolicyTimelineEdited = true;
+        if (draftPolEditWinId === wid) {
+          draftPolEditWinId = '';
+          draftPolEffFrom = '';
+          draftPolEffTo = '';
+          draftPolEffNote = '';
+        }
+        renderModalInner();
+      }));
 
       modal.querySelectorAll('[data-ssm-policy-group]').forEach(card => {
         card.addEventListener('click', e => {
@@ -133021,6 +135012,10 @@
         syncLiveInputs();
         openPolicyGroupModal('', {
           name: `${entry.company} Custom Perks`,
+          math_mode: draftMathMode,
+          ot_threshold_min: draftOtThreshMin,
+          ot_early_threshold_min: draftOtEarlyThreshMin,
+          ot_count_from: draftOtCountFrom,
           late_penalty_mode: draftLatePenaltyMode,
           late_multiplier: draftLateMultiplier,
           ot_multiplier: draftOtMultiplier,
@@ -133273,21 +135268,33 @@
           renderModalInner();
         });
       });
+      const onSsmCoPolicyUpdate = (el, bu, src) => {
+        syncLiveInputs();
+        const hasExplicitRule = hasExplicitStaffWorkRule(entry.name, entry.company);
+        const res = applyCompanyDefaultPolicyFromCard(el, bu, { source: src });
+        if (res && res.ok && norm(entry.company) === norm(bu) && !hasExplicitRule) {
+          draftPolicyGroupId = res.group.id;
+          applyPolicyGroupToDraft(res.group.id);
+        }
+        renderModalInner();
+      };
       modal.querySelectorAll('[data-ssm-bu-policy-default]').forEach(sel => {
-        sel.addEventListener('change', () => {
+        sel.addEventListener('change', () => onSsmCoPolicyUpdate(sel, sel.getAttribute('data-ssm-bu-policy-default') || entry.company, 'group_select'));
+      });
+      modal.querySelectorAll('[data-ssm-bu-policy-math]').forEach(sel => {
+        sel.addEventListener('change', () => onSsmCoPolicyUpdate(sel, sel.getAttribute('data-ssm-bu-policy-math') || entry.company, 'math_or_apply'));
+      });
+      modal.querySelectorAll('[data-ssm-bu-policy-ot-thresh]').forEach(inp => {
+        inp.addEventListener('change', () => onSsmCoPolicyUpdate(inp, inp.getAttribute('data-ssm-bu-policy-ot-thresh') || entry.company, 'math_or_apply'));
+      });
+      modal.querySelectorAll('[data-ssm-bu-policy-apply]').forEach(btn => {
+        btn.addEventListener('click', () => onSsmCoPolicyUpdate(btn, btn.getAttribute('data-ssm-bu-policy-apply') || entry.company, 'math_or_apply'));
+      });
+      modal.querySelectorAll('[data-co-policy-rm-win]').forEach(btn => {
+        btn.addEventListener('click', () => {
           syncLiveInputs();
-          const bu = sel.getAttribute('data-ssm-bu-policy-default') || entry.company;
-          const grpId = sel.value || 'pkg_15_open_15d';
-          // Read before the backfill below saves a rule for everyone on the old default.
-          const hasExplicitRule = hasExplicitStaffWorkRule(entry.name, entry.company);
-          const res = setCompanyDefaultPolicyGroup(bu, grpId, { backfill: true });
-          if (res && res.ok) {
-            if (norm(entry.company) === norm(bu) && !hasExplicitRule) {
-              draftPolicyGroupId = res.group.id;
-              applyPolicyGroupToDraft(res.group.id);
-            }
-            toast(`Set "${res.group.name}" as default policy group for ${bu}${res.backfilledStaff ? ` · Updated ${res.backfilledStaff} staff` : ''}`, 'ok');
-          }
+          removeCompanyPolicyTimelineWindow(btn.getAttribute('data-co-policy-co') || entry.company, btn.getAttribute('data-co-policy-rm-win') || '');
+          toast('Removed company policy window and recalculated', 'ok');
           renderModalInner();
         });
       });
@@ -133465,6 +135472,11 @@
           saveStaffWorkRule(s.name, {
             company: s.company,
             policy_group_id: draftPolicyGroupId,
+            custom_math_override: draftCustomMathOverride,
+            math_mode: draftMathMode,
+            ot_threshold_min: draftOtThreshMin,
+            ot_early_threshold_min: draftOtEarlyThreshMin,
+            ot_count_from: draftOtCountFrom,
             grace_min: draftGrace,
             early_leave_grace_min: draftEarlyGrace,
             late_when: draftLateWhen,
@@ -133847,10 +135859,26 @@
           : pruneDayTimingsToWorkdays(normalizeDayTimingsMap(draftDayTimings), [0, 1, 2, 3, 4, 5, 6].filter(d => !draftDays.includes(d)));
         const finalDateList = draftHasTimingExc ? normalizeDateTimingsList(draftDateTimings) : [];
         const hasSat = Boolean(finalDayMap['6']);
-        saveStaffWorkRule(entry.name, {
+        if (draftPolEffTo && !draftPolEffFrom) {
+          toast('Enter an Effective From date when setting Effective To', 'warn');
+          $('ssmPolEffFrom')?.focus();
+          return;
+        }
+        if (draftPolEffTo && draftPolEffFrom && draftPolEffTo < draftPolEffFrom) {
+          toast('Effective End Date must be on or after Start Date', 'warn');
+          $('ssmPolEffTo')?.focus();
+          return;
+        }
+        const effGrpForSave = getPolicyGroups(entry.company).find(g => g.id === draftPolicyGroupId) || null;
+        const staffSavePatch = {
           company: entry.company,
           shift_id: draftShiftId,
           policy_group_id: draftPolicyGroupId,
+          custom_math_override: draftCustomMathOverride,
+          math_mode: draftCustomMathOverride ? draftMathMode : (effGrpForSave ? effGrpForSave.math_mode : draftMathMode),
+          ot_threshold_min: draftCustomMathOverride ? draftOtThreshMin : (effGrpForSave ? effGrpForSave.ot_threshold_min : draftOtThreshMin),
+          ot_early_threshold_min: draftCustomMathOverride ? draftOtEarlyThreshMin : (effGrpForSave ? effGrpForSave.ot_early_threshold_min : draftOtEarlyThreshMin),
+          ot_count_from: draftCustomMathOverride ? draftOtCountFrom : (effGrpForSave ? effGrpForSave.ot_count_from : draftOtCountFrom),
           custom_name: draftCustomName,
           custom_start: draftCustomStart,
           custom_end: draftCustomEnd,
@@ -133880,13 +135908,20 @@
           ot_window_start: draftOtWinStart,
           ot_window_end: draftOtWinEnd,
           ot_passes: draftPasses,
-          shift_overrides: draftOverrides
-        });
+          shift_overrides: draftOverrides,
+          effective_from: draftPolEffFrom,
+          effective_to: draftPolEffTo,
+          timeline_id: draftPolEditWinId || undefined,
+          timeline_note: draftPolEffNote
+        };
+        if (draftPolicyTimelineEdited) staffSavePatch.policy_timeline = draftPolicyTimeline;
+        const saveRes = saveStaffWorkRule(entry.name, staffSavePatch, { backfillAtt: draftPolBackfill });
         if (draftHolidaysOn !== savedHolidaysOn) {
           const hr = setStaffReceivesHolidays(entry.name, entry.company, draftHolidaysOn);
           if (hr && hr.ok === false) toast(hr.error || 'Could not save the holiday setting', 'warn');
         }
-        toast(`Saved shift, policy & perks group, multipliers & rules for ${entry.name}`, 'ok');
+        const bfCnt = saveRes && saveRes.attBackfill ? Number(saveRes.attBackfill.updatedRows || 0) : 0;
+        toast(`Saved shift, policy & perks group, multipliers & rules for ${entry.name}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`, 'ok');
         closeStaffScheduleModal();
       });
 
@@ -134697,6 +136732,7 @@
       updated_at: nowIso
     });
     _holidayCfgRev = (_holidayCfgRev || 0) + 1;
+    _TIME24_WS_REV++;
     return ws.companyPolicyDefaults[coKey];
   }
 
@@ -136739,6 +138775,147 @@
     }
   }
 
+  function renderCompanyDefaultAttendanceCardHtml(coName, opts = {}) {
+    const attrPrefix = opts.attrPrefix === 'ssm' ? 'ssm' : 'pay';
+    const buAttr = `${attrPrefix}-bu`;
+    const curDef = getBuDefaultShift(coName);
+    const curDefCode = (curDef && curDef.shift_code) || 'day_8_4';
+    const coShiftOpts = getShiftTypes(coName);
+    const coPolicyOpts = getPolicyGroups(coName);
+    const curPolDefId = getCompanyDefaultPolicyGroupId(coName);
+    const today = todayISO();
+    const resolvedCoPol = resolveCompanyDefaultPolicyGroupAtDate(coName, today);
+    const coEntry = getCompanyDefaultPolicyEntry(coName);
+    const timeline = normalizePolicyTimelineList(coEntry && coEntry.policy_timeline);
+    const activeMath = normalizeAttMathMode(resolvedCoPol.math_mode);
+    const activeOtThresh = clampAttThresholdMin(resolvedCoPol.ot_threshold_min, 10);
+    const grpById = new Map(coPolicyOpts.map(g => [g.id, g]));
+    const timelineHtml = timeline.length ? `
+      <div class="att-co-timeline-chips">
+        ${timeline.map(w => {
+          const wGrp = grpById.get(w.policy_group_id);
+          const wGrpLbl = wGrp ? wGrp.name : (w.policy_group_id || 'Policy');
+          const wMathLbl = normalizeAttMathMode(w.math_mode || 'tenth_hour') === 'per_minute' ? '$/min' : '0.1h';
+          const wEnd = w.end_date ? fmtDateDMY(w.end_date) : 'Present';
+          const wThresh = w.ot_threshold_min != null ? `OT ≥${w.ot_threshold_min}m` : '';
+          return `<span class="att-co-win-chip">
+            <span>${esc(fmtDateDMY(w.start_date))}–${esc(wEnd)}: <b>${esc(wGrpLbl)}</b> · ${wMathLbl}${wThresh ? ` · ${wThresh}` : ''}</span>
+            <button type="button" class="stm-exc-chip-rm" data-co-policy-rm-win="${esc(w.id)}" data-co-policy-co="${esc(coName)}" aria-label="Remove window">✕</button>
+          </span>`;
+        }).join('')}
+      </div>
+    ` : '';
+    const mathPillHtml = `<span class="att-math-pill ${activeMath === 'per_minute' ? 'is-min' : ''}">${activeMath === 'per_minute' ? '$ / Min' : '0.1h Steps'} · OT ≥${activeOtThresh}m</span>`;
+    return `
+      <div class="att-co-def-card" data-co-def-card="${esc(coName)}" data-co-def-prefix="${esc(buAttr)}">
+        <div class="att-co-def-head">
+          <span style="display:inline-flex;align-items:center;gap:6px">${coBadge(coName)} <strong style="font-size:11.5px">${esc(opts.title || 'Company Defaults')}</strong></span>
+          ${mathPillHtml}
+        </div>
+        <div class="att-co-def-grid">
+          <div class="ssm-field" style="margin:0">
+            <label style="font-size:10.5px">Default Shift</label>
+            <select class="kiosk-select" data-${buAttr}-default="${esc(coName)}" data-plain-options="1" style="height:29px;font-size:11.5px">
+              ${coShiftOpts.map(st => {
+                const stExc = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(st.day_timings, st.days), st.date_timings, st.start_time, st.end_time);
+                const excOpt = stExc !== 'Same Every Workday' ? ` · ${stExc}` : '';
+                return `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)}${esc(excOpt)})</option>`;
+              }).join('')}
+            </select>
+          </div>
+          <div class="ssm-field" style="margin:0">
+            <label style="font-size:10.5px">Default Policy &amp; Perks</label>
+            <select class="kiosk-select" data-${buAttr}-policy-default="${esc(coName)}" data-plain-options="1" style="height:29px;font-size:11.5px">
+              ${coPolicyOpts.map(pg => `<option value="${esc(pg.id)}" ${pg.id === curPolDefId ? 'selected' : ''}>${esc(pg.name)} (${esc(pg.short)})</option>`).join('')}
+            </select>
+          </div>
+          <div class="ssm-field" style="margin:0">
+            <label style="font-size:10.5px">Calc Math &amp; OT ≥(m)</label>
+            <div style="display:flex;gap:4px;align-items:center">
+              <select class="kiosk-select" data-${buAttr}-policy-math="${esc(coName)}" data-plain-options="1" style="height:29px;font-size:11.5px;flex:1">
+                <option value="tenth_hour" ${activeMath === 'tenth_hour' ? 'selected' : ''}>Legacy 0.1h</option>
+                <option value="per_minute" ${activeMath === 'per_minute' ? 'selected' : ''}>Per-Min ($/m)</option>
+              </select>
+              <input type="number" class="mono" min="0" max="180" step="1" data-${buAttr}-policy-ot-thresh="${esc(coName)}" value="${activeOtThresh}" style="width:52px;height:29px;font-size:11.5px" aria-label="Overtime threshold minutes for ${esc(coName)}">
+            </div>
+          </div>
+          <div class="ssm-field" style="margin:0">
+            <label style="font-size:10.5px">Effective From (Opt.)</label>
+            <div style="display:flex;gap:4px;align-items:center">
+              <input type="date" class="kiosk-select" data-${buAttr}-policy-eff="${esc(coName)}" value="" style="height:29px;font-size:11px;flex:1" aria-label="Effective from date for ${esc(coName)}">
+              <button type="button" class="btn kiosk-mini-btn" data-${buAttr}-policy-apply="${esc(coName)}" style="height:29px">Apply</button>
+            </div>
+          </div>
+        </div>
+        ${timelineHtml}
+      </div>
+    `;
+  }
+
+  function applyCompanyDefaultPolicyFromCard(el, bu, opts = {}) {
+    const card = el && el.closest ? (el.closest('[data-co-def-card]') || el.parentElement) : null;
+    const prefix = (card && card.getAttribute('data-co-def-prefix')) || 'pay-bu';
+    const polSel = card ? card.querySelector(`[data-${prefix}-policy-default]`) : null;
+    const mathSel = card ? card.querySelector(`[data-${prefix}-policy-math]`) : null;
+    const threshInp = card ? card.querySelector(`[data-${prefix}-policy-ot-thresh]`) : null;
+    const effInp = card ? card.querySelector(`[data-${prefix}-policy-eff]`) : null;
+    const grpId = (polSel && polSel.value) || getCompanyDefaultPolicyGroupId(bu) || 'pkg_15_open_15d';
+    const grpObj = getPolicyGroups(bu).find(g => g.id === grpId) || resolvePolicyGroupAtDate(grpId, bu, todayISO());
+    const fromGroupSelect = opts.source === 'group_select';
+    const nextMath = fromGroupSelect && grpObj
+      ? normalizeAttMathMode(grpObj.math_mode)
+      : normalizeAttMathMode(mathSel ? mathSel.value : (grpObj ? grpObj.math_mode : 'tenth_hour'));
+    const nextThresh = fromGroupSelect && grpObj
+      ? clampAttThresholdMin(grpObj.ot_threshold_min, 10)
+      : clampAttThresholdMin(threshInp ? threshInp.value : (grpObj ? grpObj.ot_threshold_min : 10), 10);
+    const effFromRaw = effInp ? String(effInp.value || '').trim().slice(0, 10) : '';
+    const effFrom = /^\d{4}-\d{2}-\d{2}$/.test(effFromRaw) ? effFromRaw : '';
+    const today = todayISO();
+    const prev = previewPolicyChangeImpact({
+      company: bu,
+      fromDate: effFrom || today,
+      toDate: today,
+      overridePolicy: { math_mode: nextMath, ot_threshold_min: nextThresh }
+    });
+    const res = setCompanyDefaultPolicyGroup(bu, grpId, {
+      effective_from: effFrom,
+      math_mode: nextMath,
+      ot_threshold_min: nextThresh,
+      backfill: true
+    });
+    if (res && res.ok) {
+      const bf = res.attBackfill || prev;
+      const showUsd = canViewPayrollDollarAmounts();
+      const deltaStr = showUsd && bf && bf.updatedRows > 0
+        ? ` · Δ ${bf.netDeltaUsd >= 0 ? '+' : '-'}${fmtUSD(Math.abs(bf.netDeltaUsd || 0), 2)}`
+        : '';
+      const logStr = bf && bf.updatedRows > 0 ? ` · Recalculated ${bf.updatedRows} logs${deltaStr}` : '';
+      const effStr = effFrom ? ` from ${fmtDateDMY(effFrom)}` : '';
+      toast(`Set "${res.group.name}" (${nextMath === 'per_minute' ? '$/min' : '0.1h'}, OT ≥${nextThresh}m) for ${bu}${effStr}${res.backfilledStaff ? ` · ${res.backfilledStaff} staff` : ''}${logStr}`, 'ok');
+    }
+    return res;
+  }
+
+  function removeCompanyPolicyTimelineWindow(coName, winIdOrIdx) {
+    _TIME24_WS_REV++;
+    const ws = ensureWorkSchedulesState();
+    const coKey = norm(coName || '');
+    const entry = getCompanyDefaultPolicyEntry(coName);
+    if (!entry) return { ok: false };
+    const curList = normalizePolicyTimelineList(entry.policy_timeline);
+    const hasExactId = curList.some(w => String(w.id) === String(winIdOrIdx));
+    const nextTimeline = hasExactId
+      ? curList.filter(w => String(w.id) !== String(winIdOrIdx))
+      : (typeof winIdOrIdx === 'number' && Number.isInteger(winIdOrIdx)
+          ? curList.filter((_, idx) => idx !== winIdOrIdx)
+          : curList.slice());
+    const curDefId = getCompanyDefaultPolicyGroupId(coName);
+    return setCompanyDefaultPolicyGroup(coName, curDefId, {
+      policy_timeline: nextTimeline,
+      backfill: true
+    });
+  }
+
   function openPolicyGroupModal(groupId = '', seedSpec = null, onSaved = null) {
     const activeBuList = getActiveIndustryBuList(STATE.company);
     const activeTargetCo = (seedSpec && seedSpec.targetCompany) || COMPANY_BU_MATCH[STATE.company] || activeBuList[0] || defaultEntryCompany() || 'WTC';
@@ -136749,6 +138926,10 @@
       name: '',
       short: '',
       company: 'All Companies',
+      math_mode: 'tenth_hour',
+      ot_threshold_min: 10,
+      ot_early_threshold_min: 15,
+      ot_count_from: 'shift_end',
       late_penalty_mode: 'multiplier',
       late_multiplier: 1.5,
       ot_multiplier: 1.5,
@@ -136767,6 +138948,10 @@
     let draftShort = existing ? existing.short : '';
     let draftCompany = existing ? (existing.isBuiltin ? 'All Companies' : (existing.company || 'All Companies')) : ((seedSpec && seedSpec.company) || 'All Companies');
     let draftSetCoDef = Boolean(existing && getCompanyDefaultPolicyGroupId(activeTargetCo) === existing.id);
+    let draftMathMode = base.math_mode;
+    let draftOtThreshMin = base.ot_threshold_min;
+    let draftOtEarlyThreshMin = base.ot_early_threshold_min;
+    let draftOtCountFrom = base.ot_count_from;
     let draftLateMode = base.late_penalty_mode;
     let draftLateMult = base.late_multiplier;
     let draftOtMult = base.ot_multiplier;
@@ -136780,6 +138965,12 @@
     let draftNoOut = base.no_clock_out_rule;
     let draftPerks = base.perks.slice();
     let draftTone = base.tone || 'emerald';
+    let draftVersions = normalizePolicyTimelineList(base.versions);
+    let draftVersionsEdited = false;
+    let draftEffFrom = '';
+    let draftEffTo = '';
+    let draftEditingVersionId = '';
+    let draftVersionNote = '';
     let draftBackfill = true;
     const viewerAllowed = allowedCompanyNames();
     const allAllowedCos = getCompanyCatalog().map(c => c.name).filter(nm => !viewerAllowed.length || viewerAllowed.includes(nm));
@@ -136800,16 +138991,45 @@
       const knownIds = new Set(AVAILABLE_STAFF_PERKS.map(p => p.id));
       const extraPerks = draftPerks.filter(p => p && !knownIds.has(p));
       const perkItems = AVAILABLE_STAFF_PERKS.concat(extraPerks.map(p => ({ id: p, label: p, icon: 'check_circle' })));
-      const assignedCnt = existing
-        ? getKioskStaffDirectory({ includeEnded: true }).filter(s => getStaffWorkRule(s.name, s.company).policy_group_id === existing.id).length
-        : 0;
+      const assignedStaff = existing
+        ? getKioskStaffDirectory({ includeEnded: true }).filter(s => getStaffWorkRule(s.name, s.company).policy_group_id === existing.id)
+        : [];
+      const assignedCnt = assignedStaff.length;
+      const showDollars = canViewPayrollDollarAmounts();
+      const today = todayISO();
+      const previewFrom = /^\d{4}-\d{2}-\d{2}$/.test(draftEffFrom) ? draftEffFrom : today;
+      const previewTo = /^\d{4}-\d{2}-\d{2}$/.test(draftEffTo) ? draftEffTo : today;
+      const previewRes = (draftBackfill && existing && (draftEffFrom || draftMathMode !== base.math_mode || draftOtThreshMin !== base.ot_threshold_min || draftOtCountFrom !== base.ot_count_from))
+        ? (assignedStaff.length > 0
+            ? previewPolicyChangeImpact({
+                company: draftCompany !== 'All Companies' ? draftCompany : '',
+                staffNames: assignedStaff.map(s => s.name),
+                fromDate: previewFrom,
+                toDate: previewTo,
+                overridePolicy: {
+                  math_mode: draftMathMode,
+                  ot_threshold_min: draftOtThreshMin,
+                  ot_early_threshold_min: draftOtEarlyThreshMin,
+                  ot_count_from: draftOtCountFrom,
+                  late_penalty_mode: draftLateMode,
+                  late_multiplier: draftLateMult,
+                  ot_multiplier: draftOtMult,
+                  ot_mode: draftOtMode,
+                  ot_max_hours: draftOtMaxHrs,
+                  grace_min: draftGrace,
+                  early_leave_grace_min: draftEarlyGrace,
+                  no_clock_out_rule: draftNoOut
+                }
+              })
+            : { ok: true, dryRun: true, updatedRows: 0, skippedClosed: 0, skippedManual: 0, netDeltaUsd: 0, earnedDeltaUsd: 0, lostDeltaUsd: 0, fromDate: previewFrom, toDate: previewTo, rows: [] })
+        : null;
 
       modal.innerHTML = `
-        <div class="modal-card" style="width:min(760px,95vw);max-width:760px">
+        <div class="modal-card" style="width:min(820px,96vw);max-width:820px">
           <div class="modal-head">
             <div>
               <div class="modal-title">${ic('sliders')} ${existing ? `Edit Policy &amp; Perks Group: ${esc(existing.name)}` : 'New Policy, Multipliers &amp; Perks Group'}</div>
-              <div class="modal-sub">Bundle lateness &amp; overtime multipliers, allowable OT, annual vacation days, tolerances, and staff perks into one selectable type</div>
+              <div class="modal-sub">Bundle calculation precision, OT start threshold, multipliers, effective-date versions, and staff perks into one selectable policy</div>
             </div>
             <button type="button" class="icon-btn" id="pgmCloseBtn" aria-label="Close">✕</button>
           </div>
@@ -136840,6 +139060,40 @@
                     { id: 'indigo', lbl: 'Indigo' },
                     { id: 'rose', lbl: 'Rose' }
                   ].map(t => `<button type="button" class="kiosk-qchip ${draftTone === t.id ? 'active' : ''}" data-pgm-tone="${t.id}">${t.lbl}</button>`).join('')}
+                </div>
+              </div>
+            </div>
+
+            <div class="att-policy-timeline-box">
+              <div class="ssm-comp-head" style="margin-bottom:6px">
+                <label style="font-size:12px;font-weight:700">Calculation Precision &amp; Overtime Threshold</label>
+                <span class="att-math-pill ${draftMathMode === 'per_minute' ? 'is-min' : ''}">${draftMathMode === 'per_minute' ? '$ / Min Exact' : '0.1h Decimal'} · OT ≥${draftOtThreshMin}m (${draftOtCountFrom === 'after_threshold' ? 'After Thresh' : 'From Shift End'})</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1.1fr 1.3fr 0.7fr 1.1fr;gap:10px;align-items:end">
+                <div class="ssm-field" style="margin:0">
+                  <label for="pgmMathMode">Calculation Math Mode</label>
+                  <select id="pgmMathMode" class="kiosk-select" data-plain-options="1">
+                    <option value="tenth_hour" ${draftMathMode === 'tenth_hour' ? 'selected' : ''}>Legacy 0.1h (6-Min Steps)</option>
+                    <option value="per_minute" ${draftMathMode === 'per_minute' ? 'selected' : ''}>Exact Per-Minute ($ / min)</option>
+                  </select>
+                </div>
+                <div class="ssm-field" style="margin:0">
+                  <label for="pgmOtThreshMin">OT Start Threshold (min)</label>
+                  <div class="att-thresh-pills">
+                    ${[0, 5, 10, 15, 30].map(m => `<button type="button" class="kiosk-qchip mono ${draftOtThreshMin === m ? 'active' : ''}" data-pgm-ot-thresh="${m}">${m === 0 ? '0m' : `${m}m`}</button>`).join('')}
+                    <input type="number" id="pgmOtThreshMin" class="mono" min="0" max="180" step="1" value="${draftOtThreshMin}" style="width:56px">
+                  </div>
+                </div>
+                <div class="ssm-field" style="margin:0">
+                  <label for="pgmOtEarlyThreshMin">Early OT (min)</label>
+                  <input type="number" id="pgmOtEarlyThreshMin" class="mono" min="0" max="180" step="1" value="${draftOtEarlyThreshMin}">
+                </div>
+                <div class="ssm-field" style="margin:0">
+                  <label for="pgmOtCountFrom">Count OT From</label>
+                  <select id="pgmOtCountFrom" class="kiosk-select" data-plain-options="1">
+                    <option value="shift_end" ${draftOtCountFrom === 'shift_end' ? 'selected' : ''}>Shift End</option>
+                    <option value="after_threshold" ${draftOtCountFrom === 'after_threshold' ? 'selected' : ''}>After Threshold</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -136924,6 +139178,54 @@
               </div>
             </div>
 
+            <div class="att-policy-timeline-box">
+              <div class="ssm-comp-head" style="margin-bottom:6px">
+                <label style="font-size:12px;font-weight:700">${draftEditingVersionId ? 'Edit Policy Version Window' : 'Effective Date &amp; Version History'}</label>
+                ${draftEditingVersionId ? `<button type="button" class="btn kiosk-mini-btn" id="pgmCancelVerEditBtn">Cancel Edit</button>` : `<span class="muted" style="font-size:11px">Leave dates blank to update baseline in place, or enter a start date to record a chronological policy switch</span>`}
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1.4fr;gap:8px">
+                <div class="ssm-field" style="margin:0">
+                  <label for="pgmEffectiveFrom">Effective From</label>
+                  <input type="date" id="pgmEffectiveFrom" value="${esc(draftEffFrom)}">
+                </div>
+                <div class="ssm-field" style="margin:0">
+                  <label for="pgmEffectiveTo">Effective To (Optional)</label>
+                  <input type="date" id="pgmEffectiveTo" value="${esc(draftEffTo)}">
+                </div>
+                <div class="ssm-field" style="margin:0">
+                  <label for="pgmVersionNote">Version Note</label>
+                  <input type="text" id="pgmVersionNote" value="${esc(draftVersionNote)}" placeholder="e.g. Switch to $/min Nov 1">
+                </div>
+              </div>
+              ${draftVersions.length ? `
+                <div class="att-policy-timeline-list" id="pgmVersionList">
+                  ${draftVersions.map(v => {
+                    const vm = normalizeAttMathMode(v.math_mode || 'tenth_hour');
+                    const vt = clampAttThresholdMin(v.ot_threshold_min, 10);
+                    const vFrom = fmtDateDMY(v.start_date);
+                    const vTo = v.end_date ? fmtDateDMY(v.end_date) : 'Present';
+                    return `<div class="att-policy-ver-row ${draftEditingVersionId === v.id ? 'is-editing' : ''}">
+                      <span class="mono"><b>${esc(vFrom)}</b> .. ${esc(vTo)}</span>
+                      <span class="att-math-pill ${vm === 'per_minute' ? 'is-min' : ''}">${vm === 'per_minute' ? '$ / Min' : '0.1h'}</span>
+                      <span class="mono">OT ≥${vt}m · ${v.ot_count_from === 'after_threshold' ? 'After Thresh' : 'Shift End'}</span>
+                      ${v.note ? `<span class="muted">${esc(v.note)}</span>` : '<span></span>'}
+                      <span style="display:inline-flex;gap:4px;margin-inline-start:auto">
+                        <button type="button" class="btn kiosk-mini-btn" data-pgm-edit-ver="${esc(v.id)}">Edit</button>
+                        <button type="button" class="btn kiosk-mini-btn" data-pgm-del-ver="${esc(v.id)}">Delete</button>
+                      </span>
+                    </div>`;
+                  }).join('')}
+                </div>
+              ` : ''}
+              ${previewRes ? `
+                <div class="att-backfill-preview" id="pgmBackfillPreview">
+                  ${draftEffFrom && draftEffFrom > today
+                    ? `<span>Scheduled for future effective date <b>${esc(fmtDateDMY(draftEffFrom))}</b> (current active policy stays until then).</span>`
+                    : `<span>Dry-Run Preview (${esc(fmtDateDMY(previewRes.fromDate))}–${esc(fmtDateDMY(previewRes.toDate))}): recalculates <b>${fmtNum(previewRes.updatedRows)}</b> unlocked logs${showDollars ? ` · Earned Δ <b class="att-earn-pos">${previewRes.earnedDeltaUsd >= 0 ? '+' : ''}${fmtUSD(previewRes.earnedDeltaUsd, 2)}</b> · Lost Δ <b class="att-loss-neg">${previewRes.lostDeltaUsd >= 0 ? '+' : ''}${fmtUSD(previewRes.lostDeltaUsd, 2)}</b> · Net Δ <b>${previewRes.netDeltaUsd >= 0 ? '+' : '-'}${fmtUSD(Math.abs(previewRes.netDeltaUsd), 2)}</b>` : ''}${(previewRes.skippedClosed || previewRes.skippedManual) ? ` (${fmtNum(previewRes.skippedClosed)} closed skipped, ${fmtNum(previewRes.skippedManual)} manual kept)` : ''}</span>`}
+                </div>
+              ` : ''}
+            </div>
+
             <div class="ssm-perks-box">
               <div class="ssm-perks-head">
                 <span class="ssm-subhead-lbl" style="margin:0">Group Perks &amp; Functions</span>
@@ -136975,6 +139277,13 @@
         if ($('pgmName')) draftName = $('pgmName').value;
         if ($('pgmCompany') && !$('pgmCompany').disabled) draftCompany = $('pgmCompany').value || 'All Companies';
         if ($('pgmShort')) draftShort = $('pgmShort').value;
+        if ($('pgmMathMode')) draftMathMode = normalizeAttMathMode($('pgmMathMode').value);
+        if ($('pgmOtThreshMin')) draftOtThreshMin = clampAttThresholdMin($('pgmOtThreshMin').value, 10);
+        if ($('pgmOtEarlyThreshMin')) draftOtEarlyThreshMin = clampAttThresholdMin($('pgmOtEarlyThreshMin').value, 15);
+        if ($('pgmOtCountFrom')) draftOtCountFrom = normalizeOtCountFrom($('pgmOtCountFrom').value);
+        if ($('pgmEffectiveFrom')) draftEffFrom = String($('pgmEffectiveFrom').value || '').trim().slice(0, 10);
+        if ($('pgmEffectiveTo')) draftEffTo = String($('pgmEffectiveTo').value || '').trim().slice(0, 10);
+        if ($('pgmVersionNote')) draftVersionNote = $('pgmVersionNote').value;
         if ($('pgmOtMult')) draftOtMult = Math.max(1, Math.min(5, Number($('pgmOtMult').value || 1.5)));
         if ($('pgmOtMaxHrs')) draftOtMaxHrs = Math.max(0.5, Math.min(12, Number($('pgmOtMaxHrs').value || 2)));
         if ($('pgmVacDays')) draftVacDays = Math.max(0, Math.min(90, Math.round(Number($('pgmVacDays').value || 0))));
@@ -136989,6 +139298,56 @@
 
       $('pgmCloseBtn')?.addEventListener('click', closePolicyGroupModal);
       $('pgmCancelBtn')?.addEventListener('click', closePolicyGroupModal);
+      $('pgmMathMode')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      modal.querySelectorAll('[data-pgm-ot-thresh]').forEach(b => b.addEventListener('click', () => {
+        syncPgmDom();
+        draftOtThreshMin = clampAttThresholdMin(b.getAttribute('data-pgm-ot-thresh'), 10);
+        renderGroupModal();
+      }));
+      $('pgmOtThreshMin')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmOtEarlyThreshMin')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmOtCountFrom')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmEffectiveFrom')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmEffectiveTo')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmBackfillChk')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmCancelVerEditBtn')?.addEventListener('click', () => {
+        draftEditingVersionId = '';
+        draftEffFrom = '';
+        draftEffTo = '';
+        draftVersionNote = '';
+        renderGroupModal();
+      });
+      modal.querySelectorAll('[data-pgm-edit-ver]').forEach(b => b.addEventListener('click', () => {
+        const vid = b.getAttribute('data-pgm-edit-ver') || '';
+        const v = draftVersions.find(x => String(x.id) === String(vid));
+        if (!v) return;
+        draftEditingVersionId = v.id;
+        draftEffFrom = v.start_date || '';
+        draftEffTo = v.end_date || '';
+        draftVersionNote = v.note || '';
+        if (v.math_mode) draftMathMode = normalizeAttMathMode(v.math_mode);
+        if (v.ot_threshold_min != null) draftOtThreshMin = clampAttThresholdMin(v.ot_threshold_min, 10);
+        if (v.ot_early_threshold_min != null) draftOtEarlyThreshMin = clampAttThresholdMin(v.ot_early_threshold_min, 15);
+        if (v.ot_count_from) draftOtCountFrom = normalizeOtCountFrom(v.ot_count_from);
+        if (v.ot_multiplier != null) draftOtMult = Number(v.ot_multiplier);
+        if (v.late_penalty_mode) draftLateMode = v.late_penalty_mode;
+        if (v.late_multiplier != null) draftLateMult = Number(v.late_multiplier);
+        if (v.grace_min != null) draftGrace = Number(v.grace_min);
+        if (v.early_leave_grace_min != null) draftEarlyGrace = Number(v.early_leave_grace_min);
+        renderGroupModal();
+      }));
+      modal.querySelectorAll('[data-pgm-del-ver]').forEach(b => b.addEventListener('click', () => {
+        const vid = b.getAttribute('data-pgm-del-ver') || '';
+        draftVersions = draftVersions.filter(x => String(x.id) !== String(vid));
+        draftVersionsEdited = true;
+        if (draftEditingVersionId === vid) {
+          draftEditingVersionId = '';
+          draftEffFrom = '';
+          draftEffTo = '';
+          draftVersionNote = '';
+        }
+        renderGroupModal();
+      }));
       modal.querySelectorAll('[data-pgm-tone]').forEach(b => b.addEventListener('click', () => {
         syncPgmDom();
         draftTone = b.getAttribute('data-pgm-tone') || 'emerald';
@@ -137075,11 +139434,25 @@
           $('pgmName')?.focus();
           return;
         }
-        const res = savePolicyGroup({
+        if (draftEffTo && !draftEffFrom) {
+          toast('Enter an Effective From date when setting Effective To', 'warn');
+          $('pgmEffectiveFrom')?.focus();
+          return;
+        }
+        if (draftEffTo && draftEffFrom && draftEffTo < draftEffFrom) {
+          toast('Effective End Date must be on or after Start Date', 'warn');
+          $('pgmEffectiveTo')?.focus();
+          return;
+        }
+        const savePayload = {
           id: existing ? existing.id : ('pkg_' + cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 22) + '_' + String(Date.now()).slice(-4)),
           name: cleanName,
           short: String(draftShort || '').trim(),
           company: existing && existing.isBuiltin ? 'All Companies' : draftCompany,
+          math_mode: draftMathMode,
+          ot_threshold_min: draftOtThreshMin,
+          ot_early_threshold_min: draftOtEarlyThreshMin,
+          ot_count_from: draftOtCountFrom,
           late_penalty_mode: draftLateMode,
           late_multiplier: draftLateMult,
           ot_multiplier: draftOtMult,
@@ -137093,14 +139466,21 @@
           no_clock_out_rule: draftNoOut,
           perks: draftPerks,
           tone: draftTone,
+          effective_from: draftEffFrom,
+          effective_to: draftEffTo,
+          version_id: draftEditingVersionId || undefined,
+          version_note: draftVersionNote,
           backfill: draftBackfill
-        });
+        };
+        if (draftVersionsEdited) savePayload.versions = draftVersions;
+        const res = savePolicyGroup(savePayload);
         if (res.ok) {
           const targetDefCo = draftCompany !== 'All Companies' ? draftCompany : activeTargetCo;
-          if (draftSetCoDef && targetDefCo) {
-            setCompanyDefaultPolicyGroup(targetDefCo, res.policyGroup.id, { backfill: true });
+          if (draftSetCoDef && targetDefCo && (!existing || getCompanyDefaultPolicyGroupId(targetDefCo) !== res.policyGroup.id)) {
+            setCompanyDefaultPolicyGroup(targetDefCo, res.policyGroup.id, { backfill: draftBackfill });
           }
-          toast(`Saved group "${res.policyGroup.name}" (${res.policyGroup.summaryText})${draftSetCoDef ? ` · Default for ${targetDefCo}` : ''}${res.backfilledStaff ? ` · Backfilled ${res.backfilledStaff} staff` : ''}`, 'ok');
+          const attBfCount = res.attBackfill ? Number(res.attBackfill.updatedRows || 0) : 0;
+          toast(`Saved group "${res.policyGroup.name}" (${res.policyGroup.summaryText})${draftSetCoDef ? ` · Default for ${targetDefCo}` : ''}${res.backfilledStaff ? ` · Backfilled ${res.backfilledStaff} staff` : ''}${attBfCount ? ` · Recalculated ${attBfCount} logs` : ''}`, 'ok');
           closePolicyGroupModal();
           if (typeof onSaved === 'function') onSaved(res.policyGroup);
         } else {
@@ -137326,6 +139706,57 @@
     });
 
     const hasActiveLateFilter = latePenFilter !== 'all' || lateTolFilter !== 'all' || lateWhenFilter !== 'all' || lateOtFilter !== 'all' || lateTodayFilter !== 'all' || staffStatusFilter !== 'all' || policyGroupFilter !== 'all';
+    const canShowKioskDollars = canViewPayrollDollarAmounts();
+    const renderKioskMinChipsHtml = pObj => {
+      if (!pObj) return '';
+      const isPm = pObj.math_mode === 'per_minute';
+      const hasMinFields = pObj.approved_ot_min != null || pObj.billable_late_min != null || pObj.raw_late_min != null;
+      if (!isPm && !hasMinFields) return '';
+      const chips = [];
+      if (isPm) chips.push('<span class="att-math-pill is-per-min">$/Min</span>');
+      const otMin = pObj.approved_ot_min != null ? Math.round(Number(pObj.approved_ot_min)) : (isPm && pObj.overtime_hours > 0 ? Math.round(Number(pObj.overtime_hours) * 60) : 0);
+      const ltMin = pObj.billable_late_min != null ? Math.round(Number(pObj.billable_late_min)) : (pObj.raw_late_min != null ? Math.round(Number(pObj.raw_late_min)) : (isPm && pObj.late_hours > 0 ? Math.round(Number(pObj.late_hours) * 60) : 0));
+      if (otMin > 0) chips.push(`<span class="att-earn-pos">+${otMin}m</span>`);
+      if (ltMin > 0 && !(pObj.penalty_leave_days >= 0.5)) chips.push(`<span class="att-loss-neg">-${ltMin}m</span>`);
+      return chips.length ? `<div class="att-kiosk-dollar-pills mono">${chips.join(' ')}</div>` : '';
+    };
+    const renderKioskDollarPillsHtml = (staffName, company, pObj, dateStr = todayISO()) => {
+      if (!canShowKioskDollars || !pObj) return '';
+      const dStr = String(dateStr || todayISO()).slice(0, 10);
+      const coVal = company || pObj.company || '';
+      const profK = getStaffContractProfile(staffName, coVal, dStr);
+      if (!profK) return '';
+      const penLv = Number(pObj.penalty_leave_days || 0);
+      const otHVal = Number(pObj.overtime_hours || 0);
+      const ltHVal = penLv > 0 ? 0 : Number(pObj.late_hours || 0);
+      const matchedAtt = (STATE.customRecords && Array.isArray(STATE.customRecords.attendance))
+        ? STATE.customRecords.attendance.find(a => !a.voided && norm(a.staff) === norm(staffName) && String(a.date || a.rep_date || '').slice(0, 10) === dStr && (!coVal || !a.company || sameCo(a.company, coVal)))
+        : null;
+      const synType = otHVal > 0 ? 'Overtime' : (penLv >= 1 ? 'Absence' : (penLv >= 0.5 ? 'Half Day' : (ltHVal > 0 ? 'Lateness' : 'Present')));
+      const rowForImpact = matchedAtt || {
+        staff: staffName,
+        company: coVal,
+        date: dStr,
+        type: synType,
+        tally: otHVal > 0 ? otHVal : (penLv > 0 ? penLv : ltHVal),
+        overtime_hours: otHVal,
+        late_hours: ltHVal,
+        leave_days: penLv,
+        approved_ot_min: pObj.approved_ot_min,
+        billable_late_min: penLv > 0 ? 0 : pObj.billable_late_min,
+        math_mode: pObj.math_mode || resolveStaffPolicyForDate(staffName, coVal, dStr).math_mode,
+        late_mult_baked: true,
+        source: 'app'
+      };
+      const imp = computeAttendanceRowDollarImpact(rowForImpact, profK);
+      const pills = [];
+      if (imp.earnedUsd > 0) pills.push(`<span class="att-earn-pos">+${esc(fmtUSD(imp.earnedUsd, 2))}</span>`);
+      if (imp.lostUsd > 0) pills.push(`<span class="att-loss-neg">-${esc(fmtUSD(imp.lostUsd, 2))}</span>`);
+      if (!pills.length && profK.salaryPending && (otHVal > 0 || ltHVal > 0 || penLv > 0)) {
+        pills.push('<span class="att-math-pill">Salary Pending ($0.00)</span>');
+      }
+      return pills.length ? `<div class="att-kiosk-dollar-pills mono">${pills.join(' ')}</div>` : '';
+    };
     const fCnt = n => `<span class="kf-cnt ${Number(n) === 0 ? 'is-zero' : ''}">${fmtNum(n)}</span>`;
     const staffInitials = nm => String(nm || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('') || 'ST';
 
@@ -137349,6 +139780,7 @@
 
     const renderInlinePolicyGroupCell = (s, pg) => {
       const staffPolicies = getPolicyGroups(s.company);
+      const sProf = canShowKioskDollars ? getStaffContractProfile(s.name, s.company, todayISO()) : null;
       return `
         <div class="kiosk-inline-type-cell">
           <select class="kiosk-select kiosk-inline-policy-select" data-plain-options="1" data-inline-policy-group-staff="${esc(s.name)}" data-inline-staff-co="${esc(s.company || '')}" aria-label="Policy, Multipliers & Perks Group for ${esc(s.name)}">
@@ -137356,6 +139788,11 @@
             <option value="__new_policy_group__">+ New Policy &amp; Perks Group...</option>
           </select>
           <button type="button" class="kiosk-cell-sublink mono" data-open-staff-policy="${esc(s.name)}">${esc(pg.summaryLine)}</button>
+          <div class="att-kiosk-dollar-pills mono">
+            <span class="att-math-pill ${pg.mathMode === 'per_minute' ? 'is-per-min' : ''}">${esc(pg.mathMode === 'per_minute' ? '$/Min' : '0.1h · 6m')} · OT &gt;=${pg.otThresholdMin}m</span>
+            ${pg.timelineCount ? `<span class="att-math-pill">${pg.timelineCount} sch</span>` : ''}
+            ${canShowKioskDollars && sProf && !sProf.salaryPending && sProf.hourlyRate > 0 ? `<span class="att-math-pill">${esc(fmtUSD(sProf.hourlyRate / 60, 4))}/m</span>` : ''}
+          </div>
           <div class="drv-sub kiosk-perks-sub">${esc(pg.perksLine)}</div>
         </div>
       `;
@@ -137364,34 +139801,7 @@
     const companyDefaultsTargets = effectiveScopedCo ? [effectiveScopedCo] : Array.from(indCoNames);
     const companyDefaultsStripHtml = companyDefaultsTargets.length ? `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:8px;margin-bottom:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev)" id="kioskCoDefaultsBar">
-        ${companyDefaultsTargets.map(coName => {
-          const curDef = getBuDefaultShift(coName);
-          const curDefCode = (curDef && curDef.shift_code) || 'day_8_4';
-          const coShiftOpts = getShiftTypes(coName);
-          const coPolicyOpts = getPolicyGroups(coName);
-          const curPolDefId = getCompanyDefaultPolicyGroupId(coName);
-          return `
-            <div style="padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);display:flex;flex-direction:column;gap:5px">
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-                <span style="display:inline-flex;align-items:center;gap:6px">${coBadge(coName)} <strong style="font-size:11.5px">Company Attendance Defaults</strong></span>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-                <div class="ssm-field" style="margin:0">
-                  <label style="font-size:10.5px">Default Shift</label>
-                  <select class="kiosk-select" data-pay-bu-default="${esc(coName)}" data-plain-options="1" style="height:29px;font-size:11.5px">
-                    ${coShiftOpts.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)})</option>`).join('')}
-                  </select>
-                </div>
-                <div class="ssm-field" style="margin:0">
-                  <label style="font-size:10.5px">Default Policy &amp; Perks</label>
-                  <select class="kiosk-select" data-pay-bu-policy-default="${esc(coName)}" data-plain-options="1" style="height:29px;font-size:11.5px">
-                    ${coPolicyOpts.map(pg => `<option value="${esc(pg.id)}" ${pg.id === curPolDefId ? 'selected' : ''}>${esc(pg.name)}</option>`).join('')}
-                  </select>
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('')}
+        ${companyDefaultsTargets.map(coName => renderCompanyDefaultAttendanceCardHtml(coName, { attrPrefix: 'pay', title: 'Company Attendance Defaults' })).join('')}
       </div>
     ` : '';
 
@@ -137738,6 +140148,29 @@
                         <option value="today_pass">Approve Today</option>
                       </select>
                     </div>
+                    <div class="ssm-field">
+                      <label for="kioskBulkMathMode">Calc Math Mode</label>
+                      <select id="kioskBulkMathMode" class="kiosk-select" data-plain-options="1">
+                        <option value="keep" selected>Keep Current Math</option>
+                        <option value="per_minute">Exact Per-Minute ($ / min)</option>
+                        <option value="tenth_hour">Legacy 0.1h (6-Min Steps)</option>
+                      </select>
+                    </div>
+                    <div class="ssm-field">
+                      <label for="kioskBulkOtThresh">OT Start Threshold</label>
+                      <select id="kioskBulkOtThresh" class="kiosk-select" data-plain-options="1">
+                        <option value="keep" selected>Keep Threshold</option>
+                        <option value="0">0 min (1st Min)</option>
+                        <option value="5">5 min</option>
+                        <option value="10">10 min</option>
+                        <option value="15">15 min</option>
+                        <option value="30">30 min</option>
+                      </select>
+                    </div>
+                    <div class="ssm-field">
+                      <label for="kioskBulkEffFrom">Effective From (Opt.)</label>
+                      <input type="date" id="kioskBulkEffFrom" class="kiosk-select" aria-label="Bulk Effective From">
+                    </div>
                     <button type="button" class="btn btn-primary" id="kioskBulkApplyLateBtn" style="align-self:flex-end">
                       ${ic('check_circle')} Apply to ${fmtNum(filteredRoster.length)} Staff
                     </button>
@@ -137787,6 +140220,12 @@
                           otComboVal = (ot.pass && (ot.pass.start_date || ot.pass.from) === todayISO() && (ot.pass.end_date || ot.pass.to) === todayISO()) ? 'today_pass' : 'date_range';
                         }
                         const maxHoursCap = Number(ruleRow.ot_max_hours || 2);
+                        const sProfLate = canShowKioskDollars ? getStaffContractProfile(s.name, s.company, todayISO()) : null;
+                        const otRateMinTxt = canShowKioskDollars && ot.mode !== 'none' && sProfLate && !sProfLate.salaryPending && sProfLate.hourlyRate > 0
+                          ? `OT ${fmtUSD((sProfLate.hourlyRate * Number(ruleRow.ot_multiplier || 1.5)) / 60, 4)}/m`
+                          : '';
+                        const lpDate = (lp && (lp.shift_date || lp.date)) || todayISO();
+                        const lpDec = lp && lp.math_mode === 'per_minute' ? 2 : 1;
                         return `
                           <tr class="kiosk-staff-row" data-staff-row="${esc(s.name)}" data-staff-row-co="${esc(s.company || '')}" tabindex="0">
                             <td>
@@ -137847,16 +140286,20 @@
                                 <option value="date_range" ${otComboVal === 'date_range' ? 'selected' : ''}>Date Pass</option>
                               </select>
                               <div class="drv-sub mono"><button type="button" class="kiosk-pin-edit-link" data-open-staff-ot="${esc(s.name)}">${esc(ot.badgeText)}</button></div>
+                              <div class="att-kiosk-dollar-pills mono">
+                                <span class="att-math-pill">OT &gt;=${pg.otThresholdMin}m</span>
+                                ${otRateMinTxt ? `<span class="att-earn-pos">${esc(otRateMinTxt)}</span>` : ''}
+                              </div>
                             </td>
                             <td>
                               <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
                                 <div>
                                   ${onNow
-                                    ? `<span class="badge ${lt.noOutRule === 'half_day' ? 'badge-warn' : (lt.noOutRule === 'full_absence' ? 'badge-err' : 'badge-ok')}">Only IN ${esc(lp.time)} (${lt.noOutRule === 'half_day' ? '0.5d' : (lt.noOutRule === 'full_absence' ? '1.0d' : 'Active')})</span><div class="drv-sub mono">${lp.raw_late_min > 0 ? `IN Late ${lp.raw_late_min}m (>${esc(lt.inCutoffTime)})` : 'On Time IN'}</div>`
+                                    ? `<span class="badge ${lt.noOutRule === 'half_day' ? 'badge-warn' : (lt.noOutRule === 'full_absence' ? 'badge-err' : 'badge-ok')}">Only IN ${esc(lp.time)} (${lt.noOutRule === 'half_day' ? '0.5d' : (lt.noOutRule === 'full_absence' ? '1.0d' : 'Active')})</span><div class="drv-sub mono">${lp.raw_late_min > 0 ? `IN Late ${lp.raw_late_min}m (>${esc(lt.inCutoffTime)})` : 'On Time IN'}</div>${renderKioskMinChipsHtml(lp)}${renderKioskDollarPillsHtml(s.name, s.company, lp, lpDate)}`
                                     : (outToday
                                       ? (!lp.in_time
-                                        ? `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-warn' : 'badge-err'}">Only OUT ${esc(lp.time)} (${lp.penalty_leave_days >= 1 ? '1.0d' : (lp.penalty_leave_days >= 0.5 ? '0.5d' : 'No IN')})</span><div class="drv-sub mono">${lp.early_out_min > 0 ? `OUT Early ${lp.early_out_min}m (<${esc(lt.outCutoffTime)})` : 'Missing Clock-IN'}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, 1)}h OT` : ''}</div>`
-                                        : `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-err' : (lp.late_hours > 0 ? 'badge-warn' : 'badge-ok')}">IN ${esc(lp.in_time)} · OUT ${esc(lp.time)}</span><div class="drv-sub mono">${lp.penalty_leave_days >= 0.5 ? 'Half Day (0.5d Penalty)' : (lp.late_hours > 0 ? `Late -${fmtNum(lp.late_hours, 1)}h` : 'Full Shift (0 Ded.)')}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, 1)}h OT` : (lp.unapproved_ot_hours > 0 ? ' · 0h Paid OT' : '')}</div>`)
+                                        ? `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-warn' : 'badge-err'}">Only OUT ${esc(lp.time)} (${lp.penalty_leave_days >= 1 ? '1.0d' : (lp.penalty_leave_days >= 0.5 ? '0.5d' : 'No IN')})</span><div class="drv-sub mono">${lp.early_out_min > 0 ? `OUT Early ${lp.early_out_min}m (<${esc(lt.outCutoffTime)})` : 'Missing Clock-IN'}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, lpDec)}h OT` : ''}</div>${renderKioskMinChipsHtml(lp)}${renderKioskDollarPillsHtml(s.name, s.company, lp, lpDate)}`
+                                        : `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-err' : (lp.late_hours > 0 ? 'badge-warn' : 'badge-ok')}">IN ${esc(lp.in_time)} · OUT ${esc(lp.time)}</span><div class="drv-sub mono">${lp.penalty_leave_days >= 0.5 ? 'Half Day (0.5d Penalty)' : (lp.late_hours > 0 ? `Late -${fmtNum(lp.late_hours, lpDec)}h` : 'Full Shift (0 Ded.)')}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, lpDec)}h OT` : (lp.unapproved_ot_hours > 0 ? ' · 0h Paid OT' : '')}</div>${renderKioskMinChipsHtml(lp)}${renderKioskDollarPillsHtml(s.name, s.company, lp, lpDate)}`)
                                        : `<span class="kiosk-today-pill is-off"><span class="ktp-dot"></span>Off Site</span><div class="drv-sub mono">${esc(ot.badgeText)}</div>`)}
                                 </div>
                               </div>
@@ -137898,13 +140341,15 @@
                         const lt = s.lateDesc || describeStaffLatenessRule(s.name, s.company, todayISO());
                         const pg = s.policyDesc || describeStaffPolicyGroup(s.name, s.company);
                         const ruleRow = getStaffWorkRule(s.name, s.company);
-                        const otSubLbl = ot.mode === 'none'
+                        const otSubLbl = (ot.mode === 'none'
                           ? '0h Paid OT'
                           : (ot.mode === 'always'
                             ? 'Open Beyond Shift'
                             : (ot.mode === 'max_hours' || ot.mode === 'hours'
                               ? `Cap ${fmtNum(ruleRow.ot_max_hours || 2, 1)}h/day`
-                              : (ot.activeToday ? 'Approved Today' : 'Date Pass')));
+                              : (ot.activeToday ? 'Approved Today' : 'Date Pass')))) + ` · OT >=${pg.otThresholdMin}m`;
+                        const lpRDate = (lp && (lp.shift_date || lp.date)) || todayISO();
+                        const lpRDec = lp && lp.math_mode === 'per_minute' ? 2 : 1;
                         return `
                           <tr class="kiosk-staff-row" data-staff-row="${esc(s.name)}" data-staff-row-co="${esc(s.company || '')}" tabindex="0">
                             <td>
@@ -137936,11 +140381,11 @@
                             </td>
                             <td>
                               ${onNow
-                                ? `<span class="badge badge-ok">${ic('clock_in')} Only IN ${esc(lp.time)} · On Site</span><div class="drv-sub mono kiosk-nowrap-sub">${esc(lt.noOutShort)}${lp.raw_late_min > 0 ? ` · Late ${lp.raw_late_min}m` : (lp.late_hours > 0 ? ` · Late ${fmtNum(lp.late_hours, 1)}h` : '')}</div>`
+                                ? `<span class="badge badge-ok">${ic('clock_in')} Only IN ${esc(lp.time)} · On Site</span><div class="drv-sub mono kiosk-nowrap-sub">${esc(lt.noOutShort)}${lp.raw_late_min > 0 ? ` · Late ${lp.raw_late_min}m` : (lp.late_hours > 0 ? ` · Late ${fmtNum(lp.late_hours, lpRDec)}h` : '')}</div>${renderKioskMinChipsHtml(lp)}${renderKioskDollarPillsHtml(s.name, s.company, lp, lpRDate)}`
                                 : (outToday
                                   ? (!lp.in_time
-                                    ? `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-warn' : 'badge-err'}">${ic('clock_out')} Only OUT ${esc(lp.time)} (No IN)</span><div class="drv-sub mono kiosk-nowrap-sub">${esc(lt.noOutShort)}${lp.early_out_min > 0 ? ` · Early ${lp.early_out_min}m` : ''}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, 1)}h OT` : ''}</div>`
-                                    : `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-err' : 'badge-warn'}">${ic('clock_out')} IN ${esc(lp.in_time)} · OUT ${esc(lp.time)}</span><div class="drv-sub mono kiosk-nowrap-sub">${lp.paired_hours != null ? `${fmtNum(lp.paired_hours, 1)}h worked` : ''}${lp.penalty_leave_days >= 0.5 ? ' · Half Day (0.5d)' : (lp.late_hours > 0 ? ` · Late -${fmtNum(lp.late_hours, 1)}h` : '')}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, 1)}h OT` : ''}</div>`)
+                                    ? `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-warn' : 'badge-err'}">${ic('clock_out')} Only OUT ${esc(lp.time)} (No IN)</span><div class="drv-sub mono kiosk-nowrap-sub">${esc(lt.noOutShort)}${lp.early_out_min > 0 ? ` · Early ${lp.early_out_min}m` : ''}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, lpRDec)}h OT` : ''}</div>${renderKioskMinChipsHtml(lp)}${renderKioskDollarPillsHtml(s.name, s.company, lp, lpRDate)}`
+                                    : `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-err' : 'badge-warn'}">${ic('clock_out')} IN ${esc(lp.in_time)} · OUT ${esc(lp.time)}</span><div class="drv-sub mono kiosk-nowrap-sub">${lp.paired_hours != null ? `${fmtNum(lp.paired_hours, lpRDec)}h worked` : ''}${lp.penalty_leave_days >= 0.5 ? ' · Half Day (0.5d)' : (lp.late_hours > 0 ? ` · Late -${fmtNum(lp.late_hours, lpRDec)}h` : '')}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, lpRDec)}h OT` : ''}</div>${renderKioskMinChipsHtml(lp)}${renderKioskDollarPillsHtml(s.name, s.company, lp, lpRDate)}`)
                                   : `<span class="kiosk-today-pill is-off"><span class="ktp-dot"></span>Off Site</span><div class="drv-sub mono kiosk-nowrap-sub">Next: Clock IN</div>`)}
                             </td>
                             <td>
@@ -137996,10 +140441,12 @@
                         const ltP = describeStaffLatenessRule(p.staff, p.company, pDate);
                         const otP = describeStaffOvertimeRule(p.staff, p.company, pDate);
                         const isOutWithoutIn = p.direction === 'OUT' && !p.in_time;
+                        const pDec = p.math_mode === 'per_minute' ? 2 : 1;
+                        const pOtThresh = p.ot_threshold_min != null ? Number(p.ot_threshold_min) : describeStaffPolicyGroup(p.staff, p.company, pDate).otThresholdMin;
                         const penSummary = p.penalty_summary
                           || (p.direction === 'IN' || isOutWithoutIn
                             ? `${ltP.noOutLabel}${p.raw_late_min > 0 ? ` · Late ${p.raw_late_min}m` : ''}${p.early_out_min > 0 ? ` · Early OUT ${p.early_out_min}m` : ''}`
-                            : (p.penalty_leave_days >= 0.5 ? 'Half Day (0.5d Penalty)' : (p.late_hours > 0 ? `Late -${fmtNum(p.late_hours, 1)}h` : 'On Time')));
+                            : (p.penalty_leave_days >= 0.5 ? 'Half Day (0.5d Penalty)' : (p.late_hours > 0 ? `Late -${fmtNum(p.late_hours, pDec)}h` : 'On Time')));
                         return `
                           <tr class="kiosk-staff-row" data-staff-row="${esc(p.staff)}" data-staff-row-co="${esc(p.company || '')}" tabindex="0">
                             <td>
@@ -138020,14 +140467,16 @@
                               <button type="button" class="kiosk-late-pill" data-tone="${p.penalty_leave_days >= 0.5 || ((p.direction === 'IN' || isOutWithoutIn) && ltP.noOutRule !== 'auto_shift_end') ? 'amber' : (p.late_hours > 0 ? 'rose' : 'emerald')}" data-open-staff-late="${esc(p.staff)}">
                                 ${esc(penSummary)}
                               </button>
+                              ${renderKioskMinChipsHtml(p)}
                             </td>
                             <td>
                               <button type="button" class="kiosk-ot-pill" data-tone="${esc(otP.tone || 'muted')}" data-open-staff-ot="${esc(p.staff)}">
                                 ${esc(otP.badgeText)}
                               </button>
+                              <div class="drv-sub mono kiosk-nowrap-sub">OT &gt;=${pOtThresh}m</div>
                             </td>
                             <td>${esc(p.method)}</td>
-                            <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, 1)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1)}h OT)` : (p.unapproved_ot_hours > 0 ? ' (0h OT)' : '')}` : `${p.penalty_leave_days >= 0.5 ? '0.5d Half Day' : (p.late_hours > 0 ? `Late -${fmtNum(p.late_hours, 1)}h` : 'Active')}${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1)}h OT)` : ''}`}</td>
+                            <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, pDec)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, pDec)}h OT)` : (p.unapproved_ot_hours > 0 ? ' (0h OT)' : '')}` : `${p.penalty_leave_days >= 0.5 ? '0.5d Half Day' : (p.late_hours > 0 ? `Late -${fmtNum(p.late_hours, pDec)}h` : 'Active')}${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, pDec)}h OT)` : ''}`}${renderKioskDollarPillsHtml(p.staff, p.company, p, pDate)}</td>
                             <td>${p.source === 'door_tablet' ? '' : `<button type="button" class="tkt-print-mini" data-flip-punch="${esc(p.id)}" aria-label="Switch IN / OUT direction">${ic('swap')}</button>`}</td>
                           </tr>
                         `;
@@ -138933,12 +141382,32 @@
     });
     container.querySelectorAll('[data-pay-bu-policy-default]').forEach(sel => {
       sel.addEventListener('change', () => {
-        const bu = sel.getAttribute('data-pay-bu-policy-default') || 'WTC';
-        const grpId = sel.value || 'pkg_15_open_15d';
-        const res = setCompanyDefaultPolicyGroup(bu, grpId, { backfill: true });
-        if (res && res.ok) {
-          toast(`Set "${res.group.name}" as default policy & perks group for ${bu}${res.backfilledStaff ? ` · Updated ${res.backfilledStaff} staff` : ''}`, 'ok');
-        }
+        applyCompanyDefaultPolicyFromCard(sel, sel.getAttribute('data-pay-bu-policy-default') || 'WTC', { source: 'group_select' });
+        renderApp();
+      });
+    });
+    container.querySelectorAll('[data-pay-bu-policy-math]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        applyCompanyDefaultPolicyFromCard(sel, sel.getAttribute('data-pay-bu-policy-math') || 'WTC', { source: 'math_or_apply' });
+        renderApp();
+      });
+    });
+    container.querySelectorAll('[data-pay-bu-policy-ot-thresh]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        applyCompanyDefaultPolicyFromCard(inp, inp.getAttribute('data-pay-bu-policy-ot-thresh') || 'WTC', { source: 'math_or_apply' });
+        renderApp();
+      });
+    });
+    container.querySelectorAll('[data-pay-bu-policy-apply]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        applyCompanyDefaultPolicyFromCard(btn, btn.getAttribute('data-pay-bu-policy-apply') || 'WTC', { source: 'math_or_apply' });
+        renderApp();
+      });
+    });
+    container.querySelectorAll('[data-co-policy-rm-win]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        removeCompanyPolicyTimelineWindow(btn.getAttribute('data-co-policy-co') || 'WTC', btn.getAttribute('data-co-policy-rm-win') || '');
+        toast('Removed company policy window and recalculated', 'ok');
         renderApp();
       });
     });
@@ -139208,14 +141677,26 @@
       const pEl = $('kioskBulkLatePenalty');
       const nEl = $('kioskBulkNoOutRule');
       const oEl = $('kioskBulkOtRule');
+      const mEl = $('kioskBulkMathMode');
+      const tEl = $('kioskBulkOtThresh');
+      const effEl = $('kioskBulkEffFrom');
       const pkgBulkVal = pkgEl ? pkgEl.value : 'keep';
       const otBulkVal = oEl ? oEl.value : 'keep';
+      const mathBulkVal = mEl ? mEl.value : 'keep';
+      const threshBulkVal = tEl ? tEl.value : 'keep';
+      const effFromRaw = effEl ? String(effEl.value || '').trim().slice(0, 10) : '';
+      const effFrom = /^\d{4}-\d{2}-\d{2}$/.test(effFromRaw) ? effFromRaw : '';
       const baseBulkPatch = {
         late_when: wEl ? wEl.value : 'both',
         ...parseGraceComboPatch(gEl ? gEl.value : '10'),
         ...parsePenaltyComboPatch(pEl ? pEl.value : 'exact_hours'),
         no_clock_out_rule: nEl ? nEl.value : 'half_day'
       };
+      if (mathBulkVal === 'per_minute' || mathBulkVal === 'tenth_hour') baseBulkPatch.math_mode = mathBulkVal;
+      if (threshBulkVal !== 'keep' && threshBulkVal !== '' && Number.isFinite(Number(threshBulkVal))) {
+        baseBulkPatch.ot_threshold_min = clampAttThresholdMin(threshBulkVal, 10);
+      }
+      if (effFrom) baseBulkPatch.effective_from = effFrom;
       const fullDir = getKioskStaffDirectory({ scopeBySelectedCompany: true, includeEnded: true });
       const statusF = ['all', 'active', 'inactive'].includes(STATE.kioskStaffStatusFilter) ? STATE.kioskStaffStatusFilter : 'all';
       const dirList = statusF === 'active'
@@ -139264,6 +141745,11 @@
             late_when: wEl ? wEl.value : 'both',
             ...(otBulkVal && otBulkVal !== 'keep' ? buildOtComboPatchForStaff(otBulkVal, s.name, s.company) : {})
           };
+          if (mathBulkVal === 'per_minute' || mathBulkVal === 'tenth_hour') staffPatch.math_mode = mathBulkVal;
+          if (threshBulkVal !== 'keep' && threshBulkVal !== '' && Number.isFinite(Number(threshBulkVal))) {
+            staffPatch.ot_threshold_min = clampAttThresholdMin(threshBulkVal, 10);
+          }
+          if (effFrom) staffPatch.effective_from = effFrom;
         } else {
           staffPatch = otBulkVal && otBulkVal !== 'keep'
             ? { ...baseBulkPatch, ...buildOtComboPatchForStaff(otBulkVal, s.name, s.company) }
@@ -139271,11 +141757,24 @@
         }
         saveStaffWorkRule(s.name, Object.assign({}, staffPatch, s.company ? { company: s.company } : {}), { deferSave: true });
       });
+      let bulkBf = null;
+      if (targetStaff.length > 0 && (effFrom || mathBulkVal !== 'keep' || threshBulkVal !== 'keep' || pkgBulkVal !== 'keep')) {
+        const today = todayISO();
+        if (!effFrom || effFrom <= today) {
+          bulkBf = backfillAttendancePolicyChange({
+            company: scopedCo || '',
+            staffNames: targetStaff.map(s => s.name),
+            fromDate: effFrom || today,
+            deferSave: true
+          });
+        }
+      }
       if (targetStaff.length > 0) {
         saveLocalAuthAndRecords();
         syncWithCloud(true);
       }
-      toast(`Applied policy, lateness & overtime rules to ${targetStaff.length} staff`, 'ok');
+      const bfCnt = bulkBf ? Number(bulkBf.updatedRows || 0) : 0;
+      toast(`Applied policy, lateness, math & overtime rules to ${targetStaff.length} staff${effFrom ? ` from ${fmtDateDMY(effFrom)}` : ''}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`, 'ok');
       renderApp();
     });
     feedCard.querySelectorAll('[data-sched-cell-staff]').forEach(btn => {
@@ -146360,10 +148859,10 @@
       getPolicyGroups: () => getPolicyGroups(),
       savePolicyGroup: (spec = {}) => savePolicyGroup(spec),
       deletePolicyGroup: groupId => deletePolicyGroup(groupId),
-      describeStaffPolicyGroup: (staff, co) => describeStaffPolicyGroup(staff, co),
+      describeStaffPolicyGroup: (staff, co, dateStr) => describeStaffPolicyGroup(staff, co, dateStr),
       hasExplicitStaffWorkRule: (staff, co) => hasExplicitStaffWorkRule(staff, co),
       getStaffWorkRule: (staff, co) => getStaffWorkRule(staff, co),
-      saveStaffWorkRule: (staff, patch = {}) => saveStaffWorkRule(staff, patch),
+      saveStaffWorkRule: (staff, patch = {}, opts = {}) => saveStaffWorkRule(staff, patch, opts),
       resetStaffWorkRule: (staff, co) => resetStaffWorkRule(staff, co),
       addStaffShiftOverride: (staff, spec = {}, co) => addStaffShiftOverride(staff, spec, co),
       removeStaffShiftOverride: (staff, id, co) => removeStaffShiftOverride(staff, id, co),
@@ -146372,6 +148871,14 @@
       getStaffRuleKey: (staff, co) => staffRuleKey(staff, co),
       resolveStaffShiftAssignment: (staff, co) => resolveStaffShiftAssignment(staff, co),
       resolveStaffShiftForDate: (staff, co, dateStr) => resolveStaffShiftForDate(staff, co, dateStr),
+      resolveStaffPolicyForDate: (staff, co, dateStr) => resolveStaffPolicyForDate(staff, co, dateStr),
+      previewPolicyChangeImpact: (spec = {}) => previewPolicyChangeImpact(spec),
+      backfillAttendancePolicyChange: (spec = {}) => backfillAttendancePolicyChange(spec),
+      canViewPayrollDollarAmounts: u => canViewPayrollDollarAmounts(u),
+      computeAttendanceRowDollarImpact: (a, prof, opts = {}) => computeAttendanceRowDollarImpact(a, prof, opts),
+      computeStaffMonthPayrollPosition: (staff, co, ym, opts = {}) => computeStaffMonthPayrollPosition(staff, co, ym, opts),
+      getStaffContractProfile: (staff, co, dateStr) => getStaffContractProfile(staff, co, dateStr),
+      removeCompanyPolicyTimelineWindow: (co, idx, opts = {}) => removeCompanyPolicyTimelineWindow(co, idx, opts),
       computeShiftCalPresetRows: (presetId, year) => computeShiftCalPresetRows(presetId, year),
       holidayCalendars: () => HOLIDAY_CALENDARS.map(c => Object.assign({}, c)),
       getCompanyHolidayConfig: co => getCompanyHolidayConfig(co),
@@ -146379,7 +148886,11 @@
       staffHolidayOn: (staff, co, dateStr) => staffHolidayOn(staff, co, dateStr),
       staffReceivesHolidays: (staff, co) => staffReceivesHolidays(staff, co),
       setStaffReceivesHolidays: (staff, co, on, fromIso) => setStaffReceivesHolidays(staff, co, on, fromIso),
-      setCompanyDefaultPolicyGroupForTest: (co, gid) => setCompanyDefaultPolicyGroup(co, gid, { backfill: false }),
+      getCompanyDefaultPolicyGroupId: co => getCompanyDefaultPolicyGroupId(co),
+      setCompanyDefaultPolicyGroup: (co, gid, opts = {}) => setCompanyDefaultPolicyGroup(co, gid, opts),
+      setCompanyDefaultPolicyGroupForTest: (co, gid, opts = {}) => setCompanyDefaultPolicyGroup(co, gid, Object.assign({ backfill: false }, opts)),
+      attendanceFigureSig: row => attendanceFigureSig(row),
+      renderPayroll: mode => renderPayroll(mode),
       mergeWorkSchedulesForTest: remote => mergeWorkSchedules(remote),
       saveCompanyHolidayConfigForTest: (co, cfg) => saveCompanyHolidayConfig(co, cfg),
       getCompanyPolicyDefaultEntry: co => JSON.parse(JSON.stringify(ensureWorkSchedulesState().companyPolicyDefaults[norm(co)] || null)),

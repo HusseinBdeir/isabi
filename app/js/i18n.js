@@ -11614,7 +11614,105 @@
       "Unit / Floor": "الوحدة / الطابق",
       "Venue / Outlet": "المرفق / المنفذ",
       "Voucher ID": "رقم السند",
-      "Work Order #": "رقم أمر العمل"
+      "Work Order #": "رقم أمر العمل",
+      "Earned (+$)": "المستحق (+$)",
+      "Lost (-$)": "المخصوم (-$)",
+      "Net Impact ($)": "الأثر الصافي ($)",
+      "Net Impact": "الأثر الصافي",
+      "Cancel Edit": "إلغاء التعديل",
+      "Calc Math & OT ≥(m)": "طريقة الاحتساب وبدء الإضافي ≥(د)",
+      "Calc Math Mode": "طريقة الاحتساب",
+      "Calculation Math Mode": "نظام احتساب الدوام",
+      "Calculation Precision": "دقة الاحتساب",
+      "Calculation Precision & Overtime Threshold": "دقة الاحتساب وحدّ بدء العمل الإضافي",
+      "Count OT From": "احتساب الإضافي من",
+      "Early OT (min)": "الإضافي المبكر (دقيقة)",
+      "Effective From (Opt.)": "يسري من تاريخ (اختياري)",
+      "Effective To (Optional)": "يسري حتى تاريخ (اختياري)",
+      "OT Start Threshold": "حدّ بدء الإضافي",
+      "OT Start Threshold (min)": "حدّ بدء الإضافي (دقيقة)",
+      "Overtime Start Threshold & Counting": "حدّ بدء العمل الإضافي وطريقة الاحتساب",
+      "Past-End OT Threshold (min)": "حدّ الإضافي بعد نهاية الدوام (دقيقة)",
+      "Timeline Note": "ملاحظة الفترة",
+      "Version Note": "ملاحظة الإصدار",
+      "Bulk Effective From": "تاريخ السريان الجماعي",
+      "Exact Per-Minute ($/min)": "دقيق بالدقيقة ($/دقيقة)",
+      "Exact Per-Minute ($ / Min)": "دقيق بالدقيقة ($/دقيقة)",
+      "Per-Minute ($/Min)": "بالدقيقة ($/دقيقة)",
+      "0.1h Decimal (6-Min Steps)": "عُشر ساعة (خطوات 6 دقائق)",
+      "Legacy 0.1h (6-Min Steps)": "عُشر ساعة تقليدي (6 دقائق)",
+      "Legacy 0.1h": "عُشر ساعة تقليدي",
+      "Inherit Policy / Co.": "اتباع السياسة / الشركة",
+      "From Shift End": "من نهاية الدوام",
+      "Only After Threshold": "بعد الحدّ فقط",
+      "After Threshold Only": "بعد الحدّ فقط",
+      "After Threshold": "بعد الحدّ",
+      "Shift End": "نهاية الدوام",
+      "Salary Pending ($0.00)": "الراتب قيد الاعتماد (0.00$)",
+      "0 min (1st Min)": "0 د (من الدقيقة الأولى)",
+      "5 min": "5 دقائق",
+      "10 min": "10 دقائق",
+      "15 min": "15 دقيقة",
+      "30 min": "30 دقيقة",
+      "Keep Current Math": "إبقاء طريقة الاحتساب الحالية",
+      "Keep Threshold": "إبقاء الحدّ الحالي",
+      "Math / OT Policy": "نظام الاحتساب وحدّ الإضافي",
+      "OT Rate": "معدل الإضافي",
+      "Recalculate unlocked attendance logs from effective date": "إعادة احتساب سجلات الدوام غير المقفلة من تاريخ السريان",
+      "Scheduled for future effective date": "مجدول لتاريخ سريان مستقبلي",
+      "Scheduled for future date": "مجدول لتاريخ مستقبلي",
+      "0.1h Steps": "خطوات 0.1 س",
+      "Per-Min ($/m)": "بالدقيقة ($/د)",
+      "$ / Min": "$ / دقيقة",
+      "$/min": "$/دقيقة",
+      "$/Min": "$/دقيقة",
+      "0.1h": "0.1 س",
+      "0.1h · 6m": "0.1 س · 6 د",
+      "$ / Min Exact": "$ / دقيقة بالضبط",
+      "0.1h Decimal": "عشري 0.1 س",
+      "6-Min Steps": "خطوات 6 دقائق",
+      "Exact Per-Minute ($ / min)": "دقيق بالدقيقة ($ / دقيقة)",
+      "Open OT": "إضافي مفتوح",
+      "Inherit": "وراثة",
+      "Inherit Policy Group": "وراثة مجموعة السياسة",
+      "After Thresh": "بعد العتبة",
+      "Effective Date & Staff Policy Timeline": "تاريخ السريان والخط الزمني لسياسة الموظف",
+      "Edit Staff Policy Timeline Window": "تعديل فترة الخط الزمني لسياسة الموظف",
+      "Effective Date & Version History": "تاريخ السريان وسجل الإصدارات",
+      "Edit Policy Version Window": "تعديل فترة إصدار السياسة",
+      "Bundle calculation precision, OT start threshold, multipliers, effective-date versions, and staff perks into one selectable policy": "اجمع دقة الاحتساب وعتبة بدء الإضافي والمضاعفات والإصدارات المؤرخة والمزايا في سياسة واحدة",
+      "Leave dates blank to update baseline in place, or enter a start date to record a chronological policy switch": "اترك التواريخ فارغة لتحديث الأساس مباشرة، أو أدخل تاريخ بدء لتسجيل انتقال زمني للسياسة",
+      "e.g. Switch to $/min Nov 1": "مثال: التحويل إلى $/د في 1 تشرين الثاني",
+      "e.g. Standard 1.5x Open OT": "مثال: قياسي 1.5x إضافي مفتوح",
+      "$0 Track": "تتبّع $0",
+      "1.0x Exact": "1.0x دقيق",
+      "0.5d Half Day": "0.5 ي نصف يوم",
+      "1.0d Absent": "1.0 ي غياب",
+      "-2.0h Late": "-2.0 س تأخير",
+      "Full Shift": "دوام كامل",
+      "Sick:": "مرضي:",
+      "Tol(m):": "سماح (د):",
+      "Brass": "نحاسي",
+      "Rose": "وردي",
+      "All Companies (Universal)": "جميع الشركات (موحد)",
+      "Group Perks & Functions": "مزايا ووظائف المجموعة",
+      "Working Hours": "ساعات العمل",
+      "Present": "حتى الآن",
+      "Opening Baseline": "الأساس الافتراضي",
+      "New Policy, Multipliers & Perks Group": "مجموعة سياسة ومضاعفات ومزايا جديدة",
+      "Save Policy Group": "حفظ مجموعة السياسة",
+      "unlocked logs": "سجل غير مقفل",
+      "unlocked logs · Earned Δ": "سجل غير مقفل · فرق المكتسب",
+      "· Earned Δ": "· فرق المكتسب",
+      "· Lost Δ": "· فرق المخصوم",
+      "· Net Δ": "· الصافي Δ",
+      "Create Policy & Perks Group": "إنشاء مجموعة السياسة والمزايا",
+      "Save Group & Backfill": "حفظ المجموعة وإعادة الاحتساب",
+      "BU Defaults & Shift Table": "الافتراضيات وجدول الورديات",
+      "Hide BU Shift Table": "إخفاء جدول ورديات الشركة",
+      "Dollar view restricted": "عرض المبالغ مقيد",
+      "Unpaid Leave (Dollar view restricted)": "إجازة غير مدفوعة (عرض المبالغ مقيد)",
+      "$0.00 (Paid Leave)": "$0.00 (إجازة مدفوعة)"
     },
     fr: {
       "Not split by borrower": "Non réparti par emprunteur",
@@ -23210,7 +23308,105 @@
       "Unit / Floor": "Unité / Étage",
       "Venue / Outlet": "Site / Point de vente",
       "Voucher ID": "N° Pièce",
-      "Work Order #": "Bon de travail n°"
+      "Work Order #": "Bon de travail n°",
+      "Earned (+$)": "Gagné (+$)",
+      "Lost (-$)": "Perdu (-$)",
+      "Net Impact ($)": "Impact net ($)",
+      "Net Impact": "Impact net",
+      "Cancel Edit": "Annuler la modification",
+      "Calc Math & OT ≥(m)": "Mode de calcul et seuil HS ≥(m)",
+      "Calc Math Mode": "Mode de calcul",
+      "Calculation Math Mode": "Mode de calcul de présence",
+      "Calculation Precision": "Précision du calcul",
+      "Calculation Precision & Overtime Threshold": "Précision du calcul et seuil des heures sup.",
+      "Count OT From": "Compter les HS dès",
+      "Early OT (min)": "HS anticipées (min)",
+      "Effective From (Opt.)": "Effectif dès (opt.)",
+      "Effective To (Optional)": "Effectif jusqu'au (opt.)",
+      "OT Start Threshold": "Seuil de départ HS",
+      "OT Start Threshold (min)": "Seuil de départ HS (min)",
+      "Overtime Start Threshold & Counting": "Seuil de départ et décompte des heures sup.",
+      "Past-End OT Threshold (min)": "Seuil HS après fin de poste (min)",
+      "Timeline Note": "Note de période",
+      "Version Note": "Note de version",
+      "Bulk Effective From": "Date d'effet groupée",
+      "Exact Per-Minute ($/min)": "Exact à la minute ($/min)",
+      "Exact Per-Minute ($ / Min)": "Exact à la minute ($/min)",
+      "Per-Minute ($/Min)": "À la minute ($/min)",
+      "0.1h Decimal (6-Min Steps)": "Décimal 0,1 h (paliers de 6 min)",
+      "Legacy 0.1h (6-Min Steps)": "Hérité 0,1 h (paliers de 6 min)",
+      "Legacy 0.1h": "Hérité 0,1 h",
+      "Inherit Policy / Co.": "Hériter de la politique / société",
+      "From Shift End": "Dès la fin du poste",
+      "Only After Threshold": "Après le seuil uniquement",
+      "After Threshold Only": "Après le seuil uniquement",
+      "After Threshold": "Après seuil",
+      "Shift End": "Fin du poste",
+      "Salary Pending ($0.00)": "Salaire en attente (0,00 $)",
+      "0 min (1st Min)": "0 min (1re min)",
+      "5 min": "5 min",
+      "10 min": "10 min",
+      "15 min": "15 min",
+      "30 min": "30 min",
+      "Keep Current Math": "Conserver le mode actuel",
+      "Keep Threshold": "Conserver le seuil actuel",
+      "Math / OT Policy": "Mode de calcul et seuil HS",
+      "OT Rate": "Taux HS",
+      "Recalculate unlocked attendance logs from effective date": "Recalculer les pointages non verrouillés dès la date d'effet",
+      "Scheduled for future effective date": "Planifié pour une date d'effet future",
+      "Scheduled for future date": "Planifié pour une date future",
+      "0.1h Steps": "Paliers 0,1 h",
+      "Per-Min ($/m)": "Par min ($/min)",
+      "$ / Min": "$ / Min",
+      "$/min": "$/min",
+      "$/Min": "$/Min",
+      "0.1h": "0,1 h",
+      "0.1h · 6m": "0,1 h · 6 min",
+      "$ / Min Exact": "$ / Min exact",
+      "0.1h Decimal": "Décimal 0,1 h",
+      "6-Min Steps": "Paliers 6 min",
+      "Exact Per-Minute ($ / min)": "Exact à la minute ($ / min)",
+      "Open OT": "HS ouvertes",
+      "Inherit": "Hériter",
+      "Inherit Policy Group": "Hériter du groupe de politique",
+      "After Thresh": "Après seuil",
+      "Effective Date & Staff Policy Timeline": "Date d'effet et chronologie de politique",
+      "Edit Staff Policy Timeline Window": "Modifier la période de politique",
+      "Effective Date & Version History": "Date d'effet et historique des versions",
+      "Edit Policy Version Window": "Modifier la fenêtre de version",
+      "Bundle calculation precision, OT start threshold, multipliers, effective-date versions, and staff perks into one selectable policy": "Regroupez précision de calcul, seuil HS, coefficients, versions datées et avantages en une politique",
+      "Leave dates blank to update baseline in place, or enter a start date to record a chronological policy switch": "Laissez les dates vides pour modifier la base ou indiquez une date d'effet pour enregistrer un basculement",
+      "e.g. Switch to $/min Nov 1": "ex. Passage $/min au 1er nov.",
+      "e.g. Standard 1.5x Open OT": "ex. Standard 1,5x HS ouvertes",
+      "$0 Track": "Suivi 0 $",
+      "1.0x Exact": "1,0x Exact",
+      "0.5d Half Day": "0,5 j demi-journée",
+      "1.0d Absent": "1,0 j absent",
+      "-2.0h Late": "-2,0 h retard",
+      "Full Shift": "Poste complet",
+      "Sick:": "Maladie :",
+      "Tol(m):": "Tol. (m) :",
+      "Brass": "Laiton",
+      "Rose": "Rose",
+      "All Companies (Universal)": "Toutes les sociétés (universel)",
+      "Group Perks & Functions": "Avantages et fonctions du groupe",
+      "Working Hours": "Heures de travail",
+      "Present": "Présent",
+      "Opening Baseline": "Base initiale",
+      "New Policy, Multipliers & Perks Group": "Nouveau groupe de politique, coefficients et avantages",
+      "Save Policy Group": "Enregistrer le groupe de politique",
+      "unlocked logs": "journaux non verrouillés",
+      "unlocked logs · Earned Δ": "journaux non verrouillés · Δ gagné",
+      "· Earned Δ": "· Δ gagné",
+      "· Lost Δ": "· Δ perdu",
+      "· Net Δ": "· Δ net",
+      "Create Policy & Perks Group": "Créer le groupe politique et avantages",
+      "Save Group & Backfill": "Enregistrer le groupe et recalculer",
+      "BU Defaults & Shift Table": "Paramètres par défaut et grille de quarts",
+      "Hide BU Shift Table": "Masquer la grille de quarts",
+      "Dollar view restricted": "Montants masqués",
+      "Unpaid Leave (Dollar view restricted)": "Congé sans solde (montants masqués)",
+      "$0.00 (Paid Leave)": "$0.00 (Congé payé)"
     }
   };
 
@@ -24315,20 +24511,50 @@
     m = trimmed.match(/^Avg\s+([\d.]+h)$/i);
     if (m) return lang === 'ar' ? `المتوسط ${m[1]}` : `Moy. ${m[1]}`;
 
-    m = trimmed.match(/^(.+?)\s+to\s+(.+?)\s*=\s*([\d.]+)h\s*\(([\d.]+)h\s+Contract\)$/i);
+    m = trimmed.match(/^(.+?)\s+to\s+(.+?)(\s*\(\+1d\))?\s*=\s*([\d.,]+)h\s*\((Call-Out 0h Base|([\d.,]+)h(\s+Contract)?)\)$/i);
+    if (m) {
+      const plus1d = m[3] ? (lang === 'ar' ? ' (+1ي)' : ' (+1j)') : '';
+      const basePart = /^Call-Out/i.test(m[5])
+        ? (lang === 'ar' ? 'استدعاء طارئ 0 س أساسي' : 'Astreinte 0h base')
+        : (lang === 'ar'
+          ? `${m[6]} س${m[7] ? ' عقد' : ''}`
+          : `${m[6]}h${m[7] ? ' Contrat' : ''}`);
+      return lang === 'ar'
+        ? `${m[1]} إلى ${m[2]}${plus1d} = ${m[4]} س (${basePart})`
+        : `${m[1]} à ${m[2]}${plus1d} = ${m[4]}h (${basePart})`;
+    }
+    m = trimmed.match(/^\+?([\d.,]+)h\s+OT\s*\/\s*-?([\d.,]+)h\s+Late$/i);
     if (m) {
       return lang === 'ar'
-        ? `${m[1]} إلى ${m[2]} = ${m[3]} س (${m[4]} س عقد)`
-        : `${m[1]} à ${m[2]} = ${m[3]}h (${m[4]}h Contrat)`;
+        ? `+${m[1]} س إضافي / -${m[2]} س تأخير`
+        : `+${m[1]}h HS / -${m[2]}h Retard`;
     }
-    m = trimmed.match(/^([+-]?\$[\d,.]+)\s+(Overtime Pay|Late Deduction|Deduction|Bonus)$/i);
+    m = trimmed.match(/^([+-]?\$[\d.,]+)\/(min|hr)\s+(OT|Late)$/i);
+    if (m) {
+      const unitAr = m[2].toLowerCase() === 'min' ? 'دقيقة' : 'س';
+      const unitFr = m[2].toLowerCase() === 'min' ? 'min' : 'h';
+      const kindAr = m[3].toUpperCase() === 'OT' ? 'إضافي' : 'تأخير';
+      const kindFr = m[3].toUpperCase() === 'OT' ? 'HS' : 'Retard';
+      return lang === 'ar' ? `${m[1]}/${unitAr} ${kindAr}` : `${m[1]}/${unitFr} ${kindFr}`;
+    }
+    m = trimmed.match(/^Schedule\s+Basis\s*\((\d+)d\s+mo\.\)$/i);
+    if (m) {
+      return lang === 'ar' ? `أساس الجدولة (${m[1]} ي/شهر)` : `Base horaire (${m[1]} j/mois)`;
+    }
+    m = trimmed.match(/^([+-]?\$[\d,.]+)\s+Earned\s*\/\s*([+-]?\$[\d,.]+)\s+Lost\s*\(Net\s+([+-]?\$[\d,.]+)\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} مكتسب / ${m[2]} مخصوم (الصافي ${m[3]})`
+        : `${m[1]} Gagné / ${m[2]} Perdu (Net ${m[3]})`;
+    }
+    m = trimmed.match(/^([+-]?\$[\d,.]+)\s+(Overtime Pay|Late Deduction|Deduction|Earned|Lost|Bonus)$/i);
     if (m) {
       const kind = m[2].toLowerCase();
       if (lang === 'ar') {
-        const w = kind === 'overtime pay' ? 'بدل عمل إضافي' : (kind === 'late deduction' ? 'خصم تأخير' : (kind === 'bonus' ? 'مكافأة' : 'خصم'));
+        const w = kind === 'overtime pay' ? 'بدل عمل إضافي' : (kind === 'late deduction' ? 'خصم تأخير' : (kind === 'earned' ? 'مكتسب' : (kind === 'lost' ? 'مخصوم' : (kind === 'bonus' ? 'مكافأة' : 'خصم'))));
         return `${m[1]} ${w}`;
       }
-      const wFr = kind === 'overtime pay' ? 'Heures sup.' : (kind === 'late deduction' ? 'Retenue retard' : (kind === 'bonus' ? 'Prime' : 'Retenue'));
+      const wFr = kind === 'overtime pay' ? 'Heures sup.' : (kind === 'late deduction' ? 'Retenue retard' : (kind === 'earned' ? 'Gagné' : (kind === 'lost' ? 'Perdu' : (kind === 'bonus' ? 'Prime' : 'Retenue'))));
       return `${m[1]} ${wFr}`;
     }
 
@@ -26728,14 +26954,16 @@
     if (m) return lang === 'ar' ? `مستخدم في ${m[1]} قيد` : `Utilisé dans ${m[1]} saisie${m[1] === '1' ? '' : 's'}`;
     if (/^Not\s+in\s+use\s+yet$/i.test(trimmed)) return lang === 'ar' ? 'غير مستخدم بعد' : 'Pas encore utilisé';
 
-    m = trimmed.match(/^Late\s+(.+?)\s*·\s*(No\s+OT|OT\s+[\d.]+x(?:\s*\([^)]+\))?)(?:\s*·\s*(\d+)d\s+Vac)?$/i);
+    m = trimmed.match(/^Late\s+(.+?)\s*·\s*(No\s+OT|OT\s+[\d.]+x(?:\s*\([^)]+\))?)(?:\s*·\s*(\d+)d\s+Vac)?(?:\s*·\s*(0\.1h|\$\/min))?(?:\s*·\s*OT\s*(?:≥|>=)\s*(\d+)\s*m)?$/i);
     if (m) {
       const lRaw = m[1].trim();
       const otRaw = m[2].trim();
       const vac = m[3];
+      const mathRaw = m[4];
+      const thrMin = m[5];
       const lOut = /track/i.test(lRaw)
         ? (lang === 'ar' ? 'تأخير تتبّع ($0)' : 'Retard suivi ($0)')
-        : (/^\$/.test(lRaw) ? (lang === 'ar' ? `تأخير ${lRaw}` : `Retard ${lRaw}`) : (lang === 'ar' ? `تأخير ${lRaw}` : `Retard ${lRaw}`));
+        : (lang === 'ar' ? `تأخير ${lRaw}` : `Retard ${lRaw}`);
       let otOut = '';
       if (/no\s+ot/i.test(otRaw)) {
         otOut = lang === 'ar' ? 'بدون إضافي' : 'Sans HS';
@@ -26752,7 +26980,118 @@
           : `HS ${rate}${passLoc ? ` (${passLoc})` : ''}`;
       }
       const vacOut = vac ? (lang === 'ar' ? ` · ${vac} ي إجازة` : ` · ${vac}j congés`) : '';
-      return `${lOut} · ${otOut}${vacOut}`;
+      const mathOut = mathRaw
+        ? (/\$\/min/i.test(mathRaw) ? (lang === 'ar' ? ' · $/دقيقة' : ' · $/min') : (lang === 'ar' ? ' · 0.1 س' : ' · 0,1 h'))
+        : '';
+      const thrOut = thrMin ? (lang === 'ar' ? ` · إضافي ≥${thrMin}د` : ` · HS ≥${thrMin}m`) : '';
+      return `${lOut} · ${otOut}${vacOut}${mathOut}${thrOut}`;
+    }
+
+    // Per-Minute / 0.1h Math Mode, OT Thresholds & Effective-Dated Policy Timelines
+    m = trimmed.match(/^OT\s*(?:≥|>=)\s*(\d+)\s*m(?:in)?$/i);
+    if (m) return lang === 'ar' ? `إضافي ≥${m[1]}د` : `HS ≥${m[1]}m`;
+
+    m = trimmed.match(/^Past\s+End\s*(?:≥|>=)\s*(\d+)\s*m(?:in)?$/i);
+    if (m) return lang === 'ar' ? `بعد النهاية ≥${m[1]}د` : `Après fin ≥${m[1]}m`;
+
+    m = trimmed.match(/^Early\s*(?:≥|>=)\s*(\d+)\s*m(?:in)?$/i);
+    if (m) return lang === 'ar' ? `مبكر ≥${m[1]}د` : `Avant début ≥${m[1]}m`;
+
+    m = trimmed.match(/^Late\s+(\$0|[\d.]+x)$/i);
+    if (m) return lang === 'ar' ? `تأخير ${m[1]}` : `Retard ${m[1]}`;
+
+    m = trimmed.match(/^OT\s+([\d.]+x)$/i);
+    if (m) return lang === 'ar' ? `إضافي ${m[1]}` : `HS ${m[1]}`;
+
+    m = trimmed.match(/^([\d.]+x)\s+OT$/i);
+    if (m) return lang === 'ar' ? `${m[1]} إضافي` : `${m[1]} HS`;
+
+    m = trimmed.match(/^([\d.]+x)\s+Rate$/i);
+    if (m) return lang === 'ar' ? `معدل ${m[1]}` : `Taux ${m[1]}`;
+
+    m = trimmed.match(/^Max\s+([\d.]+)h(?:\s+OT)?$/i);
+    if (m) return lang === 'ar' ? `حد أقصى ${m[1]} س` : `Max ${m[1]} h`;
+
+    m = trimmed.match(/^(\d+)d\s+Vac$/i);
+    if (m) return lang === 'ar' ? `${m[1]} ي إجازة` : `${m[1]}j congé`;
+
+    m = trimmed.match(/^(\d+)d\s+Basis$/i);
+    if (m) return lang === 'ar' ? `أساس ${m[1]} ي` : `Base ${m[1]}j`;
+
+    m = trimmed.match(/^(\d+)d\s*·\s*IN\s*(\d+)m\s*\/\s*OUT\s*(\d+)m$/i);
+    if (m) return lang === 'ar' ? `${m[1]} ي · دخول ${m[2]} د / خروج ${m[3]} د` : `${m[1]}j · Entrée ${m[2]}m / Sortie ${m[3]}m`;
+
+    m = trimmed.match(/^(\d+)d\s+Sick\s*·\s*(\d+)d\/mo$/i);
+    if (m) return lang === 'ar' ? `${m[1]} ي مرضي · ${m[2]} ي/شهر` : `${m[1]}j maladie · ${m[2]}j/mois`;
+
+    m = trimmed.match(/^([\d,]+)\s+days\/yr$/i);
+    if (m) return lang === 'ar' ? `${m[1]} يوم/سنة` : `${m[1]} j/an`;
+
+    m = trimmed.match(/^(\d+)\s+sch$/i);
+    if (m) return lang === 'ar' ? `${m[1]} جدولة` : `${m[1]} progr.`;
+
+    m = trimmed.match(/^Custom:\s*(.+)$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `مخصص: ${inner}` : `Perso : ${inner}`;
+    }
+
+    m = trimmed.match(/^Base\s+(\$[\d.,]+)\/hr$/i);
+    if (m) return lang === 'ar' ? `أساسي ${m[1]}/س` : `Base ${m[1]}/h`;
+
+    m = trimmed.match(/^(\$[\d.,]+)\/min$/i);
+    if (m) return lang === 'ar' ? `${m[1]}/دقيقة` : `${m[1]}/min`;
+
+    m = trimmed.match(/^(\$[\d.,]+)\/m$/i);
+    if (m) return lang === 'ar' ? `${m[1]}/د` : `${m[1]}/min`;
+
+    m = trimmed.match(/^OT\s+(\$[\d.,]+)\/min$/i);
+    if (m) return lang === 'ar' ? `إضافي ${m[1]}/دقيقة` : `HS ${m[1]}/min`;
+
+    m = trimmed.match(/^Optional\s+start\s+date\s+records\s+a\s+chronological\s+math\s*\/\s*policy\s+change\s+for\s+(.+)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تاريخ البدء الاختياري يسجّل تغييراً زمنياً لطريقة الاحتساب أو السياسة لـ ${m[1]}`
+        : `Une date d'effet facultative enregistre un changement chronologique pour ${m[1]}`;
+    }
+
+    m = trimmed.match(/^Overtime\s+threshold\s+minutes\s+for\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `دقائق عتبة الإضافي لـ ${m[1]}` : `Minutes de seuil HS pour ${m[1]}`;
+
+    m = trimmed.match(/^Effective\s+from\s+date\s+for\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `تاريخ سريان السياسة لـ ${m[1]}` : `Date d'effet pour ${m[1]}`;
+
+    m = trimmed.match(/^Edit\s+Policy\s*&\s*Perks\s+Group:\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `تعديل مجموعة السياسة والمزايا: ${m[1]}` : `Modifier le groupe de politique : ${m[1]}`;
+
+    m = trimmed.match(/^Set\s+as\s+Default\s+Policy\s*&\s*Perks\s+Group\s+for\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `تعيين كمجموعة السياسة الافتراضية لـ ${m[1]}` : `Définir comme politique par défaut pour ${m[1]}`;
+
+    m = trimmed.match(/^Backfill\s+all\s+([\d,]+)\s+staff\s+assigned\s+to\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `إعادة الاحتساب بأثر رجعي لجميع الموظفين (${m[1]}) في ${m[2]}` : `Rétro-appliquer aux ${m[1]} employés de ${m[2]}`;
+
+    m = trimmed.match(/^\.\.\s*(Present|\d{2}-\d{2}-\d{4})$/i);
+    if (m) return /^present$/i.test(m[1]) ? (lang === 'ar' ? '.. حتى الآن' : '.. Présent') : `.. ${m[1]}`;
+
+    m = trimmed.match(/^Scheduled\s+for\s+future(?:\s+effective)?\s+date$/i);
+    if (m) return lang === 'ar' ? 'مجدول لتاريخ سريان مستقبلي' : 'Planifié pour une date future';
+
+    m = trimmed.match(/^\((?:current\s+active\s+policy\s+stays\s+until\s+then|active\s+rule\s+today\s+stays\s+unchanged\s+until\s+then)\)\.?$/i);
+    if (m) return lang === 'ar' ? '(تبقى السياسة الحالية سارية حتى ذلك التاريخ).' : '(la règle active reste inchangée jusque-là).';
+
+    m = trimmed.match(/^Dry-Run\s+Preview\s*\(([^)]+)\):\s*recalculates$/i);
+    if (m) return lang === 'ar' ? `معاينة تجريبية (${m[1]}): تُعيد احتساب` : `Aperçu à blanc (${m[1]}) : recalcule`;
+
+    m = trimmed.match(/^\((\d+)\s+closed\s+skipped,\s*(\d+)\s+manual\s+kept\)$/i);
+    if (m) return lang === 'ar' ? `(تخطي ${m[1]} مغلقة، إبقاء ${m[2]} يدوية)` : `(${m[1]} clôturés ignorés, ${m[2]} manuels conservés)`;
+
+    m = trimmed.match(/^Policy,\s*Multipliers\s*&\s*Perks\s+Group\s+for\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `مجموعة السياسة والمضاعفات والمزايا لـ ${m[1]}` : `Groupe de politique et avantages pour ${m[1]}`;
+
+    m = trimmed.match(/^(.+?)\s+Only$/i);
+    if (m && !/^(IN|OUT)$/i.test(m[1].trim())) {
+      const co = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${co} فقط` : `${co} uniquement`;
     }
 
     // Sibling industry overview banners & sentinel watchdogs

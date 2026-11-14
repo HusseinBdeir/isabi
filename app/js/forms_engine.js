@@ -2209,9 +2209,9 @@
           <div class="att-subpanel" id="attShiftPanel">
             ${fld('Time In', inp('f_in', 'time', '08:00'), { id: 'wrap_f_in' })}
             ${fld('Time Out', inp('f_out', 'time', '16:00'), { id: 'wrap_f_out', hintId: 'hint_att_out', hint: '' })}
-            ${fld('Work Hours', inp('f_worked_hours', 'number', '8', 'step="0.5" min="0" readonly class="pa-locked-input"'), { id: 'wrap_f_worked_hours' })}
-            ${fld('Overtime Hours (+)', inp('f_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_hours' })}
-            ${fld('Late Hours (−)', inp('f_late_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_late_hours' })}
+            ${fld('Work Hours', inp('f_worked_hours', 'number', '8', 'step="any" min="0" readonly class="pa-locked-input"'), { id: 'wrap_f_worked_hours' })}
+            ${fld('Overtime Hours (+)', inp('f_hours', 'number', '0', 'step="any" min="0"'), { id: 'wrap_f_hours' })}
+            ${fld('Late Hours (−)', inp('f_late_hours', 'number', '0', 'step="any" min="0"'), { id: 'wrap_f_late_hours' })}
           </div>
 
           <div class="att-subpanel" id="attLeavePanel" hidden>

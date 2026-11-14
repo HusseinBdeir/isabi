@@ -37722,3 +37722,133 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
   .pdr-actions { justify-content: flex-start; }
   .pdr-range { margin-inline-start: 0; }
 }
+
+/* Attendance Precision Math ($/min vs 0.1h), Earned/Lost Dollars & Policy Timelines */
+.att-earn-pos {
+  color: var(--teal);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.att-loss-neg {
+  color: var(--crit);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.att-math-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+.att-math-pill.is-min {
+  background: rgba(16, 185, 129, 0.14);
+  color: var(--teal);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+.att-thresh-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.att-policy-timeline-box {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-elev);
+}
+.att-policy-timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.att-policy-ver-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 11.5px;
+}
+.att-policy-ver-row.is-editing {
+  border-color: var(--brass-strong, #b45309);
+  box-shadow: 0 0 0 1px var(--brass-strong, #b45309);
+}
+.att-backfill-preview {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.08);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.att-co-def-card {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.att-co-def-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.att-co-def-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 8px;
+}
+.att-co-timeline-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+.att-co-win-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  font-size: 10.5px;
+}
+.att-kiosk-dollar-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 11px;
+}
+[dir="rtl"] .att-policy-ver-row,
+[dir="rtl"] .att-co-def-head,
+[dir="rtl"] .att-thresh-pills {
+  direction: rtl;
+}
+@media (max-width: 760px) {
+  .att-co-def-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .att-policy-timeline-box [style*="grid-template-columns"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
