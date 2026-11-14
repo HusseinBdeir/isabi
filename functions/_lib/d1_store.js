@@ -9,7 +9,9 @@ import {
   canAccessCompany,
   canAccessSentinelScope,
   canManageUsersSeat,
+  canonEntityKey,
   canReviewSentinelsSession,
+  canWriteWorkSchedulesSession,
   checkD1RateLimit,
   checkSlidingRateLimit,
   clearSessionCookie,
@@ -735,6 +737,7 @@ function stripBiometricsForPayload(uObj) {
   if (!uObj || typeof uObj !== 'object') return {};
   const clean = Object.assign({}, uObj);
   delete clean.pin_code;
+  delete clean.pin_hash;
   delete clean.face_samples;
   delete clean.face_thumbs;
   delete clean.payload_json;
@@ -752,6 +755,7 @@ function hydrateUserRow(r, _redactPin = true, redactBiometrics = false) {
   delete d._verifiedPin;
   const hasStoredPin = Boolean(String(r.pin_code || '').trim());
   delete d.pin_code;
+  delete d.pin_hash;
   d.pin_redacted = hasStoredPin;
   const parsedSamples = safeJsonParse(d.face_samples, []);
   const validSamples = Array.isArray(parsedSamples) ? parsedSamples.filter(isValidFaceVec) : [];
@@ -1321,7 +1325,16 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
       role: row.role,
       companies: row.companies,
       pbi: row.pbi_access || 'full',
-      stmts: row.statements_access || 'full'
+      stmts: row.statements_access || 'full',
+      ws_write: canWriteWorkSchedulesSession({
+        sub: row.id,
+        id: row.id,
+        role: row.role,
+        companies: row.companies,
+        custom_perms: typeof row.custom_perms === 'string'
+          ? safeJsonParse(row.custom_perms, row.custom_perms)
+          : row.custom_perms
+      })
     }, env);
   } catch (_) {
     return jsonResponse({ ok: false, error: 'Edge authentication secret is not configured.' }, 503);
@@ -2692,16 +2705,96 @@ function scopeWorkSchedulesForSession(wsObj, session) {
   };
 }
 
+export function scopeGeoConfigForSession(geoObj, session) {
+  if (!geoObj || typeof geoObj !== 'object') return geoObj;
+  if (session && isOwnerOrFullGroupSession(session)) return geoObj;
+  const out = Object.assign({}, geoObj);
+  if (geoObj.companyHubs && typeof geoObj.companyHubs === 'object') {
+    const scopedHubs = {};
+    for (const [k, v] of Object.entries(geoObj.companyHubs)) {
+      const vCo = (v && typeof v === 'object' && v.company) ? String(v.company).trim() : '';
+      const keyOk = Boolean(session && canAccessCompany(session, k));
+      const valOk = !vCo || Boolean(session && canAccessCompany(session, vCo));
+      if (keyOk && valOk) scopedHubs[k] = v;
+    }
+    out.companyHubs = scopedHubs;
+  }
+  if (geoObj._deletedKeys && typeof geoObj._deletedKeys === 'object') {
+    const scopedDel = {};
+    for (const [dk, dTs] of Object.entries(geoObj._deletedKeys)) {
+      if (String(dk || '').startsWith('companyHubs:')) {
+        const coKey = String(dk).slice('companyHubs:'.length);
+        if (!session || !canAccessCompany(session, coKey)) continue;
+      }
+      scopedDel[dk] = dTs;
+    }
+    out._deletedKeys = scopedDel;
+  }
+  return out;
+}
+
+export async function resolveCanWriteWorkSchedules(db, session, baseUsersOpt = null) {
+  if (!session) return false;
+  const uid = String(session.sub || session.id || '').trim();
+  const em = String(session.email || '').trim().toLowerCase();
+  const normalizeUserForWsCheck = (u) => ({
+    sub: u.id || u.sub || '',
+    id: u.id || u.sub || '',
+    email: u.email || '',
+    role: u.role || '',
+    companies: u.companies,
+    custom_perms: typeof u.custom_perms === 'string'
+      ? safeJsonParse(u.custom_perms, u.custom_perms)
+      : u.custom_perms
+  });
+  if (Array.isArray(baseUsersOpt) && baseUsersOpt.length) {
+    const matched = baseUsersOpt.find(u =>
+      u && typeof u === 'object' && (
+        (uid && String(u.id || u.sub || '').trim() === uid) ||
+        (em && String(u.email || '').trim().toLowerCase() === em)
+      )
+    );
+    if (matched) {
+      if (matched.status && String(matched.status).toLowerCase() === 'suspended') return false;
+      return canWriteWorkSchedulesSession(normalizeUserForWsCheck(matched));
+    }
+  }
+  if (db) {
+    let row = null;
+    if (uid) {
+      row = await db.prepare('SELECT * FROM users WHERE id = ?1 LIMIT 1').bind(uid).first();
+    }
+    if (!row && em) {
+      row = await db.prepare('SELECT * FROM users WHERE lower(email) = ?1 LIMIT 1').bind(em).first();
+    }
+    if (row) {
+      if (row.status && String(row.status).toLowerCase() === 'suspended') return false;
+      return canWriteWorkSchedulesSession(normalizeUserForWsCheck(row));
+    }
+  }
+  return canWriteWorkSchedulesSession(session);
+}
+
+export function tsCmp(a, b) {
+  const sa = String(a || '');
+  const sb = String(b || '');
+  const ma = sa ? Date.parse(sa) : NaN;
+  const mb = sb ? Date.parse(sb) : NaN;
+  if (Number.isFinite(ma) && Number.isFinite(mb)) return ma < mb ? -1 : (ma > mb ? 1 : 0);
+  return sa < sb ? -1 : (sa > sb ? 1 : 0);
+}
+
 // Staff rules are kept per company and person since Command Center v19.6.343: key `<company>|<name>`, both trimmed
 // and lower-cased. A rule whose own company disagrees with its key prefix is never stored (it would shadow or freeze
 // another company's rule for that person). Bare-name keys (older rules) are unaffected.
 export function staffRuleKeyCompanyMismatch(rk, rule) {
-  const key = String(rk || '');
+  const key = String(rk || '').trim();
   const bar = key.indexOf('|');
   if (bar < 0 || !rule || typeof rule !== 'object') return false;
-  const co = String(rule.company || '').trim().toLowerCase();
-  if (!co) return true;
-  return key.slice(0, bar) !== co;
+  const keyCo = canonEntityKey(key.slice(0, bar));
+  const valCo = canonEntityKey(rule.company);
+  if (!keyCo || !valCo) return true;
+  return keyCo !== valCo;
 }
 
 export function mergeCompanyPolicyDefaultEntry(curRaw, incRaw) {
@@ -2712,7 +2805,7 @@ export function mergeCompanyPolicyDefaultEntry(curRaw, incRaw) {
   const curTs = String(curObj.updated_at || '');
   const nxtTs = String(incObj.updated_at || '');
   const curMs = Date.parse(curTs);
-  const incWinsOverall = !curTs || !nxtTs || nxtTs >= curTs;
+  const incWinsOverall = !curTs || !nxtTs || tsCmp(nxtTs, curTs) >= 0;
   const merged = incWinsOverall ? Object.assign({}, curObj, incObj) : Object.assign({}, incObj, curObj);
   let bumpedMs = 0;
 
@@ -2720,12 +2813,12 @@ export function mergeCompanyPolicyDefaultEntry(curRaw, incRaw) {
   const curHolTs = String((curObj.holidays && curObj.holidays.updated_at) || '');
   const incHolTs = String((incObj.holidays && incObj.holidays.updated_at) || '');
   if (incWinsOverall) {
-    if (curObj.holidays && (!incObj.holidays || curHolTs > incHolTs)) {
+    if (curObj.holidays && (!incObj.holidays || (curHolTs && (!incHolTs || tsCmp(curHolTs, incHolTs) > 0)))) {
       merged.holidays = curObj.holidays;
       const incMs = Date.parse(nxtTs);
       bumpedMs = Math.max(bumpedMs, Date.now(), Number.isFinite(incMs) ? incMs + 1000 : 0);
     }
-  } else if (incObj.holidays && (!curObj.holidays || incHolTs > curHolTs)) {
+  } else if (incObj.holidays && (!curObj.holidays || (incHolTs && (!curHolTs || tsCmp(incHolTs, curHolTs) > 0)))) {
     merged.holidays = incObj.holidays;
     bumpedMs = Math.max(bumpedMs, Date.now(), Number.isFinite(curMs) ? curMs + 1000 : 0);
   }
@@ -2736,13 +2829,13 @@ export function mergeCompanyPolicyDefaultEntry(curRaw, incRaw) {
   const curTlTs = String(curObj.policy_timeline_updated_at || '');
   const incTlTs = String(incObj.policy_timeline_updated_at || '');
   if (incWinsOverall) {
-    if (curTl && (!incTl || curTlTs > incTlTs)) {
+    if (curTl && (!incTl || (curTlTs && (!incTlTs || tsCmp(curTlTs, incTlTs) > 0)))) {
       merged.policy_timeline = curTl;
       merged.policy_timeline_updated_at = curTlTs;
       const incMs = Date.parse(nxtTs);
       bumpedMs = Math.max(bumpedMs, Date.now(), Number.isFinite(incMs) ? incMs + 1000 : 0);
     }
-  } else if (incTl && (!curTl || incTlTs > curTlTs)) {
+  } else if (incTl && (!curTl || (incTlTs && (!curTlTs || tsCmp(incTlTs, curTlTs) > 0)))) {
     merged.policy_timeline = incTl;
     merged.policy_timeline_updated_at = incTlTs;
     bumpedMs = Math.max(bumpedMs, Date.now(), Number.isFinite(curMs) ? curMs + 1000 : 0);
@@ -2773,7 +2866,7 @@ export function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRl
       const cur = pgMap.get(gid);
       const curTs = cur ? String(cur.updated_at || '') : '';
       const nxtTs = String(g.updated_at || '');
-      if (!cur || !curTs || !nxtTs || nxtTs >= curTs) {
+      if (!cur || !curTs || !nxtTs || tsCmp(nxtTs, curTs) >= 0) {
         pgMap.set(gid, g);
       }
     }
@@ -2783,17 +2876,38 @@ export function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRl
   // 2. companyPolicyDefaults
   const prevDefs = (prevWs.companyPolicyDefaults && typeof prevWs.companyPolicyDefaults === 'object') ? prevWs.companyPolicyDefaults : {};
   const nextDefs = (nextWs.companyPolicyDefaults && typeof nextWs.companyPolicyDefaults === 'object') ? nextWs.companyPolicyDefaults : {};
-  const mergedDefs = Object.assign({}, prevDefs);
+  const mergedDefs = {};
+  const defKeyByNorm = new Map();
+  for (const [pk, pv] of Object.entries(prevDefs)) {
+    if (!pv || typeof pv !== 'object') continue;
+    const normK = String(pk || '').trim().toLowerCase();
+    if (!normK) continue;
+    const existKey = defKeyByNorm.get(normK);
+    if (existKey) {
+      mergedDefs[existKey] = mergeCompanyPolicyDefaultEntry(mergedDefs[existKey], pv);
+    } else {
+      const storeKey = String(pk).trim();
+      defKeyByNorm.set(normK, storeKey);
+      mergedDefs[storeKey] = Object.assign({}, pv);
+    }
+  }
   for (const [ck, nv] of Object.entries(nextDefs)) {
     if (!nv || typeof nv !== 'object') continue;
-    if (restrictRls && (!session || !canAccessCompany(session, ck))) continue;
-    mergedDefs[ck] = mergeCompanyPolicyDefaultEntry(mergedDefs[ck], nv);
+    const normK = String(ck || '').trim().toLowerCase();
+    if (!normK) continue;
+    if (restrictRls) {
+      if (!session || !canAccessCompany(session, ck)) continue;
+      if (nv.company && canonEntityKey(nv.company) !== canonEntityKey(ck)) continue;
+    }
+    const targetKey = defKeyByNorm.get(normK) || String(ck).trim();
+    defKeyByNorm.set(normK, targetKey);
+    mergedDefs[targetKey] = mergeCompanyPolicyDefaultEntry(mergedDefs[targetKey], nv);
   }
 
   // 3. shiftTypes
   const prevShifts = Array.isArray(prevWs.shiftTypes) ? prevWs.shiftTypes : [];
   const nextShifts = Array.isArray(nextWs.shiftTypes) ? nextWs.shiftTypes : [];
-  const shiftKeyFn = s => `${String((s && s.company) || 'All BUs').trim().toLowerCase()}|${String((s && (s.id || s.shift_code)) || '').trim().toLowerCase()}`;
+  const shiftKeyFn = s => `${canonEntityKey((s && s.company) || 'All BUs') || 'all bus'}|${String((s && (s.id || s.shift_code)) || '').trim().toLowerCase()}`;
   const shiftMap = new Map();
   for (const ps of prevShifts) {
     if (ps && (ps.id || ps.shift_code)) shiftMap.set(shiftKeyFn(ps), ps);
@@ -2808,7 +2922,7 @@ export function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRl
     const cur = shiftMap.get(sk);
     const curTs = cur ? String(cur.updated_at || '') : '';
     const nxtTs = String(ns.updated_at || '');
-    if (!cur || !curTs || !nxtTs || nxtTs >= curTs) {
+    if (!cur || !curTs || !nxtTs || tsCmp(nxtTs, curTs) >= 0) {
       shiftMap.set(sk, ns);
     }
   }
@@ -2825,12 +2939,14 @@ export function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRl
     const nextCo = String(nr.company || '').trim();
     const co = nextCo || prevCo;
     if (restrictRls) {
+      if (!String(rk || '').includes('|')) continue;
       if (prevR && (!prevCo || !session || !canAccessCompany(session, prevCo))) continue;
       if (!co || !session || !canAccessCompany(session, co)) continue;
     }
     const curTs = prevR ? String(prevR.updated_at || '') : '';
     const nxtTs = String(nr.updated_at || '');
-    if (!prevR || !curTs || !nxtTs || nxtTs >= curTs) {
+    if (!prevR || !curTs || !nxtTs || tsCmp(nxtTs, curTs) >= 0) {
+      // Preserve prevR.company on legacy bare-key updates (company-prefixed keys with blank company are rejected above).
       mergedRules[rk] = co && !nr.company ? Object.assign({}, nr, { company: co }) : nr;
     }
   }
@@ -2895,7 +3011,7 @@ async function overlayCanonicalSubStoresOnMfgDoc(db, docObj) {
         const cur = mergedOv[oid];
         const curTs = cur ? String(cur.updated_at || '') : '';
         const sqlTs = String(ov.updated_at || '');
-        if (!cur || !curTs || !sqlTs || sqlTs >= curTs) mergedOv[oid] = ov;
+        if (!cur || !curTs || !sqlTs || tsCmp(sqlTs, curTs) >= 0) mergedOv[oid] = ov;
       }
       const custMap = new Map();
       for (const bc of (Array.isArray(baseAr.custom) ? baseAr.custom : [])) {
@@ -2909,7 +3025,7 @@ async function overlayCanonicalSubStoresOnMfgDoc(db, docObj) {
         const cur = custMap.get(cid);
         const curTs = cur ? String(cur.updated_at || '') : '';
         const sqlTs = String(sc.updated_at || '');
-        if (!cur || !curTs || !sqlTs || sqlTs >= curTs) custMap.set(cid, sc);
+        if (!cur || !curTs || !sqlTs || tsCmp(sqlTs, curTs) >= 0) custMap.set(cid, sc);
       }
       docObj.alertRules = { overrides: mergedOv, custom: Array.from(custMap.values()) };
     }
@@ -3043,8 +3159,10 @@ export async function handleStaffBiometrics(request, env, session, body) {
 
 export async function handleKvDoc(request, env, session, docKey, responseProp, body) {
   if (!env || !env.DB) return jsonResponse({ ok: true, [responseProp]: null });
+  if (isDemoHeader(request) && request.method === 'GET') {
+    return jsonResponse({ ok: true, demo: true, [responseProp]: null });
+  }
   if (!session) {
-    if (isDemoHeader(request) && request.method === 'GET') return jsonResponse({ ok: true, demo: true, [responseProp]: null });
     return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   }
   if (request.method === 'GET') {
@@ -3052,11 +3170,15 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
     const parsedVal = row ? safeJsonParse(row.payload_json, null) : null;
     const outVal = (docKey === 'work_schedules' && parsedVal)
       ? scopeWorkSchedulesForSession(parsedVal, session)
-      : parsedVal;
+      : (docKey === 'geo_config' && parsedVal)
+        ? scopeGeoConfigForSession(parsedVal, session)
+        : parsedVal;
     return jsonResponse({ ok: true, [responseProp]: outVal });
   }
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
-  if (!canManageUsersSeat(session)) return jsonResponse({ ok: false, error: 'Supervisor or Owner required.' }, 403);
+  if (!(await resolveCanWriteWorkSchedules(env.DB, session))) {
+    return jsonResponse({ ok: false, error: 'Schedule write privileges required.' }, 403);
+  }
   const restrictKvRls = !isOwnerOrFullGroupSession(session);
   const incoming = (body && (body[responseProp] || body.config || body.payload)) || body || {};
   const nowIso = new Date().toISOString();
@@ -3096,7 +3218,7 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
       const inPairTs = (incoming._pairKmTs && typeof incoming._pairKmTs === 'object') ? incoming._pairKmTs : {};
       for (const [dk, dTs] of Object.entries(inDel)) {
         const tsStr = String(dTs || '');
-        if (tsStr && (!merged._deletedKeys[dk] || tsStr > String(merged._deletedKeys[dk]))) {
+        if (tsStr && (!merged._deletedKeys[dk] || tsCmp(tsStr, merged._deletedKeys[dk]) > 0)) {
           merged._deletedKeys[dk] = tsStr;
         }
       }
@@ -3110,8 +3232,8 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
           const nxtItemTs = (nxt && typeof nxt === 'object' && nxt.updated_at) || (bucket === 'pairKmOverrides' && inPairTs[k]) || '';
           const nxtTs = nxtItemTs || (cur === undefined ? (incoming.updatedAt || nowIso) : '');
           const delTs = String(merged._deletedKeys[dk] || '');
-          if (delTs && (!nxtTs || delTs > nxtTs)) continue;
-          if (cur === undefined || !curTs || (nxtTs && nxtTs >= curTs)) {
+          if (delTs && (!nxtTs || tsCmp(delTs, nxtTs) > 0)) continue;
+          if (cur === undefined || !curTs || (nxtTs && tsCmp(nxtTs, curTs) >= 0)) {
             merged[bucket][k] = nxt;
             if (bucket === 'pairKmOverrides' && nxtTs) merged._pairKmTs[k] = nxtTs;
             delete merged._deletedKeys[dk];
@@ -3127,7 +3249,7 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
         if (!merged[bucket]) continue;
         const cur = merged[bucket][k];
         const curTs = (cur && typeof cur === 'object' && cur.updated_at) || (bucket === 'pairKmOverrides' && merged._pairKmTs[k]) || '';
-        if (!curTs || delTs >= curTs) {
+        if (!curTs || tsCmp(delTs, curTs) >= 0) {
           delete merged[bucket][k];
           if (bucket === 'pairKmOverrides') delete merged._pairKmTs[k];
         }
@@ -3135,18 +3257,47 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
       toStore = merged;
     }
   } else if (docKey === 'work_schedules') {
+    const reqOp = String((body && body.op) || '').trim();
+    const isDelOp = reqOp === 'delete_shift' || reqOp === 'delete_policy_group';
+    if (body && Object.prototype.hasOwnProperty.call(body, 'work_schedules') && (!body.work_schedules || typeof body.work_schedules !== 'object' || Array.isArray(body.work_schedules))) {
+      return jsonResponse({ ok: false, error: 'Invalid work_schedules payload.' }, 400);
+    }
     const wsIn = (body && body.work_schedules && typeof body.work_schedules === 'object')
       ? body.work_schedules
-      : incoming;
-    if (!wsIn || typeof wsIn !== 'object' || (!Array.isArray(wsIn.shiftTypes) && !wsIn.staffRules && !Array.isArray(wsIn.policyGroups) && !wsIn.companyPolicyDefaults)) {
+      : (isDelOp ? {} : incoming);
+    if (!wsIn || typeof wsIn !== 'object' || (!isDelOp && !Array.isArray(wsIn.shiftTypes) && !wsIn.staffRules && !Array.isArray(wsIn.policyGroups) && !wsIn.companyPolicyDefaults)) {
       return jsonResponse({ ok: false, error: 'Invalid work_schedules payload.' }, 400);
     }
     const exRow = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
     const prevWs = (exRow && safeJsonParse(exRow.payload_json, null)) || { shiftTypes: [], policyGroups: [], companyPolicyDefaults: {}, staffRules: {} };
+    if (reqOp === 'upsert_staff_rule' && staffRuleKeyCompanyMismatch(body && body.key, body && body.item)) {
+      return jsonResponse({ ok: false, error: 'Row-level security: staff rule key company does not match record company.' }, 403);
+    }
+    if (isDelOp && !String((body && body.id) || '').trim()) {
+      return jsonResponse({ ok: false, error: 'Record id is required.' }, 400);
+    }
     if (restrictKvRls) {
-      const reqOp = String((body && body.op) || '').trim();
       if (reqOp === 'upsert_policy_group' || reqOp === 'delete_policy_group') {
         return jsonResponse({ ok: false, error: 'Row-level security: Owner required to modify global policy groups.' }, 403);
+      }
+      if (reqOp === 'delete_shift') {
+        const delId = String((body && body.id) || '').trim();
+        const delCo = String((body && body.company) || '').trim();
+        if (delCo && (/^all(\s+(bus|companies))?$/i.test(delCo) || !canAccessCompany(session, delCo))) {
+          return jsonResponse({ ok: false, error: 'Row-level security: cannot delete shift schedule outside your assigned entities.' }, 403);
+        }
+        const prevShiftsAll = Array.isArray(prevWs.shiftTypes) ? prevWs.shiftTypes : [];
+        const delCoCanon = delCo ? canonEntityKey(delCo) : '';
+        for (const exS of prevShiftsAll) {
+          if (!exS || !delId || (String(exS.id || '').trim() !== delId && String(exS.shift_code || '').trim() !== delId)) continue;
+          const exCo = String(exS.company || '').trim();
+          if (delCoCanon && exCo && !/^all(\s+(bus|companies))?$/i.test(exCo) && canonEntityKey(exCo) !== delCoCanon) {
+            continue;
+          }
+          if (!exCo || /^all(\s+(bus|companies))?$/i.test(exCo) || !canAccessCompany(session, exCo)) {
+            return jsonResponse({ ok: false, error: 'Row-level security: cannot delete cross-entity shift schedule.' }, 403);
+          }
+        }
       }
       if (Array.isArray(wsIn.policyGroups)) {
         const prevPgById = new Map((Array.isArray(prevWs.policyGroups) ? prevWs.policyGroups : []).filter(g => g && g.id).map(g => [String(g.id), g]));
@@ -3159,15 +3310,23 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
         }
       }
       const prevDefs = prevWs.companyPolicyDefaults || {};
+      const prevDefsByLower = new Map();
+      for (const [pk, pv] of Object.entries(prevDefs)) {
+        const lk = String(pk || '').trim().toLowerCase();
+        if (lk && !prevDefsByLower.has(lk)) prevDefsByLower.set(lk, pv);
+      }
       const nextDefs = wsIn.companyPolicyDefaults || {};
       for (const [ck, nv] of Object.entries(nextDefs)) {
-        if (!canAccessCompany(session, ck) && stableRowSig(prevDefs[ck]) !== stableRowSig(nv)) {
+        const nvCo = nv && typeof nv === 'object' ? String(nv.company || '').trim() : '';
+        const mismatchDefCo = Boolean(nvCo && canonEntityKey(nvCo) !== canonEntityKey(ck));
+        const prevDefMatch = prevDefs[ck] !== undefined ? prevDefs[ck] : prevDefsByLower.get(String(ck || '').trim().toLowerCase());
+        if ((!canAccessCompany(session, ck) || mismatchDefCo) && stableRowSig(prevDefMatch) !== stableRowSig(nv)) {
           return jsonResponse({ ok: false, error: 'Row-level security: cannot modify another entity policy default.' }, 403);
         }
       }
       const prevShifts = Array.isArray(prevWs.shiftTypes) ? prevWs.shiftTypes : [];
       const nextShifts = Array.isArray(wsIn.shiftTypes) ? wsIn.shiftTypes : [];
-      const shiftKeyFn = s => `${String((s && s.company) || 'All BUs').trim().toLowerCase()}|${String((s && (s.id || s.shift_code)) || '').trim().toLowerCase()}`;
+      const shiftKeyFn = s => `${canonEntityKey((s && s.company) || 'All BUs') || 'all bus'}|${String((s && (s.id || s.shift_code)) || '').trim().toLowerCase()}`;
       const prevShiftByKey = new Map(prevShifts.filter(s => s && (s.id || s.shift_code)).map(s => [shiftKeyFn(s), s]));
       for (const ns of nextShifts) {
         if (!ns || !(ns.id || ns.shift_code)) continue;
@@ -3182,18 +3341,94 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
       const prevRules = prevWs.staffRules || {};
       const nextRules = wsIn.staffRules || {};
       for (const [rk, nr] of Object.entries(nextRules)) {
-        // Skipped here and dropped by mergeWorkSchedulesDocs (never stored), so it cannot block the push either.
-        if (staffRuleKeyCompanyMismatch(rk, nr)) continue;
         const pr = prevRules[rk];
         const prevCo = String((pr && pr.company) || '').trim();
+        const keyBar = String(rk || '').indexOf('|');
+        const keyCo = keyBar > 0 ? String(rk).slice(0, keyBar).trim() : '';
         const nextCo = String((nr && nr.company) || '').trim();
+        if (staffRuleKeyCompanyMismatch(rk, nr)) {
+          // Cross-entity target or existing inaccessible rule still returns 403; own-entity mismatched rows drop silently in merge.
+          if (((pr && (!prevCo || !canAccessCompany(session, prevCo))) || (keyCo && !canAccessCompany(session, keyCo)) || (nextCo && !canAccessCompany(session, nextCo))) && stableRowSig(pr) !== stableRowSig(nr)) {
+            return jsonResponse({ ok: false, error: 'Row-level security: cannot modify cross-entity staff rules.' }, 403);
+          }
+          continue;
+        }
         const co = nextCo || prevCo;
-        if ((!co || !canAccessCompany(session, co) || (prevCo && !canAccessCompany(session, prevCo))) && stableRowSig(pr) !== stableRowSig(nr)) {
+        const isBareKey = !String(rk || '').includes('|');
+        if ((!co || !canAccessCompany(session, co) || (pr && (!prevCo || !canAccessCompany(session, prevCo))) || isBareKey) && stableRowSig(pr) !== stableRowSig(nr)) {
           return jsonResponse({ ok: false, error: 'Row-level security: cannot modify cross-entity staff rules.' }, 403);
         }
       }
     }
-    toStore = mergeWorkSchedulesDocs(prevWs, wsIn, session, restrictKvRls);
+    let mergeWsIn = wsIn;
+    if (reqOp === 'delete_shift' || reqOp === 'delete_policy_group') {
+      const delId = String((body && body.id) || '').trim();
+      if (delId) {
+        const arrKey = reqOp === 'delete_policy_group' ? 'policyGroups' : 'shiftTypes';
+        const prevArr = Array.isArray(prevWs[arrKey]) ? prevWs[arrKey] : [];
+        const itemIn = (body && body.item && typeof body.item === 'object') ? body.item : null;
+        const reqCoRaw = String((body && body.company) || (itemIn && itemIn.company) || '').trim();
+        const reqCoCanon = reqCoRaw ? canonEntityKey(reqCoRaw) : '';
+        const matchesDel = (x) => {
+          if (!x || typeof x !== 'object') return false;
+          const idX = String(x.id || '').trim();
+          const scX = String(x.shift_code || '').trim();
+          const matchedId = reqOp === 'delete_shift'
+            ? (idX === delId || scX === delId)
+            : (idX === delId);
+          if (!matchedId) return false;
+          if (reqOp !== 'delete_shift' || !reqCoCanon) return true;
+          const xCo = String(x.company || '').trim();
+          return !xCo || canonEntityKey(xCo) === reqCoCanon;
+        };
+        const prevMatches = prevArr.filter(matchesDel);
+        const prevMatch = prevMatches[0] || null;
+        const delCo = String(reqCoRaw || (prevMatch && prevMatch.company) || '').trim();
+        if (reqOp === 'delete_shift' && !delCo) {
+          return jsonResponse({ ok: false, error: 'Company is required when deleting a shift type' }, 400);
+        }
+        if (restrictKvRls) {
+          for (const pm of prevMatches) {
+            if (pm.company && !canAccessCompany(session, pm.company)) {
+              return jsonResponse({ ok: false, error: 'Row-level security: cannot delete another entity record.' }, 403);
+            }
+          }
+          if (delCo && !canAccessCompany(session, delCo)) {
+            return jsonResponse({ ok: false, error: 'Row-level security: cannot delete another entity record.' }, 403);
+          }
+          if (reqOp === 'delete_policy_group' && !delCo && !(prevMatch && prevMatch.company)) {
+            return jsonResponse({ ok: false, error: 'Row-level security: Owner or Full Access required to delete shared policy group.' }, 403);
+          }
+        }
+        const maxPrevMs = prevMatches.reduce((mx, pm) => {
+          const ms = Date.parse(String((pm && pm.updated_at) || ''));
+          return Number.isFinite(ms) && ms > mx ? ms : mx;
+        }, 0);
+        const prevTs = String((prevMatch && prevMatch.updated_at) || '');
+        const minNextIso = new Date(Math.max(Date.now(), maxPrevMs ? maxPrevMs + 1000 : 0)).toISOString();
+        const inTs = String((itemIn && itemIn.updated_at) || '');
+        const inMs = inTs ? Date.parse(inTs) : NaN;
+        const tombTs = (inTs && ((Number.isFinite(inMs) && maxPrevMs > 0) ? (inMs >= maxPrevMs) : (!prevTs || tsCmp(inTs, prevTs) >= 0))) ? inTs : minNextIso;
+        const resolvedId = String((prevMatch && prevMatch.id) || (itemIn && itemIn.id) || delId).trim();
+        const tomb = Object.assign({}, prevMatch || {}, itemIn || {}, {
+          id: resolvedId,
+          voided: true,
+          updated_at: tombTs
+        });
+        if (reqOp === 'delete_shift') {
+          if (!tomb.shift_code) tomb.shift_code = delId;
+          if (!tomb.company) tomb.company = delCo;
+        } else if (delCo && !tomb.company) {
+          tomb.company = delCo;
+        }
+        const baseArr = Array.isArray(wsIn[arrKey]) ? wsIn[arrKey].slice() : [];
+        const existingIdx = baseArr.findIndex(matchesDel);
+        if (existingIdx >= 0) baseArr[existingIdx] = Object.assign({}, baseArr[existingIdx], tomb);
+        else baseArr.push(tomb);
+        mergeWsIn = Object.assign({}, wsIn, { [arrKey]: baseArr });
+      }
+    }
+    toStore = mergeWorkSchedulesDocs(prevWs, mergeWsIn, session, restrictKvRls);
   }
   await env.DB.prepare(
     `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
@@ -3961,20 +4196,6 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
         }
       }
 
-      if (storePayload.workSchedules && (!hasPrev || stableRowSig(prevStorePayload.workSchedules) !== stableRowSig(storePayload.workSchedules))) {
-        const wsIso = String(storePayload.updatedAt || new Date().toISOString());
-        const kvWsRow = await db.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'work_schedules'").first();
-        const liveKvWs = (kvWsRow && safeJsonParse(kvWsRow.payload_json, null)) || {};
-        const mergedWs = mergeWorkSchedulesDocs(liveKvWs, storePayload.workSchedules, session, restrictRls);
-        storePayload.workSchedules = mergedWs;
-        subStmts.push(
-          db.prepare(
-            `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev) VALUES ('work_schedules', ?1, ?2, 1)
-             ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1`
-          ).bind(JSON.stringify(mergedWs), wsIso)
-        );
-      }
-
       if (Array.isArray(storePayload.users) && storePayload.users.length) {
         const prevUsers = (hasPrev && Array.isArray(prevStorePayload.users)) ? prevStorePayload.users : [];
         const prevUserSigByEmail = new Map();
@@ -4106,6 +4327,21 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
           );
         }
       }
+    }
+
+    const canWriteWsMirror = !session || await resolveCanWriteWorkSchedules(db, session);
+    if (canWriteWsMirror && storePayload.workSchedules && (!hasPrev || stableRowSig(prevStorePayload.workSchedules) !== stableRowSig(storePayload.workSchedules))) {
+      const wsIso = String(storePayload.updatedAt || new Date().toISOString());
+      const kvWsRow = await db.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'work_schedules'").first();
+      const liveKvWs = (kvWsRow && safeJsonParse(kvWsRow.payload_json, null)) || {};
+      const mergedWs = mergeWorkSchedulesDocs(liveKvWs, storePayload.workSchedules, session, restrictRls);
+      storePayload.workSchedules = mergedWs;
+      subStmts.push(
+        db.prepare(
+          `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev) VALUES ('work_schedules', ?1, ?2, 1)
+           ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1`
+        ).bind(JSON.stringify(mergedWs), wsIso)
+      );
     }
 
     if (subStmts.length) {
@@ -4418,11 +4654,49 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
     incomingDoc.sentinelReviews = safeSr;
   }
 
+  const canWriteWs = await resolveCanWriteWorkSchedules(db, session, baseUsers);
+  if (!canWriteWs) {
+    if (prev.workSchedules !== undefined) incomingDoc.workSchedules = prev.workSchedules;
+    else delete incomingDoc.workSchedules;
+  } else if (prev.workSchedules || incomingDoc.workSchedules) {
+    const pWs = (prev.workSchedules && typeof prev.workSchedules === 'object') ? prev.workSchedules : {};
+    const iWs = (incomingDoc.workSchedules && typeof incomingDoc.workSchedules === 'object') ? incomingDoc.workSchedules : {};
+    const safeDefs = {};
+    for (const [ck, cv] of Object.entries(iWs.companyPolicyDefaults || {})) {
+      const cvCo = cv && typeof cv === 'object' ? String(cv.company || '').trim() : '';
+      if (canAccessCompany(session, ck) && (!cvCo || canonEntityKey(cvCo) === canonEntityKey(ck))) {
+        safeDefs[ck] = cv;
+      }
+    }
+    const iShifts = Array.isArray(iWs.shiftTypes) ? iWs.shiftTypes : [];
+    const safeShifts = [];
+    for (const is of iShifts) {
+      if (is && is.company && canAccessCompany(session, is.company)) safeShifts.push(is);
+    }
+    const pRules = (pWs.staffRules && typeof pWs.staffRules === 'object') ? pWs.staffRules : {};
+    const iRules = (iWs.staffRules && typeof iWs.staffRules === 'object') ? iWs.staffRules : {};
+    const safeRules = {};
+    for (const [rk, iv] of Object.entries(iRules)) {
+      if (!String(rk || '').includes('|') || !iv || typeof iv !== 'object' || staffRuleKeyCompanyMismatch(rk, iv)) continue;
+      const pRule = pRules[rk];
+      if (pRule && typeof pRule === 'object') {
+        const pCo = String(pRule.company || '').trim();
+        if (!pCo || !canAccessCompany(session, pCo)) continue;
+      }
+      const iCo = String(iv.company || '').trim();
+      if (iCo && canAccessCompany(session, iCo)) safeRules[rk] = iv;
+    }
+    const sanitizedWs = {
+      shiftTypes: safeShifts,
+      policyGroups: Array.isArray(pWs.policyGroups) ? pWs.policyGroups : [],
+      companyPolicyDefaults: safeDefs,
+      staffRules: safeRules
+    };
+    incomingDoc.workSchedules = mergeWorkSchedulesDocs(pWs, sanitizedWs, session, true);
+  }
   if (!canManageSeats) {
     if (prev.alertRules !== undefined) incomingDoc.alertRules = prev.alertRules;
     else delete incomingDoc.alertRules;
-    if (prev.workSchedules !== undefined) incomingDoc.workSchedules = prev.workSchedules;
-    else delete incomingDoc.workSchedules;
     if (prev.staffBiometrics !== undefined) incomingDoc.staffBiometrics = prev.staffBiometrics;
     else delete incomingDoc.staffBiometrics;
   } else {
@@ -4471,11 +4745,7 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
       }
       incomingDoc.alertRules = { overrides: Object.assign({}, pAr.overrides || {}), custom: safeCust };
     }
-    if (prev.workSchedules || incomingDoc.workSchedules) {
-      const pWs = (prev.workSchedules && typeof prev.workSchedules === 'object') ? prev.workSchedules : {};
-      const iWs = (incomingDoc.workSchedules && typeof incomingDoc.workSchedules === 'object') ? incomingDoc.workSchedules : {};
-      incomingDoc.workSchedules = mergeWorkSchedulesDocs(pWs, iWs, session, true);
-    }
+    // workSchedules merged above via resolveCanWriteWorkSchedules + mergeWorkSchedulesDocs
   }
 
   if (Array.isArray(prev.sessions) || Array.isArray(incomingDoc.sessions)) {
@@ -4669,8 +4939,9 @@ function redactFaceSamplesFromUserObj(u) {
   copy.face_redacted = Boolean(copy.face_enrolled);
   if (!copy.face_enrolled && copy.face_updated_at) copy.face_cleared = true;
   delete copy.face_samples;
-  if (copy.pin_code || copy.pin_redacted) copy.pin_redacted = true;
+  if (copy.pin_code || copy.pin_hash || copy.pin_redacted) copy.pin_redacted = true;
   delete copy.pin_code;
+  delete copy.pin_hash;
   delete copy._verifiedPin;
   return copy;
 }
