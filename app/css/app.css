@@ -4258,25 +4258,43 @@ td.td-has-sel-dot > .void-btn.row-void-hover { right: 22px; }
 .cf-till-start-strip > svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: var(--warn); }
 .cf-till-start-strip .cf-till-start-txt { min-width: 0; }
 .cf-till-start-strip .cf-till-sep { display: inline-block; margin: 0 6px; color: var(--muted); }
-/* Till on this day scrubber under the till cards (owner idea 2026-11-13) */
+/* Till on this day time machine under the till cards (2024+ single-day replay) */
 .cf-till-scrub { display: flex; flex-direction: column; gap: 6px; margin: -4px 0 14px; padding: 8px 12px; background: var(--surface, var(--card)); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; color: var(--ink); }
-.cf-till-scrub .cf-till-scrub-top { display: flex; align-items: center; gap: 10px; min-height: 24px; min-width: 0; }
+.cf-till-scrub .cf-till-scrub-top { display: flex; align-items: center; gap: 8px 10px; min-height: 26px; min-width: 0; }
 .cf-till-scrub .cf-till-scrub-lbl { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
 .cf-till-scrub .cf-till-scrub-lbl svg { width: 15px; height: 15px; color: var(--brass); flex-shrink: 0; }
+.cf-till-scrub .cf-till-scrub-zoom { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 5%, transparent); border: 1px solid var(--line); flex-shrink: 0; }
+.cf-till-scrub .cf-till-scrub-zoom-btn { border: 0; background: transparent; color: var(--muted); font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; height: 20px; padding: 0 7px; border-radius: 4px; cursor: pointer; white-space: nowrap; transition: background .12s ease, color .12s ease, box-shadow .12s ease; }
+.cf-till-scrub .cf-till-scrub-zoom-btn:hover { color: var(--ink); }
+.cf-till-scrub .cf-till-scrub-zoom-btn.active { background: color-mix(in srgb, var(--brass) 18%, var(--surface, #fff)); color: var(--brass); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brass) 48%, transparent); }
+.cf-till-scrub .cf-till-scrub-zoom-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
 .cf-till-scrub .cf-till-scrub-track { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
-.cf-till-scrub .cf-till-scrub-edge { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
+.cf-till-scrub .cf-till-scrub-track-wrap { position: relative; display: flex; align-items: center; flex: 1 1 180px; min-width: 0; }
+.cf-till-scrub .cf-till-scrub-hover { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 3px 8px; border-radius: 6px; background: var(--surface, var(--card)); border: 1px solid color-mix(in srgb, var(--brass) 45%, var(--line)); box-shadow: 0 4px 12px rgba(15, 30, 56, 0.14); color: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; z-index: 30; }
+.cf-till-scrub .cf-till-scrub-hover[hidden] { display: none !important; }
+.cf-till-scrub .cf-till-scrub-hover b.good,
+.cf-till-scrub .cf-till-scrub-hover span.good { color: var(--good); font-weight: 700; }
+.cf-till-scrub .cf-till-scrub-hover b.crit,
+.cf-till-scrub .cf-till-scrub-hover span.crit { color: var(--crit); font-weight: 700; }
 .cf-till-scrub .cf-till-scrub-step { flex: 0 0 24px; width: 24px; height: 24px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1; }
 .cf-till-scrub .cf-till-scrub-step:disabled { opacity: .38; cursor: default; }
 html[dir="rtl"] .cf-till-scrub .cf-till-scrub-step { transform: scaleX(-1); }
-.cf-till-scrub .cf-till-scrub-range { --p: 100%; flex: 1 1 180px; min-width: 0; width: auto; height: 6px; margin: 9px 0; touch-action: pan-y; -webkit-appearance: none; appearance: none; border-radius: 999px; background: linear-gradient(to right, var(--brass) 0 var(--p), var(--line) var(--p) 100%); cursor: pointer; }
+.cf-till-scrub .cf-till-scrub-range { --p: 100%; flex: 1 1 auto; min-width: 0; width: 100%; height: 6px; margin: 9px 0; touch-action: pan-y; -webkit-appearance: none; appearance: none; border-radius: 999px; background: linear-gradient(to right, var(--brass) 0 var(--p), var(--line) var(--p) 100%); cursor: pointer; }
 html[dir="rtl"] .cf-till-scrub .cf-till-scrub-range { background: linear-gradient(to left, var(--brass) 0 var(--p), var(--line) var(--p) 100%); }
 .cf-till-scrub .cf-till-scrub-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--surface); border: 3px solid var(--brass); box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
 .cf-till-scrub .cf-till-scrub-range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 3px solid var(--brass); }
 .cf-till-scrub .cf-till-scrub-range:focus-visible { outline: 2px solid var(--brass); outline-offset: 4px; }
 .cf-till-scrub .cf-till-scrub-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; min-height: 26px; }
-.cf-till-scrub .cf-till-scrub-out { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-variant-numeric: tabular-nums; min-width: 0; }
-.cf-till-scrub .cf-till-scrub-date { padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--brass) 14%, transparent); color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cf-till-scrub .cf-till-scrub-out { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-variant-numeric: tabular-nums; min-width: 0; }
+.cf-till-scrub #cfTillScrubSegPill { width: auto; flex: 0 0 auto; justify-content: flex-start; gap: 1px; height: 24px; padding: 0 6px; border-radius: 6px; background: color-mix(in srgb, var(--brass) 13%, transparent); border: 1px solid color-mix(in srgb, var(--brass) 35%, var(--line)); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.cf-till-scrub #cfTillScrubSegPill [data-date-part="day"]:not(.date-seg-cal) { min-width: 20px; text-align: center; }
+.cf-till-scrub #cfTillScrubSegPill [data-date-part="month"] { min-width: 48px; text-align: center; }
+.cf-till-scrub #cfTillScrubSegPill [data-date-part="year"] { min-width: 34px; text-align: center; }
 .cf-till-scrub .cf-till-scrub-kv { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+.cf-till-scrub .cf-till-scrub-chip { border: 1px solid transparent; background: color-mix(in srgb, var(--ink) 3.5%, transparent); border-radius: 999px; height: 24px; padding: 0 7px; font: inherit; color: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: border-color .12s ease, background .12s ease; }
+.cf-till-scrub .cf-till-scrub-chip:hover { border-color: color-mix(in srgb, var(--brass) 45%, var(--line)); background: color-mix(in srgb, var(--brass) 9%, transparent); }
+.cf-till-scrub .cf-till-scrub-chip.active { border-color: var(--brass); background: color-mix(in srgb, var(--brass) 15%, transparent); }
+.cf-till-scrub .cf-till-scrub-chip:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
 .cf-till-scrub .cf-till-scrub-out b.good { color: var(--good); }
 .cf-till-scrub .cf-till-scrub-out b.crit { color: var(--crit); }
 .cf-till-scrub .cf-till-scrub-acts { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: auto; min-height: 24px; }
@@ -4291,8 +4309,13 @@ html[dir="rtl"] .cf-till-scrub .cf-till-scrub-range { background: linear-gradien
   .cf-till-scrub .cf-till-scrub-reset[hidden] { display: inline-flex !important; visibility: hidden; pointer-events: none; }
 }
 @media (min-width: 861px) and (max-width: 1180px) {
+  .cf-till-scrub .cf-till-scrub-top { gap: 4px 6px; }
+  .cf-till-scrub .cf-till-scrub-zoom-btn { padding: 0 5px; font-size: 10px; }
   .cf-till-scrub .cf-till-scrub-bar { gap: 4px 8px; }
-  .cf-till-scrub .cf-till-scrub-out { gap: 4px 8px; font-size: 11.5px; }
+  .cf-till-scrub .cf-till-scrub-out { gap: 3px 6px; font-size: 11px; }
+  .cf-till-scrub #cfTillScrubSegPill { padding: 0 4px; font-size: 11px; }
+  .cf-till-scrub #cfTillScrubSegPill [data-date-part="month"] { min-width: 44px; }
+  .cf-till-scrub .cf-till-scrub-chip { padding: 0 5px; }
   .cf-till-scrub .cf-till-scrub-acts { gap: 4px; }
   .cf-till-scrub .cf-till-scrub-daybtn,
   .cf-till-scrub .cf-till-scrub-reset { padding: 0 8px; font-size: 11px; }
@@ -4301,11 +4324,13 @@ html[dir="rtl"] .cf-till-scrub .cf-till-scrub-range { background: linear-gradien
 .sales-recon-metrics b.cf-till-scrubbed { color: var(--brass); }
 .cockpit-pill.cf-till-sub-stale .cockpit-pill-sub { opacity: .45; }
 @media (max-width: 860px) {
-  .cf-till-scrub .cf-till-scrub-edge { display: none; }
   .cf-till-scrub .cf-till-scrub-top { flex-wrap: wrap; gap: 6px 8px; }
-  .cf-till-scrub .cf-till-scrub-lbl { flex: 1 1 100%; }
+  .cf-till-scrub .cf-till-scrub-lbl { flex: 0 0 auto; }
+  .cf-till-scrub .cf-till-scrub-zoom { margin-inline-start: auto; }
   .cf-till-scrub .cf-till-scrub-track { flex: 1 1 100%; width: 100%; }
   .cf-till-scrub .cf-till-scrub-step { flex: 0 0 34px; width: 34px; height: 34px; font-size: 17px; }
+  .cf-till-scrub #cfTillScrubSegPill { height: 30px; }
+  .cf-till-scrub .cf-till-scrub-chip { height: 28px; padding: 0 8px; }
   .cf-till-scrub .cf-till-scrub-daybtn,
   .cf-till-scrub .cf-till-scrub-reset { height: 32px; padding: 0 12px; }
   .cf-till-scrub .cf-till-scrub-acts { margin-inline-start: 0; }
@@ -19163,6 +19188,9 @@ th.sortable.col-filtered {
   border-radius: 6px;
   background: rgba(15, 30, 56, 0.05);
   border: 1px solid var(--line);
+}
+.df-tabs.df-tabs-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 :root[data-theme="dark"] .df-tabs {

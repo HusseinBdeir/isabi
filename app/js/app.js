@@ -325,6 +325,9 @@
     cfBridgeMode: 'streams',
     cfFocusDate: '',
     cfFocusDateFromScrub: false,
+    cfTillScrubZoom: 'all',
+    cfChipFromScrub: false,
+    cfFocusByChip: false,
     cfFocusYm: '',
     cfFocusParty: '',
     cfChartGrain: 'monthly',
@@ -4211,39 +4214,94 @@
     return k;
   }
 
-  // Till on this day (owner idea 2026-11-13): the till at the close of each of the `days` days ending endIso, from the
-  // same sources as the dated till cards (applyCashFlowParityToKpi with a range ending that day): the daily till sheet
-  // up to that day plus the app cash entries up to that day. Null when the scope has no daily till sheet.
-  function computeTillDaySeries(rawKey, endIso, days = 90) {
+  // Till on this day: cumulative daily closing till series up to endIso from the same sources as the dated till cards.
+  // Supports Manufacturing daily till sheets (from 2024-01-01 on real books, or synthetic start in Demo Company) and
+  // tracked sibling cash books (all 6 verticals in Demo Company and future tracked books). Null for untracked books.
+  const _tillSeriesCache = new Map();
+  function computeTillDaySeries(rawKey, endIso, daysOrOpts = 'all') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(endIso || ''))) return null;
+    const effInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(rawKey) : 'Manufacturing';
     const coKey = resolveEffectiveModelKey(rawKey);
-    const m = SEED.models[coKey] || {};
-    const cf = m.cash_flow_sheet;
-    if (!cf || !cf.live_till || !Array.isArray(cf.daily) || !cf.daily.length || !/^\d{4}-\d{2}-\d{2}$/.test(String(endIso || ''))) return null;
-    const rate = Number(cf.rate_lbp || 89500);
-    const perDay = new Map();
-    computeCustomCashDeltas(coKey, null, perDay);
+    const demoOn = isDemoScopeActive();
+    const isAllMode = daysOrOpts === 'all' || daysOrOpts == null || (typeof daysOrOpts === 'object' && daysOrOpts.fullHistory);
+    const winDays = isAllMode ? 0 : Math.max(1, Number(typeof daysOrOpts === 'object' ? daysOrOpts.days : daysOrOpts) || 90);
+    const seatKey = typeof activeSeatFullFinKey === 'function' ? activeSeatFullFinKey() : 'F1';
+    const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
+    const indEditSig = effInd === 'Manufacturing' ? '' : `${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}:${indCashStrHash(JSON.stringify(STATE.industryCustomRows || {}))}`;
+    const cacheKey = `${rawKey}|${coKey}|${effInd}|${endIso}|${isAllMode ? 'all' : winDays}|${demoOn ? 1 : 0}|${SEED._customRev || 0}|${SEED._industryRev || 0}|${STATE._indCustomRev || 0}|${crCount}|${SEED._recordsReady ? 1 : 0}|${seatKey}|${indEditSig}`;
+    const cached = _tillSeriesCache.get(cacheKey);
+    if (cached) return { rate: cached.rate, days: cached.days.slice() };
+
     const endMs = Date.parse(endIso + 'T00:00:00Z');
-    const dates = [];
-    for (let i = Math.max(1, days) - 1; i >= 0; i--) dates.push(new Date(endMs - i * 86400000).toISOString().slice(0, 10));
-    const start = dates[0];
-    let runU = 0, runL = 0;
     const dayMoves = new Map();
-    const addDay = (d, iu, ou, il, ol) => {
-      // an undated app entry counts on every end date in the dated cards (computeCustomCashDeltas upToEnd): here too
-      if (!d || d < start) { runU += iu - ou; runL += il - ol; return; }
-      if (d > endIso) return;
-      const cur = dayMoves.get(d) || [0, 0, 0, 0];
-      cur[0] += iu; cur[1] += ou; cur[2] += il; cur[3] += ol;
-      dayMoves.set(d, cur);
-    };
-    for (let i = 0; i < cf.daily.length; i++) {
-      const row = cf.daily[i];
-      addDay(String(row[0] || '').slice(0, 10), Number(row[1] || 0), Number(row[2] || 0), Number(row[3] || 0), Number(row[4] || 0));
+    let runU = 0, runL = 0;
+    let rate = 89500;
+    let startIso = MIN_DATE;
+
+    if (effInd === 'Manufacturing') {
+      const m = SEED.models[coKey] || {};
+      const cf = m.cash_flow_sheet;
+      if (!cf || !cf.live_till || !Array.isArray(cf.daily) || !cf.daily.length) return null;
+      rate = Number(cf.rate_lbp || 89500);
+      if (isAllMode) {
+        const sheetStart = String(cf.daily[0][0] || MIN_DATE).slice(0, 10);
+        startIso = demoOn ? (sheetStart || MIN_DATE) : MIN_DATE;
+      } else {
+        startIso = new Date(endMs - (winDays - 1) * 86400000).toISOString().slice(0, 10);
+      }
+      if (startIso > endIso) startIso = endIso;
+      const perDay = new Map();
+      computeCustomCashDeltas(coKey, null, perDay);
+      const addDay = (d, iu, ou, il, ol) => {
+        // An undated app entry counts on every end date in the dated cards (computeCustomCashDeltas upToEnd): here too.
+        if (!d || d < startIso) { runU += iu - ou; runL += il - ol; return; }
+        if (d > endIso) return;
+        const cur = dayMoves.get(d) || [0, 0, 0, 0];
+        cur[0] += iu; cur[1] += ou; cur[2] += il; cur[3] += ol;
+        dayMoves.set(d, cur);
+      };
+      for (let i = 0; i < cf.daily.length; i++) {
+        const row = cf.daily[i];
+        addDay(String(row[0] || '').slice(0, 10), Number(row[1] || 0), Number(row[2] || 0), Number(row[3] || 0), Number(row[4] || 0));
+      }
+      perDay.forEach((v, d) => addDay(d, v[0], v[1], v[2], v[3]));
+    } else {
+      const book = typeof siblingCashBook === 'function' ? siblingCashBook(effInd) : { tracked: false };
+      if (!book.tracked || typeof buildIndustryCashMoves !== 'function') return null;
+      const moves = buildIndustryCashMoves(effInd, rawKey, { ignorePeriod: true });
+      if (!Array.isArray(moves) || !moves.length) return null;
+      let minMoveIso = '';
+      for (let i = 0; i < moves.length; i++) {
+        const dt = String((moves[i] && moves[i].date) || '').slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dt) && (!minMoveIso || dt < minMoveIso)) minMoveIso = dt;
+      }
+      if (!minMoveIso) return null;
+      if (isAllMode) {
+        startIso = demoOn ? minMoveIso : (minMoveIso < MIN_DATE ? minMoveIso : MIN_DATE);
+      } else {
+        startIso = new Date(endMs - (winDays - 1) * 86400000).toISOString().slice(0, 10);
+      }
+      if (startIso > endIso) startIso = endIso;
+      for (let i = 0; i < moves.length; i++) {
+        const mv = moves[i];
+        if (!mv) continue;
+        const d = String(mv.date || '').slice(0, 10);
+        const iu = Number(mv.in_usd || 0);
+        const ou = Number(mv.out_usd || 0);
+        const il = mv.lbp > 0 ? Number(mv.lbp) : 0;
+        const ol = mv.lbp < 0 ? -Number(mv.lbp) : 0;
+        if (!d || d < startIso) { runU += iu - ou; runL += il - ol; continue; }
+        if (d > endIso) continue;
+        const cur = dayMoves.get(d) || [0, 0, 0, 0];
+        cur[0] += iu; cur[1] += ou; cur[2] += il; cur[3] += ol;
+        dayMoves.set(d, cur);
+      }
     }
-    perDay.forEach((v, d) => addDay(d, v[0], v[1], v[2], v[3]));
+
+    const startMs = Date.parse(startIso + 'T00:00:00Z');
     const out = [];
-    for (let i = 0; i < dates.length; i++) {
-      const d = dates[i];
+    for (let ms = startMs; ms <= endMs; ms += 86400000) {
+      const d = new Date(ms).toISOString().slice(0, 10);
       const mv = dayMoves.get(d) || [0, 0, 0, 0];
       runU += mv[0] - mv[1];
       runL += mv[2] - mv[3];
@@ -4253,7 +4311,10 @@
       if (Math.abs(lbp) <= CF_LBP_DUST) lbp = 0;
       out.push({ date: d, usd, lbp, total: round2(usd + lbp / rate), in_usd: round2(mv[0]), out_usd: round2(mv[1]), in_lbp: Math.round(mv[2]), out_lbp: Math.round(mv[3]) });
     }
-    return { rate, days: out };
+    const res = { rate, days: out };
+    if (_tillSeriesCache.size > 24) _tillSeriesCache.clear();
+    _tillSeriesCache.set(cacheKey, res);
+    return { rate, days: out.slice() };
   }
 
   function getKPI(coOverride) {
@@ -5561,21 +5622,28 @@
   const daysInMonth = lastDayOfMonth;
   const MONTH_FULL = MONTH_LONG;
 
-  function normalizeValidFilterDate(rawIso, fallback = null) {
+  function getTillScrubMinYear() {
+    const startIso = (_cfTillScrub && _cfTillScrub.startDate) || MIN_DATE;
+    const yr = Number(String(startIso).slice(0, 4));
+    return Math.min(2024, Math.max(2000, yr || 2024));
+  }
+
+  function normalizeValidFilterDate(rawIso, fallback = null, minYr = 2024) {
     const s = String(rawIso == null ? '' : rawIso).trim();
     const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!m) return fallback;
     const yr = Number(m[1]);
     const mo = Number(m[2]);
     const dy = Number(m[3]);
-    if (yr < 2024 || yr > 2030 || mo < 1 || mo > 12 || dy < 1) return fallback;
+    const loYr = Math.min(2024, Math.max(2000, Number(minYr) || 2024));
+    if (yr < loYr || yr > 2030 || mo < 1 || mo > 12 || dy < 1) return fallback;
     const maxDy = daysInMonth(yr, mo);
     const clampedDy = Math.min(dy, maxDy);
     return `${String(yr).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(clampedDy).padStart(2, '0')}`;
   }
 
-  function formatDateSegParts(iso, defaultIso) {
-    const valid = normalizeValidFilterDate(iso, defaultIso || MIN_DATE) || MIN_DATE;
+  function formatDateSegParts(iso, defaultIso, minYr = 2024) {
+    const valid = normalizeValidFilterDate(iso, defaultIso || MIN_DATE, minYr) || MIN_DATE;
     const [yStr, mStr, dStr] = valid.split('-');
     const yrNum = Number(yStr) || 2024;
     const moNum = Math.min(12, Math.max(1, Number(mStr) || 1));
@@ -5593,21 +5661,30 @@
     };
   }
 
-  function renderDateSegPillHtml(endKey, iso, scope = 'top') {
+  function renderDateSegPillHtml(endKey, iso, scope = 'top', pillId = '') {
     const defIso = endKey === 'to' ? MAX_DATE : MIN_DATE;
-    const p = formatDateSegParts(iso, defIso);
-    const endLbl = endKey === 'to' ? 'To' : 'From';
-    const isEndOpen = _dateFacState.open && _dateFacState.targetMode === endKey;
+    const isScrub = scope === 'till_scrub' || endKey === 'till_day';
+    const minYr = isScrub ? getTillScrubMinYear() : 2024;
+    const p = formatDateSegParts(iso, defIso, minYr);
+    const endLbl = isScrub ? 'Till' : (endKey === 'to' ? 'To' : 'From');
+    const isEndOpen = _dateFacState.open && (isScrub ? _dateFacState.scope === 'till_scrub' : (_dateFacState.scope !== 'till_scrub' && _dateFacState.targetMode === endKey));
     const dayAct = isEndOpen && _dateFacState.tab === 'day' ? ' is-active-seg' : '';
     const moAct = isEndOpen && _dateFacState.tab === 'month' ? ' is-active-seg' : '';
     const yrAct = isEndOpen && _dateFacState.tab === 'year' ? ' is-active-seg' : '';
-    return `<div class="date-seg-pill${isEndOpen ? ' is-open-end' : ''}" data-date-end="${esc(endKey)}" data-date-scope="${esc(scope)}"><button type="button" class="date-seg-part${dayAct}" data-date-end="${esc(endKey)}" data-date-part="day" data-date-scope="${esc(scope)}" title="${endLbl} Day — click for Calendar or ↑/↓ to step ±1 day">${esc(p.dd)}</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part${moAct}" data-date-end="${esc(endKey)}" data-date-part="month" data-date-scope="${esc(scope)}" title="${endLbl} Month — click for Month Picker or ↑/↓ to step ±1 month">${esc(p.mmm)}</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part${yrAct}" data-date-end="${esc(endKey)}" data-date-part="year" data-date-scope="${esc(scope)}" title="${endLbl} Year — click for Year Picker or ↑/↓ to step ±1 year">${esc(p.yyyy)}</button><button type="button" class="date-seg-cal" data-date-end="${esc(endKey)}" data-date-part="day" data-date-scope="${esc(scope)}" title="Open interactive Date &amp; Period Facilitator (${endLbl})" aria-label="Open ${endLbl} Date Picker"><svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.8"/><line x1="5" y1="1.5" x2="5" y2="4.2"/><line x1="11" y1="1.5" x2="11" y2="4.2"/><line x1="2" y1="6.5" x2="14" y2="6.5"/></svg></button></div>`;
+    const idAttr = pillId ? ` id="${esc(pillId)}"` : '';
+    const dayTip = isScrub ? 'Till Day: click for Calendar or Up/Down to step 1 day' : `${endLbl} Day — click for Calendar or ↑/↓ to step ±1 day`;
+    const moTip = isScrub ? 'Till Month: click for Month Picker or Up/Down to step 1 month' : `${endLbl} Month — click for Month Picker or ↑/↓ to step ±1 month`;
+    const yrTip = isScrub ? 'Till Year: click for Year Picker or Up/Down to step 1 year' : `${endLbl} Year — click for Year Picker or ↑/↓ to step ±1 year`;
+    const calTip = isScrub ? 'Pick any day to inspect closing till' : `Open interactive Date &amp; Period Facilitator (${endLbl})`;
+    return `<div${idAttr} class="date-seg-pill${isEndOpen ? ' is-open-end' : ''}" data-date-end="${esc(endKey)}" data-date-scope="${esc(scope)}"><button type="button" class="date-seg-part${dayAct}" data-date-end="${esc(endKey)}" data-date-part="day" data-date-scope="${esc(scope)}" title="${dayTip}">${esc(p.dd)}</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part${moAct}" data-date-end="${esc(endKey)}" data-date-part="month" data-date-scope="${esc(scope)}" title="${moTip}">${esc(p.mmm)}</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part${yrAct}" data-date-end="${esc(endKey)}" data-date-part="year" data-date-scope="${esc(scope)}" title="${yrTip}">${esc(p.yyyy)}</button><button type="button" class="date-seg-cal" data-date-end="${esc(endKey)}" data-date-part="day" data-date-scope="${esc(scope)}" title="${calTip}" aria-label="${isScrub ? 'Pick any day to inspect closing till' : `Open ${endLbl} Date Picker`}"><svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.8"/><line x1="5" y1="1.5" x2="5" y2="4.2"/><line x1="11" y1="1.5" x2="11" y2="4.2"/><line x1="2" y1="6.5" x2="14" y2="6.5"/></svg></button></div>`;
   }
 
   function syncDateSegPillElement(pillEl, iso, endKey) {
     if (!pillEl) return;
-    const p = formatDateSegParts(iso, endKey === 'to' ? MAX_DATE : MIN_DATE);
-    const isEndOpen = _dateFacState.open && _dateFacState.targetMode === endKey;
+    const isScrub = endKey === 'till_day';
+    const minYr = isScrub ? getTillScrubMinYear() : 2024;
+    const p = formatDateSegParts(iso, endKey === 'to' ? MAX_DATE : MIN_DATE, minYr);
+    const isEndOpen = _dateFacState.open && (isScrub ? _dateFacState.scope === 'till_scrub' : (_dateFacState.scope !== 'till_scrub' && _dateFacState.targetMode === endKey));
     pillEl.classList.toggle('is-open-end', isEndOpen);
     const dayBtn = pillEl.querySelector('[data-date-part="day"]:not(.date-seg-cal)');
     const moBtn = pillEl.querySelector('[data-date-part="month"]');
@@ -5617,7 +5694,17 @@
       dayBtn.classList.toggle('is-active-seg', isEndOpen && _dateFacState.tab === 'day');
     }
     if (moBtn) {
-      moBtn.textContent = p.mmm;
+      const lang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
+      const curEn = moBtn.firstChild && moBtn.firstChild.__enText;
+      if (lang === 'en') {
+        if (moBtn.textContent !== p.mmm) moBtn.textContent = p.mmm;
+        if (moBtn.firstChild) moBtn.firstChild.__enText = p.mmm;
+      } else if (curEn !== p.mmm) {
+        moBtn.textContent = p.mmm;
+        if (window.MFG_I18N && window.MFG_I18N.translateDom) {
+          try { window.MFG_I18N.translateDom(moBtn); } catch (_) {}
+        }
+      }
       moBtn.classList.toggle('is-active-seg', isEndOpen && _dateFacState.tab === 'month');
     }
     if (yrBtn) {
@@ -5627,6 +5714,49 @@
   }
 
   function stepDateEndpointByPart(endKey, part, delta) {
+    if (endKey === 'till_day') {
+      if (!_cfTillScrub) return;
+      const minIso = _cfTillScrub.startDate || MIN_DATE;
+      const maxIso = _cfTillScrub.endDate || todayISO();
+      const curIso = getCurrentCfTillScrubIso() || maxIso;
+      const minYr = Number(minIso.slice(0, 4)) || 2024;
+      const maxYr = Number(maxIso.slice(0, 4)) || 2026;
+      const segMinYr = Math.min(2024, minYr);
+      const p = formatDateSegParts(curIso, maxIso, segMinYr);
+      let nextYr = p.yrNum;
+      let nextMo = p.moNum;
+      let nextDy = p.dayNum;
+      if (part === 'year') {
+        nextYr = Math.min(maxYr, Math.max(minYr, nextYr + delta));
+        nextDy = Math.min(nextDy, daysInMonth(nextYr, nextMo));
+      } else if (part === 'month') {
+        const totalMo = (nextYr * 12 + (nextMo - 1)) + delta;
+        const minTotal = minYr * 12 + (Number(minIso.slice(5, 7)) - 1);
+        const maxTotal = maxYr * 12 + (Number(maxIso.slice(5, 7)) - 1);
+        const clampedTotal = Math.min(maxTotal, Math.max(minTotal, totalMo));
+        nextYr = Math.floor(clampedTotal / 12);
+        nextMo = (clampedTotal % 12) + 1;
+        nextDy = Math.min(nextDy, daysInMonth(nextYr, nextMo));
+      } else {
+        const dt = new Date(Date.UTC(nextYr, nextMo - 1, nextDy) + delta * 86400000);
+        const isoCand = dt.toISOString().slice(0, 10);
+        const cp = formatDateSegParts(isoCand < minIso ? minIso : (isoCand > maxIso ? maxIso : isoCand), maxIso, segMinYr);
+        nextYr = cp.yrNum;
+        nextMo = cp.moNum;
+        nextDy = cp.dayNum;
+      }
+      let nextIso = `${String(nextYr).padStart(4, '0')}-${String(nextMo).padStart(2, '0')}-${String(nextDy).padStart(2, '0')}`;
+      if (nextIso < minIso) nextIso = minIso;
+      if (nextIso > maxIso) nextIso = maxIso;
+      selectCfTillScrubDate(nextIso);
+      if (_dateFacState.open && _dateFacState.scope === 'till_scrub') {
+        const sp = formatDateSegParts(nextIso, maxIso, segMinYr);
+        _dateFacState.viewYear = sp.yrNum;
+        _dateFacState.viewMonth = sp.moNum;
+        renderDateFacilitatorPopover();
+      }
+      return;
+    }
     const r = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE };
     const curIso = endKey === 'to' ? r.to : r.from;
     const p = formatDateSegParts(curIso, endKey === 'to' ? MAX_DATE : MIN_DATE);
@@ -5808,13 +5938,15 @@
       pop.style.top = `${_dateFacState.lockedTop}px`;
       return;
     }
-    const anchor = (scopeKey === 'pbi' && document.querySelector('.pbi-date-slicer-row'))
+    const anchor = (scopeKey === 'till_scrub' && ($('cfTillScrubSegPill') || $('cfTillScrub')))
+      || (scopeKey === 'pbi' && document.querySelector('.pbi-date-slicer-row'))
       || document.querySelector('.period-basis-row')
       || $('grainSwitch')
       || $('dateRangeBar');
     if (!anchor) return;
     const rect = anchor.getBoundingClientRect();
-    let left = Math.round(rect.left);
+    const isRtl = document.documentElement.dir === 'rtl' || getComputedStyle(document.body).direction === 'rtl';
+    let left = Math.round(isRtl ? (rect.right - popW) : rect.left);
     if (left + popW > vw - 10) left = Math.max(8, vw - popW - 10);
     if (left < 8) left = 8;
     const constPopH = 408;
@@ -5829,11 +5961,238 @@
     pop.style.top = `${top}px`;
   }
 
+  function renderTillScrubDatePopover(pop) {
+    const sc = _cfTillScrub;
+    if (!sc || !Array.isArray(sc.fullDays) || !sc.fullDays.length || !$('cfTillScrub')) {
+      closeDateFacilitator();
+      return;
+    }
+    const minIso = sc.startDate || sc.fullDays[0].date;
+    const maxIso = sc.endDate || sc.fullDays[sc.fullDays.length - 1].date;
+    const today = todayISO();
+    const minYr = Number(minIso.slice(0, 4)) || 2024;
+    const maxYr = Number(maxIso.slice(0, 4)) || 2026;
+    const segMinYr = Math.min(2024, minYr);
+    const curIso = getCurrentCfTillScrubIso() || maxIso;
+    const cp = formatDateSegParts(curIso, maxIso, segMinYr);
+    const minYm = minIso.slice(0, 7);
+    const maxYm = maxIso.slice(0, 7);
+    const rawTab = _dateFacState.tab || 'day';
+    const tab = (rawTab === 'month' || rawTab === 'year') ? rawTab : 'day';
+    _dateFacState.tab = tab;
+    const vy = Math.min(maxYr, Math.max(minYr, Number(_dateFacState.viewYear) || cp.yrNum));
+    const vm = Math.min(12, Math.max(1, Number(_dateFacState.viewMonth) || cp.moNum));
+    _dateFacState.viewYear = vy;
+    _dateFacState.viewMonth = vm;
+
+    const dayMap = new Map();
+    const byYear = {};
+    const byMonth = {};
+    for (let y = minYr; y <= maxYr; y++) byYear[String(y)] = { days: 0, vol: 0 };
+    for (let idx = 0; idx < sc.fullDays.length; idx++) {
+      const row = sc.fullDays[idx];
+      if (!row || !row.date) continue;
+      dayMap.set(row.date, row);
+      const hasAct = Number(row.in_usd || 0) > 0.005 || Number(row.out_usd || 0) > 0.005 || Math.abs(Number(row.in_lbp || 0) - Number(row.out_lbp || 0)) > 1;
+      if (hasAct) {
+        const yk = row.date.slice(0, 4);
+        const ym = row.date.slice(0, 7);
+        if (byYear[yk]) {
+          byYear[yk].days += 1;
+          byYear[yk].vol += Number(row.in_usd || 0) + Number(row.out_usd || 0);
+        }
+        if (!byMonth[ym]) byMonth[ym] = { days: 0, vol: 0 };
+        byMonth[ym].days += 1;
+        byMonth[ym].vol += Number(row.in_usd || 0) + Number(row.out_usd || 0);
+      }
+    }
+
+    const yrs = [];
+    for (let y = minYr; y <= maxYr; y++) yrs.push(y);
+    const curYrNum = Number(today.slice(0, 4)) || 2026;
+    let bodyHtml = '';
+
+    if (tab === 'year') {
+      bodyHtml = `
+        <div class="df-sec-bar">
+          <span class="df-sec-hint">Select a year to inspect daily closing till</span>
+          <span class="df-sec-sub" data-no-i18n="1">${minYr} - ${maxYr}</span>
+        </div>
+        <div class="df-year-grid">
+          ${yrs.map(y => {
+            const yStat = byYear[String(y)] || { days: 0, vol: 0 };
+            const isSel = cp.yrNum === y;
+            const tag = y === curYrNum ? 'YTD' : (y < curYrNum ? 'Closed' : 'Open');
+            return `
+              <div class="df-year-card ${isSel ? 'is-end-active' : ''}" data-df-pick-year="${y}" role="button" tabindex="0">
+                <div class="df-yc-top">
+                  <strong class="df-yc-num" data-no-i18n="1">${y}</strong>
+                  <span class="df-yc-tag ${yStat.days > 0 ? 'has-data' : ''}">${tag}</span>
+                </div>
+                <div class="df-yc-stat">${yStat.days > 0 ? `<b data-no-i18n="1">${fmtNum(yStat.days)}</b> <span>Days</span> · <b data-no-i18n="1">${esc(fmtUSDk(yStat.vol))}</b>` : '<span>No entries</span>'}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    } else if (tab === 'month') {
+      bodyHtml = `
+        <div class="df-month-nav-row">
+          <div class="df-year-strip" role="group" aria-label="Select Year for Months">
+            <button type="button" class="df-nav-mini" data-df-step-view-year="-1" title="Previous Year"${vy <= minYr ? ' disabled' : ''}>&#x2039;</button>
+            ${yrs.map(y => {
+              const hasY = (byYear[String(y)] || {}).days > 0;
+              return `<button type="button" class="df-yr-pill ${y === vy ? 'active' : ''} ${hasY ? 'has-data' : ''}" data-df-view-year="${y}" data-no-i18n="1">${y}</button>`;
+            }).join('')}
+            <button type="button" class="df-nav-mini" data-df-step-view-year="1" title="Next Year"${vy >= maxYr ? ' disabled' : ''}>&#x203A;</button>
+          </div>
+        </div>
+        <div class="df-month-grid">
+          ${MONTH_SHORT.map((mShort, idx) => {
+            const mNum = idx + 1;
+            const mm = String(mNum).padStart(2, '0');
+            const ym = `${vy}-${mm}`;
+            const mStat = byMonth[ym] || { days: 0, vol: 0 };
+            const isSelMo = cp.yrNum === vy && cp.moNum === mNum;
+            const outOfSpan = ym < minYm || ym > maxYm;
+            return `
+              <button type="button" class="df-month-card ${isSelMo ? 'is-end-active' : ''}" data-df-pick-month="${mNum}" data-df-pick-year="${vy}" ${outOfSpan ? 'disabled' : ''}>
+                <div class="df-mc-top">
+                  <span class="df-mc-num" data-no-i18n="1">${mm}</span>
+                  <strong class="df-mc-name">${mShort}</strong>
+                  ${mStat.days > 0 ? `<i class="df-mc-dot" title="${fmtNum(mStat.days)}"></i>` : ''}
+                </div>
+                <div class="df-mc-stat">${mStat.days > 0 ? `<b data-no-i18n="1">${fmtNum(mStat.days)}</b> <span>Days</span>` : '<span>No entries</span>'}</div>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      `;
+    } else {
+      const firstDow = (new Date(Date.UTC(vy, vm - 1, 1)).getUTCDay() + 6) % 7;
+      const totalDays = daysInMonth(vy, vm);
+      const prevMo = vm === 1 ? 12 : vm - 1;
+      const prevYr = vm === 1 ? vy - 1 : vy;
+      const prevDays = daysInMonth(prevYr, prevMo);
+      const cells = [];
+      for (let i = firstDow - 1; i >= 0; i--) {
+        const d = prevDays - i;
+        const iso = `${String(prevYr).padStart(4, '0')}-${String(prevMo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        cells.push({ d, iso, outside: true, disabled: iso < minIso || iso > maxIso });
+      }
+      for (let d = 1; d <= totalDays; d++) {
+        const iso = `${String(vy).padStart(4, '0')}-${String(vm).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        cells.push({ d, iso, outside: false, disabled: iso < minIso || iso > maxIso });
+      }
+      while (cells.length % 7 !== 0) {
+        const d = cells.length - (firstDow + totalDays) + 1;
+        const nextMo = vm === 12 ? 1 : vm + 1;
+        const nextYr = vm === 12 ? vy + 1 : vy;
+        const iso = `${String(nextYr).padStart(4, '0')}-${String(nextMo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        cells.push({ d, iso, outside: true, disabled: iso < minIso || iso > maxIso });
+      }
+      const ymShown = `${vy}-${String(vm).padStart(2, '0')}`;
+      bodyHtml = `
+        <div class="df-cal-toolbar">
+          <div class="df-cal-nav-left">
+            <button type="button" class="df-nav-mini" data-df-cal-nav="-1" title="Previous Month"${ymShown <= minYm ? ' disabled' : ''}>&#x2039;</button>
+            <button type="button" class="df-cal-jumper" data-df-switch-tab="month" title="Select Month">${esc(MONTH_FULL[vm - 1])} &#x25BE;</button>
+            <button type="button" class="df-cal-jumper" data-df-switch-tab="year" title="Select Year"><span data-no-i18n="1">${vy}</span> &#x25BE;</button>
+            <button type="button" class="df-nav-mini" data-df-cal-nav="1" title="Next Month"${ymShown >= maxYm ? ' disabled' : ''}>&#x203A;</button>
+          </div>
+        </div>
+        <div class="df-cal-weekdays">
+          <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+        </div>
+        <div class="df-cal-grid">
+          ${cells.map(c => {
+            const info = dayMap.get(c.iso);
+            const hasAct = Boolean(info && (Number(info.in_usd || 0) > 0.005 || Number(info.out_usd || 0) > 0.005 || Math.abs(Number(info.in_lbp || 0) - Number(info.out_lbp || 0)) > 1));
+            const isSel = c.iso === curIso;
+            const isToday = c.iso === today;
+            const cls = [
+              'df-cal-day',
+              c.outside ? 'is-outside' : '',
+              isSel ? 'is-to' : '',
+              isToday ? 'is-today' : '',
+              hasAct ? 'has-data' : ''
+            ].filter(Boolean).join(' ');
+            const tip = info ? `${fmtDateDMY(c.iso)} | ${cfTrText('Till')} ${fmtUSD(info.usd, 2)}` : fmtDateDMY(c.iso);
+            return `<button type="button" class="${cls}" data-df-till-pick="${c.iso}" ${c.disabled ? 'disabled' : ''} title="${esc(tip)}" data-no-i18n="1"><span data-no-i18n="1">${c.d}</span>${hasAct ? '<i></i>' : ''}</button>`;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    const yestIso = new Date(Date.parse(maxIso + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+    const maxMp = formatDateSegParts(maxIso, maxIso, segMinYr);
+    const prevMoNum = maxMp.moNum === 1 ? 12 : maxMp.moNum - 1;
+    const prevMoYr = maxMp.moNum === 1 ? maxMp.yrNum - 1 : maxMp.yrNum;
+    const lastMoEndIso = `${String(prevMoYr).padStart(4, '0')}-${String(prevMoNum).padStart(2, '0')}-${String(daysInMonth(prevMoYr, prevMoNum)).padStart(2, '0')}`;
+    const rawJumps = [
+      { iso: maxIso, lbl: maxIso === today ? 'Today' : fmtDateDMY(maxIso), noI18n: maxIso !== today },
+      { iso: yestIso, lbl: 'Yesterday', noI18n: false },
+      { iso: lastMoEndIso, lbl: 'Last Month-End', noI18n: false },
+      { iso: '2025-12-31', lbl: 'End of 2025', noI18n: false },
+      { iso: '2024-12-31', lbl: 'End of 2024', noI18n: false },
+      { iso: minIso, lbl: minIso === '2024-01-01' ? `01 ${cfTrText('Jan')} 2024` : fmtDateDMY(minIso), noI18n: true }
+    ];
+    const seenJumps = new Set();
+    const jumps = rawJumps.filter(j => {
+      if (!j.iso || j.iso < minIso || j.iso > maxIso || seenJumps.has(j.iso)) return false;
+      seenJumps.add(j.iso);
+      return true;
+    });
+
+    pop.innerHTML = `
+      <div class="df-head">
+        <div class="df-head-left">
+          <div class="df-active-summary">
+            <button type="button" class="df-step-period-btn" data-df-till-step="-1" title="Previous day" aria-label="Previous day"${curIso <= minIso ? ' disabled' : ''}>&#x2039;</button>
+            <strong class="df-range-readout" data-no-i18n="1">${esc(cp.dd)} ${esc(cfTrText(cp.mmm))} ${esc(cp.yyyy)}</strong>
+            <button type="button" class="df-step-period-btn" data-df-till-step="1" title="Next day" aria-label="Next day"${curIso >= maxIso ? ' disabled' : ''}>&#x203A;</button>
+          </div>
+        </div>
+        <div class="df-head-right">
+          <button type="button" class="df-reset-btn" data-df-till-pick="${esc(maxIso)}" title="Jump to latest date">Latest</button>
+          <button type="button" class="df-close-btn" data-df-action="close" aria-label="Close Period Selector" title="Close (Esc)">&#x2715;</button>
+        </div>
+      </div>
+
+      <div class="df-mode-bar">
+        <div class="df-tabs df-tabs-3" role="tablist" aria-label="Date Picker View">
+          <button type="button" role="tab" aria-selected="${tab === 'day'}" class="df-tab ${tab === 'day' ? 'active' : ''}" data-df-switch-tab="day">Day</button>
+          <button type="button" role="tab" aria-selected="${tab === 'month'}" class="df-tab ${tab === 'month' ? 'active' : ''}" data-df-switch-tab="month">Month</button>
+          <button type="button" role="tab" aria-selected="${tab === 'year'}" class="df-tab ${tab === 'year' ? 'active' : ''}" data-df-switch-tab="year">Year</button>
+        </div>
+        <span class="df-sec-sub" style="margin-inline-start:auto">Till on This Day</span>
+      </div>
+
+      <div class="df-body">${bodyHtml}</div>
+
+      <div class="df-presets-bar">
+        <span class="df-pre-lbl">Presets</span>
+        <div class="df-pre-chips">
+          ${jumps.map(j => `<button type="button" class="df-pre-chip ${curIso === j.iso ? 'active' : ''}" data-df-till-pick="${esc(j.iso)}"${j.noI18n ? ' data-no-i18n="1"' : ''}>${esc(j.lbl)}</button>`).join('')}
+        </div>
+      </div>
+    `;
+    if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(pop); } catch (_) {}
+    }
+    pop.hidden = false;
+    positionDateFacilitator();
+  }
+
   function renderDateFacilitatorPopover() {
     const pop = $('dateFacilitatorPopover');
     if (!pop) return;
     if (!_dateFacState.open) {
       pop.hidden = true;
+      return;
+    }
+    if (_dateFacState.scope === 'till_scrub') {
+      renderTillScrubDatePopover(pop);
       return;
     }
     const r = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE, label: 'All-Time (2024 to 2030)' };
@@ -6080,20 +6439,26 @@
   }
 
   function openDateFacilitator(opts = {}) {
+    const scope = opts.scope || _dateFacState.scope || 'top';
     const r = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE };
-    const targetMode = opts.targetMode || _dateFacState.targetMode || 'from';
-    const focusIso = opts.focusIso || (targetMode === 'to' ? r.to : r.from);
-    const p = formatDateSegParts(focusIso, targetMode === 'to' ? MAX_DATE : MIN_DATE);
+    const targetMode = opts.targetMode || (scope === 'till_scrub' ? 'till_day' : (_dateFacState.targetMode || 'from'));
+    const fallbackIso = scope === 'till_scrub' ? (getCurrentCfTillScrubIso() || todayISO()) : (targetMode === 'to' ? r.to : r.from);
+    const focusIso = opts.focusIso || fallbackIso;
+    const minYr = scope === 'till_scrub' ? getTillScrubMinYear() : 2024;
+    const p = formatDateSegParts(focusIso, targetMode === 'to' ? MAX_DATE : MIN_DATE, minYr);
     _dateFacState.open = true;
     resetDateFacDrillState();
-    if (opts.tab) _dateFacState.tab = opts.tab;
-    if (opts.targetMode) _dateFacState.targetMode = opts.targetMode;
+    _dateFacState.scope = scope;
+    if (opts.tab) _dateFacState.tab = (scope === 'till_scrub' && opts.tab === 'week') ? 'day' : opts.tab;
+    _dateFacState.targetMode = targetMode;
     if (opts.activePart) _dateFacState.activePart = opts.activePart;
-    if (opts.scope) _dateFacState.scope = opts.scope;
     _dateFacState.viewYear = opts.viewYear || p.yrNum;
     _dateFacState.viewMonth = opts.viewMonth || p.moNum;
     syncDateSegPillElement($('dateFromSegPill'), r.from, 'from');
     syncDateSegPillElement($('dateToSegPill'), r.to, 'to');
+    if ($('cfTillScrubSegPill') && _cfTillScrub) {
+      syncDateSegPillElement($('cfTillScrubSegPill'), getCurrentCfTillScrubIso() || _cfTillScrub.endDate, 'till_day');
+    }
     renderDateFacilitatorPopover();
   }
 
@@ -6177,6 +6542,15 @@
       }
     }
     const sigAfter = `${STATE.period}|${STATE.dateGrain}|${STATE.dateFrom}|${STATE.dateTo}`;
+    if (sigAfter !== sigBefore || opts.reset) {
+      STATE.cfTillScrubDate = '';
+      STATE.cfTillScrubKey = '';
+      if (STATE.cfFocusDateFromScrub) {
+        STATE.cfFocusDate = '';
+        STATE.cfFocusDateFromScrub = false;
+      }
+      if (typeof clearCfScrubChipState === 'function') clearCfScrubChipState();
+    }
     if (opts.deferRender && !opts.reset && _dateFacState.open) {
       if (sigAfter !== sigBefore) {
         if (STATE.rdl) STATE.rdl._dateTouched = false;
@@ -6229,6 +6603,9 @@
     if (toEl && document.activeElement !== toEl) toEl.value = r.to;
     syncDateSegPillElement($('dateFromSegPill'), r.from, 'from');
     syncDateSegPillElement($('dateToSegPill'), r.to, 'to');
+    if ($('cfTillScrubSegPill') && _cfTillScrub) {
+      syncDateSegPillElement($('cfTillScrubSegPill'), getCurrentCfTillScrubIso() || _cfTillScrub.endDate, 'till_day');
+    }
     const isFiltered = STATE.period !== 'all' || STATE.dateGrain !== 'all' || Boolean(STATE.dateFrom || STATE.dateTo);
     if (barEl) barEl.classList.toggle('custom-active', STATE.period === 'custom' || isFiltered);
     if (rstEl) rstEl.hidden = !isFiltered;
@@ -8151,6 +8528,8 @@
     }
     if (STATE.view === 'cashflow') {
       STATE.cfFocusDate = '';
+      STATE.cfFocusDateFromScrub = false;
+      clearCfScrubChipState();
       STATE.cfFocusYm = '';
       STATE.cfFocusParty = '';
       STATE.cfEntryMode = 'entries';
@@ -45665,12 +46044,97 @@
     return out;
   }
 
-  // Till on this day scrubber: series of the rendered Cash Flow page; the drag patches the three till cards in place.
+  // Till on this day time machine: full history series (2024+ on real books, seeded start on Demo Company), zoom windows,
+  // clickable single-day selector, hover preview, keyboard jumps and inline day-entry / chip drill.
   let _cfTillScrub = null;
   let _cfTillScrubDragging = false;
   let _cfTillScrubLangHooked = false;
   function cfTrText(s) {
     return (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(s) : s;
+  }
+  function clearCfScrubChipState() {
+    STATE.cfFocusByChip = false;
+    if (STATE.cfChipFromScrub) {
+      STATE.cfChipFromScrub = false;
+      if (STATE.chipFilter === 'cf_in' || STATE.chipFilter === 'cf_out' || STATE.chipFilter === 'cf_lbp') {
+        STATE.chipFilter = 'all';
+      }
+    }
+  }
+  function computeCfTillScrubWindow(fullDays, zoom, focusIso) {
+    const len = Array.isArray(fullDays) ? fullDays.length : 0;
+    if (len <= 0) return { winStart: 0, winEnd: 0, zoom: 'all' };
+    const fullLastIdx = len - 1;
+    const zNum = zoom === 'all' ? 0 : Number(zoom);
+    if (!zNum || zNum >= len) return { winStart: 0, winEnd: fullLastIdx, zoom: 'all' };
+    const winLen = Math.min(len, Math.max(2, zNum));
+    let winEnd = fullLastIdx;
+    let winStart = Math.max(0, fullLastIdx - winLen + 1);
+    if (focusIso && focusIso < fullDays[fullLastIdx].date) {
+      const fIdx = fullDays.findIndex(d => d && d.date === focusIso);
+      if (fIdx >= 0) {
+        winStart = Math.max(0, Math.min(len - winLen, fIdx - Math.floor(winLen / 2)));
+        winEnd = winStart + winLen - 1;
+      }
+    }
+    return { winStart, winEnd, zoom: String(zNum) };
+  }
+  function getCurrentCfTillScrubIso() {
+    const sc = _cfTillScrub;
+    if (!sc || !Array.isArray(sc.days) || !sc.days.length) return '';
+    const rangeEl = $('cfTillScrubRange');
+    const rawVal = rangeEl ? rangeEl.value : sc.lastIdx;
+    const idx = Math.max(0, Math.min(sc.lastIdx, Math.round(Number(rawVal) || 0)));
+    return (sc.days[idx] && sc.days[idx].date) || sc.endDate || '';
+  }
+  function syncCfTillScrubDomRange(sc, localIdx) {
+    if (!sc) return;
+    sc.days = sc.fullDays.slice(sc.winStart, sc.winEnd + 1);
+    sc.lastIdx = Math.max(0, sc.days.length - 1);
+    const clampedLocal = Math.max(0, Math.min(sc.lastIdx, Math.round(Number(localIdx) || 0)));
+    const rangeEl = $('cfTillScrubRange');
+    if (rangeEl) {
+      rangeEl.max = String(sc.lastIdx);
+      rangeEl.value = String(clampedLocal);
+    }
+    const zVal = sc.zoom || 'all';
+    document.querySelectorAll('#cfTillScrubZoom [data-cf-scrub-zoom]').forEach(btn => {
+      const on = (btn.getAttribute('data-cf-scrub-zoom') || '') === zVal;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  function selectCfTillScrubDate(iso, opts = {}) {
+    const sc = _cfTillScrub;
+    if (!sc || !Array.isArray(sc.fullDays) || !sc.fullDays.length || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ''))) return;
+    const clamped = iso < sc.startDate ? sc.startDate : (iso > sc.endDate ? sc.endDate : iso);
+    const fullIdx = sc.fullDays.findIndex(d => d && d.date === clamped);
+    if (fullIdx < 0) return;
+    if (fullIdx < sc.winStart || fullIdx > sc.winEnd) {
+      const winLen = sc.winEnd - sc.winStart + 1;
+      if (opts.slideEdge && fullIdx === sc.winStart - 1) {
+        sc.winStart = fullIdx;
+        sc.winEnd = Math.min(sc.fullLastIdx, sc.winStart + winLen - 1);
+      } else if (opts.slideEdge && fullIdx === sc.winEnd + 1) {
+        sc.winEnd = fullIdx;
+        sc.winStart = Math.max(0, sc.winEnd - winLen + 1);
+      } else {
+        const w = computeCfTillScrubWindow(sc.fullDays, sc.zoom, clamped);
+        sc.winStart = w.winStart;
+        sc.winEnd = w.winEnd;
+        sc.zoom = w.zoom;
+      }
+      syncCfTillScrubDomRange(sc, fullIdx - sc.winStart);
+    }
+    applyCfTillScrub(fullIdx - sc.winStart);
+    if (!_cfTillScrubDragging && !opts.skipFocusSync && STATE.cfFocusDateFromScrub && STATE.cfFocusDate && STATE.cfFocusDate !== clamped) {
+      STATE.cfFocusDate = clamped;
+      STATE.shown = {};
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }
   }
   let _cfTillScrubFlushTmr = null;
   function ensureCfTillScrubGlobalListeners() {
@@ -45679,15 +46143,31 @@
     const endDrag = () => {
       if (!_cfTillScrubDragging) return;
       _cfTillScrubDragging = false;
+      const hoverEl = $('cfTillScrubHover');
+      if (hoverEl) hoverEl.hidden = true;
+      if (STATE.cfFocusDateFromScrub && STATE.cfFocusDate) {
+        const curIso = getCurrentCfTillScrubIso();
+        if (curIso && STATE.cfFocusDate !== curIso) {
+          STATE.cfFocusDate = curIso;
+          STATE.shown = {};
+          STATE.renderPending = true;
+        }
+      }
       if (STATE.renderPending) {
         STATE.renderPending = false;
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
         safeRender();
+        if (ws && !STATE.renderPending) ws.scrollTop = y;
         if (STATE.renderPending && !_cfTillScrubFlushTmr) {
           _cfTillScrubFlushTmr = setTimeout(() => {
             _cfTillScrubFlushTmr = null;
             if (!_cfTillScrubDragging && STATE.renderPending) {
               STATE.renderPending = false;
+              const ws2 = $('workspace');
+              const y2 = ws2 ? ws2.scrollTop : 0;
               safeRender();
+              if (ws2) ws2.scrollTop = y2;
             }
           }, 420);
         }
@@ -45701,6 +46181,7 @@
     window.addEventListener('mfg:lang-changed', () => {
       const rangeEl = $('cfTillScrubRange');
       if (_cfTillScrub && rangeEl) applyCfTillScrub(rangeEl.value);
+      if (_dateFacState.open && _dateFacState.scope === 'till_scrub') renderDateFacilitatorPopover();
     });
   }
   function applyCfTillScrub(idx) {
@@ -45708,9 +46189,12 @@
     const rangeEl = $('cfTillScrubRange');
     if (!sc || !rangeEl) return;
     const i = Math.max(0, Math.min(sc.lastIdx, Math.round(Number(idx) || 0)));
+    const fullIdx = (sc.winStart || 0) + i;
     if (String(rangeEl.value) !== String(i)) rangeEl.value = String(i);
     const d = sc.days[i];
-    const atEnd = i === sc.lastIdx;
+    if (!d) return;
+    // atEnd compares fullIdx against fullLastIdx so the right edge of a centered sub-window in 2024/2025 never masks as live till.
+    const atEnd = fullIdx === sc.fullLastIdx;
     STATE.cfTillScrubDate = atEnd ? '' : d.date;
     STATE.cfTillScrubKey = atEnd ? '' : sc.key;
     const dateTxt = fmtDateDMY(d.date);
@@ -45718,29 +46202,56 @@
     rangeEl.style.setProperty('--p', `${((i / Math.max(1, sc.lastIdx)) * 100).toFixed(2)}%`);
     const prevBtn = $('cfTillScrubPrev');
     const nextBtn = $('cfTillScrubNext');
-    if (prevBtn) prevBtn.disabled = i <= 0;
-    if (nextBtn) nextBtn.disabled = i >= sc.lastIdx;
+    if (prevBtn) prevBtn.disabled = fullIdx <= 0;
+    if (nextBtn) nextBtn.disabled = fullIdx >= sc.fullLastIdx;
     const setTxt = (id, txt) => { const el = $(id); if (el) el.textContent = txt; };
     setTxt('cfTillScrubDate', dateTxt);
+    syncDateSegPillElement($('cfTillScrubSegPill'), d.date, 'till_day');
     setTxt('cfTillScrubUsd', fmtUSD(d.usd, 2));
     setTxt('cfTillScrubIn', fmtUSD(d.in_usd, 2));
     setTxt('cfTillScrubOut', fmtUSD(d.out_usd, 2));
     const dayLbp = d.in_lbp - d.out_lbp;
     setTxt('cfTillScrubLbp', Math.abs(dayLbp) > 1 ? fmtSignedLBP(dayLbp) : '0 LL');
+    const isFocused = (STATE.cfFocusDate || '') === d.date;
+    document.querySelectorAll('#cfTillScrub [data-cf-scrub-chip]').forEach(ch => {
+      const ck = ch.getAttribute('data-cf-scrub-chip') || '';
+      const on = isFocused && STATE.chipFilter === ck;
+      ch.classList.toggle('active', on);
+      ch.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
     const dayBtn = $('cfTillScrubDayBtn');
     if (dayBtn) {
-      const isFocused = (STATE.cfFocusDate || '') === d.date;
       dayBtn.classList.toggle('active', isFocused);
       dayBtn.setAttribute('aria-pressed', isFocused ? 'true' : 'false');
-      dayBtn.textContent = cfTrText(isFocused ? 'Showing Day' : 'Day Entries');
+      const wantDayTxt = isFocused ? 'Showing Day' : 'Day Entries';
+      const curDayEn = dayBtn.firstChild && dayBtn.firstChild.__enText;
+      const activeLang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
+      if (activeLang === 'en') {
+        if (dayBtn.textContent !== wantDayTxt) dayBtn.textContent = wantDayTxt;
+        if (dayBtn.firstChild) dayBtn.firstChild.__enText = wantDayTxt;
+      } else if (curDayEn !== wantDayTxt) {
+        dayBtn.textContent = wantDayTxt;
+        if (window.MFG_I18N && window.MFG_I18N.translateDom) {
+          try { window.MFG_I18N.translateDom(dayBtn); } catch (_) {}
+        }
+      }
     }
     const resetBtn = $('cfTillScrubReset');
     if (resetBtn) resetBtn.hidden = atEnd && !(STATE.cfFocusDateFromScrub && STATE.cfFocusDate);
+    if (_dateFacState.open && _dateFacState.scope === 'till_scrub' && !_cfTillScrubDragging) {
+      const fp = formatDateSegParts(d.date, sc.endDate, getTillScrubMinYear());
+      _dateFacState.viewYear = fp.yrNum;
+      _dateFacState.viewMonth = fp.moNum;
+      const rd = document.querySelector('#dateFacilitatorPopover .df-range-readout');
+      if (rd) rd.textContent = `${fp.dd} ${cfTrText(fp.mmm)} ${fp.yyyy}`;
+    }
+    const i18n = window.MFG_I18N;
+    const lang = i18n && i18n.getLang ? i18n.getLang() : 'en';
     const meta = sc.atEndMeta || { tillUsd: d.usd, tillLbp: d.lbp, tillTot: d.total, rate: sc.rate, tillAsOf: '' };
     const cardSpecs = [
-      { id: 'cfTillValUsd', num: fmtUSD(d.usd, 2), unitKey: 'USD', restHtml: () => `${fmtUSD(meta.tillUsd, 2)} <small>${esc(cfTrText('USD'))}</small>`, pillRestHtml: () => meta.tillAsOf ? `<span data-no-i18n="1">${esc(fmtDateDMY(meta.tillAsOf))}</span>` : esc(cfTrText(Math.abs(meta.tillUsd) < 0.005 ? 'Balanced $0' : 'Live Drawer')) },
-      { id: 'cfTillValLbp', num: fmtLBP(d.lbp), unitKey: '', restHtml: () => `${fmtLBP(meta.tillLbp)}`, pillRestHtml: () => meta.tillAsOf ? `<span data-no-i18n="1">${esc(fmtDateDMY(meta.tillAsOf))}</span>` : esc(cfTrText(Math.abs(meta.tillLbp) <= CF_LBP_DUST ? 'Balanced 0 LL' : 'Pounds')) },
-      { id: 'cfTillValTot', num: fmtUSD(d.total, 2), unitKey: 'TOTAL', restHtml: () => `${fmtUSD(meta.tillTot, 2)} <small>${esc(cfTrText('TOTAL'))}</small>`, pillRestHtml: () => meta.tillAsOf ? `<span data-no-i18n="1">${esc(fmtDateDMY(meta.tillAsOf))}</span>` : `@ ${fmtNum(meta.rate, 0)} LL/$` }
+      { id: 'cfTillValUsd', num: fmtUSD(d.usd, 2), unitKey: 'USD', restHtml: () => `<span data-no-i18n="1">${esc(fmtUSD(meta.tillUsd, 2))}</span> <small>USD</small>`, pillRestHtml: () => meta.tillAsOf ? `<span data-no-i18n="1">${esc(fmtDateDMY(meta.tillAsOf))}</span>` : esc(Math.abs(meta.tillUsd) < 0.005 ? 'Balanced $0' : 'Live Drawer') },
+      { id: 'cfTillValLbp', num: fmtLBP(d.lbp), unitKey: '', restHtml: () => `<span data-no-i18n="1">${esc(fmtLBP(meta.tillLbp))}</span>`, pillRestHtml: () => meta.tillAsOf ? `<span data-no-i18n="1">${esc(fmtDateDMY(meta.tillAsOf))}</span>` : esc(Math.abs(meta.tillLbp) <= CF_LBP_DUST ? 'Balanced 0 LL' : 'Pounds') },
+      { id: 'cfTillValTot', num: fmtUSD(d.total, 2), unitKey: 'TOTAL', restHtml: () => `<span data-no-i18n="1">${esc(fmtUSD(meta.tillTot, 2))}</span> <small>TOTAL</small>`, pillRestHtml: () => meta.tillAsOf ? `<span data-no-i18n="1">${esc(fmtDateDMY(meta.tillAsOf))}</span>` : `<span data-no-i18n="1">@ ${esc(fmtNum(meta.rate, 0))} LL/$</span>` }
     ];
     cardSpecs.forEach(spec => {
       const valEl = $(spec.id);
@@ -45749,6 +46260,7 @@
       if (atEnd) {
         valEl.innerHTML = spec.restHtml();
         delete valEl.dataset.cfScrubNum;
+        if (lang !== 'en' && i18n && i18n.translateDom) i18n.translateDom(valEl);
       } else {
         if (valEl.dataset.cfScrubNum !== '1') {
           valEl.innerHTML = spec.unitKey
@@ -45760,8 +46272,12 @@
         if (numSpan) numSpan.textContent = spec.num;
         const unitEl = valEl.querySelector('[data-cf-scrub-unit]');
         if (unitEl) {
-          const wantUnit = cfTrText(spec.unitKey);
-          if (unitEl.textContent !== wantUnit) unitEl.textContent = wantUnit;
+          const prevEn = unitEl.firstChild && unitEl.firstChild.__enText;
+          if (!unitEl.firstChild || prevEn !== spec.unitKey) {
+            unitEl.textContent = spec.unitKey;
+            if (unitEl.firstChild) unitEl.firstChild.__enText = spec.unitKey;
+            if (lang !== 'en' && i18n && i18n.translateDom) i18n.translateDom(unitEl);
+          }
         }
       }
       if (!card) return;
@@ -45773,6 +46289,7 @@
         if (atEnd) {
           pill.innerHTML = spec.pillRestHtml();
           delete pill.dataset.cfScrubNum;
+          if (lang !== 'en' && i18n && i18n.translateDom) i18n.translateDom(pill);
         } else {
           if (pill.dataset.cfScrubNum !== '1') {
             pill.innerHTML = '<span class="cf-scrub-pill-date" data-no-i18n="1"></span>';
@@ -45814,7 +46331,7 @@
     // A window ending today or later shows the live till itself (the summed sheet can differ by rounding).
     const tillRange = periodRange(STATE.period);
     const tillIsMfg = (typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing') === 'Manufacturing';
-    const tillDated = Boolean(tillRange && tillIsMfg && k.period_till_usd != null);
+    const tillDated = Boolean(tillRange && (tillIsMfg || k.till_tracked !== false) && k.period_till_usd != null);
     const tillAsOf = tillDated && tillRange.to && tillRange.to < todayISO() ? tillRange.to : '';
     const tillStartSet = tillDated && Boolean(tillRange.from) && tillRange.from > MIN_DATE;
     const tillUsd = tillAsOf ? Number(k.period_till_usd || 0) : liveUsd;
@@ -45837,49 +46354,82 @@
           ${ic('alert')}
           <span class="cf-till-start-txt"><b>Start Date Ignored by the Till</b><span class="cf-till-sep" aria-hidden="true">·</span>${tillAsOf ? `<span>Till balance at</span> <b data-no-i18n="1">${esc(fmtDateDMY(tillAsOf))}</b>` : '<span>Till balance today</span>'}<span class="cf-till-sep" aria-hidden="true">·</span><span>The till counts every cash entry from the first day, so the start date only filters the entries and the period cash flow.</span></span>
         </div>` : '';
-    // Till on this day (owner idea 2026-11-13): drag across the 90 days ending on the date the cards show and the USD,
-    // LBP and Combined cards replay the till at the close of each day (same figures as picking that day as the end
-    // date). Manufacturing scopes with a daily till sheet only; the drag patches the three cards in place.
+    // Till on this day time machine: replay closing USD, LBP and Combined till from 2024-01-01 (or seeded start on
+    // Demo Company) up to tillScrubEnd, with zoom windows (All / 1Y / 90D / 30D) and clickable single-day calendar.
     const tillScrubEnd = tillAsOf || todayISO();
-    const tillScrubSeries = (tillIsMfg && !isOfficialScopeActive(u)) ? computeTillDaySeries(STATE.company, tillScrubEnd, 90) : null;
+    const canScrubScope = (tillIsMfg && !isOfficialScopeActive(u)) || (!tillIsMfg && k.till_tracked !== false);
+    const tillScrubSeries = canScrubScope ? computeTillDaySeries(STATE.company, tillScrubEnd, 'all') : null;
     _cfTillScrub = null;
     let tillScrubHtml = '';
     if (tillScrubSeries && tillScrubSeries.days.length > 1) {
-      const sDays = tillScrubSeries.days;
-      const lastIdx = sDays.length - 1;
+      const fullDays = tillScrubSeries.days;
+      const fullLastIdx = fullDays.length - 1;
       // The last stop is the date the cards already show: use their figures (the live till on today or later).
-      sDays[lastIdx] = Object.assign({}, sDays[lastIdx], { usd: round2(tillUsd), lbp: Math.round(tillLbp), total: round2(tillTot) });
-      // A picked day survives a re-render (sync, save) of the same company and end date only; picking new dates or
-      // another company shows that choice on the cards again.
+      fullDays[fullLastIdx] = Object.assign({}, fullDays[fullLastIdx], { usd: round2(tillUsd), lbp: Math.round(tillLbp), total: round2(tillTot) });
       const scrubKey = `${STATE.company}|${STATE.period}|${tillRange ? `${tillRange.from || ''}..${tillRange.to || ''}` : 'all'}|${tillScrubEnd}`;
-      _cfTillScrub = { days: sDays, rate, lastIdx, key: scrubKey, atEndMeta: { tillUsd, tillLbp, tillTot, rate, tillAsOf } };
-      const keepIdx = (STATE.cfTillScrubDate && STATE.cfTillScrubKey === scrubKey) ? sDays.findIndex(dd => dd.date === STATE.cfTillScrubDate) : -1;
-      const startIdx = keepIdx >= 0 ? keepIdx : lastIdx;
-      const sd = sDays[startIdx];
+      const keepIso = (STATE.cfTillScrubDate && STATE.cfTillScrubKey === scrubKey && fullDays.some(dd => dd && dd.date === STATE.cfTillScrubDate))
+        ? STATE.cfTillScrubDate
+        : '';
+      const win = computeCfTillScrubWindow(fullDays, STATE.cfTillScrubZoom || 'all', keepIso);
+      const sDays = fullDays.slice(win.winStart, win.winEnd + 1);
+      const lastIdx = Math.max(0, sDays.length - 1);
+      const startFullIdx = keepIso ? fullDays.findIndex(dd => dd && dd.date === keepIso) : fullLastIdx;
+      const startIdx = Math.max(0, Math.min(lastIdx, startFullIdx - win.winStart));
+      const sd = sDays[startIdx] || fullDays[fullLastIdx];
+      const atEndInit = startFullIdx === fullLastIdx;
+      _cfTillScrub = {
+        fullDays,
+        fullLastIdx,
+        startDate: fullDays[0].date,
+        endDate: fullDays[fullLastIdx].date,
+        winStart: win.winStart,
+        winEnd: win.winEnd,
+        zoom: win.zoom,
+        days: sDays,
+        rate: tillScrubSeries.rate || rate,
+        lastIdx,
+        key: scrubKey,
+        atEndMeta: { tillUsd, tillLbp, tillTot, rate, tillAsOf }
+      };
       const dayFocused = (STATE.cfFocusDate || '') === sd.date;
+      const allZoomLbl = fullDays[0].date <= '2024-01-31' ? 'All 2024+' : 'All';
+      const zoomSpecs = [
+        ['all', allZoomLbl],
+        ['365', '1Y'],
+        ['90', '90D'],
+        ['30', '30D']
+      ];
       tillScrubHtml = `
         <div class="cf-till-scrub" id="cfTillScrub" role="group" aria-label="Till on This Day">
           <div class="cf-till-scrub-top">
             <span class="cf-till-scrub-lbl">${ic('calendar')}<b>Till on This Day</b></span>
+            <div class="cf-till-scrub-zoom" id="cfTillScrubZoom" role="group" aria-label="Timeline zoom">
+              ${zoomSpecs.map(([zv, zlbl]) => {
+                const on = win.zoom === zv;
+                return `<button type="button" class="cf-till-scrub-zoom-btn${on ? ' active' : ''}" data-cf-scrub-zoom="${zv}" aria-pressed="${on ? 'true' : 'false'}">${zlbl}</button>`;
+              }).join('')}
+            </div>
             <div class="cf-till-scrub-track">
-              <button type="button" class="btn cf-till-scrub-step" id="cfTillScrubPrev" aria-label="Previous day"${startIdx <= 0 ? ' disabled' : ''}><span data-no-i18n="1">&#x2039;</span></button>
-              <span class="cf-till-scrub-edge" data-no-i18n="1">${esc(fmtDateDMY(sDays[0].date))}</span>
-              <input type="range" class="cf-till-scrub-range" id="cfTillScrubRange" min="0" max="${lastIdx}" step="1" value="${startIdx}" style="--p:${((startIdx / lastIdx) * 100).toFixed(2)}%" aria-label="Till on This Day" aria-valuetext="${esc(fmtDateDMY(sd.date))}" data-ui-tip="Drag to replay the till day by day">
-              <span class="cf-till-scrub-edge" data-no-i18n="1">${esc(fmtDateDMY(sDays[lastIdx].date))}</span>
-              <button type="button" class="btn cf-till-scrub-step" id="cfTillScrubNext" aria-label="Next day"${startIdx >= lastIdx ? ' disabled' : ''}><span data-no-i18n="1">&#x203A;</span></button>
+              <button type="button" class="btn cf-till-scrub-step" id="cfTillScrubPrev" aria-label="Previous day"${startFullIdx <= 0 ? ' disabled' : ''}><span data-no-i18n="1">&#x2039;</span></button>
+              <div class="cf-till-scrub-track-wrap">
+                <input type="range" class="cf-till-scrub-range" id="cfTillScrubRange" min="0" max="${lastIdx}" step="1" value="${startIdx}" style="--p:${((startIdx / Math.max(1, lastIdx)) * 100).toFixed(2)}%" aria-label="Till on This Day" aria-valuetext="${esc(fmtDateDMY(sd.date))}" data-ui-tip="Drag to replay the till day by day">
+                <div class="cf-till-scrub-hover" id="cfTillScrubHover" hidden aria-hidden="true" data-no-i18n="1"></div>
+              </div>
+              <button type="button" class="btn cf-till-scrub-step" id="cfTillScrubNext" aria-label="Next day"${startFullIdx >= fullLastIdx ? ' disabled' : ''}><span data-no-i18n="1">&#x203A;</span></button>
             </div>
           </div>
           <div class="cf-till-scrub-bar">
             <span class="cf-till-scrub-out" aria-live="polite">
-              <b class="cf-till-scrub-date" id="cfTillScrubDate" data-no-i18n="1">${esc(fmtDateDMY(sd.date))}</b>
+              ${renderDateSegPillHtml('till_day', sd.date, 'till_scrub', 'cfTillScrubSegPill')}
+              <span class="sr-only" id="cfTillScrubDate" data-no-i18n="1">${esc(fmtDateDMY(sd.date))}</span>
               <span class="cf-till-scrub-kv"><span>Till</span> <b id="cfTillScrubUsd" data-no-i18n="1">${fmtUSD(sd.usd, 2)}</b></span>
-              <span class="cf-till-scrub-kv"><span>In</span> <b class="good" id="cfTillScrubIn" data-no-i18n="1">${fmtUSD(sd.in_usd, 2)}</b></span>
-              <span class="cf-till-scrub-kv"><span>Out</span> <b class="crit" id="cfTillScrubOut" data-no-i18n="1">${fmtUSD(sd.out_usd, 2)}</b></span>
-              <span class="cf-till-scrub-kv"><span>LBP</span> <b id="cfTillScrubLbp" data-no-i18n="1">${Math.abs(sd.in_lbp - sd.out_lbp) > 1 ? fmtSignedLBP(sd.in_lbp - sd.out_lbp) : '0 LL'}</b></span>
+              <button type="button" class="cf-till-scrub-kv cf-till-scrub-chip${dayFocused && STATE.chipFilter === 'cf_in' ? ' active' : ''}" data-cf-scrub-chip="cf_in" aria-pressed="${dayFocused && STATE.chipFilter === 'cf_in' ? 'true' : 'false'}" data-ui-tip="Filter day Cash In"><span>In</span> <b class="good" id="cfTillScrubIn" data-no-i18n="1">${fmtUSD(sd.in_usd, 2)}</b></button>
+              <button type="button" class="cf-till-scrub-kv cf-till-scrub-chip${dayFocused && STATE.chipFilter === 'cf_out' ? ' active' : ''}" data-cf-scrub-chip="cf_out" aria-pressed="${dayFocused && STATE.chipFilter === 'cf_out' ? 'true' : 'false'}" data-ui-tip="Filter day Cash Out"><span>Out</span> <b class="crit" id="cfTillScrubOut" data-no-i18n="1">${fmtUSD(sd.out_usd, 2)}</b></button>
+              <button type="button" class="cf-till-scrub-kv cf-till-scrub-chip${dayFocused && STATE.chipFilter === 'cf_lbp' ? ' active' : ''}" data-cf-scrub-chip="cf_lbp" aria-pressed="${dayFocused && STATE.chipFilter === 'cf_lbp' ? 'true' : 'false'}" data-ui-tip="Filter day LBP entries"><span>LBP</span> <b id="cfTillScrubLbp" data-no-i18n="1">${Math.abs(sd.in_lbp - sd.out_lbp) > 1 ? fmtSignedLBP(sd.in_lbp - sd.out_lbp) : '0 LL'}</b></button>
             </span>
             <span class="cf-till-scrub-acts">
               <button type="button" class="btn cf-till-scrub-daybtn${dayFocused ? ' active' : ''}" id="cfTillScrubDayBtn" aria-pressed="${dayFocused ? 'true' : 'false'}">${dayFocused ? 'Showing Day' : 'Day Entries'}</button>
-              <button type="button" class="btn cf-till-scrub-reset" id="cfTillScrubReset"${(startIdx === lastIdx && !(STATE.cfFocusDateFromScrub && STATE.cfFocusDate)) ? ' hidden' : ''}>Reset</button>
+              <button type="button" class="btn cf-till-scrub-reset" id="cfTillScrubReset"${(atEndInit && !(STATE.cfFocusDateFromScrub && STATE.cfFocusDate)) ? ' hidden' : ''}>Reset</button>
             </span>
           </div>
         </div>`;
@@ -45933,7 +46483,10 @@
     const focusParty = STATE.cfFocusParty || '';
     const focusPartyNorm = norm(focusParty);
 
-    const drillScopedMoves = (!focusDate && !focusYm && !focusPartyNorm) ? allMoves : allMoves.filter(mv => {
+    const scrubDrillBaseMoves = (focusDate && STATE.cfFocusDateFromScrub && tillRange && (focusDate < (tillRange.from || '') || focusDate > (tillRange.to || '')))
+      ? buildCashTillMoves({ user: u, ignorePeriod: true })
+      : allMoves;
+    const drillScopedMoves = (!focusDate && !focusYm && !focusPartyNorm) ? allMoves : scrubDrillBaseMoves.filter(mv => {
       if (focusDate && mv.date !== focusDate) return false;
       if (focusYm && mv.ym !== focusYm) return false;
       if (focusPartyNorm && norm(mv.party) !== focusPartyNorm) return false;
@@ -46397,7 +46950,7 @@
           <div class="sales-recon-card single-card sales-recon-single" data-co="${esc(STATE.company)}">
             <div class="sales-recon-head">
               <span class="badge ${STATE.company === 'bbconstruction' ? 'badge-info' : 'badge-brass'}">${esc(COMPANY_BU_MATCH[STATE.company] || COMPANY_LABELS[STATE.company] || STATE.company)}</span>
-              <b>Active ${activeIndCf === 'Manufacturing' ? 'Plant' : 'Entity'} Cash Flow &amp; Till (${fmtNum(isDailyMode ? sortedDaily.length : sortedMoves.length)} ${isDailyMode ? 'Days' : 'Entries'})</b>
+              <b><span>${activeIndCf === 'Manufacturing' ? 'Active Plant Cash Flow &amp; Till' : 'Active Entity Cash Flow &amp; Till'}</span> <span data-no-i18n="1">(${fmtNum(isDailyMode ? sortedDaily.length : sortedMoves.length)}</span> <span>${isDailyMode ? 'Days' : 'Entries'}</span><span data-no-i18n="1">)</span></b>
               <button type="button" class="btn sales-recon-reset" data-jump-co="${esc(activeIndCf === 'Manufacturing' ? 'manufacturing-group' : ('industry:' + activeIndCf))}">Show All ${esc(activeIndCf === 'Manufacturing' ? 'Group' : activeIndCf)} (${indCosCf.length})</button>
             </div>
             <div class="sales-recon-metrics">
@@ -119623,6 +120176,7 @@
     STATE.cfTillScrubKey = '';
     STATE.cfFocusDate = '';
     STATE.cfFocusDateFromScrub = false;
+    clearCfScrubChipState();
     STATE.shown = {};
     STATE.pbiTablePage = {};
     let nextView = resolveIndustryCompatibleView(STATE.view, indId);
@@ -119682,6 +120236,7 @@
       STATE.cfTillScrubKey = '';
       STATE.cfFocusDate = '';
       STATE.cfFocusDateFromScrub = false;
+      clearCfScrubChipState();
     }
     STATE.shown = {};
     STATE.pbiTablePage = {};
@@ -140304,6 +140859,9 @@
             return `<button type="button" class="recon-co-pill${activeCls}" data-jump-co="${esc(k)}">${esc(fullLbl)}</button>`;
           }).join('');
           headEl.insertBefore(nav, resetBtn);
+          if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en' && window.MFG_I18N.translateDom) {
+            window.MFG_I18N.translateDom(nav);
+          }
         }
       }
     });
@@ -140608,6 +141166,8 @@
       const chipBtn = t.closest('[data-chip]');
       if (chipBtn && container.contains(chipBtn)) {
         STATE.chipFilter = chipBtn.getAttribute('data-chip');
+        STATE.cfChipFromScrub = false;
+        STATE.cfFocusByChip = false;
         STATE.shown = {};
         renderApp();
         return;
@@ -141640,20 +142200,151 @@
     const cfTillScrubEl = container.querySelector('#cfTillScrubRange');
     if (cfTillScrubEl) {
       ensureCfTillScrubGlobalListeners();
-      const startScrubDrag = () => { _cfTillScrubDragging = true; };
+      const cfTillScrubHover = container.querySelector('#cfTillScrubHover');
+      const hideScrubHover = () => { if (cfTillScrubHover) cfTillScrubHover.hidden = true; };
+      const startScrubDrag = () => {
+        _cfTillScrubDragging = true;
+        hideScrubHover();
+      };
       cfTillScrubEl.addEventListener('pointerdown', startScrubDrag);
       cfTillScrubEl.addEventListener('mousedown', startScrubDrag);
       cfTillScrubEl.addEventListener('touchstart', startScrubDrag, { passive: true });
       cfTillScrubEl.addEventListener('input', () => applyCfTillScrub(cfTillScrubEl.value));
-      if (Number(cfTillScrubEl.value) !== Number(cfTillScrubEl.max)) applyCfTillScrub(cfTillScrubEl.value);
+      cfTillScrubEl.addEventListener('pointermove', ev => {
+        if (_cfTillScrubDragging || !cfTillScrubHover || !_cfTillScrub) {
+          hideScrubHover();
+          return;
+        }
+        if (ev.pointerType && ev.pointerType !== 'mouse') {
+          hideScrubHover();
+          return;
+        }
+        const sc = _cfTillScrub;
+        if (!sc.days || !sc.days.length) return;
+        const rect = cfTillScrubEl.getBoundingClientRect();
+        if (!rect || rect.width <= 18) return;
+        const isRtl = document.documentElement.dir === 'rtl';
+        const thumbR = 9;
+        const usable = Math.max(1, rect.width - thumbR * 2);
+        const rawX = isRtl ? (rect.right - thumbR - ev.clientX) : (ev.clientX - rect.left - thumbR);
+        const ratio = Math.max(0, Math.min(1, rawX / usable));
+        const hIdx = Math.max(0, Math.min(sc.lastIdx, Math.round(ratio * sc.lastIdx)));
+        const hd = sc.days[hIdx];
+        if (!hd) return;
+        const hasMove = Number(hd.in_usd || 0) > 0.005 || Number(hd.out_usd || 0) > 0.005;
+        cfTillScrubHover.innerHTML = `<strong>${esc(fmtDateDMY(hd.date))}</strong> · ${esc(cfTrText('Till'))} <b>${fmtUSD(hd.usd, 2)}</b>${hasMove ? ` · <span class="good">+${fmtUSDk(hd.in_usd)}</span> / <span class="crit">-${fmtUSDk(hd.out_usd)}</span>` : ''}`;
+        cfTillScrubHover.hidden = false;
+        const hw = cfTillScrubHover.offsetWidth || 140;
+        const pxFromLeft = isRtl ? (rect.width - thumbR - ratio * usable) : (thumbR + ratio * usable);
+        const leftPx = Math.max(hw / 2, Math.min(rect.width - hw / 2, pxFromLeft));
+        cfTillScrubHover.style.left = `${leftPx.toFixed(1)}px`;
+      });
+      cfTillScrubEl.addEventListener('pointerleave', hideScrubHover);
+      cfTillScrubEl.addEventListener('blur', hideScrubHover);
+      cfTillScrubEl.addEventListener('keydown', ev => {
+        const sc = _cfTillScrub;
+        if (!sc || !sc.fullDays || !sc.fullDays.length) return;
+        const isRtl = document.documentElement.dir === 'rtl';
+        const localIdx = Math.max(0, Math.min(sc.lastIdx, Math.round(Number(cfTillScrubEl.value) || 0)));
+        const curFull = (sc.winStart || 0) + localIdx;
+        const clampFull = n => Math.max(0, Math.min(sc.fullLastIdx, n));
+        if (ev.key === 'Home') {
+          ev.preventDefault();
+          selectCfTillScrubDate(sc.startDate);
+          return;
+        }
+        if (ev.key === 'End') {
+          ev.preventDefault();
+          selectCfTillScrubDate(sc.endDate);
+          return;
+        }
+        if (ev.key === 'PageUp' || ev.key === 'PageDown') {
+          ev.preventDefault();
+          const targetIdx = clampFull(curFull + (ev.key === 'PageUp' ? 30 : -30));
+          selectCfTillScrubDate(sc.fullDays[targetIdx].date, { slideEdge: false });
+          return;
+        }
+        if (ev.shiftKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
+          ev.preventDefault();
+          const dir = (ev.key === 'ArrowRight' ? 1 : -1) * (isRtl ? -1 : 1);
+          const targetIdx = clampFull(curFull + dir * 7);
+          selectCfTillScrubDate(sc.fullDays[targetIdx].date, { slideEdge: false });
+          return;
+        }
+        if (!ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
+          const stepDir = (ev.key === 'ArrowRight' ? 1 : -1) * (isRtl ? -1 : 1);
+          if ((stepDir < 0 && localIdx === 0 && curFull > 0) || (stepDir > 0 && localIdx === sc.lastIdx && curFull < sc.fullLastIdx)) {
+            ev.preventDefault();
+            selectCfTillScrubDate(sc.fullDays[clampFull(curFull + stepDir)].date, { slideEdge: true });
+          }
+        }
+      });
+      if (_cfTillScrub && (_cfTillScrub.winStart + Math.round(Number(cfTillScrubEl.value) || 0)) !== _cfTillScrub.fullLastIdx) {
+        applyCfTillScrub(cfTillScrubEl.value);
+      }
+      container.querySelectorAll('#cfTillScrubZoom [data-cf-scrub-zoom]').forEach(btn => btn.addEventListener('click', () => {
+        const sc = _cfTillScrub;
+        if (!sc || !sc.fullDays || !sc.fullDays.length) return;
+        const nextZoom = btn.getAttribute('data-cf-scrub-zoom') || 'all';
+        STATE.cfTillScrubZoom = nextZoom;
+        const curIso = getCurrentCfTillScrubIso();
+        const focusForWin = (curIso && curIso < sc.endDate) ? curIso : '';
+        const w = computeCfTillScrubWindow(sc.fullDays, nextZoom, focusForWin);
+        sc.winStart = w.winStart;
+        sc.winEnd = w.winEnd;
+        sc.zoom = w.zoom;
+        const fullIdx = curIso ? sc.fullDays.findIndex(d => d && d.date === curIso) : sc.fullLastIdx;
+        const clampedFull = fullIdx >= 0 ? Math.max(sc.winStart, Math.min(sc.winEnd, fullIdx)) : sc.winEnd;
+        syncCfTillScrubDomRange(sc, clampedFull - sc.winStart);
+        applyCfTillScrub(clampedFull - sc.winStart);
+      }));
       const cfTillScrubPrev = container.querySelector('#cfTillScrubPrev');
       if (cfTillScrubPrev) cfTillScrubPrev.addEventListener('click', () => {
-        applyCfTillScrub(Number(cfTillScrubEl.value) - 1);
+        const sc = _cfTillScrub;
+        if (!sc || !sc.fullDays) return;
+        const curFull = (sc.winStart || 0) + Math.round(Number(cfTillScrubEl.value) || 0);
+        const nextFull = Math.max(0, curFull - 1);
+        selectCfTillScrubDate(sc.fullDays[nextFull].date, { slideEdge: true });
       });
       const cfTillScrubNext = container.querySelector('#cfTillScrubNext');
       if (cfTillScrubNext) cfTillScrubNext.addEventListener('click', () => {
-        applyCfTillScrub(Number(cfTillScrubEl.value) + 1);
+        const sc = _cfTillScrub;
+        if (!sc || !sc.fullDays) return;
+        const curFull = (sc.winStart || 0) + Math.round(Number(cfTillScrubEl.value) || 0);
+        const nextFull = Math.min(sc.fullLastIdx, curFull + 1);
+        selectCfTillScrubDate(sc.fullDays[nextFull].date, { slideEdge: true });
       });
+      container.querySelectorAll('#cfTillScrub [data-cf-scrub-chip]').forEach(btn => btn.addEventListener('click', () => {
+        const sc = _cfTillScrub;
+        const idxNow = sc ? Math.max(0, Math.min(sc.lastIdx, Math.round(Number(cfTillScrubEl.value) || 0))) : 0;
+        const dNow = sc && sc.days[idxNow];
+        if (!dNow) return;
+        const chipKey = btn.getAttribute('data-cf-scrub-chip') || '';
+        if (!chipKey) return;
+        if (STATE.cfFocusDate === dNow.date && STATE.chipFilter === chipKey) {
+          STATE.chipFilter = 'all';
+          STATE.cfChipFromScrub = false;
+          if (STATE.cfFocusByChip) {
+            STATE.cfFocusDate = '';
+            STATE.cfFocusDateFromScrub = false;
+            STATE.cfFocusByChip = false;
+          }
+        } else {
+          const hadManualDayFocus = STATE.cfFocusDate === dNow.date && !STATE.cfFocusByChip;
+          STATE.cfFocusDate = dNow.date;
+          STATE.cfFocusDateFromScrub = true;
+          STATE.cfFocusByChip = !hadManualDayFocus;
+          STATE.cfFocusYm = '';
+          STATE.cfEntryMode = 'entries';
+          STATE.chipFilter = chipKey;
+          STATE.cfChipFromScrub = true;
+        }
+        STATE.shown = {};
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+      }));
       const cfTillScrubDayBtn = container.querySelector('#cfTillScrubDayBtn');
       if (cfTillScrubDayBtn) cfTillScrubDayBtn.addEventListener('click', () => {
         const sc = _cfTillScrub;
@@ -141663,6 +142354,8 @@
         const nextFocus = (STATE.cfFocusDate === dNow.date) ? '' : dNow.date;
         STATE.cfFocusDate = nextFocus;
         STATE.cfFocusDateFromScrub = Boolean(nextFocus);
+        if (!nextFocus) clearCfScrubChipState();
+        else STATE.cfFocusByChip = false;
         STATE.cfFocusYm = '';
         if (nextFocus) STATE.cfEntryMode = 'entries';
         if (String(STATE.chipFilter || '').startsWith('cf_day_')) STATE.chipFilter = 'all';
@@ -141674,11 +142367,13 @@
       });
       const cfTillScrubReset = container.querySelector('#cfTillScrubReset');
       if (cfTillScrubReset) cfTillScrubReset.addEventListener('click', () => {
+        const sc = _cfTillScrub;
+        STATE.cfTillScrubDate = '';
+        STATE.cfTillScrubKey = '';
         if (STATE.cfFocusDateFromScrub && STATE.cfFocusDate) {
           STATE.cfFocusDate = '';
           STATE.cfFocusDateFromScrub = false;
-          STATE.cfTillScrubDate = '';
-          STATE.cfTillScrubKey = '';
+          clearCfScrubChipState();
           STATE.shown = {};
           const ws = $('workspace');
           const y = ws ? ws.scrollTop : 0;
@@ -141686,8 +142381,17 @@
           if (ws) ws.scrollTop = y;
           return;
         }
-        cfTillScrubEl.value = cfTillScrubEl.max;
-        applyCfTillScrub(cfTillScrubEl.max);
+        if (sc && sc.fullDays && sc.fullDays.length) {
+          const w = computeCfTillScrubWindow(sc.fullDays, sc.zoom || STATE.cfTillScrubZoom || 'all', '');
+          sc.winStart = w.winStart;
+          sc.winEnd = w.winEnd;
+          sc.zoom = w.zoom;
+          syncCfTillScrubDomRange(sc, sc.winEnd - sc.winStart);
+          applyCfTillScrub(sc.lastIdx);
+        } else {
+          cfTillScrubEl.value = cfTillScrubEl.max;
+          applyCfTillScrub(cfTillScrubEl.max);
+        }
         cfTillScrubEl.focus({ preventScroll: true });
       });
     }
@@ -141809,6 +142513,7 @@
       const dt = el.getAttribute('data-cf-focus-date') || '';
       STATE.cfFocusDate = STATE.cfFocusDate === dt ? '' : dt;
       STATE.cfFocusDateFromScrub = false;
+      clearCfScrubChipState();
       STATE.cfFocusYm = '';
       STATE.cfEntryMode = 'entries';
       if (String(STATE.chipFilter || '').startsWith('cf_day_')) STATE.chipFilter = 'all';
@@ -141823,6 +142528,8 @@
       const ym = el.getAttribute('data-cf-focus-ym') || '';
       STATE.cfFocusYm = STATE.cfFocusYm === ym ? '' : ym;
       STATE.cfFocusDate = '';
+      STATE.cfFocusDateFromScrub = false;
+      clearCfScrubChipState();
       STATE.cfEntryMode = 'entries';
       STATE.shown = {};
       renderApp();
@@ -141859,7 +142566,7 @@
     container.querySelectorAll('[data-cf-clear-drill]').forEach(btn => btn.addEventListener('click', ev => {
       ev.stopPropagation();
       const kind = btn.getAttribute('data-cf-clear-drill') || 'all';
-      if (kind === 'date' || kind === 'all') { STATE.cfFocusDate = ''; STATE.cfFocusDateFromScrub = false; }
+      if (kind === 'date' || kind === 'all') { STATE.cfFocusDate = ''; STATE.cfFocusDateFromScrub = false; clearCfScrubChipState(); }
       if (kind === 'ym' || kind === 'all') STATE.cfFocusYm = '';
       if (kind === 'party' || kind === 'all') STATE.cfFocusParty = '';
       STATE.shown = {};
@@ -143520,6 +144227,7 @@
       STATE.cfBridgeMode = 'streams';
       STATE.cfFocusDate = '';
       STATE.cfFocusDateFromScrub = false;
+      clearCfScrubChipState();
       if (view !== prevView) {
         STATE.cfTillScrubDate = '';
         STATE.cfTillScrubKey = '';
@@ -144320,6 +145028,15 @@
         const endKey = segBtn.getAttribute('data-date-end') || 'from';
         const part = segBtn.getAttribute('data-date-part') || 'day';
         const scope = segBtn.getAttribute('data-date-scope') || 'top';
+        if (scope === 'till_scrub' || endKey === 'till_day') {
+          if (_dateFacState.open && _dateFacState.scope === 'till_scrub' && _dateFacState.activePart === part && _dateFacState.tab === part) {
+            closeDateFacilitator();
+            return;
+          }
+          const focusIso = getCurrentCfTillScrubIso() || (_cfTillScrub && _cfTillScrub.endDate) || todayISO();
+          openDateFacilitator({ tab: part, targetMode: 'till_day', activePart: part, focusIso, scope: 'till_scrub' });
+          return;
+        }
         const r = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE };
         const focusIso = endKey === 'to' ? r.to : r.from;
         openDateFacilitator({ tab: part, targetMode: endKey, activePart: part, focusIso, scope });
@@ -144334,6 +145051,25 @@
           const act = actBtn.getAttribute('data-df-action');
           if (act === 'close') closeDateFacilitator();
           else if (act === 'reset') setDateFilter({ reset: true });
+          return;
+        }
+        const tillStepBtn = e.target.closest('[data-df-till-step]');
+        if (tillStepBtn && _cfTillScrub) {
+          const d = Number(tillStepBtn.getAttribute('data-df-till-step')) || 1;
+          const cur = getCurrentCfTillScrubIso() || _cfTillScrub.endDate;
+          const nextIso = new Date(Date.parse(cur + 'T00:00:00Z') + d * 86400000).toISOString().slice(0, 10);
+          selectCfTillScrubDate(nextIso, { slideEdge: true });
+          const np = formatDateSegParts(getCurrentCfTillScrubIso() || nextIso, _cfTillScrub.endDate, getTillScrubMinYear());
+          _dateFacState.viewYear = np.yrNum;
+          _dateFacState.viewMonth = np.moNum;
+          renderDateFacilitatorPopover();
+          return;
+        }
+        const tillPickBtn = e.target.closest('[data-df-till-pick]');
+        if (tillPickBtn) {
+          const iso = normalizeValidFilterDate(tillPickBtn.getAttribute('data-df-till-pick'), null, getTillScrubMinYear());
+          if (iso) selectCfTillScrubDate(iso);
+          closeDateFacilitator();
           return;
         }
         const stepPerBtn = e.target.closest('[data-df-step-period]');
@@ -144369,7 +145105,13 @@
         if (stepVyBtn) {
           resetDateFacDrillState();
           const d = Number(stepVyBtn.getAttribute('data-df-step-view-year')) || 1;
-          _dateFacState.viewYear = Math.min(2030, Math.max(2024, (_dateFacState.viewYear || 2026) + d));
+          if (_dateFacState.scope === 'till_scrub' && _cfTillScrub) {
+            const minYr = Number(String(_cfTillScrub.startDate || MIN_DATE).slice(0, 4)) || 2024;
+            const maxYr = Number(String(_cfTillScrub.endDate || todayISO()).slice(0, 4)) || 2026;
+            _dateFacState.viewYear = Math.min(maxYr, Math.max(minYr, (_dateFacState.viewYear || maxYr) + d));
+          } else {
+            _dateFacState.viewYear = Math.min(2030, Math.max(2024, (_dateFacState.viewYear || 2026) + d));
+          }
           renderDateFacilitatorPopover();
           return;
         }
@@ -144384,7 +145126,15 @@
         if (calNavBtn) {
           resetDateFacDrillState();
           const d = Number(calNavBtn.getAttribute('data-df-cal-nav')) || 1;
-          const totalMo = Math.min(2030 * 12 + 11, Math.max(2024 * 12, (_dateFacState.viewYear || 2026) * 12 + ((_dateFacState.viewMonth || 1) - 1) + d));
+          let minTotal = 2024 * 12;
+          let maxTotal = 2030 * 12 + 11;
+          if (_dateFacState.scope === 'till_scrub' && _cfTillScrub) {
+            const s = String(_cfTillScrub.startDate || MIN_DATE);
+            const eIso = String(_cfTillScrub.endDate || todayISO());
+            minTotal = Number(s.slice(0, 4)) * 12 + (Number(s.slice(5, 7)) - 1);
+            maxTotal = Number(eIso.slice(0, 4)) * 12 + (Number(eIso.slice(5, 7)) - 1);
+          }
+          const totalMo = Math.min(maxTotal, Math.max(minTotal, (_dateFacState.viewYear || 2026) * 12 + ((_dateFacState.viewMonth || 1) - 1) + d));
           _dateFacState.viewYear = Math.floor(totalMo / 12);
           _dateFacState.viewMonth = (totalMo % 12) + 1;
           renderDateFacilitatorPopover();
@@ -144441,9 +145191,21 @@
         }
         const pickYrCard = e.target.closest('[data-df-pick-year]');
         if (pickYrCard && !e.target.closest('[data-df-pick-month]')) {
-          const yr = Math.min(2030, Math.max(2024, Number(pickYrCard.getAttribute('data-df-pick-year')) || 2026));
+          const minYrBound = _dateFacState.scope === 'till_scrub' ? getTillScrubMinYear() : 2024;
+          const yr = Math.min(2030, Math.max(minYrBound, Number(pickYrCard.getAttribute('data-df-pick-year')) || 2026));
           const isKeyboard = e.detail === 0;
           _dateFacState.viewYear = yr;
+          if (_dateFacState.scope === 'till_scrub') {
+            resetDateFacDrillState();
+            _dateFacState.tab = 'month';
+            syncTopbarDateControls();
+            renderDateFacilitatorPopover();
+            if (isKeyboard) {
+              const firstMo = pop.querySelector('.df-month-card[data-df-pick-month]:not([disabled])');
+              if (firstMo) firstMo.focus();
+            }
+            return;
+          }
           // One click drills into the months when this year is already the selected one (nothing to change);
           // a year that changes the dates is applied on the first click and drilled on the second.
           const yrRange = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE };
@@ -144516,13 +145278,25 @@
         }
         const pickMoCard = e.target.closest('[data-df-pick-month]');
         if (pickMoCard) {
-          const yr = Math.min(2030, Math.max(2024, Number(pickMoCard.getAttribute('data-df-pick-year')) || _dateFacState.viewYear || 2026));
+          const minYrBound = _dateFacState.scope === 'till_scrub' ? getTillScrubMinYear() : 2024;
+          const yr = Math.min(2030, Math.max(minYrBound, Number(pickMoCard.getAttribute('data-df-pick-year')) || _dateFacState.viewYear || 2026));
           const mo = Math.min(12, Math.max(1, Number(pickMoCard.getAttribute('data-df-pick-month')) || 1));
           const mm = String(mo).padStart(2, '0');
           const ymKey = `${yr}-${mm}`;
           const isKeyboard = e.detail === 0;
           _dateFacState.viewYear = yr;
           _dateFacState.viewMonth = mo;
+          if (_dateFacState.scope === 'till_scrub') {
+            resetDateFacDrillState();
+            _dateFacState.tab = 'day';
+            syncTopbarDateControls();
+            renderDateFacilitatorPopover();
+            if (isKeyboard) {
+              const firstDay = pop.querySelector('.df-cal-day:not(.is-outside):not([disabled])') || pop.querySelector('.df-cal-day:not([disabled])');
+              if (firstDay) firstDay.focus();
+            }
+            return;
+          }
           // Same rule as the year cards: a month that is already selected drills into its days on the first click
           const moRange = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE };
           const moFp = formatDateSegParts(moRange.from, MIN_DATE);
@@ -144602,7 +145376,7 @@
         return;
       }
 
-      if (!wasDownInside && !e.target.closest('#grainSwitch, .pbi-grain-group, #dateRangeBar, .pbi-date-right')) {
+      if (!wasDownInside && !e.target.closest('#grainSwitch, .pbi-grain-group, #dateRangeBar, .pbi-date-right, #cfTillScrubSegPill')) {
         closeDateFacilitator();
       }
     });
@@ -145798,14 +146572,26 @@
   function stripOneNativeTitle(el, skipRailCheck = false) {
     if (!el || el.nodeType !== 1 || !el.hasAttribute('title')) return;
     const raw = (el.getAttribute('title') || '').trim();
+    const enTitle = el.__enAttr_title;
+    const enTitleApp = el.__enAttrApp_title;
     el.removeAttribute('title');
+    delete el.__enAttr_title;
+    delete el.__enAttrApp_title;
     if (!raw) return;
     if ((skipRailCheck || !el.closest('#sidebarNav, #railSystemBar')) && !el.hasAttribute('data-ui-tip')) {
       el.setAttribute('data-ui-tip', raw);
+      if (enTitle !== undefined && el['__enAttr_data-ui-tip'] === undefined) {
+        el['__enAttr_data-ui-tip'] = enTitle;
+        if (enTitleApp !== undefined) el['__enAttrApp_data-ui-tip'] = raw;
+      }
     }
     const tn = el.tagName;
     if ((tn === 'BUTTON' || tn === 'A' || tn === 'INPUT' || tn === 'SELECT' || el.getAttribute('role') === 'button') && !el.getAttribute('aria-label') && !(el.textContent || '').trim()) {
       el.setAttribute('aria-label', raw);
+      if (enTitle !== undefined && el['__enAttr_aria-label'] === undefined) {
+        el['__enAttr_aria-label'] = enTitle;
+        if (enTitleApp !== undefined) el['__enAttrApp_aria-label'] = raw;
+      }
     }
   }
 
