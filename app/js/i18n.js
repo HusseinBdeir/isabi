@@ -11732,73 +11732,7 @@
       "Hide BU Shift Table": "إخفاء جدول ورديات الشركة",
       "Dollar view restricted": "عرض المبالغ مقيد",
       "Unpaid Leave (Dollar view restricted)": "إجازة غير مدفوعة (عرض المبالغ مقيد)",
-      "$0.00 (Paid Leave)": "$0.00 (إجازة مدفوعة)",
-      "+ Add": "+ إضافة",
-      "+ New Policy & Perks Group...": "+ مجموعة سياسة ومزايا جديدة...",
-      "+ New Policy Group": "+ مجموعة سياسة جديدة",
-      "+ New Shift Type...": "+ نوع وردية جديد...",
-      "+ Save Current as Group": "+ حفظ الحالي كمجموعة",
-      "Active Group": "المجموعة النشطة",
-      "Applied automatically to staff without an individual override": "يُطبَّق تلقائياً على الموظفين دون تخصيص فردي",
-      "Bundle lateness & overtime multipliers, allowable OT, annual vacation days, tolerances, and staff perks into one selectable type": "اجمع مضاعفات التأخير والعمل الإضافي والحد الأقصى للإضافي والإجازة السنوية وفترة السماح ومزايا الموظفين في نوع واحد قابل للاختيار",
-      "Click a policy package to apply it, or inspect/edit group defaults": "انقر على باقة السياسة لتطبيقها، أو لمعاينة/تعديل افتراضيات المجموعة",
-      "Click any group to edit overtime, lateness, leave & perks": "انقر على أي مجموعة لتعديل الإضافي والتأخير والإجازات والمزايا",
-      "Click any group to edit overtime, lateness, leave &amp; perks": "انقر على أي مجموعة لتعديل الإضافي والتأخير والإجازات والمزايا",
-      "Click any group to inspect overtime, lateness, leave & perks": "انقر على أي مجموعة لمعاينة العمل الإضافي والتأخير والإجازات والمزايا",
-      "Click any shift to edit hours, workdays, or dated exceptions": "انقر على أي وردية لتعديل الساعات أو أيام العمل أو استثناءات التواريخ",
-      "Click card to configure rates & perks · Use dropdown or staff card to assign": "انقر البطاقة لضبط المعدلات والمزايا · استخدم القائمة أو بطاقة الموظف للتعيين",
-      "Click card to switch · Click Edit for rates & perks": "انقر البطاقة للتبديل · انقر تعديل للمعدلات والمزايا",
-      "Company is required when deleting a shift type": "الشركة مطلوبة عند حذف نوع وردية",
-      "Configure": "تهيئة",
-      "Default Target Company": "الشركة المستهدفة الافتراضية",
-      "Edit Selected Group": "تعديل المجموعة المحددة",
-      "Edit default policy & perks group": "تعديل مجموعة السياسة والمزايا الافتراضية",
-      "Edit default policy &amp; perks group": "تعديل مجموعة السياسة والمزايا الافتراضية",
-      "Edit default shift hours & workdays": "تعديل ساعات وأيام الوردية الافتراضية",
-      "Edit default shift hours &amp; workdays": "تعديل ساعات وأيام الوردية الافتراضية",
-      "Enter Shift Name and valid Start/End times (HH:MM).": "أدخل اسم الوردية ووقت بدء/انتهاء صحيح (HH:MM).",
-      "Full-group scheduling rights are required to delete Policy & Perks groups": "يلزم وجود صلاحيات جدولة المجموعة الكاملة لحذف مجموعات السياسات والمزايا",
-      "Full-group scheduling rights are required to edit Policy & Perks groups": "تتطلب صلاحيات جدولة المجموعة الكاملة لتعديل مجموعات السياسة والمزايا",
-      "Full-group scheduling rights are required to modify Policy & Perks groups.": "يلزم وجود صلاحيات الجدولة للمجموعة الكاملة لتعديل مجموعات السياسات والمزايا.",
-      "Group Name is required.": "اسم المجموعة مطلوب.",
-      "Group saved (re-scoped outside company; staff schedule reset to company default).": "تم حفظ المجموعة (أُعيد تعيين النطاق خارج الشركة؛ أُعيد جدول الموظف إلى افتراضي الشركة).",
-      "Inspect default policy & perks group": "معاينة مجموعة السياسات والمزايا الافتراضية",
-      "Kiosk is locked. Unlock first to edit shifts or rules.": "الكشك مقفل. افتح القفل أولاً لتعديل الورديات أو القواعد.",
-      "Late or Overtime multiplier out of range.": "مضاعف التأخير أو العمل الإضافي خارج النطاق.",
-      "Math & OT": "الحساب والإضافي",
-      "Math &amp; OT": "الحساب والإضافي",
-      "New Policy & Perks Group": "مجموعة سياسة ومزايا جديدة",
-      "New Policy &amp; Perks Group": "مجموعة سياسة ومزايا جديدة",
-      "New Shift Type": "نوع وردية جديد",
-      "No perks assigned": "لا توجد مزايا مخصصة",
-      "No staff match this scope.": "لا يوجد موظفون مطابقون لهذا النطاق.",
-      "Policy & Perks Groups": "مجموعات السياسات والمزايا",
-      "Policy & perks groups saved.": "تم حفظ مجموعات السياسة والمزايا.",
-      "Policy &amp; Perks Groups": "مجموعات السياسات والمزايا",
-      "Policy group is not available for this company": "مجموعة السياسة غير متاحة لهذه الشركة",
-      "Read-only access": "صلاحية قراءة فقط",
-      "Reset selection": "إعادة تعيين الاختيار",
-      "Select a target company above to set as Default Policy & Perks Group": "اختر شركة مستهدفة أعلاه لتعيينها كمجموعة السياسات والمزايا الافتراضية",
-      "Select company...": "اختر الشركة...",
-      "Shift Type & Hours": "نوع الوردية والساعات",
-      "Shift schedules and policy groups synced.": "تمت مزامنة جداول الورديات ومجموعات السياسة.",
-      "Switch default": "تغيير الافتراضي",
-      "Tolerance out of range (0 to 120 minutes).": "فترة السماح خارج النطاق (من 0 إلى 120 دقيقة).",
-      "Universal": "شامل",
-      "Unlock to edit shifts or attendance policies.": "افتح القفل لتعديل الورديات أو سياسات الحضور.",
-      "View Only": "للعرض فقط",
-      "View Only:": "للعرض فقط:",
-      "View Selected Group": "عرض المجموعة المحددة",
-      "View-only in kiosk mode": "للعرض فقط في وضع الكشك",
-      "View-only: contact an authorized manager to edit work shifts": "للعرض فقط: تواصل مع مدير مخول لتعديل الورديات",
-      "Work Shifts": "الورديات وساعات العمل",
-      "You do not have permission to edit policy & perks groups.": "ليس لديك صلاحية لتعديل مجموعات السياسة والمزايا.",
-      "You do not have permission to edit shift types or company defaults for this company.": "ليس لديك صلاحية لتعديل أنواع الورديات أو إعدادات الشركة الافتراضية لهذه الشركة.",
-      "You do not have permission to edit shifts or attendance rules for this company.": "ليس لديك صلاحية لتعديل الورديات أو قواعد الحضور لهذه الشركة.",
-      "You do not have rights to delete shifts for this company": "ليس لديك صلاحيات حذف الورديات لهذه الشركة",
-      "You do not have rights to edit shifts for this company": "ليس لديك صلاحيات تعديل الورديات لهذه الشركة",
-      "You do not have rights to update policy defaults for this company": "ليس لديك صلاحيات تحديث افتراضيات السياسة لهذه الشركة",
-      "You do not have rights to update work rules for this company": "ليس لديك صلاحيات تحديث قواعد العمل لهذه الشركة"
+      "$0.00 (Paid Leave)": "$0.00 (إجازة مدفوعة)"
     },
     fr: {
       "Not split by borrower": "Non réparti par emprunteur",
@@ -23512,73 +23446,7 @@
       "Hide BU Shift Table": "Masquer la grille de quarts",
       "Dollar view restricted": "Montants masqués",
       "Unpaid Leave (Dollar view restricted)": "Congé sans solde (montants masqués)",
-      "$0.00 (Paid Leave)": "$0.00 (Congé payé)",
-      "+ Add": "+ Ajouter",
-      "+ New Policy & Perks Group...": "+ Nouveau groupe politique et avantages...",
-      "+ New Policy Group": "+ Nouveau groupe de politique",
-      "+ New Shift Type...": "+ Nouveau type de poste...",
-      "+ Save Current as Group": "+ Enregistrer comme groupe",
-      "Active Group": "Groupe actif",
-      "Applied automatically to staff without an individual override": "Appliqué automatiquement au personnel sans exception individuelle",
-      "Bundle lateness & overtime multipliers, allowable OT, annual vacation days, tolerances, and staff perks into one selectable type": "Regroupez multiplicateurs de retard et heures sup., plafond HS, congés annuels, tolérances et avantages en un seul profil",
-      "Click a policy package to apply it, or inspect/edit group defaults": "Cliquez sur une formule pour l'appliquer, ou consulter/modifier ses paramètres",
-      "Click any group to edit overtime, lateness, leave & perks": "Cliquez sur un groupe pour modifier heures sup., retards, congés et avantages",
-      "Click any group to edit overtime, lateness, leave &amp; perks": "Cliquez sur un groupe pour modifier heures sup., retards, congés et avantages",
-      "Click any group to inspect overtime, lateness, leave & perks": "Cliquez sur un groupe pour consulter les heures sup., retards, congés et avantages",
-      "Click any shift to edit hours, workdays, or dated exceptions": "Cliquez sur un poste pour modifier les horaires, jours de travail ou exceptions datées",
-      "Click card to configure rates & perks · Use dropdown or staff card to assign": "Cliquer pour régler taux et avantages · Utiliser le menu ou la fiche employé pour assigner",
-      "Click card to switch · Click Edit for rates & perks": "Cliquer pour sélectionner · Modifier pour taux et avantages",
-      "Company is required when deleting a shift type": "La société est requise lors de la suppression d'un type de poste",
-      "Configure": "Configurer",
-      "Default Target Company": "Société cible par défaut",
-      "Edit Selected Group": "Modifier le groupe sélectionné",
-      "Edit default policy & perks group": "Modifier le groupe politique et avantages par défaut",
-      "Edit default policy &amp; perks group": "Modifier le groupe politique et avantages par défaut",
-      "Edit default shift hours & workdays": "Modifier les horaires et jours du poste par défaut",
-      "Edit default shift hours &amp; workdays": "Modifier les horaires et jours du poste par défaut",
-      "Enter Shift Name and valid Start/End times (HH:MM).": "Saisissez le nom du poste et des heures de début/fin valides (HH:MM).",
-      "Full-group scheduling rights are required to delete Policy & Perks groups": "Les droits de planification complets sont requis pour supprimer les groupes de politiques et avantages",
-      "Full-group scheduling rights are required to edit Policy & Perks groups": "Les droits de planification de tout le groupe sont requis pour modifier les groupes de politique et avantages",
-      "Full-group scheduling rights are required to modify Policy & Perks groups.": "Les droits de planification complets sont requis pour modifier les groupes de politiques et avantages.",
-      "Group Name is required.": "Le nom du groupe est requis.",
-      "Group saved (re-scoped outside company; staff schedule reset to company default).": "Groupe enregistré (périmètre déplacé hors société ; horaire réinitialisé par défaut).",
-      "Inspect default policy & perks group": "Consulter le groupe de politiques et avantages par défaut",
-      "Kiosk is locked. Unlock first to edit shifts or rules.": "Kiosque verrouillé. Déverrouillez d'abord pour modifier les postes ou règles.",
-      "Late or Overtime multiplier out of range.": "Multiplicateur de retard ou d'heures sup. hors limites.",
-      "Math & OT": "Calcul & HS",
-      "Math &amp; OT": "Calcul & HS",
-      "New Policy & Perks Group": "Nouveau groupe politique & avantages",
-      "New Policy &amp; Perks Group": "Nouveau groupe politique & avantages",
-      "New Shift Type": "Nouveau type de poste",
-      "No perks assigned": "Aucun avantage attribué",
-      "No staff match this scope.": "Aucun employé ne correspond à ce périmètre.",
-      "Policy & Perks Groups": "Groupes de politiques et avantages",
-      "Policy & perks groups saved.": "Groupes de politique et avantages enregistrés.",
-      "Policy &amp; Perks Groups": "Groupes de politiques et avantages",
-      "Policy group is not available for this company": "Ce groupe de politique n'est pas disponible pour cette société",
-      "Read-only access": "Accès en lecture seule",
-      "Reset selection": "Réinitialiser la sélection",
-      "Select a target company above to set as Default Policy & Perks Group": "Sélectionnez une société cible ci-dessus pour la définir par défaut",
-      "Select company...": "Choisir une société...",
-      "Shift Type & Hours": "Type de poste et horaires",
-      "Shift schedules and policy groups synced.": "Horaires de poste et groupes de politique synchronisés.",
-      "Switch default": "Changer par défaut",
-      "Tolerance out of range (0 to 120 minutes).": "Tolérance hors limites (0 à 120 minutes).",
-      "Universal": "Universel",
-      "Unlock to edit shifts or attendance policies.": "Déverrouillez pour modifier les postes ou politiques de présence.",
-      "View Only": "Lecture seule",
-      "View Only:": "Lecture seule :",
-      "View Selected Group": "Voir le groupe sélectionné",
-      "View-only in kiosk mode": "Lecture seule en mode kiosque",
-      "View-only: contact an authorized manager to edit work shifts": "Lecture seule : contactez un responsable autorisé pour modifier les postes",
-      "Work Shifts": "Postes de travail",
-      "You do not have permission to edit policy & perks groups.": "Vous n'avez pas l'autorisation de modifier les groupes de politique et avantages.",
-      "You do not have permission to edit shift types or company defaults for this company.": "Vous n'avez pas l'autorisation de modifier les types de poste ou les valeurs par défaut de cette société.",
-      "You do not have permission to edit shifts or attendance rules for this company.": "Vous n'avez pas l'autorisation de modifier les postes ou règles de présence de cette société.",
-      "You do not have rights to delete shifts for this company": "Vous n'avez pas les droits pour supprimer les postes de cette société",
-      "You do not have rights to edit shifts for this company": "Vous n'avez pas les droits pour modifier les postes de cette société",
-      "You do not have rights to update policy defaults for this company": "Vous n'avez pas les droits pour mettre à jour les paramètres par défaut de cette société",
-      "You do not have rights to update work rules for this company": "Vous n'avez pas les droits pour mettre à jour les règles de travail de cette société"
+      "$0.00 (Paid Leave)": "$0.00 (Congé payé)"
     }
   };
 
@@ -27126,7 +26994,7 @@
     if (m) return lang === 'ar' ? `مستخدم في ${m[1]} قيد` : `Utilisé dans ${m[1]} saisie${m[1] === '1' ? '' : 's'}`;
     if (/^Not\s+in\s+use\s+yet$/i.test(trimmed)) return lang === 'ar' ? 'غير مستخدم بعد' : 'Pas encore utilisé';
 
-    m = trimmed.match(/^Late\s+(.+?)\s*·\s*(No\s+OT|OT\s+[\d.]+x(?:\s*\([^)]+\))?)(?:\s*·\s*(\d+)d\s+Vac)?(?:\s*·\s*(0\.1h|\$\s*\/\s*min))?(?:\s*·\s*OT\s*(?:≥|>=)\s*(\d+)\s*m)?$/i);
+    m = trimmed.match(/^Late\s+(.+?)\s*·\s*(No\s+OT|OT\s+[\d.]+x(?:\s*\([^)]+\))?)(?:\s*·\s*(\d+)d\s+Vac)?(?:\s*·\s*(0\.1h|\$\/min))?(?:\s*·\s*OT\s*(?:≥|>=)\s*(\d+)\s*m)?$/i);
     if (m) {
       const lRaw = m[1].trim();
       const otRaw = m[2].trim();
@@ -27153,7 +27021,7 @@
       }
       const vacOut = vac ? (lang === 'ar' ? ` · ${vac} ي إجازة` : ` · ${vac}j congés`) : '';
       const mathOut = mathRaw
-        ? (/\$\s*\/\s*min/i.test(mathRaw) ? (lang === 'ar' ? ' · $/دقيقة' : ' · $/min') : (lang === 'ar' ? ' · 0.1 س' : ' · 0,1 h'))
+        ? (/\$\/min/i.test(mathRaw) ? (lang === 'ar' ? ' · $/دقيقة' : ' · $/min') : (lang === 'ar' ? ' · 0.1 س' : ' · 0,1 h'))
         : '';
       const thrOut = thrMin ? (lang === 'ar' ? ` · إضافي ≥${thrMin}د` : ` · HS ≥${thrMin}m`) : '';
       return `${lOut} · ${otOut}${vacOut}${mathOut}${thrOut}`;
@@ -27233,22 +27101,14 @@
     m = trimmed.match(/^Effective\s+from\s+date\s+for\s+(.+)$/i);
     if (m) return lang === 'ar' ? `تاريخ سريان السياسة لـ ${m[1]}` : `Date d'effet pour ${m[1]}`;
 
-    m = trimmed.match(/^Calculation\s+Math\s+Mode\s+for\s+(.+)$/i);
-    if (m) {
-      const co = translateCore(m[1].trim(), lang, depth + 1);
-      return lang === 'ar' ? `وضع حساب الدقائق لـ ${co}` : `Mode de calcul pour ${co}`;
-    }
+    m = trimmed.match(/^Edit\s+Policy\s*&\s*Perks\s+Group:\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `تعديل مجموعة السياسة والمزايا: ${m[1]}` : `Modifier le groupe de politique : ${m[1]}`;
 
-    m = trimmed.match(/^([\d.]+x)\s*·\s*(Open OT|Date Pass|No OT|Max\s+[\d.]+h\s+OT)\s*·\s*(0\.1h|\$\s*\/\s*Min|\d+d)$/i);
-    if (m) {
-      const otPart = translateCore(m[2].trim(), lang, depth + 1);
-      const tailRaw = m[3].trim();
-      let tailOut = tailRaw;
-      if (/\$\s*\/\s*min/i.test(tailRaw)) tailOut = lang === 'ar' ? '$/دقيقة' : '$/min';
-      else if (/0\.1h/i.test(tailRaw)) tailOut = lang === 'ar' ? '0.1 س' : '0,1 h';
-      else if (/^\d+d$/i.test(tailRaw)) tailOut = lang === 'ar' ? `${tailRaw.replace(/d$/i, '')} يوم` : `${tailRaw.replace(/d$/i, '')}j`;
-      return `${m[1]} · ${otPart} · ${tailOut}`;
-    }
+    m = trimmed.match(/^Set\s+as\s+Default\s+Policy\s*&\s*Perks\s+Group\s+for\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `تعيين كمجموعة السياسة الافتراضية لـ ${m[1]}` : `Définir comme politique par défaut pour ${m[1]}`;
+
+    m = trimmed.match(/^Backfill\s+all\s+([\d,]+)\s+staff\s+assigned\s+to\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `إعادة الاحتساب بأثر رجعي لجميع الموظفين (${m[1]}) في ${m[2]}` : `Rétro-appliquer aux ${m[1]} employés de ${m[2]}`;
 
     m = trimmed.match(/^\.\.\s*(Present|\d{2}-\d{2}-\d{4})$/i);
     if (m) return /^present$/i.test(m[1]) ? (lang === 'ar' ? '.. حتى الآن' : '.. Présent') : `.. ${m[1]}`;
@@ -27268,7 +27128,11 @@
     m = trimmed.match(/^Policy,\s*Multipliers\s*&\s*Perks\s+Group\s+for\s+(.+)$/i);
     if (m) return lang === 'ar' ? `مجموعة السياسة والمضاعفات والمزايا لـ ${m[1]}` : `Groupe de politique et avantages pour ${m[1]}`;
 
-
+    m = trimmed.match(/^(.+?)\s+Only$/i);
+    if (m && !/^(IN|OUT)$/i.test(m[1].trim())) {
+      const co = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${co} فقط` : `${co} uniquement`;
+    }
 
     // Sibling industry overview banners & sentinel watchdogs
     m = trimmed.match(/^(\d+)\s+Entities\s*·\s*(\$[\d.,]+[kKMB]?)\s+IC\s+eliminated$/i);
@@ -27330,170 +27194,6 @@
         ? `كامل قطاع ${ind} · ${rest}`
         : `Tout le secteur ${ind} · ${rest}`;
     }
-
-    // Standalone Shift & Policy Card chips
-    m = trimmed.match(/^(\d+)m\s+grace$/i);
-    if (m) return lang === 'ar' ? `${m[1]} د سماح` : `Tol. ${m[1]} min`;
-
-    m = trimmed.match(/^Late\s+(1h\s+Round|0\.5d|\$0|[\d.]+x)$/i);
-    if (m) {
-      const r = m[1].trim();
-      if (/^1h\s+Round$/i.test(r)) return lang === 'ar' ? 'تأخير تقريب 1س' : 'Retard arrondi 1h';
-      if (r === '0.5d') return lang === 'ar' ? 'تأخير 0.5 ي' : 'Retard 0,5j';
-      return lang === 'ar' ? `تأخير ${r}` : `Retard ${r}`;
-    }
-
-    m = trimmed.match(/^OT\s+([\d.]+x)\s*·\s*(.+)$/i);
-    if (m) {
-      const rate = m[1];
-      const pass = m[2].trim();
-      let maxM = pass.match(/^Max\s+([\d.]+)h\s+OT$/i);
-      const passLoc = /open\s+ot/i.test(pass)
-        ? (lang === 'ar' ? 'إضافي مفتوح' : 'HS ouvertes')
-        : (/date\s+pass/i.test(pass)
-          ? (lang === 'ar' ? 'تصريح تاريخ' : 'Pass date')
-          : (maxM
-            ? (lang === 'ar' ? `حد أقصى ${maxM[1]}س` : `Max ${maxM[1]}h HS`)
-            : translateCore(pass, lang, depth + 1)));
-      return lang === 'ar' ? `إضافي ${rate} · ${passLoc}` : `HS ${rate} · ${passLoc}`;
-    }
-
-    m = trimmed.match(/^Max\s+([\d.]+)h\s+OT$/i);
-    if (m) return lang === 'ar' ? `حد أقصى ${m[1]}س إضافي` : `Max ${m[1]}h HS`;
-
-    m = trimmed.match(/^(\d+)d\s+Vac$/i);
-    if (m) return lang === 'ar' ? `${m[1]} ي إجازة` : `${m[1]}j congés`;
-
-    m = trimmed.match(/^(\d+)d\s+Basis$/i);
-    if (m) return lang === 'ar' ? `أساس ${m[1]} يوم` : `Base ${m[1]}j`;
-
-    m = trimmed.match(/^Edit Policy\s*&\s*Perks Group:\s*(.+)$/i);
-    if (m) {
-      const rawNm = m[1].trim();
-      const nmRes = evalCore(rawNm, lang, depth + 1);
-      const nmOut = nmRes.ok ? nmRes.out : rawNm;
-      return lang === 'ar' ? `تعديل مجموعة السياسات والمزايا: ${nmOut}` : `Modifier le groupe de politique et avantages : ${nmOut}`;
-    }
-
-    m = trimmed.match(/^View Policy\s*&\s*Perks Group:\s*(.+)$/i);
-    if (m) {
-      const rawNm = m[1].trim();
-      const nmRes = evalCore(rawNm, lang, depth + 1);
-      const nmOut = nmRes.ok ? nmRes.out : rawNm;
-      return lang === 'ar' ? `عرض مجموعة السياسات والمزايا: ${nmOut}` : `Consulter le groupe de politique et avantages : ${nmOut}`;
-    }
-
-    m = trimmed.match(/^Default\s*·\s*(\d+)\s+Cos$/i);
-    if (m) {
-      const cnt = Number(m[1]);
-      return lang === 'ar'
-        ? (cnt === 2 ? 'افتراضي · شركتان' : `افتراضي · ${m[1]} شركات`)
-        : `Par défaut · ${m[1]} soc.`;
-    }
-
-    m = trimmed.match(/^Default\s*·\s*(.+)$/i);
-    if (m) {
-      const co = translateCore(m[1].trim(), lang, depth + 1);
-      return lang === 'ar' ? `افتراضي · ${co}` : `Par défaut · ${co}`;
-    }
-
-    m = trimmed.match(/^Default for all\s+(\d+):\s*(.+)$/i);
-    if (m) {
-      const listTxt = translateSearchList(m[2].trim(), lang).out;
-      return lang === 'ar' ? `افتراضي لجميع الـ ${m[1]}: ${listTxt}` : `Par défaut pour les ${m[1]} : ${listTxt}`;
-    }
-
-    m = trimmed.match(/^Default for:\s*(.+)$/i);
-    if (m) {
-      const listTxt = translateSearchList(m[1].trim(), lang).out;
-      return lang === 'ar' ? `افتراضي لـ: ${listTxt}` : `Par défaut pour : ${listTxt}`;
-    }
-
-    m = trimmed.match(/^Default for\s+(.+)$/i);
-    if (m) {
-      const co = translateCore(m[1].trim(), lang, depth + 1);
-      return lang === 'ar' ? `افتراضي لـ ${co}` : `Par défaut pour ${co}`;
-    }
-
-    m = trimmed.match(/^Unchecking restores\s+(.+?)\s+default back to(?:\s+(.+?))?\.?$/i);
-    if (m) {
-      const co = translateCore(m[1].trim(), lang, depth + 1);
-      if (m[2] && m[2].trim()) {
-        const rawNm = m[2].trim();
-        const nmRes = evalCore(rawNm, lang, depth + 1);
-        const nmOut = nmRes.ok ? nmRes.out : rawNm;
-        return lang === 'ar' ? `إلغاء التحديد يعيد افتراضي ${co} إلى ${nmOut}.` : `Décocher rétablit le défaut de ${co} sur ${nmOut}.`;
-      }
-      return lang === 'ar' ? `إلغاء التحديد يعيد افتراضي ${co} إلى` : `Décocher rétablit le défaut de ${co} sur`;
-    }
-
-    m = trimmed.match(/^Set as Default Policy\s*&\s*Perks Group for\s+(.+)$/i);
-    if (m) {
-      const co = translateCore(m[1].trim(), lang, depth + 1);
-      return lang === 'ar' ? `تعيين كمجموعة السياسات والمزايا الافتراضية لـ ${co}` : `Définir comme groupe par défaut pour ${co}`;
-    }
-
-    m = trimmed.match(/^Backfill all\s+([\d,]+)\s+staff assigned to\s+(.+)$/i);
-    if (m) {
-      const rawNm = m[2].trim();
-      const nmRes = evalCore(rawNm, lang, depth + 1);
-      const nmOut = nmRes.ok ? nmRes.out : rawNm;
-      return lang === 'ar' ? `تطبيق بأثر رجعي على ${m[1]} موظفاً في ${nmOut}` : `Appliquer rétroactivement aux ${m[1]} employés de ${nmOut}`;
-    }
-
-    m = trimmed.match(/^(.+?)\s+Only$/i);
-    if (m && !/^(IN|OUT|Track|Today|Clock-IN Late|Clock-OUT Early)$/i.test(m[1].trim())) {
-      const co = translateCore(m[1].trim(), lang, depth + 1);
-      return lang === 'ar' ? `${co} فقط` : `${co} uniquement`;
-    }
-
-    m = trimmed.match(/^([\d.,]+x)\s+OT$/i);
-    if (m) return lang === 'ar' ? `إضافي ${m[1]}` : `HS ${m[1]}`;
-
-    m = trimmed.match(/^([\d.,]+x)\s+Exact$/i);
-    if (m) return lang === 'ar' ? `${m[1]} دقيق` : `${m[1]} exact`;
-
-    m = trimmed.match(/^([\d.,]+x)\s+Rate$/i);
-    if (m) return lang === 'ar' ? `معامل ${m[1]}` : `Taux ${m[1]}`;
-
-    m = trimmed.match(/^Max\s+([\d.]+)h$/i);
-    if (m) return lang === 'ar' ? `حد أقصى ${m[1]}س` : `Max ${m[1]} h`;
-
-    m = trimmed.match(/^([\d,]+)\s+days$/i);
-    if (m) return lang === 'ar' ? `${m[1]} يوم` : `${m[1]} jours`;
-
-    m = trimmed.match(/^(\d+)d\s*·\s*IN\s+(\d+)m\s*\/\s*OUT\s+(\d+)m$/i);
-    if (m) return lang === 'ar' ? `${m[1]} يوم · دخول ${m[2]}د / خروج ${m[3]}د` : `${m[1]}j · Entrée ${m[2]}m / Sortie ${m[3]}m`;
-
-    m = trimmed.match(/^Customize\s+(.+?)\s+\(([^)]+)\)$/i);
-    if (m) {
-      const rawNm = m[1].trim();
-      const nmRes = evalCore(rawNm, lang, depth + 1);
-      const nmOut = nmRes.ok ? nmRes.out : rawNm;
-      const co = translateCore(m[2].trim(), lang, depth + 1);
-      return lang === 'ar' ? `تخصيص ${nmOut} (${co})` : `Personnaliser ${nmOut} (${co})`;
-    }
-
-    m = trimmed.match(/^Apply Policy\s*&\s*Rules to All\s+(.+?)\s+Staff$/i);
-    if (m) {
-      const co = translateCore(m[1].trim(), lang, depth + 1);
-      return lang === 'ar' ? `تطبيق السياسة والقواعد على جميع موظفي ${co}` : `Appliquer la politique à tout le personnel de ${co}`;
-    }
-
-    m = trimmed.match(/^Apply to\s+([\d,]+)\s+Staff$/i);
-    if (m) return lang === 'ar' ? `تطبيق على ${m[1]} موظفاً` : `Appliquer à ${m[1]} employés`;
-
-    m = trimmed.match(/^Shift Type for\s+(.+)$/i);
-    if (m) return lang === 'ar' ? `نوع الدوام لـ ${m[1].trim()}` : `Type d'horaire pour ${m[1].trim()}`;
-
-    m = trimmed.match(/^Policy,\s*Multipliers\s*&\s*Perks Group for\s+(.+)$/i);
-    if (m) return lang === 'ar' ? `مجموعة السياسات والمزايا لـ ${m[1].trim()}` : `Groupe de politique et avantages pour ${m[1].trim()}`;
-
-    m = trimmed.match(/^BU Defaults\s*&\s*Shift Table\s*\((\d+)\)$/i);
-    if (m) return lang === 'ar' ? `افتراضيات الشركة وجدول الورديات (${m[1]})` : `Paramètres par défaut et tableau des postes (${m[1]})`;
-
-    m = trimmed.match(/^Hide BU Shift Table\s*\((\d+)\)$/i);
-    if (m) return lang === 'ar' ? `إخفاء جدول ورديات الشركة (${m[1]})` : `Masquer le tableau des postes (${m[1]})`;
 
     return null;
   }
