@@ -7,7 +7,7 @@
 
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { handleSync } from '../functions/_lib/d1_store.js';
+import { handleSync, MIN_SYNC_SHELL_VER } from '../functions/_lib/d1_store.js';
 
 class Stmt {
   constructor(db, sql, params = []) { this.db = db; this.sql = sql; this.params = params; }
@@ -109,17 +109,19 @@ const storedText = () => d1.db.prepare("SELECT group_concat(payload_json, '') AS
 putParts(torn, '2026-11-13T08:36:54.758Z');
 const tornText = storedText();
 r = await patch(OWNER, { updatedAt: 'x', users: [{ id: 'u1' }] }, '2026-11-13T08:00:00.000Z');
+ok('NEGATIVE: omitting minShellVer onto a torn store returns 426 shell_outdated', r.status === 426 && r.json.code === 'shell_outdated', r);
+r = await patch(OWNER, { minShellVer: MIN_SYNC_SHELL_VER, updatedAt: 'x', users: [{ id: 'u1' }] }, '2026-11-13T08:00:00.000Z');
 ok('stale If-Match onto a torn store: conflict response carries storeUnreadable', r.json.conflict === true && r.json.storeUnreadable === true, r.json);
 const SCOPED = { sub: 'u9', email: 'sup@example.test', role: 'Supervisor', companies: 'WTC' };
-r = await patch(SCOPED, { users: [{ id: 'u9' }], customRecords: { expenses: [{ id: 'ex-wtc-1', company: 'WTC', amount: 5 }] } }, '2026-11-13T08:36:54.758Z');
+r = await patch(SCOPED, { minShellVer: MIN_SYNC_SHELL_VER, users: [{ id: 'u9' }], customRecords: { expenses: [{ id: 'ex-wtc-1', company: 'WTC', amount: 5 }] } }, '2026-11-13T08:36:54.758Z');
 ok('NEGATIVE: a company-scoped save onto a torn store is refused with 503 + storeUnreadable', r.status === 503 && r.json.ok === false && r.json.storeUnreadable === true, r);
 ok('NEGATIVE: and the stored parts are left exactly as they were', storedText() === tornText);
 d1.exec("DELETE FROM edge_kv_store WHERE doc_key LIKE 'mfg_web_store%'");
 d1.db.prepare('INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) VALUES (?, ?, ?, ?, 1)').run('mfg_web_store__part_0001', '"tail"}', 't', 'test');
-r = await patch(SCOPED, { users: [{ id: 'u9' }] }, '');
+r = await patch(SCOPED, { minShellVer: MIN_SYNC_SHELL_VER, users: [{ id: 'u9' }] }, '');
 ok('NEGATIVE: a company-scoped save onto parts without a head is refused too', r.status === 503 && r.json.storeUnreadable === true, r);
 putParts(torn, '2026-11-13T08:36:54.758Z');
-const fullDoc = { users: docB.users, customRecords: docB.customRecords, updatedAt: '2026-11-13T08:56:17.253Z' };
+const fullDoc = { users: docB.users, customRecords: docB.customRecords, minShellVer: MIN_SYNC_SHELL_VER, updatedAt: '2026-11-13T08:56:17.253Z' };
 r = await patch(OWNER, fullDoc, '2026-11-13T08:36:54.758Z');
 ok('an Owner save onto a torn store goes through', r.status === 200 && r.json.ok === true && !r.json.conflict, r.json);
 let healed = null; try { healed = JSON.parse(storedText()); } catch { healed = null; }

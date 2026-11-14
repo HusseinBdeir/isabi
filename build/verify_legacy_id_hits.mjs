@@ -6,7 +6,8 @@
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import {
-  capMinShellVerForRead, compareShellVer, handleIndustryDomainStore, handleSync, holdMinShellVer
+  MIN_SYNC_SHELL_VER, capMinShellVerForRead, compareShellVer, effectiveMinSyncShellVer, handleIndustryDomainStore,
+  handleSync, holdMinShellVer
 } from '../functions/_lib/d1_store.js';
 import { DEPLOYED_SHELL_VER } from '../functions/_lib/deployed_shell.js';
 import {
@@ -227,6 +228,7 @@ for (const [label, mapVal] of [['no legacy_id_map key', undefined], ['an empty l
   const body = {
     op: 'patch', doc: 'mfg_web_store',
     patch: { mfg_web_store: {
+      minShellVer: MIN_SYNC_SHELL_VER,
       updatedAt: '2026-11-11T10:00:00.000Z',
       industryRowEdits: { 'IND::hsp_revenue::HSP-REV-0012': { company: 'Platinum', rev: 1 } },
       industryCustomRows: { trd_stock: [{ id: 'STK-KO-b780fef882', company: 'Korri Auto' }] }
@@ -238,6 +240,7 @@ for (const [label, mapVal] of [['no legacy_id_map key', undefined], ['an empty l
   ok('the sync itself is unchanged (saved, no conflict)', res.status === 200 && j.ok && !j.conflict, j);
   ok('the one old id it carried is counted', hits(d1).submit === 1, hits(d1));
   const body2 = { op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: j.updatedAt, patch: { mfg_web_store: {
+    minShellVer: MIN_SYNC_SHELL_VER,
     updatedAt: '2026-11-11T10:05:00.000Z',
     industryRowEdits: { 'IND::hsp_revenue::HSP-REV-4f5afc807f': { company: 'Platinum', rev: 2 } }
   } } };
@@ -246,6 +249,7 @@ for (const [label, mapVal] of [['no legacy_id_map key', undefined], ['an empty l
   await settle2();
   ok('NEGATIVE: a later sync with only new ids adds nothing', (await res2.json()).ok && hits(d1).submit === 1, hits(d1));
   const conflictBody = { op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: '1999-01-01T00:00:00.000Z', patch: { mfg_web_store: {
+    minShellVer: MIN_SYNC_SHELL_VER,
     industryRowEdits: { 'IND::hsp_revenue::HSP-REV-0012': { company: 'Platinum', rev: 3 } }
   } } };
   const { ctx: ctx3, settle: settle3 } = ctxCollector();
@@ -278,6 +282,7 @@ ok('NEGATIVE: stable and app ids never are (st_<hex>, wbmalf-wtc-<hex>, ex_<hex>
   ok('NEGATIVE: a non-number is not a report; a negative counts as 0', !s2.reported && s3.reported && s3.upgrade === 0, { s2, s3 });
 }
 const mfgPatch = (extra, ts) => ({ op: 'patch', doc: 'mfg_web_store', ...(ts ? { ifMatchUpdatedAt: ts } : {}), patch: { mfg_web_store: Object.assign({
+  minShellVer: MIN_SYNC_SHELL_VER,
   updatedAt: new Date().toISOString(),
   customRecords: { sentinel_dummy: [{ id: 'st123' }, { id: 'st_ab12cd34ef56' }] }
 }, extra) } });
@@ -342,16 +347,19 @@ const mfgPatch = (extra, ts) => ({ op: 'patch', doc: 'mfg_web_store', ...(ts ? {
   ok('the floor keeps the higher of stored and incoming; junk never replaces a valid stored value',
     a.minShellVer === '19.6.264' && b.minShellVer === '19.6.265' && c.minShellVer === '19.6.264' && !('minShellVer' in d), { a, b, c, d });
 
+  const effFloor = effectiveMinSyncShellVer();
+  const newerAllowed = compareShellVer(DEPLOYED_SHELL_VER, MIN_SYNC_SHELL_VER) > 0 ? DEPLOYED_SHELL_VER : MIN_SYNC_SHELL_VER;
+  const expectedStored = compareShellVer(newerAllowed, DEPLOYED_SHELL_VER) > 0 ? DEPLOYED_SHELL_VER : newerAllowed;
   const { env, d1 } = freshEnv();
   const { ctx, settle } = ctxCollector();
-  const first = mfgPatch({ minShellVer: '19.6.265' });
+  const first = mfgPatch({ minShellVer: newerAllowed });
   const r1 = await (await handleSync(syncReq(first), env, OWNER, first, ctx)).json();
-  const second = mfgPatch({ minShellVer: '19.6.260', updatedAt: new Date(Date.now() + 5000).toISOString() }, r1.updatedAt);
+  const second = mfgPatch({ minShellVer: effFloor, updatedAt: new Date(Date.now() + 5000).toISOString() }, r1.updatedAt);
   const r2 = await (await handleSync(syncReq(second), env, OWNER, second, ctx)).json();
   await settle();
   const stored = JSON.parse(d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0].payload_json);
-  ok('through /api/sync: an older shell\'s push saves but leaves the stored minShellVer at the newer version',
-    r1.ok && r2.ok && !r2.conflict && stored.minShellVer === '19.6.265', { r1, r2, stored: stored.minShellVer });
+  ok(`through /api/sync: an older shell's push (still >= ${effFloor}) saves and leaves the stored minShellVer at the newer version`,
+    r1.ok && r2.ok && !r2.conflict && stored.minShellVer === expectedStored, { r1, r2, stored: stored.minShellVer, newerAllowed, expectedStored });
 }
 
 // ...capped at the shell this deploy serves, so one bad push (any seat can push) cannot strand the value above it.
@@ -390,16 +398,38 @@ const mfgPatch = (extra, ts) => ({ op: 'patch', doc: 'mfg_web_store', ...(ts ? {
   const stillStored = JSON.parse(d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0].payload_json).minShellVer;
   ok('through /api/sync get_mfg: a stranded value is served capped, and the read writes nothing',
     rg.ok && rg.docs.mfg_web_store.minShellVer === DEPLOYED_SHELL_VER && stillStored === above, { served: rg.docs && rg.docs.mfg_web_store.minShellVer, stillStored });
-  const stale = mfgPatch({ minShellVer: '19.6.200', updatedAt: new Date(Date.now() + 9000).toISOString() }, 'not-the-current-ts');
+  const effFloor = effectiveMinSyncShellVer();
+  const effParts = effFloor.split('.').map(Number);
+  const oneBelowFloor = (effParts.length && effParts[effParts.length - 1] > 0)
+    ? effParts.slice(0, -1).concat(effParts[effParts.length - 1] - 1).join('.')
+    : '19.6.345';
+  const stale = mfgPatch({ minShellVer: effFloor, updatedAt: new Date(Date.now() + 9000).toISOString() }, 'not-the-current-ts');
   const rc = await (await handleSync(syncReq(stale), env, OWNER, stale, ctx)).json();
   ok('through /api/sync conflict reply: the fresh copy it hands back is capped too',
     rc.ok && rc.conflict && rc.docs.mfg_web_store.minShellVer === DEPLOYED_SHELL_VER, { rc: rc.conflict, served: rc.docs && rc.docs.mfg_web_store.minShellVer });
-  const p2 = mfgPatch({ minShellVer: '19.6.200', updatedAt: new Date(Date.now() + 12000).toISOString() }, rc.updatedAt);
+  const p2 = mfgPatch({ minShellVer: effFloor, updatedAt: new Date(Date.now() + 12000).toISOString() }, rc.updatedAt);
   const r2 = await (await handleSync(syncReq(p2), env, OWNER, p2, ctx)).json();
   await settle();
   const stored2 = JSON.parse(d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0].payload_json);
   ok('through /api/sync: the next push (from an older shell) brings a stranded value down to the deployed shell',
     r2.ok && !r2.conflict && stored2.minShellVer === DEPLOYED_SHELL_VER, { r2, stored: stored2.minShellVer });
+
+  // Sync floor (< effectiveMinSyncShellVer()): stale, empty, omitted, or junk minShellVer fails with HTTP 426 shell_outdated even with stale ifMatchUpdatedAt.
+  for (const [label, patchDoc] of [
+    [`below floor (${oneBelowFloor})`, { minShellVer: oneBelowFloor, updatedAt: '2026-11-14T10:00:00.000Z' }],
+    ['empty string', { minShellVer: '', updatedAt: '2026-11-14T10:00:01.000Z' }],
+    ['omitted', { updatedAt: '2026-11-14T10:00:02.000Z' }],
+    ['invalid script', { minShellVer: 'x<script>', updatedAt: '2026-11-14T10:00:03.000Z' }],
+  ]) {
+    const reqBody = { op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: 'not-the-current-ts', patch: { mfg_web_store: patchDoc } };
+    const { ctx: c426 } = ctxCollector();
+    const res426 = await handleSync(syncReq(reqBody), env, OWNER, reqBody, c426);
+    const j426 = await res426.json();
+    ok(`through /api/sync: ${label} returns HTTP 426 shell_outdated and leaves stored minShellVer unchanged`,
+      res426.status === 426 && j426.ok === false && j426.code === 'shell_outdated' && j426.minSyncShellVer === effFloor
+      && JSON.parse(d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'")[0].payload_json).minShellVer === DEPLOYED_SHELL_VER,
+      { status: res426.status, j426 });
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -52,7 +52,7 @@ export const USER_WRITABLE_TABLES = new Set(
 
 export const UNIVERSAL_UNIQUE_TABLES = new Set([
   'customers', 'suppliers', 'products', 'items', 'product_types', 'uoms',
-  'sites', 'regions', 'equipment', 'drivers', 'staff_members', 'staff_roles',
+  'sites', 'regions', 'equipment', 'drivers', 'staff_roles',
   'expense_categories', 'expense_subcategories', 'currencies', 'gl_accounts'
 ]);
 
@@ -88,6 +88,7 @@ export function isServerOwnedRowEditKey(editKey) {
 // (say 9999.0) would stick for good; with it, a stored value above the deployed shell comes back down on the next
 // push and is never served (capMinShellVerForRead).
 const SHELL_VER_RE = /^\d{1,4}(?:\.\d{1,6}){0,3}$/;
+export const MIN_SYNC_SHELL_VER = '19.6.356';
 export function compareShellVer(a, b) {
   const pa = String(a).split('.').map(Number);
   const pb = String(b).split('.').map(Number);
@@ -96,6 +97,11 @@ export function compareShellVer(a, b) {
     if (d) return d > 0 ? 1 : -1;
   }
   return 0;
+}
+export function effectiveMinSyncShellVer(ceiling = DEPLOYED_SHELL_VER) {
+  const cap = SHELL_VER_RE.test(String(ceiling || '')) ? String(ceiling) : '';
+  if (cap && compareShellVer(MIN_SYNC_SHELL_VER, cap) > 0) return cap;
+  return MIN_SYNC_SHELL_VER;
 }
 export function holdMinShellVer(doc, prevDoc = null, ceiling = DEPLOYED_SHELL_VER) {
   if (!doc || typeof doc !== 'object') return doc;
@@ -254,14 +260,353 @@ function isDemoHeader(request) {
   return request.headers.get('X-ISABI-Demo') === '1';
 }
 
-const TABLE_COLS_CACHE = new Map();
+const TABLE_COLS_BY_DB = new WeakMap();
 
 async function getTableColumns(db, table) {
-  if (TABLE_COLS_CACHE.has(table)) return TABLE_COLS_CACHE.get(table);
-  const res = await db.prepare(`PRAGMA table_info(${table})`).all();
-  const cols = new Set((res.results || []).map(r => String(r.name)));
-  if (cols.size > 0) TABLE_COLS_CACHE.set(table, cols);
+  let perDb = (db && typeof db === 'object') ? TABLE_COLS_BY_DB.get(db) : null;
+  if (!perDb && db && typeof db === 'object') {
+    perDb = new Map();
+    TABLE_COLS_BY_DB.set(db, perDb);
+  }
+  if (perDb && perDb.has(table)) return perDb.get(table);
+  let res = await db.prepare(`PRAGMA table_info(${table})`).all();
+  let cols = new Set((res.results || []).map(r => String(r.name)));
+  if (table === 'staff_members' && cols.size > 0 && !cols.has('father_name')) {
+    try {
+      await db.prepare("ALTER TABLE staff_members ADD COLUMN father_name TEXT DEFAULT ''").run();
+      res = await db.prepare(`PRAGMA table_info(${table})`).all();
+      cols = new Set((res.results || []).map(r => String(r.name)));
+    } catch (_) {}
+  }
+  if (perDb && cols.size > 0) perDb.set(table, cols);
   return cols;
+}
+
+const SAME_NAME_CANON_CO_FALLBACK = {
+  wtc: 'WTC',
+  'western trading': 'WTC',
+  'western trading co': 'WTC',
+  bbco: 'BBConstruction',
+  bbconstruction: 'BBConstruction',
+  'bdeir building': 'BBConstruction',
+  'lions transport': 'Lions Transport',
+  lions: 'Lions Transport',
+  'la una': 'La Una',
+  launa: 'La Una',
+  blanca: 'Blanca',
+  palms: 'Palms',
+  voile: 'Voile',
+  platinum: 'Platinum',
+  'korri auto': 'Korri Auto',
+  korri: 'Korri Auto',
+  shacman: 'Shacman',
+  properties: 'Properties',
+  'bdeir holding': 'Bdeir Holding',
+  holding: 'Bdeir Holding',
+  'insurance company': 'Insurance Company',
+  insurance: 'Insurance Company'
+};
+
+function _sameNameKey(v) {
+  return String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function _sameNameCanonCo(raw) {
+  const s = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  const low = s.toLowerCase();
+  if (typeof CANON_COMPANY_MAP === 'object' && CANON_COMPANY_MAP) {
+    if (Object.prototype.hasOwnProperty.call(CANON_COMPANY_MAP, s)) return CANON_COMPANY_MAP[s];
+    if (Object.prototype.hasOwnProperty.call(CANON_COMPANY_MAP, low)) return CANON_COMPANY_MAP[low];
+  }
+  return Object.prototype.hasOwnProperty.call(SAME_NAME_CANON_CO_FALLBACK, low) ? SAME_NAME_CANON_CO_FALLBACK[low] : s;
+}
+
+const _INACTIVE_STAFF_STATUSES = new Set(['ended', 'closed', 'terminated', 'inactive', 'cancelled']);
+
+function _isEmpActiveOnDate(emp, refDate) {
+  if (!emp || typeof emp !== 'object' || emp.voided || Number(emp.voided) === 1 || emp.archived) return false;
+  const st = String(emp.status || 'Active').trim().toLowerCase();
+  if (_INACTIVE_STAFF_STATUSES.has(st)) return false;
+  const ed = String(emp.end_date || '').trim().slice(0, 10);
+  if (ed && refDate && ed < refDate) return false;
+  return true;
+}
+
+async function _loadD1SameNameRows(db, table) {
+  const out = new Map();
+  if (!db) return out;
+  try {
+    const cols = await getTableColumns(db, table);
+    if (!cols.size) return out;
+    const want = ['id', 'name', 'staff', 'company', 'status', 'type', 'start_date', 'end_date', 'voided', 'archived', 'father_name', 'payload_json']
+      .filter(c => cols.has(c));
+    if (!want.length) return out;
+    const whereVoid = cols.has('voided') ? ' WHERE COALESCE(voided, 0) = 0' : '';
+    const res = await db.prepare(`SELECT ${want.join(', ')} FROM ${table}${whereVoid} LIMIT 8000`).all();
+    for (const r of (res.results || [])) {
+      let obj = {};
+      if (r.payload_json && typeof r.payload_json === 'string') {
+        try {
+          const p = JSON.parse(r.payload_json);
+          if (p && typeof p === 'object') obj = p;
+        } catch (_) {}
+      }
+      for (const c of want) {
+        if (c === 'payload_json') continue;
+        if (r[c] !== undefined && r[c] !== null && (obj[c] === undefined || obj[c] === '' || c === 'voided' || c === 'id' || c === 'company')) {
+          obj[c] = r[c];
+        }
+      }
+      const rid = String(obj.id || r.id || '').trim();
+      if (rid && !obj.voided && Number(obj.voided) !== 1) out.set(rid, obj);
+    }
+  } catch (_) {}
+  return out;
+}
+
+async function checkSameNameRecordConflict(db, table, record, opts = {}) {
+  if (table !== 'employments' && table !== 'freelance_entries' && table !== 'staff_members') return null;
+  if (!record || typeof record !== 'object' || record.voided || Number(record.voided) === 1) return null;
+
+  const recId = String(record.id || '').trim();
+  const staffRaw = table === 'staff_members'
+    ? String(record.name || record.staff || '').trim()
+    : String(record.staff || record.name || '').trim();
+  const staffK = _sameNameKey(staffRaw);
+  if (!staffK) return null;
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const refDate = String(record.start_date || record.date || todayIso).trim().slice(0, 10) || todayIso;
+
+  if (table === 'staff_members') {
+    if (record.archived || _INACTIVE_STAFF_STATUSES.has(String(record.status || '').trim().toLowerCase())) return null;
+  } else {
+    if (!_isEmpActiveOnDate(record, todayIso) && !_isEmpActiveOnDate(record, refDate)) return null;
+  }
+
+  const rawCo = String(record.company || '').trim();
+  const canonCo = table === 'staff_members'
+    ? (rawCo ? _sameNameCanonCo(rawCo) : '')
+    : _sameNameCanonCo(rawCo || 'WTC');
+  const coK = canonCo ? _sameNameKey(canonCo) : '';
+
+  const overlay = opts.overlayByTable || null;
+  const rowsFor = async (tbl) => {
+    const merged = (opts.preloaded && opts.preloaded[tbl])
+      ? new Map(opts.preloaded[tbl])
+      : await _loadD1SameNameRows(db, tbl);
+    if (overlay && overlay[tbl]) {
+      for (const [kId, vRow] of overlay[tbl].entries()) {
+        if (vRow === null) merged.delete(kId);
+        else merged.set(kId, vRow);
+      }
+    }
+    return merged;
+  };
+
+  const curMap = await rowsFor(table);
+  const orig = opts.origOverride !== undefined ? opts.origOverride : (recId ? curMap.get(recId) : null);
+  if (orig && typeof orig === 'object' && !orig.voided && Number(orig.voided) !== 1) {
+    const origStaff = table === 'staff_members'
+      ? String(orig.name || orig.staff || '').trim()
+      : String(orig.staff || orig.name || '').trim();
+    const origCo = String(orig.company || (table === 'staff_members' ? '' : 'WTC')).trim();
+    const origCoK = origCo ? _sameNameKey(_sameNameCanonCo(origCo)) : '';
+    if (_sameNameKey(origStaff) === staffK && origCoK === coK) {
+      if (orig.pending_salary || orig.salary_pending) return null;
+      if (table === 'staff_members') {
+        const origWasActive = !orig.archived && !_INACTIVE_STAFF_STATUSES.has(String(orig.status || 'Active').trim().toLowerCase());
+        if (origWasActive || record.same_person_confirmed === true) return null;
+      } else {
+        const recordIsActiveNow = _isEmpActiveOnDate(record, todayIso);
+        const origWasActive = _isEmpActiveOnDate(orig, todayIso) && _isEmpActiveOnDate(orig, refDate);
+        if (!recordIsActiveNow || origWasActive || record.same_person_confirmed === true) return null;
+      }
+    }
+  }
+
+  const empMap = table === 'employments' ? curMap : await rowsFor('employments');
+  const empRows = Array.from(empMap.values());
+  const flMap = table === 'freelance_entries' ? curMap : await rowsFor('freelance_entries');
+  const flRows = Array.from(flMap.values());
+  const smMap = table === 'staff_members' ? curMap : await rowsFor('staff_members');
+  const smRows = Array.from(smMap.values());
+
+  const conflictPayload = (tblCo, existingName, existingKind) => ({
+    ok: false,
+    code: 'same_name_conflict',
+    table,
+    id: recId,
+    conflictId: recId,
+    staff: staffRaw,
+    company: canonCo || tblCo,
+    existing: String(existingName || staffRaw).trim(),
+    existingKind,
+    error: 'Duplicate active staff name blocked by server.'
+  });
+
+  if (table === 'staff_members') {
+    for (const sm of smRows) {
+      if (!sm || typeof sm !== 'object' || sm.voided || Number(sm.voided) === 1 || sm.archived) continue;
+      if (String(sm.id || '').trim() === recId) continue;
+      if (_INACTIVE_STAFF_STATUSES.has(String(sm.status || 'Active').trim().toLowerCase())) continue;
+      if (_sameNameKey(sm.name || sm.staff) !== staffK) continue;
+      const smCo = _sameNameCanonCo(sm.company || '');
+      if (_sameNameKey(smCo) !== coK) continue;
+      return conflictPayload(smCo, sm.name || sm.staff || staffRaw, 'staff');
+    }
+
+    const activeSameCoEmps = [];
+    for (const e of empRows) {
+      if (!e || typeof e !== 'object' || e.voided || Number(e.voided) === 1 || e.archived) continue;
+      if (String(e.id || '').trim() === recId) continue;
+      if (_sameNameKey(e.staff || e.name) !== staffK) continue;
+      const eCo = _sameNameCanonCo(e.company || 'WTC');
+      if (_sameNameKey(eCo) !== coK) continue;
+      if (_isEmpActiveOnDate(e, todayIso)) activeSameCoEmps.push([e, eCo]);
+    }
+    for (const fl of flRows) {
+      if (!fl || typeof fl !== 'object' || fl.voided || Number(fl.voided) === 1 || fl.archived) continue;
+      if (String(fl.id || '').trim() === recId) continue;
+      if (_sameNameKey(fl.staff || fl.name) !== staffK) continue;
+      const fCo = _sameNameCanonCo(fl.company || 'WTC');
+      if (_sameNameKey(fCo) !== coK) continue;
+      if (_isEmpActiveOnDate(fl, todayIso)) {
+        activeSameCoEmps.push([Object.assign({}, fl, { type: fl.type || 'Freelance' }), fCo]);
+      }
+    }
+    if (activeSameCoEmps.length > 0) {
+      const enrolledEmpId = String(record.enrolled_emp_id || '').trim();
+      const allSalaryPending = activeSameCoEmps.every(([e]) => Boolean(e.salary_pending || e.pending_salary));
+      const allowSamePerson = record.same_person_confirmed === true
+        || recId.startsWith('stf_seed_')
+        || (Boolean(enrolledEmpId) && activeSameCoEmps.some(([e]) => String(e.id || '').trim() === enrolledEmpId))
+        || allSalaryPending;
+      if (!allowSamePerson) {
+        const [e, eCo] = activeSameCoEmps[0];
+        const kind = /freelance/i.test(String(e.type || '')) ? 'freelance' : 'contract';
+        return conflictPayload(eCo, e.staff || e.name || staffRaw, kind);
+      }
+    }
+    return null;
+  }
+
+  const isFreelance = table === 'freelance_entries' || /freelance/i.test(String(record.type || ''));
+  if (record.same_person_confirmed === true) return null;
+
+  let activeHit = null;
+  let activeKind = 'contract';
+  let hasAnyNonVoidedEmpInCo = false;
+  let hasAnyNonVoidedFlInCo = false;
+
+  for (const e of empRows) {
+    if (!e || typeof e !== 'object' || e.voided || Number(e.voided) === 1) continue;
+    if (String(e.id || '').trim() === recId) continue;
+    if (_sameNameKey(e.staff || e.name) !== staffK) continue;
+    const eCo = _sameNameCanonCo(e.company || 'WTC');
+    if (_sameNameKey(eCo) !== coK) continue;
+    hasAnyNonVoidedEmpInCo = true;
+    const eIsFl = /freelance/i.test(String(e.type || ''));
+    if (eIsFl) hasAnyNonVoidedFlInCo = true;
+    if (isFreelance && eIsFl) continue;
+    if (!activeHit && _isEmpActiveOnDate(e, refDate)) {
+      activeHit = e;
+      activeKind = eIsFl ? 'freelance' : 'contract';
+    }
+  }
+
+  if (!activeHit && !isFreelance) {
+    for (const fl of flRows) {
+      if (!fl || typeof fl !== 'object' || fl.voided || Number(fl.voided) === 1) continue;
+      if (String(fl.id || '').trim() === recId) continue;
+      if (_sameNameKey(fl.staff || fl.name) !== staffK) continue;
+      const fCo = _sameNameCanonCo(fl.company || 'WTC');
+      if (_sameNameKey(fCo) !== coK) continue;
+      if (_isEmpActiveOnDate(fl, refDate)) {
+        activeHit = fl;
+        activeKind = 'freelance';
+        break;
+      }
+    }
+  }
+
+  if (isFreelance && !hasAnyNonVoidedFlInCo) {
+    for (const fl of flRows) {
+      if (!fl || typeof fl !== 'object' || fl.voided || Number(fl.voided) === 1) continue;
+      if (String(fl.id || '').trim() === recId) continue;
+      if (_sameNameKey(fl.staff || fl.name) !== staffK) continue;
+      const fCo = _sameNameCanonCo(fl.company || 'WTC');
+      if (_sameNameKey(fCo) === coK) {
+        hasAnyNonVoidedFlInCo = true;
+        break;
+      }
+    }
+  }
+
+  // A roster-only staff_members profile (no contracts yet) blocks unconfirmed new employment/freelance entries
+  // in the same company unless paired via enrolled_emp_id or a returning freelancer.
+  if (!activeHit && !hasAnyNonVoidedEmpInCo && !(isFreelance && hasAnyNonVoidedFlInCo)) {
+    for (const sm of smRows) {
+      if (!sm || typeof sm !== 'object' || sm.voided || Number(sm.voided) === 1 || sm.archived) continue;
+      const smId = String(sm.id || '').trim();
+      if (smId === recId || smId.startsWith('stf_seed_') || sm.source === 'seed') continue;
+      if (_INACTIVE_STAFF_STATUSES.has(String(sm.status || 'Active').trim().toLowerCase())) continue;
+      if (String(sm.enrolled_emp_id || '').trim() === recId) continue;
+      if (_sameNameKey(sm.name || sm.staff) !== staffK) continue;
+      const smCo = _sameNameCanonCo(sm.company || '');
+      if (!smCo || _sameNameKey(smCo) !== coK) continue;
+      activeHit = sm;
+      activeKind = 'staff';
+      break;
+    }
+  }
+
+  if (!activeHit) return null;
+  if (isFreelance && activeKind === 'contract' && hasAnyNonVoidedFlInCo) return null;
+
+  return conflictPayload(canonCo, activeHit.staff || activeHit.name || staffRaw, activeKind);
+}
+
+async function checkSameNameSyncPatchConflict(db, nextDoc, prevDoc) {
+  const nextCr = (nextDoc && typeof nextDoc === 'object' && nextDoc.customRecords && typeof nextDoc.customRecords === 'object') ? nextDoc.customRecords : {};
+  const prevCr = (prevDoc && typeof prevDoc === 'object' && prevDoc.customRecords && typeof prevDoc.customRecords === 'object') ? prevDoc.customRecords : {};
+  const tables = ['employments', 'freelance_entries', 'staff_members'];
+  const hasAny = tables.some(tbl => Array.isArray(nextCr[tbl]) && nextCr[tbl].length > 0);
+  if (!hasAny) return null;
+
+  const overlay = {};
+  const preByTbl = {};
+  for (const tbl of tables) {
+    const m = await _loadD1SameNameRows(db, tbl);
+    const pArr = Array.isArray(prevCr[tbl]) ? prevCr[tbl] : [];
+    for (const pr of pArr) {
+      if (pr && typeof pr === 'object' && pr.id) m.set(String(pr.id).trim(), pr);
+    }
+    preByTbl[tbl] = new Map(m);
+    const nArr = Array.isArray(nextCr[tbl]) ? nextCr[tbl] : [];
+    for (const nr of nArr) {
+      if (nr && typeof nr === 'object' && nr.id) {
+        const rid = String(nr.id).trim();
+        if (preByTbl[tbl].has(rid)) m.set(rid, nr);
+      }
+    }
+    overlay[tbl] = m;
+  }
+
+  for (const tbl of tables) {
+    const nArr = Array.isArray(nextCr[tbl]) ? nextCr[tbl] : [];
+    const pm = preByTbl[tbl];
+    for (const rec of nArr) {
+      if (!rec || typeof rec !== 'object' || !rec.id || rec.voided || Number(rec.voided) === 1) continue;
+      const rid = String(rec.id).trim();
+      const orig = pm.has(rid) ? pm.get(rid) : null;
+      const conflict = await checkSameNameRecordConflict(db, tbl, rec, { overlayByTable: overlay, origOverride: orig });
+      if (conflict) return conflict;
+      overlay[tbl].set(rid, rec);
+    }
+  }
+  return null;
 }
 
 function hydrateRowJson(row) {
@@ -2138,7 +2483,8 @@ export async function handleRecordsPost(request, env, session, body) {
     }
     if (cols.has('company')) {
       const exRow = await env.DB.prepare(`SELECT company FROM ${canonTable} WHERE id = ?1`).bind(String(record.id).trim()).first();
-      if (exRow && exRow.company && !canAccessCompany(session, exRow.company)) {
+      const exCo = exRow ? String(exRow.company || '').trim() : '';
+      if (exRow && ((isBuScopedTable && !exCo) || (exCo && !canAccessCompany(session, exCo)))) {
         return jsonResponse({ ok: false, error: 'Row-level security: cannot overwrite another entity record.' }, 403);
       }
     }
@@ -2146,6 +2492,10 @@ export async function handleRecordsPost(request, env, session, body) {
     return jsonResponse({ ok: false, error: 'Row-level security: unauthorized entity write.' }, 403);
   }
 
+  if (canonTable === 'employments' || canonTable === 'freelance_entries' || canonTable === 'staff_members') {
+    const sameNameConflict = await checkSameNameRecordConflict(env.DB, canonTable, record);
+    if (sameNameConflict) return jsonResponse(sameNameConflict, 409);
+  }
   const res = await upsertTableRecord(env.DB, canonTable, record);
   if (!res.ok) return jsonResponse({ ok: false, error: res.error }, res.status || 400);
   return jsonResponse({ ok: true, edge: true, table: res.table, id: res.id });
@@ -3057,7 +3407,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
           const recCo = String(rec.company || '').trim();
           const prevCo = String((prevEntry && prevEntry.row && prevEntry.row.company) || '').trim();
           if ((recCo && !canAccessCompany(session, recCo)) || (prevCo && !canAccessCompany(session, prevCo))) continue;
-          if (!isUniversal && !recCo && !prevCo) continue;
+          if (!isUniversal && (!recCo || (prevEntry && !prevCo))) continue;
         }
         if (!dirtyByTable.has(canonTable)) dirtyByTable.set(canonTable, []);
         dirtyByTable.get(canonTable).push(rec);
@@ -3095,8 +3445,9 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
           const exRows = await db.prepare(`SELECT id, company FROM ${canonTable} WHERE id IN (${ph})`).bind(...slice).all();
           const foundMap = new Map((exRows.results || []).map(x => [String(x.id), String(x.company || '').trim()]));
           for (const cid of slice) {
+            const hasRow = foundMap.has(cid);
             const exCo = foundMap.get(cid) || '';
-            if (exCo && !canAccessCompany(session, exCo)) blockedIds.add(cid);
+            if ((hasRow && !isUniversal && !exCo) || (exCo && !canAccessCompany(session, exCo))) blockedIds.add(cid);
           }
         }
       }
@@ -3614,6 +3965,31 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
       for (const pr of pList) {
         if (pr && pr.id) pMap.set(String(pr.id).trim(), pr);
       }
+      const d1CoById = new Map();
+      if (db && ALLOWED_TABLES.has(canonTable)) {
+        const probeIds = [];
+        for (const ir of iList) {
+          if (!ir || typeof ir !== 'object' || !ir.id) continue;
+          const rid = String(ir.id).trim();
+          if (!rid || pMap.has(rid)) continue;
+          const irCo = String(ir.company || '').trim();
+          if ((!isUniversal && !irCo) || (irCo && !canAccessCompany(session, irCo))) continue;
+          probeIds.push(rid);
+        }
+        if (probeIds.length) {
+          const cols = await getTableColumns(db, canonTable);
+          if (cols.has('company')) {
+            for (let i = 0; i < probeIds.length; i += 80) {
+              const slice = probeIds.slice(i, i + 80);
+              const ph = slice.map((_, idx) => `?${idx + 1}`).join(',');
+              const exRes = await db.prepare(`SELECT id, company FROM ${canonTable} WHERE id IN (${ph})`).bind(...slice).all();
+              for (const xr of (exRes.results || [])) {
+                d1CoById.set(String(xr.id), String(xr.company || '').trim());
+              }
+            }
+          }
+        }
+      }
       const outList = [];
       const keptIds = new Set();
       for (const ir of iList) {
@@ -3623,7 +3999,7 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
         if (pr) {
           const prCo = String(pr.company || '').trim();
           const irCo = String(ir.company || '').trim();
-          if ((prCo && !canAccessCompany(session, prCo)) || (irCo && !canAccessCompany(session, irCo))) {
+          if ((prCo && !canAccessCompany(session, prCo)) || (irCo && !canAccessCompany(session, irCo)) || (!isUniversal && (!prCo || !irCo))) {
             outList.push(pr);
             keptIds.add(rid);
             continue;
@@ -3632,6 +4008,12 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
           const irCo = String(ir.company || '').trim();
           if ((!isUniversal && !irCo) || (irCo && !canAccessCompany(session, irCo))) {
             continue;
+          }
+          if (d1CoById.has(rid)) {
+            const exCo = d1CoById.get(rid);
+            if ((!isUniversal && !exCo) || (exCo && !canAccessCompany(session, exCo))) {
+              continue;
+            }
           }
         }
         outList.push(ir);
@@ -4276,6 +4658,21 @@ export async function handleSync(request, env, session, body, _ctx) {
     }
     const incomingDoc = body.patch[pKey] || {};
     delete incomingDoc._scopedForSession;
+    if (pKey === 'mfg_web_store') {
+      const rawVer = incomingDoc && incomingDoc.minShellVer !== undefined && incomingDoc.minShellVer !== null
+        ? String(incomingDoc.minShellVer).trim()
+        : '';
+      const minSyncVer = effectiveMinSyncShellVer();
+      if (!SHELL_VER_RE.test(rawVer) || compareShellVer(rawVer, minSyncVer) < 0) {
+        return jsonResponse({
+          ok: false,
+          code: 'shell_outdated',
+          minSyncShellVer: minSyncVer,
+          receivedShellVer: rawVer,
+          error: `App update required (v${minSyncVer}+) before syncing.`
+        }, 426);
+      }
+    }
     const expectedTs = String(body.ifMatchUpdatedAt || '');
     // Old seed ids as the browser sent them, before the RLS merge adds stored rows (counted once the write lands).
     const legacyCandidates = pKey === 'mfg_web_store' ? collectLegacyCandidates(incomingDoc) : null;
@@ -4320,6 +4717,10 @@ export async function handleSync(request, env, session, body, _ctx) {
     if (pKey === 'mfg_web_store') {
       stripServerOwnedCustomRows(incomingDoc, prevDoc);
       holdMinShellVer(incomingDoc, prevDoc);
+      const sameNameConflict = await checkSameNameSyncPatchConflict(env.DB, incomingDoc, prevDoc);
+      if (sameNameConflict) {
+        return jsonResponse(sameNameConflict, 409);
+      }
     }
     let newTs = String(incomingDoc.updatedAt || new Date().toISOString());
     if (newTs === currentTs) {

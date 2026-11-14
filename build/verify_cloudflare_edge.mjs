@@ -6,6 +6,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MIN_SYNC_SHELL_VER } from '../functions/_lib/d1_store.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 8788 + Math.floor(Math.random() * 40);
@@ -294,7 +295,7 @@ async function main() {
       op: 'patch',
       doc: 'mfg_web_store',
       ifMatchUpdatedAt: '1999-01-01T00:00:00.000Z',
-      patch: { mfg_web_store: { updatedAt: new Date().toISOString() } }
+      patch: { mfg_web_store: { minShellVer: MIN_SYNC_SHELL_VER, updatedAt: new Date().toISOString() } }
     }, { 'X-ISABI-Session': ownerToken });
     if (syncGet.status === 200 && Array.isArray(mfgStore.users) && mfgStore.users.length >= 16 && syncConflict.status === 200 && syncConflict.json?.conflict === true) {
       pass('edge-07-sync-cas-and-mfg-store', `mfg_web_store users=${mfgStore.users.length}, stale CAS conflict=true`);
@@ -570,7 +571,7 @@ async function main() {
       doc: 'mfg_web_store',
       ifMatchUpdatedAt: String(baseDoc.updatedAt || ''),
       awaitMirror: true,
-      patch: { mfg_web_store: docStep1 }
+      patch: { mfg_web_store: Object.assign({}, docStep1, { minShellVer: MIN_SYNC_SHELL_VER }) }
     }, { 'X-ISABI-Session': ownerToken });
 
     // Step 2: Modify ONLY index #0 (outside old `.slice(-80)` window!) WITHOUT bumping `rev` or `updated_at`
@@ -583,7 +584,7 @@ async function main() {
       doc: 'mfg_web_store',
       ifMatchUpdatedAt: String(syncStep1.json?.updatedAt || ''),
       awaitMirror: true,
-      patch: { mfg_web_store: docStep2 }
+      patch: { mfg_web_store: Object.assign({}, docStep2, { minShellVer: MIN_SYNC_SHELL_VER }) }
     }, { 'X-ISABI-Session': ownerToken });
     const checkExpAfterEdit = await httpReq('GET', '/app/api/records?table=expenses&company=WTC&limit=400', null, { 'X-ISABI-Session': ownerToken });
     const row0InD1 = (checkExpAfterEdit.json?.rows || []).find(r => r.id === 'exp-dirty-diff-0');
@@ -608,7 +609,7 @@ async function main() {
       doc: 'mfg_web_store',
       ifMatchUpdatedAt: String(syncStep2.json?.updatedAt || ''),
       awaitMirror: true,
-      patch: { mfg_web_store: docTamper }
+      patch: { mfg_web_store: Object.assign({}, docTamper, { minShellVer: MIN_SYNC_SHELL_VER }) }
     }, { 'X-ISABI-Session': entryToken });
     const checkBbcUntouched = await httpReq('GET', '/app/api/records?table=sales_tickets&company=BBConstruction&limit=5', null, { 'X-ISABI-Session': ownerToken });
     const bbcStillIntact = (checkBbcUntouched.json?.rows || []).some(r => r.id === bbcId && r.company === 'BBConstruction' && Number(r.total) === Number(bbcRow.total));
@@ -627,7 +628,7 @@ async function main() {
       doc: 'mfg_web_store',
       ifMatchUpdatedAt: String(syncTamper.json?.updatedAt || ''),
       awaitMirror: true,
-      patch: { mfg_web_store: docStep4 }
+      patch: { mfg_web_store: Object.assign({}, docStep4, { minShellVer: MIN_SYNC_SHELL_VER }) }
     }, { 'X-ISABI-Session': ownerToken });
     const checkExpAfterVoid = await httpReq('GET', '/app/api/records?table=expenses&company=WTC&limit=400', null, { 'X-ISABI-Session': ownerToken });
     const row0Voided = (checkExpAfterVoid.json?.rows || []).find(r => r.id === 'exp-dirty-diff-0');
@@ -1110,7 +1111,7 @@ finally:
       doc: 'mfg_web_store',
       ifMatchUpdatedAt: String(curSync18.json?.docs?.mfg_web_store?.updatedAt || ''),
       awaitMirror: true,
-      patch: { mfg_web_store: doc18 }
+      patch: { mfg_web_store: Object.assign({}, doc18, { minShellVer: MIN_SYNC_SHELL_VER }) }
     }, { 'X-ISABI-Session': ownerToken });
     const verifyBulkExp = await httpReq('GET', '/app/api/records?table=expenses&company=WTC&limit=600', null, { 'X-ISABI-Session': ownerToken });
     const bulkRows = verifyBulkExp.json?.rows || [];
@@ -1356,7 +1357,7 @@ finally:
       doc: 'mfg_web_store',
       ifMatchUpdatedAt: String(curSync20.json?.docs?.mfg_web_store?.updatedAt || ''),
       awaitMirror: true,
-      patch: { mfg_web_store: doc20 }
+      patch: { mfg_web_store: Object.assign({}, doc20, { minShellVer: MIN_SYNC_SHELL_VER }) }
     }, { 'X-ISABI-Session': ownerToken });
 
     // 20a (Adversarial): WTC Entry seat reads `/app/api/sync` (`get_mfg` + CAS `conflict` + `get_control`)
@@ -1366,7 +1367,7 @@ finally:
       op: 'patch',
       doc: 'mfg_web_store',
       ifMatchUpdatedAt: '1999-01-01T00:00:00.000Z',
-      patch: { mfg_web_store: { updatedAt: new Date().toISOString(), customRecords: {} } }
+      patch: { mfg_web_store: { minShellVer: MIN_SYNC_SHELL_VER, updatedAt: new Date().toISOString(), customRecords: {} } }
     }, { 'X-ISABI-Session': entryToken });
     const conflictDoc20 = entryConflict20.json?.docs?.mfg_web_store || {};
     const entryControl20 = await httpReq('POST', '/app/api/sync', { op: 'get_control', doc: 'control_store' }, { 'X-ISABI-Session': entryToken });
@@ -1390,7 +1391,7 @@ finally:
       doc: 'mfg_web_store',
       ifMatchUpdatedAt: String(entryDoc20.updatedAt || ''),
       awaitMirror: true,
-      patch: { mfg_web_store: entryPushDoc20 }
+      patch: { mfg_web_store: Object.assign({}, entryPushDoc20, { minShellVer: MIN_SYNC_SHELL_VER }) }
     }, { 'X-ISABI-Session': entryToken });
 
     // 20b: Owner removes `sr-r3-wtc-del` + `cr-r3-del`, upgrades `MEM-2025-001` -> `MEM-2025-a1b2c3d4e5`, and updates `both2fa@bhfirms.com`
@@ -1425,7 +1426,7 @@ finally:
       doc: 'mfg_web_store',
       ifMatchUpdatedAt: String(ownerAfterEntry.json?.docs?.mfg_web_store?.updatedAt || ''),
       awaitMirror: true,
-      patch: { mfg_web_store: ownerDoc20b }
+      patch: { mfg_web_store: Object.assign({}, ownerDoc20b, { minShellVer: MIN_SYNC_SHELL_VER }) }
     }, { 'X-ISABI-Session': ownerToken });
 
     const arAfterDel = await httpReq('GET', '/app/api/alert_rules', null, { 'X-ISABI-Session': ownerToken });
@@ -1971,7 +1972,7 @@ finally:
       doc: 'mfg_web_store',
       ifMatchUpdatedAt: String(wtcSyncGet27b.json?.docs?.mfg_web_store?.updatedAt || ''),
       awaitMirror: true,
-      patch: { mfg_web_store: wtcPushDoc27 }
+      patch: { mfg_web_store: Object.assign({}, wtcPushDoc27, { minShellVer: MIN_SYNC_SHELL_VER }) }
     }, { 'X-ISABI-Session': wtcSupTok });
 
     const ownerArAfter27 = await httpReq('GET', '/app/api/alert_rules', null, { 'X-ISABI-Session': ownerToken });
@@ -2097,6 +2098,7 @@ finally:
       doc: 'mfg_web_store',
       patch: {
         mfg_web_store: Object.assign({}, baseMfgDoc28, {
+          minShellVer: MIN_SYNC_SHELL_VER,
           updatedAt: '2026-11-08T18:04:00.000Z',
           faceSettings: { authMode: 'both', enforce2FA: true, authModeV8Explicit: true, updated_at: '2026-11-08T18:04:00.000Z' }
         })
@@ -2117,6 +2119,7 @@ finally:
       doc: 'mfg_web_store',
       patch: {
         mfg_web_store: Object.assign({}, baseMfgDoc28, {
+          minShellVer: MIN_SYNC_SHELL_VER,
           updatedAt: '2026-11-08T18:04:05.000Z',
           faceSettings: { authMode: 'either', enforce2FA: false, authModeV8Explicit: true, updated_at: '2026-11-08T18:04:05.000Z' }
         })
@@ -3067,6 +3070,7 @@ finally:
       doc: 'mfg_web_store',
       patch: {
         mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
           stepUpAudits: [{
             id: 'sua-owner-31',
             ts: '2026-11-08T23:15:00Z',
@@ -3088,6 +3092,7 @@ finally:
       doc: 'mfg_web_store',
       patch: {
         mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
           // BBC entry seat attempts to wipe owner audit & forge another seat's audit
           stepUpAudits: [{
             id: 'sua-forged-31',
@@ -3180,7 +3185,7 @@ finally:
       doc: 'mfg_web_store',
       ifMatchUpdatedAt: String(e32Cur.json?.docs?.mfg_web_store?.updatedAt || ''),
       awaitMirror: true,
-      patch: { mfg_web_store: e32Doc }
+      patch: { mfg_web_store: Object.assign({}, e32Doc, { minShellVer: MIN_SYNC_SHELL_VER }) }
     }, e32Hdr);
     const e32UsersAfter = await httpReq('GET', '/app/api/users', null, e32Hdr);
     const e32MirrorRow = (e32UsersAfter.json?.users || []).find(u => u && u.email === e32Mirror.email);
@@ -3457,6 +3462,8 @@ finally:
     const ts34B = new Date(Date.now() + 91000).toISOString();
     doc34A.updatedAt = ts34A;
     doc34B.updatedAt = ts34B;
+    doc34A.minShellVer = MIN_SYNC_SHELL_VER;
+    doc34B.minShellVer = MIN_SYNC_SHELL_VER;
     doc34A.customRecords = Object.assign({}, doc34A.customRecords || {}, {
       expenses: [{ id: 'exp-cas-race-34-A', company: 'WTC', date: '2026-11-11', code: 'CAS-A', name: 'CAS Winner A', amount: 111, rev: 1, updated_at: ts34A }, ...(doc34A.customRecords?.expenses || [])]
     });
@@ -4122,6 +4129,57 @@ finally:
         owner: [sbOwnerPost.status, sbOwnerGet.status, sbOwnerGet.json],
         cf: [cbAfterSb.json, cbAfterSbClear.json],
         clear: [sbClearPost.status, sbClearGet.json]
+      }));
+    }
+
+    // 41. Server-side < minSyncShellVer sync floor (426), same-name guard (409), and father_name persistence on Edge D1
+    const e41_426 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      patch: { mfg_web_store: { minShellVer: '19.6.345', updatedAt: '2026-11-14T09:00:00.000Z' } }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e41_sm1 = await httpReq('POST', '/app/api/records', {
+      table: 'staff_members',
+      record: { id: 'edge41-sm-1', name: 'Zz Edge Same Guard', father_name: 'Hassan', company: 'WTC', role: 'Driver', status: 'Active' }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e41_sm2 = await httpReq('POST', '/app/api/records', {
+      table: 'staff_members',
+      record: { id: 'edge41-sm-2', name: '  zz edge same  guard ', company: 'WTC', status: 'Active' }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e41_smRead = await httpReq('GET', '/app/api/records?table=staff_members&limit=5000', null, { 'X-ISABI-Session': ownerToken });
+    const e41_row = (e41_smRead.json?.rows || []).find(r => r && r.id === 'edge41-sm-1');
+    const e41_sync409 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: '2026-11-14T09:01:00.000Z',
+          customRecords: {
+            staff_members: [{ id: 'edge41-sm-3', name: 'Zz Edge Same Guard', company: 'WTC', status: 'Active' }]
+          }
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/records', {
+      table: 'staff_members',
+      record: { id: 'edge41-sm-1', name: 'Zz Edge Same Guard', company: 'WTC', status: 'Active', voided: true }
+    }, { 'X-ISABI-Session': ownerToken });
+    if (
+      e41_426.status === 426 && e41_426.json?.code === 'shell_outdated' &&
+      e41_sm1.status === 200 && e41_sm1.json?.ok === true &&
+      e41_sm2.status === 409 && e41_sm2.json?.code === 'same_name_conflict' &&
+      e41_row?.father_name === 'Hassan' &&
+      e41_sync409.status === 409 && e41_sync409.json?.code === 'same_name_conflict'
+    ) {
+      pass('edge-41-sync-min-shell-426-and-same-name-409', 'sync <minSyncShellVer=426 shell_outdated, records+sync duplicate=409 same_name_conflict, father_name saved in D1');
+    } else {
+      fail('edge-41-sync-min-shell-426-and-same-name-409', JSON.stringify({
+        s426: [e41_426.status, e41_426.json],
+        sm1: [e41_sm1.status, e41_sm1.json],
+        sm2: [e41_sm2.status, e41_sm2.json],
+        row: e41_row,
+        sync409: [e41_sync409.status, e41_sync409.json]
       }));
     }
   } finally {
