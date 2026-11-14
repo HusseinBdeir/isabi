@@ -3,12 +3,6 @@
   "branch": "wt/att-minute-math",
   "sha": "f1b657d751e402e3bb44b0d3c268a06de6d17d46"
  },
- "batch": {
-  "at": "2026-11-14T15:11:27Z",
-  "holder": "wt-att-minute-math",
-  "lockId": "3992b82c8ddb4f72a182bcb4bfa513b7",
-  "version": "19.6.354"
- },
  "gates": [
   "isabi-app: node build/verify_att_minute_math.mjs",
   "isabi: node build/verify_staff_rule_keys.mjs"
@@ -18,10 +12,13 @@
  "pc": "Theo",
  "queuedAt": "2026-11-14T15:10:47Z",
  "seenAt": "2026-11-14T15:10:47Z",
+ "shippedAt": "2026-11-14T15:30:17Z",
+ "shippedBy": "wt-att-minute-math",
+ "shippedVersion": "19.6.354",
  "site": {
   "branch": "wt/att-minute-math-edge",
   "sha": "2484fa535031b10a36ab1990077f76778aef75cd"
  },
- "state": "waiting",
+ "state": "shipped",
  "summary": "Attendance exact per-minute & 0.1h dual math engine, OT start threshold & effective-dated policy timelines"
 }
