@@ -8559,6 +8559,12 @@
     insurance: 'Insurance & Brokerage'
   };
 
+  const _isFiniteNum = v => {
+    if (v === null || v === undefined || v === '' || typeof v === 'boolean') return false;
+    return Number.isFinite(Number(v));
+  };
+  const _posFiniteInt = v => (_isFiniteNum(v) && Number(v) > 0 ? Math.trunc(Number(v)) : 0);
+
   function getActiveSourceBehindItems(u, indOverride) {
     u = u || activeUser();
     if (!u || !isOwner(u) || isDemoScopeActive() || isOfficialScopeActive(u)) return [];
@@ -8579,7 +8585,7 @@
     const indAllowed = !allowed.length || cat.some(c => (c.industry || 'Manufacturing') === ind && allowed.includes(String(c.name || '').toLowerCase()));
     return b.businesses.filter(x => {
       if (!x || typeof x !== 'object') return false;
-      if (Number(x.changed_rows || 0) <= 0) return false;
+      if (_posFiniteInt(x.changed_rows) <= 0) return false;
       const low = String(x.business || '').trim().toLowerCase();
       if (!low) return false;
       const co = byName.get(low) || null;
@@ -8594,18 +8600,42 @@
 
   function renderSourceBehindNoteHtml(items) {
     if (!Array.isArray(items) || !items.length) return '';
+    const cat = getCompanyCatalog();
+    const scopeKey = String(STATE.company || '');
+    const scopeCo = scopeKey.startsWith('industry:') ? null : (cat.find(c => c.key === scopeKey) || null);
+    const scopeNameLow = scopeCo ? String(scopeCo.name || '').trim().toLowerCase() : '';
+    const cutRaw = String((STATE.sourceBehind && STATE.sourceBehind.cutoff) || '').slice(0, 10);
+    const cutDay = /^\d{4}-\d{2}-\d{2}$/.test(cutRaw) ? cutRaw : '';
+    const leadHtml = cutDay
+      ? `<span class="cf-behind-lead"><span>Changed after last sync</span> <span class="cf-behind-cut cf-behind-num" data-no-i18n="1">(${esc(fmtDateDMY(cutDay))})</span><span data-no-i18n="1">:</span></span> `
+      : `<span class="cf-behind-lead"><span>Changed after last sync:</span></span> `;
     const segs = items.map(x => {
+      const ch = _posFiniteInt(x.changed_rows);
+      if (ch <= 0) return '';
+      const biz = String(x.business || '').trim();
+      const hideBiz = Boolean(scopeCo && items.length === 1 && biz.toLowerCase() === scopeNameLow);
+      const bizPrefix = (!hideBiz && biz) ? `<b data-no-i18n="1"><span class="cf-behind-co-name">${esc(biz)}</span><span class="cf-behind-colon">:</span></b> ` : '';
+      const ed = _posFiniteInt(x.edited_rows);
+      const ad = _posFiniteInt(x.added_rows);
+      const rm = _posFiniteInt(x.removed_rows);
+      const countParts = [];
+      if (ed > 0) countParts.push(`<b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(ed))}</b> <span>${ed === 1 ? 'row edited' : 'rows edited'}</span>`);
+      if (ad > 0) countParts.push(`<b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(ad))}</b> <span>${ad === 1 ? 'row added' : 'rows added'}</span>`);
+      if (rm > 0) countParts.push(`<b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(rm))}</b> <span>${rm === 1 ? 'row removed' : 'rows removed'}</span>`);
+      if (!countParts.length) countParts.push(`<b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(ch))}</b> <span>${ch === 1 ? 'row changed' : 'rows changed'}</span>`);
       const dates = (Array.isArray(x.changed_dates) ? x.changed_dates : []).map(d => String(d || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d));
       const shown = dates.slice(0, 3);
-      const extra = Math.max(0, Number(x.changed_date_count || dates.length) - shown.length);
+      const totalDateCount = _posFiniteInt(x.changed_date_count) || dates.length;
+      const extra = Math.max(0, totalDateCount - shown.length);
       const labels = (Array.isArray(x.labels) ? x.labels : []).map(s => String(s || '').trim()).filter(Boolean).slice(0, 3);
       const daysHtml = shown.length
-        ? `, <span>Days:</span> <span class="cf-behind-days">${shown.map(renderBehindDayPill).join('')}${extra > 0 ? `<b data-no-i18n="1">(+${extra})</b>` : ''}</span>`
+        ? ` <span class="cf-behind-days">${shown.map(renderBehindDayPill).join(' ')}${extra > 0 ? ` <span class="cf-behind-more"><b class="cf-behind-num" data-no-i18n="1">+${extra}</b> <span>more</span></span>` : ''}</span>`
         : '';
-      return `<span class="cf-behind-co"><b data-no-i18n="1">${esc(x.business || '')}</b> <span>Rows Changed:</span> <b data-no-i18n="1">${esc(fmtNum(Number(x.changed_rows || 0)))}</b>${daysHtml}${labels.length ? `, <span>Items:</span> <span data-no-i18n="1">${esc(labels.join(', '))}</span>` : ''}</span>`;
-    });
-    const cutDay = String((STATE.sourceBehind && STATE.sourceBehind.cutoff) || '').slice(0, 10);
-    return `<div class="cf-behind-note ind-source-behind-note" id="indSourceBehindNote" role="status"><span class="badge badge-warn cf-behind-badge"><span>Source Workbook Edited Since Last Update</span></span> <span class="cf-behind-items">${segs.join('<span class="cf-behind-sep" aria-hidden="true"> · </span>')}</span> <span class="cf-behind-tail">${cutDay ? `<span>Workbooks Updated To</span> <b data-no-i18n="1">${esc(fmtDateDMY(cutDay))}</b><span class="cf-behind-sep" aria-hidden="true"> · </span>` : ''}<span>Run a workbook update to refresh ISABI.</span></span></div>`;
+      const labelsHtml = labels.length ? ` <span class="cf-behind-party" data-no-i18n="1">(${esc(labels.join(', '))})</span>` : '';
+      return `<span class="cf-behind-co">${bizPrefix}${countParts.join('<span data-no-i18n="1">, </span>')}${daysHtml}${labelsHtml}</span>`;
+    }).filter(Boolean);
+    if (!segs.length) return '';
+    return `<div class="cf-behind-note ind-source-behind-note" id="indSourceBehindNote" role="status"><span class="badge badge-warn cf-behind-badge"><span>Edited in Workbook</span></span> <span class="cf-behind-items">${leadHtml}${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}</span> <span class="cf-behind-tail"><span>Not yet in ISABI</span></span></div>`;
   }
 
   function getActiveCashflowBehindItems(u) {
@@ -8615,10 +8645,10 @@
     const b = STATE.cashflowBehind;
     if (!b || b.status !== 'ok' || !Array.isArray(b.companies)) return [];
     const curCoreHash = String((SEED_MANIFEST && SEED_MANIFEST.coreHash) || '').trim();
-    if (curCoreHash && String(b.core_hash || '').trim() !== curCoreHash) return [];
+    if (!curCoreHash || String(b.core_hash || '').trim() !== curCoreHash) return [];
     const cutObj = getWorkbookUpdateCutoff();
     const seedCut = cutObj ? String(cutObj.cutoff || '').slice(0, 10) : '';
-    if (seedCut && String(b.cutoff || '').slice(0, 10) !== seedCut) return [];
+    if (!seedCut || String(b.cutoff || '').slice(0, 10) !== seedCut) return [];
     const coScope = String(STATE.company || '').toLowerCase();
     let wantKeys = [];
     if (coScope === 'wtc') wantKeys = ['wtc'];
@@ -8632,42 +8662,105 @@
       const cnameLow = String(c.company || ck).toLowerCase();
       if (!wantKeys.includes(ck)) return false;
       if (allowed.length && !allowed.includes(cnameLow)) return false;
-      if (Number(c.edited_day_count || 0) <= 0) return false;
-      if (seedCut && String(c.cutoff || '').slice(0, 10) !== seedCut) return false;
+      if (_posFiniteInt(c.edited_day_count) <= 0) return false;
+      if (c.edited_net_usd != null && !_isFiniteNum(c.edited_net_usd)) return false;
+      if (c.edited_net_lbp != null && !_isFiniteNum(c.edited_net_lbp)) return false;
+      if (String(c.cutoff || '').slice(0, 10) !== seedCut) return false;
       return true;
     });
   }
 
   function renderCashflowBehindNoteHtml(items) {
     if (!Array.isArray(items) || !items.length) return '';
-    const segs = items.map(c => {
-      const daysArr = Array.isArray(c.edited_days) ? c.edited_days : [];
-      const totalDays = Number(c.edited_day_count || daysArr.length || 0);
-      const shownDays = daysArr.slice(0, 3).map(d => String((d && d.date) || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d));
-      const extraDays = Math.max(0, totalDays - shownDays.length);
-      const dayHtml = shownDays.length
-        ? `<span class="cf-behind-days">${shownDays.map(renderBehindDayPill).join('')}${extraDays > 0 ? `<b data-no-i18n="1">(+${extraDays})</b>` : ''}</span>`
-        : `<b data-no-i18n="1">${esc(String(totalDays))}</b>`;
-      const seenP = new Set();
-      const parties = [];
-      for (let i = 0; i < daysArr.length && parties.length < 4; i++) {
-        const plist = daysArr[i] && Array.isArray(daysArr[i].parties) ? daysArr[i].parties : [];
-        for (let j = 0; j < plist.length && parties.length < 4; j++) {
-          const pn = String(plist[j] || '').trim();
-          if (pn && !seenP.has(pn.toLowerCase())) {
-            seenP.add(pn.toLowerCase());
-            parties.push(pn);
+    const validItems = items.filter(c => {
+      if (!c || typeof c !== 'object') return false;
+      if (_posFiniteInt(c.edited_day_count) <= 0) return false;
+      if (c.edited_net_usd != null && !_isFiniteNum(c.edited_net_usd)) return false;
+      if (c.edited_net_lbp != null && !_isFiniteNum(c.edited_net_lbp)) return false;
+      return true;
+    });
+    if (!validItems.length) return '';
+    const b = STATE.cashflowBehind || {};
+    const cutRaw = String(b.cutoff || (validItems[0] && validItems[0].cutoff) || '').slice(0, 10);
+    const cutDay = /^\d{4}-\d{2}-\d{2}$/.test(cutRaw) ? cutRaw : '';
+    const leadHtml = cutDay
+      ? `<span class="cf-behind-lead"><span>Changed after last sync</span> <span class="cf-behind-cut cf-behind-num" data-no-i18n="1">(${esc(fmtDateDMY(cutDay))})</span><span data-no-i18n="1">:</span></span> `
+      : `<span class="cf-behind-lead"><span>Changed after last sync:</span></span> `;
+    const coScope = String(STATE.company || '').toLowerCase();
+    const hideSingleCo = (coScope === 'wtc' || coScope === 'bbconstruction') && validItems.length === 1;
+    const finiteOr = (v, fb = 0) => (_isFiniteNum(v) ? Number(v) : fb);
+    const segs = validItems.map(c => {
+      const cName = String(c.company || c.company_key || '').trim();
+      const coPrefix = (!hideSingleCo && cName) ? `<b data-no-i18n="1"><span class="cf-behind-co-name">${esc(cName)}</span><span class="cf-behind-colon">:</span></b> ` : '';
+      const validEntries = (Array.isArray(c.edited_days) ? c.edited_days : []).filter(d => d && /^\d{4}-\d{2}-\d{2}$/.test(String(d.date || '').slice(0, 10)));
+      const totalDays = _posFiniteInt(c.edited_day_count) || validEntries.length;
+      const shownEntries = validEntries.slice(0, 3);
+      const extraDays = Math.max(0, totalDays - shownEntries.length);
+      const netU = finiteOr(c.edited_net_usd, 0);
+      const netL = Math.round(finiteOr(c.edited_net_lbp, 0));
+      const usdCls = netU < -0.005 ? 'crit' : (netU > 0.005 ? 'good' : '');
+      const daySegs = shownEntries.map(d => {
+        const dayIso = String(d.date).slice(0, 10);
+        const hasDayNet = _isFiniteNum(d.diff_net_usd);
+        const dNetU = hasDayNet ? Number(d.diff_net_usd) : (validEntries.length === 1 ? netU : 0);
+        const hasDayLbp = _isFiniteNum(d.diff_net_lbp);
+        const dNetL = Math.round(hasDayLbp ? Number(d.diff_net_lbp) : (validEntries.length === 1 ? netL : 0));
+        const dInU = finiteOr(d.diff_in_usd, 0);
+        const dOutU = finiteOr(d.diff_out_usd, 0);
+        let deltaHtml = '';
+        if (Math.abs(dNetU) > 0.005) {
+          deltaHtml = `<b class="cf-behind-num ${dNetU < -0.005 ? 'crit' : 'good'}" data-no-i18n="1">${esc(fmtSignedUSD(dNetU, 2))}</b>${Math.abs(dNetL) > 1 ? ` <b class="cf-behind-num ${dNetL < 0 ? 'crit' : 'good'}" data-no-i18n="1">(${esc(fmtSignedLBP(dNetL))})</b>` : ''}`;
+        } else if (Math.abs(dNetL) > 1) {
+          deltaHtml = `<b class="cf-behind-num ${dNetL < 0 ? 'crit' : 'good'}" data-no-i18n="1">${esc(fmtSignedLBP(dNetL))}</b>`;
+        } else if (Math.abs(dInU) > 0.005 || Math.abs(dOutU) > 0.005) {
+          deltaHtml = `<span>In</span> <b class="cf-behind-num" data-no-i18n="1">${esc(fmtSignedUSD(dInU, 2))}</b> <span data-no-i18n="1">/</span> <span>Out</span> <b class="cf-behind-num" data-no-i18n="1">${esc(fmtSignedUSD(dOutU, 2))}</b>`;
+        } else {
+          deltaHtml = `<span class="cf-behind-num" data-no-i18n="1">$0.00</span>`;
+        }
+        const rawP = Array.isArray(d.parties) ? d.parties : [];
+        const seenP = new Set();
+        const pClean = [];
+        for (let j = 0; j < rawP.length; j++) {
+          const pn = String(rawP[j] || '').trim();
+          const pLow = pn.toLowerCase();
+          if (pn && pLow !== 'unattributed day adjustment' && !seenP.has(pLow)) {
+            seenP.add(pLow);
+            pClean.push(pn);
           }
         }
-      }
-      const netU = Number(c.edited_net_usd || 0);
-      const netL = Math.round(Number(c.edited_net_lbp || 0));
-      const usdCls = netU < -0.005 ? 'crit' : (netU > 0.005 ? 'good' : '');
-      return `<span class="cf-behind-co"><b data-no-i18n="1">${esc(c.company || c.company_key || '')}</b> <span>Days:</span> ${dayHtml}, <span>Net Difference:</span> <b class="${usdCls}" data-no-i18n="1">${esc(fmtSignedUSD(netU, 2))}</b>${Math.abs(netL) > 1 ? ` <b data-no-i18n="1">(${esc(fmtSignedLBP(netL))})</b>` : ''}${parties.length ? `, <span>Parties:</span> <span data-no-i18n="1">${esc(parties.join(', '))}</span>` : ''}</span>`;
+        const pShown = pClean.slice(0, 2);
+        const pExtra = pClean.length - pShown.length;
+        const partyHtml = pShown.length
+          ? ` <span class="cf-behind-party" data-no-i18n="1">(${esc(pShown.join(', '))}${pExtra > 0 ? ` <span class="cf-behind-num">+${pExtra}</span>` : ''})</span>`
+          : '';
+        return `<span class="cf-behind-day-item">${renderBehindDayPill(dayIso)} ${deltaHtml}${partyHtml}</span>`;
+      });
+      const bodyDeltaHtml = Math.abs(netU) > 0.005
+        ? `<b class="cf-behind-num ${usdCls}" data-no-i18n="1">${esc(fmtSignedUSD(netU, 2))}</b>${Math.abs(netL) > 1 ? ` <b class="cf-behind-num ${netL < 0 ? 'crit' : 'good'}" data-no-i18n="1">(${esc(fmtSignedLBP(netL))})</b>` : ''}`
+        : (Math.abs(netL) > 1
+          ? `<b class="cf-behind-num ${netL < 0 ? 'crit' : 'good'}" data-no-i18n="1">${esc(fmtSignedLBP(netL))}</b>`
+          : `<b class="cf-behind-num" data-no-i18n="1">$0.00</b>`);
+      const bodyHtml = daySegs.length
+        ? `${daySegs.join('<span class="cf-behind-day-sep" aria-hidden="true" data-no-i18n="1">, </span>')}${extraDays > 0 ? ` <span class="cf-behind-more"><b class="cf-behind-num" data-no-i18n="1">+${extraDays}</b> <span>more</span></span>` : ''}`
+        : `<b class="cf-behind-num" data-no-i18n="1">${esc(String(totalDays))}</b> <span>${totalDays === 1 ? 'day' : 'days'}</span> ${bodyDeltaHtml}`;
+      return `<span class="cf-behind-co">${coPrefix}${bodyHtml}</span>`;
     });
-    const b = STATE.cashflowBehind || {};
-    const cutDay = String(b.cutoff || (items[0] && items[0].cutoff) || '').slice(0, 10);
-    return `<div class="cf-behind-note" id="cfWorkbookBehindNote" role="status"><span class="badge badge-warn cf-behind-badge"><span>Workbook Cash Edited Since Last Update</span></span> <span class="cf-behind-items">${segs.join('<span class="cf-behind-sep" aria-hidden="true"> · </span>')}</span> <span class="cf-behind-tail">${cutDay ? `<span>Workbooks Updated To</span> <b data-no-i18n="1">${esc(fmtDateDMY(cutDay))}</b><span class="cf-behind-sep" aria-hidden="true"> · </span>` : ''}<span>Run a workbook update to refresh ISABI.</span></span></div>`;
+    const totalNetU = validItems.reduce((s, c) => s + finiteOr(c.edited_net_usd, 0), 0);
+    const totalNetL = Math.round(validItems.reduce((s, c) => s + finiteOr(c.edited_net_lbp, 0), 0));
+    const multiCo = validItems.length > 1;
+    let tailNetHtml = '';
+    if (totalNetU < -0.005) {
+      tailNetHtml = `<span>${multiCo ? 'Combined workbook till is lower than ISABI by' : 'Workbook till is lower than ISABI by'}</span> <b class="cf-behind-num crit" data-no-i18n="1">${esc(fmtUSD(Math.abs(totalNetU), 2))}</b>${Math.abs(totalNetL) > 1 ? ` <b class="cf-behind-num ${totalNetL < 0 ? 'crit' : 'good'}" data-no-i18n="1">(${esc(fmtSignedLBP(totalNetL))})</b>` : ''}`;
+    } else if (totalNetU > 0.005) {
+      tailNetHtml = `<span>${multiCo ? 'Combined workbook till is higher than ISABI by' : 'Workbook till is higher than ISABI by'}</span> <b class="cf-behind-num good" data-no-i18n="1">${esc(fmtUSD(totalNetU, 2))}</b>${Math.abs(totalNetL) > 1 ? ` <b class="cf-behind-num ${totalNetL < 0 ? 'crit' : 'good'}" data-no-i18n="1">(${esc(fmtSignedLBP(totalNetL))})</b>` : ''}`;
+    } else if (totalNetL < -1) {
+      tailNetHtml = `<span>${multiCo ? 'Combined workbook till is lower than ISABI by' : 'Workbook till is lower than ISABI by'}</span> <b class="cf-behind-num crit" data-no-i18n="1">${esc(fmtLBP(Math.abs(totalNetL)))}</b>`;
+    } else if (totalNetL > 1) {
+      tailNetHtml = `<span>${multiCo ? 'Combined workbook till is higher than ISABI by' : 'Workbook till is higher than ISABI by'}</span> <b class="cf-behind-num good" data-no-i18n="1">${esc(fmtLBP(totalNetL))}</b>`;
+    } else {
+      tailNetHtml = `<span>${multiCo ? 'Combined workbook till matches ISABI net' : 'Workbook till matches ISABI net'}</span> <span class="cf-behind-num" data-no-i18n="1">($0.00)</span>`;
+    }
+    return `<div class="cf-behind-note" id="cfWorkbookBehindNote" role="status"><span class="badge badge-warn cf-behind-badge"><span>Edited in Workbook</span></span> <span class="cf-behind-items">${leadHtml}${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}</span> <span class="cf-behind-tail">${tailNetHtml}<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span><span>Not yet in ISABI</span></span></div>`;
   }
 
   function tableToCsv(table) {
