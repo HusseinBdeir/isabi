@@ -1686,6 +1686,34 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
 [data-theme="dark"] .geo-modal-map-canvas {
   background: #0F172A;
 }
+.insp-site-map-wrap {
+  min-width: 0;
+}
+.geo-modal-map-hdr-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.insp-site-km-readout {
+  font-weight: 700;
+  color: var(--accent, #1D4ED8);
+}
+[data-theme="dark"] .insp-site-km-readout {
+  color: #93C5FD;
+}
+.insp-site-map-canvas {
+  height: 228px;
+}
+@media (max-width: 768px) {
+  .insp-site-map-canvas {
+    height: 192px;
+  }
+  .insp-modify-drawer .geo-modal-map-bar {
+    padding: 7px 9px;
+  }
+}
 
 /* Map Region Search Engine Input & Floating Boundary Menu */
 .geo-place-search-wrap {

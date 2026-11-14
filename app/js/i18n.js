@@ -11525,7 +11525,12 @@
       "Future Advance": "سلفة مسبقة",
       "Salary Pending": "الراتب قيد التحديد",
       "Advance (Salary Pending)": "سلفة (الراتب قيد التحديد)",
-      "Advance": "سلفة"
+      "Advance": "سلفة",
+      "Pin Location": "تثبيت الموقع",
+      "Map Pin": "دبوس الخريطة",
+      "Pin Cleared": "تم مسح الدبوس",
+      "Enter both GPS Latitude and GPS Longitude, or click Clear Pin.": "أدخل خط العرض وخط الطول معاً، أو اضغط مسح الدبوس.",
+      "GPS coordinates are outside Lebanon. Check the pinned location or map link.": "إحداثيات GPS خارج لبنان. تحقق من الموقع المثبت أو رابط الخريطة."
     },
     fr: {
       "Not split by borrower": "Non réparti par emprunteur",
@@ -23032,7 +23037,12 @@
       "Future Advance": "Avance Anticipée",
       "Salary Pending": "Salaire en Attente",
       "Advance (Salary Pending)": "Avance (Salaire en Attente)",
-      "Advance": "Avance"
+      "Advance": "Avance",
+      "Pin Location": "Placer le repère",
+      "Map Pin": "Repère sur la carte",
+      "Pin Cleared": "Repère effacé",
+      "Enter both GPS Latitude and GPS Longitude, or click Clear Pin.": "Saisissez la latitude et la longitude GPS, ou cliquez sur Effacer le Repère.",
+      "GPS coordinates are outside Lebanon. Check the pinned location or map link.": "Les coordonnées GPS sont hors du Liban. Vérifiez l’emplacement ou le lien de carte."
     }
   };
 

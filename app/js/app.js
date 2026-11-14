@@ -105487,7 +105487,8 @@
     }
     if (key === 'sites') {
       const isMfgSiteInsp = getActiveIndustry() === 'Manufacturing' && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing');
-      const gpsTxt = row.latitude != null ? `${row.latitude}, ${row.longitude}` : 'Pending coordinates';
+      const hasRowGps = row.latitude != null && row.latitude !== '' && row.longitude != null && row.longitude !== '' && Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude));
+      const gpsTxt = hasRowGps ? `${row.latitude}, ${row.longitude}` : 'Pending coordinates';
       if (!isMfgSiteInsp) {
         const regTxt = row.region || 'Lebanon';
         const regPart = regTxt && norm(regTxt) !== norm(row.name) ? ` (${regTxt})` : (row.region ? ` (Zone: ${row.region})` : '');
@@ -109406,7 +109407,6 @@
       inspFreqIdx.warehouseLoc
     );
 
-    const isInspWordOnly = canModifyTextOnly();
     const renderModFieldHtml = (fDef) => {
       const f = fDef.key;
       const rawCur = typeof fDef.getVal === 'function'
@@ -109507,8 +109507,14 @@
       tableTitle: INSPECT_LABELS[key] || key
     };
     const bodyEl = $('inspectorBody');
+    if (window.MFG_GEO && typeof window.MFG_GEO.cleanupInspectorGeoMap === 'function') {
+      window.MFG_GEO.cleanupInspectorGeoMap();
+    }
     bodyEl._activeTableContext = tc;
     bodyEl._preModifySnap = null;
+    const isInspWordOnly = canModifyTextOnly();
+    const hasInspSitePin = key === 'sites' && row.latitude != null && row.latitude !== '' && row.longitude != null && row.longitude !== '' && Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude));
+    const isMfgSiteDrawer = key === 'sites' && getActiveIndustry() === 'Manufacturing' && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing');
     bodyEl.innerHTML = `
       <!-- Shared Searchable Datalists for Inspector Modification Drawer & Equipment Log -->
       <div hidden aria-hidden="true">
@@ -109560,6 +109566,7 @@
           ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">${ic('ruler')} Truck Size Windows (${eqWindows.length})</button>` : ''}
           ${!row.voided && canVoid() ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
           ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
+          ${key === 'sites' && !hasInspSitePin && canModifyRecord() && !isInspWordOnly ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPinSiteQuickBtn">${ic('pin')} Pin Location</button>` : ''}
           ${(key === 'sites' || key === 'regions' || ((key === 'sales_tickets' || key === 'raw_purchases') && row.site)) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspViewOnMapBtn">${ic('reg_sites')} View on Map</button>` : ''}
           <button type="button" class="pa-cmd-btn" data-insp-open-hub="${esc(key)}">${ic('tables')} Open ${esc(INSPECT_LABELS[key] || key)} Table</button>
           <button type="button" class="pa-cmd-btn" id="inspPrintBtn">${ic('printer')} Print Form</button>
@@ -109576,7 +109583,41 @@
           <span class="badge badge-brass">${isInspWordOnly ? 'WORDS ONLY · NUMBERS LOCKED TO SUPERVISOR' : 'MODIFY DATA PRIVILEGE VERIFIED'}</span>
         </div>
         <div class="form-grid-3" style="margin-top:10px">
-          ${editSchema.map(renderModFieldHtml).join('')}
+          ${(key === 'sites' && !isInspWordOnly) ? `
+            <div class="form-field span-3 geo-link-paste-field" id="inspSiteMapLinkWrap">
+              <label for="insp_site_coord_paste">Paste Map or WhatsApp Link</label>
+              <div class="geo-link-paste-row">
+                <span class="geo-link-paste-ic" aria-hidden="true">${ic('pin')}</span>
+                <input type="text" id="insp_site_coord_paste" inputmode="url" spellcheck="false" enterkeyhint="done" placeholder="WhatsApp location, Google Maps link, Plus Code or coordinates" autocomplete="off">
+              </div>
+              <div class="geo-link-status" id="inspSiteMapLinkStatus" role="status" aria-live="polite" hidden></div>
+            </div>
+          ` : ''}
+          ${(() => {
+            if (key !== 'sites' || isInspWordOnly) return editSchema.map(renderModFieldHtml).join('');
+            const siteMapBoxHtml = `
+              <div class="geo-modal-map-wrap insp-site-map-wrap" id="inspSiteMapWrap">
+                <div class="geo-modal-map-bar">
+                  <span id="inspSiteMapPrompt"><b>Site Location:</b> Click on the map, drag the pin, or select a Region above to set or modify where this site is</span>
+                  <span class="geo-modal-map-hdr-actions">
+                    <span id="inspSiteKmReadout" class="insp-site-km-readout">${isMfgSiteDrawer ? 'Click map or select Region to estimate KM' : 'Click map or select Region'}</span>
+                    <button type="button" class="geo-mini-btn" id="inspClearSitePinBtn" hidden>Clear Pin</button>
+                  </span>
+                </div>
+                <div class="geo-modal-map-canvas insp-site-map-canvas" id="inspSiteMapCanvas"></div>
+              </div>
+            `;
+            let injectedMap = false;
+            const fieldsHtml = editSchema.map(fDef => {
+              const h = renderModFieldHtml(fDef);
+              if (fDef.key === 'longitude') {
+                injectedMap = true;
+                return h + siteMapBoxHtml;
+              }
+              return h;
+            }).join('');
+            return fieldsHtml + (injectedMap ? '' : siteMapBoxHtml);
+          })()}
         </div>
         <div class="insp-modify-foot">
           <div id="inspModLiveCalc" class="insp-mod-live-calc"></div>
@@ -110370,12 +110411,21 @@
         html = `<span>Item: <b>${esc(mCls.item)} (${esc(mCls.category)})</b></span><span>Type: <b>${esc(mType)}</b></span><span>Quantity: <b>${mLit > 0 ? '+' : ''}${fmtNum(mLit, dec)} ${esc(mUom)}</b></span><span>${mCls.isDiesel ? 'Tank Impact' : 'Stock Impact'}: <b>${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${esc(mUom)} (${mLit >= 0 ? '+ deducts' : '- adds'})</b></span>`;
       } else if (key === 'sites') {
         const isMfgSiteMod = getActiveIndustry() === 'Manufacturing' && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing');
+        const modLatRaw = getModVal('latitude');
+        const modLngRaw = getModVal('longitude');
+        const hasModGps = modLatRaw !== '' && modLngRaw !== '' && Number.isFinite(Number(modLatRaw)) && Number.isFinite(Number(modLngRaw));
+        const modLatEdited = $('insp_edit_latitude') && $('insp_edit_latitude').dataset.userEdited === '1';
+        const modLngEdited = $('insp_edit_longitude') && $('insp_edit_longitude').dataset.userEdited === '1';
+        const wasPinCleared = !hasModGps && hasInspSitePin && Boolean(modLatEdited || modLngEdited);
+        const gpsSummaryPart = `<span><span>GPS Pin</span>: ${hasModGps
+          ? `<b dir="auto" style="unicode-bidi:isolate" data-no-i18n="1">${esc(Number(modLatRaw).toFixed(5) + ', ' + Number(modLngRaw).toFixed(5))}</b>`
+          : (wasPinCleared ? '<b>Pin Cleared</b>' : '<b>Pending coordinates</b>')}</span>`;
         if (!isMfgSiteMod) {
           const regLblMod = modDrawer.querySelector('label[for="insp_edit_region"]');
           if (regLblMod) regLblMod.textContent = 'Region / Zone *';
           const mReg = getModVal('region') || row.region || 'Lebanon';
           const mCust = getModVal('customer') || row.customer || '';
-          html = `<span>Region: <b>${esc(mReg)}</b></span>${mCust ? `<span>Linked Customer: <b>${esc(mCust)}</b></span>` : ''}`;
+          html = `<span>Region: <b>${esc(mReg)}</b></span>${mCust ? `<span>Linked Customer: <b>${esc(mCust)}</b></span>` : ''}${gpsSummaryPart}`;
         } else {
           const isBundledMod = (getModVal('includes_transport') === 'Yes' || getModVal('includes_transport') === 'true' || (!getModVal('includes_transport') && isSupplierDeliveredSite(row)));
           const regLblMod = modDrawer.querySelector('label[for="insp_edit_region"]');
@@ -110385,7 +110435,7 @@
           const custRes = row && row.name ? resolveCustomersForSite(row.name, '', SEED_DATE, '') : null;
           const mSup = (supRes && supRes.activeSupplier) || row.supplier || '';
           const mCust = (custRes && custRes.activeCustomer) || row.customer || '';
-          html = `<span>Supply Basis: <b>${isBundledMod ? 'Mat + Trans Included (Split Unknown)' : 'Standard Site (Separate Haul)'}</b></span><span>Region: <b>${esc(mReg)}</b></span>${mSup ? `<span>Active Supplier: <b>${esc(mSup)}</b></span>` : ''}${mCust ? `<span>Active Customer: <b>${esc(mCust)}</b></span>` : ''}`;
+          html = `<span>Supply Basis: <b>${isBundledMod ? 'Mat + Trans Included (Split Unknown)' : 'Standard Site (Separate Haul)'}</b></span><span>Region: <b>${esc(mReg)}</b></span>${mSup ? `<span>Active Supplier: <b>${esc(mSup)}</b></span>` : ''}${mCust ? `<span>Active Customer: <b>${esc(mCust)}</b></span>` : ''}${gpsSummaryPart}`;
         }
       }
       if (modDrawer && isEffectiveSeriesTable(key, row)) {
@@ -110413,6 +110463,9 @@
       }
       modLiveCalcEl.innerHTML = html;
       modLiveCalcEl.hidden = !html;
+      if (html && window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+        window.MFG_I18N.translateDom(modLiveCalcEl);
+      }
     };
 
     const canUseInspModify = canModifyRecord() || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver());
@@ -110423,14 +110476,26 @@
       }
       modDrawer.hidden = false;
       syncModifyLiveSummary();
-      const targetInp = focusFieldKey ? $('insp_edit_' + focusFieldKey) : modDrawer.querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled])');
+      if (key === 'sites' && !isInspWordOnly && !window.__fastInspectorModifyTest && window.MFG_GEO && typeof window.MFG_GEO.wireInspectorSiteModifyMap === 'function') {
+        window.MFG_GEO.wireInspectorSiteModifyMap(modDrawer, row, SEED);
+      }
+      if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+        window.MFG_I18N.translateDom(modDrawer);
+      }
+      const targetInp = focusFieldKey === 'site_coord_paste'
+        ? $('insp_site_coord_paste')
+        : (focusFieldKey
+          ? $('insp_edit_' + focusFieldKey)
+          : ((key === 'sites' && !isInspWordOnly && !hasInspSitePin && $('insp_site_coord_paste'))
+            ? $('insp_site_coord_paste')
+            : modDrawer.querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled])')));
       if (targetInp) {
         setTimeout(() => {
           try {
             targetInp.scrollIntoView({ behavior: 'smooth', block: 'center' });
             window.__mfgSuppressAutoFocusMenu = true;
             targetInp.focus({ preventScroll: true });
-            if (targetInp.select && targetInp.tagName === 'INPUT' && targetInp.type !== 'date') targetInp.select();
+            if (targetInp.select && targetInp.tagName === 'INPUT' && targetInp.type !== 'date' && targetInp.id !== 'insp_site_coord_paste') targetInp.select();
           } catch (_) {
           } finally {
             setTimeout(() => { window.__mfgSuppressAutoFocusMenu = false; }, 80);
@@ -110440,6 +110505,11 @@
         modDrawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     };
+
+    const quickPinBtn = $('inspPinSiteQuickBtn');
+    if (quickPinBtn && modDrawer) {
+      quickPinBtn.addEventListener('click', () => openModifyDrawerAndFocus('site_coord_paste'));
+    }
 
     const setPriceBtn = $('inspSetInvoicePriceBtn');
     if (setPriceBtn) {
@@ -110452,21 +110522,41 @@
     if (opts && opts.focusModifyField && modDrawer && canUseInspModify) {
       openModifyDrawerAndFocus(opts.focusModifyField);
     }
+    const closeAndResetSiteModifyUi = () => {
+      if (key === 'sites' && modDrawer) {
+        modDrawer.querySelectorAll('[data-mod-field]').forEach(el => {
+          const initV = el.getAttribute('data-init-val');
+          if (initV !== null) el.value = initV;
+          el.dataset.userEdited = '';
+        });
+        const pasteBox = $('insp_site_coord_paste');
+        if (pasteBox) {
+          pasteBox.value = '';
+          if (typeof pasteBox._resetLinkState === 'function') pasteBox._resetLinkState();
+        }
+        if (window.MFG_GEO && typeof window.MFG_GEO.cleanupInspectorGeoMap === 'function') {
+          window.MFG_GEO.cleanupInspectorGeoMap();
+        }
+        syncModifyLiveSummary();
+      }
+      if (modDrawer) modDrawer.hidden = true;
+      if (bodyEl._preModifySnap) {
+        restoreScrollSnapshot(bodyEl, bodyEl._preModifySnap);
+        bodyEl._preModifySnap = null;
+      }
+    };
     if (modBtn && modDrawer) {
       modBtn.addEventListener('click', () => {
         if (modDrawer.hidden) {
           openModifyDrawerAndFocus('');
         } else {
-          modDrawer.hidden = true;
-          if (bodyEl._preModifySnap) {
-            restoreScrollSnapshot(bodyEl, bodyEl._preModifySnap);
-            bodyEl._preModifySnap = null;
-          }
+          closeAndResetSiteModifyUi();
         }
       });
     }
     if (modDrawer) {
-      modDrawer.querySelectorAll('input, select, textarea').forEach(el => {
+      modDrawer._closeAndReset = closeAndResetSiteModifyUi;
+      modDrawer.querySelectorAll('[data-mod-field]').forEach(el => {
         el.dataset.userEdited = '';
         const onFieldMod = () => {
           const initV = el.getAttribute('data-init-val');
@@ -110492,13 +110582,7 @@
 
     const cancelModBtn = $('inspCancelModifyBtn');
     if (cancelModBtn && modDrawer) {
-      cancelModBtn.addEventListener('click', () => {
-        modDrawer.hidden = true;
-        if (bodyEl._preModifySnap) {
-          restoreScrollSnapshot(bodyEl, bodyEl._preModifySnap);
-          bodyEl._preModifySnap = null;
-        }
-      });
+      cancelModBtn.addEventListener('click', closeAndResetSiteModifyUi);
     }
     const saveModBtn = $('inspSaveModifyBtn');
     if (saveModBtn && modDrawer) {
@@ -110648,22 +110732,32 @@
               pendingUpdates.includes_transport = candBundled;
               pendingUpdates.haulage_mode = candBundled ? 'supplier_delivered' : 'separate';
             }
+            const rawCandLat = candidate.latitude;
+            const rawCandLng = candidate.longitude;
+            const hasCandLat = rawCandLat !== null && rawCandLat !== undefined && String(rawCandLat).trim() !== '';
+            const hasCandLng = rawCandLng !== null && rawCandLng !== undefined && String(rawCandLng).trim() !== '';
+            const checkCoords = ('latitude' in pendingUpdates) || ('longitude' in pendingUpdates);
+            if (hasCandLat !== hasCandLng || (hasCandLat && (!Number.isFinite(Number(rawCandLat)) || !Number.isFinite(Number(rawCandLng))))) {
+              toast('Enter both GPS Latitude and GPS Longitude, or click Clear Pin.', 'err');
+              return;
+            }
+            if (checkCoords && hasCandLat && hasCandLng && window.MFG_GEO && typeof window.MFG_GEO.isPointInLebanon === 'function'
+              && !window.MFG_GEO.isPointInLebanon(Number(rawCandLat), Number(rawCandLng))) {
+              toast('GPS coordinates are outside Lebanon. Check the pinned location or map link.', 'err');
+              return;
+            }
             if (window.MFG_GEO && typeof window.MFG_GEO.validateSiteInsideRegion === 'function') {
-              const checkCoords = ('latitude' in pendingUpdates) || ('longitude' in pendingUpdates);
+              const passCoords = hasCandLat && hasCandLng && (checkCoords || 'region' in pendingUpdates);
               const geoCheck = window.MFG_GEO.validateSiteInsideRegion({
                 siteName: candidate.name,
                 regionName: candidate.region,
-                lat: checkCoords ? candidate.latitude : null,
-                lng: checkCoords ? candidate.longitude : null,
+                lat: passCoords ? Number(rawCandLat) : null,
+                lng: passCoords ? Number(rawCandLng) : null,
                 allowMissingRegion: candBundled
               }, SEED);
               if (!geoCheck.ok) {
                 toast(geoCheck.reason, 'err');
                 return;
-              }
-              if ('region' in pendingUpdates && candidate.region && !('latitude' in pendingUpdates) && !('longitude' in pendingUpdates) && geoCheck.lat != null) {
-                pendingUpdates.latitude = geoCheck.lat;
-                pendingUpdates.longitude = geoCheck.lng;
               }
               if (typeof window.MFG_GEO.ensureRegionInSeed === 'function' && candidate.region) {
                 window.MFG_GEO.ensureRegionInSeed(candidate.region, SEED, STATE);
@@ -111320,20 +111414,40 @@
           const siteNameChanged = String((origRowSnap && origRowSnap.name) || '').trim() !== String(row.name || '').trim();
           const siteCatChanged = origSiteCat !== row.site_category;
           const sitePinRemoved = row.latitude == null || row.latitude === '' || row.longitude == null || row.longitude === '';
+          const pinWasEditedToEmpty = ('latitude' in pendingUpdates || 'longitude' in pendingUpdates) && sitePinRemoved;
           const effSiteInd = (origRowSnap && origRowSnap._industry) || row._industry || getActiveIndustry();
-          if (window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function' && origRowSnap && origRowSnap.name) {
-            if (siteNameChanged || siteCatChanged || sitePinRemoved) {
+          row.source = row.source || 'app';
+          if (effSiteInd && effSiteInd !== 'Manufacturing' && !row._industry) row._industry = effSiteInd;
+          if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+          const preCrIdx = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(row.id));
+          if (preCrIdx >= 0) Object.assign(STATE.customRecords.sites[preCrIdx], row);
+          else STATE.customRecords.sites.unshift(row);
+          if (SEED && SEED.records && Array.isArray(SEED.records.sites)) {
+            const preSdIdx = SEED.records.sites.findIndex(x => x && String(x.id) === String(row.id));
+            if (preSdIdx >= 0) Object.assign(SEED.records.sites[preSdIdx], row);
+            else SEED.records.sites.unshift(row);
+          }
+          if (pinWasEditedToEmpty) {
+            row._pinCleared = true;
+            row.latitude = null;
+            row.longitude = null;
+          }
+          if (window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function') {
+            if (origRowSnap && origRowSnap.name && (siteNameChanged || siteCatChanged || sitePinRemoved)) {
               window.MFG_GEO.clearLocationPin({ name: origRowSnap.name, siteCategory: origSiteCat, excludeId: row.id, industry: effSiteInd }, SEED);
             }
-          }
-          if (window.MFG_GEO && ('latitude' in pendingUpdates || 'longitude' in pendingUpdates) && sitePinRemoved) {
-            row._pinCleared = true;
-            if (typeof window.MFG_GEO.clearLocationPin === 'function') {
+            if (pinWasEditedToEmpty) {
               window.MFG_GEO.clearLocationPin({ name: row.name, siteCategory: row.site_category, excludeId: row.id, industry: effSiteInd }, SEED);
             }
-          } else if (window.MFG_GEO && row.latitude != null && row.longitude != null) {
+          }
+          const origHadPin = Boolean(origRowSnap && origRowSnap.latitude != null && origRowSnap.longitude != null && origRowSnap.latitude !== '' && origRowSnap.longitude !== '');
+          if (pinWasEditedToEmpty) {
+            row._pinCleared = true;
+            row.latitude = null;
+            row.longitude = null;
+          } else if (window.MFG_GEO && row.latitude != null && row.longitude != null && row.latitude !== '' && row.longitude !== '' && (!isSaveWordOnly || origHadPin)) {
             row._pinCleared = false;
-            window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category, name: row.name, lat: row.latitude, lng: row.longitude, region: row.region }, { SEED, STATE });
+            window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category, name: row.name, lat: row.latitude, lng: row.longitude, region: row.region, industry: effSiteInd }, { SEED, STATE });
           }
           row._inspSiteCascadePosts = [];
           if (siteNameChanged && origRowSnap && origRowSnap.name) {
@@ -111794,6 +111908,9 @@
 
   function closeRecordInspector() {
     STATE.activeInspectorCtx = null;
+    if (window.MFG_GEO && typeof window.MFG_GEO.cleanupInspectorGeoMap === 'function') {
+      window.MFG_GEO.cleanupInspectorGeoMap();
+    }
     if (window.MFG_ASK && typeof window.MFG_ASK.stopInspectorSummaryIfActive === 'function') {
       window.MFG_ASK.stopInspectorSummaryIfActive();
     }
@@ -112762,6 +112879,7 @@
             }
           }
         }
+        if ('_pinCleared' in r) r._pinCleared = r._pinCleared === true || r._pinCleared === 1 || (typeof r._pinCleared === 'string' && /^(?:1|true|yes)$/i.test(r._pinCleared.trim()));
         if (!cur) { mine.push(r); byId.set(r.id, r); changed = true; }
         else if (r.voided && !cur.voided) {
           const curRestTs = String(cur.restored_at || '');
@@ -112883,6 +113001,7 @@
       const claimedSeedTwins = checkTwins ? new Set() : null;
       customList.forEach(r => {
         if (!r) return;
+        if ('_pinCleared' in r) r._pinCleared = r._pinCleared === true || r._pinCleared === 1 || (typeof r._pinCleared === 'string' && /^(?:1|true|yes)$/i.test(r._pinCleared.trim()));
         if (k === 'external_movements' && /^extended$/i.test(String(r.kind || ''))) r.company = 'Bdeir Holding';
         if (/^bdeir\s*holding$/i.test(String(r.company || '').trim())) r._industry = 'Holding & Treasury';
         if (r._absorbedSeedTwin) delete r._absorbedSeedTwin;
@@ -145759,7 +145878,7 @@
             return;
           }
           const modDrawer = $('inspModifyDrawer');
-          if (modDrawer && !modDrawer.hidden) { modDrawer.hidden = true; return; }
+          if (modDrawer && !modDrawer.hidden) { if (typeof modDrawer._closeAndReset === 'function') modDrawer._closeAndReset(); else modDrawer.hidden = true; return; }
           closeRecordInspector();
           return;
         }
