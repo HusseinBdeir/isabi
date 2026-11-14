@@ -1,0 +1,21 @@
+{
+ "app": {
+  "branch": "wt/same-name-rec3",
+  "sha": "f20205b16821a52f1cf5d80a8d32ef50a683be86"
+ },
+ "gates": [
+  "isabi-app: node build/verify_same_name_guard.mjs",
+  "isabi: node build/verify_same_name_edge.mjs"
+ ],
+ "holder": "wt-same-name-rec3",
+ "id": "20261114T175634Z-393bd840",
+ "pc": "Theo",
+ "queuedAt": "2026-11-14T17:56:34Z",
+ "seenAt": "2026-11-14T17:56:34Z",
+ "site": {
+  "branch": "wt/same-name-rec3",
+  "sha": "f3b608e09e489fd56189eab5f2bdb3c5298e2eaa"
+ },
+ "state": "waiting",
+ "summary": "Server-side same-name conflict & sync shell floor guard, door tablet same-name guard, and optional Father's Name across staff, contracts, payroll & kiosks"
+}
