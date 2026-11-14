@@ -3590,7 +3590,7 @@
 
         ${!STUDIO.collapsed ? `
           <div class="geo-studio-body">
-            <aside class="geo-regions-rail" id="geoRegionsRail">
+            <aside class="geo-regions-rail${((STUDIO.shapelessOpen && shapelessList.length > 0) || STUDIO.pasteHit) ? ' has-open-drawer' : ''}${STUDIO.pasteHit ? ' has-maplink-hit' : ''}" id="geoRegionsRail">
               <div class="geo-rail-head">
                 <input type="search" class="geo-rail-search" id="geoRegionSearch" value="${esc(STUDIO.regionSearch)}" placeholder="Search regions or sites...">
                 ${renderStudioMapLinkBoxHtml(SEED, activeInd, ctx.canAddSite === true)}
