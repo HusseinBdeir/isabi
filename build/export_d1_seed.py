@@ -26,6 +26,7 @@ import datetime as dt
 import hashlib
 import hmac
 import json
+import math
 import os
 import pathlib
 import re
@@ -174,8 +175,10 @@ def sql_lit(val) -> str:
         return "NULL"
     if isinstance(val, bool):
         return "1" if val else "0"
-    if isinstance(val, (int, float)):
-        if val != val:  # NaN
+    if isinstance(val, int):
+        return str(val)
+    if isinstance(val, float):
+        if not math.isfinite(val):
             return "NULL"
         return repr(val)
     if isinstance(val, (dict, list)):
@@ -422,14 +425,24 @@ def _upgrade_remote_industry_stores(remote: dict, leg_map: dict[str, str]) -> tu
     return (purged_rows, purged_edits)
 
 
+def _is_valid_face_vec(v: object) -> bool:
+    return (
+        isinstance(v, list)
+        and len(v) == 128
+        and all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(float(x)) for x in v)
+    )
+
+
 def _has_real_samples(u: dict) -> bool:
+    if u.get("face_redacted"):
+        return False
     fs = u.get("face_samples")
     if isinstance(fs, str):
         try:
             fs = json.loads(fs)
         except Exception:
             fs = []
-    return isinstance(fs, list) and len(fs) > 0 and not u.get("face_redacted")
+    return isinstance(fs, list) and any(_is_valid_face_vec(x) for x in fs)
 
 
 def _pick_authoritative_user_id(ua: dict, ub: dict) -> tuple[str, bool]:
@@ -480,23 +493,64 @@ def _merge_user_rows(ua: dict, ub: dict) -> dict:
             out["pin_code"] = ""
     elif not str(out.get("pin_code") or "").strip() and str(other.get("pin_code") or "").strip() and not other.get("pin_redacted"):
         out["pin_code"] = other["pin_code"]
-    out.pop("pin_redacted", None)
+    win_u = ub if sb > sa else ua
+    explicit_pin_cleared = (
+        sa != sb
+        and "pin_redacted" in win_u
+        and win_u.get("pin_redacted") is False
+        and not str(win_u.get("pin_code") or "").strip()
+    )
+    had_pin = bool(
+        str(out.get("pin_code") or "").strip()
+        or ua.get("pin_redacted")
+        or ub.get("pin_redacted")
+        or str(ua.get("pin_code") or "").strip()
+        or str(ub.get("pin_code") or "").strip()
+    )
+    if str(out.get("pin_code") or "").strip():
+        out.pop("pin_redacted", None)
+    elif had_pin and not explicit_pin_cleared:
+        out["pin_redacted"] = True
+    else:
+        out.pop("pin_redacted", None)
     out.pop("_verifiedPin", None)
     fa = str(ua.get("face_updated_at") or "")
     fb = str(ub.get("face_updated_at") or "")
+    face_a = _has_real_samples(ua) or bool(ua.get("face_enrolled") and not ua.get("face_cleared"))
+    face_b = _has_real_samples(ub) or bool(ub.get("face_enrolled") and not ub.get("face_cleared"))
     if _has_real_samples(ua) and not _has_real_samples(ub) and not (ub.get("face_cleared") and fb > fa):
         f_win = ua
     elif _has_real_samples(ub) and not _has_real_samples(ua) and not (ua.get("face_cleared") and fa > fb):
         f_win = ub
+    elif face_a and not face_b and not (ub.get("face_cleared") and fb > fa):
+        f_win = ua
+    elif face_b and not face_a and not (ua.get("face_cleared") and fa > fb):
+        f_win = ub
+    elif fb > fa:
+        f_win = ub
+    elif fa > fb:
+        f_win = ua
     else:
-        f_win = ub if fb > fa else ua
-    for fk in ("face_samples", "face_thumbs", "face_required", "face_updated_at", "face_cleared"):
+        f_win = win_u
+    for fk in (
+        "face_samples",
+        "face_thumbs",
+        "face_required",
+        "face_updated_at",
+        "face_cleared",
+        "face_enrolled",
+        "face_redacted",
+        "face_sample_count",
+    ):
         if fk in f_win:
             out[fk] = copy.deepcopy(f_win[fk])
-        elif fk in out and fk == "face_cleared" and not f_win.get("face_cleared"):
-            out.pop("face_cleared", None)
+        elif fk in out:
+            out.pop(fk, None)
+    if not f_win.get("face_cleared"):
+        out.pop("face_cleared", None)
     if _has_real_samples(out):
         out.pop("face_redacted", None)
+        out["face_enrolled"] = True
     la = str(ua.get("last_login_at") or "")
     lb = str(ub.get("last_login_at") or "")
     if max(la, lb):
@@ -688,12 +742,15 @@ def merge_mfg_web_stores(doc_a: dict | None, doc_b: dict | None) -> dict:
                 if not isinstance(src_l, list):
                     continue
                 for item in src_l:
-                    if not isinstance(item, dict) or not item.get("id"):
+                    if not isinstance(item, dict):
+                        continue
+                    raw_id = item.get("id") or (item.get("shift_code") if list_k == "shiftTypes" else None)
+                    if not raw_id:
                         continue
                     ik = (
-                        f"{str(item.get('company') or 'All BUs').strip().lower()}|{item['id']}"
+                        f"{str(item.get('company') or 'All BUs').strip().lower()}|{str(raw_id).strip().lower()}"
                         if list_k == "shiftTypes"
-                        else str(item["id"])
+                        else str(raw_id)
                     )
                     if ik not in l_map:
                         l_map[ik] = copy.deepcopy(item)
@@ -770,6 +827,411 @@ def _mint_cli_edge_jwt(ttl_sec: int = 300) -> str:
     return f"{signing_input}.{_b64url_encode(sig)}"
 
 
+_ORIG_URLOPEN = urllib.request.urlopen
+_ORIG_MINT_CLI_EDGE_JWT = _mint_cli_edge_jwt
+
+
+class _WranglerD1BatchError(RuntimeError):
+    """Wrangler D1 JSON response reported success=false or an explicit error."""
+
+
+def _extract_wrangler_results(parsed: object) -> list[dict] | None:
+    if isinstance(parsed, list):
+        if not parsed or not all(isinstance(x, dict) for x in parsed):
+            return None
+        if not any(("results" in x or "success" in x or "error" in x) for x in parsed):
+            return None
+        out: list[dict] = []
+        for item in parsed:
+            if item.get("success") is False or item.get("error"):
+                raise _WranglerD1BatchError(f"wrangler d1 execute error: {item.get('error') or item}")
+            res = item.get("results")
+            if isinstance(res, list):
+                out.extend(r for r in res if isinstance(r, dict))
+        return out
+    if isinstance(parsed, dict):
+        if parsed.get("success") is False or parsed.get("error") or (isinstance(parsed.get("errors"), list) and parsed["errors"]):
+            raise _WranglerD1BatchError(
+                f"wrangler d1 execute error: {parsed.get('error') or parsed.get('errors') or parsed}"
+            )
+        if isinstance(parsed.get("result"), list):
+            r_list = parsed["result"]
+            if r_list and not all(isinstance(x, dict) for x in r_list):
+                return None
+            out = []
+            for item in r_list:
+                if item.get("success") is False or item.get("error"):
+                    raise _WranglerD1BatchError(f"wrangler d1 execute error: {item.get('error') or item}")
+                res = item.get("results")
+                if isinstance(res, list):
+                    out.extend(r for r in res if isinstance(r, dict))
+            return out
+        if isinstance(parsed.get("results"), list):
+            return [r for r in parsed["results"] if isinstance(r, dict)]
+    return None
+
+
+def _parse_wrangler_json_rows(raw_out: str) -> list[dict]:
+    s = (raw_out or "").strip()
+    if s:
+        try:
+            direct = _extract_wrangler_results(json.loads(s))
+            if direct is not None:
+                return direct
+        except _WranglerD1BatchError:
+            raise
+        except Exception:
+            pass
+        dec = json.JSONDecoder()
+        for idx, ch in enumerate(s):
+            if ch not in "[{":
+                continue
+            try:
+                cand, _end = dec.raw_decode(s, idx)
+            except Exception:
+                continue
+            rows = _extract_wrangler_results(cand)
+            if rows is not None:
+                return rows
+    raise RuntimeError("wrangler d1 execute returned unexpected JSON shape")
+
+
+def _wrangler_d1_query(sql: str, timeout: int = 60) -> list[dict]:
+    """Read-only remote D1 query via Wrangler OAuth (`isabi-ledger`), returning result rows."""
+    env = os.environ.copy()
+    env.pop("ELECTRON_RUN_AS_NODE", None)
+    env["CI"] = "1"
+    env["WRANGLER_SEND_METRICS"] = "false"
+    extra_dirs = [
+        d for d in (
+            r"C:\Users\hbdei\.local\node",
+            str(pathlib.Path.home() / ".local" / "node"),
+            os.path.join(env.get("APPDATA", ""), "npm"),
+        )
+        if d and os.path.isdir(d)
+    ]
+    if extra_dirs:
+        cur_path = env.get("PATH", "")
+        env["PATH"] = os.pathsep.join(extra_dirs) + (os.pathsep + cur_path if cur_path else "")
+    wbin = (
+        shutil.which("wrangler.cmd", path=env.get("PATH"))
+        or shutil.which("wrangler", path=env.get("PATH"))
+        or r"C:\Users\hbdei\.local\node\wrangler.cmd"
+    )
+    proc = subprocess.run(
+        [wbin, "d1", "execute", "isabi-ledger", "--remote", "--json", "--command", sql],
+        cwd=str(ISABI_ROOT),
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+        check=False,
+    )
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout or f"exit {proc.returncode}").strip().splitlines()[-1][:200]
+        raise RuntimeError(f"wrangler d1 execute failed: {msg}")
+    return _parse_wrangler_json_rows(proc.stdout or "")
+
+
+_ORIG_WRANGLER_D1_QUERY = _wrangler_d1_query
+
+
+def _stitch_kv_rows(kv_rows: list[dict], doc_key: str) -> tuple[dict | None, str, bool]:
+    """Stitch `doc_key` + `doc_key__part_%` rows identically to `d1_store.js` readEdgeKvDoc."""
+    head = None
+    parts: list[tuple[str, str]] = []
+    part_prefix = f"{doc_key}__part_"
+    for row in kv_rows:
+        if not isinstance(row, dict):
+            continue
+        dk = str(row.get("doc_key") or "")
+        if dk == doc_key:
+            head = row
+        elif dk.startswith(part_prefix):
+            parts.append((dk, str(row.get("payload_json") or "")))
+    if head is None:
+        return None, "", bool(parts)
+    parts.sort(key=lambda x: x[0])
+    stitched = str(head.get("payload_json") or "") + "".join(p for _, p in parts)
+    try:
+        parsed = json.loads(stitched) if stitched else None
+    except Exception:
+        parsed = None
+    if not isinstance(parsed, dict) or not parsed:
+        return None, str(head.get("updated_at") or ""), True
+    return parsed, str(head.get("updated_at") or ""), False
+
+
+def _merge_work_schedules_overlay(prev_ws: dict, next_ws: dict) -> dict:
+    """Merge `work_schedules` sub-store onto `mfg_web_store.workSchedules` using `updated_at` parity with `d1_store.js`."""
+    if not isinstance(next_ws, dict) or not next_ws:
+        return copy.deepcopy(prev_ws) if isinstance(prev_ws, dict) else {}
+    out = copy.deepcopy(prev_ws) if isinstance(prev_ws, dict) else {}
+    for list_k in ("policyGroups", "shiftTypes"):
+        base_list = out.get(list_k) if isinstance(out.get(list_k), list) else []
+        nxt_list = next_ws.get(list_k) if isinstance(next_ws.get(list_k), list) else []
+        if not base_list and not nxt_list:
+            continue
+        items: dict[str, dict] = {}
+        order: list[str] = []
+
+        def _item_key(item: dict) -> str:
+            if list_k == "shiftTypes":
+                return f"{str(item.get('company') or 'All BUs').strip().lower()}|{str(item.get('id') or item.get('shift_code') or '').strip().lower()}"
+            return str(item.get("id") or "")
+
+        for item in base_list:
+            if isinstance(item, dict) and (item.get("id") or (list_k == "shiftTypes" and item.get("shift_code"))):
+                ik = _item_key(item)
+                if ik and ik not in items:
+                    items[ik] = copy.deepcopy(item)
+                    order.append(ik)
+        for item in nxt_list:
+            if isinstance(item, dict) and (item.get("id") or (list_k == "shiftTypes" and item.get("shift_code"))):
+                ik = _item_key(item)
+                if not ik:
+                    continue
+                cur = items.get(ik)
+                cur_ts = str(cur.get("updated_at") or "") if isinstance(cur, dict) else ""
+                nxt_ts = str(item.get("updated_at") or "")
+                if cur is None or not cur_ts or not nxt_ts or nxt_ts >= cur_ts:
+                    if cur is None:
+                        order.append(ik)
+                    items[ik] = copy.deepcopy(item)
+        out[list_k] = [items[k] for k in order]
+    for dict_k in ("companyPolicyDefaults", "staffRules"):
+        base_d = out.get(dict_k) if isinstance(out.get(dict_k), dict) else {}
+        nxt_d = next_ws.get(dict_k) if isinstance(next_ws.get(dict_k), dict) else {}
+        if not base_d and not nxt_d:
+            continue
+        merged_d = copy.deepcopy(base_d)
+        for rk, rv in nxt_d.items():
+            if not isinstance(rv, dict):
+                continue
+            cur = merged_d.get(rk)
+            cur_ts = str(cur.get("updated_at") or "") if isinstance(cur, dict) else ""
+            nxt_ts = str(rv.get("updated_at") or "")
+            if not isinstance(cur, dict) or not cur_ts or not nxt_ts or nxt_ts >= cur_ts:
+                merged_d[rk] = copy.deepcopy(rv)
+        out[dict_k] = merged_d
+    return out
+
+
+def _overlay_d1_rows_on_store(
+    remote: dict,
+    ar_rows: list[dict],
+    ws_rows: list[dict],
+    u_rows: list[dict],
+    s_rows: list[dict] | None = None,
+) -> dict:
+    """Apply canonical D1 sub-stores (`alert_rules`, `work_schedules`, `users`, `auth_sessions`) onto `mfg_web_store`."""
+    if ar_rows:
+        base_ar = remote.get("alertRules") if isinstance(remote.get("alertRules"), dict) else {}
+        merged_ov = copy.deepcopy(base_ar.get("overrides") if isinstance(base_ar.get("overrides"), dict) else {})
+        sql_custom: list[dict] = []
+        deleted_custom: set[str] = set()
+        for r in ar_rows:
+            if not isinstance(r, dict):
+                continue
+            try:
+                obj = json.loads(r.get("payload_json") or "")
+            except Exception:
+                obj = None
+            if not isinstance(obj, dict):
+                continue
+            if r.get("kind") == "custom":
+                cid = str(obj.get("id") or r.get("id") or "")
+                if obj.get("deleted"):
+                    if cid:
+                        deleted_custom.add(cid)
+                else:
+                    sql_custom.append(obj)
+            elif r.get("id"):
+                oid = str(r["id"])
+                cur = merged_ov.get(oid)
+                cur_ts = str(cur.get("updated_at") or "") if isinstance(cur, dict) else ""
+                sql_ts = str(obj.get("updated_at") or "")
+                if not isinstance(cur, dict) or not cur_ts or not sql_ts or sql_ts >= cur_ts:
+                    merged_ov[oid] = obj
+        cust_map: dict[str, dict] = {}
+        cust_order: list[str] = []
+        for bc in (base_ar.get("custom") or []):
+            if isinstance(bc, dict) and bc.get("id") and not bc.get("deleted"):
+                cid = str(bc["id"])
+                if cid not in deleted_custom and cid not in cust_map:
+                    cust_map[cid] = copy.deepcopy(bc)
+                    cust_order.append(cid)
+        for sc in sql_custom:
+            cid = str(sc.get("id") or "")
+            if not cid:
+                continue
+            cur = cust_map.get(cid)
+            cur_ts = str(cur.get("updated_at") or "") if isinstance(cur, dict) else ""
+            sql_ts = str(sc.get("updated_at") or "")
+            if cur is None or not cur_ts or not sql_ts or sql_ts >= cur_ts:
+                if cur is None:
+                    cust_order.append(cid)
+                cust_map[cid] = copy.deepcopy(sc)
+        remote["alertRules"] = {"overrides": merged_ov, "custom": [cust_map[k] for k in cust_order]}
+
+    if ws_rows:
+        ws_doc, _ws_ts, ws_bad = _stitch_kv_rows(ws_rows, "work_schedules")
+        if ws_bad:
+            remote["_wsUnreadable"] = True
+        elif ws_doc:
+            remote["workSchedules"] = _merge_work_schedules_overlay(remote.get("workSchedules") or {}, ws_doc)
+
+    if u_rows:
+        d1_users: list[dict] = []
+        for r in u_rows:
+            if not isinstance(r, dict):
+                continue
+            try:
+                base_u = json.loads(r.get("payload_json") or "{}")
+            except Exception:
+                base_u = {}
+            u_obj = dict(base_u) if isinstance(base_u, dict) else {}
+            for col in (
+                "id", "full_name", "email", "role", "companies", "pbi_access",
+                "statements_access", "status", "last_login_at", "face_required",
+                "face_updated_at", "seat_updated_at", "auth_mode",
+            ):
+                if col in r and r[col] is not None:
+                    u_obj[col] = r[col]
+            for jcol, default_v in (("face_thumbs", []), ("custom_perms", None)):
+                raw_j = r.get(jcol)
+                if isinstance(raw_j, str) and raw_j.strip():
+                    try:
+                        u_obj[jcol] = json.loads(raw_j)
+                    except Exception:
+                        u_obj[jcol] = default_v
+                elif isinstance(raw_j, (list, dict)):
+                    u_obj[jcol] = raw_j
+            has_pin = bool(r.get("has_pin") or str(r.get("pin_code") or "").strip())
+            try:
+                valid_face_cnt = int(r.get("valid_face_count") or 0)
+            except (TypeError, ValueError):
+                valid_face_cnt = 0
+            has_face = bool(valid_face_cnt > 0 or r.get("has_face_samples") or _has_real_samples(u_obj))
+            for secret_k in ("pin_code", "pin_hash", "_verifiedPin", "face_samples", "payload_json", "has_pin", "has_face_samples", "valid_face_count"):
+                u_obj.pop(secret_k, None)
+            u_obj["pin_redacted"] = bool(has_pin or u_obj.get("pin_redacted"))
+            u_obj["face_required"] = bool(u_obj.get("face_required"))
+            u_obj["face_enrolled"] = has_face
+            u_obj["face_redacted"] = has_face
+            try:
+                cnt = int(valid_face_cnt or u_obj.get("face_sample_count") or 0)
+            except (TypeError, ValueError):
+                cnt = 0
+            u_obj["face_sample_count"] = max(1, cnt) if has_face else 0
+            if not has_face and u_obj.get("face_updated_at"):
+                u_obj["face_cleared"] = True
+            else:
+                u_obj.pop("face_cleared", None)
+            u_obj["_d1_authoritative_id"] = True
+            if u_obj.get("email"):
+                d1_users.append(u_obj)
+        if d1_users:
+            merged_u: dict[str, dict] = {}
+            order_u: list[str] = []
+            for src_u in (d1_users, remote.get("users") or []):
+                for u_item in src_u:
+                    if isinstance(u_item, dict) and u_item.get("email"):
+                        ek = str(u_item["email"]).strip().lower()
+                        if ek not in merged_u:
+                            merged_u[ek] = copy.deepcopy(u_item)
+                            order_u.append(ek)
+                        else:
+                            merged_u[ek] = _merge_user_rows(merged_u[ek], u_item)
+            remote["users"] = [merged_u[k] for k in order_u]
+
+    if s_rows:
+        sess_map: dict[str, dict] = {}
+        sess_order: list[str] = []
+        for src_s in (s_rows, remote.get("sessions") or []):
+            for s_item in src_s:
+                if isinstance(s_item, dict) and s_item.get("id"):
+                    sid = str(s_item["id"]).strip()
+                    if sid and sid not in sess_map:
+                        sess_map[sid] = copy.deepcopy(s_item)
+                        sess_order.append(sid)
+        if sess_order:
+            remote["sessions"] = [sess_map[k] for k in sess_order]
+
+    return remote
+
+
+def _fetch_d1_store_via_wrangler() -> dict:
+    """Equal-Host fallback: read `mfg_web_store` + canonical D1 sub-stores via Wrangler OAuth when HTTP /api/sync returns 401 or jwt_secret is absent."""
+    def _q(sql: str) -> list[dict]:
+        try:
+            return _wrangler_d1_query(sql)
+        except Exception:
+            time.sleep(1.5)
+            return _wrangler_d1_query(sql)
+
+    try:
+        kv_rows = _q(
+            f"SELECT doc_key, payload_json, updated_at FROM edge_kv_store "
+            f"WHERE doc_key = '{STORE_KV_KEY}' OR substr(doc_key, 1, {len(STORE_KV_KEY) + 7}) = '{STORE_KV_KEY}__part_' "
+            f"ORDER BY doc_key ASC"
+        )
+    except Exception as ex:
+        _edge_pull_failed(f"wrangler://d1/isabi-ledger failed ({type(ex).__name__}: {ex})")
+        return {}
+    remote, head_ts, unreadable = _stitch_kv_rows(kv_rows, STORE_KV_KEY)
+    if unreadable:
+        _edge_pull_failed("the live store is unreadable (wrangler://d1/isabi-ledger); repair it first (Users, Sync Cloud Now from an Owner browser)")
+        return {}
+    if not remote:
+        _edge_pull_failed("wrangler://d1/isabi-ledger answered without a store document")
+        return {}
+    if head_ts:
+        remote["updatedAt"] = head_ts
+    try:
+        ar_rows = _q("SELECT id, kind, payload_json, updated_at FROM alert_rules")
+        ws_rows = _q(
+            "SELECT doc_key, payload_json, updated_at FROM edge_kv_store "
+            "WHERE doc_key = 'work_schedules' OR substr(doc_key, 1, 21) = 'work_schedules__part_' ORDER BY doc_key ASC"
+        )
+        u_rows = _q(
+            "SELECT id, full_name, email, (CASE WHEN trim(COALESCE(pin_code,'')) != '' THEN 1 ELSE 0 END) AS has_pin, "
+            "role, companies, pbi_access, statements_access, status, last_login_at, face_thumbs, face_required, "
+            "face_updated_at, seat_updated_at, custom_perms, auth_mode, payload_json, "
+            "(SELECT count(*) FROM json_each(CASE WHEN json_valid(COALESCE(face_samples,'')) AND json_type(face_samples)='array' THEN face_samples ELSE '[]' END) AS s "
+            "WHERE json_type(s.value)='array' AND json_array_length(s.value)=128 "
+            "AND NOT EXISTS (SELECT 1 FROM json_each(s.value) AS e WHERE json_type(e.value) NOT IN ('integer','real'))) AS valid_face_count "
+            "FROM users ORDER BY id"
+        )
+        s_rows = _q(
+            "SELECT id, user_id, email, full_name, role, companies, device, logged_in_at, method, confidence, ip_hash "
+            "FROM auth_sessions ORDER BY logged_in_at DESC LIMIT 40"
+        )
+    except Exception as ex:
+        _edge_pull_failed(f"wrangler://d1/isabi-ledger sub-store query failed ({type(ex).__name__}: {ex})")
+        return {}
+    _overlay_d1_rows_on_store(remote, ar_rows, ws_rows, u_rows, s_rows)
+    if remote.pop("_wsUnreadable", False):
+        _edge_pull_failed("the live work_schedules document is unreadable (wrangler://d1/isabi-ledger); repair it first (Users, Sync Cloud Now from an Owner browser)")
+        return {}
+    _EDGE_PULL_FAILURES.clear()
+    print(f"Pulled live Edge D1 mfg_web_store via Wrangler D1 (updatedAt={remote.get('updatedAt')})")
+    return remote
+
+
+def _wrangler_fallback_allowed() -> bool:
+    return (
+        os.environ.get("ISABI_NO_WRANGLER_STORE") != "1"
+        and (
+            (urllib.request.urlopen is _ORIG_URLOPEN and _mint_cli_edge_jwt is _ORIG_MINT_CLI_EDGE_JWT)
+            or _wrangler_d1_query is not _ORIG_WRANGLER_D1_QUERY
+        )
+    )
+
+
 _EDGE_PULL_FAILURES: list[str] = []  # why the last live pull failed, named in the refusal message
 
 
@@ -782,8 +1244,15 @@ def _fetch_edge_store() -> dict:
     _EDGE_PULL_FAILURES.clear()
     cli_tok = _mint_cli_edge_jwt()
     if not cli_tok:
+        if _wrangler_fallback_allowed():
+            wr_doc = _fetch_d1_store_via_wrangler()
+            if wr_doc:
+                return wr_doc
+            if _EDGE_PULL_FAILURES:
+                return {}
         _edge_pull_failed("no Edge sign-in secret on this PC (ISABI_JWT_SECRET / exports/cloudflare_edge_meta.json jwt_secret)")
         return {}
+    saw_auth_401 = False
     for edge_url in EDGE_SYNC_URLS:
         try:
             req = urllib.request.Request(
@@ -845,10 +1314,16 @@ def _fetch_edge_store() -> dict:
                 return remote
             _edge_pull_failed(f"{edge_url} answered without a store document")
         except urllib.error.HTTPError as ex:
+            if ex.code == 401:
+                saw_auth_401 = True
             hint = " (this PC's jwt_secret is not the live one: copy it from the PC that last deployed)" if ex.code == 401 else ""
             _edge_pull_failed(f"{edge_url} failed (HTTP {ex.code}){hint}")
         except Exception as ex:
             _edge_pull_failed(f"{edge_url} failed ({type(ex).__name__}: {ex})")
+    if saw_auth_401 and _wrangler_fallback_allowed():
+        wr_doc = _fetch_d1_store_via_wrangler()
+        if wr_doc:
+            return wr_doc
     return {}
 
 
@@ -1162,9 +1637,9 @@ def is_store_kv_row_key(rk: str) -> bool:
 
 
 def store_kv_head_guard(head_ts: str) -> str:
-    # A missing head (brand-new database) lets the write through; any other value must match the pulled head.
+    # A missing head (brand-new database) or blank default updated_at lets the write through; any populated timestamp must match the pulled head.
     return (
-        f"COALESCE((SELECT updated_at FROM edge_kv_store WHERE doc_key = '{STORE_KV_KEY}'), {sql_lit(head_ts)}) "
+        f"COALESCE(NULLIF((SELECT updated_at FROM edge_kv_store WHERE doc_key = '{STORE_KV_KEY}'), ''), {sql_lit(head_ts)}) "
         f"= {sql_lit(head_ts)}"
     )
 
@@ -1700,23 +2175,46 @@ def collect_target_rows(
                     redacted_users.append(ku)
                     continue
                 ku_c = dict(ku)
+                has_pin_ku = bool(str(ku_c.get("pin_code") or "").strip() or ku_c.get("pin_redacted"))
                 fs_raw = ku_c.get("face_samples")
                 if isinstance(fs_raw, str):
                     try:
                         fs_raw = json.loads(fs_raw)
                     except Exception:
-                        fs_raw = []
-                valid_cnt = len(fs_raw) if isinstance(fs_raw, list) else int(ku_c.get("face_sample_count") or (1 if ku_c.get("face_enrolled") else 0))
-                enrolled = bool(not ku_c.get("face_cleared") and (ku_c.get("face_enrolled") or valid_cnt > 0))
+                        fs_raw = None
+                has_raw_list = isinstance(fs_raw, list) and not ku_c.get("face_redacted")
+                if isinstance(fs_raw, list):
+                    valid_cnt = sum(1 for x in fs_raw if _is_valid_face_vec(x))
+                else:
+                    try:
+                        valid_cnt = int(ku_c.get("face_sample_count") or (1 if ku_c.get("face_enrolled") else 0))
+                    except (TypeError, ValueError):
+                        valid_cnt = 1 if ku_c.get("face_enrolled") else 0
+                enrolled = bool(
+                    not ku_c.get("face_cleared")
+                    and (valid_cnt > 0 if has_raw_list else (ku_c.get("face_enrolled") or valid_cnt > 0))
+                )
                 ku_c["face_enrolled"] = enrolled
                 ku_c["face_sample_count"] = max(1, valid_cnt) if enrolled else 0
-                ku_c["face_redacted"] = True
-                ku_c["pin_redacted"] = True
-                ku_c.pop("pin_code", None)
-                ku_c.pop("_verifiedPin", None)
-                ku_c.pop("face_samples", None)
-                ku_c.pop("face_thumbs", None)
-                ku_c.pop("_d1_authoritative_id", None)
+                ku_c["face_redacted"] = bool(enrolled)
+                if not enrolled and ku_c.get("face_updated_at"):
+                    ku_c["face_cleared"] = True
+                else:
+                    ku_c.pop("face_cleared", None)
+                ku_c["pin_redacted"] = has_pin_ku
+                for secret_k in (
+                    "pin_code",
+                    "pin_hash",
+                    "_verifiedPin",
+                    "face_samples",
+                    "face_thumbs",
+                    "payload_json",
+                    "_d1_authoritative_id",
+                    "has_pin",
+                    "has_face_samples",
+                    "valid_face_count",
+                ):
+                    ku_c.pop(secret_k, None)
                 redacted_users.append(ku_c)
             kv_remote["users"] = redacted_users
         head_ts = _LIVE_EDGE_HEAD_TS
