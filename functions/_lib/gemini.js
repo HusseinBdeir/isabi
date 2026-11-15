@@ -467,6 +467,17 @@ export async function handleEdgeTts(request, env, body, session = null) {
   }
 }
 
+const ID_CARD_SCAN_PROMPT = [
+  'Extract structured identity fields from this Lebanese ID card (بطاقة هوية), Individual Civil Extract (إخراج قيد فردي), NSSF Card (بطاقة الصندوق الوطني للضمان الاجتماعي / بطاقة المضمون), Work/Residency Permit, or Passport as strict JSON ONLY with keys:',
+  '{"docKind":"lebanese_id|nssf_card|civil_extract|work_permit|passport|id_card","fullNameLatin":"","fullNameArabic":"","firstNameLatin":"","lastNameLatin":"","firstNameArabic":"","lastNameArabic":"","fatherNameLatin":"","fatherNameArabic":"","motherNameLatin":"","motherNameArabic":"","dob":"YYYY-MM-DD","birthYear":"","nationalityLatin":"","nationalityArabic":"","idNumber":"","nssfNumber":"","gender":""}.',
+  'Rules:',
+  '1. Convert all Eastern/Arabic-Indic numerals (٠١٢٣٤٥٦٧٨٩) to ASCII digits 0-9.',
+  '2. Format full dates as YYYY-MM-DD. If the card only shows a 4-digit birth year, put it in "birthYear" and leave "dob" empty "". Never invent day/month.',
+  '3. Put First Name + Last Name (Family Name) in fullNameArabic / fullNameLatin WITHOUT Father\'s Name in fullName*; put Father\'s Name separately in fatherNameArabic / fatherNameLatin.',
+  '4. Always populate BOTH Arabic (*Arabic) and Latin (*Latin) script fields using standard Lebanese transliteration when only one script appears on the card.',
+  '5. If header shows الجمهورية اللبنانية / بطاقة هوية, set docKind="lebanese_id", nationalityArabic="لبناني", nationalityLatin="Lebanese". If header shows الضمان الاجتماعي / NSSF, set docKind="nssf_card". Return valid JSON ONLY.'
+].join('\n');
+
 export async function handleEdgeSmartScan(request, env, body, session = null) {
   const ipHash = await hashClientIp(request);
   const isAuthed = Boolean(session && session.sub);
@@ -491,17 +502,23 @@ export async function handleEdgeSmartScan(request, env, body, session = null) {
     const mimeType = String((body && body.mimeType) || 'image/jpeg').toLowerCase().trim();
     const extTxt = String((body && body.extractedText) || '').slice(0, isAuthed ? 5500 : 2500);
     const companies = Array.isArray(body && body.companies) ? body.companies.slice(0, 16).join(', ') : '';
-    const customPrompt = isAuthed ? String((body && body.customPrompt) || '').trim().slice(0, 6000) : '';
-    const promptText = customPrompt || (
-      'Extract structured accounting fields from this document as strict JSON ONLY with keys: ' +
-      '{"formType":"expense|sales|raw|receipt|settlement|fuel|repair|salary|external|treasury|conversion|document",' +
-      '"company":"","date":"YYYY-MM-DD","reference":"","supplier":"","customer":"","counterparty":"",' +
-      '"category":"","subcategory":"","product":"","site":"","equipment":"","driver":"","staff":"",' +
-      '"paymentMethod":"Credit|Cash|Bank Transfer|Check","subtotalExVat":0,"vatAmount":0,"totalAmount":0,' +
-      '"lbpAmount":0,"hasVat":false,"pricePending":false,"qty":1,"uom":"","unitPrice":0,"notes":"",' +
-      '"lineItems":[{"description":"","qty":1,"uom":"Piece","unitCost":0,"lineTotal":0}]}. ' +
-      `Active companies: ${companies}. OCR hint: ${extTxt}`
-    );
+    const scanMode = String((body && body.scanMode) || '').trim().toLowerCase();
+    const isIdCardMode = scanMode === 'id_card' || scanMode === 'lebanese_id' || scanMode === 'nssf_card';
+    const customPrompt = (!isIdCardMode && isAuthed)
+      ? String((body && body.customPrompt) || '').trim().slice(0, 6000)
+      : '';
+    const promptText = isIdCardMode
+      ? `${ID_CARD_SCAN_PROMPT}${extTxt ? `\nOCR hint: ${extTxt}` : ''}`
+      : (customPrompt || (
+        'Extract structured accounting fields from this document as strict JSON ONLY with keys: ' +
+        '{"formType":"expense|sales|raw|receipt|settlement|fuel|repair|salary|external|treasury|conversion|document",' +
+        '"company":"","date":"YYYY-MM-DD","reference":"","supplier":"","customer":"","counterparty":"",' +
+        '"category":"","subcategory":"","product":"","site":"","equipment":"","driver":"","staff":"",' +
+        '"paymentMethod":"Credit|Cash|Bank Transfer|Check","subtotalExVat":0,"vatAmount":0,"totalAmount":0,' +
+        '"lbpAmount":0,"hasVat":false,"pricePending":false,"qty":1,"uom":"","unitPrice":0,"notes":"",' +
+        '"lineItems":[{"description":"","qty":1,"uom":"Piece","unitCost":0,"lineTotal":0}]}. ' +
+        `Active companies: ${companies}. OCR hint: ${extTxt}`
+      ));
 
     const parts = [{ text: promptText }];
     let hasVisionBin = false;
