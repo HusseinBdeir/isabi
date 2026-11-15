@@ -12165,7 +12165,93 @@
       "Keep Current OT": "الإبقاء على الإضافي الحالي",
       "Anytime Open OT": "عمل إضافي مفتوح دائماً",
       "Approve Today": "اعتماد اليوم",
-      "Bulk Policy Group, Lateness, Tolerance & Overtime": "تطبيق جماعي لمجموعة السياسة والتأخير والسماح والعمل الإضافي"
+      "Bulk Policy Group, Lateness, Tolerance & Overtime": "تطبيق جماعي لمجموعة السياسة والتأخير والسماح والعمل الإضافي",
+      "Weekly Shift Coverage": "تغطية المناوبات الأسبوعية",
+      "zero-coverage gaps": "فجوات تغطية صفرية",
+      "full workday coverage": "تغطية كاملة لأيام العمل",
+      "7-day active headcount density by shift and station. Click a cell or shift to filter the schedule below.": "كثافة الطاقم النشط لـ 7 أيام حسب المناوبة والموقع. انقر على خلية أو مناوبة لتصفية الجدول أدناه.",
+      "Station Site:": "موقع المحطة:",
+      "Daily Scheduled Total": "إجمالي المجدولين يومياً",
+      "‹ Prev": "‹ السابق",
+      "Next ›": "التالي ›",
+      "Previous coverage week": "أسبوع التغطية السابق",
+      "Next coverage week": "أسبوع التغطية التالي",
+      "AI Drift Advisor": "مستشار انحراف البصمة",
+      "Punch Drift & AI Cohort Advisor": "انحراف البصمة ومستشار المجموعات الذكي",
+      "People, crews, and role/site cohorts clocking in or out away from planned schedules. Draft proposals stay review-only until approved by an authorized manager.": "الأفراد والفرق ومجموعات الأدوار والمواقع التي تسجّل حضورها أو انصرافها بعيداً عن المواعيد المجدولة. تبقى المقترحات مسودات للمراجعة حتى اعتمادها من مدير مخوّل.",
+      "Punch Drift Mode": "وضع انحراف البصمة",
+      "Crew & Individual Drift": "انحراف الفرق والأفراد",
+      "Role & Site AI Drift (30d)": "انحراف الدور والموقع (30 ي)",
+      "Lookback Window": "فترة الفحص",
+      "Last 30 Days": "آخر 30 يوماً",
+      "Last 14 Days": "آخر 14 يوماً",
+      "Last 60 Days": "آخر 60 يوماً",
+      "Site Filter": "تصفية الموقع",
+      "Role Filter": "تصفية الدور",
+      "All Roles": "جميع الأدوار",
+      "All Rules": "جميع القواعد",
+      "AI Drift Advisor Summary": "ملخص مستشار الانحراف الذكي",
+      "Explain with AI Edge": "شرح عبر AI Edge",
+      "Analyzing...": "جارٍ التحليل...",
+      "Generated at AI Edge (grounded deterministic cohort facts)": "صادر عن AI Edge (مستند إلى حقائق المجموعة الحتمية)",
+      "Deterministic analysis summary": "ملخص التحليل الحتمي",
+      "Grace Tolerance Draft": "مسودة فترة السماح",
+      "Shift Window Draft": "مسودة توقيت المناوبة",
+      "Staff:": "الموظفون:",
+      "Review Shift Editor": "مراجعة محرر المناوبة",
+      "Approve Cohort Draft": "اعتماد مسودة المجموعة",
+      "Confirm Cohort Rule": "تأكيد قاعدة المجموعة",
+      "No role and site cohorts crossed the 30-day drift threshold for this filter.": "لم تتجاوز أي مجموعة دور وموقع عتبة الانحراف خلال 30 يوماً لهذا الفلتر.",
+      "Pre-Payroll Policy Simulation": "محاكاة سياسة ما قبل الرواتب",
+      "Current active payroll logs are unchanged until then.": "تبقى سجلات الرواتب الحالية دون تغيير حتى ذلك الحين.",
+      "Dry-run simulation: no records or rules saved until you confirm": "محاكاة تجريبية: لا يتم حفظ أي سجلات أو قواعد حتى التأكيد",
+      "Confirm & Apply": "تأكيد وتطبيق",
+      "Staff Changed": "موظفون متأثرون",
+      "logs updated": "سجلات محدّثة",
+      "Overtime Min Diff": "فرق دقائق الإضافي",
+      "Late Min Diff": "فرق دقائق التأخير",
+      "Net Payroll Diff": "صافي فرق الرواتب",
+      "Payroll Dollars": "مبالغ الرواتب",
+      "Role restricted": "مقيد حسب الصلاحية",
+      "unchanged logs": "سجلات غير متغيرة",
+      "custom-rule staff kept": "موظفو القواعد الخاصة محفوظون",
+      "closed skipped": "مقفلة تم تخطيها",
+      "manual kept": "يدوية محفوظة",
+      "Dollar Diff Redacted": "فرق المبالغ محجوب",
+      "Filter employee, role, or company...": "تصفية موظف أو دور أو شركة...",
+      "Simulation Filter": "تصفية المحاكاة",
+      "Changed Only": "المتأثرون فقط",
+      "All Scoped": "الجميع ضمن النطاق",
+      "No unlocked attendance logs changed in": "لم تتغير أي سجلات حضور غير مقفلة في",
+      "Set an earlier Effective From date to include prior worked days in simulation and backfill.": "حدّد تاريخ سريان أقدم لتضمين أيام العمل السابقة في المحاكاة والتطبيق الرجعي.",
+      "No matching employees in this simulation filter.": "لا يوجد موظفون مطابقون لهذا الفلتر.",
+      "OT Min": "دقائق الإضافي",
+      "Late Min": "دقائق التأخير",
+      "Leave": "إجازة",
+      "Net USD Diff": "صافي الفرق ($)",
+      "Punches": "البصمات",
+      "Rule Shift": "تحوّل القاعدة",
+      "Late": "تأخير",
+      "USD Diff": "فرق ($)",
+      "Custom Rule": "قاعدة مخصصة",
+      "Inspect employee diffs": "معاينة الفروقات لكل موظف",
+      "Preview employee-by-employee payroll & minute diff before saving": "معاينة فروقات الدقائق والرواتب لكل موظف قبل الحفظ",
+      "Search staff, shift type, policy group, perks, or penalty...": "ابحث عن موظف أو مناوبة أو مجموعة سياسات أو مزايا أو حسم...",
+      "You do not have rights to update shifts or rules for this company": "ليست لديك صلاحية تعديل المناوبات أو القواعد لهذه الشركة",
+      "Could not run policy simulation": "تعذّر تشغيل محاكاة السياسة",
+      "Could not simulate company default policy": "تعذّرت محاكاة السياسة الافتراضية للشركة",
+      "Could not simulate policy group changes": "تعذّرت محاكاة تغييرات مجموعة السياسات",
+      "Missing cohort members for drift proposal": "أعضاء المجموعة مفقودون لمقترح الانحراف",
+      "No cohort staff rules were updated": "لم يتم تحديث قواعد أي موظف في المجموعة",
+      "Shift:": "المناوبة:",
+      "Overtime:": "الإضافي:",
+      "Simulate Employee Diff": "محاكاة الفروقات لكل موظف",
+      "Simulate": "محاكاة",
+      "Lost Diff": "فرق الحسم",
+      "Net Diff": "الصافي",
+      "Review Cohort Draft": "مراجعة مسودة المجموعة",
+      "Save Cohort Draft": "حفظ مسودة المجموعة",
+      "Cohort Draft Scope: updates apply only to these cohort members; shared company shift stays unchanged.": "نطاق مسودة المجموعة: تُطبّق التحديثات على أعضاء هذه المجموعة فقط؛ تبقى المناوبة المشتركة للشركة دون تغيير."
     },
     fr: {
       "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
@@ -24312,7 +24398,93 @@
       "Keep Current OT": "Conserver les HS actuelles",
       "Anytime Open OT": "HS ouvertes tout le temps",
       "Approve Today": "Approuver aujourd'hui",
-      "Bulk Policy Group, Lateness, Tolerance & Overtime": "Application groupée : politique, retard, tolérance et HS"
+      "Bulk Policy Group, Lateness, Tolerance & Overtime": "Application groupée : politique, retard, tolérance et HS",
+      "Weekly Shift Coverage": "Couverture hebdomadaire des équipes",
+      "zero-coverage gaps": "écarts de couverture nulle",
+      "full workday coverage": "couverture complète des jours ouvrés",
+      "7-day active headcount density by shift and station. Click a cell or shift to filter the schedule below.": "Densité des effectifs actifs sur 7 jours par équipe et station. Cliquez sur une cellule ou équipe pour filtrer le planning ci-dessous.",
+      "Station Site:": "Station :",
+      "Daily Scheduled Total": "Total planifié par jour",
+      "‹ Prev": "‹ Préc.",
+      "Next ›": "Suiv. ›",
+      "Previous coverage week": "Semaine de couverture précédente",
+      "Next coverage week": "Semaine de couverture suivante",
+      "AI Drift Advisor": "Conseiller IA de dérive",
+      "Punch Drift & AI Cohort Advisor": "Dérive des pointages & conseiller IA de cohorte",
+      "People, crews, and role/site cohorts clocking in or out away from planned schedules. Draft proposals stay review-only until approved by an authorized manager.": "Employés, équipes et cohortes par rôle/site pointant en décalage avec l'horaire prévu. Les propositions restent en brouillon jusqu'à validation par un responsable autorisé.",
+      "Punch Drift Mode": "Mode d'analyse de dérive",
+      "Crew & Individual Drift": "Dérive équipes & individus",
+      "Role & Site AI Drift (30d)": "Dérive rôle & site IA (30 j)",
+      "Lookback Window": "Période d'analyse",
+      "Last 30 Days": "30 derniers jours",
+      "Last 14 Days": "14 derniers jours",
+      "Last 60 Days": "60 derniers jours",
+      "Site Filter": "Filtre station",
+      "Role Filter": "Filtre rôle",
+      "All Roles": "Tous les rôles",
+      "All Rules": "Toutes les règles",
+      "AI Drift Advisor Summary": "Synthèse du conseiller IA",
+      "Explain with AI Edge": "Expliquer avec AI Edge",
+      "Analyzing...": "Analyse en cours...",
+      "Generated at AI Edge (grounded deterministic cohort facts)": "Généré par AI Edge (basé sur les faits déterministes)",
+      "Deterministic analysis summary": "Synthèse de l'analyse déterministe",
+      "Grace Tolerance Draft": "Brouillon tolérance",
+      "Shift Window Draft": "Brouillon plage horaire",
+      "Staff:": "Équipe :",
+      "Review Shift Editor": "Ouvrir dans l'éditeur",
+      "Approve Cohort Draft": "Approuver le brouillon",
+      "Confirm Cohort Rule": "Confirmer la règle",
+      "No role and site cohorts crossed the 30-day drift threshold for this filter.": "Aucune cohorte rôle/site n'a dépassé le seuil de dérive sur 30 jours pour ce filtre.",
+      "Pre-Payroll Policy Simulation": "Simulation politique pré-paie",
+      "Current active payroll logs are unchanged until then.": "Les journaux de paie actuels restent inchangés jusque-là.",
+      "Dry-run simulation: no records or rules saved until you confirm": "Simulation à blanc : aucune donnée enregistrée avant confirmation",
+      "Confirm & Apply": "Confirmer et appliquer",
+      "Staff Changed": "Employés modifiés",
+      "logs updated": "journaux mis à jour",
+      "Overtime Min Diff": "Diff. min. h. sup.",
+      "Late Min Diff": "Diff. min. retard",
+      "Net Payroll Diff": "Diff. nette paie",
+      "Payroll Dollars": "Montants de paie",
+      "Role restricted": "Restreint par rôle",
+      "unchanged logs": "journaux inchangés",
+      "custom-rule staff kept": "règles perso conservées",
+      "closed skipped": "clôturés ignorés",
+      "manual kept": "manuels conservés",
+      "Dollar Diff Redacted": "Diff. montants masquée",
+      "Filter employee, role, or company...": "Filtrer employé, rôle ou société...",
+      "Simulation Filter": "Filtre simulation",
+      "Changed Only": "Modifiés uniquement",
+      "All Scoped": "Tous dans le périmètre",
+      "No unlocked attendance logs changed in": "Aucun journal de présence déverrouillé modifié sur",
+      "Set an earlier Effective From date to include prior worked days in simulation and backfill.": "Choisissez une date d'effet antérieure pour inclure les jours passés dans la simulation.",
+      "No matching employees in this simulation filter.": "Aucun employé correspondant à ce filtre.",
+      "OT Min": "Min. HS",
+      "Late Min": "Min. retard",
+      "Leave": "Congé",
+      "Net USD Diff": "Diff. nette USD",
+      "Punches": "Pointages",
+      "Rule Shift": "Changement règle",
+      "Late": "Retard",
+      "USD Diff": "Diff. USD",
+      "Custom Rule": "Règle personnalisée",
+      "Inspect employee diffs": "Inspecter les écarts par employé",
+      "Preview employee-by-employee payroll & minute diff before saving": "Prévisualiser les écarts de minutes et de paie par employé avant d'enregistrer",
+      "Search staff, shift type, policy group, perks, or penalty...": "Rechercher employé, équipe, groupe, avantage ou pénalité...",
+      "You do not have rights to update shifts or rules for this company": "Vous n'avez pas les droits pour modifier les équipes ou règles de cette société",
+      "Could not run policy simulation": "Impossible d'exécuter la simulation de politique",
+      "Could not simulate company default policy": "Impossible de simuler la politique par défaut de la société",
+      "Could not simulate policy group changes": "Impossible de simuler les changements du groupe de règles",
+      "Missing cohort members for drift proposal": "Membres de la cohorte manquants pour la proposition",
+      "No cohort staff rules were updated": "Aucune règle de la cohorte n'a été mise à jour",
+      "Shift:": "Équipe :",
+      "Overtime:": "H. sup. :",
+      "Simulate Employee Diff": "Simuler les écarts par employé",
+      "Simulate": "Simuler",
+      "Lost Diff": "Écart retenu",
+      "Net Diff": "Écart net",
+      "Review Cohort Draft": "Examiner le brouillon de cohorte",
+      "Save Cohort Draft": "Enregistrer le brouillon de cohorte",
+      "Cohort Draft Scope: updates apply only to these cohort members; shared company shift stays unchanged.": "Portée du brouillon de cohorte : les mises à jour s'appliquent uniquement à ces membres ; l'horaire partagé de la société reste inchangé."
     }
   };
 
@@ -25088,18 +25260,19 @@
       if (r) return lang === 'ar' ? 'مغلق' : 'fermé';
       r = sfx.match(/^([\d.]+)h shorter$/);
       if (r) return lang === 'ar' ? `أقصر بـ ${r[1]} س` : `${r[1]} h plus court`;
-      r = sfx.match(/^(?:start ([+-]\d+) min)?(?:, )?(?:end ([+-]\d+) min)?$/);
-      if (r && (r[1] || r[2])) {
+      r = sfx.match(/^(?:start ([+-]\d+) min)?(?:, )?(?:end ([+-]\d+) min)?(?:, )?(?:grace (\d+) min)?$/);
+      if (r && (r[1] || r[2] || r[3])) {
         const parts = [];
         if (r[1]) parts.push(lang === 'ar' ? `البداية ${r[1]} د` : `début ${r[1]} min`);
         if (r[2]) parts.push(lang === 'ar' ? `النهاية ${r[2]} د` : `fin ${r[2]} min`);
+        if (r[3]) parts.push(lang === 'ar' ? `السماح ${r[3]} د` : `tolérance ${r[3]} min`);
         return parts.join(lang === 'ar' ? '، ' : ', ');
       }
       return null;
     };
     const relOnly = relSuffix(trimmed);
     if (relOnly) return relOnly;
-    m = trimmed.match(/^(?:(.{1,60}?):\s+)?(\d{2}-\d{2}-\d{4})(?:\s+to\s+(\d{2}-\d{2}-\d{4}))?\s+(Closed|[\d.]+h shorter|(?:start [+-]\d+ min)?(?:, )?(?:end [+-]\d+ min)?)$/);
+    m = trimmed.match(/^(?:(.{1,60}?):\s+)?(\d{2}-\d{2}-\d{4})(?:\s+to\s+(\d{2}-\d{2}-\d{4}))?\s+(Closed|[\d.]+h shorter|(?:start [+-]\d+ min)?(?:, )?(?:end [+-]\d+ min)?(?:, )?(?:grace \d+ min)?)$/);
     if (m && m[4]) {
       const sfx = relSuffix(m[4]);
       if (sfx) {
@@ -25112,6 +25285,18 @@
         if (!note) return `${span} ${sfx}`;
         return lang === 'ar' ? `${note}: ${span} ${sfx}` : `${note} : ${span} ${sfx}`;
       }
+    }
+    m = trimmed.match(/^No role and site cohorts crossed the ([\d,]+)-day drift threshold for this filter\.$/);
+    if (m) {
+      return lang === 'ar'
+        ? `لم تتجاوز أي مجموعة دور وموقع عتبة الانحراف خلال ${m[1]} يوماً لهذا الفلتر.`
+        : `Aucune cohorte rôle/site n'a dépassé le seuil de dérive sur ${m[1]} jours pour ce filtre.`;
+    }
+    m = trimmed.match(/^Role & Site AI Drift \(([\d,]+)d\)$/);
+    if (m) {
+      return lang === 'ar'
+        ? `انحراف الدور والموقع بالذكاء الاصطناعي (${m[1]} يوم)`
+        : `Dérive IA Rôle et Site (${m[1]} j)`;
     }
     m = trimmed.match(/^(\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2})\s+to\s+(Open|\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2})(.*)$/i);
     if (m) {
@@ -28592,6 +28777,91 @@
       const nmRes = evalCore(rawNm, lang, depth + 1);
       const nmOut = nmRes.ok ? nmRes.out : rawNm;
       return lang === 'ar' ? `تطبيق بأثر رجعي على ${m[1]} موظفاً في ${nmOut}` : `Appliquer rétroactivement aux ${m[1]} employés de ${nmOut}`;
+    }
+
+    m = trimmed.match(/^Scanned\s+([\d,]+)\s+workday readings\s*\(([^)]+)\)\.\s*Found\s+([\d,]+)\s+draft cohort suggestion\(s\)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تم فحص ${m[1]} سجل يوم عمل (${m[2]}). تم العثور على ${m[3]} مسودة اقتراحات للمجموعة.`
+        : `${m[1]} relevés de jours ouvrés analysés (${m[2]}). ${m[3]} proposition(s) de cohorte en brouillon.`;
+    }
+
+    m = trimmed.match(/^Consistent\s+(\+?\d+m)\s+late arrival while leaving on time;\s*raising grace avoids shifting core schedule\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `وصول متأخر متكرر بمقدار ${m[1]} مع انصراف منتظم؛ رفع فترة السماح يتجنب تعديل الدوام الأساسي.`
+        : `Retard régulier de ${m[1]} à l'arrivée avec départ à l'heure ; augmenter la tolérance évite de déplacer l'horaire.`;
+    }
+
+    m = trimmed.match(/^Consistent\s+(\d+%)\s+punch offset\s*\(([^)]+)\)\s+across\s+([\d,]+)\s+workdays\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `انحراف بصمة منتظم بنسبة ${m[1]} (${m[2]}) خلال ${m[3]} يوم عمل.`
+        : `Décalage constant de ${m[1]} (${m[2]}) sur ${m[3]} jours ouvrés.`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+staff\s*·\s*([\d,]+d)\s*·\s*([\d.,]+%)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} موظفاً · ${m[2]} · ${m[3]}`
+        : `${m[1]} pers. · ${m[2]} · ${m[3]}`;
+    }
+
+    m = trimmed.match(/^Grace\s+([\d,]+m)\s+to\s+([\d,]+m)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `السماح من ${m[1]} إلى ${m[2]}`
+        : `Tolérance de ${m[1]} à ${m[2]}`;
+    }
+
+    m = trimmed.match(/^Earned\s+([^\s·]+)\s*·\s*Ded\s+([^\s]+)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مكتسب ${m[1]} · خصم ${m[2]}`
+        : `Gagné ${m[1]} · Déd. ${m[2]}`;
+    }
+
+    m = trimmed.match(/^Scheduled for future effective date\s+(.+?)\.\s*Current active payroll logs are unchanged until then\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مجدول لتاريخ سريان مستقبلي ${m[1]}. تبقى سجلات الرواتب الحالية دون تغيير حتى ذلك الحين.`
+        : `Planifié pour la date d'effet future ${m[1]}. Les journaux de paie actuels restent inchangés jusque-là.`;
+    }
+
+    m = trimmed.match(/^No unlocked attendance logs changed in\s+(.+)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `لم تتغير أي سجلات حضور غير مقفلة في ${m[1]}.`
+        : `Aucun journal de présence déverrouillé modifié sur ${m[1]}.`;
+    }
+
+    m = trimmed.match(/^Applied cohort rule for\s+([\d,]+)\s+(.+?)\s+staff$/i);
+    if (m) {
+      const rTxt = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar'
+        ? `تم تطبيق قاعدة المجموعة على ${m[1]} موظفاً (${rTxt})`
+        : `Règle de cohorte appliquée à ${m[1]} ${rTxt}`;
+    }
+
+    m = trimmed.match(/^(.+?):\s*0 scheduled staff on expected workday\s*\(([^)]+)\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]}: 0 موظف مجدول في يوم عمل متوقع (${m[2]})`
+        : `${m[1]} : 0 employé planifié un jour ouvré attendu (${m[2]})`;
+    }
+
+    m = trimmed.match(/^(.+?):\s*([\d,]+)\s+scheduled staff\s*\(([^)]+)\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]}: ${m[2]} موظفاً مجدولاً (${m[3]})`
+        : `${m[1]} : ${m[2]} employés planifiés (${m[3]})`;
+    }
+
+    m = trimmed.match(/^(.+?)\s*\(Future Effective Date\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} (تاريخ سريان مستقبلي)`
+        : `${m[1]} (Date d'effet future)`;
     }
 
     m = trimmed.match(/^(.+?)\s+Only$/i);

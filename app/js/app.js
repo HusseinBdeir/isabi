@@ -480,6 +480,7 @@
     kioskBulkBarOpen: false,
     kioskCoEffOpen: {},
     kioskCoPolicyDraft: {},
+    kioskCoverageSiteFilter: 'all',
     kioskLastPunch: null,
     editingRecord: null,
     editingPendingSalaryId: '',
@@ -29565,10 +29566,12 @@
       // A shortened day (Ramadan / winter preset): no fixed window, the day's own timing (weekday or regular,
       // split windows kept) ends `shorten_min` minutes earlier. Resolved in resolveShiftTimingForDate.
       const shortenMin = dayOff ? 0 : Math.max(0, Math.min(720, Math.round(Number(item.shorten_min || 0))));
-      // Signed offsets (Punch Drift dated rule): the day's own start / end moved by N minutes.
+      // Signed offsets (Punch Drift dated rule): the day's own start / end moved by N minutes, or arrival grace override.
       const startShift = dayOff ? 0 : Math.max(-720, Math.min(720, Math.round(Number(item.start_shift_min || 0))));
       const endShift = dayOff ? 0 : Math.max(-720, Math.min(720, Math.round(Number(item.end_shift_min || 0))));
-      const relative = !dayOff && (shortenMin > 0 || startShift !== 0 || endShift !== 0);
+      const hasGraceOverride = !dayOff && item.grace_min != null && item.grace_min !== '' && Number.isFinite(Number(item.grace_min));
+      const graceOverride = hasGraceOverride ? Math.max(0, Math.min(120, Math.round(Number(item.grace_min)))) : null;
+      const relative = !dayOff && (shortenMin > 0 || startShift !== 0 || endShift !== 0 || hasGraceOverride);
       // A closed or relative item may also carry a plain window: shells before v19.6.327 drop any item without
       // one (and could save that loss back), so presets write a harmless fallback. Newer shells ignore it.
       const st = fmtAttClockTime(item.start_time || item.start || '') || '';
@@ -29576,7 +29579,7 @@
       if (!dayOff && !relative && (!st || !et)) return;
       const hrs = (dayOff || relative) ? 0 : (computeShiftWorkedHours(st, et) || 8.0);
       const note = String(item.note || item.label || '').trim().slice(0, 60);
-      const id = String(item.id || (dayOff ? `dt_${sd}_${ed}_off` : (relative ? `dt_${sd}_${ed}_s${shortenMin}_${startShift}_${endShift}` :`dt_${sd}_${ed}_${st.replace(':', '')}_${et.replace(':', '')}`)));
+      const id = String(item.id || (dayOff ? `dt_${sd}_${ed}_off` : (relative ? `dt_${sd}_${ed}_s${shortenMin}_${startShift}_${endShift}${hasGraceOverride ? `_g${graceOverride}` : ''}` : `dt_${sd}_${ed}_${st.replace(':', '')}_${et.replace(':', '')}`)));
       const out = {
         id,
         start_date: sd,
@@ -29591,6 +29594,7 @@
       if (relative && shortenMin) out.shorten_min = shortenMin;
       if (relative && startShift) out.start_shift_min = startShift;
       if (relative && endShift) out.end_shift_min = endShift;
+      if (hasGraceOverride) out.grace_min = graceOverride;
       // Weekdays each offset applies on (Punch Drift: a Friday-only early leave moves Fridays only).
       const dowList = raw => (Array.isArray(raw) ? Array.from(new Set(raw.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))).sort((a, b) => a - b) : null);
       const sDows = startShift ? dowList(item.start_dows) : null;
@@ -29609,7 +29613,7 @@
 
   // Text of a relative dated exception: "2h shorter" (preset) or "start +45 min, end -30 min" (Punch Drift).
   function fmtRelativeDateTimingText(item) {
-    if (item.shorten_min && !item.start_shift_min && !item.end_shift_min) {
+    if (item.shorten_min && !item.start_shift_min && !item.end_shift_min && item.grace_min == null) {
       return `${fmtNum(item.shorten_min / 60, item.shorten_min % 60 ? 1 : 0)}h shorter`;
     }
     const sgn = n => (n > 0 ? `+${n}` : `${n}`);
@@ -29617,13 +29621,14 @@
     if (item.start_shift_min) out.push(`start ${sgn(item.start_shift_min)} min`);
     const endDelta = Number(item.end_shift_min || 0) - Number(item.shorten_min || 0);
     if (endDelta) out.push(`end ${sgn(endDelta)} min`);
+    if (item.grace_min != null) out.push(`grace ${item.grace_min} min`);
     return out.join(', ');
   }
 
   // Chip body for one dated exception: its clock window and hours, or "Closed" for a closed day.
   function fmtDateTimingWindowHtml(item, hrs) {
     if (item && item.day_off) return '<b class="mono">Closed</b>';
-    if (item && (item.shorten_min || item.start_shift_min || item.end_shift_min)) return `<b class="mono">${esc(fmtRelativeDateTimingText(item))}</b>`;
+    if (item && (item.shorten_min || item.start_shift_min || item.end_shift_min || item.grace_min != null)) return `<b class="mono">${esc(fmtRelativeDateTimingText(item))}</b>`;
     return `<b class="mono">${esc(item.start_time)}-${esc(item.end_time)}</b>${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}`;
   }
 
@@ -116446,7 +116451,9 @@
     if (($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden)
       || ($('staffScheduleModal') && !$('staffScheduleModal').hidden)
       || ($('shiftTypeModal') && !$('shiftTypeModal').hidden)
-      || ($('policyGroupModal') && !$('policyGroupModal').hidden)) return true;
+      || ($('policyGroupModal') && !$('policyGroupModal').hidden)
+      || ($('punchDriftModal') && !$('punchDriftModal').hidden)
+      || ($('policySimDiffDrawer') && !$('policySimDiffDrawer').hidden)) return true;
     if ((STATE.view === 'users' && STATE.userFormDirty) || FACE_STATE.enrolCamActive || KIOSK_ATT_STATE.camActive || KIOSK_ATT_STATE.camStarting || STAFF_FACE_MODAL_STATE.camActive) return true;
     if (document.querySelector('.pa-suggest-wrap.open, .rdl-combo.open, #companySwitch.open, #nuCompanySelector.open')) return true;
     const a = document.activeElement;
@@ -128526,23 +128533,33 @@
   }
 
   // ---- Attendance Biometric Kiosk Engine (Face ID + 4-Digit PIN + Smart 16h Shift Pairing) ----
+  const KIOSK_STATION_SITES_BY_CO = {
+    'WTC': ['WTC Main Plant', 'WTC Crusher & Yard', 'Jiyeh JV Quarry', 'Halat JV Quarry'],
+    'BBConstruction': ['BBConstruction Batching Plant', 'BBConstruction Yard'],
+    'Lions Transport': ['Lions Transport Garage', 'Main Dispatch Yard'],
+    'Bdeir Holding': ['Bdeir Holding HQ Reception', 'Group Executive Floor'],
+    'Blanca': ['Blanca Main Gate & Pool', 'Blanca Main Kitchen & Till'],
+    'La Una': ['La Una Main Entrance & Till', 'La Una Terrace & Kitchen'],
+    'Palms': ['Palms Main Entrance', 'Palms Restaurant & Bar'],
+    'Voile': ['Voile Main Reception', 'Voile Kitchen & Cellar'],
+    'Platinum': ['Platinum Main Reception', 'Platinum Operations Desk'],
+    'Korri Auto': ['Korri Auto Main Counter', 'Korri Auto Central Warehouse'],
+    'Shacman': ['Shacman Main Showroom', 'Shacman Service Workshop'],
+    'Properties': ['Bdeir Properties Main Desk', 'Commercial Towers Reception'],
+    '4235 Company S.A.L': ['4235 S.A.L Corporate Office', '4235 S.A.L Main Reception'],
+    'Insurance Company': ['Insurance Company Main Office', 'Underwriting & Claims Desk']
+  };
+
+  function getCompanyStationSites(co) {
+    const raw = String(co || '').trim();
+    const can = canonCompany(raw) || raw;
+    if (KIOSK_STATION_SITES_BY_CO[can]) return KIOSK_STATION_SITES_BY_CO[can].slice();
+    if (KIOSK_STATION_SITES_BY_CO[raw]) return KIOSK_STATION_SITES_BY_CO[raw].slice();
+    return [`${can || 'Main'} Entrance`];
+  }
+
   function getKioskStationSites(defCo) {
-    const byCo = {
-      'WTC': ['WTC Main Plant', 'WTC Crusher & Yard', 'Jiyeh JV Quarry', 'Halat JV Quarry'],
-      'BBConstruction': ['BBConstruction Batching Plant', 'BBConstruction Yard'],
-      'Lions Transport': ['Lions Transport Garage', 'Main Dispatch Yard'],
-      'Bdeir Holding': ['Bdeir Holding HQ Reception', 'Group Executive Floor'],
-      'Blanca': ['Blanca Main Gate & Pool', 'Blanca Main Kitchen & Till'],
-      'La Una': ['La Una Main Entrance & Till', 'La Una Terrace & Kitchen'],
-      'Palms': ['Palms Main Entrance', 'Palms Restaurant & Bar'],
-      'Voile': ['Voile Main Reception', 'Voile Kitchen & Cellar'],
-      'Platinum': ['Platinum Main Reception', 'Platinum Operations Desk'],
-      'Korri Auto': ['Korri Auto Main Counter', 'Korri Auto Central Warehouse'],
-      'Shacman': ['Shacman Main Showroom', 'Shacman Service Workshop'],
-      'Properties': ['Bdeir Properties Main Desk', 'Commercial Towers Reception'],
-      '4235 Company S.A.L': ['4235 S.A.L Corporate Office', '4235 S.A.L Main Reception'],
-      'Insurance Company': ['Insurance Company Main Office', 'Underwriting & Claims Desk']
-    };
+    const byCo = KIOSK_STATION_SITES_BY_CO;
     const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
     if (scopedCo && byCo[scopedCo]) return byCo[scopedCo].slice();
     const scopeCompanies = getActiveIndustryBuList(scopedCo || STATE.company);
@@ -129316,6 +129333,7 @@
                 </span>
               </label>
               <button type="button" class="btn kiosk-mini-btn att-co-eff-toggle-btn" data-toggle-co-eff="${esc(bu)}" aria-expanded="${coEffOpen ? 'true' : 'false'}"${canWriteCo ? '' : ' disabled'}>Effective Date</button>
+              <button type="button" class="btn kiosk-mini-btn att-co-sim-btn" data-${buAttr}-policy-sim="${esc(bu)}" data-ui-tip="Preview employee-by-employee payroll &amp; minute diff before saving"${canWriteCo ? '' : ' disabled'}>${ic('sliders')} <span>Simulate</span></button>
             </div>
             <div class="att-co-def-eff-drawer" data-co-eff-drawer="${esc(bu)}"${coEffOpen ? '' : ' hidden'}>
               <label class="att-inline-ctl">
@@ -129597,12 +129615,8 @@
     );
   }
 
-  function _rawStaffRuleHasLegacyPolicyFields(raw, companyDefaultGroupId) {
+  function _rawStaffRuleHasIndividualPolicyFields(raw) {
     if (!raw || typeof raw !== 'object' || raw.reset_default) return false;
-    const rawGrpId = normalizePolicyGroupIdAlias(raw.policy_group_id);
-    if (rawGrpId && (!companyDefaultGroupId || rawGrpId !== normalizePolicyGroupIdAlias(companyDefaultGroupId))) {
-      return true;
-    }
     return (
       raw.late_penalty_mode != null
       || raw.late_brackets != null
@@ -129618,8 +129632,104 @@
       || raw.grace_min != null
       || raw.early_leave_grace_min != null
       || raw.no_clock_out_rule != null
-      || _rawStaffRuleHasLegacyMathFields(raw)
     );
+  }
+
+  function _rawStaffRuleHasLegacyPolicyFields(raw, companyDefaultGroupId) {
+    if (!raw || typeof raw !== 'object' || raw.reset_default) return false;
+    const rawGrpId = normalizePolicyGroupIdAlias(raw.policy_group_id);
+    if (rawGrpId && (!companyDefaultGroupId || rawGrpId !== normalizePolicyGroupIdAlias(companyDefaultGroupId))) {
+      return true;
+    }
+    return _rawStaffRuleHasIndividualPolicyFields(raw) || _rawStaffRuleHasLegacyMathFields(raw);
+  }
+
+  function _policyTimelineCoversSpan(timeline, fromDate, toDate) {
+    const list = normalizePolicyTimelineList(timeline);
+    if (!list.length) return false;
+    const spanStart = /^\d{4}-\d{2}-\d{2}$/.test(String(fromDate || '').slice(0, 10))
+      ? String(fromDate).slice(0, 10)
+      : todayISO();
+    const spanEnd = /^\d{4}-\d{2}-\d{2}$/.test(String(toDate || '').slice(0, 10))
+      ? String(toDate).slice(0, 10)
+      : spanStart;
+    if (spanEnd < spanStart) return false;
+    const windows = list
+      .filter(w => w && !w.voided)
+      .map(w => ({
+        s: /^\d{4}-\d{2}-\d{2}$/.test(String(w.start_date || '').slice(0, 10)) ? String(w.start_date).slice(0, 10) : '0000-01-01',
+        e: /^\d{4}-\d{2}-\d{2}$/.test(String(w.end_date || '').slice(0, 10)) ? String(w.end_date).slice(0, 10) : '9999-12-31'
+      }))
+      .filter(w => w.e >= w.s && w.e >= spanStart && w.s <= spanEnd)
+      .sort((a, b) => (a.s < b.s ? -1 : (a.s > b.s ? 1 : (a.e < b.e ? -1 : 1))));
+    if (!windows.length) return false;
+    let cursor = spanStart;
+    for (let i = 0; i < windows.length; i++) {
+      if (windows[i].s > cursor) return false;
+      if (windows[i].e >= spanEnd) return true;
+      if (windows[i].e >= cursor) {
+        const nextDay = shiftIsoDateByDays(windows[i].e, 1);
+        if (!nextDay || nextDay <= cursor) return false;
+        cursor = nextDay;
+        if (cursor > spanEnd) return true;
+      }
+    }
+    return false;
+  }
+
+  function _getStaffGroupOverrideFlags(raw, grpId, fromDate = '', toDate = '', companyHint = '') {
+    if (!raw || typeof raw !== 'object' || raw.reset_default) {
+      return { hasAnyOverride: false, hasCustomPolicy: false, hasCustomMath: false, timelineCoversSpan: false, isFullOverride: false };
+    }
+    const hasTimeline = Array.isArray(raw.policy_timeline) && raw.policy_timeline.length > 0;
+    const hasCustomPolicy = Boolean(
+      raw.custom_policy_override === true
+      || (!('custom_policy_override' in raw) && _rawStaffRuleHasIndividualPolicyFields(raw))
+    );
+    const hasCustomMath = Boolean(
+      raw.custom_math_override === true
+      || (!('custom_math_override' in raw) && _rawStaffRuleHasLegacyMathFields(raw))
+    );
+    const timelineCoversSpan = hasTimeline && Boolean(fromDate)
+      ? _policyTimelineCoversSpan(raw.policy_timeline, fromDate, toDate || fromDate)
+      : false;
+    const hasAnyOverride = Boolean(hasCustomPolicy || hasCustomMath || hasTimeline);
+    const isFullOverride = Boolean(timelineCoversSpan || (hasCustomPolicy && hasCustomMath));
+    return { hasAnyOverride, hasCustomPolicy, hasCustomMath, timelineCoversSpan, isFullOverride };
+  }
+
+  function _applyGroupFieldsForOverrideFlags(targetRule, grpObj, ov) {
+    if (!targetRule || !grpObj || !ov) return;
+    if (!ov.hasCustomPolicy) {
+      targetRule.late_penalty_mode = grpObj.late_penalty_mode;
+      targetRule.late_brackets = normalizeLateBrackets(grpObj.late_brackets);
+      targetRule.late_below_bracket_mode = normalizeLateBelowBracketMode(grpObj.late_below_bracket_mode);
+      targetRule.late_half_day_after_min = grpObj.late_half_day_after_min;
+      targetRule.late_multiplier = grpObj.late_multiplier;
+      targetRule.ot_multiplier = grpObj.ot_multiplier;
+      targetRule.ot_mode = grpObj.ot_mode;
+      targetRule.ot_max_hours = grpObj.ot_max_hours;
+      targetRule.vacation_days = grpObj.vacation_days;
+      targetRule.sick_days = grpObj.sick_days;
+      targetRule.working_days = grpObj.working_days;
+      targetRule.grace_min = grpObj.grace_min;
+      targetRule.early_leave_grace_min = grpObj.early_leave_grace_min;
+      targetRule.no_clock_out_rule = grpObj.no_clock_out_rule;
+      targetRule.perks = Array.isArray(grpObj.perks) ? grpObj.perks.slice() : ['Site Transport', 'Paid Leave'];
+    }
+    if (!ov.hasCustomMath) {
+      targetRule.math_mode = grpObj.math_mode;
+      targetRule.ot_threshold_min = grpObj.ot_threshold_min;
+      targetRule.ot_early_threshold_min = grpObj.ot_early_threshold_min;
+      targetRule.ot_count_from = grpObj.ot_count_from;
+      targetRule.ot_snap_mode = normalizeOtSnapMode(grpObj.ot_snap_mode);
+      targetRule.ot_block_min = normalizeOtBlockMin(grpObj.ot_block_min);
+      targetRule.ot_snap_at_min = clampOtSnapAtMin(grpObj.ot_snap_at_min, grpObj.ot_block_min);
+    }
+  }
+
+  function _staffRuleHasGroupOverride(raw) {
+    return _getStaffGroupOverrideFlags(raw, raw && raw.policy_group_id, '', '', raw && raw.company).isFullOverride;
   }
 
   function _staffRuleHasExplicitCustomization(raw, companyDefaultGroupId, includeTimeline = false) {
@@ -129627,6 +129737,7 @@
     if (raw.custom_policy_override === true || raw.custom_math_override === true) return true;
     if (includeTimeline && Array.isArray(raw.policy_timeline) && raw.policy_timeline.length > 0) return true;
     if (raw.follows_company_default === true) return false;
+    if (raw.follows_company_default === false) return true;
     const rawGrpId = normalizePolicyGroupIdAlias(raw.policy_group_id);
     if (rawGrpId && (!companyDefaultGroupId || rawGrpId !== normalizePolicyGroupIdAlias(companyDefaultGroupId))) {
       return true;
@@ -129636,6 +129747,8 @@
     }
     return false;
   }
+
+  let _POLICY_SIM_SANDBOX = false;
 
   function setCompanyDefaultPolicyGroup(companyRaw, groupId, opts = {}) {
     _TIME24_WS_REV++;
@@ -129843,17 +129956,19 @@
         });
       }
     }
-    saveLocalAuthAndRecords();
-    postWorkScheduleMutation({
-      op: 'set_company_policy_default',
-      company: co,
-      group_id: activeGroupIdForToday,
-      policy_timeline: nextTimeline,
-      policy_timeline_updated_at: updatedCoEntry.policy_timeline_updated_at || nowIso,
-      updated_at: nowIso
-    });
-    syncWithCloud(true);
-    return { ok: true, company: co, group: grpObj, backfilledStaff, attBackfill: attBackfillRes, entry: updatedCoEntry };
+    if (!_POLICY_SIM_SANDBOX) {
+      saveLocalAuthAndRecords();
+      postWorkScheduleMutation({
+        op: 'set_company_policy_default',
+        company: co,
+        group_id: activeGroupIdForToday,
+        policy_timeline: nextTimeline,
+        policy_timeline_updated_at: updatedCoEntry.policy_timeline_updated_at || nowIso,
+        updated_at: nowIso
+      });
+      syncWithCloud(true);
+    }
+    return { ok: true, company: co, group: grpObj, backfilledStaff, affectedStaffNames: affectedStaffNames.slice(), attBackfill: attBackfillRes, entry: updatedCoEntry };
   }
 
   function getPolicyGroups(companyOpt = '') {
@@ -129967,6 +130082,59 @@
       STATE._customRev = (STATE._customRev || 0) + 1;
     }
     return changed;
+  }
+
+  function _revertCompanyPolicyDefaultsForGroup(ws, targetGrpId, nowIso, refDate, skipCoKey = '') {
+    const revertedCos = new Set();
+    if (!ws || !ws.companyPolicyDefaults || typeof ws.companyPolicyDefaults !== 'object') return revertedCos;
+    Object.keys(ws.companyPolicyDefaults).forEach(coKey => {
+      if (skipCoKey && coKey === skipCoKey) return;
+      const curDef = ws.companyPolicyDefaults[coKey];
+      const curDefId = normalizePolicyGroupIdAlias(typeof curDef === 'object' && curDef ? curDef.group_id : curDef);
+      const curTimeline = (curDef && typeof curDef === 'object' && Array.isArray(curDef.policy_timeline)) ? curDef.policy_timeline : [];
+      const hasTimelineHit = curTimeline.some(w => w && normalizePolicyGroupIdAlias(w.policy_group_id) === targetGrpId);
+      if (curDefId !== targetGrpId && !hasTimelineHit) return;
+      revertedCos.add(coKey);
+      const fbBase = DEFAULT_COMPANY_POLICY_GROUP_MAP[coKey] || 'pkg_15_open_15d';
+      const fallbackId = fbBase === targetGrpId ? (fbBase === 'pkg_15_open_15d' ? 'pkg_10_fixed_15d' : 'pkg_15_open_15d') : fbBase;
+      const coDisplay = String((curDef && curDef.company) || COMPANY_BU_MATCH[coKey] || coKey).trim();
+      const fbGrp = resolvePolicyGroupAtDate(fallbackId, coDisplay, refDate);
+      const nextEntry = Object.assign(
+        {},
+        (curDef && typeof curDef === 'object') ? curDef : {},
+        { company: coDisplay, updated_at: nowIso }
+      );
+      if (curDefId === targetGrpId) {
+        nextEntry.group_id = fallbackId;
+        nextEntry.math_mode = fbGrp.math_mode;
+        nextEntry.ot_threshold_min = fbGrp.ot_threshold_min;
+        nextEntry.ot_early_threshold_min = fbGrp.ot_early_threshold_min;
+        nextEntry.ot_count_from = fbGrp.ot_count_from;
+        nextEntry.ot_snap_mode = normalizeOtSnapMode(fbGrp.ot_snap_mode);
+        nextEntry.ot_block_min = normalizeOtBlockMin(fbGrp.ot_block_min);
+        nextEntry.ot_snap_at_min = clampOtSnapAtMin(fbGrp.ot_snap_at_min, fbGrp.ot_block_min);
+      }
+      if (hasTimelineHit) {
+        nextEntry.policy_timeline = normalizePolicyTimelineList(curTimeline.map(w => {
+          if (!w || normalizePolicyGroupIdAlias(w.policy_group_id) !== targetGrpId) return w;
+          const cleaned = Object.assign({}, w, {
+            policy_group_id: fallbackId,
+            math_mode: fbGrp.math_mode,
+            ot_threshold_min: fbGrp.ot_threshold_min,
+            ot_early_threshold_min: fbGrp.ot_early_threshold_min,
+            ot_count_from: fbGrp.ot_count_from,
+            ot_snap_mode: normalizeOtSnapMode(fbGrp.ot_snap_mode),
+            ot_block_min: normalizeOtBlockMin(fbGrp.ot_block_min),
+            ot_snap_at_min: clampOtSnapAtMin(fbGrp.ot_snap_at_min, fbGrp.ot_block_min)
+          });
+          ['late_penalty_mode', 'late_brackets', 'late_below_bracket_mode', 'late_half_day_after_min', 'late_multiplier', 'ot_multiplier', 'ot_mode', 'grace_min', 'early_leave_grace_min'].forEach(k => { delete cleaned[k]; });
+          return cleaned;
+        }));
+        nextEntry.policy_timeline_updated_at = nowIso;
+      }
+      ws.companyPolicyDefaults[coKey] = nextEntry;
+    });
+    return revertedCos;
   }
 
   function savePolicyGroup(spec = {}) {
@@ -130110,69 +130278,119 @@
 
     const newCoN = norm(normalized.company || 'All Companies');
     const isSingleScoped = Boolean(newCoN && newCoN !== norm('All Companies') && newCoN !== norm('All BUs'));
-    if (isSingleScoped && ws.companyPolicyDefaults && typeof ws.companyPolicyDefaults === 'object') {
-      Object.keys(ws.companyPolicyDefaults).forEach(coKey => {
-        if (coKey === newCoN) return;
-        const curDef = ws.companyPolicyDefaults[coKey];
-        const curDefId = normalizePolicyGroupIdAlias(typeof curDef === 'object' && curDef ? curDef.group_id : curDef);
-        if (curDefId === grpId) {
-          const fallbackId = DEFAULT_COMPANY_POLICY_GROUP_MAP[coKey] || 'pkg_15_open_15d';
-          const coDisplay = String((curDef && curDef.company) || COMPANY_BU_MATCH[coKey] || coKey).trim();
-          ws.companyPolicyDefaults[coKey] = Object.assign(
-            {},
-            (curDef && typeof curDef === 'object') ? curDef : {},
-            { company: coDisplay, group_id: fallbackId, updated_at: nowIso }
-          );
-        }
-      });
-    }
+    const revertedDefaultCos = isSingleScoped ? _revertCompanyPolicyDefaultsForGroup(ws, grpId, nowIso, today, newCoN) : new Set();
 
     let backfilledStaff = 0;
     const affectedStaffNames = [];
+    const affectedStaffPairs = [];
+    const affectedByCo = new Map();
+    const recordAffected = (staffName, company) => {
+      const sClean = String(staffName || '').trim();
+      const cClean = String(company || '').trim();
+      const cKey = norm(cClean);
+      if (!sClean) return;
+      affectedStaffNames.push(sClean);
+      affectedStaffPairs.push({ staff: sClean, company: cClean });
+      let bucket = affectedByCo.get(cKey);
+      if (!bucket) {
+        bucket = { company: cClean, staffNames: [] };
+        affectedByCo.set(cKey, bucket);
+      }
+      bucket.staffNames.push(sClean);
+    };
     const touchedStaffKeys = new Set();
+    const spanFrom = effFrom || today;
+    const spanEndToday = effTo
+      ? ((effFrom && effFrom > today) || spec.includeFutureBackfill ? effTo : (effTo < today ? effTo : today))
+      : ((effFrom && effFrom > today) ? '9999-12-31' : today);
     const allStaff = getKioskStaffDirectory({ includeEnded: true });
     allStaff.forEach(s => {
       const sCoN = norm(s.company || '');
       const curRule = getStaffWorkRule(s.name, s.company);
-      if (curRule.policy_group_id !== grpId) return;
-      touchedStaffKeys.add(norm(staffRuleKey(s.name, s.company)));
+      const entry = getStaffRuleEntry(s.name, s.company);
+      const rk = entry.key;
+      const raw = entry.raw || null;
+      const ov = _getStaffGroupOverrideFlags(raw, grpId, spanFrom, spanEndToday, s.company);
+      const wasDefaultFollowerBeforeNarrow = isSingleScoped && sCoN !== newCoN && revertedDefaultCos.has(sCoN) && (!raw || raw.reset_default || (raw.follows_company_default !== false && !ov.hasAnyOverride));
+      if (curRule.policy_group_id !== grpId && !wasDefaultFollowerBeforeNarrow) return;
+      touchedStaffKeys.add(norm(rk));
       if (isSingleScoped && sCoN !== newCoN) {
-        saveStaffWorkRule(s.name, {
-          company: s.company,
-          apply_policy_group_id: getCompanyDefaultPolicyGroupId(s.company)
-        }, { deferSave: true, skipRecalc: true });
-        return;
-      }
-      if (spec.backfill !== false) {
-        affectedStaffNames.push(s.name);
-        if (!effFrom || effFrom <= today) {
-          const todayResolved = resolvePolicyGroupAtDate(grpId, s.company, today);
+        const fallbackDefId = getCompanyDefaultPolicyGroupId(s.company);
+        if (ov.hasAnyOverride) {
+          const owned = ownStaffRuleForCompany(s.name, s.company, raw);
+          if (owned && typeof owned === 'object') {
+            owned.policy_group_id = fallbackDefId;
+            if (!effFrom || effFrom <= today) {
+              const fbResolved = resolvePolicyGroupAtDate(fallbackDefId, s.company, today);
+              _applyGroupFieldsForOverrideFlags(owned, fbResolved, ov);
+              if (!ov.hasCustomPolicy) {
+                syncStaffContractPolicyFields(s.name, s.company, owned, { effectiveFrom: effFrom });
+              }
+            }
+            owned.updated_at = nowIso;
+          }
+          if (spec.backfill !== false && !ov.isFullOverride) {
+            recordAffected(s.name, s.company);
+            backfilledStaff++;
+          }
+          return;
+        }
+        if (raw && !raw.reset_default) {
           saveStaffWorkRule(s.name, {
             company: s.company,
-            policy_group_id: grpId,
-            late_penalty_mode: todayResolved.late_penalty_mode,
-            late_brackets: normalizeLateBrackets(todayResolved.late_brackets),
-            late_below_bracket_mode: normalizeLateBelowBracketMode(todayResolved.late_below_bracket_mode),
-            late_half_day_after_min: todayResolved.late_half_day_after_min,
-            late_multiplier: todayResolved.late_multiplier,
-            ot_multiplier: todayResolved.ot_multiplier,
-            ot_mode: todayResolved.ot_mode,
-            ot_max_hours: todayResolved.ot_max_hours,
-            vacation_days: todayResolved.vacation_days,
-            sick_days: todayResolved.sick_days,
-            working_days: todayResolved.working_days,
-            grace_min: todayResolved.grace_min,
-            early_leave_grace_min: todayResolved.early_leave_grace_min,
-            no_clock_out_rule: todayResolved.no_clock_out_rule,
-            math_mode: todayResolved.math_mode,
-            ot_threshold_min: todayResolved.ot_threshold_min,
-            ot_early_threshold_min: todayResolved.ot_early_threshold_min,
-            ot_count_from: todayResolved.ot_count_from,
-            ot_snap_mode: normalizeOtSnapMode(todayResolved.ot_snap_mode),
-            ot_block_min: normalizeOtBlockMin(todayResolved.ot_block_min),
-            ot_snap_at_min: clampOtSnapAtMin(todayResolved.ot_snap_at_min, todayResolved.ot_block_min),
-            perks: todayResolved.perks.slice()
-          }, { deferSave: true, skipRecalc: true, fromPolicyGroup: true });
+            apply_policy_group_id: fallbackDefId,
+            follows_company_default: true
+          }, { deferSave: true, skipRecalc: true, fromCompanyDefault: true });
+        }
+        if (spec.backfill !== false) {
+          recordAffected(s.name, s.company);
+          backfilledStaff++;
+        }
+        return;
+      }
+      if (ov.isFullOverride) return;
+      if (spec.backfill !== false) {
+        recordAffected(s.name, s.company);
+        if (raw && !raw.reset_default && (!effFrom || effFrom <= today)) {
+          const todayResolved = resolvePolicyGroupAtDate(grpId, s.company, today);
+          if (ov.hasAnyOverride) {
+            const owned = ownStaffRuleForCompany(s.name, s.company, raw);
+            if (owned && typeof owned === 'object') {
+              owned.policy_group_id = grpId;
+              _applyGroupFieldsForOverrideFlags(owned, todayResolved, ov);
+              if (!ov.hasCustomPolicy) {
+                syncStaffContractPolicyFields(s.name, s.company, owned, { effectiveFrom: effFrom });
+              }
+              owned.updated_at = nowIso;
+            }
+          } else {
+            saveStaffWorkRule(s.name, {
+              company: s.company,
+              policy_group_id: grpId,
+              late_penalty_mode: todayResolved.late_penalty_mode,
+              late_brackets: normalizeLateBrackets(todayResolved.late_brackets),
+              late_below_bracket_mode: normalizeLateBelowBracketMode(todayResolved.late_below_bracket_mode),
+              late_half_day_after_min: todayResolved.late_half_day_after_min,
+              late_multiplier: todayResolved.late_multiplier,
+              ot_multiplier: todayResolved.ot_multiplier,
+              ot_mode: todayResolved.ot_mode,
+              ot_max_hours: todayResolved.ot_max_hours,
+              vacation_days: todayResolved.vacation_days,
+              sick_days: todayResolved.sick_days,
+              working_days: todayResolved.working_days,
+              grace_min: todayResolved.grace_min,
+              early_leave_grace_min: todayResolved.early_leave_grace_min,
+              no_clock_out_rule: todayResolved.no_clock_out_rule,
+              math_mode: todayResolved.math_mode,
+              ot_threshold_min: todayResolved.ot_threshold_min,
+              ot_early_threshold_min: todayResolved.ot_early_threshold_min,
+              ot_count_from: todayResolved.ot_count_from,
+              ot_snap_mode: normalizeOtSnapMode(todayResolved.ot_snap_mode),
+              ot_block_min: normalizeOtBlockMin(todayResolved.ot_block_min),
+              ot_snap_at_min: clampOtSnapAtMin(todayResolved.ot_snap_at_min, todayResolved.ot_block_min),
+              perks: todayResolved.perks.slice()
+            }, { deferSave: true, skipRecalc: true, fromPolicyGroup: true });
+          }
         }
         backfilledStaff++;
       }
@@ -130185,9 +130403,21 @@
         const rCoN = norm(r.company || '');
         if (rCoN && rCoN !== newCoN) {
           const fallbackId = getCompanyDefaultPolicyGroupId(r.company);
-          const grp = getPolicyGroups(r.company).find(g => g.id === fallbackId) || normalizePolicyGroupObj(DEFAULT_POLICY_GROUPS[0]);
+          const rOv = _getStaffGroupOverrideFlags(r, grpId, spanFrom, spanEndToday, r.company);
+          const grp = resolvePolicyGroupAtDate(fallbackId, r.company, today);
+          if (rOv.hasAnyOverride) {
+            r.policy_group_id = fallbackId;
+            if (!effFrom || effFrom <= today) {
+              _applyGroupFieldsForOverrideFlags(r, grp, rOv);
+            }
+            r.updated_at = nowIso;
+            return;
+          }
           Object.assign(r, {
             policy_group_id: grp.id,
+            follows_company_default: true,
+            custom_policy_override: false,
+            custom_math_override: false,
             late_penalty_mode: grp.late_penalty_mode,
             late_brackets: normalizeLateBrackets(grp.late_brackets),
             late_below_bracket_mode: normalizeLateBelowBracketMode(grp.late_below_bracket_mode),
@@ -130216,24 +130446,55 @@
       });
     }
     let attBackfillRes = null;
-    if (spec.backfill !== false && !spec.skipAttBackfill && affectedStaffNames.length > 0) {
+    if (spec.backfill !== false && !spec.skipAttBackfill && affectedByCo.size > 0) {
       const bfFrom = effFrom || today;
       if (bfFrom <= today || spec.includeFutureBackfill) {
-        attBackfillRes = backfillAttendancePolicyChange({
-          company: spec.company && !/^all/i.test(String(spec.company)) ? spec.company : '',
-          staffNames: affectedStaffNames,
-          fromDate: bfFrom,
-          toDate: effTo,
-          deferSave: true
+        attBackfillRes = { updatedRows: 0, skippedClosed: 0, skippedManual: 0 };
+        affectedByCo.forEach(sc => {
+          const bf = backfillAttendancePolicyChange({
+            company: sc.company,
+            staffNames: sc.staffNames,
+            fromDate: bfFrom,
+            toDate: effTo,
+            deferSave: true
+          });
+          if (bf) {
+            attBackfillRes.updatedRows += Number(bf.updatedRows || 0);
+            attBackfillRes.skippedClosed += Number(bf.skippedClosed || 0);
+            attBackfillRes.skippedManual += Number(bf.skippedManual || 0);
+          }
         });
       }
     }
-    saveLocalAuthAndRecords();
-    if (!spec.deferSync) {
-      postWorkScheduleMutation({ op: 'upsert_policy_group', item: normalized });
-      syncWithCloud(true);
+    if (!_POLICY_SIM_SANDBOX) {
+      saveLocalAuthAndRecords();
+      if (!spec.deferSync) {
+        postWorkScheduleMutation({ op: 'upsert_policy_group', item: normalized });
+        revertedDefaultCos.forEach(coKey => {
+          const revDef = ws.companyPolicyDefaults && ws.companyPolicyDefaults[coKey];
+          if (revDef && typeof revDef === 'object') {
+            postWorkScheduleMutation({
+              op: 'set_company_policy_default',
+              company: revDef.company || coKey,
+              group_id: revDef.group_id,
+              policy_timeline: Array.isArray(revDef.policy_timeline) ? revDef.policy_timeline : [],
+              policy_timeline_updated_at: revDef.policy_timeline_updated_at || nowIso,
+              updated_at: nowIso
+            });
+          }
+        });
+        syncWithCloud(true);
+      }
     }
-    return { ok: true, policyGroup: normalized, group: normalized, backfilledStaff, attBackfill: attBackfillRes };
+    return {
+      ok: true,
+      policyGroup: normalized,
+      group: normalized,
+      backfilledStaff,
+      affectedStaffNames: affectedStaffNames.slice(),
+      affectedStaffPairs: affectedStaffPairs.slice(),
+      attBackfill: attBackfillRes
+    };
   }
 
   function deletePolicyGroup(groupId) {
@@ -130250,21 +130511,7 @@
     const idx = ws.policyGroups.findIndex(g => g && String(g.id) === id);
     if (idx < 0) return { ok: false, error: 'Policy group not found' };
     ws.policyGroups[idx] = Object.assign({}, ws.policyGroups[idx], { voided: true, updated_at: nowIso });
-    if (ws.companyPolicyDefaults && typeof ws.companyPolicyDefaults === 'object') {
-      Object.keys(ws.companyPolicyDefaults).forEach(coKey => {
-        const curDef = ws.companyPolicyDefaults[coKey];
-        const curDefId = normalizePolicyGroupIdAlias(typeof curDef === 'object' && curDef ? curDef.group_id : curDef);
-        if (curDefId === id) {
-          const fallbackId = DEFAULT_COMPANY_POLICY_GROUP_MAP[coKey] || 'pkg_15_open_15d';
-          const coDisplay = String((curDef && curDef.company) || COMPANY_BU_MATCH[coKey] || coKey).trim();
-          ws.companyPolicyDefaults[coKey] = Object.assign(
-            {},
-            (curDef && typeof curDef === 'object') ? curDef : {},
-            { company: coDisplay, group_id: fallbackId, updated_at: nowIso }
-          );
-        }
-      });
-    }
+    const revertedOnDeleteCos = _revertCompanyPolicyDefaultsForGroup(ws, id, nowIso, todayISO(), '');
     const touchedKeys = new Set();
     getKioskStaffDirectory({ includeEnded: true }).forEach(s => {
       const curRule = getStaffWorkRule(s.name, s.company);
@@ -130312,6 +130559,19 @@
     }
     saveLocalAuthAndRecords();
     postWorkScheduleMutation({ op: 'delete_policy_group', id });
+    revertedOnDeleteCos.forEach(coKey => {
+      const revDef = ws.companyPolicyDefaults && ws.companyPolicyDefaults[coKey];
+      if (revDef && typeof revDef === 'object') {
+        postWorkScheduleMutation({
+          op: 'set_company_policy_default',
+          company: revDef.company || coKey,
+          group_id: revDef.group_id,
+          policy_timeline: Array.isArray(revDef.policy_timeline) ? revDef.policy_timeline : [],
+          policy_timeline_updated_at: revDef.policy_timeline_updated_at || nowIso,
+          updated_at: nowIso
+        });
+      }
+    });
     syncWithCloud(true);
     return { ok: true };
   }
@@ -130348,7 +130608,7 @@
     const hasCustomPolicy = Boolean(
       hasExplicitCustom && (
         rawEntry.custom_policy_override === true
-        || (!('custom_policy_override' in rawEntry) && _rawStaffRuleHasLegacyPolicyFields(rawEntry, baseCoDefId))
+        || (!('custom_policy_override' in rawEntry) && _rawStaffRuleHasIndividualPolicyFields(rawEntry))
       )
     );
 
@@ -130388,7 +130648,9 @@
         ot_mode: matchedStaffWin.ot_mode || resolvedGrp.ot_mode || rule.ot_mode,
         ot_max_hours: resolvedGrp.ot_max_hours != null ? resolvedGrp.ot_max_hours : rule.ot_max_hours,
         grace_min: matchedStaffWin.grace_min != null ? matchedStaffWin.grace_min : (resolvedGrp.grace_min != null ? resolvedGrp.grace_min : rule.grace_min),
-        early_leave_grace_min: resolvedGrp.early_leave_grace_min != null ? resolvedGrp.early_leave_grace_min : rule.early_leave_grace_min,
+        early_leave_grace_min: matchedStaffWin.early_leave_grace_min != null
+          ? matchedStaffWin.early_leave_grace_min
+          : (matchedStaffWin.grace_min != null ? matchedStaffWin.grace_min : (resolvedGrp.early_leave_grace_min != null ? resolvedGrp.early_leave_grace_min : rule.early_leave_grace_min)),
         no_clock_out_rule: resolvedGrp.no_clock_out_rule || rule.no_clock_out_rule,
         vacation_days: resolvedGrp.vacation_days != null ? resolvedGrp.vacation_days : rule.vacation_days,
         sick_days: resolvedGrp.sick_days != null ? resolvedGrp.sick_days : rule.sick_days,
@@ -130405,70 +130667,49 @@
       grpId = normalizePolicyGroupIdAlias(rule.policy_group_id || coResolved.id);
       const grpAtDate = resolvePolicyGroupAtDate(grpId, effCo, dStr);
       resolvedGrp = grpAtDate;
-      if (grpAtDate.activeVersion) {
-        sourceScope = 'policy_group_version';
-        mathMode = hasCustomMath && rule.math_mode != null ? normalizeAttMathMode(rule.math_mode) : normalizeAttMathMode(grpAtDate.math_mode);
-        otThreshMin = hasCustomMath && rule.ot_threshold_min != null ? clampAttThresholdMin(rule.ot_threshold_min, 10) : clampAttThresholdMin(grpAtDate.ot_threshold_min, 10);
-        otEarlyThreshMin = hasCustomMath && rule.ot_early_threshold_min != null ? clampAttThresholdMin(rule.ot_early_threshold_min, 15) : clampAttThresholdMin(grpAtDate.ot_early_threshold_min, 15);
-        otCountFrom = hasCustomMath && rule.ot_count_from != null ? normalizeOtCountFrom(rule.ot_count_from) : normalizeOtCountFrom(grpAtDate.ot_count_from);
-        otSnapMode = hasCustomMath && rule.ot_snap_mode != null ? normalizeOtSnapMode(rule.ot_snap_mode) : normalizeOtSnapMode(grpAtDate.ot_snap_mode);
-        otBlockMin = hasCustomMath && rule.ot_block_min != null ? normalizeOtBlockMin(rule.ot_block_min) : normalizeOtBlockMin(grpAtDate.ot_block_min);
-        otSnapAtMin = hasCustomMath && rule.ot_snap_at_min != null ? clampOtSnapAtMin(rule.ot_snap_at_min, otBlockMin) : clampOtSnapAtMin(grpAtDate.ot_snap_at_min, otBlockMin);
-        effectiveRule = hasCustomPolicy
-          ? Object.assign({}, rule, {
-              policy_group_id: grpId,
-              math_mode: mathMode,
-              ot_threshold_min: otThreshMin,
-              ot_early_threshold_min: otEarlyThreshMin,
-              ot_count_from: otCountFrom,
-              ot_snap_mode: otSnapMode,
-              ot_block_min: otBlockMin,
-              ot_snap_at_min: otSnapAtMin
-            })
-          : Object.assign({}, rule, {
-              policy_group_id: grpId,
-              late_penalty_mode: grpAtDate.late_penalty_mode || rule.late_penalty_mode,
-              late_brackets: normalizeLateBrackets(grpAtDate.late_brackets || rule.late_brackets),
-              late_below_bracket_mode: normalizeLateBelowBracketMode(grpAtDate.late_below_bracket_mode || rule.late_below_bracket_mode),
-              late_half_day_after_min: grpAtDate.late_half_day_after_min != null ? grpAtDate.late_half_day_after_min : rule.late_half_day_after_min,
-              late_multiplier: grpAtDate.late_multiplier != null ? grpAtDate.late_multiplier : rule.late_multiplier,
-              ot_multiplier: grpAtDate.ot_multiplier != null ? grpAtDate.ot_multiplier : rule.ot_multiplier,
-              ot_mode: grpAtDate.ot_mode || rule.ot_mode,
-              ot_max_hours: grpAtDate.ot_max_hours != null ? grpAtDate.ot_max_hours : rule.ot_max_hours,
-              grace_min: grpAtDate.grace_min != null ? grpAtDate.grace_min : rule.grace_min,
-              early_leave_grace_min: grpAtDate.early_leave_grace_min != null ? grpAtDate.early_leave_grace_min : rule.early_leave_grace_min,
-              no_clock_out_rule: grpAtDate.no_clock_out_rule || rule.no_clock_out_rule,
-              vacation_days: grpAtDate.vacation_days != null ? grpAtDate.vacation_days : rule.vacation_days,
-              sick_days: grpAtDate.sick_days != null ? grpAtDate.sick_days : rule.sick_days,
-              working_days: grpAtDate.working_days != null ? grpAtDate.working_days : rule.working_days,
-              math_mode: mathMode,
-              ot_threshold_min: otThreshMin,
-              ot_early_threshold_min: otEarlyThreshMin,
-              ot_count_from: otCountFrom,
-              ot_snap_mode: otSnapMode,
-              ot_block_min: otBlockMin,
-              ot_snap_at_min: otSnapAtMin
-            });
-      } else {
-        sourceScope = 'staff_rule';
-        mathMode = hasCustomMath && rule.math_mode != null ? normalizeAttMathMode(rule.math_mode) : normalizeAttMathMode(grpAtDate.math_mode);
-        otThreshMin = hasCustomMath && rule.ot_threshold_min != null ? clampAttThresholdMin(rule.ot_threshold_min, 10) : clampAttThresholdMin(grpAtDate.ot_threshold_min, 10);
-        otEarlyThreshMin = hasCustomMath && rule.ot_early_threshold_min != null ? clampAttThresholdMin(rule.ot_early_threshold_min, 15) : clampAttThresholdMin(grpAtDate.ot_early_threshold_min, 15);
-        otCountFrom = hasCustomMath && rule.ot_count_from != null ? normalizeOtCountFrom(rule.ot_count_from) : normalizeOtCountFrom(grpAtDate.ot_count_from);
-        otSnapMode = hasCustomMath && rule.ot_snap_mode != null ? normalizeOtSnapMode(rule.ot_snap_mode) : normalizeOtSnapMode(grpAtDate.ot_snap_mode);
-        otBlockMin = hasCustomMath && rule.ot_block_min != null ? normalizeOtBlockMin(rule.ot_block_min) : normalizeOtBlockMin(grpAtDate.ot_block_min);
-        otSnapAtMin = hasCustomMath && rule.ot_snap_at_min != null ? clampOtSnapAtMin(rule.ot_snap_at_min, otBlockMin) : clampOtSnapAtMin(grpAtDate.ot_snap_at_min, otBlockMin);
-        effectiveRule = Object.assign({}, rule, {
-          policy_group_id: grpId,
-          math_mode: mathMode,
-          ot_threshold_min: otThreshMin,
-          ot_early_threshold_min: otEarlyThreshMin,
-          ot_count_from: otCountFrom,
-          ot_snap_mode: otSnapMode,
-          ot_block_min: otBlockMin,
-          ot_snap_at_min: otSnapAtMin
-        });
-      }
+      sourceScope = grpAtDate.activeVersion ? 'policy_group_version' : 'staff_rule';
+      mathMode = hasCustomMath && rule.math_mode != null ? normalizeAttMathMode(rule.math_mode) : normalizeAttMathMode(grpAtDate.math_mode);
+      otThreshMin = hasCustomMath && rule.ot_threshold_min != null ? clampAttThresholdMin(rule.ot_threshold_min, 10) : clampAttThresholdMin(grpAtDate.ot_threshold_min, 10);
+      otEarlyThreshMin = hasCustomMath && rule.ot_early_threshold_min != null ? clampAttThresholdMin(rule.ot_early_threshold_min, 15) : clampAttThresholdMin(grpAtDate.ot_early_threshold_min, 15);
+      otCountFrom = hasCustomMath && rule.ot_count_from != null ? normalizeOtCountFrom(rule.ot_count_from) : normalizeOtCountFrom(grpAtDate.ot_count_from);
+      otSnapMode = hasCustomMath && rule.ot_snap_mode != null ? normalizeOtSnapMode(rule.ot_snap_mode) : normalizeOtSnapMode(grpAtDate.ot_snap_mode);
+      otBlockMin = hasCustomMath && rule.ot_block_min != null ? normalizeOtBlockMin(rule.ot_block_min) : normalizeOtBlockMin(grpAtDate.ot_block_min);
+      otSnapAtMin = hasCustomMath && rule.ot_snap_at_min != null ? clampOtSnapAtMin(rule.ot_snap_at_min, otBlockMin) : clampOtSnapAtMin(grpAtDate.ot_snap_at_min, otBlockMin);
+      effectiveRule = hasCustomPolicy
+        ? Object.assign({}, rule, {
+            policy_group_id: grpId,
+            math_mode: mathMode,
+            ot_threshold_min: otThreshMin,
+            ot_early_threshold_min: otEarlyThreshMin,
+            ot_count_from: otCountFrom,
+            ot_snap_mode: otSnapMode,
+            ot_block_min: otBlockMin,
+            ot_snap_at_min: otSnapAtMin
+          })
+        : Object.assign({}, rule, {
+            policy_group_id: grpId,
+            late_penalty_mode: grpAtDate.late_penalty_mode || rule.late_penalty_mode,
+            late_brackets: normalizeLateBrackets(grpAtDate.late_brackets || rule.late_brackets),
+            late_below_bracket_mode: normalizeLateBelowBracketMode(grpAtDate.late_below_bracket_mode || rule.late_below_bracket_mode),
+            late_half_day_after_min: grpAtDate.late_half_day_after_min != null ? grpAtDate.late_half_day_after_min : rule.late_half_day_after_min,
+            late_multiplier: grpAtDate.late_multiplier != null ? grpAtDate.late_multiplier : rule.late_multiplier,
+            ot_multiplier: grpAtDate.ot_multiplier != null ? grpAtDate.ot_multiplier : rule.ot_multiplier,
+            ot_mode: grpAtDate.ot_mode || rule.ot_mode,
+            ot_max_hours: grpAtDate.ot_max_hours != null ? grpAtDate.ot_max_hours : rule.ot_max_hours,
+            grace_min: grpAtDate.grace_min != null ? grpAtDate.grace_min : rule.grace_min,
+            early_leave_grace_min: grpAtDate.early_leave_grace_min != null ? grpAtDate.early_leave_grace_min : rule.early_leave_grace_min,
+            no_clock_out_rule: grpAtDate.no_clock_out_rule || rule.no_clock_out_rule,
+            vacation_days: grpAtDate.vacation_days != null ? grpAtDate.vacation_days : rule.vacation_days,
+            sick_days: grpAtDate.sick_days != null ? grpAtDate.sick_days : rule.sick_days,
+            working_days: grpAtDate.working_days != null ? grpAtDate.working_days : rule.working_days,
+            math_mode: mathMode,
+            ot_threshold_min: otThreshMin,
+            ot_early_threshold_min: otEarlyThreshMin,
+            ot_count_from: otCountFrom,
+            ot_snap_mode: otSnapMode,
+            ot_block_min: otBlockMin,
+            ot_snap_at_min: otSnapAtMin
+          });
     } else {
       const inferredGrpId = normalizePolicyGroupIdAlias(rule.policy_group_id || inferDefaultPolicyGroupId(staffName, effCo, rawEntry) || coResolved.id);
       const followsCoGroup = Boolean((rawEntry && rawEntry.follows_company_default) || inferredGrpId === baseCoDefId);
@@ -130801,6 +131042,789 @@
     });
   }
 
+  function simulatePolicyChangeEmployeeDiffs(spec = {}) {
+    const mode = spec.mode === 'policy_group' ? 'policy_group' : 'company_default';
+    const showDollars = canViewPayrollDollarAmounts();
+    const today = todayISO();
+
+    if (mode === 'policy_group' && !canEditPolicyGroupsCatalog()) {
+      return { ok: false, error: 'Full-group scheduling rights are required to edit Policy & Perks groups' };
+    }
+    if (mode === 'company_default' && !canEditShiftsAndRules(null, spec.company || '')) {
+      return { ok: false, error: 'You do not have rights to update policy defaults for this company' };
+    }
+
+    const pgPayloadRaw = (spec.groupPayload && typeof spec.groupPayload === 'object') ? Object.assign({}, spec.groupPayload) : {};
+    const rawEffFrom = mode === 'policy_group' ? pgPayloadRaw.effective_from : spec.effective_from;
+    const rawEffTo = mode === 'policy_group' ? pgPayloadRaw.effective_to : spec.effective_to;
+    const effFrom = rawEffFrom && /^\d{4}-\d{2}-\d{2}$/.test(String(rawEffFrom).slice(0, 10))
+      ? String(rawEffFrom).slice(0, 10)
+      : '';
+    const effTo = rawEffTo && /^\d{4}-\d{2}-\d{2}$/.test(String(rawEffTo).slice(0, 10))
+      ? String(rawEffTo).slice(0, 10)
+      : '';
+    if (effTo && effFrom && effTo < effFrom) {
+      return { ok: false, error: 'Effective End Date must be on or after Start Date' };
+    }
+
+    const startD = effFrom || today;
+    let endD = effTo || today;
+    if (!spec.includeFuture && endD > today) endD = today;
+    const isFutureEffective = Boolean(effFrom && effFrom > today);
+
+    const staffDirAll = getKioskStaffDirectory({ includeEnded: true });
+    const roleMap = new Map();
+    staffDirAll.forEach(s => {
+      roleMap.set(`${norm(s.company)}|${norm(s.name)}`, s.role || 'Staff');
+    });
+
+    const overriddenStaff = [];
+    const curWs = ensureWorkSchedulesState();
+    const savedWs = JSON.parse(JSON.stringify(curWs));
+    const savedRev = _TIME24_WS_REV;
+    const savedMemo = _WS_POLICY_MEMO;
+    const savedCustomRev = STATE._customRev || 0;
+    const hadCustomEmps = Boolean(STATE.customRecords && Array.isArray(STATE.customRecords.employments));
+    const savedCustomEmps = hadCustomEmps ? JSON.parse(JSON.stringify(STATE.customRecords.employments)) : null;
+    const seedEmps = (SEED && SEED.records && Array.isArray(SEED.records.employments)) ? SEED.records.employments : [];
+    const empTrackKeys = ['overtime_multiplier', 'lateness_multiplier', 'vacation_days', 'working_days'];
+    const savedSeedEmpProps = seedEmps.map(e => {
+      const snap = {};
+      empTrackKeys.forEach(k => {
+        snap[k] = { has: Boolean(e && Object.prototype.hasOwnProperty.call(e, k)), val: e ? e[k] : undefined };
+      });
+      return snap;
+    });
+
+    if (mode === 'company_default') {
+      const coKey = norm(spec.company || defaultEntryCompany() || 'WTC');
+      const prevDefId = getCompanyDefaultPolicyGroupId(spec.company || '');
+      staffDirAll.forEach(s => {
+        if (norm(s.company) !== coKey) return;
+        const raw = getStaffRuleEntry(s.name, s.company).raw || null;
+        if (_staffRuleHasExplicitCustomization(raw, prevDefId, true)) {
+          overriddenStaff.push({ staff: s.name, company: s.company, reason: 'custom_rule' });
+        }
+      });
+    } else if (pgPayloadRaw.id) {
+      const grpIdN = normalizePolicyGroupIdAlias(pgPayloadRaw.id);
+      const coScope = pgPayloadRaw.company && !/^all/i.test(String(pgPayloadRaw.company)) ? norm(pgPayloadRaw.company) : '';
+      const isNarrowing = Boolean(coScope && coScope !== norm('All Companies') && coScope !== norm('All BUs'));
+      const simSpanEnd = effTo || (isFutureEffective ? '9999-12-31' : endD);
+      staffDirAll.forEach(s => {
+        if (!isNarrowing && coScope && norm(s.company) !== coScope) return;
+        const raw = getStaffRuleEntry(s.name, s.company).raw || null;
+        const rule = getStaffWorkRule(s.name, s.company);
+        const ov = _getStaffGroupOverrideFlags(raw, grpIdN, startD, simSpanEnd, s.company);
+        if (normalizePolicyGroupIdAlias(rule.policy_group_id) === grpIdN && ov.isFullOverride) {
+          overriddenStaff.push({ staff: s.name, company: s.company, reason: 'custom_rule' });
+        }
+      });
+    }
+
+    const employeesMap = new Map();
+    const ensureEmpBucket = (staffName, company, attRow) => {
+      const ek = `${norm(company)}|${norm(staffName)}`;
+      if (!employeesMap.has(ek)) {
+        employeesMap.set(ek, {
+          key: ek,
+          staff: staffName,
+          company,
+          role: roleMap.get(ek) || (attRow && attRow.role) || 'Staff',
+          updatedLogs: 0,
+          unchangedLogs: 0,
+          oldOtMin: 0,
+          newOtMin: 0,
+          otMinDelta: 0,
+          oldLateMin: 0,
+          newLateMin: 0,
+          lateMinDelta: 0,
+          oldLeaveDays: 0,
+          newLeaveDays: 0,
+          leaveDaysDelta: 0,
+          earnedDeltaUsd: showDollars ? 0 : null,
+          lostDeltaUsd: showDollars ? 0 : null,
+          netDeltaUsd: showDollars ? 0 : null,
+          dayDiffs: []
+        });
+      }
+      return employeesMap.get(ek);
+    };
+
+    let updatedRows = 0;
+    let unchangedRows = 0;
+    let skippedClosed = 0;
+    let skippedManual = 0;
+    let oldOtMinTotal = 0;
+    let newOtMinTotal = 0;
+    let oldLateMinTotal = 0;
+    let newLateMinTotal = 0;
+    let leaveDaysDelta = 0;
+    let earnedDeltaUsd = showDollars ? 0 : null;
+    let lostDeltaUsd = showDollars ? 0 : null;
+    let netDeltaUsd = showDollars ? 0 : null;
+    let scopeLabel = '';
+    let simTitle = '';
+
+    try {
+      _POLICY_SIM_SANDBOX = true;
+      const companyStaffScopes = [];
+
+      if (mode === 'company_default') {
+        const co = String(spec.company || defaultEntryCompany() || 'WTC').trim();
+        const grpId = spec.groupId || getCompanyDefaultPolicyGroupId(co) || 'pkg_15_open_15d';
+        const simRes = setCompanyDefaultPolicyGroup(co, grpId, {
+          effective_from: effFrom,
+          effective_to: effTo,
+          math_mode: spec.math_mode,
+          ot_threshold_min: spec.ot_threshold_min,
+          ot_early_threshold_min: spec.ot_early_threshold_min,
+          ot_count_from: spec.ot_count_from,
+          ot_snap_mode: spec.ot_snap_mode,
+          ot_block_min: spec.ot_block_min,
+          ot_snap_at_min: spec.ot_snap_at_min,
+          backfill: true,
+          skipAttBackfill: true
+        });
+        if (!simRes || !simRes.ok) {
+          return { ok: false, error: (simRes && simRes.error) || 'Could not simulate company default policy' };
+        }
+        scopeLabel = `${co} - ${(simRes.group && simRes.group.name) || grpId}`;
+        simTitle = (simRes.group && simRes.group.name) || grpId;
+        companyStaffScopes.push({
+          company: co,
+          staffSet: Array.isArray(simRes.affectedStaffNames) ? new Set(simRes.affectedStaffNames.map(s => norm(s)).filter(Boolean)) : null
+        });
+      } else {
+        const pgPayload = Object.assign({}, pgPayloadRaw, { skipAttBackfill: true, deferSync: true });
+        const simRes = savePolicyGroup(pgPayload);
+        if (!simRes || !simRes.ok) {
+          return { ok: false, error: (simRes && simRes.error) || 'Could not simulate policy group changes' };
+        }
+        const targetDefCo = String(spec.targetDefCo || '').trim();
+        scopeLabel = `${simRes.policyGroup.name}${(simRes.policyGroup.company && !/^all/i.test(simRes.policyGroup.company)) ? ` (${simRes.policyGroup.company})` : ' (All Companies)'}`;
+        simTitle = simRes.policyGroup.name;
+        const pgCoFilter = pgPayload.company && !/^all/i.test(String(pgPayload.company)) ? String(pgPayload.company) : '';
+        const pairs = Array.isArray(simRes.affectedStaffPairs) ? simRes.affectedStaffPairs : [];
+        if (pgPayload.backfill !== false && pairs.length > 0) {
+          const byCoMap = new Map();
+          pairs.forEach(pair => {
+            const cName = String((pair && pair.company) || '').trim();
+            const cKey = norm(cName);
+            const sName = norm(pair && pair.staff);
+            if (!sName) return;
+            if (!byCoMap.has(cKey)) byCoMap.set(cKey, { company: cName, staffSet: new Set() });
+            byCoMap.get(cKey).staffSet.add(sName);
+          });
+          byCoMap.forEach(sc => {
+            if (sc.staffSet.size > 0) companyStaffScopes.push(sc);
+          });
+        } else if (pgPayload.backfill !== false && Array.isArray(simRes.affectedStaffNames) && simRes.affectedStaffNames.length > 0) {
+          companyStaffScopes.push({
+            company: pgCoFilter,
+            staffSet: new Set(simRes.affectedStaffNames.map(s => norm(s)).filter(Boolean))
+          });
+        }
+        if (spec.willSetCoDef && targetDefCo) {
+          const defRes = setCompanyDefaultPolicyGroup(targetDefCo, simRes.policyGroup.id, {
+            effective_from: pgPayload.effective_from || '',
+            effective_to: pgPayload.effective_to || '',
+            backfill: pgPayload.backfill !== false,
+            skipAttBackfill: true
+          });
+          if (defRes && defRes.ok && pgPayload.backfill !== false && Array.isArray(defRes.affectedStaffNames) && defRes.affectedStaffNames.length > 0) {
+            companyStaffScopes.push({
+              company: targetDefCo,
+              staffSet: new Set(defRes.affectedStaffNames.map(s => norm(s)).filter(Boolean))
+            });
+          }
+        } else if (spec.willRevertCoDef && targetDefCo) {
+          const fbBase = DEFAULT_COMPANY_POLICY_GROUP_MAP[norm(targetDefCo)] || 'pkg_15_open_15d';
+          const fbId = fbBase === simRes.policyGroup.id ? (fbBase === 'pkg_15_open_15d' ? 'pkg_10_fixed_15d' : 'pkg_15_open_15d') : fbBase;
+          const revRes = setCompanyDefaultPolicyGroup(targetDefCo, fbId, {
+            effective_from: pgPayload.effective_from || '',
+            effective_to: pgPayload.effective_to || '',
+            backfill: pgPayload.backfill !== false,
+            skipAttBackfill: true
+          });
+          if (revRes && revRes.ok && pgPayload.backfill !== false && Array.isArray(revRes.affectedStaffNames) && revRes.affectedStaffNames.length > 0) {
+            companyStaffScopes.push({
+              company: targetDefCo,
+              staffSet: new Set(revRes.affectedStaffNames.map(s => norm(s)).filter(Boolean))
+            });
+          }
+        }
+      }
+
+      if (!isFutureEffective && endD >= startD && companyStaffScopes.length > 0) {
+        const rows = Array.isArray(STATE.customRecords && STATE.customRecords.attendance)
+          ? STATE.customRecords.attendance
+          : [];
+        const seenRowIds = new Set();
+        const matchesScopes = a => {
+          const coN = norm(a.company || '');
+          const stN = norm(a.staff || '');
+          return companyStaffScopes.some(sc => {
+            if (sc.company && norm(sc.company) !== coN) return false;
+            if (sc.staffSet && !sc.staffSet.has(stN)) return false;
+            return true;
+          });
+        };
+
+        for (let i = 0; i < rows.length; i++) {
+          const a = rows[i];
+          if (!a || a.voided) continue;
+          const rid = a.id != null ? String(a.id) : `idx_${i}`;
+          if (seenRowIds.has(rid)) continue;
+          const attType = String(a.type || a.status || 'Present').trim();
+          if (/^(config|extra|site\s*(?:present|off)|vacabsence|paid\s*leave|sick)/i.test(attType)) continue;
+          if (!matchesScopes(a)) continue;
+          const effD = String(a.set_date || a.date || '').slice(0, 10);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(effD) || effD < startD || effD > endD) continue;
+          const inT = fmtAttClockTime(a.in_time || a.check_in || '');
+          const outT = fmtAttClockTime(a.out_time || a.check_out || '');
+          if (!inT && !outT) continue;
+          seenRowIds.add(rid);
+
+          const coEff = a.company || spec.company || '';
+          const closeGuard = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
+            ? window.MFG_AI_EDGE.checkPeriodCloseGuard(coEff, effD, String(a.rep_date || effD).slice(0, 10))
+            : null;
+          if (closeGuard && closeGuard.blocked) {
+            skippedClosed++;
+            continue;
+          }
+
+          const isDoorTab = a.origin === 'door_tablet';
+          const isKioskCreated = /^Kiosk\b/i.test(String(a.notes || '')) || a.origin === 'wall_kiosk';
+          const isManualEdited = Boolean(a.manual_override) || (
+            isDoorTab
+              ? isHandOwnedTabletRow(a)
+              : (Boolean(a.modified_by) && !isKioskCreated && (!a.tab_sig || attendanceFigureSig(a) !== a.tab_sig))
+          );
+          if (isManualEdited) {
+            skippedManual++;
+            continue;
+          }
+
+          const evalRes = evaluateShiftPunchTiming(a.staff, coEff, effD, inT, outT, {
+            outDate: a.out_date || a.date || effD,
+            inSameCalendarDay: (effD === String(a.date || effD).slice(0, 10)),
+            internalCalc: true
+          });
+          const prof = getStaffContractProfile(a.staff, coEff, effD);
+          const oldImp = computeAttendanceRowDollarImpact(a, prof);
+
+          const isPairedBoth = Boolean(inT && outT);
+          const workedH = Number(evalRes.workedHours || 0);
+          const otH = isPairedBoth ? Number(evalRes.overtimeHours || 0) : 0;
+          const unappOt = isPairedBoth ? Number(evalRes.unapprovedOtHours || 0) : 0;
+          const penLeaveDays = Number(evalRes.penaltyLeaveDays || 0);
+          const ltH = penLeaveDays > 0 ? 0 : Number(evalRes.lateHours || 0);
+          const effType = otH > 0
+            ? 'Overtime'
+            : (penLeaveDays >= 1
+              ? 'Absence'
+              : (penLeaveDays >= 0.5
+                ? 'Half Day'
+                : (ltH > 0 ? 'Lateness' : 'Present')));
+          const effTally = otH > 0 ? otH : (penLeaveDays > 0 ? penLeaveDays : (ltH > 0 ? ltH : workedH));
+
+          const nextFields = {
+            type: effType,
+            status: effType,
+            tally: effTally,
+            shift_id: evalRes.shift.id,
+            shift_label: evalRes.shift.badgeLabel,
+            scheduled_hours: evalRes.scheduledHours,
+            worked_hours: workedH,
+            regular_hours: isPairedBoth ? evalRes.regularHours : (workedH > 0 ? Math.min(evalRes.scheduledHours, workedH) : 0),
+            overtime_hours: otH,
+            unapproved_ot_hours: unappOt,
+            late_hours: ltH,
+            raw_late_hours: Number(evalRes.rawLateHours || 0),
+            raw_late_min: Number(evalRes.rawLateMin || 0),
+            leave_days: penLeaveDays,
+            no_out_rule: evalRes.isSinglePunch ? (evalRes.noOutRule || 'half_day') : '',
+            single_punch_type: evalRes.singlePunchType || '',
+            penalty_summary: evalRes.penaltySummary || '',
+            late_cutoff: evalRes.lateCutoffTime || '',
+            early_out_cutoff: evalRes.earlyOutCutoffTime || '',
+            math_mode: evalRes.mathMode || 'tenth_hour',
+            approved_ot_min: Number(evalRes.approvedOtMin || 0),
+            unapproved_ot_min: Number(evalRes.unapprovedOtMin || 0),
+            billable_late_min: Number(evalRes.billableLateMin || 0),
+            ot_threshold_min: Number(evalRes.otThresholdMin != null ? evalRes.otThresholdMin : 10),
+            policy_ot_mult: Number((evalRes.rule && evalRes.rule.ot_multiplier) || 1.5),
+            policy_late_mult: evalRes.rule && evalRes.rule.late_penalty_mode === 'none' ? 0 : (evalRes.rule && evalRes.rule.late_penalty_mode === 'multiplier' ? (Number(evalRes.rule.late_multiplier) || 1) : 1),
+            late_mult_baked: true
+          };
+
+          const simRow = Object.assign({}, a, nextFields);
+          delete simRow._attDollarImpactCacheKey;
+          const newImp = computeAttendanceRowDollarImpact(simRow, prof);
+
+          const oldOtMin = a.approved_ot_min != null ? Math.round(Number(a.approved_ot_min)) : Math.round(Number(a.overtime_hours || 0) * 60);
+          const newOtMin = Math.round(nextFields.approved_ot_min);
+          const oldLateMin = a.billable_late_min != null ? Math.round(Number(a.billable_late_min)) : Math.round(Number(a.late_hours || 0) * 60);
+          const newLateMin = Math.round(nextFields.billable_late_min);
+          const oldLvD = Number(a.leave_days || 0);
+          const newLvD = Number(penLeaveDays || 0);
+
+          const figChanged = (
+            a.type !== effType
+            || Math.abs(Number(a.worked_hours || 0) - workedH) > 0.0005
+            || Math.abs(Number(a.overtime_hours || 0) - otH) > 0.0005
+            || Math.abs(Number(a.late_hours || 0) - ltH) > 0.0005
+            || Math.abs(oldLvD - newLvD) > 0.001
+            || String(a.math_mode || '') !== String(nextFields.math_mode || '')
+            || Number(a.approved_ot_min || 0) !== nextFields.approved_ot_min
+            || Number(a.billable_late_min || 0) !== nextFields.billable_late_min
+            || Number(a.ot_threshold_min != null ? a.ot_threshold_min : 10) !== nextFields.ot_threshold_min
+            || Math.abs(newImp.netImpactUsd - oldImp.netImpactUsd) > 0.005
+          );
+
+          const bucket = ensureEmpBucket(a.staff, coEff, a);
+          if (!figChanged) {
+            unchangedRows++;
+            bucket.unchangedLogs++;
+            continue;
+          }
+
+          updatedRows++;
+          bucket.updatedLogs++;
+          bucket.oldOtMin += oldOtMin;
+          bucket.newOtMin += newOtMin;
+          bucket.otMinDelta = bucket.newOtMin - bucket.oldOtMin;
+          bucket.oldLateMin += oldLateMin;
+          bucket.newLateMin += newLateMin;
+          bucket.lateMinDelta = bucket.newLateMin - bucket.oldLateMin;
+          bucket.oldLeaveDays = round2(bucket.oldLeaveDays + oldLvD);
+          bucket.newLeaveDays = round2(bucket.newLeaveDays + newLvD);
+          bucket.leaveDaysDelta = round2(bucket.newLeaveDays - bucket.oldLeaveDays);
+
+          oldOtMinTotal += oldOtMin;
+          newOtMinTotal += newOtMin;
+          oldLateMinTotal += oldLateMin;
+          newLateMinTotal += newLateMin;
+          leaveDaysDelta = round2(leaveDaysDelta + (newLvD - oldLvD));
+
+          const rowEarnedDelta = showDollars ? round2(newImp.earnedUsd - oldImp.earnedUsd) : null;
+          const rowLostDelta = showDollars ? round2(newImp.lostUsd - oldImp.lostUsd) : null;
+          const rowNetDelta = showDollars ? round2(newImp.netImpactUsd - oldImp.netImpactUsd) : null;
+          if (showDollars) {
+            bucket.earnedDeltaUsd = round2((bucket.earnedDeltaUsd || 0) + rowEarnedDelta);
+            bucket.lostDeltaUsd = round2((bucket.lostDeltaUsd || 0) + rowLostDelta);
+            bucket.netDeltaUsd = round2((bucket.netDeltaUsd || 0) + rowNetDelta);
+            earnedDeltaUsd = round2((earnedDeltaUsd || 0) + rowEarnedDelta);
+            lostDeltaUsd = round2((lostDeltaUsd || 0) + rowLostDelta);
+            netDeltaUsd = round2((netDeltaUsd || 0) + rowNetDelta);
+          }
+
+          bucket.dayDiffs.push({
+            id: rid,
+            date: effD,
+            inTime: inT,
+            outTime: outT,
+            oldType: attType,
+            newType: effType,
+            oldOtMin,
+            newOtMin,
+            otMinDelta: newOtMin - oldOtMin,
+            oldLateMin,
+            newLateMin,
+            lateMinDelta: newLateMin - oldLateMin,
+            oldLeaveDays: oldLvD,
+            newLeaveDays: newLvD,
+            earnedDeltaUsd: rowEarnedDelta,
+            lostDeltaUsd: rowLostDelta,
+            netDeltaUsd: rowNetDelta
+          });
+        }
+      }
+    } finally {
+      _POLICY_SIM_SANDBOX = false;
+      STATE.workSchedules = savedWs;
+      _TIME24_WS_REV = savedRev;
+      _WS_POLICY_MEMO = savedMemo;
+      STATE._customRev = savedCustomRev;
+      if (hadCustomEmps) {
+        STATE.customRecords.employments = savedCustomEmps;
+      } else if (STATE.customRecords && Object.prototype.hasOwnProperty.call(STATE.customRecords, 'employments')) {
+        delete STATE.customRecords.employments;
+      }
+      seedEmps.forEach((e, idx) => {
+        const snap = savedSeedEmpProps[idx];
+        if (!e || !snap) return;
+        empTrackKeys.forEach(k => {
+          if (snap[k].has) e[k] = snap[k].val;
+          else delete e[k];
+        });
+      });
+    }
+
+    const employees = Array.from(employeesMap.values()).map(emp => {
+      emp.dayDiffs.sort((x, y) => String(y.date).localeCompare(String(x.date)));
+      return emp;
+    }).sort((a, b) => {
+      const aUsd = showDollars ? Math.abs(a.netDeltaUsd || 0) : 0;
+      const bUsd = showDollars ? Math.abs(b.netDeltaUsd || 0) : 0;
+      if (Math.abs(bUsd - aUsd) > 0.005) return bUsd - aUsd;
+      const aMin = Math.abs(a.otMinDelta || 0) + Math.abs(a.lateMinDelta || 0);
+      const bMin = Math.abs(b.otMinDelta || 0) + Math.abs(b.lateMinDelta || 0);
+      if (bMin !== aMin) return bMin - aMin;
+      if ((b.updatedLogs || 0) !== (a.updatedLogs || 0)) return (b.updatedLogs || 0) - (a.updatedLogs || 0);
+      return String(a.staff || '').localeCompare(String(b.staff || ''));
+    });
+
+    const changedEmployeesCount = employees.filter(e => e.updatedLogs > 0).length;
+    return {
+      ok: true,
+      mode,
+      title: simTitle,
+      scopeLabel,
+      fromDate: startD,
+      toDate: endD,
+      isFutureEffective,
+      effectiveFrom: effFrom,
+      effectiveTo: effTo,
+      dollarsRedacted: !showDollars,
+      updatedRows,
+      unchangedRows,
+      skippedClosed,
+      skippedManual,
+      overriddenStaffCount: overriddenStaff.length,
+      overriddenStaff,
+      changedEmployeesCount,
+      scannedEmployeesCount: employees.length,
+      oldOtMinTotal,
+      newOtMinTotal,
+      otMinDelta: newOtMinTotal - oldOtMinTotal,
+      oldLateMinTotal,
+      newLateMinTotal,
+      lateMinDelta: newLateMinTotal - oldLateMinTotal,
+      leaveDaysDelta,
+      earnedDeltaUsd,
+      lostDeltaUsd,
+      netDeltaUsd,
+      employees
+    };
+  }
+
+  function _syncOverlayModalState(shouldRefreshAtt = false) {
+    const anyModalOpen = ['staffScheduleModal', 'policyGroupModal', 'punchDriftModal', 'shiftTypeModal', 'policySimDiffDrawer', 'shiftCalPresetModal']
+      .some(id => { const el = $(id); return el && !el.hidden; });
+    if (!anyModalOpen) {
+      document.body.classList.remove('modal-open');
+      if (shouldRefreshAtt && (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance')) renderApp();
+    }
+  }
+
+  function closePolicySimulationDiffDrawer() {
+    const d = $('policySimDiffDrawer');
+    if (d) d.hidden = true;
+    _syncOverlayModalState(false);
+  }
+
+  function openPolicySimulationDiffDrawer(opts = {}) {
+    const sim = opts.simResult || simulatePolicyChangeEmployeeDiffs(opts.simSpec || {});
+    if (!sim || !sim.ok) {
+      toast((sim && sim.error) || 'Could not run policy simulation', 'warn');
+      return null;
+    }
+
+    let drawer = $('policySimDiffDrawer');
+    if (!drawer) {
+      drawer = document.createElement('div');
+      drawer.id = 'policySimDiffDrawer';
+      drawer.className = 'modal-backdrop psd-drawer-backdrop';
+      drawer.style.zIndex = '1220';
+      drawer.setAttribute('role', 'dialog');
+      drawer.setAttribute('aria-modal', 'true');
+      wireBackdropDismiss(drawer, closePolicySimulationDiffDrawer);
+      document.body.appendChild(drawer);
+    }
+
+    const st = {
+      query: '',
+      filterMode: 'changed',
+      expandedKeys: new Set()
+    };
+    const showDollars = !sim.dollarsRedacted && canViewPayrollDollarAmounts();
+    const canApply = opts.canApply !== false && typeof opts.onConfirmApply === 'function';
+    const fmtSignedMin = m => {
+      const n = Math.round(Number(m || 0));
+      return n > 0 ? `+${n}m` : `${n}m`;
+    };
+    const fmtSignedUsd = v => {
+      const n = Number(v || 0);
+      return `${n >= 0 ? '+' : '-'}${fmtUSD(Math.abs(n), 2)}`;
+    };
+
+    const render = () => {
+      const qN = norm(st.query || '');
+      const visibleEmps = sim.employees.filter(emp => {
+        if (st.filterMode === 'changed' && emp.updatedLogs <= 0) return false;
+        if (qN && !(norm(emp.staff).includes(qN) || norm(emp.role).includes(qN) || norm(emp.company).includes(qN))) {
+          return false;
+        }
+        return true;
+      });
+      const winLabel = sim.isFutureEffective
+        ? `${fmtDateDMY(sim.effectiveFrom)} (Future Effective Date)`
+        : `${fmtDateDMY(sim.fromDate)} - ${fmtDateDMY(sim.toDate)}`;
+
+      drawer.innerHTML = `
+        <div class="psd-drawer" role="document">
+          <div class="modal-head psd-head">
+            <div>
+              <div class="modal-title">${ic('sliders')} <span>Pre-Payroll Policy Simulation</span></div>
+              <div class="modal-sub" data-no-i18n="1">${esc(sim.scopeLabel)} · ${esc(winLabel)}</div>
+            </div>
+            <button type="button" class="icon-btn" id="psdCloseBtn" aria-label="Close">✕</button>
+          </div>
+          <div class="psd-body">
+            ${sim.isFutureEffective ? `
+              <div class="psd-notice">
+                ${ic('calendar')} <span>Scheduled for future effective date</span> <b class="mono" data-no-i18n="1">${esc(fmtDateDMY(sim.effectiveFrom))}</b><span>.</span> <span>Current active payroll logs are unchanged until then.</span>
+              </div>
+            ` : `
+              <div class="psd-kpis">
+                <div class="psd-kpi">
+                  <span class="psd-kpi-lbl">Staff Changed</span>
+                  <strong class="psd-kpi-val mono">${fmtNum(sim.changedEmployeesCount)}</strong>
+                  <small class="psd-kpi-sub">${fmtNum(sim.updatedRows)} <span>logs updated</span></small>
+                </div>
+                <div class="psd-kpi">
+                  <span class="psd-kpi-lbl">Overtime Min Diff</span>
+                  <strong class="psd-kpi-val mono ${sim.otMinDelta > 0 ? 'att-earn-pos' : (sim.otMinDelta < 0 ? 'att-loss-neg' : '')}">${esc(fmtSignedMin(sim.otMinDelta))}</strong>
+                  <small class="psd-kpi-sub mono" data-no-i18n="1">${sim.oldOtMinTotal}m - ${sim.newOtMinTotal}m</small>
+                </div>
+                <div class="psd-kpi">
+                  <span class="psd-kpi-lbl">Late Min Diff</span>
+                  <strong class="psd-kpi-val mono ${sim.lateMinDelta > 0 ? 'att-loss-neg' : (sim.lateMinDelta < 0 ? 'att-earn-pos' : '')}">${esc(fmtSignedMin(sim.lateMinDelta))}</strong>
+                  <small class="psd-kpi-sub mono" data-no-i18n="1">${sim.oldLateMinTotal}m - ${sim.newLateMinTotal}m</small>
+                </div>
+                ${showDollars ? `
+                  <div class="psd-kpi">
+                    <span class="psd-kpi-lbl">Net Payroll Diff</span>
+                    <strong class="psd-kpi-val mono ${Number(sim.netDeltaUsd || 0) >= 0 ? 'att-earn-pos' : 'att-loss-neg'}">${esc(fmtSignedUsd(sim.netDeltaUsd))}</strong>
+                    <small class="psd-kpi-sub mono">Earned ${fmtSignedUsd(sim.earnedDeltaUsd)} · Ded ${fmtSignedUsd(sim.lostDeltaUsd)}</small>
+                  </div>
+                ` : `
+                  <div class="psd-kpi is-redacted">
+                    <span class="psd-kpi-lbl">Payroll Dollars</span>
+                    <strong class="psd-kpi-val">${ic('lock')} <span>Redacted</span></strong>
+                    <small class="psd-kpi-sub"><span>Role restricted</span></small>
+                  </div>
+                `}
+              </div>
+            `}
+            <div class="psd-guard-row">
+              <span>${fmtNum(sim.unchangedRows)} <span>unchanged logs</span></span>
+              <span>·</span>
+              <span>${fmtNum(sim.overriddenStaffCount)} <span>custom-rule staff kept</span></span>
+              <span>·</span>
+              <span>${fmtNum(sim.skippedClosed)} <span>closed skipped</span></span>
+              <span>·</span>
+              <span>${fmtNum(sim.skippedManual)} <span>manual kept</span></span>
+              ${!showDollars ? `<span class="badge badge-muted" style="margin-inline-start:auto">${ic('lock')} <span>Dollar Diff Redacted</span></span>` : ''}
+            </div>
+            <div class="psd-toolbar">
+              <input type="search" class="search-input" id="psdStaffSearch" placeholder="Filter employee, role, or company..." value="${esc(st.query)}">
+              <div class="kiosk-seg-group" role="group" aria-label="Simulation Filter">
+                <button type="button" class="kiosk-seg-btn ${st.filterMode === 'changed' ? 'active' : ''}" data-psd-filter="changed"><span>Changed Only</span> (${fmtNum(sim.changedEmployeesCount)})</button>
+                <button type="button" class="kiosk-seg-btn ${st.filterMode === 'all' ? 'active' : ''}" data-psd-filter="all"><span>All Scoped</span> (${fmtNum(sim.scannedEmployeesCount)})</button>
+              </div>
+            </div>
+            ${!sim.isFutureEffective && sim.updatedRows === 0 ? `
+              <div class="psd-empty">
+                <p><span>No unlocked attendance logs changed in</span> <b class="mono" data-no-i18n="1">${esc(fmtDateDMY(sim.fromDate))} - ${esc(fmtDateDMY(sim.toDate))}</b>.</p>
+                ${!sim.effectiveFrom ? `<small class="muted">Set an earlier Effective From date to include prior worked days in simulation and backfill.</small>` : ''}
+              </div>
+            ` : (!visibleEmps.length ? `
+              <div class="psd-empty"><span>No matching employees in this simulation filter.</span></div>
+            ` : `
+              <div class="table-wrap psd-table-wrap">
+                <table class="ledger-table psd-emp-table">
+                  <thead>
+                    <tr>
+                      <th>Staff Member</th>
+                      <th class="c">Logs</th>
+                      <th class="r">OT Min</th>
+                      <th class="r">Late Min</th>
+                      <th class="r">Leave</th>
+                      ${showDollars ? '<th class="r">Net USD Diff</th>' : ''}
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${visibleEmps.map(emp => {
+                      const expanded = st.expandedKeys.has(emp.key);
+                      return `
+                        <tr class="psd-emp-row ${expanded ? 'is-expanded' : ''}" data-psd-expand-staff="${esc(emp.key)}">
+                          <td>
+                            <strong data-no-i18n="1">${esc(emp.staff)}</strong>
+                            <div class="drv-sub" data-no-i18n="1">${esc(emp.company)} · ${esc(emp.role)}</div>
+                          </td>
+                          <td class="c mono">${fmtNum(emp.updatedLogs)}</td>
+                          <td class="r mono">
+                            <span class="${emp.otMinDelta > 0 ? 'att-earn-pos' : (emp.otMinDelta < 0 ? 'att-loss-neg' : '')}">${esc(fmtSignedMin(emp.otMinDelta))}</span>
+                            <div class="drv-sub" data-no-i18n="1">${emp.oldOtMin}m - ${emp.newOtMin}m</div>
+                          </td>
+                          <td class="r mono">
+                            <span class="${emp.lateMinDelta > 0 ? 'att-loss-neg' : (emp.lateMinDelta < 0 ? 'att-earn-pos' : '')}">${esc(fmtSignedMin(emp.lateMinDelta))}</span>
+                            <div class="drv-sub" data-no-i18n="1">${emp.oldLateMin}m - ${emp.newLateMin}m</div>
+                          </td>
+                          <td class="r mono" data-no-i18n="1">${emp.leaveDaysDelta ? `${emp.leaveDaysDelta > 0 ? '+' : ''}${fmtNum(emp.leaveDaysDelta, 1)}d` : '0d'}</td>
+                          ${showDollars ? `
+                            <td class="r mono">
+                              <strong class="${Number(emp.netDeltaUsd || 0) >= 0 ? 'att-earn-pos' : 'att-loss-neg'}">${esc(fmtSignedUsd(emp.netDeltaUsd))}</strong>
+                            </td>
+                          ` : ''}
+                          <td class="c">
+                            <button type="button" class="btn kiosk-mini-btn" data-psd-expand-btn="${esc(emp.key)}">${expanded ? 'Hide' : 'Days'}</button>
+                          </td>
+                        </tr>
+                        ${expanded && emp.dayDiffs.length ? `
+                          <tr class="psd-day-detail-row">
+                            <td colspan="${showDollars ? 7 : 6}">
+                              <div class="psd-day-subwrap">
+                                <table class="psd-day-subtable">
+                                  <thead>
+                                    <tr>
+                                      <th>Date</th>
+                                      <th>Punches</th>
+                                      <th>Rule Shift</th>
+                                      <th class="r">OT</th>
+                                      <th class="r">Late</th>
+                                      ${showDollars ? '<th class="r">USD Diff</th>' : ''}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    ${emp.dayDiffs.map(dd => `
+                                      <tr>
+                                        <td class="mono" data-no-i18n="1">${esc(fmtDateDMY(dd.date))}</td>
+                                        <td class="mono" data-no-i18n="1">${esc(dd.inTime || '--:--')} - ${esc(dd.outTime || '--:--')}</td>
+                                        <td><span>${esc(dd.oldType)}</span> - <span>${esc(dd.newType)}</span></td>
+                                        <td class="r mono" data-no-i18n="1">${dd.oldOtMin}m - ${dd.newOtMin}m</td>
+                                        <td class="r mono" data-no-i18n="1">${dd.oldLateMin}m - ${dd.newLateMin}m</td>
+                                        ${showDollars ? `<td class="r mono ${Number(dd.netDeltaUsd || 0) >= 0 ? 'att-earn-pos' : 'att-loss-neg'}">${esc(fmtSignedUsd(dd.netDeltaUsd))}</td>` : ''}
+                                      </tr>
+                                    `).join('')}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        ` : ''}
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `)}
+          </div>
+          <div class="modal-foot psd-foot">
+            <span class="muted" style="font-size:11px;margin-inline-end:auto">Dry-run simulation: no records or rules saved until you confirm</span>
+            <button type="button" class="btn" id="psdCancelBtn">Cancel</button>
+            ${canApply ? `<button type="button" class="btn btn-primary" id="psdConfirmApplyBtn">${ic('check_circle')} <span>Confirm &amp; Apply</span></button>` : ''}
+          </div>
+        </div>
+      `;
+
+      drawer.hidden = false;
+      document.body.classList.add('modal-open');
+      stripNativeTitles(drawer);
+
+      $('psdCloseBtn')?.addEventListener('click', closePolicySimulationDiffDrawer);
+      $('psdCancelBtn')?.addEventListener('click', closePolicySimulationDiffDrawer);
+      $('psdStaffSearch')?.addEventListener('input', e => {
+        st.query = e.target.value || '';
+        const caret = e.target.selectionStart;
+        render();
+        const nextInp = $('psdStaffSearch');
+        if (nextInp) {
+          nextInp.focus();
+          if (typeof caret === 'number') {
+            try { nextInp.setSelectionRange(caret, caret); } catch (_) {}
+          }
+        }
+      });
+      drawer.querySelectorAll('[data-psd-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          st.filterMode = btn.getAttribute('data-psd-filter') || 'changed';
+          render();
+        });
+      });
+      drawer.querySelectorAll('[data-psd-expand-staff]').forEach(row => {
+        row.addEventListener('click', () => {
+          const ek = row.getAttribute('data-psd-expand-staff') || '';
+          if (!ek) return;
+          if (st.expandedKeys.has(ek)) st.expandedKeys.delete(ek);
+          else st.expandedKeys.add(ek);
+          render();
+        });
+      });
+      $('psdConfirmApplyBtn')?.addEventListener('click', () => {
+        closePolicySimulationDiffDrawer();
+        if (typeof opts.onConfirmApply === 'function') opts.onConfirmApply();
+      });
+    };
+
+    render();
+    return drawer;
+  }
+
+  function openCompanyDefaultPolicySimDrawer(el, bu, extraOpts = {}) {
+    if (!canEditShiftsAndRules(null, bu)) {
+      toast('You do not have rights to update policy defaults for this company', 'warn');
+      return null;
+    }
+    const card = el && el.closest ? (el.closest('[data-co-def-card]') || el.parentElement) : null;
+    const prefix = (card && card.getAttribute('data-co-def-prefix')) || 'pay-bu';
+    const polSel = card ? card.querySelector(`[data-${prefix}-policy-default]`) : null;
+    const snapSel = card ? card.querySelector(`[data-${prefix}-policy-ot-snap]`) : null;
+    const threshInp = card ? card.querySelector(`[data-${prefix}-policy-ot-thresh]`) : null;
+    const effInp = card ? card.querySelector(`[data-${prefix}-policy-eff]`) : null;
+    const grpId = (polSel && polSel.value) || getCompanyDefaultPolicyGroupId(bu) || 'pkg_15_open_15d';
+    const grpObj = getPolicyGroups(bu).find(g => g.id === grpId) || resolvePolicyGroupAtDate(grpId, bu, todayISO());
+    const nextMath = 'per_minute';
+    const snapPatch = snapSel
+      ? parseOtSnapComboPatch(snapSel.value)
+      : (grpObj
+        ? {
+            ot_snap_mode: normalizeOtSnapMode(grpObj.ot_snap_mode),
+            ot_block_min: normalizeOtBlockMin(grpObj.ot_block_min),
+            ot_snap_at_min: clampOtSnapAtMin(grpObj.ot_snap_at_min, grpObj.ot_block_min)
+          }
+        : { ot_snap_mode: 'exact', ot_block_min: 60, ot_snap_at_min: 50 });
+    const nextThresh = clampAttThresholdMin(threshInp ? threshInp.value : (grpObj ? grpObj.ot_threshold_min : 10), 10);
+    const effFromRaw = effInp ? String(effInp.value || '').trim().slice(0, 10) : '';
+    const effFrom = /^\d{4}-\d{2}-\d{2}$/.test(effFromRaw) ? effFromRaw : '';
+
+    return openPolicySimulationDiffDrawer({
+      simSpec: {
+        mode: 'company_default',
+        company: bu,
+        groupId: grpId,
+        math_mode: nextMath,
+        ot_threshold_min: nextThresh,
+        ot_snap_mode: snapPatch.ot_snap_mode,
+        ot_block_min: snapPatch.ot_block_min,
+        ot_snap_at_min: snapPatch.ot_snap_at_min,
+        effective_from: effFrom
+      },
+      canApply: true,
+      onConfirmApply: typeof extraOpts.onApply === 'function'
+        ? extraOpts.onApply
+        : () => {
+            applyCompanyDefaultPolicyFromCard(el, bu, { source: 'math_or_apply' });
+            renderApp();
+          }
+    });
+  }
+
   function parseClockMinutes(hhmm) {
     const f = fmtAttClockTime(hhmm);
     if (!f || !/^\d{2}:\d{2}$/.test(f)) return null;
@@ -130837,7 +131861,7 @@
 
   function normalizeShiftTypeObj(raw, fallback = null) {
     const base = Object.assign({}, fallback || {}, raw || {});
-    const normId = normalizeShiftCodeAlias(base.id || base.shift_code || '') || uid('shf');
+    const normId = normalizeShiftCodeAlias(base.shift_code || base.shift_id || base.id || '') || uid('shf');
     const st = fmtAttClockTime(base.start_time || '08:00') || '08:00';
     const et = fmtAttClockTime(base.end_time || '16:00') || '16:00';
     const isSplit = Boolean(base.split_enabled || normId === 'split_shift' || /split/i.test(base.name || ''));
@@ -131861,6 +132885,7 @@
     base.custom_math_override = Boolean(raw && !raw.reset_default && raw.custom_math_override);
     base.policy_timeline = normalizePolicyTimelineList(base.policy_timeline);
     base.policy_timeline_updated_at = String(base.policy_timeline_updated_at || '');
+    base.own_date_timings = normalizeDateTimingsList(base.own_date_timings);
     base.math_mode = normalizeAttMathMode(base.math_mode || coDefMathMode);
     base.ot_threshold_min = clampAttThresholdMin(base.ot_threshold_min, coDefOtThresh != null ? coDefOtThresh : 10);
     base.ot_early_threshold_min = clampAttThresholdMin(base.ot_early_threshold_min, coDefOtEarlyThresh != null ? coDefOtEarlyThresh : 15);
@@ -131868,8 +132893,9 @@
     base.ot_snap_mode = normalizeOtSnapMode(base.ot_snap_mode || coDefOtSnapMode);
     base.ot_block_min = normalizeOtBlockMin(base.ot_block_min != null ? base.ot_block_min : coDefOtBlockMin);
     base.ot_snap_at_min = clampOtSnapAtMin(base.ot_snap_at_min != null ? base.ot_snap_at_min : coDefOtSnapAtMin, base.ot_block_min);
-    base.grace_min = Math.max(0, Math.min(120, Number(base.grace_min != null ? base.grace_min : defGrace)));
-    base.early_leave_grace_min = Math.max(0, Math.min(120, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : base.grace_min)));
+    const rawOrDefGrace = Number(base.grace_min != null ? base.grace_min : defGrace);
+    base.grace_min = Math.max(0, Math.min(120, rawOrDefGrace));
+    base.early_leave_grace_min = Math.max(0, Math.min(120, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : rawOrDefGrace)));
     base.late_when = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(base.late_when) ? base.late_when : 'both';
     base.late_count_from = ['shift_start', 'after_grace'].includes(base.late_count_from) ? base.late_count_from : 'shift_start';
     base.late_penalty_mode = VALID_LATE_PENALTY_MODES.includes(String(base.late_penalty_mode || '').trim().toLowerCase())
@@ -132061,6 +133087,7 @@
           late_half_day_after_min: priorRule.late_half_day_after_min,
           late_multiplier: priorRule.late_multiplier,
           grace_min: priorRule.grace_min,
+          early_leave_grace_min: priorRule.early_leave_grace_min != null ? Number(priorRule.early_leave_grace_min) : priorRule.grace_min,
           note: 'Prior Baseline'
         });
       }
@@ -132085,6 +133112,7 @@
         late_half_day_after_min: effectivePatch.late_half_day_after_min != null ? Number(effectivePatch.late_half_day_after_min) : cur.late_half_day_after_min,
         late_multiplier: effectivePatch.late_multiplier != null ? Number(effectivePatch.late_multiplier) : cur.late_multiplier,
         grace_min: effectivePatch.grace_min != null ? Number(effectivePatch.grace_min) : cur.grace_min,
+        early_leave_grace_min: effectivePatch.early_leave_grace_min != null ? Number(effectivePatch.early_leave_grace_min) : (effectivePatch.grace_min != null ? Number(effectivePatch.grace_min) : cur.early_leave_grace_min),
         note: String(patch.timeline_note || opts.timeline_note || '')
       });
       timelineTouched = true;
@@ -132100,10 +133128,8 @@
       || patch.ot_block_min != null
       || patch.ot_snap_at_min != null
     );
-    const patchHasPolicyFields = !isFutureEffective && (
-      patch.apply_policy_group_id != null
-      || patch.policy_group_id != null
-      || patch.late_penalty_mode != null
+    const patchHasIndividualPolicyFields = !isFutureEffective && (
+      patch.late_penalty_mode != null
       || patch.late_brackets != null
       || patch.late_below_bracket_mode != null
       || patch.late_half_day_after_min != null
@@ -132117,8 +133143,14 @@
       || patch.grace_min != null
       || patch.early_leave_grace_min != null
       || patch.no_clock_out_rule != null
+      || patch.custom_policy_override === true
+      || patch.custom_math_override === true
       || patchHasMathFields
     );
+    const patchAssignsGroupOnly = !isFutureEffective
+      && (patch.apply_policy_group_id != null || patch.policy_group_id != null)
+      && !patchHasIndividualPolicyFields;
+    const patchHasPolicyFields = patchHasIndividualPolicyFields || patchAssignsGroupOnly;
 
     if (!effFrom && !Array.isArray(effectivePatch.policy_timeline) && nextTimeline.length > 0 && patchHasPolicyFields
       && !opts.fromCompanyDefault && !opts.fromPolicyGroup && effectivePatch.follows_company_default !== true) {
@@ -132153,7 +133185,7 @@
     }
 
     const applyFields = isFutureEffective
-      ? {}
+      ? (effectivePatch.own_date_timings ? { own_date_timings: effectivePatch.own_date_timings } : {})
       : effectivePatch;
 
     const next = Object.assign({}, cur, applyFields, {
@@ -132170,10 +133202,16 @@
       next.custom_policy_override = false;
       next.custom_math_override = false;
     } else if (opts.fromPolicyGroup) {
-      next.follows_company_default = rawExisting ? Boolean(rawExisting.follows_company_default) : false;
+      next.follows_company_default = rawExisting
+        ? ('follows_company_default' in rawExisting ? Boolean(rawExisting.follows_company_default) : Boolean(cur.follows_company_default))
+        : (normalizePolicyGroupIdAlias(next.policy_group_id) === normalizePolicyGroupIdAlias(getCompanyDefaultPolicyGroupId(ruleCo || cur.company)));
       next.custom_policy_override = rawExisting ? Boolean(rawExisting.custom_policy_override) : false;
       next.custom_math_override = rawExisting ? Boolean(rawExisting.custom_math_override) : false;
-    } else if (patchHasPolicyFields) {
+    } else if (patchAssignsGroupOnly) {
+      next.follows_company_default = false;
+      next.custom_policy_override = false;
+      next.custom_math_override = rawExisting ? Boolean(rawExisting.custom_math_override) : false;
+    } else if (patchHasIndividualPolicyFields) {
       next.follows_company_default = false;
       next.custom_policy_override = true;
       if (effectivePatch.custom_math_override === false) next.custom_math_override = false;
@@ -132258,10 +133296,10 @@
         deferSave: true
       });
     }
-    if (!opts.skipRecalc) {
+    if (!opts.skipRecalc && !_POLICY_SIM_SANDBOX) {
       recalcStaffTodayPunchAndAttendance(next.staff || staffName);
     }
-    if (!opts.deferSave) {
+    if (!opts.deferSave && !_POLICY_SIM_SANDBOX) {
       saveLocalAuthAndRecords();
       postWorkScheduleMutation({ op: 'upsert_staff_rule', key: k, item: next });
       syncWithCloud(true);
@@ -132350,6 +133388,12 @@
     const dStr = String(isoDate || todayISO()).slice(0, 10);
     const rule = getStaffWorkRule(staffName, company);
     const effCo = company || rule.company || defaultEntryCompany();
+    const datedPol = resolveStaffPolicyForDate(staffName, effCo, dStr);
+    const datedRule = (datedPol && datedPol.rule) || rule;
+    const hasDatedGrace = Boolean(
+      hasExplicitStaffWorkRule(staffName, effCo)
+      || (datedPol && (datedPol.sourceScope === 'staff_timeline' || datedPol.sourceScope === 'company_timeline' || datedPol.sourceScope === 'policy_group_version'))
+    );
     const types = getShiftTypes(effCo);
     const wk = attDateWeekdayInfo(dStr);
     const activeOv = (rule.shift_overrides || []).find(o => o && o.start_date <= dStr && dStr <= (o.end_date || o.start_date)) || null;
@@ -132369,7 +133413,7 @@
           hours: 0,
           overnight: false,
           days: [],
-          grace_min: Number(rule.grace_min != null ? rule.grace_min : 10),
+          grace_min: Number(datedRule.grace_min != null ? datedRule.grace_min : 10),
           tone: 'muted',
           isOverride: true,
           overrideObj: activeOv,
@@ -132387,13 +133431,16 @@
           start_time: activeOv.custom_start || rule.custom_start,
           end_time: activeOv.custom_end || rule.custom_end,
           days: [0, 1, 2, 3, 4, 5, 6],
-          grace_min: rule.grace_min,
+          grace_min: datedRule.grace_min,
           tone: 'emerald'
         });
       } else {
         const datedOvShift = resolveShiftAtDate(activeOv.shift_id, effCo, dStr);
         const foundOv = (datedOvShift ? normalizeShiftTypeObj(datedOvShift) : null) || types.find(t => t.id === activeOv.shift_id) || types[0];
         chosenShift = Object.assign({}, foundOv, { days: [0, 1, 2, 3, 4, 5, 6] });
+        if (hasDatedGrace && datedRule.grace_min != null) {
+          chosenShift.grace_min = Number(datedRule.grace_min);
+        }
       }
     } else if (rule.shift_id === 'custom') {
       chosenShift = normalizeShiftTypeObj({
@@ -132403,7 +133450,7 @@
         start_time: rule.custom_start,
         end_time: rule.custom_end,
         days: rule.custom_days,
-        grace_min: rule.grace_min,
+        grace_min: datedRule.grace_min,
         sat_diff_enabled: rule.sat_diff_enabled,
         sat_start_time: rule.sat_start_time,
         sat_end_time: rule.sat_end_time,
@@ -132419,8 +133466,8 @@
       if (ownRule && Array.isArray(rule.custom_days) && rule.use_custom_days) {
         chosenShift.days = rule.custom_days;
       }
-      if (ownRule && rule.grace_min != null) {
-        chosenShift.grace_min = Number(rule.grace_min);
+      if (hasDatedGrace && datedRule.grace_min != null) {
+        chosenShift.grace_min = Number(datedRule.grace_min);
       }
       if (ownRule && rule.use_custom_day_timings) {
         chosenShift.day_timings = normalizeDayTimingsMap(rule.day_timings, rule.sat_diff_enabled, rule.sat_start_time, rule.sat_end_time);
@@ -132508,13 +133555,30 @@
     let driftNote = '';
     if (!activeOv && isWorkday && wk.dayIdx >= 0) {
       const own = normalizeDateTimingsList(rule.own_date_timings).filter(it => it.start_date <= dStr && dStr <= it.end_date);
+      const rawShiftN = norm(chosenShift.shift_code || chosenShift.id || '');
+      const curShiftN = norm(normalizeShiftCodeAlias(chosenShift.shift_code || chosenShift.id || ''));
       let sMove = 0;
       let eMove = 0;
+      let ownGrace = null;
       own.forEach(it => {
+        const itIdStr = String(it.id || '');
+        if (itIdStr.startsWith('adr_')) {
+          const mAdr = /^adr_(.+)_\d{8}$/.exec(itIdStr);
+          if (mAdr) {
+            const adrShiftN = norm(mAdr[1]);
+            if (adrShiftN !== rawShiftN && norm(normalizeShiftCodeAlias(adrShiftN)) !== curShiftN) return;
+          }
+        }
         if (it.start_shift_min && (!it.start_dows || it.start_dows.includes(wk.dayIdx))) sMove += Number(it.start_shift_min);
         if (it.end_shift_min && (!it.end_dows || it.end_dows.includes(wk.dayIdx))) eMove += Number(it.end_shift_min);
-        if ((it.start_shift_min || it.end_shift_min) && it.note) driftNote = it.note;
+        if (it.grace_min != null) ownGrace = Number(it.grace_min);
+        if ((it.start_shift_min || it.end_shift_min || it.grace_min != null) && it.note) driftNote = it.note;
       });
+      if (ownGrace != null) {
+        chosenShift.grace_min = ownGrace;
+        chosenShift.hasOwnDateGrace = true;
+        if (!dateTimingNote) dateTimingNote = driftNote;
+      }
       if (sMove || eMove) {
         const sKey = chosenShift.split_enabled ? 'split_start_1' : 'start_time';
         const eKey = chosenShift.split_enabled ? 'split_end_2' : 'end_time';
@@ -132751,7 +133815,14 @@
     const rule = resolvedPol.rule || getStaffWorkRule(staffName, company);
     const shift = resolveStaffShiftForDate(staffName, company, dStr);
     const policyDesc = describeStaffPolicyGroup(staffName, company, dStr);
-    const graceMin = Math.max(0, Number(shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10)));
+    const hasTimelineGrace = resolvedPol && (resolvedPol.sourceScope === 'staff_timeline' || resolvedPol.sourceScope === 'company_timeline' || resolvedPol.sourceScope === 'policy_group_version');
+    const graceMin = Math.max(0, Number(
+      (shift && shift.hasOwnDateGrace && shift.grace_min != null)
+        ? shift.grace_min
+        : ((hasTimelineGrace && rule.grace_min != null)
+          ? rule.grace_min
+          : (shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10)))
+    ));
     const earlyGraceMin = Math.max(0, Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : graceMin));
     const schedStartMin = parseClockMinutes(shift.start_time) ?? 480;
     const schedEndRaw = parseClockMinutes(shift.end_time) ?? 960;
@@ -132927,8 +133998,24 @@
     const schedDurMin = shift.isWorkday ? Math.max(0, schedEndMin - schedStartMin) : 0;
     const scheduledHours = roundH(schedDurMin / 60);
 
-    const graceMin = Math.max(0, Number(shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10)));
-    const earlyGraceMin = Math.max(0, Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : graceMin));
+    const ovPolicyObj = (opts && opts.overridePolicy && typeof opts.overridePolicy === 'object') ? opts.overridePolicy : null;
+    const hasTimelineGrace = resolvedPol && (resolvedPol.sourceScope === 'staff_timeline' || resolvedPol.sourceScope === 'company_timeline' || resolvedPol.sourceScope === 'policy_group_version');
+    const graceMin = Math.max(0, Number(
+      (ovPolicyObj && ovPolicyObj.grace_min != null)
+        ? ovPolicyObj.grace_min
+        : ((shift && shift.hasOwnDateGrace && shift.grace_min != null)
+          ? shift.grace_min
+          : ((hasTimelineGrace && rule.grace_min != null)
+            ? rule.grace_min
+            : (shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10))))
+    ));
+    const earlyGraceMin = Math.max(0, Number(
+      (ovPolicyObj && ovPolicyObj.early_leave_grace_min != null)
+        ? ovPolicyObj.early_leave_grace_min
+        : (rule.early_leave_grace_min != null
+          ? rule.early_leave_grace_min
+          : (shift.early_leave_grace_min != null ? shift.early_leave_grace_min : graceMin))
+    ));
     const lateCutoffTime = formatMinutesAsClockTime(schedStartMin + graceMin);
     const earlyOutCutoffTime = formatMinutesAsClockTime(schedEndMin - earlyGraceMin);
     const lateWhen = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(rule.late_when) ? rule.late_when : 'both';
@@ -140643,6 +141730,15 @@
       modal.querySelectorAll('[data-ssm-bu-policy-apply]').forEach(btn => {
         btn.addEventListener('click', () => onSsmCoPolicyUpdate(btn, btn.getAttribute('data-ssm-bu-policy-apply') || entry.company, 'apply'));
       });
+      modal.querySelectorAll('[data-ssm-bu-policy-sim]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const simBu = btn.getAttribute('data-ssm-bu-policy-sim') || entry.company;
+          syncLiveInputs();
+          openCompanyDefaultPolicySimDrawer(btn, simBu, {
+            onApply: () => onSsmCoPolicyUpdate(btn, simBu, 'apply')
+          });
+        });
+      });
       modal.querySelectorAll('[data-co-policy-rm-win]').forEach(btn => {
         btn.addEventListener('click', () => {
           const rmCo = btn.getAttribute('data-co-policy-co') || entry.company;
@@ -141368,11 +142464,7 @@
   function closeShiftTypeModal() {
     const m = $('shiftTypeModal');
     if (m) m.hidden = true;
-    const ssm = $('staffScheduleModal');
-    if (!ssm || ssm.hidden) {
-      document.body.classList.remove('modal-open');
-      if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
-    }
+    _syncOverlayModalState(true);
   }
 
   function openShiftTypeModal(shiftId = '', opts = {}) {
@@ -141386,11 +142478,18 @@
     const normShiftId = normalizeShiftCodeAlias(shiftId);
     const types = getShiftTypes(defCo);
     const existing = normShiftId ? types.find(t => t.id === normShiftId) : null;
+    const cohortProp = (opts && opts.cohortProposal && typeof opts.cohortProposal === 'object') ? opts.cohortProposal : null;
+    const draftPatch = (opts && opts.draftPatch && typeof opts.draftPatch === 'object') ? opts.draftPatch : null;
     let draftDays = existing ? existing.days.slice() : [1, 2, 3, 4, 5, 6];
     let draftTone = existing ? existing.tone : 'emerald';
     const initSplit = Boolean(existing && existing.split_enabled);
-    const initStart1 = existing ? (initSplit ? (existing.split_start_1 || existing.start_time || '11:00') : (existing.start_time || '08:00')) : '08:00';
-    const initEnd1 = existing ? (initSplit ? (existing.split_end_1 || '15:00') : (existing.end_time || '16:00')) : '16:00';
+    const baseStart1 = existing ? (initSplit ? (existing.split_start_1 || existing.start_time || '11:00') : (existing.start_time || '08:00')) : '08:00';
+    const baseEnd1 = existing ? (initSplit ? (existing.split_end_1 || '15:00') : (existing.end_time || '16:00')) : '16:00';
+    const initStart1 = (draftPatch && draftPatch.start_time) ? normalize24hClockTime(draftPatch.start_time, baseStart1) : baseStart1;
+    const initEnd1 = (draftPatch && draftPatch.end_time) ? normalize24hClockTime(draftPatch.end_time, baseEnd1) : baseEnd1;
+    const initGraceVal = (draftPatch && draftPatch.grace_min != null)
+      ? finiteClamp(draftPatch.grace_min, 10, 0, 60, true)
+      : (existing ? existing.grace_min : 10);
     const initSplitS2 = (existing && existing.split_start_2) || '19:00';
     const initSplitE2 = (existing && existing.split_end_2) || '23:00';
     const initDayMap = existing
@@ -141430,7 +142529,9 @@
         };
       });
     });
-    const initEffDate = (existing && existing.start_date) || todayISO();
+    const initEffDate = (draftPatch && draftPatch.effective_from)
+      ? String(draftPatch.effective_from).slice(0, 10)
+      : ((existing && existing.start_date) || todayISO());
     const curCoDef = getBuDefaultShift(defCo);
     const initIsBuDef = Boolean(existing && ((curCoDef && normalizeShiftCodeAlias(curCoDef.shift_code) === existing.id) || existing.is_bu_default));
     const viewerAllowed = allowedCompanyNames();
@@ -141476,13 +142577,16 @@
       return pruneDayTimingsToWorkdays(out, draftDays);
     };
 
+    const cohortLockAttr = cohortProp ? ' disabled' : '';
+    const cohortMemberCount = cohortProp ? (cohortProp.staffCount || (Array.isArray(cohortProp.memberNames) ? cohortProp.memberNames.length : 0)) : 0;
+
     // Active Workdays pills carry each day's own hours, so the week reads in one row.
     const renderActiveDayPillsHtml = () => {
       const eff = buildEffectiveDraftDayMap();
       return [1, 2, 3, 4, 5, 6, 0].map(dIdx => {
         const own = draftDays.includes(dIdx) ? eff[String(dIdx)] : null;
         const ownTxt = own ? `${own.start_time}-${own.end_time}` : '';
-        return `<button type="button" class="ssm-day-pill ${draftDays.includes(dIdx) ? 'active' : ''} ${own ? 'has-own-hours' : ''}" data-stm-day="${dIdx}">${ATT_WEEKDAYS[dIdx]}${own ? ` <span class="stm-day-own mono">${esc(ownTxt)}</span>` : ''}</button>`;
+        return `<button type="button" class="ssm-day-pill ${draftDays.includes(dIdx) ? 'active' : ''} ${own ? 'has-own-hours' : ''}" data-stm-day="${dIdx}"${cohortLockAttr}>${ATT_WEEKDAYS[dIdx]}${own ? ` <span class="stm-day-own mono">${esc(ownTxt)}</span>` : ''}</button>`;
       }).join('');
     };
 
@@ -141547,30 +142651,46 @@
       }
     };
 
+    const showInitExcBody = hasInitExceptions && !cohortProp;
+    const modalTitleHtml = cohortProp
+      ? `${ic('sliders')} <span>Review Cohort Draft</span> <span class="muted mono" data-no-i18n="1">(${esc(cohortProp.role)} - ${esc(cohortProp.site)})</span>`
+      : `${ic('clock')} ${existing ? `Customize ${esc(existing.name)} (${esc(defCo)})` : 'New Shift &amp; Clock Timing'}`;
+    const modalSubHtml = cohortProp
+      ? `<span data-no-i18n="1">${esc(cohortProp.company)} · ${esc(cohortProp.role)} @ ${esc(cohortProp.site)} · ${fmtNum(cohortMemberCount)} staff</span>`
+      : 'Universal shift structure customizable per company: set single or split hours, weekday or specific-date timing exceptions, and Effective Date backfill';
+    const cohortBannerHtml = cohortProp
+      ? `<div id="stmCohortScopeBanner" class="att-cov-gap-badge is-warn" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1px solid var(--border-warm, #d97706);background:var(--bg-warm-soft, rgba(217,119,6,0.08));font-size:12px">
+          ${ic('shield')}
+          <span>Cohort Draft Scope: updates apply only to these cohort members; shared company shift stays unchanged.</span>
+          <span class="badge mono" data-no-i18n="1" style="margin-inline-start:auto">${fmtNum(cohortMemberCount)} staff</span>
+        </div>`
+      : '';
+
     modal.innerHTML = `
       <div class="modal-card" style="width:min(660px,95vw);max-width:660px">
         <div class="modal-head">
           <div>
-            <div class="modal-title">${ic('clock')} ${existing ? `Customize ${esc(existing.name)} (${esc(defCo)})` : 'New Shift &amp; Clock Timing'}</div>
-            <div class="modal-sub">Universal shift structure customizable per company: set single or split hours, weekday or specific-date timing exceptions, and Effective Date backfill</div>
+            <div class="modal-title">${modalTitleHtml}</div>
+            <div class="modal-sub">${modalSubHtml}</div>
           </div>
           <button type="button" class="icon-btn" id="stmCloseBtn" aria-label="Close">✕</button>
         </div>
         <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+          ${cohortBannerHtml}
           <div style="display:grid;grid-template-columns:1.15fr 1.35fr 0.8fr;gap:10px">
             <div class="ssm-field">
               <label for="stmCompany">Company Scope</label>
-              <select id="stmCompany" class="kiosk-select" data-plain-options="1">
+              <select id="stmCompany" class="kiosk-select" data-plain-options="1"${cohortLockAttr}>
                 ${(isFullGroupSeat() ? allAllowedCos.concat(['All Companies']) : allAllowedCos).map(bu => `<option value="${esc(bu)}" ${bu === defCo ? 'selected' : ''}>${esc(bu)}</option>`).join('')}
               </select>
             </div>
             <div class="ssm-field">
               <label for="stmName">Shift Name</label>
-              <input type="text" id="stmName" value="${esc(existing ? existing.name : '')}" placeholder="e.g. Day Shift / Split Shift / Morning">
+              <input type="text" id="stmName" value="${esc(existing ? existing.name : '')}" placeholder="e.g. Day Shift / Split Shift / Morning"${cohortLockAttr}>
             </div>
             <div class="ssm-field">
               <label for="stmShort">Short Tag</label>
-              <input type="text" id="stmShort" maxlength="10" value="${esc(existing ? existing.short : '')}" placeholder="e.g. Day">
+              <input type="text" id="stmShort" maxlength="10" value="${esc(existing ? existing.short : '')}" placeholder="e.g. Day"${cohortLockAttr}>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
@@ -141584,7 +142704,7 @@
             </div>
             <div class="ssm-field">
               <label for="stmGrace">Arrival Grace (min)</label>
-              <input type="number" id="stmGrace" min="0" max="60" step="5" value="${existing ? existing.grace_min : 10}">
+              <input type="number" id="stmGrace" min="0" max="60" step="5" value="${initGraceVal}">
             </div>
             <div class="ssm-field">
               <label for="stmStartDate">Effective Date</label>
@@ -141593,7 +142713,7 @@
           </div>
           <div style="padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev)">
             <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px;cursor:pointer;margin:0">
-              <input type="checkbox" id="stmSplitChk" ${initSplit ? 'checked' : ''}>
+              <input type="checkbox" id="stmSplitChk" ${initSplit ? 'checked' : ''}${cohortLockAttr}>
               <span>Split Shift (Two Daily Windows, e.g. Morning / Lunch + Afternoon / Evening)</span>
             </label>
             <div id="stmSplitRow" style="display:${initSplit ? 'grid' : 'none'};grid-template-columns:1fr 1fr 1.2fr;gap:10px;margin-top:8px">
@@ -141616,7 +142736,7 @@
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
               <div class="ssm-day-pills" id="stmDaysBar">${renderActiveDayPillsHtml()}</div>
               <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer;margin:0">
-                <input type="checkbox" id="stmBuDefault" ${initIsBuDef ? 'checked' : ''}>
+                <input type="checkbox" id="stmBuDefault" ${initIsBuDef ? 'checked' : ''}${cohortLockAttr}>
                 <span>Set as Company Default Shift</span>
               </label>
             </div>
@@ -141624,12 +142744,12 @@
           <div class="stm-exc-box">
             <div class="stm-exc-head">
               <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px;cursor:pointer;margin:0">
-                <input type="checkbox" id="stmDiffChk" ${hasInitExceptions ? 'checked' : ''}>
+                <input type="checkbox" id="stmDiffChk" ${showInitExcBody ? 'checked' : ''}${cohortLockAttr}>
                 <span>Different timing on specific weekdays or dates</span>
               </label>
-              <span class="badge ${hasInitExceptions ? 'badge-brass' : ''}" id="stmExcLiveBadge">${esc(formatShiftExceptionsSummary(draftExtraDayMap, draftDateTimings))}</span>
+              <span class="badge ${showInitExcBody ? 'badge-brass' : ''}" id="stmExcLiveBadge">${esc(formatShiftExceptionsSummary(draftExtraDayMap, draftDateTimings))}</span>
             </div>
-            <div id="stmDiffBody" style="display:${hasInitExceptions ? 'flex' : 'none'};flex-direction:column;gap:10px;margin-top:10px">
+            <div id="stmDiffBody" style="display:${showInitExcBody ? 'flex' : 'none'};flex-direction:column;gap:10px;margin-top:10px">
               <div class="stm-exc-subcard">
                 <div class="stm-exc-subhead">
                   <strong>Workdays With Different Hours</strong>
@@ -141698,7 +142818,7 @@
                   { id: 'indigo', lbl: 'Indigo' },
                   { id: 'sapphire', lbl: 'Blue' },
                   { id: 'emerald', lbl: 'Green' }
-                ].map(t => `<button type="button" class="kiosk-qchip ${draftTone === t.id ? 'active' : ''}" data-stm-tone="${t.id}">${t.lbl}</button>`).join('')}
+                ].map(t => `<button type="button" class="kiosk-qchip ${draftTone === t.id ? 'active' : ''}" data-stm-tone="${t.id}"${cohortLockAttr}>${t.lbl}</button>`).join('')}
               </div>
             </div>
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer;margin:0">
@@ -141709,11 +142829,11 @@
         </div>
         <div class="modal-foot" style="justify-content:space-between">
           <div>
-            ${existing && !existing.isBuiltin ? `<button type="button" class="btn" id="stmDeleteBtn">Delete Shift Type</button>` : ''}
+            ${!cohortProp && existing && !existing.isBuiltin ? `<button type="button" class="btn" id="stmDeleteBtn">Delete Shift Type</button>` : ''}
           </div>
           <div style="display:flex;gap:8px">
             <button type="button" class="btn" id="stmCancelBtn">Cancel</button>
-            <button type="button" class="btn btn-primary" id="stmSaveBtn">Save Shift &amp; Backfill</button>
+            <button type="button" class="btn btn-primary" id="stmSaveBtn">${cohortProp ? 'Save Cohort Draft' : 'Save Shift &amp; Backfill'}</button>
           </div>
         </div>
       </div>
@@ -141923,6 +143043,24 @@
       const isBuDef = Boolean($('stmBuDefault')?.checked);
       const isDiffOn = Boolean($('stmDiffChk')?.checked);
       const doBackfill = Boolean($('stmBackfill')?.checked);
+      if (cohortProp) {
+        const res = applyRoleSiteDriftProposal(cohortProp, {
+          recommendedStartTime: st,
+          recommendedEndTime: isSplit ? spE2 : et,
+          recommendedGraceMin: gr,
+          effective_from: effDt,
+          allowDualEdit: true,
+          backfill: doBackfill
+        });
+        if (res && res.ok) {
+          toast(`Saved cohort draft for ${res.updatedCount} staff (${cohortProp.role} - ${cohortProp.site}) effective ${fmtDateDMY(effDt)}${res.backfilledRows ? ` · Recalculated ${res.backfilledRows} logs` : ''}`, 'ok');
+          closeShiftTypeModal();
+          if (typeof opts.onSaved === 'function') opts.onSaved(res);
+        } else {
+          toast((res && res.error) || 'Could not apply cohort draft', 'err');
+        }
+        return;
+      }
       if (!nm) {
         toast('Enter a shift type name', 'warn');
         return;
@@ -143950,7 +145088,7 @@
     Object.entries(ws.staffRules || {}).forEach(([rk, r]) => {
       if (!r || r.reset_default || !r.staff) return;
       if (!staffRuleKeyMatchesCompany(rk, r)) return;
-      const items = normalizeDateTimingsList(r.own_date_timings).filter(it => !(it.end_date < today || !(it.start_shift_min || it.end_shift_min)));
+      const items = normalizeDateTimingsList(r.own_date_timings).filter(it => !(it.end_date < today || !(it.start_shift_min || it.end_shift_min || it.grace_min != null)));
       if (!items.length) return;
       // An older bare-name rule applies in every active company of the person that has no rule of its own.
       let cos = [r.company || ''];
@@ -143973,6 +145111,957 @@
     const cur = getStaffWorkRule(staff, company);
     const next = normalizeDateTimingsList(cur.own_date_timings).filter(it => String(it.id) !== String(itemId));
     return saveStaffWorkRule(staff, { company, own_date_timings: next });
+  }
+
+  function resolvePunchRealSite(p, fallbackCo = '') {
+    if (p && typeof p === 'object') {
+      const isDoorTab = p.origin === 'door_tablet' || p.source === 'door_tablet' || norm(p.site || '') === 'door tablet';
+      const tabSite = String(p.tablet_site || '').trim();
+      const rawSite = String(p.site || '').trim();
+      if (isDoorTab && tabSite && norm(tabSite) !== 'door tablet') return tabSite;
+      if (rawSite && norm(rawSite) !== 'door tablet') return rawSite;
+      if (tabSite) return tabSite;
+    }
+    const list = getCompanyStationSites(fallbackCo || (p && p.company) || defaultEntryCompany());
+    return list[0] || 'Main Entrance';
+  }
+
+  let _STAFF_ROLE_SITE_MEMO = null;
+  function _getStaffRoleSiteIndex() {
+    ensureStaffMembersSeeded();
+    const kPunches = Array.isArray(STATE.kioskPunches) ? STATE.kioskPunches : [];
+    const dPunches = typeof doorTabletPunchList === 'function' ? doorTabletPunchList() : [];
+    const custAtt = (STATE.customRecords && Array.isArray(STATE.customRecords.attendance)) ? STATE.customRecords.attendance : [];
+    const seedEmps = (SEED && SEED.records && Array.isArray(SEED.records.employments)) ? SEED.records.employments : [];
+    const custEmps = (STATE.customRecords && Array.isArray(STATE.customRecords.employments)) ? STATE.customRecords.employments : [];
+    const seedSm = (SEED && SEED.records && Array.isArray(SEED.records.staff_members)) ? SEED.records.staff_members : [];
+    const custSm = (STATE.customRecords && Array.isArray(STATE.customRecords.staff_members)) ? STATE.customRecords.staff_members : [];
+    const stamp = `${(SEED && SEED._customRev) || 0}|${STATE._customRev || 0}|${kPunches.length}|${dPunches.length}|${custAtt.length}|${seedEmps.length}|${custEmps.length}|${seedSm.length}|${custSm.length}|${todayISO()}`;
+    if (
+      _STAFF_ROLE_SITE_MEMO
+      && _STAFF_ROLE_SITE_MEMO.stamp === stamp
+      && _STAFF_ROLE_SITE_MEMO.kRef === kPunches
+      && _STAFF_ROLE_SITE_MEMO.caRef === custAtt
+      && _STAFF_ROLE_SITE_MEMO.ceRef === custEmps
+      && _STAFF_ROLE_SITE_MEMO.seRef === seedEmps
+      && _STAFF_ROLE_SITE_MEMO.csRef === custSm
+    ) {
+      return _STAFF_ROLE_SITE_MEMO;
+    }
+    const byStaff = new Map();
+    const recordSite = (staff, co, site) => {
+      const stN = norm(staff);
+      const coN = norm(canonCompany(co || '') || co || '');
+      const cleanSite = String(site || '').trim();
+      if (!stN || !cleanSite || norm(cleanSite) === 'door tablet') return;
+      const key = `${coN}|${stN}`;
+      if (!byStaff.has(key)) byStaff.set(key, new Map());
+      const m = byStaff.get(key);
+      m.set(cleanSite, (m.get(cleanSite) || 0) + 1);
+    };
+    kPunches.forEach(p => {
+      if (!p || p.voided) return;
+      recordSite(p.staff, p.company, resolvePunchRealSite(p, p.company));
+    });
+    dPunches.forEach(p => {
+      if (!p || p.voided) return;
+      recordSite(p.staff, p.company, resolvePunchRealSite(p, p.company));
+    });
+    custAtt.forEach(a => {
+      if (!a || a.voided) return;
+      if (a.tablet_site && norm(a.tablet_site) !== 'door tablet') {
+        recordSite(a.staff, a.company, a.tablet_site);
+      } else if (a.site && norm(a.site) !== 'door tablet') {
+        recordSite(a.staff, a.company, a.site);
+      }
+    });
+    const empRoleCo = new Map();
+    const empRoleAny = new Map();
+    const indexEmpList = arr => {
+      for (let i = 0; i < arr.length; i++) {
+        const e = arr[i];
+        if (!e || e.voided) continue;
+        const k = norm(e.staff || e.name);
+        const r = String(e.role || e.type || '').trim();
+        if (!k || !r) continue;
+        const c = norm(canonCompany(e.company || '') || e.company || '');
+        if (c && !empRoleCo.has(`${c}|${k}`)) empRoleCo.set(`${c}|${k}`, r);
+        if (!empRoleAny.has(k)) empRoleAny.set(k, r);
+      }
+    };
+    indexEmpList(custEmps);
+    indexEmpList(seedEmps);
+
+    const smByName = new Map();
+    const indexSmList = (arr, isCustom) => {
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r || r.voided) continue;
+        const k = norm(r.name || r.staff);
+        if (!k) continue;
+        let bucket = smByName.get(k);
+        if (!bucket) {
+          bucket = { cust: [], seed: [] };
+          smByName.set(k, bucket);
+        }
+        if (isCustom) bucket.cust.push(r);
+        else bucket.seed.push(r);
+      }
+    };
+    indexSmList(custSm, true);
+    indexSmList(seedSm, false);
+
+    _STAFF_ROLE_SITE_MEMO = {
+      stamp, kRef: kPunches, caRef: custAtt, ceRef: custEmps, seRef: seedEmps, csRef: custSm,
+      byStaff, empRoleCo, empRoleAny, smByName
+    };
+    return _STAFF_ROLE_SITE_MEMO;
+  }
+
+  function _getStaffSiteFreqMap() {
+    return _getStaffRoleSiteIndex().byStaff;
+  }
+
+  function _pickIndexedStaffMember(idx, stN, coN) {
+    if (!stN) return null;
+    const bucket = idx.smByName.get(stN);
+    if (!bucket) return null;
+    const pick = matches => {
+      if (!matches.length) return null;
+      if (coN) {
+        const activeCo = matches.find(r => !r.archived && r.company && norm(canonCompany(r.company)) === coN);
+        if (activeCo) return activeCo;
+        const anyCo = matches.find(r => r.company && norm(canonCompany(r.company)) === coN);
+        if (anyCo) return anyCo;
+        const unscoped = matches.find(r => !String(r.company || '').trim());
+        if (unscoped) return unscoped;
+      }
+      return matches[0];
+    };
+    return pick(bucket.cust) || pick(bucket.seed) || null;
+  }
+
+  function resolveStaffRoleAndSiteForDate(staffName, company, dateStr = todayISO(), staffEntryOpt = null) {
+    const co = canonCompany(company || (staffEntryOpt && staffEntryOpt.company) || defaultEntryCompany()) || (company || 'WTC');
+    const stName = String(staffName || (staffEntryOpt && staffEntryOpt.name) || '').trim();
+    const stN = norm(stName);
+    const coN = norm(co);
+    const idx = _getStaffRoleSiteIndex();
+    let smHit;
+    const getSm = () => (smHit === undefined ? (smHit = _pickIndexedStaffMember(idx, stN, coN)) : smHit);
+    let role = String((staffEntryOpt && staffEntryOpt.role) || '').trim();
+    if (!role && stN) {
+      role = idx.empRoleCo.get(`${coN}|${stN}`) || idx.empRoleAny.get(stN) || '';
+    }
+    if (!role && stN) {
+      const sm = getSm();
+      if (sm && sm.role) role = String(sm.role).trim();
+    }
+    role = role || 'Staff';
+
+    const freqMap = idx.byStaff.get(`${coN}|${stN}`) || null;
+    let bestSite = '';
+    let bestFreq = 0;
+    if (freqMap && freqMap.size > 0) {
+      freqMap.forEach((cnt, sName) => {
+        if (cnt > bestFreq) {
+          bestFreq = cnt;
+          bestSite = sName;
+        }
+      });
+    }
+    if (!bestSite && stN) {
+      const sm = getSm();
+      const smSite = String((sm && (sm.tablet_site || sm.site)) || '').trim();
+      if (smSite && norm(smSite) !== 'door tablet') bestSite = smSite;
+    }
+    if (!bestSite) {
+      const defSites = getCompanyStationSites(co);
+      bestSite = defSites[0] || 'Main Entrance';
+    }
+    return { role, site: bestSite, siteFreq: bestFreq };
+  }
+
+  function computeWeeklyShiftCoverageHeatmap(opts = {}) {
+    const weekOffset = Number(opts.weekOffset != null ? opts.weekOffset : (STATE.kioskSchedWeekOffset || 0));
+    const weekDates = getScheduleWeekDates(weekOffset);
+    const activeScopedCo = opts.company != null ? String(opts.company || '').trim() : (COMPANY_BU_MATCH[STATE.company] || '');
+    const buList = activeScopedCo ? [activeScopedCo] : getActiveIndustryBuList(STATE.company);
+    const primaryCo = activeScopedCo || buList[0] || defaultEntryCompany() || 'WTC';
+    const baseStaff = Array.isArray(opts.staffList)
+      ? opts.staffList.filter(s => s && !s.isEndedContract)
+      : getKioskStaffDirectory({
+          companyOverride: activeScopedCo,
+          scopeBySelectedCompany: Boolean(activeScopedCo),
+          scopeByActiveIndustry: !activeScopedCo,
+          includeEnded: true
+        }).filter(s => !s.isEndedContract);
+
+    const byStaffFreq = _getStaffSiteFreqMap();
+    const siteCounts = new Map();
+    const bumpSite = (siteName, staffInc, punchInc) => {
+      const clean = String(siteName || '').trim();
+      if (!clean || norm(clean) === 'door tablet') return;
+      const cur = siteCounts.get(clean) || { site: clean, staffCount: 0, freqScore: 0 };
+      cur.staffCount += staffInc;
+      cur.freqScore += punchInc + staffInc;
+      siteCounts.set(clean, cur);
+    };
+
+    const allowedCos = activeScopedCo ? [activeScopedCo] : buList;
+    allowedCos.forEach(co => {
+      getCompanyStationSites(co).forEach(sName => bumpSite(sName, 0, 0));
+    });
+
+    const staffResolved = baseStaff.map(s => {
+      const rs = resolveStaffRoleAndSiteForDate(s.name, s.company, weekDates[0].iso, s);
+      const fMap = byStaffFreq.get(`${norm(s.company)}|${norm(s.name)}`);
+      const punchScore = fMap ? (fMap.get(rs.site) || 0) : 0;
+      bumpSite(rs.site, 1, punchScore * 3);
+      return Object.assign({}, s, { _covSite: rs.site, _covRole: rs.role });
+    });
+
+    const sites = Array.from(siteCounts.values()).sort((a, b) =>
+      (b.freqScore - a.freqScore) || (b.staffCount - a.staffCount) || a.site.localeCompare(b.site)
+    );
+    const reqSite = String(opts.siteFilter != null ? opts.siteFilter : (STATE.kioskCoverageSiteFilter || 'all')).trim();
+    const validSite = reqSite !== 'all' && sites.some(s => norm(s.site) === norm(reqSite)) ? sites.find(s => norm(s.site) === norm(reqSite)).site : 'all';
+    const filteredStaff = validSite === 'all'
+      ? staffResolved
+      : staffResolved.filter(s => norm(s._covSite) === norm(validSite));
+
+    const mergedShiftMap = new Map();
+    allowedCos.forEach(co => {
+      getShiftTypes(co).forEach(st => {
+        const nid = normalizeShiftCodeAlias(st.id || st.shift_code);
+        if (!nid) return;
+        if (!mergedShiftMap.has(nid)) {
+          mergedShiftMap.set(nid, Object.assign({}, st, { id: nid, shift_code: nid }));
+        }
+      });
+    });
+    const shiftTypes = Array.from(mergedShiftMap.values());
+    const shiftMap = new Map();
+    shiftTypes.forEach(st => shiftMap.set(st.id, st));
+    const perCoStaffCounts = new Map();
+    const perCoShiftCounts = new Map();
+    const totalPerShift = new Map();
+    let hasCustomStaff = false;
+    const staffRuleShifts = filteredStaff.map(s => {
+      const coN = norm(s.company || '');
+      perCoStaffCounts.set(coN, (perCoStaffCounts.get(coN) || 0) + 1);
+      const rawSid = getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4';
+      if (rawSid === 'custom') hasCustomStaff = true;
+      const sid = rawSid === 'custom' ? 'custom' : normalizeShiftCodeAlias(rawSid);
+      totalPerShift.set(sid, (totalPerShift.get(sid) || 0) + 1);
+      perCoShiftCounts.set(`${coN}|${sid}`, (perCoShiftCounts.get(`${coN}|${sid}`) || 0) + 1);
+      return rawSid;
+    });
+
+    const catalogRows = shiftTypes.slice();
+    if (hasCustomStaff) {
+      catalogRows.push({ id: 'custom', name: 'Custom Rule', short: 'Custom', days: [1, 2, 3, 4, 5, 6], date_timings: [], tone: 'indigo', is_bu_default: false });
+    }
+    const catalogIds = new Set(catalogRows.map(r => r.id));
+
+    const coDefMap = new Map(
+      allowedCos.map(co => [norm(co), normalizeShiftCodeAlias((getBuDefaultShift(co) && getBuDefaultShift(co).shift_code) || 'day_8_4')])
+    );
+    const defaultShiftIds = new Set(coDefMap.values());
+    const coShiftTypesMap = new Map(allowedCos.map(co => [norm(co), getShiftTypes(co)]));
+    const dailyTotals = weekDates.map(() => 0);
+    const shiftDayCounts = new Map();
+    const dayCount = weekDates.length;
+    const customExpectedByDay = new Array(dayCount).fill(false);
+    const countCoveragePass = () => {
+      for (let sIdx = 0; sIdx < filteredStaff.length; sIdx++) {
+        const s = filteredStaff[sIdx];
+        const ruleShift = staffRuleShifts[sIdx];
+        const baseRule = ruleShift === 'custom' ? getStaffWorkRule(s.name, s.company) : null;
+        for (let dIdx = 0; dIdx < dayCount; dIdx++) {
+          const wd = weekDates[dIdx];
+          const dayShift = resolveStaffShiftForDate(s.name, s.company, wd.iso);
+          if (ruleShift === 'custom' && !customExpectedByDay[dIdx]) {
+            if (dayShift && dayShift.isWorkday) {
+              customExpectedByDay[dIdx] = true;
+            } else if (dayShift && dayShift.isOverride && dayShift.id === 'off' && baseRule) {
+              const cDays = Array.isArray(baseRule.custom_days) && baseRule.custom_days.length ? baseRule.custom_days : [1, 2, 3, 4, 5, 6];
+              const cClosed = normalizeDateTimingsList(baseRule.date_timings).some(it => it.day_off && wd.iso >= it.start_date && wd.iso <= it.end_date);
+              if (cDays.includes(wd.dayIdx) && !cClosed) customExpectedByDay[dIdx] = true;
+            }
+          }
+          if (!dayShift || !dayShift.isWorkday) continue;
+          const effectiveId = ruleShift === 'custom' ? 'custom' : normalizeShiftCodeAlias(dayShift.shift_code || dayShift.id || ruleShift);
+          if (!catalogIds.has(effectiveId)) continue;
+          let arr = shiftDayCounts.get(effectiveId);
+          if (!arr) {
+            arr = new Array(dayCount).fill(0);
+            shiftDayCounts.set(effectiveId, arr);
+          }
+          arr[dIdx]++;
+          dailyTotals[dIdx]++;
+        }
+      }
+    };
+    if (typeof withReadPass === 'function') withReadPass(countCoveragePass);
+    else countCoveragePass();
+
+    let zeroGapCount = 0;
+    const rows = catalogRows.map(st => {
+      const totalOnShift = totalPerShift.get(st.id) || 0;
+      const countsArr = shiftDayCounts.get(st.id);
+      const isCustomRow = st.id === 'custom';
+      const activeCosForShift = isCustomRow
+        ? []
+        : allowedCos.filter(co => {
+            const cN = norm(co);
+            const onSh = perCoShiftCounts.get(`${cN}|${st.id}`) || 0;
+            const coDef = coDefMap.get(cN) || 'day_8_4';
+            return onSh > 0 || (validSite === 'all' && coDef === st.id && (perCoStaffCounts.get(cN) || 0) > 0);
+          });
+      const relevantCos = activeCosForShift.length ? activeCosForShift : allowedCos;
+      const isImportantShift = isCustomRow ? totalOnShift > 0 : activeCosForShift.length > 0;
+      let rowZeroGaps = 0;
+      const cells = weekDates.map((wd, dIdx) => {
+        const count = countsArr ? countsArr[dIdx] : 0;
+        let expectedWorkday = false;
+        let isClosedShift = false;
+        if (isCustomRow) {
+          expectedWorkday = Boolean(customExpectedByDay[dIdx]);
+        } else {
+          let anyOpen = false;
+          let anyClosed = false;
+          for (let cIdx = 0; cIdx < relevantCos.length; cIdx++) {
+            const co = relevantCos[cIdx];
+            const coShRaw = resolveShiftAtDate(st.id, co, wd.iso);
+            const coShCode = coShRaw ? normalizeShiftCodeAlias(coShRaw.shift_code || coShRaw.id || '') : '';
+            const coSh = (coShRaw && coShCode === st.id)
+              ? normalizeShiftTypeObj(coShRaw)
+              : ((coShiftTypesMap.get(norm(co)) || []).find(x => normalizeShiftCodeAlias(x.id || x.shift_code) === st.id) || st);
+            const coDays = Array.isArray(coSh.days) ? coSh.days : [1, 2, 3, 4, 5, 6];
+            const coExc = normalizeDateTimingsList(coSh.date_timings || []).find(it => wd.iso >= it.start_date && wd.iso <= it.end_date);
+            const coClosed = Boolean(coExc && coExc.day_off);
+            if (coClosed) anyClosed = true;
+            if (!coClosed && (coDays.includes(wd.dayIdx) || Boolean(coExc && !coExc.day_off && coExc.include_off_days))) {
+              anyOpen = true;
+            }
+          }
+          expectedWorkday = anyOpen;
+          isClosedShift = !expectedWorkday && anyClosed;
+        }
+        const isZeroGap = Boolean(expectedWorkday && count === 0 && isImportantShift);
+        if (isZeroGap) {
+          zeroGapCount++;
+          rowZeroGaps++;
+        }
+        const tier = count === 0 ? 0 : (count >= 6 ? 3 : (count >= 3 ? 2 : 1));
+        return {
+          iso: wd.iso,
+          dayIdx: wd.dayIdx,
+          count,
+          expectedWorkday,
+          isClosedShift,
+          isZeroGap,
+          tier
+        };
+      });
+      return {
+        shiftId: st.id,
+        shiftName: st.name,
+        shiftShort: st.short || st.name,
+        tone: st.tone || 'amber',
+        assignedCount: totalOnShift,
+        isDefault: defaultShiftIds.has(st.id),
+        cells,
+        zeroGapCount: rowZeroGaps
+      };
+    });
+
+    return {
+      weekDates,
+      weekOffset,
+      sites,
+      siteFilter: validSite,
+      rows,
+      dailyTotals,
+      zeroGapCount,
+      totalActiveStaff: filteredStaff.length
+    };
+  }
+
+  function renderWeeklyShiftCoverageStripHtml(cov, opts = {}) {
+    if (!cov || !Array.isArray(cov.weekDates)) return '';
+    const activeShift = String(opts.activeShiftFilter || 'all');
+    const weekRangeLbl = `${cov.weekDates[0].dayNum} ${cov.weekDates[0].monthShort} - ${cov.weekDates[6].dayNum} ${cov.weekDates[6].monthShort}`;
+    return `
+      <div class="att-cov-strip" id="kioskShiftCoverageStrip">
+        <div class="att-cov-head">
+          <div class="att-cov-title-wrap">
+            <div class="att-cov-title-row">
+              ${ic('calendar')}
+              <strong>Weekly Shift Coverage</strong>
+              <span class="att-cov-gap-badge ${cov.zeroGapCount > 0 ? 'is-warn' : 'is-ok'}">
+                <b class="mono">${fmtNum(cov.zeroGapCount)}</b>
+                <span>${cov.zeroGapCount > 0 ? 'zero-coverage gaps' : 'full workday coverage'}</span>
+              </span>
+            </div>
+            <span class="att-catalog-sub"><span>7-day active headcount density by shift and station. Click a cell or shift to filter the schedule below.</span></span>
+          </div>
+          <div class="sched-week-nav">
+            <button type="button" class="btn kiosk-mini-btn" data-cov-week-nav="-1" aria-label="Previous coverage week">‹ Prev</button>
+            <button type="button" class="btn kiosk-mini-btn ${cov.weekOffset === 0 ? 'btn-primary' : ''}" data-cov-week-nav="0" data-no-i18n="1">${esc(weekRangeLbl)}</button>
+            <button type="button" class="btn kiosk-mini-btn" data-cov-week-nav="1" aria-label="Next coverage week">Next ›</button>
+          </div>
+        </div>
+        <div class="att-cov-filters">
+          <span class="kiosk-bar-lbl">Station Site:</span>
+          <button type="button" class="kiosk-qchip ${cov.siteFilter === 'all' ? 'active' : ''}" data-cov-site-filter="all">
+            <span>All Sites</span> (<b class="mono">${fmtNum(cov.totalActiveStaff)}</b>)
+          </button>
+          ${cov.sites.map(st => `
+            <button type="button" class="kiosk-qchip ${norm(cov.siteFilter) === norm(st.site) ? 'active' : ''}" data-cov-site-filter="${esc(st.site)}">
+              <span data-no-i18n="1">${esc(st.site)}</span> (<b class="mono">${fmtNum(st.staffCount)}</b>)
+            </button>
+          `).join('')}
+        </div>
+        <div class="cov-table-wrap">
+          <table class="cov-grid">
+            <thead>
+              <tr>
+                <th>Shift Type</th>
+                ${cov.weekDates.map(wd => `<th class="c ${wd.isToday ? 'is-today-col' : ''}"><span data-no-i18n="1">${esc(wd.short)}</span> <small class="mono">${esc(wd.dayNum)}</small></th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${cov.rows.map(row => `
+                <tr class="${activeShift === row.shiftId ? 'is-selected-shift' : ''}">
+                  <td>
+                    <button type="button" class="cov-shift-btn ${activeShift === row.shiftId ? 'active' : ''}" data-cov-shift-pick="${esc(row.shiftId)}" data-tone="${esc(row.tone)}">
+                      <span data-no-i18n="1">${esc(row.shiftName)}</span>
+                      <small class="mono">(${fmtNum(row.assignedCount)})</small>
+                    </button>
+                  </td>
+                  ${row.cells.map(c => {
+                    const cls = [
+                      'cov-cell',
+                      c.isZeroGap ? 'is-zero-gap' : '',
+                      !c.expectedWorkday ? 'is-off-day' : '',
+                      c.tier ? `cov-tier-${c.tier}` : ''
+                    ].filter(Boolean).join(' ');
+                    const tip = c.isZeroGap
+                      ? `${row.shiftName}: 0 scheduled staff on expected workday (${fmtDateDMY(c.iso)})`
+                      : `${row.shiftName}: ${c.count} scheduled staff (${fmtDateDMY(c.iso)})`;
+                    return `
+                      <td class="c">
+                        <button type="button" class="${cls}" data-cov-shift-pick="${esc(row.shiftId)}" data-ui-tip="${esc(tip)}">
+                          <span class="mono">${!c.expectedWorkday && c.count === 0 ? 'Off' : fmtNum(c.count)}</span>
+                          ${c.isZeroGap ? '<small class="cov-gap-tag">Gap</small>' : ''}
+                        </button>
+                      </td>
+                    `;
+                  }).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="cov-day-total">
+                <td>Daily Scheduled Total</td>
+                ${cov.dailyTotals.map(tot => `<td class="c mono">${fmtNum(tot)}</td>`).join('')}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function computeRoleSiteDriftProposals(opts = {}) {
+    const days = Math.max(7, Math.min(90, Number(opts.days || 30)));
+    const minObs = Math.max(2, Number(opts.minObs || 4));
+    const to = String(opts.to || todayISO()).slice(0, 10);
+    const from = shiftCalAddDays(to, -(days - 1));
+    const allowedCos = (opts.companies && opts.companies.length) ? opts.companies : getActiveIndustryBuList(STATE.company);
+    const coSet = new Set(allowedCos.map(c => norm(c)));
+    const viewerAllowed = allowedCompanyNames();
+    const viewerSet = new Set(viewerAllowed.map(c => norm(c)));
+
+    const staffDir = getKioskStaffDirectory({ includeEnded: true });
+    const dirByKey = new Map();
+    staffDir.forEach(s => dirByKey.set(`${norm(s.company)}|${norm(s.name)}`, s));
+
+    const attSeed = (SEED && SEED.records && Array.isArray(SEED.records.attendance)) ? SEED.records.attendance : [];
+    const attCustom = (STATE.customRecords && Array.isArray(STATE.customRecords.attendance)) ? STATE.customRecords.attendance : [];
+    const kioskList = sanitizeKioskPunchesList(STATE.kioskPunches).filter(p => p && !p.voided);
+    const tabletList = (typeof doorTabletPunchList === 'function' ? doorTabletPunchList() : []).filter(p => p && !p.voided);
+
+    const punchSiteLookup = new Map();
+    const ingestDayPunch = (p, sourceBucket) => {
+      const staff = String(p.staff || '').trim();
+      const coRaw = String(p.company || defaultEntryCompany() || 'WTC').trim();
+      const co = canonCompany(coRaw) || coRaw;
+      const coN = norm(co);
+      if (!staff || !coSet.has(coN)) return;
+      if (viewerSet.size && !viewerSet.has(coN)) return;
+      const d = String(p.shift_date || p.set_date || p.rep_date || p.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d < from || d > to) return;
+      const realSite = resolvePunchRealSite(p, co);
+      const dayKey = `${coN}|${norm(staff)}|${d}`;
+      if (!punchSiteLookup.has(dayKey)) punchSiteLookup.set(dayKey, []);
+      punchSiteLookup.get(dayKey).push({ site: realSite, sourceBucket, p });
+    };
+    tabletList.forEach(p => ingestDayPunch(p, 'door_tablet'));
+    kioskList.forEach(p => ingestDayPunch(p, 'wall_kiosk'));
+
+    const dayReadings = new Map();
+    const seenAttIds = new Set();
+    const mergeAttRow = a => {
+      if (!a || a.voided) return;
+      const rid = a.id != null ? String(a.id) : '';
+      if (rid && seenAttIds.has(rid)) return;
+      if (/^(extra|config|site\s*(?:present|off)|vacabsence|paid\s*leave|sick)/i.test(String(a.type || a.status || ''))) return;
+      const staff = String(a.staff || '').trim();
+      const co = canonCompany(a.company || defaultEntryCompany() || 'WTC') || String(a.company || 'WTC').trim();
+      const coN = norm(co);
+      if (!staff || !coSet.has(coN)) return;
+      if (viewerSet.size && !viewerSet.has(coN)) return;
+      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d < from || d > to) return;
+      const inT = fmtAttClockTime(a.in_time || a.check_in || '');
+      const outT = fmtAttClockTime(a.out_time || a.check_out || '');
+      if (!inT && !outT) return;
+      if (rid) seenAttIds.add(rid);
+      const dayKey = `${coN}|${norm(staff)}|${d}`;
+      const existing = dayReadings.get(dayKey) || { staff, company: co, date: d, inMin: null, outMin: null, site: '' };
+      const inMin = inT ? parseClockMinutes(inT) : null;
+      const outMin = outT ? parseClockMinutes(outT) : null;
+      if (inMin != null && (existing.inMin == null || punchDriftWrap(inMin - existing.inMin) < 0)) existing.inMin = inMin;
+      if (outMin != null && (existing.outMin == null || punchDriftWrap(outMin - existing.outMin) > 0)) existing.outMin = outMin;
+      if (a.tablet_site && norm(a.tablet_site) !== 'door tablet') existing.site = String(a.tablet_site).trim();
+      else if (a.site && norm(a.site) !== 'door tablet' && !existing.site) existing.site = String(a.site).trim();
+      dayReadings.set(dayKey, existing);
+    };
+    attCustom.forEach(mergeAttRow);
+    attSeed.forEach(mergeAttRow);
+
+    punchSiteLookup.forEach((items, dayKey) => {
+      const p0 = items[0].p;
+      const staff = String(p0.staff || '').trim();
+      const co = canonCompany(p0.company || defaultEntryCompany() || 'WTC') || String(p0.company || 'WTC').trim();
+      const d = String(p0.shift_date || p0.date || '').slice(0, 10);
+      const existing = dayReadings.get(dayKey) || { staff, company: co, date: d, inMin: null, outMin: null, site: '' };
+      items.forEach(({ site, p }) => {
+        if (site && norm(site) !== 'door tablet') existing.site = site;
+        const dir = String(p.direction || '').toUpperCase();
+        const t = fmtAttClockTime(p.time || (dir === 'OUT' ? p.out_time : p.in_time) || '');
+        const tMin = t ? parseClockMinutes(t) : null;
+        if (tMin == null) return;
+        if (dir === 'OUT') {
+          if (existing.outMin == null || punchDriftWrap(tMin - existing.outMin) > 0) existing.outMin = tMin;
+        } else {
+          if (existing.inMin == null || punchDriftWrap(tMin - existing.inMin) < 0) existing.inMin = tMin;
+        }
+      });
+      dayReadings.set(dayKey, existing);
+    });
+
+    const siteFreq = new Map();
+    const roleFreq = new Map();
+    const cohortMap = new Map();
+    const shiftCache = new Map();
+
+    dayReadings.forEach(rec => {
+      const ck = `${norm(rec.company)}|${norm(rec.staff)}|${rec.date}`;
+      let sh = shiftCache.get(ck);
+      if (!sh) {
+        sh = resolveStaffShiftForDate(rec.staff, rec.company, rec.date);
+        shiftCache.set(ck, sh);
+      }
+      if (!sh || !sh.isWorkday || sh.split_enabled || sh.isOverride) return;
+      const plannedStart = parseClockMinutes(sh.start_time);
+      const plannedEnd = parseClockMinutes(sh.end_time);
+      if (plannedStart == null || plannedEnd == null) return;
+
+      const sEntry = dirByKey.get(`${norm(rec.company)}|${norm(rec.staff)}`) || null;
+      if (sEntry ? sEntry.isEndedContract : !isEmploymentActiveToday(rec.staff, rec.company)) return;
+      const roleSite = resolveStaffRoleAndSiteForDate(rec.staff, rec.company, rec.date, sEntry);
+      const role = roleSite.role || 'Staff';
+      const site = (rec.site && norm(rec.site) !== 'door tablet') ? rec.site : roleSite.site;
+
+      siteFreq.set(site, (siteFreq.get(site) || 0) + 1);
+      roleFreq.set(role, (roleFreq.get(role) || 0) + 1);
+
+      const shiftId = normalizeShiftCodeAlias(sh.shift_code || sh.id || getStaffWorkRule(rec.staff, rec.company).shift_id || 'day_8_4');
+      if (shiftId === 'custom') return;
+      const cohortKey = `${norm(rec.company)}|${norm(site)}|${norm(role)}|${norm(shiftId)}`;
+      if (!cohortMap.has(cohortKey)) {
+        const baseSh = getShiftTypes(rec.company).find(x => x.id === shiftId) || sh;
+        cohortMap.set(cohortKey, {
+          cohortKey,
+          company: rec.company,
+          site,
+          role,
+          shiftId,
+          shiftName: baseSh.name || sh.name || shiftId,
+          currentStart: baseSh.start_time || sh.start_time || '08:00',
+          currentEnd: baseSh.end_time || sh.end_time || '16:00',
+          currentGraceMin: Math.max(0, Number(sh.grace_min != null ? sh.grace_min : (baseSh.grace_min != null ? baseSh.grace_min : 10))),
+          members: new Set(),
+          inDeltas: [],
+          outDeltas: [],
+          dates: new Set()
+        });
+      }
+      const c = cohortMap.get(cohortKey);
+      c.members.add(rec.staff);
+      c.dates.add(rec.date);
+      if (rec.inMin != null) c.inDeltas.push(punchDriftWrap(rec.inMin - plannedStart));
+      if (rec.outMin != null) c.outDeltas.push(punchDriftWrap(rec.outMin - plannedEnd));
+    });
+
+    const slugCohortPart = txt => {
+      const raw = String(txt || '').trim();
+      const asc = norm(raw).replace(/[^a-z0-9]/g, '');
+      if (asc) return asc;
+      let h = 2166136261;
+      for (let i = 0; i < raw.length; i++) {
+        h ^= raw.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+      }
+      return `u${h.toString(36)}`;
+    };
+
+    const proposals = [];
+    cohortMap.forEach(c => {
+      const obsCount = Math.max(c.inDeltas.length, c.outDeltas.length);
+      if (obsCount < minObs) return;
+
+      const medIn = c.inDeltas.length ? punchDriftMedian(c.inDeltas) : 0;
+      const medOut = c.outDeltas.length ? punchDriftMedian(c.outDeltas) : 0;
+      const inRatioDir = c.inDeltas.length
+        ? c.inDeltas.filter(d => (medIn >= 0 ? d >= Math.max(5, c.currentGraceMin + 1) : d <= -15)).length / c.inDeltas.length
+        : 0;
+      const inShiftConsistency = c.inDeltas.length
+        ? c.inDeltas.filter(d => (medIn >= 0 ? d >= 15 : d <= -15)).length / c.inDeltas.length
+        : 0;
+      const outShiftConsistency = c.outDeltas.length
+        ? c.outDeltas.filter(d => (medOut >= 0 ? d >= 15 : d <= -15)).length / c.outDeltas.length
+        : 0;
+
+      const memberNames = Array.from(c.members).sort((a, b) => a.localeCompare(b));
+      const baseProps = {
+        company: c.company,
+        site: c.site,
+        role: c.role,
+        shiftId: c.shiftId,
+        shiftName: c.shiftName,
+        currentStart: c.currentStart,
+        currentEnd: c.currentEnd,
+        currentGraceMin: c.currentGraceMin,
+        medianInMin: medIn,
+        medianOutMin: medOut,
+        obsCount,
+        staffCount: memberNames.length,
+        memberNames,
+        effectiveFrom: to
+      };
+
+      const cohortIdStem = `${slugCohortPart(c.company)}_${slugCohortPart(c.site)}_${slugCohortPart(c.role)}_${slugCohortPart(c.shiftId)}`;
+
+      if (c.inDeltas.length >= minObs && medIn > c.currentGraceMin && medIn <= Math.min(25, c.currentGraceMin + 15) && Math.abs(medOut) < 20 && inRatioDir >= 0.55) {
+        const nextGrace = Math.min(30, Math.max(c.currentGraceMin + 5, Math.ceil(medIn / 5) * 5));
+        if (nextGrace > c.currentGraceMin) {
+          proposals.push(Object.assign({}, baseProps, {
+            id: `adr_grace_${cohortIdStem}`,
+            kind: 'grace_tolerance',
+            recommendedGraceMin: nextGrace,
+            recommendedStartTime: c.currentStart,
+            recommendedEndTime: c.currentEnd,
+            startDeltaMin: 0,
+            endDeltaMin: 0,
+            consistencyPct: Math.round(inRatioDir * 100)
+          }));
+          return;
+        }
+      }
+
+      const startQualifies = c.inDeltas.length >= minObs && Math.abs(medIn) >= 15 && inShiftConsistency >= 0.50;
+      const endQualifies = c.outDeltas.length >= minObs && Math.abs(medOut) >= 15 && outShiftConsistency >= 0.50;
+      if ((Math.abs(medIn) >= 20 && inShiftConsistency >= 0.55) || (Math.abs(medOut) >= 20 && outShiftConsistency >= 0.55)) {
+        const startDeltaMin = startQualifies ? punchDriftRound15(medIn) : 0;
+        const endDeltaMin = endQualifies ? punchDriftRound15(medOut) : 0;
+        if (startDeltaMin !== 0 || endDeltaMin !== 0) {
+          const s0 = parseClockMinutes(c.currentStart) ?? 480;
+          const e0Raw = parseClockMinutes(c.currentEnd) ?? 960;
+          const e0 = e0Raw <= s0 ? e0Raw + 1440 : e0Raw;
+          const nextS = s0 + startDeltaMin;
+          const nextE = Math.max(nextS + 60, e0 + endDeltaMin);
+          proposals.push(Object.assign({}, baseProps, {
+            id: `adr_shift_${cohortIdStem}`,
+            kind: 'shift_timing',
+            recommendedGraceMin: c.currentGraceMin,
+            recommendedStartTime: shiftCalMinutesToClock(nextS),
+            recommendedEndTime: shiftCalMinutesToClock(nextE),
+            startDeltaMin,
+            endDeltaMin,
+            consistencyPct: Math.round(Math.max(startQualifies ? inShiftConsistency : 0, endQualifies ? outShiftConsistency : 0) * 100)
+          }));
+        }
+      }
+    });
+
+    proposals.sort((a, b) =>
+      (b.consistencyPct - a.consistencyPct) || (b.obsCount - a.obsCount) || a.role.localeCompare(b.role)
+    );
+
+    const rankMapEntries = m => Array.from(m.entries())
+      .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
+      .map(([label, count]) => ({ label, count }));
+
+    return {
+      ok: true,
+      from,
+      to,
+      days,
+      minObs,
+      readingsCount: dayReadings.size,
+      sites: rankMapEntries(siteFreq),
+      roles: rankMapEntries(roleFreq),
+      proposals
+    };
+  }
+
+  async function runAiShiftPolicyDriftRecommender(driftRes, opts = {}) {
+    const cleanOut = s => {
+      const edge = window.MFG_AI_EDGE;
+      if (edge && typeof edge.sanitizeOutward === 'function') return edge.sanitizeOutward(String(s || ''));
+      return String(s || '').replace(/[\u2014\u2013]/g, ' - ').replace(/[\u2190-\u21FF\u25B8]/g, 'to').replace(/\bTHEO\b/gi, 'ISABI').trim();
+    };
+    const proposals = Array.isArray(driftRes && driftRes.proposals) ? driftRes.proposals : [];
+    const lang = opts.lang || ((window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en');
+    const langName = lang === 'ar' ? 'Arabic' : (lang === 'fr' ? 'French' : 'English');
+
+    const buildFallbackRationale = p => {
+      if (lang === 'ar') {
+        if (p.kind === 'grace_tolerance') {
+          return cleanOut(`سجّل فريق ${p.role} في ${p.site} (${p.staffCount} موظفين، ${p.obsCount} يوماً) تأخيراً طفيفاً في الوصول بوسيط +${p.medianInMin} د مع التزام وقت الانصراف. يُنصح برفع سماح التأخير إلى ${p.recommendedGraceMin} د بدلاً من تغيير موعد الدوام.`);
+        }
+        return cleanOut(`انحرف حضور فريق ${p.role} في ${p.site} (${p.staffCount} موظفين، اتساق ${p.consistencyPct}%) بوسيط وصول ${p.medianInMin >= 0 ? '+' : ''}${p.medianInMin} د وانصراف ${p.medianOutMin >= 0 ? '+' : ''}${p.medianOutMin} د. يُنصح بتعديل المسودة إلى ${p.recommendedStartTime} - ${p.recommendedEndTime}.`);
+      }
+      if (lang === 'fr') {
+        if (p.kind === 'grace_tolerance') {
+          return cleanOut(`L equipe ${p.role} sur ${p.site} (${p.staffCount} pers., ${p.obsCount} j.) pointe avec un median de +${p.medianInMin} min a l entree et part a l heure. Passage recommande de la tolerance a ${p.recommendedGraceMin} min.`);
+        }
+        return cleanOut(`Decalage constant pour ${p.role} sur ${p.site} (${p.consistencyPct}% sur ${p.obsCount} j., entree ${p.medianInMin >= 0 ? '+' : ''}${p.medianInMin} min, sortie ${p.medianOutMin >= 0 ? '+' : ''}${p.medianOutMin} min). Proposition: ${p.recommendedStartTime} - ${p.recommendedEndTime}.`);
+      }
+      if (p.kind === 'grace_tolerance') {
+        return cleanOut(`${p.role} at ${p.site} (${p.staffCount} staff across ${p.obsCount} workdays) shows a consistent +${p.medianInMin} min arrival median while leaving on time. Raising grace to ${p.recommendedGraceMin} min avoids changing the core shift window.`);
+      }
+      return cleanOut(`${p.role} at ${p.site} (${p.staffCount} staff, ${p.consistencyPct}% consistency across ${p.obsCount} workdays) shows median IN ${p.medianInMin >= 0 ? '+' : ''}${p.medianInMin}m and OUT ${p.medianOutMin >= 0 ? '+' : ''}${p.medianOutMin}m drift. Draft shift adjustment ${p.recommendedStartTime} - ${p.recommendedEndTime} for manager review.`);
+    };
+
+    const buildFallbackHeadline = () => {
+      if (!proposals.length) {
+        if (lang === 'ar') return cleanOut(`لم يتم رصد انحراف مستمر حسب الدور والموقع خلال آخر ${driftRes && driftRes.days || 30} يوماً.`);
+        if (lang === 'fr') return cleanOut(`Aucune derive persistante par role et site detectee sur les ${driftRes && driftRes.days || 30} derniers jours.`);
+        return cleanOut(`No persistent role and site punch drift detected over the last ${driftRes && driftRes.days || 30} days.`);
+      }
+      if (lang === 'ar') return cleanOut(`تم تحليل ${proposals.length} مجموعة دور وموقع ذات انحراف متكرر في البصمة، وتبقى القواعد في وضع المسودة بانتظار اعتماد المدير.`);
+      if (lang === 'fr') return cleanOut(`${proposals.length} groupe(s) role et site a derive recurrente detectes. Toutes les propositions restent en brouillon avant approbation.`);
+      return cleanOut(`${proposals.length} role and site cohort drift pattern(s) flagged from ${driftRes && driftRes.days || 30}-day punch telemetry. Proposals remain draft-only until approved.`);
+    };
+
+    const fallbackRationales = {};
+    proposals.forEach(p => { fallbackRationales[p.id] = buildFallbackRationale(p); });
+    const fallbackOut = {
+      ok: true,
+      mode: 'deterministic_fallback',
+      headline: buildFallbackHeadline(),
+      rationales: fallbackRationales
+    };
+
+    const edge = window.MFG_AI_EDGE;
+    if (!proposals.length || !edge || typeof edge.callAiEdgeJson !== 'function') {
+      return fallbackOut;
+    }
+
+    const factLines = proposals.slice(0, 10).map(p => (
+      `ID=${p.id} | KIND=${p.kind} | CO=${p.company} | SITE=${p.site} | ROLE=${p.role} | SHIFT=${p.shiftName} (${p.currentStart}-${p.currentEnd}, grace ${p.currentGraceMin}m) | OBS=${p.obsCount} days, STAFF=${p.staffCount}, MED_IN=${p.medianInMin}m, MED_OUT=${p.medianOutMin}m, CONSISTENCY=${p.consistencyPct}% | DRAFT=${p.kind === 'grace_tolerance' ? `grace ${p.recommendedGraceMin}m` : `${p.recommendedStartTime}-${p.recommendedEndTime}`}`
+    ));
+    const prompt = [
+      'You are an HR operations analyst advising shift managers. Explain why each cohort drift proposal makes sense operationally without altering any fixed number or payroll calculation.',
+      `Analysis window: ${driftRes.from} to ${driftRes.to} (${driftRes.days} days).`,
+      'Cohort facts:',
+      factLines.join('\n'),
+      `Reply in ${langName}. Return ONLY JSON {"headline": "one short summary sentence", "proposals": [{"id": "<exact ID>", "rationale": "1-2 short sentences using the exact ID"}]}. Use only plain hyphens (-) and "to", never em dashes, never arrows, never mention THEO.`
+    ].join('\n');
+
+    try {
+      const aiRes = await edge.callAiEdgeJson('shift_policy_drift_rec', prompt, '', '', { tier: 'fast', timeoutMs: 8500 });
+      if (aiRes && typeof aiRes === 'object') {
+        const merged = Object.assign({}, fallbackRationales);
+        if (Array.isArray(aiRes.proposals)) {
+          aiRes.proposals.forEach(item => {
+            if (item && item.id && item.rationale && Object.prototype.hasOwnProperty.call(merged, item.id)) {
+              merged[item.id] = cleanOut(item.rationale);
+            }
+          });
+        }
+        const hl = aiRes.headline ? cleanOut(aiRes.headline) : fallbackOut.headline;
+        return {
+          ok: true,
+          mode: 'ai_edge',
+          headline: hl,
+          rationales: merged
+        };
+      }
+    } catch (_) {}
+    return fallbackOut;
+  }
+
+  function applyRoleSiteDriftProposal(proposal, opts = {}) {
+    if (!proposal || !proposal.company || !Array.isArray(proposal.memberNames) || !proposal.memberNames.length) {
+      return { ok: false, error: 'Missing cohort members for drift proposal' };
+    }
+    const co = String(proposal.company || '').trim();
+    if (!canEditShiftsAndRules(null, co)) {
+      return { ok: false, error: 'You do not have rights to update shifts or rules for this company' };
+    }
+    const today = todayISO();
+    const rawEff = opts.effective_from || proposal.effectiveFrom || today;
+    const effFrom = /^\d{4}-\d{2}-\d{2}$/.test(String(rawEff).slice(0, 10)) ? String(rawEff).slice(0, 10) : today;
+    const rawEffTo = String(opts.effective_to || '').slice(0, 10);
+    const effTo = (/^\d{4}-\d{2}-\d{2}$/.test(rawEffTo) && rawEffTo >= effFrom) ? rawEffTo : '';
+
+    const curStart = normalize24hClockTime(proposal.currentStart || '08:00', '08:00');
+    const curEnd = normalize24hClockTime(proposal.currentEnd || '16:00', '16:00');
+    const nextStart = normalize24hClockTime(opts.recommendedStartTime != null ? opts.recommendedStartTime : (proposal.recommendedStartTime || curStart), curStart);
+    const nextEnd = normalize24hClockTime(opts.recommendedEndTime != null ? opts.recommendedEndTime : (proposal.recommendedEndTime || curEnd), curEnd);
+    const sDelta = opts.startDeltaMin != null
+      ? Number(opts.startDeltaMin)
+      : (opts.recommendedStartTime != null
+          ? punchDriftWrap((parseClockMinutes(nextStart) ?? 480) - (parseClockMinutes(curStart) ?? 480))
+          : Number(proposal.startDeltaMin || 0));
+    const eDelta = opts.endDeltaMin != null
+      ? Number(opts.endDeltaMin)
+      : (opts.recommendedEndTime != null
+          ? punchDriftWrap((parseClockMinutes(nextEnd) ?? 960) - (parseClockMinutes(curEnd) ?? 960))
+          : Number(proposal.endDeltaMin || 0));
+    const curGrace = finiteClamp(proposal.currentGraceMin, 10, 0, 60, true);
+    const hasGraceOpt = opts.recommendedGraceMin != null;
+    const targetGrace = finiteClamp(hasGraceOpt ? opts.recommendedGraceMin : proposal.recommendedGraceMin, curGrace, 0, 60, true);
+    const allowDualEdit = Boolean(opts.allowDualEdit);
+    const applyGrace = opts.applyGrace != null
+      ? Boolean(opts.applyGrace)
+      : Boolean(proposal.kind === 'grace_tolerance' || (allowDualEdit && hasGraceOpt && targetGrace !== curGrace));
+    const applyShift = opts.applyShift != null
+      ? Boolean(opts.applyShift)
+      : Boolean(proposal.kind === 'shift_timing' || (allowDualEdit && (sDelta !== 0 || eDelta !== 0 || nextStart !== curStart || nextEnd !== curEnd)));
+
+    const adrPrefix = `adr_${norm(proposal.shiftId)}_`;
+    const updatedStaff = [];
+    const touchedRules = [];
+    const coDirMap = new Map(
+      getKioskStaffDirectory({ companyOverride: co, scopeBySelectedCompany: true, includeEnded: true })
+        .map(x => [norm(x.name), x])
+    );
+
+    proposal.memberNames.forEach(staffName => {
+      const cleanName = String(staffName || '').trim();
+      if (!cleanName) return;
+      const mEntry = coDirMap.get(norm(cleanName));
+      if (mEntry ? mEntry.isEndedContract : !isEmploymentActiveToday(cleanName, co)) return;
+      if (!applyGrace && !applyShift) return;
+      const cur = getStaffWorkRule(cleanName, co);
+      const preservedDates = [];
+      let sameStartPrev = null;
+      let nextLaterStart = '';
+      normalizeDateTimingsList(cur.own_date_timings).forEach(it => {
+        const itId = String(it.id || '');
+        if (!itId.startsWith(adrPrefix)) {
+          preservedDates.push(it);
+          return;
+        }
+        if (it.start_date === effFrom) {
+          sameStartPrev = it;
+          return;
+        }
+        if (it.start_date < effFrom) {
+          const closedEnd = it.end_date >= effFrom ? shiftIsoDateByDays(effFrom, -1) : it.end_date;
+          if (closedEnd >= it.start_date) {
+            preservedDates.push(Object.assign({}, it, { end_date: closedEnd }));
+          }
+          return;
+        }
+        if (!nextLaterStart || it.start_date < nextLaterStart) nextLaterStart = it.start_date;
+        preservedDates.push(it);
+      });
+      const capEnd = nextLaterStart ? shiftIsoDateByDays(nextLaterStart, -1) : '2099-12-31';
+      const spanEnd = (effTo && effTo < capEnd) ? effTo : capEnd;
+      const hasShiftChange = applyShift && (sDelta !== 0 || eDelta !== 0 || (sameStartPrev && (sameStartPrev.start_shift_min || sameStartPrev.end_shift_min)));
+      const hasGraceChange = applyGrace || Boolean(sameStartPrev && sameStartPrev.grace_min != null);
+      const patch = { company: co };
+      if ((hasGraceChange || hasShiftChange) && spanEnd >= effFrom) {
+        const ruleId = `${adrPrefix}${effFrom.replace(/-/g, '')}`;
+        const item = {
+          id: ruleId,
+          start_date: effFrom,
+          end_date: spanEnd,
+          start_time: applyShift ? nextStart : curStart,
+          end_time: applyShift ? nextEnd : curEnd,
+          include_off_days: false,
+          note: (applyGrace && !applyShift ? `Role/Site Grace (${proposal.role})` : `Role/Site Drift (${proposal.role})`).slice(0, 60)
+        };
+        if (applyShift) {
+          if (sDelta) item.start_shift_min = sDelta;
+          if (eDelta) item.end_shift_min = eDelta;
+        } else if (sameStartPrev) {
+          if (sameStartPrev.start_shift_min) item.start_shift_min = sameStartPrev.start_shift_min;
+          if (sameStartPrev.end_shift_min) item.end_shift_min = sameStartPrev.end_shift_min;
+        }
+        if (applyGrace) {
+          item.grace_min = targetGrace;
+        } else if (sameStartPrev && sameStartPrev.grace_min != null) {
+          item.grace_min = sameStartPrev.grace_min;
+        }
+        patch.own_date_timings = normalizeDateTimingsList(preservedDates.concat([item]));
+      } else {
+        patch.own_date_timings = normalizeDateTimingsList(preservedDates);
+      }
+      const res = saveStaffWorkRule(cleanName, patch, { deferSave: true, skipRecalc: true, backfillAtt: false });
+      if (res && res.ok) {
+        updatedStaff.push(cleanName);
+        touchedRules.push(res);
+      }
+    });
+
+    if (!updatedStaff.length) {
+      return { ok: false, error: 'No cohort staff rules were updated' };
+    }
+    let backfilledRows = 0;
+    const doBackfill = opts.backfill !== false;
+    if (doBackfill && effFrom <= today) {
+      const bf = backfillAttendancePolicyChange({
+        company: co,
+        staffNames: updatedStaff,
+        fromDate: effFrom,
+        toDate: (effTo && effTo <= today) ? effTo : today,
+        deferSave: true
+      });
+      backfilledRows = bf ? Number(bf.updatedRows || 0) : 0;
+    }
+    updatedStaff.forEach(sn => recalcStaffTodayPunchAndAttendance(sn));
+    saveLocalAuthAndRecords();
+    touchedRules.forEach(r => postWorkScheduleMutation({ op: 'upsert_staff_rule', key: r.key, item: r.rule }));
+    syncWithCloud(true);
+    return {
+      ok: true,
+      kind: applyShift && !applyGrace ? 'shift_timing' : (applyGrace && !applyShift ? 'grace_tolerance' : proposal.kind),
+      company: co,
+      effectiveFrom: effFrom,
+      updatedCount: updatedStaff.length,
+      backfilledRows,
+      updatedStaff
+    };
   }
 
   async function runPunchDriftBrief(dg) {
@@ -144007,20 +146096,26 @@
   function closePunchDriftModal() {
     const m = $('punchDriftModal');
     if (m) m.hidden = true;
-    document.body.classList.remove('modal-open');
-    if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
+    _syncOverlayModalState(true);
   }
 
   function openPunchDriftModal(opts = {}) {
     const canWrite = canApplyShiftCalendar();
     const st = {
+      tab: opts.tab === 'advisor' ? 'advisor' : 'crew',
       weeks: Number(opts.weeks || 4),
       thresholdMin: Number(opts.thresholdMin || 30),
       brief: null,
       briefBusy: false,
+      advDays: Number(opts.days || 30),
+      advSite: 'all',
+      advRole: 'all',
+      advAi: null,
+      advBusy: false,
       armed: ''
     };
     let dg = null;
+    let advRes = null;
     let modal = $('punchDriftModal');
     if (!modal) {
       modal = document.createElement('div');
@@ -144034,6 +146129,8 @@
     const compute = () => {
       dg = computePunchDriftDigest({ weeks: st.weeks, thresholdMin: st.thresholdMin });
       window.__lastPunchDriftDigest = dg;
+      advRes = computeRoleSiteDriftProposals({ days: st.advDays });
+      window.__lastRoleSiteDriftProposals = advRes;
     };
     const patHtml = list => list.map(x => `<span class="pdr-pat" data-side="${esc(x.side)}"><span>${esc(x.label)}</span> <b class="mono">${x.medianMin > 0 ? '+' : ''}${fmtNum(x.medianMin)}</b> <span>min</span></span>`).join(' ');
     const daysHtml = (scope, dows) => (scope === 'weekday'
@@ -144074,47 +146171,133 @@
         </tr>`).join('');
       const brief = st.brief;
       const activeRules = listActivePunchDriftRules(getActiveIndustryBuList(STATE.company));
+      const filteredAdvProps = (advRes && Array.isArray(advRes.proposals) ? advRes.proposals : []).filter(p => {
+        if (st.advSite !== 'all' && norm(p.site) !== norm(st.advSite)) return false;
+        if (st.advRole !== 'all' && norm(p.role) !== norm(st.advRole)) return false;
+        return true;
+      });
       modal.innerHTML = `
         <div class="modal-card pdr-card" style="width:min(980px,97vw);max-width:980px">
           <div class="modal-head">
             <div>
-              <div class="modal-title">${ic('clock')} <span>Punch Drift</span></div>
-              <div class="modal-sub">People and crews who keep clocking in or out well away from the window their shift plans for that date. Read only until you turn a pattern into a rule; pay and overtime stay rule-driven.</div>
+              <div class="modal-title">${ic('clock')} <span>Punch Drift &amp; AI Cohort Advisor</span></div>
+              <div class="modal-sub">People, crews, and role/site cohorts clocking in or out away from planned schedules. Draft proposals stay review-only until approved by an authorized manager.</div>
             </div>
             <button type="button" class="icon-btn" id="pdrCloseBtn" aria-label="Close">✕</button>
           </div>
           <div class="modal-body pdr-body">
-            <div class="pdr-controls">
-              <div class="pdr-ctl" role="group" aria-label="Period">
-                <span class="pdr-ctl-lbl">Period</span>
-                ${[[4, 'Last 4 Weeks'], [2, 'Last 2 Weeks'], [8, 'Last 8 Weeks']].map(([w, l]) => `<button type="button" class="kiosk-qchip ${st.weeks === w ? 'active' : ''}" data-pdr-weeks="${w}">${l}</button>`).join('')}
-              </div>
-              <div class="pdr-ctl" role="group" aria-label="Off by at least">
-                <span class="pdr-ctl-lbl">Off by at least</span>
-                ${[30, 15, 45, 60].map(m => `<button type="button" class="kiosk-qchip ${st.thresholdMin === m ? 'active' : ''}" data-pdr-thr="${m}"><b class="mono">${m}</b> <span>min</span></button>`).join('')}
-              </div>
+            <div class="pdr-tabs" role="tablist" aria-label="Punch Drift Mode">
+              <button type="button" class="pdr-tab-btn ${st.tab === 'crew' ? 'active' : ''}" data-pdr-tab="crew" role="tab" aria-selected="${st.tab === 'crew' ? 'true' : 'false'}">
+                ${ic('clock')} <span>Crew &amp; Individual Drift</span> <span class="badge mono">${fmtNum(dg.crews.length + dg.people.length)}</span>
+              </button>
+              <button type="button" class="pdr-tab-btn ${st.tab === 'advisor' ? 'active' : ''}" data-pdr-tab="advisor" role="tab" aria-selected="${st.tab === 'advisor' ? 'true' : 'false'}">
+                ${ic('sparkles')} <span>Role &amp; Site AI Drift (${fmtNum(st.advDays)}d)</span> <span class="badge badge-brass mono">${fmtNum(advRes ? advRes.proposals.length : 0)}</span>
+              </button>
             </div>
-            <div class="pdr-kpis">
-              <span class="scp-pv-item"><b class="mono">${fmtNum(dg.peopleRead)}</b> <span>people read</span></span>
-              <span class="scp-pv-item"><b class="mono">${fmtNum(dg.daysRead)}</b> <span>worked days</span></span>
-              <span class="scp-pv-item ${dg.crews.length ? 'is-warn' : ''}"><b class="mono">${fmtNum(dg.crews.length)}</b> <span>crews</span></span>
-              <span class="scp-pv-item ${dg.findings.length ? 'is-warn' : ''}"><b class="mono">${fmtNum(dg.findings.length)}</b> <span>people flagged</span></span>
-              <span class="pdr-range mono" data-no-i18n="1">${esc(fmtDateDMY(dg.from))} - ${esc(fmtDateDMY(dg.to))}</span>
-            </div>
-            <div class="pdr-brief" id="pdrBrief">
-              <div class="pdr-brief-head">
-                <strong>Weekly Brief</strong>
-                <button type="button" class="btn kiosk-mini-btn" id="pdrBriefBtn" ${st.briefBusy ? 'disabled' : ''}>${ic('sparkles')} <span>${st.briefBusy ? 'Writing...' : 'Write with Ask ISABI'}</span></button>
+            ${st.tab === 'crew' ? `
+              <div id="pdrTabCrew">
+                <div class="pdr-controls">
+                  <div class="pdr-ctl" role="group" aria-label="Period">
+                    <span class="pdr-ctl-lbl">Period</span>
+                    ${[[4, 'Last 4 Weeks'], [2, 'Last 2 Weeks'], [8, 'Last 8 Weeks']].map(([w, l]) => `<button type="button" class="kiosk-qchip ${st.weeks === w ? 'active' : ''}" data-pdr-weeks="${w}">${l}</button>`).join('')}
+                  </div>
+                  <div class="pdr-ctl" role="group" aria-label="Off by at least">
+                    <span class="pdr-ctl-lbl">Off by at least</span>
+                    ${[30, 15, 45, 60].map(m => `<button type="button" class="kiosk-qchip ${st.thresholdMin === m ? 'active' : ''}" data-pdr-thr="${m}"><b class="mono">${m}</b> <span>min</span></button>`).join('')}
+                  </div>
+                </div>
+                <div class="pdr-kpis">
+                  <span class="scp-pv-item"><b class="mono">${fmtNum(dg.peopleRead)}</b> <span>people read</span></span>
+                  <span class="scp-pv-item"><b class="mono">${fmtNum(dg.daysRead)}</b> <span>worked days</span></span>
+                  <span class="scp-pv-item ${dg.crews.length ? 'is-warn' : ''}"><b class="mono">${fmtNum(dg.crews.length)}</b> <span>crews</span></span>
+                  <span class="scp-pv-item ${dg.findings.length ? 'is-warn' : ''}"><b class="mono">${fmtNum(dg.findings.length)}</b> <span>people flagged</span></span>
+                  <span class="pdr-range mono" data-no-i18n="1">${esc(fmtDateDMY(dg.from))} - ${esc(fmtDateDMY(dg.to))}</span>
+                </div>
+                <div class="pdr-brief" id="pdrBrief">
+                  <div class="pdr-brief-head">
+                    <strong>Weekly Brief</strong>
+                    <button type="button" class="btn kiosk-mini-btn" id="pdrBriefBtn" ${st.briefBusy ? 'disabled' : ''}>${ic('sparkles')} <span>${st.briefBusy ? 'Writing...' : 'Write with Ask ISABI'}</span></button>
+                  </div>
+                  ${brief && !brief.unavailable ? `<div class="pdr-brief-body" data-no-i18n="1"><p>${esc(brief.headline)}</p><ul>${brief.bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>` : (brief && brief.unavailable ? `<div class="muted">${dg.findings.length ? 'Ask ISABI could not be reached. The table below is the full digest.' : 'No chronic drift in this period.'}</div>` : '<div class="muted">Ask ISABI words the findings below into a short note for HR. It never changes a figure.</div>')}
+                </div>
+                ${dg.findings.length ? `
+                  <div class="table-wrap pdr-table-wrap">
+                    <table class="pdr-table">
+                      <thead><tr><th>Who</th><th>Planned</th><th>Drift (median)</th><th>Days</th><th>Change</th><th></th></tr></thead>
+                      <tbody>${crewRows}${personRows}</tbody>
+                    </table>
+                  </div>` : '<div class="pdr-empty">No chronic drift in this period.</div>'}
               </div>
-              ${brief && !brief.unavailable ? `<div class="pdr-brief-body" data-no-i18n="1"><p>${esc(brief.headline)}</p><ul>${brief.bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>` : (brief && brief.unavailable ? `<div class="muted">${dg.findings.length ? 'Ask ISABI could not be reached. The table below is the full digest.' : 'No chronic drift in this period.'}</div>` : '<div class="muted">Ask ISABI words the findings below into a short note for HR. It never changes a figure.</div>')}
-            </div>
-            ${dg.findings.length ? `
-              <div class="table-wrap pdr-table-wrap">
-                <table class="pdr-table">
-                  <thead><tr><th>Who</th><th>Planned</th><th>Drift (median)</th><th>Days</th><th>Change</th><th></th></tr></thead>
-                  <tbody>${crewRows}${personRows}</tbody>
-                </table>
-              </div>` : '<div class="pdr-empty">No chronic drift in this period.</div>'}
+            ` : `
+              <div id="pdrRoleSiteSection">
+                <div class="pdr-controls">
+                  <div class="pdr-ctl" role="group" aria-label="Lookback Window">
+                    <span class="pdr-ctl-lbl">Window</span>
+                    ${[[30, 'Last 30 Days'], [14, 'Last 14 Days'], [60, 'Last 60 Days']].map(([dVal, lbl]) => `<button type="button" class="kiosk-qchip ${st.advDays === dVal ? 'active' : ''}" data-pdr-adv-days="${dVal}">${lbl}</button>`).join('')}
+                  </div>
+                  ${advRes && advRes.sites.length ? `
+                    <div class="pdr-ctl" role="group" aria-label="Site Filter">
+                      <span class="pdr-ctl-lbl">Site</span>
+                      <button type="button" class="kiosk-qchip ${st.advSite === 'all' ? 'active' : ''}" data-pdr-adv-site="all">All Sites</button>
+                      ${advRes.sites.slice(0, 6).map(x => `<button type="button" class="kiosk-qchip ${norm(st.advSite) === norm(x.label) ? 'active' : ''}" data-pdr-adv-site="${esc(x.label)}"><span data-no-i18n="1">${esc(x.label)}</span> <b class="mono">${fmtNum(x.count)}</b></button>`).join('')}
+                    </div>
+                  ` : ''}
+                  ${advRes && advRes.roles.length ? `
+                    <div class="pdr-ctl" role="group" aria-label="Role Filter">
+                      <span class="pdr-ctl-lbl">Role</span>
+                      <button type="button" class="kiosk-qchip ${st.advRole === 'all' ? 'active' : ''}" data-pdr-adv-role="all">All Roles</button>
+                      ${advRes.roles.slice(0, 6).map(x => `<button type="button" class="kiosk-qchip ${norm(st.advRole) === norm(x.label) ? 'active' : ''}" data-pdr-adv-role="${esc(x.label)}"><span data-no-i18n="1">${esc(x.label)}</span> <b class="mono">${fmtNum(x.count)}</b></button>`).join('')}
+                    </div>
+                  ` : ''}
+                </div>
+                <div class="pdr-brief" id="pdrAiRecBanner">
+                  <div class="pdr-brief-head">
+                    <strong>AI Drift Advisor Summary</strong>
+                    <button type="button" class="btn kiosk-mini-btn" id="pdrRunAiRecBtn" ${st.advBusy ? 'disabled' : ''}>${ic('sparkles')} <span>${st.advBusy ? 'Analyzing...' : 'Explain with AI Edge'}</span></button>
+                  </div>
+                  ${st.advAi
+                    ? `<div class="pdr-brief-body"><p data-no-i18n="1">${esc(st.advAi.headline)}</p><small class="muted">${st.advAi.mode === 'ai_edge' ? 'Generated at AI Edge (grounded deterministic cohort facts)' : 'Deterministic analysis summary'}</small></div>`
+                    : `<div class="muted"><span>Scanned ${fmtNum(advRes ? advRes.readingsCount : 0)} workday readings (${esc(fmtDateDMY(advRes ? advRes.from : todayISO()))} - ${esc(fmtDateDMY(advRes ? advRes.to : todayISO()))}). Found ${fmtNum(filteredAdvProps.length)} draft cohort suggestion(s).</span></div>`}
+                </div>
+                ${filteredAdvProps.length ? `
+                  <div class="pdr-prop-grid">
+                    ${filteredAdvProps.map(prop => {
+                      const isArmed = st.armed === `prop:${prop.id}`;
+                      const rationale = (st.advAi && st.advAi.rationales && st.advAi.rationales[prop.id])
+                        ? st.advAi.rationales[prop.id]
+                        : (prop.kind === 'grace_tolerance'
+                          ? `Consistent +${prop.medianInMin}m late arrival while leaving on time; raising grace avoids shifting core schedule.`
+                          : `Consistent ${prop.consistencyPct}% punch offset (${prop.medianInMin >= 0 ? '+' : ''}${prop.medianInMin}m IN / ${prop.medianOutMin >= 0 ? '+' : ''}${prop.medianOutMin}m OUT) across ${prop.obsCount} workdays.`);
+                      const canEditCo = canWrite && canEditShiftsAndRules(null, prop.company);
+                      return `
+                        <div class="pdr-prop-card" data-pdr-prop-id="${esc(prop.id)}">
+                          <div class="pdr-prop-head">
+                            <div>
+                              <span class="badge ${prop.kind === 'grace_tolerance' ? 'badge-emerald' : 'badge-brass'}">${prop.kind === 'grace_tolerance' ? 'Grace Tolerance Draft' : 'Shift Window Draft'}</span>
+                              <strong data-no-i18n="1">${esc(prop.role)}</strong>
+                              <span class="muted" data-no-i18n="1">· ${esc(prop.site)} · ${esc(prop.company)}</span>
+                            </div>
+                            <span class="badge badge-muted mono">${fmtNum(prop.staffCount)} staff · ${fmtNum(prop.obsCount)}d · ${fmtNum(prop.consistencyPct)}%</span>
+                          </div>
+                          <div class="pdr-prop-metrics mono">
+                            <span data-no-i18n="1">${esc(prop.shiftName)}:</span>
+                            ${prop.kind === 'grace_tolerance'
+                              ? `<span>Grace ${fmtNum(prop.currentGraceMin)}m to ${fmtNum(prop.recommendedGraceMin)}m</span>`
+                              : `<span data-no-i18n="1">${esc(prop.currentStart)}-${esc(prop.currentEnd)}</span> <span>-</span> <b data-no-i18n="1">${esc(prop.recommendedStartTime)}-${esc(prop.recommendedEndTime)}</b>`}
+                            <span class="muted">· <span>Staff:</span> <span data-no-i18n="1">${esc(prop.memberNames.slice(0, 4).join(', '))}${prop.memberNames.length > 4 ? ` +${prop.memberNames.length - 4}` : ''}</span></span>
+                          </div>
+                          <div class="pdr-prop-rationale" ${st.advAi && st.advAi.rationales && st.advAi.rationales[prop.id] ? 'data-no-i18n="1"' : ''}>${esc(rationale)}</div>
+                          <div class="pdr-prop-actions">
+                            <button type="button" class="btn kiosk-mini-btn" data-pdr-review-prop="${esc(prop.id)}"${canEditCo ? '' : ' disabled'}>${ic('sliders')} <span>Review Cohort Draft</span></button>
+                            ${canEditCo ? `<button type="button" class="btn kiosk-mini-btn ${isArmed ? 'btn-primary' : ''}" data-pdr-approve-prop="${esc(prop.id)}">${ic('check_circle')} <span>${isArmed ? 'Confirm Cohort Rule' : 'Approve Cohort Draft'}</span></button>` : '<span class="badge badge-muted">View Only</span>'}
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                ` : `<div class="pdr-empty"><span>No role and site cohorts crossed the ${fmtNum(st.advDays)}-day drift threshold for this filter.</span></div>`}
+              </div>
+            `}
             ${activeRules.length ? `
               <div class="scp-section-head">Drift rules in force</div>
               <div class="pdr-rules">
@@ -144150,6 +146333,78 @@
     const wire = () => {
       $('pdrCloseBtn')?.addEventListener('click', closePunchDriftModal);
       $('pdrDoneBtn')?.addEventListener('click', closePunchDriftModal);
+      modal.querySelectorAll('[data-pdr-tab]').forEach(b => b.addEventListener('click', () => {
+        st.tab = b.getAttribute('data-pdr-tab') === 'advisor' ? 'advisor' : 'crew';
+        st.armed = '';
+        render();
+      }));
+      modal.querySelectorAll('[data-pdr-adv-days]').forEach(b => b.addEventListener('click', () => {
+        st.advDays = Number(b.getAttribute('data-pdr-adv-days')) || 30;
+        st.advAi = null;
+        st.armed = '';
+        compute();
+        render();
+      }));
+      modal.querySelectorAll('[data-pdr-adv-site]').forEach(b => b.addEventListener('click', () => {
+        st.advSite = b.getAttribute('data-pdr-adv-site') || 'all';
+        st.armed = '';
+        render();
+      }));
+      modal.querySelectorAll('[data-pdr-adv-role]').forEach(b => b.addEventListener('click', () => {
+        st.advRole = b.getAttribute('data-pdr-adv-role') || 'all';
+        st.armed = '';
+        render();
+      }));
+      $('pdrRunAiRecBtn')?.addEventListener('click', async () => {
+        if (st.advBusy) return;
+        st.advBusy = true;
+        render();
+        const snap = advRes;
+        const aiOut = await runAiShiftPolicyDriftRecommender(snap);
+        st.advBusy = false;
+        if (snap === advRes && !modal.hidden) {
+          st.advAi = aiOut;
+          render();
+        }
+      });
+      modal.querySelectorAll('[data-pdr-review-prop]').forEach(b => b.addEventListener('click', () => {
+        const pid = b.getAttribute('data-pdr-review-prop') || '';
+        const prop = (advRes && Array.isArray(advRes.proposals) ? advRes.proposals : []).find(x => x.id === pid);
+        if (!prop) return;
+        openShiftTypeModal(prop.shiftId, {
+          company: prop.company,
+          cohortProposal: prop,
+          draftPatch: {
+            start_time: prop.recommendedStartTime || prop.currentStart,
+            end_time: prop.recommendedEndTime || prop.currentEnd,
+            grace_min: prop.recommendedGraceMin != null ? prop.recommendedGraceMin : prop.currentGraceMin,
+            effective_from: prop.effectiveFrom || todayISO()
+          },
+          onSaved: () => {
+            if (!modal.hidden) {
+              compute();
+              render();
+            }
+          }
+        });
+      }));
+      modal.querySelectorAll('[data-pdr-approve-prop]').forEach(b => b.addEventListener('click', () => {
+        const pid = b.getAttribute('data-pdr-approve-prop') || '';
+        const armKey = `prop:${pid}`;
+        if (st.armed !== armKey) {
+          st.armed = armKey;
+          render();
+          return;
+        }
+        st.armed = '';
+        const prop = (advRes && Array.isArray(advRes.proposals) ? advRes.proposals : []).find(x => x.id === pid);
+        if (!prop) return;
+        const res = applyRoleSiteDriftProposal(prop);
+        toast(res && res.ok ? `Applied cohort rule for ${res.updatedCount} ${prop.role} staff` : ((res && res.error) || 'Nothing changed'), res && res.ok ? 'ok' : 'warn');
+        st.advAi = null;
+        compute();
+        render();
+      }));
       modal.querySelectorAll('[data-pdr-weeks]').forEach(b => b.addEventListener('click', () => {
         st.weeks = Number(b.getAttribute('data-pdr-weeks')) || 4;
         st.brief = null;
@@ -144225,11 +146480,7 @@
   function closePolicyGroupModal() {
     const m = $('policyGroupModal');
     if (m) m.hidden = true;
-    const ssm = $('staffScheduleModal');
-    if (!ssm || ssm.hidden) {
-      document.body.classList.remove('modal-open');
-      if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
-    }
+    _syncOverlayModalState(true);
   }
 
   function renderCompanyDefaultAttendanceCardHtml(coName, opts = {}) {
@@ -144756,6 +147007,7 @@
                   ${draftEffFrom && draftEffFrom > today
                     ? `<span>Scheduled for future effective date <b>${esc(fmtDateDMY(draftEffFrom))}</b> (current active policy stays until then).</span>`
                     : `<span>Dry-Run Preview (${esc(fmtDateDMY(previewRes.fromDate))}–${esc(fmtDateDMY(previewRes.toDate))}): recalculates <b>${fmtNum(previewRes.updatedRows)}</b> unlocked logs${showDollars ? ` · Earned Δ <b class="att-earn-pos">${previewRes.earnedDeltaUsd >= 0 ? '+' : ''}${fmtUSD(previewRes.earnedDeltaUsd, 2)}</b> · Lost Δ <b class="att-loss-neg">${previewRes.lostDeltaUsd >= 0 ? '+' : ''}${fmtUSD(previewRes.lostDeltaUsd, 2)}</b> · Net Δ <b>${previewRes.netDeltaUsd >= 0 ? '+' : '-'}${fmtUSD(Math.abs(previewRes.netDeltaUsd), 2)}</b>` : ''}${(previewRes.skippedClosed || previewRes.skippedManual) ? ` (${fmtNum(previewRes.skippedClosed)} closed skipped, ${fmtNum(previewRes.skippedManual)} manual kept)` : ''}</span>`}
+                  ${!isRo ? ` <button type="button" class="btn kiosk-mini-btn" data-pgm-open-sim="1">Inspect employee diffs</button>` : ''}
                 </div>
               ` : ''}
             </div>
@@ -144826,8 +147078,9 @@
             <div>
               ${existing && !existing.isBuiltin && !isRo ? `<button type="button" class="btn" id="pgmDeleteBtn">Delete Group</button>` : ''}
             </div>
-            <div style="display:flex;gap:8px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button type="button" class="btn" id="pgmCancelBtn">${isRo ? 'Close' : 'Cancel'}</button>
+              ${isRo ? '' : `<button type="button" class="btn" id="pgmSimulateDiffBtn">${ic('sliders')} <span>Simulate Employee Diff</span></button>`}
               ${isRo ? '' : `<button type="button" class="btn btn-primary" id="pgmSaveBtn">${ic('check_circle')} ${existing ? 'Save Group &amp; Backfill' : 'Create Policy &amp; Perks Group'}</button>`}
             </div>
           </div>
@@ -145075,24 +147328,23 @@
         draftSetCoDef = Boolean(existing && nextDefCo && getCompanyDefaultPolicyGroupId(nextDefCo) === existing.id);
         renderGroupModal();
       });
-      $('pgmSaveBtn')?.addEventListener('click', () => {
-        if (isRo) return;
+      const buildPgmDraftSaveContext = () => {
         syncPgmDom();
         const cleanName = String(draftName || '').trim();
         if (!cleanName) {
           toast('Enter a name for the Policy & Perks group', 'warn');
           $('pgmName')?.focus();
-          return;
+          return null;
         }
         if (draftEffTo && !draftEffFrom) {
           toast('Enter an Effective From date when setting Effective To', 'warn');
           $('pgmEffectiveFrom')?.focus();
-          return;
+          return null;
         }
         if (draftEffTo && draftEffFrom && draftEffTo < draftEffFrom) {
           toast('Effective End Date must be on or after Start Date', 'warn');
           $('pgmEffectiveTo')?.focus();
-          return;
+          return null;
         }
         const targetDefCo = effDefCo(draftCompany);
         const willSetCoDef = Boolean(draftSetCoDef && targetDefCo);
@@ -145134,15 +147386,25 @@
           deferSync: willUpdateCoDefault
         };
         if (draftVersionsEdited) savePayload.versions = draftVersions;
+        return { targetDefCo, willSetCoDef, willRevertCoDef, willUpdateCoDefault, savePayload };
+      };
+      const commitPgmSaveContext = ctx => {
+        if (isRo || !ctx) return;
+        const { targetDefCo, willSetCoDef, willRevertCoDef, willUpdateCoDefault, savePayload } = ctx;
         const res = savePolicyGroup(savePayload);
         if (res.ok) {
           let defUpdateRes = null;
+          const coDefOpts = {
+            backfill: draftBackfill,
+            effective_from: draftEffFrom || '',
+            effective_to: draftEffTo || ''
+          };
           if (willSetCoDef && targetDefCo) {
-            defUpdateRes = setCompanyDefaultPolicyGroup(targetDefCo, res.policyGroup.id, { backfill: draftBackfill });
+            defUpdateRes = setCompanyDefaultPolicyGroup(targetDefCo, res.policyGroup.id, coDefOpts);
           } else if (willRevertCoDef && targetDefCo) {
             const fbBase = DEFAULT_COMPANY_POLICY_GROUP_MAP[norm(targetDefCo)] || 'pkg_15_open_15d';
             const fbId = fbBase === res.policyGroup.id ? (fbBase === 'pkg_15_open_15d' ? 'pkg_10_fixed_15d' : 'pkg_15_open_15d') : fbBase;
-            defUpdateRes = setCompanyDefaultPolicyGroup(targetDefCo, fbId, { backfill: draftBackfill });
+            defUpdateRes = setCompanyDefaultPolicyGroup(targetDefCo, fbId, coDefOpts);
           }
           if (willUpdateCoDefault && (!defUpdateRes || !defUpdateRes.ok)) {
             postWorkScheduleMutation({ op: 'upsert_policy_group', item: res.policyGroup });
@@ -145156,6 +147418,29 @@
         } else {
           toast(res.error || 'Could not save group', 'err');
         }
+      };
+      const openPgmSim = () => {
+        if (isRo) return;
+        const ctx = buildPgmDraftSaveContext();
+        if (!ctx) return;
+        openPolicySimulationDiffDrawer({
+          simSpec: {
+            mode: 'policy_group',
+            groupPayload: ctx.savePayload,
+            targetDefCo: ctx.targetDefCo,
+            willSetCoDef: ctx.willSetCoDef,
+            willRevertCoDef: ctx.willRevertCoDef
+          },
+          canApply: true,
+          onConfirmApply: () => commitPgmSaveContext(ctx)
+        });
+      };
+      $('pgmSimulateDiffBtn')?.addEventListener('click', openPgmSim);
+      modal.querySelectorAll('[data-pgm-open-sim]').forEach(b => b.addEventListener('click', openPgmSim));
+      $('pgmSaveBtn')?.addEventListener('click', () => {
+        if (isRo) return;
+        const ctx = buildPgmDraftSaveContext();
+        if (ctx) commitPgmSaveContext(ctx);
       });
       wireModalSuggestions(modal);
       stripNativeTitles(modal);
@@ -145325,6 +147610,59 @@
     };
   }
 
+  function refreshPayrollPolicySectionInPlace() {
+    if (STATE.view !== 'payroll_attendance') {
+      renderApp();
+      return;
+    }
+    const curSec = $('payBiometricPolicySection');
+    if (!curSec || !curSec.parentNode) {
+      renderApp();
+      return;
+    }
+    const tmp = document.createElement('div');
+    tmp.innerHTML = renderPayrollBiometricPolicySectionHtml().trim();
+    const nextSec = tmp.firstElementChild;
+    if (!nextSec) {
+      renderApp();
+      return;
+    }
+    if (_uiTipObserver) _uiTipObserver.disconnect();
+    try {
+      curSec.replaceWith(nextSec);
+      const togglePayPolBtn = $('payTogglePolicyBtn');
+      if (togglePayPolBtn) {
+        togglePayPolBtn.classList.toggle('btn-primary', Boolean(STATE.payrollPolicyOpen));
+        togglePayPolBtn.classList.toggle('btn-ghost-bar', !STATE.payrollPolicyOpen);
+      }
+      nextSec.querySelectorAll('[data-open-pay-policy]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const polTab = btn.getAttribute('data-open-pay-policy') || 'roster';
+          STATE.payrollPolicyOpen = true;
+          STATE.kioskAttFeedFilter = ['roster', 'lateness', 'schedule', 'onsite', 'all'].includes(polTab) ? polTab : 'roster';
+          renderApp();
+          const sec = $('kioskAttFeedCard') || $('payBiometricPolicySection');
+          if (sec) scrollWorkspaceTo(sec, 8);
+        });
+      });
+      wireAttendancePolicyCard(nextSec);
+      if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
+        window.MFG_TABLE_COLS.enhanceAllTables(nextSec, STATE);
+      }
+      if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
+        window.MFG_AI_EDGE.syncAllSurfacesNow();
+      }
+    } finally {
+      if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+        window.MFG_I18N.translateDom(nextSec);
+      }
+      stripNativeTitles(nextSec);
+      if (_uiTipObserver && document.body) {
+        _uiTipObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
+      }
+    }
+  }
+
   function renderAttendancePolicyCardHtml(opts = {}) {
     const host = opts.host === 'payroll' ? 'payroll' : 'kiosk';
     sanitizeKioskPunchesState();
@@ -145397,13 +147735,27 @@
     const weekRangeLbl = `${weekDates[0].dayNum} ${weekDates[0].monthShort} - ${weekDates[6].dayNum} ${weekDates[6].monthShort}`;
     const schedShiftFilter = STATE.kioskSchedShiftFilter || 'all';
     const schedOtFilter = lateOtFilter;
-    const schedRoster = filteredRoster.filter(s => {
+    const showSchedWorkspace = feedFilter === 'schedule' && !STATE.kioskLocked;
+    const coverageHeatmap = showSchedWorkspace ? computeWeeklyShiftCoverageHeatmap({
+      company: effectiveScopedCo || '',
+      weekOffset: STATE.kioskSchedWeekOffset || 0,
+      siteFilter: STATE.kioskCoverageSiteFilter || 'all',
+      staffList: fullStaffDir.filter(s => !s.isEndedContract)
+    }) : null;
+    const covSiteActive = coverageHeatmap ? coverageHeatmap.siteFilter : 'all';
+    const schedRoster = showSchedWorkspace ? filteredRoster.filter(s => {
+      if (covSiteActive !== 'all') {
+        const stRs = resolveStaffRoleAndSiteForDate(s.name, s.company, todayISO(), s);
+        if (norm(stRs.site) !== norm(covSiteActive)) return false;
+      }
       if (schedShiftFilter !== 'all') {
-        const rId = getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4';
-        if (rId !== schedShiftFilter) return false;
+        const rawId = getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4';
+        const rId = rawId === 'custom' ? 'custom' : normalizeShiftCodeAlias(rawId);
+        const fId = schedShiftFilter === 'custom' ? 'custom' : normalizeShiftCodeAlias(schedShiftFilter);
+        if (rId !== fId) return false;
       }
       return true;
-    });
+    }) : [];
 
     const hasActiveLateFilter = latePenFilter !== 'all' || lateTolFilter !== 'all' || lateWhenFilter !== 'all' || lateOtFilter !== 'all' || lateTodayFilter !== 'all' || staffStatusFilter !== 'all' || policyGroupFilter !== 'all';
     const hasAnyAttFilter = hasActiveLateFilter || schedShiftFilter !== 'all';
@@ -145777,6 +148129,7 @@
             ${feedFilter === 'schedule' && !STATE.kioskLocked ? `
               <div class="kiosk-sched-workspace" id="kioskSchedWorkspace">
                 ${companyDefaultsStripHtml}
+                ${renderWeeklyShiftCoverageStripHtml(coverageHeatmap, { activeShiftFilter: schedShiftFilter })}
                 <div class="att-sched-templates-bar">
                   <div class="att-sched-templates-meta">
                     ${ic('sliders')}
@@ -145801,12 +148154,16 @@
                     <div class="att-catalog-actions">
                       <button type="button" class="btn att-util-btn" id="kioskShiftCalPresetBtn">${ic('calendar')} Holidays &amp; Seasons</button>
                       <button type="button" class="btn att-util-btn" id="kioskPunchDriftBtn">${ic('overtime')} Punch Drift</button>
+                      <button type="button" class="btn att-util-btn" id="kioskAiDriftRecBtn">${ic('sparkles')} <span>AI Drift Advisor</span></button>
                       <button type="button" class="btn btn-primary att-add-btn" id="kioskNewShiftTypeBtn"${editCoAttr}${canWriteShiftCat ? '' : ' disabled'}>${ic('plus')} New Shift Type</button>
                     </div>
                   </div>
                   <div class="shift-types-strip">
                     ${shiftTypesCatalog.map(st => {
-                      const assignedCnt = staffDir.filter(s => (getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4') === st.id).length;
+                      const assignedCnt = staffDir.filter(s => {
+                        const rawId = getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4';
+                        return (rawId === 'custom' ? 'custom' : normalizeShiftCodeAlias(rawId)) === st.id;
+                      }).length;
                       const excSum = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(st.day_timings, st.days), st.date_timings, st.start_time, st.end_time);
                       const hasExc = excSum !== 'Same Every Workday';
                       const defShiftCos = companyDefaultsTargets.filter(co => normalizeShiftCodeAlias((getBuDefaultShift(co) && getBuDefaultShift(co).shift_code) || 'day_8_4') === st.id);
@@ -147303,6 +149660,12 @@
         renderApp();
       });
     });
+    container.querySelectorAll('[data-pay-bu-policy-sim]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const simBu = btn.getAttribute('data-pay-bu-policy-sim') || 'WTC';
+        openCompanyDefaultPolicySimDrawer(btn, simBu);
+      });
+    });
     container.querySelectorAll('[data-co-policy-rm-win]').forEach(btn => {
       btn.addEventListener('click', () => {
         const rmCo = btn.getAttribute('data-co-policy-co') || 'WTC';
@@ -147347,7 +149710,7 @@
       rosterSearchInp.addEventListener('input', () => {
         const pos = rosterSearchInp.selectionStart;
         STATE.kioskAttRosterSearch = rosterSearchInp.value || '';
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
         const nextInp = $('kioskAttRosterSearch');
         if (nextInp && document.activeElement !== nextInp) {
           try {
@@ -147361,7 +149724,7 @@
       btn.addEventListener('click', () => {
         const nextF = btn.getAttribute('data-att-feed-filter') || 'all';
         STATE.kioskAttFeedFilter = ['roster', 'lateness', 'schedule', 'onsite', 'all'].includes(nextF) ? nextF : 'all';
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
       });
     });
     feedCard.querySelectorAll('[data-open-staff-sched]').forEach(btn => {
@@ -147391,14 +149754,14 @@
     feedCard.querySelectorAll('[data-policy-group-filter]').forEach(el => {
       el.addEventListener('click', () => {
         STATE.kioskPolicyGroupFilter = el.getAttribute('data-policy-group-filter') || 'all';
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
       });
       el.addEventListener('keydown', e => {
         if (e.target !== el) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           STATE.kioskPolicyGroupFilter = el.getAttribute('data-policy-group-filter') || 'all';
-          renderApp();
+          refreshPayrollPolicySectionInPlace();
         }
       });
     });
@@ -147494,19 +149857,19 @@
     feedCard.querySelectorAll('[data-late-pen-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
         STATE.kioskLatePenFilter = btn.getAttribute('data-late-pen-filter') || 'all';
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
       });
     });
     feedCard.querySelectorAll('[data-late-tol-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
         STATE.kioskLateTolFilter = btn.getAttribute('data-late-tol-filter') || 'all';
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
       });
     });
     feedCard.querySelectorAll('[data-late-when-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
         STATE.kioskLateWhenFilter = btn.getAttribute('data-late-when-filter') || 'all';
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
       });
     });
     feedCard.querySelectorAll('[data-late-ot-filter]').forEach(btn => {
@@ -147514,32 +149877,32 @@
         const val = btn.getAttribute('data-late-ot-filter') || 'all';
         STATE.kioskLateOtFilter = val;
         STATE.kioskSchedOtFilter = val;
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
       });
     });
     feedCard.querySelectorAll('[data-late-today-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
         STATE.kioskLateTodayFilter = btn.getAttribute('data-late-today-filter') || 'all';
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
       });
     });
     $('kioskToggleMoreFiltersBtn')?.addEventListener('click', () => {
       STATE.kioskMoreFiltersOpen = !STATE.kioskMoreFiltersOpen;
-      renderApp();
+      refreshPayrollPolicySectionInPlace();
     });
     $('kioskToggleTemplatesBtn')?.addEventListener('click', () => {
       STATE.kioskTemplatesCollapsed = !STATE.kioskTemplatesCollapsed;
-      renderApp();
+      refreshPayrollPolicySectionInPlace();
     });
     feedCard.querySelectorAll('[data-toggle-tab-policies]').forEach(btn => {
       btn.addEventListener('click', () => {
         STATE.kioskTabPoliciesOpen = !STATE.kioskTabPoliciesOpen;
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
       });
     });
     $('kioskToggleBulkLateBtn')?.addEventListener('click', () => {
       STATE.kioskBulkBarOpen = !STATE.kioskBulkBarOpen;
-      renderApp();
+      refreshPayrollPolicySectionInPlace();
     });
     $('kioskClearLateFiltersBtn')?.addEventListener('click', () => {
       STATE.kioskStaffStatusFilter = 'all';
@@ -147551,7 +149914,7 @@
       STATE.kioskSchedOtFilter = 'all';
       STATE.kioskSchedShiftFilter = 'all';
       STATE.kioskLateTodayFilter = 'all';
-      renderApp();
+      refreshPayrollPolicySectionInPlace();
     });
     const parsePenaltyComboPatch = comboVal => {
       const cv = String(comboVal || 'exact_hours');
@@ -147755,10 +150118,38 @@
       e.stopPropagation();
       openPunchDriftModal();
     });
+    $('kioskAiDriftRecBtn')?.addEventListener('click', e => {
+      e.stopPropagation();
+      openPunchDriftModal({ tab: 'advisor' });
+    });
+    feedCard.querySelectorAll('[data-cov-site-filter]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        STATE.kioskCoverageSiteFilter = btn.getAttribute('data-cov-site-filter') || 'all';
+        refreshPayrollPolicySectionInPlace();
+      });
+    });
+    feedCard.querySelectorAll('[data-cov-week-nav]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const delta = Number(btn.getAttribute('data-cov-week-nav') || 0);
+        STATE.kioskSchedWeekOffset = delta === 0 ? 0 : (Number(STATE.kioskSchedWeekOffset || 0) + delta);
+        refreshPayrollPolicySectionInPlace();
+      });
+    });
+    feedCard.querySelectorAll('[data-cov-shift-pick]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const picked = btn.getAttribute('data-cov-shift-pick') || 'all';
+        STATE.kioskSchedShiftFilter = (STATE.kioskSchedShiftFilter === picked) ? 'all' : picked;
+        refreshPayrollPolicySectionInPlace();
+        const tbl = $('kioskShiftScheduleTable');
+        if (tbl && typeof tbl.scrollIntoView === 'function') {
+          try { tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+        }
+      });
+    });
     feedCard.querySelectorAll('[data-sched-shift-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
         STATE.kioskSchedShiftFilter = btn.getAttribute('data-sched-shift-filter') || 'all';
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
       });
     });
     feedCard.querySelectorAll('[data-sched-ot-filter]').forEach(btn => {
@@ -147766,20 +150157,20 @@
         const val = btn.getAttribute('data-sched-ot-filter') || 'all';
         STATE.kioskSchedOtFilter = val;
         STATE.kioskLateOtFilter = val;
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
       });
     });
     $('kioskSchedPrevWeekBtn')?.addEventListener('click', () => {
       STATE.kioskSchedWeekOffset = Number(STATE.kioskSchedWeekOffset || 0) - 1;
-      renderApp();
+      refreshPayrollPolicySectionInPlace();
     });
     $('kioskSchedThisWeekBtn')?.addEventListener('click', () => {
       STATE.kioskSchedWeekOffset = 0;
-      renderApp();
+      refreshPayrollPolicySectionInPlace();
     });
     $('kioskSchedNextWeekBtn')?.addEventListener('click', () => {
       STATE.kioskSchedWeekOffset = Number(STATE.kioskSchedWeekOffset || 0) + 1;
-      renderApp();
+      refreshPayrollPolicySectionInPlace();
     });
     feedCard.querySelectorAll('[data-quick-clock-staff]').forEach(btn => {
       btn.addEventListener('click', e => {
@@ -147800,7 +150191,7 @@
         e.stopPropagation();
         const stf = btn.getAttribute('data-edit-staff-pin') || '';
         STATE.kioskEditingPinStaff = norm(stf);
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
         const pinInp = $('kioskInlinePinInput');
         if (pinInp) setTimeout(() => { try { pinInp.focus({ preventScroll: true }); pinInp.select(); } catch (_) {} }, 25);
       });
@@ -147837,7 +150228,7 @@
         } else if (e.key === 'Escape') {
           e.preventDefault();
           STATE.kioskEditingPinStaff = '';
-          renderApp();
+          refreshPayrollPolicySectionInPlace();
         }
       });
     }
@@ -147846,7 +150237,7 @@
       cancelInlinePinBtn.addEventListener('click', e => {
         e.stopPropagation();
         STATE.kioskEditingPinStaff = '';
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
       });
     }
     feedCard.querySelectorAll('[data-flip-punch]').forEach(fBtn => {
@@ -154300,10 +156691,14 @@
         const fbModal = $('fatherBackfillModal');
         if (fbModal && !fbModal.hidden) { closeFatherNameBackfillModal(); return; }
         if (_dateFacState.open) { closeDateFacilitator(); return; }
+        const psdDrawer = $('policySimDiffDrawer');
+        if (psdDrawer && !psdDrawer.hidden) { closePolicySimulationDiffDrawer(); return; }
         const pgmModal = $('policyGroupModal');
         if (pgmModal && !pgmModal.hidden) { closePolicyGroupModal(); return; }
         const stmModal = $('shiftTypeModal');
         if (stmModal && !stmModal.hidden) { closeShiftTypeModal(); return; }
+        const pdrModal = $('punchDriftModal');
+        if (pdrModal && !pdrModal.hidden) { closePunchDriftModal(); return; }
         const ssmModal = $('staffScheduleModal');
         if (ssmModal && !ssmModal.hidden) { closeStaffScheduleModal(); return; }
         const sfeModal = $('staffFaceEnrolModal');
@@ -154891,9 +157286,19 @@
       computePunchDriftDigest: (opts = {}) => computePunchDriftDigest(opts),
       convertPunchDriftToRule: (finding, kind) => convertPunchDriftToRule(finding, kind),
       openPunchDriftModal: (opts = {}) => openPunchDriftModal(opts),
+      simulatePolicyChangeEmployeeDiffs: (spec = {}) => simulatePolicyChangeEmployeeDiffs(spec),
+      openPolicySimulationDiffDrawer: (opts = {}) => openPolicySimulationDiffDrawer(opts),
+      closePolicySimulationDiffDrawer: () => closePolicySimulationDiffDrawer(),
+      uiBusy: () => uiBusy(),
+      computeWeeklyShiftCoverageHeatmap: (opts = {}) => computeWeeklyShiftCoverageHeatmap(opts),
+      resolveStaffRoleAndSiteForDate: (staff, co, dateStr) => resolveStaffRoleAndSiteForDate(staff, co, dateStr),
+      computeRoleSiteDriftProposals: (opts = {}) => computeRoleSiteDriftProposals(opts),
+      runAiShiftPolicyDriftRecommender: (driftRes, opts = {}) => runAiShiftPolicyDriftRecommender(driftRes, opts),
+      applyRoleSiteDriftProposal: (proposal, opts = {}) => applyRoleSiteDriftProposal(proposal, opts),
       listActivePunchDriftRules: cos => listActivePunchDriftRules(cos),
       removePunchDriftRule: (staff, co, id) => removePunchDriftRule(staff, co, id),
       resolveStaffAttendanceDefaultWindow:(staff, co, dateStr) => resolveStaffAttendanceDefaultWindow(staff, co, dateStr),
+      describeStaffLatenessRule: (staff, co, dateStr) => describeStaffLatenessRule(staff, co, dateStr),
       describeStaffOvertimeRule: (staff, co, dateStr) => describeStaffOvertimeRule(staff, co, dateStr),
       evaluateShiftPunchTiming: (staff, co, dateStr, inTime, outTime, opts = {}) => evaluateShiftPunchTiming(staff, co, dateStr, inTime, outTime, opts),
       enrolStaffFacePose: (staff, vec, opts = {}) => enrolStaffFacePose(staff, vec, (opts && opts.thumb) || '', (opts && typeof opts.poseIndex === 'number') ? opts.poseIndex : null),
