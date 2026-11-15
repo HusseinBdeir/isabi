@@ -8,6 +8,7 @@ import {
   buildSessionCookie,
   canAccessCompany,
   canAccessSentinelScope,
+  canEnterSite,
   canManageUsersSeat,
   canonEntityKey,
   canReviewSentinelsSession,
@@ -2453,6 +2454,10 @@ export async function upsertTableRecord(db, table, record) {
     }
   }
 
+  if (cols.has('name') && (record.name === undefined || record.name === null) && Boolean(record.voided)) {
+    record = Object.assign({}, record, { name: '' });
+  }
+
   const colNames = [];
   const bindVals = [];
   for (const [k, rawV] of Object.entries(record)) {
@@ -2468,9 +2473,13 @@ export async function upsertTableRecord(db, table, record) {
     bindVals.push(JSON.stringify(record));
   }
   const placeholders = colNames.map((_, idx) => `?${idx + 1}`).join(',');
-  await db.prepare(
-    `INSERT OR REPLACE INTO ${canonTable} (${colNames.join(',')}) VALUES (${placeholders})`
-  ).bind(...bindVals).run();
+  try {
+    await db.prepare(
+      `INSERT OR REPLACE INTO ${canonTable} (${colNames.join(',')}) VALUES (${placeholders})`
+    ).bind(...bindVals).run();
+  } catch (err) {
+    return { ok: false, status: 400, error: String((err && err.message) || err) };
+  }
 
   return { ok: true, table: canonTable, id: recId };
 }
@@ -2572,6 +2581,24 @@ function hasAnyGpsField(obj) {
   return false;
 }
 
+function hasExplicitGpsKeyInPayload(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  return ['latitude', 'longitude', 'geo_lat', 'geo_lng', '_pinCleared'].some(k => (k in obj) && obj[k] !== undefined);
+}
+
+function isInitialMissingSitePinFill(canonTable, baseObj, nextObj, perms) {
+  if (canonTable !== 'sites') return false;
+  if (!canEnterSite(perms)) return false;
+  if (!baseObj || typeof baseObj !== 'object' || !nextObj || typeof nextObj !== 'object') return false;
+  if (baseObj._pinCleared || nextObj._pinCleared) return false;
+  const baseHasPin = normGpsCoord(baseObj.latitude) !== null && normGpsCoord(baseObj.longitude) !== null;
+  const nextHasPin = normGpsCoord(nextObj.latitude) !== null && normGpsCoord(nextObj.longitude) !== null;
+  if (baseHasPin || !nextHasPin) return false;
+  if (normGpsCoord(baseObj.geo_lat) !== null || normGpsCoord(baseObj.geo_lng) !== null) return false;
+  if (normGpsCoord(nextObj.geo_lat) !== null || normGpsCoord(nextObj.geo_lng) !== null) return false;
+  return !hasNonVoidFieldChange(baseObj, nextObj);
+}
+
 function hasGpsFieldMutation(baseObj, nextObj) {
   const a = (baseObj && typeof baseObj === 'object') ? baseObj : {};
   const b = (nextObj && typeof nextObj === 'object') ? nextObj : {};
@@ -2655,31 +2682,40 @@ export async function handleRecordsPost(request, env, session, body) {
   }
 
   const perms = getSessionWritePerms(session);
+  let recordToWrite = record;
   if (!exRow) {
-    if (!perms.canEnterAny) {
-      return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot create records.' }, 403);
+    if (!perms.canEnterAny || (canonTable === 'sites' && !canEnterSite(perms))) {
+      return jsonResponse({ ok: false, error: 'Role permission: seat cannot create records in this table.' }, 403);
     }
   } else {
     const exHydrated = hydrateRowJson(exRow);
-    const gpsChanged = hasGpsFieldMutation(exHydrated, record);
-    if (!perms.modifyData && gpsChanged) {
+    const wasVoid = Boolean(exHydrated.voided);
+    const nowVoid = Boolean(record.voided);
+    const isSparsePureVoid = Boolean(
+      !wasVoid && nowVoid && !hasExplicitGpsKeyInPayload(record) && !hasNonVoidFieldChange(exHydrated, record)
+    );
+    if (isSparsePureVoid) {
+      recordToWrite = Object.assign({}, exHydrated, record);
+      restoreGpsFieldsFromBase(recordToWrite, exHydrated);
+    }
+    const gpsChanged = hasGpsFieldMutation(exHydrated, recordToWrite);
+    const missingPinFill = isInitialMissingSitePinFill(canonTable, exHydrated, recordToWrite, perms);
+    if (!perms.modifyData && gpsChanged && !missingPinFill) {
       return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to modify location coordinates.' }, 403);
     }
     if (!perms.modifyText && !perms.modifyData) {
-      const wasVoid = Boolean(exHydrated.voided);
-      const nowVoid = Boolean(record.voided);
-      const allowVoidOnly = Boolean(perms.voidData && !wasVoid && nowVoid && !gpsChanged && !hasNonVoidFieldChange(exHydrated, record));
-      if (!allowVoidOnly) {
+      const allowVoidOnly = Boolean(perms.voidData && !wasVoid && nowVoid && !gpsChanged && !hasNonVoidFieldChange(exHydrated, recordToWrite));
+      if (!allowVoidOnly && !missingPinFill) {
         return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify existing records.' }, 403);
       }
     }
   }
 
   if (canonTable === 'employments' || canonTable === 'freelance_entries' || canonTable === 'staff_members') {
-    const sameNameConflict = await checkSameNameRecordConflict(env.DB, canonTable, record);
+    const sameNameConflict = await checkSameNameRecordConflict(env.DB, canonTable, recordToWrite);
     if (sameNameConflict) return jsonResponse(sameNameConflict, 409);
   }
-  const res = await upsertTableRecord(env.DB, canonTable, record);
+  const res = await upsertTableRecord(env.DB, canonTable, recordToWrite);
   if (!res.ok) return jsonResponse({ ok: false, error: res.error }, res.status || 400);
   return jsonResponse({ ok: true, edge: true, table: res.table, id: res.id });
 }
@@ -2792,26 +2828,70 @@ function scopeWorkSchedulesForSession(wsObj, session) {
   };
 }
 
+const GEO_IND_COMPANIES = Object.freeze({
+  'manufacturing': ['WTC', 'BBConstruction', 'Lions Transport'],
+  'holding & treasury': ['Bdeir Holding'],
+  'hospitality & resorts': ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'],
+  'automotive & heavy trading': ['Korri Auto', 'Shacman'],
+  'real estate & property': ['Properties', '4235 Company S.A.L'],
+  'insurance & brokerage': ['Insurance Company']
+});
+
+const GEO_RL_BUCKETS = ['companyHubs', 'regions', 'sites', 'pairKmOverrides'];
+
+function canAccessGeoBucketEntry(session, bucket, key, val) {
+  if (!session) return false;
+  if (isOwnerOrFullGroupSession(session)) return true;
+  if (bucket === 'companyHubs') {
+    const vCo = (val && typeof val === 'object' && val.company) ? String(val.company).trim() : '';
+    return canAccessCompany(session, key) && (!vCo || canAccessCompany(session, vCo));
+  }
+  if (val && typeof val === 'object' && val.company) {
+    if (!canAccessCompany(session, String(val.company).trim())) return false;
+  }
+  const kStr = String(key || '').trim();
+  const sepIdx = kStr.indexOf('::');
+  const rawInd = sepIdx >= 0
+    ? kStr.slice(0, sepIdx)
+    : ((val && typeof val === 'object' && (val._industry || val.industry)) ? (val._industry || val.industry) : 'manufacturing');
+  const indKey = String(rawInd || 'manufacturing').trim().toLowerCase().replace(/\s+/g, ' ');
+  const cos = GEO_IND_COMPANIES[indKey];
+  if (!cos || !cos.length) return false;
+  return cos.some(co => canAccessCompany(session, co));
+}
+
 export function scopeGeoConfigForSession(geoObj, session) {
   if (!geoObj || typeof geoObj !== 'object') return geoObj;
   if (session && isOwnerOrFullGroupSession(session)) return geoObj;
   const out = Object.assign({}, geoObj);
-  if (geoObj.companyHubs && typeof geoObj.companyHubs === 'object') {
-    const scopedHubs = {};
-    for (const [k, v] of Object.entries(geoObj.companyHubs)) {
-      const vCo = (v && typeof v === 'object' && v.company) ? String(v.company).trim() : '';
-      const keyOk = Boolean(session && canAccessCompany(session, k));
-      const valOk = !vCo || Boolean(session && canAccessCompany(session, vCo));
-      if (keyOk && valOk) scopedHubs[k] = v;
+  for (const bucket of GEO_RL_BUCKETS) {
+    if (geoObj[bucket] && typeof geoObj[bucket] === 'object') {
+      const scoped = {};
+      for (const [k, v] of Object.entries(geoObj[bucket])) {
+        if (canAccessGeoBucketEntry(session, bucket, k, v)) scoped[k] = v;
+      }
+      out[bucket] = scoped;
     }
-    out.companyHubs = scopedHubs;
+  }
+  if (geoObj._pairKmTs && typeof geoObj._pairKmTs === 'object') {
+    const keptPairs = (out.pairKmOverrides && typeof out.pairKmOverrides === 'object') ? out.pairKmOverrides : {};
+    const scopedPairTs = {};
+    for (const [pk, pv] of Object.entries(geoObj._pairKmTs)) {
+      if ((pk in keptPairs) || canAccessGeoBucketEntry(session, 'pairKmOverrides', pk, null)) {
+        scopedPairTs[pk] = pv;
+      }
+    }
+    out._pairKmTs = scopedPairTs;
   }
   if (geoObj._deletedKeys && typeof geoObj._deletedKeys === 'object') {
     const scopedDel = {};
     for (const [dk, dTs] of Object.entries(geoObj._deletedKeys)) {
-      if (String(dk || '').startsWith('companyHubs:')) {
-        const coKey = String(dk).slice('companyHubs:'.length);
-        if (!session || !canAccessCompany(session, coKey)) continue;
+      const sDk = String(dk || '');
+      const idx = sDk.indexOf(':');
+      if (idx > 0) {
+        const b = sDk.slice(0, idx);
+        const entryKey = sDk.slice(idx + 1);
+        if (GEO_RL_BUCKETS.includes(b) && !canAccessGeoBucketEntry(session, b, entryKey, null)) continue;
       }
       scopedDel[dk] = dTs;
     }
@@ -3274,19 +3354,25 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
     const exRow = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
     const prev = exRow ? safeJsonParse(exRow.payload_json, null) : null;
     if (restrictKvRls) {
-      const prevHubs = (prev && prev.companyHubs && typeof prev.companyHubs === 'object') ? prev.companyHubs : {};
-      const inHubs = (incoming.companyHubs && typeof incoming.companyHubs === 'object') ? incoming.companyHubs : {};
-      for (const [hk, hv] of Object.entries(inHubs)) {
-        if (!canAccessCompany(session, hk) && stableRowSig(prevHubs[hk]) !== stableRowSig(hv)) {
-          return jsonResponse({ ok: false, error: 'Row-level security: cannot modify another entity hub.' }, 403);
+      for (const bucket of GEO_RL_BUCKETS) {
+        const prevBucket = (prev && prev[bucket] && typeof prev[bucket] === 'object') ? prev[bucket] : {};
+        const inBucket = (incoming[bucket] && typeof incoming[bucket] === 'object') ? incoming[bucket] : {};
+        for (const [bkKey, bkVal] of Object.entries(inBucket)) {
+          if (!canAccessGeoBucketEntry(session, bucket, bkKey, bkVal) && stableRowSig(prevBucket[bkKey]) !== stableRowSig(bkVal)) {
+            return jsonResponse({ ok: false, error: `Row-level security: cannot modify another entity geo configuration (${bucket}).` }, 403);
+          }
         }
       }
+      const prevDelCheck = (prev && prev._deletedKeys && typeof prev._deletedKeys === 'object') ? prev._deletedKeys : {};
       const inDelCheck = (incoming._deletedKeys && typeof incoming._deletedKeys === 'object') ? incoming._deletedKeys : {};
-      for (const dk of Object.keys(inDelCheck)) {
-        if (dk.startsWith('companyHubs:')) {
-          const hk = dk.slice('companyHubs:'.length);
-          if (!canAccessCompany(session, hk)) {
-            return jsonResponse({ ok: false, error: 'Row-level security: cannot delete another entity hub.' }, 403);
+      for (const [dk, dTs] of Object.entries(inDelCheck)) {
+        const sDk = String(dk || '');
+        const idx = sDk.indexOf(':');
+        if (idx > 0) {
+          const bucket = sDk.slice(0, idx);
+          const entryKey = sDk.slice(idx + 1);
+          if (GEO_RL_BUCKETS.includes(bucket) && !canAccessGeoBucketEntry(session, bucket, entryKey, null) && String(prevDelCheck[dk] || '') !== String(dTs || '')) {
+            return jsonResponse({ ok: false, error: `Row-level security: cannot delete another entity geo configuration (${bucket}).` }, 403);
           }
         }
       }
@@ -3631,6 +3717,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   let savedRows = 0;
   let savedEdits = 0;
   let ignoredServerOwned = 0;   // rows and patches aimed at server-totalled till close rows
+  let rlsSkipped = 0;
 
   const pendingRowWrites = [];
   const pendingEditWrites = [];
@@ -3645,35 +3732,43 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       if (!rid) continue;
       if (isServerOwnedCustomRow(bucket, rid)) { ignoredServerOwned++; continue; }
       const co = canonicalizeCompanyName(r.company || r.resort || r.entity || '');
-      if (restrictRls && (!co || !canAccessCompany(session, co))) continue;
+      if (restrictRls && (!co || !canAccessCompany(session, co))) { rlsSkipped++; continue; }
       const incRev = Number(r.rev || 1);
       const incVoid = r.voided ? 1 : 0;
       const incTs = String(r.updated_at || r._createdAt || '');
       const ex = await env.DB.prepare(
         'SELECT rev, voided, company, payload_json FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2'
       ).bind(bucket, rid).first();
+      let rowToWrite = r;
       if (ex) {
         const exCo = String(ex.company || '').trim();
-        if (restrictRls && (!exCo || !canAccessCompany(session, exCo))) continue;
+        if (restrictRls && (!exCo || !canAccessCompany(session, exCo))) { rlsSkipped++; continue; }
         const exObj = safeJsonParse(ex.payload_json, {});
-        const gpsChanged = hasGpsFieldMutation(exObj, r);
+        const exVoid = Number(ex.voided || 0);
+        const exRev = Number(ex.rev || 1);
+        if (Boolean(exVoid) === Boolean(incVoid) && !hasGpsFieldMutation(exObj, r) && !hasNonVoidFieldChange(exObj, r)) continue;
+        if (exVoid && !incVoid && exRev >= incRev) continue;
+        if (exRev > incRev && !(incVoid && !exVoid)) continue;
+        const isSparsePureVoid = Boolean(
+          !exVoid && incVoid && !hasExplicitGpsKeyInPayload(r) && !hasNonVoidFieldChange(exObj, r)
+        );
+        if (isSparsePureVoid) {
+          rowToWrite = restoreGpsFieldsFromBase(Object.assign({}, exObj, r), exObj);
+        }
+        const gpsChanged = hasGpsFieldMutation(exObj, rowToWrite);
         if (!perms.modifyData && gpsChanged) {
           return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to modify location coordinates.' }, 403);
         }
-        const exVoid = Number(ex.voided || 0);
         if (!perms.modifyText && !perms.modifyData) {
-          const allowVoidOnly = Boolean(perms.voidData && !exVoid && incVoid && !gpsChanged && !hasNonVoidFieldChange(exObj, r));
+          const allowVoidOnly = Boolean(perms.voidData && !exVoid && incVoid && !gpsChanged && !hasNonVoidFieldChange(exObj, rowToWrite));
           if (!allowVoidOnly) {
             return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify existing domain records.' }, 403);
           }
         }
-        const exRev = Number(ex.rev || 1);
-        if (exVoid && !incVoid && exRev >= incRev) continue;
-        if (exRev > incRev && !(incVoid && !exVoid)) continue;
       } else if (!perms.canEnterAny) {
         return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot create domain records.' }, 403);
       }
-      pendingRowWrites.push([bucket, rid, co, incRev, incVoid, incTs, JSON.stringify(r)]);
+      pendingRowWrites.push([bucket, rid, co, incRev, incVoid, incTs, JSON.stringify(rowToWrite)]);
     }
   }
 
@@ -3681,43 +3776,51 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     if (!ek || !ev || typeof ev !== 'object') continue;
     if (isServerOwnedRowEditKey(ek)) { ignoredServerOwned++; continue; }
     const edCo = canonicalizeCompanyName(ev.company || ev.resort || ev.entity || '');
-    if (restrictRls && (!edCo || !canAccessCompany(session, edCo))) continue;
+    if (restrictRls && (!edCo || !canAccessCompany(session, edCo))) { rlsSkipped++; continue; }
     const incRev = Number(ev.rev || 1);
     const incVoid = ev.voided ? 1 : 0;
     const incTs = String(ev.updated_at || ev.updatedAt || '');
     const ex = await env.DB.prepare('SELECT rev, voided, payload_json FROM industry_row_edits WHERE edit_key = ?1').bind(ek).first();
+    let editToWrite = ev;
     if (ex) {
       const exObj = safeJsonParse(ex.payload_json, {});
       if (restrictRls) {
         const exCo = String((exObj && (exObj.company || exObj.resort || exObj.entity)) || '').trim();
-        if (!exCo || !canAccessCompany(session, exCo)) continue;
+        if (!exCo || !canAccessCompany(session, exCo)) { rlsSkipped++; continue; }
       }
-      const gpsChanged = hasGpsFieldMutation(exObj, ev);
+      const exVoid = Number(ex.voided || 0);
+      const exRev = Number(ex.rev || 1);
+      if (Boolean(exVoid) === Boolean(incVoid) && !hasGpsFieldMutation(exObj, ev) && !hasNonVoidFieldChange(exObj, ev)) continue;
+      if (exVoid && !incVoid && exRev >= incRev) continue;
+      if (exRev > incRev && !(incVoid && !exVoid)) continue;
+      const isSparsePureVoid = Boolean(
+        !exVoid && incVoid && !hasExplicitGpsKeyInPayload(ev) && !hasNonVoidFieldChange(exObj, ev)
+      );
+      if (isSparsePureVoid) {
+        editToWrite = restoreGpsFieldsFromBase(Object.assign({}, exObj, ev), exObj);
+      }
+      const gpsChanged = hasGpsFieldMutation(exObj, editToWrite);
       if (!perms.modifyData && gpsChanged) {
         return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to modify location coordinates.' }, 403);
       }
-      const exVoid = Number(ex.voided || 0);
       if (!perms.modifyText && !perms.modifyData) {
-        const allowVoidOnly = Boolean(perms.voidData && !exVoid && incVoid && !gpsChanged && !hasNonVoidFieldChange(exObj, ev));
+        const allowVoidOnly = Boolean(perms.voidData && !exVoid && incVoid && !gpsChanged && !hasNonVoidFieldChange(exObj, editToWrite));
         if (!allowVoidOnly) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify existing domain records.' }, 403);
         }
       }
-      const exRev = Number(ex.rev || 1);
-      if (exVoid && !incVoid && exRev >= incRev) continue;
-      if (exRev > incRev && !(incVoid && !exVoid)) continue;
     } else {
-      if (!perms.modifyData && hasAnyGpsField(ev)) {
+      if (!perms.modifyData && (hasAnyGpsField(ev) || hasExplicitGpsKeyInPayload(ev))) {
         return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to modify location coordinates.' }, 403);
       }
       if (!perms.modifyText && !perms.modifyData) {
-        const allowVoidOnly = Boolean(perms.voidData && incVoid && !hasAnyGpsField(ev));
+        const allowVoidOnly = Boolean(perms.voidData && incVoid && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
         if (!allowVoidOnly) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot edit domain records.' }, 403);
         }
       }
     }
-    pendingEditWrites.push([ek, incRev, incVoid, incTs, JSON.stringify(ev)]);
+    pendingEditWrites.push([ek, incRev, incVoid, incTs, JSON.stringify(editToWrite)]);
   }
 
   const purgedRows = Array.isArray(body && body.purgedRows) ? body.purgedRows : [];
@@ -3726,10 +3829,14 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     const bk = String(pr.bucket || '').trim();
     const rid = String(pr.row_id || pr.id || '').trim();
     if (!bk || !rid || isServerOwnedCustomRow(bk, rid)) continue;
-    const ex = await env.DB.prepare('SELECT company FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2').bind(bk, rid).first();
+    const ex = await env.DB.prepare('SELECT company, payload_json FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2').bind(bk, rid).first();
     if (!ex) continue;
     const exCo = String(ex.company || '').trim();
-    if (restrictRls && (!exCo || !canAccessCompany(session, exCo))) continue;
+    if (restrictRls && (!exCo || !canAccessCompany(session, exCo))) { rlsSkipped++; continue; }
+    const exObj = safeJsonParse(ex.payload_json, {});
+    if (!perms.modifyData && hasAnyGpsField(exObj)) {
+      return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to purge pinned records.' }, 403);
+    }
     if (!perms.modifyData && !perms.voidData) {
       return jsonResponse({ ok: false, error: 'Role permission: purge requires modify or void privileges.' }, 403);
     }
@@ -3742,15 +3849,28 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     if (!ek || isServerOwnedRowEditKey(ek)) continue;
     const ex = await env.DB.prepare('SELECT payload_json FROM industry_row_edits WHERE edit_key = ?1').bind(ek).first();
     if (!ex) continue;
+    const exObj = safeJsonParse(ex.payload_json, {});
     if (restrictRls) {
-      const exObj = safeJsonParse(ex.payload_json, {});
       const exCo = String((exObj && (exObj.company || exObj.resort || exObj.entity)) || '').trim();
-      if (!exCo || !canAccessCompany(session, exCo)) continue;
+      if (!exCo || !canAccessCompany(session, exCo)) { rlsSkipped++; continue; }
+    }
+    if (!perms.modifyData && hasAnyGpsField(exObj)) {
+      return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to purge pinned records.' }, 403);
     }
     if (!perms.modifyData && !perms.voidData) {
       return jsonResponse({ ok: false, error: 'Role permission: purge requires modify or void privileges.' }, 403);
     }
     pendingPurgeEdits.push(ek);
+  }
+
+  if (
+    pendingRowWrites.length === 0 &&
+    pendingEditWrites.length === 0 &&
+    pendingPurgeRows.length === 0 &&
+    pendingPurgeEdits.length === 0 &&
+    rlsSkipped > 0
+  ) {
+    return jsonResponse({ ok: false, error: 'Row-level security: unauthorized entity domain write.' }, 403);
   }
 
   for (const args of pendingRowWrites) {
@@ -4584,6 +4704,10 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
     const prevCr = (prev.customRecords && typeof prev.customRecords === 'object') ? prev.customRecords : {};
     const allKeys = Array.from(new Set([...Object.keys(prevCr), ...Object.keys(incomingDoc.customRecords)]));
     for (const k of allKeys) {
+      if (!Object.prototype.hasOwnProperty.call(incomingDoc.customRecords, k)) {
+        if (Array.isArray(prevCr[k])) incomingDoc.customRecords[k] = prevCr[k];
+        continue;
+      }
       const canonTable = CR_KEY_TO_TABLE[k] || k;
       const isUniversal = UNIVERSAL_UNIQUE_TABLES.has(canonTable);
       const pList = Array.isArray(prevCr[k]) ? prevCr[k] : [];
@@ -4658,6 +4782,8 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
       }
       incomingDoc.customRecords[k] = outList;
     }
+  } else if (!Object.prototype.hasOwnProperty.call(incomingDoc, 'customRecords') && prev.customRecords && typeof prev.customRecords === 'object') {
+    incomingDoc.customRecords = prev.customRecords;
   }
 
   // 2b. Protect _purgedOverrideIds against cross-BU deletion or non-legacy ID injection
@@ -4696,12 +4822,16 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
   else delete incomingDoc._purgedOverrideIds;
 
   // 3. Protect industryCustomRows & industryRowEdits
-  const prevIcr = (prev.industryCustomRows && typeof prev.industryCustomRows === 'object') ? prev.industryCustomRows : {};
-  const incIcr = (incomingDoc.industryCustomRows && typeof incomingDoc.industryCustomRows === 'object') ? incomingDoc.industryCustomRows : {};
-  if (Object.keys(prevIcr).length || Object.keys(incIcr).length) {
+  if (incomingDoc.industryCustomRows && typeof incomingDoc.industryCustomRows === 'object') {
+    const prevIcr = (prev.industryCustomRows && typeof prev.industryCustomRows === 'object') ? prev.industryCustomRows : {};
+    const incIcr = incomingDoc.industryCustomRows;
     const safeIcr = {};
     for (const bk of new Set([...Object.keys(prevIcr), ...Object.keys(incIcr)])) {
       const pList = Array.isArray(prevIcr[bk]) ? prevIcr[bk] : [];
+      if (!Object.prototype.hasOwnProperty.call(incIcr, bk)) {
+        if (pList.length) safeIcr[bk] = pList;
+        continue;
+      }
       const iList = Array.isArray(incIcr[bk]) ? incIcr[bk] : [];
       const pMap = new Map(pList.filter(x => x && (x.id || x.code)).map(x => [String(x.id || x.code).trim(), x]));
       const outB = [];
@@ -4731,11 +4861,13 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
       safeIcr[bk] = outB;
     }
     incomingDoc.industryCustomRows = safeIcr;
+  } else if (!Object.prototype.hasOwnProperty.call(incomingDoc, 'industryCustomRows') && prev.industryCustomRows && typeof prev.industryCustomRows === 'object') {
+    incomingDoc.industryCustomRows = prev.industryCustomRows;
   }
 
-  const prevIre = (prev.industryRowEdits && typeof prev.industryRowEdits === 'object') ? prev.industryRowEdits : {};
-  const incIre = (incomingDoc.industryRowEdits && typeof incomingDoc.industryRowEdits === 'object') ? incomingDoc.industryRowEdits : {};
-  if (Object.keys(prevIre).length || Object.keys(incIre).length) {
+  if (incomingDoc.industryRowEdits && typeof incomingDoc.industryRowEdits === 'object') {
+    const prevIre = (prev.industryRowEdits && typeof prev.industryRowEdits === 'object') ? prev.industryRowEdits : {};
+    const incIre = incomingDoc.industryRowEdits;
     const safeIre = {};
     for (const [ek, pv] of Object.entries(prevIre)) {
       const pCo = pv && typeof pv === 'object' ? String(pv.company || pv.resort || pv.entity || '').trim() : '';
@@ -4747,6 +4879,8 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
       if (iCo && canAccessCompany(session, iCo)) safeIre[ek] = iv;
     }
     incomingDoc.industryRowEdits = safeIre;
+  } else if (!Object.prototype.hasOwnProperty.call(incomingDoc, 'industryRowEdits') && prev.industryRowEdits && typeof prev.industryRowEdits === 'object') {
+    incomingDoc.industryRowEdits = prev.industryRowEdits;
   }
 
   // 4. Protect kioskPunches, sentinelReviews, staffBiometrics, alertRules, workSchedules
@@ -5289,7 +5423,10 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
   if (incomingDoc.customRecords && typeof incomingDoc.customRecords === 'object') {
     const prevCr = (prev.customRecords && typeof prev.customRecords === 'object') ? prev.customRecords : {};
     for (const k of new Set([...Object.keys(prevCr), ...Object.keys(incomingDoc.customRecords)])) {
-      if (!isReadOnly && !(k in incomingDoc.customRecords)) continue;
+      if (!Object.prototype.hasOwnProperty.call(incomingDoc.customRecords, k)) {
+        if (Array.isArray(prevCr[k])) incomingDoc.customRecords[k] = prevCr[k];
+        continue;
+      }
       const canonTable = CR_KEY_TO_TABLE[k] || k;
       const pList = Array.isArray(prevCr[k]) ? prevCr[k] : [];
       const iList = Array.isArray(incomingDoc.customRecords[k]) ? incomingDoc.customRecords[k] : [];
@@ -5323,21 +5460,31 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
         const rid = String(ir.id).trim();
         const pr = pMap.get(rid) || d1Map.get(rid) || null;
         if (!pr) {
-          if (!perms.canEnterAny) continue;
+          if (!perms.canEnterAny || (canonTable === 'sites' && !canEnterSite(perms))) continue;
           outList.push(ir);
           keptIds.add(rid);
           continue;
         }
+        const wasVoid = Boolean(pr.voided);
+        const nowVoid = Boolean(ir.voided);
+        const isSparsePureVoid = Boolean(!wasVoid && nowVoid && !hasExplicitGpsKeyInPayload(ir) && !hasNonVoidFieldChange(pr, ir));
+        const mergedIr = isSparsePureVoid ? restoreGpsFieldsFromBase(Object.assign({}, pr, ir), pr) : ir;
+        const missingPinFill = isInitialMissingSitePinFill(canonTable, pr, mergedIr, perms);
         if (isReadOnly) {
-          const allowVoidOnly = Boolean(perms.voidData && !pr.voided && Boolean(ir.voided) && !hasGpsFieldMutation(pr, ir) && !hasNonVoidFieldChange(pr, ir));
+          if (missingPinFill) {
+            outList.push(Object.assign({}, pr, mergedIr));
+            keptIds.add(rid);
+            continue;
+          }
+          const allowVoidOnly = Boolean(perms.voidData && !wasVoid && nowVoid && !hasGpsFieldMutation(pr, mergedIr) && !hasNonVoidFieldChange(pr, mergedIr));
           if (allowVoidOnly) {
             outList.push(Object.assign({}, pr, {
               voided: true,
-              voided_by: ir.voided_by || ir.voidedBy || pr.voided_by || '',
-              voided_at: ir.voided_at || ir.voidedAt || pr.voided_at || '',
-              void_reason: ir.void_reason || ir.voidReason || pr.void_reason || '',
-              modified_at: ir.modified_at || pr.modified_at || '',
-              rev: ir.rev || pr.rev
+              voided_by: mergedIr.voided_by || mergedIr.voidedBy || pr.voided_by || '',
+              voided_at: mergedIr.voided_at || mergedIr.voidedAt || pr.voided_at || '',
+              void_reason: mergedIr.void_reason || mergedIr.voidReason || pr.void_reason || '',
+              modified_at: mergedIr.modified_at || pr.modified_at || '',
+              rev: mergedIr.rev || pr.rev
             }));
             keptIds.add(rid);
           } else if (pMap.has(rid)) {
@@ -5346,13 +5493,13 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
           }
           continue;
         }
-        if (!perms.modifyData && hasGpsFieldMutation(pr, ir)) {
-          restoreGpsFieldsFromBase(ir, pr);
+        if (!perms.modifyData && hasGpsFieldMutation(pr, mergedIr) && !missingPinFill) {
+          restoreGpsFieldsFromBase(mergedIr, pr);
         }
-        outList.push(ir);
+        outList.push(mergedIr);
         keptIds.add(rid);
       }
-      if (isReadOnly) {
+      if (isReadOnly || !perms.modifyData) {
         for (const pr of pList) {
           const rid = pr && pr.id ? String(pr.id).trim() : '';
           if (rid && !keptIds.has(rid)) outList.push(pr);
@@ -5360,15 +5507,17 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
       }
       incomingDoc.customRecords[k] = outList;
     }
+  } else if ((isReadOnly || !perms.modifyData) && !Object.prototype.hasOwnProperty.call(incomingDoc, 'customRecords') && prev.customRecords && typeof prev.customRecords === 'object') {
+    incomingDoc.customRecords = prev.customRecords;
   }
 
-  const prevIcr = (prev.industryCustomRows && typeof prev.industryCustomRows === 'object') ? prev.industryCustomRows : {};
-  const incIcr = (incomingDoc.industryCustomRows && typeof incomingDoc.industryCustomRows === 'object') ? incomingDoc.industryCustomRows : {};
-  if (Object.keys(prevIcr).length || Object.keys(incIcr).length) {
+  if (incomingDoc.industryCustomRows && typeof incomingDoc.industryCustomRows === 'object') {
+    const prevIcr = (prev.industryCustomRows && typeof prev.industryCustomRows === 'object') ? prev.industryCustomRows : {};
+    const incIcr = incomingDoc.industryCustomRows;
     const safeIcr = {};
     for (const bk of new Set([...Object.keys(prevIcr), ...Object.keys(incIcr)])) {
       const pList = Array.isArray(prevIcr[bk]) ? prevIcr[bk] : [];
-      if (!isReadOnly && !(bk in incIcr)) {
+      if (!Object.prototype.hasOwnProperty.call(incIcr, bk)) {
         if (pList.length) safeIcr[bk] = pList;
         continue;
       }
@@ -5387,19 +5536,23 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
           kept.add(rid);
           continue;
         }
+        const wasVoid = Boolean(pr.voided);
+        const nowVoid = Boolean(ir.voided);
+        const isSparsePureVoid = Boolean(!wasVoid && nowVoid && !hasExplicitGpsKeyInPayload(ir) && !hasNonVoidFieldChange(pr, ir));
+        const mergedIr = isSparsePureVoid ? restoreGpsFieldsFromBase(Object.assign({}, pr, ir), pr) : ir;
         if (isReadOnly) {
-          const allowVoidOnly = Boolean(perms.voidData && !pr.voided && Boolean(ir.voided) && !hasGpsFieldMutation(pr, ir) && !hasNonVoidFieldChange(pr, ir));
-          outB.push(allowVoidOnly ? Object.assign({}, pr, { voided: true, updated_at: ir.updated_at || pr.updated_at, rev: ir.rev || pr.rev }) : pr);
+          const allowVoidOnly = Boolean(perms.voidData && !wasVoid && nowVoid && !hasGpsFieldMutation(pr, mergedIr) && !hasNonVoidFieldChange(pr, mergedIr));
+          outB.push(allowVoidOnly ? Object.assign({}, pr, { voided: true, updated_at: mergedIr.updated_at || pr.updated_at, rev: mergedIr.rev || pr.rev }) : pr);
           kept.add(rid);
           continue;
         }
-        if (!perms.modifyData && hasGpsFieldMutation(pr, ir)) {
-          restoreGpsFieldsFromBase(ir, pr);
+        if (!perms.modifyData && hasGpsFieldMutation(pr, mergedIr)) {
+          restoreGpsFieldsFromBase(mergedIr, pr);
         }
-        outB.push(ir);
+        outB.push(mergedIr);
         kept.add(rid);
       }
-      if (isReadOnly) {
+      if (isReadOnly || !perms.modifyData) {
         for (const pr of pList) {
           const rid = pr && String(pr.id || pr.code || '').trim();
           if (rid && !kept.has(rid)) outB.push(pr);
@@ -5408,28 +5561,34 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
       safeIcr[bk] = outB;
     }
     incomingDoc.industryCustomRows = safeIcr;
+  } else if ((isReadOnly || !perms.modifyData) && !Object.prototype.hasOwnProperty.call(incomingDoc, 'industryCustomRows') && prev.industryCustomRows && typeof prev.industryCustomRows === 'object') {
+    incomingDoc.industryCustomRows = prev.industryCustomRows;
   }
 
-  const prevIre = (prev.industryRowEdits && typeof prev.industryRowEdits === 'object') ? prev.industryRowEdits : {};
-  const incIre = (incomingDoc.industryRowEdits && typeof incomingDoc.industryRowEdits === 'object') ? incomingDoc.industryRowEdits : {};
-  if (Object.keys(prevIre).length || Object.keys(incIre).length) {
+  if (incomingDoc.industryRowEdits && typeof incomingDoc.industryRowEdits === 'object') {
+    const prevIre = (prev.industryRowEdits && typeof prev.industryRowEdits === 'object') ? prev.industryRowEdits : {};
+    const incIre = incomingDoc.industryRowEdits;
     const safeIre = {};
     for (const [ek, iv] of Object.entries(incIre)) {
       if (!iv || typeof iv !== 'object') continue;
       const pv = prevIre[ek] && typeof prevIre[ek] === 'object' ? prevIre[ek] : null;
       if (pv) {
+        const wasVoid = Boolean(pv.voided);
+        const nowVoid = Boolean(iv.voided);
+        const isSparsePureVoid = Boolean(!wasVoid && nowVoid && !hasExplicitGpsKeyInPayload(iv) && !hasNonVoidFieldChange(pv, iv));
+        const mergedIv = isSparsePureVoid ? restoreGpsFieldsFromBase(Object.assign({}, pv, iv), pv) : iv;
         if (isReadOnly) {
-          const allowVoidOnly = Boolean(perms.voidData && !pv.voided && Boolean(iv.voided) && !hasGpsFieldMutation(pv, iv) && !hasNonVoidFieldChange(pv, iv));
-          safeIre[ek] = allowVoidOnly ? iv : pv;
+          const allowVoidOnly = Boolean(perms.voidData && !wasVoid && nowVoid && !hasGpsFieldMutation(pv, mergedIv) && !hasNonVoidFieldChange(pv, mergedIv));
+          safeIre[ek] = allowVoidOnly ? mergedIv : pv;
         } else {
-          if (!perms.modifyData && hasGpsFieldMutation(pv, iv)) {
-            restoreGpsFieldsFromBase(iv, pv);
+          if (!perms.modifyData && hasGpsFieldMutation(pv, mergedIv)) {
+            restoreGpsFieldsFromBase(mergedIv, pv);
           }
-          safeIre[ek] = iv;
+          safeIre[ek] = mergedIv;
         }
       } else {
         if (isReadOnly) {
-          if (perms.voidData && Boolean(iv.voided) && !hasAnyGpsField(iv)) {
+          if (perms.voidData && Boolean(iv.voided) && !hasAnyGpsField(iv) && !hasExplicitGpsKeyInPayload(iv)) {
             safeIre[ek] = iv;
           }
         } else {
@@ -5442,12 +5601,14 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
         }
       }
     }
-    if (isReadOnly) {
+    if (isReadOnly || !perms.modifyData) {
       for (const [ek, pv] of Object.entries(prevIre)) {
         if (!(ek in safeIre)) safeIre[ek] = pv;
       }
     }
     incomingDoc.industryRowEdits = safeIre;
+  } else if ((isReadOnly || !perms.modifyData) && !Object.prototype.hasOwnProperty.call(incomingDoc, 'industryRowEdits') && prev.industryRowEdits && typeof prev.industryRowEdits === 'object') {
+    incomingDoc.industryRowEdits = prev.industryRowEdits;
   }
 }
 

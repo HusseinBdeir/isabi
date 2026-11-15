@@ -491,8 +491,6 @@ export function isSameOriginBrowserRequest(request, urlObj, env = null) {
       return false;
     }
   }
-  const fetchSite = String(request.headers.get('Sec-Fetch-Site') || '').trim().toLowerCase();
-  if (fetchSite === 'same-origin') return true;
   return false;
 }
 
@@ -572,27 +570,44 @@ const ROLE_WRITE_PRESETS = Object.freeze({
   'Supervisor': { modifyText: false, modifyData: false, voidData: true, enterDispatch: false, enterAccounting: false, enterMaster: false, enterPayrollJv: false },
   'Entry': { modifyText: true, modifyData: false, voidData: false, enterDispatch: true, enterAccounting: true, enterMaster: true, enterPayrollJv: false },
   'Sales': { modifyText: false, modifyData: false, voidData: false, enterDispatch: false, enterAccounting: true, enterMaster: false, enterPayrollJv: false },
+  'Viewer': { modifyText: false, modifyData: false, voidData: false, enterDispatch: false, enterAccounting: false, enterMaster: false, enterPayrollJv: false },
   'Custom': { modifyText: true, modifyData: true, voidData: true, enterDispatch: true, enterAccounting: true, enterMaster: true, enterPayrollJv: false }
 });
+
+export function canEnterSite(permsOrSession) {
+  const perms = (permsOrSession && typeof permsOrSession === 'object' && 'roleKey' in permsOrSession)
+    ? permsOrSession
+    : getSessionWritePerms(permsOrSession);
+  if (!perms) return false;
+  if (perms.roleKey === 'Full Access (Owner)' || perms.roleKey === 'Supervisor + Entry' || perms.roleKey === 'Entry' || perms.roleKey === 'Sales') {
+    return true;
+  }
+  if (perms.roleKey === 'Custom') {
+    return Boolean(perms.enterMaster || perms.enterPayrollJv);
+  }
+  return false;
+}
 
 /**
  * Mirrors js/app.js getEffectivePermissions write/GPS/void capabilities for server-side enforcement.
  */
 export function getSessionWritePerms(session) {
   if (!session) {
-    return { roleKey: 'None', modifyText: false, modifyData: false, voidData: false, enterDispatch: false, enterAccounting: false, enterMaster: false, enterPayrollJv: false, canEnterAny: false };
+    return { roleKey: 'None', modifyText: false, modifyData: false, voidData: false, enterDispatch: false, enterAccounting: false, enterMaster: false, enterPayrollJv: false, canEnterAny: false, canEnterSite: false };
   }
   if (session.sub === 'u1' || session.sub === 'u2') {
-    return Object.assign({ roleKey: 'Full Access (Owner)', canEnterAny: true }, ROLE_WRITE_PRESETS['Full Access (Owner)']);
+    return Object.assign({ roleKey: 'Full Access (Owner)', canEnterAny: true, canEnterSite: true }, ROLE_WRITE_PRESETS['Full Access (Owner)']);
   }
   const rawRole = String(session.role || '').trim();
-  let roleKey = 'Entry';
+  let roleKey = 'Viewer';
   if (/^Custom/i.test(rawRole)) roleKey = 'Custom';
   else if (/Owner|Full Access|Admin/i.test(rawRole)) roleKey = 'Full Access (Owner)';
   else if (/Supervisor\s*\+\s*Entry/i.test(rawRole)) roleKey = 'Supervisor + Entry';
   else if (/Supervisor/i.test(rawRole)) roleKey = 'Supervisor';
+  else if (/Entry/i.test(rawRole)) roleKey = 'Entry';
   else if (/Sales/i.test(rawRole)) roleKey = 'Sales';
-  const out = Object.assign({}, ROLE_WRITE_PRESETS[roleKey] || ROLE_WRITE_PRESETS.Entry);
+  else if (/Viewer|Read/i.test(rawRole)) roleKey = 'Viewer';
+  const out = Object.assign({}, ROLE_WRITE_PRESETS[roleKey] || ROLE_WRITE_PRESETS.Viewer);
   let rawCustom = session.custom_perms;
   if (typeof rawCustom === 'string' && rawCustom.trim()) {
     try { rawCustom = JSON.parse(rawCustom); } catch (_) { rawCustom = null; }
@@ -614,6 +629,7 @@ export function getSessionWritePerms(session) {
   if (out.modifyData) out.modifyText = true;
   out.roleKey = roleKey;
   out.canEnterAny = Boolean(out.enterDispatch || out.enterAccounting || out.enterMaster || out.enterPayrollJv);
+  out.canEnterSite = canEnterSite(out);
   return out;
 }
 

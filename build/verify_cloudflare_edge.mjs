@@ -4925,6 +4925,188 @@ finally:
         siteAfter: e44bSiteAfter
       }));
     }
+
+    // 44c: Gate #2 remediation parity (Sec-Fetch-Site CSRF, Geo RLS, sparse pure-void, Supervisor purge lock, Sales missing-pin & partial /sync)
+    const e44cSecFetchOnly = await httpReq('POST', '/app/api/resolve-map-link', { url: 'https://maps.app.goo.gl/testGate1' }, {
+      'X-ISABI-Demo': '1',
+      'Sec-Fetch-Site': 'same-origin'
+    });
+    const lionsLogin = await httpReq('POST', '/app/api/auth/login', {
+      email: 'fleet.lions@bhfirms.com', pin: '7777', method: 'PIN', device: 'Verify Suite'
+    });
+    const lionsToken = String(lionsLogin.json?.token || '');
+    const salesLogin = await httpReq('POST', '/app/api/auth/login', {
+      email: 'ar.mfg@bhfirms.com', pin: '8888', method: 'PIN', device: 'Verify Suite'
+    });
+    const salesToken = String(salesLogin.json?.token || '');
+
+    const e44cDelTs = new Date().toISOString();
+    await httpReq('POST', '/app/api/geo_config', {
+      regions: { 'Hospitality::Blanca:44cReg': { id: '44cr', name: '44cReg', company: 'Blanca', center_lat: 33.89, center_lng: 35.50, radius_km: 1 } },
+      sites: { 'Hospitality::Blanca:44cSite': { id: '44cs', name: '44cSite', company: 'Blanca', lat: 33.89, lng: 35.50 } },
+      pairKmOverrides: { 'Hospitality::Blanca::A::B': 5.5 },
+      _deletedKeys: { 'sites:Hospitality::Blanca:44cDel': e44cDelTs }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    const e44cLionsGeoReg403 = await httpReq('POST', '/app/api/geo_config', {
+      regions: { 'Hospitality::Blanca:attackReg': { id: 'atk1', name: 'AtkReg', company: 'Blanca', center_lat: 33.8, center_lng: 35.5, radius_km: 1 } }
+    }, { 'X-ISABI-Session': lionsToken });
+    const e44cLionsGeoSite403 = await httpReq('POST', '/app/api/geo_config', {
+      sites: { 'Hospitality::Blanca:attackSite': { id: 'atk2', name: 'AtkSite', company: 'Blanca', lat: 33.8, lng: 35.5 } }
+    }, { 'X-ISABI-Session': lionsToken });
+    const e44cLionsGeoKm403 = await httpReq('POST', '/app/api/geo_config', {
+      pairKmOverrides: { 'Hospitality::Blanca::X::Y': 9.9 }
+    }, { 'X-ISABI-Session': lionsToken });
+    const e44cLionsGeoGet = await httpReq('GET', '/app/api/geo_config', null, { 'X-ISABI-Session': lionsToken });
+    const e44cLionsGeoDoc = e44cLionsGeoGet.json?.config || e44cLionsGeoGet.json || {};
+    const e44cLionsHasHosp = ['regions', 'sites', 'pairKmOverrides', '_pairKmTs', '_deletedKeys'].some(b =>
+      Object.keys(e44cLionsGeoDoc[b] || {}).some(k => /Hospitality::/i.test(k))
+    );
+
+    const e44cBbcSiteId = 'site-edge-44c-bbc';
+    const e44cBbcDomKey = 'Manufacturing::Sites::BBC-44C';
+    await httpReq('POST', '/app/api/records', {
+      table: 'sites',
+      record: { id: e44cBbcSiteId, name: '__44C_BBC_VOID__', company: 'BBConstruction', latitude: 33.8915, longitude: 35.5015, region: 'Beirut', notes: 'edge-keep' }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryRowEdits: {
+        [e44cBbcDomKey]: { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'BBC-44C', company: 'BBConstruction', latitude: 33.8916, longitude: 35.5016, region: 'Beirut', rev: 1 }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    const e44cSupVoidSite = await httpReq('POST', '/app/api/records', {
+      table: 'sites', record: { id: e44cBbcSiteId, company: 'BBConstruction', voided: 1 }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const e44cSupSitesList = await httpReq('GET', '/app/api/records?table=sites', null, { 'X-ISABI-Session': bbcSupToken });
+    const e44cVoidedSite = ((e44cSupSitesList.json?.rows || e44cSupSitesList.json?.records || []).find(r => String(r.id) === e44cBbcSiteId)) || {};
+
+    const e44cLionsInd403 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryRowEdits: { 'Manufacturing::Sites::BBC-ONLY': { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'BBC-ONLY', company: 'BBConstruction', rev: 1 } }
+    }, { 'X-ISABI-Session': lionsToken });
+    const e44cSupVoidInd = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryRowEdits: {
+        [e44cBbcDomKey]: { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'BBC-44C', company: 'BBConstruction', latitude: 33.8916, longitude: 35.5016, region: 'Beirut', voided: true, rev: 2 },
+        'Hospitality::Blanca::ECHO-IGNORED': { ind: 'Hospitality', tableTitle: 'Venues', primaryId: 'ECHO-IGNORED', company: 'Blanca', rev: 1 }
+      }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const e44cSupIndGet = await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': bbcSupToken });
+    const e44cOwnIndGet = await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': ownerToken });
+    const e44cVoidedDom = (e44cSupIndGet.json?.industryRowEdits || {})[e44cBbcDomKey] || {};
+    const e44cHospEchoPersisted = Boolean((e44cOwnIndGet.json?.industryRowEdits || {})['Hospitality::Blanca::ECHO-IGNORED']);
+    const e44cSupPurge403 = await httpReq('POST', '/app/api/industry_domain_store', { purgedEditKeys: [e44cBbcDomKey] }, { 'X-ISABI-Session': bbcSupToken });
+
+    const e44cSalesSiteId = 'site-edge-44c-sales';
+    const e44cSalesCreate = await httpReq('POST', '/app/api/records', {
+      table: 'sites', record: { id: e44cSalesSiteId, name: '__44C_SALES_SITE__', company: 'WTC', region: 'Beirut', site_category: 'Project' }
+    }, { 'X-ISABI-Session': salesToken });
+    const e44cSalesFillPin = await httpReq('POST', '/app/api/records', {
+      table: 'sites', record: { id: e44cSalesSiteId, name: '__44C_SALES_SITE__', company: 'WTC', region: 'Beirut', latitude: 33.8925, longitude: 35.5025 }
+    }, { 'X-ISABI-Session': salesToken });
+    const e44cSalesRePin403 = await httpReq('POST', '/app/api/records', {
+      table: 'sites', record: { id: e44cSalesSiteId, name: '__44C_SALES_SITE__', company: 'WTC', region: 'Beirut', latitude: 33.8111, longitude: 35.4111 }
+    }, { 'X-ISABI-Session': salesToken });
+
+    const e44cSyncSnap0 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const e44cDoc0 = e44cSyncSnap0.json?.docs?.mfg_web_store || {};
+    const e44cKeySeed = 'Manufacturing::Sites::WTC-44C-SEED';
+    const e44cKeyNew = 'Manufacturing::Sites::WTC-44C-NEW';
+    const e44cSyncKeepSiteId = 'site-edge-44c-keep';
+    const e44cOrigCustomSites = Array.isArray(e44cDoc0.customRecords?.sites) ? e44cDoc0.customRecords.sites.slice() : [];
+    const e44cSeedPatch = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date().toISOString(),
+          industryRowEdits: Object.assign({}, e44cDoc0.industryRowEdits || {}, {
+            [e44cKeySeed]: { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'WTC-44C-SEED', company: 'WTC', rev: 1 }
+          }),
+          customRecords: Object.assign({}, e44cDoc0.customRecords || {}, {
+            sites: e44cOrigCustomSites.concat([{ id: e44cSyncKeepSiteId, name: '__44C_SYNC_KEEP__', company: 'WTC' }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e44cEntryPartialSync = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Date.now() + 500).toISOString(),
+          industryRowEdits: {
+            [e44cKeyNew]: { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'WTC-44C-NEW', company: 'WTC', rev: 1 }
+          }
+        }
+      }
+    }, { 'X-ISABI-Session': entryToken });
+    const e44cSyncAfter = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const e44cDocAfter = e44cSyncAfter.json?.docs?.mfg_web_store || {};
+    const e44cKeptSiblingKey = Boolean(e44cDocAfter.industryRowEdits && e44cDocAfter.industryRowEdits[e44cKeySeed]);
+    const e44cKeptCustomSite = Boolean(Array.isArray(e44cDocAfter.customRecords?.sites) && e44cDocAfter.customRecords.sites.some(s => String(s.id) === e44cSyncKeepSiteId));
+
+    // Clean up 44c test rows & keys with ownerToken
+    await httpReq('POST', '/app/api/records', { table: 'sites', record: { id: e44cBbcSiteId, company: 'BBConstruction', voided: 1 } }, { 'X-ISABI-Session': ownerToken }).catch(() => {});
+    await httpReq('POST', '/app/api/records', { table: 'sites', record: { id: e44cSalesSiteId, company: 'WTC', voided: 1 } }, { 'X-ISABI-Session': ownerToken }).catch(() => {});
+    await httpReq('POST', '/app/api/industry_domain_store', { purgedEditKeys: [e44cBbcDomKey, e44cKeySeed, e44cKeyNew] }, { 'X-ISABI-Session': ownerToken }).catch(() => {});
+    await httpReq('POST', '/app/api/geo_config', {
+      _deletedKeys: { 'regions:Hospitality::Blanca:44cReg': e44cDelTs, 'sites:Hospitality::Blanca:44cSite': e44cDelTs }
+    }, { 'X-ISABI-Session': ownerToken }).catch(() => {});
+    await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Date.now() + 1000).toISOString(),
+          customRecords: Object.assign({}, e44cDoc0.customRecords || {}, { sites: e44cOrigCustomSites })
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken }).catch(() => {});
+
+    const e44cOk = (
+      e44cSecFetchOnly.status === 403 &&
+      Boolean(lionsToken) &&
+      e44cLionsGeoReg403.status === 403 &&
+      e44cLionsGeoSite403.status === 403 &&
+      e44cLionsGeoKm403.status === 403 &&
+      !e44cLionsHasHosp &&
+      e44cSupVoidSite.status === 200 &&
+      Math.abs(Number(e44cVoidedSite.latitude) - 33.8915) < 1e-4 &&
+      Math.abs(Number(e44cVoidedSite.longitude) - 35.5015) < 1e-4 &&
+      e44cVoidedSite.region === 'Beirut' &&
+      e44cLionsInd403.status === 403 &&
+      e44cSupVoidInd.status === 200 &&
+      Math.abs(Number(e44cVoidedDom.latitude) - 33.8916) < 1e-4 &&
+      Math.abs(Number(e44cVoidedDom.longitude) - 35.5016) < 1e-4 &&
+      e44cVoidedDom.region === 'Beirut' &&
+      !e44cHospEchoPersisted &&
+      e44cSupPurge403.status === 403 &&
+      e44cSalesCreate.status === 200 &&
+      e44cSalesFillPin.status === 200 &&
+      e44cSalesRePin403.status === 403 &&
+      e44cSeedPatch.status === 200 &&
+      e44cEntryPartialSync.status === 200 &&
+      e44cKeptSiblingKey &&
+      e44cKeptCustomSite
+    );
+    if (e44cOk) {
+      pass('edge-44c-gate2-remediation-parity', 'Sec-Fetch-Site CSRF=403, u8 Geo RLS hidden/403, sparse pure-void preserves GPS, Supervisor purge=403, Sales missing-pin=200/re-pin=403, partial /sync preserved');
+    } else {
+      fail('edge-44c-gate2-remediation-parity', JSON.stringify({
+        secFetchOnly: e44cSecFetchOnly.status,
+        lionsGeo403: [e44cLionsGeoReg403.status, e44cLionsGeoSite403.status, e44cLionsGeoKm403.status],
+        lionsHasHosp: e44cLionsHasHosp,
+        supVoidSite: [e44cSupVoidSite.status, e44cVoidedSite],
+        lionsInd403: e44cLionsInd403.status,
+        supVoidInd: [e44cSupVoidInd.status, e44cVoidedDom],
+        hospEchoPersisted: e44cHospEchoPersisted,
+        supPurge403: e44cSupPurge403.status,
+        salesPin: [e44cSalesCreate.status, e44cSalesFillPin.status, e44cSalesRePin403.status],
+        syncStatus: [e44cSeedPatch.status, e44cEntryPartialSync.status],
+        keptSiblingKey: e44cKeptSiblingKey,
+        keptCustomSite: e44cKeptCustomSite
+      }));
+    }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
     killTree(edgeProc.pid);
