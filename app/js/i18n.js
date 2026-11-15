@@ -12109,21 +12109,7 @@
       "File Upload": "تحميل ملف",
       "Camera Scan": "مسح بالكاميرا",
       "Document Scan": "مسح مستند",
-      "Camera Capture": "التقاط بالكاميرا",
-      "Satellite": "القمر الصناعي",
-      "Map Type": "نوع الخريطة",
-      "Switch to street map": "التبديل إلى خريطة الشوارع",
-      "Switch to satellite map with street labels": "التبديل إلى صور القمر الصناعي مع أسماء الشوارع",
-      "Map data © Google": "بيانات الخرائط © Google",
-      "© OpenStreetMap": "© OpenStreetMap",
-      "Registered Sites": "المواقع المسجلة",
-      "Searching Google Maps...": "جارٍ البحث في خرائط Google...",
-      "Search Google Maps, or paste link, Plus Code or coordinates": "ابحث في خرائط Google، أو الصق رابطاً أو رمز Plus Code أو إحداثيات",
-      "Search Google Maps or paste map link": "ابحث في خرائط Google أو الصق رابط الخريطة",
-      "Search regions, sites, or places...": "ابحث عن المناطق أو المواقع أو الأماكن...",
-      "Paste link, coords, or search place...": "الصق رابطاً أو إحداثيات أو ابحث عن مكان...",
-      "Click map, search place, or paste link": "انقر على الخريطة، أو ابحث عن مكان، أو الصق رابطاً",
-      "Search Google Maps, paste link/coords, or click map": "ابحث في خرائط Google، أو الصق رابطاً/إحداثيات، أو انقر على الخريطة"
+      "Camera Capture": "التقاط بالكاميرا"
     },
     fr: {
       "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
@@ -24214,21 +24200,7 @@
       "File Upload": "Téléversement de fichier",
       "Camera Scan": "Scan caméra",
       "Document Scan": "Scan document",
-      "Camera Capture": "Capture caméra",
-      "Satellite": "Satellite",
-      "Map Type": "Type de carte",
-      "Switch to street map": "Passer au plan routier",
-      "Switch to satellite map with street labels": "Passer à la vue satellite avec noms de rues",
-      "Map data © Google": "Données cartographiques © Google",
-      "© OpenStreetMap": "© OpenStreetMap",
-      "Registered Sites": "Sites enregistrés",
-      "Searching Google Maps...": "Recherche sur Google Maps...",
-      "Search Google Maps, or paste link, Plus Code or coordinates": "Rechercher sur Google Maps, ou coller lien, Plus Code ou coordonnées",
-      "Search Google Maps or paste map link": "Rechercher sur Google Maps ou coller un lien de carte",
-      "Search regions, sites, or places...": "Rechercher des régions, sites ou lieux...",
-      "Paste link, coords, or search place...": "Coller lien, coord. ou rechercher un lieu...",
-      "Click map, search place, or paste link": "Cliquer sur la carte, chercher un lieu ou coller un lien",
-      "Search Google Maps, paste link/coords, or click map": "Rechercher sur Google Maps, coller lien/coord. ou cliquer sur la carte"
+      "Camera Capture": "Capture caméra"
     }
   };
 

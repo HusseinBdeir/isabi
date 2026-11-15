@@ -749,9 +749,8 @@
   }
 
   const _placeMenuClosers = new Set();
-  function closeAllGeoPlaceMenus(exceptFn) {
+  function closeAllGeoPlaceMenus() {
     Array.from(_placeMenuClosers).forEach(fn => {
-      if (fn === exceptFn) return;
       try { fn(); } catch (_) {}
     });
   }
@@ -3007,25 +3006,13 @@
     return tryName(raw) || raw.split(/\s+/).reduce((acc, w) => acc || (w.length >= 3 ? tryName(w) : null), null);
   }
 
-  function extractMapLinkPlaceName(rawEncoded, d) {
-    const rawStr = String(rawEncoded || '');
-    const decStr = String(d || rawStr);
+  function extractMapLinkPlaceName(d) {
     let nm = '';
-    const pmRaw = rawStr.match(/\/maps\/place\/([^/@?#]+)/i);
-    if (pmRaw) {
-      nm = safeDecodeMapLink(pmRaw[1]);
-    } else {
-      const pm = decStr.match(/\/maps\/place\/([^/@?#]+)/i);
-      if (pm) nm = pm[1];
-    }
-    if (!nm && /maps\.apple\.com/i.test(decStr)) {
-      const qmRaw = rawStr.match(/[?&](?:q|name)=([^&#]+)/i);
-      if (qmRaw) {
-        nm = safeDecodeMapLink(qmRaw[1]);
-      } else {
-        const qm = decStr.match(/[?&](?:q|name)=([^&#]+)/i);
-        if (qm) nm = qm[1];
-      }
+    const pm = d.match(/\/maps\/place\/([^/@?#]+)/i);
+    if (pm) nm = pm[1];
+    if (!nm && /maps\.apple\.com/i.test(d)) {
+      const qm = d.match(/[?&](?:q|name)=([^&#]+)/i);
+      if (qm) nm = qm[1];
     }
     nm = String(nm || '').replace(/\+/g, ' ').replace(/\s+/g, ' ').trim();
     if (!nm || nm.length < 3 || nm.length > 80) return '';
@@ -3171,7 +3158,7 @@
       lng: round5(lng),
       source: hit.source,
       sourceLabel: hit.sourceLabel,
-      placeName: extractMapLinkPlaceName(s, d),
+      placeName: extractMapLinkPlaceName(d),
       swapped,
       mapView: Boolean(hit.mapView),
       lowPrecision: prec < 4,
@@ -3898,617 +3885,31 @@
     `;
   }
 
-  const MAP_LAYER_KEY = 'isabi_mfg_map_layer_v1';
-  const _mountedMapControllers = new Set();
-  const _clientPlacesCache = new Map();
-
-  function _isDemoGeoSession() {
-    try {
-      return Boolean(isDemoGeoMode() || (typeof location !== 'undefined' && /[?&]demo=1\b/.test(location.search || '')));
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function getMapLayerStyle() {
-    try {
-      const raw = _isDemoGeoSession()
-        ? (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('demo_sbx_' + MAP_LAYER_KEY))
-        : (typeof localStorage !== 'undefined' && localStorage.getItem(MAP_LAYER_KEY));
-      const v = String(raw || '').trim().toLowerCase();
-      return v === 'hybrid' ? 'hybrid' : 'roadmap';
-    } catch (_) {
-      return 'roadmap';
-    }
-  }
-
-  function _getGeoTileLang() {
-    try {
-      const l = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function')
-        ? String(window.MFG_I18N.getLang() || 'en').trim().toLowerCase()
-        : 'en';
-      return (l === 'ar' || l === 'fr') ? l : 'en';
-    } catch (_) {
-      return 'en';
-    }
-  }
-
-  function _buildGoogleTileUrl(style, lang) {
-    const s = style === 'hybrid' ? 'hybrid' : 'roadmap';
-    const l = (lang === 'ar' || lang === 'fr') ? lang : 'en';
-    const qs = _isDemoGeoSession() ? '?demo=1' : '';
-    return `./api/map-tiles/${s}/${l}/{z}/{x}/{y}${qs}`;
-  }
-
-  function _syncBasemapControllerUi(ctrl) {
-    if (!ctrl) return;
-    const style = getMapLayerStyle();
-    if (ctrl.switchEl) {
-      ctrl.switchEl.querySelectorAll('.geo-basemap-btn').forEach(btn => {
-        const isAct = btn.getAttribute('data-map-style') === style;
-        btn.classList.toggle('is-active', isAct);
-        btn.setAttribute('aria-pressed', isAct ? 'true' : 'false');
-      });
-      _trGeoDom(ctrl.switchEl);
-    }
-    if (ctrl.attribEl) {
-      const label = ctrl.isOsmFallback ? '© OpenStreetMap' : 'Map data © Google';
-      ctrl.attribEl.innerHTML = `<span>${esc(label)}</span>`;
-      _trGeoDom(ctrl.attribEl);
-    }
-  }
-
-  function refreshMountedMapTiles() {
-    _mountedMapControllers.forEach(ctrl => {
-      try {
-        if (!ctrl || !ctrl.map || (ctrl.container && !ctrl.container.isConnected)) {
-          _mountedMapControllers.delete(ctrl);
-          return;
-        }
-        ctrl.updateLayer();
-      } catch (_) {}
-    });
-  }
-
-  function setMapLayerStyle(style) {
-    const next = String(style || '').trim().toLowerCase() === 'hybrid' ? 'hybrid' : 'roadmap';
-    try {
-      if (_isDemoGeoSession()) {
-        if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('demo_sbx_' + MAP_LAYER_KEY, next);
-      } else if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(MAP_LAYER_KEY, next);
-      }
-    } catch (_) {}
-    _mountedMapControllers.forEach(ctrl => {
-      if (ctrl) {
-        ctrl.isOsmFallback = false;
-        ctrl.tileLoads = 0;
-        ctrl.tileErrors = 0;
-      }
-    });
-    refreshMountedMapTiles();
-    return next;
-  }
-
   function addBaseTiles(L, map) {
-    if (!L || !map) return null;
-    const container = typeof map.getContainer === 'function' ? map.getContainer() : null;
-    try { map.setMaxZoom(20); } catch (_) {}
-
-    const ctrl = {
-      map,
-      L,
-      container,
-      layer: null,
-      isOsmFallback: false,
-      tileLoads: 0,
-      tileErrors: 0,
-      activeTileUrl: '',
-      switchEl: null,
-      attribEl: null,
-      updateLayer: null
-    };
-
-    const mountBaseLayer = () => {
-      if (ctrl.layer) {
-        try { map.removeLayer(ctrl.layer); } catch (_) {}
-        ctrl.layer = null;
-      }
-      const style = getMapLayerStyle();
-      const lang = _getGeoTileLang();
-      const googleUrl = _buildGoogleTileUrl(style, lang);
-      ctrl.activeTileUrl = ctrl.isOsmFallback ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' : googleUrl;
-
-      const isHeadless = Boolean((typeof navigator !== 'undefined' && navigator.webdriver) || (typeof window !== 'undefined' && window.__MFG_HEADLESS_TEST));
-      const allowLiveTiles = Boolean(typeof window !== 'undefined' && window.__MFG_TEST_ENABLE_LIVE_TILES);
-      if (isHeadless && !allowLiveTiles) {
-        try { map.setMaxZoom(20); } catch (_) {}
-        const GridLayer = L.GridLayer.extend({
-          createTile: function () {
-            const tile = document.createElement('canvas');
-            tile.width = 256; tile.height = 256;
-            const g = tile.getContext('2d');
-            const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-            g.fillStyle = dark ? '#0F1B33' : (style === 'hybrid' ? '#D6DEC8' : '#EAECEF');
-            g.fillRect(0, 0, 256, 256);
-            g.strokeStyle = dark ? 'rgba(255,255,255,0.06)' : 'rgba(8,17,36,0.06)';
-            g.lineWidth = 1;
-            for (let x = 0; x <= 256; x += 64) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 256); g.stroke(); }
-            for (let y = 0; y <= 256; y += 64) { g.beginPath(); g.moveTo(0, y); g.lineTo(256, y); g.stroke(); }
-            return tile;
-          }
-        });
-        ctrl.layer = new GridLayer({ maxZoom: 20 }).addTo(map);
-        _syncBasemapControllerUi(ctrl);
-        return;
-      }
-
-      if (ctrl.isOsmFallback) {
-        try {
-          map.setMaxZoom(19);
-          if (typeof map.getZoom === 'function' && map.getZoom() > 19) map.setZoom(19, { animate: false });
-        } catch (_) {}
-        ctrl.layer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          maxNativeZoom: 19,
-          attribution: '&copy; OpenStreetMap'
-        }).addTo(map);
-        _syncBasemapControllerUi(ctrl);
-        return;
-      }
-
-      try { map.setMaxZoom(20); } catch (_) {}
-      ctrl.tileLoads = 0;
-      ctrl.tileErrors = 0;
-      const tileLayer = L.tileLayer(googleUrl, {
-        maxZoom: 20,
-        attribution: 'Map data &copy; Google'
-      });
-      tileLayer.on('tileload', () => {
-        ctrl.tileLoads += 1;
-        ctrl.tileErrors = 0;
-      });
-      tileLayer.on('tileerror', () => {
-        ctrl.tileErrors += 1;
-        if (!ctrl.isOsmFallback && ctrl.tileErrors >= 4) {
-          ctrl.isOsmFallback = true;
-          mountBaseLayer();
+    if (navigator.webdriver || window.__MFG_HEADLESS_TEST) {
+      // Deterministic zero-network subtle cartographic grid in headless verification
+      const GridLayer = L.GridLayer.extend({
+        createTile: function () {
+          const tile = document.createElement('canvas');
+          tile.width = 256; tile.height = 256;
+          const g = tile.getContext('2d');
+          const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+          g.fillStyle = dark ? '#0F1B33' : '#EAECEF';
+          g.fillRect(0, 0, 256, 256);
+          g.strokeStyle = dark ? 'rgba(255,255,255,0.06)' : 'rgba(8,17,36,0.06)';
+          g.lineWidth = 1;
+          for (let x = 0; x <= 256; x += 64) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 256); g.stroke(); }
+          for (let y = 0; y <= 256; y += 64) { g.beginPath(); g.moveTo(0, y); g.lineTo(256, y); g.stroke(); }
+          return tile;
         }
       });
-      ctrl.layer = tileLayer.addTo(map);
-      _syncBasemapControllerUi(ctrl);
-    };
-
-    ctrl.updateLayer = mountBaseLayer;
-
-    if (container && typeof document !== 'undefined') {
-      container.querySelectorAll(':scope > .geo-basemap-switch, :scope > .geo-map-attrib').forEach(el => {
-        try { el.remove(); } catch (_) {}
-      });
-      const switchEl = document.createElement('div');
-      switchEl.className = 'geo-basemap-switch';
-      switchEl.setAttribute('role', 'group');
-      switchEl.setAttribute('aria-label', 'Map Type');
-      switchEl.innerHTML = [
-        '<button type="button" class="geo-basemap-btn" data-map-style="roadmap" aria-label="Switch to street map" aria-pressed="false"><span>Map</span></button>',
-        '<button type="button" class="geo-basemap-btn" data-map-style="hybrid" aria-label="Switch to satellite map with street labels" aria-pressed="false"><span>Satellite</span></button>'
-      ].join('');
-      if (L.DomEvent) {
-        try {
-          L.DomEvent.disableClickPropagation(switchEl);
-          L.DomEvent.disableScrollPropagation(switchEl);
-        } catch (_) {}
-      }
-      switchEl.addEventListener('click', ev => {
-        const btn = ev.target && ev.target.closest ? ev.target.closest('[data-map-style]') : null;
-        if (!btn) return;
-        ev.preventDefault();
-        ev.stopPropagation();
-        setMapLayerStyle(btn.getAttribute('data-map-style'));
-      });
-      container.appendChild(switchEl);
-      ctrl.switchEl = switchEl;
-
-      const attribEl = document.createElement('div');
-      attribEl.className = 'geo-map-attrib';
-      attribEl.setAttribute('aria-hidden', 'true');
-      container.appendChild(attribEl);
-      ctrl.attribEl = attribEl;
+      new GridLayer().addTo(map);
+      return;
     }
-
-    _mountedMapControllers.add(ctrl);
-    if (typeof map.on === 'function') {
-      map.on('unload', () => {
-        _mountedMapControllers.delete(ctrl);
-        if (container && container._geoTileController === ctrl) {
-          delete container._geoTileController;
-        }
-      });
-    }
-    try { map._geoTileController = ctrl; } catch (_) {}
-    if (container) {
-      try {
-        container._geoTileController = ctrl;
-        if (!container._leafletMap) container._leafletMap = map;
-      } catch (_) {}
-    }
-    mountBaseLayer();
-    return ctrl;
-  }
-
-  function buildGooglePlaceMapUrl(name, lat, lng) {
-    const lat6 = Number(lat).toFixed(6);
-    const lng6 = Number(lng).toFixed(6);
-    const cleanName = String(name || 'Pinned Location').replace(/[\r\n]+/g, ' ').trim().slice(0, 80) || 'Pinned Location';
-    return `https://www.google.com/maps/place/${encodeURIComponent(cleanName)}/@${lat6},${lng6},17z/data=!3m1!4b1!4m5!3m4!1s0x0:0x0!8m2!3d${lat6}!4d${lng6}`;
-  }
-
-  function isLikelyPlaceSearchQuery(raw, SEED, ref) {
-    const s = String(raw || '').trim();
-    if (s.length < 2) return false;
-    if (/^(?:https?:\/\/|geo:|\/\/)/i.test(s)) return false;
-    if (/(?:maps\.google|google\.[^/]+\/maps|goo\.gl\/|maps\.app\.goo\.gl|maps\.apple\.com|waze\.com|bing\.com\/maps|openstreetmap\.org|osm\.org)/i.test(s)) return false;
-    const parsed = parseMapLink(s, { SEED, ref });
-    if (parsed && (parsed.ok || parsed.code === 'short_link' || parsed.code === 'unsupported_short_link' || parsed.code === 'out_of_range')) {
-      return false;
-    }
-    return true;
-  }
-
-  // THEO Hard Rule 11: rank registered ISABI sites strictly by operational usage frequency first, never alphabetically.
-  function rankLocalSitesForSearch(query, SEED, opts = {}) {
-    const nq = norm(query);
-    if (!nq || nq.length < 2) return [];
-    const activeInd = opts.industry || getGeoActiveIndustry();
-    const isMfg = activeInd === 'Manufacturing';
-    const stateRef = opts.STATE || (typeof window !== 'undefined' && window.STATE) || null;
-    const stats = getUnifiedSiteStats(SEED, stateRef);
-    let freqMap = null;
-    try {
-      if (typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function') {
-        const mf = window.MFG_FREQ();
-        freqMap = mf && mf.site ? mf.site : null;
-      }
-    } catch (_) {}
-
-    const inIndAnyState = r => Boolean(r && (isMfg
-      ? (!r._multiIndustrySeed && (!r._industry || r._industry === 'Manufacturing'))
-      : r._industry === activeInd));
-    const seedSites = (SEED && SEED.records && Array.isArray(SEED.records.sites)) ? SEED.records.sites : [];
-    const customSites = (stateRef && stateRef.customRecords && Array.isArray(stateRef.customRecords.sites))
-      ? stateRef.customRecords.sites
-      : [];
-
-    const activeCustomCatNames = new Set();
-    const blockedKeys = new Set();
-    customSites.forEach(s => {
-      if (!s || !s.name || !inIndAnyState(s)) return;
-      const cat = resolveGeoSiteCat(s);
-      const isInactive = Boolean(s.voided || s.active === false || /^closed|inactive$/i.test(String(s.status || '')));
-      if (!isInactive) activeCustomCatNames.add(`${cat}:${norm(s.name)}`);
-    });
-    customSites.forEach(s => {
-      if (!s || !s.name || !inIndAnyState(s)) return;
-      const cat = resolveGeoSiteCat(s);
-      const isInactive = Boolean(s.voided || s.active === false || /^closed|inactive$/i.test(String(s.status || '')));
-      if (isInactive) {
-        if (s.id) blockedKeys.add(String(s.id));
-        if (!activeCustomCatNames.has(`${cat}:${norm(s.name)}`)) blockedKeys.add(`${cat}:${norm(s.name)}`);
-      }
-    });
-
-    const poolByKey = new Map();
-    customSites.concat(seedSites).forEach((s, idx) => {
-      if (!s || !s.name || s.voided || !isRowInGeoIndustry(s, activeInd)) return;
-      if (s.active === false || /^closed|inactive$/i.test(String(s.status || ''))) return;
-      const cat = resolveGeoSiteCat(s);
-      const key = s.id ? String(s.id) : `${cat}:${norm(s.name)}`;
-      if (blockedKeys.has(key) || (!activeCustomCatNames.has(`${cat}:${norm(s.name)}`) && blockedKeys.has(`${cat}:${norm(s.name)}`))) return;
-      if (!poolByKey.has(key)) poolByKey.set(key, { s, idx });
-    });
-
-    const allIndSites = Array.from(poolByKey.values()).map(x => x.s);
-    const life = getSiteLifecycleIndex(allIndSites, SEED, stateRef);
-    const anchorIso = geoTodayIso();
-    const cutoffIso = geoIsoAddDays(anchorIso, -90);
-    const domainVolMap = (!isMfg && typeof window !== 'undefined' && typeof window.__mfgGetDomainSiteActivity90d === 'function')
-      ? window.__mfgGetDomainSiteActivity90d(activeInd, cutoffIso, anchorIso, SEED, stateRef)
-      : null;
-
-    const matches = [];
-    const seen = new Set();
-    poolByKey.forEach(({ s, idx }) => {
-      const lc = life.byNorm.get(norm(s.name)) || { state: 'active' };
-      if (lc.state === 'closed') return;
-      if (_isPinClearedFlag(s._pinCleared) || !isValidLatLngPair(s.latitude, s.longitude)) return;
-      const nk = norm(s.name);
-      const rk = norm(s.region || s.geo_zone || '');
-      if (!nk.includes(nq) && !rk.includes(nq)) return;
-      const lat = Number(s.latitude);
-      const lng = Number(s.longitude);
-      const dedupKey = `${nk}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
-      if (seen.has(dedupKey)) return;
-      seen.add(dedupKey);
-      const st = stats.byNorm.get(nk);
-      const mfScore = (freqMap && typeof freqMap.get === 'function') ? Number(freqMap.get(nk) || 0) : 0;
-      const dv = (domainVolMap && typeof domainVolMap.get === 'function') ? domainVolMap.get(nk) : null;
-      const domScore = dv ? Number((dv.totalCount ?? dv.totalVol ?? dv.count90d ?? dv.vol90) || 0) : 0;
-      const opFreq = mfScore + (st ? Number(st.total || 0) : 0) + domScore;
-      const starts = nk.startsWith(nq) ? 1 : 0;
-      const regLabel = String(s.region || s.geo_zone || '').trim();
-      matches.push({
-        kind: 'site',
-        id: s.id || '',
-        name: String(s.name),
-        region: regLabel,
-        address: regLabel,
-        lat,
-        lng,
-        freq: opFreq,
-        _starts: starts,
-        _idx: idx
-      });
-    });
-    matches.sort((a, b) => (b.freq - a.freq) || (b._starts - a._starts) || (a._idx - b._idx));
-    return matches.slice(0, opts.limit || 5).map(({ _starts, _idx, ...rest }) => rest);
-  }
-
-  async function searchGooglePlaces(query, opts = {}) {
-    const q = String(query || '').trim();
-    if (q.length < 2) return [];
-    const isHeadless = Boolean((typeof navigator !== 'undefined' && navigator.webdriver) || (typeof window !== 'undefined' && window.__MFG_HEADLESS_TEST));
-    const allowLivePlaces = Boolean(typeof window !== 'undefined' && window.__MFG_TEST_ENABLE_PLACES);
-    if (isHeadless && !allowLivePlaces) return [];
-
-    const lang = opts.lang || _getGeoTileLang();
-    const ref = opts.ref && Number.isFinite(Number(opts.ref.lat)) && Number.isFinite(Number(opts.ref.lng))
-      ? { lat: Number(opts.ref.lat), lng: Number(opts.ref.lng) }
-      : null;
-    const cacheKey = `${lang}|${q.toLowerCase()}|${ref ? ref.lat.toFixed(2) : '_'}|${ref ? ref.lng.toFixed(2) : '_'}`;
-    const hit = _clientPlacesCache.get(cacheKey);
-    if (hit && Date.now() < hit.expiresAt) return hit.places;
-
-    const payload = { query: q, lang };
-    if (ref) {
-      payload.lat = ref.lat;
-      payload.lng = ref.lng;
-    }
-    const headers = { 'Content-Type': 'application/json' };
-    if (_isDemoGeoSession()) headers['X-ISABI-Demo'] = '1';
-    const fetchFn = (typeof window !== 'undefined' && typeof window.ISABI_EDGE_FETCH === 'function')
-      ? window.ISABI_EDGE_FETCH
-      : (typeof fetch === 'function' ? fetch.bind(window) : null);
-    if (!fetchFn) return [];
-    const res = await fetchFn('./api/map-places', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal: opts.signal
-    });
-    if (!res || !res.ok) return [];
-    const data = await res.json();
-    const places = Array.isArray(data && data.places) ? data.places : [];
-    if (_clientPlacesCache.size >= 100) {
-      const oldest = _clientPlacesCache.keys().next().value;
-      if (oldest !== undefined) _clientPlacesCache.delete(oldest);
-    }
-    _clientPlacesCache.set(cacheKey, { places, expiresAt: Date.now() + 180000 });
-    return places;
-  }
-
-  function resolveGeoPlaceInputRaw(inp) {
-    if (!inp) return '';
-    const raw = String(inp.value || '');
-    if (inp.dataset && inp.dataset.pickedMapUrl && raw === inp.dataset.pickedDisplay) {
-      return inp.dataset.pickedMapUrl;
-    }
-    return raw;
-  }
-
-  function attachGooglePlacesAutocomplete(inp, opts = {}) {
-    if (!inp || inp.dataset.gmapsAcWired === '1' || typeof document === 'undefined') return null;
-    inp.dataset.gmapsAcWired = '1';
-    const anchor = opts.anchorEl || inp.parentElement;
-    if (!anchor) return null;
-    try {
-      const cs = typeof getComputedStyle === 'function' ? getComputedStyle(anchor) : null;
-      if (cs && cs.position === 'static') anchor.style.position = 'relative';
-    } catch (_) {}
-
-    const menu = document.createElement('div');
-    menu.className = 'geo-place-menu';
-    menu.setAttribute('role', 'listbox');
-    menu.hidden = true;
-    menu.addEventListener('mousedown', ev => {
-      ev.preventDefault();
-    });
-    anchor.appendChild(menu);
-
-    let items = [];
-    let activeIdx = -1;
-    let debTimer = 0;
-    let reqGen = 0;
-    let blurTimer = 0;
-    let abortCtrl = null;
-    let isPicking = false;
-
-    const closeMenu = () => {
-      clearTimeout(debTimer);
-      if (abortCtrl) { try { abortCtrl.abort(); } catch (_) {} }
-      if (!inp.isConnected) {
-        _placeMenuClosers.delete(closeMenu);
-        return;
-      }
-      menu.hidden = true;
-      menu.innerHTML = '';
-      items = [];
-      activeIdx = -1;
-    };
-    _placeMenuClosers.add(closeMenu);
-
-    const highlight = idx => {
-      const btns = menu.querySelectorAll('.geo-place-item');
-      btns.forEach((b, i) => b.classList.toggle('active', i === idx));
-      activeIdx = idx;
-    };
-
-    const pickItem = item => {
-      if (!item || !Number.isFinite(Number(item.lat)) || !Number.isFinite(Number(item.lng))) return;
-      isPicking = true;
-      try {
-        clearTimeout(debTimer);
-        if (abortCtrl) { try { abortCtrl.abort(); } catch (_) {} }
-        const lat = Number(item.lat);
-        const lng = Number(item.lng);
-        const mapUrl = buildGooglePlaceMapUrl(item.name, lat, lng);
-        const displayVal = opts.useMapUrlValue ? mapUrl : `${item.name} (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
-        inp.dataset.pickedDisplay = displayVal;
-        inp.dataset.pickedMapUrl = mapUrl;
-        inp.value = displayVal;
-        closeMenu();
-        if (typeof opts.onSelect === 'function') opts.onSelect(item, mapUrl, displayVal);
-      } finally {
-        setTimeout(() => { isPicking = false; }, 0);
-      }
-    };
-
-    const renderMenu = (localSites, googlePlaces, loading) => {
-      if (!inp.isConnected) return;
-      items = [];
-      let html = '';
-      if (localSites.length > 0) {
-        html += `<div class="geo-place-menu-hdr"><span>Registered Sites</span></div>`;
-        localSites.forEach(s => {
-          const idx = items.length;
-          items.push(s);
-          html += `<button type="button" class="geo-place-item" role="option" data-gmaps-idx="${idx}"><span class="geo-place-item-main"><span class="geo-place-item-title" data-no-i18n="1">${esc(s.name)}</span>${s.region ? `<span class="geo-place-item-sub" data-no-i18n="1">${esc(s.region)}</span>` : ''}</span><span class="geo-place-item-badges"><span class="geo-place-badge is-km" data-no-i18n="1">${Number(s.freq || 0)}</span></span></button>`;
-        });
-      }
-      if (googlePlaces.length > 0) {
-        html += `<div class="geo-place-menu-hdr"><span>Google Maps</span></div>`;
-        googlePlaces.forEach(p => {
-          const idx = items.length;
-          items.push(p);
-          const sub = [p.type, p.address].filter(Boolean).join(' · ');
-          html += `<button type="button" class="geo-place-item" role="option" data-gmaps-idx="${idx}"><span class="geo-place-item-main"><span class="geo-place-item-title" data-no-i18n="1">${esc(p.name)}</span>${sub ? `<span class="geo-place-item-sub" data-no-i18n="1">${esc(sub)}</span>` : ''}</span><span class="geo-place-item-badges"><span class="geo-place-badge is-google">Google Maps</span></span></button>`;
-        });
-      } else if (loading) {
-        html += `<div class="geo-place-menu-hdr"><span>Google Maps</span></div><div class="geo-place-status-row">Searching Google Maps...</div>`;
-      }
-
-      if (!html) {
-        closeMenu();
-        return;
-      }
-      closeAllGeoPlaceMenus(closeMenu);
-      menu.innerHTML = html;
-      menu.hidden = false;
-      activeIdx = items.length > 0 ? 0 : -1;
-      if (activeIdx >= 0) highlight(0);
-      _trGeoDom(menu);
-    };
-
-    menu.addEventListener('click', ev => {
-      const btn = ev.target && ev.target.closest ? ev.target.closest('[data-gmaps-idx]') : null;
-      if (!btn) return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      const idx = Number(btn.getAttribute('data-gmaps-idx'));
-      if (Number.isInteger(idx) && items[idx]) pickItem(items[idx]);
-    });
-
-    inp.addEventListener('paste', () => {
-      clearTimeout(debTimer);
-      reqGen += 1;
-      closeMenu();
-    });
-
-    inp.addEventListener('input', () => {
-      if (isPicking) return;
-      if (inp.dataset && inp.dataset.pickedDisplay && inp.value !== inp.dataset.pickedDisplay) {
-        delete inp.dataset.pickedDisplay;
-        delete inp.dataset.pickedMapUrl;
-      }
-      clearTimeout(debTimer);
-      if (abortCtrl) { try { abortCtrl.abort(); } catch (_) {} abortCtrl = null; }
-      const raw = String(inp.value || '');
-      const SEED = typeof opts.getSeed === 'function' ? opts.getSeed() : opts.SEED;
-      const ref = typeof opts.getRef === 'function' ? opts.getRef() : opts.ref;
-      if (!isLikelyPlaceSearchQuery(raw, SEED, ref)) {
-        reqGen += 1;
-        closeMenu();
-        return;
-      }
-      const q = raw.trim();
-      const myGen = ++reqGen;
-      const includeLocal = opts.includeLocalSites !== false;
-      const localHits = includeLocal ? rankLocalSitesForSearch(q, SEED, { limit: 4 }) : [];
-      const canQueryLive = !Boolean((typeof navigator !== 'undefined' && navigator.webdriver) && !(typeof window !== 'undefined' && window.__MFG_TEST_ENABLE_PLACES));
-      if (localHits.length > 0 || canQueryLive) {
-        renderMenu(localHits, [], canQueryLive);
-      }
-      debTimer = setTimeout(async () => {
-        if (!inp.isConnected || myGen !== reqGen) return;
-        abortCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        try {
-          const gHits = await searchGooglePlaces(q, { ref, signal: abortCtrl ? abortCtrl.signal : undefined });
-          if (!inp.isConnected || myGen !== reqGen) return;
-          const localKeys = new Set(localHits.map(s => `${norm(s.name)}|${Number(s.lat).toFixed(3)}|${Number(s.lng).toFixed(3)}`));
-          const filteredG = (gHits || []).filter(p => !localKeys.has(`${norm(p.name)}|${Number(p.lat).toFixed(3)}|${Number(p.lng).toFixed(3)}`));
-          renderMenu(localHits, filteredG, false);
-        } catch (_) {
-          if (!inp.isConnected || myGen !== reqGen) return;
-          renderMenu(localHits, [], false);
-        }
-      }, 280);
-    });
-
-    inp.addEventListener('keydown', ev => {
-      if (!menu.hidden && ev.key === 'Escape') {
-        ev.preventDefault();
-        ev.stopPropagation();
-        ev.stopImmediatePropagation();
-        reqGen += 1;
-        clearTimeout(debTimer);
-        if (abortCtrl) { try { abortCtrl.abort(); } catch (_) {} }
-        closeMenu();
-        return;
-      }
-      if (ev.key === 'Enter') {
-        if (!menu.hidden && items.length > 0) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          ev.stopImmediatePropagation();
-          pickItem(items[activeIdx >= 0 ? activeIdx : 0]);
-          return;
-        }
-        const pickedUrl = inp.dataset && inp.dataset.pickedMapUrl;
-        const SEED_k = typeof opts.getSeed === 'function' ? opts.getSeed() : opts.SEED;
-        const ref_k = typeof opts.getRef === 'function' ? opts.getRef() : opts.ref;
-        if (!pickedUrl && (!menu.hidden || isLikelyPlaceSearchQuery(inp.value, SEED_k, ref_k))) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          ev.stopImmediatePropagation();
-        }
-        return;
-      }
-      if (menu.hidden || items.length === 0) return;
-      if (ev.key === 'ArrowDown') {
-        ev.preventDefault();
-        highlight((activeIdx + 1) % items.length);
-      } else if (ev.key === 'ArrowUp') {
-        ev.preventDefault();
-        highlight((activeIdx - 1 + items.length) % items.length);
-      }
-    }, true);
-
-    inp.addEventListener('blur', () => {
-      clearTimeout(blurTimer);
-      blurTimer = setTimeout(closeMenu, 180);
-    });
-
-    inp._closePlacesMenu = closeMenu;
-    return { close: closeMenu };
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
   }
 
   function makeSvgPinIcon(L, color, label, isBu, lifeState, labelIsData) {
@@ -4535,11 +3936,6 @@
     mode: 'view',         // 'view' | 'search' | 'circle' | 'polygon' | 'pin'
     selectedRegion: '',   // '' = All Regions overview
     regionSearch: '',
-    regionPlacesQuery: '',
-    regionPlacesResults: [],
-    regionPlacesLoading: false,
-    _regionPlacesGen: 0,
-    _regionPlacesTimer: 0,
     pinFilter: 'all',     // 'all' | 'bu' | 'raw' | 'sales' | 'jv' | 'trucks' | 'unpinned'
     unpinnedIdx: 0,
     unpinnedTargetId: '',
@@ -4672,252 +4068,6 @@
     return String(STUDIO.distFrom || '').indexOf('bu:') === 0 ? String(STUDIO.distFrom).slice(3) : 'WTC';
   }
 
-  function renderStudioPlacesBoxHtml(places, loading, localSites = []) {
-    const locals = Array.isArray(localSites) ? localSites : [];
-    const list = Array.isArray(places) ? places : [];
-    if (!locals.length && !list.length && !loading) return '';
-    let html = '';
-    if (locals.length > 0) {
-      html += `<div class="geo-place-menu-hdr"><span>Registered Sites</span></div>`;
-      html += locals.map((s, idx) => {
-        return `<button type="button" class="geo-place-item" data-geo-studio-site-idx="${idx}"><span class="geo-place-item-main"><span class="geo-place-item-title" data-no-i18n="1">${esc(s.name)}</span>${s.region ? `<span class="geo-place-item-sub" data-no-i18n="1">${esc(s.region)}</span>` : ''}</span><span class="geo-place-item-badges"><span class="geo-place-badge is-km" data-no-i18n="1">${Number(s.freq || 0)}</span></span></button>`;
-      }).join('');
-    }
-    if (list.length > 0) {
-      html += `<div class="geo-place-menu-hdr"><span>Google Maps</span></div>`;
-      html += list.map((p, idx) => {
-        const sub = [p.type, p.address].filter(Boolean).join(' · ');
-        return `<button type="button" class="geo-place-item" data-geo-studio-place-idx="${idx}"><span class="geo-place-item-main"><span class="geo-place-item-title" data-no-i18n="1">${esc(p.name)}</span>${sub ? `<span class="geo-place-item-sub" data-no-i18n="1">${esc(sub)}</span>` : ''}</span><span class="geo-place-item-badges"><span class="geo-place-badge is-google">Google Maps</span></span></button>`;
-      }).join('');
-    } else if (loading) {
-      html += `<div class="geo-place-menu-hdr"><span>Google Maps</span></div><div class="geo-place-status-row">Searching Google Maps...</div>`;
-    }
-    return html;
-  }
-
-  function computeStudioRegionListData(SEED, STATE, pre) {
-    const o = pre || {};
-    const activeInd = o.activeInd || getGeoActiveIndustry();
-    const isMfg = activeInd === 'Manufacturing';
-    const inIndGeo = r => isRowInGeoIndustry(r, activeInd);
-    const regions = o.regions || ((SEED && SEED.records && SEED.records.regions) || []).filter(inIndGeo);
-    const siteStats = o.siteStats || getUnifiedSiteStats(SEED, STATE);
-    const hubs = o.hubs || (isMfg ? getAllCompanyHubs(SEED) : []);
-    const activeSites = o.activeSites || ((SEED && SEED.records && SEED.records.sites) || []).filter(s => inIndGeo(s) && s.name && !s.voided && s.active !== false);
-    const siteLife = getSiteLifecycleIndex(activeSites, SEED, STATE);
-    const lifeOf = s => siteLife.byNorm.get(norm(s && s.name)) || { state: 'active', lastDate: '', endDate: '', closesOn: '' };
-    const lifeRank = s => SITE_LIFE_RANK[lifeOf(s).state] || 0;
-
-    // Group member sites and BUs per region (including spatial containment!)
-    const sitesByReg = new Map();
-    const sitesByRegList = new Map();
-    const unassignedSites = [];
-    const siteFreqScore = s => {
-      const st = siteStats.byNorm.get(norm(s.name));
-      if (!st) return 0;
-      return resolveGeoSiteCat(s) === 'customer' ? (st.sales || 0) : (st.raw || 0);
-    };
-    // Active sites first, then dormant, closed last; frequency order inside each group
-    activeSites.slice().sort((a, b) => (lifeRank(a) - lifeRank(b)) || (siteFreqScore(b) - siteFreqScore(a))).forEach(s => {
-      const rk = norm(s.region || s.geo_zone);
-      if (rk) {
-        sitesByReg.set(rk, (sitesByReg.get(rk) || 0) + 1);
-        if (!sitesByRegList.has(rk)) sitesByRegList.set(rk, []);
-        sitesByRegList.get(rk).push(s);
-      } else {
-        unassignedSites.push(s);
-      }
-    });
-    const busByReg = new Map();
-    hubs.forEach(h => {
-      const rk = norm(h.region);
-      if (rk) {
-        if (!busByReg.has(rk)) busByReg.set(rk, []);
-        busByReg.get(rk).push(h.name);
-      }
-    });
-
-    const otByReg = new Map();
-    const canSeeOt = canSeeNightRatesNow();
-    // Night trip pay is a payroll rate: only a seat that may read overtime_rates sees it on the Map
-    if (isMfg && canSeeOt) {
-      ((SEED && SEED.records && SEED.records.overtime_rates) || []).forEach(ov => {
-        if (ov && !ov.voided && ov.region && Number(ov.amount) > 0) {
-          const rk = norm(ov.region);
-          if (!otByReg.has(rk)) otByReg.set(rk, Number(ov.amount));
-        }
-      });
-    }
-
-    const q = norm(STUDIO.regionSearch);
-    const regFreq = getRegionOperationalFreqMap(SEED);
-    const freqRegions = regions.slice().sort((a, b) => {
-      const ak = norm(a.name), bk = norm(b.name);
-      const aFreq = (regFreq.get(ak) || 0) + (sitesByReg.get(ak) || 0) * 2 + (busByReg.get(ak) || []).length * 5;
-      const bFreq = (regFreq.get(bk) || 0) + (sitesByReg.get(bk) || 0) * 2 + (busByReg.get(bk) || []).length * 5;
-      return bFreq - aFreq;
-    });
-    const sortedRegions = freqRegions.filter(r => {
-      if (!q) return true;
-      const rk = norm(r.name);
-      if (rk.includes(q)) return true;
-      if ((busByReg.get(rk) || []).some(b => norm(b).includes(q))) return true;
-      return (sitesByRegList.get(rk) || []).some(s => norm(s.name).includes(q));
-    });
-    const showUnassignedCard = unassignedSites.length > 0 && (!q || 'unassigned'.includes(q) || unassignedSites.some(s => norm(s.name).includes(q)));
-    const isUnassignedAct = STUDIO.selectedRegion === '__unassigned__';
-    const unassMatched = (q && !'unassigned'.includes(q)) ? unassignedSites.filter(s => norm(s.name).includes(q)) : unassignedSites;
-    const showUnassSub = (isUnassignedAct || Boolean(q && unassMatched.length > 0)) && unassMatched.length > 0;
-
-    return {
-      activeInd,
-      isMfg,
-      regions,
-      activeSites,
-      siteStats,
-      hubs,
-      siteLife,
-      lifeOf,
-      lifeRank,
-      sitesByReg,
-      sitesByRegList,
-      unassignedSites,
-      busByReg,
-      otByReg,
-      canSeeOt,
-      q,
-      freqRegions,
-      sortedRegions,
-      showUnassignedCard,
-      isUnassignedAct,
-      unassMatched,
-      showUnassSub
-    };
-  }
-
-  function renderStudioRegionsListMarkup(data) {
-    const {
-      isMfg,
-      regions,
-      activeSites,
-      siteStats,
-      lifeOf,
-      sitesByRegList,
-      unassignedSites,
-      busByReg,
-      otByReg,
-      canSeeOt,
-      q,
-      sortedRegions,
-      showUnassignedCard,
-      isUnassignedAct,
-      unassMatched,
-      showUnassSub
-    } = data;
-
-    const chevronSvg = open => `<svg class="geo-exp-chev" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${open ? 'M2.5 7.5L6 4l3.5 3.5' : 'M2.5 4.5L6 8l3.5-3.5'}"/></svg>`;
-
-    const renderMemberSiteBtn = s => {
-      const st = siteStats.byNorm.get(norm(s.name)) || { raw: 0, sales: 0, total: 0 };
-      const isJvSite = isMfg && Boolean(s.is_jv || /\bjv\b/i.test(s.name || ''));
-      const isBundSite = isMfg && !isJvSite && !s._multiIndustrySeed && Boolean(s.includes_transport === true || s.includes_transport === 1 || s.haulage_mode === 'supplier_delivered');
-      const dotCls = isJvSite ? 'dual' : 'site';
-      const specCls = isJvSite ? 'is-jv' : (isBundSite ? 'is-bund' : '');
-      const specLbl = isJvSite ? 'JV 50/50' : (isBundSite ? 'Mat+Trans' : '');
-      const rCnt = Number(st.raw || 0);
-      const sCntLoads = Number(st.sales || 0);
-      const siteLoads = isMfg ? Number(st.total || (rCnt + sCntLoads)) : 0;
-      const metaLbl = siteLoads > 0 ? `${siteLoads.toLocaleString('en-US')} ${siteLoads === 1 ? 'load' : 'loads'}` : (!_isPinClearedFlag(s._pinCleared) && isValidLatLngPair(s.latitude, s.longitude) ? 'Pinned' : '');
-      const loadBreakTip = siteLoads > 0
-        ? (rCnt > 0 && sCntLoads > 0
-          ? `${rCnt.toLocaleString('en-US')} raw · ${sCntLoads.toLocaleString('en-US')} sales loads`
-          : (rCnt > 0
-            ? `${rCnt.toLocaleString('en-US')} raw ${rCnt === 1 ? 'load' : 'loads'}`
-            : `${sCntLoads.toLocaleString('en-US')} sales ${sCntLoads === 1 ? 'load' : 'loads'}`))
-        : '';
-      const lc = lifeOf(s);
-      const lifeTip = siteLifecycleTip(lc);
-      const itemTip = [loadBreakTip, lifeTip].filter(Boolean).join(' · ');
-      return `
-        <button type="button" class="geo-reg-site-item${lc.state !== 'active' ? ` is-${lc.state}` : ''}" data-geo-inspect-site="${esc(s.id)}" data-site-life="${lc.state}"${itemTip ? ` data-ui-tip="${esc(itemTip)}"` : ''}>
-          <span class="geo-dot ${dotCls}"></span>
-          <span class="geo-reg-site-name">${esc(s.name)}</span>
-          ${specLbl ? `<span class="geo-reg-site-cat ${specCls}">${esc(specLbl)}</span>` : ''}
-          ${lc.state !== 'active' ? `<span class="geo-site-life-tag is-${lc.state}">${lc.state === 'closed' ? 'Closed' : 'Dormant'}</span>` : ''}
-          ${metaLbl ? `<span class="geo-reg-site-meta">${esc(metaLbl)}</span>` : ''}
-        </button>
-      `;
-    };
-
-    return `
-      <button type="button" class="geo-reg-card${!STUDIO.selectedRegion ? ' active' : ''}" data-geo-region="">
-        <div class="geo-reg-card-top">
-          <span class="geo-reg-name">All Regions (${regions.length})</span>
-          <span class="geo-reg-shape is-poly">${activeSites.length} Sites</span>
-        </div>
-        <div class="geo-reg-card-sub">
-          <span>Click any region to view its sites &amp; filter below</span>
-        </div>
-      </button>
-      ${sortedRegions.map(r => {
-        const rk = norm(r.name);
-        const isAct = norm(STUDIO.selectedRegion) === rk;
-        const memberSites = sitesByRegList.get(rk) || [];
-        const sCnt = memberSites.length;
-        const sActiveCnt = memberSites.filter(ms => lifeOf(ms).state === 'active').length;
-        const matchedSites = (q && !rk.includes(q)) ? memberSites.filter(s => norm(s.name).includes(q)) : memberSites;
-        const showSublist = (isAct || Boolean(q && matchedSites.length > 0)) && matchedSites.length > 0;
-        const buHits = busByReg.get(rk) || [];
-        const otRate = (isMfg && canSeeOt) ? (otByReg.get(rk) || r.driver_ot_rate || null) : null;
-        const isCirc = r.zone_type === 'circle' && Number(r.radius_km) > 0;
-        const isBnd = r.zone_type === 'boundary' && Boolean(r.zone_geojson);
-        const isPoly = Boolean(r.zone_geojson) && !isBnd;
-        const shapeCls = isCirc ? 'is-circle' : (isBnd ? 'is-boundary' : (isPoly ? 'is-poly' : 'is-none'));
-        const shapeTxt = isCirc ? `Circle ${round1(r.radius_km)} km` : (isBnd ? 'Map Region' : (isPoly ? 'Polygon' : 'Unmapped'));
-        return `
-          <div class="geo-reg-item-grp${showSublist ? ' is-expanded' : ''}">
-            <button type="button" class="geo-reg-card${isAct ? ' active' : ''}" data-geo-region="${esc(r.name)}">
-              <div class="geo-reg-card-top">
-                <span class="geo-reg-name">${esc(r.name)}</span>
-                <span class="geo-reg-shape ${shapeCls}">${esc(shapeTxt)}</span>
-              </div>
-              <div class="geo-reg-card-sub">
-                ${buHits.map(b => `<span class="geo-reg-bu-tag">${esc(b)}</span>`).join('')}
-                <span class="geo-reg-sites-cnt">${sCnt} ${sCnt === 1 ? 'Site' : 'Sites'}${sCnt > 0 ? ' ' + chevronSvg(showSublist) : ''}</span>
-                ${sCnt > 0 && sActiveCnt < sCnt ? `<span class="geo-reg-life-cnt" data-ui-tip="Excludes dormant and closed sites">${sActiveCnt} Active</span>` : ''}
-                ${otRate ? `<span>OT $${round2(otRate)}</span>` : ''}
-              </div>
-            </button>
-            ${showSublist ? `
-              <div class="geo-reg-sites-sublist">
-                ${matchedSites.map(renderMemberSiteBtn).join('')}
-              </div>
-            ` : ''}
-          </div>
-        `;
-      }).join('')}
-      ${showUnassignedCard ? `
-        <div class="geo-reg-item-grp${showUnassSub ? ' is-expanded' : ''}">
-          <button type="button" class="geo-reg-card${isUnassignedAct ? ' active' : ''}" data-geo-region="__unassigned__">
-            <div class="geo-reg-card-top">
-              <span class="geo-reg-name">Unassigned Region</span>
-              <span class="geo-reg-shape is-none">${unassignedSites.length} Sites</span>
-            </div>
-            <div class="geo-reg-card-sub">
-              <span class="geo-reg-sites-cnt">Sites without an assigned region ${chevronSvg(showUnassSub)}</span>
-            </div>
-          </button>
-          ${showUnassSub ? `
-            <div class="geo-reg-sites-sublist">
-              ${unassMatched.slice(0, 25).map(renderMemberSiteBtn).join('')}
-              ${unassMatched.length > 25 ? `<div class="geo-reg-site-more">+${unassMatched.length - 25} more in Sites table below</div>` : ''}
-            </div>
-          ` : ''}
-        </div>
-      ` : ''}
-    `;
-  }
-
   function renderStudioMapLinkBoxHtml(SEED, activeInd, canAddSite) {
     const hit = STUDIO.pasteHit;
     let statusHtml = '';
@@ -4938,7 +4088,7 @@
     return `
       <div class="geo-link-paste-row is-studio">
         <span class="geo-link-paste-ic" aria-hidden="true">${ic('pin')}</span>
-        <input type="text" class="geo-rail-search geo-link-paste-inp" id="geoMapLinkPasteInp" value="${esc(STUDIO.pasteRaw)}" placeholder="Paste link, coords, or search place..." aria-label="Paste Map or WhatsApp Link" inputmode="search" spellcheck="false" autocomplete="off" enterkeyhint="go">
+        <input type="text" class="geo-rail-search geo-link-paste-inp" id="geoMapLinkPasteInp" value="${esc(STUDIO.pasteRaw)}" placeholder="Paste Map or WhatsApp link" aria-label="Paste Map or WhatsApp Link" inputmode="url" spellcheck="false" autocomplete="off" enterkeyhint="go">
       </div>
       ${statusHtml}
       ${actionsHtml}
@@ -5156,9 +4306,6 @@
         STUDIO.pasteRaw = '';
         STUDIO.pasteHit = null;
         STUDIO._focusPasteLatLng = null;
-        STUDIO.regionPlacesQuery = '';
-        STUDIO.regionPlacesResults = [];
-        STUDIO.regionPlacesLoading = false;
         clearShapelessTransientState();
         STUDIO._shapelessScrollTop = 0;
       }
@@ -5215,8 +4362,66 @@
     const curUnpinned = unpinnedQueue[STUDIO.unpinnedIdx] || null;
     const mappedRegionsCnt = regions.filter(r => (r.zone_type === 'circle' && r.radius_km > 0) || Boolean(r.zone_geojson)).length;
     const pinnedSitesCnt = activeSites.filter(s => !_isPinClearedFlag(s._pinCleared) && isValidLatLngPair(s.latitude, s.longitude)).length;
-    const regData = computeStudioRegionListData(SEED, STATE, { activeInd, regions, activeSites, siteStats, hubs });
-    const { siteLife, lifeOf, sitesByRegList, unassignedSites, busByReg, otByReg, canSeeOt, freqRegions } = regData;
+    const siteLife = getSiteLifecycleIndex(activeSites, SEED, STATE);
+    const lifeOf = s => siteLife.byNorm.get(norm(s && s.name)) || { state: 'active', lastDate: '', endDate: '', closesOn: '' };
+    const lifeRank = s => SITE_LIFE_RANK[lifeOf(s).state] || 0;
+
+    // Group member sites and BUs per region (including spatial containment!)
+    const sitesByReg = new Map();
+    const sitesByRegList = new Map();
+    const unassignedSites = [];
+    const siteFreqScore = s => {
+      const st = siteStats.byNorm.get(norm(s.name));
+      if (!st) return 0;
+      return resolveGeoSiteCat(s) === 'customer' ? (st.sales || 0) : (st.raw || 0);
+    };
+    // Active sites first, then dormant, closed last; frequency order inside each group
+    activeSites.slice().sort((a, b) => (lifeRank(a) - lifeRank(b)) || (siteFreqScore(b) - siteFreqScore(a))).forEach(s => {
+      const rk = norm(s.region || s.geo_zone);
+      if (rk) {
+        sitesByReg.set(rk, (sitesByReg.get(rk) || 0) + 1);
+        if (!sitesByRegList.has(rk)) sitesByRegList.set(rk, []);
+        sitesByRegList.get(rk).push(s);
+      } else {
+        unassignedSites.push(s);
+      }
+    });
+    const busByReg = new Map();
+    hubs.forEach(h => {
+      const rk = norm(h.region);
+      if (rk) {
+        if (!busByReg.has(rk)) busByReg.set(rk, []);
+        busByReg.get(rk).push(h.name);
+      }
+    });
+
+    const otByReg = new Map();
+    const canSeeOt = canSeeNightRatesNow();
+    // Night trip pay is a payroll rate: only a seat that may read overtime_rates sees it on the Map
+    if (isMfg && canSeeOt) {
+      ((SEED && SEED.records && SEED.records.overtime_rates) || []).forEach(o => {
+        if (o && !o.voided && o.region && Number(o.amount) > 0) {
+          const rk = norm(o.region);
+          if (!otByReg.has(rk)) otByReg.set(rk, Number(o.amount));
+        }
+      });
+    }
+
+    const q = norm(STUDIO.regionSearch);
+    const regFreq = getRegionOperationalFreqMap(SEED);
+    const freqRegions = regions.slice().sort((a, b) => {
+      const ak = norm(a.name), bk = norm(b.name);
+      const aFreq = (regFreq.get(ak) || 0) + (sitesByReg.get(ak) || 0) * 2 + (busByReg.get(ak) || []).length * 5;
+      const bFreq = (regFreq.get(bk) || 0) + (sitesByReg.get(bk) || 0) * 2 + (busByReg.get(bk) || []).length * 5;
+      return bFreq - aFreq;
+    });
+    const sortedRegions = freqRegions.filter(r => {
+      if (!q) return true;
+      const rk = norm(r.name);
+      if (rk.includes(q)) return true;
+      if ((busByReg.get(rk) || []).some(b => norm(b).includes(q))) return true;
+      return (sitesByRegList.get(rk) || []).some(s => norm(s.name).includes(q));
+    });
 
     // Build distance endpoint options
     const siteListForDist = isMfg ? siteStats.list.slice(0, 140) : activeSites.slice(0, 140);
@@ -5249,6 +4454,40 @@
     const selRegObj = (STUDIO.selectedRegion && STUDIO.selectedRegion !== '__unassigned__')
       ? regions.find(r => norm(r.name) === norm(STUDIO.selectedRegion))
       : null;
+
+    const chevronSvg = open => `<svg class="geo-exp-chev" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${open ? 'M2.5 7.5L6 4l3.5 3.5' : 'M2.5 4.5L6 8l3.5-3.5'}"/></svg>`;
+
+    const renderMemberSiteBtn = (s) => {
+      const st = siteStats.byNorm.get(norm(s.name)) || { raw: 0, sales: 0, total: 0 };
+      const isJvSite = isMfg && Boolean(s.is_jv || /\bjv\b/i.test(s.name || ''));
+      const isBundSite = isMfg && !isJvSite && !s._multiIndustrySeed && Boolean(s.includes_transport === true || s.includes_transport === 1 || s.haulage_mode === 'supplier_delivered');
+      const dotCls = isJvSite ? 'dual' : 'site';
+      const specCls = isJvSite ? 'is-jv' : (isBundSite ? 'is-bund' : '');
+      const specLbl = isJvSite ? 'JV 50/50' : (isBundSite ? 'Mat+Trans' : '');
+      const rCnt = Number(st.raw || 0);
+      const sCntLoads = Number(st.sales || 0);
+      const siteLoads = isMfg ? Number(st.total || (rCnt + sCntLoads)) : 0;
+      const metaLbl = siteLoads > 0 ? `${siteLoads.toLocaleString('en-US')} ${siteLoads === 1 ? 'load' : 'loads'}` : (!_isPinClearedFlag(s._pinCleared) && isValidLatLngPair(s.latitude, s.longitude) ? 'Pinned' : '');
+      const loadBreakTip = siteLoads > 0
+        ? (rCnt > 0 && sCntLoads > 0
+          ? `${rCnt.toLocaleString('en-US')} raw · ${sCntLoads.toLocaleString('en-US')} sales loads`
+          : (rCnt > 0
+            ? `${rCnt.toLocaleString('en-US')} raw ${rCnt === 1 ? 'load' : 'loads'}`
+            : `${sCntLoads.toLocaleString('en-US')} sales ${sCntLoads === 1 ? 'load' : 'loads'}`))
+        : '';
+      const lc = lifeOf(s);
+      const lifeTip = siteLifecycleTip(lc);
+      const itemTip = [loadBreakTip, lifeTip].filter(Boolean).join(' · ');
+      return `
+        <button type="button" class="geo-reg-site-item${lc.state !== 'active' ? ` is-${lc.state}` : ''}" data-geo-inspect-site="${esc(s.id)}" data-site-life="${lc.state}"${itemTip ? ` data-ui-tip="${esc(itemTip)}"` : ''}>
+          <span class="geo-dot ${dotCls}"></span>
+          <span class="geo-reg-site-name">${esc(s.name)}</span>
+          ${specLbl ? `<span class="geo-reg-site-cat ${specCls}">${esc(specLbl)}</span>` : ''}
+          ${lc.state !== 'active' ? `<span class="geo-site-life-tag is-${lc.state}">${lc.state === 'closed' ? 'Closed' : 'Dormant'}</span>` : ''}
+          ${metaLbl ? `<span class="geo-reg-site-meta">${esc(metaLbl)}</span>` : ''}
+        </button>
+      `;
+    };
 
     const canPinLocations = (typeof ctx.canPinLocations === 'boolean') ? ctx.canPinLocations : canPinLocationsNow();
     const canAddSite = (typeof ctx.canAddSite === 'boolean') ? ctx.canAddSite : canEnterSiteNow();
@@ -5292,7 +4531,7 @@
               </label>
             `}
             <label class="geo-tool-field">Coords / Link
-              <span class="geo-place-inline-anchor"><input type="text" id="geoPinCoordPasteInp" value="${STUDIO.pinLat != null && STUDIO.pinLng != null ? `${STUDIO.pinLat}, ${STUDIO.pinLng}` : ''}" placeholder="Click map, search place, or paste link" style="width:188px" autocomplete="off"></span>
+              <input type="text" id="geoPinCoordPasteInp" value="${STUDIO.pinLat != null && STUDIO.pinLng != null ? `${STUDIO.pinLat}, ${STUDIO.pinLng}` : ''}" placeholder="Click map or paste lat, lng" style="width:168px">
             </label>
             <label class="geo-tool-field">Zone
               <input type="text" id="geoPinRegionInp" list="dl_geo_draw_regions" value="${esc(STUDIO.pinRegion)}" placeholder="Auto from map zone" style="width:136px">
@@ -5307,6 +4546,10 @@
       `;
     }
 
+    const showUnassignedCard = unassignedSites.length > 0 && (!q || 'unassigned'.includes(q) || unassignedSites.some(s => norm(s.name).includes(q)));
+    const isUnassignedAct = STUDIO.selectedRegion === '__unassigned__';
+    const unassMatched = (q && !'unassigned'.includes(q)) ? unassignedSites.filter(s => norm(s.name).includes(q)) : unassignedSites;
+    const showUnassSub = (isUnassignedAct || Boolean(q && unassMatched.length > 0)) && unassMatched.length > 0;
     const selRegMemberSites = selRegObj ? (sitesByRegList.get(norm(selRegObj.name)) || []) : [];
     const selRegOt = (isMfg && canSeeOt && selRegObj) ? (otByReg.get(norm(selRegObj.name)) || selRegObj.driver_ot_rate || null) : null;
     const scopedTruckCnt = (isMfg && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getScopedUnits === 'function')
@@ -5401,7 +4644,7 @@
               <div class="geo-unpinned-controls">
                 <div class="geo-link-paste-row">
                   <span class="geo-link-paste-ic" aria-hidden="true">${ic('pin')}</span>
-                  <input type="text" class="geo-rail-search geo-link-paste-inp" id="geoUnpinnedPasteInp" value="${esc(STUDIO.unpinnedPasteRaw || '')}" placeholder="Search Google Maps, paste link/coords, or click map" aria-label="Paste Map or WhatsApp Link for Unpinned Site" inputmode="search" spellcheck="false" autocomplete="off" enterkeyhint="done">
+                  <input type="text" class="geo-rail-search geo-link-paste-inp" id="geoUnpinnedPasteInp" value="${esc(STUDIO.unpinnedPasteRaw || '')}" placeholder="Paste Map or WhatsApp link, coordinates, or click map" aria-label="Paste Map or WhatsApp Link for Unpinned Site" inputmode="url" spellcheck="false" autocomplete="off" enterkeyhint="done">
                 </div>
                 <input type="text" class="geo-rail-search geo-unpinned-reg-inp" id="geoUnpinnedRegionInp" list="geoUnpinnedRegionList" value="${esc(STUDIO.unpinnedRegionDraft || '')}" placeholder="Region" aria-label="Region for Unpinned Site" autocomplete="off">
                 <datalist id="geoUnpinnedRegionList">
@@ -5426,13 +4669,76 @@
           <div class="geo-studio-body">
             <aside class="geo-regions-rail${((STUDIO.shapelessOpen && shapelessList.length > 0) || STUDIO.pasteHit) ? ' has-open-drawer' : ''}${STUDIO.pasteHit ? ' has-maplink-hit' : ''}" id="geoRegionsRail">
               <div class="geo-rail-head">
-                <input type="search" class="geo-rail-search" id="geoRegionSearch" value="${esc(STUDIO.regionSearch)}" placeholder="Search regions, sites, or places..." autocomplete="off">
-                <div class="geo-studio-places-box" id="geoStudioPlacesBox"${(STUDIO.regionSearch && STUDIO.regionSearch.trim().length >= 2 && (STUDIO.regionPlacesLoading || (STUDIO.regionPlacesResults && STUDIO.regionPlacesResults.length > 0) || (STUDIO.regionLocalResults && STUDIO.regionLocalResults.length > 0))) ? '' : ' hidden'}>${renderStudioPlacesBoxHtml(STUDIO.regionPlacesResults, STUDIO.regionPlacesLoading, STUDIO.regionLocalResults)}</div>
+                <input type="search" class="geo-rail-search" id="geoRegionSearch" value="${esc(STUDIO.regionSearch)}" placeholder="Search regions or sites...">
                 ${renderStudioMapLinkBoxHtml(SEED, activeInd, ctx.canAddSite === true)}
               </div>
               ${renderShapelessPanelHtml(shapelessList, SEED, STATE, activeInd, canShapeRegions)}
               <div class="geo-regions-list" id="geoRegionsList">
-                ${renderStudioRegionsListMarkup(regData)}
+                <button type="button" class="geo-reg-card${!STUDIO.selectedRegion ? ' active' : ''}" data-geo-region="">
+                  <div class="geo-reg-card-top">
+                    <span class="geo-reg-name">All Regions (${regions.length})</span>
+                    <span class="geo-reg-shape is-poly">${activeSites.length} Sites</span>
+                  </div>
+                  <div class="geo-reg-card-sub">
+                    <span>Click any region to view its sites &amp; filter below</span>
+                  </div>
+                </button>
+                ${sortedRegions.map(r => {
+                  const rk = norm(r.name);
+                  const isAct = norm(STUDIO.selectedRegion) === rk;
+                  const memberSites = sitesByRegList.get(rk) || [];
+                  const sCnt = memberSites.length;
+                  const sActiveCnt = memberSites.filter(ms => lifeOf(ms).state === 'active').length;
+                  const matchedSites = (q && !rk.includes(q)) ? memberSites.filter(s => norm(s.name).includes(q)) : memberSites;
+                  const showSublist = (isAct || Boolean(q && matchedSites.length > 0)) && matchedSites.length > 0;
+                  const buHits = busByReg.get(rk) || [];
+                  const otRate = (isMfg && canSeeOt) ? (otByReg.get(rk) || r.driver_ot_rate || null) : null;
+                  const isCirc = r.zone_type === 'circle' && Number(r.radius_km) > 0;
+                  const isBnd = r.zone_type === 'boundary' && Boolean(r.zone_geojson);
+                  const isPoly = Boolean(r.zone_geojson) && !isBnd;
+                  const shapeCls = isCirc ? 'is-circle' : (isBnd ? 'is-boundary' : (isPoly ? 'is-poly' : 'is-none'));
+                  const shapeTxt = isCirc ? `Circle ${round1(r.radius_km)} km` : (isBnd ? 'Map Region' : (isPoly ? 'Polygon' : 'Unmapped'));
+                  return `
+                    <div class="geo-reg-item-grp${showSublist ? ' is-expanded' : ''}">
+                      <button type="button" class="geo-reg-card${isAct ? ' active' : ''}" data-geo-region="${esc(r.name)}">
+                        <div class="geo-reg-card-top">
+                          <span class="geo-reg-name">${esc(r.name)}</span>
+                          <span class="geo-reg-shape ${shapeCls}">${esc(shapeTxt)}</span>
+                        </div>
+                        <div class="geo-reg-card-sub">
+                          ${buHits.map(b => `<span class="geo-reg-bu-tag">${esc(b)}</span>`).join('')}
+                          <span class="geo-reg-sites-cnt">${sCnt} ${sCnt === 1 ? 'Site' : 'Sites'}${sCnt > 0 ? ' ' + chevronSvg(showSublist) : ''}</span>
+                          ${sCnt > 0 && sActiveCnt < sCnt ? `<span class="geo-reg-life-cnt" data-ui-tip="Excludes dormant and closed sites">${sActiveCnt} Active</span>` : ''}
+                          ${otRate ? `<span>OT $${round2(otRate)}</span>` : ''}
+                        </div>
+                      </button>
+                      ${showSublist ? `
+                        <div class="geo-reg-sites-sublist">
+                          ${matchedSites.map(renderMemberSiteBtn).join('')}
+                        </div>
+                      ` : ''}
+                    </div>
+                  `;
+                }).join('')}
+                ${showUnassignedCard ? `
+                  <div class="geo-reg-item-grp${showUnassSub ? ' is-expanded' : ''}">
+                    <button type="button" class="geo-reg-card${isUnassignedAct ? ' active' : ''}" data-geo-region="__unassigned__">
+                      <div class="geo-reg-card-top">
+                        <span class="geo-reg-name">Unassigned Region</span>
+                        <span class="geo-reg-shape is-none">${unassignedSites.length} Sites</span>
+                      </div>
+                      <div class="geo-reg-card-sub">
+                        <span class="geo-reg-sites-cnt">Sites without an assigned region ${chevronSvg(showUnassSub)}</span>
+                      </div>
+                    </button>
+                    ${showUnassSub ? `
+                      <div class="geo-reg-sites-sublist">
+                        ${unassMatched.slice(0, 25).map(renderMemberSiteBtn).join('')}
+                        ${unassMatched.length > 25 ? `<div class="geo-reg-site-more">+${unassMatched.length - 25} more in Sites table below</div>` : ''}
+                      </div>
+                    ` : ''}
+                  </div>
+                ` : ''}
               </div>
             </aside>
 
@@ -6337,237 +5643,34 @@
       });
     });
 
-    // Region search & selection cards (+ Google Maps landmark search under rail search)
+    // Region search & selection cards
     const searchInp = deck.querySelector('#geoRegionSearch');
-    const placesBox = deck.querySelector('#geoStudioPlacesBox');
-    let studioPlaceActiveIdx = -1;
-    let studioPlaceBlurTimer = 0;
-    const getStudioPlaceItems = () => {
-      const box = document.getElementById('geoStudioPlacesBox') || placesBox;
-      return box ? Array.from(box.querySelectorAll('.geo-place-item')) : [];
-    };
-    const highlightStudioPlace = idx => {
-      const btns = getStudioPlaceItems();
-      btns.forEach((b, i) => b.classList.toggle('active', i === idx));
-      studioPlaceActiveIdx = idx;
-    };
-    const updateStudioRegionsListInPlace = () => {
-      const listEl = document.getElementById('geoRegionsList') || deck.querySelector('#geoRegionsList');
-      if (!listEl) return;
-      listEl.innerHTML = renderStudioRegionsListMarkup(computeStudioRegionListData(SEED, STATE));
-      _trGeoDom(listEl);
-    };
-    const closeStudioPlacesBox = (clearQueryText = false) => {
-      clearTimeout(STUDIO._regionPlacesTimer);
-      STUDIO._regionPlacesGen = (STUDIO._regionPlacesGen || 0) + 1;
-      STUDIO.regionPlacesLoading = false;
-      STUDIO.regionPlacesResults = [];
-      STUDIO.regionLocalResults = [];
-      studioPlaceActiveIdx = -1;
-      const box = document.getElementById('geoStudioPlacesBox') || placesBox;
-      if (box) {
-        box.innerHTML = '';
-        box.hidden = true;
-      }
-      if (clearQueryText && searchInp) {
-        searchInp.value = '';
-        STUDIO.regionSearch = '';
-        updateStudioRegionsListInPlace();
-      }
-    };
-    const wirePlacesBoxClicks = boxEl => {
-      if (!boxEl || boxEl.dataset.placesClickWired === '1') return;
-      boxEl.dataset.placesClickWired = '1';
-      boxEl.addEventListener('mousedown', ev => { ev.preventDefault(); });
-      boxEl.addEventListener('click', ev => {
-        const siteBtn = ev.target && ev.target.closest ? ev.target.closest('[data-geo-studio-site-idx]') : null;
-        if (siteBtn) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          const idx = Number(siteBtn.getAttribute('data-geo-studio-site-idx'));
-          const siteItem = (STUDIO.regionLocalResults || [])[idx];
-          if (!siteItem) return;
-          const activeInd = getGeoActiveIndustry();
-          const mapUrl = buildGooglePlaceMapUrl(siteItem.name, siteItem.lat, siteItem.lng);
-          STUDIO.pasteRaw = mapUrl;
-          STUDIO.pasteHit = parseMapLink(mapUrl, { SEED });
-          STUDIO.selectedRegion = siteItem.region || findContainingRegion(siteItem.lat, siteItem.lng, SEED, activeInd).best || '';
-          STUDIO._focusPasteLatLng = [siteItem.lat, siteItem.lng];
-          STUDIO._userPanned = false;
-          STUDIO.regionSearch = '';
-          STUDIO.regionPlacesResults = [];
-          STUDIO.regionLocalResults = [];
-          STUDIO.regionPlacesLoading = false;
-          rerenderWorkspace();
-          return;
-        }
-        const placeBtn = ev.target && ev.target.closest ? ev.target.closest('[data-geo-studio-place-idx]') : null;
-        if (!placeBtn) return;
-        ev.preventDefault();
-        ev.stopPropagation();
-        const idx = Number(placeBtn.getAttribute('data-geo-studio-place-idx'));
-        const placeItem = (STUDIO.regionPlacesResults || [])[idx];
-        if (!placeItem) return;
-        const activeInd = getGeoActiveIndustry();
-        const mapUrl = buildGooglePlaceMapUrl(placeItem.name, placeItem.lat, placeItem.lng);
-        STUDIO.pasteRaw = mapUrl;
-        STUDIO.pasteHit = parseMapLink(mapUrl, { SEED });
-        const det = findContainingRegion(placeItem.lat, placeItem.lng, SEED, activeInd);
-        if (det.best) STUDIO.selectedRegion = det.best;
-        STUDIO._focusPasteLatLng = [placeItem.lat, placeItem.lng];
-        STUDIO._userPanned = false;
-        STUDIO.regionSearch = '';
-        if (STUDIO.mode === 'pin' && STUDIO.pasteHit && !STUDIO.pasteHit.outsideLebanon) {
-          STUDIO.pinLat = STUDIO.pasteHit.lat;
-          STUDIO.pinLng = STUDIO.pasteHit.lng;
-          STUDIO.pinRegion = studioPinRegionFor(STUDIO.pasteHit.lat, STUDIO.pasteHit.lng, SEED, studioPinRecordRegion(STUDIO.pasteHit.lat, STUDIO.pasteHit.lng, SEED));
-        }
-        STUDIO.regionPlacesResults = [];
-        STUDIO.regionLocalResults = [];
-        STUDIO.regionPlacesLoading = false;
+    if (searchInp) {
+      searchInp.addEventListener('input', () => {
+        STUDIO.regionSearch = searchInp.value;
         rerenderWorkspace();
       });
-    };
-    wirePlacesBoxClicks(placesBox);
-
-    if (searchInp) {
-      if (!deck.dataset._studioPlaceOutsideWired) {
-        deck.dataset._studioPlaceOutsideWired = '1';
-        deck.addEventListener('pointerdown', ev => {
-          if (ev.target && ev.target.closest && (ev.target.closest('#geoRegionSearch') || ev.target.closest('#geoStudioPlacesBox'))) return;
-          closeStudioPlacesBox(false);
-        });
-      }
-      searchInp.addEventListener('input', () => {
-        clearTimeout(studioPlaceBlurTimer);
-        STUDIO.regionSearch = searchInp.value;
-        updateStudioRegionsListInPlace();
-        const qTrim = String(searchInp.value || '').trim();
-        const liveBoxNow = document.getElementById('geoStudioPlacesBox') || placesBox;
-        clearTimeout(STUDIO._regionPlacesTimer);
-        if (!isLikelyPlaceSearchQuery(qTrim, SEED, null)) {
-          STUDIO._regionPlacesGen = (STUDIO._regionPlacesGen || 0) + 1;
-          STUDIO.regionPlacesQuery = '';
-          STUDIO.regionPlacesResults = [];
-          STUDIO.regionLocalResults = [];
-          STUDIO.regionPlacesLoading = false;
-          studioPlaceActiveIdx = -1;
-          if (liveBoxNow) {
-            liveBoxNow.innerHTML = '';
-            liveBoxNow.hidden = true;
-          }
-          return;
-        }
-        const activeInd = getGeoActiveIndustry();
-        const hub = activeInd === 'Manufacturing' ? getCompanyHub(studioMapLinkCompany(), SEED) : null;
-        const ref = hub ? { lat: hub.lat, lng: hub.lng, label: hub.name } : null;
-        const myGen = ++STUDIO._regionPlacesGen;
-        STUDIO.regionPlacesQuery = qTrim;
-        STUDIO.regionLocalResults = rankLocalSitesForSearch(qTrim, SEED, { STATE, limit: 3 });
-        const canQueryLive = !Boolean((typeof navigator !== 'undefined' && navigator.webdriver) && !(typeof window !== 'undefined' && window.__MFG_TEST_ENABLE_PLACES));
-        STUDIO.regionPlacesLoading = canQueryLive;
-        STUDIO.regionPlacesResults = [];
-        if (liveBoxNow) {
-          const initHtml = renderStudioPlacesBoxHtml([], canQueryLive, STUDIO.regionLocalResults);
-          liveBoxNow.innerHTML = initHtml;
-          liveBoxNow.hidden = !initHtml;
-          if (initHtml) {
-            _trGeoDom(liveBoxNow);
-            const initBtns = getStudioPlaceItems();
-            highlightStudioPlace(initBtns.length > 0 ? 0 : -1);
-          } else {
-            studioPlaceActiveIdx = -1;
-          }
-        }
-        STUDIO._regionPlacesTimer = setTimeout(async () => {
-          if (myGen !== STUDIO._regionPlacesGen || String(STUDIO.regionSearch || '').trim() !== qTrim) return;
-          try {
-            const gHits = await searchGooglePlaces(qTrim, { ref });
-            if (myGen !== STUDIO._regionPlacesGen || String(STUDIO.regionSearch || '').trim() !== qTrim) return;
-            const localKeys = new Set((STUDIO.regionLocalResults || []).map(s => `${norm(s.name)}|${Number(s.lat).toFixed(3)}|${Number(s.lng).toFixed(3)}`));
-            STUDIO.regionPlacesResults = (gHits || []).filter(p => !localKeys.has(`${norm(p.name)}|${Number(p.lat).toFixed(3)}|${Number(p.lng).toFixed(3)}`));
-          } catch (_) {
-            STUDIO.regionPlacesResults = [];
-          } finally {
-            if (myGen === STUDIO._regionPlacesGen) {
-              STUDIO.regionPlacesLoading = false;
-              const liveBox = document.getElementById('geoStudioPlacesBox') || placesBox;
-              if (liveBox) {
-                const boxHtml = renderStudioPlacesBoxHtml(STUDIO.regionPlacesResults, false, STUDIO.regionLocalResults);
-                liveBox.innerHTML = boxHtml;
-                liveBox.hidden = !boxHtml;
-                if (boxHtml) {
-                  _trGeoDom(liveBox);
-                  const btns = getStudioPlaceItems();
-                  highlightStudioPlace(btns.length > 0 ? Math.max(0, Math.min(studioPlaceActiveIdx, btns.length - 1)) : -1);
-                } else {
-                  studioPlaceActiveIdx = -1;
-                }
-              }
-            }
-          }
-        }, 280);
-      });
-      searchInp.addEventListener('keydown', ev => {
-        const liveBox = document.getElementById('geoStudioPlacesBox') || placesBox;
-        const boxOpen = Boolean(liveBox && !liveBox.hidden);
-        const btns = boxOpen ? getStudioPlaceItems() : [];
-        if (ev.key === 'Escape') {
-          if (boxOpen) {
-            ev.preventDefault();
-            ev.stopPropagation();
-            closeStudioPlacesBox(false);
-          } else if (searchInp.value) {
-            ev.preventDefault();
-            ev.stopPropagation();
-            closeStudioPlacesBox(true);
-          }
-          return;
-        }
-        if (!boxOpen || btns.length === 0) return;
-        if (ev.key === 'ArrowDown') {
-          ev.preventDefault();
-          highlightStudioPlace((studioPlaceActiveIdx + 1 + btns.length) % btns.length);
-        } else if (ev.key === 'ArrowUp') {
-          ev.preventDefault();
-          highlightStudioPlace((studioPlaceActiveIdx - 1 + btns.length) % btns.length);
-        } else if (ev.key === 'Enter') {
-          ev.preventDefault();
-          ev.stopPropagation();
-          const pickBtn = btns[studioPlaceActiveIdx >= 0 ? studioPlaceActiveIdx : 0];
-          if (pickBtn) pickBtn.click();
-        }
-      });
-      searchInp.addEventListener('blur', () => {
-        clearTimeout(studioPlaceBlurTimer);
-        studioPlaceBlurTimer = setTimeout(() => closeStudioPlacesBox(false), 180);
-      });
     }
-    // 1-paste Map / WhatsApp link or Google Place search: fly to the point, select its Region, offer + New Site Here
+    // 1-paste Map / WhatsApp link: fly to the point, select its Region, offer + New Site Here
     const linkInp = deck.querySelector('#geoMapLinkPasteInp');
     if (linkInp) {
-      const studioRef = () => {
-        const activeInd = getGeoActiveIndustry();
-        const selReg = STUDIO.selectedRegion && STUDIO.selectedRegion !== '__unassigned__'
-          ? resolveRegionRecordOrAtlas(STUDIO.selectedRegion, SEED, activeInd)
-          : null;
-        const hub = activeInd === 'Manufacturing' ? getCompanyHub(studioMapLinkCompany(), SEED) : null;
-        return (selReg && selReg.center_lat != null && selReg.center_lng != null)
-          ? { lat: Number(selReg.center_lat), lng: Number(selReg.center_lng), label: selReg.name || STUDIO.selectedRegion }
-          : (hub ? { lat: hub.lat, lng: hub.lng, label: hub.name } : null);
-      };
-      const applyStudioLink = (explicitRaw, trigger) => {
-        const raw = typeof explicitRaw === 'string' ? explicitRaw : resolveGeoPlaceInputRaw(linkInp);
+      const applyStudioLink = () => {
+        const raw = String(linkInp.value || '');
         if (raw === STUDIO.pasteRaw && STUDIO.pasteHit) return;
-        const activeInd = getGeoActiveIndustry();
-        const ref = studioRef();
-        if (trigger === 'input' && isLikelyPlaceSearchQuery(raw, SEED, ref)) return;
         STUDIO.pasteRaw = raw;
         if (!raw.trim()) {
           STUDIO.pasteHit = null;
           rerenderWorkspace();
           return;
         }
+        const activeInd = getGeoActiveIndustry();
+        const selReg = STUDIO.selectedRegion && STUDIO.selectedRegion !== '__unassigned__'
+          ? resolveRegionRecordOrAtlas(STUDIO.selectedRegion, SEED, activeInd)
+          : null;
+        const hub = activeInd === 'Manufacturing' ? getCompanyHub(studioMapLinkCompany(), SEED) : null;
+        const ref = (selReg && selReg.center_lat != null && selReg.center_lng != null)
+          ? { lat: Number(selReg.center_lat), lng: Number(selReg.center_lng), label: selReg.name || STUDIO.selectedRegion }
+          : (hub ? { lat: hub.lat, lng: hub.lng, label: hub.name } : null);
         const parsed = parseMapLink(raw, { SEED, ref });
         if (parsed && !parsed.ok && parsed.code === 'short_link') {
           const myGen = ++STUDIO._studioLinkGen;
@@ -6610,36 +5713,21 @@
       let studioLinkTimer = 0;
       const runStudioLinkNow = () => {
         clearTimeout(studioLinkTimer);
-        applyStudioLink(undefined, 'manual');
+        applyStudioLink();
       };
-      attachGooglePlacesAutocomplete(linkInp, {
-        SEED,
-        STATE,
-        anchorEl: linkInp.closest('.geo-link-paste-row') || linkInp.parentElement,
-        getRef: studioRef,
-        useMapUrlValue: true,
-        onSelect: (_item, mapUrl) => {
-          clearTimeout(studioLinkTimer);
-          applyStudioLink(mapUrl, 'pick');
-        }
-      });
-      linkInp.addEventListener('paste', () => { clearTimeout(studioLinkTimer); studioLinkTimer = setTimeout(() => applyStudioLink(undefined, 'paste'), 0); });
+      linkInp.addEventListener('paste', () => { clearTimeout(studioLinkTimer); studioLinkTimer = setTimeout(applyStudioLink, 0); });
       linkInp.addEventListener('input', () => {
         const val = String(linkInp.value || '').trim();
         clearTimeout(studioLinkTimer);
         if (!val) {
-          applyStudioLink('', 'input');
+          applyStudioLink();
           return;
         }
         if (/https?:\/\//i.test(val) || /[-+]?\d{1,2}\.\d{3,}\s*,\s*[-+]?\d{1,3}\.\d{3,}/.test(val) || /^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}/i.test(val)) {
-          studioLinkTimer = setTimeout(() => applyStudioLink(undefined, 'input'), 220);
+          studioLinkTimer = setTimeout(applyStudioLink, 220);
         }
       });
-      linkInp.addEventListener('change', () => {
-        const val = resolveGeoPlaceInputRaw(linkInp).trim();
-        if (val && isLikelyPlaceSearchQuery(val, SEED, studioRef())) return;
-        runStudioLinkNow();
-      });
+      linkInp.addEventListener('change', runStudioLinkNow);
       linkInp.addEventListener('keydown', ev => {
         if (ev.key === 'Enter') {
           ev.preventDefault();
@@ -6657,21 +5745,8 @@
         rerenderWorkspace();
       });
     }
-    const regionsListEl = deck.querySelector('#geoRegionsList');
-    if (regionsListEl && regionsListEl.dataset.listClickWired !== '1') {
-      regionsListEl.dataset.listClickWired = '1';
-      regionsListEl.addEventListener('click', ev => {
-        const inspBtn = ev.target && ev.target.closest ? ev.target.closest('[data-geo-inspect-site]') : null;
-        if (inspBtn) {
-          ev.stopPropagation();
-          const sid = inspBtn.getAttribute('data-geo-inspect-site') || '';
-          if (!sid) return;
-          if (typeof ctx.editRecord === 'function') ctx.editRecord('sites', sid);
-          else if (typeof ctx.openInspector === 'function') ctx.openInspector('sites', sid);
-          return;
-        }
-        const card = ev.target && ev.target.closest ? ev.target.closest('[data-geo-region]') : null;
-        if (!card) return;
+    deck.querySelectorAll('[data-geo-region]').forEach(card => {
+      card.addEventListener('click', ev => {
         const targetReg = card.getAttribute('data-geo-region') || '';
         if (targetReg && ev && ev.isTrusted && norm(STUDIO.selectedRegion) === norm(targetReg)) {
           STUDIO.selectedRegion = '';
@@ -6681,9 +5756,8 @@
         STUDIO._userPanned = false;
         rerenderWorkspace();
       });
-    }
+    });
     deck.querySelectorAll('[data-geo-inspect-site]').forEach(btn => {
-      if (btn.closest('#geoRegionsList')) return;
       btn.addEventListener('click', ev => {
         ev.stopPropagation();
         const sid = btn.getAttribute('data-geo-inspect-site') || '';
@@ -7224,39 +6298,30 @@
         syncUnpinnedDraftDom(tone, renderMapLinkStatusHtml(parsed, info, { studio: true }), true);
         if (saveAfter) saveCurrentUnpinnedPin();
       };
-      const unpRef = () => {
-        const indNow = getGeoActiveIndustry();
-        const regNow = (unpinnedRegInp && unpinnedRegInp.value.trim()) || STUDIO.unpinnedRegionDraft || '';
-        const regObjNow = regNow ? resolveRegionRecordOrAtlas(regNow, SEED, indNow) : null;
-        return (regObjNow && regObjNow.center_lat != null && regObjNow.center_lng != null)
-          ? { lat: Number(regObjNow.center_lat), lng: Number(regObjNow.center_lng), label: regObjNow.name || regNow }
-          : null;
-      };
-      const applyUnpinnedInput = (saveAfter, trigger) => {
-        const raw = resolveGeoPlaceInputRaw(unpinnedPasteInp);
-        STUDIO.unpinnedPasteRaw = String(unpinnedPasteInp.value || '');
+      const applyUnpinnedInput = saveAfter => {
+        const raw = String(unpinnedPasteInp.value || '');
+        STUDIO.unpinnedPasteRaw = raw;
         if (!raw.trim()) {
           STUDIO.unpinnedLat = null;
           STUDIO.unpinnedLng = null;
           syncUnpinnedDraftDom('', '', false);
           return;
         }
-        const ref = unpRef();
-        if ((trigger === 'input' || trigger === 'change') && !(unpinnedPasteInp.dataset && unpinnedPasteInp.dataset.pickedMapUrl) && isLikelyPlaceSearchQuery(unpinnedPasteInp.value, SEED, ref)) {
-          STUDIO.unpinnedLat = null;
-          STUDIO.unpinnedLng = null;
-          syncUnpinnedDraftDom('', '', false);
-          return;
-        }
+        const indNow = getGeoActiveIndustry();
+        const regNow = (unpinnedRegInp && unpinnedRegInp.value.trim()) || STUDIO.unpinnedRegionDraft || '';
+        const regObjNow = regNow ? resolveRegionRecordOrAtlas(regNow, SEED, indNow) : null;
+        const ref = (regObjNow && regObjNow.center_lat != null && regObjNow.center_lng != null)
+          ? { lat: Number(regObjNow.center_lat), lng: Number(regObjNow.center_lng), label: regObjNow.name || regNow }
+          : null;
         const parsed = parseMapLink(raw, { SEED, ref });
         if (parsed && !parsed.ok && parsed.code === 'short_link') {
           const myGen = ++STUDIO._unpinnedLinkGen;
           syncUnpinnedDraftDom('is-warn', renderMapLinkStatusHtml({ ok: false, code: 'short_link_resolving' }, null, { studio: true }), false);
           resolveMapLinkAsync(raw, { SEED, ref }, resolvedParsed => {
-            if (myGen !== STUDIO._unpinnedLinkGen || !unpinnedPasteInp.isConnected || resolveGeoPlaceInputRaw(unpinnedPasteInp) !== raw) return;
+            if (myGen !== STUDIO._unpinnedLinkGen || !unpinnedPasteInp.isConnected || String(unpinnedPasteInp.value || '') !== raw) return;
             applyParsedUnpinned(resolvedParsed, saveAfter);
           }, failRes => {
-            if (myGen !== STUDIO._unpinnedLinkGen || !unpinnedPasteInp.isConnected || resolveGeoPlaceInputRaw(unpinnedPasteInp) !== raw) return;
+            if (myGen !== STUDIO._unpinnedLinkGen || !unpinnedPasteInp.isConnected || String(unpinnedPasteInp.value || '') !== raw) return;
             STUDIO.unpinnedLat = null;
             STUDIO.unpinnedLng = null;
             syncUnpinnedDraftDom('is-warn', renderMapLinkStatusHtml((failRes && failRes.code) ? failRes : { ok: false, code: 'short_link_unresolvable' }, null, { studio: true }), false);
@@ -7272,23 +6337,16 @@
         }
         applyParsedUnpinned(parsed, saveAfter);
       };
-      attachGooglePlacesAutocomplete(unpinnedPasteInp, {
-        SEED,
-        STATE,
-        anchorEl: unpinnedPasteInp.closest('.geo-link-paste-row') || unpinnedPasteInp.parentElement,
-        getRef: unpRef,
-        onSelect: () => applyUnpinnedInput(false, 'pick')
-      });
       let unpDeb = 0;
-      unpinnedPasteInp.addEventListener('paste', () => setTimeout(() => applyUnpinnedInput(false, 'paste'), 0));
-      unpinnedPasteInp.addEventListener('input', () => { clearTimeout(unpDeb); unpDeb = setTimeout(() => applyUnpinnedInput(false, 'input'), 220); });
-      unpinnedPasteInp.addEventListener('change', () => { clearTimeout(unpDeb); applyUnpinnedInput(false, 'change'); });
+      unpinnedPasteInp.addEventListener('paste', () => setTimeout(() => applyUnpinnedInput(false), 0));
+      unpinnedPasteInp.addEventListener('input', () => { clearTimeout(unpDeb); unpDeb = setTimeout(() => applyUnpinnedInput(false), 220); });
+      unpinnedPasteInp.addEventListener('change', () => { clearTimeout(unpDeb); applyUnpinnedInput(false); });
       unpinnedPasteInp.addEventListener('keydown', ev => {
         if (ev.key === 'Enter') {
           ev.preventDefault();
           ev.stopPropagation();
           clearTimeout(unpDeb);
-          applyUnpinnedInput(true, 'enter');
+          applyUnpinnedInput(true);
         }
       });
     }
@@ -7704,30 +6762,15 @@
           renderStudioMapLayers(window.L, STUDIO.map, ctx);
         }
       };
-      const pinCoordRef = () => {
+      pinCoordPasteInp.addEventListener('change', () => {
+        const raw = String(pinCoordPasteInp.value || '').trim();
+        if (!raw) return;
         const activeInd = getGeoActiveIndustry();
         const rpEl = deck.querySelector('#geoPinRegionInp');
         const regObj = (rpEl && rpEl.value) ? resolveRegionRecordOrAtlas(rpEl.value, SEED, activeInd) : null;
-        return (regObj && regObj.center_lat != null && regObj.center_lng != null)
+        const ref = (regObj && regObj.center_lat != null && regObj.center_lng != null)
           ? { lat: Number(regObj.center_lat), lng: Number(regObj.center_lng), label: regObj.name }
           : null;
-      };
-      attachGooglePlacesAutocomplete(pinCoordPasteInp, {
-        SEED,
-        STATE,
-        anchorEl: pinCoordPasteInp.closest('.geo-place-inline-anchor') || pinCoordPasteInp.parentElement,
-        getRef: pinCoordRef,
-        onSelect: item => {
-          applyPinCoordCoords(Number(item.lat), Number(item.lng));
-        }
-      });
-      const applyPinCoordInput = trigger => {
-        const raw = resolveGeoPlaceInputRaw(pinCoordPasteInp).trim();
-        if (!raw) return;
-        const ref = pinCoordRef();
-        if ((trigger === 'input' || trigger === 'change') && !(pinCoordPasteInp.dataset && pinCoordPasteInp.dataset.pickedMapUrl) && isLikelyPlaceSearchQuery(pinCoordPasteInp.value, SEED, ref)) {
-          return;
-        }
         const coordOnly = parsePastedCoordinates(raw);
         if (coordOnly) {
           applyPinCoordCoords(coordOnly.lat, coordOnly.lng);
@@ -7742,7 +6785,7 @@
           const myGen = ++pinCoordGen;
           if (typeof ctx.toast === 'function') ctx.toast('Resolving short map link...', 'info');
           resolveMapLinkAsync(raw, { SEED, ref }, resolvedParsed => {
-            if (myGen !== pinCoordGen || !pinCoordPasteInp.isConnected || resolveGeoPlaceInputRaw(pinCoordPasteInp).trim() !== raw) return;
+            if (myGen !== pinCoordGen || !pinCoordPasteInp.isConnected || String(pinCoordPasteInp.value || '').trim() !== raw) return;
             applyPinCoordCoords(resolvedParsed.lat, resolvedParsed.lng);
           }, failRes => {
             if (myGen !== pinCoordGen) return;
@@ -7754,14 +6797,6 @@
                 : 'Could not expand this short map link.');
             if (typeof ctx.toast === 'function') ctx.toast(msg, 'warn');
           });
-        }
-      };
-      pinCoordPasteInp.addEventListener('change', () => applyPinCoordInput('change'));
-      pinCoordPasteInp.addEventListener('keydown', ev => {
-        if (ev.key === 'Enter') {
-          ev.preventDefault();
-          ev.stopPropagation();
-          applyPinCoordInput('enter');
         }
       });
     }
@@ -8116,14 +7151,8 @@
 
   function _emitGeoFieldEvents(el) {
     if (!el) return;
-    const prevSuppress = window.__mfgSuppressAutoFocusMenu;
-    window.__mfgSuppressAutoFocusMenu = true;
-    try {
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    } finally {
-      window.__mfgSuppressAutoFocusMenu = prevSuppress;
-    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   // Inside Lebanon: the box also holds Damascus and northern Israel, so the point must also fall within the
@@ -8258,34 +7287,22 @@
       statusEl.innerHTML = html || '';
       if (html) _trGeoDom(statusEl);
     };
-    const getPasteRef = () => {
+    const apply = force => {
+      const raw = String(pasteInp.value || '');
+      if (!force && raw === lastVal) return;
+      lastVal = raw;
+      reqGen++;
+      if (!raw.trim()) { setStatus('', ''); return; }
       const activeInd = getGeoActiveIndustry();
       const company = typeof c.getCompany === 'function' ? c.getCompany() : '';
       const regNow = regInp ? String(regInp.value || '').trim() : '';
       const regObjNow = regNow ? resolveRegionRecordOrAtlas(regNow, SEED, activeInd) : null;
+      let ref = null;
       if (regObjNow && regObjNow.center_lat != null && regObjNow.center_lng != null) {
-        return { lat: Number(regObjNow.center_lat), lng: Number(regObjNow.center_lng), label: regObjNow.name || regNow };
-      }
-      if (activeInd === 'Manufacturing') {
+        ref = { lat: Number(regObjNow.center_lat), lng: Number(regObjNow.center_lng), label: regObjNow.name || regNow };
+      } else if (activeInd === 'Manufacturing') {
         const h = getCompanyHub(BU_LIST.find(b => norm(b) === norm(company)) || 'WTC', SEED);
-        return { lat: h.lat, lng: h.lng, label: h.name };
-      }
-      return null;
-    };
-    const apply = (force, trigger = 'manual') => {
-      const displayRaw = String(pasteInp.value || '');
-      const raw = resolveGeoPlaceInputRaw(pasteInp);
-      if (!force && raw === lastVal) return;
-      lastVal = raw;
-      reqGen++;
-      if (!displayRaw.trim()) { pasteInp.removeAttribute('aria-invalid'); setStatus('', ''); return; }
-      const activeInd = getGeoActiveIndustry();
-      const company = typeof c.getCompany === 'function' ? c.getCompany() : '';
-      const ref = getPasteRef();
-      if (trigger === 'input' && isLikelyPlaceSearchQuery(displayRaw, SEED, ref)) {
-        pasteInp.removeAttribute('aria-invalid');
-        setStatus('', '');
-        return;
+        ref = { lat: h.lat, lng: h.lng, label: h.name };
       }
       const applyParsed = parsed => {
         pasteInp.removeAttribute('aria-invalid');
@@ -8341,10 +7358,10 @@
           setStatus(renderMapLinkStatusHtml({ ok: false, code: 'short_link_resolving' }), 'is-warn');
           pasteInp.removeAttribute('aria-invalid');
           resolveMapLinkAsync(raw, { SEED, ref }, resolvedParsed => {
-            if (myGen !== reqGen || !pasteInp.isConnected || resolveGeoPlaceInputRaw(pasteInp) !== raw) return;
+            if (myGen !== reqGen || !pasteInp.isConnected || String(pasteInp.value || '') !== raw) return;
             applyParsed(resolvedParsed);
           }, failRes => {
-            if (myGen !== reqGen || !pasteInp.isConnected || resolveGeoPlaceInputRaw(pasteInp) !== raw) return;
+            if (myGen !== reqGen || !pasteInp.isConnected || String(pasteInp.value || '') !== raw) return;
             setStatus(renderMapLinkStatusHtml((failRes && failRes.code) ? failRes : { ok: false, code: 'short_link_unresolvable' }), 'is-warn');
             pasteInp.setAttribute('aria-invalid', 'true');
           });
@@ -8356,40 +7373,24 @@
       }
       applyParsed(parsed);
     };
-    attachGooglePlacesAutocomplete(pasteInp, {
-      SEED,
-      anchorEl: pasteInp.closest('.geo-link-paste-row') || pasteInp.parentElement,
-      getRef: getPasteRef,
-      onSelect: () => {
-        clearTimeout(debounceT);
-        apply(true, 'pick');
-      }
-    });
-    pasteInp.addEventListener('paste', () => { setTimeout(() => apply(false, 'paste'), 0); });
+    pasteInp.addEventListener('paste', () => { setTimeout(() => apply(false), 0); });
     pasteInp.addEventListener('input', () => {
       clearTimeout(debounceT);
-      debounceT = setTimeout(() => apply(false, 'input'), 220);
+      debounceT = setTimeout(() => apply(false), 220);
     });
-    pasteInp.addEventListener('change', () => {
-      clearTimeout(debounceT);
-      if (isLikelyPlaceSearchQuery(pasteInp.value, SEED, getPasteRef()) && !(pasteInp.dataset && pasteInp.dataset.pickedMapUrl)) return;
-      apply(false, 'change');
-    });
+    pasteInp.addEventListener('change', () => { clearTimeout(debounceT); apply(false); });
     pasteInp.addEventListener('keydown', ev => {
       if (ev.key === 'Enter') {
         ev.preventDefault();
         ev.stopPropagation();
         clearTimeout(debounceT);
-        apply(true, 'enter');
+        apply(true);
       }
     });
     const resetLinkState = () => {
       clearTimeout(debounceT);
       lastVal = '';
       reqGen++;
-      delete pasteInp.dataset.pickedDisplay;
-      delete pasteInp.dataset.pickedMapUrl;
-      if (typeof pasteInp._closePlacesMenu === 'function') pasteInp._closePlacesMenu();
       pasteInp.removeAttribute('aria-invalid');
       setStatus('', '');
     };
@@ -9709,9 +8710,8 @@
       }
     });
   }
-  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  if (typeof window !== 'undefined') {
     window.addEventListener('blur', suspendTransientGeoUi);
-    window.addEventListener('mfg:lang-changed', refreshMountedMapTiles);
   }
 
   window.MFG_GEO = {
@@ -9789,17 +8789,7 @@
     packQrEscPosRaster,
     resolveVerifiedSiteGatePin,
     renderGateMiniMapSvg,
-    renderGatePinCardHtml,
-    getMapLayerStyle,
-    setMapLayerStyle,
-    refreshMountedMapTiles,
-    buildGooglePlaceMapUrl,
-    isLikelyPlaceSearchQuery,
-    rankLocalSitesForSearch,
-    searchGooglePlaces,
-    resolveGeoPlaceInputRaw,
-    attachGooglePlacesAutocomplete,
-    closeAllPlaceMenus: closeAllGeoPlaceMenus
+    renderGatePinCardHtml
   };
   if (typeof window !== 'undefined') window.MFG_GATE_PIN = window.MFG_GEO;
 })();

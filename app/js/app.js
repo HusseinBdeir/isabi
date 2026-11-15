@@ -141,7 +141,7 @@
     const urlStr = String(url || '');
     const method = String((opts && opts.method) || 'GET').toUpperCase();
     const isAuthCheckUrl = /\/api\/auth\/(?:login|logout|me)(?:\b|\/|\?|$)/i.test(urlStr);
-    const isReadOnlyAiOrScan = /\/api\/(?:ai-edge|ask|smart-scan|resolve-map-link|map-places)(?:\b|\/|\?|$)/i.test(urlStr);
+    const isReadOnlyAiOrScan = /\/api\/(?:ai-edge|ask|smart-scan|resolve-map-link)(?:\b|\/|\?|$)/i.test(urlStr);
     const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|cashflow_behind|source_behind|industry_domain_store|staff_biometrics|work_schedules|geo_config|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
     const inDemoSession = isDemoSandboxSession();
     const inDemoCo = !inDemoSession && STATE.company === DEMO_COMPANY_KEY;
@@ -79482,7 +79482,7 @@
                       <label for="ind_insp_coord_paste">Paste Map or WhatsApp Link</label>
                       <div class="geo-link-paste-row">
                         <span class="geo-link-paste-ic" aria-hidden="true">${ic('pin')}</span>
-                        <input type="text" id="ind_insp_coord_paste" inputmode="search" spellcheck="false" enterkeyhint="done" placeholder="Search Google Maps, or paste link, Plus Code or coordinates" autocomplete="off">
+                        <input type="text" id="ind_insp_coord_paste" inputmode="url" spellcheck="false" enterkeyhint="done" placeholder="WhatsApp location, Google Maps link, Plus Code or coordinates" autocomplete="off">
                       </div>
                       <div class="geo-link-status" id="indInspMapLinkStatus" role="status" aria-live="polite" hidden></div>
                     </div>
@@ -84366,7 +84366,7 @@
     return `<div id="tktSitePinBar" class="tkt-site-pin-bar" data-side="${side === 'raw' ? 'raw' : 'sales'}" hidden>
       <label class="tkt-site-pin-lbl" for="tktSitePinPasteInp">${ic('pin')} <span>${lbl}</span></label>
       <div class="tkt-site-pin-row">
-        <input type="text" id="tktSitePinPasteInp" autocomplete="off" spellcheck="false" inputmode="search" placeholder="Search Google Maps or paste map link">
+        <input type="text" id="tktSitePinPasteInp" autocomplete="off" spellcheck="false" inputmode="url" placeholder="Paste Map or WhatsApp Link">
         <button type="button" class="btn btn-ghost btn-sm" id="tktSitePinSaveBtn" hidden>${ic('pin')} <span>Save Pin</span></button>
       </div>
       <div id="tktSitePinStatus" class="geo-link-status" role="status" aria-live="polite" hidden></div>
@@ -84475,14 +84475,7 @@
       // Another site: start clean
       bar.dataset.site = siteKey;
       bar.dataset.saved = '';
-      if (inp) {
-        inp.value = '';
-        delete inp.dataset.lastVal;
-        delete inp.dataset.pickedDisplay;
-        delete inp.dataset.pickedMapUrl;
-        if (typeof inp._closePlacesMenu === 'function') inp._closePlacesMenu();
-        inp.removeAttribute('aria-invalid');
-      }
+      if (inp) { inp.value = ''; delete inp.dataset.lastVal; inp.removeAttribute('aria-invalid'); }
       if (statusEl) { statusEl.hidden = true; statusEl.innerHTML = ''; statusEl.className = 'geo-link-status'; }
       if (saveBtn) saveBtn.hidden = true;
     }
@@ -84512,39 +84505,25 @@
       }
       bar.dataset.saved = p.siteKey;
       inp.value = '';
-      delete inp.dataset.pickedDisplay;
-      delete inp.dataset.pickedMapUrl;
-      if (typeof inp._closePlacesMenu === 'function') inp._closePlacesMenu();
       setStatus(`<span class="geo-link-ic is-ok">${ic('check')}</span><span class="geo-link-msg"><span class="geo-link-parts"><span>Pinned</span> ${vb(cur.name)}<span class="geo-link-sep" aria-hidden="true"> · </span><span>Region kept</span> ${vb(p.region)}${p.hubLine || ''}</span></span>`, 'is-ok');
       toast('Pin saved on the site', 'ok');
       try { recalcForm(); } catch (_) {}
     };
     let reqGen = 0;
-    const getTktRef = () => {
-      const G = window.MFG_GEO;
-      const co = bar.dataset.company || val('f_company') || 'WTC';
-      const hub = (G && typeof G.getCompanyHub === 'function') ? G.getCompanyHub(co, SEED) : null;
-      return hub ? { lat: hub.lat, lng: hub.lng, label: hub.name } : null;
-    };
-    const apply = (force, trigger = 'manual') => {
-      const G = window.MFG_GEO;
-      const displayRaw = String(inp.value || '');
-      const raw = (G && typeof G.resolveGeoPlaceInputRaw === 'function') ? G.resolveGeoPlaceInputRaw(inp) : displayRaw;
+    const apply = force => {
+      const raw = String(inp.value || '');
       if (!force && raw === inp.dataset.lastVal) return;
       inp.dataset.lastVal = raw;
       const myGen = ++reqGen;
       pending = null;
       if (saveBtn) saveBtn.hidden = true;
-      if (!displayRaw.trim()) { setStatus('', ''); inp.removeAttribute('aria-invalid'); return; }
-      const ref = getTktRef();
-      if (trigger === 'input' && G && typeof G.isLikelyPlaceSearchQuery === 'function' && G.isLikelyPlaceSearchQuery(displayRaw, SEED, ref)) {
-        setStatus('', '');
-        inp.removeAttribute('aria-invalid');
-        return;
-      }
+      if (!raw.trim()) { setStatus('', ''); inp.removeAttribute('aria-invalid'); return; }
+      const G = window.MFG_GEO;
       const cur = _tktPinMfgSiteRow(val('f_site'), side);
       if (!G || !cur || typeof G.parseMapLink !== 'function') return;
       const co = bar.dataset.company || val('f_company') || 'WTC';
+      const hub = typeof G.getCompanyHub === 'function' ? G.getCompanyHub(co, SEED) : null;
+      const ref = hub ? { lat: hub.lat, lng: hub.lng, label: hub.name } : null;
       const parsed = G.parseMapLink(raw, { SEED, ref });
       const dec = decideTicketSitePin(cur, parsed);
       if (dec.action === 'error' && dec.code === 'short_link' && typeof G.resolveShortMapLink === 'function') {
@@ -84603,38 +84582,19 @@
       }
       doSave();
     };
-    if (window.MFG_GEO && typeof window.MFG_GEO.attachGooglePlacesAutocomplete === 'function') {
-      window.MFG_GEO.attachGooglePlacesAutocomplete(inp, {
-        SEED,
-        anchorEl: inp.closest('.tkt-site-pin-row') || inp.parentElement,
-        getRef: getTktRef,
-        onSelect: () => {
-          clearTimeout(debounceT);
-          apply(true, 'pick');
-        }
-      });
-    }
-    inp.addEventListener('paste', () => { setTimeout(() => apply(false, 'paste'), 0); });
+    inp.addEventListener('paste', () => { setTimeout(() => apply(false), 0); });
     inp.addEventListener('input', ev => {
       ev.stopPropagation();
       clearTimeout(debounceT);
-      debounceT = setTimeout(() => apply(false, 'input'), 220);
+      debounceT = setTimeout(() => apply(false), 220);
     });
-    inp.addEventListener('change', ev => {
-      ev.stopPropagation();
-      clearTimeout(debounceT);
-      const G = window.MFG_GEO;
-      if (G && typeof G.isLikelyPlaceSearchQuery === 'function' && G.isLikelyPlaceSearchQuery(inp.value, SEED, getTktRef()) && !(inp.dataset && inp.dataset.pickedMapUrl)) {
-        return;
-      }
-      apply(false, 'change');
-    });
+    inp.addEventListener('change', ev => { ev.stopPropagation(); clearTimeout(debounceT); apply(false); });
     inp.addEventListener('keydown', ev => {
       if (ev.key === 'Enter') {
         ev.preventDefault();
         ev.stopPropagation();
         clearTimeout(debounceT);
-        apply(true, 'enter');
+        apply(true);
       }
     });
     if (saveBtn) saveBtn.addEventListener('click', ev => { ev.preventDefault(); ev.stopPropagation(); doSave(); });
@@ -97617,7 +97577,7 @@
       el.addEventListener('input', () => {
         clearTimeout(blurTimer);
         syncClearBtn();
-        if (choosing || window.__mfgSuppressAutoFocusMenu) return;
+        if (choosing) return;
         renderMenu(true, false);
       });
       el.addEventListener('change', syncClearBtn);
@@ -112226,7 +112186,7 @@
               <label for="insp_site_coord_paste">Paste Map or WhatsApp Link</label>
               <div class="geo-link-paste-row">
                 <span class="geo-link-paste-ic" aria-hidden="true">${ic('pin')}</span>
-                <input type="text" id="insp_site_coord_paste" inputmode="search" spellcheck="false" enterkeyhint="done" placeholder="Search Google Maps, or paste link, Plus Code or coordinates" autocomplete="off">
+                <input type="text" id="insp_site_coord_paste" inputmode="url" spellcheck="false" enterkeyhint="done" placeholder="WhatsApp location, Google Maps link, Plus Code or coordinates" autocomplete="off">
               </div>
               <div class="geo-link-status" id="inspSiteMapLinkStatus" role="status" aria-live="polite" hidden></div>
             </div>
@@ -153953,7 +153913,6 @@
     // Keyboard: Escape closes the innermost open popover / drawer / modal / rail; Ctrl+K toggles Global Search
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
-        if (e.defaultPrevented) return;
         if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.isOpen === 'function' && window.MFG_CMD_PALETTE.isOpen()) {
           e.preventDefault();
           window.MFG_CMD_PALETTE.close();
@@ -153979,11 +153938,10 @@
           if (cTrig) cTrig.setAttribute('aria-expanded', 'false');
           return;
         }
-        const openSuggestMenus = document.querySelectorAll('.pa-suggest-menu:not([hidden]), .pa-select-menu:not([hidden]), #supCategoryMenu:not([hidden]), .rdl-combo-menu:not([hidden]), .geo-place-menu:not([hidden]), #geoStudioPlacesBox:not([hidden])');
+        const openSuggestMenus = document.querySelectorAll('.pa-suggest-menu:not([hidden]), .pa-select-menu:not([hidden]), #supCategoryMenu:not([hidden]), .rdl-combo-menu:not([hidden])');
         if (openSuggestMenus.length) {
-          if (window.MFG_GEO && typeof window.MFG_GEO.closeAllPlaceMenus === 'function') window.MFG_GEO.closeAllPlaceMenus();
           openSuggestMenus.forEach(m => { m.hidden = true; });
-          document.querySelectorAll('.pa-suggest-wrap.open, .rdl-combo.open, .geo-place-search-wrap.open').forEach(w => w.classList.remove('open'));
+          document.querySelectorAll('.pa-suggest-wrap.open, .rdl-combo.open').forEach(w => w.classList.remove('open'));
           return;
         }
         const colPop = $('colFilterPopover');

@@ -1424,7 +1424,7 @@
       return `
         <div class="form-grid-3">
           ${haulDeckHtml}
-          ${fld('Paste Map or WhatsApp Link', `<div class="geo-link-paste-row"><span class="geo-link-paste-ic" aria-hidden="true">${ic('pin')}</span>${inp('f_site_coord_paste', 'text', '', 'inputmode="search" spellcheck="false" enterkeyhint="done" placeholder="Search Google Maps, or paste link, Plus Code or coordinates"')}</div>`, {
+          ${fld('Paste Map or WhatsApp Link', `<div class="geo-link-paste-row"><span class="geo-link-paste-ic" aria-hidden="true">${ic('pin')}</span>${inp('f_site_coord_paste', 'text', '', 'inputmode="url" spellcheck="false" enterkeyhint="done" placeholder="WhatsApp location, Google Maps link, Plus Code or coordinates"')}</div>`, {
             id: 'wrap_site_map_link',
             span: true,
             cls: 'geo-link-paste-field',
