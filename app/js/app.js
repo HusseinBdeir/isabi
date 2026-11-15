@@ -43129,6 +43129,7 @@
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
               <button type="button" class="btn ${STATE.payrollPolicyOpen ? 'btn-primary' : 'btn-ghost-bar'}" id="payTogglePolicyBtn">${ic('clock')} Shifts, Lateness &amp; Face ID</button>
               <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="attendance">${ic('kiosks')} Attendance Kiosk</button>
+              ${canOpenFatherBackfill() ? (() => { const fbS = getFatherBackfillSummary(); return `<button type="button" class="btn btn-ghost-bar" data-open-father-backfill="1">${ic('reg_staff')} <span>Father's Name Backfill</span>${fbS.totalMissing > 0 ? ` <span class="badge warn" data-no-i18n="1">${fmtNum(fbS.totalMissing)}</span>` : ''}</button>`; })() : ''}
               ${exportBtn('payAttPanel', 'Attendance_Records')}
               ${canEnterForm('attendance') ? '<button type="button" class="btn btn-primary" data-open-modal="attendance">+ Log Attendance</button>' : ''}
             </div>
@@ -43792,6 +43793,7 @@
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_staff">${ic('reg_staff')} Staff Registry (All BUs)</button>
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_roles">${ic('reg_roles')} Staff Roles</button>
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_allowances">${ic('payroll_allowances')} Site Transport (${fmtNum(logAll.length)})</button>
+              ${canOpenFatherBackfill() ? (() => { const fbS = getFatherBackfillSummary(); return `<button type="button" class="btn btn-ghost-bar" data-open-father-backfill="1">${ic('reg_staff')} <span>Father's Name Backfill</span>${fbS.totalMissing > 0 ? ` <span class="badge warn" data-no-i18n="1">${fmtNum(fbS.totalMissing)}</span>` : ''}</button>`; })() : ''}
               ${exportBtn('payEmpPanel', 'Employment_Contracts')}
               ${canEnterForm('employment') ? '<button type="button" class="btn btn-ghost-bar" data-open-pending-salary="1">+ Pending-Salary Hire</button>' : ''}
               ${canEnterForm('freelance') ? '<button type="button" class="btn btn-brass" data-open-modal="freelance">+ Freelance Entry</button>' : ''}
@@ -85564,7 +85566,7 @@
             : `<span class="att-chip-ico" data-entry-att-preview="${idx}">${ic('receipt')}</span>`}
           <div class="att-chip-meta" data-entry-att-preview="${idx}">
             <strong class="mono">${esc(fName)}</strong>
-            <small>${esc(formatFileSizeShort(fSize))} · ${esc(a.capture_method || 'File Upload')}</small>
+            <small><span data-no-i18n="1">${esc(formatFileSizeShort(fSize))}</span> · <span>${esc(a.capture_method || 'File Upload')}</span></small>
           </div>
           <button type="button" class="btn btn-ghost-bar btn-sm" data-entry-att-preview="${idx}">Preview</button>
           ${canEdit ? `<button type="button" class="att-chip-remove" data-entry-att-remove="${idx}" aria-label="Remove attachment">✕</button>` : ''}
@@ -94462,6 +94464,28 @@
         const editId = (STATE.editingRecord && STATE.editingRecord.crKey === 'staff_members') ? STATE.editingRecord.id : '';
         const staffCo = val('f_staff_company') || val('f_company') || defaultEntryCompany();
         const dup = syncUniversalMainDupHint('f_staff', 'staff_members', 'Staff', { excludeId: editId, company: staffCo });
+        const nm = val('f_staff');
+        const activeEmpDup = (!dup && !editId && nm) ? findActiveSameNameInCompany(nm, staffCo) : null;
+        const sameNameBox = $('staffSameNameBox');
+        if (sameNameBox) {
+          const hit = (!editId && (dup || activeEmpDup)) ? (dup || activeEmpDup) : null;
+          if (hit) {
+            const hitName = (dup ? (dup.name || dup.staff) : hit.staff) || nm;
+            const sug = suggestDistinctStaffName(nm, val('f_father_name'));
+            sameNameBox.hidden = false;
+            sameNameBox.innerHTML = `
+              <div class="ssn-row">
+                <span class="ssn-badge">${ic('warn')} Same-Name Guard</span>
+                <span><b data-no-i18n="1">${esc(hitName)}</b> is already active in <b data-no-i18n="1">${esc(hit.company || staffCo)}</b>. Exact duplicate staff names are blocked across payroll &amp; Face ID.</span>
+              </div>
+              <div class="ssn-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="staffUseDistinctNameBtn" data-name="${esc(sug)}"><span>Use Disambiguated Name:</span> <b data-no-i18n="1">${esc(sug)}</b></button>
+              </div>`;
+          } else {
+            sameNameBox.hidden = true;
+            sameNameBox.innerHTML = '';
+          }
+        }
         const curRole = val('f_role');
         const resolvedCat = resolveRoleCategory(curRole, '');
         if ($('f_emp_cat')) $('f_emp_cat').value = resolvedCat;
@@ -94470,7 +94494,6 @@
         const strip = $('staffUnivContextStrip');
         if (strip) {
           strip.hidden = false;
-          const nm = val('f_staff');
           if (dup && !editId) {
             const k = norm(dup.name || dup.staff || nm);
             const dupCoNorm = dup.company ? norm(canonCompany(dup.company)) : norm(staffCo);
@@ -99937,6 +99960,25 @@
       recalcForm();
       try { stEl.focus({ preventScroll: true }); } catch (_) {}
     });
+    if ($('f_staff_company') && STATE.modalForm === 'staff') {
+      $('f_staff_company').addEventListener('change', () => recalcForm());
+    }
+    const staffSameBoxEl = $('staffSameNameBox');
+    if (staffSameBoxEl) {
+      staffSameBoxEl.addEventListener('click', ev => {
+        const useBtn = ev.target && ev.target.closest ? ev.target.closest('#staffUseDistinctNameBtn') : null;
+        if (!useBtn) return;
+        ev.preventDefault();
+        const sug = useBtn.getAttribute('data-name') || '';
+        const stEl = $('f_staff');
+        if (!stEl || !sug) return;
+        stEl.value = sug;
+        FORM_UI.userInteracted = true;
+        try { stEl.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+        recalcForm();
+        try { stEl.focus({ preventScroll: true }); } catch (_) {}
+      });
+    }
     body.querySelectorAll('[data-emp-salary-mode]').forEach(btn => {
       btn.addEventListener('click', ev => {
         ev.preventDefault();
@@ -102238,7 +102280,9 @@
       if (!nm) addErr('f_staff', 'Staff Name is required.');
       else {
         const dup = findUniversalDuplicate('staff_members', nm, { excludeId: exclId, company: staffCo });
+        const actDup = (!dup && !exclId) ? findActiveSameNameInCompany(nm, staffCo) : null;
         if (dup) addErr('f_staff', `Staff "${universalMainValue('staff_members', dup) || nm}" already exists in the Universal Staff Registry. Duplicate names are not allowed.`);
+        else if (actDup) addErr('f_staff', `Staff "${actDup.staff || nm}" is already active in ${actDup.company || staffCo}. Disambiguate the name (e.g. include Father's Name) before saving.`);
       }
       if (!roleVal) addErr('f_role', 'Role is required.');
       if (!assignStartRaw) addErr('f_assign_start', 'Effective Start Date is required.');
@@ -102248,6 +102292,12 @@
         name: nm,
         staff: nm,
         father_name: cleanFatherName(val('f_father_name')),
+        full_name_ar: val('f_staff_ar') || '',
+        father_name_ar: val('f_father_name_ar') || '',
+        dob: val('f_dob') ? String(val('f_dob')).slice(0, 10) : '',
+        nationality: val('f_nationality') || '',
+        nationality_ar: val('f_nationality_ar') || '',
+        id_doc_kind: val('f_id_doc_kind') || '',
         role: roleVal,
         role_category: roleCat,
         worker_category: roleCat,
@@ -103979,13 +104029,18 @@
 
   async function postRecordToLocalApi(crKey, record, opts = {}) {
     const tblName = CR_TABLE[crKey] || (/^[a-z][a-z0-9_]*$/.test(String(crKey || '')) ? String(crKey) : '');
-    if (!hasServerApi() || isDemoScopeActive() || !tblName || !record || !record.id) return { ok: true };
+    if (!hasServerApi() || isDemoScopeActive() || !tblName || !record || !record.id) return { ok: true, status: 200 };
+    let t = null;
     try {
       const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 8000);
+      t = setTimeout(() => ctrl.abort(), 8000);
       const res = await edgeApiFetch('./api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: tblName, record }), signal: ctrl.signal });
       clearTimeout(t);
-      if (res && res.status === 409) {
+      t = null;
+      if (!res) {
+        return { ok: false, blockedSameName: false, networkError: true, status: 0, table: tblName, id: record.id, err: null, error: 'Empty response from server.' };
+      }
+      if (res.status === 409) {
         const err = await res.json().catch(() => null);
         if (err && err.code === 'same_name_conflict') {
           if (!(opts && opts.deferRender)) {
@@ -103993,16 +104048,23 @@
             toast(err.error || 'Duplicate active staff name blocked by server.', 'err');
             renderApp();
           }
-          return { ok: false, blockedSameName: true, table: tblName, id: record.id, err };
+          return { ok: false, blockedSameName: true, status: 409, table: tblName, id: record.id, err, error: (err && err.error) || 'Duplicate active staff name blocked by server.' };
         }
+        return { ok: false, blockedSameName: false, status: 409, table: tblName, id: record.id, err, error: (err && err.error) || 'Conflict saving record (HTTP 409).' };
       }
-      return { ok: Boolean(!res || res.ok) };
-    } catch (_) { /* offline or static host */ }
-    return { ok: true };
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        return { ok: false, blockedSameName: false, status: Number(res.status || 0), table: tblName, id: record.id, err, error: (err && err.error) || `HTTP ${res.status || 0} saving record.` };
+      }
+      return { ok: true, status: Number(res.status || 200) };
+    } catch (e) {
+      if (t) clearTimeout(t);
+      return { ok: false, blockedSameName: false, networkError: true, status: 0, table: tblName, id: record.id, err: null, error: (e && e.message) || 'Network error while saving record.' };
+    }
   }
 
   async function postRecordPairsChunked(pairs, concurrency = 8, opts = {}) {
-    if (!Array.isArray(pairs) || !pairs.length) return { ok: true, blockedSameName: false };
+    if (!Array.isArray(pairs) || !pairs.length) return { ok: true, blockedSameName: false, postedPairs: [] };
     const dedup = [];
     const seen = new Set();
     for (let i = pairs.length - 1; i >= 0; i--) {
@@ -104014,13 +104076,37 @@
       dedup.push(item);
     }
     dedup.reverse();
+    const postedPairs = [];
     for (let i = 0; i < dedup.length; i += concurrency) {
       const chunk = dedup.slice(i, i + concurrency);
       const chunkRes = await Promise.all(chunk.map(([ek, er]) => postRecordToLocalApi(ek, er, opts)));
-      const hit = chunkRes.find(r => r && r.blockedSameName);
-      if (hit) return { ok: false, blockedSameName: true, table: hit.table, id: hit.id, err: hit.err };
+      let sameNameHit = null;
+      let errHit = null;
+      chunkRes.forEach((r, idx) => {
+        if (r && r.ok) {
+          postedPairs.push(chunk[idx]);
+        } else if (r && r.blockedSameName && !sameNameHit) {
+          sameNameHit = r;
+        } else if (r && !r.ok && !errHit) {
+          errHit = r;
+        }
+      });
+      const hit = sameNameHit || errHit;
+      if (hit) {
+        return {
+          ok: false,
+          blockedSameName: Boolean(hit.blockedSameName),
+          networkError: Boolean(hit.networkError),
+          status: Number(hit.status || 0),
+          table: hit.table,
+          id: hit.id,
+          err: hit.err || null,
+          error: hit.error || '',
+          postedPairs,
+        };
+      }
     }
-    return { ok: true, blockedSameName: false };
+    return { ok: true, blockedSameName: false, postedPairs };
   }
 
   async function saveModalEntry(evOrOpts) {
@@ -104081,6 +104167,7 @@
     STATE.saving = true;
     const sBtn = $('dynSaveModalBtn');
     const nBtn = $('dynSaveNextDayModalBtn');
+    const origSBtnText = sBtn ? sBtn.textContent : ((isUpdatingPending || isEditingExisting) ? 'Save Changes' : 'Post Entry');
     if (sBtn) { sBtn.disabled = true; sBtn.textContent = (isUpdatingPending || isEditingExisting) ? 'Saving…' : 'Posting…'; }
     if (nBtn) { nBtn.disabled = true; }
     try {
@@ -104831,6 +104918,85 @@
         }
       }
       stampBatchModifiedAt(extraApiPosts, crKey, record);
+      const findPreSnapRow = (snap, tblName, rowId) => {
+        if (!snap || rowId == null) return null;
+        const sid = String(rowId);
+        const cRows = snap.custom && snap.custom[tblName] && snap.custom[tblName].rows;
+        if (Array.isArray(cRows)) {
+          const cHit = cRows.find(x => x && String(x.id) === sid);
+          if (cHit) return _cloneSameNameSnapRow(cHit);
+        }
+        const sRows = snap.seedSmall && snap.seedSmall[tblName];
+        if (Array.isArray(sRows)) {
+          const sHit = sRows.find(x => x && String(x.id) === sid);
+          if (sHit) return _cloneSameNameSnapRow(sHit);
+        }
+        return null;
+      };
+      const restoreModalAfterServerFail = (tblName, conflictId, errObj, opts = {}) => {
+        if (sBtn) { sBtn.disabled = false; sBtn.textContent = origSBtnText || 'Post'; }
+        if (nBtn) { nBtn.disabled = false; }
+        const qTbl = (errObj && errObj.table) || tblName;
+        const qId = (errObj && (errObj.conflictId || errObj.id)) || conflictId;
+        const canonQTbl = qTbl === 'staff' ? 'staff_members' : (qTbl === 'freelance' ? 'freelance_entries' : qTbl);
+        if (sameNameSaveSnap) restoreStaffSameNameSnapshot(sameNameSaveSnap);
+        if (opts && opts.quarantine) {
+          if (!preSaveSameNameIds || !preSaveSameNameIds.has(`${canonQTbl}:${String(qId || '')}`)) {
+            quarantineSameNameRejectedRecord(qTbl, qId, errObj, null);
+          }
+        }
+        toast((opts && opts.message) || (errObj && errObj.error) || 'Could not save record to server. Please check connection and retry.', 'err');
+        renderApp();
+      };
+      if (sameNameSaveSnap) {
+        const mainPostRes = await postRecordToLocalApi(crKey, record, { deferRender: true });
+        if (!mainPostRes || !mainPostRes.ok) {
+          restoreModalAfterServerFail(
+            (mainPostRes && mainPostRes.table) || CR_TABLE[crKey] || crKey,
+            (mainPostRes && mainPostRes.id) || record.id,
+            mainPostRes && mainPostRes.err,
+            {
+              quarantine: Boolean(mainPostRes && mainPostRes.blockedSameName),
+              message: (mainPostRes && (mainPostRes.error || (mainPostRes.err && mainPostRes.err.error)))
+                || 'Could not save record to server. Your form inputs are preserved.'
+            }
+          );
+          return;
+        }
+        const extraPostRes = await postRecordPairsChunked(extraApiPosts, 8, { deferRender: true });
+        if (!extraPostRes || !extraPostRes.ok) {
+          const postedExtra = Array.isArray(extraPostRes && extraPostRes.postedPairs) ? extraPostRes.postedPairs : [];
+          for (let i = postedExtra.length - 1; i >= 0; i--) {
+            const [pTbl, pRec] = postedExtra[i];
+            const prevRec = findPreSnapRow(sameNameSaveSnap, pTbl, pRec && pRec.id);
+            if (prevRec) {
+              await postRecordToLocalApi(pTbl, Object.assign({}, prevRec, { same_person_confirmed: true }), { deferRender: true });
+            } else if (pRec && pRec.id) {
+              await postRecordToLocalApi(pTbl, Object.assign({}, pRec, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
+            }
+          }
+          if (hasServerApi() && !isDemoScopeActive()) {
+            if (!isEditingExisting && !isUpdatingPending) {
+              await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
+            } else if (editCtx && editCtx.orig && String(editCtx.orig.id || '') === String(record.id || '')) {
+              await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { same_person_confirmed: true }), { deferRender: true });
+            } else if (bpPendRow && String(bpPendRow.id || '') === String(record.id || '')) {
+              await postRecordToLocalApi(crKey, Object.assign({}, bpPendRow, { same_person_confirmed: true }), { deferRender: true });
+            }
+          }
+          restoreModalAfterServerFail(
+            (extraPostRes && extraPostRes.table) || CR_TABLE[crKey] || crKey,
+            (extraPostRes && extraPostRes.id) || record.id,
+            extraPostRes && extraPostRes.err,
+            {
+              quarantine: Boolean(extraPostRes && extraPostRes.blockedSameName),
+              message: (extraPostRes && (extraPostRes.error || (extraPostRes.err && extraPostRes.err.error)))
+                || 'Could not save related staff changes to server. Changes were rolled back.'
+            }
+          );
+          return;
+        }
+      }
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
       STATE.saving = false;
       if (keepOpenNextDay) {
@@ -104911,35 +105077,23 @@
           openSalaryAdvanceReceiptModal(record);
         }
       }
-      const rollbackSaveOnSameName = (tblName, conflictId, errObj) => {
-        const qTbl = (errObj && errObj.table) || tblName;
-        const qId = (errObj && (errObj.conflictId || errObj.id)) || conflictId;
-        const canonQTbl = qTbl === 'staff' ? 'staff_members' : (qTbl === 'freelance' ? 'freelance_entries' : qTbl);
-        if (sameNameSaveSnap) restoreStaffSameNameSnapshot(sameNameSaveSnap);
-        if (!preSaveSameNameIds || !preSaveSameNameIds.has(`${canonQTbl}:${String(qId || '')}`)) {
-          quarantineSameNameRejectedRecord(qTbl, qId, errObj, null);
+      if (!sameNameSaveSnap) {
+        const rollbackSaveOnSameName = (tblName, conflictId, errObj) => {
+          restoreModalAfterServerFail(tblName, conflictId, errObj, {
+            quarantine: true,
+            message: (errObj && errObj.error) || 'Duplicate active staff name blocked by server.'
+          });
+        };
+        const mainPostRes = await postRecordToLocalApi(crKey, record, { deferRender: true });
+        if (mainPostRes && mainPostRes.blockedSameName) {
+          rollbackSaveOnSameName(mainPostRes.table || CR_TABLE[crKey] || crKey, mainPostRes.id || record.id, mainPostRes.err);
+          return;
         }
-        toast((errObj && errObj.error) || 'Duplicate active staff name blocked by server.', 'err');
-        renderApp();
-      };
-      const mainPostRes = await postRecordToLocalApi(crKey, record, { deferRender: Boolean(sameNameSaveSnap) });
-      if (mainPostRes && mainPostRes.blockedSameName) {
-        rollbackSaveOnSameName(mainPostRes.table || CR_TABLE[crKey] || crKey, mainPostRes.id || record.id, mainPostRes.err);
-        return;
-      }
-      const extraPostRes = await postRecordPairsChunked(extraApiPosts, 8, { deferRender: Boolean(sameNameSaveSnap) });
-      if (extraPostRes && extraPostRes.blockedSameName) {
-        if (sameNameSaveSnap && hasServerApi() && !isDemoScopeActive()) {
-          if (!isEditingExisting && !isUpdatingPending) {
-            await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
-          } else if (editCtx && editCtx.orig && String(editCtx.orig.id || '') === String(record.id || '')) {
-            await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { same_person_confirmed: true }), { deferRender: true });
-          } else if (bpPendRow && String(bpPendRow.id || '') === String(record.id || '')) {
-            await postRecordToLocalApi(crKey, Object.assign({}, bpPendRow, { same_person_confirmed: true }), { deferRender: true });
-          }
+        const extraPostRes = await postRecordPairsChunked(extraApiPosts, 8, { deferRender: true });
+        if (extraPostRes && extraPostRes.blockedSameName) {
+          rollbackSaveOnSameName(extraPostRes.table || CR_TABLE[crKey] || crKey, extraPostRes.id || record.id, extraPostRes.err);
+          return;
         }
-        rollbackSaveOnSameName(extraPostRes.table || CR_TABLE[crKey] || crKey, extraPostRes.id || record.id, extraPostRes.err);
-        return;
       }
       syncWithCloud(true);
     } finally {
@@ -106277,6 +106431,146 @@
       if (typeof window.MFG_SMART_SCAN.resetModalState === 'function') window.MFG_SMART_SCAN.resetModalState();
       if (typeof window.MFG_SMART_SCAN.mountOnEntryModal === 'function') window.MFG_SMART_SCAN.mountOnEntryModal();
     }
+    if (form === 'staff') {
+      const renderStaffIdScanResultStrip = (res, pendingLabel) => {
+        const strip = $('staffIdScanResultStrip');
+        if (!strip) return;
+        if (pendingLabel) {
+          strip.hidden = false;
+          strip.innerHTML = `<div class="staff-id-scan-loading"><span>Scanning ID card</span> <span data-no-i18n="1">(${esc(pendingLabel)})...</span></div>`;
+          if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(strip);
+          return;
+        }
+        if (!res || !res.ok) {
+          strip.innerHTML = '';
+          strip.hidden = true;
+          return;
+        }
+        const pairs = [
+          res.fullNameLatin ? `<span><b>Name:</b> <span data-no-i18n="1">${esc(res.fullNameLatin)}</span></span>` : '',
+          res.fullNameArabic ? `<span dir="rtl" data-no-i18n="1"><b>الاسم:</b> ${esc(res.fullNameArabic)}</span>` : '',
+          res.fatherNameLatin ? `<span><b>Father:</b> <span data-no-i18n="1">${esc(res.fatherNameLatin)}</span></span>` : '',
+          res.fatherNameArabic ? `<span dir="rtl" data-no-i18n="1"><b>الأب:</b> ${esc(res.fatherNameArabic)}</span>` : '',
+          res.dob ? `<span><b>DOB:</b> <span data-no-i18n="1">${esc(res.dob)}</span></span>` : '',
+          res.nationalityLatin ? `<span><b>Nationality:</b> <span data-no-i18n="1">${esc(res.nationalityLatin)}</span></span>` : '',
+          (res.nssfNumber || res.idNumber) ? `<span><b>ID / NSSF:</b> <span data-no-i18n="1">${esc(res.idNumber || res.nssfNumber)}</span></span>` : ''
+        ].filter(Boolean).join('');
+        strip.hidden = false;
+        strip.innerHTML = `
+          <div class="staff-id-scan-strip-inner">
+            ${res.previewDataUrl ? `<img class="staff-id-scan-thumb" src="${esc(res.previewDataUrl)}" alt="ID Card">` : ''}
+            <div class="staff-id-scan-meta">
+              <div class="staff-id-scan-badges">
+                <span class="staff-id-scan-badge">${esc(formatIdDocKindBadgeLabel(res.docKind))}</span>
+                <span class="staff-id-scan-engine" data-no-i18n="1">${esc(res.engineLabel || 'ID Scan')}</span>
+              </div>
+              <div class="staff-id-scan-fields">${pairs || '<span>No structured fields detected.</span>'}</div>
+            </div>
+            <button type="button" class="btn btn-sm staff-id-scan-clear" id="staffIdScanClearBtn">Dismiss</button>
+          </div>
+        `;
+        if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(strip);
+        const clrBtn = $('staffIdScanClearBtn');
+        if (clrBtn) {
+          clrBtn.addEventListener('click', () => {
+            strip.innerHTML = '';
+            strip.hidden = true;
+          });
+        }
+      };
+
+      const applyStaffModalIdScan = async (fileOrSpec, methodLabel) => {
+        if (!window.MFG_SMART_SCAN || typeof window.MFG_SMART_SCAN.scanIdentityCard !== 'function') {
+          toast('ID card scanner module is not loaded.', 'err');
+          return;
+        }
+        const camBtn = $('staffIdCameraScanBtn');
+        const upBtn = $('staffIdUploadBtn');
+        const smpBtn = $('staffIdSampleBtn');
+        const setBusy = busy => {
+          [camBtn, upBtn, smpBtn].forEach(b => { if (b) b.disabled = !!busy; });
+        };
+        setBusy(true);
+        renderStaffIdScanResultStrip(null, methodLabel || 'ID Card');
+        try {
+          const co = $('f_staff_company') ? $('f_staff_company').value : '';
+          const res = await window.MFG_SMART_SCAN.scanIdentityCard(fileOrSpec, { company: co });
+          if (!$('entryModal') || $('entryModal').hidden || STATE.modalForm !== 'staff') return;
+          if (!res || !res.ok) {
+            renderStaffIdScanResultStrip(null, '');
+            toast((res && (res.error || res.message)) || 'Could not extract ID card fields.', 'err');
+            return;
+          }
+          const setScanField = (id, v) => {
+            const el = $(id);
+            if (el) el.value = (v != null && String(v).trim()) ? String(v).trim() : '';
+          };
+          setScanField('f_staff', res.fullNameLatin || res.fullNameArabic);
+          setScanField('f_staff_ar', res.fullNameArabic);
+          setScanField('f_father_name', res.fatherNameLatin);
+          setScanField('f_father_name_ar', res.fatherNameArabic);
+          const validDob = /^\d{4}-\d{2}-\d{2}$/.test(String(res.dob || '').trim()) ? String(res.dob).trim() : '';
+          setScanField('f_dob', validDob);
+          setScanField('f_nationality', res.nationalityLatin);
+          setScanField('f_nationality_ar', res.nationalityArabic);
+          setScanField('f_id_doc_kind', res.docKind);
+          const idRef = (res.nssfNumber && !res.idNumber) ? res.nssfNumber : (res.idNumber || res.nssfNumber || '');
+          setScanField('f_reference', idRef);
+          const prevIdCount = FORM_UI.attachments.length;
+          FORM_UI.attachments = FORM_UI.attachments.filter(a => !(a && a.from_id_scan));
+          let attChanged = FORM_UI.attachments.length !== prevIdCount;
+          if (res.attObj && res.attObj.name) {
+            const nextIdAtt = Object.assign({}, res.attObj, { from_id_scan: true });
+            const exists = FORM_UI.attachments.some(a => a && (
+              (nextIdAtt.id && a.id === nextIdAtt.id)
+              || (a.name === nextIdAtt.name && a.size === nextIdAtt.size)
+              || (nextIdAtt.data && a.data === nextIdAtt.data)
+            ));
+            if (!exists) {
+              FORM_UI.attachments.push(nextIdAtt);
+              attChanged = true;
+            }
+          }
+          if (attChanged) renderEntryAttachmentsListUI();
+          FORM_UI.userInteracted = true;
+          renderStaffIdScanResultStrip(res, '');
+          recalcForm();
+          toast(`Extracted ${res.docKind || 'ID Card'} fields (${res.engineLabel || methodLabel || 'ID Scan'}).`, 'ok');
+        } catch (err) {
+          renderStaffIdScanResultStrip(null, '');
+          toast(`ID card scan failed: ${err && err.message ? err.message : 'Unknown error'}`, 'err');
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      const camScanBtn = $('staffIdCameraScanBtn');
+      const uploadBtn = $('staffIdUploadBtn');
+      const fileInp = $('staffIdFileInput');
+      const sampleBtn = $('staffIdSampleBtn');
+      if (camScanBtn) {
+        camScanBtn.addEventListener('click', () => {
+          if (typeof openDocumentCameraCapture === 'function') {
+            openDocumentCameraCapture(files => {
+              if (files && files[0]) applyStaffModalIdScan(files[0], 'Camera ID Scan');
+            }, { preset: 'card' });
+          } else {
+            toast('Camera scanner is not available on this view.', 'err');
+          }
+        });
+      }
+      if (uploadBtn && fileInp) {
+        uploadBtn.addEventListener('click', () => fileInp.click());
+        fileInp.addEventListener('change', () => {
+          const f = fileInp.files && fileInp.files[0];
+          fileInp.value = '';
+          if (f) applyStaffModalIdScan(f, 'ID File Upload');
+        });
+      }
+      if (sampleBtn) {
+        sampleBtn.addEventListener('click', () => applyStaffModalIdScan('lebanese_id', 'Sample ID Card'));
+      }
+    }
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
       window.MFG_AI_EDGE.syncAllSurfacesNow();
     }
@@ -107105,6 +107399,12 @@
       }
       setModalControlVal('f_staff', row.name || row.staff || '');
       setModalControlVal('f_father_name', row.father_name || '');
+      setModalControlVal('f_staff_ar', row.full_name_ar || '');
+      setModalControlVal('f_father_name_ar', row.father_name_ar || '');
+      setModalControlVal('f_dob', row.dob ? String(row.dob).slice(0, 10) : '');
+      setModalControlVal('f_nationality', row.nationality || '');
+      setModalControlVal('f_nationality_ar', row.nationality_ar || '');
+      setModalControlVal('f_id_doc_kind', row.id_doc_kind || '');
       setModalControlVal('f_role', row.role || '');
       setModalControlVal('f_emp_cat', resolveRoleCategory(row.role || '', row.role_category || row.worker_category || ''));
       setModalControlVal('f_phone', row.phone || '');
@@ -135487,6 +135787,747 @@
     }
   }
 
+  const FATHER_BACKFILL_STATE = {
+    open: false,
+    companyFilter: 'ALL',
+    tierFilter: 'ALL',
+    search: '',
+    scannedCards: [],
+    draftEdits: {},
+    selectedIds: new Set(),
+    busy: false
+  };
+
+  const ID_DOC_KIND_LABELS = {
+    lebanese_id: 'Lebanese National ID',
+    nssf_card: 'NSSF Card',
+    civil_extract: 'Civil Extract',
+    work_permit: 'Work Permit',
+    passport: 'Passport',
+    id_card: 'ID Card'
+  };
+
+  function formatIdDocKindBadgeLabel(kind) {
+    const raw = String(kind || '').trim();
+    if (!raw) return 'ID Card';
+    return ID_DOC_KIND_LABELS[raw.toLowerCase()] || raw;
+  }
+
+  function canOpenFatherBackfill(u = activeUser()) {
+    return Boolean(canAccessTable('staff_members', u) && canModifyRecord(u));
+  }
+
+  function getFatherBackfillSummary(opts = {}) {
+    if (!window.MFG_SMART_SCAN || typeof window.MFG_SMART_SCAN.computeFatherNameBackfillReview !== 'function') {
+      return { totalMissing: 0, renewalRiskCount: 0, matchedCount: 0, highCount: 0, mediumCount: 0, manualCount: 0, rows: [] };
+    }
+    const defaultCoFilter = (opts && opts.companyFilter !== undefined)
+      ? opts.companyFilter
+      : ((STATE.company === 'ALL' || STATE.company === DEMO_COMPANY_KEY) ? 'ALL' : (COMPANY_BU_MATCH[STATE.company] || STATE.company));
+    try {
+      return window.MFG_SMART_SCAN.computeFatherNameBackfillReview({
+        companyFilter: defaultCoFilter,
+        scannedCards: FATHER_BACKFILL_STATE.scannedCards,
+        user: activeUser()
+      }) || { totalMissing: 0, renewalRiskCount: 0, matchedCount: 0, highCount: 0, mediumCount: 0, manualCount: 0, rows: [] };
+    } catch (_) {
+      return { totalMissing: 0, renewalRiskCount: 0, matchedCount: 0, highCount: 0, mediumCount: 0, manualCount: 0, rows: [] };
+    }
+  }
+
+  function renderFatherBackfillBannerHtml() {
+    if (!canOpenFatherBackfill()) return '';
+    const sum = getFatherBackfillSummary();
+    const isDepleted = sum.totalMissing === 0;
+    const isWarn = sum.renewalRiskCount > 0;
+    return `
+      <div class="father-backfill-banner ${isWarn ? 'is-risk' : (isDepleted ? 'is-clean' : '')}" id="fatherBackfillBanner">
+        <div class="fb-banner-copy">
+          <div class="fb-banner-title-row">
+            <strong>Legacy Father's Name Backfill Review</strong>
+            <span class="badge ${isDepleted ? 'ok' : (isWarn ? 'warn' : '')}"><span data-no-i18n="1">${fmtNum(sum.totalMissing)}</span> <span>missing</span></span>
+            ${sum.renewalRiskCount > 0 ? `<span class="badge crit"><span data-no-i18n="1">${fmtNum(sum.renewalRiskCount)}</span> <span>renewal risk</span></span>` : ''}
+            ${sum.matchedCount > 0 ? `<span class="badge ok"><span data-no-i18n="1">${fmtNum(sum.matchedCount)}</span> <span>matched</span></span>` : ''}
+          </div>
+          <div class="fb-banner-sub">${isDepleted
+            ? '<span>All active staff in scope have a Father\'s Name recorded. Open the reviewer any time to scan HR ID cards in batch.</span>'
+            : '<span>Match active staff against contract notes, 3-part names, or batch HR ID / NSSF scans before contract renewals fall back to numbered names.</span>'}</div>
+        </div>
+        <div class="fb-banner-actions">
+          <button type="button" class="btn ${isDepleted ? 'btn-ghost-bar' : 'btn-primary'}" data-open-father-backfill="1">
+            ${ic('reg_staff')} ${isDepleted ? '<span>Open Backfill &amp; ID Batch Scan</span>' : '<span>Review Father\'s Name Backfill</span>'}
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function closeFatherNameBackfillModal() {
+    FATHER_BACKFILL_STATE.open = false;
+    FATHER_BACKFILL_STATE.selectedIds.clear();
+    Object.keys(FATHER_BACKFILL_STATE.draftEdits).forEach(k => delete FATHER_BACKFILL_STATE.draftEdits[k]);
+    FATHER_BACKFILL_STATE.scannedCards = [];
+    const modal = $('fatherBackfillModal');
+    if (modal) modal.hidden = true;
+    const enrolOpen = Boolean($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden);
+    const entryOpen = Boolean($('entryModal') && !$('entryModal').hidden);
+    if (!enrolOpen && !entryOpen) {
+      document.body.classList.remove('modal-open');
+    }
+  }
+
+  async function applyFatherNameBackfillSelection(targetIds) {
+    if (!canOpenFatherBackfill()) {
+      toast('Your seat cannot modify existing staff records.', 'err');
+      return { ok: false, count: 0 };
+    }
+    if (FATHER_BACKFILL_STATE.busy) return { ok: false, count: 0 };
+    FATHER_BACKFILL_STATE.busy = true;
+    try {
+      ensureStaffMembersSeeded();
+      const ids = (Array.isArray(targetIds) ? targetIds : Array.from(FATHER_BACKFILL_STATE.selectedIds))
+        .map(v => String(v || '').trim())
+        .filter(Boolean);
+      if (!ids.length) {
+        toast('Select at least one staff row to backfill.', 'warn');
+        return { ok: false, count: 0 };
+      }
+      const idSet = new Set(ids);
+      const sum = getFatherBackfillSummary({ companyFilter: 'ALL' });
+      const opAllowed = allowedCompanyNames(activeUser());
+      const opAllowedSet = new Set(opAllowed.map(c => norm(c)));
+      const nowIso = new Date().toISOString();
+      const whoEmail = (activeUser() && activeUser().email) || '';
+      const pairs = [];
+      const prePairMap = new Map();
+      let updatedCount = 0;
+
+      if (!STATE.customRecords || typeof STATE.customRecords !== 'object') STATE.customRecords = {};
+      if (!Array.isArray(STATE.customRecords.staff_members)) STATE.customRecords.staff_members = [];
+      if (!Array.isArray(STATE.customRecords.employments)) STATE.customRecords.employments = [];
+      if (!Array.isArray(STATE.customRecords.freelance_entries)) STATE.customRecords.freelance_entries = [];
+      if (!SEED.records) SEED.records = {};
+
+      const preSnap = (hasServerApi() && !isDemoScopeActive())
+        ? captureStaffSameNameSnapshot(['staff_members', 'employments', 'freelance_entries'], [])
+        : null;
+      const preExistingIds = preSnap
+        ? new Set(
+            ['staff_members', 'employments', 'freelance_entries'].flatMap(t =>
+              ((STATE.customRecords && STATE.customRecords[t]) || []).concat((SEED.records && SEED.records[t]) || [])
+                .filter(r => r && r.id != null)
+                .map(r => `${t}:${String(r.id)}`)
+            )
+          )
+        : null;
+      const preSelectedIds = new Set(FATHER_BACKFILL_STATE.selectedIds);
+      const preDraftEdits = Object.assign({}, FATHER_BACKFILL_STATE.draftEdits);
+
+      const mergeAttNoDup = (target, attObj) => {
+        if (!target || !attObj || !attObj.name) return;
+        const list = Array.isArray(target.attachments) ? target.attachments.slice() : [];
+        const dup = list.some(a => a && (
+          (attObj.id && a.id === attObj.id)
+          || (a.name === attObj.name && a.size === attObj.size)
+          || (attObj.data && a.data === attObj.data)
+        ));
+        if (!dup) list.push(Object.assign({}, attObj));
+        target.attachments = list;
+        target.attachment_count = list.length;
+      };
+
+      const targetRows = (sum.rows || []).filter(r => r && idSet.has(String(r.staffId)));
+      for (const row of targetRows) {
+        const draftRaw = Object.prototype.hasOwnProperty.call(FATHER_BACKFILL_STATE.draftEdits, row.staffId)
+          ? FATHER_BACKFILL_STATE.draftEdits[row.staffId]
+          : row.proposedFather;
+        const cleanedFather = cleanFatherName(draftRaw || '');
+        if (!cleanedFather) continue;
+        const acceptedProposal = Boolean(row.proposedFather)
+          && staffNameKey(cleanedFather) === staffNameKey(row.proposedFather);
+        const rowCoCanon = row.company ? canonCompany(row.company) : '';
+        if (opAllowedSet.size && rowCoCanon && !opAllowedSet.has(norm(rowCoCanon))) continue;
+
+        let smCustomIdx = STATE.customRecords.staff_members.findIndex(r => r && String(r.id) === String(row.staffId));
+        let smSeedIdx = Array.isArray(SEED.records.staff_members)
+          ? SEED.records.staff_members.findIndex(r => r && String(r.id) === String(row.staffId))
+          : -1;
+        if (smCustomIdx < 0 && smSeedIdx < 0) {
+          const nk = staffNameKey(row.name);
+          const ck = staffNameKey(rowCoCanon || row.company);
+          smCustomIdx = STATE.customRecords.staff_members.findIndex(r => r && !r.voided && staffNameKey(r.name || r.staff) === nk && (!ck || staffNameKey(r.company) === ck));
+          if (smCustomIdx < 0 && Array.isArray(SEED.records.staff_members)) {
+            smSeedIdx = SEED.records.staff_members.findIndex(r => r && !r.voided && staffNameKey(r.name || r.staff) === nk && (!ck || staffNameKey(r.company) === ck));
+          }
+        }
+        let smTarget = null;
+        if (smCustomIdx >= 0) {
+          smTarget = STATE.customRecords.staff_members[smCustomIdx];
+          if (smTarget && smTarget.id != null && !prePairMap.has(`staff_members::${String(smTarget.id)}`)) {
+            prePairMap.set(`staff_members::${String(smTarget.id)}`, _cloneSameNameSnapRow(smTarget));
+          }
+        } else if (smSeedIdx >= 0) {
+          const seedOrig = SEED.records.staff_members[smSeedIdx];
+          if (seedOrig && seedOrig.id != null && !prePairMap.has(`staff_members::${String(seedOrig.id)}`)) {
+            prePairMap.set(`staff_members::${String(seedOrig.id)}`, _cloneSameNameSnapRow(seedOrig));
+          }
+          smTarget = Object.assign({}, seedOrig);
+          if (!row.hasHomonym) smTarget.same_person_confirmed = true;
+          STATE.customRecords.staff_members.unshift(smTarget);
+        }
+        if (!smTarget) continue;
+
+        smTarget.father_name = cleanedFather;
+        if (acceptedProposal) {
+          if (row.proposedFatherAr && !String(smTarget.father_name_ar || '').trim()) smTarget.father_name_ar = row.proposedFatherAr;
+          if (row.proposedFullAr && !String(smTarget.full_name_ar || '').trim()) smTarget.full_name_ar = row.proposedFullAr;
+          if (row.proposedDob && /^\d{4}-\d{2}-\d{2}$/.test(String(row.proposedDob)) && !String(smTarget.dob || '').trim()) smTarget.dob = row.proposedDob;
+          if (row.proposedNat && !String(smTarget.nationality || '').trim()) smTarget.nationality = row.proposedNat;
+          if (row.proposedNatAr && !String(smTarget.nationality_ar || '').trim()) smTarget.nationality_ar = row.proposedNatAr;
+          if (row.proposedRef && !String(smTarget.reference || '').trim()) smTarget.reference = row.proposedRef;
+          if (row.proposedDocKind && !String(smTarget.id_doc_kind || '').trim()) smTarget.id_doc_kind = row.proposedDocKind;
+          if (row.proposedAttObj) mergeAttNoDup(smTarget, row.proposedAttObj);
+        }
+        smTarget.modified_by = whoEmail;
+        smTarget.modified_at = nowIso;
+        smTarget.updated_at = nowIso;
+
+        const nk = staffNameKey(smTarget.name || smTarget.staff || row.name);
+        const ck = staffNameKey(smTarget.company || rowCoCanon);
+        const linkedEmpId = String(smTarget.enrolled_emp_id || '').trim();
+        let touchedAnyContract = false;
+        ['employments', 'freelance_entries'].forEach(tbl => {
+          const seedArr = Array.isArray(SEED.records[tbl]) ? SEED.records[tbl] : [];
+          const custArr = STATE.customRecords[tbl];
+          const seenIds = new Set();
+          const touchRow = (r, origBeforeTouch) => {
+            if (!r || r.voided || r.archived) return false;
+            if (/^(ended|closed|terminated|inactive|cancelled)$/i.test(String(r.status || 'Active').trim())) return false;
+            if (row.hasHomonym) {
+              if (!linkedEmpId || String(r.id || '').trim() !== linkedEmpId) return false;
+            }
+            if (staffNameKey(r.staff || r.name) !== nk) return false;
+            if (ck && r.company && staffNameKey(r.company) !== ck) return false;
+            if (String(r.father_name || '').trim()) return false;
+            if (origBeforeTouch && origBeforeTouch.id != null && !prePairMap.has(`${tbl}::${String(origBeforeTouch.id)}`)) {
+              prePairMap.set(`${tbl}::${String(origBeforeTouch.id)}`, _cloneSameNameSnapRow(origBeforeTouch));
+            }
+            r.father_name = cleanedFather;
+            if (!row.hasHomonym) r.same_person_confirmed = true;
+            if (acceptedProposal) {
+              if (row.proposedFatherAr && !String(r.father_name_ar || '').trim()) r.father_name_ar = row.proposedFatherAr;
+              if (row.proposedFullAr && !String(r.full_name_ar || '').trim()) r.full_name_ar = row.proposedFullAr;
+              if (row.proposedDob && /^\d{4}-\d{2}-\d{2}$/.test(String(row.proposedDob)) && !String(r.dob || '').trim()) r.dob = row.proposedDob;
+              if (row.proposedNat && !String(r.nationality || '').trim()) r.nationality = row.proposedNat;
+              if (row.proposedNatAr && !String(r.nationality_ar || '').trim()) r.nationality_ar = row.proposedNatAr;
+              if (row.proposedRef && !String(r.reference || '').trim()) r.reference = row.proposedRef;
+            }
+            r.modified_by = whoEmail;
+            r.modified_at = nowIso;
+            r.updated_at = nowIso;
+            return true;
+          };
+          custArr.forEach(r => {
+            const origSnap = r ? _cloneSameNameSnapRow(r) : null;
+            if (touchRow(r, origSnap) && r.id != null) {
+              touchedAnyContract = true;
+              seenIds.add(String(r.id));
+              const sMatch = seedArr.find(sr => sr && String(sr.id) === String(r.id));
+              if (sMatch) Object.assign(sMatch, r);
+              pairs.push([tbl, Object.assign({}, r)]);
+            }
+          });
+          seedArr.forEach(sr => {
+            if (!sr || (sr.id != null && seenIds.has(String(sr.id)))) return;
+            const origSnap = _cloneSameNameSnapRow(sr);
+            const clone = Object.assign({}, sr);
+            if (touchRow(clone, origSnap)) {
+              touchedAnyContract = true;
+              custArr.unshift(clone);
+              Object.assign(sr, clone);
+              if (clone.id != null) seenIds.add(String(clone.id));
+              pairs.push([tbl, Object.assign({}, clone)]);
+            }
+          });
+        });
+
+        if (touchedAnyContract && !row.hasHomonym) {
+          smTarget.same_person_confirmed = true;
+        }
+        if (smSeedIdx >= 0 && Array.isArray(SEED.records.staff_members)) {
+          Object.assign(SEED.records.staff_members[smSeedIdx], smTarget);
+        }
+        pairs.push(['staff_members', Object.assign({}, smTarget)]);
+
+        FATHER_BACKFILL_STATE.selectedIds.delete(String(row.staffId));
+        delete FATHER_BACKFILL_STATE.draftEdits[row.staffId];
+        updatedCount += 1;
+      }
+
+      if (!updatedCount) {
+        toast('Enter or scan a valid Father\'s Name before applying.', 'warn');
+        return { ok: false, count: 0 };
+      }
+
+      SEED._staffMembersSeededRev = '';
+      if (SEED._tableRev) {
+        SEED._tableRev.staff_members = (SEED._tableRev.staff_members || 0) + 1;
+        SEED._tableRev.employments = (SEED._tableRev.employments || 0) + 1;
+        SEED._tableRev.freelance_entries = (SEED._tableRev.freelance_entries || 0) + 1;
+      }
+      SEED._customRev = (SEED._customRev || 0) + 1;
+      applyCustomRecordsToSeed();
+      if (typeof invalidateAllSeedCaches === 'function') invalidateAllSeedCaches();
+      ensureStaffMembersSeeded();
+
+      if (isDemoScopeActive()) {
+        saveLocalAuthAndRecords();
+        toast(`Updated ${updatedCount} staff profile${updatedCount === 1 ? '' : 's'} in Demo session only (no server changes).`, 'ok');
+      } else if (pairs.length) {
+        const postRes = await postRecordPairsChunked(pairs, 8, { deferRender: true });
+        if (!postRes || !postRes.ok) {
+          const posted = Array.isArray(postRes && postRes.postedPairs) ? postRes.postedPairs : [];
+          const rollbackFailures = [];
+          for (let i = posted.length - 1; i >= 0; i--) {
+            const [pTbl, pRec] = posted[i];
+            const prevRec = pRec && pRec.id != null ? prePairMap.get(`${pTbl}::${String(pRec.id)}`) : null;
+            if (prevRec) {
+              let rbRes = await postRecordToLocalApi(pTbl, prevRec, { deferRender: true });
+              if (rbRes && rbRes.blockedSameName) {
+                rbRes = await postRecordToLocalApi(pTbl, Object.assign({}, prevRec, { same_person_confirmed: true }), { deferRender: true });
+              }
+              if (!rbRes || !rbRes.ok) {
+                rollbackFailures.push(`${pTbl}:${String(prevRec.id || '')}`);
+              }
+            }
+          }
+          if (preSnap) restoreStaffSameNameSnapshot(preSnap);
+          FATHER_BACKFILL_STATE.selectedIds = new Set(preSelectedIds);
+          Object.keys(FATHER_BACKFILL_STATE.draftEdits).forEach(k => delete FATHER_BACKFILL_STATE.draftEdits[k]);
+          Object.assign(FATHER_BACKFILL_STATE.draftEdits, preDraftEdits);
+          if (postRes && postRes.blockedSameName && postRes.err) {
+            const qTbl = (postRes.err && postRes.err.table) || postRes.table || 'staff_members';
+            const qId = (postRes.err && (postRes.err.conflictId || postRes.err.id)) || postRes.id;
+            const canonQTbl = qTbl === 'staff' ? 'staff_members' : (qTbl === 'freelance' ? 'freelance_entries' : qTbl);
+            if (qId && (!preExistingIds || !preExistingIds.has(`${canonQTbl}:${String(qId)}`))) {
+              quarantineSameNameRejectedRecord(qTbl, qId, postRes.err, null);
+            }
+          }
+          const baseErr = (postRes && (postRes.error || (postRes.err && postRes.err.error))) || 'Could not save Father\'s Name backfill to server. Changes were rolled back.';
+          const errMsg = rollbackFailures.length
+            ? `${baseErr} Warning: ${rollbackFailures.length} server revert${rollbackFailures.length === 1 ? '' : 's'} failed; reload before retrying.`
+            : baseErr;
+          toast(errMsg, 'err');
+          if (FATHER_BACKFILL_STATE.open) renderFatherBackfillModalDom();
+          renderApp();
+          return {
+            ok: false,
+            count: 0,
+            blockedSameName: Boolean(postRes && postRes.blockedSameName),
+            rollbackFailed: rollbackFailures.length > 0,
+            rollbackFailures,
+            error: errMsg
+          };
+        }
+        saveLocalAuthAndRecords();
+        syncWithCloud(true);
+        toast(`Updated Father's Name for ${updatedCount} staff member${updatedCount === 1 ? '' : 's'}.`, 'ok');
+      } else {
+        saveLocalAuthAndRecords();
+        toast(`Updated Father's Name for ${updatedCount} staff member${updatedCount === 1 ? '' : 's'}.`, 'ok');
+      }
+
+      if (FATHER_BACKFILL_STATE.open) renderFatherBackfillModalDom();
+      renderApp();
+      return { ok: true, count: updatedCount };
+    } finally {
+      FATHER_BACKFILL_STATE.busy = false;
+    }
+  }
+
+  function renderFatherBackfillTableOnly() {
+    const modal = $('fatherBackfillModal');
+    if (!modal || !FATHER_BACKFILL_STATE.open) return;
+    const sum = getFatherBackfillSummary({ companyFilter: FATHER_BACKFILL_STATE.companyFilter });
+    const rowsAll = sum.rows || [];
+    const tier = FATHER_BACKFILL_STATE.tierFilter || 'ALL';
+    const q = norm(FATHER_BACKFILL_STATE.search || '');
+    const filtered = rowsAll.filter(r => {
+      if (tier === 'RISK' && !r.renewalRisk && !r.isNumericFallback) return false;
+      if (tier === 'MATCHED' && !r.proposedFather) return false;
+      if (tier === 'MANUAL' && r.confidenceTier !== 'manual') return false;
+      if (q) {
+        const hay = norm(`${r.name} ${r.baseName} ${r.company} ${r.role} ${r.proposedFather} ${r.sourceLabel} ${r.snippet}`);
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    const kpiEl = $('fbKpiStrip');
+    if (kpiEl) {
+      kpiEl.innerHTML = `
+        <div class="fb-kpi-card"><small>Active Missing Father's Name</small><b data-no-i18n="1">${fmtNum(sum.totalMissing)}</b></div>
+        <div class="fb-kpi-card ${sum.renewalRiskCount > 0 ? 'is-crit' : ''}"><small>Homonym / (2) Renewal Risk</small><b data-no-i18n="1">${fmtNum(sum.renewalRiskCount)}</b></div>
+        <div class="fb-kpi-card is-ok"><small>Ready Suggestions (High / Medium)</small><b data-no-i18n="1">${fmtNum(sum.matchedCount)} (${fmtNum(sum.highCount)} / ${fmtNum(sum.mediumCount)})</b></div>
+        <div class="fb-kpi-card"><small>HR ID Cards Scanned</small><b data-no-i18n="1">${fmtNum(FATHER_BACKFILL_STATE.scannedCards.length)}</b></div>
+      `;
+    }
+
+    const syncFbSelectionUi = shownCountVal => {
+      const selCount = FATHER_BACKFILL_STATE.selectedIds.size;
+      const applyBtn = $('fbApplySelectedBtn');
+      const cntEl = $('fbApplyBtnCnt');
+      if (cntEl) cntEl.textContent = `(${selCount})`;
+      if (applyBtn) applyBtn.disabled = selCount === 0 || FATHER_BACKFILL_STATE.busy;
+      const shownEl = $('fbShownCntVal');
+      const selEl = $('fbSelCntVal');
+      if (shownEl && shownCountVal != null) shownEl.textContent = fmtNum(shownCountVal);
+      if (selEl) selEl.textContent = fmtNum(selCount);
+    };
+
+    const wrap = $('fbReviewTableWrap');
+    if (wrap) {
+      if (!filtered.length) {
+        wrap.innerHTML = `<div class="fb-empty-state"><span>No active staff rows match this filter.</span></div>`;
+      } else {
+        wrap.innerHTML = `
+          <table class="data-table fb-review-table" id="fbReviewTable">
+            <thead>
+              <tr>
+                <th style="width:36px"></th>
+                <th>Staff &amp; Role</th>
+                <th>Evidence Source</th>
+                <th>Confidence</th>
+                <th>Proposed Father's Name</th>
+                <th>Renewal Preview</th>
+                <th style="width:92px">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtered.map(r => {
+                const draftVal = Object.prototype.hasOwnProperty.call(FATHER_BACKFILL_STATE.draftEdits, r.staffId)
+                  ? FATHER_BACKFILL_STATE.draftEdits[r.staffId]
+                  : (r.proposedFather || '');
+                const checked = FATHER_BACKFILL_STATE.selectedIds.has(String(r.staffId));
+                const cleanedPreview = cleanFatherName(draftVal);
+                const renewalText = cleanedPreview
+                  ? `${r.baseName} (${cleanedPreview})`
+                  : (r.renewalPreview || `${r.baseName} (2)`);
+                const tierCls = r.confidenceTier === 'high' ? 'ok' : (r.confidenceTier === 'medium' ? 'warn' : '');
+                const idChips = [
+                  r.proposedFatherAr ? `<span dir="rtl" data-no-i18n="1">${esc(r.proposedFatherAr)}</span>` : '',
+                  r.proposedDob ? `<span data-no-i18n="1">${esc(r.proposedDob)}</span>` : '',
+                  r.proposedNat ? `<span data-no-i18n="1">${esc(r.proposedNat)}</span>` : ''
+                ].filter(Boolean).join('');
+                return `
+                  <tr data-fb-row="${esc(r.staffId)}">
+                    <td>
+                      <input type="checkbox" class="fb-row-check" data-fb-check="${esc(r.staffId)}" ${checked ? 'checked' : ''} aria-label="Select row">
+                    </td>
+                    <td>
+                      <div class="fb-staff-cell">
+                        <strong data-no-i18n="1">${esc(r.name)}</strong>
+                        <small data-no-i18n="1">${esc(r.company || '')}${r.role ? ` · ${esc(r.role)}` : ''}</small>
+                        <div class="fb-row-badges">
+                          ${r.renewalRisk ? '<span class="badge crit">Homonym Risk</span>' : ''}
+                          ${r.isNumericFallback ? '<span class="badge warn">(2) Fallback</span>' : ''}
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="fb-src-cell">
+                        <span class="fb-src-lbl">${esc(r.sourceLabel || 'Manual Entry')}</span>
+                        ${r.snippet ? `<small class="fb-src-snip" data-no-i18n="1">${esc(r.snippet)}</small>` : ''}
+                        ${idChips ? `<div class="fb-id-chips">${idChips}</div>` : ''}
+                      </div>
+                    </td>
+                    <td>
+                      <span class="badge ${tierCls}">${r.confidenceTier === 'high' ? 'High' : (r.confidenceTier === 'medium' ? 'Medium' : 'Manual')}</span>
+                      ${r.confidenceTier !== 'manual' && r.confidencePct ? `<span class="fb-conf-pct" data-no-i18n="1">${esc(r.confidencePct)}%</span>` : ''}
+                    </td>
+                    <td>
+                      <input type="text" class="fb-father-input" data-fb-father="${esc(r.staffId)}" value="${esc(draftVal)}" placeholder="Enter Father's Name..." autocomplete="off">
+                    </td>
+                    <td>
+                      <span class="fb-renewal-preview" data-no-i18n="1">${esc(renewalText)}</span>
+                    </td>
+                    <td>
+                      <button type="button" class="btn btn-sm btn-primary" data-fb-apply-one="${esc(r.staffId)}">Apply</button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `;
+      }
+      wrap.querySelectorAll('[data-fb-check]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const sid = cb.getAttribute('data-fb-check');
+          if (!sid) return;
+          if (cb.checked) FATHER_BACKFILL_STATE.selectedIds.add(sid);
+          else FATHER_BACKFILL_STATE.selectedIds.delete(sid);
+          syncFbSelectionUi(filtered.length);
+        });
+      });
+      wrap.querySelectorAll('[data-fb-father]').forEach(inp => {
+        inp.addEventListener('input', () => {
+          const sid = inp.getAttribute('data-fb-father');
+          if (!sid) return;
+          FATHER_BACKFILL_STATE.draftEdits[sid] = inp.value;
+          const tr = inp.closest('tr');
+          const pv = tr && tr.querySelector('.fb-renewal-preview');
+          const rowObj = rowsAll.find(x => String(x.staffId) === String(sid));
+          if (pv && rowObj) {
+            const c = cleanFatherName(inp.value);
+            pv.textContent = c ? `${rowObj.baseName} (${c})` : (rowObj.renewalPreview || `${rowObj.baseName} (2)`);
+          }
+          if (cleanFatherName(inp.value)) {
+            FATHER_BACKFILL_STATE.selectedIds.add(sid);
+            const cb = tr && tr.querySelector('[data-fb-check]');
+            if (cb) cb.checked = true;
+          }
+          syncFbSelectionUi(filtered.length);
+        });
+      });
+      wrap.querySelectorAll('[data-fb-apply-one]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const sid = btn.getAttribute('data-fb-apply-one');
+          if (sid) applyFatherNameBackfillSelection([sid]);
+        });
+      });
+    }
+
+    syncFbSelectionUi(filtered.length);
+    if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+      window.MFG_I18N.translateDom(modal);
+    }
+  }
+
+  function renderFatherBackfillModalDom() {
+    let modal = $('fatherBackfillModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'fatherBackfillModal';
+      modal.className = 'modal-backdrop';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      wireBackdropDismiss(modal, closeFatherNameBackfillModal);
+      document.body.appendChild(modal);
+    }
+    const opAllowed = allowedCompanyNames(activeUser());
+    const allSum = getFatherBackfillSummary({ companyFilter: 'ALL' });
+    const coFreq = new Map();
+    const bumpCo = (c, w) => {
+      const cc = canonCompany(c);
+      if (!cc) return;
+      coFreq.set(cc, (coFreq.get(cc) || 0) + w);
+    };
+    (allSum.rows || []).forEach(r => bumpCo(r.company, 3));
+    ((SEED.records && SEED.records.staff_members) || []).concat((STATE.customRecords && STATE.customRecords.staff_members) || []).forEach(r => {
+      if (r && !r.voided && r.company) bumpCo(r.company, 1);
+    });
+    const baseCos = opAllowed.length ? opAllowed : getCompanyCatalog().map(c => c.name);
+    const rankedCos = Array.from(new Set(baseCos.concat(Array.from(coFreq.keys())))).filter(c => !opAllowed.length || opAllowed.includes(c))
+      .sort((a, b) => (coFreq.get(b) || 0) - (coFreq.get(a) || 0));
+
+    modal.innerHTML = `
+      <div class="modal-card fb-modal-card">
+        <div class="modal-head">
+          <div>
+            <div class="modal-title">${ic('reg_staff')} Legacy Father's Name Backfill Review</div>
+            <div class="modal-sub">One-pass fuzzy review matching active staff against contract notes and HR ID cards before renewals turn (2) fallbacks into permanent names</div>
+          </div>
+          <button type="button" class="icon-btn" id="closeFatherBackfillModalBtn" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body fb-modal-body">
+          <div class="fb-kpi-strip" id="fbKpiStrip"></div>
+
+          <div class="fb-dropzone" id="fbDropZone">
+            <div class="fb-drop-copy">
+              <strong>Batch Scan HR ID / NSSF Cards</strong>
+              <span>Drop ID card photos or PDFs here, or capture with camera to auto-match Arabic &amp; Latin Father's Names against active staff</span>
+            </div>
+            <div class="fb-drop-actions">
+              <button type="button" class="btn btn-primary btn-sm" id="fbScanCamBtn">${ic('camera')} <span>Scan Card Camera</span></button>
+              <button type="button" class="btn btn-sm" id="fbUploadIdsBtn"><span>Upload HR IDs (Batch)</span></button>
+              <input type="file" id="fbUploadIdsInput" accept="image/*,.pdf,.svg" multiple hidden>
+              <button type="button" class="btn btn-ghost btn-sm" id="fbSampleIdBtn"><span>Sample ID Card</span></button>
+            </div>
+          </div>
+
+          <div class="fb-filter-bar">
+            <select id="fbCompanySelect" class="kiosk-select" data-native-select="1">
+              <option value="ALL" ${FATHER_BACKFILL_STATE.companyFilter === 'ALL' ? 'selected' : ''}>All Allowed BUs (${fmtNum(rankedCos.length)})</option>
+              ${rankedCos.map(c => `<option value="${esc(c)}" ${norm(FATHER_BACKFILL_STATE.companyFilter) === norm(c) ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+            </select>
+            <div class="fb-tier-pills">
+              ${[
+                ['ALL', 'All Active Missing'],
+                ['RISK', 'Homonym Risk'],
+                ['MATCHED', 'Matched'],
+                ['MANUAL', 'Manual']
+              ].map(([k, lbl]) => `<button type="button" class="sfe-chip ${FATHER_BACKFILL_STATE.tierFilter === k ? 'is-active' : ''}" data-fb-tier="${k}">${lbl}</button>`).join('')}
+            </div>
+            <input type="text" id="fbSearchInput" class="fb-search-input" value="${esc(FATHER_BACKFILL_STATE.search || '')}" placeholder="Search staff, role or suggested name..." autocomplete="off">
+            <div class="fb-bulk-btns">
+              <button type="button" class="btn btn-sm" id="fbSelectMatchedBtn">Select All Matched</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="fbClearSelBtn">Clear</button>
+            </div>
+          </div>
+
+          <div class="fb-table-wrap" id="fbReviewTableWrap"></div>
+        </div>
+        <div class="modal-foot fb-modal-foot">
+          <span class="muted" id="fbSelCountLabel"><span id="fbShownCntVal" data-no-i18n="1">0</span> <span>shown</span> · <span id="fbSelCntVal" data-no-i18n="1">0</span> <span>selected</span></span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn" id="cancelFatherBackfillBtn">Close</button>
+            <button type="button" class="btn btn-primary" id="fbApplySelectedBtn"><span>Apply Selected Backfill</span> <span id="fbApplyBtnCnt" data-no-i18n="1">(0)</span></button>
+          </div>
+        </div>
+      </div>
+    `;
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+
+    const ingestBatchIdFiles = async files => {
+      const list = Array.from(files || []).filter(Boolean);
+      if (!list.length) return;
+      if (!window.MFG_SMART_SCAN || typeof window.MFG_SMART_SCAN.scanIdentityCard !== 'function') {
+        toast('ID card scanner module is not loaded.', 'err');
+        return;
+      }
+      const dz = $('fbDropZone');
+      if (dz) dz.classList.add('is-scanning');
+      let added = 0;
+      try {
+        const opAllowedCos = allowedCompanyNames(activeUser());
+        const batchFixedCo = opAllowedCos.length === 1 ? opAllowedCos[0] : '';
+        for (const f of list) {
+          const res = await window.MFG_SMART_SCAN.scanIdentityCard(f, { company: batchFixedCo });
+          if (res && res.ok) {
+            FATHER_BACKFILL_STATE.scannedCards.push(Object.assign({}, res, {
+              company: batchFixedCo || '',
+              idNumber: res.idNumber || res.nssfNumber || '',
+              fileName: (res.attObj && res.attObj.name) || (f && f.name) || 'ID Card'
+            }));
+            added += 1;
+          }
+        }
+      } finally {
+        if (dz) dz.classList.remove('is-scanning');
+      }
+      if (added > 0) {
+        const nextSum = getFatherBackfillSummary({ companyFilter: FATHER_BACKFILL_STATE.companyFilter });
+        (nextSum.rows || []).forEach(r => {
+          if (r && r.proposedFather && (r.sourceType === 'hr_scan' || r.sourceType === 'nssf_card')) {
+            FATHER_BACKFILL_STATE.selectedIds.add(String(r.staffId));
+          }
+        });
+        toast(`Scanned ${added} HR ID card${added === 1 ? '' : 's'} and updated matches.`, 'ok');
+        renderFatherBackfillTableOnly();
+      } else {
+        toast('No readable ID fields found in selected file(s).', 'warn');
+      }
+    };
+
+    $('closeFatherBackfillModalBtn')?.addEventListener('click', closeFatherNameBackfillModal);
+    $('cancelFatherBackfillBtn')?.addEventListener('click', closeFatherNameBackfillModal);
+    $('fbCompanySelect')?.addEventListener('change', e => {
+      FATHER_BACKFILL_STATE.companyFilter = e.target.value || 'ALL';
+      renderFatherBackfillTableOnly();
+    });
+    modal.querySelectorAll('[data-fb-tier]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        FATHER_BACKFILL_STATE.tierFilter = btn.getAttribute('data-fb-tier') || 'ALL';
+        modal.querySelectorAll('[data-fb-tier]').forEach(b => b.classList.toggle('is-active', b === btn));
+        renderFatherBackfillTableOnly();
+      });
+    });
+    $('fbSearchInput')?.addEventListener('input', e => {
+      FATHER_BACKFILL_STATE.search = e.target.value || '';
+      renderFatherBackfillTableOnly();
+    });
+    $('fbSelectMatchedBtn')?.addEventListener('click', () => {
+      const s = getFatherBackfillSummary({ companyFilter: FATHER_BACKFILL_STATE.companyFilter });
+      (s.rows || []).forEach(r => {
+        if (r && r.proposedFather) FATHER_BACKFILL_STATE.selectedIds.add(String(r.staffId));
+      });
+      renderFatherBackfillTableOnly();
+    });
+    $('fbClearSelBtn')?.addEventListener('click', () => {
+      FATHER_BACKFILL_STATE.selectedIds.clear();
+      renderFatherBackfillTableOnly();
+    });
+    $('fbApplySelectedBtn')?.addEventListener('click', () => applyFatherNameBackfillSelection());
+
+    $('fbScanCamBtn')?.addEventListener('click', () => {
+      stopStaffEnrolModalCamera();
+      stopKioskAttCamera();
+      if (typeof openDocumentCameraCapture === 'function') {
+        openDocumentCameraCapture(files => {
+          if (files && files.length) ingestBatchIdFiles(files);
+        }, { preset: 'card' });
+      } else {
+        toast('Camera scanner is not available on this view.', 'err');
+      }
+    });
+    if ($('fbUploadIdsBtn') && $('fbUploadIdsInput')) {
+      $('fbUploadIdsBtn').addEventListener('click', () => $('fbUploadIdsInput')?.click());
+      $('fbUploadIdsInput').addEventListener('change', ev => {
+        const files = ev.target.files ? Array.from(ev.target.files) : [];
+        ev.target.value = '';
+        if (files.length) ingestBatchIdFiles(files);
+      });
+    }
+    $('fbSampleIdBtn')?.addEventListener('click', () => ingestBatchIdFiles(['lebanese_id']));
+
+    const dz = $('fbDropZone');
+    if (dz) {
+      dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('is-drag'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('is-drag'));
+      dz.addEventListener('drop', e => {
+        e.preventDefault();
+        dz.classList.remove('is-drag');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+          ingestBatchIdFiles(e.dataTransfer.files);
+        }
+      });
+    }
+
+    renderFatherBackfillTableOnly();
+  }
+
+  function openFatherNameBackfillModal() {
+    if (!canOpenFatherBackfill()) {
+      toast('Your seat cannot modify existing staff records.', 'warn');
+      return null;
+    }
+    const opAllowed = allowedCompanyNames(activeUser());
+    let defCo = 'ALL';
+    if (STATE.company && STATE.company !== 'ALL' && STATE.company !== DEMO_COMPANY_KEY) {
+      const cand = canonCompany(COMPANY_BU_MATCH[STATE.company] || STATE.company);
+      if (!opAllowed.length || opAllowed.includes(cand)) defCo = cand;
+    } else if (opAllowed.length === 1) {
+      defCo = opAllowed[0];
+    }
+    FATHER_BACKFILL_STATE.open = true;
+    FATHER_BACKFILL_STATE.companyFilter = defCo;
+    FATHER_BACKFILL_STATE.tierFilter = 'ALL';
+    FATHER_BACKFILL_STATE.search = '';
+    FATHER_BACKFILL_STATE.selectedIds.clear();
+    Object.keys(FATHER_BACKFILL_STATE.draftEdits).forEach(k => delete FATHER_BACKFILL_STATE.draftEdits[k]);
+    FATHER_BACKFILL_STATE.scannedCards = [];
+    const sum = getFatherBackfillSummary({ companyFilter: defCo });
+    (sum.rows || []).forEach(r => {
+      if (r && r.proposedFather && r.confidenceTier === 'high') {
+        FATHER_BACKFILL_STATE.selectedIds.add(String(r.staffId));
+      }
+    });
+    renderFatherBackfillModalDom();
+    return $('fatherBackfillModal');
+  }
+
   function getStaffInitialsMonogram(nameStr) {
     const parts = String(nameStr || '').trim().split(/\s+/).filter(Boolean);
     if (!parts.length) return 'ST';
@@ -135701,6 +136742,29 @@
     const cleanRole = String((spec && (spec.role || spec.roleTitle)) || '').trim() || rankedRoles[0] || 'General Labour';
     const roleCat = resolveRoleCategory(cleanRole, 'Site & Operations') || 'Site & Operations';
     const cleanPhone = String((spec && spec.phone) || '').trim();
+    const cleanFullAr = String((spec && (spec.fullNameArabic || spec.full_name_ar)) || '').trim();
+    const cleanFatherAr = String((spec && (spec.fatherNameArabic || spec.father_name_ar)) || '').trim();
+    const rawSpecDob = String((spec && spec.dob) || '').trim();
+    const cleanDob = /^\d{4}-\d{2}-\d{2}$/.test(rawSpecDob) ? rawSpecDob : '';
+    const cleanNat = String((spec && (spec.nationality || spec.nationalityLatin)) || '').trim();
+    const cleanNatAr = String((spec && (spec.nationalityArabic || spec.nationality_ar)) || '').trim();
+    const cleanRef = String((spec && spec.reference) || '').trim();
+    const cleanDocKind = String((spec && (spec.idDocKind || spec.id_doc_kind)) || '').trim();
+    const idAtt = (spec && spec.idAttachment && typeof spec.idAttachment === 'object' && spec.idAttachment.name)
+      ? Object.assign({}, spec.idAttachment)
+      : null;
+    const mergeIdAtt = target => {
+      if (!target || !idAtt) return;
+      const list = Array.isArray(target.attachments) ? target.attachments.slice() : [];
+      const exists = list.some(a => a && (
+        (idAtt.id && a.id === idAtt.id)
+        || (a.name === idAtt.name && a.size === idAtt.size)
+        || (idAtt.data && a.data === idAtt.data)
+      ));
+      if (!exists) list.push(Object.assign({}, idAtt));
+      target.attachments = list;
+      target.attachment_count = list.length;
+    };
     const today = todayISO();
     const nowIso = new Date().toISOString();
     const whoName = (operatorUser && operatorUser.full_name) || activeUser().full_name || 'Entry Operator';
@@ -135742,12 +136806,22 @@
       && !/^(ended|closed|terminated|inactive|cancelled)$/.test(String(r.status || 'Active').trim().toLowerCase());
     let smRec = STATE.customRecords.staff_members.find(r => isSmActive(r) && norm(r.name || r.staff) === targetKey && norm(r.company || '') === norm(canonicalCo))
       || SEED.records.staff_members.find(r => isSmActive(r) && norm(r.name || r.staff) === targetKey && norm(r.company || '') === norm(canonicalCo));
+    const createdNewSm = !smRec;
+    const preSmSnap = smRec ? _cloneSameNameSnapRow(smRec) : null;
     const cleanName = (smRec && (smRec.name || smRec.staff)) ? String(smRec.name || smRec.staff).trim() : rawName;
     if (smRec) {
       smRec.company = canonicalCo;
       smRec.status = smRec.status || 'Active';
       smRec.archived = false;
       if (cleanFather) smRec.father_name = cleanFather;
+      if (cleanFullAr) smRec.full_name_ar = cleanFullAr;
+      if (cleanFatherAr) smRec.father_name_ar = cleanFatherAr;
+      if (cleanDob) smRec.dob = cleanDob;
+      if (cleanNat) smRec.nationality = cleanNat;
+      if (cleanNatAr) smRec.nationality_ar = cleanNatAr;
+      if (cleanRef) smRec.reference = cleanRef;
+      if (cleanDocKind) smRec.id_doc_kind = cleanDocKind;
+      if (idAtt) mergeIdAtt(smRec);
       smRec.role = cleanRole || smRec.role || 'General Labour';
       smRec.role_category = roleCat;
       smRec.worker_category = roleCat;
@@ -135757,12 +136831,20 @@
       const cIdx = STATE.customRecords.staff_members.findIndex(r => r && r.id === smRec.id);
       if (cIdx >= 0) Object.assign(STATE.customRecords.staff_members[cIdx], smRec);
       else STATE.customRecords.staff_members.unshift(Object.assign({}, smRec));
+      const sIdx = SEED.records.staff_members.findIndex(r => r && r.id === smRec.id);
+      if (sIdx >= 0) Object.assign(SEED.records.staff_members[sIdx], smRec);
     } else {
       smRec = {
         id: uid('stf'),
         name: cleanName,
         staff: cleanName,
+        full_name_ar: cleanFullAr,
         father_name: cleanFather,
+        father_name_ar: cleanFatherAr,
+        dob: cleanDob,
+        nationality: cleanNat,
+        nationality_ar: cleanNatAr,
+        id_doc_kind: cleanDocKind,
         company: canonicalCo,
         status: 'Active',
         archived: false,
@@ -135774,7 +136856,9 @@
         phone: cleanPhone,
         default_equipment: '',
         assign_start: today,
-        reference: '',
+        reference: cleanRef,
+        attachments: idAtt ? [Object.assign({}, idAtt)] : [],
+        attachment_count: idAtt ? 1 : 0,
         notes: `Enrolled by ${whoName} (${canonicalCo})`,
         source: 'app',
         is_app: true,
@@ -135789,7 +136873,11 @@
 
     // 2. Ensure active staff_assignments row in canonicalCo
     const hasSa = SEED.records.staff_assignments.concat(STATE.customRecords.staff_assignments).some(sa =>
-      sa && !sa.voided && norm(sa.staff) === targetKey && norm(sa.company || canonicalCo) === norm(canonicalCo)
+      sa && !sa.voided && !sa.archived
+      && !/^(ended|closed|terminated|inactive|cancelled)$/i.test(String(sa.status || 'Current').trim())
+      && (!sa.end_date || String(sa.end_date).slice(0, 10) >= today)
+      && norm(sa.staff) === targetKey
+      && norm(sa.company || canonicalCo) === norm(canonicalCo)
     );
     const stSlug = String(cleanName || 'STAFF').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 14) || 'STAFF';
     let createdSaRec = null;
@@ -135829,6 +136917,7 @@
     );
     let empToPost = null;
     let createdNewEmp = false;
+    const preEmpSnap = empRec ? _cloneSameNameSnapRow(empRec) : null;
     if (!empRec) {
       const empSeq = String((allEmps.filter(e => e && norm(e.staff) === targetKey).length) + 1).padStart(3, '0');
       empRec = {
@@ -135838,7 +136927,14 @@
         date: today,
         rep_date: today,
         staff: cleanName,
+        full_name_ar: cleanFullAr,
         father_name: cleanFather,
+        father_name_ar: cleanFatherAr,
+        dob: cleanDob,
+        nationality: cleanNat,
+        nationality_ar: cleanNatAr,
+        id_doc_kind: cleanDocKind,
+        reference: cleanRef,
         role: cleanRole,
         role_category: roleCat,
         pay_type: 'Monthly',
@@ -135878,13 +136974,32 @@
       SEED.records.employments.unshift(Object.assign({}, empRec));
       createdNewEmp = true;
       empToPost = empRec;
-    } else if (cleanFather && !empRec.father_name) {
-      empRec.father_name = cleanFather;
-      const eCustomIdx = STATE.customRecords.employments.findIndex(e => e && e.id === empRec.id);
-      if (eCustomIdx >= 0) STATE.customRecords.employments[eCustomIdx].father_name = cleanFather;
-      const eSeedIdx = SEED.records.employments.findIndex(e => e && e.id === empRec.id);
-      if (eSeedIdx >= 0) SEED.records.employments[eSeedIdx].father_name = cleanFather;
-      empToPost = empRec;
+    } else {
+      let empChanged = false;
+      const fillBlank = (k, v) => {
+        if (v && !String(empRec[k] || '').trim()) {
+          empRec[k] = v;
+          empChanged = true;
+        }
+      };
+      fillBlank('father_name', cleanFather);
+      fillBlank('full_name_ar', cleanFullAr);
+      fillBlank('father_name_ar', cleanFatherAr);
+      fillBlank('dob', cleanDob);
+      fillBlank('nationality', cleanNat);
+      fillBlank('nationality_ar', cleanNatAr);
+      fillBlank('reference', cleanRef);
+      fillBlank('id_doc_kind', cleanDocKind);
+      if (empChanged) {
+        empRec.modified_by = whoEmail;
+        empRec.modified_at = nowIso;
+        const eCustomIdx = STATE.customRecords.employments.findIndex(e => e && e.id === empRec.id);
+        if (eCustomIdx >= 0) Object.assign(STATE.customRecords.employments[eCustomIdx], empRec);
+        else STATE.customRecords.employments.unshift(Object.assign({}, empRec));
+        const eSeedIdx = SEED.records.employments.findIndex(e => e && e.id === empRec.id);
+        if (eSeedIdx >= 0) Object.assign(SEED.records.employments[eSeedIdx], empRec);
+        empToPost = empRec;
+      }
     }
 
     if (empRec && empRec.id) {
@@ -135905,14 +137020,16 @@
     invalidateAllSeedCaches();
     ensureStaffMembersSeeded();
     saveLocalAuthAndRecords();
-    const rollbackEnrolRegistration = (tblName, conflictId, errObj) => {
+    const rollbackEnrolRegistration = (tblName, conflictId, errObj, opts = {}) => {
       try { if (typeof stopStaffEnrolModalCamera === 'function') stopStaffEnrolModalCamera(); } catch (_) {}
       const qTbl = (errObj && errObj.table) || tblName;
       const qId = (errObj && (errObj.conflictId || errObj.id)) || conflictId;
       const canonQTbl = qTbl === 'staff' ? 'staff_members' : qTbl;
       if (enrolRegSnap && enrolRegSnap.tables) restoreStaffSameNameSnapshot(enrolRegSnap.tables);
-      if (!enrolRegSnap || !enrolRegSnap.preIds || !enrolRegSnap.preIds.has(`${canonQTbl}:${String(qId || '')}`)) {
-        quarantineSameNameRejectedRecord(qTbl, qId, errObj, null);
+      if (opts && opts.quarantine) {
+        if (!enrolRegSnap || !enrolRegSnap.preIds || !enrolRegSnap.preIds.has(`${canonQTbl}:${String(qId || '')}`)) {
+          quarantineSameNameRejectedRecord(qTbl, qId, errObj, null);
+        }
       }
       if (enrolRegSnap && enrolRegSnap.modal && STAFF_FACE_MODAL_STATE) {
         STAFF_FACE_MODAL_STATE.selectedStaff = enrolRegSnap.modal.selectedStaff;
@@ -135921,7 +137038,7 @@
         STAFF_FACE_MODAL_STATE.rosterCo = enrolRegSnap.modal.rosterCo;
         STAFF_FACE_MODAL_STATE.newStaffOpen = enrolRegSnap.modal.newStaffOpen;
       }
-      const errMsg = (errObj && errObj.error) || 'Duplicate active staff name blocked by server.';
+      const errMsg = (opts && opts.message) || (errObj && errObj.error) || 'Duplicate active staff name blocked by server.';
       if (STAFF_FACE_MODAL_STATE && STAFF_FACE_MODAL_STATE.open) {
         STAFF_FACE_MODAL_STATE.statusText = errMsg;
         STAFF_FACE_MODAL_STATE.statusCls = 'err';
@@ -135932,30 +137049,115 @@
     };
     const persistPromise = (async () => {
       let postedNewEmp = false;
-      if (empToPost) {
-        const rEmp = await postRecordToLocalApi('employments', empToPost, { deferRender: Boolean(enrolRegSnap) });
-        if (rEmp && rEmp.blockedSameName) {
-          rollbackEnrolRegistration(rEmp.table || 'employments', rEmp.id || empToPost.id, rEmp.err);
-          return { ok: false, blockedSameName: true, err: rEmp.err };
+      let postedUpdatedEmp = false;
+      let postedSm = false;
+      const revertServerRow = async (tbl, snap) => {
+        if (!snap || !snap.id) return true;
+        let rbRes = await postRecordToLocalApi(tbl, snap, { deferRender: true });
+        if (rbRes && rbRes.blockedSameName) {
+          rbRes = await postRecordToLocalApi(tbl, Object.assign({}, snap, { same_person_confirmed: true }), { deferRender: true });
         }
-        postedNewEmp = Boolean(createdNewEmp && (!rEmp || rEmp.ok));
-      }
-      const rSm = await postRecordToLocalApi('staff_members', smRec, { deferRender: Boolean(enrolRegSnap) });
-      if (rSm && rSm.blockedSameName) {
+        return Boolean(rbRes && rbRes.ok);
+      };
+      const compensatePosted = async () => {
+        const voidIso = new Date().toISOString();
+        const rollbackFailures = [];
         if (postedNewEmp && empToPost) {
-          await postRecordToLocalApi('employments', Object.assign({}, empToPost, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
+          const rbEmp = await postRecordToLocalApi('employments', Object.assign({}, empToPost, { voided: true, voided_at: voidIso }), { deferRender: true });
+          if (!rbEmp || !rbEmp.ok) rollbackFailures.push('employments');
+        } else if (postedUpdatedEmp && preEmpSnap) {
+          const okEmp = await revertServerRow('employments', preEmpSnap);
+          if (!okEmp) rollbackFailures.push('employments');
         }
-        rollbackEnrolRegistration(rSm.table || 'staff_members', rSm.id || smRec.id, rSm.err);
-        return { ok: false, blockedSameName: true, err: rSm.err };
-      }
-      if (createdSaRec) {
-        const rSa = await postRecordToLocalApi('staff_assignments', createdSaRec, { deferRender: Boolean(enrolRegSnap) });
-        if (rSa && rSa.blockedSameName) {
-          if (postedNewEmp && empToPost) {
-            await postRecordToLocalApi('employments', Object.assign({}, empToPost, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
+        if (postedSm && smRec && smRec.id) {
+          if (createdNewSm) {
+            const rbSm = await postRecordToLocalApi('staff_members', Object.assign({}, smRec, { voided: true, voided_at: voidIso }), { deferRender: true });
+            if (!rbSm || !rbSm.ok) rollbackFailures.push('staff_members');
+          } else if (preSmSnap) {
+            const okSm = await revertServerRow('staff_members', preSmSnap);
+            if (!okSm) rollbackFailures.push('staff_members');
           }
-          rollbackEnrolRegistration(rSa.table || 'staff_assignments', rSa.id || createdSaRec.id, rSa.err);
-          return { ok: false, blockedSameName: true, err: rSa.err };
+        }
+        return rollbackFailures;
+      };
+      if (empToPost) {
+        const rEmp = await postRecordToLocalApi('employments', empToPost, { deferRender: true });
+        if (!rEmp || !rEmp.ok) {
+          const blocked = Boolean(rEmp && rEmp.blockedSameName);
+          rollbackEnrolRegistration(
+            (rEmp && rEmp.table) || 'employments',
+            (rEmp && rEmp.id) || empToPost.id,
+            rEmp && rEmp.err,
+            {
+              quarantine: blocked,
+              message: (rEmp && (rEmp.error || (rEmp.err && rEmp.err.error))) || 'Could not save employment contract to server.'
+            }
+          );
+          return {
+            ok: false,
+            blockedSameName: blocked,
+            status: Number((rEmp && rEmp.status) || 0),
+            networkError: Boolean(rEmp && rEmp.networkError),
+            err: rEmp && rEmp.err,
+            error: (rEmp && rEmp.error) || ''
+          };
+        }
+        postedNewEmp = Boolean(createdNewEmp && rEmp.ok);
+        postedUpdatedEmp = Boolean(!createdNewEmp && rEmp.ok);
+      }
+      const rSm = await postRecordToLocalApi('staff_members', smRec, { deferRender: true });
+      if (!rSm || !rSm.ok) {
+        const rbFails = await compensatePosted();
+        const blocked = Boolean(rSm && rSm.blockedSameName);
+        const baseMsg = (rSm && (rSm.error || (rSm.err && rSm.err.error))) || 'Could not save staff profile to server.';
+        const msg = rbFails.length ? `${baseMsg} Warning: server rollback was incomplete; refresh before retrying.` : baseMsg;
+        rollbackEnrolRegistration(
+          (rSm && rSm.table) || 'staff_members',
+          (rSm && rSm.id) || smRec.id,
+          rSm && rSm.err,
+          {
+            quarantine: blocked,
+            message: msg
+          }
+        );
+        return {
+          ok: false,
+          blockedSameName: blocked,
+          status: Number((rSm && rSm.status) || 0),
+          networkError: Boolean(rSm && rSm.networkError),
+          rollbackFailed: rbFails.length > 0,
+          rollbackFailures: rbFails,
+          err: rSm && rSm.err,
+          error: msg
+        };
+      }
+      postedSm = true;
+      if (createdSaRec) {
+        const rSa = await postRecordToLocalApi('staff_assignments', createdSaRec, { deferRender: true });
+        if (!rSa || !rSa.ok) {
+          const rbFails = await compensatePosted();
+          const blocked = Boolean(rSa && rSa.blockedSameName);
+          const baseMsg = (rSa && (rSa.error || (rSa.err && rSa.err.error))) || 'Could not save staff assignment to server.';
+          const msg = rbFails.length ? `${baseMsg} Warning: server rollback was incomplete; refresh before retrying.` : baseMsg;
+          rollbackEnrolRegistration(
+            (rSa && rSa.table) || 'staff_assignments',
+            (rSa && rSa.id) || createdSaRec.id,
+            rSa && rSa.err,
+            {
+              quarantine: blocked,
+              message: msg
+            }
+          );
+          return {
+            ok: false,
+            blockedSameName: blocked,
+            status: Number((rSa && rSa.status) || 0),
+            networkError: Boolean(rSa && rSa.networkError),
+            rollbackFailed: rbFails.length > 0,
+            rollbackFailures: rbFails,
+            err: rSa && rSa.err,
+            error: msg
+          };
         }
       }
       syncWithCloud(true);
@@ -136732,6 +137934,27 @@
     STAFF_FACE_MODAL_STATE.lastSnap = '';
     STAFF_FACE_MODAL_STATE.statusText = '';
     STAFF_FACE_MODAL_STATE.statusCls = '';
+    STAFF_FACE_MODAL_STATE.pendingIdAtt = null;
+
+    const sfeNatFreq = new Map();
+    const bumpSfeNat = (n, w = 1) => {
+      const s = String(n || '').trim();
+      if (!s) return;
+      const k = norm(s);
+      const prev = sfeNatFreq.get(k);
+      if (prev) prev.count += w;
+      else sfeNatFreq.set(k, { name: s, count: w });
+    };
+    ((SEED.records && SEED.records.staff_members) || []).concat((STATE.customRecords && STATE.customRecords.staff_members) || []).forEach(r => {
+      if (r && !r.voided && r.nationality) bumpSfeNat(r.nationality, 2);
+    });
+    ((SEED.records && SEED.records.employments) || []).concat((STATE.customRecords && STATE.customRecords.employments) || []).forEach(r => {
+      if (r && !r.voided && r.nationality) bumpSfeNat(r.nationality, 1);
+    });
+    ['Lebanese', 'Syrian', 'Palestinian', 'Egyptian', 'Bangladeshi', 'Ethiopian', 'Indian', 'Sudanese', 'Filipino', 'Jordanian', 'Iraqi'].forEach((n, idx) => {
+      bumpSfeNat(n, Math.max(0.1, 0.9 - idx * 0.05));
+    });
+    const sfeNatList = Array.from(sfeNatFreq.values()).sort((a, b) => b.count - a.count).map(x => x.name);
 
     let modal = $('staffFaceEnrolModal');
     if (!modal) {
@@ -136779,8 +138002,15 @@
               <div class="sfe-new-staff-drawer" id="sfeNewStaffDrawer" hidden>
                 <div class="sfe-ns-head">
                   <strong>Register &amp; Enrol New Staff Member</strong>
-                  <span>Restricted to your assigned Business Unit (${esc(opAllowedCos.join(', '))}) · Creates active roster profile &amp; opens 3-Pose Face ID capture</span>
+                  <span><span>Restricted to your assigned Business Unit</span> (<span data-no-i18n="1">${esc(opAllowedCos.join(', '))}</span>) · <span>Creates active roster profile &amp; opens 3-Pose Face ID capture</span></span>
                 </div>
+                <div class="sfe-id-scan-bar" id="sfeIdScanBar">
+                  <button type="button" class="btn btn-primary btn-sm" id="sfeScanIdCamBtn">${ic('camera')} <span>Scan ID / NSSF Card</span></button>
+                  <button type="button" class="btn btn-sm" id="sfeScanIdFileBtn"><span>Upload ID Photo</span></button>
+                  <input type="file" id="sfeScanIdFileInput" accept="image/*,.pdf,.svg" hidden>
+                  <button type="button" class="btn btn-ghost btn-sm" id="sfeScanIdSampleBtn"><span>Sample ID</span></button>
+                </div>
+                <div class="sfe-id-scan-strip" id="sfeIdScanStrip" hidden></div>
                 <div class="sfe-ns-grid">
                   <label class="sfe-ns-field">
                     <span>Full Name *</span>
@@ -136805,7 +138035,24 @@
                     <span>Phone (Optional)</span>
                     <input type="tel" id="sfeNewStaffPhone" class="sfe-search-input" placeholder="e.g. 03 123 456" autocomplete="off">
                   </label>
+                  <label class="sfe-ns-field">
+                    <span>Date of Birth (Optional)</span>
+                    <input type="date" id="sfeNewStaffDob" class="sfe-search-input">
+                  </label>
+                  <label class="sfe-ns-field">
+                    <span>Nationality (Optional)</span>
+                    <input type="text" id="sfeNewStaffNat" class="sfe-search-input" list="dl_sfe_nat" placeholder="e.g. Lebanese" autocomplete="off">
+                    <datalist id="dl_sfe_nat">${sfeNatList.map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
+                  </label>
+                  <label class="sfe-ns-field">
+                    <span>Civil ID / NSSF # (Optional)</span>
+                    <input type="text" id="sfeNewStaffRef" class="sfe-search-input" placeholder="ID or NSSF #" autocomplete="off">
+                  </label>
                 </div>
+                <input type="hidden" id="sfeNewStaffNameAr" value="">
+                <input type="hidden" id="sfeNewStaffFatherAr" value="">
+                <input type="hidden" id="sfeNewStaffNatAr" value="">
+                <input type="hidden" id="sfeNewStaffDocKind" value="">
                 <div class="sfe-ns-err" id="sfeNewStaffErr" hidden></div>
                 <div class="sfe-ns-actions">
                   <button type="button" class="btn" id="sfeNewStaffCancelBtn">Cancel</button>
@@ -136922,15 +138169,218 @@
         if (nmInp) setTimeout(() => { try { nmInp.focus({ preventScroll: true }); } catch (_) {} }, 25);
       }
     });
-    $('sfeNewStaffCancelBtn')?.addEventListener('click', () => {
-      STAFF_FACE_MODAL_STATE.newStaffOpen = false;
+    const clearSfeNewStaffFields = () => {
+      ['sfeNewStaffName', 'sfeNewStaffFather', 'sfeNewStaffPhone', 'sfeNewStaffDob', 'sfeNewStaffNat', 'sfeNewStaffRef',
+        'sfeNewStaffNameAr', 'sfeNewStaffFatherAr', 'sfeNewStaffNatAr', 'sfeNewStaffDocKind'].forEach(id => {
+        const el = $(id);
+        if (el) el.value = '';
+      });
+      STAFF_FACE_MODAL_STATE.pendingIdAtt = null;
+      const strip = $('sfeIdScanStrip');
+      if (strip) { strip.innerHTML = ''; strip.hidden = true; }
       const errEl = $('sfeNewStaffErr');
       if (errEl) { errEl.hidden = true; errEl.classList.remove('is-same-name'); errEl.textContent = ''; }
+    };
+
+    const renderSfeSameNameError = info => {
+      const errEl = $('sfeNewStaffErr');
+      if (!errEl || !info || !info.existing) return;
+      const nmInp = $('sfeNewStaffName');
       const fatherInp = $('sfeNewStaffFather');
-      if (fatherInp) fatherInp.value = '';
+      const suggestion = info.suggestion || suggestDistinctStaffName((nmInp && nmInp.value) || info.existing, fatherInp ? fatherInp.value : '');
+      errEl.hidden = false;
+      errEl.classList.add('is-same-name');
+      errEl.innerHTML = `
+        <div class="sfe-ns-same-line"><span>Already active in this company:</span> <b data-no-i18n="1">${esc(info.existing)}</b> <span class="sfe-ns-same-meta" data-no-i18n="1">${esc(info.company || '')}${info.role ? ` · ${esc(info.role)}` : ''}${info.since ? ` · ${esc(fmtDateDMY(info.since))}` : ''}</span></div>
+        <div class="sfe-ns-same-line"><span>If this is a different person, add something to the name (such as the father's name) so the two never share shift rules, payroll, punches or Face ID.</span></div>
+        <div class="sfe-ns-same-actions">
+          <button type="button" class="btn" id="sfeSameNameOpenBtn" data-staff="${esc(info.existing)}">${ic('user')} <span>Open Existing Person</span></button>
+          <button type="button" class="btn btn-primary" id="sfeSameNameSuggestBtn" data-name="${esc(suggestion)}"><span>Use Suggested Name</span> <b data-no-i18n="1">${esc(suggestion)}</b></button>
+        </div>`;
+      if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(errEl);
+      $('sfeSameNameOpenBtn')?.addEventListener('click', ev => {
+        const who = ev.currentTarget.getAttribute('data-staff') || '';
+        const targetCo = info.company || '';
+        clearSfeNewStaffFields();
+        STAFF_FACE_MODAL_STATE.newStaffOpen = false;
+        STAFF_FACE_MODAL_STATE.rosterSearch = '';
+        if (STAFF_FACE_MODAL_STATE.rosterCo && targetCo && norm(STAFF_FACE_MODAL_STATE.rosterCo) !== norm(targetCo)) {
+          STAFF_FACE_MODAL_STATE.rosterCo = targetCo;
+        }
+        selectStaffForEnrolModal(who, { autoStartCam: false });
+        syncStaffFaceEnrolModalDom();
+      });
+      $('sfeSameNameSuggestBtn')?.addEventListener('click', ev => {
+        const sug = ev.currentTarget.getAttribute('data-name') || '';
+        if (nmInp && sug) {
+          nmInp.value = sug;
+          try { nmInp.focus({ preventScroll: true }); nmInp.setSelectionRange(sug.length, sug.length); } catch (_) {}
+        }
+        errEl.hidden = true;
+        errEl.classList.remove('is-same-name');
+        errEl.innerHTML = '';
+      });
+    };
+
+    const checkSfeLiveSameNameConflict = () => {
+      const errEl = $('sfeNewStaffErr');
+      const nm = String(($('sfeNewStaffName') && $('sfeNewStaffName').value) || '').trim();
+      const father = String(($('sfeNewStaffFather') && $('sfeNewStaffFather').value) || '').trim();
+      const co = String(($('sfeNewStaffCo') && $('sfeNewStaffCo').value) || opAllowedCos[0] || defaultEntryCompany() || 'WTC').trim();
+      if (nm.length < 2) {
+        if (errEl && errEl.classList.contains('is-same-name')) {
+          errEl.hidden = true;
+          errEl.classList.remove('is-same-name');
+          errEl.innerHTML = '';
+        }
+        return false;
+      }
+      ensureStaffMembersSeeded();
+      let hit = findActiveSameNameInCompany(nm, co);
+      if (!hit) {
+        try {
+          const dirHit = getKioskStaffDirectory({ companyOverride: co, strictCompanyScope: true, activeOnly: true, operatorUser: STAFF_FACE_MODAL_STATE.operatorUser })
+            .find(s => s && !s.isEndedContract && staffNameKey(s.name) === staffNameKey(nm) && staffNameKey(s.company) === staffNameKey(co));
+          if (dirHit) hit = { staff: String(dirHit.name || nm).trim(), company: dirHit.company || co, role: dirHit.role || '', since: '' };
+        } catch (_) {}
+      }
+      if (hit) {
+        renderSfeSameNameError({
+          existing: hit.staff || hit.name || nm,
+          company: hit.company || co,
+          role: hit.role || '',
+          since: hit.since || '',
+          suggestion: suggestDistinctStaffName(nm, father)
+        });
+        return true;
+      }
+      if (errEl && errEl.classList.contains('is-same-name')) {
+        errEl.hidden = true;
+        errEl.classList.remove('is-same-name');
+        errEl.innerHTML = '';
+      }
+      return false;
+    };
+
+    const renderSfeIdScanStrip = (res, pendingLabel) => {
+      const strip = $('sfeIdScanStrip');
+      if (!strip) return;
+      if (pendingLabel) {
+        strip.hidden = false;
+        strip.innerHTML = `<div class="staff-id-scan-loading"><span>Scanning ID card</span> <span data-no-i18n="1">(${esc(pendingLabel)})...</span></div>`;
+        if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(strip);
+        return;
+      }
+      if (!res || !res.ok) {
+        strip.innerHTML = '';
+        strip.hidden = true;
+        return;
+      }
+      const pairs = [
+        res.fullNameLatin ? `<span><b>Name:</b> <span data-no-i18n="1">${esc(res.fullNameLatin)}</span></span>` : '',
+        res.fullNameArabic ? `<span dir="rtl" data-no-i18n="1"><b>الاسم:</b> ${esc(res.fullNameArabic)}</span>` : '',
+        res.fatherNameLatin ? `<span><b>Father:</b> <span data-no-i18n="1">${esc(res.fatherNameLatin)}</span></span>` : '',
+        res.fatherNameArabic ? `<span dir="rtl" data-no-i18n="1"><b>الأب:</b> ${esc(res.fatherNameArabic)}</span>` : '',
+        res.dob ? `<span><b>DOB:</b> <span data-no-i18n="1">${esc(res.dob)}</span></span>` : '',
+        res.nationalityLatin ? `<span><b>Nationality:</b> <span data-no-i18n="1">${esc(res.nationalityLatin)}</span></span>` : '',
+        (res.nssfNumber || res.idNumber) ? `<span><b>ID / NSSF:</b> <span data-no-i18n="1">${esc(res.idNumber || res.nssfNumber)}</span></span>` : ''
+      ].filter(Boolean).join('');
+      strip.hidden = false;
+      strip.innerHTML = `
+        <div class="staff-id-scan-strip-inner">
+          ${res.previewDataUrl ? `<img class="staff-id-scan-thumb" src="${esc(res.previewDataUrl)}" alt="ID Card">` : ''}
+          <div class="staff-id-scan-meta">
+            <div class="staff-id-scan-badges">
+              <span class="staff-id-scan-badge">${esc(formatIdDocKindBadgeLabel(res.docKind))}</span>
+              <span class="staff-id-scan-engine" data-no-i18n="1">${esc(res.engineLabel || 'ID Scan')}</span>
+            </div>
+            <div class="staff-id-scan-fields">${pairs || '<span>No structured fields detected.</span>'}</div>
+          </div>
+          <button type="button" class="btn btn-sm staff-id-scan-clear" id="sfeIdScanClearBtn">Dismiss</button>
+        </div>
+      `;
+      if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(strip);
+      $('sfeIdScanClearBtn')?.addEventListener('click', () => {
+        strip.innerHTML = '';
+        strip.hidden = true;
+      });
+    };
+
+    const applySfeIdScan = async (fileOrSpec, methodLabel) => {
+      if (!window.MFG_SMART_SCAN || typeof window.MFG_SMART_SCAN.scanIdentityCard !== 'function') {
+        toast('ID card scanner module is not loaded.', 'err');
+        return;
+      }
+      const camBtn = $('sfeScanIdCamBtn');
+      const fileBtn = $('sfeScanIdFileBtn');
+      const smpBtn = $('sfeScanIdSampleBtn');
+      const setBusy = b => { [camBtn, fileBtn, smpBtn].forEach(el => { if (el) el.disabled = !!b; }); };
+      setBusy(true);
+      renderSfeIdScanStrip(null, methodLabel || 'ID Card');
+      try {
+        const co = ($('sfeNewStaffCo') && $('sfeNewStaffCo').value) || '';
+        const res = await window.MFG_SMART_SCAN.scanIdentityCard(fileOrSpec, { company: co });
+        if (!STAFF_FACE_MODAL_STATE.open || !$('staffFaceEnrolModal')) return;
+        if (!res || !res.ok) {
+          renderSfeIdScanStrip(null, '');
+          toast((res && (res.error || res.message)) || 'Could not extract ID card fields.', 'err');
+          return;
+        }
+        const setScanField = (id, v) => {
+          const el = $(id);
+          if (el) el.value = (v != null && String(v).trim()) ? String(v).trim() : '';
+        };
+        setScanField('sfeNewStaffName', res.fullNameLatin || res.fullNameArabic);
+        setScanField('sfeNewStaffNameAr', res.fullNameArabic);
+        setScanField('sfeNewStaffFather', res.fatherNameLatin);
+        setScanField('sfeNewStaffFatherAr', res.fatherNameArabic);
+        const validDob = /^\d{4}-\d{2}-\d{2}$/.test(String(res.dob || '').trim()) ? String(res.dob).trim() : '';
+        setScanField('sfeNewStaffDob', validDob);
+        setScanField('sfeNewStaffNat', res.nationalityLatin);
+        setScanField('sfeNewStaffNatAr', res.nationalityArabic);
+        setScanField('sfeNewStaffDocKind', res.docKind);
+        const idRef = (res.nssfNumber && !res.idNumber) ? res.nssfNumber : (res.idNumber || res.nssfNumber || '');
+        setScanField('sfeNewStaffRef', idRef);
+        STAFF_FACE_MODAL_STATE.pendingIdAtt = (res.attObj && res.attObj.name) ? Object.assign({}, res.attObj, { from_id_scan: true }) : null;
+        renderSfeIdScanStrip(res, '');
+        checkSfeLiveSameNameConflict();
+        toast(`Extracted ${res.docKind || 'ID Card'} fields (${res.engineLabel || methodLabel || 'ID Scan'}).`, 'ok');
+      } catch (err) {
+        renderSfeIdScanStrip(null, '');
+        toast(`ID card scan failed: ${err && err.message ? err.message : 'Unknown error'}`, 'err');
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    $('sfeScanIdCamBtn')?.addEventListener('click', () => {
+      stopStaffEnrolModalCamera();
+      stopKioskAttCamera();
+      if (typeof openDocumentCameraCapture === 'function') {
+        openDocumentCameraCapture(files => {
+          if (files && files[0]) applySfeIdScan(files[0], 'Camera ID Scan');
+        }, { preset: 'card' });
+      } else {
+        toast('Camera scanner is not available on this view.', 'err');
+      }
+    });
+    if ($('sfeScanIdFileBtn') && $('sfeScanIdFileInput')) {
+      $('sfeScanIdFileBtn').addEventListener('click', () => $('sfeScanIdFileInput')?.click());
+      $('sfeScanIdFileInput').addEventListener('change', ev => {
+        const f = ev.target.files && ev.target.files[0];
+        ev.target.value = '';
+        if (f) applySfeIdScan(f, 'ID File Upload');
+      });
+    }
+    $('sfeScanIdSampleBtn')?.addEventListener('click', () => applySfeIdScan('lebanese_id', 'Sample ID Card'));
+
+    $('sfeNewStaffCancelBtn')?.addEventListener('click', () => {
+      STAFF_FACE_MODAL_STATE.newStaffOpen = false;
+      clearSfeNewStaffFields();
       syncStaffFaceEnrolModalDom();
     });
     $('sfeNewStaffCo')?.addEventListener('change', () => {
+      checkSfeLiveSameNameConflict();
       syncStaffFaceEnrolModalDom();
     });
     const commitNewStaffFromStudio = async () => {
@@ -136939,12 +138389,27 @@
       const coSel = $('sfeNewStaffCo');
       const roleInp = $('sfeNewStaffRole');
       const phInp = $('sfeNewStaffPhone');
+      const dobInp = $('sfeNewStaffDob');
+      const natInp = $('sfeNewStaffNat');
+      const refInp = $('sfeNewStaffRef');
+      const nmArInp = $('sfeNewStaffNameAr');
+      const fatherArInp = $('sfeNewStaffFatherAr');
+      const natArInp = $('sfeNewStaffNatAr');
+      const docKindInp = $('sfeNewStaffDocKind');
       const errEl = $('sfeNewStaffErr');
       const saveBtn = $('sfeNewStaffSaveBtn');
       const waitPersist = hasServerApi() && !isDemoScopeActive();
       const res = registerNewStaffFromEnrolStudio({
         name: nmInp ? nmInp.value : '',
         fatherName: fatherInp ? fatherInp.value : '',
+        fullNameArabic: nmArInp ? nmArInp.value : '',
+        fatherNameArabic: fatherArInp ? fatherArInp.value : '',
+        dob: dobInp ? dobInp.value : '',
+        nationality: natInp ? natInp.value : '',
+        nationalityArabic: natArInp ? natArInp.value : '',
+        reference: refInp ? refInp.value : '',
+        idDocKind: docKindInp ? docKindInp.value : '',
+        idAttachment: STAFF_FACE_MODAL_STATE.pendingIdAtt,
         company: coSel ? coSel.value : '',
         role: roleInp ? roleInp.value : 'General Labour',
         phone: phInp ? phInp.value : '',
@@ -136953,38 +138418,7 @@
       });
       if (!res.ok) {
         if (errEl && res.reason === 'same-name-active') {
-          errEl.hidden = false;
-          errEl.classList.add('is-same-name');
-          errEl.innerHTML = `
-            <div class="sfe-ns-same-line"><span>Already active in this company:</span> <b data-no-i18n="1">${esc(res.existing)}</b> <span class="sfe-ns-same-meta" data-no-i18n="1">${esc(res.company)}${res.role ? ` · ${esc(res.role)}` : ''}${res.since ? ` · ${esc(fmtDateDMY(res.since))}` : ''}</span></div>
-            <div class="sfe-ns-same-line"><span>If this is a different person, add something to the name (such as the father's name) so the two never share shift rules, payroll, punches or Face ID.</span></div>
-            <div class="sfe-ns-same-actions">
-              <button type="button" class="btn" id="sfeSameNameOpenBtn" data-staff="${esc(res.existing)}">${ic('user')} <span>Open Existing Person</span></button>
-              <button type="button" class="btn btn-primary" id="sfeSameNameSuggestBtn" data-name="${esc(res.suggestion)}"><span>Use Suggested Name</span> <b data-no-i18n="1">${esc(res.suggestion)}</b></button>
-            </div>`;
-          $('sfeSameNameOpenBtn')?.addEventListener('click', ev => {
-            const who = ev.currentTarget.getAttribute('data-staff') || '';
-            errEl.hidden = true;
-            errEl.classList.remove('is-same-name');
-            errEl.innerHTML = '';
-            if (nmInp) nmInp.value = '';
-            if (fatherInp) fatherInp.value = '';
-            STAFF_FACE_MODAL_STATE.newStaffOpen = false;
-            STAFF_FACE_MODAL_STATE.rosterSearch = '';
-            if (STAFF_FACE_MODAL_STATE.rosterCo && norm(STAFF_FACE_MODAL_STATE.rosterCo) !== norm(res.company)) STAFF_FACE_MODAL_STATE.rosterCo = res.company;
-            selectStaffForEnrolModal(who, { autoStartCam: false });
-            syncStaffFaceEnrolModalDom();
-          });
-          $('sfeSameNameSuggestBtn')?.addEventListener('click', ev => {
-            const sug = ev.currentTarget.getAttribute('data-name') || '';
-            if (nmInp && sug) {
-              nmInp.value = sug;
-              try { nmInp.focus({ preventScroll: true }); nmInp.setSelectionRange(sug.length, sug.length); } catch (_) {}
-            }
-            errEl.hidden = true;
-            errEl.classList.remove('is-same-name');
-            errEl.innerHTML = '';
-          });
+          renderSfeSameNameError(res);
           toast(res.error, 'warn');
           return;
         }
@@ -137004,8 +138438,8 @@
         } finally {
           if (saveBtn) saveBtn.disabled = false;
         }
-        if (pRes && pRes.blockedSameName) {
-          const srvErr = (pRes.err && pRes.err.error) || 'Duplicate active staff name blocked by server.';
+        if (!pRes || !pRes.ok) {
+          const srvErr = (pRes && (pRes.error || (pRes.err && pRes.err.error))) || 'Could not save new staff profile to server. Please check connection and retry.';
           if (errEl) {
             errEl.hidden = false;
             errEl.classList.remove('is-same-name');
@@ -137025,24 +138459,15 @@
           syncStaffFaceEnrolModalDom();
         }
       }
-      if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
-      if (nmInp) nmInp.value = '';
-      if (fatherInp) fatherInp.value = '';
-      if (phInp) phInp.value = '';
+      clearSfeNewStaffFields();
       toast(`Registered ${res.staff} (${res.company} · ${res.role}) · ready for 3-pose Face ID`, 'ok');
     };
     $('sfeNewStaffSaveBtn')?.addEventListener('click', commitNewStaffFromStudio);
     $('sfeNewStaffFather')?.addEventListener('input', () => {
-      const errEl = $('sfeNewStaffErr');
-      const sugBtn = $('sfeSameNameSuggestBtn');
-      const nmInp = $('sfeNewStaffName');
-      const fatherInp = $('sfeNewStaffFather');
-      if (errEl && !errEl.hidden && errEl.classList.contains('is-same-name') && sugBtn && nmInp && fatherInp) {
-        const sug = suggestDistinctStaffName(nmInp.value, fatherInp.value);
-        sugBtn.setAttribute('data-name', sug);
-        const b = sugBtn.querySelector('b');
-        if (b) b.textContent = sug;
-      }
+      checkSfeLiveSameNameConflict();
+    });
+    $('sfeNewStaffName')?.addEventListener('input', () => {
+      checkSfeLiveSameNameConflict();
     });
     $('sfeNewStaffName')?.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
@@ -147194,6 +148619,9 @@
       case 'reg_vat_rates':
         ensureStaffMembersSeeded();
         wsHtml = window.MFG_PBI ? window.MFG_PBI.renderUniversalRegistriesView({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, pageTitle: canonicalViewTitle, registryGroupKeys: univGroupKeys }) : renderOverview();
+        if (STATE.view === 'reg_staff' && canOpenFatherBackfill()) {
+          wsHtml = renderFatherBackfillBannerHtml() + wsHtml;
+        }
         if (STATE.view === 'reg_equipment' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderFleetTelematicsDeck === 'function') {
           wsHtml = window.MFG_TELEMATICS.renderFleetTelematicsDeck() + wsHtml;
         }
@@ -147795,6 +149223,12 @@
           STATE.kioskAttSetupOpen = true;
         }
         setView('kiosks');
+        return;
+      }
+      const fatherBackfillBtn = t.closest('[data-open-father-backfill]');
+      if (fatherBackfillBtn && container.contains(fatherBackfillBtn)) {
+        e.stopPropagation();
+        openFatherNameBackfillModal();
         return;
       }
 
@@ -152259,6 +153693,12 @@
         getFreqIndex,
         getLbpFxRate,
         todayISO,
+        activeUser,
+        isOwner,
+        isDemoScopeActive,
+        edgeApiFetch,
+        canonCompany,
+        ensureStaffMembersSeeded,
         allowedCompanyNames,
         defaultEntryCompany,
         defaultWarehouseLocationForCompany,
@@ -152511,6 +153951,10 @@
           document.querySelectorAll('.tbl-col-popover').forEach(p => { p.hidden = true; });
           return;
         }
+        const camDocModal = $('docCameraModal');
+        if (camDocModal && !camDocModal.hidden) { closeDocumentCameraModal(); return; }
+        const fbModal = $('fatherBackfillModal');
+        if (fbModal && !fbModal.hidden) { closeFatherNameBackfillModal(); return; }
         if (_dateFacState.open) { closeDateFacilitator(); return; }
         const pgmModal = $('policyGroupModal');
         if (pgmModal && !pgmModal.hidden) { closePolicyGroupModal(); return; }
@@ -152529,8 +153973,6 @@
           }
           return;
         }
-        const camDocModal = $('docCameraModal');
-        if (camDocModal && !camDocModal.hidden) { closeDocumentCameraModal(); return; }
         const prevDocModal = $('docPreviewModal');
         if (prevDocModal && !prevDocModal.hidden) { closeDocumentPreviewModal(); return; }
         const thModal = $('thermalPrintModal');
