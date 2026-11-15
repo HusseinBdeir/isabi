@@ -95238,8 +95238,13 @@
         const attTimeKey = `${curStaff}|${curCo}|${attDate}|${activePreset}|${inVal}|${outVal}|${sched}|${_TIME24_WS_REV}`;
         if (!isNoClock && attTimeKey !== FORM_UI.lastAttTimeKey) {
           FORM_UI.lastAttTimeKey = attTimeKey;
-          const autoOt = timingEval ? Number(timingEval.overtimeHours ?? timingEval.overtime_hours ?? 0) : (Math.round(Math.max(0, worked - sched) * 10) / 10);
-          const autoLate = timingEval ? Number(timingEval.lateHours ?? timingEval.late_hours ?? 0) : (Math.round(Math.max(0, sched - worked) * 10) / 10);
+          const isPerMinAuto = Boolean((timingEval && timingEval.mathMode === 'per_minute') || (resolvedAttPol && resolvedAttPol.math_mode === 'per_minute'));
+          const autoOt = timingEval
+            ? Number(timingEval.overtimeHours ?? timingEval.overtime_hours ?? 0)
+            : (isPerMinAuto ? (Math.round(Math.max(0, worked - sched) * 10000) / 10000) : (Math.round(Math.max(0, worked - sched) * 10) / 10));
+          const autoLate = timingEval
+            ? Number(timingEval.lateHours ?? timingEval.late_hours ?? 0)
+            : (isPerMinAuto ? (Math.round(Math.max(0, sched - worked) * 10000) / 10000) : (Math.round(Math.max(0, sched - worked) * 10) / 10));
           if ($('f_hours') && document.activeElement !== $('f_hours')) {
             $('f_hours').value = String(autoOt);
           }
@@ -102710,10 +102715,11 @@
           late_hours: ltH,
           raw_late_hours: matchesLtSave && timingSave ? Number(timingSave.rawLateHours || 0) : ltH,
           raw_late_min: matchesLtSave && timingSave ? Number(timingSave.rawLateMin || 0) : Math.round(ltH * 60),
-          math_mode: timingSave ? timingSave.mathMode : (resolvedPolSave ? resolvedPolSave.math_mode : 'tenth_hour'),
+          math_mode: timingSave ? timingSave.mathMode : (resolvedPolSave ? resolvedPolSave.math_mode : 'per_minute'),
           approved_ot_min: matchesOtSave ? Number(timingSave.approvedOtMin || 0) : Math.round(otH * 60),
           unapproved_ot_min: timingSave ? Number(timingSave.unapprovedOtMin || 0) : 0,
           billable_late_min: matchesLtSave ? Number(timingSave.billableLateMin || 0) : Math.round(ltH * 60),
+          penalty_summary: matchesLtSave && timingSave ? (timingSave.penaltySummary || '') : '',
           ot_threshold_min: timingSave ? Number(timingSave.otThresholdMin != null ? timingSave.otThresholdMin : 10) : (resolvedPolSave ? Number(resolvedPolSave.ot_threshold_min != null ? resolvedPolSave.ot_threshold_min : 10) : 10),
           policy_ot_mult: Number(polRuleSave.ot_multiplier || 1.5),
           policy_late_mult: effPolLateMultSave,
@@ -113407,10 +113413,11 @@
               row.late_hours = Number(timingInsp.lateHours || 0);
               row.raw_late_hours = Number(timingInsp.rawLateHours || 0);
               row.raw_late_min = Number(timingInsp.rawLateMin || 0);
-              row.math_mode = timingInsp.mathMode || (inspPol ? inspPol.math_mode : 'tenth_hour');
+              row.math_mode = timingInsp.mathMode || (inspPol ? inspPol.math_mode : 'per_minute');
               row.approved_ot_min = Number(timingInsp.approvedOtMin || 0);
               row.unapproved_ot_min = Number(timingInsp.unapprovedOtMin || 0);
               row.billable_late_min = Number(timingInsp.billableLateMin || 0);
+              row.penalty_summary = timingInsp.penaltySummary || '';
               row.ot_threshold_min = Number(timingInsp.otThresholdMin != null ? timingInsp.otThresholdMin : 10);
               row.policy_ot_mult = Number(polRuleInsp.ot_multiplier || 1.5);
               row.policy_late_mult = Number(polRuleInsp.late_penalty_mode === 'multiplier' ? polRuleInsp.late_multiplier : (polRuleInsp.late_penalty_mode === 'none' ? 0 : 1));
@@ -113429,7 +113436,7 @@
           }
           if (manualHoursChanged) {
             const polRuleMan = (inspPol && inspPol.rule) || {};
-            if (!row.math_mode) row.math_mode = inspPol ? inspPol.math_mode : 'tenth_hour';
+            if (!row.math_mode) row.math_mode = inspPol ? inspPol.math_mode : 'per_minute';
             if ('overtime_hours' in pendingUpdates) {
               row.overtime_hours = Math.max(0, Number(row.overtime_hours || 0));
               row.approved_ot_min = Math.round(row.overtime_hours * 60);
@@ -128262,9 +128269,9 @@
     'bdeir holding': 'pkg_exec_21d'
   };
 
-  const ATT_MATH_MODES = ['per_minute', 'tenth_hour'];
-  function normalizeAttMathMode(v) {
-    return String(v || '').trim().toLowerCase() === 'per_minute' ? 'per_minute' : 'tenth_hour';
+  const ATT_MATH_MODES = ['per_minute'];
+  function normalizeAttMathMode() {
+    return 'per_minute';
   }
   function normalizeOtCountFrom(v) {
     return String(v || '').trim().toLowerCase() === 'after_threshold' ? 'after_threshold' : 'shift_end';
@@ -128273,13 +128280,150 @@
     const n = (v != null && v !== '' && Number.isFinite(Number(v))) ? Number(v) : Number(defVal);
     return Math.max(0, Math.min(180, Math.round(Number.isFinite(n) ? n : 10)));
   }
-  function formatAttMathModeLabel(mode) {
-    return normalizeAttMathMode(mode) === 'per_minute'
-      ? 'Exact Per-Minute ($ / Min)'
-      : '0.1h Decimal Hours (6-Min Steps)';
+  const VALID_LATE_PENALTY_MODES = ['exact_hours', 'multiplier', 'step_brackets', 'round_30m', 'round_hour', 'tiered_half_day', 'half_day_any', 'none'];
+  function normalizeLatePenaltyMode(v) {
+    const s = String(v || '').trim().toLowerCase();
+    return VALID_LATE_PENALTY_MODES.includes(s) ? s : 'exact_hours';
   }
-  function formatAttMathModeShort(mode) {
-    return normalizeAttMathMode(mode) === 'per_minute' ? '$ / Min' : '0.1h Steps';
+  const DEFAULT_LATE_BRACKETS = Object.freeze([
+    { over_min: 15, penalty_min: 30 },
+    { over_min: 30, penalty_min: 60 }
+  ]);
+  function normalizeLateBrackets(raw, opts = {}) {
+    const fallback = opts.fallbackDefault !== false
+      ? DEFAULT_LATE_BRACKETS.map(b => ({ over_min: b.over_min, penalty_min: b.penalty_min }))
+      : [];
+    let list = [];
+    if (Array.isArray(raw)) {
+      list = raw;
+    } else if (typeof raw === 'string' && raw.trim()) {
+      list = raw.split(/[;,]+/).map(tok => {
+        const cleaned = String(tok || '').trim().replace(/^>/, '');
+        const m = cleaned.match(/^(\d+(?:\.\d+)?)\s*[:=]\s*(\d+(?:\.\d+)?)/);
+        return m ? { over_min: Number(m[1]), penalty_min: Number(m[2]) } : null;
+      }).filter(Boolean);
+    }
+    const byOver = new Map();
+    list.forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      const ovRaw = Number(item.over_min);
+      const pnRaw = Number(item.penalty_min);
+      if (!Number.isFinite(ovRaw) || !Number.isFinite(pnRaw)) return;
+      const overMin = Math.max(0, Math.min(480, Math.round(ovRaw)));
+      const penMin = Math.max(1, Math.min(720, Math.round(pnRaw)));
+      const prev = byOver.get(overMin);
+      if (!prev || penMin > prev.penalty_min) {
+        byOver.set(overMin, { over_min: overMin, penalty_min: penMin });
+      }
+    });
+    const out = Array.from(byOver.values()).sort((a, b) => a.over_min - b.over_min);
+    return out.length ? out : fallback;
+  }
+  function normalizeLateBelowBracketMode(v) {
+    return String(v || '').trim().toLowerCase() === 'waive' ? 'waive' : 'exact';
+  }
+  function formatLateBracketsCompact(brackets, belowMode = 'exact') {
+    const arr = normalizeLateBrackets(brackets);
+    const str = arr.map(b => `>${b.over_min}m=${b.penalty_min}m`).join(', ');
+    return belowMode === 'waive' ? `${str} (waive <=${arr[0].over_min}m)` : str;
+  }
+  function serializeLateBrackets(brackets) {
+    return normalizeLateBrackets(brackets).map(b => `${b.over_min}:${b.penalty_min}`).join(',');
+  }
+  const VALID_OT_SNAP_MODES = ['exact', 'exact_plus_snap', 'whole_blocks'];
+  function normalizeOtSnapMode(v) {
+    const s = String(v || '').trim().toLowerCase();
+    return VALID_OT_SNAP_MODES.includes(s) ? s : 'exact';
+  }
+  function normalizeOtBlockMin(v) {
+    return Number(v) === 30 ? 30 : 60;
+  }
+  function clampOtSnapAtMin(v, blockMin = 60) {
+    const blk = normalizeOtBlockMin(blockMin);
+    const def = blk === 30 ? 25 : 50;
+    const n = (v != null && v !== '' && Number.isFinite(Number(v))) ? Math.round(Number(v)) : def;
+    return Math.max(1, Math.min(blk, n));
+  }
+  function serializeOtSnapCombo(mode, blockMin = 60, snapAtMin = null) {
+    const m = normalizeOtSnapMode(mode);
+    if (m === 'exact') return 'exact';
+    const blk = normalizeOtBlockMin(blockMin);
+    const sat = clampOtSnapAtMin(snapAtMin, blk);
+    return `${m}|${blk}|${sat}`;
+  }
+  function parseOtSnapComboPatch(comboVal) {
+    const raw = String(comboVal || 'exact').trim();
+    if (!raw || raw === 'exact') {
+      return { ot_snap_mode: 'exact', ot_block_min: 60, ot_snap_at_min: 50 };
+    }
+    const parts = raw.split('|');
+    const mode = normalizeOtSnapMode(parts[0]);
+    const blk = normalizeOtBlockMin(parts[1] != null ? parts[1] : 60);
+    const sat = clampOtSnapAtMin(parts[2], blk);
+    return { ot_snap_mode: mode, ot_block_min: blk, ot_snap_at_min: sat };
+  }
+  function formatOtSnapShort(mode, blockMin = 60, snapAtMin = null, compact = false) {
+    const m = normalizeOtSnapMode(mode);
+    if (m === 'exact') return 'Exact 1m';
+    const blk = normalizeOtBlockMin(blockMin);
+    const sat = clampOtSnapAtMin(snapAtMin, blk);
+    if (m === 'exact_plus_snap') {
+      return compact ? `Snap >=${sat}m=${blk}m` : `Exact + Snap (>=${sat}m = ${blk}m)`;
+    }
+    return compact ? `${blk}m Blk (>=${sat}m)` : `Whole ${blk}m Blocks (>=${sat}m)`;
+  }
+  function applyOvertimeSnapMinutes(rawQualifiedMin, snapMode, blockMin = 60, snapAtMin = null) {
+    const cleanMin = Math.max(0, Math.round(Number(rawQualifiedMin || 0)));
+    const mode = normalizeOtSnapMode(snapMode);
+    const blk = normalizeOtBlockMin(blockMin);
+    const snapAt = clampOtSnapAtMin(snapAtMin, blk);
+    if (cleanMin <= 0 || mode === 'exact') {
+      return { snappedMin: cleanMin, mode, blockMin: blk, snapAtMin: snapAt, snappedUp: false, droppedMin: 0 };
+    }
+    const fullBlocks = Math.floor(cleanMin / blk);
+    const rem = cleanMin % blk;
+    if (mode === 'exact_plus_snap') {
+      const snappedMin = rem >= snapAt ? (fullBlocks + 1) * blk : cleanMin;
+      return {
+        snappedMin,
+        mode,
+        blockMin: blk,
+        snapAtMin: snapAt,
+        snappedUp: snappedMin > cleanMin,
+        droppedMin: 0
+      };
+    }
+    const blocks = fullBlocks + (rem >= snapAt ? 1 : 0);
+    const snappedMin = blocks * blk;
+    return {
+      snappedMin,
+      mode,
+      blockMin: blk,
+      snapAtMin: snapAt,
+      snappedUp: snappedMin > cleanMin,
+      droppedMin: snappedMin < cleanMin ? (cleanMin - snappedMin) : 0
+    };
+  }
+  const OT_SNAP_PRESET_COMBOS = Object.freeze([
+    { val: 'exact', label: 'Exact 1m (No Snap)' },
+    { val: 'exact_plus_snap|60|50', label: 'Exact + Snap (>=50m = 60m)' },
+    { val: 'whole_blocks|60|50', label: 'Whole 60m Blocks (>=50m)' },
+    { val: 'exact_plus_snap|30|25', label: 'Exact + Snap (>=25m = 30m)' },
+    { val: 'whole_blocks|30|25', label: 'Whole 30m Blocks (>=25m)' }
+  ]);
+  function renderOtSnapComboOptionsHtml(mode, blockMin = 60, snapAtMin = null) {
+    const curVal = serializeOtSnapCombo(mode, blockMin, snapAtMin);
+    const hasPreset = OT_SNAP_PRESET_COMBOS.some(p => p.val === curVal);
+    const items = hasPreset
+      ? OT_SNAP_PRESET_COMBOS
+      : OT_SNAP_PRESET_COMBOS.concat([{ val: curVal, label: formatOtSnapShort(mode, blockMin, snapAtMin, false) }]);
+    return items.map(it => `<option value="${esc(it.val)}" ${curVal === it.val ? 'selected' : ''}>${esc(it.label)}</option>`).join('');
+  }
+  function formatAttMathModeLabel() {
+    return '$ / Min (Hourly / 60)';
+  }
+  function formatAttMathModeShort() {
+    return '$ / Min';
   }
   function normalizePolicyTimelineWindow(raw) {
     if (!raw || typeof raw !== 'object') return null;
@@ -128321,8 +128465,15 @@
     if (raw.late_count_from && ['shift_start', 'after_grace'].includes(raw.late_count_from)) {
       out.late_count_from = raw.late_count_from;
     }
-    if (raw.late_penalty_mode && ['exact_hours', 'multiplier', 'round_hour', 'tiered_half_day', 'half_day_any', 'none'].includes(raw.late_penalty_mode)) {
-      out.late_penalty_mode = raw.late_penalty_mode;
+    if (raw.late_penalty_mode && VALID_LATE_PENALTY_MODES.includes(String(raw.late_penalty_mode).trim().toLowerCase())) {
+      out.late_penalty_mode = normalizeLatePenaltyMode(raw.late_penalty_mode);
+    }
+    if (raw.late_brackets != null && (Array.isArray(raw.late_brackets) || String(raw.late_brackets).trim() !== '')) {
+      const brk = normalizeLateBrackets(raw.late_brackets, { fallbackDefault: false });
+      if (brk.length) out.late_brackets = brk;
+    }
+    if (raw.late_below_bracket_mode != null && String(raw.late_below_bracket_mode).trim() !== '') {
+      out.late_below_bracket_mode = normalizeLateBelowBracketMode(raw.late_below_bracket_mode);
     }
     if (raw.late_multiplier != null && raw.late_multiplier !== '' && Number.isFinite(Number(raw.late_multiplier))) {
       out.late_multiplier = Math.max(1, Math.min(5, Number(raw.late_multiplier)));
@@ -128341,6 +128492,15 @@
     }
     if (raw.ot_max_hours != null && raw.ot_max_hours !== '' && Number.isFinite(Number(raw.ot_max_hours))) {
       out.ot_max_hours = Math.max(0, Number(raw.ot_max_hours));
+    }
+    if (raw.ot_snap_mode != null && String(raw.ot_snap_mode).trim() !== '') {
+      out.ot_snap_mode = normalizeOtSnapMode(raw.ot_snap_mode);
+    }
+    if (raw.ot_block_min != null && raw.ot_block_min !== '' && Number.isFinite(Number(raw.ot_block_min))) {
+      out.ot_block_min = normalizeOtBlockMin(raw.ot_block_min);
+    }
+    if (raw.ot_snap_at_min != null && raw.ot_snap_at_min !== '' && Number.isFinite(Number(raw.ot_snap_at_min))) {
+      out.ot_snap_at_min = clampOtSnapAtMin(raw.ot_snap_at_min, out.ot_block_min != null ? out.ot_block_min : 60);
     }
     if (raw.ot_window_start) out.ot_window_start = fmtAttClockTime(raw.ot_window_start);
     if (raw.ot_window_end) out.ot_window_end = fmtAttClockTime(raw.ot_window_end);
@@ -128411,10 +128571,13 @@
       id: 'pkg_15_open_15d',
       name: 'Standard 1.5x Open OT',
       short: '1.5x Open · 15d Vac',
-      math_mode: 'tenth_hour',
+      math_mode: 'per_minute',
       ot_threshold_min: 10,
       ot_early_threshold_min: 15,
       ot_count_from: 'shift_end',
+      ot_snap_mode: 'exact',
+      ot_block_min: 60,
+      ot_snap_at_min: 50,
       late_penalty_mode: 'multiplier',
       late_multiplier: 1.5,
       ot_multiplier: 1.5,
@@ -128435,10 +128598,13 @@
       id: 'pkg_15_pass_15d',
       name: 'Controlled 1.5x Date-Pass OT',
       short: '1.5x Pass · 15d Vac',
-      math_mode: 'tenth_hour',
+      math_mode: 'per_minute',
       ot_threshold_min: 10,
       ot_early_threshold_min: 15,
       ot_count_from: 'shift_end',
+      ot_snap_mode: 'exact',
+      ot_block_min: 60,
+      ot_snap_at_min: 50,
       late_penalty_mode: 'multiplier',
       late_multiplier: 1.5,
       ot_multiplier: 1.5,
@@ -128459,10 +128625,13 @@
       id: 'pkg_10_fixed_15d',
       name: 'Fixed 1.0x Standard',
       short: '1.0x No OT · 15d Vac',
-      math_mode: 'tenth_hour',
+      math_mode: 'per_minute',
       ot_threshold_min: 10,
       ot_early_threshold_min: 15,
       ot_count_from: 'shift_end',
+      ot_snap_mode: 'exact',
+      ot_block_min: 60,
+      ot_snap_at_min: 50,
       late_penalty_mode: 'exact_hours',
       late_multiplier: 1.0,
       ot_multiplier: 1.0,
@@ -128483,10 +128652,13 @@
       id: 'pkg_exec_21d',
       name: 'Executive & Salaried (21d)',
       short: 'OT 1.5x · 21d Vac',
-      math_mode: 'tenth_hour',
+      math_mode: 'per_minute',
       ot_threshold_min: 10,
       ot_early_threshold_min: 15,
       ot_count_from: 'shift_end',
+      ot_snap_mode: 'exact',
+      ot_block_min: 60,
+      ot_snap_at_min: 50,
       late_penalty_mode: 'none',
       late_multiplier: 1.0,
       ot_multiplier: 1.5,
@@ -128507,10 +128679,13 @@
       id: 'pkg_daily_26d',
       name: 'Daily / 26-Day Schedule',
       short: '1.0x · 7d Vac · 26d',
-      math_mode: 'tenth_hour',
+      math_mode: 'per_minute',
       ot_threshold_min: 10,
       ot_early_threshold_min: 15,
       ot_count_from: 'shift_end',
+      ot_snap_mode: 'exact',
+      ot_block_min: 60,
+      ot_snap_at_min: 50,
       late_penalty_mode: 'exact_hours',
       late_multiplier: 1.0,
       ot_multiplier: 1.0,
@@ -128589,6 +128764,8 @@
   function formatPolicyLateChip(grp) {
     if (grp.late_penalty_mode === 'none') return 'Late $0';
     if (grp.late_penalty_mode === 'multiplier') return `Late ${fmtPolicyDec(grp.late_multiplier != null ? grp.late_multiplier : 1.5)}x`;
+    if (grp.late_penalty_mode === 'step_brackets') return 'Late Steps';
+    if (grp.late_penalty_mode === 'round_30m') return 'Late 30m Round';
     if (grp.late_penalty_mode === 'round_hour') return 'Late 1h Round';
     if (grp.late_penalty_mode === 'tiered_half_day' || grp.late_penalty_mode === 'half_day_any') return 'Late 0.5d';
     return 'Late 1x';
@@ -128601,7 +128778,11 @@
     const passLbl = grp.ot_mode === 'always'
       ? 'Open OT'
       : (grp.ot_mode === 'date_range' ? 'Date Pass' : `Max ${fmtPolicyDec(hrs)}h OT`);
-    return `OT ${mult}x · ${passLbl}`;
+    const snapMode = normalizeOtSnapMode(grp.ot_snap_mode);
+    const snapPart = snapMode !== 'exact'
+      ? ` · ${formatOtSnapShort(snapMode, grp.ot_block_min, grp.ot_snap_at_min, true)}`
+      : '';
+    return `OT ${mult}x · ${passLbl}${snapPart}`;
   }
 
   function renderCompanyAttendanceDefaultsCardHtml(coName, opts = {}) {
@@ -128629,6 +128810,10 @@
     const coEntry = getCompanyDefaultPolicyEntry(bu);
     const timeline = normalizePolicyTimelineList(coEntry && coEntry.policy_timeline);
     const activeMath = normalizeAttMathMode(resolvedCoPol.math_mode);
+    const activeOtSnapMode = normalizeOtSnapMode(resolvedCoPol.ot_snap_mode);
+    const activeOtBlockMin = normalizeOtBlockMin(resolvedCoPol.ot_block_min);
+    const activeOtSnapAtMin = clampOtSnapAtMin(resolvedCoPol.ot_snap_at_min, activeOtBlockMin);
+    const activeOtSnapShort = formatOtSnapShort(activeOtSnapMode, activeOtBlockMin, activeOtSnapAtMin, true);
     const activeOtThresh = clampAttThresholdMin(resolvedCoPol.ot_threshold_min, 10);
     const grpById = new Map(buPolicyOpts.map(g => [g.id, g]));
     const canWriteCo = canEditShiftsAndRules(null, bu);
@@ -128636,17 +128821,19 @@
     const isLocked = Boolean(STATE.kioskLocked);
     const polPerksShown = (curPolObj && Array.isArray(curPolObj.perks)) ? curPolObj.perks.slice(0, 2) : [];
     const polPerksExtra = Math.max(0, ((curPolObj && Array.isArray(curPolObj.perks)) ? curPolObj.perks.length : 0) - 2);
-    const mathPillHtml = `<span class="att-math-pill ${activeMath === 'per_minute' ? 'is-min' : ''}">${activeMath === 'per_minute' ? '$ / Min' : '0.1h Steps'} · OT ≥${activeOtThresh}m</span>`;
+    const mathPillHtml = `<span class="att-math-pill is-min">$ / Min · OT ≥${activeOtThresh}m${activeOtSnapMode !== 'exact' ? ` · ${esc(activeOtSnapShort)}` : ''}</span>`;
     const timelineHtml = timeline.length ? `
       <div class="att-co-timeline-chips">
         ${timeline.map(w => {
           const wGrp = grpById.get(w.policy_group_id);
           const wGrpLbl = wGrp ? wGrp.name : (w.policy_group_id || 'Policy');
-          const wMathLbl = normalizeAttMathMode(w.math_mode || 'tenth_hour') === 'per_minute' ? '$/min' : '0.1h';
+          const wSnapLbl = w.ot_snap_mode && w.ot_snap_mode !== 'exact'
+            ? ` · ${formatOtSnapShort(w.ot_snap_mode, w.ot_block_min, w.ot_snap_at_min, true)}`
+            : '';
           const wEnd = w.end_date ? fmtDateDMY(w.end_date) : 'Present';
           const wThresh = w.ot_threshold_min != null ? `OT ≥${w.ot_threshold_min}m` : '';
           return `<span class="att-co-win-chip">
-            <span>${esc(fmtDateDMY(w.start_date))}–${esc(wEnd)}: <b>${esc(wGrpLbl)}</b> · ${wMathLbl}${wThresh ? ` · ${wThresh}` : ''}</span>
+            <span>${esc(fmtDateDMY(w.start_date))}-${esc(wEnd)}: <b>${esc(wGrpLbl)}</b> · $/min${wThresh ? ` · ${wThresh}` : ''}${wSnapLbl ? esc(wSnapLbl) : ''}</span>
             <button type="button" class="stm-exc-chip-rm" data-co-policy-rm-win="${esc(w.id)}" data-co-policy-co="${esc(bu)}" aria-label="Remove window"${canWriteCo ? '' : ' disabled'}>✕</button>
           </span>`;
         }).join('')}
@@ -128719,9 +128906,8 @@
               </select>
             </div>
             <div class="att-co-def-math-row">
-              <select class="kiosk-select att-co-def-math-sel" data-${buAttr}-policy-math="${esc(bu)}" data-plain-options="1" aria-label="Calculation Math Mode for ${esc(bu)}"${canWriteCo ? '' : ' disabled'}>
-                <option value="tenth_hour" ${activeMath === 'tenth_hour' ? 'selected' : ''}>Legacy 0.1h</option>
-                <option value="per_minute" ${activeMath === 'per_minute' ? 'selected' : ''}>Per-Min ($/m)</option>
+              <select class="kiosk-select att-co-def-math-sel" data-${buAttr}-policy-ot-snap="${esc(bu)}" data-plain-options="1" aria-label="Overtime Snap Mode for ${esc(bu)}"${canWriteCo ? '' : ' disabled'}>
+                ${renderOtSnapComboOptionsHtml(resolvedCoPol.ot_snap_mode, resolvedCoPol.ot_block_min, resolvedCoPol.ot_snap_at_min)}
               </select>
               <input type="number" class="mono att-co-def-thresh" min="0" max="180" step="1" data-${buAttr}-policy-ot-thresh="${esc(bu)}" value="${activeOtThresh}" aria-label="Overtime threshold minutes for ${esc(bu)}"${canWriteCo ? '' : ' disabled'}>
               <input type="date" class="kiosk-select att-co-def-eff" data-${buAttr}-policy-eff="${esc(bu)}" value="" aria-label="Effective from date for ${esc(bu)}"${canWriteCo ? '' : ' disabled'}>
@@ -128744,9 +128930,15 @@
     const lateMult = finiteClamp(base.late_multiplier, 1.5, 1, 5);
     const otMult = finiteClamp(base.ot_multiplier, 1.5, 1, 5);
     const otMaxHrs = finiteClamp(base.ot_max_hours, 2, 0, 24);
-    const latePenMode = ['exact_hours', 'multiplier', 'round_hour', 'tiered_half_day', 'half_day_any', 'none'].includes(base.late_penalty_mode)
-      ? base.late_penalty_mode
+    const latePenMode = VALID_LATE_PENALTY_MODES.includes(String(base.late_penalty_mode || '').trim().toLowerCase())
+      ? normalizeLatePenaltyMode(base.late_penalty_mode)
       : (lateMult > 1 ? 'multiplier' : 'exact_hours');
+    const lateBrackets = normalizeLateBrackets(base.late_brackets);
+    const lateBelowBrkMode = normalizeLateBelowBracketMode(base.late_below_bracket_mode);
+    const lateHalfDayAfterMin = finiteClamp(base.late_half_day_after_min, 60, 5, 360, true);
+    const otSnapMode = normalizeOtSnapMode(base.ot_snap_mode);
+    const otBlockMin = normalizeOtBlockMin(base.ot_block_min);
+    const otSnapAtMin = clampOtSnapAtMin(base.ot_snap_at_min, otBlockMin);
     const otMode = ['none', 'always', 'max_hours', 'date_range'].includes(base.ot_mode) ? base.ot_mode : 'always';
     const vacDays = finiteClamp(base.vacation_days, 15, 0, 90, true);
     const sickDays = finiteClamp(base.sick_days, 7, 0, 60, true);
@@ -128764,11 +128956,24 @@
     const otModeShort = otMode === 'always'
       ? 'Open OT'
       : (otMode === 'date_range' ? 'Date Pass' : (otMode === 'max_hours' ? `Max ${fmtPolicyDec(otMaxHrs)}h OT` : 'No OT'));
-    const lateMultLbl = latePenMode === 'multiplier' ? `Late ${fmtPolicyDec(lateMult)}x` : (latePenMode === 'none' ? 'Late $0' : 'Late 1x');
+    const lateMultLbl = latePenMode === 'multiplier'
+      ? `Late ${fmtPolicyDec(lateMult)}x`
+      : (latePenMode === 'none'
+        ? 'Late $0'
+        : (latePenMode === 'step_brackets'
+          ? `Late ${formatLateBracketsCompact(lateBrackets, lateBelowBrkMode)}`
+          : (latePenMode === 'round_30m'
+            ? 'Late 30m Round'
+            : (latePenMode === 'round_hour'
+              ? 'Late 1h Round'
+              : (latePenMode === 'tiered_half_day'
+                ? `Late >=${lateHalfDayAfterMin}m=0.5d`
+                : (latePenMode === 'half_day_any' ? 'Late 0.5d' : 'Late 1x'))))));
     const otMultLbl = otMode === 'none' ? 'No OT' : `OT ${fmtPolicyDec(otMult)}x (${otModeShort})`;
-    const mathTag = mathMode === 'per_minute' ? '$ / Min' : '0.1h';
+    const otSnapTag = otMode !== 'none' && otSnapMode !== 'exact' ? ` · ${formatOtSnapShort(otSnapMode, otBlockMin, otSnapAtMin, true)}` : '';
+    const mathTag = '$ / Min';
     const otThreshTag = otMode !== 'none' && otThresholdMin !== 10 ? ` · OT >=${otThresholdMin}m` : '';
-    const summaryText = `${lateMultLbl} · ${otMultLbl} · ${vacDays}d Vac · ${mathTag}${otThreshTag}`;
+    const summaryText = `${lateMultLbl} · ${otMultLbl}${otSnapTag} · ${vacDays}d Vac · ${mathTag}${otThreshTag}`;
     const isBuiltin = Boolean(base.isBuiltin || DEFAULT_POLICY_GROUPS.some(d => d.id === base.id));
     const coScope = isBuiltin ? 'All Companies' : (String(base.company || 'All Companies').trim() || 'All Companies');
     return {
@@ -128780,7 +128985,13 @@
       ot_threshold_min: otThresholdMin,
       ot_early_threshold_min: otEarlyThresholdMin,
       ot_count_from: otCountFrom,
+      ot_snap_mode: otSnapMode,
+      ot_block_min: otBlockMin,
+      ot_snap_at_min: otSnapAtMin,
       late_penalty_mode: latePenMode,
+      late_brackets: lateBrackets,
+      late_below_bracket_mode: lateBelowBrkMode,
+      late_half_day_after_min: lateHalfDayAfterMin,
       late_multiplier: lateMult,
       ot_multiplier: otMult,
       ot_mode: otMode,
@@ -128809,7 +129020,7 @@
     let pgStamp = '';
     for (let i = 0; i < pgArr.length; i++) {
       const g = pgArr[i];
-      if (g) pgStamp += `${g.id || ''}:${g.updated_at || ''}:${g.voided ? 1 : 0}:${Array.isArray(g.versions) ? g.versions.length : 0}:${g.grace_min ?? ''}:${g.early_leave_grace_min ?? ''}:${g.late_penalty_mode || ''}:${g.late_multiplier ?? ''}:${g.ot_mode || ''}:${g.ot_multiplier ?? ''}:${g.ot_max_hours ?? ''}:${g.company || ''}:${g.name || ''}:${Array.isArray(g.perks) ? g.perks.join(',') : ''};`;
+      if (g) pgStamp += `${g.id || ''}:${g.updated_at || ''}:${g.voided ? 1 : 0}:${Array.isArray(g.versions) ? g.versions.length : 0}:${g.grace_min ?? ''}:${g.early_leave_grace_min ?? ''}:${g.late_penalty_mode || ''}:${serializeLateBrackets(g.late_brackets)}:${g.late_below_bracket_mode || ''}:${g.late_multiplier ?? ''}:${g.ot_mode || ''}:${g.ot_multiplier ?? ''}:${g.ot_max_hours ?? ''}:${g.ot_snap_mode || ''}:${g.ot_block_min ?? ''}:${g.ot_snap_at_min ?? ''}:${g.company || ''}:${g.name || ''}:${Array.isArray(g.perks) ? g.perks.join(',') : ''};`;
     }
     const rev = `${_TIME24_WS_REV}|${(SEED && SEED._customRev) || 0}|${_GLOBAL_RATES_REV}|${STATE.enterpriseScalePreview ? 1 : 0}|${todayISO()}|${stArr.length}|${pgStamp}`;
     if (
@@ -128860,14 +129071,21 @@
       const merged = Object.assign({}, grp);
       const copyKeys = [
         'math_mode', 'ot_threshold_min', 'ot_early_threshold_min', 'ot_count_from',
+        'ot_snap_mode', 'ot_block_min', 'ot_snap_at_min',
         'grace_min', 'early_leave_grace_min', 'late_when', 'late_count_from',
-        'late_penalty_mode', 'late_multiplier', 'late_half_day_after_min',
+        'late_penalty_mode', 'late_brackets', 'late_below_bracket_mode',
+        'late_multiplier', 'late_half_day_after_min',
         'no_clock_out_rule', 'ot_mode', 'ot_multiplier', 'ot_max_hours',
         'ot_window_start', 'ot_window_end'
       ];
       copyKeys.forEach(k => {
         if (win[k] !== undefined && win[k] !== null && win[k] !== '') merged[k] = win[k];
       });
+      merged.ot_snap_mode = normalizeOtSnapMode(merged.ot_snap_mode);
+      merged.ot_block_min = normalizeOtBlockMin(merged.ot_block_min);
+      merged.ot_snap_at_min = clampOtSnapAtMin(merged.ot_snap_at_min, merged.ot_block_min);
+      merged.late_brackets = normalizeLateBrackets(merged.late_brackets);
+      merged.late_below_bracket_mode = normalizeLateBelowBracketMode(merged.late_below_bracket_mode);
       merged.activeVersion = win;
       res = merged;
     }
@@ -128905,21 +129123,32 @@
       entry: coDef || null,
       source: win ? 'company_timeline' : 'company_default'
     });
+    const verStamp = grp.activeVersion ? String(grp.activeVersion.updated_at || grp.activeVersion.effective_from || grp.activeVersion.start_date || '') : '';
+    const hasExplicitCoOverride = Boolean(coDef && coDef.math_override_at && (!verStamp || String(coDef.math_override_at) >= verStamp));
     if (win) {
       if (win.math_mode) out.math_mode = normalizeAttMathMode(win.math_mode);
       if (win.ot_threshold_min != null) out.ot_threshold_min = clampAttThresholdMin(win.ot_threshold_min, out.ot_threshold_min);
       if (win.ot_early_threshold_min != null) out.ot_early_threshold_min = clampAttThresholdMin(win.ot_early_threshold_min, out.ot_early_threshold_min);
       if (win.ot_count_from) out.ot_count_from = normalizeOtCountFrom(win.ot_count_from);
-      if (win.late_penalty_mode) out.late_penalty_mode = win.late_penalty_mode;
+      if (win.ot_snap_mode != null) out.ot_snap_mode = normalizeOtSnapMode(win.ot_snap_mode);
+      if (win.ot_block_min != null) out.ot_block_min = normalizeOtBlockMin(win.ot_block_min);
+      if (win.ot_snap_at_min != null) out.ot_snap_at_min = clampOtSnapAtMin(win.ot_snap_at_min, out.ot_block_min);
+      if (win.late_penalty_mode) out.late_penalty_mode = normalizeLatePenaltyMode(win.late_penalty_mode);
+      if (win.late_brackets) out.late_brackets = normalizeLateBrackets(win.late_brackets);
+      if (win.late_below_bracket_mode) out.late_below_bracket_mode = normalizeLateBelowBracketMode(win.late_below_bracket_mode);
+      if (win.late_half_day_after_min != null) out.late_half_day_after_min = Number(win.late_half_day_after_min);
       if (win.late_multiplier != null) out.late_multiplier = Number(win.late_multiplier);
       if (win.ot_multiplier != null) out.ot_multiplier = Number(win.ot_multiplier);
       if (win.ot_mode) out.ot_mode = win.ot_mode;
       if (win.grace_min != null) out.grace_min = Number(win.grace_min);
-    } else if (coDef && (!Array.isArray(coDef.policy_timeline) || coDef.policy_timeline.length === 0) && !grp.activeVersion) {
+    } else if (coDef && (!Array.isArray(coDef.policy_timeline) || coDef.policy_timeline.length === 0) && (!grp.activeVersion || hasExplicitCoOverride)) {
       if (coDef.math_mode) out.math_mode = normalizeAttMathMode(coDef.math_mode);
       if (coDef.ot_threshold_min != null) out.ot_threshold_min = clampAttThresholdMin(coDef.ot_threshold_min, out.ot_threshold_min);
       if (coDef.ot_early_threshold_min != null) out.ot_early_threshold_min = clampAttThresholdMin(coDef.ot_early_threshold_min, out.ot_early_threshold_min);
       if (coDef.ot_count_from) out.ot_count_from = normalizeOtCountFrom(coDef.ot_count_from);
+      if (coDef.ot_snap_mode != null) out.ot_snap_mode = normalizeOtSnapMode(coDef.ot_snap_mode);
+      if (coDef.ot_block_min != null) out.ot_block_min = normalizeOtBlockMin(coDef.ot_block_min);
+      if (coDef.ot_snap_at_min != null) out.ot_snap_at_min = clampOtSnapAtMin(coDef.ot_snap_at_min, out.ot_block_min);
     }
     if (memo.coDefAtDate.size > 2048) memo.coDefAtDate.clear();
     memo.coDefAtDate.set(ck, { val: out, coDefRef: coDef });
@@ -128951,6 +129180,9 @@
       || raw.ot_threshold_min != null
       || raw.ot_early_threshold_min != null
       || raw.ot_count_from != null
+      || raw.ot_snap_mode != null
+      || raw.ot_block_min != null
+      || raw.ot_snap_at_min != null
     );
   }
 
@@ -128962,6 +129194,9 @@
     }
     return (
       raw.late_penalty_mode != null
+      || raw.late_brackets != null
+      || raw.late_below_bracket_mode != null
+      || raw.late_half_day_after_min != null
       || raw.late_multiplier != null
       || raw.ot_mode != null
       || raw.ot_multiplier != null
@@ -129027,6 +129262,7 @@
     if (effFrom) {
       if (!nextTimeline.length && !Array.isArray(opts.policy_timeline) && prevDefId && effFrom > '2000-01-01') {
         const prevGrp = getPolicyGroups(co).find(g => g.id === prevDefId) || normalizePolicyGroupObj(DEFAULT_POLICY_GROUPS[0]);
+        const prevSnapBlk = normalizeOtBlockMin(prevObj.ot_block_min != null ? prevObj.ot_block_min : prevGrp.ot_block_min);
         nextTimeline = upsertPolicyTimelineWindow(nextTimeline, {
           id: 'co_base',
           start_date: '2000-01-01',
@@ -129036,6 +129272,9 @@
           ot_threshold_min: clampAttThresholdMin(prevObj.ot_threshold_min != null ? prevObj.ot_threshold_min : prevGrp.ot_threshold_min, 10),
           ot_early_threshold_min: clampAttThresholdMin(prevObj.ot_early_threshold_min != null ? prevObj.ot_early_threshold_min : prevGrp.ot_early_threshold_min, 15),
           ot_count_from: normalizeOtCountFrom(prevObj.ot_count_from || prevGrp.ot_count_from),
+          ot_snap_mode: normalizeOtSnapMode(prevObj.ot_snap_mode || prevGrp.ot_snap_mode),
+          ot_block_min: prevSnapBlk,
+          ot_snap_at_min: clampOtSnapAtMin(prevObj.ot_snap_at_min != null ? prevObj.ot_snap_at_min : prevGrp.ot_snap_at_min, prevSnapBlk),
           note: 'Prior Baseline'
         });
       }
@@ -129043,6 +129282,9 @@
       const nextThresh = opts.ot_threshold_min != null ? clampAttThresholdMin(opts.ot_threshold_min, 10) : grpObj.ot_threshold_min;
       const nextEarlyThresh = opts.ot_early_threshold_min != null ? clampAttThresholdMin(opts.ot_early_threshold_min, 15) : grpObj.ot_early_threshold_min;
       const nextCountFrom = opts.ot_count_from != null ? normalizeOtCountFrom(opts.ot_count_from) : grpObj.ot_count_from;
+      const nextSnapMode = opts.ot_snap_mode != null ? normalizeOtSnapMode(opts.ot_snap_mode) : normalizeOtSnapMode(grpObj.ot_snap_mode);
+      const nextSnapBlk = opts.ot_block_min != null ? normalizeOtBlockMin(opts.ot_block_min) : normalizeOtBlockMin(grpObj.ot_block_min);
+      const nextSnapAt = opts.ot_snap_at_min != null ? clampOtSnapAtMin(opts.ot_snap_at_min, nextSnapBlk) : clampOtSnapAtMin(grpObj.ot_snap_at_min, nextSnapBlk);
       nextTimeline = upsertPolicyTimelineWindow(nextTimeline, {
         id: opts.timeline_id || undefined,
         start_date: effFrom,
@@ -129052,6 +129294,9 @@
         ot_threshold_min: nextThresh,
         ot_early_threshold_min: nextEarlyThresh,
         ot_count_from: nextCountFrom,
+        ot_snap_mode: nextSnapMode,
+        ot_block_min: nextSnapBlk,
+        ot_snap_at_min: nextSnapAt,
         note: String(opts.note || '')
       });
       timelineTouched = true;
@@ -129066,6 +129311,20 @@
       policy_timeline: nextTimeline
     });
     if (!effFrom) {
+      const hasExplicitMathOpt = (
+        opts.math_mode != null
+        || opts.ot_threshold_min != null
+        || opts.ot_early_threshold_min != null
+        || opts.ot_count_from != null
+        || opts.ot_snap_mode != null
+        || opts.ot_block_min != null
+        || opts.ot_snap_at_min != null
+      );
+      if (hasExplicitMathOpt) {
+        updatedCoEntry.math_override_at = nowIso;
+      } else if (nextId !== prevDefId) {
+        delete updatedCoEntry.math_override_at;
+      }
       if (opts.math_mode != null) {
         updatedCoEntry.math_mode = normalizeAttMathMode(opts.math_mode);
       } else {
@@ -129080,9 +129339,27 @@
       if (opts.ot_count_from != null) {
         updatedCoEntry.ot_count_from = normalizeOtCountFrom(opts.ot_count_from);
       }
+      if (opts.ot_snap_mode != null) {
+        updatedCoEntry.ot_snap_mode = normalizeOtSnapMode(opts.ot_snap_mode);
+      } else {
+        updatedCoEntry.ot_snap_mode = normalizeOtSnapMode(activeCoResolved.ot_snap_mode);
+      }
+      if (opts.ot_block_min != null) {
+        updatedCoEntry.ot_block_min = normalizeOtBlockMin(opts.ot_block_min);
+      } else {
+        updatedCoEntry.ot_block_min = normalizeOtBlockMin(activeCoResolved.ot_block_min);
+      }
+      if (opts.ot_snap_at_min != null) {
+        updatedCoEntry.ot_snap_at_min = clampOtSnapAtMin(opts.ot_snap_at_min, updatedCoEntry.ot_block_min);
+      } else {
+        updatedCoEntry.ot_snap_at_min = clampOtSnapAtMin(activeCoResolved.ot_snap_at_min, updatedCoEntry.ot_block_min);
+      }
       if (!Array.isArray(opts.policy_timeline) && nextTimeline.length > 0) {
         const actWin = matchPolicyTimelineAtDate(nextTimeline, today);
         if (actWin) {
+          const effBlk = opts.ot_block_min != null
+            ? updatedCoEntry.ot_block_min
+            : normalizeOtBlockMin(actWin.ot_block_min != null ? actWin.ot_block_min : grpObj.ot_block_min);
           const updatedActWin = Object.assign({}, actWin, {
             policy_group_id: nextId,
             math_mode: updatedCoEntry.math_mode,
@@ -129094,7 +129371,14 @@
               : (actWin.ot_early_threshold_min != null ? clampAttThresholdMin(actWin.ot_early_threshold_min, 15) : grpObj.ot_early_threshold_min),
             ot_count_from: opts.ot_count_from != null
               ? updatedCoEntry.ot_count_from
-              : normalizeOtCountFrom(actWin.ot_count_from || grpObj.ot_count_from)
+              : normalizeOtCountFrom(actWin.ot_count_from || grpObj.ot_count_from),
+            ot_snap_mode: opts.ot_snap_mode != null
+              ? updatedCoEntry.ot_snap_mode
+              : normalizeOtSnapMode(actWin.ot_snap_mode || grpObj.ot_snap_mode),
+            ot_block_min: effBlk,
+            ot_snap_at_min: opts.ot_snap_at_min != null
+              ? updatedCoEntry.ot_snap_at_min
+              : clampOtSnapAtMin(actWin.ot_snap_at_min != null ? actWin.ot_snap_at_min : grpObj.ot_snap_at_min, effBlk)
           });
           nextTimeline = normalizePolicyTimelineList(
             nextTimeline.map(w => (w && w.id === actWin.id ? updatedActWin : w))
@@ -129126,6 +129410,9 @@
             if (opts.ot_threshold_min != null) patchSpec.ot_threshold_min = clampAttThresholdMin(opts.ot_threshold_min, 10);
             if (opts.ot_early_threshold_min != null) patchSpec.ot_early_threshold_min = clampAttThresholdMin(opts.ot_early_threshold_min, 15);
             if (opts.ot_count_from != null) patchSpec.ot_count_from = normalizeOtCountFrom(opts.ot_count_from);
+            if (opts.ot_snap_mode != null) patchSpec.ot_snap_mode = normalizeOtSnapMode(opts.ot_snap_mode);
+            if (opts.ot_block_min != null) patchSpec.ot_block_min = normalizeOtBlockMin(opts.ot_block_min);
+            if (opts.ot_snap_at_min != null) patchSpec.ot_snap_at_min = clampOtSnapAtMin(opts.ot_snap_at_min, patchSpec.ot_block_min != null ? patchSpec.ot_block_min : updatedCoEntry.ot_block_min);
             saveStaffWorkRule(s.name, patchSpec, { deferSave: true, skipRecalc: true, fromCompanyDefault: true });
             backfilledStaff++;
           }
@@ -129250,7 +129537,7 @@
       changed = true;
     }
     if (patch.late_multiplier != null && Number.isFinite(Number(patch.late_multiplier))) {
-      activeTarget.lateness_multiplier = patch.late_penalty_mode === 'exact_hours' ? 1.0 : Number(patch.late_multiplier);
+      activeTarget.lateness_multiplier = patch.late_penalty_mode === 'multiplier' ? Number(patch.late_multiplier) : 1.0;
       changed = true;
     }
     if (patch.vacation_days != null && Number.isFinite(Number(patch.vacation_days))) {
@@ -129297,10 +129584,17 @@
     let nextVersions = Array.isArray(spec.versions)
       ? normalizePolicyTimelineList(spec.versions)
       : normalizePolicyTimelineList(prev && prev.versions);
-    const specMath = spec.math_mode != null ? normalizeAttMathMode(spec.math_mode) : (prev ? prev.math_mode : 'tenth_hour');
+    const specMath = spec.math_mode != null ? normalizeAttMathMode(spec.math_mode) : (prev ? prev.math_mode : 'per_minute');
     const specOtThresh = spec.ot_threshold_min != null ? clampAttThresholdMin(spec.ot_threshold_min, 10) : (prev ? prev.ot_threshold_min : 10);
     const specOtEarly = spec.ot_early_threshold_min != null ? clampAttThresholdMin(spec.ot_early_threshold_min, 15) : (prev ? prev.ot_early_threshold_min : 15);
     const specOtFrom = spec.ot_count_from != null ? normalizeOtCountFrom(spec.ot_count_from) : (prev ? prev.ot_count_from : 'shift_end');
+    const specOtSnapMode = spec.ot_snap_mode != null ? normalizeOtSnapMode(spec.ot_snap_mode) : (prev ? normalizeOtSnapMode(prev.ot_snap_mode) : 'exact');
+    const specOtBlockMin = spec.ot_block_min != null ? normalizeOtBlockMin(spec.ot_block_min) : (prev ? normalizeOtBlockMin(prev.ot_block_min) : 60);
+    const specOtSnapAtMin = spec.ot_snap_at_min != null ? clampOtSnapAtMin(spec.ot_snap_at_min, specOtBlockMin) : clampOtSnapAtMin(prev ? prev.ot_snap_at_min : 50, specOtBlockMin);
+    const specLateMode = spec.late_penalty_mode != null ? normalizeLatePenaltyMode(spec.late_penalty_mode) : (prev ? normalizeLatePenaltyMode(prev.late_penalty_mode) : 'multiplier');
+    const specLateBrackets = spec.late_brackets != null ? normalizeLateBrackets(spec.late_brackets) : normalizeLateBrackets(prev && prev.late_brackets);
+    const specLateBelowBrk = spec.late_below_bracket_mode != null ? normalizeLateBelowBracketMode(spec.late_below_bracket_mode) : normalizeLateBelowBracketMode(prev && prev.late_below_bracket_mode);
+    const specLateHdMin = spec.late_half_day_after_min != null ? finiteClamp(spec.late_half_day_after_min, 60, 5, 360, true) : (prev ? finiteClamp(prev.late_half_day_after_min, 60, 5, 360, true) : 60);
 
     if (effFrom) {
       if (!nextVersions.length && !Array.isArray(spec.versions) && prev && effFrom > '2000-01-01') {
@@ -129313,10 +129607,16 @@
           ot_threshold_min: prev.ot_threshold_min,
           ot_early_threshold_min: prev.ot_early_threshold_min,
           ot_count_from: prev.ot_count_from,
+          ot_snap_mode: prev.ot_snap_mode,
+          ot_block_min: prev.ot_block_min,
+          ot_snap_at_min: prev.ot_snap_at_min,
           ot_multiplier: prev.ot_multiplier,
           ot_mode: prev.ot_mode,
           ot_max_hours: prev.ot_max_hours,
           late_penalty_mode: prev.late_penalty_mode,
+          late_brackets: prev.late_brackets,
+          late_below_bracket_mode: prev.late_below_bracket_mode,
+          late_half_day_after_min: prev.late_half_day_after_min,
           late_multiplier: prev.late_multiplier,
           grace_min: prev.grace_min,
           early_leave_grace_min: prev.early_leave_grace_min,
@@ -129332,10 +129632,16 @@
         ot_threshold_min: specOtThresh,
         ot_early_threshold_min: specOtEarly,
         ot_count_from: specOtFrom,
+        ot_snap_mode: specOtSnapMode,
+        ot_block_min: specOtBlockMin,
+        ot_snap_at_min: specOtSnapAtMin,
         ot_multiplier: spec.ot_multiplier != null ? Number(spec.ot_multiplier) : (prev ? prev.ot_multiplier : 1.5),
         ot_mode: spec.ot_mode || (prev ? prev.ot_mode : 'always'),
         ot_max_hours: spec.ot_max_hours != null ? Number(spec.ot_max_hours) : (prev ? prev.ot_max_hours : 2),
-        late_penalty_mode: spec.late_penalty_mode || (prev ? prev.late_penalty_mode : 'multiplier'),
+        late_penalty_mode: specLateMode,
+        late_brackets: specLateBrackets,
+        late_below_bracket_mode: specLateBelowBrk,
+        late_half_day_after_min: specLateHdMin,
         late_multiplier: spec.late_multiplier != null ? Number(spec.late_multiplier) : (prev ? prev.late_multiplier : 1.5),
         grace_min: spec.grace_min != null ? Number(spec.grace_min) : (prev ? prev.grace_min : 10),
         early_leave_grace_min: spec.early_leave_grace_min != null ? Number(spec.early_leave_grace_min) : (prev ? prev.early_leave_grace_min : 10),
@@ -129350,10 +129656,16 @@
           ot_threshold_min: specOtThresh,
           ot_early_threshold_min: specOtEarly,
           ot_count_from: specOtFrom,
+          ot_snap_mode: specOtSnapMode,
+          ot_block_min: specOtBlockMin,
+          ot_snap_at_min: specOtSnapAtMin,
           ot_multiplier: spec.ot_multiplier != null ? Number(spec.ot_multiplier) : (actVer.ot_multiplier != null ? actVer.ot_multiplier : (prev ? prev.ot_multiplier : 1.5)),
           ot_mode: spec.ot_mode || actVer.ot_mode || (prev ? prev.ot_mode : 'always'),
           ot_max_hours: spec.ot_max_hours != null ? Number(spec.ot_max_hours) : (actVer.ot_max_hours != null ? actVer.ot_max_hours : (prev ? prev.ot_max_hours : 2)),
-          late_penalty_mode: spec.late_penalty_mode || actVer.late_penalty_mode || (prev ? prev.late_penalty_mode : 'multiplier'),
+          late_penalty_mode: spec.late_penalty_mode ? specLateMode : (actVer.late_penalty_mode || (prev ? prev.late_penalty_mode : 'multiplier')),
+          late_brackets: spec.late_brackets != null ? specLateBrackets : normalizeLateBrackets(actVer.late_brackets || (prev && prev.late_brackets)),
+          late_below_bracket_mode: spec.late_below_bracket_mode != null ? specLateBelowBrk : normalizeLateBelowBracketMode(actVer.late_below_bracket_mode || (prev && prev.late_below_bracket_mode)),
+          late_half_day_after_min: spec.late_half_day_after_min != null ? specLateHdMin : (actVer.late_half_day_after_min != null ? actVer.late_half_day_after_min : (prev ? prev.late_half_day_after_min : 60)),
           late_multiplier: spec.late_multiplier != null ? Number(spec.late_multiplier) : (actVer.late_multiplier != null ? actVer.late_multiplier : (prev ? prev.late_multiplier : 1.5)),
           grace_min: spec.grace_min != null ? Number(spec.grace_min) : (actVer.grace_min != null ? actVer.grace_min : (prev ? prev.grace_min : 10)),
           early_leave_grace_min: spec.early_leave_grace_min != null ? Number(spec.early_leave_grace_min) : (actVer.early_leave_grace_min != null ? actVer.early_leave_grace_min : (prev ? prev.early_leave_grace_min : 10))
@@ -129428,6 +129740,9 @@
             company: s.company,
             policy_group_id: grpId,
             late_penalty_mode: todayResolved.late_penalty_mode,
+            late_brackets: normalizeLateBrackets(todayResolved.late_brackets),
+            late_below_bracket_mode: normalizeLateBelowBracketMode(todayResolved.late_below_bracket_mode),
+            late_half_day_after_min: todayResolved.late_half_day_after_min,
             late_multiplier: todayResolved.late_multiplier,
             ot_multiplier: todayResolved.ot_multiplier,
             ot_mode: todayResolved.ot_mode,
@@ -129442,6 +129757,9 @@
             ot_threshold_min: todayResolved.ot_threshold_min,
             ot_early_threshold_min: todayResolved.ot_early_threshold_min,
             ot_count_from: todayResolved.ot_count_from,
+            ot_snap_mode: normalizeOtSnapMode(todayResolved.ot_snap_mode),
+            ot_block_min: normalizeOtBlockMin(todayResolved.ot_block_min),
+            ot_snap_at_min: clampOtSnapAtMin(todayResolved.ot_snap_at_min, todayResolved.ot_block_min),
             perks: todayResolved.perks.slice()
           }, { deferSave: true, skipRecalc: true, fromPolicyGroup: true });
         }
@@ -129460,6 +129778,9 @@
           Object.assign(r, {
             policy_group_id: grp.id,
             late_penalty_mode: grp.late_penalty_mode,
+            late_brackets: normalizeLateBrackets(grp.late_brackets),
+            late_below_bracket_mode: normalizeLateBelowBracketMode(grp.late_below_bracket_mode),
+            late_half_day_after_min: grp.late_half_day_after_min,
             late_multiplier: grp.late_multiplier,
             ot_multiplier: grp.ot_multiplier,
             ot_mode: grp.ot_mode,
@@ -129474,6 +129795,9 @@
             ot_threshold_min: grp.ot_threshold_min,
             ot_early_threshold_min: grp.ot_early_threshold_min,
             ot_count_from: grp.ot_count_from,
+            ot_snap_mode: normalizeOtSnapMode(grp.ot_snap_mode),
+            ot_block_min: normalizeOtBlockMin(grp.ot_block_min),
+            ot_snap_at_min: clampOtSnapAtMin(grp.ot_snap_at_min, grp.ot_block_min),
             perks: (grp.perks || []).slice(),
             updated_at: nowIso
           });
@@ -129550,6 +129874,9 @@
         Object.assign(r, {
           policy_group_id: grp.id,
           late_penalty_mode: grp.late_penalty_mode,
+          late_brackets: normalizeLateBrackets(grp.late_brackets),
+          late_below_bracket_mode: normalizeLateBelowBracketMode(grp.late_below_bracket_mode),
+          late_half_day_after_min: grp.late_half_day_after_min,
           late_multiplier: grp.late_multiplier,
           ot_multiplier: grp.ot_multiplier,
           ot_mode: grp.ot_mode,
@@ -129564,6 +129891,9 @@
           ot_threshold_min: grp.ot_threshold_min,
           ot_early_threshold_min: grp.ot_early_threshold_min,
           ot_count_from: grp.ot_count_from,
+          ot_snap_mode: normalizeOtSnapMode(grp.ot_snap_mode),
+          ot_block_min: normalizeOtBlockMin(grp.ot_block_min),
+          ot_snap_at_min: clampOtSnapAtMin(grp.ot_snap_at_min, grp.ot_block_min),
           perks: (grp.perks || []).slice(),
           updated_at: nowIso
         });
@@ -129620,6 +129950,9 @@
     let otThreshMin = clampAttThresholdMin(resolvedGrp.ot_threshold_min, 10);
     let otEarlyThreshMin = clampAttThresholdMin(resolvedGrp.ot_early_threshold_min, 15);
     let otCountFrom = normalizeOtCountFrom(resolvedGrp.ot_count_from);
+    let otSnapMode = normalizeOtSnapMode(resolvedGrp.ot_snap_mode);
+    let otBlockMin = normalizeOtBlockMin(resolvedGrp.ot_block_min);
+    let otSnapAtMin = clampOtSnapAtMin(resolvedGrp.ot_snap_at_min, otBlockMin);
     let effectiveRule;
 
     if (matchedStaffWin) {
@@ -129630,9 +129963,15 @@
       otThreshMin = clampAttThresholdMin(matchedStaffWin.ot_threshold_min != null ? matchedStaffWin.ot_threshold_min : resolvedGrp.ot_threshold_min, 10);
       otEarlyThreshMin = clampAttThresholdMin(matchedStaffWin.ot_early_threshold_min != null ? matchedStaffWin.ot_early_threshold_min : resolvedGrp.ot_early_threshold_min, 15);
       otCountFrom = normalizeOtCountFrom(matchedStaffWin.ot_count_from || resolvedGrp.ot_count_from);
+      otSnapMode = normalizeOtSnapMode(matchedStaffWin.ot_snap_mode != null ? matchedStaffWin.ot_snap_mode : resolvedGrp.ot_snap_mode);
+      otBlockMin = normalizeOtBlockMin(matchedStaffWin.ot_block_min != null ? matchedStaffWin.ot_block_min : resolvedGrp.ot_block_min);
+      otSnapAtMin = clampOtSnapAtMin(matchedStaffWin.ot_snap_at_min != null ? matchedStaffWin.ot_snap_at_min : resolvedGrp.ot_snap_at_min, otBlockMin);
       effectiveRule = Object.assign({}, rule, {
         policy_group_id: grpId,
         late_penalty_mode: matchedStaffWin.late_penalty_mode || resolvedGrp.late_penalty_mode || rule.late_penalty_mode,
+        late_brackets: normalizeLateBrackets((Array.isArray(matchedStaffWin.late_brackets) && matchedStaffWin.late_brackets.length) ? matchedStaffWin.late_brackets : (resolvedGrp.late_brackets || rule.late_brackets)),
+        late_below_bracket_mode: normalizeLateBelowBracketMode(matchedStaffWin.late_below_bracket_mode || resolvedGrp.late_below_bracket_mode || rule.late_below_bracket_mode),
+        late_half_day_after_min: matchedStaffWin.late_half_day_after_min != null ? matchedStaffWin.late_half_day_after_min : (resolvedGrp.late_half_day_after_min != null ? resolvedGrp.late_half_day_after_min : rule.late_half_day_after_min),
         late_multiplier: matchedStaffWin.late_multiplier != null ? matchedStaffWin.late_multiplier : (resolvedGrp.late_multiplier != null ? resolvedGrp.late_multiplier : rule.late_multiplier),
         ot_multiplier: matchedStaffWin.ot_multiplier != null ? matchedStaffWin.ot_multiplier : (resolvedGrp.ot_multiplier != null ? resolvedGrp.ot_multiplier : rule.ot_multiplier),
         ot_mode: matchedStaffWin.ot_mode || resolvedGrp.ot_mode || rule.ot_mode,
@@ -129646,7 +129985,10 @@
         math_mode: mathMode,
         ot_threshold_min: otThreshMin,
         ot_early_threshold_min: otEarlyThreshMin,
-        ot_count_from: otCountFrom
+        ot_count_from: otCountFrom,
+        ot_snap_mode: otSnapMode,
+        ot_block_min: otBlockMin,
+        ot_snap_at_min: otSnapAtMin
       });
     } else if (hasExplicitCustom) {
       grpId = normalizePolicyGroupIdAlias(rule.policy_group_id || coResolved.id);
@@ -129658,17 +130000,26 @@
         otThreshMin = hasCustomMath && rule.ot_threshold_min != null ? clampAttThresholdMin(rule.ot_threshold_min, 10) : clampAttThresholdMin(grpAtDate.ot_threshold_min, 10);
         otEarlyThreshMin = hasCustomMath && rule.ot_early_threshold_min != null ? clampAttThresholdMin(rule.ot_early_threshold_min, 15) : clampAttThresholdMin(grpAtDate.ot_early_threshold_min, 15);
         otCountFrom = hasCustomMath && rule.ot_count_from != null ? normalizeOtCountFrom(rule.ot_count_from) : normalizeOtCountFrom(grpAtDate.ot_count_from);
+        otSnapMode = hasCustomMath && rule.ot_snap_mode != null ? normalizeOtSnapMode(rule.ot_snap_mode) : normalizeOtSnapMode(grpAtDate.ot_snap_mode);
+        otBlockMin = hasCustomMath && rule.ot_block_min != null ? normalizeOtBlockMin(rule.ot_block_min) : normalizeOtBlockMin(grpAtDate.ot_block_min);
+        otSnapAtMin = hasCustomMath && rule.ot_snap_at_min != null ? clampOtSnapAtMin(rule.ot_snap_at_min, otBlockMin) : clampOtSnapAtMin(grpAtDate.ot_snap_at_min, otBlockMin);
         effectiveRule = hasCustomPolicy
           ? Object.assign({}, rule, {
               policy_group_id: grpId,
               math_mode: mathMode,
               ot_threshold_min: otThreshMin,
               ot_early_threshold_min: otEarlyThreshMin,
-              ot_count_from: otCountFrom
+              ot_count_from: otCountFrom,
+              ot_snap_mode: otSnapMode,
+              ot_block_min: otBlockMin,
+              ot_snap_at_min: otSnapAtMin
             })
           : Object.assign({}, rule, {
               policy_group_id: grpId,
               late_penalty_mode: grpAtDate.late_penalty_mode || rule.late_penalty_mode,
+              late_brackets: normalizeLateBrackets(grpAtDate.late_brackets || rule.late_brackets),
+              late_below_bracket_mode: normalizeLateBelowBracketMode(grpAtDate.late_below_bracket_mode || rule.late_below_bracket_mode),
+              late_half_day_after_min: grpAtDate.late_half_day_after_min != null ? grpAtDate.late_half_day_after_min : rule.late_half_day_after_min,
               late_multiplier: grpAtDate.late_multiplier != null ? grpAtDate.late_multiplier : rule.late_multiplier,
               ot_multiplier: grpAtDate.ot_multiplier != null ? grpAtDate.ot_multiplier : rule.ot_multiplier,
               ot_mode: grpAtDate.ot_mode || rule.ot_mode,
@@ -129682,7 +130033,10 @@
               math_mode: mathMode,
               ot_threshold_min: otThreshMin,
               ot_early_threshold_min: otEarlyThreshMin,
-              ot_count_from: otCountFrom
+              ot_count_from: otCountFrom,
+              ot_snap_mode: otSnapMode,
+              ot_block_min: otBlockMin,
+              ot_snap_at_min: otSnapAtMin
             });
       } else {
         sourceScope = 'staff_rule';
@@ -129690,12 +130044,18 @@
         otThreshMin = hasCustomMath && rule.ot_threshold_min != null ? clampAttThresholdMin(rule.ot_threshold_min, 10) : clampAttThresholdMin(grpAtDate.ot_threshold_min, 10);
         otEarlyThreshMin = hasCustomMath && rule.ot_early_threshold_min != null ? clampAttThresholdMin(rule.ot_early_threshold_min, 15) : clampAttThresholdMin(grpAtDate.ot_early_threshold_min, 15);
         otCountFrom = hasCustomMath && rule.ot_count_from != null ? normalizeOtCountFrom(rule.ot_count_from) : normalizeOtCountFrom(grpAtDate.ot_count_from);
+        otSnapMode = hasCustomMath && rule.ot_snap_mode != null ? normalizeOtSnapMode(rule.ot_snap_mode) : normalizeOtSnapMode(grpAtDate.ot_snap_mode);
+        otBlockMin = hasCustomMath && rule.ot_block_min != null ? normalizeOtBlockMin(rule.ot_block_min) : normalizeOtBlockMin(grpAtDate.ot_block_min);
+        otSnapAtMin = hasCustomMath && rule.ot_snap_at_min != null ? clampOtSnapAtMin(rule.ot_snap_at_min, otBlockMin) : clampOtSnapAtMin(grpAtDate.ot_snap_at_min, otBlockMin);
         effectiveRule = Object.assign({}, rule, {
           policy_group_id: grpId,
           math_mode: mathMode,
           ot_threshold_min: otThreshMin,
           ot_early_threshold_min: otEarlyThreshMin,
-          ot_count_from: otCountFrom
+          ot_count_from: otCountFrom,
+          ot_snap_mode: otSnapMode,
+          ot_block_min: otBlockMin,
+          ot_snap_at_min: otSnapAtMin
         });
       }
     } else {
@@ -129709,19 +130069,33 @@
         otThreshMin = coResolved.window.ot_threshold_min != null ? clampAttThresholdMin(coResolved.window.ot_threshold_min, 10) : clampAttThresholdMin(resolvedGrp.ot_threshold_min, 10);
         otEarlyThreshMin = coResolved.window.ot_early_threshold_min != null ? clampAttThresholdMin(coResolved.window.ot_early_threshold_min, 15) : clampAttThresholdMin(resolvedGrp.ot_early_threshold_min, 15);
         otCountFrom = coResolved.window.ot_count_from ? normalizeOtCountFrom(coResolved.window.ot_count_from) : normalizeOtCountFrom(resolvedGrp.ot_count_from);
+        otSnapMode = coResolved.window.ot_snap_mode != null ? normalizeOtSnapMode(coResolved.window.ot_snap_mode) : normalizeOtSnapMode(resolvedGrp.ot_snap_mode);
+        otBlockMin = coResolved.window.ot_block_min != null ? normalizeOtBlockMin(coResolved.window.ot_block_min) : normalizeOtBlockMin(resolvedGrp.ot_block_min);
+        otSnapAtMin = coResolved.window.ot_snap_at_min != null ? clampOtSnapAtMin(coResolved.window.ot_snap_at_min, otBlockMin) : clampOtSnapAtMin(resolvedGrp.ot_snap_at_min, otBlockMin);
         const grpSwitchedByCoWin = followsCoGroup && grpId !== baseCoDefId;
         effectiveRule = Object.assign({}, rule, {
           policy_group_id: grpId,
-          late_penalty_mode: coResolved.window.late_penalty_mode || (grpSwitchedByCoWin ? resolvedGrp.late_penalty_mode : rule.late_penalty_mode),
-          late_multiplier: coResolved.window.late_multiplier != null ? coResolved.window.late_multiplier : (grpSwitchedByCoWin && resolvedGrp.late_multiplier != null ? resolvedGrp.late_multiplier : rule.late_multiplier),
-          ot_multiplier: coResolved.window.ot_multiplier != null ? coResolved.window.ot_multiplier : (grpSwitchedByCoWin && resolvedGrp.ot_multiplier != null ? resolvedGrp.ot_multiplier : rule.ot_multiplier),
-          ot_mode: coResolved.window.ot_mode || (grpSwitchedByCoWin ? resolvedGrp.ot_mode : rule.ot_mode),
-          ot_max_hours: grpSwitchedByCoWin && resolvedGrp.ot_max_hours != null ? resolvedGrp.ot_max_hours : rule.ot_max_hours,
-          grace_min: coResolved.window.grace_min != null ? coResolved.window.grace_min : rule.grace_min,
+          late_penalty_mode: coResolved.window.late_penalty_mode || resolvedGrp.late_penalty_mode || rule.late_penalty_mode,
+          late_brackets: normalizeLateBrackets((Array.isArray(coResolved.window.late_brackets) && coResolved.window.late_brackets.length) ? coResolved.window.late_brackets : (resolvedGrp.late_brackets || rule.late_brackets)),
+          late_below_bracket_mode: normalizeLateBelowBracketMode(coResolved.window.late_below_bracket_mode || resolvedGrp.late_below_bracket_mode || rule.late_below_bracket_mode),
+          late_half_day_after_min: coResolved.window.late_half_day_after_min != null ? coResolved.window.late_half_day_after_min : (resolvedGrp.late_half_day_after_min != null ? resolvedGrp.late_half_day_after_min : rule.late_half_day_after_min),
+          late_multiplier: coResolved.window.late_multiplier != null ? coResolved.window.late_multiplier : (resolvedGrp.late_multiplier != null ? resolvedGrp.late_multiplier : rule.late_multiplier),
+          ot_multiplier: coResolved.window.ot_multiplier != null ? coResolved.window.ot_multiplier : (resolvedGrp.ot_multiplier != null ? resolvedGrp.ot_multiplier : rule.ot_multiplier),
+          ot_mode: coResolved.window.ot_mode || resolvedGrp.ot_mode || rule.ot_mode,
+          ot_max_hours: resolvedGrp.ot_max_hours != null ? resolvedGrp.ot_max_hours : rule.ot_max_hours,
+          grace_min: coResolved.window.grace_min != null ? coResolved.window.grace_min : (resolvedGrp.grace_min != null ? resolvedGrp.grace_min : rule.grace_min),
+          early_leave_grace_min: coResolved.window.early_leave_grace_min != null ? coResolved.window.early_leave_grace_min : (resolvedGrp.early_leave_grace_min != null ? resolvedGrp.early_leave_grace_min : rule.early_leave_grace_min),
+          no_clock_out_rule: resolvedGrp.no_clock_out_rule || rule.no_clock_out_rule,
+          vacation_days: resolvedGrp.vacation_days != null ? resolvedGrp.vacation_days : rule.vacation_days,
+          sick_days: resolvedGrp.sick_days != null ? resolvedGrp.sick_days : rule.sick_days,
+          working_days: resolvedGrp.working_days != null ? resolvedGrp.working_days : rule.working_days,
           math_mode: mathMode,
           ot_threshold_min: otThreshMin,
           ot_early_threshold_min: otEarlyThreshMin,
-          ot_count_from: otCountFrom
+          ot_count_from: otCountFrom,
+          ot_snap_mode: otSnapMode,
+          ot_block_min: otBlockMin,
+          ot_snap_at_min: otSnapAtMin
         });
       } else {
         grpId = inferredGrpId;
@@ -129730,41 +130104,73 @@
         otThreshMin = clampAttThresholdMin(resolvedGrp.ot_threshold_min, 10);
         otEarlyThreshMin = clampAttThresholdMin(resolvedGrp.ot_early_threshold_min, 15);
         otCountFrom = normalizeOtCountFrom(resolvedGrp.ot_count_from);
+        otSnapMode = normalizeOtSnapMode(resolvedGrp.ot_snap_mode);
+        otBlockMin = normalizeOtBlockMin(resolvedGrp.ot_block_min);
+        otSnapAtMin = clampOtSnapAtMin(resolvedGrp.ot_snap_at_min, otBlockMin);
         if (resolvedGrp.activeVersion) {
           sourceScope = 'policy_group_version';
           const av = resolvedGrp.activeVersion;
           effectiveRule = Object.assign({}, rule, {
             policy_group_id: grpId,
-            late_penalty_mode: av.late_penalty_mode || rule.late_penalty_mode,
-            late_multiplier: av.late_multiplier != null ? av.late_multiplier : rule.late_multiplier,
-            ot_multiplier: av.ot_multiplier != null ? av.ot_multiplier : rule.ot_multiplier,
-            ot_mode: av.ot_mode || rule.ot_mode,
-            ot_max_hours: av.ot_max_hours != null ? av.ot_max_hours : rule.ot_max_hours,
-            grace_min: av.grace_min != null ? av.grace_min : rule.grace_min,
-            early_leave_grace_min: av.early_leave_grace_min != null ? av.early_leave_grace_min : rule.early_leave_grace_min,
-            no_clock_out_rule: av.no_clock_out_rule || rule.no_clock_out_rule,
-            vacation_days: av.vacation_days != null ? av.vacation_days : rule.vacation_days,
-            sick_days: av.sick_days != null ? av.sick_days : rule.sick_days,
-            working_days: av.working_days != null ? av.working_days : rule.working_days,
+            late_penalty_mode: av.late_penalty_mode || resolvedGrp.late_penalty_mode || rule.late_penalty_mode,
+            late_brackets: normalizeLateBrackets((Array.isArray(av.late_brackets) && av.late_brackets.length) ? av.late_brackets : (resolvedGrp.late_brackets || rule.late_brackets)),
+            late_below_bracket_mode: normalizeLateBelowBracketMode(av.late_below_bracket_mode || resolvedGrp.late_below_bracket_mode || rule.late_below_bracket_mode),
+            late_half_day_after_min: av.late_half_day_after_min != null ? av.late_half_day_after_min : (resolvedGrp.late_half_day_after_min != null ? resolvedGrp.late_half_day_after_min : rule.late_half_day_after_min),
+            late_multiplier: av.late_multiplier != null ? av.late_multiplier : (resolvedGrp.late_multiplier != null ? resolvedGrp.late_multiplier : rule.late_multiplier),
+            ot_multiplier: av.ot_multiplier != null ? av.ot_multiplier : (resolvedGrp.ot_multiplier != null ? resolvedGrp.ot_multiplier : rule.ot_multiplier),
+            ot_mode: av.ot_mode || resolvedGrp.ot_mode || rule.ot_mode,
+            ot_max_hours: av.ot_max_hours != null ? av.ot_max_hours : (resolvedGrp.ot_max_hours != null ? resolvedGrp.ot_max_hours : rule.ot_max_hours),
+            grace_min: av.grace_min != null ? av.grace_min : (resolvedGrp.grace_min != null ? resolvedGrp.grace_min : rule.grace_min),
+            early_leave_grace_min: av.early_leave_grace_min != null ? av.early_leave_grace_min : (resolvedGrp.early_leave_grace_min != null ? resolvedGrp.early_leave_grace_min : rule.early_leave_grace_min),
+            no_clock_out_rule: av.no_clock_out_rule || resolvedGrp.no_clock_out_rule || rule.no_clock_out_rule,
+            vacation_days: av.vacation_days != null ? av.vacation_days : (resolvedGrp.vacation_days != null ? resolvedGrp.vacation_days : rule.vacation_days),
+            sick_days: av.sick_days != null ? av.sick_days : (resolvedGrp.sick_days != null ? resolvedGrp.sick_days : rule.sick_days),
+            working_days: av.working_days != null ? av.working_days : (resolvedGrp.working_days != null ? resolvedGrp.working_days : rule.working_days),
             math_mode: mathMode,
             ot_threshold_min: otThreshMin,
             ot_early_threshold_min: otEarlyThreshMin,
-            ot_count_from: otCountFrom
+            ot_count_from: otCountFrom,
+            ot_snap_mode: otSnapMode,
+            ot_block_min: otBlockMin,
+            ot_snap_at_min: otSnapAtMin
           });
         } else {
           sourceScope = 'company_default';
-          if (coResolved.entry && (!Array.isArray(coResolved.entry.policy_timeline) || coResolved.entry.policy_timeline.length === 0)) {
-            if (coResolved.entry.math_mode) mathMode = normalizeAttMathMode(coResolved.entry.math_mode);
-            if (coResolved.entry.ot_threshold_min != null) otThreshMin = clampAttThresholdMin(coResolved.entry.ot_threshold_min, otThreshMin);
-            if (coResolved.entry.ot_early_threshold_min != null) otEarlyThreshMin = clampAttThresholdMin(coResolved.entry.ot_early_threshold_min, otEarlyThreshMin);
-            if (coResolved.entry.ot_count_from) otCountFrom = normalizeOtCountFrom(coResolved.entry.ot_count_from);
+          const coNoTl = (coResolved.entry && (!Array.isArray(coResolved.entry.policy_timeline) || coResolved.entry.policy_timeline.length === 0))
+            ? coResolved.entry
+            : null;
+          if (coNoTl) {
+            if (coNoTl.math_mode) mathMode = normalizeAttMathMode(coNoTl.math_mode);
+            if (coNoTl.ot_threshold_min != null) otThreshMin = clampAttThresholdMin(coNoTl.ot_threshold_min, otThreshMin);
+            if (coNoTl.ot_early_threshold_min != null) otEarlyThreshMin = clampAttThresholdMin(coNoTl.ot_early_threshold_min, otEarlyThreshMin);
+            if (coNoTl.ot_count_from) otCountFrom = normalizeOtCountFrom(coNoTl.ot_count_from);
+            if (coNoTl.ot_snap_mode != null) otSnapMode = normalizeOtSnapMode(coNoTl.ot_snap_mode);
+            if (coNoTl.ot_block_min != null) otBlockMin = normalizeOtBlockMin(coNoTl.ot_block_min);
+            if (coNoTl.ot_snap_at_min != null) otSnapAtMin = clampOtSnapAtMin(coNoTl.ot_snap_at_min, otBlockMin);
           }
           effectiveRule = Object.assign({}, rule, {
             policy_group_id: grpId,
+            late_penalty_mode: (coNoTl && coNoTl.late_penalty_mode) || resolvedGrp.late_penalty_mode || rule.late_penalty_mode,
+            late_brackets: normalizeLateBrackets((coNoTl && Array.isArray(coNoTl.late_brackets) && coNoTl.late_brackets.length) ? coNoTl.late_brackets : (resolvedGrp.late_brackets || rule.late_brackets)),
+            late_below_bracket_mode: normalizeLateBelowBracketMode((coNoTl && coNoTl.late_below_bracket_mode) || resolvedGrp.late_below_bracket_mode || rule.late_below_bracket_mode),
+            late_half_day_after_min: (coNoTl && coNoTl.late_half_day_after_min != null) ? coNoTl.late_half_day_after_min : (resolvedGrp.late_half_day_after_min != null ? resolvedGrp.late_half_day_after_min : rule.late_half_day_after_min),
+            late_multiplier: (coNoTl && coNoTl.late_multiplier != null) ? coNoTl.late_multiplier : (resolvedGrp.late_multiplier != null ? resolvedGrp.late_multiplier : rule.late_multiplier),
+            ot_multiplier: (coNoTl && coNoTl.ot_multiplier != null) ? coNoTl.ot_multiplier : (resolvedGrp.ot_multiplier != null ? resolvedGrp.ot_multiplier : rule.ot_multiplier),
+            ot_mode: (coNoTl && coNoTl.ot_mode) || resolvedGrp.ot_mode || rule.ot_mode,
+            ot_max_hours: (coNoTl && coNoTl.ot_max_hours != null) ? coNoTl.ot_max_hours : (resolvedGrp.ot_max_hours != null ? resolvedGrp.ot_max_hours : rule.ot_max_hours),
+            grace_min: (coNoTl && coNoTl.grace_min != null) ? coNoTl.grace_min : (resolvedGrp.grace_min != null ? resolvedGrp.grace_min : rule.grace_min),
+            early_leave_grace_min: (coNoTl && coNoTl.early_leave_grace_min != null) ? coNoTl.early_leave_grace_min : (resolvedGrp.early_leave_grace_min != null ? resolvedGrp.early_leave_grace_min : rule.early_leave_grace_min),
+            no_clock_out_rule: (coNoTl && coNoTl.no_clock_out_rule) || resolvedGrp.no_clock_out_rule || rule.no_clock_out_rule,
+            vacation_days: (coNoTl && coNoTl.vacation_days != null) ? coNoTl.vacation_days : (resolvedGrp.vacation_days != null ? resolvedGrp.vacation_days : rule.vacation_days),
+            sick_days: (coNoTl && coNoTl.sick_days != null) ? coNoTl.sick_days : (resolvedGrp.sick_days != null ? resolvedGrp.sick_days : rule.sick_days),
+            working_days: (coNoTl && coNoTl.working_days != null) ? coNoTl.working_days : (resolvedGrp.working_days != null ? resolvedGrp.working_days : rule.working_days),
             math_mode: mathMode,
             ot_threshold_min: otThreshMin,
             ot_early_threshold_min: otEarlyThreshMin,
-            ot_count_from: otCountFrom
+            ot_count_from: otCountFrom,
+            ot_snap_mode: otSnapMode,
+            ot_block_min: otBlockMin,
+            ot_snap_at_min: otSnapAtMin
           });
         }
       }
@@ -129782,6 +130188,9 @@
       ot_threshold_min: otThreshMin,
       ot_early_threshold_min: otEarlyThreshMin,
       ot_count_from: otCountFrom,
+      ot_snap_mode: otSnapMode,
+      ot_block_min: otBlockMin,
+      ot_snap_at_min: otSnapAtMin,
       rule: effectiveRule
     };
     if (memo.staffPolAtDate.size > 4096) memo.staffPolAtDate.clear();
@@ -129902,7 +130311,7 @@
         penalty_summary: evalRes.penaltySummary || '',
         late_cutoff: evalRes.lateCutoffTime || '',
         early_out_cutoff: evalRes.earlyOutCutoffTime || '',
-        math_mode: evalRes.mathMode || 'tenth_hour',
+        math_mode: evalRes.mathMode || 'per_minute',
         approved_ot_min: Number(evalRes.approvedOtMin || 0),
         unapproved_ot_min: Number(evalRes.unapprovedOtMin || 0),
         billable_late_min: Number(evalRes.billableLateMin || 0),
@@ -130922,10 +131331,27 @@
     const matchedPkg = policyGroups.find(g => g.id === defaultPkgId) || coAtToday || policyGroups[0] || DEFAULT_POLICY_GROUPS[0];
     const resolvedPkgToday = resolvePolicyGroupAtDate(matchedPkg.id, effCo, todayISO()) || matchedPkg;
     const hasCoTl = Boolean(coAtToday.entry && Array.isArray(coAtToday.entry.policy_timeline) && coAtToday.entry.policy_timeline.length > 0);
-    const coDefMathMode = (coAtToday.window && coAtToday.window.math_mode)
+    const coDefMathMode = normalizeAttMathMode(
+      (coAtToday.window && coAtToday.window.math_mode)
       || (!hasCoTl && coAtToday.entry && coAtToday.entry.math_mode)
       || resolvedPkgToday.math_mode
-      || 'tenth_hour';
+    );
+    const coDefOtSnapMode = normalizeOtSnapMode(
+      (coAtToday.window && coAtToday.window.ot_snap_mode)
+      || (!hasCoTl && coAtToday.entry && coAtToday.entry.ot_snap_mode)
+      || resolvedPkgToday.ot_snap_mode
+    );
+    const coDefOtBlockMin = normalizeOtBlockMin(
+      (coAtToday.window && coAtToday.window.ot_block_min != null)
+        ? coAtToday.window.ot_block_min
+        : ((!hasCoTl && coAtToday.entry && coAtToday.entry.ot_block_min != null) ? coAtToday.entry.ot_block_min : resolvedPkgToday.ot_block_min)
+    );
+    const coDefOtSnapAtMin = clampOtSnapAtMin(
+      (coAtToday.window && coAtToday.window.ot_snap_at_min != null)
+        ? coAtToday.window.ot_snap_at_min
+        : ((!hasCoTl && coAtToday.entry && coAtToday.entry.ot_snap_at_min != null) ? coAtToday.entry.ot_snap_at_min : resolvedPkgToday.ot_snap_at_min),
+      coDefOtBlockMin
+    );
     const coDefOtThresh = (coAtToday.window && coAtToday.window.ot_threshold_min != null)
       ? coAtToday.window.ot_threshold_min
       : ((!hasCoTl && coAtToday.entry && coAtToday.entry.ot_threshold_min != null) ? coAtToday.entry.ot_threshold_min : resolvedPkgToday.ot_threshold_min);
@@ -130990,14 +131416,19 @@
         : ((raw && !raw.reset_default && raw.grace_min != null) ? raw.grace_min : defEarlyGrace),
       late_when: 'both',
       late_count_from: 'shift_start',
-      late_penalty_mode: resolvedPkgToday.late_penalty_mode || 'exact_hours',
+      late_penalty_mode: normalizeLatePenaltyMode(resolvedPkgToday.late_penalty_mode || 'exact_hours'),
+      late_brackets: normalizeLateBrackets(resolvedPkgToday.late_brackets),
+      late_below_bracket_mode: normalizeLateBelowBracketMode(resolvedPkgToday.late_below_bracket_mode),
       late_multiplier: defLateMult,
-      late_half_day_after_min: 60,
+      late_half_day_after_min: resolvedPkgToday.late_half_day_after_min != null ? resolvedPkgToday.late_half_day_after_min : 60,
       no_clock_out_rule: resolvedPkgToday.no_clock_out_rule || 'half_day',
       math_mode: coDefMathMode,
       ot_threshold_min: coDefOtThresh != null ? coDefOtThresh : 10,
       ot_early_threshold_min: coDefOtEarlyThresh != null ? coDefOtEarlyThresh : 15,
       ot_count_from: coDefOtCountFrom,
+      ot_snap_mode: coDefOtSnapMode,
+      ot_block_min: coDefOtBlockMin,
+      ot_snap_at_min: coDefOtSnapAtMin,
       shift_overrides: [],
       ot_mode: resolvedPkgToday.ot_mode || 'none',
       ot_multiplier: defOtMult,
@@ -131023,13 +131454,18 @@
     base.ot_threshold_min = clampAttThresholdMin(base.ot_threshold_min, coDefOtThresh != null ? coDefOtThresh : 10);
     base.ot_early_threshold_min = clampAttThresholdMin(base.ot_early_threshold_min, coDefOtEarlyThresh != null ? coDefOtEarlyThresh : 15);
     base.ot_count_from = normalizeOtCountFrom(base.ot_count_from || coDefOtCountFrom);
+    base.ot_snap_mode = normalizeOtSnapMode(base.ot_snap_mode || coDefOtSnapMode);
+    base.ot_block_min = normalizeOtBlockMin(base.ot_block_min != null ? base.ot_block_min : coDefOtBlockMin);
+    base.ot_snap_at_min = clampOtSnapAtMin(base.ot_snap_at_min != null ? base.ot_snap_at_min : coDefOtSnapAtMin, base.ot_block_min);
     base.grace_min = Math.max(0, Math.min(120, Number(base.grace_min != null ? base.grace_min : defGrace)));
     base.early_leave_grace_min = Math.max(0, Math.min(120, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : base.grace_min)));
     base.late_when = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(base.late_when) ? base.late_when : 'both';
     base.late_count_from = ['shift_start', 'after_grace'].includes(base.late_count_from) ? base.late_count_from : 'shift_start';
-    base.late_penalty_mode = ['exact_hours', 'multiplier', 'round_hour', 'tiered_half_day', 'half_day_any', 'none'].includes(base.late_penalty_mode)
-      ? base.late_penalty_mode
+    base.late_penalty_mode = VALID_LATE_PENALTY_MODES.includes(String(base.late_penalty_mode || '').trim().toLowerCase())
+      ? normalizeLatePenaltyMode(base.late_penalty_mode)
       : 'exact_hours';
+    base.late_brackets = normalizeLateBrackets(base.late_brackets);
+    base.late_below_bracket_mode = normalizeLateBelowBracketMode(base.late_below_bracket_mode);
     base.late_multiplier = Math.max(1, Math.min(5, Number(base.late_multiplier != null ? base.late_multiplier : 1.5)));
     base.ot_multiplier = Math.max(1, Math.min(5, Number(base.ot_multiplier != null ? base.ot_multiplier : defOtMult)));
     base.vacation_days = Math.max(0, Math.min(90, Math.round(Number(base.vacation_days != null ? base.vacation_days : defVacDays))));
@@ -131066,9 +131502,7 @@
     const rule = resolved.rule || getStaffWorkRule(staffName, company);
     const groups = getPolicyGroups(company || rule.company);
     const matched = resolved.group || groups.find(g => g.id === rule.policy_group_id) || groups[0] || DEFAULT_POLICY_GROUPS[0];
-    const lateMultLbl = rule.late_penalty_mode === 'multiplier'
-      ? `Late ${fmtPolicyDec(rule.late_multiplier != null ? rule.late_multiplier : 1.5)}x`
-      : (rule.late_penalty_mode === 'none' ? 'Late $0' : 'Late 1x');
+    const lateMultLbl = formatPolicyLateChip(rule);
     const rawOtHrs = rule.ot_max_hours != null ? rule.ot_max_hours : 2;
     const otModeShort = rule.ot_mode === 'always'
       ? 'Whenever'
@@ -131082,8 +131516,13 @@
     const otThresholdMin = clampAttThresholdMin(resolved.ot_threshold_min != null ? resolved.ot_threshold_min : rule.ot_threshold_min, 10);
     const otEarlyThresholdMin = clampAttThresholdMin(resolved.ot_early_threshold_min != null ? resolved.ot_early_threshold_min : rule.ot_early_threshold_min, 15);
     const otCountFrom = normalizeOtCountFrom(resolved.ot_count_from || rule.ot_count_from);
+    const otSnapMode = normalizeOtSnapMode(resolved.ot_snap_mode != null ? resolved.ot_snap_mode : rule.ot_snap_mode);
+    const otBlockMin = normalizeOtBlockMin(resolved.ot_block_min != null ? resolved.ot_block_min : rule.ot_block_min);
+    const otSnapAtMin = clampOtSnapAtMin(resolved.ot_snap_at_min != null ? resolved.ot_snap_at_min : rule.ot_snap_at_min, otBlockMin);
+    const otSnapShort = formatOtSnapShort(otSnapMode, otBlockMin, otSnapAtMin, true);
     const mathModeLabel = formatAttMathModeLabel(mathMode);
     const mathModeShort = formatAttMathModeShort(mathMode);
+    const snapSummaryPart = rule.ot_mode !== 'none' && otSnapMode !== 'exact' ? ` · ${otSnapShort}` : '';
     return {
       id: matched ? matched.id : 'custom',
       name: matched ? matched.name : 'Custom Policy & Perks',
@@ -131097,13 +131536,17 @@
       otThresholdMin,
       otEarlyThresholdMin,
       otCountFrom,
+      otSnapMode,
+      otBlockMin,
+      otSnapAtMin,
+      otSnapShort,
       sourceScope: resolved.sourceScope,
       timelineCount: Array.isArray(rule.policy_timeline) ? rule.policy_timeline.length : 0,
       vacationDays: vacDays,
       sickDays: Number(rule.sick_days != null ? rule.sick_days : 7),
       workingDays: Number(rule.working_days || 30),
       perks: perksList,
-      summaryLine: `${mathModeShort} · OT >=${otThresholdMin}m · ${lateMultLbl} · ${otMultLbl} · ${vacDays}d Vac`,
+      summaryLine: `${mathModeShort} · OT >=${otThresholdMin}m${snapSummaryPart} · ${lateMultLbl} · ${otMultLbl} · ${vacDays}d Vac`,
       perksLine: perksList.length ? perksList.slice(0, 3).join(' · ') : `${vacDays}d Annual Leave`
     };
   }
@@ -131150,6 +131593,9 @@
         effectivePatch = Object.assign({
           policy_group_id: grp.id,
           late_penalty_mode: grp.late_penalty_mode,
+          late_brackets: normalizeLateBrackets(grp.late_brackets),
+          late_below_bracket_mode: normalizeLateBelowBracketMode(grp.late_below_bracket_mode),
+          late_half_day_after_min: grp.late_half_day_after_min,
           late_multiplier: grp.late_multiplier,
           ot_multiplier: grp.ot_multiplier,
           ot_mode: grp.ot_mode,
@@ -131164,6 +131610,9 @@
           ot_threshold_min: grp.ot_threshold_min,
           ot_early_threshold_min: grp.ot_early_threshold_min,
           ot_count_from: grp.ot_count_from,
+          ot_snap_mode: normalizeOtSnapMode(grp.ot_snap_mode),
+          ot_block_min: normalizeOtBlockMin(grp.ot_block_min),
+          ot_snap_at_min: clampOtSnapAtMin(grp.ot_snap_at_min, grp.ot_block_min),
           perks: grp.perks.slice()
         }, effectivePatch);
         delete effectivePatch.apply_policy_group_id;
@@ -131180,6 +131629,7 @@
         const priorDate = shiftIsoDateByDays(effFrom, -1);
         const priorPol = resolveStaffPolicyForDate(staffName, entry.company || patch.company || cur.company, priorDate);
         const priorRule = (priorPol && priorPol.rule) || cur;
+        const priorBlk = normalizeOtBlockMin(priorPol && priorPol.ot_block_min != null ? priorPol.ot_block_min : cur.ot_block_min);
         nextTimeline = upsertPolicyTimelineWindow(nextTimeline, {
           id: 'stf_base',
           start_date: '2000-01-01',
@@ -131189,14 +131639,21 @@
           ot_threshold_min: priorPol && priorPol.ot_threshold_min != null ? priorPol.ot_threshold_min : cur.ot_threshold_min,
           ot_early_threshold_min: priorPol && priorPol.ot_early_threshold_min != null ? priorPol.ot_early_threshold_min : cur.ot_early_threshold_min,
           ot_count_from: priorPol ? priorPol.ot_count_from : cur.ot_count_from,
+          ot_snap_mode: normalizeOtSnapMode(priorPol && priorPol.ot_snap_mode != null ? priorPol.ot_snap_mode : cur.ot_snap_mode),
+          ot_block_min: priorBlk,
+          ot_snap_at_min: clampOtSnapAtMin(priorPol && priorPol.ot_snap_at_min != null ? priorPol.ot_snap_at_min : cur.ot_snap_at_min, priorBlk),
           ot_multiplier: priorRule.ot_multiplier,
           ot_mode: priorRule.ot_mode,
           late_penalty_mode: priorRule.late_penalty_mode,
+          late_brackets: normalizeLateBrackets(priorRule.late_brackets),
+          late_below_bracket_mode: normalizeLateBelowBracketMode(priorRule.late_below_bracket_mode),
+          late_half_day_after_min: priorRule.late_half_day_after_min,
           late_multiplier: priorRule.late_multiplier,
           grace_min: priorRule.grace_min,
           note: 'Prior Baseline'
         });
       }
+      const winBlk = effectivePatch.ot_block_min != null ? normalizeOtBlockMin(effectivePatch.ot_block_min) : normalizeOtBlockMin(cur.ot_block_min);
       nextTimeline = upsertPolicyTimelineWindow(nextTimeline, {
         id: patch.timeline_id || opts.timeline_id || undefined,
         start_date: effFrom,
@@ -131206,9 +131663,15 @@
         ot_threshold_min: effectivePatch.ot_threshold_min != null ? clampAttThresholdMin(effectivePatch.ot_threshold_min, cur.ot_threshold_min) : cur.ot_threshold_min,
         ot_early_threshold_min: effectivePatch.ot_early_threshold_min != null ? clampAttThresholdMin(effectivePatch.ot_early_threshold_min, cur.ot_early_threshold_min) : cur.ot_early_threshold_min,
         ot_count_from: effectivePatch.ot_count_from != null ? normalizeOtCountFrom(effectivePatch.ot_count_from) : cur.ot_count_from,
+        ot_snap_mode: effectivePatch.ot_snap_mode != null ? normalizeOtSnapMode(effectivePatch.ot_snap_mode) : cur.ot_snap_mode,
+        ot_block_min: winBlk,
+        ot_snap_at_min: effectivePatch.ot_snap_at_min != null ? clampOtSnapAtMin(effectivePatch.ot_snap_at_min, winBlk) : clampOtSnapAtMin(cur.ot_snap_at_min, winBlk),
         ot_multiplier: effectivePatch.ot_multiplier != null ? Number(effectivePatch.ot_multiplier) : cur.ot_multiplier,
         ot_mode: effectivePatch.ot_mode || cur.ot_mode,
         late_penalty_mode: effectivePatch.late_penalty_mode || cur.late_penalty_mode,
+        late_brackets: effectivePatch.late_brackets != null ? normalizeLateBrackets(effectivePatch.late_brackets) : normalizeLateBrackets(cur.late_brackets),
+        late_below_bracket_mode: effectivePatch.late_below_bracket_mode != null ? normalizeLateBelowBracketMode(effectivePatch.late_below_bracket_mode) : normalizeLateBelowBracketMode(cur.late_below_bracket_mode),
+        late_half_day_after_min: effectivePatch.late_half_day_after_min != null ? Number(effectivePatch.late_half_day_after_min) : cur.late_half_day_after_min,
         late_multiplier: effectivePatch.late_multiplier != null ? Number(effectivePatch.late_multiplier) : cur.late_multiplier,
         grace_min: effectivePatch.grace_min != null ? Number(effectivePatch.grace_min) : cur.grace_min,
         note: String(patch.timeline_note || opts.timeline_note || '')
@@ -131222,11 +131685,17 @@
       || patch.ot_threshold_min != null
       || patch.ot_early_threshold_min != null
       || patch.ot_count_from != null
+      || patch.ot_snap_mode != null
+      || patch.ot_block_min != null
+      || patch.ot_snap_at_min != null
     );
     const patchHasPolicyFields = !isFutureEffective && (
       patch.apply_policy_group_id != null
       || patch.policy_group_id != null
       || patch.late_penalty_mode != null
+      || patch.late_brackets != null
+      || patch.late_below_bracket_mode != null
+      || patch.late_half_day_after_min != null
       || patch.late_multiplier != null
       || patch.ot_mode != null
       || patch.ot_multiplier != null
@@ -131244,15 +131713,24 @@
       && !opts.fromCompanyDefault && !opts.fromPolicyGroup && effectivePatch.follows_company_default !== true) {
       const actWin = matchPolicyTimelineAtDate(nextTimeline, today);
       if (actWin) {
+        const actBlk = effectivePatch.ot_block_min != null
+          ? normalizeOtBlockMin(effectivePatch.ot_block_min)
+          : normalizeOtBlockMin(actWin.ot_block_min != null ? actWin.ot_block_min : cur.ot_block_min);
         const updatedActWin = Object.assign({}, actWin, {
           policy_group_id: normalizePolicyGroupIdAlias(effectivePatch.policy_group_id || actWin.policy_group_id || cur.policy_group_id),
           math_mode: effectivePatch.math_mode != null ? normalizeAttMathMode(effectivePatch.math_mode) : normalizeAttMathMode(actWin.math_mode || cur.math_mode),
           ot_threshold_min: effectivePatch.ot_threshold_min != null ? clampAttThresholdMin(effectivePatch.ot_threshold_min, cur.ot_threshold_min) : clampAttThresholdMin(actWin.ot_threshold_min != null ? actWin.ot_threshold_min : cur.ot_threshold_min, 10),
           ot_early_threshold_min: effectivePatch.ot_early_threshold_min != null ? clampAttThresholdMin(effectivePatch.ot_early_threshold_min, cur.ot_early_threshold_min) : clampAttThresholdMin(actWin.ot_early_threshold_min != null ? actWin.ot_early_threshold_min : cur.ot_early_threshold_min, 15),
           ot_count_from: effectivePatch.ot_count_from != null ? normalizeOtCountFrom(effectivePatch.ot_count_from) : normalizeOtCountFrom(actWin.ot_count_from || cur.ot_count_from),
+          ot_snap_mode: effectivePatch.ot_snap_mode != null ? normalizeOtSnapMode(effectivePatch.ot_snap_mode) : normalizeOtSnapMode(actWin.ot_snap_mode || cur.ot_snap_mode),
+          ot_block_min: actBlk,
+          ot_snap_at_min: effectivePatch.ot_snap_at_min != null ? clampOtSnapAtMin(effectivePatch.ot_snap_at_min, actBlk) : clampOtSnapAtMin(actWin.ot_snap_at_min != null ? actWin.ot_snap_at_min : cur.ot_snap_at_min, actBlk),
           ot_multiplier: effectivePatch.ot_multiplier != null ? Number(effectivePatch.ot_multiplier) : (actWin.ot_multiplier != null ? actWin.ot_multiplier : cur.ot_multiplier),
           ot_mode: effectivePatch.ot_mode || actWin.ot_mode || cur.ot_mode,
           late_penalty_mode: effectivePatch.late_penalty_mode || actWin.late_penalty_mode || cur.late_penalty_mode,
+          late_brackets: effectivePatch.late_brackets != null ? normalizeLateBrackets(effectivePatch.late_brackets) : normalizeLateBrackets(actWin.late_brackets || cur.late_brackets),
+          late_below_bracket_mode: effectivePatch.late_below_bracket_mode != null ? normalizeLateBelowBracketMode(effectivePatch.late_below_bracket_mode) : normalizeLateBelowBracketMode(actWin.late_below_bracket_mode || cur.late_below_bracket_mode),
+          late_half_day_after_min: effectivePatch.late_half_day_after_min != null ? Number(effectivePatch.late_half_day_after_min) : (actWin.late_half_day_after_min != null ? actWin.late_half_day_after_min : cur.late_half_day_after_min),
           late_multiplier: effectivePatch.late_multiplier != null ? Number(effectivePatch.late_multiplier) : (actWin.late_multiplier != null ? actWin.late_multiplier : cur.late_multiplier),
           grace_min: effectivePatch.grace_min != null ? Number(effectivePatch.grace_min) : (actWin.grace_min != null ? actWin.grace_min : cur.grace_min)
         });
@@ -131315,6 +131793,9 @@
     next.ot_threshold_min = clampAttThresholdMin(next.ot_threshold_min, 10);
     next.ot_early_threshold_min = clampAttThresholdMin(next.ot_early_threshold_min, 15);
     next.ot_count_from = normalizeOtCountFrom(next.ot_count_from);
+    next.ot_snap_mode = normalizeOtSnapMode(next.ot_snap_mode);
+    next.ot_block_min = normalizeOtBlockMin(next.ot_block_min);
+    next.ot_snap_at_min = clampOtSnapAtMin(next.ot_snap_at_min, next.ot_block_min);
     next.grace_min = finiteClamp(next.grace_min, 10, 0, 120, true);
     if (applyFields.grace_min != null && applyFields.early_leave_grace_min == null) {
       next.early_leave_grace_min = next.grace_min;
@@ -131323,9 +131804,9 @@
     }
     next.late_when = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(next.late_when) ? next.late_when : 'both';
     next.late_count_from = ['shift_start', 'after_grace'].includes(next.late_count_from) ? next.late_count_from : 'shift_start';
-    next.late_penalty_mode = ['exact_hours', 'multiplier', 'round_hour', 'tiered_half_day', 'half_day_any', 'none'].includes(next.late_penalty_mode)
-      ? next.late_penalty_mode
-      : 'exact_hours';
+    next.late_penalty_mode = normalizeLatePenaltyMode(next.late_penalty_mode);
+    next.late_brackets = normalizeLateBrackets(next.late_brackets);
+    next.late_below_bracket_mode = normalizeLateBelowBracketMode(next.late_below_bracket_mode);
     next.late_multiplier = finiteClamp(next.late_multiplier, 1.5, 1, 5);
     next.ot_multiplier = finiteClamp(next.ot_multiplier, 1.5, 1, 5);
     next.vacation_days = finiteClamp(next.vacation_days, 15, 0, 90, true);
@@ -131755,7 +132236,26 @@
     const otThresholdMin = clampAttThresholdMin(resolvedPol.ot_threshold_min != null ? resolvedPol.ot_threshold_min : rule.ot_threshold_min, 10);
     const otEarlyThresholdMin = clampAttThresholdMin(resolvedPol.ot_early_threshold_min != null ? resolvedPol.ot_early_threshold_min : rule.ot_early_threshold_min, 15);
     const otCountFrom = normalizeOtCountFrom(resolvedPol.ot_count_from || rule.ot_count_from);
-    const threshTag = otThresholdMin > 0 ? ` · >=${otThresholdMin}m` : ' · 1st Min';
+    const otSnapMode = normalizeOtSnapMode(resolvedPol.ot_snap_mode != null ? resolvedPol.ot_snap_mode : rule.ot_snap_mode);
+    const otBlockMin = normalizeOtBlockMin(resolvedPol.ot_block_min != null ? resolvedPol.ot_block_min : rule.ot_block_min);
+    const otSnapAtMin = clampOtSnapAtMin(resolvedPol.ot_snap_at_min != null ? resolvedPol.ot_snap_at_min : rule.ot_snap_at_min, otBlockMin);
+    const otSnapShort = formatOtSnapShort(otSnapMode, otBlockMin, otSnapAtMin, true);
+    const snapSuffix = otSnapMode !== 'exact' ? ` · ${otSnapShort}` : '';
+    const snapDetailPart = otSnapMode !== 'exact' ? `, ${formatOtSnapShort(otSnapMode, otBlockMin, otSnapAtMin, false)}` : '';
+    const threshTag = (otThresholdMin > 0 ? ` · >=${otThresholdMin}m` : ' · 1st Min') + snapSuffix;
+    const baseOtFields = {
+      otMultiplier: otMult,
+      mathMode,
+      mathModeLabel,
+      mathModeShort,
+      otThresholdMin,
+      otEarlyThresholdMin,
+      otCountFrom,
+      otSnapMode,
+      otBlockMin,
+      otSnapAtMin,
+      otSnapShort
+    };
     const activePass = (rule.ot_passes || []).find(p => p && p.start_date <= dStr && dStr <= (p.end_date || p.start_date)) || null;
     if (activePass && (rule.ot_mode === 'date_range' || rule.ot_mode === 'none')) {
       const sameDay = activePass.start_date === (activePass.end_date || activePass.start_date);
@@ -131763,57 +132263,36 @@
         ? (activePass.start_date === todayISO() ? 'Today' : fmtShortDayMonth(activePass.start_date))
         : `${fmtShortDayMonth(activePass.start_date)}-${fmtShortDayMonth(activePass.end_date)}`;
       const capLbl = activePass.max_hours > 0 ? ` (${fmtNum(activePass.max_hours, 1)}h)` : '';
-      return {
+      return Object.assign({
         mode: 'date_range',
-        otMultiplier: otMult,
-        mathMode,
-        mathModeLabel,
-        mathModeShort,
-        otThresholdMin,
-        otEarlyThresholdMin,
-        otCountFrom,
         badgeText: `OT ${otMultTag}: ${dateLbl}${capLbl}${threshTag}`,
-        detailText: `Approved for ${dateLbl}${capLbl} at ${otMultTag} (${otThresholdMin}m start threshold)`,
+        detailText: `Approved for ${dateLbl}${capLbl} at ${otMultTag} (${otThresholdMin}m start threshold${snapDetailPart})`,
         tone: 'emerald',
         activeToday: true,
         pass: activePass
-      };
+      }, baseOtFields);
     }
     if (rule.ot_mode === 'always') {
-      return {
+      return Object.assign({
         mode: 'always',
-        otMultiplier: otMult,
-        mathMode,
-        mathModeLabel,
-        mathModeShort,
-        otThresholdMin,
-        otEarlyThresholdMin,
-        otCountFrom,
         badgeText: `OT ${otMultTag}: Whenever${threshTag}`,
-        detailText: `Open overtime authorized anytime beyond shift (${otThresholdMin}m threshold) at ${otMultTag}`,
+        detailText: `Open overtime authorized anytime beyond shift (${otThresholdMin}m threshold${snapDetailPart}) at ${otMultTag}`,
         tone: 'emerald',
         activeToday: true
-      };
+      }, baseOtFields);
     }
     if (rule.ot_mode === 'max_hours') {
       const cap = Number(rule.ot_max_hours || 0);
       const hasWin = Boolean(rule.ot_window_start && rule.ot_window_end);
       const capPart = cap > 0 ? `Max ${fmtNum(cap, cap % 1 ? 1 : 0)}h/d` : 'Window';
       const winPart = hasWin ? ` (${rule.ot_window_start}-${rule.ot_window_end})` : '';
-      return {
+      return Object.assign({
         mode: 'max_hours',
-        otMultiplier: otMult,
-        mathMode,
-        mathModeLabel,
-        mathModeShort,
-        otThresholdMin,
-        otEarlyThresholdMin,
-        otCountFrom,
         badgeText: `OT ${otMultTag}: ${capPart}${winPart}${threshTag}`,
-        detailText: `${cap > 0 ? `Up to ${fmtNum(cap, 1)}h/day` : 'Allowed'}${hasWin ? ` between ${rule.ot_window_start} and ${rule.ot_window_end}` : ' beyond shift'} (${otThresholdMin}m threshold) at ${otMultTag}`,
+        detailText: `${cap > 0 ? `Up to ${fmtNum(cap, 1)}h/day` : 'Allowed'}${hasWin ? ` between ${rule.ot_window_start} and ${rule.ot_window_end}` : ' beyond shift'} (${otThresholdMin}m threshold${snapDetailPart}) at ${otMultTag}`,
         tone: 'sapphire',
         activeToday: true
-      };
+      }, baseOtFields);
     }
     if (rule.ot_mode === 'date_range') {
       const upcoming = (rule.ot_passes || [])
@@ -131822,51 +132301,30 @@
       if (upcoming) {
         const sameDay = upcoming.start_date === (upcoming.end_date || upcoming.start_date);
         const lbl = sameDay ? fmtShortDayMonth(upcoming.start_date) : `${fmtShortDayMonth(upcoming.start_date)}-${fmtShortDayMonth(upcoming.end_date)}`;
-        return {
+        return Object.assign({
           mode: 'date_range',
-          otMultiplier: otMult,
-          mathMode,
-          mathModeLabel,
-          mathModeShort,
-          otThresholdMin,
-          otEarlyThresholdMin,
-          otCountFrom,
           badgeText: `OT ${otMultTag}: ${lbl}${threshTag}`,
           detailText: `Scheduled OT pass (${lbl}); 0h paid OT today`,
           tone: 'amber',
           activeToday: false,
           pass: upcoming
-        };
+        }, baseOtFields);
       }
-      return {
+      return Object.assign({
         mode: 'date_range',
-        otMultiplier: otMult,
-        mathMode,
-        mathModeLabel,
-        mathModeShort,
-        otThresholdMin,
-        otEarlyThresholdMin,
-        otCountFrom,
         badgeText: `OT ${otMultTag}: Date Pass`,
         detailText: 'Date-range mode with no active date today (0h paid OT)',
         tone: 'muted',
         activeToday: false
-      };
+      }, baseOtFields);
     }
-    return {
+    return Object.assign({
       mode: 'none',
-      otMultiplier: otMult,
-      mathMode,
-      mathModeLabel,
-      mathModeShort,
-      otThresholdMin,
-      otEarlyThresholdMin,
-      otCountFrom,
       badgeText: 'No Overtime',
       detailText: 'Late clock-out logs actual time with 0h paid overtime',
       tone: 'muted',
       activeToday: false
-    };
+    }, baseOtFields);
   }
 
   function formatMinutesAsClockTime(totalMinutes) {
@@ -131892,7 +132350,9 @@
     const cutoffTime = inCutoffTime;
     const lateWhen = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(rule.late_when) ? rule.late_when : 'both';
     const countFrom = rule.late_count_from || 'shift_start';
-    const penaltyMode = rule.late_penalty_mode || 'exact_hours';
+    const penaltyMode = normalizeLatePenaltyMode(rule.late_penalty_mode);
+    const lateBrackets = normalizeLateBrackets(rule.late_brackets);
+    const lateBelowBracketMode = normalizeLateBelowBracketMode(rule.late_below_bracket_mode);
     const mult = Number(rule.late_multiplier || 1.5);
     const hdMin = Number(rule.late_half_day_after_min || 60);
     const noOutRule = rule.no_clock_out_rule || 'half_day';
@@ -131925,6 +132385,15 @@
     if (penaltyMode === 'multiplier') {
       penaltyLabel = `Rate ${fmtNum(mult, mult % 1 ? 1 : 0)}x`;
       penaltyShort = `${fmtNum(mult, mult % 1 ? 1 : 0)}x Rate`;
+      tone = 'amber';
+    } else if (penaltyMode === 'step_brackets') {
+      const brkCompact = formatLateBracketsCompact(lateBrackets, lateBelowBracketMode);
+      penaltyLabel = `Step Brackets (${brkCompact})`;
+      penaltyShort = brkCompact;
+      tone = 'amber';
+    } else if (penaltyMode === 'round_30m') {
+      penaltyLabel = 'Round Up 30m';
+      penaltyShort = 'Round 30m';
       tone = 'amber';
     } else if (penaltyMode === 'round_hour') {
       penaltyLabel = 'Round Up 1h';
@@ -131981,6 +132450,8 @@
       countFrom,
       countFromLabel: countFromLabels[countFrom] || countFromLabels.shift_start,
       penaltyMode,
+      lateBrackets,
+      lateBelowBracketMode,
       penaltyLabel,
       penaltyShort,
       lateMultiplier: mult,
@@ -132031,6 +132502,9 @@
     const otThresholdMin = clampAttThresholdMin(rule.ot_threshold_min != null ? rule.ot_threshold_min : resolvedPol.ot_threshold_min, 10);
     const otEarlyThresholdMin = clampAttThresholdMin(rule.ot_early_threshold_min != null ? rule.ot_early_threshold_min : resolvedPol.ot_early_threshold_min, 15);
     const otCountFrom = normalizeOtCountFrom(rule.ot_count_from != null ? rule.ot_count_from : resolvedPol.ot_count_from);
+    const otSnapMode = normalizeOtSnapMode(rule.ot_snap_mode != null ? rule.ot_snap_mode : resolvedPol.ot_snap_mode);
+    const otBlockMin = normalizeOtBlockMin(rule.ot_block_min != null ? rule.ot_block_min : resolvedPol.ot_block_min);
+    const otSnapAtMin = clampOtSnapAtMin(rule.ot_snap_at_min != null ? rule.ot_snap_at_min : resolvedPol.ot_snap_at_min, otBlockMin);
     const round1 = v => Math.round(Math.max(0, Number(v || 0)) * 10) / 10;
     const round3 = v => Math.round(Math.max(0, Number(v || 0)) * 1000) / 1000;
     const round4 = v => Math.round(Math.max(0, Number(v || 0)) * 10000) / 10000;
@@ -132048,7 +132522,9 @@
     const earlyOutCutoffTime = formatMinutesAsClockTime(schedEndMin - earlyGraceMin);
     const lateWhen = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(rule.late_when) ? rule.late_when : 'both';
     const countFrom = rule.late_count_from || 'shift_start';
-    const penaltyMode = rule.late_penalty_mode || 'exact_hours';
+    const penaltyMode = normalizeLatePenaltyMode(rule.late_penalty_mode);
+    const lateBrackets = normalizeLateBrackets(rule.late_brackets);
+    const lateBelowBracketMode = normalizeLateBelowBracketMode(rule.late_below_bracket_mode);
     const mult = Number(rule.late_multiplier || 1.5);
     const otMult = Number(rule.ot_multiplier || 1.5);
     const hdAfterMin = Number(rule.late_half_day_after_min || 60);
@@ -132117,6 +132593,37 @@
             penaltyStatus = 'Lateness';
             penaltySummary = `Late ${cleanRawMin}m (-${fmtNum(billableLateHours, decPlaces)}h)`;
           }
+        } else if (penaltyMode === 'step_brackets') {
+          const brackets = normalizeLateBrackets(rule.late_brackets);
+          const belowMode = normalizeLateBelowBracketMode(rule.late_below_bracket_mode);
+          let matchedTier = null;
+          for (let bi = 0; bi < brackets.length; bi++) {
+            if (cleanRawMin > brackets[bi].over_min) matchedTier = brackets[bi];
+          }
+          if (matchedTier) {
+            billableLateMin = Math.max(cleanRawMin, matchedTier.penalty_min);
+            billableLateHours = roundH(billableLateMin / 60);
+            penaltyStatus = 'Lateness';
+            penaltySummary = billableLateMin > cleanRawMin
+              ? `Late ${cleanRawMin}m, billed ${billableLateMin}m (-${fmtNum(billableLateHours, decPlaces)}h)`
+              : `Late ${cleanRawMin}m (-${fmtNum(billableLateHours, decPlaces)}h)`;
+          } else if (belowMode === 'waive') {
+            billableLateMin = 0;
+            billableLateHours = 0;
+            penaltyStatus = 'Present';
+            penaltySummary = `Late ${cleanRawMin}m (<=${brackets[0].over_min}m waived)`;
+          } else {
+            billableLateMin = cleanRawMin;
+            billableLateHours = rawLateHours;
+            penaltyStatus = 'Lateness';
+            penaltySummary = `Late ${cleanRawMin}m (-${fmtNum(billableLateHours, decPlaces)}h)`;
+          }
+        } else if (penaltyMode === 'round_30m') {
+          const halfHrsUp = Math.max(1, Math.ceil(cleanRawMin / 30));
+          billableLateMin = halfHrsUp * 30;
+          billableLateHours = roundH(billableLateMin / 60);
+          penaltyStatus = 'Lateness';
+          penaltySummary = `Late ${cleanRawMin}m, billed ${billableLateMin}m (-${fmtNum(billableLateHours, decPlaces)}h)`;
         } else if (penaltyMode === 'round_hour') {
           const hrsUp = Math.max(1, Math.ceil(cleanRawMin / 60));
           billableLateMin = hrsUp * 60;
@@ -132198,6 +132705,12 @@
         otThresholdMin,
         otEarlyThresholdMin,
         otCountFrom,
+        otSnapMode,
+        otBlockMin,
+        otSnapAtMin,
+        otSnappedUp: false,
+        otDroppedMin: 0,
+        latePenaltyMode: penaltyMode,
         sourceScope: resolvedPol.sourceScope,
         hasIn: false,
         hasOut: false,
@@ -132278,6 +132791,12 @@
         otThresholdMin,
         otEarlyThresholdMin,
         otCountFrom,
+        otSnapMode,
+        otBlockMin,
+        otSnapAtMin,
+        otSnappedUp: false,
+        otDroppedMin: 0,
+        latePenaltyMode: penaltyMode,
         sourceScope: resolvedPol.sourceScope,
         hasIn: rawInMin != null,
         hasOut: rawOutMin != null,
@@ -132383,22 +132902,52 @@
     const billableLateMinFinal = penOut.penaltyLeaveDays > 0 ? 0 : penOut.billableLateMin;
 
     let approvedOtMin = 0;
+    let otSnappedUp = false;
+    let otDroppedMin = 0;
     let otReason = '';
+    const resolveCappedOt = (rawQualMin, capMinVal = Infinity) => {
+      const snapOut = applyOvertimeSnapMinutes(rawQualMin, otSnapMode, otBlockMin, otSnapAtMin);
+      const effMin = Math.min(snapOut.snappedMin, capMinVal);
+      return {
+        approvedMin: effMin,
+        snappedUp: snapOut.snappedUp && effMin > rawQualMin,
+        droppedMin: Math.max(0, rawQualMin - effMin),
+        blockedBySnap: rawQualMin > 0 && effMin === 0 && otSnapMode === 'whole_blocks'
+      };
+    };
+    const appendSnapReasonSuffix = (baseLbl, rawQualMin, otRes, capMinVal = Infinity) => {
+      if (qualifyingExtraMin === 0 && rawExtraMin > 0) {
+        return `Below OT threshold (${rawExtraMin}m < ${otThresholdMin}m)`;
+      }
+      if (otRes.blockedBySnap) {
+        return `Below ${otBlockMin}m OT block (${rawQualMin}m < ${otSnapAtMin}m snap)`;
+      }
+      if (otRes.snappedUp) {
+        return `${baseLbl} (${rawQualMin}m snapped to ${otRes.approvedMin}m)`;
+      }
+      if (otRes.droppedMin > 0 && otSnapMode === 'whole_blocks' && capMinVal === Infinity) {
+        return `${baseLbl} (${rawQualMin}m trimmed to ${otRes.approvedMin}m block)`;
+      }
+      return baseLbl;
+    };
     const activePass = (rule.ot_passes || []).find(p => p && p.start_date <= dStr && dStr <= (p.end_date || p.start_date)) || null;
 
     if (activePass && (rule.ot_mode === 'date_range' || rule.ot_mode === 'none')) {
       const capMin = Number(activePass.max_hours || 0) > 0 ? Math.round(Number(activePass.max_hours) * 60) : Infinity;
-      approvedOtMin = Math.min(qualifyingExtraMin, capMin);
-      otReason = qualifyingExtraMin === 0 && rawExtraMin > 0
-        ? `Below OT threshold (${rawExtraMin}m < ${otThresholdMin}m)`
-        : (activePass.start_date === (activePass.end_date || activePass.start_date)
-          ? `Approved OT (${fmtDateDMY(activePass.start_date)})`
-          : `Approved OT (${fmtDateDMY(activePass.start_date)} to ${fmtDateDMY(activePass.end_date)})`);
+      const otRes = resolveCappedOt(qualifyingExtraMin, capMin);
+      approvedOtMin = otRes.approvedMin;
+      otSnappedUp = otRes.snappedUp;
+      otDroppedMin = otRes.droppedMin;
+      const passLbl = activePass.start_date === (activePass.end_date || activePass.start_date)
+        ? `Approved OT (${fmtDateDMY(activePass.start_date)})`
+        : `Approved OT (${fmtDateDMY(activePass.start_date)} to ${fmtDateDMY(activePass.end_date)})`;
+      otReason = appendSnapReasonSuffix(passLbl, qualifyingExtraMin, otRes, capMin);
     } else if (rule.ot_mode === 'always') {
-      approvedOtMin = qualifyingExtraMin;
-      otReason = qualifyingExtraMin === 0 && rawExtraMin > 0
-        ? `Below OT threshold (${rawExtraMin}m < ${otThresholdMin}m)`
-        : 'Anytime OT authorized';
+      const otRes = resolveCappedOt(qualifyingExtraMin, Infinity);
+      approvedOtMin = otRes.approvedMin;
+      otSnappedUp = otRes.snappedUp;
+      otDroppedMin = otRes.droppedMin;
+      otReason = appendSnapReasonSuffix('Anytime OT authorized', qualifyingExtraMin, otRes, Infinity);
     } else if (rule.ot_mode === 'max_hours') {
       let eligibleMin = qualifyingExtraMin;
       const winS = parseClockMinutes(rule.ot_window_start);
@@ -132413,10 +132962,12 @@
         eligibleMin = Math.min(qualifyingExtraMin, winOverlap);
       }
       const capMin = Number(rule.ot_max_hours || 0) > 0 ? Math.round(Number(rule.ot_max_hours) * 60) : Infinity;
-      approvedOtMin = Math.min(eligibleMin, capMin);
-      otReason = qualifyingExtraMin === 0 && rawExtraMin > 0
-        ? `Below OT threshold (${rawExtraMin}m < ${otThresholdMin}m)`
-        : (capMin < Infinity ? `OT cap ${round1(capMin / 60)}h/day` : 'OT window');
+      const otRes = resolveCappedOt(eligibleMin, capMin);
+      approvedOtMin = otRes.approvedMin;
+      otSnappedUp = otRes.snappedUp;
+      otDroppedMin = otRes.droppedMin;
+      const maxLbl = capMin < Infinity ? `OT cap ${round1(capMin / 60)}h/day` : 'OT window';
+      otReason = appendSnapReasonSuffix(maxLbl, eligibleMin, otRes, capMin);
     } else if (rule.ot_mode === 'date_range') {
       approvedOtMin = 0;
       otReason = rawExtraMin > 0 ? 'Outside approved OT dates' : 'Date-range OT';
@@ -132437,6 +132988,12 @@
       otThresholdMin,
       otEarlyThresholdMin,
       otCountFrom,
+      otSnapMode,
+      otBlockMin,
+      otSnapAtMin,
+      otSnappedUp,
+      otDroppedMin,
+      latePenaltyMode: penaltyMode,
       sourceScope: resolvedPol.sourceScope,
       hasIn: true,
       hasOut: true,
@@ -133397,7 +133954,7 @@
     punch.late_hours = !isPairedBoth ? Number(evalRes.billableLateHours ?? evalRes.rawLateHours ?? ltH) : ltH;
     punch.raw_late_hours = rawLtH;
     punch.raw_late_min = rawLtMin;
-    punch.math_mode = evalRes.mathMode || 'tenth_hour';
+    punch.math_mode = evalRes.mathMode || 'per_minute';
     punch.billable_late_min = billLateMin;
     punch.ot_threshold_min = otThreshUsed;
     punch.penalty_leave_days = penLeaveDays;
@@ -133457,7 +134014,7 @@
         late_hours: ltH,
         raw_late_hours: rawLtH,
         raw_late_min: rawLtMin,
-        math_mode: evalRes.mathMode || 'tenth_hour',
+        math_mode: evalRes.mathMode || 'per_minute',
         approved_ot_min: appOtMin,
         unapproved_ot_min: unappOtMin,
         billable_late_min: billLateMin,
@@ -133495,7 +134052,7 @@
       attRec.late_hours = ltH;
       attRec.raw_late_hours = rawLtH;
       attRec.raw_late_min = rawLtMin;
-      attRec.math_mode = evalRes.mathMode || 'tenth_hour';
+      attRec.math_mode = evalRes.mathMode || 'per_minute';
       attRec.approved_ot_min = appOtMin;
       attRec.unapproved_ot_min = unappOtMin;
       attRec.billable_late_min = billLateMin;
@@ -136622,7 +137179,7 @@
     let draftEarlyGrace = Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : draftGrace);
     let draftLateWhen = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(rule.late_when) ? rule.late_when : 'both';
     let draftLateCountFrom = rule.late_count_from || 'shift_start';
-    let draftLatePenaltyMode = rule.late_penalty_mode || 'exact_hours';
+    let draftLatePenaltyMode = normalizeLatePenaltyMode(rule.late_penalty_mode || 'exact_hours');
     let draftLateMultiplier = Number(rule.late_multiplier != null ? rule.late_multiplier : 1.5);
     let draftOtMultiplier = Number(rule.ot_multiplier != null ? rule.ot_multiplier : 1.5);
     let draftVacationDays = Number(rule.vacation_days != null ? rule.vacation_days : 15);
@@ -136685,6 +137242,11 @@
     let draftOtThreshMin = clampAttThresholdMin(draftCustomMathOverride && rule.ot_threshold_min != null ? rule.ot_threshold_min : todayResolvedStaffPol.ot_threshold_min, 10);
     let draftOtEarlyThreshMin = clampAttThresholdMin(draftCustomMathOverride && rule.ot_early_threshold_min != null ? rule.ot_early_threshold_min : todayResolvedStaffPol.ot_early_threshold_min, 15);
     let draftOtCountFrom = normalizeOtCountFrom(draftCustomMathOverride && rule.ot_count_from ? rule.ot_count_from : todayResolvedStaffPol.ot_count_from);
+    let draftOtSnapMode = normalizeOtSnapMode(draftCustomMathOverride && rule.ot_snap_mode ? rule.ot_snap_mode : todayResolvedStaffPol.ot_snap_mode);
+    let draftOtBlockMin = normalizeOtBlockMin(draftCustomMathOverride && rule.ot_block_min != null ? rule.ot_block_min : todayResolvedStaffPol.ot_block_min);
+    let draftOtSnapAtMin = clampOtSnapAtMin(draftCustomMathOverride && rule.ot_snap_at_min != null ? rule.ot_snap_at_min : todayResolvedStaffPol.ot_snap_at_min, draftOtBlockMin);
+    let draftLateBrackets = normalizeLateBrackets(rule.late_brackets && rule.late_brackets.length ? rule.late_brackets : todayResolvedStaffPol.late_brackets);
+    let draftLateBelowBrk = normalizeLateBelowBracketMode(rule.late_below_bracket_mode || todayResolvedStaffPol.late_below_bracket_mode);
     let draftPolicyTimeline = normalizePolicyTimelineList(rule.policy_timeline);
     let draftPolicyTimelineEdited = false;
     let draftPolEffFrom = '';
@@ -136746,6 +137308,8 @@
       const penSummaryMap = {
         exact_hours: '1.0x Exact',
         multiplier: `${fmtNum(draftLateMultiplier, draftLateMultiplier % 1 ? 2 : 1)}x Rate`,
+        step_brackets: formatLateBracketsCompact(draftLateBrackets, draftLateBelowBrk),
+        round_30m: 'Round 30m',
         round_hour: 'Round 1h',
         tiered_half_day: `>=${draftLateHalfDayMin}m = 0.5d`,
         half_day_any: 'Late = 0.5d',
@@ -136777,7 +137341,23 @@
         || draftCustomMathOverride !== Boolean(rule.custom_math_override)
         || draftMathMode !== normalizeAttMathMode(rule.math_mode)
         || draftOtThreshMin !== clampAttThresholdMin(rule.ot_threshold_min, 10)
+        || draftOtEarlyThreshMin !== clampAttThresholdMin(rule.ot_early_threshold_min, 15)
         || draftOtCountFrom !== normalizeOtCountFrom(rule.ot_count_from)
+        || draftOtSnapMode !== normalizeOtSnapMode(rule.ot_snap_mode)
+        || draftOtBlockMin !== normalizeOtBlockMin(rule.ot_block_min)
+        || draftOtSnapAtMin !== clampOtSnapAtMin(rule.ot_snap_at_min, normalizeOtBlockMin(rule.ot_block_min))
+        || draftLatePenaltyMode !== normalizeLatePenaltyMode(rule.late_penalty_mode)
+        || serializeLateBrackets(draftLateBrackets) !== serializeLateBrackets(rule.late_brackets)
+        || draftLateBelowBrk !== normalizeLateBelowBracketMode(rule.late_below_bracket_mode)
+        || draftLateHalfDayMin !== Number(rule.late_half_day_after_min != null ? rule.late_half_day_after_min : 60)
+        || draftLateWhen !== (['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(rule.late_when) ? rule.late_when : 'both')
+        || Math.abs(Number(draftLateMultiplier) - Number(rule.late_multiplier != null ? rule.late_multiplier : 1.5)) > 0.001
+        || Math.abs(Number(draftOtMultiplier) - Number(rule.ot_multiplier != null ? rule.ot_multiplier : 1.5)) > 0.001
+        || draftOtMode !== (rule.ot_mode || 'none')
+        || Math.abs(Number(draftOtMaxHours) - Number(rule.ot_max_hours != null ? rule.ot_max_hours : 2)) > 0.001
+        || Number(draftGrace) !== Number(rule.grace_min != null ? rule.grace_min : 10)
+        || Number(draftEarlyGrace) !== Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : (rule.grace_min != null ? rule.grace_min : 10))
+        || draftNoClockOutRule !== (rule.no_clock_out_rule || 'half_day')
         || draftPolicyGroupId !== (rule.policy_group_id || 'pkg_15_open_15d')
       ))
         ? previewPolicyChangeImpact({
@@ -136791,7 +137371,14 @@
               ot_threshold_min: draftOtThreshMin,
               ot_early_threshold_min: draftOtEarlyThreshMin,
               ot_count_from: draftOtCountFrom,
+              ot_snap_mode: draftOtSnapMode,
+              ot_block_min: draftOtBlockMin,
+              ot_snap_at_min: draftOtSnapAtMin,
               late_penalty_mode: draftLatePenaltyMode,
+              late_brackets: draftLateBrackets,
+              late_below_bracket_mode: draftLateBelowBrk,
+              late_half_day_after_min: draftLateHalfDayMin,
+              late_when: draftLateWhen,
               late_multiplier: draftLateMultiplier,
               ot_multiplier: draftOtMultiplier,
               ot_mode: draftOtMode,
@@ -137331,13 +137918,18 @@
                 <div class="ssm-comp-card" id="ssmMathModeCard">
                   <div class="ssm-comp-head">
                     <label for="ssmMathModeSelect">Calculation Precision</label>
-                    <span class="att-math-pill ${draftMathMode === 'per_minute' ? 'is-min' : ''}">${draftCustomMathOverride ? (draftMathMode === 'per_minute' ? 'Custom: $/min' : 'Custom: 0.1h') : `Inherit (${draftMathMode === 'per_minute' ? '$/min' : '0.1h'})`}</span>
+                    <span class="att-math-pill is-min">${draftCustomMathOverride ? `Custom: ${esc(formatOtSnapShort(draftOtSnapMode, draftOtBlockMin, draftOtSnapAtMin, true))}` : `Inherit (${esc(formatOtSnapShort(draftOtSnapMode, draftOtBlockMin, draftOtSnapAtMin, true))})`}</span>
                   </div>
-                  <select id="ssmMathModeSelect" class="kiosk-select" data-plain-options="1">
-                    <option value="inherit" ${!draftCustomMathOverride ? 'selected' : ''}>Inherit Policy Group (${curPolicyGrp && curPolicyGrp.math_mode === 'per_minute' ? '$ / Min' : '0.1h Steps'})</option>
-                    <option value="per_minute" ${draftCustomMathOverride && draftMathMode === 'per_minute' ? 'selected' : ''}>Exact Per-Minute ($ / min)</option>
-                    <option value="tenth_hour" ${draftCustomMathOverride && draftMathMode === 'tenth_hour' ? 'selected' : ''}>Legacy 0.1h (6-Min Steps)</option>
-                  </select>
+                  ${(() => {
+                    const curSsmSnapCombo = serializeOtSnapCombo(draftOtSnapMode, draftOtBlockMin, draftOtSnapAtMin);
+                    const hasPresetCombo = OT_SNAP_PRESET_COMBOS.some(c => c.val === curSsmSnapCombo);
+                    const inhSnapLbl = curPolicyGrp ? formatOtSnapShort(curPolicyGrp.ot_snap_mode, curPolicyGrp.ot_block_min, curPolicyGrp.ot_snap_at_min, true) : '$ / Min Exact';
+                    return `<select id="ssmMathModeSelect" class="kiosk-select" data-plain-options="1">
+                      <option value="inherit" ${!draftCustomMathOverride ? 'selected' : ''}>Inherit Policy Group ($ / Min - ${esc(inhSnapLbl)})</option>
+                      ${OT_SNAP_PRESET_COMBOS.map(c => `<option value="${esc(c.val)}" ${draftCustomMathOverride && curSsmSnapCombo === c.val ? 'selected' : ''}>Custom: ${esc(c.label)}</option>`).join('')}
+                      ${draftCustomMathOverride && !hasPresetCombo ? `<option value="${esc(curSsmSnapCombo)}" selected>Custom: ${esc(formatOtSnapShort(draftOtSnapMode, draftOtBlockMin, draftOtSnapAtMin))}</option>` : ''}
+                    </select>`;
+                  })()}
                   ${canShowSsmDollars && ssmHrRate > 0 ? `<div class="muted mono" style="font-size:11px;margin-top:4px">Base ${fmtUSD(ssmHrRate, 2)}/hr · <b>${fmtUSD(ssmHrRate / 60, 4)}/min</b> · OT ${fmtUSD((ssmHrRate * Number(draftOtMultiplier || 1.5)) / 60, 4)}/min</div>` : ''}
                 </div>
               </div>
@@ -137386,14 +137978,15 @@
                 ${draftPolicyTimeline.length ? `
                   <div class="att-policy-timeline-list" id="ssmPolTimelineList">
                     ${draftPolicyTimeline.map(w => {
-                      const wm = normalizeAttMathMode(w.math_mode || 'tenth_hour');
+                      const wm = normalizeAttMathMode(w.math_mode || 'per_minute');
                       const wt = clampAttThresholdMin(w.ot_threshold_min, 10);
+                      const wSnap = formatOtSnapShort(w.ot_snap_mode, w.ot_block_min, w.ot_snap_at_min, true);
                       const wGrp = livePolicyGroups.find(g => g.id === w.policy_group_id);
                       const wFrom = fmtDateDMY(w.start_date);
                       const wTo = w.end_date ? fmtDateDMY(w.end_date) : 'Present';
                       return `<div class="att-policy-ver-row ${draftPolEditWinId === w.id ? 'is-editing' : ''}">
                         <span class="mono"><b>${esc(wFrom)}</b> .. ${esc(wTo)}</span>
-                        <span class="att-math-pill ${wm === 'per_minute' ? 'is-min' : ''}">${wm === 'per_minute' ? '$ / Min' : '0.1h'}</span>
+                        <span class="att-math-pill ${wm === 'per_minute' ? 'is-min' : ''}">$ / Min · ${esc(wSnap)}</span>
                         <span>${esc(wGrp ? wGrp.name : (w.policy_group_id || 'Policy'))}</span>
                         <span class="mono">OT ≥${wt}m</span>
                         ${w.note ? `<span class="muted">${esc(w.note)}</span>` : '<span></span>'}
@@ -137510,6 +138103,14 @@
                   <div class="ot-mc-title"><span class="ot-dot amber"></span>Round Up to Full Hour</div>
                   <div class="ot-mc-desc">Any lateness beyond tolerance deducts at least 1 full hour.</div>
                 </button>
+                <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'step_brackets' ? 'active' : ''}" data-ssm-late-pen="step_brackets">
+                  <div class="ot-mc-title"><span class="ot-dot sapphire"></span>Step Brackets (${esc(formatLateBracketsCompact(draftLateBrackets, draftLateBelowBrk))})</div>
+                  <div class="ot-mc-desc">Fixed minute penalties per threshold tier (e.g. &gt;15m = 30m, &gt;30m = 60m) at 1x $/min.</div>
+                </button>
+                <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'round_30m' ? 'active' : ''}" data-ssm-late-pen="round_30m">
+                  <div class="ot-mc-title"><span class="ot-dot amber"></span>Round Up to 30m</div>
+                  <div class="ot-mc-desc">Any lateness beyond tolerance bills in completed 30m increments at 1x $/min.</div>
+                </button>
                 <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'tiered_half_day' ? 'active' : ''}" data-ssm-late-pen="tiered_half_day">
                   <div class="ot-mc-title"><span class="ot-dot rose"></span>Late &gt;= ${draftLateHalfDayMin}m = Half Day</div>
                   <div class="ot-mc-desc">1x hours below ${draftLateHalfDayMin}m; converts to Half Day (0.5d) at ${draftLateHalfDayMin}m+.</div>
@@ -137533,6 +138134,37 @@
                         <input type="number" id="ssmLateMultInput" min="1" max="5" step="0.25" value="${draftLateMultiplier}" style="width:84px">
                         ${[1.25, 1.5, 2, 3].map(m => `<button type="button" class="kiosk-qchip ${Number(draftLateMultiplier) === m ? 'active' : ''}" data-ssm-mult-chip="${m}">${m}x</button>`).join('')}
                       </div>
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
+
+              ${draftLatePenaltyMode === 'step_brackets' ? `
+                <div class="ssm-ot-subpanel" id="ssmLateBracketsBox">
+                  <div class="att-bracket-editor">
+                    <div class="att-bracket-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+                      <label style="font-size:12px;font-weight:700">Lateness Penalty Tiers (Minutes Late = Billed Minutes at 1x $/min)</label>
+                      <div style="display:inline-flex;gap:6px;align-items:center">
+                        <span class="muted" style="font-size:11px">Below 1st tier:</span>
+                        <select id="ssmLateBelowBrk" class="kiosk-select" style="width:auto;min-width:130px" data-plain-options="1">
+                          <option value="exact" ${draftLateBelowBrk === 'exact' ? 'selected' : ''}>Exact Minutes (1x)</option>
+                          <option value="waive" ${draftLateBelowBrk === 'waive' ? 'selected' : ''}>Waive ($0)</option>
+                        </select>
+                      </div>
+                    </div>
+                    ${draftLateBrackets.map((b, idx) => `
+                      <div class="att-bracket-row" data-ssm-brk-idx="${idx}">
+                        <span class="muted">Late &gt;</span>
+                        <input type="number" class="mono" min="0" max="480" step="1" data-ssm-brk-over="${idx}" value="${b.over_min != null && Number.isFinite(Number(b.over_min)) ? Number(b.over_min) : 15}" aria-label="Minutes late threshold">
+                        <span class="muted">m = Bill</span>
+                        <input type="number" class="mono" min="1" max="720" step="1" data-ssm-brk-pen="${idx}" value="${Number(b.penalty_min || 30)}" aria-label="Penalty minutes billed">
+                        <span class="muted">m</span>
+                        ${draftLateBrackets.length > 1 ? `<button type="button" class="btn kiosk-mini-btn" data-ssm-brk-rm="${idx}" aria-label="Remove tier">&times;</button>` : ''}
+                      </div>
+                    `).join('')}
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+                      <button type="button" class="btn kiosk-mini-btn" id="ssmAddLateBracketBtn">+ Add Tier</button>
+                      <span class="muted mono" style="font-size:11px">Actual late &gt; penalty keeps exact late min</span>
                     </div>
                   </div>
                 </div>
@@ -137601,7 +138233,7 @@
               <div class="att-policy-timeline-box" style="margin-top:8px">
                 <div class="ssm-comp-head" style="margin-bottom:6px">
                   <label style="font-size:12px;font-weight:700">Overtime Start Threshold &amp; Counting</label>
-                  <span class="badge mono">Past End ≥${draftOtThreshMin}m · Early ≥${draftOtEarlyThreshMin}m · ${draftOtCountFrom === 'after_threshold' ? 'After Thresh' : 'Shift End'}</span>
+                  <span class="badge mono">Past End ≥${draftOtThreshMin}m · Early ≥${draftOtEarlyThreshMin}m · ${draftOtCountFrom === 'after_threshold' ? 'After Thresh' : 'Shift End'} · ${esc(formatOtSnapShort(draftOtSnapMode, draftOtBlockMin, draftOtSnapAtMin, true))}</span>
                 </div>
                 <div style="display:grid;grid-template-columns:1.4fr 0.7fr 1.1fr;gap:10px;align-items:end">
                   <div class="ssm-field" style="margin:0">
@@ -137622,6 +138254,38 @@
                       <option value="after_threshold" ${draftOtCountFrom === 'after_threshold' ? 'selected' : ''}>Only After Threshold</option>
                     </select>
                   </div>
+                </div>
+                <div class="att-snap-row" style="margin-top:8px">
+                  <div class="ssm-field" style="margin:0">
+                    <label for="ssmOtSnapMode">Overtime Snap / Block Rule</label>
+                    <select id="ssmOtSnapMode" class="kiosk-select" data-plain-options="1">
+                      <option value="exact" ${draftOtSnapMode === 'exact' ? 'selected' : ''}>Exact Minutes (No Snap)</option>
+                      <option value="exact_plus_snap" ${draftOtSnapMode === 'exact_plus_snap' ? 'selected' : ''}>Exact Minutes + Top Snap</option>
+                      <option value="whole_blocks" ${draftOtSnapMode === 'whole_blocks' ? 'selected' : ''}>Whole Blocks Only</option>
+                    </select>
+                  </div>
+                  <div class="ssm-field" style="margin:0">
+                    <label for="ssmOtBlockMin">Block Size</label>
+                    <select id="ssmOtBlockMin" class="kiosk-select" data-plain-options="1" ${draftOtSnapMode === 'exact' ? 'disabled' : ''}>
+                      <option value="60" ${Number(draftOtBlockMin) === 60 ? 'selected' : ''}>60 min (1h)</option>
+                      <option value="30" ${Number(draftOtBlockMin) === 30 ? 'selected' : ''}>30 min (0.5h)</option>
+                    </select>
+                  </div>
+                  <div class="ssm-field" style="margin:0">
+                    <label for="ssmOtSnapAtMin">Snap Remainder At (&ge; min)</label>
+                    <input type="number" id="ssmOtSnapAtMin" class="mono" min="1" max="${draftOtBlockMin}" step="1" value="${draftOtSnapAtMin}" ${draftOtSnapMode === 'exact' ? 'disabled' : ''}>
+                  </div>
+                </div>
+                <div class="att-snap-hint muted mono" id="ssmOtSnapHint">
+                  ${(() => {
+                    const ex1Min = Math.max(draftOtThreshMin || 0, Math.min(draftOtBlockMin - 1, Math.round(draftOtBlockMin * 0.4)));
+                    const ex2Min = Math.max(draftOtThreshMin || 0, Math.min(draftOtBlockMin, draftOtSnapAtMin));
+                    const r1 = applyOvertimeSnapMinutes(ex1Min, draftOtSnapMode, draftOtBlockMin, draftOtSnapAtMin);
+                    const r2 = applyOvertimeSnapMinutes(ex2Min, draftOtSnapMode, draftOtBlockMin, draftOtSnapAtMin);
+                    return draftOtSnapMode === 'exact'
+                      ? `Example: ${ex1Min}m pays ${ex1Min}m, ${ex2Min}m pays ${ex2Min}m at $/min.`
+                      : `Example: ${ex1Min}m pays ${r1.snappedMin}m, ${ex2Min}m pays ${r2.snappedMin}m (block ${draftOtBlockMin}m, snap &gt;=${draftOtSnapAtMin}m).`;
+                  })()}
                 </div>
               </div>
 
@@ -137738,7 +138402,7 @@
         </div>
       `;
 
-      const syncLiveInputs = () => {
+      const syncLiveInputs = (src = '') => {
         if ($('ssmCustomName')) draftCustomName = $('ssmCustomName').value || 'Custom Shift';
         if ($('ssmCustomStart')) draftCustomStart = normalize24hClockTime($('ssmCustomStart').value, draftCustomStart || '08:00');
         if ($('ssmCustomEnd')) draftCustomEnd = normalize24hClockTime($('ssmCustomEnd').value, draftCustomEnd || '16:00');
@@ -137775,17 +138439,42 @@
         if ($('ssmDateExcStart')) draftPendingDateStart = normalize24hClockTime($('ssmDateExcStart').value || '09:00', '09:00');
         if ($('ssmDateExcEnd')) draftPendingDateEnd = normalize24hClockTime($('ssmDateExcEnd').value || '15:00', '15:00');
         if ($('ssmDateExcNote')) draftPendingDateNote = String($('ssmDateExcNote').value || '');
-        if ($('ssmMathModeSelect')) {
+        if ($('ssmMathModeSelect') && src !== 'ot_snap') {
           const mv = $('ssmMathModeSelect').value || 'inherit';
-          if (mv === 'inherit') draftCustomMathOverride = false;
-          else {
+          if (mv === 'inherit') {
+            draftCustomMathOverride = false;
+            draftMathMode = 'per_minute';
+          } else {
             draftCustomMathOverride = true;
-            draftMathMode = normalizeAttMathMode(mv);
+            draftMathMode = 'per_minute';
+            const snapPatch = parseOtSnapComboPatch(mv);
+            draftOtSnapMode = snapPatch.ot_snap_mode;
+            draftOtBlockMin = snapPatch.ot_block_min;
+            draftOtSnapAtMin = snapPatch.ot_snap_at_min;
           }
         }
         if ($('ssmOtThreshMin')) draftOtThreshMin = clampAttThresholdMin($('ssmOtThreshMin').value, 10);
         if ($('ssmOtEarlyThreshMin')) draftOtEarlyThreshMin = clampAttThresholdMin($('ssmOtEarlyThreshMin').value, 15);
         if ($('ssmOtCountFrom')) draftOtCountFrom = normalizeOtCountFrom($('ssmOtCountFrom').value);
+        if (src !== 'math_select') {
+          if ($('ssmOtSnapMode')) draftOtSnapMode = normalizeOtSnapMode($('ssmOtSnapMode').value);
+          if ($('ssmOtBlockMin')) draftOtBlockMin = normalizeOtBlockMin($('ssmOtBlockMin').value);
+          if ($('ssmOtSnapAtMin')) draftOtSnapAtMin = clampOtSnapAtMin($('ssmOtSnapAtMin').value, draftOtBlockMin);
+        }
+        if ($('ssmLateBelowBrk')) draftLateBelowBrk = normalizeLateBelowBracketMode($('ssmLateBelowBrk').value);
+        const brkRowsLive = modal.querySelectorAll('[data-ssm-brk-idx]');
+        if (brkRowsLive.length) {
+          const collectedBrk = [];
+          brkRowsLive.forEach(rowEl => {
+            const idxStr = rowEl.getAttribute('data-ssm-brk-idx');
+            const ovInp = rowEl.querySelector(`[data-ssm-brk-over="${idxStr}"]`);
+            const pnInp = rowEl.querySelector(`[data-ssm-brk-pen="${idxStr}"]`);
+            if (ovInp && pnInp) {
+              collectedBrk.push({ over_min: Number(ovInp.value || 0), penalty_min: Number(pnInp.value || 0) });
+            }
+          });
+          if (collectedBrk.length) draftLateBrackets = normalizeLateBrackets(collectedBrk);
+        }
         if ($('ssmPolEffFrom')) draftPolEffFrom = String($('ssmPolEffFrom').value || '').trim().slice(0, 10);
         if ($('ssmPolEffTo')) draftPolEffTo = String($('ssmPolEffTo').value || '').trim().slice(0, 10);
         if ($('ssmPolEffNote')) draftPolEffNote = String($('ssmPolEffNote').value || '');
@@ -137864,8 +138553,11 @@
         const grp = getPolicyGroups(entry.company).find(g => g.id === grpId);
         if (!grp) return;
         draftPolicyGroupId = grp.id;
-        draftLatePenaltyMode = grp.late_penalty_mode;
+        draftLatePenaltyMode = normalizeLatePenaltyMode(grp.late_penalty_mode);
         draftLateMultiplier = grp.late_multiplier;
+        draftLateBrackets = normalizeLateBrackets(grp.late_brackets);
+        draftLateBelowBrk = normalizeLateBelowBracketMode(grp.late_below_bracket_mode);
+        draftLateHalfDayMin = Number(grp.late_half_day_after_min != null ? grp.late_half_day_after_min : 60);
         draftOtMultiplier = grp.ot_multiplier;
         draftOtMode = grp.ot_mode;
         draftOtMaxHours = grp.ot_max_hours;
@@ -137881,10 +138573,13 @@
         draftOtThreshMin = clampAttThresholdMin(grp.ot_threshold_min, 10);
         draftOtEarlyThreshMin = clampAttThresholdMin(grp.ot_early_threshold_min, 15);
         draftOtCountFrom = normalizeOtCountFrom(grp.ot_count_from);
+        draftOtSnapMode = normalizeOtSnapMode(grp.ot_snap_mode);
+        draftOtBlockMin = normalizeOtBlockMin(grp.ot_block_min);
+        draftOtSnapAtMin = clampOtSnapAtMin(grp.ot_snap_at_min, draftOtBlockMin);
       };
 
       $('ssmMathModeSelect')?.addEventListener('change', () => {
-        syncLiveInputs();
+        syncLiveInputs('math_select');
         if (!draftCustomMathOverride) {
           const g = getPolicyGroups(entry.company).find(x => x.id === draftPolicyGroupId) || resolveCompanyDefaultPolicyGroupAtDate(entry.company, today);
           if (g) {
@@ -137892,6 +138587,9 @@
             draftOtThreshMin = clampAttThresholdMin(g.ot_threshold_min, 10);
             draftOtEarlyThreshMin = clampAttThresholdMin(g.ot_early_threshold_min, 15);
             draftOtCountFrom = normalizeOtCountFrom(g.ot_count_from);
+            draftOtSnapMode = normalizeOtSnapMode(g.ot_snap_mode);
+            draftOtBlockMin = normalizeOtBlockMin(g.ot_block_min);
+            draftOtSnapAtMin = clampOtSnapAtMin(g.ot_snap_at_min, draftOtBlockMin);
           }
         }
         renderModalInner();
@@ -137914,6 +138612,25 @@
       });
       $('ssmOtCountFrom')?.addEventListener('change', () => {
         syncLiveInputs();
+        draftCustomMathOverride = true;
+        renderModalInner();
+      });
+      $('ssmOtSnapMode')?.addEventListener('change', () => {
+        syncLiveInputs('ot_snap');
+        draftCustomMathOverride = true;
+        renderModalInner();
+      });
+      $('ssmOtBlockMin')?.addEventListener('change', () => {
+        const prevBlk = draftOtBlockMin;
+        const prevAt = draftOtSnapAtMin;
+        syncLiveInputs('ot_snap');
+        draftCustomMathOverride = true;
+        if (prevBlk === 60 && draftOtBlockMin === 30 && prevAt === 50) draftOtSnapAtMin = 25;
+        else if (prevBlk === 30 && draftOtBlockMin === 60 && prevAt === 25) draftOtSnapAtMin = 50;
+        renderModalInner();
+      });
+      $('ssmOtSnapAtMin')?.addEventListener('change', () => {
+        syncLiveInputs('ot_snap');
         draftCustomMathOverride = true;
         renderModalInner();
       });
@@ -137942,6 +138659,12 @@
         if (w.ot_threshold_min != null) draftOtThreshMin = clampAttThresholdMin(w.ot_threshold_min, 10);
         if (w.ot_early_threshold_min != null) draftOtEarlyThreshMin = clampAttThresholdMin(w.ot_early_threshold_min, 15);
         if (w.ot_count_from) draftOtCountFrom = normalizeOtCountFrom(w.ot_count_from);
+        if (w.ot_snap_mode) draftOtSnapMode = normalizeOtSnapMode(w.ot_snap_mode);
+        if (w.ot_block_min != null) draftOtBlockMin = normalizeOtBlockMin(w.ot_block_min);
+        if (w.ot_snap_at_min != null) draftOtSnapAtMin = clampOtSnapAtMin(w.ot_snap_at_min, draftOtBlockMin);
+        if (w.late_penalty_mode) draftLatePenaltyMode = normalizeLatePenaltyMode(w.late_penalty_mode);
+        if (Array.isArray(w.late_brackets) && w.late_brackets.length) draftLateBrackets = normalizeLateBrackets(w.late_brackets);
+        if (w.late_below_bracket_mode) draftLateBelowBrk = normalizeLateBelowBracketMode(w.late_below_bracket_mode);
         renderModalInner();
       }));
       modal.querySelectorAll('[data-ssm-pol-del-win]').forEach(btn => btn.addEventListener('click', () => {
@@ -138006,7 +138729,12 @@
           ot_threshold_min: draftOtThreshMin,
           ot_early_threshold_min: draftOtEarlyThreshMin,
           ot_count_from: draftOtCountFrom,
+          ot_snap_mode: draftOtSnapMode,
+          ot_block_min: draftOtBlockMin,
+          ot_snap_at_min: draftOtSnapAtMin,
           late_penalty_mode: draftLatePenaltyMode,
+          late_brackets: draftLateBrackets,
+          late_below_bracket_mode: draftLateBelowBrk,
           late_multiplier: draftLateMultiplier,
           ot_multiplier: draftOtMultiplier,
           ot_mode: draftOtMode,
@@ -138302,8 +139030,8 @@
       modal.querySelectorAll('[data-ssm-bu-policy-default]').forEach(sel => {
         sel.addEventListener('change', () => onSsmCoPolicyUpdate(sel, sel.getAttribute('data-ssm-bu-policy-default') || entry.company, 'group_select'));
       });
-      modal.querySelectorAll('[data-ssm-bu-policy-math]').forEach(sel => {
-        sel.addEventListener('change', () => onSsmCoPolicyUpdate(sel, sel.getAttribute('data-ssm-bu-policy-math') || entry.company, 'math_or_apply'));
+      modal.querySelectorAll('[data-ssm-bu-policy-ot-snap]').forEach(sel => {
+        sel.addEventListener('change', () => onSsmCoPolicyUpdate(sel, sel.getAttribute('data-ssm-bu-policy-ot-snap') || entry.company, 'math_or_apply'));
       });
       modal.querySelectorAll('[data-ssm-bu-policy-ot-thresh]').forEach(inp => {
         inp.addEventListener('change', () => onSsmCoPolicyUpdate(inp, inp.getAttribute('data-ssm-bu-policy-ot-thresh') || entry.company, 'math_or_apply'));
@@ -138515,11 +139243,16 @@
             ot_threshold_min: draftOtThreshMin,
             ot_early_threshold_min: draftOtEarlyThreshMin,
             ot_count_from: draftOtCountFrom,
+            ot_snap_mode: draftOtSnapMode,
+            ot_block_min: draftOtBlockMin,
+            ot_snap_at_min: draftOtSnapAtMin,
             grace_min: draftGrace,
             early_leave_grace_min: draftEarlyGrace,
             late_when: draftLateWhen,
             late_count_from: draftLateCountFrom,
             late_penalty_mode: draftLatePenaltyMode,
+            late_brackets: draftLateBrackets,
+            late_below_bracket_mode: draftLateBelowBrk,
             late_multiplier: draftLateMultiplier,
             ot_multiplier: draftOtMultiplier,
             ot_mode: draftOtMode,
@@ -138722,7 +139455,45 @@
       modal.querySelectorAll('[data-ssm-late-pen]').forEach(btn => {
         btn.addEventListener('click', () => {
           syncLiveInputs();
-          draftLatePenaltyMode = btn.getAttribute('data-ssm-late-pen') || 'exact_hours';
+          draftLatePenaltyMode = normalizeLatePenaltyMode(btn.getAttribute('data-ssm-late-pen') || 'exact_hours');
+          if (draftLatePenaltyMode === 'step_brackets' && (!Array.isArray(draftLateBrackets) || !draftLateBrackets.length)) {
+            draftLateBrackets = normalizeLateBrackets(DEFAULT_LATE_BRACKETS);
+          }
+          renderModalInner();
+        });
+      });
+
+      $('ssmLateBelowBrk')?.addEventListener('change', () => {
+        syncLiveInputs();
+        renderModalInner();
+      });
+
+      modal.querySelectorAll('[data-ssm-brk-over], [data-ssm-brk-pen]').forEach(inp => {
+        inp.addEventListener('change', () => {
+          syncLiveInputs();
+          renderModalInner();
+        });
+      });
+
+      $('ssmAddLateBracketBtn')?.addEventListener('click', () => {
+        syncLiveInputs();
+        const maxOv = draftLateBrackets.reduce((m, b) => Math.max(m, Number(b.over_min || 0)), 0);
+        const maxPn = draftLateBrackets.reduce((m, b) => Math.max(m, Number(b.penalty_min || 0)), 0);
+        draftLateBrackets = normalizeLateBrackets(draftLateBrackets.concat([{
+          over_min: Math.min(480, maxOv + 15),
+          penalty_min: Math.min(720, Math.max(maxOv + 15, maxPn + 30))
+        }]));
+        renderModalInner();
+      });
+
+      modal.querySelectorAll('[data-ssm-brk-rm]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const rmIdx = Number(btn.getAttribute('data-ssm-brk-rm'));
+          if (draftLateBrackets.length > 1) {
+            draftLateBrackets = draftLateBrackets.filter((_, idx) => idx !== rmIdx);
+            if (!draftLateBrackets.length) draftLateBrackets = normalizeLateBrackets(DEFAULT_LATE_BRACKETS);
+          }
           renderModalInner();
         });
       });
@@ -138918,6 +139689,9 @@
           ot_threshold_min: draftCustomMathOverride ? draftOtThreshMin : (effGrpForSave ? effGrpForSave.ot_threshold_min : draftOtThreshMin),
           ot_early_threshold_min: draftCustomMathOverride ? draftOtEarlyThreshMin : (effGrpForSave ? effGrpForSave.ot_early_threshold_min : draftOtEarlyThreshMin),
           ot_count_from: draftCustomMathOverride ? draftOtCountFrom : (effGrpForSave ? effGrpForSave.ot_count_from : draftOtCountFrom),
+          ot_snap_mode: draftCustomMathOverride ? draftOtSnapMode : (effGrpForSave ? effGrpForSave.ot_snap_mode : draftOtSnapMode),
+          ot_block_min: draftCustomMathOverride ? draftOtBlockMin : (effGrpForSave ? effGrpForSave.ot_block_min : draftOtBlockMin),
+          ot_snap_at_min: draftCustomMathOverride ? draftOtSnapAtMin : (effGrpForSave ? effGrpForSave.ot_snap_at_min : draftOtSnapAtMin),
           custom_name: draftCustomName,
           custom_start: draftCustomStart,
           custom_end: draftCustomEnd,
@@ -138934,6 +139708,8 @@
           late_when: draftLateWhen,
           late_count_from: draftLateCountFrom,
           late_penalty_mode: draftLatePenaltyMode,
+          late_brackets: normalizeLateBrackets(draftLateBrackets),
+          late_below_bracket_mode: draftLateBelowBrk,
           late_multiplier: draftLateMultiplier,
           ot_multiplier: draftOtMultiplier,
           vacation_days: draftVacationDays,
@@ -141863,15 +142639,28 @@
     const card = el && el.closest ? (el.closest('[data-co-def-card]') || el.parentElement) : null;
     const prefix = (card && card.getAttribute('data-co-def-prefix')) || 'pay-bu';
     const polSel = card ? card.querySelector(`[data-${prefix}-policy-default]`) : null;
-    const mathSel = card ? card.querySelector(`[data-${prefix}-policy-math]`) : null;
+    const snapSel = card ? card.querySelector(`[data-${prefix}-policy-ot-snap]`) : null;
     const threshInp = card ? card.querySelector(`[data-${prefix}-policy-ot-thresh]`) : null;
     const effInp = card ? card.querySelector(`[data-${prefix}-policy-eff]`) : null;
     const grpId = (polSel && polSel.value) || getCompanyDefaultPolicyGroupId(bu) || 'pkg_15_open_15d';
     const grpObj = getPolicyGroups(bu).find(g => g.id === grpId) || resolvePolicyGroupAtDate(grpId, bu, todayISO());
     const fromGroupSelect = opts.source === 'group_select';
-    const nextMath = fromGroupSelect && grpObj
-      ? normalizeAttMathMode(grpObj.math_mode)
-      : normalizeAttMathMode(mathSel ? mathSel.value : (grpObj ? grpObj.math_mode : 'tenth_hour'));
+    const nextMath = 'per_minute';
+    const snapPatch = (fromGroupSelect && grpObj)
+      ? {
+          ot_snap_mode: normalizeOtSnapMode(grpObj.ot_snap_mode),
+          ot_block_min: normalizeOtBlockMin(grpObj.ot_block_min),
+          ot_snap_at_min: clampOtSnapAtMin(grpObj.ot_snap_at_min, grpObj.ot_block_min)
+        }
+      : (snapSel
+        ? parseOtSnapComboPatch(snapSel.value)
+        : (grpObj
+          ? {
+              ot_snap_mode: normalizeOtSnapMode(grpObj.ot_snap_mode),
+              ot_block_min: normalizeOtBlockMin(grpObj.ot_block_min),
+              ot_snap_at_min: clampOtSnapAtMin(grpObj.ot_snap_at_min, grpObj.ot_block_min)
+            }
+          : { ot_snap_mode: 'exact', ot_block_min: 60, ot_snap_at_min: 50 }));
     const nextThresh = fromGroupSelect && grpObj
       ? clampAttThresholdMin(grpObj.ot_threshold_min, 10)
       : clampAttThresholdMin(threshInp ? threshInp.value : (grpObj ? grpObj.ot_threshold_min : 10), 10);
@@ -141882,12 +142671,21 @@
       company: bu,
       fromDate: effFrom || today,
       toDate: today,
-      overridePolicy: { math_mode: nextMath, ot_threshold_min: nextThresh }
+      overridePolicy: {
+        math_mode: nextMath,
+        ot_threshold_min: nextThresh,
+        ot_snap_mode: snapPatch.ot_snap_mode,
+        ot_block_min: snapPatch.ot_block_min,
+        ot_snap_at_min: snapPatch.ot_snap_at_min
+      }
     });
     const res = setCompanyDefaultPolicyGroup(bu, grpId, {
       effective_from: effFrom,
       math_mode: nextMath,
       ot_threshold_min: nextThresh,
+      ot_snap_mode: snapPatch.ot_snap_mode,
+      ot_block_min: snapPatch.ot_block_min,
+      ot_snap_at_min: snapPatch.ot_snap_at_min,
       backfill: true
     });
     if (res && res.ok) {
@@ -141898,7 +142696,10 @@
         : '';
       const logStr = bf && bf.updatedRows > 0 ? ` · Recalculated ${bf.updatedRows} logs${deltaStr}` : '';
       const effStr = effFrom ? ` from ${fmtDateDMY(effFrom)}` : '';
-      toast(`Set "${res.group.name}" (${nextMath === 'per_minute' ? '$/min' : '0.1h'}, OT ≥${nextThresh}m) for ${bu}${effStr}${res.backfilledStaff ? ` · ${res.backfilledStaff} staff` : ''}${logStr}`, 'ok');
+      const snapStr = snapPatch.ot_snap_mode !== 'exact'
+        ? `, ${formatOtSnapShort(snapPatch.ot_snap_mode, snapPatch.ot_block_min, snapPatch.ot_snap_at_min, true)}`
+        : '';
+      toast(`Set "${res.group.name}" ($/min, OT ≥${nextThresh}m${snapStr}) for ${bu}${effStr}${res.backfilledStaff ? ` · ${res.backfilledStaff} staff` : ''}${logStr}`, 'ok');
     }
     return res;
   }
@@ -141949,7 +142750,7 @@
       name: '',
       short: '',
       company: 'All Companies',
-      math_mode: 'tenth_hour',
+      math_mode: 'per_minute',
       ot_threshold_min: 10,
       ot_early_threshold_min: 15,
       ot_count_from: 'shift_end',
@@ -141981,6 +142782,12 @@
     let draftOtMult = base.ot_multiplier;
     let draftOtMode = base.ot_mode;
     let draftOtMaxHrs = base.ot_max_hours != null ? base.ot_max_hours : 2;
+    let draftOtSnapMode = normalizeOtSnapMode(base.ot_snap_mode);
+    let draftOtBlockMin = normalizeOtBlockMin(base.ot_block_min);
+    let draftOtSnapAtMin = clampOtSnapAtMin(base.ot_snap_at_min, draftOtBlockMin);
+    let draftLateBrackets = normalizeLateBrackets(base.late_brackets);
+    let draftLateBelowBrk = normalizeLateBelowBracketMode(base.late_below_bracket_mode);
+    let draftLateHalfDayMin = Number(base.late_half_day_after_min != null ? base.late_half_day_after_min : 60);
     let draftVacDays = base.vacation_days;
     let draftSickDays = base.sick_days;
     let draftWorkDays = base.working_days;
@@ -142012,6 +142819,7 @@
     }
 
     const renderGroupModal = () => {
+      draftMathMode = 'per_minute';
       const knownIds = new Set(AVAILABLE_STAFF_PERKS.map(p => p.id));
       const extraPerks = draftPerks.filter(p => p && !knownIds.has(p));
       const perkItems = AVAILABLE_STAFF_PERKS.concat(extraPerks.map(p => ({ id: p, label: p, icon: 'check_circle' })));
@@ -142023,7 +142831,28 @@
       const today = todayISO();
       const previewFrom = /^\d{4}-\d{2}-\d{2}$/.test(draftEffFrom) ? draftEffFrom : today;
       const previewTo = /^\d{4}-\d{2}-\d{2}$/.test(draftEffTo) ? draftEffTo : today;
-      const previewRes = (draftBackfill && existing && (draftEffFrom || draftMathMode !== base.math_mode || draftOtThreshMin !== base.ot_threshold_min || draftOtCountFrom !== base.ot_count_from))
+      const hasDraftRuleChange = Boolean(
+        draftEffFrom
+        || draftOtThreshMin !== base.ot_threshold_min
+        || draftOtEarlyThreshMin !== base.ot_early_threshold_min
+        || draftOtCountFrom !== base.ot_count_from
+        || draftOtSnapMode !== normalizeOtSnapMode(base.ot_snap_mode)
+        || draftOtBlockMin !== normalizeOtBlockMin(base.ot_block_min)
+        || draftOtSnapAtMin !== clampOtSnapAtMin(base.ot_snap_at_min, draftOtBlockMin)
+        || draftLateMode !== base.late_penalty_mode
+        || draftLateBelowBrk !== normalizeLateBelowBracketMode(base.late_below_bracket_mode)
+        || serializeLateBrackets(draftLateBrackets) !== serializeLateBrackets(base.late_brackets)
+        || draftLateHalfDayMin !== Number(base.late_half_day_after_min != null ? base.late_half_day_after_min : 60)
+        || Math.abs(Number(draftLateMult || 1) - Number(base.late_multiplier || 1)) > 0.001
+        || Math.abs(Number(draftOtMult || 1.5) - Number(base.ot_multiplier || 1.5)) > 0.001
+        || draftOtMode !== base.ot_mode
+        || Math.abs(Number(draftOtMaxHrs != null ? draftOtMaxHrs : 2) - Number(base.ot_max_hours != null ? base.ot_max_hours : 2)) > 0.001
+        || draftGrace !== base.grace_min
+        || draftEarlyGrace !== base.early_leave_grace_min
+        || draftNoOut !== base.no_clock_out_rule
+        || draftWorkDays !== base.working_days
+      );
+      const previewRes = (draftBackfill && existing && hasDraftRuleChange)
         ? (assignedStaff.length > 0
             ? previewPolicyChangeImpact({
                 company: draftCompany !== 'All Companies' ? draftCompany : '',
@@ -142031,11 +142860,17 @@
                 fromDate: previewFrom,
                 toDate: previewTo,
                 overridePolicy: {
-                  math_mode: draftMathMode,
+                  math_mode: 'per_minute',
                   ot_threshold_min: draftOtThreshMin,
                   ot_early_threshold_min: draftOtEarlyThreshMin,
                   ot_count_from: draftOtCountFrom,
+                  ot_snap_mode: draftOtSnapMode,
+                  ot_block_min: draftOtBlockMin,
+                  ot_snap_at_min: draftOtSnapAtMin,
                   late_penalty_mode: draftLateMode,
+                  late_brackets: draftLateBrackets,
+                  late_below_bracket_mode: draftLateBelowBrk,
+                  late_half_day_after_min: draftLateHalfDayMin,
                   late_multiplier: draftLateMult,
                   ot_multiplier: draftOtMult,
                   ot_mode: draftOtMode,
@@ -142048,12 +142883,18 @@
             : { ok: true, dryRun: true, updatedRows: 0, skippedClosed: 0, skippedManual: 0, netDeltaUsd: 0, earnedDeltaUsd: 0, lostDeltaUsd: 0, fromDate: previewFrom, toDate: previewTo, rows: [] })
         : null;
 
+      const otSnapExampleHint = draftOtSnapMode === 'exact_plus_snap'
+        ? `Exact min below ${draftOtSnapAtMin}m; each remainder >= ${draftOtSnapAtMin}m snaps up to full ${draftOtBlockMin}m block (daily cap applies after snap).`
+        : (draftOtSnapMode === 'whole_blocks'
+          ? `Only pays completed ${draftOtBlockMin}m blocks (remainder >= ${draftOtSnapAtMin}m snaps up; remainder < ${draftOtSnapAtMin}m pays 0m; daily cap applies after snap).`
+          : `Pays exact overtime minutes 1-for-1 at $/min once OT >= ${draftOtThreshMin}m.`);
+
       modal.innerHTML = `
         <div class="modal-card" style="width:min(820px,96vw);max-width:820px">
           <div class="modal-head">
             <div>
               <div class="modal-title">${ic('sliders')} ${existing ? (isRo ? `View Policy &amp; Perks Group: ${esc(existing.name)}` : `Edit Policy &amp; Perks Group: ${esc(existing.name)}`) : 'New Policy, Multipliers &amp; Perks Group'}${isRo ? ` <span class="badge badge-muted">View Only</span>` : ''}</div>
-              <div class="modal-sub">Bundle calculation precision, OT start threshold, multipliers, effective-date versions, and staff perks into one selectable policy</div>
+              <div class="modal-sub">Bundle $ / Min calculation precision, overtime snap blocks, lateness brackets, multipliers, effective-date versions, and staff perks</div>
             </div>
             <button type="button" class="icon-btn" id="pgmCloseBtn" aria-label="Close">✕</button>
           </div>
@@ -142090,17 +142931,10 @@
 
             <div class="att-policy-timeline-box">
               <div class="ssm-comp-head" style="margin-bottom:6px">
-                <label style="font-size:12px;font-weight:700">Calculation Precision &amp; Overtime Threshold</label>
-                <span class="att-math-pill ${draftMathMode === 'per_minute' ? 'is-min' : ''}">${draftMathMode === 'per_minute' ? '$ / Min Exact' : '0.1h Decimal'} · OT ≥${draftOtThreshMin}m (${draftOtCountFrom === 'after_threshold' ? 'After Thresh' : 'From Shift End'})</span>
+                <label style="font-size:12px;font-weight:700">$ / Min Precision &amp; Overtime Start Threshold</label>
+                <span class="att-math-pill is-min">$ / Min Exact · OT ≥${draftOtThreshMin}m (${draftOtCountFrom === 'after_threshold' ? 'After Thresh' : 'From Shift End'}) · ${esc(formatOtSnapShort(draftOtSnapMode, draftOtBlockMin, draftOtSnapAtMin, true))}</span>
               </div>
-              <div style="display:grid;grid-template-columns:1.1fr 1.3fr 0.7fr 1.1fr;gap:10px;align-items:end">
-                <div class="ssm-field" style="margin:0">
-                  <label for="pgmMathMode">Calculation Math Mode</label>
-                  <select id="pgmMathMode" class="kiosk-select" data-plain-options="1">
-                    <option value="tenth_hour" ${draftMathMode === 'tenth_hour' ? 'selected' : ''}>Legacy 0.1h (6-Min Steps)</option>
-                    <option value="per_minute" ${draftMathMode === 'per_minute' ? 'selected' : ''}>Exact Per-Minute ($ / min)</option>
-                  </select>
-                </div>
+              <div style="display:grid;grid-template-columns:1.4fr 0.7fr 1.1fr;gap:10px;align-items:end">
                 <div class="ssm-field" style="margin:0">
                   <label for="pgmOtThreshMin">OT Start Threshold (min)</label>
                   <div class="att-thresh-pills">
@@ -142120,13 +142954,47 @@
                   </select>
                 </div>
               </div>
+              <div class="att-snap-row" style="margin-top:8px">
+                <div class="ssm-field" style="margin:0">
+                  <label for="pgmOtSnapMode">Overtime Snap / Block Rule</label>
+                  <select id="pgmOtSnapMode" class="kiosk-select" data-plain-options="1">
+                    <option value="exact" ${draftOtSnapMode === 'exact' ? 'selected' : ''}>Exact Minutes (1m = 1m)</option>
+                    <option value="exact_plus_snap" ${draftOtSnapMode === 'exact_plus_snap' ? 'selected' : ''}>Exact Minutes + Block Snap</option>
+                    <option value="whole_blocks" ${draftOtSnapMode === 'whole_blocks' ? 'selected' : ''}>Whole Blocks Only</option>
+                  </select>
+                </div>
+                <div class="ssm-field" style="margin:0">
+                  <label for="pgmOtBlockMin">Block Size</label>
+                  <select id="pgmOtBlockMin" class="kiosk-select" data-plain-options="1"${draftOtSnapMode === 'exact' ? ' disabled' : ''}>
+                    <option value="60" ${draftOtBlockMin === 60 ? 'selected' : ''}>60 min (1h)</option>
+                    <option value="30" ${draftOtBlockMin === 30 ? 'selected' : ''}>30 min (0.5h)</option>
+                  </select>
+                </div>
+                <div class="ssm-field" style="margin:0">
+                  <label for="pgmOtSnapAtMin">Snap Up At (min)</label>
+                  <input type="number" id="pgmOtSnapAtMin" class="mono" min="1" max="${draftOtBlockMin}" step="1" value="${draftOtSnapAtMin}"${draftOtSnapMode === 'exact' ? ' disabled' : ''}>
+                </div>
+              </div>
+              <div class="att-snap-hint">${esc(otSnapExampleHint)}</div>
             </div>
 
             <div class="ssm-comp-workbench">
               <div class="ssm-comp-card">
                 <div class="ssm-comp-head">
-                  <label for="pgmLateMult">Lateness Multiplier</label>
-                  <span class="badge mono">${draftLateMode === 'multiplier' ? `${fmtNum(draftLateMult, draftLateMult % 1 ? 2 : 1)}x` : (draftLateMode === 'none' ? '$0 Track' : '1.0x Exact')}</span>
+                  <label for="pgmLateMode">Lateness Penalty &amp; Brackets</label>
+                  <span class="badge mono">${esc(formatPolicyLateChip({ late_penalty_mode: draftLateMode, late_multiplier: draftLateMult, late_brackets: draftLateBrackets, late_below_bracket_mode: draftLateBelowBrk, late_half_day_after_min: draftLateHalfDayMin }))}</span>
+                </div>
+                <div class="ssm-field" style="margin:0 0 6px">
+                  <select id="pgmLateMode" class="kiosk-select" data-plain-options="1">
+                    <option value="exact_hours" ${draftLateMode === 'exact_hours' ? 'selected' : ''}>Exact Minutes (1.0x)</option>
+                    <option value="multiplier" ${draftLateMode === 'multiplier' ? 'selected' : ''}>Rate Multiplier (e.g. 1.5x / 2x)</option>
+                    <option value="step_brackets" ${draftLateMode === 'step_brackets' ? 'selected' : ''}>Step Brackets (e.g. &gt;15m=30m, &gt;30m=60m)</option>
+                    <option value="round_30m" ${draftLateMode === 'round_30m' ? 'selected' : ''}>Round Up 30m (0.50h Blocks)</option>
+                    <option value="round_hour" ${draftLateMode === 'round_hour' ? 'selected' : ''}>Round Up 1h (60m Blocks)</option>
+                    <option value="tiered_half_day" ${draftLateMode === 'tiered_half_day' ? 'selected' : ''}>Tiered Half Day (&gt;=X min = 0.5d)</option>
+                    <option value="half_day_any" ${draftLateMode === 'half_day_any' ? 'selected' : ''}>Any Late = Half Day (0.5d)</option>
+                    <option value="none" ${draftLateMode === 'none' ? 'selected' : ''}>Track Only ($0)</option>
+                  </select>
                 </div>
                 <div class="ssm-seg-pills">
                   <button type="button" class="kiosk-qchip mono ${draftLateMode === 'none' ? 'active' : ''}" data-pgm-late-mult="0">$0</button>
@@ -142134,8 +143002,42 @@
                     const on = (m === 1 && draftLateMode === 'exact_hours') || (m > 1 && draftLateMode === 'multiplier' && Math.abs(draftLateMult - m) < 0.01);
                     return `<button type="button" class="kiosk-qchip mono ${on ? 'active' : ''}" data-pgm-late-mult="${m}">${m === 1 ? '1.0x' : `${m}x`}</button>`;
                   }).join('')}
-                  <input type="number" id="pgmLateMult" class="mono" min="1" max="5" step="0.25" value="${draftLateMode === 'multiplier' ? draftLateMult : 1}">
+                  <input type="number" id="pgmLateMult" class="mono" min="1" max="5" step="0.25" value="${draftLateMode === 'multiplier' ? draftLateMult : 1}" aria-label="Lateness Multiplier">
                 </div>
+                ${draftLateMode === 'step_brackets' ? `
+                  <div class="att-bracket-editor" id="pgmLateBracketsBox">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap">
+                      <span class="muted" style="font-size:11px">Step Brackets (priced 1.0x at $/min):</span>
+                      <div style="display:flex;gap:4px">
+                        <button type="button" class="btn kiosk-mini-btn" id="pgmBrkPreset15Btn">Preset &gt;15m=30m, &gt;30m=60m</button>
+                        <button type="button" class="btn kiosk-mini-btn" id="pgmAddBrkBtn">+ Tier</button>
+                      </div>
+                    </div>
+                    ${draftLateBrackets.map((bk, bIdx) => `
+                      <div class="att-bracket-row" data-pgm-brk-row="${bIdx}">
+                        <span>Over (&gt;)</span>
+                        <input type="number" class="mono" min="0" max="480" step="1" data-pgm-brk-over="${bIdx}" value="${bk.over_min}" aria-label="Minutes late threshold">
+                        <span>m = Bill</span>
+                        <input type="number" class="mono" min="1" max="720" step="5" data-pgm-brk-pen="${bIdx}" value="${bk.penalty_min}" aria-label="Penalty minutes billed">
+                        <span>m</span>
+                        ${draftLateBrackets.length > 1 ? `<button type="button" class="btn kiosk-mini-btn" data-pgm-brk-del="${bIdx}" aria-label="Remove tier">✕</button>` : ''}
+                      </div>
+                    `).join('')}
+                    <div class="att-bracket-row">
+                      <label for="pgmLateBelowBrk" style="font-size:11px;margin:0">Below 1st Tier (&lt;=${draftLateBrackets[0].over_min}m):</label>
+                      <select id="pgmLateBelowBrk" class="kiosk-select" data-plain-options="1" style="width:auto;min-width:140px">
+                        <option value="exact" ${draftLateBelowBrk === 'exact' ? 'selected' : ''}>Charge Exact Minutes (1x)</option>
+                        <option value="waive" ${draftLateBelowBrk === 'waive' ? 'selected' : ''}>Waive ($0)</option>
+                      </select>
+                    </div>
+                  </div>
+                ` : ''}
+                ${draftLateMode === 'tiered_half_day' ? `
+                  <div class="att-bracket-row" style="margin-top:6px">
+                    <label for="pgmLateHalfDayMin" style="font-size:11px;margin:0">Half Day Trigger (min):</label>
+                    <input type="number" id="pgmLateHalfDayMin" class="mono" min="5" max="360" step="5" value="${draftLateHalfDayMin}">
+                  </div>
+                ` : ''}
               </div>
 
               <div class="ssm-comp-card">
@@ -142218,20 +143120,21 @@
                 </div>
                 <div class="ssm-field" style="margin:0">
                   <label for="pgmVersionNote">Version Note</label>
-                  <input type="text" id="pgmVersionNote" value="${esc(draftVersionNote)}" placeholder="e.g. Switch to $/min Nov 1">
+                  <input type="text" id="pgmVersionNote" value="${esc(draftVersionNote)}" placeholder="e.g. OT snap &amp; brackets Nov 1">
                 </div>
               </div>
               ${draftVersions.length ? `
                 <div class="att-policy-timeline-list" id="pgmVersionList">
                   ${draftVersions.map(v => {
-                    const vm = normalizeAttMathMode(v.math_mode || 'tenth_hour');
                     const vt = clampAttThresholdMin(v.ot_threshold_min, 10);
                     const vFrom = fmtDateDMY(v.start_date);
                     const vTo = v.end_date ? fmtDateDMY(v.end_date) : 'Present';
+                    const vSnapLbl = formatOtSnapShort(v.ot_snap_mode, v.ot_block_min, v.ot_snap_at_min, true);
+                    const vLateLbl = formatPolicyLateChip(v);
                     return `<div class="att-policy-ver-row ${draftEditingVersionId === v.id ? 'is-editing' : ''}">
                       <span class="mono"><b>${esc(vFrom)}</b> .. ${esc(vTo)}</span>
-                      <span class="att-math-pill ${vm === 'per_minute' ? 'is-min' : ''}">${vm === 'per_minute' ? '$ / Min' : '0.1h'}</span>
-                      <span class="mono">OT ≥${vt}m · ${v.ot_count_from === 'after_threshold' ? 'After Thresh' : 'Shift End'}</span>
+                      <span class="att-math-pill is-min">$ / Min</span>
+                      <span class="mono">OT ≥${vt}m · ${esc(vSnapLbl)} · ${esc(vLateLbl)}</span>
                       ${v.note ? `<span class="muted">${esc(v.note)}</span>` : '<span></span>'}
                       <span style="display:inline-flex;gap:4px;margin-inline-start:auto">
                         <button type="button" class="btn kiosk-mini-btn" data-pgm-edit-ver="${esc(v.id)}">Edit</button>
@@ -142339,10 +143242,34 @@
         if ($('pgmName')) draftName = $('pgmName').value;
         if ($('pgmCompany') && !$('pgmCompany').disabled) draftCompany = $('pgmCompany').value || 'All Companies';
         if ($('pgmShort')) draftShort = $('pgmShort').value;
-        if ($('pgmMathMode')) draftMathMode = normalizeAttMathMode($('pgmMathMode').value);
+        draftMathMode = 'per_minute';
         if ($('pgmOtThreshMin')) draftOtThreshMin = clampAttThresholdMin($('pgmOtThreshMin').value, 10);
         if ($('pgmOtEarlyThreshMin')) draftOtEarlyThreshMin = clampAttThresholdMin($('pgmOtEarlyThreshMin').value, 15);
         if ($('pgmOtCountFrom')) draftOtCountFrom = normalizeOtCountFrom($('pgmOtCountFrom').value);
+        if ($('pgmOtSnapMode')) draftOtSnapMode = normalizeOtSnapMode($('pgmOtSnapMode').value);
+        let pgmBlkChanged = false;
+        if ($('pgmOtBlockMin')) {
+          const nextBlk = normalizeOtBlockMin($('pgmOtBlockMin').value);
+          if (nextBlk !== draftOtBlockMin) {
+            draftOtBlockMin = nextBlk;
+            draftOtSnapAtMin = nextBlk === 30 ? 25 : 50;
+            pgmBlkChanged = true;
+          }
+        }
+        if (!pgmBlkChanged && $('pgmOtSnapAtMin')) draftOtSnapAtMin = clampOtSnapAtMin($('pgmOtSnapAtMin').value, draftOtBlockMin);
+        if ($('pgmLateMode')) draftLateMode = normalizeLatePenaltyMode($('pgmLateMode').value);
+        if ($('pgmLateHalfDayMin')) draftLateHalfDayMin = finiteClamp($('pgmLateHalfDayMin').value, draftLateHalfDayMin, 5, 360, true);
+        if ($('pgmLateBelowBrk')) draftLateBelowBrk = normalizeLateBelowBracketMode($('pgmLateBelowBrk').value);
+        const brkRows = modal.querySelectorAll('[data-pgm-brk-row]');
+        if (brkRows.length > 0) {
+          const nextBrks = [];
+          brkRows.forEach(r => {
+            const ovEl = r.querySelector('[data-pgm-brk-over]');
+            const pnEl = r.querySelector('[data-pgm-brk-pen]');
+            if (ovEl && pnEl) nextBrks.push({ over_min: Number(ovEl.value), penalty_min: Number(pnEl.value) });
+          });
+          if (nextBrks.length) draftLateBrackets = normalizeLateBrackets(nextBrks);
+        }
         if ($('pgmEffectiveFrom')) draftEffFrom = String($('pgmEffectiveFrom').value || '').trim().slice(0, 10);
         if ($('pgmEffectiveTo')) draftEffTo = String($('pgmEffectiveTo').value || '').trim().slice(0, 10);
         if ($('pgmVersionNote')) draftVersionNote = $('pgmVersionNote').value;
@@ -142362,7 +143289,37 @@
         if ($('pgmBackfillChk')) draftBackfill = Boolean($('pgmBackfillChk').checked);
       };
 
-      $('pgmMathMode')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmOtSnapMode')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmOtBlockMin')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmOtSnapAtMin')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmLateMode')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmLateBelowBrk')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmLateHalfDayMin')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmBrkPreset15Btn')?.addEventListener('click', () => {
+        syncPgmDom();
+        draftLateBrackets = DEFAULT_LATE_BRACKETS.map(b => ({ over_min: b.over_min, penalty_min: b.penalty_min }));
+        renderGroupModal();
+      });
+      $('pgmAddBrkBtn')?.addEventListener('click', () => {
+        syncPgmDom();
+        const last = draftLateBrackets[draftLateBrackets.length - 1] || { over_min: 15, penalty_min: 30 };
+        draftLateBrackets = normalizeLateBrackets(draftLateBrackets.concat([{
+          over_min: Math.min(480, Number(last.over_min) + 15),
+          penalty_min: Math.min(720, Number(last.penalty_min) + 30)
+        }]));
+        renderGroupModal();
+      });
+      modal.querySelectorAll('[data-pgm-brk-del]').forEach(b => b.addEventListener('click', () => {
+        syncPgmDom();
+        const idx = Number(b.getAttribute('data-pgm-brk-del'));
+        if (draftLateBrackets.length > 1) {
+          draftLateBrackets = normalizeLateBrackets(draftLateBrackets.filter((_, i) => i !== idx));
+          renderGroupModal();
+        }
+      }));
+      modal.querySelectorAll('[data-pgm-brk-over], [data-pgm-brk-pen]').forEach(inp => {
+        inp.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      });
       modal.querySelectorAll('[data-pgm-ot-thresh]').forEach(b => b.addEventListener('click', () => {
         syncPgmDom();
         draftOtThreshMin = clampAttThresholdMin(b.getAttribute('data-pgm-ot-thresh'), 10);
@@ -142389,12 +143346,18 @@
         draftEffFrom = v.start_date || '';
         draftEffTo = v.end_date || '';
         draftVersionNote = v.note || '';
-        if (v.math_mode) draftMathMode = normalizeAttMathMode(v.math_mode);
+        draftMathMode = 'per_minute';
         if (v.ot_threshold_min != null) draftOtThreshMin = clampAttThresholdMin(v.ot_threshold_min, 10);
         if (v.ot_early_threshold_min != null) draftOtEarlyThreshMin = clampAttThresholdMin(v.ot_early_threshold_min, 15);
         if (v.ot_count_from) draftOtCountFrom = normalizeOtCountFrom(v.ot_count_from);
+        if (v.ot_snap_mode) draftOtSnapMode = normalizeOtSnapMode(v.ot_snap_mode);
+        if (v.ot_block_min != null) draftOtBlockMin = normalizeOtBlockMin(v.ot_block_min);
+        if (v.ot_snap_at_min != null) draftOtSnapAtMin = clampOtSnapAtMin(v.ot_snap_at_min, draftOtBlockMin);
         if (v.ot_multiplier != null) draftOtMult = finiteClamp(v.ot_multiplier, draftOtMult, 1, 5);
-        if (v.late_penalty_mode) draftLateMode = v.late_penalty_mode;
+        if (v.late_penalty_mode) draftLateMode = normalizeLatePenaltyMode(v.late_penalty_mode);
+        if (Array.isArray(v.late_brackets)) draftLateBrackets = normalizeLateBrackets(v.late_brackets);
+        if (v.late_below_bracket_mode) draftLateBelowBrk = normalizeLateBelowBracketMode(v.late_below_bracket_mode);
+        if (v.late_half_day_after_min != null) draftLateHalfDayMin = finiteClamp(v.late_half_day_after_min, draftLateHalfDayMin, 5, 360, true);
         if (v.late_multiplier != null) draftLateMult = finiteClamp(v.late_multiplier, draftLateMult, 1, 5);
         if (v.grace_min != null) draftGrace = finiteClamp(v.grace_min, draftGrace, 0, 120, true);
         if (v.early_leave_grace_min != null) draftEarlyGrace = finiteClamp(v.early_leave_grace_min, draftEarlyGrace, 0, 120, true);
@@ -142533,11 +143496,17 @@
           name: cleanName,
           short: String(draftShort || '').trim(),
           company: existing && existing.isBuiltin ? 'All Companies' : draftCompany,
-          math_mode: draftMathMode,
+          math_mode: 'per_minute',
           ot_threshold_min: draftOtThreshMin,
           ot_early_threshold_min: draftOtEarlyThreshMin,
           ot_count_from: draftOtCountFrom,
+          ot_snap_mode: draftOtSnapMode,
+          ot_block_min: draftOtBlockMin,
+          ot_snap_at_min: draftOtSnapAtMin,
           late_penalty_mode: draftLateMode,
+          late_brackets: draftLateBrackets,
+          late_below_bracket_mode: draftLateBelowBrk,
+          late_half_day_after_min: draftLateHalfDayMin,
           late_multiplier: draftLateMult,
           ot_multiplier: draftOtMult,
           ot_mode: draftOtMode,
@@ -142708,7 +143677,7 @@
         if (penF === 'no_out_half_day' && lt.noOutRule !== 'half_day') return false;
         if (penF === 'no_out_absent' && lt.noOutRule !== 'full_absence') return false;
         if (penF === 'late_half_day' && lt.penaltyMode !== 'tiered_half_day' && lt.penaltyMode !== 'half_day_any') return false;
-        if (penF === 'escalated' && lt.penaltyMode !== 'multiplier' && lt.penaltyMode !== 'round_hour') return false;
+        if (penF === 'escalated' && lt.penaltyMode !== 'multiplier' && lt.penaltyMode !== 'round_hour' && lt.penaltyMode !== 'round_30m' && lt.penaltyMode !== 'step_brackets') return false;
         if (penF === 'exact_hours' && lt.penaltyMode !== 'exact_hours') return false;
         if (penF === 'none' && lt.penaltyMode !== 'none') return false;
       }
@@ -142807,7 +143776,7 @@
       const hasMinFields = pObj.approved_ot_min != null || pObj.billable_late_min != null || pObj.raw_late_min != null;
       if (!isPm && !hasMinFields) return '';
       const chips = [];
-      if (isPm) chips.push('<span class="att-math-pill is-per-min">$/Min</span>');
+      if (isPm) chips.push('<span class="att-math-pill is-min">$/Min</span>');
       const otMin = pObj.approved_ot_min != null ? Math.round(Number(pObj.approved_ot_min)) : (isPm && pObj.overtime_hours > 0 ? Math.round(Number(pObj.overtime_hours) * 60) : 0);
       const ltMin = pObj.billable_late_min != null ? Math.round(Number(pObj.billable_late_min)) : (pObj.raw_late_min != null ? Math.round(Number(pObj.raw_late_min)) : (isPm && pObj.late_hours > 0 ? Math.round(Number(pObj.late_hours) * 60) : 0));
       if (otMin > 0) chips.push(`<span class="att-earn-pos">+${otMin}m</span>`);
@@ -142886,7 +143855,8 @@
           </select>
           <button type="button" class="kiosk-cell-sublink mono" data-open-staff-policy="${esc(s.name)}">${esc(pg.summaryLine)}</button>
           <div class="att-kiosk-dollar-pills mono">
-            <span class="att-math-pill ${pg.mathMode === 'per_minute' ? 'is-per-min' : ''}">${esc(pg.mathMode === 'per_minute' ? '$/Min' : '0.1h · 6m')} · OT &gt;=${pg.otThresholdMin}m</span>
+            <span class="att-math-pill is-min">$/Min · OT &gt;=${pg.otThresholdMin}m</span>
+            ${pg.otSnapMode && pg.otSnapMode !== 'exact' ? `<span class="att-math-pill">${esc(formatOtSnapShort(pg.otSnapMode, pg.otBlockMin, pg.otSnapAtMin, true))}</span>` : ''}
             ${pg.timelineCount ? `<span class="att-math-pill">${pg.timelineCount} sch</span>` : ''}
             ${canShowKioskDollars && sProf && !sProf.salaryPending && sProf.hourlyRate > 0 ? `<span class="att-math-pill">${esc(fmtUSD(sProf.hourlyRate / 60, 4))}/m</span>` : ''}
           </div>
@@ -143019,7 +143989,7 @@
             <button type="button" class="kiosk-qchip ${latePenFilter === 'no_out_half_day' ? 'active' : ''}" data-late-pen-filter="no_out_half_day">Only IN/OUT = 0.5d ${fCnt(countByCriteria({ pen: 'no_out_half_day' }))}</button>
             <button type="button" class="kiosk-qchip ${latePenFilter === 'no_out_absent' ? 'active' : ''}" data-late-pen-filter="no_out_absent">Only IN/OUT = 1d ${fCnt(countByCriteria({ pen: 'no_out_absent' }))}</button>
             <button type="button" class="kiosk-qchip ${latePenFilter === 'late_half_day' ? 'active' : ''}" data-late-pen-filter="late_half_day">Late = 0.5d ${fCnt(countByCriteria({ pen: 'late_half_day' }))}</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'escalated' ? 'active' : ''}" data-late-pen-filter="escalated">1.5x / 2x / 1h ${fCnt(countByCriteria({ pen: 'escalated' }))}</button>
+            <button type="button" class="kiosk-qchip ${latePenFilter === 'escalated' ? 'active' : ''}" data-late-pen-filter="escalated">1.5x / Steps / Round ${fCnt(countByCriteria({ pen: 'escalated' }))}</button>
             <button type="button" class="kiosk-qchip ${latePenFilter === 'exact_hours' ? 'active' : ''}" data-late-pen-filter="exact_hours">Exact 1x ${fCnt(countByCriteria({ pen: 'exact_hours' }))}</button>
             <button type="button" class="kiosk-qchip ${latePenFilter === 'none' ? 'active' : ''}" data-late-pen-filter="none">Track $0 ${fCnt(countByCriteria({ pen: 'none' }))}</button>
           </div>
@@ -143246,9 +144216,10 @@
                     <div class="ssm-field">
                       <label for="kioskBulkLateGrace">Tolerance (IN &amp; OUT)</label>
                       <select id="kioskBulkLateGrace" class="kiosk-select" data-plain-options="1"${canWriteShiftCat ? '' : ' disabled'}>
+                        <option value="keep" selected>Keep Tolerance</option>
                         <option value="0">0 min (Strict)</option>
                         <option value="5">5 min</option>
-                        <option value="10" selected>10 min</option>
+                        <option value="10">10 min</option>
                         <option value="15">15 min</option>
                         <option value="20">20 min</option>
                         <option value="30">30 min</option>
@@ -143257,7 +144228,8 @@
                     <div class="ssm-field">
                       <label for="kioskBulkLateWhen">When Lateness Occurs</label>
                       <select id="kioskBulkLateWhen" class="kiosk-select" data-plain-options="1"${canWriteShiftCat ? '' : ' disabled'}>
-                        <option value="both" selected>IN Late + OUT Early</option>
+                        <option value="keep" selected>Keep Current Trigger</option>
+                        <option value="both">IN Late + OUT Early</option>
                         <option value="arrival_only">Clock-IN Late Only</option>
                         <option value="early_out_only">Clock-OUT Early Only</option>
                         <option value="short_hours">Shift Hours Shortfall</option>
@@ -143266,9 +144238,12 @@
                     <div class="ssm-field">
                       <label for="kioskBulkLatePenalty">Lateness Punishment</label>
                       <select id="kioskBulkLatePenalty" class="kiosk-select" data-plain-options="1"${canWriteShiftCat ? '' : ' disabled'}>
-                        <option value="exact_hours" selected>Exact Hours (1x)</option>
+                        <option value="keep" selected>Keep Punishment</option>
+                        <option value="exact_hours">Exact Hours (1x)</option>
                         <option value="multiplier_1.5">1.5x Rate</option>
                         <option value="multiplier_2">2.0x Rate</option>
+                        <option value="step_brackets">Step Brackets (&gt;15m=30m, &gt;30m=60m)</option>
+                        <option value="round_30m">Round Up 30m (0.50h)</option>
                         <option value="round_hour">Round Up 1h</option>
                         <option value="tiered_30">&gt;=30m = Half Day</option>
                         <option value="tiered_60">&gt;=60m = Half Day</option>
@@ -143279,7 +144254,8 @@
                     <div class="ssm-field">
                       <label for="kioskBulkNoOutRule">If Only Clock-IN or OUT</label>
                       <select id="kioskBulkNoOutRule" class="kiosk-select" data-plain-options="1"${canWriteShiftCat ? '' : ' disabled'}>
-                        <option value="half_day" selected>Half Day (0.5d)</option>
+                        <option value="keep" selected>Keep 1-Punch Rule</option>
+                        <option value="half_day">Half Day (0.5d)</option>
                         <option value="full_absence">Full Absence (1.0d)</option>
                         <option value="deduct_2h">Deduct 2.0h Late</option>
                         <option value="auto_shift_end">Full Shift (0 Ded.)</option>
@@ -143296,11 +144272,10 @@
                       </select>
                     </div>
                     <div class="ssm-field">
-                      <label for="kioskBulkMathMode">Calc Math Mode</label>
-                      <select id="kioskBulkMathMode" class="kiosk-select" data-plain-options="1"${canWriteShiftCat ? '' : ' disabled'}>
-                        <option value="keep" selected>Keep Current Math</option>
-                        <option value="per_minute">Exact Per-Minute ($ / min)</option>
-                        <option value="tenth_hour">Legacy 0.1h (6-Min Steps)</option>
+                      <label for="kioskBulkOtSnap">OT Snap / Block</label>
+                      <select id="kioskBulkOtSnap" class="kiosk-select" data-plain-options="1"${canWriteShiftCat ? '' : ' disabled'}>
+                        <option value="keep" selected>Keep Current Snap</option>
+                        ${OT_SNAP_PRESET_COMBOS.map(p => `<option value="${esc(p.val)}">${esc(p.label)}</option>`).join('')}
                       </select>
                     </div>
                     <div class="ssm-field">
@@ -143410,6 +144385,8 @@
                                 <option value="exact_hours" ${penComboVal === 'exact_hours' ? 'selected' : ''}>Exact 1x</option>
                                 <option value="multiplier_1.5" ${penComboVal === 'multiplier_1.5' ? 'selected' : ''}>1.5x Rate</option>
                                 <option value="multiplier_2" ${penComboVal === 'multiplier_2' ? 'selected' : ''}>2.0x Rate</option>
+                                <option value="step_brackets" ${penComboVal === 'step_brackets' ? 'selected' : ''}>Step Brackets</option>
+                                <option value="round_30m" ${penComboVal === 'round_30m' ? 'selected' : ''}>Round 30m</option>
                                 <option value="round_hour" ${penComboVal === 'round_hour' ? 'selected' : ''}>Round 1h</option>
                                 <option value="tiered_30" ${penComboVal === 'tiered_30' ? 'selected' : ''}>&gt;=30m = 0.5d</option>
                                 <option value="tiered_60" ${penComboVal === 'tiered_60' ? 'selected' : ''}>&gt;=60m = 0.5d</option>
@@ -143435,7 +144412,7 @@
                               </select>
                               <div class="drv-sub mono"><button type="button" class="kiosk-pin-edit-link" data-open-staff-ot="${esc(s.name)}">${esc(ot.badgeText)}</button></div>
                               <div class="att-kiosk-dollar-pills mono">
-                                <span class="att-math-pill">OT &gt;=${pg.otThresholdMin}m</span>
+                                <span class="att-math-pill">OT &gt;=${pg.otThresholdMin}m${ot.otSnapMode && ot.otSnapMode !== 'exact' ? ` · ${esc(ot.otSnapShort)}` : ''}</span>
                                 ${otRateMinTxt ? `<span class="att-earn-pos">${esc(otRateMinTxt)}</span>` : ''}
                               </div>
                             </td>
@@ -144538,9 +145515,9 @@
         renderApp();
       });
     });
-    container.querySelectorAll('[data-pay-bu-policy-math]').forEach(sel => {
+    container.querySelectorAll('[data-pay-bu-policy-ot-snap]').forEach(sel => {
       sel.addEventListener('change', () => {
-        applyCompanyDefaultPolicyFromCard(sel, sel.getAttribute('data-pay-bu-policy-math') || 'WTC', { source: 'math_or_apply' });
+        applyCompanyDefaultPolicyFromCard(sel, sel.getAttribute('data-pay-bu-policy-ot-snap') || 'WTC', { source: 'math_or_apply' });
         renderApp();
       });
     });
@@ -144788,6 +145765,14 @@
       const cv = String(comboVal || 'exact_hours');
       if (cv === 'multiplier_1.5') return { late_penalty_mode: 'multiplier', late_multiplier: 1.5 };
       if (cv === 'multiplier_2') return { late_penalty_mode: 'multiplier', late_multiplier: 2 };
+      if (cv === 'step_brackets') {
+        return {
+          late_penalty_mode: 'step_brackets',
+          late_brackets: DEFAULT_LATE_BRACKETS.map(b => ({ over_min: b.over_min, penalty_min: b.penalty_min })),
+          late_below_bracket_mode: 'exact'
+        };
+      }
+      if (cv === 'round_30m') return { late_penalty_mode: 'round_30m' };
       if (cv === 'round_hour') return { late_penalty_mode: 'round_hour' };
       if (cv === 'tiered_30') return { late_penalty_mode: 'tiered_half_day', late_half_day_after_min: 30 };
       if (cv === 'tiered_60') return { late_penalty_mode: 'tiered_half_day', late_half_day_after_min: 60 };
@@ -144863,26 +145848,52 @@
       const pEl = $('kioskBulkLatePenalty');
       const nEl = $('kioskBulkNoOutRule');
       const oEl = $('kioskBulkOtRule');
-      const mEl = $('kioskBulkMathMode');
+      const snapEl = $('kioskBulkOtSnap');
       const tEl = $('kioskBulkOtThresh');
       const effEl = $('kioskBulkEffFrom');
       const pkgBulkVal = pkgEl ? pkgEl.value : 'keep';
+      const graceBulkVal = gEl ? gEl.value : 'keep';
+      const whenBulkVal = wEl ? wEl.value : 'keep';
+      const penBulkVal = pEl ? pEl.value : 'keep';
+      const noOutBulkVal = nEl ? nEl.value : 'keep';
       const otBulkVal = oEl ? oEl.value : 'keep';
-      const mathBulkVal = mEl ? mEl.value : 'keep';
+      const snapBulkVal = snapEl ? snapEl.value : 'keep';
       const threshBulkVal = tEl ? tEl.value : 'keep';
       const effFromRaw = effEl ? String(effEl.value || '').trim().slice(0, 10) : '';
       const effFrom = /^\d{4}-\d{2}-\d{2}$/.test(effFromRaw) ? effFromRaw : '';
-      const baseBulkPatch = {
-        late_when: wEl ? wEl.value : 'both',
-        ...parseGraceComboPatch(gEl ? gEl.value : '10'),
-        ...parsePenaltyComboPatch(pEl ? pEl.value : 'exact_hours'),
-        no_clock_out_rule: nEl ? nEl.value : 'half_day'
-      };
-      if (mathBulkVal === 'per_minute' || mathBulkVal === 'tenth_hour') baseBulkPatch.math_mode = mathBulkVal;
-      if (threshBulkVal !== 'keep' && threshBulkVal !== '' && Number.isFinite(Number(threshBulkVal))) {
-        baseBulkPatch.ot_threshold_min = clampAttThresholdMin(threshBulkVal, 10);
+      const explicitBulkFields = {};
+      let hasExplicitFieldChange = false;
+      if (whenBulkVal && whenBulkVal !== 'keep') {
+        explicitBulkFields.late_when = whenBulkVal;
+        hasExplicitFieldChange = true;
       }
-      if (effFrom) baseBulkPatch.effective_from = effFrom;
+      if (graceBulkVal && graceBulkVal !== 'keep') {
+        Object.assign(explicitBulkFields, parseGraceComboPatch(graceBulkVal));
+        hasExplicitFieldChange = true;
+      }
+      if (penBulkVal && penBulkVal !== 'keep') {
+        Object.assign(explicitBulkFields, parsePenaltyComboPatch(penBulkVal));
+        hasExplicitFieldChange = true;
+      }
+      if (noOutBulkVal && noOutBulkVal !== 'keep') {
+        explicitBulkFields.no_clock_out_rule = noOutBulkVal;
+        hasExplicitFieldChange = true;
+      }
+      if (snapBulkVal && snapBulkVal !== 'keep') {
+        Object.assign(explicitBulkFields, parseOtSnapComboPatch(snapBulkVal));
+        hasExplicitFieldChange = true;
+      }
+      if (threshBulkVal !== 'keep' && threshBulkVal !== '' && Number.isFinite(Number(threshBulkVal))) {
+        explicitBulkFields.ot_threshold_min = clampAttThresholdMin(threshBulkVal, 10);
+        hasExplicitFieldChange = true;
+      }
+      if (effFrom) explicitBulkFields.effective_from = effFrom;
+      const hasBulkOtChange = Boolean(otBulkVal && otBulkVal !== 'keep');
+      const hasBulkPkgChange = Boolean(pkgBulkVal && pkgBulkVal !== 'keep');
+      if (!effFrom && !hasExplicitFieldChange && !hasBulkOtChange && !hasBulkPkgChange) {
+        toast('Select at least one rule change or effective date to apply', 'warn');
+        return;
+      }
       const fullDir = getKioskStaffDirectory({ scopeBySelectedCompany: true, includeEnded: true });
       const statusF = ['all', 'active', 'inactive'].includes(STATE.kioskStaffStatusFilter) ? STATE.kioskStaffStatusFilter : 'all';
       const dirList = statusF === 'active'
@@ -144904,7 +145915,7 @@
           if (latePenF === 'no_out_half_day' && lt.noOutRule !== 'half_day') return false;
           if (latePenF === 'no_out_absent' && lt.noOutRule !== 'full_absence') return false;
           if (latePenF === 'late_half_day' && lt.penaltyMode !== 'tiered_half_day' && lt.penaltyMode !== 'half_day_any') return false;
-          if (latePenF === 'escalated' && lt.penaltyMode !== 'multiplier' && lt.penaltyMode !== 'round_hour') return false;
+          if (latePenF === 'escalated' && lt.penaltyMode !== 'multiplier' && lt.penaltyMode !== 'round_hour' && lt.penaltyMode !== 'round_30m' && lt.penaltyMode !== 'step_brackets') return false;
           if (latePenF === 'exact_hours' && lt.penaltyMode !== 'exact_hours') return false;
           if (latePenF === 'none' && lt.penaltyMode !== 'none') return false;
         }
@@ -144925,31 +145936,20 @@
       });
       const writableStaff = targetStaff.filter(s => canEditShiftsAndRules(null, s.company));
       writableStaff.forEach(s => {
-        let staffPatch;
-        if (pkgBulkVal && pkgBulkVal !== 'keep') {
-          staffPatch = {
-            apply_policy_group_id: pkgBulkVal,
-            late_when: wEl ? wEl.value : 'both',
-            ...(otBulkVal && otBulkVal !== 'keep' ? buildOtComboPatchForStaff(otBulkVal, s.name, s.company) : {})
-          };
-          if (mathBulkVal === 'per_minute' || mathBulkVal === 'tenth_hour') staffPatch.math_mode = mathBulkVal;
-          if (threshBulkVal !== 'keep' && threshBulkVal !== '' && Number.isFinite(Number(threshBulkVal))) {
-            staffPatch.ot_threshold_min = clampAttThresholdMin(threshBulkVal, 10);
-          }
-          if (effFrom) staffPatch.effective_from = effFrom;
-        } else {
-          staffPatch = otBulkVal && otBulkVal !== 'keep'
-            ? { ...baseBulkPatch, ...buildOtComboPatchForStaff(otBulkVal, s.name, s.company) }
-            : baseBulkPatch;
-        }
+        const staffPatch = Object.assign(
+          {},
+          hasBulkPkgChange ? { apply_policy_group_id: pkgBulkVal } : {},
+          explicitBulkFields,
+          hasBulkOtChange ? buildOtComboPatchForStaff(otBulkVal, s.name, s.company) : {}
+        );
         saveStaffWorkRule(s.name, Object.assign({}, staffPatch, s.company ? { company: s.company } : {}), { deferSave: true });
       });
       let bulkBf = null;
-      if (writableStaff.length > 0 && (effFrom || mathBulkVal !== 'keep' || threshBulkVal !== 'keep' || pkgBulkVal !== 'keep')) {
+      if (writableStaff.length > 0 && (effFrom || hasExplicitFieldChange || hasBulkOtChange || hasBulkPkgChange)) {
         const today = todayISO();
         if (!effFrom || effFrom <= today) {
           bulkBf = backfillAttendancePolicyChange({
-            company: scopedCo || '',
+            company: bulkScopeCo || '',
             staffNames: writableStaff.map(s => s.name),
             fromDate: effFrom || today,
             deferSave: true
@@ -144961,7 +145961,7 @@
         syncWithCloud(true);
       }
       const bfCnt = bulkBf ? Number(bulkBf.updatedRows || 0) : 0;
-      toast(`Applied policy, lateness, math & overtime rules to ${writableStaff.length} staff${effFrom ? ` from ${fmtDateDMY(effFrom)}` : ''}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`, 'ok');
+      toast(`Applied policy, lateness, OT snap & threshold rules to ${writableStaff.length} staff${effFrom ? ` from ${fmtDateDMY(effFrom)}` : ''}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`, 'ok');
       renderApp();
     });
     feedCard.querySelectorAll('[data-sched-cell-staff]').forEach(btn => {
@@ -152074,6 +153074,8 @@
       resolveStaffShiftAssignment: (staff, co) => resolveStaffShiftAssignment(staff, co),
       resolveStaffShiftForDate: (staff, co, dateStr) => resolveStaffShiftForDate(staff, co, dateStr),
       resolveStaffPolicyForDate: (staff, co, dateStr) => resolveStaffPolicyForDate(staff, co, dateStr),
+      normalizeAttMathMode: v => normalizeAttMathMode(v),
+      applyOvertimeSnapMinutes: (m, mode, blk, at) => applyOvertimeSnapMinutes(m, mode, blk, at),
       previewPolicyChangeImpact: (spec = {}) => previewPolicyChangeImpact(spec),
       backfillAttendancePolicyChange: (spec = {}) => backfillAttendancePolicyChange(spec),
       canViewPayrollDollarAmounts: u => canViewPayrollDollarAmounts(u),

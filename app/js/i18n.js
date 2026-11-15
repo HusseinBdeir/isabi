@@ -3269,7 +3269,7 @@
       "Ex-VAT (+": "دون الضريبة (+",
       "Ex-VAT Sum": "المجموع قبل الضريبة",
       "Ex-VAT across aggregate m³": "دون الضريبة عبر إجمالي م³",
-      "Exact 1m": "دقيقة واحدة بالضبط",
+      "Exact 1m": "دقيق 1 د",
       "Exact 1x": "عادي 1x",
       "Exact Ex-VAT Credit ($/LL), Payments ($/LL), Remaining Payment ($/LL), 11% VAT Credit/Payment/Rem, and Total Remaining TTC": "تفصيل دقيق للآجل بدون ضريبة ($/ل.ل.) والمدفوع والمتبقي وضريبة 11% وإجمالي المتبقي شامل الضريبة",
       "Exact Matches": "تطابقات تامة",
@@ -11004,7 +11004,7 @@
       "Specific Hours Limit": "حد ساعات محدد",
       "Temporary Shift Rotation (Specific Date or Range)": "مناوبة وردية مؤقتة (تاريخ أو نطاق محدد)",
       "Track ($0)": "تتبع ($0)",
-      "Track Only ($0)": "تتبع فقط ($0)",
+      "Track Only ($0)": "تتبّع فقط ($0)",
       "Update PIN": "تحديث PIN",
       "Whenever": "دائماً",
       "Whenever (Open OT)": "دائماً (إضافي مفتوح)",
@@ -11914,7 +11914,70 @@
       "Edit Region & Zone": "تعديل المنطقة والنطاق",
       "Verify Coordinates Before Saving": "التحقق من الإحداثيات قبل الحفظ",
       "Quarry / Supplier": "مقالع / مورّد",
-      "Project Site": "موقع مشروع"
+      "Project Site": "موقع مشروع",
+      "Exact + Snap (>=25m = 30m)": "دقيق + تقريب (≥25 د = 30 د)",
+      "Exact + Snap (>=50m = 60m)": "دقيق + تقريب (≥50 د = 60 د)",
+      "Exact 1m (No Snap)": "دقيقة واحدة دقيقة (بدون تقريب)",
+      "Whole 30m Blocks (>=25m)": "كتل كاملة 30 د (≥25 د)",
+      "Whole 60m Blocks (>=50m)": "كتل كاملة 60 د (≥50 د)",
+      "+ Add Tier": "+ إضافة شريحة",
+      "+ Tier": "+ شريحة",
+      "Block Size": "حجم الكتلة",
+      "Half Day Trigger (min):": "عتبة نصف اليوم (دقيقة):",
+      "Lateness Penalty & Brackets": "خصم وشرائح التأخير",
+      "OT Snap / Block": "تقريب / كتل الإضافي",
+      "Overtime Snap / Block Rule": "قاعدة تقريب / كتل الإضافي",
+      "Snap Up At (min)": "التقريب للأعلى عند (د)",
+      "Minutes late threshold": "عتبة دقائق التأخير",
+      "Penalty minutes billed": "دقائق الخصم المحتسبة",
+      "Remove tier": "حذف الشريحة",
+      "e.g. OT snap & brackets Nov 1": "مثال: تقريب الإضافي وشرائح التأخير 1 نوفمبر",
+      "Bundle $ / Min calculation precision, overtime snap blocks, lateness brackets, multipliers, effective-date versions, and staff perks": "تجميع دقة الحساب بالدقيقة ($/دقيقة)، كتل تقريب الإضافي، شرائح التأخير، المضاعفات، تواريخ السريان، والمزايا",
+      "$ / Min Precision & Overtime Start Threshold": "دقة الحساب ($/دقيقة) وعتبة بدء العمل الإضافي",
+      "Exact Minutes (1m = 1m)": "دقائق فعلية (1 د = 1 د)",
+      "Exact Minutes + Block Snap": "دقائق فعلية + تقريب الكتلة",
+      "Exact Minutes (No Snap)": "دقائق فعلية (بدون تقريب)",
+      "Exact Minutes + Top Snap": "دقائق فعلية + تقريب الكتلة الكاملة",
+      "Whole Blocks Only": "كتل كاملة فقط",
+      "60 min (1h)": "60 دقيقة (1 ساعة)",
+      "30 min (0.5h)": "30 دقيقة (0.5 ساعة)",
+      "Exact Minutes (1.0x)": "دقائق فعلية (1.0x)",
+      "Rate Multiplier (e.g. 1.5x / 2x)": "مضاعف الأجر (مثل 1.5x / 2x)",
+      "Step Brackets (e.g. >15m=30m, >30m=60m)": "شرائح التأخير (مثل >15د=30د، >30د=60د)",
+      "Round Up 30m (0.50h Blocks)": "تقريب للأعلى كل 30 د (كتل 0.50 س)",
+      "Round Up 1h (60m Blocks)": "تقريب للأعلى 1 ساعة (كتل 60 د)",
+      "Tiered Half Day (>=X min = 0.5d)": "نصف يوم حسب العتبة (≥X د = 0.5 يوم)",
+      "Step Brackets (priced 1.0x at $/min):": "شرائح التأخير (تُحتسب بمعدل 1.0x بالدقيقة):",
+      "Preset >15m=30m, >30m=60m": "قالب >15د=30د، >30د=60د",
+      "Over (>)": "أكثر من (>)",
+      "m = Bill": "د = احتساب",
+      "Charge Exact Minutes (1x)": "خصم الدقائق الفعلية (1x)",
+      "Waive ($0)": "إعفاء ($0)",
+      "Step Brackets (>15m=30m, >30m=60m)": "شرائح التأخير (>15د=30د، >30د=60د)",
+      "Round Up 30m (0.50h)": "تقريب للأعلى 30 د (0.50 س)",
+      "Round Up 1h": "تقريب للأعلى 1 س",
+      "Keep Current Snap": "إبقاء التقريب الحالي",
+      "Keep Tolerance": "إبقاء السماح الحالي",
+      "Keep Current Trigger": "إبقاء شرط التأخير الحالي",
+      "Keep Punishment": "إبقاء عقوبة التأخير الحالية",
+      "Keep 1-Punch Rule": "إبقاء قاعدة البصمة الواحدة",
+      "Select at least one rule change or effective date to apply": "اختر قاعدة واحدة على الأقل أو تاريخ سريان للتطبيق",
+      "Round Up to 30m": "تقريب للأعلى إلى 30 د",
+      "Any lateness beyond tolerance bills in completed 30m increments at 1x $/min.": "أي تأخير بعد فترة السماح يُحتسب بمضاعفات 30 دقيقة بسعر 1x $/دقيقة.",
+      "Fixed minute penalties per threshold tier (e.g. >15m = 30m, >30m = 60m) at 1x $/min.": "خصومات دقائق ثابتة لكل شريحة عتبة (مثل >15د = 30د، >30د = 60د) بسعر 1x $/دقيقة.",
+      "Lateness Penalty Tiers (Minutes Late = Billed Minutes at 1x $/min)": "شرائح خصم التأخير (دقائق التأخير = الدقائق المحتسبة بمعدل 1x $/دقيقة)",
+      "Below 1st tier:": "دون الشريحة الأولى:",
+      "Exact Minutes (1x)": "دقائق فعلية (1x)",
+      "Late >": "تأخير >",
+      "Actual late > penalty keeps exact late min": "إذا تجاوز التأخير الفعلي الشريحة يُحتسب الفعلي",
+      "Snap Remainder At (≥ min)": "تقريب الباقي عند (≥ د)",
+      "Round 30m": "تقريب 30 د",
+      "Round 1h": "تقريب 1 س",
+      "Exact": "دقيق",
+      "Late Steps": "تأخير شرائح",
+      "Late 30m Round": "تأخير تقريب 30د",
+      "Late 1h Round": "تأخير تقريب 1س",
+      "Late 1x": "تأخير 1x"
     },
     fr: {
       "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
@@ -15165,7 +15228,7 @@
       "Ex-VAT (+": "HT (+",
       "Ex-VAT Sum": "Total HT",
       "Ex-VAT across aggregate m³": "HT sur l'ensemble des m³",
-      "Exact 1m": "1 min Exacte",
+      "Exact 1m": "1 min exacte",
       "Exact 1x": "Exact 1x",
       "Exact Ex-VAT Credit ($/LL), Payments ($/LL), Remaining Payment ($/LL), 11% VAT Credit/Payment/Rem, and Total Remaining TTC": "Détail exact Crédit HT ($/LBP), Paiements, Reste, TVA 11 % et Solde TTC",
       "Exact Matches": "Correspondances exactes",
@@ -22900,7 +22963,7 @@
       "Specific Hours Limit": "Limite d'heures spécifique",
       "Temporary Shift Rotation (Specific Date or Range)": "Rotation temporaire de poste (date ou plage précise)",
       "Track ($0)": "Suivi ($0)",
-      "Track Only ($0)": "Suivi uniquement ($0)",
+      "Track Only ($0)": "Suivi seul (0 $)",
       "Update PIN": "Mettre à jour le PIN",
       "Whenever": "Toujours",
       "Whenever (Open OT)": "Toujours (HS ouvertes)",
@@ -23810,7 +23873,70 @@
       "Edit Region & Zone": "Modifier la région et la zone",
       "Verify Coordinates Before Saving": "Vérifier les coordonnées avant d’enregistrer",
       "Quarry / Supplier": "Carrière / Fournisseur",
-      "Project Site": "Site projet"
+      "Project Site": "Site projet",
+      "Exact + Snap (>=25m = 30m)": "Exact + arrondi (≥25m = 30m)",
+      "Exact + Snap (>=50m = 60m)": "Exact + arrondi (≥50m = 60m)",
+      "Exact 1m (No Snap)": "Minute exacte (sans arrondi)",
+      "Whole 30m Blocks (>=25m)": "Blocs complets 30m (≥25m)",
+      "Whole 60m Blocks (>=50m)": "Blocs complets 60m (≥50m)",
+      "+ Add Tier": "+ Ajouter palier",
+      "+ Tier": "+ Palier",
+      "Block Size": "Taille de bloc",
+      "Half Day Trigger (min):": "Seuil demi-journée (min) :",
+      "Lateness Penalty & Brackets": "Pénalité et paliers de retard",
+      "OT Snap / Block": "Arrondi / blocs HS",
+      "Overtime Snap / Block Rule": "Règle d'arrondi / blocs HS",
+      "Snap Up At (min)": "Arrondir à partir de (min)",
+      "Minutes late threshold": "Seuil minutes de retard",
+      "Penalty minutes billed": "Minutes pénalisées facturées",
+      "Remove tier": "Supprimer le palier",
+      "e.g. OT snap & brackets Nov 1": "ex. Arrondi HS et paliers 1 nov.",
+      "Bundle $ / Min calculation precision, overtime snap blocks, lateness brackets, multipliers, effective-date versions, and staff perks": "Regrouper la précision $/min, les blocs d'arrondi HS, les paliers de retard, les coefficients, les versions datées et les avantages",
+      "$ / Min Precision & Overtime Start Threshold": "Précision $/min et seuil de déclenchement HS",
+      "Exact Minutes (1m = 1m)": "Minutes exactes (1m = 1m)",
+      "Exact Minutes + Block Snap": "Minutes exactes + arrondi de bloc",
+      "Exact Minutes (No Snap)": "Minutes exactes (sans arrondi)",
+      "Exact Minutes + Top Snap": "Minutes exactes + arrondi supérieur",
+      "Whole Blocks Only": "Blocs complets uniquement",
+      "60 min (1h)": "60 min (1h)",
+      "30 min (0.5h)": "30 min (0,5h)",
+      "Exact Minutes (1.0x)": "Minutes exactes (1,0x)",
+      "Rate Multiplier (e.g. 1.5x / 2x)": "Multiplicateur de taux (ex. 1,5x / 2x)",
+      "Step Brackets (e.g. >15m=30m, >30m=60m)": "Paliers de retard (ex. >15m=30m, >30m=60m)",
+      "Round Up 30m (0.50h Blocks)": "Arrondi sup. 30m (blocs 0,50h)",
+      "Round Up 1h (60m Blocks)": "Arrondi sup. 1h (blocs 60m)",
+      "Tiered Half Day (>=X min = 0.5d)": "Demi-journée selon seuil (≥X m = 0,5j)",
+      "Step Brackets (priced 1.0x at $/min):": "Paliers de retard (tarifés à 1,0x au $/min) :",
+      "Preset >15m=30m, >30m=60m": "Préréglage >15m=30m, >30m=60m",
+      "Over (>)": "Au-delà (>)",
+      "m = Bill": "m = Facturer",
+      "Charge Exact Minutes (1x)": "Déduire les minutes exactes (1x)",
+      "Waive ($0)": "Exonérer (0 $)",
+      "Step Brackets (>15m=30m, >30m=60m)": "Paliers (>15m=30m, >30m=60m)",
+      "Round Up 30m (0.50h)": "Arrondi sup. 30m (0,50h)",
+      "Round Up 1h": "Arrondi sup. 1h",
+      "Keep Current Snap": "Conserver l'arrondi actuel",
+      "Keep Tolerance": "Conserver la tolérance",
+      "Keep Current Trigger": "Conserver le déclencheur actuel",
+      "Keep Punishment": "Conserver la pénalité actuelle",
+      "Keep 1-Punch Rule": "Conserver la règle 1 pointage",
+      "Select at least one rule change or effective date to apply": "Sélectionnez au moins une règle ou une date d'effet à appliquer",
+      "Round Up to 30m": "Arrondir au palier de 30m",
+      "Any lateness beyond tolerance bills in completed 30m increments at 1x $/min.": "Tout retard au-delà de la tolérance est facturé par tranches complètes de 30m à 1x $/min.",
+      "Fixed minute penalties per threshold tier (e.g. >15m = 30m, >30m = 60m) at 1x $/min.": "Pénalités en minutes fixes par palier (ex. >15m = 30m, >30m = 60m) à 1x $/min.",
+      "Lateness Penalty Tiers (Minutes Late = Billed Minutes at 1x $/min)": "Paliers de pénalité de retard (minutes de retard = minutes facturées à 1x $/min)",
+      "Below 1st tier:": "Sous le 1er palier :",
+      "Exact Minutes (1x)": "Minutes exactes (1x)",
+      "Late >": "Retard >",
+      "Actual late > penalty keeps exact late min": "Si le retard réel dépasse le palier, le réel s'applique",
+      "Snap Remainder At (≥ min)": "Arrondir le reste à (≥ min)",
+      "Round 30m": "Arrondi 30m",
+      "Round 1h": "Arrondi 1h",
+      "Exact": "Exact",
+      "Late Steps": "Retard paliers",
+      "Late 30m Round": "Retard arrondi 30m",
+      "Late 1h Round": "Retard arrondi 1h",
+      "Late 1x": "Retard 1x"
     }
   };
 
@@ -27693,6 +27819,12 @@
       return lang === 'ar' ? `وضع حساب الدقائق لـ ${co}` : `Mode de calcul pour ${co}`;
     }
 
+    m = trimmed.match(/^Overtime\s+Snap\s+Mode\s+for\s+(.+)$/i);
+    if (m) {
+      const co = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `وضع تقريب الإضافي لـ ${co}` : `Mode d'arrondi HS pour ${co}`;
+    }
+
     m = trimmed.match(/^([\d.]+x)\s*·\s*(Open OT|Date Pass|No OT|Max\s+[\d.]+h\s+OT)\s*·\s*(0\.1h|\$\s*\/\s*Min|\d+d)$/i);
     if (m) {
       const otPart = translateCore(m[2].trim(), lang, depth + 1);
@@ -27712,6 +27844,156 @@
 
     m = trimmed.match(/^\((?:current\s+active\s+policy\s+stays\s+until\s+then|active\s+rule\s+today\s+stays\s+unchanged\s+until\s+then)\)\.?$/i);
     if (m) return lang === 'ar' ? '(تبقى السياسة الحالية سارية حتى ذلك التاريخ).' : '(la règle active reste inchangée jusque-là).';
+
+    if (trimmed === 'm') return lang === 'ar' ? 'د' : 'min';
+
+    m = trimmed.match(/^Below\s+1st\s+Tier\s*\((?:<=|≤)\s*(\d+)m\):?$/i);
+    if (m) return lang === 'ar' ? `دون الشريحة الأولى (≤${m[1]} د):` : `Sous le 1er palier (≤${m[1]}m) :`;
+
+    m = trimmed.match(/^((?:>\d+m=\d+m(?:\s*,\s*)?)+)(?:\s*\(([^)]+)\))?$/i);
+    if (m) {
+      let body = lang === 'ar' ? m[1].replace(/(\d+)m/gi, '$1 د') : m[1];
+      let tail = '';
+      if (m[2]) {
+        const sub = m[2].trim();
+        const tm = sub.match(/^(waive|exact)\s*(?:<=|≤|<)\s*(\d+)m$/i);
+        if (tm) {
+          tail = lang === 'ar'
+            ? ` (${/^waive$/i.test(tm[1]) ? 'إعفاء' : 'دقيق'} ≤${tm[2]} د)`
+            : ` (${/^waive$/i.test(tm[1]) ? 'exonéré' : 'exact'} ≤${tm[2]}m)`;
+        } else {
+          tail = ` (${translateCore(sub, lang, depth + 1)})`;
+        }
+      }
+      return body + tail;
+    }
+
+    m = trimmed.match(/^Late\s+((?:>\d+m=\d+m.*)|(?:>=|≥)\s*\d+m=0\.5d)$/i);
+    if (m) {
+      const inner = m[1].trim();
+      const gm = inner.match(/^(?:>=|≥)\s*(\d+)m=0\.5d$/i);
+      if (gm) return lang === 'ar' ? `تأخير ≥${gm[1]} د=0.5 ي` : `Retard ≥${gm[1]}m=0,5j`;
+      const innerLoc = translateCore(inner, lang, depth + 1);
+      return lang === 'ar' ? `تأخير ${innerLoc}` : `Retard ${innerLoc}`;
+    }
+
+    m = trimmed.match(/^Step\s+Brackets\s*\((.+)\)$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `شرائح التأخير (${inner})` : `Paliers (${inner})`;
+    }
+
+    m = trimmed.match(/^Inherit\s+Policy\s+Group\s*\((.+)\)$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `توريث مجموعة السياسة (${inner})` : `Hériter du groupe (${inner})`;
+    }
+
+    m = trimmed.match(/^Inherit\s*\((.+)\)$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `توريث (${inner})` : `Hériter (${inner})`;
+    }
+
+    m = trimmed.match(/^\$\s*\/\s*Min\s*([-·])\s*(.+)$/i);
+    if (m) {
+      const inner = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `$/دقيقة ${m[1]} ${inner}` : `$/min ${m[1]} ${inner}`;
+    }
+
+    m = trimmed.match(/^\$\s*\/\s*Min\s+Exact\s*·\s*OT\s*(?:≥|>=)\s*(\d+)\s*m\s*\((From Shift End|After Thresh)\)(?:\s*·\s*(.+))?$/i);
+    if (m) {
+      const cf = /after/i.test(m[2])
+        ? (lang === 'ar' ? 'بعد العتبة' : 'Après seuil')
+        : (lang === 'ar' ? 'من نهاية الوردية' : 'Fin de poste');
+      const snapPart = m[3] ? ` · ${translateCore(m[3].trim(), lang, depth + 1)}` : '';
+      return lang === 'ar'
+        ? `$/دقيقة دقيق · إضافي ≥${m[1]}د (${cf})${snapPart}`
+        : `$/min exact · HS ≥${m[1]}m (${cf})${snapPart}`;
+    }
+
+    m = trimmed.match(/^Past\s+End\s*(?:≥|>=)\s*(\d+)\s*m\s*·\s*Early\s*(?:≥|>=)\s*(\d+)\s*m\s*·\s*(Shift End|After Thresh)(?:\s*·\s*(.+))?$/i);
+    if (m) {
+      const cf = /after/i.test(m[3])
+        ? (lang === 'ar' ? 'بعد العتبة' : 'Après seuil')
+        : (lang === 'ar' ? 'نهاية الوردية' : 'Fin poste');
+      const snapPart = m[4] ? ` · ${translateCore(m[4].trim(), lang, depth + 1)}` : '';
+      return lang === 'ar'
+        ? `بعد النهاية ≥${m[1]}د · مبكر ≥${m[2]}د · ${cf}${snapPart}`
+        : `Après fin ≥${m[1]}m · Avant ≥${m[2]}m · ${cf}${snapPart}`;
+    }
+
+    m = trimmed.match(/^Exact\s*\+\s*Snap\s*\(\s*(?:≥|>=)\s*(\d+)m\s*=\s*(\d+)m\s*\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `دقيق + تقريب (≥${m[1]}د = ${m[2]}د)`
+        : `Exact + arrondi (≥${m[1]}m = ${m[2]}m)`;
+    }
+
+    m = trimmed.match(/^Snap\s*(?:≥|>=)\s*(\d+)m\s*=\s*(\d+)m$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تقريب ≥${m[1]}د=${m[2]}د`
+        : `Arrondi ≥${m[1]}m=${m[2]}m`;
+    }
+
+    m = trimmed.match(/^(?:Exact\+Snap|Snap)\s*(?:≥|>=)\s*(\d+)m?(?:\s*[\(/](\d+)m\)?|\s*\(\+(\d+)m\))?$/i);
+    if (m) {
+      const a = m[1], b = m[2] || m[3] || '';
+      return lang === 'ar'
+        ? `تقريب ≥${a}د${b ? ` (${b}د)` : ''}`
+        : `Arrondi ≥${a}m${b ? ` (${b}m)` : ''}`;
+    }
+
+    m = trimmed.match(/^Whole\s*(\d+)m\s*Blocks\s*\(\s*(?:≥|>=)\s*(\d+)m\s*\)$/i);
+    if (m) {
+      return lang === 'ar' ? `كتل كاملة ${m[1]}د (≥${m[2]}د)` : `Blocs complets ${m[1]}m (≥${m[2]}m)`;
+    }
+
+    m = trimmed.match(/^(\d+)m\s*Blk\s*\(\s*(?:≥|>=)\s*(\d+)m\s*\)$/i);
+    if (m) {
+      return lang === 'ar' ? `كتل ${m[1]}د (≥${m[2]}د)` : `Blocs ${m[1]}m (≥${m[2]}m)`;
+    }
+
+    m = trimmed.match(/^Whole(?:\s+Blk)?\s*(\d+)m\s*\((?:≥|>=)\s*(\d+)m\)$/i);
+    if (m) {
+      return lang === 'ar' ? `كتل ${m[1]}د (≥${m[2]}د)` : `Blocs ${m[1]}m (≥${m[2]}m)`;
+    }
+
+    m = trimmed.match(/^Example:\s*(\d+)m\s+pays\s+(\d+)m,\s*(\d+)m\s+pays\s+(\d+)m\s+at\s+\$\/min\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مثال: ${m[1]} د تصرف ${m[2]} د، و${m[3]} د تصرف ${m[4]} د بسعر $/دقيقة.`
+        : `Exemple : ${m[1]}m paie ${m[2]}m, ${m[3]}m paie ${m[4]}m à $/min.`;
+    }
+
+    m = trimmed.match(/^Example:\s*(\d+)m\s+pays\s+(\d+)m,\s*(\d+)m\s+pays\s+(\d+)m\s*\(block\s+(\d+)m,\s*snap\s*(?:≥|>=)\s*(\d+)m\)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مثال: ${m[1]} د تصرف ${m[2]} د، و${m[3]} د تصرف ${m[4]} د (كتلة ${m[5]} د، تقريب ≥${m[6]} د).`
+        : `Exemple : ${m[1]}m paie ${m[2]}m, ${m[3]}m paie ${m[4]}m (bloc ${m[5]}m, seuil ≥${m[6]}m).`;
+    }
+
+    m = trimmed.match(/^Exact\s+min\s+below\s+(\d+)m;\s*each\s+remainder\s*(?:≥|>=)\s*(\d+)m\s+snaps\s+up\s+to\s+full\s+(\d+)m\s+block\s*\(daily\s+cap\s+applies\s+after\s+snap\)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `دقائق فعلية أقل من ${m[1]} د؛ كل باقٍ ≥${m[2]} د يرتقي لكتلة كاملة ${m[3]} د (يُطبّق الحد اليومي بعد التقريب).`
+        : `Minutes exactes sous ${m[1]}m ; tout reste ≥${m[2]}m passe au bloc complet de ${m[3]}m (plafond journalier après arrondi).`;
+    }
+
+    m = trimmed.match(/^Only\s+pays\s+completed\s+(\d+)m\s+blocks\s*\(remainder\s*(?:≥|>=)\s*(\d+)m\s+snaps\s+up;\s*remainder\s*<\s*(\d+)m\s+pays\s+0m;\s*daily\s+cap\s+applies\s+after\s+snap\)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يصرف كتل ${m[1]} د المكتملة فقط (الباقي ≥${m[2]} د يرتقي؛ الباقي <${m[3]} د يصرف 0 د؛ الحد اليومي بعد التقريب).`
+        : `Paie uniquement les blocs complets de ${m[1]}m (reste ≥${m[2]}m arrondi au bloc ; reste <${m[3]}m = 0m ; plafond après arrondi).`;
+    }
+
+    m = trimmed.match(/^Pays\s+exact\s+overtime\s+minutes\s+1-for-1\s+at\s+\$\/min\s+once\s+OT\s*(?:≥|>=)\s*(\d+)m\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يصرف دقائق العمل الإضافي الفعلية 1 مقابل 1 بسعر $/دقيقة عند بلوغ عتبة ≥${m[1]} د.`
+        : `Paie les minutes supplémentaires exactes 1 pour 1 à $/min dès HS ≥${m[1]}m.`;
+    }
 
     m = trimmed.match(/^Dry-Run\s+Preview\s*\(([^)]+)\):\s*recalculates$/i);
     if (m) return lang === 'ar' ? `معاينة تجريبية (${m[1]}): تُعيد احتساب` : `Aperçu à blanc (${m[1]}) : recalcule`;
@@ -27802,9 +28084,9 @@
       const rate = m[1];
       const pass = m[2].trim();
       let maxM = pass.match(/^Max\s+([\d.]+)h\s+OT$/i);
-      const passLoc = /open\s+ot/i.test(pass)
+      const passLoc = /^open\s+ot$/i.test(pass)
         ? (lang === 'ar' ? 'إضافي مفتوح' : 'HS ouvertes')
-        : (/date\s+pass/i.test(pass)
+        : (/^date\s+pass$/i.test(pass)
           ? (lang === 'ar' ? 'تصريح تاريخ' : 'Pass date')
           : (maxM
             ? (lang === 'ar' ? `حد أقصى ${maxM[1]}س` : `Max ${maxM[1]}h HS`)
