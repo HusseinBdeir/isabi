@@ -1264,7 +1264,7 @@
     const dslFe = (typeof window !== 'undefined') ? window.MFG_FUEL_ECON : null;
     const dslSig = `${(dslFe && typeof dslFe.rightsSig === 'function') ? dslFe.rightsSig() : 'x'}:`
       + (allowedCos || [co, 'WTC', 'BBConstruction', 'Lions Transport']).map(c => (dslGate(c) ? '1' : '0')).join('');
-    const sig = `${co}|${ind}|${demoSig}|${allowedSig}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.vat_invoices || []).length}|${(recs.fuel_malfunctions || []).length}|dsl:${dslSig}`;
+    const sig = `${co}|${ind}|${demoSig}|${allowedSig}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.attendance || []).length}|${(recs.vat_invoices || []).length}|${(recs.fuel_malfunctions || []).length}|dsl:${dslSig}`;
 
     if (_cachedCoKey !== sig || !_cachedCtxData) {
       const isMfgAll = !co || co === 'ALL';
@@ -1273,6 +1273,7 @@
       const rawSales = (recs.sales_tickets || recs.sales || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'sales_tickets'));
       const rawExp = (recs.expenses || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'expenses'));
       const rawPay = (recs.salaries || recs.payroll || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos));
+      const rawAtt = (recs.attendance || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'attendance'));
       const rawRm = (recs.raw_purchases || recs.rm || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'raw_purchases'));
       const rawFuel = (recs.fuel_intakes || recs.fuel || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos));
       const rawReceipts = (recs.receipts || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'receipts'));
@@ -1871,7 +1872,7 @@
         ind,
         coaAccounts: getCoaAccountsForInd(ind),
         domainTerms: getDomainRdlTerms(ind),
-        salesAll, expAll, payAll, rmAll, apRmLegsAll, fuelAll, dieselAdjAll, dieselClosing, dieselStationAlloc, prodAll: [],
+        salesAll, expAll, payAll, attAll: rawAtt, rmAll, apRmLegsAll, fuelAll, dieselAdjAll, dieselClosing, dieselStationAlloc, prodAll: [],
         receiptLedgerAll, arLedgerAll, settlementLedgerAll, apRmLedgerAll, vatPaidAll,
         customers, products, sites, suppliers, categories, staff, equipTypes, equipments, drivers,
         invoiceList, invMap, ticketCandidates, ticketById, receiptCandidates, receiptById
@@ -3334,6 +3335,53 @@
 
     const totPaid = rows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
     const viewRows = rows.slice(0, 160);
+    const E = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) || {};
+    const canShowPayDollars = Boolean(E.STATE && E.STATE.authed && typeof E.canViewPayrollDollarAmounts === 'function' && E.canViewPayrollDollarAmounts());
+    const getAuditPillsFn = typeof E.getAttendanceRuleAuditPills === 'function' ? E.getAttendanceRuleAuditPills : null;
+    const attSource = Array.isArray(ctx.attAll) ? ctx.attAll : ((rdlSeedRecs && Array.isArray(rdlSeedRecs.attendance)) ? rdlSeedRecs.attendance : []);
+    const staffAuditMap = new Map();
+    const auditDetailRows = [];
+    if (getAuditPillsFn && attSource.length) {
+      const attCandidates = [];
+      for (let i = 0; i < attSource.length; i++) {
+        const a = attSource[i];
+        if (!a || a.voided || a.manual_override) continue;
+        if (/^(?:config|extra|site|vac|sick)/i.test(String(a.type || ''))) continue;
+        const dStr = rowDate(a, ctx.basis);
+        if (!inWindow(dStr, p.from, p.to)) continue;
+        if (p.staff && p.staff !== 'ALL' && normStaffNm(a.staff) !== normStaffNm(p.staff)) continue;
+        if (!coMatch(a.company || ctxSingleCo || 'WTC', ctx.co, null)) continue;
+        const hasStamped = Boolean(a.rule_audit_late || a.rule_audit_ot);
+        const hasEvent = hasStamped || Number(a.overtime_hours || 0) > 0 || Number(a.late_hours || 0) > 0 || Number(a.leave_days || 0) > 0 || Boolean(a.in_time || a.out_time);
+        if (!hasEvent) continue;
+        attCandidates.push({ row: a, dStr, hasStamped });
+      }
+      attCandidates.sort((a, b) => (a.hasStamped === b.hasStamped ? b.dStr.localeCompare(a.dStr) : (a.hasStamped ? -1 : 1)));
+      let evalBudget = 400;
+      for (let i = 0; i < attCandidates.length; i++) {
+        const item = attCandidates[i];
+        if (!item.hasStamped && evalBudget <= 0) break;
+        if (!item.hasStamped) evalBudget--;
+        const pills = getAuditPillsFn(item.row, { kind: 'all' }) || [];
+        if (!pills.length) continue;
+        const coLbl = item.row.company || ctxSingleCo || 'WTC';
+        const sk = `${normCoNm(coLbl)}|${normStaffNm(item.row.staff)}`;
+        let stRec = staffAuditMap.get(sk);
+        if (!stRec) {
+          stRec = { lateCount: 0, otCount: 0, pills: [] };
+          staffAuditMap.set(sk, stRec);
+        }
+        pills.forEach(pl => {
+          if (pl.kind === 'ot') stRec.otCount++;
+          else stRec.lateCount++;
+          if (stRec.pills.length < 2 && !stRec.pills.some(x => x.text === pl.text)) stRec.pills.push(pl);
+        });
+        if (auditDetailRows.length < 120) {
+          auditDetailRows.push({ row: item.row, dStr: item.dStr, pills, coLbl });
+        }
+      }
+      auditDetailRows.sort((a, b) => b.dStr.localeCompare(a.dStr));
+    }
 
     const summaryHtml = staffEarnRows.length ? `
       <div class="rdl-section-title" style="margin:6px 0 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#334155">1 · Staff Earnings, Transportation / Reimbursement &amp; Remaining Balance (${fmtNum(staffEarnRows.length, 0)} Staff)</div>
@@ -3355,34 +3403,82 @@
           ${staffEarnRows.slice(0, 120).map(sr => {
             const otSite = Number(sr.ot_pay || 0) + Number(sr.site_allow || 0) + Number(sr.extras || 0);
             const dedTot = Number(sr.late_ded || 0) + Number(sr.abs_ded || 0) + Number(sr.ded || 0);
+            const stAud = staffAuditMap.get(`${normCoNm(sr.company || 'WTC')}|${normStaffNm(sr.staff)}`);
+            const stAudHtml = stAud
+              ? `<div style="margin-top:2px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">${stAud.pills.map(pl => `<span class="att-rule-audit-pill ${esc(pl.tone)}" data-rule-audit-kind="${esc(pl.kind)}">${esc(pl.text)}</span>`).join(' ')}${(stAud.lateCount + stAud.otCount) > stAud.pills.length ? `<span class="att-rule-audit-pill is-meta">+${stAud.lateCount + stAud.otCount - stAud.pills.length} rules</span>` : ''}</div>`
+              : '';
             return `
             <tr>
-              <td class="bold">${staffCellHtml(sr.staff, sr.company)}</td>
+              <td class="bold">${staffCellHtml(sr.staff, sr.company)}${stAudHtml}</td>
               <td>${esc(sr.company || 'WTC')}</td>
-              <td class="num">${fmtUsd(sr.base || 0, 2)}</td>
-              <td class="num">${sr.reimb ? fmtUsd(sr.reimb, 2) : '-'}</td>
-              <td class="num">${Math.abs(otSite) > 0.005 ? fmtUsdSigned(otSite, 2) : '-'}</td>
-              <td class="num">${dedTot > 0.005 ? fmtUsd(dedTot, 2) : '-'}</td>
-              <td class="num bold">${fmtUsd(sr.earnings || 0, 2)}</td>
-              <td class="num">${fmtUsd(sr.paid || 0, 2)}</td>
-              <td class="num bold">${fmtUsdSigned(sr.balance || 0, 2)}</td>
+              <td class="num">${canShowPayDollars ? fmtUsd(sr.base || 0, 2) : '-'}</td>
+              <td class="num">${canShowPayDollars && sr.reimb ? fmtUsd(sr.reimb, 2) : '-'}</td>
+              <td class="num">${canShowPayDollars && Math.abs(otSite) > 0.005 ? fmtUsdSigned(otSite, 2) : '-'}</td>
+              <td class="num">${canShowPayDollars && dedTot > 0.005 ? fmtUsd(dedTot, 2) : '-'}</td>
+              <td class="num bold">${canShowPayDollars ? fmtUsd(sr.earnings || 0, 2) : '-'}</td>
+              <td class="num">${canShowPayDollars ? fmtUsd(sr.paid || 0, 2) : '-'}</td>
+              <td class="num bold">${canShowPayDollars ? fmtUsdSigned(sr.balance || 0, 2) : '-'}</td>
             </tr>`;
           }).join('')}
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="2">TOTAL STAFF PAYROLL SUMMARY (${fmtNum(staffEarnRows.length, 0)} staff)</td>
-            <td class="num">${fmtUsd(sumBase, 2)}</td>
-            <td class="num">${fmtUsd(sumReimb, 2)}</td>
-            <td class="num">${fmtUsdSigned(sumOtSite, 2)}</td>
-            <td class="num">${fmtUsd(sumDedAll, 2)}</td>
-            <td class="num">${fmtUsd(sumEarned, 2)}</td>
-            <td class="num">${fmtUsd(sumPaidReg, 2)}</td>
-            <td class="num">${fmtUsdSigned(sumBalReg, 2)}</td>
+            <td class="num">${canShowPayDollars ? fmtUsd(sumBase, 2) : '-'}</td>
+            <td class="num">${canShowPayDollars ? fmtUsd(sumReimb, 2) : '-'}</td>
+            <td class="num">${canShowPayDollars ? fmtUsdSigned(sumOtSite, 2) : '-'}</td>
+            <td class="num">${canShowPayDollars ? fmtUsd(sumDedAll, 2) : '-'}</td>
+            <td class="num">${canShowPayDollars ? fmtUsd(sumEarned, 2) : '-'}</td>
+            <td class="num">${canShowPayDollars ? fmtUsd(sumPaidReg, 2) : '-'}</td>
+            <td class="num">${canShowPayDollars ? fmtUsdSigned(sumBalReg, 2) : '-'}</td>
           </tr>
         </tfoot>
       </table>
       <div class="rdl-section-title" style="margin:10px 0 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#334155">2 · Salary Disbursement Vouchers (${fmtNum(rows.length, 0)} Entries)</div>
+    ` : '';
+
+    const auditTableHtml = auditDetailRows.length ? `
+      <div class="rdl-section-title" style="margin:14px 0 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#334155">3 · Daily Attendance Rule-Audit &amp; Policy Exceptions (${fmtNum(auditDetailRows.length, 0)} Days)</div>
+      <table class="rdl-table" id="rdlPayRuleAuditTable" style="margin-bottom:10px">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Staff Member</th>
+            <th>Co.</th>
+            <th>Clock IN / OUT</th>
+            <th>Rule Audit</th>
+            <th class="num">Billable OT / Late</th>
+            ${canShowPayDollars ? '<th class="num">Net Impact ($)</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>
+          ${auditDetailRows.map(item => {
+            const r = item.row;
+            const clockStr = [r.in_time ? `IN ${r.in_time}` : '', r.out_time ? `OUT ${r.out_time}` : ''].filter(Boolean).join(' · ') || '-';
+            const otMin = r.approved_ot_min != null ? Math.round(Number(r.approved_ot_min)) : Math.round(Number(r.overtime_hours || 0) * 60);
+            const lateMin = r.billable_late_min != null ? Math.round(Number(r.billable_late_min)) : Math.round(Number(r.late_hours || 0) * 60);
+            const billStr = [
+              otMin > 0 ? `+${otMin}m OT` : '',
+              Number(r.leave_days || 0) >= 0.5 ? `${fmtNum(r.leave_days, 1)}d Penalty` : (lateMin > 0 ? `-${lateMin}m Late` : '')
+            ].filter(Boolean).join(' / ') || '0m';
+            const impUsd = (r.payroll_impact_usd != null && Number.isFinite(Number(r.payroll_impact_usd)))
+              ? Number(r.payroll_impact_usd)
+              : (canShowPayDollars && typeof E.computeAttendanceRowDollarImpact === 'function'
+                ? Number((E.computeAttendanceRowDollarImpact(r) || {}).netImpactUsd || 0)
+                : 0);
+            return `
+              <tr>
+                <td class="mono">${esc(item.dStr)}</td>
+                <td class="bold">${staffCellHtml(r.staff, item.coLbl)}</td>
+                <td>${esc(item.coLbl)}</td>
+                <td class="mono">${esc(clockStr)}</td>
+                <td>${item.pills.map(pl => `<span class="att-rule-audit-pill ${esc(pl.tone)}" data-rule-audit-kind="${esc(pl.kind)}">${esc(pl.text)}</span>`).join(' ')}</td>
+                <td class="num mono">${esc(billStr)}</td>
+                ${canShowPayDollars ? `<td class="num">${Math.abs(impUsd) > 0.005 ? fmtUsdSigned(impUsd, 2) : '-'}</td>` : ''}
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
     ` : '';
 
     return `
@@ -3405,17 +3501,18 @@
               <td class="bold">${staffCellHtml(r.staff, r.company)}</td>
               <td>${esc(r.role || '-')}</td>
               <td>${esc(r.type || 'Cash')}</td>
-              <td class="num bold">${fmtUsd(r.paid_usd, 2)}</td>
+              <td class="num bold">${canShowPayDollars ? fmtUsd(r.paid_usd, 2) : '-'}</td>
             </tr>
           `).join('')}
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="4">TOTAL SALARY DISBURSEMENTS (${fmtNum(rows.length, 0)} entries)</td>
-            <td class="num">${fmtUsd(totPaid, 2)}</td>
+            <td class="num">${canShowPayDollars ? fmtUsd(totPaid, 2) : '-'}</td>
           </tr>
         </tfoot>
       </table>
+      ${auditTableHtml}
       ${sheetFooterHtml(ctx.co, 1, 1)}
     `;
   }
@@ -6450,6 +6547,10 @@
       if (paramCont) paramCont.innerHTML = renderParamBarHtml(meta, updatedCtx);
       const sheet = root.querySelector('#printableSheet');
       if (sheet) sheet.innerHTML = renderRdlSheet(meta.id, updatedCtx);
+      if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+        if (paramCont) window.MFG_I18N.translateDom(paramCont);
+        if (sheet) window.MFG_I18N.translateDom(sheet);
+      }
       syncPinnedStatementCoverNote(root, STATE);
       wireParamControls();
       wireTableSorting();

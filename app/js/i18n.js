@@ -914,7 +914,7 @@
       "All Classes": "جميع الأصناف المحاسبية",
       "All Clear": "سليم بالكامل",
       "All Cohort": "كامل المجموعة المختارة",
-      "All Companies": "كل الشركات",
+      "All Companies": "جميع الشركات",
       "All Contract Statuses": "جميع حالات العقود",
       "All Contract Types": "جميع أنواع العقود",
       "All Contracts": "جميع العقود",
@@ -1035,7 +1035,7 @@
       "All-time balance from the Extended ledger. The period and search filters do not apply.": "رصيد كامل المدة من دفتر الأطراف الموسّعة. لا تنطبق فلاتر الفترة والبحث.",
       "All-time opening anchor": "الرصيد الافتتاحي المرجعي",
       "Allocate Pack & Match Credits": "توزيع ملف الشحن ومطابقة إشعارات الكفالة",
-      "Allocated ($)": "المخصص ($)",
+      "Allocated ($)": "الموزّع ($)",
       "Allocated Driver Cost": "تكلفة السائقين الموزعة",
       "Allocated Now": "المخصّص الآن",
       "Allocated Overhead ($)": "المصاريف المشتركة الموزعة ($)",
@@ -7703,7 +7703,7 @@
       "Restaurant & Shisha": "المطعم والأركيلة",
       "Restaurant F&B": "مطعم ومشروبات",
       "Restaurant, Lounge & Shisha": "المطعم واللاونج والأركيلة",
-      "Restricted": "محجوب",
+      "Restricted": "مقيد",
       "Restricted Inventory Scope": "نطاق مخزون مقيّد",
       "Restricted Treasury Scope": "نطاق خزينة مقيّد",
       "Resume": "متابعة",
@@ -12251,7 +12251,96 @@
       "Net Diff": "الصافي",
       "Review Cohort Draft": "مراجعة مسودة المجموعة",
       "Save Cohort Draft": "حفظ مسودة المجموعة",
-      "Cohort Draft Scope: updates apply only to these cohort members; shared company shift stays unchanged.": "نطاق مسودة المجموعة: تُطبّق التحديثات على أعضاء هذه المجموعة فقط؛ تبقى المناوبة المشتركة للشركة دون تغيير."
+      "Cohort Draft Scope: updates apply only to these cohort members; shared company shift stays unchanged.": "نطاق مسودة المجموعة: تُطبّق التحديثات على أعضاء هذه المجموعة فقط؛ تبقى المناوبة المشتركة للشركة دون تغيير.",
+      "$/m³ Impact": "أثر $/م³",
+      "$ / Min Preview": "معاينة $/دقيقة",
+      "0m OT Exact": "0د إضافي دقيق",
+      "1 Legacy 0.1h Row": "صف 0.1 س قديم واحد",
+      "1 Old 0.1h Row": "1 صف 0.1 س قديم",
+      "3 · Daily Attendance Rule-Audit & Policy Exceptions": "3 · تدقيق قواعد الحضور اليومية واستثناءات السياسات",
+      "6-Industry OT Snap Cost Consolidation Rollup": "تجميع تكلفة تقريب الإضافي للقطاعات الستة",
+      "After ($ / Min)": "بعد ($ / دقيقة)",
+      "All Open Eligible": "جميع المفتوحة المؤهلة",
+      "Alloc ($)": "الموزّع ($)",
+      "Allocated OT Snap": "قرب الإضافي الموزّع",
+      "Allocated to Jobs": "الموزّع على المهام",
+      "Allocated Unit Economics Impact": "الأثر الموزّع على اقتصاديات الوحدة",
+      "Before (0.1h)": "قبل (0.1 س)",
+      "Billable OT / Late": "الإضافي / التأخير القابل للفوترة",
+      "Claims & Adjuster OT Snap Allocation": "توزيع تقريب إضافي المطالبات والمعاينين",
+      "Clear Selection": "مسح التحديد",
+      "Clock": "الساعة",
+      "Clock IN / OUT": "دخول / خروج البصمة",
+      "Closed Month": "شهر مغلق",
+      "Daily Rule Audit": "تدقيق القواعد اليومي",
+      "Deterministic largest-remainder cent allocation of overtime-snap minute jumps onto same-day deliveries & trips": "توزيع حتمي لأقرب سنت من قفزات تقريب الإضافي على توصيلات ونقلات نفس اليوم",
+      "Dollar Amounts Restricted": "المبالغ الدولارية مقيدة",
+      "Exact Base": "الأساس الدقيق",
+      "Exact Min Base": "الأساس بالدقيقة",
+      "Exact Minutes": "الدقائق الدقيقة",
+      "Full-Day Absence": "غياب يوم كامل",
+      "Group Snap Premium": "علاوة التقريب للمجموعة",
+      "Half-Day Penalty": "جزاء نصف يوم",
+      "Impacted Jobs": "المهام المتأثرة",
+      "Impacted Trips & Delivery Tickets": "النقلات وتذاكر التوصيل المتأثرة",
+      "Incremental OT Snap Cost": "التكلفة الإضافية لتقريب الإضافي",
+      "Jobs": "المهام",
+      "Jobs / Trips": "المهمات / النقلات",
+      "Late Grace": "سماح التأخير",
+      "Late Waived": "تأخير معفى",
+      "Legacy 0.1h Attendance Migration": "ترحيل حضور 0.1 ساعة القديم",
+      "Legacy 0.1h Backfill Review": "مراجعة الترحيل الانتقائي لنظام 0.1 ساعة",
+      "Maintenance Work Orders OT Snap Allocation": "توزيع تقريب إضافي أوامر عمل الصيانة",
+      "Manual Override": "تعديل يدوي",
+      "Migrate Selected Open Rows": "ترحيل الصفوف المفتوحة المحددة",
+      "Migrated": "مرحّل",
+      "Minute deltas shown; payroll access required for USD": "تظهر الفروق بالدقائق؛ عرض الدولار يتطلب صلاحية الرواتب",
+      "Net Delta ($)": "صافي الفرق ($)",
+      "No Daily Rule-Audit Exceptions": "لا توجد استثناءات لتدقيق القواعد اليومي",
+      "No eligible open rows were migrated (closed months and manual overrides stayed protected)": "لم يتم ترحيل أي صفوف مفتوحة مؤهلة (الأشهر المغلقة والتعديلات اليدوية بقيت محمية)",
+      "No legacy 0.1h rows match this filter": "لا توجد صفوف 0.1 س قديمة مطابقة لهذا المرشح",
+      "No same-day job matches in active period": "لا توجد مهام مطابقة في نفس اليوم خلال الفترة النشطة",
+      "No site OT snap allocations": "لا توجد توزيعات لتقريب الإضافي على المواقع",
+      "No snapped overtime deltas in the active Manufacturing scope. All OT minutes currently match exact-minute payroll timing.": "لا توجد فروق تقريب إضافي في نطاق التصنيع النشط. جميع دقائق الإضافي تطابق التوقيت الدقيق حاليًا.",
+      "Open & Eligible": "مفتوح ومؤهل",
+      "Open 0.1h Rows": "صفوف 0.1 س مفتوحة",
+      "OT Snap": "تقريب الإضافي",
+      "OT Snap Cost Allocation": "توزيع تكلفة تقريب الإضافي",
+      "OT Snap Delta (Minutes)": "فرق تقريب الإضافي (دقائق)",
+      "Overtime Cap": "سقف الإضافي",
+      "Overtime Exact Minutes": "إضافي بالدقائق الدقيقة",
+      "Overtime Snap Block": "إضافي بتقريب الكتلة",
+      "Payroll Access Restricted": "صلاحية الرواتب مقيدة",
+      "Payroll Driver OT GL $0.00 Delta": "فرق أستاذ رواتب إضافي السائقين $0.00",
+      "Payroll GL Delta": "فرق دفتر الرواتب",
+      "Policy Multiplier": "معامل السياسة",
+      "POS Shift OT Snap Allocation": "توزيع تقريب إضافي ورديات نقاط البيع",
+      "Protected": "محمي",
+      "Protected (Closed / Manual)": "محمية (مغلقة / يدوية)",
+      "Read Only": "للقراءة فقط",
+      "Review & selectively migrate unmigrated legacy tenth-hour rows onto unified $/min rules while preserving closed periods and manual overrides.": "مراجعة وترحيل صفوف 0.1 ساعة القديمة غير المرحّلة انتقائيًا إلى قواعد $/دقيقة الموحّدة مع حماية الأشهر المغلقة والتعديلات اليدوية.",
+      "Review Legacy 0.1h": "مراجعة 0.1 س القديمة",
+      "Review legacy 0.1h rows": "مراجعة صفوف 0.1 س القديمة",
+      "Rule Audit": "تدقيق القواعد",
+      "Rule Audit Pills": "شارات تدقيق القواعد",
+      "Search staff, company, or rule...": "ابحث عن موظف أو شركة أو قاعدة...",
+      "Search staff, date, company...": "ابحث بالموظف، التاريخ، الشركة...",
+      "Select All Open": "تحديد كل المفتوح",
+      "Select all open legacy rows": "تحديد كل الصفوف القديمة المفتوحة",
+      "Select open-period legacy 0.1h logs to recalculate onto $ / Min precision; closed months and manual overrides stay protected": "اختر سجلات 0.1 ساعة القديمة في الفترات المفتوحة لإعادة حسابها بدقة $/دقيقة؛ وتبقى الأشهر المقفلة والتعديلات اليدوية محمية",
+      "Selected Net Delta ($)": "صافي الفرق المحدد ($)",
+      "Selected to Migrate": "المحددة للترحيل",
+      "Site Unit Economics (Frequency-Ranked)": "اقتصاديات المواقع (مرتبة حسب التكرار)",
+      "Snap Block": "تقريب الكتلة",
+      "Snap Premium": "علاوة التقريب",
+      "Staff & Co.": "الموظف والشركة",
+      "Ticket / Job": "التذكرة / المهمة",
+      "Unit Economics & OT Snap Cost Allocation": "اقتصاديات الوحدة وتوزيع تكلفة تقريب الإضافي",
+      "Unit Economics Cost ($)": "تكلفة اقتصاديات الوحدة ($)",
+      "Unmatched Same-Day": "غير مطابق لنفس اليوم",
+      "Venue & Banquet OT Snap Allocation": "توزيع تقريب إضافي المرافق والحفلات",
+      "Work Site": "الموقع",
+      "Workshop, PDI & Warranty OT Snap Allocation": "توزيع تقريب إضافي الورشة والفحص والضمان"
     },
     fr: {
       "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
@@ -13268,7 +13357,7 @@
       "All-time balance from the Extended ledger. The period and search filters do not apply.": "Solde depuis l'origine du Grand Livre Étendu. Les filtres de période et de recherche ne s'appliquent pas.",
       "All-time opening anchor": "Ancre initiale toutes périodes",
       "Allocate Pack & Match Credits": "Ventiler dossier import et rapprocher avoirs",
-      "Allocated ($)": "Alloue ($)",
+      "Allocated ($)": "Imputé ($)",
       "Allocated Driver Cost": "Coût Chauffeurs Imputé",
       "Allocated Now": "Alloué",
       "Allocated Overhead ($)": "Frais Généraux Répartis ($)",
@@ -15230,7 +15319,7 @@
       "Driver & Assigned Truck": "Chauffeur & Camion Attitré",
       "Driver / Operator": "Chauffeur / Opérateur",
       "Driver / Plate": "Chauffeur / Plaque",
-      "Driver / Staff": "Chauffeur / Collaborateur",
+      "Driver / Staff": "Chauffeur / Personnel",
       "Driver 1: BHFIRMS Multi-Device Cloud Relay + Local SQLite": "Pilote 1 : Relais Cloud Multi-Appareils + Base SQLite Locale",
       "Driver 2: Dedicated Supabase / PostgreSQL Cloud (Optional)": "Pilote 2 : Cloud PostgreSQL / Supabase Dédié (Optionnel)",
       "Driver Base + Overtime Pay": "Salaire de Base + Heures Sup. Chauffeurs",
@@ -21852,7 +21941,7 @@
       "Unlocked via Supervisor or Role Privilege": "Déverrouillé par privilège superviseur ou rôle",
       "Unlocked via Supervisor or Role Privilege · click to re-lock to policy rule": "Déverrouillé par privilège superviseur ou rôle · cliquer pour reverrouiller selon la règle",
       "Unmapped": "Non géolocalisé",
-      "Unmatched": "Non rapproché",
+      "Unmatched": "Non rattaché",
       "Not in Workbooks": "Absent des livres",
       "JV Partners": "Partenaires JV",
       "JV Partner Share Paid": "Part du partenaire JV versée",
@@ -24484,7 +24573,96 @@
       "Net Diff": "Écart net",
       "Review Cohort Draft": "Examiner le brouillon de cohorte",
       "Save Cohort Draft": "Enregistrer le brouillon de cohorte",
-      "Cohort Draft Scope: updates apply only to these cohort members; shared company shift stays unchanged.": "Portée du brouillon de cohorte : les mises à jour s'appliquent uniquement à ces membres ; l'horaire partagé de la société reste inchangé."
+      "Cohort Draft Scope: updates apply only to these cohort members; shared company shift stays unchanged.": "Portée du brouillon de cohorte : les mises à jour s'appliquent uniquement à ces membres ; l'horaire partagé de la société reste inchangé.",
+      "$/m³ Impact": "Impact $/m³",
+      "$ / Min Preview": "Aperçu $/min",
+      "0m OT Exact": "0m HS exactes",
+      "1 Legacy 0.1h Row": "1 ligne 0.1h héritée",
+      "1 Old 0.1h Row": "1 ligne 0.1h héritée",
+      "3 · Daily Attendance Rule-Audit & Policy Exceptions": "3 · Audit quotidien des règles de présence et exceptions",
+      "6-Industry OT Snap Cost Consolidation Rollup": "Consolidation palier HS des 6 secteurs",
+      "After ($ / Min)": "Après ($ / min)",
+      "All Open Eligible": "Toutes ouvertes éligibles",
+      "Alloc ($)": "Imputé ($)",
+      "Allocated OT Snap": "Palier HS imputé",
+      "Allocated to Jobs": "Imputé aux tâches",
+      "Allocated Unit Economics Impact": "Impact unitaire imputé",
+      "Before (0.1h)": "Avant (0.1h)",
+      "Billable OT / Late": "HS / Retard facturable",
+      "Claims & Adjuster OT Snap Allocation": "Imputation palier HS sinistres et experts",
+      "Clear Selection": "Effacer la sélection",
+      "Clock": "Horloge",
+      "Clock IN / OUT": "Pointage Entrée / Sortie",
+      "Closed Month": "Mois clôturé",
+      "Daily Rule Audit": "Audit quotidien des règles",
+      "Deterministic largest-remainder cent allocation of overtime-snap minute jumps onto same-day deliveries & trips": "Répartition déterministe au centime des sauts d'heures sup. sur les livraisons et trajets du jour",
+      "Dollar Amounts Restricted": "Montants USD restreints",
+      "Exact Base": "Base exacte",
+      "Exact Min Base": "Base minute exacte",
+      "Exact Minutes": "Minutes exactes",
+      "Full-Day Absence": "Absence journée complète",
+      "Group Snap Premium": "Prime palier groupe",
+      "Half-Day Penalty": "Pénalité demi-journée",
+      "Impacted Jobs": "Tâches impactées",
+      "Impacted Trips & Delivery Tickets": "Trajets et bons de livraison impactés",
+      "Incremental OT Snap Cost": "Coût incrémental palier HS",
+      "Jobs": "Tâches",
+      "Jobs / Trips": "Tâches / Trajets",
+      "Late Grace": "Tolérance retard",
+      "Late Waived": "Retard exonéré",
+      "Legacy 0.1h Attendance Migration": "Migration présence 0,1h héritée",
+      "Legacy 0.1h Backfill Review": "Révision rétroactive sélective 0.1h",
+      "Maintenance Work Orders OT Snap Allocation": "Imputation palier HS bons de maintenance",
+      "Manual Override": "Modification manuelle",
+      "Migrate Selected Open Rows": "Migrer les lignes ouvertes sélectionnées",
+      "Migrated": "Migré",
+      "Minute deltas shown; payroll access required for USD": "Écarts en minutes affichés ; accès paie requis pour les montants USD",
+      "Net Delta ($)": "Écart net ($)",
+      "No Daily Rule-Audit Exceptions": "Aucune exception d'audit quotidien",
+      "No eligible open rows were migrated (closed months and manual overrides stayed protected)": "Aucune ligne ouverte éligible migrée (mois clôturés et saisies manuelles protégés)",
+      "No legacy 0.1h rows match this filter": "Aucune ligne 0,1h héritée ne correspond à ce filtre",
+      "No same-day job matches in active period": "Aucune tâche du même jour dans la période active",
+      "No site OT snap allocations": "Aucune imputation palier HS par chantier",
+      "No snapped overtime deltas in the active Manufacturing scope. All OT minutes currently match exact-minute payroll timing.": "Aucun écart de palier HS dans le périmètre industriel actif. Toutes les minutes correspondent au calcul exact.",
+      "Open & Eligible": "Ouvert et éligible",
+      "Open 0.1h Rows": "Lignes 0,1h ouvertes",
+      "OT Snap": "Palier HS",
+      "OT Snap Cost Allocation": "Imputation coût palier HS",
+      "OT Snap Delta (Minutes)": "Écart palier HS (minutes)",
+      "Overtime Cap": "Plafond HS",
+      "Overtime Exact Minutes": "HS minutes exactes",
+      "Overtime Snap Block": "HS par palier",
+      "Payroll Access Restricted": "Accès paie restreint",
+      "Payroll Driver OT GL $0.00 Delta": "Écart grand livre HS chauffeurs 0,00 $",
+      "Payroll GL Delta": "Écart GL paie",
+      "Policy Multiplier": "Coefficient politique",
+      "POS Shift OT Snap Allocation": "Imputation palier HS caisses POS",
+      "Protected": "Protégé",
+      "Protected (Closed / Manual)": "Protégées (clôturées / manuelles)",
+      "Read Only": "Lecture seule",
+      "Review & selectively migrate unmigrated legacy tenth-hour rows onto unified $/min rules while preserving closed periods and manual overrides.": "Examiner et migrer sélectivement les lignes 0.1h héritées vers $/min tout en protégeant les mois clôturés et les saisies manuelles.",
+      "Review Legacy 0.1h": "Revoir 0,1h héritées",
+      "Review legacy 0.1h rows": "Revoir les lignes 0,1h héritées",
+      "Rule Audit": "Audit des règles",
+      "Rule Audit Pills": "Pastilles d'audit des règles",
+      "Search staff, company, or rule...": "Rechercher collaborateur, société ou règle...",
+      "Search staff, date, company...": "Rechercher employé, date, société...",
+      "Select All Open": "Tout sélectionner (ouvert)",
+      "Select all open legacy rows": "Sélectionner toutes les lignes héritées ouvertes",
+      "Select open-period legacy 0.1h logs to recalculate onto $ / Min precision; closed months and manual overrides stay protected": "Sélectionnez les pointages 0,1h hérités en période ouverte à recalculer au tarif $/min ; les mois clôturés et forçages manuels restent protégés",
+      "Selected Net Delta ($)": "Écart net sélectionné ($)",
+      "Selected to Migrate": "Sélectionnées à migrer",
+      "Site Unit Economics (Frequency-Ranked)": "Économie par chantier (par fréquence)",
+      "Snap Block": "Arrondi par palier",
+      "Snap Premium": "Prime palier HS",
+      "Staff & Co.": "Collaborateur & Sté",
+      "Ticket / Job": "Bon / Tâche",
+      "Unit Economics & OT Snap Cost Allocation": "Économie unitaire et imputation coût palier HS",
+      "Unit Economics Cost ($)": "Coût unitaire ($)",
+      "Unmatched Same-Day": "Non rattaché du jour",
+      "Venue & Banquet OT Snap Allocation": "Imputation palier HS points et banquets",
+      "Work Site": "Chantier",
+      "Workshop, PDI & Warranty OT Snap Allocation": "Imputation palier HS atelier, PDI et garantie"
     }
   };
 
@@ -28865,7 +29043,7 @@
     }
 
     m = trimmed.match(/^(.+?)\s+Only$/i);
-    if (m && !/^(IN|OUT|Track|Today|Clock-IN Late|Clock-OUT Early)$/i.test(m[1].trim())) {
+    if (m && !/^(IN|OUT|Track|Today|Read|Clock-IN Late|Clock-OUT Early)$/i.test(m[1].trim())) {
       const co = translateCore(m[1].trim(), lang, depth + 1);
       return lang === 'ar' ? `${co} فقط` : `${co} uniquement`;
     }
@@ -28922,6 +29100,150 @@
 
     m = trimmed.match(/^Hide BU Shift Table\s*\((\d+)\)$/i);
     if (m) return lang === 'ar' ? `إخفاء جدول ورديات الشركة (${m[1]})` : `Masquer le tableau des postes (${m[1]})`;
+
+    m = trimmed.match(/^Late\s+(\d+(?:\.\d+)?)m\s*->\s*(\d+(?:\.\d+)?)m$/i);
+    if (m) return lang === 'ar' ? `تأخير ${m[1]}د -> ${m[2]}د` : `Retard ${m[1]}m -> ${m[2]}m`;
+
+    m = trimmed.match(/^Late\s+(\d+(?:\.\d+)?)m\s*->\s*0\.5d$/i);
+    if (m) return lang === 'ar' ? `تأخير ${m[1]}د -> 0.5ي` : `Retard ${m[1]}m -> 0,5j`;
+
+    m = trimmed.match(/^Late\s+(\d+(?:\.\d+)?)m\s*->\s*1\.0d$/i);
+    if (m) return lang === 'ar' ? `تأخير ${m[1]}د -> 1.0ي` : `Retard ${m[1]}m -> 1,0j`;
+
+    m = trimmed.match(/^1-Punch\s*->\s*(\d+(?:\.\d+)?)(m|d)$/i);
+    if (m) {
+      const unit = String(m[2] || '').toLowerCase();
+      if (lang === 'ar') return `بصمة مفردة -> ${m[1]}${unit === 'd' ? 'ي' : 'د'}`;
+      return `1 pointage -> ${m[1].replace('.', ',')}${unit === 'd' ? 'j' : 'm'}`;
+    }
+
+    m = trimmed.match(/^OT\s+(\d+(?:\.\d+)?)m\s*->\s*(\d+(?:\.\d+)?)m(\s+Cap)?$/i);
+    if (m) {
+      const cap = m[3] ? (lang === 'ar' ? ' حد أقصى' : ' Plafond') : '';
+      return lang === 'ar' ? `إضافي ${m[1]}د -> ${m[2]}د${cap}` : `HS ${m[1]}m -> ${m[2]}m${cap}`;
+    }
+
+    m = trimmed.match(/^(\d[\d,]*)\s+(?:Legacy|Old)\s+0\.1h\s+Rows?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} صف 0.1 س قديم` : `${m[1]} ligne(s) 0.1h héritée(s)`;
+
+    m = trimmed.match(/^Review\s+(\d[\d,]*)\s+Legacy\s+0\.1h$/i);
+    if (m) return lang === 'ar' ? `مراجعة ${m[1]} (0.1 س)` : `Revoir ${m[1]} (0.1h)`;
+
+    m = trimmed.match(/^([+-]?[\d,]+)\s*m\s+OT\s+(Snap|Trim|Exact)(?:\s*\(([^)]+)\))?$/i);
+    if (m) {
+      const kind = m[2].toLowerCase();
+      const tail = m[3] ? ` (${m[3]})` : '';
+      const kAr = kind === 'snap' ? 'قرب إضافي' : (kind === 'trim' ? 'تقليم إضافي' : 'إضافي دقيق');
+      const kFr = kind === 'snap' ? 'palier HS' : (kind === 'trim' ? 'ajust. HS' : 'HS exactes');
+      return lang === 'ar' ? `${m[1]}د ${kAr}${tail}` : `${m[1]}m ${kFr}${tail}`;
+    }
+
+    m = trimmed.match(/^([^:]{1,64}):\s*([+-]?[\d,]+)\s*m\s+OT\s+(Snap|Trim|Exact)((?:\s+[+-]?\$[\d,.]+)?)(?:\s*\((\d[\d,]*)\s+jobs?\))?$/i);
+    if (m) {
+      const lblRaw = m[1].trim();
+      const lblTr = (DICT[lang] && DICT[lang][lblRaw]) || (LOWER_DICT[lang] && LOWER_DICT[lang][lblRaw.toLowerCase()]) || lblRaw;
+      const kind = m[3].toLowerCase();
+      const kAr = kind === 'snap' ? 'قرب إضافي' : (kind === 'trim' ? 'تقليم إضافي' : 'إضافي دقيق');
+      const kFr = kind === 'snap' ? 'palier HS' : (kind === 'trim' ? 'ajust. HS' : 'HS exactes');
+      const usdPart = m[4] || '';
+      const jobsPart = m[5] ? (lang === 'ar' ? ` (${m[5]} مهمات)` : ` (${m[5]} tâches)`) : '';
+      return lang === 'ar'
+        ? `${lblTr}: ${m[2]}د ${kAr}${usdPart}${jobsPart}`
+        : `${lblTr} : ${m[2]}m ${kFr}${usdPart}${jobsPart}`;
+    }
+
+    m = trimmed.match(/^Exact min base\s+([+-]?\$[\d,.]+)\s+vs snapped\s+([+-]?\$[\d,.]+)$/i);
+    if (m) return lang === 'ar' ? `أساس الدقائق الدقيقة ${m[1]} مقابل المقرّب ${m[2]}` : `Base min exacte ${m[1]} vs arrondie ${m[2]}`;
+
+    m = trimmed.match(/^Allocated\s+([+-]?\$[\d,.]+)\s*·\s*Payroll GL Delta\s+([+-]?\$[\d,.]+)$/i);
+    if (m) return lang === 'ar' ? `الموزّع ${m[1]} · فرق أستاذ الرواتب ${m[2]}` : `Imputé ${m[1]} · Écart grand livre paie ${m[2]}`;
+
+    m = trimmed.match(/^(\d[\d,]*)\s+sites?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مواقع` : `${m[1]} chantiers`;
+
+    m = trimmed.match(/^(\d[\d,]*)\s+allocated job\(s\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مهمات موزّعة` : `${m[1]} tâche(s) imputée(s)`;
+
+    m = trimmed.match(/^(\d[\d,]*)\s+snapped shift log\(s\)\s*·\s*(\d[\d,]*)\s+impacted ticket\(s\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سجل دوام مقرّب · ${m[2]} تذكرة متأثرة` : `${m[1]} pointage(s) arrondi(s) · ${m[2]} bon(s) impacté(s)`;
+
+    m = trimmed.match(/^\((\d[\d,]*)\s+Logs\)$/i);
+    if (m) return lang === 'ar' ? `(${m[1]} سجلات)` : `(${m[1]} entrées)`;
+
+    m = trimmed.match(/^(\d[\d,]*)\s+snapped logs across\s+(\d[\d,]*)\s+fleet trips(.*)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سجل إضافي مقرّب عبر ${m[2]} نقلة أسطول${m[3]}` : `${m[1]} pointages arrondis sur ${m[2]} trajets flotte${m[3]}`;
+
+    m = trimmed.match(/^Migrated\s+(\d[\d,]*)\s+legacy 0\.1h rows to \$ \/ Min(.*)$/i);
+    if (m) return lang === 'ar' ? `تم ترحيل ${m[1]} صف 0.1 س قديم إلى $ / دقيقة${m[2]}` : `${m[1]} ligne(s) 0.1h migrée(s) vers $/min${m[2]}`;
+
+    m = trimmed.match(/^Open Legacy 0\.1h\s*\((\d[\d,]*)\)$/i);
+    if (m) return lang === 'ar' ? `قديمة 0.1 س مفتوحة (${m[1]})` : `0.1h héritées ouvertes (${m[1]})`;
+
+    m = trimmed.match(/^Changed Only\s*\((\d[\d,]*)\)$/i);
+    if (m) return lang === 'ar' ? `المتغيّرة فقط (${m[1]})` : `Modifiées seulement (${m[1]})`;
+
+    m = trimmed.match(/^Protected\s*\((\d[\d,]*)\)$/i);
+    if (m) return lang === 'ar' ? `المحمية (${m[1]})` : `Protégées (${m[1]})`;
+
+    m = trimmed.match(/^All Detected\s*\((\d[\d,]*)\)$/i);
+    if (m) return lang === 'ar' ? `كل المكتشف (${m[1]})` : `Toutes détectées (${m[1]})`;
+
+    m = trimmed.match(/^Clear Scope\s*\((.+)\)$/i);
+    if (m) return lang === 'ar' ? `مسح النطاق (${m[1]})` : `Effacer la portée (${m[1]})`;
+
+    m = trimmed.match(/^(\d[\d,]*)\s+selected of\s+(\d[\d,]*)\s+open(?:\s*\((\d[\d,]*)\s+protected untouched\))?$/i);
+    if (m) {
+      const prAr = m[3] ? ` (${m[3]} محمية دون تغيير)` : '';
+      const prFr = m[3] ? ` (${m[3]} protégée(s) intacte(s))` : '';
+      return lang === 'ar' ? `محدد ${m[1]} من ${m[2]} مفتوحة${prAr}` : `${m[1]} sélectionnée(s) sur ${m[2]} ouverte(s)${prFr}`;
+    }
+
+    m = trimmed.match(/^Migrate Selected to \$ \/ Min\s*\((\d[\d,]*)\)$/i);
+    if (m) return lang === 'ar' ? `ترحيل المحدد إلى $/دقيقة (${m[1]})` : `Migrer la sélection vers $/min (${m[1]})`;
+
+    m = trimmed.match(/^All\s*\((\d[\d,]*)\)$/i);
+    if (m) return lang === 'ar' ? `الكل (${m[1]})` : `Tous (${m[1]})`;
+
+    m = trimmed.match(/^(\d[\d,]*)\s+shown$/i);
+    if (m) return lang === 'ar' ? `${m[1]} معروض` : `${m[1]} affichées`;
+
+    m = trimmed.match(/^(\d[\d,]*)\s+staff$/i);
+    if (m) return lang === 'ar' ? `${m[1]} موظف` : `${m[1]} employés`;
+
+    m = trimmed.match(/^\+(\d[\d,]*)\s+rules?$/i);
+    if (m) return lang === 'ar' ? `+${m[1]} قواعد` : `+${m[1]} règles`;
+
+    m = trimmed.match(/^Driver & OT\s*\(([\d,.]+h)\)$/i);
+    if (m) return lang === 'ar' ? `السائق والإضافي (${m[1]})` : `Chauffeur & HS (${m[1]})`;
+
+    m = trimmed.match(/^3 · Daily Attendance Rule-Audit & Policy Exceptions\s*\((\d[\d,]*)\s+Days\)$/i);
+    if (m) return lang === 'ar' ? `3 · تدقيق قواعد الحضور اليومي واستثناءات السياسة (${m[1]} يوم)` : `3 · Audit quotidien des règles de présence et exceptions (${m[1]} jours)`;
+
+    m = trimmed.match(/^((?:[+-]?[\d,.]+[hm]\s+(?:OT|Late)|[\d,.]+d(?:\s+Penalty)?)(?:\s*(?:\/|·)\s*(?:[+-]?[\d,.]+[hm]\s+(?:OT|Late)|[\d,.]+d(?:\s+Penalty)?))*)$/i);
+    if (m) {
+      const trPart = seg => {
+        const s = seg.trim();
+        let mm = s.match(/^([+-]?[\d,.]+)([hm])\s+OT$/i);
+        if (mm) return lang === 'ar' ? `${mm[1]}${mm[2].toLowerCase() === 'h' ? 'س' : 'د'} إضافي` : `${mm[1]}${mm[2].toLowerCase()} HS`;
+        mm = s.match(/^([+-]?[\d,.]+)([hm])\s+Late$/i);
+        if (mm) return lang === 'ar' ? `${mm[1]}${mm[2].toLowerCase() === 'h' ? 'س' : 'د'} تأخير` : `${mm[1]}${mm[2].toLowerCase()} Retard`;
+        mm = s.match(/^([\d,.]+)d\s+Penalty$/i);
+        if (mm) return lang === 'ar' ? `جزاء ${mm[1]}ي` : `Pénalité ${mm[1]}j`;
+        mm = s.match(/^([\d,.]+)d$/i);
+        if (mm) return lang === 'ar' ? `${mm[1]}ي` : `${mm[1]}j`;
+        return s;
+      };
+      const sep = m[1].includes('·') ? ' · ' : ' / ';
+      return m[1].split(/\s*(?:\/|·)\s*/).map(trPart).join(sep);
+    }
+
+    m = trimmed.match(/^(?:IN\s+(\d{2}:\d{2}))?(?:\s*·\s*)?(?:OUT\s+(\d{2}:\d{2}))?$/i);
+    if (m && (m[1] || m[2])) {
+      const parts = [];
+      if (m[1]) parts.push(lang === 'ar' ? `دخول ${m[1]}` : `Entrée ${m[1]}`);
+      if (m[2]) parts.push(lang === 'ar' ? `خروج ${m[2]}` : `Sortie ${m[2]}`);
+      return parts.join(' · ');
+    }
 
     return null;
   }

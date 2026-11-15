@@ -91,12 +91,43 @@
   const _delivMonthsCache = new Map();
   const _gradeSeriesCache = new Map();
 
+  function buildMonthsOtSnapHeaderHtml(mArr) {
+    const list = Array.isArray(mArr) ? mArr : [];
+    const active = list.filter(m => m && (Math.abs(Number(m.otSnapMin || 0)) >= 0.1 || Math.abs(Number(m.otSnapUsd || 0)) >= 0.005));
+    if (!active.length) return '';
+    const totMin = Math.round(active.reduce((s, m) => s + Number(m.otSnapMin || 0), 0));
+    const hasUsd = active.some(m => m.otSnapUsd != null);
+    const totUsd = active.reduce((s, m) => s + Number(m.otSnapUsd || 0), 0);
+    if (totMin === 0 && (!hasUsd || Math.abs(totUsd) < 0.005)) return '';
+    const pillTxt = totMin === 0
+      ? '0m OT Exact'
+      : `${totMin > 0 ? '+' : ''}${fmtNum(totMin, 0)}m OT ${totMin < 0 ? 'Trim' : 'Snap'}`;
+    if (!hasUsd) {
+      return `<span class="job-otsnap-pill ${totMin < 0 ? 'is-trim' : 'is-snap'}">${esc(pillTxt)}</span> <span class="muted" style="font-size:11px">Dollar Amounts Restricted</span>`;
+    }
+    const totM3 = active.reduce((s, m) => s + Number(m.qty_sold || 0), 0);
+    const perM3Val = totM3 > 0.001
+      ? Math.round(((totUsd / totM3) + Number.EPSILON) * 100) / 100
+      : ((active.find(m => m.otSnapPerM3 != null) || {}).otSnapPerM3 ?? null);
+    const usdStr = `${totUsd >= 0 ? '+' : '-'}${fmtUSD(Math.abs(totUsd), 2)}`;
+    const unitStr = perM3Val != null ? ` (${perM3Val >= 0 ? '+' : '-'}${fmtUSD(Math.abs(perM3Val), 2)}/m³)` : '';
+    return `<span class="job-otsnap-pill ${totMin < 0 ? 'is-trim' : 'is-snap'}">${esc(pillTxt)}</span> <span class="mono" style="font-size:11px;font-weight:700">${esc(usdStr)}${esc(unitStr)}</span>`;
+  }
+
   function enrichMonthsWithTicketUnitEconomics(months, salesRows, rawRows, opts = {}) {
     const mList = Array.isArray(months) ? months : [];
     if (!mList.length) return mList;
     const seedRev = (typeof window !== 'undefined' && window.SEED && window.SEED._customRev) || 0;
-    const eKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${opts.hasSalesTicketSource}|${opts.hasRawTicketSource}|${_monthsSig(mList)}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}|${_pbiArrUid(rawRows)}:${(rawRows && rawRows.length) || 0}`;
+    const _otSnapE = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
+    const otSnapSig = (_otSnapE && typeof _otSnapE.getOtSnapAllocSig === 'function') ? _otSnapE.getOtSnapAllocSig() : '';
+    const scopeCo = opts.company || (typeof window !== 'undefined' && window.STATE && window.STATE.company ? window.STATE.company : 'ALL');
+    const payUsdAuth = (_otSnapE && typeof _otSnapE.canViewPayrollDollarAmounts === 'function' && _otSnapE.canViewPayrollDollarAmounts()) ? '1' : '0';
+    const actUserIdx = (typeof window !== 'undefined' && window.STATE && window.STATE.activeUserIdx != null) ? window.STATE.activeUserIdx : '';
+    const eKey = `${seedRev}|${otSnapSig}|${payUsdAuth}|${actUserIdx}|${scopeCo}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${opts.hasSalesTicketSource}|${opts.hasRawTicketSource}|${_monthsSig(mList)}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}|${_pbiArrUid(rawRows)}:${(rawRows && rawRows.length) || 0}`;
     if (_enrichMonthsCache.has(eKey)) return _enrichMonthsCache.get(eKey);
+    const otSnapAlloc = (_otSnapE && typeof _otSnapE.computeJobOtSnapAllocation === 'function')
+      ? _otSnapE.computeJobOtSnapAllocation({ industry: 'Manufacturing', company: scopeCo, basis: opts.basis || 'rep', ignorePeriod: true })
+      : null;
     const sList = Array.isArray(salesRows) ? salesRows : [];
     const rList = Array.isArray(rawRows) ? rawRows : [];
     const basis = opts.basis === 'tx' ? 'tx' : 'rep';
@@ -215,10 +246,16 @@
       const avgRaw = (rb && rb.m3 > 0.001)
         ? roundFn(rb.cost / rb.m3)
         : (hasRawPool ? 0 : Number(mRow.avg_raw_cost || 0));
+      const mSnap = (otSnapAlloc && otSnapAlloc.byMonth && ym) ? otSnapAlloc.byMonth[ym] : null;
+      const denomSnapM3 = (sb && sb.m3 > 0.001) ? sb.m3 : Number(mRow.qty_sold || 0);
+      const otSnapUsdVal = (otSnapAlloc && otSnapAlloc.authorizedDollar && mSnap && mSnap.snapUsd != null) ? roundFn(mSnap.snapUsd) : null;
       return Object.assign({}, mRow, {
         avg_price_net: avgNet,
         avg_price_ttc: avgTtc,
         avg_raw_cost: avgRaw,
+        otSnapMin: mSnap ? roundFn(mSnap.snapDeltaMin || 0) : 0,
+        otSnapUsd: otSnapUsdVal,
+        otSnapPerM3: (otSnapUsdVal != null && denomSnapM3 > 0.001) ? roundFn(otSnapUsdVal / denomSnapM3) : null,
         cash_sales_ttc: hasSalesSource ? roundFn(tb ? tb.cashTtc : 0) : roundFn(Number(mRow.cash_sales_ttc != null ? mRow.cash_sales_ttc : (mRow.cash_sales || 0))),
         credit_sales_ttc: hasSalesSource ? roundFn(tb ? tb.credTtc : 0) : roundFn(Number(mRow.credit_sales_ttc != null ? mRow.credit_sales_ttc : (Number(mRow.sales_ttc || 0) - Number(mRow.cash_sales || 0)))),
         raw_mat_leg: hasRawSource ? roundFn(rb ? rb.mat : 0) : roundFn(Number(mRow.raw_mat_cost || 0)),
@@ -5747,6 +5784,7 @@
       operating_profit: sc(r.operating_profit), gross_margin: sc(r.gross_margin), receipts: sc(r.receipts)
     })) : baseMonths;
     const months = enrichMonthsWithTicketUnitEconomics(scaledMonths, monthSalesPool, monthRawPool, {
+      company: STATE.company,
       basis: STATE.basis,
       ticketMeters,
       isAggregateMaterialProduct,
@@ -7046,6 +7084,7 @@
             { label: 'Avg Raw Cost / m³', key: 'avg_raw_cost', color: C.crit }
           ], { isMoney: true, decimals: 2 }), {
             subtitle: 'Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw material intake cost',
+            headerRight: buildMonthsOtSnapHeaderHtml(months),
             legend: [{ label: 'Selling Price ($/m³)', color: C.navy, line: true }, { label: 'Raw Cost ($/m³)', color: C.crit, line: true }]
           })}
           ${pbiPanel('Raw intake cost split by month · material vs 3rd-party haulage ($)', buildComboChartSvg(months, [
@@ -7296,6 +7335,7 @@
             { label: 'Avg Raw Cost / m³', key: 'avg_raw_cost', color: C.crit }
           ], { isMoney: true, decimals: 2 }), {
             subtitle: 'Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw material intake cost',
+            headerRight: buildMonthsOtSnapHeaderHtml(months),
             legend: [{ label: 'Selling Price ($/m³)', color: C.navy, line: true }, { label: 'Raw Cost ($/m³)', color: C.crit, line: true }]
           })}
           ${pbiPanel('Raw intake cost split by month · material vs 3rd-party haulage ($)', buildComboChartSvg(months, [
@@ -13291,6 +13331,7 @@
     const salesRows = (ctx && ctx.salesRows) || [];
     const rawRows = (ctx && ctx.rawRows) || [];
     const mRows = enrichMonthsWithTicketUnitEconomics(rawMonths, salesRows, rawRows, {
+      company: (ctx && ctx.company) || (typeof window !== 'undefined' && window.STATE && window.STATE.company) || 'ALL',
       basis: ctx && ctx.basis,
       ticketMeters: ctx && ctx.ticketMeters,
       isAggregateMaterialProduct: ctx && ctx.isAggregateMaterialProduct,
@@ -13305,6 +13346,7 @@
           { label: 'Avg Raw Cost / m³', key: 'avg_raw_cost', color: C.crit }
         ], { isMoney: true, decimals: 2 }), {
           subtitle: 'Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw intake cost (including supplier-delivered Mat+Trans quarry loads)',
+          headerRight: buildMonthsOtSnapHeaderHtml(mRows),
           legend: [
             { label: 'Selling Price ($/m³)', color: C.navy, line: true },
             { label: 'Raw Cost ($/m³)', color: C.crit, line: true }
@@ -14275,6 +14317,7 @@
     renderCashFlowVisualsSection,
     renderSalesVisualsSection,
     buildMonthlyDeliveryTransportRows,
+    enrichMonthsWithTicketUnitEconomics,
     renderCustomersVisualsSection,
     renderPricingVisualsSection,
     renderCommissionVisualsSection,

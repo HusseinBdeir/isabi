@@ -276,10 +276,13 @@
     var seedRev = (window.MFG_SEED && window.MFG_SEED._customRev) || 0;
     var allowedKey = (ent && typeof ent.allowedCompanyNames === 'function' && ent.allowedCompanyNames())
       ? ent.allowedCompanyNames().join(',') : 'ALL';
+    var otSnapSig = (ent && typeof ent.getOtSnapAllocSig === 'function') ? ent.getOtSnapAllocSig() : '';
+    var payUsdAuth = (ent && typeof ent.canViewPayrollDollarAmounts === 'function' && ent.canViewPayrollDollarAmounts()) ? '1' : '0';
     var cacheKey = [
       st.company || '', st.period || '', st.dateGrain || '', st.dateFrom || '', st.dateTo || '',
       st.basis || st.dateBasis || 'rep', st.officialBookScope || '', st._officialScopeActive ? '1' : '0',
-      st.userId || '', STATE.companyFilter || 'ALL', allowedKey, seedRev, st._indCustomRev || 0
+      st.userId || '', st.activeUserIdx != null ? st.activeUserIdx : '', payUsdAuth,
+      STATE.companyFilter || 'ALL', allowedKey, seedRev, st._indCustomRev || 0, otSnapSig
     ].join('|');
 
     if (LIVE_CACHE && LIVE_CACHE_KEY === cacheKey) return LIVE_CACHE;
@@ -327,6 +330,7 @@
           dieselEvents: 0, dieselLiters: 0, dieselCost: 0,
           repairs: 0, lubes: 0, insurance: 0, capex: 0, expCount: 0,
           driverBasePay: 0, driverOtHours: 0, driverOtPay: 0, driverTotalPay: 0,
+          driverOtSnapMin: 0, driverOtSnapUsd: null,
           driverTripsMap: {}, monthsMap: {}
         };
       }
@@ -698,6 +702,27 @@
       });
     }
 
+    var otSnapAlloc = (ent && typeof ent.computeJobOtSnapAllocation === 'function')
+      ? ent.computeJobOtSnapAllocation({
+        industry: 'Manufacturing',
+        company: (STATE.companyFilter && STATE.companyFilter !== 'ALL') ? STATE.companyFilter : (st.company || 'ALL'),
+        period: st.period || 'all',
+        dateFrom: st.dateFrom || '',
+        dateTo: st.dateTo || ''
+      })
+      : null;
+    if (otSnapAlloc && Array.isArray(otSnapAlloc.jobs)) {
+      otSnapAlloc.jobs.forEach(function (j) {
+        var jCode = normTruckCode(j && j.truck);
+        var jTruck = jCode ? trucks[jCode] : null;
+        if (!jTruck) return;
+        jTruck.driverOtSnapMin = Math.round(((jTruck.driverOtSnapMin || 0) + Number(j.snapDeltaMin || 0)) * 10) / 10;
+        if (otSnapAlloc.authorizedDollar && j.allocatedUsd != null) {
+          jTruck.driverOtSnapUsd = Math.round((((jTruck.driverOtSnapUsd || 0) + Number(j.allocatedUsd || 0)) + Number.EPSILON) * 100) / 100;
+        }
+      });
+    }
+
     var activeMonthsCount = Math.max(1, Object.keys(monthsMap).filter(function (k) { return k !== 'Unspecified'; }).length);
     var allTruckList = [];
     Object.keys(trucks).forEach(function (c) {
@@ -797,6 +822,7 @@
       zeroRows: zeroRows,
       expenses: expenseRows,
       overtimeRows: overtimeRows,
+      otSnapAlloc: otSnapAlloc,
       driverList: Object.keys(driverMap).map(function (k) { return driverMap[k]; }).sort(function (a, b) { return b.hours - a.hours; }),
       months: monthsList,
       diagnostics: diagnostics
@@ -911,6 +937,8 @@
       driverBasePay: t.driverBasePay,
       driverOtHours: t.driverOtHours,
       driverOtPay: t.driverOtPay,
+      driverOtSnapMin: t.driverOtSnapMin || 0,
+      driverOtSnapUsd: t.driverOtSnapUsd != null ? t.driverOtSnapUsd : null,
       driverCost: driverCost,
       totalCost: totalCost,
       netProfit: netProfit,
@@ -1217,6 +1245,14 @@
             '</button>' +
             '<button type="button" class="fpnl-drill-chip" data-fpnl-drill="overtime" data-fpnl-truck="' + esc(r.code) + '" title="Inspect Driver Overtime & Pay">' +
               '<span class="fpnl-dot" style="background:#8B5CF6"></span>Driver &amp; OT (' + fmtNum(r.driverOtHours, 0) + 'h) <b>-' + fmtMoney(r.driverCost, 0) + '</b>' +
+              (Math.abs(Number(r.driverOtSnapMin || 0)) >= 0.1
+                ? (' <span class="job-otsnap-pill ' + (r.driverOtSnapMin < 0 ? 'is-trim' : 'is-snap') + '">' +
+                  esc((r.driverOtSnapMin > 0 ? '+' : '') + fmtNum(Math.round(r.driverOtSnapMin), 0) + 'm OT ' + (r.driverOtSnapMin < 0 ? 'Trim' : 'Snap')) +
+                  '</span>' +
+                  (r.driverOtSnapUsd != null
+                    ? (' <span class="mono">' + esc((r.driverOtSnapUsd >= 0 ? '+' : '-') + fmtMoney(Math.abs(r.driverOtSnapUsd))) + '</span>')
+                    : ''))
+                : '') +
             '</button>' +
           '</div>' +
         '</div>' +
@@ -1761,6 +1797,24 @@
       '</tr>';
     }).join('');
 
+    var otSnapBannerHtml = '';
+    if (ds.otSnapAlloc && ds.otSnapAlloc.snappedLogs > 0) {
+      var os = ds.otSnapAlloc;
+      var osMin = Math.round(Number(os.snapDeltaMin || 0));
+      var osMinTxt = osMin > 0
+        ? ('+' + fmtNum(osMin, 0) + 'm OT Snap')
+        : (osMin < 0 ? (fmtNum(osMin, 0) + 'm OT Trim') : '0m OT Exact');
+      var osShowUsd = Boolean(os.authorizedDollar);
+      var osUsdSpan = osShowUsd
+        ? ('<span> · </span><span>Snap Premium</span> <strong class="mono">' + esc((os.snapPremiumUsd >= 0 ? '+' : '-') + fmtMoney(Math.abs(os.snapPremiumUsd || 0))) + '</strong><span> · </span><span>Payroll Driver OT GL $0.00 Delta</span>')
+        : ('<span> · </span><span>Dollar Amounts Restricted</span>');
+      otSnapBannerHtml = '<div id="fpnlOtSnapStrip" class="fpnl-otsnap-strip">' +
+        '<span class="job-otsnap-pill ' + (osMin < 0 ? 'is-trim' : 'is-snap') + '">' + esc(osMinTxt) + '</span> ' +
+        '<span>' + fmtInt(os.snappedLogs) + ' snapped logs across ' + fmtInt(os.impactedJobCount) + ' fleet trips</span>' +
+        osUsdSpan +
+      '</div>';
+    }
+
     return '<div class="fpnl-section-card">' +
       '<div class="fpnl-section-head">' +
         '<div>' +
@@ -1772,6 +1826,7 @@
           (STATE.otDriver !== 'ALL' ? '<button type="button" class="fpnl-focus-btn" data-fpnl-drv-card="ALL">Show All Drivers</button>' : '') +
         '</div>' +
       '</div>' +
+      otSnapBannerHtml +
       '<div class="fpnl-cat-cards">' + drvCards + '</div>' +
       '<div class="fpnl-table-wrap">' +
         '<table class="fpnl-table">' +

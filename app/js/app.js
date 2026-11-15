@@ -2043,11 +2043,23 @@
     wireToastDismiss(el);
     el.className = 'toast' + (kind ? ' toast-' + kind : '');
     el.hidden = false;
-    if (opts && typeof opts.onUndo === 'function') {
-      el.innerHTML = `<span>${esc(msg)}</span> <button type="button" class="toast-undo-btn" id="toastUndoBtn" style="margin-left:10px;padding:2px 8px;border-radius:4px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:inherit;font-size:11px;font-weight:700;cursor:pointer">Undo ↩</button>`;
+    if (opts && (typeof opts.onUndo === 'function' || (opts.actionLabel && typeof opts.onAction === 'function'))) {
+      const undoHtml = typeof opts.onUndo === 'function'
+        ? ` <button type="button" class="toast-undo-btn" id="toastUndoBtn" style="margin-inline-start:10px;padding:2px 8px;border-radius:4px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:inherit;font-size:11px;font-weight:700;cursor:pointer">Undo ↩</button>`
+        : '';
+      const actHtml = (opts.actionLabel && typeof opts.onAction === 'function')
+        ? ` <button type="button" class="toast-undo-btn" id="toastActionBtn" style="margin-inline-start:8px;padding:2px 8px;border-radius:4px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:inherit;font-size:11px;font-weight:700;cursor:pointer">${esc(opts.actionLabel)}</button>`
+        : '';
+      el.innerHTML = `<span>${esc(msg)}</span>${undoHtml}${actHtml}`;
       const uBtn = document.getElementById('toastUndoBtn');
-      if (uBtn) uBtn.addEventListener('click', () => { clearTimeout(toastTimer); clearTimeout(toastFadeTimer); el.classList.remove('is-leaving'); el.hidden = true; opts.onUndo(); });
-      scheduleToastHide(el, 6000);
+      if (uBtn && typeof opts.onUndo === 'function') {
+        uBtn.addEventListener('click', () => { clearTimeout(toastTimer); clearTimeout(toastFadeTimer); el.classList.remove('is-leaving'); el.hidden = true; opts.onUndo(); });
+      }
+      const aBtn = document.getElementById('toastActionBtn');
+      if (aBtn && typeof opts.onAction === 'function') {
+        aBtn.addEventListener('click', () => { clearTimeout(toastTimer); clearTimeout(toastFadeTimer); el.classList.remove('is-leaving'); el.hidden = true; opts.onAction(); });
+      }
+      scheduleToastHide(el, opts.actionLabel ? 6500 : 6000);
       return;
     }
     el.textContent = msg;
@@ -26321,6 +26333,8 @@
           </div>
         </div>
       </div>
+
+      ${renderUnitEconomicsSectionHtml(rows, sAgg)}
     `;
   }
 
@@ -31208,6 +31222,7 @@
           || Math.abs(Number(a.late_hours || 0) - ltH) > 1e-4
           || Math.abs(Number(a.leave_days || 0) - penLeaveDays) > 1e-4
           || a.type !== effType
+          || hasAttRowAuditDriftFromEval(a, evalRes, { isPaired, penaltyLeaveDays: penLeaveDays })
         ) {
           a.worked_hours = workedH;
           a.regular_hours = isPaired ? evalRes.regularHours : (workedH > 0 ? Math.min(schedH, workedH) : 0);
@@ -31223,6 +31238,7 @@
           a.type = effType;
           a.status = effType;
           a.tally = effTally;
+          syncAttRowAuditFromEvalRes(a, evalRes, { isPaired, penaltyLeaveDays: penLeaveDays });
           rowChanged = true;
         }
       }
@@ -39768,6 +39784,10 @@
 
   function computeAttendanceRowDollarImpact(a, prof, opts = {}) {
     const fxRate = Number(opts.fxRate || getLbpFxRate()) || 89500;
+    const effDateImp = String((a && (a.set_date || a.rep_date || a.date)) || '').slice(0, 10);
+    if (!prof && a && a.staff && typeof getStaffContractProfile === 'function') {
+      prof = getStaffContractProfile(a.staff, a.company || 'WTC', effDateImp);
+    }
     const eff = resolveAttRowEffectiveHoursAndMults(a);
     const attType = eff.attType;
     if (/^site\s*(?:present|off)$|^config/i.test(attType)) {
@@ -43141,6 +43161,7 @@
               <button type="button" class="btn btn-ghost-bar" id="payTogglePolicyBtn">${ic('clock')} ${STATE.payrollPolicyOpen ? 'Hide Shifts &amp; Policies' : 'Shifts, Policies &amp; Face ID'}</button>
               <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="attendance">${ic('kiosks')} Attendance Kiosk</button>
               ${canOpenFatherBackfill() ? (() => { const fbS = getFatherBackfillSummary(); return `<button type="button" class="btn btn-ghost-bar" data-open-father-backfill="1">${ic('reg_staff')} <span>Father's Name Backfill</span>${fbS.totalMissing > 0 ? ` <span class="badge warn" data-no-i18n="1">${fmtNum(fbS.totalMissing)}</span>` : ''}</button>`; })() : ''}
+              ${renderLegacyTenthBackfillPillHtml({ company: COMPANY_BU_MATCH[STATE.company] || '', toolbarBtn: true })}
               ${exportBtn('payAttPanel', 'Attendance_Records')}
               ${canEnterForm('attendance') ? '<button type="button" class="btn btn-primary" data-open-modal="attendance">+ Log Attendance</button>' : ''}
             </div>
@@ -43221,8 +43242,8 @@
                     <td class="mono">${outCell}</td>
                     <td class="r">${a.worked_hours ? `<strong>${fmtAttHrs(a.worked_hours, isPerMinRow)}</strong>` : '—'}</td>
                     <td><span class="att-basis-pill${a.is_callout ? ' is-callout' : ''}">${esc(a.shift_basis_lbl || '—')}</span>${isPerMinRow ? ' <span class="att-math-pill">$/min</span>' : ''}</td>
-                    <td class="r">${a.overtime_hours ? `<strong style="color:var(--brass)">${fmtAttHrs(a.overtime_hours, isPerMinRow)}</strong>${otMinPill > 0 ? ` <span class="att-math-pill">${otMinPill}m</span>` : ''}` : '—'}</td>
-                    <td class="r">${a.late_hours ? `<strong class="att-impact-neg">${fmtAttHrs(a.late_hours, isPerMinRow)}</strong>${lateMinPill > 0 ? ` <span class="att-math-pill">${lateMinPill}m</span>` : ''}` : '—'}</td>
+                    <td class="r">${a.overtime_hours ? `<strong style="color:var(--brass)">${fmtAttHrs(a.overtime_hours, isPerMinRow)}</strong>${otMinPill > 0 ? ` <span class="att-math-pill">${otMinPill}m</span>` : ''}` : '—'}${renderRuleAuditPillsHtml(a, { kind: 'ot', inline: true })}</td>
+                    <td class="r">${a.late_hours ? `<strong class="att-impact-neg">${fmtAttHrs(a.late_hours, isPerMinRow)}</strong>${lateMinPill > 0 ? ` <span class="att-math-pill">${lateMinPill}m</span>` : ''}` : '—'}${renderRuleAuditPillsHtml(a, { kind: 'late', inline: true })}</td>
                     <td class="r">${a.leave_days ? fmtNum(a.leave_days, 1) : '—'}</td>
                     ${canShowAttDollars ? `<td class="r">${fmtEarnedCell(a.earned_usd)}</td><td class="r">${fmtLostCell(a.lost_usd)}</td><td class="r">${fmtSignedImpact(a.payroll_impact_usd)}</td>` : ''}
                     <td class="mu">${esc(a.notes || '—')}</td>
@@ -49965,7 +49986,24 @@
         left: { mode: 'group', groupKey: 'industry', valKey: 'sales_ttc', fmt: 'usd', color: 'blue', title: 'Group Revenue by Industry Vertical ($)', sub: 'Combined operating revenue TTC across the 6 group industries' },
         right: { mode: 'group', groupKey: 'name', valKey: 'operating_profit', fmt: 'usd', color: 'green', title: 'Operating Profit by Subsidiary Entity ($)', sub: 'Net entity operating contribution across subsidiaries' }
       })}`;
-      })() : `
+      })() : (() => {
+        const hldOtAlloc = computeJobOtSnapAllocation({ industry: 'ALL', period: STATE.period, dateFrom: STATE.dateFrom, dateTo: STATE.dateTo });
+        const hldOtShowUsd = Boolean(hldOtAlloc && hldOtAlloc.authorizedDollar);
+        const hldOtStripHtml = (hldOtAlloc && hldOtAlloc.snappedLogs > 0) ? `
+          <div class="job-otsnap-banner" id="hldOtSnapRollup" data-otsnap-logs="${hldOtAlloc.snappedLogs}" data-otsnap-jobs="${hldOtAlloc.impactedJobCount}" data-otsnap-min="${Math.round(hldOtAlloc.snapDeltaMin)}">
+            <div class="job-otsnap-head">
+              <div class="job-otsnap-title">${ic('clock')} <strong>6-Industry OT Snap Cost Consolidation Rollup</strong></div>
+              <div class="job-otsnap-metrics">
+                <span class="job-otsnap-stat is-snap"><b>${esc(_formatOtSnapMinPillLabel(hldOtAlloc.snapDeltaMin))}</b><span>(${fmtNum(hldOtAlloc.snappedLogs, 0)} Logs)</span></span>
+                ${hldOtShowUsd
+                  ? `<span class="job-otsnap-stat"><span>Group Snap Premium</span><b>${esc(fmtSignedUSD(hldOtAlloc.snapPremiumUsd || 0, 2))}</b></span><span class="job-otsnap-stat"><span>Allocated to Jobs</span><b>${esc(fmtUSD(hldOtAlloc.allocatedUsd || 0, 2))}</b></span><span class="job-otsnap-stat"><span>Unmatched</span><b>${esc(fmtUSD(hldOtAlloc.unallocatedUsd || 0, 2))}</b></span><span class="job-otsnap-stat is-exact"><span>Payroll GL Delta</span><b>${esc(fmtUSD(0, 2))}</b></span>`
+                  : `<span class="job-otsnap-stat is-restricted">${ic('lock')} <span>Dollar Amounts Restricted</span></span>`}
+              </div>
+            </div>
+            ${hldOtAlloc.byIndustry && hldOtAlloc.byIndustry.length ? `<div class="job-otsnap-sub">${hldOtAlloc.byIndustry.map(ind => `<span class="job-otsnap-mini">${esc(ind.industry)}: ${esc(_formatOtSnapMinPillLabel(ind.snapDeltaMin))}${hldOtShowUsd && ind.snapUsd != null ? ` ${esc(fmtSignedUSD(ind.snapUsd, 2))}` : ''} (${fmtNum(ind.impactedJobCount, 0)} jobs)</span>`).join('')}</div>` : ''}
+          </div>` : '';
+        return `
+      ${hldOtStripHtml}
       <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
         <div class="panel-head" style="margin-bottom:10px">
           <div class="panel-title"><span>${ic('hld_consolidation')} 6-INDUSTRY REVENUE, OPERATING PROFIT &amp; INTERCOMPANY ELIMINATION BRIDGE</span></div>
@@ -50028,7 +50066,7 @@
           </table>
         </div>
       </div>
-      `}
+      `; })()}
     `;
   }
 
@@ -52477,9 +52515,10 @@
     { key: 'platinum', name: 'Platinum', label: 'Platinum Suites & Events', chalets: 36, cabanas: 14, color: '#8B5CF6' }
   ];
 
-  function getActiveHospitalityResorts(coOverride) {
+  function getActiveHospitalityResorts(coOverride, opts) {
     const u = activeUser();
-    const allowedSet = (!isDemoScopeActive() && !isOwner(u) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length)
+    const ignoreRls = Boolean(opts && opts.ignoreRls);
+    const allowedSet = (!ignoreRls && !isDemoScopeActive() && !isOwner(u) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length)
       ? new Set(STATE.allowedCompanyNames.map(n => String(n).toLowerCase()))
       : null;
     const permittedResorts = allowedSet
@@ -52524,12 +52563,12 @@
 
   function computeHospitalityOperations(opts) {
     const scopeCo = (opts && opts.company) || STATE.company;
-    const activeResorts = getActiveHospitalityResorts(scopeCo === DEMO_COMPANY_KEY ? 'industry:Hospitality & Resorts' : scopeCo);
+    const activeResorts = getActiveHospitalityResorts(scopeCo === DEMO_COMPANY_KEY ? 'industry:Hospitality & Resorts' : scopeCo, opts);
     const activeNames = new Set(activeResorts.map(r => r.name));
     const q = (opts && opts.ignoreSearch) ? '' : norm(STATE.search);
     const demoActive = isDemoScopeActive();
     const hspPm = industryPeriodMatcher(opts);
-    const _hspCacheKey = `${scopeCo}|${demoActive ? 1 : 0}|${hspPm.sig}|${Array.from(activeNames).join(',')}|${q}|${(SEED && SEED._industryRev) || 0}|${(SEED && SEED._customRev) || 0}|${((SEED && SEED.records && SEED.records.sales_tickets) || []).length}|${JSON.stringify(STATE.industryRowEdits || {})}|${JSON.stringify(STATE.industryCustomRows || {})}`;
+    const _hspCacheKey = `${scopeCo}|${demoActive ? 1 : 0}|${(opts && opts.ignoreRls) ? 1 : 0}|${hspPm.sig}|${Array.from(activeNames).join(',')}|${q}|${(SEED && SEED._industryRev) || 0}|${(SEED && SEED._customRev) || 0}|${((SEED && SEED.records && SEED.records.sales_tickets) || []).length}|${JSON.stringify(STATE.industryRowEdits || {})}|${JSON.stringify(STATE.industryCustomRows || {})}`;
     if (_hspOpsCache.has(_hspCacheKey)) return _hspOpsCache.get(_hspCacheKey);
     const liveHsp = (SEED && SEED.industryLive && SEED.industryLive.hospitality) || null;
     const pickHsp = (key, fallback) => {
@@ -52844,8 +52883,11 @@
       const sumComp = round2(filteredPos.reduce((a, r) => a + r.comp_usd, 0));
       const sumVar = round2(filteredPos.reduce((a, r) => a + r.variance_usd, 0));
 
+      const allocHspPos = computeJobOtSnapAllocation({ industry: 'Hospitality & Resorts', company: STATE.company, tableKey: 'hsp_pos', period: STATE.period, dateFrom: STATE.dateFrom, dateTo: STATE.dateTo });
+
       return `
         ${kpiHtml}
+        ${renderJobOtSnapBannerHtml(allocHspPos, { id: 'hspPosOtSnapBanner', title: 'POS Shift OT Snap Allocation' })}
         <div class="panel-card" id="hspPosPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -52884,7 +52926,7 @@
               <tbody>
                 ${shownPos.length ? shownPos.map(r => `
                   <tr class="rrow">
-                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono"><strong>${esc(r.id)}</strong>${renderJobOtSnapRowPillHtml(allocHspPos.byJobMap.get('hsp_pos:' + r.id), allocHspPos)}</td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.terminal)}</strong> <small class="mu">· ${esc(r.shift)}</small></td>
@@ -53025,8 +53067,11 @@
     const sumVat = round2(filteredRev.reduce((a, r) => a + r.vat_usd, 0));
     const sumTtc = round2(filteredRev.reduce((a, r) => a + r.ttc_usd, 0));
 
+    const allocHspRev = computeJobOtSnapAllocation({ industry: 'Hospitality & Resorts', company: STATE.company, tableKey: 'hsp_revenue', period: STATE.period, dateFrom: STATE.dateFrom, dateTo: STATE.dateTo });
+
     return `
       ${kpiHtml}
+      ${renderJobOtSnapBannerHtml(allocHspRev, { id: 'hspRevOtSnapBanner', title: 'Venue & Banquet OT Snap Allocation' })}
       <div class="panel-card" id="hspRevenuePanel">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -53067,7 +53112,7 @@
             <tbody>
               ${shownRev.length ? shownRev.map(r => `
                 <tr class="rrow">
-                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td class="mono"><strong>${esc(r.id)}</strong>${renderJobOtSnapRowPillHtml(allocHspRev.byJobMap.get('hsp_revenue:' + r.id), allocHspRev)}</td>
                   <td class="mono">${esc(fmtDateDMY(r.date))}</td>
                   <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.outlet)}</strong></td>
@@ -53892,7 +53937,7 @@
     const coKey = String(opts.company || STATE.company || '');
     const activeMatch = COMPANY_BU_MATCH[coKey];
     const trdUser = activeUser();
-    const trdRlsActive = Boolean(!isDemoScopeActive() && !isOwner(trdUser) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length);
+    const trdRlsActive = Boolean(!opts.ignoreRls && !isDemoScopeActive() && !isOwner(trdUser) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length);
     const rlsTrd = trdRlsActive
       ? TRADING_ENTITIES.filter(n => STATE.allowedCompanyNames.some(an => an.toLowerCase() === n.toLowerCase()))
       : TRADING_ENTITIES;
@@ -54983,9 +55028,11 @@
       const sumParts = round2(filteredWar.reduce((a, r) => a + r.parts_cost_usd, 0));
       const sumLabor = round2(filteredWar.reduce((a, r) => a + r.labor_usd, 0));
       const sumRec = round2(filteredWar.reduce((a, r) => a + r.claim_recovery_usd, 0));
+      const allocTrd = computeJobOtSnapAllocation({ industry: 'Automotive & Heavy Trading', company: STATE.company, tableKey: 'trd_warranty', period: STATE.period, dateFrom: STATE.dateFrom, dateTo: STATE.dateTo });
 
       return `
         ${kpiHtml}
+        ${renderJobOtSnapBannerHtml(allocTrd, { id: 'trdWarOtSnapBanner', title: 'Workshop, PDI & Warranty OT Snap Allocation' })}
         <div class="panel-card" id="trdWarrantyPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -55025,7 +55072,7 @@
               <tbody>
                 ${shownWar.length ? shownWar.map(r => `
                   <tr class="rrow" data-ind-row-tbl="trd_warranty" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
-                    <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('trd_warranty', r.id)}</td>
+                    <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('trd_warranty', r.id)}${renderJobOtSnapRowPillHtml(allocTrd.byJobMap.get('trd_warranty:' + r.id), allocTrd)}</td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td class="mono">${esc(r.chassis_vin)}</td>
@@ -55478,12 +55525,13 @@
   let _reOpsSig = '';
   function computeRealEstateOperations(opts = {}) {
     const ignoreSearch = Boolean(opts.ignoreSearch);
+    const ignoreRls = Boolean(opts.ignoreRls);
     const activeCo = opts.company || STATE.company || 'manufacturing-group';
     const selectedEntityName = RE_ENTITY_KEYS.includes(activeCo) ? COMPANY_BU_MATCH[activeCo] : null;
     const demoActive = isDemoScopeActive();
     const rePm = industryPeriodMatcher(opts);
-    const sig = `${activeCo}|${demoActive ? 1 : 0}|${rePm.sig}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${JSON.stringify(STATE.industryRowEdits || {})}|${ignoreSearch ? '' : (STATE.search || '')}|${(STATE.allowedCompanyNames || []).join(',')}`;
-    if (!ignoreSearch && _reOpsCache && _reOpsSig === sig) return _reOpsCache;
+    const sig = `${activeCo}|${demoActive ? 1 : 0}|${ignoreRls ? 1 : 0}|${rePm.sig}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${JSON.stringify(STATE.industryRowEdits || {})}|${ignoreSearch ? '' : (STATE.search || '')}|${(STATE.allowedCompanyNames || []).join(',')}`;
+    if (!ignoreSearch && !ignoreRls && _reOpsCache && _reOpsSig === sig) return _reOpsCache;
     const liveRe = (SEED && SEED.industryLive && SEED.industryLive.realestate) || null;
     const pickRe = (key, fallback) => {
       if (!liveRe || !Array.isArray(liveRe[key]) || !liveRe[key].length) return industryDemoRows(fallback);
@@ -55681,7 +55729,7 @@
     });
 
     const reUser = activeUser();
-    const rlsReSet = (!isDemoScopeActive() && !isOwner(reUser) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length)
+    const rlsReSet = (!ignoreRls && !isDemoScopeActive() && !isOwner(reUser) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length)
       ? new Set(STATE.allowedCompanyNames.map(n => String(n).toLowerCase()))
       : null;
     const byCo = list => list.filter(r => {
@@ -55820,7 +55868,7 @@
         unrechargedUsd
       }
     };
-    if (!ignoreSearch) {
+    if (!ignoreSearch && !ignoreRls) {
       _reOpsCache = res;
       _reOpsSig = sig;
     }
@@ -56802,9 +56850,11 @@
 
     const sumBudget = filteredWo.reduce((a, r) => a + r.budget_usd, 0);
     const sumActual = filteredWo.reduce((a, r) => a + r.actual_usd, 0);
+    const allocRe = computeJobOtSnapAllocation({ industry: 'Real Estate & Property', company: STATE.company, tableKey: 're_workorders', period: STATE.period, dateFrom: STATE.dateFrom, dateTo: STATE.dateTo });
 
     return `
       ${bannerHtml}
+      ${renderJobOtSnapBannerHtml(allocRe, { id: 'reWoOtSnapBanner', title: 'Maintenance Work Orders OT Snap Allocation' })}
       <div class="panel">
         <div class="panel-head">
           <div>
@@ -56833,7 +56883,7 @@
             <tbody>
               ${filteredWo.length ? sliceRows('re_workorders', filteredWo).map(r => `
                 <tr class="rrow">
-                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td class="mono"><strong>${esc(r.id)}</strong>${renderJobOtSnapRowPillHtml(allocRe.byJobMap.get('re_workorders:' + r.id), allocRe)}</td>
                   <td class="mono">${esc(r.date)}</td>
                   <td${coStyle}>${coBadge(r.company)}</td>
                   <td>${esc(r.property)}</td>
@@ -56874,7 +56924,8 @@
   function computeInsuranceOperations(opts = {}) {
     const co = 'Insurance Company';
     const insUser = activeUser();
-    const rlsInsAllowed = isDemoScopeActive()
+    const rlsInsAllowed = Boolean(opts.ignoreRls)
+      || isDemoScopeActive()
       || isOwner(insUser)
       || !Array.isArray(STATE.allowedCompanyNames)
       || !STATE.allowedCompanyNames.length
@@ -57806,6 +57857,7 @@
     const sumDed = filteredClm.reduce((a, r) => a + r.deductible_usd, 0);
     const sumAppr = filteredClm.reduce((a, r) => a + r.approved_usd, 0);
     const sumPaid = filteredClm.reduce((a, r) => a + r.paid_by_insurer_usd, 0);
+    const allocIns = computeJobOtSnapAllocation({ industry: 'Insurance & Brokerage', company: STATE.company, tableKey: 'ins_claims', period: STATE.period, dateFrom: STATE.dateFrom, dateTo: STATE.dateTo });
 
     return `
       <div class="cockpit-banner">
@@ -57822,6 +57874,7 @@
       </div>
 
       ${window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderCrossIndustryStrip === 'function' ? window.MFG_TELEMATICS.renderCrossIndustryStrip('ins_claims') : ''}
+      ${renderJobOtSnapBannerHtml(allocIns, { id: 'insClmOtSnapBanner', title: 'Claims & Adjuster OT Snap Allocation' })}
 
       ${filterBarHtml}
 
@@ -57876,7 +57929,7 @@
             <tbody>
               ${filteredClm.length ? sliceRows('ins_claims', filteredClm).map(r => `
                 <tr class="rrow" data-ind-row-tbl="ins_claims" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
-                  <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('ins_claims', r.id)}</td>
+                  <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('ins_claims', r.id)}${renderJobOtSnapRowPillHtml(allocIns.byJobMap.get('ins_claims:' + r.id))}</td>
                   <td class="mono">${esc(r.loss_date)}</td>
                   <td style="display:none">${coBadge(r.company)}</td>
                   <td class="mono">${esc(r.policy_no)}</td>
@@ -92112,12 +92165,22 @@
       `;
     }).join('');
 
+    const otSnap = opts && opts.otSnapSite ? opts.otSnapSite : null;
+    const otSnapPill = (() => {
+      if (!otSnap || !(otSnap.snappedLogs > 0 || otSnap.impactedJobCount > 0)) return '';
+      const minLbl = _formatOtSnapMinPillLabel(otSnap.snapDeltaMin);
+      const usdPart = (otSnap.authorizedDollar && otSnap.allocatedUsd != null)
+        ? ` ${fmtSignedUSD(otSnap.allocatedUsd, 2)}${otSnap.perM3Usd != null ? ` (${fmtSignedUSD(otSnap.perM3Usd, 2)}/m³)` : ''}`
+        : '';
+      return `<span class="site-nb-pill ${otSnap.snapDeltaMin < 0 ? 'is-ok' : 'is-warn'}" id="siteNetBackOtSnapPill">${nv(esc(minLbl + usdPart))} <span>OT Snap</span></span>`;
+    })();
     const pills = [
       nb.lossCnt ? `<span class="site-nb-pill is-crit">${nv(esc(fmtNum(nb.lossCnt, 0)))} <span>Losing on Haulage</span></span>` : '',
       nb.nightCnt ? `<span class="site-nb-pill is-warn">${nv(esc(fmtNum(nb.nightCnt, 0)))} <span>Night Trips Lose</span></span>` : '',
       nb.thinCnt ? `<span class="site-nb-pill is-warn">${nv(esc(fmtNum(nb.thinCnt, 0)))} <span>Thin Margin</span></span>` : '',
       nb.okCnt ? `<span class="site-nb-pill is-ok">${nv(esc(fmtNum(nb.okCnt, 0)))} <span>Covers Fuel</span></span>` : '',
-      nb.shortfall90 > 0 ? `<span class="site-nb-pill is-crit"><span>Shortfall, Last 90 Days</span> ${nv(esc(fmtUSD(nb.shortfall90, 0)))}</span>` : ''
+      nb.shortfall90 > 0 ? `<span class="site-nb-pill is-crit"><span>Shortfall, Last 90 Days</span> ${nv(esc(fmtUSD(nb.shortfall90, 0)))}</span>` : '',
+      otSnapPill
     ].join('');
 
     return `
@@ -92544,7 +92607,10 @@
         regionHint: val('f_region') || (siteRow && siteRow.region) || '',
         liveCoord: hasLivePin ? { lat: liveLat, lng: liveLng } : null
       });
-      netBackHtml = renderSiteNetBackStripHtml(nb, { id: 'siteNetBackStrip' });
+      const siteOtSnap = (typeof computeJobOtSnapAllocation === 'function' && (cleanSite || cleanOrig))
+        ? computeJobOtSnapAllocation({ industry: 'Manufacturing', site: cleanSite || cleanOrig, company: singleBu || 'ALL', ignorePeriod: true })
+        : null;
+      netBackHtml = renderSiteNetBackStripHtml(nb, { id: 'siteNetBackStrip', otSnapSite: siteOtSnap });
     } catch (nbErr) {
       console.warn('[site net-back] skipped', nbErr);
       netBackHtml = '';
@@ -102817,6 +102883,13 @@
           raw_late_hours: matchesLtSave && timingSave ? Number(timingSave.rawLateHours || 0) : ltH,
           raw_late_min: matchesLtSave && timingSave ? Number(timingSave.rawLateMin || 0) : Math.round(ltH * 60),
           math_mode: timingSave ? timingSave.mathMode : (resolvedPolSave ? resolvedPolSave.math_mode : 'per_minute'),
+          raw_ot_min: matchesOtSave && timingSave ? Number(timingSave.rawQualifiedOtMin || 0) : Math.round(otH * 60),
+          exact_ot_min: matchesOtSave && timingSave ? Number(timingSave.exactApprovedOtMin || 0) : Math.round(otH * 60),
+          ot_snap_delta_min: matchesOtSave && timingSave ? Number(timingSave.otSnapDeltaMin || 0) : 0,
+          ot_snap_mode: matchesOtSave && timingSave ? (timingSave.otSnapMode || 'exact') : 'exact',
+          late_penalty_mode: matchesLtSave && timingSave ? (timingSave.latePenaltyMode || 'exact_hours') : 'exact_hours',
+          rule_audit_late: matchesLtSave && timingSave ? String(timingSave.lateAuditText || '') : '',
+          rule_audit_ot: matchesOtSave && timingSave ? String(timingSave.otAuditText || '') : '',
           approved_ot_min: matchesOtSave ? Number(timingSave.approvedOtMin || 0) : Math.round(otH * 60),
           unapproved_ot_min: timingSave ? Number(timingSave.unapprovedOtMin || 0) : 0,
           billable_late_min: matchesLtSave ? Number(timingSave.billableLateMin || 0) : Math.round(ltH * 60),
@@ -113736,7 +113809,7 @@
           const clocksOrDateChanged = 'in_time' in pendingUpdates || 'out_time' in pendingUpdates || 'set_date' in pendingUpdates || 'date' in pendingUpdates || 'staff' in pendingUpdates;
           const manualHoursChanged = 'overtime_hours' in pendingUpdates || 'late_hours' in pendingUpdates || 'worked_hours' in pendingUpdates;
           if ((clocksOrDateChanged && !isLeaveRow) || manualHoursChanged) {
-            ['worked_hours', 'regular_hours', 'scheduled_hours', 'overtime_hours', 'unapproved_ot_hours', 'late_hours', 'raw_late_hours', 'raw_late_min', 'approved_ot_min', 'unapproved_ot_min', 'billable_late_min', 'ot_threshold_min', 'policy_ot_mult', 'policy_late_mult', 'tally'].forEach(k => editedKeySet.add(k));
+            ['worked_hours', 'regular_hours', 'scheduled_hours', 'overtime_hours', 'unapproved_ot_hours', 'late_hours', 'raw_late_hours', 'raw_late_min', 'approved_ot_min', 'unapproved_ot_min', 'billable_late_min', 'raw_ot_min', 'exact_ot_min', 'ot_snap_delta_min', 'ot_snap_mode', 'late_penalty_mode', 'rule_audit_late', 'rule_audit_ot', 'math_mode', 'ot_threshold_min', 'policy_ot_mult', 'policy_late_mult', 'tally'].forEach(k => editedKeySet.add(k));
           }
           if ('in_time' in pendingUpdates || 'out_time' in pendingUpdates) {
             const inF = fmtAttClockTime(row.in_time || '');
@@ -113764,12 +113837,8 @@
               row.late_hours = Number(timingInsp.lateHours || 0);
               row.raw_late_hours = Number(timingInsp.rawLateHours || 0);
               row.raw_late_min = Number(timingInsp.rawLateMin || 0);
-              row.math_mode = timingInsp.mathMode || (inspPol ? inspPol.math_mode : 'per_minute');
-              row.approved_ot_min = Number(timingInsp.approvedOtMin || 0);
-              row.unapproved_ot_min = Number(timingInsp.unapprovedOtMin || 0);
-              row.billable_late_min = Number(timingInsp.billableLateMin || 0);
+              syncAttRowAuditFromEvalRes(row, timingInsp, { isPaired: true });
               row.penalty_summary = timingInsp.penaltySummary || '';
-              row.ot_threshold_min = Number(timingInsp.otThresholdMin != null ? timingInsp.otThresholdMin : 10);
               row.policy_ot_mult = Number(polRuleInsp.ot_multiplier || 1.5);
               row.policy_late_mult = Number(polRuleInsp.late_penalty_mode === 'multiplier' ? polRuleInsp.late_multiplier : (polRuleInsp.late_penalty_mode === 'none' ? 0 : 1));
               row.late_mult_baked = true;
@@ -113783,6 +113852,19 @@
               if (row.tab_sig && row.origin !== 'door_tablet') row.tab_sig = attendanceFigureSig(row);
             } else {
               row.regular_hours = round2(Math.max(0, Number(row.worked_hours || 0) - Number(row.overtime_hours || 0)));
+              if (!manualHoursChanged && !row.manual_override) {
+                const apOtM = Math.round(Number(row.overtime_hours || 0) * 60);
+                const blLtM = Math.round(Number(row.late_hours || 0) * 60);
+                row.approved_ot_min = apOtM;
+                row.raw_ot_min = apOtM;
+                row.exact_ot_min = apOtM;
+                row.ot_snap_delta_min = 0;
+                row.ot_snap_mode = 'exact';
+                row.billable_late_min = blLtM;
+                row.late_penalty_mode = 'exact_hours';
+                row.rule_audit_late = '';
+                row.rule_audit_ot = '';
+              }
             }
           }
           if (manualHoursChanged) {
@@ -113791,6 +113873,11 @@
             if ('overtime_hours' in pendingUpdates) {
               row.overtime_hours = Math.max(0, Number(row.overtime_hours || 0));
               row.approved_ot_min = Math.round(row.overtime_hours * 60);
+              row.raw_ot_min = row.approved_ot_min;
+              row.exact_ot_min = row.approved_ot_min;
+              row.ot_snap_delta_min = 0;
+              row.ot_snap_mode = 'exact';
+              row.rule_audit_ot = '';
               row.manual_override = true;
             }
             if ('late_hours' in pendingUpdates) {
@@ -113798,6 +113885,8 @@
               row.billable_late_min = Math.round(row.late_hours * 60);
               row.raw_late_hours = row.late_hours;
               row.raw_late_min = Math.round(row.late_hours * 60);
+              row.late_penalty_mode = 'exact_hours';
+              row.rule_audit_late = '';
               row.late_mult_baked = false;
               row.manual_override = true;
             }
@@ -129344,6 +129433,7 @@
             </div>
           </div>
         </div>
+        ${renderLegacyTenthBackfillPillHtml({ company: bu, inlineCard: true })}
         ${timelineHtml}
       </div>
     `;
@@ -130855,6 +130945,154 @@
     return Object.assign({}, outObj, { rule: Object.assign({}, outObj.rule) });
   }
 
+  function syncAttRowAuditFromEvalRes(row, evalRes, opts = {}) {
+    if (!row || !evalRes) return;
+    const isPaired = opts.isPaired != null ? Boolean(opts.isPaired) : true;
+    const penLeave = opts.penaltyLeaveDays != null ? Number(opts.penaltyLeaveDays || 0) : Number(evalRes.penaltyLeaveDays || 0);
+    row.math_mode = evalRes.mathMode || row.math_mode || 'per_minute';
+    row.approved_ot_min = isPaired ? Number(evalRes.approvedOtMin || 0) : 0;
+    row.unapproved_ot_min = isPaired ? Number(evalRes.unapprovedOtMin || 0) : 0;
+    row.billable_late_min = penLeave > 0 ? 0 : Number(evalRes.billableLateMin || 0);
+    row.raw_ot_min = isPaired ? Number(evalRes.rawQualifiedOtMin || 0) : 0;
+    row.exact_ot_min = isPaired ? Number(evalRes.exactApprovedOtMin || 0) : 0;
+    row.ot_snap_delta_min = isPaired ? Number(evalRes.otSnapDeltaMin || 0) : 0;
+    row.ot_snap_mode = evalRes.otSnapMode || 'exact';
+    row.late_penalty_mode = evalRes.latePenaltyMode || 'exact_hours';
+    row.rule_audit_late = String(evalRes.lateAuditText || '');
+    row.rule_audit_ot = isPaired ? String(evalRes.otAuditText || '') : '';
+    row.ot_threshold_min = Number(evalRes.otThresholdMin != null ? evalRes.otThresholdMin : 10);
+  }
+
+  function hasAttRowAuditDriftFromEval(row, evalRes, opts = {}) {
+    if (!row || !evalRes) return false;
+    const isPaired = opts.isPaired != null ? Boolean(opts.isPaired) : true;
+    const penLeave = opts.penaltyLeaveDays != null ? Number(opts.penaltyLeaveDays || 0) : Number(evalRes.penaltyLeaveDays || 0);
+    const expAppOt = isPaired ? Number(evalRes.approvedOtMin || 0) : 0;
+    const expRawOt = isPaired ? Number(evalRes.rawQualifiedOtMin || 0) : 0;
+    const expExactOt = isPaired ? Number(evalRes.exactApprovedOtMin || 0) : 0;
+    const expSnapDelta = isPaired ? Number(evalRes.otSnapDeltaMin || 0) : 0;
+    const expBillLate = penLeave > 0 ? 0 : Number(evalRes.billableLateMin || 0);
+    const expLateAud = String(evalRes.lateAuditText || '');
+    const expOtAud = isPaired ? String(evalRes.otAuditText || '') : '';
+    const expOtMode = String(evalRes.otSnapMode || 'exact');
+    const expLtMode = String(evalRes.latePenaltyMode || 'exact_hours');
+    return (
+      Number(row.approved_ot_min != null ? row.approved_ot_min : -1) !== expAppOt
+      || Number(row.raw_ot_min != null ? row.raw_ot_min : -1) !== expRawOt
+      || Number(row.exact_ot_min != null ? row.exact_ot_min : -1) !== expExactOt
+      || Number(row.ot_snap_delta_min != null ? row.ot_snap_delta_min : -999999) !== expSnapDelta
+      || Number(row.billable_late_min != null ? row.billable_late_min : -1) !== expBillLate
+      || String(row.rule_audit_late || '') !== expLateAud
+      || String(row.rule_audit_ot || '') !== expOtAud
+      || String(row.ot_snap_mode || 'exact') !== expOtMode
+      || String(row.late_penalty_mode || 'exact_hours') !== expLtMode
+    );
+  }
+
+  const _ruleAuditEvalMemo = new WeakMap();
+  function getAttendanceRuleAuditPills(rowOrPunch, opts = {}) {
+    if (!rowOrPunch || rowOrPunch.voided || rowOrPunch.manual_override) return [];
+    const filterKind = opts.kind || 'all';
+    const attType = String(rowOrPunch.type || rowOrPunch.status || '').trim();
+    if (/^(?:config|extra|site\s*(?:present|off)|vacabsence|paid\s*leave|sick)/i.test(attType)) return [];
+    let lateText = String(rowOrPunch.rule_audit_late || '').trim();
+    let lateKind = String(rowOrPunch.late_penalty_mode || '').trim();
+    let otText = String(rowOrPunch.rule_audit_ot || '').trim();
+    let otKind = '';
+
+    // Numeric deterministic fallback when row/punch provides explicit raw vs. billable/approved minute fields
+    if (!lateText && (rowOrPunch.raw_late_min != null || rowOrPunch.billable_late_min != null)) {
+      const rawLate = Number(rowOrPunch.raw_late_min != null ? rowOrPunch.raw_late_min : rowOrPunch.billable_late_min);
+      const billLate = Number(rowOrPunch.billable_late_min != null ? rowOrPunch.billable_late_min : rawLate);
+      const lv = Number(rowOrPunch.leave_days != null ? rowOrPunch.leave_days : (rowOrPunch.penalty_leave_days || 0));
+      if (Number.isFinite(rawLate) && rawLate > 0 && (/half[\s_]*day|0\.5d/i.test(attType) || lateKind === 'half_day' || (lv >= 0.49 && lv < 0.99))) {
+        lateText = `Late ${Math.round(rawLate)}m -> 0.5d`;
+        lateKind = lateKind || 'half_day';
+      } else if (Number.isFinite(rawLate) && rawLate > 0 && (/absen|1\.0d/i.test(attType) || lateKind === 'absence' || lv >= 0.99)) {
+        lateText = `Late ${Math.round(rawLate)}m -> 1.0d`;
+        lateKind = lateKind || 'absence';
+      } else if (Number.isFinite(rawLate) && Number.isFinite(billLate) && (rawLate !== billLate || lateKind === 'waived' || lateKind === 'track_only' || lateKind === 'none') && (rawLate > 0 || billLate > 0)) {
+        lateText = `Late ${Math.round(rawLate)}m -> ${Math.round(billLate)}m`;
+        if (billLate === 0 && !lateKind) lateKind = 'waived';
+      }
+    }
+    if (!otText && (rowOrPunch.exact_ot_min != null || rowOrPunch.raw_ot_min != null || rowOrPunch.approved_ot_min != null || rowOrPunch.ot_cap_min != null)) {
+      const rawOt = Number(rowOrPunch.exact_ot_min != null ? rowOrPunch.exact_ot_min : rowOrPunch.raw_ot_min);
+      const appOt = Number(rowOrPunch.approved_ot_min != null ? rowOrPunch.approved_ot_min : rawOt);
+      const capMin = Number(rowOrPunch.ot_cap_min || 0);
+      if (capMin > 0 && Number.isFinite(rawOt) && Number.isFinite(appOt) && rawOt > capMin && appOt <= capMin) {
+        otText = `OT ${Math.round(rawOt)}m -> ${Math.round(appOt)}m Cap`;
+        otKind = otKind || 'capped';
+      } else if (Number.isFinite(rawOt) && Number.isFinite(appOt) && (rawOt !== appOt || (rowOrPunch.ot_snap_mode && rawOt > 0 && rowOrPunch.ot_snap_mode !== 'exact'))) {
+        otText = `OT ${Math.round(rawOt)}m -> ${Math.round(appOt)}m`;
+        if (!otKind) otKind = appOt < rawOt ? 'blocked_or_trimmed' : (appOt > rawOt ? 'snapped' : 'ot');
+      }
+    }
+
+    // Deterministic fallback when legacy/imported punch lacks stamped rule_audit_* or numeric minute fields
+    if ((!lateText || !otText) && typeof evaluateShiftPunchTiming === 'function' && rowOrPunch.staff) {
+      const cacheKey = `${_TIME24_WS_REV}|${rowOrPunch.in_time || rowOrPunch.check_in || ''}|${rowOrPunch.out_time || rowOrPunch.check_out || ''}|${rowOrPunch.time || ''}|${rowOrPunch.direction || ''}`;
+      let cached = _ruleAuditEvalMemo.get(rowOrPunch);
+      if (!cached || cached.k !== cacheKey) {
+        let inT = fmtAttClockTime(rowOrPunch.in_time || rowOrPunch.check_in || '');
+        let outT = fmtAttClockTime(rowOrPunch.out_time || rowOrPunch.check_out || '');
+        if (!inT && rowOrPunch.direction === 'IN' && rowOrPunch.time) inT = fmtAttClockTime(rowOrPunch.time);
+        if (!outT && rowOrPunch.direction === 'OUT' && rowOrPunch.time) outT = fmtAttClockTime(rowOrPunch.time);
+        let ev = null;
+        if (inT || outT) {
+          const dStr = String(rowOrPunch.shift_date || rowOrPunch.set_date || rowOrPunch.rep_date || rowOrPunch.date || todayISO()).slice(0, 10);
+          try {
+            ev = evaluateShiftPunchTiming(rowOrPunch.staff, rowOrPunch.company || '', dStr, inT, outT, {
+              outDate: rowOrPunch.out_date || rowOrPunch.date || dStr,
+              inSameCalendarDay: dStr === String(rowOrPunch.date || dStr).slice(0, 10),
+              internalCalc: true
+            });
+          } catch (_) { ev = null; }
+        }
+        cached = { k: cacheKey, ev };
+        _ruleAuditEvalMemo.set(rowOrPunch, cached);
+      }
+      if (cached.ev) {
+        if (!lateText) {
+          lateText = String(cached.ev.lateAuditText || '').trim();
+          lateKind = String(cached.ev.lateRuleKind || lateKind || '').trim();
+        }
+        if (!otText) {
+          otText = String(cached.ev.otAuditText || '').trim();
+          otKind = String(cached.ev.otRuleKind || '').trim();
+        }
+      }
+    }
+
+    const pills = [];
+    if (lateText && (filterKind === 'all' || filterKind === 'late')) {
+      const cleanLate = lateText.replace(/\u2192/g, '->').replace(/\u2014/g, '-');
+      let tone = 'is-late-snap';
+      if (/->\s*0m\b/i.test(cleanLate) || lateKind === 'waived' || lateKind === 'none' || lateKind === 'track_only') tone = 'is-waived';
+      else if (/->\s*(?:0\.5d|1\.0d)/i.test(cleanLate) || lateKind === 'half_day' || lateKind === 'absence') tone = 'is-halfday';
+      pills.push({ kind: 'late', ruleKind: lateKind || 'late', text: cleanLate, tone });
+    }
+    if (otText && (filterKind === 'all' || filterKind === 'ot')) {
+      const cleanOt = otText.replace(/\u2192/g, '->').replace(/\u2014/g, '-');
+      let tone = 'is-ot-snap';
+      if (/Cap\b/i.test(cleanOt) || otKind === 'capped') tone = 'is-ot-cap';
+      else if (/->\s*0m\b/i.test(cleanOt) || otKind === 'blocked_or_trimmed' || otKind === 'below_thresh') tone = 'is-ot-drop';
+      else {
+        const m = cleanOt.match(/OT\s+(\d+)m\s*->\s*(\d+)m/i);
+        if (m && Number(m[2]) < Number(m[1])) tone = 'is-ot-drop';
+      }
+      pills.push({ kind: 'ot', ruleKind: otKind || 'ot', text: cleanOt, tone });
+    }
+    return pills;
+  }
+
+  function renderRuleAuditPillsHtml(rowOrPunch, opts = {}) {
+    const pills = getAttendanceRuleAuditPills(rowOrPunch, opts);
+    if (!pills.length) return '';
+    const html = pills.map(p => `<span class="att-rule-audit-pill ${esc(p.tone)}" data-rule-audit-kind="${esc(p.kind)}">${esc(p.text)}</span>`).join(' ');
+    return opts.inline ? ` ${html}` : `<div class="att-rule-audit-row">${html}</div>`;
+  }
+
   function backfillAttendancePolicyChange({ company = '', staffNames = null, fromDate = '', toDate = '', dryRun = false, deferSave = false, includeFuture = false, overridePolicy = null } = {}) {
     const today = todayISO();
     const startD = /^\d{4}-\d{2}-\d{2}$/.test(String(fromDate || '').slice(0, 10))
@@ -130964,6 +131202,13 @@
         late_cutoff: evalRes.lateCutoffTime || '',
         early_out_cutoff: evalRes.earlyOutCutoffTime || '',
         math_mode: evalRes.mathMode || 'per_minute',
+        raw_ot_min: Number(evalRes.rawQualifiedOtMin || 0),
+        exact_ot_min: Number(evalRes.exactApprovedOtMin || 0),
+        ot_snap_delta_min: Number(evalRes.otSnapDeltaMin || 0),
+        ot_snap_mode: evalRes.otSnapMode || 'exact',
+        late_penalty_mode: evalRes.latePenaltyMode || 'exact_hours',
+        rule_audit_late: String(evalRes.lateAuditText || ''),
+        rule_audit_ot: String(evalRes.otAuditText || ''),
         approved_ot_min: Number(evalRes.approvedOtMin || 0),
         unapproved_ot_min: Number(evalRes.unapprovedOtMin || 0),
         billable_late_min: Number(evalRes.billableLateMin || 0),
@@ -130983,6 +131228,12 @@
         || Math.abs(Number(a.leave_days || 0) - penLeaveDays) > 0.001
         || String(a.math_mode || '') !== String(nextFields.math_mode || '')
         || Number(a.approved_ot_min || 0) !== nextFields.approved_ot_min
+        || Number(a.exact_ot_min != null ? a.exact_ot_min : a.approved_ot_min || 0) !== nextFields.exact_ot_min
+        || Number(a.ot_snap_delta_min || 0) !== nextFields.ot_snap_delta_min
+        || String(a.ot_snap_mode || '') !== String(nextFields.ot_snap_mode || '')
+        || String(a.late_penalty_mode || '') !== String(nextFields.late_penalty_mode || '')
+        || String(a.rule_audit_late || '') !== String(nextFields.rule_audit_late || '')
+        || String(a.rule_audit_ot || '') !== String(nextFields.rule_audit_ot || '')
         || Number(a.billable_late_min || 0) !== nextFields.billable_late_min
         || Number(a.ot_threshold_min != null ? a.ot_threshold_min : 10) !== nextFields.ot_threshold_min
         || Math.abs(newImp.netImpactUsd - oldImp.netImpactUsd) > 0.005
@@ -131823,6 +132074,1741 @@
             renderApp();
           }
     });
+  }
+
+  function normalizeLegacyBackfillCoFilter(rawCo) {
+    const s = String(rawCo || '').trim();
+    if (!s || /^(?:all|all\s*companies|manufacturing-group)$/i.test(s) || /^industry:/i.test(s)) return '';
+    return canonCompany(s) || s;
+  }
+
+  function isLegacyTenthHourAttRow(a) {
+    if (!a || a.voided) return false;
+    const attType = String(a.type || a.status || 'Present').trim();
+    if (/^(?:config|extra|site\s*(?:present|off)|vacabsence|paid\s*leave|sick)/i.test(attType)) return false;
+    const mode = String(a.math_mode || '').trim().toLowerCase();
+    if (mode === 'per_minute') return false;
+    const inT = fmtAttClockTime(a.in_time || a.check_in || '');
+    const outT = fmtAttClockTime(a.out_time || a.check_out || '');
+    if (!inT && !outT) return false;
+    return mode === 'tenth_hour' || !mode;
+  }
+
+  function isProtectedLegacyBackfillRow(a, companyHint = '') {
+    const co = canonCompany(a && (a.company || companyHint)) || 'WTC';
+    const effD = String((a && (a.set_date || a.date)) || '').slice(0, 10);
+    const repD = String((a && (a.rep_date || effD)) || '').slice(0, 10);
+    const closeGuard = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
+      ? window.MFG_AI_EDGE.checkPeriodCloseGuard(co, effD, repD)
+      : null;
+    const isClosed = Boolean(closeGuard && closeGuard.blocked);
+    const isDoorTab = Boolean(a && a.origin === 'door_tablet');
+    const isKioskCreated = Boolean(a && (/^Kiosk\b/i.test(String(a.notes || '')) || a.origin === 'wall_kiosk'));
+    const isManual = Boolean(a && a.manual_override) || (
+      isDoorTab
+        ? isHandOwnedTabletRow(a)
+        : (Boolean(a && a.modified_by) && !isKioskCreated && (!a.tab_sig || attendanceFigureSig(a) !== a.tab_sig))
+    );
+    const canEditCo = canEditShiftsAndRules(null, co);
+    return {
+      isClosed,
+      isManual,
+      canEditCo,
+      isProtected: isClosed || isManual || !canEditCo,
+      protReason: isClosed ? 'closed_month' : (isManual ? 'manual_override' : (!canEditCo ? 'read_only' : ''))
+    };
+  }
+
+  function getMergedLegacyAttendancePool() {
+    const customList = Array.isArray(STATE.customRecords && STATE.customRecords.attendance)
+      ? STATE.customRecords.attendance
+      : [];
+    const seedList = (typeof SEED !== 'undefined' && SEED && SEED.records && Array.isArray(SEED.records.attendance))
+      ? SEED.records.attendance
+      : [];
+    if (!seedList.length) return customList;
+    if (!customList.length) return seedList;
+    const byId = new Map();
+    for (let i = 0; i < customList.length; i++) {
+      const r = customList[i];
+      if (!r || r.id == null) continue;
+      const k = String(r.id);
+      if (!byId.has(k)) byId.set(k, r);
+    }
+    const merged = customList.slice();
+    for (let i = 0; i < seedList.length; i++) {
+      const r = seedList[i];
+      if (!r || r.id == null) continue;
+      const k = String(r.id);
+      if (!byId.has(k)) {
+        byId.set(k, r);
+        merged.push(r);
+      }
+    }
+    return merged;
+  }
+
+  function detectLegacyTenthHourBackfill(spec = {}) {
+    const today = todayISO();
+    const fromD = /^\d{4}-\d{2}-\d{2}$/.test(String(spec.fromDate || '').slice(0, 10))
+      ? String(spec.fromDate).slice(0, 10)
+      : '';
+    let endD = /^\d{4}-\d{2}-\d{2}$/.test(String(spec.toDate || '').slice(0, 10))
+      ? String(spec.toDate).slice(0, 10)
+      : today;
+    if (!spec.includeFuture && endD > today) endD = today;
+
+    const uAllowed = allowedCompanyNames(activeUser()).map(c => norm(canonCompany(c)));
+    const allowedSet = uAllowed.length ? new Set(uAllowed) : null;
+    const scopeRaw = String(spec.company || '').trim();
+    const coSingle = normalizeLegacyBackfillCoFilter(scopeRaw);
+    const coNorm = coSingle ? norm(coSingle) : '';
+    let indCoSet = null;
+    if (!coNorm && /^industry:/i.test(scopeRaw) && typeof getActiveIndustryBuList === 'function') {
+      indCoSet = new Set(getActiveIndustryBuList(scopeRaw).map(c => norm(canonCompany(c))));
+    } else if (!coNorm && STATE.company && /^industry:/i.test(String(STATE.company)) && typeof getActiveIndustryBuList === 'function' && !spec.allIndustries) {
+      indCoSet = new Set(getActiveIndustryBuList(STATE.company).map(c => norm(canonCompany(c))));
+    }
+    const staffSet = (Array.isArray(spec.staffNames) && spec.staffNames.length)
+      ? new Set(spec.staffNames.map(s => norm(s)).filter(Boolean))
+      : null;
+
+    const rowsRaw = getMergedLegacyAttendancePool();
+    const totalAttFreqByCo = new Map();
+    const legacyFreqByCo = new Map();
+    const coDisplayName = new Map();
+    const detected = [];
+    let closedCount = 0;
+    let manualCount = 0;
+    let deltaOnlyCount = 0;
+    let earnedDeltaUsd = 0;
+    let lostDeltaUsd = 0;
+    let netDeltaUsd = 0;
+
+    for (let i = 0; i < rowsRaw.length; i++) {
+      const a = rowsRaw[i];
+      if (!a || a.voided) continue;
+      const coCanon = canonCompany(a.company || coSingle || 'WTC') || 'WTC';
+      const coKey = norm(coCanon);
+      if (allowedSet && !allowedSet.has(coKey)) continue;
+      if (indCoSet && !indCoSet.has(coKey)) continue;
+      totalAttFreqByCo.set(coKey, (totalAttFreqByCo.get(coKey) || 0) + 1);
+      if (!coDisplayName.has(coKey)) coDisplayName.set(coKey, coCanon);
+
+      if (coNorm && coKey !== coNorm) continue;
+      if (staffSet && !staffSet.has(norm(a.staff || ''))) continue;
+      if (!isLegacyTenthHourAttRow(a)) continue;
+
+      const effD = String(a.set_date || a.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(effD)) continue;
+      if (fromD && effD < fromD) continue;
+      if (endD && effD > endD) continue;
+
+      const inT = fmtAttClockTime(a.in_time || a.check_in || '');
+      const outT = fmtAttClockTime(a.out_time || a.check_out || '');
+      if (!inT && !outT) continue;
+
+      legacyFreqByCo.set(coKey, (legacyFreqByCo.get(coKey) || 0) + 1);
+      const prot = isProtectedLegacyBackfillRow(a, coCanon);
+      if (prot.isClosed) closedCount++;
+      else if (prot.isManual) manualCount++;
+
+      if (spec.countOnly) {
+        detected.push({
+          id: String(a.id),
+          row: a,
+          effDate: effD,
+          repDate: String(a.rep_date || effD).slice(0, 10),
+          company: coCanon,
+          staff: String(a.staff || ''),
+          isClosed: prot.isClosed,
+          isManual: prot.isManual,
+          canEditCo: prot.canEditCo,
+          isProtected: prot.isProtected,
+          protReason: prot.protReason
+        });
+        continue;
+      }
+
+      const ovPol = Object.assign({}, spec.overridePolicy || {}, { math_mode: 'per_minute' });
+      const evalRes = evaluateShiftPunchTiming(a.staff, coCanon, effD, inT, outT, {
+        outDate: a.out_date || a.date || effD,
+        inSameCalendarDay: (effD === String(a.date || effD).slice(0, 10)),
+        overridePolicy: ovPol
+      });
+      const prof = getStaffContractProfile(a.staff, coCanon, effD);
+      const oldImp = computeAttendanceRowDollarImpact(a, prof);
+
+      const isPairedBoth = Boolean(inT && outT);
+      const workedH = Number(evalRes.workedHours || 0);
+      const newOtH = isPairedBoth ? Number(evalRes.overtimeHours || 0) : 0;
+      const penLeaveDays = Number(evalRes.penaltyLeaveDays || 0);
+      const newLateH = penLeaveDays > 0 ? 0 : Number(evalRes.lateHours || 0);
+      const effType = newOtH > 0 ? 'Overtime' : (penLeaveDays >= 1 ? 'Absence' : (penLeaveDays >= 0.5 ? 'Half Day' : (newLateH > 0 ? 'Lateness' : 'Present')));
+      const simRow = Object.assign({}, a, {
+        type: effType,
+        status: effType,
+        tally: newOtH > 0 ? newOtH : (penLeaveDays > 0 ? penLeaveDays : (newLateH > 0 ? newLateH : workedH)),
+        worked_hours: workedH,
+        regular_hours: isPairedBoth ? evalRes.regularHours : (workedH > 0 ? Math.min(evalRes.scheduledHours, workedH) : 0),
+        overtime_hours: newOtH,
+        unapproved_ot_hours: isPairedBoth ? Number(evalRes.unapprovedOtHours || 0) : 0,
+        late_hours: newLateH,
+        leave_days: penLeaveDays,
+        math_mode: 'per_minute',
+        raw_ot_min: Number(evalRes.rawQualifiedOtMin || 0),
+        exact_ot_min: Number(evalRes.exactApprovedOtMin || 0),
+        ot_snap_delta_min: Number(evalRes.otSnapDeltaMin || 0),
+        ot_snap_mode: evalRes.otSnapMode || 'exact',
+        late_penalty_mode: evalRes.latePenaltyMode || 'exact_hours',
+        rule_audit_late: String(evalRes.lateAuditText || ''),
+        rule_audit_ot: String(evalRes.otAuditText || ''),
+        approved_ot_min: Number(evalRes.approvedOtMin || 0),
+        billable_late_min: Number(evalRes.billableLateMin || 0),
+        ot_threshold_min: Number(evalRes.otThresholdMin != null ? evalRes.otThresholdMin : 10),
+        policy_ot_mult: Number((evalRes.rule && evalRes.rule.ot_multiplier) || 1.5),
+        policy_late_mult: evalRes.rule && evalRes.rule.late_penalty_mode === 'none' ? 0 : (evalRes.rule && evalRes.rule.late_penalty_mode === 'multiplier' ? (Number(evalRes.rule.late_multiplier) || 1) : 1),
+        late_mult_baked: true
+      });
+      const newImp = computeAttendanceRowDollarImpact(simRow, prof);
+      const oldOtH = Number(a.overtime_hours || 0);
+      const oldLateH = Number(a.late_hours || 0);
+      const oldLeave = Number(a.leave_days || 0);
+      const dEarned = round2(newImp.earnedUsd - oldImp.earnedUsd);
+      const dLost = round2(newImp.lostUsd - oldImp.lostUsd);
+      const dNet = round2(newImp.netImpactUsd - oldImp.netImpactUsd);
+      const hasDelta = (
+        Math.abs(dNet) > 0.005
+        || Math.abs(newOtH - oldOtH) > 0.0005
+        || Math.abs(newLateH - oldLateH) > 0.0005
+        || Math.abs(penLeaveDays - oldLeave) > 0.001
+      );
+      if (!prot.isProtected) {
+        if (hasDelta) deltaOnlyCount++;
+        earnedDeltaUsd = round2(earnedDeltaUsd + dEarned);
+        lostDeltaUsd = round2(lostDeltaUsd + dLost);
+        netDeltaUsd = round2(netDeltaUsd + dNet);
+      }
+
+      detected.push({
+        id: String(a.id),
+        row: a,
+        effDate: effD,
+        repDate: String(a.rep_date || effD).slice(0, 10),
+        company: coCanon,
+        staff: String(a.staff || ''),
+        inTime: inT,
+        outTime: outT,
+        oldMathMode: String(a.math_mode || 'tenth_hour'),
+        oldOtH,
+        oldLateH,
+        oldLeaveDays: oldLeave,
+        newOtH,
+        newLateH,
+        newLeaveDays: penLeaveDays,
+        approvedOtMin: Number(simRow.approved_ot_min || 0),
+        billableLateMin: Number(simRow.billable_late_min || 0),
+        lateAuditText: simRow.rule_audit_late,
+        otAuditText: simRow.rule_audit_ot,
+        simRow,
+        oldNetUsd: oldImp.netImpactUsd,
+        newNetUsd: newImp.netImpactUsd,
+        earnedDeltaUsd: dEarned,
+        lostDeltaUsd: dLost,
+        netDeltaUsd: dNet,
+        hasDelta,
+        isClosed: prot.isClosed,
+        isManual: prot.isManual,
+        canEditCo: prot.canEditCo,
+        isProtected: prot.isProtected,
+        protReason: prot.protReason
+      });
+    }
+
+    detected.sort((a, b) => (b.effDate !== a.effDate ? b.effDate.localeCompare(a.effDate) : String(b.id).localeCompare(String(a.id))));
+    const migratableRows = detected.filter(r => !r.isProtected);
+    const deltaRows = migratableRows.filter(r => r.hasDelta);
+    const protectedRows = detected.filter(r => r.isProtected);
+    const rankedCompanies = Array.from(legacyFreqByCo.keys())
+      .sort((ka, kb) => {
+        const la = legacyFreqByCo.get(ka) || 0;
+        const lb = legacyFreqByCo.get(kb) || 0;
+        if (lb !== la) return lb - la;
+        return (totalAttFreqByCo.get(kb) || 0) - (totalAttFreqByCo.get(ka) || 0);
+      })
+      .map(k => ({ company: coDisplayName.get(k) || k, count: legacyFreqByCo.get(k) || 0 }));
+
+    return {
+      ok: true,
+      totalCount: detected.length,
+      migratableCount: migratableRows.length,
+      protectedCount: protectedRows.length,
+      closedCount,
+      manualCount,
+      deltaOnlyCount,
+      earnedDeltaUsd,
+      lostDeltaUsd,
+      netDeltaUsd,
+      fromDate: fromD,
+      toDate: endD,
+      rows: detected,
+      migratableRows,
+      deltaRows,
+      protectedRows,
+      rankedCompanies
+    };
+  }
+
+  function applySelectiveLegacyBackfill(ids, opts = {}) {
+    const idList = Array.isArray(ids) ? ids.map(x => String(x || '')).filter(Boolean) : [];
+    const idSet = new Set(idList);
+    if ((!Array.isArray(ids) || idSet.size === 0) && !opts.allOpen) {
+      return {
+        ok: true,
+        updatedRows: 0,
+        skippedClosed: 0,
+        skippedManual: 0,
+        skippedPermission: 0,
+        earnedDeltaUsd: 0,
+        lostDeltaUsd: 0,
+        netDeltaUsd: 0,
+        rows: []
+      };
+    }
+    const rows = getMergedLegacyAttendancePool();
+    const uAllowed = allowedCompanyNames(activeUser()).map(c => norm(canonCompany(c)));
+    const allowedSet = uAllowed.length ? new Set(uAllowed) : null;
+    const nowIso = new Date().toISOString();
+    const touchedIds = [];
+    let updatedRows = 0;
+    let skippedClosed = 0;
+    let skippedManual = 0;
+    let skippedPermission = 0;
+    let earnedDeltaUsd = 0;
+    let lostDeltaUsd = 0;
+    let netDeltaUsd = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const a = rows[i];
+      if (!a || a.voided) continue;
+      if (idSet.size && !idSet.has(String(a.id || ''))) continue;
+      if (!isLegacyTenthHourAttRow(a)) continue;
+
+      const coCanon = canonCompany(a.company || 'WTC') || 'WTC';
+      if (allowedSet && !allowedSet.has(norm(coCanon))) {
+        skippedPermission++;
+        continue;
+      }
+      const prot = isProtectedLegacyBackfillRow(a, coCanon);
+      if (prot.isClosed) { skippedClosed++; continue; }
+      if (prot.isManual) { skippedManual++; continue; }
+      if (!prot.canEditCo) { skippedPermission++; continue; }
+
+      const effD = String(a.set_date || a.date || '').slice(0, 10);
+      const inT = fmtAttClockTime(a.in_time || a.check_in || '');
+      const outT = fmtAttClockTime(a.out_time || a.check_out || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(effD) || (!inT && !outT)) continue;
+
+      const ovPol = Object.assign({}, opts.overridePolicy || {}, { math_mode: 'per_minute' });
+      const evalRes = evaluateShiftPunchTiming(a.staff, coCanon, effD, inT, outT, {
+        outDate: a.out_date || a.date || effD,
+        inSameCalendarDay: (effD === String(a.date || effD).slice(0, 10)),
+        overridePolicy: ovPol
+      });
+      const prof = getStaffContractProfile(a.staff, coCanon, effD);
+      const oldImp = computeAttendanceRowDollarImpact(a, prof);
+
+      const isPairedBoth = Boolean(inT && outT);
+      const workedH = Number(evalRes.workedHours || 0);
+      const otH = isPairedBoth ? Number(evalRes.overtimeHours || 0) : 0;
+      const unappOt = isPairedBoth ? Number(evalRes.unapprovedOtHours || 0) : 0;
+      const penLeaveDays = Number(evalRes.penaltyLeaveDays || 0);
+      const ltH = penLeaveDays > 0 ? 0 : Number(evalRes.lateHours || 0);
+      const effType = otH > 0 ? 'Overtime' : (penLeaveDays >= 1 ? 'Absence' : (penLeaveDays >= 0.5 ? 'Half Day' : (ltH > 0 ? 'Lateness' : 'Present')));
+      const effTally = otH > 0 ? otH : (penLeaveDays > 0 ? penLeaveDays : (ltH > 0 ? ltH : workedH));
+
+      const nextFields = {
+        type: effType,
+        status: effType,
+        tally: effTally,
+        shift_id: evalRes.shift.id,
+        shift_label: evalRes.shift.badgeLabel,
+        scheduled_hours: evalRes.scheduledHours,
+        worked_hours: workedH,
+        regular_hours: isPairedBoth ? evalRes.regularHours : (workedH > 0 ? Math.min(evalRes.scheduledHours, workedH) : 0),
+        overtime_hours: otH,
+        unapproved_ot_hours: unappOt,
+        late_hours: ltH,
+        raw_late_hours: Number(evalRes.rawLateHours || 0),
+        raw_late_min: Number(evalRes.rawLateMin || 0),
+        leave_days: penLeaveDays,
+        no_out_rule: evalRes.isSinglePunch ? (evalRes.noOutRule || 'half_day') : '',
+        single_punch_type: evalRes.singlePunchType || '',
+        penalty_summary: evalRes.penaltySummary || '',
+        late_cutoff: evalRes.lateCutoffTime || '',
+        early_out_cutoff: evalRes.earlyOutCutoffTime || '',
+        math_mode: 'per_minute',
+        raw_ot_min: Number(evalRes.rawQualifiedOtMin || 0),
+        exact_ot_min: Number(evalRes.exactApprovedOtMin || 0),
+        ot_snap_delta_min: Number(evalRes.otSnapDeltaMin || 0),
+        ot_snap_mode: evalRes.otSnapMode || 'exact',
+        late_penalty_mode: evalRes.latePenaltyMode || 'exact_hours',
+        rule_audit_late: String(evalRes.lateAuditText || ''),
+        rule_audit_ot: String(evalRes.otAuditText || ''),
+        approved_ot_min: Number(evalRes.approvedOtMin || 0),
+        unapproved_ot_min: Number(evalRes.unapprovedOtMin || 0),
+        billable_late_min: Number(evalRes.billableLateMin || 0),
+        ot_threshold_min: Number(evalRes.otThresholdMin != null ? evalRes.otThresholdMin : 10),
+        policy_ot_mult: Number((evalRes.rule && evalRes.rule.ot_multiplier) || 1.5),
+        policy_late_mult: evalRes.rule && evalRes.rule.late_penalty_mode === 'none' ? 0 : (evalRes.rule && evalRes.rule.late_penalty_mode === 'multiplier' ? (Number(evalRes.rule.late_multiplier) || 1) : 1),
+        late_mult_baked: true
+      };
+
+      const simRow = Object.assign({}, a, nextFields);
+      const newImp = computeAttendanceRowDollarImpact(simRow, prof);
+      updatedRows++;
+      touchedIds.push(a.id);
+      earnedDeltaUsd = round2(earnedDeltaUsd + (newImp.earnedUsd - oldImp.earnedUsd));
+      lostDeltaUsd = round2(lostDeltaUsd + (newImp.lostUsd - oldImp.lostUsd));
+      netDeltaUsd = round2(netDeltaUsd + (newImp.netImpactUsd - oldImp.netImpactUsd));
+
+      if (!opts.dryRun) {
+        if (!STATE.customRecords || typeof STATE.customRecords !== 'object') STATE.customRecords = {};
+        if (!Array.isArray(STATE.customRecords.attendance)) STATE.customRecords.attendance = [];
+        const aid = String(a.id || '');
+        const cIdx = STATE.customRecords.attendance.findIndex(x => x && String(x.id || '') === aid);
+        if (cIdx >= 0) {
+          const target = STATE.customRecords.attendance[cIdx];
+          Object.assign(target, nextFields, { modified_at: nowIso });
+          if (target.origin) target.tab_sig = attendanceFigureSig(target);
+          if (a !== target) {
+            Object.assign(a, nextFields, { modified_at: nowIso });
+            if (a.origin) a.tab_sig = attendanceFigureSig(a);
+          }
+        } else {
+          const origSnap = (typeof isAppRecord === 'function' && !isAppRecord(a) && typeof captureSeedOrigSnapshot === 'function')
+            ? captureSeedOrigSnapshot('attendance', a)
+            : null;
+          const cloned = Object.assign({}, a, nextFields, { modified_at: nowIso });
+          if (origSnap && !cloned._seed_orig && typeof buildSeedOrigMeta === 'function') {
+            cloned._seed_orig = buildSeedOrigMeta(origSnap);
+          }
+          if (cloned.origin) cloned.tab_sig = attendanceFigureSig(cloned);
+          STATE.customRecords.attendance.unshift(cloned);
+          Object.assign(a, nextFields, { modified_at: nowIso });
+          if (a.origin) a.tab_sig = attendanceFigureSig(a);
+        }
+      }
+    }
+
+    if (!opts.dryRun && updatedRows > 0) {
+      applyCustomRecordsToSeed();
+      invalidateAllSeedCaches();
+      if (!opts.deferSave) {
+        saveLocalAuthAndRecords();
+        syncWithCloud(true);
+      }
+    }
+
+    return {
+      ok: updatedRows > 0 || (skippedClosed === 0 && skippedManual === 0 && skippedPermission === 0),
+      updatedRows,
+      skippedClosed,
+      skippedManual,
+      skippedPermission,
+      earnedDeltaUsd,
+      lostDeltaUsd,
+      netDeltaUsd,
+      rows: touchedIds
+    };
+  }
+
+  const LEGACY_BACKFILL_MODAL_STATE = {
+    open: false,
+    company: 'ALL',
+    filter: 'tenth_hour',
+    fromDate: '',
+    toDate: '',
+    staffNames: null,
+    search: '',
+    selectedIds: null
+  };
+
+  function closeBackfillModal() {
+    LEGACY_BACKFILL_MODAL_STATE.open = false;
+    const m = $('backfillModal');
+    if (m) m.hidden = true;
+    const otherOpen = ['fatherBackfillModal', 'staffScheduleModal', 'policyGroupModal', 'shiftTypeModal', 'staffFaceEnrolModal']
+      .some(id => { const el = $(id); return el && !el.hidden; });
+    if (!otherOpen) document.body.classList.remove('modal-open');
+  }
+
+  function renderBackfillModalDom() {
+    let modal = $('backfillModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'backfillModal';
+      modal.className = 'modal-backdrop kiosk-submodal-backdrop';
+      modal.style.zIndex = '1185';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'bfmModalTitle');
+      wireBackdropDismiss(modal, closeBackfillModal);
+      document.body.appendChild(modal);
+    }
+
+    const baseScan = detectLegacyTenthHourBackfill({
+      company: '',
+      staffNames: LEGACY_BACKFILL_MODAL_STATE.staffNames,
+      fromDate: LEGACY_BACKFILL_MODAL_STATE.fromDate,
+      toDate: LEGACY_BACKFILL_MODAL_STATE.toDate
+    });
+    const scopedCo = normalizeLegacyBackfillCoFilter(LEGACY_BACKFILL_MODAL_STATE.company);
+    const activeScan = scopedCo
+      ? detectLegacyTenthHourBackfill({
+          company: scopedCo,
+          staffNames: LEGACY_BACKFILL_MODAL_STATE.staffNames,
+          fromDate: LEGACY_BACKFILL_MODAL_STATE.fromDate,
+          toDate: LEGACY_BACKFILL_MODAL_STATE.toDate
+        })
+      : baseScan;
+
+    if (!LEGACY_BACKFILL_MODAL_STATE.selectedIds) {
+      LEGACY_BACKFILL_MODAL_STATE.selectedIds = new Set(activeScan.migratableRows.map(r => r.id));
+    } else {
+      const validOpenIds = new Set(activeScan.migratableRows.map(r => r.id));
+      LEGACY_BACKFILL_MODAL_STATE.selectedIds.forEach(id => {
+        if (!validOpenIds.has(id)) LEGACY_BACKFILL_MODAL_STATE.selectedIds.delete(id);
+      });
+    }
+
+    const filterMode = ['tenth_hour', 'delta_only', 'protected', 'all'].includes(LEGACY_BACKFILL_MODAL_STATE.filter)
+      ? LEGACY_BACKFILL_MODAL_STATE.filter
+      : 'tenth_hour';
+    const q = norm(LEGACY_BACKFILL_MODAL_STATE.search || '');
+    const poolRows = filterMode === 'tenth_hour'
+      ? activeScan.migratableRows
+      : (filterMode === 'delta_only'
+        ? activeScan.deltaRows
+        : (filterMode === 'protected' ? activeScan.protectedRows : activeScan.rows));
+    const shownRows = q
+      ? poolRows.filter(r => norm(r.staff).includes(q) || norm(r.company).includes(q) || norm(r.effDate).includes(q) || norm(r.lateAuditText).includes(q) || norm(r.otAuditText).includes(q))
+      : poolRows;
+
+    const showUsd = canViewPayrollDollarAmounts();
+    const selOpenRows = activeScan.migratableRows.filter(r => LEGACY_BACKFILL_MODAL_STATE.selectedIds.has(r.id));
+    const selNetDeltaUsd = selOpenRows.reduce((s, r) => round2(s + Number(r.netDeltaUsd || 0)), 0);
+    const visibleOpenRows = shownRows.filter(r => !r.isProtected);
+    const allVisibleSelected = visibleOpenRows.length > 0 && visibleOpenRows.every(r => LEGACY_BACKFILL_MODAL_STATE.selectedIds.has(r.id));
+    const scopeNotes = [];
+    if (scopedCo) scopeNotes.push(scopedCo);
+    if (Array.isArray(LEGACY_BACKFILL_MODAL_STATE.staffNames) && LEGACY_BACKFILL_MODAL_STATE.staffNames.length) {
+      scopeNotes.push(LEGACY_BACKFILL_MODAL_STATE.staffNames.length === 1 ? LEGACY_BACKFILL_MODAL_STATE.staffNames[0] : `${LEGACY_BACKFILL_MODAL_STATE.staffNames.length} staff`);
+    }
+    if (LEGACY_BACKFILL_MODAL_STATE.fromDate) scopeNotes.push(`From ${fmtDateDMY(LEGACY_BACKFILL_MODAL_STATE.fromDate)}`);
+
+    modal.innerHTML = `
+      <div class="modal-card bfm-modal-card">
+        <div class="modal-head">
+          <div>
+            <div class="modal-title" id="bfmModalTitle">${ic('sliders')} Legacy 0.1h Attendance Migration</div>
+            <div class="modal-sub">Select open-period legacy 0.1h logs to recalculate onto $ / Min precision; closed months and manual overrides stay protected</div>
+          </div>
+          <button type="button" class="icon-btn" id="closeBackfillModalBtn" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body bfm-modal-body">
+          <div class="bfm-kpi-strip">
+            <div class="bfm-kpi">
+              <span class="bfm-kpi-lbl">Open 0.1h Rows</span>
+              <strong class="bfm-kpi-val">${fmtNum(activeScan.migratableCount, 0)}</strong>
+            </div>
+            <div class="bfm-kpi">
+              <span class="bfm-kpi-lbl">Protected (Closed / Manual)</span>
+              <strong class="bfm-kpi-val">${fmtNum(activeScan.protectedCount, 0)}</strong>
+            </div>
+            <div class="bfm-kpi">
+              <span class="bfm-kpi-lbl">Selected to Migrate</span>
+              <strong class="bfm-kpi-val">${fmtNum(selOpenRows.length, 0)}</strong>
+            </div>
+            ${showUsd ? `
+              <div class="bfm-kpi">
+                <span class="bfm-kpi-lbl">Selected Net Delta ($)</span>
+                <strong class="bfm-kpi-val ${selNetDeltaUsd > 0 ? 'att-earn-pos' : (selNetDeltaUsd < 0 ? 'att-loss-neg' : '')}">${selNetDeltaUsd >= 0 ? '+' : '-'}${esc(fmtUSD(Math.abs(selNetDeltaUsd), 2))}</strong>
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="bfm-toolbar">
+            <div class="bfm-filter-pills">
+              <button type="button" class="kiosk-qchip ${filterMode === 'tenth_hour' ? 'active' : ''}" data-bfm-filter="tenth_hour">Open Legacy 0.1h (${fmtNum(activeScan.migratableCount, 0)})</button>
+              <button type="button" class="kiosk-qchip ${filterMode === 'delta_only' ? 'active' : ''}" data-bfm-filter="delta_only">Changed Only (${fmtNum(activeScan.deltaOnlyCount, 0)})</button>
+              <button type="button" class="kiosk-qchip ${filterMode === 'protected' ? 'active' : ''}" data-bfm-filter="protected">Protected (${fmtNum(activeScan.protectedCount, 0)})</button>
+              <button type="button" class="kiosk-qchip ${filterMode === 'all' ? 'active' : ''}" data-bfm-filter="all">All Detected (${fmtNum(activeScan.totalCount, 0)})</button>
+            </div>
+            ${baseScan.rankedCompanies.length > 1 ? `
+              <div class="bfm-co-chips">
+                <button type="button" class="kiosk-qchip ${!scopedCo ? 'active' : ''}" data-bfm-co="ALL">All (${fmtNum(baseScan.totalCount, 0)})</button>
+                ${baseScan.rankedCompanies.map(rc => `<button type="button" class="kiosk-qchip ${norm(scopedCo) === norm(rc.company) ? 'active' : ''}" data-bfm-co="${esc(rc.company)}">${esc(rc.company)} (${fmtNum(rc.count, 0)})</button>`).join('')}
+              </div>
+            ` : ''}
+            <div class="bfm-search-row">
+              <input type="search" id="bfmSearchInput" class="kiosk-search-inp" value="${esc(LEGACY_BACKFILL_MODAL_STATE.search)}" placeholder="Search staff, company, or rule...">
+              ${scopeNotes.length ? `<button type="button" class="btn kiosk-mini-btn" id="bfmClearScopeBtn">Clear Scope (${esc(scopeNotes.join(' · '))})</button>` : ''}
+            </div>
+          </div>
+
+          <div class="table-wrap bfm-table-wrap">
+            <table class="ledger-table" id="bfmRowsTable">
+              <thead>
+                <tr>
+                  <th style="width:34px"><input type="checkbox" id="bfmSelectAllChk" aria-label="Select all open legacy rows"${visibleOpenRows.length ? '' : ' disabled'}${allVisibleSelected ? ' checked' : ''}></th>
+                  <th>Date</th>
+                  <th>Staff &amp; Co.</th>
+                  <th>Clock</th>
+                  <th>Legacy 0.1h</th>
+                  <th>$ / Min Preview</th>
+                  ${showUsd ? '<th class="r">Net Delta ($)</th>' : ''}
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownRows.slice(0, 200).map(r => {
+                  const checked = !r.isProtected && LEGACY_BACKFILL_MODAL_STATE.selectedIds.has(r.id);
+                  const oldLbl = [
+                    r.oldOtH > 0 ? `+${fmtNum(r.oldOtH, 1)}h OT` : '',
+                    r.oldLateH > 0 ? `-${fmtNum(r.oldLateH, 1)}h Late` : '',
+                    r.oldLeaveDays >= 0.5 ? `${fmtNum(r.oldLeaveDays, 1)}d` : ''
+                  ].filter(Boolean).join(' · ') || '0h';
+                  const newLbl = [
+                    r.approvedOtMin > 0 ? `+${r.approvedOtMin}m OT` : '',
+                    r.billableLateMin > 0 ? `-${r.billableLateMin}m Late` : '',
+                    r.newLeaveDays >= 0.5 ? `${fmtNum(r.newLeaveDays, 1)}d` : ''
+                  ].filter(Boolean).join(' · ') || '0m';
+                  const auditHtml = renderRuleAuditPillsHtml(r.simRow, { inline: true });
+                  const protBadge = r.isClosed
+                    ? '<span class="badge badge-warn" data-bfm-prot="closed">Closed Month</span>'
+                    : (r.isManual
+                      ? '<span class="badge badge-info" data-bfm-prot="manual">Manual Override</span>'
+                      : (!r.canEditCo
+                        ? '<span class="badge" data-bfm-prot="readonly">Read Only</span>'
+                        : '<span class="badge badge-ok" data-bfm-prot="open">Open</span>'));
+                  return `
+                    <tr data-bfm-row-id="${esc(r.id)}" class="${r.isProtected ? 'bfm-row-protected' : ''}">
+                      <td><input type="checkbox" class="bfm-row-chk" data-bfm-id="${esc(r.id)}"${checked ? ' checked' : ''}${r.isProtected ? ' disabled' : ''}></td>
+                      <td class="mono">${esc(fmtDateDMY(r.effDate))}</td>
+                      <td><strong>${esc(r.staff)}</strong> ${coBadge(r.company)}</td>
+                      <td class="mono">${esc(r.inTime || '--')} - ${esc(r.outTime || '--')}</td>
+                      <td class="mono">${esc(oldLbl)}</td>
+                      <td><span class="mono">${esc(newLbl)}</span>${auditHtml}</td>
+                      ${showUsd ? `<td class="r mono ${r.netDeltaUsd > 0 ? 'att-earn-pos' : (r.netDeltaUsd < 0 ? 'att-loss-neg' : 'mu')}">${Math.abs(r.netDeltaUsd) > 0.005 ? `${r.netDeltaUsd >= 0 ? '+' : '-'}${esc(fmtUSD(Math.abs(r.netDeltaUsd), 2))}` : '$0.00'}</td>` : ''}
+                      <td>${protBadge}</td>
+                    </tr>
+                  `;
+                }).join('') || emptyRow(showUsd ? 8 : 7, 'No legacy 0.1h rows match this filter')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-foot bfm-modal-foot">
+          <div class="bfm-foot-meta muted">
+            ${fmtNum(selOpenRows.length, 0)} selected of ${fmtNum(activeScan.migratableCount, 0)} open${activeScan.protectedCount ? ` (${fmtNum(activeScan.protectedCount, 0)} protected untouched)` : ''}
+          </div>
+          <div class="bfm-foot-actions">
+            <button type="button" class="btn" id="closeBackfillModalFooterBtn">Close</button>
+            <button type="button" class="btn btn-primary" id="bfmMigrateBtn"${selOpenRows.length > 0 ? '' : ' disabled'}>${ic('check_circle')} Migrate Selected to $ / Min (${fmtNum(selOpenRows.length, 0)})</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    $('closeBackfillModalBtn')?.addEventListener('click', closeBackfillModal);
+    $('closeBackfillModalFooterBtn')?.addEventListener('click', closeBackfillModal);
+    modal.querySelectorAll('[data-bfm-filter]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        LEGACY_BACKFILL_MODAL_STATE.filter = btn.getAttribute('data-bfm-filter') || 'tenth_hour';
+        renderBackfillModalDom();
+      });
+    });
+    modal.querySelectorAll('[data-bfm-co]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        LEGACY_BACKFILL_MODAL_STATE.company = btn.getAttribute('data-bfm-co') || 'ALL';
+        LEGACY_BACKFILL_MODAL_STATE.selectedIds = null;
+        renderBackfillModalDom();
+      });
+    });
+    const searchEl = $('bfmSearchInput');
+    if (searchEl) {
+      searchEl.addEventListener('input', () => {
+        const pos = searchEl.selectionStart;
+        LEGACY_BACKFILL_MODAL_STATE.search = searchEl.value || '';
+        renderBackfillModalDom();
+        const nextInp = $('bfmSearchInput');
+        if (nextInp) {
+          nextInp.focus();
+          if (pos != null) try { nextInp.setSelectionRange(pos, pos); } catch (_) {}
+        }
+      });
+    }
+    $('bfmClearScopeBtn')?.addEventListener('click', () => {
+      LEGACY_BACKFILL_MODAL_STATE.company = 'ALL';
+      LEGACY_BACKFILL_MODAL_STATE.staffNames = null;
+      LEGACY_BACKFILL_MODAL_STATE.fromDate = '';
+      LEGACY_BACKFILL_MODAL_STATE.toDate = '';
+      LEGACY_BACKFILL_MODAL_STATE.selectedIds = null;
+      renderBackfillModalDom();
+    });
+    $('bfmSelectAllChk')?.addEventListener('change', e => {
+      const checked = Boolean(e.target && e.target.checked);
+      visibleOpenRows.forEach(r => {
+        if (checked) LEGACY_BACKFILL_MODAL_STATE.selectedIds.add(r.id);
+        else LEGACY_BACKFILL_MODAL_STATE.selectedIds.delete(r.id);
+      });
+      renderBackfillModalDom();
+    });
+    modal.querySelectorAll('.bfm-row-chk').forEach(chk => {
+      chk.addEventListener('change', () => {
+        const rid = chk.getAttribute('data-bfm-id') || '';
+        if (!rid) return;
+        if (chk.checked) LEGACY_BACKFILL_MODAL_STATE.selectedIds.add(rid);
+        else LEGACY_BACKFILL_MODAL_STATE.selectedIds.delete(rid);
+        renderBackfillModalDom();
+      });
+    });
+    $('bfmMigrateBtn')?.addEventListener('click', () => {
+      const targetIds = selOpenRows.map(r => r.id);
+      if (!targetIds.length) return;
+      const migRes = applySelectiveLegacyBackfill(targetIds, { fromModal: true });
+      const usdTxt = showUsd && migRes.updatedRows > 0
+        ? ` (Net ${migRes.netDeltaUsd >= 0 ? '+' : '-'}${fmtUSD(Math.abs(migRes.netDeltaUsd || 0), 2)})`
+        : '';
+      if (migRes.updatedRows > 0) {
+        toast(`Migrated ${migRes.updatedRows} legacy 0.1h rows to $ / Min${usdTxt}`, 'ok');
+      } else {
+        toast('No eligible open rows were migrated (closed months and manual overrides stayed protected)', 'warn');
+      }
+      LEGACY_BACKFILL_MODAL_STATE.selectedIds = null;
+      const afterScan = detectLegacyTenthHourBackfill({
+        company: normalizeLegacyBackfillCoFilter(LEGACY_BACKFILL_MODAL_STATE.company),
+        staffNames: LEGACY_BACKFILL_MODAL_STATE.staffNames,
+        fromDate: LEGACY_BACKFILL_MODAL_STATE.fromDate,
+        toDate: LEGACY_BACKFILL_MODAL_STATE.toDate
+      });
+      if (afterScan.migratableCount === 0 && afterScan.protectedCount === 0) {
+        closeBackfillModal();
+      } else {
+        renderBackfillModalDom();
+      }
+      renderApp();
+    });
+    stripNativeTitles(modal);
+    if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(modal);
+    }
+  }
+
+  function openBackfillModal(opts = {}) {
+    LEGACY_BACKFILL_MODAL_STATE.open = true;
+    LEGACY_BACKFILL_MODAL_STATE.company = opts.company ? String(opts.company) : 'ALL';
+    LEGACY_BACKFILL_MODAL_STATE.filter = opts.filter || 'tenth_hour';
+    LEGACY_BACKFILL_MODAL_STATE.fromDate = opts.fromDate ? String(opts.fromDate).slice(0, 10) : '';
+    LEGACY_BACKFILL_MODAL_STATE.toDate = opts.toDate ? String(opts.toDate).slice(0, 10) : '';
+    LEGACY_BACKFILL_MODAL_STATE.staffNames = Array.isArray(opts.staffNames) && opts.staffNames.length ? opts.staffNames.slice() : null;
+    LEGACY_BACKFILL_MODAL_STATE.search = '';
+    LEGACY_BACKFILL_MODAL_STATE.selectedIds = null;
+    renderBackfillModalDom();
+    const m = $('backfillModal');
+    if (m) m.hidden = false;
+    document.body.classList.add('modal-open');
+    return m;
+  }
+
+  function renderLegacyTenthBackfillPillHtml(spec = {}) {
+    const attList = getMergedLegacyAttendancePool();
+    if (!attList.length || !attList.some(a => a && !a.voided && isLegacyTenthHourAttRow(a))) return '';
+    const res = detectLegacyTenthHourBackfill(Object.assign({}, spec, { countOnly: true }));
+    if (!res.migratableCount) return '';
+    const coAttr = spec.company ? esc(String(spec.company)) : '';
+    const staffCsv = Array.isArray(spec.staffNames) && spec.staffNames.length ? esc(spec.staffNames.join('|')) : '';
+    const fromAttr = spec.fromDate ? esc(String(spec.fromDate).slice(0, 10)) : '';
+    const toAttr = spec.toDate ? esc(String(spec.toDate).slice(0, 10)) : '';
+    const countWord = res.migratableCount === 1 ? '1 Old 0.1h Row' : `${fmtNum(res.migratableCount, 0)} Old 0.1h Rows`;
+    const cls = spec.toolbarBtn ? 'btn btn-ghost-bar legacy-tenth-bf-pill' : 'legacy-tenth-bf-pill';
+    return `<button type="button" class="${cls}" data-open-backfill-modal="1" data-bfm-co="${coAttr}" data-bfm-staff="${staffCsv}" data-bfm-from="${fromAttr}" data-bfm-to="${toAttr}">${ic('sliders')} <span>${countWord}</span></button>`;
+  }
+
+  let _legacyBackfillDelegatedWired = false;
+  if (typeof document !== 'undefined' && !_legacyBackfillDelegatedWired) {
+    _legacyBackfillDelegatedWired = true;
+    document.addEventListener('click', e => {
+      const btn = e.target && e.target.closest ? e.target.closest('[data-open-backfill-modal]') : null;
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const staffRaw = btn.getAttribute('data-bfm-staff') || '';
+      openBackfillModal({
+        company: btn.getAttribute('data-bfm-co') || '',
+        staffNames: staffRaw ? staffRaw.split('|').filter(Boolean) : null,
+        fromDate: btn.getAttribute('data-bfm-from') || '',
+        toDate: btn.getAttribute('data-bfm-to') || '',
+        filter: 'tenth_hour'
+      });
+    });
+  }
+
+  // ============================================================================
+  // Step 3: Deterministic OT Snap Cost Allocation per Job / Trip (#unit_economics & All 6 Industries)
+  // Feeds daily incremental OT snap dollar delta (actual snapped OT pay - exact minute equivalent)
+  // into job/trip costing via largest-remainder cent-exact math while leaving payroll & GL $0.00 untouched.
+  // ============================================================================
+  function _otSnapCanonicalCo(raw) {
+    const k = slugCompanyKey(raw);
+    if (!k) return String(raw || 'WTC').trim() || 'WTC';
+    if (k === 'wtc') return 'WTC';
+    if (k === 'bbc' || k === 'bbconstruction') return 'BBConstruction';
+    if (k === 'lions' || k === 'lionstransport') return 'Lions Transport';
+    if (k === 'shacman') return 'Shacman';
+    if (k === 'korri' || k === 'korriauto') return 'Korri Auto';
+    if (k === 'blanca') return 'Blanca';
+    if (k === 'launa') return 'La Una';
+    if (k === 'palms') return 'Palms';
+    if (k === 'voile') return 'Voile';
+    if (k === 'platinum') return 'Platinum';
+    if (k === 'properties') return 'Properties';
+    if (k === '4235' || k === '4235company' || k === '4235companysal') return '4235 Company S.A.L';
+    if (k === 'insurance' || k === 'insuranceco' || k === 'insurancecompany') return 'Insurance Company';
+    if (k === 'holding' || k === 'bdeirholding') return 'Bdeir Holding';
+    return SENTINEL_MODEL_KEY[k] || String(raw || 'WTC').trim() || 'WTC';
+  }
+
+  function _otSnapCoIndustry(coName) {
+    const can = _otSnapCanonicalCo(coName);
+    const k = COMPANY_KEY_BY_NAME[can] || slugCompanyKey(can);
+    return COMPANY_INDUSTRY_BY_KEY[k] || inferIndustryForCompany(can);
+  }
+
+  function computeAttendanceOtSnapPremium(a, prof) {
+    if (!a || a.voided) return null;
+    const attType = String(a.type || a.status || 'Present').trim();
+    if (/^site\s*(?:present|off)$|^config|^extra/i.test(attType)) return null;
+    const effDate = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(effDate)) return null;
+    const eff = resolveAttRowEffectiveHoursAndMults(a);
+    const actualOtMin = (a.approved_ot_min != null && Number.isFinite(Number(a.approved_ot_min)))
+      ? Math.max(0, Number(a.approved_ot_min))
+      : round2(Math.max(0, Number(eff.otH || 0)) * 60);
+    let exactOtMin = actualOtMin;
+    if (a.exact_ot_min != null && Number.isFinite(Number(a.exact_ot_min))) {
+      exactOtMin = Math.max(0, Number(a.exact_ot_min));
+    } else if (a.raw_ot_min != null && Number.isFinite(Number(a.raw_ot_min))) {
+      exactOtMin = Math.max(0, Number(a.raw_ot_min));
+    } else if (a.ot_snap_delta_min != null && Number.isFinite(Number(a.ot_snap_delta_min))) {
+      exactOtMin = Math.max(0, round2(actualOtMin - Number(a.ot_snap_delta_min)));
+    }
+    const rawDelta = round2(actualOtMin - exactOtMin);
+    const snapDeltaMin = Math.abs(rawDelta) >= 0.05 ? rawDelta : 0;
+    const co = _otSnapCanonicalCo(a.company || 'WTC');
+    const industry = a._industry || _otSnapCoIndustry(co);
+    const p = prof || getStaffContractProfile(a.staff, a.company || co, effDate);
+    const isPendSal = Boolean(p && p.salaryPending);
+    const hourlyRate = isPendSal ? 0 : Number((p && p.hourlyRate) || 0);
+    const otMult = eff.otMultOverride != null ? eff.otMultOverride : Number((p && p.otMultiplier) || 1);
+    const actualOtUsd = isPendSal ? 0 : round2((actualOtMin / 60) * hourlyRate * otMult);
+    const exactOtUsd = isPendSal ? 0 : round2((exactOtMin / 60) * hourlyRate * otMult);
+    const snapPremiumUsd = round2(actualOtUsd - exactOtUsd);
+    const snapPremiumCents = Math.round(snapPremiumUsd * 100);
+    const isSnapped = snapDeltaMin !== 0 || snapPremiumCents !== 0;
+    return {
+      attId: String(a.id || ''),
+      date: effDate,
+      ym: effDate.slice(0, 7),
+      company: co,
+      industry,
+      staff: String(a.staff || '').trim(),
+      staffNorm: norm(a.staff || ''),
+      actualOtMin: round2(actualOtMin),
+      exactOtMin: round2(exactOtMin),
+      snapDeltaMin,
+      hourlyRate,
+      otMult,
+      actualOtUsd,
+      exactOtUsd,
+      snapPremiumUsd,
+      snapPremiumCents,
+      otSnapMode: String(a.ot_snap_mode || (p && p.otSnapMode) || 'exact'),
+      isSnapped
+    };
+  }
+
+  function _otSnapRawSig() {
+    const rec = (typeof SEED !== 'undefined' && SEED && SEED.records) ? SEED.records : {};
+    const att = Array.isArray(rec.attendance) ? rec.attendance : [];
+    const emp = Array.isArray(rec.employments) ? rec.employments : [];
+    const sales = Array.isArray(rec.sales_tickets) ? rec.sales_tickets : [];
+    const raw = Array.isArray(rec.raw_purchases) ? rec.raw_purchases : [];
+    let attHash = 0;
+    let snappedHint = 0;
+    for (let i = 0; i < att.length; i++) {
+      const a = att[i];
+      if (!a || a.voided) continue;
+      const d = Number(a.ot_snap_delta_min || 0);
+      const ap = Number(a.approved_ot_min || 0);
+      const ex = Number(a.exact_ot_min != null ? a.exact_ot_min : (a.raw_ot_min != null ? a.raw_ot_min : 0));
+      const oh = Number(a.overtime_hours || 0);
+      if (d || ap || ex || oh) {
+        snappedHint++;
+        attHash = (attHash * 31 + Math.round((d * 17 + ap * 7 + ex * 11 + oh * 100) * 10)) | 0;
+      }
+    }
+    const indRev = Number(STATE && STATE._indCustomRev || 0);
+    const seedIndRev = Number(SEED && SEED._industryRev || 0);
+    const demoKey = isDemoScopeActive() ? 'd1' : 'd0';
+    const wsRev = Number(SEED && SEED.settings && SEED.settings.workScheduleRev || 0);
+    const indCustomSig = Object.keys((STATE && STATE.industryCustomRows) || {}).sort().map(k => `${k}:${(STATE.industryCustomRows[k] || []).length}`).join(',');
+    const indEditSig = Object.keys((STATE && STATE.industryRowEdits) || {}).length;
+    return `${att.length}:${snappedHint}:${attHash}|${emp.length}|${sales.length}|${raw.length}|${SEED && SEED._customRev || 0}|${indRev}:${seedIndRev}:${indCustomSig}:${indEditSig}|${demoKey}|${_GLOBAL_RATES_REV || 0}|${wsRev}`;
+  }
+
+  function getOtSnapAllocSig() {
+    const authUsd = canViewPayrollDollarAmounts() ? '1' : '0';
+    const rlsKey = (typeof allowedCompanyNames === 'function' ? (allowedCompanyNames() || []).join(',') : '');
+    return `${_otSnapRawSig()}|u${authUsd}|${isOwner(activeUser()) ? 'o1' : 'o0'}|${rlsKey}`;
+  }
+
+  function allocateOtSnapCentsLargestRemainder(totalCents, totalDeltaTenths, jobs) {
+    const list = Array.isArray(jobs) ? jobs : [];
+    const n = list.length;
+    if (!n) return [];
+    const cSign = totalCents < 0 ? -1 : 1;
+    const absCents = Math.abs(Math.round(Number(totalCents || 0)));
+    const dSign = totalDeltaTenths < 0 ? -1 : 1;
+    const absTenths = Math.abs(Math.round(Number(totalDeltaTenths || 0)));
+    const totalW = list.reduce((s, j) => s + Math.max(0.0001, Number(j && j.weight || 1)), 0);
+
+    const rows = list.map((j, idx) => {
+      const w = Math.max(0.0001, Number(j && j.weight || 1));
+      const exactC = (absCents * w) / totalW;
+      const baseC = Math.floor(exactC);
+      const exactD = (absTenths * w) / totalW;
+      const baseD = Math.floor(exactD);
+      return {
+        idx,
+        job: j,
+        weight: w,
+        id: String((j && j.id) || idx),
+        cents: baseC,
+        remC: exactC - baseC,
+        tenths: baseD,
+        remD: exactD - baseD
+      };
+    });
+
+    const leftC = absCents - rows.reduce((s, r) => s + r.cents, 0);
+    if (leftC > 0) {
+      const orderC = rows.slice().sort((a, b) => (b.remC - a.remC) || (b.weight - a.weight) || a.id.localeCompare(b.id));
+      for (let i = 0; i < leftC && i < orderC.length; i++) orderC[i].cents += 1;
+    }
+
+    const leftD = absTenths - rows.reduce((s, r) => s + r.tenths, 0);
+    if (leftD > 0) {
+      const orderD = rows.slice().sort((a, b) => (b.remD - a.remD) || (b.weight - a.weight) || a.id.localeCompare(b.id));
+      for (let i = 0; i < leftD && i < orderD.length; i++) orderD[i].tenths += 1;
+    }
+
+    return rows.map(r => ({
+      job: r.job,
+      allocatedCents: r.cents * cSign,
+      deltaMin: (r.tenths * dSign) / 10
+    }));
+  }
+
+  let _otSnapGlobalCache = { sig: '', data: null };
+  let _inOtSnapAlloc = false;
+
+  function _buildGlobalOtSnapAllocationRaw() {
+    const rawSig = _otSnapRawSig();
+    if (_otSnapGlobalCache.data && _otSnapGlobalCache.sig === rawSig) {
+      return _otSnapGlobalCache.data;
+    }
+    if (_inOtSnapAlloc) {
+      return { events: [], sig: rawSig };
+    }
+    _inOtSnapAlloc = true;
+    try {
+      const rec = (typeof SEED !== 'undefined' && SEED && SEED.records) ? SEED.records : {};
+      const att = Array.isArray(rec.attendance) ? rec.attendance : [];
+      const snappedRows = [];
+      for (let i = 0; i < att.length; i++) {
+        const res = computeAttendanceOtSnapPremium(att[i]);
+        if (res && res.isSnapped) snappedRows.push(res);
+      }
+      if (!snappedRows.length) {
+        const emptyData = { events: [], sig: rawSig };
+        _otSnapGlobalCache = { sig: rawSig, data: emptyData };
+        return emptyData;
+      }
+
+      // Index candidate jobs across all verticals by date/company/industry only for dates present in snappedRows
+      const activeDates = new Set(snappedRows.map(s => s.date));
+      const candidates = [];
+
+      // 1. Manufacturing: sales_tickets (primary) & raw_purchases (fallback)
+      const salesArr = Array.isArray(rec.sales_tickets) ? rec.sales_tickets : [];
+      for (let i = 0; i < salesArr.length; i++) {
+        const s = salesArr[i];
+        if (!s || s.voided || ticketSign(s) === 0) continue;
+        const dt = String(s.date || s.rep_date || s.delivery_date || '').slice(0, 10);
+        if (!activeDates.has(dt)) continue;
+        const qM3 = Math.abs(ticketMeters(s) || Number(s.qty || 0));
+        candidates.push({
+          key: `sales_tickets:${String(s.id || s.ticket_no || i)}`,
+          table: 'sales_tickets',
+          id: String(s.id || s.ticket_no || ''),
+          date: dt,
+          company: _otSnapCanonicalCo(s.company || 'WTC'),
+          industry: 'Manufacturing',
+          tierRole: 'primary',
+          person: norm(s.driver || ''),
+          driver: String(s.driver || '').trim(),
+          truck: String(s.truck || s.truck_code || s.equipment || '').trim(),
+          site: String(s.site || s.work_site || '').trim(),
+          customer: String(s.customer || '').trim(),
+          label: `${s.ticket_no || s.id || ''} · ${s.site || s.customer || 'Delivery'}`.trim(),
+          qtyM3: qM3,
+          weight: Math.max(1, qM3 || Math.abs(Number(s.total_ttc || s.total || 1)))
+        });
+      }
+      const rawArr = Array.isArray(rec.raw_purchases) ? rec.raw_purchases : [];
+      for (let i = 0; i < rawArr.length; i++) {
+        const r = rawArr[i];
+        if (!r || r.voided) continue;
+        const dt = String(r.date || r.rep_date || '').slice(0, 10);
+        if (!activeDates.has(dt)) continue;
+        const qM3 = Math.abs(Number(r.qty || r.qty_m3 || 0));
+        candidates.push({
+          key: `raw_purchases:${String(r.id || r.ticket_no || i)}`,
+          table: 'raw_purchases',
+          id: String(r.id || r.ticket_no || ''),
+          date: dt,
+          company: _otSnapCanonicalCo(r.company || 'WTC'),
+          industry: 'Manufacturing',
+          tierRole: 'fallback',
+          person: norm(r.driver || ''),
+          driver: String(r.driver || '').trim(),
+          truck: String(r.truck || r.truck_code || r.equipment || '').trim(),
+          site: String(r.site || r.quarry || '').trim(),
+          customer: String(r.supplier || '').trim(),
+          label: `${r.ticket_no || r.id || ''} · ${r.site || r.quarry || r.supplier || 'Raw Trip'}`.trim(),
+          qtyM3: qM3,
+          weight: Math.max(1, qM3 || Math.abs(Number(r.total_ttc || r.total || 1)))
+        });
+      }
+
+      // 2. Trading: trd_warranty (primary) & trd_sales (fallback)
+      if (typeof computeTradingOperations === 'function') {
+        const trd = computeTradingOperations({ company: 'industry:Automotive & Heavy Trading', ignoreSearch: true, ignorePeriod: true, ignoreRls: true, period: 'all' });
+        (trd && Array.isArray(trd.warrantyRows) ? trd.warrantyRows : []).forEach((w, idx) => {
+          const dt = String(w && w.date || '').slice(0, 10);
+          if (!w || !activeDates.has(dt)) return;
+          candidates.push({
+            key: `trd_warranty:${String(w.id || idx)}`,
+            table: 'trd_warranty',
+            id: String(w.id || ''),
+            date: dt,
+            company: _otSnapCanonicalCo(w.company || 'Shacman'),
+            industry: 'Automotive & Heavy Trading',
+            tierRole: 'primary',
+            person: norm(w.technician || ''),
+            driver: String(w.technician || '').trim(),
+            truck: String(w.chassis_vin || '').trim(),
+            site: String(w.bay || '').trim(),
+            customer: String(w.model || '').trim(),
+            label: `${w.id || ''} · ${w.job_type || w.model || 'Workshop Job'}`.trim(),
+            qtyM3: 0,
+            weight: Math.max(1, Number(w.labor_usd || 0) + Number(w.parts_cost_usd || 0) || Number(w.claim_recovery_usd || 1))
+          });
+        });
+        (trd && Array.isArray(trd.salesRows) ? trd.salesRows : []).forEach((s, idx) => {
+          const dt = String(s && s.date || '').slice(0, 10);
+          if (!s || !activeDates.has(dt)) return;
+          candidates.push({
+            key: `trd_sales:${String(s.id || idx)}`,
+            table: 'trd_sales',
+            id: String(s.id || ''),
+            date: dt,
+            company: _otSnapCanonicalCo(s.company || 'Shacman'),
+            industry: 'Automotive & Heavy Trading',
+            tierRole: 'fallback',
+            person: norm(s.rep || s.technician || ''),
+            driver: String(s.rep || '').trim(),
+            truck: String(s.chassis || '').trim(),
+            site: String(s.category || '').trim(),
+            customer: String(s.customer || '').trim(),
+            label: `${s.id || ''} · ${s.item || s.customer || 'Trading Sale'}`.trim(),
+            qtyM3: 0,
+            weight: Math.max(1, Number(s.ttc_usd || s.net_usd || 1))
+          });
+        });
+      }
+
+      // 3. Hospitality: hsp_pos + hsp_revenue (both primary, weighted by TTC revenue)
+      if (typeof computeHospitalityOperations === 'function') {
+        const hsp = computeHospitalityOperations({ company: 'industry:Hospitality & Resorts', ignoreSearch: true, ignorePeriod: true, ignoreRls: true, period: 'all' });
+        (hsp && Array.isArray(hsp.posRows) ? hsp.posRows : []).forEach((p, idx) => {
+          const dt = String(p && p.date || '').slice(0, 10);
+          if (!p || !activeDates.has(dt)) return;
+          candidates.push({
+            key: `hsp_pos:${String(p.id || idx)}`,
+            table: 'hsp_pos',
+            id: String(p.id || ''),
+            date: dt,
+            company: _otSnapCanonicalCo(p.company || 'La Una'),
+            industry: 'Hospitality & Resorts',
+            tierRole: 'primary',
+            person: norm(p.cashier || ''),
+            driver: String(p.cashier || '').trim(),
+            truck: '',
+            site: String(p.terminal || '').trim(),
+            customer: String(p.shift || '').trim(),
+            label: `${p.id || ''} · ${p.terminal || 'POS Shift'}`.trim(),
+            qtyM3: 0,
+            weight: Math.max(1, Number(p.pos_billed_ttc || 1))
+          });
+        });
+        (hsp && Array.isArray(hsp.venueRows) ? hsp.venueRows : []).forEach((v, idx) => {
+          const dt = String(v && v.date || '').slice(0, 10);
+          if (!v || !activeDates.has(dt)) return;
+          candidates.push({
+            key: `hsp_revenue:${String(v.id || idx)}`,
+            table: 'hsp_revenue',
+            id: String(v.id || ''),
+            date: dt,
+            company: _otSnapCanonicalCo(v.company || 'La Una'),
+            industry: 'Hospitality & Resorts',
+            tierRole: 'primary',
+            person: norm(v.staff || ''),
+            driver: String(v.staff || '').trim(),
+            truck: '',
+            site: String(v.outlet || '').trim(),
+            customer: String(v.category || '').trim(),
+            label: `${v.id || ''} · ${v.outlet || v.category || 'Venue Shift'}`.trim(),
+            qtyM3: 0,
+            weight: Math.max(1, Number(v.ttc_usd || v.ht_usd || 1))
+          });
+        });
+      }
+
+      // 4. Real Estate: re_workorders (primary)
+      if (typeof computeRealEstateOperations === 'function') {
+        const re = computeRealEstateOperations({ company: 'industry:Real Estate & Property', ignoreSearch: true, ignorePeriod: true, ignoreRls: true, period: 'all' });
+        (re && Array.isArray(re.workorders) ? re.workorders : []).forEach((w, idx) => {
+          const dt = String(w && w.date || '').slice(0, 10);
+          if (!w || !activeDates.has(dt)) return;
+          candidates.push({
+            key: `re_workorders:${String(w.id || idx)}`,
+            table: 're_workorders',
+            id: String(w.id || ''),
+            date: dt,
+            company: _otSnapCanonicalCo(w.company || 'Properties'),
+            industry: 'Real Estate & Property',
+            tierRole: 'primary',
+            person: norm(w.contractor || ''),
+            driver: String(w.contractor || '').trim(),
+            truck: '',
+            site: String(w.property || '').trim(),
+            customer: String(w.unit || '').trim(),
+            label: `${w.id || ''} · ${w.property || w.unit || 'Work Order'}`.trim(),
+            qtyM3: 0,
+            weight: Math.max(1, Number(w.actual_usd || w.budget_usd || 1))
+          });
+        });
+      }
+
+      // 5. Insurance: ins_claims (primary, on loss_date || date)
+      if (typeof computeInsuranceOperations === 'function') {
+        const ins = computeInsuranceOperations({ company: 'industry:Insurance & Brokerage', ignoreSearch: true, ignorePeriod: true, ignoreRls: true, period: 'all' });
+        (ins && Array.isArray(ins.claims) ? ins.claims : []).forEach((c, idx) => {
+          const dt = String(c && (c.loss_date || c.date) || '').slice(0, 10);
+          if (!c || !activeDates.has(dt)) return;
+          candidates.push({
+            key: `ins_claims:${String(c.id || idx)}`,
+            table: 'ins_claims',
+            id: String(c.id || ''),
+            date: dt,
+            company: _otSnapCanonicalCo(c.company || 'Insurance Company'),
+            industry: 'Insurance & Brokerage',
+            tierRole: 'primary',
+            person: norm(c.adjuster || ''),
+            driver: String(c.adjuster || '').trim(),
+            truck: '',
+            site: String(c.line || '').trim(),
+            customer: String(c.client || '').trim(),
+            label: `${c.id || ''} · ${c.client || c.peril || 'Claim'}`.trim(),
+            qtyM3: 0,
+            weight: Math.max(1, Number(c.claimed_usd || c.approved_usd || 1))
+          });
+        });
+      }
+
+      // Bucket candidates by (date|co) and (date|industry) for O(1) lookup
+      const byDateCoPrim = new Map();
+      const byDateCoFall = new Map();
+      const byDateIndAll = new Map();
+      candidates.forEach(c => {
+        const dcKey = `${c.date}|${c.company}`;
+        const targetMap = c.tierRole === 'fallback' ? byDateCoFall : byDateCoPrim;
+        if (!targetMap.has(dcKey)) targetMap.set(dcKey, []);
+        targetMap.get(dcKey).push(c);
+        const diKey = `${c.date}|${c.industry}`;
+        if (!byDateIndAll.has(diKey)) byDateIndAll.set(diKey, []);
+        byDateIndAll.get(diKey).push(c);
+      });
+
+      const events = snappedRows.map(ev => {
+        const dcKey = `${ev.date}|${ev.company}`;
+        const diKey = `${ev.date}|${ev.industry}`;
+        const coPrim = byDateCoPrim.get(dcKey) || [];
+        const coFall = byDateCoFall.get(dcKey) || [];
+        const indAll = byDateIndAll.get(diKey) || [];
+
+        let matched = [];
+        let matchTier = 'unallocated';
+        if (ev.staffNorm) {
+          const t1a = coPrim.concat(coFall).filter(j => j.person === ev.staffNorm);
+          if (t1a.length) { matched = t1a; matchTier = 'person_company'; }
+          else {
+            const t1b = indAll.filter(j => j.person === ev.staffNorm);
+            if (t1b.length) { matched = t1b; matchTier = 'person_industry'; }
+          }
+        }
+        if (!matched.length && coPrim.length) {
+          matched = coPrim;
+          matchTier = 'company_primary';
+        } else if (!matched.length && coFall.length) {
+          matched = coFall;
+          matchTier = 'company_fallback';
+        }
+
+        const allocations = matched.length
+          ? allocateOtSnapCentsLargestRemainder(ev.snapPremiumCents, Math.round(ev.snapDeltaMin * 10), matched)
+          : [];
+        return {
+          att: ev,
+          matchTier,
+          allocations,
+          allocatedCents: allocations.reduce((s, x) => s + x.allocatedCents, 0),
+          unallocatedCents: matched.length ? 0 : ev.snapPremiumCents
+        };
+      });
+
+      const built = { events, sig: rawSig };
+      _otSnapGlobalCache = { sig: rawSig, data: built };
+      return built;
+    } finally {
+      _inOtSnapAlloc = false;
+    }
+  }
+
+  function _resolveOtSnapScopeCompanies(opts = {}) {
+    if (opts.companies && Array.isArray(opts.companies)) return new Set(opts.companies.map(_otSnapCanonicalCo));
+    if (opts.company && opts.company !== 'ALL' && opts.company !== 'manufacturing-group' && opts.company !== DEMO_COMPANY_KEY && !String(opts.company).startsWith('industry:')) {
+      if (COMPANY_BU_MATCH && COMPANY_BU_MATCH[opts.company]) {
+        return new Set([_otSnapCanonicalCo(COMPANY_BU_MATCH[opts.company])]);
+      }
+      return new Set([_otSnapCanonicalCo(opts.company)]);
+    }
+    return null;
+  }
+
+  function _resolveOtSnapDateWindow(opts = {}) {
+    if (opts.ignorePeriod) return { from: '', to: '' };
+    let from = String(opts.dateFrom || '').slice(0, 10);
+    let to = String(opts.dateTo || '').slice(0, 10);
+    const pKey = opts.period && opts.period !== 'all' ? opts.period : '';
+    if (pKey && typeof periodRange === 'function') {
+      const pr = periodRange(pKey);
+      if (pr) {
+        if (pr.from && (!from || pr.from > from)) from = pr.from;
+        if (pr.to && (!to || pr.to < to)) to = pr.to;
+      }
+    }
+    return { from, to };
+  }
+
+  function computeJobOtSnapAllocation(opts = {}) {
+    const raw = _buildGlobalOtSnapAllocationRaw();
+    const authorizedDollar = Boolean(canViewPayrollDollarAmounts());
+    const allowedCos = (!opts.ignoreRls && STATE && STATE.authed && !isOwner(activeUser()) && !isDemoScopeActive() && typeof allowedCompanyNames === 'function')
+      ? allowedCompanyNames()
+      : null;
+    const allowedSet = (Array.isArray(allowedCos) && allowedCos.length)
+      ? new Set(allowedCos.map(c => _otSnapCanonicalCo(c)))
+      : null;
+    const coFilterSet = _resolveOtSnapScopeCompanies(opts);
+    const indFilter = (opts.industry && opts.industry !== 'ALL') ? String(opts.industry) : '';
+    const tblFilter = opts.tableKey ? String(opts.tableKey) : '';
+    const siteFilter = opts.site ? norm(opts.site) : '';
+    const win = _resolveOtSnapDateWindow(opts);
+
+    let actualOtMin = 0;
+    let exactOtMin = 0;
+    let snapDeltaMin = 0;
+    let actualOtCents = 0;
+    let exactOtCents = 0;
+    let snapPremiumCents = 0;
+    let allocatedCents = 0;
+    let unallocatedCents = 0;
+    let snappedLogs = 0;
+    let positiveSnapLogs = 0;
+    let negativeTrimLogs = 0;
+
+    const byJobMap = new Map();
+    const byDriverMap = new Map();
+    const bySiteMap = new Map();
+    const byMonthMap = new Map();
+    const byIndMap = new Map();
+    const eventSummaries = [];
+
+    raw.events.forEach(item => {
+      const ev = item.att;
+      if (allowedSet && !allowedSet.has(ev.company)) return;
+      if (coFilterSet && !coFilterSet.has(ev.company)) return;
+      if (indFilter && ev.industry !== indFilter) return;
+      if (win.from && ev.date < win.from) return;
+      if (win.to && ev.date > win.to) return;
+
+      // Apply job-level and company/RLS filters (tableKey / site / company / RLS)
+      const isSliced = Boolean(tblFilter || siteFilter || coFilterSet || allowedSet);
+      const scopedAllocs = item.allocations.filter(al => {
+        if (allowedSet && !allowedSet.has(al.job.company)) return false;
+        if (coFilterSet && !coFilterSet.has(al.job.company)) return false;
+        if (tblFilter && al.job.table !== tblFilter) return false;
+        if (siteFilter && norm(al.job.site) !== siteFilter) return false;
+        return true;
+      });
+      if ((tblFilter || siteFilter) && !scopedAllocs.length) return;
+      if (isSliced && item.allocations.length > 0 && !scopedAllocs.length) return;
+
+      const isPartiallySliced = item.allocations.length > 0 && scopedAllocs.length < item.allocations.length;
+      const useAllocCents = isPartiallySliced
+        ? scopedAllocs.reduce((s, a) => s + a.allocatedCents, 0)
+        : item.allocatedCents;
+      const useUnallocCents = isPartiallySliced ? 0 : item.unallocatedCents;
+      const useEvDeltaMin = isPartiallySliced
+        ? round2(scopedAllocs.reduce((s, a) => s + a.deltaMin, 0))
+        : ev.snapDeltaMin;
+      const useEvSnapCents = useAllocCents + useUnallocCents;
+
+      let useEvExactCents = Math.round(ev.exactOtUsd * 100);
+      let useEvActualCents = Math.round(ev.actualOtUsd * 100);
+      let useEvExactMin = ev.exactOtMin;
+      let useEvActualMin = ev.actualOtMin;
+      if (isPartiallySliced) {
+        const totalAllocC = item.allocatedCents;
+        const shareFrac = totalAllocC !== 0
+          ? (useAllocCents / totalAllocC)
+          : (scopedAllocs.length / item.allocations.length);
+        useEvExactCents = Math.round(useEvExactCents * shareFrac);
+        useEvActualCents = useEvExactCents + useEvSnapCents;
+        useEvExactMin = round2(ev.exactOtMin * shareFrac);
+        useEvActualMin = round2(useEvExactMin + useEvDeltaMin);
+      }
+
+      snappedLogs += 1;
+      if (useEvDeltaMin > 0) positiveSnapLogs += 1;
+      else if (useEvDeltaMin < 0) negativeTrimLogs += 1;
+
+      actualOtMin = round2(actualOtMin + useEvActualMin);
+      exactOtMin = round2(exactOtMin + useEvExactMin);
+      snapDeltaMin = round2(snapDeltaMin + useEvDeltaMin);
+      actualOtCents += useEvActualCents;
+      exactOtCents += useEvExactCents;
+      snapPremiumCents += useEvSnapCents;
+      allocatedCents += useAllocCents;
+      unallocatedCents += useUnallocCents;
+
+      // Month rollup
+      if (!byMonthMap.has(ev.ym)) {
+        byMonthMap.set(ev.ym, { ym: ev.ym, actualOtMin: 0, exactOtMin: 0, snapDeltaMin: 0, snapCents: 0, snappedLogs: 0 });
+      }
+      const mEnt = byMonthMap.get(ev.ym);
+      mEnt.actualOtMin = round2(mEnt.actualOtMin + useEvActualMin);
+      mEnt.exactOtMin = round2(mEnt.exactOtMin + useEvExactMin);
+      mEnt.snapDeltaMin = round2(mEnt.snapDeltaMin + useEvDeltaMin);
+      mEnt.snapCents += useEvSnapCents;
+      mEnt.snappedLogs += 1;
+
+      // Industry rollup
+      if (!byIndMap.has(ev.industry)) {
+        byIndMap.set(ev.industry, { industry: ev.industry, snappedLogs: 0, jobKeys: new Set(), snapDeltaMin: 0, snapCents: 0, allocatedCents: 0, unallocatedCents: 0 });
+      }
+      const iEnt = byIndMap.get(ev.industry);
+      iEnt.snappedLogs += 1;
+      iEnt.snapDeltaMin = round2(iEnt.snapDeltaMin + useEvDeltaMin);
+      iEnt.snapCents += useEvSnapCents;
+      iEnt.allocatedCents += useAllocCents;
+      iEnt.unallocatedCents += useUnallocCents;
+
+      // Driver/Staff rollup (from attendance log when unallocated or from matched driver)
+      const staffKey = norm(ev.staff) || '_unassigned';
+      if (!byDriverMap.has(staffKey)) {
+        byDriverMap.set(staffKey, { name: ev.staff || 'Unassigned', company: ev.company, logs: 0, jobsSet: new Set(), snapDeltaMin: 0, snapCents: 0, qtyM3: 0 });
+      }
+      const dEnt = byDriverMap.get(staffKey);
+      dEnt.logs += 1;
+      dEnt.snapDeltaMin = round2(dEnt.snapDeltaMin + useEvDeltaMin);
+      dEnt.snapCents += useEvSnapCents;
+
+      scopedAllocs.forEach(al => {
+        const j = al.job;
+        iEnt.jobKeys.add(j.key);
+        dEnt.jobsSet.add(j.key);
+        dEnt.qtyM3 = round2(dEnt.qtyM3 + Number(j.qtyM3 || 0));
+
+        if (!byJobMap.has(j.key)) {
+          byJobMap.set(j.key, {
+            key: j.key,
+            table: j.table,
+            id: j.id,
+            date: j.date,
+            company: j.company,
+            industry: j.industry,
+            label: j.label,
+            site: j.site,
+            driver: j.driver,
+            truck: j.truck,
+            customer: j.customer,
+            qtyM3: Number(j.qtyM3 || 0),
+            snapDeltaMin: 0,
+            allocatedCents: 0,
+            staffContributors: []
+          });
+        }
+        const jEnt = byJobMap.get(j.key);
+        jEnt.snapDeltaMin = round2(jEnt.snapDeltaMin + al.deltaMin);
+        jEnt.allocatedCents += al.allocatedCents;
+        if (ev.staff && !jEnt.staffContributors.includes(ev.staff)) {
+          jEnt.staffContributors.push(ev.staff);
+        }
+
+        const siteNm = String(j.site || '').trim() || j.company;
+        const sk = norm(siteNm);
+        if (!bySiteMap.has(sk)) {
+          bySiteMap.set(sk, { site: siteNm, company: j.company, jobKeys: new Set(), snapDeltaMin: 0, allocatedCents: 0, qtyM3: 0 });
+        }
+        const sEnt = bySiteMap.get(sk);
+        if (!sEnt.jobKeys.has(j.key)) {
+          sEnt.jobKeys.add(j.key);
+          sEnt.qtyM3 = round2(sEnt.qtyM3 + Number(j.qtyM3 || 0));
+        }
+        sEnt.snapDeltaMin = round2(sEnt.snapDeltaMin + al.deltaMin);
+        sEnt.allocatedCents += al.allocatedCents;
+      });
+
+      eventSummaries.push({
+        attId: ev.attId,
+        date: ev.date,
+        company: ev.company,
+        industry: ev.industry,
+        staff: ev.staff,
+        actualOtMin: useEvActualMin,
+        exactOtMin: useEvExactMin,
+        snapDeltaMin: useEvDeltaMin,
+        matchTier: item.matchTier,
+        impactedJobCount: scopedAllocs.length,
+        snapPremiumUsd: authorizedDollar ? round2(useEvSnapCents / 100) : null,
+        allocatedUsd: authorizedDollar ? round2(useAllocCents / 100) : null,
+        unallocatedUsd: authorizedDollar ? round2(useUnallocCents / 100) : null
+      });
+    });
+
+    const jobsList = Array.from(byJobMap.values()).map(j => {
+      const allocUsd = authorizedDollar ? round2(j.allocatedCents / 100) : null;
+      const perM3 = (authorizedDollar && j.qtyM3 > 0.001) ? round2((j.allocatedCents / 100) / j.qtyM3) : null;
+      return {
+        key: j.key,
+        table: j.table,
+        id: j.id,
+        date: j.date,
+        company: j.company,
+        industry: j.industry,
+        label: j.label,
+        site: j.site,
+        driver: j.driver,
+        truck: j.truck,
+        customer: j.customer,
+        qtyM3: j.qtyM3,
+        snapDeltaMin: j.snapDeltaMin,
+        allocatedCents: authorizedDollar ? j.allocatedCents : null,
+        allocatedUsd: allocUsd,
+        perM3Usd: perM3,
+        staffContributors: j.staffContributors
+      };
+    }).sort((a, b) => (b.date || '').localeCompare(a.date || '') || Math.abs(b.snapDeltaMin) - Math.abs(a.snapDeltaMin) || String(a.id).localeCompare(String(b.id)));
+
+    const jobsLookup = new Map();
+    jobsList.forEach(j => jobsLookup.set(j.key, j));
+
+    // Frequency-first ranking (Hard Rule 11): operational volume/count desc, never alphabetical
+    const bySite = Array.from(bySiteMap.values()).map(s => {
+      const allocUsd = authorizedDollar ? round2(s.allocatedCents / 100) : null;
+      return {
+        site: s.site,
+        company: s.company,
+        jobsCount: s.jobKeys.size,
+        qtyM3: s.qtyM3,
+        snapDeltaMin: s.snapDeltaMin,
+        allocatedCents: authorizedDollar ? s.allocatedCents : null,
+        allocatedUsd: allocUsd,
+        perM3Usd: (authorizedDollar && s.qtyM3 > 0.001) ? round2((s.allocatedCents / 100) / s.qtyM3) : null
+      };
+    }).sort((a, b) => (b.jobsCount - a.jobsCount) || (b.qtyM3 - a.qtyM3) || (Math.abs(b.snapDeltaMin) - Math.abs(a.snapDeltaMin)));
+
+    const byDriver = Array.from(byDriverMap.values()).map(d => ({
+      name: d.name,
+      company: d.company,
+      logs: d.logs,
+      jobsCount: d.jobsSet.size,
+      qtyM3: d.qtyM3,
+      snapDeltaMin: d.snapDeltaMin,
+      snapCents: authorizedDollar ? d.snapCents : null,
+      snapUsd: authorizedDollar ? round2(d.snapCents / 100) : null
+    })).sort((a, b) => (b.jobsCount - a.jobsCount) || (b.logs - a.logs) || (Math.abs(b.snapDeltaMin) - Math.abs(a.snapDeltaMin)));
+
+    const byIndustry = Array.from(byIndMap.values()).map(ind => ({
+      industry: ind.industry,
+      snappedLogs: ind.snappedLogs,
+      impactedJobCount: ind.jobKeys.size,
+      snapDeltaMin: ind.snapDeltaMin,
+      snapCents: authorizedDollar ? ind.snapCents : null,
+      snapUsd: authorizedDollar ? round2(ind.snapCents / 100) : null,
+      allocatedUsd: authorizedDollar ? round2(ind.allocatedCents / 100) : null,
+      unallocatedUsd: authorizedDollar ? round2(ind.unallocatedCents / 100) : null
+    })).sort((a, b) => (b.snappedLogs - a.snappedLogs) || (b.impactedJobCount - a.impactedJobCount) || (Math.abs(b.snapDeltaMin) - Math.abs(a.snapDeltaMin)));
+
+    const byMonth = {};
+    byMonthMap.forEach((m, ym) => {
+      byMonth[ym] = {
+        ym,
+        actualOtMin: m.actualOtMin,
+        exactOtMin: m.exactOtMin,
+        snapDeltaMin: m.snapDeltaMin,
+        snappedLogs: m.snappedLogs,
+        snapUsd: authorizedDollar ? round2(m.snapCents / 100) : null
+      };
+    });
+
+    const totalM3Impacted = round2(jobsList.reduce((s, j) => s + Number(j.qtyM3 || 0), 0));
+
+    return {
+      authorizedDollar,
+      actualOtMin,
+      exactOtMin,
+      snapDeltaMin,
+      snappedLogs,
+      positiveSnapLogs,
+      negativeTrimLogs,
+      impactedJobCount: jobsList.length,
+      totalM3Impacted,
+      actualOtUsd: authorizedDollar ? round2(actualOtCents / 100) : null,
+      exactOtUsd: authorizedDollar ? round2(exactOtCents / 100) : null,
+      snapPremiumCents: authorizedDollar ? snapPremiumCents : null,
+      snapPremiumUsd: authorizedDollar ? round2(snapPremiumCents / 100) : null,
+      allocatedCents: authorizedDollar ? allocatedCents : null,
+      allocatedUsd: authorizedDollar ? round2(allocatedCents / 100) : null,
+      unallocatedCents: authorizedDollar ? unallocatedCents : null,
+      unallocatedUsd: authorizedDollar ? round2(unallocatedCents / 100) : null,
+      perM3Usd: (authorizedDollar && totalM3Impacted > 0.001) ? round2((allocatedCents / 100) / totalM3Impacted) : null,
+      payrollGlDeltaUsd: authorizedDollar ? 0 : null,
+      jobs: jobsList,
+      byJobMap: jobsLookup,
+      bySite,
+      byDriver,
+      byIndustry,
+      byMonth,
+      events: eventSummaries
+    };
+  }
+
+  function _formatOtSnapMinPillLabel(deltaMin) {
+    const m = Math.round(Number(deltaMin || 0));
+    if (!m) return '0m OT Exact';
+    return m > 0 ? `+${fmtNum(m, 0)}m OT Snap` : `${fmtNum(m, 0)}m OT Trim`;
+  }
+
+  function renderJobOtSnapRowPillHtml(jobAlloc, opts = {}) {
+    if (!jobAlloc) return '';
+    const dMin = Number(jobAlloc.snapDeltaMin || 0);
+    const hasUsd = jobAlloc.allocatedUsd != null && Math.abs(jobAlloc.allocatedUsd) >= 0.005;
+    if (Math.abs(dMin) < 0.5 && !hasUsd) return '';
+    const showUsd = opts.authorizedDollar != null ? Boolean(opts.authorizedDollar) : Boolean(canViewPayrollDollarAmounts());
+    const tone = dMin < 0 ? 'is-trim' : 'is-snap';
+    const minLbl = _formatOtSnapMinPillLabel(dMin);
+    let txt = minLbl;
+    if (showUsd && jobAlloc.allocatedUsd != null) {
+      txt += ` (${fmtSignedUSD(jobAlloc.allocatedUsd, 2)})`;
+    }
+    return ` <span class="job-otsnap-pill ${tone}" data-otsnap-row-id="${esc(jobAlloc.id || '')}">${esc(txt)}</span>`;
+  }
+
+  function renderJobOtSnapBannerHtml(alloc, opts = {}) {
+    if (!alloc) return '';
+    const hasActivity = Boolean(alloc.snappedLogs > 0 || alloc.impactedJobCount > 0);
+    if (!opts.alwaysShow && !hasActivity) return '';
+    const showUsd = Boolean(alloc.authorizedDollar);
+    const domId = opts.id ? ` id="${esc(opts.id)}"` : '';
+    const title = opts.title || 'OT Snap Cost Allocation';
+    const dMin = Math.round(Number(alloc.snapDeltaMin || 0));
+    const minPillCls = dMin < 0 ? 'is-trim' : (dMin > 0 ? 'is-snap' : 'is-exact');
+    const minBadge = `<span class="job-otsnap-stat ${minPillCls}"><b>${esc(_formatOtSnapMinPillLabel(dMin))}</b><span>(${fmtNum(alloc.snappedLogs, 0)} Logs)</span></span>`;
+
+    const usdStats = showUsd
+      ? `
+        <span class="job-otsnap-stat"><span>Snap Premium</span><b>${esc(fmtSignedUSD(alloc.snapPremiumUsd || 0, 2))}</b></span>
+        <span class="job-otsnap-stat"><span>Exact Min Base</span><b>${esc(fmtUSD(alloc.exactOtUsd || 0, 2))}</b></span>
+        <span class="job-otsnap-stat"><span>Allocated to Jobs</span><b>${esc(fmtUSD(alloc.allocatedUsd || 0, 2))}</b> (${fmtNum(alloc.impactedJobCount, 0)})</span>
+        ${Math.abs(alloc.unallocatedUsd || 0) >= 0.01 ? `<span class="job-otsnap-stat is-warn"><span>Unmatched Same-Day</span><b>${esc(fmtUSD(alloc.unallocatedUsd || 0, 2))}</b></span>` : ''}
+        <span class="job-otsnap-stat is-exact"><span>Payroll GL Delta</span><b>${esc(fmtUSD(0, 2))}</b></span>
+      `
+      : `
+        <span class="job-otsnap-stat"><span>Impacted Jobs</span><b>${fmtNum(alloc.impactedJobCount, 0)}</b></span>
+        <span class="job-otsnap-stat is-restricted">${ic('lock')} <span>Dollar Amounts Restricted</span></span>
+      `;
+
+    const topSitesHtml = (alloc.bySite || []).slice(0, 3).map(s => {
+      const mTxt = _formatOtSnapMinPillLabel(s.snapDeltaMin);
+      const uTxt = (showUsd && s.allocatedUsd != null) ? ` ${fmtSignedUSD(s.allocatedUsd, 2)}` : '';
+      return `<span class="job-otsnap-mini">${esc(s.site)}: ${esc(mTxt)}${esc(uTxt)}</span>`;
+    }).join('');
+
+    return `
+      <div class="job-otsnap-banner"${domId} data-otsnap-logs="${alloc.snappedLogs}" data-otsnap-jobs="${alloc.impactedJobCount}" data-otsnap-min="${Math.round(alloc.snapDeltaMin)}">
+        <div class="job-otsnap-head">
+          <div class="job-otsnap-title">${ic('clock')} <strong>${esc(title)}</strong></div>
+          <div class="job-otsnap-metrics">
+            ${minBadge}
+            ${usdStats}
+          </div>
+        </div>
+        ${topSitesHtml ? `<div class="job-otsnap-sub">${topSitesHtml}</div>` : ''}
+      </div>
+    `;
+  }
+
+  function renderUnitEconomicsSectionHtml(salesRows = [], sAgg = null) {
+    const alloc = computeJobOtSnapAllocation({
+      industry: 'Manufacturing',
+      company: STATE.company,
+      period: STATE.period,
+      dateFrom: STATE.dateFrom,
+      dateTo: STATE.dateTo
+    });
+    const showUsd = Boolean(alloc.authorizedDollar);
+    const totalSalesM3 = round2(Number((sAgg && sAgg.sumQty) || alloc.totalM3Impacted || 0));
+    const overallPerM3 = (showUsd && alloc.allocatedUsd != null && totalSalesM3 > 0.001)
+      ? round2(alloc.allocatedUsd / totalSalesM3)
+      : (showUsd ? alloc.perM3Usd : null);
+
+    const kpiHtml = `
+      <div class="unit-econ-kpis">
+        <div class="unit-econ-kpi">
+          <span class="unit-econ-lbl">OT Snap Delta (Minutes)</span>
+          <b class="unit-econ-val ${alloc.snapDeltaMin > 0 ? 'warn' : (alloc.snapDeltaMin < 0 ? 'good' : '')}">${esc(_formatOtSnapMinPillLabel(alloc.snapDeltaMin))}</b>
+          <span class="unit-econ-sub">${fmtNum(alloc.snappedLogs, 0)} snapped shift log(s) · ${fmtNum(alloc.impactedJobCount, 0)} impacted ticket(s)</span>
+        </div>
+        ${showUsd ? `
+          <div class="unit-econ-kpi">
+            <span class="unit-econ-lbl">Incremental OT Snap Cost</span>
+            <b class="unit-econ-val">${esc(fmtSignedUSD(alloc.snapPremiumUsd || 0, 2))}</b>
+            <span class="unit-econ-sub">Exact min base ${esc(fmtUSD(alloc.exactOtUsd || 0, 2))} vs snapped ${esc(fmtUSD(alloc.actualOtUsd || 0, 2))}</span>
+          </div>
+          <div class="unit-econ-kpi">
+            <span class="unit-econ-lbl">Allocated Unit Economics Impact</span>
+            <b class="unit-econ-val">${overallPerM3 != null ? `${esc(fmtSignedUSD(overallPerM3, 2))}/m³` : esc(fmtUSD(0, 2))}</b>
+            <span class="unit-econ-sub">Allocated ${esc(fmtUSD(alloc.allocatedUsd || 0, 2))} · Payroll GL Delta ${esc(fmtUSD(0, 2))}</span>
+          </div>
+        ` : `
+          <div class="unit-econ-kpi">
+            <span class="unit-econ-lbl">Unit Economics Cost ($)</span>
+            <b class="unit-econ-val muted">Restricted</b>
+            <span class="unit-econ-sub">Minute deltas shown; payroll access required for USD</span>
+          </div>
+        `}
+      </div>
+    `;
+
+    const siteRows = (alloc.bySite || []).slice(0, 8);
+    const jobRows = (alloc.jobs || []).slice(0, 12);
+
+    return `
+      <section class="panel-card unit-econ-snap-panel" id="unit_economics" style="margin-top:14px">
+        <div class="panel-head">
+          <div>
+            <h3>Unit Economics &amp; OT Snap Cost Allocation</h3>
+            <span class="muted">Deterministic largest-remainder cent allocation of overtime-snap minute jumps onto same-day deliveries &amp; trips</span>
+          </div>
+          <span class="panel-meta">${fmtNum(alloc.impactedJobCount, 0)} allocated job(s)</span>
+        </div>
+        ${kpiHtml}
+        ${alloc.snappedLogs > 0 ? `
+          <div class="grid-2" style="margin-top:12px">
+            <div class="panel">
+              <div class="panel-head"><h4>Site Unit Economics (Frequency-Ranked)</h4><span class="panel-meta">${siteRows.length} sites</span></div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Work Site</th>
+                      <th class="r">Jobs</th>
+                      <th class="r">Volume (m³)</th>
+                      <th class="r">OT Snap</th>
+                      ${showUsd ? '<th class="r">Allocated ($)</th><th class="r">$/m³ Impact</th>' : ''}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${siteRows.length ? siteRows.map(s => `
+                      <tr>
+                        <td><strong>${esc(s.site)}</strong></td>
+                        <td class="r mono">${fmtNum(s.jobsCount, 0)}</td>
+                        <td class="r mono">${fmtNum(s.qtyM3, 1)}</td>
+                        <td class="r mono">${esc(_formatOtSnapMinPillLabel(s.snapDeltaMin))}</td>
+                        ${showUsd ? `<td class="r mono">${esc(fmtSignedUSD(s.allocatedUsd || 0, 2))}</td><td class="r mono">${s.perM3Usd != null ? esc(fmtSignedUSD(s.perM3Usd, 2)) : '-'}</td>` : ''}
+                      </tr>
+                    `).join('') : emptyRow(showUsd ? 6 : 4, 'No site OT snap allocations')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><h4>Impacted Trips &amp; Delivery Tickets</h4><span class="panel-meta">${jobRows.length} shown</span></div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Ticket / Job</th>
+                      <th>Driver / Staff</th>
+                      <th class="r">OT Snap</th>
+                      ${showUsd ? '<th class="r">Alloc ($)</th>' : ''}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${jobRows.length ? jobRows.map(j => `
+                      <tr>
+                        <td class="mono">${esc(fmtDateDMY(j.date))}</td>
+                        <td><strong>${esc(j.label || j.id)}</strong></td>
+                        <td>${esc(j.driver || (j.staffContributors || []).join(', ') || j.company)}</td>
+                        <td class="r mono">${esc(_formatOtSnapMinPillLabel(j.snapDeltaMin))}</td>
+                        ${showUsd ? `<td class="r mono">${esc(fmtSignedUSD(j.allocatedUsd || 0, 2))}</td>` : ''}
+                      </tr>
+                    `).join('') : emptyRow(showUsd ? 5 : 4, 'No same-day job matches in active period')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ` : `<p class="muted" style="margin:8px 0 0">No snapped overtime deltas in the active Manufacturing scope. All OT minutes currently match exact-minute payroll timing.</p>`}
+      </section>
+    `;
   }
 
   function parseClockMinutes(hhmm) {
@@ -134064,6 +136050,8 @@
       let penaltyLeaveDays = 0;
       let penaltyStatus = 'On Time';
       let penaltySummary = 'On Time';
+      let lateRuleKind = '';
+      let lateAuditText = '';
       const decPlaces = isPerMin ? 2 : 1;
 
       if (cleanRawMin > 0) {
@@ -134072,12 +136060,16 @@
           billableLateHours = 0;
           penaltyStatus = 'Late (Track Only)';
           penaltySummary = `Late ${cleanRawMin}m (Track Only, $0 Ded.)`;
+          lateRuleKind = 'track_only';
+          lateAuditText = `Late ${cleanRawMin}m -> 0m`;
         } else if (penaltyMode === 'half_day_any') {
           penaltyLeaveDays = 0.5;
           billableLateMin = 0;
           billableLateHours = 0;
           penaltyStatus = 'Half Day';
           penaltySummary = `Late ${cleanRawMin}m = Half Day (0.5d)`;
+          lateRuleKind = 'half_day';
+          lateAuditText = `Late ${cleanRawMin}m -> 0.5d`;
         } else if (penaltyMode === 'tiered_half_day') {
           if (cleanRawMin >= hdAfterMin) {
             penaltyLeaveDays = 0.5;
@@ -134085,6 +136077,8 @@
             billableLateHours = 0;
             penaltyStatus = 'Half Day';
             penaltySummary = `Late ${cleanRawMin}m (>=${hdAfterMin}m) = Half Day (0.5d)`;
+            lateRuleKind = 'half_day';
+            lateAuditText = `Late ${cleanRawMin}m -> 0.5d`;
           } else {
             billableLateMin = cleanRawMin;
             billableLateHours = rawLateHours;
@@ -134105,11 +136099,20 @@
             penaltySummary = billableLateMin > cleanRawMin
               ? `Late ${cleanRawMin}m, billed ${billableLateMin}m (-${fmtNum(billableLateHours, decPlaces)}h)`
               : `Late ${cleanRawMin}m (-${fmtNum(billableLateHours, decPlaces)}h)`;
+            if (billableLateMin > cleanRawMin) {
+              lateRuleKind = 'bracket';
+              lateAuditText = `Late ${cleanRawMin}m -> ${billableLateMin}m`;
+            } else {
+              lateRuleKind = 'bracket_1x';
+              lateAuditText = `Late ${cleanRawMin}m -> ${billableLateMin}m`;
+            }
           } else if (belowMode === 'waive') {
             billableLateMin = 0;
             billableLateHours = 0;
             penaltyStatus = 'Present';
             penaltySummary = `Late ${cleanRawMin}m (<=${brackets[0].over_min}m waived)`;
+            lateRuleKind = 'waived';
+            lateAuditText = `Late ${cleanRawMin}m -> 0m`;
           } else {
             billableLateMin = cleanRawMin;
             billableLateHours = rawLateHours;
@@ -134122,17 +136125,29 @@
           billableLateHours = roundH(billableLateMin / 60);
           penaltyStatus = 'Lateness';
           penaltySummary = `Late ${cleanRawMin}m, billed ${billableLateMin}m (-${fmtNum(billableLateHours, decPlaces)}h)`;
+          if (billableLateMin > cleanRawMin) {
+            lateRuleKind = 'round_30m';
+            lateAuditText = `Late ${cleanRawMin}m -> ${billableLateMin}m`;
+          }
         } else if (penaltyMode === 'round_hour') {
           const hrsUp = Math.max(1, Math.ceil(cleanRawMin / 60));
           billableLateMin = hrsUp * 60;
           billableLateHours = hrsUp;
           penaltyStatus = 'Lateness';
           penaltySummary = `Late ${cleanRawMin}m = Rounded -${fmtNum(billableLateHours, 1)}h`;
+          if (billableLateMin > cleanRawMin) {
+            lateRuleKind = 'round_hour';
+            lateAuditText = `Late ${cleanRawMin}m -> ${billableLateMin}m`;
+          }
         } else if (penaltyMode === 'multiplier') {
           billableLateMin = round3(cleanRawMin * mult);
           billableLateHours = roundH((cleanRawMin / 60) * mult);
           penaltyStatus = 'Lateness';
           penaltySummary = `Late ${cleanRawMin}m x${fmtNum(mult, 1)} = -${fmtNum(billableLateHours, decPlaces)}h`;
+          if (Math.abs(mult - 1) > 0.001) {
+            lateRuleKind = 'multiplier';
+            lateAuditText = `Late ${cleanRawMin}m -> ${Math.round(billableLateMin)}m (${fmtNum(mult, mult % 1 ? 2 : 1)}x)`;
+          }
         } else {
           billableLateMin = cleanRawMin;
           billableLateHours = rawLateHours;
@@ -134157,6 +136172,8 @@
           penaltySummary = lateDetail
             ? `${noOutPenaltyText} · ${lateDetail}`
             : noOutPenaltyText;
+          lateRuleKind = 'half_day';
+          lateAuditText = cleanRawMin > 0 ? `Late ${cleanRawMin}m -> 0.5d` : '1-Punch -> 0.5d';
         } else if (noOutRule === 'full_absence') {
           penaltyLeaveDays = 1.0;
           billableLateMin = 0;
@@ -134165,6 +136182,8 @@
           penaltySummary = lateDetail
             ? `${noOutPenaltyText} · ${lateDetail}`
             : noOutPenaltyText;
+          lateRuleKind = 'absence';
+          lateAuditText = '1-Punch -> 1.0d';
         } else if (noOutRule === 'deduct_2h') {
           billableLateMin = round3(billableLateMin + 120);
           billableLateHours = roundH(billableLateHours + 2.0);
@@ -134173,6 +136192,8 @@
           penaltySummary = lateDetail
             ? `${lateDetail} + ${singleLbl} (+2.0h) = -${fmtNum(billableLateHours, decPlaces)}h`
             : `${singleLbl} = -2.0h Lateness`;
+          lateRuleKind = 'deduct_2h';
+          lateAuditText = `1-Punch -> ${Math.round(billableLateMin)}m`;
         } else if (noOutRule === 'auto_shift_end') {
           noOutPenaltyText = `${singleLbl} = Auto Full Shift`;
           if (!lateDetail) penaltySummary = noOutPenaltyText;
@@ -134187,7 +136208,9 @@
         penaltyLeaveDays,
         penaltyStatus,
         penaltySummary,
-        noOutPenaltyText
+        noOutPenaltyText,
+        lateRuleKind,
+        lateAuditText
       };
     };
 
@@ -134236,11 +136259,18 @@
         earlyGraceMin,
         rawExtraMin: 0,
         rawExtraHours: 0,
+        rawQualifiedOtMin: 0,
+        exactApprovedOtMin: 0,
+        otSnapDeltaMin: 0,
         approvedOtMin: 0,
         unapprovedOtMin: 0,
         overtimeHours: 0,
         unapprovedOtHours: 0,
-        otReason: ''
+        otReason: '',
+        otRuleKind: '',
+        otAuditText: '',
+        lateRuleKind: '',
+        lateAuditText: ''
       }, buildDollarFields(0, 0, 0, 0));
     }
 
@@ -134316,17 +136346,24 @@
         penaltySummary: penSingle.penaltySummary,
         noOutRule,
         noOutPenaltyText: penSingle.noOutPenaltyText,
+        lateRuleKind: penSingle.lateRuleKind || '',
+        lateAuditText: penSingle.lateAuditText || '',
         lateCutoffTime,
         earlyOutCutoffTime,
         graceMin,
         earlyGraceMin,
         rawExtraMin: 0,
         rawExtraHours: 0,
+        rawQualifiedOtMin: 0,
+        exactApprovedOtMin: 0,
+        otSnapDeltaMin: 0,
         approvedOtMin: 0,
         unapprovedOtMin: 0,
         overtimeHours: 0,
         unapprovedOtHours: 0,
-        otReason: ''
+        otReason: '',
+        otRuleKind: '',
+        otAuditText: ''
       }, buildDollarFields(0, effLateMin, effLateH, penSingle.penaltyLeaveDays));
     }
 
@@ -134400,17 +136437,45 @@
     const billableLateMinFinal = penOut.penaltyLeaveDays > 0 ? 0 : penOut.billableLateMin;
 
     let approvedOtMin = 0;
+    let rawQualifiedOtMin = 0;
+    let exactApprovedOtMin = 0;
+    let otSnapDeltaMin = 0;
     let otSnappedUp = false;
     let otDroppedMin = 0;
     let otReason = '';
+    let otRuleKind = '';
+    let otAuditText = '';
     const resolveCappedOt = (rawQualMin, capMinVal = Infinity) => {
-      const snapOut = applyOvertimeSnapMinutes(rawQualMin, otSnapMode, otBlockMin, otSnapAtMin);
+      const cleanQual = Math.max(0, Math.round(Number(rawQualMin || 0)));
+      const snapOut = applyOvertimeSnapMinutes(cleanQual, otSnapMode, otBlockMin, otSnapAtMin);
+      const exactMin = Math.min(cleanQual, capMinVal);
       const effMin = Math.min(snapOut.snappedMin, capMinVal);
+      const cappedOut = cleanQual > 0 && effMin === capMinVal && capMinVal < Infinity && Math.max(cleanQual, snapOut.snappedMin) > capMinVal;
+      let ruleKind = '';
+      let auditText = '';
+      if (cappedOut) {
+        ruleKind = 'capped';
+        auditText = `OT ${cleanQual}m -> ${effMin}m Cap`;
+      } else if (effMin > cleanQual) {
+        ruleKind = 'snapped_up';
+        auditText = `OT ${cleanQual}m -> ${effMin}m`;
+      } else if (cleanQual > 0 && effMin < cleanQual) {
+        ruleKind = 'blocked_or_trimmed';
+        auditText = `OT ${cleanQual}m -> ${effMin}m`;
+      } else if (cleanQual === 0 && rawExtraMin > 0) {
+        ruleKind = 'below_thresh';
+        auditText = `OT ${rawExtraMin}m -> 0m`;
+      }
       return {
+        rawQualMin: cleanQual,
+        exactMin,
         approvedMin: effMin,
-        snappedUp: snapOut.snappedUp && effMin > rawQualMin,
-        droppedMin: Math.max(0, rawQualMin - effMin),
-        blockedBySnap: rawQualMin > 0 && effMin === 0 && otSnapMode === 'whole_blocks'
+        snapDeltaMin: effMin - exactMin,
+        snappedUp: snapOut.snappedUp && effMin > cleanQual,
+        droppedMin: Math.max(0, cleanQual - effMin),
+        blockedBySnap: cleanQual > 0 && effMin === 0 && otSnapMode === 'whole_blocks',
+        ruleKind,
+        auditText
       };
     };
     const appendSnapReasonSuffix = (baseLbl, rawQualMin, otRes, capMinVal = Infinity) => {
@@ -134433,18 +136498,28 @@
     if (activePass && (rule.ot_mode === 'date_range' || rule.ot_mode === 'none')) {
       const capMin = Number(activePass.max_hours || 0) > 0 ? Math.round(Number(activePass.max_hours) * 60) : Infinity;
       const otRes = resolveCappedOt(qualifyingExtraMin, capMin);
+      rawQualifiedOtMin = otRes.rawQualMin;
+      exactApprovedOtMin = otRes.exactMin;
       approvedOtMin = otRes.approvedMin;
+      otSnapDeltaMin = otRes.snapDeltaMin;
       otSnappedUp = otRes.snappedUp;
       otDroppedMin = otRes.droppedMin;
+      otRuleKind = otRes.ruleKind;
+      otAuditText = otRes.auditText;
       const passLbl = activePass.start_date === (activePass.end_date || activePass.start_date)
         ? `Approved OT (${fmtDateDMY(activePass.start_date)})`
         : `Approved OT (${fmtDateDMY(activePass.start_date)} to ${fmtDateDMY(activePass.end_date)})`;
       otReason = appendSnapReasonSuffix(passLbl, qualifyingExtraMin, otRes, capMin);
     } else if (rule.ot_mode === 'always') {
       const otRes = resolveCappedOt(qualifyingExtraMin, Infinity);
+      rawQualifiedOtMin = otRes.rawQualMin;
+      exactApprovedOtMin = otRes.exactMin;
       approvedOtMin = otRes.approvedMin;
+      otSnapDeltaMin = otRes.snapDeltaMin;
       otSnappedUp = otRes.snappedUp;
       otDroppedMin = otRes.droppedMin;
+      otRuleKind = otRes.ruleKind;
+      otAuditText = otRes.auditText;
       otReason = appendSnapReasonSuffix('Anytime OT authorized', qualifyingExtraMin, otRes, Infinity);
     } else if (rule.ot_mode === 'max_hours') {
       let eligibleMin = qualifyingExtraMin;
@@ -134461,9 +136536,14 @@
       }
       const capMin = Number(rule.ot_max_hours || 0) > 0 ? Math.round(Number(rule.ot_max_hours) * 60) : Infinity;
       const otRes = resolveCappedOt(eligibleMin, capMin);
+      rawQualifiedOtMin = otRes.rawQualMin;
+      exactApprovedOtMin = otRes.exactMin;
       approvedOtMin = otRes.approvedMin;
+      otSnapDeltaMin = otRes.snapDeltaMin;
       otSnappedUp = otRes.snappedUp;
       otDroppedMin = otRes.droppedMin;
+      otRuleKind = otRes.ruleKind;
+      otAuditText = otRes.auditText;
       const maxLbl = capMin < Infinity ? `OT cap ${round1(capMin / 60)}h/day` : 'OT window';
       otReason = appendSnapReasonSuffix(maxLbl, eligibleMin, otRes, capMin);
     } else if (rule.ot_mode === 'date_range') {
@@ -134512,6 +136592,8 @@
       penaltyLeaveDays: penOut.penaltyLeaveDays,
       penaltyStatus: penOut.penaltyStatus,
       penaltySummary: penOut.penaltySummary,
+      lateRuleKind: penOut.lateRuleKind || '',
+      lateAuditText: penOut.lateAuditText || '',
       noOutRule,
       noOutPenaltyText: '',
       lateCutoffTime,
@@ -134520,11 +136602,16 @@
       earlyGraceMin,
       rawExtraMin,
       rawExtraHours,
+      rawQualifiedOtMin,
+      exactApprovedOtMin,
+      otSnapDeltaMin,
       approvedOtMin,
       unapprovedOtMin,
       overtimeHours,
       unapprovedOtHours,
-      otReason
+      otReason,
+      otRuleKind,
+      otAuditText
     }, buildDollarFields(approvedOtMin, billableLateMinFinal, lateHours, penOut.penaltyLeaveDays));
   }
 
@@ -135398,7 +137485,7 @@
     // figures back onto it, and every re-settle of an unchanged day would then restamp and resend the row.
     const sigOf = opts.origin
       ? row => attendanceFigureSig(row) + '|' + [row.shift_id, row.shift_label, row.scheduled_hours, row.penalty_summary, row.late_cutoff,
-        row.early_out_cutoff, row.no_out_rule, row.single_punch_type, row.raw_late_hours, row.raw_late_min, row.math_mode, row.approved_ot_min, row.billable_late_min, row.ot_threshold_min, row.notes, Boolean(row.voided)].join('|')
+        row.early_out_cutoff, row.no_out_rule, row.single_punch_type, row.raw_late_hours, row.raw_late_min, row.math_mode, row.raw_ot_min, row.exact_ot_min, row.ot_snap_delta_min, row.ot_snap_mode, row.late_penalty_mode, row.rule_audit_late, row.rule_audit_ot, row.approved_ot_min, row.billable_late_min, row.ot_threshold_min, row.notes, Boolean(row.voided)].join('|')
       : row => JSON.stringify(Object.assign({}, row, { modified_at: '' }));
     const sigBefore = (attRec && opts.keepStampIfSame) ? sigOf(attRec) : null;
 
@@ -135448,6 +137535,14 @@
     const billLateMin = penLeaveDays > 0 ? 0 : Number(evalRes.billableLateMin || 0);
     const otThreshUsed = Number(evalRes.otThresholdMin != null ? evalRes.otThresholdMin : 10);
 
+    const rawOtMinVal = isPairedBoth ? Number(evalRes.rawQualifiedOtMin || 0) : 0;
+    const exactOtMinVal = isPairedBoth ? Number(evalRes.exactApprovedOtMin || 0) : 0;
+    const otSnapDeltaVal = isPairedBoth ? Number(evalRes.otSnapDeltaMin || 0) : 0;
+    const otSnapModeVal = evalRes.otSnapMode || 'exact';
+    const latePenModeVal = evalRes.latePenaltyMode || 'exact_hours';
+    const lateAuditVal = String(evalRes.lateAuditText || '');
+    const otAuditVal = isPairedBoth ? String(evalRes.otAuditText || '') : '';
+
     // Synchronize live evaluation onto the punch object
     punch.late_hours = !isPairedBoth ? Number(evalRes.billableLateHours ?? evalRes.rawLateHours ?? ltH) : ltH;
     punch.raw_late_hours = rawLtH;
@@ -135455,6 +137550,9 @@
     punch.math_mode = evalRes.mathMode || 'per_minute';
     punch.billable_late_min = billLateMin;
     punch.ot_threshold_min = otThreshUsed;
+    punch.ot_snap_mode = otSnapModeVal;
+    punch.late_penalty_mode = latePenModeVal;
+    punch.rule_audit_late = lateAuditVal;
     punch.penalty_leave_days = penLeaveDays;
     punch.penalty_status = evalRes.penaltyStatus || effType;
     punch.penalty_summary = evalRes.penaltySummary || '';
@@ -135466,12 +137564,20 @@
       punch.paired_hours = workedH;
       punch.overtime_hours = otH;
       punch.unapproved_ot_hours = unappOt;
+      punch.raw_ot_min = rawOtMinVal;
+      punch.exact_ot_min = exactOtMinVal;
+      punch.ot_snap_delta_min = otSnapDeltaVal;
+      punch.rule_audit_ot = otAuditVal;
       punch.approved_ot_min = appOtMin;
       punch.unapproved_ot_min = unappOtMin;
     } else {
       punch.paired_hours = null;
       punch.overtime_hours = 0;
       punch.unapproved_ot_hours = 0;
+      punch.raw_ot_min = 0;
+      punch.exact_ot_min = 0;
+      punch.ot_snap_delta_min = 0;
+      punch.rule_audit_ot = '';
       punch.approved_ot_min = 0;
       punch.unapproved_ot_min = 0;
     }
@@ -135513,6 +137619,13 @@
         raw_late_hours: rawLtH,
         raw_late_min: rawLtMin,
         math_mode: evalRes.mathMode || 'per_minute',
+        raw_ot_min: rawOtMinVal,
+        exact_ot_min: exactOtMinVal,
+        ot_snap_delta_min: otSnapDeltaVal,
+        ot_snap_mode: otSnapModeVal,
+        late_penalty_mode: latePenModeVal,
+        rule_audit_late: lateAuditVal,
+        rule_audit_ot: otAuditVal,
         approved_ot_min: appOtMin,
         unapproved_ot_min: unappOtMin,
         billable_late_min: billLateMin,
@@ -135551,6 +137664,13 @@
       attRec.raw_late_hours = rawLtH;
       attRec.raw_late_min = rawLtMin;
       attRec.math_mode = evalRes.mathMode || 'per_minute';
+      attRec.raw_ot_min = rawOtMinVal;
+      attRec.exact_ot_min = exactOtMinVal;
+      attRec.ot_snap_delta_min = otSnapDeltaVal;
+      attRec.ot_snap_mode = otSnapModeVal;
+      attRec.late_penalty_mode = latePenModeVal;
+      attRec.rule_audit_late = lateAuditVal;
+      attRec.rule_audit_ot = otAuditVal;
       attRec.approved_ot_min = appOtMin;
       attRec.unapproved_ot_min = unappOtMin;
       attRec.billable_late_min = billLateMin;
@@ -140636,8 +142756,12 @@
                     ${draftPolEffFrom && draftPolEffFrom > today
                       ? `<span>Scheduled for future date <b>${esc(fmtDateDMY(draftPolEffFrom))}</b> (active rule today stays unchanged until then).</span>`
                       : `<span>Dry-Run Preview (${esc(fmtDateDMY(ssmPreviewRes.fromDate))}–${esc(fmtDateDMY(ssmPreviewRes.toDate))}): recalculates <b>${fmtNum(ssmPreviewRes.updatedRows)}</b> unlocked logs${canShowSsmDollars ? ` · Earned Δ <b class="att-earn-pos">${ssmPreviewRes.earnedDeltaUsd >= 0 ? '+' : ''}${fmtUSD(ssmPreviewRes.earnedDeltaUsd, 2)}</b> · Lost Δ <b class="att-loss-neg">${ssmPreviewRes.lostDeltaUsd >= 0 ? '+' : ''}${fmtUSD(ssmPreviewRes.lostDeltaUsd, 2)}</b> · Net Δ <b>${ssmPreviewRes.netDeltaUsd >= 0 ? '+' : '-'}${fmtUSD(Math.abs(ssmPreviewRes.netDeltaUsd), 2)}</b>` : ''}${(ssmPreviewRes.skippedClosed || ssmPreviewRes.skippedManual) ? ` (${fmtNum(ssmPreviewRes.skippedClosed)} closed skipped, ${fmtNum(ssmPreviewRes.skippedManual)} manual kept)` : ''}</span>`}
+                    ${renderLegacyTenthBackfillPillHtml({ company: entry.company, staffNames: [entry.name] })}
                   </div>
-                ` : ''}
+                ` : (() => {
+                  const ssmLegHtml = renderLegacyTenthBackfillPillHtml({ company: entry.company, staffNames: [entry.name] });
+                  return ssmLegHtml ? `<div class="att-backfill-preview" id="ssmPolBackfillPreview">${ssmLegHtml}</div>` : '';
+                })()}
               </div>
             </div>
 
@@ -142436,7 +144560,14 @@
           if (hr && hr.ok === false) toast(hr.error || 'Could not save the holiday setting', 'warn');
         }
         const bfCnt = saveRes && saveRes.attBackfill ? Number(saveRes.attBackfill.updatedRows || 0) : 0;
-        toast(`Saved shift, policy & perks group, multipliers & rules for ${entry.name}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`, 'ok');
+        const ssmRemLeg = detectLegacyTenthHourBackfill({ company: entry.company, staffNames: [entry.name] });
+        toast(
+          `Saved shift, policy & perks group, multipliers & rules for ${entry.name}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`,
+          'ok',
+          ssmRemLeg.migratableCount > 0
+            ? { actionLabel: `Review ${ssmRemLeg.migratableCount} Legacy 0.1h`, onAction: () => openBackfillModal({ company: entry.company, staffNames: [entry.name], filter: 'tenth_hour' }) }
+            : undefined
+        );
         closeStaffScheduleModal();
       });
 
@@ -143448,7 +145579,8 @@
           || Math.abs(Number(a.overtime_hours || 0) - otH) > 1e-4
           || Math.abs(Number(a.late_hours || 0) - ltH) > 1e-4
           || Math.abs(Number(a.leave_days || 0) - penLeaveDays) > 1e-4
-          || a.type !== effType) {
+          || a.type !== effType
+          || hasAttRowAuditDriftFromEval(a, evalRes, { isPaired, penaltyLeaveDays: penLeaveDays })) {
           a.worked_hours = workedH;
           a.regular_hours = isPaired ? evalRes.regularHours : (workedH > 0 ? Math.min(schedH, workedH) : 0);
           a.overtime_hours = otH;
@@ -143463,6 +145595,7 @@
           a.type = effType;
           a.status = effType;
           a.tally = effTally;
+          syncAttRowAuditFromEvalRes(a, evalRes, { isPaired, penaltyLeaveDays: penLeaveDays });
           rowChanged = true;
         }
       }
@@ -146557,7 +148690,14 @@
       const snapStr = snapPatch.ot_snap_mode !== 'exact'
         ? `, ${formatOtSnapShort(snapPatch.ot_snap_mode, snapPatch.ot_block_min, snapPatch.ot_snap_at_min, true)}`
         : '';
-      toast(`Set "${res.group.name}" ($/min, OT ≥${nextThresh}m${snapStr}) for ${bu}${effStr}${res.backfilledStaff ? ` · ${res.backfilledStaff} staff` : ''}${logStr}`, 'ok');
+      const coRemLeg = detectLegacyTenthHourBackfill({ company: bu });
+      toast(
+        `Set "${res.group.name}" ($/min, OT ≥${nextThresh}m${snapStr}) for ${bu}${effStr}${res.backfilledStaff ? ` · ${res.backfilledStaff} staff` : ''}${logStr}`,
+        'ok',
+        coRemLeg.migratableCount > 0
+          ? { actionLabel: `Review ${coRemLeg.migratableCount} Legacy 0.1h`, onAction: () => openBackfillModal({ company: bu, filter: 'tenth_hour' }) }
+          : undefined
+      );
     }
     return res;
   }
@@ -147008,8 +149148,12 @@
                     ? `<span>Scheduled for future effective date <b>${esc(fmtDateDMY(draftEffFrom))}</b> (current active policy stays until then).</span>`
                     : `<span>Dry-Run Preview (${esc(fmtDateDMY(previewRes.fromDate))}–${esc(fmtDateDMY(previewRes.toDate))}): recalculates <b>${fmtNum(previewRes.updatedRows)}</b> unlocked logs${showDollars ? ` · Earned Δ <b class="att-earn-pos">${previewRes.earnedDeltaUsd >= 0 ? '+' : ''}${fmtUSD(previewRes.earnedDeltaUsd, 2)}</b> · Lost Δ <b class="att-loss-neg">${previewRes.lostDeltaUsd >= 0 ? '+' : ''}${fmtUSD(previewRes.lostDeltaUsd, 2)}</b> · Net Δ <b>${previewRes.netDeltaUsd >= 0 ? '+' : '-'}${fmtUSD(Math.abs(previewRes.netDeltaUsd), 2)}</b>` : ''}${(previewRes.skippedClosed || previewRes.skippedManual) ? ` (${fmtNum(previewRes.skippedClosed)} closed skipped, ${fmtNum(previewRes.skippedManual)} manual kept)` : ''}</span>`}
                   ${!isRo ? ` <button type="button" class="btn kiosk-mini-btn" data-pgm-open-sim="1">Inspect employee diffs</button>` : ''}
+                  ${renderLegacyTenthBackfillPillHtml({ company: draftCompany !== 'All Companies' ? draftCompany : '', staffNames: assignedStaff.map(s => s.name) })}
                 </div>
-              ` : ''}
+              ` : (() => {
+                const pgmLegHtml = renderLegacyTenthBackfillPillHtml({ company: draftCompany !== 'All Companies' ? draftCompany : '', staffNames: assignedStaff.map(s => s.name) });
+                return pgmLegHtml ? `<div class="att-backfill-preview" id="pgmBackfillPreview">${pgmLegHtml}</div>` : '';
+              })()}
             </div>
 
             <div class="ssm-perks-box">
@@ -147411,7 +149555,18 @@
             syncWithCloud(true);
           }
           const attBfCount = res.attBackfill ? Number(res.attBackfill.updatedRows || 0) : 0;
-          toast(`Saved group "${res.policyGroup.name}" (${res.policyGroup.summaryText})${willSetCoDef ? ` · Default for ${targetDefCo}` : ''}${res.backfilledStaff ? ` · Backfilled ${res.backfilledStaff} staff` : ''}${attBfCount ? ` · Recalculated ${attBfCount} logs` : ''}`, 'ok');
+          const pgScopeCo = (willSetCoDef && targetDefCo) ? targetDefCo : (draftCompany !== 'All Companies' ? draftCompany : '');
+          const pgStaffNames = getKioskStaffDirectory({ includeEnded: true })
+            .filter(s => getStaffWorkRule(s.name, s.company).policy_group_id === res.policyGroup.id)
+            .map(s => s.name);
+          const pgRemLeg = detectLegacyTenthHourBackfill({ company: pgScopeCo, staffNames: pgStaffNames.length ? pgStaffNames : null });
+          toast(
+            `Saved group "${res.policyGroup.name}" (${res.policyGroup.summaryText})${willSetCoDef ? ` · Default for ${targetDefCo}` : ''}${res.backfilledStaff ? ` · Backfilled ${res.backfilledStaff} staff` : ''}${attBfCount ? ` · Recalculated ${attBfCount} logs` : ''}`,
+            'ok',
+            pgRemLeg.migratableCount > 0
+              ? { actionLabel: `Review ${pgRemLeg.migratableCount} Legacy 0.1h`, onAction: () => openBackfillModal({ company: pgScopeCo, staffNames: pgStaffNames.length ? pgStaffNames : null, filter: 'tenth_hour' }) }
+              : undefined
+          );
           closePolicyGroupModal();
           if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
           if (typeof onSaved === 'function') onSaved(res.policyGroup);
@@ -147488,6 +149643,7 @@
             <span class="badge badge-ok">${fmtNum(enrolledFaces)}/${fmtNum(staffDir.length)} Face ID</span>
             <span class="badge">${fmtNum(configuredPins)} PINs</span>
             ${onSiteCount > 0 ? `<span class="badge badge-ok">${fmtNum(onSiteCount)} On Site</span>` : ''}
+            ${renderLegacyTenthBackfillPillHtml({ company: scopedCo || '' })}
             <button type="button" class="btn" data-open-pay-policy="schedule">${ic('clock')} Shift Schedule</button>
             <button type="button" class="btn" data-open-pay-policy="lateness">${ic('warn')} Lateness &amp; OT Rules</button>
             <button type="button" class="btn" data-enrol-staff-face="">${ic('camera')} Enrol Face ID</button>
@@ -147760,17 +149916,22 @@
     const hasActiveLateFilter = latePenFilter !== 'all' || lateTolFilter !== 'all' || lateWhenFilter !== 'all' || lateOtFilter !== 'all' || lateTodayFilter !== 'all' || staffStatusFilter !== 'all' || policyGroupFilter !== 'all';
     const hasAnyAttFilter = hasActiveLateFilter || schedShiftFilter !== 'all';
     const canShowKioskDollars = canViewPayrollDollarAmounts();
-    const renderKioskMinChipsHtml = pObj => {
+    const renderKioskMinChipsHtml = (pObj, opts = {}) => {
       if (!pObj) return '';
       const isPm = pObj.math_mode === 'per_minute';
       const hasMinFields = pObj.approved_ot_min != null || pObj.billable_late_min != null || pObj.raw_late_min != null;
-      if (!isPm && !hasMinFields) return '';
+      const auditKind = opts.auditKind || 'all';
+      const auditPills = getAttendanceRuleAuditPills(pObj, { kind: auditKind });
+      if (!isPm && !hasMinFields && !auditPills.length) return '';
       const chips = [];
       if (isPm) chips.push('<span class="att-math-pill is-min">$/Min</span>');
       const otMin = pObj.approved_ot_min != null ? Math.round(Number(pObj.approved_ot_min)) : (isPm && pObj.overtime_hours > 0 ? Math.round(Number(pObj.overtime_hours) * 60) : 0);
       const ltMin = pObj.billable_late_min != null ? Math.round(Number(pObj.billable_late_min)) : (pObj.raw_late_min != null ? Math.round(Number(pObj.raw_late_min)) : (isPm && pObj.late_hours > 0 ? Math.round(Number(pObj.late_hours) * 60) : 0));
       if (otMin > 0) chips.push(`<span class="att-earn-pos">+${otMin}m</span>`);
       if (ltMin > 0 && !(pObj.penalty_leave_days >= 0.5)) chips.push(`<span class="att-loss-neg">-${ltMin}m</span>`);
+      auditPills.forEach(ap => {
+        chips.push(`<span class="att-rule-audit-pill ${esc(ap.tone)}" data-rule-audit-kind="${esc(ap.kind)}">${esc(ap.text)}</span>`);
+      });
       return chips.length ? `<div class="att-kiosk-dollar-pills mono">${chips.join(' ')}</div>` : '';
     };
     const renderKioskDollarPillsHtml = (staffName, company, pObj, dateStr = todayISO()) => {
@@ -148374,6 +150535,7 @@
                       ${ic('check_circle')} Apply to ${fmtNum(filteredRoster.filter(s => canEditShiftsAndRules(null, s.company)).length)} Staff
                     </button>
                   </div>
+                  ${renderLegacyTenthBackfillPillHtml({ company: effectiveScopedCo || '', staffNames: filteredRoster.map(s => s.name) })}
                 </div>
                 ${renderContextualAttFilterBarHtml('lateness')}
 
@@ -148679,13 +150841,13 @@
                               <button type="button" class="kiosk-late-pill" data-tone="${p.penalty_leave_days >= 0.5 || ((p.direction === 'IN' || isOutWithoutIn) && ltP.noOutRule !== 'auto_shift_end') ? 'amber' : (p.late_hours > 0 ? 'rose' : 'emerald')}" data-open-staff-late="${esc(p.staff)}">
                                 ${esc(penSummary)}
                               </button>
-                              ${renderKioskMinChipsHtml(p)}
+                              ${renderKioskMinChipsHtml(p, { auditKind: 'late' })}
                             </td>
                             <td>
                               <button type="button" class="kiosk-ot-pill" data-tone="${esc(otP.tone || 'muted')}" data-open-staff-ot="${esc(p.staff)}">
                                 ${esc(otP.badgeText)}
                               </button>
-                              <div class="drv-sub mono kiosk-nowrap-sub">OT &gt;=${pOtThresh}m</div>
+                              <div class="drv-sub mono kiosk-nowrap-sub">OT &gt;=${pOtThresh}m</div>${renderRuleAuditPillsHtml(p, { kind: 'ot' })}
                             </td>
                             <td>${esc(p.method)}</td>
                             <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, pDec)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, pDec)}h OT)` : (p.unapproved_ot_hours > 0 ? ' (0h OT)' : '')}` : `${p.penalty_leave_days >= 0.5 ? '0.5d Half Day' : (p.late_hours > 0 ? `Late -${fmtNum(p.late_hours, pDec)}h` : 'Active')}${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, pDec)}h OT)` : ''}`}${renderKioskDollarPillsHtml(p.staff, p.company, p, pDate)}</td>
@@ -150089,7 +152251,15 @@
         saveLocalAuthAndRecords();
         syncWithCloud(true);
       }
-      toast(`Applied policy, lateness, OT snap & threshold rules to ${writableStaff.length} staff${effFrom ? ` from ${fmtDateDMY(effFrom)}` : ''}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`, 'ok');
+      const bulkNames = writableStaff.map(s => s.name);
+      const bulkRemLeg = detectLegacyTenthHourBackfill({ company: bulkScopeCo || '', staffNames: bulkNames.length ? bulkNames : null });
+      toast(
+        `Applied policy, lateness, OT snap & threshold rules to ${writableStaff.length} staff${effFrom ? ` from ${fmtDateDMY(effFrom)}` : ''}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`,
+        'ok',
+        bulkRemLeg.migratableCount > 0
+          ? { actionLabel: `Review ${bulkRemLeg.migratableCount} Legacy 0.1h`, onAction: () => openBackfillModal({ company: bulkScopeCo || '', staffNames: bulkNames.length ? bulkNames : null, filter: 'tenth_hour' }) }
+          : undefined
+      );
       renderApp();
     });
     feedCard.querySelectorAll('[data-sched-cell-staff]').forEach(btn => {
@@ -151429,6 +153599,11 @@
         if (!($('entryModal') && !$('entryModal').hidden) && !($('recordInspector') && !$('recordInspector').hidden)) {
           _preModalWorkspaceScrollSnap = null;
         }
+      }
+      if (STATE._pendingUnitEconScroll && STATE.view === 'sales') {
+        STATE._pendingUnitEconScroll = false;
+        const uSec = $('unit_economics');
+        if (uSec && typeof scrollWorkspaceTo === 'function') scrollWorkspaceTo(uSec, 10);
       }
     } finally {
       if (window.MFG_I18N) {
@@ -155059,9 +157234,10 @@
 
   function setView(view, opts = {}) {
     const _scrollPaySal = (view === 'payroll_salaries');
+    const _scrollUnitEcon = (view === 'unit_economics');
     if (view === 'cashflow_analytics') view = 'cashflow';
     if (view === 'sales_vat') view = 'customers';
-    if (view === 'sales_analytics') view = 'sales';
+    if (view === 'sales_analytics' || view === 'unit_economics') view = 'sales';
     if (view === 'raw_analytics') view = 'raw';
     if (view === 'expenses_analytics') view = 'expenses';
     if (view === 'fleet_analytics') view = 'fleet_drivers';
@@ -155155,6 +157331,10 @@
       const pPanel = $('paySalPanel');
       if (pPanel && typeof scrollWorkspaceTo === 'function') scrollWorkspaceTo(pPanel, 10);
     }
+    if (_scrollUnitEcon) {
+      const uPanel = $('unit_economics');
+      if (uPanel && typeof scrollWorkspaceTo === 'function') scrollWorkspaceTo(uPanel, 10);
+    }
     if (STATE.authed && !IS_AUTOMATED_TEST && Date.now() - _lastCloudSyncStartedAt > 8000) {
       syncWithCloud(false);
     }
@@ -155218,7 +157398,8 @@
       }
     } catch (_) {}
     const rawQView = PARAMS.get('view') || (location.hash || '').replace(/^#/, '');
-    const qView = rawQView === 'cashflow_analytics' ? 'cashflow' : (rawQView === 'sales_vat' ? 'customers' : (rawQView === 'sales_analytics' ? 'sales' : (rawQView === 'raw_analytics' ? 'raw' : (rawQView === 'expenses_analytics' ? 'expenses' : (rawQView === 'fleet_analytics' ? 'fleet_drivers' : (rawQView === 'payroll_analytics' ? 'payroll' : (rawQView === 'jv' ? 'raw_jv' : rawQView)))))));
+    if (rawQView === 'unit_economics') STATE._pendingUnitEconScroll = true;
+    const qView = rawQView === 'cashflow_analytics' ? 'cashflow' : (rawQView === 'sales_vat' ? 'customers' : ((rawQView === 'sales_analytics' || rawQView === 'unit_economics') ? 'sales' : (rawQView === 'raw_analytics' ? 'raw' : (rawQView === 'expenses_analytics' ? 'expenses' : (rawQView === 'fleet_analytics' ? 'fleet_drivers' : (rawQView === 'payroll_analytics' ? 'payroll' : (rawQView === 'jv' ? 'raw_jv' : rawQView)))))));
     if (qView && VIEW_TITLES[qView]) STATE.view = qView;
     if (swResumeView && !PARAMS.get('view')) STATE.view = swResumeView;
     const qKiosk = PARAMS.get('kiosk');
@@ -156690,6 +158871,8 @@
         if (camDocModal && !camDocModal.hidden) { closeDocumentCameraModal(); return; }
         const fbModal = $('fatherBackfillModal');
         if (fbModal && !fbModal.hidden) { closeFatherNameBackfillModal(); return; }
+        const lbfModal = $('backfillModal');
+        if (lbfModal && !lbfModal.hidden) { closeBackfillModal(); return; }
         if (_dateFacState.open) { closeDateFacilitator(); return; }
         const psdDrawer = $('policySimDiffDrawer');
         if (psdDrawer && !psdDrawer.hidden) { closePolicySimulationDiffDrawer(); return; }
@@ -156845,11 +159028,21 @@
       if (VIEW_TITLES[v] && (!scopeRestored || v !== STATE.view)) setView(v, { noPush: true });
     });
     const LEGACY_HASH_VIEW_ALIASES = {
-      cashflow_analytics: 'cashflow', sales_vat: 'customers', sales_analytics: 'sales', raw_analytics: 'raw',
+      cashflow_analytics: 'cashflow', sales_vat: 'customers', sales_analytics: 'sales', unit_economics: 'sales', raw_analytics: 'raw',
       expenses_analytics: 'expenses', fleet_analytics: 'fleet_drivers', payroll_analytics: 'payroll', jv: 'raw_jv'
     };
     window.addEventListener('hashchange', () => {
       const rawHash = (location.hash || '').replace(/^#/, '');
+      if (rawHash === 'unit_economics') {
+        if (!STATE.authed) {
+          STATE.view = 'sales';
+          STATE._pendingUnitEconScroll = true;
+          history.replaceState({ view: STATE.view }, '', lockedCleanUrl);
+          return;
+        }
+        setView('unit_economics', { noPush: true });
+        return;
+      }
       const v = LEGACY_HASH_VIEW_ALIASES[rawHash] || rawHash;
       if (!STATE.authed) {
         if (VIEW_TITLES[v]) STATE.view = v;
@@ -157394,6 +159587,16 @@
       expireAdminSession: (reason = 'inactivity') => expireKioskAdminSession(reason),
       getAdminInactivityTimeoutMs: () => KIOSK_ADMIN_INACTIVITY_MS,
       getStationAdminState: () => Object.assign({}, KIOSK_ADMIN_MODAL_STATE, { adminSessionExpiresAt: KIOSK_ADMIN_MODAL_STATE.expiresAt }),
+      getAttendanceRuleAuditPills: (a, opts = {}) => getAttendanceRuleAuditPills(a, opts),
+      renderRuleAuditPillsHtml: (a, opts = {}) => renderRuleAuditPillsHtml(a, opts),
+      isLegacyTenthHourAttRow: a => isLegacyTenthHourAttRow(a),
+      detectLegacyTenthHourBackfill: (spec = {}) => detectLegacyTenthHourBackfill(spec),
+      applySelectiveLegacyBackfill: (ids, opts = {}) => applySelectiveLegacyBackfill(ids, opts),
+      openBackfillModal: (opts = {}) => openBackfillModal(opts),
+      closeBackfillModal: () => closeBackfillModal(),
+      computeAttendanceOtSnapPremium: (a, prof) => computeAttendanceOtSnapPremium(a, prof),
+      computeJobOtSnapAllocation: (opts = {}) => computeJobOtSnapAllocation(opts),
+      getOtSnapAllocSig: () => getOtSnapAllocSig(),
       clearFlashPunch: () => clearKioskFlashPunch(true)
     };
 
@@ -157668,6 +159871,8 @@
     if (_localKpiRawCache) _localKpiRawCache.clear();
     _cashMovesCacheKey = '';
     _cashMovesCacheVal = null;
+    _otSnapGlobalCache = { sig: '', data: null };
+    if (typeof _hspOpsCache !== 'undefined' && _hspOpsCache) _hspOpsCache.clear();
     _reOpsCache = null;
     _reOpsSig = '';
     _icInteractionsCache = null;
@@ -159062,6 +161267,18 @@
     openAdminUnlockPrompt: typeof openAdminUnlockPrompt === 'function' ? openAdminUnlockPrompt : null,
     applyRemoteStore: typeof mergeRemoteMfgDoc === 'function' ? mergeRemoteMfgDoc : null,
     mergeRemoteMfgDoc: typeof mergeRemoteMfgDoc === 'function' ? mergeRemoteMfgDoc : null,
+    canViewPayrollDollarAmounts: u => canViewPayrollDollarAmounts(u),
+    computeAttendanceRowDollarImpact: (a, prof, opts = {}) => computeAttendanceRowDollarImpact(a, prof, opts),
+    getAttendanceRuleAuditPills: (a, opts = {}) => getAttendanceRuleAuditPills(a, opts),
+    renderRuleAuditPillsHtml: (a, opts = {}) => renderRuleAuditPillsHtml(a, opts),
+    isLegacyTenthHourAttRow: a => isLegacyTenthHourAttRow(a),
+    detectLegacyTenthHourBackfill: (spec = {}) => detectLegacyTenthHourBackfill(spec),
+    applySelectiveLegacyBackfill: (ids, opts = {}) => applySelectiveLegacyBackfill(ids, opts),
+    openBackfillModal: (opts = {}) => openBackfillModal(opts),
+    closeBackfillModal: () => closeBackfillModal(),
+    computeAttendanceOtSnapPremium: (a, prof) => computeAttendanceOtSnapPremium(a, prof),
+    computeJobOtSnapAllocation: (opts = {}) => computeJobOtSnapAllocation(opts),
+    getOtSnapAllocSig: () => getOtSnapAllocSig(),
     sanitizeUniversalCustomRecords: typeof sanitizeUniversalCustomRecords === 'function' ? sanitizeUniversalCustomRecords : null,
     getFormUi: () => FORM_UI
   };
