@@ -12123,7 +12123,49 @@
       "Search regions, sites, or places...": "ابحث عن المناطق أو المواقع أو الأماكن...",
       "Paste link, coords, or search place...": "الصق رابطاً أو إحداثيات أو ابحث عن مكان...",
       "Click map, search place, or paste link": "انقر على الخريطة، أو ابحث عن مكان، أو الصق رابطاً",
-      "Search Google Maps, paste link/coords, or click map": "ابحث في خرائط Google، أو الصق رابطاً/إحداثيات، أو انقر على الخريطة"
+      "Search Google Maps, paste link/coords, or click map": "ابحث في خرائط Google، أو الصق رابطاً/إحداثيات، أو انقر على الخريطة",
+      "OT After": "إضافي بعد",
+      "Apply & Backfill": "تطبيق وإعادة احتساب",
+      "Late Deduction": "خصم التأخير",
+      "Late Deduction Rule": "قاعدة خصم التأخير",
+      "Keep Deduction": "إبقاء الخصم الحالي",
+      "1.5x / Steps / Round": "1.5x / شرائح / تقريب",
+      "More Filters": "فلاتر إضافية",
+      "Punch Filter": "فلتر البصمة",
+      "Single Punch (0.5d)": "بصمة واحدة (0.5 يوم)",
+      "Bulk Update": "تحديث جماعي",
+      "Close Bulk Editor": "إغلاق التحديث الجماعي",
+      "Hide Policy Groups": "إخفاء مجموعات السياسات",
+      "Manage Policy & Perks Templates": "إدارة قوالب السياسات والمزايا",
+      "New Policy Group": "مجموعة سياسات جديدة",
+      "Shift & Policy Templates": "قوالب المناوبات والسياسات",
+      "Hide Templates": "إخفاء القوالب",
+      "Show Templates": "عرض القوالب",
+      "Active Shift · Click to Edit": "المناوبة النشطة · اضغط للتعديل",
+      "Active Rules · Click to Edit": "القواعد النشطة · اضغط للتعديل",
+      "Inherited by staff without an individual override": "تُطبَّق تلقائياً على الموظفين بدون استثناء فردي",
+      "Hide Shifts & Policies": "إخفاء المناوبات والسياسات",
+      "Shifts, Policies & Face ID": "المناوبات والسياسات وبصمة الوجه",
+      "SHIFTS, POLICIES & BIOMETRIC CREDENTIALS": "المناوبات والسياسات وبيانات البصمة",
+      "Manage work shifts, lateness & overtime policies, Face ID, and wall kiosk PINs": "إدارة مناوبات العمل وسياسات التأخير والإضافي وبصمة الوجه ورموز الكشك",
+      "Open Roster & PINs": "فتح السجل والرموز",
+      "SHIFT EFFECTIVE-DATE HISTORY & TIMING LEDGER": "سجل تواريخ سريان المناوبات والأوقات",
+      "Workforce Shifts, Policies & Weekly Schedule": "مناوبات الموظفين والسياسات والجدول الأسبوعي",
+      "Workforce Lateness, Policies & Overtime Rules": "قواعد التأخير والخصومات والإضافي للموظفين",
+      "Workforce Shifts, Policies & Biometrics": "المناوبات والسياسات وبيانات البصمة",
+      "Search staff, shift, policy group, or rule...": "ابحث بالاسم أو المناوبة أو السياسة أو القاعدة...",
+      "No staff match the selected lateness, policy group, tolerance, overtime, or deduction filter": "لا يوجد موظفون يطابقون فلتر التأخير أو مجموعة السياسة أو السماحية أو الإضافي أو الخصم المحدد",
+      "Keep Current Group": "الإبقاء على المجموعة الحالية",
+      "0 min (Strict)": "0 د (صارم)",
+      "Shift Hours Shortfall": "نقص ساعات الوردية",
+      ">=30m = Half Day": ">=30د = نصف يوم",
+      ">=60m = Half Day": ">=60د = نصف يوم",
+      "Any Late = Half Day": "أي تأخير = نصف يوم",
+      "Deduct 2.0h Late": "خصم 2.0 س تأخير",
+      "Keep Current OT": "الإبقاء على الإضافي الحالي",
+      "Anytime Open OT": "عمل إضافي مفتوح دائماً",
+      "Approve Today": "اعتماد اليوم",
+      "Bulk Policy Group, Lateness, Tolerance & Overtime": "تطبيق جماعي لمجموعة السياسة والتأخير والسماح والعمل الإضافي"
     },
     fr: {
       "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
@@ -24228,7 +24270,49 @@
       "Search regions, sites, or places...": "Rechercher des régions, sites ou lieux...",
       "Paste link, coords, or search place...": "Coller lien, coord. ou rechercher un lieu...",
       "Click map, search place, or paste link": "Cliquer sur la carte, chercher un lieu ou coller un lien",
-      "Search Google Maps, paste link/coords, or click map": "Rechercher sur Google Maps, coller lien/coord. ou cliquer sur la carte"
+      "Search Google Maps, paste link/coords, or click map": "Rechercher sur Google Maps, coller lien/coord. ou cliquer sur la carte",
+      "OT After": "HS après",
+      "Apply & Backfill": "Appliquer & recalculer",
+      "Late Deduction": "Déduction retard",
+      "Late Deduction Rule": "Règle de déduction de retard",
+      "Keep Deduction": "Conserver la déduction actuelle",
+      "1.5x / Steps / Round": "1,5x / Paliers / Arrondi",
+      "More Filters": "Plus de filtres",
+      "Punch Filter": "Filtre de pointage",
+      "Single Punch (0.5d)": "Pointage unique (0,5 j)",
+      "Bulk Update": "Mise à jour groupée",
+      "Close Bulk Editor": "Fermer l'éditeur groupé",
+      "Hide Policy Groups": "Masquer les groupes",
+      "Manage Policy & Perks Templates": "Gérer les modèles de règles & avantages",
+      "New Policy Group": "Nouveau groupe de règles",
+      "Shift & Policy Templates": "Modèles d'horaires & règles",
+      "Hide Templates": "Masquer les modèles",
+      "Show Templates": "Afficher les modèles",
+      "Active Shift · Click to Edit": "Horaire actif · Cliquer pour modifier",
+      "Active Rules · Click to Edit": "Règles actives · Cliquer pour modifier",
+      "Inherited by staff without an individual override": "Héritée par le personnel sans exception individuelle",
+      "Hide Shifts & Policies": "Masquer horaires & règles",
+      "Shifts, Policies & Face ID": "Horaires, règles & Face ID",
+      "SHIFTS, POLICIES & BIOMETRIC CREDENTIALS": "HORAIRES, RÈGLES & IDENTIFIANTS BIOMÉTRIQUES",
+      "Manage work shifts, lateness & overtime policies, Face ID, and wall kiosk PINs": "Gérez les horaires, les règles de retard & HS, Face ID et les codes PIN",
+      "Open Roster & PINs": "Ouvrir le registre & PIN",
+      "SHIFT EFFECTIVE-DATE HISTORY & TIMING LEDGER": "HISTORIQUE DES HORAIRES & DATES D'EFFET",
+      "Workforce Shifts, Policies & Weekly Schedule": "Horaires, règles & planning hebdomadaire",
+      "Workforce Lateness, Policies & Overtime Rules": "Règles de retard, déductions & heures sup.",
+      "Workforce Shifts, Policies & Biometrics": "Horaires du personnel, règles & biométrie",
+      "Search staff, shift, policy group, or rule...": "Rechercher employé, horaire, règle...",
+      "No staff match the selected lateness, policy group, tolerance, overtime, or deduction filter": "Aucun employé ne correspond aux filtres de retard, groupe, tolérance, HS ou déduction",
+      "Keep Current Group": "Conserver le groupe actuel",
+      "0 min (Strict)": "0 min (strict)",
+      "Shift Hours Shortfall": "Déficit d'heures du poste",
+      ">=30m = Half Day": ">=30m = Demi-journée",
+      ">=60m = Half Day": ">=60m = Demi-journée",
+      "Any Late = Half Day": "Tout retard = Demi-journée",
+      "Deduct 2.0h Late": "Déduire 2,0 h retard",
+      "Keep Current OT": "Conserver les HS actuelles",
+      "Anytime Open OT": "HS ouvertes tout le temps",
+      "Approve Today": "Approuver aujourd'hui",
+      "Bulk Policy Group, Lateness, Tolerance & Overtime": "Application groupée : politique, retard, tolérance et HS"
     }
   };
 
@@ -28117,6 +28201,47 @@
       return lang === 'ar' ? `وضع تقريب الإضافي لـ ${co}` : `Mode d'arrondi HS pour ${co}`;
     }
 
+    m = trimmed.match(/^Late\s+deduction\s+rule\s+for\s+(.+)$/i);
+    if (m) {
+      return lang === 'ar' ? `قاعدة خصم التأخير لـ ${m[1]}` : `Règle de déduction de retard pour ${m[1]}`;
+    }
+
+    m = trimmed.match(/^More\s+Filters\s*\((\d+)\)$/i);
+    if (m) {
+      return lang === 'ar' ? `فلاتر إضافية (${m[1]})` : `Plus de filtres (${m[1]})`;
+    }
+
+    m = trimmed.match(/^Manage\s+Policy\s*&\s*Perks\s+Templates\s*\(([\d,]+)\)$/i);
+    if (m) {
+      return lang === 'ar' ? `إدارة قوالب السياسات والمزايا (${m[1]})` : `Gérer les modèles de règles & avantages (${m[1]})`;
+    }
+
+    m = trimmed.match(/^Bulk\s+Update\s*\(([\d,]+)\s+Staff\)$/i);
+    if (m) {
+      return lang === 'ar' ? `تحديث جماعي (${m[1]} موظف)` : `Mise à jour groupée (${m[1]} employés)`;
+    }
+
+    m = trimmed.match(/^(\d+)\s+Work\s+Shifts?\s*·\s*(\d+)\s+Policy\s*&\s*Perks\s+Groups?$/i);
+    if (m) {
+      return lang === 'ar' ? `${m[1]} مناوبات عمل · ${m[2]} مجموعات سياسات ومزايا` : `${m[1]} horaires · ${m[2]} groupes de règles & avantages`;
+    }
+
+    m = trimmed.match(/^Company\s+default\s+shift\s*&\s*policy\s+controls\s*\(([^)]+)\)\s+plus\s+audit\s+trail\s+of\s+dated\s+timing\s+overrides$/i);
+    if (m) {
+      const cos = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar'
+        ? `ضوابط المناوبة والسياسة الافتراضية للشركة (${cos}) وسجل التعديلات المؤرخة`
+        : `Paramètres par défaut (${cos}) et historique des exceptions datées`;
+    }
+
+    m = trimmed.match(/^Audit\s+trail\s+of\s+dated\s+regular-shift\s+overrides,\s+split\s+hours,\s+and\s+weekday\s+rules\s*\(([^)]+)\)$/i);
+    if (m) {
+      const cos = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar'
+        ? `سجل التعديلات المؤرخة للمناوبات، والدوام المجزأ، وقواعد أيام الأسبوع (${cos})`
+        : `Historique des modifications d'horaires datées, coupures et jours de semaine (${cos})`;
+    }
+
     m = trimmed.match(/^([\d.]+x)\s*·\s*(Open OT|Date Pass|No OT|Max\s+[\d.]+h\s+OT)\s*·\s*(0\.1h|\$\s*\/\s*Min|\d+d)$/i);
     if (m) {
       const otPart = translateCore(m[2].trim(), lang, depth + 1);
@@ -28510,6 +28635,11 @@
 
     m = trimmed.match(/^Apply to\s+([\d,]+)\s+Staff$/i);
     if (m) return lang === 'ar' ? `تطبيق على ${m[1]} موظفاً` : `Appliquer à ${m[1]} employés`;
+
+    m = trimmed.match(/^Apply policy & perks group, tolerance \(0-30m for IN & OUT\), when lateness occurs, (?:late deduction|punishment), single-punch rule, and overtime to all ([\d,]+) filtered staff$/i);
+    if (m) return lang === 'ar'
+      ? `تطبيق مجموعة السياسات والمزايا، وفترة السماح (0-30د للدخول والخروج)، ومتى يُحتسب التأخير، وخصم التأخير، وقاعدة البصمة المفردة، والعمل الإضافي على جميع الموظفين المصفّين (${m[1]})`
+      : `Appliquer groupe de politique, tolérance (0-30m Entrée/Sortie), portée du retard, retenue, pointage unique et HS aux ${m[1]} employés filtrés`;
 
     m = trimmed.match(/^Shift Type for\s+(.+)$/i);
     if (m) return lang === 'ar' ? `نوع الدوام لـ ${m[1].trim()}` : `Type d'horaire pour ${m[1].trim()}`;

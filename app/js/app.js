@@ -474,6 +474,12 @@
     kioskSchedShiftFilter: 'all',
     kioskSchedOtFilter: 'all',
     kioskSchedWeekOffset: 0,
+    kioskMoreFiltersOpen: false,
+    kioskTemplatesCollapsed: false,
+    kioskTabPoliciesOpen: false,
+    kioskBulkBarOpen: false,
+    kioskCoEffOpen: {},
+    kioskCoPolicyDraft: {},
     kioskLastPunch: null,
     editingRecord: null,
     editingPendingSalaryId: '',
@@ -43127,7 +43133,7 @@
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
-              <button type="button" class="btn ${STATE.payrollPolicyOpen ? 'btn-primary' : 'btn-ghost-bar'}" id="payTogglePolicyBtn">${ic('clock')} Shifts, Lateness &amp; Face ID</button>
+              <button type="button" class="btn btn-ghost-bar" id="payTogglePolicyBtn">${ic('clock')} ${STATE.payrollPolicyOpen ? 'Hide Shifts &amp; Policies' : 'Shifts, Policies &amp; Face ID'}</button>
               <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="attendance">${ic('kiosks')} Attendance Kiosk</button>
               ${canOpenFatherBackfill() ? (() => { const fbS = getFatherBackfillSummary(); return `<button type="button" class="btn btn-ghost-bar" data-open-father-backfill="1">${ic('reg_staff')} <span>Father's Name Backfill</span>${fbS.totalMissing > 0 ? ` <span class="badge warn" data-no-i18n="1">${fmtNum(fbS.totalMissing)}</span>` : ''}</button>`; })() : ''}
               ${exportBtn('payAttPanel', 'Attendance_Records')}
@@ -43377,17 +43383,17 @@
             <div class="panel-card" id="payShiftTimingsPanel">
               <div class="panel-head">
                 <div>
-                  <div class="panel-title"><span>${ic('clock')} UNIVERSAL ATTENDANCE STRUCTURE &amp; PER-COMPANY DEFAULTS</span></div>
-                  <span class="ph-sub">Customize each company's default regular shift, default policy &amp; perks group (${esc(activeBuList.join(', '))}), split, weekday, or date-specific hours, and Effective Date backfills</span>
+                  <div class="panel-title"><span>${ic('clock')} SHIFT EFFECTIVE-DATE HISTORY &amp; TIMING LEDGER</span></div>
+                  <span class="ph-sub">${STATE.payrollPolicyOpen ? `Audit trail of dated regular-shift overrides, split hours, and weekday rules (${esc(activeBuList.join(', '))})` : `Company default shift &amp; policy controls (${esc(activeBuList.join(', '))}) plus audit trail of dated timing overrides`}</span>
                 </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
                   ${exportBtn('payShiftTimingsPanel', 'Regular_Shift_Timings')}
                   ${canEnterForm('workshift') ? `<button type="button" class="btn btn-primary" data-open-modal="workshift">+ New Shift &amp; Clock Timing</button>` : ''}
                 </div>
               </div>
-              <div class="att-co-defaults-bar is-panel-bar" id="payBuDefaultBar">
+              ${!STATE.payrollPolicyOpen ? `<div class="att-co-defaults-bar is-panel-bar" id="payBuDefaultBar">
                 ${activeBuList.map(bu => renderCompanyAttendanceDefaultsCardHtml(bu, { attrPrefix: 'pay', title: 'Company Defaults' })).join('')}
-              </div>
+              </div>` : ''}
               ${renderColFilterBar('pay_work_shifts')}
               <div class="table-wrap">
                 <table class="ledger-table" id="payShiftTimingsTable" data-keep-co="1">
@@ -129125,6 +129131,57 @@
     return `OT ${mult}x · ${passLbl}${snapPart}`;
   }
 
+  function getCoDefCardKey(el, bu) {
+    const card = el && el.closest ? el.closest('[data-co-def-card]') : null;
+    const prefix = (card && card.getAttribute('data-co-def-prefix')) || 'pay-bu';
+    return `${prefix}:${String(bu || 'WTC').trim() || 'WTC'}`;
+  }
+
+  function snapshotCoPolicyDraftFromCard(el, bu, opts = {}) {
+    const key = getCoDefCardKey(el, bu);
+    const card = el && el.closest ? (el.closest('[data-co-def-card]') || el.parentElement) : null;
+    if (!card) return null;
+    const prefix = (card.getAttribute('data-co-def-prefix')) || 'pay-bu';
+    const polSel = card.querySelector(`[data-${prefix}-policy-default]`);
+    const snapSel = card.querySelector(`[data-${prefix}-policy-ot-snap]`);
+    const threshInp = card.querySelector(`[data-${prefix}-policy-ot-thresh]`);
+    const effInp = card.querySelector(`[data-${prefix}-policy-eff]`);
+    STATE.kioskCoPolicyDraft = STATE.kioskCoPolicyDraft || {};
+    const prevDraft = STATE.kioskCoPolicyDraft[key] || {};
+    const nextGroupId = (polSel && polSel.value) || prevDraft.groupId || getCompanyDefaultPolicyGroupId(bu);
+    const grpObj = getPolicyGroups(bu).find(g => g.id === nextGroupId) || resolvePolicyGroupAtDate(nextGroupId, bu, todayISO());
+    let snapDirty = Boolean(prevDraft.snapDirty);
+    let threshDirty = Boolean(prevDraft.threshDirty);
+    if (opts.field === 'snap') snapDirty = true;
+    if (opts.field === 'thresh') threshDirty = true;
+    const grpSnapFallback = grpObj
+      ? {
+          ot_snap_mode: normalizeOtSnapMode(grpObj.ot_snap_mode),
+          ot_block_min: normalizeOtBlockMin(grpObj.ot_block_min),
+          ot_snap_at_min: clampOtSnapAtMin(grpObj.ot_snap_at_min, grpObj.ot_block_min)
+        }
+      : { ot_snap_mode: 'exact', ot_block_min: 60, ot_snap_at_min: 50 };
+    let nextSnapPatch = snapSel
+      ? parseOtSnapComboPatch(snapSel.value)
+      : (prevDraft.snapPatch || grpSnapFallback);
+    let nextOtThresh = threshInp ? clampAttThresholdMin(threshInp.value, 10) : (prevDraft.otThresh != null ? prevDraft.otThresh : clampAttThresholdMin(grpObj && grpObj.ot_threshold_min, 10));
+    if (opts.field === 'group_select' && grpObj) {
+      if (!snapDirty) nextSnapPatch = grpSnapFallback;
+      if (!threshDirty) nextOtThresh = clampAttThresholdMin(grpObj.ot_threshold_min, 10);
+    }
+    const effRaw = effInp ? String(effInp.value || '').trim().slice(0, 10) : (prevDraft.effFrom || '');
+    const draft = {
+      groupId: nextGroupId,
+      snapPatch: nextSnapPatch,
+      otThresh: nextOtThresh,
+      effFrom: /^\d{4}-\d{2}-\d{2}$/.test(effRaw) ? effRaw : effRaw,
+      snapDirty,
+      threshDirty
+    };
+    STATE.kioskCoPolicyDraft[key] = draft;
+    return draft;
+  }
+
   function renderCompanyAttendanceDefaultsCardHtml(coName, opts = {}) {
     const bu = String(coName || 'WTC').trim() || 'WTC';
     const attrPrefix = opts.attrPrefix === 'ssm' ? 'ssm' : 'pay';
@@ -129149,12 +129206,16 @@
     const resolvedCoPol = resolveCompanyDefaultPolicyGroupAtDate(bu, today);
     const coEntry = getCompanyDefaultPolicyEntry(bu);
     const timeline = normalizePolicyTimelineList(coEntry && coEntry.policy_timeline);
-    const activeMath = normalizeAttMathMode(resolvedCoPol.math_mode);
-    const activeOtSnapMode = normalizeOtSnapMode(resolvedCoPol.ot_snap_mode);
-    const activeOtBlockMin = normalizeOtBlockMin(resolvedCoPol.ot_block_min);
-    const activeOtSnapAtMin = clampOtSnapAtMin(resolvedCoPol.ot_snap_at_min, activeOtBlockMin);
+    const coCardKey = `${buAttr}:${bu}`;
+    const coEffOpen = Boolean(STATE.kioskCoEffOpen && STATE.kioskCoEffOpen[coCardKey]);
+    const coDraft = (coEffOpen && STATE.kioskCoPolicyDraft && STATE.kioskCoPolicyDraft[coCardKey]) || null;
+    const selPolDefId = (coDraft && coDraft.groupId) || curPolDefId;
+    const activeOtSnapMode = normalizeOtSnapMode((coDraft && coDraft.snapPatch && coDraft.snapPatch.ot_snap_mode) || resolvedCoPol.ot_snap_mode);
+    const activeOtBlockMin = normalizeOtBlockMin((coDraft && coDraft.snapPatch && coDraft.snapPatch.ot_block_min != null) ? coDraft.snapPatch.ot_block_min : resolvedCoPol.ot_block_min);
+    const activeOtSnapAtMin = clampOtSnapAtMin((coDraft && coDraft.snapPatch && coDraft.snapPatch.ot_snap_at_min != null) ? coDraft.snapPatch.ot_snap_at_min : resolvedCoPol.ot_snap_at_min, activeOtBlockMin);
     const activeOtSnapShort = formatOtSnapShort(activeOtSnapMode, activeOtBlockMin, activeOtSnapAtMin, true);
-    const activeOtThresh = clampAttThresholdMin(resolvedCoPol.ot_threshold_min, 10);
+    const activeOtThresh = clampAttThresholdMin((coDraft && coDraft.otThresh != null) ? coDraft.otThresh : resolvedCoPol.ot_threshold_min, 10);
+    const draftEffVal = (coDraft && coDraft.effFrom) || '';
     const grpById = new Map(buPolicyOpts.map(g => [g.id, g]));
     const canWriteCo = canEditShiftsAndRules(null, bu);
     const canWritePolCat = canEditPolicyGroupsCatalog();
@@ -129185,15 +129246,20 @@
           ${coBadge(bu)}
           <div class="att-co-defaults-meta">
             <strong>${esc(cardTitle)}</strong>
-            <span class="att-co-defaults-sub">Applied automatically to staff without an individual override</span>
+            <span class="att-co-defaults-sub">Inherited by staff without an individual override</span>
           </div>
-          ${mathPillHtml}
         </div>
         <div class="att-co-defaults-controls">
           <div class="ssm-field att-co-def-field">
+            <div class="att-co-def-head-bar">
+              <span class="att-co-def-head-lbl">Default Shift</span>
+              <select class="kiosk-select att-co-def-inline-sel" data-${buAttr}-default="${esc(bu)}" aria-label="Default Shift" data-plain-options="1"${canWriteCo ? '' : ' disabled'}>
+                ${buShiftOpts.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)}</option>`).join('')}
+              </select>
+            </div>
             <button type="button" class="att-co-def-tile" data-tone="${esc((curShiftObj && curShiftObj.tone) || 'amber')}" data-edit-shift-type="${esc(curDefCode)}" data-edit-co="${esc(bu)}" data-ui-tip="Edit default shift hours &amp; workdays"${canWriteCo ? '' : ' disabled'}>
               <div class="att-co-def-tile-top">
-                <span class="att-co-def-tile-kicker">Default Shift</span>
+                <span class="att-co-def-tile-kicker">Active Shift · Click to Edit</span>
                 <span class="att-co-def-tile-end">
                   <span class="stc-hrs-pill">${fmtNum((curShiftObj && curShiftObj.hours) != null ? curShiftObj.hours : 8, 1)}h</span>
                   <span class="att-card-chev" aria-hidden="true">${ic('chevron_right')}</span>
@@ -129209,21 +129275,17 @@
                 ${hasShiftExc ? `<span class="att-meta-pill is-exc">${esc(curShiftExc)}</span>` : ''}
               </div>
             </button>
-            <div class="att-co-def-switch-row">
-              <span class="att-co-def-switch-lbl">Switch default</span>
-              <select class="kiosk-select" data-${buAttr}-default="${esc(bu)}" aria-label="Default Shift" data-plain-options="1"${canWriteCo ? '' : ' disabled'}>
-                ${buShiftOpts.map(st => {
-                  const stExc = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(st.day_timings, st.days), st.date_timings, st.start_time, st.end_time);
-                  const excOpt = stExc !== 'Same Every Workday' ? ` · ${stExc}` : '';
-                  return `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)}${esc(excOpt)})</option>`;
-                }).join('')}
-              </select>
-            </div>
           </div>
           <div class="ssm-field att-co-def-field">
+            <div class="att-co-def-head-bar">
+              <span class="att-co-def-head-lbl">Default Policy &amp; Perks</span>
+              <select class="kiosk-select att-co-def-inline-sel" data-${buAttr}-policy-default="${esc(bu)}" aria-label="Default Policy &amp; Perks" data-plain-options="1"${canWriteCo ? '' : ' disabled'}>
+                ${buPolicyOpts.map(pg => `<option value="${esc(pg.id)}" ${pg.id === selPolDefId ? 'selected' : ''}>${esc(pg.name)}</option>`).join('')}
+              </select>
+            </div>
             <button type="button" class="att-co-def-tile" data-tone="${esc((curPolObj && curPolObj.tone) || 'emerald')}" data-edit-policy-group="${esc(curPolDefId)}" data-edit-co="${esc(bu)}" data-ui-tip="${canWritePolCat ? 'Edit default policy &amp; perks group' : 'Inspect default policy &amp; perks group'}"${isLocked ? ' disabled' : ''}>
               <div class="att-co-def-tile-top">
-                <span class="att-co-def-tile-kicker">Default Policy &amp; Perks</span>
+                <span class="att-co-def-tile-kicker">Active Rules · Click to Edit</span>
                 <span class="att-co-def-tile-end">
                   ${!canWritePolCat ? '<span class="att-ro-mini-pill">View Only</span>' : ''}
                   <span class="att-card-chev" aria-hidden="true">${ic('chevron_right')}</span>
@@ -129239,19 +129301,28 @@
                 ${polPerksShown.map(pk => `<span class="pgc-perk-tag">${esc(pk)}</span>`).join('')}${polPerksExtra ? `<span class="pgc-perk-more">+${fmtNum(polPerksExtra)} more</span>` : ''}
               </div>
             </button>
-            <div class="att-co-def-switch-row">
-              <span class="att-co-def-switch-lbl">Switch default</span>
-              <select class="kiosk-select" data-${buAttr}-policy-default="${esc(bu)}" aria-label="Default Policy &amp; Perks" data-plain-options="1"${canWriteCo ? '' : ' disabled'}>
-                ${buPolicyOpts.map(pg => `<option value="${esc(pg.id)}" ${pg.id === curPolDefId ? 'selected' : ''}>${esc(pg.name)} (${esc(pg.short)})</option>`).join('')}
-              </select>
-            </div>
             <div class="att-co-def-math-row">
-              <select class="kiosk-select att-co-def-math-sel" data-${buAttr}-policy-ot-snap="${esc(bu)}" data-plain-options="1" aria-label="Overtime Snap Mode for ${esc(bu)}"${canWriteCo ? '' : ' disabled'}>
-                ${renderOtSnapComboOptionsHtml(resolvedCoPol.ot_snap_mode, resolvedCoPol.ot_block_min, resolvedCoPol.ot_snap_at_min)}
-              </select>
-              <input type="number" class="mono att-co-def-thresh" min="0" max="180" step="1" data-${buAttr}-policy-ot-thresh="${esc(bu)}" value="${activeOtThresh}" aria-label="Overtime threshold minutes for ${esc(bu)}"${canWriteCo ? '' : ' disabled'}>
-              <input type="date" class="kiosk-select att-co-def-eff" data-${buAttr}-policy-eff="${esc(bu)}" value="" aria-label="Effective from date for ${esc(bu)}"${canWriteCo ? '' : ' disabled'}>
-              <button type="button" class="btn kiosk-mini-btn" data-${buAttr}-policy-apply="${esc(bu)}"${canWriteCo ? '' : ' disabled'}>Apply</button>
+              <label class="att-inline-ctl">
+                <span class="att-inline-ctl-lbl">OT Snap / Block</span>
+                <select class="kiosk-select att-co-def-math-sel" data-${buAttr}-policy-ot-snap="${esc(bu)}" data-plain-options="1" aria-label="Overtime Snap Mode for ${esc(bu)}"${canWriteCo ? '' : ' disabled'}>
+                  ${renderOtSnapComboOptionsHtml(activeOtSnapMode, activeOtBlockMin, activeOtSnapAtMin)}
+                </select>
+              </label>
+              <label class="att-inline-ctl is-compact">
+                <span class="att-inline-ctl-lbl">OT After</span>
+                <span class="att-unit-input-wrap">
+                  <input type="number" class="mono att-co-def-thresh" min="0" max="180" step="1" data-${buAttr}-policy-ot-thresh="${esc(bu)}" value="${activeOtThresh}" aria-label="Overtime threshold minutes for ${esc(bu)}"${canWriteCo ? '' : ' disabled'}>
+                  <span class="att-unit-sfx">min</span>
+                </span>
+              </label>
+              <button type="button" class="btn kiosk-mini-btn att-co-eff-toggle-btn" data-toggle-co-eff="${esc(bu)}" aria-expanded="${coEffOpen ? 'true' : 'false'}"${canWriteCo ? '' : ' disabled'}>Effective Date</button>
+            </div>
+            <div class="att-co-def-eff-drawer" data-co-eff-drawer="${esc(bu)}"${coEffOpen ? '' : ' hidden'}>
+              <label class="att-inline-ctl">
+                <span class="att-inline-ctl-lbl">Effective From</span>
+                <input type="date" class="kiosk-select att-co-def-eff" data-${buAttr}-policy-eff="${esc(bu)}" value="${esc(draftEffVal)}" aria-label="Effective from date for ${esc(bu)}"${canWriteCo ? '' : ' disabled'}>
+              </label>
+              <button type="button" class="btn btn-primary kiosk-mini-btn" data-${buAttr}-policy-apply="${esc(bu)}"${canWriteCo ? '' : ' disabled'}>Apply &amp; Backfill</button>
             </div>
           </div>
         </div>
@@ -138610,6 +138681,12 @@
   }
 
   function closeStaffScheduleModal() {
+    if (STATE.kioskCoEffOpen) {
+      Object.keys(STATE.kioskCoEffOpen).forEach(k => { if (k.startsWith('ssm-bu:')) delete STATE.kioskCoEffOpen[k]; });
+    }
+    if (STATE.kioskCoPolicyDraft) {
+      Object.keys(STATE.kioskCoPolicyDraft).forEach(k => { if (k.startsWith('ssm-bu:')) delete STATE.kioskCoPolicyDraft[k]; });
+    }
     const m = $('staffScheduleModal');
     if (m) m.hidden = true;
     document.body.classList.remove('modal-open');
@@ -139477,7 +139554,7 @@
               </div>
             </div>
 
-            <!-- SECTION 3: LATENESS TOLERANCE, WHEN LATENESS OCCURS & PUNISHMENT RULES -->
+            <!-- SECTION 3: LATENESS TOLERANCE, WHEN LATENESS OCCURS & LATE DEDUCTION RULES -->
             <div class="ssm-section" id="ssmLatenessSection" ${showSec('lateness') ? '' : 'hidden'}>
               <div class="ssm-sec-head">
                 <strong>3. Lateness Tolerances, Scope &amp; Single-Punch Rules</strong>
@@ -139554,7 +139631,7 @@
                 </div>
               </div>
 
-              <div class="ssm-subhead-lbl" style="margin-top:6px">Lateness Punishment Rule</div>
+              <div class="ssm-subhead-lbl" style="margin-top:6px">Late Deduction Rule</div>
               <div class="ot-mode-grid ssm-penalty-grid">
                 <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'exact_hours' ? 'active' : ''}" data-ssm-late-pen="exact_hours">
                   <div class="ot-mc-title"><span class="ot-dot sapphire"></span>Exact Hours (1x)</div>
@@ -140455,17 +140532,41 @@
           renderModalInner();
         });
       });
-      const onSsmCoPolicyUpdate = (el, bu, src) => {
+      const onSsmCoPolicyUpdate = (el, bu, src, field = '') => {
         if (!canEditShiftsAndRules(null, bu)) {
           renderModalInner();
           return;
         }
         syncLiveInputs();
+        const key = getCoDefCardKey(el, bu);
+        const effOpen = Boolean(STATE.kioskCoEffOpen && STATE.kioskCoEffOpen[key]);
+        if (effOpen && src !== 'apply') {
+          snapshotCoPolicyDraftFromCard(el, bu, { field: field || (src === 'group_select' ? 'group_select' : '') });
+          if (field !== 'thresh') renderModalInner();
+          return;
+        }
         const hasExplicitRule = hasExplicitStaffWorkRule(entry.name, entry.company);
-        const res = applyCompanyDefaultPolicyFromCard(el, bu, { source: src });
-        if (res && res.ok && norm(entry.company) === norm(bu) && !hasExplicitRule) {
-          draftPolicyGroupId = res.group.id;
-          applyPolicyGroupToDraft(res.group.id);
+        const res = applyCompanyDefaultPolicyFromCard(el, bu, { source: src === 'apply' ? 'math_or_apply' : src });
+        if (res && res.ok) {
+          if (STATE.kioskCoPolicyDraft) delete STATE.kioskCoPolicyDraft[key];
+          if (src === 'apply' && STATE.kioskCoEffOpen) delete STATE.kioskCoEffOpen[key];
+          if (norm(entry.company) === norm(bu) && !hasExplicitRule) {
+            const resolvedToday = resolveCompanyDefaultPolicyGroupAtDate(bu, todayISO());
+            const todayActiveId = (resolvedToday && resolvedToday.id) || (res.entry && res.entry.group_id) || res.group.id;
+            draftPolicyGroupId = todayActiveId;
+            applyPolicyGroupToDraft(todayActiveId);
+            if (resolvedToday) {
+              if (resolvedToday.math_mode) draftMathMode = normalizeAttMathMode(resolvedToday.math_mode);
+              if (resolvedToday.ot_threshold_min != null) draftOtThreshMin = clampAttThresholdMin(resolvedToday.ot_threshold_min, draftOtThreshMin);
+              if (resolvedToday.ot_early_threshold_min != null) draftOtEarlyThreshMin = clampAttThresholdMin(resolvedToday.ot_early_threshold_min, draftOtEarlyThreshMin);
+              if (resolvedToday.ot_count_from) draftOtCountFrom = normalizeOtCountFrom(resolvedToday.ot_count_from);
+              if (resolvedToday.ot_snap_mode) draftOtSnapMode = normalizeOtSnapMode(resolvedToday.ot_snap_mode);
+              if (resolvedToday.ot_block_min != null) draftOtBlockMin = normalizeOtBlockMin(resolvedToday.ot_block_min);
+              if (resolvedToday.ot_snap_at_min != null) draftOtSnapAtMin = clampOtSnapAtMin(resolvedToday.ot_snap_at_min, draftOtBlockMin);
+            }
+          }
+        } else if (res && !res.ok && res.error) {
+          toast(res.error, 'warn');
         }
         renderModalInner();
       };
@@ -140493,16 +140594,54 @@
         });
       });
       modal.querySelectorAll('[data-ssm-bu-policy-default]').forEach(sel => {
-        sel.addEventListener('change', () => onSsmCoPolicyUpdate(sel, sel.getAttribute('data-ssm-bu-policy-default') || entry.company, 'group_select'));
+        sel.addEventListener('change', () => onSsmCoPolicyUpdate(sel, sel.getAttribute('data-ssm-bu-policy-default') || entry.company, 'group_select', 'group_select'));
       });
       modal.querySelectorAll('[data-ssm-bu-policy-ot-snap]').forEach(sel => {
-        sel.addEventListener('change', () => onSsmCoPolicyUpdate(sel, sel.getAttribute('data-ssm-bu-policy-ot-snap') || entry.company, 'math_or_apply'));
+        sel.addEventListener('change', () => onSsmCoPolicyUpdate(sel, sel.getAttribute('data-ssm-bu-policy-ot-snap') || entry.company, 'math_or_apply', 'snap'));
       });
       modal.querySelectorAll('[data-ssm-bu-policy-ot-thresh]').forEach(inp => {
-        inp.addEventListener('change', () => onSsmCoPolicyUpdate(inp, inp.getAttribute('data-ssm-bu-policy-ot-thresh') || entry.company, 'math_or_apply'));
+        const bu = inp.getAttribute('data-ssm-bu-policy-ot-thresh') || entry.company;
+        inp.addEventListener('input', () => {
+          const key = getCoDefCardKey(inp, bu);
+          if (STATE.kioskCoEffOpen && STATE.kioskCoEffOpen[key]) snapshotCoPolicyDraftFromCard(inp, bu, { field: 'thresh' });
+        });
+        inp.addEventListener('change', () => onSsmCoPolicyUpdate(inp, bu, 'math_or_apply', 'thresh'));
+      });
+      modal.querySelectorAll('[data-ssm-bu-policy-eff]').forEach(inp => {
+        const bu = inp.getAttribute('data-ssm-bu-policy-eff') || entry.company;
+        inp.addEventListener('input', () => snapshotCoPolicyDraftFromCard(inp, bu, { field: 'eff' }));
+        inp.addEventListener('change', () => snapshotCoPolicyDraftFromCard(inp, bu, { field: 'eff' }));
+      });
+      modal.querySelectorAll('[data-toggle-co-eff]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const co = btn.getAttribute('data-toggle-co-eff') || entry.company;
+          const card = btn.closest('[data-co-def-card]');
+          const prefix = (card && card.getAttribute('data-co-def-prefix')) || 'ssm-bu';
+          STATE.kioskCoEffOpen = STATE.kioskCoEffOpen || {};
+          const key = `${prefix}:${co}`;
+          const next = !STATE.kioskCoEffOpen[key];
+          if (next) {
+            STATE.kioskCoEffOpen[key] = true;
+            btn.setAttribute('aria-expanded', 'true');
+            const drawer = card ? card.querySelector('[data-co-eff-drawer]') : null;
+            if (drawer) drawer.hidden = false;
+          } else {
+            delete STATE.kioskCoEffOpen[key];
+            const hadDraft = Boolean(STATE.kioskCoPolicyDraft && STATE.kioskCoPolicyDraft[key]);
+            if (STATE.kioskCoPolicyDraft) delete STATE.kioskCoPolicyDraft[key];
+            if (hadDraft) {
+              syncLiveInputs();
+              renderModalInner();
+            } else {
+              btn.setAttribute('aria-expanded', 'false');
+              const drawer = card ? card.querySelector('[data-co-eff-drawer]') : null;
+              if (drawer) drawer.hidden = true;
+            }
+          }
+        });
       });
       modal.querySelectorAll('[data-ssm-bu-policy-apply]').forEach(btn => {
-        btn.addEventListener('click', () => onSsmCoPolicyUpdate(btn, btn.getAttribute('data-ssm-bu-policy-apply') || entry.company, 'math_or_apply'));
+        btn.addEventListener('click', () => onSsmCoPolicyUpdate(btn, btn.getAttribute('data-ssm-bu-policy-apply') || entry.company, 'apply'));
       });
       modal.querySelectorAll('[data-co-policy-rm-win]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -144154,6 +144293,9 @@
       backfill: true
     });
     if (res && res.ok) {
+      const cardKey = getCoDefCardKey(el, bu);
+      if (STATE.kioskCoPolicyDraft) delete STATE.kioskCoPolicyDraft[cardKey];
+      if (STATE.kioskCoEffOpen) delete STATE.kioskCoEffOpen[cardKey];
       const bf = res.attBackfill || prev;
       const showUsd = canViewPayrollDollarAmounts();
       const deltaStr = showUsd && bf && bf.updatedRows > 0
@@ -145053,8 +145195,8 @@
       <div class="panel-card pay-policy-summary-card" id="payBiometricPolicySection">
         <div class="panel-head pay-policy-summary-head" id="payBiometricPolicySummaryCard">
           <div>
-            <div class="panel-title"><span>${ic('clock')} BIOMETRIC SHIFTS, LATENESS TOLERANCES &amp; KIOSK CREDENTIALS</span></div>
-            <span class="ph-sub">Configure Day / Night / Custom shifts, arrival &amp; departure grace windows, single-punch rules, overtime passes, 3-pose Face ID, and 4-digit PINs here so wall tablets stay clean for staff clocking</span>
+            <div class="panel-title"><span>${ic('clock')} SHIFTS, POLICIES &amp; BIOMETRIC CREDENTIALS</span></div>
+            <span class="ph-sub">Manage work shifts, lateness &amp; overtime policies, Face ID, and wall kiosk PINs</span>
           </div>
           <div class="pay-policy-summary-actions">
             <span class="badge">${fmtNum(shiftTypes.length)} Shift Types</span>
@@ -145064,11 +145206,123 @@
             <button type="button" class="btn" data-open-pay-policy="schedule">${ic('clock')} Shift Schedule</button>
             <button type="button" class="btn" data-open-pay-policy="lateness">${ic('warn')} Lateness &amp; OT Rules</button>
             <button type="button" class="btn" data-enrol-staff-face="">${ic('camera')} Enrol Face ID</button>
-            <button type="button" class="btn btn-primary" data-open-pay-policy="roster">${ic('sliders')} Open Policy Desk</button>
+            <button type="button" class="btn btn-primary" data-open-pay-policy="roster">${ic('sliders')} Open Roster &amp; PINs</button>
           </div>
         </div>
       </div>
     `;
+  }
+
+  function getFilteredKioskRoster(opts = {}) {
+    const scopeBySelectedCompany = opts.scopeBySelectedCompany !== false;
+    const includeEnded = opts.includeEnded !== false;
+    const staffStatusFilter = ['all', 'active', 'inactive'].includes(STATE.kioskStaffStatusFilter)
+      ? STATE.kioskStaffStatusFilter
+      : 'all';
+    const fullStaffDir = opts.fullStaffDir || getKioskStaffDirectory({ scopeBySelectedCompany, includeEnded });
+    const staffDir = staffStatusFilter === 'active'
+      ? fullStaffDir.filter(s => !s.isEndedContract)
+      : (staffStatusFilter === 'inactive' ? fullStaffDir.filter(s => s.isEndedContract) : fullStaffDir);
+    const rosterQuery = norm(STATE.kioskAttRosterSearch || '');
+    const latePenFilter = STATE.kioskLatePenFilter || 'all';
+    const lateTolFilter = STATE.kioskLateTolFilter || 'all';
+    const lateWhenFilter = STATE.kioskLateWhenFilter || 'all';
+    const lateOtFilter = (STATE.kioskLateOtFilter && STATE.kioskLateOtFilter !== 'all')
+      ? STATE.kioskLateOtFilter
+      : (STATE.kioskSchedOtFilter || 'all');
+    const lateTodayFilter = STATE.kioskLateTodayFilter || 'all';
+    const policyGroupFilter = STATE.kioskPolicyGroupFilter || 'all';
+    const nowMs = opts.nowMs || Date.now();
+    let latestByStaff = opts.latestByStaff;
+    if (!(latestByStaff instanceof Map)) {
+      const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
+      const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
+      const tabletPunches = doorTabletPunchList();
+      const wallPunches = sanitizeKioskPunchesList(STATE.kioskPunches);
+      const allPunches = (tabletPunches.length
+        ? wallPunches.concat(tabletPunches).sort((a, b) => String((b && b.iso) || '').localeCompare(String((a && a.iso) || '')))
+        : wallPunches).filter(p => p && !p.voided);
+      const viewerAllowedCos = allowedCompanyNames(activeUser());
+      const indCoNames = new Set(getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd && (!viewerAllowedCos.length || viewerAllowedCos.includes(c.name))).map(c => c.name));
+      const punches = scopedCo
+        ? allPunches.filter(p => (!p.company || p.company === scopedCo) && (!viewerAllowedCos.length || !p.company || viewerAllowedCos.includes(p.company)))
+        : allPunches.filter(p => (!p.company || indCoNames.has(p.company)) && (!viewerAllowedCos.length || !p.company || viewerAllowedCos.includes(p.company)));
+      latestByStaff = new Map();
+      punches.forEach(p => {
+        const k = norm(p.staff);
+        if (k && !latestByStaff.has(k)) latestByStaff.set(k, p);
+      });
+    }
+    const today = todayISO();
+    const checkStaffFilterCriteria = (s, criteria = {}) => {
+      const penF = criteria.pen != null ? criteria.pen : latePenFilter;
+      const tolF = criteria.tol != null ? criteria.tol : lateTolFilter;
+      const whenF = criteria.when != null ? criteria.when : lateWhenFilter;
+      const otF = criteria.ot != null ? criteria.ot : lateOtFilter;
+      const todayF = criteria.today != null ? criteria.today : lateTodayFilter;
+      const pkgF = criteria.pkg != null ? criteria.pkg : policyGroupFilter;
+      const lt = s.lateDesc || describeStaffLatenessRule(s.name, s.company, today);
+      const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, today);
+      const pg = s.policyDesc || describeStaffPolicyGroup(s.name, s.company);
+      if (pkgF !== 'all' && pg.id !== pkgF) return false;
+      if (penF !== 'all') {
+        if (penF === 'no_out_half_day' && lt.noOutRule !== 'half_day') return false;
+        if (penF === 'no_out_absent' && lt.noOutRule !== 'full_absence') return false;
+        if (penF === 'late_half_day' && lt.penaltyMode !== 'tiered_half_day' && lt.penaltyMode !== 'half_day_any') return false;
+        if (penF === 'escalated' && lt.penaltyMode !== 'multiplier' && lt.penaltyMode !== 'round_hour' && lt.penaltyMode !== 'round_30m' && lt.penaltyMode !== 'step_brackets') return false;
+        if (penF === 'exact_hours' && lt.penaltyMode !== 'exact_hours') return false;
+        if (penF === 'none' && lt.penaltyMode !== 'none') return false;
+      }
+      if (tolF !== 'all') {
+        const targetMin = Number(tolF);
+        const gm = Number(lt.graceMin != null ? lt.graceMin : 10);
+        const egm = Number(lt.earlyGraceMin != null ? lt.earlyGraceMin : gm);
+        if (Number.isFinite(targetMin) && gm !== targetMin && egm !== targetMin) return false;
+      }
+      if (whenF !== 'all' && lt.lateWhen !== whenF) {
+        return false;
+      }
+      if (otF !== 'all') {
+        const otMode = ot.mode || 'none';
+        if (otF === 'none' && otMode !== 'none') return false;
+        if (otF === 'allowed' && otMode === 'none') return false;
+        if (otF === 'date_range' && otMode !== 'date_range') return false;
+      }
+      if (todayF !== 'all') {
+        const lp = latestByStaff.get(norm(s.name));
+        const onNow = isPunchActiveOnSite(lp, nowMs);
+        const outToday = !onNow && lp && lp.direction === 'OUT' && (lp.date === today || lp.shift_date === today);
+        const hasTodayPunch = onNow || outToday;
+        const isSinglePunchToday = onNow || (outToday && !lp.in_time);
+        const isLateToday = hasTodayPunch && ((Number(lp.late_hours || 0) > 0) || (Number(lp.raw_late_min || 0) > 0) || (Number(lp.early_out_min || 0) > 0) || (outToday && Number(lp.penalty_leave_days || 0) >= 0.5));
+        const isMissingOutHalfDay = isSinglePunchToday && (lt.noOutRule === 'half_day' || Number(lp.penalty_leave_days || 0) >= 0.5);
+        if (todayF === 'missing_out_half_day' && !isMissingOutHalfDay) return false;
+        if (todayF === 'late_today' && !isLateToday) return false;
+        if (todayF === 'on_time_today' && (!hasTodayPunch || isLateToday || isSinglePunchToday)) return false;
+        if (todayF === 'off_site' && hasTodayPunch) return false;
+      }
+      return true;
+    };
+    const searchFilteredRoster = rosterQuery
+      ? staffDir.filter(s =>
+        norm(s.name).includes(rosterQuery)
+        || norm(s.role).includes(rosterQuery)
+        || norm(s.company).includes(rosterQuery)
+        || norm(s.shift && s.shift.name).includes(rosterQuery)
+        || norm(s.policyDesc && s.policyDesc.name).includes(rosterQuery)
+        || norm(s.policyDesc && s.policyDesc.summaryLine).includes(rosterQuery)
+        || norm((s.policyDesc && s.policyDesc.perks || []).join(' ')).includes(rosterQuery)
+        || norm(s.lateDesc && s.lateDesc.badgeText).includes(rosterQuery)
+        || norm(s.lateDesc && s.lateDesc.subText).includes(rosterQuery)
+        || norm(s.otDesc && s.otDesc.badgeText).includes(rosterQuery)
+      )
+      : staffDir;
+    const filteredRoster = searchFilteredRoster.filter(s => checkStaffFilterCriteria(s));
+    return {
+      staffStatusFilter, fullStaffDir, staffDir, rosterQuery,
+      latePenFilter, lateTolFilter, lateWhenFilter, lateOtFilter, lateTodayFilter, policyGroupFilter,
+      searchFilteredRoster, filteredRoster, checkStaffFilterCriteria
+    };
   }
 
   function renderAttendancePolicyCardHtml(opts = {}) {
@@ -145107,92 +145361,16 @@
       ? allEmpRecords.some(emp => emp && !emp.voided && (emp.company || 'WTC') === rawScopedCo)
       : true;
     const effectiveScopedCo = rawCoHasEmps ? rawScopedCo : '';
-    const staffStatusFilter = ['all', 'active', 'inactive'].includes(STATE.kioskStaffStatusFilter)
-      ? STATE.kioskStaffStatusFilter
-      : 'all';
-    const fullStaffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true, includeEnded: true });
+    const {
+      staffStatusFilter, fullStaffDir, staffDir, rosterQuery,
+      latePenFilter, lateTolFilter, lateWhenFilter, lateOtFilter, lateTodayFilter, policyGroupFilter,
+      searchFilteredRoster, filteredRoster, checkStaffFilterCriteria
+    } = getFilteredKioskRoster({ latestByStaff, nowMs });
     const activeStaffTotal = fullStaffDir.filter(s => !s.isEndedContract).length;
     const endedStaffTotal = fullStaffDir.filter(s => s.isEndedContract).length;
-    const staffDir = staffStatusFilter === 'active'
-      ? fullStaffDir.filter(s => !s.isEndedContract)
-      : (staffStatusFilter === 'inactive' ? fullStaffDir.filter(s => s.isEndedContract) : fullStaffDir);
     const allowedFeedModes = ['roster', 'lateness', 'schedule', 'onsite', 'all'];
     const feedFilter = allowedFeedModes.includes(STATE.kioskAttFeedFilter) ? STATE.kioskAttFeedFilter : 'roster';
-    const rosterQuery = norm(STATE.kioskAttRosterSearch || '');
-    const latePenFilter = STATE.kioskLatePenFilter || 'all';
-    const lateTolFilter = STATE.kioskLateTolFilter || 'all';
-    const lateWhenFilter = STATE.kioskLateWhenFilter || 'all';
-    const lateOtFilter = STATE.kioskLateOtFilter || 'all';
-    const lateTodayFilter = STATE.kioskLateTodayFilter || 'all';
-    const policyGroupFilter = STATE.kioskPolicyGroupFilter || 'all';
     const policyGroupsCatalog = getPolicyGroups(effectiveScopedCo || defCo);
-
-    const checkStaffFilterCriteria = (s, criteria = {}) => {
-      const penF = criteria.pen != null ? criteria.pen : latePenFilter;
-      const tolF = criteria.tol != null ? criteria.tol : lateTolFilter;
-      const whenF = criteria.when != null ? criteria.when : lateWhenFilter;
-      const otF = criteria.ot != null ? criteria.ot : lateOtFilter;
-      const todayF = criteria.today != null ? criteria.today : lateTodayFilter;
-      const pkgF = criteria.pkg != null ? criteria.pkg : policyGroupFilter;
-      const lt = s.lateDesc || describeStaffLatenessRule(s.name, s.company, todayISO());
-      const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, todayISO());
-      const pg = s.policyDesc || describeStaffPolicyGroup(s.name, s.company);
-      if (pkgF !== 'all' && pg.id !== pkgF) return false;
-      if (penF !== 'all') {
-        if (penF === 'no_out_half_day' && lt.noOutRule !== 'half_day') return false;
-        if (penF === 'no_out_absent' && lt.noOutRule !== 'full_absence') return false;
-        if (penF === 'late_half_day' && lt.penaltyMode !== 'tiered_half_day' && lt.penaltyMode !== 'half_day_any') return false;
-        if (penF === 'escalated' && lt.penaltyMode !== 'multiplier' && lt.penaltyMode !== 'round_hour' && lt.penaltyMode !== 'round_30m' && lt.penaltyMode !== 'step_brackets') return false;
-        if (penF === 'exact_hours' && lt.penaltyMode !== 'exact_hours') return false;
-        if (penF === 'none' && lt.penaltyMode !== 'none') return false;
-      }
-      if (tolF !== 'all') {
-        const targetMin = Number(tolF);
-        const gm = Number(lt.graceMin != null ? lt.graceMin : 10);
-        const egm = Number(lt.earlyGraceMin != null ? lt.earlyGraceMin : gm);
-        if (Number.isFinite(targetMin) && gm !== targetMin && egm !== targetMin) return false;
-      }
-      if (whenF !== 'all' && lt.lateWhen !== whenF) {
-        return false;
-      }
-      if (otF !== 'all') {
-        const otMode = ot.mode || 'none';
-        if (otF === 'none' && otMode !== 'none') return false;
-        if (otF === 'allowed' && otMode === 'none') return false;
-        if (otF === 'date_range' && otMode !== 'date_range') return false;
-      }
-      if (todayF !== 'all') {
-        const lp = latestByStaff.get(norm(s.name));
-        const onNow = isPunchActiveOnSite(lp, nowMs);
-        const outToday = !onNow && lp && lp.direction === 'OUT' && (lp.date === todayISO() || lp.shift_date === todayISO());
-        const hasTodayPunch = onNow || outToday;
-        const isSinglePunchToday = onNow || (outToday && !lp.in_time);
-        const isLateToday = hasTodayPunch && ((Number(lp.late_hours || 0) > 0) || (Number(lp.raw_late_min || 0) > 0) || (Number(lp.early_out_min || 0) > 0) || (outToday && Number(lp.penalty_leave_days || 0) >= 0.5));
-        const isMissingOutHalfDay = isSinglePunchToday && (lt.noOutRule === 'half_day' || Number(lp.penalty_leave_days || 0) >= 0.5);
-        if (todayF === 'missing_out_half_day' && !isMissingOutHalfDay) return false;
-        if (todayF === 'late_today' && !isLateToday) return false;
-        if (todayF === 'on_time_today' && (!hasTodayPunch || isLateToday || isSinglePunchToday)) return false;
-        if (todayF === 'off_site' && hasTodayPunch) return false;
-      }
-      return true;
-    };
-
-    const matchesKioskLateFilters = s => checkStaffFilterCriteria(s);
-    const searchFilteredRoster = rosterQuery
-      ? staffDir.filter(s =>
-        norm(s.name).includes(rosterQuery)
-        || norm(s.role).includes(rosterQuery)
-        || norm(s.company).includes(rosterQuery)
-        || norm(s.shift && s.shift.name).includes(rosterQuery)
-        || norm(s.policyDesc && s.policyDesc.name).includes(rosterQuery)
-        || norm(s.policyDesc && s.policyDesc.summaryLine).includes(rosterQuery)
-        || norm((s.policyDesc && s.policyDesc.perks || []).join(' ')).includes(rosterQuery)
-        || norm(s.lateDesc && s.lateDesc.badgeText).includes(rosterQuery)
-        || norm(s.lateDesc && s.lateDesc.subText).includes(rosterQuery)
-        || norm(s.otDesc && s.otDesc.badgeText).includes(rosterQuery)
-      )
-      : staffDir;
-    const filteredRoster = searchFilteredRoster.filter(matchesKioskLateFilters);
     const countByCriteria = overrides => searchFilteredRoster.filter(s => checkStaffFilterCriteria(s, overrides)).length;
 
     const basePunches = feedFilter === 'onsite' ? onSiteList : punches.slice(0, 25);
@@ -145218,22 +145396,17 @@
     const weekDates = getScheduleWeekDates(STATE.kioskSchedWeekOffset || 0);
     const weekRangeLbl = `${weekDates[0].dayNum} ${weekDates[0].monthShort} - ${weekDates[6].dayNum} ${weekDates[6].monthShort}`;
     const schedShiftFilter = STATE.kioskSchedShiftFilter || 'all';
-    const schedOtFilter = STATE.kioskSchedOtFilter || 'all';
+    const schedOtFilter = lateOtFilter;
     const schedRoster = filteredRoster.filter(s => {
       if (schedShiftFilter !== 'all') {
         const rId = getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4';
         if (rId !== schedShiftFilter) return false;
       }
-      if (schedOtFilter !== 'all') {
-        const otM = (s.otDesc && s.otDesc.mode) || 'none';
-        if (schedOtFilter === 'allowed' && otM === 'none') return false;
-        if (schedOtFilter === 'none' && otM !== 'none') return false;
-        if (schedOtFilter === 'date_range' && otM !== 'date_range') return false;
-      }
       return true;
     });
 
     const hasActiveLateFilter = latePenFilter !== 'all' || lateTolFilter !== 'all' || lateWhenFilter !== 'all' || lateOtFilter !== 'all' || lateTodayFilter !== 'all' || staffStatusFilter !== 'all' || policyGroupFilter !== 'all';
+    const hasAnyAttFilter = hasActiveLateFilter || schedShiftFilter !== 'all';
     const canShowKioskDollars = canViewPayrollDollarAmounts();
     const renderKioskMinChipsHtml = pObj => {
       if (!pObj) return '';
@@ -145258,7 +145431,7 @@
       const otHVal = Number(pObj.overtime_hours || 0);
       const ltHVal = penLv > 0 ? 0 : Number(pObj.late_hours || 0);
       const matchedAtt = (STATE.customRecords && Array.isArray(STATE.customRecords.attendance))
-        ? STATE.customRecords.attendance.find(a => !a.voided && norm(a.staff) === norm(staffName) && String(a.date || a.rep_date || '').slice(0, 10) === dStr && (!coVal || !a.company || sameCo(a.company, coVal)))
+        ? STATE.customRecords.attendance.find(a => !a.voided && norm(a.staff) === norm(staffName) && String(a.date || a.rep_date || '').slice(0, 10) === dStr && (!coVal || !a.company || norm(canonCompany(a.company)) === norm(canonCompany(coVal))))
         : null;
       const synType = otHVal > 0 ? 'Overtime' : (penLv >= 1 ? 'Absence' : (penLv >= 0.5 ? 'Half Day' : (ltHVal > 0 ? 'Lateness' : 'Present')));
       const rowForImpact = matchedAtt || {
@@ -145334,7 +145507,9 @@
     const editCoAttr = effectiveScopedCo ? ` data-edit-co="${esc(effectiveScopedCo)}"` : '';
 
     const canWritePolCat = canEditPolicyGroupsCatalog();
-    const canWriteShiftCat = canEditShiftsAndRules(null, effectiveScopedCo || defCo);
+    const canWriteShiftCat = effectiveScopedCo
+      ? canEditShiftsAndRules(null, effectiveScopedCo)
+      : (indCoNames.size ? Array.from(indCoNames).some(c => canEditShiftsAndRules(null, c)) : canEditShiftsAndRules(null, defCo));
 
     const companyDefaultsStripHtml = companyDefaultsTargets.length ? `
       <div class="att-co-defaults-bar" id="kioskCoDefaultsBar">
@@ -145342,7 +145517,7 @@
       </div>
     ` : '';
 
-    const policyGroupsStripHtml = `
+    const buildPolicyGroupsStripHtml = () => `
       <div class="att-catalog-section is-policy-catalog">
         <div class="att-catalog-head">
           <div class="att-catalog-title-col">
@@ -145394,90 +145569,171 @@
       </div>
     `;
 
-    const lateFilterBarHtml = `
-      <div class="kiosk-late-filter-bar" id="kioskLateFilterBar">
-        <div class="sched-filter-group kiosk-filter-pod">
-          <span class="kiosk-bar-lbl">Staff Status</span>
-          <div class="kiosk-filter-chips">
-            <button type="button" class="kiosk-qchip ${staffStatusFilter === 'all' ? 'active' : ''}" data-kiosk-staff-status="all">All Staff ${fCnt(fullStaffDir.length)}</button>
-            <button type="button" class="kiosk-qchip ${staffStatusFilter === 'active' ? 'active' : ''}" data-kiosk-staff-status="active">Active ${fCnt(activeStaffTotal)}</button>
-            <button type="button" class="kiosk-qchip ${staffStatusFilter === 'inactive' ? 'active' : ''}" data-kiosk-staff-status="inactive">Inactive / Ended ${fCnt(endedStaffTotal)}</button>
+    const allowedInInd = getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd && (!viewerAllowedCos.length || viewerAllowedCos.includes(c.name)));
+    const statusPodHtml = `
+      <div class="sched-filter-group kiosk-filter-pod">
+        <span class="kiosk-bar-lbl">Staff Status</span>
+        <div class="kiosk-filter-chips">
+          <button type="button" class="kiosk-qchip ${staffStatusFilter === 'all' ? 'active' : ''}" data-kiosk-staff-status="all">All Staff ${fCnt(fullStaffDir.length)}</button>
+          <button type="button" class="kiosk-qchip ${staffStatusFilter === 'active' ? 'active' : ''}" data-kiosk-staff-status="active">Active ${fCnt(activeStaffTotal)}</button>
+          <button type="button" class="kiosk-qchip ${staffStatusFilter === 'inactive' ? 'active' : ''}" data-kiosk-staff-status="inactive">Inactive / Ended ${fCnt(endedStaffTotal)}</button>
+        </div>
+      </div>
+    `;
+    const companyPodHtml = allowedInInd.length > 1 ? `
+      <div class="sched-filter-group kiosk-filter-pod">
+        <span class="kiosk-bar-lbl">Company</span>
+        <div class="kiosk-filter-chips">
+          ${(() => {
+            const groupKey = activeInd === 'Manufacturing' ? 'manufacturing-group' : ('industry:' + activeInd);
+            const allChip = allowedInInd.length > 1
+              ? `<button type="button" class="kiosk-qchip ${!effectiveScopedCo ? 'active' : ''}" data-kiosk-policy-co="${esc(groupKey)}">All Companies</button>`
+              : '';
+            return allChip + allowedInInd.map(c => `<button type="button" class="kiosk-qchip ${(effectiveScopedCo === c.name || (allowedInInd.length === 1 && !effectiveScopedCo)) ? 'active' : ''}" data-kiosk-policy-co="${esc(c.key)}">${esc(c.name)}</button>`).join('');
+          })()}
+        </div>
+      </div>
+    ` : '';
+    const buildPolicyPodHtml = () => `
+      <div class="sched-filter-group kiosk-filter-pod">
+        <span class="kiosk-bar-lbl">Policy &amp; Perks Group</span>
+        <div class="kiosk-filter-chips">
+          <button type="button" class="kiosk-qchip ${policyGroupFilter === 'all' ? 'active' : ''}" data-policy-group-filter="all">All Groups ${fCnt(countByCriteria({ pkg: 'all' }))}</button>
+          ${policyGroupsCatalog.map(grp => {
+            const c = countByCriteria({ pkg: grp.id });
+            return `<button type="button" class="kiosk-qchip ${policyGroupFilter === grp.id ? 'active' : ''} ${c === 0 ? 'is-empty-chip' : ''}" data-policy-group-filter="${esc(grp.id)}">${esc(grp.name)} ${fCnt(c)}</button>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+    const buildTolPodHtml = () => `
+      <div class="sched-filter-group kiosk-filter-pod">
+        <span class="kiosk-bar-lbl">Tolerance (IN &amp; OUT)</span>
+        <div class="kiosk-filter-chips">
+          <button type="button" class="kiosk-qchip ${lateTolFilter === 'all' ? 'active' : ''}" data-late-tol-filter="all">All ${fCnt(countByCriteria({ tol: 'all' }))}</button>
+          ${[0, 5, 10, 15, 20, 30].map(m => {
+            const c = countByCriteria({ tol: String(m) });
+            return `<button type="button" class="kiosk-qchip ${lateTolFilter === String(m) ? 'active' : ''} ${c === 0 ? 'is-empty-chip' : ''}" data-late-tol-filter="${m}">${m}m ${fCnt(c)}</button>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+    const buildWhenPodHtml = () => `
+      <div class="sched-filter-group kiosk-filter-pod">
+        <span class="kiosk-bar-lbl">When Late</span>
+        <div class="kiosk-filter-chips">
+          <button type="button" class="kiosk-qchip ${lateWhenFilter === 'all' ? 'active' : ''}" data-late-when-filter="all">All</button>
+          <button type="button" class="kiosk-qchip ${lateWhenFilter === 'both' ? 'active' : ''}" data-late-when-filter="both">IN + OUT ${fCnt(countByCriteria({ when: 'both' }))}</button>
+          <button type="button" class="kiosk-qchip ${lateWhenFilter === 'arrival_only' ? 'active' : ''}" data-late-when-filter="arrival_only">IN Only ${fCnt(countByCriteria({ when: 'arrival_only' }))}</button>
+          <button type="button" class="kiosk-qchip ${lateWhenFilter === 'early_out_only' ? 'active' : ''}" data-late-when-filter="early_out_only">OUT Only ${fCnt(countByCriteria({ when: 'early_out_only' }))}</button>
+          <button type="button" class="kiosk-qchip ${lateWhenFilter === 'short_hours' ? 'active' : ''}" data-late-when-filter="short_hours">Shift Hrs ${fCnt(countByCriteria({ when: 'short_hours' }))}</button>
+        </div>
+      </div>
+    `;
+    const buildPenPodHtml = () => `
+      <div class="sched-filter-group kiosk-filter-pod">
+        <span class="kiosk-bar-lbl">Late Deduction</span>
+        <div class="kiosk-filter-chips">
+          <button type="button" class="kiosk-qchip ${latePenFilter === 'all' ? 'active' : ''}" data-late-pen-filter="all">All</button>
+          <button type="button" class="kiosk-qchip ${latePenFilter === 'no_out_half_day' ? 'active' : ''}" data-late-pen-filter="no_out_half_day">Only IN/OUT = 0.5d ${fCnt(countByCriteria({ pen: 'no_out_half_day' }))}</button>
+          <button type="button" class="kiosk-qchip ${latePenFilter === 'no_out_absent' ? 'active' : ''}" data-late-pen-filter="no_out_absent">Only IN/OUT = 1d ${fCnt(countByCriteria({ pen: 'no_out_absent' }))}</button>
+          <button type="button" class="kiosk-qchip ${latePenFilter === 'late_half_day' ? 'active' : ''}" data-late-pen-filter="late_half_day">Late = 0.5d ${fCnt(countByCriteria({ pen: 'late_half_day' }))}</button>
+          <button type="button" class="kiosk-qchip ${latePenFilter === 'escalated' ? 'active' : ''}" data-late-pen-filter="escalated">1.5x / Steps / Round ${fCnt(countByCriteria({ pen: 'escalated' }))}</button>
+          <button type="button" class="kiosk-qchip ${latePenFilter === 'exact_hours' ? 'active' : ''}" data-late-pen-filter="exact_hours">Exact 1x ${fCnt(countByCriteria({ pen: 'exact_hours' }))}</button>
+          <button type="button" class="kiosk-qchip ${latePenFilter === 'none' ? 'active' : ''}" data-late-pen-filter="none">Track $0 ${fCnt(countByCriteria({ pen: 'none' }))}</button>
+        </div>
+      </div>
+    `;
+    const buildOtPodHtml = () => `
+      <div class="sched-filter-group kiosk-filter-pod">
+        <span class="kiosk-bar-lbl">Overtime</span>
+        <div class="kiosk-filter-chips">
+          <button type="button" class="kiosk-qchip ${lateOtFilter === 'all' ? 'active' : ''}" data-late-ot-filter="all">All</button>
+          <button type="button" class="kiosk-qchip ${lateOtFilter === 'none' ? 'active' : ''}" data-late-ot-filter="none">No OT ${fCnt(countByCriteria({ ot: 'none' }))}</button>
+          <button type="button" class="kiosk-qchip ${lateOtFilter === 'allowed' ? 'active' : ''}" data-late-ot-filter="allowed">OT Allowed ${fCnt(countByCriteria({ ot: 'allowed' }))}</button>
+          <button type="button" class="kiosk-qchip ${lateOtFilter === 'date_range' ? 'active' : ''}" data-late-ot-filter="date_range">Date Pass ${fCnt(countByCriteria({ ot: 'date_range' }))}</button>
+        </div>
+      </div>
+    `;
+    const shiftPodHtml = `
+      <div class="sched-filter-group kiosk-filter-pod">
+        <span class="kiosk-bar-lbl">Shift</span>
+        <div class="kiosk-filter-chips">
+          <button type="button" class="kiosk-qchip ${schedShiftFilter === 'all' ? 'active' : ''}" data-sched-shift-filter="all">All</button>
+          ${shiftTypesCatalog.map(st => `<button type="button" class="kiosk-qchip ${schedShiftFilter === st.id ? 'active' : ''}" data-sched-shift-filter="${esc(st.id)}">${esc(st.short)}</button>`).join('')}
+          <button type="button" class="kiosk-qchip ${schedShiftFilter === 'custom' ? 'active' : ''}" data-sched-shift-filter="custom">Custom</button>
+        </div>
+      </div>
+    `;
+    const renderTodayPodHtml = isPunchLog => `
+      <div class="sched-filter-group kiosk-filter-pod">
+        <span class="kiosk-bar-lbl">${isPunchLog ? 'Punch Filter' : 'Today'}</span>
+        <div class="kiosk-filter-chips">
+          <button type="button" class="kiosk-qchip ${lateTodayFilter === 'all' ? 'active' : ''}" data-late-today-filter="all">All</button>
+          <button type="button" class="kiosk-qchip ${lateTodayFilter === 'missing_out_half_day' ? 'active' : ''}" data-late-today-filter="missing_out_half_day">${isPunchLog ? 'Single Punch (0.5d)' : `Only IN or OUT (0.5d) ${fCnt(countByCriteria({ today: 'missing_out_half_day' }))}`}</button>
+          <button type="button" class="kiosk-qchip ${lateTodayFilter === 'late_today' ? 'active' : ''}" data-late-today-filter="late_today">${isPunchLog ? 'Late / Early OUT' : `Late / Early OUT ${fCnt(countByCriteria({ today: 'late_today' }))}`}</button>
+          <button type="button" class="kiosk-qchip ${lateTodayFilter === 'on_time_today' ? 'active' : ''}" data-late-today-filter="on_time_today">${isPunchLog ? 'On Time' : `On Time ${fCnt(countByCriteria({ today: 'on_time_today' }))}`}</button>
+        </div>
+      </div>
+    `;
+    const renderContextualAttFilterBarHtml = (mode, weekNavHtml = '') => {
+      if (mode === 'onsite' || mode === 'all') {
+        const showCompanyPrimary = host === 'kiosk' && allowedInInd.length > 1;
+        return `
+          <div class="kiosk-late-filter-bar is-compact-bar" id="kioskLateFilterBar">
+            <div class="kiosk-filter-primary-row">
+              ${showCompanyPrimary ? companyPodHtml : ''}
+              ${renderTodayPodHtml(true)}
+              ${hasAnyAttFilter ? `<button type="button" class="kiosk-qchip is-reset-chip" id="kioskClearLateFiltersBtn">✕ Reset Filters</button>` : ''}
+            </div>
+          </div>
+        `;
+      }
+      const isSched = mode === 'schedule';
+      const isLate = mode === 'lateness';
+      const drawerActiveCnt = [
+        policyGroupFilter !== 'all',
+        lateTolFilter !== 'all',
+        lateWhenFilter !== 'all',
+        latePenFilter !== 'all',
+        mode === 'roster' ? lateOtFilter !== 'all' : lateTodayFilter !== 'all'
+      ].filter(Boolean).length;
+      const showCompanyPrimary = host === 'kiosk' && !isSched && allowedInInd.length > 1;
+      const showReset = isSched ? hasAnyAttFilter : hasActiveLateFilter;
+      const primaryPods = isSched
+        ? `${statusPodHtml}${shiftPodHtml}${buildOtPodHtml()}`
+        : (isLate
+          ? `${statusPodHtml}${showCompanyPrimary ? companyPodHtml : ''}${buildOtPodHtml()}`
+          : `${statusPodHtml}${showCompanyPrimary ? companyPodHtml : ''}${renderTodayPodHtml(false)}`);
+      const drawerPods = `
+        ${!showCompanyPrimary ? companyPodHtml : ''}
+        ${buildPolicyPodHtml()}
+        ${buildTolPodHtml()}
+        ${buildWhenPodHtml()}
+        ${buildPenPodHtml()}
+        ${mode === 'roster' ? buildOtPodHtml() : renderTodayPodHtml(false)}
+      `;
+      return `
+        <div class="kiosk-late-filter-bar is-compact-bar" id="kioskLateFilterBar">
+          <div class="kiosk-filter-primary-row">
+            ${primaryPods}
+            <div class="kiosk-filter-actions-end">
+              <button type="button" class="kiosk-qchip is-more-btn ${STATE.kioskMoreFiltersOpen ? 'active' : ''}" id="kioskToggleMoreFiltersBtn" aria-expanded="${STATE.kioskMoreFiltersOpen ? 'true' : 'false'}">More Filters${drawerActiveCnt ? ` (${fmtNum(drawerActiveCnt)})` : ''}</button>
+              ${showReset ? `<button type="button" class="kiosk-qchip is-reset-chip" id="kioskClearLateFiltersBtn">✕ Reset Filters</button>` : ''}
+              ${weekNavHtml}
+            </div>
+          </div>
+          <div class="kiosk-more-filters-drawer" id="kioskMoreFiltersDrawer"${STATE.kioskMoreFiltersOpen ? '' : ' hidden'}>
+            ${drawerPods}
           </div>
         </div>
-        <div class="sched-filter-group kiosk-filter-pod">
-          <span class="kiosk-bar-lbl">Company</span>
-          <div class="kiosk-filter-chips">
-            ${(() => {
-              const allowedInInd = getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd && (!viewerAllowedCos.length || viewerAllowedCos.includes(c.name)));
-              const groupKey = activeInd === 'Manufacturing' ? 'manufacturing-group' : ('industry:' + activeInd);
-              const allChip = allowedInInd.length > 1
-                ? `<button type="button" class="kiosk-qchip ${!effectiveScopedCo ? 'active' : ''}" data-kiosk-policy-co="${esc(groupKey)}">All Companies</button>`
-                : '';
-              return allChip + allowedInInd.map(c => `<button type="button" class="kiosk-qchip ${(effectiveScopedCo === c.name || (allowedInInd.length === 1 && !effectiveScopedCo)) ? 'active' : ''}" data-kiosk-policy-co="${esc(c.key)}">${esc(c.name)}</button>`).join('');
-            })()}
-          </div>
-        </div>
-        <div class="sched-filter-group kiosk-filter-pod">
-          <span class="kiosk-bar-lbl">Policy &amp; Perks Group</span>
-          <div class="kiosk-filter-chips">
-            <button type="button" class="kiosk-qchip ${policyGroupFilter === 'all' ? 'active' : ''}" data-policy-group-filter="all">All Groups ${fCnt(countByCriteria({ pkg: 'all' }))}</button>
-            ${policyGroupsCatalog.map(grp => {
-              const c = countByCriteria({ pkg: grp.id });
-              return `<button type="button" class="kiosk-qchip ${policyGroupFilter === grp.id ? 'active' : ''} ${c === 0 ? 'is-empty-chip' : ''}" data-policy-group-filter="${esc(grp.id)}">${esc(grp.name)} ${fCnt(c)}</button>`;
-            }).join('')}
-          </div>
-        </div>
-        <div class="sched-filter-group kiosk-filter-pod">
-          <span class="kiosk-bar-lbl">Tolerance (IN &amp; OUT)</span>
-          <div class="kiosk-filter-chips">
-            <button type="button" class="kiosk-qchip ${lateTolFilter === 'all' ? 'active' : ''}" data-late-tol-filter="all">All ${fCnt(countByCriteria({ tol: 'all' }))}</button>
-            ${[0, 5, 10, 15, 20, 30].map(m => {
-              const c = countByCriteria({ tol: String(m) });
-              return `<button type="button" class="kiosk-qchip ${lateTolFilter === String(m) ? 'active' : ''} ${c === 0 ? 'is-empty-chip' : ''}" data-late-tol-filter="${m}">${m}m ${fCnt(c)}</button>`;
-            }).join('')}
-          </div>
-        </div>
-        <div class="sched-filter-group kiosk-filter-pod">
-          <span class="kiosk-bar-lbl">When Late</span>
-          <div class="kiosk-filter-chips">
-            <button type="button" class="kiosk-qchip ${lateWhenFilter === 'all' ? 'active' : ''}" data-late-when-filter="all">All</button>
-            <button type="button" class="kiosk-qchip ${lateWhenFilter === 'both' ? 'active' : ''}" data-late-when-filter="both">IN + OUT ${fCnt(countByCriteria({ when: 'both' }))}</button>
-            <button type="button" class="kiosk-qchip ${lateWhenFilter === 'arrival_only' ? 'active' : ''}" data-late-when-filter="arrival_only">IN Only ${fCnt(countByCriteria({ when: 'arrival_only' }))}</button>
-            <button type="button" class="kiosk-qchip ${lateWhenFilter === 'early_out_only' ? 'active' : ''}" data-late-when-filter="early_out_only">OUT Only ${fCnt(countByCriteria({ when: 'early_out_only' }))}</button>
-            <button type="button" class="kiosk-qchip ${lateWhenFilter === 'short_hours' ? 'active' : ''}" data-late-when-filter="short_hours">Shift Hrs ${fCnt(countByCriteria({ when: 'short_hours' }))}</button>
-          </div>
-        </div>
-        <div class="sched-filter-group kiosk-filter-pod">
-          <span class="kiosk-bar-lbl">Punishment</span>
-          <div class="kiosk-filter-chips">
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'all' ? 'active' : ''}" data-late-pen-filter="all">All</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'no_out_half_day' ? 'active' : ''}" data-late-pen-filter="no_out_half_day">Only IN/OUT = 0.5d ${fCnt(countByCriteria({ pen: 'no_out_half_day' }))}</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'no_out_absent' ? 'active' : ''}" data-late-pen-filter="no_out_absent">Only IN/OUT = 1d ${fCnt(countByCriteria({ pen: 'no_out_absent' }))}</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'late_half_day' ? 'active' : ''}" data-late-pen-filter="late_half_day">Late = 0.5d ${fCnt(countByCriteria({ pen: 'late_half_day' }))}</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'escalated' ? 'active' : ''}" data-late-pen-filter="escalated">1.5x / Steps / Round ${fCnt(countByCriteria({ pen: 'escalated' }))}</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'exact_hours' ? 'active' : ''}" data-late-pen-filter="exact_hours">Exact 1x ${fCnt(countByCriteria({ pen: 'exact_hours' }))}</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'none' ? 'active' : ''}" data-late-pen-filter="none">Track $0 ${fCnt(countByCriteria({ pen: 'none' }))}</button>
-          </div>
-        </div>
-        <div class="sched-filter-group kiosk-filter-pod">
-          <span class="kiosk-bar-lbl">Overtime</span>
-          <div class="kiosk-filter-chips">
-            <button type="button" class="kiosk-qchip ${lateOtFilter === 'all' ? 'active' : ''}" data-late-ot-filter="all">All</button>
-            <button type="button" class="kiosk-qchip ${lateOtFilter === 'none' ? 'active' : ''}" data-late-ot-filter="none">No OT ${fCnt(countByCriteria({ ot: 'none' }))}</button>
-            <button type="button" class="kiosk-qchip ${lateOtFilter === 'allowed' ? 'active' : ''}" data-late-ot-filter="allowed">OT Allowed ${fCnt(countByCriteria({ ot: 'allowed' }))}</button>
-            <button type="button" class="kiosk-qchip ${lateOtFilter === 'date_range' ? 'active' : ''}" data-late-ot-filter="date_range">Date Pass ${fCnt(countByCriteria({ ot: 'date_range' }))}</button>
-          </div>
-        </div>
-        <div class="sched-filter-group kiosk-filter-pod">
-          <span class="kiosk-bar-lbl">Today</span>
-          <div class="kiosk-filter-chips">
-            <button type="button" class="kiosk-qchip ${lateTodayFilter === 'all' ? 'active' : ''}" data-late-today-filter="all">All</button>
-            <button type="button" class="kiosk-qchip ${lateTodayFilter === 'missing_out_half_day' ? 'active' : ''}" data-late-today-filter="missing_out_half_day">Only IN or OUT (0.5d) ${fCnt(countByCriteria({ today: 'missing_out_half_day' }))}</button>
-            <button type="button" class="kiosk-qchip ${lateTodayFilter === 'late_today' ? 'active' : ''}" data-late-today-filter="late_today">Late / Early OUT ${fCnt(countByCriteria({ today: 'late_today' }))}</button>
-            <button type="button" class="kiosk-qchip ${lateTodayFilter === 'on_time_today' ? 'active' : ''}" data-late-today-filter="on_time_today">On Time ${fCnt(countByCriteria({ today: 'on_time_today' }))}</button>
-            ${hasActiveLateFilter ? `<button type="button" class="kiosk-qchip is-reset-chip" id="kioskClearLateFiltersBtn">✕ Reset Filters</button>` : ''}
-          </div>
-        </div>
+      `;
+    };
+    const schedWeekNavHtml = `
+      <div class="sched-week-nav">
+        <button type="button" class="btn kiosk-mini-btn" id="kioskSchedPrevWeekBtn" aria-label="Previous week">‹ Prev</button>
+        <button type="button" class="btn kiosk-mini-btn ${(STATE.kioskSchedWeekOffset || 0) === 0 ? 'btn-primary' : ''}" id="kioskSchedThisWeekBtn">${esc(weekRangeLbl)}</button>
+        <button type="button" class="btn kiosk-mini-btn" id="kioskSchedNextWeekBtn" aria-label="Next week">Next ›</button>
       </div>
     `;
 
@@ -145488,20 +145744,20 @@
           <div class="panel-card kiosk-att-feed-card" id="kioskAttFeedCard" data-policy-host="${host}">
             <div class="panel-head kiosk-feed-head">
               <div class="panel-title">
-                <span>${ic('payroll')} ${feedFilter === 'schedule' ? 'Shift Types, Policy Groups &amp; Weekly Staff Schedule' : (feedFilter === 'lateness' ? 'Policy &amp; Perks Groups, Multipliers, Tolerances &amp; Overtime Rules' : 'Staff Roster, Shift Types, Policy Groups &amp; Biometrics')}</span>
+                <span>${ic('payroll')} ${feedFilter === 'schedule' ? 'Workforce Shifts, Policies &amp; Weekly Schedule' : (feedFilter === 'lateness' ? 'Workforce Lateness, Policies &amp; Overtime Rules' : 'Workforce Shifts, Policies &amp; Biometrics')}</span>
                 <small class="kiosk-feed-sub">${esc(scopeTitleLabel)} · ${fmtNum(filteredRoster.length)} of ${fmtNum(fullStaffDir.length)} Staff (${fmtNum(activeStaffTotal)} Active · ${fmtNum(endedStaffTotal)} Inactive/Ended) · Station: ${esc(STATE.kioskAttSite)}</small>
               </div>
               <div class="kiosk-feed-tools">
-                <input type="search" class="search-input kiosk-roster-search" id="kioskAttRosterSearch" placeholder="Search staff, shift type, policy group, perks, or penalty..." value="${esc(STATE.kioskAttRosterSearch || '')}">
+                <input type="search" class="search-input kiosk-roster-search" id="kioskAttRosterSearch" placeholder="Search staff, shift, policy group, or rule..." value="${esc(STATE.kioskAttRosterSearch || '')}">
                 <div class="kiosk-seg-group" role="group" aria-label="Attendance View">
                   <button type="button" class="kiosk-seg-btn ${feedFilter === 'roster' ? 'active' : ''}" data-tone="sapphire" data-att-feed-filter="roster">
                     Staff Roster (${fmtNum(filteredRoster.length)})
                   </button>
-                  <button type="button" class="kiosk-seg-btn ${feedFilter === 'lateness' ? 'active' : ''}" data-tone="rose" data-att-feed-filter="lateness">
-                    Lateness &amp; Penalties
-                  </button>
                   <button type="button" class="kiosk-seg-btn ${feedFilter === 'schedule' ? 'active' : ''}" data-tone="indigo" data-att-feed-filter="schedule">
                     Shift Schedule
+                  </button>
+                  <button type="button" class="kiosk-seg-btn ${feedFilter === 'lateness' ? 'active' : ''}" data-tone="rose" data-att-feed-filter="lateness">
+                    Lateness &amp; OT Rules
                   </button>
                   <button type="button" class="kiosk-seg-btn ${feedFilter === 'onsite' ? 'active' : ''}" data-tone="emerald" data-att-feed-filter="onsite">
                     On Site (${fmtNum(onSiteList.length)})
@@ -145518,10 +145774,20 @@
                 </button>
               </div>
             </div>
-            ${lateFilterBarHtml}
             ${feedFilter === 'schedule' && !STATE.kioskLocked ? `
               <div class="kiosk-sched-workspace" id="kioskSchedWorkspace">
                 ${companyDefaultsStripHtml}
+                <div class="att-sched-templates-bar">
+                  <div class="att-sched-templates-meta">
+                    ${ic('sliders')}
+                    <strong>Shift &amp; Policy Templates</strong>
+                    <span class="att-templates-cnt-pill">${fmtNum(shiftTypesCatalog.length)} Work Shifts · ${fmtNum(policyGroupsCatalog.length)} Policy &amp; Perks Groups</span>
+                  </div>
+                  <div class="att-sched-templates-actions">
+                    <button type="button" class="btn kiosk-mini-btn" id="kioskToggleTemplatesBtn" aria-expanded="${STATE.kioskTemplatesCollapsed ? 'false' : 'true'}">${STATE.kioskTemplatesCollapsed ? 'Show Templates' : 'Hide Templates'}</button>
+                  </div>
+                </div>
+                ${!STATE.kioskTemplatesCollapsed ? `
                 <div class="att-catalog-section is-shifts-catalog">
                   <div class="att-catalog-head">
                     <div class="att-catalog-title-col">
@@ -145574,28 +145840,10 @@
                     }).join('')}
                   </div>
                 </div>
-                ${policyGroupsStripHtml}
+                ${buildPolicyGroupsStripHtml()}
+                ` : ''}
 
-                <div class="sched-toolbar">
-                  <div class="sched-filter-group">
-                    <span class="kiosk-bar-lbl">Shift:</span>
-                    <button type="button" class="kiosk-qchip ${schedShiftFilter === 'all' ? 'active' : ''}" data-sched-shift-filter="all">All</button>
-                    ${shiftTypesCatalog.map(st => `<button type="button" class="kiosk-qchip ${schedShiftFilter === st.id ? 'active' : ''}" data-sched-shift-filter="${esc(st.id)}">${esc(st.short)}</button>`).join('')}
-                    <button type="button" class="kiosk-qchip ${schedShiftFilter === 'custom' ? 'active' : ''}" data-sched-shift-filter="custom">Custom</button>
-                  </div>
-                  <div class="sched-filter-group">
-                    <span class="kiosk-bar-lbl">Overtime:</span>
-                    <button type="button" class="kiosk-qchip ${schedOtFilter === 'all' ? 'active' : ''}" data-sched-ot-filter="all">All Rules</button>
-                    <button type="button" class="kiosk-qchip ${schedOtFilter === 'allowed' ? 'active' : ''}" data-sched-ot-filter="allowed">OT Allowed</button>
-                    <button type="button" class="kiosk-qchip ${schedOtFilter === 'date_range' ? 'active' : ''}" data-sched-ot-filter="date_range">Date Pass</button>
-                    <button type="button" class="kiosk-qchip ${schedOtFilter === 'none' ? 'active' : ''}" data-sched-ot-filter="none">No Overtime</button>
-                  </div>
-                  <div class="sched-week-nav">
-                    <button type="button" class="btn kiosk-mini-btn" id="kioskSchedPrevWeekBtn" aria-label="Previous week">‹ Prev</button>
-                    <button type="button" class="btn kiosk-mini-btn ${(STATE.kioskSchedWeekOffset || 0) === 0 ? 'btn-primary' : ''}" id="kioskSchedThisWeekBtn">${esc(weekRangeLbl)}</button>
-                    <button type="button" class="btn kiosk-mini-btn" id="kioskSchedNextWeekBtn" aria-label="Next week">Next ›</button>
-                  </div>
-                </div>
+                ${renderContextualAttFilterBarHtml('schedule', schedWeekNavHtml)}
 
                 <div class="table-wrap" style="max-height:400px">
                   <table class="ledger-table sched-matrix-table" id="kioskShiftScheduleTable">
@@ -145664,11 +145912,18 @@
               </div>
             ` : (feedFilter === 'lateness' && !STATE.kioskLocked ? `
               <div class="kiosk-late-workspace" id="kioskLatenessWorkspace">
-                ${policyGroupsStripHtml}
-                <div class="late-policy-bulk-bar" id="kioskLateBulkPolicyBar">
+                <div class="att-tab-util-bar">
+                  <div class="att-tab-util-left">
+                    <button type="button" class="btn kiosk-mini-btn" data-toggle-tab-policies="1" aria-expanded="${STATE.kioskTabPoliciesOpen ? 'true' : 'false'}">${ic('sliders')} ${STATE.kioskTabPoliciesOpen ? 'Hide Policy Groups' : `Manage Policy &amp; Perks Templates (${fmtNum(policyGroupsCatalog.length)})`}</button>
+                    <button type="button" class="btn ${STATE.kioskBulkBarOpen ? 'btn-primary' : 'kiosk-mini-btn'}" id="kioskToggleBulkLateBtn" aria-expanded="${STATE.kioskBulkBarOpen ? 'true' : 'false'}">${ic('edit')} ${STATE.kioskBulkBarOpen ? 'Close Bulk Editor' : `Bulk Update (${fmtNum(filteredRoster.length)} Staff)`}</button>
+                  </div>
+                  ${canWritePolCat ? `<button type="button" class="btn kiosk-mini-btn" data-new-policy-group="1"${editCoAttr}>${ic('plus')} New Policy Group</button>` : ''}
+                </div>
+                ${STATE.kioskTabPoliciesOpen ? buildPolicyGroupsStripHtml() : ''}
+                <div class="late-policy-bulk-bar" id="kioskLateBulkPolicyBar"${STATE.kioskBulkBarOpen ? '' : ' hidden'}>
                   <div class="lp-bulk-title">
                     <strong>${ic('warn')} Bulk Policy Group, Lateness, Tolerance &amp; Overtime</strong>
-                    <span class="muted">Apply policy &amp; perks group, tolerance (0-30m for IN &amp; OUT), when lateness occurs, punishment, single-punch rule, and overtime to all ${fmtNum(filteredRoster.length)} filtered staff</span>
+                    <span class="muted">Apply policy &amp; perks group, tolerance (0-30m for IN &amp; OUT), when lateness occurs, late deduction, single-punch rule, and overtime to all ${fmtNum(filteredRoster.length)} filtered staff</span>
                   </div>
                   <div class="lp-bulk-controls">
                     <div class="ssm-field">
@@ -145701,9 +145956,9 @@
                       </select>
                     </div>
                     <div class="ssm-field">
-                      <label for="kioskBulkLatePenalty">Lateness Punishment</label>
+                      <label for="kioskBulkLatePenalty">Late Deduction</label>
                       <select id="kioskBulkLatePenalty" class="kiosk-select" data-plain-options="1"${canWriteShiftCat ? '' : ' disabled'}>
-                        <option value="keep" selected>Keep Punishment</option>
+                        <option value="keep" selected>Keep Deduction</option>
                         <option value="exact_hours">Exact Hours (1x)</option>
                         <option value="multiplier_1.5">1.5x Rate</option>
                         <option value="multiplier_2">2.0x Rate</option>
@@ -145759,10 +146014,11 @@
                       <input type="date" id="kioskBulkEffFrom" class="kiosk-select" aria-label="Bulk Effective From"${canWriteShiftCat ? '' : ' disabled'}>
                     </div>
                     <button type="button" class="btn btn-primary" id="kioskBulkApplyLateBtn" style="align-self:flex-end"${canWriteShiftCat ? '' : ' disabled'}>
-                      ${ic('check_circle')} Apply to ${fmtNum(filteredRoster.length)} Staff
+                      ${ic('check_circle')} Apply to ${fmtNum(filteredRoster.filter(s => canEditShiftsAndRules(null, s.company)).length)} Staff
                     </button>
                   </div>
                 </div>
+                ${renderContextualAttFilterBarHtml('lateness')}
 
                 <div class="table-wrap" style="max-height:460px">
                   <table class="ledger-table" id="kioskLatenessRulesTable">
@@ -145774,7 +146030,7 @@
                         <th>Policy, Multipliers &amp; Perks</th>
                         <th>Tolerance (IN &amp; OUT)</th>
                         <th>When Late Occurs</th>
-                        <th>Lateness Punishment</th>
+                        <th>Late Deduction</th>
                         <th>Only IN or OUT (1 Punch)</th>
                         <th>Overtime Rule</th>
                         <th>Today's Status &amp; Penalty</th>
@@ -145846,7 +146102,7 @@
                               </select>
                             </td>
                             <td>
-                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-staff-co="${esc(s.company || '')}" data-inline-late-field="penalty_combo" aria-label="Lateness punishment for ${esc(s.name)}"${canWriteRow ? '' : ' disabled'}>
+                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-staff-co="${esc(s.company || '')}" data-inline-late-field="penalty_combo" aria-label="Late deduction rule for ${esc(s.name)}"${canWriteRow ? '' : ' disabled'}>
                                 <option value="exact_hours" ${penComboVal === 'exact_hours' ? 'selected' : ''}>Exact 1x</option>
                                 <option value="multiplier_1.5" ${penComboVal === 'multiplier_1.5' ? 'selected' : ''}>1.5x Rate</option>
                                 <option value="multiplier_2" ${penComboVal === 'multiplier_2' ? 'selected' : ''}>2.0x Rate</option>
@@ -145896,13 +146152,22 @@
                             </td>
                           </tr>
                         `;
-                      }).join('') || emptyRow(showCoCol ? 10 : 9, 'No staff match the selected lateness, policy group, tolerance, overtime, or punishment filter')}
+                      }).join('') || emptyRow(showCoCol ? 10 : 9, 'No staff match the selected lateness, policy group, tolerance, overtime, or deduction filter')}
                     </tbody>
                   </table>
                 </div>
               </div>
             ` : `
-              ${feedFilter === 'roster' && !STATE.kioskLocked ? policyGroupsStripHtml : ''}
+              ${feedFilter === 'roster' && !STATE.kioskLocked ? `
+                <div class="att-tab-util-bar">
+                  <div class="att-tab-util-left">
+                    <button type="button" class="btn kiosk-mini-btn" data-toggle-tab-policies="1" aria-expanded="${STATE.kioskTabPoliciesOpen ? 'true' : 'false'}">${ic('sliders')} ${STATE.kioskTabPoliciesOpen ? 'Hide Policy Groups' : `Manage Policy &amp; Perks Templates (${fmtNum(policyGroupsCatalog.length)})`}</button>
+                  </div>
+                  ${canWritePolCat ? `<button type="button" class="btn kiosk-mini-btn" data-new-policy-group="1"${editCoAttr}>${ic('plus')} New Policy Group</button>` : ''}
+                </div>
+                ${STATE.kioskTabPoliciesOpen ? buildPolicyGroupsStripHtml() : ''}
+              ` : ''}
+              ${renderContextualAttFilterBarHtml(STATE.kioskLocked ? 'all' : feedFilter)}
               <div class="table-wrap" style="max-height:420px">
                 ${feedFilter === 'roster' && !STATE.kioskLocked ? `
                   <table class="ledger-table" id="kioskAttFeedTable">
@@ -146298,7 +146563,7 @@
                 </span>
               ` : ''}
               <button type="button" class="btn ${STATE.kioskAttSetupOpen && STATE.kioskAttFeedFilter === 'lateness' ? 'btn-primary' : 'btn-ghost-bar'} kiosk-enrol-link-btn" id="kioskAttOpenLatenessBtn">
-                ${ic('warn')} Lateness &amp; Penalties
+                ${ic('warn')} Lateness &amp; OT Rules
               </button>
               <button type="button" class="btn ${STATE.kioskAttSetupOpen && STATE.kioskAttFeedFilter === 'schedule' ? 'btn-primary' : 'btn-ghost-bar'} kiosk-enrol-link-btn" id="kioskAttOpenSchedBtn">
                 ${ic('clock')} Shift Schedule
@@ -146974,27 +147239,67 @@
         renderApp();
       });
     });
+    const onPayCoPolicyChange = (el, bu, src, field) => {
+      const key = getCoDefCardKey(el, bu);
+      if (STATE.kioskCoEffOpen && STATE.kioskCoEffOpen[key]) {
+        snapshotCoPolicyDraftFromCard(el, bu, { field });
+        if (field !== 'thresh') renderApp();
+        return;
+      }
+      const res = applyCompanyDefaultPolicyFromCard(el, bu, { source: src });
+      if (res && !res.ok && res.error) toast(res.error, 'warn');
+      renderApp();
+    };
     container.querySelectorAll('[data-pay-bu-policy-default]').forEach(sel => {
-      sel.addEventListener('change', () => {
-        applyCompanyDefaultPolicyFromCard(sel, sel.getAttribute('data-pay-bu-policy-default') || 'WTC', { source: 'group_select' });
-        renderApp();
-      });
+      sel.addEventListener('change', () => onPayCoPolicyChange(sel, sel.getAttribute('data-pay-bu-policy-default') || 'WTC', 'group_select', 'group_select'));
     });
     container.querySelectorAll('[data-pay-bu-policy-ot-snap]').forEach(sel => {
-      sel.addEventListener('change', () => {
-        applyCompanyDefaultPolicyFromCard(sel, sel.getAttribute('data-pay-bu-policy-ot-snap') || 'WTC', { source: 'math_or_apply' });
-        renderApp();
-      });
+      sel.addEventListener('change', () => onPayCoPolicyChange(sel, sel.getAttribute('data-pay-bu-policy-ot-snap') || 'WTC', 'math_or_apply', 'snap'));
     });
     container.querySelectorAll('[data-pay-bu-policy-ot-thresh]').forEach(inp => {
-      inp.addEventListener('change', () => {
-        applyCompanyDefaultPolicyFromCard(inp, inp.getAttribute('data-pay-bu-policy-ot-thresh') || 'WTC', { source: 'math_or_apply' });
-        renderApp();
+      const bu = inp.getAttribute('data-pay-bu-policy-ot-thresh') || 'WTC';
+      inp.addEventListener('input', () => {
+        const key = getCoDefCardKey(inp, bu);
+        if (STATE.kioskCoEffOpen && STATE.kioskCoEffOpen[key]) snapshotCoPolicyDraftFromCard(inp, bu, { field: 'thresh' });
+      });
+      inp.addEventListener('change', () => onPayCoPolicyChange(inp, bu, 'math_or_apply', 'thresh'));
+    });
+    container.querySelectorAll('[data-pay-bu-policy-eff]').forEach(inp => {
+      const bu = inp.getAttribute('data-pay-bu-policy-eff') || 'WTC';
+      inp.addEventListener('input', () => snapshotCoPolicyDraftFromCard(inp, bu, { field: 'eff' }));
+      inp.addEventListener('change', () => snapshotCoPolicyDraftFromCard(inp, bu, { field: 'eff' }));
+    });
+    container.querySelectorAll('[data-toggle-co-eff]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const co = btn.getAttribute('data-toggle-co-eff') || 'WTC';
+        const card = btn.closest('[data-co-def-card]');
+        const prefix = (card && card.getAttribute('data-co-def-prefix')) || 'pay-bu';
+        STATE.kioskCoEffOpen = STATE.kioskCoEffOpen || {};
+        const key = `${prefix}:${co}`;
+        const next = !STATE.kioskCoEffOpen[key];
+        if (next) {
+          STATE.kioskCoEffOpen[key] = true;
+          btn.setAttribute('aria-expanded', 'true');
+          const drawer = card ? card.querySelector('[data-co-eff-drawer]') : null;
+          if (drawer) drawer.hidden = false;
+        } else {
+          delete STATE.kioskCoEffOpen[key];
+          const hadDraft = Boolean(STATE.kioskCoPolicyDraft && STATE.kioskCoPolicyDraft[key]);
+          if (STATE.kioskCoPolicyDraft) delete STATE.kioskCoPolicyDraft[key];
+          if (hadDraft) {
+            renderApp();
+          } else {
+            btn.setAttribute('aria-expanded', 'false');
+            const drawer = card ? card.querySelector('[data-co-eff-drawer]') : null;
+            if (drawer) drawer.hidden = true;
+          }
+        }
       });
     });
     container.querySelectorAll('[data-pay-bu-policy-apply]').forEach(btn => {
       btn.addEventListener('click', () => {
-        applyCompanyDefaultPolicyFromCard(btn, btn.getAttribute('data-pay-bu-policy-apply') || 'WTC', { source: 'math_or_apply' });
+        const res = applyCompanyDefaultPolicyFromCard(btn, btn.getAttribute('data-pay-bu-policy-apply') || 'WTC', { source: 'math_or_apply' });
+        if (res && !res.ok && res.error) toast(res.error, 'warn');
         renderApp();
       });
     });
@@ -147206,7 +147511,9 @@
     });
     feedCard.querySelectorAll('[data-late-ot-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
-        STATE.kioskLateOtFilter = btn.getAttribute('data-late-ot-filter') || 'all';
+        const val = btn.getAttribute('data-late-ot-filter') || 'all';
+        STATE.kioskLateOtFilter = val;
+        STATE.kioskSchedOtFilter = val;
         renderApp();
       });
     });
@@ -147216,6 +147523,24 @@
         renderApp();
       });
     });
+    $('kioskToggleMoreFiltersBtn')?.addEventListener('click', () => {
+      STATE.kioskMoreFiltersOpen = !STATE.kioskMoreFiltersOpen;
+      renderApp();
+    });
+    $('kioskToggleTemplatesBtn')?.addEventListener('click', () => {
+      STATE.kioskTemplatesCollapsed = !STATE.kioskTemplatesCollapsed;
+      renderApp();
+    });
+    feedCard.querySelectorAll('[data-toggle-tab-policies]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        STATE.kioskTabPoliciesOpen = !STATE.kioskTabPoliciesOpen;
+        renderApp();
+      });
+    });
+    $('kioskToggleBulkLateBtn')?.addEventListener('click', () => {
+      STATE.kioskBulkBarOpen = !STATE.kioskBulkBarOpen;
+      renderApp();
+    });
     $('kioskClearLateFiltersBtn')?.addEventListener('click', () => {
       STATE.kioskStaffStatusFilter = 'all';
       STATE.kioskPolicyGroupFilter = 'all';
@@ -147223,6 +147548,8 @@
       STATE.kioskLateTolFilter = 'all';
       STATE.kioskLateWhenFilter = 'all';
       STATE.kioskLateOtFilter = 'all';
+      STATE.kioskSchedOtFilter = 'all';
+      STATE.kioskSchedShiftFilter = 'all';
       STATE.kioskLateTodayFilter = 'all';
       renderApp();
     });
@@ -147359,47 +147686,10 @@
         toast('Select at least one rule change or effective date to apply', 'warn');
         return;
       }
-      const fullDir = getKioskStaffDirectory({ scopeBySelectedCompany: true, includeEnded: true });
-      const statusF = ['all', 'active', 'inactive'].includes(STATE.kioskStaffStatusFilter) ? STATE.kioskStaffStatusFilter : 'all';
-      const dirList = statusF === 'active'
-        ? fullDir.filter(s => !s.isEndedContract)
-        : (statusF === 'inactive' ? fullDir.filter(s => s.isEndedContract) : fullDir);
-      const q = norm(STATE.kioskAttRosterSearch || '');
-      const pkgF = STATE.kioskPolicyGroupFilter || 'all';
-      const latePenF = STATE.kioskLatePenFilter || 'all';
-      const lateTolF = STATE.kioskLateTolFilter || 'all';
-      const lateWhenF = STATE.kioskLateWhenFilter || 'all';
-      const lateOtF = STATE.kioskLateOtFilter || 'all';
-      const targetStaff = dirList.filter(s => {
-        if (q && !norm(`${s.name} ${s.role} ${s.company} ${s.shift && s.shift.name || ''} ${s.policyDesc && s.policyDesc.name || ''}`).includes(q)) return false;
-        const lt = s.lateDesc || describeStaffLatenessRule(s.name, s.company, todayISO());
-        const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, todayISO());
-        const pg = s.policyDesc || describeStaffPolicyGroup(s.name, s.company);
-        if (pkgF !== 'all' && pg.id !== pkgF) return false;
-        if (latePenF !== 'all') {
-          if (latePenF === 'no_out_half_day' && lt.noOutRule !== 'half_day') return false;
-          if (latePenF === 'no_out_absent' && lt.noOutRule !== 'full_absence') return false;
-          if (latePenF === 'late_half_day' && lt.penaltyMode !== 'tiered_half_day' && lt.penaltyMode !== 'half_day_any') return false;
-          if (latePenF === 'escalated' && lt.penaltyMode !== 'multiplier' && lt.penaltyMode !== 'round_hour' && lt.penaltyMode !== 'round_30m' && lt.penaltyMode !== 'step_brackets') return false;
-          if (latePenF === 'exact_hours' && lt.penaltyMode !== 'exact_hours') return false;
-          if (latePenF === 'none' && lt.penaltyMode !== 'none') return false;
-        }
-        if (lateTolF !== 'all') {
-          const targetMin = Number(lateTolF);
-          const gm = Number(lt.graceMin != null ? lt.graceMin : 10);
-          const egm = Number(lt.earlyGraceMin != null ? lt.earlyGraceMin : gm);
-          if (Number.isFinite(targetMin) && gm !== targetMin && egm !== targetMin) return false;
-        }
-        if (lateWhenF !== 'all' && lt.lateWhen !== lateWhenF) return false;
-        if (lateOtF !== 'all') {
-          const otMode = ot.mode || 'none';
-          if (lateOtF === 'none' && otMode !== 'none') return false;
-          if (lateOtF === 'allowed' && otMode === 'none') return false;
-          if (lateOtF === 'date_range' && otMode !== 'date_range') return false;
-        }
-        return true;
-      });
+      const { filteredRoster: targetStaff } = getFilteredKioskRoster();
       const writableStaff = targetStaff.filter(s => canEditShiftsAndRules(null, s.company));
+      const bulkToday = todayISO();
+      const runBulkRecalc = !effFrom || effFrom <= bulkToday;
       writableStaff.forEach(s => {
         const staffPatch = Object.assign(
           {},
@@ -147407,25 +147697,35 @@
           explicitBulkFields,
           hasBulkOtChange ? buildOtComboPatchForStaff(otBulkVal, s.name, s.company) : {}
         );
-        saveStaffWorkRule(s.name, Object.assign({}, staffPatch, s.company ? { company: s.company } : {}), { deferSave: true });
+        saveStaffWorkRule(s.name, Object.assign({}, staffPatch, s.company ? { company: s.company } : {}), { deferSave: true, skipRecalc: runBulkRecalc });
       });
-      let bulkBf = null;
+      let bfCnt = 0;
       if (writableStaff.length > 0 && (effFrom || hasExplicitFieldChange || hasBulkOtChange || hasBulkPkgChange)) {
-        const today = todayISO();
-        if (!effFrom || effFrom <= today) {
-          bulkBf = backfillAttendancePolicyChange({
-            company: bulkScopeCo || '',
-            staffNames: writableStaff.map(s => s.name),
-            fromDate: effFrom || today,
-            deferSave: true
+        if (runBulkRecalc) {
+          const staffByCo = new Map();
+          writableStaff.forEach(s => {
+            const coKey = String(s.company || bulkScopeCo || '').trim();
+            if (!staffByCo.has(coKey)) staffByCo.set(coKey, []);
+            staffByCo.get(coKey).push(s.name);
+          });
+          staffByCo.forEach((names, coKey) => {
+            const bfRes = backfillAttendancePolicyChange({
+              company: coKey,
+              staffNames: names,
+              fromDate: effFrom || bulkToday,
+              deferSave: true
+            });
+            bfCnt += bfRes ? Number(bfRes.updatedRows || 0) : 0;
           });
         }
+      }
+      if (writableStaff.length > 0 && runBulkRecalc) {
+        writableStaff.forEach(s => recalcStaffTodayPunchAndAttendance(s.name));
       }
       if (writableStaff.length > 0) {
         saveLocalAuthAndRecords();
         syncWithCloud(true);
       }
-      const bfCnt = bulkBf ? Number(bulkBf.updatedRows || 0) : 0;
       toast(`Applied policy, lateness, OT snap & threshold rules to ${writableStaff.length} staff${effFrom ? ` from ${fmtDateDMY(effFrom)}` : ''}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`, 'ok');
       renderApp();
     });
@@ -147463,7 +147763,9 @@
     });
     feedCard.querySelectorAll('[data-sched-ot-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
-        STATE.kioskSchedOtFilter = btn.getAttribute('data-sched-ot-filter') || 'all';
+        const val = btn.getAttribute('data-sched-ot-filter') || 'all';
+        STATE.kioskSchedOtFilter = val;
+        STATE.kioskLateOtFilter = val;
         renderApp();
       });
     });
