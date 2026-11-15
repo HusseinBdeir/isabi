@@ -8516,10 +8516,336 @@
     return APP_ONLY_FULL_FIN_KEYS.has(key);
   }
 
+  const APP_ONLY_DATE_CAND_KEYS = new Set(['salaries', 'expenses', 'receipts', 'settlements', 'external_movements']);
+  const _cfCandAlpha = s => String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, '');
+  const _cfCandDay = r => String((r && (r.date || r.start_date)) || '').slice(0, 10);
+  const _cfCandIsoValid = d => /^\d{4}-\d{2}-\d{2}$/.test(d);
+  function _cfCandShiftDay(iso, delta) {
+    if (!_cfCandIsoValid(iso)) return '';
+    const dt = new Date(iso + 'T12:00:00Z');
+    dt.setUTCDate(dt.getUTCDate() + delta);
+    return dt.toISOString().slice(0, 10);
+  }
+  function _cfCandRepDay(r, dt) {
+    const rp = String((r && r.rep_date) || '').slice(0, 10);
+    return (_cfCandIsoValid(rp) && rp !== dt) ? rp : '';
+  }
+  function _cfCandEffUsd(x) {
+    const lbp = Number((x && x.lbp_amount) || 0);
+    const u = Number(lbp ? ((x && x.usd_amount) || 0) : (x && (x.usd_amount != null ? x.usd_amount : (x.amount != null ? x.amount : (x.total != null ? x.total : x.principal)))) || 0);
+    return Math.abs(u) > 0.005 ? u : (Math.abs(lbp) > 1 ? lbp / 89500 : 0);
+  }
+  function _cfCandTicketUsd(s) {
+    const u = Number(s && (s.total_ttc != null ? s.total_ttc : (s.total != null ? s.total : s.amount)) || 0);
+    if (Math.abs(u) > 0.005) return u;
+    const lbp = Number((s && s.lbp_amount) || 0);
+    return Math.abs(lbp) > 1 ? lbp / 89500 : 0;
+  }
+  function _cfCandAmtMatch(s, r) {
+    return Math.abs(_cfCandEffUsd(s) - _cfCandEffUsd(r)) < 0.5 && Math.abs(Number((s && s.lbp_amount) || 0) - Number((r && r.lbp_amount) || 0)) < 1000;
+  }
+  function _cfCandParty(key, x) {
+    if (key === 'salaries') return _cfCandAlpha(x && x.staff);
+    if (key === 'expenses' || key === 'settlements') return _cfCandAlpha(x && x.supplier);
+    if (key === 'receipts' || key === 'sales_tickets') return _cfCandAlpha(x && x.customer);
+    if (key === 'external_movements') return _cfCandAlpha(x && (x.counterparty || x.party));
+    return '';
+  }
+  function _cfCandCompat(key, s, r) {
+    if (key === 'expenses') return isCashExpense(s) && expenseSign(s) === expenseSign(r);
+    if (key === 'receipts') return receiptKind(s) === receiptKind(r);
+    if (key === 'settlements') return settlementKind(s) === settlementKind(r);
+    if (key === 'external_movements') {
+      return /out|expense/i.test(String(s.direction || s.flow || s.method || '')) === /out|expense/i.test(String(r.direction || r.flow || r.method || ''));
+    }
+    return key === 'salaries';
+  }
+  function _cfCandTieBreak(key, s, r) {
+    if (key === 'expenses') {
+      const eS = _cfCandAlpha(s.equipment), eR = _cfCandAlpha(r.equipment);
+      return Boolean(eS && eR && eS === eR);
+    }
+    if (key === 'salaries') {
+      const pS = String(s.payroll_month || '').trim(), pR = String(r.payroll_month || '').trim();
+      return Boolean(pS && pR && pS === pR);
+    }
+    return false;
+  }
+  function _cfCandExtractRef(s) {
+    if (!s) return '';
+    const mName = /#([A-Za-z0-9-]+)/.exec(String(s.name || ''));
+    if (mName) return '#' + mName[1];
+    const inv = String(s.invoice || '').trim();
+    if (inv && inv !== '-') return '#' + inv.replace(/^#+/, '');
+    const rf = String(s.reference || s.ticket_no || '').trim();
+    if (rf && rf !== '-') return '#' + rf.replace(/^#+/, '');
+    return '';
+  }
+  function computeAppOnlyWorkbookCandidates(rows, cut) {
+    const candByKey = new Map();
+    if (!rows || !rows.length || !cut || !SEED || !SEED._recordsReady || !SEED.records) return candByKey;
+    const rowsByKey = new Map();
+    for (let i = 0; i < rows.length; i++) {
+      const it = rows[i];
+      if (!it || !it.r || !it.r.id) continue;
+      if (!rowsByKey.has(it.key)) rowsByKey.set(it.key, []);
+      rowsByKey.get(it.key).push(it);
+    }
+    rowsByKey.forEach((keyRows, key) => {
+      if (!APP_ONLY_DATE_CAND_KEYS.has(key)) return;
+      const rawWb = Array.isArray(SEED.records[key]) ? SEED.records[key] : [];
+      if (!rawWb.length) return;
+      const wbByBucket = new Map();
+      for (let i = 0; i < rawWb.length; i++) {
+        const s = rawWb[i];
+        if (!s || s.voided || !Number.isNaN(appRecordCreatedMs(s))) continue;
+        const sDate = _cfCandDay(s);
+        if (!_cfCandIsoValid(sDate) || (cut.cutoff && sDate > cut.cutoff)) continue;
+        const party = _cfCandParty(key, s);
+        if (!party) continue;
+        const bKey = `${norm(s.company || 'WTC')}|${party}`;
+        if (!wbByBucket.has(bKey)) wbByBucket.set(bKey, []);
+        wbByBucket.get(bKey).push(s);
+      }
+      if (!wbByBucket.size) return;
+      const claimed = new Set();
+      const crArr = (STATE.customRecords && Array.isArray(STATE.customRecords[key])) ? STATE.customRecords[key] : [];
+      for (let pass = 0; pass < 2; pass++) {
+        for (let i = 0; i < crArr.length; i++) {
+          const r = crArr[i];
+          if (!r) continue;
+          if (pass === 0) {
+            if (r.voided) {
+              if (Array.isArray(r.twin_of)) {
+                for (let j = 0; j < r.twin_of.length; j++) if (r.twin_of[j]) claimed.add(String(r.twin_of[j]));
+              } else if (typeof r.twin_of === 'string' && r.twin_of) {
+                claimed.add(r.twin_of);
+              }
+              if (r.id && Number.isNaN(appRecordCreatedMs(r))) claimed.add(String(r.id));
+            }
+            continue;
+          }
+          if (r._reopenedExplicitly || r.restored_at) continue;
+          const isClaimer = (!r.voided && r._absorbedSeedTwin) || (r.voided && /^system-topup/i.test(String(r.voided_by || '')));
+          if (!isClaimer) continue;
+          const bKey = `${norm(r.company || 'WTC')}|${_cfCandParty(key, r)}`;
+          const bucket = wbByBucket.get(bKey);
+          if (!bucket) continue;
+          const rDate = _cfCandDay(r);
+          const rRep = _cfCandRepDay(r, rDate);
+          let hit = null, hitScore = -1;
+          for (let j = 0; j < bucket.length; j++) {
+            const s = bucket[j];
+            const sid = String(s.id || '');
+            if (sid && claimed.has(sid)) continue;
+            const sDate = _cfCandDay(s);
+            if (sDate !== rDate && (Boolean(r._absorbedSeedTwin) || sDate !== rRep)) continue;
+            if (!_cfCandCompat(key, s, r) || !_cfCandAmtMatch(s, r)) continue;
+            const sc = (sDate === rDate ? 4 : 2) + (_cfCandTieBreak(key, s, r) ? 1 : 0);
+            if (sc > hitScore) { hitScore = sc; hit = s; }
+          }
+          if (hit && hit.id) claimed.add(String(hit.id));
+        }
+      }
+      for (let i = 0; i < keyRows.length; i++) {
+        const it = keyRows[i], r = it.r;
+        const rDate = _cfCandDay(r);
+        if (!_cfCandIsoValid(rDate)) continue;
+        const rRep = _cfCandRepDay(r, rDate);
+        const prevD = _cfCandShiftDay(rDate, -1);
+        const nextD = _cfCandShiftDay(rDate, 1);
+        const bKey = `${norm(r.company || 'WTC')}|${_cfCandParty(key, r)}`;
+        const bucket = wbByBucket.get(bKey);
+        if (!bucket) continue;
+        let best = null, bestScore = -1;
+        for (let j = 0; j < bucket.length; j++) {
+          const s = bucket[j];
+          const sid = String(s.id || '');
+          if (sid && claimed.has(sid)) continue;
+          const sDate = _cfCandDay(s);
+          if (sDate === rDate) continue;
+          if (sDate !== rRep && sDate !== prevD && sDate !== nextD) continue;
+          if (!_cfCandCompat(key, s, r) || !_cfCandAmtMatch(s, r)) continue;
+          const sc = (sDate === rRep ? 4 : 0) + (_cfCandTieBreak(key, s, r) ? 2 : 0) + (sDate === prevD ? 1 : 0);
+          if (sc > bestScore) { bestScore = sc; best = s; }
+        }
+        if (best) {
+          const wbId = String(best.id || '');
+          if (wbId) claimed.add(wbId);
+          const cand = { kind: 'date_diff', wbId, wbDate: _cfCandDay(best), ref: _cfCandExtractRef(best) };
+          it.candidate = cand;
+          candByKey.set(`${key}:${r.id}`, cand);
+        }
+      }
+    });
+
+    const rcItems = rowsByKey.get('receipts');
+    const unmatchedReceipts = rcItems ? rcItems.filter(it => !candByKey.has(`receipts:${it.r.id}`) && receiptKind(it.r) === 'Settlement') : [];
+    const rawSales = (unmatchedReceipts.length && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets : [];
+    if (unmatchedReceipts.length && rawSales.length) {
+      const wbByDay = new Map();
+      const wbByParty = new Map();
+      const wbByTno = new Map();
+      for (let i = 0; i < rawSales.length; i++) {
+        const s = rawSales[i];
+        if (!s || s.voided || !Number.isNaN(appRecordCreatedMs(s)) || !isCashSaleTicket(s) || ticketSign(s) <= 0) continue;
+        if (_cfCandTicketUsd(s) <= 0.005) continue;
+        const sDate = _cfCandDay(s);
+        if (!_cfCandIsoValid(sDate) || (cut.cutoff && sDate > cut.cutoff)) continue;
+        const cust = _cfCandAlpha(s.customer);
+        if (!cust) continue;
+        const co = norm(s.company || 'WTC');
+        const dk = `${co}|${cust}|${sDate}`;
+        if (!wbByDay.has(dk)) wbByDay.set(dk, []);
+        wbByDay.get(dk).push(s);
+        const pk = `${co}|${cust}`;
+        if (!wbByParty.has(pk)) wbByParty.set(pk, []);
+        wbByParty.get(pk).push(s);
+        const tno = String(s.ticket_no || (/^\s*#?(\d+)/.exec(String(s.name || ''))?.[1] || '')).replace(/^#+/, '').trim().toLowerCase();
+        if (tno) {
+          const tkKey = `${co}|${tno}`;
+          if (!wbByTno.has(tkKey)) wbByTno.set(tkKey, []);
+          wbByTno.get(tkKey).push(s);
+        }
+      }
+      if (wbByDay.size) {
+        const usedCashIds = new Set();
+        const creditAbsorbedIds = new Set();
+        const crRc = (STATE.customRecords && Array.isArray(STATE.customRecords.receipts)) ? STATE.customRecords.receipts : [];
+        for (let i = 0; i < crRc.length; i++) {
+          const rr = crRc[i];
+          if (rr && rr.voided && /cash sales ticket/i.test(String(rr.voided_by || '')) && Array.isArray(rr.twin_of)) {
+            for (let j = 0; j < rr.twin_of.length; j++) if (rr.twin_of[j]) usedCashIds.add(String(rr.twin_of[j]));
+          }
+        }
+        const crSales = (STATE.customRecords && Array.isArray(STATE.customRecords.sales_tickets)) ? STATE.customRecords.sales_tickets : [];
+        const salesPairedWbIds = new Set();
+        for (let pass = 0; pass < 2; pass++) {
+          for (let i = 0; i < crSales.length; i++) {
+            const sr = crSales[i];
+            if (!sr || sr._reopenedExplicitly || sr.restored_at) continue;
+            const isClaimer = (!sr.voided && sr._absorbedSeedTwin) || (sr.voided && /^system-topup/i.test(String(sr.voided_by || '')));
+            if (!isClaimer) continue;
+            const appMethod = String(sr.method || '').trim().toLowerCase();
+            const isCashApp = appMethod === 'cash' || appMethod === 'c return' || appMethod === 'cash return';
+            if ((pass === 0 && !isCashApp) || (pass === 1 && isCashApp)) continue;
+            const co = norm(sr.company || 'WTC');
+            const tno = String(sr.ticket_no || '').replace(/^#+/, '').trim().toLowerCase();
+            const sDate = _cfCandDay(sr);
+            let paired = null;
+            if (tno && wbByTno.has(`${co}|${tno}`)) {
+              const cands = wbByTno.get(`${co}|${tno}`);
+              for (let j = 0; j < cands.length; j++) {
+                const candS = cands[j];
+                const sid = String(candS.id || '');
+                if (salesPairedWbIds.has(sid)) continue;
+                if (_cfCandIsoValid(sDate) && _cfCandIsoValid(_cfCandDay(candS)) && Math.abs(daysBetween(_cfCandDay(candS), sDate)) <= 5) {
+                  paired = candS;
+                  if (!usedCashIds.has(sid)) break;
+                }
+              }
+            }
+            if (!paired) {
+              const cust = _cfCandAlpha(sr.customer);
+              const pList = wbByParty.get(`${co}|${cust}`) || [];
+              const srAmt = _cfCandTicketUsd(sr);
+              for (let j = 0; j < pList.length; j++) {
+                const candS = pList[j];
+                const sid = String(candS.id || '');
+                if (salesPairedWbIds.has(sid)) continue;
+                if (_cfCandIsoValid(sDate) && _cfCandIsoValid(_cfCandDay(candS)) && Math.abs(daysBetween(_cfCandDay(candS), sDate)) <= 1 && Math.abs(_cfCandTicketUsd(candS) - srAmt) < 1.0) {
+                  paired = candS;
+                  if (!usedCashIds.has(sid)) break;
+                }
+              }
+            }
+            if (!paired || !paired.id) continue;
+            const pid = String(paired.id);
+            salesPairedWbIds.add(pid);
+            if (isCashApp) {
+              usedCashIds.add(pid);
+            } else if (appMethod === 'credit' || (sr.voided && /^system-topup/i.test(String(sr.voided_by || '')) && !appMethod)) {
+              creditAbsorbedIds.add(pid);
+            }
+          }
+        }
+        const sumTktsOk = (arr, targetUsd, targetLbp) => {
+          if (!arr || !arr.length) return false;
+          let sumU = 0, sumL = 0;
+          for (let j = 0; j < arr.length; j++) {
+            sumU += _cfCandTicketUsd(arr[j]);
+            sumL += Number(arr[j].lbp_amount || 0);
+          }
+          return Math.abs(sumU - targetUsd) < 0.5 && Math.abs(sumL - targetLbp) < 1000;
+        };
+        for (let i = 0; i < unmatchedReceipts.length; i++) {
+          const it = unmatchedReceipts[i], r = it.r;
+          const rDate = _cfCandDay(r);
+          if (!_cfCandIsoValid(rDate)) continue;
+          const rRep = _cfCandRepDay(r, rDate);
+          const co = norm(r.company || 'WTC');
+          const cust = _cfCandAlpha(r.customer);
+          if (!cust) continue;
+          const rUsd = _cfCandEffUsd(r), rLbp = Number(r.lbp_amount || 0);
+          if (Math.abs(rUsd) <= 0.005 && Math.abs(rLbp) <= 1) continue;
+          const tryDays = [];
+          [rDate, rRep, _cfCandShiftDay(rDate, -1), _cfCandShiftDay(rDate, 1)].forEach(d => {
+            if (d && tryDays.indexOf(d) < 0) tryDays.push(d);
+          });
+          const noteNums = new Set(((String(r.reference || '') + ' ' + String(r.notes || '')).match(/\d{4,7}/g) || []).map(x => x.toLowerCase()));
+          let matchedGroup = null, matchedDay = '';
+          for (let di = 0; di < tryDays.length; di++) {
+            const dTry = tryDays[di];
+            const rawDay = wbByDay.get(`${co}|${cust}|${dTry}`);
+            if (!rawDay || !rawDay.length) continue;
+            const avail = rawDay.filter(s => !usedCashIds.has(String(s.id || '')));
+            if (!avail.length) continue;
+            if (noteNums.size) {
+              const byNum = avail.filter(s => {
+                const tno = String(s.ticket_no || (/^\s*#?(\d+)/.exec(String(s.name || ''))?.[1] || '')).replace(/^#+/, '').trim().toLowerCase();
+                return tno && noteNums.has(tno);
+              });
+              if (sumTktsOk(byNum, rUsd, rLbp)) { matchedGroup = byNum; matchedDay = dTry; break; }
+            }
+            const creditSub = avail.filter(s => creditAbsorbedIds.has(String(s.id || '')));
+            if (creditSub.length && sumTktsOk(creditSub, rUsd, rLbp)) { matchedGroup = creditSub; matchedDay = dTry; break; }
+            if (sumTktsOk(avail, rUsd, rLbp)) { matchedGroup = avail; matchedDay = dTry; break; }
+          }
+          if (matchedGroup && matchedGroup.length) {
+            const wbIds = [];
+            const refList = [];
+            for (let j = 0; j < matchedGroup.length; j++) {
+              const s = matchedGroup[j];
+              const sid = String(s.id || '');
+              if (sid) { usedCashIds.add(sid); wbIds.push(sid); }
+              const rf = _cfCandExtractRef(s);
+              if (rf) refList.push(rf);
+            }
+            const refsText = refList.length <= 3 ? refList.join(', ') : `${refList.slice(0, 3).join(', ')} +${refList.length - 3}`;
+            const cand = { kind: 'cash_tickets', wbIds, wbDate: matchedDay, count: matchedGroup.length, refsText };
+            it.candidate = cand;
+            candByKey.set(`receipts:${r.id}`, cand);
+          }
+        }
+      }
+    }
+    return candByKey;
+  }
+  function renderCfCandidatePillHtml(cand) {
+    if (!cand) return '';
+    if (cand.kind === 'date_diff') {
+      return `<span class="cf-cand-pill"><span>Matches</span> <b data-no-i18n="1" dir="ltr">${esc(fmtDateDMY(cand.wbDate))}</b> <span>workbook row</span>${cand.ref ? ` <b data-no-i18n="1" dir="ltr">${esc(cand.ref)}</b>` : ''} <span>(date differs)</span></span>`;
+    }
+    if (cand.kind === 'cash_tickets') {
+      return `<span class="cf-cand-pill"><span>Matches</span> <b data-no-i18n="1">${fmtNum(cand.count)}</b> <span>${cand.count === 1 ? 'Cash sales ticket' : 'Cash sales tickets'}</span>${cand.refsText ? ` <b data-no-i18n="1" dir="ltr">${esc(cand.refsText)}</b>` : ''} <span>(method differs)</span></span>`;
+    }
+    return '';
+  }
+
   let _appOnlyCashIdx = null;
   function getAppOnlyCashIndex() {
     const cut = isDemoScopeActive() ? null : getWorkbookUpdateCutoff();
-    const sig = `${SEED._customRev || 0}|${STATE._customRev || 0}|${cut ? cut.cutoff + '|' + cut.genMs : 'none'}`;
+    const sig = `${SEED._customRev || 0}|${STATE._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${cut ? cut.cutoff + '|' + cut.genMs : 'none'}`;
     if (_appOnlyCashIdx && _appOnlyCashIdx.sig === sig) return _appOnlyCashIdx;
     const rows = [];
     if (cut) {
@@ -8538,7 +8864,8 @@
         }
       });
     }
-    _appOnlyCashIdx = { sig, rows, cutoff: cut ? cut.cutoff : '' };
+    const candByKey = computeAppOnlyWorkbookCandidates(rows, cut);
+    _appOnlyCashIdx = { sig, rows, candByKey, cutoff: cut ? cut.cutoff : '' };
     return _appOnlyCashIdx;
   }
 
@@ -8891,9 +9218,9 @@
         .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
         .map(td => {
           let txt = td.innerText;
-          if (td.querySelector('.ind-agr-pill')) {
+          if (td.querySelector('.ind-agr-pill, .cf-cand-pill')) {
             const clone = td.cloneNode(true);
-            clone.querySelectorAll('.ind-agr-pill').forEach(n => n.remove());
+            clone.querySelectorAll('.ind-agr-pill, .cf-cand-pill').forEach(n => n.remove());
             txt = clone.textContent;
           }
           return '"' + String(txt || '').replace(/\s+/g, ' ').trim().replace(/"/g, '""') + '"';
@@ -46948,6 +47275,10 @@
       appOnlyLbp += appOnlyMoves[i].lbp;
     }
     const appOnlyCutoff = appOnlyMoves.length ? getAppOnlyCashIndex().cutoff : '';
+    const appOnlyCandMap = appOnlyMoves.length ? getAppOnlyCashIndex().candByKey : null;
+    const appOnlyCandCount = appOnlyCandMap
+      ? appOnlyMoves.reduce((n, mv) => n + (appOnlyCandMap.has(`${mv.rkey}:${mv.id}`) ? 1 : 0), 0)
+      : 0;
 
     const cfChip = ((!isHoldingCf && STATE.chipFilter === 'cf_extd') || (STATE.chipFilter === 'cf_jv' && (!fullFin || !streamCounts.jv)) || (STATE.chipFilter === 'cf_app_only' && (!appOnlyMoves.length || isDailyMode))) ? 'all' : (STATE.chipFilter || 'all');
     const chipBaseMoves = cfChip === 'cf_app_only' ? appOnlyMoves : drillScopedMoves;
@@ -47348,6 +47679,7 @@
             <span><span>In:</span> <b class="good">${fmtUSD(appOnlyInUsd, 2)}</b></span>
             ${Math.abs(appOnlyLbp) > 1 ? `<span><span>LBP:</span> <b>${fmtSignedLBP(appOnlyLbp)}</b></span>` : ''}
           </span>
+          ${appOnlyCandCount > 0 ? `<span class="cf-app-only-cand-note"><b data-no-i18n="1">${fmtNum(appOnlyCandCount)}</b> <span>${appOnlyCandCount === 1 ? 'entry has a candidate workbook match' : 'entries have candidate workbook matches'}</span></span>` : ''}
           ${cfChip === 'cf_app_only'
             ? '<button type="button" class="btn cf-app-only-btn" data-chip="all">Show All Entries</button>'
             : '<button type="button" class="btn cf-app-only-btn" data-cf-app-only-show="1">Show Entries</button>'}
@@ -47431,13 +47763,14 @@
                 const refHtml = r.ticketId
                   ? `<span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ref)}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.ticketId)}" title="Preview / Print Ticket ${esc(r.ref)}">${ic('printer')}</button>${tktOtBadge(r.raw)}</span> <span class="mu">· ${esc(r.method)}</span>`
                   : `${esc(r.ref)} <span class="mu">· ${esc(r.method)}</span>`;
+                const cfCand = appOnlyCandMap ? appOnlyCandMap.get(`${r.rkey}:${r.id}`) : null;
                 return `
                 <tr class="rrow" data-rkey="${esc(r.rkey)}" data-rid="${esc(r.id)}">
                   <td class="mono"><button type="button" class="cf-date-jump" data-cf-focus-date="${esc(r.date)}" title="Filter till sheet to ${esc(fmtDateDMY(r.date))}">${esc(fmtDateDMY(r.date))}</button>${appCell(r.raw, r.rkey)}</td>
                   <td>${coBadge(r.company)}</td>
                   <td class="cf-cat-cell"><span class="cf-flow-badge ${flowCls}">${flowSym}</span><span class="cf-cat-txt">${esc(r.cat)}</span></td>
                   <td class="cf-party-cell" title="${esc(r.party)}">${partyHtml}</td>
-                  <td class="cf-detail-cell" title="${esc(r.detail)}">${esc(r.detail)}</td>
+                  <td class="cf-detail-cell${cfCand ? ' has-cand' : ''}" title="${esc(r.detail)}">${cfCand ? `${r.detail ? `<span class="cf-detail-txt">${esc(r.detail)}</span> ` : ''}${renderCfCandidatePillHtml(cfCand)}` : esc(r.detail)}</td>
                   <td class="mono cf-ref-cell" title="${esc(r.ref + ' · ' + r.method)}">${refHtml}</td>
                   <td class="r">${r.in_usd >= 0.005 ? `<strong style="color:var(--good)">+${fmtUSD(r.in_usd, 2)}</strong>` : '—'}</td>
                   <td class="r">${r.out_usd >= 0.005 ? `<strong style="color:var(--crit)">-${fmtUSD(r.out_usd, 2)}</strong>` : '—'}</td>
@@ -153474,7 +153807,7 @@
     renderApp: typeof renderApp === 'function' ? renderApp : null,
     customRecords: () => STATE.customRecords,
     refreshCustomRecords: () => { applyCustomRecordsToSeed(); invalidateAllSeedCaches(); },
-    appOnlyCash: { index: getAppOnlyCashIndex, scoped: getScopedAppOnlyCashRows, badge: getCashAppOnlyExceptionBadge, cutoff: getWorkbookUpdateCutoff, createdMs: appRecordCreatedMs },
+    appOnlyCash: { index: getAppOnlyCashIndex, scoped: getScopedAppOnlyCashRows, badge: getCashAppOnlyExceptionBadge, cutoff: getWorkbookUpdateCutoff, createdMs: appRecordCreatedMs, candidate: (rkey, id) => (getAppOnlyCashIndex().candByKey.get(`${rkey}:${id}`) || null), tableToCsv },
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null,
     STATE,
     state: STATE,

@@ -21,6 +21,14 @@
   const DICT = {
     en: {},
     ar: {
+      "entry has a candidate workbook match": "قيد له تطابق محتمل في دفاتر العمل",
+      "entries have candidate workbook matches": "قيود لها تطابقات محتملة في دفاتر العمل",
+      "Matches": "يطابق",
+      "workbook row": "سطر دفتر العمل",
+      "(date differs)": "(اختلاف في التاريخ)",
+      "Cash sales ticket": "تذكرة مبيعات نقدية",
+      "Cash sales tickets": "تذاكر مبيعات نقدية",
+      "(method differs)": "(اختلاف في طريقة الدفع)",
       "Not split by borrower": "غير موزّع على المقترضين",
       "Cash the workbook books under Borrowing without a borrower (mostly ticket tips in LL). It is in the TOTAL once.": "نقد يسجّله دفتر العمل ضمن الاقتراض من دون مقترض (معظمه إكراميات التذاكر بالليرة). يُحتسب مرة واحدة في المجموع.",
       "Shift Windows Across the Day": "أوقات الورديات على مدار اليوم",
@@ -11909,6 +11917,14 @@
       "Project Site": "موقع مشروع"
     },
     fr: {
+      "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
+      "entries have candidate workbook matches": "écritures ont des correspondances probables dans les classeurs",
+      "Matches": "Correspond à",
+      "workbook row": "ligne du classeur",
+      "(date differs)": "(date différente)",
+      "Cash sales ticket": "bon de vente espèces",
+      "Cash sales tickets": "bons de vente espèces",
+      "(method differs)": "(mode de règlement différent)",
       "Not split by borrower": "Non réparti par emprunteur",
       "Cash the workbook books under Borrowing without a borrower (mostly ticket tips in LL). It is in the TOTAL once.": "Trésorerie que le classeur inscrit sous Emprunts sans emprunteur (surtout des pourboires de tickets en LL). Elle figure une seule fois dans le TOTAL.",
       "Shift Windows Across the Day": "Plages horaires des postes sur la journée",

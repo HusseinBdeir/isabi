@@ -4229,6 +4229,8 @@ td.td-has-sel-dot > .void-btn.row-void-hover { right: 22px; }
 .cf-app-only-strip .cf-app-only-figs b.crit { color: var(--crit); }
 .cf-app-only-strip .cf-app-only-figs b.good { color: var(--good); }
 .cf-app-only-strip .cf-app-only-btn { padding: 3px 10px; font-size: 11.5px; white-space: nowrap; }
+.cf-app-only-strip .cf-app-only-cand-note { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--warn); border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 11.5px; font-weight: 600; max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
+.cf-cand-pill { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px 4px; margin-inline-start: 4px; padding: 2px 7px; border: 1px solid var(--warn); border-radius: 999px; background: var(--warn-bg); color: var(--ink); font-size: 11px; font-weight: 500; line-height: 1.35; white-space: normal; max-width: 100%; box-sizing: border-box; vertical-align: middle; overflow-wrap: anywhere; }
 .cf-behind-note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 14px; background: var(--warn-bg); border-bottom: 1px solid var(--line); font-size: 12px; line-height: 1.45; color: var(--ink); min-width: 0; max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
 .cf-behind-note .cf-behind-badge { display: inline-flex; align-items: center; padding: 3px 9px; border: 1px solid var(--warn); border-radius: 999px; font-weight: 600; white-space: normal; max-width: 100%; }
 .cf-behind-note .cf-behind-items { flex: 0 1 auto; min-width: 0; max-width: 100%; font-variant-numeric: tabular-nums; }
@@ -20594,6 +20596,18 @@ body.kiosk-locked .hub-subtab-bar {
   white-space: nowrap;
   color: var(--ink);
 }
+.cf-detail-cell.has-cand {
+  max-width: 340px;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+.cf-detail-cell.has-cand .cf-detail-txt {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
 .cf-ref-cell {
   max-width: 116px;
   overflow: hidden;
@@ -20683,6 +20697,12 @@ svg .cf-chart-bar:hover .cf-bar-hit {
   }
   .cf-detail-cell {
     max-width: 190px;
+  }
+  .cf-detail-cell.has-cand {
+    max-width: 240px;
+  }
+  .cf-app-only-strip .cf-app-only-cand-note {
+    flex-basis: 100%;
   }
   .cf-clear-all-btn {
     margin-left: 0;
