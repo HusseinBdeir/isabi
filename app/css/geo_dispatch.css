@@ -793,7 +793,7 @@
   letter-spacing: 0;
 }
 .tkt-site-pin-lbl svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--brass, #C0892F); margin-top: 1px; }
-.tkt-site-pin-row { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.tkt-site-pin-row { position: relative; display: flex; gap: 6px; align-items: center; min-width: 0; }
 .tkt-site-pin-row > input { flex: 1 1 auto; min-width: 0; width: 100%; }
 .tkt-site-pin-row > .btn { flex: 0 0 auto; white-space: nowrap; }
 .tkt-site-pin-row > .btn[hidden] { display: none !important; }
@@ -952,7 +952,13 @@
 body.modal-open .geo-focus-card,
 body:has(.modal-backdrop:not([hidden])) .geo-focus-card,
 body.modal-open .geo-studio-deck .geo-place-menu,
-body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
+body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu,
+body.modal-open .geo-studio-deck .geo-basemap-switch,
+body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-basemap-switch,
+body.modal-open .geo-studio-deck .geo-map-attrib,
+body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-map-attrib,
+body:has(.modal-backdrop:not(#recordInspector):not([hidden])) .insp-site-map-wrap .geo-basemap-switch,
+body:has(.modal-backdrop:not(#recordInspector):not([hidden])) .insp-site-map-wrap .geo-map-attrib {
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
@@ -3842,5 +3848,143 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
   .geo-unpinned-reg-inp {
     flex: 1 1 100%;
     min-width: 0;
+  }
+}
+
+/* ==================== GOOGLE MAPS LAYER SWITCHER & PLACES SEARCH ==================== */
+.geo-basemap-switch {
+  position: absolute;
+  bottom: 10px;
+  inset-inline-start: 10px;
+  z-index: 680;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(192, 137, 47, 0.45);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(6px);
+}
+[data-theme="dark"] .geo-basemap-switch {
+  background: rgba(16, 29, 54, 0.93);
+  border-color: rgba(217, 165, 74, 0.42);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.48);
+}
+.geo-basemap-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink, #1E293B);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.geo-basemap-btn:hover:not(.is-active) {
+  background: rgba(192, 137, 47, 0.13);
+}
+[data-theme="dark"] .geo-basemap-btn {
+  color: #E2E8F0;
+}
+[data-theme="dark"] .geo-basemap-btn:hover:not(.is-active) {
+  background: rgba(217, 165, 74, 0.18);
+}
+.geo-basemap-btn.is-active {
+  background: var(--brass, #C0892F);
+  color: #FFFFFF;
+}
+[data-theme="dark"] .geo-basemap-btn.is-active {
+  background: #D9A54A;
+  color: #081124;
+}
+.geo-map-attrib {
+  position: absolute;
+  bottom: 6px;
+  inset-inline-end: 8px;
+  z-index: 675;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.25;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #334155;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  pointer-events: none;
+  unicode-bidi: isolate;
+}
+[data-theme="dark"] .geo-map-attrib {
+  background: rgba(16, 29, 54, 0.86);
+  color: #CBD5E1;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.geo-place-inline-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.geo-link-paste-row .geo-place-menu,
+.tkt-site-pin-row .geo-place-menu,
+.geo-place-inline-anchor .geo-place-menu {
+  z-index: 75;
+  max-height: 250px;
+  overflow-y: auto;
+}
+.geo-regions-rail .geo-place-menu {
+  min-width: 0;
+  width: 100%;
+  max-height: 210px;
+}
+.geo-regions-rail:has(.geo-place-menu:not([hidden])),
+.geo-regions-rail:has(#geoStudioPlacesBox:not([hidden])) {
+  max-height: 540px;
+}
+.geo-place-badge.is-google {
+  background: rgba(192, 137, 47, 0.14);
+  color: #8A5B10;
+}
+[data-theme="dark"] .geo-place-badge.is-google {
+  background: rgba(217, 165, 74, 0.22);
+  color: #FCD38D;
+}
+.geo-place-status-row {
+  padding: 7px 10px;
+  font-size: 11.5px;
+  color: var(--muted, #64748B);
+}
+.geo-studio-places-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  border-radius: 9px;
+  border: 1px solid rgba(192, 137, 47, 0.4);
+  background: var(--surface, #FAF8F5);
+  max-height: 205px;
+  overflow-y: auto;
+}
+.geo-studio-places-box[hidden] {
+  display: none !important;
+}
+[data-theme="dark"] .geo-studio-places-box {
+  background: rgba(16, 29, 54, 0.92);
+  border-color: rgba(217, 165, 74, 0.35);
+}
+@media (max-width: 760px) {
+  .geo-basemap-switch {
+    bottom: 8px;
+    inset-inline-start: 8px;
+  }
+  .geo-basemap-btn {
+    padding: 5px 9px;
+    font-size: 11px;
   }
 }

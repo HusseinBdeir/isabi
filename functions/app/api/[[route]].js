@@ -33,6 +33,11 @@ import {
   handleEdgeSmartScan,
   handleEdgeTts
 } from '../../_lib/gemini.js';
+import {
+  evictCachedMapSession,
+  handleGoogleMapPlaces,
+  handleGoogleMapTile
+} from '../../_lib/google_maps.js';
 import { handleTelematics } from '../../_lib/telematics.js';
 import { handleKioskOptions, handleKioskPunchFeed, handleKioskVerify } from '../../_lib/kiosk_verify.js';
 import { handleResolveMapLink } from '../../_lib/map_link.js';
@@ -101,6 +106,9 @@ async function routeAppApi(context) {
 
   const url = new URL(request.url);
   const rawSession = await extractRequestSession(request, env);
+  if (parts[0] === 'map-tiles') {
+    return handleGoogleMapTile(request, env, rawSession, parts, { url, context });
+  }
   const session = rawSession ? await verifyActiveEdgeSession(rawSession, env) : null;
 
   if (subPath === '/status' || subPath === '/health') {
@@ -111,7 +119,9 @@ async function routeAppApi(context) {
     return handleSeedGet(request, env, session, parts[1]);
   }
 
-  const bodyLimit = session ? AUTHED_MAX_BODY_BYTES : 6291456; // 6 MB pre-auth ceiling (covers 4 MB phone-scan page)
+  const bodyLimit = (subPath === '/map-places' || subPath === '/resolve-map-link')
+    ? 4096
+    : (session ? AUTHED_MAX_BODY_BYTES : 6291456); // 6 MB pre-auth ceiling (covers 4 MB phone-scan page)
   const { body, rawBytes, tooLarge, parseError, emptyBody } = await parseBodyWithSize(request, bodyLimit);
   if (tooLarge) {
     return jsonResponse({ ok: false, error: 'Request payload exceeds size limit.' }, 413);
@@ -121,6 +131,7 @@ async function routeAppApi(context) {
     return handleAuthLogin(request, env, body, session);
   }
   if (subPath === '/auth/logout' && request.method === 'POST') {
+    evictCachedMapSession(session || rawSession);
     return handleAuthLogout(request, env, session || rawSession);
   }
   if (subPath === '/auth/me' && request.method === 'GET') {
@@ -140,6 +151,9 @@ async function routeAppApi(context) {
   if (subPath === '/resolve-map-link') {
     if (parseError) return jsonResponse({ ok: false, code: 'invalid_json', error: 'Malformed JSON body.' }, 400);
     return handleResolveMapLink(request, env, body, session, { url });
+  }
+  if (subPath === '/map-places') {
+    return handleGoogleMapPlaces(request, env, body, session, { url, parseError });
   }
   if (!session) {
     if (isDemoReq && request.method === 'GET' && DEMO_EMPTY_GET_ROUTES.has(subPath)) {
