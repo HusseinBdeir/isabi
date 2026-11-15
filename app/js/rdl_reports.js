@@ -3974,6 +3974,24 @@
     const drvFilter = p.driver;
     const byDrv = new Map();
 
+    const siteTripCounts = new Map();
+    const bumpSiteTrip = (r, side) => {
+      const sNm = String((r && r.site) || '').trim();
+      if (!sNm || typeof window === 'undefined' || !window.MFG_GEO || typeof window.MFG_GEO.resolveVerifiedSiteGatePin !== 'function') return;
+      const pin = window.MFG_GEO.resolveVerifiedSiteGatePin(sNm, {
+        side,
+        company: (r && (r.company || r.co)) || ctx.co,
+        ticketNo: (r && r.ticket_no) || '',
+        SEED: ctx.seed || window.MFG_SEED,
+        STATE: ctx.state || (typeof window !== 'undefined' && window.MFG_ENTERPRISE ? window.MFG_ENTERPRISE.STATE : null)
+      });
+      if (!pin) return;
+      const k = pin.siteId ? String(pin.siteId) : `${pin.side}:${pin.siteName.toLowerCase()}`;
+      const cur = siteTripCounts.get(k) || { pin, trips: 0 };
+      cur.trips += 1;
+      siteTripCounts.set(k, cur);
+    };
+
     ctx.salesAll.forEach(r => {
       const d = rowDate(r, ctx.basis);
       if (!inWindow(d, p.from, p.to)) return;
@@ -3984,6 +4002,7 @@
       g.m3 += Number(r.qty || 0);
       g.rev += Number(r.total_usd || 0);
       byDrv.set(drv, g);
+      if (!r.is_return) bumpSiteTrip(r, 'sales');
     });
 
     ctx.rmAll.forEach(r => {
@@ -3995,6 +4014,7 @@
       const g = byDrv.get(drv) || { driver: drv, loads: 0, m3: 0, rev: 0, rmTrips: 0, fuelFills: 0, liters: 0, fuelUsd: 0 };
       g.rmTrips += 1;
       byDrv.set(drv, g);
+      bumpSiteTrip(r, 'raw');
     });
 
     // Fuel money (litres x diesel price) is printed only for a seat that may read the diesel purchases of every
@@ -4065,6 +4085,21 @@
           </tr>
         </tfoot>
       </table>
+      ${(() => {
+        if (!siteTripCounts.size || typeof window === 'undefined' || !window.MFG_GEO || typeof window.MFG_GEO.renderGatePinCardHtml !== 'function') return '';
+        const sortedPins = Array.from(siteTripCounts.values()).sort((a, b) => b.trips - a.trips);
+        return `
+          <section id="rdlDriverGatePinsSection" class="rdl-driver-gate-sec">
+            <div class="rdl-driver-gate-hdr">
+              <span>Verified Gate Pins &amp; Dispatch Navigation</span>
+              <span class="badge badge-brass"><b data-no-i18n="1">${sortedPins.length}</b> <span>${sortedPins.length === 1 ? 'Site' : 'Sites'}</span></span>
+            </div>
+            <div class="rdl-driver-gate-grid">
+              ${sortedPins.map(it => window.MFG_GEO.renderGatePinCardHtml(it.pin, { variant: 'rdl', tripsCount: it.trips })).join('')}
+            </div>
+          </section>
+        `;
+      })()}
       ${sheetFooterHtml(ctx.co, 1, 1)}
     `;
   }
@@ -4437,6 +4472,18 @@
           </tr>
         </tfoot>
       </table>
+      ${(() => {
+        if (!tk.site || typeof window === 'undefined' || !window.MFG_GEO || typeof window.MFG_GEO.resolveVerifiedSiteGatePin !== 'function') return '';
+        const gatePin21 = window.MFG_GEO.resolveVerifiedSiteGatePin(tk.site, {
+          side: 'sales',
+          company: tk.co || ctx.co,
+          ticketNo: tNo,
+          SEED: ctx.seed || window.MFG_SEED,
+          STATE: ctx.state || (typeof window !== 'undefined' && window.MFG_ENTERPRISE ? window.MFG_ENTERPRISE.STATE : null)
+        });
+        if (!gatePin21 || typeof window.MFG_GEO.renderGatePinCardHtml !== 'function') return '';
+        return `<div id="rdlDeliveryGatePinCard" class="rdl-gate-pin-wrap">${window.MFG_GEO.renderGatePinCardHtml(gatePin21, { variant: 'rdl' })}</div>`;
+      })()}
       ${signatureRowHtml(dt.doc21SigLeft, dt.doc21SigRight)}
       ${sheetFooterHtml(tk.co || ctx.co, 1, 1)}
     `;

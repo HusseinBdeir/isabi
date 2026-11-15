@@ -1055,6 +1055,22 @@
   if (!GEO_STORE.routeKmCache) GEO_STORE.routeKmCache = {};
   if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
 
+  function isValidLatLngPair(lat, lng) {
+    if (lat == null || lng == null) return false;
+    if ((typeof lat !== 'number' && typeof lat !== 'string') || (typeof lng !== 'number' && typeof lng !== 'string')) return false;
+    const sLat = String(lat).trim();
+    const sLng = String(lng).trim();
+    if (!sLat || !sLng) return false;
+    const la = Number(sLat);
+    const ln = Number(sLng);
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) return false;
+    if (la < -90 || la > 90 || ln < -180 || ln > 180) return false;
+    if (Math.abs(la) < 1e-4 && Math.abs(ln) < 1e-4) return false;
+    return true;
+  }
+
+  let _geoConfigPushChain = Promise.resolve();
+
   function saveStoredConfig(pushServer = true) {
     GEO_STORE.updatedAt = new Date().toISOString();
     const isDemoGeo = isDemoGeoMode();
@@ -1065,15 +1081,23 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(GEO_STORE));
       }
     } catch (_) {}
-    const canPostGeoApi = !isDemoGeo && (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname || '') || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
+    const canWriteGeoApi = (() => {
+      try {
+        return (typeof window.MFG_CAN_PIN_LOCATIONS === 'function' && window.MFG_CAN_PIN_LOCATIONS() === true)
+          || (typeof window.MFG_CAN_SHAPE_REGIONS === 'function' && window.MFG_CAN_SHAPE_REGIONS() === true);
+      } catch (_) { return false; }
+    })();
+    const canPostGeoApi = !isDemoGeo && canWriteGeoApi && (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname || '') || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
     if (pushServer && canPostGeoApi && typeof window.fetch === 'function' && (!navigator.webdriver || window.__ISABI_TEST_EDGE) && (!window.__MFG_HEADLESS_TEST || window.__ISABI_TEST_EDGE)) {
       try {
         const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
-        edgeFetch('./api/geo_config', {
+        const payloadBody = JSON.stringify({ config: exportGeoConfig() });
+        _geoConfigPushChain = _geoConfigPushChain.catch(() => {}).then(() => edgeFetch('./api/geo_config', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ config: exportGeoConfig() })
-        }).catch(() => {});
+          body: payloadBody
+        })).catch(() => {});
       } catch (_) {}
     }
     if (typeof window.__mfgScheduleCloudPush === 'function') {
@@ -2228,28 +2252,55 @@
       const sIsMfg = sInd === 'Manufacturing' && !s._multiIndustrySeed;
       const pfx = geoIndStorePrefix(sInd);
       // A quarry and a delivery site can share a name: each reads only its own pin (and the Region saved with it)
-      const ov = siteStoreEntryFor(pfx, nk, resolveGeoSiteCat(s), siteHasTwin(siteCatsByName, s));
+      const sCat = resolveGeoSiteCat(s);
+      const sTwin = siteHasTwin(siteCatsByName, s);
+      const ov = siteStoreEntryFor(pfx, nk, sCat, sTwin);
       const basePin = sIsMfg ? BASELINE_SITE_PINS[nk] : null;
       if ('_pinCleared' in s) s._pinCleared = _isPinClearedFlag(s._pinCleared);
       const pinCleared = _isPinClearedFlag(s._pinCleared);
       let geoZone = s.region || '';
-      if (basePin && !pinCleared) {
-        if (s.latitude == null || s.latitude === '') s.latitude = basePin.lat;
-        if (s.longitude == null || s.longitude === '') s.longitude = basePin.lng;
+      if (basePin && !pinCleared && isValidLatLngPair(basePin.lat, basePin.lng)) {
+        if (!isValidLatLngPair(s.latitude, s.longitude)) {
+          s.latitude = Number(basePin.lat);
+          s.longitude = Number(basePin.lng);
+        }
         if (!geoZone && basePin.region) geoZone = basePin.region;
       }
       if (ov && !pinCleared) {
-        if (ov.latitude != null) s.latitude = Number(ov.latitude);
-        if (ov.longitude != null) s.longitude = Number(ov.longitude);
+        if (isValidLatLngPair(ov.latitude, ov.longitude)) {
+          s.latitude = Number(ov.latitude);
+          s.longitude = Number(ov.longitude);
+        }
         if (ov.region) { s.region = ov.region; geoZone = ov.region; }
       }
-      if (s.latitude != null && s.longitude != null && !geoZone) {
+      if (isValidLatLngPair(s.latitude, s.longitude) && !geoZone) {
         // Region records only: this can fill the Region of an app site (night trip pay), as before the atlas fix
         const det = findContainingRegion(Number(s.latitude), Number(s.longitude), SEED, sInd, { recordsOnly: true });
         if (det.best) geoZone = det.best;
       }
       if (!s.region && s.source === 'app' && geoZone) {
         s.region = geoZone;
+      }
+      if (!ov && !pinCleared && isValidLatLngPair(s.latitude, s.longitude) && (s.source === 'app' || s.modified_at)) {
+        const bfMod = String(s.modified_at || s.entered_at || '');
+        const bfDel = (GEO_STORE._deletedKeys && typeof GEO_STORE._deletedKeys === 'object') ? GEO_STORE._deletedKeys : {};
+        const bfCatDelTs = String(bfDel[`sites:${pfx}${sCat}:${nk}`] || '');
+        const bfPlainDelTs = String(bfDel[`sites:${pfx}${nk}`] || '');
+        const bfTombstoned = Boolean((bfCatDelTs && (!bfMod || bfCatDelTs >= bfMod)) || (bfPlainDelTs && (!bfMod || bfPlainDelTs >= bfMod)));
+        if (nk && !bfTombstoned) {
+          const bfKey = sTwin ? `${pfx}${sCat}:${nk}` : `${pfx}${nk}`;
+          if (!GEO_STORE.sites || typeof GEO_STORE.sites !== 'object') GEO_STORE.sites = {};
+          const bfEntry = {
+            name: String(s.name || '').trim(),
+            site_category: sCat,
+            latitude: Number(s.latitude),
+            longitude: Number(s.longitude),
+            region: geoZone || s.region || '',
+            updated_at: bfMod || new Date().toISOString()
+          };
+          if (s.company) bfEntry.company = s.company;
+          GEO_STORE.sites[bfKey] = bfEntry;
+        }
       }
       s.geo_zone = s.region || geoZone || '';
     });
@@ -3084,8 +3135,11 @@
     }
 
     if (!hit) {
-      const shortLink = /\b(maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs|maps\.apple\/p|waze\.com\/ul\/h[0-9a-z]|bit\.ly|tinyurl\.com)/i.test(d);
-      return finish({ ok: false, code: shortLink ? 'short_link' : 'unrecognized' });
+      if (extractShortMapUrlFromText(d)) {
+        return finish({ ok: false, code: 'short_link' });
+      }
+      const unsupportedShort = /\b(g\.co\/kgs|maps\.apple\/p|bit\.ly|tinyurl\.com)\b|http:\/\/(?:maps\.app\.goo\.gl|goo\.gl|(?:www\.|ul\.)?waze\.com)\b|https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl)\/?(?=$|[\s.,;!?)\]}'"])/i.test(d);
+      return finish({ ok: false, code: unsupportedShort ? 'unsupported_short_link' : 'unrecognized' });
     }
 
     let lat = parseFloat(hit.lat), lng = parseFloat(hit.lng);
@@ -3121,6 +3175,75 @@
   function parsePastedCoordinates(rawText, opts) {
     const r = parseMapLink(rawText, opts);
     return r && r.ok ? { lat: r.lat, lng: r.lng } : null;
+  }
+
+  // Server-assisted short-link resolver cache & client helper (Rec 1)
+  var _SHORT_MAP_URL_RE = /https:\/\/(?:maps\.app\.goo\.gl|goo\.gl|(?:www\.|ul\.)?waze\.com)\/[^\s<>"{}|\\^`]+/i;
+  const _shortMapLinkCache = new Map();
+
+  function extractShortMapUrlFromText(rawText) {
+    const s = String(rawText || '').slice(0, MAP_LINK_MAX_LEN);
+    const m = s.match(_SHORT_MAP_URL_RE);
+    if (!m) return '';
+    return String(m[0] || '').replace(/[.,;!?)\]}'"]+$/g, '');
+  }
+
+  async function resolveShortMapLink(rawText) {
+    const rawStr = String(rawText || '');
+    const shortUrl = extractShortMapUrlFromText(rawStr);
+    if (!shortUrl) return { ok: false, code: 'not_short_link' };
+    if (_shortMapLinkCache.has(shortUrl)) {
+      const cached = _shortMapLinkCache.get(shortUrl);
+      _shortMapLinkCache.delete(shortUrl);
+      _shortMapLinkCache.set(shortUrl, cached);
+      const expandedText = (cached.resolvedUrl && rawStr.includes(shortUrl))
+        ? rawStr.replace(shortUrl, cached.resolvedUrl)
+        : (cached.resolvedUrl || '');
+      return Object.assign({}, cached, { expandedText });
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return { ok: false, code: 'offline' };
+    const fetcher = (typeof window !== 'undefined' && typeof window.ISABI_EDGE_FETCH === 'function')
+      ? window.ISABI_EDGE_FETCH
+      : (typeof fetch === 'function' ? fetch : null);
+    if (!fetcher) return { ok: false, code: 'no_fetch' };
+    const isDemo = typeof window !== 'undefined' && typeof window.__ISABI_IS_DEMO === 'function' && window.__ISABI_IS_DEMO();
+    const headers = { 'Content-Type': 'application/json' };
+    if (isDemo) headers['X-ISABI-Demo'] = '1';
+    try {
+      const resp = await fetcher('./api/resolve-map-link', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify({ url: shortUrl })
+      });
+      let data = null;
+      try { data = await resp.json(); } catch (_) { data = null; }
+      if (!resp.ok || !data || !data.ok || !data.resolvedUrl) {
+        return {
+          ok: false,
+          code: (data && data.code) || (resp.status === 429 ? 'rate_limited' : 'resolve_failed'),
+          status: resp.status
+        };
+      }
+      const resObj = {
+        ok: true,
+        shortUrl,
+        resolvedUrl: String(data.resolvedUrl),
+        hops: Number(data.hops || 0)
+      };
+      if (_shortMapLinkCache.size >= 64) {
+        const oldest = _shortMapLinkCache.keys().next().value;
+        if (oldest !== undefined) _shortMapLinkCache.delete(oldest);
+      }
+      _shortMapLinkCache.set(shortUrl, resObj);
+      const expandedText = rawStr.includes(shortUrl)
+        ? rawStr.replace(shortUrl, resObj.resolvedUrl)
+        : resObj.resolvedUrl;
+      return Object.assign({}, resObj, { expandedText });
+    } catch (_) {
+      const offlineNow = typeof navigator !== 'undefined' && navigator.onLine === false;
+      return { ok: false, code: offlineNow ? 'offline' : 'network_error' };
+    }
   }
 
   // Region, reference distance and nearest registered site for a pasted point, in any of the 6 verticals.
@@ -3159,14 +3282,56 @@
     return { region, governorate, hub, nearest, isMfg };
   }
 
+  function resolveMapLinkAsync(raw, opts, onParsed, onFail) {
+    resolveShortMapLink(raw).then(res => {
+      const ref = (opts && opts.ref) || null;
+      const seedObj = (opts && opts.SEED) || null;
+      let resolved = null;
+      if (res && res.ok) {
+        const expTarget = res.expandedText || res.resolvedUrl;
+        if (expTarget) resolved = parseMapLink(expTarget, { SEED: seedObj, ref });
+        if ((!resolved || !resolved.ok) && Number.isFinite(Number(res.lat)) && Number.isFinite(Number(res.lng))) {
+          const rLat = round5(Number(res.lat));
+          const rLng = round5(Number(res.lng));
+          resolved = { ok: true, lat: rLat, lng: rLng, outsideLebanon: !isPointInLebanon(rLat, rLng), sourceLabel: 'Short Link', ms: 0 };
+        }
+      }
+      if (resolved && resolved.ok) {
+        onParsed(resolved, res);
+      } else if (typeof onFail === 'function') {
+        const rawCode = (res && res.code) || '';
+        const normCode = (rawCode === 'offline' || rawCode === 'short_link')
+          ? 'short_link'
+          : (rawCode === 'unsupported_short_link' ? 'unsupported_short_link' : 'short_link_unresolvable');
+        onFail(Object.assign({}, res, { ok: false, code: normCode, rawCode }));
+      }
+    });
+  }
+
+  const UNRESOLVABLE_SHORT_LINK_CODES = new Set([
+    'short_link_unresolvable', 'no_redirect_location', 'resolve_failed',
+    'too_many_redirects', 'redirect_loop', 'disallowed_redirect_target',
+    'resolve_timeout', 'upstream_fetch_failed', 'network_error',
+    'rate_limited', 'no_fetch', 'not_short_link'
+  ]);
+
   // Status line HTML: fixed phrases are separate text nodes (translated by MFG_I18N), values carry data-no-i18n.
   function renderMapLinkStatusHtml(parsed, info, opts) {
     const inForm = !(opts && opts.studio);
     const v = x => `<b class="geo-link-val" dir="auto" data-no-i18n="1">${esc(x)}</b>`;
     if (!parsed) return '';
     if (!parsed.ok) {
-      if (parsed.code === 'short_link') {
+      if (parsed.code === 'short_link_resolving') {
+        return `<span class="geo-link-ic is-warn">${ic('pin')}</span><span class="geo-link-msg"><span>Resolving short map link...</span></span>`;
+      }
+      if (parsed.code === 'short_link' || parsed.code === 'offline') {
         return `<span class="geo-link-ic is-warn">${ic('warn')}</span><span class="geo-link-msg"><span>Short links cannot be read offline.</span> <span>Open the link, tap Share and copy the full link, or long-press the pin and copy its coordinates.</span></span>`;
+      }
+      if (UNRESOLVABLE_SHORT_LINK_CODES.has(parsed.code)) {
+        return `<span class="geo-link-ic is-warn">${ic('warn')}</span><span class="geo-link-msg"><span>Could not expand this short map link.</span> <span>Open the link, tap Share and copy the full link, or long-press the pin and copy its coordinates.</span></span>`;
+      }
+      if (parsed.code === 'unsupported_short_link') {
+        return `<span class="geo-link-ic is-warn">${ic('warn')}</span><span class="geo-link-msg"><span>This short link cannot be expanded automatically.</span> <span>Open the link, tap Share and copy the full link, or long-press the pin and copy its coordinates.</span></span>`;
       }
       if (parsed.code === 'out_of_range') {
         return `<span class="geo-link-ic is-crit">${ic('warn')}</span><span class="geo-link-msg"><span>These coordinates are outside the valid range.</span></span>`;
@@ -3195,6 +3360,529 @@
     }
     const tone = (parsed.outsideLebanon || (info && info.nearest && info.nearest.duplicateRisk)) ? 'is-warn' : ((parsed.approx || parsed.mapView || parsed.lowPrecision || parsed.swapped) ? 'is-warn' : 'is-ok');
     return `<span class="geo-link-ic ${tone}">${ic(tone === 'is-ok' ? 'check' : 'warn')}</span><span class="geo-link-msg"><span class="geo-link-parts">${parts.join('<span class="geo-link-sep" aria-hidden="true"> · </span>')}</span>${notes.length ? `<span class="geo-link-notes">${notes.join(' ')}</span>` : ''}</span>`;
+  }
+
+  // ==================== OFFLINE PURE-JS QR & DRIVER GATE MINI-MAP (REC 3) ====================
+  // Deterministic ISO/IEC 18004 Byte-mode QR encoder (Versions 1..8, ECC Level M) with zero external network calls.
+  const _QR_GF_EXP = new Uint8Array(512);
+  const _QR_GF_LOG = new Uint8Array(256);
+  (() => {
+    let x = 1;
+    for (let i = 0; i < 255; i++) {
+      _QR_GF_EXP[i] = x;
+      _QR_GF_LOG[x] = i;
+      x = x & 0x80 ? ((x << 1) ^ 0x11d) : (x << 1);
+    }
+    for (let i = 255; i < 512; i++) _QR_GF_EXP[i] = _QR_GF_EXP[i - 255];
+  })();
+  const _qrGfMul = (a, b) => (a === 0 || b === 0) ? 0 : _QR_GF_EXP[_QR_GF_LOG[a] + _QR_GF_LOG[b]];
+  const _qrRsPolyCache = new Map();
+  function _qrRsGenerator(ecCount) {
+    if (_qrRsPolyCache.has(ecCount)) return _qrRsPolyCache.get(ecCount);
+    let poly = [1];
+    for (let i = 0; i < ecCount; i++) {
+      const next = new Array(poly.length + 1).fill(0);
+      const factor = _QR_GF_EXP[i];
+      for (let j = 0; j < poly.length; j++) {
+        next[j] ^= poly[j];
+        next[j + 1] ^= _qrGfMul(poly[j], factor);
+      }
+      poly = next;
+    }
+    _qrRsPolyCache.set(ecCount, poly);
+    return poly;
+  }
+  function _qrRsEncode(dataBytes, ecCount) {
+    const gen = _qrRsGenerator(ecCount);
+    const buf = dataBytes.concat(new Array(ecCount).fill(0));
+    for (let i = 0; i < dataBytes.length; i++) {
+      const coef = buf[i];
+      if (coef !== 0) {
+        for (let j = 1; j < gen.length; j++) {
+          buf[i + j] ^= _qrGfMul(gen[j], coef);
+        }
+      }
+    }
+    return buf.slice(dataBytes.length);
+  }
+  const _QR_VER_M = [
+    null,
+    { ver: 1, size: 21, total: 26,  ec: 10, g1: 1, d1: 16, g2: 0, d2: 0,  align: [],          rem: 0 },
+    { ver: 2, size: 25, total: 44,  ec: 16, g1: 1, d1: 28, g2: 0, d2: 0,  align: [6, 18],     rem: 7 },
+    { ver: 3, size: 29, total: 70,  ec: 26, g1: 1, d1: 44, g2: 0, d2: 0,  align: [6, 22],     rem: 7 },
+    { ver: 4, size: 33, total: 100, ec: 18, g1: 2, d1: 32, g2: 0, d2: 0,  align: [6, 26],     rem: 7 },
+    { ver: 5, size: 37, total: 134, ec: 24, g1: 2, d1: 43, g2: 0, d2: 0,  align: [6, 30],     rem: 7 },
+    { ver: 6, size: 41, total: 172, ec: 16, g1: 4, d1: 27, g2: 0, d2: 0,  align: [6, 34],     rem: 7 },
+    { ver: 7, size: 45, total: 196, ec: 18, g1: 4, d1: 31, g2: 0, d2: 0,  align: [6, 22, 38], rem: 0 },
+    { ver: 8, size: 49, total: 242, ec: 22, g1: 2, d1: 38, g2: 2, d2: 39, align: [6, 24, 42], rem: 0 }
+  ];
+  const _qrMatrixCache = new Map();
+
+  function _qrBchFormatBits(maskIdx) {
+    // ECC Level M = 0b00; 5-bit payload = (0 << 3) | maskIdx
+    const data = maskIdx & 7;
+    let d = data << 10;
+    for (let i = 4; i >= 0; i--) {
+      if ((d >>> (i + 10)) & 1) d ^= (0x537 << i);
+    }
+    return ((data << 10) | d) ^ 0x5412;
+  }
+
+  function _qrBchVersionBits(ver) {
+    let d = (ver & 0x3f) << 12;
+    for (let i = 5; i >= 0; i--) {
+      if ((d >>> (i + 12)) & 1) d ^= (0x1f25 << i);
+    }
+    return ((ver & 0x3f) << 12) | d;
+  }
+
+  function encodeQrMatrix(text) {
+    const raw = String(text || '');
+    if (_qrMatrixCache.has(raw)) return _qrMatrixCache.get(raw);
+    const bytes = [];
+    if (typeof TextEncoder !== 'undefined') {
+      const encBytes = new TextEncoder().encode(raw);
+      for (let i = 0; i < encBytes.length; i++) bytes.push(encBytes[i]);
+    } else {
+      const utf8 = unescape(encodeURIComponent(raw));
+      for (let i = 0; i < utf8.length; i++) bytes.push(utf8.charCodeAt(i) & 0xff);
+    }
+    let spec = null;
+    for (let v = 1; v < _QR_VER_M.length; v++) {
+      const cand = _QR_VER_M[v];
+      const dataCw = cand.g1 * cand.d1 + cand.g2 * cand.d2;
+      if (4 + 8 + bytes.length * 8 <= dataCw * 8) { spec = cand; break; }
+    }
+    if (!spec) spec = _QR_VER_M[_QR_VER_M.length - 1];
+    const dataCap = spec.g1 * spec.d1 + spec.g2 * spec.d2;
+    const clippedBytes = bytes.slice(0, Math.max(0, dataCap - 2));
+
+    const bits = [];
+    const pushBits = (val, n) => { for (let i = n - 1; i >= 0; i--) bits.push((val >>> i) & 1); };
+    pushBits(0b0100, 4);
+    pushBits(clippedBytes.length, 8);
+    clippedBytes.forEach(b => pushBits(b, 8));
+    const maxDataBits = dataCap * 8;
+    const term = Math.min(4, maxDataBits - bits.length);
+    for (let i = 0; i < term; i++) bits.push(0);
+    while (bits.length % 8 !== 0) bits.push(0);
+    const dataCw = [];
+    for (let i = 0; i < bits.length; i += 8) {
+      let cw = 0;
+      for (let b = 0; b < 8; b++) cw = (cw << 1) | bits[i + b];
+      dataCw.push(cw);
+    }
+    let padToggle = 0;
+    while (dataCw.length < dataCap) {
+      dataCw.push(padToggle === 0 ? 0xEC : 0x11);
+      padToggle = 1 - padToggle;
+    }
+
+    const blocks = [];
+    let off = 0;
+    for (let i = 0; i < spec.g1; i++) {
+      const blk = dataCw.slice(off, off + spec.d1);
+      off += spec.d1;
+      blocks.push({ d: blk, e: _qrRsEncode(blk, spec.ec) });
+    }
+    for (let i = 0; i < spec.g2; i++) {
+      const blk = dataCw.slice(off, off + spec.d2);
+      off += spec.d2;
+      blocks.push({ d: blk, e: _qrRsEncode(blk, spec.ec) });
+    }
+    const streamBits = [];
+    const maxD = Math.max(spec.d1, spec.d2 || 0);
+    for (let c = 0; c < maxD; c++) {
+      for (let b = 0; b < blocks.length; b++) {
+        if (c < blocks[b].d.length) {
+          const v = blocks[b].d[c];
+          for (let k = 7; k >= 0; k--) streamBits.push((v >>> k) & 1);
+        }
+      }
+    }
+    for (let c = 0; c < spec.ec; c++) {
+      for (let b = 0; b < blocks.length; b++) {
+        const v = blocks[b].e[c];
+        for (let k = 7; k >= 0; k--) streamBits.push((v >>> k) & 1);
+      }
+    }
+    for (let r = 0; r < spec.rem; r++) streamBits.push(0);
+
+    const N = spec.size;
+    const base = Array.from({ length: N }, () => new Array(N).fill(false));
+    const isFn = Array.from({ length: N }, () => new Array(N).fill(false));
+    const setFn = (r, c, dark) => {
+      if (r < 0 || r >= N || c < 0 || c >= N) return;
+      base[r][c] = Boolean(dark);
+      isFn[r][c] = true;
+    };
+    const drawFinder = (r0, c0) => {
+      for (let dr = -1; dr <= 7; dr++) {
+        for (let dc = -1; dc <= 7; dc++) {
+          const r = r0 + dr, c = c0 + dc;
+          if (r < 0 || r >= N || c < 0 || c >= N) continue;
+          const inSep = dr === -1 || dr === 7 || dc === -1 || dc === 7;
+          const dark = !inSep && (dr === 0 || dr === 6 || dc === 0 || dc === 6 || (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4));
+          setFn(r, c, dark);
+        }
+      }
+    };
+    drawFinder(0, 0);
+    drawFinder(0, N - 7);
+    drawFinder(N - 7, 0);
+    for (let r = 0; r < spec.align.length; r++) {
+      for (let c = 0; c < spec.align.length; c++) {
+        const cr = spec.align[r], cc = spec.align[c];
+        if (isFn[cr][cc]) continue;
+        for (let dr = -2; dr <= 2; dr++) {
+          for (let dc = -2; dc <= 2; dc++) {
+            setFn(cr + dr, cc + dc, Math.max(Math.abs(dr), Math.abs(dc)) !== 1);
+          }
+        }
+      }
+    }
+    for (let i = 8; i < N - 8; i++) {
+      if (!isFn[6][i]) setFn(6, i, i % 2 === 0);
+      if (!isFn[i][6]) setFn(i, 6, i % 2 === 0);
+    }
+    setFn(N - 8, 8, true); // Dark module
+    // Reserve format strips
+    for (let i = 0; i <= 8; i++) {
+      if (i !== 6) {
+        if (!isFn[8][i]) setFn(8, i, false);
+        if (!isFn[i][8]) setFn(i, 8, false);
+      }
+      if (i < 8 && !isFn[8][N - 1 - i]) setFn(8, N - 1 - i, false);
+      if (i < 7 && !isFn[N - 1 - i][8]) setFn(N - 1 - i, 8, false);
+    }
+    // Version >= 7 info blocks
+    if (spec.ver >= 7) {
+      const vBits = _qrBchVersionBits(spec.ver);
+      for (let i = 0; i < 18; i++) {
+        const bit = Boolean((vBits >>> i) & 1);
+        const a = Math.floor(i / 3);
+        const b = N - 11 + (i % 3);
+        setFn(a, b, bit);
+        setFn(b, a, bit);
+      }
+    }
+    // Zig-zag data bit placement
+    let bitIdx = 0;
+    for (let right = N - 1; right >= 1; right -= 2) {
+      if (right === 6) right = 5;
+      for (let vert = 0; vert < N; vert++) {
+        const upward = ((right + 1) & 2) === 0;
+        const r = upward ? (N - 1 - vert) : vert;
+        for (let j = 0; j < 2; j++) {
+          const c = right - j;
+          if (!isFn[r][c]) {
+            base[r][c] = bitIdx < streamBits.length ? Boolean(streamBits[bitIdx]) : false;
+            bitIdx++;
+          }
+        }
+      }
+    }
+
+    const applyMaskAndFormat = maskIdx => {
+      const m = base.map(row => row.slice());
+      for (let r = 0; r < N; r++) {
+        for (let c = 0; c < N; c++) {
+          if (isFn[r][c]) continue;
+          let inv = false;
+          if (maskIdx === 0) inv = ((r + c) & 1) === 0;
+          else if (maskIdx === 1) inv = (r & 1) === 0;
+          else if (maskIdx === 2) inv = (c % 3) === 0;
+          else if (maskIdx === 3) inv = ((r + c) % 3) === 0;
+          else if (maskIdx === 4) inv = ((Math.floor(r / 2) + Math.floor(c / 3)) & 1) === 0;
+          else if (maskIdx === 5) inv = (((r * c) & 1) + ((r * c) % 3)) === 0;
+          else if (maskIdx === 6) inv = ((((r * c) & 1) + ((r * c) % 3)) & 1) === 0;
+          else inv = ((((r + c) & 1) + ((r * c) % 3)) & 1) === 0;
+          if (inv) m[r][c] = !m[r][c];
+        }
+      }
+      const fmt = _qrBchFormatBits(maskIdx);
+      for (let i = 0; i < 15; i++) {
+        const bit = Boolean((fmt >>> i) & 1);
+        if (i < 6) m[i][8] = bit;
+        else if (i < 8) m[i + 1][8] = bit;
+        else m[8][14 - i + (i >= 9 ? 0 : 1)] = bit;
+        if (i < 8) m[8][N - 1 - i] = bit;
+        else m[N - 15 + i][8] = bit;
+      }
+      return m;
+    };
+
+    const scoreMatrix = m => {
+      let pen = 0;
+      for (let r = 0; r < N; r++) {
+        let run = 1, last = m[r][0];
+        for (let c = 1; c < N; c++) {
+          if (m[r][c] === last) { run++; if (run === 5) pen += 3; else if (run > 5) pen += 1; }
+          else { run = 1; last = m[r][c]; }
+        }
+      }
+      for (let c = 0; c < N; c++) {
+        let run = 1, last = m[0][c];
+        for (let r = 1; r < N; r++) {
+          if (m[r][c] === last) { run++; if (run === 5) pen += 3; else if (run > 5) pen += 1; }
+          else { run = 1; last = m[r][c]; }
+        }
+      }
+      for (let r = 0; r < N - 1; r++) {
+        for (let c = 0; c < N - 1; c++) {
+          const b0 = m[r][c];
+          if (m[r][c + 1] === b0 && m[r + 1][c] === b0 && m[r + 1][c + 1] === b0) pen += 3;
+        }
+      }
+      let darkCnt = 0;
+      for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (m[r][c]) darkCnt++;
+      const pct = (darkCnt * 100) / (N * N);
+      pen += Math.floor(Math.abs(pct - 50) / 5) * 10;
+      return pen;
+    };
+
+    let bestModules = null;
+    let bestPen = Infinity;
+    for (let maskIdx = 0; maskIdx < 8; maskIdx++) {
+      const candM = applyMaskAndFormat(maskIdx);
+      const p = scoreMatrix(candM);
+      if (p < bestPen) { bestPen = p; bestModules = candM; }
+    }
+    const out = { size: N, version: spec.ver, modules: bestModules };
+    if (_qrMatrixCache.size >= 128) {
+      const old = _qrMatrixCache.keys().next().value;
+      if (old !== undefined) _qrMatrixCache.delete(old);
+    }
+    _qrMatrixCache.set(raw, out);
+    return out;
+  }
+
+  function renderQrSvg(text, sizePx = 76) {
+    const qr = encodeQrMatrix(text);
+    const qz = 2;
+    const vb = qr.size + qz * 2;
+    let d = '';
+    for (let r = 0; r < qr.size; r++) {
+      let c = 0;
+      while (c < qr.size) {
+        if (!qr.modules[r][c]) { c++; continue; }
+        let span = 1;
+        while (c + span < qr.size && qr.modules[r][c + span]) span++;
+        d += `M${c + qz} ${r + qz}h${span}v1h-${span}z`;
+        c += span;
+      }
+    }
+    const px = Math.max(48, Math.round(Number(sizePx) || 76));
+    return `<svg class="gate-qr-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${vb} ${vb}" width="${px}" height="${px}" shape-rendering="crispEdges" role="img" aria-label="Gate Pin QR Code"><rect width="${vb}" height="${vb}" fill="#FFFFFF"/><path d="${d}" fill="#081124"/></svg>`;
+  }
+
+  function packQrEscPosRaster(text, maxDots = 168) {
+    const qr = encodeQrMatrix(text);
+    const qz = 2;
+    const totalMods = qr.size + qz * 2;
+    const modPx = Math.max(2, Math.min(4, Math.floor(Math.max(96, Number(maxDots) || 168) / totalMods)));
+    const widthDots = totalMods * modPx;
+    const heightDots = totalMods * modPx;
+    const wBytes = Math.ceil(widthDots / 8);
+    const header = [
+      0x1D, 0x76, 0x30, 0x00,
+      wBytes & 0xff, (wBytes >> 8) & 0xff,
+      heightDots & 0xff, (heightDots >> 8) & 0xff
+    ];
+    const data = new Array(wBytes * heightDots).fill(0);
+    for (let mr = 0; mr < qr.size; mr++) {
+      for (let mc = 0; mc < qr.size; mc++) {
+        if (!qr.modules[mr][mc]) continue;
+        const y0 = (mr + qz) * modPx;
+        const x0 = (mc + qz) * modPx;
+        for (let dy = 0; dy < modPx; dy++) {
+          const rowBase = (y0 + dy) * wBytes;
+          for (let dx = 0; dx < modPx; dx++) {
+            const px = x0 + dx;
+            data[rowBase + (px >> 3)] |= (0x80 >> (px & 7));
+          }
+        }
+      }
+    }
+    return header.concat(data);
+  }
+
+  function resolveVerifiedSiteGatePin(siteName, opts = {}) {
+    const cleanSite = String(siteName || '').trim();
+    if (!cleanSite) return null;
+    const SEED = opts.SEED || (typeof window !== 'undefined' && (window.MFG_SEED || window.__MFG_SEED_INTERNAL)) || null;
+    const STATE = opts.STATE || (typeof window !== 'undefined' && ((window.MFG_ENTERPRISE && window.MFG_ENTERPRISE.STATE) || window.STATE)) || null;
+    const ind = opts.industry || getGeoActiveIndustry();
+    const nk = norm(cleanSite);
+    const wantCat = opts.side === 'raw' ? 'supplier' : (opts.side === 'sales' ? 'customer' : '');
+    const customSites = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.sites)) ? STATE.customRecords.sites : [];
+    const seedSites = (SEED && SEED.records && Array.isArray(SEED.records.sites)) ? SEED.records.sites : [];
+    const matches = [];
+    const seenIds = new Set();
+    customSites.concat(seedSites).forEach(s => {
+      if (!s || !s.name || !isRowInGeoIndustry(s, ind)) return;
+      if (s.id) {
+        if (seenIds.has(String(s.id))) return;
+        seenIds.add(String(s.id));
+      }
+      if (norm(s.name) === nk) matches.push(s);
+    });
+    if (!matches.length) return null;
+    let siteRow = wantCat ? matches.find(s => resolveGeoSiteCat(s) === wantCat) : null;
+    if (!siteRow) {
+      if (wantCat) return null;
+      siteRow = matches[0];
+    }
+    if (!siteRow || siteRow.voided || siteRow._pinCleared) return null;
+    const lat = siteRow.latitude != null && siteRow.latitude !== '' ? Number(siteRow.latitude) : NaN;
+    const lng = siteRow.longitude != null && siteRow.longitude !== '' ? Number(siteRow.longitude) : NaN;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || (Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001)) return null;
+    if (!isPointInLebanon(lat, lng)) return null;
+
+    const rLat = round5(lat);
+    const rLng = round5(lng);
+    const region = String(siteRow.region || siteRow.geo_zone || '').trim();
+    const governorate = canonGovernorateName(resolveGovernorateForPoint(rLat, rLng).label) || '';
+    const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${rLat},${rLng}`;
+    const wazeUrl = `https://waze.com/ul?ll=${rLat},${rLng}&navigate=yes`;
+    const coordText = `${rLat.toFixed(5)}, ${rLng.toFixed(5)}`;
+    const ticketNo = String(opts.ticketNo || '').trim();
+    const company = String(opts.company || '').trim();
+    let hubName = '';
+    let hubKm = null;
+    let hubLat = null;
+    let hubLng = null;
+    if (ind === 'Manufacturing' && SEED) {
+      const h = getCompanyHub(company || 'WTC', SEED);
+      if (h && Number.isFinite(h.lat) && Number.isFinite(h.lng)) {
+        hubName = h.name;
+        hubLat = h.lat;
+        hubLng = h.lng;
+        hubKm = round1(roadAdjustedKm(h.lat, h.lng, rLat, rLng));
+      }
+    }
+    const regionObj = (region && SEED) ? resolveRegionRecordOrAtlas(region, SEED, ind) : null;
+    const msgLines = [
+      `Delivery Gate Pin: ${siteRow.name}${ticketNo ? ` (Ticket #${ticketNo})` : ''}`,
+      region ? `Region: ${region}` : (governorate ? `Governorate: ${governorate}` : ''),
+      `GPS: ${coordText}`,
+      `Google Maps: ${googleMapsUrl}`,
+      `Waze: ${wazeUrl}`
+    ].filter(Boolean);
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(msgLines.join('\n'))}`;
+
+    return {
+      siteId: siteRow.id || '',
+      siteName: siteRow.name,
+      side: resolveGeoSiteCat(siteRow),
+      industry: ind,
+      region,
+      governorate,
+      lat: rLat,
+      lng: rLng,
+      coordText,
+      googleMapsUrl,
+      wazeUrl,
+      whatsappUrl,
+      hubName,
+      hubKm,
+      hubLat,
+      hubLng,
+      regionObj
+    };
+  }
+
+  function renderGateMiniMapSvg(gatePin, opts = {}) {
+    if (!gatePin || !Number.isFinite(gatePin.lat) || !Number.isFinite(gatePin.lng)) return '';
+    const W = opts.width || 132;
+    const H = opts.height || 86;
+    const cx = W / 2, cy = H / 2;
+    const cosLat = Math.max(0.5, Math.cos((gatePin.lat * Math.PI) / 180));
+    const spanKm = 2.6;
+    const scaleX = W / (spanKm * 1.6);
+    const scaleY = H / spanKm;
+    const proj = (lt, lg) => {
+      const dxKm = (lg - gatePin.lng) * 111.32 * cosLat;
+      const dyKm = (lt - gatePin.lat) * 110.57;
+      return [round1(cx + dxKm * scaleX), round1(cy - dyKm * scaleY)];
+    };
+
+    let zoneShapeSvg = '';
+    const regObj = gatePin.regionObj;
+    if (regObj && regObj.zone_type === 'circle' && regObj.center_lat != null && Number(regObj.radius_km) > 0) {
+      const [rx, ry] = proj(Number(regObj.center_lat), Number(regObj.center_lng));
+      const rPx = Math.max(10, Math.min(70, round1(Number(regObj.radius_km) * scaleY)));
+      zoneShapeSvg = `<circle cx="${rx}" cy="${ry}" r="${rPx}" fill="rgba(5,150,105,0.12)" stroke="#059669" stroke-width="1.2" stroke-dasharray="3 2"/>`;
+    } else if (regObj && regObj.zone_geojson) {
+      const ring = extractEditablePolyRing(regObj.zone_geojson, 28);
+      if (ring && ring.length >= 3) {
+        const pts = ring.map(p => proj(p[1], p[0]).join(',')).join(' ');
+        zoneShapeSvg = `<polygon points="${pts}" fill="rgba(5,150,105,0.12)" stroke="#059669" stroke-width="1.2"/>`;
+      }
+    }
+    let hubVecSvg = '';
+    if (gatePin.hubLat != null && gatePin.hubLng != null) {
+      const dxKm = (gatePin.hubLng - gatePin.lng) * 111.32 * cosLat;
+      const dyKm = (gatePin.hubLat - gatePin.lat) * 110.57;
+      const dist = Math.hypot(dxKm, dyKm) || 1;
+      const ux = dxKm / dist, uy = -dyKm / dist;
+      const ex = round1(cx + ux * 36), ey = round1(cy + uy * 26);
+      hubVecSvg = `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="#C89D54" stroke-width="1.4" stroke-dasharray="3 2"/><circle cx="${ex}" cy="${ey}" r="2.6" fill="#C89D54" stroke="#081124" stroke-width="0.8"/>`;
+    }
+    return `<svg class="gate-minimap-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Verified Site Gate Mini-Map">` +
+      `<rect width="${W}" height="${H}" rx="6" fill="#FAF8F4" stroke="#CBD5E1" stroke-width="1"/>` +
+      `<g stroke="rgba(8,17,36,0.08)" stroke-width="0.7">` +
+        `<line x1="${Math.round(W * 0.25)}" y1="0" x2="${Math.round(W * 0.25)}" y2="${H}"/><line x1="${Math.round(W * 0.5)}" y1="0" x2="${Math.round(W * 0.5)}" y2="${H}"/><line x1="${Math.round(W * 0.75)}" y1="0" x2="${Math.round(W * 0.75)}" y2="${H}"/>` +
+        `<line x1="0" y1="${Math.round(H * 0.33)}" x2="${W}" y2="${Math.round(H * 0.33)}"/><line x1="0" y1="${Math.round(H * 0.67)}" x2="${W}" y2="${Math.round(H * 0.67)}"/>` +
+      `</g>` +
+      zoneShapeSvg +
+      hubVecSvg +
+      `<circle cx="${cx}" cy="${cy}" r="14" fill="rgba(200,157,84,0.14)" stroke="#C89D54" stroke-width="0.9"/>` +
+      `<path d="M${cx} ${cy - 12}c-3.9 0-7 3.1-7 7 0 4.6 7 10.6 7 10.6s7-6 7-10.6c0-3.9-3.1-7-7-7z" fill="#059669" stroke="#FFFFFF" stroke-width="1.4"/>` +
+      `<circle cx="${cx}" cy="${cy - 5}" r="2.2" fill="#FFFFFF"/>` +
+      `<text x="6" y="12" font-family="ui-monospace,monospace" font-size="7.5" font-weight="700" fill="#475569">N ↑</text>` +
+      `<rect x="4" y="${H - 14}" width="${W - 8}" height="10" rx="3" fill="rgba(255,255,255,0.88)"/>` +
+      `<text x="7" y="${H - 6.5}" font-family="ui-monospace,monospace" font-size="7" font-weight="700" fill="#081124">${esc(gatePin.coordText)}</text>` +
+    `</svg>`;
+  }
+
+  function renderGatePinCardHtml(gatePin, opts = {}) {
+    if (!gatePin) return '';
+    const variant = opts.variant || 'rdl';
+    const is58 = Boolean(opts.is58);
+    const qrPx = variant === 'thermal' ? (is58 ? 64 : 76) : 74;
+    const mapW = variant === 'thermal' ? (is58 ? 112 : 128) : 136;
+    const mapH = variant === 'thermal' ? (is58 ? 72 : 82) : 86;
+    const metaParts = [
+      gatePin.region ? `<span>Region</span> <b data-no-i18n="1">${esc(gatePin.region)}</b>` : (gatePin.governorate ? `<span>Governorate</span> <b data-no-i18n="1">${esc(gatePin.governorate)}</b>` : ''),
+      gatePin.hubKm != null ? `<b data-no-i18n="1">${esc(gatePin.hubName || 'Hub')}</b> <b data-no-i18n="1">${gatePin.hubKm.toFixed(1)} km</b>` : '',
+      opts.tripsCount > 0 ? `<span>Period Trips</span> <b data-no-i18n="1">${Number(opts.tripsCount).toLocaleString('en-US')}</b>` : ''
+    ].filter(Boolean);
+
+    return `
+      <div class="gate-pin-card is-${esc(variant)}" data-gate-site="${esc(gatePin.siteName)}">
+        <div class="gate-pin-head">
+          <div class="gate-pin-title-grp">
+            <span class="gate-pin-badge">Verified Gate Pin</span>
+            <strong class="gate-pin-site" data-no-i18n="1">${esc(gatePin.siteName)}</strong>
+          </div>
+          <span class="gate-pin-coords mono" dir="auto" data-no-i18n="1">${esc(gatePin.coordText)}</span>
+        </div>
+        ${metaParts.length ? `<div class="gate-pin-meta">${metaParts.join('<span class="geo-link-sep" aria-hidden="true"> · </span>')}</div>` : ''}
+        <div class="gate-pin-visuals">
+          <div class="gate-pin-minimap">${renderGateMiniMapSvg(gatePin, { width: mapW, height: mapH })}</div>
+          <div class="gate-pin-qr-wrap">
+            ${renderQrSvg(gatePin.googleMapsUrl, qrPx)}
+            <span class="gate-pin-qr-lbl">Open Gate Pin in Google Maps / Waze</span>
+          </div>
+        </div>
+        <div class="gate-pin-links no-print">
+          <a class="gate-pin-link-btn" href="${esc(gatePin.googleMapsUrl)}" target="_blank" rel="noopener">Google Maps</a>
+          <a class="gate-pin-link-btn" href="${esc(gatePin.wazeUrl)}" target="_blank" rel="noopener">Waze</a>
+          <a class="gate-pin-link-btn is-wa" href="${esc(gatePin.whatsappUrl)}" target="_blank" rel="noopener">WhatsApp Driver</a>
+        </div>
+      </div>
+    `;
   }
 
   function addBaseTiles(L, map) {
@@ -3248,7 +3936,20 @@
     mode: 'view',         // 'view' | 'search' | 'circle' | 'polygon' | 'pin'
     selectedRegion: '',   // '' = All Regions overview
     regionSearch: '',
-    pinFilter: 'all',     // 'all' | 'bu' | 'raw' | 'sales' | 'jv'
+    pinFilter: 'all',     // 'all' | 'bu' | 'raw' | 'sales' | 'jv' | 'trucks' | 'unpinned'
+    unpinnedIdx: 0,
+    unpinnedTargetId: '',
+    unpinnedTargetName: '',
+    unpinnedTargetCat: '',
+    unpinnedLat: null,
+    unpinnedLng: null,
+    unpinnedPasteRaw: '',
+    unpinnedRegionDraft: '',
+    unpinnedStatusHtml: '',
+    unpinnedStatusTone: '',
+    _studioLinkGen: 0,
+    _unpinnedLinkGen: 0,
+    _shapelessLinkGen: 0,
     distFrom: 'bu:WTC',
     distTo: 'site:Choueifat',
     drawRegionName: '',
@@ -3329,7 +4030,20 @@
       STUDIO._lastActiveInd = '';
       STUDIO._jumpPendingTs = 0;
       STUDIO._rerender = null;
+      STUDIO.unpinnedIdx = 0;
+      STUDIO.unpinnedTargetId = '';
+      STUDIO.unpinnedTargetName = '';
+      STUDIO.unpinnedTargetCat = '';
+      STUDIO.unpinnedLat = null;
+      STUDIO.unpinnedLng = null;
+      STUDIO.unpinnedPasteRaw = '';
+      STUDIO.unpinnedRegionDraft = '';
+      STUDIO.unpinnedStatusHtml = '';
+      STUDIO.unpinnedStatusTone = '';
     }
+    STUDIO._studioLinkGen = (STUDIO._studioLinkGen || 0) + 1;
+    STUDIO._unpinnedLinkGen = (STUDIO._unpinnedLinkGen || 0) + 1;
+    STUDIO._shapelessLinkGen = (STUDIO._shapelessLinkGen || 0) + 1;
   }
 
   function syncStudioDistEndpoints(hubs, siteListForDist) {
@@ -3360,7 +4074,7 @@
     let actionsHtml = '';
     if (hit) {
       const info = hit.ok ? getMapLinkReferenceInfo(hit.lat, hit.lng, SEED, { industry: activeInd, company: studioMapLinkCompany() }) : null;
-      const tone = !hit.ok ? (hit.code === 'short_link' ? 'is-warn' : 'is-crit')
+      const tone = !hit.ok ? ((hit.code === 'short_link' || hit.code === 'short_link_resolving') ? 'is-warn' : 'is-crit')
         : ((hit.outsideLebanon || hit.approx || hit.mapView || hit.lowPrecision || hit.swapped || (info && info.nearest && info.nearest.duplicateRisk)) ? 'is-warn' : 'is-ok');
       statusHtml = `<div class="geo-link-status ${tone}" id="geoMapLinkStatus" role="status" aria-live="polite">${renderMapLinkStatusHtml(hit, info, { studio: true })}</div>`;
       const dupSite = info && info.nearest && info.nearest.duplicateRisk ? info.nearest : null;
@@ -3391,6 +4105,27 @@
   const canShapeRegionsNow = () => {
     try {
       return typeof window !== 'undefined' && typeof window.MFG_CAN_SHAPE_REGIONS === 'function' && window.MFG_CAN_SHAPE_REGIONS() === true;
+    } catch (_) {
+      return false;
+    }
+  };
+  const canPinLocationsNow = () => {
+    try {
+      return typeof window !== 'undefined' && typeof window.MFG_CAN_PIN_LOCATIONS === 'function' && window.MFG_CAN_PIN_LOCATIONS() === true;
+    } catch (_) {
+      return false;
+    }
+  };
+  const canEnterSiteNow = () => {
+    try {
+      return typeof window !== 'undefined' && typeof window.MFG_CAN_ENTER_SITE === 'function' && window.MFG_CAN_ENTER_SITE() === true;
+    } catch (_) {
+      return false;
+    }
+  };
+  const canModifyRecordNow = () => {
+    try {
+      return typeof window !== 'undefined' && typeof window.MFG_CAN_MODIFY_RECORD === 'function' && window.MFG_CAN_MODIFY_RECORD() === true;
     } catch (_) {
       return false;
     }
@@ -3589,15 +4324,44 @@
     if (STUDIO.selectedRegion && STUDIO.selectedRegion !== '__unassigned__' && !regions.some(r => norm(r.name) === norm(STUDIO.selectedRegion))) {
       STUDIO.selectedRegion = '';
     }
-    if (!isMfg && STUDIO.pinFilter && STUDIO.pinFilter !== 'all') {
+    if (!isMfg && STUDIO.pinFilter && STUDIO.pinFilter !== 'all' && STUDIO.pinFilter !== 'unpinned') {
       STUDIO.pinFilter = 'all';
     }
     const siteStats = getUnifiedSiteStats(SEED, STATE);
     const hubs = isMfg ? getAllCompanyHubs(SEED) : [];
 
-    const activeSites = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => inIndGeo(s) && s.name);
+    const activeSites = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => inIndGeo(s) && s.name && !s.voided && s.active !== false);
+    const unpinnedQueue = getUnpinnedSitesQueue(SEED, STATE, activeInd);
+    if (unpinnedQueue.length === 0) {
+      STUDIO.unpinnedIdx = 0;
+      STUDIO.unpinnedTargetId = '';
+      STUDIO.unpinnedTargetName = '';
+      STUDIO.unpinnedTargetCat = '';
+    } else {
+      const matchedIdx = STUDIO.unpinnedTargetId
+        ? unpinnedQueue.findIndex(u => String(u.key) === String(STUDIO.unpinnedTargetId))
+        : -1;
+      if (matchedIdx >= 0) {
+        STUDIO.unpinnedIdx = matchedIdx;
+      } else {
+        STUDIO.unpinnedIdx = Math.max(0, Math.min(STUDIO.unpinnedIdx || 0, unpinnedQueue.length - 1));
+        const curU = unpinnedQueue[STUDIO.unpinnedIdx];
+        if (curU) {
+          STUDIO.unpinnedTargetId = curU.key;
+          STUDIO.unpinnedTargetName = curU.name;
+          STUDIO.unpinnedTargetCat = curU.siteCategory;
+          STUDIO.unpinnedLat = null;
+          STUDIO.unpinnedLng = null;
+          STUDIO.unpinnedPasteRaw = '';
+          STUDIO.unpinnedRegionDraft = curU.region || '';
+          STUDIO.unpinnedStatusHtml = '';
+          STUDIO.unpinnedStatusTone = '';
+        }
+      }
+    }
+    const curUnpinned = unpinnedQueue[STUDIO.unpinnedIdx] || null;
     const mappedRegionsCnt = regions.filter(r => (r.zone_type === 'circle' && r.radius_km > 0) || Boolean(r.zone_geojson)).length;
-    const pinnedSitesCnt = activeSites.filter(s => s.latitude != null && s.longitude != null && s.latitude !== '' && s.longitude !== '').length;
+    const pinnedSitesCnt = activeSites.filter(s => !_isPinClearedFlag(s._pinCleared) && isValidLatLngPair(s.latitude, s.longitude)).length;
     const siteLife = getSiteLifecycleIndex(activeSites, SEED, STATE);
     const lifeOf = s => siteLife.byNorm.get(norm(s && s.name)) || { state: 'active', lastDate: '', endDate: '', closesOn: '' };
     const lifeRank = s => SITE_LIFE_RANK[lifeOf(s).state] || 0;
@@ -3703,7 +4467,7 @@
       const rCnt = Number(st.raw || 0);
       const sCntLoads = Number(st.sales || 0);
       const siteLoads = isMfg ? Number(st.total || (rCnt + sCntLoads)) : 0;
-      const metaLbl = siteLoads > 0 ? `${siteLoads.toLocaleString('en-US')} ${siteLoads === 1 ? 'load' : 'loads'}` : (s.latitude != null && s.longitude != null ? 'Pinned' : '');
+      const metaLbl = siteLoads > 0 ? `${siteLoads.toLocaleString('en-US')} ${siteLoads === 1 ? 'load' : 'loads'}` : (!_isPinClearedFlag(s._pinCleared) && isValidLatLngPair(s.latitude, s.longitude) ? 'Pinned' : '');
       const loadBreakTip = siteLoads > 0
         ? (rCnt > 0 && sCntLoads > 0
           ? `${rCnt.toLocaleString('en-US')} raw · ${sCntLoads.toLocaleString('en-US')} sales loads`
@@ -3725,7 +4489,13 @@
       `;
     };
 
+    const canPinLocations = (typeof ctx.canPinLocations === 'boolean') ? ctx.canPinLocations : canPinLocationsNow();
+    const canAddSite = (typeof ctx.canAddSite === 'boolean') ? ctx.canAddSite : canEnterSiteNow();
+    const canModifyRec = (typeof ctx.canModifyRecord === 'boolean') ? ctx.canModifyRecord : canModifyRecordNow();
     let toolDrawerHtml = '';
+    if (!STUDIO.collapsed && STUDIO.mode === 'pin' && !canPinLocations) {
+      STUDIO.mode = 'view';
+    }
     if (!STUDIO.collapsed && STUDIO.mode === 'pin') {
       if (!isMfg && STUDIO.pinTargetType === 'bu') STUDIO.pinTargetType = 'site';
       const isBuPin = isMfg && STUDIO.pinTargetType === 'bu';
@@ -3785,7 +4555,11 @@
     const scopedTruckCnt = (isMfg && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getScopedUnits === 'function')
       ? window.MFG_TELEMATICS.getScopedUnits().length
       : 0;
-    if ((!isMfg && STUDIO.pinFilter !== 'all') || (STUDIO.pinFilter === 'trucks' && scopedTruckCnt === 0)) {
+    if (STUDIO._lastActiveInd !== activeInd) {
+      STUDIO._lastActiveInd = activeInd;
+      STUDIO.pinFilter = 'all';
+    }
+    if ((!isMfg && STUDIO.pinFilter !== 'all' && STUDIO.pinFilter !== 'unpinned') || (STUDIO.pinFilter === 'trucks' && scopedTruckCnt === 0)) {
       STUDIO.pinFilter = 'all';
     }
     const shapelessList = STUDIO.collapsed ? [] : getShapelessRegions(SEED, STATE, activeInd);
@@ -3818,22 +4592,76 @@
             </div>
           </div>
           <div class="geo-studio-controls-right">
-            ${!STUDIO.collapsed ? `
-              ${isMfg ? `
-                <div class="geo-pin-filters" id="geoPinFilterStrip" role="group" aria-label="Map Pin Filter">
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'all' ? ' active' : ''}" data-geo-pin-filter="all">All</button>
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'bu' ? ' active' : ''}" data-geo-pin-filter="bu"><span class="geo-dot bu"></span>Company Hubs (${hubs.length})</button>
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'raw' ? ' active' : ''}" data-geo-pin-filter="raw"><span class="geo-dot raw"></span>Raw Activity</button>
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'sales' ? ' active' : ''}" data-geo-pin-filter="sales"><span class="geo-dot sales"></span>Sales Activity</button>
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'jv' ? ' active' : ''}" data-geo-pin-filter="jv"><span class="geo-dot dual"></span>JV 50/50</button>
-                  ${scopedTruckCnt > 0 ? `<button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'trucks' ? ' active' : ''}" data-geo-pin-filter="trucks"><span class="geo-dot trucks"></span>Trucks (${scopedTruckCnt})</button>` : ''}
-                </div>
-              ` : ''}
-              ${STUDIO.selectedRegion ? `<button type="button" class="geo-mini-btn" id="geoResetLebanonViewBtn">Reset View</button>` : ''}
-            ` : ''}
+            ${!STUDIO.collapsed ? (isMfg ? `
+              <div class="geo-pin-filters" id="geoPinFilterStrip" role="group" aria-label="Map Pin Filter">
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'all' ? ' active' : ''}" data-geo-pin-filter="all">All</button>
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'bu' ? ' active' : ''}" data-geo-pin-filter="bu"><span class="geo-dot bu"></span>Company Hubs (${hubs.length})</button>
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'raw' ? ' active' : ''}" data-geo-pin-filter="raw"><span class="geo-dot raw"></span>Raw Activity</button>
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'sales' ? ' active' : ''}" data-geo-pin-filter="sales"><span class="geo-dot sales"></span>Sales Activity</button>
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'jv' ? ' active' : ''}" data-geo-pin-filter="jv"><span class="geo-dot dual"></span>JV 50/50</button>
+                ${scopedTruckCnt > 0 ? `<button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'trucks' ? ' active' : ''}" data-geo-pin-filter="trucks"><span class="geo-dot trucks"></span>Trucks (${scopedTruckCnt})</button>` : ''}
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'unpinned' ? ' active' : ''}" id="geoUnpinnedFilterBtn" data-geo-pin-filter="unpinned"><span class="geo-dot unpinned"></span><span>Unpinned Sites</span> (${unpinnedQueue.length})</button>
+              </div>
+            ` : `
+              <div class="geo-pin-filters" id="geoUnpinnedQueueBar" role="group" aria-label="Unpinned Sites">
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'all' ? ' active' : ''}" data-geo-pin-filter="all">All</button>
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'unpinned' ? ' active' : ''}" id="geoUnpinnedFilterBtn" data-geo-pin-filter="unpinned"><span class="geo-dot unpinned"></span><span>Unpinned Sites</span> (${unpinnedQueue.length})</button>
+              </div>
+            `) : ''}
+            ${!STUDIO.collapsed && STUDIO.selectedRegion ? `<button type="button" class="geo-mini-btn" id="geoResetLebanonViewBtn">Reset View</button>` : ''}
             <button type="button" class="geo-collapse-btn" id="geoToggleCollapseBtn">${STUDIO.collapsed ? 'Show Map' : 'Hide Map'}</button>
           </div>
         </div>
+
+        ${(!STUDIO.collapsed && STUDIO.pinFilter === 'unpinned') ? (!unpinnedQueue.length ? `
+          <div class="geo-unpinned-stepper is-done" id="geoUnpinnedStepper" role="region" aria-label="Unpinned Sites Queue">
+            <div class="geo-unpinned-ident">
+              <span class="geo-link-ic is-ok">${ic('check')}</span>
+              <strong>All active sites have verified pins.</strong>
+            </div>
+            <button type="button" class="geo-mini-btn" id="geoUnpinnedExitBtn">Back to All Pins</button>
+          </div>
+        ` : `
+          <div class="geo-unpinned-stepper${!canPinLocations ? ' is-locked' : ''}" id="geoUnpinnedStepper" role="region" aria-label="Unpinned Sites Queue">
+            <div class="geo-unpinned-head">
+              <div class="geo-unpinned-ident">
+                <span class="geo-unpinned-count" id="geoUnpinnedCounter" data-no-i18n="1">${STUDIO.unpinnedIdx + 1} / ${unpinnedQueue.length}</span>
+                <strong class="geo-unpinned-name" id="geoUnpinnedTargetName" data-no-i18n="1">${esc(curUnpinned.name)}</strong>
+                ${isMfg ? `<span class="geo-unpinned-cat">${curUnpinned.siteCategory === 'customer' ? 'Delivery Site' : 'Quarry / Supplier'}</span>` : ''}
+                <span class="geo-unpinned-vol">${curUnpinned.vol90 > 0 ? `<b data-no-i18n="1">${curUnpinned.vol90}</b> <span>(90d)</span>` : `<b data-no-i18n="1">${curUnpinned.totalVol}</b> <span>total</span>`}</span>
+                ${(STUDIO.unpinnedRegionDraft || curUnpinned.region)
+                  ? `<span class="geo-unpinned-regpill" data-no-i18n="1">${esc(STUDIO.unpinnedRegionDraft || curUnpinned.region)}</span>`
+                  : '<span class="geo-unpinned-regpill">No Region</span>'}
+              </div>
+              <div class="geo-unpinned-nav">
+                <button type="button" class="geo-mini-btn" id="geoUnpinnedPrevBtn" ${unpinnedQueue.length <= 1 ? 'disabled' : ''}>Prev</button>
+                <button type="button" class="geo-mini-btn" id="geoUnpinnedNextBtn" ${unpinnedQueue.length <= 1 ? 'disabled' : ''}>Next</button>
+                ${curUnpinned.id ? `<button type="button" class="geo-mini-btn" id="geoUnpinnedInspectBtn" data-geo-inspect-site="${esc(curUnpinned.id)}">Open 360°</button>` : ''}
+                <button type="button" class="geo-mini-btn" id="geoUnpinnedExitBtn">Close</button>
+              </div>
+            </div>
+            ${canPinLocations ? `
+              <div class="geo-unpinned-controls">
+                <div class="geo-link-paste-row">
+                  <span class="geo-link-paste-ic" aria-hidden="true">${ic('pin')}</span>
+                  <input type="text" class="geo-rail-search geo-link-paste-inp" id="geoUnpinnedPasteInp" value="${esc(STUDIO.unpinnedPasteRaw || '')}" placeholder="Paste Map or WhatsApp link, coordinates, or click map" aria-label="Paste Map or WhatsApp Link for Unpinned Site" inputmode="url" spellcheck="false" autocomplete="off" enterkeyhint="done">
+                </div>
+                <input type="text" class="geo-rail-search geo-unpinned-reg-inp" id="geoUnpinnedRegionInp" list="geoUnpinnedRegionList" value="${esc(STUDIO.unpinnedRegionDraft || '')}" placeholder="Region" aria-label="Region for Unpinned Site" autocomplete="off">
+                <datalist id="geoUnpinnedRegionList">
+                  ${regions.map(r => `<option value="${esc(r.name)}"></option>`).join('')}
+                </datalist>
+                <button type="button" class="geo-mini-btn primary" id="geoUnpinnedSaveBtn" ${(STUDIO.unpinnedLat != null && STUDIO.unpinnedLng != null) ? '' : 'disabled'}>Save Pin &amp; Next</button>
+              </div>
+              <div class="geo-unpinned-hint">${STUDIO.unpinnedLat != null && STUDIO.unpinnedLng != null ? `<span>Draft Pin</span>: <b data-no-i18n="1">${Number(STUDIO.unpinnedLat).toFixed(5)}, ${Number(STUDIO.unpinnedLng).toFixed(5)}</b>` : 'Paste a Maps/WhatsApp link or click the map to drop the pin.'}</div>
+              ${STUDIO.unpinnedStatusHtml ? `<div class="geo-link-status ${esc(STUDIO.unpinnedStatusTone || 'is-ok')}" id="geoUnpinnedPasteStatus" role="status" aria-live="polite">${STUDIO.unpinnedStatusHtml}</div>` : '<div class="geo-link-status" id="geoUnpinnedPasteStatus" role="status" aria-live="polite" hidden></div>'}
+            ` : `
+              <div class="geo-unpinned-lock" id="geoUnpinnedLockBanner">
+                <span class="geo-link-ic is-warn">${ic('lock')}</span>
+                <span><strong data-no-i18n="1">&#128274;</strong> <strong>Supervisor Only</strong> · <span>Pinning existing sites requires Supervisor + Entry or Owner access.</span></span>
+              </div>
+            `}
+          </div>
+        `) : ''}
 
         ${toolDrawerHtml}
 
@@ -3947,10 +4775,12 @@
                       </div>
                     ` : `<div class="geo-focus-sites-empty">No sites assigned yet</div>`}
                   </div>
-                  <div class="geo-focus-actions">
-                    <button type="button" class="geo-mini-btn primary" data-geo-open-reg-360="${esc(selRegObj.id)}">Edit Region &amp; Zone</button>
-                    <button type="button" class="geo-mini-btn" data-open-modal="site" data-prefill-region="${esc(selRegObj.name)}">+ Add Site Here</button>
-                  </div>
+                  ${(canModifyRec || canShapeRegions || canAddSite) ? `
+                    <div class="geo-focus-actions">
+                      ${(canModifyRec || canShapeRegions) ? `<button type="button" class="geo-mini-btn primary" data-geo-open-reg-360="${esc(selRegObj.id)}">${canShapeRegions ? 'Edit Region &amp; Zone' : 'Region 360°'}</button>` : ''}
+                      ${canAddSite ? `<button type="button" class="geo-mini-btn" data-open-modal="site" data-prefill-region="${esc(selRegObj.name)}">+ Add Site Here</button>` : ''}
+                    </div>
+                  ` : ''}
                 </div>
               ` : ''}
 
@@ -3976,9 +4806,11 @@
               `}
               <div class="geo-km-override-grp">
                 ${kmEst && kmEst.fromCoord && kmEst.toCoord && kmEst.fromCoord.lat != null && kmEst.toCoord.lat != null ? `<button type="button" class="geo-mini-btn" id="geoDistZoomBtn">Zoom Route</button>` : ''}
-                <input type="number" step="0.1" min="0" class="geo-km-override-inp" id="geoDistOverrideInp" value="${hasOverride && kmEst ? kmEst.oneWayKm : ''}" placeholder="Exact km">
-                <button type="button" class="geo-mini-btn" id="geoDistSaveOverrideBtn">${hasOverride ? 'Update KM' : 'Set KM'}</button>
-                ${hasOverride ? `<button type="button" class="geo-mini-btn" id="geoDistClearOverrideBtn">Auto</button>` : ''}
+                ${canPinLocations ? `
+                  <input type="number" step="0.1" min="0" class="geo-km-override-inp" id="geoDistOverrideInp" value="${hasOverride && kmEst ? kmEst.oneWayKm : ''}" placeholder="Exact km">
+                  <button type="button" class="geo-mini-btn" id="geoDistSaveOverrideBtn">${hasOverride ? 'Update KM' : 'Set KM'}</button>
+                  ${hasOverride ? `<button type="button" class="geo-mini-btn" id="geoDistClearOverrideBtn">Auto</button>` : ''}
+                ` : ''}
               </div>
             </div>
           </div>
@@ -4000,13 +4832,13 @@
     const isMfg = activeInd === 'Manufacturing';
     const inIndGeo = r => isRowInGeoIndustry(r, activeInd);
     const regions = ((SEED && SEED.records && SEED.records.regions) || []).filter(inIndGeo);
-    const sites = ((SEED && SEED.records && SEED.records.sites) || []).filter(inIndGeo);
+    const sites = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => inIndGeo(s) && s.name && !s.voided && s.active !== false);
     const siteStats = getUnifiedSiteStats(SEED, STATE);
     const hubs = isMfg ? getAllCompanyHubs(SEED) : [];
     if (STUDIO.selectedRegion && STUDIO.selectedRegion !== '__unassigned__' && !regions.some(r => norm(r.name) === norm(STUDIO.selectedRegion))) {
       STUDIO.selectedRegion = '';
     }
-    if (!isMfg && STUDIO.pinFilter && STUDIO.pinFilter !== 'all') {
+    if (!isMfg && STUDIO.pinFilter && STUDIO.pinFilter !== 'all' && STUDIO.pinFilter !== 'unpinned') {
       STUDIO.pinFilter = 'all';
     }
     const selRegNorm = norm(STUDIO.selectedRegion);
@@ -4122,12 +4954,11 @@
       STUDIO.pinFilter = 'all';
     }
     const pickModeActive = Boolean(STUDIO.mode === 'view' && STUDIO.shapelessPickRegion);
-    if (STUDIO.pinFilter !== 'bu' && STUDIO.pinFilter !== 'trucks') {
+    if (STUDIO.pinFilter !== 'bu' && STUDIO.pinFilter !== 'trucks' && STUDIO.pinFilter !== 'unpinned') {
       const pinLife = getSiteLifecycleIndex(sites, SEED, STATE);
       sites.forEach(s => {
-        if (s.latitude == null || s.longitude == null || s.latitude === '' || s.longitude === '') return;
+        if (_isPinClearedFlag(s._pinCleared) || !isValidLatLngPair(s.latitude, s.longitude)) return;
         const lat = Number(s.latitude), lng = Number(s.longitude);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
         if (selRegNorm === '__unassigned__') {
           if (norm(s.region || s.geo_zone)) return;
         } else if (selRegNorm && norm(s.region || s.geo_zone) !== selRegNorm) {
@@ -4182,9 +5013,9 @@
             ${wtcEst && wtcEst.available ? `<div>From WTC: <b>${wtcEst.oneWayKm.toFixed(1)} km</b> (RT ${wtcEst.roundTripKm.toFixed(1)} km)</div>` : ''}
             ${bbcEst && bbcEst.available ? `<div>From BBConstruction: <b>${bbcEst.oneWayKm.toFixed(1)} km</b> (RT ${bbcEst.roundTripKm.toFixed(1)} km)</div>` : ''}
             <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
-              <button type="button" class="geo-mini-btn primary" data-popup-edit-site="${esc(s.id)}">Edit Site</button>
+              ${canModifyRecordNow() ? `<button type="button" class="geo-mini-btn primary" data-popup-edit-site="${esc(s.id)}">Edit Site</button>` : ''}
               <button type="button" class="geo-mini-btn" data-popup-measure-to="site:${esc(s.name)}">Measure KM</button>
-              <button type="button" class="geo-mini-btn" data-popup-repin-site="${esc(s.name)}" data-popup-repin-cat="${esc(siteCat)}">Move Pin</button>
+              ${canPinLocationsNow() ? `<button type="button" class="geo-mini-btn" data-popup-repin-site="${esc(s.name)}" data-popup-repin-cat="${esc(siteCat)}">Move Pin</button>` : ''}
             </div>
           </div>
         `);
@@ -4208,7 +5039,7 @@
           <div style="color:#64748B">GPS: ${h.lat.toFixed(5)}, ${h.lng.toFixed(5)}</div>
           <div style="display:flex;gap:5px;margin-top:6px">
             <button type="button" class="geo-mini-btn primary" data-popup-measure-from="bu:${esc(h.name)}">Start KM Here</button>
-            <button type="button" class="geo-mini-btn" data-popup-repin-bu="${esc(h.name)}">Move Hub Pin</button>
+            ${canPinLocationsNow() ? `<button type="button" class="geo-mini-btn" data-popup-repin-bu="${esc(h.name)}">Move Hub Pin</button>` : ''}
           </div>
         </div>
       `);
@@ -4345,6 +5176,11 @@
         icon: makeSvgPinIcon(L, '#DC2626', STUDIO.pinTargetName || 'New Pin', STUDIO.pinTargetType === 'bu'),
         zIndexOffset: 1000
       }).addTo(lg);
+    } else if (STUDIO.pinFilter === 'unpinned' && STUDIO.unpinnedLat != null && STUDIO.unpinnedLng != null) {
+      L.marker([STUDIO.unpinnedLat, STUDIO.unpinnedLng], {
+        icon: makeSvgPinIcon(L, '#D97706', STUDIO.unpinnedTargetName || 'Draft Pin', false),
+        zIndexOffset: 1060
+      }).addTo(lg);
     }
 
     // Regions with No Shape: the ready shape(s) being looked at before saving (nothing is saved yet)
@@ -4394,6 +5230,10 @@
     if (Array.isArray(STUDIO._focusPasteLatLng) && STUDIO._focusPasteLatLng.length === 2) {
       map.setView(STUDIO._focusPasteLatLng, 15, { animate: false });
       STUDIO._focusPasteLatLng = null;
+      STUDIO._userPanned = true;
+    } else if (Array.isArray(STUDIO._focusUnpinnedLatLng) && STUDIO._focusUnpinnedLatLng.length === 2) {
+      map.setView(STUDIO._focusUnpinnedLatLng, 14, { animate: false });
+      STUDIO._focusUnpinnedLatLng = null;
       STUDIO._userPanned = true;
     } else if (Array.isArray(STUDIO._focusTruckLatLng) && STUDIO._focusTruckLatLng.length === 2) {
       map.setView(STUDIO._focusTruckLatLng, 13, { animate: false });
@@ -4550,8 +5390,13 @@
       if (toast) toast('Click a point on the map or paste valid GPS coordinates', 'err');
       return false;
     }
-    const nLat = round5(lat), nLng = round5(lng);
+    const roundFn = (ctx && ctx.precision === 6) ? (v => Math.round(Number(v) * 1e6) / 1e6) : round5;
+    const nLat = roundFn(lat), nLng = roundFn(lng);
     if (targetType === 'bu') {
+      if (!canPinLocationsNow()) {
+        if (toast) toast('Supervisor privileges required to modify location pins', 'err');
+        return false;
+      }
       const hub = setCompanyHubPin(cleanName, nLat, nLng, SEED, explicitRegion);
       SEED._customRev = (SEED._customRev || 0) + 1;
       if (toast) toast(`Pinned Company BU ${hub.name} at (${nLat}, ${nLng}) inside ${hub.region || 'Lebanon'}`, 'ok');
@@ -4577,11 +5422,25 @@
       || (normCat && pool.find(s => isRowInGeoIndustry(s, activeInd) && norm(s.name) === nk && resolveGeoSiteCat(s) === normCat))
       || pool.find(s => isRowInGeoIndustry(s, activeInd) && norm(s.name) === nk);
     const effCat = normCat || (row ? resolveGeoSiteCat(row) : 'supplier');
+    const rowHasCoords = Boolean(row && !row._pinCleared && isValidLatLngPair(row.latitude, row.longitude));
+    const scEntry = GEO_STORE.sites && GEO_STORE.sites[`${storePfx}${effCat}:${nk}`];
+    const spEntry = GEO_STORE.sites && GEO_STORE.sites[storePfx + nk];
+    const storeHasCoords = Boolean((scEntry && !scEntry._pinCleared && isValidLatLngPair(scEntry.latitude, scEntry.longitude))
+      || (spEntry && !spEntry._pinCleared && isValidLatLngPair(spEntry.latitude, spEntry.longitude)));
+    const allowViaTicketMissing = Boolean(ctx.allowTicketMissingPin === true && canEnterSiteNow() && !rowHasCoords && !storeHasCoords);
+    const allowViaNewSiteModal = Boolean(ctx.allowNewSiteModal === true && canEnterSiteNow());
+    if (!canPinLocationsNow() && !allowViaNewSiteModal && !allowViaTicketMissing) {
+      if (toast) toast('Supervisor privileges required to modify location pins', 'err');
+      return false;
+    }
     // A quarry and a delivery site with this name: the pin goes under this category's key only, so the plain name
     // key (which an older pin of the other site may hold) is left as it is
     const hasTwin = pool.some(s => isRowInGeoIndustry(s, activeInd) && norm(s.name) === nk && resolveGeoSiteCat(s) !== effCat);
 
+    if (!isValidLatLngPair(nLat, nLng)) return false;
     const pinEntry = { name: cleanName, site_category: effCat, latitude: nLat, longitude: nLng, region, updated_at: nowIso };
+    const pinCompany = String((row && row.company) || (ctx && ctx.company) || '').trim();
+    if (pinCompany) pinEntry.company = pinCompany;
     if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
     if (!hasTwin) {
       GEO_STORE.sites[storePfx + nk] = pinEntry;
@@ -4596,8 +5455,20 @@
       row.latitude = nLat;
       row.longitude = nLng;
       if (region) row.region = region;
+      if (ctx && ctx.rePropertyId) row._rePropertyId = ctx.rePropertyId;
+      if (ctx && ctx.domainPrimaryId) row._domainPrimaryId = ctx.domainPrimaryId;
       row.modified_at = nowIso;
       row.modified_by = ctx.userEmail || 'app';
+      const stRef = (ctx && ctx.STATE) || (typeof window !== 'undefined' ? window.STATE : null);
+      if (stRef) {
+        if (!stRef.customRecords || typeof stRef.customRecords !== 'object') stRef.customRecords = {};
+        if (!Array.isArray(stRef.customRecords.sites)) stRef.customRecords.sites = [];
+        const cIdx = stRef.customRecords.sites.findIndex(x => x && String(x.id) === String(row.id));
+        if (cIdx >= 0) Object.assign(stRef.customRecords.sites[cIdx], row);
+        else stRef.customRecords.sites.unshift(Object.assign({}, row));
+      }
+      if (ctx && typeof ctx.saveLocal === 'function') ctx.saveLocal();
+      else if (typeof window !== 'undefined' && typeof window.__mfgSaveLocalAuthAndRecords === 'function') window.__mfgSaveLocalAuthAndRecords();
     } else {
       row = {
         id: typeof uid === 'function' ? uid('si') : ('si_' + Date.now()),
@@ -4610,6 +5481,8 @@
         longitude: nLng,
         is_jv: isMfg && effCat === 'supplier' ? /\bjv\b/i.test(cleanName) : false,
         ...(isMfg ? {} : { _industry: activeInd }),
+        ...(ctx && ctx.rePropertyId ? { _rePropertyId: ctx.rePropertyId } : {}),
+        ...(ctx && ctx.domainPrimaryId ? { _domainPrimaryId: ctx.domainPrimaryId } : {}),
         source: 'app',
         entered_at: nowIso,
         voided: false
@@ -4622,12 +5495,27 @@
     }
     hydrateSeedGeo(SEED, true);
     SEED._customRev = (SEED._customRev || 0) + 1;
+    if (!isMfg && !(ctx && ctx.skipDomainEditSync) && typeof window !== 'undefined' && typeof window.__mfgSyncDomainEditsFromSitePin === 'function') {
+      window.__mfgSyncDomainEditsFromSitePin({
+        industry: activeInd,
+        siteId: row && row.id,
+        siteName: cleanName,
+        rePropertyId: row && row._rePropertyId,
+        domainPrimaryId: row && row._domainPrimaryId,
+        lat: nLat,
+        lng: nLng,
+        region,
+        pinCleared: false,
+        modifiedAt: nowIso
+      });
+    }
     if (typeof postRecordToLocalApi === 'function') postRecordToLocalApi('sites', Object.assign({}, row, { modified_by: ctx.userEmail || 'app' }));
     if (toast) toast(`Pinned ${cleanName}${region ? ' in zone ' + region : ''}`, 'ok');
     return true;
   }
 
-  function clearLocationPin(opts, SEED) {
+  function clearLocationPin(opts, SEED, ctx) {
+    if (!canPinLocationsNow() && !(ctx && ctx.allowNewSiteModal === true && canEnterSiteNow())) return;
     const o = opts || {};
     const nm = String(o.name || '').trim();
     const nk = norm(nm);
@@ -4670,8 +5558,24 @@
       GEO_STORE._deletedKeys[`sites:${storePfx}${nk}`] = delIso;
       changed = true;
     }
+    const matchedRow = sites.find(s => isRowInGeoIndustry(s, effInd) && norm(s.name) === nk && (!o.excludeId || String(s.id) !== String(o.excludeId)) && (!cat || resolveGeoSiteCat(s) === cat))
+      || sites.find(s => isRowInGeoIndustry(s, effInd) && norm(s.name) === nk && (!o.excludeId || String(s.id) !== String(o.excludeId)));
     if (changed) saveStoredConfig(true);
     if (SEED) hydrateSeedGeo(SEED, true);
+    if (effInd !== 'Manufacturing' && !(ctx && ctx.skipDomainEditSync) && typeof window !== 'undefined' && typeof window.__mfgSyncDomainEditsFromSitePin === 'function') {
+      window.__mfgSyncDomainEditsFromSitePin({
+        industry: effInd,
+        siteId: (matchedRow && matchedRow.id) || o.siteId || '',
+        siteName: nm,
+        rePropertyId: (matchedRow && matchedRow._rePropertyId) || o.rePropertyId || '',
+        domainPrimaryId: (matchedRow && matchedRow._domainPrimaryId) || o.domainPrimaryId || '',
+        lat: null,
+        lng: null,
+        region: '',
+        pinCleared: true,
+        modifiedAt: delIso
+      });
+    }
   }
 
   function wireGeoStudio(container, ctx) {
@@ -4700,6 +5604,14 @@
     deck.querySelectorAll('[data-geo-mode]').forEach(btn => {
       btn.addEventListener('click', () => {
         const nextMode = btn.getAttribute('data-geo-mode') || 'view';
+        if (nextMode === 'pin' && !canPinLocationsNow()) {
+          if (toast) toast('Supervisor privileges required to modify location pins', 'err');
+          return;
+        }
+        if ((nextMode === 'circle' || nextMode === 'polygon' || nextMode === 'search') && !canShapeRegionsNow()) {
+          if (toast) toast('Supervisor privileges required to edit region shapes', 'err');
+          return;
+        }
         STUDIO.mode = nextMode;
         if (nextMode !== 'view') clearShapelessTransientState();
         if (nextMode === 'search') {
@@ -4760,6 +5672,29 @@
           ? { lat: Number(selReg.center_lat), lng: Number(selReg.center_lng), label: selReg.name || STUDIO.selectedRegion }
           : (hub ? { lat: hub.lat, lng: hub.lng, label: hub.name } : null);
         const parsed = parseMapLink(raw, { SEED, ref });
+        if (parsed && !parsed.ok && parsed.code === 'short_link') {
+          const myGen = ++STUDIO._studioLinkGen;
+          STUDIO.pasteHit = { ok: false, code: 'short_link_resolving' };
+          rerenderWorkspace();
+          resolveMapLinkAsync(raw, { SEED, ref }, resolvedParsed => {
+            if (myGen !== STUDIO._studioLinkGen || STUDIO.pasteRaw !== raw) return;
+            STUDIO.pasteHit = resolvedParsed;
+            const det = findContainingRegion(resolvedParsed.lat, resolvedParsed.lng, SEED, activeInd);
+            if (det.best) STUDIO.selectedRegion = det.best;
+            STUDIO._focusPasteLatLng = [resolvedParsed.lat, resolvedParsed.lng];
+            if (STUDIO.mode === 'pin' && !resolvedParsed.outsideLebanon) {
+              STUDIO.pinLat = resolvedParsed.lat;
+              STUDIO.pinLng = resolvedParsed.lng;
+              STUDIO.pinRegion = studioPinRegionFor(resolvedParsed.lat, resolvedParsed.lng, SEED, studioPinRecordRegion(resolvedParsed.lat, resolvedParsed.lng, SEED));
+            }
+            rerenderWorkspace();
+          }, failRes => {
+            if (myGen !== STUDIO._studioLinkGen || STUDIO.pasteRaw !== raw) return;
+            STUDIO.pasteHit = (failRes && failRes.code) ? failRes : { ok: false, code: 'short_link_unresolvable' };
+            rerenderWorkspace();
+          });
+          return;
+        }
         STUDIO.pasteHit = parsed || { ok: false, code: 'unrecognized' };
         if (parsed && parsed.ok) {
           const det = findContainingRegion(parsed.lat, parsed.lng, SEED, activeInd);
@@ -4775,13 +5710,29 @@
         }
         rerenderWorkspace();
       };
-      linkInp.addEventListener('paste', () => { setTimeout(applyStudioLink, 0); });
-      linkInp.addEventListener('change', applyStudioLink);
+      let studioLinkTimer = 0;
+      const runStudioLinkNow = () => {
+        clearTimeout(studioLinkTimer);
+        applyStudioLink();
+      };
+      linkInp.addEventListener('paste', () => { clearTimeout(studioLinkTimer); studioLinkTimer = setTimeout(applyStudioLink, 0); });
+      linkInp.addEventListener('input', () => {
+        const val = String(linkInp.value || '').trim();
+        clearTimeout(studioLinkTimer);
+        if (!val) {
+          applyStudioLink();
+          return;
+        }
+        if (/https?:\/\//i.test(val) || /[-+]?\d{1,2}\.\d{3,}\s*,\s*[-+]?\d{1,3}\.\d{3,}/.test(val) || /^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}/i.test(val)) {
+          studioLinkTimer = setTimeout(applyStudioLink, 220);
+        }
+      });
+      linkInp.addEventListener('change', runStudioLinkNow);
       linkInp.addEventListener('keydown', ev => {
         if (ev.key === 'Enter') {
           ev.preventDefault();
           ev.stopPropagation();
-          applyStudioLink();
+          runStudioLinkNow();
         }
       });
     }
@@ -5000,11 +5951,47 @@
         : (hub ? { lat: hub.lat, lng: hub.lng, label: hub.name } : null);
       const parsed = parseMapLink(raw, { SEED, ref });
       if (!parsed || !parsed.ok) {
+        if (parsed && parsed.code === 'short_link') {
+          const myGen = ++STUDIO._shapelessLinkGen;
+          if (STUDIO.shapePreview && norm(STUDIO.shapePreview.region) === norm(regName)) STUDIO.shapePreview = null;
+          STUDIO.shapelessPickRegion = '';
+          STUDIO.shapelessBatchPreview = false;
+          STUDIO.shapelessSeedFeedback = { region: regName, raw, tone: 'is-warn', html: '<span>Resolving short map link...</span>' };
+          rerenderWorkspace();
+          resolveMapLinkAsync(raw, { SEED, ref }, resolvedParsed => {
+            if (myGen !== STUDIO._shapelessLinkGen) return;
+            if (!STUDIO.shapelessSeedFeedback || STUDIO.shapelessSeedFeedback.raw !== raw || norm(STUDIO.shapelessSeedFeedback.region) !== norm(regName)) return;
+            applyShapelessSeedCoords(regName, resolvedParsed.lat, resolvedParsed.lng, resolvedParsed, raw);
+          }, failRes => {
+            if (myGen !== STUDIO._shapelessLinkGen) return;
+            if (!STUDIO.shapelessSeedFeedback || STUDIO.shapelessSeedFeedback.raw !== raw || norm(STUDIO.shapelessSeedFeedback.region) !== norm(regName)) return;
+            const failCode = (failRes && failRes.code) || 'short_link_unresolvable';
+            const lead = failCode === 'short_link'
+              ? 'Short links cannot be read offline.'
+              : (failCode === 'unsupported_short_link'
+                ? 'This short link cannot be expanded automatically.'
+                : 'Could not expand this short map link.');
+            STUDIO.shapelessSeedFeedback = {
+              region: regName,
+              raw,
+              tone: 'is-warn',
+              html: `<span>${lead}</span> <span>Open the link, tap Share and copy the full link, or long-press the pin and copy its coordinates.</span>`
+            };
+            rerenderWorkspace();
+          });
+          return;
+        }
         let tone = 'is-crit';
         let html = '<span>No location found in this text.</span> <span>Paste a WhatsApp location, a Google Maps link, a Plus Code or coordinates.</span>';
         if (parsed && parsed.code === 'short_link') {
           tone = 'is-warn';
           html = '<span>Short links cannot be read offline.</span> <span>Open the link, tap Share and copy the full link, or long-press the pin and copy its coordinates.</span>';
+        } else if (parsed && parsed.code === 'unsupported_short_link') {
+          tone = 'is-warn';
+          html = '<span>This short link cannot be expanded automatically.</span> <span>Open the link, tap Share and copy the full link, or long-press the pin and copy its coordinates.</span>';
+        } else if (parsed && parsed.code === 'short_link_unresolvable') {
+          tone = 'is-warn';
+          html = '<span>Could not expand this short map link.</span> <span>Open the link, tap Share and copy the full link, or long-press the pin and copy its coordinates.</span>';
         } else if (parsed && parsed.code === 'out_of_range') {
           html = '<span>These coordinates are outside the valid range.</span>';
         }
@@ -5165,10 +6152,204 @@
     // Pin filter chips & Lebanon view reset
     deck.querySelectorAll('[data-geo-pin-filter]').forEach(chip => {
       chip.addEventListener('click', () => {
-        STUDIO.pinFilter = chip.getAttribute('data-geo-pin-filter') || 'all';
+        const nextFilter = chip.getAttribute('data-geo-pin-filter') || 'all';
+        STUDIO.pinFilter = nextFilter;
+        if (nextFilter === 'unpinned') {
+          STUDIO.unpinnedIdx = 0;
+          STUDIO.unpinnedTargetId = '';
+          STUDIO.unpinnedLat = null;
+          STUDIO.unpinnedLng = null;
+          STUDIO.unpinnedPasteRaw = '';
+          STUDIO.unpinnedStatusHtml = '';
+          STUDIO.unpinnedStatusTone = '';
+          STUDIO._userPanned = false;
+        }
         rerenderWorkspace();
       });
     });
+
+    // Unpinned Active Sites Queue Stepper
+    const stepUnpinnedQueue = delta => {
+      const q = getUnpinnedSitesQueue(SEED, STATE, getGeoActiveIndustry());
+      if (!q.length) return;
+      STUDIO.unpinnedIdx = (STUDIO.unpinnedIdx + delta + q.length) % q.length;
+      const target = q[STUDIO.unpinnedIdx];
+      STUDIO.unpinnedTargetId = target ? target.key : '';
+      STUDIO.unpinnedTargetName = target ? target.name : '';
+      STUDIO.unpinnedTargetCat = target ? target.siteCategory : '';
+      STUDIO.unpinnedLat = null;
+      STUDIO.unpinnedLng = null;
+      STUDIO.unpinnedPasteRaw = '';
+      STUDIO.unpinnedRegionDraft = (target && target.region) || '';
+      STUDIO.unpinnedStatusHtml = '';
+      STUDIO.unpinnedStatusTone = '';
+      STUDIO._unpinnedLinkGen = (STUDIO._unpinnedLinkGen || 0) + 1;
+      if (target) {
+        const regObj = target.region ? resolveRegionRecordOrAtlas(target.region, SEED, getGeoActiveIndustry()) : null;
+        if (regObj && regObj.center_lat != null && regObj.center_lng != null) {
+          STUDIO._focusUnpinnedLatLng = [Number(regObj.center_lat), Number(regObj.center_lng)];
+        } else {
+          const pl = resolvePlaceLocation(target.name, SEED);
+          if (pl) STUDIO._focusUnpinnedLatLng = [pl.lat, pl.lng];
+        }
+      }
+      rerenderWorkspace();
+    };
+    const unpinnedPrevBtn = deck.querySelector('#geoUnpinnedPrevBtn');
+    if (unpinnedPrevBtn) unpinnedPrevBtn.addEventListener('click', () => stepUnpinnedQueue(-1));
+    const unpinnedNextBtn = deck.querySelector('#geoUnpinnedNextBtn');
+    if (unpinnedNextBtn) unpinnedNextBtn.addEventListener('click', () => stepUnpinnedQueue(1));
+    const unpinnedExitBtn = deck.querySelector('#geoUnpinnedExitBtn');
+    if (unpinnedExitBtn) {
+      unpinnedExitBtn.addEventListener('click', () => {
+        STUDIO.pinFilter = 'all';
+        STUDIO.unpinnedLat = null;
+        STUDIO.unpinnedLng = null;
+        rerenderWorkspace();
+      });
+    }
+    const unpinnedRegInp = deck.querySelector('#geoUnpinnedRegionInp');
+    if (unpinnedRegInp) {
+      unpinnedRegInp.addEventListener('input', () => { STUDIO.unpinnedRegionDraft = unpinnedRegInp.value; });
+      unpinnedRegInp.addEventListener('change', () => { STUDIO.unpinnedRegionDraft = unpinnedRegInp.value.trim(); });
+    }
+    const saveCurrentUnpinnedPin = () => {
+      if (!canPinLocationsNow()) {
+        if (typeof ctx.toast === 'function') ctx.toast('Supervisor privileges required to modify location pins', 'err');
+        return;
+      }
+      const indNow = getGeoActiveIndustry();
+      const q = getUnpinnedSitesQueue(SEED, STATE, indNow);
+      const cur = q[STUDIO.unpinnedIdx];
+      if (!cur) return;
+      if (STUDIO.unpinnedLat == null || STUDIO.unpinnedLng == null) {
+        if (typeof ctx.toast === 'function') ctx.toast('Click the map or paste a location first', 'err');
+        return;
+      }
+      if (!isPointInLebanon(STUDIO.unpinnedLat, STUDIO.unpinnedLng)) {
+        if (typeof ctx.toast === 'function') ctx.toast('Outside Lebanon. Check the link.', 'err');
+        return;
+      }
+      const regVal = (unpinnedRegInp && unpinnedRegInp.value.trim()) || STUDIO.unpinnedRegionDraft || cur.region || '';
+      if (persistLocationPin({
+        targetType: 'site',
+        siteId: cur.id,
+        siteCategory: cur.siteCategory,
+        industry: indNow,
+        name: cur.name,
+        lat: STUDIO.unpinnedLat,
+        lng: STUDIO.unpinnedLng,
+        region: regVal
+      }, ctx)) {
+        STUDIO.unpinnedTargetId = '';
+        STUDIO.unpinnedLat = null;
+        STUDIO.unpinnedLng = null;
+        STUDIO.unpinnedPasteRaw = '';
+        STUDIO.unpinnedStatusHtml = '';
+        STUDIO.unpinnedStatusTone = '';
+        STUDIO._userPanned = false;
+        rerenderWorkspace();
+      }
+    };
+    const unpinnedSaveBtn = deck.querySelector('#geoUnpinnedSaveBtn');
+    if (unpinnedSaveBtn) unpinnedSaveBtn.addEventListener('click', saveCurrentUnpinnedPin);
+
+    const unpinnedPasteInp = deck.querySelector('#geoUnpinnedPasteInp');
+    if (unpinnedPasteInp) {
+      const syncUnpinnedDraftDom = (tone, html, panToPin) => {
+        STUDIO.unpinnedStatusTone = tone;
+        STUDIO.unpinnedStatusHtml = html;
+        const stEl = deck.querySelector('#geoUnpinnedPasteStatus');
+        if (stEl) {
+          stEl.hidden = !html;
+          stEl.className = 'geo-link-status' + (tone ? ' ' + tone : '');
+          stEl.innerHTML = html || '';
+          if (html) _trGeoDom(stEl);
+        }
+        const saveBtn = deck.querySelector('#geoUnpinnedSaveBtn');
+        if (saveBtn) saveBtn.disabled = !(STUDIO.unpinnedLat != null && STUDIO.unpinnedLng != null && isPointInLebanon(STUDIO.unpinnedLat, STUDIO.unpinnedLng));
+        const hintEl = deck.querySelector('.geo-unpinned-hint');
+        if (hintEl) {
+          hintEl.innerHTML = (STUDIO.unpinnedLat != null && STUDIO.unpinnedLng != null)
+            ? `<span>Draft Pin</span>: <b data-no-i18n="1">${Number(STUDIO.unpinnedLat).toFixed(5)}, ${Number(STUDIO.unpinnedLng).toFixed(5)}</b>`
+            : 'Paste a Maps/WhatsApp link or click the map to drop the pin.';
+          _trGeoDom(hintEl);
+        }
+        if (unpinnedRegInp && STUDIO.unpinnedRegionDraft && !unpinnedRegInp.value) unpinnedRegInp.value = STUDIO.unpinnedRegionDraft;
+        if (panToPin && STUDIO.unpinnedLat != null && STUDIO.unpinnedLng != null && STUDIO.map) {
+          try { STUDIO.map.setView([STUDIO.unpinnedLat, STUDIO.unpinnedLng], 15, { animate: false }); } catch (_) {}
+        }
+        if (STUDIO.map && window.L) renderStudioMapLayers(window.L, STUDIO.map, ctx);
+      };
+      const applyParsedUnpinned = (parsed, saveAfter) => {
+        if (!parsed || !parsed.ok) return;
+        const indNow = getGeoActiveIndustry();
+        const info = getMapLinkReferenceInfo(parsed.lat, parsed.lng, SEED, { industry: indNow, excludeId: STUDIO.unpinnedTargetId });
+        if (parsed.outsideLebanon) {
+          STUDIO.unpinnedLat = null;
+          STUDIO.unpinnedLng = null;
+          syncUnpinnedDraftDom('is-warn', renderMapLinkStatusHtml(parsed, null, { studio: true }), false);
+          return;
+        }
+        STUDIO.unpinnedLat = parsed.lat;
+        STUDIO.unpinnedLng = parsed.lng;
+        if (!STUDIO.unpinnedRegionDraft && info && info.region) STUDIO.unpinnedRegionDraft = info.region;
+        const tone = (info && info.nearest && info.nearest.duplicateRisk) ? 'is-warn' : 'is-ok';
+        syncUnpinnedDraftDom(tone, renderMapLinkStatusHtml(parsed, info, { studio: true }), true);
+        if (saveAfter) saveCurrentUnpinnedPin();
+      };
+      const applyUnpinnedInput = saveAfter => {
+        const raw = String(unpinnedPasteInp.value || '');
+        STUDIO.unpinnedPasteRaw = raw;
+        if (!raw.trim()) {
+          STUDIO.unpinnedLat = null;
+          STUDIO.unpinnedLng = null;
+          syncUnpinnedDraftDom('', '', false);
+          return;
+        }
+        const indNow = getGeoActiveIndustry();
+        const regNow = (unpinnedRegInp && unpinnedRegInp.value.trim()) || STUDIO.unpinnedRegionDraft || '';
+        const regObjNow = regNow ? resolveRegionRecordOrAtlas(regNow, SEED, indNow) : null;
+        const ref = (regObjNow && regObjNow.center_lat != null && regObjNow.center_lng != null)
+          ? { lat: Number(regObjNow.center_lat), lng: Number(regObjNow.center_lng), label: regObjNow.name || regNow }
+          : null;
+        const parsed = parseMapLink(raw, { SEED, ref });
+        if (parsed && !parsed.ok && parsed.code === 'short_link') {
+          const myGen = ++STUDIO._unpinnedLinkGen;
+          syncUnpinnedDraftDom('is-warn', renderMapLinkStatusHtml({ ok: false, code: 'short_link_resolving' }, null, { studio: true }), false);
+          resolveMapLinkAsync(raw, { SEED, ref }, resolvedParsed => {
+            if (myGen !== STUDIO._unpinnedLinkGen || !unpinnedPasteInp.isConnected || String(unpinnedPasteInp.value || '') !== raw) return;
+            applyParsedUnpinned(resolvedParsed, saveAfter);
+          }, failRes => {
+            if (myGen !== STUDIO._unpinnedLinkGen || !unpinnedPasteInp.isConnected || String(unpinnedPasteInp.value || '') !== raw) return;
+            STUDIO.unpinnedLat = null;
+            STUDIO.unpinnedLng = null;
+            syncUnpinnedDraftDom('is-warn', renderMapLinkStatusHtml((failRes && failRes.code) ? failRes : { ok: false, code: 'short_link_unresolvable' }, null, { studio: true }), false);
+          });
+          return;
+        }
+        if (!parsed || !parsed.ok) {
+          STUDIO.unpinnedLat = null;
+          STUDIO.unpinnedLng = null;
+          const tone = (parsed && parsed.code === 'unsupported_short_link') ? 'is-warn' : 'is-crit';
+          syncUnpinnedDraftDom(tone, renderMapLinkStatusHtml(parsed || { ok: false, code: 'unrecognized' }, null, { studio: true }), false);
+          return;
+        }
+        applyParsedUnpinned(parsed, saveAfter);
+      };
+      let unpDeb = 0;
+      unpinnedPasteInp.addEventListener('paste', () => setTimeout(() => applyUnpinnedInput(false), 0));
+      unpinnedPasteInp.addEventListener('input', () => { clearTimeout(unpDeb); unpDeb = setTimeout(() => applyUnpinnedInput(false), 220); });
+      unpinnedPasteInp.addEventListener('change', () => { clearTimeout(unpDeb); applyUnpinnedInput(false); });
+      unpinnedPasteInp.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          clearTimeout(unpDeb);
+          applyUnpinnedInput(true);
+        }
+      });
+    }
     const resetBtn = deck.querySelector('#geoResetLebanonViewBtn');
     if (resetBtn) {
       resetBtn.addEventListener('click', () => {
@@ -5564,24 +6745,58 @@
     }
     const pinCoordPasteInp = deck.querySelector('#geoPinCoordPasteInp');
     if (pinCoordPasteInp) {
-      pinCoordPasteInp.addEventListener('change', () => {
-        const parsed = parsePastedCoordinates(pinCoordPasteInp.value);
-        if (parsed && !isPointInLebanon(parsed.lat, parsed.lng)) {
-          // Same rule as the link box: Save Location Pin writes straight to the site
+      let pinCoordGen = 0;
+      const applyPinCoordCoords = (lat, lng) => {
+        if (!isPointInLebanon(lat, lng)) {
           if (typeof ctx.toast === 'function') ctx.toast('Outside Lebanon. Check the link.', 'err');
           return;
         }
-        if (parsed) {
-          STUDIO.pinLat = parsed.lat;
-          STUDIO.pinLng = parsed.lng;
-          STUDIO.pinRegion = studioPinRegionFor(parsed.lat, parsed.lng, SEED, studioPinRecordRegion(parsed.lat, parsed.lng, SEED) || STUDIO.pinRegion);
-          pinCoordPasteInp.value = `${parsed.lat}, ${parsed.lng}`;
-          const rp = deck.querySelector('#geoPinRegionInp');
-          if (rp) rp.value = STUDIO.pinRegion;
-          if (STUDIO.map && window.L) {
-            STUDIO.map.setView([parsed.lat, parsed.lng], 14, { animate: false });
-            renderStudioMapLayers(window.L, STUDIO.map, ctx);
-          }
+        STUDIO.pinLat = lat;
+        STUDIO.pinLng = lng;
+        STUDIO.pinRegion = studioPinRegionFor(lat, lng, SEED, studioPinRecordRegion(lat, lng, SEED) || STUDIO.pinRegion);
+        pinCoordPasteInp.value = `${lat}, ${lng}`;
+        const rp = deck.querySelector('#geoPinRegionInp');
+        if (rp) rp.value = STUDIO.pinRegion;
+        if (STUDIO.map && window.L) {
+          STUDIO.map.setView([lat, lng], 14, { animate: false });
+          renderStudioMapLayers(window.L, STUDIO.map, ctx);
+        }
+      };
+      pinCoordPasteInp.addEventListener('change', () => {
+        const raw = String(pinCoordPasteInp.value || '').trim();
+        if (!raw) return;
+        const activeInd = getGeoActiveIndustry();
+        const rpEl = deck.querySelector('#geoPinRegionInp');
+        const regObj = (rpEl && rpEl.value) ? resolveRegionRecordOrAtlas(rpEl.value, SEED, activeInd) : null;
+        const ref = (regObj && regObj.center_lat != null && regObj.center_lng != null)
+          ? { lat: Number(regObj.center_lat), lng: Number(regObj.center_lng), label: regObj.name }
+          : null;
+        const coordOnly = parsePastedCoordinates(raw);
+        if (coordOnly) {
+          applyPinCoordCoords(coordOnly.lat, coordOnly.lng);
+          return;
+        }
+        const parsed = parseMapLink(raw, { SEED, ref });
+        if (parsed && parsed.ok) {
+          applyPinCoordCoords(parsed.lat, parsed.lng);
+          return;
+        }
+        if (parsed && parsed.code === 'short_link') {
+          const myGen = ++pinCoordGen;
+          if (typeof ctx.toast === 'function') ctx.toast('Resolving short map link...', 'info');
+          resolveMapLinkAsync(raw, { SEED, ref }, resolvedParsed => {
+            if (myGen !== pinCoordGen || !pinCoordPasteInp.isConnected || String(pinCoordPasteInp.value || '').trim() !== raw) return;
+            applyPinCoordCoords(resolvedParsed.lat, resolvedParsed.lng);
+          }, failRes => {
+            if (myGen !== pinCoordGen) return;
+            const code = (failRes && failRes.code) || 'short_link_unresolvable';
+            const msg = code === 'short_link'
+              ? 'Short links cannot be read offline.'
+              : (code === 'unsupported_short_link'
+                ? 'This short link cannot be expanded automatically.'
+                : 'Could not expand this short map link.');
+            if (typeof ctx.toast === 'function') ctx.toast(msg, 'warn');
+          });
         }
       });
     }
@@ -5592,6 +6807,10 @@
     const savePinBtn = deck.querySelector('#geoSavePinBtn');
     if (savePinBtn) {
       savePinBtn.addEventListener('click', () => {
+        if (!canPinLocationsNow()) {
+          if (typeof ctx.toast === 'function') ctx.toast('Supervisor privileges required to modify location pins', 'err');
+          return;
+        }
         const tName = STUDIO.pinTargetType === 'bu'
           ? ((pinBuSel && pinBuSel.value) || STUDIO.pinTargetName || 'WTC')
           : ((pinSiteInp && pinSiteInp.value) || STUDIO.pinTargetName);
@@ -5643,6 +6862,10 @@
     const ovInp = deck.querySelector('#geoDistOverrideInp');
     if (saveOvBtn && ovInp) {
       saveOvBtn.addEventListener('click', () => {
+        if (!canPinLocationsNow()) {
+          if (toast) toast('Supervisor privileges required to modify location pins', 'err');
+          return;
+        }
         const v = parseFloat(ovInp.value);
         if (!Number.isFinite(v) || v < 0) {
           if (toast) toast('Enter a valid non-negative KM value', 'err');
@@ -5656,6 +6879,10 @@
     const clearOvBtn = deck.querySelector('#geoDistClearOverrideBtn');
     if (clearOvBtn) {
       clearOvBtn.addEventListener('click', () => {
+        if (!canPinLocationsNow()) {
+          if (toast) toast('Supervisor privileges required to modify location pins', 'err');
+          return;
+        }
         setPairKmOverride(parseSpec(STUDIO.distFrom), parseSpec(STUDIO.distTo), null);
         rerenderWorkspace();
       });
@@ -5726,6 +6953,12 @@
           syncStudioPolyHeader();
           renderStudioMapLayers(L, map, ctx);
         } else if (STUDIO.mode === 'pin') {
+          if (!canPinLocationsNow()) {
+            STUDIO.mode = 'view';
+            if (toast) toast('Supervisor privileges required to modify location pins', 'err');
+            rerenderWorkspace();
+            return;
+          }
           STUDIO.pinLat = lat;
           STUDIO.pinLng = lng;
           STUDIO.pinRegion = studioPinRegionFor(lat, lng, SEED, studioPinRecordRegion(lat, lng, SEED));
@@ -5768,6 +7001,42 @@
           };
           STUDIO._userPanned = false;
           rerenderWorkspace();
+        } else if (STUDIO.mode === 'view' && STUDIO.pinFilter === 'unpinned' && !STUDIO.shapelessPickRegion) {
+          if (!canPinLocationsNow()) {
+            if (toast) toast('Supervisor privileges required to modify location pins', 'err');
+            return;
+          }
+          const indNow = getGeoActiveIndustry();
+          const uQueueNow = getUnpinnedSitesQueue(SEED, STATE, indNow);
+          if (!uQueueNow.length) return;
+          if (!isPointInLebanon(lat, lng)) {
+            if (typeof ctx.toast === 'function') ctx.toast('Outside Lebanon. Check the link.', 'err');
+            return;
+          }
+          STUDIO.unpinnedLat = lat;
+          STUDIO.unpinnedLng = lng;
+          const detReg = findContainingRegion(lat, lng, SEED, indNow, { recordsOnly: true }).best || '';
+          if (!STUDIO.unpinnedRegionDraft && detReg) STUDIO.unpinnedRegionDraft = detReg;
+          const info = getMapLinkReferenceInfo(lat, lng, SEED, { industry: indNow, excludeId: STUDIO.unpinnedTargetId });
+          STUDIO.unpinnedStatusTone = (info && info.nearest && info.nearest.duplicateRisk) ? 'is-warn' : 'is-ok';
+          STUDIO.unpinnedStatusHtml = renderMapLinkStatusHtml({ ok: true, sourceLabel: 'Map Pin', lat, lng }, info, { studio: true });
+          const saveUnpBtn = deck.querySelector('#geoUnpinnedSaveBtn');
+          if (saveUnpBtn) saveUnpBtn.disabled = false;
+          const regUnpInp = deck.querySelector('#geoUnpinnedRegionInp');
+          if (regUnpInp && STUDIO.unpinnedRegionDraft && !regUnpInp.value) regUnpInp.value = STUDIO.unpinnedRegionDraft;
+          const hintEl = deck.querySelector('.geo-unpinned-hint');
+          if (hintEl) {
+            hintEl.innerHTML = `<span>Draft Pin</span>: <b data-no-i18n="1">${lat.toFixed(5)}, ${lng.toFixed(5)}</b>`;
+            _trGeoDom(hintEl);
+          }
+          const stEl = deck.querySelector('#geoUnpinnedPasteStatus');
+          if (stEl) {
+            stEl.hidden = false;
+            stEl.className = 'geo-link-status ' + (STUDIO.unpinnedStatusTone || 'is-ok');
+            stEl.innerHTML = STUDIO.unpinnedStatusHtml;
+            _trGeoDom(stEl);
+          }
+          renderStudioMapLayers(L, map, ctx);
         } else if (STUDIO.mode === 'view' && STUDIO.selectedRegion && (Date.now() - _lastZoneLayerClickTs > 90)) {
           STUDIO.selectedRegion = '';
           STUDIO._userPanned = false;
@@ -5801,6 +7070,10 @@
         });
         popEl.querySelectorAll('[data-popup-repin-site]').forEach(b => {
           b.addEventListener('click', () => {
+            if (!canPinLocationsNow()) {
+              if (toast) toast('Supervisor privileges required to modify location pins', 'err');
+              return;
+            }
             const nm = b.getAttribute('data-popup-repin-site') || '';
             const rCat = b.getAttribute('data-popup-repin-cat') === 'customer' ? 'customer' : 'supplier';
             STUDIO.mode = 'pin';
@@ -5815,6 +7088,10 @@
         });
         popEl.querySelectorAll('[data-popup-repin-bu]').forEach(b => {
           b.addEventListener('click', () => {
+            if (!canPinLocationsNow()) {
+              if (toast) toast('Supervisor privileges required to modify location pins', 'err');
+              return;
+            }
             const bu = b.getAttribute('data-popup-repin-bu') || 'WTC';
             const h = getCompanyHub(bu, SEED);
             STUDIO.mode = 'pin';
@@ -5962,18 +7239,24 @@
     };
   }
 
-  function _sitePickerCfgForInspector(hostEl, siteRow) {
+  function _sitePickerCfgForInspector(hostEl, siteRow, opts) {
+    const o = opts || {};
     return {
       pasteSel: '#insp_site_coord_paste',
       statusSel: '#inspSiteMapLinkStatus',
       latSel: '#insp_edit_latitude',
       lngSel: '#insp_edit_longitude',
-      regSel: '#insp_edit_region',
+      regSel: o.regSel || '#insp_edit_region',
       siteSel: '#insp_edit_name',
       inclTransSel: '#insp_edit_includes_transport',
       canvasSel: '#inspSiteMapCanvas',
       kmSel: '#inspSiteKmReadout',
       clearBtnSel: '#inspClearSitePinBtn',
+      pinLabel: o.pinLabel || '',
+      skipRegionContainmentCheck: Boolean(o.skipRegionContainmentCheck),
+      onlyFillEmptyRegion: Boolean(o.onlyFillEmptyRegion),
+      baselinePin: o.baselinePin || null,
+      onPinChange: o.onPinChange || null,
       getCompany: () => String((siteRow && siteRow.company) || hostEl.getAttribute('data-t24-company') || ''),
       getEditRec: () => (siteRow ? { id: siteRow.id || '', region: String(siteRow.region || '').trim() } : null),
       isBundled: inp => inp ? (inp.value === '1' || inp.value === 'Yes' || inp.value === 'true') : Boolean(siteRow && siteRow.includes_transport),
@@ -5996,6 +7279,7 @@
     const siteInp = hostEl.querySelector(c.siteSel);
     let lastVal = '';
     let debounceT = 0;
+    let reqGen = 0;
     const setStatus = (html, tone) => {
       if (!statusEl) return;
       statusEl.hidden = !html;
@@ -6007,6 +7291,7 @@
       const raw = String(pasteInp.value || '');
       if (!force && raw === lastVal) return;
       lastVal = raw;
+      reqGen++;
       if (!raw.trim()) { setStatus('', ''); return; }
       const activeInd = getGeoActiveIndustry();
       const company = typeof c.getCompany === 'function' ? c.getCompany() : '';
@@ -6019,51 +7304,74 @@
         const h = getCompanyHub(BU_LIST.find(b => norm(b) === norm(company)) || 'WTC', SEED);
         ref = { lat: h.lat, lng: h.lng, label: h.name };
       }
+      const applyParsed = parsed => {
+        pasteInp.removeAttribute('aria-invalid');
+        if (parsed.outsideLebanon) {
+          // Never overwrite good GPS with a point outside Lebanon (stray numbers in a pasted message, a foreign link)
+          setStatus(renderMapLinkStatusHtml(parsed, null), 'is-warn');
+          return;
+        }
+        if (latInp) { latInp.value = String(parsed.lat); latInp.dataset.autoFromPlace = ''; latInp.dataset.userEdited = '1'; }
+        if (lngInp) { lngInp.value = String(parsed.lng); lngInp.dataset.autoFromPlace = ''; lngInp.dataset.userEdited = '1'; }
+        const clrBtnPaste = c.clearBtnSel ? hostEl.querySelector(c.clearBtnSel) : null;
+        if (clrBtnPaste) clrBtnPaste.hidden = false;
+        if (parsed.placeName && siteInp && !String(siteInp.value || '').trim()) {
+          siteInp.value = parsed.placeName;
+          _emitGeoFieldEvents(siteInp);
+        }
+        const editRec = typeof c.getEditRec === 'function' ? c.getEditRec() : null;
+        const info = getMapLinkReferenceInfo(parsed.lat, parsed.lng, SEED, {
+          industry: activeInd,
+          company,
+          excludeId: (editRec && editRec.id) || ''
+        });
+        const regNowLatest = regInp ? String(regInp.value || '').trim() : '';
+        if (!c.onlyFillEmptyRegion || !regNowLatest) {
+          const resolvedReg = _resolvePickedSiteRegion(parsed.lat, parsed.lng, regNowLatest, editRec, SEED, activeInd, info, false);
+          if (resolvedReg && regInp) {
+            regInp.value = resolvedReg;
+            regInp.dataset.autoFromPlace = '';
+            _emitGeoFieldEvents(regInp);
+          }
+        }
+        if (canvas) canvas._suppressLatLngPan = true;
+        try {
+          _emitGeoFieldEvents(latInp);
+          _emitGeoFieldEvents(lngInp);
+        } finally {
+          if (canvas) canvas._suppressLatLngPan = false;
+        }
+        const map = canvas && canvas._leafletMap;
+        if (map) {
+          try { map.setView([parsed.lat, parsed.lng], 15, { animate: false }); } catch (_) {}
+        }
+        if (canvas && typeof canvas._refreshSiteOverlay === 'function') canvas._refreshSiteOverlay();
+        const tone = (parsed.outsideLebanon || parsed.approx || parsed.mapView || parsed.lowPrecision || parsed.swapped || (info && info.nearest && info.nearest.duplicateRisk)) ? 'is-warn' : 'is-ok';
+        setStatus(renderMapLinkStatusHtml(parsed, info), tone);
+        pasteInp.dataset.lastParseMs = String(parsed.ms);
+        if (typeof c.onPinChange === 'function') c.onPinChange({ lat: parsed.lat, lng: parsed.lng, region: regInp ? regInp.value : '', cleared: false });
+      };
       const parsed = parseMapLink(raw, { SEED, ref });
       if (!parsed || !parsed.ok) {
-        setStatus(renderMapLinkStatusHtml(parsed || { ok: false, code: 'unrecognized' }), parsed && parsed.code === 'short_link' ? 'is-warn' : 'is-crit');
+        if (parsed && parsed.code === 'short_link') {
+          const myGen = reqGen;
+          setStatus(renderMapLinkStatusHtml({ ok: false, code: 'short_link_resolving' }), 'is-warn');
+          pasteInp.removeAttribute('aria-invalid');
+          resolveMapLinkAsync(raw, { SEED, ref }, resolvedParsed => {
+            if (myGen !== reqGen || !pasteInp.isConnected || String(pasteInp.value || '') !== raw) return;
+            applyParsed(resolvedParsed);
+          }, failRes => {
+            if (myGen !== reqGen || !pasteInp.isConnected || String(pasteInp.value || '') !== raw) return;
+            setStatus(renderMapLinkStatusHtml((failRes && failRes.code) ? failRes : { ok: false, code: 'short_link_unresolvable' }), 'is-warn');
+            pasteInp.setAttribute('aria-invalid', 'true');
+          });
+          return;
+        }
+        setStatus(renderMapLinkStatusHtml(parsed || { ok: false, code: 'unrecognized' }), 'is-crit');
         pasteInp.setAttribute('aria-invalid', 'true');
         return;
       }
-      pasteInp.removeAttribute('aria-invalid');
-      if (parsed.outsideLebanon) {
-        // Never overwrite good GPS with a point outside Lebanon (stray numbers in a pasted message, a foreign link)
-        setStatus(renderMapLinkStatusHtml(parsed, null), 'is-warn');
-        return;
-      }
-      if (latInp) { latInp.value = String(parsed.lat); latInp.dataset.autoFromPlace = ''; }
-      if (lngInp) { lngInp.value = String(parsed.lng); lngInp.dataset.autoFromPlace = ''; }
-      if (parsed.placeName && siteInp && !String(siteInp.value || '').trim()) {
-        siteInp.value = parsed.placeName;
-        _emitGeoFieldEvents(siteInp);
-      }
-      const editRec = typeof c.getEditRec === 'function' ? c.getEditRec() : null;
-      const info = getMapLinkReferenceInfo(parsed.lat, parsed.lng, SEED, {
-        industry: activeInd,
-        company,
-        excludeId: (editRec && editRec.id) || ''
-      });
-      const resolvedReg = _resolvePickedSiteRegion(parsed.lat, parsed.lng, regNow, editRec, SEED, activeInd, info, false);
-      if (resolvedReg && regInp) {
-        regInp.value = resolvedReg;
-        regInp.dataset.autoFromPlace = '';
-        _emitGeoFieldEvents(regInp);
-      }
-      if (canvas) canvas._suppressLatLngPan = true;
-      try {
-        _emitGeoFieldEvents(latInp);
-        _emitGeoFieldEvents(lngInp);
-      } finally {
-        if (canvas) canvas._suppressLatLngPan = false;
-      }
-      const map = canvas && canvas._leafletMap;
-      if (map) {
-        try { map.setView([parsed.lat, parsed.lng], 15, { animate: false }); } catch (_) {}
-      }
-      if (canvas && typeof canvas._refreshSiteOverlay === 'function') canvas._refreshSiteOverlay();
-      const tone = (parsed.outsideLebanon || parsed.approx || parsed.mapView || parsed.lowPrecision || parsed.swapped || (info && info.nearest && info.nearest.duplicateRisk)) ? 'is-warn' : 'is-ok';
-      setStatus(renderMapLinkStatusHtml(parsed, info), tone);
-      pasteInp.dataset.lastParseMs = String(parsed.ms);
+      applyParsed(parsed);
     };
     pasteInp.addEventListener('paste', () => { setTimeout(() => apply(false), 0); });
     pasteInp.addEventListener('input', () => {
@@ -6082,6 +7390,7 @@
     const resetLinkState = () => {
       clearTimeout(debounceT);
       lastVal = '';
+      reqGen++;
       pasteInp.removeAttribute('aria-invalid');
       setStatus('', '');
     };
@@ -6121,6 +7430,39 @@
       });
     }
     wireSiteMapLinkPaste(hostEl, canvas, SEED, cfg);
+    const syncClearBtn = hostEl.querySelector(cfg.clearBtnSel);
+    const syncLatInp = hostEl.querySelector(cfg.latSel);
+    const syncLngInp = hostEl.querySelector(cfg.lngSel);
+    const syncRegInp = hostEl.querySelector(cfg.regSel);
+    const syncPasteInp = hostEl.querySelector(cfg.pasteSel);
+    const hasSyncInitPin = Boolean(
+      syncLatInp && syncLngInp &&
+      syncLatInp.value !== '' && syncLngInp.value !== '' &&
+      Number.isFinite(parseFloat(syncLatInp.value)) && Number.isFinite(parseFloat(syncLngInp.value))
+    );
+    if (syncClearBtn) {
+      syncClearBtn.hidden = !hasSyncInitPin;
+      syncClearBtn.addEventListener('click', () => {
+        if (syncLatInp) { syncLatInp.value = ''; syncLatInp.dataset.autoFromPlace = ''; syncLatInp.dataset.userEdited = '1'; }
+        if (syncLngInp) { syncLngInp.value = ''; syncLngInp.dataset.autoFromPlace = ''; syncLngInp.dataset.userEdited = '1'; }
+        if (syncPasteInp) {
+          syncPasteInp.value = '';
+          if (typeof syncPasteInp._resetLinkState === 'function') syncPasteInp._resetLinkState();
+        }
+        canvas._suppressLatLngPan = true;
+        try {
+          _emitGeoFieldEvents(syncLatInp);
+          _emitGeoFieldEvents(syncLngInp);
+        } finally {
+          canvas._suppressLatLngPan = false;
+        }
+        if (syncLatInp) syncLatInp.dataset.userEdited = '1';
+        if (syncLngInp) syncLngInp.dataset.userEdited = '1';
+        syncClearBtn.hidden = true;
+        if (typeof cfg.onPinChange === 'function') cfg.onPinChange({ lat: null, lng: null, region: syncRegInp ? syncRegInp.value : '', cleared: true });
+        if (typeof canvas._refreshSiteOverlay === 'function') canvas._refreshSiteOverlay({ panToRegion: true });
+      }, sig);
+    }
     ensureLeaflet().then(L => {
       if (!canvas.isConnected || listenerAbort.signal.aborted) return;
       const latInp = hostEl.querySelector(cfg.latSel);
@@ -6166,11 +7508,13 @@
           company,
           excludeId: (editRec && editRec.id) || ''
         });
-        const resolvedReg = _resolvePickedSiteRegion(lat, lng, regNow, editRec, SEED, activeInd, info, true);
-        if (resolvedReg && regInp) {
-          regInp.value = resolvedReg;
-          regInp.dataset.autoFromPlace = '';
-          _emitGeoFieldEvents(regInp);
+        if (!cfg.onlyFillEmptyRegion || !regNow) {
+          const resolvedReg = _resolvePickedSiteRegion(lat, lng, regNow, editRec, SEED, activeInd, info, true);
+          if (resolvedReg && regInp) {
+            regInp.value = resolvedReg;
+            regInp.dataset.autoFromPlace = '';
+            _emitGeoFieldEvents(regInp);
+          }
         }
         canvas._suppressLatLngPan = true;
         try {
@@ -6183,6 +7527,7 @@
           const tone = (info && info.nearest && info.nearest.duplicateRisk) ? 'is-warn' : 'is-ok';
           pasteInp._setLinkStatus(renderMapLinkStatusHtml({ ok: true, sourceLabel: 'Map Pin', lat, lng }, info), tone);
         }
+        if (typeof cfg.onPinChange === 'function') cfg.onPinChange({ lat, lng, region: regInp ? regInp.value : '', cleared: false });
         refreshSiteOverlay();
       };
 
@@ -6192,7 +7537,7 @@
         const isMfg = activeInd === 'Manufacturing';
         lg.clearLayers();
         const accentColor = '#059669';
-        const pinLabel = 'Site Pin';
+        const pinLabel = String(cfg.pinLabel || 'Site Pin');
         const selRegName = regInp ? String(regInp.value || '').trim() : '';
         const selRegObj = selRegName ? resolveRegionRecordOrAtlas(selRegName, SEED, activeInd) : null;
         const drawnRegNorms = new Set();
@@ -6239,26 +7584,37 @@
             L.marker([h.lat, h.lng], { icon: makeSvgPinIcon(L, '#D9A54A', h.name, true) }).addTo(lg);
           });
         }
+        const bp = cfg.baselinePin;
+        const hasBaselinePin = Boolean(bp && Number.isFinite(Number(bp.lat)) && Number.isFinite(Number(bp.lng)));
+        if (hasBaselinePin) {
+          L.marker([Number(bp.lat), Number(bp.lng)], {
+            icon: makeSvgPinIcon(L, '#D9A54A', bp.label || 'Project Site', true),
+            interactive: false,
+            zIndexOffset: 900
+          }).addTo(lg);
+        }
 
         const rawLat = latInp && latInp.value !== '' ? parseFloat(latInp.value) : null;
         const rawLng = lngInp && lngInp.value !== '' ? parseFloat(lngInp.value) : null;
         const hasExplicitPin = rawLat != null && rawLng != null && Number.isFinite(rawLat) && Number.isFinite(rawLng);
         if (clearPinBtn) clearPinBtn.hidden = !hasExplicitPin;
         const placeHit = siteInp && siteInp.value ? resolvePlaceLocation(siteInp.value, SEED) : null;
-        const previewLat = hasExplicitPin ? rawLat : (placeHit ? placeHit.lat : (selRegObj ? selRegObj.center_lat : null));
-        const previewLng = hasExplicitPin ? rawLng : (placeHit ? placeHit.lng : (selRegObj ? selRegObj.center_lng : null));
+        const previewLat = hasExplicitPin ? rawLat : (hasBaselinePin ? Number(bp.lat) : (placeHit ? placeHit.lat : (selRegObj ? selRegObj.center_lat : null)));
+        const previewLng = hasExplicitPin ? rawLng : (hasBaselinePin ? Number(bp.lng) : (placeHit ? placeHit.lng : (selRegObj ? selRegObj.center_lng : null)));
 
         if (previewLat != null && previewLng != null && Number.isFinite(previewLat) && Number.isFinite(previewLng)) {
           const allowOptReg = typeof cfg.isBundled === 'function' ? cfg.isBundled(inclTransInp) : Boolean(inclTransInp && inclTransInp.value === '1');
-          const check = validateSiteInsideRegion({
-            siteName: siteInp ? siteInp.value : '',
-            regionName: selRegName,
-            lat: hasExplicitPin ? rawLat : null,
-            lng: hasExplicitPin ? rawLng : null,
-            allowMissingRegion: allowOptReg
-          }, SEED);
+          const check = cfg.skipRegionContainmentCheck
+            ? { ok: true }
+            : validateSiteInsideRegion({
+                siteName: siteInp ? siteInp.value : '',
+                regionName: selRegName,
+                lat: hasExplicitPin ? rawLat : null,
+                lng: hasExplicitPin ? rawLng : null,
+                allowMissingRegion: allowOptReg
+              }, SEED);
           const pinColor = (!check.ok && selRegName) ? '#DC2626' : accentColor;
-          const badgeText = hasExplicitPin ? pinLabel : (placeHit ? placeHit.placeName : (selRegObj ? selRegObj.name : pinLabel));
+          const badgeText = hasExplicitPin ? pinLabel : (hasBaselinePin ? (bp.label || 'Project Site') : (placeHit ? placeHit.placeName : (selRegObj ? selRegObj.name : pinLabel)));
           const pinMarker = L.marker([previewLat, previewLng], {
             draggable: true,
             icon: makeSvgPinIcon(L, pinColor, badgeText, false, '', badgeText !== pinLabel),
@@ -6297,6 +7653,8 @@
           if ((!hasExplicitPin || pinOutsideNewReg) && selRegObj.center_lat != null && selRegObj.center_lng != null) {
             map.setView([Number(selRegObj.center_lat), Number(selRegObj.center_lng)], selRegObj.zone_type === 'circle' ? 12 : 11, { animate: false });
           }
+        } else if (o.initialOpen && hasBaselinePin) {
+          map.setView([Number(bp.lat), Number(bp.lng)], 14, { animate: false });
         } else if (o.initialOpen && placeHit) {
           map.setView([placeHit.lat, placeHit.lng], 12, { animate: false });
         }
@@ -6308,24 +7666,6 @@
       map.on('click', ev => {
         applyPickedSiteLatLng(round5(ev.latlng.lat), round5(ev.latlng.lng));
       });
-      if (clearPinBtn) {
-        clearPinBtn.addEventListener('click', () => {
-          if (latInp) { latInp.value = ''; latInp.dataset.autoFromPlace = ''; }
-          if (lngInp) { lngInp.value = ''; lngInp.dataset.autoFromPlace = ''; }
-          if (pasteInp) {
-            pasteInp.value = '';
-            if (typeof pasteInp._resetLinkState === 'function') pasteInp._resetLinkState();
-          }
-          canvas._suppressLatLngPan = true;
-          try {
-            _emitGeoFieldEvents(latInp);
-            _emitGeoFieldEvents(lngInp);
-          } finally {
-            canvas._suppressLatLngPan = false;
-          }
-          refreshSiteOverlay({ panToRegion: true });
-        }, sig);
-      }
       [latInp, lngInp].forEach(el => {
         if (el) el.addEventListener('change', () => {
           if (canvas._suppressLatLngPan) return;
@@ -6349,9 +7689,140 @@
     }).catch(() => {});
   }
 
-  function wireInspectorSiteModifyMap(hostEl, siteRow, SEED) {
+  function getUnpinnedSitesQueue(SEED, STATE, activeInd) {
+    const ind = activeInd || getGeoActiveIndustry();
+    const isMfg = ind === 'Manufacturing';
+    const inInd = r => isRowInGeoIndustry(r, ind);
+    const inIndAnyState = r => Boolean(r && (isMfg
+      ? (!r._multiIndustrySeed && (!r._industry || r._industry === 'Manufacturing'))
+      : r._industry === ind));
+    const seedSites = (SEED && SEED.records && Array.isArray(SEED.records.sites)) ? SEED.records.sites : [];
+    const customSites = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.sites)) ? STATE.customRecords.sites : [];
+    const activeCustomCatNames = new Set();
+    const blockedKeys = new Set();
+    customSites.forEach(s => {
+      if (!s || !s.name || !inIndAnyState(s)) return;
+      const cat = resolveGeoSiteCat(s);
+      const isInactive = Boolean(s.voided || s.active === false || /^closed|inactive$/i.test(String(s.status || '')));
+      if (!isInactive) activeCustomCatNames.add(`${cat}:${norm(s.name)}`);
+    });
+    customSites.forEach(s => {
+      if (!s || !s.name || !inIndAnyState(s)) return;
+      const cat = resolveGeoSiteCat(s);
+      const isInactive = Boolean(s.voided || s.active === false || /^closed|inactive$/i.test(String(s.status || '')));
+      if (isInactive) {
+        if (s.id) blockedKeys.add(String(s.id));
+        if (!activeCustomCatNames.has(`${cat}:${norm(s.name)}`)) blockedKeys.add(`${cat}:${norm(s.name)}`);
+      }
+    });
+    const poolByKey = new Map();
+    customSites.concat(seedSites).forEach((s, idx) => {
+      if (!s || !s.name || s.voided || !inInd(s)) return;
+      if (s.active === false || /^closed|inactive$/i.test(String(s.status || ''))) return;
+      const cat = resolveGeoSiteCat(s);
+      const key = s.id ? String(s.id) : `${cat}:${norm(s.name)}`;
+      if (blockedKeys.has(key) || (!activeCustomCatNames.has(`${cat}:${norm(s.name)}`) && blockedKeys.has(`${cat}:${norm(s.name)}`))) return;
+      if (!poolByKey.has(key)) poolByKey.set(key, { s, cat, key, idx });
+    });
+    const allIndSites = Array.from(poolByKey.values()).map(x => x.s);
+    const life = getSiteLifecycleIndex(allIndSites, SEED, STATE);
+    const stats = getUnifiedSiteStats(SEED, STATE);
+
+    const anchorIso = geoTodayIso();
+    const cutoffIso = geoIsoAddDays(anchorIso, -90);
+    const mfgVol90 = new Map();
+    if (isMfg) {
+      const addMfgVol = (siteNm, cat, dtRaw) => {
+        const nk = norm(siteNm);
+        if (!nk) return;
+        const dt = String(dtRaw || '').slice(0, 10);
+        if (cutoffIso && (!dt || dt < cutoffIso || dt > anchorIso)) return;
+        const ck = `${cat}:${nk}`;
+        mfgVol90.set(ck, (mfgVol90.get(ck) || 0) + 1);
+        mfgVol90.set(nk, (mfgVol90.get(nk) || 0) + 1);
+      };
+      ((SEED && SEED.records && SEED.records.raw_purchases) || []).forEach(r => {
+        if (!r || r.voided) return;
+        addMfgVol(r.site || r.quarry || r.origin_site, 'supplier', r.delivery_date || r.date || r.ticket_date || r.entered_at);
+      });
+      ((SEED && SEED.records && SEED.records.sales_tickets) || []).forEach(t => {
+        if (!t || t.voided) return;
+        addMfgVol(t.site, 'customer', t.delivery_date || t.date || t.ticket_date || t.entered_at);
+      });
+    }
+    const domainVolMap = (!isMfg && typeof window !== 'undefined' && typeof window.__mfgGetDomainSiteActivity90d === 'function')
+      ? window.__mfgGetDomainSiteActivity90d(ind, cutoffIso, anchorIso, SEED, STATE)
+      : null;
+
+    const queue = [];
+    poolByKey.forEach(({ s, cat, key, idx }) => {
+      const lc = life.byNorm.get(norm(s.name)) || { state: 'active' };
+      if (lc.state === 'closed') return;
+      const hasPin = !_isPinClearedFlag(s._pinCleared) && isValidLatLngPair(s.latitude, s.longitude);
+      if (hasPin) return;
+      const nk = norm(s.name);
+      const st = stats.byNorm.get(nk) || { raw: 0, sales: 0, total: 0 };
+      let vol90 = 0;
+      let totalVol = Number(st.total || 0);
+      if (isMfg) {
+        const hasCatSpecific = mfgVol90.has(`${cat}:${nk}`);
+        vol90 = hasCatSpecific ? (mfgVol90.get(`${cat}:${nk}`) || 0) : (mfgVol90.get(nk) || 0);
+        totalVol = cat === 'customer' ? (st.sales || st.total || 0) : (st.raw || st.total || 0);
+      } else if (domainVolMap && typeof domainVolMap.get === 'function') {
+        const dv = domainVolMap.get(nk);
+        if (dv) {
+          vol90 = Number((dv.count90d ?? dv.vol90) || 0);
+          totalVol = Math.max(totalVol, Number((dv.totalCount ?? dv.totalVol) || 0));
+        }
+      }
+      queue.push({
+        key,
+        id: s.id || '',
+        name: s.name,
+        siteCategory: cat,
+        region: String(s.region || s.geo_zone || '').trim(),
+        lifeState: lc.state,
+        vol90,
+        totalVol,
+        _idx: idx
+      });
+    });
+
+    // Frequency-first strictly descending (Hard Rule 11; never alphabetical)
+    queue.sort((a, b) => (b.vol90 - a.vol90) || (b.totalVol - a.totalVol) || (a._idx - b._idx));
+    return queue;
+  }
+
+  function wireInspectorSiteModifyMap(hostEl, siteRow, SEED, opts) {
     if (!hostEl) return;
-    _wireSiteInteractiveMapCore(hostEl, SEED, _sitePickerCfgForInspector(hostEl, siteRow));
+    _wireSiteInteractiveMapCore(hostEl, SEED, _sitePickerCfgForInspector(hostEl, siteRow, opts));
+  }
+
+  function wireDomainInspectorModifyMap(hostEl, cfg, SEED) {
+    if (!hostEl) return;
+    const o = cfg || {};
+    _wireSiteInteractiveMapCore(hostEl, SEED, {
+      pasteSel: o.pasteSel || '#ind_insp_coord_paste',
+      statusSel: o.statusSel || '#indInspMapLinkStatus',
+      latSel: o.latSel || '#ind_insp_latitude',
+      lngSel: o.lngSel || '#ind_insp_longitude',
+      regSel: o.regSel || '#ind_insp_region',
+      siteSel: o.siteSel || '#ind_insp_site_name',
+      canvasSel: o.canvasSel || '#indInspMapCanvas',
+      kmSel: o.kmSel || '#indInspKmReadout',
+      clearBtnSel: o.clearBtnSel || '#indInspClearPinBtn',
+      pinLabel: o.pinLabel || 'Location Pin',
+      skipRegionContainmentCheck: true,
+      onlyFillEmptyRegion: true,
+      baselinePin: o.baselinePin || null,
+      onPinChange: o.onPinChange || null,
+      getCompany: () => String(o.company || ''),
+      getEditRec: () => ({ id: o.id || '', region: String(o.region || '').trim() }),
+      isBundled: () => true,
+      cleanup: cleanupInspectorGeoMap,
+      setActiveMap: map => { _activeInspectorMap = map; },
+      setActiveCleanup: fn => { _activeInspectorCleanup = fn; }
+    });
   }
 
   function wireModalSiteOrRegionMap(hostEl, formType, SEED) {
@@ -7304,9 +8775,21 @@
     wireModalSiteOrRegionMap,
     cleanupModalGeoMap,
     wireInspectorSiteModifyMap,
+    wireDomainInspectorModifyMap,
     cleanupInspectorGeoMap,
     wireTicketOriginMiniMap,
     cleanupTicketOriginMiniMap,
-    jumpToMapRegionOrSite
+    jumpToMapRegionOrSite,
+    extractShortMapUrlFromText,
+    resolveShortMapLink,
+    resolveMapLinkAsync,
+    getUnpinnedSitesQueue,
+    encodeQrMatrix,
+    renderQrSvg,
+    packQrEscPosRaster,
+    resolveVerifiedSiteGatePin,
+    renderGateMiniMapSvg,
+    renderGatePinCardHtml
   };
+  if (typeof window !== 'undefined') window.MFG_GATE_PIN = window.MFG_GEO;
 })();

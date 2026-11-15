@@ -141,7 +141,7 @@
     const urlStr = String(url || '');
     const method = String((opts && opts.method) || 'GET').toUpperCase();
     const isAuthCheckUrl = /\/api\/auth\/(?:login|logout|me)(?:\b|\/|\?|$)/i.test(urlStr);
-    const isReadOnlyAiOrScan = /\/api\/(?:ai-edge|ask|smart-scan)(?:\b|\/|\?|$)/i.test(urlStr);
+    const isReadOnlyAiOrScan = /\/api\/(?:ai-edge|ask|smart-scan|resolve-map-link)(?:\b|\/|\?|$)/i.test(urlStr);
     const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|cashflow_behind|source_behind|industry_domain_store|staff_biometrics|work_schedules|geo_config|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
     const inDemoSession = isDemoSandboxSession();
     const inDemoCo = !inDemoSession && STATE.company === DEMO_COMPANY_KEY;
@@ -9759,6 +9759,9 @@
   }
   // Map, Regions with No Shape: giving an existing Region a shape is a change to that record
   window.MFG_CAN_SHAPE_REGIONS = u => canEnterForm('region', u) && canModifyData(u);
+  window.MFG_CAN_PIN_LOCATIONS = u => canModifyData(u);
+  window.MFG_CAN_ENTER_SITE = u => canEnterForm('site', u);
+  window.MFG_CAN_MODIFY_RECORD = u => canModifyRecord(u);
   // Map: night trip pay per Region is a payroll rate, shown only to a seat that may read overtime_rates
   window.MFG_CAN_SEE_NIGHT_RATES = u => canAccessTable('overtime_rates', u);
   function canModifyTextOnly(u) {
@@ -37755,7 +37758,7 @@
     if (/^(INV-TRD|TRD-INV|SH-INV|KA-INV)-/i.test(pid)) return 'trd_sales';
     if (/^(PRT|SKU)-/i.test(pid)) return 'trd_parts';
     if (/^LSE-/i.test(pid)) return 're_leases';
-    if (/^UNT-/i.test(pid)) return 're_units';
+    if (/^(?:UNT|UNIT|U)-/i.test(pid)) return 're_units';
     if (/^INV-(4235|PROP|RE)-/i.test(pid)) return 're_invoicing';
     if (/^RCT-(4235|PROP|RE)-/i.test(pid)) return 're_receipts';
     if (/^WO-/i.test(pid)) return 're_maintenance';
@@ -78461,7 +78464,312 @@
     openIndustryDomainEntryModal(st.formKey, pf);
   }
 
+  window.__mfgGetDomainSiteActivity90d = function (ind, cutoffIso, anchorIso) {
+    const out = new Map();
+    const bump = (rawName, rawDt) => {
+      const k = norm(rawName);
+      if (!k) return;
+      let rec = out.get(k);
+      if (!rec) {
+        rec = { count90d: 0, totalCount: 0 };
+        out.set(k, rec);
+      }
+      rec.totalCount += 1;
+      const dt = String(rawDt || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dt) && (!cutoffIso || dt >= cutoffIso) && (!anchorIso || dt <= anchorIso)) {
+        rec.count90d += 1;
+      }
+    };
+    const scanArr = (arr, nameFn, dateFn) => {
+      (Array.isArray(arr) ? arr : []).forEach(r => {
+        if (!r || r.voided) return;
+        bump(nameFn(r), dateFn(r));
+      });
+    };
+    try {
+      if (ind === 'Real Estate & Property' && typeof computeRealEstateOperations === 'function') {
+        const re = computeRealEstateOperations({ ignoreSearch: true }) || {};
+        scanArr(re.properties, r => r.property || r.name, r => r.date);
+        scanArr(re.units, r => r.property, r => r.date || r.lease_start);
+        scanArr(re.leases, r => r.property, r => r.start_date || r.date);
+        scanArr(re.workorders, r => r.property, r => r.date || r.opened_date);
+        scanArr(re.invoices, r => r.property, r => r.date);
+        scanArr(re.receipts, r => r.property, r => r.date);
+        scanArr(re.instalments, r => r.property, r => r.due_date || r.date);
+      } else if (ind === 'Hospitality & Resorts' && typeof computeHospitalityOperations === 'function') {
+        const hsp = computeHospitalityOperations({ ignoreSearch: true }) || {};
+        scanArr(hsp.venueRows, r => r.venue || r.outlet || r.company, r => r.date);
+        scanArr(hsp.posRows, r => r.venue || r.outlet || r.company, r => r.date);
+        scanArr(hsp.membershipRows, r => r.venue || r.company, r => r.start_date || r.date);
+        scanArr(hsp.stockRows, r => r.venue || r.store || r.company, r => r.date);
+        scanArr(hsp.energyRows, r => r.venue || r.site || r.company, r => r.date);
+        scanArr(hsp.maintRows, r => r.venue || r.company, r => r.date);
+      } else if (ind === 'Automotive & Heavy Trading' && typeof computeTradingOperations === 'function') {
+        const trd = computeTradingOperations({ ignoreSearch: true }) || {};
+        scanArr(trd.salesRows, r => r.warehouse || r.location || r.showroom || r.company, r => r.date);
+        scanArr(trd.grnRows, r => r.warehouse || r.location || r.showroom || r.company, r => r.date);
+        scanArr(trd.serialUnits, r => r.warehouse || r.location || r.showroom || r.company, r => r.date);
+        scanArr(trd.warrantyRows, r => r.warehouse || r.location || r.workshop || r.company, r => r.date);
+        scanArr(trd.stockRows, r => r.warehouse || r.location || r.showroom || r.company, r => r.date);
+        scanArr(trd.movementRows, r => r.warehouse || r.from_loc || r.to_loc || r.company, r => r.date);
+      } else if (/^holding/i.test(String(ind || ''))) {
+        if (typeof computeHoldingSchedules === 'function') {
+          const hld = computeHoldingSchedules() || {};
+          scanArr(hld.partnerAgreements, r => r.entity || r.company, r => r.start_date || r.date);
+          scanArr(hld.partnerDistributions, r => r.entity || r.company, r => r.date);
+          scanArr(hld.facilitySchedules, r => r.entity || r.company || r.lender, r => r.start_date || r.date);
+          scanArr(hld.loanAccruals, r => r.entity || r.company || r.lender, r => r.date);
+        }
+        const hldInteractions = typeof getIndustryCustomRows === 'function' ? getIndustryCustomRows('hld_interactions') : [];
+        scanArr(hldInteractions, r => r.site || r.fromCo || r.company, r => r.date);
+        scanArr(hldInteractions, r => r.toCo || r.counterparty, r => r.date);
+        const hldTransfers = (STATE.industryCustomRows && STATE.industryCustomRows.hld_transfers) || [];
+        scanArr(hldTransfers, r => r.site || r.from_loc || r.fromCo || r.company || r.entity, r => r.date);
+        scanArr(hldTransfers, r => r.to_loc || r.toCo || r.counterparty, r => r.date);
+        const hldExt = ((SEED.records && SEED.records.external_movements) || []).filter(r => r && !r.voided && (/^holding/i.test(String(r._industry || '')) || /^bdeir holding$/i.test(String(r.company || ''))));
+        scanArr(hldExt, r => r.site, r => r.date);
+        scanArr(hldExt, r => r.company || r.counterparty, r => r.date);
+      } else if (ind === 'Insurance & Brokerage' && typeof computeInsuranceOperations === 'function') {
+        const ins = computeInsuranceOperations({ ignoreSearch: true }) || {};
+        scanArr(ins.policies, r => r.location || r.site || r.carrier || r.company, r => r.date || r.start_date);
+        scanArr(ins.items, r => r.garage || r.location || r.site || r.company, r => r.date);
+        scanArr(ins.claims, r => r.garage || r.location || r.site || r.carrier || r.company, r => r.date);
+        scanArr(ins.remittances, r => r.location || r.carrier || r.company, r => r.date);
+      }
+    } catch (_) {}
+    return out;
+  };
+
+  if (typeof window !== 'undefined') {
+    window.__mfgSyncDomainEditsFromSitePin = function syncDomainLocationEditsFromSite(info) {
+      if (!info || !info.industry || info.industry === 'Manufacturing') return;
+      const targetInd = String(info.industry).trim();
+      const pidNorm = norm(info.domainPrimaryId || info.rePropertyId || '');
+      const snNorm = norm(info.siteName || '');
+      const hasCoords = info.lat != null && info.lng != null && Number.isFinite(Number(info.lat)) && Number.isFinite(Number(info.lng));
+      const ts = String(info.modifiedAt || new Date().toISOString());
+
+      const store = getIndustryRowEditStore();
+      let storeChanged = false;
+      Object.keys(store).forEach(ek => {
+        const e = store[ek];
+        if (!e || e.voided || e.ind !== targetInd) return;
+        const ePidNorm = norm(e.primaryId || '');
+        const eSiteNorm = norm(e.siteName || '');
+        const exactMatch = Boolean(
+          (pidNorm && ePidNorm === pidNorm)
+          || (snNorm && eSiteNorm && eSiteNorm === snNorm)
+          || (snNorm && !eSiteNorm && ePidNorm === snNorm)
+        );
+        if (!exactMatch) return;
+        if (info.pinCleared) {
+          e._pinCleared = true;
+          e.latitude = null;
+          e.longitude = null;
+        } else if (hasCoords) {
+          e._pinCleared = false;
+          e.latitude = Number(info.lat);
+          e.longitude = Number(info.lng);
+          if (info.region) e.region = String(info.region).trim();
+        }
+        e.updated_at = ts;
+        e.updatedAt = ts;
+        e.rev = Number(e.rev || 0) + 1;
+        e._revBumped = true;
+        storeChanged = true;
+      });
+      if (storeChanged) saveIndustryRowEditStore(store);
+
+      const icr = STATE && STATE.industryCustomRows;
+      let icrChanged = false;
+      if (icr && typeof icr === 'object') {
+        Object.keys(icr).forEach(bk => {
+          const arr = icr[bk];
+          if (!Array.isArray(arr)) return;
+          arr.forEach(r => {
+            if (!r || r.voided) return;
+            const rPid = norm(r.id || '');
+            const rSn = norm(r.siteName || '');
+            if (!((pidNorm && rPid === pidNorm) || (snNorm && rSn && rSn === snNorm))) return;
+            if (info.pinCleared) {
+              r._pinCleared = true;
+              r.latitude = null;
+              r.longitude = null;
+            } else if (hasCoords) {
+              r._pinCleared = false;
+              r.latitude = Number(info.lat);
+              r.longitude = Number(info.lng);
+              if (info.region) r.region = String(info.region).trim();
+            }
+            r.modified_at = ts;
+            icrChanged = true;
+          });
+        });
+      }
+      if (icrChanged) {
+        STATE._indCustomRev = (STATE._indCustomRev || 0) + 1;
+        saveLocalAuthAndRecords();
+      }
+    };
+  }
+
+  function resolveDomainLocationModifySpec(ctx) {
+    const ind = String(ctx.ind || '').trim();
+    const tbl = String(ctx.domainTblKey || '').trim().toLowerCase();
+    const vw = String(ctx.viewKey || '').trim().toLowerCase();
+    const title = String(ctx.tableTitle || '').trim();
+    const pid = String(ctx.primaryId || '').trim();
+    const headers = Array.isArray(ctx.headers) ? ctx.headers : [];
+    const cells = Array.isArray(ctx.cells) ? ctx.cells : [];
+    const visTds = ctx.trEl ? Array.from(ctx.trEl.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none') : [];
+    const pickHeaderVal = (rx, preferStrong = false) => {
+      for (let i = 0; i < headers.length; i++) {
+        if (rx.test(String(headers[i] || '')) && cells[i] != null && String(cells[i]).trim() !== '') {
+          if (preferStrong && visTds[i]) {
+            const st = visTds[i].querySelector('strong');
+            if (st && st.textContent.trim()) return st.textContent.trim();
+          }
+          return String(cells[i]).trim();
+        }
+      }
+      return '';
+    };
+    const fallbackLabel = String(cells[1] || cells[2] || ctx.rowCompany || pid || '').trim();
+    let pinLabel = '';
+    let isReProperty = false;
+    let siteName = '';
+    let baselinePin = null;
+
+    if (ind === 'Real Estate & Property') {
+      const looksProp = tbl === 're_properties' || tbl === 're_prop_tbl' || vw === 're_properties'
+        || /propert|portfolio|building|asset register/i.test(title) || /^(?:PROP|PLOT)-/i.test(pid);
+      const looksUnitChild = tbl === 're_units' || tbl === 're_leases' || tbl === 're_maintenance' || tbl === 're_workorders'
+        || tbl === 're_invoicing' || tbl === 're_receipts' || vw === 're_units' || vw === 're_leases' || vw === 're_maintenance'
+        || vw === 're_invoicing' || vw === 're_receipts'
+        || /unit|lease|maintenance|work order|capex|invoice|receipt|instalment/i.test(title)
+        || /^(UNT|UNIT|U|LSE|WO|INV-(?:4235|PROP|RE)|RCT-(?:4235|PROP|RE))-/i.test(pid);
+      if (looksProp && !looksUnitChild) {
+        isReProperty = true;
+        pinLabel = 'Building / Parcel Entrance Pin';
+        siteName = (ctx.savedEntry && ctx.savedEntry.siteName)
+          || pickHeaderVal(/^(property|building|project|name|site|asset)/i, true)
+          || fallbackLabel || pid;
+      } else {
+        pinLabel = 'Unit / Parcel Entrance Pin';
+        const propName = (ctx.resolvedDomainChrono && ctx.resolvedDomainChrono.prefill && ctx.resolvedDomainChrono.prefill.property)
+          || pickHeaderVal(/^(property|building|project|site)/i, true)
+          || '';
+        const unitVal = pickHeaderVal(/^(unit|premise|suite|floor)/i, true);
+        siteName = (ctx.savedEntry && ctx.savedEntry.siteName) || unitVal || (propName ? `${propName} (${pid})` : (fallbackLabel || pid));
+        if (propName) {
+          const pn = norm(propName);
+          const matchPropText = (cand) => {
+            const nc = norm(cand);
+            return Boolean(nc && pn && nc === pn);
+          };
+          const editVals = Object.values(ctx.editStore || {});
+          const propEdit = editVals.find(e => e && !e.voided && e.ind === 'Real Estate & Property'
+            && !e._pinCleared && e.latitude != null && e.longitude != null && e.latitude !== '' && e.longitude !== ''
+            && Number.isFinite(Number(e.latitude)) && Number.isFinite(Number(e.longitude))
+            && (e.isReProperty || /propert|portfolio|building|asset/i.test(String(e.tableTitle || '')) || /^(?:PROP|PLOT)-/i.test(String(e.primaryId || '')))
+            && (matchPropText(e.siteName) || (Array.isArray(e.cells) ? e.cells.some(c => matchPropText(c)) : matchPropText(e.primaryId))));
+          if (propEdit) {
+            baselinePin = { lat: Number(propEdit.latitude), lng: Number(propEdit.longitude), label: propName };
+          } else {
+            const propSite = ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && !s._pinCleared
+              && s._industry === 'Real Estate & Property'
+              && s.latitude != null && s.longitude != null && s.latitude !== '' && s.longitude !== ''
+              && Number.isFinite(Number(s.latitude)) && Number.isFinite(Number(s.longitude))
+              && matchPropText(s.name));
+            if (propSite) {
+              baselinePin = { lat: Number(propSite.latitude), lng: Number(propSite.longitude), label: propSite.name || propName };
+            }
+          }
+        }
+      }
+    } else if (ind === 'Hospitality & Resorts') {
+      pinLabel = 'Venue / Chalet / Outlet Pin';
+      siteName = (ctx.savedEntry && ctx.savedEntry.siteName) || pickHeaderVal(/^(venue|outlet|chalet|resort|store|site|company|unit)/i) || fallbackLabel || pid;
+    } else if (ind === 'Holding & Treasury') {
+      pinLabel = 'Entity / Branch / HQ Pin';
+      siteName = (ctx.savedEntry && ctx.savedEntry.siteName) || pickHeaderVal(/^(entity|subsidiary|branch|company|lender|partner|site)/i) || fallbackLabel || pid;
+    } else if (ind === 'Automotive & Heavy Trading') {
+      pinLabel = 'Showroom / Bonded Yard / Bay Pin';
+      siteName = (ctx.savedEntry && ctx.savedEntry.siteName) || pickHeaderVal(/^(warehouse|yard|showroom|location|branch|bay|workshop|site|company)/i) || fallbackLabel || pid;
+    } else if (ind === 'Insurance & Brokerage') {
+      pinLabel = 'Survey / Risk / Garage Location Pin';
+      siteName = (ctx.savedEntry && ctx.savedEntry.siteName) || pickHeaderVal(/^(garage|workshop|location|address|risk|site|carrier|client|insured|company)/i) || fallbackLabel || pid;
+    } else {
+      return null;
+    }
+
+    const prefill = (ctx.resolvedDomainChrono && ctx.resolvedDomainChrono.prefill) || null;
+    const saved = ctx.savedEntry || null;
+    const sn = norm(siteName);
+    const pidNorm = norm(pid);
+    const matchedSite = ((SEED.records && SEED.records.sites) || []).find(s => {
+      if (!s || s.voided || s._industry !== ind) return false;
+      if (s._domainPrimaryId && norm(s._domainPrimaryId) === pidNorm) return true;
+      if (isReProperty && s._rePropertyId && norm(s._rePropertyId) === pidNorm) return true;
+      if (norm(s.id) === pidNorm) return true;
+      return Boolean(sn && norm(s.name) === sn);
+    }) || null;
+    let initLat = '';
+    let initLng = '';
+    let initRegion = '';
+    let initCleared = false;
+    const hasNum = (o, k) => o && o[k] != null && typeof o[k] !== 'boolean' && typeof o[k] !== 'object' && String(o[k]).trim() !== '' && Number.isFinite(Number(o[k]));
+    const fmtCoord6 = (v) => String(Math.round(Number(v) * 1e6) / 1e6);
+    const tsMs = (v) => {
+      if (!v) return 0;
+      const t = Date.parse(String(v));
+      return Number.isFinite(t) ? t : 0;
+    };
+    const siteHasGeoState = Boolean(matchedSite && (matchedSite._pinCleared || (hasNum(matchedSite, 'latitude') && hasNum(matchedSite, 'longitude'))));
+    const entryObj = (prefill && (prefill._pinCleared || hasNum(prefill, 'latitude') || prefill.region))
+      ? prefill
+      : ((saved && (saved._pinCleared || hasNum(saved, 'latitude') || saved.region)) ? saved : null);
+    const siteTs = siteHasGeoState ? tsMs(matchedSite.modified_at || matchedSite.entered_at) : 0;
+    const entryTs = entryObj ? tsMs(entryObj.updated_at || entryObj.updatedAt || entryObj.modified_at) : 0;
+    const useSiteFirst = Boolean(siteHasGeoState && (!entryObj || (siteTs > 0 && siteTs >= entryTs)));
+
+    if (useSiteFirst) {
+      initCleared = Boolean(matchedSite._pinCleared);
+      if (!initCleared && hasNum(matchedSite, 'latitude') && hasNum(matchedSite, 'longitude')) {
+        initLat = fmtCoord6(matchedSite.latitude);
+        initLng = fmtCoord6(matchedSite.longitude);
+      }
+      initRegion = String(matchedSite.region || (entryObj && entryObj.region) || '').trim();
+    } else if (entryObj) {
+      initCleared = Boolean(entryObj._pinCleared);
+      if (!initCleared && hasNum(entryObj, 'latitude') && hasNum(entryObj, 'longitude')) {
+        initLat = fmtCoord6(entryObj.latitude);
+        initLng = fmtCoord6(entryObj.longitude);
+      }
+      initRegion = String(entryObj.region || (matchedSite && matchedSite.region) || '').trim();
+    }
+    if (!initRegion) {
+      initRegion = pickHeaderVal(/^(region|zone|district|area|city|governorate)/i) || '';
+    }
+
+    return {
+      ind,
+      pinLabel,
+      isReProperty,
+      siteName,
+      baselinePin,
+      initLat,
+      initLng,
+      initRegion,
+      initCleared,
+      hadInitialPin: Boolean(!initCleared && initLat && initLng)
+    };
+  }
+
   function openIndustryDomainInspector(opts = {}) {
+    if (window.MFG_GEO && typeof window.MFG_GEO.cleanupInspectorGeoMap === 'function') {
+      window.MFG_GEO.cleanupInspectorGeoMap();
+    }
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
       window.MFG_ASK.closeDailyHandover();
     }
@@ -78481,7 +78789,44 @@
     const secondaryLbl = String(cells[1] || cells[2] || COMPANY_LABELS[STATE.company] || ind).trim();
     const amountCell = cells.slice().reverse().find(c => /\$|\d/.test(String(c))) || '$0.00';
     const domainTblKey = opts.domainTblKey || (opts.trEl && opts.trEl.getAttribute('data-ind-row-tbl')) || inferDomainTblKey(ind, STATE.view, primaryId);
-    const rowCompany = opts.rowCompany || (opts.trEl && opts.trEl.getAttribute('data-ind-row-co')) || COMPANY_BU_MATCH[STATE.company] || (!/^industry:/i.test(String(STATE.company || '')) ? COMPANY_LABELS[STATE.company] : '') || '';
+    const initialRowCompany = String(
+      opts.rowCompany
+      || (opts.trEl && opts.trEl.getAttribute('data-ind-row-co'))
+      || (savedEntry && savedEntry.company)
+      || COMPANY_BU_MATCH[STATE.company]
+      || (!/^industry:/i.test(String(STATE.company || '')) ? COMPANY_LABELS[STATE.company] : '')
+      || ''
+    ).trim();
+    const resolvedDomainChrono = findDomainRecordPrefillForModal(ind, domainTblKey, primaryId, headers, cells, initialRowCompany, editKey);
+    const pickColCompany = () => {
+      for (let hi = 0; hi < headers.length; hi++) {
+        if (/^(company|bu|entity|subsidiary|brand|branch|resort|venue)/i.test(String(headers[hi] || '').trim())) {
+          const v = String(cells[hi] || '').trim();
+          if (v && !/^[\d$.,%\-]+$/.test(v)) return v;
+        }
+      }
+      return '';
+    };
+    const inferVerticalCompany = () => {
+      const joined = `${primaryId} ${tableTitle} ${cells.join(' ')}`;
+      if (ind === 'Real Estate & Property') return /4235/i.test(joined) ? '4235 Company S.A.L' : 'Properties';
+      if (ind === 'Holding & Treasury') return 'Bdeir Holding';
+      if (ind === 'Insurance & Brokerage') return 'Insurance Company';
+      if (/^BLC-|\bblanca\b/i.test(joined)) return 'Blanca';
+      if (/^UNA-|\bla\s*una\b/i.test(joined)) return 'La Una';
+      if (/^PLM-|\bpalms\b/i.test(joined)) return 'Palms';
+      if (/^VOL-|\bvoile\b/i.test(joined)) return 'Voile';
+      if (/^PLT-|\bplatinum\b/i.test(joined)) return 'Platinum';
+      if (/^SHC-|\bshacman\b/i.test(joined)) return 'Shacman';
+      if (/^KOR-|\bkorri\b/i.test(joined)) return 'Korri Auto';
+      if (ind === 'Hospitality & Resorts') return 'Blanca';
+      if (ind === 'Automotive & Heavy Trading') return 'Korri Auto';
+      return '';
+    };
+    const pfCo = resolvedDomainChrono && resolvedDomainChrono.prefill
+      ? (resolvedDomainChrono.prefill.company || resolvedDomainChrono.prefill.entity || resolvedDomainChrono.prefill.venue || '')
+      : '';
+    const rowCompany = String(initialRowCompany || pfCo || pickColCompany() || inferVerticalCompany() || '').trim();
     const dateCell = cells.find(c => /^\d{4}-\d{2}-\d{2}$/.test(String(c || '').trim())) || todayISO();
     const numericAmt = parseFloat(String(amountCell || '').replace(/[^0-9.-]/g, '')) || 0;
     const domainMeta = {
@@ -78511,6 +78856,34 @@
     const textOnlyLock = canModifyTextOnly();
     const canEditAny = canModifyRecord() && !tillOwned;
     const allowVoid = canVoid() && !tillOwned;
+    const CHRONO_DOMAIN_KEYS = new Set(['ins_agreements', 're_leases', 'trd_targets', 'hsp_tariffs', 'hld_partners', 'hld_loans']);
+    const domainGeoSpec = resolveDomainLocationModifySpec({
+      ind,
+      domainTblKey,
+      viewKey: STATE.view,
+      tableTitle,
+      headers,
+      cells,
+      trEl: opts.trEl,
+      primaryId,
+      rowCompany,
+      savedEntry,
+      resolvedDomainChrono,
+      editStore
+    });
+    const domGeoRegions = domainGeoSpec ? uniqSorted(
+      ((SEED.records && SEED.records.regions) || []).map(r => r.name)
+        .concat(((SEED.records && SEED.records.sites) || []).map(s => s.region))
+        .concat([
+          'Beirut', 'Mount Lebanon', 'South Lebanon', 'Nabatieh', 'Bekaa', 'North Lebanon',
+          'Chouf', 'Saida', 'Tyre', 'Baabda', 'Metn', 'Keserwan', 'Aley', 'Jbeil', 'Batroun', 'Chekka',
+          'Tripoli', 'Koura', 'Zgharta', 'Akkar', 'Zahle', 'Chtaura', 'West Bekaa', 'Rachaiya',
+          'Baalbek', 'Hermel', 'Jezzine', 'Bint Jbeil', 'Marjayoun', 'Hasbaya', 'Jounieh', 'Zouk Mosbeh',
+          'Dbayeh', 'Antelias', 'Zalka', 'Broummana', 'Choueifat', 'Khaldeh', 'Damour', 'Sin El Fil',
+          'Hazmieh', 'Hadath', 'Ghaziyeh', 'Sarafand', 'Dekwaneh', 'Jiyeh', 'Sibline', 'Borj Hammoud', 'Aawkar', 'Halat'
+        ]),
+      getFreqIndex().region
+    ) : [];
 
     const stmtMap = {
       'Holding & Treasury': { id: '23', label: 'Print Statement #23 · Intercompany & Partner Split', glDr: 'Intercompany Liaison Account', glCr: 'Central Treasury Bank', form: 'external', ruleHint: '3-Tier Intercompany Auto-Pairing & Chronological Partner Split Guard' },
@@ -78549,9 +78922,8 @@
       <datalist id="dl_ind_insp_carrier">${inspCatPool.carrier.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
       <datalist id="dl_ind_insp_supplier">${inspCatPool.supplier.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
       <datalist id="dl_ind_insp_site">${inspCatPool.site.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+      ${domGeoRegions.length ? `<datalist id="dl_ind_insp_regions">${domGeoRegions.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>` : ''}
     `;
-    const CHRONO_DOMAIN_KEYS = new Set(['ins_agreements', 're_leases', 'trd_targets', 'hsp_tariffs', 'hld_partners', 'hld_loans']);
-    const resolvedDomainChrono = findDomainRecordPrefillForModal(ind, domainTblKey, primaryId, headers, cells, rowCompany, editKey);
     const isChronoDomainRow = Boolean(resolvedDomainChrono && CHRONO_DOMAIN_KEYS.has(resolvedDomainChrono.formKey) && resolvedDomainChrono.prefill && resolvedDomainChrono.prefill.start_date);
     const hasSeparateStartHeader = headers.some(h => /^(effective start|effective from|start date)$/i.test(String(h || '').trim()));
     const chronoExtraFieldsHtml = (isChronoDomainRow && !hasSeparateStartHeader) ? `
@@ -78754,6 +79126,61 @@
               ${inspDatalistsHtml}
               ${editableFieldsHtml}
             </div>
+            ${domainGeoSpec ? (() => {
+              const lockGeo = !canEditAny || textOnlyLock;
+              const gpsLockBadge = textOnlyLock ? '<span class="badge" style="font-size:9.5px;padding:1px 5px;text-transform:none">🔒 Supervisor Only</span>' : '';
+              const baseHintHtml = domainGeoSpec.baselinePin
+                ? `<span class="badge badge-info" style="margin-left:6px"><span>Parent Pin</span>: <b dir="auto" data-no-i18n="1">${esc(domainGeoSpec.baselinePin.label || '')} (${domainGeoSpec.baselinePin.lat.toFixed(5)}, ${domainGeoSpec.baselinePin.lng.toFixed(5)})</b></span>`
+                : '';
+              return `
+                <div class="ind-insp-geo-card" id="indInspGeoPinCard">
+                  <input type="hidden" id="ind_insp_site_name" value="${esc(domainGeoSpec.siteName)}">
+                  <div class="ind-insp-geo-head">
+                    <div>
+                      <strong>${ic('pin')} <span>${esc(domainGeoSpec.pinLabel)}</span></strong>
+                      ${baseHintHtml}
+                    </div>
+                    <span class="badge ${domainGeoSpec.hadInitialPin ? 'badge-ok' : 'badge-neutral'}">${domainGeoSpec.hadInitialPin ? 'GPS Pinned' : 'Pending coordinates'}</span>
+                  </div>
+                  ${!lockGeo ? `
+                    <div class="form-field geo-link-paste-field" id="indInspGeoLinkWrap" style="margin-top:8px">
+                      <label for="ind_insp_coord_paste">Paste Map or WhatsApp Link</label>
+                      <div class="geo-link-paste-row">
+                        <span class="geo-link-paste-ic" aria-hidden="true">${ic('pin')}</span>
+                        <input type="text" id="ind_insp_coord_paste" inputmode="url" spellcheck="false" enterkeyhint="done" placeholder="WhatsApp location, Google Maps link, Plus Code or coordinates" autocomplete="off">
+                      </div>
+                      <div class="geo-link-status" id="indInspMapLinkStatus" role="status" aria-live="polite" hidden></div>
+                    </div>
+                  ` : ''}
+                  <div class="ind-insp-geo-grid">
+                    <label style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:6px">
+                      <span style="display:flex;align-items:center;justify-content:space-between;gap:4px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--muted)"><span>Latitude (GPS)</span>${gpsLockBadge}</span>
+                      <input type="number" step="0.00001" min="33.0" max="34.8" id="ind_insp_latitude" class="ind-geo-input mono" data-init-val="${esc(domainGeoSpec.initLat)}" value="${esc(domainGeoSpec.initLat)}" placeholder="33.xxxxx (optional)" ${lockGeo ? 'disabled readonly style="padding:5px 8px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--bg,#F1F5F9);color:var(--muted);font-size:12.5px;font-weight:600"' : 'style="padding:5px 8px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--card,#fff);color:var(--ink);font-size:12.5px;font-weight:600"'}>
+                    </label>
+                    <label style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:6px">
+                      <span style="display:flex;align-items:center;justify-content:space-between;gap:4px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--muted)"><span>Longitude (GPS)</span>${gpsLockBadge}</span>
+                      <input type="number" step="0.00001" min="35.0" max="36.8" id="ind_insp_longitude" class="ind-geo-input mono" data-init-val="${esc(domainGeoSpec.initLng)}" value="${esc(domainGeoSpec.initLng)}" placeholder="35.xxxxx (optional)" ${lockGeo ? 'disabled readonly style="padding:5px 8px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--bg,#F1F5F9);color:var(--muted);font-size:12.5px;font-weight:600"' : 'style="padding:5px 8px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--card,#fff);color:var(--ink);font-size:12.5px;font-weight:600"'}>
+                    </label>
+                    <label style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:6px">
+                      <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--muted)">Region / Zone</span>
+                      <input type="text" id="ind_insp_region" list="dl_ind_insp_regions" class="ind-geo-input" data-init-val="${esc(domainGeoSpec.initRegion)}" value="${esc(domainGeoSpec.initRegion)}" placeholder="Select or type region..." autocomplete="off" ${lockGeo ? 'disabled readonly style="padding:5px 8px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--bg,#F1F5F9);color:var(--muted);font-size:12.5px;font-weight:600"' : 'style="padding:5px 8px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--card,#fff);color:var(--ink);font-size:12.5px;font-weight:600"'}>
+                    </label>
+                  </div>
+                  ${!lockGeo ? `
+                    <div class="geo-modal-map-wrap insp-site-map-wrap" id="indInspMapWrap" style="margin-top:8px">
+                      <div class="geo-modal-map-bar">
+                        <span id="indInspMapPrompt"><b>${esc(domainGeoSpec.pinLabel)}:</b> Click map, drag marker, or paste link above</span>
+                        <span class="geo-modal-map-hdr-actions">
+                          <span id="indInspKmReadout" class="insp-site-km-readout">Click map or paste link</span>
+                          <button type="button" class="geo-mini-btn" id="indInspClearPinBtn" hidden>Clear Pin</button>
+                        </span>
+                      </div>
+                      <div class="geo-modal-map-canvas insp-site-map-canvas" id="indInspMapCanvas"></div>
+                    </div>
+                  ` : ''}
+                </div>
+              `;
+            })() : ''}
             <div id="indInspValidationMsg" style="display:none;margin-top:8px;padding:6px 10px;border-radius:6px;font-size:11.5px;font-weight:600"></div>
           </div>
 
@@ -79041,6 +79468,138 @@
             return;
           }
         }
+        let domainGeoSave = null;
+        if (domainGeoSpec && !textOnlyLock) {
+          const gLatInp = $('ind_insp_latitude');
+          const gLngInp = $('ind_insp_longitude');
+          const gRegInp = $('ind_insp_region');
+          const rawLat = gLatInp ? String(gLatInp.value || '').trim() : '';
+          const rawLng = gLngInp ? String(gLngInp.value || '').trim() : '';
+          const rawReg = gRegInp ? String(gRegInp.value || '').trim() : '';
+          const hasLat = rawLat !== '';
+          const hasLng = rawLng !== '';
+          const numLat = hasLat ? Number(rawLat) : null;
+          const numLng = hasLng ? Number(rawLng) : null;
+          if (hasLat !== hasLng || (hasLat && (!Number.isFinite(numLat) || !Number.isFinite(numLng)))) {
+            toast('Enter both GPS Latitude and GPS Longitude, or click Clear Pin.', 'err');
+            return;
+          }
+          if (hasLat && hasLng && window.MFG_GEO && typeof window.MFG_GEO.isPointInLebanon === 'function'
+            && !window.MFG_GEO.isPointInLebanon(numLat, numLng)) {
+            toast('GPS coordinates are outside Lebanon. Check the pinned location or map link.', 'err');
+            return;
+          }
+          const latEdited = Boolean(gLatInp && gLatInp.dataset.userEdited === '1');
+          const lngEdited = Boolean(gLngInp && gLngInp.dataset.userEdited === '1');
+          const regEdited = Boolean(gRegInp && gRegInp.dataset.userEdited === '1');
+          const valChanged = rawLat !== String(domainGeoSpec.initLat ?? '').trim() || rawLng !== String(domainGeoSpec.initLng ?? '').trim();
+          const regChanged = (gRegInp ? String(gRegInp.value || '').trim() : '') !== String(domainGeoSpec.initRegion || '').trim();
+          const pinCleared = !hasLat && (domainGeoSpec.hadInitialPin || domainGeoSpec.initCleared || latEdited || lngEdited || valChanged);
+          const pinTouched = Boolean(pinCleared || latEdited || lngEdited || regEdited || valChanged || regChanged);
+          if (rawReg && window.MFG_GEO && typeof window.MFG_GEO.ensureRegionInSeed === 'function') {
+            window.MFG_GEO.ensureRegionInSeed(rawReg, SEED, STATE);
+          }
+          domainGeoSave = {
+            hasPin: hasLat && hasLng,
+            lat: (hasLat && hasLng) ? Math.round(numLat * 1e6) / 1e6 : null,
+            lng: (hasLat && hasLng) ? Math.round(numLng * 1e6) / 1e6 : null,
+            region: rawReg,
+            pinCleared,
+            pinTouched
+          };
+        }
+        const applyDomainGeoSaveMeta = (targetObj, dgs) => {
+          if (!targetObj || !dgs || !dgs.pinTouched) return;
+          if (domainGeoSpec && domainGeoSpec.siteName && !('id' in targetObj && 'voided' in targetObj && targetObj.name)) {
+            targetObj.siteName = domainGeoSpec.siteName;
+          }
+          if (dgs.pinCleared) {
+            targetObj._pinCleared = true;
+            targetObj.latitude = null;
+            targetObj.longitude = null;
+          } else if (dgs.hasPin) {
+            targetObj._pinCleared = false;
+            targetObj.latitude = dgs.lat;
+            targetObj.longitude = dgs.lng;
+          }
+          if (dgs.region) targetObj.region = dgs.region;
+          else if (dgs.pinTouched && 'region' in targetObj) targetObj.region = '';
+        };
+        const mirrorDomainPinToSites = (dgs) => {
+          if (!domainGeoSpec || !dgs || !dgs.pinTouched) return;
+          const targetInd = domainGeoSpec.ind;
+          const sn = norm(domainGeoSpec.siteName);
+          const pidUp = norm(primaryId);
+          if (!SEED.records) SEED.records = {};
+          if (!Array.isArray(SEED.records.sites)) SEED.records.sites = [];
+          let matchSite = SEED.records.sites.find(s => {
+            if (!s || s.voided || s._industry !== targetInd) return false;
+            if (norm(s.id) === pidUp) return true;
+            if (s._domainPrimaryId && norm(s._domainPrimaryId) === pidUp) return true;
+            if (domainGeoSpec.isReProperty && s._rePropertyId && norm(s._rePropertyId) === pidUp) return true;
+            const sNorm = norm(s.name);
+            return Boolean(sn && sNorm && sNorm === sn);
+          });
+          if (!matchSite) {
+            if (!dgs.hasPin) {
+              if (dgs.pinCleared && domainGeoSpec.siteName && window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function') {
+                window.MFG_GEO.clearLocationPin({ name: domainGeoSpec.siteName, industry: targetInd }, SEED, { skipDomainEditSync: true });
+              }
+              return;
+            }
+            const slug = String(primaryId || domainGeoSpec.siteName || Date.now()).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || String(Date.now());
+            const indSlug = targetInd.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 12) || 'dom';
+            const fallbackCo = domainGeoSpec.isReProperty ? 'Properties' : targetInd;
+            matchSite = {
+              id: domainGeoSpec.isReProperty ? ('site-re-' + slug) : ('site-dom-' + indSlug + '-' + slug),
+              name: domainGeoSpec.siteName || primaryId,
+              company: rowCompany || fallbackCo,
+              _industry: targetInd,
+              _domainPrimaryId: primaryId,
+              _createdByDomainId: primaryId,
+              ...(domainGeoSpec.isReProperty ? { _rePropertyId: primaryId } : {}),
+              site_category: 'customer',
+              customer: true,
+              active: true,
+              region: dgs.region || '',
+              latitude: dgs.lat,
+              longitude: dgs.lng,
+              _pinCleared: false,
+              voided: false,
+              source: 'app'
+            };
+            SEED.records.sites.unshift(matchSite);
+          }
+          if (domainGeoSpec.isReProperty) matchSite._rePropertyId = primaryId;
+          if (!matchSite._domainPrimaryId) matchSite._domainPrimaryId = primaryId;
+          applyDomainGeoSaveMeta(matchSite, dgs);
+          matchSite.modified_at = new Date().toISOString();
+          if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+          const upsertCust = () => {
+            const ci = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(matchSite.id));
+            if (ci >= 0) Object.assign(STATE.customRecords.sites[ci], matchSite);
+            else STATE.customRecords.sites.unshift(Object.assign({}, matchSite));
+          };
+          upsertCust();
+          let postedViaGeo = false;
+          if (dgs.pinCleared && window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function') {
+            window.MFG_GEO.clearLocationPin({ name: matchSite.name, siteCategory: resolveSiteCategory(matchSite), industry: targetInd, excludeId: matchSite.id }, SEED, { skipDomainEditSync: true });
+            matchSite._pinCleared = true;
+            matchSite.latitude = null;
+            matchSite.longitude = null;
+            upsertCust();
+            if (typeof window.MFG_GEO.hydrateSeedGeo === 'function') window.MFG_GEO.hydrateSeedGeo(SEED, true);
+          } else if (dgs.hasPin && window.MFG_GEO && typeof window.MFG_GEO.persistLocationPin === 'function') {
+            postedViaGeo = window.MFG_GEO.persistLocationPin(
+              { targetType: 'site', siteId: matchSite.id, siteCategory: resolveSiteCategory(matchSite), name: matchSite.name, lat: dgs.lat, lng: dgs.lng, region: dgs.region || matchSite.region || '', industry: targetInd },
+              { SEED, STATE, postRecordToLocalApi, uid, company: matchSite.company || rowCompany, precision: 6, rePropertyId: matchSite._rePropertyId, domainPrimaryId: matchSite._domainPrimaryId, skipDomainEditSync: true }
+            );
+          } else if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
+            window.MFG_GEO.hydrateSeedGeo(SEED, true);
+          }
+          saveLocalAuthAndRecords();
+          if (!postedViaGeo) postRecordToLocalApi('sites', matchSite);
+        };
         if (isChronoDomainRow) {
           const fk = resolvedDomainChrono.formKey;
           if (!canManageSiblingChronoSchedule(fk)) {
@@ -79111,6 +79670,10 @@
             autoCloseDate: cState.closeDate,
             status: cState.ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
           });
+          if (domainGeoSave) {
+            applyDomainGeoSaveMeta(upd, domainGeoSave);
+            mirrorDomainPinToSites(domainGeoSave);
+          }
           if (!textOnlyLock) {
             if (fk === 'ins_agreements') {
               const nbInp = findInp(/new bus/);
@@ -79183,18 +79746,31 @@
         const store = getIndustryRowEditStore();
         const prevEntry = store[editKey] || {};
         const nowIso = new Date().toISOString();
-        store[editKey] = {
+        const nextStoreEntry = {
           ind,
           tableTitle,
           primaryId,
+          company: rowCompany || prevEntry.company || '',
           headers,
           cells: nextCells,
           removedDocIds: Array.isArray(prevEntry.removedDocIds) ? prevEntry.removedDocIds : undefined,
+          isReProperty: Boolean((domainGeoSpec && domainGeoSpec.isReProperty) || prevEntry.isReProperty),
           rev: Number(prevEntry.rev || 0) + 1,
           updated_at: nowIso,
           updatedAt: nowIso,
           _revBumped: true
         };
+        if (prevEntry._pinCleared) nextStoreEntry._pinCleared = true;
+        else if (prevEntry.latitude != null && prevEntry.longitude != null) {
+          nextStoreEntry.latitude = prevEntry.latitude;
+          nextStoreEntry.longitude = prevEntry.longitude;
+        }
+        if (prevEntry.region) nextStoreEntry.region = prevEntry.region;
+        if (domainGeoSave) {
+          applyDomainGeoSaveMeta(nextStoreEntry, domainGeoSave);
+          mirrorDomainPinToSites(domainGeoSave);
+        }
+        store[editKey] = nextStoreEntry;
         saveIndustryRowEditStore(store);
         if (opts.trEl && opts.trEl.isConnected) {
           const tblEl = opts.trEl.closest('table');
@@ -79231,17 +79807,18 @@
           const store = getIndustryRowEditStore();
           const prevEntry = store[editKey] || {};
           const nowIso = new Date().toISOString();
-          store[editKey] = {
+          store[editKey] = Object.assign({}, prevEntry, {
             ind,
             tableTitle,
             primaryId,
+            company: rowCompany || prevEntry.company || '',
             voided: true,
             removedDocIds: Array.isArray(prevEntry.removedDocIds) ? prevEntry.removedDocIds : undefined,
             rev: Number(prevEntry.rev || 0) + 1,
             updated_at: nowIso,
             updatedAt: nowIso,
             _revBumped: true
-          };
+          });
           saveIndustryRowEditStore(store);
           const wasCustom = voidIndustryCustomRowById(primaryId, { skipCloudSync: true });
           if (isChronoDomainRow) {
@@ -79254,6 +79831,60 @@
             if (store[editKey]) {
               delete store[editKey];
               saveIndustryRowEditStore(store);
+            }
+          }
+          if (domainGeoSpec && SEED && SEED.records && Array.isArray(SEED.records.sites)) {
+            const targetInd = domainGeoSpec.ind;
+            const reSlug = String(primaryId || domainGeoSpec.siteName || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            const reExpectedId = norm(`site-re-${reSlug}`);
+            const reRawId = norm(`site-re-${primaryId}`);
+            const rePidNorm = norm(primaryId);
+            const reSn = norm(domainGeoSpec.siteName || '');
+            const matchesMirroredSite = (s) => {
+              if (!s || s.voided || s._industry !== targetInd) return false;
+              if (domainGeoSpec.isReProperty) {
+                const sid = norm(s.id);
+                if (sid && (sid === reExpectedId || sid === reRawId || sid === rePidNorm)) return true;
+                if (s._rePropertyId && norm(s._rePropertyId) === rePidNorm) return true;
+                if (String(s.id || '').toLowerCase().startsWith('site-re-') && reSn && norm(s.name) === reSn) return true;
+                return false;
+              }
+              if (s._createdByDomainId && norm(s._createdByDomainId) === rePidNorm) return true;
+              if (String(s.id || '').toLowerCase().startsWith('site-dom-') && s._domainPrimaryId && norm(s._domainPrimaryId) === rePidNorm) return true;
+              return false;
+            };
+            const voidTs = new Date().toISOString();
+            const byUser = (typeof activeUser === 'function' && activeUser() && activeUser().email) || 'app';
+            if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+            const voidedMap = new Map();
+            const markVoidSite = (s) => {
+              s.voided = true;
+              s.modified_at = voidTs;
+              s.modified_by = byUser;
+              if (s.id != null) voidedMap.set(String(s.id), s);
+            };
+            STATE.customRecords.sites.forEach(s => {
+              if (matchesMirroredSite(s)) markVoidSite(s);
+            });
+            SEED.records.sites.forEach(s => {
+              if (!matchesMirroredSite(s)) return;
+              markVoidSite(s);
+              const ci = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(s.id));
+              if (ci >= 0) Object.assign(STATE.customRecords.sites[ci], s);
+              else STATE.customRecords.sites.unshift(Object.assign({}, s));
+            });
+            if (voidedMap.size > 0) {
+              if (window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function') {
+                voidedMap.forEach(vs => {
+                  window.MFG_GEO.clearLocationPin({ name: vs.name, siteCategory: resolveSiteCategory(vs), industry: targetInd, excludeId: vs.id }, SEED, { skipDomainEditSync: true });
+                });
+              }
+              applyCustomRecordsToSeed();
+              saveLocalAuthAndRecords();
+              if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
+                window.MFG_GEO.hydrateSeedGeo(SEED, true);
+              }
+              voidedMap.forEach(s => postRecordToLocalApi('sites', s));
             }
           }
           voidDomainRecordAttachments(domainTblKey, primaryId);
@@ -79420,6 +80051,20 @@
     }
 
     panel.hidden = false;
+    if (bodyEl && domainGeoSpec && canEditAny && !textOnlyLock && window.MFG_GEO && typeof window.MFG_GEO.wireDomainInspectorModifyMap === 'function') {
+      const indGeoCard = $('indInspGeoPinCard');
+      if (indGeoCard) {
+        window.MFG_GEO.wireDomainInspectorModifyMap(indGeoCard, {
+          pinLabel: domainGeoSpec.pinLabel,
+          company: rowCompany,
+          baselinePin: domainGeoSpec.baselinePin,
+          siteName: domainGeoSpec.siteName
+        }, SEED);
+        if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+          try { window.MFG_I18N.translateDom(indGeoCard); } catch (_) {}
+        }
+      }
+    }
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
       window.MFG_AI_EDGE.syncAllSurfacesNow();
     }
@@ -83404,8 +84049,13 @@
     return rows.find(s => resolveSiteCategory(s) === 'customer') || rows[0] || null;
   }
   function _tktPinHasPin(row) {
-    const ok = v => v != null && String(v).trim() !== '' && Number.isFinite(Number(v));
-    return Boolean(row && ok(row.latitude) && ok(row.longitude));
+    if (!row || row._pinCleared === true || row._pinCleared === 'true' || row._pinCleared === 1) return false;
+    const ok = v => v != null && typeof v !== 'boolean' && typeof v !== 'object' && String(v).trim() !== '' && Number.isFinite(Number(v));
+    if (!ok(row.latitude) || !ok(row.longitude)) return false;
+    const la = Number(row.latitude);
+    const ln = Number(row.longitude);
+    if (la < -90 || la > 90 || ln < -180 || ln > 180) return false;
+    return !(Math.abs(la) < 1e-4 && Math.abs(ln) < 1e-4);
   }
   function canPinSiteFromTicket(u) {
     u = u || activeUser();
@@ -83442,23 +84092,35 @@
     const nLat = Math.round(Number(lat) * 1e5) / 1e5;
     const nLng = Math.round(Number(lng) * 1e5) / 1e5;
     if (!Number.isFinite(nLat) || !Number.isFinite(nLng)) return false;
+    if (lat == null || lng == null || typeof lat === 'boolean' || typeof lng === 'boolean' || typeof lat === 'object' || typeof lng === 'object') return false;
+    if (!Number.isFinite(nLat) || !Number.isFinite(nLng) || nLat < -90 || nLat > 90 || nLng < -180 || nLng > 180 || (Math.abs(nLat) < 1e-4 && Math.abs(nLng) < 1e-4)) return false;
+    // Same write as Edit Site, with the site's own Region passed explicitly so it is kept as it is
+    const pinSaved = G.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category || resolveSiteCategory(row), name: row.name, lat: nLat, lng: nLng, region }, { SEED, STATE, userEmail: activeUser().email, allowTicketMissingPin: true, saveLocal: saveLocalAuthAndRecords });
+    if (pinSaved === false) return false;
     row._pinCleared = false;
     row.latitude = nLat;
     row.longitude = nLng;
-    // Same write as Edit Site, with the site's own Region passed explicitly so it is kept as it is
-    G.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category || resolveSiteCategory(row), name: row.name, lat: nLat, lng: nLng, region }, { SEED, STATE, userEmail: activeUser().email });
     if (String(row.region || '').trim() !== region) row.region = region;
     // Stamped after persistLocationPin, which writes its own stamps on the same row
     row.modified_by = activeUser().email;
     row.modified_at = nextMonotonicIso();
     if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+    const customSiteCopy = Object.assign({}, row);
+    delete customSiteCopy.geo_zone;
     const cIdx = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(row.id));
-    if (cIdx >= 0) Object.assign(STATE.customRecords.sites[cIdx], row);
-    else STATE.customRecords.sites.unshift(Object.assign({}, row));
+    if (cIdx >= 0) {
+      Object.assign(STATE.customRecords.sites[cIdx], customSiteCopy);
+      delete STATE.customRecords.sites[cIdx].geo_zone;
+    } else {
+      STATE.customRecords.sites.unshift(customSiteCopy);
+    }
     applyCustomRecordsToSeed();
     saveLocalAuthAndRecords();
     if (!window.__fastInspectorModifyTest) {
-      postRecordToLocalApi('sites', row);
+      const apiSite = Object.assign({}, row);
+      delete apiSite.geo_zone;
+      delete apiSite._seed_orig;
+      postRecordToLocalApi('sites', apiSite);
       syncWithCloud(true);
     }
     return true;
@@ -83512,10 +84174,12 @@
       toast('Pin saved on the site', 'ok');
       try { recalcForm(); } catch (_) {}
     };
+    let reqGen = 0;
     const apply = force => {
       const raw = String(inp.value || '');
       if (!force && raw === inp.dataset.lastVal) return;
       inp.dataset.lastVal = raw;
+      const myGen = ++reqGen;
       pending = null;
       if (saveBtn) saveBtn.hidden = true;
       if (!raw.trim()) { setStatus('', ''); inp.removeAttribute('aria-invalid'); return; }
@@ -83527,6 +84191,29 @@
       const ref = hub ? { lat: hub.lat, lng: hub.lng, label: hub.name } : null;
       const parsed = G.parseMapLink(raw, { SEED, ref });
       const dec = decideTicketSitePin(cur, parsed);
+      if (dec.action === 'error' && dec.code === 'short_link' && typeof G.resolveShortMapLink === 'function') {
+        setStatus(`<span class="geo-link-ic is-warn">${ic('pin')}</span><span class="geo-link-msg"><span>Expanding short map link...</span></span>`, 'is-warn');
+        G.resolveShortMapLink(raw).then(res => {
+          if (!inp.isConnected || myGen !== reqGen || String(inp.value || '') !== raw) return;
+          if (res && res.ok && res.resolvedUrl && res.resolvedUrl !== raw) {
+            inp.value = res.resolvedUrl;
+            inp.dataset.lastVal = '';
+            apply(true);
+            return;
+          }
+          inp.setAttribute('aria-invalid', 'true');
+          const failParsed = (res && res.code === 'offline')
+            ? { ok: false, code: 'short_link' }
+            : { ok: false, code: (res && res.code) || 'short_link_unresolvable', reason: res && res.reason };
+          setStatus(G.renderMapLinkStatusHtml(failParsed), 'is-warn');
+        }).catch(() => {
+          if (!inp.isConnected || myGen !== reqGen || String(inp.value || '') !== raw) return;
+          inp.setAttribute('aria-invalid', 'true');
+          const offlineNow = typeof navigator !== 'undefined' && navigator.onLine === false;
+          setStatus(G.renderMapLinkStatusHtml({ ok: false, code: offlineNow ? 'short_link' : 'short_link_unresolvable' }), 'is-warn');
+        });
+        return;
+      }
       if (dec.action === 'error') {
         inp.setAttribute('aria-invalid', 'true');
         setStatus(G.renderMapLinkStatusHtml(parsed || { ok: false, code: 'unrecognized' }), dec.code === 'short_link' ? 'is-warn' : 'is-crit');
@@ -101032,10 +101719,6 @@
           addErr(geoCheck.field || 'f_region', geoCheck.reason);
         } else {
           siteReg = geoCheck.region || siteReg || '';
-          if (!pinClearedInEdit && (siteLat == null || siteLng == null) && geoCheck.lat != null && geoCheck.lng != null) {
-            siteLat = geoCheck.lat;
-            siteLng = geoCheck.lng;
-          }
           if (siteReg && typeof window.MFG_GEO.ensureRegionInSeed === 'function') {
             window.MFG_GEO.ensureRegionInSeed(siteReg, SEED, STATE);
           }
@@ -103516,7 +104199,9 @@
         }
       }
       if (crKey === 'sites' && window.MFG_GEO) {
-        if (isEditingExisting && editCtx && editCtx.orig && typeof window.MFG_GEO.clearLocationPin === 'function') {
+        const allowNewSiteEntry = !isEditingExisting && canEnterForm('site');
+        const allowPinMut = canModifyData() || allowNewSiteEntry;
+        if (allowPinMut && isEditingExisting && editCtx && editCtx.orig && typeof window.MFG_GEO.clearLocationPin === 'function') {
           const origCat = resolveSiteCategory(editCtx.orig);
           const nameChanged = norm(editCtx.orig.name) !== norm(record.name);
           const catChanged = origCat !== record.site_category;
@@ -103529,8 +104214,8 @@
             window.MFG_GEO.clearLocationPin({ name: record.name, siteCategory: record.site_category, excludeId: record.id, industry: effInd }, SEED);
           }
         }
-        if (record.latitude != null && record.longitude != null) {
-          window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: record.id, siteCategory: record.site_category, name: record.name, lat: record.latitude, lng: record.longitude, region: record.region }, { SEED, STATE });
+        if (allowPinMut && record.latitude != null && record.longitude != null) {
+          window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: record.id, siteCategory: record.site_category, name: record.name, lat: record.latitude, lng: record.longitude, region: record.region }, { SEED, STATE, allowNewSiteModal: allowNewSiteEntry });
         }
       }
       if (crKey === 'sites' && record.is_jv) {
@@ -108317,6 +109002,8 @@
         { key: 'phone', label: 'Phone / Contact Number', type: 'tel', sec: 1, placeholder: '+961 ...', getVal: r => r.phone || r.contact || (customerInfo(r.name || r.Customer) || {}).phone || '' },
         { key: 'email', label: 'Email Address', type: 'text', sec: 1, placeholder: 'billing@client.com' },
         { key: 'address', label: 'Region / Address', type: 'combo', dl: 'dl_insp_regions', sec: 1, placeholder: 'Select or type region / address...', getVal: r => r.address || r.region || (customerInfo(r.name || r.Customer) || {}).address || '' },
+        { key: 'latitude', label: 'Latitude (GPS)', type: 'number', step: '0.00001', min: '33.0', max: '34.8', sec: 1, placeholder: '33.xxxxx (optional)', getVal: r => { if (r._pinCleared) return ''; if (r.latitude != null && r.latitude !== '') return r.latitude; const ci = customerInfo(r.name || r.Customer); return (ci && !ci._pinCleared && ci.latitude != null && ci.latitude !== '') ? ci.latitude : ''; } },
+        { key: 'longitude', label: 'Longitude (GPS)', type: 'number', step: '0.00001', min: '35.0', max: '36.8', sec: 1, placeholder: '35.xxxxx (optional)', getVal: r => { if (r._pinCleared) return ''; if (r.longitude != null && r.longitude !== '') return r.longitude; const ci = customerInfo(r.name || r.Customer); return (ci && !ci._pinCleared && ci.longitude != null && ci.longitude !== '') ? ci.longitude : ''; } },
         { key: 'vat_registered', label: 'VAT 11% Registered', type: 'bool', sec: 1, getVal: r => Boolean(r.vat_registered || (customerInfo(r.name || r.Customer) || {})['VAT Registered'] === 'Yes') },
         { key: 'mof_no', label: 'MOF Tax Number', type: 'text', sec: 1, placeholder: 'Ministry of Finance #...', getVal: r => r.mof_no || r.financial_no || (customerInfo(r.name || r.Customer) || {}).mof_no || '' },
         { key: 'credit_days', label: 'Credit Terms (Days)', type: 'number', step: '1', min: '0', sec: 3, placeholder: 'e.g. 30', getVal: r => { if (r.credit_days != null && r.credit_days !== '') return r.credit_days; const ct = creditTermsForCustomer(r.name || r.Customer); return ct && ct.credit_days != null ? ct.credit_days : ''; } },
@@ -108333,6 +109020,8 @@
         { key: 'category2', label: 'Secondary Category (Optional)', type: 'select', options: [['', 'None']].concat(suppCatOpts.map(c => [c, c])), sec: 2, getVal: r => r.category2 || (Array.isArray(r.categories) && r.categories[1]) || (r.category ? String(r.category).split(/\s*,\s*/)[1] : '') || '' },
         { key: 'phone', label: 'Phone / Contact Number', type: 'tel', sec: 1, placeholder: '+961 ...', getVal: r => r.phone || r.contact || (supplierInfo(r.name || r.Supplier) || {}).phone || '' },
         { key: 'location', label: 'Region / Location', type: 'combo', dl: 'dl_insp_regions', sec: 1, placeholder: 'Select or type region / location...', getVal: r => r.location || r.region || (supplierInfo(r.name || r.Supplier) || {}).location || '' },
+        { key: 'latitude', label: 'Latitude (GPS)', type: 'number', step: '0.00001', min: '33.0', max: '34.8', sec: 1, placeholder: '33.xxxxx (optional)', getVal: r => { if (r._pinCleared) return ''; if (r.latitude != null && r.latitude !== '') return r.latitude; const si = supplierInfo(r.name || r.Supplier); return (si && !si._pinCleared && si.latitude != null && si.latitude !== '') ? si.latitude : ''; } },
+        { key: 'longitude', label: 'Longitude (GPS)', type: 'number', step: '0.00001', min: '35.0', max: '36.8', sec: 1, placeholder: '35.xxxxx (optional)', getVal: r => { if (r._pinCleared) return ''; if (r.longitude != null && r.longitude !== '') return r.longitude; const si = supplierInfo(r.name || r.Supplier); return (si && !si._pinCleared && si.longitude != null && si.longitude !== '') ? si.longitude : ''; } },
         { key: 'iva', label: 'VAT / IVA Registered', type: 'bool', sec: 1, getVal: r => Boolean(r.iva || (supplierInfo(r.name || r.Supplier) || {}).iva) },
         { key: 'mof_no', label: 'MOF / Financial Number', type: 'text', sec: 1, placeholder: 'Ministry of Finance #...', getVal: r => r.mof_no || r.financial_no || (supplierInfo(r.name || r.Supplier) || {}).mof_no || '' },
         { key: 'is_truck_owner', label: 'Registered Hauler / Truck Owner', type: 'bool', sec: 2, getVal: r => Boolean(r.is_truck_owner || (supplierInfo(r.name || r.Supplier) || {}).is_truck_owner) },
@@ -109108,6 +109797,7 @@
     if (!anyDriverEdited) {
       Object.keys(orig).forEach(k => {
         if (editedSet && editedSet.has(k)) return;
+        if (updated._pinCleared && (k === 'latitude' || k === 'longitude')) return;
         if (k === 'overtime' && editedSet && (editedSet.has('time') || editedSet.has('driver') || editedSet.has('transport_by'))) return;
         if (typeof orig[k] === 'number' || k.endsWith('_indiff')) {
           updated[k] = orig[k];
@@ -110771,8 +111461,18 @@
     bodyEl._activeTableContext = tc;
     bodyEl._preModifySnap = null;
     const isInspWordOnly = canModifyTextOnly();
-    const hasInspSitePin = key === 'sites' && row.latitude != null && row.latitude !== '' && row.longitude != null && row.longitude !== '' && Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude));
+    const isGeoEntityInspector = key === 'sites' || key === 'customers' || key === 'suppliers';
+    const hasInspSitePin = isGeoEntityInspector && !row._pinCleared && row.latitude != null && row.latitude !== '' && row.longitude != null && row.longitude !== '' && Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude));
     const isMfgSiteDrawer = key === 'sites' && getActiveIndustry() === 'Manufacturing' && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing');
+    const inspTicketGatePin = ((key === 'sales_tickets' || key === 'raw_purchases') && row.site && window.MFG_GEO && typeof window.MFG_GEO.resolveVerifiedSiteGatePin === 'function')
+      ? window.MFG_GEO.resolveVerifiedSiteGatePin(row.site, {
+          side: key === 'raw_purchases' ? 'raw' : 'sales',
+          company: row.company,
+          ticketNo: row.ticket_no || row.invoice_no || row.id,
+          SEED,
+          STATE
+        })
+      : null;
     bodyEl.innerHTML = `
       <!-- Shared Searchable Datalists for Inspector Modification Drawer & Equipment Log -->
       <div hidden aria-hidden="true">
@@ -110824,7 +111524,8 @@
           ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">${ic('ruler')} Truck Size Windows (${eqWindows.length})</button>` : ''}
           ${!row.voided && canVoid() ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
           ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
-          ${key === 'sites' && !hasInspSitePin && canModifyRecord() && !isInspWordOnly ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPinSiteQuickBtn">${ic('pin')} Pin Location</button>` : ''}
+          ${inspTicketGatePin && inspTicketGatePin.whatsappUrl ? `<a class="pa-cmd-btn btn-brass" id="inspWhatsAppGatePinBtn" href="${esc(inspTicketGatePin.whatsappUrl)}" target="_blank" rel="noopener">${ic('send')} WhatsApp Gate Pin</a>` : ''}
+          ${isGeoEntityInspector && !hasInspSitePin && canModifyRecord() && !isInspWordOnly ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPinSiteQuickBtn">${ic('pin')} Pin Location</button>` : ''}
           ${(key === 'sites' || key === 'regions' || ((key === 'sales_tickets' || key === 'raw_purchases') && row.site)) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspViewOnMapBtn">${ic('reg_sites')} View on Map</button>` : ''}
           <button type="button" class="pa-cmd-btn" data-insp-open-hub="${esc(key)}">${ic('tables')} Open ${esc(INSPECT_LABELS[key] || key)} Table</button>
           <button type="button" class="pa-cmd-btn" id="inspPrintBtn">${ic('printer')} Print Form</button>
@@ -110841,7 +111542,7 @@
           <span class="badge badge-brass">${isInspWordOnly ? 'WORDS ONLY · NUMBERS LOCKED TO SUPERVISOR' : 'MODIFY DATA PRIVILEGE VERIFIED'}</span>
         </div>
         <div class="form-grid-3" style="margin-top:10px">
-          ${(key === 'sites' && !isInspWordOnly) ? `
+          ${(isGeoEntityInspector && !isInspWordOnly) ? `
             <div class="form-field span-3 geo-link-paste-field" id="inspSiteMapLinkWrap">
               <label for="insp_site_coord_paste">Paste Map or WhatsApp Link</label>
               <div class="geo-link-paste-row">
@@ -110852,13 +111553,21 @@
             </div>
           ` : ''}
           ${(() => {
-            if (key !== 'sites' || isInspWordOnly) return editSchema.map(renderModFieldHtml).join('');
+            if (!isGeoEntityInspector || isInspWordOnly) return editSchema.map(renderModFieldHtml).join('');
+            const inspPinPrompt = key === 'customers'
+              ? '<b>Customer Delivery / Office Pin:</b> Click on the map, drag the pin, or paste a link above to set or modify where this customer is located'
+              : (key === 'suppliers'
+                ? '<b>Supplier / Hauler Pin:</b> Click on the map, drag the pin, or paste a link above to set or modify where this supplier or hauler is located'
+                : '<b>Site Location:</b> Click on the map, drag the pin, or select a Region above to set or modify where this site is');
+            const inspKmInitTxt = key !== 'sites'
+              ? 'Click map or paste link'
+              : (isMfgSiteDrawer ? 'Click map or select Region to estimate KM' : 'Click map or select Region');
             const siteMapBoxHtml = `
               <div class="geo-modal-map-wrap insp-site-map-wrap" id="inspSiteMapWrap">
                 <div class="geo-modal-map-bar">
-                  <span id="inspSiteMapPrompt"><b>Site Location:</b> Click on the map, drag the pin, or select a Region above to set or modify where this site is</span>
+                  <span id="inspSiteMapPrompt">${inspPinPrompt}</span>
                   <span class="geo-modal-map-hdr-actions">
-                    <span id="inspSiteKmReadout" class="insp-site-km-readout">${isMfgSiteDrawer ? 'Click map or select Region to estimate KM' : 'Click map or select Region'}</span>
+                    <span id="inspSiteKmReadout" class="insp-site-km-readout">${inspKmInitTxt}</span>
                     <button type="button" class="geo-mini-btn" id="inspClearSitePinBtn" hidden>Clear Pin</button>
                   </span>
                 </div>
@@ -110933,6 +111642,8 @@
       </div>
 
       ${siteNetBackInspHtml}
+
+      ${inspTicketGatePin && window.MFG_GEO && typeof window.MFG_GEO.renderGatePinCardHtml === 'function' ? `<div id="inspTicketGatePinCard" class="insp-ticket-gate-wrap">${window.MFG_GEO.renderGatePinCardHtml(inspTicketGatePin, { variant: 'inspector' })}</div>` : ''}
 
       ${tc ? `
         <div class="pa-subgrid-box" id="inspTableRowSnapshot" style="margin-bottom:14px">
@@ -111695,6 +112406,19 @@
           const mCust = (custRes && custRes.activeCustomer) || row.customer || '';
           html = `<span>Supply Basis: <b>${isBundledMod ? 'Mat + Trans Included (Split Unknown)' : 'Standard Site (Separate Haul)'}</b></span><span>Region: <b>${esc(mReg)}</b></span>${mSup ? `<span>Active Supplier: <b>${esc(mSup)}</b></span>` : ''}${mCust ? `<span>Active Customer: <b>${esc(mCust)}</b></span>` : ''}${gpsSummaryPart}`;
         }
+      } else if (key === 'customers' || key === 'suppliers') {
+        const modLatRaw = getModVal('latitude');
+        const modLngRaw = getModVal('longitude');
+        const hasModGps = modLatRaw !== '' && modLngRaw !== '' && Number.isFinite(Number(modLatRaw)) && Number.isFinite(Number(modLngRaw));
+        const modLatEdited = $('insp_edit_latitude') && $('insp_edit_latitude').dataset.userEdited === '1';
+        const modLngEdited = $('insp_edit_longitude') && $('insp_edit_longitude').dataset.userEdited === '1';
+        const wasPinCleared = !hasModGps && hasInspSitePin && Boolean(modLatEdited || modLngEdited);
+        const locLbl = key === 'customers' ? 'Region / Address' : 'Region / Location';
+        const locVal = (key === 'customers' ? (getModVal('address') || row.address) : (getModVal('location') || row.location)) || row.region || 'Lebanon';
+        const gpsSummaryPart = `<span><span>GPS Pin</span>: ${hasModGps
+          ? `<b dir="auto" style="unicode-bidi:isolate" data-no-i18n="1">${esc(Number(modLatRaw).toFixed(5) + ', ' + Number(modLngRaw).toFixed(5))}</b>`
+          : (wasPinCleared ? '<b>Pin Cleared</b>' : '<b>Pending coordinates</b>')}</span>`;
+        html = `<span>${locLbl}: <b>${esc(locVal)}</b></span>${gpsSummaryPart}`;
       }
       if (modDrawer && isEffectiveSeriesTable(key, row)) {
         const modCand = Object.assign({}, row);
@@ -111734,8 +112458,14 @@
       }
       modDrawer.hidden = false;
       syncModifyLiveSummary();
-      if (key === 'sites' && !isInspWordOnly && !window.__fastInspectorModifyTest && window.MFG_GEO && typeof window.MFG_GEO.wireInspectorSiteModifyMap === 'function') {
-        window.MFG_GEO.wireInspectorSiteModifyMap(modDrawer, row, SEED);
+      if (isGeoEntityInspector && !isInspWordOnly && !window.__fastInspectorModifyTest && window.MFG_GEO && typeof window.MFG_GEO.wireInspectorSiteModifyMap === 'function') {
+        window.MFG_GEO.wireInspectorSiteModifyMap(modDrawer, row, SEED, {
+          tableKey: key,
+          regSel: key === 'customers' ? '#insp_edit_address' : (key === 'suppliers' ? '#insp_edit_location' : '#insp_edit_region'),
+          skipRegionContainmentCheck: key !== 'sites',
+          onlyFillEmptyRegion: key !== 'sites',
+          pinLabel: key === 'customers' ? 'Customer Pin' : (key === 'suppliers' ? 'Supplier Pin' : 'Site Pin')
+        });
       }
       if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
         window.MFG_I18N.translateDom(modDrawer);
@@ -111744,7 +112474,7 @@
         ? $('insp_site_coord_paste')
         : (focusFieldKey
           ? $('insp_edit_' + focusFieldKey)
-          : ((key === 'sites' && !isInspWordOnly && !hasInspSitePin && $('insp_site_coord_paste'))
+          : ((isGeoEntityInspector && !isInspWordOnly && !hasInspSitePin && $('insp_site_coord_paste'))
             ? $('insp_site_coord_paste')
             : modDrawer.querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled])')));
       if (targetInp) {
@@ -111781,7 +112511,7 @@
       openModifyDrawerAndFocus(opts.focusModifyField);
     }
     const closeAndResetSiteModifyUi = () => {
-      if (key === 'sites' && modDrawer) {
+      if (isGeoEntityInspector && modDrawer) {
         modDrawer.querySelectorAll('[data-mod-field]').forEach(el => {
           const initV = el.getAttribute('data-init-val');
           if (initV !== null) el.value = initV;
@@ -112023,6 +112753,24 @@
             } else if (!candBundled && !String(candidate.region || '').trim()) {
               toast('Region / Zone is required for Standard Sites (unless Bundled Supplier Material + Transport is enabled).', 'err');
               return;
+            }
+          } else if (key === 'customers' || key === 'suppliers') {
+            const rawCandLat = candidate.latitude;
+            const rawCandLng = candidate.longitude;
+            const hasCandLat = rawCandLat !== null && rawCandLat !== undefined && String(rawCandLat).trim() !== '';
+            const hasCandLng = rawCandLng !== null && rawCandLng !== undefined && String(rawCandLng).trim() !== '';
+            const checkCoords = ('latitude' in pendingUpdates) || ('longitude' in pendingUpdates);
+            if (hasCandLat !== hasCandLng || (hasCandLat && (!Number.isFinite(Number(rawCandLat)) || !Number.isFinite(Number(rawCandLng))))) {
+              toast('Enter both GPS Latitude and GPS Longitude, or click Clear Pin.', 'err');
+              return;
+            }
+            if (checkCoords && hasCandLat && hasCandLng && window.MFG_GEO && typeof window.MFG_GEO.isPointInLebanon === 'function'
+              && !window.MFG_GEO.isPointInLebanon(Number(rawCandLat), Number(rawCandLng))) {
+              toast('GPS coordinates are outside Lebanon. Check the pinned location or map link.', 'err');
+              return;
+            }
+            if (candidate.region && window.MFG_GEO && typeof window.MFG_GEO.ensureRegionInSeed === 'function') {
+              window.MFG_GEO.ensureRegionInSeed(candidate.region, SEED, STATE);
             }
           }
         }
@@ -112822,6 +113570,28 @@
           resolveUniversalFutureTableCalc(origRowSnap, row, editedKeySet, getLbpFxRate(row.date || row.rep_date || todayISO()));
         }
 
+        if (key === 'customers' || key === 'suppliers') {
+          const pinRemoved = row.latitude == null || row.latitude === '' || row.longitude == null || row.longitude === '';
+          const pinWasEditedToEmpty = ('latitude' in pendingUpdates || 'longitude' in pendingUpdates) && pinRemoved;
+          const origHadPin = Boolean(origRowSnap && !origRowSnap._pinCleared && origRowSnap.latitude != null && origRowSnap.longitude != null && origRowSnap.latitude !== '' && origRowSnap.longitude !== '');
+          if (pinWasEditedToEmpty) {
+            row._pinCleared = true;
+            row.latitude = null;
+            row.longitude = null;
+            row.source = row.source || 'app';
+          } else if (row.latitude != null && row.longitude != null && row.latitude !== '' && row.longitude !== '' && (!isSaveWordOnly || origHadPin)) {
+            row._pinCleared = false;
+            row.source = row.source || 'app';
+          }
+          const locTxt = key === 'customers' ? String(row.address || row.region || '').trim() : String(row.location || row.region || '').trim();
+          if (locTxt && (!row.region || 'address' in pendingUpdates || 'location' in pendingUpdates)) {
+            row.region = locTxt;
+          }
+          row.name = row.name || row.Customer || row.Supplier || String(idOrName || '');
+          if (key === 'customers' && row.name) row.Customer = row.name;
+          if (key === 'suppliers' && row.name) row.Supplier = row.name;
+        }
+
         // Universal Post-Save Numeric Invariance Guard across all 46 current tables + any 47th+ future table
         enforceUneditedNumericInvariance(origRowSnap, row, editedKeySet);
         if (isSaveWordOnly) {
@@ -113340,6 +114110,7 @@
       }
     } catch (_) { /* storage full or blocked — the cloud copy still holds the state */ }
   }
+  if (typeof window !== 'undefined') window.__mfgSaveLocalAuthAndRecords = saveLocalAuthAndRecords;
 
   function mergeUserRow(existing, incoming) {
     if (!existing) {
@@ -114525,6 +115296,14 @@
           if (dvn.phone) out.phone = dvn.phone;
           if (dvn.address || dvn.region) { out.address = dvn.address || dvn.region; out.region = dvn.region || dvn.address; }
           if (dvn.mof_no) out.mof_no = dvn.mof_no;
+          if ('_pinCleared' in dvn) {
+            out._pinCleared = Boolean(dvn._pinCleared);
+            if (out._pinCleared) { out.latitude = null; out.longitude = null; }
+          }
+          if (!out._pinCleared) {
+            if (dvn.latitude != null && dvn.latitude !== '') out.latitude = dvn.latitude;
+            if (dvn.longitude != null && dvn.longitude !== '') out.longitude = dvn.longitude;
+          }
           return out;
         });
       }
@@ -114543,6 +115322,14 @@
             if (dvn.phone || dvn.contact) { out.phone = dvn.phone || dvn.contact; out.contact = dvn.contact || dvn.phone; }
             if (dvn.location || dvn.region) { out.location = dvn.location || dvn.region; out.region = dvn.region || dvn.location; }
             if (dvn.mof_no || dvn.financial_no) { out.mof_no = dvn.mof_no || dvn.financial_no; out.financial_no = dvn.financial_no || dvn.mof_no; }
+            if ('_pinCleared' in dvn) {
+              out._pinCleared = Boolean(dvn._pinCleared);
+              if (out._pinCleared) { out.latitude = null; out.longitude = null; }
+            }
+            if (!out._pinCleared) {
+              if (dvn.latitude != null && dvn.latitude !== '') out.latitude = dvn.latitude;
+              if (dvn.longitude != null && dvn.longitude !== '') out.longitude = dvn.longitude;
+            }
           }
           if (ed) {
             out.expenses = round2(Number(out.expenses || 0) + ed.tot);
@@ -146051,6 +146838,10 @@
         SEED,
         STATE,
         canAccessTable,
+        canAddSite: canEnterForm('site', activeUserRow),
+        canPinLocations: canModifyData(activeUserRow),
+        canEnterSite: canEnterForm('site', activeUserRow),
+        canModifyRecord: canModifyRecord(activeUserRow),
         filterRecords,
         rerenderWorkspace: () => renderApp(),
         openInspector: (k, id) => showRecordInspector(k, id),

@@ -484,7 +484,10 @@
         reference: record.reference || '',
         notes: record.notes || '',
         enteredBy: record.entered_by || 'Weighbridge Operator',
-        barcodeDigits
+        barcodeDigits,
+        gatePin: (typeof window !== 'undefined' && window.MFG_GEO && typeof window.MFG_GEO.resolveVerifiedSiteGatePin === 'function')
+          ? window.MFG_GEO.resolveVerifiedSiteGatePin(record.site, { side: 'raw', company, ticketNo })
+          : null
       };
     }
 
@@ -602,7 +605,10 @@
       priceRule: record.price_rule || '',
       notes: record.notes || '',
       enteredBy: record.entered_by || 'Weighbridge Operator',
-      barcodeDigits
+      barcodeDigits,
+      gatePin: (typeof window !== 'undefined' && window.MFG_GEO && typeof window.MFG_GEO.resolveVerifiedSiteGatePin === 'function')
+        ? window.MFG_GEO.resolveVerifiedSiteGatePin(record.site, { side: 'sales', company, ticketNo })
+        : null
     };
   }
 
@@ -811,6 +817,23 @@
     if (d.notes) {
       line(SEP);
       line('Notes: ' + d.notes.slice(0, W - 7));
+    }
+
+    if (d.gatePin && typeof window !== 'undefined' && window.MFG_GEO && typeof window.MFG_GEO.packQrEscPosRaster === 'function') {
+      const qrPx = d.paperWidth === '58mm' ? 148 : 176;
+      const qrBytes = window.MFG_GEO.packQrEscPosRaster(d.gatePin.googleMapsUrl, qrPx);
+      line(SEP);
+      emit(P.ALIGN_C, P.BOLD_ON);
+      line('VERIFIED GATE PIN');
+      emit(P.BOLD_OFF);
+      const asciiReg = asciiClean(d.gatePin.region || '').trim();
+      const asciiSiteLbl = asciiClean(d.gatePin.siteName || '').trim()
+        || (asciiReg ? `Site (${asciiReg})` : 'Delivery Gate Location');
+      line(asciiSiteLbl);
+      line(`GPS: ${d.gatePin.coordText || ''}`);
+      if (qrBytes && qrBytes.length) emit(P.ALIGN_C, qrBytes);
+      line('Scan QR for Google Maps');
+      emit(P.ALIGN_L);
     }
 
     // 5. Signatures & Gate Stamp Block
@@ -1093,6 +1116,9 @@
         ${d.reference ? `<div class="th-kv"><span>Reference</span><b>${escHtml(d.reference)}</b></div>` : ''}
         ${d.extInvoice ? `<div class="th-kv"><span>Ext. Invoice #</span><b class="mono">${escHtml(d.extInvoice)}</b></div>` : ''}
         ${d.notes ? `<div class="th-sep"></div><div class="th-notes"><b>Notes:</b> ${escHtml(d.notes)}</div>` : ''}
+        ${(d.gatePin && typeof window !== 'undefined' && window.MFG_GEO && typeof window.MFG_GEO.renderGatePinCardHtml === 'function')
+          ? `<div class="th-sep"></div><div class="th-gate-pin-box">${window.MFG_GEO.renderGatePinCardHtml(d.gatePin, { variant: 'thermal', is58: d.paperWidth === '58mm' })}</div>`
+          : ''}
         <div class="th-sep"></div>
         <div class="th-kv"><span>Operator</span><b>${escHtml(d.enteredBy)}</b></div>
         <div class="th-sig-grid">
@@ -1147,6 +1173,7 @@
         <div class="modal-foot thermal-modal-foot">
           <span class="form-note" id="thermalModalStatusNote">Ready to print via Bluetooth ESC/POS</span>
           <div class="thermal-modal-actions">
+            <a class="btn" id="thermalWhatsAppDriverBtn" href="#" target="_blank" rel="noopener" hidden>${ic('pin')} <span>WhatsApp Driver Pin</span></a>
             <button type="button" class="btn" id="thermalBrowserPrintBtn" title="Print via system / browser thermal printer dialog">${ic('window')} Browser Print</button>
             <button type="button" class="btn" id="thermalWebBtBtn" title="Pair &amp; print directly via Web Bluetooth GATT">${ic('bluetooth')} Web Bluetooth</button>
             <button type="button" class="btn btn-brass" id="thermalRawBtBtn" title="Send ESC/POS raster + barcode to Bluetooth printer via RawBT">${ic('printer')} Print Bluetooth (RawBT)</button>
@@ -1272,6 +1299,19 @@
     const wrap = document.getElementById('thermalModalPreviewWrap');
     if (wrap) {
       wrap.innerHTML = renderThermalTicketHtml(docType, record, opts);
+    }
+    const waBtn = document.getElementById('thermalWhatsAppDriverBtn');
+    if (waBtn) {
+      if (d && d.gatePin && d.gatePin.whatsappUrl) {
+        waBtn.href = d.gatePin.whatsappUrl;
+        waBtn.hidden = false;
+      } else {
+        waBtn.removeAttribute('href');
+        waBtn.hidden = true;
+      }
+    }
+    if (typeof window !== 'undefined' && window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(modal); } catch (_) {}
     }
     const note = document.getElementById('thermalModalStatusNote');
     if (note) {
