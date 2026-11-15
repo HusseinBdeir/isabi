@@ -4149,7 +4149,14 @@
     );
   }
 
+  function canMountClosePanel() {
+    if (D && typeof D.canAccessTable === 'function' && !D.canAccessTable('gl_accounts')) return false;
+    if (D && D.STATE && D.STATE.view === 'payroll' && typeof D.canViewPayrollDollarAmounts === 'function' && !D.canViewPayrollDollarAmounts()) return false;
+    return true;
+  }
+
   function mountMfgPeriodClosePanel() {
+    if (!canMountClosePanel()) return;
     const ws = $('workspace');
     if (!ws || !ensureFreshPanel('mfgPeriodClosePanel') || !D || !D.STATE) return;
     const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
@@ -4170,30 +4177,30 @@
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
-          <span class="aie-pill ${pack.lock.isSealed ? 'is-good' : ''}">${ic(pack.lock.isSealed ? 'lock' : 'calendar')} ${esc(tr(pack.lock.isSealed ? 'Period Sealed' : 'Month-End Period Close & Accrual Cutoff'))}</span>
-          <strong>${esc(tr('Hard Rep/Tx Date Close Lock, Auto-Reversing Pending Accruals & Counterparty Confirmations'))}</strong>
+          <span class="aie-pill">${ic(pack.lock.isSealed ? 'lock' : 'calendar')} ${esc(pack.lock.isSealed ? 'Period Sealed' : 'Month-End Period Close & Accrual Cutoff')}</span>
+          <strong>Hard Rep/Tx Date Close Lock, Auto-Reversing Pending Accruals &amp; Counterparty Confirmations</strong>
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <span class="aie-pill ${pack.lock.isSealed ? 'is-good' : 'is-warn'}" data-no-i18n="1">${pack.lock.isSealed ? `${esc(tr('Sealed Through'))}: ${esc(pack.lock.closedThroughDate)}` : `${esc(tr('Open Cutoff'))}: ${esc(pack.cutoffDate)}`}</span>
-          <button type="button" class="aie-btn is-brass" id="mfgToggleCloseBtn">${esc(tr(EDGE_STATE.mfgCloseOpen ? 'Hide Period-Close Studio' : 'Open Period-Close Studio'))}</button>
+          <button type="button" class="aie-btn is-brass" id="mfgToggleCloseBtn">${esc(EDGE_STATE.mfgCloseOpen ? 'Hide Period-Close Studio' : 'Open Period-Close Studio')}</button>
         </div>
       </div>
       <div class="aie-recon-kpis">
-        <div class="aie-recon-kpi"><small>${esc(tr('Reversing Cutoff Accruals'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalAccrualUsd, 2)}</strong></div>
-        <div class="aie-recon-kpi"><small>${esc(tr('Day-1 Auto-Reversal Date'))}</small><strong data-no-i18n="1">${esc(pack.reversalDate)}</strong></div>
-        <div class="aie-recon-kpi"><small>${esc(tr('Cross-Month Cutoff Shifts'))}</small><strong data-no-i18n="1">${fmtNum(pack.cutoffShiftCount)}</strong></div>
-        <div class="aie-recon-kpi"><small>${esc(tr('Accrual Trial Balance Drift'))}</small><strong data-no-i18n="1">$0.00</strong></div>
+        <div class="aie-recon-kpi"><small>Reversing Cutoff Accruals</small><strong data-no-i18n="1">${fmtUSD(pack.totalAccrualUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>Day-1 Auto-Reversal Date</small><strong data-no-i18n="1">${esc(pack.reversalDate)}</strong></div>
+        <div class="aie-recon-kpi"><small>Cross-Month Cutoff Shifts</small><strong data-no-i18n="1">${fmtNum(pack.cutoffShiftCount)}</strong></div>
+        <div class="aie-recon-kpi"><small>Accrual Trial Balance Drift</small><strong data-no-i18n="1">$0.00</strong></div>
       </div>
       ${EDGE_STATE.mfgCloseOpen ? `
         <div class="aie-close-status-bar ${pack.lock.isSealed ? 'is-sealed' : ''}">
-          <span>${ic(pack.lock.isSealed ? 'lock' : 'shield')} <strong>${esc(tr('Cutoff Lock Scope'))}:</strong> <span data-no-i18n="1">${esc(pack.lock.entityLabel)}</span> · ${esc(tr(pack.lock.isSealed ? 'Prior-month Tx Date & Rep Date edits frozen' : 'Ready to seal prior-month Tx Date & Rep Date edits'))}</span>
+          <span>${ic(pack.lock.isSealed ? 'lock' : 'shield')} <strong>Cutoff Lock Scope</strong>: <span data-no-i18n="1">${esc(pack.lock.entityLabel)}</span> · <span>${esc(pack.lock.isSealed ? 'Prior-month Tx Date & Rep Date edits frozen' : 'Ready to seal prior-month Tx Date & Rep Date edits')}</span></span>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button type="button" class="aie-btn" id="mfgAiCutoffSweepBtn">${ic('sparkles')} ${esc(tr('AI Cutoff Anomaly Sweep'))}</button>
-            <button type="button" class="aie-btn" id="mfgConfirmationPackBtn">${ic('send_msg')} ${esc(tr('Balance Confirmation Pack'))}</button>
-            <button type="button" class="aie-btn" id="mfgPostAccrualCutoffBtn">${ic('bolt')} ${esc(tr('+ Post Reversing Accruals'))}</button>
+            <button type="button" class="aie-btn" id="mfgAiCutoffSweepBtn">${ic('sparkles')} AI Cutoff Anomaly Sweep</button>
+            <button type="button" class="aie-btn" id="mfgConfirmationPackBtn">${ic('send_msg')} Balance Confirmation Pack</button>
+            <button type="button" class="aie-btn" id="mfgPostAccrualCutoffBtn">${ic('bolt')} + Post Reversing Accruals</button>
             ${pack.lock.isSealed
-              ? `<button type="button" class="aie-btn" id="mfgReopenPeriodBtn">${ic('unlock')} ${esc(tr('Reopen Period'))}</button>`
-              : `<button type="button" class="aie-btn is-brass" id="mfgSealPeriodBtn">${ic('lock')} ${esc(tr('Seal Period Through'))} <span data-no-i18n="1">${esc(pack.cutoffDate)}</span></button>`}
+              ? `<button type="button" class="aie-btn" id="mfgReopenPeriodBtn">${ic('unlock')} Reopen Period</button>`
+              : `<button type="button" class="aie-btn is-brass" id="mfgSealPeriodBtn">${ic('lock')} <span>Seal Period Through</span> <span data-no-i18n="1">${esc(pack.cutoffDate)}</span></button>`}
           </div>
         </div>
         ${EDGE_STATE.mfgSweepBrief ? `
@@ -5802,12 +5809,19 @@
     if (['hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_due_matrix', 'hld_ic', 'hld_open_ic_tbl'].includes(v)) mountHoldingMatcherPanel();
     if (['hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_due_matrix', 'hld_loans'].includes(v)) mountHoldingBankSweepPanel();
     if (['ins_policies', 'ins_renewals', 'ins_statements', 'ins_carrier', 'ins_stm_tbl', 'ins_billing', 'ins_remittances'].includes(v)) mountInsuranceBordereauPanel();
-    if (['ledger', 'coa_classes', 'gl_automation', 'raw', 'expenses', 'payroll', 'statements'].includes(v)) mountMfgPeriodClosePanel();
-    if (['hsp_memberships', 'hsp_stock', 'hsp_revenue', 'hsp_packages', 'hsp_pos', 'ledger', 'statements'].includes(v)) mountHospitalityPeriodClosePanel();
-    if (['re_properties', 're_units', 're_leases', 're_invoicing', 're_receipts', 'ledger', 'statements'].includes(v)) mountRealEstatePeriodClosePanel();
-    if (['trd_trucks', 'trd_sales', 'trd_purchases', 'trd_stock', 'ledger', 'statements'].includes(v)) mountTradingPeriodClosePanel();
-    if (['ins_policies', 'ins_renewals', 'ins_billing', 'ins_statements', 'ins_remittances', 'ledger', 'statements'].includes(v)) mountInsurancePeriodClosePanel();
-    if (['hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_due_matrix', 'hld_loans', 'hld_distributions', 'entities', 'ledger', 'statements'].includes(v)) mountHoldingCloseGatePanel();
+    if (!canMountClosePanel()) {
+      ['mfgPeriodClosePanel', 'hspPeriodClosePanel', 'rePeriodClosePanel', 'trdPeriodClosePanel', 'insPeriodClosePanel', 'hldCloseGatePanel'].forEach(pid => {
+        const el = $(pid);
+        if (el) el.remove();
+      });
+    } else {
+      if (['ledger', 'coa_classes', 'gl_automation', 'raw', 'expenses', 'payroll', 'statements'].includes(v)) mountMfgPeriodClosePanel();
+      if (['hsp_memberships', 'hsp_stock', 'hsp_revenue', 'hsp_packages', 'hsp_pos', 'ledger', 'statements'].includes(v)) mountHospitalityPeriodClosePanel();
+      if (['re_properties', 're_units', 're_leases', 're_invoicing', 're_receipts', 'ledger', 'statements'].includes(v)) mountRealEstatePeriodClosePanel();
+      if (['trd_trucks', 'trd_sales', 'trd_purchases', 'trd_stock', 'ledger', 'statements'].includes(v)) mountTradingPeriodClosePanel();
+      if (['ins_policies', 'ins_renewals', 'ins_billing', 'ins_statements', 'ins_remittances', 'ledger', 'statements'].includes(v)) mountInsurancePeriodClosePanel();
+      if (['hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_due_matrix', 'hld_loans', 'hld_distributions', 'entities', 'ledger', 'statements'].includes(v)) mountHoldingCloseGatePanel();
+    }
     if (v === 'daily_ops') mountDailyOpsRootCauseButton();
 
     const mfgModal = $('entryModal');

@@ -12340,7 +12340,109 @@
       "Unmatched Same-Day": "غير مطابق لنفس اليوم",
       "Venue & Banquet OT Snap Allocation": "توزيع تقريب إضافي المرافق والحفلات",
       "Work Site": "الموقع",
-      "Workshop, PDI & Warranty OT Snap Allocation": "توزيع تقريب إضافي الورشة والفحص والضمان"
+      "Workshop, PDI & Warranty OT Snap Allocation": "توزيع تقريب إضافي الورشة والفحص والضمان",
+      "28 Printable A4 Statements": "28 كشف A4 قابلاً للطباعة",
+      "28 Printable A4 Statements & Paginated Reports Launcher": "منصة 28 كشف A4 قابلاً للطباعة وتقارير مفصلة",
+      "APP": "تطبيق",
+      "Absent Ded.": "خصم الغياب",
+      "Absent Ded. ($/d)": "خصم الغياب ($/يوم)",
+      "Access restricted for Contract & NSSF Pack.": "الوصول مقيّد إلى ملف العقد والضمان.",
+      "Active Rate": "الأجر الساري",
+      "All Staff": "جميع الموظفين",
+      "All active staff IDs, work permits and residencies are within valid dates.": "جميع بطاقات الهوية وتصاريح العمل والإقامات للموظفين النشطين سارية المفعول.",
+      "Attendance & Disbursement Activity": "نشاط الحضور وصرف الدفعات",
+      "Bilingual HR Contract & NSSF Declaration Pack": "ملف عقد العمل والتصريح للضمان الاجتماعي",
+      "CNSS / NSSF #": "رقم الضمان الاجتماعي",
+      "CNSS / NSSF registration #...": "رقم التسجيل في الضمان...",
+      "Capture & Extract ID": "التقاط واستخراج الهوية",
+      "Choose / Take Photo": "اختيار / التقاط صورة",
+      "Compliance": "الامتثال",
+      "Compliance watchdog filter": "تصفية مراقب الامتثال",
+      "Contract & NSSF Pack": "ملف العقد والضمان",
+      "Contract + NSSF": "العقد + الضمان",
+      "Contract Only": "العقد فقط",
+      "Could not decode photo. Please capture with camera or choose a JPG, PNG, or WebP image.": "تعذّر فك ترميز الصورة. يرجى الالتقاط بالكاميرا أو اختيار صورة بصيغة JPG أو PNG أو WebP.",
+      "Critical alert window (days)": "نافذة التنبيه الحرج (أيام)",
+      "Due &lt;=": "يستحق خلال",
+      "Due &lt;= 30d": "يستحق خلال 30 يوماً",
+      "Due &lt;= 60d": "يستحق خلال 60 يوماً",
+      "Due &lt;= 7d": "يستحق خلال 7 أيام",
+      "Due <=": "يستحق خلال",
+      "Due <= 30d": "يستحق خلال 30 يوماً",
+      "Due <= 60d": "يستحق خلال 60 يوماً",
+      "Due <= 7d": "يستحق خلال 7 أيام",
+      "Entered in this web app": "مُسجّل في هذا التطبيق",
+      "Fleet & Stock Hygiene": "سلامة بيانات الأسطول والمخزون",
+      "Foreign Missing Permit": "أجنبي بلا تصريح عمل",
+      "General Security Residency #...": "رقم بطاقة إقامة الأمن العام...",
+      "HR Compliance": "امتثال الموارد البشرية",
+      "HR Contract & NSSF Pack": "ملف عقد العمل والضمان",
+      "HR Print Pack": "ملف الطباعة للموارد البشرية",
+      "HR print pack language layout": "تخطيط لغة ملف الطباعة للموارد البشرية",
+      "HR print pack sections": "أقسام ملف الطباعة للموارد البشرية",
+      "ID / Passport": "بطاقة الهوية / جواز السفر",
+      "ID / Passport Expiry": "تاريخ انتهاء الهوية / الجواز",
+      "ID Document Type": "نوع وثيقة الهوية",
+      "ID Expiry": "انتهاء الهوية",
+      "ID Expiry Date": "تاريخ انتهاء الهوية",
+      "ID Expiry Date (Optional)": "تاريخ انتهاء الهوية (اختياري)",
+      "ID Expiry:": "انتهاء الهوية:",
+      "Language Layout": "تخطيط اللغة",
+      "Missing Work Permit": "إجازة عمل مفقودة",
+      "MoL Permit #": "رقم إجازة العمل",
+      "MoL Work Permit # (foreign staff)...": "رقم إجازة عمل وزارة العمل (للأجانب)...",
+      "Mother's Name": "اسم الأم",
+      "Mother's Name (Arabic)": "اسم الأم (بالعربية)",
+      "Mother:": "اسم الأم:",
+      "NSSF No.": "رقم الضمان",
+      "NSSF Only": "الضمان فقط",
+      "NSSF Reg #": "رقم التسجيل في الضمان",
+      "NSSF Reg # (Optional)": "رقم الضمان الاجتماعي (اختياري)",
+      "NSSF Registration #": "رقم التسجيل في الضمان",
+      "Nationality (Arabic)": "الجنسية (بالعربية)",
+      "No Expiry Set": "بدون تاريخ انتهاء",
+      "No scoped staff members match this entity yet.": "لا يوجد موظفون ضمن هذا النطاق لهذه الشركة بعد.",
+      "No staff members match the active company filter.": "لا يوجد موظفون يطابقون تصفية الشركة النشطة.",
+      "Open Bilingual Contract & NSSF Pack": "فتح ملف عقد العمل والتصريح للضمان",
+      "Open Staff Roster": "فتح سجل الموظفين",
+      "Pack Sections": "أقسام الملف",
+      "Payroll permission required": "يلزم إذن الرواتب",
+      "Payroll, Attendance, Contracts & NSSF Register": "سجل الرواتب والحضور والعقود والضمان الاجتماعي",
+      "Prevents Ministry of Labour and General Security fines by tracking ID, work permit and residency expiry windows across active staff and flagging non-Lebanese workers missing work permit dates.": "يمنع غرامات وزارة العمل والأمن العام عبر تتبّع صلاحية الهوية وإجازة العمل والإقامة للموظفين النشطين وتنبيه غير اللبنانيين الذين يفتقرون إلى تواريخ إجازة العمل.",
+      "Rem. Payment": "المتبقي للدفع",
+      "Residency": "الإقامة",
+      "Residency #": "رقم الإقامة",
+      "Residency # (Optional)": "رقم الإقامة (اختياري)",
+      "Residency Expiry": "تاريخ انتهاء الإقامة",
+      "Residency Expiry (Optional)": "تاريخ انتهاء الإقامة (اختياري)",
+      "Residency Expiry:": "انتهاء الإقامة:",
+      "Residency No.": "رقم الإقامة",
+      "Residency Permit #": "رقم بطاقة الإقامة",
+      "Scan from Phone": "مسح بكاميرا الهاتف",
+      "Scan from Phone (QR)": "مسح من الهاتف (QR)",
+      "Search staff, NSSF #, ID or permit…": "ابحث عن موظف أو رقم ضمان أو هوية...",
+      "Single-use phone scan link": "رابط مسح بالهاتف لمرة واحدة",
+      "Site Transport Schedules": "جداول بدل نقل المواقع",
+      "Staff Members by Active Contracts": "الموظفون حسب العقود النشطة",
+      "Staff Register Scope": "نطاق سجل الموظفين",
+      "Staff Registry by Role": "سجل الموظفين حسب الدور",
+      "Staff Roster, Contracts & AI Sentinels": "سجل الموظفين والعقود والمراقبون",
+      "Top Staff Members by Active Contracts": "أعلى الموظفين حسب العقود النشطة",
+      "Total Earned": "إجمالي المستحق",
+      "Total Monthly": "الإجمالي الشهري",
+      "Total Monthly ($)": "الإجمالي الشهري ($)",
+      "Total Paid": "إجمالي المدفوع",
+      "Transp. / Reimb.": "بدل نقل / تعويضات",
+      "Void / Delete this app entry (keeps a tombstone so other devices drop it too)": "إلغاء / حذف هذا السجل (يحتفظ بوسم حذف لتسقطه الأجهزة الأخرى أيضاً)",
+      "Watchdog horizon (days)": "أفق مراقبة الصلاحية (أيام)",
+      "Work Permit #": "رقم إجازة العمل",
+      "Work Permit # (Optional)": "رقم إجازة العمل (اختياري)",
+      "Work Permit Expiry": "تاريخ انتهاء إجازة العمل",
+      "Work Permit Expiry (Optional)": "تاريخ انتهاء إجازة العمل (اختياري)",
+      "Work Permit Expiry:": "انتهاء إجازة العمل:",
+      "Work Permit No.": "رقم إجازة العمل",
+      "Work Permit, Residency & ID Renewal Watchdog": "مراقب تجديد تصاريح العمل والإقامات والهويات",
+      "Workforce & Agreements": "فريق العمل والاتفاقيات"
     },
     fr: {
       "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
@@ -24662,7 +24764,109 @@
       "Unmatched Same-Day": "Non rattaché du jour",
       "Venue & Banquet OT Snap Allocation": "Imputation palier HS points et banquets",
       "Work Site": "Chantier",
-      "Workshop, PDI & Warranty OT Snap Allocation": "Imputation palier HS atelier, PDI et garantie"
+      "Workshop, PDI & Warranty OT Snap Allocation": "Imputation palier HS atelier, PDI et garantie",
+      "28 Printable A4 Statements": "28 états A4 imprimables",
+      "28 Printable A4 Statements & Paginated Reports Launcher": "Lanceur des 28 États Imprimables A4 & Rapports Paginés",
+      "APP": "APPLI",
+      "Absent Ded.": "Retenue d'Absence",
+      "Absent Ded. ($/d)": "Retenue d'Absence ($/j)",
+      "Access restricted for Contract & NSSF Pack.": "Accès restreint au dossier Contrat et CNSS.",
+      "Active Rate": "Tarif Actif",
+      "All Staff": "Tout le personnel",
+      "All active staff IDs, work permits and residencies are within valid dates.": "Toutes les pièces d’identité, permis et résidences des salariés actifs sont valides.",
+      "Attendance & Disbursement Activity": "Activité Pointage & Décaissements",
+      "Bilingual HR Contract & NSSF Declaration Pack": "Dossier bilingue contrat de travail et CNSS",
+      "CNSS / NSSF #": "N° CNSS / NSSF",
+      "CNSS / NSSF registration #...": "N° d’immatriculation CNSS...",
+      "Capture & Extract ID": "Capturer et extraire la pièce",
+      "Choose / Take Photo": "Choisir / Prendre une photo",
+      "Compliance": "Conformité",
+      "Compliance watchdog filter": "Filtre de surveillance conformité",
+      "Contract & NSSF Pack": "Dossier Contrat et CNSS",
+      "Contract + NSSF": "Contrat + CNSS",
+      "Contract Only": "Contrat seul",
+      "Could not decode photo. Please capture with camera or choose a JPG, PNG, or WebP image.": "Impossible de décoder la photo. Veuillez utiliser la caméra ou choisir une image JPG, PNG ou WebP.",
+      "Critical alert window (days)": "Fenêtre d’alerte critique (jours)",
+      "Due &lt;=": "Échéance <=",
+      "Due &lt;= 30d": "Échéance <= 30 j",
+      "Due &lt;= 60d": "Échéance <= 60 j",
+      "Due &lt;= 7d": "Échéance <= 7 j",
+      "Due <=": "Échéance <=",
+      "Due <= 30d": "Échéance <= 30 j",
+      "Due <= 60d": "Échéance <= 60 j",
+      "Due <= 7d": "Échéance <= 7 j",
+      "Entered in this web app": "Saisi dans cette application web",
+      "Fleet & Stock Hygiene": "Intégrité Flotte & Stock",
+      "Foreign Missing Permit": "Étranger sans permis",
+      "General Security Residency #...": "N° carte de résidence Sûreté Gén....",
+      "HR Compliance": "Conformité RH",
+      "HR Contract & NSSF Pack": "Dossier Contrat et CNSS",
+      "HR Print Pack": "Dossier RH à imprimer",
+      "HR print pack language layout": "Langue du dossier d’impression RH",
+      "HR print pack sections": "Sections du dossier d’impression RH",
+      "ID / Passport": "Pièce d'identité / Passeport",
+      "ID / Passport Expiry": "Expiration ID / Passeport",
+      "ID Document Type": "Type de pièce d'identité",
+      "ID Expiry": "Exp. ID",
+      "ID Expiry Date": "Expiration pièce d’identité",
+      "ID Expiry Date (Optional)": "Expiration ID (Optionnel)",
+      "ID Expiry:": "Expiration ID :",
+      "Language Layout": "Mise en page langue",
+      "Missing Work Permit": "Permis de travail manquant",
+      "MoL Permit #": "N° permis MoL",
+      "MoL Work Permit # (foreign staff)...": "N° permis de travail MoL (étrangers)...",
+      "Mother's Name": "Nom de la mère",
+      "Mother's Name (Arabic)": "Nom de la mère (Arabe)",
+      "Mother:": "Mère :",
+      "NSSF No.": "N° CNSS",
+      "NSSF Only": "CNSS seule",
+      "NSSF Reg #": "N° d’affiliation CNSS",
+      "NSSF Reg # (Optional)": "N° CNSS (Optionnel)",
+      "NSSF Registration #": "N° d’immatriculation CNSS",
+      "Nationality (Arabic)": "Nationalité (Arabe)",
+      "No Expiry Set": "Aucune échéance",
+      "No scoped staff members match this entity yet.": "Aucun salarié dans ce périmètre pour cette entité.",
+      "No staff members match the active company filter.": "Aucun salarié ne correspond au filtre de société actif.",
+      "Open Bilingual Contract & NSSF Pack": "Ouvrir le dossier bilingue Contrat et CNSS",
+      "Open Staff Roster": "Ouvrir le registre RH",
+      "Pack Sections": "Sections du dossier",
+      "Payroll permission required": "Permission paie requise",
+      "Payroll, Attendance, Contracts & NSSF Register": "Registre de paie, présence, contrats et CNSS",
+      "Prevents Ministry of Labour and General Security fines by tracking ID, work permit and residency expiry windows across active staff and flagging non-Lebanese workers missing work permit dates.": "Évite les amendes du Ministère du Travail et de la Sûreté Générale en suivant les échéances des pièces d'identité, permis de travail et titres de séjour des salariés actifs et en signalant les étrangers sans date de permis.",
+      "Rem. Payment": "Reste à Payer",
+      "Residency": "Titre de séjour",
+      "Residency #": "N° de résidence",
+      "Residency # (Optional)": "N° de résidence (Optionnel)",
+      "Residency Expiry": "Expiration de résidence",
+      "Residency Expiry (Optional)": "Expiration résidence (Optionnel)",
+      "Residency Expiry:": "Expiration résidence :",
+      "Residency No.": "N° résidence",
+      "Residency Permit #": "N° carte de résidence",
+      "Scan from Phone": "Scanner par téléphone",
+      "Scan from Phone (QR)": "Scanner par téléphone (QR)",
+      "Search staff, NSSF #, ID or permit…": "Rechercher salarié, CNSS, ID ou permis…",
+      "Single-use phone scan link": "Lien de scan mobile à usage unique",
+      "Site Transport Schedules": "Plannings Transport Chantier",
+      "Staff Members by Active Contracts": "Salariés par contrats actifs",
+      "Staff Register Scope": "Périmètre du Registre du Personnel",
+      "Staff Registry by Role": "Registre du Personnel par Fonction",
+      "Staff Roster, Contracts & AI Sentinels": "Registre RH, Contrats & Sentinelles IA",
+      "Top Staff Members by Active Contracts": "Principaux salariés par contrats actifs",
+      "Total Earned": "Total Acquis",
+      "Total Monthly": "Total Mensuel",
+      "Total Monthly ($)": "Total Mensuel ($)",
+      "Total Paid": "Total Payé",
+      "Transp. / Reimb.": "Transp. / Remb.",
+      "Void / Delete this app entry (keeps a tombstone so other devices drop it too)": "Annuler / Supprimer cette saisie (conserve une marque de suppression pour les autres appareils)",
+      "Watchdog horizon (days)": "Horizon de surveillance (jours)",
+      "Work Permit #": "N° permis de travail",
+      "Work Permit # (Optional)": "N° permis de travail (Optionnel)",
+      "Work Permit Expiry": "Expiration permis de travail",
+      "Work Permit Expiry (Optional)": "Expiration permis de travail (Optionnel)",
+      "Work Permit Expiry:": "Expiration permis de travail :",
+      "Work Permit No.": "N° permis",
+      "Work Permit, Residency & ID Renewal Watchdog": "Surveillance des permis, résidences et pièces d’identité",
+      "Workforce & Agreements": "Effectifs & Accords"
     }
   };
 
@@ -29245,6 +29449,105 @@
       return parts.join(' · ');
     }
 
+    m = trimmed.match(/^(\d+)\s+Printable\s+A4\s+Statements(?:\s*&\s*Paginated\s+Reports\s+Launcher)?$/i);
+    if (m) {
+      const hasLauncher = /Launcher/i.test(trimmed);
+      if (hasLauncher) {
+        return lang === 'ar' ? `منصة ${m[1]} كشف A4 قابلاً للطباعة وتقارير مفصلة` : `Lanceur des ${m[1]} États Imprimables A4 & Rapports Paginés`;
+      }
+      return lang === 'ar' ? `${m[1]} كشف A4 قابلاً للطباعة` : `${m[1]} états A4 imprimables`;
+    }
+
+    m = trimmed.match(/^Expired\s*\((\d+)d\s+ago\)$/i);
+    if (m) return lang === 'ar' ? `منتهية (منذ ${m[1]} يوم)` : `Expirée (il y a ${m[1]} j)`;
+
+    m = trimmed.match(/^Valid\s*\((\d+)d\)$/i);
+    if (m) return lang === 'ar' ? `ساري (${m[1]} يوم)` : `Valide (${m[1]} j)`;
+
+    m = trimmed.match(/^(ID\s*\/\s*Passport|Work\s+Permit|Residency)\s+(\d+)d$/i);
+    if (m) {
+      const docLbl = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${docLbl} (${m[2]} يوم)` : `${docLbl} (${m[2]} j)`;
+    }
+
+    m = trimmed.match(/^(ID\s*\/\s*Passport|Work\s+Permit|Residency)\s+due\s+today$/i);
+    if (m) {
+      const docLbl = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${docLbl} ينتهي اليوم` : `${docLbl} expire aujourd'hui`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+staff\s+compliance\s+items?\s+flagged(?:\s*\(Top priority:\s*(.+?)\s*-\s*(.+?)\))?$/i);
+    if (m) {
+      const nCnt = Number(String(m[1] || '0').replace(/,/g, ''));
+      const tail = m[2] && m[3]
+        ? (() => {
+            const bdgRes = evalCore(m[3].trim(), lang, depth + 1);
+            const bdgOut = bdgRes.ok ? bdgRes.out : m[3].trim();
+            return lang === 'ar' ? ` (الأولوية القصوى: ${m[2].trim()} - ${bdgOut})` : ` (Priorité : ${m[2].trim()} - ${bdgOut})`;
+          })()
+        : '';
+      return lang === 'ar'
+        ? `تم رصد ${m[1]} ${nCnt === 1 ? 'بند امتثال للموظفين' : 'بنود امتثال للموظفين'}${tail}`
+        : `${m[1]} élément${nCnt === 1 ? '' : 's'} de conformité du personnel signalé${nCnt === 1 ? '' : 's'}${tail}`;
+    }
+
+    m = trimmed.match(/^All\s+([\d,]+)\s+active\s+staff\s+records\s+are\s+within\s+valid\s+ID,\s+work\s+permit\s+and\s+residency\s+renewal\s+windows\s*\(([\d,]+)d\s+horizon\)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `جميع سجلات الموظفين النشطين الـ ${m[1]} ضمن نوافذ صلاحية الهوية وإجازة العمل والإقامة (أفق ${m[2]} يوماً).`
+        : `Les ${m[1]} dossiers de personnel actifs respectent les délais de validité des pièces d'identité, permis et résidences (horizon ${m[2]} j).`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+active\s+staff\s+compliance\s+items?:\s*([\d,]+)\s+expired,\s*([\d,]+)\s+due\s*<=\s*([\d,]+)d,\s*([\d,]+)\s+due\s*<=\s*30d,\s*([\d,]+)\s+due\s*<=\s*([\d,]+)d,\s*([\d,]+)\s+foreign\s+missing\s+permit\.(?:\s*Top\s+priority:\s*(.+?)\s*\(([^()]+)\)\.)?$/i);
+    if (m) {
+      const nCnt = Number(String(m[1] || '0').replace(/,/g, ''));
+      const topPart = (m[9] && m[10])
+        ? (() => {
+            const bRes = evalCore(m[10].trim(), lang, depth + 1);
+            const bOut = bRes.ok ? bRes.out : m[10].trim();
+            return lang === 'ar'
+              ? ` الأولوية القصوى: ${m[9].trim()} (${bOut}).`
+              : ` Priorité : ${m[9].trim()} (${bOut}).`;
+          })()
+        : '';
+      return lang === 'ar'
+        ? `${m[1]} ${nCnt === 1 ? 'بند' : 'بنود'} امتثال موظفين نشطة: ${m[2]} منتهي، ${m[3]} خلال <= ${m[4]} يوم، ${m[5]} خلال <= 30 يوماً، ${m[6]} خلال <= ${m[7]} يوماً، ${m[8]} أجنبي بلا إجازة عمل.${topPart}`
+        : `${m[1]} point${nCnt === 1 ? '' : 's'} de conformité RH actif${nCnt === 1 ? '' : 's'} : ${m[2]} expirés, ${m[3]} <= ${m[4]} j, ${m[5]} <= 30 j, ${m[6]} <= ${m[7]} j, ${m[8]} étranger(s) sans permis.${topPart}`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+CRITICAL$/i);
+    if (m) {
+      const nCnt = Number(String(m[1] || '0').replace(/,/g, ''));
+      return lang === 'ar' ? `${m[1]} حرج` : `${m[1]} CRITIQUE${nCnt === 1 ? '' : 'S'}`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+DUE\s*\/\s*MISSING$/i);
+    if (m) {
+      const nCnt = Number(String(m[1] || '0').replace(/,/g, ''));
+      return lang === 'ar' ? `${m[1]} مستحق / مفقود` : `${m[1]} ÉCHU${nCnt === 1 ? '' : 'S'} / MANQUANT${nCnt === 1 ? '' : 'S'}`;
+    }
+
+    m = trimmed.match(/^Crit\s*<=\s*([\d,]+)d\s*·\s*Watch\s*<=\s*([\d,]+)d$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `حرج <= ${m[1]} يوم · مراقبة <= ${m[2]} يوم`
+        : `Crit. <= ${m[1]} j · Veille <= ${m[2]} j`;
+    }
+
+    m = trimmed.match(/^Evaluates\s+all\s+active\s+staff\s+records\s+against\s+deterministic\s+UTC\s+calendar-day\s+boundaries\s*\(Expired\s*<0d,\s*Critical\s*<=\s*([\d,]+)d,\s*Due\s*<=\s*30d,\s*Watch\s*<=\s*([\d,]+)d\)\s+and\s+flags\s+confirmed\s+non-Lebanese\s+staff\s+lacking\s+work\s+permit\s+expiry\s+dates\s+before\s+compliance\s+penalties\s+hit\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يقيّم جميع سجلات الموظفين النشطين وفق حدود الأيام التقويمية بتوقيت UTC (منتهي <0 يوم، حرج <= ${m[1]} يوم، مستحق <= 30 يوماً، مراقبة <= ${m[2]} يوماً) وينبّه للعمال غير اللبنانيين دون تاريخ إجازة عمل قبل الغرامات.`
+        : `Évalue tous les salariés actifs selon des seuils calendaires UTC déterministes (Expiré <0 j, Critique <= ${m[1]} j, Échéance <= 30 j, Veille <= ${m[2]} j) et signale les travailleurs étrangers sans date d'expiration de permis.`;
+    }
+
+    m = trimmed.match(/^Live\s+example:\s+Any\s+active\s+ID,\s+work\s+permit\s+or\s+residency\s+expiring\s+within\s+([\d,]+)\s+days\s+raises\s+a\s+warning,\s+escalating\s+to\s+critical\s+at\s*<=\s*([\d,]+)\s+days\s+or\s+overdue;\s+foreign\s+staff\s+lacking\s+permit\s+dates\s+are\s+flagged\s+immediately\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مثال حي: أي هوية أو إجازة عمل أو إقامة نشطة تنتهي خلال ${m[1]} يوماً تطلق تحذيراً يتصاعد إلى حرج عند <= ${m[2]} يوماً أو عند الانتهاء؛ والعمالة الأجنبية دون تاريخ إجازة عمل تُرصد فوراً.`
+        : `Exemple : toute pièce d'identité, permis ou résidence expirant sous ${m[1]} jours déclenche un avertissement, passant en critique à <= ${m[2]} jours ou dépassé ; les salariés étrangers sans permis sont signalés immédiatement.`;
+    }
+
     return null;
   }
 
@@ -29659,6 +29962,13 @@
 
     m = trimmed.match(/^(●\s*)?Refresh app to sync\s*\((v[\d.]+\+?)\)$/i);
     if (m) return { out: (m[1] ? '● ' : '') + (lang === 'ar' ? `حدّث التطبيق للمزامنة (${m[2]})` : `Actualisez l'application pour synchroniser (${m[2]})`), ok: true };
+
+    m = trimmed.match(/^Entered in this web app(?:\s+by\s+(.+?))?(?:\s*·\s*(.+))?$/i);
+    if (m) {
+      const byPart = m[1] ? (lang === 'ar' ? ` بواسطة ${m[1].trim()}` : ` par ${m[1].trim()}`) : '';
+      const atPart = m[2] ? ` · ${m[2].trim()}` : '';
+      return { out: (lang === 'ar' ? 'مُسجّل في هذا التطبيق' : 'Saisi dans cette application web') + byPart + atPart, ok: true };
+    }
 
     const cntHit = translateCountNoun(trimmed, lang);
     if (cntHit) return { out: cntHit, ok: true };

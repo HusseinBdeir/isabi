@@ -646,3 +646,113 @@ html.phone-scan-companion body {
     max-height: 36dvh;
   }
 }
+
+/* Single-use HR Phone ID/Permit QR Handoff Modal & Mobile Companion */
+.hr-phone-qr-card {
+  max-width: 560px;
+  width: min(96vw, 560px);
+}
+.hr-phone-qr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hr-phone-qr-grid {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.hr-phone-qr-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hr-phone-qr-url-row input {
+  flex: 1 1 220px;
+  min-width: 0;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.hr-phone-qr-notice {
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #FEF3C7;
+  border: 1px solid #D97706;
+  color: #78350F;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.hr-phone-qr-notice.is-error {
+  background: #FEE2E2;
+  border-color: #DC2626;
+  color: #7F1D1D;
+}
+:root[data-theme="dark"] .hr-phone-qr-notice {
+  background: rgba(217, 119, 6, 0.2);
+  border-color: #F59E0B;
+  color: #FDE68A;
+}
+:root[data-theme="dark"] .hr-phone-qr-notice.is-error {
+  background: rgba(220, 38, 38, 0.22);
+  border-color: #F87171;
+  color: #FECACA;
+}
+.psc-id-shell {
+  max-width: 560px;
+  margin: 0 auto;
+}
+.psc-id-result-card,
+.psc-consumed-card {
+  padding: 16px;
+  border-radius: 12px;
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.psc-id-result-card {
+  background: #ECFDF5;
+  border-color: #1F7A4C;
+  color: #145334;
+}
+.psc-consumed-card {
+  background: #FEF2F2;
+  border-color: #DC2626;
+  color: #7F1D1D;
+}
+:root[data-theme="dark"] .psc-id-result-card {
+  background: rgba(31, 122, 76, 0.22);
+  border-color: #34D399;
+  color: #D1FAE5;
+}
+:root[data-theme="dark"] .psc-consumed-card {
+  background: rgba(220, 38, 38, 0.22);
+  border-color: #F87171;
+  color: #FECACA;
+}
+.psc-id-kv {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  font-size: 12.5px;
+}
+.psc-id-kv div {
+  background: rgba(255, 255, 255, 0.65);
+  border-radius: 8px;
+  padding: 7px 9px;
+}
+:root[data-theme="dark"] .psc-id-kv div {
+  background: rgba(15, 23, 42, 0.55);
+}
+@media (max-width: 520px) {
+  .hr-phone-qr-grid {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .hr-phone-qr-grid .doc-cam-qr-box {
+    margin: 0 auto;
+  }
+}

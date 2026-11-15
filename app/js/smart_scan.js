@@ -4259,6 +4259,33 @@
     return { dob: '', birthYear: '' };
   }
 
+  function normalizeIdentityExpiryDate(raw) {
+    const s = normalizeDigits(String(raw || '')).trim();
+    if (!s) return '';
+    const isExactCalendar = (y, mo, d) => {
+      if (y < 1990 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return false;
+      const chk = new Date(Date.UTC(y, mo - 1, d));
+      return chk.getUTCFullYear() === y && chk.getUTCMonth() === mo - 1 && chk.getUTCDate() === d;
+    };
+    const isoM = s.match(/\b((?:199\d|20\d{2}|2100))[-/.](\d{1,2})[-/.](\d{1,2})\b/);
+    if (isoM) {
+      const y = Number(isoM[1]), mo = Number(isoM[2]), d = Number(isoM[3]);
+      if (isExactCalendar(y, mo, d)) {
+        return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      }
+      return '';
+    }
+    const dmyM = s.match(/\b(\d{1,2})[-/.](\d{1,2})[-/.]((?:199\d|20\d{2}|2100))\b/);
+    if (dmyM) {
+      let d = Number(dmyM[1]), mo = Number(dmyM[2]), y = Number(dmyM[3]);
+      if (mo > 12 && d <= 12) { const tmp = d; d = mo; mo = tmp; }
+      if (isExactCalendar(y, mo, d)) {
+        return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      }
+    }
+    return '';
+  }
+
   function stripMiddleFatherToken(fullName, fatherName, useArabic) {
     const fn = String(fullName || '').trim().replace(/\s+/g, ' ');
     const fa = String(fatherName || '').trim().replace(/\s+/g, ' ');
@@ -4308,17 +4335,19 @@
       docKind = 'nssf_card';
     } else if (/(إخراج\s*قيد|اخراج\s*قيد|civil\s*extract)/i.test(combined)) {
       docKind = 'civil_extract';
+    } else if (/(إجازة\s*عمل|اجازة\s*عمل|وزارة\s*العمل|ministry\s*of\s*labo(?:ur|r)|work[\s_-]*permit)/i.test(combined)) {
+      docKind = 'work_permit';
+    } else if (/(بطاقة\s*إقامة|بطاقة\s*اقامة|اقامة|إقامة|الأمن\s*العام|general\s*security|s[ûu]ret[ée]\s*g[ée]n[ée]rale|residen(?:cy|ce)[\s_-]*(?:permit|card))/i.test(combined)) {
+      docKind = 'residency_permit';
     } else if (/(بطاقة\s*هوية|الجمهورية\s*اللبنانية|lebanese\s*id|\bidentity\s*card\b)/i.test(combined)) {
       docKind = 'lebanese_id';
-    } else if (/(إجازة\s*عمل|اقامة|إقامة|work\s*permit|residency)/i.test(combined)) {
-      docKind = 'work_permit';
     } else if (/(passport|جواز\s*سفر)/i.test(combined)) {
       docKind = 'passport';
     }
 
     const AR_STOPS = [
-      /[ \t]+(?:الاسم|الإسم|الشهرة|اسم\s*الأب|إسم\s*الأب|اسم\s*الاب|الأب|اسم\s*الأم|الأم|تاريخ\s*الولادة|تاريخ\s*الميلاد|تاريخ\s*الإصدار|تاريخ\s*الاصدار|تاريخ\s*الانتهاء|صلاحية|محل\s*الولادة|الجنس|الجنسية|رقم\s*الهوية|رقم\s*السجل|رقم\s*التسجيل|رقم\s*المضمون|رقم\s*الضمان|الرقم)\s*[:=\-\u2013\u2014]?/,
-      /[ \t]+(?:Full\s*Name|First\s*Name|Last\s*Name|Surname|Father(?:'s)?\s*Name|Mother(?:'s)?\s*Name|Date\s*of\s*Birth|Birth\s*Date|Date\s*de\s*naissance|Issue\s*Date|Expiry\s*Date|Valid\s*Until|Date\s*d['’][ée]mission|Date\s*d['’]expiration|DOB|Nationality|ID\s*(?:No|Number|#)|NSSF\s*(?:No|Number|#))\s*[:=\-\u2013\u2014]?/i
+      /[ \t]+(?:الاسم|الإسم|الشهرة|اسم\s*الأب|إسم\s*الأب|اسم\s*الاب|الأب|اسم\s*الأم|الأم|تاريخ\s*الولادة|تاريخ\s*الميلاد|تاريخ\s*الإصدار|تاريخ\s*الاصدار|تاريخ\s*الانتهاء|صلاحية|صالحة\s*لغاية|محل\s*الولادة|الجنس|الجنسية|رقم\s*الهوية|رقم\s*السجل|رقم\s*التسجيل|رقم\s*المضمون|رقم\s*الضمان|رقم\s*(?:إجازة|اجازة)\s*العمل|رقم\s*(?:الإقامة|الاقامة)|الرقم)\s*[:=\-\u2013\u2014]?/,
+      /[ \t]+(?:Full\s*Name|First\s*Name|Last\s*Name|Surname|Father(?:'s)?\s*Name|Mother(?:'s)?\s*Name|Date\s*of\s*Birth|Birth\s*Date|Date\s*de\s*naissance|Issue\s*Date|Issued|Expiry\s*Date|Expires|Valid\s*(?:Until|Thru)|Date\s*d['’][ée]mission|Date\s*d['’]expiration|DOB|Nationality|ID\s*(?:No|Number|#)|NSSF\s*(?:No|Number|#)|CNSS\s*(?:No|Number|#)|Work\s*Permit\s*(?:No|Number|#|Expiry)|Residen(?:cy|ce)\s*(?:Permit\s*)?(?:No|Number|#|Expiry))\s*[:=\-\u2013\u2014]?/i
     ];
 
     const firstArRaw = extractIdSegmentAfter(normTxt, [
@@ -4344,7 +4373,28 @@
       /(?:الجنسية)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
     ], AR_STOPS);
     const idArRaw = extractIdSegmentAfter(normTxt, [
-      /(?:رقم\s*المضمون|رقم\s*التسجيل|رقم\s*السجل|رقم\s*الضمان|رقم\s*الهوية|رقم\s*البطاقة|الرقم\s*الوطني)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+      /(?:رقم\s*السجل|رقم\s*الهوية|رقم\s*البطاقة|الرقم\s*الوطني)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+    const nssfArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:رقم\s*المضمون|رقم\s*التسجيل\s*في\s*الضمان|رقم\s*التسجيل|رقم\s*الضمان)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+    const wpNoArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:رقم\s*(?:إجازة|اجازة)\s*العمل)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+    const resNoArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:رقم\s*(?:بطاقة\s*)?(?:الإقامة|الاقامة))[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+    const issueArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:تاريخ\s*الإصدار|تاريخ\s*الاصدار)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+    const wpExpArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:(?:تاريخ\s*)?(?:انتهاء|صلاحية)\s*(?:إجازة|اجازة)\s*العمل)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+    const resExpArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:(?:تاريخ\s*)?(?:انتهاء|صلاحية)\s*(?:الإقامة|الاقامة))[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+    const expArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:تاريخ\s*الانتهاء|صلاحية\s*البطاقة|صالحة\s*لغاية|تنتهي\s*(?:في|بتاريخ))[ \t]*[:=\-\u2013\u2014]?[ \t]*/
     ], AR_STOPS);
 
     const fullLatLabeled = extractIdSegmentAfter(normTxt, [
@@ -4366,7 +4416,28 @@
       /(?:Nationality|Nationalit[ée]|Citizenship)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
     ], AR_STOPS);
     const idLatRaw = extractIdSegmentAfter(normTxt, [
-      /(?:ID\s*(?:No|Number|#)|Civil\s*ID|NSSF\s*(?:No|Number|#)|Matricule)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+      /(?:ID\s*(?:No|Number|#)|Civil\s*ID|Matricule)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const nssfLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:NSSF\s*(?:No|Number|#)|CNSS\s*(?:No|Number|#))[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const wpNoLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:Work\s*Permit\s*(?:No|Number|#)|Permis\s*de\s*travail\s*(?:N°|No)?)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const resNoLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:Residen(?:cy|ce)\s*(?:Permit\s*)?(?:No|Number|#)|Carte\s*de\s*s[ée]jour\s*(?:N°|No)?)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const issueLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:Issue\s*Date|Date\s*Issued|Date\s*d['’]?[ée]mission)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const wpExpLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:Work\s*Permit\s*Expiry(?:\s*Date)?)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const resExpLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:Residen(?:cy|ce)\s*(?:Permit\s*)?Expiry(?:\s*Date)?)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const expLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:Expiry\s*Date|Exp\.?\s*Date|Valid\s*(?:Until|Thru|To)|Expires\s*(?:on)?|Date\s*d['’]?expiration)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
     ], AR_STOPS);
 
     const keepArOnly = s => cleanArabicRaw(String(s || '').replace(/[A-Za-z0-9.,/\\|()[\]]+/g, ' ').trim());
@@ -4426,6 +4497,24 @@
 
     const idCand = idArRaw || idLatRaw || '';
     const idDigits = (idCand.match(/[A-Z0-9-]{4,24}/i) || [])[0] || '';
+    const nssfCand = nssfArRaw || nssfLatRaw || '';
+    const nssfDigits = (nssfCand.match(/[A-Z0-9/-]{4,28}/i) || [])[0] || '';
+    const wpCand = wpNoArRaw || wpNoLatRaw || '';
+    const wpDigits = (wpCand.match(/[A-Z0-9/-]{4,28}/i) || [])[0] || '';
+    const resCand = resNoArRaw || resNoLatRaw || '';
+    const resDigits = (resCand.match(/[A-Z0-9/-]{4,28}/i) || [])[0] || '';
+
+    const issueDate = normalizeIdentityExpiryDate(issueArRaw || issueLatRaw || '');
+    const wpExpNorm = normalizeIdentityExpiryDate(wpExpArRaw || wpExpLatRaw || '');
+    const resExpNorm = normalizeIdentityExpiryDate(resExpArRaw || resExpLatRaw || '');
+    const genExpNorm = normalizeIdentityExpiryDate(expArRaw || expLatRaw || '');
+
+    const workPermitNumber = wpDigits || (docKind === 'work_permit' ? idDigits : '');
+    const workPermitExpiryDate = wpExpNorm || (docKind === 'work_permit' ? genExpNorm : '');
+    const residencyNumber = resDigits || (docKind === 'residency_permit' ? idDigits : '');
+    const residencyExpiryDate = resExpNorm || (docKind === 'residency_permit' ? genExpNorm : '');
+    const idExpiryDate = (docKind !== 'work_permit' && docKind !== 'residency_permit') ? genExpNorm : '';
+    const nssfNumber = nssfDigits || (docKind === 'nssf_card' ? idDigits : '');
 
     if (!fullNameLatin && fullNameArabic) fullNameLatin = transliterateArabicNameToLatin(fullNameArabic);
     if (!fullNameArabic && fullNameLatin) fullNameArabic = transliterateLatinNameToArabic(fullNameLatin);
@@ -4448,8 +4537,14 @@
       birthYear: dateInfo.birthYear,
       nationalityLatin: natInfo.latin,
       nationalityArabic: natInfo.ar,
-      idNumber: idDigits,
-      nssfNumber: docKind === 'nssf_card' ? idDigits : '',
+      idNumber: idDigits || workPermitNumber || residencyNumber || nssfNumber,
+      nssfNumber,
+      issueDate,
+      idExpiryDate,
+      workPermitNumber,
+      workPermitExpiryDate,
+      residencyNumber,
+      residencyExpiryDate,
       gender: ''
     });
   }
@@ -4489,7 +4584,16 @@
     const dateNorm = normalizeIdentityDate(r.dob || r.dateOfBirth || r.birthDate || r.birthYear || '');
     const natNorm = canonicalizeNationality(r.nationalityLatin || r.nationality || r.nationalityArabic || '');
     const docKind = String(r.docKind || 'id_card').trim().toLowerCase();
-    const idNumber = normalizeDigits(String(r.idNumber || r.nssfNumber || r.reference || '').trim()).slice(0, 48);
+    const wpNo = normalizeDigits(String(r.workPermitNumber || r.work_permit_no || '').trim()).slice(0, 48);
+    const resNo = normalizeDigits(String(r.residencyNumber || r.residency_no || '').trim()).slice(0, 48);
+    const nssfRaw = normalizeDigits(String(r.nssfNumber || r.nssf_no || '').trim()).slice(0, 48);
+    const rawIdNo = normalizeDigits(String(r.idNumber || '').trim()).slice(0, 48);
+    const idNumber = rawIdNo || wpNo || resNo || nssfRaw || normalizeDigits(String(r.reference || '').trim()).slice(0, 48);
+    const nssfNumber = nssfRaw || (docKind === 'nssf_card' ? idNumber : '');
+    const issueDate = normalizeIdentityExpiryDate(r.issueDate || r.issue_date || '');
+    const idExpiryDate = normalizeIdentityExpiryDate(r.idExpiryDate || r.id_expiry_date || '');
+    const workPermitExpiryDate = normalizeIdentityExpiryDate(r.workPermitExpiryDate || r.work_permit_expiry || '');
+    const residencyExpiryDate = normalizeIdentityExpiryDate(r.residencyExpiryDate || r.residency_expiry || '');
 
     return {
       docKind,
@@ -4504,15 +4608,66 @@
       nationalityLatin: natNorm.latin,
       nationalityArabic: natNorm.ar,
       idNumber,
-      nssfNumber: docKind === 'nssf_card' ? idNumber : normalizeDigits(String(r.nssfNumber || '').trim()).slice(0, 48),
+      nssfNumber,
+      issueDate,
+      idExpiryDate,
+      workPermitNumber: wpNo || (docKind === 'work_permit' ? idNumber : ''),
+      workPermitExpiryDate,
+      residencyNumber: resNo || (docKind === 'residency_permit' ? idNumber : ''),
+      residencyExpiryDate,
       gender: String(r.gender || '').trim().slice(0, 16)
     };
   }
 
   function buildSampleIdentityCardFile(kind = 'lebanese_id') {
-    const isNssf = kind === 'nssf_card' || kind === 'nssf';
-    const svgStr = isNssf
-      ? `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+    const kNorm = String(kind || 'lebanese_id').trim().toLowerCase();
+    const isNssf = kNorm === 'nssf_card' || kNorm === 'nssf';
+    const isWorkPermit = kNorm === 'work_permit' || kNorm === 'permit';
+    const isResidency = kNorm === 'residency_permit' || kNorm === 'residency';
+    let svgStr = '';
+    let fname = 'Sample_Lebanese_ID_Card.svg';
+    if (isWorkPermit) {
+      fname = 'Sample_Lebanese_Work_Permit.svg';
+      svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+          <rect width="100%" height="100%" rx="16" fill="#FFFDF7" stroke="#B45309" stroke-width="2.5"/>
+          <rect x="0" y="0" width="640" height="62" rx="14" fill="#92400E"/>
+          <text x="320" y="28" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">الجمهورية اللبنانية - وزارة العمل - بطاقة إجازة عمل</text>
+          <text x="320" y="49" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#FEF3C7">Ministry of Labour - Work Permit Card</text>
+          <text x="604" y="98" text-anchor="end" font-family="sans-serif" font-size="15" font-weight="700" fill="#1F2937">الاسم الكامل: طارق منصور</text>
+          <text x="604" y="126" text-anchor="end" font-family="sans-serif" font-size="14" fill="#374151">اسم الأب: عادل</text>
+          <text x="604" y="154" text-anchor="end" font-family="sans-serif" font-size="14" fill="#374151">تاريخ الولادة: 1991-05-18</text>
+          <text x="604" y="182" text-anchor="end" font-family="sans-serif" font-size="14" fill="#374151">الجنسية: سوري</text>
+          <text x="604" y="210" text-anchor="end" font-family="monospace" font-size="13.5" font-weight="700" fill="#92400E">رقم إجازة العمل: WP-2026-4418</text>
+          <text x="604" y="236" text-anchor="end" font-family="monospace" font-size="13" fill="#B91C1C">تاريخ الانتهاء: 2026-12-05</text>
+          <line x1="36" y1="254" x2="604" y2="254" stroke="#E5E7EB"/>
+          <text x="36" y="284" font-family="sans-serif" font-size="13.5" font-weight="700" fill="#0F172A">Full Name: Tariq Mansour</text>
+          <text x="36" y="308" font-family="sans-serif" font-size="13" fill="#334155">Father's Name: Adel</text>
+          <text x="36" y="332" font-family="sans-serif" font-size="13" fill="#334155">Nationality: Syrian</text>
+          <text x="36" y="356" font-family="monospace" font-size="12.5" fill="#92400E">Work Permit No: WP-2026-4418</text>
+          <text x="36" y="380" font-family="monospace" font-size="12.5" fill="#B91C1C">Work Permit Expiry: 2026-12-05</text>
+        </svg>`;
+    } else if (isResidency) {
+      fname = 'Sample_Lebanese_Residency_Permit.svg';
+      svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+          <rect width="100%" height="100%" rx="16" fill="#F7FAFC" stroke="#0F766E" stroke-width="2.5"/>
+          <rect x="0" y="0" width="640" height="62" rx="14" fill="#115E59"/>
+          <text x="320" y="28" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">المديرية العامة للأمن العام - بطاقة إقامة</text>
+          <text x="320" y="49" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#CCFBF1">General Security - Residency Permit</text>
+          <text x="604" y="102" text-anchor="end" font-family="sans-serif" font-size="15" font-weight="700" fill="#1E293B">الاسم الكامل: مازن حسن</text>
+          <text x="604" y="132" text-anchor="end" font-family="sans-serif" font-size="14" fill="#334155">اسم الأب: فؤاد</text>
+          <text x="604" y="162" text-anchor="end" font-family="sans-serif" font-size="14" fill="#334155">الجنسية: مصري</text>
+          <text x="604" y="194" text-anchor="end" font-family="monospace" font-size="13.5" font-weight="700" fill="#0F766E">رقم الإقامة: RP-2026-9912</text>
+          <text x="604" y="222" text-anchor="end" font-family="monospace" font-size="13" fill="#B91C1C">انتهاء الإقامة: 2026-12-12</text>
+          <line x1="36" y1="248" x2="604" y2="248" stroke="#CBD5E1"/>
+          <text x="36" y="280" font-family="sans-serif" font-size="13.5" font-weight="700" fill="#0F172A">Full Name: Mazen Hassan</text>
+          <text x="36" y="306" font-family="sans-serif" font-size="13" fill="#334155">Father's Name: Fouad</text>
+          <text x="36" y="332" font-family="sans-serif" font-size="13" fill="#334155">Nationality: Egyptian</text>
+          <text x="36" y="358" font-family="monospace" font-size="12.5" fill="#0F766E">Residency Permit No: RP-2026-9912</text>
+          <text x="36" y="382" font-family="monospace" font-size="12.5" fill="#B91C1C">Residency Expiry: 2026-12-12</text>
+        </svg>`;
+    } else if (isNssf) {
+      fname = 'Sample_Lebanese_NSSF_Card.svg';
+      svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
           <rect width="100%" height="100%" rx="16" fill="#F8FAFC" stroke="#1E40AF" stroke-width="2.5"/>
           <rect x="0" y="0" width="640" height="62" rx="14" fill="#1E3A8A"/>
           <text x="320" y="28" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">الصندوق الوطني للضمان الاجتماعي - بطاقة المضمون</text>
@@ -4528,8 +4683,9 @@
           <text x="36" y="332" font-family="sans-serif" font-size="13" fill="#334155">DOB: 14/03/1989</text>
           <text x="36" y="358" font-family="sans-serif" font-size="13" fill="#334155">Nationality: Lebanese</text>
           <text x="36" y="382" font-family="monospace" font-size="12.5" fill="#475569">NSSF No: 882419-03</text>
-        </svg>`
-      : `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+        </svg>`;
+    } else {
+      svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
           <rect width="100%" height="100%" rx="16" fill="#FBF9F4" stroke="#A67C2E" stroke-width="2.5"/>
           <rect x="0" y="0" width="640" height="60" rx="14" fill="#8C5E14"/>
           <text x="320" y="26" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">الجمهورية اللبنانية - بطاقة هوية</text>
@@ -4550,7 +4706,7 @@
           <text x="32" y="362" font-family="sans-serif" font-size="13" fill="#3B3128">DOB: 22/07/1992</text>
           <text x="270" y="362" font-family="sans-serif" font-size="13" fill="#3B3128">Nationality: Lebanese</text>
         </svg>`;
-    const fname = isNssf ? 'Sample_Lebanese_NSSF_Card.svg' : 'Sample_Lebanese_ID_Card.svg';
+    }
     return new File([new Blob([svgStr], { type: 'image/svg+xml' })], fname, { type: 'image/svg+xml' });
   }
 
@@ -4661,6 +4817,12 @@
       nationalityArabic: pickVal(aiParsed && aiParsed.nationalityArabic, detParsed.nationalityArabic),
       idNumber: pickVal(aiParsed && aiParsed.idNumber, detParsed.idNumber),
       nssfNumber: pickVal(aiParsed && aiParsed.nssfNumber, detParsed.nssfNumber),
+      issueDate: pickVal(aiParsed && aiParsed.issueDate, detParsed.issueDate),
+      idExpiryDate: pickVal(aiParsed && aiParsed.idExpiryDate, detParsed.idExpiryDate),
+      workPermitNumber: pickVal(aiParsed && aiParsed.workPermitNumber, detParsed.workPermitNumber),
+      workPermitExpiryDate: pickVal(aiParsed && aiParsed.workPermitExpiryDate, detParsed.workPermitExpiryDate),
+      residencyNumber: pickVal(aiParsed && aiParsed.residencyNumber, detParsed.residencyNumber),
+      residencyExpiryDate: pickVal(aiParsed && aiParsed.residencyExpiryDate, detParsed.residencyExpiryDate),
       gender: pickVal(aiParsed && aiParsed.gender, detParsed.gender)
     });
 
@@ -4915,7 +5077,15 @@
         dob: scanObj.dob || '',
         nationality: scanObj.nationalityLatin || '',
         nationalityAr: scanObj.nationalityArabic || '',
-        reference: scanObj.idNumber || '',
+        motherNameLatin: scanObj.motherNameLatin || '',
+        motherNameArabic: scanObj.motherNameArabic || '',
+        nssfNumber: scanObj.nssfNumber || '',
+        idExpiryDate: scanObj.idExpiryDate || '',
+        workPermitNumber: scanObj.workPermitNumber || '',
+        workPermitExpiryDate: scanObj.workPermitExpiryDate || '',
+        residencyNumber: scanObj.residencyNumber || '',
+        residencyExpiryDate: scanObj.residencyExpiryDate || '',
+        reference: scanObj.idNumber || scanObj.nssfNumber || scanObj.workPermitNumber || scanObj.residencyNumber || '',
         idDocKind: scanObj.docKind || '',
         attObj: scanObj.attObj || null,
         snippet: docRef || [scanObj.fullNameLatin, scanObj.fatherNameLatin ? `Father: ${scanObj.fatherNameLatin}` : '', scanObj.dob || ''].filter(Boolean).join(' · ')
@@ -5032,9 +5202,17 @@
             father_name: ev.fatherNameLatin,
             father_name_ar: ev.fatherNameArabic || '',
             full_name_ar: ev.fullNameArabic || '',
+            mother_name: ev.motherNameLatin || '',
+            mother_name_ar: ev.motherNameArabic || '',
             dob: ev.dob || '',
             nationality: ev.nationality || '',
             nationality_ar: ev.nationalityAr || '',
+            nssf_no: ev.nssfNumber || '',
+            id_expiry_date: ev.idExpiryDate || '',
+            work_permit_no: ev.workPermitNumber || '',
+            work_permit_expiry: ev.workPermitExpiryDate || '',
+            residency_no: ev.residencyNumber || '',
+            residency_expiry: ev.residencyExpiryDate || '',
             reference: ev.reference || '',
             id_doc_kind: ev.idDocKind || '',
             attObj: ev.attObj || null,
@@ -5148,9 +5326,17 @@
         proposedFather: best ? best.father_name : '',
         proposedFatherAr: best ? (best.father_name_ar || transliterateLatinNameToArabic(best.father_name)) : '',
         proposedFullAr: best ? (best.full_name_ar || '') : '',
+        proposedMother: best ? (best.mother_name || '') : '',
+        proposedMotherAr: best ? (best.mother_name_ar || '') : '',
         proposedDob: best ? (best.dob || '') : '',
         proposedNat: best ? (best.nationality || '') : '',
         proposedNatAr: best ? (best.nationality_ar || '') : '',
+        proposedNssfNo: best ? (best.nssf_no || '') : '',
+        proposedIdExpiry: best ? (best.id_expiry_date || '') : '',
+        proposedWorkPermitNo: best ? (best.work_permit_no || '') : '',
+        proposedWorkPermitExpiry: best ? (best.work_permit_expiry || '') : '',
+        proposedResidencyNo: best ? (best.residency_no || '') : '',
+        proposedResidencyExpiry: best ? (best.residency_expiry || '') : '',
         proposedRef: best ? (best.reference || '') : '',
         proposedDocKind: best ? (best.id_doc_kind || '') : '',
         proposedAttObj: best ? (best.attObj || null) : null,
@@ -5216,6 +5402,7 @@
     scanIdentityCard,
     parseIdentityCardDeterministic,
     normalizeIdentityScanResult,
+    normalizeIdentityExpiryDate,
     buildSampleIdentityCardFile,
     transliterateArabicNameToLatin,
     transliterateLatinNameToArabic,

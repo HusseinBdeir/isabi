@@ -32,6 +32,51 @@
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
+  function canViewPayrollMoneyPbi(ctx) {
+    if (ctx && typeof ctx.canViewPayrollDollarAmounts === 'function') return Boolean(ctx.canViewPayrollDollarAmounts());
+    if (typeof window !== 'undefined' && typeof window.__mfgCanViewPayrollDollarAmounts === 'function') return Boolean(window.__mfgCanViewPayrollDollarAmounts());
+    return false;
+  }
+
+  function canAccessRdlPbi(ctx, reportId) {
+    if (ctx && typeof ctx.canAccessRdlReport === 'function') return Boolean(ctx.canAccessRdlReport(reportId));
+    if (typeof window !== 'undefined' && typeof window.__mfgCanAccessRdlReport === 'function') return Boolean(window.__mfgCanAccessRdlReport(reportId));
+    return false;
+  }
+
+  function isStaffAllowedPbi(r, seedObj, ctx) {
+    if (!r) return false;
+    const s = seedObj || (typeof SEED !== 'undefined' ? SEED : null);
+    if (ctx && typeof ctx.isStaffMemberAllowedForSeat === 'function') return Boolean(ctx.isStaffMemberAllowedForSeat(r, s));
+    if (typeof window !== 'undefined' && typeof window.__mfgIsStaffMemberAllowedForSeat === 'function') return Boolean(window.__mfgIsStaffMemberAllowedForSeat(r, s));
+    return false;
+  }
+
+  function isMaskedPayrollColPbi(tableKey, colName) {
+    if (typeof window !== 'undefined' && typeof window.__mfgIsMaskedPayrollCol === 'function') {
+      return Boolean(window.__mfgIsMaskedPayrollCol(tableKey, colName));
+    }
+    const t = String(tableKey || '').trim().toLowerCase();
+    const c = String(colName || '').trim().toLowerCase();
+    if (!c) return false;
+    if (t === 'staff_members') return /^(?:active_salary_usd|monthly_salary_usd|monthly_salary|salary_usd|salary|reimbursement|package_usd|daily_rate|total_earned|total_paid|rem_payment|deduction|base|reimb|att_ot_pay|trip_ot_pay|ot_pay|extras|site_allow|late_ded|abs_ded|ded|earnings|paid|balance|advances|base_salary|salary_status)$/.test(c);
+    if (t === 'employments') return /^(?:monthly_salary_usd|monthly_salary|salary_usd|salary|reimbursement|package_usd|daily_rate|deduction|total_paid|total_earned|rem_payment|lbp_amount|usd_amount)$/.test(c);
+    if (t === 'salaries') return /^(?:amount|lbp_amount|usd_amount|monthly_salary_usd|monthly_salary|salary_usd|salary|reimbursement|deduction|month_earnings|month_cum_paid|cash_usd|bank_usd|unmatched_usd)$/.test(c);
+    if (t === 'attendance') return /^(?:extra_usd|overtime_usd|deduction_usd|net_usd|wage_usd|amount|usd_amount|sales_ot_usd|raw_ot_usd|total_ot_usd|in_payroll_usd|total|diff)$/.test(c);
+    if (t === 'freelance_entries') return /^(?:rate_usd|total|amount|usd_amount|reimbursement|deduction)$/.test(c);
+    if (t === 'logistics_allowances') return /^(?:daily_usd|lbp_amount|amount|total|usd_amount|earned_usd|earned_win_usd|accrued|paid_fifo|outstanding|daily_rate_eff)$/.test(c);
+    if (t === 'overtime_rates') return /^(?:amount|rate|rate_usd|usd_amount)$/.test(c);
+    return false;
+  }
+
+  function isMaskedPayrollViewPbi(tableKey, viewId) {
+    const t = String(tableKey || '').trim().toLowerCase();
+    const v = String(viewId || '').trim().toLowerCase();
+    if (v === 'open_rem' || v === 'pending_salary') return t === 'staff_members' || t === 'employments';
+    if (t === 'salaries' && (v === 'usd' || v === 'lbp')) return true;
+    return false;
+  }
+
   function isArSettlingRecpt(r) {
     if (!r || r.voided) return false;
     const mth = String(r.method || '').trim();
@@ -1598,8 +1643,8 @@
     // 4 · Payroll, Attendance & Workforce (5 BU-scoped)
     { key: 'salaries', group: '4 · Payroll, Attendance & Workforce', label: 'Staff Salary Payments', dvn: 'bhf_mfgsalary', form: 'salary', cols: ['date', 'payroll_month', 'company', 'staff', 'currency', 'amount', 'lbp_amount', 'notes'], relTables: ['employments', 'attendance', 'logistics_allowances', 'freelance_entries'], views: [
       { id: 'all', label: 'All Salary Payments' },
-      { id: 'usd', label: 'USD Salaries', fn: r => String(r.currency || 'USD').toUpperCase() !== 'LBP' && !r.lbp_amount },
-      { id: 'lbp', label: 'LBP Salaries (LL)', fn: r => String(r.currency || '').toUpperCase() === 'LBP' || Number(r.lbp_amount || 0) > 0 }
+      { id: 'usd', label: 'USD Salaries', fn: r => canViewPayrollMoneyPbi(null) && String(r.currency || 'USD').toUpperCase() !== 'LBP' && !r.lbp_amount },
+      { id: 'lbp', label: 'LBP Salaries (LL)', fn: r => canViewPayrollMoneyPbi(null) && (String(r.currency || '').toUpperCase() === 'LBP' || Number(r.lbp_amount || 0) > 0) }
     ] },
     { key: 'attendance', group: '4 · Payroll, Attendance & Workforce', label: 'Attendance & Overtime Log', dvn: 'bhf_mfgattendance', form: 'attendance', cols: ['set_date', 'tx_date', 'month', 'company', 'staff', 'type', 'tally', 'in_time', 'out_time', 'worked_hours', 'overtime_hours', 'late_hours', 'leave_days', 'extra_usd', 'notes'], relTables: ['work_shifts', 'employments', 'salaries'], views: [
       { id: 'all', label: 'All Attendance Rows' },
@@ -1615,7 +1660,7 @@
       { id: 'active', label: 'Current Active', fn: r => !r.end_date || String(r.end_date).slice(0, 10) >= localTodayPbi() },
       { id: 'historical', label: 'Historical Windows', fn: r => Boolean(r.end_date && String(r.end_date).slice(0, 10) < localTodayPbi()) }
     ] },
-    { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'reimbursement', 'package_usd', 'daily_rate', 'working_days', 'working_hours', 'vacation_days', 'overtime_multiplier', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['staff_members', 'staff_roles', 'staff_assignments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'pending_salary', label: 'Pending Salary ($0)', fn: r => Boolean(r && !r.voided && r.salary_pending) }, { id: 'freelance', label: 'Freelance & Daily', fn: r => /free|daily/i.test(r.type || '') }] },
+    { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'reimbursement', 'package_usd', 'daily_rate', 'working_days', 'working_hours', 'vacation_days', 'overtime_multiplier', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['staff_members', 'staff_roles', 'staff_assignments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'pending_salary', label: 'Pending Salary ($0)', fn: r => canViewPayrollMoneyPbi(null) && Boolean(r && !r.voided && r.salary_pending) }, { id: 'freelance', label: 'Freelance & Daily', fn: r => /free|daily/i.test(r.type || '') }] },
     { key: 'staff_assignments', group: '4 · Payroll, Attendance & Workforce', navView: 'payroll_contracts', label: 'Staff Role & Equipment Log', singularLabel: 'Role & Equipment Assignment', dvn: 'bhf_staffassignment', form: 'staffassignment', chronoSeries: true, seriesKeys: ['staff'], cols: ['name', 'company', 'staff', 'role', 'role_category', 'equipment', 'status', 'start_date', 'end_date', 'notes'], relTables: ['staff_members', 'staff_roles', 'employments', 'equipment'], views: [
       { id: 'all', label: 'All Assignments' },
       { id: 'active', label: 'Current Active', fn: r => !r.end_date || String(r.end_date).slice(0, 10) >= localTodayPbi() },
@@ -1678,11 +1723,11 @@
     { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region', dvn: 'bhf_region', form: 'region', cols: ['name', 'sites_count', 'corridor', 'zone_shape', 'distance_km', 'overtime_rate', 'total_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
     { key: 'equipment', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', singularLabel: 'Equipment', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
     { key: 'drivers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', singularLabel: 'Driver', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] },
-    { key: 'staff_members', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_staff', label: 'Staff Members', singularLabel: 'Staff Member', dvn: 'bhf_staffmember', form: 'staff', cols: ['name', 'father_name', 'nationality', 'dob', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'active_salary_usd', 'salary_status', 'total_earned', 'total_paid', 'rem_payment'], relTables: ['staff_roles', 'staff_assignments', 'employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'loans'], views: [
+    { key: 'staff_members', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_staff', label: 'Staff Members', singularLabel: 'Staff Member', dvn: 'bhf_staffmember', form: 'staff', cols: ['name', 'father_name', 'nationality', 'dob', 'permit_status', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'active_salary_usd', 'salary_status', 'total_earned', 'total_paid', 'rem_payment'], relTables: ['staff_roles', 'staff_assignments', 'employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'loans'], views: [
       { id: 'all', label: 'All Staff Members' },
-      { id: 'open_rem', label: 'Remaining Payment > $0', fn: (r, rel) => { const sr = lookupRelStaffPbi(rel, r) || {}; return Number(sr.rem_payment || 0) > 0.5; } },
+      { id: 'open_rem', label: 'Remaining Payment > $0', fn: (r, rel) => { if (!canViewPayrollMoneyPbi(null)) return false; const sr = lookupRelStaffPbi(rel, r) || {}; return Number(sr.rem_payment || 0) > 0.5; } },
       { id: 'active_contracts', label: 'Active Contracted', fn: (r, rel) => { const sr = lookupRelStaffPbi(rel, r) || {}; return Number(sr.active_contracts_count || 0) > 0; } },
-      { id: 'pending_salary', label: 'Pending Salary ($0)', fn: (r, rel) => { const sr = lookupRelStaffPbi(rel, r) || {}; return Boolean(sr.has_pending_salary); } },
+      { id: 'pending_salary', label: 'Pending Salary ($0)', fn: (r, rel) => { if (!canViewPayrollMoneyPbi(null)) return false; const sr = lookupRelStaffPbi(rel, r) || {}; return Boolean(sr.has_pending_salary); } },
       { id: 'drivers_ops', label: 'Drivers & Operators', fn: (r, rel) => { const sr = lookupRelStaffPbi(rel, r) || {}; return Boolean(sr.is_driver_op || /driver|operat|loader|excavat|crusher|truck/i.test(String(r.role || r.role_category || r.worker_category || sr.role || ''))); } },
       { id: 'uncontracted', label: 'Registry Only (No Contract)', fn: (r, rel) => { const sr = lookupRelStaffPbi(rel, r) || {}; return Number(sr.contracts_count || 0) === 0; } }
     ] },
@@ -1937,6 +1982,16 @@
       }
       return `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('payroll_contracts')}<span>${esc(cell)}</span></span>`;
     }
+    if (c === 'permit_status' && cell && cell !== '—' && cell !== '-') {
+      const ev = (typeof window !== 'undefined' && typeof window.__mfgEvaluateStaffComplianceRow === 'function')
+        ? window.__mfgEvaluateStaffComplianceRow(r, (typeof window !== 'undefined' && (window.MFG_SEED || window.__MFG_SEED_INTERNAL || window.SEED)) || null)
+        : null;
+      const tier = (ev && ev.tier) ? ev.tier : 'none';
+      const badgeCls = (tier === 'expired' || tier === 'critical_7')
+        ? 'badge-bad'
+        : ((tier === 'due_30' || tier === 'watch_60' || tier === 'missing_permit') ? 'badge-warn' : (tier === 'ok' ? 'badge-ok' : 'badge-muted'));
+      return `<span class="badge permit-status-badge permit-tier-${esc(tier)} ${badgeCls}">${esc(cell)}</span>`;
+    }
     if (c === 'role_category' && cell && cell !== '—' && cell !== '-') {
       if (/fleet|driver/i.test(cell)) return `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('truck')}<span>${esc(cell)}</span></span>`;
       if (/plant|prod/i.test(cell)) return `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('plant')}<span>${esc(cell)}</span></span>`;
@@ -1990,7 +2045,7 @@
     return `<span class="badge ${isCust ? 'badge-info' : 'badge-brass'}">${esc(isCust ? 'Customer Delivery' : 'Supplier / Quarry')}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(code|ext_ref|ext_flow|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|supply_mode|linked_party|jv_partner|jv_share|working_days|workdays_label|day_schedule_summary|shift_code|is_bu_default|start_time|end_time|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref|lifecycle|last_load)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(code|ext_ref|ext_flow|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|supply_mode|linked_party|jv_partner|jv_share|working_days|workdays_label|day_schedule_summary|shift_code|is_bu_default|start_time|end_time|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|permit_status|nssf_no|work_permit_no|residency_no|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref|lifecycle|last_load)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -3388,6 +3443,12 @@
         if (c === 'dob') return r.dob || (st && st.dob) || null;
         if (c === 'role') return effRole;
         if (c === 'role_category') return (re && re.category) || (st && st.role_category) || r.role_category || inferRoleCatPbi(effRole);
+        if (c === 'permit_status') {
+          const ev = (typeof window !== 'undefined' && typeof window.__mfgEvaluateStaffComplianceRow === 'function')
+            ? window.__mfgEvaluateStaffComplianceRow(r, (typeof window !== 'undefined' && (window.MFG_SEED || window.__MFG_SEED_INTERNAL || window.SEED)) || null)
+            : null;
+          return (ev && ev.badgeText) ? ev.badgeText : null;
+        }
         if (c === 'phone') return r.phone || (st && st.phone) || null;
         if (c === 'default_equipment') return (st && st.active_equipment) || r.default_equipment || (st && st.default_equipment) || null;
         if (st && st[c] != null) return st[c];
@@ -5998,12 +6059,13 @@
     // PAGE 03: ACTION ITEMS & EXCEPTIONS (m284 Executive Control Tower — 4 headed sections)
     // =========================================================================
     else if (activePageId === 'p03_exceptions') {
+      const canViewPayExc = canViewPayrollMoneyPbi(ctx);
       const overdueCusts = custRows.filter(c => Number(c.ar_overdue || 0) > 0).sort((a, b) => Number(b.ar_overdue || 0) - Number(a.ar_overdue || 0));
       const ivaUninvoiced = custRows.filter(c => c['VAT Registered'] === 'Yes' && Number(c.vat_receivable || 0) > 0);
       const belowAgreed = (prSn.top_below_agreed_exceptions || []).filter(matchSearch);
       const lapsedPairs = (prSn.lapsed_agreement_pairs || []).filter(matchSearch);
       const outliers = (flSn.consumption_outliers || []).filter(matchSearch);
-      const unmatchedSal = (prSn.unmatched_salary_by_staff || []).filter(matchSearch);
+      const unmatchedSal = canViewPayExc ? (prSn.unmatched_salary_by_staff || []).filter(matchSearch) : [];
 
       bodyHtml = `
         ${pbiHeading('1 · Executive exception queue', 'Priority operational, financial and tax action items for the period · click any card to open its detail page')}
@@ -6012,7 +6074,9 @@
           { label: 'Sales below agreed price', value: fmtUSD(prSn.sales_below_agreed_usd || 0, 0), sub: fmtNum(prSn.below_agreed_pairs_count || 0) + ' customer × product pairs', tone: 'warn', navPage: 'p05_pricing' },
           { label: 'Meter readings to check', value: fmtNum(flSn.meter_readings_to_check || 0), sub: fmtNum(outliers.length) + ' consumption outliers', tone: 'warn', navPage: 'p09_fuel' },
           { label: 'Diesel tank balance', value: fmtNum(flSn.diesel_stock_balance_l != null ? flSn.diesel_stock_balance_l : k.diesel_in_tank, 0) + ' L', sub: 'Negative = unbooked bulk purchase', tone: Number(k.diesel_in_tank || 0) < 0 ? 'crit' : 'good', navPage: 'p09_fuel' },
-          { label: 'Salary without contract', value: fmtUSD(prSn.unmatched_salary_payments_usd || 0, 0), sub: fmtNum(unmatchedSal.length) + ' staff affected', tone: 'warn', navPage: 'p12_payroll' },
+          canViewPayExc
+            ? { label: 'Salary without contract', value: fmtUSD(prSn.unmatched_salary_payments_usd || 0, 0), sub: fmtNum(unmatchedSal.length) + ' staff affected', tone: 'warn', navPage: 'p12_payroll' }
+            : { label: 'Salary without contract', value: 'Restricted', sub: 'Payroll permission required', tone: 'warn' },
           { label: 'Date gaps > 31 days', value: fmtNum(paritySn.date_basis_anomalies_gt_31d_count || 0), sub: 'Tx vs Reporting date drift', tone: 'warn', navPage: 'p19_changelog' }
         ])}
 
@@ -6061,12 +6125,14 @@
         ${kpiBand('', [
           { label: 'Own units idle 30+ days', value: fmtNum(flSn.own_units_idle_30d || 0), sub: 'Active fleet ' + fmtNum(flSn.active_equipment || k.active_equip), navPage: 'p10_fleet' },
           { label: 'Consumption outliers', value: fmtNum(outliers.length), sub: '>80 L/100km or >25 L/h', tone: 'warn', navPage: 'p09_fuel' },
-          { label: 'Driver pay unallocated', value: fmtUSD(flSn.unallocated_driver_payroll_usd || 0, 0), sub: fmtNum(flSn.unallocated_driver_months_count || 0) + ' driver-months', navPage: 'p11_drivers' },
+          canViewPayExc
+            ? { label: 'Driver pay unallocated', value: fmtUSD(flSn.unallocated_driver_payroll_usd || 0, 0), sub: fmtNum(flSn.unallocated_driver_months_count || 0) + ' driver-months', navPage: 'p11_drivers' }
+            : { label: 'Driver pay unallocated', value: 'Restricted', sub: 'Payroll permission required' },
           { label: 'Incomplete ticket books', value: fmtNum(prSn.incomplete_ticket_books || 0), sub: fmtNum(prSn.missing_tickets_in_books || 0) + ' missing serials', navPage: 'p18_tickets' },
           { label: 'Duplicate ticket serials', value: fmtNum(prSn.duplicate_ticket_numbers || 0), sub: fmtNum(prSn.unnumbered_tickets || 0) + ' unnumbered', tone: 'warn', navPage: 'p18_tickets' },
           { label: 'Unlinked VAT invoices', value: fmtNum(paritySn.unlinked_vat_invoices_count || 0), sub: 'Headers without tickets', navPage: 'p13_vat' }
         ])}
-        <div class="pbi-grid-2">
+        <div class="${canViewPayExc ? 'pbi-grid-2' : 'pbi-grid-1'}">
           ${pbiTable('Fuel consumption & meter reading outliers', [
             { label: 'Equipment', key: 'equipment', mono: true, bold: true },
             { label: 'Type', key: 'type' },
@@ -6076,10 +6142,10 @@
             { label: 'Diesel (L)', key: 'diesel_l', r: true, fmt: v => fmtNum(v, 0) }
           ], outliers, { subtitle: 'Units exceeding tolerance thresholds (>80 L/100km for trucks or >25 L/hr for yellow iron)', unitLabel: 'outliers' })}
 
-          ${pbiTable('Salary payments without an employment contract', [
+          ${canViewPayExc ? pbiTable('Salary payments without an employment contract', [
             { label: 'Staff Member', key: 'staff', bold: true },
             { label: 'Unmatched Paid ($)', key: 'unmatched_usd', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` }
-          ], unmatchedSal, { subtitle: 'Payments whose staff and payroll month no employment contract covers · add/extend contract on Workforce & Payroll', unitLabel: 'staff' })}
+          ], unmatchedSal, { subtitle: 'Payments whose staff and payroll month no employment contract covers · add/extend contract on Workforce & Payroll', unitLabel: 'staff' }) : ''}
         </div>
         ${(() => {
           const lubEx = computeLubricationAudit({
@@ -9445,7 +9511,7 @@
           <div class="pbi-panel">
             <div class="pbi-panel-hdr">
               <div>
-                <div class="pbi-panel-title">27 Printable A4 Statements &amp; Paginated Reports Launcher</div>
+                <div class="pbi-panel-title">28 Printable A4 Statements &amp; Paginated Reports Launcher</div>
                 <span class="pbi-panel-sub">Click any statement below to open its A4 printable sheet (including #19 Staff Payroll &amp; #15 Driver Overtime)</span>
               </div>
               <button type="button" class="btn btn-brass" style="padding:4px 10px;font-size:11px" data-nav-jump="statements">Open Statement Center</button>
@@ -9967,7 +10033,10 @@
     for (let i = 0; i < TABLE_CATALOG.length; i++) {
       const t = TABLE_CATALOG[i];
       const tUniv = Boolean(t.universal);
-      const tRows = ctx.filterRecords((SEED.records && SEED.records[t.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: tUniv, ignoreRls: tUniv });
+      let tRows = ctx.filterRecords((SEED.records && SEED.records[t.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: tUniv, ignoreRls: tUniv });
+      if (t.key === 'staff_members') {
+        tRows = tRows.filter(r => isStaffAllowedPbi(r, SEED, ctx));
+      }
       if (t.key === 'price_rules') {
         let salesCnt = 0;
         for (let j = 0; j < tRows.length; j++) {
@@ -10216,12 +10285,16 @@
     const rel = getHubRelIndex(SEED);
     const chipCounts = _getHubTableChipCounts(SEED, STATE, ctx, tablePool);
     const rawList = (SEED.records && SEED.records[meta.key]) || [];
+    const _tblCtx = typeof ctx !== 'undefined' ? ctx : (typeof opts !== 'undefined' ? opts : null);
+    const canViewPay = canViewPayrollMoneyPbi(_tblCtx);
+    const scopedRawList = meta.key === 'staff_members' ? (rawList || []).filter(r => isStaffAllowedPbi(r, SEED, _tblCtx)) : rawList;
     const isUniv = Boolean(meta.universal);
-    const rlsScopedRaw = filterRecords(rawList, { ignorePeriod: true, ignoreSearch: true, ignoreCompany: isUniv, ignoreRls: isUniv });
-    const searchCols = meta.key === 'sites'
+    const rlsScopedRaw = filterRecords(scopedRawList, { ignorePeriod: true, ignoreSearch: true, ignoreCompany: isUniv, ignoreRls: isUniv });
+    const rawSearchCols = meta.key === 'sites'
       ? Array.from(new Set(meta.cols.concat(['supplier', 'customer', 'site_category', 'linked_party'])))
-      : (meta.key === 'staff_members' ? Array.from(new Set(meta.cols.concat(['father_name', 'role_category', 'phone', 'reference']))) : meta.cols);
-    const baseFiltered = filterRecords(rawList, {
+      : (meta.key === 'staff_members' ? Array.from(new Set(meta.cols.concat(['father_name', 'role_category', 'phone', 'reference', 'nssf_no', 'work_permit_no', 'residency_no']))) : meta.cols);
+    const searchCols = canViewPay ? rawSearchCols : rawSearchCols.filter(sc => !isMaskedPayrollColPbi(meta.key, sc));
+    const baseFiltered = filterRecords(scopedRawList, {
       cols: searchCols,
       tableKey: meta.key,
       ignoreCompany: isUniv,
@@ -10238,7 +10311,7 @@
       : (meta.views || [{ id: 'all', label: 'All ' + meta.label }]);
     const views = ((meta.key === 'sales_tickets' && !STATE._canSeeTaxBreakdown)
       ? rawViews.filter(v => v.id !== 'iva')
-      : rawViews).filter(v => isMfgTbl || !v.mfgOnly);
+      : rawViews).filter(v => (isMfgTbl || !v.mfgOnly) && (canViewPay || !isMaskedPayrollViewPbi(meta.key, v.id)));
     const activeViewId = (STATE.tableViews && STATE.tableViews[meta.key]) || 'all';
     const activeView = views.find(v => v.id === activeViewId) || views[0];
     const isRawPrMode = meta.key === 'price_rules' && /^raw_/i.test(activeView.id);
@@ -10263,7 +10336,13 @@
     const activeCols = (!isMfgTbl && meta.key === 'sites')
       ? baseActiveCols.filter(c => !/^(supply_mode|is_jv|active_rules|raw_loads|sales_loads|total_loads)$/.test(c))
       : ((!isMfgTbl && meta.key === 'regions') ? baseActiveCols.filter(c => c !== 'total_loads' && c !== 'overtime_rate') : baseActiveCols);
-    const filtered = activeView && activeView.fn ? baseFiltered.filter(r => activeView.fn(r, rel)) : baseFiltered;
+    const filteredByView = activeView && activeView.fn ? baseFiltered.filter(r => activeView.fn(r, rel)) : baseFiltered;
+    const watchdogTier = (meta.key === 'staff_members' && STATE && STATE.permitWatchdogTier) ? String(STATE.permitWatchdogTier) : 'all';
+    const evalComplianceFn = (meta.key === 'staff_members' && watchdogTier !== 'all' && typeof window !== 'undefined') ? window.__mfgEvaluateStaffComplianceRow : null;
+    const matchTierFn = (evalComplianceFn && typeof window !== 'undefined') ? window.__mfgMatchesComplianceTier : null;
+    const filtered = (evalComplianceFn && matchTierFn)
+      ? filteredByView.filter(r => matchTierFn(evalComplianceFn(r, SEED), watchdogTier))
+      : filteredByView;
     const defSortSpec = getHubTableDefaultSort(meta, activeView.id);
     const rows = sortRows(filtered, 'tbl_' + meta.key, defSortSpec.key, defSortSpec.dir);
     const shown = rows.slice(0, shownCount('tbl_' + meta.key));
@@ -10427,7 +10506,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|deduction|balance|rem_payment|advances|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|ext_received_usd|ext_gave_usd|ext_owes_usd|ext_owes_lbp|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
+                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key, _tblCtx), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|deduction|balance|rem_payment|advances|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|ext_received_usd|ext_gave_usd|ext_owes_usd|ext_owes_lbp|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
@@ -10464,10 +10543,13 @@
                     const signedHtml = (isSignedUsd || isSignedLbp) && v != null && v !== ''
                       ? `<strong style="color:${signedTone}">${esc(cell)}</strong>`
                       : null;
-                    const innerHtml = isLookup
-                      ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-                      : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, meta.key) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell)))))));
-                    return `<td class="${isMoney || isSignedUsd || isNum || isLbp || isSignedLbp ? 'r' : ''}${/date|ticket|code|ext_ref|_no$|plate|version|_delta$|^ext_owes_|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
+                    const isMaskedPay = !canViewPay && isMaskedPayrollColPbi(meta.key, c);
+                    const innerHtml = isMaskedPay
+                      ? `<span class="muted" data-masked-payroll="1">Restricted</span>`
+                      : (isLookup
+                        ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
+                        : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, meta.key) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell))))))));
+                    return `<td class="${!isMaskedPay && (isMoney || isSignedUsd || isNum || isLbp || isSignedLbp) ? 'r' : ''}${/date|ticket|code|ext_ref|_no$|plate|version|_delta$|^ext_owes_|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
               `).join('') || emptyRow(activeCols.length, 'No rows match the active filter.')}
@@ -10478,7 +10560,7 @@
                 ${(() => {
                   const hasTankCol = activeCols.includes('tank_remaining_litres');
                   const tankRemVal = hasTankCol && typeof window.MFG_DIESEL_TANK === 'function' ? ((window.MFG_DIESEL_TANK() || {}).closingTankL ?? '') : '';
-                  const tfKey = `tbl|${(SEED && SEED._customRev) || 0}|${_hubRelStamp}|${meta.key}|${activeView.id}|${activeCols.join(',')}|${_pbiArrUid(rows)}:${rows.length}:${rows[0] && rows[0].id}:${rows[rows.length - 1] && rows[rows.length - 1].id}|${tankRemVal}`;
+                  const tfKey = `tbl|${(SEED && SEED._customRev) || 0}|${_hubRelStamp}|pay:${canViewPay ? 1 : 0}|${meta.key}|${activeView.id}|${activeCols.join(',')}|${_pbiArrUid(rows)}:${rows.length}:${rows[0] && rows[0].id}:${rows[rows.length - 1] && rows[rows.length - 1].id}|${tankRemVal}`;
                   if (_hubTfootCache.has(tfKey)) return _hubTfootCache.get(tfKey);
                   const isColNumeric = col => {
                     if (NON_NUMERIC_HUB_COLS.test(col)) return { isM: false, isN: false, isL: false, isSU: false, isSL: false, num: false };
@@ -10520,6 +10602,7 @@
                   for (let ci = leadSpan; ci < colSpecs.length; ci++) {
                     const sp = colSpecs[ci];
                     const { c, isM: isMoney, isN: isNum, isL, isSU, isSL, isAvg, sum, cnt } = sp;
+                    if (!canViewPay && isMaskedPayrollColPbi(meta.key, c)) { out.push(`<td><span class="muted">Restricted</span></td>`); continue; }
                     if (!isMoney && !isNum && !isL && !isSU && !isSL) { out.push(`<td></td>`); continue; }
                     if (c === 'tank_remaining_litres') {
                       const rem = tankRemVal !== '' ? tankRemVal : null;
@@ -10571,6 +10654,13 @@
     reimbursement: 'Transp. / Reimb. ($)',
     deduction: 'Absent Ded. ($/d)',
     salary_status: 'Status',
+    permit_status: 'Compliance',
+    nssf_no: 'NSSF No.',
+    id_expiry_date: 'ID Expiry',
+    work_permit_no: 'Work Permit No.',
+    work_permit_expiry: 'Work Permit Expiry',
+    residency_no: 'Residency No.',
+    residency_expiry: 'Residency Expiry',
     attendance_days: 'Att. Logs',
     payments_count: 'Pay Vouchers',
     total_earned: 'Total Earned ($)',
@@ -10670,44 +10760,48 @@
     associated_staff_count: 'Staff Assigned'
   };
 
-  function hubColLabel(c, tableKey) {
-    if (c === 'type' && tableKey === 'conversions') return 'Direction';
-    if (tableKey === 'fx_rates' && c === 'rate') return 'Rate (per $1)';
-    if (tableKey === 'currencies' && c === 'code') return 'ISO Code';
-    if (tableKey === 'currencies' && c === 'name') return 'Currency Name';
-    if (tableKey === 'gl_accounts' && c === 'code') return 'GL Code';
-    if (tableKey === 'gl_accounts' && c === 'name') return 'GL Account';
-    if (tableKey === 'sites') {
-      if (c === 'supplier') return 'Default Site Owner';
-      if (c === 'customer') return 'Linked Customer';
-      if (c === 'raw_loads') return 'Source Raw Loads';
-      if (c === 'sales_loads') return 'Delivery Loads';
+  function hubColLabel(c, tableKey, ctxOpt) {
+    let lbl = '';
+    if (c === 'type' && tableKey === 'conversions') lbl = 'Direction';
+    else if (tableKey === 'fx_rates' && c === 'rate') lbl = 'Rate (per $1)';
+    else if (tableKey === 'currencies' && c === 'code') lbl = 'ISO Code';
+    else if (tableKey === 'currencies' && c === 'name') lbl = 'Currency Name';
+    else if (tableKey === 'gl_accounts' && c === 'code') lbl = 'GL Code';
+    else if (tableKey === 'gl_accounts' && c === 'name') lbl = 'GL Account';
+    else if (tableKey === 'sites' && c === 'supplier') lbl = 'Default Site Owner';
+    else if (tableKey === 'sites' && c === 'customer') lbl = 'Linked Customer';
+    else if (tableKey === 'sites' && c === 'raw_loads') lbl = 'Source Raw Loads';
+    else if (tableKey === 'sites' && c === 'sales_loads') lbl = 'Delivery Loads';
+    else if ((tableKey === 'equipment' || tableKey === 'company_equipment') && c === 'supplier') lbl = 'Truck Owner';
+    else if (c === 'name') {
+      if (tableKey === 'fx_rates') lbl = 'Rate Window Ref';
+      else if (tableKey === 'vat_rates') lbl = 'Statutory Window';
+      else if (tableKey === 'conversions') lbl = 'Voucher';
+      else if (tableKey === 'equipment_defects') lbl = 'Defect Ref';
+      else if (tableKey === 'part_movements') lbl = 'Part Log Ref';
+      else if (tableKey === 'suppliers') lbl = 'Supplier';
+      else if (tableKey === 'equipment') lbl = 'Unit Code';
+      else if (tableKey === 'drivers') lbl = 'Driver Name';
+      else if (tableKey === 'staff_members') lbl = 'Staff Member';
+      else if (tableKey === 'staff_roles') lbl = 'Staff Role';
+      else if (tableKey === 'staff_assignments') lbl = 'Assignment Ref';
+      else if (tableKey === 'work_shifts') lbl = 'Shift Name';
+      else if (tableKey === 'customers') lbl = 'Customer';
+      else if (tableKey === 'sites') lbl = 'Site';
+      else if (tableKey === 'regions') lbl = 'Region';
+      else if (tableKey === 'products') lbl = 'Product';
+      else if (tableKey === 'items') lbl = 'Item Name';
     }
-    if ((tableKey === 'equipment' || tableKey === 'company_equipment') && c === 'supplier') return 'Truck Owner';
-    if (c === 'name') {
-      if (tableKey === 'fx_rates') return 'Rate Window Ref';
-      if (tableKey === 'vat_rates') return 'Statutory Window';
-      if (tableKey === 'conversions') return 'Voucher';
-      if (tableKey === 'equipment_defects') return 'Defect Ref';
-      if (tableKey === 'part_movements') return 'Part Log Ref';
-      if (tableKey === 'suppliers') return 'Supplier';
-      if (tableKey === 'equipment') return 'Unit Code';
-      if (tableKey === 'drivers') return 'Driver Name';
-      if (tableKey === 'staff_members') return 'Staff Member';
-      if (tableKey === 'staff_roles') return 'Staff Role';
-      if (tableKey === 'staff_assignments') return 'Assignment Ref';
-      if (tableKey === 'work_shifts') return 'Shift Name';
-      if (tableKey === 'customers') return 'Customer';
-      if (tableKey === 'sites') return 'Site';
-      if (tableKey === 'regions') return 'Region';
-      if (tableKey === 'products') return 'Product';
-      if (tableKey === 'items') return 'Item Name';
+    if (!lbl && c === 'distance_km' && typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function' && window.__mfgGetActiveIndustry() !== 'Manufacturing') {
+      lbl = 'Ref KM';
     }
-    if (c === 'distance_km' && typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function' && window.__mfgGetActiveIndustry() !== 'Manufacturing') {
-      return 'Ref KM';
+    if (!lbl) {
+      lbl = HUB_COL_LABELS[c] || String(c || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     }
-    if (HUB_COL_LABELS[c]) return HUB_COL_LABELS[c];
-    return String(c || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    if (!canViewPayrollMoneyPbi(ctxOpt || null) && isMaskedPayrollColPbi(tableKey, c)) {
+      lbl = lbl.replace(/\s*\(\$(?:\/[a-z]+)?\)/gi, '').trim();
+    }
+    return lbl;
   }
 
   function formatSupplierRoleHtml(roleTxt) {
@@ -11141,10 +11235,11 @@
       ...(isMfgConn && canSeeRawPrConn ? [{ id: 'site_raw', label: 'Quarry & Haulage', mfgOnly: true, fn: r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }] : []),
       { id: 'site_sales', label: 'Sales & Delivery', mfgOnly: true, fn: r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }
     ];
+    const canViewConnPay = canViewPayrollMoneyPbi(typeof ctx !== 'undefined' ? ctx : null);
     const connViews = (connKey === 'price_rules'
       ? (isSitePr ? sitePrViews : (isRawPr ? rawViews.filter(v => /^raw_/i.test(v.id)) : rawViews.filter(v => !/^raw_/i.test(v.id))))
       : ((connKey === 'sales_tickets' && !STATE._canSeeTaxBreakdown) ? rawViews.filter(v => v.id !== 'iva') : rawViews)
-    ).filter(v => isMfgConn || !v.mfgOnly);
+    ).filter(v => (isMfgConn || !v.mfgOnly) && (canViewConnPay || !isMaskedPayrollViewPbi(connKey, v.id)));
     const defaultViewId = isSitePr ? 'site_all' : (isRawPr ? 'raw_all' : ((connViews[0] && connViews[0].id) || 'all'));
     const activeConnViewId = STATE.univConnView || defaultViewId;
     const activeConnView = connViews.find(v => v.id === activeConnViewId) || connViews[0] || { id: 'all', label: 'All ' + connMeta.label };
@@ -11198,8 +11293,9 @@
       ? baseConnCols.filter(c => !/^(supply_mode|is_jv|active_rules|raw_loads|sales_loads|total_loads)$/.test(c))
       : baseConnCols;
 
+    const connSearchCols = canViewConnPay ? connCols : connCols.filter(c => !isMaskedPayrollColPbi(connKey, c));
     const searchFiltered = q
-      ? partyFiltered.filter(r => connCols.some(c => norm(String(cellValue(r, c, connKey, rel) ?? '')).includes(q)))
+      ? partyFiltered.filter(r => connSearchCols.some(c => norm(String(cellValue(r, c, connKey, rel) ?? '')).includes(q)))
       : partyFiltered;
 
     const defSort = getHubTableDefaultSort(connMeta, activeConnView.id);
@@ -11274,7 +11370,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${connCols.map(c => th('conn_' + connKey, hubColLabel(c, connKey), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|deduction|balance|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
+                ${connCols.map(c => th('conn_' + connKey, hubColLabel(c, connKey, typeof ctx !== 'undefined' ? ctx : null), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|deduction|balance|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
@@ -11308,10 +11404,13 @@
                     const signedHtml = (isSignedUsd || isSignedLbp) && v != null && v !== ''
                       ? `<strong style="color:${Number(v) >= 0 ? 'var(--good)' : 'var(--crit)'}">${esc(cell)}</strong>`
                       : null;
-                    const innerHtml = isLookup
-                      ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-                      : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, connKey) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell)))))));
-                    return `<td class="${isMoney || isNum || isLbp || isSignedLbp ? 'r' : ''}${/date|ticket|code|_no$|plate|version|_delta$|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, connKey)}` : innerHtml}</td>`;
+                    const isMaskedPay = !canViewPayrollMoneyPbi(typeof ctx !== 'undefined' ? ctx : null) && isMaskedPayrollColPbi(connKey, c);
+                    const innerHtml = isMaskedPay
+                      ? `<span class="muted" data-masked-payroll="1">Restricted</span>`
+                      : (isLookup
+                        ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
+                        : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, connKey) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell))))))));
+                    return `<td class="${!isMaskedPay && (isMoney || isNum || isLbp || isSignedLbp) ? 'r' : ''}${/date|ticket|code|_no$|plate|version|_delta$|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, connKey)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
               `).join('') || emptyRow(connCols.length, 'No connected records match the active filter.')}
@@ -11356,6 +11455,7 @@
                   const out = [`<td colspan="${leadSpan}"><b>TOTAL (${fmtNum(connRows.length)} RECORDS)</b></td>`];
                   for (let ci = leadSpan; ci < colSpecs.length; ci++) {
                     const { c, isM: isMoney, isN: isNum, isAvg, sum, cnt } = colSpecs[ci];
+                    if (!canViewConnPay && isMaskedPayrollColPbi(connKey, c)) { out.push(`<td><span class="muted">Restricted</span></td>`); continue; }
                     if (!isMoney && !isNum) { out.push(`<td></td>`); continue; }
                     if (!cnt) { out.push(`<td class="r">—</td>`); continue; }
                     const val = isAvg ? (sum / cnt) : sum;
@@ -11394,13 +11494,18 @@
     const rawList = (SEED.records && SEED.records[meta.key]) || [];
     const searchCols = meta.key === 'sites'
       ? Array.from(new Set(meta.cols.concat(['supplier', 'customer', 'site_category', 'linked_party'])))
-      : (meta.key === 'staff_members' ? Array.from(new Set(meta.cols.concat(['father_name', 'role_category', 'phone', 'reference']))) : meta.cols);
+      : (meta.key === 'staff_members' ? Array.from(new Set(meta.cols.concat(['father_name', 'role_category', 'phone', 'reference', 'nssf_no', 'work_permit_no', 'residency_no']))) : meta.cols);
     const activeIndUreg = (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function')
       ? window.__mfgGetActiveIndustry()
       : 'Manufacturing';
     const isMfg = activeIndUreg === 'Manufacturing';
-    const baseFiltered = filterRecords(rawList, { cols: searchCols, tableKey: meta.key, ignorePeriod: true, ignoreCompany: true, ignoreRls: true });
-    const views = (meta.views || [{ id: 'all', label: 'All ' + meta.label }]).filter(v => isMfg || !v.mfgOnly);
+    const _regCtx = typeof ctx !== 'undefined' ? ctx : (typeof opts !== 'undefined' ? opts : null);
+    const canViewPay = canViewPayrollMoneyPbi(_regCtx);
+    const canOpenHrPack = canAccessRdlPbi(_regCtx, '28');
+    const scopedRawList = meta.key === 'staff_members' ? (rawList || []).filter(r => isStaffAllowedPbi(r, SEED, _regCtx)) : rawList;
+    const effectiveSearchCols = (canViewPay || !Array.isArray(searchCols)) ? searchCols : searchCols.filter(sc => !isMaskedPayrollColPbi(meta.key, sc));
+    const baseFiltered = filterRecords(scopedRawList, { cols: effectiveSearchCols, tableKey: meta.key, ignorePeriod: true, ignoreCompany: true, ignoreRls: true });
+    const views = (meta.views || [{ id: 'all', label: 'All ' + meta.label }]).filter(v => (isMfg || !v.mfgOnly) && (canViewPay || !isMaskedPayrollViewPbi(meta.key, v.id)));
     const activeViewId = (STATE.tableViews && STATE.tableViews[meta.key]) || 'all';
     const activeView = views.find(v => v.id === activeViewId) || views[0];
     const mfgOnlyCols = !isMfg && meta.key === 'sites'
@@ -11408,7 +11513,13 @@
       : (!isMfg && meta.key === 'regions' ? new Set(['overtime_rate', 'total_loads']) : null);
     const rawActiveCols = (activeView && Array.isArray(activeView.cols) && activeView.cols.length) ? activeView.cols : meta.cols;
     const activeCols = mfgOnlyCols ? rawActiveCols.filter(c => !mfgOnlyCols.has(c)) : rawActiveCols;
-    const filtered = activeView && activeView.fn ? baseFiltered.filter(r => activeView.fn(r, rel)) : baseFiltered;
+    const filteredByView = activeView && activeView.fn ? baseFiltered.filter(r => activeView.fn(r, rel)) : baseFiltered;
+    const watchdogTier = (meta.key === 'staff_members' && STATE && STATE.permitWatchdogTier) ? String(STATE.permitWatchdogTier) : 'all';
+    const evalComplianceFn = (meta.key === 'staff_members' && watchdogTier !== 'all' && typeof window !== 'undefined') ? window.__mfgEvaluateStaffComplianceRow : null;
+    const matchTierFn = (evalComplianceFn && typeof window !== 'undefined') ? window.__mfgMatchesComplianceTier : null;
+    const filtered = (evalComplianceFn && matchTierFn)
+      ? filteredByView.filter(r => matchTierFn(evalComplianceFn(r, SEED), watchdogTier))
+      : filteredByView;
     const defSortSpec = getHubTableDefaultSort(meta, activeView.id);
     const rows = sortRows(filtered, 'ureg_' + meta.key, defSortSpec.key, defSortSpec.dir);
     const shown = rows.slice(0, shownCount('ureg_' + meta.key));
@@ -11516,6 +11627,7 @@
               ${searchBox('Search ' + String(meta.label || '').replace(/\s+Registry$/i, '') + '...')}
             </div>
             <div style="display:flex;gap:6px">
+              ${(meta.key === 'staff_members' && canOpenHrPack) ? `<button type="button" class="btn btn-sm" data-open-hr-pack data-ui-tip="Open Bilingual Contract &amp; NSSF Pack">${pbiIcon('printer')} Contract &amp; NSSF Pack</button>` : ''}
               ${exportBtn('univRegPanel', meta.key)}
               ${canEnterForm(meta.form) ? `<button type="button" class="btn btn-primary" data-open-modal="${esc(meta.form)}">+ New ${esc(meta.singularLabel || meta.label.replace(/ies$/, 'y').replace(/s$/, ''))}</button>` : ''}
             </div>
@@ -11526,7 +11638,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${activeCols.map(c => th('ureg_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|rem_payment|advances|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
+                ${activeCols.map(c => th('ureg_' + meta.key, hubColLabel(c, meta.key, _regCtx), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|rem_payment|advances|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
@@ -11555,12 +11667,18 @@
                     const hasConnTarget = inlineConnSpec && relTablesMeta.some(rt => rt.key === inlineConnSpec.connKey);
                     const partyKeyVal = hasConnTarget ? String(r.name || r.code || '').trim() : '';
                     const isInlineConnActive = hasConnTarget && activeConnKey === inlineConnSpec.connKey && norm(STATE.univConnPartyFilter || '') === norm(partyKeyVal) && (!inlineConnSpec.subRole || STATE.univConnSubRole === inlineConnSpec.subRole);
-                    const innerHtml = isLookup
-                      ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-                      : (hasConnTarget && partyKeyVal
-                          ? `<button type="button" class="reg-inline-conn-pill ${isInlineConnActive ? 'active' : ''}" data-inline-conn-table="${esc(inlineConnSpec.connKey)}" data-inline-conn-party="${esc(partyKeyVal)}"${inlineConnSpec.viewId ? ` data-inline-conn-view="${esc(inlineConnSpec.viewId)}"` : ''}${inlineConnSpec.subRole ? ` data-inline-conn-subrole="${esc(inlineConnSpec.subRole)}"` : ''} data-ui-tip="Preview ${esc(cell)} linked records for ${esc(partyKeyVal)}">${esc(cell)}</button>`
-                          : (formatHubSpecialCellHtml(c, v, cell, r, meta.key) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell))))))));
-                    return `<td class="${isMoney || isNum ? 'r' : ''}${/^dob$|date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
+                    const isMaskedPay = !canViewPay && isMaskedPayrollColPbi(meta.key, c);
+                    const innerHtml = isMaskedPay
+                      ? `<span class="muted" data-masked-payroll="1">Restricted</span>`
+                      : (isLookup
+                        ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
+                        : (hasConnTarget && partyKeyVal
+                            ? `<button type="button" class="reg-inline-conn-pill ${isInlineConnActive ? 'active' : ''}" data-inline-conn-table="${esc(inlineConnSpec.connKey)}" data-inline-conn-party="${esc(partyKeyVal)}"${inlineConnSpec.viewId ? ` data-inline-conn-view="${esc(inlineConnSpec.viewId)}"` : ''}${inlineConnSpec.subRole ? ` data-inline-conn-subrole="${esc(inlineConnSpec.subRole)}"` : ''} data-ui-tip="Preview ${esc(cell)} linked records for ${esc(partyKeyVal)}">${esc(cell)}</button>`
+                            : (formatHubSpecialCellHtml(c, v, cell, r, meta.key) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell)))))))));
+                    const staffPackBtn = (meta.key === 'staff_members' && canOpenHrPack && ci === 0 && r && r.id)
+                      ? `<button type="button" class="btn-xs staff-hr-pack-inline-btn" data-open-hr-pack data-hr-pack-staff="${esc(r.id)}" data-hr-pack-name="${esc(r.name || '')}" data-ui-tip="Contract &amp; NSSF Pack">${pbiIcon('printer')}</button>`
+                      : '';
+                    return `<td class="${!isMaskedPay && (isMoney || isNum) ? 'r' : ''}${/^dob$|date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}${staffPackBtn}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
               `).join('') || emptyRow(activeCols.length, 'No rows match the active filter.')}
@@ -11569,7 +11687,7 @@
             <tfoot>
               <tr>
                 ${(() => {
-                  const tfKey = `ureg|${(SEED && SEED._customRev) || 0}|${_hubRelStamp}|${meta.key}|${activeView.id}|${activeCols.join(',')}|${_pbiArrUid(rows)}:${rows.length}:${rows[0] && rows[0].id}:${rows[rows.length - 1] && rows[rows.length - 1].id}`;
+                  const tfKey = `ureg|${(SEED && SEED._customRev) || 0}|${_hubRelStamp}|pay:${canViewPay ? 1 : 0}|${meta.key}|${activeView.id}|${activeCols.join(',')}|${_pbiArrUid(rows)}:${rows.length}:${rows[0] && rows[0].id}:${rows[rows.length - 1] && rows[rows.length - 1].id}`;
                   if (_hubTfootCache.has(tfKey)) return _hubTfootCache.get(tfKey);
                   const isColNumeric = col => {
                     if (NON_NUMERIC_HUB_COLS.test(col)) return { isM: false, isN: false, num: false };
@@ -11607,6 +11725,7 @@
                   const out = [`<td colspan="${leadSpan}"><b>TOTAL (${fmtNum(rows.length)} RECORDS)</b></td>`];
                   for (let ci = leadSpan; ci < colSpecs.length; ci++) {
                     const { c, isM: isMoney, isN: isNum, isAvg, sum, cnt } = colSpecs[ci];
+                    if (!canViewPay && isMaskedPayrollColPbi(meta.key, c)) { out.push(`<td><span class="muted">Restricted</span></td>`); continue; }
                     if (!isMoney && !isNum) { out.push(`<td></td>`); continue; }
                     if (!cnt) { out.push(`<td class="r">—</td>`); continue; }
                     const val = isAvg ? (sum / cnt) : sum;
@@ -11683,14 +11802,27 @@
           rows.forEach(r => addGrp(gMap, meta.key === 'equipment' ? `${r.ownership || 'Own'} · ${r.type || 'Truck'}` : (r.truck_owner || 'Company Fleet'), 1, 'units'));
           rightRows = Array.from(gMap.values()).sort((a, b) => b.value - a.value);
         } else if (meta.key === 'staff_members') {
-          leftTitle = 'Top Staff Members by Remaining Payment ($)';
-          leftRows = rows.map(r => {
-            const rem = Number(cellValue(r, 'rem_payment', 'staff_members', rel) || 0);
-            const earned = Number(cellValue(r, 'total_earned', 'staff_members', rel) || 0);
-            return { label: r.name || r.staff, value: rem > 0.01 ? rem : earned, sub: `${cellValue(r, 'role', 'staff_members', rel) || 'Staff'} · Earned ${fmtUSD(earned, 0)}` };
-          }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
-          rightTitle = 'Staff Registry by Pay Status';
-          rows.forEach(r => addGrp(gMap, cellValue(r, 'salary_status', 'staff_members', rel) || 'Active Contract', 1, 'staff'));
+          if (canViewPay) {
+            leftTitle = 'Top Staff Members by Remaining Payment ($)';
+            leftRows = rows.map(r => {
+              const rem = Number(cellValue(r, 'rem_payment', 'staff_members', rel) || 0);
+              const earned = Number(cellValue(r, 'total_earned', 'staff_members', rel) || 0);
+              return { label: r.name || r.staff, value: rem > 0.01 ? rem : earned, sub: `${cellValue(r, 'role', 'staff_members', rel) || 'Staff'} · Earned ${fmtUSD(earned, 0)}` };
+            }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+          } else {
+            leftTitle = 'Top Staff Members by Active Contracts';
+            leftRows = rows.map(r => {
+              const cnt = Number(cellValue(r, 'contracts_count', 'staff_members', rel) || 0);
+              return { label: r.name || r.staff, value: cnt, sub: `${cellValue(r, 'role', 'staff_members', rel) || 'Staff'} · ${cnt} contract${cnt === 1 ? '' : 's'}` };
+            }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+          }
+          if (canViewPay) {
+            rightTitle = 'Staff Registry by Pay Status';
+            rows.forEach(r => addGrp(gMap, cellValue(r, 'salary_status', 'staff_members', rel) || 'Active Contract', 1, 'staff'));
+          } else {
+            rightTitle = 'Staff Registry by Role';
+            rows.forEach(r => addGrp(gMap, cellValue(r, 'role', 'staff_members', rel) || 'Staff', 1, 'staff'));
+          }
           rightRows = Array.from(gMap.values()).sort((a, b) => b.value - a.value);
         } else if (meta.key === 'staff_roles') {
           leftTitle = 'Staff Roles by Assigned Workforce Headcount';
@@ -13066,6 +13198,7 @@
   }
 
   function renderPayrollVisualsSection(ctx) {
+    if (!canViewPayrollMoneyPbi(ctx)) return '';
     const payMonths = (ctx && ctx.payMonths) || [];
     const staffRows = ((ctx && ctx.staffRows) || []).slice().sort((a, b) => Number(b.earnings || 0) - Number(a.earnings || 0));
     return `
@@ -13277,6 +13410,7 @@
   }
 
   function renderAllowancesVisualsSection(ctx) {
+    if (!canViewPayrollMoneyPbi(ctx)) return '';
     const payMonths = (ctx && ctx.payMonths) || [];
     const siteStaffRows = ((ctx && ctx.siteStaffRows) || []).map(r => Object.assign({}, r, {
       verifSub: `${r.sitesStr || r.site || 'Site'}${r.days_paid > 0 ? ` · ${fmtNum(r.activity_days || 0, 0)}/${fmtNum(r.days_paid, 0)}d verified` : ''}`
@@ -13510,6 +13644,7 @@
   }
 
   function renderContractsVisualsSection(ctx) {
+    if (!canViewPayrollMoneyPbi(ctx)) return '';
     const empAll = (ctx && ctx.empAll) || [];
     const otRates = (ctx && ctx.otRates) || [];
     const fxRate = Number((ctx && ctx.fxRate) || 89500);

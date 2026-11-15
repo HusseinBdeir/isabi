@@ -38,7 +38,8 @@
     { id: '24', code: '24', slug: 'hsp_venue_till_reg',   cat: 'Registers', name: 'Venue Revenue & POS Till',     title: 'Venue Revenue, POS Till & Membership Register', ar: 'سجل إيرادات المنتجعات وصندوق الكاشير والاشتراكات', landscape: true, params: ['from', 'to'] },
     { id: '25', code: '25', slug: 'trd_books_stock_reg',  cat: 'Registers', name: 'Invoice Books & Stock Valuation', title: 'Invoice Books, Serial VIN & Stock Valuation', ar: 'سجل دفاتر الفواتير والشاحنات وتقييم المخزون', landscape: true, params: ['from', 'to'] },
     { id: '26', code: '26', slug: 're_rent_roll_stmt',    cat: 'Statements', name: '4235 Official Rent Roll',    title: 'Official 4235 VAT Rent Roll & Lease Expiry', ar: 'جدول عقود الإيجار والفواتير الضريبية 4235', landscape: true, params: ['from', 'to'] },
-    { id: '27', code: '27', slug: 'ins_policy_recon_stmt', cat: 'Statements', name: 'Policy Schedule & Carrier Recon', title: 'Policy Schedule, Renewal Queue & Carrier Recon', ar: 'جدول البوالص والتجديدات ومطابقة شركات التأمين', landscape: true, params: ['from', 'to'] }
+    { id: '27', code: '27', slug: 'ins_policy_recon_stmt', cat: 'Statements', name: 'Policy Schedule & Carrier Recon', title: 'Policy Schedule, Renewal Queue & Carrier Recon', ar: 'جدول البوالص والتجديدات ومطابقة شركات التأمين', landscape: true, params: ['from', 'to'] },
+    { id: '28', code: '28', slug: 'hr_contract_nssf_pack', cat: 'Documents', name: 'HR Contract & NSSF Pack', title: 'Bilingual HR Contract & NSSF Declaration Pack', ar: 'ملف عقد العمل والتصريح للضمان الاجتماعي', landscape: false, params: ['hrStaff'] }
   ];
 
   const RDL_CATEGORIES = ['All', 'Digest', 'Statements', 'General Ledger', 'Registers', 'Counterparties', 'Tax & Recon', 'Documents'];
@@ -300,7 +301,10 @@
           month: 'ALL',
           invoiceNo: '2738',
           ticketId: '',
-          receiptId: ''
+          receiptId: '',
+          hrStaff: '',
+          hrPackMode: 'both',
+          hrPackLang: 'bi'
         }
       };
     }
@@ -462,7 +466,7 @@
     '13': 'accounting', '14': 'accounting', '15': 'accounting', '16': 'accounting', '18': 'accounting',
     '19': 'accounting', '20': 'accounting', '22': 'accounting',
     '11': 'logistics', '12': 'logistics', '17': 'logistics', '21': 'logistics',
-    '01': 'corporate', '02': 'corporate', '03': 'corporate', '04': 'corporate', '08': 'corporate'
+    '01': 'corporate', '02': 'corporate', '03': 'corporate', '04': 'corporate', '08': 'corporate', '28': 'corporate'
   };
   const WTC_DIVISION_SEALS = {
     accounting: { file: 'wtc-accounting-seal.svg', alt: 'WTC Accounting' },
@@ -487,7 +491,7 @@
     const sealHtml = wtcDivisionSealHtml(meta, coKey);
     const textHtml = `
         <div class="rdl-title-text">${esc(meta.title)} - ${esc(L.short)} / <span dir="rtl">${esc(meta.ar)}</span></div>
-        <div class="rdl-subtitle-text">${esc(subtitle || '')}</div>
+        <div class="rdl-subtitle-text"${meta && meta.id === '28' ? ' data-no-i18n="1"' : ''}>${esc(subtitle || '')}</div>
         ${(Array.isArray(noteText) ? noteText : [noteText]).filter(Boolean).map(n => `<div class="rdl-note-text">${esc(n)}</div>`).join('')}`;
     if (sealHtml) {
       return `
@@ -1264,7 +1268,7 @@
     const dslFe = (typeof window !== 'undefined') ? window.MFG_FUEL_ECON : null;
     const dslSig = `${(dslFe && typeof dslFe.rightsSig === 'function') ? dslFe.rightsSig() : 'x'}:`
       + (allowedCos || [co, 'WTC', 'BBConstruction', 'Lions Transport']).map(c => (dslGate(c) ? '1' : '0')).join('');
-    const sig = `${co}|${ind}|${demoSig}|${allowedSig}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.attendance || []).length}|${(recs.vat_invoices || []).length}|${(recs.fuel_malfunctions || []).length}|dsl:${dslSig}`;
+    const sig = `${co}|${ind}|${demoSig}|${allowedSig}|seat:${(STATE && STATE.activeUserIdx) != null ? STATE.activeUserIdx : ''}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.attendance || []).length}|${(recs.vat_invoices || []).length}|${(recs.fuel_malfunctions || []).length}|sm:${(recs.staff_members || []).length}:${(recs.employments || []).length}|dsl:${dslSig}`;
 
     if (_cachedCoKey !== sig || !_cachedCtxData) {
       const isMfgAll = !co || co === 'ALL';
@@ -1867,6 +1871,118 @@
         receiptById.set(String(r.id), r);
       });
 
+      const todayIsoHr = new Date().toISOString().slice(0, 10);
+      const normHr = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const fIdxHr = typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null;
+      const allEmpForHr = (recs.employments || []).filter(e => e && !e.voided && !e.archived && seedGuard(e) && coMatch(e.company || e.co, co, allowedCos));
+      const empsByStaffId = new Map();
+      const empsByStaffName = new Map();
+      allEmpForHr.forEach(e => {
+        const sid = String(e.staff_id || '').trim();
+        if (sid) {
+          if (!empsByStaffId.has(sid)) empsByStaffId.set(sid, []);
+          empsByStaffId.get(sid).push(e);
+        }
+        const sn = normHr(e.staff);
+        if (sn) {
+          if (!empsByStaffName.has(sn)) empsByStaffName.set(sn, []);
+          empsByStaffName.get(sn).push(e);
+        }
+      });
+      const payCntByStaff = new Map();
+      (recs.salaries || recs.payroll || []).forEach(pr => {
+        if (!pr || pr.voided || !seedGuard(pr) || !coMatch(pr.company || pr.co, co, allowedCos)) return;
+        const pn = normHr(pr.staff);
+        if (pn) payCntByStaff.set(pn, (payCntByStaff.get(pn) || 0) + 1);
+      });
+      const pickBestEmp = list => {
+        if (!list || !list.length) return null;
+        return list.slice().sort((a, b) => {
+          const aAct = (a.status !== 'Ended' && (!a.end_date || String(a.end_date).slice(0, 10) >= todayIsoHr)) ? 1 : 0;
+          const bAct = (b.status !== 'Ended' && (!b.end_date || String(b.end_date).slice(0, 10) >= todayIsoHr)) ? 1 : 0;
+          if (aAct !== bAct) return bAct - aAct;
+          return String(b.start_date || '').localeCompare(String(a.start_date || ''));
+        })[0];
+      };
+      const scopedHrStaff = [];
+      const seenHrStaffNames = new Set();
+      const seatAllowsStaffFn = (typeof window !== 'undefined' && typeof window.__mfgIsStaffMemberAllowedForSeat === 'function')
+        ? window.__mfgIsStaffMemberAllowedForSeat
+        : null;
+      const allMfgCosInAllowed = (!co || co === 'ALL') && (!allowedCos || RDL_GROUP_COMPANIES.ALL.every(m => allowedCos.includes(m)));
+      (recs.staff_members || []).forEach((s, idx) => {
+        if (!s || s.voided || s.archived || !seedGuard(s)) return;
+        if (seatAllowsStaffFn && !seatAllowsStaffFn(s, SEED)) return;
+        const sid = String(s.id || '').trim();
+        const sName = String(s.name || '').trim();
+        const sn = normHr(sName);
+        const linked = (sid && empsByStaffId.get(sid)) || (sn && empsByStaffName.get(sn)) || [];
+        if (s._industry && s._industry !== ind && !linked.length && !(s.company && coMatch(s.company, co, allowedCos))) return;
+        const inCoScope = s.company
+          ? (coMatch(s.company, co, allowedCos) || linked.length > 0)
+          : (linked.length > 0 || allMfgCosInAllowed);
+        if (!inCoScope) return;
+        if (sn) seenHrStaffNames.add(sn);
+        const bestEmp = pickBestEmp(linked);
+        const coKey = (bestEmp && bestEmp.company) || s.company || co;
+        const fq = (fIdxHr && fIdxHr.staff ? (fIdxHr.staff.get(sn) || 0) : 0) + (fIdxHr && fIdxHr.any ? (fIdxHr.any.get(sn) || 0) : 0);
+        const pCnt = payCntByStaff.get(sn) || 0;
+        const hasAct = Boolean(bestEmp && bestEmp.status !== 'Ended' && (!bestEmp.end_date || String(bestEmp.end_date).slice(0, 10) >= todayIsoHr));
+        scopedHrStaff.push({
+          id: sid || ('st:' + sName),
+          name: sName,
+          staff: s,
+          emp: bestEmp || {},
+          emps: linked,
+          coKey,
+          _score: fq * 10 + pCnt * 3 + linked.length * 2 + (hasAct ? 20 : 0) + ((s.nssf_no || s.work_permit_expiry || s.id_expiry_date) ? 2 : 0),
+          _idx: idx
+        });
+      });
+      allEmpForHr.forEach((e, idx) => {
+        const sn = normHr(e.staff);
+        if (!sn || seenHrStaffNames.has(sn)) return;
+        seenHrStaffNames.add(sn);
+        const linked = empsByStaffName.get(sn) || [e];
+        const bestEmp = pickBestEmp(linked) || e;
+        const fq = (fIdxHr && fIdxHr.staff ? (fIdxHr.staff.get(sn) || 0) : 0) + (fIdxHr && fIdxHr.any ? (fIdxHr.any.get(sn) || 0) : 0);
+        const pCnt = payCntByStaff.get(sn) || 0;
+        scopedHrStaff.push({
+          id: String(e.staff_id || ('emp:' + (e.id || idx))),
+          name: String(e.staff || '').trim(),
+          staff: {
+            id: e.staff_id || '',
+            name: e.staff || '',
+            father_name: e.father_name || '',
+            father_name_ar: e.father_name_ar || '',
+            full_name_ar: e.full_name_ar || '',
+            mother_name: e.mother_name || '',
+            mother_name_ar: e.mother_name_ar || '',
+            dob: e.dob || '',
+            nationality: e.nationality || '',
+            nationality_ar: e.nationality_ar || '',
+            company: e.company || '',
+            role: e.role || '',
+            reference: e.reference || '',
+            nssf_no: e.nssf_no || '',
+            id_expiry_date: e.id_expiry_date || '',
+            work_permit_no: e.work_permit_no || '',
+            work_permit_expiry: e.work_permit_expiry || '',
+            residency_no: e.residency_no || '',
+            residency_expiry: e.residency_expiry || ''
+          },
+          emp: bestEmp,
+          emps: linked,
+          coKey: bestEmp.company || co,
+          _score: fq * 10 + pCnt * 3 + linked.length * 2,
+          _idx: 100000 + idx
+        });
+      });
+      scopedHrStaff.sort((a, b) => (b._score !== a._score ? b._score - a._score : a._idx - b._idx));
+      const hrStaffCandidates = scopedHrStaff;
+      const hrStaffById = new Map();
+      hrStaffCandidates.forEach(c => { hrStaffById.set(String(c.id), c); });
+
       _cachedCoKey = sig;
       _cachedCtxData = {
         ind,
@@ -1875,7 +1991,8 @@
         salesAll, expAll, payAll, attAll: rawAtt, rmAll, apRmLegsAll, fuelAll, dieselAdjAll, dieselClosing, dieselStationAlloc, prodAll: [],
         receiptLedgerAll, arLedgerAll, settlementLedgerAll, apRmLedgerAll, vatPaidAll,
         customers, products, sites, suppliers, categories, staff, equipTypes, equipments, drivers,
-        invoiceList, invMap, ticketCandidates, ticketById, receiptCandidates, receiptById
+        invoiceList, invMap, ticketCandidates, ticketById, receiptCandidates, receiptById,
+        hrStaffCandidates, hrStaffById
       };
     }
 
@@ -1889,6 +2006,9 @@
     }
     if (!rdl.params.receiptId || !d.receiptById.has(String(rdl.params.receiptId))) {
       rdl.params.receiptId = d.receiptCandidates[0] ? String(d.receiptCandidates[0].id) : '';
+    }
+    if (!rdl.params.hrStaff || !d.hrStaffById.has(String(rdl.params.hrStaff))) {
+      rdl.params.hrStaff = d.hrStaffCandidates[0] ? String(d.hrStaffCandidates[0].id) : '';
     }
 
     return {
@@ -2387,6 +2507,26 @@
       }
       return { label: 'Receipt Voucher', wide: true, steppable: true, placeholder: 'Search customer name, voucher #, date or amount…', badge: `${fmtNum(ctx._receiptComboOpts.length)} vouchers`, options: ctx._receiptComboOpts };
     }
+    if (k === 'hrStaff') {
+      if (!ctx._hrStaffComboOpts) {
+        ctx._hrStaffComboOpts = (ctx.hrStaffCandidates || []).map(c => {
+          const st = c.staff || {};
+          const emp = c.emp || {};
+          const roleLbl = emp.role || st.role || 'Staff';
+          const coLbl = (emp.company || c.coKey || '').trim();
+          const nssfTag = st.nssf_no ? ` · NSSF ${st.nssf_no}` : '';
+          return {
+            value: String(c.id),
+            code: String(st.id || c.id).slice(0, 12),
+            main: c.name || '-',
+            meta: `${roleLbl}${coLbl ? ' · ' + coLbl : ''}${nssfTag}`,
+            label: `${c.name || '-'} · ${roleLbl}${coLbl ? ' (' + coLbl + ')' : ''}`,
+            q: `${c.id} ${c.name || ''} ${st.full_name_ar || ''} ${st.father_name || ''} ${st.father_name_ar || ''} ${st.mother_name || ''} ${st.mother_name_ar || ''} ${st.nationality || ''} ${st.nationality_ar || ''} ${st.reference || ''} ${st.nssf_no || ''} ${st.work_permit_no || ''} ${st.residency_no || ''} ${roleLbl} ${coLbl}`.toLowerCase()
+          };
+        });
+      }
+      return { label: 'Employee', wide: true, steppable: true, placeholder: 'Search staff, NSSF #, ID or permit…', badge: `${fmtNum(ctx._hrStaffComboOpts.length)} staff`, options: ctx._hrStaffComboOpts };
+    }
     return null;
   }
 
@@ -2479,6 +2619,20 @@
             <button type="button" class="rdl-view-btn" id="rdlViewReportBtn">View report</button>
             <button type="button" class="rdl-reset-btn" id="rdlResetParamsBtn" aria-label="Reset report parameters to defaults">Reset</button>
           </div>
+        ${meta.id === '28' ? `
+          <div class="rdl-param-group">
+            <label class="rdl-param-lbl">Pack Sections</label>
+            <div class="rdl-seg" role="group" aria-label="HR print pack sections">
+              ${[['both', 'Contract + NSSF'], ['contract', 'Contract Only'], ['nssf', 'NSSF Only']].map(([mv, ml]) => `<button type="button" class="rdl-seg-btn ${(p.hrPackMode || 'both') === mv ? 'active' : ''}" data-hr-pack-mode="${mv}">${ml}</button>`).join('')}
+            </div>
+          </div>
+          <div class="rdl-param-group">
+            <label class="rdl-param-lbl">Language Layout</label>
+            <div class="rdl-seg" role="group" aria-label="HR print pack language layout">
+              ${[['bi', 'AR + FR'], ['ar', 'عربي RTL'], ['fr', 'Français']].map(([lv, ll]) => `<button type="button" class="rdl-seg-btn ${(p.hrPackLang || 'bi') === lv ? 'active' : ''}" data-hr-pack-lang="${lv}">${ll}</button>`).join('')}
+            </div>
+          </div>
+        ` : ''}
         </div>
       </div>
     `;
@@ -5114,6 +5268,237 @@
     `;
   }
 
+  function render28HrPrintPack(meta, ctx) {
+    const p = ctx.rdl.params || {};
+    const candidates = Array.isArray(ctx.hrStaffCandidates) ? ctx.hrStaffCandidates : [];
+    const cand = (ctx.hrStaffById && ctx.hrStaffById.get(String(p.hrStaff || ''))) || candidates.find(c => String(c.id) === String(p.hrStaff || '')) || candidates[0] || {};
+    const st = cand.staff || {};
+    const emp = cand.emp || {};
+    const effCoKey = (emp && emp.company && CO_LEGAL[emp.company]) ? emp.company
+      : ((cand.coKey && CO_LEGAL[cand.coKey]) ? cand.coKey : ((ctx.co && CO_LEGAL[ctx.co]) ? ctx.co : 'WTC'));
+    const L = CO_LEGAL[effCoKey] || CO_LEGAL.WTC;
+    const mode = ['both', 'contract', 'nssf'].includes(p.hrPackMode) ? p.hrPackMode : 'both';
+    const lang = ['bi', 'ar', 'fr'].includes(p.hrPackLang) ? p.hrPackLang : 'bi';
+    const showAr = lang === 'bi' || lang === 'ar';
+    const showFr = lang === 'bi' || lang === 'fr';
+
+    const canViewPayrollAmt = (typeof window !== 'undefined' && typeof window.__mfgCanViewPayrollDollarAmounts === 'function')
+      ? Boolean(window.__mfgCanViewPayrollDollarAmounts())
+      : false;
+
+    const fmtDmy = iso => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '').trim());
+      return m ? `${m[3]}/${m[2]}/${m[1]}` : (String(iso || '').trim() || '-');
+    };
+    const vOr = (v, fb = '-') => {
+      const s = String(v == null ? '' : v).trim();
+      return s || fb;
+    };
+
+    const maskedFr = 'Confidentiel (Restreint)';
+    const maskedAr = 'مقيد حسب الصلاحية';
+    const maskedBi = 'Restricted / مقيد / Confidentiel';
+
+    const baseUsd = Number(emp.salary_usd != null ? emp.salary_usd : (emp.monthly_salary_usd || 0));
+    const reimbUsd = Number(emp.reimbursement || 0);
+    const pkgUsd = baseUsd + reimbUsd;
+    const salaryLbp = Number(emp.salary_lbp || 0);
+    const dedUsd = Number(emp.deduction || 0);
+    const workDays = Number(emp.working_days || 26);
+    const workHours = Number(emp.working_hours || 8);
+    const vacDays = Number(emp.vacation_days || 15);
+    const otMult = Number(emp.overtime_multiplier || 1.5);
+
+    const salDisplayFr = canViewPayrollAmt
+      ? `${fmtUsd(pkgUsd, 2)} / mois (Base ${fmtUsd(baseUsd, 2)}${reimbUsd > 0 ? ' + Indemn. ' + fmtUsd(reimbUsd, 2) : ''}${salaryLbp > 0 ? ' · ' + fmtNum(salaryLbp, 0) + ' LBP' : ''})`
+      : maskedFr;
+    const salDisplayAr = canViewPayrollAmt
+      ? `${fmtUsd(pkgUsd, 2)} شهرياً (الأساسي ${fmtUsd(baseUsd, 2)}${reimbUsd > 0 ? ' + بدلات ' + fmtUsd(reimbUsd, 2) : ''}${salaryLbp > 0 ? ' · ' + fmtNum(salaryLbp, 0) + ' ل.ل' : ''})`
+      : maskedAr;
+
+    const fullName = vOr(st.name || cand.name || emp.staff);
+    const fullNameAr = vOr(st.full_name_ar || st.name_ar || emp.full_name_ar, fullName);
+    const fatherName = vOr(st.father_name || emp.father_name);
+    const fatherNameAr = vOr(st.father_name_ar || emp.father_name_ar, fatherName);
+    const motherFr = vOr(st.mother_name || emp.mother_name || st.mother_name_ar);
+    const motherAr = vOr(st.mother_name_ar || emp.mother_name_ar || st.mother_name);
+    const dob = fmtDmy(st.dob || emp.dob);
+    const nat = vOr(st.nationality || emp.nationality);
+    const natAr = vOr(st.nationality_ar || emp.nationality_ar, nat);
+    const natId = vOr(st.reference || emp.reference);
+    const idExp = fmtDmy(st.id_expiry_date || emp.id_expiry_date);
+    const phone = vOr(st.phone);
+    const nssfNo = vOr(st.nssf_no || emp.nssf_no, 'A attribuer / قيد التسجيل');
+    const wpNo = vOr(st.work_permit_no || emp.work_permit_no);
+    const wpExp = fmtDmy(st.work_permit_expiry || emp.work_permit_expiry);
+    const resNo = vOr(st.residency_no || emp.residency_no);
+    const resExp = fmtDmy(st.residency_expiry || emp.residency_expiry);
+    const roleTitle = vOr(emp.role || st.role, 'Collaborateur / موظف');
+    const contractType = vOr(emp.type, 'CDI / دائم');
+    const startD = fmtDmy(emp.start_date);
+    const endD = emp.end_date ? fmtDmy(emp.end_date) : 'Durée indéterminée / غير محدد المدة';
+    const contractStatus = vOr(emp.status, 'Actif / حالي');
+    const sdObj = (typeof window !== 'undefined' && window.MFG_SEED) ? window.MFG_SEED : null;
+    const compEv = (typeof window !== 'undefined' && typeof window.__mfgEvaluateStaffComplianceRow === 'function')
+      ? window.__mfgEvaluateStaffComplianceRow(st, sdObj)
+      : null;
+
+    const maskNoteHtml = !canViewPayrollAmt
+      ? `<div class="hr-pack-mask-note">Compensation &amp; NSSF declared salary figures are restricted for your role (${maskedBi}).</div>`
+      : '';
+
+    const kvTable = (rows, isAr) => `
+      <table class="rdl-table hr-pack-kv${isAr ? ' is-ar' : ''}"${isAr ? ' dir="rtl"' : ''}>
+        <tbody>
+          ${rows.map(([lbl, val]) => `<tr><th>${esc(lbl)}</th><td>${esc(val)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    `;
+
+    const contractFrTable = kvTable([
+      ['Employeur (Raison sociale)', L.legal],
+      ['N° Fiscal (MOF / TVA)', L.mof],
+      ['Siège social', `${L.address}${L.phone ? ' · ' + L.phone : ''}`],
+      ['Salarié(e) · Nom complet', fullName],
+      ['Nom du père / Nom de la mère', `${fatherName} / ${motherFr}`],
+      ['Date de naissance / Nationalité', `${dob} · ${nat}`],
+      ['Pièce d’identité / Passeport', `${natId}${idExp !== '-' ? ' (Exp. ' + idExp + ')' : ''}`],
+      ['Téléphone / N° CNSS', `${phone} · CNSS: ${nssfNo}`],
+      ['Permis de travail / Résidence', `${wpNo}${wpExp !== '-' ? ' (' + wpExp + ')' : ''} / ${resNo}${resExp !== '-' ? ' (' + resExp + ')' : ''}`],
+      ['Poste & Type de contrat', `${roleTitle} · ${contractType} (${contractStatus})`],
+      ['Date d’embauche / Échéance', `${startD} / ${endD}`],
+      ['Régime & Congé annuel', `${fmtNum(workDays, 0)} j/mois · ${fmtNum(workHours, 1)} h/jour · ${fmtNum(vacDays, 0)} j congé/an · Heures supp. ×${fmtNum(otMult, 2)}`],
+      ['Rémunération mensuelle', salDisplayFr]
+    ], false);
+
+    const contractArTable = kvTable([
+      ['صاحب العمل / الشركة', `${L.ar} (${L.short})`],
+      ['الرقم المالي / الضريبي', L.mof],
+      ['العنوان والهاتف', `${L.address}${L.phone ? ' · ' + L.phone : ''}`],
+      ['الاسم الكامل للأجير', fullNameAr],
+      ['اسم الأب / اسم الأم', `${fatherNameAr} / ${motherAr}`],
+      ['تاريخ الولادة / الجنسية', `${dob} · ${natAr}`],
+      ['رقم الهوية / جواز السفر', `${natId}${idExp !== '-' ? ' (صلاحية ' + idExp + ')' : ''}`],
+      ['الهاتف / رقم الضمان', `${phone} · ضمان: ${nssfNo}`],
+      ['إجازة العمل / الإقامة', `${wpNo}${wpExp !== '-' ? ' (' + wpExp + ')' : ''} / ${resNo}${resExp !== '-' ? ' (' + resExp + ')' : ''}`],
+      ['الوظيفة ونوع العقد', `${roleTitle} · ${contractType} (${contractStatus})`],
+      ['تاريخ المباشرة / الانتهاء', `${startD} / ${endD}`],
+      ['الدوام والإجازة السنوية', `${fmtNum(workDays, 0)} يوم/شهر · ${fmtNum(workHours, 1)} س/يوم · ${fmtNum(vacDays, 0)} يوم سنوياً · إضافي ×${fmtNum(otMult, 2)}`],
+      ['الأجر والبدلات الشهرية', salDisplayAr]
+    ], true);
+
+    const contractDocHtml = `
+      <div class="hr-pack-doc hr-pack-contract" id="hrPackContractDoc">
+        <div class="hr-pack-doc-hdr">
+          ${showFr ? `<div class="hr-pack-doc-hdr-fr">CONTRAT INDIVIDUEL DE TRAVAIL (CODE DU TRAVAIL LIBANAIS)</div>` : ''}
+          ${showAr ? `<div class="hr-pack-doc-hdr-ar" dir="rtl">عقد عمل فردي وفق قانون العمل اللبناني (وزارة العمل)</div>` : ''}
+        </div>
+        ${maskNoteHtml}
+        <div class="${lang === 'bi' ? 'hr-pack-bi-grid' : ''}">
+          ${showFr ? contractFrTable : ''}
+          ${showAr ? contractArTable : ''}
+        </div>
+        <div class="hr-pack-clauses-bi${lang === 'bi' ? '' : ' is-single'}">
+          ${showFr ? `
+            <div class="hr-pack-clause-box">
+              <h4>Clauses Contractuelles Essentielles (Droit Libanais)</h4>
+              <ol>
+                <li><b>Objet &amp; Fonction :</b> L’Employeur engage le Salarié en qualité de <b>${esc(roleTitle)}</b> à compter du <b>${esc(startD)}</b> conformément aux directives techniques et règlements intérieurs.</li>
+                <li><b>Durée du Travail &amp; Repos :</b> Horaire fixé à ${fmtNum(workHours, 1)} h/jour sur ${fmtNum(workDays, 0)} jours/mois; repos hebdomadaire et ${fmtNum(vacDays, 0)} jours de congé annuel payé après un an (Art. 39).</li>
+                <li><b>Rémunération &amp; Déclarations :</b> Salaire convenu de ${esc(salDisplayFr)}, déclaré auprès de la CNSS et soumis aux retenues légales applicables.</li>
+                <li><b>Obligations Légales &amp; Renouvellement :</b> Le Salarié s’engage à maintenir valides ses documents d’identité, permis de travail (${esc(wpExp)}) et titre de séjour (${esc(resExp)}).</li>
+              </ol>
+            </div>
+          ` : ''}
+          ${showAr ? `
+            <div class="hr-pack-clause-box is-ar" dir="rtl">
+              <h4>البنود التعاقدية الأساسية (قانون العمل اللبناني)</h4>
+              <ol>
+                <li><b>موضوع العقد والوظيفة:</b> يعين الفريق الأول الفريق الثاني بصفة <b>${esc(roleTitle)}</b> اعتباراً من <b>${esc(startD)}</b> للقيام بالمهام الموكلة إليه وفق النظام الداخلي.</li>
+                <li><b>الدوام والإجازات:</b> يحدد الدوام بـ ${fmtNum(workHours, 1)} ساعات يومياً على أساس ${fmtNum(workDays, 0)} يوم عمل شهرياً، مع إجازة سنوية مدفوعة مدتها ${fmtNum(vacDays, 0)} يوماً (المادة 39).</li>
+                <li><b>الأجر والتصريح القانوني:</b> يتقاضى الأجير أجراً شهرياً قدره ${esc(salDisplayAr)} خاضعاً للتصريح والضرائب والاقتطاعات القانونية المعمول بها.</li>
+                <li><b>المستندات القانونية والتجديد:</b> يلتزم الأجير بالمحافظة على صلاحية بطاقة الهوية أو الجواز وإجازة العمل (${esc(wpExp)}) والإقامة (${esc(resExp)}) طوال مدة العقد.</li>
+              </ol>
+            </div>
+          ` : ''}
+        </div>
+        <div class="hr-pack-sig-grid">
+          <div class="hr-pack-sig-box">
+            <span>L’Employeur / الفريق الأول (${esc(L.short)})</span>
+            <span dir="rtl">الختم والتوقيع</span>
+          </div>
+          <div class="hr-pack-sig-box">
+            <span>Le Salarié / الفريق الثاني (${esc(fullName)}${fullNameAr && fullNameAr !== fullName ? ' / ' + esc(fullNameAr) : ''})</span>
+            <span dir="rtl">توقيع الأجير والمصادقة</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const nssfFrTable = kvTable([
+      ['Raison sociale Employeur', L.legal],
+      ['N° Fiscal / Référence Employeur', L.mof],
+      ['N° Immatriculation CNSS Salarié', nssfNo],
+      ['Nom & Prénom / Père / Mère', `${fullName} · Père: ${fatherName} · Mère: ${motherFr}`],
+      ['Date de naissance / Nationalité', `${dob} · ${nat}`],
+      ['Pièce ID / Exp.', `${natId} (Exp. ${idExp})`],
+      ['Permis de travail (MoL)', `${wpNo} · Exp. ${wpExp}`],
+      ['Titre de séjour (Sûreté Gén.)', `${resNo} · Exp. ${resExp}`],
+      ['Statut Conformité Watchdog', (compEv && compEv.badgeText) ? compEv.badgeText : contractStatus],
+      ['Date d’affiliation / Embauche', startD],
+      ['Salaire mensuel assujetti (USD / LBP)', canViewPayrollAmt ? `${fmtUsd(pkgUsd, 2)}${salaryLbp > 0 ? ' / ' + fmtNum(salaryLbp, 0) + ' LBP' : ''}` : maskedFr],
+      ['Retenue absence / jour', canViewPayrollAmt ? fmtUsd(dedUsd, 2) : maskedFr]
+    ], false);
+
+    const nssfArTable = kvTable([
+      ['اسم المؤسسة / صاحب العمل', L.ar],
+      ['الرقم المالي / رقم التسجيل', L.mof],
+      ['رقم تسجيل الأجير في الضمان', nssfNo],
+      ['الاسم الثلاثي / اسم الأم', `${fullNameAr} · الأب: ${fatherNameAr} · الأم: ${motherAr}`],
+      ['تاريخ الولادة / الجنسية', `${dob} · ${natAr}`],
+      ['بطاقة الهوية أو الجواز / الصلاحية', `${natId} (${idExp})`],
+      ['إجازة العمل (وزارة العمل)', `${wpNo} · انتهاء ${wpExp}`],
+      ['بطاقة الإقامة (الأمن العام)', `${resNo} · انتهاء ${resExp}`],
+      ['حالة الصلاحية والمتابعة', (compEv && compEv.badgeText) ? compEv.badgeText : contractStatus],
+      ['تاريخ الالتحاق بالعمل', startD],
+      ['الأجر الشهري المصرح عنه', canViewPayrollAmt ? `${fmtUsd(pkgUsd, 2)}${salaryLbp > 0 ? ' / ' + fmtNum(salaryLbp, 0) + ' ل.ل' : ''}` : maskedAr],
+      ['حسم الغياب اليومي', canViewPayrollAmt ? fmtUsd(dedUsd, 2) : maskedAr]
+    ], true);
+
+    const nssfDocHtml = `
+      <div class="hr-pack-doc hr-pack-nssf${mode === 'both' ? ' hr-pack-page-break' : ''}" id="hrPackNssfDoc">
+        <div class="hr-pack-doc-hdr">
+          ${showFr ? `<div class="hr-pack-doc-hdr-fr">DÉCLARATION INDIVIDUELLE CNSS / NSSF DU SALARIÉ</div>` : ''}
+          ${showAr ? `<div class="hr-pack-doc-hdr-ar" dir="rtl">ملخص التصريح الفردي للصندوق الوطني للضمان الاجتماعي</div>` : ''}
+        </div>
+        ${maskNoteHtml}
+        <div class="${lang === 'bi' ? 'hr-pack-bi-grid' : ''}">
+          ${showFr ? nssfFrTable : ''}
+          ${showAr ? nssfArTable : ''}
+        </div>
+        <div class="hr-pack-sig-grid">
+          <div class="hr-pack-sig-box">
+            <span>Responsable RH &amp; Comptabilité / الموارد البشرية</span>
+            <span dir="rtl">التصديق والختم</span>
+          </div>
+          <div class="hr-pack-sig-box">
+            <span>Signature Salarié / توقيع الأجير</span>
+            <span dir="rtl">المطابقة والاستلام</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    return `
+      ${sheetHeaderHtml(meta, effCoKey, `${fullName} · ${roleTitle} · NSSF ${nssfNo} · ${mode.toUpperCase()} (${lang.toUpperCase()})`)}
+      <div class="hr-print-pack" data-no-i18n="1" data-hr-staff="${esc(st.id || '')}" data-hr-mode="${esc(mode)}" data-hr-lang="${esc(lang)}">
+        ${mode !== 'nssf' ? contractDocHtml : ''}
+        ${mode !== 'contract' ? nssfDocHtml : ''}
+      </div>
+      ${sheetFooterHtml(effCoKey, mode === 'both' ? 2 : 1, mode === 'both' ? 2 : 1)}
+    `;
+  }
+
 
   const SHEET_RENDERERS = {
     '01': render01DailyOps,
@@ -5142,7 +5527,8 @@
     '24': render24HospitalityRegister,
     '25': render25TradingRegister,
     '26': render26RealEstateRegister,
-    '27': render27InsuranceRegister
+    '27': render27InsuranceRegister,
+    '28': render28HrPrintPack
   };
 
   function renderRdlSheet(id, ctx) {
@@ -5182,7 +5568,10 @@
             month: opts.month || 'ALL',
             invoiceNo: opts.invoiceNo || '2738',
             ticketId: opts.ticketId || '',
-            receiptId: opts.receiptId || ''
+            receiptId: opts.receiptId || '',
+            hrStaff: opts.hrStaff || '',
+            hrPackMode: opts.hrPackMode || 'both',
+            hrPackLang: opts.hrPackLang || 'bi'
           }
         }
       };
@@ -5284,7 +5673,8 @@
     '24': 'Registre revenus sites, caisse et abonnements',
     '25': 'Carnets de factures, châssis VIN et valorisation stock',
     '26': 'État locatif officiel 4235 et échéancier baux',
-    '27': 'Bordereau polices, renouvellements et compagnies'
+    '27': 'Bordereau polices, renouvellements et compagnies',
+    '28': 'Dossier contrat de travail et déclaration CNSS'
   };
 
   function computeStatementSnapshot(SEED, STATE, opts) {
@@ -6304,6 +6694,50 @@
         mkKpi('car', 'Net Carrier Payable', 'مستحقات شركات التأمين', 'Net dû compagnies', canViewBooks ? fmtUsd(k.carrierPayableUsd || 0, 0) : 'Restricted', `${cRows.length} carriers`, `${cRows.length} شركات ضامنة`, `${cRows.length} compagnies`),
         mkKpi('unp', 'Unpaid Client Prem.', 'أقساط قيد التحصيل', 'Primes clients à encaisser', canViewBooks ? fmtUsd(clientUnpaid, 0) : 'Restricted', 'Account 4112 / 4017', 'حساب 4112 / 4017', 'Comptes 4112 / 4017')
       ];
+    } else if (stmtId === '28') {
+      windowMode = 'document';
+      const cand = (ctx.hrStaffById && ctx.hrStaffById.get(String(p.hrStaff || ''))) || (ctx.hrStaffCandidates || []).find(c => String(c.id) === String(p.hrStaff || '')) || (ctx.hrStaffCandidates || [])[0] || {};
+      const st = cand.staff || {};
+      const emp = cand.emp || {};
+      const canViewPayrollAmt = (typeof window !== 'undefined' && typeof window.__mfgCanViewPayrollDollarAmounts === 'function')
+        ? Boolean(window.__mfgCanViewPayrollDollarAmounts())
+        : false;
+      const baseUsd = Number(emp.salary_usd != null ? emp.salary_usd : (emp.monthly_salary_usd || 0));
+      const pkgUsd = baseUsd + Number(emp.reimbursement || 0);
+      const compEv = (typeof window !== 'undefined' && typeof window.__mfgEvaluateStaffComplianceRow === 'function')
+        ? window.__mfgEvaluateStaffComplianceRow(st, seedObj)
+        : null;
+      const stName = st.name || cand.name || '-';
+      windowLabelEn = `${stName} · Contract & NSSF`;
+      windowLabelAr = `${stName} · عقد العمل والضمان`;
+      windowLabelFr = `${stName} · Contrat et CNSS`;
+      facts = {
+        staffId: st.id || cand.id || '',
+        staffName: stName,
+        fatherName: st.father_name || '',
+        motherName: st.mother_name || '',
+        motherNameAr: st.mother_name_ar || '',
+        nationality: st.nationality || '',
+        dob: st.dob || '',
+        nssfNo: st.nssf_no || '',
+        idExpiryDate: st.id_expiry_date || '',
+        workPermitNo: st.work_permit_no || '',
+        workPermitExpiry: st.work_permit_expiry || '',
+        residencyNo: st.residency_no || '',
+        residencyExpiry: st.residency_expiry || '',
+        complianceTier: compEv ? compEv.tier : 'none',
+        salaryMasked: !canViewPayrollAmt,
+        baseSalaryUsd: canViewPayrollAmt ? Number(baseUsd.toFixed(2)) : undefined,
+        packageUsd: canViewPayrollAmt ? Number(pkgUsd.toFixed(2)) : undefined,
+        packMode: p.hrPackMode || 'both',
+        packLang: p.hrPackLang || 'bi'
+      };
+      kpis = [
+        mkKpi('emp', 'Employee', 'الموظف', 'Salarié(e)', _stmtCleanParty(stName), _stmtCleanParty(emp.role || st.role || 'Staff'), _stmtCleanParty(emp.role || st.role || 'موظف'), _stmtCleanParty(emp.role || st.role || 'Employé')),
+        mkKpi('nssf', 'NSSF / CNSS #', 'رقم الضمان الاجتماعي', 'N° CNSS / NSSF', st.nssf_no || 'Pending', st.nationality || '-', st.nationality || '-', st.nationality || '-'),
+        mkKpi('comp', 'Compliance Status', 'حالة الامتثال', 'Statut conformité', (compEv && compEv.badgeText) ? compEv.badgeText : 'Active', st.work_permit_expiry ? `WP ${st.work_permit_expiry}` : 'ID & Permit check', st.work_permit_expiry ? `إجازة ${st.work_permit_expiry}` : 'متابعة الصلاحية', st.work_permit_expiry ? `Permis ${st.work_permit_expiry}` : 'Suivi échéances', compEv && (compEv.tier === 'expired' || compEv.tier === 'critical_7') ? 'neg' : 'ok'),
+        mkKpi('sal', 'Monthly Package', 'الراتب الشهري', 'Rémunération mensuelle', canViewPayrollAmt ? fmtUsd(pkgUsd, 2) : 'Restricted', canViewPayrollAmt ? `Base ${fmtUsd(baseUsd, 2)}` : 'Masked for this role', canViewPayrollAmt ? `الأساسي ${fmtUsd(baseUsd, 2)}` : 'محجوب لهذه الصلاحية', canViewPayrollAmt ? `Base ${fmtUsd(baseUsd, 2)}` : 'Masqué pour ce rôle')
+      ];
     }
 
     function uniqCount(arr) {
@@ -6312,7 +6746,7 @@
       return s.size;
     }
 
-    const paramSig = (meta.params || []).map(pk => `${pk}:${p[pk] || ''}`).join('|');
+    const paramSig = (meta.params || []).map(pk => `${pk}:${p[pk] || ''}`).join('|') + (stmtId === '28' ? `|hm:${p.hrPackMode || ''}|hl:${p.hrPackLang || ''}|sal:${(typeof window !== 'undefined' && typeof window.__mfgCanViewPayrollDollarAmounts === 'function') ? (window.__mfgCanViewPayrollDollarAmounts() ? 1 : 0) : 0}` : '');
     const customRev = (seedObj && (seedObj._customRev || seedObj._indCustomRev || seedObj._industryRev)) || 0;
     // Diesel rights of the reading seat are part of the key: a cover note written for a seat that reads fuel money
     // (Fuel Log, Driver Statement) is never served from the cache to a seat that may not.
@@ -7031,6 +7465,18 @@
       root.querySelectorAll('[data-rdl-period]').forEach(btn => {
         btn.addEventListener('click', () => {
           liveCtx.rdl.params.period = btn.dataset.rdlPeriod || 'Month';
+          refreshSheetAndParams();
+        });
+      });
+      root.querySelectorAll('[data-hr-pack-mode]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          liveCtx.rdl.params.hrPackMode = btn.dataset.hrPackMode || 'both';
+          refreshSheetAndParams();
+        });
+      });
+      root.querySelectorAll('[data-hr-pack-lang]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          liveCtx.rdl.params.hrPackLang = btn.dataset.hrPackLang || 'bi';
           refreshSheetAndParams();
         });
       });

@@ -2029,6 +2029,7 @@
           <div class="staff-id-scan-bar-actions">
             <button type="button" class="btn btn-primary btn-sm" id="staffIdCameraScanBtn">${ic('camera')} Scan Lebanese ID or NSSF Card</button>
             <button type="button" class="btn btn-ghost-bar btn-sm" id="staffIdUploadBtn">${ic('upload')} Upload Card</button>
+            <button type="button" class="btn btn-ghost-bar btn-sm" id="staffIdPhoneQrBtn">${ic('qr')} Scan from Phone</button>
             <button type="button" class="btn btn-ghost-bar btn-sm" id="staffIdSampleBtn">${ic('sparkles')} Sample ID</button>
             <input type="file" id="staffIdFileInput" accept="image/*,.pdf,.svg" hidden>
           </div>
@@ -2045,8 +2046,16 @@
           ${fld('Nationality', inp('f_nationality', 'text', '', 'list="dl_staff_nat" placeholder="Select or type nationality..."') + dl('dl_staff_nat', natPool))}
           ${fld('Phone', inp('f_phone', 'text', '', 'placeholder="+961 ..."'))}
           ${fld('Civil ID or NSSF #', inp('f_reference', 'text', '', 'placeholder="Civil ID, NSSF or work permit #..."'))}
+          ${fld('NSSF Registration #', inp('f_nssf_no', 'text', '', 'placeholder="CNSS / NSSF registration #..."'))}
+          ${fld('ID / Passport Expiry', inp('f_id_expiry_date', 'date', '', 'min="2000-01-01" max="2060-12-31"'))}
+          ${fld('Work Permit #', inp('f_work_permit_no', 'text', '', 'placeholder="MoL Work Permit # (foreign staff)..."'))}
+          ${fld('Work Permit Expiry', inp('f_work_permit_expiry', 'date', '', 'min="2000-01-01" max="2060-12-31"'))}
+          ${fld('Residency Permit #', inp('f_residency_no', 'text', '', 'placeholder="General Security Residency #..."'))}
+          ${fld('Residency Expiry', inp('f_residency_expiry', 'date', '', 'min="2000-01-01" max="2060-12-31"'))}
           <input type="hidden" id="f_nationality_ar" value="">
           <input type="hidden" id="f_id_doc_kind" value="">
+          <input type="hidden" id="f_mother_name" value="">
+          <input type="hidden" id="f_mother_name_ar" value="">
           ${secHdr('2. Initial Role & Equipment Assignment (Logged by Effective Date)', 'Future role, equipment, and contract changes are tracked chronologically in Role & Equipment Log and Employment Contract')}
           ${fld('Effective Start Date *', inp('f_assign_start', 'date', today), { id: 'wrap_staff_assign_start' })}
           ${fld('Role *', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type staff role..."') + dlMeta('dl_roles', roleMetaItems), { id: 'wrap_staff_role', hintId: 'hint_staff_role', hint: '' })}

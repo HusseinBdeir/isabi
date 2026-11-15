@@ -468,24 +468,133 @@ export async function handleEdgeTts(request, env, body, session = null) {
 }
 
 const ID_CARD_SCAN_PROMPT = [
-  'Extract structured identity fields from this Lebanese ID card (بطاقة هوية), Individual Civil Extract (إخراج قيد فردي), NSSF Card (بطاقة الصندوق الوطني للضمان الاجتماعي / بطاقة المضمون), Work/Residency Permit, or Passport as strict JSON ONLY with keys:',
-  '{"docKind":"lebanese_id|nssf_card|civil_extract|work_permit|passport|id_card","fullNameLatin":"","fullNameArabic":"","firstNameLatin":"","lastNameLatin":"","firstNameArabic":"","lastNameArabic":"","fatherNameLatin":"","fatherNameArabic":"","motherNameLatin":"","motherNameArabic":"","dob":"YYYY-MM-DD","birthYear":"","nationalityLatin":"","nationalityArabic":"","idNumber":"","nssfNumber":"","gender":""}.',
+  'Extract structured identity fields from this Lebanese ID card (بطاقة هوية), Individual Civil Extract (إخراج قيد فردي), NSSF Card (بطاقة الصندوق الوطني للضمان الاجتماعي / بطاقة المضمون), Work Permit (بطاقة إجازة عمل), Residency Permit (بطاقة إقامة), or Passport as strict JSON ONLY with keys:',
+  '{"docKind":"lebanese_id|nssf_card|civil_extract|work_permit|residency_permit|passport|id_card","fullNameLatin":"","fullNameArabic":"","firstNameLatin":"","lastNameLatin":"","firstNameArabic":"","lastNameArabic":"","fatherNameLatin":"","fatherNameArabic":"","motherNameLatin":"","motherNameArabic":"","dob":"YYYY-MM-DD","birthYear":"","nationalityLatin":"","nationalityArabic":"","idNumber":"","nssfNumber":"","gender":"","issueDate":"YYYY-MM-DD","idExpiryDate":"YYYY-MM-DD","workPermitNumber":"","workPermitExpiryDate":"YYYY-MM-DD","residencyNumber":"","residencyExpiryDate":"YYYY-MM-DD"}.',
   'Rules:',
   '1. Convert all Eastern/Arabic-Indic numerals (٠١٢٣٤٥٦٧٨٩) to ASCII digits 0-9.',
-  '2. Format full dates as YYYY-MM-DD. If the card only shows a 4-digit birth year, put it in "birthYear" and leave "dob" empty "". Never invent day/month.',
+  '2. Format full dates as YYYY-MM-DD. If only a 4-digit birth year is visible, put it in "birthYear" and leave "dob" empty "". Never invent day/month.',
   '3. Put First Name + Last Name (Family Name) in fullNameArabic / fullNameLatin WITHOUT Father\'s Name in fullName*; put Father\'s Name separately in fatherNameArabic / fatherNameLatin.',
   '4. Always populate BOTH Arabic (*Arabic) and Latin (*Latin) script fields using standard Lebanese transliteration when only one script appears on the card.',
-  '5. If header shows الجمهورية اللبنانية / بطاقة هوية, set docKind="lebanese_id", nationalityArabic="لبناني", nationalityLatin="Lebanese". If header shows الضمان الاجتماعي / NSSF, set docKind="nssf_card". Return valid JSON ONLY.'
+  '5. Identify docKind accurately: الجمهورية اللبنانية / بطاقة هوية -> "lebanese_id" (nationalityArabic="لبناني", nationalityLatin="Lebanese", put card expiry in idExpiryDate if printed); الضمان الاجتماعي / NSSF -> "nssf_card" (extract 6-10 digit registration into nssfNumber); إجازة عمل / Ministry of Labour / Work Permit -> "work_permit" (extract workPermitNumber & workPermitExpiryDate); بطاقة إقامة / الأمن العام / General Security / Sûreté Générale / Residency -> "residency_permit" (extract residencyNumber & residencyExpiryDate). Return valid JSON ONLY.'
 ].join('\n');
 
-export async function handleEdgeSmartScan(request, env, body, session = null) {
+export function validateBase64MediaDataUrl(rawDataUrl, opts = {}) {
+  const allowPdfAndHeic = Boolean(opts && opts.allowPdfAndHeic);
+  const declaredMime = String((opts && opts.declaredMime) || '').toLowerCase().trim();
+  const s = String(rawDataUrl || '').trim();
+  if (declaredMime) {
+    const allowedDecl = allowPdfAndHeic
+      ? /^(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf)$/i
+      : /^image\/(jpeg|jpg|png|webp)$/i;
+    if (/svg|xml|html/i.test(declaredMime) || !allowedDecl.test(declaredMime)) {
+      return { ok: false, status: 400, error: 'Unsupported image format.' };
+    }
+  }
+  if (!s) {
+    return { ok: true, empty: true, mimeType: declaredMime === 'image/jpg' ? 'image/jpeg' : declaredMime };
+  }
+  const m = /^data:([^;,\s]+)(?:;[^,]*)?;base64,([A-Za-z0-9+/=\r\n\s]+)$/i.exec(s);
+  if (!m) {
+    return { ok: false, status: 400, error: 'Unsupported image format.' };
+  }
+  const hdrMime = m[1].toLowerCase().trim();
+  const allowedHdr = allowPdfAndHeic
+    ? /^(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf)$/i
+    : /^image\/(jpeg|jpg|png|webp)$/i;
+  if (/svg|xml|html/i.test(hdrMime) || !allowedHdr.test(hdrMime)) {
+    return { ok: false, status: 400, error: 'Unsupported image format.' };
+  }
+  const safeHdrMime = hdrMime === 'image/jpg' ? 'image/jpeg' : hdrMime;
+  if (declaredMime) {
+    const safeDecl = declaredMime === 'image/jpg' ? 'image/jpeg' : declaredMime;
+    const bothHeif = (safeHdrMime === 'image/heic' || safeHdrMime === 'image/heif')
+      && (safeDecl === 'image/heic' || safeDecl === 'image/heif');
+    if (safeHdrMime !== safeDecl && !bothHeif) {
+      return { ok: false, status: 400, error: 'Mismatched declared media type.' };
+    }
+  }
+  const b64Clean = m[2].replace(/\s+/g, '');
+  if (!b64Clean || b64Clean.length % 4 === 1) {
+    return { ok: false, status: 400, error: 'Invalid base64 image payload.' };
+  }
+  let headBytes;
+  try {
+    const sliceLen = b64Clean.length <= 256 ? b64Clean.length : 256;
+    const bin = atob(b64Clean.slice(0, sliceLen));
+    headBytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) headBytes[i] = bin.charCodeAt(i);
+  } catch (_) {
+    return { ok: false, status: 400, error: 'Invalid base64 image payload.' };
+  }
+  if (!headBytes || headBytes.length < 3) {
+    return { ok: false, status: 400, error: 'Truncated or invalid image payload.' };
+  }
+  let off = 0;
+  if (headBytes.length >= 3 && headBytes[0] === 0xEF && headBytes[1] === 0xBB && headBytes[2] === 0xBF) off = 3;
+  else if (headBytes.length >= 2 && ((headBytes[0] === 0xFF && headBytes[1] === 0xFE) || (headBytes[0] === 0xFE && headBytes[1] === 0xFF))) off = 2;
+  let asciiClean = '';
+  for (let i = off; i < headBytes.length; i++) {
+    const c = headBytes[i];
+    if (c === 0) continue;
+    asciiClean += String.fromCharCode(c);
+  }
+  const trimmedHead = asciiClean.trimStart().toLowerCase();
+  if (/^(?:<svg\b|<\?xml\b|<!doctype\b|<html\b|<script\b)/.test(trimmedHead)) {
+    return { ok: false, status: 400, error: 'Unsupported image format.' };
+  }
+  const asciiSlice = (a, b) => {
+    let out = '';
+    for (let i = a; i < b && i < headBytes.length; i++) out += String.fromCharCode(headBytes[i]);
+    return out;
+  };
+  const isJpeg = headBytes.length >= 3 && headBytes[0] === 0xFF && headBytes[1] === 0xD8 && headBytes[2] === 0xFF;
+  const isPng = headBytes.length >= 8 && headBytes[0] === 0x89 && headBytes[1] === 0x50 && headBytes[2] === 0x4E && headBytes[3] === 0x47
+    && headBytes[4] === 0x0D && headBytes[5] === 0x0A && headBytes[6] === 0x1A && headBytes[7] === 0x0A;
+  const isWebp = headBytes.length >= 12 && asciiSlice(0, 4) === 'RIFF' && asciiSlice(8, 12) === 'WEBP';
+  const isPdf = allowPdfAndHeic && headBytes.length >= 5 && asciiSlice(0, 5) === '%PDF-';
+  const isHeic = allowPdfAndHeic && headBytes.length >= 12 && asciiSlice(4, 8) === 'ftyp'
+    && /^(heic|heix|hevc|hevx|mif1|msf1|heim|heis|avic)$/i.test(asciiSlice(8, 12));
+
+  let magicMime = '';
+  if (isJpeg) magicMime = 'image/jpeg';
+  else if (isPng) magicMime = 'image/png';
+  else if (isWebp) magicMime = 'image/webp';
+  else if (isPdf) magicMime = 'application/pdf';
+  else if (isHeic) magicMime = 'image/heic';
+
+  if (!magicMime) {
+    return { ok: false, status: 400, error: 'Unsupported image format.' };
+  }
+  const heifPair = magicMime === 'image/heic' && (safeHdrMime === 'image/heic' || safeHdrMime === 'image/heif');
+  if (magicMime !== safeHdrMime && !heifPair) {
+    return { ok: false, status: 400, error: 'Unsupported image format.' };
+  }
+  return { ok: true, empty: false, mimeType: magicMime };
+}
+
+export async function handleEdgeSmartScan(request, env, body, session = null, opts = null) {
   const ipHash = await hashClientIp(request);
   const isAuthed = Boolean(session && session.sub);
+  const hasPhoneScanGrant = Boolean(opts && opts.phoneScanGrant && opts.phoneScanGrant.ok);
   const rl = checkSlidingRateLimit(`scan:${ipHash}`, isAuthed ? 30 : 10, 60000);
   if (!rl.allowed) {
     return jsonResponse({ ok: true, mode: 'rate_limited', parsed: null }, 429);
   }
-  if (!isAuthed) {
+  const rawPrimaryUrl = String((body && body.dataUrl) || '').trim();
+  const rawAltUrl = String((body && body.imageDataUrl) || '').trim();
+  const declMime = String((body && body.mimeType) || '').toLowerCase().trim();
+  if (declMime && /svg|xml|html/i.test(declMime)) {
+    return jsonResponse({ ok: false, error: 'Unsupported image format.' }, 400);
+  }
+  if (rawPrimaryUrl) {
+    const chk1 = validateBase64MediaDataUrl(rawPrimaryUrl, { allowPdfAndHeic: true, declaredMime: declMime });
+    if (!chk1.ok) return jsonResponse({ ok: false, error: chk1.error }, chk1.status || 400);
+  }
+  if (rawAltUrl) {
+    const chk2 = validateBase64MediaDataUrl(rawAltUrl, { allowPdfAndHeic: true, declaredMime: declMime });
+    if (!chk2.ok) return jsonResponse({ ok: false, error: chk2.error }, chk2.status || 400);
+  }
+  if (!isAuthed && !hasPhoneScanGrant) {
     const dayCap = await checkPublicAiDailyCap(env);
     if (!dayCap.allowed) {
       return jsonResponse({ ok: true, mode: 'daily_cap_reached', parsed: null }, 429);
@@ -498,13 +607,13 @@ export async function handleEdgeSmartScan(request, env, body, session = null) {
   }
 
   try {
-    const dataUrl = String((body && body.dataUrl) || '');
-    const mimeType = String((body && body.mimeType) || 'image/jpeg').toLowerCase().trim();
+    const dataUrl = rawPrimaryUrl || rawAltUrl;
+    const mimeType = declMime || (dataUrl.startsWith('data:') ? dataUrl.slice(5).split(';')[0].toLowerCase().trim() : 'image/jpeg');
     const extTxt = String((body && body.extractedText) || '').slice(0, isAuthed ? 5500 : 2500);
     const companies = Array.isArray(body && body.companies) ? body.companies.slice(0, 16).join(', ') : '';
-    const scanMode = String((body && body.scanMode) || '').trim().toLowerCase();
-    const isIdCardMode = scanMode === 'id_card' || scanMode === 'lebanese_id' || scanMode === 'nssf_card';
-    const customPrompt = (!isIdCardMode && isAuthed)
+    const scanMode = hasPhoneScanGrant ? 'id_card' : String((body && body.scanMode) || '').trim().toLowerCase();
+    const isIdCardMode = scanMode === 'id_card' || scanMode === 'lebanese_id' || scanMode === 'nssf_card' || scanMode === 'work_permit' || scanMode === 'residency_permit';
+    const customPrompt = (!isIdCardMode && isAuthed && !hasPhoneScanGrant)
       ? String((body && body.customPrompt) || '').trim().slice(0, 6000)
       : '';
     const promptText = isIdCardMode
@@ -522,7 +631,7 @@ export async function handleEdgeSmartScan(request, env, body, session = null) {
 
     const parts = [{ text: promptText }];
     let hasVisionBin = false;
-    const maxB64 = isAuthed ? 6000000 : 1600000;
+    const maxB64 = isAuthed ? 6000000 : (hasPhoneScanGrant ? 2400000 : 1600000);
     if (dataUrl.includes(';base64,') && /^(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf)$/i.test(mimeType)) {
       const b64Part = dataUrl.split(';base64,')[1] || '';
       if (b64Part && b64Part.length < maxB64) {

@@ -31,6 +31,7 @@ import {
 } from './security.js';
 import { collectLegacyCandidates, scheduleLegacyIdHits, takeMfgLegacySignals } from './legacy_ids.js';
 import { DEPLOYED_SHELL_VER } from './deployed_shell.js';
+import { validateBase64MediaDataUrl } from './gemini.js';
 
 export const ALLOWED_TABLES = new Set([
   'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions',
@@ -358,9 +359,32 @@ async function getTableColumns(db, table) {
   if (perDb && perDb.has(table)) return perDb.get(table);
   let res = await db.prepare(`PRAGMA table_info(${table})`).all();
   let cols = new Set((res.results || []).map(r => String(r.name)));
-  if (table === 'staff_members' && cols.size > 0 && !cols.has('father_name')) {
+  if (table === 'staff_members' && cols.size > 0) {
+    const staffExtraCols = [
+      'father_name', 'father_name_ar', 'full_name_ar',
+      'mother_name', 'mother_name_ar',
+      'nationality_ar', 'id_doc_kind',
+      'nssf_no', 'id_expiry_date',
+      'work_permit_no', 'work_permit_expiry',
+      'residency_no', 'residency_expiry'
+    ];
+    let addedCol = false;
+    for (const colName of staffExtraCols) {
+      if (!cols.has(colName)) {
+        try {
+          await db.prepare(`ALTER TABLE staff_members ADD COLUMN ${colName} TEXT DEFAULT ''`).run();
+          addedCol = true;
+        } catch (_) {}
+      }
+    }
+    if (addedCol) {
+      res = await db.prepare(`PRAGMA table_info(${table})`).all();
+      cols = new Set((res.results || []).map(r => String(r.name)));
+    }
+  }
+  if (table === 'phone_scan_sessions' && cols.size > 0 && !cols.has('meta_json')) {
     try {
-      await db.prepare("ALTER TABLE staff_members ADD COLUMN father_name TEXT DEFAULT ''").run();
+      await db.prepare("ALTER TABLE phone_scan_sessions ADD COLUMN meta_json TEXT DEFAULT '{}'").run();
       res = await db.prepare(`PRAGMA table_info(${table})`).all();
       cols = new Set((res.results || []).map(r => String(r.name)));
     } catch (_) {}
@@ -6124,6 +6148,71 @@ async function purgePhoneScanR2Pages(env, pagesJsonRaw) {
   }
 }
 
+const PHONE_ID_SCALAR_KEYS = [
+  'docKind', 'fullNameLatin', 'fullNameArabic', 'firstNameLatin', 'lastNameLatin',
+  'firstNameArabic', 'lastNameArabic', 'fatherNameLatin', 'fatherNameArabic',
+  'motherNameLatin', 'motherNameArabic', 'dob', 'birthYear', 'nationalityLatin',
+  'nationalityArabic', 'idNumber', 'nssfNumber', 'gender', 'issueDate',
+  'idExpiryDate', 'workPermitNumber', 'workPermitExpiryDate',
+  'residencyNumber', 'residencyExpiryDate', 'source'
+];
+
+function sanitizePhoneIdExtracted(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const out = {};
+  for (const k of PHONE_ID_SCALAR_KEYS) {
+    if (raw[k] !== undefined && raw[k] !== null) {
+      const s = String(raw[k]).trim().slice(0, 120);
+      if (s) out[k] = s;
+    }
+  }
+  if (typeof raw.cardDataUrl === 'string' && raw.cardDataUrl.length <= 650000
+      && /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(raw.cardDataUrl)) {
+    out.cardDataUrl = raw.cardDataUrl;
+  }
+  return out;
+}
+
+export async function verifyAndIncrementPhoneIdScan(env, rawSid, rawTok) {
+  if (!env || !env.DB) return { ok: false, status: 503, code: 'db_unavailable', error: 'Database unavailable.' };
+  const sid = String(rawSid || '').trim().slice(0, 64);
+  const tok = String(rawTok || '').trim().slice(0, 64);
+  if (!sid || !tok) return { ok: false, status: 403, code: 'missing_token', error: 'Phone scan token required.' };
+  try { await getTableColumns(env.DB, 'phone_scan_sessions'); } catch (_) {}
+
+  const nowMs = Date.now();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const row = await env.DB.prepare('SELECT * FROM phone_scan_sessions WHERE sid = ?1').bind(sid).first();
+    if (!row || !row.tok || row.tok !== tok) {
+      return { ok: false, status: 403, code: 'invalid_token', error: 'Invalid or expired phone scan token.' };
+    }
+    const rawMeta = String(row.meta_json || '{}');
+    const meta = safeJsonParse(rawMeta, {});
+    if (!meta || meta.mode !== 'id_card') {
+      return { ok: false, status: 403, code: 'wrong_mode', error: 'Token is not scoped for ID card scanning.' };
+    }
+    if (meta.consumed || row.status === 'consumed') {
+      return { ok: false, status: 403, code: 'already_consumed', error: 'This single-use QR link has already been used.' };
+    }
+    if (meta.expiresAtMs && nowMs > Number(meta.expiresAtMs)) {
+      return { ok: false, status: 403, code: 'expired', error: 'This single-use QR link has expired.' };
+    }
+    const scansUsed = Number(meta.scansUsed || 0);
+    if (scansUsed >= 3) {
+      return { ok: false, status: 429, code: 'scan_limit_reached', error: 'Maximum scan attempts (3) reached for this QR link.' };
+    }
+    const nextMeta = Object.assign({}, meta, { scansUsed: scansUsed + 1 });
+    const nextMetaStr = JSON.stringify(nextMeta);
+    const upd = await env.DB.prepare(
+      `UPDATE phone_scan_sessions SET meta_json = ?1, updated_ms = ?2 WHERE sid = ?3 AND COALESCE(meta_json, '{}') = ?4`
+    ).bind(nextMetaStr, nowMs, sid, rawMeta).run();
+    if (upd && upd.meta && upd.meta.changes > 0) {
+      return { ok: true, sid, company: String(meta.company || ''), scansUsed: scansUsed + 1 };
+    }
+  }
+  return { ok: false, status: 409, code: 'conflict', error: 'Concurrent scan attempt; please retry.' };
+}
+
 export async function handlePhoneScan(request, env, url, body, session) {
   if (!env || !env.DB) return jsonResponse({ ok: true, found: false });
   const ipHash = await hashClientIp(request);
@@ -6131,6 +6220,7 @@ export async function handlePhoneScan(request, env, url, body, session) {
   if (!rl.allowed) {
     return jsonResponse({ ok: false, error: 'Phone scan rate limit exceeded.' }, 429);
   }
+  try { await getTableColumns(env.DB, 'phone_scan_sessions'); } catch (_) {}
   const nowMs = Date.now();
   // Prune sessions older than 10 minutes in bounded batches, purging R2 pages BEFORE deleting each exact sid
   try {
@@ -6159,9 +6249,12 @@ export async function handlePhoneScan(request, env, url, body, session) {
     if (!row || (row.tok && row.tok !== tok)) {
       return jsonResponse({ ok: true, found: false });
     }
-    const pages = safeJsonParse(row.pages_json, []);
+    const meta = safeJsonParse(row.meta_json, {}) || {};
+    const isConsumed = Boolean(meta.consumed || row.status === 'consumed');
+    const isExpired = Boolean(meta.expiresAtMs && nowMs > Number(meta.expiresAtMs));
+    let pages = (meta.mode === 'id_card' && (isConsumed || isExpired)) ? [] : safeJsonParse(row.pages_json, []);
     // Hydrate any R2-offloaded page dataUrls
-    if (env.BUCKET && Array.isArray(pages)) {
+    if (env.BUCKET && Array.isArray(pages) && pages.length) {
       for (const pg of pages) {
         if (pg && pg.r2Key && !pg.dataUrl) {
           try {
@@ -6171,18 +6264,28 @@ export async function handlePhoneScan(request, env, url, body, session) {
         }
       }
     }
+    const sessOut = {
+      sid: row.sid,
+      tok: row.tok,
+      status: isConsumed ? 'consumed' : (isExpired ? 'expired' : row.status),
+      pages,
+      rtcOffer: row.rtc_offer ? safeJsonParse(row.rtc_offer, row.rtc_offer) : undefined,
+      rtcAnswer: row.rtc_answer ? safeJsonParse(row.rtc_answer, row.rtc_answer) : undefined,
+      ts: Math.floor(Number(row.updated_ms || nowMs) / 1000)
+    };
+    if (meta && meta.mode) {
+      sessOut.mode = String(meta.mode);
+      sessOut.company = String(meta.company || '');
+      sessOut.consumed = isConsumed;
+      sessOut.expired = isExpired;
+      sessOut.scansUsed = Number(meta.scansUsed || 0);
+      sessOut.expiresAtMs = Number(meta.expiresAtMs || 0);
+      sessOut.extracted = (isConsumed || isExpired) ? null : (meta.extracted || null);
+    }
     return jsonResponse({
       ok: true,
       found: true,
-      session: {
-        sid: row.sid,
-        tok: row.tok,
-        status: row.status,
-        pages,
-        rtcOffer: row.rtc_offer ? safeJsonParse(row.rtc_offer, row.rtc_offer) : undefined,
-        rtcAnswer: row.rtc_answer ? safeJsonParse(row.rtc_answer, row.rtc_answer) : undefined,
-        ts: Math.floor(Number(row.updated_ms || nowMs) / 1000)
-      }
+      session: sessOut
     });
   }
 
@@ -6191,6 +6294,9 @@ export async function handlePhoneScan(request, env, url, body, session) {
   const opKind = String((body && body.op) || 'update').trim().toLowerCase();
   if (!sid || !tok) return jsonResponse({ ok: false, error: 'Missing session id' }, 400);
 
+  if (opKind === 'init_id_card' && (!session || isDemoHeader(request))) {
+    return jsonResponse({ ok: false, error: 'Authenticated session required to initiate phone scan handoff.' }, 401);
+  }
   const existing = await env.DB.prepare('SELECT * FROM phone_scan_sessions WHERE sid = ?1').bind(sid).first();
   if (!existing && (!session || isDemoHeader(request))) {
     return jsonResponse({ ok: false, error: 'Authenticated session required to initiate phone scan handoff.' }, 401);
@@ -6198,12 +6304,138 @@ export async function handlePhoneScan(request, env, url, body, session) {
   if (existing && existing.tok !== tok) {
     return jsonResponse({ ok: false, error: 'Token mismatch' }, 403);
   }
+  const existingMeta = existing ? (safeJsonParse(existing.meta_json, {}) || {}) : {};
   if (opKind === 'clear') {
     if (existing && existing.pages_json) {
       await purgePhoneScanR2Pages(env, existing.pages_json);
     }
     await env.DB.prepare('DELETE FROM phone_scan_sessions WHERE sid = ?1').bind(sid).run();
     return jsonResponse({ ok: true, cleared: true });
+  }
+  if (opKind === 'init_id_card') {
+    if (!session || isDemoHeader(request)) {
+      return jsonResponse({ ok: false, error: 'Authenticated session required to initiate phone scan handoff.' }, 401);
+    }
+    const reqCo = String((body && body.company) || '').trim().slice(0, 80);
+    if (reqCo && !isOwnerOrFullGroupSession(session) && !canAccessCompany(session, reqCo) && !canAccessSentinelScope(session, reqCo)) {
+      return jsonResponse({ ok: false, error: 'Row-level security: unauthorized entity scope.' }, 403);
+    }
+    if (existing) {
+      return jsonResponse({ ok: false, error: 'Session id already exists.' }, 409);
+    }
+    const initMeta = {
+      mode: 'id_card',
+      company: reqCo,
+      createdBy: String((session && session.sub) || '').trim().slice(0, 80),
+      createdAtMs: nowMs,
+      expiresAtMs: nowMs + 600000,
+      scansUsed: 0,
+      consumed: false,
+      consumedAtMs: 0,
+      extracted: null
+    };
+    await env.DB.prepare(
+      `INSERT INTO phone_scan_sessions (sid, tok, status, pages_json, rtc_offer, rtc_answer, meta_json, updated_ms)
+       VALUES (?1, ?2, 'waiting', '[]', '', '', ?3, ?4)`
+    ).bind(sid, tok, JSON.stringify(initMeta), nowMs).run();
+    return jsonResponse({ ok: true, status: 'waiting', mode: 'id_card', expiresAtMs: initMeta.expiresAtMs });
+  }
+  if (opKind === 'consume') {
+    if (!existing) return jsonResponse({ ok: false, error: 'Phone scan session not found.' }, 404);
+    if (existing.pages_json) {
+      await purgePhoneScanR2Pages(env, existing.pages_json);
+    }
+    const consumedMeta = Object.assign({}, existingMeta, {
+      consumed: true,
+      consumedAtMs: nowMs,
+      extracted: null
+    });
+    await env.DB.prepare(
+      `UPDATE phone_scan_sessions SET status = 'consumed', pages_json = '[]', meta_json = ?1, updated_ms = ?2 WHERE sid = ?3`
+    ).bind(JSON.stringify(consumedMeta), nowMs, sid).run();
+    return jsonResponse({ ok: true, consumed: true });
+  }
+  if (opKind === 'complete_id_card') {
+    if (!existing) return jsonResponse({ ok: false, error: 'Phone scan session not found.' }, 404);
+    if (existingMeta.mode !== 'id_card') {
+      return jsonResponse({ ok: false, error: 'Session is not an ID card phone scan session.' }, 400);
+    }
+    if (existingMeta.consumed || existing.status === 'consumed') {
+      return jsonResponse({ ok: false, code: 'already_consumed', error: 'This single-use QR link has already been used.' }, 403);
+    }
+    if (existingMeta.expiresAtMs && nowMs > Number(existingMeta.expiresAtMs)) {
+      return jsonResponse({ ok: false, code: 'expired', error: 'This single-use QR link has expired.' }, 403);
+    }
+    const rawExtracted = body && body.extracted;
+    if (rawExtracted && typeof rawExtracted.cardDataUrl === 'string' && rawExtracted.cardDataUrl.trim()) {
+      const rawCardUrl = rawExtracted.cardDataUrl.trim();
+      if (rawCardUrl.length > 2000000) {
+        return jsonResponse({ ok: false, error: 'ID preview exceeds 1.5 MB limit.' }, 413);
+      }
+      const cardChk = validateBase64MediaDataUrl(rawCardUrl, { allowPdfAndHeic: false });
+      if (!cardChk.ok) {
+        return jsonResponse({ ok: false, error: 'Unsupported image format for ID card preview.' }, 400);
+      }
+    }
+    const extracted = sanitizePhoneIdExtracted(rawExtracted);
+    const idPages = [];
+    const safeSidId = sid.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const rawPg0 = Array.isArray(body && body.pages) ? body.pages[0] : null;
+    const previewPg = rawPg0 && rawPg0.dataUrl
+      ? rawPg0
+      : (extracted.cardDataUrl ? { id: 'id-card-1', mimeType: 'image/jpeg', dataUrl: extracted.cardDataUrl } : null);
+    if (previewPg && previewPg.dataUrl) {
+      const rawDataUrl = String(previewPg.dataUrl).trim();
+      if (rawDataUrl.length > 2000000) {
+        return jsonResponse({ ok: false, error: 'ID preview exceeds 1.5 MB limit.' }, 413);
+      }
+      const declPgMime = (rawPg0 && rawPg0.dataUrl && rawPg0.mimeType) ? String(rawPg0.mimeType) : '';
+      const imgChk = validateBase64MediaDataUrl(rawDataUrl, { allowPdfAndHeic: false, declaredMime: declPgMime });
+      if (!imgChk.ok) {
+        return jsonResponse({ ok: false, error: 'Unsupported image format for ID card preview.' }, 400);
+      }
+      const safeMime = imgChk.mimeType || 'image/jpeg';
+      if (existing.pages_json) {
+        await purgePhoneScanR2Pages(env, existing.pages_json);
+      }
+      const pid = 'id-card-1';
+      if (env.BUCKET) {
+        const r2Key = `phone-scan/${safeSidId}/${pid}.txt`;
+        await env.BUCKET.put(r2Key, rawDataUrl, {
+          httpMetadata: { contentType: 'text/plain; charset=utf-8' }
+        });
+        idPages.push({ id: pid, mimeType: safeMime, r2Key, ts: nowMs });
+      } else {
+        idPages.push({ id: pid, mimeType: safeMime, dataUrl: rawDataUrl, ts: nowMs });
+      }
+    }
+    delete extracted.cardDataUrl;
+    if (!Object.keys(extracted).length && !idPages.length) {
+      return jsonResponse({ ok: false, error: 'No extracted identity fields supplied.' }, 400);
+    }
+    const nextMeta = Object.assign({}, existingMeta, { extracted, completedAtMs: nowMs });
+    await env.DB.prepare(
+      `UPDATE phone_scan_sessions SET status = 'id_ready', pages_json = ?1, meta_json = ?2, updated_ms = ?3 WHERE sid = ?4`
+    ).bind(JSON.stringify(idPages), JSON.stringify(nextMeta), nowMs, sid).run();
+    return jsonResponse({ ok: true, status: 'id_ready' });
+  }
+  if (existing && existingMeta.mode === 'id_card') {
+    if (existingMeta.consumed || existing.status === 'consumed') {
+      return jsonResponse({ ok: false, code: 'already_consumed', error: 'This single-use QR link has already been used.' }, 403);
+    }
+    if (existingMeta.expiresAtMs && nowMs > Number(existingMeta.expiresAtMs)) {
+      return jsonResponse({ ok: false, code: 'expired', error: 'This single-use QR link has expired.' }, 403);
+    }
+    const reqStatus = String((body && body.status) || '').trim().toLowerCase();
+    const hasMutPayload = Boolean((Array.isArray(body && body.pages) && body.pages.length) || (body && body.rtcOffer) || (body && body.rtcAnswer));
+    if (opKind !== 'update' || reqStatus !== 'connected' || hasMutPayload) {
+      return jsonResponse({ ok: false, error: 'Unsupported operation for ID card phone scan session.' }, 400);
+    }
+    const nextSt = existing.status === 'waiting' ? 'connected' : String(existing.status || 'connected');
+    await env.DB.prepare('UPDATE phone_scan_sessions SET status = ?1, updated_ms = ?2 WHERE sid = ?3')
+      .bind(nextSt, nowMs, sid).run();
+    const curPages = safeJsonParse(existing.pages_json, []);
+    return jsonResponse({ ok: true, status: nextSt, pageCount: Array.isArray(curPages) ? curPages.length : 0 });
   }
 
   let status = String((body && body.status) || (existing && existing.status) || 'waiting').slice(0, 40);
@@ -6241,9 +6473,9 @@ export async function handlePhoneScan(request, env, url, body, session) {
   }
 
   await env.DB.prepare(
-    `INSERT OR REPLACE INTO phone_scan_sessions (sid, tok, status, pages_json, rtc_offer, rtc_answer, updated_ms)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
-  ).bind(sid, tok, status, JSON.stringify(mergedPages.slice(0, 8)), rtcOffer, rtcAnswer, nowMs).run();
+    `INSERT OR REPLACE INTO phone_scan_sessions (sid, tok, status, pages_json, rtc_offer, rtc_answer, meta_json, updated_ms)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+  ).bind(sid, tok, status, JSON.stringify(mergedPages.slice(0, 8)), rtcOffer, rtcAnswer, JSON.stringify(existingMeta || {}), nowMs).run();
 
   return jsonResponse({ ok: true, status, pageCount: mergedPages.length });
 }

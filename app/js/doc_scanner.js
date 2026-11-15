@@ -1128,12 +1128,8 @@
   const IS_TEST_HARNESS = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST || (location.port && Number(location.port) >= 8095));
 
   function buildPhoneScanHandoffUrl(sid, tok, preset) {
-    const pCode = preset === 'vin' ? 'v' : (preset === 'card' ? 'c' : (preset === 'document' ? 'd' : 'r'));
-    const isLoopback = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/.test(location.hostname);
-    // On localhost desktop dev, point QR to https://isabisystems.com/app/ so any phone on cellular/Wi-Fi opens HTTPS camera cleanly
-    const base = (!IS_TEST_HARNESS && isLoopback)
-      ? 'https://isabisystems.com/app/'
-      : (location.origin + location.pathname);
+    const pCode = preset === 'vin' ? 'v' : (preset === 'card' ? 'c' : (preset === 'document' ? 'd' : (preset === 'id_card' ? 'i' : 'r')));
+    const base = location.origin + location.pathname;
     return `${base}?ps=${encodeURIComponent(sid)}.${encodeURIComponent(tok)}.${pCode}`;
   }
 
@@ -2501,7 +2497,7 @@
     const psCompact = sp.get('ps');
     if (psCompact && psCompact.includes('.')) {
       const parts = psCompact.split('.');
-      const pMap = { r: 'receipt', d: 'document', c: 'card', v: 'vin' };
+      const pMap = { r: 'receipt', d: 'document', c: 'card', v: 'vin', i: 'id_card' };
       return {
         sid: parts[0] || '',
         tok: parts[1] || '',
@@ -2519,9 +2515,536 @@
     return null;
   }
 
+  let _activeHrQrCleanup = null;
+
+  function openHrPhoneIdQrHandoff(opts = {}) {
+    if (typeof _activeHrQrCleanup === 'function') {
+      try { _activeHrQrCleanup(false); } catch (_) {}
+      _activeHrQrCleanup = null;
+    }
+    const prevModal = $('hrPhoneIdQrModal');
+    if (prevModal) prevModal.remove();
+
+    const sid = 'psid_' + randomHex(8);
+    const tok = randomHex(12);
+    const handoffUrl = buildPhoneScanHandoffUrl(sid, tok, 'id_card');
+    const titleTxt = String((opts && opts.title) || 'Scan ID or Permit from Phone');
+    const company = String((opts && opts.company) || '').trim();
+
+    const modal = document.createElement('div');
+    modal.id = 'hrPhoneIdQrModal';
+    modal.className = 'modal-backdrop';
+    modal.innerHTML = `
+      <div class="modal-card hr-phone-qr-card" role="dialog" aria-modal="true" aria-labelledby="hrPhoneQrTitle">
+        <div class="modal-header">
+          <div>
+            <span class="modal-eyebrow">ISABI SINGLE-USE QR HANDOFF</span>
+            <h2 id="hrPhoneQrTitle">${esc(titleTxt)}</h2>
+          </div>
+          <button type="button" class="modal-close-btn" id="hrPhoneQrCloseBtn" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body hr-phone-qr-body">
+          <div class="hr-phone-qr-grid">
+            <div class="doc-cam-qr-box" id="hrPhoneQrBox" data-handoff-url="${esc(handoffUrl)}">${encodeQrSvg(handoffUrl, 3)}</div>
+            <div class="doc-cam-qr-info">
+              <h3>Capture sharp rear-camera ID or permit from your phone</h3>
+              <ol class="doc-cam-qr-steps">
+                <li>Point your phone camera at this QR code to open the secure capture link.</li>
+                <li>Snap or upload the Lebanese ID, NSSF card, Work Permit, or Residency Permit.</li>
+                <li>Extracted fields stream into this form and the single-use link expires immediately.</li>
+              </ol>
+              <div class="doc-cam-qr-status-row">
+                <span class="doc-cam-qr-status-pill" id="hrPhoneQrStatus">Waiting for phone scan (single-use, 10 min limit)...</span>
+              </div>
+            </div>
+          </div>
+          <div class="hr-phone-qr-notice" id="hrPhoneQrNotice" hidden></div>
+          <div class="hr-phone-qr-url-row">
+            <input type="text" id="hrPhoneQrUrlInput" readonly value="${esc(handoffUrl)}" aria-label="Single-use phone scan link" data-no-i18n="1">
+            <button type="button" class="btn btn-outline-bar btn-sm" id="hrPhoneQrCopyBtn">${ic('link')} Copy Link</button>
+            <button type="button" class="btn btn-ghost-bar btn-sm" id="hrPhoneQrCancelBtn">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang() !== 'en') {
+      registerScannerI18n();
+      window.MFG_I18N.translateDom(modal);
+    }
+
+    let handled = false;
+    let pollTimer = null;
+    let bc = null;
+
+    const cleanup = (sendClear) => {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (bc) { try { bc.close(); } catch (_) {} bc = null; }
+      if (modal && modal.parentNode) modal.remove();
+      if (_activeHrQrCleanup === cleanup) _activeHrQrCleanup = null;
+      if (sendClear && !handled) {
+        const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
+        edgeFetch('./api/phone-scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sid, k: tok, op: 'clear' })
+        }).catch(() => {});
+      }
+    };
+    _activeHrQrCleanup = cleanup;
+
+    const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
+    const noticeEl = $('hrPhoneQrNotice');
+    const statusEl = $('hrPhoneQrStatus');
+
+    const handleReadyPayload = async (extractedRaw, pagesRaw) => {
+      if (handled) return;
+      handled = true;
+      if (statusEl) {
+        statusEl.textContent = 'Received! Applying scanned ID fields...';
+        statusEl.className = 'doc-cam-qr-status-pill is-ready';
+      }
+      try {
+        await edgeFetch('./api/phone-scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sid, k: tok, op: 'consume' })
+        });
+      } catch (_) {}
+
+      const pages = Array.isArray(pagesRaw) ? pagesRaw : [];
+      const previewDataUrl = (pages[0] && pages[0].dataUrl) ? String(pages[0].dataUrl) : '';
+      let attObj = null;
+      if (previewDataUrl) {
+        const fname = 'Phone_ID_Scan.jpg';
+        const f = dataUrlToFile(previewDataUrl, fname);
+        attObj = {
+          id: 'att-qr-' + randomHex(5),
+          name: fname,
+          type: 'image/jpeg',
+          size: f ? f.size : Math.round(previewDataUrl.length * 0.72),
+          data: previewDataUrl,
+          data_url: previewDataUrl,
+          from_id_scan: true
+        };
+      }
+      const normFn = window.MFG_SMART_SCAN && window.MFG_SMART_SCAN.normalizeIdentityScanResult;
+      const normalized = normFn ? normFn(extractedRaw || {}) : (extractedRaw || {});
+      const scanRes = Object.assign({}, normalized, {
+        ok: true,
+        mode: 'phone_qr',
+        engineLabel: 'Phone Camera QR Handoff',
+        fileName: attObj ? attObj.name : 'Phone_ID_Scan.jpg',
+        attObj,
+        previewDataUrl
+      });
+      cleanup(false);
+      if (opts && typeof opts.onResult === 'function') {
+        try { await opts.onResult(scanRes); } catch (_) {}
+      }
+    };
+
+    (async () => {
+      try {
+        const initResp = await edgeFetch('./api/phone-scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sid, k: tok, op: 'init_id_card', company })
+        });
+        const j = initResp && typeof initResp.json === 'function' ? await initResp.json().catch(() => null) : null;
+        if (j && j.demo_isolated) {
+          if (noticeEl) {
+            noticeEl.hidden = false;
+            noticeEl.textContent = 'Demo Mode preview: cross-device phone capture requires a signed-in seat. Local same-browser tab handoff remains active.';
+          }
+        } else if (initResp && !initResp.ok) {
+          if (noticeEl) {
+            noticeEl.hidden = false;
+            noticeEl.classList.add('is-error');
+            noticeEl.textContent = (j && j.error) || 'Sign in to a workspace seat to generate a single-use phone camera link.';
+          }
+        }
+      } catch (_) {}
+    })();
+
+    try {
+      if (typeof BroadcastChannel === 'function') {
+        bc = new BroadcastChannel('isabi_ps_' + sid);
+        bc.onmessage = ev => {
+          const msg = ev && ev.data;
+          if (!msg || msg.tok !== tok) return;
+          if (msg.status === 'connected' && statusEl && !handled) {
+            statusEl.textContent = 'Phone connected. Waiting for ID photo...';
+            statusEl.className = 'doc-cam-qr-status-pill is-connected';
+          }
+          if ((msg.status === 'id_ready' || msg.op === 'complete_id_card') && msg.extracted) {
+            handleReadyPayload(msg.extracted, msg.pages);
+          }
+        };
+      }
+    } catch (_) {}
+
+    const checkOnce = async () => {
+      if (handled || !document.body.contains(modal)) return false;
+      const remote = await pollPhoneRelayState(sid, tok);
+      if (!remote) return false;
+      if (remote.status === 'connected' && statusEl && !handled) {
+        statusEl.textContent = 'Phone connected. Waiting for ID photo...';
+        statusEl.className = 'doc-cam-qr-status-pill is-connected';
+      }
+      if (remote.status === 'id_ready' && remote.extracted) {
+        await handleReadyPayload(remote.extracted, remote.pages);
+        return true;
+      }
+      return false;
+    };
+    pollTimer = setInterval(checkOnce, IS_LOCAL_HOST ? 700 : 1400);
+
+    $('hrPhoneQrCopyBtn').addEventListener('click', () => {
+      const inp = $('hrPhoneQrUrlInput');
+      if (inp) { inp.select(); }
+      try { navigator.clipboard && navigator.clipboard.writeText(handoffUrl); } catch (_) {}
+      const btn = $('hrPhoneQrCopyBtn');
+      if (btn) btn.textContent = 'Copied';
+    });
+    $('hrPhoneQrCloseBtn').addEventListener('click', () => cleanup(true));
+    $('hrPhoneQrCancelBtn').addEventListener('click', () => cleanup(true));
+    modal.addEventListener('click', ev => { if (ev.target === modal) cleanup(true); });
+
+    return { sid, tok, url: handoffUrl, close: () => cleanup(true), checkOnce };
+  }
+
+  function mountPhoneIdCardCompanion(cfg) {
+    document.documentElement.classList.add('phone-scan-companion');
+    S.preset = 'card';
+    S.facingMode = 'environment';
+    S.zoom = 1;
+
+    const shell = document.createElement('main');
+    shell.id = 'phoneScanCompanionShell';
+    shell.className = 'psc-shell psc-id-shell';
+    shell.innerHTML = `
+      <header class="psc-header">
+        <div class="psc-brand">
+          <small>ISABI SECURE ID HANDOFF</small>
+          <strong>Scan ID or Permit to Computer</strong>
+        </div>
+        <span class="badge badge-ok" id="pscStatusBadge">Single-Use Link</span>
+      </header>
+      <div class="psc-consumed-card" id="pscConsumedNotice" hidden>
+        <strong>Link closed or expired</strong>
+        <span>This single-use QR scan link has already been used or expired. Generate a fresh QR code on your computer.</span>
+      </div>
+      <div class="psc-id-result-card" id="pscIdSentCard" hidden>
+        <strong>Sent to computer</strong>
+        <span id="pscIdSentNote">Extracted identity fields streamed to desktop. This single-use link is now closed.</span>
+        <div class="psc-id-kv" id="pscIdSentSummary"></div>
+      </div>
+      <div id="pscIdActiveBody">
+        <div class="doc-cam-tools-bar" id="pscToolsBar">
+          <div class="doc-cam-zoom-group" id="pscZoomBar">
+            <button type="button" class="doc-cam-zoom-btn active" data-psc-id-zoom="1" data-no-i18n="1">1x</button>
+            <button type="button" class="doc-cam-zoom-btn" data-psc-id-zoom="1.5" data-no-i18n="1">1.5x</button>
+            <button type="button" class="doc-cam-zoom-btn" data-psc-id-zoom="2" data-no-i18n="1">2x</button>
+          </div>
+          <span class="badge" id="pscIdHintBadge">ID · NSSF · Work Permit · Residency</span>
+        </div>
+        <div class="psc-cam-stage" id="pscStage" data-doc-preset="card">
+          <video id="pscVideo" class="doc-cam-video" autoplay muted playsinline poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
+          <div class="doc-cam-guide has-privacy-mask" id="pscGuide">
+            <i class="dc-corner tl"></i><i class="dc-corner tr"></i><i class="dc-corner bl"></i><i class="dc-corner br"></i>
+            <span class="doc-cam-guide-msg">Align ID card or permit inside frame</span>
+          </div>
+        </div>
+        <div class="psc-consumed-card" id="pscIdErrorBanner" hidden></div>
+        <div class="psc-foot">
+          <input type="file" id="pscIdFileInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*" capture="environment" hidden>
+          <button type="button" class="btn btn-outline-bar" id="pscIdPickBtn">${ic('upload')} Choose / Take Photo</button>
+          <button type="button" class="btn btn-brass" id="pscIdCaptureBtn">${ic('scan_doc')} Capture &amp; Extract ID</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(shell);
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang() !== 'en') {
+      registerScannerI18n();
+      window.MFG_I18N.translateDom(shell);
+    }
+
+    const showConsumed = (reasonTxt) => {
+      stopCameraTracks();
+      const bodyEl = $('pscIdActiveBody');
+      const conEl = $('pscConsumedNotice');
+      const sentEl = $('pscIdSentCard');
+      if (bodyEl) bodyEl.hidden = true;
+      if (sentEl) sentEl.hidden = true;
+      if (conEl) {
+        conEl.hidden = false;
+        const msgSpan = conEl.querySelector('span');
+        if (msgSpan && reasonTxt) msgSpan.textContent = reasonTxt;
+      }
+      const badge = $('pscStatusBadge');
+      if (badge) { badge.textContent = 'Closed'; badge.className = 'badge badge-warn'; }
+    };
+
+    const setBusy = (busy) => {
+      const cap = $('pscIdCaptureBtn');
+      const pick = $('pscIdPickBtn');
+      if (cap) cap.disabled = !!busy;
+      if (pick) pick.disabled = !!busy;
+      if (cap && busy) cap.textContent = 'Scanning ID...';
+      else if (cap) cap.innerHTML = `${ic('scan_doc')} Capture &amp; Extract ID`;
+    };
+
+    const processImageSubmission = async (dataUrl, extractedHint = '', fileName = 'Phone_ID_Scan.jpg') => {
+      const errBanner = $('pscIdErrorBanner');
+      if (errBanner) { errBanner.hidden = true; errBanner.textContent = ''; }
+      setBusy(true);
+      try {
+        const res = await fetch('./api/smart-scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scanMode: 'id_card',
+            phoneScanSid: cfg.sid,
+            phoneScanTok: cfg.tok,
+            dataUrl,
+            mimeType: 'image/jpeg',
+            extractedText: String(extractedHint || '').slice(0, 2400),
+            tier: 'vision'
+          })
+        });
+        const j = await res.json().catch(() => null);
+        if (!res.ok) {
+          if (res.status === 403 || (j && (j.code === 'already_consumed' || j.code === 'expired' || j.code === 'invalid_token'))) {
+            showConsumed((j && j.error) || 'This single-use QR scan link has already been used or expired.');
+            return;
+          }
+          if (errBanner) {
+            errBanner.hidden = false;
+            errBanner.textContent = (j && j.error) || 'Scan failed. Please retake a clear photo.';
+          }
+          setBusy(false);
+          return;
+        }
+        const ss = window.MFG_SMART_SCAN;
+        const det = (ss && ss.parseIdentityCardDeterministic && extractedHint)
+          ? ss.parseIdentityCardDeterministic(extractedHint, fileName)
+          : {};
+        const ai = (j && j.parsed && typeof j.parsed === 'object' && ss && ss.normalizeIdentityScanResult)
+          ? ss.normalizeIdentityScanResult(j.parsed)
+          : (j && j.parsed ? j.parsed : {});
+        const pick = (a, b) => (a && String(a).trim()) ? String(a).trim() : (b && String(b).trim() ? String(b).trim() : '');
+        const mergedRaw = {
+          docKind: pick(ai.docKind && ai.docKind !== 'id_card' ? ai.docKind : '', det.docKind || 'id_card'),
+          fullNameLatin: pick(ai.fullNameLatin, det.fullNameLatin),
+          fullNameArabic: pick(ai.fullNameArabic, det.fullNameArabic),
+          fatherNameLatin: pick(ai.fatherNameLatin, det.fatherNameLatin),
+          fatherNameArabic: pick(ai.fatherNameArabic, det.fatherNameArabic),
+          motherNameLatin: pick(ai.motherNameLatin, det.motherNameLatin),
+          motherNameArabic: pick(ai.motherNameArabic, det.motherNameArabic),
+          dob: pick(ai.dob, det.dob),
+          birthYear: pick(ai.birthYear, det.birthYear),
+          nationalityLatin: pick(ai.nationalityLatin, det.nationalityLatin),
+          nationalityArabic: pick(ai.nationalityArabic, det.nationalityArabic),
+          idNumber: pick(ai.idNumber, det.idNumber),
+          nssfNumber: pick(ai.nssfNumber, det.nssfNumber),
+          issueDate: pick(ai.issueDate, det.issueDate),
+          idExpiryDate: pick(ai.idExpiryDate, det.idExpiryDate),
+          workPermitNumber: pick(ai.workPermitNumber, det.workPermitNumber),
+          workPermitExpiryDate: pick(ai.workPermitExpiryDate, det.workPermitExpiryDate),
+          residencyNumber: pick(ai.residencyNumber, det.residencyNumber),
+          residencyExpiryDate: pick(ai.residencyExpiryDate, det.residencyExpiryDate),
+          gender: pick(ai.gender, det.gender)
+        };
+        const extracted = (ss && ss.normalizeIdentityScanResult) ? ss.normalizeIdentityScanResult(mergedRaw) : mergedRaw;
+        const pages = dataUrl ? [{ id: 'id-card-1', mimeType: 'image/jpeg', dataUrl }] : [];
+        const compRes = await fetch('./api/phone-scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sid: cfg.sid,
+            k: cfg.tok,
+            op: 'complete_id_card',
+            extracted,
+            pages
+          })
+        });
+        const compJ = await compRes.json().catch(() => null);
+        if (!compRes.ok) {
+          if (compRes.status === 403) {
+            showConsumed((compJ && compJ.error) || 'This single-use QR scan link has already been used or expired.');
+            return;
+          }
+          if (errBanner) {
+            errBanner.hidden = false;
+            errBanner.textContent = (compJ && compJ.error) || 'Could not deliver scan to desktop.';
+          }
+          setBusy(false);
+          return;
+        }
+        try {
+          if (typeof BroadcastChannel === 'function') {
+            const bc = new BroadcastChannel('isabi_ps_' + cfg.sid);
+            bc.postMessage({ sid: cfg.sid, tok: cfg.tok, op: 'complete_id_card', status: 'id_ready', extracted, pages, ts: Date.now() });
+            setTimeout(() => { try { bc.close(); } catch (_) {} }, 350);
+          }
+        } catch (_) {}
+
+        stopCameraTracks();
+        const bodyEl = $('pscIdActiveBody');
+        const sentEl = $('pscIdSentCard');
+        const sumEl = $('pscIdSentSummary');
+        const badge = $('pscStatusBadge');
+        if (bodyEl) bodyEl.hidden = true;
+        if (sentEl) sentEl.hidden = false;
+        if (badge) { badge.textContent = 'Sent'; badge.className = 'badge badge-ok'; }
+        if (sumEl) {
+          const kvItems = [
+            extracted.fullNameLatin ? ['Name', extracted.fullNameLatin] : null,
+            extracted.fatherNameLatin ? ['Father', extracted.fatherNameLatin] : null,
+            extracted.nationalityLatin ? ['Nationality', extracted.nationalityLatin] : null,
+            (extracted.workPermitNumber || extracted.residencyNumber || extracted.nssfNumber || extracted.idNumber)
+              ? ['ID / Permit #', extracted.workPermitNumber || extracted.residencyNumber || extracted.nssfNumber || extracted.idNumber]
+              : null,
+            (extracted.workPermitExpiryDate || extracted.residencyExpiryDate || extracted.idExpiryDate)
+              ? ['Expiry', extracted.workPermitExpiryDate || extracted.residencyExpiryDate || extracted.idExpiryDate]
+              : null
+          ].filter(Boolean);
+          sumEl.innerHTML = kvItems.map(([k, v]) => `<div><small>${esc(k)}</small><br><strong data-no-i18n="1">${esc(v)}</strong></div>`).join('');
+        }
+      } catch (ex) {
+        if (errBanner) {
+          errBanner.hidden = false;
+          errBanner.textContent = String((ex && ex.message) || ex || 'Scan error');
+        }
+        setBusy(false);
+      }
+    };
+
+    const startIdRearCam = async () => {
+      stopCameraTracks();
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || IS_TEST_HARNESS) {
+        S.camLive = false;
+        const v = $('pscVideo'); if (v) v.hidden = true;
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } },
+          audio: false
+        }).catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }));
+        S.stream = stream;
+        S.camLive = true;
+        const vid = $('pscVideo');
+        vid.srcObject = stream;
+        try { await vid.play(); } catch (_) {}
+        await applyZoomLevel(S.zoom, vid);
+      } catch (_) {
+        S.camLive = false;
+      }
+    };
+
+    shell.querySelectorAll('[data-psc-id-zoom]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        S.zoom = Number(btn.getAttribute('data-psc-id-zoom')) || 1;
+        shell.querySelectorAll('[data-psc-id-zoom]').forEach(x => x.classList.toggle('active', x === btn));
+        applyZoomLevel(S.zoom, $('pscVideo')).catch(() => {});
+      });
+    });
+
+    $('pscIdPickBtn').addEventListener('click', () => $('pscIdFileInput').click());
+    $('pscIdFileInput').addEventListener('change', async () => {
+      const file = $('pscIdFileInput').files && $('pscIdFileInput').files[0];
+      $('pscIdFileInput').value = '';
+      if (!file) return;
+      const isSvg = /\.svgz?$/i.test(file.name || '') || /svg|xml/i.test(file.type || '');
+      if (isSvg) {
+        const errBanner = $('pscIdErrorBanner');
+        if (errBanner) {
+          errBanner.hidden = false;
+          errBanner.textContent = 'Unsupported image format. Please capture with camera or choose a JPG, PNG, or WebP photo.';
+        }
+        return;
+      }
+      const hintTxt = '';
+      const urlObj = URL.createObjectURL(file);
+      const img = new Image();
+      await new Promise(res => { img.onload = res; img.onerror = res; img.src = urlObj; });
+      try { URL.revokeObjectURL(urlObj); } catch (_) {}
+      let outDataUrl = '';
+      if (img.naturalWidth) {
+        const sc = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * sc));
+        c.height = Math.max(1, Math.round(img.naturalHeight * sc));
+        const ctx2 = c.getContext('2d');
+        ctx2.fillStyle = '#ffffff';
+        ctx2.fillRect(0, 0, c.width, c.height);
+        ctx2.drawImage(img, 0, 0, c.width, c.height);
+        outDataUrl = c.toDataURL('image/jpeg', 0.84);
+      }
+      if (!outDataUrl && !hintTxt) {
+        const errBanner = $('pscIdErrorBanner');
+        if (errBanner) {
+          errBanner.hidden = false;
+          errBanner.textContent = 'Could not decode photo. Please capture with camera or choose a JPG, PNG, or WebP image.';
+        }
+        return;
+      }
+      await processImageSubmission(outDataUrl, hintTxt, file.name || 'Phone_ID_Scan.jpg');
+    });
+
+    $('pscIdCaptureBtn').addEventListener('click', async () => {
+      const vid = $('pscVideo');
+      if (!S.camLive || !vid || !vid.videoWidth) {
+        $('pscIdFileInput').click();
+        return;
+      }
+      const sc = Math.min(1, 1400 / Math.max(vid.videoWidth, vid.videoHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(vid.videoWidth * sc));
+      c.height = Math.max(1, Math.round(vid.videoHeight * sc));
+      c.getContext('2d').drawImage(vid, 0, 0, c.width, c.height);
+      const outDataUrl = c.toDataURL('image/jpeg', 0.84);
+      await processImageSubmission(outDataUrl, '', 'Phone_ID_Camera.jpg');
+    });
+
+    (async () => {
+      try {
+        const checkResp = await fetch(`./api/phone-scan?sid=${encodeURIComponent(cfg.sid)}&k=${encodeURIComponent(cfg.tok)}`);
+        const checkJ = await checkResp.json().catch(() => null);
+        if (!checkResp.ok || !checkJ || !checkJ.found || !checkJ.session || checkJ.session.consumed || checkJ.session.expired) {
+          showConsumed();
+          return;
+        }
+        fetch('./api/phone-scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sid: cfg.sid, k: cfg.tok, status: 'connected' })
+        }).catch(() => {});
+        try {
+          if (typeof BroadcastChannel === 'function') {
+            const bc = new BroadcastChannel('isabi_ps_' + cfg.sid);
+            bc.postMessage({ sid: cfg.sid, tok: cfg.tok, status: 'connected', ts: Date.now() });
+            setTimeout(() => { try { bc.close(); } catch (_) {} }, 300);
+          }
+        } catch (_) {}
+        startIdRearCam();
+      } catch (_) {
+        showConsumed();
+      }
+    })();
+
+    return true;
+  }
+
   function mountPhoneCompanionScannerIfRequested() {
     const cfg = parsePhoneCompanionParams();
     if (!cfg || !cfg.sid || !cfg.tok) return false;
+    if (cfg.preset === 'id_card') {
+      return mountPhoneIdCardCompanion(cfg);
+    }
     document.documentElement.classList.add('phone-scan-companion');
     S.preset = cfg.preset;
     S.lastCardSubPreset = S.preset === 'vin' ? 'vin' : 'card';
@@ -2950,6 +3473,31 @@
     'Send 4 Pages': 'إرسال 4 صفحات',
     'Send 5 Pages': 'إرسال 5 صفحات',
     'Send 6 Pages': 'إرسال 6 صفحات',
+    'ISABI SINGLE-USE QR HANDOFF': 'ربط QR لمرة واحدة عبر الهاتف',
+    'Scan ID or Permit from Phone': 'مسح الهوية أو إجازة العمل من الهاتف',
+    'Capture sharp rear-camera ID or permit from your phone': 'التقط صورة واضحة للهوية أو الإجازة بالكاميرا الخلفية للهاتف',
+    'Point your phone camera at this QR code to open the secure capture link.': 'وجّه كاميرا هاتفك نحو رمز الاستجابة السريعة لفتح رابط المسح الآمن.',
+    'Snap or upload the Lebanese ID, NSSF card, Work Permit, or Residency Permit.': 'التقط أو ارفع صورة الهوية اللبنانية أو بطاقة الضمان أو إجازة العمل أو الإقامة.',
+    'Extracted fields stream into this form and the single-use link expires immediately.': 'تنتقل الحقول المستخرجة تلقائياً إلى النموذج وتنتهي صلاحية الرابط فوراً.',
+    'Waiting for phone scan (single-use, 10 min limit)...': 'بانتظار المسح من الهاتف (استخدام واحد، صالح 10 دقائق)...',
+    'Phone connected. Waiting for ID photo...': 'تم توصيل الهاتف. بانتظار صورة الهوية...',
+    'Received! Applying scanned ID fields...': 'تم الاستلام! جارٍ تعبئة حقول الهوية...',
+    'Copy Link': 'نسخ الرابط',
+    'Copied': 'تم النسخ',
+    'ISABI SECURE ID HANDOFF': 'مسح آمن للهوية عبر الهاتف',
+    'Scan ID or Permit to Computer': 'مسح الهوية أو الإجازة إلى الكمبيوتر',
+    'Single-Use Link': 'رابط لمرة واحدة',
+    'Closed': 'مغلق',
+    'Sent': 'تم الإرسال',
+    'Link closed or expired': 'انتهت صلاحية الرابط أو تم استخدامه',
+    'This single-use QR scan link has already been used or expired. Generate a fresh QR code on your computer.': 'تم استخدام رابط QR ذي الاستخدام الواحد أو انتهت صلاحيته. أنشئ رمزاً جديداً من الكمبيوتر.',
+    'Sent to computer': 'تم الإرسال إلى الكمبيوتر',
+    'Extracted identity fields streamed to desktop. This single-use link is now closed.': 'تم إرسال حقول الهوية المستخرجة إلى الكمبيوتر وأُغلق هذا الرابط نهائياً.',
+    'ID · NSSF · Work Permit · Residency': 'هوية · ضمان · إجازة عمل · إقامة',
+    'Align ID card or permit inside frame': 'ضع الهوية أو الإجازة داخل الإطار',
+    'Choose / Take Photo': 'اختيار أو التقاط صورة',
+    'Capture & Extract ID': 'التقاط واستخراج البيانات',
+    'Scanning ID...': 'جارٍ مسح الهوية...',
     '1x': '1×',
     '1.5x': '1.5×',
     '2x': '2×',
@@ -3062,6 +3610,31 @@
     'Send 4 Pages': 'Envoyer 4 pages',
     'Send 5 Pages': 'Envoyer 5 pages',
     'Send 6 Pages': 'Envoyer 6 pages',
+    'ISABI SINGLE-USE QR HANDOFF': 'TRANSFERT QR À USAGE UNIQUE ISABI',
+    'Scan ID or Permit from Phone': 'Scanner pièce d’identité ou permis depuis le téléphone',
+    'Capture sharp rear-camera ID or permit from your phone': 'Photographiez nettement la pièce d’identité ou le permis avec votre téléphone',
+    'Point your phone camera at this QR code to open the secure capture link.': 'Pointez la caméra de votre téléphone vers ce QR code pour ouvrir le lien sécurisé.',
+    'Snap or upload the Lebanese ID, NSSF card, Work Permit, or Residency Permit.': 'Prenez ou importez la carte d’identité, carte CNSS, permis de travail ou carte de séjour.',
+    'Extracted fields stream into this form and the single-use link expires immediately.': 'Les champs extraits remplissent ce formulaire et le lien à usage unique expire aussitôt.',
+    'Waiting for phone scan (single-use, 10 min limit)...': 'En attente du scan mobile (usage unique, validité 10 min)...',
+    'Phone connected. Waiting for ID photo...': 'Téléphone connecté. En attente de la photo...',
+    'Received! Applying scanned ID fields...': 'Reçu ! Application des champs extraits...',
+    'Copy Link': 'Copier le lien',
+    'Copied': 'Copié',
+    'ISABI SECURE ID HANDOFF': 'SCAN D’IDENTITÉ SÉCURISÉ ISABI',
+    'Scan ID or Permit to Computer': 'Scanner pièce d’identité ou permis vers l’ordinateur',
+    'Single-Use Link': 'Lien à usage unique',
+    'Closed': 'Fermé',
+    'Sent': 'Envoyé',
+    'Link closed or expired': 'Lien fermé ou expiré',
+    'This single-use QR scan link has already been used or expired. Generate a fresh QR code on your computer.': 'Ce lien QR à usage unique a déjà été utilisé ou a expiré. Générez un nouveau QR code sur l’ordinateur.',
+    'Sent to computer': 'Envoyé à l’ordinateur',
+    'Extracted identity fields streamed to desktop. This single-use link is now closed.': 'Les champs d’identité extraits ont été transmis à l’ordinateur. Ce lien est désormais fermé.',
+    'ID · NSSF · Work Permit · Residency': 'Identité · CNSS · Permis de travail · Séjour',
+    'Align ID card or permit inside frame': 'Alignez la carte d’identité ou le permis dans le cadre',
+    'Choose / Take Photo': 'Choisir / Prendre photo',
+    'Capture & Extract ID': 'Capturer et extraire',
+    'Scanning ID...': 'Analyse en cours...',
     '1x': '1×',
     '1.5x': '1.5×',
     '2x': '2×',
@@ -3103,6 +3676,8 @@
     maskAnyFacesOutsideQuad,
     ingestReceivedPhonePages,
     openPhoneQrMode,
+    openHrPhoneIdQrHandoff,
+    mountPhoneCompanionScannerIfRequested,
     checkQrRemoteOnce,
     snapCanvasForBatchTest,
     registerScannerI18n,

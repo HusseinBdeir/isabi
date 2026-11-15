@@ -3253,6 +3253,10 @@
       || null;
   }
   function openPendingSalaryModal(empId) {
+    if (!canViewPayrollDollarAmounts()) {
+      toast('Payroll compensation amounts require Payroll / Financial access', 'warn');
+      return;
+    }
     const row = findEmploymentRecordById(empId);
     if (!row) {
       toast('Employment contract not found', 'err');
@@ -6794,10 +6798,22 @@
     raw_pricing: 'price_rules',
     coeq: 'company_equipment',
     salaries: 'salaries',
+    payroll: 'salaries',
     pay_sal: 'salaries',
     pay_emp: 'employments',
     pay_att: 'attendance',
+    pay_drv_ot: 'attendance',
     pay_log: 'logistics_allowances',
+    payroll_allowances: 'logistics_allowances',
+    pay_site_daily: 'logistics_allowances',
+    pay_site_staff: 'logistics_allowances',
+    pay_free: 'freelance_entries',
+    pay_fl: 'freelance_entries',
+    pay_unmatched: 'salaries',
+    otrate: 'overtime_rates',
+    pay_staff: 'staff_members',
+    reg_staff: 'staff_members',
+    payroll_contracts: 'employments',
     credterm: 'credit_terms',
     vatinv: 'vat_invoices',
     tr_loans: 'loans',
@@ -7264,7 +7280,31 @@
     const v = String(view || '');
     if (v.startsWith('ureg_')) return v.slice(5);
     if (v.startsWith('tbl_')) return v.slice(4);
+    if (v.startsWith('conn_')) return v.slice(5);
     return VIEW_TABLE_KEY_MAP[v] || v;
+  }
+
+  const _PAYROLL_MASKED_COL_RE = {
+    staff_members: /^(?:active_salary_usd|monthly_salary_usd|monthly_salary|salary_usd|salary|reimbursement|package_usd|daily_rate|total_earned|total_paid|rem_payment|deduction|base|reimb|att_ot_pay|trip_ot_pay|ot_pay|extras|site_allow|late_ded|abs_ded|ded|earnings|paid|balance|advances|base_salary|salary_status)$/i,
+    employments: /^(?:monthly_salary_usd|monthly_salary|salary_usd|salary|reimbursement|package_usd|daily_rate|deduction|total_paid|total_earned|rem_payment|lbp_amount|usd_amount|base_salary|salary_status)$/i,
+    salaries: /^(?:amount|lbp_amount|usd_amount|monthly_salary_usd|monthly_salary|salary_usd|salary|reimbursement|deduction|month_earnings|month_cum_paid|cash_usd|bank_usd|unmatched_usd)$/i,
+    attendance: /^(?:extra_usd|overtime_usd|deduction_usd|net_usd|wage_usd|amount|usd_amount|sales_ot_usd|raw_ot_usd|total_ot_usd|in_payroll_usd|total|diff|ot_pay_usd|late_ded_usd|abs_ded_usd|earned_usd|lost_usd|payroll_impact_usd|extra_lbp)$/i,
+    freelance_entries: /^(?:rate_usd|total|amount|usd_amount|reimbursement|deduction)$/i,
+    logistics_allowances: /^(?:daily_usd|lbp_amount|amount|total|usd_amount|earned_usd|earned_win_usd|accrued|paid_fifo|outstanding|daily_rate_eff)$/i,
+    overtime_rates: /^(?:amount|rate|rate_usd|usd_amount)$/i
+  };
+
+  function isMaskedPayrollField(tableKey, colName) {
+    const t = String(tableKey || '').trim().toLowerCase();
+    const c = String(colName || '').trim().toLowerCase();
+    const re = t && _PAYROLL_MASKED_COL_RE[t];
+    return Boolean(re && c && re.test(c));
+  }
+  window.__mfgIsMaskedPayrollCol = isMaskedPayrollField;
+
+  function isMaskedPayrollAccessBlocked(tableKey, colName, u) {
+    if (!isMaskedPayrollField(tableKey, colName)) return false;
+    return typeof canViewPayrollDollarAmounts !== 'function' || !canViewPayrollDollarAmounts(u);
   }
 
   // One lookup-index resolution per table pass. MFG_PBI.getHubRelIndex() re-validates its cache on every call
@@ -7305,6 +7345,7 @@
 
   function resolveColVal(r, colKey, view) {
     if (!r || !colKey) return null;
+    if (isMaskedPayrollAccessBlocked(viewToTableKey(view), colKey)) return '';
     if (colKey === 'ext_ref' || colKey === 'ext_flow' || colKey === 'ext_received_usd' || colKey === 'ext_gave_usd' || colKey === 'ext_owes_usd' || colKey === 'ext_owes_lbp' || colKey === 'ext_notes') {
       const ex = parseExtendedRow(r);
       if (colKey === 'ext_ref') return ex.docRef || '';
@@ -7479,7 +7520,8 @@
   function applyColFiltersForView(rows, view) {
     const cf = STATE.colFilters && STATE.colFilters[view];
     if (!cf) return rows || [];
-    const activeEntries = Object.entries(cf).filter(([, spec]) => Boolean(spec && String(spec).trim()));
+    const tk = viewToTableKey(view);
+    const activeEntries = Object.entries(cf).filter(([colKey, spec]) => Boolean(spec && String(spec).trim()) && !isMaskedPayrollAccessBlocked(tk, colKey));
     if (!activeEntries.length) return rows || [];
     return withRelPass(() => (rows || []).filter(r => {
       for (const [colKey, spec] of activeEntries) {
@@ -7535,11 +7577,12 @@
     const offScope = !opts.ignoreBookScope && isOfficialScopeActive(opts.user);
     const exclMultiInd = Boolean(opts.excludeMultiIndustrySeed || activeInd === 'Manufacturing');
     const hasMultiSeed = Boolean(list._hasMultiIndustrySeed);
+    const canViewPay = typeof canViewPayrollDollarAmounts === 'function' ? Boolean(canViewPayrollDollarAmounts(opts.user)) : false;
 
     let listCache = null;
     let fastKey = '';
     if (!qTokens.length) {
-      fastKey = `${scopeKey}|${activeInd}|${demoActive ? 1 : 0}|${exclMultiInd ? 1 : 0}|${Boolean(opts.ignoreCompany)}|${Boolean(opts.includeGroupMfg)}|${Boolean(opts.includeAllIndustries)}|${Boolean(opts.ignoreRls)}|${offScope ? 'OFF' : 'ALL'}|${allowedCos ? allowedCos.join(',') : ''}|${range ? (range.from + '..' + range.to) : 'ALL'}|${basis}|${list.length}|${SEED._customRev || 0}`;
+      fastKey = `${scopeKey}|${activeInd}|${demoActive ? 1 : 0}|${exclMultiInd ? 1 : 0}|${Boolean(opts.ignoreCompany)}|${Boolean(opts.includeGroupMfg)}|${Boolean(opts.includeAllIndustries)}|${Boolean(opts.ignoreRls)}|${offScope ? 'OFF' : 'ALL'}|pay:${canViewPay ? 1 : 0}|${allowedCos ? allowedCos.join(',') : ''}|${range ? (range.from + '..' + range.to) : 'ALL'}|${basis}|${list.length}|${SEED._customRev || 0}`;
       listCache = _filterRecordsWeakCache.get(list);
       if (listCache && listCache.has(fastKey)) return listCache.get(fastKey);
     }
@@ -7554,6 +7597,8 @@
     const rel = (qTokens.length && window.MFG_PBI && window.MFG_PBI.getHubRelIndex) ? window.MFG_PBI.getHubRelIndex(SEED) : null;
     const tk = opts.tableKey || '';
     const effTk = offScope ? inferRecordTableKey(list[0], list, tk) : tk;
+    const payMaskTk = qTokens.length && !canViewPay ? (tk || effTk || inferRecordTableKey(list[0], list, '')) : '';
+    const isBlockedPayField = (row, k) => !canViewPay && isMaskedPayrollField(payMaskTk || inferRecordTableKey(row, null, ''), k);
 
     const out = list.filter(r => {
       if (!r || r.voided) return false;
@@ -7586,6 +7631,7 @@
           if (t.col) {
             const candidateKeys = COL_KEY_ALIASES[t.col] || [t.col];
             const matchedCol = candidateKeys.some(ck => {
+              if (isBlockedPayField(r, ck)) return false;
               let v = r[ck];
               if ((v === undefined || v === null || v === '') && rel && window.MFG_PBI && window.MFG_PBI.cellValue) {
                 v = window.MFG_PBI.cellValue(r, ck, tk, rel);
@@ -7597,28 +7643,29 @@
           } else {
             if (hay === null) {
               const curRev = SEED._customRev || 0;
+              const payMaskTag = canViewPay ? 'open' : (payMaskTk || 'masked');
               let baseHay = '';
               const cachedHay = _recordSearchHayWeakMap.get(r);
-              if (cachedHay && cachedHay.rev === curRev && cachedHay.notes === showNotes) {
+              if (cachedHay && cachedHay.rev === curRev && cachedHay.notes === showNotes && cachedHay.payMask === payMaskTag) {
                 baseHay = cachedHay.hay;
               } else {
                 const parts = [];
                 const keys = Object.keys(r);
                 for (let i = 0; i < keys.length; i++) {
                   const k = keys[i];
-                  if (k === 'id' || (k === 'notes' && !showNotes)) continue;
+                  if (k === 'id' || (k === 'notes' && !showNotes) || isBlockedPayField(r, k)) continue;
                   const val = r[k];
                   if (val != null && val !== '') parts.push(val);
                 }
                 parts.push(recordDateDMY(r));
                 baseHay = parts.join(' ').toLowerCase();
-                _recordSearchHayWeakMap.set(r, { rev: curRev, notes: showNotes, hay: baseHay });
+                _recordSearchHayWeakMap.set(r, { rev: curRev, notes: showNotes, payMask: payMaskTag, hay: baseHay });
               }
               if (Array.isArray(opts.cols) && rel && window.MFG_PBI && window.MFG_PBI.cellValue) {
                 const extraParts = [];
                 for (let i = 0; i < opts.cols.length; i++) {
                   const ck = opts.cols[i];
-                  if (r[ck] === undefined) {
+                  if (r[ck] === undefined && !isBlockedPayField(r, ck)) {
                     const cv = window.MFG_PBI.cellValue(r, ck, tk, rel);
                     if (cv != null && cv !== '') extraParts.push(cv);
                   }
@@ -7685,7 +7732,7 @@
     const secKeys = getSecondaryNumericKeys(tk);
     for (let i = 0; i < secKeys.length; i++) {
       const sk = secKeys[i];
-      if (sk === primaryKey) continue;
+      if (sk === primaryKey || isMaskedPayrollAccessBlocked(tk, sk)) continue;
       const va = Number(resolveColVal(ra, sk, view) || 0);
       const vb = Number(resolveColVal(rb, sk, view) || 0);
       if (Number.isFinite(va) && Number.isFinite(vb) && va !== vb) return vb - va;
@@ -7759,13 +7806,18 @@
     if (drill) filteredRows = filteredRows.filter(r => regDrillMatch(r, drill, view, view));
     const resolvedDefDir = defDir || (isDefaultDescSortKey(defKey) ? 'desc' : 'asc');
     if (view && defKey) _defaultSortBy[view] = { key: defKey, dir: resolvedDefDir };
-    const s = STATE.sortBy[view] || { key: defKey, dir: resolvedDefDir };
+    const rawSort = STATE.sortBy[view] || { key: defKey, dir: resolvedDefDir };
+    const sortTk = viewToTableKey(view);
+    const s = (rawSort && isMaskedPayrollAccessBlocked(sortTk, rawSort.key))
+      ? ((defKey && !isMaskedPayrollAccessBlocked(sortTk, defKey)) ? { key: defKey, dir: resolvedDefDir } : { key: 'name', dir: 'asc' })
+      : rawSort;
     if (!s.key || filteredRows.length <= 1) return filteredRows;
 
     const rev = SEED._customRev || 0;
+    const payOk = typeof canViewPayrollDollarAmounts === 'function' ? Boolean(canViewPayrollDollarAmounts()) : false;
     if (view && !hasColF) {
       const cached = _sortedRowsCache.get(view);
-      if (cached && cached.rawPool === rawPool && cached.len === rawPool.length && cached.key === s.key && cached.dir === s.dir && cached.basis === STATE.basis && cached.rev === rev) {
+      if (cached && cached.rawPool === rawPool && cached.len === rawPool.length && cached.key === s.key && cached.dir === s.dir && cached.basis === STATE.basis && cached.rev === rev && cached.payOk === payOk) {
         return cached.out;
       }
     }
@@ -7852,7 +7904,7 @@
 
     if (view && !hasColF) {
       if (_sortedRowsCache.size > 48) _sortedRowsCache.clear();
-      _sortedRowsCache.set(view, { rawPool, len: rawPool.length, key: s.key, dir: s.dir, basis: STATE.basis, rev, out: sorted });
+      _sortedRowsCache.set(view, { rawPool, len: rawPool.length, key: s.key, dir: s.dir, basis: STATE.basis, rev, payOk, out: sorted });
     }
     return sorted;
   }
@@ -7864,6 +7916,9 @@
       const tmp = label;
       label = key;
       key = tmp;
+    }
+    if (isMaskedPayrollAccessBlocked(viewToTableKey(view), key)) {
+      return `<th class="${cls || ''}"><span class="th-lbl">${label}</span></th>`;
     }
     const s = STATE.sortBy[view] || _defaultSortBy[view] || {};
     const on = s.key === key;
@@ -7888,6 +7943,10 @@
 
   function getColFilterDefsForView(view, colsOverride) {
     const tk = viewToTableKey(view);
+    const defs = getColFilterDefsForViewRaw(view, colsOverride, tk);
+    return Array.isArray(defs) ? defs.filter(d => d && !isMaskedPayrollAccessBlocked(tk, d.key)) : [];
+  }
+  function getColFilterDefsForViewRaw(view, colsOverride, tk) {
     if (tk === 'equipment' && (view === 'ureg_equipment' || view === 'tbl_equipment')) {
       return [
         { key: 'type', label: 'Type' },
@@ -7941,8 +8000,10 @@
     return withRelPass(() => buildNumericFilterOptionsPass(pool, colKey, view));
   }
   function buildNumericFilterOptionsPass(pool, colKey, view) {
+    if (isMaskedPayrollAccessBlocked(viewToTableKey(view), colKey)) return [];
     const canCache = view && pool === _tablePoolCache[view] && !STATE.search;
-    const cacheKey = canCache ? `num|${view}|${colKey}|${pool.length}|${STATE.company}|${STATE.period}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis}|${SEED._customRev || 0}` : '';
+    const payOk = typeof canViewPayrollDollarAmounts === 'function' ? Boolean(canViewPayrollDollarAmounts()) : false;
+    const cacheKey = canCache ? `num|${view}|${colKey}|pay:${payOk ? 1 : 0}|${pool.length}|${STATE.company}|${STATE.period}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis}|${SEED._customRev || 0}` : '';
     if (cacheKey && _colFilterOptsCache.has(cacheKey)) return _colFilterOptsCache.get(cacheKey);
 
     let posCnt = 0, zeroCnt = 0, negCnt = 0;
@@ -8014,8 +8075,10 @@
     return withRelPass(() => buildCategoricalFilterOptionsPass(pool, colKey, view, maxItems));
   }
   function buildCategoricalFilterOptionsPass(pool, colKey, view, maxItems = 75) {
+    if (isMaskedPayrollAccessBlocked(viewToTableKey(view), colKey)) return [];
     const canCache = view && pool === _tablePoolCache[view] && !STATE.search;
-    const cacheKey = canCache ? `cat|${view}|${colKey}|${maxItems}|${pool.length}|${STATE.company}|${STATE.period}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis}|${SEED._customRev || 0}` : '';
+    const payOk = typeof canViewPayrollDollarAmounts === 'function' ? Boolean(canViewPayrollDollarAmounts()) : false;
+    const cacheKey = canCache ? `cat|${view}|${colKey}|${maxItems}|pay:${payOk ? 1 : 0}|${pool.length}|${STATE.company}|${STATE.period}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis}|${SEED._customRev || 0}` : '';
     if (cacheKey && _colFilterOptsCache.has(cacheKey)) return _colFilterOptsCache.get(cacheKey);
 
     const counts = new Map();
@@ -8078,7 +8141,8 @@
     const defs = getColFilterDefsForView(view, colsOverride);
     if (!defs.length) return '';
     const cf = (STATE.colFilters && STATE.colFilters[view]) || {};
-    const activeEntries = Object.entries(cf).filter(([, v]) => Boolean(v && String(v).trim()));
+    const tkBar = viewToTableKey(view);
+    const activeEntries = Object.entries(cf).filter(([k, v]) => Boolean(v && String(v).trim()) && !isMaskedPayrollAccessBlocked(tkBar, k));
     const filteredCount = activeEntries.length ? applyColFiltersForView(pool, view).length : pool.length;
 
     return `
@@ -8147,6 +8211,7 @@
     const colKey = btnEl.getAttribute('data-th-filter-key') || (thEl && thEl.getAttribute('data-sort-key'));
     const colLabel = btnEl.getAttribute('data-th-filter-label') || (thEl && (thEl.dataset.colCleanLabel || (thEl.querySelector('.th-lbl') && thEl.querySelector('.th-lbl').textContent.trim()))) || getColLabel(colKey);
     if (!view || !colKey) return;
+    if (isMaskedPayrollAccessBlocked(viewToTableKey(view), colKey)) return;
 
     let pop = document.getElementById('colFilterPopover');
     if (!pop) {
@@ -8452,8 +8517,9 @@
   function appPill(crKey, amountKey, label) {
     const rows = filterRecords(STATE.customRecords[crKey], { ignoreSearch: true }).filter(r => isAppRecord(r) && !r._absorbedSeedTwin);
     if (!rows.length) return '';
-    const sum = rows.reduce((a, r) => a + Number(r[amountKey] || 0), 0);
-    return `<div class="cockpit-pill app-pill" title="Entered in this web app · not yet inside the SQL / book totals"><div class="cockpit-pill-lbl">App-entered (unposted)</div><div class="cockpit-pill-val amber">${fmtNum(rows.length)} ${esc(label)} · ${fmtUSD(sum, 0)}</div></div>`;
+    const hideUsd = isMaskedPayrollAccessBlocked(crKey, amountKey);
+    const sum = hideUsd ? 0 : rows.reduce((a, r) => a + Number(r[amountKey] || 0), 0);
+    return `<div class="cockpit-pill app-pill" title="Entered in this web app · not yet inside the SQL / book totals"><div class="cockpit-pill-lbl">App-entered (unposted)</div><div class="cockpit-pill-val amber">${fmtNum(rows.length)} ${esc(label)}${hideUsd ? '' : ` · ${fmtUSD(sum, 0)}`}</div></div>`;
   }
 
   function appEnteredSummary() {
@@ -9384,6 +9450,12 @@
     if ('payable_leg' in r || 'raw_ticket' in r || 'expense_record' in r) return 'settlements';
     if ('frequency' in r && 'start_date' in r) return 'recurring_expenses';
     if ('category' in r && 'subcategory' in r) return 'expenses';
+    if ('salary_usd' in r && ('staff' in r || 'daily_rate' in r || 'reimbursement' in r)) return 'employments';
+    if ('nssf_no' in r || 'work_permit_no' in r || 'residency_no' in r || ('id_doc_kind' in r && 'name' in r) || ('default_equipment' in r && 'name' in r && !('plate_no' in r))) return 'staff_members';
+    if ('daily_usd' in r && 'staff' in r) return 'logistics_allowances';
+    if ('rate_usd' in r && ('staff' in r || 'worker' in r)) return 'freelance_entries';
+    if ('extra_usd' in r && ('staff' in r || 'worker' in r)) return 'attendance';
+    if ('staff' in r && ('amount' in r || 'usd_amount' in r || 'lbp_amount' in r) && !('sale_type' in r)) return 'salaries';
     return '';
   }
   function isOfficialRecord(r, tk) {
@@ -9745,7 +9817,7 @@
       { id: 'stmt_digest_ops', codes: ['01', '08', '09', '11', '12'], count: 5, label: 'Executive Digest & Operational Registers', sub: '#01 Daily Operations Digest, #08 Sales Register, #09 Expense Register, #11 Quarry & Raw Material, #12 Fuel & Lube Log', badge: '5 Statements' },
       { id: 'stmt_counterparty', codes: ['13', '14', '15', '16', '17'], count: 5, label: 'Customer, Supplier & Driver Statements (SOA)', sub: '#13 Aged Receivables, #14 Customer Statement, #15 Supplier 3-Leg Balances, #16 Quarry & Supplier Statement, #17 Driver Statement', badge: '5 Statements' },
       { id: 'stmt_vouchers', codes: ['20', '21', '22'], count: 3, label: 'Printable Tax Invoices, Delivery Tickets & Vouchers', sub: '#20 Statutory VAT Sales Invoice (2738), #21 Weighbridge Delivery Ticket, #22 Customer Receipt Voucher', badge: '3 Statements' },
-      { id: 'stmt_payroll', codes: ['10'], count: 1, label: 'Payroll, Attendance & Site Transport Register', sub: '#10 Monthly Payroll, Overtime, Attendance & Site Transport Register', badge: '1 Statement' },
+      { id: 'stmt_payroll', codes: ['10', '28'], count: 2, label: 'Payroll, Attendance, Contracts & NSSF Register', sub: '#10 Monthly Payroll, Overtime, Attendance & Site Transport Register, #28 Bilingual HR Contract & NSSF Pack', badge: '2 Statements' },
       { id: 'stmt_financial_board', codes: ['02', '03', '04', '05', '06', '07', '18', '19'], count: 8, label: 'Audited Financial Statements, CoA Trial Balance, VAT & JV Pack', sub: '#02 Balance Sheet, #03 P&L Statement, #04 Cash Flow, #05 Trial Balance, #06 General Journal, #07 Sub-Account SOA, #18 VAT Return, #19 JV & Recon', badge: '8 Statements' }
     ]
   };
@@ -11495,6 +11567,7 @@
       return false;
     }
     if (code === '18' && !canSeeTaxBreakdown(u)) return false;
+    if (code === '10' && !canViewPayrollDollarAmounts(u)) return false;
     if (/^Custom/i.test(role) || st === 'custom') {
       const p = getEffectivePermissions(u);
       const grp = PERM_CATALOG.statements.find(s => s.codes.includes(code));
@@ -21587,6 +21660,24 @@
       whatFn: p => `Runs the site net-back on every delivery and customer-haulage agreement in force: delivered price against pickup price plus fuel for the round trip (distance x measured fleet burn x latest diesel price). Lists agreements below breakeven with at least <b>${fmtNum(p.min_loads_90d, 0)}</b> own-fleet loads in 90 days and escalates to critical from <b>$${fmtNum(p.crit_shortfall_usd, 0)}</b> lost.`,
       threshFn: p => `Loads >= ${fmtNum(p.min_loads_90d, 0)} · Crit >= $${fmtNum(p.crit_shortfall_usd, 0)}`,
       previewFn: p => `Live example: A delivery agreed at pickup price + $0.20 / m3 on a 50 km round trip loses the fuel gap on every load; it is listed once it has ${fmtNum(p.min_loads_90d, 0)} or more loads and turns critical from $${fmtNum(p.crit_shortfall_usd, 0)} lost in 90 days.`
+    },
+    {
+      id: 'S13',
+      code: '#23',
+      name: 'Work Permit, Residency & ID Renewal Watchdog',
+      domain: 'Finance & Payroll',
+      behavior: 'warn',
+      whereLabel: 'Staff Roster, Contracts & AI Sentinels',
+      jumpView: 'reg_staff',
+      sentinelId: 'S13',
+      why: 'Prevents Ministry of Labour and General Security fines by tracking ID, work permit and residency expiry windows across active staff and flagging non-Lebanese workers missing work permit dates.',
+      params: [
+        { key: 'crit_window_days', label: 'Critical alert window (days)', def: 7, min: 1, max: 30, step: 1, unit: 'days' },
+        { key: 'warn_window_days', label: 'Watchdog horizon (days)', def: 60, min: 15, max: 180, step: 5, unit: 'days' }
+      ],
+      whatFn: p => `Evaluates all active staff records against deterministic UTC calendar-day boundaries (Expired <0d, Critical <= ${fmtNum(p.crit_window_days, 0)}d, Due <= 30d, Watch <= ${fmtNum(p.warn_window_days, 0)}d) and flags confirmed non-Lebanese staff lacking work permit expiry dates before compliance penalties hit.`,
+      threshFn: p => `Crit <= ${fmtNum(p.crit_window_days, 0)}d · Watch <= ${fmtNum(p.warn_window_days, 0)}d`,
+      previewFn: p => `Live example: Any active ID, work permit or residency expiring within ${fmtNum(p.warn_window_days, 0)} days raises a warning, escalating to critical at <= ${fmtNum(p.crit_window_days, 0)} days or overdue; foreign staff lacking permit dates are flagged immediately.`
     }
   ];
 
@@ -23157,7 +23248,7 @@
       : allCustomRules.filter(cr => Boolean(scopedCaMetrics[cr.metric]));
     let indSentByRule = null;
 
-    const universalRuleIds = new Set(['G_BACKDATE_NOTE', 'G_REPDATE_GAP', 'S8', 'S4', 'S1', 'S7', 'G_KIOSK_PUNCH']);
+    const universalRuleIds = new Set(['G_BACKDATE_NOTE', 'G_REPDATE_GAP', 'S8', 'S4', 'S1', 'S7', 'G_KIOSK_PUNCH', 'S13']);
     const scopedBuiltInCatalog = isMfgScope
       ? ALERT_RULE_CATALOG
       : ALERT_RULE_CATALOG.filter(r => universalRuleIds.has(r.id));
@@ -24253,7 +24344,13 @@
     const nbSnSig = nbSn
       ? `${nbSn.agreements}:${nbSn.sites}:${nbSn.lossCnt}:${nbSn.nightCnt}:${nbSn.noDistCnt}:${nbSn.approxCnt}:${nbSn.noFuelCnt}:${nbSn.shortfall90}:${nbSn.lossLoads90}:${nbSn.showFuel ? 1 : 0}:${nbSn.prices.map(p => `${p.co}@${p.usdPerL}@${p.date}`).join(',')}`
       : 'x';
-    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}`;
+    const _wdStaffArr = (SEED.records && SEED.records.staff_members) || [];
+    let wdSig = String(_wdStaffArr.length);
+    for (let i = 0; i < _wdStaffArr.length; i++) {
+      const sr = _wdStaffArr[i];
+      if (sr) wdSig += '|' + (sr.id || '') + ':' + (sr.nationality || '') + ':' + (sr.status || '') + ':' + (sr.id_expiry_date || '') + ':' + (sr.work_permit_expiry || '') + ':' + (sr.residency_expiry || '');
+    }
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
     let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
     if (!rawItems) {
@@ -24385,21 +24482,23 @@
       navView: 'sales', navLabel: 'Open Sales'
     });
 
-    const unmatched = Number(pricing.unmatched_salary_payments_usd || 0);
-    const unmatchedStaffCnt = (pricing.unmatched_salary_by_staff || []).length;
-    const pendSalCnt = Number(pricing.pending_salary_contracts || 0);
-    const s7MinUnm = getAlertParam('S7', 'min_unmatched_usd', 0);
-    rawItems.push({
-      id: 'S7',
-      code: 'Rule #19 · Payroll Contracts', title: 'Salary Payments Without an Employment Contract',
-      detail: `${fmtUSD(unmatched, 2)} paid across ${fmtNum(unmatchedStaffCnt)} staff without an active contract for that month · ${fmtUSD(fleet.unallocated_driver_payroll_usd || 0, 0)} driver payroll unallocated (${fmtNum(fleet.unallocated_driver_months_count || 0)} months)${pendSalCnt > 0 ? ` · ${fmtNum(pendSalCnt)} active contract${pendSalCnt === 1 ? '' : 's'} awaiting final salary ($0.00)` : ''}.`,
-      severity: (unmatched > s7MinUnm || pendSalCnt > 0) ? 'warn' : 'ok',
-      badge: unmatched > s7MinUnm ? fmtUSD(unmatched, 0) + ' UNMATCHED' : (pendSalCnt > 0 ? fmtNum(pendSalCnt) + ' SALARY PENDING' : 'MATCHED'),
-      company: scope,
-      rawMetric: round2(unmatched),
-      rawSecondary: unmatchedStaffCnt + pendSalCnt,
-      scrollPanel: unmatched > s7MinUnm ? 'snPayroll' : (pendSalCnt > 0 ? 'pendingSalaryQueuePanel' : 'snPayroll'), navView: 'payroll_contracts', navLabel: 'Open Contracts'
-    });
+    if (canViewPayrollDollarAmounts()) {
+      const unmatched = Number(pricing.unmatched_salary_payments_usd || 0);
+      const unmatchedStaffCnt = (pricing.unmatched_salary_by_staff || []).length;
+      const pendSalCnt = Number(pricing.pending_salary_contracts || 0);
+      const s7MinUnm = getAlertParam('S7', 'min_unmatched_usd', 0);
+      rawItems.push({
+        id: 'S7',
+        code: 'Rule #19 · Payroll Contracts', title: 'Salary Payments Without an Employment Contract',
+        detail: `${fmtUSD(unmatched, 2)} paid across ${fmtNum(unmatchedStaffCnt)} staff without an active contract for that month · ${fmtUSD(fleet.unallocated_driver_payroll_usd || 0, 0)} driver payroll unallocated (${fmtNum(fleet.unallocated_driver_months_count || 0)} months)${pendSalCnt > 0 ? ` · ${fmtNum(pendSalCnt)} active contract${pendSalCnt === 1 ? '' : 's'} awaiting final salary ($0.00)` : ''}.`,
+        severity: (unmatched > s7MinUnm || pendSalCnt > 0) ? 'warn' : 'ok',
+        badge: unmatched > s7MinUnm ? fmtUSD(unmatched, 0) + ' UNMATCHED' : (pendSalCnt > 0 ? fmtNum(pendSalCnt) + ' SALARY PENDING' : 'MATCHED'),
+        company: scope,
+        rawMetric: round2(unmatched),
+        rawSecondary: unmatchedStaffCnt + pendSalCnt,
+        scrollPanel: unmatched > s7MinUnm ? 'snPayroll' : (pendSalCnt > 0 ? 'pendingSalaryQueuePanel' : 'snPayroll'), navView: 'payroll_contracts', navLabel: 'Open Contracts'
+      });
+    }
 
     const anomalies = Number(parity.date_basis_anomalies_gt_31d_count || 0);
     const unlinkedVatCnt = Number(parity.unlinked_vat_invoices_count || 0);
@@ -24515,6 +24614,33 @@
       });
     }
       }
+
+      const s13CritDays = getAlertParam('S13', 'crit_window_days', 7);
+      const s13WarnDays = getAlertParam('S13', 'warn_window_days', 60);
+      const wdS13 = computeStaffComplianceWatchdog(null, SEED, { critDays: s13CritDays, warnDays: s13WarnDays });
+      const effCritDays = wdS13.critDays || s13CritDays;
+      const effWarnDays = wdS13.warnDays || s13WarnDays;
+      const s13CritCnt = wdS13.counts.expired + wdS13.counts.critical_7;
+      const s13TotalAlerts = wdS13.counts.actionable;
+      const s13Top = wdS13.items[0] || null;
+      rawItems.push({
+        id: 'S13',
+        code: 'Rule #23 · HR Compliance',
+        title: 'Work Permit, Residency & ID Renewal Watchdog',
+        detail: s13TotalAlerts > 0
+          ? `${fmtNum(s13TotalAlerts)} active staff compliance item${s13TotalAlerts === 1 ? '' : 's'}: ${fmtNum(wdS13.counts.expired)} expired, ${fmtNum(wdS13.counts.critical_7)} due <= ${fmtNum(effCritDays, 0)}d, ${fmtNum(wdS13.counts.due_30)} due <= 30d, ${fmtNum(wdS13.counts.watch_60)} due <= ${fmtNum(effWarnDays, 0)}d, ${fmtNum(wdS13.counts.missing_permit)} foreign missing permit.${s13Top ? ` Top priority: ${s13Top.staffName} (${s13Top.badgeText}).` : ''}`
+          : `All ${fmtNum(wdS13.counts.total)} active staff records are within valid ID, work permit and residency renewal windows (${fmtNum(effWarnDays, 0)}d horizon).`,
+        severity: s13CritCnt > 0 ? 'crit' : (s13TotalAlerts > 0 ? 'warn' : 'ok'),
+        badge: s13CritCnt > 0
+          ? `${fmtNum(s13CritCnt)} CRITICAL`
+          : (s13TotalAlerts > 0 ? `${fmtNum(s13TotalAlerts)} DUE / MISSING` : 'COMPLIANT'),
+        company: scope,
+        rawMetric: s13TotalAlerts,
+        rawSecondary: s13CritCnt,
+        scrollPanel: null,
+        navView: 'reg_staff',
+        navLabel: 'Open Staff Roster'
+      });
 
       const snScopedMetrics = getCustomAlertMetricsForIndustry(activeIndForSn);
       const snAllowedCos = allowedCompanyNames();
@@ -24675,7 +24801,7 @@
     return window.MFG_PBI.renderModuleAnalytics(moduleKey, {
       STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI,
       filterRecords, buildSentinelItems, exportBtn, nextTicketNo,
-      canEnterForm, canAccessPbiPage, allowedCompanyNames,
+      canEnterForm, canAccessPbiPage, canViewPayrollDollarAmounts, allowedCompanyNames,
       SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog,
       getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml,
       buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic
@@ -25555,7 +25681,7 @@
             pct: Math.max(25, Math.min(100, 100 - customHitRows.length * 10)),
             sub: `<b>${customHitRows.length}</b> custom rule hits · <span class="insight-drill" data-nav-jump="alert_rules">Tune thresholds</span>`,
             tone: 'amber'
-          }) : insightCard({
+          }) : (canViewPayrollDollarAmounts() ? insightCard({
             label: 'Fleet & Payroll Hygiene',
             badge: `${outlierCnt} Fuel Outliers`,
             badgeCls: (outlierCnt > 0 || Number(pricing.unmatched_salary_payments_usd || 0) > 0) ? 'warn' : 'good',
@@ -25564,7 +25690,16 @@
             pct: Math.max(20, 100 - outlierCnt * 8),
             sub: `<span class="insight-drill" data-scroll-panel="snFuel"><b>${outlierCnt}</b> diesel outliers</span> · <b>${(pricing.unmatched_salary_by_staff || []).length}</b> staff without contract`,
             tone: 'amber'
-          })}
+          }) : insightCard({
+            label: 'Fleet & Stock Hygiene',
+            badge: `${outlierCnt} Fuel Outliers`,
+            badgeCls: outlierCnt > 0 ? 'warn' : 'good',
+            val: `<span class="insight-drill" data-scroll-panel="snFuel" title="Jump to Fuel Consumption Outliers">${fmtNum(outlierCnt, 0)} <small>Outliers</small></span>`,
+            valCls: outlierCnt > 0 ? 'amber' : 'emerald',
+            pct: Math.max(20, 100 - outlierCnt * 8),
+            sub: `<span class="insight-drill" data-scroll-panel="snFuel"><b>${outlierCnt}</b> diesel outliers</span> · <span class="insight-drill" data-scroll-panel="snMalfunction"><b>${(fleet.malfunction_rows || []).length}</b> stock discrepancies</span>`,
+            tone: 'amber'
+          }))}
         </div>
       </div>
 
@@ -25706,9 +25841,9 @@
           { label: 'Supplier', key: 'supplier' }, { label: 'Item', key: 'item_label' },
           { label: 'Qty', key: 'qty_label', r: true, mono: true }
         ], 'snPendingPrice')}
-        ${miniTable('SALARY PAYMENTS WITHOUT A CONTRACT', pricing.unmatched_salary_by_staff || [], [
+        ${canViewPayrollDollarAmounts() ? miniTable('SALARY PAYMENTS WITHOUT A CONTRACT', pricing.unmatched_salary_by_staff || [], [
           { label: 'Staff Member', key: 'staff' }, { label: 'Co.', key: 'company' }, { label: 'Months', key: 'months_count', r: true, fmt: v => fmtNum(v || 1, 0) }, { label: 'Unmatched ($)', key: 'unmatched_usd', r: true, fmt: usd2 }
-        ], 'snPayroll')}
+        ], 'snPayroll') : ''}
         ${miniTable(`TRANSACTION vs REPORTING DATE GAPS &gt; ${fmtNum(s8DaysUi, 0)} DAYS`, (parity.date_basis_anomalies_gt_31d || []).filter(r => STATE.company === 'manufacturing-group' || r.bu === COMPANY_BU_MATCH[STATE.company]), [
           { label: 'Table', key: 'table' }, { label: 'BU', key: 'bu' }, { label: 'Record', key: 'name' }, { label: 'Ticket', key: 'ticket', mono: true },
           { label: 'Tx Date', key: 'transaction_date', mono: true }, { label: 'Rep Date', key: 'reporting_date', mono: true }, { label: 'Gap (d)', key: 'gap_days', r: true, fmt: v => fmtNum(v) }, { label: 'Amount', key: 'amount_usd', r: true, fmt: usd2 }
@@ -40374,8 +40509,9 @@
     const ignoreSearchFlag = Boolean(opts.ignoreSearch);
     const scopeCo = String(opts.company || STATE.company || 'manufacturing-group');
     const canMemoReg = !matchFn && !opts.empRows && !opts.logRows;
+    const canPayMaskReg = canViewPayrollDollarAmounts() ? 1 : 0;
     const regCacheKey = canMemoReg
-      ? `${idx.rev}|${scopeCo}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${rawFrom}..${rawTo}|${isOpenEnd ? 1 : 0}|${STATE.basis}|${cutoffMode}|${ignoreSearchFlag ? '' : STATE.search.trim().toLowerCase()}|${fxRate}`
+      ? `${idx.rev}|${scopeCo}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${rawFrom}..${rawTo}|${isOpenEnd ? 1 : 0}|${STATE.basis}|${cutoffMode}|${ignoreSearchFlag ? '' : STATE.search.trim().toLowerCase()}|${fxRate}|pay:${canPayMaskReg}`
       : '';
     if (canMemoReg && idx.regCache.has(regCacheKey)) {
       return idx.regCache.get(regCacheKey);
@@ -40913,10 +41049,11 @@
         }
       }
     });
+    const canShowPay = canViewPayrollDollarAmounts();
     const driverOtRows = Array.from(driverOtMap.values()).map(dr => ({
       ...dr,
-      regionsStr: Array.from(dr.regions).slice(0, 3).join(', ') || 'Default ($5)'
-    })).sort((a, b) => b.total_ot_usd - a.total_ot_usd || b.total_trips - a.total_trips);
+      regionsStr: Array.from(dr.regions).slice(0, 3).join(', ') || (canShowPay ? 'Default ($5)' : 'Default')
+    })).sort((a, b) => (canShowPay ? (b.total_ot_usd - a.total_ot_usd) : 0) || b.total_trips - a.total_trips);
 
     // 4. Site allowances (exact [wStart, wEnd] window absence deduction per Salary.tmdl lines 210-230, deduplicated per calendar day + daily work verification & tally ledger)
     const siteStaffMap = new Map();
@@ -42307,6 +42444,7 @@
     return `Back pay for closed payroll months: ${parts.join(' and ') || fmtSignedUSD(0, 2)} · ${staff} · ${span}`;
   }
   function renderBackpayNoticePanel(empRows) {
+    if (!canViewPayrollDollarAmounts()) return '';
     const since = backpaySinceIso();
     const rows = (empRows || [])
       .filter(e => backpayListed(e, since))
@@ -42399,6 +42537,7 @@
     const k = getKPI();
     const { fleet, pricing } = sentinelSlice();
     const payIdx = _getPayrollIntelIndex();
+    const canShowAttDollars = canViewPayrollDollarAmounts();
     const today = SEED_DATE;
     const fxRate = getLbpFxRate();
     const fxShortLbl = `${fmtNum(fxRate / 1000, 1).replace(/\.0$/, '')}k`;
@@ -42554,7 +42693,7 @@
       _attNormWeakMap.set(a, attNormKey);
     });
 
-    const filteredSiteStaff = subMode === 'allowances' ? sortRows(siteStaffRowsBase, 'pay_site_staff', 'accrued', 'desc') : siteStaffRowsBase;
+    const filteredSiteStaff = subMode === 'allowances' ? sortRows(siteStaffRowsBase, 'pay_site_staff', canShowAttDollars ? 'accrued' : 'staff', canShowAttDollars ? 'desc' : 'asc') : siteStaffRowsBase;
     const shownSiteStaff = subMode === 'allowances' ? filteredSiteStaff.slice(0, shownCount('pay_site_staff')) : [];
 
     const attStaffAllBase = subMode === 'attendance'
@@ -42565,7 +42704,7 @@
     const shownAttStaff = subMode === 'attendance' ? filteredAttStaff.slice(0, shownCount('pay_att_sum')) : [];
 
     const needDriverOt = subMode === 'main' || subMode === 'attendance';
-    const filteredDriverOt = needDriverOt ? sortRows(driverOtRows, 'pay_drv_ot', 'total_ot_usd', 'desc') : [];
+    const filteredDriverOt = needDriverOt ? sortRows(driverOtRows, 'pay_drv_ot', canShowAttDollars ? 'total_ot_usd' : 'total_trips', 'desc') : [];
     const shownDriverOt = needDriverOt ? filteredDriverOt.slice(0, shownCount('pay_drv_ot')) : [];
     const totDriverOtTrips = filteredDriverOt.reduce((a, r) => a + Number(r.total_trips || 0), 0);
     const totDriverSalesTrips = filteredDriverOt.reduce((a, r) => a + Number(r.sales_trips || 0), 0);
@@ -42598,12 +42737,13 @@
       ...extraOpts
     });
 
+    const drvOtColSpan = canShowAttDollars ? 11 : 7;
     const driverOtPanelHtml = !needDriverOt ? '' : `
       <div class="panel-card" id="payDriverOtPanel">
         <div class="panel-head">
           <div>
-            <div class="panel-title"><span>DRIVER NIGHT-TRIP OVERTIME BY DRIVER · SALES &amp; QUARRY TRIPS (${fmtNum(filteredDriverOt.length)} DRIVERS · ${fmtUSD(totDriverOtUsd, 2)})</span></div>
-            <span class="ph-sub">Valued per dated regional trip rate ($5 / $7 / $10 / $14) through ${esc(fmtDateDMY(cm.effToDate))} · Contracted drivers are included in Driver OT ($) on Staff Payroll (${fmtUSD(totDriverInPayUsd, 2)})</span>
+            <div class="panel-title"><span>DRIVER NIGHT-TRIP OVERTIME BY DRIVER · SALES &amp; QUARRY TRIPS (${fmtNum(filteredDriverOt.length)} DRIVERS${canShowAttDollars ? ` · ${fmtUSD(totDriverOtUsd, 2)}` : ''})</span></div>
+            <span class="ph-sub">${canShowAttDollars ? `Valued per dated regional trip rate ($5 / $7 / $10 / $14) through ${esc(fmtDateDMY(cm.effToDate))} · Contracted drivers are included in Driver OT ($) on Staff Payroll (${fmtUSD(totDriverInPayUsd, 2)})` : `Trip counts through ${esc(fmtDateDMY(cm.effToDate))} · Overtime payout rates masked`}</span>
           </div>
           <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_drivers">${ic('fleet_drivers')} Drivers &amp; Overtime</button>
@@ -42617,7 +42757,7 @@
               <tr>
                 ${th('pay_drv_ot', 'Driver', 'driver')}${th('pay_drv_ot', 'Co.', 'company')}${th('pay_drv_ot', 'Payroll Status', 'hasContract')}${th('pay_drv_ot', 'Regions', 'regionsStr')}
                 ${th('pay_drv_ot', 'Sales OT Trips', 'sales_trips', 'r')}${th('pay_drv_ot', 'Quarry OT Trips', 'raw_trips', 'r')}${th('pay_drv_ot', 'Total OT Trips', 'total_trips', 'r')}
-                ${th('pay_drv_ot', 'Sales OT ($)', 'sales_ot_usd', 'r')}${th('pay_drv_ot', 'Quarry OT ($)', 'raw_ot_usd', 'r')}${th('pay_drv_ot', 'Total Driver OT ($)', 'total_ot_usd', 'r')}${th('pay_drv_ot', 'In Staff Payroll ($)', 'in_payroll_usd', 'r')}
+                ${canShowAttDollars ? `${th('pay_drv_ot', 'Sales OT ($)', 'sales_ot_usd', 'r')}${th('pay_drv_ot', 'Quarry OT ($)', 'raw_ot_usd', 'r')}${th('pay_drv_ot', 'Total Driver OT ($)', 'total_ot_usd', 'r')}${th('pay_drv_ot', 'In Staff Payroll ($)', 'in_payroll_usd', 'r')}` : ''}
               </tr>
             </thead>
             <tbody>
@@ -42630,13 +42770,10 @@
                   <td class="r">${dr.sales_trips ? fmtNum(dr.sales_trips, 0) : '-'}</td>
                   <td class="r">${dr.raw_trips ? fmtNum(dr.raw_trips, 0) : '-'}</td>
                   <td class="r"><strong>${fmtNum(dr.total_trips, 0)}</strong></td>
-                  <td class="r">${dr.sales_ot_usd ? fmtUSD(dr.sales_ot_usd, 2) : '-'}</td>
-                  <td class="r">${dr.raw_ot_usd ? fmtUSD(dr.raw_ot_usd, 2) : '-'}</td>
-                  <td class="r"><strong>${fmtUSD(dr.total_ot_usd, 2)}</strong></td>
-                  <td class="r">${dr.in_payroll_usd ? `<strong>${fmtUSD(dr.in_payroll_usd, 2)}</strong>` : '<span class="mu">$0.00</span>'}</td>
+                  ${canShowAttDollars ? `<td class="r">${dr.sales_ot_usd ? fmtUSD(dr.sales_ot_usd, 2) : '-'}</td><td class="r">${dr.raw_ot_usd ? fmtUSD(dr.raw_ot_usd, 2) : '-'}</td><td class="r"><strong>${fmtUSD(dr.total_ot_usd, 2)}</strong></td><td class="r">${dr.in_payroll_usd ? `<strong>${fmtUSD(dr.in_payroll_usd, 2)}</strong>` : '<span class="mu">$0.00</span>'}</td>` : ''}
                 </tr>
-              `).join('') || emptyRow(11, 'No driver night-trip overtime records match the active filter')}
-              ${showMoreRow('pay_drv_ot', filteredDriverOt.length, 11)}
+              `).join('') || emptyRow(drvOtColSpan, 'No driver night-trip overtime records match the active filter')}
+              ${showMoreRow('pay_drv_ot', filteredDriverOt.length, drvOtColSpan)}
             </tbody>
             <tfoot>
               <tr>
@@ -42644,17 +42781,14 @@
                 <td class="r"><b>${fmtNum(totDriverSalesTrips, 0)}</b></td>
                 <td class="r"><b>${fmtNum(totDriverRawTrips, 0)}</b></td>
                 <td class="r"><b>${fmtNum(totDriverOtTrips, 0)}</b></td>
-                <td class="r"><b>${fmtUSD(totDriverSalesUsd, 2)}</b></td>
-                <td class="r"><b>${fmtUSD(totDriverRawUsd, 2)}</b></td>
-                <td class="r"><b>${fmtUSD(totDriverOtUsd, 2)}</b></td>
-                <td class="r"><b>${fmtUSD(totDriverInPayUsd, 2)}</b></td>
+                ${canShowAttDollars ? `<td class="r"><b>${fmtUSD(totDriverSalesUsd, 2)}</b></td><td class="r"><b>${fmtUSD(totDriverRawUsd, 2)}</b></td><td class="r"><b>${fmtUSD(totDriverOtUsd, 2)}</b></td><td class="r"><b>${fmtUSD(totDriverInPayUsd, 2)}</b></td>` : ''}
               </tr>
             </tfoot>
           </table>
         </div>
       </div>`;
 
-    const filteredStaff = sortRows(scopedStaffRows, 'pay_staff', 'balance', 'desc');
+    const filteredStaff = sortRows(scopedStaffRows, 'pay_staff', canShowAttDollars ? 'balance' : 'staff', canShowAttDollars ? 'desc' : 'asc');
     const shownStaff = filteredStaff.slice(0, shownCount('pay_staff'));
     const hasContractStaffSet = new Set(staffRows.filter(s => s.hasContract).map(s => norm(s.staff)));
     const unmatchedRaw = pricing.unmatched_salary_by_staff || [];
@@ -42676,7 +42810,7 @@
         unmatched_usd: Number(u.unmatched_usd || 0)
       };
     });
-    const filteredUnmatched = sortRows(unmatchedRowsDetailed, 'pay_unmatched', 'unmatched_usd', 'desc');
+    const filteredUnmatched = sortRows(unmatchedRowsDetailed, 'pay_unmatched', canShowAttDollars ? 'unmatched_usd' : 'staff', canShowAttDollars ? 'desc' : 'asc');
     const shownUnmatched = filteredUnmatched.slice(0, shownCount('pay_unmatched'));
 
     // Annotate each salary payment with its full-month running entitlement & settlement / advance posture (main payroll view only, memoized on payIdx)
@@ -42747,8 +42881,8 @@
       ? (STATE.chipFilter === 'all' ? salAll : salAll.filter(s => {
           if (STATE.chipFilter === 'cash_sal') return /cash/i.test(String(s.method || 'Cash'));
           if (STATE.chipFilter === 'bank_sal') return !/cash/i.test(String(s.method || 'Cash'));
-          if (STATE.chipFilter === 'advance_sal') return Boolean(s.is_advance_sal);
-          if (STATE.chipFilter === 'unmatched_sal') return !hasContractStaffSet.has(norm(s.staff)) || unmatchedStaffSet.has(norm(s.staff));
+          if (STATE.chipFilter === 'advance_sal') return canShowAttDollars ? Boolean(s.is_advance_sal) : true;
+          if (STATE.chipFilter === 'unmatched_sal') return canShowAttDollars ? (!hasContractStaffSet.has(norm(s.staff)) || unmatchedStaffSet.has(norm(s.staff))) : true;
           if (STATE.chipFilter === 'app') return isAppRecord(s);
           return true;
         }))
@@ -42763,16 +42897,24 @@
     const filteredEmpBase = subMode === 'contracts'
       ? (STATE.chipFilter === 'all' ? empAll : empAll.filter(e => {
           const ended = e.status === 'Ended' || (e.end_date && String(e.end_date) < today);
-          if (STATE.chipFilter === 'pending_salary') return isPendingSalaryEmployment(e);
+          if (STATE.chipFilter === 'pending_salary') return canShowAttDollars ? isPendingSalaryEmployment(e) : true;
           if (STATE.chipFilter === 'active_emp') return !ended;
           if (STATE.chipFilter === 'ended_emp') return ended;
           if (STATE.chipFilter === 'freelance_emp') return /free|daily/i.test(String(e.type || ''));
-          if (STATE.chipFilter === 'reimb_emp') return empContractReimbUsd(e, fxRate) > 0 || empContractDedUsd(e, fxRate) > 0;
+          if (STATE.chipFilter === 'reimb_emp') return canShowAttDollars ? (empContractReimbUsd(e, fxRate) > 0 || empContractDedUsd(e, fxRate) > 0) : true;
           if (STATE.chipFilter === 'app') return isAppRecord(e);
           return true;
         }))
       : [];
-    const filteredEmp = subMode === 'contracts' ? sortRows(filteredEmpBase, 'pay_emp', 'start_date', 'desc') : [];
+    const _empWatchdogTier = (subMode === 'contracts' && STATE.permitWatchdogTier && STATE.permitWatchdogTier !== 'all') ? String(STATE.permitWatchdogTier) : 'all';
+    const _empWdFiltered = _empWatchdogTier === 'all'
+      ? filteredEmpBase
+      : filteredEmpBase.filter(e => {
+          const smRec = (SEED.records && SEED.records.staff_members || []).find(s => s && !s.voided && !s.archived && ((e.staff_id && String(s.id) === String(e.staff_id)) || norm(s.name || '') === norm(e.staff || '')));
+          const synthetic = smRec || { id: e.staff_id || '', name: e.staff || '', nationality: e.nationality || '', status: e.status || '', nssf_no: e.nssf_no || '', id_expiry_date: e.id_expiry_date || '', work_permit_no: e.work_permit_no || '', work_permit_expiry: e.work_permit_expiry || '', residency_no: e.residency_no || '', residency_expiry: e.residency_expiry || '' };
+          return matchesComplianceTier(evaluateStaffComplianceRow(synthetic, SEED), _empWatchdogTier);
+        });
+    const filteredEmp = subMode === 'contracts' ? sortRows(_empWdFiltered, 'pay_emp', 'start_date', 'desc') : [];
     const shownEmp = subMode === 'contracts' ? filteredEmp.slice(0, shownCount('pay_emp')) : [];
 
     let otAttCount = 0, calloutAttCount = 0, lateAttCount = 0, absentAttCount = 0, extraAttCount = 0, configAttCount = 0;
@@ -42878,7 +43020,6 @@
     const saTotalFuelL = round2(siteStaffRowsBase.reduce((a, r) => a + Number(r.fuel_litres || 0), 0));
     const saTotalOtHrs = round2(siteStaffRowsBase.reduce((a, r) => a + Number(r.ot_hrs || 0), 0));
 
-    const canShowAttDollars = canViewPayrollDollarAmounts();
     const heroTitle = subMode === 'attendance'
       ? 'Attendance & Overtime'
       : (subMode === 'allowances'
@@ -42945,13 +43086,21 @@
           <div class="cockpit-title">${esc(heroTitle)}</div>
         </div>
         <div class="cockpit-pills insight-grid">
-          ${insightCard({
+          ${canShowAttDollars ? insightCard({
             label: 'Site Transport Earned',
             badge: `${fmtNum(siteStaffRowsBase.length)} Staff · ${fmtNum(siteLogRows.length || logAll.length)} Schedules`,
             badgeCls: 'brass',
             val: `${fmtUSD(saEarnedTot, 2)}`,
             valCls: 'brass',
             sub: `FIFO paid in salary <b>${fmtUSD(saPaidTot, 0)}</b> · Outstanding <b>${fmtUSD(saOutTot, 0)}</b>`,
+            tone: 'brass'
+          }) : insightCard({
+            label: 'Site Transport Schedules',
+            badge: `${fmtNum(siteStaffRowsBase.length)} Staff`,
+            badgeCls: 'brass',
+            val: `${fmtNum(siteLogRows.length || logAll.length)} <small>Schedules</small>`,
+            valCls: 'brass',
+            sub: `Site transport rates &amp; payout amounts masked`,
             tone: 'brass'
           })}
           ${insightCard({
@@ -42960,7 +43109,7 @@
             badgeCls: saAbsDaysTot > 0 ? 'info' : 'emerald',
             badgeChip: 'absent_sa',
             val: `${fmtNum(saPaidDaysTot, 0)} <small>Paid Days</small>`,
-            sub: `<b>${fmtNum(saAbsDaysTot, 1)}</b> at-plant / absent days ($0 site transport)`,
+            sub: `<b>${fmtNum(saAbsDaysTot, 1)}</b> at-plant / absent days${canShowAttDollars ? ' ($0 site transport)' : ''}`,
             tone: 'steel'
           })}
           ${insightCard({
@@ -43005,7 +43154,7 @@
             sub: `<b>${fmtNum(staffRows.filter(s => s.hasContract).length)}</b> unique staff with contract on file · <b>${fmtNum(empAll.length - activeEmpCount)}</b> historical ended`,
             tone: 'emerald'
           })}
-          ${insightCard({
+          ${canShowAttDollars ? insightCard({
             label: 'Contracted Monthly Payroll',
             badge: `${fmtNum(activeEmpCount)} Active`,
             badgeCls: 'brass',
@@ -43013,12 +43162,20 @@
             valCls: 'brass',
             sub: `Base <b>${fmtUSD(totalContractBase, 0)}</b> + Transp./Reimb. <b>${fmtUSD(totalContractReimb, 0)}</b> · Avg <b>${fmtUSD(activeEmpCount > 0 ? totalContractMonthly / activeEmpCount : 0, 0)}/mo</b>`,
             tone: 'brass'
+          }) : insightCard({
+            label: 'Workforce & Agreements',
+            badge: `${fmtNum(activeEmpCount)} Active`,
+            badgeCls: 'brass',
+            val: `${fmtNum(staffRows.filter(s => s.hasContract).length)} <small>Staff</small>`,
+            valCls: 'brass',
+            sub: `Contract compensation &amp; salary figures masked`,
+            tone: 'brass'
           })}
           ${insightCard({
             label: 'Site Transport',
             badge: `${fmtNum(logAll.length)} Schedules`,
             badgeCls: 'info',
-            val: `${fmtUSD(saEarnedTot, 0)} <small>Earned</small>`,
+            val: canShowAttDollars ? `${fmtUSD(saEarnedTot, 0)} <small>Earned</small>` : `${fmtNum(logAll.length)} <small>Schedules</small>`,
             sub: `<b>${fmtNum(siteStaffRowsBase.length)}</b> staff (${saVerifPct.toFixed(0)}% verified) · <span class="insight-drill" data-nav-jump="payroll_allowances">Open Site Transport ↘</span>`,
             tone: 'steel'
           })}
@@ -43026,8 +43183,8 @@
             label: 'Regional Trip & OT Rules',
             badge: `${fmtNum(otRates.length)} Rules`,
             badgeCls: 'brass',
-            val: `Avg ${fmtUSD(otRates.length ? otRates.reduce((a, r) => a + Number(r.amount != null ? r.amount : r.usd_amount || 0), 0) / otRates.length : 0, 2)} <small>/ trip</small>`,
-            sub: `<span class="insight-drill" data-scroll-panel="payOtRatesPanel">Regional Driver OT Rates ↘</span>`,
+            val: canShowAttDollars ? `Avg ${fmtUSD(otRates.length ? otRates.reduce((a, r) => a + Number(r.amount != null ? r.amount : r.usd_amount || 0), 0) / otRates.length : 0, 2)} <small>/ trip</small>` : `${fmtNum(otRates.length)} <small>Rules</small>`,
+            sub: `<span class="insight-drill" data-scroll-panel="payOtRatesPanel">Regional Driver OT Rules ↘</span>`,
             tone: 'amber'
           })}
           ${appPill('employments', 'salary_usd', 'contracts')}
@@ -43039,7 +43196,7 @@
           <div class="cockpit-title">${esc(heroTitle)}</div>
         </div>
         <div class="cockpit-pills insight-grid">
-          ${(() => {
+          ${canShowAttDollars ? (() => {
             const sumRemUsd = round2(filteredStaff.reduce((a, r) => a + Number(r.rem_usd || 0), 0));
             const sumRemLbp = Math.round(filteredStaff.reduce((a, r) => a + Number(r.rem_lbp || 0), 0));
             const sumRemNet = round2(filteredStaff.reduce((a, r) => a + Number(r.balance || 0), 0));
@@ -43052,7 +43209,15 @@
               sub: `USD Rem <b>${fmtUSD(sumRemUsd, 2)}</b> · LBP Rem <b>${fmtNum(sumRemLbp, 0)} LL</b> · Book paid <b>${fmtUSD(k.salaries_paid, 0)}</b>`,
               tone: 'brass'
             });
-          })()}
+          })() : insightCard({
+            label: 'Staff Register Scope',
+            badge: `${fmtNum(filteredStaff.length)} Staff`,
+            badgeCls: 'brass',
+            val: `${fmtNum(activeStaffCnt)} <small>Active</small>`,
+            valCls: 'brass',
+            sub: `<b>${fmtNum(inactiveStaffCnt)}</b> inactive · Payroll dollar figures masked`,
+            tone: 'brass'
+          })}
           ${insightCard({
             label: 'Contract Coverage',
             badge: `${fmtNum(activeEmpCount)} / ${fmtNum(empAll.length)} Contracts`,
@@ -43067,11 +43232,11 @@
           ${insightCard({
             label: 'Overtime & Site Transport',
             badge: `${fmtNum(totalOtHrs, 0)} OT hrs`,
-            val: fmtUSD((k.overtime_bonus || 0) + totalSiteAllow, 0),
-            sub: `OT &amp; trip bonus <b>${fmtUSD(k.overtime_bonus, 0)}</b> · Site transport <b>${fmtUSD(totalSiteAllow, 0)}</b> (${fmtNum(logAll.length)})`,
+            val: canShowAttDollars ? fmtUSD((k.overtime_bonus || 0) + totalSiteAllow, 0) : `${fmtNum(totalOtHrs, 0)} <small>OT hrs</small>`,
+            sub: canShowAttDollars ? `OT &amp; trip bonus <b>${fmtUSD(k.overtime_bonus, 0)}</b> · Site transport <b>${fmtUSD(totalSiteAllow, 0)}</b> (${fmtNum(logAll.length)})` : `Site transport <b>${fmtNum(logAll.length)}</b> active schedule${logAll.length === 1 ? '' : 's'}`,
             tone: 'steel'
           })}
-          ${insightCard({
+          ${canShowAttDollars ? insightCard({
             label: 'Payroll Match Audit',
             badge: `${unmatchedRowsDetailed.length} Alerts`,
             badgeCls: unmatchedUsd > 0 ? 'amber' : 'emerald',
@@ -43080,6 +43245,14 @@
             valCls: unmatchedUsd > 0 ? 'amber' : 'emerald',
             sub: `<b>${fmtNum(attAll.length)}</b> attendance logs · <span class="insight-drill" data-scroll-panel="payUnmatchedPanel"><b>${unmatchedRowsDetailed.length}</b> staff in Unmatched Audit ↘</span>`,
             tone: unmatchedUsd > 0 ? 'amber' : 'emerald'
+          }) : insightCard({
+            label: 'Attendance & Disbursement Activity',
+            badge: `${fmtNum(salAll.length)} Vouchers`,
+            badgeCls: 'emerald',
+            val: `${fmtNum(attAll.length)} <small>Logs</small>`,
+            valCls: 'emerald',
+            sub: `<b>${fmtNum(filteredStaff.length)}</b> staff in workforce roster · Compensation masked`,
+            tone: 'emerald'
           })}
           ${appPill('salaries', 'amount', 'salary payments')}
         </div>
@@ -43523,12 +43696,12 @@
       const filteredSiteDaily = sortRows(dailyFilteredBase, 'pay_site_daily', 'date', 'desc');
       const shownSiteDaily = filteredSiteDaily.slice(0, shownCount('pay_site_daily'));
       const showDayTallyCol = canTallySiteDay && (filteredSiteDaily.length ? filteredSiteDaily.some(d => d.can_tally_day) : dailyPreChip.some(d => d.can_tally_day));
-      const dailyColSpan = showDayTallyCol ? 10 : 9;
+      const dailyColSpan = canShowAttDollars ? (showDayTallyCol ? 10 : 9) : (showDayTallyCol ? 8 : 7);
 
       const siteStaffScoped = siteStaffRowsBase.filter(r =>
         matchAllowSearch([r.staff, r.company, r.site, r.sitesStr, r.equipment, r.equipListStr, r.working_days])
       );
-      const filteredAllowStaff = sortRows(siteStaffScoped, 'pay_site_staff', 'accrued', 'desc');
+      const filteredAllowStaff = sortRows(siteStaffScoped, 'pay_site_staff', canShowAttDollars ? 'accrued' : 'staff', canShowAttDollars ? 'desc' : 'asc');
       const shownAllowStaff = filteredAllowStaff.slice(0, shownCount('pay_site_staff'));
 
       const logScopedList = (siteLogRows.length ? siteLogRows : logAll).filter(l => {
@@ -43579,7 +43752,7 @@
           </div>
           ${staffDrill ? `
             <div class="site-staff-filter-banner" id="siteAllowStaffBanner">
-              <span>Showing daily site transport tally &amp; work proof for <strong>${esc(staffDrill)}</strong> (${fmtNum(filteredSiteDaily.length)} day${filteredSiteDaily.length === 1 ? '' : 's'} · ${fmtUSD(sumDailyEarned, 2)} earned)</span>
+              <span>Showing daily site transport tally &amp; work proof for <strong>${esc(staffDrill)}</strong> (${fmtNum(filteredSiteDaily.length)} day${filteredSiteDaily.length === 1 ? '' : 's'}${canShowAttDollars ? ` · ${fmtUSD(sumDailyEarned, 2)} earned` : ''})</span>
               <button type="button" class="btn btn-ghost-bar" data-clear-site-staff="1">Show All Staff</button>
             </div>` : ''}
           ${renderColFilterBar('pay_site_daily')}
@@ -43589,7 +43762,7 @@
                 <tr>
                   ${th('pay_site_daily', 'Date', 'date')}${th('pay_site_daily', 'Staff Member', 'staff')}${th('pay_site_daily', 'Co.', 'company')}${th('pay_site_daily', 'Posted Site', 'site')}${th('pay_site_daily', 'Equipment', 'equipment')}
                   ${th('pay_site_daily', 'Work Verification', 'proof_label')}${th('pay_site_daily', 'Operational Work Evidence', 'total_loads')}
-                  ${th('pay_site_daily', 'Daily Rate', 'daily_usd', 'r')}${th('pay_site_daily', 'Earned ($)', 'earned_usd', 'r')}
+                  ${canShowAttDollars ? `${th('pay_site_daily', 'Daily Rate', 'daily_usd', 'r')}${th('pay_site_daily', 'Earned ($)', 'earned_usd', 'r')}` : ''}
                   ${showDayTallyCol ? '<th class="r">Day Tally</th>' : ''}
                 </tr>
               </thead>
@@ -43597,7 +43770,7 @@
                 ${shownSiteDaily.map(d => {
                   const rateSub = d.l_daily > 0 ? `<div class="mu" style="font-size:10px">${fmtNum(d.l_daily / 1000, 0)}k LL</div>` : '';
                   const fallbackEvTxt = d.proof_status === 'pending_tally'
-                    ? 'Awaiting On Site or At Plant click ($0 until tallied)'
+                    ? (canShowAttDollars ? 'Awaiting On Site or At Plant click ($0 until tallied)' : 'Awaiting On Site or At Plant click')
                     : (d.is_closed_historical ? 'Closed payroll period · paid in workbook' : 'No ticket, fuel, or shift log');
                   const chipsHtml = (d.evidence_chips && d.evidence_chips.length)
                     ? `<div class="site-proof-chips">${d.evidence_chips.map(c => `<span class="site-proof-chip ${esc(c.cls)}">${esc(c.txt)}</span>`).join('')}</div>`
@@ -43613,14 +43786,13 @@
                     <td class="mono">${d.equipment && d.equipment !== '—' ? relLink('equipment', d.equipment) : '—'}</td>
                     <td><span class="badge ${proofBadgeCls(d.proof_status)}">${esc(d.proof_label)}</span></td>
                     <td>${chipsHtml}</td>
-                    <td class="r">${fmtUSD(d.daily_usd, 2)}${rateSub}</td>
-                    <td class="r ${d.earned_usd <= 0 ? 'mu' : ''}"><strong>${fmtUSD(d.earned_usd, 2)}</strong></td>
+                    ${canShowAttDollars ? `<td class="r">${fmtUSD(d.daily_usd, 2)}${rateSub}</td><td class="r ${d.earned_usd <= 0 ? 'mu' : ''}"><strong>${fmtUSD(d.earned_usd, 2)}</strong></td>` : ''}
                     ${showDayTallyCol ? `
                     <td class="r" style="white-space:nowrap">
                       ${d.can_tally_day ? `
                       <div class="site-tally-actions">
                         <button type="button" class="site-tally-btn is-confirm ${onSiteActive ? 'is-active' : ''}" data-site-day-tally="present" data-tally-explicit="${d.tally_kind === 'present' ? '1' : '0'}" data-tally-co="${esc(d.company)}" data-tally-staff="${esc(d.staff)}" data-tally-date="${esc(d.date)}" data-tally-site="${esc(d.site)}" aria-label="Confirm ${esc(d.staff)} worked at ${esc(d.site)} on ${esc(fmtDateDMY(d.date))}">&#10003; On Site</button>
-                        <button type="button" class="site-tally-btn is-absent ${atPlantActive ? 'is-active' : ''}" data-site-day-tally="off_site" data-tally-explicit="${d.tally_kind === 'off_site' ? '1' : '0'}" data-tally-co="${esc(d.company)}" data-tally-staff="${esc(d.staff)}" data-tally-date="${esc(d.date)}" data-tally-site="${esc(d.site)}" aria-label="Mark ${esc(d.staff)} at main plant on ${esc(fmtDateDMY(d.date))} ($0 site transport)">&#10005; At Plant</button>
+                        <button type="button" class="site-tally-btn is-absent ${atPlantActive ? 'is-active' : ''}" data-site-day-tally="off_site" data-tally-explicit="${d.tally_kind === 'off_site' ? '1' : '0'}" data-tally-co="${esc(d.company)}" data-tally-staff="${esc(d.staff)}" data-tally-date="${esc(d.date)}" data-tally-site="${esc(d.site)}" aria-label="Mark ${esc(d.staff)} at main plant on ${esc(fmtDateDMY(d.date))}${canShowAttDollars ? ' ($0 site transport)' : ''}">&#10005; At Plant</button>
                         ${d.tally_id ? `<button type="button" class="site-tally-btn is-undo" data-site-day-tally="undo" data-tally-id="${esc(d.tally_id)}" data-tally-staff="${esc(d.staff)}" data-tally-date="${esc(d.date)}" aria-label="Clear manual day tally">Undo</button>` : ''}
                       </div>` : `<span class="badge badge-neutral">${d.paid_days > 0 ? 'Closed · Paid' : 'Deducted'}</span>`}
                     </td>` : ''}
@@ -43633,8 +43805,7 @@
                   <td colspan="5"><b>TOTAL (${fmtNum(filteredSiteDaily.length)} POSTED DAYS · ${fmtNum(sumDailyPaidDays, 1)} PAID DAYS)</b></td>
                   <td><b>${fmtNum(sumDailyVerifDays)} Verified (${filteredSiteDaily.length > 0 ? ((sumDailyVerifDays / Math.max(1, sumDailyPaidDays || filteredSiteDaily.length)) * 100).toFixed(0) : '0'}%)</b></td>
                   <td><b>${fmtNum(sumDailyLoads)} Loads (${fmtNum(sumDailyM3, 0)} m³) · ${fmtNum(sumDailyFuel, 0)} L Fuel</b></td>
-                  <td class="r"><b>${sumDailyPaidDays > 0 ? fmtUSD(sumDailyEarned / sumDailyPaidDays, 2) + '/d' : '—'}</b></td>
-                  <td class="r" data-foot-earned="1"><b>${fmtUSD(sumDailyEarned, 2)}</b></td>
+                  ${canShowAttDollars ? `<td class="r"><b>${sumDailyPaidDays > 0 ? fmtUSD(sumDailyEarned / sumDailyPaidDays, 2) + '/d' : '—'}</b></td><td class="r" data-foot-earned="1"><b>${fmtUSD(sumDailyEarned, 2)}</b></td>` : ''}
                   ${showDayTallyCol ? '<td></td>' : ''}
                 </tr>
               </tfoot>
@@ -43643,14 +43814,14 @@
         </div>
 
         ${(window.MFG_PBI && typeof window.MFG_PBI.renderAllowancesVisualsSection === 'function')
-          ? window.MFG_PBI.renderAllowancesVisualsSection({ payMonths, siteStaffRows: filteredAllowStaff })
+          ? window.MFG_PBI.renderAllowancesVisualsSection({ payMonths, siteStaffRows: filteredAllowStaff, canViewPayrollDollarAmounts })
           : ''}
 
         <div class="panel-card" id="paySiteStaffPanel">
           <div class="panel-head">
             <div>
-              <div class="panel-title"><span>STAFF SITE TRANSPORT &amp; WORK OUTPUT ANALYSIS (${fmtNum(filteredAllowStaff.length)} STAFF · ${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.accrued, 0), 2)})</span></div>
-              <span class="ph-sub">Click any staff member's Verified Work pill to inspect and tally their day-by-day site log above · FIFO salary allocation against earned site transport</span>
+              <div class="panel-title"><span>STAFF SITE TRANSPORT &amp; WORK OUTPUT ANALYSIS (${fmtNum(filteredAllowStaff.length)} STAFF${canShowAttDollars ? ` · ${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.accrued, 0), 2)}` : ''})</span></div>
+              <span class="ph-sub">${canShowAttDollars ? "Click any staff member's Verified Work pill to inspect and tally their day-by-day site log above · FIFO salary allocation against earned site transport" : "Click any staff member's Verified Work pill to inspect and tally their day-by-day site log above"}</span>
             </div>
             <span class="panel-meta">${exportBtn('paySiteStaffPanel', 'Site_Transport_Work_Analysis')}</span>
           </div>
@@ -43660,9 +43831,9 @@
               <thead>
                 <tr>
                   ${th('pay_site_staff', 'Staff', 'staff')}${th('pay_site_staff', 'Co.', 'company')}${th('pay_site_staff', 'Site', 'site')}${th('pay_site_staff', 'Equipment', 'equipment')}
-                  ${th('pay_site_staff', 'Daily ($)', 'daily_usd', 'r')}${th('pay_site_staff', 'Sched.', 'days_counted', 'r')}${th('pay_site_staff', 'At Plant / Ded.', 'absent_days', 'r')}${th('pay_site_staff', 'Paid Days', 'days_paid', 'r')}
+                  ${canShowAttDollars ? th('pay_site_staff', 'Daily ($)', 'daily_usd', 'r') : ''}${th('pay_site_staff', 'Sched.', 'days_counted', 'r')}${th('pay_site_staff', 'At Plant / Ded.', 'absent_days', 'r')}${th('pay_site_staff', 'Paid Days', 'days_paid', 'r')}
                   ${th('pay_site_staff', 'Verified Work', 'activity_days', 'r')}${th('pay_site_staff', 'Loads & Vol.', 'total_loads', 'r')}${th('pay_site_staff', 'Machine Fuel', 'fuel_litres', 'r')}
-                  ${th('pay_site_staff', 'Earned ($)', 'accrued', 'r')}${th('pay_site_staff', 'Paid (FIFO)', 'paid_fifo', 'r')}${th('pay_site_staff', 'Outst. ($)', 'outstanding', 'r')}
+                  ${canShowAttDollars ? `${th('pay_site_staff', 'Earned ($)', 'accrued', 'r')}${th('pay_site_staff', 'Paid (FIFO)', 'paid_fifo', 'r')}${th('pay_site_staff', 'Outst. ($)', 'outstanding', 'r')}` : ''}
                 </tr>
               </thead>
               <tbody>
@@ -43675,7 +43846,7 @@
                     <td>${coBadge(r.company)}</td>
                     <td>${r.site && r.site !== '—' ? relLink('sites', r.site) : '—'}</td>
                     <td class="mono">${r.equipment && r.equipment !== '—' ? relLink('equipment', r.equipment) : '—'}</td>
-                    <td class="r">${fmtUSD(r.daily_usd, 2)}</td>
+                    ${canShowAttDollars ? `<td class="r">${fmtUSD(r.daily_usd, 2)}</td>` : ''}
                     <td class="r">${fmtNum(r.days_counted, 0)}d</td>
                     <td class="r">${r.absent_days ? fmtNum(r.absent_days, 1) + 'd' : '—'}</td>
                     <td class="r"><strong>${fmtNum(r.days_paid, 1).replace(/\.0$/, '')}d</strong></td>
@@ -43686,26 +43857,22 @@
                     </td>
                     <td class="r">${r.total_loads > 0 ? `<strong>${fmtNum(r.total_loads, 0)}</strong> <span class="mu">(${fmtNum(r.total_m3, 0)} m³)</span>` : '—'}</td>
                     <td class="r">${r.fuel_litres > 0 ? `${fmtNum(r.fuel_litres, 0)} L` : (r.grease_kg > 0 ? `${fmtNum(r.grease_kg, 2)} kg` : '—')}</td>
-                    <td class="r"><strong>${fmtUSD(r.accrued, 2)}</strong></td>
-                    <td class="r">${fmtUSD(r.paid_fifo, 2)}</td>
-                    <td class="r ${r.outstanding > 0 ? 'pbi-warn' : ''}"><strong>${fmtUSD(r.outstanding, 2)}</strong></td>
+                    ${canShowAttDollars ? `<td class="r"><strong>${fmtUSD(r.accrued, 2)}</strong></td><td class="r">${fmtUSD(r.paid_fifo, 2)}</td><td class="r ${r.outstanding > 0 ? 'pbi-warn' : ''}"><strong>${fmtUSD(r.outstanding, 2)}</strong></td>` : ''}
                   </tr>`;
-                }).join('') || emptyRow(14, 'No site transport staff records match filter')}
-                ${showMoreRow('pay_site_staff', filteredAllowStaff.length, 14)}
+                }).join('') || emptyRow(canShowAttDollars ? 14 : 10, 'No site transport staff records match filter')}
+                ${showMoreRow('pay_site_staff', filteredAllowStaff.length, canShowAttDollars ? 14 : 10)}
               </tbody>
               <tfoot>
                 <tr>
                   <td colspan="4"><b>TOTAL (${fmtNum(filteredAllowStaff.length)} STAFF ON SITE TRANSPORT)</b></td>
-                  <td class="r"><b>${saPaidDaysTot > 0 ? fmtUSD(saEarnedTot / saPaidDaysTot, 2) + '/d' : '—'}</b></td>
+                  ${canShowAttDollars ? `<td class="r"><b>${saPaidDaysTot > 0 ? fmtUSD(saEarnedTot / saPaidDaysTot, 2) + '/d' : '—'}</b></td>` : ''}
                   <td class="r"><b>${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.days_counted, 0), 0)}d</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.absent_days, 0), 1).replace(/\.0$/, '')}d</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.days_paid, 0), 1).replace(/\.0$/, '')}d</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.activity_days, 0), 0)}d (${saVerifPct.toFixed(0)}%)</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.total_loads, 0), 0)} (${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.total_m3, 0), 0)} m³)</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.fuel_litres, 0), 0)} L</b></td>
-                  <td class="r" data-foot-earned="1"><b>${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.accrued, 0), 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.paid_fifo, 0), 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.outstanding, 0), 2)}</b></td>
+                  ${canShowAttDollars ? `<td class="r" data-foot-earned="1"><b>${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.accrued, 0), 2)}</b></td><td class="r"><b>${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.paid_fifo, 0), 2)}</b></td><td class="r"><b>${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.outstanding, 0), 2)}</b></td>` : ''}
                 </tr>
               </tfoot>
             </table>
@@ -43716,7 +43883,7 @@
           <div class="panel-head">
             <div>
               <div class="panel-title"><span>SITE TRANSPORT SCHEDULES &amp; POSTINGS (${fmtNum(filteredAllowLog.length)} SCHEDULES)</span></div>
-              <span class="ph-sub">Range &amp; open schedules start at $0 until tallied On Site above · Single-day site entries count immediately</span>
+              <span class="ph-sub">${canShowAttDollars ? 'Range &amp; open schedules start at $0 until tallied On Site above · Single-day site entries count immediately' : 'Range &amp; open schedules await On Site tally above · Single-day site entries count immediately'}</span>
             </div>
             <span class="panel-meta">${exportBtn('payLogPanel', 'Site_Transport_Schedules')} ${canEnterForm('logistics') ? '<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" data-open-modal="logistics">+ New Site Transport</button>' : ''}</span>
           </div>
@@ -43726,7 +43893,7 @@
                 <tr>
                   ${th('pay_log', 'Staff', 'staff')}${th('pay_log', 'Co.', 'company')}${th('pay_log', 'Site', 'site')}${th('pay_log', 'Equipment', 'equipment')}
                   ${th('pay_log', 'Start', 'start_date')}${th('pay_log', 'End', 'end_date')}${th('pay_log', 'Schedule', 'working_days')}
-                  ${th('pay_log', 'Paid Days', 'days_paid_win', 'r')}${th('pay_log', 'Verified', 'verified_days_win', 'r')}${th('pay_log', 'Daily Rate ($)', 'daily_usd', 'r')}${th('pay_log', 'Window Earned ($)', 'earned_win_usd', 'r')}
+                  ${th('pay_log', 'Paid Days', 'days_paid_win', 'r')}${th('pay_log', 'Verified', 'verified_days_win', 'r')}${canShowAttDollars ? `${th('pay_log', 'Daily Rate ($)', 'daily_usd', 'r')}${th('pay_log', 'Window Earned ($)', 'earned_win_usd', 'r')}` : ''}
                 </tr>
               </thead>
               <tbody>
@@ -43744,19 +43911,17 @@
                     <td>${esc(l.working_days || 'Mon–Sat')}</td>
                     <td class="r">${fmtNum(l.days_paid_win || 0, 1).replace(/\.0$/, '')}d</td>
                     <td class="r">${fmtNum(l.verified_days_win || 0, 0)}d</td>
-                    <td class="r">${fmtUSD(effDaily, 2)}${Number(l.lbp_amount || 0) > 0 ? ` <span class="mu" style="font-size:10px">(${fmtNum(l.lbp_amount / 1000, 0)}k LL)</span>` : ''}</td>
-                    <td class="r"><strong>${fmtUSD(l.earned_win_usd || 0, 2)}</strong></td>
+                    ${canShowAttDollars ? `<td class="r">${fmtUSD(effDaily, 2)}${Number(l.lbp_amount || 0) > 0 ? ` <span class="mu" style="font-size:10px">(${fmtNum(l.lbp_amount / 1000, 0)}k LL)</span>` : ''}</td><td class="r"><strong>${fmtUSD(l.earned_win_usd || 0, 2)}</strong></td>` : ''}
                   </tr>`;
-                }).join('') || emptyRow(11, 'No site transport schedules match filter')}
-                ${showMoreRow('pay_log', filteredAllowLog.length, 11)}
+                }).join('') || emptyRow(canShowAttDollars ? 11 : 9, 'No site transport schedules match filter')}
+                ${showMoreRow('pay_log', filteredAllowLog.length, canShowAttDollars ? 11 : 9)}
               </tbody>
               <tfoot>
                 <tr>
                   <td colspan="7"><b>TOTAL (${fmtNum(filteredAllowLog.length)} SCHEDULES)</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowLog.reduce((a, l) => a + Number(l.days_paid_win || 0), 0), 1).replace(/\.0$/, '')}d</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowLog.reduce((a, l) => a + Number(l.verified_days_win || 0), 0), 0)}d</b></td>
-                  <td class="r"><b>Avg ${fmtUSD(filteredAllowLog.length ? filteredAllowLog.reduce((a, l) => a + Number(l.daily_rate_eff || l.daily_usd || 0), 0) / filteredAllowLog.length : 0, 2)}/d</b></td>
-                  <td class="r"><b>${fmtUSD(filteredAllowLog.reduce((a, l) => a + Number(l.earned_win_usd || 0), 0), 2)}</b></td>
+                  ${canShowAttDollars ? `<td class="r"><b>Avg ${fmtUSD(filteredAllowLog.length ? filteredAllowLog.reduce((a, l) => a + Number(l.daily_rate_eff || l.daily_usd || 0), 0) / filteredAllowLog.length : 0, 2)}/d</b></td><td class="r"><b>${fmtUSD(filteredAllowLog.reduce((a, l) => a + Number(l.earned_win_usd || 0), 0), 2)}</b></td>` : ''}
                 </tr>
               </tfoot>
             </table>
@@ -43800,13 +43965,15 @@
             empAll: filteredEmp,
             otRates,
             freelanceRows: flRowsAll,
-            fxRate
+            fxRate,
+            canViewPayrollDollarAmounts
           })
         : '';
       return `
         ${bannerHtml}
         ${renderBackpayNoticePanel(empAll)}
-        ${(pendingSalaryRows.length > 0 || STATE.chipFilter === 'pending_salary') ? renderPendingSalaryQueuePanel(pendingSalaryRows) : ''}
+        ${(canShowAttDollars && (pendingSalaryRows.length > 0 || STATE.chipFilter === 'pending_salary')) ? renderPendingSalaryQueuePanel(pendingSalaryRows) : ''}
+        ${renderStaffPermitWatchdogStripHtml({ scope: 'payroll_contracts', contractRows: filteredEmpBase })}
         <div class="panel-card" id="payEmpPanel">
           <div class="table-toolbar">
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -43814,10 +43981,10 @@
               <div class="chip-bar">
                 ${chip('all', `All (${empAll.length})`)}
                 ${chip('active_emp', `Current (${activeEmpCount})`)}
-                ${chip('pending_salary', `Pending Salary (${pendingSalaryRows.length})`)}
+                ${canShowAttDollars ? chip('pending_salary', `Pending Salary (${pendingSalaryRows.length})`) : ''}
                 ${chip('ended_emp', `Ended (${empAll.length - activeEmpCount})`)}
                 ${chip('freelance_emp', `Freelance (${empAll.filter(e => /free|daily/i.test(String(e.type || ''))).length})`)}
-                ${reimbEmpCount ? chip('reimb_emp', `With Reimb & Ded (${reimbEmpCount})`) : ''}
+                ${(canShowAttDollars && reimbEmpCount) ? chip('reimb_emp', `With Reimb & Ded (${reimbEmpCount})`) : ''}
                 ${chip('app', 'App-entered')}
               </div>
             </div>
@@ -43827,7 +43994,7 @@
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_allowances">${ic('payroll_allowances')} Site Transport (${fmtNum(logAll.length)})</button>
               ${canOpenFatherBackfill() ? (() => { const fbS = getFatherBackfillSummary(); return `<button type="button" class="btn btn-ghost-bar" data-open-father-backfill="1">${ic('reg_staff')} <span>Father's Name Backfill</span>${fbS.totalMissing > 0 ? ` <span class="badge warn" data-no-i18n="1">${fmtNum(fbS.totalMissing)}</span>` : ''}</button>`; })() : ''}
               ${exportBtn('payEmpPanel', 'Employment_Contracts')}
-              ${canEnterForm('employment') ? '<button type="button" class="btn btn-ghost-bar" data-open-pending-salary="1">+ Pending-Salary Hire</button>' : ''}
+              ${(canShowAttDollars && canEnterForm('employment')) ? '<button type="button" class="btn btn-ghost-bar" data-open-pending-salary="1">+ Pending-Salary Hire</button>' : ''}
               ${canEnterForm('freelance') ? '<button type="button" class="btn btn-brass" data-open-modal="freelance">+ Freelance Entry</button>' : ''}
               ${canEnterForm('employment') ? '<button type="button" class="btn btn-primary" data-open-modal="employment">+ New Contract</button>' : ''}
             </div>
@@ -43835,7 +44002,7 @@
           ${renderColFilterBar('pay_emp')}
           <div class="table-wrap">
             <table class="ledger-table">
-              <thead><tr>${th('pay_emp', 'Staff', 'staff')}${th('pay_emp', 'Co.', 'company')}${th('pay_emp', 'Role', 'role')}${th('pay_emp', 'Type', 'type')}${th('pay_emp', 'Start', 'start_date')}${th('pay_emp', 'End', 'end_date')}${th('pay_emp', 'Status', 'status')}${th('pay_emp', 'Work Days', 'working_days', 'r')}${th('pay_emp', 'Hrs/Day', 'working_hours', 'r')}${th('pay_emp', 'Vac/Yr', 'vacation_days', 'r')}${th('pay_emp', 'OT ×', 'overtime_multiplier', 'r')}${th('pay_emp', 'Base ($)', 'salary_usd', 'r')}${th('pay_emp', 'Reimb. ($)', 'reimbursement', 'r')}${th('pay_emp', 'Total / Mo ($)', 'package_usd', 'r')}${th('pay_emp', 'Ded./Day', 'deduction', 'r')}</tr></thead>
+              <thead><tr>${th('pay_emp', 'Staff', 'staff')}${th('pay_emp', 'Co.', 'company')}${th('pay_emp', 'Role', 'role')}${th('pay_emp', 'Type', 'type')}${th('pay_emp', 'Start', 'start_date')}${th('pay_emp', 'End', 'end_date')}${th('pay_emp', 'Status', 'status')}${th('pay_emp', 'Compliance', 'permit_status')}${th('pay_emp', 'Work Days', 'working_days', 'r')}${th('pay_emp', 'Hrs/Day', 'working_hours', 'r')}${th('pay_emp', 'Vac/Yr', 'vacation_days', 'r')}${th('pay_emp', 'OT ×', 'overtime_multiplier', 'r')}${canShowAttDollars ? `${th('pay_emp', 'Base ($)', 'salary_usd', 'r')}${th('pay_emp', 'Reimb. ($)', 'reimbursement', 'r')}${th('pay_emp', 'Total / Mo ($)', 'package_usd', 'r')}${th('pay_emp', 'Ded./Day', 'deduction', 'r')}` : ''}</tr></thead>
               <tbody>
                 ${shownEmp.map(e => {
                   const ended = e.status === 'Ended' || (e.end_date && String(e.end_date) < today);
@@ -43854,25 +44021,33 @@
                     <td class="mono">${esc(fmtDateDMY(e.start_date))}</td>
                     <td class="mono">${esc(e.end_date ? fmtDateDMY(e.end_date) : 'Open')}</td>
                     <td><span class="badge ${ended ? 'badge-warn' : 'badge-ok'}">${ended ? 'Ended' : (e.status || 'Current')}</span></td>
+                    ${(() => {
+                      const smRec = (SEED.records && SEED.records.staff_members || []).find(s => s && !s.voided && !s.archived && ((e.staff_id && String(s.id) === String(e.staff_id)) || norm(s.name || '') === norm(e.staff || '')));
+                      const ev = smRec ? evaluateStaffComplianceRow(smRec, SEED) : null;
+                      const cls = ev ? (ev.tier === 'expired' || ev.tier === 'critical_7' ? 'badge-bad' : (ev.tier === 'due_30' || ev.tier === 'watch_60' || ev.tier === 'missing_permit' ? 'badge-warn' : (ev.tier === 'ok' ? 'badge-ok' : 'badge-muted'))) : 'badge-muted';
+                      const lbl = (ev && ev.badgeText) ? ev.badgeText : 'No Expiry Set';
+                      const packBtn = canAccessRdlReport('28') ? `<button type="button" class="btn-xs emp-hr-pack-btn" data-open-hr-pack data-hr-pack-staff="${esc((smRec && smRec.id) || e.staff_id || '')}" data-hr-pack-emp="${esc(e.id || '')}" data-hr-pack-name="${esc(e.staff || '')}" data-hr-pack-company="${esc(e.company || '')}" data-ui-tip="Contract &amp; NSSF Pack">${ic('printer')}</button>` : '';
+                      return `<td><div class="emp-compliance-cell"><span class="badge permit-status-badge permit-tier-${esc((ev && ev.tier) || 'none')} ${cls}">${esc(lbl)}</span>${packBtn}</div></td>`;
+                    })()}
                     <td class="r">${fmtNum(e.working_days || 26, 0)}d</td>
                     <td class="r">${fmtNum(e.working_hours || 9, 0)}h</td>
                     <td class="r">${fmtNum(vacVal, vacVal % 1 ? 1 : 0)}d</td>
                     <td class="r">${fmtNum(e.overtime_multiplier || 1.5, 1)}×</td>
-                    <td class="r">${isPend ? `<span class="badge badge-warn">Pending ($0.00)</span>${canSetPendingSal ? ` <button type="button" class="btn btn-primary" style="padding:2px 8px;font-size:10.5px;margin-left:4px" data-set-pending-salary-id="${esc(e.id)}">$ Enter Salary</button>` : ''}` : fmtUSD(baseVal, 2)}</td>
+                    ${canShowAttDollars ? `<td class="r">${isPend ? `<span class="badge badge-warn">Pending ($0.00)</span>${canSetPendingSal ? ` <button type="button" class="btn btn-primary" style="padding:2px 8px;font-size:10.5px;margin-left:4px" data-set-pending-salary-id="${esc(e.id)}">$ Enter Salary</button>` : ''}` : fmtUSD(baseVal, 2)}</td>
                     <td class="r">${reimbVal ? fmtUSD(reimbVal, 2) : '-'}</td>
                     <td class="r">${isPend ? '<span class="mu">$0.00</span>' : `<strong>${fmtUSD(pkgVal, 2)}</strong>`}</td>
-                    <td class="r">${dedVal ? `${fmtUSD(dedVal, 2)}/d` : '-'}</td>
+                    <td class="r">${dedVal ? `${fmtUSD(dedVal, 2)}/d` : '-'}</td>` : ''}
                   </tr>`;
-                }).join('') || emptyRow(15, 'No contracts match filter')}
-                ${showMoreRow('pay_emp', filteredEmp.length, 15)}
+                }).join('') || emptyRow(canShowAttDollars ? 16 : 12, 'No contracts match filter')}
+                ${showMoreRow('pay_emp', filteredEmp.length, canShowAttDollars ? 16 : 12)}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="11"><b>TOTAL (${fmtNum(filteredEmp.length)} CONTRACTS · ${fmtNum(filteredEmp.filter(e => e.status !== 'Ended' && (!e.end_date || e.end_date >= today)).length)} CURRENT)</b></td>
-                  <td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + empContractMonthlyUsd(e, fxRate), 0), 2)}</b></td>
+                  <td colspan="12"><b>TOTAL (${fmtNum(filteredEmp.length)} CONTRACTS · ${fmtNum(filteredEmp.filter(e => e.status !== 'Ended' && (!e.end_date || e.end_date >= today)).length)} CURRENT)</b></td>
+                  ${canShowAttDollars ? `<td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + empContractMonthlyUsd(e, fxRate), 0), 2)}</b></td>
                   <td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + empContractReimbUsd(e, fxRate), 0), 2)}</b></td>
                   <td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + empContractPackageUsd(e, fxRate), 0), 2)}</b></td>
-                  <td class="r"><b>${(() => { const dRows = filteredEmp.filter(e => empContractDedUsd(e, fxRate) > 0); return dRows.length ? ('Avg ' + fmtUSD(dRows.reduce((a, e) => a + empContractDedUsd(e, fxRate), 0) / dRows.length, 2) + '/d') : '-'; })()}</b></td>
+                  <td class="r"><b>${(() => { const dRows = filteredEmp.filter(e => empContractDedUsd(e, fxRate) > 0); return dRows.length ? ('Avg ' + fmtUSD(dRows.reduce((a, e) => a + empContractDedUsd(e, fxRate), 0) / dRows.length, 2) + '/d') : '-'; })()}</b></td>` : ''}
                 </tr>
               </tfoot>
             </table>
@@ -43936,23 +44111,23 @@
           </div>
           <div class="table-wrap">
             <table class="ledger-table">
-              <thead><tr>${th('otrate', 'Rule Name', 'name')}${th('otrate', 'Co.', 'company')}${th('otrate', 'Region', 'region')}${th('otrate', 'Rate / Trip ($)', 'amount', 'r')}${th('otrate', 'Start Date', 'start_date')}${th('otrate', 'End Date', 'end_date')}</tr></thead>
+              <thead><tr>${th('otrate', 'Rule Name', 'name')}${th('otrate', 'Co.', 'company')}${th('otrate', 'Region', 'region')}${canShowAttDollars ? th('otrate', 'Rate / Trip ($)', 'amount', 'r') : ''}${th('otrate', 'Start Date', 'start_date')}${th('otrate', 'End Date', 'end_date')}</tr></thead>
               <tbody>
                 ${sortRows(otRates, 'otrate', 'start_date', 'desc').slice(0, shownCount('otrate')).map(or => `
                   <tr class="rrow" data-rkey="overtime_rates" data-rid="${esc(or.id || or.name)}">
                     <td class="mono"><strong>${esc(or.name || '—')}</strong>${appCell(or, 'overtime_rates')}</td>
                     <td>${coBadge(or.company)}</td>
                     <td>${or.region ? relLink('regions', or.region) : '—'}</td>
-                    <td class="r"><strong>${fmtUSD(or.amount != null ? or.amount : or.usd_amount, 2)}</strong></td>
+                    ${canShowAttDollars ? `<td class="r"><strong>${fmtUSD(or.amount != null ? or.amount : or.usd_amount, 2)}</strong></td>` : ''}
                     <td class="mono">${or.start_date ? esc(fmtDateDMY(or.start_date)) : '—'}</td>
                     <td class="mono">${or.end_date ? esc(fmtDateDMY(or.end_date)) : 'Open'}</td>
-                  </tr>`).join('') || emptyRow(6, 'No regional overtime rate rules match filter')}
-                ${showMoreRow('otrate', otRates.length, 6)}
+                  </tr>`).join('') || emptyRow(canShowAttDollars ? 6 : 5, 'No regional overtime rate rules match filter')}
+                ${showMoreRow('otrate', otRates.length, canShowAttDollars ? 6 : 5)}
               </tbody>
               <tfoot>
                 <tr>
                   <td colspan="3"><b>TOTAL (${fmtNum(otRates.length)} OVERTIME RULES)</b></td>
-                  <td class="r"><b>Avg ${fmtUSD(otRates.length ? otRates.reduce((a, r) => a + Number(r.amount != null ? r.amount : r.usd_amount || 0), 0) / otRates.length : 0, 2)}</b></td>
+                  ${canShowAttDollars ? `<td class="r"><b>Avg ${fmtUSD(otRates.length ? otRates.reduce((a, r) => a + Number(r.amount != null ? r.amount : r.usd_amount || 0), 0) / otRates.length : 0, 2)}</b></td>` : ''}
                   <td colspan="2"></td>
                 </tr>
               </tfoot>
@@ -43968,7 +44143,7 @@
           ${renderColFilterBar('pay_fl')}
           <div class="table-wrap">
             <table class="ledger-table">
-              <thead><tr>${th('pay_fl', 'Date', 'date')}${th('pay_fl', 'Voucher', 'name')}${th('pay_fl', 'Co.', 'company')}${th('pay_fl', 'Staff / Contractor', 'staff')}${th('pay_fl', 'Site', 'site')}${th('pay_fl', 'Hours / Days', 'hours', 'r')}${th('pay_fl', 'OT Hrs', 'extra_hours', 'r')}${th('pay_fl', 'Rate ($)', 'rate_usd', 'r')}${th('pay_fl', 'Total ($)', 'total', 'r')}${th('pay_fl', 'Notes', 'notes')}</tr></thead>
+              <thead><tr>${th('pay_fl', 'Date', 'date')}${th('pay_fl', 'Voucher', 'name')}${th('pay_fl', 'Co.', 'company')}${th('pay_fl', 'Staff / Contractor', 'staff')}${th('pay_fl', 'Site', 'site')}${th('pay_fl', 'Hours / Days', 'hours', 'r')}${th('pay_fl', 'OT Hrs', 'extra_hours', 'r')}${canShowAttDollars ? `${th('pay_fl', 'Rate ($)', 'rate_usd', 'r')}${th('pay_fl', 'Total ($)', 'total', 'r')}` : ''}${th('pay_fl', 'Notes', 'notes')}</tr></thead>
               <tbody>
                 ${flShown.map(f => {
                   const rowTot = Number(f.total != null ? f.total : (Number(f.hours || 0) * Number(f.rate_usd || 0)));
@@ -43981,20 +44156,18 @@
                     <td>${f.site ? relLink('sites', f.site) : '—'}</td>
                     <td class="r">${fmtNum(f.hours || 0, 1).replace(/\.0$/, '')}</td>
                     <td class="r">${Number(f.extra_hours || 0) > 0 ? fmtNum(f.extra_hours, 1).replace(/\.0$/, '') : '—'}</td>
-                    <td class="r">${fmtUSD(f.rate_usd || 0, 2)}</td>
-                    <td class="r"><strong>${fmtUSD(rowTot, 2)}</strong></td>
+                    ${canShowAttDollars ? `<td class="r">${fmtUSD(f.rate_usd || 0, 2)}</td><td class="r"><strong>${fmtUSD(rowTot, 2)}</strong></td>` : ''}
                     <td class="mu">${esc(f.notes || '—')}</td>
                   </tr>`;
-                }).join('') || emptyRow(10, 'No freelance or daily work entries in selected scope — click "+ Freelance / Daily" to log casual or contractor work')}
-                ${showMoreRow('pay_fl', flRowsAll.length, 10)}
+                }).join('') || emptyRow(canShowAttDollars ? 10 : 8, 'No freelance or daily work entries in selected scope — click "+ Freelance / Daily" to log casual or contractor work')}
+                ${showMoreRow('pay_fl', flRowsAll.length, canShowAttDollars ? 10 : 8)}
               </tbody>
               <tfoot>
                 <tr>
                   <td colspan="5"><b>TOTAL (${fmtNum(flRowsAll.length)} FREELANCE ENTRIES)</b></td>
                   <td class="r"><b>${fmtNum(totFlHrs, 1).replace(/\.0$/, '')}</b></td>
                   <td class="r"><b>${fmtNum(totFlOt, 1).replace(/\.0$/, '')}</b></td>
-                  <td></td>
-                  <td class="r"><b>${fmtUSD(totFlUsd, 2)}</b></td>
+                  ${canShowAttDollars ? `<td></td><td class="r"><b>${fmtUSD(totFlUsd, 2)}</b></td>` : ''}
                   <td></td>
                 </tr>
               </tfoot>
@@ -44016,21 +44189,21 @@
               ${chip('all', `All (${salAll.length})`)}
               ${chip('cash_sal', 'Cash')}
               ${chip('bank_sal', 'Bank / Transfer')}
-              ${advanceSalCount ? chip('advance_sal', `Advances (${advanceSalCount})`) : ''}
-              ${chip('unmatched_sal', `No Contract (${unmatchedRowsDetailed.length})`)}
+              ${(canShowAttDollars && advanceSalCount) ? chip('advance_sal', `Advances (${advanceSalCount})`) : ''}
+              ${canShowAttDollars ? chip('unmatched_sal', `No Contract (${unmatchedRowsDetailed.length})`) : ''}
               ${chip('app', 'App-entered')}
             </div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_staff">${ic('reg_staff')} Staff Registry (All BUs)</button>
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="10">${ic('printer')} Payroll RDL (#10)</button>
+            ${canAccessRdlReport('10') ? `<button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="10">${ic('printer')} Payroll RDL (#10)</button>` : ''}
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_attendance">${ic('payroll_attendance')} Attendance (${fmtNum(attAll.length)})</button>
             ${exportBtn('paySalPanel', 'Salary_Disbursements')}
             ${canEnterForm('salary') ? '<button type="button" class="btn btn-primary" data-open-modal="salary">+ Pay Salary</button>' : ''}
           </div>
         </div>
-        ${isGroupScope ? `
+        ${!canShowAttDollars ? '' : (isGroupScope ? `
         <div class="sales-entity-recon">
           <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" data-ui-tip="Click to filter to WTC only">
             <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcSal.n)} Disbursements</b><span class="sales-recon-act">Filter WTC Only →</span></div>
@@ -44064,11 +44237,11 @@
             </div>
           </div>
         </div>
-        `}
+        `)}
         ${renderColFilterBar('pay_sal')}
         <div class="table-wrap">
           <table class="ledger-table">
-            <thead><tr>${th('pay_sal', 'Date', 'date')}${th('pay_sal', 'Payroll Month', 'payroll_month')}${th('pay_sal', 'Co.', 'company')}${th('pay_sal', 'Staff Member', 'staff')}${th('pay_sal', 'Method', 'method')}${th('pay_sal', 'Month Earned', 'month_earnings')}${th('pay_sal', 'Month Status', 'sal_status_lbl')}${th('pay_sal', 'Amount ($)', 'amount', 'r')}</tr></thead>
+            <thead><tr>${th('pay_sal', 'Date', 'date')}${th('pay_sal', 'Payroll Month', 'payroll_month')}${th('pay_sal', 'Co.', 'company')}${th('pay_sal', 'Staff Member', 'staff')}${th('pay_sal', 'Method', 'method')}${canShowAttDollars ? th('pay_sal', 'Month Earned', 'month_earnings') : ''}${th('pay_sal', 'Month Status', 'sal_status_lbl')}${canShowAttDollars ? th('pay_sal', 'Amount ($)', 'amount', 'r') : ''}</tr></thead>
             <tbody>
               ${shownSal.map(s => {
                 const rowSalUsd = round2(salaryVoucherUsd895(s, fxRate));
@@ -44078,6 +44251,9 @@
                   : (s.month_is_future
                       ? `<strong>${fmtUSD(cumPaidVal, 2)}</strong> <span class="mu">/ ${fmtUSD(s.month_earnings, 2)} base</span>`
                       : `<strong>${fmtUSD(cumPaidVal, 2)}</strong> <span class="mu">/ ${fmtUSD(s.month_earnings, 2)}</span>`);
+                const rawSalLbl = String(s.sal_status_lbl || '-');
+                const safeSalLbl = canShowAttDollars ? rawSalLbl : (s.is_advance_sal ? 'Advance' : (/partial/i.test(rawSalLbl) ? 'Partial' : rawSalLbl.replace(/\$[0-9,.]+/g, '').replace(/[+\-·\s]+$/g, '').trim() || '-'));
+                const safeSalTip = canShowAttDollars && s.sal_status_tip ? ` data-ui-tip="${esc(s.sal_status_tip)}"` : '';
                 return `
                 <tr class="rrow" data-rkey="salaries" data-rid="${esc(s.id)}">
                   <td class="mono">${esc(recordDateDMY(s))}${appCell(s, 'salaries')}</td>
@@ -44085,17 +44261,17 @@
                   <td>${coBadge(s.company)}</td>
                   <td>${relLink('employments', s.staff, s.staff, true)}</td>
                   <td>${esc(s.method || 'Cash')}</td>
-                  <td class="mono sal-paid-earned-cell"${s.sal_status_tip ? ` data-ui-tip="${esc(s.sal_status_tip)}"` : ''}>${monthEarnHtml}</td>
-                  <td><div class="sal-status-cell-wrap"><span class="badge ${esc(s.sal_status_cls || 'badge-info')}"${s.sal_status_tip ? ` data-ui-tip="${esc(s.sal_status_tip)}"` : ''}>${esc(s.sal_status_lbl || '-')}</span>${(!s.voided && canViewPayrollDollarAmounts()) ? `<button type="button" class="hld-share-btn sal-receipt-inline-btn" data-sal-receipt-id="${esc(s.id)}" title="${esc(s.is_advance_sal ? 'Advance Receipt' : 'Payment Receipt')}" aria-label="${esc(s.is_advance_sal ? 'Advance Receipt' : 'Payment Receipt')}">${ic('receipt')}</button>` : ''}</div></td>
-                  <td class="r"><strong>${fmtUSD(rowSalUsd, 2)}</strong></td>
+                  ${canShowAttDollars ? `<td class="mono sal-paid-earned-cell"${safeSalTip}>${monthEarnHtml}</td>` : ''}
+                  <td><div class="sal-status-cell-wrap"><span class="badge ${esc(s.sal_status_cls || 'badge-info')}"${safeSalTip}>${esc(safeSalLbl)}</span>${(!s.voided && canShowAttDollars) ? `<button type="button" class="hld-share-btn sal-receipt-inline-btn" data-sal-receipt-id="${esc(s.id)}" title="${esc(s.is_advance_sal ? 'Advance Receipt' : 'Payment Receipt')}" aria-label="${esc(s.is_advance_sal ? 'Advance Receipt' : 'Payment Receipt')}">${ic('receipt')}</button>` : ''}</div></td>
+                  ${canShowAttDollars ? `<td class="r"><strong>${fmtUSD(rowSalUsd, 2)}</strong></td>` : ''}
                 </tr>`;
-              }).join('') || emptyRow(8, 'No salary payments match filter')}
-              ${showMoreRow('pay_sal', filteredSal.length, 8)}
+              }).join('') || emptyRow(canShowAttDollars ? 8 : 6, 'No salary payments match filter')}
+              ${showMoreRow('pay_sal', filteredSal.length, canShowAttDollars ? 8 : 6)}
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="7"><b>TOTAL (${fmtNum(filteredSal.length)} SALARY DISBURSEMENTS)</b></td>
-                <td class="r"><b>${fmtUSD(sumSalFiltered, 2)}</b></td>
+                <td colspan="${canShowAttDollars ? 7 : 6}"><b>TOTAL (${fmtNum(filteredSal.length)} SALARY DISBURSEMENTS)</b></td>
+                ${canShowAttDollars ? `<td class="r"><b>${fmtUSD(sumSalFiltered, 2)}</b></td>` : ''}
               </tr>
             </tfoot>
           </table>
@@ -44103,14 +44279,14 @@
       </div>
 
       ${(window.MFG_PBI && typeof window.MFG_PBI.renderPayrollVisualsSection === 'function')
-        ? window.MFG_PBI.renderPayrollVisualsSection({ payMonths, staffRows: filteredStaff })
+        ? window.MFG_PBI.renderPayrollVisualsSection({ payMonths, staffRows: filteredStaff, canViewPayrollDollarAmounts })
         : ''}
 
       <div class="panel-card" id="payStaffRegPanel">
         <div class="panel-head">
           <div>
-            <div class="panel-title"><span>PAYROLL BY STAFF · BASE, REIMB., SHIFT OT, DRIVER OT, SITE TRANSP., DED., EARNINGS, PAID &amp; REM.</span></div>
-            <span class="ph-sub">Contract reimb., site transport &amp; driver OT included in Earnings · LBP ÷ ${fmtNum(fxRate, 0)} LL/$ · Remaining = Earnings minus Paid · Post-cutoff in Advances</span>
+            <div class="panel-title"><span>${canShowAttDollars ? 'PAYROLL BY STAFF · BASE, REIMB., SHIFT OT, DRIVER OT, SITE TRANSP., DED., EARNINGS, PAID &amp; REM.' : 'STAFF REGISTER · OVERTIME HOURS, LATENESS HOURS &amp; ABSENCES'}</span></div>
+            <span class="ph-sub">${canShowAttDollars ? `Contract reimb., site transport &amp; driver OT included in Earnings · LBP ÷ ${fmtNum(fxRate, 0)} LL/$ · Remaining = Earnings minus Paid · Post-cutoff in Advances` : 'Hours, leave &amp; attendance summary · Compensation amounts masked'}</span>
           </div>
         </div>
         ${renderPayrollCutoffBarHtml('payrollCutoffBar', filteredStaff, { actionsHtml: exportBtn('payStaffRegPanel', 'Payroll_By_Staff') })}
@@ -44120,57 +44296,40 @@
             <thead>
               <tr>
                 ${th('pay_staff', 'Staff Member', 'staff')}${th('pay_staff', 'Co.', 'company')}${th('pay_staff', 'Status', 'status')}
-                ${th('pay_staff', 'Base ($)', 'base', 'r')}${th('pay_staff', 'Reimb. ($)', 'reimb', 'r')}${th('pay_staff', 'OT Hrs', 'ot_hrs', 'r')}${th('pay_staff', 'Shift OT ($)', 'att_ot_pay', 'r')}${th('pay_staff', 'Driver OT ($)', 'trip_ot_pay', 'r')}${th('pay_staff', 'Site Transp.', 'site_allow', 'r')}
-                ${th('pay_staff', 'Late Hrs', 'late_hrs', 'r')}${th('pay_staff', 'Lateness ($)', 'late_ded', 'r')}${th('pay_staff', 'Absent Days', 'absent_days', 'r')}${th('pay_staff', 'Absence ($)', 'abs_ded', 'r')}${th('pay_staff', 'Ded. ($)', 'ded', 'r')}
-                ${th('pay_staff', 'Earnings ($)', 'earnings', 'r')}${th('pay_staff', 'Paid ($)', 'paid', 'r')}${th('pay_staff', 'Rem. ($)', 'balance', 'r')}${th('pay_staff', 'Advances ($)', 'advances', 'r')}
+                ${canShowAttDollars ? `${th('pay_staff', 'Base ($)', 'base', 'r')}${th('pay_staff', 'Reimb. ($)', 'reimb', 'r')}` : ''}${th('pay_staff', 'OT Hrs', 'ot_hrs', 'r')}${canShowAttDollars ? `${th('pay_staff', 'Shift OT ($)', 'att_ot_pay', 'r')}${th('pay_staff', 'Driver OT ($)', 'trip_ot_pay', 'r')}${th('pay_staff', 'Site Transp.', 'site_allow', 'r')}` : ''}
+                ${th('pay_staff', 'Late Hrs', 'late_hrs', 'r')}${canShowAttDollars ? th('pay_staff', 'Lateness ($)', 'late_ded', 'r') : ''}${th('pay_staff', 'Absent Days', 'absent_days', 'r')}${canShowAttDollars ? `${th('pay_staff', 'Absence ($)', 'abs_ded', 'r')}${th('pay_staff', 'Ded. ($)', 'ded', 'r')}${th('pay_staff', 'Earnings ($)', 'earnings', 'r')}${th('pay_staff', 'Paid ($)', 'paid', 'r')}${th('pay_staff', 'Rem. ($)', 'balance', 'r')}${th('pay_staff', 'Advances ($)', 'advances', 'r')}` : ''}
               </tr>
             </thead>
             <tbody>
               ${shownStaff.map(r => {
-                const lbpNote = (r.earnings_lbp || r.paid_lbp) ? `USD Rem: ${fmtUSD(r.rem_usd, 2)} · LBP Earn: ${fmtNum(r.earnings_lbp, 0)} LL · LBP Paid: ${fmtNum(r.paid_lbp, 0)} LL · LBP Rem: ${fmtNum(r.rem_lbp, 0)} LL ÷ ${fmtNum(fxRate, 0)} = ${fmtSignedUSD(round2(r.rem_lbp / fxRate), 2)}` : '';
-                const canSetRegPend = (canModifyData() || canEnterForm('employment') || canEnterForm('freelance')) && Boolean(r.pending_emp_id);
+                const lbpNote = (canShowAttDollars && (r.earnings_lbp || r.paid_lbp)) ? `USD Rem: ${fmtUSD(r.rem_usd, 2)} · LBP Earn: ${fmtNum(r.earnings_lbp, 0)} LL · LBP Paid: ${fmtNum(r.paid_lbp, 0)} LL · LBP Rem: ${fmtNum(r.rem_lbp, 0)} LL ÷ ${fmtNum(fxRate, 0)} = ${fmtSignedUSD(round2(r.rem_lbp / fxRate), 2)}` : '';
+                const canSetRegPend = canShowAttDollars && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance')) && Boolean(r.pending_emp_id);
                 return `
                 <tr class="rrow ${!r.is_active ? 'pbi-row-amber' : ''}" data-rkey="employments" data-rid="${esc(r.salary_pending && r.pending_emp_id ? r.pending_emp_id : r.staff)}">
-                  <td>${relLink('employments', r.staff, r.staff, true)}${!r.hasContract ? ' <span class="badge badge-warn" data-ui-tip="Salary payment without an employment contract">No contract</span>' : (r.salary_pending ? ` <span class="badge badge-warn" data-ui-tip="Active contract awaiting final salary assignment ($0.00)">Pending Salary</span>${canSetRegPend ? ` <button type="button" class="btn btn-primary" style="padding:1px 7px;font-size:10.5px;margin-left:4px" data-set-pending-salary-id="${esc(r.pending_emp_id)}">$ Enter Salary</button>` : ''}` : '')}</td>
+                  <td>${relLink('employments', r.staff, r.staff, true)}${!r.hasContract ? ' <span class="badge badge-warn" data-ui-tip="Salary payment without an employment contract">No contract</span>' : (r.salary_pending ? ` <span class="badge badge-warn" data-ui-tip="${canShowAttDollars ? 'Active contract awaiting final salary assignment ($0.00)' : 'Active contract awaiting final salary assignment'}">Pending Salary</span>${canSetRegPend ? ` <button type="button" class="btn btn-primary" style="padding:1px 7px;font-size:10.5px;margin-left:4px" data-set-pending-salary-id="${esc(r.pending_emp_id)}">$ Enter Salary</button>` : ''}` : '')}</td>
                   <td>${coBadge(r.company)}</td>
                   <td><span class="badge ${r.is_active ? 'badge-ok' : 'badge-warn'}">${esc(r.status)}</span></td>
-                  <td class="r"${r.active_months ? ` data-ui-tip="${esc(`${r.active_months} active contract months${r.reimb ? ` · Package Base + Reimb: ${fmtUSD(round2(r.base + r.reimb), 2)}` : ''}${r.vac_rem ? ` · Rem Vacation: ${fmtNum(r.vac_rem, 1)}d` : ''}`)}"` : ''}>${r.salary_pending && r.base === 0 ? '<span class="badge badge-warn">Pending ($0.00)</span>' : fmtUSD(r.base, 2)}</td>
-                  <td class="r">${r.reimb ? fmtUSD(r.reimb, 2) : '-'}</td>
+                  ${canShowAttDollars ? `<td class="r"${r.active_months ? ` data-ui-tip="${esc(`${r.active_months} active contract months${r.reimb ? ` · Package Base + Reimb: ${fmtUSD(round2(r.base + r.reimb), 2)}` : ''}${r.vac_rem ? ` · Rem Vacation: ${fmtNum(r.vac_rem, 1)}d` : ''}`)}"` : ''}>${r.salary_pending && r.base === 0 ? '<span class="badge badge-warn">Pending ($0.00)</span>' : fmtUSD(r.base, 2)}</td><td class="r">${r.reimb ? fmtUSD(r.reimb, 2) : '-'}</td>` : ''}
                   <td class="r">${r.ot_hrs ? fmtNum(r.ot_hrs, 1) : '-'}</td>
-                  <td class="r">${r.att_ot_pay ? fmtUSD(r.att_ot_pay, 2) : '-'}</td>
-                  <td class="r"${r.trip_ot_cnt ? ` data-ui-tip="${esc(`${fmtNum(r.trip_ot_cnt, 0)} night OT trips (${fmtNum(r.sales_ot_trips || 0, 0)} Sales · ${fmtNum(r.raw_ot_trips || 0, 0)} Quarry)`)}"` : ''}>${r.trip_ot_pay ? fmtUSD(r.trip_ot_pay, 2) : '-'}</td>
-                  <td class="r">${r.site_allow ? fmtUSD(r.site_allow, 2) : '-'}</td>
+                  ${canShowAttDollars ? `<td class="r">${r.att_ot_pay ? fmtUSD(r.att_ot_pay, 2) : '-'}</td><td class="r"${r.trip_ot_cnt ? ` data-ui-tip="${esc(`${fmtNum(r.trip_ot_cnt, 0)} night OT trips (${fmtNum(r.sales_ot_trips || 0, 0)} Sales · ${fmtNum(r.raw_ot_trips || 0, 0)} Quarry)`)}"` : ''}>${r.trip_ot_pay ? fmtUSD(r.trip_ot_pay, 2) : '-'}</td><td class="r">${r.site_allow ? fmtUSD(r.site_allow, 2) : '-'}</td>` : ''}
                   <td class="r">${r.late_hrs ? fmtNum(r.late_hrs, 1) : '-'}</td>
-                  <td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '-'}</td>
-                  <td class="r"${r.gap_days > 0 ? ` data-ui-tip="${esc(`${fmtNum(r.rec_absent_days, 1)}d recorded absence (${fmtNum(r.gap_days, 0)}d contract start/end gap deducted in Absence $)`)}"` : ''}>${r.absent_days ? fmtNum(r.absent_days, 1).replace(/\.0$/, '') : '-'}</td>
-                  <td class="r">${r.abs_ded ? fmtUSD(r.abs_ded, 2) : '-'}</td>
-                  <td class="r">${r.ded ? fmtUSD(r.ded, 2) : '-'}</td>
-                  <td class="r"${(r.reimb || r.extras || r.ded) ? ` data-ui-tip="${esc(`Base: ${fmtUSD(r.base, 2)} · Reimb: +${fmtUSD(r.reimb, 2)} · Extras: ${fmtSignedUSD(r.extras, 2)} · Reimb Ded: -${fmtUSD(r.ded, 2)}`)}"` : ''}><strong>${fmtUSD(r.earnings, 2)}</strong></td>
-                  <td class="r"${r.config_paid ? ` data-ui-tip="${esc(`Vouchers: ${fmtUSD(r.vouchers_paid, 2)} · Opening Config: ${fmtUSD(r.config_paid, 2)}`)}"` : ''}><strong>${fmtUSD(r.paid, 2)}</strong></td>
-                  <td class="r ${r.balance < 0 ? 'pbi-neg' : ''}"${lbpNote ? ` data-ui-tip="${esc(lbpNote)}"` : ''}><strong>${fmtUSD(r.balance, 2)}</strong></td>
-                  <td class="r"${r.advance_cnt ? ` data-ui-tip="${esc(`${fmtNum(r.advance_cnt, 0)} post-cutoff advance voucher(s)`)}"` : ''}>${r.advances ? `<span class="badge badge-brass">${fmtUSD(r.advances, 2)}</span>` : '-'}</td>
+                  ${canShowAttDollars ? `<td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '-'}</td>` : ''}
+                  <td class="r"${r.gap_days > 0 ? ` data-ui-tip="${esc(canShowAttDollars ? `${fmtNum(r.rec_absent_days, 1)}d recorded absence (${fmtNum(r.gap_days, 0)}d contract start/end gap deducted in Absence $)` : `${fmtNum(r.rec_absent_days, 1)}d recorded absence`)}"` : ''}>${r.absent_days ? fmtNum(r.absent_days, 1).replace(/\.0$/, '') : '-'}</td>
+                  ${canShowAttDollars ? `<td class="r">${r.abs_ded ? fmtUSD(r.abs_ded, 2) : '-'}</td><td class="r">${r.ded ? fmtUSD(r.ded, 2) : '-'}</td><td class="r"${(r.reimb || r.extras || r.ded) ? ` data-ui-tip="${esc(`Base: ${fmtUSD(r.base, 2)} · Reimb: +${fmtUSD(r.reimb, 2)} · Extras: ${fmtSignedUSD(r.extras, 2)} · Reimb Ded: -${fmtUSD(r.ded, 2)}`)}"` : ''}><strong>${fmtUSD(r.earnings, 2)}</strong></td><td class="r"${r.config_paid ? ` data-ui-tip="${esc(`Vouchers: ${fmtUSD(r.vouchers_paid, 2)} · Opening Config: ${fmtUSD(r.config_paid, 2)}`)}"` : ''}><strong>${fmtUSD(r.paid, 2)}</strong></td><td class="r ${r.balance < 0 ? 'pbi-neg' : ''}"${lbpNote ? ` data-ui-tip="${esc(lbpNote)}"` : ''}><strong>${fmtUSD(r.balance, 2)}</strong></td><td class="r"${r.advance_cnt ? ` data-ui-tip="${esc(`${fmtNum(r.advance_cnt, 0)} post-cutoff advance voucher(s)`)}"` : ''}>${r.advances ? `<span class="badge badge-brass">${fmtUSD(r.advances, 2)}</span>` : '-'}</td>` : ''}
                 </tr>`;
-              }).join('') || emptyRow(18, 'No staff records match filter')}
-              ${showMoreRow('pay_staff', filteredStaff.length, 18)}
+              }).join('') || emptyRow(canShowAttDollars ? 18 : 6, 'No staff records match filter')}
+              ${showMoreRow('pay_staff', filteredStaff.length, canShowAttDollars ? 18 : 6)}
             </tbody>
             <tfoot>
               <tr>
                 <td colspan="3">TOTAL (${fmtNum(filteredStaff.length)} ${statusMode === 'all' ? '' : statusMode.toUpperCase() + ' '}STAFF)</td>
-                <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.base, 0), 2)}</td>
-                <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + (r.reimb || 0), 0), 2)}</td>
+                ${canShowAttDollars ? `<td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.base, 0), 2)}</td><td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + (r.reimb || 0), 0), 2)}</td>` : ''}
                 <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.ot_hrs, 0), 1)}</td>
-                <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.att_ot_pay, 0), 2)}</td>
-                <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.trip_ot_pay, 0), 2)}</td>
-                <td class="r">${fmtUSD(totalSiteAllow, 2)}</td>
+                ${canShowAttDollars ? `<td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.att_ot_pay, 0), 2)}</td><td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.trip_ot_pay, 0), 2)}</td><td class="r">${fmtUSD(totalSiteAllow, 2)}</td>` : ''}
                 <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.late_hrs, 0), 1)}</td>
-                <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.late_ded, 0), 2)}</td>
+                ${canShowAttDollars ? `<td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.late_ded, 0), 2)}</td>` : ''}
                 <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.absent_days, 0), 1).replace(/\.0$/, '')}</td>
-                <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.abs_ded, 0), 2)}</td>
-                <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + (r.ded || 0), 0), 2)}</td>
-                <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.earnings, 0), 2)}</td>
-                <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.paid, 0), 2)}</td>
-                <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.balance, 0), 2)}</td>
-                <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + (r.advances || 0), 0), 2)}</td>
+                ${canShowAttDollars ? `<td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.abs_ded, 0), 2)}</td><td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + (r.ded || 0), 0), 2)}</td><td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.earnings, 0), 2)}</td><td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.paid, 0), 2)}</td><td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.balance, 0), 2)}</td><td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + (r.advances || 0), 0), 2)}</td>` : ''}
               </tr>
             </tfoot>
           </table>
@@ -44179,7 +44338,7 @@
 
       ${driverOtPanelHtml}
 
-      <div class="panel-card" id="payUnmatchedPanel">
+      ${!canShowAttDollars ? '' : `<div class="panel-card" id="payUnmatchedPanel">
         <div class="panel-head">
           <div>
             <div class="panel-title"><span>UNMATCHED SALARY DISBURSEMENTS &amp; CONTRACT COVERAGE AUDIT (${fmtNum(filteredUnmatched.length)} STAFF · ${fmtUSD(unmatchedUsd, 2)})</span></div>
@@ -44225,7 +44384,7 @@
             </tfoot>
           </table>
         </div>
-      </div>
+      </div>`}
     `;
   }
 
@@ -48773,7 +48932,7 @@
       ? window.MFG_PBI.renderPbiStudio({
           STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI,
           filterRecords, buildSentinelItems, exportBtn, nextTicketNo,
-          canEnterForm, canAccessPbiPage, allowedCompanyNames,
+          canEnterForm, canAccessPbiPage, canViewPayrollDollarAmounts, allowedCompanyNames,
           SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog,
           getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml
         }, 'p02_companies', true)
@@ -68756,6 +68915,58 @@
         return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
       }
 
+      if (rid === 'S13') {
+        const s13CritDays = getAlertParam('S13', 'crit_window_days', 7);
+        const s13WarnDays = getAlertParam('S13', 'warn_window_days', 60);
+        const wd = computeStaffComplianceWatchdog(null, SEED, { critDays: s13CritDays, warnDays: s13WarnDays });
+        const c = wd.counts;
+        const effCrit = wd.critDays || s13CritDays;
+        const effWarn = wd.warnDays || s13WarnDays;
+        expUsd = 0;
+        rowCnt = c.actionable;
+        const top = wd.items[0] || null;
+        topParty = top ? sanitizePlain(top.staffName) : 'No Repeat Offenders';
+        topSubEn = top ? sanitizePlain(top.summaryText) : 'All active staff compliant';
+        topSubAr = top ? (top.missingForeignPermit && top.tier === 'missing_permit'
+          ? `${top.nationality || 'أجنبي'}: تصريح عمل مفقود`
+          : (top.urgentDoc ? `${top.urgentDoc.label}: ${top.minDays < 0 ? 'منتهٍ منذ ' + Math.abs(top.minDays) + 'ي' : 'متبقٍ ' + top.minDays + 'ي'}` : sanitizePlain(top.badgeText))) : 'جميع السجلات ضمن الصلاحية';
+        topSubFr = top ? (top.missingForeignPermit && top.tier === 'missing_permit'
+          ? `${top.nationality || 'Étranger'} : permis de travail manquant`
+          : (top.urgentDoc ? `${top.urgentDoc.label} : ${top.minDays < 0 ? 'expiré ' + Math.abs(top.minDays) + ' j' : top.minDays + ' j restants'}` : sanitizePlain(top.badgeText))) : 'Tous les dossiers sont conformes';
+        const dueTotal = c.critical_7 + c.due_30 + c.watch_60;
+        physValEn = `${fmtNum(c.expired, 0)} expired / ${fmtNum(dueTotal, 0)} due / ${fmtNum(c.missing_permit, 0)} missing permit`;
+        physValAr = `${fmtNum(c.expired, 0)} منتهي / ${fmtNum(dueTotal, 0)} مستحق / ${fmtNum(c.missing_permit, 0)} بلا تصريح`;
+        physValFr = `${fmtNum(c.expired, 0)} expiré(s) / ${fmtNum(dueTotal, 0)} à renouv. / ${fmtNum(c.missing_permit, 0)} sans permis`;
+        bEn = [
+          top
+            ? `${fmtNum(rowCnt, 0)} active HR compliance alert(s) in ${companyEn}: ${fmtNum(c.expired, 0)} expired, ${fmtNum(c.critical_7, 0)} due <= ${fmtNum(effCrit, 0)}d, ${fmtNum(c.due_30, 0)} due <= 30d, ${fmtNum(c.watch_60, 0)} due <= ${fmtNum(effWarn, 0)}d, and ${fmtNum(c.missing_permit, 0)} foreign staff without work permit expiry.`
+            : `All active employee IDs, work permits and residencies in ${companyEn} remain within valid renewal windows (${fmtNum(effWarn, 0)}d horizon).`,
+          top
+            ? `Highest priority sits on ${topParty} (${topSubEn}); verify scanned renewal documents and Ministry of Labor filings immediately.`
+            : 'No expired, near-expiry or missing work permit gaps were flagged in active staff records.',
+          'Open Staff Registry or Employment Contracts to update document expiry dates or print the Contract & NSSF Pack before signing off.'
+        ];
+        bAr = [
+          top
+            ? `تم رصد ${fmtNum(rowCnt, 0)} تنبيه امتثال نشط للموظفين في ${companyAr}: ${fmtNum(c.expired, 0)} منتهي الصلاحية، ${fmtNum(c.critical_7, 0)} خلال ${fmtNum(effCrit, 0)} يوماً، ${fmtNum(c.due_30, 0)} خلال 30 يوماً، ${fmtNum(c.watch_60, 0)} خلال ${fmtNum(effWarn, 0)} يوماً، و${fmtNum(c.missing_permit, 0)} موظف أجنبي بلا تاريخ انتهاء لتصريح العمل.`
+            : `جميع بطاقات الهوية وتصاريح العمل والإقامات للموظفين النشطين في ${companyAr} ضمن فترات الصلاحية السارية (${fmtNum(effWarn, 0)} يوماً).`,
+          top
+            ? `الأولوية القصوى تتركز لدى ${locOffender(topParty, 'ar')} (${topSubAr})؛ يُرجى مراجعة المستندات الممسوحة وإجراءات التجديد فوراً.`
+            : 'لم تُسجل أي مستندات منتهية أو قريبة الانتهاء أو تصاريح عمل مفقودة في السجلات النشطة.',
+          'افتح سجل الموظفين أو العقود لتحديث تواريخ الانتهاء أو طباعة ملف عقد العمل والضمان قبل الاعتماد.'
+        ];
+        bFr = [
+          top
+            ? `${fmtNum(rowCnt, 0)} alerte(s) conformité RH actives sur ${companyFr} : ${fmtNum(c.expired, 0)} expiré(s), ${fmtNum(c.critical_7, 0)} <= ${fmtNum(effCrit, 0)} j, ${fmtNum(c.due_30, 0)} <= 30 j, ${fmtNum(c.watch_60, 0)} <= ${fmtNum(effWarn, 0)} j, et ${fmtNum(c.missing_permit, 0)} salarié(s) étranger(s) sans permis de travail.`
+            : `Toutes les pièces d’identité, permis de travail et titres de séjour des salariés actifs sur ${companyFr} sont valides (${fmtNum(effWarn, 0)} j).`,
+          top
+            ? `La priorité maximale concerne ${locOffender(topParty, 'fr')} (${topSubFr}) ; vérifiez immédiatement les justificatifs numérisés.`
+            : 'Aucun document expiré, proche d’échéance ou permis manquant n’a été détecté.',
+          'Ouvrez le Registre du personnel ou les Contrats pour mettre à jour les dates d’expiration ou éditer le Dossier Contrat & CNSS avant signature.'
+        ];
+        return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
+      }
+
       if (!isNonMfg) {
         // Manufacturing S2 - S11
         if (rid === 'S2') {
@@ -69426,6 +69637,7 @@
         S10: { ar: 'بلاغات الأعطال المسبقة وعهدة القطع المستبدلة', fr: 'Avis de panne préalable & garde des pièces déposées' },
         S11: { ar: 'مراقب فروقات وأعطال المازوت (سقف 5%)', fr: 'Surveillance écarts & pannes gasoil (seuil 5%)' },
         S12: { ar: 'اتفاقيات التوصيل دون نقطة تعادل النقل', fr: 'Accords de livraison sous le seuil de rentabilité du transport' },
+        S13: { ar: 'مراقب انتهاء تصاريح العمل والإقامات والهويات', fr: 'Surveillance des expirations de permis, résidences et pièces d’identité' },
         H1: { ar: 'تحويلات الشركات الشقيقة غير المقابلة', fr: 'Transferts inter-sociétés sans contrepartie miroir' },
         H2: { ar: 'مراقب فروقات المسارات الثنائية للشركات الشقيقة', fr: 'Contrôle d écart bilatéral entre sociétés sœurs' },
         H3: { ar: 'رقابة سقف مصاريف الخدمات المشتركة للقابضة', fr: 'Plafond des charges partagées Holding' },
@@ -81406,7 +81618,8 @@
     { code: '19', name: 'P&L Reconciliation', cat: 'Tax & Recon' },
     { code: '20', name: 'Sales Invoice', cat: 'Documents' },
     { code: '21', name: 'Delivery Ticket', cat: 'Documents' },
-    { code: '22', name: 'Receipt Voucher', cat: 'Documents' }
+    { code: '22', name: 'Receipt Voucher', cat: 'Documents' },
+    { code: '28', name: 'HR Contract & NSSF Pack', cat: 'Documents' }
   ];
 
   function stTable(cols, rows, foot) {
@@ -81584,6 +81797,9 @@
         { label: 'Date', key: 'date', mono: true }, { label: 'Ticket', key: 'ticket_no', mono: true }, { label: 'VAT Invoice', key: 'vat_invoice', mono: true }, { label: 'Co.', key: 'company' }, { label: 'Customer', key: 'customer' }, { label: 'Net', key: 'total', r: true, fmt: C.usd2 }, { label: 'VAT 11%', key: 'vat', r: true, fmt: v => `<strong>${fmtUSD(v, 2)}</strong>` }, { label: 'Total TTC', key: 'total_ttc', r: true, fmt: C.usd2 }
       ], vatTickets, [{ v: `${fmtNum(vatTickets.length)} TICKETS`, span: 5 }, { v: fmtUSD(vSum(vatTickets, 'total'), 2), r: true }, { v: fmtUSD(vSum(vatTickets, 'vat'), 2), r: true }, { v: fmtUSD(vSum(vatTickets, 'total_ttc'), 2), r: true }]);
     } else if (code === '19') {
+      if (!canViewPayrollDollarAmounts()) {
+        bodyHtml = `<div class="live-calc"><div><small>Restricted Statement</small><b>Payroll compensation amounts require Payroll / Financial access.</b></div></div>`;
+      } else {
       const fxRate = getLbpFxRate();
       const { pricing } = sentinelSlice();
       const sal = filterRecords(SEED.records.salaries, { ignoreSearch: true });
@@ -81613,6 +81829,7 @@
         stTable([
           { label: 'Staff Member', key: 'staff', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'Co.', key: 'company' }, { label: 'Site / Location', key: 'site' }, { label: 'Equipment', key: 'equipment', mono: true }, { label: 'Start', key: 'start_date', mono: true }, { label: 'End', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }, { label: 'Working Days', key: 'working_days' }, { label: 'Daily ($)', key: 'daily_usd', r: true, fmt: (_, r) => fmtUSD(siteAllowanceDailyUsd(r, fxRate), 2) }
         ], log.slice(0, 60), [{ v: `${log.length} SITE TRANSPORT SCHEDULES · ${att.length} ATTENDANCE LOGS IN SAMPLE`, span: 8 }]);
+      }
     } else if (code === '21') {
       const tb = (m.gl_tb || []).filter(r => [1, 5].includes(Number(r.Class)) || /^(16|17|45|455|53|51|512|5300)/.test(String(r.Code)));
       bodyHtml = stTable([
@@ -102403,6 +102620,15 @@
       }
       if (!roleVal) addErr('f_role', 'Role is required.');
       if (!assignStartRaw) addErr('f_assign_start', 'Effective Start Date is required.');
+      const cleanOptIso = (fid, lbl) => {
+        const s = val(fid);
+        if (s && !isValidStrictIsoCalendarDate(s)) addErr(fid, `${lbl} must be a valid calendar YYYY-MM-DD date.`);
+        return s ? s.slice(0, 10) : '';
+      };
+      cleanOptIso('f_dob', 'Date of Birth');
+      const idExpVal = cleanOptIso('f_id_expiry_date', 'ID Expiry Date');
+      const wpExpVal = cleanOptIso('f_work_permit_expiry', 'Work Permit Expiry');
+      const resExpVal = cleanOptIso('f_residency_expiry', 'Residency Expiry');
       record = {
         ...base,
         company: staffCo,
@@ -102411,10 +102637,18 @@
         father_name: cleanFatherName(val('f_father_name')),
         full_name_ar: val('f_staff_ar') || '',
         father_name_ar: val('f_father_name_ar') || '',
+        mother_name: val('f_mother_name') || '',
+        mother_name_ar: val('f_mother_name_ar') || '',
         dob: val('f_dob') ? String(val('f_dob')).slice(0, 10) : '',
         nationality: val('f_nationality') || '',
         nationality_ar: val('f_nationality_ar') || '',
         id_doc_kind: val('f_id_doc_kind') || '',
+        nssf_no: val('f_nssf_no') || '',
+        id_expiry_date: idExpVal,
+        work_permit_no: val('f_work_permit_no') || '',
+        work_permit_expiry: wpExpVal,
+        residency_no: val('f_residency_no') || '',
+        residency_expiry: resExpVal,
         role: roleVal,
         role_category: roleCat,
         worker_category: roleCat,
@@ -104587,32 +104821,6 @@
         syncCatRows('staff_assignments', 'role');
         syncCatRows('employments', 'role');
       }
-      if ((crKey === 'employments' || crKey === 'freelance_entries') && record.staff && record.father_name) {
-        ensureStaffMembersSeeded();
-        const fNorm = norm(record.staff);
-        const fCoNorm = norm(canonCompany(record.company || 'WTC'));
-        const fVal = cleanFatherName(record.father_name);
-        if (fVal) {
-          if (!Array.isArray(STATE.customRecords.staff_members)) STATE.customRecords.staff_members = [];
-          const matchCoSm = s => s && !s.voided && !s.archived && norm(s.name || s.staff) === fNorm && s.company && norm(canonCompany(s.company)) === fCoNorm;
-          const matchBlankSm = s => s && !s.voided && !s.archived && norm(s.name || s.staff) === fNorm && !s.company;
-          const smHit = STATE.customRecords.staff_members.find(matchCoSm)
-            || ((SEED.records && SEED.records.staff_members) || []).find(matchCoSm)
-            || (isOwner()
-              ? (STATE.customRecords.staff_members.find(matchBlankSm) || ((SEED.records && SEED.records.staff_members) || []).find(matchBlankSm))
-              : null);
-          if (smHit && (!smHit.father_name || isEditingExisting)) {
-            smHit.father_name = fVal;
-            if (!smHit.company && record.company && isOwner()) smHit.company = canonCompany(record.company);
-            if (crKey === 'employments' && record.id && !smHit.enrolled_emp_id) smHit.enrolled_emp_id = record.id;
-            smHit.same_person_confirmed = true;
-            const cIdx = STATE.customRecords.staff_members.findIndex(s => s && String(s.id) === String(smHit.id));
-            if (cIdx >= 0) Object.assign(STATE.customRecords.staff_members[cIdx], smHit);
-            else STATE.customRecords.staff_members.unshift(Object.assign({}, smHit));
-            extraApiPosts.push(['staff_members', Object.assign({}, smHit)]);
-          }
-        }
-      }
       if (crKey === 'staff_members') {
         const initAssignStart = String(record._init_assign_start || record.assign_start || record.date || todayISO()).slice(0, 10);
         delete record._init_assign_start;
@@ -104649,6 +104857,18 @@
             extraApiPosts.push(['staff_assignments', Object.assign({}, initSa)]);
           }
         }
+      }
+      if (crKey === 'staff_members' || crKey === 'employments' || crKey === 'freelance_entries') {
+        const domPresentHrKeys = isEditingExisting
+          ? _HR_SYNC_COMPLIANCE_COLS.filter(k => Boolean($(`f_${k}`)) || (k === 'father_name' && Boolean($('f_father'))))
+          : null;
+        syncHrComplianceFields({
+          crKey,
+          record,
+          isEditingExisting,
+          explicitKeys: domPresentHrKeys && domPresentHrKeys.length ? domPresentHrKeys : null,
+          extraApiPosts
+        });
       }
       if (isEditingExisting && crKey === 'expenses') {
         if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
@@ -106575,9 +106795,13 @@
           res.fullNameArabic ? `<span dir="rtl" data-no-i18n="1"><b>الاسم:</b> ${esc(res.fullNameArabic)}</span>` : '',
           res.fatherNameLatin ? `<span><b>Father:</b> <span data-no-i18n="1">${esc(res.fatherNameLatin)}</span></span>` : '',
           res.fatherNameArabic ? `<span dir="rtl" data-no-i18n="1"><b>الأب:</b> ${esc(res.fatherNameArabic)}</span>` : '',
+          res.motherNameLatin ? `<span><b>Mother:</b> <span data-no-i18n="1">${esc(res.motherNameLatin)}</span></span>` : '',
           res.dob ? `<span><b>DOB:</b> <span data-no-i18n="1">${esc(res.dob)}</span></span>` : '',
           res.nationalityLatin ? `<span><b>Nationality:</b> <span data-no-i18n="1">${esc(res.nationalityLatin)}</span></span>` : '',
-          (res.nssfNumber || res.idNumber) ? `<span><b>ID / NSSF:</b> <span data-no-i18n="1">${esc(res.idNumber || res.nssfNumber)}</span></span>` : ''
+          (res.nssfNumber || res.idNumber) ? `<span><b>ID / NSSF:</b> <span data-no-i18n="1">${esc(res.idNumber || res.nssfNumber)}</span></span>` : '',
+          res.idExpiryDate ? `<span><b>ID Expiry:</b> <span data-no-i18n="1">${esc(res.idExpiryDate)}</span></span>` : '',
+          res.workPermitExpiryDate ? `<span><b>Work Permit Expiry:</b> <span data-no-i18n="1">${esc(res.workPermitExpiryDate)}</span></span>` : '',
+          res.residencyExpiryDate ? `<span><b>Residency Expiry:</b> <span data-no-i18n="1">${esc(res.residencyExpiryDate)}</span></span>` : ''
         ].filter(Boolean).join('');
         strip.hidden = false;
         strip.innerHTML = `
@@ -106603,6 +106827,59 @@
         }
       };
 
+      const applyStaffModalScanResult = (res, methodLabel) => {
+        if (!$('entryModal') || $('entryModal').hidden || STATE.modalForm !== 'staff') return false;
+        if (!res || !res.ok) {
+          renderStaffIdScanResultStrip(null, '');
+          toast((res && (res.error || res.message)) || 'Could not extract ID card fields.', 'err');
+          return false;
+        }
+        const setScanField = (id, v) => {
+          const el = $(id);
+          if (el) el.value = (v != null && String(v).trim()) ? String(v).trim() : '';
+        };
+        const cleanIsoDate = v => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '').trim()) ? String(v).trim() : '');
+        setScanField('f_staff', res.fullNameLatin || res.fullNameArabic);
+        setScanField('f_staff_ar', res.fullNameArabic);
+        setScanField('f_father_name', res.fatherNameLatin);
+        setScanField('f_father_name_ar', res.fatherNameArabic);
+        setScanField('f_mother_name', res.motherNameLatin);
+        setScanField('f_mother_name_ar', res.motherNameArabic);
+        setScanField('f_dob', cleanIsoDate(res.dob));
+        setScanField('f_nationality', res.nationalityLatin);
+        setScanField('f_nationality_ar', res.nationalityArabic);
+        setScanField('f_id_doc_kind', res.docKind);
+        const idRef = res.idNumber || res.nssfNumber || res.workPermitNumber || res.residencyNumber || '';
+        setScanField('f_reference', idRef);
+        setScanField('f_nssf_no', res.nssfNumber);
+        setScanField('f_id_expiry_date', cleanIsoDate(res.idExpiryDate));
+        setScanField('f_work_permit_no', res.workPermitNumber);
+        setScanField('f_work_permit_expiry', cleanIsoDate(res.workPermitExpiryDate));
+        setScanField('f_residency_no', res.residencyNumber);
+        setScanField('f_residency_expiry', cleanIsoDate(res.residencyExpiryDate));
+        const prevIdCount = FORM_UI.attachments.length;
+        FORM_UI.attachments = FORM_UI.attachments.filter(a => !(a && a.from_id_scan));
+        let attChanged = FORM_UI.attachments.length !== prevIdCount;
+        if (res.attObj && res.attObj.name) {
+          const nextIdAtt = Object.assign({}, res.attObj, { from_id_scan: true });
+          const exists = FORM_UI.attachments.some(a => a && (
+            (nextIdAtt.id && a.id === nextIdAtt.id)
+            || (a.name === nextIdAtt.name && a.size === nextIdAtt.size)
+            || (nextIdAtt.data && a.data === nextIdAtt.data)
+          ));
+          if (!exists) {
+            FORM_UI.attachments.push(nextIdAtt);
+            attChanged = true;
+          }
+        }
+        if (attChanged) renderEntryAttachmentsListUI();
+        FORM_UI.userInteracted = true;
+        renderStaffIdScanResultStrip(res, '');
+        recalcForm();
+        toast(`Extracted ${formatIdDocKindBadgeLabel(res.docKind)} fields (${res.engineLabel || methodLabel || 'ID Scan'}).`, 'ok');
+        return true;
+      };
+
       const applyStaffModalIdScan = async (fileOrSpec, methodLabel) => {
         if (!window.MFG_SMART_SCAN || typeof window.MFG_SMART_SCAN.scanIdentityCard !== 'function') {
           toast('ID card scanner module is not loaded.', 'err');
@@ -106611,55 +106888,16 @@
         const camBtn = $('staffIdCameraScanBtn');
         const upBtn = $('staffIdUploadBtn');
         const smpBtn = $('staffIdSampleBtn');
+        const qrBtn = $('staffIdPhoneQrBtn');
         const setBusy = busy => {
-          [camBtn, upBtn, smpBtn].forEach(b => { if (b) b.disabled = !!busy; });
+          [camBtn, upBtn, smpBtn, qrBtn].forEach(b => { if (b) b.disabled = !!busy; });
         };
         setBusy(true);
         renderStaffIdScanResultStrip(null, methodLabel || 'ID Card');
         try {
           const co = $('f_staff_company') ? $('f_staff_company').value : '';
           const res = await window.MFG_SMART_SCAN.scanIdentityCard(fileOrSpec, { company: co });
-          if (!$('entryModal') || $('entryModal').hidden || STATE.modalForm !== 'staff') return;
-          if (!res || !res.ok) {
-            renderStaffIdScanResultStrip(null, '');
-            toast((res && (res.error || res.message)) || 'Could not extract ID card fields.', 'err');
-            return;
-          }
-          const setScanField = (id, v) => {
-            const el = $(id);
-            if (el) el.value = (v != null && String(v).trim()) ? String(v).trim() : '';
-          };
-          setScanField('f_staff', res.fullNameLatin || res.fullNameArabic);
-          setScanField('f_staff_ar', res.fullNameArabic);
-          setScanField('f_father_name', res.fatherNameLatin);
-          setScanField('f_father_name_ar', res.fatherNameArabic);
-          const validDob = /^\d{4}-\d{2}-\d{2}$/.test(String(res.dob || '').trim()) ? String(res.dob).trim() : '';
-          setScanField('f_dob', validDob);
-          setScanField('f_nationality', res.nationalityLatin);
-          setScanField('f_nationality_ar', res.nationalityArabic);
-          setScanField('f_id_doc_kind', res.docKind);
-          const idRef = (res.nssfNumber && !res.idNumber) ? res.nssfNumber : (res.idNumber || res.nssfNumber || '');
-          setScanField('f_reference', idRef);
-          const prevIdCount = FORM_UI.attachments.length;
-          FORM_UI.attachments = FORM_UI.attachments.filter(a => !(a && a.from_id_scan));
-          let attChanged = FORM_UI.attachments.length !== prevIdCount;
-          if (res.attObj && res.attObj.name) {
-            const nextIdAtt = Object.assign({}, res.attObj, { from_id_scan: true });
-            const exists = FORM_UI.attachments.some(a => a && (
-              (nextIdAtt.id && a.id === nextIdAtt.id)
-              || (a.name === nextIdAtt.name && a.size === nextIdAtt.size)
-              || (nextIdAtt.data && a.data === nextIdAtt.data)
-            ));
-            if (!exists) {
-              FORM_UI.attachments.push(nextIdAtt);
-              attChanged = true;
-            }
-          }
-          if (attChanged) renderEntryAttachmentsListUI();
-          FORM_UI.userInteracted = true;
-          renderStaffIdScanResultStrip(res, '');
-          recalcForm();
-          toast(`Extracted ${res.docKind || 'ID Card'} fields (${res.engineLabel || methodLabel || 'ID Scan'}).`, 'ok');
+          applyStaffModalScanResult(res, methodLabel);
         } catch (err) {
           renderStaffIdScanResultStrip(null, '');
           toast(`ID card scan failed: ${err && err.message ? err.message : 'Unknown error'}`, 'err');
@@ -106671,6 +106909,7 @@
       const camScanBtn = $('staffIdCameraScanBtn');
       const uploadBtn = $('staffIdUploadBtn');
       const fileInp = $('staffIdFileInput');
+      const phoneQrBtn = $('staffIdPhoneQrBtn');
       const sampleBtn = $('staffIdSampleBtn');
       if (camScanBtn) {
         camScanBtn.addEventListener('click', () => {
@@ -106689,6 +106928,21 @@
           const f = fileInp.files && fileInp.files[0];
           fileInp.value = '';
           if (f) applyStaffModalIdScan(f, 'ID File Upload');
+        });
+      }
+      if (phoneQrBtn) {
+        phoneQrBtn.addEventListener('click', () => {
+          if (!window.MFG_DOC_SCANNER || typeof window.MFG_DOC_SCANNER.openHrPhoneIdQrHandoff !== 'function') {
+            toast('Phone QR handoff module is not loaded.', 'err');
+            return;
+          }
+          window.MFG_DOC_SCANNER.openHrPhoneIdQrHandoff({
+            title: 'Scan ID or Permit from Phone',
+            company: ($('f_staff_company') && $('f_staff_company').value) || '',
+            onResult: res => {
+              applyStaffModalScanResult(res, 'Phone Camera QR');
+            }
+          });
         });
       }
       if (sampleBtn) {
@@ -107525,10 +107779,18 @@
       setModalControlVal('f_father_name', row.father_name || '');
       setModalControlVal('f_staff_ar', row.full_name_ar || '');
       setModalControlVal('f_father_name_ar', row.father_name_ar || '');
+      setModalControlVal('f_mother_name', row.mother_name || '');
+      setModalControlVal('f_mother_name_ar', row.mother_name_ar || '');
       setModalControlVal('f_dob', row.dob ? String(row.dob).slice(0, 10) : '');
       setModalControlVal('f_nationality', row.nationality || '');
       setModalControlVal('f_nationality_ar', row.nationality_ar || '');
       setModalControlVal('f_id_doc_kind', row.id_doc_kind || '');
+      setModalControlVal('f_nssf_no', row.nssf_no || '');
+      setModalControlVal('f_id_expiry_date', row.id_expiry_date ? String(row.id_expiry_date).slice(0, 10) : '');
+      setModalControlVal('f_work_permit_no', row.work_permit_no || '');
+      setModalControlVal('f_work_permit_expiry', row.work_permit_expiry ? String(row.work_permit_expiry).slice(0, 10) : '');
+      setModalControlVal('f_residency_no', row.residency_no || '');
+      setModalControlVal('f_residency_expiry', row.residency_expiry ? String(row.residency_expiry).slice(0, 10) : '');
       setModalControlVal('f_role', row.role || '');
       setModalControlVal('f_emp_cat', resolveRoleCategory(row.role || '', row.role_category || row.worker_category || ''));
       setModalControlVal('f_phone', row.phone || '');
@@ -107804,6 +108066,9 @@
       if (String(id) !== String(row.id)) return false;
       if (!row.start_date && !row.date && !row.pay_type && row.base_salary == null && row.salary_usd == null) return false;
     }
+    if (['employments', 'salaries', 'freelance_entries', 'logistics_allowances', 'overtime_rates'].includes(crKey) && !canViewPayrollDollarAmounts()) {
+      return false;
+    }
     if (crKey === 'attendance' && /^config$/i.test(String(row.type || row.status || ''))) {
       return false;
     }
@@ -107813,6 +108078,10 @@
   function openEntryModalForRecord(crKey, id) {
     let targetKey = crKey;
     let targetRow = resolveInspectorRecord(crKey, id);
+    if (['employments', 'salaries', 'freelance_entries', 'logistics_allowances', 'overtime_rates'].includes(targetKey) && !canViewPayrollDollarAmounts()) {
+      showRecordInspector(crKey, id);
+      return;
+    }
     if (crKey === 'expense_items' && targetRow) {
       const parentExp = resolveInspectorRecord('expenses', targetRow.expense_id || targetRow.expense_ref);
       if (parentExp) {
@@ -108262,6 +108531,12 @@
       const totPaid = stPayRows.length ? round2(stPayRows.reduce((a, sr) => a + Number(sr.paid || 0), 0)) : round2(salPaid);
       const remPay = stPayRows.length ? round2(stPayRows.reduce((a, sr) => a + Number(sr.balance || 0), 0)) : 0;
       const roleLbl = row.role || row.role_category || row.worker_category || 'Staff';
+      if (!canViewPayrollDollarAmounts()) {
+        return {
+          tone: 'info',
+          text: `Universal Staff Profile · ${stName || 'Staff'} (${roleLbl}): Shared across all BUs${cos.length ? ' · Active in ' + cos.join(', ') : ''}  |  ${fmtNum(empRows.length)} Contract${empRows.length === 1 ? '' : 's'}  |  ${fmtNum(saRows.length)} Role & Equipment Log${saRows.length === 1 ? '' : 's'}  |  Compensation masked`
+        };
+      }
       if (pendEmp) {
         return {
           tone: 'warn',
@@ -108302,10 +108577,13 @@
       };
     }
     if (key === 'employments') {
+      const canShowPay = canViewPayrollDollarAmounts();
       if (isPendingSalaryEmployment(row)) {
         return {
           tone: 'warn',
-          text: `PENDING SALARY ASSIGNMENT: ${row.staff || 'Staff'} (${row.role || row.type || 'Staff'} · ${row.company || 'WTC'}) is active on the roster & attendance kiosk from ${row.start_date || row.date || 'Start'} at $0.00 base/OT · Click "Enter Final Salary" once management sets their pay to retroactively calculate earnings from Start Date.`
+          text: canShowPay
+            ? `PENDING SALARY ASSIGNMENT: ${row.staff || 'Staff'} (${row.role || row.type || 'Staff'} · ${row.company || 'WTC'}) is active on the roster & attendance kiosk from ${row.start_date || row.date || 'Start'} at $0.00 base/OT · Click "Enter Final Salary" once management sets their pay to retroactively calculate earnings from Start Date.`
+            : `PENDING SALARY ASSIGNMENT: ${row.staff || 'Staff'} (${row.role || row.type || 'Staff'} · ${row.company || 'WTC'}) is active on the roster & attendance kiosk from ${row.start_date || row.date || 'Start'} · Compensation masked`
         };
       }
       const stName = row.staff || row.name || '';
@@ -108313,12 +108591,18 @@
       const eqTxt = eqInfo && eqInfo.hasConnection
         ? `Connected Equipment: ${eqInfo.registeredUnits.map(u => u.equipment + (u.site ? ' @ ' + u.site : '')).slice(0, 3).join(', ')}${eqInfo.siteLogs.length ? ` (${eqInfo.siteLogs.length} Equipment Sites Log ${eqInfo.siteLogs.length === 1 ? 'entry' : 'entries'})` : ''}`
         : 'No Equipment Assignment';
+      const vacAllowance = row.vacation_days != null ? Number(row.vacation_days) : 0;
+      if (!canShowPay) {
+        return {
+          tone: 'info',
+          text: `Staff Contract · ${stName || 'Staff'} (${row.role || 'Staff'} · ${row.status || 'Current'}): Compensation masked · Vacation ${fmtNum(vacAllowance, vacAllowance % 1 ? 1 : 0)}d/yr  |  ${eqTxt}`
+        };
+      }
       const mContractUsd = empContractMonthlyUsd(row);
       const mReimbUsd = empContractReimbUsd(row);
       const mPkgUsd = empContractPackageUsd(row);
       const mDedUsd = empContractDedUsd(row);
       const baseAmt = Number(row.daily_rate || row.amount || 0);
-      const vacAllowance = row.vacation_days != null ? Number(row.vacation_days) : 0;
       const compTxt = (mContractUsd > 0 || mReimbUsd > 0)
         ? `${fmtUSD(mPkgUsd, 2)}/mo${mReimbUsd > 0 ? ` (${fmtUSD(mContractUsd, 2)} Base + ${fmtUSD(mReimbUsd, 2)} Transp./Reimb.)` : ''}${mDedUsd > 0 ? ` · -${fmtUSD(mDedUsd, 2)}/d absent reimb. ded.` : ''}`
         : (baseAmt > 0 ? `${fmtUSD(baseAmt, 2)}/d` : '-');
@@ -108342,6 +108626,12 @@
     }
     if (key === 'salaries') {
       const payMo = row.payroll_month || String(row.date || '').slice(0, 7);
+      if (!canViewPayrollDollarAmounts()) {
+        return {
+          tone: 'info',
+          text: `Salary Disbursement · ${row.staff || 'Staff'} (${payMo || 'Payroll'})  |  Method: ${row.method || 'Cash'}  |  Compensation amounts masked`
+        };
+      }
       const pos = computeStaffMonthPayrollPosition(row.staff, row.company, payMo, row.date, row.id, true);
       const thisAmt = round2(salaryVoucherUsd895(row));
       if (pos && pos.hasContract) {
@@ -108744,15 +109034,20 @@
       const cos = Array.from(new Set(empRows.map(e => e.company).concat(saRows.map(a => a.company), salRows.map(s => s.company), attRows.map(a => a.company)).filter(Boolean)));
       const otHrs = round2(attRows.reduce((a, r) => a + Number(r.overtime_hours || 0), 0));
       const rCat = row.role_category || row.worker_category || resolveRoleCategory(row.role, 'Site & Operations');
+      const canShowPay = canViewPayrollDollarAmounts();
       return {
         bu: singleBuCockpit || 'ALL BUs',
         title: stName,
-        pill: hasPend ? 'PENDING SALARY ($0.00)' : (Math.abs(remPay) > 0.5 ? `REM ${fmtUSD(remPay, 2)}` : (activeEmps.length ? (activePkgUsd > 0 ? `${fmtUSD(activePkgUsd, 2)} / MO` : 'ACTIVE STAFF') : (empRows.length ? 'ENDED CONTRACT' : 'NO CONTRACT'))),
+        pill: !canShowPay ? (activeEmps.length ? (hasPend ? 'PENDING SALARY' : 'ACTIVE STAFF') : (empRows.length ? 'ENDED CONTRACT' : 'NO CONTRACT')) : (hasPend ? 'PENDING SALARY ($0.00)' : (Math.abs(remPay) > 0.5 ? `REM ${fmtUSD(remPay, 2)}` : (activeEmps.length ? (activePkgUsd > 0 ? `${fmtUSD(activePkgUsd, 2)} / MO` : 'ACTIVE STAFF') : (empRows.length ? 'ENDED CONTRACT' : 'NO CONTRACT')))),
         cards: [
           { lbl: 'CURRENT ROLE & EQUIPMENT', tag: String(rCat || 'SITE & OPERATIONS').toUpperCase().slice(0, 20), tone: 'info', val: row.role || rCat || 'Staff Member', sub1: `Assigned Unit: ${row.default_equipment || 'Unassigned'} (${fmtNum(saRows.length)} log${saRows.length === 1 ? '' : 's'})`, sub2: `Phone: ${row.phone || 'Not set'}${row.reference ? ' · ID ' + row.reference : ''}`, pct: 90 },
-          { lbl: 'COMPANY CONTRACTS', tag: hasPend ? 'PENDING ($0)' : `${fmtNum(activeEmps.length)} ACTIVE`, tone: hasPend ? 'warn' : (activeEmps.length ? 'good' : 'info'), val: activeEmps.length && activePkgUsd > 0 ? `${fmtUSD(activePkgUsd, 2)}/mo` : `${fmtNum(empRows.length)} Contract${empRows.length === 1 ? '' : 's'}`, sub1: activeEmps.length && activeReimbUsd > 0 ? `Base ${fmtUSD(round2(activePkgUsd - activeReimbUsd), 2)} + Transp./Reimb. ${fmtUSD(activeReimbUsd, 2)}` : (cos.length ? `Corporations: ${cos.join(', ')}` : 'Shared across all BUs'), sub2: activeEmps[0] ? `Latest: ${activeEmps[0].company || 'WTC'} (${fmtNum(empRows.length)} contract${empRows.length === 1 ? '' : 's'})` : 'Assign contract in Payroll & Workforce', pct: Math.min(100, Math.max(25, empRows.length * 35)) },
+          !canShowPay
+            ? { lbl: 'COMPANY CONTRACTS', tag: hasPend ? 'PENDING' : `${fmtNum(activeEmps.length)} ACTIVE`, tone: hasPend ? 'warn' : (activeEmps.length ? 'good' : 'info'), val: `${fmtNum(empRows.length)} Contract${empRows.length === 1 ? '' : 's'}`, sub1: cos.length ? `Corporations: ${cos.join(', ')}` : 'Shared across all BUs', sub2: activeEmps[0] ? `Latest: ${activeEmps[0].company || 'WTC'}` : 'Assign contract in Payroll & Workforce', pct: Math.min(100, Math.max(25, empRows.length * 35)) }
+            : { lbl: 'COMPANY CONTRACTS', tag: hasPend ? 'PENDING ($0)' : `${fmtNum(activeEmps.length)} ACTIVE`, tone: hasPend ? 'warn' : (activeEmps.length ? 'good' : 'info'), val: activeEmps.length && activePkgUsd > 0 ? `${fmtUSD(activePkgUsd, 2)}/mo` : `${fmtNum(empRows.length)} Contract${empRows.length === 1 ? '' : 's'}`, sub1: activeEmps.length && activeReimbUsd > 0 ? `Base ${fmtUSD(round2(activePkgUsd - activeReimbUsd), 2)} + Transp./Reimb. ${fmtUSD(activeReimbUsd, 2)}` : (cos.length ? `Corporations: ${cos.join(', ')}` : 'Shared across all BUs'), sub2: activeEmps[0] ? `Latest: ${activeEmps[0].company || 'WTC'} (${fmtNum(empRows.length)} contract${empRows.length === 1 ? '' : 's'})` : 'Assign contract in Payroll & Workforce', pct: Math.min(100, Math.max(25, empRows.length * 35)) },
           { lbl: 'ATTENDANCE & OVERTIME', tag: `${fmtNum(attRows.length)} LOGS`, tone: 'info', val: `${fmtNum(attRows.length)} Days`, sub1: `Logged Overtime: ${fmtNum(otHrs, 1)} hrs`, sub2: `Freelance Entries: ${fmtNum(flRows.length)}`, pct: Math.min(100, Math.max(20, attRows.length)) },
-          { lbl: 'REMAINING PAYMENT & PAYROLL', tag: Math.abs(remPay) > 0.5 ? (remPay > 0 ? 'OPEN REMAINING' : 'OVERPAID / ADV') : (totalPaid > 0 ? 'SETTLED ($0)' : `${fmtNum(salRows.length)} VOUCHERS`), tone: remPay > 0.5 ? 'warn' : (totalPaid > 0 ? 'good' : 'info'), val: fmtUSD(remPay, 2), sub1: `Earned: ${fmtUSD(totalEarned, 2)} · Paid: ${fmtUSD(totalPaid, 2)}`, sub2: totAdv > 0 ? `Advances: ${fmtUSD(totAdv, 2)} · ${fmtNum(salRows.length)} vouchers` : `Salary Vouchers: ${fmtNum(salRows.length)}`, pct: totalEarned > 0 ? Math.min(100, Math.max(20, Math.round((totalPaid / totalEarned) * 100))) : 35 }
+          !canShowPay
+            ? { lbl: 'PAYROLL DISBURSEMENTS', tag: `${fmtNum(salRows.length)} VOUCHERS`, tone: 'info', val: 'Masked', sub1: 'Compensation amounts require Financial / Payroll access', sub2: `Salary Vouchers: ${fmtNum(salRows.length)}`, pct: 35 }
+            : { lbl: 'REMAINING PAYMENT & PAYROLL', tag: Math.abs(remPay) > 0.5 ? (remPay > 0 ? 'OPEN REMAINING' : 'OVERPAID / ADV') : (totalPaid > 0 ? 'SETTLED ($0)' : `${fmtNum(salRows.length)} VOUCHERS`), tone: remPay > 0.5 ? 'warn' : (totalPaid > 0 ? 'good' : 'info'), val: fmtUSD(remPay, 2), sub1: `Earned: ${fmtUSD(totalEarned, 2)} · Paid: ${fmtUSD(totalPaid, 2)}`, sub2: totAdv > 0 ? `Advances: ${fmtUSD(totAdv, 2)} · ${fmtNum(salRows.length)} vouchers` : `Salary Vouchers: ${fmtNum(salRows.length)}`, pct: totalEarned > 0 ? Math.min(100, Math.max(20, Math.round((totalPaid / totalEarned) * 100))) : 35 }
         ]
       };
     }
@@ -108816,23 +109111,26 @@
     // Generic rich 4-card cockpit for all other 30 tables
     const subgrids = buildInspectorSubgrids(key, row);
     const totalRel = subgrids.reduce((a, sg) => a + sg.rows.length, 0);
+    const maskPayrollCockpit = ['employments', 'salaries', 'attendance', 'freelance_entries', 'logistics_allowances', 'overtime_rates'].includes(key) && !canViewPayrollDollarAmounts();
     const prMoney = key === 'price_rules'
       ? (Number(row.unit_price || 0) > 0 ? row.unit_price : (Number(row.trans_unit_price || 0) > 0 ? row.trans_unit_price : ruleAnyIndiffPrice(row)))
       : row.unit_price;
-    const empMoney = key === 'employments' ? empContractPackageUsd(row) : null;
-    const empReimbMoney = key === 'employments' ? empContractReimbUsd(row) : 0;
-    const primaryMoney = empMoney != null
-      ? empMoney
-      : (row.total_ttc ?? row.total ?? row.amount ?? row.usd_amount ?? prMoney ?? row.salary_usd ?? row.principal ?? row.credit_limit ?? row.list_price);
+    const empMoney = (!maskPayrollCockpit && key === 'employments') ? empContractPackageUsd(row) : null;
+    const empReimbMoney = (!maskPayrollCockpit && key === 'employments') ? empContractReimbUsd(row) : 0;
+    const primaryMoney = maskPayrollCockpit
+      ? null
+      : (empMoney != null
+          ? empMoney
+          : (row.total_ttc ?? row.total ?? row.amount ?? row.usd_amount ?? prMoney ?? row.salary_usd ?? row.principal ?? row.credit_limit ?? row.list_price));
     const isPendExp = (key === 'expenses' && isPendingPriceExpense(row)) || (key === 'raw_purchases' && isPendingPriceRaw(row));
     const isPendSal = key === 'employments' && isPendingSalaryEmployment(row);
     const isDieselExp = key === 'expenses' && isBulkDieselExpense(row);
     return {
       bu,
       title,
-      pill: isPendExp ? 'PENDING PRICE ($0.00)' : (isPendSal ? 'PENDING SALARY ($0.00)' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : `${fmtNum(totalRel)} Linked Rows`)),
+      pill: isPendExp ? 'PENDING PRICE ($0.00)' : (isPendSal ? (maskPayrollCockpit ? 'PENDING SALARY' : 'PENDING SALARY ($0.00)') : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : `${fmtNum(totalRel)} Linked Rows`)),
       cards: [
-        { lbl: key === 'employments' ? 'MONTHLY COMPENSATION' : 'PRIMARY RECORD VALUE', tag: isPendExp ? 'PENDING PRICE' : (isPendSal ? 'PENDING SALARY' : (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18)), tone: (isPendExp || isPendSal) ? 'warn' : 'good', val: isPendExp ? `${fmtNum(row.qty || 1, 0)}${isDieselExp ? ' L ($0.00)' : ' Qty ($0.00)'}` : (isPendSal ? 'Pending ($0.00)' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : (row.name || row.ticket_no || String(row.id).slice(0, 10)))), sub1: isPendExp ? `Vendor: ${row.supplier || '—'} · Awaiting Invoice` : (isPendSal ? `Staff: ${row.staff || '—'} · Awaiting Salary` : (key === 'employments' && empReimbMoney > 0 ? `Base ${fmtUSD(empContractMonthlyUsd(row), 2)} + Transp./Reimb. ${fmtUSD(empReimbMoney, 2)}` : `Entity: ${INSPECT_LABELS[key] || key}`)), sub2: `Company Scope: ${row.company || COMPANY_BU_MATCH[STATE.company] || 'Shared / Root BU'}`, pct: 82 },
+        { lbl: maskPayrollCockpit ? 'RECORD STATUS' : (key === 'employments' ? 'MONTHLY COMPENSATION' : 'PRIMARY RECORD VALUE'), tag: isPendExp ? 'PENDING PRICE' : (isPendSal ? 'PENDING SALARY' : (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18)), tone: (isPendExp || isPendSal) ? 'warn' : 'good', val: isPendExp ? `${fmtNum(row.qty || 1, 0)}${isDieselExp ? ' L ($0.00)' : ' Qty ($0.00)'}` : (isPendSal ? (maskPayrollCockpit ? 'Pending Salary' : 'Pending ($0.00)') : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : (maskPayrollCockpit ? (row.status || row.type || row.payroll_month || row.name || String(row.id || '').slice(0, 10) || 'Masked') : (row.name || row.ticket_no || String(row.id).slice(0, 10))))), sub1: isPendExp ? `Vendor: ${row.supplier || '—'} · Awaiting Invoice` : (isPendSal ? `Staff: ${row.staff || '—'} · Awaiting Salary` : (key === 'employments' && empReimbMoney > 0 ? `Base ${fmtUSD(empContractMonthlyUsd(row), 2)} + Transp./Reimb. ${fmtUSD(empReimbMoney, 2)}` : `Entity: ${INSPECT_LABELS[key] || key}${maskPayrollCockpit ? ' · Amounts masked' : ''}`)), sub2: `Company Scope: ${row.company || COMPANY_BU_MATCH[STATE.company] || 'Shared / Root BU'}`, pct: 82 },
         { lbl: 'CONNECTED SUBGRIDS', tag: `${subgrids.length} TABLES`, tone: 'info', val: `${fmtNum(totalRel)} Rows`, sub1: subgrids.slice(0, 2).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Direct master record', sub2: subgrids.slice(2, 4).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Click any row below to inspect', pct: Math.min(100, Math.max(25, totalRel * 5)) },
         { lbl: 'EFFECTIVE DATES & TIMELINE', tag: row.end_date ? 'DATED' : 'ACTIVE', tone: row.end_date && String(row.end_date) < SEED_DATE ? 'warn' : 'good', val: String(row.date || row.start_date || SEED_DATE).slice(0, 10), sub1: `Rep / Start: ${row.rep_date || row.start_date || row.date || '—'}`, sub2: `End Date: ${row.end_date || 'Open / Current'}`, pct: 75 },
         { lbl: 'AUDIT & LEDGER SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: isAppRecord(row) ? 'App Entry' : 'Synced Book', sub1: isAppRecord(row) ? `Posted by ${row.entered_by || 'User'}` : `Snapshot ${SEED_DATE}`, sub2: `Double-Entry SOA Verified`, pct: 100 }
@@ -110091,11 +110389,25 @@
       ],
       staff_members: [
         { key: 'name', label: 'Staff Name *', type: 'text', sec: 1, getVal: r => r.name || r.staff || '' },
+        { key: 'full_name_ar', label: 'Full Name (Arabic)', type: 'text', sec: 1 },
         { key: 'father_name', label: "Father's Name", type: 'text', sec: 1, placeholder: "Optional father's name" },
+        { key: 'father_name_ar', label: "Father's Name (Arabic)", type: 'text', sec: 1 },
+        { key: 'mother_name', label: "Mother's Name", type: 'text', sec: 1 },
+        { key: 'mother_name_ar', label: "Mother's Name (Arabic)", type: 'text', sec: 1 },
+        { key: 'dob', label: 'Date of Birth', type: 'date', sec: 1 },
+        { key: 'nationality', label: 'Nationality', type: 'text', sec: 1 },
+        { key: 'nationality_ar', label: 'Nationality (Arabic)', type: 'text', sec: 1 },
         { key: 'role', label: 'Role *', type: 'combo', dl: 'dl_insp_roles', sec: 1, placeholder: 'Select or type role...' },
         { key: 'phone', label: 'Phone', type: 'tel', sec: 1, placeholder: '+961 ...' },
         { key: 'default_equipment', label: 'Assigned Equipment', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
+        { key: 'id_doc_kind', label: 'ID Document Type', type: 'text', sec: 2 },
         { key: 'reference', label: 'Civil ID or Permit #', type: 'text', sec: 2 },
+        { key: 'nssf_no', label: 'NSSF Reg #', type: 'text', sec: 2 },
+        { key: 'id_expiry_date', label: 'ID Expiry Date', type: 'date', sec: 2 },
+        { key: 'work_permit_no', label: 'Work Permit #', type: 'text', sec: 2 },
+        { key: 'work_permit_expiry', label: 'Work Permit Expiry', type: 'date', sec: 2 },
+        { key: 'residency_no', label: 'Residency #', type: 'text', sec: 2 },
+        { key: 'residency_expiry', label: 'Residency Expiry', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       staff_roles: [
@@ -110138,10 +110450,26 @@
       ],
       employments: [
         { key: 'staff', label: 'Staff *', type: 'combo', dl: 'dl_insp_staff', sec: 1, getVal: r => r.staff || r.name || '' },
+        { key: 'full_name_ar', label: 'Full Name (Arabic)', type: 'text', sec: 1 },
+        { key: 'father_name', label: "Father's Name", type: 'text', sec: 1 },
+        { key: 'father_name_ar', label: "Father's Name (Arabic)", type: 'text', sec: 1 },
+        { key: 'mother_name', label: "Mother's Name", type: 'text', sec: 1 },
+        { key: 'mother_name_ar', label: "Mother's Name (Arabic)", type: 'text', sec: 1 },
+        { key: 'dob', label: 'Date of Birth', type: 'date', sec: 1 },
+        { key: 'nationality', label: 'Nationality', type: 'text', sec: 1 },
+        { key: 'nationality_ar', label: 'Nationality (Arabic)', type: 'text', sec: 1 },
         { key: 'role', label: 'Role *', type: 'combo', dl: 'dl_insp_roles', sec: 1, placeholder: 'Select or type role...' },
         { key: 'type', label: 'Contract Type *', type: 'select', options: ['Staff', 'Freelance', 'Regular', 'Daily'], sec: 1 },
         { key: 'status', label: 'Status *', type: 'select', options: ['Current', 'Ended', 'Active', 'Inactive', 'Terminated'], sec: 1 },
         { key: 'phone', label: 'Phone', type: 'tel', sec: 1, placeholder: '+961 ...' },
+        { key: 'id_doc_kind', label: 'ID Document Type', type: 'text', sec: 2 },
+        { key: 'reference', label: 'Civil ID or Permit #', type: 'text', sec: 2 },
+        { key: 'nssf_no', label: 'NSSF Reg #', type: 'text', sec: 2 },
+        { key: 'id_expiry_date', label: 'ID Expiry Date', type: 'date', sec: 2 },
+        { key: 'work_permit_no', label: 'Work Permit #', type: 'text', sec: 2 },
+        { key: 'work_permit_expiry', label: 'Work Permit Expiry', type: 'date', sec: 2 },
+        { key: 'residency_no', label: 'Residency #', type: 'text', sec: 2 },
+        { key: 'residency_expiry', label: 'Residency Expiry', type: 'date', sec: 2 },
         { key: 'salary_usd', label: 'Base Salary ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'daily_rate', label: 'Daily Rate ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'salary_pending', label: 'Awaiting Salary Assignment ($0 Pending)', type: 'bool', sec: 3, getVal: r => Boolean(isPendingSalaryEmployment(r)) },
@@ -110416,7 +110744,10 @@
       ]
     };
 
-    return schemas[key] || buildFallbackInspectorEditableSchema(key, row);
+    const rawSchema = schemas[key] || buildFallbackInspectorEditableSchema(key, row);
+    return Array.isArray(rawSchema)
+      ? rawSchema.filter(f => f && !isMaskedPayrollAccessBlocked(key, f.key) && !(key === 'employments' && f.key === 'salary_pending' && !canViewPayrollDollarAmounts()))
+      : [];
   }
 
   // Auto-introspects any present or future (49th+) table row so 100% of fields are safely editable without data loss,
@@ -110766,10 +111097,10 @@
       }
     }
 
-    const populatedKeys = Object.keys(row).filter(k => !k.startsWith('_') && !hidden.has(k) && row[k] !== '' && row[k] != null && !(typeof row[k] === 'number' && row[k] === 0 && /tip|discount|tier|adj|difference/.test(k) && !schemaByKey.has(k)));
+    const populatedKeys = Object.keys(row).filter(k => !k.startsWith('_') && !hidden.has(k) && !isMaskedPayrollAccessBlocked(key, k) && !(key === 'employments' && k === 'salary_pending' && !canViewPayrollDollarAmounts()) && row[k] !== '' && row[k] != null && !(typeof row[k] === 'number' && row[k] === 0 && /tip|discount|tier|adj|difference/.test(k) && !schemaByKey.has(k)));
     const allKeysSet = new Set(populatedKeys);
     schema.forEach(f => {
-      if (!f.drawerOnly && !hidden.has(f.key)) allKeysSet.add(f.key);
+      if (!f.drawerOnly && !hidden.has(f.key) && !isMaskedPayrollAccessBlocked(key, f.key) && !(key === 'employments' && f.key === 'salary_pending' && !canViewPayrollDollarAmounts())) allKeysSet.add(f.key);
     });
     const allKeys = Array.from(allKeysSet);
 
@@ -110807,6 +111138,7 @@
     const canEditFull = canModifyData();
     const canEditWordOnly = canModifyTextOnly();
     const renderCell = (k, valOverride) => {
+      if (isMaskedPayrollAccessBlocked(key, k) || (key === 'employments' && k === 'salary_pending' && !canViewPayrollDollarAmounts())) return '';
       const fDef = schemaByKey.get(k);
       const v = valOverride !== undefined ? valOverride : (fDef && typeof fDef.getVal === 'function' ? fDef.getVal(row) : row[k]);
       const formatted = inspectorValue(k, v);
@@ -110843,10 +111175,12 @@
   function renderSubgridBoxHtml(sg) {
     const rows = sg.rows || [];
     const shown = rows.slice(0, 25);
+    const visibleCols = (sg.cols || []).filter(c => !isMaskedPayrollAccessBlocked(sg.targetKey, c));
+    const effSumCol = (sg.sumCol && !isMaskedPayrollAccessBlocked(sg.targetKey, sg.sumCol)) ? sg.sumCol : '';
     let sumVal = 0, hasSum = false;
-    if (sg.sumCol) {
+    if (effSumCol) {
       rows.forEach(r => {
-        const rawSumVal = (sg.targetKey === 'employments' && sg.sumCol === 'package_usd') ? empContractPackageUsd(r) : r[sg.sumCol];
+        const rawSumVal = (sg.targetKey === 'employments' && effSumCol === 'package_usd') ? empContractPackageUsd(r) : r[effSumCol];
         const n = Number(rawSumVal);
         if (Number.isFinite(n)) {
           const rowSgn = sg.targetKey === 'sales_tickets' ? ticketSign(r) : (sg.targetKey === 'expenses' ? expenseSign(r) : 1);
@@ -110855,7 +111189,7 @@
         }
       });
     }
-    const isMoneySum = sg.sumCol && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|daily_usd|principal|proceeds|^debit$|^credit$|balance/.test(sg.sumCol);
+    const isMoneySum = effSumCol && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|daily_usd|principal|proceeds|^debit$|^credit$|balance/.test(effSumCol);
 
     return `
       <div class="pa-subgrid-box" id="subgrid_${esc(sg.id)}" data-subgrid-box="${esc(sg.id)}">
@@ -110875,13 +111209,13 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${sg.cols.map(c => `<th class="${!/^(cost_class|cost_bucket|working_days)$/i.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|qty|litres|capacity|hours|days|percentage|_count|proceeds|^debit$|^credit$|balance$/.test(c) ? 'r' : ''}">${esc(c === 'package_usd' ? 'Total / Mo ($)' : (c === 'reimbursement' ? 'Reimb. ($)' : c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())))}</th>`).join('')}
+                  ${visibleCols.map(c => `<th class="${!/^(cost_class|cost_bucket|working_days)$/i.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|qty|litres|capacity|hours|days|percentage|_count|proceeds|^debit$|^credit$|balance$/.test(c) ? 'r' : ''}">${esc(c === 'package_usd' ? 'Total / Mo ($)' : (c === 'reimbursement' ? 'Reimb. ($)' : c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())))}</th>`).join('')}
                 </tr>
               </thead>
               <tbody data-sg-tbody="${esc(sg.id)}">
                 ${shown.map(r => `
                   <tr${sg.noRowInspect ? '' : ` class="rrow" data-rkey="${esc(sg.targetKey)}" data-rid="${esc(r.id || r.name || r.ticket_no)}"`}>
-                    ${sg.cols.map((c, ci) => {
+                    ${visibleCols.map((c, ci) => {
                       let v = r[c] !== undefined ? r[c] : resolveColVal(r, c, 'tbl_' + sg.targetKey);
                       if (sg.targetKey === 'employments') {
                         if (c === 'salary_usd') v = empContractMonthlyUsd(r);
@@ -110916,7 +111250,7 @@
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="${Math.max(1, sg.cols.length - (hasSum ? 1 : 0))}"><b>TOTAL (${fmtNum(rows.length)} ${esc(sg.shortLabel.toUpperCase())}${rows.length > 25 ? ' · showing top 25' : ''})</b></td>
+                  <td colspan="${Math.max(1, visibleCols.length - (hasSum ? 1 : 0))}"><b>TOTAL (${fmtNum(rows.length)} ${esc(sg.shortLabel.toUpperCase())}${rows.length > 25 ? ' · showing top 25' : ''})</b></td>
                   ${hasSum ? `<td class="r"><b>${isMoneySum ? fmtUSD(sumVal, 2) : fmtNum(sumVal, 2)}</b></td>` : ''}
                 </tr>
               </tfoot>
@@ -112272,7 +112606,7 @@
           ${tc ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspOpenFull360Btn">Open Full 360° Profile ↗</button>` : ''}
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
           ${((key === 'expenses' && isPendingPriceExpense(row) && (canModifyData() || canEnterForm('expense'))) || (key === 'raw_purchases' && isPendingPriceRaw(row) && (canModifyData() || canEnterForm('raw')))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Price</button>` : ''}
-          ${(key === 'employments' && isPendingSalaryEmployment(row) && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance'))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Salary</button>` : ''}
+          ${(key === 'employments' && isPendingSalaryEmployment(row) && canViewPayrollDollarAmounts() && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance'))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Salary</button>` : ''}
           ${(canModifyRecord() || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver())) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} ${isInspWordOnly ? 'Modify Words' : 'Modify Record'}</button>` : ''}
           ${isEquipInspect && canEnterForm('defect') ? `<button type="button" class="pa-cmd-btn" id="inspReportDefectBtn">${ic('warn')} + Report Warning</button>` : ''}
           ${isEquipInspect && canEnterForm('repair') ? `<button type="button" class="pa-cmd-btn" id="inspLogRepairBtn">${ic('repair')} + Log Repair</button>` : ''}
@@ -112282,6 +112616,7 @@
           ${key === 'equipment_defects' && isDefectOpen(row) && canEnterForm('partlog') ? `<button type="button" class="pa-cmd-btn" id="inspResolveWithPartBtn">${ic('cog')} + Log Part Change</button>` : ''}
           ${(key === 'staff_members' || key === 'employments' || key === 'staff_assignments') && canEnterForm('staffassignment') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspLogStaffAssignBtn">${ic('staffassignment')} + Log Role or Equipment</button>` : ''}
           ${key === 'staff_members' && canEnterForm('employment') ? `<button type="button" class="pa-cmd-btn" id="inspNewStaffContractBtn">${ic('employment')} + New Contract</button>` : ''}
+          ${(key === 'staff_members' || key === 'employments') && canAccessRdlReport('28') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspHrPrintPackBtn">${ic('printer')} HR Print Pack</button>` : ''}
           ${key === 'sites' && getActiveIndustry() === 'Manufacturing' && canEnterForm('pricerule_raw') ? `<button type="button" class="pa-cmd-btn" id="inspNewSiteRawRuleBtn">${ic('pricing')} + Quarry Agreement</button>` : ''}
           ${key === 'sites' && getActiveIndustry() === 'Manufacturing' && canEnterForm('pricerule') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspNewSiteSalesRuleBtn">${ic('pricing')} + Sales Agreement</button>` : ''}
           ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">${ic('ruler')} Truck Size Windows (${eqWindows.length})</button>` : ''}
@@ -112799,6 +113134,17 @@
         openEntryModal('employment', { staff: stName, role: row.role || '', co: row.company || '', samePerson: true });
       });
     }
+    const inspHrPrintPackBtn = $('inspHrPrintPackBtn');
+    if (inspHrPrintPackBtn) {
+      inspHrPrintPackBtn.addEventListener('click', () => {
+        const stName = row.staff || row.name || '';
+        const staffId = key === 'staff_members' ? (row.id || '') : (row.enrolled_staff_id || '');
+        const empId = key === 'employments' ? (row.id || '') : (row.enrolled_emp_id || '');
+        const staffCo = row.company || '';
+        closeRecordInspector();
+        openHrPrintPack({ staff: stName, staffId, empId, company: staffCo });
+      });
+    }
     const inspNewSiteRawRuleBtn = $('inspNewSiteRawRuleBtn');
     if (inspNewSiteRawRuleBtn) {
       inspNewSiteRawRuleBtn.addEventListener('click', () => {
@@ -113045,30 +113391,34 @@
         const proc = round2(getModNum('sale_proceeds'));
         html = `<span>Disposition: <b>${esc(disp)}</b></span><span>Pre-Notified: <b>${pre ? 'Verified' : 'Unnotified'}</b></span><span>Outlay: <b>${fmtUSD(out, 2)}</b></span><span>Proceeds: <b>${fmtUSD(proc, 2)}</b></span>`;
       } else if (key === 'salaries') {
-        const stName = getModVal('staff') || row.staff;
         const payMo = getModVal('payroll_month') || row.payroll_month || String(getModVal('date') || row.date || '').slice(0, 7);
-        const salDt = getModVal('date') || row.date || todayISO();
-        const usd = getModNum('usd_amount');
-        const lbp = getModNum('lbp_amount');
-        const salAmtEdited = Boolean(($('insp_edit_usd_amount') && $('insp_edit_usd_amount').dataset.userEdited === '1') || ($('insp_edit_lbp_amount') && $('insp_edit_lbp_amount').dataset.userEdited === '1'));
-        const totAmt = salAmtEdited && (usd > 0 || lbp > 0)
-          ? round2(usd + lbp / getLbpFxRate(salDt, row.currency || 'LBP'))
-          : getModNum('amount');
-        if ($('insp_edit_amount') && salAmtEdited && (usd > 0 || lbp > 0)) $('insp_edit_amount').value = totAmt.toFixed(2);
-        const pos = computeStaffMonthPayrollPosition(stName, getModVal('company') || row.company, payMo, getModVal('date') || row.date, row.id, true);
-        if (pos && pos.hasContract) {
-          const afterRem = round2(pos.monthNetEarned - (pos.paidSoFar + totAmt));
-          if (pos.isFutureMonth) {
-            const futAfter = afterRem >= -0.01
-              ? `Future Adv (${fmtUSD(Math.max(0, afterRem), 2)} Base Left)`
-              : `Future Adv (+${fmtUSD(Math.abs(afterRem), 2)} Over Base)`;
-            html = `<span>${esc(pos.monthLabel)} Base: <b>${fmtUSD(pos.baseNet, 2)} ($0 Earned Yet)</b></span><span>Other Advanced: <b>${fmtUSD(pos.paidSoFar, 2)}</b></span><span>This Advance: <b>${fmtUSD(totAmt, 2)}</b></span><span>After: <b>${futAfter}</b></span>`;
-          } else {
-            const statusStr = afterRem < -0.01 ? `Advance +${fmtUSD(Math.abs(afterRem), 2)}` : (afterRem <= 0.01 ? 'Settled ($0.00 Left)' : `${fmtUSD(afterRem, 2)} Remaining`);
-            html = `<span>${esc(pos.monthLabel)} Earned: <b>${fmtUSD(pos.monthNetEarned, 2)}</b></span><span>Other Paid: <b>${fmtUSD(pos.paidSoFar, 2)}</b></span><span>This Voucher: <b>${fmtUSD(totAmt, 2)}</b></span><span>After: <b>${statusStr}</b></span>`;
-          }
+        if (!canViewPayrollDollarAmounts()) {
+          html = `<span>Month: <b>${esc(formatPayrollMonthLabel(payMo))}</b></span><span>Status: <b>Restricted</b></span>`;
         } else {
-          html = `<span>Total USD: <b>${fmtUSD(totAmt, 2)}</b></span><span>Month: <b>${esc(formatPayrollMonthLabel(payMo))}</b></span>`;
+          const stName = getModVal('staff') || row.staff;
+          const salDt = getModVal('date') || row.date || todayISO();
+          const usd = getModNum('usd_amount');
+          const lbp = getModNum('lbp_amount');
+          const salAmtEdited = Boolean(($('insp_edit_usd_amount') && $('insp_edit_usd_amount').dataset.userEdited === '1') || ($('insp_edit_lbp_amount') && $('insp_edit_lbp_amount').dataset.userEdited === '1'));
+          const totAmt = salAmtEdited && (usd > 0 || lbp > 0)
+            ? round2(usd + lbp / getLbpFxRate(salDt, row.currency || 'LBP'))
+            : getModNum('amount');
+          if ($('insp_edit_amount') && salAmtEdited && (usd > 0 || lbp > 0)) $('insp_edit_amount').value = totAmt.toFixed(2);
+          const pos = computeStaffMonthPayrollPosition(stName, getModVal('company') || row.company, payMo, getModVal('date') || row.date, row.id, true);
+          if (pos && pos.hasContract) {
+            const afterRem = round2(pos.monthNetEarned - (pos.paidSoFar + totAmt));
+            if (pos.isFutureMonth) {
+              const futAfter = afterRem >= -0.01
+                ? `Future Adv (${fmtUSD(Math.max(0, afterRem), 2)} Base Left)`
+                : `Future Adv (+${fmtUSD(Math.abs(afterRem), 2)} Over Base)`;
+              html = `<span>${esc(pos.monthLabel)} Base: <b>${fmtUSD(pos.baseNet, 2)} ($0 Earned Yet)</b></span><span>Other Advanced: <b>${fmtUSD(pos.paidSoFar, 2)}</b></span><span>This Advance: <b>${fmtUSD(totAmt, 2)}</b></span><span>After: <b>${futAfter}</b></span>`;
+            } else {
+              const statusStr = afterRem < -0.01 ? `Advance +${fmtUSD(Math.abs(afterRem), 2)}` : (afterRem <= 0.01 ? 'Settled ($0.00 Left)' : `${fmtUSD(afterRem, 2)} Remaining`);
+              html = `<span>${esc(pos.monthLabel)} Earned: <b>${fmtUSD(pos.monthNetEarned, 2)}</b></span><span>Other Paid: <b>${fmtUSD(pos.paidSoFar, 2)}</b></span><span>This Voucher: <b>${fmtUSD(totAmt, 2)}</b></span><span>After: <b>${statusStr}</b></span>`;
+            }
+          } else {
+            html = `<span>Total USD: <b>${fmtUSD(totAmt, 2)}</b></span><span>Month: <b>${esc(formatPayrollMonthLabel(payMo))}</b></span>`;
+          }
         }
       } else if (key === 'expenses') {
         const mQty = getModNum('qty') || 1;
@@ -113100,22 +113450,26 @@
           html = `<span>Total Amount: <b>${fmtUSD(mAmt, 2)}</b></span><span>Method: <b>${esc(dispMethod)}</b></span>${isFuel && mQty > 0 && mAmt > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}`;
         }
       } else if (key === 'employments') {
-        const mSal = getModNum('salary_usd');
-        const mDaily = getModNum('daily_rate');
-        const mReimb = getModNum('reimbursement');
-        const mDed = getModNum('deduction');
         const mDays = getModNum('working_days') || Number(row.working_days || 30) || 30;
-        const pendSel = $('insp_edit_salary_pending');
-        if ((mSal > 0 || mDaily > 0) && pendSel && pendSel.value === 'Yes' && pendSel.dataset.userEdited !== '1') {
-          pendSel.value = 'No';
-        }
-        const stillPend = pendSel ? pendSel.value === 'Yes' : ((mSal === 0 && mDaily === 0) && isPendingSalaryEmployment(row));
-        if (stillPend) {
-          html = `<span>Schedule: <b>${fmtNum(mDays, 0)}d</b></span><span>Status: <b style="color:var(--warn)">Salary Pending ($0.00 Base &amp; OT)</b></span>`;
+        if (!canViewPayrollDollarAmounts()) {
+          html = `<span>Schedule: <b>${fmtNum(mDays, 0)}d</b></span><span>Status: <b>Restricted</b></span>`;
         } else {
-          const effBaseMo = mSal > 0 ? mSal : round2(mDaily * mDays);
-          const effPkgMo = round2(effBaseMo + mReimb);
-          html = `<span>Monthly Package: <b>${fmtUSD(effPkgMo, 2)}</b>${mReimb > 0 ? ` <small>(${fmtUSD(effBaseMo, 2)} Base + ${fmtUSD(mReimb, 2)} Reimb.${mDed > 0 ? ` · -${fmtUSD(mDed, 2)}/d abs` : ''})</small>` : ''}</span>${isPendingSalaryEmployment(row) && effPkgMo > 0 ? `<span>Status: <b style="color:var(--ok)">✓ Clears Pending Salary · Retroactive from ${esc(row.start_date || 'Start')}</b></span>` : ''}`;
+          const mSal = getModNum('salary_usd');
+          const mDaily = getModNum('daily_rate');
+          const mReimb = getModNum('reimbursement');
+          const mDed = getModNum('deduction');
+          const pendSel = $('insp_edit_salary_pending');
+          if ((mSal > 0 || mDaily > 0) && pendSel && pendSel.value === 'Yes' && pendSel.dataset.userEdited !== '1') {
+            pendSel.value = 'No';
+          }
+          const stillPend = pendSel ? pendSel.value === 'Yes' : ((mSal === 0 && mDaily === 0) && isPendingSalaryEmployment(row));
+          if (stillPend) {
+            html = `<span>Schedule: <b>${fmtNum(mDays, 0)}d</b></span><span>Status: <b style="color:var(--warn)">Salary Pending ($0.00 Base &amp; OT)</b></span>`;
+          } else {
+            const effBaseMo = mSal > 0 ? mSal : round2(mDaily * mDays);
+            const effPkgMo = round2(effBaseMo + mReimb);
+            html = `<span>Monthly Package: <b>${fmtUSD(effPkgMo, 2)}</b>${mReimb > 0 ? ` <small>(${fmtUSD(effBaseMo, 2)} Base + ${fmtUSD(mReimb, 2)} Reimb.${mDed > 0 ? ` · -${fmtUSD(mDed, 2)}/d abs` : ''})</small>` : ''}</span>${isPendingSalaryEmployment(row) && effPkgMo > 0 ? `<span>Status: <b style="color:var(--ok)">✓ Clears Pending Salary · Retroactive from ${esc(row.start_date || 'Start')}</b></span>` : ''}`;
+          }
         }
       } else if (key === 'fuel_malfunctions') {
         const mItem = getModVal('item') || row.item || 'Diesel';
@@ -113406,6 +113760,14 @@
           if (isUserEdited && (key === 'equipment' || key === 'company_equipment') && fk === 'capacity' && /^(truck|mixer)/i.test(($('insp_edit_type') && $('insp_edit_type').value) || row.type || (targetEqRow && targetEqRow.type) || 'Truck') && !(Number(nextVal) > 0)) {
             validationError = 'Box Capacity (m³) must be greater than 0 for trucks and mixers.';
             return;
+          }
+          if (isUserEdited && (key === 'staff_members' || key === 'employments' || key === 'freelance_entries')
+            && (fk === 'id_expiry_date' || fk === 'work_permit_expiry' || fk === 'residency_expiry' || fk === 'dob')) {
+            const dtStr = String(nextVal ?? '').trim();
+            if (dtStr && !isValidStrictIsoCalendarDate(dtStr)) {
+              validationError = `${String(fDef.label || fk).replace(/\s*\*\s*$/, '')} must be a valid calendar YYYY-MM-DD date.`;
+              return;
+            }
           }
 
           let isDiff = false;
@@ -114416,11 +114778,24 @@
         const cIdx = STATE.customRecords[key].findIndex(x => String(x.id) === String(row.id));
         if (cIdx >= 0) Object.assign(STATE.customRecords[key][cIdx], row);
         else STATE.customRecords[key].unshift(Object.assign({}, row));
-        if (window.__fastInspectorModifyTest && inspSiteCascadePosts.length) {
+        const hrInspExtraPosts = [];
+        const hrChangedKeys = (key === 'staff_members' || key === 'employments' || key === 'freelance_entries')
+          ? Object.keys(pendingUpdates).filter(k => _HR_SYNC_COMPLIANCE_COLS.includes(k))
+          : [];
+        if (hrChangedKeys.length) {
+          syncHrComplianceFields({
+            crKey: key,
+            record: row,
+            isEditingExisting: true,
+            explicitKeys: hrChangedKeys,
+            extraApiPosts: hrInspExtraPosts
+          });
+        }
+        if (window.__fastInspectorModifyTest && (inspSiteCascadePosts.length || hrInspExtraPosts.length)) {
           applyCustomRecordsToSeed();
         }
         if (!window.__fastInspectorModifyTest) {
-          const inspExtraPosts = inspSiteCascadePosts.slice();
+          const inspExtraPosts = inspSiteCascadePosts.concat(hrInspExtraPosts);
           // Back pay: the row was edited in place, so the contracts before the change are the seed's others plus the
           // row as it was (origRowSnap), when it belonged to the same staff and company.
           let inspBackpayCtx = null;
@@ -139121,6 +139496,7 @@
     nssf_card: 'NSSF Card',
     civil_extract: 'Civil Extract',
     work_permit: 'Work Permit',
+    residency_permit: 'Residency Permit',
     passport: 'Passport',
     id_card: 'ID Card'
   };
@@ -139179,6 +139555,581 @@
       </div>
     `;
   }
+
+  function isNonLebaneseNationality(nationality) {
+    const raw = String(nationality || '').trim();
+    if (!raw) return false;
+    return !/^(leban|lbn|liban|لبنان)/i.test(raw);
+  }
+
+  function _complianceNormIso(raw) {
+    let s = String(raw == null ? '' : raw).trim();
+    if (!s) return '';
+    s = s.replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+    const isExactCalendar = (y, m, d) => {
+      if (y < 1900 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return false;
+      const chk = new Date(Date.UTC(y, m - 1, d));
+      return chk.getUTCFullYear() === y && chk.getUTCMonth() === m - 1 && chk.getUTCDate() === d;
+    };
+    const ymd = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(s);
+    if (ymd) {
+      const y = Number(ymd[1]), m = Number(ymd[2]), d = Number(ymd[3]);
+      if (isExactCalendar(y, m, d)) {
+        return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      }
+      return '';
+    }
+    const dmy = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(s);
+    if (dmy) {
+      const d = Number(dmy[1]), m = Number(dmy[2]), y = Number(dmy[3]);
+      if (isExactCalendar(y, m, d)) {
+        return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      }
+    }
+    return '';
+  }
+
+  function isValidStrictIsoCalendarDate(raw) {
+    let s = String(raw == null ? '' : raw).trim();
+    if (!s) return true;
+    s = s.replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (!m) return false;
+    const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+    if (y < 1900 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return false;
+    const chk = new Date(Date.UTC(y, mo - 1, d));
+    return chk.getUTCFullYear() === y && chk.getUTCMonth() === mo - 1 && chk.getUTCDate() === d;
+  }
+
+  const _HR_SYNC_COMPLIANCE_COLS = ['father_name', 'father_name_ar', 'full_name_ar', 'mother_name', 'mother_name_ar', 'dob', 'nationality', 'nationality_ar', 'reference', 'id_doc_kind', 'nssf_no', 'id_expiry_date', 'work_permit_no', 'work_permit_expiry', 'residency_no', 'residency_expiry'];
+
+  function syncHrComplianceFields(opts = {}) {
+    const crKey = String((opts && opts.crKey) || '').trim();
+    const record = (opts && opts.record) || null;
+    const isEditingExisting = Boolean(opts && opts.isEditingExisting);
+    const explicitSet = Array.isArray(opts && opts.explicitKeys) ? new Set(opts.explicitKeys) : null;
+    const extraApiPosts = Array.isArray(opts && opts.extraApiPosts) ? opts.extraApiPosts : null;
+    if (!record || !crKey) return;
+
+    if ((crKey === 'employments' || crKey === 'freelance_entries') && record.staff) {
+      const hasAnySync = explicitSet
+        ? _HR_SYNC_COMPLIANCE_COLS.some(k => explicitSet.has(k))
+        : _HR_SYNC_COMPLIANCE_COLS.some(k => String(record[k] || '').trim());
+      if (!hasAnySync) return;
+      ensureStaffMembersSeeded();
+      const fNorm = norm(record.staff);
+      const fCoNorm = norm(canonCompany(record.company || 'WTC'));
+      if (!Array.isArray(STATE.customRecords.staff_members)) STATE.customRecords.staff_members = [];
+      const matchCoSm = s => s && !s.voided && !s.archived && ((record.staff_id && String(s.id || '') === String(record.staff_id)) || (norm(s.name || s.staff) === fNorm && s.company && norm(canonCompany(s.company)) === fCoNorm));
+      const matchBlankSm = s => s && !s.voided && !s.archived && norm(s.name || s.staff) === fNorm && !s.company;
+      const smHit = STATE.customRecords.staff_members.find(matchCoSm)
+        || ((SEED.records && SEED.records.staff_members) || []).find(matchCoSm)
+        || (isOwner()
+          ? (STATE.customRecords.staff_members.find(matchBlankSm) || ((SEED.records && SEED.records.staff_members) || []).find(matchBlankSm))
+          : null);
+      if (smHit) {
+        let smChanged = false;
+        _HR_SYNC_COMPLIANCE_COLS.forEach(k => {
+          const isExplicit = Boolean(explicitSet && explicitSet.has(k));
+          if (explicitSet && !isExplicit) return;
+          const nv = k === 'father_name' && record[k] ? cleanFatherName(record[k]) : String(record[k] ?? '').trim();
+          const curV = String(smHit[k] ?? '').trim();
+          if (isExplicit) {
+            if (curV !== nv) {
+              smHit[k] = nv;
+              smChanged = true;
+            }
+          } else if (nv && (!curV || isEditingExisting) && curV !== nv) {
+            smHit[k] = nv;
+            smChanged = true;
+          }
+        });
+        if (!smHit.company && record.company && isOwner()) { smHit.company = canonCompany(record.company); smChanged = true; }
+        if (crKey === 'employments' && record.id && !smHit.enrolled_emp_id) { smHit.enrolled_emp_id = record.id; smChanged = true; }
+        if (smChanged) {
+          smHit.same_person_confirmed = true;
+          smHit.modified_by = record.modified_by || record.entered_by || (activeUser() && activeUser().email) || '';
+          smHit.modified_at = record.modified_at || new Date().toISOString();
+          smHit.updated_at = smHit.modified_at;
+          const cIdx = STATE.customRecords.staff_members.findIndex(s => s && String(s.id) === String(smHit.id));
+          if (cIdx >= 0) Object.assign(STATE.customRecords.staff_members[cIdx], smHit);
+          else STATE.customRecords.staff_members.unshift(Object.assign({}, smHit));
+          const seedSm = ((SEED.records && SEED.records.staff_members) || []).find(s => s && String(s.id) === String(smHit.id));
+          if (seedSm && seedSm !== smHit) Object.assign(seedSm, smHit);
+          if (extraApiPosts) extraApiPosts.push(['staff_members', Object.assign({}, smHit)]);
+        }
+      }
+      return;
+    }
+
+    if (crKey === 'staff_members' && record.name) {
+      const stSyncUpdates = {};
+      _HR_SYNC_COMPLIANCE_COLS.forEach(k => {
+        const isExplicit = Boolean(explicitSet && explicitSet.has(k));
+        if (explicitSet && !isExplicit) return;
+        const val = k === 'father_name' && record[k] ? cleanFatherName(record[k]) : String(record[k] ?? '').trim();
+        if (val || isExplicit) stSyncUpdates[k] = val;
+      });
+      if (!Object.keys(stSyncUpdates).length) return;
+      const stIdStr = String(record.id || '').trim();
+      const stNameNorm = norm(record.name || '');
+      const stCoNorm = record.company ? norm(canonCompany(record.company)) : '';
+      const linkedEmpHint = String(record.enrolled_emp_id || '').trim();
+      const allSmActive = ((SEED.records && SEED.records.staff_members) || []).concat(STATE.customRecords.staff_members || []);
+      const uniqSmIds = new Set();
+      allSmActive.forEach(s => { if (s && !s.voided && !s.archived && norm(s.name || s.staff) === stNameNorm) uniqSmIds.add(String(s.id || s.name || '')); });
+      const hasHomonymStaff = uniqSmIds.size > 1;
+      ['employments', 'freelance_entries'].forEach(tbl => {
+        if (!Array.isArray(STATE.customRecords[tbl])) STATE.customRecords[tbl] = [];
+        const seedList = (SEED.records && Array.isArray(SEED.records[tbl])) ? SEED.records[tbl] : [];
+        const custList = STATE.customRecords[tbl];
+        const seenContractIds = new Set();
+        const syncContract = rowObj => {
+          if (!rowObj || rowObj.voided || rowObj.archived) return false;
+          if (/^(ended|closed|terminated|inactive|cancelled)$/i.test(String(rowObj.status || 'Active').trim())) return false;
+          const bySid = Boolean(stIdStr && String(rowObj.staff_id || '').trim() === stIdStr);
+          const byHint = Boolean(linkedEmpHint && String(rowObj.id || '').trim() === linkedEmpHint);
+          if (!bySid && !byHint) {
+            if (hasHomonymStaff) return false;
+            if (norm(rowObj.staff || rowObj.name) !== stNameNorm) return false;
+            if (stCoNorm && rowObj.company && norm(canonCompany(rowObj.company)) !== stCoNorm) return false;
+          }
+          let changed = false;
+          if (stIdStr && !String(rowObj.staff_id || '').trim()) { rowObj.staff_id = stIdStr; changed = true; }
+          Object.keys(stSyncUpdates).forEach(k => {
+            if (String(rowObj[k] ?? '').trim() !== stSyncUpdates[k]) {
+              rowObj[k] = stSyncUpdates[k];
+              changed = true;
+            }
+          });
+          if (changed) {
+            rowObj.modified_by = record.modified_by || record.entered_by || (activeUser() && activeUser().email) || '';
+            rowObj.modified_at = record.modified_at || new Date().toISOString();
+            rowObj.updated_at = rowObj.modified_at;
+          }
+          return changed;
+        };
+        custList.forEach(cRow => {
+          if (syncContract(cRow)) {
+            if (cRow.id != null) seenContractIds.add(String(cRow.id));
+            const srMatch = seedList.find(sr => sr && String(sr.id) === String(cRow.id));
+            if (srMatch) Object.assign(srMatch, cRow);
+            if (extraApiPosts) extraApiPosts.push([tbl, Object.assign({}, cRow)]);
+          }
+        });
+        seedList.forEach(sRow => {
+          if (!sRow || (sRow.id != null && seenContractIds.has(String(sRow.id)))) return;
+          const clone = Object.assign({}, sRow);
+          if (syncContract(clone)) {
+            custList.unshift(clone);
+            Object.assign(sRow, clone);
+            if (clone.id != null) seenContractIds.add(String(clone.id));
+            if (extraApiPosts) extraApiPosts.push([tbl, Object.assign({}, clone)]);
+          }
+        });
+      });
+    }
+  }
+
+  function _complianceUtcDayDiff(isoDate, todayIso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(isoDate || '').trim());
+    const tm = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(todayIso || '').trim());
+    if (!m || !tm) return null;
+    const tMs = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const nMs = Date.UTC(Number(tm[1]), Number(tm[2]) - 1, Number(tm[3]));
+    return Math.round((tMs - nMs) / 86400000);
+  }
+
+  function _resolveS13Windows(todayOrOpts) {
+    let todayOverride = '';
+    let critOpt = null;
+    let warnOpt = null;
+    if (todayOrOpts && typeof todayOrOpts === 'object') {
+      todayOverride = todayOrOpts.today || todayOrOpts.todayOverride || '';
+      if (todayOrOpts.critDays != null && Number.isFinite(Number(todayOrOpts.critDays))) critOpt = Number(todayOrOpts.critDays);
+      if (todayOrOpts.warnDays != null && Number.isFinite(Number(todayOrOpts.warnDays))) warnOpt = Number(todayOrOpts.warnDays);
+    } else {
+      todayOverride = todayOrOpts || '';
+    }
+    const rawCrit = critOpt != null ? critOpt : (typeof getAlertParam === 'function' ? Number(getAlertParam('S13', 'crit_window_days', 7)) : 7);
+    const rawWarn = warnOpt != null ? warnOpt : (typeof getAlertParam === 'function' ? Number(getAlertParam('S13', 'warn_window_days', 60)) : 60);
+    const critDays = Number.isFinite(rawCrit) && rawCrit >= 0 ? Math.round(rawCrit) : 7;
+    const warnDays = Math.max(critDays, Number.isFinite(rawWarn) && rawWarn >= 0 ? Math.round(rawWarn) : 60);
+    return { todayOverride: String(todayOverride || ''), critDays, warnDays };
+  }
+
+  function isStaffMemberAllowedForSeat(staff, seedObj, userOverride) {
+    const s = staff;
+    if (!s || s.voided || s.archived) return false;
+    const u = userOverride || (typeof activeUser === 'function' ? activeUser() : null);
+    if ((typeof isDemoScopeActive === 'function' && isDemoScopeActive()) || (typeof isOwner === 'function' && isOwner(u))) {
+      return true;
+    }
+    const sd = seedObj || (typeof SEED !== 'undefined' ? SEED : {});
+    const allowedList = typeof allowedCompanyNames === 'function' ? allowedCompanyNames(u) : ['WTC'];
+    const allowedSet = new Set(allowedList.map(n => norm(n)).filter(Boolean));
+    if (!allowedSet.size) return false;
+    const sid = String(s.id || '').trim();
+    const sName = norm(s.name || s.staff || '');
+    const linkedCos = [];
+    ['employments', 'freelance_entries'].forEach(tbl => {
+      const arr = (sd && sd.records && Array.isArray(sd.records[tbl])) ? sd.records[tbl] : [];
+      for (let i = 0; i < arr.length; i++) {
+        const e = arr[i];
+        if (!e || e.voided || e.archived || !e.company) continue;
+        if ((sid && String(e.staff_id || '').trim() === sid) || (sName && norm(e.staff || e.name || '') === sName)) {
+          linkedCos.push(e.company);
+        }
+      }
+    });
+    if (s.company && String(s.company).trim()) {
+      return allowedSet.has(norm(s.company)) || linkedCos.some(c => allowedSet.has(norm(c)));
+    }
+    if (linkedCos.length > 0) {
+      return linkedCos.some(c => allowedSet.has(norm(c)));
+    }
+    const actInd = typeof getActiveIndustry === 'function' ? getActiveIndustry() : 'Manufacturing';
+    const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
+    const indCos = cat.filter(c => (c.industry || 'Manufacturing') === actInd).map(c => norm(c.name)).filter(Boolean);
+    return indCos.length > 0 && indCos.every(cn => allowedSet.has(cn));
+  }
+
+  function _complianceTierFromDays(days, critDays = 7, warnDays = 60) {
+    if (days == null || !Number.isFinite(days)) return 'ok';
+    const cDays = Number.isFinite(Number(critDays)) ? Number(critDays) : 7;
+    const wDays = Math.max(cDays, Number.isFinite(Number(warnDays)) ? Number(warnDays) : 60);
+    if (days < 0) return 'expired';
+    if (days <= cDays) return 'critical_7';
+    if (days <= 30 && days <= wDays) return 'due_30';
+    if (days <= wDays) return 'watch_60';
+    return 'ok';
+  }
+
+  function evaluateStaffComplianceRow(staff, seedObj, todayOrOpts) {
+    const s = staff || {};
+    const sd = seedObj || (typeof SEED !== 'undefined' ? SEED : {});
+    const { todayOverride, critDays, warnDays } = _resolveS13Windows(todayOrOpts);
+    const todayIso = /^\d{4}-\d{2}-\d{2}/.test(todayOverride)
+      ? todayOverride.slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+    const sid = String(s.id || '').trim();
+    const sNameNorm = norm(s.name || '');
+    const allEmps = (sd && sd.records && Array.isArray(sd.records.employments)) ? sd.records.employments : [];
+    const staffEmps = allEmps.filter(e => {
+      if (!e || e.voided || e.archived) return false;
+      if (sid && String(e.staff_id || '').trim() === sid) return true;
+      return sNameNorm && norm(e.staff || '') === sNameNorm;
+    });
+    const stLower = String(s.status || '').trim().toLowerCase();
+    const explicitlyInactive = Boolean(s.voided || s.archived) || stLower === 'ended' || stLower === 'inactive' || stLower === 'terminated';
+    const allEmpsEnded = staffEmps.length > 0 && staffEmps.every(e => {
+      const est = String(e.status || '').trim().toLowerCase();
+      return est === 'ended' || est === 'terminated' || Boolean(e.end_date && String(e.end_date).slice(0, 10) < todayIso);
+    });
+    const isForeign = isNonLebaneseNationality(s.nationality);
+    const idExp = _complianceNormIso(s.id_expiry_date || '');
+    const wpNo = String(s.work_permit_no || '').trim();
+    const wpExp = _complianceNormIso(s.work_permit_expiry || '');
+    const resNo = String(s.residency_no || '').trim();
+    const resExp = _complianceNormIso(s.residency_expiry || '');
+    const missingForeignPermit = Boolean(!explicitlyInactive && !allEmpsEnded && isForeign && !wpExp);
+    const docs = [];
+    const pushDoc = (kind, label, docNo, expiryDate) => {
+      if (!expiryDate) return;
+      const daysLeft = _complianceUtcDayDiff(expiryDate, todayIso);
+      if (daysLeft == null) return;
+      docs.push({
+        kind,
+        label,
+        docNo: String(docNo || '').trim(),
+        expiryDate,
+        daysLeft,
+        tier: _complianceTierFromDays(daysLeft, critDays, warnDays)
+      });
+    };
+    if (!explicitlyInactive && !allEmpsEnded) {
+      pushDoc('id_card', 'ID / Passport', s.reference || '', idExp);
+      pushDoc('work_permit', 'Work Permit', wpNo, wpExp);
+      pushDoc('residency', 'Residency', resNo, resExp);
+    }
+    docs.sort((a, b) => a.daysLeft - b.daysLeft);
+    const urgent = docs.length ? docs[0] : null;
+    const minDays = urgent ? urgent.daysLeft : null;
+    let tier = 'none';
+    if (explicitlyInactive || allEmpsEnded) {
+      tier = 'inactive';
+    } else if (minDays != null && minDays < 0) {
+      tier = 'expired';
+    } else if (minDays != null && minDays <= critDays) {
+      tier = 'critical_7';
+    } else if (minDays != null && minDays <= 30 && minDays <= warnDays) {
+      tier = 'due_30';
+    } else if (minDays != null && minDays <= warnDays) {
+      tier = 'watch_60';
+    } else if (missingForeignPermit) {
+      tier = 'missing_permit';
+    } else if (docs.length > 0) {
+      tier = 'ok';
+    }
+    let badgeText = '';
+    if (tier === 'expired') badgeText = `Expired (${Math.abs(minDays)}d ago)`;
+    else if (tier === 'critical_7') badgeText = minDays === 0 ? `${urgent.label} due today` : `${urgent.label} ${minDays}d`;
+    else if (tier === 'due_30') badgeText = `${urgent.label} ${minDays}d`;
+    else if (tier === 'watch_60') badgeText = `${urgent.label} ${minDays}d`;
+    else if (missingForeignPermit) badgeText = 'Missing Work Permit';
+    else if (tier === 'ok' && urgent) badgeText = `Valid (${urgent.daysLeft}d)`;
+    else if (tier === 'inactive') badgeText = 'Inactive';
+    const summaryText = tier === 'expired' || tier === 'critical_7' || tier === 'due_30' || tier === 'watch_60'
+      ? `${urgent.label}: ${fmtDateDMY(urgent.expiryDate)} (${minDays < 0 ? Math.abs(minDays) + 'd overdue' : minDays + 'd left'})`
+      : (missingForeignPermit ? `Nationality ${s.nationality || 'Foreign'}: missing Work Permit expiry` : badgeText);
+    return {
+      staffId: sid,
+      staffName: String(s.name || '').trim(),
+      nationality: String(s.nationality || '').trim(),
+      isForeign,
+      inactive: explicitlyInactive || allEmpsEnded,
+      missingForeignPermit,
+      nssfNo: String(s.nssf_no || '').trim(),
+      idExpiryDate: idExp,
+      workPermitNo: wpNo,
+      workPermitExpiry: wpExp,
+      residencyNo: resNo,
+      residencyExpiry: resExp,
+      critDays,
+      warnDays,
+      docs,
+      urgentDoc: urgent,
+      minDays,
+      tier,
+      badgeText,
+      summaryText
+    };
+  }
+
+  function matchesComplianceTier(ev, tier) {
+    const tKey = String(tier || 'all').trim() || 'all';
+    if (!ev || ev.inactive) return tKey === 'all';
+    if (tKey === 'all') return true;
+    if (tKey === 'missing_permit') return ev.tier === 'missing_permit' || Boolean(ev.missingForeignPermit);
+    if (tKey === 'actionable') return ev.tier !== 'ok' && ev.tier !== 'none' && ev.tier !== 'inactive';
+    return ev.tier === tKey;
+  }
+
+  function computeStaffComplianceWatchdog(staffRows, seedObj, todayOrOpts) {
+    const sd = seedObj || (typeof SEED !== 'undefined' ? SEED : {});
+    const { todayOverride, critDays, warnDays } = _resolveS13Windows(todayOrOpts);
+    let scopedRows;
+    if (Array.isArray(staffRows)) {
+      scopedRows = staffRows.filter(r => isStaffMemberAllowedForSeat(r, sd));
+    } else {
+      const rawSm = (sd && sd.records && Array.isArray(sd.records.staff_members)) ? sd.records.staff_members : [];
+      const baseRows = (typeof filterRecords === 'function'
+        ? filterRecords(rawSm, { tableKey: 'staff_members', ignorePeriod: true, ignoreSearch: true, ignoreCompany: true })
+        : rawSm).filter(r => isStaffMemberAllowedForSeat(r, sd));
+      const scopeCo = (typeof STATE !== 'undefined' && STATE.company) ? String(STATE.company) : 'ALL';
+      if (!scopeCo || scopeCo === 'ALL' || (typeof DEMO_COMPANY_KEY !== 'undefined' && scopeCo === DEMO_COMPANY_KEY)) {
+        scopedRows = baseRows;
+      } else {
+        const allowAllBypass = (typeof isDemoScopeActive === 'function' && isDemoScopeActive()) || (typeof isOwner === 'function' && isOwner());
+        const allowedList = typeof allowedCompanyNames === 'function' ? allowedCompanyNames() : [];
+        const allowedSet = new Set(allowedList.map(n => norm(n)).filter(Boolean));
+        const inAllowed = n => allowAllBypass || (allowedSet.size > 0 && allowedSet.has(norm(n)));
+        let wantList;
+        let isMultiBuScope = false;
+        if (scopeCo === 'manufacturing-group') {
+          isMultiBuScope = true;
+          wantList = ['WTC', 'BBConstruction', 'Lions Transport'].filter(inAllowed);
+        } else if (scopeCo.startsWith('industry:')) {
+          isMultiBuScope = true;
+          const indT = scopeCo.slice(9);
+          const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
+          wantList = cat.filter(c => (c.industry || 'Manufacturing') === indT).map(c => c.name).filter(inAllowed);
+        } else {
+          const singleTarget = (typeof COMPANY_BU_MATCH !== 'undefined' && COMPANY_BU_MATCH[scopeCo]) || scopeCo;
+          wantList = [singleTarget].filter(inAllowed);
+        }
+        const wantSet = new Set(wantList.map(n => norm(n)).filter(Boolean));
+        const emps = (sd && sd.records && Array.isArray(sd.records.employments)) ? sd.records.employments : [];
+        scopedRows = wantSet.size ? baseRows.filter(r => {
+          if (r.company && wantSet.has(norm(r.company))) return true;
+          const sid = String(r.id || '').trim();
+          const sName = norm(r.name || '');
+          const linked = emps.filter(e => e && !e.voided && !e.archived && ((sid && String(e.staff_id || '').trim() === sid) || (sName && norm(e.staff || '') === sName)));
+          if (!linked.length) return isMultiBuScope && !r.company;
+          return linked.some(e => e.company && wantSet.has(norm(e.company)));
+        }) : [];
+      }
+    }
+    const byStaffId = new Map();
+    const byStaffName = new Map();
+    const evals = [];
+    const counts = { total: scopedRows.length, expired: 0, critical_7: 0, due_30: 0, watch_60: 0, missing_permit: 0, actionable: 0, ok: 0 };
+    for (let i = 0; i < scopedRows.length; i++) {
+      const r = scopedRows[i];
+      if (!r) continue;
+      const ev = evaluateStaffComplianceRow(r, sd, { today: todayOverride, critDays, warnDays });
+      evals.push(ev);
+      if (ev.staffId) byStaffId.set(ev.staffId, ev);
+      if (ev.staffName) byStaffName.set(norm(ev.staffName), ev);
+      if (matchesComplianceTier(ev, 'expired')) counts.expired++;
+      if (matchesComplianceTier(ev, 'critical_7')) counts.critical_7++;
+      if (matchesComplianceTier(ev, 'due_30')) counts.due_30++;
+      if (matchesComplianceTier(ev, 'watch_60')) counts.watch_60++;
+      if (matchesComplianceTier(ev, 'missing_permit')) counts.missing_permit++;
+      if (matchesComplianceTier(ev, 'actionable')) counts.actionable++;
+      if (ev.tier === 'ok') counts.ok++;
+    }
+    const items = evals.filter(ev => matchesComplianceTier(ev, 'actionable')).sort((a, b) => {
+      const rank = t => (t === 'expired' ? 0 : t === 'critical_7' ? 1 : t === 'due_30' ? 2 : t === 'watch_60' ? 3 : 4);
+      const ra = rank(a.tier);
+      const rb = rank(b.tier);
+      if (ra !== rb) return ra - rb;
+      const da = a.minDays == null ? 9999 : a.minDays;
+      const db = b.minDays == null ? 9999 : b.minDays;
+      if (da !== db) return da - db;
+      return a.staffName.localeCompare(b.staffName);
+    });
+    return {
+      counts,
+      critDays,
+      warnDays,
+      items,
+      evals,
+      byStaffId,
+      byStaffName
+    };
+  }
+
+  function renderStaffPermitWatchdogStripHtml(opts) {
+    const o = opts || {};
+    const { critDays, warnDays } = _resolveS13Windows();
+    let wd;
+    if (Array.isArray(o.contractRows)) {
+      const sd = SEED;
+      const staffAll = (sd && sd.records && Array.isArray(sd.records.staff_members)) ? sd.records.staff_members : [];
+      const evals = [];
+      const counts = { total: 0, expired: 0, critical_7: 0, due_30: 0, watch_60: 0, missing_permit: 0, actionable: 0, ok: 0 };
+      for (let i = 0; i < o.contractRows.length; i++) {
+        const e = o.contractRows[i];
+        if (!e || e.voided || e.archived) continue;
+        counts.total++;
+        const smRec = staffAll.find(s => s && !s.voided && !s.archived && ((e.staff_id && String(s.id) === String(e.staff_id)) || norm(s.name || '') === norm(e.staff || '')));
+        const synthetic = smRec || { id: e.staff_id || '', name: e.staff || '', nationality: e.nationality || '', status: e.status || '', nssf_no: e.nssf_no || '', id_expiry_date: e.id_expiry_date || '', work_permit_no: e.work_permit_no || '', work_permit_expiry: e.work_permit_expiry || '', residency_no: e.residency_no || '', residency_expiry: e.residency_expiry || '' };
+        const ev = evaluateStaffComplianceRow(synthetic, sd, { critDays, warnDays });
+        evals.push(ev);
+        if (matchesComplianceTier(ev, 'expired')) counts.expired++;
+        if (matchesComplianceTier(ev, 'critical_7')) counts.critical_7++;
+        if (matchesComplianceTier(ev, 'due_30')) counts.due_30++;
+        if (matchesComplianceTier(ev, 'watch_60')) counts.watch_60++;
+        if (matchesComplianceTier(ev, 'missing_permit')) counts.missing_permit++;
+        if (matchesComplianceTier(ev, 'actionable')) counts.actionable++;
+        if (ev.tier === 'ok') counts.ok++;
+      }
+      const items = evals.filter(ev => matchesComplianceTier(ev, 'actionable')).sort((a, b) => {
+        const rank = t => (t === 'expired' ? 0 : t === 'critical_7' ? 1 : t === 'due_30' ? 2 : t === 'watch_60' ? 3 : 4);
+        const ra = rank(a.tier), rb = rank(b.tier);
+        if (ra !== rb) return ra - rb;
+        return (a.minDays == null ? 9999 : a.minDays) - (b.minDays == null ? 9999 : b.minDays);
+      });
+      wd = { counts, critDays, warnDays, items, evals };
+    } else {
+      wd = computeStaffComplianceWatchdog(o.staffRows, SEED, { critDays, warnDays });
+    }
+    const activeTier = String(STATE.permitWatchdogTier || 'all').trim() || 'all';
+    const c = wd.counts;
+    const cCritDays = wd.critDays || 7;
+    const cWarnDays = wd.warnDays || 60;
+    const critLblHtml = cCritDays === 7 ? '<span>Due &lt;= 7d</span>' : `<span>Due &lt;=</span> <span data-no-i18n="1">${fmtNum(cCritDays, 0)}d</span>`;
+    const warnLblHtml = cWarnDays === 60 ? '<span>Due &lt;= 60d</span>' : `<span>Due &lt;=</span> <span data-no-i18n="1">${fmtNum(cWarnDays, 0)}d</span>`;
+    const chips = [
+      { key: 'all', labelHtml: '<span>All Staff</span>', count: c.total },
+      { key: 'expired', labelHtml: '<span>Expired</span>', count: c.expired },
+      { key: 'critical_7', labelHtml: critLblHtml, count: c.critical_7 },
+      { key: 'due_30', labelHtml: '<span>Due &lt;= 30d</span>', count: c.due_30 },
+      { key: 'watch_60', labelHtml: warnLblHtml, count: c.watch_60 },
+      { key: 'missing_permit', labelHtml: '<span>Foreign Missing Permit</span>', count: c.missing_permit }
+    ];
+    const hasAlerts = c.actionable > 0;
+    const packAccess = typeof canAccessRdlReport === 'function' ? canAccessRdlReport('28') : false;
+    const leadItem = wd.items[0] || null;
+    const toneCls = c.expired > 0 || c.critical_7 > 0 ? 'is-critical' : (hasAlerts ? 'is-warn' : 'is-ok');
+    return `
+      <div class="panel-card permit-watchdog-strip ${toneCls}" id="staffPermitWatchdogStrip" data-scope="${esc(o.scope || 'reg_staff')}">
+        <div class="pwd-head">
+          <div class="pwd-title-wrap">
+            <span class="pwd-ico">${ic('shield')}</span>
+            <div>
+              <div class="pwd-title">Work Permit, Residency &amp; ID Renewal Watchdog</div>
+              <div class="pwd-sub">
+                ${hasAlerts
+                  ? `${fmtNum(c.actionable)} staff compliance item${c.actionable === 1 ? '' : 's'} flagged${leadItem ? ` (Top priority: ${esc(leadItem.staffName)} - ${esc(leadItem.badgeText)})` : ''}`
+                  : 'All active staff IDs, work permits and residencies are within valid dates.'}
+              </div>
+            </div>
+          </div>
+          <div class="pwd-actions">
+            ${packAccess ? `<button type="button" class="btn btn-sm" data-open-hr-pack data-hr-pack-staff="${esc(leadItem ? leadItem.staffId : '')}" data-hr-pack-name="${esc(leadItem ? leadItem.staffName : '')}">${ic('printer')} Contract &amp; NSSF Pack</button>` : ''}
+          </div>
+        </div>
+        <div class="pwd-chips" role="group" aria-label="Compliance watchdog filter">
+          ${chips.map(ch => {
+            const act = activeTier === ch.key;
+            return `<button type="button" class="filter-chip pwd-chip pwd-tier-${esc(ch.key)} ${act ? 'active' : ''}" data-permit-watchdog-tier="${esc(ch.key)}">${ch.labelHtml}<span class="mono pwd-chip-cnt">(${fmtNum(ch.count)})</span></button>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function openHrPrintPack(opts) {
+    if (typeof canAccessRdlReport === 'function' && !canAccessRdlReport('28')) {
+      if (typeof toast === 'function') toast('Access restricted for Contract & NSSF Pack.', 'err');
+      return false;
+    }
+    const o = opts || {};
+    let staffId = String(o.staffId || (o.staff && typeof o.staff === 'object' ? o.staff.id : '') || '').trim();
+    const empId = String(o.empId || '').trim();
+    const staffName = String(o.staffName || (typeof o.staff === 'string' ? o.staff : (o.staff && o.staff.name)) || '').trim();
+    const scopedEmps = typeof filterRecords === 'function'
+      ? filterRecords((SEED.records && SEED.records.employments) || [], { tableKey: 'employments', ignorePeriod: true, ignoreSearch: true })
+      : ((SEED.records && SEED.records.employments) || []).filter(e => e && !e.voided && !e.archived);
+    const scopedStaff = (typeof filterRecords === 'function'
+      ? filterRecords((SEED.records && SEED.records.staff_members) || [], { tableKey: 'staff_members', ignorePeriod: true, ignoreSearch: true, ignoreCompany: true })
+      : ((SEED.records && SEED.records.staff_members) || [])).filter(s => isStaffMemberAllowedForSeat(s, SEED));
+    if (!staffId && empId) {
+      const empRec = scopedEmps.find(e => e && String(e.id || '') === empId);
+      if (empRec) staffId = String(empRec.staff_id || '').trim() || staffId;
+    }
+    if (!staffId && staffName) {
+      const stRec = scopedStaff.find(s => s && norm(s.name || '') === norm(staffName));
+      if (stRec) staffId = String(stRec.id || '').trim();
+    }
+    if (!staffId) {
+      const firstStaff = scopedStaff[0];
+      if (firstStaff && firstStaff.id) staffId = String(firstStaff.id);
+    }
+    if (!STATE.rdl) STATE.rdl = {};
+    STATE.activeStatement = '28';
+    STATE.rdl.activeCode = '28';
+    if (!STATE.rdl.params) STATE.rdl.params = {};
+    if (staffId) STATE.rdl.params.hrStaff = staffId;
+    STATE.rdl.params.hrPackMode = String(o.hrPackMode || STATE.rdl.params.hrPackMode || 'both');
+    if (o.hrPackLang) STATE.rdl.params.hrPackLang = String(o.hrPackLang);
+    if (typeof setView === 'function') setView('statements');
+    else { STATE.view = 'statements'; renderApp(); }
+    return true;
+  }
+
+  window.__mfgIsNonLebaneseNationality = isNonLebaneseNationality;
+  window.__mfgComplianceNormIso = _complianceNormIso;
+  window.__mfgIsStaffMemberAllowedForSeat = isStaffMemberAllowedForSeat;
+  window.__mfgCanAccessRdlReport = canAccessRdlReport;
+  window.__mfgEvaluateStaffComplianceRow = evaluateStaffComplianceRow;
+  window.__mfgMatchesComplianceTier = matchesComplianceTier;
+  window.__mfgComputeStaffComplianceWatchdog = computeStaffComplianceWatchdog;
+  window.__mfgRenderStaffPermitWatchdogStripHtml = renderStaffPermitWatchdogStripHtml;
+  window.__mfgOpenHrPrintPack = openHrPrintPack;
+  window.__mfgCanViewPayrollDollarAmounts = canViewPayrollDollarAmounts;
 
   function closeFatherNameBackfillModal() {
     FATHER_BACKFILL_STATE.open = false;
@@ -139299,11 +140250,19 @@
         if (acceptedProposal) {
           if (row.proposedFatherAr && !String(smTarget.father_name_ar || '').trim()) smTarget.father_name_ar = row.proposedFatherAr;
           if (row.proposedFullAr && !String(smTarget.full_name_ar || '').trim()) smTarget.full_name_ar = row.proposedFullAr;
+          if (row.proposedMother && !String(smTarget.mother_name || '').trim()) smTarget.mother_name = row.proposedMother;
+          if (row.proposedMotherAr && !String(smTarget.mother_name_ar || '').trim()) smTarget.mother_name_ar = row.proposedMotherAr;
           if (row.proposedDob && /^\d{4}-\d{2}-\d{2}$/.test(String(row.proposedDob)) && !String(smTarget.dob || '').trim()) smTarget.dob = row.proposedDob;
           if (row.proposedNat && !String(smTarget.nationality || '').trim()) smTarget.nationality = row.proposedNat;
           if (row.proposedNatAr && !String(smTarget.nationality_ar || '').trim()) smTarget.nationality_ar = row.proposedNatAr;
           if (row.proposedRef && !String(smTarget.reference || '').trim()) smTarget.reference = row.proposedRef;
           if (row.proposedDocKind && !String(smTarget.id_doc_kind || '').trim()) smTarget.id_doc_kind = row.proposedDocKind;
+          if (row.proposedNssfNo && !String(smTarget.nssf_no || '').trim()) smTarget.nssf_no = row.proposedNssfNo;
+          if (row.proposedIdExpiry && /^\d{4}-\d{2}-\d{2}$/.test(String(row.proposedIdExpiry)) && !String(smTarget.id_expiry_date || '').trim()) smTarget.id_expiry_date = row.proposedIdExpiry;
+          if (row.proposedWorkPermitNo && !String(smTarget.work_permit_no || '').trim()) smTarget.work_permit_no = row.proposedWorkPermitNo;
+          if (row.proposedWorkPermitExpiry && /^\d{4}-\d{2}-\d{2}$/.test(String(row.proposedWorkPermitExpiry)) && !String(smTarget.work_permit_expiry || '').trim()) smTarget.work_permit_expiry = row.proposedWorkPermitExpiry;
+          if (row.proposedResidencyNo && !String(smTarget.residency_no || '').trim()) smTarget.residency_no = row.proposedResidencyNo;
+          if (row.proposedResidencyExpiry && /^\d{4}-\d{2}-\d{2}$/.test(String(row.proposedResidencyExpiry)) && !String(smTarget.residency_expiry || '').trim()) smTarget.residency_expiry = row.proposedResidencyExpiry;
           if (row.proposedAttObj) mergeAttNoDup(smTarget, row.proposedAttObj);
         }
         smTarget.modified_by = whoEmail;
@@ -139313,7 +140272,33 @@
         const nk = staffNameKey(smTarget.name || smTarget.staff || row.name);
         const ck = staffNameKey(smTarget.company || rowCoCanon);
         const linkedEmpId = String(smTarget.enrolled_emp_id || '').trim();
+        const smIdStr = String(smTarget.id || '').trim();
         let touchedAnyContract = false;
+        const propSpec = acceptedProposal ? {
+          father_name_ar: row.proposedFatherAr,
+          full_name_ar: row.proposedFullAr,
+          mother_name: row.proposedMother,
+          mother_name_ar: row.proposedMotherAr,
+          dob: row.proposedDob,
+          nationality: row.proposedNat,
+          nationality_ar: row.proposedNatAr,
+          reference: row.proposedRef,
+          id_doc_kind: row.proposedDocKind,
+          nssf_no: row.proposedNssfNo,
+          id_expiry_date: row.proposedIdExpiry,
+          work_permit_no: row.proposedWorkPermitNo,
+          work_permit_expiry: row.proposedWorkPermitExpiry,
+          residency_no: row.proposedResidencyNo,
+          residency_expiry: row.proposedResidencyExpiry
+        } : {};
+        const syncPairCols = [
+          ['father_name_ar', false], ['full_name_ar', false],
+          ['mother_name', false], ['mother_name_ar', false], ['dob', true],
+          ['nationality', false], ['nationality_ar', false], ['reference', false],
+          ['id_doc_kind', false], ['nssf_no', false], ['id_expiry_date', true],
+          ['work_permit_no', false], ['work_permit_expiry', true],
+          ['residency_no', false], ['residency_expiry', true]
+        ];
         ['employments', 'freelance_entries'].forEach(tbl => {
           const seedArr = Array.isArray(SEED.records[tbl]) ? SEED.records[tbl] : [];
           const custArr = STATE.customRecords[tbl];
@@ -139321,25 +140306,29 @@
           const touchRow = (r, origBeforeTouch) => {
             if (!r || r.voided || r.archived) return false;
             if (/^(ended|closed|terminated|inactive|cancelled)$/i.test(String(r.status || 'Active').trim())) return false;
+            const matchByStaffId = Boolean(smIdStr && String(r.staff_id || '').trim() === smIdStr);
             if (row.hasHomonym) {
-              if (!linkedEmpId || String(r.id || '').trim() !== linkedEmpId) return false;
+              if (!matchByStaffId && (!linkedEmpId || String(r.id || '').trim() !== linkedEmpId)) return false;
+            } else if (!matchByStaffId) {
+              if (staffNameKey(r.staff || r.name) !== nk) return false;
+              if (ck && r.company && staffNameKey(r.company) !== ck) return false;
             }
-            if (staffNameKey(r.staff || r.name) !== nk) return false;
-            if (ck && r.company && staffNameKey(r.company) !== ck) return false;
-            if (String(r.father_name || '').trim()) return false;
+            const updates = {};
+            if (!String(r.father_name || '').trim() && cleanedFather) updates.father_name = cleanedFather;
+            if (!String(r.staff_id || '').trim() && smIdStr) updates.staff_id = smIdStr;
+            syncPairCols.forEach(([k, isIso]) => {
+              const candVal = String(propSpec[k] || smTarget[k] || '').trim();
+              if (!candVal) return;
+              if (isIso && !/^\d{4}-\d{2}-\d{2}$/.test(candVal)) return;
+              if (!String(r[k] || '').trim()) updates[k] = candVal;
+            });
+            const updateKeys = Object.keys(updates);
+            if (!updateKeys.length) return false;
             if (origBeforeTouch && origBeforeTouch.id != null && !prePairMap.has(`${tbl}::${String(origBeforeTouch.id)}`)) {
               prePairMap.set(`${tbl}::${String(origBeforeTouch.id)}`, _cloneSameNameSnapRow(origBeforeTouch));
             }
-            r.father_name = cleanedFather;
+            updateKeys.forEach(k => { r[k] = updates[k]; });
             if (!row.hasHomonym) r.same_person_confirmed = true;
-            if (acceptedProposal) {
-              if (row.proposedFatherAr && !String(r.father_name_ar || '').trim()) r.father_name_ar = row.proposedFatherAr;
-              if (row.proposedFullAr && !String(r.full_name_ar || '').trim()) r.full_name_ar = row.proposedFullAr;
-              if (row.proposedDob && /^\d{4}-\d{2}-\d{2}$/.test(String(row.proposedDob)) && !String(r.dob || '').trim()) r.dob = row.proposedDob;
-              if (row.proposedNat && !String(r.nationality || '').trim()) r.nationality = row.proposedNat;
-              if (row.proposedNatAr && !String(r.nationality_ar || '').trim()) r.nationality_ar = row.proposedNatAr;
-              if (row.proposedRef && !String(r.reference || '').trim()) r.reference = row.proposedRef;
-            }
             r.modified_by = whoEmail;
             r.modified_at = nowIso;
             r.updated_at = nowIso;
@@ -139670,6 +140659,7 @@
               <button type="button" class="btn btn-primary btn-sm" id="fbScanCamBtn">${ic('camera')} <span>Scan Card Camera</span></button>
               <button type="button" class="btn btn-sm" id="fbUploadIdsBtn"><span>Upload HR IDs (Batch)</span></button>
               <input type="file" id="fbUploadIdsInput" accept="image/*,.pdf,.svg" multiple hidden>
+              <button type="button" class="btn btn-sm" id="fbPhoneQrBtn">${ic('qr')} <span>Scan from Phone</span></button>
               <button type="button" class="btn btn-ghost btn-sm" id="fbSampleIdBtn"><span>Sample ID Card</span></button>
             </div>
           </div>
@@ -139798,6 +140788,36 @@
         if (files.length) ingestBatchIdFiles(files);
       });
     }
+    $('fbPhoneQrBtn')?.addEventListener('click', () => {
+      stopStaffEnrolModalCamera();
+      stopKioskAttCamera();
+      if (!window.MFG_DOC_SCANNER || typeof window.MFG_DOC_SCANNER.openHrPhoneIdQrHandoff !== 'function') {
+        toast('Phone QR handoff module is not loaded.', 'err');
+        return;
+      }
+      const opAllowedCos = allowedCompanyNames(activeUser());
+      const batchFixedCo = opAllowedCos.length === 1 ? opAllowedCos[0] : '';
+      window.MFG_DOC_SCANNER.openHrPhoneIdQrHandoff({
+        title: 'Scan ID or Permit from Phone',
+        company: batchFixedCo,
+        onResult: res => {
+          if (!res || !res.ok || !$('fatherBackfillModal')) return;
+          FATHER_BACKFILL_STATE.scannedCards.push(Object.assign({}, res, {
+            company: batchFixedCo || '',
+            idNumber: res.idNumber || res.nssfNumber || res.workPermitNumber || res.residencyNumber || '',
+            fileName: res.fileName || (res.attObj && res.attObj.name) || 'Phone ID Scan'
+          }));
+          const nextSum = getFatherBackfillSummary({ companyFilter: FATHER_BACKFILL_STATE.companyFilter });
+          (nextSum.rows || []).forEach(r => {
+            if (r && r.proposedFather && (r.sourceType === 'hr_scan' || r.sourceType === 'nssf_card')) {
+              FATHER_BACKFILL_STATE.selectedIds.add(String(r.staffId));
+            }
+          });
+          toast('Scanned HR ID / Permit from phone and updated matches.', 'ok');
+          renderFatherBackfillTableOnly();
+        }
+      });
+    });
     $('fbSampleIdBtn')?.addEventListener('click', () => ingestBatchIdFiles(['lebanese_id']));
 
     const dz = $('fbDropZone');
@@ -140062,12 +141082,20 @@
     const cleanPhone = String((spec && spec.phone) || '').trim();
     const cleanFullAr = String((spec && (spec.fullNameArabic || spec.full_name_ar)) || '').trim();
     const cleanFatherAr = String((spec && (spec.fatherNameArabic || spec.father_name_ar)) || '').trim();
-    const rawSpecDob = String((spec && spec.dob) || '').trim();
-    const cleanDob = /^\d{4}-\d{2}-\d{2}$/.test(rawSpecDob) ? rawSpecDob : '';
+    const cleanMother = String((spec && (spec.motherName || spec.mother_name)) || '').trim();
+    const cleanMotherAr = String((spec && (spec.motherNameArabic || spec.mother_name_ar)) || '').trim();
+    const cleanIsoOpt = v => { const s = String(v || '').trim(); return (s && isValidStrictIsoCalendarDate(s)) ? s : ''; };
+    const cleanDob = cleanIsoOpt(spec && spec.dob);
     const cleanNat = String((spec && (spec.nationality || spec.nationalityLatin)) || '').trim();
     const cleanNatAr = String((spec && (spec.nationalityArabic || spec.nationality_ar)) || '').trim();
     const cleanRef = String((spec && spec.reference) || '').trim();
     const cleanDocKind = String((spec && (spec.idDocKind || spec.id_doc_kind)) || '').trim();
+    const cleanNssfNo = String((spec && (spec.nssfNumber || spec.nssf_no)) || '').trim();
+    const cleanIdExp = cleanIsoOpt(spec && (spec.idExpiryDate || spec.id_expiry_date));
+    const cleanWpNo = String((spec && (spec.workPermitNumber || spec.work_permit_no)) || '').trim();
+    const cleanWpExp = cleanIsoOpt(spec && (spec.workPermitExpiryDate || spec.work_permit_expiry));
+    const cleanResNo = String((spec && (spec.residencyNumber || spec.residency_no)) || '').trim();
+    const cleanResExp = cleanIsoOpt(spec && (spec.residencyExpiryDate || spec.residency_expiry));
     const idAtt = (spec && spec.idAttachment && typeof spec.idAttachment === 'object' && spec.idAttachment.name)
       ? Object.assign({}, spec.idAttachment)
       : null;
@@ -140134,11 +141162,19 @@
       if (cleanFather) smRec.father_name = cleanFather;
       if (cleanFullAr) smRec.full_name_ar = cleanFullAr;
       if (cleanFatherAr) smRec.father_name_ar = cleanFatherAr;
+      if (cleanMother) smRec.mother_name = cleanMother;
+      if (cleanMotherAr) smRec.mother_name_ar = cleanMotherAr;
       if (cleanDob) smRec.dob = cleanDob;
       if (cleanNat) smRec.nationality = cleanNat;
       if (cleanNatAr) smRec.nationality_ar = cleanNatAr;
       if (cleanRef) smRec.reference = cleanRef;
       if (cleanDocKind) smRec.id_doc_kind = cleanDocKind;
+      if (cleanNssfNo) smRec.nssf_no = cleanNssfNo;
+      if (cleanIdExp) smRec.id_expiry_date = cleanIdExp;
+      if (cleanWpNo) smRec.work_permit_no = cleanWpNo;
+      if (cleanWpExp) smRec.work_permit_expiry = cleanWpExp;
+      if (cleanResNo) smRec.residency_no = cleanResNo;
+      if (cleanResExp) smRec.residency_expiry = cleanResExp;
       if (idAtt) mergeIdAtt(smRec);
       smRec.role = cleanRole || smRec.role || 'General Labour';
       smRec.role_category = roleCat;
@@ -140159,10 +141195,18 @@
         full_name_ar: cleanFullAr,
         father_name: cleanFather,
         father_name_ar: cleanFatherAr,
+        mother_name: cleanMother,
+        mother_name_ar: cleanMotherAr,
         dob: cleanDob,
         nationality: cleanNat,
         nationality_ar: cleanNatAr,
         id_doc_kind: cleanDocKind,
+        nssf_no: cleanNssfNo,
+        id_expiry_date: cleanIdExp,
+        work_permit_no: cleanWpNo,
+        work_permit_expiry: cleanWpExp,
+        residency_no: cleanResNo,
+        residency_expiry: cleanResExp,
         company: canonicalCo,
         status: 'Active',
         archived: false,
@@ -140248,10 +141292,18 @@
         full_name_ar: cleanFullAr,
         father_name: cleanFather,
         father_name_ar: cleanFatherAr,
+        mother_name: cleanMother,
+        mother_name_ar: cleanMotherAr,
         dob: cleanDob,
         nationality: cleanNat,
         nationality_ar: cleanNatAr,
         id_doc_kind: cleanDocKind,
+        nssf_no: cleanNssfNo,
+        id_expiry_date: cleanIdExp,
+        work_permit_no: cleanWpNo,
+        work_permit_expiry: cleanWpExp,
+        residency_no: cleanResNo,
+        residency_expiry: cleanResExp,
         reference: cleanRef,
         role: cleanRole,
         role_category: roleCat,
@@ -140303,11 +141355,19 @@
       fillBlank('father_name', cleanFather);
       fillBlank('full_name_ar', cleanFullAr);
       fillBlank('father_name_ar', cleanFatherAr);
+      fillBlank('mother_name', cleanMother);
+      fillBlank('mother_name_ar', cleanMotherAr);
       fillBlank('dob', cleanDob);
       fillBlank('nationality', cleanNat);
       fillBlank('nationality_ar', cleanNatAr);
       fillBlank('reference', cleanRef);
       fillBlank('id_doc_kind', cleanDocKind);
+      fillBlank('nssf_no', cleanNssfNo);
+      fillBlank('id_expiry_date', cleanIdExp);
+      fillBlank('work_permit_no', cleanWpNo);
+      fillBlank('work_permit_expiry', cleanWpExp);
+      fillBlank('residency_no', cleanResNo);
+      fillBlank('residency_expiry', cleanResExp);
       if (empChanged) {
         empRec.modified_by = whoEmail;
         empRec.modified_at = nowIso;
@@ -141326,6 +142386,7 @@
                   <button type="button" class="btn btn-primary btn-sm" id="sfeScanIdCamBtn">${ic('camera')} <span>Scan ID / NSSF Card</span></button>
                   <button type="button" class="btn btn-sm" id="sfeScanIdFileBtn"><span>Upload ID Photo</span></button>
                   <input type="file" id="sfeScanIdFileInput" accept="image/*,.pdf,.svg" hidden>
+                  <button type="button" class="btn btn-sm" id="sfeScanIdPhoneQrBtn">${ic('qr')} <span>Scan from Phone</span></button>
                   <button type="button" class="btn btn-ghost btn-sm" id="sfeScanIdSampleBtn"><span>Sample ID</span></button>
                 </div>
                 <div class="sfe-id-scan-strip" id="sfeIdScanStrip" hidden></div>
@@ -141366,9 +142427,35 @@
                     <span>Civil ID / NSSF # (Optional)</span>
                     <input type="text" id="sfeNewStaffRef" class="sfe-search-input" placeholder="ID or NSSF #" autocomplete="off">
                   </label>
+                  <label class="sfe-ns-field">
+                    <span>NSSF Reg # (Optional)</span>
+                    <input type="text" id="sfeNewNssfNo" class="sfe-search-input" placeholder="CNSS / NSSF #" autocomplete="off">
+                  </label>
+                  <label class="sfe-ns-field">
+                    <span>ID Expiry Date (Optional)</span>
+                    <input type="date" id="sfeNewIdExpiry" class="sfe-search-input">
+                  </label>
+                  <label class="sfe-ns-field">
+                    <span>Work Permit # (Optional)</span>
+                    <input type="text" id="sfeNewWorkPermitNo" class="sfe-search-input" placeholder="MoL Permit #" autocomplete="off">
+                  </label>
+                  <label class="sfe-ns-field">
+                    <span>Work Permit Expiry (Optional)</span>
+                    <input type="date" id="sfeNewWorkPermitExpiry" class="sfe-search-input">
+                  </label>
+                  <label class="sfe-ns-field">
+                    <span>Residency # (Optional)</span>
+                    <input type="text" id="sfeNewResidencyNo" class="sfe-search-input" placeholder="Residency #" autocomplete="off">
+                  </label>
+                  <label class="sfe-ns-field">
+                    <span>Residency Expiry (Optional)</span>
+                    <input type="date" id="sfeNewResidencyExpiry" class="sfe-search-input">
+                  </label>
                 </div>
                 <input type="hidden" id="sfeNewStaffNameAr" value="">
                 <input type="hidden" id="sfeNewStaffFatherAr" value="">
+                <input type="hidden" id="sfeNewStaffMother" value="">
+                <input type="hidden" id="sfeNewStaffMotherAr" value="">
                 <input type="hidden" id="sfeNewStaffNatAr" value="">
                 <input type="hidden" id="sfeNewStaffDocKind" value="">
                 <div class="sfe-ns-err" id="sfeNewStaffErr" hidden></div>
@@ -141489,7 +142576,8 @@
     });
     const clearSfeNewStaffFields = () => {
       ['sfeNewStaffName', 'sfeNewStaffFather', 'sfeNewStaffPhone', 'sfeNewStaffDob', 'sfeNewStaffNat', 'sfeNewStaffRef',
-        'sfeNewStaffNameAr', 'sfeNewStaffFatherAr', 'sfeNewStaffNatAr', 'sfeNewStaffDocKind'].forEach(id => {
+        'sfeNewNssfNo', 'sfeNewIdExpiry', 'sfeNewWorkPermitNo', 'sfeNewWorkPermitExpiry', 'sfeNewResidencyNo', 'sfeNewResidencyExpiry',
+        'sfeNewStaffNameAr', 'sfeNewStaffFatherAr', 'sfeNewStaffMother', 'sfeNewStaffMotherAr', 'sfeNewStaffNatAr', 'sfeNewStaffDocKind'].forEach(id => {
         const el = $(id);
         if (el) el.value = '';
       });
@@ -141599,9 +142687,13 @@
         res.fullNameArabic ? `<span dir="rtl" data-no-i18n="1"><b>الاسم:</b> ${esc(res.fullNameArabic)}</span>` : '',
         res.fatherNameLatin ? `<span><b>Father:</b> <span data-no-i18n="1">${esc(res.fatherNameLatin)}</span></span>` : '',
         res.fatherNameArabic ? `<span dir="rtl" data-no-i18n="1"><b>الأب:</b> ${esc(res.fatherNameArabic)}</span>` : '',
+        res.motherNameLatin ? `<span><b>Mother:</b> <span data-no-i18n="1">${esc(res.motherNameLatin)}</span></span>` : '',
         res.dob ? `<span><b>DOB:</b> <span data-no-i18n="1">${esc(res.dob)}</span></span>` : '',
         res.nationalityLatin ? `<span><b>Nationality:</b> <span data-no-i18n="1">${esc(res.nationalityLatin)}</span></span>` : '',
-        (res.nssfNumber || res.idNumber) ? `<span><b>ID / NSSF:</b> <span data-no-i18n="1">${esc(res.idNumber || res.nssfNumber)}</span></span>` : ''
+        (res.nssfNumber || res.idNumber) ? `<span><b>ID / NSSF:</b> <span data-no-i18n="1">${esc(res.idNumber || res.nssfNumber)}</span></span>` : '',
+        res.idExpiryDate ? `<span><b>ID Expiry:</b> <span data-no-i18n="1">${esc(res.idExpiryDate)}</span></span>` : '',
+        res.workPermitExpiryDate ? `<span><b>Work Permit Expiry:</b> <span data-no-i18n="1">${esc(res.workPermitExpiryDate)}</span></span>` : '',
+        res.residencyExpiryDate ? `<span><b>Residency Expiry:</b> <span data-no-i18n="1">${esc(res.residencyExpiryDate)}</span></span>` : ''
       ].filter(Boolean).join('');
       strip.hidden = false;
       strip.innerHTML = `
@@ -141624,6 +142716,43 @@
       });
     };
 
+    const applySfeScanResult = (res, methodLabel) => {
+      if (!STAFF_FACE_MODAL_STATE.open || !$('staffFaceEnrolModal')) return false;
+      if (!res || !res.ok) {
+        renderSfeIdScanStrip(null, '');
+        toast((res && (res.error || res.message)) || 'Could not extract ID card fields.', 'err');
+        return false;
+      }
+      const setScanField = (id, v) => {
+        const el = $(id);
+        if (el) el.value = (v != null && String(v).trim()) ? String(v).trim() : '';
+      };
+      const cleanIsoDate = v => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '').trim()) ? String(v).trim() : '');
+      setScanField('sfeNewStaffName', res.fullNameLatin || res.fullNameArabic);
+      setScanField('sfeNewStaffNameAr', res.fullNameArabic);
+      setScanField('sfeNewStaffFather', res.fatherNameLatin);
+      setScanField('sfeNewStaffFatherAr', res.fatherNameArabic);
+      setScanField('sfeNewStaffMother', res.motherNameLatin);
+      setScanField('sfeNewStaffMotherAr', res.motherNameArabic);
+      setScanField('sfeNewStaffDob', cleanIsoDate(res.dob));
+      setScanField('sfeNewStaffNat', res.nationalityLatin);
+      setScanField('sfeNewStaffNatAr', res.nationalityArabic);
+      setScanField('sfeNewStaffDocKind', res.docKind);
+      const idRef = res.idNumber || res.nssfNumber || res.workPermitNumber || res.residencyNumber || '';
+      setScanField('sfeNewStaffRef', idRef);
+      setScanField('sfeNewNssfNo', res.nssfNumber);
+      setScanField('sfeNewIdExpiry', cleanIsoDate(res.idExpiryDate));
+      setScanField('sfeNewWorkPermitNo', res.workPermitNumber);
+      setScanField('sfeNewWorkPermitExpiry', cleanIsoDate(res.workPermitExpiryDate));
+      setScanField('sfeNewResidencyNo', res.residencyNumber);
+      setScanField('sfeNewResidencyExpiry', cleanIsoDate(res.residencyExpiryDate));
+      STAFF_FACE_MODAL_STATE.pendingIdAtt = (res.attObj && res.attObj.name) ? Object.assign({}, res.attObj, { from_id_scan: true }) : null;
+      renderSfeIdScanStrip(res, '');
+      checkSfeLiveSameNameConflict();
+      toast(`Extracted ${formatIdDocKindBadgeLabel(res.docKind)} fields (${res.engineLabel || methodLabel || 'ID Scan'}).`, 'ok');
+      return true;
+    };
+
     const applySfeIdScan = async (fileOrSpec, methodLabel) => {
       if (!window.MFG_SMART_SCAN || typeof window.MFG_SMART_SCAN.scanIdentityCard !== 'function') {
         toast('ID card scanner module is not loaded.', 'err');
@@ -141632,37 +142761,14 @@
       const camBtn = $('sfeScanIdCamBtn');
       const fileBtn = $('sfeScanIdFileBtn');
       const smpBtn = $('sfeScanIdSampleBtn');
-      const setBusy = b => { [camBtn, fileBtn, smpBtn].forEach(el => { if (el) el.disabled = !!b; }); };
+      const qrBtn = $('sfeScanIdPhoneQrBtn');
+      const setBusy = b => { [camBtn, fileBtn, smpBtn, qrBtn].forEach(el => { if (el) el.disabled = !!b; }); };
       setBusy(true);
       renderSfeIdScanStrip(null, methodLabel || 'ID Card');
       try {
         const co = ($('sfeNewStaffCo') && $('sfeNewStaffCo').value) || '';
         const res = await window.MFG_SMART_SCAN.scanIdentityCard(fileOrSpec, { company: co });
-        if (!STAFF_FACE_MODAL_STATE.open || !$('staffFaceEnrolModal')) return;
-        if (!res || !res.ok) {
-          renderSfeIdScanStrip(null, '');
-          toast((res && (res.error || res.message)) || 'Could not extract ID card fields.', 'err');
-          return;
-        }
-        const setScanField = (id, v) => {
-          const el = $(id);
-          if (el) el.value = (v != null && String(v).trim()) ? String(v).trim() : '';
-        };
-        setScanField('sfeNewStaffName', res.fullNameLatin || res.fullNameArabic);
-        setScanField('sfeNewStaffNameAr', res.fullNameArabic);
-        setScanField('sfeNewStaffFather', res.fatherNameLatin);
-        setScanField('sfeNewStaffFatherAr', res.fatherNameArabic);
-        const validDob = /^\d{4}-\d{2}-\d{2}$/.test(String(res.dob || '').trim()) ? String(res.dob).trim() : '';
-        setScanField('sfeNewStaffDob', validDob);
-        setScanField('sfeNewStaffNat', res.nationalityLatin);
-        setScanField('sfeNewStaffNatAr', res.nationalityArabic);
-        setScanField('sfeNewStaffDocKind', res.docKind);
-        const idRef = (res.nssfNumber && !res.idNumber) ? res.nssfNumber : (res.idNumber || res.nssfNumber || '');
-        setScanField('sfeNewStaffRef', idRef);
-        STAFF_FACE_MODAL_STATE.pendingIdAtt = (res.attObj && res.attObj.name) ? Object.assign({}, res.attObj, { from_id_scan: true }) : null;
-        renderSfeIdScanStrip(res, '');
-        checkSfeLiveSameNameConflict();
-        toast(`Extracted ${res.docKind || 'ID Card'} fields (${res.engineLabel || methodLabel || 'ID Scan'}).`, 'ok');
+        applySfeScanResult(res, methodLabel);
       } catch (err) {
         renderSfeIdScanStrip(null, '');
         toast(`ID card scan failed: ${err && err.message ? err.message : 'Unknown error'}`, 'err');
@@ -141690,6 +142796,21 @@
         if (f) applySfeIdScan(f, 'ID File Upload');
       });
     }
+    $('sfeScanIdPhoneQrBtn')?.addEventListener('click', () => {
+      stopStaffEnrolModalCamera();
+      stopKioskAttCamera();
+      if (!window.MFG_DOC_SCANNER || typeof window.MFG_DOC_SCANNER.openHrPhoneIdQrHandoff !== 'function') {
+        toast('Phone QR handoff module is not loaded.', 'err');
+        return;
+      }
+      window.MFG_DOC_SCANNER.openHrPhoneIdQrHandoff({
+        title: 'Scan ID or Permit from Phone',
+        company: ($('sfeNewStaffCo') && $('sfeNewStaffCo').value) || '',
+        onResult: res => {
+          applySfeScanResult(res, 'Phone Camera QR');
+        }
+      });
+    });
     $('sfeScanIdSampleBtn')?.addEventListener('click', () => applySfeIdScan('lebanese_id', 'Sample ID Card'));
 
     $('sfeNewStaffCancelBtn')?.addEventListener('click', () => {
@@ -141710,22 +142831,55 @@
       const dobInp = $('sfeNewStaffDob');
       const natInp = $('sfeNewStaffNat');
       const refInp = $('sfeNewStaffRef');
+      const nssfInp = $('sfeNewNssfNo');
+      const idExpInp = $('sfeNewIdExpiry');
+      const wpNoInp = $('sfeNewWorkPermitNo');
+      const wpExpInp = $('sfeNewWorkPermitExpiry');
+      const resNoInp = $('sfeNewResidencyNo');
+      const resExpInp = $('sfeNewResidencyExpiry');
       const nmArInp = $('sfeNewStaffNameAr');
       const fatherArInp = $('sfeNewStaffFatherAr');
+      const motherInp = $('sfeNewStaffMother');
+      const motherArInp = $('sfeNewStaffMotherAr');
       const natArInp = $('sfeNewStaffNatAr');
       const docKindInp = $('sfeNewStaffDocKind');
       const errEl = $('sfeNewStaffErr');
       const saveBtn = $('sfeNewStaffSaveBtn');
+      const checkOptIso = (el, label) => {
+        const raw = String((el && el.value) || '').trim();
+        if (raw && !isValidStrictIsoCalendarDate(raw)) return `${label} must be a valid calendar YYYY-MM-DD date.`;
+        return '';
+      };
+      const dateErr = checkOptIso(idExpInp, 'ID Expiry Date')
+        || checkOptIso(wpExpInp, 'Work Permit Expiry')
+        || checkOptIso(resExpInp, 'Residency Expiry');
+      if (dateErr) {
+        if (errEl) {
+          errEl.hidden = false;
+          errEl.classList.remove('is-same-name');
+          errEl.textContent = dateErr;
+        }
+        toast(dateErr, 'warn');
+        return;
+      }
       const waitPersist = hasServerApi() && !isDemoScopeActive();
       const res = registerNewStaffFromEnrolStudio({
         name: nmInp ? nmInp.value : '',
         fatherName: fatherInp ? fatherInp.value : '',
         fullNameArabic: nmArInp ? nmArInp.value : '',
         fatherNameArabic: fatherArInp ? fatherArInp.value : '',
+        mother_name: motherInp ? motherInp.value : '',
+        mother_name_ar: motherArInp ? motherArInp.value : '',
         dob: dobInp ? dobInp.value : '',
         nationality: natInp ? natInp.value : '',
         nationalityArabic: natArInp ? natArInp.value : '',
         reference: refInp ? refInp.value : '',
+        nssf_no: nssfInp ? nssfInp.value : '',
+        id_expiry_date: idExpInp ? idExpInp.value : '',
+        work_permit_no: wpNoInp ? wpNoInp.value : '',
+        work_permit_expiry: wpExpInp ? wpExpInp.value : '',
+        residency_no: resNoInp ? resNoInp.value : '',
+        residency_expiry: resExpInp ? resExpInp.value : '',
         idDocKind: docKindInp ? docKindInp.value : '',
         idAttachment: STAFF_FACE_MODAL_STATE.pendingIdAtt,
         company: coSel ? coSel.value : '',
@@ -153460,7 +154614,7 @@
       case 'ins_catalogue': wsHtml = renderInsuranceCatalogue('main'); break;
       case 'ins_agreements': wsHtml = renderInsuranceCatalogue('agreements'); break;
       case 'pbi': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? (renderIndustryContextBanner('pbi') + renderIndustryPbiStudio(activeInd)) : (window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview()); break;
-      case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); ensureDocumentsVaultSeeded(); wsHtml = renderIndustryContextBanner('tables') + (window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, activeIndustry: activeInd, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview()); break;
+      case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); ensureDocumentsVaultSeeded(); wsHtml = renderIndustryContextBanner('tables') + (window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, activeIndustry: activeInd, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, canAccessRdlReport, canViewPayrollDollarAmounts, allowedCompanyNames, isAppRecord }) : renderOverview()); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
       case 'alert_rules': wsHtml = renderAlertRules(); break;
       case 'approvals': wsHtml = window.MFG_APPROVALS ? window.MFG_APPROVALS.renderView() : ''; break;
@@ -153521,9 +154675,15 @@
       case 'reg_currencies':
       case 'reg_vat_rates':
         ensureStaffMembersSeeded();
-        wsHtml = window.MFG_PBI ? window.MFG_PBI.renderUniversalRegistriesView({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, pageTitle: canonicalViewTitle, registryGroupKeys: univGroupKeys }) : renderOverview();
-        if (STATE.view === 'reg_staff' && canOpenFatherBackfill()) {
-          wsHtml = renderFatherBackfillBannerHtml() + wsHtml;
+        wsHtml = window.MFG_PBI ? window.MFG_PBI.renderUniversalRegistriesView({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, canAccessRdlReport, canViewPayrollDollarAmounts, pageTitle: canonicalViewTitle, registryGroupKeys: univGroupKeys }) : renderOverview();
+        if (STATE.view === 'reg_staff') {
+          const canViewPayStaff = typeof canViewPayrollDollarAmounts === 'function' ? Boolean(canViewPayrollDollarAmounts()) : false;
+          const wdStaffCols = ['name', 'father_name', 'nationality', 'dob', 'permit_status', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'role_category', 'phone', 'reference', 'nssf_no', 'work_permit_no', 'residency_no']
+            .concat(canViewPayStaff ? ['active_salary_usd', 'salary_status', 'total_earned', 'total_paid', 'rem_payment'] : []);
+          const wdStaffRows = filterRecords((SEED.records && SEED.records.staff_members) || [], { cols: wdStaffCols, tableKey: 'staff_members', ignorePeriod: true, ignoreCompany: true }).filter(r => isStaffMemberAllowedForSeat(r, SEED));
+          const wdHtml = renderStaffPermitWatchdogStripHtml({ scope: 'reg_staff', staffRows: wdStaffRows });
+          const fbHtml = canOpenFatherBackfill() ? renderFatherBackfillBannerHtml() : '';
+          if (fbHtml || wdHtml) wsHtml = fbHtml + wdHtml + wsHtml;
         }
         if (STATE.view === 'reg_equipment' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderFleetTelematicsDeck === 'function') {
           wsHtml = window.MFG_TELEMATICS.renderFleetTelematicsDeck() + wsHtml;
@@ -154066,6 +155226,7 @@
       if (sortTh && container.contains(sortTh)) {
         if (t.closest('.th-filter-btn, .tbl-col-resizer, .tbl-th-tools')) return;
         const view = sortTh.getAttribute('data-sort-view'), key = sortTh.getAttribute('data-sort-key');
+        if (isMaskedPayrollAccessBlocked(viewToTableKey(view), key)) return;
         const cur = STATE.sortBy[view] || _defaultSortBy[view] || {};
         const defaultDir = !isDefaultDescSortKey(key) ? 'asc' : 'desc';
         STATE.sortBy[view] = { key, dir: cur.key === key ? (cur.dir === 'desc' ? 'asc' : 'desc') : defaultDir };
@@ -154137,6 +155298,28 @@
       if (fatherBackfillBtn && container.contains(fatherBackfillBtn)) {
         e.stopPropagation();
         openFatherNameBackfillModal();
+        return;
+      }
+      const watchdogChip = t.closest('[data-permit-watchdog-tier]');
+      if (watchdogChip && container.contains(watchdogChip)) {
+        e.stopPropagation();
+        const tier = String(watchdogChip.dataset.permitWatchdogTier || 'all').trim() || 'all';
+        STATE.permitWatchdogTier = (STATE.permitWatchdogTier === tier && tier !== 'all') ? 'all' : tier;
+        const wsEl = $('workspace');
+        const keepY = wsEl ? wsEl.scrollTop : 0;
+        renderApp();
+        if (wsEl) wsEl.scrollTop = keepY;
+        return;
+      }
+      const hrPackBtn = t.closest('[data-open-hr-pack], .emp-hr-pack-btn, .staff-hr-pack-inline-btn');
+      if (hrPackBtn && container.contains(hrPackBtn)) {
+        e.stopPropagation();
+        openHrPrintPack({
+          staffId: hrPackBtn.dataset.hrPackStaff || hrPackBtn.dataset.staffId || '',
+          empId: hrPackBtn.dataset.hrPackEmp || hrPackBtn.dataset.empId || '',
+          staffName: hrPackBtn.dataset.hrPackName || hrPackBtn.dataset.staffName || '',
+          company: hrPackBtn.dataset.hrPackCompany || ''
+        });
         return;
       }
 
@@ -156594,6 +157777,10 @@
     container.querySelectorAll('[data-open-pending-salary]').forEach(btn => {
       btn.addEventListener('click', ev => {
         ev.stopPropagation();
+        if (!canViewPayrollDollarAmounts()) {
+          toast('Payroll compensation amounts require Payroll / Financial access', 'warn');
+          return;
+        }
         openEntryModal('employment', { salaryPending: true });
       });
     });
@@ -158651,6 +159838,8 @@
         allowedCompanyNames,
         getActiveIndustry,
         canEnterForm,
+        canAccessTable,
+        canViewPayrollDollarAmounts,
         canModifyTextOnly,
         isFieldAdminUnlocked,
         canVoid,

@@ -5483,6 +5483,97 @@ finally:
         pAuth: [e45AuthedPlaces.status, e45AuthedPlaces.json]
       }));
     }
+
+    // E46: Single-use QR HR ID card handoff + 3-scan smart-scan cap + consume tombstone + 8 HR fields persistence in D1
+    const psSid46 = 'psid46_' + Date.now();
+    const psTok46 = 'tok46_' + Math.random().toString(16).slice(2, 12);
+    const e46UnauthInit = await httpReq('POST', '/app/api/phone-scan', {
+      sid: psSid46, k: psTok46, op: 'init_id_card', company: 'WTC'
+    });
+    const e46AuthInit = await httpReq('POST', '/app/api/phone-scan', {
+      sid: psSid46, k: psTok46, op: 'init_id_card', company: 'WTC'
+    }, { 'X-ISABI-Session': ownerToken });
+    const e46SmartBody = {
+      scanMode: 'id_card',
+      phoneScanSid: psSid46,
+      phoneScanTok: psTok46,
+      company: 'WTC',
+      extractedText: 'Lebanese ID\nNSSF: 882190\nWork Permit: WP-7722\nExpiry: 2026-12-15\nMother: Salwa Karam'
+    };
+    const e46Scan1 = await httpReq('POST', '/app/api/smart-scan', e46SmartBody);
+    const e46Scan2 = await httpReq('POST', '/app/api/smart-scan', e46SmartBody);
+    const e46Scan3 = await httpReq('POST', '/app/api/smart-scan', e46SmartBody);
+    const e46Scan4 = await httpReq('POST', '/app/api/smart-scan', e46SmartBody);
+    const e46Complete = await httpReq('POST', '/app/api/phone-scan', {
+      sid: psSid46,
+      k: psTok46,
+      op: 'complete_id_card',
+      extracted: { fullNameLatin: 'Edge HR Test', nssfNumber: '882190', workPermitNumber: 'WP-7722', motherNameLatin: 'Salwa Karam' },
+      pages: [{ id: 'p1', mimeType: 'image/png', dataUrl: tinyPngDataUrl }]
+    });
+    const e46WrongTok = await httpReq('GET', `/app/api/phone-scan?sid=${psSid46}&k=wrongtok`);
+    const e46GoodPoll = await httpReq('GET', `/app/api/phone-scan?sid=${psSid46}&k=${psTok46}`);
+    const e46Consume = await httpReq('POST', '/app/api/phone-scan', { sid: psSid46, k: psTok46, op: 'consume' });
+    const e46ReplayGet = await httpReq('GET', `/app/api/phone-scan?sid=${psSid46}&k=${psTok46}`);
+    const e46ReplayComp = await httpReq('POST', '/app/api/phone-scan', {
+      sid: psSid46, k: psTok46, op: 'complete_id_card', extracted: { fullNameLatin: 'Replay' }
+    });
+    const e46ReplayScan = await httpReq('POST', '/app/api/smart-scan', e46SmartBody);
+    const e46StaffId = 'sm_edge46_' + Date.now();
+    const e46StaffPost = await httpReq('POST', '/app/api/records', {
+      table: 'staff_members',
+      record: {
+        id: e46StaffId,
+        name: 'Edge HR Compliance Test',
+        company: 'WTC',
+        role: 'Operator',
+        status: 'Active',
+        nssf_no: '882190',
+        id_expiry_date: '2028-04-01',
+        work_permit_no: 'WP-7722',
+        work_permit_expiry: '2026-12-15',
+        residency_no: 'RES-9901',
+        residency_expiry: '2027-06-01',
+        mother_name: 'Salwa Karam',
+        mother_name_ar: 'سلوى كرم'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e46StaffGet = await httpReq('GET', '/app/api/records?table=staff_members&company=WTC&limit=5000', null, {
+      'X-ISABI-Session': ownerToken
+    });
+    const e46Saved = (e46StaffGet.json?.rows || []).find(r => r && r.id === e46StaffId);
+    const e46Ok = (
+      e46UnauthInit.status === 401
+      && e46AuthInit.status === 200
+      && e46Scan1.status === 200 && e46Scan2.status === 200 && e46Scan3.status === 200
+      && e46Scan4.status === 429
+      && e46Complete.status === 200
+      && e46WrongTok.json?.found === false
+      && e46GoodPoll.status === 200 && e46GoodPoll.json?.found === true && e46GoodPoll.json?.session?.extracted?.nssfNumber === '882190'
+      && e46Consume.status === 200
+      && (e46ReplayGet.status === 403 || (e46ReplayGet.status === 200 && e46ReplayGet.json?.session?.status === 'consumed' && e46ReplayGet.json?.session?.consumed === true))
+      && !e46ReplayGet.json?.session?.extracted && (!e46ReplayGet.json?.session?.pages || e46ReplayGet.json.session.pages.length === 0)
+      && e46ReplayComp.status === 403
+      && e46ReplayScan.status === 403
+      && e46StaffPost.status === 200
+      && e46Saved?.nssf_no === '882190'
+      && e46Saved?.id_expiry_date === '2028-04-01'
+      && e46Saved?.work_permit_no === 'WP-7722'
+      && e46Saved?.work_permit_expiry === '2026-12-15'
+      && e46Saved?.residency_no === 'RES-9901'
+      && e46Saved?.residency_expiry === '2027-06-01'
+      && e46Saved?.mother_name === 'Salwa Karam'
+      && e46Saved?.mother_name_ar === 'سلوى كرم'
+    );
+    if (e46Ok) {
+      pass('edge-46-hr-phone-id-card-and-schema', 'init_id_card 401/200 + smart-scan 3-scan limit + consume 403 replay PII scrub + 8 HR fields persisted');
+    } else {
+      fail('edge-46-hr-phone-id-card-and-schema', JSON.stringify({
+        statuses: [e46UnauthInit.status, e46AuthInit.status, e46Scan1.status, e46Scan2.status, e46Scan3.status, e46Scan4.status, e46Complete.status, e46GoodPoll.status, e46Consume.status, e46ReplayGet.status, e46ReplayComp.status, e46ReplayScan.status, e46StaffPost.status],
+        e46ReplayGet: e46ReplayGet.json,
+        e46Saved
+      }));
+    }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
     killTree(edgeProc.pid);
