@@ -53,14 +53,14 @@ HEAD = """<!DOCTYPE html>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
-  <link rel="manifest" href="manifest.json?v=6.35">
-  <link rel="icon" href="icon.svg?v=6.35" type="image/svg+xml" sizes="any">
-  <link rel="icon" href="icon-dark.svg?v=6.35" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="icon.svg?v=6.35" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
-  <link rel="shortcut icon" href="favicon.ico?v=6.35">
-  <link rel="icon" href="favicon-dark.ico?v=6.35" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="favicon.ico?v=6.35" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: light)">
-  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.35">
+  <link rel="manifest" href="manifest.json?v=6.36">
+  <link rel="icon" href="icon.svg?v=6.36" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="icon-dark.svg?v=6.36" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="icon.svg?v=6.36" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
+  <link rel="shortcut icon" href="favicon.ico?v=6.36">
+  <link rel="icon" href="favicon-dark.ico?v=6.36" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="favicon.ico?v=6.36" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: light)">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.36">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap">
@@ -87,6 +87,7 @@ HEAD = """<!DOCTYPE html>
   </script>
   <script type="application/ld+json">__WEBSITE_JSONLD__</script>
   <script type="application/ld+json">__ORG_JSONLD__</script>
+  <script type="application/ld+json">__SOFTWARE_JSONLD__</script>
   <script type="application/ld+json">__FAQ_JSONLD__</script>
 """
 
@@ -96,19 +97,23 @@ WEBSITE_JSONLD = _json.dumps({
     "@type": "WebSite",
     "@id": "https://isabisystems.com/#website",
     "name": "ISABI Systems",
-    "alternateName": ["ISABI", "ISABI ERP", "isabisystems.com"],
+    "alternateName": ["ISABI", "isabisystems", "ISABI ERP", "isabisystems.com"],
     "url": "https://isabisystems.com/",
     "publisher": {"@id": "https://isabisystems.com/#org"},
-    "inLanguage": "en"
+    "about": {"@id": "https://isabisystems.com/#org"},
+    "inLanguage": ["en", "ar", "fr"]
 }, ensure_ascii=False)
 ORG_JSONLD = _json.dumps({
     "@context": "https://schema.org",
     "@type": "ProfessionalService",
     "@id": "https://isabisystems.com/#org",
     "name": "ISABI Systems",
-    "legalName": "Isabi Systems",
+    "alternateName": ["ISABI", "isabisystems", "ISABI Systems ERP"],
+    "legalName": "ISABI Systems",
+    "identifier": "isabisystems",
     "url": "https://isabisystems.com/",
-    "logo": "https://isabisystems.com/icon-512.png?v=6.35",
+    "mainEntityOfPage": "https://isabisystems.com/",
+    "logo": "https://isabisystems.com/icon-512.png?v=6.36",
     "image": "https://isabisystems.com/og-image.png",
     "sameAs": [
         "https://github.com/HusseinBdeir",
@@ -116,16 +121,102 @@ ORG_JSONLD = _json.dumps({
     ],
     "slogan": "The ERP Your Group Actually Runs On",
     "description": "Custom enterprise ERP operations, double-entry financial accounting, What-If scenario studios, interactive executive dashboards, automated statement matching, fleet GPS telematics, field kiosks, and the Ask ISABI assistant with simple per-seat pricing.",
+    "disambiguatingDescription": "Independent Beirut, Lebanon enterprise ERP software studio founded by Hussein Bdeir at isabisystems.com; distinct from and unaffiliated with unrelated UK banking software entities ABI Systems Limited or ABIS Systems Limited.",
+    "brand": {
+        "@type": "Brand",
+        "@id": "https://isabisystems.com/#brand",
+        "name": "ISABI Systems",
+        "alternateName": ["ISABI", "isabisystems"],
+        "url": "https://isabisystems.com/",
+        "logo": "https://isabisystems.com/icon-512.png?v=6.36",
+        "slogan": "The ERP Your Group Actually Runs On"
+    },
     "email": "husseinbdeir@isabisystems.com",
     "telephone": "+96170444955",
-    "founder": {"@type": "Person", "name": "Hussein Bdeir", "jobTitle": "Founder and Principal Systems Architect"},
+    "founder": {
+        "@type": "Person",
+        "@id": "https://isabisystems.com/#founder",
+        "name": "Hussein Bdeir",
+        "jobTitle": "Founder and Principal Systems Architect",
+        "email": "husseinbdeir@isabisystems.com",
+        "url": "https://github.com/HusseinBdeir",
+        "sameAs": ["https://github.com/HusseinBdeir"],
+        "knowsLanguage": ["en", "ar", "fr"],
+        "worksFor": {"@id": "https://isabisystems.com/#org"}
+    },
+    "foundingLocation": {
+        "@type": "Place",
+        "name": "Beirut, Lebanon",
+        "address": {"@type": "PostalAddress", "addressLocality": "Beirut", "addressCountry": "LB"}
+    },
+    "location": {
+        "@type": "Place",
+        "name": "Beirut, Lebanon",
+        "address": {"@type": "PostalAddress", "addressLocality": "Beirut", "addressCountry": "LB"}
+    },
     "areaServed": ["Lebanon", "Middle East", "Worldwide"],
     "address": {"@type": "PostalAddress", "addressLocality": "Beirut", "addressCountry": "LB"},
-    "knowsAbout": ["Enterprise Resource Planning", "Multi-Entity Operations", "Executive Dashboards & Reporting", "Double-Entry Accounting", "POS & Gate Kiosks", "Automated Financial Controls"],
-    "contactPoint": [{"@type": "ContactPoint", "contactType": "sales", "telephone": "+96170444955", "email": "husseinbdeir@isabisystems.com", "availableLanguage": ["en", "ar", "fr"]}],
+    "knowsAbout": [
+        "Enterprise Resource Planning",
+        "Multi-Entity Operations",
+        "Executive Dashboards & Reporting",
+        "Double-Entry Accounting",
+        "POS & Gate Kiosks",
+        "Automated Financial Controls"
+    ],
+    "owns": {"@id": "https://isabisystems.com/#software"},
+    "contactPoint": [{
+        "@type": "ContactPoint",
+        "contactType": "sales",
+        "telephone": "+96170444955",
+        "email": "husseinbdeir@isabisystems.com",
+        "areaServed": ["Lebanon", "Middle East", "Worldwide"],
+        "availableLanguage": ["en", "ar", "fr"]
+    }],
     "priceRange": "$3,000 to $11,000+ setup + $50 to $100/seat/mo"
 }, ensure_ascii=False)
-HEAD = HEAD.replace("__WEBSITE_JSONLD__", WEBSITE_JSONLD).replace("__ORG_JSONLD__", ORG_JSONLD).replace("__FAQ_JSONLD__", FAQ_JSONLD)
+SOFTWARE_JSONLD = _json.dumps({
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "@id": "https://isabisystems.com/#software",
+    "name": "ISABI Command Center",
+    "alternateName": ["ISABI Systems ERP", "isabisystems"],
+    "applicationCategory": "BusinessApplication",
+    "applicationSubCategory": "Enterprise Resource Planning",
+    "operatingSystem": "Web, Windows, macOS, iOS, Android",
+    "url": "https://isabisystems.com/app/",
+    "inLanguage": ["en", "ar", "fr"],
+    "provider": {"@id": "https://isabisystems.com/#org"},
+    "publisher": {"@id": "https://isabisystems.com/#org"},
+    "author": {"@id": "https://isabisystems.com/#founder"},
+    "brand": {"@id": "https://isabisystems.com/#brand"},
+    "offers": [
+        {
+            "@type": "Offer",
+            "name": "Operational Foundation (Setup + Monthly Seat)",
+            "url": "https://isabisystems.com/#pricing",
+            "priceCurrency": "USD",
+            "priceSpecification": [
+                {"@type": "UnitPriceSpecification", "name": "One-time custom setup", "price": 3000, "priceCurrency": "USD"},
+                {"@type": "UnitPriceSpecification", "name": "Monthly per-seat plan", "price": 50, "priceCurrency": "USD", "unitText": "seat", "billingDuration": "P1M"}
+            ]
+        },
+        {
+            "@type": "Offer",
+            "name": "Executive & Enterprise Group Tiers",
+            "url": "https://isabisystems.com/#pricing",
+            "priceCurrency": "USD",
+            "priceSpecification": [
+                {"@type": "UnitPriceSpecification", "name": "One-time custom setup", "minPrice": 5600, "priceCurrency": "USD"},
+                {"@type": "UnitPriceSpecification", "name": "Monthly per-seat plan", "minPrice": 80, "maxPrice": 100, "priceCurrency": "USD", "unitText": "seat", "billingDuration": "P1M"}
+            ]
+        }
+    ]
+}, ensure_ascii=False)
+HEAD = (HEAD.replace("__WEBSITE_JSONLD__", WEBSITE_JSONLD)
+            .replace("__ORG_JSONLD__", ORG_JSONLD)
+            .replace("__SOFTWARE_JSONLD__", SOFTWARE_JSONLD)
+            .replace("__FAQ_JSONLD__", FAQ_JSONLD))
 
 INDEXNOW_KEY = "c4b9e2a7d18f406395e1a82c7d3f6b90"
 
