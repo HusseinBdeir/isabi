@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MIN_SYNC_SHELL_VER } from '../functions/_lib/d1_store.js';
+import { walkShortMapRedirects } from '../functions/_lib/map_link.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 8788 + Math.floor(Math.random() * 40);
@@ -286,8 +287,12 @@ async function main() {
     const validWriteId = 'test-edge-wtc-' + Date.now();
     const allowedWrite = await httpReq('POST', '/app/api/records', {
       table: 'expenses',
-      record: { id: validWriteId, company: 'WTC', date: '2026-11-08', name: 'Edge Verified Expense', total_usd: 125.5, voided: true }
+      record: { id: validWriteId, company: 'WTC', date: '2026-11-08', name: 'Edge Verified Expense', total_usd: 125.5, voided: false }
     }, { 'X-ISABI-Session': entryToken });
+    await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: validWriteId, company: 'WTC', voided: true }
+    }, { 'X-ISABI-Session': ownerToken });
     if (rlsForbiddenWrite.status === 403 && demoForbiddenWrite.status === 403 && allowedWrite.status === 200 && allowedWrite.json?.ok) {
       pass('edge-05-bu-rls-write-and-demo-guard', `Cross-BU write=403, Demo write=403, Authorized WTC write=200`);
     } else {
@@ -5105,6 +5110,289 @@ finally:
         syncStatus: [e44cSeedPatch.status, e44cEntryPartialSync.status],
         keptSiblingKey: e44cKeptSiblingKey,
         keptCustomSite: e44cKeptCustomSite
+      }));
+    }
+
+    // 44d. Gate #3 Remediation Parity (HEAD-first redirect walk, GPS bounds/(0,0)/boolean validation, void/create lock parity, non-Owner geo_config RLS)
+    const e44dHeadCalls = [];
+    const e44dHeadRes = await walkShortMapRedirects('https://maps.app.goo.gl/e44dHead1', {
+      maxHops: 3,
+      timeoutMs: 3000,
+      fetchImpl: async (_u, init = {}) => {
+        e44dHeadCalls.push({ method: init.method, range: (init.headers && init.headers.Range) || '' });
+        if (init.method === 'HEAD') {
+          return new Response(null, { status: 302, headers: { Location: 'https://www.google.com/maps?q=33.8938,35.5018' } });
+        }
+        return new Response(null, { status: 500 });
+      }
+    });
+    const e44d405Calls = [];
+    const e44d405Res = await walkShortMapRedirects('https://maps.app.goo.gl/e44dHead405', {
+      maxHops: 3,
+      timeoutMs: 3000,
+      fetchImpl: async (_u, init = {}) => {
+        e44d405Calls.push({ method: init.method, range: (init.headers && init.headers.Range) || '' });
+        if (init.method === 'HEAD') return new Response(null, { status: 405 });
+        if (init.method === 'GET' && init.headers && init.headers.Range === 'bytes=0-0') {
+          return new Response(null, { status: 302, headers: { Location: 'https://www.google.com/maps?q=33.8555,35.5155' } });
+        }
+        return new Response(null, { status: 500 });
+      }
+    });
+    const e44d403Calls = [];
+    const e44d403Res = await walkShortMapRedirects('https://maps.app.goo.gl/e44dHead403', {
+      maxHops: 3,
+      timeoutMs: 3000,
+      fetchImpl: async (_u, init = {}) => {
+        e44d403Calls.push({ method: init.method });
+        if (init.method === 'HEAD') return new Response(null, { status: 403 });
+        return new Response(null, { status: 302, headers: { Location: 'https://www.google.com/maps?q=33.8555,35.5155' } });
+      }
+    });
+    const e44dHeadUnitOk = (
+      e44dHeadRes.ok === true && /33\.8938,35\.5018/.test(String(e44dHeadRes.resolvedUrl || '')) &&
+      e44dHeadCalls.length === 1 && e44dHeadCalls[0].method === 'HEAD' &&
+      e44d405Res.ok === true && /33\.8555,35\.5155/.test(String(e44d405Res.resolvedUrl || '')) &&
+      e44d405Calls.length === 2 && e44d405Calls[0].method === 'HEAD' && e44d405Calls[1].method === 'GET' && e44d405Calls[1].range === 'bytes=0-0' &&
+      e44d403Res.ok === false && e44d403Res.status === 422 && e44d403Calls.length === 1 && e44d403Calls[0].method === 'HEAD'
+    );
+
+    const e44dBadCoords = [
+      { latitude: 0, longitude: 0 },
+      { latitude: 999, longitude: 999 },
+      { latitude: true, longitude: false }
+    ];
+    let e44dRecBad400 = true;
+    let e44dIndBad400 = true;
+    for (let bi = 0; bi < e44dBadCoords.length; bi++) {
+      const bc = e44dBadCoords[bi];
+      const rBad = await httpReq('POST', '/app/api/records', {
+        table: 'sites',
+        record: Object.assign({ id: `s_e44d_bad_${bi}`, name: `E44D_BAD_${bi}`, company: 'WTC', region: 'Beirut' }, bc)
+      }, { 'X-ISABI-Session': ownerToken });
+      if (rBad.status !== 400) e44dRecBad400 = false;
+      const iBad = await httpReq('POST', '/app/api/industry_domain_store', {
+        industryRowEdits: {
+          [`Hospitality::Test::E44D_BAD_${bi}`]: Object.assign({ ind: 'Hospitality & Resorts', tableTitle: 'Test', primaryId: `E44D_BAD_${bi}`, company: 'Blanca', updated_at: new Date().toISOString() }, bc)
+        }
+      }, { 'X-ISABI-Session': ownerToken });
+      if (iBad.status !== 400) e44dIndBad400 = false;
+    }
+
+    const e44dUnpinId = 's_44d_unpin';
+    const e44dPinnedId = 's_44d_pinned';
+    const e44dPinnedNm = '__E44D_PINNED__';
+    const e44dHydPinId = 's_44d_hyd_pin';
+    await httpReq('POST', '/app/api/records', {
+      table: 'sites',
+      record: { id: e44dUnpinId, name: '__E44D_UNPIN__', company: 'WTC', region: 'Choueifat', site_category: 'customer', voided: 0 }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/records', {
+      table: 'sites',
+      record: { id: e44dPinnedId, name: e44dPinnedNm, company: 'WTC', region: 'Choueifat', site_category: 'customer', latitude: 33.891, longitude: 35.501, voided: 0 }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/records', {
+      table: 'sites',
+      record: { id: e44dHydPinId, name: '__E44D_HYD_PIN__', company: 'WTC', region: 'Choueifat', site_category: 'customer', voided: 0 }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    // Sales: initial pin + voided -> 403; initial pin + bundled flag change -> 403; initial pin + default client hydrated keys -> 200 without persisting _seed_orig/geo_zone; salaries -> 403; customers+GPS -> 403; new-ID dup sites overwrite -> 409/403
+    const e44dSalesPinVoid403 = await httpReq('POST', '/app/api/records', {
+      table: 'sites',
+      record: { id: e44dUnpinId, name: '__E44D_UNPIN__', company: 'WTC', region: 'Choueifat', site_category: 'customer', latitude: 33.89, longitude: 35.50, voided: 1 }
+    }, { 'X-ISABI-Session': salesToken });
+    const e44dSalesHydSmuggle403 = await httpReq('POST', '/app/api/records', {
+      table: 'sites',
+      record: { id: e44dHydPinId, name: '__E44D_HYD_PIN__', company: 'WTC', region: 'Choueifat', site_category: 'customer', includes_transport: true, haulage_mode: 'supplier_delivered', latitude: 33.892, longitude: 35.502 }
+    }, { 'X-ISABI-Session': salesToken });
+    const e44dSalesHydOk200 = await httpReq('POST', '/app/api/records', {
+      table: 'sites',
+      record: { id: e44dHydPinId, name: '__E44D_HYD_PIN__', company: 'WTC', region: 'Choueifat', site_category: 'customer', includes_transport: false, haulage_mode: 'separate', geo_zone: 'Choueifat', _seed_orig: { id: e44dHydPinId }, latitude: 33.892, longitude: 35.502 }
+    }, { 'X-ISABI-Session': salesToken });
+    const e44dSitesGet = await httpReq('GET', '/app/api/records?table=sites&limit=5000', null, { 'X-ISABI-Session': ownerToken });
+    const e44dHydRow = (e44dSitesGet.json?.rows || []).find(r => r && r.id === e44dHydPinId);
+    const e44dSalesSal403 = await httpReq('POST', '/app/api/records', {
+      table: 'salaries',
+      record: { id: 'sal_44d_deny', company: 'WTC', staff: 'Test', net_usd: 100 }
+    }, { 'X-ISABI-Session': salesToken });
+    const e44dSalesCustGps403 = await httpReq('POST', '/app/api/records', {
+      table: 'customers',
+      record: { id: 'cust_44d_gps', name: 'Cust44dGps', company: 'WTC', latitude: 33.89, longitude: 35.50 }
+    }, { 'X-ISABI-Session': salesToken });
+    const e44dSalesDupSite = await httpReq('POST', '/app/api/records', {
+      table: 'sites',
+      record: { id: 's_44d_sales_dup', name: e44dPinnedNm, company: 'WTC', region: 'Choueifat', latitude: 33.82, longitude: 35.42 }
+    }, { 'X-ISABI-Session': salesToken });
+
+    // Entry: voided in /industry_domain_store (custom & edit) -> 403
+    const e44dTs = new Date(Date.now() + 5000).toISOString();
+    const e44dEntIndCustom403 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: {
+        mfg_custom: [{ id: 'ic_44d_ent_void', company: 'WTC', voided: true, updated_at: e44dTs }]
+      }
+    }, { 'X-ISABI-Session': entryToken });
+    const e44dEntIndEdit403 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryRowEdits: {
+        'Manufacturing::WTC Register::ENT_44D_VOID': { ind: 'Manufacturing', tableTitle: 'WTC Register', primaryId: 'ENT_44D_VOID', company: 'WTC', voided: true, updated_at: e44dTs }
+      }
+    }, { 'X-ISABI-Session': entryToken });
+
+    // /sync locks: seed base customRecords.sites row as Owner, then test Sales voided strip + salaries strip + Entry industry voided strip
+    await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          customRecords: {
+            sites: [{ id: e44dUnpinId, name: '__E44D_UNPIN__', company: 'WTC', region: 'Choueifat', voided: false, modified_at: new Date().toISOString() }]
+          }
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e44dSyncTs = new Date(Date.now() + 10000).toISOString();
+    await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          customRecords: {
+            sites: [{ id: e44dUnpinId, name: '__E44D_UNPIN__', company: 'WTC', region: 'Choueifat', voided: true, modified_at: e44dSyncTs }],
+            salaries: [{ id: 'sal_44d_sync_deny', company: 'WTC', staff: 'X', net_usd: 100, modified_at: e44dSyncTs }],
+            customers: [{ id: 'cust_44d_sync_gps', name: 'Cust44dSync', company: 'WTC', latitude: 33.89, longitude: 35.50, modified_at: e44dSyncTs }]
+          }
+        }
+      }
+    }, { 'X-ISABI-Session': salesToken });
+    await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          industryCustomRows: {
+            mfg_custom: [{ id: 'ic_44d_sync_ent', company: 'WTC', voided: true, updated_at: e44dSyncTs }]
+          },
+          industryRowEdits: {
+            'Manufacturing::WTC Register::ENT_44D_SYNC': { ind: 'Manufacturing', tableTitle: 'WTC Register', primaryId: 'ENT_44D_SYNC', company: 'WTC', voided: true, updated_at: e44dSyncTs }
+          }
+        }
+      }
+    }, { 'X-ISABI-Session': entryToken });
+    const e44dSyncAfter = await httpReq('POST', '/app/api/sync', { op: 'get_mfg' }, { 'X-ISABI-Session': ownerToken });
+    const e44dMfgDoc = e44dSyncAfter.json?.docs?.mfg_web_store || {};
+    const e44dSyncSiteRow = ((e44dMfgDoc.customRecords && e44dMfgDoc.customRecords.sites) || []).find(x => x && x.id === e44dUnpinId);
+    const e44dSyncSalDenied = !(((e44dMfgDoc.customRecords && e44dMfgDoc.customRecords.salaries) || []).some(x => x && x.id === 'sal_44d_sync_deny'));
+    const e44dSyncCustRow = ((e44dMfgDoc.customRecords && e44dMfgDoc.customRecords.customers) || []).find(x => x && x.id === 'cust_44d_sync_gps');
+    const e44dSyncCustNoGps = !e44dSyncCustRow || (e44dSyncCustRow.latitude == null && e44dSyncCustRow.longitude == null);
+    const e44dSyncEntCustomRow = ((e44dMfgDoc.industryCustomRows && e44dMfgDoc.industryCustomRows.mfg_custom) || []).find(x => x && x.id === 'ic_44d_sync_ent');
+    const e44dSyncEntEditRow = (e44dMfgDoc.industryRowEdits || {})['Manufacturing::WTC Register::ENT_44D_SYNC'];
+
+    // Non-Owner geoIndStorePrefix RLS + pairKmOverrides bu: checks
+    await httpReq('POST', '/app/api/users', {
+      user: { id: 'u-blanca-sup', email: 'blanca.sup@bhfirms.com', full_name: 'Blanca Resort Supervisor', role: 'Supervisor + Entry', companies: 'Blanca', pin_code: '4927', status: 'Active' }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/users', {
+      user: { id: 'u-re-sup', email: 're4235.sup@bhfirms.com', full_name: '4235 Property Supervisor', role: 'Supervisor + Entry', companies: '4235 Company S.A.L', pin_code: '5839', status: 'Active' }
+    }, { 'X-ISABI-Session': ownerToken });
+    const blancaLogin44d = await httpReq('POST', '/app/api/auth/login', { email: 'blanca.sup@bhfirms.com', pin: '4927', method: 'PIN' });
+    const blancaToken44d = String(blancaLogin44d.json?.token || '');
+    const reLogin44d = await httpReq('POST', '/app/api/auth/login', { email: 're4235.sup@bhfirms.com', pin: '5839', method: 'PIN' });
+    const reToken44d = String(reLogin44d.json?.token || '');
+
+    const e44dBlancaKey = 'hospitality & resorts::customer:blanca_44d';
+    const e44dLaUnaKey = 'hospitality & resorts::La Una:launa_44d';
+    const e44dReKey = 'real estate & property::customer:re4235_44d';
+    const e44dBlancaWrite = await httpReq('POST', '/app/api/geo_config', {
+      sites: { [e44dBlancaKey]: { name: 'Blanca 44d', company: 'Blanca', latitude: 33.7654, longitude: 35.4456, updated_at: e44dSyncTs } }
+    }, { 'X-ISABI-Session': blancaToken44d });
+    const e44dBlancaLaUna403 = await httpReq('POST', '/app/api/geo_config', {
+      sites: { [e44dLaUnaKey]: { name: 'La Una 44d', company: 'Blanca', latitude: 33.7654, longitude: 35.4456, updated_at: e44dSyncTs } }
+    }, { 'X-ISABI-Session': blancaToken44d });
+    const e44dReWrite = await httpReq('POST', '/app/api/geo_config', {
+      sites: { [e44dReKey]: { name: 'RE 4235 44d', company: '4235 Company S.A.L', latitude: 33.8812, longitude: 35.5123, updated_at: e44dSyncTs } }
+    }, { 'X-ISABI-Session': reToken44d });
+    const e44dBlancaGet = await httpReq('GET', '/app/api/geo_config', null, { 'X-ISABI-Session': blancaToken44d });
+    const e44dReGet = await httpReq('GET', '/app/api/geo_config', null, { 'X-ISABI-Session': reToken44d });
+    const e44dLionsGet = await httpReq('GET', '/app/api/geo_config', null, { 'X-ISABI-Session': lionsToken });
+    const e44dLionsPair403 = await httpReq('POST', '/app/api/geo_config', {
+      pairKmOverrides: { 'bu:bbconstruction||site:test_44d': 8.4 }
+    }, { 'X-ISABI-Session': lionsToken });
+
+    // Clean up 44d test artifacts
+    for (const vid of [e44dUnpinId, e44dPinnedId, e44dHydPinId]) {
+      await httpReq('POST', '/app/api/records', { table: 'sites', record: { id: vid, company: 'WTC', voided: 1 } }, { 'X-ISABI-Session': ownerToken }).catch(() => {});
+    }
+    const del44dTs = new Date(Date.now() + 60000).toISOString();
+    await httpReq('POST', '/app/api/geo_config', {
+      _deletedKeys: {
+        [`sites:${e44dBlancaKey}`]: del44dTs,
+        [`sites:${e44dReKey}`]: del44dTs
+      }
+    }, { 'X-ISABI-Session': ownerToken }).catch(() => {});
+    await httpReq('POST', '/app/api/users', {
+      user: { id: 'u-blanca-sup', email: 'blanca.sup@bhfirms.com', full_name: 'Blanca Resort Supervisor', role: 'Supervisor + Entry', companies: 'Blanca', status: 'Inactive' }
+    }, { 'X-ISABI-Session': ownerToken }).catch(() => {});
+    await httpReq('POST', '/app/api/users', {
+      user: { id: 'u-re-sup', email: 're4235.sup@bhfirms.com', full_name: '4235 Property Supervisor', role: 'Supervisor + Entry', companies: '4235 Company S.A.L', status: 'Inactive' }
+    }, { 'X-ISABI-Session': ownerToken }).catch(() => {});
+
+    const e44dBlancaSites = (e44dBlancaGet.json?.config || e44dBlancaGet.json?.geoConfig)?.sites || {};
+    const e44dReSites = (e44dReGet.json?.config || e44dReGet.json?.geoConfig)?.sites || {};
+    const e44dLionsSites = (e44dLionsGet.json?.config || e44dLionsGet.json?.geoConfig)?.sites || {};
+    const e44dHydPinOk = Boolean(
+      e44dSalesHydSmuggle403.status === 403 &&
+      e44dSalesHydOk200.status === 200 &&
+      e44dHydRow &&
+      Math.abs(Number(e44dHydRow.latitude) - 33.892) < 1e-4 &&
+      Math.abs(Number(e44dHydRow.longitude) - 35.502) < 1e-4 &&
+      e44dHydRow._seed_orig === undefined &&
+      e44dHydRow.geo_zone === undefined
+    );
+    const e44dOk = (
+      e44dHeadUnitOk &&
+      e44dRecBad400 &&
+      e44dIndBad400 &&
+      e44dSalesPinVoid403.status === 403 &&
+      e44dHydPinOk &&
+      e44dSalesSal403.status === 403 &&
+      e44dSalesCustGps403.status === 403 &&
+      (e44dSalesDupSite.status === 409 || e44dSalesDupSite.status === 403) &&
+      e44dEntIndCustom403.status === 403 &&
+      e44dEntIndEdit403.status === 403 &&
+      Boolean(e44dSyncSiteRow && !e44dSyncSiteRow.voided) &&
+      e44dSyncSalDenied &&
+      e44dSyncCustNoGps &&
+      (!e44dSyncEntCustomRow || !e44dSyncEntCustomRow.voided) &&
+      (!e44dSyncEntEditRow || !e44dSyncEntEditRow.voided) &&
+      e44dBlancaWrite.status === 200 &&
+      e44dBlancaLaUna403.status === 403 &&
+      Boolean(e44dBlancaSites[e44dBlancaKey]) &&
+      e44dReWrite.status === 200 &&
+      Boolean(e44dReSites[e44dReKey]) &&
+      !(e44dLionsSites[e44dBlancaKey]) &&
+      !(e44dLionsSites[e44dReKey]) &&
+      e44dLionsPair403.status === 403
+    );
+    if (e44dOk) {
+      pass('edge-44d-gate3-remediation-parity', 'HEAD-first+405/403 unit, (0,0)/(999,999)/bool=400, Sales/Entry void+create+GPS+dup blocked/stripped across /records+/industry_domain_store+/sync, non-Owner Blanca/4235 geo RLS & bu: pairKmOverrides=403');
+    } else {
+      fail('edge-44d-gate3-remediation-parity', JSON.stringify({
+        headUnit: e44dHeadUnitOk,
+        headCalls: e44dHeadCalls,
+        c405Calls: e44d405Calls,
+        c403Calls: e44d403Calls,
+        recBad400: e44dRecBad400,
+        indBad400: e44dIndBad400,
+        salesStatuses: [e44dSalesPinVoid403.status, e44dSalesHydSmuggle403.status, e44dSalesHydOk200.status, e44dSalesSal403.status, e44dSalesCustGps403.status, e44dSalesDupSite.status],
+        hydPinRow: e44dHydRow ? { lat: e44dHydRow.latitude, seedOrig: e44dHydRow._seed_orig !== undefined, geoZone: e44dHydRow.geo_zone !== undefined } : null,
+        entryStatuses: [e44dEntIndCustom403.status, e44dEntIndEdit403.status],
+        syncChecks: { siteVoid: e44dSyncSiteRow?.voided, salDenied: e44dSyncSalDenied, custNoGps: e44dSyncCustNoGps, entC: e44dSyncEntCustomRow?.voided, entE: e44dSyncEntEditRow?.voided },
+        geoStatuses: [e44dBlancaWrite.status, e44dBlancaLaUna403.status, e44dReWrite.status, e44dLionsPair403.status],
+        geoGets: {
+          blancaHas: Boolean(e44dBlancaSites[e44dBlancaKey]),
+          reHas: Boolean(e44dReSites[e44dReKey]),
+          lionsBlanca: Boolean(e44dLionsSites[e44dBlancaKey]),
+          lionsRe: Boolean(e44dLionsSites[e44dReKey])
+        }
       }));
     }
   } finally {

@@ -167,39 +167,53 @@ export async function walkShortMapRedirects(rawEntryUrl, opts = {}) {
   let hopsTaken = 0;
 
   for (let hop = 0; hop <= maxHops; hop++) {
-    const ac = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = ac ? setTimeout(() => { try { ac.abort(); } catch (_) {} }, timeoutMs) : null;
-    let res;
-    try {
-      res = await fetchImpl(currentUrl, {
-        method: 'GET',
-        redirect: 'manual',
-        signal: ac ? ac.signal : undefined,
-        headers: {
-          'Accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1',
-          'User-Agent': 'Mozilla/5.0 (compatible; ISABI-MapLinkResolver/1.0)'
-        }
-      });
-    } catch (err) {
-      if (timer) clearTimeout(timer);
-      const isAbort = err && (err.name === 'AbortError' || err.name === 'TimeoutError');
-      return {
-        ok: false,
-        status: isAbort ? 504 : 502,
-        code: isAbort ? 'resolve_timeout' : 'upstream_fetch_failed',
-        error: isAbort ? 'Timed out expanding short map link.' : 'Could not reach short map link provider.'
-      };
-    }
-    if (timer) clearTimeout(timer);
-
-    // Header-only: never read HTML/script response body bytes
-    try {
-      if (res && res.body && typeof res.body.cancel === 'function') {
-        await res.body.cancel();
+    const fetchOneMethod = async (method, extraHeaders = null) => {
+      const ac = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = ac ? setTimeout(() => { try { ac.abort(); } catch (_) {} }, timeoutMs) : null;
+      const headers = Object.assign({
+        'Accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1',
+        'User-Agent': 'Mozilla/5.0 (compatible; ISABI-MapLinkResolver/1.0)'
+      }, extraHeaders || {});
+      try {
+        const resp = await fetchImpl(currentUrl, {
+          method,
+          redirect: 'manual',
+          signal: ac ? ac.signal : undefined,
+          headers
+        });
+        // Header-only: never read HTML/script response body bytes
+        try {
+          if (resp && resp.body && typeof resp.body.cancel === 'function') {
+            await resp.body.cancel();
+          }
+        } catch (_) {}
+        return { ok: true, res: resp };
+      } catch (err) {
+        const isAbort = err && (err.name === 'AbortError' || err.name === 'TimeoutError');
+        return {
+          ok: false,
+          errRes: {
+            ok: false,
+            status: isAbort ? 504 : 502,
+            code: isAbort ? 'resolve_timeout' : 'upstream_fetch_failed',
+            error: isAbort ? 'Timed out expanding short map link.' : 'Could not reach short map link provider.'
+          }
+        };
+      } finally {
+        if (timer) clearTimeout(timer);
       }
-    } catch (_) {}
+    };
 
-    const status = Number((res && res.status) || 0);
+    let attempt = await fetchOneMethod('HEAD');
+    if (!attempt.ok) return attempt.errRes;
+    let res = attempt.res;
+    let status = Number((res && res.status) || 0);
+    if (!REDIRECT_STATUSES.has(status) && (status === 405 || status === 501)) {
+      attempt = await fetchOneMethod('GET', { 'Range': 'bytes=0-0' });
+      if (!attempt.ok) return attempt.errRes;
+      res = attempt.res;
+      status = Number((res && res.status) || 0);
+    }
     const loc = res && res.headers && typeof res.headers.get === 'function' ? String(res.headers.get('location') || '').trim() : '';
 
     if (REDIRECT_STATUSES.has(status) && loc) {
