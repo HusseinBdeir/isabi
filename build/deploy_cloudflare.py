@@ -106,6 +106,20 @@ def read_gemini_key() -> str:
     return k
 
 
+def read_google_maps_key() -> str:
+    k = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("ISABI_GMAPS_KEY") or ""
+    if not k and sys.platform == "win32":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment") as rk:
+                k = str(winreg.QueryValueEx(rk, "GOOGLE_MAPS_API_KEY")[0] or "").strip()
+        except Exception:
+            k = ""
+    if not k:
+        k = str(load_edge_meta().get("google_maps_api_key") or "").strip()
+    return k
+
+
 def load_or_create_jwt_secret() -> str:
     meta = load_edge_meta()
     if not meta.get("jwt_secret"):
@@ -405,11 +419,12 @@ def ensure_pages_project(env: dict):
 def upload_secrets(env: dict, *, rotate_secrets: bool = False):
     jwt_sec = load_or_create_jwt_secret()
     gem_key = read_gemini_key()
+    gmaps_key = read_google_maps_key()
     meta = load_edge_meta()
     vt_hash = str(os.environ.get("VT_GPS_API_HASH") or meta.get("vt_gps_api_hash") or "").strip()
     vt_email = str(os.environ.get("VT_GPS_EMAIL") or meta.get("vt_gps_email") or "").strip()
     vt_pass = str(os.environ.get("VT_GPS_PASSWORD") or meta.get("vt_gps_password") or "").strip()
-    sec_sha = hashlib.sha256(f"{jwt_sec}|{gem_key}|{vt_hash}|{vt_email}|{vt_pass}".encode("utf-8")).hexdigest()
+    sec_sha = hashlib.sha256(f"{jwt_sec}|{gem_key}|{gmaps_key}|{vt_hash}|{vt_email}|{vt_pass}".encode("utf-8")).hexdigest()
     if not rotate_secrets and meta.get("last_secrets_sha256") == sec_sha:
         print("Edge secrets unchanged; skipping redundant secret upload.")
         return
@@ -422,6 +437,11 @@ def upload_secrets(env: dict, *, rotate_secrets: bool = False):
         print("Uploading encrypted GEMINI_API_KEY to Cloudflare Pages...")
         r_gem = run_wrangler(["pages", "secret", "put", "GEMINI_API_KEY", "--project-name=isabi-systems"], env, input_text=gem_key, check=False)
         ok_sec = ok_sec and (r_gem.returncode == 0)
+
+    if gmaps_key:
+        print("Uploading encrypted GOOGLE_MAPS_API_KEY to Cloudflare Pages...")
+        r_gmaps = run_wrangler(["pages", "secret", "put", "GOOGLE_MAPS_API_KEY", "--project-name=isabi-systems"], env, input_text=gmaps_key, check=False)
+        ok_sec = ok_sec and (r_gmaps.returncode == 0)
 
     if vt_hash:
         print("Uploading encrypted VT_GPS_API_HASH to Cloudflare Pages...")

@@ -77,6 +77,7 @@ function httpReq(method, urlPath, bodyObj = null, extraHeaders = {}) {
 const tmpPersist = fs.mkdtempSync(path.join(os.tmpdir(), 'isabi-cf-persist-'));
 const srcWranglerState = [
   path.join(ROOT, '.wrangler', 'state'),
+  path.resolve(ROOT, '..', '..', '..', 'isabi', '.wrangler', 'state'),
   path.resolve(ROOT, '..', '..', 'isabi', '.wrangler', 'state'),
   path.resolve(ROOT, '..', 'isabi', '.wrangler', 'state')
 ].find(p => fs.existsSync(p));
@@ -151,6 +152,18 @@ const E43_MAP_LINK_MOCKS = {
   'https://maps.app.goo.gl/edgePriv': { status: 302, location: 'https://127.0.0.1/admin' }
 };
 
+const E45_GMAPS_MOCKS = {
+  places: [
+    {
+      id: 'ChIJ_edge_ahed',
+      displayName: { text: 'Al Ahed Stadium' },
+      formattedAddress: 'Airport Rd, Beirut',
+      location: { latitude: 33.840576, longitude: 35.489775 },
+      primaryTypeDisplayName: { text: 'Stadium' }
+    }
+  ]
+};
+
 const wranglerProc = spawn(NODE_BIN, [
   WRANGLER_JS,
   'pages', 'dev', tmpBundle,
@@ -161,6 +174,7 @@ const wranglerProc = spawn(NODE_BIN, [
   '-b', `ISABI_JWT_SECRET=${jwtSecret}`,
   '-b', 'VT_TEST_FIXTURE=1',
   '-b', `ISABI_TEST_MAP_LINK_MOCKS=${JSON.stringify(E43_MAP_LINK_MOCKS)}`,
+  '-b', `ISABI_TEST_GMAPS_MOCKS=${JSON.stringify(E45_GMAPS_MOCKS)}`,
   '--live-reload=false'
 ], {
   cwd: ROOT,
@@ -5393,6 +5407,80 @@ finally:
           lionsBlanca: Boolean(e44dLionsSites[e44dBlancaKey]),
           lionsRe: Boolean(e44dLionsSites[e44dReKey])
         }
+      }));
+    }
+
+    // E45: Google Maps 2D Tiles + Places proxy endpoints
+    const e45UnauthTile = await httpReq('GET', '/app/api/map-tiles/roadmap/en/15/19614/13318');
+    const e45CrossSiteTile = await httpReq('GET', '/app/api/map-tiles/roadmap/en/15/19614/13318?demo=1', null, {
+      'Sec-Fetch-Site': 'cross-site',
+      Referer: `http://127.0.0.1:${PORT}/app/`
+    });
+    const e45DemoTileRef = await httpReq('GET', '/app/api/map-tiles/roadmap/en/15/19614/13318?demo=1', null, {
+      Referer: `http://127.0.0.1:${PORT}/app/`
+    });
+    const e45DemoTileSec = await httpReq('GET', '/app/api/map-tiles/roadmap/en/15/19614/13318?demo=1', null, {
+      'Sec-Fetch-Site': 'same-origin'
+    });
+    const e45AuthedHybrid = await httpReq('GET', '/app/api/map-tiles/hybrid/ar/15/19614/13318', null, {
+      'X-ISABI-Session': ownerToken
+    });
+    const e45BadZoom = await httpReq('GET', '/app/api/map-tiles/roadmap/en/21/0/0', null, {
+      'X-ISABI-Session': ownerToken
+    });
+    const e45PostTile = await httpReq('POST', '/app/api/map-tiles/roadmap/en/15/19614/13318', {}, {
+      'X-ISABI-Session': ownerToken
+    });
+    const e45UnauthPlaces = await httpReq('POST', '/app/api/map-places', { query: 'Al Ahed' });
+    const e45UnauthMalformed = await fetch(`http://127.0.0.1:${PORT}/app/api/map-places`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{bad-json'
+    });
+    const e45BareSecPlaces = await httpReq('POST', '/app/api/map-places', { query: 'Al Ahed' }, {
+      'X-ISABI-Demo': '1',
+      'Sec-Fetch-Site': 'same-origin'
+    });
+    const e45DemoPlaces = await httpReq('POST', '/app/api/map-places', { query: 'Al Ahed', lang: 'en' }, {
+      'X-ISABI-Demo': '1',
+      Origin: `http://127.0.0.1:${PORT}`
+    });
+    const e45AuthedPlaces = await httpReq('POST', '/app/api/map-places', { query: 'Al Ahed', lang: 'ar' }, {
+      'X-ISABI-Session': ownerToken
+    });
+    const e45Ok = (
+      e45UnauthTile.status === 401
+      && e45CrossSiteTile.status === 403
+      && e45DemoTileRef.status === 200
+      && /^image\/png/i.test(String(e45DemoTileRef.headers['content-type'] || ''))
+      && e45DemoTileRef.buf && e45DemoTileRef.buf.length > 20
+      && e45DemoTileSec.status === 200
+      && e45AuthedHybrid.status === 200
+      && /^image\/jpeg/i.test(String(e45AuthedHybrid.headers['content-type'] || ''))
+      && e45BadZoom.status === 400
+      && e45PostTile.status === 405
+      && e45UnauthPlaces.status === 401
+      && e45UnauthMalformed.status === 401
+      && e45BareSecPlaces.status === 403
+      && e45DemoPlaces.status === 200 && e45DemoPlaces.json?.places?.[0]?.name === 'Al Ahed Stadium'
+      && e45AuthedPlaces.status === 200 && e45AuthedPlaces.json?.places?.[0]?.name === 'Al Ahed Stadium'
+    );
+    if (e45Ok) {
+      pass('edge-45-google-maps-proxy', 'Tiles 401/403/200 (PNG + hybrid JPEG) + zoom/method guards + Places 401/403/200');
+    } else {
+      fail('edge-45-google-maps-proxy', JSON.stringify({
+        t401: e45UnauthTile.status,
+        t403: e45CrossSiteTile.status,
+        tDemoRef: [e45DemoTileRef.status, e45DemoTileRef.headers['content-type'], e45DemoTileRef.buf?.length],
+        tDemoSec: e45DemoTileSec.status,
+        tHyb: [e45AuthedHybrid.status, e45AuthedHybrid.headers['content-type']],
+        tBadZoom: e45BadZoom.status,
+        tPost: e45PostTile.status,
+        pUnauth: e45UnauthPlaces.status,
+        pBadJson: e45UnauthMalformed.status,
+        pBareSec: e45BareSecPlaces.status,
+        pDemo: [e45DemoPlaces.status, e45DemoPlaces.json],
+        pAuth: [e45AuthedPlaces.status, e45AuthedPlaces.json]
       }));
     }
   } finally {
