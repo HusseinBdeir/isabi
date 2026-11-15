@@ -7,11 +7,14 @@
 import {
   buildSessionCookie,
   canAccessCompany,
+  canAccessGeoIndustrySession,
   canAccessSentinelScope,
   canEnterSite,
   canManageUsersSeat,
   canonEntityKey,
+  canonGeoIndustryKey,
   canReviewSentinelsSession,
+  canWriteGeoConfigSession,
   canWriteWorkSchedulesSession,
   checkD1RateLimit,
   checkSlidingRateLimit,
@@ -145,7 +148,7 @@ function createPurgeOverrideAccumulator() {
 // (say 9999.0) would stick for good; with it, a stored value above the deployed shell comes back down on the next
 // push and is never served (capMinShellVerForRead).
 const SHELL_VER_RE = /^\d{1,4}(?:\.\d{1,6}){0,3}$/;
-export const MIN_SYNC_SHELL_VER = '19.6.356';
+export const MIN_SYNC_SHELL_VER = '19.6.373';
 export function compareShellVer(a, b) {
   const pa = String(a).split('.').map(Number);
   const pb = String(b).split('.').map(Number);
@@ -270,6 +273,7 @@ const CANON_COMPANY_MAP = {
   lions: 'Lions Transport',
   bdeirholding: 'Bdeir Holding',
   'bdeir holding': 'Bdeir Holding',
+  'bdeir holding · consolidated jv': 'Bdeir Holding',
   blanca: 'Blanca',
   launa: 'La Una',
   'la una': 'La Una',
@@ -295,7 +299,12 @@ export function canonicalizeCompanyName(raw) {
   const s = String(raw || '').trim();
   if (!s) return '';
   const k = s.toLowerCase().replace(/\s+/g, ' ');
-  return CANON_COMPANY_MAP[k] || s;
+  if (CANON_COMPANY_MAP[k]) return CANON_COMPANY_MAP[k];
+  if (k.includes('·')) {
+    const head = k.split('·')[0].trim();
+    if (CANON_COMPANY_MAP[head]) return CANON_COMPANY_MAP[head];
+  }
+  return s;
 }
 
 const CANON_INDUSTRY_SCOPE_MAP = {
@@ -2510,6 +2519,66 @@ export async function upsertTableRecord(db, table, record) {
   return { ok: true, table: canonTable, id: recId };
 }
 
+function generateRollbackToken() {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return 'rbt_' + crypto.randomUUID().replace(/-/g, '');
+    }
+  } catch (_) {}
+  return 'rbt_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 14);
+}
+
+function getSessionActorKey(session) {
+  return String((session && (session.email || session.id || session.user_id)) || '').trim().toLowerCase();
+}
+
+async function storeRollbackToken(db, entry) {
+  if (!db || !entry || typeof entry !== 'object') return '';
+  const token = generateRollbackToken();
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const gcCutoffIso = new Date(nowMs - 5 * 60 * 1000).toISOString();
+  const payload = Object.assign({}, entry, { expMs: nowMs + 60000 });
+  try {
+    await db.prepare("DELETE FROM edge_kv_store WHERE doc_key LIKE 'rb_tok_%' AND updated_at < ?1").bind(gcCutoffIso).run();
+  } catch (_) {}
+  await db.prepare(
+    `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
+     VALUES (?1, ?2, ?3, 1)
+     ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1`
+  ).bind(`rb_tok_${token}`, JSON.stringify(payload), nowIso).run();
+  return token;
+}
+
+async function takeRollbackToken(db, expectedKind, token, session) {
+  const tok = String(token || '').trim();
+  if (!/^rbt_[a-z0-9_-]{16,80}$/i.test(tok)) {
+    return { ok: false, status: 400, error: 'Invalid rollback token.' };
+  }
+  const gcCutoffIso = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  try {
+    await db.prepare("DELETE FROM edge_kv_store WHERE doc_key LIKE 'rb_tok_%' AND updated_at < ?1").bind(gcCutoffIso).run();
+  } catch (_) {}
+  const docKey = `rb_tok_${tok}`;
+  const row = await db.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
+  if (!row || !row.payload_json) {
+    return { ok: false, status: 404, error: 'Rollback token not found or already used.' };
+  }
+  const entry = safeJsonParse(row.payload_json, null);
+  if (!entry || typeof entry !== 'object' || entry.kind !== expectedKind) {
+    return { ok: false, status: 404, error: 'Rollback token is invalid for this endpoint.' };
+  }
+  const actorKey = getSessionActorKey(session);
+  if (!actorKey || String(entry.actor || '') !== actorKey) {
+    return { ok: false, status: 403, error: 'Rollback token belongs to another session.' };
+  }
+  await db.prepare('DELETE FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).run();
+  if (Date.now() > Number(entry.expMs || 0)) {
+    return { ok: false, status: 409, error: 'Rollback token expired.' };
+  }
+  return { ok: true, entry };
+}
+
 export async function handleRecordsGet(request, env, session, url) {
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   if (!env || !env.DB) return jsonResponse({ ok: true, rows: [] });
@@ -2529,8 +2598,22 @@ export async function handleRecordsGet(request, env, session, url) {
   if (!cols.size) return jsonResponse({ ok: true, table, rows: [] });
 
   const orderClause = cols.has('date')
-    ? 'ORDER BY date DESC'
-    : (cols.has('start_date') ? 'ORDER BY start_date DESC' : 'ORDER BY rowid DESC');
+    ? 'ORDER BY date DESC, rowid DESC'
+    : (cols.has('start_date') ? 'ORDER BY start_date DESC, rowid DESC' : 'ORDER BY rowid DESC');
+
+  const restrictRls = !isOwnerOrFullGroupSession(session);
+  const isUnivGeoTable = table === 'sites' || table === 'regions';
+  if (restrictRls) {
+    if (company && companyNorm !== 'all' && companyNorm !== 'manufacturing-group' && !canAccessCompany(session, company)) {
+      return jsonResponse({ ok: false, error: 'Row-level security: unauthorized entity scope.' }, 403);
+    }
+    if (companyNorm === 'manufacturing-group') {
+      const mfgCosCheck = ['WTC', 'BBConstruction', 'Lions Transport'].filter(c => canAccessCompany(session, c));
+      if (!mfgCosCheck.length) {
+        return jsonResponse({ ok: false, error: 'Row-level security: unauthorized entity scope.' }, 403);
+      }
+    }
+  }
 
   let sql = `SELECT * FROM ${table}`;
   const binds = [];
@@ -2560,7 +2643,7 @@ export async function handleRecordsGet(request, env, session, url) {
         binds.push(...mfgCos);
         whereParts.push(`company IN (${ph})`);
       }
-    } else if (!isOwnerOrFullGroupSession(session)) {
+    } else if (restrictRls) {
       const rawAllowed = parseAllowedCompanies(session.companies).filter(c => c !== '*');
       if (!rawAllowed.length) {
         return jsonResponse({ ok: false, error: 'Row-level security: no permitted entities assigned.' }, 403);
@@ -2576,19 +2659,35 @@ export async function handleRecordsGet(request, env, session, url) {
         whereParts.push(`company IN (${ph})`);
       }
     }
+  } else if (restrictRls && isUnivGeoTable) {
+    const rawAllowed = parseAllowedCompanies(session.companies).filter(c => c !== '*');
+    if (!rawAllowed.length) {
+      return jsonResponse({ ok: false, error: 'Row-level security: no permitted entities assigned.' }, 403);
+    }
   }
 
+  const deferLimitAfterHydration = Boolean(restrictRls && isUnivGeoTable);
   if (whereParts.length) sql += ` WHERE ${whereParts.join(' AND ')}`;
-  binds.push(limit);
-  sql += ` ${orderClause} LIMIT ?${binds.length}`;
+  if (deferLimitAfterHydration) {
+    sql += ` ${orderClause}`;
+  } else {
+    binds.push(limit);
+    sql += ` ${orderClause} LIMIT ?${binds.length}`;
+  }
 
   let res = await env.DB.prepare(sql).bind(...binds).all();
   if (allowUnknownCaseFallback && (!res.results || res.results.length === 0)) {
-    res = await env.DB.prepare(
-      `SELECT * FROM ${table} WHERE lower(company) = ?1 ${orderClause} LIMIT ?2`
-    ).bind(companyNorm, limit).all();
+    const fbSql = deferLimitAfterHydration
+      ? `SELECT * FROM ${table} WHERE lower(company) = ?1 ${orderClause}`
+      : `SELECT * FROM ${table} WHERE lower(company) = ?1 ${orderClause} LIMIT ?2`;
+    res = deferLimitAfterHydration
+      ? await env.DB.prepare(fbSql).bind(companyNorm).all()
+      : await env.DB.prepare(fbSql).bind(companyNorm, limit).all();
   }
-  const outRows = (res.results || []).map(r => hydrateRowJson(r));
+  let outRows = (res.results || []).map(r => hydrateRowJson(r));
+  if (restrictRls && isUnivGeoTable) {
+    outRows = outRows.filter(r => canAccessUniversalGeoRow(session, table, r)).slice(0, limit);
+  }
   return jsonResponse({ ok: true, edge: true, table, rows: outRows });
 }
 
@@ -2625,17 +2724,22 @@ const GPS_LAT_KEYS = ['latitude', 'geo_lat', 'lat', 'gps_lat', 'gpsLat'];
 const GPS_LNG_KEYS = ['longitude', 'geo_lng', 'lng', 'lon', 'gps_lng', 'gpsLng'];
 const GPS_CLEAR_KEYS = ['_pinCleared', 'pin_cleared', 'pinCleared'];
 const ALL_GPS_KEYS = [...GPS_LAT_KEYS, ...GPS_LNG_KEYS, ...GPS_CLEAR_KEYS];
+const REGION_ZONE_KEYS = ['center_lat', 'center_lng', 'radius_km', 'distance_km', 'shape_type', 'zone_type', 'zone_geojson'];
 
 function validateRecordGpsCoords(obj) {
   if (!obj || typeof obj !== 'object') return true;
-  for (const k of GPS_LAT_KEYS) {
+  for (const k of [...GPS_LAT_KEYS, 'center_lat']) {
     if (k in obj && !parseStrictGpsCoord(obj[k], 90).ok) return false;
   }
-  for (const k of GPS_LNG_KEYS) {
+  for (const k of [...GPS_LNG_KEYS, 'center_lng']) {
     if (k in obj && !parseStrictGpsCoord(obj[k], 180).ok) return false;
   }
   const lngAlt = ('lng' in obj) ? 'lng' : 'lon';
-  const pairs = [['latitude', 'longitude'], ['geo_lat', 'geo_lng'], ['gps_lat', 'gps_lng'], ['gpsLat', 'gpsLng'], ['lat', lngAlt]];
+  const pairs = [
+    ['latitude', 'longitude'], ['geo_lat', 'geo_lng'],
+    ['gps_lat', 'gps_lng'], ['gpsLat', 'gpsLng'],
+    ['lat', lngAlt], ['center_lat', 'center_lng']
+  ];
   for (const [lk, rk] of pairs) {
     if ((lk in obj) || (rk in obj)) {
       const la = parseStrictGpsCoord(obj[lk], 90);
@@ -2645,6 +2749,16 @@ function validateRecordGpsCoords(obj) {
       if (hasLa !== hasLn) return false;
       if (hasLa && hasLn && Math.abs(la.value) < 1e-4 && Math.abs(ln.value) < 1e-4) return false;
     }
+  }
+  const shapeType = String(obj.shape_type || obj.zone_type || '').trim().toLowerCase();
+  const hasRadiusVal = ('radius_km' in obj) && obj.radius_km !== undefined && obj.radius_km !== null && String(obj.radius_km).trim() !== '';
+  if (hasRadiusVal) {
+    if (typeof obj.radius_km === 'boolean' || typeof obj.radius_km === 'object') return false;
+    const rKm = Number(String(obj.radius_km).trim());
+    if (!Number.isFinite(rKm) || rKm < 0 || rKm > 500) return false;
+    if (shapeType === 'circle' && rKm <= 0) return false;
+  } else if (shapeType === 'circle' && (('center_lat' in obj && !parseStrictGpsCoord(obj.center_lat, 90).empty) || ('lat' in obj && !parseStrictGpsCoord(obj.lat, 90).empty))) {
+    return false;
   }
   return true;
 }
@@ -2684,20 +2798,24 @@ function hasExplicitGpsKeyInPayload(obj) {
   return ALL_GPS_KEYS.some(k => (k in obj) && obj[k] !== undefined);
 }
 
-const VOID_META_KEYS = ['voided', 'voided_by', 'voidedBy', 'voided_at', 'voidedAt', 'void_reason', 'voidReason'];
+const VOID_META_KEYS = ['voided', 'voided_by', 'voidedBy', 'voided_at', 'voidedAt', 'void_reason', 'voidReason', 'voided_with_voucher'];
 
 const VOID_META_AND_GPS_SKIP_KEYS = new Set([
   ...VOID_META_KEYS,
+  'restored_at', 'restoredAt',
   'modified_at', 'modifiedAt', 'modified_by', 'modifiedBy', 'updated_at', 'updatedAt',
   'rev', '_rev', '_revBumped', '_customRev', 'sync_source', 'payload_json',
-  ...ALL_GPS_KEYS
+  '_seed_orig', '_seedCatAuto', 'geo_zone', '_geoOrig', '_geoOrigInit', 'zone_shape',
+  ...ALL_GPS_KEYS,
+  ...REGION_ZONE_KEYS,
+  'distance_km'
 ]);
 
 const PIN_FILL_SKIP_KEYS = new Set([
   'modified_at', 'modifiedAt', 'modified_by', 'modifiedBy', 'updated_at', 'updatedAt',
   'entered_by', 'enteredBy', 'entered_at', 'enteredAt', 'source',
   'rev', '_rev', '_revBumped', '_customRev', 'sync_source', 'payload_json',
-  '_seed_orig', 'geo_zone',
+  '_seed_orig', '_seedCatAuto', 'geo_zone', '_geoOrig', '_geoOrigInit', 'zone_shape',
   ...ALL_GPS_KEYS
 ]);
 
@@ -2705,10 +2823,34 @@ function normFieldForVoidCmp(val) {
   if (val === undefined || val === null || val === '') return '';
   if (typeof val === 'number') return Number.isFinite(val) ? String(val) : '';
   if (typeof val === 'boolean') return val ? '1' : '0';
+  if (Array.isArray(val)) return val.length === 0 ? '' : JSON.stringify(val);
   if (typeof val === 'object') {
+    if (Object.keys(val).length === 0) return '';
     try { return JSON.stringify(val); } catch (_) { return String(val); }
   }
-  return String(val).trim();
+  const s = String(val).trim();
+  if (s === '[]' || s === '{}') return '';
+  return s;
+}
+
+function asStrictBoolOrNull(val) {
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'number' && (val === 0 || val === 1)) return val === 1;
+  if (typeof val === 'string') {
+    const s = val.trim().toLowerCase();
+    if (s === '1' || s === 'true') return true;
+    if (s === '0' || s === 'false') return false;
+  }
+  return null;
+}
+
+function fieldsEquivForVoidCmp(a, b) {
+  if (typeof a === 'boolean' || typeof b === 'boolean') {
+    const ba = asStrictBoolOrNull(a);
+    const bb = asStrictBoolOrNull(b);
+    return ba !== null && bb !== null && ba === bb;
+  }
+  return normFieldForVoidCmp(a) === normFieldForVoidCmp(b);
 }
 
 function hasNonVoidFieldChange(baseObj, nextObj) {
@@ -2717,7 +2859,7 @@ function hasNonVoidFieldChange(baseObj, nextObj) {
   for (const [k, v] of Object.entries(nextObj)) {
     if (VOID_META_AND_GPS_SKIP_KEYS.has(k)) continue;
     if (!(k in base) && (v === undefined || v === null || v === '')) continue;
-    if (normFieldForVoidCmp(base[k]) !== normFieldForVoidCmp(v)) return true;
+    if (!fieldsEquivForVoidCmp(base[k], v)) return true;
   }
   return false;
 }
@@ -2727,6 +2869,7 @@ function hasDisallowedPinFillFieldChange(baseObj, nextObj) {
   const base = (baseObj && typeof baseObj === 'object') ? baseObj : {};
   for (const [k, v] of Object.entries(nextObj)) {
     if (PIN_FILL_SKIP_KEYS.has(k)) continue;
+    if (k === 'site_category' && Boolean(nextObj._seedCatAuto) && /^(customer|supplier)$/i.test(String(v || '').trim())) continue;
     if (k === 'voided') {
       if (Boolean(base.voided) !== Boolean(v)) return true;
       continue;
@@ -2738,11 +2881,84 @@ function hasDisallowedPinFillFieldChange(baseObj, nextObj) {
         const defHm = base.includes_transport ? 'supplier_delivered' : 'separate';
         if (v === undefined || v === null || String(v).trim() === '' || String(v).trim() === defHm) continue;
       }
+      if (k === 'region' && String(v || '').trim() !== '') continue;
     }
     if (!(k in base) && (v === undefined || v === null || v === '')) continue;
-    if (normFieldForVoidCmp(base[k]) !== normFieldForVoidCmp(v)) return true;
+    if (!fieldsEquivForVoidCmp(base[k], v)) return true;
   }
   return false;
+}
+
+function extractSiteLatLng(obj) {
+  if (!obj || typeof obj !== 'object') return [null, null];
+  let la = null;
+  for (const k of ['latitude', 'lat', 'gps_lat', 'gpsLat']) {
+    la = normGpsCoord(obj[k], 90);
+    if (la !== null) break;
+  }
+  let ln = null;
+  for (const k of ['longitude', 'lng', 'lon', 'gps_lng', 'gpsLng']) {
+    ln = normGpsCoord(obj[k], 180);
+    if (ln !== null) break;
+  }
+  if (la !== null && ln !== null && Math.abs(la) < 1e-4 && Math.abs(ln) < 1e-4) {
+    return [null, null];
+  }
+  return [la, ln];
+}
+
+const SITE_ALIAS_LAT_KEYS = ['lat', 'gps_lat', 'gpsLat'];
+const SITE_ALIAS_LNG_KEYS = ['lng', 'lon', 'gps_lng', 'gpsLng'];
+
+function stripSiteAliasCoordKeys(targetObj) {
+  if (!targetObj || typeof targetObj !== 'object') return targetObj;
+  for (const ak of SITE_ALIAS_LAT_KEYS) delete targetObj[ak];
+  for (const ak of SITE_ALIAS_LNG_KEYS) delete targetObj[ak];
+  return targetObj;
+}
+
+function normalizeIncomingSiteCoordAliases(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const hasAlias = SITE_ALIAS_LAT_KEYS.some(k => (k in obj) && obj[k] !== undefined)
+    || SITE_ALIAS_LNG_KEYS.some(k => (k in obj) && obj[k] !== undefined);
+  if (!hasAlias) return obj;
+  const out = Object.assign({}, obj);
+  const hasCanonLat = ('latitude' in out) && out.latitude !== undefined && out.latitude !== null && String(out.latitude).trim() !== '';
+  const hasCanonLng = ('longitude' in out) && out.longitude !== undefined && out.longitude !== null && String(out.longitude).trim() !== '';
+  if (!hasCanonLat || !hasCanonLng) {
+    let aLa = null;
+    for (const lk of SITE_ALIAS_LAT_KEYS) {
+      aLa = normGpsCoord(out[lk], 90);
+      if (aLa !== null) break;
+    }
+    let aLn = null;
+    for (const rk of SITE_ALIAS_LNG_KEYS) {
+      aLn = normGpsCoord(out[rk], 180);
+      if (aLn !== null) break;
+    }
+    if (aLa !== null && aLn !== null && !(Math.abs(aLa) < 1e-4 && Math.abs(aLn) < 1e-4)) {
+      out.latitude = aLa;
+      out.longitude = aLn;
+    } else {
+      const anyExplicitAliasNull = SITE_ALIAS_LAT_KEYS.some(k => (k in out) && (out[k] === null || out[k] === ''))
+        && SITE_ALIAS_LNG_KEYS.some(k => (k in out) && (out[k] === null || out[k] === ''));
+      if (anyExplicitAliasNull && !('latitude' in out) && !('longitude' in out)) {
+        out.latitude = null;
+        out.longitude = null;
+      }
+    }
+  }
+  return stripSiteAliasCoordKeys(out);
+}
+
+function applyCanonSiteLatLngAliases(targetObj, srcObj = null) {
+  if (!targetObj || typeof targetObj !== 'object') return false;
+  const [la, ln] = extractSiteLatLng(srcObj || targetObj);
+  if (la === null || ln === null) return false;
+  targetObj.latitude = la;
+  targetObj.longitude = ln;
+  stripSiteAliasCoordKeys(targetObj);
+  return true;
 }
 
 function isInitialMissingSitePinFill(canonTable, baseObj, nextObj, perms) {
@@ -2751,25 +2967,45 @@ function isInitialMissingSitePinFill(canonTable, baseObj, nextObj, perms) {
   if (!baseObj || typeof baseObj !== 'object' || !nextObj || typeof nextObj !== 'object') return false;
   if (Boolean(baseObj.voided) || Boolean(nextObj.voided)) return false;
   if (baseObj._pinCleared || nextObj._pinCleared || baseObj.pin_cleared || nextObj.pin_cleared || baseObj.pinCleared || nextObj.pinCleared) return false;
-  const baseHasPin = isValidLatLngPair(baseObj.latitude, baseObj.longitude);
-  const nextHasPin = isValidLatLngPair(nextObj.latitude, nextObj.longitude);
+  const [bLa, bLn] = extractSiteLatLng(baseObj);
+  const [nLa, nLn] = extractSiteLatLng(nextObj);
+  const baseHasPin = bLa !== null && bLn !== null;
+  const nextHasPin = nLa !== null && nLn !== null;
   if (baseHasPin || !nextHasPin) return false;
   if (isValidLatLngPair(baseObj.geo_lat, baseObj.geo_lng)) return false;
   if (normGpsCoord(nextObj.geo_lat, 90) !== null || normGpsCoord(nextObj.geo_lng, 180) !== null) return false;
   return !hasDisallowedPinFillFieldChange(baseObj, nextObj);
 }
 
+function isInitialUnpinnedSitePinAddition(canonTable, baseObj, nextObj, perms) {
+  if (canonTable !== 'sites') return false;
+  if (!canEnterSite(perms) || !(perms && perms.modifyText)) return false;
+  if (!baseObj || typeof baseObj !== 'object' || !nextObj || typeof nextObj !== 'object') return false;
+  if (Boolean(baseObj.voided) || Boolean(nextObj.voided)) return false;
+  if (baseObj._pinCleared || nextObj._pinCleared || baseObj.pin_cleared || nextObj.pin_cleared || baseObj.pinCleared || nextObj.pinCleared) return false;
+  const [bLa, bLn] = extractSiteLatLng(baseObj);
+  const [nLa, nLn] = extractSiteLatLng(nextObj);
+  const baseHasPin = bLa !== null && bLn !== null;
+  const nextHasPin = nLa !== null && nLn !== null;
+  if (baseHasPin || !nextHasPin) return false;
+  if (isValidLatLngPair(baseObj.geo_lat, baseObj.geo_lng)) return false;
+  if (normGpsCoord(nextObj.geo_lat, 90) !== null || normGpsCoord(nextObj.geo_lng, 180) !== null) return false;
+  return true;
+}
+
 function applyInitialMissingSitePinFill(baseObj, incObj, actorEmail = '') {
   const out = Object.assign({}, (baseObj && typeof baseObj === 'object') ? baseObj : {});
   const inc = (incObj && typeof incObj === 'object') ? incObj : {};
-  out.latitude = normGpsCoord(inc.latitude, 90);
-  out.longitude = normGpsCoord(inc.longitude, 180);
+  applyCanonSiteLatLngAliases(out, inc);
   out._pinCleared = false;
   delete out.pin_cleared;
   delete out.pinCleared;
+  if (!String(out.region || '').trim() && String(inc.region || '').trim()) {
+    out.region = String(inc.region).trim();
+  }
   const modBy = String(actorEmail || inc.modified_by || out.modified_by || '').trim();
   if (modBy) out.modified_by = modBy;
-  const modAt = String(inc.modified_at || out.modified_at || '').trim();
+  const modAt = String(inc.modified_at || new Date().toISOString()).trim();
   if (modAt) out.modified_at = modAt;
   return out;
 }
@@ -2777,12 +3013,14 @@ function applyInitialMissingSitePinFill(baseObj, incObj, actorEmail = '') {
 function hasGpsFieldMutation(baseObj, nextObj) {
   const a = (baseObj && typeof baseObj === 'object') ? baseObj : {};
   const b = (nextObj && typeof nextObj === 'object') ? nextObj : {};
-  const [aLat, aLng] = normalizedGpsPair(a, 'latitude', 'longitude');
-  const [bLat, bLng] = normalizedGpsPair(b, 'latitude', 'longitude');
-  if (aLat !== bLat || aLng !== bLng) return true;
-  const [aGeoLat, aGeoLng] = normalizedGpsPair(a, 'geo_lat', 'geo_lng');
-  const [bGeoLat, bGeoLng] = normalizedGpsPair(b, 'geo_lat', 'geo_lng');
-  if (aGeoLat !== bGeoLat || aGeoLng !== bGeoLng) return true;
+  const [eALat, eALng] = extractSiteLatLng(a);
+  const [eBLat, eBLng] = extractSiteLatLng(b);
+  if (eALat !== eBLat || eALng !== eBLng) return true;
+  for (const [lk, rk] of [['latitude', 'longitude'], ['geo_lat', 'geo_lng'], ['lat', 'lng'], ['lat', 'lon'], ['gps_lat', 'gps_lng'], ['gpsLat', 'gpsLng']]) {
+    const [aL, aN] = normalizedGpsPair(a, lk, rk);
+    const [bL, bN] = normalizedGpsPair(b, lk, rk);
+    if (aL !== bL || aN !== bN) return true;
+  }
   for (const ck of GPS_CLEAR_KEYS) {
     if (Boolean(a[ck]) !== Boolean(b[ck])) return true;
   }
@@ -2802,6 +3040,110 @@ function restoreGpsFieldsFromBase(targetObj, baseObj) {
 function stripGpsFields(targetObj) {
   if (!targetObj || typeof targetObj !== 'object') return targetObj;
   for (const k of ALL_GPS_KEYS) {
+    delete targetObj[k];
+  }
+  return targetObj;
+}
+
+function normRegionRadiusKm(val) {
+  if (val === undefined || val === null || val === '') return null;
+  if (typeof val === 'boolean' || typeof val === 'object') return null;
+  const n = Number(String(val).trim());
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 1000) / 1000;
+}
+
+function canonicalizeZoneJsonValue(val) {
+  if (val === null || val === undefined) return null;
+  if (typeof val === 'number') return Number.isFinite(val) ? Math.round(val * 1e6) / 1e6 : null;
+  if (Array.isArray(val)) return val.map(canonicalizeZoneJsonValue);
+  if (typeof val === 'object') {
+    const out = {};
+    for (const k of Object.keys(val).sort()) {
+      if (val[k] !== undefined) out[k] = canonicalizeZoneJsonValue(val[k]);
+    }
+    return out;
+  }
+  return val;
+}
+
+function canonZoneGeoJsonSig(val) {
+  if (val === undefined || val === null || val === '') return '';
+  let parsed = val;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return '';
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (_) {
+      return trimmed;
+    }
+  }
+  if (!parsed) return '';
+  if (Array.isArray(parsed) && parsed.length === 0) return '';
+  if (typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length === 0) return '';
+  try {
+    return JSON.stringify(canonicalizeZoneJsonValue(parsed));
+  } catch (_) {
+    return String(val);
+  }
+}
+
+function hasExplicitRegionZoneKeyInPayload(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  return REGION_ZONE_KEYS.some(k => (k in obj) && obj[k] !== undefined);
+}
+
+function hasAnyRegionZoneShape(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  const [cLat, cLng] = normalizedGpsPair(obj, 'center_lat', 'center_lng');
+  if (cLat !== null || cLng !== null) return true;
+  const [lat, lng] = normalizedGpsPair(obj, 'lat', 'lng');
+  if (lat !== null || lng !== null) return true;
+  if (canonZoneGeoJsonSig(obj.zone_geojson)) return true;
+  const r = normRegionRadiusKm(obj.radius_km);
+  if (r !== null && r > 0) return true;
+  const st = String(obj.shape_type || obj.zone_type || '').trim().toLowerCase();
+  if (st && st !== 'none' && st !== 'shapeless' && st !== 'unmapped' && st !== 'null') return true;
+  return false;
+}
+
+function hasRegionZoneMutation(baseObj, nextObj, opts = {}) {
+  const a = (baseObj && typeof baseObj === 'object') ? baseObj : {};
+  const b = (nextObj && typeof nextObj === 'object') ? nextObj : {};
+  const [aLat, aLng] = normalizedGpsPair(a, 'center_lat', 'center_lng');
+  const [bLat, bLng] = normalizedGpsPair(b, 'center_lat', 'center_lng');
+  if (aLat !== bLat || aLng !== bLng) return true;
+  const [aL2, aG2] = normalizedGpsPair(a, 'lat', 'lng');
+  const [bL2, bG2] = normalizedGpsPair(b, 'lat', 'lng');
+  if (aL2 !== bL2 || aG2 !== bG2) return true;
+  if ((normRegionRadiusKm(a.radius_km) || null) !== (normRegionRadiusKm(b.radius_km) || null)) return true;
+  const ignoreAbsentDist = Boolean(opts && opts.ignoreAbsentDistanceKm);
+  const hasNextDist = ('distance_km' in b) && b.distance_km !== undefined && b.distance_km !== null;
+  if ((!ignoreAbsentDist || hasNextDist) && normRegionRadiusKm(a.distance_km) !== normRegionRadiusKm(b.distance_km)) return true;
+  const aShape = String(a.shape_type || '').trim().toLowerCase();
+  const bShape = String(b.shape_type || '').trim().toLowerCase();
+  if (aShape !== bShape) return true;
+  const aZoneType = String(a.zone_type || '').trim().toLowerCase();
+  const bZoneType = String(b.zone_type || '').trim().toLowerCase();
+  if (aZoneType !== bZoneType) return true;
+  if (canonZoneGeoJsonSig(a.zone_geojson) !== canonZoneGeoJsonSig(b.zone_geojson)) return true;
+  return false;
+}
+
+function restoreRegionZoneFieldsFromBase(targetObj, baseObj) {
+  if (!targetObj || typeof targetObj !== 'object') return targetObj;
+  const base = (baseObj && typeof baseObj === 'object') ? baseObj : {};
+  for (const k of REGION_ZONE_KEYS) {
+    if (k in base && base[k] !== undefined) targetObj[k] = base[k];
+    else delete targetObj[k];
+  }
+  return targetObj;
+}
+
+function stripRegionZoneFields(targetObj) {
+  if (!targetObj || typeof targetObj !== 'object') return targetObj;
+  for (const k of REGION_ZONE_KEYS) {
     delete targetObj[k];
   }
   return targetObj;
@@ -2832,13 +3174,36 @@ const SALES_ALLOWED_TABLES = new Set([
   'drivers', 'documents'
 ]);
 
+const CUSTOM_DISPATCH_TABLES = new Set(['sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions']);
+const CUSTOM_FLEET_MAINT_TABLES = new Set(['equipment_defects', 'part_movements', 'equipment_repairs', 'repair_items', 'equipment_oil_logs']);
+const CUSTOM_ACCT_TABLES = new Set(['customer_receipts', 'expenses', 'expense_items', 'recurring_expenses', 'warehouse_movements', 'supplier_payments', 'documents']);
+const CUSTOM_MASTER_TABLES = new Set([
+  'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products', 'product_types', 'uoms',
+  'sites', 'regions', 'staff_members', 'staff_roles', 'staff_assignments', 'work_shifts', 'salary_payments',
+  'salaries', 'employments', 'freelance_entries', 'logistics_allowances', 'overtime_rates', 'attendance',
+  'fx_rates', 'vat_rates', 'currencies'
+]);
+const CUSTOM_TREASURY_TABLES = new Set(['external_movements', 'loans', 'loan_settlements', 'conversions']);
+const CUSTOM_JV_TABLES = new Set(['jv_partnerships', 'jv_distributions']);
+
 function canCreateTableRecord(perms, canonTable) {
   if (!perms) return false;
-  if (perms.modifyData) return true;
-  if (canonTable === 'sites') return canEnterSite(perms);
+  if (canonTable === 'sites' || canonTable === 'regions') {
+    return Boolean(perms.canWriteGeoConfig || canEnterSite(perms));
+  }
+  if (perms.roleKey === 'Full Access (Owner)' || perms.roleKey === 'Supervisor + Entry') return true;
+  if (perms.roleKey === 'Supervisor' || perms.roleKey === 'Viewer') return false;
   if (perms.roleKey === 'Sales') return SALES_ALLOWED_TABLES.has(canonTable);
   if (perms.roleKey === 'Custom') {
-    return Boolean(perms.enterDispatch || perms.enterAccounting || perms.enterMaster || perms.enterPayrollJv);
+    const anyEnter = Boolean(perms.enterDispatch || perms.enterAccounting || perms.enterMaster || perms.enterPayrollJv);
+    if (!anyEnter) return false;
+    if (CUSTOM_DISPATCH_TABLES.has(canonTable)) return Boolean(perms.enterDispatch);
+    if (CUSTOM_FLEET_MAINT_TABLES.has(canonTable)) return Boolean(perms.enterDispatch || perms.enterMaster || perms.enterAccounting);
+    if (CUSTOM_ACCT_TABLES.has(canonTable)) return Boolean(perms.enterAccounting || perms.enterMaster || perms.enterDispatch);
+    if (CUSTOM_MASTER_TABLES.has(canonTable)) return Boolean(perms.enterMaster || perms.enterPayrollJv);
+    if (CUSTOM_TREASURY_TABLES.has(canonTable)) return Boolean(perms.enterPayrollJv || perms.enterAccounting);
+    if (CUSTOM_JV_TABLES.has(canonTable)) return Boolean(perms.enterPayrollJv);
+    return anyEnter;
   }
   return Boolean(perms.modifyText && (perms.enterDispatch || perms.enterAccounting || perms.enterMaster));
 }
@@ -2848,6 +3213,40 @@ export async function handleRecordsPost(request, env, session, body) {
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
 
+  if (body && body.op === 'rollback') {
+    const tokRes = await takeRollbackToken(env.DB, 'records', body.rollbackToken, session);
+    if (!tokRes.ok) return jsonResponse({ ok: false, error: tokRes.error }, tokRes.status || 400);
+    const entry = tokRes.entry;
+    const tbl = String(entry.table || '');
+    const rid = String(entry.id || '');
+    if (!USER_WRITABLE_TABLES.has(tbl) || !rid) {
+      return jsonResponse({ ok: false, error: 'Invalid rollback target table.' }, 400);
+    }
+    if (body.table) {
+      const reqTbl = CR_KEY_TO_TABLE[body.table] || body.table;
+      if (reqTbl !== tbl) return jsonResponse({ ok: false, error: 'Rollback table mismatch.' }, 400);
+    }
+    if (body.id && String(body.id).trim() !== rid) {
+      return jsonResponse({ ok: false, error: 'Rollback record id mismatch.' }, 400);
+    }
+    const curRow = await env.DB.prepare(`SELECT * FROM ${tbl} WHERE id = ?1`).bind(rid).first();
+    if (!curRow) {
+      if (!entry.existed) return jsonResponse({ ok: true, rolledBack: true, alreadyAbsent: true, table: tbl, id: rid });
+      return jsonResponse({ ok: false, error: 'Rollback conflict: record no longer exists.' }, 409);
+    }
+    const curSig = stableRowSig(hydrateRowJson(curRow));
+    if (curSig !== entry.writtenSig) {
+      return jsonResponse({ ok: false, error: 'Rollback conflict: record was modified after commit.' }, 409);
+    }
+    if (!entry.existed) {
+      await env.DB.prepare(`DELETE FROM ${tbl} WHERE id = ?1`).bind(rid).run();
+      return jsonResponse({ ok: true, rolledBack: true, table: tbl, id: rid });
+    }
+    const rbUp = await upsertTableRecord(env.DB, tbl, entry.prevRow);
+    if (!rbUp.ok) return jsonResponse({ ok: false, error: rbUp.error }, rbUp.status || 409);
+    return jsonResponse({ ok: true, rolledBack: true, table: tbl, id: rid });
+  }
+
   const rawTable = body && body.table;
   const canonTable = CR_KEY_TO_TABLE[rawTable] || rawTable;
   let record = body && body.record;
@@ -2856,6 +3255,9 @@ export async function handleRecordsPost(request, env, session, body) {
   }
   if (!validateRecordGpsCoords(record)) {
     return jsonResponse({ ok: false, error: 'Invalid GPS coordinates.' }, 400);
+  }
+  if (canonTable === 'sites') {
+    record = normalizeIncomingSiteCoordAliases(record);
   }
 
   const cols = await getTableColumns(env.DB, canonTable);
@@ -2890,23 +3292,36 @@ export async function handleRecordsPost(request, env, session, body) {
     }
   }
 
+  const exHydratedRls = exRow ? hydrateRowJson(exRow) : null;
   if (!isOwnerOrFullGroupSession(session)) {
     const isBuScopedTable = cols.has('company') && !UNIVERSAL_UNIQUE_TABLES.has(canonTable);
     const recCo = String(record.company || '').trim();
+    const exCo = exHydratedRls ? String(exHydratedRls.company || exHydratedRls.resort || exHydratedRls.entity || '').trim() : '';
     if (recCo && !canAccessCompany(session, recCo)) {
       return jsonResponse({ ok: false, error: 'Row-level security: unauthorized entity write.' }, 403);
     }
-    if (isBuScopedTable && !recCo) {
+    if (isBuScopedTable && !recCo && !exCo) {
       return jsonResponse({ ok: false, error: 'Row-level security: company is required for entity-scoped writes.' }, 403);
     }
-    if (cols.has('company')) {
-      const exCo = exRow ? String(exRow.company || '').trim() : '';
-      if (exRow && ((isBuScopedTable && !exCo) || (exCo && !canAccessCompany(session, exCo)))) {
+    if (exHydratedRls) {
+      if ((isBuScopedTable && !exCo) || (exCo && !canAccessCompany(session, exCo))) {
         return jsonResponse({ ok: false, error: 'Row-level security: cannot overwrite another entity record.' }, 403);
       }
     }
   } else if (record.company && !canAccessCompany(session, record.company)) {
     return jsonResponse({ ok: false, error: 'Row-level security: unauthorized entity write.' }, 403);
+  }
+
+  if (canonTable === 'sites' || canonTable === 'regions') {
+    const recInd = String(record._industry || record.industry || record.ind || '').trim();
+    const exInd = String((exHydratedRls && (exHydratedRls._industry || exHydratedRls.industry || exHydratedRls.ind)) || '').trim();
+    const effInd = exInd || recInd || 'Manufacturing';
+    if (!canAccessGeoIndustrySession(session, effInd)) {
+      return jsonResponse({ ok: false, error: 'Row-level security: unauthorized industry geo write.' }, 403);
+    }
+    if (recInd && exInd && canonGeoIndustryKey(recInd) !== canonGeoIndustryKey(exInd) && !canAccessGeoIndustrySession(session, recInd)) {
+      return jsonResponse({ ok: false, error: 'Row-level security: unauthorized industry geo write.' }, 403);
+    }
   }
 
   const perms = getSessionWritePerms(session);
@@ -2918,47 +3333,122 @@ export async function handleRecordsPost(request, env, session, body) {
     if (!perms.voidData && Boolean(record.voided)) {
       return jsonResponse({ ok: false, error: 'Role permission: seat cannot create voided records.' }, 403);
     }
-    if (!perms.modifyData && canonTable !== 'sites' && (hasAnyGpsField(record) || hasExplicitGpsKeyInPayload(record))) {
-      return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to pin GPS coordinates on non-site records.' }, 403);
+    if (!perms.canWriteGeoConfig && canonTable !== 'sites' && (hasAnyGpsField(record) || hasExplicitGpsKeyInPayload(record))) {
+      return jsonResponse({ ok: false, error: 'Supervisor + Entry or Geo-authorized seat required to pin GPS coordinates on non-site records.' }, 403);
+    }
+    if (!perms.canWriteGeoConfig && canonTable !== 'regions' && hasAnyRegionZoneShape(record)) {
+      return jsonResponse({ ok: false, error: 'Supervisor + Entry or Geo-authorized seat required to define region zones on non-region records.' }, 403);
+    }
+    recordToWrite = Object.assign({}, record);
+    const createActorEmail = String((session && session.email) || '').trim();
+    if (!String(recordToWrite.entered_by || '').trim() && createActorEmail) {
+      recordToWrite.entered_by = createActorEmail;
+    }
+    if (!String(recordToWrite.entered_at || '').trim()) {
+      recordToWrite.entered_at = new Date().toISOString();
     }
   } else {
-    const exHydrated = hydrateRowJson(exRow);
+    const exHydrated = exHydratedRls || hydrateRowJson(exRow);
     const wasVoid = Boolean(exHydrated.voided);
     const nowVoid = Boolean(record.voided);
     if (!perms.voidData && wasVoid !== nowVoid) {
       return jsonResponse({ ok: false, error: 'Role permission: seat cannot void or unvoid records.' }, 403);
     }
     const isSparsePureVoid = Boolean(
-      !wasVoid && nowVoid && !hasExplicitGpsKeyInPayload(record) && !hasNonVoidFieldChange(exHydrated, record)
+      wasVoid !== nowVoid
+      && !hasExplicitGpsKeyInPayload(record)
+      && !hasExplicitRegionZoneKeyInPayload(record)
+      && !hasNonVoidFieldChange(exHydrated, record)
     );
+    recordToWrite = Object.assign({}, exHydrated, record);
     if (isSparsePureVoid) {
-      recordToWrite = Object.assign({}, exHydrated, record);
+      if (!nowVoid) {
+        delete recordToWrite.voided_by;
+        delete recordToWrite.voidedBy;
+        delete recordToWrite.voided_at;
+        delete recordToWrite.voidedAt;
+        delete recordToWrite.voided_with_voucher;
+      }
       restoreGpsFieldsFromBase(recordToWrite, exHydrated);
+      restoreRegionZoneFieldsFromBase(recordToWrite, exHydrated);
     }
     const gpsChanged = hasGpsFieldMutation(exHydrated, recordToWrite);
+    const regionZoneChanged = hasRegionZoneMutation(exHydrated, recordToWrite);
     const missingPinFill = isInitialMissingSitePinFill(canonTable, exHydrated, recordToWrite, perms);
+    const allowUnpinnedPinAdd = !missingPinFill && isInitialUnpinnedSitePinAddition(canonTable, exHydrated, recordToWrite, perms);
     if (missingPinFill) {
       recordToWrite = applyInitialMissingSitePinFill(exHydrated, recordToWrite, session && session.email);
+    } else if (allowUnpinnedPinAdd) {
+      if (!perms.canWriteGeoConfig && regionZoneChanged) {
+        return jsonResponse({ ok: false, error: 'Supervisor + Entry or Geo-authorized seat required to modify region zone shapes.' }, 403);
+      }
+      applyCanonSiteLatLngAliases(recordToWrite);
+      recordToWrite._pinCleared = false;
+      delete recordToWrite.pin_cleared;
+      delete recordToWrite.pinCleared;
     } else {
-      if (!perms.modifyData && gpsChanged) {
-        return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to modify location coordinates.' }, 403);
+      if (!perms.canWriteGeoConfig && gpsChanged) {
+        return jsonResponse({ ok: false, error: 'Supervisor + Entry or Geo-authorized seat required to modify location coordinates.' }, 403);
+      }
+      if (!perms.canWriteGeoConfig && regionZoneChanged) {
+        return jsonResponse({ ok: false, error: 'Supervisor + Entry or Geo-authorized seat required to modify region zone shapes.' }, 403);
       }
       if (!perms.modifyText && !perms.modifyData) {
-        const allowVoidOnly = Boolean(perms.voidData && !wasVoid && nowVoid && !gpsChanged && !hasNonVoidFieldChange(exHydrated, recordToWrite));
+        const allowVoidOnly = Boolean(
+          perms.voidData && wasVoid !== nowVoid
+          && !gpsChanged && !regionZoneChanged
+          && !hasNonVoidFieldChange(exHydrated, recordToWrite)
+        );
         if (!allowVoidOnly) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify existing records.' }, 403);
         }
       }
     }
+    if (wasVoid && !nowVoid) {
+      delete recordToWrite.voided_by;
+      delete recordToWrite.voidedBy;
+      delete recordToWrite.voided_at;
+      delete recordToWrite.voidedAt;
+      delete recordToWrite.voided_with_voucher;
+    }
   }
 
+  const prevRowForRb = exHydratedRls ? hydrateRowJson(exRow) : null;
+  if (prevRowForRb && canonTable === 'sites') {
+    if (!('latitude' in prevRowForRb)) prevRowForRb.latitude = null;
+    if (!('longitude' in prevRowForRb)) prevRowForRb.longitude = null;
+  } else if (prevRowForRb && canonTable === 'regions') {
+    for (const rk of ['center_lat', 'center_lng', 'radius_km', 'zone_geojson', 'distance_km', 'shape_type', 'zone_type']) {
+      if (!(rk in prevRowForRb)) prevRowForRb[rk] = null;
+    }
+  }
+  if (canonTable === 'sites' && (!exRow || perms.canWriteGeoConfig)) {
+    stripSiteAliasCoordKeys(recordToWrite);
+  }
   if (canonTable === 'employments' || canonTable === 'freelance_entries' || canonTable === 'staff_members') {
     const sameNameConflict = await checkSameNameRecordConflict(env.DB, canonTable, recordToWrite);
     if (sameNameConflict) return jsonResponse(sameNameConflict, 409);
   }
   const res = await upsertTableRecord(env.DB, canonTable, recordToWrite);
   if (!res.ok) return jsonResponse({ ok: false, error: res.error }, res.status || 400);
-  return jsonResponse({ ok: true, edge: true, table: res.table, id: res.id });
+  let rollbackToken = '';
+  try {
+    const afterRow = await env.DB.prepare(`SELECT * FROM ${canonTable} WHERE id = ?1`).bind(String(res.id)).first();
+    const writtenSig = afterRow ? stableRowSig(hydrateRowJson(afterRow)) : '';
+    const actorKey = getSessionActorKey(session);
+    if (writtenSig && actorKey) {
+      rollbackToken = await storeRollbackToken(env.DB, {
+        kind: 'records',
+        actor: actorKey,
+        table: canonTable,
+        id: String(res.id),
+        existed: Boolean(exRow),
+        prevRow: prevRowForRb,
+        writtenSig
+      });
+    }
+  } catch (_) {}
+  return jsonResponse({ ok: true, edge: true, table: res.table, id: res.id, ...(rollbackToken ? { rollbackToken } : {}) });
 }
 
 export async function handleSentinelReviews(request, env, session, body) {
@@ -3087,43 +3577,481 @@ const GEO_IND_COMPANIES = Object.freeze({
 });
 
 const GEO_RL_BUCKETS = ['companyHubs', 'regions', 'sites', 'pairKmOverrides', 'verifiedRoutes'];
+const GEO_MFG_HUB_COMPANIES = new Set(
+  (GEO_IND_COMPANIES.manufacturing || []).map(c => canonicalizeCompanyName(c).toLowerCase())
+);
 
-function canAccessGeoBucketEntry(session, bucket, key, val) {
+function normGeoKeyToken(val) {
+  return String(val || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function normGeoSiteCat(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (s === 'customer' || s === 'delivery' || s === 'sales') return 'customer';
+  if (s === 'supplier' || s === 'quarry' || s === 'raw') return 'supplier';
+  return '';
+}
+
+function describeGeoSiteEntry(key, val) {
+  const obj = (val && typeof val === 'object') ? val : {};
+  const valCo = String(obj.company || obj.resort || obj.entity || '').trim();
+  const infInd = valCo ? inferEntityIndustry(valCo) : '';
+  const split = splitGeoBucketKey(key, obj, infInd || 'Manufacturing');
+  let cat = '';
+  let companyNorm = valCo ? canonicalizeCompanyName(valCo).toLowerCase() : '';
+  const tokens = new Set();
+  const pushTok = (raw) => {
+    const t = normGeoKeyToken(raw);
+    if (t) tokens.add(t);
+  };
+  const extractCat = (s) => {
+    let cur = String(s || '').trim();
+    const mPre = cur.match(/^(customer|supplier):/i);
+    if (mPre) {
+      if (!cat) cat = mPre[1].toLowerCase();
+      cur = cur.slice(mPre[0].length).trim();
+    }
+    const mSuf = cur.match(/\|(customer|supplier)$/i);
+    if (mSuf) {
+      if (!cat) cat = mSuf[1].toLowerCase();
+      cur = cur.slice(0, cur.length - mSuf[0].length).trim();
+    }
+    return cur;
+  };
+  const noCat = extractCat(split.bodyStr);
+  pushTok(noCat);
+  const cIdx = noCat.indexOf(':');
+  if (cIdx > 0) {
+    const head = noCat.slice(0, cIdx).trim();
+    const tail = extractCat(noCat.slice(cIdx + 1));
+    if (tail && isKnownCanonicalCompany(head)) {
+      if (!companyNorm) companyNorm = canonicalizeCompanyName(head).toLowerCase();
+      pushTok(tail);
+    }
+  }
+  if (!cat && obj.site_category && !obj._seedCatAuto) {
+    cat = normGeoSiteCat(obj.site_category);
+  }
+  if (obj.name) pushTok(obj.name);
+  if (obj.id) pushTok(obj.id);
+  return { indKey: split.indKey, cat, companyNorm, tokens };
+}
+
+function findMatchingPrevSiteEntries(prevSites, incKey, incVal, dbHits = []) {
+  if (!prevSites || typeof prevSites !== 'object') return [];
+  const entries = Object.entries(prevSites);
+  if (!entries.length) return [];
+  const incDesc = describeGeoSiteEntry(incKey, incVal);
+  const dbCats = new Set((dbHits || []).map(h => h && h.siteCategory).filter(Boolean));
+  const hasIncCatTwin = Boolean(incDesc.cat && dbCats.has(incDesc.cat));
+  const matches = [];
+  for (const [pk, pv] of entries) {
+    if (pv == null) continue;
+    if (pk === incKey) {
+      matches.push([pk, pv]);
+      continue;
+    }
+    const pDesc = describeGeoSiteEntry(pk, pv);
+    if (pDesc.indKey !== incDesc.indKey) continue;
+    let tokMatch = false;
+    for (const t of pDesc.tokens) {
+      if (incDesc.tokens.has(t)) { tokMatch = true; break; }
+    }
+    if (!tokMatch) continue;
+    if (pDesc.companyNorm && incDesc.companyNorm && pDesc.companyNorm !== incDesc.companyNorm) continue;
+    if (pDesc.cat && incDesc.cat && pDesc.cat !== incDesc.cat && hasIncCatTwin) continue;
+    matches.push([pk, pv]);
+  }
+  return matches;
+}
+
+function describeGeoRegionEntry(key, val) {
+  const obj = (val && typeof val === 'object') ? val : {};
+  const valCo = String(obj.company || obj.resort || obj.entity || '').trim();
+  const infInd = valCo ? inferEntityIndustry(valCo) : '';
+  const split = splitGeoBucketKey(key, obj, infInd || 'Manufacturing');
+  const body = String(split.bodyStr || '').trim();
+  const tokens = new Set();
+  for (const cand of [body, obj.name, obj.id]) {
+    const t = normGeoKeyToken(cand);
+    if (t) tokens.add(t);
+  }
+  const cIdx = body.indexOf(':');
+  if (cIdx > 0) {
+    const head = body.slice(0, cIdx).trim();
+    const tail = body.slice(cIdx + 1).trim();
+    if (tail && isKnownCanonicalCompany(head)) {
+      const t = normGeoKeyToken(tail);
+      if (t) tokens.add(t);
+    }
+  }
+  return { indKey: split.indKey, tokens };
+}
+
+function findMatchingPrevRegionEntries(prevRegions, incKey, incVal) {
+  if (!prevRegions || typeof prevRegions !== 'object') return [];
+  const entries = Object.entries(prevRegions);
+  if (!entries.length) return [];
+  const incDesc = describeGeoRegionEntry(incKey, incVal);
+  const matches = [];
+  for (const [pk, pv] of entries) {
+    if (pv == null) continue;
+    if (pk === incKey) {
+      matches.push([pk, pv]);
+      continue;
+    }
+    const pDesc = describeGeoRegionEntry(pk, pv);
+    if (pDesc.indKey !== incDesc.indKey) continue;
+    let tokMatch = false;
+    for (const t of pDesc.tokens) {
+      if (incDesc.tokens.has(t)) { tokMatch = true; break; }
+    }
+    if (tokMatch) matches.push([pk, pv]);
+  }
+  return matches;
+}
+
+function stripGeoSiteCategorySuffix(bodyStr) {
+  return String(bodyStr || '').trim()
+    .replace(/^(?:customer|supplier):/i, '')
+    .replace(/\|(?:customer|supplier)$/i, '')
+    .trim();
+}
+
+function splitGeoBucketKey(key, val, fallbackInd = 'Manufacturing') {
+  const kStr = String(key || '').trim();
+  const parts = kStr.split('::');
+  const valInd = (val && typeof val === 'object' && (val._industry || val.industry || val.ind))
+    ? String(val._industry || val.industry || val.ind).trim()
+    : '';
+  const rawInd = parts.length > 1 ? parts[0] : (valInd || fallbackInd || 'Manufacturing');
+  const indKey = canonGeoIndustryKey(rawInd).toLowerCase();
+  const bodyStr = parts.length > 1 ? parts.slice(1).join('::') : kStr;
+  return { kStr, parts, hasIndPrefix: parts.length > 1, valInd, indKey, bodyStr };
+}
+
+const ENTITY_TO_GEO_IND = {
+  wtc: 'Manufacturing',
+  bbconstruction: 'Manufacturing',
+  'lions transport': 'Manufacturing',
+  'bdeir holding': 'Holding & Treasury',
+  blanca: 'Hospitality & Resorts',
+  'la una': 'Hospitality & Resorts',
+  palms: 'Hospitality & Resorts',
+  voile: 'Hospitality & Resorts',
+  platinum: 'Hospitality & Resorts',
+  'korri auto': 'Automotive & Heavy Trading',
+  shacman: 'Automotive & Heavy Trading',
+  properties: 'Real Estate & Property',
+  '4235 company s.a.l': 'Real Estate & Property',
+  'insurance company': 'Insurance & Brokerage'
+};
+
+function inferEntityIndustry(coRaw) {
+  const ck = canonEntityKey(coRaw);
+  return ENTITY_TO_GEO_IND[ck] || '';
+}
+
+function inferDomainIndustry(obj, keyHint = '') {
+  if (obj && typeof obj === 'object') {
+    const rawInd = String(obj._industry || obj.industry || obj.ind || '').trim();
+    if (rawInd) {
+      const ci = canonGeoIndustryKey(rawInd);
+      if (ci) return ci;
+    }
+    const rawCo = String(obj.company || obj.fromCo || obj.resort || obj.entity || '').trim();
+    const normCo = rawCo.toLowerCase().replace(/\s+/g, ' ');
+    if (rawCo && !['all', 'all bus', 'all companies', 'shared'].includes(normCo)) {
+      const byCo = inferEntityIndustry(rawCo);
+      if (byCo) return byCo;
+    }
+  }
+  const hint = String(keyHint || '').trim();
+  if (hint.includes('::')) {
+    const head = hint.split('::', 1)[0].trim();
+    if (head) {
+      const hl = head.toLowerCase();
+      if (hl === 'hsp' || hl === 'resort' || hl === 'resorts') return 'Hospitality & Resorts';
+      if (hl === 'hld' || hl === 'holding') return 'Holding & Treasury';
+      if (hl === 'trd' || hl === 'trading') return 'Automotive & Heavy Trading';
+      if (hl === 'res' || hl === 'realestate' || hl === 'real_estate' || hl === 'prop' || hl === 'properties') return 'Real Estate & Property';
+      if (hl === 'ins' || hl === 'insurance') return 'Insurance & Brokerage';
+      if (hl === 'mfg' || hl === 'manufacturing') return 'Manufacturing';
+      const byHead = canonGeoIndustryKey(head);
+      if (byHead) return byHead;
+    }
+  }
+  if (hint) {
+    const hl = hint.toLowerCase();
+    if (/resort|hospitality|blanca|la.?una|palms|voile|platinum|\bhsp\b/.test(hl)) return 'Hospitality & Resorts';
+    if (/holding|treasury|\bhld\b/.test(hl)) return 'Holding & Treasury';
+    if (/trading|auto|korri|shacman|\btrd\b/.test(hl)) return 'Automotive & Heavy Trading';
+    if (/real.?estate|property|properties|4235|\bres\b/.test(hl)) return 'Real Estate & Property';
+    if (/insur|broker|\bins\b/.test(hl)) return 'Insurance & Brokerage';
+  }
+  return '';
+}
+
+function canAccessUniversalGeoRow(session, canonTable, row) {
+  if (!session) return false;
+  if (isOwnerOrFullGroupSession(session)) return true;
+  if (!row || typeof row !== 'object') return false;
+  const co = String(row.company || row.resort || row.entity || '').trim();
+  const normCo = co.toLowerCase().replace(/\s+/g, ' ');
+  const isSharedCo = !normCo || normCo === 'all' || normCo === 'all bus' || normCo === 'all companies' || normCo === 'shared';
+  if (!isSharedCo && !canAccessCompany(session, co)) return false;
+  if (canonTable === 'sites' || canonTable === 'regions') {
+    let indRaw = String(row._industry || row.industry || row.ind || '').trim();
+    if (!indRaw && !isSharedCo) indRaw = inferEntityIndustry(co);
+    if (!canAccessGeoIndustrySession(session, indRaw || 'Manufacturing')) return false;
+  }
+  return true;
+}
+
+function isRecentGeoTimestamp(isoStr, maxAgeMs = 10 * 60 * 1000) {
+  const s = String(isoStr || '').trim();
+  if (!s) return false;
+  const ms = Date.parse(s);
+  return Number.isFinite(ms) && Math.abs(Date.now() - ms) <= maxAgeMs;
+}
+
+async function loadGeoEntityLookup(db) {
+  const out = {
+    sitesByIndAndName: new Map(),
+    sitesByIndAndId: new Map(),
+    sitesByName: new Map(),
+    sitesById: new Map(),
+    regionsByIndAndName: new Map(),
+    regionsByIndAndId: new Map(),
+    regionsByName: new Map(),
+    regionsById: new Map()
+  };
+  if (!db) return out;
+  const pushMap = (map, key, val) => {
+    if (!key) return;
+    let arr = map.get(key);
+    if (!arr) { arr = []; map.set(key, arr); }
+    arr.push(val);
+  };
+  try {
+    const sRes = await db.prepare('SELECT * FROM sites').all();
+    for (const r of (sRes.results || [])) {
+      const h = hydrateRowJson(r);
+      if (!h || h.voided) continue;
+      const rawCo = String(h.company || '').trim();
+      const co = rawCo ? canonicalizeCompanyName(rawCo) : '';
+      const indKey = canonGeoIndustryKey(h._industry || h.industry || h.ind || 'Manufacturing').toLowerCase();
+      const [lat, lng] = extractSiteLatLng(h);
+      const id = String(h.id || '').trim();
+      const name = String(h.name || '').trim();
+      let rawSc = String(h.site_category || '').trim().toLowerCase();
+      if (!rawSc) {
+        if (h.customer && !h.supplier) rawSc = 'customer';
+        else if (h.supplier && !h.customer) rawSc = 'supplier';
+      }
+      const rec = {
+        id,
+        name,
+        company: co,
+        region: String(h.region || '').trim(),
+        siteCategory: normGeoSiteCat(rawSc),
+        raw: h,
+        indKey,
+        lat,
+        lng,
+        hasValidPin: lat !== null && lng !== null,
+        pinCleared: Boolean(h._pinCleared || h.pin_cleared || h.pinCleared),
+        enteredBy: String(h.entered_by || h.enteredBy || '').trim().toLowerCase(),
+        enteredAt: String(h.entered_at || h.enteredAt || h.created_at || '').trim(),
+        modifiedBy: String(h.modified_by || h.modifiedBy || '').trim().toLowerCase(),
+        modifiedAt: String(h.modified_at || h.modifiedAt || '').trim()
+      };
+      const nk = normGeoKeyToken(name);
+      const ik = id.toLowerCase();
+      pushMap(out.sitesByIndAndName, `${indKey}::${nk}`, rec);
+      pushMap(out.sitesByIndAndId, `${indKey}::${ik}`, rec);
+      pushMap(out.sitesByName, nk, rec);
+      pushMap(out.sitesById, ik, rec);
+    }
+  } catch (_) {}
+  try {
+    const rRes = await db.prepare('SELECT * FROM regions').all();
+    for (const r of (rRes.results || [])) {
+      const h = hydrateRowJson(r);
+      if (!h || h.voided) continue;
+      const indKey = canonGeoIndustryKey(h._industry || h.industry || h.ind || 'Manufacturing').toLowerCase();
+      const id = String(h.id || '').trim();
+      const name = String(h.name || '').trim();
+      const rec = {
+        id,
+        name,
+        indKey,
+        raw: h,
+        hasShape: hasAnyRegionZoneShape(h),
+        enteredBy: String(h.entered_by || h.enteredBy || '').trim().toLowerCase(),
+        enteredAt: String(h.entered_at || h.enteredAt || h.created_at || '').trim(),
+        modifiedBy: String(h.modified_by || h.modifiedBy || '').trim().toLowerCase(),
+        modifiedAt: String(h.modified_at || h.modifiedAt || '').trim()
+      };
+      const nk = normGeoKeyToken(name);
+      const ik = id.toLowerCase();
+      pushMap(out.regionsByIndAndName, `${indKey}::${nk}`, rec);
+      pushMap(out.regionsByIndAndId, `${indKey}::${ik}`, rec);
+      pushMap(out.regionsByName, nk, rec);
+      pushMap(out.regionsById, ik, rec);
+    }
+  } catch (_) {}
+  return out;
+}
+
+function lookupGeoSitesForBucketKey(geoLookup, indKey, rawBody, hasIndPrefix, extraTokens = null) {
+  if (!geoLookup) return [];
+  const stripped = stripGeoSiteCategorySuffix(rawBody);
+  const candidates = [];
+  if (stripped) candidates.push({ token: stripped, companyFilter: '' });
+  const colonIdx = stripped.indexOf(':');
+  if (colonIdx > 0) {
+    const head = stripped.slice(0, colonIdx).trim();
+    const tail = stripGeoSiteCategorySuffix(stripped.slice(colonIdx + 1));
+    if (tail && isKnownCanonicalCompany(head)) {
+      candidates.push({ token: tail, companyFilter: canonicalizeCompanyName(head).toLowerCase() });
+    }
+  }
+  for (const et of (extraTokens || [])) {
+    const ets = stripGeoSiteCategorySuffix(et);
+    if (ets) candidates.push({ token: ets, companyFilter: '' });
+  }
+  if (!candidates.length) return [];
+  const hits = [];
+  const seen = new Set();
+  const addList = (arr, companyFilter) => {
+    for (const item of (arr || [])) {
+      if (companyFilter && item.company && item.company.toLowerCase() !== companyFilter) continue;
+      const uid = item.id || `${item.indKey}::${item.name}::${item.company}`;
+      if (!seen.has(uid)) { seen.add(uid); hits.push(item); }
+    }
+  };
+  for (const cand of candidates) {
+    const nk = normGeoKeyToken(cand.token);
+    const ik = cand.token.toLowerCase();
+    if (!nk) continue;
+    addList(geoLookup.sitesByIndAndId.get(`${indKey}::${ik}`), cand.companyFilter);
+    addList(geoLookup.sitesByIndAndName.get(`${indKey}::${nk}`), cand.companyFilter);
+  }
+  if (!hits.length && !hasIndPrefix) {
+    for (const cand of candidates) {
+      const nk = normGeoKeyToken(cand.token);
+      const ik = cand.token.toLowerCase();
+      if (!nk) continue;
+      addList(geoLookup.sitesById.get(ik), cand.companyFilter);
+      addList(geoLookup.sitesByName.get(nk), cand.companyFilter);
+    }
+  }
+  return hits;
+}
+
+function lookupGeoRegionsForBucketKey(geoLookup, indKey, rawBody, hasIndPrefix, extraTokens = null) {
+  if (!geoLookup) return [];
+  const toks = [rawBody, ...((extraTokens && Array.isArray(extraTokens)) ? extraTokens : [])];
+  const hits = [];
+  const seen = new Set();
+  const addList = (arr) => {
+    for (const item of (arr || [])) {
+      const uid = item.id || `${item.indKey}::${item.name}`;
+      if (!seen.has(uid)) { seen.add(uid); hits.push(item); }
+    }
+  };
+  for (const rawTok of toks) {
+    const nk = normGeoKeyToken(rawTok);
+    const ik = String(rawTok || '').trim().toLowerCase();
+    if (!nk) continue;
+    addList(geoLookup.regionsByIndAndId.get(`${indKey}::${ik}`));
+    addList(geoLookup.regionsByIndAndName.get(`${indKey}::${nk}`));
+    if (!hits.length && !hasIndPrefix) {
+      addList(geoLookup.regionsById.get(ik));
+      addList(geoLookup.regionsByName.get(nk));
+    }
+  }
+  return hits;
+}
+
+function canAccessGeoBucketEntry(session, bucket, key, val, geoLookup = null) {
   if (!session) return false;
   if (isOwnerOrFullGroupSession(session)) return true;
   if (bucket === 'companyHubs') {
+    const hubCo = canonicalizeCompanyName(key);
+    if (!GEO_MFG_HUB_COMPANIES.has(hubCo.toLowerCase())) return false;
     const vCo = (val && typeof val === 'object' && val.company) ? String(val.company).trim() : '';
-    return canAccessCompany(session, key) && (!vCo || canAccessCompany(session, vCo));
+    return canAccessCompany(session, hubCo) && (!vCo || canAccessCompany(session, vCo));
   }
   if (val && typeof val === 'object') {
     const vCo = String(val.company || val.resort || val.entity || '').trim();
     if (vCo && !canAccessCompany(session, vCo)) return false;
   }
-  const kStr = String(key || '').trim();
-  const parts = kStr.split('::');
-  const rawInd = parts.length > 1
-    ? parts[0]
-    : ((val && typeof val === 'object' && (val._industry || val.industry || val.ind)) ? (val._industry || val.industry || val.ind) : 'manufacturing');
-  const indKey = String(rawInd || 'manufacturing').trim().toLowerCase().replace(/\s+/g, ' ');
+  const split = splitGeoBucketKey(key, val, 'Manufacturing');
+  let indKey = split.indKey;
+  if (!split.hasIndPrefix && !split.valInd && geoLookup) {
+    if (bucket === 'regions') {
+      const regHits = lookupGeoRegionsForBucketKey(geoLookup, indKey, split.bodyStr, false);
+      if (regHits.length === 1 && regHits[0].indKey) indKey = regHits[0].indKey;
+      else if (regHits.length > 1) {
+        if (!regHits.some(r => canAccessGeoIndustrySession(session, r.indKey))) return false;
+      }
+    } else if (bucket === 'sites') {
+      const siteHits = lookupGeoSitesForBucketKey(geoLookup, indKey, split.bodyStr, false);
+      if (siteHits.length === 1 && siteHits[0].indKey) indKey = siteHits[0].indKey;
+      else if (siteHits.length > 1) {
+        if (!siteHits.some(s => canAccessGeoIndustrySession(session, s.indKey))) return false;
+      }
+    }
+  }
   const cos = GEO_IND_COMPANIES[indKey];
   if (!cos || !cos.length) return false;
+  if (!canAccessGeoIndustrySession(session, indKey)) return false;
   const cosSet = new Set(cos.map(c => canonicalizeCompanyName(c).toLowerCase()));
-  const bodyStr = parts.length > 1 ? parts.slice(1).join('::') : kStr;
-  for (const seg of bodyStr.split('||')) {
-    const m = String(seg || '').trim().match(/^bu:(.+)$/i);
-    if (m && !canAccessCompany(session, m[1].trim())) return false;
+  if (bucket === 'sites' && geoLookup) {
+    const siteHits = lookupGeoSitesForBucketKey(geoLookup, indKey, split.bodyStr, split.hasIndPrefix);
+    if (siteHits.length && !siteHits.some(s => !s.company || canAccessCompany(session, s.company))) {
+      return false;
+    }
   }
-  if (parts.length > 1) {
-    const firstTok = String(parts[1] || '').split(':')[0].trim();
+  for (const seg of split.bodyStr.split(/\|\|?/)) {
+    const s = String(seg || '').trim();
+    const bm = s.match(/^bu:(.+)$/i);
+    if (bm && !canAccessCompany(session, bm[1].trim())) return false;
+    const sm = s.match(/^site:(.+)$/i);
+    if (sm) {
+      const siteRef = sm[1].trim();
+      const srColon = siteRef.indexOf(':');
+      if (srColon > 0) {
+        const srHead = siteRef.slice(0, srColon).trim();
+        if (srHead && isKnownCanonicalCompany(srHead) && !canAccessCompany(session, canonicalizeCompanyName(srHead))) {
+          return false;
+        }
+      }
+      if (geoLookup) {
+        const sHits = lookupGeoSitesForBucketKey(geoLookup, indKey, siteRef, split.hasIndPrefix);
+        if (sHits.length) {
+          if (!sHits.some(h => !h.company || canAccessCompany(session, h.company))) return false;
+        } else if (isKnownCanonicalCompany(siteRef) && !canAccessCompany(session, siteRef)) {
+          return false;
+        }
+      } else if (isKnownCanonicalCompany(siteRef) && !canAccessCompany(session, siteRef)) {
+        return false;
+      }
+    }
+  }
+  if (bucket === 'sites' && split.bodyStr.includes(':')) {
+    const firstTok = split.bodyStr.slice(0, split.bodyStr.indexOf(':')).trim();
     if (firstTok && isKnownCanonicalCompany(firstTok)) {
       const cName = canonicalizeCompanyName(firstTok);
       if (cosSet.has(cName.toLowerCase()) && !canAccessCompany(session, cName)) return false;
     }
   }
-  return cos.some(co => canAccessCompany(session, co));
+  return true;
 }
 
-export function scopeGeoConfigForSession(geoObj, session) {
+export function scopeGeoConfigForSession(geoObj, session, geoLookup = null) {
   if (!geoObj || typeof geoObj !== 'object') return geoObj;
   if (session && isOwnerOrFullGroupSession(session)) return geoObj;
   const out = Object.assign({}, geoObj);
@@ -3131,7 +4059,7 @@ export function scopeGeoConfigForSession(geoObj, session) {
     if (geoObj[bucket] && typeof geoObj[bucket] === 'object') {
       const scoped = {};
       for (const [k, v] of Object.entries(geoObj[bucket])) {
-        if (canAccessGeoBucketEntry(session, bucket, k, v)) scoped[k] = v;
+        if (canAccessGeoBucketEntry(session, bucket, k, v, geoLookup)) scoped[k] = v;
       }
       out[bucket] = scoped;
     }
@@ -3140,7 +4068,7 @@ export function scopeGeoConfigForSession(geoObj, session) {
     const keptPairs = (out.pairKmOverrides && typeof out.pairKmOverrides === 'object') ? out.pairKmOverrides : {};
     const scopedPairTs = {};
     for (const [pk, pv] of Object.entries(geoObj._pairKmTs)) {
-      if ((pk in keptPairs) || canAccessGeoBucketEntry(session, 'pairKmOverrides', pk, null)) {
+      if ((pk in keptPairs) || canAccessGeoBucketEntry(session, 'pairKmOverrides', pk, null, geoLookup)) {
         scopedPairTs[pk] = pv;
       }
     }
@@ -3154,13 +4082,55 @@ export function scopeGeoConfigForSession(geoObj, session) {
       if (idx > 0) {
         const b = sDk.slice(0, idx);
         const entryKey = sDk.slice(idx + 1);
-        if (GEO_RL_BUCKETS.includes(b) && !canAccessGeoBucketEntry(session, b, entryKey, null)) continue;
+        const bMap = (geoObj[b] && typeof geoObj[b] === 'object') ? geoObj[b] : {};
+        const prevVal = Object.prototype.hasOwnProperty.call(bMap, entryKey) ? bMap[entryKey] : null;
+        if (GEO_RL_BUCKETS.includes(b) && !canAccessGeoBucketEntry(session, b, entryKey, prevVal, geoLookup)) continue;
       }
       scopedDel[dk] = dTs;
     }
     out._deletedKeys = scopedDel;
   }
   return out;
+}
+
+export async function resolveGeoWriteAccess(db, session) {
+  if (!session) {
+    return { canWriteGeo: false, canEnterSitePin: false, effectiveSession: null, perms: getSessionWritePerms(null) };
+  }
+  let effectiveSession = session;
+  const uid = String(session.sub || session.id || '').trim();
+  const em = String(session.email || '').trim().toLowerCase();
+  if (db) {
+    let row = null;
+    if (uid) {
+      row = await db.prepare('SELECT * FROM users WHERE id = ?1 LIMIT 1').bind(uid).first();
+    }
+    if (!row && em) {
+      row = await db.prepare('SELECT * FROM users WHERE lower(email) = ?1 LIMIT 1').bind(em).first();
+    }
+    if (row) {
+      if (row.status && String(row.status).toLowerCase() === 'suspended') {
+        return { canWriteGeo: false, canEnterSitePin: false, effectiveSession: session, perms: getSessionWritePerms(null) };
+      }
+      effectiveSession = {
+        sub: row.id || uid,
+        id: row.id || uid,
+        email: row.email || em,
+        role: row.role || '',
+        companies: row.companies,
+        custom_perms: typeof row.custom_perms === 'string'
+          ? safeJsonParse(row.custom_perms, row.custom_perms)
+          : row.custom_perms
+      };
+    }
+  }
+  const perms = getSessionWritePerms(effectiveSession);
+  return {
+    canWriteGeo: Boolean(perms.canWriteGeoConfig),
+    canEnterSitePin: Boolean(perms.canEnterSite),
+    effectiveSession,
+    perms
+  };
 }
 
 export async function resolveCanWriteWorkSchedules(db, session, baseUsersOpt = null) {
@@ -3599,44 +4569,268 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
   if (request.method === 'GET') {
     const row = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
     const parsedVal = row ? safeJsonParse(row.payload_json, null) : null;
-    const outVal = (docKey === 'work_schedules' && parsedVal)
-      ? scopeWorkSchedulesForSession(parsedVal, session)
-      : (docKey === 'geo_config' && parsedVal)
-        ? scopeGeoConfigForSession(parsedVal, session)
-        : parsedVal;
+    let outVal = parsedVal;
+    if (docKey === 'work_schedules' && parsedVal) {
+      outVal = scopeWorkSchedulesForSession(parsedVal, session);
+    } else if (docKey === 'geo_config' && parsedVal) {
+      const getGeoLookup = isOwnerOrFullGroupSession(session) ? null : await loadGeoEntityLookup(env.DB);
+      outVal = scopeGeoConfigForSession(parsedVal, session, getGeoLookup);
+    }
     return jsonResponse({ ok: true, [responseProp]: outVal });
   }
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
-  if (!(await resolveCanWriteWorkSchedules(env.DB, session))) {
+  let effectiveSession = session;
+  let geoAccess = null;
+  if (docKey === 'geo_config') {
+    geoAccess = await resolveGeoWriteAccess(env.DB, session);
+    if (!geoAccess.canWriteGeo && !geoAccess.canEnterSitePin) {
+      return jsonResponse({ ok: false, error: 'Map write privileges required.' }, 403);
+    }
+    effectiveSession = geoAccess.effectiveSession || session;
+  } else if (!(await resolveCanWriteWorkSchedules(env.DB, session))) {
     return jsonResponse({ ok: false, error: 'Schedule write privileges required.' }, 403);
   }
-  const restrictKvRls = !isOwnerOrFullGroupSession(session);
+  const restrictKvRls = !isOwnerOrFullGroupSession(effectiveSession);
   const incoming = (body && (body[responseProp] || body.config || body.payload)) || body || {};
   const nowIso = new Date().toISOString();
   let toStore = incoming;
   if (docKey === 'geo_config' && incoming && typeof incoming === 'object') {
+    const parseGeoKm = (v) => {
+      if (v === undefined || v === null) return { ok: true, empty: true, km: null };
+      if (typeof v === 'boolean' || Array.isArray(v)) return { ok: false };
+      const rawKm = (typeof v === 'object') ? v.km : v;
+      if (typeof rawKm === 'boolean' || typeof rawKm === 'object' || rawKm === undefined || rawKm === null || String(rawKm).trim() === '') {
+        return { ok: false };
+      }
+      const km = Number(String(rawKm).trim());
+      if (!Number.isFinite(km) || km < 0 || km > 5000) return { ok: false };
+      return { ok: true, empty: false, km: Math.round(km * 100) / 100 };
+    };
+    const inHubs = (incoming.companyHubs && typeof incoming.companyHubs === 'object' && !Array.isArray(incoming.companyHubs)) ? incoming.companyHubs : {};
+    for (const v of Object.values(inHubs)) {
+      if (v === undefined || v === null) continue;
+      if (typeof v !== 'object' || Array.isArray(v)) {
+        return jsonResponse({ ok: false, error: 'Invalid companyHubs payload.' }, 400);
+      }
+      const la = ('lat' in v && v.lat !== undefined) ? v.lat : v.latitude;
+      const ln = ('lng' in v && v.lng !== undefined) ? v.lng : v.longitude;
+      if (!isValidLatLngPair(la, ln)) {
+        return jsonResponse({ ok: false, error: 'Invalid hub GPS coordinates.' }, 400);
+      }
+    }
+    const inSites = (incoming.sites && typeof incoming.sites === 'object' && !Array.isArray(incoming.sites)) ? incoming.sites : {};
+    for (const v of Object.values(inSites)) {
+      if (v === undefined || v === null) continue;
+      if (typeof v !== 'object' || Array.isArray(v)) {
+        return jsonResponse({ ok: false, error: 'Invalid site geo payload.' }, 400);
+      }
+      if (!validateRecordGpsCoords(v)) {
+        return jsonResponse({ ok: false, error: 'Invalid site GPS coordinates.' }, 400);
+      }
+      const la = ('lat' in v && v.lat !== undefined) ? v.lat : v.latitude;
+      const ln = ('lng' in v && v.lng !== undefined) ? v.lng : v.longitude;
+      const hasCoordKey = ('lat' in v || 'latitude' in v || 'lng' in v || 'longitude' in v || 'lon' in v);
+      const isCleared = Boolean(v._pinCleared || v.pin_cleared || v.pinCleared);
+      if (hasCoordKey && !isCleared && !isValidLatLngPair(la, ln)) {
+        return jsonResponse({ ok: false, error: 'Invalid site GPS coordinates.' }, 400);
+      }
+      if (!hasCoordKey && !isCleared && !String(v.region || '').trim()) {
+        return jsonResponse({ ok: false, error: 'Invalid site geo payload.' }, 400);
+      }
+    }
+    const inRegions = (incoming.regions && typeof incoming.regions === 'object' && !Array.isArray(incoming.regions)) ? incoming.regions : {};
+    for (const v of Object.values(inRegions)) {
+      if (v === undefined || v === null) continue;
+      if (typeof v !== 'object' || Array.isArray(v)) {
+        return jsonResponse({ ok: false, error: 'Invalid region geo payload.' }, 400);
+      }
+      if (!validateRecordGpsCoords(v)) {
+        return jsonResponse({ ok: false, error: 'Invalid region coordinates or radius.' }, 400);
+      }
+      const rShape = String(v.shape_type || v.zone_type || '').trim().toLowerCase();
+      if (rShape === 'circle') {
+        const hasRad = ('radius_km' in v) && v.radius_km !== undefined && v.radius_km !== null && String(v.radius_km).trim() !== '';
+        const rk = hasRad ? Number(String(v.radius_km).trim()) : NaN;
+        if (!hasRad || !Number.isFinite(rk) || rk <= 0 || rk > 500) {
+          return jsonResponse({ ok: false, error: 'Circle region radius_km must be > 0 and <= 500.' }, 400);
+        }
+      }
+    }
+    const inPairs = (incoming.pairKmOverrides && typeof incoming.pairKmOverrides === 'object' && !Array.isArray(incoming.pairKmOverrides)) ? incoming.pairKmOverrides : {};
+    for (const v of Object.values(inPairs)) {
+      if (v === undefined || v === null) continue;
+      if (!parseGeoKm(v).ok) {
+        return jsonResponse({ ok: false, error: 'Invalid route KM override value (must be 0 to 5000).' }, 400);
+      }
+    }
+    const inVerifiedRoutes = (incoming.verifiedRoutes && typeof incoming.verifiedRoutes === 'object' && !Array.isArray(incoming.verifiedRoutes)) ? incoming.verifiedRoutes : {};
+    for (const v of Object.values(inVerifiedRoutes)) {
+      if (v === undefined || v === null) continue;
+      if (typeof v !== 'object' || Array.isArray(v)) {
+        return jsonResponse({ ok: false, error: 'Invalid verified route payload.' }, 400);
+      }
+      if ('km' in v && v.km !== undefined && v.km !== null && !parseGeoKm(v.km).ok) {
+        return jsonResponse({ ok: false, error: 'Invalid verified route KM value (must be 0 to 5000).' }, 400);
+      }
+    }
+
     const exRow = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
     const prev = exRow ? safeJsonParse(exRow.payload_json, null) : null;
+    const geoLookup = await loadGeoEntityLookup(env.DB);
+    const prevDelCheck = (prev && prev._deletedKeys && typeof prev._deletedKeys === 'object') ? prev._deletedKeys : {};
+    const inDelCheck = (incoming._deletedKeys && typeof incoming._deletedKeys === 'object') ? incoming._deletedKeys : {};
+
     if (restrictKvRls) {
       for (const bucket of GEO_RL_BUCKETS) {
         const prevBucket = (prev && prev[bucket] && typeof prev[bucket] === 'object') ? prev[bucket] : {};
         const inBucket = (incoming[bucket] && typeof incoming[bucket] === 'object') ? incoming[bucket] : {};
         for (const [bkKey, bkVal] of Object.entries(inBucket)) {
-          if (!canAccessGeoBucketEntry(session, bucket, bkKey, bkVal) && stableRowSig(prevBucket[bkKey]) !== stableRowSig(bkVal)) {
-            return jsonResponse({ ok: false, error: `Row-level security: cannot modify another entity geo configuration (${bucket}).` }, 403);
+          const hasPrev = Object.prototype.hasOwnProperty.call(prevBucket, bkKey) && prevBucket[bkKey] != null;
+          const changed = !hasPrev || stableRowSig(prevBucket[bkKey]) !== stableRowSig(bkVal);
+          if (changed) {
+            const canInc = canAccessGeoBucketEntry(effectiveSession, bucket, bkKey, bkVal, geoLookup);
+            const canPrev = !hasPrev || canAccessGeoBucketEntry(effectiveSession, bucket, bkKey, prevBucket[bkKey], geoLookup);
+            if (!canInc || !canPrev) {
+              return jsonResponse({ ok: false, error: `Row-level security: cannot modify another entity geo configuration (${bucket}).` }, 403);
+            }
           }
         }
       }
-      const prevDelCheck = (prev && prev._deletedKeys && typeof prev._deletedKeys === 'object') ? prev._deletedKeys : {};
-      const inDelCheck = (incoming._deletedKeys && typeof incoming._deletedKeys === 'object') ? incoming._deletedKeys : {};
       for (const [dk, dTs] of Object.entries(inDelCheck)) {
         const sDk = String(dk || '');
         const idx = sDk.indexOf(':');
         if (idx > 0) {
           const bucket = sDk.slice(0, idx);
           const entryKey = sDk.slice(idx + 1);
-          if (GEO_RL_BUCKETS.includes(bucket) && !canAccessGeoBucketEntry(session, bucket, entryKey, null) && String(prevDelCheck[dk] || '') !== String(dTs || '')) {
+          const prevBucket = (prev && prev[bucket] && typeof prev[bucket] === 'object') ? prev[bucket] : {};
+          const prevVal = Object.prototype.hasOwnProperty.call(prevBucket, entryKey) ? prevBucket[entryKey] : null;
+          if (GEO_RL_BUCKETS.includes(bucket) && String(prevDelCheck[dk] || '') !== String(dTs || '') && !canAccessGeoBucketEntry(effectiveSession, bucket, entryKey, prevVal, geoLookup)) {
             return jsonResponse({ ok: false, error: `Row-level security: cannot delete another entity geo configuration (${bucket}).` }, 403);
+          }
+        }
+      }
+    }
+
+    if (!geoAccess.canWriteGeo) {
+      const actorEm = String(effectiveSession.email || '').trim().toLowerCase();
+      for (const [dk, dTs] of Object.entries(inDelCheck)) {
+        if (String(prevDelCheck[dk] || '') !== String(dTs || '')) {
+          return jsonResponse({ ok: false, error: 'Geo write permission required to remove pins, regions, or KM overrides.' }, 403);
+        }
+      }
+      const prevHubs = (prev && prev.companyHubs && typeof prev.companyHubs === 'object') ? prev.companyHubs : {};
+      for (const [k, v] of Object.entries(inHubs)) {
+        if (v === undefined || v === null) continue;
+        if (!(k in prevHubs) || stableRowSig(prevHubs[k]) !== stableRowSig(v)) {
+          return jsonResponse({ ok: false, error: 'Geo write permission required to move or create company hubs.' }, 403);
+        }
+      }
+      const prevPairs = (prev && prev.pairKmOverrides && typeof prev.pairKmOverrides === 'object') ? prev.pairKmOverrides : {};
+      for (const [k, v] of Object.entries(inPairs)) {
+        if (v === undefined || v === null) continue;
+        if (!(k in prevPairs) || stableRowSig(prevPairs[k]) !== stableRowSig(v)) {
+          return jsonResponse({ ok: false, error: 'Geo write permission required to edit route KM overrides.' }, 403);
+        }
+      }
+      const prevVerifiedRoutes = (prev && prev.verifiedRoutes && typeof prev.verifiedRoutes === 'object') ? prev.verifiedRoutes : {};
+      for (const [k, v] of Object.entries(inVerifiedRoutes)) {
+        if (v === undefined || v === null) continue;
+        if (!(k in prevVerifiedRoutes) || stableRowSig(prevVerifiedRoutes[k]) !== stableRowSig(v)) {
+          return jsonResponse({ ok: false, error: 'Geo write permission required to verify or modify road routes.' }, 403);
+        }
+      }
+      const prevPairTs = (prev && prev._pairKmTs && typeof prev._pairKmTs === 'object') ? prev._pairKmTs : {};
+      const inPairTsCheck = (incoming._pairKmTs && typeof incoming._pairKmTs === 'object') ? incoming._pairKmTs : {};
+      for (const [k, v] of Object.entries(inPairTsCheck)) {
+        if (String(prevPairTs[k] || '') !== String(v || '')) {
+          return jsonResponse({ ok: false, error: 'Geo write permission required to edit route KM timestamps.' }, 403);
+        }
+      }
+      const prevSites = (prev && prev.sites && typeof prev.sites === 'object') ? prev.sites : {};
+      for (const [k, v] of Object.entries(inSites)) {
+        if (v === undefined || v === null) continue;
+        if (v._pinCleared || v.pin_cleared || v.pinCleared) {
+          return jsonResponse({ ok: false, error: 'Geo write permission required to clear site pins.' }, 403);
+        }
+        const la = normGpsCoord(('lat' in v && v.lat !== undefined) ? v.lat : v.latitude, 90);
+        const ln = normGpsCoord(('lng' in v && v.lng !== undefined) ? v.lng : v.longitude, 180);
+        const hasValidIncPin = la !== null && ln !== null && !(Math.abs(la) < 1e-4 && Math.abs(ln) < 1e-4);
+        const split = splitGeoBucketKey(k, v, 'Manufacturing');
+        const dbHits = lookupGeoSitesForBucketKey(geoLookup, split.indKey, split.bodyStr, split.hasIndPrefix, [v.name, v.id]);
+        const matchedPrev = findMatchingPrevSiteEntries(prevSites, k, v, dbHits);
+        if (matchedPrev.length === 1 && matchedPrev[0][0] === k && stableRowSig(matchedPrev[0][1]) === stableRowSig(v)) {
+          continue;
+        }
+        for (const [pk, prevS] of matchedPrev) {
+          if (pk === k && stableRowSig(prevS) === stableRowSig(v)) continue;
+          if (!prevS || typeof prevS !== 'object' || prevS._pinCleared || prevS.pin_cleared || prevS.pinCleared) {
+            return jsonResponse({ ok: false, error: 'Geo write permission required to modify existing pinned sites.' }, 403);
+          }
+          const [pLa, pLn] = normalizedGpsPair(prevS, ('lat' in prevS) ? 'lat' : 'latitude', ('lng' in prevS) ? 'lng' : 'longitude');
+          if (pLa !== null || pLn !== null) {
+            return jsonResponse({ ok: false, error: 'Geo write permission required to modify existing pinned sites.' }, 403);
+          }
+          if (!hasValidIncPin) {
+            return jsonResponse({ ok: false, error: 'Geo write permission required to modify existing unpinned site entries without adding a valid pin.' }, 403);
+          }
+          for (const mf of ['company', 'site_category', 'name', 'region']) {
+            const pm = String(prevS[mf] || '').trim();
+            if (!pm) continue;
+            const nm = String(v[mf] || '').trim();
+            if (nm.toLowerCase() !== pm.toLowerCase()) {
+              return jsonResponse({ ok: false, error: `Geo write permission required to modify existing site metadata (${mf}).` }, 403);
+            }
+          }
+        }
+        const incDesc = describeGeoSiteEntry(k, v);
+        const dbCats = new Set(dbHits.map(d => d && d.siteCategory).filter(Boolean));
+        const hasDbTwin = dbCats.has('customer') && dbCats.has('supplier');
+        for (const dbSite of dbHits) {
+          if (hasDbTwin && incDesc.cat && dbSite.siteCategory && dbSite.siteCategory !== incDesc.cat) continue;
+          if (dbSite.pinCleared) {
+            return jsonResponse({ ok: false, error: 'Geo write permission required to re-pin a cleared site.' }, 403);
+          }
+          if (dbSite.hasValidPin) {
+            const sameCoords = (la !== null && ln !== null && Math.abs(dbSite.lat - la) < 1e-5 && Math.abs(dbSite.lng - ln) < 1e-5);
+            const sameActor = Boolean(actorEm && (dbSite.modifiedBy === actorEm || dbSite.enteredBy === actorEm));
+            const recent = isRecentGeoTimestamp(dbSite.modifiedAt || dbSite.enteredAt);
+            if (!sameCoords || !(sameActor || recent)) {
+              return jsonResponse({ ok: false, error: 'Geo write permission required to re-pin an already pinned site.' }, 403);
+            }
+          }
+          const dbRaw = (dbSite.raw && typeof dbSite.raw === 'object') ? dbSite.raw : {};
+          for (const mf of ['company', 'site_category', 'name', 'region']) {
+            if (mf === 'site_category' && v._seedCatAuto) continue;
+            const pm = String((mf === 'site_category' ? dbSite.siteCategory : '') || dbRaw[mf] || dbSite[mf] || '').trim();
+            const nm = String(v[mf] || '').trim();
+            if (pm && nm && nm.toLowerCase() !== pm.toLowerCase()) {
+              return jsonResponse({ ok: false, error: `Geo write permission required to modify existing site metadata (${mf}).` }, 403);
+            }
+          }
+        }
+      }
+      const prevRegions = (prev && prev.regions && typeof prev.regions === 'object') ? prev.regions : {};
+      for (const [k, v] of Object.entries(inRegions)) {
+        if (v === undefined || v === null) continue;
+        const matchedPrevRegs = findMatchingPrevRegionEntries(prevRegions, k, v);
+        if (matchedPrevRegs.length > 0) {
+          if (matchedPrevRegs.length === 1 && matchedPrevRegs[0][0] === k && stableRowSig(matchedPrevRegs[0][1]) === stableRowSig(v)) {
+            continue;
+          }
+          return jsonResponse({ ok: false, error: 'Geo write permission required to modify existing regions.' }, 403);
+        }
+        const split = splitGeoBucketKey(k, v, 'Manufacturing');
+        const dbHits = lookupGeoRegionsForBucketKey(geoLookup, split.indKey, split.bodyStr, split.hasIndPrefix, [v.name, v.id]);
+        for (const dbReg of dbHits) {
+          if (hasRegionZoneMutation(dbReg.raw, v, { ignoreAbsentDistanceKm: true })) {
+            return jsonResponse({ ok: false, error: 'Geo write permission required to modify an existing region zone.' }, 403);
+          }
+          if (dbReg.hasShape) {
+            const sameActor = Boolean(actorEm && (dbReg.enteredBy === actorEm || dbReg.modifiedBy === actorEm));
+            const recent = isRecentGeoTimestamp(dbReg.enteredAt || dbReg.modifiedAt);
+            if (!(sameActor || recent)) {
+              return jsonResponse({ ok: false, error: 'Geo write permission required to modify an existing region zone.' }, 403);
+            }
           }
         }
       }
@@ -3964,7 +5158,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       const obj = safeJsonParse(r.payload_json, null);
       if (!r.edit_key || !obj) continue;
       if (restrictRls) {
-        const edCo = String(obj.company || obj.resort || obj.entity || '').trim();
+        const edCo = String(obj.company || obj.fromCo || obj.resort || obj.entity || '').trim();
         if (!edCo || !canAccessCompany(session, edCo)) continue;
       }
       rowEdits[r.edit_key] = obj;
@@ -3973,6 +5167,62 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   }
 
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
+  if (body && body.op === 'rollback') {
+    const tokRes = await takeRollbackToken(env.DB, 'industry_domain_store', body.rollbackToken, session);
+    if (!tokRes.ok) return jsonResponse({ ok: false, error: tokRes.error }, tokRes.status || 400);
+    const entry = tokRes.entry;
+    const rbRows = Array.isArray(entry.rows) ? entry.rows : [];
+    const rbEdits = Array.isArray(entry.edits) ? entry.edits : [];
+    for (const it of rbRows) {
+      const cur = await env.DB.prepare(
+        'SELECT rev, voided, company, updated_at, payload_json FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2'
+      ).bind(it.bucket, it.id).first();
+      if (it.op === 'purge') {
+        if (cur) return jsonResponse({ ok: false, error: 'Rollback conflict: purged domain row was recreated.' }, 409);
+      } else {
+        if (!cur || Number(cur.rev || 1) !== Number(it.writtenRev || 1) || Number(cur.voided || 0) !== Number(it.writtenVoid || 0) || String(cur.payload_json || '') !== String(it.writtenPayload || '')) {
+          return jsonResponse({ ok: false, error: 'Rollback conflict: domain row was modified after commit.' }, 409);
+        }
+      }
+    }
+    for (const it of rbEdits) {
+      const cur = await env.DB.prepare(
+        'SELECT rev, voided, updated_at, payload_json FROM industry_row_edits WHERE edit_key = ?1'
+      ).bind(it.editKey).first();
+      if (it.op === 'purge') {
+        if (cur) return jsonResponse({ ok: false, error: 'Rollback conflict: purged domain edit was recreated.' }, 409);
+      } else {
+        if (!cur || Number(cur.rev || 1) !== Number(it.writtenRev || 1) || Number(cur.voided || 0) !== Number(it.writtenVoid || 0) || String(cur.payload_json || '') !== String(it.writtenPayload || '')) {
+          return jsonResponse({ ok: false, error: 'Rollback conflict: domain edit was modified after commit.' }, 409);
+        }
+      }
+    }
+    const rbStmts = [];
+    for (const it of rbRows) {
+      if (it.existed) {
+        rbStmts.push(env.DB.prepare(
+          'INSERT OR REPLACE INTO industry_custom_rows (bucket, row_id, company, rev, voided, updated_at, payload_json) VALUES (?1,?2,?3,?4,?5,?6,?7)'
+        ).bind(it.bucket, it.id, it.prevCompany || '', Number(it.prevRev || 1), Number(it.prevVoid || 0), it.prevTs || '', it.prevPayload || '{}'));
+      } else {
+        rbStmts.push(env.DB.prepare(
+          'DELETE FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2'
+        ).bind(it.bucket, it.id));
+      }
+    }
+    for (const it of rbEdits) {
+      if (it.existed) {
+        rbStmts.push(env.DB.prepare(
+          'INSERT OR REPLACE INTO industry_row_edits (edit_key, rev, voided, updated_at, payload_json) VALUES (?1,?2,?3,?4,?5)'
+        ).bind(it.editKey, Number(it.prevRev || 1), Number(it.prevVoid || 0), it.prevTs || '', it.prevPayload || '{}'));
+      } else {
+        rbStmts.push(env.DB.prepare(
+          'DELETE FROM industry_row_edits WHERE edit_key = ?1'
+        ).bind(it.editKey));
+      }
+    }
+    if (rbStmts.length) await execBatchedStmts(env.DB, rbStmts);
+    return jsonResponse({ ok: true, rolledBack: true, rows: rbRows.length, edits: rbEdits.length });
+  }
   // Old seed ids still in use (counts only; see legacy_ids.js). Read before anything below touches the body.
   const legacyHitsTask = scheduleLegacyIdHits(env, ctx, collectLegacyCandidates(body));
   if (legacyHitsTask) await legacyHitsTask;
@@ -3988,30 +5238,39 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
   const pendingEditWrites = [];
   const pendingPurgeRows = [];
   const pendingPurgeEdits = [];
+  const rbRowsMeta = [];
+  const rbEditsMeta = [];
 
   for (const [bucket, arr] of Object.entries(customMap)) {
     if (!bucket || !Array.isArray(arr)) continue;
-    for (const r of arr) {
-      if (!r || typeof r !== 'object') continue;
-      const rid = String(r.id || r.code || '').trim();
+    for (const rawR of arr) {
+      if (!rawR || typeof rawR !== 'object') continue;
+      const rid = String(rawR.id || rawR.code || '').trim();
       if (!rid) continue;
       if (isServerOwnedCustomRow(bucket, rid)) { ignoredServerOwned++; continue; }
-      if (!validateRecordGpsCoords(r)) {
+      if (!validateRecordGpsCoords(rawR)) {
         return jsonResponse({ ok: false, error: 'Invalid GPS coordinates.' }, 400);
       }
-      const co = canonicalizeCompanyName(r.company || r.resort || r.entity || '');
-      if (restrictRls && (!co || !canAccessCompany(session, co))) { rlsSkipped++; continue; }
+      const r = normalizeIncomingSiteCoordAliases(rawR);
+      const co = canonicalizeCompanyName(r.company || r.fromCo || r.resort || r.entity || '');
+      const rowInd = inferDomainIndustry(r, bucket);
+      if (restrictRls && (!co || !canAccessCompany(session, co) || (rowInd && !canAccessGeoIndustrySession(session, rowInd)))) {
+        return jsonResponse({ ok: false, error: 'Row-level security: cannot save domain rows outside your assigned companies or industries.' }, 403);
+      }
       const incRev = Number(r.rev || 1);
       const incVoid = r.voided ? 1 : 0;
       const incTs = String(r.updated_at || r._createdAt || '');
       const ex = await env.DB.prepare(
-        'SELECT rev, voided, company, payload_json FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2'
+        'SELECT rev, voided, company, updated_at, payload_json FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2'
       ).bind(bucket, rid).first();
       let rowToWrite = r;
       if (ex) {
-        const exCo = String(ex.company || '').trim();
-        if (restrictRls && (!exCo || !canAccessCompany(session, exCo))) { rlsSkipped++; continue; }
         const exObj = safeJsonParse(ex.payload_json, {});
+        const exCo = canonicalizeCompanyName(ex.company || (exObj && (exObj.company || exObj.fromCo || exObj.resort || exObj.entity)) || '');
+        const exInd = inferDomainIndustry(exObj, bucket);
+        if (restrictRls && (!exCo || !canAccessCompany(session, exCo) || (exInd && !canAccessGeoIndustrySession(session, exInd)))) {
+          return jsonResponse({ ok: false, error: 'Row-level security: cannot overwrite domain rows outside your assigned companies or industries.' }, 403);
+        }
         const exVoid = Number(ex.voided || 0);
         const exRev = Number(ex.rev || 1);
         if (Boolean(exVoid) === Boolean(incVoid) && !hasGpsFieldMutation(exObj, r) && !hasNonVoidFieldChange(exObj, r)) continue;
@@ -4021,17 +5280,24 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
           return jsonResponse({ ok: false, error: 'Role permission: seat cannot void or unvoid domain records.' }, 403);
         }
         const isSparsePureVoid = Boolean(
-          !exVoid && incVoid && !hasExplicitGpsKeyInPayload(r) && !hasNonVoidFieldChange(exObj, r)
+          Boolean(exVoid) !== Boolean(incVoid) && !hasExplicitGpsKeyInPayload(r) && !hasNonVoidFieldChange(exObj, r)
         );
         if (isSparsePureVoid) {
           rowToWrite = restoreGpsFieldsFromBase(Object.assign({}, exObj, r), exObj);
+          if (!incVoid) {
+            delete rowToWrite.voided_by;
+            delete rowToWrite.voidedBy;
+            delete rowToWrite.voided_at;
+            delete rowToWrite.voidedAt;
+            delete rowToWrite.voided_with_voucher;
+          }
         }
         const gpsChanged = hasGpsFieldMutation(exObj, rowToWrite);
-        if (!perms.modifyData && gpsChanged) {
-          return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to modify location coordinates.' }, 403);
+        if (!perms.canWriteGeoConfig && gpsChanged) {
+          return jsonResponse({ ok: false, error: 'Supervisor + Entry or Geo-authorized seat required to modify location coordinates.' }, 403);
         }
         if (!perms.modifyText && !perms.modifyData) {
-          const allowVoidOnly = Boolean(perms.voidData && !exVoid && incVoid && !gpsChanged && !hasNonVoidFieldChange(exObj, rowToWrite));
+          const allowVoidOnly = Boolean(perms.voidData && Boolean(exVoid) !== Boolean(incVoid) && !gpsChanged && !hasNonVoidFieldChange(exObj, rowToWrite));
           if (!allowVoidOnly) {
             return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify existing domain records.' }, 403);
           }
@@ -4043,32 +5309,54 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         if (!perms.voidData && Boolean(incVoid)) {
           return jsonResponse({ ok: false, error: 'Role permission: seat cannot create voided domain records.' }, 403);
         }
-        if (!perms.modifyData && (hasAnyGpsField(r) || hasExplicitGpsKeyInPayload(r))) {
-          return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to pin location coordinates.' }, 403);
+        if (!perms.canWriteGeoConfig && (hasAnyGpsField(r) || hasExplicitGpsKeyInPayload(r))) {
+          return jsonResponse({ ok: false, error: 'Supervisor + Entry or Geo-authorized seat required to pin location coordinates.' }, 403);
         }
       }
-      pendingRowWrites.push([bucket, rid, co, incRev, incVoid, incTs, JSON.stringify(rowToWrite)]);
+      const writtenPayload = JSON.stringify(rowToWrite);
+      pendingRowWrites.push([bucket, rid, co, incRev, incVoid, incTs, writtenPayload]);
+      rbRowsMeta.push({
+        op: 'write',
+        bucket,
+        id: rid,
+        existed: Boolean(ex),
+        prevCompany: ex ? String(ex.company || '') : '',
+        prevRev: ex ? Number(ex.rev || 1) : 1,
+        prevVoid: ex ? Number(ex.voided || 0) : 0,
+        prevTs: ex ? String(ex.updated_at || '') : '',
+        prevPayload: ex ? String(ex.payload_json || '{}') : '',
+        writtenRev: incRev,
+        writtenVoid: incVoid,
+        writtenPayload
+      });
     }
   }
 
-  for (const [ek, ev] of Object.entries(editsMap)) {
-    if (!ek || !ev || typeof ev !== 'object') continue;
+  for (const [ek, rawEv] of Object.entries(editsMap)) {
+    if (!ek || !rawEv || typeof rawEv !== 'object') continue;
     if (isServerOwnedRowEditKey(ek)) { ignoredServerOwned++; continue; }
-    if (!validateRecordGpsCoords(ev)) {
+    if (!validateRecordGpsCoords(rawEv)) {
       return jsonResponse({ ok: false, error: 'Invalid GPS coordinates.' }, 400);
     }
-    const edCo = canonicalizeCompanyName(ev.company || ev.resort || ev.entity || '');
-    if (restrictRls && (!edCo || !canAccessCompany(session, edCo))) { rlsSkipped++; continue; }
+    const ev = normalizeIncomingSiteCoordAliases(rawEv);
+    const edCo = canonicalizeCompanyName(ev.company || ev.fromCo || ev.resort || ev.entity || '');
+    const edInd = inferDomainIndustry(ev, ek);
+    if (restrictRls && (!edCo || !canAccessCompany(session, edCo) || (edInd && !canAccessGeoIndustrySession(session, edInd)))) {
+      return jsonResponse({ ok: false, error: 'Row-level security: cannot save domain edits outside your assigned companies or industries.' }, 403);
+    }
     const incRev = Number(ev.rev || 1);
     const incVoid = ev.voided ? 1 : 0;
     const incTs = String(ev.updated_at || ev.updatedAt || '');
-    const ex = await env.DB.prepare('SELECT rev, voided, payload_json FROM industry_row_edits WHERE edit_key = ?1').bind(ek).first();
+    const ex = await env.DB.prepare('SELECT rev, voided, updated_at, payload_json FROM industry_row_edits WHERE edit_key = ?1').bind(ek).first();
     let editToWrite = ev;
     if (ex) {
       const exObj = safeJsonParse(ex.payload_json, {});
       if (restrictRls) {
-        const exCo = String((exObj && (exObj.company || exObj.resort || exObj.entity)) || '').trim();
-        if (!exCo || !canAccessCompany(session, exCo)) { rlsSkipped++; continue; }
+        const exCo = canonicalizeCompanyName((exObj && (exObj.company || exObj.fromCo || exObj.resort || exObj.entity)) || '');
+        const exInd = inferDomainIndustry(exObj, ek);
+        if (!exCo || !canAccessCompany(session, exCo) || (exInd && !canAccessGeoIndustrySession(session, exInd))) {
+          return jsonResponse({ ok: false, error: 'Row-level security: cannot overwrite domain edits outside your assigned companies or industries.' }, 403);
+        }
       }
       const exVoid = Number(ex.voided || 0);
       const exRev = Number(ex.rev || 1);
@@ -4079,17 +5367,24 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         return jsonResponse({ ok: false, error: 'Role permission: seat cannot void or unvoid domain records.' }, 403);
       }
       const isSparsePureVoid = Boolean(
-        !exVoid && incVoid && !hasExplicitGpsKeyInPayload(ev) && !hasNonVoidFieldChange(exObj, ev)
+        Boolean(exVoid) !== Boolean(incVoid) && !hasExplicitGpsKeyInPayload(ev) && !hasNonVoidFieldChange(exObj, ev)
       );
       if (isSparsePureVoid) {
         editToWrite = restoreGpsFieldsFromBase(Object.assign({}, exObj, ev), exObj);
+        if (!incVoid) {
+          delete editToWrite.voided_by;
+          delete editToWrite.voidedBy;
+          delete editToWrite.voided_at;
+          delete editToWrite.voidedAt;
+          delete editToWrite.voided_with_voucher;
+        }
       }
       const gpsChanged = hasGpsFieldMutation(exObj, editToWrite);
-      if (!perms.modifyData && gpsChanged) {
-        return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to modify location coordinates.' }, 403);
+      if (!perms.canWriteGeoConfig && gpsChanged) {
+        return jsonResponse({ ok: false, error: 'Supervisor + Entry or Geo-authorized seat required to modify location coordinates.' }, 403);
       }
       if (!perms.modifyText && !perms.modifyData) {
-        const allowVoidOnly = Boolean(perms.voidData && !exVoid && incVoid && !gpsChanged && !hasNonVoidFieldChange(exObj, editToWrite));
+        const allowVoidOnly = Boolean(perms.voidData && Boolean(exVoid) !== Boolean(incVoid) && !gpsChanged && !hasNonVoidFieldChange(exObj, editToWrite));
         if (!allowVoidOnly) {
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify existing domain records.' }, 403);
         }
@@ -4098,8 +5393,8 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       if (!perms.voidData && Boolean(incVoid)) {
         return jsonResponse({ ok: false, error: 'Role permission: seat cannot void domain records.' }, 403);
       }
-      if (!perms.modifyData && (hasAnyGpsField(ev) || hasExplicitGpsKeyInPayload(ev))) {
-        return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to modify location coordinates.' }, 403);
+      if (!perms.canWriteGeoConfig && (hasAnyGpsField(ev) || hasExplicitGpsKeyInPayload(ev))) {
+        return jsonResponse({ ok: false, error: 'Supervisor + Entry or Geo-authorized seat required to modify location coordinates.' }, 403);
       }
       if (!perms.modifyText && !perms.modifyData) {
         const allowVoidOnly = Boolean(perms.voidData && incVoid && !hasAnyGpsField(ev) && !hasExplicitGpsKeyInPayload(ev));
@@ -4108,7 +5403,20 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         }
       }
     }
-    pendingEditWrites.push([ek, incRev, incVoid, incTs, JSON.stringify(editToWrite)]);
+    const writtenPayload = JSON.stringify(editToWrite);
+    pendingEditWrites.push([ek, incRev, incVoid, incTs, writtenPayload]);
+    rbEditsMeta.push({
+      op: 'write',
+      editKey: ek,
+      existed: Boolean(ex),
+      prevRev: ex ? Number(ex.rev || 1) : 1,
+      prevVoid: ex ? Number(ex.voided || 0) : 0,
+      prevTs: ex ? String(ex.updated_at || '') : '',
+      prevPayload: ex ? String(ex.payload_json || '{}') : '',
+      writtenRev: incRev,
+      writtenVoid: incVoid,
+      writtenPayload
+    });
   }
 
   const purgedRows = Array.isArray(body && body.purgedRows) ? body.purgedRows : [];
@@ -4117,38 +5425,64 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     const bk = String(pr.bucket || '').trim();
     const rid = String(pr.row_id || pr.id || '').trim();
     if (!bk || !rid || isServerOwnedCustomRow(bk, rid)) continue;
-    const ex = await env.DB.prepare('SELECT company, payload_json FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2').bind(bk, rid).first();
+    const ex = await env.DB.prepare('SELECT rev, voided, company, updated_at, payload_json FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2').bind(bk, rid).first();
     if (!ex) continue;
-    const exCo = String(ex.company || '').trim();
-    if (restrictRls && (!exCo || !canAccessCompany(session, exCo))) { rlsSkipped++; continue; }
     const exObj = safeJsonParse(ex.payload_json, {});
-    if (!perms.modifyData && hasAnyGpsField(exObj)) {
+    const exCo = canonicalizeCompanyName(ex.company || (exObj && (exObj.company || exObj.fromCo || exObj.resort || exObj.entity)) || '');
+    const exInd = inferDomainIndustry(exObj, bk);
+    if (restrictRls && (!exCo || !canAccessCompany(session, exCo) || (exInd && !canAccessGeoIndustrySession(session, exInd)))) {
+      return jsonResponse({ ok: false, error: 'Row-level security: cannot purge domain rows outside your assigned companies or industries.' }, 403);
+    }
+    if (!perms.canWriteGeoConfig && hasAnyGpsField(exObj)) {
       return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to purge pinned records.' }, 403);
     }
     if (!perms.modifyData && !perms.voidData) {
       return jsonResponse({ ok: false, error: 'Role permission: purge requires modify or void privileges.' }, 403);
     }
     pendingPurgeRows.push([bk, rid]);
+    rbRowsMeta.push({
+      op: 'purge',
+      bucket: bk,
+      id: rid,
+      existed: true,
+      prevCompany: String(ex.company || ''),
+      prevRev: Number(ex.rev || 1),
+      prevVoid: Number(ex.voided || 0),
+      prevTs: String(ex.updated_at || ''),
+      prevPayload: String(ex.payload_json || '{}')
+    });
   }
 
   const purgedEditKeys = Array.isArray(body && body.purgedEditKeys) ? body.purgedEditKeys : [];
   for (const rawEk of purgedEditKeys) {
     const ek = String(rawEk || '').trim();
     if (!ek || isServerOwnedRowEditKey(ek)) continue;
-    const ex = await env.DB.prepare('SELECT payload_json FROM industry_row_edits WHERE edit_key = ?1').bind(ek).first();
+    const ex = await env.DB.prepare('SELECT rev, voided, updated_at, payload_json FROM industry_row_edits WHERE edit_key = ?1').bind(ek).first();
     if (!ex) continue;
     const exObj = safeJsonParse(ex.payload_json, {});
     if (restrictRls) {
-      const exCo = String((exObj && (exObj.company || exObj.resort || exObj.entity)) || '').trim();
-      if (!exCo || !canAccessCompany(session, exCo)) { rlsSkipped++; continue; }
+      const exCo = canonicalizeCompanyName((exObj && (exObj.company || exObj.fromCo || exObj.resort || exObj.entity)) || '');
+      const exInd = inferDomainIndustry(exObj, ek);
+      if (!exCo || !canAccessCompany(session, exCo) || (exInd && !canAccessGeoIndustrySession(session, exInd))) {
+        return jsonResponse({ ok: false, error: 'Row-level security: cannot purge domain edits outside your assigned companies or industries.' }, 403);
+      }
     }
-    if (!perms.modifyData && hasAnyGpsField(exObj)) {
+    if (!perms.canWriteGeoConfig && hasAnyGpsField(exObj)) {
       return jsonResponse({ ok: false, error: 'Supervisor + Entry or Owner permission required to purge pinned records.' }, 403);
     }
     if (!perms.modifyData && !perms.voidData) {
       return jsonResponse({ ok: false, error: 'Role permission: purge requires modify or void privileges.' }, 403);
     }
     pendingPurgeEdits.push(ek);
+    rbEditsMeta.push({
+      op: 'purge',
+      editKey: ek,
+      existed: true,
+      prevRev: Number(ex.rev || 1),
+      prevVoid: Number(ex.voided || 0),
+      prevTs: String(ex.updated_at || ''),
+      prevPayload: String(ex.payload_json || '{}')
+    });
   }
 
   if (
@@ -4184,7 +5518,28 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
     deletedLegacyEdits++;
   }
 
-  return jsonResponse({ ok: true, rows: savedRows, edits: savedEdits, deletedLegacyRows, deletedLegacyEdits, ignoredServerOwned });
+  let rollbackToken = '';
+  const actorKey = getSessionActorKey(session);
+  if (actorKey && (rbRowsMeta.length > 0 || rbEditsMeta.length > 0)) {
+    try {
+      rollbackToken = await storeRollbackToken(env.DB, {
+        kind: 'industry_domain_store',
+        actor: actorKey,
+        rows: rbRowsMeta,
+        edits: rbEditsMeta
+      });
+    } catch (_) {}
+  }
+
+  return jsonResponse({
+    ok: true,
+    rows: savedRows,
+    edits: savedEdits,
+    deletedLegacyRows,
+    deletedLegacyEdits,
+    ignoredServerOwned,
+    ...(rollbackToken ? { rollbackToken } : {})
+  });
 }
 
 function buildBoundRecordUpsertStmt(db, canonTable, cols, rawRec) {
@@ -4405,10 +5760,15 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
           continue;
         }
         if (restrictRls) {
-          const recCo = String(rec.company || '').trim();
-          const prevCo = String((prevEntry && prevEntry.row && prevEntry.row.company) || '').trim();
-          if ((recCo && !canAccessCompany(session, recCo)) || (prevCo && !canAccessCompany(session, prevCo))) continue;
-          if (!isUniversal && (!recCo || (prevEntry && !prevCo))) continue;
+          if (isUniversal) {
+            if (!canAccessUniversalGeoRow(session, canonTable, rec)) continue;
+            if (prevEntry && prevEntry.row && !canAccessUniversalGeoRow(session, canonTable, prevEntry.row)) continue;
+          } else {
+            const recCo = String(rec.company || '').trim();
+            const prevCo = String((prevEntry && prevEntry.row && prevEntry.row.company) || '').trim();
+            if ((recCo && !canAccessCompany(session, recCo)) || (prevCo && !canAccessCompany(session, prevCo))) continue;
+            if (!recCo || (prevEntry && !prevCo)) continue;
+          }
         }
         if (!dirtyByTable.has(canonTable)) dirtyByTable.set(canonTable, []);
         dirtyByTable.get(canonTable).push(rec);
@@ -4421,13 +5781,13 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
           if (!pr) continue;
           if (restrictRls) {
             const prCo = String(pr.company || '').trim();
-            if (isUniversal && !canManageSeats) continue;
+            if (isUniversal && (!canManageSeats || !canAccessUniversalGeoRow(session, canonTable, pr))) continue;
             if ((!isUniversal && !prCo) || (prCo && !canAccessCompany(session, prCo))) continue;
           }
           const seedHit = await lookupSeedRowFromBucket(r2SeedCache, env, crKey, canonTable, prevId);
           if (seedHit.found && seedHit.row) {
             const srCo = String(seedHit.row.company || '').trim();
-            if (restrictRls && ((srCo && !canAccessCompany(session, srCo)) || (!isUniversal && !srCo))) continue;
+            if (restrictRls && (isUniversal ? !canAccessUniversalGeoRow(session, canonTable, seedHit.row) : (!srCo || !canAccessCompany(session, srCo)))) continue;
             const restored = Object.assign({}, seedHit.row, { voided: Boolean(seedHit.row.voided) });
             if (!dirtyByTable.has(canonTable)) dirtyByTable.set(canonTable, []);
             dirtyByTable.get(canonTable).push(restored);
@@ -4471,17 +5831,22 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
 
       // Batch-verify existing row ownership in D1 for restricted RLS sessions
       const blockedIds = new Set();
-      if (restrictRls && cols.has('company')) {
+      if (restrictRls && (cols.has('company') || canonTable === 'sites' || canonTable === 'regions')) {
         const checkIds = recs.map(r => String(r.id).trim());
         for (let i = 0; i < checkIds.length; i += 80) {
           const slice = checkIds.slice(i, i + 80);
           const ph = slice.map((_, k) => `?${k + 1}`).join(',');
-          const exRows = await db.prepare(`SELECT id, company FROM ${canonTable} WHERE id IN (${ph})`).bind(...slice).all();
-          const foundMap = new Map((exRows.results || []).map(x => [String(x.id), String(x.company || '').trim()]));
+          const exRows = await db.prepare(`SELECT * FROM ${canonTable} WHERE id IN (${ph})`).bind(...slice).all();
+          const foundMap = new Map((exRows.results || []).map(x => [String(x.id), hydrateRowJson(x)]));
           for (const cid of slice) {
-            const hasRow = foundMap.has(cid);
-            const exCo = foundMap.get(cid) || '';
-            if ((hasRow && !isUniversal && !exCo) || (exCo && !canAccessCompany(session, exCo))) blockedIds.add(cid);
+            const exHyd = foundMap.get(cid);
+            if (!exHyd) continue;
+            if (isUniversal) {
+              if (!canAccessUniversalGeoRow(session, canonTable, exHyd)) blockedIds.add(cid);
+            } else {
+              const exCo = String(exHyd.company || '').trim();
+              if (!exCo || !canAccessCompany(session, exCo)) blockedIds.add(cid);
+            }
           }
         }
       }
@@ -4583,7 +5948,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
         curIds.add(rid);
         if (pSigs.get(rid) === stableRowSig(r)) continue;
         if (isServerOwnedCustomRow(bk, rid)) continue;
-        const co = canonicalizeCompanyName(r.company || r.resort || r.entity || '');
+        const co = canonicalizeCompanyName(r.company || r.fromCo || r.resort || r.entity || '');
         if (restrictRls && (!co || !canAccessCompany(session, co))) continue;
         subStmts.push(
           db.prepare(
@@ -4596,7 +5961,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
           if (!pr || typeof pr !== 'object') continue;
           const prid = String(pr.id || pr.code || '').trim();
           if (!prid || curIds.has(prid) || isServerOwnedCustomRow(bk, prid)) continue;
-          const pCo = canonicalizeCompanyName(pr.company || pr.resort || pr.entity || '');
+          const pCo = canonicalizeCompanyName(pr.company || pr.fromCo || pr.resort || pr.entity || '');
           if (restrictRls && (!pCo || !canAccessCompany(session, pCo))) continue;
           subStmts.push(db.prepare('DELETE FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2').bind(bk, prid));
         }
@@ -4611,7 +5976,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
       curIreKeys.add(ek);
       if (isServerOwnedRowEditKey(ek)) continue;
       if (prevIre[ek] && stableRowSig(prevIre[ek]) === stableRowSig(ev)) continue;
-      const edCo = canonicalizeCompanyName(ev.company || ev.resort || ev.entity || '');
+      const edCo = canonicalizeCompanyName(ev.company || ev.fromCo || ev.resort || ev.entity || '');
       if (restrictRls && (!edCo || !canAccessCompany(session, edCo))) continue;
       subStmts.push(
         db.prepare(
@@ -4622,7 +5987,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
     if (hasPrev) {
       for (const [pek, pev] of Object.entries(prevIre)) {
         if (!pek || curIreKeys.has(pek) || isServerOwnedRowEditKey(pek)) continue;
-        const pEdCo = canonicalizeCompanyName((pev && (pev.company || pev.resort || pev.entity)) || '');
+        const pEdCo = canonicalizeCompanyName((pev && (pev.company || pev.fromCo || pev.resort || pev.entity)) || '');
         if (restrictRls && (!pEdCo || !canAccessCompany(session, pEdCo))) continue;
         subStmts.push(db.prepare('DELETE FROM industry_row_edits WHERE edit_key = ?1').bind(pek));
       }
@@ -4886,19 +6251,21 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
       }
     }
 
-    const canWriteWsMirror = !session || await resolveCanWriteWorkSchedules(db, session);
-    if (canWriteWsMirror && storePayload.workSchedules && (!hasPrev || stableRowSig(prevStorePayload.workSchedules) !== stableRowSig(storePayload.workSchedules))) {
-      const wsIso = String(storePayload.updatedAt || new Date().toISOString());
-      const kvWsRow = await db.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'work_schedules'").first();
-      const liveKvWs = (kvWsRow && safeJsonParse(kvWsRow.payload_json, null)) || {};
-      const mergedWs = mergeWorkSchedulesDocs(liveKvWs, storePayload.workSchedules, session, restrictRls);
-      storePayload.workSchedules = mergedWs;
-      subStmts.push(
-        db.prepare(
-          `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev) VALUES ('work_schedules', ?1, ?2, 1)
-           ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1`
-        ).bind(JSON.stringify(mergedWs), wsIso)
-      );
+    if (storePayload.workSchedules && (!hasPrev || stableRowSig(prevStorePayload.workSchedules) !== stableRowSig(storePayload.workSchedules))) {
+      const canWriteWsMirror = !session || await resolveCanWriteWorkSchedules(db, session);
+      if (canWriteWsMirror) {
+        const wsIso = String(storePayload.updatedAt || new Date().toISOString());
+        const kvWsRow = await db.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'work_schedules'").first();
+        const liveKvWs = (kvWsRow && safeJsonParse(kvWsRow.payload_json, null)) || {};
+        const mergedWs = mergeWorkSchedulesDocs(liveKvWs, storePayload.workSchedules, session, restrictRls);
+        storePayload.workSchedules = mergedWs;
+        subStmts.push(
+          db.prepare(
+            `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev) VALUES ('work_schedules', ?1, ?2, 1)
+             ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1`
+          ).bind(JSON.stringify(mergedWs), wsIso)
+        );
+      }
     }
 
     if (subStmts.length) {
@@ -5010,26 +6377,31 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
       for (const pr of pList) {
         if (pr && pr.id) pMap.set(String(pr.id).trim(), pr);
       }
-      const d1CoById = new Map();
+      const d1RowById = new Map();
       if (db && ALLOWED_TABLES.has(canonTable)) {
         const probeIds = [];
         for (const ir of iList) {
           if (!ir || typeof ir !== 'object' || !ir.id) continue;
           const rid = String(ir.id).trim();
           if (!rid || pMap.has(rid)) continue;
-          const irCo = String(ir.company || '').trim();
-          if ((!isUniversal && !irCo) || (irCo && !canAccessCompany(session, irCo))) continue;
+          if (isUniversal) {
+            if (!canAccessUniversalGeoRow(session, canonTable, ir)) continue;
+          } else {
+            const irCo = String(ir.company || '').trim();
+            if (!irCo || !canAccessCompany(session, irCo)) continue;
+          }
           probeIds.push(rid);
         }
         if (probeIds.length) {
           const cols = await getTableColumns(db, canonTable);
-          if (cols.has('company')) {
+          if (cols.has('company') || canonTable === 'sites' || canonTable === 'regions') {
             for (let i = 0; i < probeIds.length; i += 80) {
               const slice = probeIds.slice(i, i + 80);
               const ph = slice.map((_, idx) => `?${idx + 1}`).join(',');
-              const exRes = await db.prepare(`SELECT id, company FROM ${canonTable} WHERE id IN (${ph})`).bind(...slice).all();
+              const exRes = await db.prepare(`SELECT * FROM ${canonTable} WHERE id IN (${ph})`).bind(...slice).all();
               for (const xr of (exRes.results || [])) {
-                d1CoById.set(String(xr.id), String(xr.company || '').trim());
+                const hyd = hydrateRowJson(xr);
+                d1RowById.set(String(xr.id).trim(), hyd);
               }
             }
           }
@@ -5042,22 +6414,35 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
         const rid = String(ir.id).trim();
         const pr = pMap.get(rid);
         if (pr) {
-          const prCo = String(pr.company || '').trim();
-          const irCo = String(ir.company || '').trim();
-          if ((prCo && !canAccessCompany(session, prCo)) || (irCo && !canAccessCompany(session, irCo)) || (!isUniversal && (!prCo || !irCo))) {
-            outList.push(pr);
-            keptIds.add(rid);
-            continue;
+          if (isUniversal) {
+            if (!canAccessUniversalGeoRow(session, canonTable, pr) || !canAccessUniversalGeoRow(session, canonTable, ir)) {
+              outList.push(pr);
+              keptIds.add(rid);
+              continue;
+            }
+          } else {
+            const prCo = String(pr.company || '').trim();
+            const irCo = String(ir.company || '').trim();
+            if ((prCo && !canAccessCompany(session, prCo)) || (irCo && !canAccessCompany(session, irCo)) || !prCo || !irCo) {
+              outList.push(pr);
+              keptIds.add(rid);
+              continue;
+            }
           }
         } else {
-          const irCo = String(ir.company || '').trim();
-          if ((!isUniversal && !irCo) || (irCo && !canAccessCompany(session, irCo))) {
-            continue;
-          }
-          if (d1CoById.has(rid)) {
-            const exCo = d1CoById.get(rid);
-            if ((!isUniversal && !exCo) || (exCo && !canAccessCompany(session, exCo))) {
-              continue;
+          if (isUniversal) {
+            if (!canAccessUniversalGeoRow(session, canonTable, ir)) continue;
+            if (d1RowById.has(rid)) {
+              const exRowHyd = d1RowById.get(rid);
+              if (!canAccessUniversalGeoRow(session, canonTable, exRowHyd)) continue;
+            }
+          } else {
+            const irCo = String(ir.company || '').trim();
+            if (!irCo || !canAccessCompany(session, irCo)) continue;
+            if (d1RowById.has(rid)) {
+              const exRowHyd = d1RowById.get(rid);
+              const exCo = String((exRowHyd && exRowHyd.company) || '').trim();
+              if (!exCo || !canAccessCompany(session, exCo)) continue;
             }
           }
         }
@@ -5068,10 +6453,15 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
         if (!pr || !pr.id) continue;
         const rid = String(pr.id).trim();
         if (keptIds.has(rid)) continue;
-        const prCo = String(pr.company || '').trim();
-        // Restore omitted cross-entity rows, companyless BU-table rows, and omitted universal rows for non-Supervisor Entry seats
-        if ((prCo && !canAccessCompany(session, prCo)) || (!prCo && !isUniversal) || (isUniversal && !canManageSeats)) {
-          outList.push(pr);
+        if (isUniversal) {
+          if (!canManageSeats || !canAccessUniversalGeoRow(session, canonTable, pr)) {
+            outList.push(pr);
+          }
+        } else {
+          const prCo = String(pr.company || '').trim();
+          if (!prCo || !canAccessCompany(session, prCo)) {
+            outList.push(pr);
+          }
         }
       }
       incomingDoc.customRecords[k] = outList;
@@ -5135,22 +6525,31 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
         const rid = String(ir.id || ir.code || '').trim();
         if (!rid) continue;
         const pr = pMap.get(rid);
-        const irCo = String(ir.company || ir.resort || ir.entity || '').trim();
-        const prCo = pr ? String(pr.company || pr.resort || pr.entity || '').trim() : '';
-        if (pr && ((prCo && !canAccessCompany(session, prCo)) || !irCo || !canAccessCompany(session, irCo))) {
+        const irCo = String(ir.company || ir.fromCo || ir.resort || ir.entity || '').trim();
+        const prCo = pr ? String(pr.company || pr.fromCo || pr.resort || pr.entity || '').trim() : '';
+        const irInd = inferDomainIndustry(ir, bk);
+        const prInd = pr ? inferDomainIndustry(pr, bk) : '';
+        if (pr && (
+          (prCo && !canAccessCompany(session, prCo))
+          || (prInd && !canAccessGeoIndustrySession(session, prInd))
+          || !irCo
+          || !canAccessCompany(session, irCo)
+          || (irInd && !canAccessGeoIndustrySession(session, irInd))
+        )) {
           outB.push(pr);
           kept.add(rid);
           continue;
         }
-        if (!pr && (!irCo || !canAccessCompany(session, irCo))) continue;
+        if (!pr && (!irCo || !canAccessCompany(session, irCo) || (irInd && !canAccessGeoIndustrySession(session, irInd)))) continue;
         outB.push(ir);
         kept.add(rid);
       }
       for (const pr of pList) {
         const rid = pr && String(pr.id || pr.code || '').trim();
         if (!rid || kept.has(rid)) continue;
-        const prCo = String(pr.company || pr.resort || pr.entity || '').trim();
-        if (!prCo || !canAccessCompany(session, prCo)) outB.push(pr);
+        const prCo = String(pr.company || pr.fromCo || pr.resort || pr.entity || '').trim();
+        const prInd = inferDomainIndustry(pr, bk);
+        if (!prCo || !canAccessCompany(session, prCo) || (prInd && !canAccessGeoIndustrySession(session, prInd))) outB.push(pr);
       }
       safeIcr[bk] = outB;
     }
@@ -5164,13 +6563,15 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
     const incIre = incomingDoc.industryRowEdits;
     const safeIre = {};
     for (const [ek, pv] of Object.entries(prevIre)) {
-      const pCo = pv && typeof pv === 'object' ? String(pv.company || pv.resort || pv.entity || '').trim() : '';
-      if (!pCo || !canAccessCompany(session, pCo)) safeIre[ek] = pv;
+      const pCo = pv && typeof pv === 'object' ? String(pv.company || pv.fromCo || pv.resort || pv.entity || '').trim() : '';
+      const pInd = (pv && typeof pv === 'object') ? inferDomainIndustry(pv, ek) : '';
+      if (!pCo || !canAccessCompany(session, pCo) || (pInd && !canAccessGeoIndustrySession(session, pInd))) safeIre[ek] = pv;
     }
     for (const [ek, iv] of Object.entries(incIre)) {
       if (ek in safeIre || !iv || typeof iv !== 'object') continue;
-      const iCo = String(iv.company || iv.resort || iv.entity || '').trim();
-      if (iCo && canAccessCompany(session, iCo)) safeIre[ek] = iv;
+      const iCo = String(iv.company || iv.fromCo || iv.resort || iv.entity || '').trim();
+      const iInd = inferDomainIndustry(iv, ek);
+      if (iCo && canAccessCompany(session, iCo) && (!iInd || canAccessGeoIndustrySession(session, iInd))) safeIre[ek] = iv;
     }
     incomingDoc.industryRowEdits = safeIre;
   } else if (!Object.prototype.hasOwnProperty.call(incomingDoc, 'industryRowEdits') && prev.industryRowEdits && typeof prev.industryRowEdits === 'object') {
@@ -5595,8 +6996,8 @@ function scopeStoreDocForSession(docObj, session) {
       const isUniversal = UNIVERSAL_UNIQUE_TABLES.has(canonTable);
       scopedCr[k] = list.filter(r => {
         if (!r || typeof r !== 'object') return false;
+        if (isUniversal) return canAccessUniversalGeoRow(session, canonTable, r);
         const co = String(r.company || '').trim();
-        if (isUniversal) return !co || canAccessCompany(session, co);
         return Boolean(co && canAccessCompany(session, co));
       });
     }
@@ -5609,8 +7010,11 @@ function scopeStoreDocForSession(docObj, session) {
       if (!Array.isArray(arr)) continue;
       scopedIcr[bk] = arr.filter(r => {
         if (!r || typeof r !== 'object') return false;
-        const co = String(r.company || r.resort || r.entity || '').trim();
-        return Boolean(co && canAccessCompany(session, co));
+        const co = String(r.company || r.fromCo || r.resort || r.entity || '').trim();
+        if (!co || !canAccessCompany(session, co)) return false;
+        const indD = inferDomainIndustry(r, bk);
+        if (indD && !canAccessGeoIndustrySession(session, indD)) return false;
+        return true;
       });
     }
     copyDoc.industryCustomRows = scopedIcr;
@@ -5620,8 +7024,11 @@ function scopeStoreDocForSession(docObj, session) {
     const scopedIre = {};
     for (const [ek, ev] of Object.entries(docObj.industryRowEdits)) {
       if (!ev || typeof ev !== 'object') continue;
-      const co = String(ev.company || ev.resort || ev.entity || '').trim();
-      if (co && canAccessCompany(session, co)) scopedIre[ek] = ev;
+      const co = String(ev.company || ev.fromCo || ev.resort || ev.entity || '').trim();
+      if (!co || !canAccessCompany(session, co)) continue;
+      const indD = inferDomainIndustry(ev, ek);
+      if (indD && !canAccessGeoIndustrySession(session, indD)) continue;
+      scopedIre[ek] = ev;
     }
     copyDoc.industryRowEdits = scopedIre;
   }
@@ -5710,7 +7117,7 @@ export async function handleAuthMe(env, session) {
 async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
   if (!incomingDoc || typeof incomingDoc !== 'object' || !session) return;
   const perms = getSessionWritePerms(session);
-  if (perms.modifyData && perms.modifyText && perms.canEnterAny && perms.voidData) return;
+  if (perms.modifyData && perms.modifyText && perms.canEnterAny && perms.voidData && perms.canWriteGeoConfig) return;
   const prev = (prevDoc && typeof prevDoc === 'object') ? prevDoc : {};
   const isReadOnly = !perms.modifyText && !perms.modifyData;
 
@@ -5729,7 +7136,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
         if (pr && pr.id) pMap.set(String(pr.id).trim(), pr);
       }
       const d1Map = new Map();
-      if (db && ALLOWED_TABLES.has(canonTable) && (!perms.modifyData || isReadOnly || !perms.voidData)) {
+      if (db && ALLOWED_TABLES.has(canonTable) && (!perms.modifyData || !perms.canWriteGeoConfig || isReadOnly || !perms.voidData)) {
         const probeIds = [];
         for (const ir of iList) {
           if (!ir || typeof ir !== 'object' || !ir.id) continue;
@@ -5755,9 +7162,14 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
         const pr = pMap.get(rid) || d1Map.get(rid) || null;
         if (!pr) {
           if (!canCreateTableRecord(perms, canonTable)) continue;
-          const cleanedNew = Object.assign({}, ir);
-          if ((!perms.modifyData && canonTable !== 'sites') || !validateRecordGpsCoords(cleanedNew)) {
+          let cleanedNew = Object.assign({}, ir);
+          if (!validateRecordGpsCoords(cleanedNew)) {
             stripGpsFields(cleanedNew);
+            stripRegionZoneFields(cleanedNew);
+          } else {
+            if (!perms.canWriteGeoConfig && canonTable !== 'sites') stripGpsFields(cleanedNew);
+            if (!perms.canWriteGeoConfig && canonTable !== 'regions') stripRegionZoneFields(cleanedNew);
+            if (canonTable === 'sites') cleanedNew = normalizeIncomingSiteCoordAliases(cleanedNew);
           }
           if (!perms.voidData && Boolean(cleanedNew.voided)) {
             stripVoidFields(cleanedNew);
@@ -5768,8 +7180,13 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
         }
         const wasVoid = Boolean(pr.voided);
         const nowVoid = Boolean(ir.voided);
-        const sanIr = Object.assign({}, ir);
-        if (!validateRecordGpsCoords(sanIr)) restoreGpsFieldsFromBase(sanIr, pr);
+        let sanIr = Object.assign({}, ir);
+        if (!validateRecordGpsCoords(sanIr)) {
+          restoreGpsFieldsFromBase(sanIr, pr);
+          restoreRegionZoneFieldsFromBase(sanIr, pr);
+        } else if (canonTable === 'sites') {
+          sanIr = normalizeIncomingSiteCoordAliases(sanIr);
+        }
         if (!perms.voidData && nowVoid !== wasVoid) {
           if (isReadOnly) {
             if (pMap.has(rid)) outList.push(pMap.get(rid));
@@ -5778,8 +7195,22 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
           }
           restoreVoidFieldsFromBase(sanIr, pr);
         }
-        const isSparsePureVoid = Boolean(!wasVoid && Boolean(sanIr.voided) && !hasExplicitGpsKeyInPayload(sanIr) && !hasNonVoidFieldChange(pr, sanIr));
-        const mergedIr = isSparsePureVoid ? restoreGpsFieldsFromBase(Object.assign({}, pr, sanIr), pr) : sanIr;
+        const isSparsePureVoid = Boolean(
+          wasVoid !== Boolean(sanIr.voided)
+          && !hasExplicitGpsKeyInPayload(sanIr)
+          && !hasExplicitRegionZoneKeyInPayload(sanIr)
+          && !hasNonVoidFieldChange(pr, sanIr)
+        );
+        const mergedIr = isSparsePureVoid
+          ? restoreRegionZoneFieldsFromBase(restoreGpsFieldsFromBase(Object.assign({}, pr, sanIr), pr), pr)
+          : sanIr;
+        if (isSparsePureVoid && !mergedIr.voided) {
+          delete mergedIr.voided_by;
+          delete mergedIr.voidedBy;
+          delete mergedIr.voided_at;
+          delete mergedIr.voidedAt;
+          delete mergedIr.voided_with_voucher;
+        }
         const missingPinFill = isInitialMissingSitePinFill(canonTable, pr, mergedIr, perms);
         if (isReadOnly) {
           if (missingPinFill) {
@@ -5787,16 +7218,31 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
             keptIds.add(rid);
             continue;
           }
-          const allowVoidOnly = Boolean(perms.voidData && !wasVoid && Boolean(mergedIr.voided) && !hasGpsFieldMutation(pr, mergedIr) && !hasNonVoidFieldChange(pr, mergedIr));
+          const allowVoidOnly = Boolean(
+            perms.voidData && wasVoid !== Boolean(mergedIr.voided)
+            && !hasGpsFieldMutation(pr, mergedIr)
+            && !hasRegionZoneMutation(pr, mergedIr)
+            && !hasNonVoidFieldChange(pr, mergedIr)
+          );
           if (allowVoidOnly) {
-            outList.push(Object.assign({}, pr, {
-              voided: true,
-              voided_by: mergedIr.voided_by || mergedIr.voidedBy || pr.voided_by || '',
-              voided_at: mergedIr.voided_at || mergedIr.voidedAt || pr.voided_at || '',
-              void_reason: mergedIr.void_reason || mergedIr.voidReason || pr.void_reason || '',
+            const nextRowRo = Object.assign({}, pr, {
+              voided: Boolean(mergedIr.voided),
               modified_at: mergedIr.modified_at || pr.modified_at || '',
               rev: mergedIr.rev || pr.rev
-            }));
+            });
+            if (nextRowRo.voided) {
+              nextRowRo.voided_by = mergedIr.voided_by || mergedIr.voidedBy || pr.voided_by || '';
+              nextRowRo.voided_at = mergedIr.voided_at || mergedIr.voidedAt || pr.voided_at || '';
+              nextRowRo.void_reason = mergedIr.void_reason || mergedIr.voidReason || pr.void_reason || '';
+            } else {
+              delete nextRowRo.voided_by;
+              delete nextRowRo.voidedBy;
+              delete nextRowRo.voided_at;
+              delete nextRowRo.voidedAt;
+              delete nextRowRo.voided_with_voucher;
+              if (mergedIr.restored_at) nextRowRo.restored_at = mergedIr.restored_at;
+            }
+            outList.push(nextRowRo);
             keptIds.add(rid);
           } else if (pMap.has(rid)) {
             outList.push(pMap.get(rid));
@@ -5809,13 +7255,22 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
           keptIds.add(rid);
           continue;
         }
-        if (!perms.modifyData && hasGpsFieldMutation(pr, mergedIr)) {
-          restoreGpsFieldsFromBase(mergedIr, pr);
+        const allowUnpinnedPinAdd = !perms.canWriteGeoConfig && isInitialUnpinnedSitePinAddition(canonTable, pr, mergedIr, perms);
+        if (!perms.canWriteGeoConfig) {
+          if (allowUnpinnedPinAdd) {
+            applyCanonSiteLatLngAliases(mergedIr);
+            mergedIr._pinCleared = false;
+            delete mergedIr.pin_cleared;
+            delete mergedIr.pinCleared;
+          } else if (hasGpsFieldMutation(pr, mergedIr)) {
+            restoreGpsFieldsFromBase(mergedIr, pr);
+          }
+          if (hasRegionZoneMutation(pr, mergedIr)) restoreRegionZoneFieldsFromBase(mergedIr, pr);
         }
         outList.push(mergedIr);
         keptIds.add(rid);
       }
-      if (isReadOnly || !perms.modifyData || !perms.voidData) {
+      if (isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData) {
         for (const pr of pList) {
           const rid = pr && pr.id ? String(pr.id).trim() : '';
           if (rid && !keptIds.has(rid)) outList.push(pr);
@@ -5823,7 +7278,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
       }
       incomingDoc.customRecords[k] = outList;
     }
-  } else if ((isReadOnly || !perms.modifyData || !perms.voidData) && !Object.prototype.hasOwnProperty.call(incomingDoc, 'customRecords') && prev.customRecords && typeof prev.customRecords === 'object') {
+  } else if ((isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData) && !Object.prototype.hasOwnProperty.call(incomingDoc, 'customRecords') && prev.customRecords && typeof prev.customRecords === 'object') {
     incomingDoc.customRecords = prev.customRecords;
   }
 
@@ -5848,8 +7303,9 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
         const pr = pMap.get(rid);
         if (!pr) {
           if (isReadOnly || !perms.canEnterAny) continue;
-          const cleanedNew = Object.assign({}, ir);
-          if (!perms.modifyData || !validateRecordGpsCoords(cleanedNew)) stripGpsFields(cleanedNew);
+          let cleanedNew = Object.assign({}, ir);
+          if (!perms.canWriteGeoConfig || !validateRecordGpsCoords(cleanedNew)) stripGpsFields(cleanedNew);
+          else cleanedNew = normalizeIncomingSiteCoordAliases(cleanedNew);
           if (!perms.voidData && Boolean(cleanedNew.voided)) stripVoidFields(cleanedNew);
           outB.push(cleanedNew);
           kept.add(rid);
@@ -5857,8 +7313,9 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
         }
         const wasVoid = Boolean(pr.voided);
         const nowVoid = Boolean(ir.voided);
-        const sanIr = Object.assign({}, ir);
+        let sanIr = Object.assign({}, ir);
         if (!validateRecordGpsCoords(sanIr)) restoreGpsFieldsFromBase(sanIr, pr);
+        else sanIr = normalizeIncomingSiteCoordAliases(sanIr);
         if (!perms.voidData && nowVoid !== wasVoid) {
           if (isReadOnly) {
             outB.push(pr);
@@ -5867,21 +7324,34 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
           }
           restoreVoidFieldsFromBase(sanIr, pr);
         }
-        const isSparsePureVoid = Boolean(!wasVoid && Boolean(sanIr.voided) && !hasExplicitGpsKeyInPayload(sanIr) && !hasNonVoidFieldChange(pr, sanIr));
+        const isSparsePureVoid = Boolean(wasVoid !== Boolean(sanIr.voided) && !hasExplicitGpsKeyInPayload(sanIr) && !hasNonVoidFieldChange(pr, sanIr));
         const mergedIr = isSparsePureVoid ? restoreGpsFieldsFromBase(Object.assign({}, pr, sanIr), pr) : sanIr;
+        if (isSparsePureVoid && !mergedIr.voided) {
+          delete mergedIr.voided_by;
+          delete mergedIr.voidedBy;
+          delete mergedIr.voided_at;
+          delete mergedIr.voidedAt;
+          delete mergedIr.voided_with_voucher;
+        }
         if (isReadOnly) {
-          const allowVoidOnly = Boolean(perms.voidData && !wasVoid && Boolean(mergedIr.voided) && !hasGpsFieldMutation(pr, mergedIr) && !hasNonVoidFieldChange(pr, mergedIr));
-          outB.push(allowVoidOnly ? Object.assign({}, pr, { voided: true, updated_at: mergedIr.updated_at || pr.updated_at, rev: mergedIr.rev || pr.rev }) : pr);
+          const allowVoidOnly = Boolean(perms.voidData && wasVoid !== Boolean(mergedIr.voided) && !hasGpsFieldMutation(pr, mergedIr) && !hasNonVoidFieldChange(pr, mergedIr));
+          if (allowVoidOnly) {
+            const nextRo = Object.assign({}, pr, { voided: Boolean(mergedIr.voided), updated_at: mergedIr.updated_at || pr.updated_at, rev: mergedIr.rev || pr.rev });
+            if (!nextRo.voided) { delete nextRo.voided_by; delete nextRo.voided_at; }
+            outB.push(nextRo);
+          } else {
+            outB.push(pr);
+          }
           kept.add(rid);
           continue;
         }
-        if (!perms.modifyData && hasGpsFieldMutation(pr, mergedIr)) {
+        if (!perms.canWriteGeoConfig && hasGpsFieldMutation(pr, mergedIr)) {
           restoreGpsFieldsFromBase(mergedIr, pr);
         }
         outB.push(mergedIr);
         kept.add(rid);
       }
-      if (isReadOnly || !perms.modifyData || !perms.voidData) {
+      if (isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData) {
         for (const pr of pList) {
           const rid = pr && String(pr.id || pr.code || '').trim();
           if (rid && !kept.has(rid)) outB.push(pr);
@@ -5890,7 +7360,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
       safeIcr[bk] = outB;
     }
     incomingDoc.industryCustomRows = safeIcr;
-  } else if ((isReadOnly || !perms.modifyData || !perms.voidData) && !Object.prototype.hasOwnProperty.call(incomingDoc, 'industryCustomRows') && prev.industryCustomRows && typeof prev.industryCustomRows === 'object') {
+  } else if ((isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData) && !Object.prototype.hasOwnProperty.call(incomingDoc, 'industryCustomRows') && prev.industryCustomRows && typeof prev.industryCustomRows === 'object') {
     incomingDoc.industryCustomRows = prev.industryCustomRows;
   }
 
@@ -5904,8 +7374,9 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
       if (pv) {
         const wasVoid = Boolean(pv.voided);
         const nowVoid = Boolean(iv.voided);
-        const sanIv = Object.assign({}, iv);
+        let sanIv = Object.assign({}, iv);
         if (!validateRecordGpsCoords(sanIv)) restoreGpsFieldsFromBase(sanIv, pv);
+        else sanIv = normalizeIncomingSiteCoordAliases(sanIv);
         if (!perms.voidData && nowVoid !== wasVoid) {
           if (isReadOnly) {
             safeIre[ek] = pv;
@@ -5913,13 +7384,20 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
           }
           restoreVoidFieldsFromBase(sanIv, pv);
         }
-        const isSparsePureVoid = Boolean(!wasVoid && Boolean(sanIv.voided) && !hasExplicitGpsKeyInPayload(sanIv) && !hasNonVoidFieldChange(pv, sanIv));
+        const isSparsePureVoid = Boolean(wasVoid !== Boolean(sanIv.voided) && !hasExplicitGpsKeyInPayload(sanIv) && !hasNonVoidFieldChange(pv, sanIv));
         const mergedIv = isSparsePureVoid ? restoreGpsFieldsFromBase(Object.assign({}, pv, sanIv), pv) : sanIv;
+        if (isSparsePureVoid && !mergedIv.voided) {
+          delete mergedIv.voided_by;
+          delete mergedIv.voidedBy;
+          delete mergedIv.voided_at;
+          delete mergedIv.voidedAt;
+          delete mergedIv.voided_with_voucher;
+        }
         if (isReadOnly) {
-          const allowVoidOnly = Boolean(perms.voidData && !wasVoid && Boolean(mergedIv.voided) && !hasGpsFieldMutation(pv, mergedIv) && !hasNonVoidFieldChange(pv, mergedIv));
+          const allowVoidOnly = Boolean(perms.voidData && wasVoid !== Boolean(mergedIv.voided) && !hasGpsFieldMutation(pv, mergedIv) && !hasNonVoidFieldChange(pv, mergedIv));
           safeIre[ek] = allowVoidOnly ? mergedIv : pv;
         } else {
-          if (!perms.modifyData && hasGpsFieldMutation(pv, mergedIv)) {
+          if (!perms.canWriteGeoConfig && hasGpsFieldMutation(pv, mergedIv)) {
             restoreGpsFieldsFromBase(mergedIv, pv);
           }
           safeIre[ek] = mergedIv;
@@ -5930,20 +7408,21 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session) {
             safeIre[ek] = iv;
           }
         } else {
-          const cleanedNew = Object.assign({}, iv);
-          if (!perms.modifyData || !validateRecordGpsCoords(cleanedNew)) stripGpsFields(cleanedNew);
+          let cleanedNew = Object.assign({}, iv);
+          if (!perms.canWriteGeoConfig || !validateRecordGpsCoords(cleanedNew)) stripGpsFields(cleanedNew);
+          else cleanedNew = normalizeIncomingSiteCoordAliases(cleanedNew);
           if (!perms.voidData && Boolean(cleanedNew.voided)) stripVoidFields(cleanedNew);
           safeIre[ek] = cleanedNew;
         }
       }
     }
-    if (isReadOnly || !perms.modifyData || !perms.voidData) {
+    if (isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData) {
       for (const [ek, pv] of Object.entries(prevIre)) {
         if (!(ek in safeIre)) safeIre[ek] = pv;
       }
     }
     incomingDoc.industryRowEdits = safeIre;
-  } else if ((isReadOnly || !perms.modifyData || !perms.voidData) && !Object.prototype.hasOwnProperty.call(incomingDoc, 'industryRowEdits') && prev.industryRowEdits && typeof prev.industryRowEdits === 'object') {
+  } else if ((isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData) && !Object.prototype.hasOwnProperty.call(incomingDoc, 'industryRowEdits') && prev.industryRowEdits && typeof prev.industryRowEdits === 'object') {
     incomingDoc.industryRowEdits = prev.industryRowEdits;
   }
 }

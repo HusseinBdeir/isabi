@@ -277,8 +277,20 @@ export function clearSessionCookie(isSecure = true) {
 export function parseAllowedCompanies(companiesStr) {
   const raw = String(companiesStr || '').trim();
   if (!raw) return [];
-  if (/^all\b/i.test(raw)) return ['*'];
-  return raw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  if (raw === '*' || /^all\b/i.test(raw)) return ['*'];
+  const out = [];
+  const seen = new Set();
+  for (const part of raw.split(',')) {
+    const t = part.trim();
+    if (!t) continue;
+    if (t === '*' || /^all\b/i.test(t)) return ['*'];
+    const ck = canonEntityKey(t);
+    if (ck && !seen.has(ck)) {
+      seen.add(ck);
+      out.push(ck);
+    }
+  }
+  return out;
 }
 
 export function isOwnerOrFullGroupSession(session) {
@@ -286,7 +298,7 @@ export function isOwnerOrFullGroupSession(session) {
   const role = String(session.role || '').toLowerCase();
   if (role.includes('owner') || session.sub === 'u1' || session.sub === 'u2') return true;
   const allowed = parseAllowedCompanies(session.companies);
-  return allowed.includes('*') || allowed.length >= 12;
+  return allowed.includes('*');
 }
 
 const ENTITY_ALIAS_MAP = {
@@ -300,6 +312,7 @@ const ENTITY_ALIAS_MAP = {
   lions: 'lions transport',
   bdeirholding: 'bdeir holding',
   'bdeir holding': 'bdeir holding',
+  'bdeir holding · consolidated jv': 'bdeir holding',
   blanca: 'blanca',
   launa: 'la una',
   'la una': 'la una',
@@ -321,7 +334,12 @@ const ENTITY_ALIAS_MAP = {
 
 export function canonEntityKey(raw) {
   const k = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
-  return ENTITY_ALIAS_MAP[k] || k;
+  if (ENTITY_ALIAS_MAP[k]) return ENTITY_ALIAS_MAP[k];
+  if (k.includes('·')) {
+    const head = k.split('·')[0].trim();
+    if (ENTITY_ALIAS_MAP[head]) return ENTITY_ALIAS_MAP[head];
+  }
+  return k;
 }
 
 const ENTITY_INDUSTRY_MAP = {
@@ -419,6 +437,32 @@ export function canWriteWorkSchedulesSession(session) {
   if (/\bowner\b|full\s+access|\badmin\b/i.test(role)) return true;
   if (role.includes('supervisor') && role.includes('entry')) return true;
   return false;
+}
+
+export function canonGeoIndustryKey(raw) {
+  const s = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!s || s.includes('manufactur') || s === 'mfg') return 'Manufacturing';
+  if (s.includes('holding') || s.includes('treasury')) return 'Holding & Treasury';
+  if (s.includes('hospitality') || s.includes('resort')) return 'Hospitality & Resorts';
+  if (s.includes('trading') || s.includes('auto')) return 'Automotive & Heavy Trading';
+  if (s.includes('real estate') || s.includes('realestate') || s.includes('property')) return 'Real Estate & Property';
+  if (s.includes('insur') || s.includes('broker')) return 'Insurance & Brokerage';
+  return String(raw || '').trim();
+}
+
+export function canAccessGeoIndustrySession(session, industry = 'Manufacturing') {
+  if (!session) return false;
+  if (isOwnerOrFullGroupSession(session)) return true;
+  const allowed = parseAllowedCompanies(session.companies);
+  if (allowed.includes('*')) return true;
+  const targetInd = canonGeoIndustryKey(industry || 'Manufacturing');
+  return allowed.some(c => ENTITY_INDUSTRY_MAP[canonEntityKey(c)] === targetInd);
+}
+
+export function canWriteGeoConfigSession(session) {
+  if (!session) return false;
+  const perms = getSessionWritePerms(session);
+  return Boolean(perms && perms.canWriteGeoConfig);
 }
 
 export function normalizeIpForRateLimit(rawIp) {
@@ -593,10 +637,10 @@ export function canEnterSite(permsOrSession) {
  */
 export function getSessionWritePerms(session) {
   if (!session) {
-    return { roleKey: 'None', modifyText: false, modifyData: false, voidData: false, enterDispatch: false, enterAccounting: false, enterMaster: false, enterPayrollJv: false, canEnterAny: false, canEnterSite: false };
+    return { roleKey: 'None', modifyText: false, modifyData: false, voidData: false, enterDispatch: false, enterAccounting: false, enterMaster: false, enterPayrollJv: false, canEnterAny: false, canEnterSite: false, canWriteGeoConfig: false };
   }
   if (session.sub === 'u1' || session.sub === 'u2') {
-    return Object.assign({ roleKey: 'Full Access (Owner)', canEnterAny: true, canEnterSite: true }, ROLE_WRITE_PRESETS['Full Access (Owner)']);
+    return Object.assign({ roleKey: 'Full Access (Owner)', canEnterAny: true, canEnterSite: true, canWriteGeoConfig: true }, ROLE_WRITE_PRESETS['Full Access (Owner)']);
   }
   const rawRole = String(session.role || '').trim();
   let roleKey = 'Viewer';
@@ -615,14 +659,14 @@ export function getSessionWritePerms(session) {
   const customRights = (rawCustom && typeof rawCustom === 'object' && !Array.isArray(rawCustom) && rawCustom.rights && typeof rawCustom.rights === 'object')
     ? rawCustom.rights
     : null;
-  if (roleKey === 'Custom' && customRights) {
-    if ('modify_text' in customRights) out.modifyText = Boolean(customRights.modify_text);
-    if ('modify_data' in customRights) out.modifyData = Boolean(customRights.modify_data);
-    if ('void_data' in customRights) out.voidData = Boolean(customRights.void_data);
-    if ('enter_dispatch' in customRights) out.enterDispatch = Boolean(customRights.enter_dispatch);
-    if ('enter_accounting' in customRights) out.enterAccounting = Boolean(customRights.enter_accounting);
-    if ('enter_master' in customRights) out.enterMaster = Boolean(customRights.enter_master);
-    if ('enter_payroll_jv' in customRights) out.enterPayrollJv = Boolean(customRights.enter_payroll_jv);
+  if (roleKey === 'Custom' && customRights && Object.keys(customRights).length > 0) {
+    out.modifyText = Boolean(customRights.modify_text);
+    out.modifyData = Boolean(customRights.modify_data);
+    out.voidData = Boolean(customRights.void_data);
+    out.enterDispatch = Boolean(customRights.enter_dispatch);
+    out.enterAccounting = Boolean(customRights.enter_accounting);
+    out.enterMaster = Boolean(customRights.enter_master);
+    out.enterPayrollJv = Boolean(customRights.enter_payroll_jv);
   } else if (customRights && typeof customRights.modify_text === 'boolean') {
     out.modifyText = Boolean(customRights.modify_text);
   }
@@ -630,6 +674,11 @@ export function getSessionWritePerms(session) {
   out.roleKey = roleKey;
   out.canEnterAny = Boolean(out.enterDispatch || out.enterAccounting || out.enterMaster || out.enterPayrollJv);
   out.canEnterSite = canEnterSite(out);
+  out.canWriteGeoConfig = Boolean(
+    roleKey === 'Full Access (Owner)'
+    || roleKey === 'Supervisor + Entry'
+    || (roleKey === 'Custom' && out.modifyData && (out.enterMaster || out.enterPayrollJv))
+  );
   return out;
 }
 

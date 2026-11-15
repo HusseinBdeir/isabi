@@ -10983,7 +10983,16 @@
     return `
       <div class="panel-card sites-regions-hub" id="univRegPanel">
         ${window.MFG_GEO && typeof window.MFG_GEO.renderGeoStudioHtml === 'function'
-          ? window.MFG_GEO.renderGeoStudioHtml({ metaKey: 'sites', STATE, SEED, rel, canAddSite: typeof canEnterForm === 'function' ? canEnterForm('site') : false })
+          ? window.MFG_GEO.renderGeoStudioHtml({
+              metaKey: 'sites',
+              STATE,
+              SEED,
+              rel,
+              canAddSite: typeof canEnterForm === 'function' ? canEnterForm('site') : false,
+              canPinLocations: typeof window.MFG_CAN_PIN_LOCATIONS === 'function' ? window.MFG_CAN_PIN_LOCATIONS() : false,
+              canShapeRegions: typeof window.MFG_CAN_SHAPE_REGIONS === 'function' ? window.MFG_CAN_SHAPE_REGIONS() : false,
+              canModifyRecord: typeof window.MFG_CAN_MODIFY_RECORD === 'function' ? window.MFG_CAN_MODIFY_RECORD() : false
+            })
           : ''}
 
         <section class="srh-subpanel" id="regionsRegPanel" aria-label="Regions and Zones Table">
