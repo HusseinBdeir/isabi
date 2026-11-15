@@ -1641,7 +1641,7 @@
     { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region', dvn: 'bhf_region', form: 'region', cols: ['name', 'sites_count', 'corridor', 'zone_shape', 'distance_km', 'overtime_rate', 'total_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
     { key: 'equipment', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', singularLabel: 'Equipment', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
     { key: 'drivers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', singularLabel: 'Driver', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] },
-    { key: 'staff_members', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_staff', label: 'Staff Members', singularLabel: 'Staff Member', dvn: 'bhf_staffmember', form: 'staff', cols: ['name', 'father_name', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'active_salary_usd', 'salary_status', 'total_earned', 'total_paid', 'rem_payment'], relTables: ['staff_roles', 'staff_assignments', 'employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'loans'], views: [
+    { key: 'staff_members', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_staff', label: 'Staff Members', singularLabel: 'Staff Member', dvn: 'bhf_staffmember', form: 'staff', cols: ['name', 'father_name', 'nationality', 'dob', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'active_salary_usd', 'salary_status', 'total_earned', 'total_paid', 'rem_payment'], relTables: ['staff_roles', 'staff_assignments', 'employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'loans'], views: [
       { id: 'all', label: 'All Staff Members' },
       { id: 'open_rem', label: 'Remaining Payment > $0', fn: (r, rel) => { const sr = lookupRelStaffPbi(rel, r) || {}; return Number(sr.rem_payment || 0) > 0.5; } },
       { id: 'active_contracts', label: 'Active Contracted', fn: (r, rel) => { const sr = lookupRelStaffPbi(rel, r) || {}; return Number(sr.active_contracts_count || 0) > 0; } },
@@ -3347,6 +3347,8 @@
         const re = rel.roleByName && rel.roleByName[norm(effRole)];
         if (c === 'name') return r.name || r.staff || '';
         if (c === 'father_name') return r.father_name || (st && st.father_name) || null;
+        if (c === 'nationality') return r.nationality || (st && st.nationality) || null;
+        if (c === 'dob') return r.dob || (st && st.dob) || null;
         if (c === 'role') return effRole;
         if (c === 'role_category') return (re && re.category) || (st && st.role_category) || r.role_category || inferRoleCatPbi(effRole);
         if (c === 'phone') return r.phone || (st && st.phone) || null;
@@ -10513,6 +10515,8 @@
 
   const HUB_COL_LABELS = {
     father_name: "Father's Name",
+    nationality: 'Nationality',
+    dob: 'Date of Birth',
     contracts_count: 'Contracts',
     vacation_days: 'Vac Days',
     payable_leg: 'Payable Leg',
@@ -11501,7 +11505,7 @@
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
                     else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
                     else if ((meta.key === 'recurring_expenses' || meta.key === 'staff_assignments' || meta.key === 'work_shifts') && c === 'end_date' && !v) cell = 'Open';
-                    else if (/date/.test(c) && v) cell = fmtDateDMY(v);
+                    else if ((c === 'dob' || /date/.test(c)) && v) cell = fmtDateDMY(v);
 
                     const lkTarget = c === 'linked_party'
                       ? (resolveSiteCategoryPbi(r) === 'customer' ? 'customers' : 'suppliers')
@@ -11516,7 +11520,7 @@
                       : (hasConnTarget && partyKeyVal
                           ? `<button type="button" class="reg-inline-conn-pill ${isInlineConnActive ? 'active' : ''}" data-inline-conn-table="${esc(inlineConnSpec.connKey)}" data-inline-conn-party="${esc(partyKeyVal)}"${inlineConnSpec.viewId ? ` data-inline-conn-view="${esc(inlineConnSpec.viewId)}"` : ''}${inlineConnSpec.subRole ? ` data-inline-conn-subrole="${esc(inlineConnSpec.subRole)}"` : ''} data-ui-tip="Preview ${esc(cell)} linked records for ${esc(partyKeyVal)}">${esc(cell)}</button>`
                           : (formatHubSpecialCellHtml(c, v, cell, r, meta.key) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell))))))));
-                    return `<td class="${isMoney || isNum ? 'r' : ''}${/date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
+                    return `<td class="${isMoney || isNum ? 'r' : ''}${/^dob$|date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
               `).join('') || emptyRow(activeCols.length, 'No rows match the active filter.')}

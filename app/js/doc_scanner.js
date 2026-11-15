@@ -776,7 +776,8 @@
             if (isVinMode ? (aspect < 1.9 || aspect > 6.8) : (aspect < 0.30 || aspect > 3.5)) continue;
 
             const skinInside = rectSum(intSkin, x0 + 2, y0 + 2, x1 - 1, y1 - 1) / bArea;
-            if (skinInside > 0.06) continue;
+            const maxSkinAllowed = (!isVinMode && g && g.preset === 'card') ? 0.18 : 0.06;
+            if (skinInside > maxSkinAllowed) continue;
             const paperInside = rectSum(intPaper, x0 + 2, y0 + 2, x1 - 1, y1 - 1) / bArea;
 
             const topSupport = Math.min(1.2, rectSum(intEy, x0, y0 - 1, x1 + 1, y0 + 2) / bw);

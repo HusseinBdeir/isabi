@@ -4063,6 +4063,1130 @@
     return applyDomainExtractionToModal(customExt);
   }
 
+  // ==================== BILINGUAL IDENTITY SCAN & FATHER'S NAME BACKFILL ====================
+  const AR_TO_LATIN_WORDS = {
+    'محمد': 'Mohamad', 'احمد': 'Ahmad', 'أحمد': 'Ahmad', 'علي': 'Ali', 'حسين': 'Hussein',
+    'حسن': 'Hassan', 'عباس': 'Abbas', 'مهدي': 'Mahdi', 'مصطفى': 'Mostafa', 'محمود': 'Mahmoud',
+    'ابراهيم': 'Ibrahim', 'إبراهيم': 'Ibrahim', 'خليل': 'Khalil', 'بلال': 'Bilal', 'خزعل': 'Khazaal',
+    'يوسف': 'Youssef', 'شربل': 'Charbel', 'ايلي': 'Elie', 'إيلي': 'Elie', 'جورج': 'Georges',
+    'مارك': 'Mark', 'طوني': 'Tony', 'فادي': 'Fadi', 'شادي': 'Chadi', 'رامي': 'Rami',
+    'سامي': 'Sami', 'وسام': 'Wissam', 'ربيع': 'Rabea', 'ماجد': 'Majed', 'ماهر': 'Maher',
+    'كريم': 'Karim', 'طارق': 'Tarek', 'زياد': 'Ziad', 'وليد': 'Walid', 'خالد': 'Khaled',
+    'سمير': 'Samir', 'عمر': 'Omar', 'غسان': 'Ghassan', 'عادل': 'Adel', 'جهاد': 'Jihad',
+    'منصور': 'Mansour', 'سعيد': 'Said', 'نبيل': 'Nabil', 'فيصل': 'Faisal', 'شريف': 'Sharif',
+    'جمال': 'Jamal', 'عماد': 'Imad', 'جاسم': 'Jasem', 'رياض': 'Riyad', 'أيمن': 'Ayman',
+    'ايمن': 'Ayman', 'موفق': 'Mwafak', 'ياسين': 'Yassin', 'سهيب': 'Soheib', 'رشاد': 'Rashad',
+    'منال': 'Manal', 'زينب': 'Zeinab', 'فاطمة': 'Fatima', 'مريم': 'Mariam', 'نور': 'Nour',
+    'سارة': 'Sara', 'ايه': 'Aya', 'آية': 'Aya', 'صباح': 'Sabah',
+    'بدوي': 'Badawi', 'مرتضى': 'Mortada', 'صالح': 'Saleh', 'سلامة': 'Salameh', 'حمود': 'Hammoud',
+    'نجدي': 'Najdi', 'حرب': 'Harb', 'كرم': 'Karam', 'حداد': 'Hadad', 'قسيس': 'Kassis',
+    'خميس': 'Khames', 'زهرة': 'Zahra', 'اسماعيل': 'Ismail', 'إسماعيل': 'Ismail', 'عبدالله': 'Abdallah',
+    'دخلول': 'Dakhloul', 'مغسل': 'Maghsal', 'ملاعب': 'Mlaab', 'ركين': 'Rkein', 'حبيب': 'Habib',
+    'سلوم': 'Saloum', 'ناصر': 'Nasser', 'نصار': 'Nassar', 'كصّاب': 'Kassab', 'كساب': 'Kassab', 'عواد': 'Awad',
+    'موسى': 'Moussa', 'عيسى': 'Issa', 'نعمة': 'Naameh', 'مشعل': 'Mashaal', 'جعويك': 'Jaawik',
+    'الشريف': 'Al Sharif', 'المرتضى': 'Al Mortada', 'الحاج': 'Al Hajj', 'اللطيف': 'Al Latif',
+    'ال': 'Al', 'ابو': 'Abou', 'أبو': 'Abou', 'عبد': 'Abed', 'علاء': 'Ala', 'الدين': 'Eddine', 'تيه': 'Tayeh'
+  };
+
+  const LATIN_TO_AR_WORDS = Object.create(null);
+  Object.keys(AR_TO_LATIN_WORDS).forEach(arW => {
+    const k = String(AR_TO_LATIN_WORDS[arW] || '').toLowerCase();
+    if (k && !LATIN_TO_AR_WORDS[k]) LATIN_TO_AR_WORDS[k] = arW;
+  });
+
+  const AR_CHAR_MAP = {
+    'ا': 'a', 'أ': 'a', 'إ': 'i', 'آ': 'aa', 'ب': 'b', 'ت': 't', 'ث': 'th',
+    'ج': 'j', 'ح': 'h', 'خ': 'kh', 'د': 'd', 'ذ': 'z', 'ر': 'r', 'ز': 'z',
+    'س': 's', 'ش': 'ch', 'ص': 's', 'ض': 'd', 'ط': 't', 'ظ': 'z', 'ع': 'a',
+    'غ': 'gh', 'ف': 'f', 'ق': 'k', 'ك': 'k', 'ل': 'l', 'م': 'm', 'ن': 'n',
+    'ه': 'h', 'ة': 'a', 'و': 'ou', 'ي': 'i', 'ى': 'a', 'ئ': 'e', 'ؤ': 'o', 'ء': ''
+  };
+
+  const LATIN_CONSONANT_AR = {
+    kh: 'خ', gh: 'غ', sh: 'ش', ch: 'ش', th: 'ث', dh: 'ذ', ph: 'ف', ou: 'و', oo: 'و', ee: 'ي', aa: 'ا', ai: 'ي', ei: 'ي',
+    a: 'ا', b: 'ب', c: 'ك', d: 'د', e: 'ي', f: 'ف', g: 'غ', h: 'ه', i: 'ي', j: 'ج', k: 'ك', l: 'ل',
+    m: 'م', n: 'ن', o: 'و', p: 'ب', q: 'ق', r: 'ر', s: 'س', t: 'ت', u: 'و', v: 'ف', w: 'و', x: 'كس', y: 'ي', z: 'ز'
+  };
+
+  const NATIONALITY_CATALOG = [
+    { latin: 'Lebanese', ar: 'لبناني', rx: /(لبنان(?:ي|يه|ية)?|الجمهورية\s*اللبنانية|lebanese|lebanon|liban(?:ais|aise|e)?)/i },
+    { latin: 'Syrian', ar: 'سوري', rx: /(سور(?:ي|يه|ية)|الجمهورية\s*العربية\s*السورية|syrian|syria|syrien(?:ne)?)/i },
+    { latin: 'Palestinian', ar: 'فلسطيني', rx: /(فلسطين(?:ي|يه|ية)?|palestin(?:ian|e|ien|ienne))/i },
+    { latin: 'Egyptian', ar: 'مصري', rx: /(مصر(?:ي|يه|ية)?|egypt(?:ian|e|ien|ienne)?)/i },
+    { latin: 'Jordanian', ar: 'أردني', rx: /(اردن(?:ي|يه|ية)?|أردن(?:ي|يه|ية)?|jordan(?:ian|ien|ienne)?)/i },
+    { latin: 'Iraqi', ar: 'عراقي', rx: /(عراق(?:ي|يه|ية)?|iraq(?:i|ien|ienne)?)/i },
+    { latin: 'Sudanese', ar: 'سوداني', rx: /(سودان(?:ي|يه|ية)?|sudan(?:ese)?|soudan(?:ais|aise)?)/i },
+    { latin: 'Ethiopian', ar: 'إثيوبي', rx: /(اثيوبي(?:ة|ه)?|إثيوبي(?:ة|ه)?|حبشي|ethiop(?:ian|ien|ienne)?)/i },
+    { latin: 'Bangladeshi', ar: 'بنغلاديشي', rx: /(بنغلاديش(?:ي|ية)?|بنجلاديش|bangladesh(?:i)?)/i },
+    { latin: 'Indian', ar: 'هندي', rx: /(هند(?:ي|يه|ية)|india(?:n)?|indien(?:ne)?)/i },
+    { latin: 'Filipino', ar: 'فلبيني', rx: /(فلبين(?:ي|يه|ية)?|filipin(?:o|a)|philippin(?:e|es)?)/i },
+    { latin: 'Sri Lankan', ar: 'سريلانكي', rx: /(سريلانك(?:ي|ية)|sri\s*lank(?:an|a))/i },
+    { latin: 'Pakistani', ar: 'باكستاني', rx: /(باكستان(?:ي|ية)?|pakistan(?:i)?)/i },
+    { latin: 'Nepalese', ar: 'نيبالي', rx: /(نيبال(?:ي|ية)?|nepal(?:ese|i)?)/i },
+    { latin: 'French', ar: 'فرنسي', rx: /(فرنس(?:ي|يه|ية)|french|fran[cç]ais(?:e)?)/i }
+  ];
+
+  const COMPOUND_PATRONYMIC_BLOCK = new Set([
+    'al', 'el', 'ul', 'il', 'abou', 'abu', 'abo', 'abi', 'abed', 'abd', 'abdel', 'abdul',
+    'ben', 'bin', 'bint', 'ibn', 'oum', 'um', 'umm', 'ala', 'alaa', 'eddine', 'eldine', 'aldin', 'eldin',
+    'din', 'deen', 'allah', 'oulah', 'st', 'saint', 'de', 'la', 'del', 'da', 'di', 'van', 'von',
+    'driver', 'worker', 'staff', 'chef', 'eng', 'dr', 'mr', 'mrs', 'ms',
+    'ال', 'ابو', 'أبو', 'ابي', 'أبي', 'ام', 'أم', 'عبد', 'بن', 'بنت', 'ابن', 'علاء', 'الدين', 'الله'
+  ]);
+
+  function cleanArabicRaw(s) {
+    return normalizeDigits(String(s || ''))
+      .replace(/[\u0640\u064B-\u065F\u0670]/g, '')
+      .replace(/[أإآ]/g, m => (m === 'آ' ? 'آ' : (m === 'إ' ? 'إ' : 'أ')))
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function hasArabicScript(s) {
+    return /[\u0600-\u06FF]/.test(String(s || ''));
+  }
+
+  function hasLatinScript(s) {
+    return /[A-Za-z]/.test(String(s || ''));
+  }
+
+  function titleCaseLatin(s) {
+    return String(s || '').trim().replace(/\s+/g, ' ').split(' ').map(w => {
+      if (!w) return '';
+      if (/^\(\d+\)$/.test(w)) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    }).join(' ');
+  }
+
+  function transliterateArabicNameToLatin(arStr) {
+    const clean = cleanArabicRaw(arStr);
+    if (!clean) return '';
+    if (!hasArabicScript(clean)) return titleCaseLatin(clean);
+    const words = clean.split(/\s+/).filter(Boolean);
+    const out = [];
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
+      const noDiac = w.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ة');
+      if (AR_TO_LATIN_WORDS[w]) { out.push(AR_TO_LATIN_WORDS[w]); continue; }
+      if (AR_TO_LATIN_WORDS[noDiac]) { out.push(AR_TO_LATIN_WORDS[noDiac]); continue; }
+      if (w.startsWith('ال') && w.length > 3) {
+        const tail = w.slice(2);
+        const mappedTail = AR_TO_LATIN_WORDS[tail] || transliterateArabicNameToLatin(tail);
+        if (mappedTail) { out.push('Al ' + mappedTail); continue; }
+      }
+      let buf = '';
+      for (let ci = 0; ci < w.length; ci++) {
+        const ch = w[ci];
+        if (AR_CHAR_MAP[ch] !== undefined) buf += AR_CHAR_MAP[ch];
+        else if (/[A-Za-z0-9-]/.test(ch)) buf += ch;
+      }
+      buf = buf.replace(/(.)\1{2,}/g, '$1$1').replace(/^ou/, 'W');
+      if (buf) out.push(buf.charAt(0).toUpperCase() + buf.slice(1));
+    }
+    return out.join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function transliterateLatinNameToArabic(latStr) {
+    const clean = String(latStr || '').trim().replace(/\s+/g, ' ');
+    if (!clean) return '';
+    if (hasArabicScript(clean)) return cleanArabicRaw(clean);
+    const words = clean.split(/\s+/).filter(Boolean);
+    const out = [];
+    for (const w of words) {
+      const cleanW = w.replace(/[^A-Za-z'-]/g, '');
+      if (!cleanW) continue;
+      const lw = cleanW.toLowerCase();
+      if (LATIN_TO_AR_WORDS[lw]) { out.push(LATIN_TO_AR_WORDS[lw]); continue; }
+      let idx = 0;
+      let arBuf = '';
+      while (idx < lw.length) {
+        const pair = lw.slice(idx, idx + 2);
+        if (LATIN_CONSONANT_AR[pair]) {
+          arBuf += LATIN_CONSONANT_AR[pair];
+          idx += 2;
+          continue;
+        }
+        const ch = lw[idx];
+        if (ch === '-' || ch === "'") { idx++; continue; }
+        if (idx > 0 && idx < lw.length - 1 && (ch === 'e' || ch === 'o') && !/[aeiou]/.test(lw[idx - 1])) {
+          idx++;
+          continue;
+        }
+        arBuf += LATIN_CONSONANT_AR[ch] || '';
+        idx++;
+      }
+      if (arBuf) out.push(arBuf);
+    }
+    return out.join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function canonicalizeNationality(raw) {
+    const clean = normalizeDigits(String(raw || '')).trim();
+    if (!clean) return { latin: '', ar: '' };
+    for (const entry of NATIONALITY_CATALOG) {
+      if (entry.rx.test(clean)) return { latin: entry.latin, ar: entry.ar };
+    }
+    if (hasArabicScript(clean)) {
+      return { latin: transliterateArabicNameToLatin(clean), ar: cleanArabicRaw(clean) };
+    }
+    const tit = titleCaseLatin(clean);
+    return { latin: tit, ar: transliterateLatinNameToArabic(tit) };
+  }
+
+  function normalizeIdentityDate(raw) {
+    const s = normalizeDigits(String(raw || '')).trim();
+    if (!s) return { dob: '', birthYear: '' };
+    const isoM = s.match(/\b((?:19|20)\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/);
+    if (isoM) {
+      const y = Number(isoM[1]), mo = Number(isoM[2]), d = Number(isoM[3]);
+      if (y >= 1930 && y <= new Date().getFullYear() && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        return { dob: `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`, birthYear: String(y) };
+      }
+    }
+    const dmyM = s.match(/\b(\d{1,2})[-/.](\d{1,2})[-/.]((?:19|20)\d{2})\b/);
+    if (dmyM) {
+      let d = Number(dmyM[1]), mo = Number(dmyM[2]), y = Number(dmyM[3]);
+      if (mo > 12 && d <= 12) { const tmp = d; d = mo; mo = tmp; }
+      if (y >= 1930 && y <= new Date().getFullYear() && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        return { dob: `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`, birthYear: String(y) };
+      }
+    }
+    const yrM = s.match(/\b((?:19|20)\d{2})\b/);
+    if (yrM) {
+      const y = Number(yrM[1]);
+      if (y >= 1930 && y <= new Date().getFullYear()) return { dob: '', birthYear: String(y) };
+    }
+    return { dob: '', birthYear: '' };
+  }
+
+  function stripMiddleFatherToken(fullName, fatherName, useArabic) {
+    const fn = String(fullName || '').trim().replace(/\s+/g, ' ');
+    const fa = String(fatherName || '').trim().replace(/\s+/g, ' ');
+    if (!fn || !fa) return fn;
+    const parts = fn.split(/\s+/);
+    if (parts.length < 3) return fn;
+    const faKey = useArabic
+      ? cleanArabicRaw(fa).replace(/[أإآ]/g, 'ا')
+      : norm(fa);
+    const midKey = useArabic
+      ? cleanArabicRaw(parts[1]).replace(/[أإآ]/g, 'ا')
+      : norm(parts[1]);
+    if (faKey && midKey === faKey) {
+      return [parts[0]].concat(parts.slice(2)).join(' ');
+    }
+    return fn;
+  }
+
+  function extractIdSegmentAfter(text, labelPatterns, stopPatterns) {
+    const src = normalizeDigits(String(text || ''));
+    for (const lRx of labelPatterns) {
+      const m = src.match(lRx);
+      if (!m || m.index == null) continue;
+      let rest = src.slice(m.index + m[0].length);
+      rest = rest.replace(/^[ \t:=\-\u2013\u2014\u00b7\u2022/|]+/, '');
+      let cutIdx = rest.length;
+      const nlIdx = rest.search(/[\r\n]+/);
+      if (nlIdx >= 0 && nlIdx < cutIdx) cutIdx = nlIdx;
+      for (const sRx of stopPatterns) {
+        const sm = rest.match(sRx);
+        if (sm && sm.index != null && sm.index >= 0 && sm.index < cutIdx) {
+          cutIdx = sm.index;
+        }
+      }
+      const valOut = rest.slice(0, cutIdx).replace(/^[\s:|\-/]+|[\s:|\-/]+$/g, '').trim();
+      if (valOut) return valOut;
+    }
+    return '';
+  }
+
+  function parseIdentityCardDeterministic(rawText, fileName = '') {
+    const normTxt = normalizeDigits(String(rawText || '').replace(/\u200f|\u200e/g, ' '));
+    const fname = String(fileName || '');
+    const combined = `${normTxt}\n${fname}`;
+    let docKind = 'id_card';
+    if (/(الضمان\s*الاجتماعي|الصندوق\s*الوطني\s*للضمان|بطاقة\s*المضمون|\bnssf\b|\bcnss\b)/i.test(combined)) {
+      docKind = 'nssf_card';
+    } else if (/(إخراج\s*قيد|اخراج\s*قيد|civil\s*extract)/i.test(combined)) {
+      docKind = 'civil_extract';
+    } else if (/(بطاقة\s*هوية|الجمهورية\s*اللبنانية|lebanese\s*id|\bidentity\s*card\b)/i.test(combined)) {
+      docKind = 'lebanese_id';
+    } else if (/(إجازة\s*عمل|اقامة|إقامة|work\s*permit|residency)/i.test(combined)) {
+      docKind = 'work_permit';
+    } else if (/(passport|جواز\s*سفر)/i.test(combined)) {
+      docKind = 'passport';
+    }
+
+    const AR_STOPS = [
+      /[ \t]+(?:الاسم|الإسم|الشهرة|اسم\s*الأب|إسم\s*الأب|اسم\s*الاب|الأب|اسم\s*الأم|الأم|تاريخ\s*الولادة|تاريخ\s*الميلاد|تاريخ\s*الإصدار|تاريخ\s*الاصدار|تاريخ\s*الانتهاء|صلاحية|محل\s*الولادة|الجنس|الجنسية|رقم\s*الهوية|رقم\s*السجل|رقم\s*التسجيل|رقم\s*المضمون|رقم\s*الضمان|الرقم)\s*[:=\-\u2013\u2014]?/,
+      /[ \t]+(?:Full\s*Name|First\s*Name|Last\s*Name|Surname|Father(?:'s)?\s*Name|Mother(?:'s)?\s*Name|Date\s*of\s*Birth|Birth\s*Date|Date\s*de\s*naissance|Issue\s*Date|Expiry\s*Date|Valid\s*Until|Date\s*d['’][ée]mission|Date\s*d['’]expiration|DOB|Nationality|ID\s*(?:No|Number|#)|NSSF\s*(?:No|Number|#))\s*[:=\-\u2013\u2014]?/i
+    ];
+
+    const firstArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:^|[\n\r|])[ \t]*(?:الاسم|الإسم)[ \t]*[:=\-\u2013\u2014][ \t]*/m,
+      /(?:^|[ \t])(?:الاسم|الإسم)(?![ \t]*(?:الأب|الاب|الأم|الشهرة|والشهرة|الكامل|المضمون))[ \t]*[:=\-\u2013\u2014]?[ \t]+(?=[\u0600-\u06FF])/
+    ], AR_STOPS);
+    const lastArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:^|[\n\r|]|[ \t])الشهرة[ \t]*[:=\-\u2013\u2014]?[ \t]*/m
+    ], AR_STOPS);
+    const fullArLabeled = extractIdSegmentAfter(normTxt, [
+      /(?:اسم\s*المضمون\s*وشهرته|اسم\s*المضمون|الاسم\s*وشهرته|الاسم\s*والشهرة|الاسم\s*الكامل)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+    const fatherArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:اسم\s*الأب|إسم\s*الأب|اسم\s*الاب|إسم\s*الاب)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+    const motherArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:اسم\s*الأم\s*وشهرتها|اسم\s*الأم|إسم\s*الأم)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+    const dobArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:تاريخ\s*الولادة|تاريخ\s*الميلاد|مواليد)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+    const natArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:الجنسية)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+    const idArRaw = extractIdSegmentAfter(normTxt, [
+      /(?:رقم\s*المضمون|رقم\s*التسجيل|رقم\s*السجل|رقم\s*الضمان|رقم\s*الهوية|رقم\s*البطاقة|الرقم\s*الوطني)[ \t]*[:=\-\u2013\u2014]?[ \t]*/
+    ], AR_STOPS);
+
+    const fullLatLabeled = extractIdSegmentAfter(normTxt, [
+      /(?:Full\s*Name|Nom\s*et\s*Pr[ée]nom|Worker\s*Name|Employee\s*Name)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const firstLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:First\s*Name|Given\s*Name|Pr[ée]nom)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const lastLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:Last\s*Name|Family\s*Name|Surname|Nom\s*de\s*famille)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const fatherLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:Father(?:'s)?\s*Name|Nom\s*du\s*p[èe]re|Father)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const dobLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:Date\s*of\s*Birth|Birth\s*Date|Date\s*de\s*naissance|N[ée]e?\s*le|D\.?O\.?B\.?|DOB)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const natLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:Nationality|Nationalit[ée]|Citizenship)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+    const idLatRaw = extractIdSegmentAfter(normTxt, [
+      /(?:ID\s*(?:No|Number|#)|Civil\s*ID|NSSF\s*(?:No|Number|#)|Matricule)[ \t]*[:=\-\u2013\u2014]?[ \t]*/i
+    ], AR_STOPS);
+
+    const keepArOnly = s => cleanArabicRaw(String(s || '').replace(/[A-Za-z0-9.,/\\|()[\]]+/g, ' ').trim());
+    const keepLatOnly = s => String(s || '').replace(/[\u0600-\u06FF]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+    let firstNameArabic = keepArOnly(firstArRaw);
+    let lastNameArabic = keepArOnly(lastArRaw);
+    let fullNameArabic = keepArOnly(fullArLabeled);
+    if (!fullNameArabic && (firstNameArabic || lastNameArabic)) {
+      fullNameArabic = [firstNameArabic, lastNameArabic].filter(Boolean).join(' ').trim();
+    }
+    let fatherNameArabic = keepArOnly(fatherArRaw);
+    const motherNameArabic = keepArOnly(motherArRaw);
+    if (fullNameArabic && fatherNameArabic) {
+      fullNameArabic = stripMiddleFatherToken(fullNameArabic, fatherNameArabic, true);
+    }
+
+    let firstNameLatin = keepLatOnly(firstLatRaw);
+    let lastNameLatin = keepLatOnly(lastLatRaw);
+    let fullNameLatin = keepLatOnly(fullLatLabeled);
+    if (!fullNameLatin && (firstNameLatin || lastNameLatin)) {
+      fullNameLatin = [firstNameLatin, lastNameLatin].filter(Boolean).join(' ').trim();
+    }
+    let fatherNameLatin = keepLatOnly(fatherLatRaw);
+    if (fullNameLatin && fatherNameLatin) {
+      fullNameLatin = stripMiddleFatherToken(fullNameLatin, fatherNameLatin, false);
+    }
+
+    if (!fatherNameArabic && !fatherNameLatin) {
+      const arToks = fullNameArabic ? fullNameArabic.split(/\s+/).filter(Boolean) : [];
+      const latForSplit = fullNameLatin || (fullNameArabic ? transliterateArabicNameToLatin(fullNameArabic) : '');
+      const latToks = latForSplit ? latForSplit.split(/\s+/).filter(Boolean) : [];
+      if (latToks.length === 3) {
+        const splitHit = matchStaffAgainstThreePartName([latToks[0], latToks[2]], latForSplit);
+        if (splitHit && splitHit.father) {
+          fatherNameLatin = splitHit.father;
+          fatherNameArabic = arToks.length === 3 ? arToks[1] : transliterateLatinNameToArabic(splitHit.father);
+          if (arToks.length === 3) {
+            fullNameArabic = `${arToks[0]} ${arToks[2]}`;
+          }
+          if (fullNameLatin) {
+            fullNameLatin = stripMiddleFatherToken(fullNameLatin, fatherNameLatin, false);
+          }
+        }
+      }
+    }
+
+    const dobCandidate = dobArRaw || dobLatRaw || '';
+    const dateInfo = dobCandidate ? normalizeIdentityDate(dobCandidate) : { dob: '', birthYear: '' };
+    let natInfo = canonicalizeNationality(natArRaw || natLatRaw);
+    if (!natInfo.latin && (docKind === 'lebanese_id' || docKind === 'civil_extract' || /(الجمهورية\s*اللبنانية|r[ée]publique\s*libanaise)/i.test(normTxt))) {
+      natInfo = { latin: 'Lebanese', ar: 'لبناني' };
+    } else if (!natInfo.latin) {
+      const catHit = NATIONALITY_CATALOG.find(entry => entry.rx.test(normTxt));
+      if (catHit) natInfo = { latin: catHit.latin, ar: catHit.ar };
+    }
+
+    const idCand = idArRaw || idLatRaw || '';
+    const idDigits = (idCand.match(/[A-Z0-9-]{4,24}/i) || [])[0] || '';
+
+    if (!fullNameLatin && fullNameArabic) fullNameLatin = transliterateArabicNameToLatin(fullNameArabic);
+    if (!fullNameArabic && fullNameLatin) fullNameArabic = transliterateLatinNameToArabic(fullNameLatin);
+    if (!fatherNameLatin && fatherNameArabic) fatherNameLatin = transliterateArabicNameToLatin(fatherNameArabic);
+    if (!fatherNameArabic && fatherNameLatin) fatherNameArabic = transliterateLatinNameToArabic(fatherNameLatin);
+
+    return normalizeIdentityScanResult({
+      docKind,
+      fullNameLatin,
+      fullNameArabic,
+      firstNameLatin,
+      lastNameLatin,
+      firstNameArabic,
+      lastNameArabic,
+      fatherNameLatin,
+      fatherNameArabic,
+      motherNameLatin: '',
+      motherNameArabic,
+      dob: dateInfo.dob,
+      birthYear: dateInfo.birthYear,
+      nationalityLatin: natInfo.latin,
+      nationalityArabic: natInfo.ar,
+      idNumber: idDigits,
+      nssfNumber: docKind === 'nssf_card' ? idDigits : '',
+      gender: ''
+    });
+  }
+
+  function normalizeIdentityScanResult(raw = {}) {
+    const r = (raw && typeof raw === 'object') ? raw : {};
+    let fullLat = String(r.fullNameLatin || r.fullName || r.name || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+    let fullAr = cleanArabicRaw(String(r.fullNameArabic || r.fullNameAr || '').slice(0, 120));
+    let fatherLat = String(r.fatherNameLatin || r.fatherName || r.father_name || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+    let fatherAr = cleanArabicRaw(String(r.fatherNameArabic || r.fatherNameAr || '').slice(0, 80));
+
+    if (!fullLat && (r.firstNameLatin || r.lastNameLatin)) {
+      fullLat = [r.firstNameLatin, r.lastNameLatin].filter(Boolean).join(' ').trim();
+    }
+    if (!fullAr && (r.firstNameArabic || r.lastNameArabic)) {
+      fullAr = cleanArabicRaw([r.firstNameArabic, r.lastNameArabic].filter(Boolean).join(' ').trim());
+    }
+    if (fullLat && hasArabicScript(fullLat) && !hasLatinScript(fullLat)) {
+      if (!fullAr) fullAr = cleanArabicRaw(fullLat);
+      fullLat = transliterateArabicNameToLatin(fullAr);
+    }
+    if (fatherLat && hasArabicScript(fatherLat) && !hasLatinScript(fatherLat)) {
+      if (!fatherAr) fatherAr = cleanArabicRaw(fatherLat);
+      fatherLat = transliterateArabicNameToLatin(fatherAr);
+    }
+    if (!fullLat && fullAr) fullLat = transliterateArabicNameToLatin(fullAr);
+    if (!fullAr && fullLat) fullAr = transliterateLatinNameToArabic(fullLat);
+    if (!fatherLat && fatherAr) fatherLat = transliterateArabicNameToLatin(fatherAr);
+    if (!fatherAr && fatherLat) fatherAr = transliterateLatinNameToArabic(fatherLat);
+
+    if (fatherLat) fullLat = stripMiddleFatherToken(fullLat, fatherLat, false);
+    if (fatherAr) fullAr = stripMiddleFatherToken(fullAr, fatherAr, true);
+
+    fullLat = fullLat ? titleCaseLatin(fullLat) : '';
+    fatherLat = fatherLat ? titleCaseLatin(fatherLat) : '';
+
+    const dateNorm = normalizeIdentityDate(r.dob || r.dateOfBirth || r.birthDate || r.birthYear || '');
+    const natNorm = canonicalizeNationality(r.nationalityLatin || r.nationality || r.nationalityArabic || '');
+    const docKind = String(r.docKind || 'id_card').trim().toLowerCase();
+    const idNumber = normalizeDigits(String(r.idNumber || r.nssfNumber || r.reference || '').trim()).slice(0, 48);
+
+    return {
+      docKind,
+      fullNameLatin: fullLat,
+      fullNameArabic: fullAr,
+      fatherNameLatin: fatherLat,
+      fatherNameArabic: fatherAr,
+      motherNameLatin: String(r.motherNameLatin || '').trim().slice(0, 80),
+      motherNameArabic: cleanArabicRaw(String(r.motherNameArabic || '').slice(0, 80)),
+      dob: dateNorm.dob,
+      birthYear: dateNorm.birthYear,
+      nationalityLatin: natNorm.latin,
+      nationalityArabic: natNorm.ar,
+      idNumber,
+      nssfNumber: docKind === 'nssf_card' ? idNumber : normalizeDigits(String(r.nssfNumber || '').trim()).slice(0, 48),
+      gender: String(r.gender || '').trim().slice(0, 16)
+    };
+  }
+
+  function buildSampleIdentityCardFile(kind = 'lebanese_id') {
+    const isNssf = kind === 'nssf_card' || kind === 'nssf';
+    const svgStr = isNssf
+      ? `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+          <rect width="100%" height="100%" rx="16" fill="#F8FAFC" stroke="#1E40AF" stroke-width="2.5"/>
+          <rect x="0" y="0" width="640" height="62" rx="14" fill="#1E3A8A"/>
+          <text x="320" y="28" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">الصندوق الوطني للضمان الاجتماعي - بطاقة المضمون</text>
+          <text x="320" y="49" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#DBEAFE">National Social Security Fund (NSSF) - Lebanon</text>
+          <text x="604" y="102" text-anchor="end" font-family="sans-serif" font-size="15" font-weight="700" fill="#1E293B">اسم المضمون وشهرته: بلال بدوي</text>
+          <text x="604" y="132" text-anchor="end" font-family="sans-serif" font-size="14" fill="#334155">اسم الأب: خزعل</text>
+          <text x="604" y="162" text-anchor="end" font-family="sans-serif" font-size="14" fill="#334155">تاريخ الولادة: ١٤/٠٣/١٩٨٩</text>
+          <text x="604" y="192" text-anchor="end" font-family="sans-serif" font-size="14" fill="#334155">الجنسية: لبناني</text>
+          <text x="604" y="222" text-anchor="end" font-family="monospace" font-size="13.5" font-weight="700" fill="#1E40AF">رقم التسجيل: 882419-03</text>
+          <line x1="36" y1="248" x2="604" y2="248" stroke="#CBD5E1"/>
+          <text x="36" y="280" font-family="sans-serif" font-size="13.5" font-weight="700" fill="#0F172A">Full Name: Bilal Badawi</text>
+          <text x="36" y="306" font-family="sans-serif" font-size="13" fill="#334155">Father's Name: Khazaal</text>
+          <text x="36" y="332" font-family="sans-serif" font-size="13" fill="#334155">DOB: 14/03/1989</text>
+          <text x="36" y="358" font-family="sans-serif" font-size="13" fill="#334155">Nationality: Lebanese</text>
+          <text x="36" y="382" font-family="monospace" font-size="12.5" fill="#475569">NSSF No: 882419-03</text>
+        </svg>`
+      : `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+          <rect width="100%" height="100%" rx="16" fill="#FBF9F4" stroke="#A67C2E" stroke-width="2.5"/>
+          <rect x="0" y="0" width="640" height="60" rx="14" fill="#8C5E14"/>
+          <text x="320" y="26" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">الجمهورية اللبنانية - بطاقة هوية</text>
+          <text x="320" y="47" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#FEF3C7">République Libanaise - Lebanese National ID Card</text>
+          <rect x="32" y="82" width="112" height="136" rx="8" fill="#E7E0D3" stroke="#C6B8A2"/>
+          <circle cx="88" cy="128" r="24" fill="#B8AA96"/>
+          <path d="M52 198 C52 168 124 168 124 198" fill="#B8AA96"/>
+          <text x="606" y="102" text-anchor="end" font-family="sans-serif" font-size="15.5" font-weight="700" fill="#1F1914">الاسم: رامي</text>
+          <text x="606" y="130" text-anchor="end" font-family="sans-serif" font-size="15.5" font-weight="700" fill="#1F1914">الشهرة: قسيس</text>
+          <text x="606" y="158" text-anchor="end" font-family="sans-serif" font-size="14" fill="#3B3128">اسم الأب: محمد</text>
+          <text x="606" y="186" text-anchor="end" font-family="sans-serif" font-size="14" fill="#3B3128">اسم الأم وشهرتها: زينب صالح</text>
+          <text x="606" y="214" text-anchor="end" font-family="sans-serif" font-size="14" fill="#3B3128">تاريخ الولادة: ٢٢/٠٧/١٩٩٢</text>
+          <text x="606" y="242" text-anchor="end" font-family="sans-serif" font-size="14" fill="#3B3128">الجنسية: لبناني</text>
+          <text x="606" y="268" text-anchor="end" font-family="monospace" font-size="13" font-weight="700" fill="#8C5E14">رقم الهوية: 0004918275</text>
+          <line x1="32" y1="286" x2="606" y2="286" stroke="#DED6C8"/>
+          <text x="32" y="314" font-family="sans-serif" font-size="13.5" font-weight="700" fill="#1F1914">Full Name: Rami Kassis</text>
+          <text x="32" y="338" font-family="sans-serif" font-size="13" fill="#3B3128">Father's Name: Mohamad</text>
+          <text x="32" y="362" font-family="sans-serif" font-size="13" fill="#3B3128">DOB: 22/07/1992</text>
+          <text x="270" y="362" font-family="sans-serif" font-size="13" fill="#3B3128">Nationality: Lebanese</text>
+        </svg>`;
+    const fname = isNssf ? 'Sample_Lebanese_NSSF_Card.svg' : 'Sample_Lebanese_ID_Card.svg';
+    return new File([new Blob([svgStr], { type: 'image/svg+xml' })], fname, { type: 'image/svg+xml' });
+  }
+
+  async function scanIdentityCard(fileOrSpec, opts = {}) {
+    let fileItem = fileOrSpec;
+    if (typeof fileOrSpec === 'string') {
+      fileItem = buildSampleIdentityCardFile(fileOrSpec);
+    }
+    const isBlobLike = typeof Blob !== 'undefined' && fileItem instanceof Blob;
+    let attObj = null;
+    let extractedText = String((opts && opts.extractedText) || (fileOrSpec && !isBlobLike && fileOrSpec.extractedText) || '');
+    let rawDataUrl = (!isBlobLike && fileOrSpec && fileOrSpec.dataUrl) ? String(fileOrSpec.dataUrl) : '';
+    let rawMime = (!isBlobLike && fileOrSpec && fileOrSpec.mimeType) ? String(fileOrSpec.mimeType) : '';
+    let fileName = (isBlobLike ? (fileItem.name || 'ID_Card.jpg') : String((fileOrSpec && fileOrSpec.fileName) || 'ID_Card.jpg'));
+
+    if (isBlobLike) {
+      const pair = await normalizeSingleScanItem(fileItem, opts.captureMethod || 'ID Card Scan', 0);
+      attObj = pair && pair.attObj;
+      if (attObj) {
+        if (!rawDataUrl) rawDataUrl = String(attObj.data_url || '');
+        if (!rawMime) rawMime = String(attObj.mime_type || fileItem.type || 'image/jpeg');
+        fileName = attObj.file_name || fileName;
+      }
+      const isTextBearing = /\.(svg|pdf|txt|csv|tsv|json|xml|docx|xlsx)$/i.test(fileName) || /svg|pdf|text|json|xml/i.test(rawMime);
+      if (!extractedText && (!isHeadlessEnv() || isTextBearing || window.__MFG_TEST_LIVE_AI)) {
+        try {
+          extractedText = await extractAnyDocumentText(fileItem, attObj, () => {});
+        } catch (_) {
+          extractedText = '';
+        }
+      }
+    }
+
+    const detParsed = parseIdentityCardDeterministic(extractedText, fileName);
+    let aiParsed = null;
+    let mode = 'deterministic';
+    let engineLabel = 'Deterministic Bilingual Parser';
+
+    const inlinePart = attObj ? extractVisionInlinePart(attObj) : (
+      rawDataUrl.includes(';base64,') && /^(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf)$/i.test(rawMime)
+        ? { mimeType: rawMime === 'image/jpg' ? 'image/jpeg' : rawMime, data: rawDataUrl.split(';base64,')[1] || '' }
+        : null
+    );
+    const isDemo = Boolean(D && typeof D.isDemoScopeActive === 'function' && D.isDemoScopeActive());
+    const maxApiB64 = isDemo ? 1150000 : 4200000;
+    const sendDataUrl = (inlinePart && inlinePart.data && inlinePart.data.length < maxApiB64)
+      ? `data:${inlinePart.mimeType};base64,${inlinePart.data}`
+      : '';
+    const hasEndpoint = Boolean(
+      (typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '')) ||
+      window.ISABI_LOCAL_API ||
+      window.ISABI_HAS_EDGE_API
+    );
+    const allowApi = Boolean(
+      (opts && opts.forceApi) ||
+      window.__MFG_TEST_LIVE_AI ||
+      window.__MFG_TEST_ID_API ||
+      (!isHeadlessEnv() && hasEndpoint)
+    );
+
+    if (allowApi && hasEndpoint && (typeof navigator === 'undefined' || navigator.onLine !== false) && (sendDataUrl || extractedText.trim().length >= 6)) {
+      const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
+      const edgeFetch = (D && D.edgeApiFetch) || window.ISABI_EDGE_FETCH || fetch;
+      const companies = (D && typeof D.allowedCompanyNames === 'function') ? D.allowedCompanyNames() : [];
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), sendDataUrl ? 14000 : 6000);
+      try {
+        const res = await edgeFetch(`${base}/api/smart-scan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scanMode: 'id_card',
+            tier: sendDataUrl ? 'vision' : 'fast',
+            thinkingLevel: sendDataUrl ? 'LOW' : undefined,
+            dataUrl: sendDataUrl,
+            mimeType: sendDataUrl ? (inlinePart && inlinePart.mimeType) : '',
+            extractedText: String(extractedText || '').slice(0, isDemo ? 2400 : 5200),
+            companies: companies.slice(0, 12)
+          }),
+          signal: ctrl.signal
+        });
+        if (res && res.ok) {
+          const j = await res.json();
+          if (j && j.ok && j.parsed && typeof j.parsed === 'object') {
+            aiParsed = normalizeIdentityScanResult(j.parsed);
+            mode = j.mode || 'gemini_vision';
+            engineLabel = sendDataUrl ? 'ISABI Vision (Arabic + Latin)' : 'ISABI AI + Bilingual Parser';
+          }
+        }
+      } catch (_) {
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    const pickVal = (a, b) => (a && String(a).trim()) ? String(a).trim() : (b && String(b).trim() ? String(b).trim() : '');
+    const merged = normalizeIdentityScanResult({
+      docKind: pickVal(aiParsed && aiParsed.docKind !== 'id_card' ? aiParsed.docKind : '', detParsed.docKind),
+      fullNameLatin: pickVal(aiParsed && aiParsed.fullNameLatin, detParsed.fullNameLatin),
+      fullNameArabic: pickVal(aiParsed && aiParsed.fullNameArabic, detParsed.fullNameArabic),
+      fatherNameLatin: pickVal(aiParsed && aiParsed.fatherNameLatin, detParsed.fatherNameLatin),
+      fatherNameArabic: pickVal(aiParsed && aiParsed.fatherNameArabic, detParsed.fatherNameArabic),
+      motherNameLatin: pickVal(aiParsed && aiParsed.motherNameLatin, detParsed.motherNameLatin),
+      motherNameArabic: pickVal(aiParsed && aiParsed.motherNameArabic, detParsed.motherNameArabic),
+      dob: pickVal(aiParsed && aiParsed.dob, detParsed.dob),
+      birthYear: pickVal(aiParsed && aiParsed.birthYear, detParsed.birthYear),
+      nationalityLatin: pickVal(aiParsed && aiParsed.nationalityLatin, detParsed.nationalityLatin),
+      nationalityArabic: pickVal(aiParsed && aiParsed.nationalityArabic, detParsed.nationalityArabic),
+      idNumber: pickVal(aiParsed && aiParsed.idNumber, detParsed.idNumber),
+      nssfNumber: pickVal(aiParsed && aiParsed.nssfNumber, detParsed.nssfNumber),
+      gender: pickVal(aiParsed && aiParsed.gender, detParsed.gender)
+    });
+
+    return Object.assign({}, merged, {
+      ok: true,
+      mode,
+      engineLabel,
+      fileName,
+      attObj,
+      previewDataUrl: (attObj && attObj.data_url) || rawDataUrl || ''
+    });
+  }
+
+  function jaroWinklerSim(aRaw, bRaw) {
+    const a = norm(aRaw);
+    const b = norm(bRaw);
+    if (!a || !b) return 0;
+    if (a === b) return 1;
+    const matchWin = Math.max(0, Math.floor(Math.max(a.length, b.length) / 2) - 1);
+    const aMat = new Array(a.length).fill(false);
+    const bMat = new Array(b.length).fill(false);
+    let matches = 0;
+    for (let i = 0; i < a.length; i++) {
+      const start = Math.max(0, i - matchWin);
+      const end = Math.min(i + matchWin + 1, b.length);
+      for (let j = start; j < end; j++) {
+        if (!bMat[j] && a[i] === b[j]) {
+          aMat[i] = true;
+          bMat[j] = true;
+          matches++;
+          break;
+        }
+      }
+    }
+    if (!matches) return 0;
+    let t = 0, k = 0;
+    for (let i = 0; i < a.length; i++) {
+      if (!aMat[i]) continue;
+      while (!bMat[k]) k++;
+      if (a[i] !== b[k]) t++;
+      k++;
+    }
+    const m = matches;
+    const jaro = (m / a.length + m / b.length + (m - t / 2) / m) / 3;
+    let prefix = 0;
+    for (let i = 0; i < Math.min(4, a.length, b.length); i++) {
+      if (a[i] === b[i]) prefix++;
+      else break;
+    }
+    return jaro + prefix * 0.1 * (1 - jaro);
+  }
+
+  function cleanBackfillFatherCandidate(rawVal) {
+    let s = String(rawVal || '').trim().replace(/\s+/g, ' ');
+    if (!s || /^\d+$/.test(s)) return '';
+    if (hasArabicScript(s) && !hasLatinScript(s)) {
+      s = transliterateArabicNameToLatin(s);
+    }
+    const lowTokens = norm(s).split(/\s+/).filter(Boolean);
+    if (!lowTokens.length || lowTokens.length > 3) return '';
+    if (lowTokens.every(t => COMPOUND_PATRONYMIC_BLOCK.has(t))) return '';
+    if (/^(wtc|bbco|bbconstruction|lions|lions transport|la una|blanca|palms|voile|platinum|korri|korri auto|shacman|properties|bdeir holding|driver|staff|pending|open|current|ended|active|monthly|daily|male|female)$/i.test(s)) {
+      return '';
+    }
+    return titleCaseLatin(s);
+  }
+
+  function matchStaffAgainstThreePartName(baseTokens, candRaw) {
+    const clean = String(candRaw || '').replace(/\(\d+\)$/, '').trim().replace(/\s+/g, ' ');
+    if (!clean) return null;
+    const lat = (hasArabicScript(clean) && !hasLatinScript(clean)) ? transliterateArabicNameToLatin(clean) : clean;
+    const tokens = lat.split(/\s+/).filter(Boolean);
+    if (tokens.length < 3 || baseTokens.length < 2) return null;
+    const normToks = tokens.map(t => norm(t));
+    if (normToks.some(t => COMPOUND_PATRONYMIC_BLOCK.has(t))) return null;
+    const firstSim = jaroWinklerSim(baseTokens[0], tokens[0]);
+    const lastSim = jaroWinklerSim(baseTokens[baseTokens.length - 1], tokens[tokens.length - 1]);
+    if (firstSim < 0.86 || lastSim < 0.86) return null;
+    const mid = cleanBackfillFatherCandidate(tokens.slice(1, -1).join(' '));
+    if (!mid || norm(mid) === norm(baseTokens[0]) || norm(mid) === norm(baseTokens[baseTokens.length - 1])) return null;
+    return { father: mid, score: round2((firstSim + lastSim) * 0.5) };
+  }
+
+  function extractFatherFromTextNote(noteRaw, staffBaseName) {
+    const raw = normalizeDigits(String(noteRaw || '').trim());
+    if (!raw || raw.length < 3) return '';
+    const explicitPatterns = [
+      /(?:father(?:'s)?(?:\s+name)?|p[èe]re|patronym(?:e|ic)?)\s*[:=\-–]\s*([A-Za-zÀ-ÿ\u0600-\u06FF][A-Za-zÀ-ÿ\u0600-\u06FF\s'-]{1,34})/i,
+      /(?:son|daughter|fils|fille)\s+(?:of|de)\s+([A-Za-zÀ-ÿ'][A-Za-zÀ-ÿ'-]{1,28})/i,
+      /(?:اسم\s*الأب|إسم\s*الأب|اسم\s*الاب|والده|والدها)\s*[:=\-–]?\s*([\u0600-\u06FF][\u0600-\u06FF\s]{1,28})/,
+      /[\u0600-\u06FF]{2,20}\s+(?:بن|بنت)\s+([\u0600-\u06FF]{2,20})/
+    ];
+    for (const rx of explicitPatterns) {
+      const m = raw.match(rx);
+      if (m && m[1]) {
+        const stopped = m[1].split(/[\r\n,;()|.]+/)[0].trim();
+        const cand = cleanBackfillFatherCandidate(stopped);
+        if (cand) return cand;
+      }
+    }
+    const baseKey = norm(staffBaseName);
+    if (baseKey) {
+      const parenRx = /([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'-]{2,42})\(\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'-]{1,28})\s*\)/g;
+      let pm;
+      while ((pm = parenRx.exec(raw)) !== null) {
+        if (jaroWinklerSim(pm[1], baseKey) >= 0.88) {
+          const cand = cleanBackfillFatherCandidate(pm[2]);
+          if (cand) return cand;
+        }
+      }
+    }
+    return '';
+  }
+
+  function computeFatherNameBackfillReview(ctx = {}) {
+    if (D && typeof D.ensureStaffMembersSeeded === 'function') {
+      try { D.ensureStaffMembersSeeded(); } catch (_) {}
+    }
+    const rec = (D && D.SEED && D.SEED.records) || (window.MFG_SEED && window.MFG_SEED.records) || {};
+    const cust = (D && D.STATE && D.STATE.customRecords) || {};
+    const user = (ctx && ctx.user) || (D && typeof D.activeUser === 'function' ? D.activeUser() : null);
+    const isDemo = Boolean(D && typeof D.isDemoScopeActive === 'function' && D.isDemoScopeActive());
+    const allowedCosRaw = (D && typeof D.allowedCompanyNames === 'function')
+      ? D.allowedCompanyNames(user)
+      : [];
+    const allowedCoSet = new Set(allowedCosRaw.map(c => norm(c)));
+    const companyFilter = ctx && ctx.companyFilter ? norm(ctx.companyFilter) : '';
+
+    const isDemoRow = r => Boolean(r && (
+      r._demo
+      || /^demo(?:_|\s|$)/i.test(String(r.company || '').trim())
+      || (D && D.DEMO_COMPANY_KEY && norm(r.company) === norm(D.DEMO_COMPANY_KEY))
+      || String(r.id || '').startsWith('demo_')
+    ));
+    const coOf = r => {
+      const raw = String((r && r.company) || '').trim();
+      if (!raw) return '';
+      if (D && typeof D.canonCompany === 'function') return D.canonCompany(raw);
+      return raw;
+    };
+    const canSeeScope = r => {
+      if (!r || r.voided) return false;
+      if (!isDemo && isDemoRow(r)) return false;
+      if (isDemo && !isDemoRow(r)) return false;
+      const co = coOf(r);
+      if (allowedCoSet.size && co && !allowedCoSet.has(norm(co))) return false;
+      if (allowedCoSet.size && !co && user && D && typeof D.isOwner === 'function' && !D.isOwner(user)) return false;
+      return true;
+    };
+    const matchesCompanyFilter = r => {
+      if (!companyFilter || companyFilter === 'all') return true;
+      const co = coOf(r);
+      return Boolean(co && norm(co) === companyFilter);
+    };
+
+    const mergePool = key => {
+      const a = Array.isArray(rec[key]) ? rec[key] : [];
+      const b = Array.isArray(cust[key]) ? cust[key] : [];
+      const seen = new Set();
+      const out = [];
+      for (const list of [b, a]) {
+        for (const r of list) {
+          if (!r || r.voided) continue;
+          const idKey = r.id != null ? String(r.id) : '';
+          if (idKey && seen.has(idKey)) continue;
+          if (idKey) seen.add(idKey);
+          if (canSeeScope(r)) out.push(r);
+        }
+      }
+      return out;
+    };
+
+    const staffAll = mergePool('staff_members');
+    const empAll = mergePool('employments');
+    const flAll = mergePool('freelance_entries');
+    const saAll = mergePool('staff_assignments');
+    const cdAll = mergePool('company_drivers');
+    const salAll = mergePool('salaries');
+    const drvAll = mergePool('drivers');
+    const docAll = mergePool('documents');
+
+    const baseCounts = new Map();
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const isInactiveSm = r => Boolean(r && (r.archived || /^(ended|closed|terminated|inactive|cancelled)$/i.test(String(r.status || '').trim())));
+    const isEmpRowActiveToday = e => Boolean(
+      e && !e.voided && !e.archived &&
+      !/^(ended|closed|terminated|inactive|cancelled)$/i.test(String(e.status || '').trim()) &&
+      (!e.end_date || String(e.end_date).slice(0, 10) >= todayStr)
+    );
+    const matchesStaffIdentity = (staffNameK, staffCoK, rowNameRaw, rowCoRaw) => {
+      if (!staffNameK || norm(rowNameRaw) !== staffNameK) return false;
+      const rCoK = rowCoRaw ? norm(coOf({ company: rowCoRaw })) : '';
+      if (staffCoK && rCoK && staffCoK !== rCoK) return false;
+      return true;
+    };
+    const isStaffCurrentlyActive = sm => {
+      if (!sm || sm.voided || isInactiveSm(sm)) return false;
+      const smK = norm(sm.name || sm.staff);
+      if (!smK) return false;
+      const smCoK = sm.company ? norm(coOf(sm)) : '';
+      const matchedEmpFl = [];
+      for (const e of empAll) {
+        if (matchesStaffIdentity(smK, smCoK, e.staff || e.name, e.company || 'WTC')) matchedEmpFl.push(e);
+      }
+      for (const fl of flAll) {
+        if (matchesStaffIdentity(smK, smCoK, fl.staff || fl.name, fl.company || 'WTC')) matchedEmpFl.push(fl);
+      }
+      if (matchedEmpFl.length > 0) {
+        return matchedEmpFl.some(isEmpRowActiveToday);
+      }
+      const smId = String(sm.id || '').trim();
+      const isSeeded = smId.startsWith('stf_seed_') || sm.source === 'seed';
+      if (!isSeeded) return true;
+      if (saAll.some(sa => matchesStaffIdentity(smK, smCoK, sa.staff, sa.company) && (!sa.end_date || String(sa.end_date).slice(0, 10) >= todayStr))) {
+        return true;
+      }
+      if (cdAll.some(cd => matchesStaffIdentity(smK, smCoK, cd.staff || cd.driver, cd.company || 'WTC') && !cd.archived && !/^(ended|closed|terminated|inactive|cancelled)$/i.test(String(cd.status || '').trim()))) {
+        return true;
+      }
+      return false;
+    };
+
+    staffAll.forEach(s => {
+      const nm = String(s.name || s.staff || '').trim();
+      const base = nm.replace(/\s*\(\d+\)$/, '').replace(/\s*\([^)]+\)$/, '').trim();
+      const k = norm(base);
+      if (k) baseCounts.set(k, (baseCounts.get(k) || 0) + 1);
+    });
+
+    const activeStaff = ctx && ctx.includeHistorical
+      ? staffAll.filter(s => !s.voided)
+      : staffAll.filter(isStaffCurrentlyActive);
+    const missingStaff = activeStaff.filter(s => {
+      if (!matchesCompanyFilter(s)) return false;
+      const fNow = String(s.father_name || '').trim();
+      return Boolean(ctx.includeFilled) || !fNow;
+    });
+
+    // Build scoped ID-scan corpus from uploaded HR docs, staff attachments, and session batch scans
+    const idEvidencePool = [];
+    const pushScanEvidence = (scanObj, sourceLabel, coHint, docRef, linkedStaff) => {
+      if (!scanObj || (!scanObj.fullNameLatin && !scanObj.fullNameArabic)) return;
+      idEvidencePool.push({
+        kind: scanObj.docKind === 'nssf_card' ? 'nssf_card' : 'hr_scan',
+        sourceLabel,
+        company: coHint || '',
+        linkedStaff: String(linkedStaff || ''),
+        fullNameLatin: scanObj.fullNameLatin || '',
+        fullNameArabic: scanObj.fullNameArabic || '',
+        fatherNameLatin: scanObj.fatherNameLatin || '',
+        fatherNameArabic: scanObj.fatherNameArabic || '',
+        dob: scanObj.dob || '',
+        nationality: scanObj.nationalityLatin || '',
+        nationalityAr: scanObj.nationalityArabic || '',
+        reference: scanObj.idNumber || '',
+        idDocKind: scanObj.docKind || '',
+        attObj: scanObj.attObj || null,
+        snippet: docRef || [scanObj.fullNameLatin, scanObj.fatherNameLatin ? `Father: ${scanObj.fatherNameLatin}` : '', scanObj.dob || ''].filter(Boolean).join(' · ')
+      });
+    };
+
+    const batchCards = Array.isArray(ctx && ctx.scannedCards) ? ctx.scannedCards : [];
+    batchCards.forEach(sc => pushScanEvidence(sc, sc.docKind === 'nssf_card' ? 'NSSF Card Scan' : 'HR ID Scan', sc.company || '', sc.fileName || '', sc.linkedStaff || ''));
+
+    docAll.forEach(d => {
+      const blobTxt = [d.title, d.name, d.notes, d.reference, d.ocr_text, d.extracted_text].filter(Boolean).join('\n');
+      const isIdDoc = /(id|passport|nssf|civil|permit|هوية|ضمان|إخراج|اقامة|جواز)/i.test(`${d.doc_type || ''} ${d.title || ''} ${d.name || ''} ${blobTxt}`);
+      if (!isIdDoc && !/(father|اسم الأب|بن\s)/i.test(blobTxt)) return;
+      const parsedDoc = parseIdentityCardDeterministic(blobTxt, d.title || d.name || '');
+      if (parsedDoc.fatherNameLatin && (parsedDoc.fullNameLatin || d.parent_label)) {
+        if (!parsedDoc.fullNameLatin && d.parent_label) parsedDoc.fullNameLatin = String(d.parent_label).trim();
+        pushScanEvidence(parsedDoc, 'Document Vault ID', coOf(d), d.title || d.name || d.reference || 'Document Vault', d.parent_label || d.staff || '');
+      }
+    });
+
+    const scanAttText = (attachments, ownerName, coHint) => {
+      if (!Array.isArray(attachments)) return;
+      attachments.forEach(att => {
+        if (!att) return;
+        const txtParts = [att.ocr_text, att.extracted_text, att.note, att.notes, att.file_name].filter(Boolean).join('\n');
+        if (!txtParts) return;
+        const p = parseIdentityCardDeterministic(txtParts, att.file_name || '');
+        if (p.fatherNameLatin) {
+          if (!p.fullNameLatin && ownerName) p.fullNameLatin = ownerName;
+          pushScanEvidence(p, 'Staff Attachment ID', coHint, att.file_name || 'Attachment', ownerName);
+        }
+      });
+    };
+    staffAll.forEach(s => scanAttText(s.attachments, s.name || s.staff, coOf(s)));
+    empAll.forEach(e => scanAttText(e.attachments, e.staff || e.name, coOf(e)));
+
+    const multiNameCorpus = [];
+    const seenCorpus = new Set();
+    const pushMultiName = (rawName, co, srcLbl) => {
+      const nm = String(rawName || '').replace(/\(\d+\)$/, '').trim().replace(/\s+/g, ' ');
+      if (!nm) return;
+      const lat = (hasArabicScript(nm) && !hasLatinScript(nm)) ? transliterateArabicNameToLatin(nm) : nm;
+      const toks = lat.split(/\s+/).filter(Boolean);
+      if (toks.length < 3) return;
+      const key = `${norm(co)}|${norm(lat)}`;
+      if (seenCorpus.has(key)) return;
+      seenCorpus.add(key);
+      multiNameCorpus.push({ name: lat, company: co, srcLbl });
+    };
+    empAll.forEach(e => pushMultiName(e.staff || e.name, coOf(e), 'Historical Contract'));
+    flAll.forEach(f => pushMultiName(f.staff || f.name, coOf(f), 'Freelance Log'));
+    saAll.forEach(a => pushMultiName(a.staff, coOf(a), 'Role Assignment Log'));
+    salAll.forEach(s => pushMultiName(s.staff, coOf(s), 'Payroll Voucher'));
+    drvAll.forEach(d => pushMultiName(d.name || d.driver, coOf(d), 'Driver Registry'));
+
+    const matchNameScore = (aName, candList) => {
+      const aBase = String(aName || '').replace(/\s*\(\d+\)$/, '').trim();
+      const aToks = norm(aBase).split(/\s+/).filter(Boolean);
+      let bestSim = 0;
+      for (const cn of candList) {
+        if (!cn) continue;
+        const sim = jaroWinklerSim(aBase, cn);
+        const cnToks = norm(cn).split(/\s+/).filter(Boolean);
+        const tokHit = (aToks.length >= 2 && cnToks.length >= 2)
+          ? (jaroWinklerSim(aToks[0], cnToks[0]) * 0.55 + jaroWinklerSim(aToks[aToks.length - 1], cnToks[cnToks.length - 1]) * 0.45)
+          : sim;
+        bestSim = Math.max(bestSim, sim, tokHit);
+      }
+      return bestSim;
+    };
+    const isEvAmbiguousAcrossBus = ev => {
+      if (!ev || ev.company) return false;
+      const candNames = [ev.linkedStaff, ev.fullNameLatin, ev.fullNameArabic ? transliterateArabicNameToLatin(ev.fullNameArabic) : ''].filter(Boolean);
+      if (!candNames.length) return false;
+      const matchedBus = new Set();
+      let matchedCount = 0;
+      for (const otherSm of activeStaff) {
+        if (!otherSm) continue;
+        const oScore = matchNameScore(otherSm.name || otherSm.staff, candNames);
+        if (oScore >= 0.85) {
+          matchedCount += 1;
+          matchedBus.add(norm(coOf(otherSm)) || String(otherSm.id || matchedCount));
+          if (matchedCount > 1 || matchedBus.size > 1) return true;
+        }
+      }
+      return false;
+    };
+
+    const rows = missingStaff.map(sm => {
+      const rawName = String(sm.name || sm.staff || '').trim();
+      const isNumFallback = /\(\d+\)$/.test(rawName);
+      const baseName = rawName.replace(/\s*\(\d+\)$/, '').trim();
+      const baseKey = norm(baseName);
+      const smCo = coOf(sm);
+      const baseTokens = baseName.split(/\s+/).filter(Boolean);
+      const hasHomonym = (baseCounts.get(baseKey) || 0) > 1;
+      const candidates = [];
+
+      // 1. HR ID / NSSF Scan Evidence (highest precision, supports cross-script matching)
+      for (const ev of idEvidencePool) {
+        if (ev.company && smCo && norm(ev.company) !== norm(smCo)) continue;
+        const refExactMatch = Boolean(
+          ev.reference && sm.reference
+          && String(ev.reference).trim()
+          && norm(ev.reference) === norm(sm.reference)
+        );
+        if (!ev.company && !refExactMatch && (hasHomonym || isEvAmbiguousAcrossBus(ev))) continue;
+        if (!ev.fatherNameLatin) continue;
+        const candNames = [ev.linkedStaff, ev.fullNameLatin, ev.fullNameArabic ? transliterateArabicNameToLatin(ev.fullNameArabic) : ''].filter(Boolean);
+        const bestSim = matchNameScore(baseName, candNames);
+        if (bestSim >= 0.85) {
+          const confPct = Math.min(99, Math.max(88, Math.round(bestSim * 100)));
+          candidates.push({
+            father_name: ev.fatherNameLatin,
+            father_name_ar: ev.fatherNameArabic || '',
+            full_name_ar: ev.fullNameArabic || '',
+            dob: ev.dob || '',
+            nationality: ev.nationality || '',
+            nationality_ar: ev.nationalityAr || '',
+            reference: ev.reference || '',
+            id_doc_kind: ev.idDocKind || '',
+            attObj: ev.attObj || null,
+            sourceType: ev.kind,
+            sourceLabel: ev.sourceLabel,
+            confidenceTier: confPct >= 90 ? 'high' : 'medium',
+            confidencePct: confPct,
+            snippet: ev.snippet
+          });
+        }
+      }
+
+      // 2. Explicit father_name or workbook notes on operational records for this staff member
+      const inspectOperationalRow = (row, rowStaff, srcTitle) => {
+        if (!row) return;
+        const rCo = coOf(row);
+        if (rCo && smCo && norm(rCo) !== norm(smCo)) return;
+        const refExactOp = Boolean(row.reference && sm.reference && String(row.reference).trim() && norm(row.reference) === norm(sm.reference));
+        if ((!rCo || !smCo) && !refExactOp && hasHomonym) return;
+        const sim = jaroWinklerSim(baseName, String(rowStaff || '').replace(/\s*\(\d+\)$/, ''));
+        if (sim < 0.88) return;
+        const explicitFather = cleanBackfillFatherCandidate(row.father_name);
+        if (explicitFather) {
+          candidates.push({
+            father_name: explicitFather,
+            sourceType: 'operational_record',
+            sourceLabel: srcTitle,
+            confidenceTier: 'high',
+            confidencePct: 96,
+            snippet: `${rowStaff || baseName} (${srcTitle})`
+          });
+        }
+        const noteText = [row.notes, row.note, row.reference].filter(Boolean).join(' · ');
+        if (noteText) {
+          const noteFather = extractFatherFromTextNote(noteText, baseName);
+          if (noteFather) {
+            const pct = sim >= 0.97 ? 91 : 80;
+            candidates.push({
+              father_name: noteFather,
+              sourceType: 'workbook_note',
+              sourceLabel: `${srcTitle} Note`,
+              confidenceTier: pct >= 90 ? 'high' : 'medium',
+              confidencePct: pct,
+              snippet: noteText.slice(0, 96)
+            });
+          }
+        }
+      };
+      empAll.forEach(e => inspectOperationalRow(e, e.staff || e.name, 'Contract'));
+      flAll.forEach(f => inspectOperationalRow(f, f.staff || f.name, 'Freelance'));
+      salAll.forEach(s => inspectOperationalRow(s, s.staff, 'Payroll'));
+      drvAll.forEach(d => inspectOperationalRow(d, d.name || d.driver, 'Driver'));
+      if (sm.notes || sm.reference) inspectOperationalRow(sm, rawName, 'Staff Profile');
+
+      // 3. Historical / cross-record 3-part name match (e.g. Bilal Badawi -> Bilal Khazaal Badawi)
+      if (baseTokens.length === 2) {
+        for (const mc of multiNameCorpus) {
+          if (mc.company && smCo && norm(mc.company) !== norm(smCo)) continue;
+          if ((!mc.company || !smCo) && hasHomonym) continue;
+          const hit = matchStaffAgainstThreePartName(baseTokens, mc.name);
+          if (hit) {
+            const pct = Math.min(96, Math.max(88, Math.round(hit.score * 96)));
+            candidates.push({
+              father_name: hit.father,
+              sourceType: 'historical_contract',
+              sourceLabel: mc.srcLbl,
+              confidenceTier: pct >= 90 ? 'high' : 'medium',
+              confidencePct: pct,
+              snippet: `Matched "${mc.name}"`
+            });
+          }
+        }
+      }
+
+      // 4. Active 3-part name decomposition (only when non-compound Arabic/Latin patronymic)
+      if (!candidates.length && baseTokens.length === 3) {
+        const hit = matchStaffAgainstThreePartName([baseTokens[0], baseTokens[2]], baseName);
+        if (hit) {
+          candidates.push({
+            father_name: hit.father,
+            sourceType: 'roster_3part',
+            sourceLabel: '3-Part Roster Name',
+            confidenceTier: 'medium',
+            confidencePct: 78,
+            snippet: `Middle name of "${baseName}"`
+          });
+        }
+      }
+
+      candidates.sort((a, b) => (b.confidencePct || 0) - (a.confidencePct || 0));
+      const best = candidates[0] || null;
+      const renewalPreview = best && best.father_name
+        ? (isNumFallback
+          ? `${baseName} (${best.father_name})`
+          : (hasHomonym ? `${baseName} (${best.father_name})` : `${baseName} (Father: ${best.father_name})`))
+        : '';
+
+      return {
+        staffId: String(sm.id || ''),
+        name: rawName,
+        baseName,
+        company: smCo,
+        role: String(sm.role || ''),
+        existingFather: String(sm.father_name || '').trim(),
+        existingDob: String(sm.dob || '').trim(),
+        existingNat: String(sm.nationality || '').trim(),
+        isNumericFallback: isNumFallback,
+        hasHomonym,
+        renewalRisk: Boolean(isNumFallback || hasHomonym),
+        best,
+        proposedFather: best ? best.father_name : '',
+        proposedFatherAr: best ? (best.father_name_ar || transliterateLatinNameToArabic(best.father_name)) : '',
+        proposedFullAr: best ? (best.full_name_ar || '') : '',
+        proposedDob: best ? (best.dob || '') : '',
+        proposedNat: best ? (best.nationality || '') : '',
+        proposedNatAr: best ? (best.nationality_ar || '') : '',
+        proposedRef: best ? (best.reference || '') : '',
+        proposedDocKind: best ? (best.id_doc_kind || '') : '',
+        proposedAttObj: best ? (best.attObj || null) : null,
+        sourceType: best ? best.sourceType : 'manual',
+        sourceLabel: best ? best.sourceLabel : 'Manual Review',
+        confidenceTier: best ? best.confidenceTier : 'manual',
+        confidencePct: best ? best.confidencePct : 0,
+        snippet: best ? best.snippet : '',
+        renewalPreview
+      };
+    });
+
+    const fIdx = (D && typeof D.getFreqIndex === 'function') ? D.getFreqIndex().staff : null;
+    const tierOrder = { high: 0, medium: 1, manual: 2 };
+    rows.sort((a, b) => {
+      const td = (tierOrder[a.confidenceTier] ?? 2) - (tierOrder[b.confidenceTier] ?? 2);
+      if (td) return td;
+      if (b.confidencePct !== a.confidencePct) return b.confidencePct - a.confidencePct;
+      if (a.renewalRisk !== b.renewalRisk) return a.renewalRisk ? -1 : 1;
+      const fa = fIdx ? (fIdx.get(norm(a.name)) || 0) : 0;
+      const fb = fIdx ? (fIdx.get(norm(b.name)) || 0) : 0;
+      return fb - fa;
+    });
+
+    const matchedRows = rows.filter(r => Boolean(r.proposedFather));
+    return {
+      totalMissing: rows.length,
+      renewalRiskCount: rows.filter(r => r.renewalRisk).length,
+      matchedCount: matchedRows.length,
+      highCount: rows.filter(r => r.confidenceTier === 'high').length,
+      mediumCount: rows.filter(r => r.confidenceTier === 'medium').length,
+      manualCount: rows.filter(r => r.confidenceTier === 'manual').length,
+      rows
+    };
+  }
+
   function init(deps) {
     D = deps || {};
     ensureGlobalFileInputs();
@@ -4089,6 +5213,14 @@
     scanIntoDomainModal,
     validateAndDisambiguateVin17,
     computeIso3779CheckDigit,
+    scanIdentityCard,
+    parseIdentityCardDeterministic,
+    normalizeIdentityScanResult,
+    buildSampleIdentityCardFile,
+    transliterateArabicNameToLatin,
+    transliterateLatinNameToArabic,
+    canonicalizeNationality,
+    computeFatherNameBackfillReview,
     SAMPLE_SCANS,
     DOMAIN_SAMPLE_SCANS,
     _state: () => SCAN_STATE

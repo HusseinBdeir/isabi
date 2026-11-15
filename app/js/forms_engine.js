@@ -2009,14 +2009,44 @@
     }
 
     if (fType === 'staff') {
+      const natFreqMap = new Map();
+      (rec.staff_members || []).forEach(sm => {
+        if (!sm || sm.voided || !sm.nationality) return;
+        const k = norm(sm.nationality);
+        if (k) natFreqMap.set(k, (natFreqMap.get(k) || 0) + 1);
+      });
+      const natPool = uniqSorted(
+        (rec.staff_members || []).filter(s => s && !s.voided && s.nationality).map(s => s.nationality)
+          .concat(['Lebanese', 'Syrian', 'Palestinian', 'Egyptian', 'Ethiopian', 'Bangladeshi', 'Indian', 'Filipino', 'Sudanese', 'Jordanian', 'Iraqi', 'Sri Lankan', 'Pakistani', 'Nepalese', 'French']),
+        natFreqMap
+      );
       return `
+        <div class="staff-id-scan-bar" id="staffIdScanBar">
+          <div class="staff-id-scan-bar-copy">
+            <strong>${ic('camera')} Lebanese ID or NSSF Card Auto-Fill</strong>
+            <small>1-tap bilingual extraction (Arabic + Latin name, father's name, DOB &amp; nationality)</small>
+          </div>
+          <div class="staff-id-scan-bar-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="staffIdCameraScanBtn">${ic('camera')} Scan Lebanese ID or NSSF Card</button>
+            <button type="button" class="btn btn-ghost-bar btn-sm" id="staffIdUploadBtn">${ic('upload')} Upload Card</button>
+            <button type="button" class="btn btn-ghost-bar btn-sm" id="staffIdSampleBtn">${ic('sparkles')} Sample ID</button>
+            <input type="file" id="staffIdFileInput" accept="image/*,.pdf,.svg" hidden>
+          </div>
+        </div>
+        <div class="staff-id-scan-strip" id="staffIdScanResultStrip" hidden></div>
         <div class="form-grid-3">
           ${secHdr('1. Staff Identity (Universal Registry · All BUs)')}
           ${fld('Business Unit *', sel('f_staff_company', comps, company), { id: 'wrap_f_staff_company', hidden: Array.isArray(comps) && comps.length <= 1 })}
           ${fld('Staff Name *', inp('f_staff', 'text', '', 'placeholder="Full staff member name"'))}
           ${fld("Father's Name", inp('f_father_name', 'text', '', 'placeholder="Optional father\'s name"'))}
+          ${fld('Full Name (Arabic)', inp('f_staff_ar', 'text', '', 'dir="rtl" placeholder="الاسم والشهرة بالعربية"'))}
+          ${fld("Father's Name (Arabic)", inp('f_father_name_ar', 'text', '', 'dir="rtl" placeholder="اسم الأب بالعربية"'))}
+          ${fld('Date of Birth', inp('f_dob', 'date', '', 'min="1930-01-01" max="' + today + '"'))}
+          ${fld('Nationality', inp('f_nationality', 'text', '', 'list="dl_staff_nat" placeholder="Select or type nationality..."') + dl('dl_staff_nat', natPool))}
           ${fld('Phone', inp('f_phone', 'text', '', 'placeholder="+961 ..."'))}
-          ${fld('Civil ID or Permit #', inp('f_reference', 'text', '', 'placeholder="Civil ID, NSSF or work permit #..."'))}
+          ${fld('Civil ID or NSSF #', inp('f_reference', 'text', '', 'placeholder="Civil ID, NSSF or work permit #..."'))}
+          <input type="hidden" id="f_nationality_ar" value="">
+          <input type="hidden" id="f_id_doc_kind" value="">
           ${secHdr('2. Initial Role & Equipment Assignment (Logged by Effective Date)', 'Future role, equipment, and contract changes are tracked chronologically in Role & Equipment Log and Employment Contract')}
           ${fld('Effective Start Date *', inp('f_assign_start', 'date', today), { id: 'wrap_staff_assign_start' })}
           ${fld('Role *', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type staff role..."') + dlMeta('dl_roles', roleMetaItems), { id: 'wrap_staff_role', hintId: 'hint_staff_role', hint: '' })}
@@ -2024,6 +2054,7 @@
           ${fld('Assigned Equipment', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional assigned truck or machine..."') + dl('dl_equip', equipNames), { id: 'wrap_staff_truck' })}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Skills, shift notes or emergency contact..."'), { span2: true })}
         </div>
+        <div class="staff-same-name-box" id="staffSameNameBox" hidden></div>
         <div class="calc-strip" id="staffUnivContextStrip" hidden></div>
       `;
     }
