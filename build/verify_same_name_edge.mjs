@@ -671,6 +671,58 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
       && parsedVecs.every(v => Array.isArray(v) && v.length === 128 && v.every(Number.isFinite)),
       { prov, syncSamp, vecCount: parsedVecs.length });
   }
+
+  // 5k. staff_members bilingual/ID fields round-trip via D1 payload_json + hydrateRowJson on POST + GET + backfill update
+  {
+    const envId = freshEnv().env;
+    const pCreate = await postRec(envId, 'staff_members', {
+      id: 'sm-id-rt-1',
+      name: 'Bilal Khazaal Badawi',
+      full_name_ar: 'بلال خزعل بدوي',
+      father_name: 'Khazaal',
+      father_name_ar: 'خزعل',
+      dob: '1992-04-15',
+      nationality: 'Lebanese',
+      nationality_ar: 'لبناني',
+      reference: '0009182736',
+      id_doc_kind: 'lebanese_id',
+      company: 'WTC',
+      status: 'Active',
+    }, OWNER);
+    const pMissing = await postRec(envId, 'staff_members', {
+      id: 'sm-id-rt-2',
+      name: 'Samir Haddad',
+      company: 'WTC',
+      status: 'Active',
+    }, OWNER);
+    const pBackfill = await postRec(envId, 'staff_members', {
+      id: 'sm-id-rt-2',
+      name: 'Samir Haddad',
+      full_name_ar: 'سمير جوزيف حداد',
+      father_name: 'Joseph',
+      father_name_ar: 'جوزيف',
+      dob: '1988-11-03',
+      nationality: 'Lebanese',
+      nationality_ar: 'لبناني',
+      reference: 'NSSF-448120',
+      id_doc_kind: 'nssf_card',
+      company: 'WTC',
+      status: 'Active',
+    }, OWNER);
+    const rd = await getRecs(envId, 'staff_members', OWNER);
+    const byId = new Map((rd.json.rows || []).map(r => [r.id, r]));
+    const r1 = byId.get('sm-id-rt-1');
+    const r2 = byId.get('sm-id-rt-2');
+    ok('5k. staff_members bilingual/ID fields (full_name_ar, father_name_ar, dob, nationality, nationality_ar, reference, id_doc_kind) round-trip through D1 POST + GET and backfill update',
+      pCreate.status === 200 && pMissing.status === 200 && pBackfill.status === 200 && rd.status === 200
+      && r1 && r1.father_name === 'Khazaal' && r1.full_name_ar === 'بلال خزعل بدوي' && r1.father_name_ar === 'خزعل'
+      && r1.dob === '1992-04-15' && r1.nationality === 'Lebanese' && r1.nationality_ar === 'لبناني'
+      && r1.reference === '0009182736' && r1.id_doc_kind === 'lebanese_id'
+      && r2 && r2.father_name === 'Joseph' && r2.full_name_ar === 'سمير جوزيف حداد' && r2.father_name_ar === 'جوزيف'
+      && r2.dob === '1988-11-03' && r2.nationality === 'Lebanese' && r2.nationality_ar === 'لبناني'
+      && r2.reference === 'NSSF-448120' && r2.id_doc_kind === 'nssf_card',
+      { pCreate, pBackfill, r1, r2 });
+  }
 }
 
 // 6. Outward copy hygiene check on all API responses collected
