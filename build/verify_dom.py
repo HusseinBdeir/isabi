@@ -71,6 +71,32 @@ def run_dom_and_screenshots():
         assert raw_idx_html.count('<!--email_off-->') == 3 and raw_idx_html.count('<!--/email_off-->') == 3, "Expected 3 <!--email_off--> wrappers in index.html"
         assert '/cdn-cgi/l/email-protection' not in raw_idx_html, "Unexpected Cloudflare email-protection link in index.html"
         assert '"sameAs": ["https://github.com/HusseinBdeir", "https://github.com/HusseinBdeir/isabi"]' in raw_idx_html, "Missing verified sameAs URLs in ORG_JSONLD"
+        assert '"disambiguatingDescription":' in raw_idx_html and '"isabisystems"' in raw_idx_html and '"https://isabisystems.com/#brand"' in raw_idx_html, "Missing strengthened entity disambiguation fields in JSON-LD"
+        ld_scripts = re.findall(r'<script type="application/ld\+json">(.*?)</script>', raw_idx_html, re.S)
+        assert len(ld_scripts) == 4, f"Expected 4 JSON-LD blocks in index.html, got {len(ld_scripts)}"
+        ld_docs = [json.loads(s) for s in ld_scripts]
+        def _collect_ld_ids(node, defined, refs):
+            if isinstance(node, dict):
+                if '@id' in node and len(node) == 1:
+                    refs.add(node['@id'])
+                elif '@id' in node:
+                    defined.add(node['@id'])
+                for k, v in node.items():
+                    if k != '@id':
+                        _collect_ld_ids(v, defined, refs)
+            elif isinstance(node, list):
+                for item in node:
+                    _collect_ld_ids(item, defined, refs)
+        ld_defined, ld_refs = set(), set()
+        for doc in ld_docs:
+            _collect_ld_ids(doc, ld_defined, ld_refs)
+        unresolved_ids = ld_refs - ld_defined
+        assert not unresolved_ids, f"Unresolved JSON-LD @id references: {unresolved_ids}"
+        assert {'WebSite', 'ProfessionalService', 'SoftwareApplication', 'FAQPage'} == {d.get('@type') for d in ld_docs}
+        sw_doc = next(d for d in ld_docs if d.get('@type') == 'SoftwareApplication')
+        assert len(sw_doc.get('offers', [])) == 2 and sw_doc['offers'][0]['priceSpecification'][0]['price'] == 3000, f"Unexpected SoftwareApplication offers: {sw_doc.get('offers')}"
+        assert sw_doc['offers'][0]['priceSpecification'][1]['price'] == 50 and sw_doc['offers'][0]['priceSpecification'][1]['billingDuration'] == 'P1M' and sw_doc['offers'][0]['priceSpecification'][1]['unitText'] == 'seat'
+        assert sw_doc['offers'][1]['priceSpecification'][0]['minPrice'] == 5600 and sw_doc['offers'][1]['priceSpecification'][1]['minPrice'] == 80 and sw_doc['offers'][1]['priceSpecification'][1]['maxPrice'] == 100 and sw_doc['offers'][1]['priceSpecification'][1]['billingDuration'] == 'P1M'
         bot_res = subprocess.run(
             [EDGE, '--headless=new', f'--user-data-dir={ud}', '--user-agent=Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', '--window-size=1440,900', '--dump-dom', URL],
             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=25
@@ -100,6 +126,7 @@ def run_dom_and_screenshots():
             ('FAQ JSON-LD present', '"@type": "FAQPage"'),
             ('Organization JSON-LD present', '"@type": "ProfessionalService"'),
             ('WebSite JSON-LD present', '"@type": "WebSite"'),
+            ('SoftwareApplication JSON-LD present', '"@type": "SoftwareApplication"'),
             ('Sitemap link tag present', 'rel="sitemap"'),
             ('Open Graph image tag', 'property="og:image"'),
             ('Dynamic sandbox period label', '(MTD)</option>'),
