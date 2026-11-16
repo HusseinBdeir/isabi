@@ -391,6 +391,8 @@
     partDispFilter: 'all',
     unitHealthFilter: 'all',
     indAssetFilter: {},
+    indFilterDrawerOpen: {},
+    indDrawerFilters: {},
     whChipFilter: 'all',
     repSrcFilter: 'all',
     oilFilter: 'all',
@@ -51174,7 +51176,18 @@
       ? searchScopedExtd.filter(r => norm(r.counterparty || r.party || 'Extended Stakeholder') === norm(focusParty))
       : searchScopedExtd;
 
-    const extdRows = sortRows(partyScoped.filter(r => {
+    const extdExtractors = {
+      stakeholder: r => String(r.counterparty || r.party || 'Extended Stakeholder').trim(),
+      flow: r => String(r.flow_type || r.category || '').trim(),
+      currency: r => {
+        const a = parseExtendedRow(r);
+        const hasUsd = Math.abs(a.owesUsd) > 0.01 || Math.abs(a.receivedUsd) > 0.01 || Math.abs(a.gaveUsd) > 0.01;
+        const hasLbp = Math.abs(a.owesLbp) > 1 || Math.abs(a.receivedLbp) > 1 || Math.abs(a.gaveLbp) > 1;
+        return hasUsd && hasLbp ? 'USD + LBP' : (hasLbp ? 'LBP Only' : 'USD Only');
+      },
+      source: r => (isAppRecord(r) ? 'App-entered' : 'Historical Seed')
+    };
+    const extdChipScoped = partyScoped.filter(r => {
       const a = parseExtendedRow(r);
       if (STATE.chipFilter === 'extd_out') return !a.isCfg && a.isOut;
       if (STATE.chipFilter === 'extd_in') return !a.isCfg && !a.isOut;
@@ -51182,7 +51195,29 @@
       if (STATE.chipFilter === 'extd_lbp') return Math.abs(a.owesLbp) > 1 || Math.abs(a.receivedLbp) > 1 || Math.abs(a.gaveLbp) > 1;
       if (STATE.chipFilter === 'app') return isAppRecord(r);
       return true;
-    }), 'hld_extd_entries', 'date', 'desc');
+    });
+    const extdRows = sortRows(extdChipScoped.filter(r => matchIndDrawerFilters(r, 'hld_extended', extdExtractors)), 'hld_extd_entries', 'date', 'desc');
+    const extdDrawerPodsHtml = `
+      ${buildFreqFilterPodHtml({ scope: 'hld_extended', key: 'stakeholder', title: 'Stakeholder', rows: extdChipScoped, getVal: extdExtractors.stakeholder, noI18nValues: true })}
+      ${buildFreqFilterPodHtml({ scope: 'hld_extended', key: 'flow', title: 'Flow Type', rows: extdChipScoped, getVal: extdExtractors.flow, noI18nValues: true })}
+      ${buildFreqFilterPodHtml({ scope: 'hld_extended', key: 'currency', title: 'Currency', rows: extdChipScoped, getVal: extdExtractors.currency, noI18nValues: false })}
+      ${buildFreqFilterPodHtml({ scope: 'hld_extended', key: 'source', title: 'Source', rows: extdChipScoped, getVal: extdExtractors.source, noI18nValues: false })}
+    `;
+    const extdDrawerChips = getIndDrawerActiveChips('hld_extended', [
+      { key: 'stakeholder', label: 'Stakeholder', noI18nValue: true },
+      { key: 'flow', label: 'Flow Type', noI18nValue: true },
+      { key: 'currency', label: 'Currency' },
+      { key: 'source', label: 'Source' }
+    ]);
+    const extdDrawerBarHtml = renderContextualFilterDrawerBarHtml({
+      scope: 'hld_extended',
+      barId: 'hldExtdFilterBar',
+      extraClass: 'cv-filter-drawer-bar',
+      drawerOpen: Boolean(STATE.indFilterDrawerOpen && STATE.indFilterDrawerOpen.hld_extended),
+      drawerPodsHtml: extdDrawerPodsHtml,
+      drawerActiveChips: extdDrawerChips,
+      showReset: extdDrawerChips.length > 0
+    });
     const shownExtd = extdRows.slice(0, shownCount('hld_extd_entries'));
 
     let totRecUsd = 0, totGaveUsd = 0, totOwesUsd = 0;
@@ -51331,6 +51366,8 @@
           </div>
         </div>
 
+        ${extdDrawerBarHtml}
+
         ${focusParty ? `
         <div class="cf-drill-strip" role="status">
           <span class="cf-drill-lbl">Active Stakeholder Filter:</span>
@@ -51377,7 +51414,7 @@
               ${showMoreRow('hld_extd_entries', extdRows.length, entryColCount)}
             </tbody>
             <tfoot>
-              <tr>
+              <tr class="totals-row">
                 <td colspan="${showCoCol ? 5 : 4}"><b>TOTAL (${fmtNum(extdRows.length)} ENTRIES)</b></td>
                 <td class="r mono"><b style="color:var(--crit)">${fmtUSD(totRecUsd, 2)}</b></td>
                 <td class="r mono"><b style="color:var(--good)">${fmtUSD(totGaveUsd, 2)}</b></td>
@@ -52391,6 +52428,135 @@
     `;
   }
 
+  function getIndDrawerFilter(scopeKey, filterKey) {
+    const scopeMap = STATE.indDrawerFilters && STATE.indDrawerFilters[scopeKey];
+    const v = scopeMap && scopeMap[filterKey];
+    return v ? String(v) : 'ALL';
+  }
+
+  function setIndDrawerFilter(scopeKey, filterKey, val) {
+    if (!STATE.indDrawerFilters || typeof STATE.indDrawerFilters !== 'object') STATE.indDrawerFilters = {};
+    if (!STATE.indDrawerFilters[scopeKey] || typeof STATE.indDrawerFilters[scopeKey] !== 'object') {
+      STATE.indDrawerFilters[scopeKey] = {};
+    }
+    const clean = String(val || 'ALL').trim();
+    if (!clean || clean === 'ALL') {
+      delete STATE.indDrawerFilters[scopeKey][filterKey];
+      if (!Object.keys(STATE.indDrawerFilters[scopeKey]).length) delete STATE.indDrawerFilters[scopeKey];
+    } else {
+      STATE.indDrawerFilters[scopeKey][filterKey] = clean;
+    }
+  }
+
+  function clearIndDrawerFilters(scopeKey) {
+    if (STATE.indDrawerFilters && scopeKey) delete STATE.indDrawerFilters[scopeKey];
+  }
+
+  function matchIndDrawerFilters(row, scopeKey, extractors) {
+    const scopeMap = STATE.indDrawerFilters && STATE.indDrawerFilters[scopeKey];
+    if (!scopeMap) return true;
+    for (const [k, want] of Object.entries(scopeMap)) {
+      if (!want || want === 'ALL') continue;
+      const fn = extractors && extractors[k];
+      if (typeof fn !== 'function') continue;
+      if (String(fn(row) || '').trim() !== String(want)) return false;
+    }
+    return true;
+  }
+
+  // Frequency-ranked cross-vertical drawer filter pod (Hard Rule 11: most-frequent options first, never alphabetical).
+  function buildFreqFilterPodHtml({ scope, key, title, rows, getVal, maxOpts = 8, formatOptLabel, noI18nValues = true, allLabel = 'All' }) {
+    const list = Array.isArray(rows) ? rows : [];
+    const cur = getIndDrawerFilter(scope, key);
+    const freqMap = new Map();
+    list.forEach(r => {
+      const v = String((typeof getVal === 'function' ? getVal(r) : '') || '').trim();
+      if (!v) return;
+      freqMap.set(v, (freqMap.get(v) || 0) + 1);
+    });
+    const ranked = Array.from(freqMap.entries())
+      .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]));
+    if (!ranked.length && cur === 'ALL') return '';
+    const shownOpts = ranked.slice(0, maxOpts);
+    if (cur !== 'ALL' && !shownOpts.some(([val]) => val === cur)) {
+      shownOpts.push([cur, freqMap.get(cur) || 0]);
+    }
+    return `
+      <div class="sched-filter-group kiosk-filter-pod" data-cv-pod-scope="${esc(scope)}" data-cv-pod-key="${esc(key)}">
+        <span class="kiosk-bar-lbl">${esc(title)}</span>
+        <div class="kiosk-filter-chips">
+          <button type="button" class="kiosk-qchip ${cur === 'ALL' ? 'active' : ''}" data-cv-drawer-set="ALL" data-cv-scope="${esc(scope)}" data-cv-key="${esc(key)}"><span>${esc(allLabel)}</span> <span class="kf-cnt">${fmtNum(list.length)}</span></button>
+          ${shownOpts.map(([val, cnt]) => {
+            const disp = typeof formatOptLabel === 'function' ? formatOptLabel(val, cnt) : val;
+            return `<button type="button" class="kiosk-qchip ${cur === val ? 'active' : ''}" data-cv-drawer-set="${esc(val)}" data-cv-scope="${esc(scope)}" data-cv-key="${esc(key)}"><span${noI18nValues ? ' data-no-i18n="1"' : ''}>${esc(disp)}</span> <span class="kf-cnt ${cnt === 0 ? 'is-zero' : ''}">${fmtNum(cnt)}</span></button>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function getIndDrawerActiveChips(scopeKey, chipSpecs = []) {
+    const out = [];
+    chipSpecs.forEach(sp => {
+      const val = getIndDrawerFilter(scopeKey, sp.key);
+      if (!val || val === 'ALL') return;
+      const disp = typeof sp.formatOptLabel === 'function' ? sp.formatOptLabel(val) : val;
+      out.push({
+        key: sp.key,
+        label: sp.label,
+        value: disp,
+        noI18nValue: Boolean(sp.noI18nValue)
+      });
+    });
+    return out;
+  }
+
+  function renderContextualFilterDrawerBarHtml(spec = {}) {
+    const scope = String(spec.scope || 'generic');
+    const barId = spec.barId || `cvFilterBar_${scope}`;
+    const drawerId = spec.drawerId || `cvMoreDrawer_${scope}`;
+    const toggleBtnId = spec.toggleBtnId || `cvToggleMoreBtn_${scope}`;
+    const resetBtnId = spec.resetBtnId || `cvResetBtn_${scope}`;
+    const drawerOpen = Boolean(spec.drawerOpen);
+    const hasDrawer = Boolean(spec.drawerPodsHtml && String(spec.drawerPodsHtml).trim());
+    const drawerActiveChips = Array.isArray(spec.drawerActiveChips) ? spec.drawerActiveChips : [];
+    const drawerActiveCnt = spec.drawerActiveCnt != null ? Number(spec.drawerActiveCnt) : drawerActiveChips.length;
+    const toggleAttr = spec.resetUseAttHandler ? '' : ` data-cv-toggle-drawer="${esc(scope)}"`;
+    const resetAttr = spec.resetUseAttHandler ? '' : ` data-cv-reset-all="${esc(scope)}"`;
+    const extraCls = spec.extraClass ? ` ${esc(spec.extraClass)}` : '';
+    const chipsHtml = (!drawerOpen && drawerActiveChips.length) ? `
+      <span class="cv-drawer-active-chips" role="group" aria-label="Active drawer filters" data-cv-chips-scope="${esc(scope)}">
+        ${drawerActiveChips.map(ch => `
+          <button type="button" class="kiosk-qchip cv-rm-filter-chip" data-cv-rm-chip="${esc(ch.key)}" data-cv-scope="${esc(scope)}" aria-label="Remove filter">
+            <span class="cv-rm-lbl">${esc(ch.label)}</span><span class="cv-rm-sep">:</span> <b class="cv-rm-val"${ch.noI18nValue ? ' data-no-i18n="1"' : ''}>${esc(ch.value)}</b> <span class="cv-rm-x" aria-hidden="true">✕</span>
+          </button>
+        `).join('')}
+        <button type="button" class="kiosk-qchip cv-clear-drawer-btn" data-cv-clear-drawer="${esc(scope)}">Clear all</button>
+      </span>
+    ` : '';
+    const resetBtnHtml = spec.showReset
+      ? `<button type="button" class="kiosk-qchip is-reset-chip" id="${esc(resetBtnId)}"${resetAttr}>✕ Reset Filters</button>`
+      : '';
+    return `
+      <div class="kiosk-late-filter-bar is-compact-bar${extraCls}" id="${esc(barId)}" data-cv-filter-bar="${esc(scope)}">
+        <div class="kiosk-filter-primary-row">
+          ${spec.primaryPodsHtml || ''}
+          <div class="kiosk-filter-actions-end">
+            ${hasDrawer ? `<button type="button" class="kiosk-qchip is-more-btn ${drawerOpen ? 'active' : ''}" id="${esc(toggleBtnId)}"${toggleAttr} aria-expanded="${drawerOpen ? 'true' : 'false'}"><span>More Filters</span>${drawerActiveCnt ? ` <span class="kf-cnt">(${fmtNum(drawerActiveCnt)})</span>` : ''}</button>` : ''}
+            ${chipsHtml}
+            ${resetBtnHtml}
+            ${spec.trailingHtml || ''}
+          </div>
+        </div>
+        ${hasDrawer ? `
+          <div class="kiosk-more-filters-drawer" id="${esc(drawerId)}"${drawerOpen ? '' : ' hidden'}>
+            ${spec.drawerPodsHtml}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
   function renderHoldingLoans(submode = 'main') {
     const u = activeUser();
     const rawLoans = filterRecords(SEED.records.loans || [], { ignoreCompany: true, includeGroupMfg: true, ignorePeriod: true });
@@ -53028,13 +53194,40 @@
     `;
 
     if (submode === 'pos') {
-      let filteredPos = hsp.posRows.filter(r => {
+      const posExtractors = {
+        resort: r => String(r.company || '').trim(),
+        terminal: r => String(r.terminal || r.shift || '').trim(),
+        cashier: r => String(r.cashier || '').trim(),
+        status: r => String(r.status || (Math.abs(r.variance_usd || 0) > 0.5 ? 'Variance' : 'Balanced')).trim()
+      };
+      const posChipRows = hsp.posRows.filter(r => {
         if (f === 'variance') return Math.abs(r.variance_usd) > 0.5;
         if (f === 'balanced') return Math.abs(r.variance_usd) <= 0.5;
         if (f === 'launa') return r.company === 'La Una';
         return true;
       });
-      filteredPos = regPanelRows('hspPosPanel', filteredPos, 'hsp_pos');
+      const filteredPos = regPanelRows('hspPosPanel', posChipRows.filter(r => matchIndDrawerFilters(r, 'hsp_pos', posExtractors)), 'hsp_pos');
+      const posDrawerPodsHtml = `
+        ${!hideCo ? buildFreqFilterPodHtml({ scope: 'hsp_pos', key: 'resort', title: 'Resort', rows: posChipRows, getVal: posExtractors.resort, noI18nValues: true }) : ''}
+        ${buildFreqFilterPodHtml({ scope: 'hsp_pos', key: 'terminal', title: 'Terminal', rows: posChipRows, getVal: posExtractors.terminal, noI18nValues: true })}
+        ${buildFreqFilterPodHtml({ scope: 'hsp_pos', key: 'cashier', title: 'Cashier', rows: posChipRows, getVal: posExtractors.cashier, noI18nValues: true })}
+        ${buildFreqFilterPodHtml({ scope: 'hsp_pos', key: 'status', title: 'Close Status', rows: posChipRows, getVal: posExtractors.status, noI18nValues: true })}
+      `;
+      const posDrawerChips = getIndDrawerActiveChips('hsp_pos', [
+        { key: 'resort', label: 'Resort', noI18nValue: true },
+        { key: 'terminal', label: 'Terminal', noI18nValue: true },
+        { key: 'cashier', label: 'Cashier', noI18nValue: true },
+        { key: 'status', label: 'Close Status', noI18nValue: true }
+      ]);
+      const posDrawerBarHtml = renderContextualFilterDrawerBarHtml({
+        scope: 'hsp_pos',
+        barId: 'hspPosFilterBar',
+        extraClass: 'cv-filter-drawer-bar',
+        drawerOpen: Boolean(STATE.indFilterDrawerOpen && STATE.indFilterDrawerOpen.hsp_pos),
+        drawerPodsHtml: posDrawerPodsHtml,
+        drawerActiveChips: posDrawerChips,
+        showReset: posDrawerChips.length > 0
+      });
       const shownPos = filteredPos.slice(0, shownCount('hsp_pos'));
       const sumBilled = round2(filteredPos.reduce((a, r) => a + r.pos_billed_ttc, 0));
       const sumCash = round2(filteredPos.reduce((a, r) => a + r.cash_usd, 0));
@@ -53064,6 +53257,7 @@
               ${canEnterForm('receipt', u) ? '<button type="button" class="btn btn-primary" data-open-modal="receipt">+ POS Shift Close</button>' : ''}
             </div>
           </div>
+          ${posDrawerBarHtml}
           <div class="table-wrap">
             <table class="ledger-table">
               <thead>
@@ -55174,7 +55368,13 @@
     `;
 
     if (submode === 'warranty') {
-      let filteredWar = trd.warrantyRows.filter(r => {
+      const warExtractors = {
+        entity: r => String(r.company || '').trim(),
+        job_type: r => String(r.job_type || '').trim(),
+        technician: r => String(r.technician || r.bay || '').trim(),
+        status: r => String(r.status || '').trim()
+      };
+      const warChipRows = trd.warrantyRows.filter(r => {
         if (f === 'open') return r.status !== 'Completed';
         if (f === 'pdi') return r.job_type.includes('PDI');
         if (f === 'warranty') return r.job_type.includes('Warranty');
@@ -55182,7 +55382,28 @@
         if (f === 'korri') return r.company === 'Korri Auto';
         return true;
       });
-      filteredWar = regPanelRows('trdWarrantyPanel', filteredWar, 'trd_warranty');
+      const filteredWar = regPanelRows('trdWarrantyPanel', warChipRows.filter(r => matchIndDrawerFilters(r, 'trd_warranty', warExtractors)), 'trd_warranty');
+      const warDrawerPodsHtml = `
+        ${!hideCo ? buildFreqFilterPodHtml({ scope: 'trd_warranty', key: 'entity', title: 'Entity', rows: warChipRows, getVal: warExtractors.entity, noI18nValues: true }) : ''}
+        ${buildFreqFilterPodHtml({ scope: 'trd_warranty', key: 'job_type', title: 'Job Type', rows: warChipRows, getVal: warExtractors.job_type, noI18nValues: true })}
+        ${buildFreqFilterPodHtml({ scope: 'trd_warranty', key: 'technician', title: 'Technician', rows: warChipRows, getVal: warExtractors.technician, noI18nValues: true })}
+        ${buildFreqFilterPodHtml({ scope: 'trd_warranty', key: 'status', title: 'Status', rows: warChipRows, getVal: warExtractors.status, noI18nValues: true })}
+      `;
+      const warDrawerChips = getIndDrawerActiveChips('trd_warranty', [
+        { key: 'entity', label: 'Entity', noI18nValue: true },
+        { key: 'job_type', label: 'Job Type', noI18nValue: true },
+        { key: 'technician', label: 'Technician', noI18nValue: true },
+        { key: 'status', label: 'Status', noI18nValue: true }
+      ]);
+      const warDrawerBarHtml = renderContextualFilterDrawerBarHtml({
+        scope: 'trd_warranty',
+        barId: 'trdWarrantyFilterBar',
+        extraClass: 'cv-filter-drawer-bar',
+        drawerOpen: Boolean(STATE.indFilterDrawerOpen && STATE.indFilterDrawerOpen.trd_warranty),
+        drawerPodsHtml: warDrawerPodsHtml,
+        drawerActiveChips: warDrawerChips,
+        showReset: warDrawerChips.length > 0
+      });
       const shownWar = filteredWar.slice(0, shownCount('trd_warranty'));
       const sumParts = round2(filteredWar.reduce((a, r) => a + r.parts_cost_usd, 0));
       const sumLabor = round2(filteredWar.reduce((a, r) => a + r.labor_usd, 0));
@@ -55211,6 +55432,7 @@
               ${canEnterForm('repair', u) ? '<button type="button" class="btn btn-primary" data-open-modal="repair">+ PDI / Warranty Job</button>' : ''}
             </div>
           </div>
+          ${warDrawerBarHtml}
           <div class="table-wrap">
             <table class="ledger-table">
               <thead>
@@ -56041,9 +56263,41 @@
     const coStyle = hideCo ? ' style="display:none"' : '';
     const q = String(STATE.search || '').trim().toLowerCase();
     const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
-    const filteredLeases = sortRows(data.leases.filter(matchQ), 're_leases');
+    const reExtractors = {
+      status: r => String(r.status || '').trim(),
+      property: r => String(r.property || '').trim(),
+      frequency: r => String(r.frequency || '').trim(),
+      entity: r => String(r.company || '').trim(),
+      tenant: r => String(r.tenant || '').trim()
+    };
+    const baseLeases = data.leases.filter(matchQ);
+    const filteredLeases = sortRows(baseLeases.filter(r => matchIndDrawerFilters(r, 're_leases', reExtractors)), 're_leases');
     const filteredInv = sortRows(data.invoices.filter(matchQ), 're_invoicing');
     const filteredRct = sortRows(data.receipts.filter(matchQ), 're_receipts');
+    const rePrimaryPodsHtml = buildFreqFilterPodHtml({ scope: 're_leases', key: 'status', title: 'Status', rows: baseLeases, getVal: reExtractors.status, noI18nValues: true });
+    const reDrawerPodsHtml = `
+      ${buildFreqFilterPodHtml({ scope: 're_leases', key: 'property', title: 'Property', rows: baseLeases, getVal: reExtractors.property, noI18nValues: true })}
+      ${buildFreqFilterPodHtml({ scope: 're_leases', key: 'frequency', title: 'Billing', rows: baseLeases, getVal: reExtractors.frequency, noI18nValues: true })}
+      ${!hideCo ? buildFreqFilterPodHtml({ scope: 're_leases', key: 'entity', title: 'Entity', rows: baseLeases, getVal: reExtractors.entity, noI18nValues: true }) : ''}
+      ${buildFreqFilterPodHtml({ scope: 're_leases', key: 'tenant', title: 'Tenant', rows: baseLeases, getVal: reExtractors.tenant, noI18nValues: true })}
+    `;
+    const reDrawerChips = getIndDrawerActiveChips('re_leases', [
+      { key: 'property', label: 'Property', noI18nValue: true },
+      { key: 'frequency', label: 'Billing', noI18nValue: true },
+      { key: 'entity', label: 'Entity', noI18nValue: true },
+      { key: 'tenant', label: 'Tenant', noI18nValue: true }
+    ]);
+    const reHasAnyFilter = getIndDrawerFilter('re_leases', 'status') !== 'ALL' || reDrawerChips.length > 0;
+    const reFilterBarHtml = renderContextualFilterDrawerBarHtml({
+      scope: 're_leases',
+      barId: 'reLeasesFilterBar',
+      extraClass: 'cv-filter-drawer-bar',
+      drawerOpen: Boolean(STATE.indFilterDrawerOpen && STATE.indFilterDrawerOpen.re_leases),
+      primaryPodsHtml: rePrimaryPodsHtml,
+      drawerPodsHtml: reDrawerPodsHtml,
+      drawerActiveChips: reDrawerChips,
+      showReset: reHasAnyFilter
+    });
 
     const bannerHtml = `
       <div class="cockpit-banner">
@@ -56278,7 +56532,7 @@
           </div>
       </div>
 
-      <div class="panel">
+      <div class="panel" id="reLeasesPanel">
         <div class="panel-head">
           <div>
             <h3>Commercial &amp; Residential Lease Contracts Registry ${shownCount('re_leases', filteredLeases.length, data.leases.length)}</h3>
@@ -56286,6 +56540,7 @@
           </div>
           <div class="panel-actions">${searchBox('Search lease, tenant, property, unit...')}</div>
         </div>
+        ${reFilterBarHtml}
         <div class="table-wrap">
           <table class="data-table">
             <thead>
@@ -57478,9 +57733,41 @@
     const s = data.summary;
     const q = String(STATE.search || '').trim().toLowerCase();
     const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
-    const filteredPol = sortRows(data.policies.filter(matchQ), 'ins_policies');
+    const insExtractors = {
+      status: r => String(r.status || '').trim(),
+      line: r => String(r.line || '').trim(),
+      carrier: r => String(r.carrier || '').trim(),
+      producer: r => String(r.producer || '').trim(),
+      type: r => String(r.type || '').trim()
+    };
+    const basePol = data.policies.filter(matchQ);
+    const filteredPol = sortRows(basePol.filter(r => matchIndDrawerFilters(r, 'ins_policies', insExtractors)), 'ins_policies');
     const filteredRen = sortRows(data.renewals.filter(matchQ), 'ins_renewals');
     const filteredItm = sortRows(data.items.filter(matchQ), 'ins_items');
+    const insPrimaryPodsHtml = buildFreqFilterPodHtml({ scope: 'ins_policies', key: 'status', title: 'Status', rows: basePol, getVal: insExtractors.status, noI18nValues: true });
+    const insDrawerPodsHtml = `
+      ${buildFreqFilterPodHtml({ scope: 'ins_policies', key: 'line', title: 'Insurance Line', rows: basePol, getVal: insExtractors.line, noI18nValues: true })}
+      ${buildFreqFilterPodHtml({ scope: 'ins_policies', key: 'carrier', title: 'Carrier', rows: basePol, getVal: insExtractors.carrier, noI18nValues: true })}
+      ${buildFreqFilterPodHtml({ scope: 'ins_policies', key: 'producer', title: 'Producer', rows: basePol, getVal: insExtractors.producer, noI18nValues: true })}
+      ${buildFreqFilterPodHtml({ scope: 'ins_policies', key: 'type', title: 'Entry Type', rows: basePol, getVal: insExtractors.type, noI18nValues: true })}
+    `;
+    const insDrawerChips = getIndDrawerActiveChips('ins_policies', [
+      { key: 'line', label: 'Insurance Line', noI18nValue: true },
+      { key: 'carrier', label: 'Carrier', noI18nValue: true },
+      { key: 'producer', label: 'Producer', noI18nValue: true },
+      { key: 'type', label: 'Entry Type', noI18nValue: true }
+    ]);
+    const insHasAnyFilter = getIndDrawerFilter('ins_policies', 'status') !== 'ALL' || insDrawerChips.length > 0;
+    const insFilterBarHtml = renderContextualFilterDrawerBarHtml({
+      scope: 'ins_policies',
+      barId: 'insPoliciesFilterBar',
+      extraClass: 'cv-filter-drawer-bar',
+      drawerOpen: Boolean(STATE.indFilterDrawerOpen && STATE.indFilterDrawerOpen.ins_policies),
+      primaryPodsHtml: insPrimaryPodsHtml,
+      drawerPodsHtml: insDrawerPodsHtml,
+      drawerActiveChips: insDrawerChips,
+      showReset: insHasAnyFilter
+    });
 
     const bannerHtml = `
       <div class="cockpit-banner">
@@ -57668,7 +57955,7 @@
 
     return `
       ${bannerHtml}
-      <div class="panel">
+      <div class="panel" id="insPoliciesPanel">
         <div class="panel-head">
           <div>
             <h3>Master Policies, Mid-Term Endorsements &amp; Client Discounts Ledger ${shownCount('ins_policies', filteredPol.length, data.policies.length)}</h3>
@@ -57676,6 +57963,7 @@
           </div>
           <div class="panel-actions">${searchBox('Search policy #, client, carrier, line, producer...')}</div>
         </div>
+        ${insFilterBarHtml}
         <div class="table-wrap">
           <table class="data-table">
             <thead>
@@ -57714,7 +58002,7 @@
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="5"><strong>TOTAL PRODUCTION LEDGER (${fmtNum(s.totalPolicyCount)} POLICIES + ${fmtNum(s.endorsementCount)} ENDORSEMENTS)</strong></td>
+                <td colspan="5"><strong>TOTAL PRODUCTION LEDGER (${fmtNum(filteredPol.filter(p => !/endorse/i.test(String(p.type || ''))).length)} POLICIES + ${fmtNum(filteredPol.filter(p => /endorse/i.test(String(p.type || ''))).length)} ENDORSEMENTS)</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumGwp, 0)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumGrossComm, 0)}</strong></td>
                 <td class="r mono"><strong>-${fmtUSD(sumDisc, 0)}</strong></td>
@@ -118191,6 +118479,19 @@
         if (!/^__/.test(spec)) values.push(spec.replace(/^=/, ''));
       });
     });
+    const cvBar = panel && panel.querySelector ? panel.querySelector('[data-cv-filter-bar]') : null;
+    const cvScope = cvBar ? (cvBar.getAttribute('data-cv-filter-bar') || '') : '';
+    const cvMap = (cvScope && cvScope !== 'att_kiosk' && STATE.indDrawerFilters && STATE.indDrawerFilters[cvScope]) || null;
+    if (cvMap && typeof cvMap === 'object') {
+      Object.keys(cvMap).forEach(k => {
+        const val = String(cvMap[k] == null ? '' : cvMap[k]).trim();
+        if (!val || val === 'ALL') return;
+        const podLblEl = cvBar.querySelector(`[data-cv-pod-key="${CSS.escape(k)}"] .kiosk-bar-lbl`);
+        const lab = podLblEl ? podLblEl.textContent.trim() : wsUiT(k);
+        parts.push(`${lab} = ${val}`);
+        values.push(val);
+      });
+    }
     const q = String(STATE.search || '').trim();
     if (q) { parts.push(`${wsUiT('Search')} = "${q}"`); values.push(q); }
     return { parts, values };
@@ -123585,6 +123886,8 @@
     STATE.cfFocusDate = '';
     STATE.cfFocusDateFromScrub = false;
     clearCfScrubChipState();
+    STATE.indDrawerFilters = {};
+    closeCoOverrideDiffPopover();
     STATE.shown = {};
     STATE.pbiTablePage = {};
     let nextView = resolveIndustryCompatibleView(STATE.view, indId);
@@ -123646,6 +123949,8 @@
       STATE.cfFocusDateFromScrub = false;
       clearCfScrubChipState();
     }
+    STATE.indDrawerFilters = {};
+    closeCoOverrideDiffPopover();
     STATE.shown = {};
     STATE.pbiTablePage = {};
     let nextView = resolveIndustryCompatibleView(STATE.view, nextInd);
@@ -129663,6 +129968,434 @@
     return draft;
   }
 
+  let _CO_OV_POP_STATE = { open: false, company: '', triggerEl: null };
+
+  function computeCompanyAttendanceOverrideDiff(coRaw) {
+    const co = canonCompany(String(coRaw || '').trim()) || String(coRaw || '').trim() || 'WTC';
+    const viewerAllowedCos = allowedCompanyNames(activeUser());
+    if (viewerAllowedCos.length && !viewerAllowedCos.includes(co)) {
+      return { company: co, totalActive: 0, inheritedCount: 0, overrideCount: 0, overrides: [], baseline: null };
+    }
+    const activeDir = getKioskStaffDirectory({ companyOverride: co, strictCompanyScope: true, activeOnly: true, lite: true });
+    const today = todayISO();
+    const curDef = getBuDefaultShift(co);
+    const coDefShiftId = normalizeShiftCodeAlias((curDef && curDef.shift_code) || 'day_8_4');
+    const shiftTypes = getShiftTypes(co);
+    const shiftById = new Map(shiftTypes.map(st => [normalizeShiftCodeAlias(st.id), st]));
+    const coDefPolId = normalizePolicyGroupIdAlias(getCompanyDefaultPolicyGroupId(co));
+    const policyGroups = getPolicyGroups(co);
+    const polById = new Map(policyGroups.map(pg => [normalizePolicyGroupIdAlias(pg.id), pg]));
+    const resolvedCoPol = resolveCompanyDefaultPolicyGroupAtDate(co, today);
+    const coSnapMode = normalizeOtSnapMode(resolvedCoPol.ot_snap_mode);
+    const coBlockMin = normalizeOtBlockMin(resolvedCoPol.ot_block_min);
+    const coSnapAt = clampOtSnapAtMin(resolvedCoPol.ot_snap_at_min, coBlockMin);
+    const coOtThresh = clampAttThresholdMin(resolvedCoPol.ot_threshold_min, 10);
+    const coShiftObj = shiftById.get(coDefShiftId) || curDef || shiftTypes[0] || DEFAULT_SHIFT_TYPES[0];
+    const coPolObj = polById.get(coDefPolId) || resolvedCoPol || policyGroups[0] || DEFAULT_POLICY_GROUPS[0];
+    const coSnapShort = coSnapMode !== 'exact' ? formatOtSnapShort(coSnapMode, coBlockMin, coSnapAt, true) : 'Exact $/min';
+    const baseline = {
+      shiftId: coDefShiftId,
+      shiftLabel: (coShiftObj && (coShiftObj.name || coShiftObj.short)) || coDefShiftId,
+      policyGroupId: coDefPolId,
+      policyGroupLabel: (coPolObj && coPolObj.name) || coDefPolId,
+      otSnapMode: coSnapMode,
+      otBlockMin: coBlockMin,
+      otSnapAtMin: coSnapAt,
+      otSnapLabel: coSnapShort,
+      otThreshMin: coOtThresh
+    };
+
+    const overrides = [];
+    activeDir.forEach(s => {
+      const entry = getStaffRuleEntry(s.name, co);
+      const raw = entry && entry.raw && !entry.raw.reset_default ? entry.raw : null;
+      if (!raw) return;
+
+      const rawShiftRaw = raw.shift_id ? String(raw.shift_id) : '';
+      const rawShiftNorm = rawShiftRaw === 'custom' ? 'custom' : (rawShiftRaw ? normalizeShiftCodeAlias(rawShiftRaw) : '');
+      const expectedDefShift = normalizeShiftCodeAlias(companyDefaultShiftIdFor(s.name, co) || coDefShiftId);
+      const hasShiftIdDiff = Boolean(rawShiftNorm && (rawShiftNorm === 'custom' || rawShiftNorm !== expectedDefShift));
+      const hasShiftOvDates = Array.isArray(raw.shift_overrides) && raw.shift_overrides.length > 0;
+      const hasCustomTimings = Boolean((Array.isArray(raw.date_timings) && raw.date_timings.length) || (Array.isArray(raw.day_timings) && raw.day_timings.length));
+      const shiftDiff = hasShiftIdDiff || hasShiftOvDates || hasCustomTimings;
+
+      const notInheritingFlag = raw.follows_company_default === false;
+      const isFollowingDefaultFlag = raw.follows_company_default === true;
+      const rawPolNorm = normalizePolicyGroupIdAlias(raw.policy_group_id);
+      const hasGrpDiff = Boolean(rawPolNorm && coDefPolId && rawPolNorm !== coDefPolId && !isFollowingDefaultFlag);
+      const hasCustomPolFields = Boolean(
+        raw.custom_policy_override === true
+        || (!('custom_policy_override' in raw) && !isFollowingDefaultFlag && _rawStaffRuleHasIndividualPolicyFields(raw))
+      );
+      const hasPolTimeline = Array.isArray(raw.policy_timeline) && raw.policy_timeline.length > 0;
+      const policyDiff = Boolean(hasGrpDiff || hasCustomPolFields || hasPolTimeline || notInheritingFlag);
+
+      const stSnapMode = normalizeOtSnapMode(raw.ot_snap_mode != null ? raw.ot_snap_mode : coSnapMode);
+      const stBlockMin = normalizeOtBlockMin(raw.ot_block_min != null ? raw.ot_block_min : coBlockMin);
+      const stSnapAt = clampOtSnapAtMin(raw.ot_snap_at_min != null ? raw.ot_snap_at_min : coSnapAt, stBlockMin);
+      const stOtThresh = clampAttThresholdMin(raw.ot_threshold_min != null ? raw.ot_threshold_min : coOtThresh, coOtThresh);
+      const hasMathOverrideFlag = raw.custom_math_override === true
+        || (!('custom_math_override' in raw) && !isFollowingDefaultFlag && _rawStaffRuleHasLegacyMathFields(raw));
+      const snapChanged = Boolean(
+        (!isFollowingDefaultFlag || raw.custom_math_override === true)
+        && (raw.ot_snap_mode != null || raw.ot_block_min != null || raw.custom_math_override === true)
+        && (stSnapMode !== coSnapMode || (stSnapMode !== 'exact' && (stBlockMin !== coBlockMin || (stSnapMode === 'snap_at' && stSnapAt !== coSnapAt))))
+      );
+      const threshChanged = Boolean(
+        (!isFollowingDefaultFlag || raw.custom_math_override === true)
+        && (raw.ot_threshold_min != null || raw.custom_math_override === true)
+        && stOtThresh !== coOtThresh
+      );
+      const mathDiff = Boolean(hasMathOverrideFlag || snapChanged || threshChanged);
+
+      if (!shiftDiff && !policyDiff && !mathDiff) return;
+
+      const reasons = [];
+      const details = [];
+      if (shiftDiff) {
+        reasons.push('shift');
+        if (rawShiftNorm === 'custom') {
+          details.push(`${raw.custom_name || 'Custom'} ${raw.custom_start || '08:00'}-${raw.custom_end || '16:00'}`);
+        } else if (hasShiftIdDiff) {
+          const stObj = shiftById.get(rawShiftNorm);
+          details.push((stObj && (stObj.short || stObj.name)) || rawShiftRaw);
+        } else if (hasShiftOvDates) {
+          details.push(`${raw.shift_overrides.length} date ov`);
+        } else {
+          details.push('Custom timing');
+        }
+      }
+      if (policyDiff) {
+        reasons.push('policy');
+        if (hasGrpDiff) {
+          const pgObj = polById.get(rawPolNorm);
+          details.push((pgObj && pgObj.name) || raw.policy_group_id);
+        } else if (hasPolTimeline) {
+          details.push(`${raw.policy_timeline.length} timeline`);
+        } else {
+          details.push('Custom policy');
+        }
+      }
+      if (mathDiff) {
+        reasons.push('math');
+        const snapTag = stSnapMode !== 'exact' ? formatOtSnapShort(stSnapMode, stBlockMin, stSnapAt, true) : 'Exact';
+        details.push(`${snapTag} / OT >=${stOtThresh}m`);
+      }
+
+      overrides.push({
+        name: s.name,
+        role: s.role || '',
+        company: co,
+        reasons,
+        detailText: details.join(' · ')
+      });
+    });
+
+    if (overrides.length > 1) {
+      const staffFreqMap = getFreqIndex().staff;
+      const punchFreqMap = new Map();
+      (STATE.kioskPunches || []).forEach(p => {
+        if (p && !p.voided && p.staff) {
+          const pk = norm(p.staff);
+          if (pk) punchFreqMap.set(pk, (punchFreqMap.get(pk) || 0) + 1);
+        }
+      });
+      overrides.sort((a, b) => {
+        const ka = norm(a.name), kb = norm(b.name);
+        const fa = (punchFreqMap.get(ka) || 0) * 5 + (staffFreqMap ? (staffFreqMap.get(ka) || 0) : 0);
+        const fb = (punchFreqMap.get(kb) || 0) * 5 + (staffFreqMap ? (staffFreqMap.get(kb) || 0) : 0);
+        return fb - fa;
+      });
+    }
+
+    return {
+      company: co,
+      totalActive: activeDir.length,
+      inheritedCount: Math.max(0, activeDir.length - overrides.length),
+      overrideCount: overrides.length,
+      overrides,
+      baseline
+    };
+  }
+
+  function resetCompanyStaffOverrides(coRaw, staffNames = null, opts = {}) {
+    const co = canonCompany(String(coRaw || '').trim()) || String(coRaw || '').trim() || 'WTC';
+    const viewerAllowedCos = allowedCompanyNames(activeUser());
+    if (viewerAllowedCos.length && !viewerAllowedCos.includes(co)) {
+      return { ok: false, error: 'You do not have rights for this company' };
+    }
+    if (STATE.kioskLocked) {
+      return { ok: false, error: 'Unlock Station (PIN) before resetting overrides' };
+    }
+    if (!canEditShiftsAndRules(null, co)) {
+      return { ok: false, error: 'You do not have rights to reset work rules for this company' };
+    }
+    const diff = computeCompanyAttendanceOverrideDiff(co);
+    const reqSet = Array.isArray(staffNames) && staffNames.length
+      ? new Set(staffNames.map(x => norm(x)).filter(Boolean))
+      : null;
+    const targets = diff.overrides.filter(o => !reqSet || reqSet.has(norm(o.name)));
+    if (!targets.length) {
+      return { ok: true, company: co, count: 0, resetNames: [], updatedRows: 0, skippedClosed: 0, skippedManual: 0 };
+    }
+    _TIME24_WS_REV++;
+    const ws = ensureWorkSchedulesState();
+    const nowIso = new Date().toISOString();
+    const today = todayISO();
+    const resolvedCoPol = resolveCompanyDefaultPolicyGroupAtDate(co, today);
+    const resetNames = [];
+    const cloudMutations = [];
+    targets.forEach(item => {
+      const entry = getStaffRuleEntry(item.name, co);
+      const k = entry.key;
+      const tomb = { staff: item.name, company: co, reset_default: true, updated_at: nowIso };
+      ws.staffRules[k] = tomb;
+      cloudMutations.push({ key: k, item: tomb });
+      syncStaffContractPolicyFields(item.name, co, resolvedCoPol, { deferSave: true });
+      recalcStaffTodayPunchAndAttendance(item.name);
+      resetNames.push(item.name);
+    });
+    const defaultFromDate = `${today.slice(0, 7)}-01`;
+    const fromDate = opts.fromDate && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.fromDate).slice(0, 10))
+      ? String(opts.fromDate).slice(0, 10)
+      : defaultFromDate;
+    const bfRes = opts.skipBackfill
+      ? { updatedRows: 0, skippedClosed: 0, skippedManual: 0 }
+      : backfillAttendancePolicyChange({ company: co, staffNames: resetNames, fromDate, deferSave: true });
+    saveLocalAuthAndRecords();
+    cloudMutations.forEach(m => postWorkScheduleMutation({ op: 'upsert_staff_rule', key: m.key, item: m.item }));
+    syncWithCloud(true);
+    return {
+      ok: true,
+      company: co,
+      count: resetNames.length,
+      resetNames,
+      updatedRows: Number(bfRes.updatedRows || 0),
+      skippedClosed: Number(bfRes.skippedClosed || 0),
+      skippedManual: Number(bfRes.skippedManual || 0)
+    };
+  }
+
+  function closeCoOverrideDiffPopover() {
+    const pop = $('coOverrideDiffPopover');
+    if (pop) {
+      pop.hidden = true;
+      pop.innerHTML = '';
+    }
+    document.querySelectorAll('[data-co-override-diff]').forEach(btn => btn.setAttribute('aria-expanded', 'false'));
+    _CO_OV_POP_STATE = { open: false, company: '', triggerEl: null };
+  }
+
+  function positionCoOverrideDiffPopover(pop, triggerEl) {
+    if (!pop || !triggerEl || !triggerEl.getBoundingClientRect) return;
+    const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 800;
+    const rect = triggerEl.getBoundingClientRect();
+    const popRect = pop.getBoundingClientRect();
+    const pw = popRect.width || Math.min(460, vw - 16);
+    const ph = popRect.height || 320;
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+    let left = isRtl ? (rect.right - pw) : rect.left;
+    if (left + pw > vw - 8) left = vw - pw - 8;
+    if (left < 8) left = 8;
+    let top = rect.bottom + 6;
+    if (top + ph > vh - 8 && rect.top - ph - 6 >= 8) {
+      top = rect.top - ph - 6;
+    }
+    if (top + ph > vh - 8) top = Math.max(8, vh - ph - 8);
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
+  }
+
+  function renderCoOverrideDiffPopoverContent(coRaw) {
+    const pop = $('coOverrideDiffPopover');
+    if (!pop) return;
+    const diff = computeCompanyAttendanceOverrideDiff(coRaw);
+    const canWrite = canEditShiftsAndRules(null, diff.company) && !STATE.kioskLocked;
+    const ovLbl = diff.overrideCount === 1 ? 'Override' : 'Overrides';
+    const base = diff.baseline || {};
+    const reasonBadgeHtml = r => {
+      if (r === 'shift') return '<span class="co-ov-tag is-shift">Shift</span>';
+      if (r === 'policy') return '<span class="co-ov-tag is-policy">Policy Group</span>';
+      return '<span class="co-ov-tag is-math">OT Snap / Block</span>';
+    };
+    pop.innerHTML = `
+      <div class="co-ov-head">
+        <div class="co-ov-head-meta">
+          <div class="co-ov-title" id="coOvPopTitle">${coBadge(diff.company)} <span>Company vs. Staff Diff</span></div>
+          <div class="co-ov-sub">
+            <b class="mono">${fmtNum(diff.inheritedCount)}/${fmtNum(diff.totalActive)}</b> <span>Default</span>
+            <span aria-hidden="true">·</span>
+            <b class="mono">${fmtNum(diff.overrideCount)}</b> <span>${esc(ovLbl)}</span>
+          </div>
+        </div>
+        <button type="button" class="co-ov-close" id="coOvPopCloseBtn" aria-label="Close">✕</button>
+      </div>
+      ${base.shiftLabel ? `
+        <div class="co-ov-baseline">
+          <span class="co-ov-base-lbl">Default</span>
+          <span class="co-ov-base-val mono" data-no-i18n="1">${esc(base.shiftLabel)} · ${esc(base.policyGroupLabel)} · ${esc(base.otSnapLabel)} · OT &gt;=${fmtNum(base.otThreshMin)}m</span>
+        </div>
+      ` : ''}
+      <div class="co-ov-body">
+        ${diff.overrides.length ? `
+          <div class="co-ov-list">
+            ${diff.overrides.map(item => `
+              <div class="co-ov-row" data-co-ov-staff="${esc(item.name)}">
+                <div class="co-ov-row-info">
+                  <div class="co-ov-staff-name"><strong data-no-i18n="1">${esc(item.name)}</strong>${item.role ? ` <span class="co-ov-staff-role" data-no-i18n="1">${esc(item.role)}</span>` : ''}</div>
+                  <div class="co-ov-tags">${item.reasons.map(reasonBadgeHtml).join('')}<span class="co-ov-detail mono" data-no-i18n="1">${esc(item.detailText)}</span></div>
+                </div>
+                <div class="co-ov-row-actions">
+                  <button type="button" class="btn kiosk-mini-btn" data-co-ov-inspect="${esc(item.name)}" data-co-ov-co="${esc(diff.company)}">Inspect</button>
+                  <button type="button" class="btn kiosk-mini-btn is-reset" data-co-ov-reset-staff="${esc(item.name)}" data-co-ov-co="${esc(diff.company)}"${canWrite ? '' : ' disabled'}>Reset</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : `
+          <div class="co-ov-empty">
+            <span class="co-ov-empty-dot" aria-hidden="true">✓</span>
+            <span>All active staff follow company default</span>
+          </div>
+        `}
+      </div>
+      ${diff.overrides.length ? `
+        <div class="co-ov-foot">
+          <span class="co-ov-foot-hint">Preserves closed months &amp; manual edits</span>
+          <button type="button" class="btn kiosk-mini-btn is-danger-arm" id="coOvResetAllBtn" data-co-ov-reset-all="${esc(diff.company)}"${canWrite ? '' : ' disabled'}>Reset All</button>
+        </div>
+      ` : ''}
+    `;
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(pop);
+    }
+  }
+
+  function openCoOverrideDiffPopover(triggerEl, coRaw) {
+    const co = canonCompany(String(coRaw || '').trim()) || String(coRaw || '').trim() || 'WTC';
+    const pop = $('coOverrideDiffPopover');
+    if (!pop) return;
+    if (_CO_OV_POP_STATE.open && norm(_CO_OV_POP_STATE.company) === norm(co) && _CO_OV_POP_STATE.triggerEl === triggerEl && !pop.hidden) {
+      closeCoOverrideDiffPopover();
+      return;
+    }
+    document.querySelectorAll('[data-co-override-diff]').forEach(btn => btn.setAttribute('aria-expanded', btn === triggerEl ? 'true' : 'false'));
+    _CO_OV_POP_STATE = { open: true, company: co, triggerEl: triggerEl || null };
+    pop.hidden = false;
+    renderCoOverrideDiffPopoverContent(co);
+    positionCoOverrideDiffPopover(pop, triggerEl);
+  }
+
+  (function bindCoOverrideDiffPopoverEvents() {
+    if (window.__ISABI_CO_OV_BOUND) return;
+    window.__ISABI_CO_OV_BOUND = true;
+    const afterCoOverrideResetUI = co => {
+      const m = $('staffScheduleModal');
+      if (m && !m.hidden && typeof m._isabiSsmRefresh === 'function') {
+        m._isabiSsmRefresh();
+      } else if (STATE.view === 'payroll_attendance' || STATE.view === 'kiosks') {
+        if (typeof refreshPayrollPolicySectionInPlace === 'function') refreshPayrollPolicySectionInPlace();
+        else renderApp();
+      } else {
+        renderApp();
+      }
+      const pop = $('coOverrideDiffPopover');
+      if (pop && !pop.hidden) {
+        renderCoOverrideDiffPopoverContent(co);
+      }
+    };
+    document.addEventListener('click', ev => {
+      const t = ev.target;
+      if (!(t instanceof Element)) return;
+      const diffBtn = t.closest('[data-co-override-diff]');
+      if (diffBtn) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openCoOverrideDiffPopover(diffBtn, diffBtn.getAttribute('data-co-override-diff') || '');
+        return;
+      }
+      const pop = $('coOverrideDiffPopover');
+      if (!pop || pop.hidden) return;
+      if (t.closest('#coOvPopCloseBtn')) {
+        ev.preventDefault();
+        closeCoOverrideDiffPopover();
+        return;
+      }
+      const inspectBtn = t.closest('[data-co-ov-inspect]');
+      if (inspectBtn && pop.contains(inspectBtn)) {
+        ev.preventDefault();
+        const stf = inspectBtn.getAttribute('data-co-ov-inspect') || '';
+        const co = inspectBtn.getAttribute('data-co-ov-co') || _CO_OV_POP_STATE.company;
+        closeCoOverrideDiffPopover();
+        if (stf) openStaffScheduleModal(stf, { company: co });
+        return;
+      }
+      const resetOneBtn = t.closest('[data-co-ov-reset-staff]');
+      if (resetOneBtn && pop.contains(resetOneBtn)) {
+        ev.preventDefault();
+        if (resetOneBtn.disabled) return;
+        const stf = resetOneBtn.getAttribute('data-co-ov-reset-staff') || '';
+        const co = resetOneBtn.getAttribute('data-co-ov-co') || _CO_OV_POP_STATE.company;
+        const res = resetCompanyStaffOverrides(co, [stf]);
+        if (res && res.ok) {
+          afterCoOverrideResetUI(co);
+          toast(`${wsUiT('Reset to company default')}: ${stf}${res.updatedRows ? ` (${fmtNum(res.updatedRows)} rows)` : ''}`, 'ok');
+        } else {
+          toast(wsUiT((res && res.error) || 'Could not reset override'), 'warn');
+        }
+        return;
+      }
+      const resetAllBtn = t.closest('#coOvResetAllBtn');
+      if (resetAllBtn && pop.contains(resetAllBtn)) {
+        ev.preventDefault();
+        if (resetAllBtn.disabled) return;
+        if (resetAllBtn.getAttribute('data-armed') !== '1') {
+          resetAllBtn.setAttribute('data-armed', '1');
+          resetAllBtn.classList.add('is-armed');
+          resetAllBtn.textContent = wsUiT('Click Again to Reset All');
+          clearTimeout(resetAllBtn._armT);
+          resetAllBtn._armT = setTimeout(() => {
+            if (!resetAllBtn.isConnected) return;
+            resetAllBtn.removeAttribute('data-armed');
+            resetAllBtn.classList.remove('is-armed');
+            resetAllBtn.textContent = wsUiT('Reset All');
+          }, 5000);
+          return;
+        }
+        clearTimeout(resetAllBtn._armT);
+        const co = resetAllBtn.getAttribute('data-co-ov-reset-all') || _CO_OV_POP_STATE.company;
+        const res = resetCompanyStaffOverrides(co, null);
+        if (res && res.ok) {
+          const skipTotal = (res.skippedClosed || 0) + (res.skippedManual || 0);
+          const skipPart = skipTotal ? ` · ${fmtNum(skipTotal)} preserved` : '';
+          afterCoOverrideResetUI(co);
+          if (computeCompanyAttendanceOverrideDiff(co).overrideCount === 0) {
+            closeCoOverrideDiffPopover();
+          }
+          toast(`${wsUiT('Reset to company default')}: ${fmtNum(res.count)} staff${skipPart}`, 'ok');
+        } else {
+          toast(wsUiT((res && res.error) || 'Could not reset overrides'), 'warn');
+        }
+        return;
+      }
+      if (!pop.contains(t)) {
+        closeCoOverrideDiffPopover();
+      }
+    });
+    document.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape' && _CO_OV_POP_STATE.open) {
+        closeCoOverrideDiffPopover();
+      }
+    });
+    window.addEventListener('resize', () => {
+      const pop = $('coOverrideDiffPopover');
+      if (pop && !pop.hidden && _CO_OV_POP_STATE.triggerEl) {
+        positionCoOverrideDiffPopover(pop, _CO_OV_POP_STATE.triggerEl);
+      }
+    });
+  })();
+
   function renderCompanyAttendanceDefaultsCardHtml(coName, opts = {}) {
     const bu = String(coName || 'WTC').trim() || 'WTC';
     const attrPrefix = opts.attrPrefix === 'ssm' ? 'ssm' : 'pay';
@@ -129721,12 +130454,21 @@
         }).join('')}
       </div>
     ` : '';
+    const diffSummary = computeCompanyAttendanceOverrideDiff(bu);
+    const diffOvLbl = diffSummary.overrideCount === 1 ? 'Override' : 'Overrides';
+    const diffTip = diffSummary.overrideCount > 0
+      ? 'Review or reset individual staff overrides'
+      : 'All active staff follow company default';
+    const isOvPopOpen = Boolean(_CO_OV_POP_STATE && _CO_OV_POP_STATE.open && norm(_CO_OV_POP_STATE.company) === norm(bu));
     return `
       <div class="att-co-defaults-card" data-co-def-card="${esc(bu)}" data-co-def-prefix="${esc(buAttr)}">
         <div class="att-co-defaults-intro">
           ${coBadge(bu)}
           <div class="att-co-defaults-meta">
-            <strong>${esc(cardTitle)}</strong>
+            <div class="att-co-defaults-title-row">
+              <strong>${esc(cardTitle)}</strong>
+              <button type="button" class="att-co-override-badge ${diffSummary.overrideCount > 0 ? 'has-overrides' : 'is-clean'}" data-co-override-diff="${esc(bu)}" data-co-ov-prefix="${esc(buAttr)}" aria-haspopup="dialog" aria-expanded="${isOvPopOpen ? 'true' : 'false'}" data-ui-tip="${esc(diffTip)}"><span class="att-co-ov-main"><b class="mono">${fmtNum(diffSummary.inheritedCount)}/${fmtNum(diffSummary.totalActive)}</b> <span>Default</span></span><span class="att-co-ov-sep" aria-hidden="true">·</span><span class="att-co-ov-exc"><b class="mono">${fmtNum(diffSummary.overrideCount)}</b> <span>${esc(diffOvLbl)}</span></span></button>
+            </div>
             <span class="att-co-defaults-sub">Inherited by staff without an individual override</span>
           </div>
         </div>
@@ -130382,7 +131124,7 @@
     let backfilledStaff = 0;
     const affectedStaffNames = [];
     if (opts.backfill !== false && grpObj) {
-      const allStaff = getKioskStaffDirectory({ includeEnded: true });
+      const allStaff = getKioskStaffDirectory({ includeEnded: true, lite: true });
       allStaff.forEach(s => {
         if (norm(s.company || '') !== coKey) return;
         const raw = getStaffRuleEntry(s.name, s.company).raw || null;
@@ -130768,7 +131510,7 @@
     const spanEndToday = effTo
       ? ((effFrom && effFrom > today) || spec.includeFutureBackfill ? effTo : (effTo < today ? effTo : today))
       : ((effFrom && effFrom > today) ? '9999-12-31' : today);
-    const allStaff = getKioskStaffDirectory({ includeEnded: true });
+    const allStaff = getKioskStaffDirectory({ includeEnded: true, lite: true });
     allStaff.forEach(s => {
       const sCoN = norm(s.company || '');
       const curRule = getStaffWorkRule(s.name, s.company);
@@ -130932,7 +131674,7 @@
       }
     }
     if (!_POLICY_SIM_SANDBOX) {
-      saveLocalAuthAndRecords();
+      if (!spec.deferSave) saveLocalAuthAndRecords();
       if (!spec.deferSync) {
         postWorkScheduleMutation({ op: 'upsert_policy_group', item: normalized });
         revertedDefaultCos.forEach(coKey => {
@@ -130978,7 +131720,7 @@
     ws.policyGroups[idx] = Object.assign({}, ws.policyGroups[idx], { voided: true, updated_at: nowIso });
     const revertedOnDeleteCos = _revertCompanyPolicyDefaultsForGroup(ws, id, nowIso, todayISO(), '');
     const touchedKeys = new Set();
-    getKioskStaffDirectory({ includeEnded: true }).forEach(s => {
+    getKioskStaffDirectory({ includeEnded: true, lite: true }).forEach(s => {
       const curRule = getStaffWorkRule(s.name, s.company);
       if (curRule.policy_group_id === id) {
         touchedKeys.add(norm(staffRuleKey(s.name, s.company)));
@@ -131038,7 +131780,7 @@
       }
     });
     syncWithCloud(true);
-    return { ok: true };
+    return { ok: true, touchedCount: touchedKeys.size };
   }
 
   function resolveStaffPolicyForDate(staffName, company, dateStr) {
@@ -132700,7 +133442,9 @@
       });
     }
 
-    detected.sort((a, b) => (b.effDate !== a.effDate ? b.effDate.localeCompare(a.effDate) : String(b.id).localeCompare(String(a.id))));
+    if (!spec.countOnly) {
+      detected.sort((a, b) => (b.effDate !== a.effDate ? b.effDate.localeCompare(a.effDate) : String(b.id).localeCompare(String(a.id))));
+    }
     const migratableRows = detected.filter(r => !r.isProtected);
     const deltaRows = migratableRows.filter(r => r.hasDelta);
     const protectedRows = detected.filter(r => r.isProtected);
@@ -137430,8 +138174,9 @@
       : null;
     const includeEnded = opts.includeEnded != null ? Boolean(opts.includeEnded) : !opts.activeOnly;
     const statusFilter = String(opts.statusFilter || 'all').toLowerCase();
+    const lite = Boolean(opts && opts.lite);
     const today = todayISO();
-    const bioMap = (STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') ? STATE.staffBiometrics : {};
+    const bioMap = (!lite && STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') ? STATE.staffBiometrics : {};
 
     const humanUsersByNorm = new Map();
     (STATE.users || []).forEach(u => {
@@ -137440,13 +138185,17 @@
       const k = norm(nm);
       if (!k) return;
       if (!humanUsersByNorm.has(k)) humanUsersByNorm.set(k, u);
-      const up = String(u.pin_code || '').trim();
-      if (/^\d{4}$/.test(up)) usedPins.add(up);
+      if (!lite) {
+        const up = String(u.pin_code || '').trim();
+        if (/^\d{4}$/.test(up)) usedPins.add(up);
+      }
     });
-    Object.values(bioMap).forEach(b => {
-      const bp = String((b && b.pin_code) || '').trim();
-      if (/^\d{4}$/.test(bp)) usedPins.add(bp);
-    });
+    if (!lite) {
+      Object.values(bioMap).forEach(b => {
+        const bp = String((b && b.pin_code) || '').trim();
+        if (/^\d{4}$/.test(bp)) usedPins.add(bp);
+      });
+    }
 
     const makeDemoPin = k => {
       let h = 0;
@@ -137467,7 +138216,7 @@
     const endedEmpsMap = new Map();
     allEmpRecords.forEach(emp => {
       if (!emp || emp.voided) return;
-      if (activeInd === 'Manufacturing' && emp._multiIndustrySeed) return;
+      if (activeInd === 'Manufacturing' && !opts.companyOverride && emp._multiIndustrySeed) return;
       const nm = String(emp.staff || emp.name || '').trim();
       const k = norm(nm);
       if (!k || nm === '(Unassigned)') return;
@@ -137584,6 +138333,19 @@
       const ck = dirCoKey(co, k);
       if (seen.has(ck)) return;
       seen.add(ck);
+      if (lite) {
+        out.push({
+          id: u.id,
+          name: nm,
+          company: co,
+          role: matchingEmp ? (matchingEmp.emp.role || matchingEmp.emp.type || u.role || 'Staff') : (u.role || 'Management'),
+          hasActiveContract: true,
+          isEndedContract: false,
+          contractStatus: 'Active',
+          userObj: u
+        });
+        return;
+      }
       const bio = bioMap[k] || null;
       const explicitPin = String((bio && bio.pin_code) || u.pin_code || '').trim();
       const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
@@ -137616,63 +138378,100 @@
     });
 
     // 3. Remaining Active Contract Employees ($0 ERP login seat required)
-    const staffFreqMap = getFreqIndex().staff;
-    const punchFreqMap = new Map();
-    (STATE.kioskPunches || []).forEach(p => {
-      if (p && !p.voided && p.staff) {
-        const pk = norm(p.staff);
-        if (pk) punchFreqMap.set(pk, (punchFreqMap.get(pk) || 0) + 1);
-      }
-    });
-    const sortByFreq = (a, b) => {
-      const fa = (punchFreqMap.get(a.k) || 0) * 5 + (staffFreqMap ? (staffFreqMap.get(a.k) || 0) : 0);
-      const fb = (punchFreqMap.get(b.k) || 0) * 5 + (staffFreqMap ? (staffFreqMap.get(b.k) || 0) : 0);
-      return fb - fa;
-    };
-    activeEmps
-      .slice()
-      .sort(sortByFreq)
-      .forEach(({ emp, nm, k, ck, empCo }) => {
+    let sortByFreq = null;
+    if (!lite) {
+      const staffFreqMap = getFreqIndex().staff;
+      const punchFreqMap = new Map();
+      (STATE.kioskPunches || []).forEach(p => {
+        if (p && !p.voided && p.staff) {
+          const pk = norm(p.staff);
+          if (pk) punchFreqMap.set(pk, (punchFreqMap.get(pk) || 0) + 1);
+        }
+      });
+      sortByFreq = (a, b) => {
+        const fa = (punchFreqMap.get(a.k) || 0) * 5 + (staffFreqMap ? (staffFreqMap.get(a.k) || 0) : 0);
+        const fb = (punchFreqMap.get(b.k) || 0) * 5 + (staffFreqMap ? (staffFreqMap.get(b.k) || 0) : 0);
+        return fb - fa;
+      };
+    }
+    if (lite) {
+      activeEmps.forEach(({ emp, nm, k, ck, empCo }) => {
         if (seen.has(ck)) return;
         seen.add(ck);
-        const u = humanUsersByNorm.get(k) || null;
-        const sm = resolveStaffMember(nm, empCo);
-        const bio = bioMap[k] || null;
-        const explicitPin = String((bio && bio.pin_code) || (u && u.pin_code) || '').trim();
-        const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
-        const shiftToday = resolveStaffShiftForDate(nm, empCo, today);
-        const otToday = describeStaffOvertimeRule(nm, empCo, today);
-        const lateToday = describeStaffLatenessRule(nm, empCo, today);
-        const policyToday = describeStaffPolicyGroup(nm, empCo);
         out.push({
           id: emp.id || ('emp-' + k),
           name: nm,
-          fatherName: getStaffFatherName(nm, empCo) || cleanFatherName(emp.father_name || ''),
-          email: u ? (u.email || '') : '',
           company: empCo,
-          role: emp.role || (sm && sm.role) || emp.type || 'Active Staff',
-          schedHours: shiftToday.hours || Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo),
-          shift: shiftToday,
-          otDesc: otToday,
-          lateDesc: lateToday,
-          policyDesc: policyToday,
-          pin: explicitPin || (IS_DEMO ? makeDemoPin(k) : ''),
-          hasExplicitPin: Boolean(explicitPin),
-          hasFace: faceInfo.samples.length > 0,
-          faceCount: faceInfo.samples.length,
+          role: emp.role || emp.type || 'Active Staff',
           hasActiveContract: true,
           isEndedContract: false,
           contractStatus: 'Active',
-          endDate: emp.end_date || '',
-          userObj: u
+          userObj: humanUsersByNorm.get(k) || null
         });
       });
+    } else {
+      activeEmps
+        .slice()
+        .sort(sortByFreq)
+        .forEach(({ emp, nm, k, ck, empCo }) => {
+          if (seen.has(ck)) return;
+          seen.add(ck);
+          const u = humanUsersByNorm.get(k) || null;
+          const sm = resolveStaffMember(nm, empCo);
+          const bio = bioMap[k] || null;
+          const explicitPin = String((bio && bio.pin_code) || (u && u.pin_code) || '').trim();
+          const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
+          const shiftToday = resolveStaffShiftForDate(nm, empCo, today);
+          const otToday = describeStaffOvertimeRule(nm, empCo, today);
+          const lateToday = describeStaffLatenessRule(nm, empCo, today);
+          const policyToday = describeStaffPolicyGroup(nm, empCo);
+          out.push({
+            id: emp.id || ('emp-' + k),
+            name: nm,
+            fatherName: getStaffFatherName(nm, empCo) || cleanFatherName(emp.father_name || ''),
+            email: u ? (u.email || '') : '',
+            company: empCo,
+            role: emp.role || (sm && sm.role) || emp.type || 'Active Staff',
+            schedHours: shiftToday.hours || Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo),
+            shift: shiftToday,
+            otDesc: otToday,
+            lateDesc: lateToday,
+            policyDesc: policyToday,
+            pin: explicitPin || (IS_DEMO ? makeDemoPin(k) : ''),
+            hasExplicitPin: Boolean(explicitPin),
+            hasFace: faceInfo.samples.length > 0,
+            faceCount: faceInfo.samples.length,
+            hasActiveContract: true,
+            isEndedContract: false,
+            contractStatus: 'Active',
+            endDate: emp.end_date || '',
+            userObj: u
+          });
+        });
+    }
 
     // 4. Ended / Inactive Contract Employees (when includeEnded is enabled)
     if (includeEnded && endedEmpsMap.size > 0) {
-      Array.from(endedEmpsMap.values())
-        .sort(sortByFreq)
-        .forEach(({ emp, nm, k, ck, empCo }) => {
+      const endedList = Array.from(endedEmpsMap.values());
+      if (lite) {
+        endedList.forEach(({ emp, nm, k, ck, empCo }) => {
+          if (seen.has(ck)) return;
+          seen.add(ck);
+          out.push({
+            id: emp.id || ('emp-ended-' + k),
+            name: nm,
+            company: empCo,
+            role: emp.role || emp.type || 'Staff',
+            hasActiveContract: false,
+            isEndedContract: true,
+            contractStatus: emp.status || 'Ended',
+            userObj: humanUsersByNorm.get(k) || null
+          });
+        });
+      } else {
+        endedList
+          .sort(sortByFreq)
+          .forEach(({ emp, nm, k, ck, empCo }) => {
           if (seen.has(ck)) return;
           seen.add(ck);
           const u = humanUsersByNorm.get(k) || null;
@@ -137707,6 +138506,7 @@
             userObj: u
           });
         });
+      }
     }
 
     if (statusFilter === 'active') return out.filter(s => !s.isEndedContract);
@@ -143042,6 +143842,7 @@
   }
 
   function closeStaffScheduleModal() {
+    closeCoOverrideDiffPopover();
     if (STATE.kioskCoEffOpen) {
       Object.keys(STATE.kioskCoEffOpen).forEach(k => { if (k.startsWith('ssm-bu:')) delete STATE.kioskCoEffOpen[k]; });
     }
@@ -144935,6 +145736,7 @@
         }
         renderModalInner();
       };
+      modal._isabiSsmRefresh = renderModalInner;
       modal.querySelectorAll('#ssmBuDefaultBar [data-edit-shift-type]').forEach(btn => {
         btn.addEventListener('click', e => {
           e.stopPropagation();
@@ -145714,7 +146516,8 @@
           if (hr && hr.ok === false) toast(hr.error || 'Could not save the holiday setting', 'warn');
         }
         const bfCnt = saveRes && saveRes.attBackfill ? Number(saveRes.attBackfill.updatedRows || 0) : 0;
-        const ssmRemLeg = detectLegacyTenthHourBackfill({ company: entry.company, staffNames: [entry.name] });
+        const ssmRemLeg = detectLegacyTenthHourBackfill({ company: entry.company, staffNames: [entry.name], countOnly: true });
+        closeStaffScheduleModal();
         toast(
           `Saved shift, policy & perks group, multipliers & rules for ${entry.name}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`,
           'ok',
@@ -145722,7 +146525,6 @@
             ? { actionLabel: `Review ${ssmRemLeg.migratableCount} Legacy 0.1h`, onAction: () => openBackfillModal({ company: entry.company, staffNames: [entry.name], filter: 'tenth_hour' }) }
             : undefined
         );
-        closeStaffScheduleModal();
       });
 
       wireModalSuggestions(modal);
@@ -149844,7 +150646,7 @@
       const snapStr = snapPatch.ot_snap_mode !== 'exact'
         ? `, ${formatOtSnapShort(snapPatch.ot_snap_mode, snapPatch.ot_block_min, snapPatch.ot_snap_at_min, true)}`
         : '';
-      const coRemLeg = detectLegacyTenthHourBackfill({ company: bu });
+      const coRemLeg = detectLegacyTenthHourBackfill({ company: bu, countOnly: true });
       toast(
         `Set "${res.group.name}" ($/min, OT ≥${nextThresh}m${snapStr}) for ${bu}${effStr}${res.backfilledStaff ? ` · ${res.backfilledStaff} staff` : ''}${logStr}`,
         'ok',
@@ -149976,7 +150778,7 @@
       const extraPerks = draftPerks.filter(p => p && !knownIds.has(p));
       const perkItems = AVAILABLE_STAFF_PERKS.concat(extraPerks.map(p => ({ id: p, label: p, icon: 'check_circle' })));
       const assignedStaff = existing
-        ? getKioskStaffDirectory({ includeEnded: true }).filter(s => getStaffWorkRule(s.name, s.company).policy_group_id === existing.id)
+        ? getKioskStaffDirectory({ includeEnded: true, lite: true }).filter(s => getStaffWorkRule(s.name, s.company).policy_group_id === existing.id)
         : [];
       const assignedCnt = assignedStaff.length;
       const showDollars = canViewPayrollDollarAmounts();
@@ -150612,10 +151414,14 @@
         if (isRo || !existing) return;
         const r = deletePolicyGroup(existing.id);
         if (r.ok) {
-          toast(`Deleted policy group ${existing.name}`, 'ok');
           closePolicyGroupModal();
-          if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
+          if (STATE.view === 'payroll_attendance' && STATE.payrollPolicyOpen && !r.touchedCount) {
+            refreshPayrollPolicySectionInPlace();
+          } else if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') {
+            renderApp();
+          }
           if (typeof onSaved === 'function') onSaved(null);
+          toast(`Deleted policy group ${existing.name}`, 'ok');
         } else {
           toast(r.error || 'Cannot delete group', 'warn');
         }
@@ -150681,6 +151487,7 @@
           version_id: draftEditingVersionId || undefined,
           version_note: draftVersionNote,
           backfill: draftBackfill,
+          deferSave: willUpdateCoDefault,
           deferSync: willUpdateCoDefault
         };
         if (draftVersionsEdited) savePayload.versions = draftVersions;
@@ -150705,15 +151512,24 @@
             defUpdateRes = setCompanyDefaultPolicyGroup(targetDefCo, fbId, coDefOpts);
           }
           if (willUpdateCoDefault && (!defUpdateRes || !defUpdateRes.ok)) {
+            saveLocalAuthAndRecords();
             postWorkScheduleMutation({ op: 'upsert_policy_group', item: res.policyGroup });
             syncWithCloud(true);
           }
           const attBfCount = res.attBackfill ? Number(res.attBackfill.updatedRows || 0) : 0;
+          const defBfCount = defUpdateRes && defUpdateRes.attBackfill ? Number(defUpdateRes.attBackfill.updatedRows || 0) : 0;
           const pgScopeCo = (willSetCoDef && targetDefCo) ? targetDefCo : (draftCompany !== 'All Companies' ? draftCompany : '');
-          const pgStaffNames = getKioskStaffDirectory({ includeEnded: true })
+          const pgStaffNames = getKioskStaffDirectory({ includeEnded: true, lite: true })
             .filter(s => getStaffWorkRule(s.name, s.company).policy_group_id === res.policyGroup.id)
             .map(s => s.name);
-          const pgRemLeg = detectLegacyTenthHourBackfill({ company: pgScopeCo, staffNames: pgStaffNames.length ? pgStaffNames : null });
+          const pgRemLeg = detectLegacyTenthHourBackfill({ company: pgScopeCo, staffNames: pgStaffNames.length ? pgStaffNames : null, countOnly: true });
+          closePolicyGroupModal();
+          if (STATE.view === 'payroll_attendance' && STATE.payrollPolicyOpen && (attBfCount + defBfCount) === 0) {
+            refreshPayrollPolicySectionInPlace();
+          } else if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') {
+            renderApp();
+          }
+          if (typeof onSaved === 'function') onSaved(res.policyGroup);
           toast(
             `Saved group "${res.policyGroup.name}" (${res.policyGroup.summaryText})${willSetCoDef ? ` · Default for ${targetDefCo}` : ''}${res.backfilledStaff ? ` · Backfilled ${res.backfilledStaff} staff` : ''}${attBfCount ? ` · Recalculated ${attBfCount} logs` : ''}`,
             'ok',
@@ -150721,9 +151537,6 @@
               ? { actionLabel: `Review ${pgRemLeg.migratableCount} Legacy 0.1h`, onAction: () => openBackfillModal({ company: pgScopeCo, staffNames: pgStaffNames.length ? pgStaffNames : null, filter: 'tenth_hour' }) }
               : undefined
           );
-          closePolicyGroupModal();
-          if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
-          if (typeof onSaved === 'function') onSaved(res.policyGroup);
         } else {
           toast(res.error || 'Could not save group', 'err');
         }
@@ -150944,13 +151757,49 @@
       if (togglePayPolBtn) {
         togglePayPolBtn.classList.toggle('btn-primary', Boolean(STATE.payrollPolicyOpen));
         togglePayPolBtn.classList.toggle('btn-ghost-bar', !STATE.payrollPolicyOpen);
+        togglePayPolBtn.innerHTML = `${ic('clock')} ${STATE.payrollPolicyOpen ? 'Hide Shifts &amp; Policies' : 'Shifts, Policies &amp; Face ID'}`;
+        if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+          window.MFG_I18N.translateDom(togglePayPolBtn);
+        }
+      }
+      const shiftPanel = $('payShiftTimingsPanel');
+      if (shiftPanel) {
+        const activeBuList = getActiveIndustryBuList(STATE.company);
+        const phSub = shiftPanel.querySelector('.panel-head .ph-sub');
+        if (phSub) {
+          phSub.textContent = STATE.payrollPolicyOpen
+            ? `Audit trail of dated regular-shift overrides, split hours, and weekday rules (${activeBuList.join(', ')})`
+            : `Company default shift & policy controls (${activeBuList.join(', ')}) plus audit trail of dated timing overrides`;
+          if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+            window.MFG_I18N.translateDom(phSub);
+          }
+        }
+        const existingBuBar = $('payBuDefaultBar');
+        if (STATE.payrollPolicyOpen) {
+          if (existingBuBar) existingBuBar.remove();
+        } else {
+          const barEl = existingBuBar || document.createElement('div');
+          barEl.className = 'att-co-defaults-bar is-panel-bar';
+          barEl.id = 'payBuDefaultBar';
+          barEl.innerHTML = activeBuList.map(bu => renderCompanyAttendanceDefaultsCardHtml(bu, { attrPrefix: 'pay', title: 'Company Defaults' })).join('');
+          if (!existingBuBar) {
+            const headEl = shiftPanel.querySelector('.panel-head');
+            if (headEl && headEl.nextSibling) shiftPanel.insertBefore(barEl, headEl.nextSibling);
+            else shiftPanel.prepend(barEl);
+          }
+          wireAttendancePolicyCard(barEl);
+          if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+            window.MFG_I18N.translateDom(barEl);
+          }
+          stripNativeTitles(barEl);
+        }
       }
       nextSec.querySelectorAll('[data-open-pay-policy]').forEach(btn => {
         btn.addEventListener('click', () => {
           const polTab = btn.getAttribute('data-open-pay-policy') || 'roster';
           STATE.payrollPolicyOpen = true;
           STATE.kioskAttFeedFilter = ['roster', 'lateness', 'schedule', 'onsite', 'all'].includes(polTab) ? polTab : 'roster';
-          renderApp();
+          refreshPayrollPolicySectionInPlace();
           const sec = $('kioskAttFeedCard') || $('payBiometricPolicySection');
           if (sec) scrollWorkspaceTo(sec, 8);
         });
@@ -151380,21 +152229,79 @@
         ${buildPenPodHtml()}
         ${mode === 'roster' ? buildOtPodHtml() : renderTodayPodHtml(false)}
       `;
-      return `
-        <div class="kiosk-late-filter-bar is-compact-bar" id="kioskLateFilterBar">
-          <div class="kiosk-filter-primary-row">
-            ${primaryPods}
-            <div class="kiosk-filter-actions-end">
-              <button type="button" class="kiosk-qchip is-more-btn ${STATE.kioskMoreFiltersOpen ? 'active' : ''}" id="kioskToggleMoreFiltersBtn" aria-expanded="${STATE.kioskMoreFiltersOpen ? 'true' : 'false'}">More Filters${drawerActiveCnt ? ` (${fmtNum(drawerActiveCnt)})` : ''}</button>
-              ${showReset ? `<button type="button" class="kiosk-qchip is-reset-chip" id="kioskClearLateFiltersBtn">✕ Reset Filters</button>` : ''}
-              ${weekNavHtml}
-            </div>
-          </div>
-          <div class="kiosk-more-filters-drawer" id="kioskMoreFiltersDrawer"${STATE.kioskMoreFiltersOpen ? '' : ' hidden'}>
-            ${drawerPods}
-          </div>
-        </div>
-      `;
+      const attDrawerChips = [];
+      if (policyGroupFilter !== 'all') {
+        const pgObj = policyGroupsCatalog.find(g => g.id === policyGroupFilter);
+        attDrawerChips.push({
+          key: 'policy_group',
+          label: 'Policy Group',
+          value: pgObj ? pgObj.name : policyGroupFilter,
+          noI18nValue: !(pgObj && pgObj.isBuiltin)
+        });
+      }
+      if (lateTolFilter !== 'all') {
+        attDrawerChips.push({
+          key: 'late_tol',
+          label: 'Tolerance',
+          value: `${lateTolFilter}m`,
+          noI18nValue: true
+        });
+      }
+      if (lateWhenFilter !== 'all') {
+        const whenLbls = { both: 'IN + OUT', arrival_only: 'IN Only', early_out_only: 'OUT Only', short_hours: 'Shift Hrs' };
+        attDrawerChips.push({
+          key: 'late_when',
+          label: 'When Late',
+          value: whenLbls[lateWhenFilter] || lateWhenFilter
+        });
+      }
+      if (latePenFilter !== 'all') {
+        const penLbls = {
+          no_out_half_day: 'Only IN/OUT = 0.5d',
+          no_out_absent: 'Only IN/OUT = 1d',
+          late_half_day: 'Late = 0.5d',
+          escalated: '1.5x / Steps / Round',
+          exact_hours: 'Exact 1x',
+          none: 'Track $0'
+        };
+        attDrawerChips.push({
+          key: 'late_pen',
+          label: 'Deduction',
+          value: penLbls[latePenFilter] || latePenFilter
+        });
+      }
+      if (mode === 'roster' ? lateOtFilter !== 'all' : lateTodayFilter !== 'all') {
+        if (mode === 'roster') {
+          const otLbls = { none: 'No OT', allowed: 'OT Allowed', date_range: 'Date Pass' };
+          attDrawerChips.push({
+            key: 'late_ot',
+            label: 'Overtime',
+            value: otLbls[lateOtFilter] || lateOtFilter
+          });
+        } else {
+          const tdLbls = { missing_out_half_day: 'Only IN or OUT (0.5d)', late_today: 'Late / Early OUT', on_time_today: 'On Time' };
+          attDrawerChips.push({
+            key: 'late_today',
+            label: 'Today',
+            value: tdLbls[lateTodayFilter] || lateTodayFilter
+          });
+        }
+      }
+      return renderContextualFilterDrawerBarHtml({
+        scope: 'att_kiosk',
+        barId: 'kioskLateFilterBar',
+        drawerId: 'kioskMoreFiltersDrawer',
+        toggleBtnId: 'kioskToggleMoreFiltersBtn',
+        resetBtnId: 'kioskClearLateFiltersBtn',
+        resetUseAttHandler: true,
+        drawerOpen: Boolean(STATE.kioskMoreFiltersOpen),
+        primaryPodsHtml: primaryPods,
+        drawerPodsHtml: drawerPods,
+        drawerActiveChips: attDrawerChips,
+        drawerActiveCnt,
+        showReset,
+        trailingHtml: weekNavHtml
+      });
     };
     const schedWeekNavHtml = `
       <div class="sched-week-nav">
@@ -152799,7 +153706,7 @@
     if (collapsePayBtn) {
       collapsePayBtn.addEventListener('click', () => {
         STATE.payrollPolicyOpen = false;
-        renderApp();
+        refreshPayrollPolicySectionInPlace();
       });
     }
     container.querySelectorAll('[data-enrol-staff-face]').forEach(btn => {
@@ -153206,6 +154113,33 @@
       STATE.kioskMoreFiltersOpen = !STATE.kioskMoreFiltersOpen;
       refreshPayrollPolicySectionInPlace();
     });
+    feedCard.querySelectorAll('[data-cv-rm-chip][data-cv-scope="att_kiosk"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-cv-rm-chip') || '';
+        if (key === 'policy_group') STATE.kioskPolicyGroupFilter = 'all';
+        else if (key === 'late_tol') STATE.kioskLateTolFilter = 'all';
+        else if (key === 'late_when') STATE.kioskLateWhenFilter = 'all';
+        else if (key === 'late_pen') STATE.kioskLatePenFilter = 'all';
+        else if (key === 'late_ot') { STATE.kioskLateOtFilter = 'all'; STATE.kioskSchedOtFilter = 'all'; }
+        else if (key === 'late_today') STATE.kioskLateTodayFilter = 'all';
+        refreshPayrollPolicySectionInPlace();
+      });
+    });
+    feedCard.querySelectorAll('[data-cv-clear-drawer="att_kiosk"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        STATE.kioskPolicyGroupFilter = 'all';
+        STATE.kioskLateTolFilter = 'all';
+        STATE.kioskLateWhenFilter = 'all';
+        STATE.kioskLatePenFilter = 'all';
+        if (STATE.kioskAttFeedFilter === 'roster' || !STATE.kioskAttFeedFilter) {
+          STATE.kioskLateOtFilter = 'all';
+          STATE.kioskSchedOtFilter = 'all';
+        } else {
+          STATE.kioskLateTodayFilter = 'all';
+        }
+        refreshPayrollPolicySectionInPlace();
+      });
+    });
     $('kioskToggleTemplatesBtn')?.addEventListener('click', () => {
       STATE.kioskTemplatesCollapsed = !STATE.kioskTemplatesCollapsed;
       refreshPayrollPolicySectionInPlace();
@@ -153406,7 +154340,8 @@
         syncWithCloud(true);
       }
       const bulkNames = writableStaff.map(s => s.name);
-      const bulkRemLeg = detectLegacyTenthHourBackfill({ company: bulkScopeCo || '', staffNames: bulkNames.length ? bulkNames : null });
+      const bulkRemLeg = detectLegacyTenthHourBackfill({ company: bulkScopeCo || '', staffNames: bulkNames.length ? bulkNames : null, countOnly: true });
+      renderApp();
       toast(
         `Applied policy, lateness, OT snap & threshold rules to ${writableStaff.length} staff${effFrom ? ` from ${fmtDateDMY(effFrom)}` : ''}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`,
         'ok',
@@ -153414,7 +154349,6 @@
           ? { actionLabel: `Review ${bulkRemLeg.migratableCount} Legacy 0.1h`, onAction: () => openBackfillModal({ company: bulkScopeCo || '', staffNames: bulkNames.length ? bulkNames : null, filter: 'tenth_hour' }) }
           : undefined
       );
-      renderApp();
     });
     feedCard.querySelectorAll('[data-sched-cell-staff]').forEach(btn => {
       btn.addEventListener('click', e => {
@@ -155407,6 +156341,85 @@
         STATE.shown = {};
         renderApp();
         return;
+      }
+
+      const cvToggleBtn = t.closest('[data-cv-toggle-drawer]');
+      if (cvToggleBtn && container.contains(cvToggleBtn)) {
+        const scope = cvToggleBtn.getAttribute('data-cv-toggle-drawer') || '';
+        if (scope && scope !== 'att_kiosk') {
+          STATE.indFilterDrawerOpen = STATE.indFilterDrawerOpen || {};
+          STATE.indFilterDrawerOpen[scope] = !STATE.indFilterDrawerOpen[scope];
+          const ws = $('workspace');
+          const y = ws ? ws.scrollTop : 0;
+          renderApp();
+          if (ws) ws.scrollTop = y;
+          return;
+        }
+      }
+
+      const cvSetBtn = t.closest('[data-cv-drawer-set]');
+      if (cvSetBtn && container.contains(cvSetBtn)) {
+        const scope = cvSetBtn.getAttribute('data-cv-scope') || '';
+        const key = cvSetBtn.getAttribute('data-cv-key') || '';
+        const val = cvSetBtn.getAttribute('data-cv-drawer-set') || 'ALL';
+        if (scope && scope !== 'att_kiosk' && key) {
+          setIndDrawerFilter(scope, key, val);
+          STATE.shown = {};
+          const ws = $('workspace');
+          const y = ws ? ws.scrollTop : 0;
+          renderApp();
+          if (ws) ws.scrollTop = y;
+          return;
+        }
+      }
+
+      const cvRmChipBtn = t.closest('[data-cv-rm-chip]');
+      if (cvRmChipBtn && container.contains(cvRmChipBtn)) {
+        const scope = cvRmChipBtn.getAttribute('data-cv-scope') || '';
+        const key = cvRmChipBtn.getAttribute('data-cv-rm-chip') || '';
+        if (scope && scope !== 'att_kiosk' && key) {
+          setIndDrawerFilter(scope, key, 'ALL');
+          STATE.shown = {};
+          const ws = $('workspace');
+          const y = ws ? ws.scrollTop : 0;
+          renderApp();
+          if (ws) ws.scrollTop = y;
+          return;
+        }
+      }
+
+      const cvClearDrawerBtn = t.closest('[data-cv-clear-drawer]');
+      if (cvClearDrawerBtn && container.contains(cvClearDrawerBtn)) {
+        const scope = cvClearDrawerBtn.getAttribute('data-cv-clear-drawer') || '';
+        if (scope && scope !== 'att_kiosk') {
+          if (scope === 're_leases' || scope === 'ins_policies') {
+            const keepStatus = getIndDrawerFilter(scope, 'status');
+            clearIndDrawerFilters(scope);
+            if (keepStatus && keepStatus !== 'ALL') setIndDrawerFilter(scope, 'status', keepStatus);
+          } else {
+            clearIndDrawerFilters(scope);
+          }
+          STATE.shown = {};
+          const ws = $('workspace');
+          const y = ws ? ws.scrollTop : 0;
+          renderApp();
+          if (ws) ws.scrollTop = y;
+          return;
+        }
+      }
+
+      const cvResetAllBtn = t.closest('[data-cv-reset-all]');
+      if (cvResetAllBtn && container.contains(cvResetAllBtn)) {
+        const scope = cvResetAllBtn.getAttribute('data-cv-reset-all') || '';
+        if (scope && scope !== 'att_kiosk') {
+          clearIndDrawerFilters(scope);
+          STATE.shown = {};
+          const ws = $('workspace');
+          const y = ws ? ws.scrollTop : 0;
+          renderApp();
+          if (ws) ws.scrollTop = y;
+          return;
+        }
       }
 
       const insightChip = t.closest('[data-insight-chip]');
@@ -157959,7 +158972,7 @@
       if (togglePayPolBtn) {
         togglePayPolBtn.addEventListener('click', () => {
           STATE.payrollPolicyOpen = !STATE.payrollPolicyOpen;
-          renderApp();
+          refreshPayrollPolicySectionInPlace();
           if (STATE.payrollPolicyOpen) {
             const sec = $('kioskAttFeedCard') || $('payBiometricPolicySection');
             if (sec) scrollWorkspaceTo(sec, 8);
@@ -157971,7 +158984,7 @@
           const polTab = btn.getAttribute('data-open-pay-policy') || 'roster';
           STATE.payrollPolicyOpen = true;
           STATE.kioskAttFeedFilter = ['roster', 'lateness', 'schedule', 'onsite', 'all'].includes(polTab) ? polTab : 'roster';
-          renderApp();
+          refreshPayrollPolicySectionInPlace();
           const sec = $('kioskAttFeedCard') || $('payBiometricPolicySection');
           if (sec) scrollWorkspaceTo(sec, 8);
         });
@@ -160660,6 +161673,13 @@
       renderPayroll: mode => renderPayroll(mode),
       mergeWorkSchedulesForTest: remote => mergeWorkSchedules(remote),
       saveCompanyHolidayConfigForTest: (co, cfg) => saveCompanyHolidayConfig(co, cfg),
+      computeCompanyAttendanceOverrideDiff: co => computeCompanyAttendanceOverrideDiff(co),
+      resetCompanyStaffOverrides: (co, names, opts) => resetCompanyStaffOverrides(co, names, opts),
+      openCoOverrideDiffPopover: (el, co) => openCoOverrideDiffPopover(el, co),
+      closeCoOverrideDiffPopover: () => closeCoOverrideDiffPopover(),
+      getIndDrawerFilter: (scope, key) => getIndDrawerFilter(scope, key),
+      setIndDrawerFilter: (scope, key, val) => setIndDrawerFilter(scope, key, val),
+      clearIndDrawerFilters: scope => clearIndDrawerFilters(scope),
       getCompanyPolicyDefaultEntry: co => JSON.parse(JSON.stringify(ensureWorkSchedulesState().companyPolicyDefaults[norm(co)] || null)),
       listShiftCalTargets: co => listShiftCalTargets(co),
       applyShiftCalendarPreset: spec => applyShiftCalendarPreset(spec),

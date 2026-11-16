@@ -12442,7 +12442,31 @@
       "Work Permit Expiry:": "انتهاء إجازة العمل:",
       "Work Permit No.": "رقم إجازة العمل",
       "Work Permit, Residency & ID Renewal Watchdog": "مراقب تجديد تصاريح العمل والإقامات والهويات",
-      "Workforce & Agreements": "فريق العمل والاتفاقيات"
+      "Workforce & Agreements": "فريق العمل والاتفاقيات",
+      "Close Status": "حالة الإغلاق",
+      "Deduction": "الحسم",
+      "Flow Type": "نوع التدفق",
+      "Technician": "الفني",
+      "Terminal": "نقطة البيع",
+      "Tolerance": "السماحية",
+      "Active drawer filters": "فلاتر الدرج النشطة",
+      "Remove filter": "إزالة الفلتر",
+      "Review or reset individual staff overrides": "مراجعة أو إعادة ضبط استثناءات الموظفين الفردية",
+      "All active staff follow company default": "جميع الموظفين النشطين يتبعون الإعداد الافتراضي للشركة",
+      "Company vs. Staff Diff": "الافتراضي مقابل استثناءات الموظفين",
+      "Preserves closed months & manual edits": "يحفظ الأشهر المقفلة والتعديلات اليدوية",
+      "Click Again to Reset All": "انقر مجدداً لإعادة ضبط الكل",
+      "Reset All": "إعادة ضبط الكل",
+      "Inspect": "فحص",
+      "Overrides": "استثناءات",
+      "Clear all": "مسح الكل",
+      "Reset to company default": "إعادة ضبط إلى افتراضي الشركة",
+      "Could not reset override": "تعذّر إعادة ضبط الاستثناء",
+      "Could not reset overrides": "تعذّر إعادة ضبط الاستثناءات",
+      "USD + LBP": "دولار + ليرة",
+      "LBP Only": "ليرة فقط",
+      "USD Only": "دولار فقط",
+      "Historical Seed": "بيانات أساسية تاريخية"
     },
     fr: {
       "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
@@ -24866,7 +24890,31 @@
       "Work Permit Expiry:": "Expiration permis de travail :",
       "Work Permit No.": "N° permis",
       "Work Permit, Residency & ID Renewal Watchdog": "Surveillance des permis, résidences et pièces d’identité",
-      "Workforce & Agreements": "Effectifs & Accords"
+      "Workforce & Agreements": "Effectifs & Accords",
+      "Close Status": "Statut de clôture",
+      "Deduction": "Déduction",
+      "Flow Type": "Type de flux",
+      "Technician": "Technicien",
+      "Terminal": "Terminal",
+      "Tolerance": "Tolérance",
+      "Active drawer filters": "Filtres du tiroir actifs",
+      "Remove filter": "Retirer le filtre",
+      "Review or reset individual staff overrides": "Examiner ou réinitialiser les exceptions individuelles",
+      "All active staff follow company default": "Tout le personnel actif suit le défaut société",
+      "Company vs. Staff Diff": "Défaut société vs exceptions",
+      "Preserves closed months & manual edits": "Préserve les mois clôturés et saisies manuelles",
+      "Click Again to Reset All": "Cliquer encore pour tout réinitialiser",
+      "Reset All": "Tout réinitialiser",
+      "Inspect": "Inspecter",
+      "Overrides": "Exceptions",
+      "Clear all": "Tout effacer",
+      "Reset to company default": "Réinitialisé au défaut société",
+      "Could not reset override": "Impossible de réinitialiser l'exception",
+      "Could not reset overrides": "Impossible de réinitialiser les exceptions",
+      "USD + LBP": "USD + LBP",
+      "LBP Only": "LBP uniquement",
+      "USD Only": "USD uniquement",
+      "Historical Seed": "Historique de base"
     }
   };
 
@@ -30154,10 +30202,61 @@
     }
   }
 
+  let _obsRaf = 0;
+  const _dirtyNodes = new Set();
+  let _domObserver = null;
+
+  function ingestPendingMutations(mutations) {
+    if (!mutations || !mutations.length || _activeLang === 'en') return;
+    for (let i = 0; i < mutations.length; i++) {
+      const m = mutations[i];
+      const t = m.target;
+      if (!t) continue;
+      if (t.nodeName === 'TITLE' || (t.parentElement && t.parentElement.nodeName === 'TITLE')) {
+        translateDocumentTitle();
+        continue;
+      }
+      if (m.type === 'childList' && (t === document.body || t === document.documentElement)) {
+        if (m.addedNodes && m.addedNodes.length) {
+          for (let j = 0; j < m.addedNodes.length; j++) {
+            const an = m.addedNodes[j];
+            if (an && an.nodeType === 1) _dirtyNodes.add(an);
+          }
+        }
+        continue;
+      }
+      const el = t.nodeType === 1 ? t : t.parentElement;
+      if (el) _dirtyNodes.add(el);
+    }
+    if (_dirtyNodes.size && !_obsRaf && typeof requestAnimationFrame === 'function') {
+      _obsRaf = requestAnimationFrame(flushDirtyMutations);
+    }
+  }
+
   function translateDom(rootEl) {
     if (_activeLang === 'en' && !_everTranslated) return;
     const root = rootEl || document.body;
     if (!root || _isApplying) return;
+
+    if (_domObserver) {
+      try {
+        const pre = _domObserver.takeRecords();
+        if (root === document.body || root === document.documentElement) {
+          _dirtyNodes.clear();
+          if (_obsRaf && typeof cancelAnimationFrame === 'function') {
+            cancelAnimationFrame(_obsRaf);
+            _obsRaf = 0;
+          }
+        } else {
+          if (pre && pre.length) ingestPendingMutations(pre);
+          if (_dirtyNodes.size && root.contains) {
+            Array.from(_dirtyNodes).forEach(d => {
+              if (!d || !d.isConnected || d === root || root.contains(d)) _dirtyNodes.delete(d);
+            });
+          }
+        }
+      } catch (_) {}
+    }
 
     _isApplying = true;
     try {
@@ -30224,25 +30323,34 @@
         root.querySelectorAll('[aria-label]').forEach(el => translateAttr(el, 'aria-label'));
       }
     } finally {
+      if (_domObserver) {
+        try { _domObserver.takeRecords(); } catch (_) {}
+      }
       _isApplying = false;
     }
   }
 
-  function isElementVisibleForAudit(el) {
+  function isElementVisibleForAudit(el, visCache) {
     if (!el || el.nodeType !== 1) return false;
-    let cur = el;
-    while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
-      if (cur.hasAttribute('hidden')) return false;
-      const inlineStyle = cur.getAttribute('style') || '';
-      if (/display\s*:\s*none/i.test(inlineStyle)) return false;
-      if (cur.classList && (cur.classList.contains('hidden') || cur.classList.contains('is-hidden'))) return false;
-      if (typeof window !== 'undefined' && window.getComputedStyle) {
-        const cs = window.getComputedStyle(cur);
-        if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return false;
+    if (el === document.documentElement) return true;
+    if (visCache && visCache.has(el)) return visCache.get(el);
+    let ownVisible = true;
+    if (el.hasAttribute('hidden')) {
+      ownVisible = false;
+    } else {
+      const inlineStyle = el.getAttribute('style') || '';
+      if (/display\s*:\s*none/i.test(inlineStyle)) {
+        ownVisible = false;
+      } else if (el.classList && (el.classList.contains('hidden') || el.classList.contains('is-hidden'))) {
+        ownVisible = false;
+      } else if (typeof window !== 'undefined' && window.getComputedStyle) {
+        const cs = window.getComputedStyle(el);
+        if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) ownVisible = false;
       }
-      cur = cur.parentElement;
     }
-    return true;
+    const res = ownVisible ? (el.parentElement ? isElementVisibleForAudit(el.parentElement, visCache) : true) : false;
+    if (visCache) visCache.set(el, res);
+    return res;
   }
 
   function auditDom(rootEl, lang) {
@@ -30250,6 +30358,7 @@
     const root = rootEl || document.body;
     if (!root || targetLang === 'en') return { lang: targetLang, count: 0, items: [] };
 
+    const visCache = new Map();
     const found = new Map();
     const addMiss = (text, ctx) => {
       if (!found.has(text)) {
@@ -30272,7 +30381,7 @@
       const p = n.parentElement;
       if (!p) continue;
       const checkEl = p.tagName === 'OPTION' ? (p.parentElement || p) : p;
-      if (!isElementVisibleForAudit(checkEl)) continue;
+      if (!isElementVisibleForAudit(checkEl, visCache)) continue;
       const src = (n.__enText !== undefined ? n.__enText : (n.nodeValue || '')).trim();
       if (!src || !/[A-Za-z]/.test(src)) continue;
       const res = evalCached(src, targetLang);
@@ -30287,7 +30396,7 @@
       const attrs = ['placeholder', 'data-ui-tip', 'title', 'aria-label'];
       attrs.forEach(attr => {
         root.querySelectorAll('[' + attr + ']').forEach(el => {
-          if (isAuditExcludedElement(el) || !isElementVisibleForAudit(el)) return;
+          if (isAuditExcludedElement(el) || !isElementVisibleForAudit(el, visCache)) return;
           const raw = (el['__enAttr_' + attr] !== undefined ? el['__enAttr_' + attr] : (el.getAttribute(attr) || '')).trim();
           if (!raw || !/[A-Za-z]/.test(raw)) return;
           const res = evalCached(raw, targetLang);
@@ -30303,10 +30412,6 @@
     return { lang: targetLang, count: items.length, items };
   }
 
-  let _obsRaf = 0;
-  const _dirtyNodes = new Set();
-  let _domObserver = null;
-
   function flushDirtyMutations() {
     _obsRaf = 0;
     if (_activeLang === 'en' || !_dirtyNodes.size) {
@@ -30314,16 +30419,45 @@
       return;
     }
     translateDocumentTitle();
-    if (_dirtyNodes.has(document.body) || _dirtyNodes.size > 16) {
+    if (_dirtyNodes.has(document.body) || _dirtyNodes.has(document.documentElement)) {
       _dirtyNodes.clear();
       translateDom(document.body);
       return;
     }
-    const batch = Array.from(_dirtyNodes);
+    let batch = [];
+    _dirtyNodes.forEach(el => {
+      if (el && el.nodeType === 1 && el.isConnected) batch.push(el);
+    });
     _dirtyNodes.clear();
+    if (!batch.length) return;
+    if (batch.length > 12) {
+      const promoted = new Set();
+      for (let i = 0; i < batch.length; i++) {
+        const el = batch[i];
+        const container = (el.closest && el.closest('.modal-backdrop, .modal, [role="dialog"], #coOverrideDiffPopover, #dateFacilitatorPopover, .panel-card, #payBiometricPolicySection, #topbar, #sidebar')) || el;
+        promoted.add(container);
+      }
+      batch = Array.from(promoted);
+    }
+    if (batch.includes(document.body) || batch.includes(document.documentElement)) {
+      translateDom(document.body);
+      return;
+    }
+    const roots = [];
     for (let i = 0; i < batch.length; i++) {
-      const el = batch[i];
-      if (el && el.isConnected) translateDom(el);
+      const cand = batch[i];
+      let covered = false;
+      for (let j = 0; j < batch.length; j++) {
+        if (i !== j && batch[j].contains && batch[j].contains(cand)) { covered = true; break; }
+      }
+      if (!covered) roots.push(cand);
+    }
+    if (roots.length > 24) {
+      translateDom(document.body);
+      return;
+    }
+    for (let i = 0; i < roots.length; i++) {
+      if (roots[i] && roots[i].isConnected) translateDom(roots[i]);
     }
   }
 
@@ -30334,20 +30468,7 @@
     }
     _domObserver = new MutationObserver(mutations => {
       if (_isApplying || _activeLang === 'en') return;
-      for (let i = 0; i < mutations.length; i++) {
-        const m = mutations[i];
-        const t = m.target;
-        if (!t) continue;
-        if (t.nodeName === 'TITLE' || (t.parentElement && t.parentElement.nodeName === 'TITLE')) {
-          translateDocumentTitle();
-          continue;
-        }
-        const el = t.nodeType === 1 ? t : t.parentElement;
-        if (el) _dirtyNodes.add(el);
-      }
-      if (_dirtyNodes.size && !_obsRaf) {
-        _obsRaf = requestAnimationFrame(flushDirtyMutations);
-      }
+      ingestPendingMutations(mutations);
     });
     _domObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
     const titleEl = document.querySelector && document.querySelector('title');
