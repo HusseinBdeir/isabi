@@ -2613,29 +2613,49 @@
       } catch (_) {}
 
       const pages = Array.isArray(pagesRaw) ? pagesRaw : [];
-      const previewDataUrl = (pages[0] && pages[0].dataUrl) ? String(pages[0].dataUrl) : '';
-      let attObj = null;
-      if (previewDataUrl) {
-        const fname = 'Phone_ID_Scan.jpg';
-        const f = dataUrlToFile(previewDataUrl, fname);
-        attObj = {
+      const extFromMime = m => ({ 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' }[m] || 'jpg');
+      const attObjs = [];
+      pages.forEach((pg, idx) => {
+        const durl = (pg && pg.dataUrl) ? String(pg.dataUrl).trim() : '';
+        if (!durl) return;
+        const hdrMatch = /^data:(image\/[a-z0-9.+-]+);/i.exec(durl);
+        let safeMime = String((pg && pg.mimeType) || (hdrMatch && hdrMatch[1]) || 'image/jpeg').toLowerCase().trim();
+        if (safeMime === 'image/jpg') safeMime = 'image/jpeg';
+        if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(safeMime)) safeMime = 'image/jpeg';
+        const ext = extFromMime(safeMime);
+        const sideKey = (pg && String(pg.side || '').toLowerCase() === 'back') || idx === 1 ? 'back' : 'front';
+        const fname = (pages.length > 1 || (pg && pg.side))
+          ? (sideKey === 'back' ? `Phone_ID_Back.${ext}` : `Phone_ID_Front.${ext}`)
+          : `Phone_ID_Scan.${ext}`;
+        const f = dataUrlToFile(durl, fname);
+        attObjs.push({
           id: 'att-qr-' + randomHex(5),
           name: fname,
-          type: 'image/jpeg',
-          size: f ? f.size : Math.round(previewDataUrl.length * 0.72),
-          data: previewDataUrl,
-          data_url: previewDataUrl,
+          side: sideKey,
+          type: safeMime,
+          mime_type: safeMime,
+          size: f ? f.size : Math.round(durl.length * 0.72),
+          data: durl,
+          data_url: durl,
           from_id_scan: true
-        };
-      }
+        });
+      });
+      const attObj = attObjs[0] || null;
+      const previewDataUrl = (attObj && attObj.data_url) || '';
       const normFn = window.MFG_SMART_SCAN && window.MFG_SMART_SCAN.normalizeIdentityScanResult;
       const normalized = normFn ? normFn(extractedRaw || {}) : (extractedRaw || {});
+      const sidesCaptured = Math.max(
+        Number((extractedRaw && extractedRaw.sidesCaptured) || 0),
+        attObjs.length >= 2 ? 2 : (attObjs.length === 1 ? 1 : (Number(normalized.sidesCaptured || 0) || 1))
+      );
       const scanRes = Object.assign({}, normalized, {
         ok: true,
         mode: 'phone_qr',
-        engineLabel: 'Phone Camera QR Handoff',
+        engineLabel: sidesCaptured >= 2 ? 'Phone Camera QR (Front + Back)' : 'Phone Camera QR Handoff',
+        sidesCaptured,
         fileName: attObj ? attObj.name : 'Phone_ID_Scan.jpg',
         attObj,
+        attObjs,
         previewDataUrl
       });
       cleanup(false);
@@ -2741,6 +2761,10 @@
         <div class="psc-id-kv" id="pscIdSentSummary"></div>
       </div>
       <div id="pscIdActiveBody">
+        <div class="psc-id-side-bar" id="pscIdSideBar" role="tablist" aria-label="ID Card Sides">
+          <button type="button" class="psc-side-pill active" id="pscSideFrontBtn" data-psc-id-side="front">1. Front Side</button>
+          <button type="button" class="psc-side-pill" id="pscSideBackBtn" data-psc-id-side="back">2. Back Side (Optional)</button>
+        </div>
         <div class="doc-cam-tools-bar" id="pscToolsBar">
           <div class="doc-cam-zoom-group" id="pscZoomBar">
             <button type="button" class="doc-cam-zoom-btn active" data-psc-id-zoom="1" data-no-i18n="1">1x</button>
@@ -2753,11 +2777,21 @@
           <video id="pscVideo" class="doc-cam-video" autoplay muted playsinline poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
           <div class="doc-cam-guide has-privacy-mask" id="pscGuide">
             <i class="dc-corner tl"></i><i class="dc-corner tr"></i><i class="dc-corner bl"></i><i class="dc-corner br"></i>
-            <span class="doc-cam-guide-msg">Align ID card or permit inside frame</span>
+            <span class="doc-cam-guide-msg" id="pscIdGuideMsg">Align ID card or permit inside frame</span>
+          </div>
+        </div>
+        <div class="psc-id-front-done" id="pscIdFrontDonePanel" hidden>
+          <strong id="pscFrontDoneTitle">Front Side Captured</strong>
+          <div class="psc-id-thumbs-row" id="pscIdThumbsRow"></div>
+          <div class="psc-id-kv" id="pscFrontDoneSummary"></div>
+          <div class="psc-id-front-actions">
+            <button type="button" class="btn btn-brass" id="pscFlipBackBtn">+ Flip &amp; Capture Back Side</button>
+            <button type="button" class="btn btn-primary" id="pscSendFrontOnlyBtn">Send Front Only</button>
+            <button type="button" class="btn btn-outline-bar" id="pscRetakeFrontBtn">Retake Front</button>
           </div>
         </div>
         <div class="psc-consumed-card" id="pscIdErrorBanner" hidden></div>
-        <div class="psc-foot">
+        <div class="psc-foot" id="pscIdFoot">
           <input type="file" id="pscIdFileInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*" capture="environment" hidden>
           <button type="button" class="btn btn-outline-bar" id="pscIdPickBtn">${ic('upload')} Choose / Take Photo</button>
           <button type="button" class="btn btn-brass" id="pscIdCaptureBtn">${ic('scan_doc')} Capture &amp; Extract ID</button>
@@ -2770,6 +2804,9 @@
       registerScannerI18n();
       window.MFG_I18N.translateDom(shell);
     }
+
+    let activeSide = 'front';
+    const sideScans = { front: null, back: null };
 
     const showConsumed = (reasonTxt) => {
       stopCameraTracks();
@@ -2790,10 +2827,162 @@
     const setBusy = (busy) => {
       const cap = $('pscIdCaptureBtn');
       const pick = $('pscIdPickBtn');
-      if (cap) cap.disabled = !!busy;
-      if (pick) pick.disabled = !!busy;
+      const flipB = $('pscFlipBackBtn');
+      const sendFrontB = $('pscSendFrontOnlyBtn');
+      const retakeFrontB = $('pscRetakeFrontBtn');
+      [cap, pick, flipB, sendFrontB, retakeFrontB].forEach(b => { if (b) b.disabled = !!busy; });
       if (cap && busy) cap.textContent = 'Scanning ID...';
-      else if (cap) cap.innerHTML = `${ic('scan_doc')} Capture &amp; Extract ID`;
+      else if (cap) cap.innerHTML = activeSide === 'back'
+        ? `${ic('scan_doc')} Capture Back Side`
+        : `${ic('scan_doc')} Capture &amp; Extract ID`;
+    };
+
+    const syncSideUi = (showCaptureStage) => {
+      const hasFront = Boolean(sideScans.front);
+      const hasBack = Boolean(sideScans.back);
+      const showFrontReview = !showCaptureStage && activeSide === 'front' && hasFront && !hasBack;
+      const stgEl = $('pscStage');
+      const footEl = $('pscIdFoot');
+      const donePanel = $('pscIdFrontDonePanel');
+      const toolsBar = $('pscToolsBar');
+      if (stgEl) stgEl.hidden = showFrontReview;
+      if (footEl) footEl.hidden = showFrontReview;
+      if (toolsBar) toolsBar.hidden = showFrontReview;
+      if (donePanel) donePanel.hidden = !showFrontReview;
+      const fBtn = $('pscSideFrontBtn');
+      const bBtn = $('pscSideBackBtn');
+      if (fBtn) {
+        fBtn.classList.toggle('active', activeSide === 'front');
+        fBtn.classList.toggle('is-done', hasFront);
+      }
+      if (bBtn) {
+        bBtn.classList.toggle('active', activeSide === 'back');
+        bBtn.classList.toggle('is-done', hasBack);
+      }
+      const guideMsg = $('pscIdGuideMsg');
+      if (guideMsg) {
+        guideMsg.textContent = activeSide === 'back'
+          ? 'Align BACK side of ID, civil registry or permit inside frame'
+          : 'Align ID card or permit inside frame';
+      }
+      const cap = $('pscIdCaptureBtn');
+      if (cap && !cap.disabled) {
+        cap.innerHTML = activeSide === 'back'
+          ? `${ic('scan_doc')} Capture Back Side`
+          : `${ic('scan_doc')} Capture &amp; Extract ID`;
+      }
+    };
+
+    const renderErrWithRecovery = (msg) => {
+      const errBanner = $('pscIdErrorBanner');
+      if (!errBanner) return;
+      errBanner.hidden = false;
+      const canSendFrontOnly = Boolean(sideScans.front);
+      errBanner.innerHTML = `<span class="psc-err-txt">${esc(msg)}</span>${canSendFrontOnly ? ' <button type="button" class="btn btn-sm" id="pscErrSendFrontBtn">Send Front Only</button>' : ''}`;
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang() !== 'en') {
+        registerScannerI18n();
+        window.MFG_I18N.translateDom(errBanner);
+      }
+      const recBtn = $('pscErrSendFrontBtn');
+      if (recBtn) {
+        recBtn.addEventListener('click', () => {
+          sideScans.back = null;
+          activeSide = 'front';
+          submitCompletedIdPayload();
+        });
+      }
+    };
+
+    const submitCompletedIdPayload = async () => {
+      const ss = window.MFG_SMART_SCAN;
+      const frontObj = sideScans.front;
+      const backObj = sideScans.back;
+      if (!frontObj && !backObj) return false;
+      const fExt = frontObj ? frontObj.extracted : null;
+      const bExt = backObj ? backObj.extracted : null;
+      let extracted;
+      if (fExt && bExt && ss && typeof ss.mergeTwoSidedIdentityScans === 'function') {
+        extracted = ss.mergeTwoSidedIdentityScans(fExt, bExt);
+      } else {
+        const single = fExt || bExt || {};
+        extracted = Object.assign({}, single, { sidesCaptured: 1 });
+      }
+      const pages = [];
+      if (frontObj && frontObj.page) pages.push(Object.assign({}, frontObj.page, { id: 'id-card-1', side: 'front' }));
+      if (backObj && backObj.page) pages.push(Object.assign({}, backObj.page, { id: pages.length ? 'id-card-2' : 'id-card-1', side: 'back' }));
+      setBusy(true);
+      const errBanner = $('pscIdErrorBanner');
+      if (errBanner) { errBanner.hidden = true; errBanner.textContent = ''; }
+      try {
+        const compRes = await fetch('./api/phone-scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sid: cfg.sid,
+            k: cfg.tok,
+            op: 'complete_id_card',
+            extracted,
+            pages
+          })
+        });
+        const compJ = await compRes.json().catch(() => null);
+        if (!compRes.ok) {
+          if (compRes.status === 403) {
+            showConsumed((compJ && compJ.error) || 'This single-use QR scan link has already been used or expired.');
+            return false;
+          }
+          if (activeSide === 'back' && sideScans.back) {
+            sideScans.back = null;
+          }
+          renderErrWithRecovery((compJ && compJ.error) || 'Could not deliver scan to desktop.');
+          setBusy(false);
+          syncSideUi(true);
+          return false;
+        }
+        try {
+          if (typeof BroadcastChannel === 'function') {
+            const bc = new BroadcastChannel('isabi_ps_' + cfg.sid);
+            bc.postMessage({ sid: cfg.sid, tok: cfg.tok, op: 'complete_id_card', status: 'id_ready', extracted, pages, ts: Date.now() });
+            setTimeout(() => { try { bc.close(); } catch (_) {} }, 350);
+          }
+        } catch (_) {}
+
+        stopCameraTracks();
+        const bodyEl = $('pscIdActiveBody');
+        const sentEl = $('pscIdSentCard');
+        const sumEl = $('pscIdSentSummary');
+        const badge = $('pscStatusBadge');
+        if (bodyEl) bodyEl.hidden = true;
+        if (sentEl) sentEl.hidden = false;
+        if (badge) { badge.textContent = 'Sent'; badge.className = 'badge badge-ok'; }
+        if (sumEl) {
+          const kvItems = [
+            extracted.fullNameLatin ? ['Name', extracted.fullNameLatin] : null,
+            extracted.fatherNameLatin ? ['Father', extracted.fatherNameLatin] : null,
+            extracted.nationalityLatin ? ['Nationality', extracted.nationalityLatin] : null,
+            (extracted.workPermitNumber || extracted.residencyNumber || extracted.nssfNumber || extracted.idNumber)
+              ? ['ID / Permit #', extracted.workPermitNumber || extracted.residencyNumber || extracted.nssfNumber || extracted.idNumber]
+              : null,
+            extracted.civilRegistryNumber
+              ? ['Civil Registry', `${extracted.civilRegistryNumber}${extracted.civilRegistryPlace ? ' · ' + extracted.civilRegistryPlace : ''}`]
+              : null,
+            (extracted.workPermitExpiryDate || extracted.residencyExpiryDate || extracted.idExpiryDate)
+              ? ['Expiry', extracted.workPermitExpiryDate || extracted.residencyExpiryDate || extracted.idExpiryDate]
+              : null,
+            ['Sides Captured', pages.length >= 2 || Number(extracted.sidesCaptured || 0) >= 2 ? 'Front + Back' : 'Front Only']
+          ].filter(Boolean);
+          sumEl.innerHTML = kvItems.map(([k, v]) => `<div><small>${esc(k)}</small><br><strong data-no-i18n="1">${esc(v)}</strong></div>`).join('');
+        }
+        return true;
+      } catch (ex) {
+        if (activeSide === 'back' && sideScans.back) {
+          sideScans.back = null;
+        }
+        renderErrWithRecovery(String((ex && ex.message) || ex || 'Scan error'));
+        setBusy(false);
+        syncSideUi(true);
+        return false;
+      }
     };
 
     const processImageSubmission = async (dataUrl, extractedHint = '', fileName = 'Phone_ID_Scan.jpg') => {
@@ -2808,6 +2997,7 @@
             scanMode: 'id_card',
             phoneScanSid: cfg.sid,
             phoneScanTok: cfg.tok,
+            side: activeSide,
             dataUrl,
             mimeType: 'image/jpeg',
             extractedText: String(extractedHint || '').slice(0, 2400),
@@ -2855,64 +3045,44 @@
           workPermitExpiryDate: pick(ai.workPermitExpiryDate, det.workPermitExpiryDate),
           residencyNumber: pick(ai.residencyNumber, det.residencyNumber),
           residencyExpiryDate: pick(ai.residencyExpiryDate, det.residencyExpiryDate),
+          civilRegistryNumber: pick(ai.civilRegistryNumber, det.civilRegistryNumber),
+          civilRegistryPlace: pick(ai.civilRegistryPlace, det.civilRegistryPlace),
+          maritalStatus: pick(ai.maritalStatus, det.maritalStatus),
           gender: pick(ai.gender, det.gender)
         };
         const extracted = (ss && ss.normalizeIdentityScanResult) ? ss.normalizeIdentityScanResult(mergedRaw) : mergedRaw;
-        const pages = dataUrl ? [{ id: 'id-card-1', mimeType: 'image/jpeg', dataUrl }] : [];
-        const compRes = await fetch('./api/phone-scan', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sid: cfg.sid,
-            k: cfg.tok,
-            op: 'complete_id_card',
-            extracted,
-            pages
-          })
-        });
-        const compJ = await compRes.json().catch(() => null);
-        if (!compRes.ok) {
-          if (compRes.status === 403) {
-            showConsumed((compJ && compJ.error) || 'This single-use QR scan link has already been used or expired.');
-            return;
+        const pageObj = dataUrl
+          ? { id: activeSide === 'back' ? 'id-card-2' : 'id-card-1', side: activeSide, mimeType: 'image/jpeg', dataUrl }
+          : null;
+
+        if (activeSide === 'front') {
+          sideScans.front = { extracted, page: pageObj };
+          stopCameraTracks();
+          const thumbsEl = $('pscIdThumbsRow');
+          if (thumbsEl) {
+            thumbsEl.innerHTML = dataUrl ? `<img src="${esc(dataUrl)}" alt="Front ID preview">` : '';
           }
-          if (errBanner) {
-            errBanner.hidden = false;
-            errBanner.textContent = (compJ && compJ.error) || 'Could not deliver scan to desktop.';
+          const fSumEl = $('pscFrontDoneSummary');
+          if (fSumEl) {
+            const fItems = [
+              extracted.fullNameLatin ? ['Name', extracted.fullNameLatin] : null,
+              extracted.fatherNameLatin ? ['Father', extracted.fatherNameLatin] : null,
+              (extracted.workPermitNumber || extracted.residencyNumber || extracted.nssfNumber || extracted.idNumber)
+                ? ['ID / Permit #', extracted.workPermitNumber || extracted.residencyNumber || extracted.nssfNumber || extracted.idNumber]
+                : null,
+              (extracted.workPermitExpiryDate || extracted.residencyExpiryDate || extracted.idExpiryDate)
+                ? ['Expiry', extracted.workPermitExpiryDate || extracted.residencyExpiryDate || extracted.idExpiryDate]
+                : null
+            ].filter(Boolean);
+            fSumEl.innerHTML = fItems.map(([k, v]) => `<div><small>${esc(k)}</small><br><strong data-no-i18n="1">${esc(v)}</strong></div>`).join('');
           }
           setBusy(false);
+          syncSideUi(false);
           return;
         }
-        try {
-          if (typeof BroadcastChannel === 'function') {
-            const bc = new BroadcastChannel('isabi_ps_' + cfg.sid);
-            bc.postMessage({ sid: cfg.sid, tok: cfg.tok, op: 'complete_id_card', status: 'id_ready', extracted, pages, ts: Date.now() });
-            setTimeout(() => { try { bc.close(); } catch (_) {} }, 350);
-          }
-        } catch (_) {}
 
-        stopCameraTracks();
-        const bodyEl = $('pscIdActiveBody');
-        const sentEl = $('pscIdSentCard');
-        const sumEl = $('pscIdSentSummary');
-        const badge = $('pscStatusBadge');
-        if (bodyEl) bodyEl.hidden = true;
-        if (sentEl) sentEl.hidden = false;
-        if (badge) { badge.textContent = 'Sent'; badge.className = 'badge badge-ok'; }
-        if (sumEl) {
-          const kvItems = [
-            extracted.fullNameLatin ? ['Name', extracted.fullNameLatin] : null,
-            extracted.fatherNameLatin ? ['Father', extracted.fatherNameLatin] : null,
-            extracted.nationalityLatin ? ['Nationality', extracted.nationalityLatin] : null,
-            (extracted.workPermitNumber || extracted.residencyNumber || extracted.nssfNumber || extracted.idNumber)
-              ? ['ID / Permit #', extracted.workPermitNumber || extracted.residencyNumber || extracted.nssfNumber || extracted.idNumber]
-              : null,
-            (extracted.workPermitExpiryDate || extracted.residencyExpiryDate || extracted.idExpiryDate)
-              ? ['Expiry', extracted.workPermitExpiryDate || extracted.residencyExpiryDate || extracted.idExpiryDate]
-              : null
-          ].filter(Boolean);
-          sumEl.innerHTML = kvItems.map(([k, v]) => `<div><small>${esc(k)}</small><br><strong data-no-i18n="1">${esc(v)}</strong></div>`).join('');
-        }
+        sideScans.back = { extracted, page: pageObj };
+        await submitCompletedIdPayload();
       } catch (ex) {
         if (errBanner) {
           errBanner.hidden = false;
@@ -3010,6 +3180,30 @@
       await processImageSubmission(outDataUrl, '', 'Phone_ID_Camera.jpg');
     });
 
+    shell.querySelectorAll('[data-psc-id-side]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const nextSide = btn.getAttribute('data-psc-id-side') === 'back' ? 'back' : 'front';
+        activeSide = nextSide;
+        const showCap = nextSide === 'back' || !sideScans.front || Boolean(sideScans.back);
+        syncSideUi(showCap);
+        if (showCap) startIdRearCam();
+        else stopCameraTracks();
+      });
+    });
+    $('pscFlipBackBtn')?.addEventListener('click', () => {
+      activeSide = 'back';
+      syncSideUi(true);
+      startIdRearCam();
+    });
+    $('pscSendFrontOnlyBtn')?.addEventListener('click', () => {
+      submitCompletedIdPayload();
+    });
+    $('pscRetakeFrontBtn')?.addEventListener('click', () => {
+      activeSide = 'front';
+      syncSideUi(true);
+      startIdRearCam();
+    });
+
     (async () => {
       try {
         const checkResp = await fetch(`./api/phone-scan?sid=${encodeURIComponent(cfg.sid)}&k=${encodeURIComponent(cfg.tok)}`);
@@ -3030,6 +3224,7 @@
             setTimeout(() => { try { bc.close(); } catch (_) {} }, 300);
           }
         } catch (_) {}
+        syncSideUi(true);
         startIdRearCam();
       } catch (_) {
         showConsumed();
@@ -3497,7 +3692,20 @@
     'Align ID card or permit inside frame': 'ضع الهوية أو الإجازة داخل الإطار',
     'Choose / Take Photo': 'اختيار أو التقاط صورة',
     'Capture & Extract ID': 'التقاط واستخراج البيانات',
+    'Capture Back Side': 'التقاط الجهة الخلفية',
     'Scanning ID...': 'جارٍ مسح الهوية...',
+    '1. Front Side': '1. الجهة الأمامية',
+    '2. Back Side (Optional)': '2. الجهة الخلفية (اختياري)',
+    'Front Side Captured': 'تم التقاط الجهة الأمامية',
+    '+ Flip & Capture Back Side': '+ اقلب البطاقة والتقط الخلفية',
+    'Send Front Only': 'إرسال الأمامية فقط',
+    'Retake Front': 'إعادة التقاط الأمامية',
+    'Align BACK side of ID, civil registry or permit inside frame': 'ضع الجهة الخلفية للهوية أو السجل أو الإجازة داخل الإطار',
+    'Civil Registry': 'رقم ومحل القيد',
+    'Sides Captured': 'الجهات الملتقطة',
+    'Front + Back': 'أمامية + خلفية',
+    'Front Only': 'أمامية فقط',
+    'Phone Camera QR (Front + Back)': 'كاميرا الهاتف QR (أمامية + خلفية)',
     '1x': '1×',
     '1.5x': '1.5×',
     '2x': '2×',
@@ -3634,7 +3842,20 @@
     'Align ID card or permit inside frame': 'Alignez la carte d’identité ou le permis dans le cadre',
     'Choose / Take Photo': 'Choisir / Prendre photo',
     'Capture & Extract ID': 'Capturer et extraire',
+    'Capture Back Side': 'Capturer le verso',
     'Scanning ID...': 'Analyse en cours...',
+    '1. Front Side': '1. Recto (face avant)',
+    '2. Back Side (Optional)': '2. Verso (optionnel)',
+    'Front Side Captured': 'Recto capturé',
+    '+ Flip & Capture Back Side': '+ Retourner et capturer le verso',
+    'Send Front Only': 'Envoyer le recto seul',
+    'Retake Front': 'Reprendre le recto',
+    'Align BACK side of ID, civil registry or permit inside frame': 'Alignez le VERSO de la carte d’identité, du registre civil ou du permis dans le cadre',
+    'Civil Registry': 'Registre civil',
+    'Sides Captured': 'Faces capturées',
+    'Front + Back': 'Recto + Verso',
+    'Front Only': 'Recto seul',
+    'Phone Camera QR (Front + Back)': 'Caméra mobile QR (Recto + Verso)',
     '1x': '1×',
     '1.5x': '1.5×',
     '2x': '2×',

@@ -2052,6 +2052,12 @@
           ${fld('Work Permit Expiry', inp('f_work_permit_expiry', 'date', '', 'min="2000-01-01" max="2060-12-31"'))}
           ${fld('Residency Permit #', inp('f_residency_no', 'text', '', 'placeholder="General Security Residency #..."'))}
           ${fld('Residency Expiry', inp('f_residency_expiry', 'date', '', 'min="2000-01-01" max="2060-12-31"'))}
+          ${fld('Renewal Filing Status', sel('f_renewal_status', [
+            ['', 'Active Tracking (No Pending Receipt)'],
+            ['submitted', 'Renewal Submitted (Receipt on File)']
+          ], ''))}
+          ${fld('Renewal Receipt #', inp('f_renewal_receipt_no', 'text', '', 'maxlength="80" placeholder="General Security / MoL receipt no."'))}
+          ${fld('Renewal Submitted Date', inp('f_renewal_submitted_date', 'date', '', 'min="2000-01-01" max="2060-12-31"'))}
           <input type="hidden" id="f_nationality_ar" value="">
           <input type="hidden" id="f_id_doc_kind" value="">
           <input type="hidden" id="f_mother_name" value="">

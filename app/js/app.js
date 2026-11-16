@@ -744,7 +744,9 @@
     autoStreak: 0,
     nextAutoAt: 0,
     statusText: '',
-    statusCls: ''
+    statusCls: '',
+    pendingIdAtt: null,
+    pendingIdAtts: []
   };
 
   // App-entered record pools (localStorage + cloud relay) → server table + SEED list
@@ -24674,7 +24676,7 @@
     let wdSig = String(_wdStaffArr.length);
     for (let i = 0; i < _wdStaffArr.length; i++) {
       const sr = _wdStaffArr[i];
-      if (sr) wdSig += '|' + (sr.id || '') + ':' + (sr.nationality || '') + ':' + (sr.status || '') + ':' + (sr.id_expiry_date || '') + ':' + (sr.work_permit_expiry || '') + ':' + (sr.residency_expiry || '');
+      if (sr) wdSig += '|' + (sr.id || '') + ':' + (sr.nationality || '') + ':' + (sr.status || '') + ':' + (sr.id_expiry_date || '') + ':' + (sr.work_permit_expiry || '') + ':' + (sr.residency_expiry || '') + ':' + (sr.renewal_status || '') + ':' + (sr.renewal_receipt_no || '') + ':' + (sr.renewal_submitted_date || '');
     }
     const qSnapUi = _getMapsQuotaSnapForUi();
     const qSig = `${qSnapUi.band}:${qSnapUi.metrics.tiles_2d.used}:${qSnapUi.metrics.places_text.used}:${qSnapUi.metrics.routes_compute.used}:${qSnapUi.gcp && qSnapUi.gcp.budgetConfirmed ? 1 : 0}`;
@@ -24992,18 +24994,24 @@
       const effWarnDays = wdS13.warnDays || s13WarnDays;
       const s13CritCnt = wdS13.counts.expired + wdS13.counts.critical_7;
       const s13TotalAlerts = wdS13.counts.actionable;
+      const s13InRenewal = wdS13.counts.renewal_submitted || 0;
       const s13Top = wdS13.items[0] || null;
+      const s13RenewalNote = s13InRenewal > 0
+        ? ` ${fmtNum(s13InRenewal)} renewal receipt${s13InRenewal === 1 ? '' : 's'} submitted awaiting clearance.`
+        : '';
       rawItems.push({
         id: 'S13',
         code: 'Rule #23 · HR Compliance',
         title: 'Work Permit, Residency & ID Renewal Watchdog',
         detail: s13TotalAlerts > 0
-          ? `${fmtNum(s13TotalAlerts)} active staff compliance item${s13TotalAlerts === 1 ? '' : 's'}: ${fmtNum(wdS13.counts.expired)} expired, ${fmtNum(wdS13.counts.critical_7)} due <= ${fmtNum(effCritDays, 0)}d, ${fmtNum(wdS13.counts.due_30)} due <= 30d, ${fmtNum(wdS13.counts.watch_60)} due <= ${fmtNum(effWarnDays, 0)}d, ${fmtNum(wdS13.counts.missing_permit)} foreign missing permit.${s13Top ? ` Top priority: ${s13Top.staffName} (${s13Top.badgeText}).` : ''}`
-          : `All ${fmtNum(wdS13.counts.total)} active staff records are within valid ID, work permit and residency renewal windows (${fmtNum(effWarnDays, 0)}d horizon).`,
+          ? `${fmtNum(s13TotalAlerts)} active staff compliance item${s13TotalAlerts === 1 ? '' : 's'}: ${fmtNum(wdS13.counts.expired)} expired, ${fmtNum(wdS13.counts.critical_7)} due <= ${fmtNum(effCritDays, 0)}d, ${fmtNum(wdS13.counts.due_30)} due <= 30d, ${fmtNum(wdS13.counts.watch_60)} due <= ${fmtNum(effWarnDays, 0)}d, ${fmtNum(wdS13.counts.missing_permit)} foreign missing permit.${s13RenewalNote}${s13Top ? ` Top priority: ${s13Top.staffName} (${s13Top.badgeText}).` : ''}`
+          : (s13InRenewal > 0
+            ? `${fmtNum(s13InRenewal)} renewal receipt${s13InRenewal === 1 ? '' : 's'} submitted and awaiting official clearance across ${fmtNum(wdS13.counts.total)} active staff records (${fmtNum(effWarnDays, 0)}d horizon).`
+            : `All ${fmtNum(wdS13.counts.total)} active staff records are within valid ID, work permit and residency renewal windows (${fmtNum(effWarnDays, 0)}d horizon).`),
         severity: s13CritCnt > 0 ? 'crit' : (s13TotalAlerts > 0 ? 'warn' : 'ok'),
         badge: s13CritCnt > 0
           ? `${fmtNum(s13CritCnt)} CRITICAL`
-          : (s13TotalAlerts > 0 ? `${fmtNum(s13TotalAlerts)} DUE / MISSING` : 'COMPLIANT'),
+          : (s13TotalAlerts > 0 ? `${fmtNum(s13TotalAlerts)} DUE / MISSING` : (s13InRenewal > 0 ? `${fmtNum(s13InRenewal)} IN RENEWAL` : 'COMPLIANT')),
         company: scope,
         rawMetric: s13TotalAlerts,
         rawSecondary: s13CritCnt,
@@ -43832,7 +43840,7 @@
       ? filteredEmpBase
       : filteredEmpBase.filter(e => {
           const smRec = (SEED.records && SEED.records.staff_members || []).find(s => s && !s.voided && !s.archived && ((e.staff_id && String(s.id) === String(e.staff_id)) || norm(s.name || '') === norm(e.staff || '')));
-          const synthetic = smRec || { id: e.staff_id || '', name: e.staff || '', nationality: e.nationality || '', status: e.status || '', nssf_no: e.nssf_no || '', id_expiry_date: e.id_expiry_date || '', work_permit_no: e.work_permit_no || '', work_permit_expiry: e.work_permit_expiry || '', residency_no: e.residency_no || '', residency_expiry: e.residency_expiry || '' };
+          const synthetic = smRec || { id: e.staff_id || '', name: e.staff || '', nationality: e.nationality || '', status: e.status || '', nssf_no: e.nssf_no || '', id_expiry_date: e.id_expiry_date || '', work_permit_no: e.work_permit_no || '', work_permit_expiry: e.work_permit_expiry || '', residency_no: e.residency_no || '', residency_expiry: e.residency_expiry || '', renewal_status: e.renewal_status || '', renewal_receipt_no: e.renewal_receipt_no || '', renewal_submitted_date: e.renewal_submitted_date || '' };
           return matchesComplianceTier(evaluateStaffComplianceRow(synthetic, SEED), _empWatchdogTier);
         });
     const filteredEmp = subMode === 'contracts' ? sortRows(_empWdFiltered, 'pay_emp', 'start_date', 'desc') : [];
@@ -44984,7 +44992,7 @@
                     ${(() => {
                       const smRec = (SEED.records && SEED.records.staff_members || []).find(s => s && !s.voided && !s.archived && ((e.staff_id && String(s.id) === String(e.staff_id)) || norm(s.name || '') === norm(e.staff || '')));
                       const ev = smRec ? evaluateStaffComplianceRow(smRec, SEED) : null;
-                      const cls = ev ? (ev.tier === 'expired' || ev.tier === 'critical_7' ? 'badge-bad' : (ev.tier === 'due_30' || ev.tier === 'watch_60' || ev.tier === 'missing_permit' ? 'badge-warn' : (ev.tier === 'ok' ? 'badge-ok' : 'badge-muted'))) : 'badge-muted';
+                      const cls = ev ? (ev.tier === 'expired' || ev.tier === 'critical_7' ? 'badge-bad' : (ev.tier === 'due_30' || ev.tier === 'watch_60' || ev.tier === 'missing_permit' ? 'badge-warn' : (ev.tier === 'renewal_submitted' ? 'badge-info' : (ev.tier === 'ok' ? 'badge-ok' : 'badge-muted')))) : 'badge-muted';
                       const lbl = (ev && ev.badgeText) ? ev.badgeText : 'No Expiry Set';
                       const packBtn = canAccessRdlReport('28') ? `<button type="button" class="btn-xs emp-hr-pack-btn" data-open-hr-pack data-hr-pack-staff="${esc((smRec && smRec.id) || e.staff_id || '')}" data-hr-pack-emp="${esc(e.id || '')}" data-hr-pack-name="${esc(e.staff || '')}" data-hr-pack-company="${esc(e.company || '')}" data-ui-tip="Contract &amp; NSSF Pack">${ic('printer')}</button>` : '';
                       return `<td><div class="emp-compliance-cell"><span class="badge permit-status-badge permit-tier-${esc((ev && ev.tier) || 'none')} ${cls}">${esc(lbl)}</span>${packBtn}</div></td>`;
@@ -45157,6 +45165,7 @@
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_staff">${ic('reg_staff')} Staff Registry (All BUs)</button>
             ${canAccessRdlReport('10') ? `<button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="10">${ic('printer')} Payroll RDL (#10)</button>` : ''}
+            ${canAccessRdlReport('28') ? `<button type="button" class="btn btn-ghost-bar" data-open-hr-bordereau data-hr-pack-company="${esc(COMPANY_BU_MATCH[STATE.company] || '')}" data-ui-tip="Open Company CNSS R3 &amp; Nominal Bordereau">${ic('printer')} CNSS R3 Bordereau</button>` : ''}
             <button type="button" class="btn btn-ghost-bar" id="payOpenPrePaydayCardBtn">${ic('receipt')} Pre-Payday Card</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_attendance">${ic('payroll_attendance')} Attendance (${fmtNum(attAll.length)})</button>
@@ -70253,36 +70262,43 @@
         topSubFr = top ? (top.missingForeignPermit && top.tier === 'missing_permit'
           ? `${top.nationality || 'Étranger'} : permis de travail manquant`
           : (top.urgentDoc ? `${top.urgentDoc.label} : ${top.minDays < 0 ? 'expiré ' + Math.abs(top.minDays) + ' j' : top.minDays + ' j restants'}` : sanitizePlain(top.badgeText))) : 'Tous les dossiers sont conformes';
+        const inRen = c.renewal_submitted || 0;
         const dueTotal = c.critical_7 + c.due_30 + c.watch_60;
-        physValEn = `${fmtNum(c.expired, 0)} expired / ${fmtNum(dueTotal, 0)} due / ${fmtNum(c.missing_permit, 0)} missing permit`;
-        physValAr = `${fmtNum(c.expired, 0)} منتهي / ${fmtNum(dueTotal, 0)} مستحق / ${fmtNum(c.missing_permit, 0)} بلا تصريح`;
-        physValFr = `${fmtNum(c.expired, 0)} expiré(s) / ${fmtNum(dueTotal, 0)} à renouv. / ${fmtNum(c.missing_permit, 0)} sans permis`;
+        physValEn = `${fmtNum(c.expired, 0)} expired / ${fmtNum(dueTotal, 0)} due / ${fmtNum(c.missing_permit, 0)} missing permit` + (inRen > 0 ? ` · ${fmtNum(inRen, 0)} in renewal` : '');
+        physValAr = `${fmtNum(c.expired, 0)} منتهي / ${fmtNum(dueTotal, 0)} مستحق / ${fmtNum(c.missing_permit, 0)} بلا تصريح` + (inRen > 0 ? ` · ${fmtNum(inRen, 0)} قيد التجديد` : '');
+        physValFr = `${fmtNum(c.expired, 0)} expiré(s) / ${fmtNum(dueTotal, 0)} à renouv. / ${fmtNum(c.missing_permit, 0)} sans permis` + (inRen > 0 ? ` · ${fmtNum(inRen, 0)} en renouvellement` : '');
         bEn = [
           top
-            ? `${fmtNum(rowCnt, 0)} active HR compliance alert(s) in ${companyEn}: ${fmtNum(c.expired, 0)} expired, ${fmtNum(c.critical_7, 0)} due <= ${fmtNum(effCrit, 0)}d, ${fmtNum(c.due_30, 0)} due <= 30d, ${fmtNum(c.watch_60, 0)} due <= ${fmtNum(effWarn, 0)}d, and ${fmtNum(c.missing_permit, 0)} foreign staff without work permit expiry.`
-            : `All active employee IDs, work permits and residencies in ${companyEn} remain within valid renewal windows (${fmtNum(effWarn, 0)}d horizon).`,
+            ? `${fmtNum(rowCnt, 0)} active HR compliance alert(s) in ${companyEn}: ${fmtNum(c.expired, 0)} expired, ${fmtNum(c.critical_7, 0)} due <= ${fmtNum(effCrit, 0)}d, ${fmtNum(c.due_30, 0)} due <= 30d, ${fmtNum(c.watch_60, 0)} due <= ${fmtNum(effWarn, 0)}d, and ${fmtNum(c.missing_permit, 0)} foreign staff without work permit expiry` + (inRen > 0 ? ` (${fmtNum(inRen, 0)} in Renewal Submitted follow-up).` : '.')
+            : `All active employee IDs, work permits and residencies in ${companyEn} remain within valid renewal windows (${fmtNum(effWarn, 0)}d horizon)` + (inRen > 0 ? ` (${fmtNum(inRen, 0)} in Renewal Submitted follow-up).` : '.'),
           top
             ? `Highest priority sits on ${topParty} (${topSubEn}); verify scanned renewal documents and Ministry of Labor filings immediately.`
-            : 'No expired, near-expiry or missing work permit gaps were flagged in active staff records.',
-          'Open Staff Registry or Employment Contracts to update document expiry dates or print the Contract & NSSF Pack before signing off.'
+            : (inRen > 0
+              ? `${fmtNum(inRen, 0)} staff member(s) hold a submitted renewal receipt pending final Ministry of Labor or General Security clearance.`
+              : 'No expired, near-expiry or missing work permit gaps were flagged in active staff records.'),
+          'Open Staff Registry or Employment Contracts to update document expiry dates, log a renewal receipt, or print the Contract & NSSF Pack before signing off.'
         ];
         bAr = [
           top
-            ? `تم رصد ${fmtNum(rowCnt, 0)} تنبيه امتثال نشط للموظفين في ${companyAr}: ${fmtNum(c.expired, 0)} منتهي الصلاحية، ${fmtNum(c.critical_7, 0)} خلال ${fmtNum(effCrit, 0)} يوماً، ${fmtNum(c.due_30, 0)} خلال 30 يوماً، ${fmtNum(c.watch_60, 0)} خلال ${fmtNum(effWarn, 0)} يوماً، و${fmtNum(c.missing_permit, 0)} موظف أجنبي بلا تاريخ انتهاء لتصريح العمل.`
-            : `جميع بطاقات الهوية وتصاريح العمل والإقامات للموظفين النشطين في ${companyAr} ضمن فترات الصلاحية السارية (${fmtNum(effWarn, 0)} يوماً).`,
+            ? `تم رصد ${fmtNum(rowCnt, 0)} تنبيه امتثال نشط للموظفين في ${companyAr}: ${fmtNum(c.expired, 0)} منتهي الصلاحية، ${fmtNum(c.critical_7, 0)} خلال ${fmtNum(effCrit, 0)} يوماً، ${fmtNum(c.due_30, 0)} خلال 30 يوماً، ${fmtNum(c.watch_60, 0)} خلال ${fmtNum(effWarn, 0)} يوماً، و${fmtNum(c.missing_permit, 0)} موظف أجنبي بلا تاريخ انتهاء لتصريح العمل` + (inRen > 0 ? ` (${fmtNum(inRen, 0)} قيد متابعة التجديد).` : '.')
+            : `جميع بطاقات الهوية وتصاريح العمل والإقامات للموظفين النشطين في ${companyAr} ضمن فترات الصلاحية السارية (${fmtNum(effWarn, 0)} يوماً)` + (inRen > 0 ? ` (${fmtNum(inRen, 0)} قيد متابعة التجديد).` : '.'),
           top
             ? `الأولوية القصوى تتركز لدى ${locOffender(topParty, 'ar')} (${topSubAr})؛ يُرجى مراجعة المستندات الممسوحة وإجراءات التجديد فوراً.`
-            : 'لم تُسجل أي مستندات منتهية أو قريبة الانتهاء أو تصاريح عمل مفقودة في السجلات النشطة.',
-          'افتح سجل الموظفين أو العقود لتحديث تواريخ الانتهاء أو طباعة ملف عقد العمل والضمان قبل الاعتماد.'
+            : (inRen > 0
+              ? `يوجد ${fmtNum(inRen, 0)} موظف(ين) لديهم إيصال طلب تجديد مقدم بانتظار الصدور النهائي من وزارة العمل أو الأمن العام.`
+              : 'لم تُسجل أي مستندات منتهية أو قريبة الانتهاء أو تصاريح عمل مفقودة في السجلات النشطة.'),
+          'افتح سجل الموظفين أو العقود لتحديث تواريخ الانتهاء أو تسجيل إيصال التجديد أو طباعة ملف عقد العمل والضمان قبل الاعتماد.'
         ];
         bFr = [
           top
-            ? `${fmtNum(rowCnt, 0)} alerte(s) conformité RH actives sur ${companyFr} : ${fmtNum(c.expired, 0)} expiré(s), ${fmtNum(c.critical_7, 0)} <= ${fmtNum(effCrit, 0)} j, ${fmtNum(c.due_30, 0)} <= 30 j, ${fmtNum(c.watch_60, 0)} <= ${fmtNum(effWarn, 0)} j, et ${fmtNum(c.missing_permit, 0)} salarié(s) étranger(s) sans permis de travail.`
-            : `Toutes les pièces d’identité, permis de travail et titres de séjour des salariés actifs sur ${companyFr} sont valides (${fmtNum(effWarn, 0)} j).`,
+            ? `${fmtNum(rowCnt, 0)} alerte(s) conformité RH actives sur ${companyFr} : ${fmtNum(c.expired, 0)} expiré(s), ${fmtNum(c.critical_7, 0)} <= ${fmtNum(effCrit, 0)} j, ${fmtNum(c.due_30, 0)} <= 30 j, ${fmtNum(c.watch_60, 0)} <= ${fmtNum(effWarn, 0)} j, et ${fmtNum(c.missing_permit, 0)} salarié(s) étranger(s) sans permis de travail` + (inRen > 0 ? ` (${fmtNum(inRen, 0)} en suivi de renouvellement déposé).` : '.')
+            : `Toutes les pièces d’identité, permis de travail et titres de séjour des salariés actifs sur ${companyFr} sont valides (${fmtNum(effWarn, 0)} j)` + (inRen > 0 ? ` (${fmtNum(inRen, 0)} en suivi de renouvellement déposé).` : '.'),
           top
             ? `La priorité maximale concerne ${locOffender(topParty, 'fr')} (${topSubFr}) ; vérifiez immédiatement les justificatifs numérisés.`
-            : 'Aucun document expiré, proche d’échéance ou permis manquant n’a été détecté.',
-          'Ouvrez le Registre du personnel ou les Contrats pour mettre à jour les dates d’expiration ou éditer le Dossier Contrat & CNSS avant signature.'
+            : (inRen > 0
+              ? `${fmtNum(inRen, 0)} salarié(s) disposent d’un récépissé de renouvellement déposé en attente de délivrance officielle.`
+              : 'Aucun document expiré, proche d’échéance ou permis manquant n’a été détecté.'),
+          'Ouvrez le Registre du personnel ou les Contrats pour mettre à jour les dates d’expiration, saisir un récépissé de renouvellement ou éditer le Dossier Contrat & CNSS avant signature.'
         ];
         return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
       }
@@ -104189,6 +104205,11 @@
       const idExpVal = cleanOptIso('f_id_expiry_date', 'ID Expiry Date');
       const wpExpVal = cleanOptIso('f_work_permit_expiry', 'Work Permit Expiry');
       const resExpVal = cleanOptIso('f_residency_expiry', 'Residency Expiry');
+      const renSubDateRaw = cleanOptIso('f_renewal_submitted_date', 'Renewal Submitted Date');
+      const renRcptVal = String(val('f_renewal_receipt_no') || '').trim();
+      let renStatusVal = normalizeStaffRenewalStatus(val('f_renewal_status'));
+      if (renRcptVal && renStatusVal !== 'submitted') renStatusVal = 'submitted';
+      const renSubDateVal = renStatusVal === 'submitted' ? (renSubDateRaw || todayISO()) : renSubDateRaw;
       record = {
         ...base,
         company: staffCo,
@@ -104209,6 +104230,9 @@
         work_permit_expiry: wpExpVal,
         residency_no: val('f_residency_no') || '',
         residency_expiry: resExpVal,
+        renewal_status: renStatusVal,
+        renewal_receipt_no: renRcptVal,
+        renewal_submitted_date: renSubDateVal,
         role: roleVal,
         role_category: roleCat,
         worker_category: roleCat,
@@ -108358,6 +108382,7 @@
           res.motherNameLatin ? `<span><b>Mother:</b> <span data-no-i18n="1">${esc(res.motherNameLatin)}</span></span>` : '',
           res.dob ? `<span><b>DOB:</b> <span data-no-i18n="1">${esc(res.dob)}</span></span>` : '',
           res.nationalityLatin ? `<span><b>Nationality:</b> <span data-no-i18n="1">${esc(res.nationalityLatin)}</span></span>` : '',
+          (res.civilRegistryNumber || res.civilRegistryPlace) ? `<span><b>Civil Registry:</b> <span data-no-i18n="1">${esc([res.civilRegistryNumber, res.civilRegistryPlace].filter(Boolean).join(' · '))}</span></span>` : '',
           (res.nssfNumber || res.idNumber) ? `<span><b>ID / NSSF:</b> <span data-no-i18n="1">${esc(res.idNumber || res.nssfNumber)}</span></span>` : '',
           res.idExpiryDate ? `<span><b>ID Expiry:</b> <span data-no-i18n="1">${esc(res.idExpiryDate)}</span></span>` : '',
           res.workPermitExpiryDate ? `<span><b>Work Permit Expiry:</b> <span data-no-i18n="1">${esc(res.workPermitExpiryDate)}</span></span>` : '',
@@ -108370,6 +108395,7 @@
             <div class="staff-id-scan-meta">
               <div class="staff-id-scan-badges">
                 <span class="staff-id-scan-badge">${esc(formatIdDocKindBadgeLabel(res.docKind))}</span>
+                ${Number(res.sidesCaptured || 0) >= 2 ? `<span class="staff-id-merged-badge">Front + Back Merged</span>` : ''}
                 <span class="staff-id-scan-engine" data-no-i18n="1">${esc(res.engineLabel || 'ID Scan')}</span>
               </div>
               <div class="staff-id-scan-fields">${pairs || '<span>No structured fields detected.</span>'}</div>
@@ -108409,7 +108435,7 @@
         setScanField('f_nationality', res.nationalityLatin);
         setScanField('f_nationality_ar', res.nationalityArabic);
         setScanField('f_id_doc_kind', res.docKind);
-        const idRef = res.idNumber || res.nssfNumber || res.workPermitNumber || res.residencyNumber || '';
+        const idRef = res.idNumber || res.civilRegistryNumber || res.nssfNumber || res.workPermitNumber || res.residencyNumber || '';
         setScanField('f_reference', idRef);
         setScanField('f_nssf_no', res.nssfNumber);
         setScanField('f_id_expiry_date', cleanIsoDate(res.idExpiryDate));
@@ -108420,18 +108446,22 @@
         const prevIdCount = FORM_UI.attachments.length;
         FORM_UI.attachments = FORM_UI.attachments.filter(a => !(a && a.from_id_scan));
         let attChanged = FORM_UI.attachments.length !== prevIdCount;
-        if (res.attObj && res.attObj.name) {
-          const nextIdAtt = Object.assign({}, res.attObj, { from_id_scan: true });
+        const scanAtts = (Array.isArray(res.attObjs) && res.attObjs.length)
+          ? res.attObjs
+          : ((res.attObj && res.attObj.name) ? [res.attObj] : []);
+        scanAtts.forEach(srcAtt => {
+          if (!srcAtt || !srcAtt.name) return;
+          const nextIdAtt = Object.assign({}, srcAtt, { from_id_scan: true });
           const exists = FORM_UI.attachments.some(a => a && (
             (nextIdAtt.id && a.id === nextIdAtt.id)
             || (a.name === nextIdAtt.name && a.size === nextIdAtt.size)
-            || (nextIdAtt.data && a.data === nextIdAtt.data)
+            || (nextIdAtt.data && a.data === nextIdAtt.data && (!a.name || !nextIdAtt.name || a.name === nextIdAtt.name))
           ));
           if (!exists) {
             FORM_UI.attachments.push(nextIdAtt);
             attChanged = true;
           }
-        }
+        });
         if (attChanged) renderEntryAttachmentsListUI();
         FORM_UI.userInteracted = true;
         renderStaffIdScanResultStrip(res, '');
@@ -108507,6 +108537,24 @@
       }
       if (sampleBtn) {
         sampleBtn.addEventListener('click', () => applyStaffModalIdScan('lebanese_id', 'Sample ID Card'));
+      }
+      const renStatEl = $('f_renewal_status');
+      const renRcptEl = $('f_renewal_receipt_no');
+      const renDateEl = $('f_renewal_submitted_date');
+      if (renRcptEl) {
+        renRcptEl.addEventListener('input', () => {
+          if (String(renRcptEl.value || '').trim()) {
+            if (renStatEl && normalizeStaffRenewalStatus(renStatEl.value) !== 'submitted') renStatEl.value = 'submitted';
+            if (renDateEl && !String(renDateEl.value || '').trim()) renDateEl.value = todayISO();
+          }
+        });
+      }
+      if (renStatEl) {
+        renStatEl.addEventListener('change', () => {
+          if (normalizeStaffRenewalStatus(renStatEl.value) === 'submitted' && renDateEl && !String(renDateEl.value || '').trim()) {
+            renDateEl.value = todayISO();
+          }
+        });
       }
     }
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
@@ -109353,6 +109401,9 @@
       setModalControlVal('f_work_permit_expiry', row.work_permit_expiry ? String(row.work_permit_expiry).slice(0, 10) : '');
       setModalControlVal('f_residency_no', row.residency_no || '');
       setModalControlVal('f_residency_expiry', row.residency_expiry ? String(row.residency_expiry).slice(0, 10) : '');
+      setModalControlVal('f_renewal_status', normalizeStaffRenewalStatus(row.renewal_status));
+      setModalControlVal('f_renewal_receipt_no', row.renewal_receipt_no || '');
+      setModalControlVal('f_renewal_submitted_date', row.renewal_submitted_date ? String(row.renewal_submitted_date).slice(0, 10) : '');
       setModalControlVal('f_role', row.role || '');
       setModalControlVal('f_emp_cat', resolveRoleCategory(row.role || '', row.role_category || row.worker_category || ''));
       setModalControlVal('f_phone', row.phone || '');
@@ -111970,6 +112021,9 @@
         { key: 'work_permit_expiry', label: 'Work Permit Expiry', type: 'date', sec: 2 },
         { key: 'residency_no', label: 'Residency #', type: 'text', sec: 2 },
         { key: 'residency_expiry', label: 'Residency Expiry', type: 'date', sec: 2 },
+        { key: 'renewal_status', label: 'Renewal Filing Status', type: 'select', options: [['', 'Active Tracking (No Pending Receipt)'], ['submitted', 'Renewal Submitted (Receipt on File)']], sec: 2, getVal: r => normalizeStaffRenewalStatus(r.renewal_status) },
+        { key: 'renewal_receipt_no', label: 'Renewal Receipt #', type: 'text', sec: 2 },
+        { key: 'renewal_submitted_date', label: 'Renewal Submitted Date', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       staff_roles: [
@@ -112032,6 +112086,9 @@
         { key: 'work_permit_expiry', label: 'Work Permit Expiry', type: 'date', sec: 2 },
         { key: 'residency_no', label: 'Residency #', type: 'text', sec: 2 },
         { key: 'residency_expiry', label: 'Residency Expiry', type: 'date', sec: 2 },
+        { key: 'renewal_status', label: 'Renewal Filing Status', type: 'select', options: [['', 'Active Tracking (No Pending Receipt)'], ['submitted', 'Renewal Submitted (Receipt on File)']], sec: 2, getVal: r => normalizeStaffRenewalStatus(r.renewal_status) },
+        { key: 'renewal_receipt_no', label: 'Renewal Receipt #', type: 'text', sec: 2 },
+        { key: 'renewal_submitted_date', label: 'Renewal Submitted Date', type: 'date', sec: 2 },
         { key: 'salary_usd', label: 'Base Salary ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'daily_rate', label: 'Daily Rate ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'salary_pending', label: 'Awaiting Salary Assignment ($0 Pending)', type: 'bool', sec: 3, getVal: r => Boolean(isPendingSalaryEmployment(r)) },
@@ -114217,6 +114274,42 @@
         </div>
       </div>
 
+      ${(key === 'staff_members' || key === 'employments') && (canModifyRecord() || canModifyData()) && !isInspWordOnly ? (() => {
+        let inspLinkedSm = null;
+        if (key === 'employments') {
+          const smPool = [].concat(
+            (STATE.customRecords && STATE.customRecords.staff_members) || [],
+            (SEED && SEED.records && SEED.records.staff_members) || []
+          ).filter(s => s && !s.voided && !s.archived);
+          const linkId = String(row.enrolled_staff_id || row.staff_id || '').trim();
+          const rowNm = norm(row.staff || row.name || '');
+          const rowCo = row.company ? norm(canonCompany(row.company)) : '';
+          inspLinkedSm = (linkId ? smPool.find(s => String(s.id || '') === linkId) : null)
+            || (rowNm
+              ? (smPool.find(s => norm(s.name || s.staff) === rowNm && rowCo && s.company && norm(canonCompany(s.company)) === rowCo)
+                || smPool.find(s => norm(s.name || s.staff) === rowNm && (!rowCo || !s.company)))
+              : null);
+        }
+        const inspCompTarget = inspLinkedSm || row;
+        const inspCompEv = evaluateStaffComplianceRow(inspCompTarget, SEED);
+        const effRenStatus = normalizeStaffRenewalStatus(row.renewal_status || (inspLinkedSm && inspLinkedSm.renewal_status) || '');
+        const isRenSub = effRenStatus === 'submitted';
+        const effRenRcpt = String(row.renewal_receipt_no || (inspLinkedSm && inspLinkedSm.renewal_receipt_no) || '').trim();
+        const badgeCls = inspCompEv ? `permit-tier-${inspCompEv.tier}` : 'permit-tier-none';
+        const curDateVal = String(row.renewal_submitted_date || (inspLinkedSm && inspLinkedSm.renewal_submitted_date) || todayISO()).slice(0, 10);
+        return `
+          <div class="insp-renewal-quickbar" id="inspRenewalQuickBar">
+            <span class="permit-status-badge ${esc(badgeCls)}" data-no-i18n="1">${esc((inspCompEv && inspCompEv.badgeText) || 'Compliance')}</span>
+            <label for="inspQuickRenewalReceiptInp" class="insp-ren-lbl">Renewal Receipt #</label>
+            <input type="text" id="inspQuickRenewalReceiptInp" class="insp-ren-input" placeholder="Receipt / Ref #" value="${esc(effRenRcpt)}" autocomplete="off">
+            <label for="inspQuickRenewalDateInp" class="insp-ren-lbl">Renewal Submitted Date</label>
+            <input type="date" id="inspQuickRenewalDateInp" class="insp-ren-date" value="${esc(curDateVal)}">
+            <button type="button" class="btn btn-sm btn-primary" id="inspMarkRenewalBtn">Mark Renewal Submitted</button>
+            ${isRenSub ? `<button type="button" class="btn btn-sm" id="inspClearRenewalBtn">Clear Renewal Receipt</button>` : ''}
+          </div>
+        `;
+      })() : ''}
+
       <!-- Inline Record Modification Drawer (Gated by Role Modify Data / Words Permission) -->
       <div class="insp-modify-drawer" id="inspModifyDrawer" data-t24-company="${esc(String((row && row.company) || ''))}" hidden>
         <div class="insp-modify-hdr">
@@ -114748,6 +114841,125 @@
         openHrPrintPack({ staff: stName, staffId, empId, company: staffCo });
       });
     }
+    const inspMarkRenewalBtn = $('inspMarkRenewalBtn');
+    const inspClearRenewalBtn = $('inspClearRenewalBtn');
+    let _inspRenewalInFlight = false;
+    const applyQuickRenewal = async nextMode => {
+      if (_inspRenewalInFlight || !(canModifyRecord() || canModifyData()) || isInspWordOnly) return;
+      const rcptVal = nextMode === 'submitted'
+        ? String(($('inspQuickRenewalReceiptInp') && $('inspQuickRenewalReceiptInp').value) || '').trim()
+        : '';
+      const rawDate = nextMode === 'submitted'
+        ? String(($('inspQuickRenewalDateInp') && $('inspQuickRenewalDateInp').value) || todayISO()).trim().slice(0, 10)
+        : '';
+      if (nextMode === 'submitted' && rawDate && !isValidStrictIsoCalendarDate(rawDate)) {
+        toast('Renewal Submitted Date must be a valid calendar YYYY-MM-DD date.', 'err');
+        return;
+      }
+      const syncTables = ['staff_members', 'employments', 'freelance_entries'];
+      const preRowSnap = Object.assign({}, row);
+      const snapCustom = {};
+      const snapSeed = {};
+      const preByTblId = new Map();
+      syncTables.forEach(tbl => {
+        snapCustom[tbl] = Array.isArray(STATE.customRecords[tbl])
+          ? STATE.customRecords[tbl].map(r => (r && typeof r === 'object' ? Object.assign({}, r) : r))
+          : null;
+        snapSeed[tbl] = (SEED.records && Array.isArray(SEED.records[tbl]))
+          ? SEED.records[tbl].map(r => (r && typeof r === 'object' ? Object.assign({}, r) : r))
+          : null;
+        (snapSeed[tbl] || []).concat(snapCustom[tbl] || []).forEach(r => {
+          if (r && r.id != null) preByTblId.set(`${tbl}::${String(r.id)}`, Object.assign({}, r));
+        });
+      });
+      const restoreRenewalSnap = () => {
+        Object.keys(row).forEach(k => {
+          if (!Object.prototype.hasOwnProperty.call(preRowSnap, k)) delete row[k];
+        });
+        Object.keys(preRowSnap).forEach(k => { row[k] = preRowSnap[k]; });
+        syncTables.forEach(tbl => {
+          if (snapCustom[tbl] !== null) STATE.customRecords[tbl] = snapCustom[tbl];
+          else delete STATE.customRecords[tbl];
+          if (SEED.records && snapSeed[tbl] !== null) SEED.records[tbl] = snapSeed[tbl];
+        });
+        applyCustomRecordsToSeed();
+        invalidateAllSeedCaches();
+        saveLocalAuthAndRecords();
+      };
+      const setRenewalBtnsDisabled = disabled => {
+        if (inspMarkRenewalBtn) inspMarkRenewalBtn.disabled = disabled;
+        if (inspClearRenewalBtn) inspClearRenewalBtn.disabled = disabled;
+      };
+
+      _inspRenewalInFlight = true;
+      setRenewalBtnsDisabled(true);
+      try {
+        row.renewal_status = nextMode === 'submitted' ? 'submitted' : '';
+        row.renewal_receipt_no = rcptVal;
+        row.renewal_submitted_date = nextMode === 'submitted' ? (rawDate || todayISO()) : '';
+        row.modified_by = (activeUser() && activeUser().email) || '';
+        row.modified_at = nextMonotonicIso();
+        if (!Array.isArray(STATE.customRecords[key])) STATE.customRecords[key] = [];
+        const crIdx = STATE.customRecords[key].findIndex(x => x && String(x.id) === String(row.id));
+        if (crIdx >= 0) Object.assign(STATE.customRecords[key][crIdx], row);
+        else STATE.customRecords[key].unshift(Object.assign({}, row));
+        const extraApiPosts = [];
+        syncHrComplianceFields({
+          crKey: key,
+          record: row,
+          isEditingExisting: true,
+          explicitKeys: ['renewal_status', 'renewal_receipt_no', 'renewal_submitted_date'],
+          extraApiPosts
+        });
+        applyCustomRecordsToSeed();
+        invalidateAllSeedCaches();
+        stampBatchModifiedAt(extraApiPosts, key, row);
+
+        const shouldPostRemote = !window.__fastInspectorModifyTest && typeof hasServerApi === 'function' && hasServerApi() && !isDemoScopeActive();
+        if (shouldPostRemote) {
+          const primaryRes = await postRecordToLocalApi(key, Object.assign({}, row), { deferRender: true });
+          if (!primaryRes || !primaryRes.ok) {
+            restoreRenewalSnap();
+            renderApp();
+            const errMsg = (primaryRes && (primaryRes.error || (primaryRes.err && primaryRes.err.error)))
+              || 'Could not save renewal status to server. Changes were rolled back.';
+            toast(errMsg, 'err');
+            return;
+          }
+          if (extraApiPosts.length) {
+            const extraRes = await postRecordPairsChunked(extraApiPosts, 8, { deferRender: true });
+            if (!extraRes || !extraRes.ok) {
+              const postedExtra = Array.isArray(extraRes && extraRes.postedPairs) ? extraRes.postedPairs : [];
+              for (let i = postedExtra.length - 1; i >= 0; i--) {
+                const [pTbl, pRec] = postedExtra[i];
+                const prevRec = pRec && pRec.id != null ? preByTblId.get(`${pTbl}::${String(pRec.id)}`) : null;
+                if (prevRec) {
+                  await postRecordToLocalApi(pTbl, Object.assign({}, prevRec, { same_person_confirmed: true }), { deferRender: true });
+                }
+              }
+              await postRecordToLocalApi(key, Object.assign({}, preRowSnap, { same_person_confirmed: true }), { deferRender: true });
+              restoreRenewalSnap();
+              renderApp();
+              const errMsg = (extraRes && (extraRes.error || (extraRes.err && extraRes.err.error)))
+                || 'Could not sync renewal status across linked staff records. Changes were rolled back.';
+              toast(errMsg, 'err');
+              return;
+            }
+          }
+        }
+
+        saveLocalAuthAndRecords();
+        renderApp();
+        if (shouldPostRemote) syncWithCloud(true);
+        toast(nextMode === 'submitted' ? 'Marked Renewal Submitted.' : 'Cleared renewal receipt; active expiry tracking restored.', 'ok');
+        showRecordInspector(key, row.id || row.name || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
+      } finally {
+        _inspRenewalInFlight = false;
+        setRenewalBtnsDisabled(false);
+      }
+    };
+    if (inspMarkRenewalBtn) inspMarkRenewalBtn.addEventListener('click', () => { void applyQuickRenewal('submitted'); });
+    if (inspClearRenewalBtn) inspClearRenewalBtn.addEventListener('click', () => { void applyQuickRenewal(''); });
     const inspNewSiteRawRuleBtn = $('inspNewSiteRawRuleBtn');
     if (inspNewSiteRawRuleBtn) {
       inspNewSiteRawRuleBtn.addEventListener('click', () => {
@@ -115419,7 +115631,7 @@
             return;
           }
           if (isUserEdited && (key === 'staff_members' || key === 'employments' || key === 'freelance_entries')
-            && (fk === 'id_expiry_date' || fk === 'work_permit_expiry' || fk === 'residency_expiry' || fk === 'dob')) {
+            && (fk === 'id_expiry_date' || fk === 'work_permit_expiry' || fk === 'residency_expiry' || fk === 'dob' || fk === 'renewal_submitted_date')) {
             const dtStr = String(nextVal ?? '').trim();
             if (dtStr && !isValidStrictIsoCalendarDate(dtStr)) {
               validationError = `${String(fDef.label || fk).replace(/\s*\*\s*$/, '')} must be a valid calendar YYYY-MM-DD date.`;
@@ -116395,6 +116607,21 @@
         enforceUneditedNumericInvariance(origRowSnap, row, editedKeySet);
         if (isSaveWordOnly) {
           enforceStrictNumericLockFromOrig(origRowSnap, row);
+        }
+        if ((key === 'staff_members' || key === 'employments' || key === 'freelance_entries')
+          && ('renewal_status' in pendingUpdates || 'renewal_receipt_no' in pendingUpdates || 'renewal_submitted_date' in pendingUpdates)) {
+          let renStatus = normalizeStaffRenewalStatus(row.renewal_status);
+          const renRcpt = String(row.renewal_receipt_no || '').trim();
+          const renDate = String(row.renewal_submitted_date || '').trim().slice(0, 10);
+          if (renRcpt && 'renewal_receipt_no' in pendingUpdates && !('renewal_status' in pendingUpdates)) {
+            renStatus = 'submitted';
+          }
+          row.renewal_status = renStatus;
+          row.renewal_receipt_no = renRcpt;
+          row.renewal_submitted_date = renStatus === 'submitted' ? (renDate || todayISO()) : renDate;
+          pendingUpdates.renewal_status = row.renewal_status;
+          pendingUpdates.renewal_receipt_no = row.renewal_receipt_no;
+          pendingUpdates.renewal_submitted_date = row.renewal_submitted_date;
         }
 
         if (isEquipInspect && targetEqRow && ('capacity' in pendingUpdates || 'supplier' in pendingUpdates || 'default_driver' in pendingUpdates || Boolean(effToDate))) {
@@ -141947,7 +142174,12 @@
     return chk.getUTCFullYear() === y && chk.getUTCMonth() === mo - 1 && chk.getUTCDate() === d;
   }
 
-  const _HR_SYNC_COMPLIANCE_COLS = ['father_name', 'father_name_ar', 'full_name_ar', 'mother_name', 'mother_name_ar', 'dob', 'nationality', 'nationality_ar', 'reference', 'id_doc_kind', 'nssf_no', 'id_expiry_date', 'work_permit_no', 'work_permit_expiry', 'residency_no', 'residency_expiry'];
+  function normalizeStaffRenewalStatus(v) {
+    const s = String(v == null ? '' : v).trim().toLowerCase();
+    return /^(submitted|renewal_submitted|receipt|in_progress|pending_renewal)$/.test(s) ? 'submitted' : '';
+  }
+
+  const _HR_SYNC_COMPLIANCE_COLS = ['father_name', 'father_name_ar', 'full_name_ar', 'mother_name', 'mother_name_ar', 'dob', 'nationality', 'nationality_ar', 'reference', 'id_doc_kind', 'nssf_no', 'id_expiry_date', 'work_permit_no', 'work_permit_expiry', 'residency_no', 'residency_expiry', 'renewal_status', 'renewal_receipt_no', 'renewal_submitted_date'];
 
   function syncHrComplianceFields(opts = {}) {
     const crKey = String((opts && opts.crKey) || '').trim();
@@ -141956,6 +142188,12 @@
     const explicitSet = Array.isArray(opts && opts.explicitKeys) ? new Set(opts.explicitKeys) : null;
     const extraApiPosts = Array.isArray(opts && opts.extraApiPosts) ? opts.extraApiPosts : null;
     if (!record || !crKey) return;
+
+    const cleanComplianceFieldVal = (k, rawV) => {
+      if (k === 'father_name') return rawV ? cleanFatherName(rawV) : '';
+      if (k === 'renewal_status') return normalizeStaffRenewalStatus(rawV);
+      return String(rawV ?? '').trim();
+    };
 
     if ((crKey === 'employments' || crKey === 'freelance_entries') && record.staff) {
       const hasAnySync = explicitSet
@@ -141978,8 +142216,8 @@
         _HR_SYNC_COMPLIANCE_COLS.forEach(k => {
           const isExplicit = Boolean(explicitSet && explicitSet.has(k));
           if (explicitSet && !isExplicit) return;
-          const nv = k === 'father_name' && record[k] ? cleanFatherName(record[k]) : String(record[k] ?? '').trim();
-          const curV = String(smHit[k] ?? '').trim();
+          const nv = cleanComplianceFieldVal(k, record[k]);
+          const curV = cleanComplianceFieldVal(k, smHit[k]);
           if (isExplicit) {
             if (curV !== nv) {
               smHit[k] = nv;
@@ -142013,7 +142251,7 @@
       _HR_SYNC_COMPLIANCE_COLS.forEach(k => {
         const isExplicit = Boolean(explicitSet && explicitSet.has(k));
         if (explicitSet && !isExplicit) return;
-        const val = k === 'father_name' && record[k] ? cleanFatherName(record[k]) : String(record[k] ?? '').trim();
+        const val = cleanComplianceFieldVal(k, record[k]);
         if (val || isExplicit) stSyncUpdates[k] = val;
       });
       if (!Object.keys(stSyncUpdates).length) return;
@@ -142043,7 +142281,7 @@
           let changed = false;
           if (stIdStr && !String(rowObj.staff_id || '').trim()) { rowObj.staff_id = stIdStr; changed = true; }
           Object.keys(stSyncUpdates).forEach(k => {
-            if (String(rowObj[k] ?? '').trim() !== stSyncUpdates[k]) {
+            if (cleanComplianceFieldVal(k, rowObj[k]) !== stSyncUpdates[k]) {
               rowObj[k] = stSyncUpdates[k];
               changed = true;
             }
@@ -142178,6 +142416,9 @@
     const wpExp = _complianceNormIso(s.work_permit_expiry || '');
     const resNo = String(s.residency_no || '').trim();
     const resExp = _complianceNormIso(s.residency_expiry || '');
+    const renewalStatus = normalizeStaffRenewalStatus(s.renewal_status);
+    const renewalReceiptNo = String(s.renewal_receipt_no || '').trim();
+    const renewalSubmittedDate = _complianceNormIso(s.renewal_submitted_date || '');
     const missingForeignPermit = Boolean(!explicitlyInactive && !allEmpsEnded && isForeign && !wpExp);
     const docs = [];
     const pushDoc = (kind, label, docNo, expiryDate) => {
@@ -142201,33 +142442,44 @@
     docs.sort((a, b) => a.daysLeft - b.daysLeft);
     const urgent = docs.length ? docs[0] : null;
     const minDays = urgent ? urgent.daysLeft : null;
-    let tier = 'none';
+    let underlyingTier = 'none';
     if (explicitlyInactive || allEmpsEnded) {
-      tier = 'inactive';
+      underlyingTier = 'inactive';
     } else if (minDays != null && minDays < 0) {
-      tier = 'expired';
+      underlyingTier = 'expired';
     } else if (minDays != null && minDays <= critDays) {
-      tier = 'critical_7';
+      underlyingTier = 'critical_7';
     } else if (minDays != null && minDays <= 30 && minDays <= warnDays) {
-      tier = 'due_30';
+      underlyingTier = 'due_30';
     } else if (minDays != null && minDays <= warnDays) {
-      tier = 'watch_60';
+      underlyingTier = 'watch_60';
     } else if (missingForeignPermit) {
-      tier = 'missing_permit';
+      underlyingTier = 'missing_permit';
     } else if (docs.length > 0) {
-      tier = 'ok';
+      underlyingTier = 'ok';
     }
+    const isSubmittedRenewal = !explicitlyInactive && !allEmpsEnded && renewalStatus === 'submitted';
+    const tier = isSubmittedRenewal ? 'renewal_submitted' : underlyingTier;
     let badgeText = '';
-    if (tier === 'expired') badgeText = `Expired (${Math.abs(minDays)}d ago)`;
+    if (tier === 'renewal_submitted') {
+      badgeText = renewalReceiptNo ? `Renewal Submitted · #${renewalReceiptNo}` : 'Renewal Submitted';
+    }
+    else if (tier === 'expired') badgeText = `Expired (${Math.abs(minDays)}d ago)`;
     else if (tier === 'critical_7') badgeText = minDays === 0 ? `${urgent.label} due today` : `${urgent.label} ${minDays}d`;
     else if (tier === 'due_30') badgeText = `${urgent.label} ${minDays}d`;
     else if (tier === 'watch_60') badgeText = `${urgent.label} ${minDays}d`;
     else if (missingForeignPermit) badgeText = 'Missing Work Permit';
     else if (tier === 'ok' && urgent) badgeText = `Valid (${urgent.daysLeft}d)`;
     else if (tier === 'inactive') badgeText = 'Inactive';
-    const summaryText = tier === 'expired' || tier === 'critical_7' || tier === 'due_30' || tier === 'watch_60'
-      ? `${urgent.label}: ${fmtDateDMY(urgent.expiryDate)} (${minDays < 0 ? Math.abs(minDays) + 'd overdue' : minDays + 'd left'})`
-      : (missingForeignPermit ? `Nationality ${s.nationality || 'Foreign'}: missing Work Permit expiry` : badgeText);
+    const summaryText = tier === 'renewal_submitted'
+      ? [
+          renewalReceiptNo ? `Receipt #${renewalReceiptNo}` : 'Renewal receipt submitted',
+          renewalSubmittedDate ? `Submitted ${fmtDateDMY(renewalSubmittedDate)}` : '',
+          urgent ? `${urgent.label}: ${fmtDateDMY(urgent.expiryDate)}` : (missingForeignPermit ? 'Pending permit issue' : '')
+        ].filter(Boolean).join(' · ')
+      : (tier === 'expired' || tier === 'critical_7' || tier === 'due_30' || tier === 'watch_60'
+          ? `${urgent.label}: ${fmtDateDMY(urgent.expiryDate)} (${minDays < 0 ? Math.abs(minDays) + 'd overdue' : minDays + 'd left'})`
+          : (missingForeignPermit ? `Nationality ${s.nationality || 'Foreign'}: missing Work Permit expiry` : badgeText));
     return {
       staffId: sid,
       staffName: String(s.name || '').trim(),
@@ -142241,12 +142493,17 @@
       workPermitExpiry: wpExp,
       residencyNo: resNo,
       residencyExpiry: resExp,
+      renewalStatus,
+      renewalReceiptNo,
+      renewalSubmittedDate,
+      underlyingTier,
       critDays,
       warnDays,
       docs,
       urgentDoc: urgent,
       minDays,
       tier,
+      isActionable: tier !== 'ok' && tier !== 'none' && tier !== 'inactive' && tier !== 'renewal_submitted',
       badgeText,
       summaryText
     };
@@ -142256,8 +142513,10 @@
     const tKey = String(tier || 'all').trim() || 'all';
     if (!ev || ev.inactive) return tKey === 'all';
     if (tKey === 'all') return true;
+    if (tKey === 'renewal_submitted') return ev.tier === 'renewal_submitted';
+    if (ev.tier === 'renewal_submitted') return false;
     if (tKey === 'missing_permit') return ev.tier === 'missing_permit' || Boolean(ev.missingForeignPermit);
-    if (tKey === 'actionable') return ev.tier !== 'ok' && ev.tier !== 'none' && ev.tier !== 'inactive';
+    if (tKey === 'actionable') return ev.tier !== 'ok' && ev.tier !== 'none' && ev.tier !== 'inactive' && ev.tier !== 'renewal_submitted';
     return ev.tier === tKey;
   }
 
@@ -142309,7 +142568,8 @@
     const byStaffId = new Map();
     const byStaffName = new Map();
     const evals = [];
-    const counts = { total: scopedRows.length, expired: 0, critical_7: 0, due_30: 0, watch_60: 0, missing_permit: 0, actionable: 0, ok: 0 };
+    const counts = { total: scopedRows.length, expired: 0, critical_7: 0, due_30: 0, watch_60: 0, missing_permit: 0, renewal_submitted: 0, renewalSubmitted: 0, actionable: 0, ok: 0 };
+    const renewalSubmittedRows = [];
     for (let i = 0; i < scopedRows.length; i++) {
       const r = scopedRows[i];
       if (!r) continue;
@@ -142322,9 +142582,14 @@
       if (matchesComplianceTier(ev, 'due_30')) counts.due_30++;
       if (matchesComplianceTier(ev, 'watch_60')) counts.watch_60++;
       if (matchesComplianceTier(ev, 'missing_permit')) counts.missing_permit++;
+      if (matchesComplianceTier(ev, 'renewal_submitted')) {
+        counts.renewal_submitted++;
+        renewalSubmittedRows.push(ev);
+      }
       if (matchesComplianceTier(ev, 'actionable')) counts.actionable++;
       if (ev.tier === 'ok') counts.ok++;
     }
+    counts.renewalSubmitted = counts.renewal_submitted;
     const items = evals.filter(ev => matchesComplianceTier(ev, 'actionable')).sort((a, b) => {
       const rank = t => (t === 'expired' ? 0 : t === 'critical_7' ? 1 : t === 'due_30' ? 2 : t === 'watch_60' ? 3 : 4);
       const ra = rank(a.tier);
@@ -142340,6 +142605,7 @@
       critDays,
       warnDays,
       items,
+      renewalSubmittedRows,
       evals,
       byStaffId,
       byStaffName
@@ -142354,13 +142620,13 @@
       const sd = SEED;
       const staffAll = (sd && sd.records && Array.isArray(sd.records.staff_members)) ? sd.records.staff_members : [];
       const evals = [];
-      const counts = { total: 0, expired: 0, critical_7: 0, due_30: 0, watch_60: 0, missing_permit: 0, actionable: 0, ok: 0 };
+      const counts = { total: 0, expired: 0, critical_7: 0, due_30: 0, watch_60: 0, missing_permit: 0, renewal_submitted: 0, renewalSubmitted: 0, actionable: 0, ok: 0 };
       for (let i = 0; i < o.contractRows.length; i++) {
         const e = o.contractRows[i];
         if (!e || e.voided || e.archived) continue;
         counts.total++;
         const smRec = staffAll.find(s => s && !s.voided && !s.archived && ((e.staff_id && String(s.id) === String(e.staff_id)) || norm(s.name || '') === norm(e.staff || '')));
-        const synthetic = smRec || { id: e.staff_id || '', name: e.staff || '', nationality: e.nationality || '', status: e.status || '', nssf_no: e.nssf_no || '', id_expiry_date: e.id_expiry_date || '', work_permit_no: e.work_permit_no || '', work_permit_expiry: e.work_permit_expiry || '', residency_no: e.residency_no || '', residency_expiry: e.residency_expiry || '' };
+        const synthetic = smRec || { id: e.staff_id || '', name: e.staff || '', nationality: e.nationality || '', status: e.status || '', nssf_no: e.nssf_no || '', id_expiry_date: e.id_expiry_date || '', work_permit_no: e.work_permit_no || '', work_permit_expiry: e.work_permit_expiry || '', residency_no: e.residency_no || '', residency_expiry: e.residency_expiry || '', renewal_status: e.renewal_status || '', renewal_receipt_no: e.renewal_receipt_no || '', renewal_submitted_date: e.renewal_submitted_date || '' };
         const ev = evaluateStaffComplianceRow(synthetic, sd, { critDays, warnDays });
         evals.push(ev);
         if (matchesComplianceTier(ev, 'expired')) counts.expired++;
@@ -142368,9 +142634,11 @@
         if (matchesComplianceTier(ev, 'due_30')) counts.due_30++;
         if (matchesComplianceTier(ev, 'watch_60')) counts.watch_60++;
         if (matchesComplianceTier(ev, 'missing_permit')) counts.missing_permit++;
+        if (matchesComplianceTier(ev, 'renewal_submitted')) counts.renewal_submitted++;
         if (matchesComplianceTier(ev, 'actionable')) counts.actionable++;
         if (ev.tier === 'ok') counts.ok++;
       }
+      counts.renewalSubmitted = counts.renewal_submitted;
       const items = evals.filter(ev => matchesComplianceTier(ev, 'actionable')).sort((a, b) => {
         const rank = t => (t === 'expired' ? 0 : t === 'critical_7' ? 1 : t === 'due_30' ? 2 : t === 'watch_60' ? 3 : 4);
         const ra = rank(a.tier), rb = rank(b.tier);
@@ -142393,12 +142661,17 @@
       { key: 'critical_7', labelHtml: critLblHtml, count: c.critical_7 },
       { key: 'due_30', labelHtml: '<span>Due &lt;= 30d</span>', count: c.due_30 },
       { key: 'watch_60', labelHtml: warnLblHtml, count: c.watch_60 },
-      { key: 'missing_permit', labelHtml: '<span>Foreign Missing Permit</span>', count: c.missing_permit }
+      { key: 'missing_permit', labelHtml: '<span>Foreign Missing Permit</span>', count: c.missing_permit },
+      { key: 'renewal_submitted', labelHtml: '<span>Renewal Submitted</span>', count: c.renewal_submitted }
     ];
     const hasAlerts = c.actionable > 0;
+    const hasFollowupOnly = !hasAlerts && c.renewal_submitted > 0;
     const packAccess = typeof canAccessRdlReport === 'function' ? canAccessRdlReport('28') : false;
     const leadItem = wd.items[0] || null;
-    const toneCls = c.expired > 0 || c.critical_7 > 0 ? 'is-critical' : (hasAlerts ? 'is-warn' : 'is-ok');
+    const toneCls = (c.expired > 0 || c.critical_7 > 0)
+      ? 'is-critical'
+      : (hasAlerts ? 'is-warn' : (hasFollowupOnly ? 'is-followup' : 'is-ok'));
+    const curScopeCo = COMPANY_BU_MATCH[STATE.company] || '';
     return `
       <div class="panel-card permit-watchdog-strip ${toneCls}" id="staffPermitWatchdogStrip" data-scope="${esc(o.scope || 'reg_staff')}">
         <div class="pwd-head">
@@ -142408,13 +142681,15 @@
               <div class="pwd-title">Work Permit, Residency &amp; ID Renewal Watchdog</div>
               <div class="pwd-sub">
                 ${hasAlerts
-                  ? `${fmtNum(c.actionable)} staff compliance item${c.actionable === 1 ? '' : 's'} flagged${leadItem ? ` (Top priority: ${esc(leadItem.staffName)} - ${esc(leadItem.badgeText)})` : ''}`
-                  : 'All active staff IDs, work permits and residencies are within valid dates.'}
+                  ? `${fmtNum(c.actionable)} staff compliance item${c.actionable === 1 ? '' : 's'} flagged${c.renewal_submitted > 0 ? ` · ${fmtNum(c.renewal_submitted)} in renewal` : ''}${leadItem ? ` (Top priority: ${esc(leadItem.staffName)} - ${esc(leadItem.badgeText)})` : ''}`
+                  : (hasFollowupOnly
+                    ? `${fmtNum(c.renewal_submitted)} renewal receipt${c.renewal_submitted === 1 ? '' : 's'} submitted and awaiting official clearance.`
+                    : 'All active staff IDs, work permits and residencies are within valid dates.')}
               </div>
             </div>
           </div>
           <div class="pwd-actions">
-            ${packAccess ? `<button type="button" class="btn btn-sm" data-open-hr-pack data-hr-pack-staff="${esc(leadItem ? leadItem.staffId : '')}" data-hr-pack-name="${esc(leadItem ? leadItem.staffName : '')}">${ic('printer')} Contract &amp; NSSF Pack</button>` : ''}
+            ${packAccess ? `<button type="button" class="btn btn-sm" data-open-hr-bordereau data-hr-pack-company="${esc(curScopeCo)}" data-ui-tip="Open Company CNSS R3 &amp; Nominal Bordereau">${ic('printer')} CNSS R3 Bordereau</button><button type="button" class="btn btn-sm" data-open-hr-pack data-hr-pack-staff="${esc(leadItem ? leadItem.staffId : '')}" data-hr-pack-name="${esc(leadItem ? leadItem.staffName : '')}">${ic('printer')} Contract &amp; NSSF Pack</button>` : ''}
           </div>
         </div>
         <div class="pwd-chips" role="group" aria-label="Compliance watchdog filter">
@@ -142433,38 +142708,52 @@
       return false;
     }
     const o = opts || {};
+    const wantMode = String(o.hrPackMode || o.packMode || '').trim().toLowerCase();
+    const isBordereau = wantMode === 'bordereau';
     let staffId = String(o.staffId || (o.staff && typeof o.staff === 'object' ? o.staff.id : '') || '').trim();
     const empId = String(o.empId || '').trim();
     const staffName = String(o.staffName || (typeof o.staff === 'string' ? o.staff : (o.staff && o.staff.name)) || '').trim();
-    const scopedEmps = typeof filterRecords === 'function'
-      ? filterRecords((SEED.records && SEED.records.employments) || [], { tableKey: 'employments', ignorePeriod: true, ignoreSearch: true })
-      : ((SEED.records && SEED.records.employments) || []).filter(e => e && !e.voided && !e.archived);
-    const scopedStaff = (typeof filterRecords === 'function'
-      ? filterRecords((SEED.records && SEED.records.staff_members) || [], { tableKey: 'staff_members', ignorePeriod: true, ignoreSearch: true, ignoreCompany: true })
-      : ((SEED.records && SEED.records.staff_members) || [])).filter(s => isStaffMemberAllowedForSeat(s, SEED));
-    if (!staffId && empId) {
-      const empRec = scopedEmps.find(e => e && String(e.id || '') === empId);
-      if (empRec) staffId = String(empRec.staff_id || '').trim() || staffId;
-    }
-    if (!staffId && staffName) {
-      const stRec = scopedStaff.find(s => s && norm(s.name || '') === norm(staffName));
-      if (stRec) staffId = String(stRec.id || '').trim();
-    }
-    if (!staffId) {
-      const firstStaff = scopedStaff[0];
-      if (firstStaff && firstStaff.id) staffId = String(firstStaff.id);
+    if (!isBordereau) {
+      const scopedEmps = typeof filterRecords === 'function'
+        ? filterRecords((SEED.records && SEED.records.employments) || [], { tableKey: 'employments', ignorePeriod: true, ignoreSearch: true })
+        : ((SEED.records && SEED.records.employments) || []).filter(e => e && !e.voided && !e.archived);
+      const scopedStaff = (typeof filterRecords === 'function'
+        ? filterRecords((SEED.records && SEED.records.staff_members) || [], { tableKey: 'staff_members', ignorePeriod: true, ignoreSearch: true, ignoreCompany: true })
+        : ((SEED.records && SEED.records.staff_members) || [])).filter(s => isStaffMemberAllowedForSeat(s, SEED));
+      if (!staffId && empId) {
+        const empRec = scopedEmps.find(e => e && String(e.id || '') === empId);
+        if (empRec) staffId = String(empRec.staff_id || '').trim() || staffId;
+      }
+      if (!staffId && staffName) {
+        const stRec = scopedStaff.find(s => s && norm(s.name || '') === norm(staffName));
+        if (stRec) staffId = String(stRec.id || '').trim();
+      }
+      if (!staffId) {
+        const firstStaff = scopedStaff[0];
+        if (firstStaff && firstStaff.id) staffId = String(firstStaff.id);
+      }
     }
     if (!STATE.rdl) STATE.rdl = {};
     STATE.activeStatement = '28';
     STATE.rdl.activeCode = '28';
     if (!STATE.rdl.params) STATE.rdl.params = {};
     if (staffId) STATE.rdl.params.hrStaff = staffId;
-    STATE.rdl.params.hrPackMode = String(o.hrPackMode || STATE.rdl.params.hrPackMode || 'both');
+    STATE.rdl.params.hrPackMode = wantMode || STATE.rdl.params.hrPackMode || 'both';
     if (o.hrPackLang) STATE.rdl.params.hrPackLang = String(o.hrPackLang);
+    if (isBordereau) {
+      const allowedCos = typeof allowedCompanyNames === 'function' ? allowedCompanyNames() : [];
+      const reqCo = String(o.company || o.co || COMPANY_BU_MATCH[STATE.company] || '').trim();
+      const matchedCo = reqCo ? allowedCos.find(c => norm(c) === norm(reqCo) || norm(canonCompany(c)) === norm(canonCompany(reqCo))) : '';
+      STATE.rdl.params.hrBordereauCo = matchedCo || allowedCos[0] || '';
+      if (o.year || o.hrBordereauYear) STATE.rdl.params.hrBordereauYear = String(o.year || o.hrBordereauYear);
+      if (o.period || o.hrBordereauPeriod) STATE.rdl.params.hrBordereauPeriod = String(o.period || o.hrBordereauPeriod);
+    }
     if (typeof setView === 'function') setView('statements');
     else { STATE.view = 'statements'; renderApp(); }
     return true;
   }
+
+  window.__mfgNormalizeStaffRenewalStatus = normalizeStaffRenewalStatus;
 
   window.__mfgIsNonLebaneseNationality = isNonLebaneseNationality;
   window.__mfgComplianceNormIso = _complianceNormIso;
@@ -142544,7 +142833,7 @@
         const dup = list.some(a => a && (
           (attObj.id && a.id === attObj.id)
           || (a.name === attObj.name && a.size === attObj.size)
-          || (attObj.data && a.data === attObj.data)
+          || (attObj.data && a.data === attObj.data && (!a.name || !attObj.name || a.name === attObj.name))
         ));
         if (!dup) list.push(Object.assign({}, attObj));
         target.attachments = list;
@@ -142609,7 +142898,10 @@
           if (row.proposedWorkPermitExpiry && /^\d{4}-\d{2}-\d{2}$/.test(String(row.proposedWorkPermitExpiry)) && !String(smTarget.work_permit_expiry || '').trim()) smTarget.work_permit_expiry = row.proposedWorkPermitExpiry;
           if (row.proposedResidencyNo && !String(smTarget.residency_no || '').trim()) smTarget.residency_no = row.proposedResidencyNo;
           if (row.proposedResidencyExpiry && /^\d{4}-\d{2}-\d{2}$/.test(String(row.proposedResidencyExpiry)) && !String(smTarget.residency_expiry || '').trim()) smTarget.residency_expiry = row.proposedResidencyExpiry;
-          if (row.proposedAttObj) mergeAttNoDup(smTarget, row.proposedAttObj);
+          const propAtts = (Array.isArray(row.proposedAttObjs) && row.proposedAttObjs.length)
+            ? row.proposedAttObjs
+            : (row.proposedAttObj ? [row.proposedAttObj] : []);
+          propAtts.forEach(ao => { if (ao) mergeAttNoDup(smTarget, ao); });
         }
         smTarget.modified_by = whoEmail;
         smTarget.modified_at = nowIso;
@@ -143150,8 +143442,9 @@
           if (!res || !res.ok || !$('fatherBackfillModal')) return;
           FATHER_BACKFILL_STATE.scannedCards.push(Object.assign({}, res, {
             company: batchFixedCo || '',
-            idNumber: res.idNumber || res.nssfNumber || res.workPermitNumber || res.residencyNumber || '',
-            fileName: res.fileName || (res.attObj && res.attObj.name) || 'Phone ID Scan'
+            idNumber: res.idNumber || res.civilRegistryNumber || res.nssfNumber || res.workPermitNumber || res.residencyNumber || '',
+            fileName: res.fileName || (res.attObj && res.attObj.name) || 'Phone ID Scan',
+            attObjs: Array.isArray(res.attObjs) && res.attObjs.length ? res.attObjs : (res.attObj ? [res.attObj] : [])
           }));
           const nextSum = getFatherBackfillSummary({ companyFilter: FATHER_BACKFILL_STATE.companyFilter });
           (nextSum.rows || []).forEach(r => {
@@ -143445,15 +143738,20 @@
     const idAtt = (spec && spec.idAttachment && typeof spec.idAttachment === 'object' && spec.idAttachment.name)
       ? Object.assign({}, spec.idAttachment)
       : null;
+    const idAtts = (Array.isArray(spec && spec.idAttachments) && spec.idAttachments.length)
+      ? spec.idAttachments.filter(a => a && typeof a === 'object' && a.name).map(a => Object.assign({}, a))
+      : (idAtt ? [idAtt] : []);
     const mergeIdAtt = target => {
-      if (!target || !idAtt) return;
+      if (!target || !idAtts.length) return;
       const list = Array.isArray(target.attachments) ? target.attachments.slice() : [];
-      const exists = list.some(a => a && (
-        (idAtt.id && a.id === idAtt.id)
-        || (a.name === idAtt.name && a.size === idAtt.size)
-        || (idAtt.data && a.data === idAtt.data)
-      ));
-      if (!exists) list.push(Object.assign({}, idAtt));
+      idAtts.forEach(srcAtt => {
+        const exists = list.some(a => a && (
+          (srcAtt.id && a.id === srcAtt.id)
+          || (a.name === srcAtt.name && a.size === srcAtt.size)
+          || (srcAtt.data && a.data === srcAtt.data && (!a.name || !srcAtt.name || a.name === srcAtt.name))
+        ));
+        if (!exists) list.push(Object.assign({}, srcAtt));
+      });
       target.attachments = list;
       target.attachment_count = list.length;
     };
@@ -143521,7 +143819,7 @@
       if (cleanWpExp) smRec.work_permit_expiry = cleanWpExp;
       if (cleanResNo) smRec.residency_no = cleanResNo;
       if (cleanResExp) smRec.residency_expiry = cleanResExp;
-      if (idAtt) mergeIdAtt(smRec);
+      if (idAtts.length) mergeIdAtt(smRec);
       smRec.role = cleanRole || smRec.role || 'General Labour';
       smRec.role_category = roleCat;
       smRec.worker_category = roleCat;
@@ -143553,6 +143851,9 @@
         work_permit_expiry: cleanWpExp,
         residency_no: cleanResNo,
         residency_expiry: cleanResExp,
+        renewal_status: '',
+        renewal_receipt_no: '',
+        renewal_submitted_date: '',
         company: canonicalCo,
         status: 'Active',
         archived: false,
@@ -143565,8 +143866,8 @@
         default_equipment: '',
         assign_start: today,
         reference: cleanRef,
-        attachments: idAtt ? [Object.assign({}, idAtt)] : [],
-        attachment_count: idAtt ? 1 : 0,
+        attachments: idAtts.map(a => Object.assign({}, a)),
+        attachment_count: idAtts.length,
         notes: `Enrolled by ${whoName} (${canonicalCo})`,
         source: 'app',
         is_app: true,
@@ -143650,7 +143951,12 @@
         work_permit_expiry: cleanWpExp,
         residency_no: cleanResNo,
         residency_expiry: cleanResExp,
+        renewal_status: '',
+        renewal_receipt_no: '',
+        renewal_submitted_date: '',
         reference: cleanRef,
+        attachments: idAtts.map(a => Object.assign({}, a)),
+        attachment_count: idAtts.length,
         role: cleanRole,
         role_category: roleCat,
         pay_type: 'Monthly',
@@ -143714,6 +144020,11 @@
       fillBlank('work_permit_expiry', cleanWpExp);
       fillBlank('residency_no', cleanResNo);
       fillBlank('residency_expiry', cleanResExp);
+      if (idAtts.length) {
+        const prevAttCnt = Array.isArray(empRec.attachments) ? empRec.attachments.length : 0;
+        mergeIdAtt(empRec);
+        if ((empRec.attachment_count || 0) !== prevAttCnt) empChanged = true;
+      }
       if (empChanged) {
         empRec.modified_by = whoEmail;
         empRec.modified_at = nowIso;
@@ -144659,6 +144970,7 @@
     STAFF_FACE_MODAL_STATE.statusText = '';
     STAFF_FACE_MODAL_STATE.statusCls = '';
     STAFF_FACE_MODAL_STATE.pendingIdAtt = null;
+    STAFF_FACE_MODAL_STATE.pendingIdAtts = [];
 
     const sfeNatFreq = new Map();
     const bumpSfeNat = (n, w = 1) => {
@@ -144928,6 +145240,7 @@
         if (el) el.value = '';
       });
       STAFF_FACE_MODAL_STATE.pendingIdAtt = null;
+      STAFF_FACE_MODAL_STATE.pendingIdAtts = [];
       const strip = $('sfeIdScanStrip');
       if (strip) { strip.innerHTML = ''; strip.hidden = true; }
       const errEl = $('sfeNewStaffErr');
@@ -145036,6 +145349,7 @@
         res.motherNameLatin ? `<span><b>Mother:</b> <span data-no-i18n="1">${esc(res.motherNameLatin)}</span></span>` : '',
         res.dob ? `<span><b>DOB:</b> <span data-no-i18n="1">${esc(res.dob)}</span></span>` : '',
         res.nationalityLatin ? `<span><b>Nationality:</b> <span data-no-i18n="1">${esc(res.nationalityLatin)}</span></span>` : '',
+        (res.civilRegistryNumber || res.civilRegistryPlace) ? `<span><b>Civil Registry:</b> <span data-no-i18n="1">${esc([res.civilRegistryNumber, res.civilRegistryPlace].filter(Boolean).join(' · '))}</span></span>` : '',
         (res.nssfNumber || res.idNumber) ? `<span><b>ID / NSSF:</b> <span data-no-i18n="1">${esc(res.idNumber || res.nssfNumber)}</span></span>` : '',
         res.idExpiryDate ? `<span><b>ID Expiry:</b> <span data-no-i18n="1">${esc(res.idExpiryDate)}</span></span>` : '',
         res.workPermitExpiryDate ? `<span><b>Work Permit Expiry:</b> <span data-no-i18n="1">${esc(res.workPermitExpiryDate)}</span></span>` : '',
@@ -145048,6 +145362,7 @@
           <div class="staff-id-scan-meta">
             <div class="staff-id-scan-badges">
               <span class="staff-id-scan-badge">${esc(formatIdDocKindBadgeLabel(res.docKind))}</span>
+              ${Number(res.sidesCaptured || 0) >= 2 ? `<span class="staff-id-merged-badge">Front + Back Merged</span>` : ''}
               <span class="staff-id-scan-engine" data-no-i18n="1">${esc(res.engineLabel || 'ID Scan')}</span>
             </div>
             <div class="staff-id-scan-fields">${pairs || '<span>No structured fields detected.</span>'}</div>
@@ -145084,7 +145399,7 @@
       setScanField('sfeNewStaffNat', res.nationalityLatin);
       setScanField('sfeNewStaffNatAr', res.nationalityArabic);
       setScanField('sfeNewStaffDocKind', res.docKind);
-      const idRef = res.idNumber || res.nssfNumber || res.workPermitNumber || res.residencyNumber || '';
+      const idRef = res.idNumber || res.civilRegistryNumber || res.nssfNumber || res.workPermitNumber || res.residencyNumber || '';
       setScanField('sfeNewStaffRef', idRef);
       setScanField('sfeNewNssfNo', res.nssfNumber);
       setScanField('sfeNewIdExpiry', cleanIsoDate(res.idExpiryDate));
@@ -145092,7 +145407,11 @@
       setScanField('sfeNewWorkPermitExpiry', cleanIsoDate(res.workPermitExpiryDate));
       setScanField('sfeNewResidencyNo', res.residencyNumber);
       setScanField('sfeNewResidencyExpiry', cleanIsoDate(res.residencyExpiryDate));
-      STAFF_FACE_MODAL_STATE.pendingIdAtt = (res.attObj && res.attObj.name) ? Object.assign({}, res.attObj, { from_id_scan: true }) : null;
+      const scanAttList = (Array.isArray(res.attObjs) && res.attObjs.length)
+        ? res.attObjs.filter(a => a && a.name).map(a => Object.assign({}, a, { from_id_scan: true }))
+        : ((res.attObj && res.attObj.name) ? [Object.assign({}, res.attObj, { from_id_scan: true })] : []);
+      STAFF_FACE_MODAL_STATE.pendingIdAtts = scanAttList;
+      STAFF_FACE_MODAL_STATE.pendingIdAtt = scanAttList[0] || null;
       renderSfeIdScanStrip(res, '');
       checkSfeLiveSameNameConflict();
       toast(`Extracted ${formatIdDocKindBadgeLabel(res.docKind)} fields (${res.engineLabel || methodLabel || 'ID Scan'}).`, 'ok');
@@ -145228,6 +145547,9 @@
         residency_expiry: resExpInp ? resExpInp.value : '',
         idDocKind: docKindInp ? docKindInp.value : '',
         idAttachment: STAFF_FACE_MODAL_STATE.pendingIdAtt,
+        idAttachments: Array.isArray(STAFF_FACE_MODAL_STATE.pendingIdAtts) && STAFF_FACE_MODAL_STATE.pendingIdAtts.length
+          ? STAFF_FACE_MODAL_STATE.pendingIdAtts
+          : (STAFF_FACE_MODAL_STATE.pendingIdAtt ? [STAFF_FACE_MODAL_STATE.pendingIdAtt] : []),
         company: coSel ? coSel.value : '',
         role: roleInp ? roleInp.value : 'General Labour',
         phone: phInp ? phInp.value : '',
@@ -159532,6 +159854,15 @@
           empId: hrPackBtn.dataset.hrPackEmp || hrPackBtn.dataset.empId || '',
           staffName: hrPackBtn.dataset.hrPackName || hrPackBtn.dataset.staffName || '',
           company: hrPackBtn.dataset.hrPackCompany || ''
+        });
+        return;
+      }
+      const hrBordBtn = t.closest('[data-open-hr-bordereau]');
+      if (hrBordBtn && container.contains(hrBordBtn)) {
+        e.stopPropagation();
+        openHrPrintPack({
+          hrPackMode: 'bordereau',
+          company: hrBordBtn.dataset.hrPackCompany || ''
         });
         return;
       }

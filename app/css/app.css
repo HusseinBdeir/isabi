@@ -39729,6 +39729,83 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
   border-inline-start-color: var(--warn, #d97706);
   background: color-mix(in srgb, var(--warn, #d97706) 5%, var(--surface));
 }
+.permit-watchdog-strip.is-followup {
+  border-inline-start-color: #0e7490;
+  background: color-mix(in srgb, #0e7490 5%, var(--surface));
+}
+.permit-status-badge.permit-tier-renewal_submitted,
+.pwd-chip.pwd-tier-renewal_submitted {
+  border-color: color-mix(in srgb, #0e7490 36%, var(--line));
+  color: #0e7490;
+  background: color-mix(in srgb, #0e7490 10%, var(--surface));
+}
+.pwd-chip.pwd-tier-renewal_submitted.active {
+  background: #0e7490;
+  border-color: #0e7490;
+  color: #ffffff;
+}
+.insp-renewal-quickbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, #0e7490 30%, var(--line));
+  background: color-mix(in srgb, #0e7490 6%, var(--surface));
+}
+.insp-renewal-quickbar.is-submitted {
+  border-color: color-mix(in srgb, #0e7490 42%, var(--line));
+  background: color-mix(in srgb, #0e7490 9%, var(--surface));
+}
+.insp-renewal-quick-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--ink);
+}
+.insp-renewal-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.insp-renewal-quick-actions input {
+  min-width: 200px;
+  padding: 5px 9px;
+  font-size: 12px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--ink);
+}
+#hrPackBordereauDoc .hr-bordereau-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+#hrPackBordereauDoc .hr-bordereau-kpi {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+#hrPackBordereauDoc .hr-bordereau-kpi small {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+#hrPackBordereauDoc .hr-bordereau-kpi b {
+  display: block;
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--ink);
+}
 .pwd-head {
   display: flex;
   align-items: center;

@@ -304,7 +304,10 @@
           receiptId: '',
           hrStaff: '',
           hrPackMode: 'both',
-          hrPackLang: 'bi'
+          hrPackLang: 'bi',
+          hrBordereauCo: '',
+          hrBordereauYear: '',
+          hrBordereauPeriod: 'annual'
         }
       };
     }
@@ -1256,8 +1259,9 @@
     const ind = getRdlIndustryForCo(co);
     const basis = STATE.basis || STATE.dateBasis || 'tx';
     const recs = (SEED && SEED.records) || {};
+    const hasEmptyAllowedCos = Boolean(STATE && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length === 0);
     const allowedCos = Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length ? STATE.allowedCompanyNames : null;
-    const allowedSig = allowedCos ? allowedCos.join(',') : 'ALL';
+    const allowedSig = hasEmptyAllowedCos ? 'NONE' : (allowedCos ? allowedCos.join(',') : 'ALL');
     const offScope = Boolean(STATE._officialScopeActive);
     const indRev = (SEED && (SEED._indCustomRev || SEED._industryRev)) || 0;
     const editRev = STATE && STATE.industryRowEdits ? Object.keys(STATE.industryRowEdits).length : 0;
@@ -1969,7 +1973,10 @@
             work_permit_no: e.work_permit_no || '',
             work_permit_expiry: e.work_permit_expiry || '',
             residency_no: e.residency_no || '',
-            residency_expiry: e.residency_expiry || ''
+            residency_expiry: e.residency_expiry || '',
+            renewal_status: e.renewal_status || '',
+            renewal_receipt_no: e.renewal_receipt_no || '',
+            renewal_submitted_date: e.renewal_submitted_date || ''
           },
           emp: bestEmp,
           emps: linked,
@@ -1986,6 +1993,9 @@
       _cachedCoKey = sig;
       _cachedCtxData = {
         ind,
+        allowedCos,
+        hasEmptyAllowedCos,
+        recs,
         coaAccounts: getCoaAccountsForInd(ind),
         domainTerms: getDomainRdlTerms(ind),
         salesAll, expAll, payAll, attAll: rawAtt, rmAll, apRmLegsAll, fuelAll, dieselAdjAll, dieselClosing, dieselStationAlloc, prodAll: [],
@@ -2010,6 +2020,14 @@
     if (!rdl.params.hrStaff || !d.hrStaffById.has(String(rdl.params.hrStaff))) {
       rdl.params.hrStaff = d.hrStaffCandidates[0] ? String(d.hrStaffCandidates[0].id) : '';
     }
+    const allowedBordCos = _resolveBordereauEntityPool(d.ind, co, STATE, d.allowedCos, d.hasEmptyAllowedCos).pool;
+    const curBordCo = String(rdl.params.hrBordereauCo || '').trim();
+    if (!allowedBordCos.length) {
+      rdl.params.hrBordereauCo = '';
+    } else if (!curBordCo || !allowedBordCos.some(ac => ac.toLowerCase() === curBordCo.toLowerCase())) {
+      const prefCo = allowedBordCos.find(ac => ac.toLowerCase() === String(co || '').toLowerCase());
+      rdl.params.hrBordereauCo = prefCo || allowedBordCos[0];
+    }
 
     return {
       rdl, co, basis,
@@ -2019,6 +2037,8 @@
       period: STATE.period || 'all',
       dateFrom: STATE.dateFrom || '',
       dateTo: STATE.dateTo || '',
+      seed: SEED,
+      state: STATE,
       showTaxBreakdown: Boolean(STATE._canSeeTaxBreakdown && STATE.showSalesTaxBreakdown),
       officialScope: Boolean(STATE._officialScopeActive),
       ...d
@@ -2566,6 +2586,7 @@
           </div>
         `);
       } else {
+        if (meta.id === '28' && k === 'hrStaff' && (p.hrPackMode || 'both') === 'bordereau') return;
         const cfg = getParamComboConfig(k, ctx);
         if (!cfg) return;
         const curVal = String(p[k] !== undefined ? p[k] : '');
@@ -2623,9 +2644,40 @@
           <div class="rdl-param-group">
             <label class="rdl-param-lbl">Pack Sections</label>
             <div class="rdl-seg" role="group" aria-label="HR print pack sections">
-              ${[['both', 'Contract + NSSF'], ['contract', 'Contract Only'], ['nssf', 'NSSF Only']].map(([mv, ml]) => `<button type="button" class="rdl-seg-btn ${(p.hrPackMode || 'both') === mv ? 'active' : ''}" data-hr-pack-mode="${mv}">${ml}</button>`).join('')}
+              ${[['both', 'Contract + NSSF'], ['contract', 'Contract Only'], ['nssf', 'NSSF Only'], ['bordereau', 'Company R3 / Bordereau']].map(([mv, ml]) => `<button type="button" class="rdl-seg-btn ${(p.hrPackMode || 'both') === mv ? 'active' : ''}" data-hr-pack-mode="${mv}">${ml}</button>`).join('')}
             </div>
           </div>
+          ${(p.hrPackMode || 'both') === 'bordereau' ? (() => {
+            const bordScope = _resolveBordereauEntityPool(ctx.ind, ctx.co, ctx.state, ctx.allowedCos, ctx.hasEmptyAllowedCos);
+            const bordCos = bordScope.pool;
+            const effBordCo = bordCos.find(c => c.toLowerCase() === String(p.hrBordereauCo || '').toLowerCase()) || bordCos[0] || '';
+            const bordYears = _collectBordereauYears(ctx, effBordCo || ctx.co);
+            const effBordYear = bordYears.includes(String(p.hrBordereauYear || '')) ? String(p.hrBordereauYear) : bordYears[0];
+            const effBordPer = ['annual', 'Q1', 'Q2', 'Q3', 'Q4'].includes(String(p.hrBordereauPeriod || '')) ? String(p.hrBordereauPeriod) : 'annual';
+            return `
+              <div class="rdl-param-group">
+                <label class="rdl-param-lbl" for="hrBordereauCoSel">Legal Entity</label>
+                <select class="rdl-select rdl-date-input" id="hrBordereauCoSel" data-hr-bordereau-param="hrBordereauCo"${bordCos.length ? '' : ' disabled'}>
+                  ${bordCos.length ? bordCos.map(c => `<option value="${esc(c)}" data-no-i18n="1" ${c === effBordCo ? 'selected' : ''}>${esc(c)}</option>`).join('') : '<option value="">No Permitted Entity</option>'}
+                </select>
+              </div>
+              <div class="rdl-param-group">
+                <label class="rdl-param-lbl" for="hrBordereauYearSel">Declaration Year</label>
+                <select class="rdl-select rdl-date-input" id="hrBordereauYearSel" data-hr-bordereau-param="hrBordereauYear">
+                  ${bordYears.map(y => `<option value="${esc(y)}" data-no-i18n="1" ${y === effBordYear ? 'selected' : ''}>${esc(y)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="rdl-param-group">
+                <label class="rdl-param-lbl">Declaration Period</label>
+                <div class="rdl-seg" role="group" aria-label="Declaration Period">
+                  ${[['annual', 'Annual'], ['Q1', 'Q1'], ['Q2', 'Q2'], ['Q3', 'Q3'], ['Q4', 'Q4']].map(([pv, pl]) => `<button type="button" class="rdl-seg-btn ${effBordPer === pv ? 'active' : ''}" data-hr-bordereau-period="${pv}">${pl}</button>`).join('')}
+                </div>
+              </div>
+              <div class="rdl-param-group">
+                <button type="button" class="rdl-view-btn" id="hrBordereauCsvBtn">Export CNSS Bordereau CSV</button>
+              </div>
+            `;
+          })() : ''}
           <div class="rdl-param-group">
             <label class="rdl-param-lbl">Language Layout</label>
             <div class="rdl-seg" role="group" aria-label="HR print pack language layout">
@@ -5585,8 +5637,516 @@
     `;
   }
 
+  function _isBordereauPayrollAmtAllowed(state) {
+    const st = state || (typeof window !== 'undefined' && window.MFG_ENTERPRISE && window.MFG_ENTERPRISE.STATE) || null;
+    if (st && st.authed === false) return false;
+    if (typeof window === 'undefined' || typeof window.__mfgCanViewPayrollDollarAmounts !== 'function') return false;
+    if (!window.__mfgCanViewPayrollDollarAmounts()) return false;
+    const E = window.MFG_ENTERPRISE || null;
+    if (E && typeof E.canViewPayrollDollarAmounts === 'function' && !E.canViewPayrollDollarAmounts()) return false;
+    return true;
+  }
+
+  function _resolveBordereauEntityPool(ind, co, state, dAllowedCos, hasEmptyAllowedCos) {
+    const entitiesByInd = {
+      'Manufacturing': ['WTC', 'BBConstruction', 'Lions Transport'],
+      'Holding & Treasury': ['Bdeir Holding'],
+      'Hospitality & Resorts': ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'],
+      'Automotive & Heavy Trading': ['Korri Auto', 'Shacman'],
+      'Real Estate & Property': ['Properties', '4235 Company S.A.L'],
+      'Insurance & Brokerage': ['Insurance Company']
+    };
+    const effInd = ind || getRdlIndustryForCo(co) || 'Manufacturing';
+    const globalSt = (typeof window !== 'undefined' && window.MFG_ENTERPRISE && window.MFG_ENTERPRISE.STATE) || null;
+    if ((state && state.authed === false)
+      || (!state && globalSt && globalSt.authed === false)
+      || hasEmptyAllowedCos
+      || (state && Array.isArray(state.allowedCompanyNames) && state.allowedCompanyNames.length === 0)
+      || (Array.isArray(dAllowedCos) && dAllowedCos.length === 0)) {
+      return { pool: [], locked: true, ind: effInd };
+    }
+    const indPool = entitiesByInd[effInd]
+      || (co && co !== 'ALL' && !RDL_GROUP_COMPANIES[co] && CO_LEGAL[co] ? [co] : ['WTC', 'BBConstruction', 'Lions Transport']);
+    let seatAllowed = null;
+    if (state && Array.isArray(state.allowedCompanyNames)) {
+      seatAllowed = state.allowedCompanyNames;
+    } else if (Array.isArray(dAllowedCos)) {
+      seatAllowed = dAllowedCos;
+    } else if ((!state || state.allowedCompanyNames === undefined)
+      && typeof window !== 'undefined' && window.MFG_ENTERPRISE
+      && typeof window.MFG_ENTERPRISE.allowedCompanyNames === 'function'
+      && (!state || state.authed !== false)) {
+      const fnList = window.MFG_ENTERPRISE.allowedCompanyNames();
+      if (Array.isArray(fnList)) seatAllowed = fnList;
+    }
+    if (seatAllowed !== null) {
+      const allowLower = seatAllowed.map(x => String(x || '').trim().toLowerCase()).filter(Boolean);
+      const pool = indPool.filter(name => allowLower.includes(name.toLowerCase()));
+      return { pool, locked: pool.length === 0, ind: effInd };
+    }
+    return { pool: indPool.slice(), locked: indPool.length === 0, ind: effInd };
+  }
+
+  function _bordereauPeriodRange(yearStr, periodStr) {
+    const y = /^\d{4}$/.test(String(yearStr || '')) ? String(yearStr) : String(new Date().getUTCFullYear());
+    const rawP = String(periodStr || 'annual').trim().toUpperCase();
+    const map = {
+      Q1: { period: 'Q1', labelEn: `Q1 ${y} (Jan - Mar)`, labelFr: `T1 ${y} (Janv. - Mars)`, labelAr: `الربع الأول ${y} (ك2 - آذار)`, start: `${y}-01-01`, end: `${y}-03-31`, mFrom: 1, mTo: 3 },
+      Q2: { period: 'Q2', labelEn: `Q2 ${y} (Apr - Jun)`, labelFr: `T2 ${y} (Avr. - Juin)`, labelAr: `الربع الثاني ${y} (نيسان - حزيران)`, start: `${y}-04-01`, end: `${y}-06-30`, mFrom: 4, mTo: 6 },
+      Q3: { period: 'Q3', labelEn: `Q3 ${y} (Jul - Sep)`, labelFr: `T3 ${y} (Juil. - Sept.)`, labelAr: `الربع الثالث ${y} (تموز - أيلول)`, start: `${y}-07-01`, end: `${y}-09-30`, mFrom: 7, mTo: 9 },
+      Q4: { period: 'Q4', labelEn: `Q4 ${y} (Oct - Dec)`, labelFr: `T4 ${y} (Oct. - Déc.)`, labelAr: `الربع الرابع ${y} (ت1 - ك1)`, start: `${y}-10-01`, end: `${y}-12-31`, mFrom: 10, mTo: 12 }
+    };
+    return map[rawP] || { period: 'annual', labelEn: `Annual ${y} (Jan - Dec)`, labelFr: `Annuel ${y} (Janv. - Déc.)`, labelAr: `سنوي ${y} (ك2 - ك1)`, start: `${y}-01-01`, end: `${y}-12-31`, mFrom: 1, mTo: 12 };
+  }
+
+  function _collectBordereauYears(ctx, targetCo) {
+    const recs = (ctx && ctx.recs) || (ctx && ctx.seed && ctx.seed.records) || {};
+    const yrs = new Set([String(new Date().getUTCFullYear())]);
+    const coLower = String(targetCo || '').toLowerCase();
+    const matchTarget = r => !coLower || String(r.company || r.co || '').toLowerCase() === coLower;
+    (recs.salaries || []).forEach(r => {
+      if (!r || r.voided || r.archived || !matchTarget(r)) return;
+      const m = /^(\d{4})-/.exec(String(r.rep_date || r.date || ''));
+      if (m) yrs.add(m[1]);
+    });
+    (recs.employments || []).forEach(e => {
+      if (!e || e.voided || e.archived || !matchTarget(e)) return;
+      [e.start_date, e.end_date, e.date].forEach(d => {
+        const m = /^(\d{4})-/.exec(String(d || ''));
+        if (m) yrs.add(m[1]);
+      });
+    });
+    return Array.from(yrs).filter(y => Number(y) >= 2000 && Number(y) <= 2099).sort((a, b) => Number(b) - Number(a));
+  }
+
+  function _addOverlappingMonths(monthSet, yearNum, mFrom, mTo, startIso, endIso) {
+    const s = startIso && /^\d{4}-\d{2}-\d{2}/.test(startIso) ? startIso.slice(0, 10) : '0000-01-01';
+    const e = endIso && /^\d{4}-\d{2}-\d{2}/.test(endIso) ? endIso.slice(0, 10) : '9999-12-31';
+    for (let m = mFrom; m <= mTo; m++) {
+      const mm = String(m).padStart(2, '0');
+      const lastDay = new Date(Date.UTC(yearNum, m, 0)).getUTCDate();
+      const mStart = `${yearNum}-${mm}-01`;
+      const mEnd = `${yearNum}-${mm}-${String(lastDay).padStart(2, '0')}`;
+      if (s <= mEnd && e >= mStart) monthSet.add(`${yearNum}-${mm}`);
+    }
+  }
+
+  function computeCnssNominalBordereau(ctx, paramsOverride) {
+    const safeCtx = ctx || {};
+    const recs = safeCtx.recs || (safeCtx.seed && safeCtx.seed.records) || {};
+    const p = Object.assign({}, (safeCtx.rdl && safeCtx.rdl.params) || {}, paramsOverride || {});
+    const scope = _resolveBordereauEntityPool(safeCtx.ind, safeCtx.co, safeCtx.state, safeCtx.allowedCos, safeCtx.hasEmptyAllowedCos);
+    const canViewPayrollAmt = _isBordereauPayrollAmtAllowed(safeCtx.state);
+    const wantedCo = String(p.hrBordereauCo || '').trim();
+    const matchedWanted = scope.pool.find(c => c.toLowerCase() === wantedCo.toLowerCase());
+    const matchedCtxCo = (safeCtx.co && safeCtx.co !== 'ALL')
+      ? scope.pool.find(c => c.toLowerCase() === String(safeCtx.co).toLowerCase())
+      : '';
+    const targetCo = matchedWanted || matchedCtxCo || scope.pool[0] || '';
+    const years = _collectBordereauYears(safeCtx, targetCo || scope.pool[0] || '');
+    const year = /^\d{4}$/.test(String(p.hrBordereauYear || '')) ? String(p.hrBordereauYear) : (years[0] || String(new Date().getUTCFullYear()));
+    const pr = _bordereauPeriodRange(year, p.hrBordereauPeriod);
+    if (scope.locked || !targetCo) {
+      return {
+        locked: true,
+        coKey: '',
+        coPool: scope.pool,
+        legal: CO_ALL,
+        year,
+        years,
+        period: pr.period,
+        periodInfo: pr,
+        canViewPayrollAmt,
+        restricted: !canViewPayrollAmt,
+        rows: [],
+        totals: { headcount: 0, activeNssf: 0, missingIdentityCount: 0, totalMonthsWorked: 0, monthlyContractUsd: null, periodDeclaredUsd: null }
+      };
+    }
+
+    const officialOnly = Boolean(safeCtx.officialScope || (safeCtx.state && safeCtx.state._officialScopeActive));
+    const isMfgAll = !safeCtx.co || safeCtx.co === 'ALL';
+    const seedGuard = r => !(isMfgAll && r._multiIndustrySeed);
+    const offPred = (r, tk) => !officialOnly || !safeCtx.state || typeof safeCtx.state.isOfficialRecord !== 'function' || safeCtx.state.isOfficialRecord(r, tk);
+    const recOk = (r, tk) => r && !r.voided && !r.archived && seedGuard(r) && (!officialOnly || !r._isSeed) && offPred(r, tk);
+    const normNm = s => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const targetLower = targetCo.toLowerCase();
+    const coEq = c => String(c || '').trim().toLowerCase() === targetLower;
+    const fxDefault = Number((safeCtx.seed && safeCtx.seed.fx_rate) || 89500) || 89500;
+
+    const allStaff = (recs.staff_members || []).filter(s => recOk(s, 'staff_members'));
+    const staffById = new Map();
+    const staffByNameCo = new Map();
+    const staffByNameAny = new Map();
+    allStaff.forEach(s => {
+      if (s.id != null && String(s.id).trim()) staffById.set(String(s.id), s);
+      const nk = normNm(s.name || s.staff || '');
+      if (!nk) return;
+      if (s.company) {
+        const keyCo = `${nk}::${String(s.company).trim().toLowerCase()}`;
+        if (!staffByNameCo.has(keyCo)) staffByNameCo.set(keyCo, s);
+      }
+      if (!staffByNameAny.has(nk)) staffByNameAny.set(nk, s);
+    });
+    const lookupStaff = (staffId, name) => {
+      if (staffId != null && staffById.has(String(staffId))) return staffById.get(String(staffId));
+      const nk = normNm(name);
+      if (!nk) return null;
+      return staffByNameCo.get(`${nk}::${targetLower}`) || staffByNameAny.get(nk) || null;
+    };
+
+    const workerMap = new Map();
+    const ensureWorker = (staffId, name, empHint) => {
+      const st = lookupStaff(staffId, name);
+      const canonId = st && st.id != null ? String(st.id) : (staffId != null && String(staffId).trim() ? String(staffId) : '');
+      const dispName = String((st && (st.name || st.staff)) || name || (empHint && empHint.staff) || '').trim();
+      const mapKey = canonId ? `id:${canonId}` : `nm:${normNm(dispName)}`;
+      if (!workerMap.has(mapKey)) {
+        workerMap.set(mapKey, {
+          key: mapKey,
+          staff: st || {},
+          name: dispName,
+          role: String((empHint && empHint.role) || (st && st.role) || '').trim(),
+          empIds: new Set(),
+          startIso: '',
+          endIso: '',
+          hasOpenContract: false,
+          sawEndedStatus: false,
+          monthlyContractUsd: 0,
+          periodDeclaredUsd: 0,
+          activeMonthSet: new Set(),
+          hasEmploymentOverlap: false
+        });
+      }
+      const w = workerMap.get(mapKey);
+      if (st && (!w.staff || !w.staff.id)) w.staff = st;
+      if (empHint && empHint.role && !w.role) w.role = String(empHint.role).trim();
+      return w;
+    };
+
+    const empRows = (recs.employments || []).filter(e => recOk(e, 'employments') && coEq(e.company || e.co));
+    empRows.forEach(e => {
+      const isEndedStatus = /^(ended|closed|terminated|inactive|cancelled|resigned)$/i.test(String(e.status || e.contract_status || '').trim());
+      const eStart = String(e.start_date || e.date || '').slice(0, 10);
+      let eEnd = String(e.end_date || '').slice(0, 10);
+      const effStart = /^\d{4}-\d{2}-\d{2}$/.test(eStart) ? eStart : '0000-01-01';
+      let effEnd = /^\d{4}-\d{2}-\d{2}$/.test(eEnd) ? eEnd : '';
+      if (!effEnd) {
+        if (isEndedStatus) {
+          const fallbackEnd = String(e.closed_at || e.modified_at || e.date || '').slice(0, 10);
+          const closedAnchor = /^\d{4}-\d{2}-\d{2}$/.test(fallbackEnd)
+            ? fallbackEnd
+            : (effStart !== '0000-01-01' ? effStart : '0000-01-01');
+          effEnd = closedAnchor < effStart ? effStart : closedAnchor;
+          eEnd = effEnd;
+        } else {
+          effEnd = '9999-12-31';
+        }
+      }
+      if (effStart > pr.end || effEnd < pr.start) return;
+      const w = ensureWorker(e.enrolled_staff_id || e.staff_id, e.staff || e.name, e);
+      w.hasEmploymentOverlap = true;
+      if (e.id != null) w.empIds.add(String(e.id));
+      const isPendSal = Boolean(e.salary_pending);
+      const eFx = Number(e.fx_rate || fxDefault) || fxDefault;
+      const rawBaseUsd = isPendSal ? 0 : (Number(e.salary_usd != null ? e.salary_usd : (e.monthly_salary_usd != null ? e.monthly_salary_usd : 0)) || 0);
+      const rawLbpUsd = isPendSal ? 0 : ((Number(e.salary_lbp || 0) || 0) / eFx);
+      const wDays = Number(e.working_days || 26) || 26;
+      const dailyUsd = isPendSal ? 0 : ((!rawBaseUsd && !rawLbpUsd && Number(e.daily_rate || 0) > 0) ? (Number(e.daily_rate || 0) * wDays) : 0);
+      const reimbUsd = isPendSal ? 0 : (Number(e.reimbursement || 0) || 0);
+      const pkg = rawBaseUsd + rawLbpUsd + dailyUsd + reimbUsd;
+      if (pkg > w.monthlyContractUsd) w.monthlyContractUsd = pkg;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(eStart) && (!w.startIso || eStart < w.startIso)) w.startIso = eStart;
+      if (!isEndedStatus && !/^\d{4}-\d{2}-\d{2}$/.test(eEnd)) {
+        w.hasOpenContract = true;
+      } else {
+        if (isEndedStatus) w.sawEndedStatus = true;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(eEnd) && (!w.endIso || eEnd > w.endIso)) w.endIso = eEnd;
+      }
+      _addOverlappingMonths(w.activeMonthSet, Number(year), pr.mFrom, pr.mTo, effStart, effEnd);
+    });
+
+    const salRows = (recs.salaries || []).filter(s => recOk(s, 'salaries') && coEq(s.company || s.co));
+    salRows.forEach(s => {
+      const d = rowDate(s, safeCtx.basis);
+      if (!inWindow(d, pr.start, pr.end)) return;
+      const w = ensureWorker(s.staff_id, s.staff || s.name, s);
+      const usdPart = Number(s.usd_amount != null ? s.usd_amount : (s.amount_usd != null ? s.amount_usd : (s.amount != null ? s.amount : 0))) || 0;
+      const lbpFx = Number(s.fx_rate || fxDefault) || fxDefault;
+      const lbpPart = s.lbp_amount ? (Number(s.lbp_amount) / lbpFx) : 0;
+      w.periodDeclaredUsd += usdPart + lbpPart;
+      if (/^\d{4}-\d{2}/.test(d)) w.activeMonthSet.add(d.slice(0, 7));
+    });
+
+    const rows = Array.from(workerMap.values()).map(w => {
+      const st = w.staff || {};
+      const nssfNo = String(st.nssf_no || '').trim();
+      const fatherName = String(st.father_name || '').trim();
+      const fatherNameAr = String(st.father_name_ar || '').trim();
+      const motherName = String(st.mother_name || '').trim();
+      const motherNameAr = String(st.mother_name_ar || '').trim();
+      const dob = /^\d{4}-\d{2}-\d{2}/.test(String(st.dob || '')) ? String(st.dob).slice(0, 10) : '';
+      const nationality = String(st.nationality || '').trim();
+      const reference = String(st.reference || '').trim();
+      const monthsActive = w.activeMonthSet.size;
+      const missingFields = [];
+      if (!nssfNo) missingFields.push('NSSF No.');
+      if (!fatherName && !fatherNameAr) missingFields.push('Father Name');
+      if (!motherName && !motherNameAr) missingFields.push('Mother Name');
+      if (!dob) missingFields.push('DOB');
+      const endDisplay = w.hasOpenContract ? '' : w.endIso;
+      const contractEnded = Boolean(!w.hasOpenContract && (w.endIso || w.sawEndedStatus));
+      return {
+        staffId: st.id != null ? String(st.id) : '',
+        name: w.name || '-',
+        nameAr: String(st.full_name_ar || st.name_ar || '').trim(),
+        fatherName,
+        fatherNameAr,
+        motherName,
+        motherNameAr,
+        dob,
+        nationality,
+        reference,
+        nssfNo,
+        role: w.role || String(st.role || '').trim(),
+        startDate: w.startIso || '',
+        endDate: endDisplay,
+        contractEnded,
+        monthsActive,
+        monthlyContractUsd: canViewPayrollAmt ? Math.round(w.monthlyContractUsd * 100) / 100 : null,
+        periodDeclaredUsd: canViewPayrollAmt ? Math.round(w.periodDeclaredUsd * 100) / 100 : null,
+        missingFields
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+
+    const totals = {
+      headcount: rows.length,
+      activeNssf: rows.filter(r => Boolean(r.nssfNo)).length,
+      missingIdentityCount: rows.filter(r => r.missingFields.length > 0).length,
+      totalMonthsWorked: rows.reduce((s, r) => s + (r.monthsActive || 0), 0),
+      monthlyContractUsd: canViewPayrollAmt ? Math.round(rows.reduce((s, r) => s + Number(r.monthlyContractUsd || 0), 0) * 100) / 100 : null,
+      periodDeclaredUsd: canViewPayrollAmt ? Math.round(rows.reduce((s, r) => s + Number(r.periodDeclaredUsd || 0), 0) * 100) / 100 : null
+    };
+
+    return {
+      locked: false,
+      coKey: targetCo,
+      coPool: scope.pool,
+      legal: CO_LEGAL[targetCo] || CO_ALL,
+      year,
+      years,
+      period: pr.period,
+      periodInfo: pr,
+      canViewPayrollAmt,
+      restricted: !canViewPayrollAmt,
+      rows,
+      totals
+    };
+  }
+
+  function buildCnssBordereauCsv(bordereauData, opts) {
+    const b = bordereauData || {};
+    const allowDollars = Boolean(!b.restricted && _isBordereauPayrollAmtAllowed(opts && opts.state) && (!opts || opts.canViewPayrollAmt !== false));
+    const safeCell = val => {
+      let s = String(val == null ? '' : val).replace(/\r?\n/g, ' ');
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return /[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const fmtAmtCell = v => (!allowDollars ? 'Restricted' : (v == null ? '0.00' : Number(v || 0).toFixed(2)));
+    const headers = [
+      'Entity', 'CNSS Employer No.', 'Year', 'Period',
+      'NSSF No.', 'Full Name', 'Arabic Name', 'Father Name', 'Mother Name',
+      'Date of Birth', 'Nationality', 'ID / Residency Ref', 'Role',
+      'Start Date', 'End Date', 'Months Worked',
+      'Monthly Contract (USD)', 'Period Declared Paid (USD)', 'Identity Readiness'
+    ];
+    const lines = [headers.map(safeCell).join(',')];
+    const legal = b.legal || {};
+    const empNo = legal.cnssEmployer || legal.nssf || legal.mof || '';
+    (b.rows || []).forEach(r => {
+      const readiness = (r.missingFields && r.missingFields.length) ? `Missing: ${r.missingFields.join('; ')}` : 'Ready';
+      const endCsv = r.endDate || (r.contractEnded ? 'Ended' : 'Active');
+      lines.push([
+        b.coKey || '', empNo, b.year || '', b.period || 'annual',
+        r.nssfNo || '', r.name || '', r.nameAr || '', r.fatherName || r.fatherNameAr || '', r.motherName || r.motherNameAr || '',
+        r.dob || '', r.nationality || '', r.reference || '', r.role || '',
+        r.startDate || '', endCsv, String(r.monthsActive || 0),
+        fmtAmtCell(r.monthlyContractUsd), fmtAmtCell(r.periodDeclaredUsd), readiness
+      ].map(safeCell).join(','));
+    });
+    return lines.join('\n');
+  }
+
+  function exportCnssBordereauCsv(ctx) {
+    const data = computeCnssNominalBordereau(ctx);
+    const csv = buildCnssBordereauCsv(data, { state: ctx && ctx.state, canViewPayrollAmt: data.canViewPayrollAmt });
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeCo = String(data.coKey || 'locked').replace(/[^a-z0-9_-]+/gi, '_').toLowerCase();
+    a.download = `cnss_r3_bordereau_${safeCo}_${data.year || 'all'}_${String(data.period || 'annual').toLowerCase()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function render28HrBordereauHtml(meta, ctx, lang) {
+    const b = computeCnssNominalBordereau(ctx);
+    const uiLangRaw = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function')
+      ? String(window.MFG_I18N.getLang() || 'en').toLowerCase()
+      : 'en';
+    const effLang = (lang === 'ar' || lang === 'fr')
+      ? lang
+      : ((uiLangRaw === 'ar' || uiLangRaw === 'fr') ? uiLangRaw : 'bi');
+    const showAr = effLang === 'bi' || effLang === 'ar';
+    const showFr = effLang === 'bi' || effLang === 'fr';
+    const docDir = effLang === 'ar' ? 'rtl' : 'ltr';
+    const tr = (frTxt, arTxt, biTxt) => (effLang === 'ar' ? arTxt : (effLang === 'fr' ? frTxt : (biTxt != null ? biTxt : `${frTxt} / ${arTxt}`)));
+    const fmtDmy = iso => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '').trim());
+      return m ? `${m[3]}/${m[2]}/${m[1]}` : (String(iso || '').trim() || '-');
+    };
+    const fmtMoney = v => (b.canViewPayrollAmt ? fmtUsd(Number(v || 0), 2) : tr('Confidentiel (Restreint)', 'مقيد حسب الصلاحية', 'Confidentiel / مقيد حسب الصلاحية'));
+    const localizeMissing = f => {
+      if (f === 'NSSF No.') return tr('N° CNSS', 'رقم الضمان');
+      if (f === 'Father Name') return tr('Nom du père', 'اسم الأب', 'Père / الأب');
+      if (f === 'Mother Name') return tr('Nom de la mère', 'اسم الأم', 'Mère / الأم');
+      if (f === 'DOB') return tr('Date naiss.', 'تاريخ الولادة', 'Date naiss. / الولادة');
+      return f;
+    };
+    if (b.locked) {
+      return `
+        <div class="hr-pack-doc hr-pack-locked" id="hrPackBordereauDoc" data-no-i18n="1" data-bordereau-lang="${esc(effLang)}" dir="${docDir}">
+          <div class="rdl-alert">${esc(tr(
+            'Aucune entité juridique autorisée pour le bordereau CNSS R3 selon vos droits d’accès.',
+            'لا توجد شركة أو كيان قانوني متاح لبيان الضمان الاجتماعي R3 ضمن صلاحيات هذا المستخدم.'
+          ))}</div>
+        </div>
+      `;
+    }
+    const L = b.legal || CO_ALL;
+    const titleFr = `Bordereau Nominatif Annuel / Trimestriel CNSS (Modèle R3)`;
+    const titleAr = `البيان الاسمي السنوي / الفصلي للصندوق الوطني للضمان الاجتماعي (نموذج R3)`;
+    const coHeading = effLang === 'ar'
+      ? (L.ar || L.legal || b.coKey)
+      : (effLang === 'fr'
+        ? (L.legal || L.short || b.coKey)
+        : `${L.legal || L.short || b.coKey}${L.ar ? ' · ' + L.ar : ''}`);
+    const subHeading = effLang === 'ar'
+      ? titleAr
+      : (effLang === 'fr' ? titleFr : `${titleFr} · ${titleAr}`);
+    const periodText = effLang === 'ar' ? b.periodInfo.labelAr : (effLang === 'fr' ? b.periodInfo.labelFr : `${b.periodInfo.labelFr} · ${b.periodInfo.labelAr}`);
+    const rowsHtml = b.rows.length
+      ? b.rows.map((r, idx) => {
+          const miss = r.missingFields && r.missingFields.length
+            ? `<span class="badge badge-warn">${esc(r.missingFields.map(localizeMissing).join(' · '))}</span>`
+            : `<span class="badge badge-ok">${esc(tr('Prêt', 'جاهز'))}</span>`;
+          const fatherCell = esc(r.fatherNameAr && showAr && showFr && r.fatherName ? `${r.fatherName} / ${r.fatherNameAr}` : (effLang === 'ar' ? (r.fatherNameAr || r.fatherName || '-') : (r.fatherName || r.fatherNameAr || '-')));
+          const motherCell = esc(r.motherNameAr && showAr && showFr && r.motherName ? `${r.motherName} / ${r.motherNameAr}` : (effLang === 'ar' ? (r.motherNameAr || r.motherName || '-') : (r.motherName || r.motherNameAr || '-')));
+          const nameCell = effLang === 'ar'
+            ? `<b>${esc(r.nameAr || r.name)}</b>${r.nameAr && r.name && r.nameAr !== r.name ? `<div class="muted" dir="ltr">${esc(r.name)}</div>` : ''}`
+            : `<b>${esc(r.name)}</b>${showAr && r.nameAr ? `<div class="muted" dir="rtl">${esc(r.nameAr)}</div>` : ''}`;
+          const endCell = r.endDate
+            ? fmtDmy(r.endDate)
+            : esc(r.contractEnded ? tr('Clôturé', 'منتهٍ') : tr('Actif', 'مستمر'));
+          return `
+            <tr>
+              <td class="num">${idx + 1}</td>
+              <td class="mono">${esc(r.nssfNo || tr('En attente', 'قيد التسجيل'))}</td>
+              <td>${nameCell}</td>
+              <td>${fatherCell}</td>
+              <td>${motherCell}</td>
+              <td>${fmtDmy(r.dob)}</td>
+              <td>${esc(r.nationality || '-')}</td>
+              <td>${esc(r.role || '-')}</td>
+              <td>${fmtDmy(r.startDate)}</td>
+              <td>${endCell}</td>
+              <td class="num">${fmtNum(r.monthsActive, 0)}</td>
+              <td class="num">${esc(fmtMoney(r.monthlyContractUsd))}</td>
+              <td class="num">${esc(fmtMoney(r.periodDeclaredUsd))}</td>
+              <td>${miss}</td>
+            </tr>
+          `;
+        }).join('')
+      : `<tr><td colspan="14" class="empty">${esc(tr(
+          `Aucun contrat actif ni déclaration salariale pour ${b.coKey} (${b.periodInfo.labelFr}).`,
+          `لم يتم العثور على عقود أو تصاريح رواتب لشركة ${b.coKey} (${b.periodInfo.labelAr}).`
+        ))}</td></tr>`;
+
+    return `
+      <div class="hr-pack-doc hr-bordereau-doc" id="hrPackBordereauDoc" data-no-i18n="1" data-bordereau-co="${esc(b.coKey)}" data-bordereau-year="${esc(b.year)}" data-bordereau-period="${esc(b.period)}" data-bordereau-lang="${esc(effLang)}" dir="${docDir}">
+        <div class="hr-pack-letterhead">
+          <div class="hr-pack-lh-main">
+            <h2>${esc(b.coKey)} · ${esc(coHeading)}</h2>
+            <p class="hr-pack-lh-sub">${esc(subHeading)}</p>
+          </div>
+          <div class="hr-pack-lh-meta">
+            <div><span>${esc(tr('Période :', 'الفترة:', 'Période / الفترة :'))}</span> <b>${esc(periodText)}</b></div>
+            <div><span>${esc(tr('N° Employeur CNSS :', 'رقم المشترك بالضمان:', 'N° Employeur CNSS / رقم المشترك :'))}</span> <b>${esc(L.cnssEmployer || L.nssf || tr('À compléter', 'قيد المتابعة'))}</b></div>
+            <div><span>${esc(tr('N° Fiscal / MOF :', 'الرقم المالي:', 'N° Fiscal / الرقم المالي :'))}</span> <b>${esc(L.mof || tr('À compléter', 'قيد المتابعة'))}</b></div>
+          </div>
+        </div>
+        <div class="hr-bordereau-kpis">
+          <div class="hr-bord-kpi"><span class="hr-bord-k">${esc(tr('Effectif déclaré', 'العدد المصرّح به'))}</span><b class="hr-bord-v">${fmtNum(b.totals.headcount, 0)}</b></div>
+          <div class="hr-bord-kpi"><span class="hr-bord-k">${esc(tr('Immatriculés CNSS', 'المسجلون بالضمان'))}</span><b class="hr-bord-v">${fmtNum(b.totals.activeNssf, 0)}</b></div>
+          <div class="hr-bord-kpi"><span class="hr-bord-k">${esc(tr('Identité incomplète', 'بيانات هوية ناقصة'))}</span><b class="hr-bord-v ${b.totals.missingIdentityCount > 0 ? 'is-warn' : ''}">${fmtNum(b.totals.missingIdentityCount, 0)}</b></div>
+          <div class="hr-bord-kpi"><span class="hr-bord-k">${esc(tr('Masse mensuelle', 'مجموع الأساسي الشهري'))}</span><b class="hr-bord-v">${esc(fmtMoney(b.totals.monthlyContractUsd))}</b></div>
+          <div class="hr-bord-kpi"><span class="hr-bord-k">${esc(tr('Total déclaré (période)', 'المصرّح به للفترة'))}</span><b class="hr-bord-v">${esc(fmtMoney(b.totals.periodDeclaredUsd))}</b></div>
+        </div>
+        <div class="rdl-table-wrap">
+          <table class="rdl-table hr-bordereau-table" id="hrPackBordereauTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>${esc(tr('N° CNSS', 'رقم الضمان'))}</th>
+                <th>${esc(tr('Nom complet', 'اسم الأجير'))}</th>
+                <th>${esc(tr('Père', 'اسم الأب', 'Père / الأب'))}</th>
+                <th>${esc(tr('Mère', 'اسم الأم', 'Mère / الأم'))}</th>
+                <th>${esc(tr('Date naiss.', 'تاريخ الولادة', 'Naissance / الولادة'))}</th>
+                <th>${esc(tr('Nationalité', 'الجنسية'))}</th>
+                <th>${esc(tr('Poste', 'الوظيفة'))}</th>
+                <th>${esc(tr('Date d’entrée', 'تاريخ البدء', 'Entrée / البدء'))}</th>
+                <th>${esc(tr('Date de sortie', 'تاريخ الانتهاء', 'Sortie / الانتهاء'))}</th>
+                <th class="num">${esc(tr('Mois', 'الأشهر'))}</th>
+                <th class="num">${esc(tr('Base mensuelle', 'الأجر الشهري'))}</th>
+                <th class="num">${esc(tr('Déclaré période', 'المصرّح للفترة', 'Déclaré / المصرّح'))}</th>
+                <th>${esc(tr('Conformité R3', 'جاهزية R3'))}</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="10"><b>${esc(tr(
+                  `TOTAL (${fmtNum(b.totals.headcount, 0)} salariés · ${b.coKey})`,
+                  `المجموع (${fmtNum(b.totals.headcount, 0)} أجير · ${b.coKey})`,
+                  `TOTAL / المجموع (${fmtNum(b.totals.headcount, 0)} · ${b.coKey})`
+                ))}</b></td>
+                <td class="num"><b>${fmtNum(b.totals.totalMonthsWorked, 0)}</b></td>
+                <td class="num"><b>${esc(fmtMoney(b.totals.monthlyContractUsd))}</b></td>
+                <td class="num"><b>${esc(fmtMoney(b.totals.periodDeclaredUsd))}</b></td>
+                <td><b>${esc(b.totals.missingIdentityCount > 0
+                  ? tr(`${fmtNum(b.totals.missingIdentityCount, 0)} incomplets`, `${fmtNum(b.totals.missingIdentityCount, 0)} غير مكتمل`)
+                  : tr('Tous complets', 'الجميع جاهز', 'Complet / الجميع جاهز'))}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        ${signatureRowHtml(
+          tr('Visa Ressources Humaines & Paie', 'توقيع وختم شؤون الموظفين والرواتب', 'Visa RH & Paie / شؤون الموظفين والرواتب'),
+          tr('Signature autorisée & Cachet de l’entreprise', 'توقيع المفوض بالتوقيع وختم الشركة', 'Employeur & Cachet / المفوض بالتوقيع والختم')
+        )}
+      </div>
+    `;
+  }
+
   function render28HrPrintPack(meta, ctx) {
     const p = ctx.rdl.params || {};
+    const mode = ['both', 'contract', 'nssf', 'bordereau'].includes(p.hrPackMode) ? p.hrPackMode : 'both';
+    const lang = ['bi', 'ar', 'fr'].includes(p.hrPackLang) ? p.hrPackLang : 'bi';
+    if (mode === 'bordereau') {
+      return render28HrBordereauHtml(meta, ctx, lang);
+    }
     const candidates = Array.isArray(ctx.hrStaffCandidates) ? ctx.hrStaffCandidates : [];
     const cand = (ctx.hrStaffById && ctx.hrStaffById.get(String(p.hrStaff || ''))) || candidates.find(c => String(c.id) === String(p.hrStaff || '')) || candidates[0] || {};
     const st = cand.staff || {};
@@ -5594,8 +6154,6 @@
     const effCoKey = (emp && emp.company && CO_LEGAL[emp.company]) ? emp.company
       : ((cand.coKey && CO_LEGAL[cand.coKey]) ? cand.coKey : ((ctx.co && CO_LEGAL[ctx.co]) ? ctx.co : 'WTC'));
     const L = CO_LEGAL[effCoKey] || CO_LEGAL.WTC;
-    const mode = ['both', 'contract', 'nssf'].includes(p.hrPackMode) ? p.hrPackMode : 'both';
-    const lang = ['bi', 'ar', 'fr'].includes(p.hrPackLang) ? p.hrPackLang : 'bi';
     const showAr = lang === 'bi' || lang === 'ar';
     const showFr = lang === 'bi' || lang === 'fr';
 
@@ -7018,6 +7576,33 @@
         mkKpi('car', 'Net Carrier Payable', 'مستحقات شركات التأمين', 'Net dû compagnies', canViewBooks ? fmtUsd(k.carrierPayableUsd || 0, 0) : 'Restricted', `${cRows.length} carriers`, `${cRows.length} شركات ضامنة`, `${cRows.length} compagnies`),
         mkKpi('unp', 'Unpaid Client Prem.', 'أقساط قيد التحصيل', 'Primes clients à encaisser', canViewBooks ? fmtUsd(clientUnpaid, 0) : 'Restricted', 'Account 4112 / 4017', 'حساب 4112 / 4017', 'Comptes 4112 / 4017')
       ];
+    } else if (stmtId === '28' && (p.hrPackMode || 'both') === 'bordereau') {
+      windowMode = 'document';
+      const b = computeCnssNominalBordereau(ctx);
+      windowLabelEn = `${b.coKey || effCoKey} · CNSS R3 (${b.periodInfo ? b.periodInfo.labelEn : b.year})`;
+      windowLabelAr = `${b.coKey || effCoKey} · بيان الضمان R3 (${b.periodInfo ? b.periodInfo.labelAr : b.year})`;
+      windowLabelFr = `${b.coKey || effCoKey} · Bordereau CNSS R3 (${b.periodInfo ? b.periodInfo.labelFr : b.year})`;
+      facts = {
+        coKey: b.coKey,
+        year: b.year,
+        period: b.period,
+        locked: Boolean(b.locked),
+        headcount: b.totals.headcount,
+        activeNssf: b.totals.activeNssf,
+        missingIdentityCount: b.totals.missingIdentityCount,
+        totalMonthsWorked: b.totals.totalMonthsWorked,
+        salaryMasked: !b.canViewPayrollAmt,
+        monthlyContractUsd: b.canViewPayrollAmt ? Number(b.totals.monthlyContractUsd || 0) : undefined,
+        periodDeclaredUsd: b.canViewPayrollAmt ? Number(b.totals.periodDeclaredUsd || 0) : undefined,
+        packMode: 'bordereau',
+        packLang: p.hrPackLang || 'bi'
+      };
+      kpis = [
+        mkKpi('entity', 'Legal Entity', 'الشركة المصرحة', 'Entité légale', b.locked ? 'Locked' : (b.coKey || '-'), b.periodInfo.labelEn, b.periodInfo.labelAr, b.periodInfo.labelFr),
+        mkKpi('hc', 'Declared Headcount', 'عدد الأجراء', 'Effectif déclaré', `${fmtNum(b.totals.headcount, 0)}`, `${fmtNum(b.totals.activeNssf, 0)} NSSF #`, `${fmtNum(b.totals.activeNssf, 0)} رقم ضمان`, `${fmtNum(b.totals.activeNssf, 0)} N° CNSS`),
+        mkKpi('ready', 'Missing Identity', 'نواقص الهوية', 'Identités incomplètes', fmtNum(b.totals.missingIdentityCount, 0), b.totals.missingIdentityCount > 0 ? 'Missing NSSF/Parents/DOB' : 'All Ready', b.totals.missingIdentityCount > 0 ? 'بيانات ضمان/أهل ناقصة' : 'مكتمل', b.totals.missingIdentityCount > 0 ? 'CNSS/Parents/DDN manquants' : 'Complet', b.totals.missingIdentityCount > 0 ? 'neg' : 'ok'),
+        mkKpi('sal', 'Period Declared Gross', 'الأجور المصرح بها', 'Salaires déclarés période', b.canViewPayrollAmt ? fmtUsd(b.totals.periodDeclaredUsd || 0, 2) : 'Restricted', b.canViewPayrollAmt ? `Contract Base ${fmtUsd(b.totals.monthlyContractUsd || 0, 2)}` : 'Masked for this role', b.canViewPayrollAmt ? `الأساس الشهري ${fmtUsd(b.totals.monthlyContractUsd || 0, 2)}` : 'محجوب لهذه الصلاحية', b.canViewPayrollAmt ? `Base contrat ${fmtUsd(b.totals.monthlyContractUsd || 0, 2)}` : 'Masqué pour ce rôle')
+      ];
     } else if (stmtId === '28') {
       windowMode = 'document';
       const cand = (ctx.hrStaffById && ctx.hrStaffById.get(String(p.hrStaff || ''))) || (ctx.hrStaffCandidates || []).find(c => String(c.id) === String(p.hrStaff || '')) || (ctx.hrStaffCandidates || [])[0] || {};
@@ -7070,7 +7655,8 @@
       return s.size;
     }
 
-    const paramSig = (meta.params || []).map(pk => `${pk}:${p[pk] || ''}`).join('|') + (stmtId === '28' ? `|hm:${p.hrPackMode || ''}|hl:${p.hrPackLang || ''}|sal:${(typeof window !== 'undefined' && typeof window.__mfgCanViewPayrollDollarAmounts === 'function') ? (window.__mfgCanViewPayrollDollarAmounts() ? 1 : 0) : 0}` : '');
+    const uiLangSig = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en';
+    const paramSig = (meta.params || []).map(pk => `${pk}:${p[pk] || ''}`).join('|') + (stmtId === '28' ? `|hm:${p.hrPackMode || ''}|hl:${p.hrPackLang || ''}|uil:${uiLangSig}|sal:${_isBordereauPayrollAmtAllowed(STATE) ? 1 : 0}|bc:${p.hrBordereauCo || ''}|by:${p.hrBordereauYear || ''}|bp:${p.hrBordereauPeriod || ''}` : '');
     const customRev = (seedObj && (seedObj._customRev || seedObj._indCustomRev || seedObj._industryRev)) || 0;
     // Diesel rights of the reading seat are part of the key: a cover note written for a seat that reads fuel money
     // (Fuel Log, Driver Statement) is never served from the cache to a seat that may not.
@@ -7448,6 +8034,10 @@
     const menuCsv = root.querySelector('#rdlMenuCsv');
     const doCsv = () => {
       const activeId = String(STATE.activeStatement || '01').padStart(2, '0');
+      if (activeId === '28' && STATE.rdl && STATE.rdl.params && STATE.rdl.params.hrPackMode === 'bordereau') {
+        exportCnssBordereauCsv(buildRdlContext(SEED, STATE));
+        return;
+      }
       const meta = RDL_CATALOG.find(x => x.id === activeId) || RDL_CATALOG[0];
       exportPrintableSheetCsv(meta, STATE.company);
     };
@@ -7804,6 +8394,23 @@
           refreshSheetAndParams();
         });
       });
+      root.querySelectorAll('[data-hr-bordereau-param]').forEach(sel => {
+        sel.addEventListener('change', () => {
+          const k = sel.dataset.hrBordereauParam;
+          if (k) liveCtx.rdl.params[k] = sel.value || '';
+          refreshSheetAndParams();
+        });
+      });
+      root.querySelectorAll('[data-hr-bordereau-period]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          liveCtx.rdl.params.hrBordereauPeriod = btn.dataset.hrBordereauPeriod || 'annual';
+          refreshSheetAndParams();
+        });
+      });
+      const bordCsvBtn = root.querySelector('#hrBordereauCsvBtn');
+      if (bordCsvBtn) {
+        bordCsvBtn.addEventListener('click', () => exportCnssBordereauCsv(liveCtx));
+      }
 
       const viewBtn = root.querySelector('#rdlViewReportBtn');
       if (viewBtn) {
@@ -8302,6 +8909,12 @@
     computeStatementSnapshot,
     syncPinnedStatementCoverNote,
     getCoaAccountsForInd,
-    getDomainRdlTerms
+    getDomainRdlTerms,
+    computeCnssNominalBordereau,
+    buildCnssBordereauCsv
   };
+  if (typeof window !== 'undefined') {
+    window.__mfgComputeCnssNominalBordereau = computeCnssNominalBordereau;
+    window.__mfgBuildCnssBordereauCsv = buildCnssBordereauCsv;
+  }
 })();

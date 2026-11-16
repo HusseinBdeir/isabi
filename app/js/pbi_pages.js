@@ -1989,7 +1989,7 @@
       const tier = (ev && ev.tier) ? ev.tier : 'none';
       const badgeCls = (tier === 'expired' || tier === 'critical_7')
         ? 'badge-bad'
-        : ((tier === 'due_30' || tier === 'watch_60' || tier === 'missing_permit') ? 'badge-warn' : (tier === 'ok' ? 'badge-ok' : 'badge-muted'));
+        : ((tier === 'due_30' || tier === 'watch_60' || tier === 'missing_permit') ? 'badge-warn' : (tier === 'renewal_submitted' ? 'badge-info' : (tier === 'ok' ? 'badge-ok' : 'badge-muted')));
       return `<span class="badge permit-status-badge permit-tier-${esc(tier)} ${badgeCls}">${esc(cell)}</span>`;
     }
     if (c === 'role_category' && cell && cell !== '—' && cell !== '-') {
@@ -2045,7 +2045,7 @@
     return `<span class="badge ${isCust ? 'badge-info' : 'badge-brass'}">${esc(isCust ? 'Customer Delivery' : 'Supplier / Quarry')}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(code|ext_ref|ext_flow|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|supply_mode|linked_party|jv_partner|jv_share|working_days|workdays_label|day_schedule_summary|shift_code|is_bu_default|start_time|end_time|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|permit_status|nssf_no|work_permit_no|residency_no|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref|lifecycle|last_load)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(code|ext_ref|ext_flow|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|supply_mode|linked_party|jv_partner|jv_share|working_days|workdays_label|day_schedule_summary|shift_code|is_bu_default|start_time|end_time|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|permit_status|renewal_status|renewal_receipt_no|renewal_submitted_date|nssf_no|work_permit_no|residency_no|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref|lifecycle|last_load)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -10655,6 +10655,9 @@
     deduction: 'Absent Ded. ($/d)',
     salary_status: 'Status',
     permit_status: 'Compliance',
+    renewal_status: 'Renewal Status',
+    renewal_receipt_no: 'Renewal Receipt #',
+    renewal_submitted_date: 'Renewal Submitted Date',
     nssf_no: 'NSSF No.',
     id_expiry_date: 'ID Expiry',
     work_permit_no: 'Work Permit No.',
@@ -11627,7 +11630,7 @@
               ${searchBox('Search ' + String(meta.label || '').replace(/\s+Registry$/i, '') + '...')}
             </div>
             <div style="display:flex;gap:6px">
-              ${(meta.key === 'staff_members' && canOpenHrPack) ? `<button type="button" class="btn btn-sm" data-open-hr-pack data-ui-tip="Open Bilingual Contract &amp; NSSF Pack">${pbiIcon('printer')} Contract &amp; NSSF Pack</button>` : ''}
+              ${(meta.key === 'staff_members' && canOpenHrPack) ? `<button type="button" class="btn btn-sm" data-open-hr-pack data-ui-tip="Open Bilingual Contract &amp; NSSF Pack">${pbiIcon('printer')} Contract &amp; NSSF Pack</button><button type="button" class="btn btn-sm" data-open-hr-bordereau data-ui-tip="Open Company CNSS R3 &amp; Nominal Bordereau">${pbiIcon('printer')} CNSS R3 Bordereau</button>` : ''}
               ${exportBtn('univRegPanel', meta.key)}
               ${canEnterForm(meta.form) ? `<button type="button" class="btn btn-primary" data-open-modal="${esc(meta.form)}">+ New ${esc(meta.singularLabel || meta.label.replace(/ies$/, 'y').replace(/s$/, ''))}</button>` : ''}
             </div>
