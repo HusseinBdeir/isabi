@@ -6633,6 +6633,1672 @@
     };
   }
 
+  // ==================== OT THRESHOLD / SNAP CLUSTER BRIEF & PRE-PAYDAY SUMMARY CARD ====================
+  const PPD_LANG_PREF_KEY = 'isabi_prepayday_lang_v1';
+
+  function getAttBridge() {
+    return (typeof window !== 'undefined' && window.__mfgAttPayrollBridge) || null;
+  }
+
+  function parseHhMmToMin(str) {
+    const m = String(str || '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!m) return null;
+    const hh = Number(m[1]);
+    const mm = Number(m[2]);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 29 || mm < 0 || mm > 59) return null;
+    return (hh * 60) + mm;
+  }
+
+  function isoShiftDayStr(iso, deltaDays) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ''))) return '';
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d + Number(deltaDays || 0)));
+    return dt.toISOString().slice(0, 10);
+  }
+
+  function scrubForbiddenPolicyCopy(str, allowDollarSymbol) {
+    let s = sanitizeOutward(str);
+    s = s.replace(/\b0\.1\s*h\b/gi, 'minute engine')
+      .replace(/tenth_hour/gi, 'per_minute')
+      .replace(/6[- ]Min(?:ute)?\s*Steps?/gi, 'Lateness Brackets');
+    if (allowDollarSymbol === false) {
+      s = s.replace(/\$\s*\/\s*Min/gi, 'Per-Min')
+        .replace(/[+-]?\$\s*[\d,.]+/g, 'Restricted')
+        .replace(/\bUSD\s*[\d,.]+/gi, 'Restricted')
+        .replace(/\$/g, '');
+    }
+    return sanitizeOutward(s);
+  }
+
+  function resolveClusterAllowedCompanies(bridge, opts) {
+    const canon = co => (bridge && typeof bridge.canonCompany === 'function') ? bridge.canonCompany(co) : String(co || '').trim();
+    const allowedRaw = (bridge && typeof bridge.allowedCompanyNames === 'function')
+      ? bridge.allowedCompanyNames()
+      : [];
+    const allowed = Array.from(new Set(allowedRaw.map(c => canon(c)).filter(Boolean)));
+    const allowedSet = new Set(allowed);
+    if (!allowedSet.size) return { companies: [], deniedEmpty: true };
+    const state = bridge && typeof bridge.getState === 'function' ? bridge.getState() : {};
+    const reqCo = String((opts && opts.company) || (state && state.company) || '').trim();
+    const reqCosArr = (opts && Array.isArray(opts.companies) && opts.companies.length)
+      ? opts.companies.map(c => canon(c)).filter(Boolean)
+      : null;
+    if (reqCosArr) {
+      const filtered = reqCosArr.filter(c => allowedSet.has(c));
+      return { companies: filtered, deniedEmpty: filtered.length === 0 };
+    }
+    if (!reqCo || /^ALL$/i.test(reqCo) || /^(manufacturing-group|demo_company)$/i.test(reqCo) || /^industry:/i.test(reqCo)) {
+      if (bridge && typeof bridge.getActiveIndustryBuList === 'function') {
+        const buList = (bridge.getActiveIndustryBuList(reqCo) || []).map(c => canon(c)).filter(Boolean);
+        if (buList.length) {
+          const filtered = buList.filter(c => allowedSet.has(c));
+          return { companies: filtered, deniedEmpty: filtered.length === 0 };
+        }
+      }
+      if (/^industry:/i.test(reqCo)) {
+        const targetInd = reqCo.slice(9).trim();
+        const filtered = allowed.filter(co => bridge && typeof bridge.getActiveIndustry === 'function' && bridge.getActiveIndustry(co) === targetInd);
+        return { companies: filtered, deniedEmpty: filtered.length === 0 };
+      }
+      if (reqCo === 'manufacturing-group') {
+        const mfgSet = new Set(['WTC', 'BBConstruction', 'Lions Transport']);
+        const matched = allowed.filter(co => mfgSet.has(co) || (bridge && typeof bridge.getActiveIndustry === 'function' && bridge.getActiveIndustry(co) === 'Manufacturing'));
+        return { companies: matched, deniedEmpty: matched.length === 0 };
+      }
+      return { companies: allowed, deniedEmpty: false };
+    }
+    const cName = canon(reqCo);
+    if (!cName) return { companies: allowed, deniedEmpty: false };
+    return allowedSet.has(cName) ? { companies: [cName], deniedEmpty: false } : { companies: [], deniedEmpty: true };
+  }
+
+  function computeOtThresholdClusterDigest(opts = {}) {
+    const bridge = getAttBridge();
+    if (!bridge || typeof bridge.getSeed !== 'function') {
+      return { ok: false, lookbackDays: 30, bandMin: 4, minCount: 4, scannedPunches: 0, totalShifts: 0, clusters: [], generatedAt: new Date().toISOString() };
+    }
+    const seed = bridge.getSeed() || {};
+    const state = (typeof bridge.getState === 'function' ? bridge.getState() : {}) || {};
+    const attArr = (seed.records && Array.isArray(seed.records.attendance)) ? seed.records.attendance : [];
+    const lookbackDays = Math.max(7, Math.min(90, Number((opts && opts.lookbackDays) || (bridge.getAlertParam && bridge.getAlertParam('S14', 'lookbackDays', 30)) || 30)));
+    const bandMin = Math.max(1, Math.min(10, Number((opts && opts.bandMin) || (bridge.getAlertParam && bridge.getAlertParam('S14', 'bandMin', 4)) || 4)));
+    const minCount = Math.max(2, Math.min(20, Number((opts && opts.minCount) || (bridge.getAlertParam && bridge.getAlertParam('S14', 'minCount', 4)) || 4)));
+    const scopeRes = resolveClusterAllowedCompanies(bridge, opts);
+    const targetCos = (scopeRes && Array.isArray(scopeRes.companies)) ? scopeRes.companies.slice().sort() : [];
+    const seedDate = (bridge.getSeedDate && bridge.getSeedDate()) || String(seed.generated_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+    const endDate = String((opts && opts.endDate) || seedDate).slice(0, 10);
+    const startDate = isoShiftDayStr(endDate, -(lookbackDays - 1)) || endDate;
+    if (!targetCos.length || (scopeRes && scopeRes.deniedEmpty)) {
+      return {
+        ok: true,
+        lookbackDays,
+        startDate,
+        endDate,
+        bandMin,
+        minCount,
+        companies: [],
+        scannedPunches: 0,
+        totalShifts: 0,
+        clusters: [],
+        generatedAt: new Date().toISOString()
+      };
+    }
+    const targetCoSet = new Set(targetCos);
+
+    const firstId = attArr.length && attArr[0] ? String(attArr[0].id || '') : '';
+    const lastRec = attArr.length ? attArr[attArr.length - 1] : null;
+    const lastSig = lastRec ? `${lastRec.id || ''}:${lastRec.out_time || ''}:${lastRec.voided ? 1 : 0}` : '';
+    const workShiftCount = Array.isArray(seed.records && seed.records.work_shifts) ? seed.records.work_shifts.length : 0;
+    const customRuleCount = state.customWorkRules ? Object.keys(state.customWorkRules).length : 0;
+    const bridgeRev = bridge.getClusterMemoRev ? bridge.getClusterMemoRev() : String(seed._customRev || 0);
+    const seatSig = (typeof window.__mfgSeatScopeSig === 'function') ? window.__mfgSeatScopeSig() : String(state.activeUserIdx || 0);
+    const activeIndKey = bridge.getActiveIndustry ? bridge.getActiveIndustry(state.company) : '';
+    const memoKey = `${bridgeRev}|${seatSig}|${state._customRev || 0}|${(seed._tableRev && seed._tableRev.attendance) || 0}|${targetCos.join(',')}|${startDate}|${endDate}|${bandMin}|${minCount}|${attArr.length}|${firstId}|${lastSig}|${workShiftCount}|${customRuleCount}|${activeIndKey}|${state.demoCompanyIndustry || ''}`;
+    if (!(EDGE_STATE._otClusterMemoMap instanceof Map)) EDGE_STATE._otClusterMemoMap = new Map();
+    if (!opts.forceFresh && !window.__MFG_SPEED_CACHES_OFF && EDGE_STATE._otClusterMemoMap.has(memoKey)) {
+      return EDGE_STATE._otClusterMemoMap.get(memoKey);
+    }
+
+    const shiftTotals = new Map();
+    const clusterBuckets = new Map();
+    let scannedPunches = 0;
+
+    const bumpBucket = (bKey, meta, a, d, co, staff, offsetMin, boundaryLabel, subKind) => {
+      let bk = clusterBuckets.get(bKey);
+      if (!bk) {
+        bk = Object.assign({
+          id: bKey,
+          count: 0,
+          offsets: [],
+          dates: new Set(),
+          latestDate: '',
+          staffMap: new Map(),
+          subKinds: new Set(),
+          boundaryLabel
+        }, meta);
+        clusterBuckets.set(bKey, bk);
+      }
+      bk.count += 1;
+      bk.offsets.push(offsetMin);
+      bk.dates.add(d);
+      if (subKind) bk.subKinds.add(subKind);
+      if (!bk.latestDate || d > bk.latestDate) bk.latestDate = d;
+      bk.staffMap.set(staff, (bk.staffMap.get(staff) || 0) + 1);
+    };
+
+    const coCanonMap = new Map();
+    const staffCoRuleMap = new Map();
+    const dayMetaMap = new Map();
+
+    for (let i = 0; i < attArr.length; i++) {
+      const a = attArr[i];
+      if (!a || a.voided) continue;
+      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      if (!d || d < startDate || d > endDate) continue;
+      const outRaw = String(a.out_time || '').trim();
+      if (!outRaw) continue;
+      const outM0 = parseHhMmToMin(outRaw);
+      if (outM0 == null) continue;
+      const attType = String(a.type || a.status || 'Present').trim();
+      if (/^site\s*(?:present|off)$|^config|^absence$|^absent$|^off$|^leave$/i.test(attType)) continue;
+      const rawCo = String(a.company || '');
+      let co = coCanonMap.get(rawCo);
+      if (co === undefined) {
+        co = (bridge.canonCompany ? bridge.canonCompany(rawCo) : rawCo.trim()) || targetCos[0] || '';
+        coCanonMap.set(rawCo, co);
+      }
+      if (targetCoSet.size && co && !targetCoSet.has(co)) continue;
+      const staff = String(a.staff || '').trim();
+      if (!staff) continue;
+
+      const scKey = `${co}|${staff}`;
+      let rawRuleObj = staffCoRuleMap.get(scKey);
+      if (rawRuleObj === undefined) {
+        rawRuleObj = bridge.getStaffWorkRule ? bridge.getStaffWorkRule(staff, co) : null;
+        staffCoRuleMap.set(scKey, rawRuleObj || null);
+      }
+      if (rawRuleObj && String(rawRuleObj.shift_id || '').toLowerCase() === 'off') continue;
+
+      const dmKey = `${scKey}|${d}|${a.shift_name || ''}`;
+      let dm = dayMetaMap.get(dmKey);
+      if (dm === undefined) {
+        const shift = bridge.resolveStaffShiftForDate ? bridge.resolveStaffShiftForDate(staff, co, d) : null;
+        if (shift && (shift.id === 'off' || shift.isWorkday === false)) {
+          dm = { skip: true };
+        } else {
+          const shiftName = String((shift && (shift.name || shift.label || shift.id)) || a.shift_name || 'Standard Shift').trim();
+          let shStartM = parseHhMmToMin((shift && (shift.start_time || shift.start)) || '08:00');
+          let shEndM = parseHhMmToMin((shift && (shift.end_time || shift.end)) || '17:00');
+          if (shStartM == null) shStartM = 8 * 60;
+          if (shEndM == null) shEndM = 17 * 60;
+          if (shEndM <= shStartM) shEndM += 1440;
+          const pol = bridge.resolveStaffPolicyForDate ? bridge.resolveStaffPolicyForDate(staff, co, d) : null;
+          const polDesc = bridge.describeUnifiedMinutePolicy ? bridge.describeUnifiedMinutePolicy(pol, { staff, company: co, date: d }) : null;
+          const indName = bridge.getActiveIndustry ? bridge.getActiveIndustry(co) : 'Manufacturing';
+          dm = { skip: false, shiftName, shStartM, shEndM, polDesc, indName };
+        }
+        dayMetaMap.set(dmKey, dm);
+      }
+      if (dm.skip) continue;
+      const { shiftName, shStartM, shEndM, polDesc, indName } = dm;
+
+      const inM0 = parseHhMmToMin(a.in_time || '');
+      let outM = outM0;
+      if (inM0 != null && outM < inM0) outM += 1440;
+      else if (shEndM > 1440 && outM < shStartM - 120) outM += 1440;
+
+      scannedPunches += 1;
+      const shiftKey = `${co}|${shiftName}`;
+      shiftTotals.set(shiftKey, (shiftTotals.get(shiftKey) || 0) + 1);
+
+      if (!polDesc || polDesc.otMode === 'none') continue;
+      const pastEndMin = Math.round(outM - shEndM);
+      const threshMin = Number(polDesc.otThreshMin || 0);
+      const otCountFrom = String(polDesc.otCountFrom || 'shift_end');
+      const otSnapMode = String(polDesc.otSnapMode || 'exact');
+      const otBlockMin = Number(polDesc.otBlockMin || 0);
+      const otSnapAtMin = Number(polDesc.otSnapAtMin || 0);
+
+      // 1) OT Start Threshold boundary cluster (especially Shift-End cliff)
+      if (threshMin > 0 && pastEndMin >= threshMin && pastEndMin <= (threshMin + bandMin)) {
+        const bKey = `${co}|${shiftName}|threshold|${threshMin}|${otCountFrom}`;
+        bumpBucket(bKey, {
+          company: co,
+          industry: indName,
+          shiftName,
+          shiftKey,
+          cliffKind: 'threshold_cliff',
+          thresholdMin: threshMin,
+          snapMode: otSnapMode,
+          blockMin: otBlockMin,
+          snapAtMin: otSnapAtMin,
+          otCountFrom,
+          policyDesc: polDesc
+        }, a, d, co, staff, pastEndMin, `${threshMin}m OT start (${otCountFrom === 'shift_end' ? 'Shift-End' : 'After Threshold'})`, otCountFrom === 'shift_end' ? 'shift_end_cliff' : 'after_thresh_cliff');
+      }
+
+      // 2) OT Snap / Block cliff clustering (exact_plus_snap or whole_blocks)
+      if (pastEndMin > 0 && pastEndMin >= threshMin && (otSnapMode === 'exact_plus_snap' || otSnapMode === 'whole_blocks') && otBlockMin >= 15) {
+        const rawOtMin = Math.max(0, pastEndMin - (otCountFrom === 'after_threshold' ? threshMin : 0));
+        if (rawOtMin > 0) {
+          if (otSnapMode === 'exact_plus_snap' && otSnapAtMin > 0) {
+            const rem = rawOtMin % otBlockMin;
+            const hitDirect = rawOtMin >= otSnapAtMin && rawOtMin <= (otSnapAtMin + bandMin);
+            const hitMod = rem >= otSnapAtMin && rem <= Math.min(otBlockMin - 1, otSnapAtMin + bandMin);
+            if (hitDirect || hitMod) {
+              const bKey = `${co}|${shiftName}|snap|${otSnapMode}|${otSnapAtMin}|${otBlockMin}`;
+              bumpBucket(bKey, {
+                company: co,
+                industry: indName,
+                shiftName,
+                shiftKey,
+                cliffKind: 'snap_cliff',
+                thresholdMin: threshMin,
+                snapMode: otSnapMode,
+                blockMin: otBlockMin,
+                snapAtMin: otSnapAtMin,
+                otCountFrom,
+                policyDesc: polDesc
+              }, a, d, co, staff, rawOtMin, `Snap at ${otSnapAtMin}m to ${otBlockMin}m block`, 'snap_up_cliff');
+            }
+          } else if (otSnapMode === 'whole_blocks') {
+            const rem = rawOtMin % otBlockMin;
+            if (rawOtMin >= otBlockMin && rem <= bandMin) {
+              const bKey = `${co}|${shiftName}|block_above|${otBlockMin}`;
+              bumpBucket(bKey, {
+                company: co,
+                industry: indName,
+                shiftName,
+                shiftKey,
+                cliffKind: 'snap_cliff',
+                thresholdMin: threshMin,
+                snapMode: otSnapMode,
+                blockMin: otBlockMin,
+                snapAtMin: otSnapAtMin,
+                otCountFrom,
+                policyDesc: polDesc
+              }, a, d, co, staff, rawOtMin, `${otBlockMin}m whole-block cliff`, 'above_block');
+            }
+          }
+        }
+      }
+    }
+
+    const clusters = [];
+    clusterBuckets.forEach(bk => {
+      if (bk.count < minCount) return;
+      const shiftTotal = shiftTotals.get(bk.shiftKey) || bk.count;
+      const sharePct = Math.round((bk.count / Math.max(1, shiftTotal)) * 100);
+      const sortedOff = bk.offsets.slice().sort((x, y) => x - y);
+      const minOffset = sortedOff[0];
+      const maxOffset = sortedOff[sortedOff.length - 1];
+      const medianOffset = sortedOff[Math.floor(sortedOff.length / 2)];
+      const topStaff = Array.from(bk.staffMap.entries())
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 6)
+        .map(([staff, count]) => ({ staff, count }));
+      const rangeStr = minOffset === maxOffset ? `+${minOffset}m` : `+${minOffset}m to +${maxOffset}m`;
+      const isSnap = bk.cliffKind === 'snap_cliff';
+      const isShiftEnd = bk.otCountFrom === 'shift_end';
+
+      const headlineEn = isSnap
+        ? `${bk.shiftName} (${bk.company}): ${bk.count} clock-outs (${sharePct}%) clustered at ${rangeStr} raw OT around ${bk.boundaryLabel}`
+        : `${bk.shiftName} (${bk.company}): ${bk.count} clock-outs (${sharePct}%) clustered at ${rangeStr} past shift end (${bk.thresholdMin}m threshold, ${isShiftEnd ? 'Shift-End counting' : 'After-Threshold'})`;
+      const headlineAr = isSnap
+        ? `${bk.shiftName} (${bk.company}): ${bk.count} بصمات خروج (${sharePct}%) تجمعت عند ${rangeStr} قرب حد التثبيت (${bk.blockMin} د)`
+        : `${bk.shiftName} (${bk.company}): ${bk.count} بصمات خروج (${sharePct}%) تجمعت عند ${rangeStr} بعد نهاية الدوام (عتبة ${bk.thresholdMin} د)`;
+      const headlineFr = isSnap
+        ? `${bk.shiftName} (${bk.company}): ${bk.count} pointages (${sharePct}%) groupés à ${rangeStr} autour du palier (${bk.blockMin}m)`
+        : `${bk.shiftName} (${bk.company}): ${bk.count} pointages (${sharePct}%) groupés à ${rangeStr} après fin de poste (seuil ${bk.thresholdMin}m)`;
+
+      const recEn = isSnap
+        ? `Review ${bk.snapMode === 'exact_plus_snap' ? `snap-at ${bk.snapAtMin}m` : `${bk.blockMin}m block`} boundary or adjust OT snap to Exact Min on ${bk.shiftName}.`
+        : (isShiftEnd
+          ? `Evaluate switching Counting Mode from Shift-End to After Threshold or nudging threshold from ${bk.thresholdMin}m to ${bk.thresholdMin + 5}m.`
+          : `Inspect shift handover / queue timing around +${bk.thresholdMin}m on ${bk.shiftName}.`);
+      const recAr = isSnap
+        ? `راجع حد التثبيت (${bk.blockMin} د) أو فعّل الحساب بالدقيقة الدقيقة لوردية ${bk.shiftName}.`
+        : (isShiftEnd
+          ? `قيّم تحويل الاحتساب إلى "بعد العتبة" أو تعديل العتبة من ${bk.thresholdMin} إلى ${bk.thresholdMin + 5} دقيقة.`
+          : `تحقق من سبب التجمع قرب +${bk.thresholdMin} دقيقة في وردية ${bk.shiftName}.`);
+      const recFr = isSnap
+        ? `Vérifiez le palier (${bk.blockMin}m) ou passez en minutes exactes sur ${bk.shiftName}.`
+        : (isShiftEnd
+          ? `Envisagez de compter Après Seuil ou d'ajuster le seuil de ${bk.thresholdMin}m à ${bk.thresholdMin + 5}m.`
+          : `Vérifiez les pointages de fin de poste autour de +${bk.thresholdMin}m sur ${bk.shiftName}.`);
+
+      const cliffLabelAr = isSnap
+        ? (bk.snapMode === 'exact_plus_snap' ? `تثبيت عند ${bk.snapAtMin} د إلى ${bk.blockMin} د` : `كتل كاملة ${bk.blockMin} د`)
+        : `${bk.thresholdMin} د بدء إضافي (${isShiftEnd ? 'نهاية الدوام' : 'بعد الحد'})`;
+      const cliffLabelFr = isSnap
+        ? (bk.snapMode === 'exact_plus_snap' ? `Arrondi à ${bk.snapAtMin}m vers ${bk.blockMin}m` : `Blocs complets ${bk.blockMin}m`)
+        : `Seuil ${bk.thresholdMin}m (${isShiftEnd ? 'Fin de poste' : 'Après seuil'})`;
+
+      clusters.push({
+        id: bk.id,
+        company: bk.company,
+        industry: bk.industry,
+        shiftName: bk.shiftName,
+        cliffKind: bk.cliffKind,
+        cliffLabel: bk.boundaryLabel,
+        cliffLabelEn: bk.boundaryLabel,
+        cliffLabelAr,
+        cliffLabelFr,
+        thresholdMin: bk.thresholdMin,
+        snapMode: bk.snapMode,
+        blockMin: bk.blockMin,
+        snapAtMin: bk.snapAtMin,
+        otCountFrom: bk.otCountFrom,
+        count: bk.count,
+        shiftTotal,
+        sharePct,
+        minOffset,
+        maxOffset,
+        medianOffset,
+        latestDate: bk.latestDate,
+        dates: Array.from(bk.dates).sort(),
+        topStaff,
+        severity: (bk.count >= minCount + 2 || sharePct >= 45 || (isShiftEnd && !isSnap)) ? 'high' : 'med',
+        headlineEn: scrubForbiddenPolicyCopy(headlineEn, true),
+        headlineAr: scrubForbiddenPolicyCopy(headlineAr, true),
+        headlineFr: scrubForbiddenPolicyCopy(headlineFr, true),
+        recommendationEn: scrubForbiddenPolicyCopy(recEn, true),
+        recommendationAr: scrubForbiddenPolicyCopy(recAr, true),
+        recommendationFr: scrubForbiddenPolicyCopy(recFr, true)
+      });
+    });
+
+    clusters.sort((a, b) => b.count - a.count || b.sharePct - a.sharePct || a.shiftName.localeCompare(b.shiftName));
+
+    const result = {
+      ok: true,
+      _memoKey: memoKey,
+      lookbackDays,
+      startDate,
+      endDate,
+      bandMin,
+      minCount,
+      companies: targetCos,
+      scannedPunches,
+      totalShifts: shiftTotals.size,
+      clusters,
+      generatedAt: new Date().toISOString()
+    };
+    if (!window.__MFG_SPEED_CACHES_OFF) {
+      if (EDGE_STATE._otClusterMemoMap.size >= 32) {
+        const oldest = EDGE_STATE._otClusterMemoMap.keys().next().value;
+        if (oldest !== undefined) EDGE_STATE._otClusterMemoMap.delete(oldest);
+      }
+      EDGE_STATE._otClusterMemoMap.set(memoKey, result);
+    }
+    return result;
+  }
+
+  function buildOtClusterEdgeBrief(digest, opts = {}) {
+    const d = digest || computeOtThresholdClusterDigest(opts);
+    const lang = opts.lang || curLang();
+    const bridge = getAttBridge();
+    const canDollars = Boolean(bridge && typeof bridge.canViewPayrollDollarAmounts === 'function' && bridge.canViewPayrollDollarAmounts());
+    if (!d.clusters || !d.clusters.length) {
+      return {
+        source: 'deterministic',
+        hasClusters: false,
+        title: lang === 'ar' ? 'تحليل عتبات العمل الإضافي (30 يوماً)' : (lang === 'fr' ? 'Brief Seuils HS (30 jours)' : '30-Day OT Boundary & Snap Cluster Brief'),
+        summary: scrubForbiddenPolicyCopy(
+          lang === 'ar'
+            ? `تم مسح ${d.scannedPunches} بصمة خروج خلال ${d.lookbackDays} يوماً (${d.startDate} إلى ${d.endDate}): توزيع سليم دون تجمع مريب قرب عتبات أو قوالب العمل الإضافي.`
+            : (lang === 'fr'
+              ? `${d.scannedPunches} pointages analysés sur ${d.lookbackDays}j (${d.startDate} au ${d.endDate}) : aucun regroupement anormal autour des seuils ou paliers d'heures sup.`
+              : `Scanned ${d.scannedPunches} clock-outs over ${d.lookbackDays} days (${d.startDate} to ${d.endDate}): clean distribution with no clustering at OT start thresholds or snap boundaries.`),
+          canDollars
+        ),
+        bullets: []
+      };
+    }
+    const bullets = d.clusters.slice(0, 6).map(c => {
+      const headline = lang === 'ar' ? c.headlineAr : (lang === 'fr' ? c.headlineFr : c.headlineEn);
+      const rec = lang === 'ar' ? c.recommendationAr : (lang === 'fr' ? c.recommendationFr : c.recommendationEn);
+      const who = (c.topStaff || []).slice(0, 3).map(s => `${s.staff} (${s.count})`).join(', ');
+      return {
+        id: c.id,
+        headline: scrubForbiddenPolicyCopy(headline, canDollars),
+        recommendation: scrubForbiddenPolicyCopy(rec, canDollars),
+        staffSummary: who
+      };
+    });
+    const lead = bullets[0];
+    return {
+      source: 'deterministic',
+      hasClusters: true,
+      clusterCount: d.clusters.length,
+      title: lang === 'ar' ? 'تحليل عتبات وتثبيت العمل الإضافي (30 يوماً)' : (lang === 'fr' ? 'Brief Seuils & Paliers HS (30 jours)' : '30-Day OT Boundary & Snap Cluster Brief'),
+      summary: scrubForbiddenPolicyCopy(
+        lang === 'ar'
+          ? `تم رصد ${d.clusters.length} تجمّع(ات) قرب عتبات أو قوالب العمل الإضافي ضمن ${d.scannedPunches} بصمة. الأبرز: ${lead.headline}`
+          : (lang === 'fr'
+            ? `${d.clusters.length} regroupement(s) détecté(s) sur ${d.scannedPunches} pointages. Principal : ${lead.headline}`
+            : `Detected ${d.clusters.length} clock-out boundary cluster(s) across ${d.scannedPunches} punches (${d.startDate} to ${d.endDate}). Top finding: ${lead.headline}`),
+        canDollars
+      ),
+      bullets
+    };
+  }
+
+  function clearOtClusterCaches() {
+    if (EDGE_STATE._otClusterMemoMap instanceof Map) EDGE_STATE._otClusterMemoMap.clear();
+    EDGE_STATE._otClusterCardHtmlMemo = null;
+  }
+
+  function shiftLabelHtml(name) {
+    const s = String(name || '').trim();
+    const d = typeof window !== 'undefined' && window.MFG_I18N && window.MFG_I18N.DICT;
+    const known = Boolean(d && d.ar && Object.prototype.hasOwnProperty.call(d.ar, s));
+    return known ? `<span>${esc(s)}</span>` : `<span data-no-i18n="1">${esc(s)}</span>`;
+  }
+
+  function renderPayAttClusterBriefCardHtml(opts = {}) {
+    const digest = computeOtThresholdClusterDigest(opts);
+    const bridge = getAttBridge();
+    const canDollars = Boolean(bridge && typeof bridge.canViewPayrollDollarAmounts === 'function' && bridge.canViewPayrollDollarAmounts());
+    const memoKey = digest && digest._memoKey ? digest._memoKey : '';
+    const cardKey = memoKey ? `${memoKey}|${canDollars ? 1 : 0}|${(opts && opts.company) || ''}|${curLang()}` : '';
+    if (!window.__MFG_SPEED_CACHES_OFF && cardKey && EDGE_STATE._otClusterCardHtmlMemo && EDGE_STATE._otClusterCardHtmlMemo.key === cardKey) {
+      return EDGE_STATE._otClusterCardHtmlMemo.html;
+    }
+    const brief = buildOtClusterEdgeBrief(digest, Object.assign({}, opts, { lang: 'en' }));
+    const clusters = digest.clusters || [];
+    const pillCls = clusters.length ? 'aie-pill is-warn' : 'aie-pill is-good';
+    const pillTxt = clusters.length
+      ? `${clusters.length} boundary cluster${clusters.length > 1 ? 's' : ''}`
+      : 'Clean distribution';
+
+    const rowsHtml = clusters.slice(0, 3).map(c => {
+      const barPct = Math.min(100, Math.max(12, c.sharePct || 25));
+      const headTxt = scrubForbiddenPolicyCopy(c.headlineEn, canDollars);
+      const recTxt = scrubForbiddenPolicyCopy(c.recommendationEn, canDollars);
+      const staffBadges = (c.topStaff || []).slice(0, 3).map(s => `<span class="aie-pill" style="font-size:10px;padding:1px 6px">${esc(s.staff)} · ${s.count}x</span>`).join(' ');
+      const cliffBadge = c.cliffKind === 'snap_cliff' ? 'Snap / Block Cliff' : 'Threshold Cliff';
+      return `
+        <div class="aie-cluster-row">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
+            <strong style="font-size:12px">${shiftLabelHtml(c.shiftName)} - <span>${esc(c.company)}</span></strong>
+            <span class="aie-pill ${c.cliffKind === 'snap_cliff' ? 'is-warn' : 'is-crit'}" style="font-size:10px;padding:2px 7px">${esc(cliffBadge)} · ${c.count}x (${c.sharePct}%)</span>
+          </div>
+          <div class="aie-cluster-bar-track"><div class="aie-cluster-bar-fill" style="width:${barPct}%"></div></div>
+          <div style="font-size:11.5px;line-height:1.4;margin-bottom:4px">${esc(headTxt)}</div>
+          <div style="font-size:11px;color:#7A5414;margin-bottom:4px"><em>Tuning hint:</em> ${esc(recTxt)}</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">${staffBadges}</div>
+        </div>
+      `;
+    }).join('');
+
+    const html = `
+      <div id="payAttClusterBriefCard" class="aie-cluster-card" data-cluster-count="${clusters.length}" data-scanned="${digest.scannedPunches}">
+        <div class="aie-head">
+          <div class="aie-title-wrap">
+            ${ic('brain_radar')}
+            <strong style="font-size:13px">30-Day OT Boundary &amp; Snap Cluster Brief</strong>
+            <span class="${pillCls}">${esc(pillTxt)}</span>
+            <span style="font-size:11px;color:var(--muted,#6E6254)">${fmtNum(digest.scannedPunches)} punches · ${esc(digest.startDate)} to ${esc(digest.endDate)}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <button type="button" id="otClusterAiExplainBtn" class="aie-btn">${ic('sparkles')} Explain Clusters</button>
+            <button type="button" class="aie-btn" data-open-ot-cluster-modal="1">${ic('sliders')} Full Cluster Brief</button>
+          </div>
+        </div>
+        ${clusters.length
+          ? `<div class="aie-cluster-grid">${rowsHtml}</div>`
+          : `<div style="margin-top:6px;font-size:12px;color:var(--muted,#5F5244)">${esc(brief.summary)}</div>`}
+        <div id="otClusterAiInsightSlot" class="aie-cluster-ai-slot hidden"></div>
+      </div>
+    `;
+    if (!window.__MFG_SPEED_CACHES_OFF && cardKey) {
+      EDGE_STATE._otClusterCardHtmlMemo = { key: cardKey, html };
+    }
+    return html;
+  }
+
+  async function runOtClusterExplainInSlot(slotEl, digest) {
+    if (!slotEl) return;
+    const lang = curLang();
+    const d = digest || computeOtThresholdClusterDigest();
+    const det = buildOtClusterEdgeBrief(d, { lang });
+    const bridge = getAttBridge();
+    const canDollars = Boolean(bridge && typeof bridge.canViewPayrollDollarAmounts === 'function' && bridge.canViewPayrollDollarAmounts());
+    const syncI18n = () => {
+      if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && typeof window.MFG_I18N.setLang === 'function') {
+        const uiL = window.MFG_I18N.getLang();
+        if (uiL && uiL !== 'en') window.MFG_I18N.setLang(uiL, { skipStorage: true });
+      }
+    };
+    slotEl.classList.remove('hidden');
+    slotEl.innerHTML = `<strong>Deterministic Digest:</strong> <span class="ask-answer-body">${esc(scrubForbiddenPolicyCopy(det.summary, canDollars))}</span>`;
+    syncI18n();
+    if (!d.clusters || !d.clusters.length) return;
+    const targetLangName = lang === 'ar' ? 'Arabic' : (lang === 'fr' ? 'French' : 'English');
+    const prompt = sanitizeOutward([
+      `You are advising HR operations on attendance policy tuning under a strict Per-Minute ($ / Min) engine with OT start threshold and optional OT snap/block constraints. Respond in ${targetLangName}.`,
+      'Summarize the pattern below concisely in plain language (no markdown em-dashes or arrows). Keep all math deterministic; recommend whether supervisors should check physical shift handover timing vs adjusting ot_threshold_min / ot_count_from / ot_snap_mode.',
+      JSON.stringify({
+        lookbackDays: d.lookbackDays,
+        scannedPunches: d.scannedPunches,
+        clusters: d.clusters.slice(0, 5).map(c => ({
+          company: c.company,
+          shift: c.shiftName,
+          cliffKind: c.cliffKind,
+          thresholdMin: c.thresholdMin,
+          otCountFrom: c.otCountFrom,
+          snapMode: c.snapMode,
+          blockMin: c.blockMin,
+          snapAtMin: c.snapAtMin,
+          count: c.count,
+          sharePct: c.sharePct,
+          offsetRangeMin: [c.minOffset, c.maxOffset]
+        }))
+      })
+    ].join('\n'));
+    try {
+      const aiObj = await callAiEdgeJson('grounded_brief', prompt, null, null, { tier: 'fast', timeoutMs: 4500 });
+      const aiTxt = aiObj && (aiObj.summary || aiObj.brief || aiObj.answer || aiObj.recommendation);
+      if (aiTxt && String(aiTxt).trim()) {
+        slotEl.innerHTML = `<strong>AI Edge Note:</strong> <span class="ask-answer-body">${esc(scrubForbiddenPolicyCopy(String(aiTxt), canDollars))}</span>`;
+        syncI18n();
+      }
+    } catch (_) {}
+  }
+
+  function closeOtClusterBriefModal() {
+    const m = $('otClusterBriefModal');
+    if (m) m.remove();
+  }
+
+  function openOtClusterBriefModal(opts = {}) {
+    closeOtClusterBriefModal();
+    const digest = computeOtThresholdClusterDigest(Object.assign({}, opts, { forceFresh: true }));
+    const brief = buildOtClusterEdgeBrief(digest, Object.assign({}, opts, { lang: 'en' }));
+    const modal = document.createElement('div');
+    modal.id = 'otClusterBriefModal';
+    modal.className = 'aie-modal-backdrop';
+    modal.innerHTML = `
+      <div class="aie-modal-card" role="dialog" aria-modal="true" aria-labelledby="otClusterModalTitle">
+        <div class="aie-modal-hdr">
+          <div class="aie-title-wrap">
+            ${ic('brain_radar')}
+            <strong id="otClusterModalTitle" style="font-size:15px">${esc(brief.title)}</strong>
+            <span class="aie-pill ${digest.clusters.length ? 'is-warn' : 'is-good'}">${digest.clusters.length} clusters</span>
+          </div>
+          <button type="button" id="otClusterModalCloseBtn" class="aie-btn">Close</button>
+        </div>
+        <div class="aie-modal-body">
+          <div style="font-size:12.5px;margin-bottom:10px;line-height:1.5">${esc(brief.summary)}</div>
+          <div id="otClusterModalAiSlot" class="aie-cluster-ai-slot hidden"></div>
+          ${digest.clusters.length ? `
+            <div style="margin-top:10px;overflow-x:auto">
+              <table class="aie-ppd-table" style="border:1px solid #E2DCD0;border-radius:8px">
+                <thead>
+                  <tr>
+                    <th>Company</th>
+                    <th>Shift</th>
+                    <th>Boundary Cliff</th>
+                    <th>Punches</th>
+                    <th>Offset Range</th>
+                    <th>Staff Concentrated</th>
+                    <th>Tuning Guidance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${digest.clusters.map(c => `
+                    <tr>
+                      <td><strong>${esc(c.company)}</strong></td>
+                      <td>${shiftLabelHtml(c.shiftName)}</td>
+                      <td>${esc(c.cliffLabelEn || c.cliffLabel)}</td>
+                      <td><strong>${c.count}</strong> / ${c.shiftTotal} (${c.sharePct}%)</td>
+                      <td>+${c.minOffset}m to +${c.maxOffset}m</td>
+                      <td>${esc((c.topStaff || []).slice(0, 4).map(s => `${s.staff} (${s.count})`).join(', '))}</td>
+                      <td style="white-space:normal;min-width:210px">${esc(c.recommendationEn)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          ` : ''}
+        </div>
+        <div class="aie-modal-foot">
+          <span style="font-size:11px;color:var(--muted,#6E6254)">All overtime, threshold, and snap block math remains 100% deterministic under the Per-Minute engine.</span>
+          <div style="display:flex;gap:8px">
+            <button type="button" id="otClusterModalExplainBtn" class="aie-btn aie-btn-primary">${ic('sparkles')} AI Root-Cause Note</button>
+            <button type="button" id="otClusterModalCloseBtn2" class="aie-btn">Close</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && typeof window.MFG_I18N.setLang === 'function') {
+      const uiL = window.MFG_I18N.getLang();
+      if (uiL && uiL !== 'en') window.MFG_I18N.setLang(uiL, { skipStorage: true });
+    }
+    const closeFn = () => closeOtClusterBriefModal();
+    const c1 = $('otClusterModalCloseBtn');
+    const c2 = $('otClusterModalCloseBtn2');
+    if (c1) c1.addEventListener('click', closeFn);
+    if (c2) c2.addEventListener('click', closeFn);
+    modal.addEventListener('click', ev => { if (ev.target === modal) closeFn(); });
+    const expBtn = $('otClusterModalExplainBtn');
+    if (expBtn) expBtn.addEventListener('click', () => runOtClusterExplainInSlot($('otClusterModalAiSlot'), digest));
+  }
+
+  function loadPrePaydayLangMap() {
+    try {
+      const raw = localStorage.getItem(PPD_LANG_PREF_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function getPrePaydayStaffLang(staff, company) {
+    const map = loadPrePaydayLangMap();
+    const k = `${String(company || '').trim().toLowerCase()}|${String(staff || '').trim().toLowerCase()}`;
+    const v = map[k] || map[String(staff || '').trim().toLowerCase()];
+    return /^(bilingual|en|ar|fr)$/.test(String(v || '')) ? String(v) : 'bilingual';
+  }
+
+  function setPrePaydayStaffLang(staff, company, lang) {
+    const cleanLang = /^(bilingual|en|ar|fr)$/.test(String(lang || '')) ? String(lang) : 'bilingual';
+    const map = loadPrePaydayLangMap();
+    const k = `${String(company || '').trim().toLowerCase()}|${String(staff || '').trim().toLowerCase()}`;
+    map[k] = cleanLang;
+    try { localStorage.setItem(PPD_LANG_PREF_KEY, JSON.stringify(map)); } catch (_) {}
+    return cleanLang;
+  }
+
+  function listFrequencyStaffOptions(bridge, companyHint) {
+    const seed = (bridge && typeof bridge.getSeed === 'function' ? bridge.getSeed() : {}) || {};
+    const state = (bridge && typeof bridge.getState === 'function' ? bridge.getState() : {}) || {};
+    const allowed = bridge && typeof bridge.allowedCompanyNames === 'function' ? bridge.allowedCompanyNames() : [];
+    if (!Array.isArray(allowed) || !allowed.length) return [];
+    const allowedSet = new Set(allowed);
+    const canon = co => (bridge && typeof bridge.canonCompany === 'function') ? bridge.canonCompany(co) : String(co || '').trim();
+    const coHint = companyHint && !/^(ALL|manufacturing-group)$/i.test(companyHint) && !/^industry:/i.test(companyHint)
+      ? canon(companyHint)
+      : '';
+
+    const counts = new Map();
+    const meta = new Map();
+    const touch = (staff, co, weight, fatherName) => {
+      const s = String(staff || '').trim();
+      if (!s) return;
+      const c = canon(co) || coHint || (allowed[0] || '');
+      if (!c || !allowedSet.has(c)) return;
+      const key = `${c}|${s}`;
+      counts.set(key, (counts.get(key) || 0) + weight);
+      if (!meta.has(key)) meta.set(key, { staff: s, company: c, fatherName: String(fatherName || '').trim() });
+      else if (fatherName && !meta.get(key).fatherName) meta.get(key).fatherName = String(fatherName).trim();
+    };
+
+    (seed.records && seed.records.attendance || []).forEach(a => { if (a && !a.voided) touch(a.staff, a.company, 3, ''); });
+    (seed.records && seed.records.salaries || []).forEach(p => { if (p && !p.voided) touch(p.staff, p.company, 2, ''); });
+    (seed.records && seed.records.employments || []).forEach(e => { if (e && !e.voided) touch(e.staff || e.name, e.company, 1, e.father_name); });
+    (seed.records && seed.records.employees || []).forEach(e => { if (e && !e.voided) touch(e.name || e.staff, e.company, 1, e.father_name); });
+    (seed.records && seed.records.staff_members || []).forEach(sm => { if (sm && !sm.voided) touch(sm.name || sm.staff, sm.company, 1, sm.father_name); });
+
+    if (bridge && typeof bridge.getKioskStaffDirectory === 'function') {
+      try {
+        (bridge.getKioskStaffDirectory({ company: coHint || undefined }) || []).forEach((k, idx) => {
+          touch(k && (k.staff || k.name), k && k.company, Math.max(1, 5 - Math.floor(idx / 5)), k && k.father_name);
+        });
+      } catch (_) {}
+    }
+
+    const activeCo = coHint || (allowedSet.has(state.company) ? state.company : '');
+    return Array.from(meta.entries())
+      .map(([k, m]) => ({
+        staff: m.staff,
+        company: m.company,
+        fatherName: m.fatherName,
+        freq: (counts.get(k) || 0) + (activeCo && m.company === activeCo ? 50 : 0)
+      }))
+      .sort((a, b) => b.freq - a.freq || a.staff.localeCompare(b.staff));
+  }
+
+  function listFrequencyMonthOptions(bridge, staff, company) {
+    const seed = (bridge && typeof bridge.getSeed === 'function' ? bridge.getSeed() : {}) || {};
+    const state = (bridge && typeof bridge.getState === 'function' ? bridge.getState() : {}) || {};
+    const counts = new Map();
+    const seedDate = (bridge && bridge.getSeedDate && bridge.getSeedDate()) || String(seed.generated_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+    const periodYm = String(state && state.period || '').startsWith('month:') ? String(state.period).slice(6, 13) : '';
+    const curYm = (periodYm || String((state && (state.dateTo || state.dateFrom)) || seedDate)).slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(curYm)) counts.set(curYm, 1000);
+    const sk = String(staff || '').trim().toLowerCase();
+    const ck = String(company || '').trim().toLowerCase();
+    const addRecs = arr => {
+      (arr || []).forEach(r => {
+        if (!r || r.voided) return;
+        const ym = String(r.payroll_month || r.month || r.set_date || r.rep_date || r.date || '').slice(0, 7);
+        if (!/^\d{4}-\d{2}$/.test(ym)) return;
+        const sm = String(r.staff || '').trim().toLowerCase() === sk && (!ck || String(r.company || '').trim().toLowerCase() === ck);
+        counts.set(ym, (counts.get(ym) || 0) + (sm ? 25 : 1));
+      });
+    };
+    addRecs(seed.records && seed.records.attendance);
+    addRecs(seed.records && seed.records.salaries);
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))
+      .map(([ym]) => ym)
+      .slice(0, 14);
+  }
+
+  function buildPrePaydaySummaryContext(opts = {}) {
+    const bridge = getAttBridge();
+    if (!bridge) return null;
+    const seed = (bridge.getSeed && bridge.getSeed()) || {};
+    const state = (bridge.getState && bridge.getState()) || {};
+    const allowed = bridge.allowedCompanyNames ? bridge.allowedCompanyNames() : [];
+    if (!Array.isArray(allowed) || !allowed.length) {
+      return { error: 'restricted_company', canDollars: Boolean(bridge.canViewPayrollDollarAmounts && bridge.canViewPayrollDollarAmounts()), staffOptions: [], monthOptions: [] };
+    }
+    const canon = co => bridge.canonCompany ? bridge.canonCompany(co) : String(co || '').trim();
+    const stateIndCos = bridge.getActiveIndustryBuList ? bridge.getActiveIndustryBuList(state.company) : [];
+    const allowedIndCo = stateIndCos.find(c => allowed.includes(canon(c))) || '';
+    const rawCo = canon(opts.company || (state.company && !/^(manufacturing-group|demo_company|ALL)$/i.test(state.company) && !/^industry:/i.test(state.company) ? state.company : '') || allowedIndCo || allowed[0] || '');
+    const staffOptions = listFrequencyStaffOptions(bridge, rawCo);
+
+    let staff = String(opts.staff || '').trim();
+    let company = rawCo;
+    if (staff.includes('||')) {
+      const parts = staff.split('||');
+      if (!opts.company && parts[0]) company = canon(parts[0]);
+      staff = parts.slice(1).join('||').trim();
+    }
+    if (!staff && staffOptions.length) {
+      staff = staffOptions[0].staff;
+      company = staffOptions[0].company;
+    } else if (staff) {
+      const hit = staffOptions.find(s => s.staff.toLowerCase() === staff.toLowerCase() && (!rawCo || s.company === rawCo))
+        || staffOptions.find(s => s.staff.toLowerCase() === staff.toLowerCase());
+      if (hit) {
+        staff = hit.staff;
+        company = hit.company;
+      } else if (!company || !allowed.includes(company)) {
+        return { error: 'restricted_company', canDollars: Boolean(bridge.canViewPayrollDollarAmounts && bridge.canViewPayrollDollarAmounts()), staffOptions, monthOptions: [] };
+      }
+    } else if (!company || !allowed.includes(company)) {
+      return { error: 'restricted_company', canDollars: Boolean(bridge.canViewPayrollDollarAmounts && bridge.canViewPayrollDollarAmounts()), staffOptions, monthOptions: [] };
+    }
+
+    const monthOptions = listFrequencyMonthOptions(bridge, staff, company);
+    const seedDate = (bridge.getSeedDate && bridge.getSeedDate()) || String(seed.generated_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+    const periodYm = String(state && state.period || '').startsWith('month:') ? String(state.period).slice(6, 13) : '';
+    const defaultYm = String(opts.month || periodYm || (state && (state.dateTo || state.dateFrom)) || seedDate).slice(0, 7);
+    const month = /^\d{4}-\d{2}$/.test(defaultYm) ? defaultYm : (monthOptions[0] || seedDate.slice(0, 7));
+    if (!monthOptions.includes(month)) monthOptions.unshift(month);
+
+    const canDollars = Boolean(bridge.canViewPayrollDollarAmounts && bridge.canViewPayrollDollarAmounts());
+    const lang = opts.lang
+      ? (/^(bilingual|en|ar|fr)$/.test(opts.lang) ? opts.lang : 'bilingual')
+      : getPrePaydayStaffLang(staff, company);
+
+    const bk = (staff && bridge.computeStaffAttendancePeriodBreakdown)
+      ? bridge.computeStaffAttendancePeriodBreakdown(staff, company, { ym: month, strictCalendarDates: true })
+      : null;
+    const pos = (staff && bridge.computeStaffMonthPayrollPosition)
+      ? bridge.computeStaffMonthPayrollPosition(staff, company, month)
+      : null;
+
+    const indName = bridge.getActiveIndustry ? bridge.getActiveIndustry(company) : 'Manufacturing';
+    const lockObj = typeof getPeriodCloseLock === 'function' ? getPeriodCloseLock(company, indName) : null;
+    const closeCutoff = String((lockObj && lockObj.closedThroughDate) || (bridge.getPeriodCloseLock ? bridge.getPeriodCloseLock(company, indName) : '') || '').trim();
+    const rawPhone = (staff && bridge.resolveStaffReceiptPhone) ? bridge.resolveStaffReceiptPhone(staff, company) : '';
+    const cleanDigits = String(rawPhone || '').replace(/[^\d+]/g, '').replace(/^\+/, '');
+    const waDigits = cleanDigits.length >= 6 ? cleanDigits : '';
+    const monthLabelEn = bridge.formatSalaryReceiptMonthForLang ? bridge.formatSalaryReceiptMonthForLang(month, 'en') : month;
+    const monthLabelAr = bridge.formatSalaryReceiptMonthForLang ? bridge.formatSalaryReceiptMonthForLang(month, 'ar') : month;
+    const monthLabelFr = bridge.formatSalaryReceiptMonthForLang ? bridge.formatSalaryReceiptMonthForLang(month, 'fr') : month;
+    const staffMeta = staffOptions.find(s => s.staff === staff && s.company === company) || { fatherName: '' };
+
+    const safeNum = n => (canDollars && n != null && Number.isFinite(Number(n))) ? round2(Number(n)) : null;
+    const baseUsd = safeNum(pos && (pos.baseSalary != null ? pos.baseSalary : pos.base));
+    const reimbUsd = safeNum(pos && (pos.reimbursement != null ? pos.reimbursement : pos.reimb));
+    const siteAllowUsd = safeNum(pos && (pos.siteAllowUsd != null ? pos.siteAllowUsd : pos.site_allow));
+    const otPayUsd = safeNum(bk && bk.otPayUsd);
+    const lateDedUsd = safeNum(bk && bk.lateDedUsd);
+    const absDedUsd = safeNum(bk && bk.absDedUsd);
+    const extUsd = safeNum(bk && bk.extUsd);
+    const netAttUsd = safeNum(bk && bk.netAttUsd);
+    const advancesPaidUsd = safeNum(pos && (pos.paidSoFar != null ? pos.paidSoFar : pos.paid));
+    const otherDedUsd = safeNum(pos && (pos.contractDed != null ? pos.contractDed : pos.ded));
+    const netPayableUsd = canDollars
+      ? round2(Number(pos && (pos.remainingNet != null ? pos.remainingNet : pos.balance) != null
+        ? (pos.remainingNet != null ? pos.remainingNet : pos.balance)
+        : (Number(baseUsd || 0) + Number(reimbUsd || 0) + Number(siteAllowUsd || 0) + Number(netAttUsd || 0) - Number(otherDedUsd || 0) - Number(advancesPaidUsd || 0))))
+      : null;
+
+    const windows = ((bk && bk.windows) || []).map(w => ({
+      fromDate: w.fromDate,
+      toDate: w.toDate,
+      otMin: w.otMin || 0,
+      otHours: w.otHours || 0,
+      otPayUsd: canDollars ? w.otPayUsd : null,
+      lateRawMin: w.lateRawMin || 0,
+      lateBilledMin: w.lateBilledMin || 0,
+      lateHours: w.lateHours || 0,
+      lateDedUsd: canDollars ? w.lateDedUsd : null,
+      absDays: w.absDays || 0,
+      absDedUsd: canDollars ? w.absDedUsd : null,
+      netAttUsd: canDollars ? w.netAttUsd : null,
+      missingOutCount: w.missingOutCount || 0,
+      policy: {
+        engineLabel: canDollars ? '$ / Min' : 'Per-Min',
+        summaryEn: scrubForbiddenPolicyCopy(w.policy && w.policy.summaryEn, canDollars),
+        summaryAr: scrubForbiddenPolicyCopy(w.policy && w.policy.summaryAr, canDollars),
+        summaryFr: scrubForbiddenPolicyCopy(w.policy && w.policy.summaryFr, canDollars)
+      }
+    }));
+
+    const rows = ((bk && bk.rows) || []).map(r => ({
+      date: r.date,
+      inTime: r.inTime || '',
+      outTime: r.outTime || '',
+      type: r.type || 'Present',
+      isMissingOut: Boolean(r.isMissingOut),
+      otMin: r.otMin || 0,
+      otHours: r.otHours || 0,
+      otPayUsd: canDollars ? r.otPayUsd : null,
+      lateRawMin: r.lateRawMin || 0,
+      lateBilledMin: r.lateBilledMin || 0,
+      lateHours: r.lateHours || 0,
+      lateDedUsd: canDollars ? r.lateDedUsd : null,
+      absDays: r.absDays || 0,
+      absDedUsd: canDollars ? r.absDedUsd : null,
+      extUsd: canDollars ? r.extUsd : null,
+      netUsd: canDollars ? r.netUsd : null,
+      ruleApplied: scrubForbiddenPolicyCopy(r.ruleApplied || '', canDollars)
+    }));
+
+    return {
+      staff,
+      fatherName: staffMeta.fatherName || '',
+      company,
+      industry: indName,
+      month,
+      monthLabelEn,
+      monthLabelAr,
+      monthLabelFr,
+      lang,
+      canDollars,
+      hrRateUsd: canDollars && bk ? bk.hrRateUsd : null,
+      perMinRateUsd: canDollars && bk ? bk.perMinRateUsd : null,
+      fromDate: (bk && bk.fromDate) || `${month}-01`,
+      toDate: (bk && bk.toDate) || `${month}-31`,
+      otMin: (bk && bk.otMin) || 0,
+      otHours: (bk && bk.otHours) || 0,
+      otPayUsd,
+      lateRawMin: (bk && bk.lateRawMin) || 0,
+      lateBilledMin: (bk && bk.lateBilledMin) || 0,
+      lateHours: (bk && bk.lateHours) || 0,
+      lateDedUsd,
+      absDays: (bk && bk.absDays) || 0,
+      absDedUsd,
+      extUsd,
+      netAttUsd,
+      baseUsd,
+      reimbUsd,
+      siteAllowUsd,
+      advancesPaidUsd,
+      otherDedUsd,
+      netPayableUsd,
+      missingOutCount: (bk && bk.missingOutCount) || 0,
+      missingOutDates: rows.filter(r => r.isMissingOut).map(r => r.date),
+      logsCount: rows.length,
+      hasPolicySplit: windows.length > 1,
+      windows,
+      rows,
+      phoneRaw: rawPhone || '',
+      waDigits,
+      closeCutoff: closeCutoff || '',
+      staffOptions,
+      monthOptions
+    };
+  }
+
+  function formatPrePaydaySummaryText(ctx) {
+    if (!ctx || !ctx.staff) return '';
+    const L = ctx.lang || 'bilingual';
+    const isAr = L === 'ar';
+    const isFr = L === 'fr';
+    const isBi = L === 'bilingual';
+    const lines = [];
+    const safeSignedUsd = v => {
+      if (!ctx.canDollars || v == null) return '';
+      const n = round2(v);
+      return `${n >= 0 ? '+$' : '-$'}${Math.abs(n).toFixed(2)}`;
+    };
+    const safeUsd = v => {
+      if (!ctx.canDollars || v == null) return '';
+      return `$${Math.abs(round2(v)).toFixed(2)}`;
+    };
+    const safePlainSignedUsd = v => {
+      if (!ctx.canDollars || v == null) return '';
+      const n = round2(v);
+      return n < 0 ? `-$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`;
+    };
+
+    if (isBi) {
+      lines.push(`PRE-PAYDAY ATTENDANCE CARD | بطاقة الحضور قبل الدفع`);
+      lines.push(`${ctx.company} - ${ctx.staff}${ctx.fatherName ? ` (${ctx.fatherName})` : ''}`);
+      lines.push(`Month: ${ctx.monthLabelEn} | ${ctx.monthLabelAr}`);
+    } else if (isAr) {
+      lines.push(`بطاقة الحضور والاستحقاق قبل الدفع`);
+      lines.push(`${ctx.company} - ${ctx.staff}${ctx.fatherName ? ` (${ctx.fatherName})` : ''}`);
+      lines.push(`الشهر: ${ctx.monthLabelAr}`);
+    } else if (isFr) {
+      lines.push(`RELEVE DE PRESENCE AVANT PAIE`);
+      lines.push(`${ctx.company} - ${ctx.staff}${ctx.fatherName ? ` (${ctx.fatherName})` : ''}`);
+      lines.push(`Mois: ${ctx.monthLabelFr}`);
+    } else {
+      lines.push(`PRE-PAYDAY ATTENDANCE SUMMARY`);
+      lines.push(`${ctx.company} - ${ctx.staff}${ctx.fatherName ? ` (${ctx.fatherName})` : ''}`);
+      lines.push(`Period: ${ctx.monthLabelEn} (${ctx.fromDate} to ${ctx.toDate})`);
+    }
+
+    if (ctx.missingOutCount > 0) {
+      const ds = ctx.missingOutDates.join(', ');
+      if (isBi) {
+        lines.push(`WARNING Missing OUT (${ctx.missingOutCount}): ${ds} | يرجى تأكيد بصمة الخروج في: ${ds}`);
+      } else if (isAr) {
+        lines.push(`تنبيه بصمة خروج ناقصة (${ctx.missingOutCount}): ${ds} - يرجى المراجعة قبل إقفال الراتب`);
+      } else if (isFr) {
+        lines.push(`ATTENTION Pointage sortie manquant (${ctx.missingOutCount}): ${ds} - a verifier avant paie`);
+      } else {
+        lines.push(`WARNING Missing OUT (${ctx.missingOutCount}): ${ds} - please confirm before payday`);
+      }
+    }
+
+    lines.push('');
+    (ctx.windows || []).forEach((w, idx) => {
+      const pTxt = isAr ? w.policy.summaryAr : (isFr ? w.policy.summaryFr : w.policy.summaryEn);
+      const label = (ctx.windows.length > 1)
+        ? (isAr ? `الفترة ${idx + 1} (${w.fromDate} الى ${w.toDate})` : (isFr ? `Periode ${idx + 1} (${w.fromDate} au ${w.toDate})` : `Window ${idx + 1} (${w.fromDate} to ${w.toDate})`))
+        : (isAr ? 'السياسة المعتمدة' : (isFr ? 'Regle active' : 'Active Policy'));
+      lines.push(`${label}: ${pTxt}`);
+      if (isBi && w.policy.summaryAr) lines.push(`  (${w.policy.summaryAr})`);
+    });
+
+    lines.push('');
+    const otPart = ctx.canDollars ? ` (${safeSignedUsd(ctx.otPayUsd)})` : '';
+    const latePart = ctx.canDollars ? ` (-${safeUsd(ctx.lateDedUsd)})` : '';
+    const absPart = ctx.canDollars ? ` (-${safeUsd(ctx.absDedUsd)})` : '';
+    if (isBi) {
+      lines.push(`Overtime / اضافي: +${ctx.otMin}m (${Number(ctx.otHours || 0).toFixed(2)}h)${otPart}`);
+      lines.push(`Lateness / تاخير: -${ctx.lateBilledMin}m (${Number(ctx.lateHours || 0).toFixed(2)}h)${ctx.lateRawMin !== ctx.lateBilledMin ? ` raw ${ctx.lateRawMin}m` : ''}${latePart}`);
+      lines.push(`Absence / غياب: ${Number(ctx.absDays || 0).toFixed(1)}d${absPart}`);
+    } else if (isAr) {
+      lines.push(`العمل الإضافي: +${ctx.otMin} دقيقة (${Number(ctx.otHours || 0).toFixed(2)} س)${otPart}`);
+      lines.push(`التأخير: -${ctx.lateBilledMin} دقيقة (${Number(ctx.lateHours || 0).toFixed(2)} س)${latePart}`);
+      lines.push(`الغياب: ${Number(ctx.absDays || 0).toFixed(1)} يوم${absPart}`);
+    } else if (isFr) {
+      lines.push(`Heures sup.: +${ctx.otMin}m (${Number(ctx.otHours || 0).toFixed(2)}h)${otPart}`);
+      lines.push(`Retard: -${ctx.lateBilledMin}m (${Number(ctx.lateHours || 0).toFixed(2)}h)${latePart}`);
+      lines.push(`Absence: ${Number(ctx.absDays || 0).toFixed(1)}j${absPart}`);
+    } else {
+      lines.push(`Overtime: +${ctx.otMin}m (${Number(ctx.otHours || 0).toFixed(2)}h)${otPart}`);
+      lines.push(`Lateness: -${ctx.lateBilledMin}m (${Number(ctx.lateHours || 0).toFixed(2)}h)${ctx.lateRawMin !== ctx.lateBilledMin ? ` (raw ${ctx.lateRawMin}m)` : ''}${latePart}`);
+      lines.push(`Absence: ${Number(ctx.absDays || 0).toFixed(1)}d${absPart}`);
+    }
+
+    if (ctx.canDollars) {
+      lines.push(isAr
+        ? `صافي اثر الحضور: ${safeSignedUsd(ctx.netAttUsd)} | المتبقي المقدر: ${safePlainSignedUsd(ctx.netPayableUsd)}`
+        : (isFr
+          ? `Impact net presence: ${safeSignedUsd(ctx.netAttUsd)} | Net estime a payer: ${safePlainSignedUsd(ctx.netPayableUsd)}`
+          : `Net Attendance Impact: ${safeSignedUsd(ctx.netAttUsd)} | Est. Remaining Payable: ${safePlainSignedUsd(ctx.netPayableUsd)}`));
+    } else {
+      lines.push(isAr ? 'مبالغ الدولار مقيّدة لهذا الحساب' : (isFr ? 'Montants en dollars restreints' : 'Dollar amounts restricted for this role'));
+    }
+
+    if (ctx.rows && ctx.rows.length) {
+      lines.push('');
+      const missOutTxt = isAr ? 'خروج ناقص' : (isFr ? 'SORTIE MANQUANTE' : 'MISSING OUT');
+      ctx.rows.forEach(r => {
+        const punchStr = (r.inTime || r.outTime) ? `${r.inTime || '--:--'}..${r.outTime || missOutTxt}` : r.type;
+        const marks = [];
+        if (r.otMin > 0) marks.push(isAr ? `+${r.otMin} د إضافي` : (isFr ? `+${r.otMin}m HS` : `+${r.otMin}m OT`));
+        if (r.lateBilledMin > 0) marks.push(isAr ? `-${r.lateBilledMin} د تأخير` : (isFr ? `-${r.lateBilledMin}m Retard` : `-${r.lateBilledMin}m Late`));
+        if (r.absDays > 0) marks.push(isAr ? `-${r.absDays} ي غياب` : (isFr ? `-${r.absDays}j Abs` : `-${r.absDays}d Abs`));
+        const moneyBit = (ctx.canDollars && r.netUsd != null && Math.abs(r.netUsd) > 0.005) ? ` ${safeSignedUsd(r.netUsd)}` : '';
+        lines.push(`${r.date}: ${punchStr}${marks.length ? ` (${marks.join(', ')})` : ''}${moneyBit}`);
+      });
+    }
+
+    const joined = lines.join('\n');
+    const cleanOut = bridgeSanitizeOutward(joined);
+    return ctx.canDollars ? cleanOut : scrubForbiddenPolicyCopy(cleanOut, false);
+  }
+
+  function bridgeSanitizeOutward(txt) {
+    const b = getAttBridge();
+    const s = b && typeof b.sanitizeOutwardReceiptText === 'function' ? b.sanitizeOutwardReceiptText(txt) : txt;
+    return scrubForbiddenPolicyCopy(s, true);
+  }
+
+  function renderPrePaydaySummaryCanvas(ctx) {
+    const W = 1760; // 2x Retina light-mode PNG canvas
+    const rows = (ctx && Array.isArray(ctx.rows)) ? ctx.rows : [];
+    const wins = (ctx && Array.isArray(ctx.windows)) ? ctx.windows : [];
+    const isAr = ctx && ctx.lang === 'ar';
+    const isBi = !ctx || ctx.lang === 'bilingual';
+    const isFr = ctx && ctx.lang === 'fr';
+    const warnH = (ctx && ctx.missingOutCount > 0) ? 92 : 0;
+    const polH = 54 + (Math.max(1, wins.length) * 34);
+    const rowH = 44;
+    const tableHdrH = 48;
+    const H = Math.max(780, 355 + warnH + polH + tableHdrH + (Math.max(1, rows.length) * rowH) + 74);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const c = canvas.getContext('2d');
+    if (!c) return { canvas, dataUrl: '', width: W, height: H };
+
+    // Light-Mode Pure paper background (zero dark navy)
+    c.fillStyle = '#FFFFFF';
+    c.fillRect(0, 0, W, H);
+
+    // Top ivory header band + ISABI Brass stripe
+    c.fillStyle = '#FAF7F0';
+    c.fillRect(0, 0, W, 132);
+    c.fillStyle = '#C0892F';
+    c.fillRect(0, 0, W, 10);
+    c.fillStyle = '#DECFA8';
+    c.fillRect(0, 131, W, 2);
+
+    const txtClean = (s, allowDollar) => scrubForbiddenPolicyCopy(String(s || ''), allowDollar !== false);
+    const titleStr = isBi
+      ? 'PRE-PAYDAY ATTENDANCE SUMMARY | بطاقة الحضور قبل الدفع'
+      : (isAr ? 'بطاقة الحضور والاستحقاق قبل الدفع' : (isFr ? 'RELEVE DE PRESENCE AVANT PAIE' : 'PRE-PAYDAY ATTENDANCE SUMMARY'));
+    const subStr = txtClean(`${ctx.company}  |  ${ctx.staff}${ctx.fatherName ? ` (${ctx.fatherName})` : ''}  |  ${isAr ? ctx.monthLabelAr : (isFr ? ctx.monthLabelFr : ctx.monthLabelEn)}`, true);
+
+    c.fillStyle = '#281D15';
+    c.font = 'bold 34px "Segoe UI", Arial, sans-serif';
+    c.textAlign = isAr ? 'right' : 'left';
+    c.fillText(txtClean(titleStr, true), isAr ? W - 48 : 48, 62);
+
+    c.fillStyle = '#7A5414';
+    c.font = '600 24px "Segoe UI", Arial, sans-serif';
+    c.fillText(subStr, isAr ? W - 48 : 48, 106);
+
+    const canvasDateSep = isAr ? 'إلى' : (isFr ? 'au' : 'to');
+    c.fillStyle = '#5E4316';
+    c.font = 'bold 21px "Segoe UI", Arial, sans-serif';
+    c.textAlign = isAr ? 'left' : 'right';
+    c.fillText(txtClean(`${ctx.fromDate} ${canvasDateSep} ${ctx.toDate}`, true), isAr ? 48 : W - 48, 106);
+
+    // KPI Cards Row
+    let y = 156;
+    const kpiGap = 18;
+    const kpiCount = 4;
+    const kpiW = (W - 96 - (kpiGap * (kpiCount - 1))) / kpiCount;
+    const kpiH = 110;
+    const restrCanvasLbl = isBi ? 'Restricted / مقيّد' : (isAr ? 'مقيّد' : (isFr ? 'Restreint' : 'Restricted'));
+    const kpiItems = [
+      {
+        lbl: isBi ? 'Overtime / إضافي' : (isAr ? 'العمل الإضافي' : (isFr ? 'Heures sup.' : 'Overtime')),
+        val: `+${ctx.otMin}m (${Number(ctx.otHours || 0).toFixed(2)}h)`,
+        sub: ctx.canDollars ? `+$${Math.abs(ctx.otPayUsd || 0).toFixed(2)}` : restrCanvasLbl,
+        col: '#1F7A4C'
+      },
+      {
+        lbl: isBi ? 'Lateness / تأخير' : (isAr ? 'التأخير' : (isFr ? 'Retard' : 'Lateness')),
+        val: `-${ctx.lateBilledMin}m (${Number(ctx.lateHours || 0).toFixed(2)}h)`,
+        sub: ctx.canDollars ? `-$${Math.abs(ctx.lateDedUsd || 0).toFixed(2)}` : restrCanvasLbl,
+        col: '#B91C1C'
+      },
+      {
+        lbl: isBi ? 'Absence / غياب' : (isAr ? 'الغياب' : (isFr ? 'Absence' : 'Absence')),
+        val: `${Number(ctx.absDays || 0).toFixed(1)}d`,
+        sub: ctx.canDollars ? `-$${Math.abs(ctx.absDedUsd || 0).toFixed(2)}` : restrCanvasLbl,
+        col: '#B91C1C'
+      },
+      {
+        lbl: isBi ? 'Net Est. / المتبقي' : (isAr ? 'المتبقي المقدر' : (isFr ? 'Net estimé' : 'Est. Remaining')),
+        val: ctx.canDollars ? (Number(ctx.netPayableUsd || 0) < 0 ? `-$${Math.abs(Number(ctx.netPayableUsd)).toFixed(2)}` : `$${Number(ctx.netPayableUsd || 0).toFixed(2)}`) : restrCanvasLbl,
+        sub: ctx.canDollars
+          ? `${isBi ? 'Att / حضور' : (isAr ? 'حضور' : (isFr ? 'Présence' : 'Att'))} ${Number(ctx.netAttUsd || 0) >= 0 ? '+$' : '-$'}${Math.abs(ctx.netAttUsd || 0).toFixed(2)}`
+          : `${ctx.logsCount || 0} ${isBi ? 'punches / بصمات' : (isAr ? 'بصمات' : (isFr ? 'pointages' : 'punches'))}`,
+        col: '#281D15'
+      }
+    ];
+
+    kpiItems.forEach((kp, idx) => {
+      const boxIdx = isAr ? (kpiCount - 1 - idx) : idx;
+      const kx = 48 + boxIdx * (kpiW + kpiGap);
+      c.fillStyle = '#FAF7F0';
+      c.fillRect(kx, y, kpiW, kpiH);
+      c.strokeStyle = '#DECFA8';
+      c.lineWidth = 2;
+      c.strokeRect(kx, y, kpiW, kpiH);
+      c.textAlign = isAr ? 'right' : 'left';
+      const tx = isAr ? kx + kpiW - 18 : kx + 18;
+      c.fillStyle = '#6E6254';
+      c.font = 'bold 18px "Segoe UI", Arial, sans-serif';
+      c.fillText(txtClean(kp.lbl, ctx.canDollars), tx, y + 32);
+      c.fillStyle = kp.col;
+      c.font = 'bold 26px "Segoe UI", Arial, sans-serif';
+      c.fillText(txtClean(kp.val, ctx.canDollars), tx, y + 68);
+      c.fillStyle = '#5E4316';
+      c.font = '600 18px "Segoe UI", Arial, sans-serif';
+      c.fillText(txtClean(kp.sub, ctx.canDollars), tx, y + 96);
+    });
+    y += kpiH + 18;
+
+    // Missing OUT Banner
+    if (warnH > 0) {
+      c.fillStyle = '#FFFBEB';
+      c.fillRect(48, y, W - 96, warnH - 12);
+      c.strokeStyle = '#F59E0B';
+      c.lineWidth = 2;
+      c.strokeRect(48, y, W - 96, warnH - 12);
+      c.fillStyle = '#92400E';
+      c.font = 'bold 21px "Segoe UI", Arial, sans-serif';
+      c.textAlign = isAr ? 'right' : 'left';
+      const warnTxt = isAr
+        ? `تنبيه: ${ctx.missingOutCount} يوم بدون بصمة خروج (${ctx.missingOutDates.join(', ')}) - يرجى التاكيد قبل الدفع`
+        : (isFr
+          ? `Attention: ${ctx.missingOutCount} pointage(s) sans sortie (${ctx.missingOutDates.join(', ')}) - a verifier avant paie`
+          : `Missing OUT Alert (${ctx.missingOutCount}): ${ctx.missingOutDates.join(', ')} - confirm clock-out before payday`);
+      c.fillText(txtClean(warnTxt, ctx.canDollars).slice(0, 118), isAr ? W - 68 : 68, y + 48);
+      y += warnH;
+    }
+
+    // Active Policy Window Strip(s)
+    c.fillStyle = '#FAF7F0';
+    c.fillRect(48, y, W - 96, polH - 12);
+    c.fillStyle = '#C0892F';
+    c.fillRect(isAr ? W - 54 : 48, y, 6, polH - 12);
+    c.fillStyle = '#281D15';
+    c.font = 'bold 20px "Segoe UI", Arial, sans-serif';
+    c.textAlign = isAr ? 'right' : 'left';
+    c.fillText(
+      wins.length > 1
+        ? (isAr ? 'فترات السياسة المعتمدة:' : (isFr ? 'Fenêtres de règles :' : 'Chronological Policy Windows:'))
+        : (isAr ? 'السياسة المعتمدة:' : (isFr ? 'Règle active :' : 'Active Per-Minute Policy:')),
+      isAr ? W - 70 : 70,
+      y + 30
+    );
+    c.font = '500 18px "Segoe UI", Arial, sans-serif';
+    c.fillStyle = '#4A3B2C';
+    wins.forEach((w, idx) => {
+      const sum = isAr ? w.policy.summaryAr : (isFr ? w.policy.summaryFr : w.policy.summaryEn);
+      const line = (wins.length > 1 ? `${w.fromDate} ${canvasDateSep} ${w.toDate}: ` : '') + sum;
+      c.fillText(txtClean(line, ctx.canDollars).slice(0, 118), isAr ? W - 70 : 70, y + 60 + (idx * 32));
+    });
+    y += polH + 8;
+
+    // Daily Punches Table
+    const cols = isAr
+      ? [
+        { k: 'net', lbl: ctx.canDollars ? 'الأثر ($)' : 'الحالة', w: 220, align: 'left' },
+        { k: 'abs', lbl: 'غياب', w: 120, align: 'center' },
+        { k: 'late', lbl: 'تأخير', w: 220, align: 'center' },
+        { k: 'ot', lbl: 'إضافي', w: 220, align: 'center' },
+        { k: 'out', lbl: 'خروج', w: 180, align: 'center' },
+        { k: 'in', lbl: 'دخول', w: 180, align: 'center' },
+        { k: 'date', lbl: 'التاريخ', w: W - 96 - 1140, align: 'right' }
+      ]
+      : [
+        { k: 'date', lbl: 'Date', w: 210, align: 'left' },
+        { k: 'in', lbl: isFr ? 'Entrée' : 'In', w: 150, align: 'center' },
+        { k: 'out', lbl: isFr ? 'Sortie' : 'Out', w: 200, align: 'center' },
+        { k: 'ot', lbl: isFr ? 'HS (m)' : 'OT (m)', w: 220, align: 'right' },
+        { k: 'late', lbl: isFr ? 'Retard (m)' : 'Late (m)', w: 240, align: 'right' },
+        { k: 'abs', lbl: isFr ? 'Abs (j)' : 'Abs', w: 140, align: 'center' },
+        { k: 'net', lbl: ctx.canDollars ? (isFr ? 'Impact ($)' : 'Net Impact') : (isFr ? 'Statut' : 'Status'), w: W - 96 - 1160, align: 'right' }
+      ];
+
+    c.fillStyle = '#F6F0E4';
+    c.fillRect(48, y, W - 96, tableHdrH);
+    c.strokeStyle = '#DECFA8';
+    c.lineWidth = 2;
+    c.strokeRect(48, y, W - 96, tableHdrH);
+
+    let cx = 48;
+    c.fillStyle = '#5E4316';
+    c.font = 'bold 19px "Segoe UI", Arial, sans-serif';
+    cols.forEach(col => {
+      c.textAlign = col.align;
+      const px = col.align === 'right' ? (cx + col.w - 12) : (col.align === 'center' ? (cx + col.w / 2) : (cx + 12));
+      c.fillText(txtClean(col.lbl, ctx.canDollars), px, y + 31);
+      cx += col.w;
+    });
+    y += tableHdrH;
+
+    const locCanvasType = t => {
+      const k = String(t || '').trim().toLowerCase();
+      if (!k) return isAr ? 'حضور' : (isFr ? 'Présent' : 'Present');
+      if (k === 'present' || k === 'regular') return isAr ? 'حضور' : (isFr ? 'Présent' : 'Present');
+      if (k === 'ot' || k === 'overtime') return isAr ? 'إضافي' : (isFr ? 'HS' : 'OT');
+      if (k === 'late') return isAr ? 'تأخير' : (isFr ? 'Retard' : 'Late');
+      if (k === 'absent' || k === 'absence') return isAr ? 'غياب' : (isFr ? 'Absent' : 'Absent');
+      if (k === 'off' || k === 'rest') return isAr ? 'عطلة' : (isFr ? 'Repos' : 'Off');
+      if (k === 'leave' || k === 'paid leave') return isAr ? 'إجازة' : (isFr ? 'Congé' : 'Leave');
+      return t;
+    };
+
+    if (!rows.length) {
+      c.fillStyle = '#FAF9F6';
+      c.fillRect(48, y, W - 96, rowH);
+      c.fillStyle = '#6E6254';
+      c.font = '500 19px "Segoe UI", Arial, sans-serif';
+      c.textAlign = 'center';
+      c.fillText(isAr ? 'لا توجد سجلات حضور في هذا الشهر' : (isFr ? 'Aucun pointage sur ce mois' : 'No attendance entries recorded in this month'), W / 2, y + 29);
+      y += rowH;
+    } else {
+      rows.forEach((r, idx) => {
+        c.fillStyle = r.isMissingOut ? '#FFFBEB' : (idx % 2 === 0 ? '#FFFFFF' : '#FAF9F6');
+        c.fillRect(48, y, W - 96, rowH);
+        c.strokeStyle = '#EFE8DA';
+        c.lineWidth = 1;
+        c.beginPath();
+        c.moveTo(48, y + rowH);
+        c.lineTo(W - 48, y + rowH);
+        c.stroke();
+
+        const otTxt = r.otMin > 0 ? `+${r.otMin}m${ctx.canDollars && r.otPayUsd ? ` (+$${Math.abs(r.otPayUsd).toFixed(2)})` : ''}` : '-';
+        const lateTxt = r.lateBilledMin > 0 ? `-${r.lateBilledMin}m${ctx.canDollars && r.lateDedUsd ? ` (-$${Math.abs(r.lateDedUsd).toFixed(2)})` : ''}` : '-';
+        const absTxt = r.absDays > 0 ? `${r.absDays}d` : '-';
+        const missLabel = isAr ? 'خروج ناقص' : (isFr ? 'Sortie manquante' : 'Missing OUT');
+        const missCapsLabel = isAr ? 'خروج ناقص' : (isFr ? 'SORTIE MANQ.' : 'MISSING OUT');
+        const netTxt = !ctx.canDollars
+          ? (r.isMissingOut ? missLabel : locCanvasType(r.type))
+          : (r.netUsd != null && Math.abs(r.netUsd) > 0.005 ? `${r.netUsd >= 0 ? '+$' : '-$'}${Math.abs(r.netUsd).toFixed(2)}` : (r.isMissingOut ? missLabel : '-'));
+        const mapVal = {
+          date: r.date,
+          in: r.inTime || '--',
+          out: r.outTime || (r.isMissingOut ? missCapsLabel : '--'),
+          ot: otTxt,
+          late: lateTxt,
+          abs: absTxt,
+          net: netTxt
+        };
+
+        let rx = 48;
+        c.font = '600 18px "Segoe UI", Arial, sans-serif';
+        cols.forEach(col => {
+          c.textAlign = col.align;
+          c.fillStyle = (col.k === 'out' && r.isMissingOut)
+            ? '#B45309'
+            : (col.k === 'ot' && r.otMin > 0 ? '#1F7A4C' : ((col.k === 'late' && r.lateBilledMin > 0) || (col.k === 'abs' && r.absDays > 0) ? '#B91C1C' : '#281D15'));
+          const px = col.align === 'right' ? (rx + col.w - 12) : (col.align === 'center' ? (rx + col.w / 2) : (rx + 12));
+          c.fillText(txtClean(mapVal[col.k] || '-', ctx.canDollars).slice(0, 32), px, y + 29);
+          rx += col.w;
+        });
+        y += rowH;
+      });
+    }
+
+    // Bottom border & footer
+    c.fillStyle = '#6E6254';
+    c.font = '500 17px "Segoe UI", Arial, sans-serif';
+    c.textAlign = isAr ? 'right' : 'left';
+    const footLeftTxt = isAr
+      ? `${ctx.company} - بطاقة الحضور قبل الدفع (${ctx.logsCount || 0} سجل)`
+      : (isFr ? `${ctx.company} - Fiche de présence pré-paie (${ctx.logsCount || 0} entrées)` : `${ctx.company} - Pre-Payday Attendance Card (${ctx.logsCount || 0} entries)`);
+    const footRightTxt = isAr
+      ? `تم الإنشاء ${new Date().toISOString().slice(0, 10)}`
+      : (isFr ? `Généré le ${new Date().toISOString().slice(0, 10)}` : `Generated ${new Date().toISOString().slice(0, 10)}`);
+    c.fillText(txtClean(footLeftTxt, ctx.canDollars), isAr ? W - 48 : 48, H - 24);
+    c.textAlign = isAr ? 'left' : 'right';
+    c.fillText(txtClean(footRightTxt, true), isAr ? 48 : W - 48, H - 24);
+
+    let dataUrl = '';
+    try { dataUrl = canvas.toDataURL('image/png'); } catch (_) {}
+    return { canvas, dataUrl, width: W, height: H };
+  }
+
+  function closePrePaydaySummaryModal() {
+    const m = $('prePaydayCardModal');
+    if (m) m.remove();
+    document.body.classList.remove('printing-prepayday-card');
+  }
+
+  function renderPrePaydayModalBodyHtml(ctx) {
+    if (!ctx) return '<div style="padding:16px">No attendance / payroll data available.</div>';
+    if (ctx.error === 'restricted_company') return '<div style="padding:16px">Access restricted to your assigned companies.</div>';
+    const isAr = ctx.lang === 'ar';
+    const isFr = ctx.lang === 'fr';
+    const restrLbl = isAr ? 'مقيّد' : (isFr ? 'Restreint' : 'Restricted');
+    const safePaperUsd = v => !ctx.canDollars ? restrLbl : `$${Math.abs(round2(v || 0)).toFixed(2)}`;
+    const safePlainPaperUsd = v => {
+      if (!ctx.canDollars) return restrLbl;
+      const n = round2(v || 0);
+      return n < 0 ? `-$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`;
+    };
+    const safeSignedPaperUsd = v => {
+      if (!ctx.canDollars) return restrLbl;
+      const n = round2(v || 0);
+      return `${n >= 0 ? '+$' : '-$'}${Math.abs(n).toFixed(2)}`;
+    };
+
+    const warnBanner = ctx.missingOutCount > 0 ? `
+      <div class="aie-ppd-banner-warn" id="ppdMissingOutBanner">
+        ${esc(scrubForbiddenPolicyCopy(
+          isAr
+            ? `تنبيه بصمة خروج ناقصة (${ctx.missingOutCount}): ${ctx.missingOutDates.join(', ')} - يرجى المراجعة قبل إقفال الراتب`
+            : (isFr
+              ? `Alerte sortie manquante (${ctx.missingOutCount}) : ${ctx.missingOutDates.join(', ')} - à vérifier avant paie`
+              : `Missing OUT Alert (${ctx.missingOutCount}): ${ctx.missingOutDates.join(', ')} - confirm punch before payday`),
+          ctx.canDollars
+        ))}
+      </div>
+    ` : '';
+
+    const toSep = isAr ? 'إلى' : (isFr ? 'au' : 'to');
+    const polTitle = ctx.hasPolicySplit
+      ? (isAr ? 'فترات السياسة الزمنية:' : (isFr ? 'Périodes de politique :' : 'Chronological Policy Splits:'))
+      : (isAr ? 'محرك السياسة النشط:' : (isFr ? 'Moteur de politique actif :' : 'Active Policy Engine:'));
+    const policyStrip = (ctx.windows || []).length ? `
+      <div class="aie-ppd-policy-strip" id="ppdPolicyStrip">
+        <strong>${polTitle}</strong>
+        ${ctx.windows.map((w, i) => `
+          <div style="${i > 0 ? 'margin-top:3px;' : ''}">
+            ${ctx.hasPolicySplit ? `<strong>${esc(w.fromDate)} ${toSep} ${esc(w.toDate)}:</strong> ` : ''}
+            ${esc(isAr ? w.policy.summaryAr : (isFr ? w.policy.summaryFr : w.policy.summaryEn))}
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    const locPaperType = t => {
+      const k = String(t || '').trim().toLowerCase();
+      if (!k) return '-';
+      if (k === 'present' || k === 'regular') return isAr ? 'حضور' : (isFr ? 'Présent' : 'Present');
+      if (k === 'ot' || k === 'overtime') return isAr ? 'إضافي' : (isFr ? 'HS' : 'OT');
+      if (k === 'late') return isAr ? 'تأخير' : (isFr ? 'Retard' : 'Late');
+      if (k === 'absent' || k === 'absence') return isAr ? 'غياب' : (isFr ? 'Absent' : 'Absent');
+      if (k === 'off' || k === 'rest') return isAr ? 'عطلة' : (isFr ? 'Repos' : 'Off');
+      if (k === 'leave' || k === 'paid leave') return isAr ? 'إجازة' : (isFr ? 'Congé' : 'Leave');
+      return t;
+    };
+    const missingOutCaps = isAr ? 'خروج ناقص' : (isFr ? 'SORTIE MANQ.' : 'MISSING OUT');
+    const missingOutShort = isAr ? 'خروج ناقص' : (isFr ? 'Sortie manquante' : 'Missing OUT');
+    const minUnit = isAr ? ' د' : 'm';
+    const hrUnit = isAr ? ' س' : 'h';
+    const dayUnit = isAr ? ' ي' : (isFr ? 'j' : 'd');
+    const rateTxt = ctx.canDollars
+      ? (isAr
+        ? `المعدل: $${Number(ctx.hrRateUsd || 0).toFixed(2)}/س ($${Number(ctx.perMinRateUsd || 0).toFixed(4)}/د)`
+        : (isFr
+          ? `Taux : $${Number(ctx.hrRateUsd || 0).toFixed(2)}/h ($${Number(ctx.perMinRateUsd || 0).toFixed(4)}/m)`
+          : `Rate: $${Number(ctx.hrRateUsd || 0).toFixed(2)}/h ($${Number(ctx.perMinRateUsd || 0).toFixed(4)}/m)`))
+      : (isAr ? 'المبالغ: مقيّد' : (isFr ? 'Montants : Restreint' : 'Amounts: Restricted'));
+    const closeTxt = ctx.closeCutoff
+      ? (isAr ? `الفترة مغلقة حتى ${esc(ctx.closeCutoff)}` : (isFr ? `Période clôturée au ${esc(ctx.closeCutoff)}` : `Period closed thru ${esc(ctx.closeCutoff)}`))
+      : (isAr ? 'فترة مفتوحة (مسودة ما قبل الصرف)' : (isFr ? 'Période ouverte (brouillon pré-paie)' : 'Period Open (Pre-Payday Draft)'));
+
+    const pngObj = renderPrePaydaySummaryCanvas(ctx);
+    const dirAttr = isAr ? 'rtl' : 'ltr';
+    const rowsHtml = (ctx.rows || []).length
+      ? ctx.rows.map(r => {
+        const rawNote = r.lateRawMin !== r.lateBilledMin
+          ? (isAr ? ` (فعلي ${r.lateRawMin} د)` : (isFr ? ` (brut ${r.lateRawMin}m)` : ` (raw ${r.lateRawMin}m)`))
+          : '';
+        return `
+        <tr class="${r.isMissingOut ? 'is-missing-out' : ''}">
+          <td>${esc(r.date)}</td>
+          <td>${esc(r.inTime || '--')}</td>
+          <td>${esc(r.outTime || (r.isMissingOut ? missingOutCaps : '--'))}</td>
+          <td>${r.otMin > 0 ? `+${r.otMin}${minUnit}${ctx.canDollars && r.otPayUsd ? ` (+$${Math.abs(r.otPayUsd).toFixed(2)})` : ''}` : '-'}</td>
+          <td>${r.lateBilledMin > 0 ? `-${r.lateBilledMin}${minUnit}${rawNote}${ctx.canDollars && r.lateDedUsd ? ` (-$${Math.abs(r.lateDedUsd).toFixed(2)})` : ''}` : '-'}</td>
+          <td>${r.absDays > 0 ? `${r.absDays}${dayUnit}` : '-'}</td>
+          <td>${!ctx.canDollars ? esc(r.isMissingOut ? missingOutShort : locPaperType(r.type)) : (r.netUsd != null && Math.abs(r.netUsd) > 0.005 ? esc(safeSignedPaperUsd(r.netUsd)) : esc(r.isMissingOut ? missingOutShort : '-'))}</td>
+        </tr>
+      `;
+      }).join('')
+      : `<tr><td colspan="7" style="text-align:center;color:#6E6254">${isAr ? 'لا توجد بصمات مسجلة في هذا الشهر' : (isFr ? 'Aucun pointage pour ce mois' : 'No punches recorded in this month')}</td></tr>`;
+
+    return `
+      <div id="prePaydayCardPrintablePaper" class="aie-ppd-paper" dir="${dirAttr}" data-no-i18n="1" data-can-dollars="${ctx.canDollars ? '1' : '0'}" data-missing-out="${ctx.missingOutCount}">
+        <div class="aie-ppd-paper-hdr">
+          <div>
+            <div style="font-size:15px;font-weight:800;color:#281D15">${esc(ctx.staff)}${ctx.fatherName ? ` <small style="font-weight:500;color:#6E6254">(${esc(ctx.fatherName)})</small>` : ''}</div>
+            <div style="font-size:11.5px;color:#7A5414;font-weight:600">${esc(ctx.company)} · ${esc(isAr ? ctx.monthLabelAr : (isFr ? ctx.monthLabelFr : ctx.monthLabelEn))} (${esc(ctx.fromDate)} ${toSep} ${esc(ctx.toDate)})</div>
+          </div>
+          <div style="text-align:${isAr ? 'left' : 'right'};font-size:11px;color:#5E4316">
+            <div>${rateTxt}</div>
+            <div>${closeTxt}</div>
+          </div>
+        </div>
+        ${warnBanner}
+        ${policyStrip}
+        <div class="aie-ppd-kpis">
+          <div class="aie-ppd-kpi">
+            <div style="font-size:10px;color:#6E6254;font-weight:700;text-transform:uppercase">${isAr ? 'العمل الإضافي' : (isFr ? 'Heures sup.' : 'Overtime')}</div>
+            <div style="font-size:13px;font-weight:800;color:#1F7A4C">+${ctx.otMin}${minUnit} (${Number(ctx.otHours || 0).toFixed(2)}${hrUnit})</div>
+            <div style="font-size:11px;color:#1F7A4C">${ctx.canDollars ? `+${safePaperUsd(ctx.otPayUsd)}` : restrLbl}</div>
+          </div>
+          <div class="aie-ppd-kpi">
+            <div style="font-size:10px;color:#6E6254;font-weight:700;text-transform:uppercase">${isAr ? 'التأخير' : (isFr ? 'Retard' : 'Lateness')}</div>
+            <div style="font-size:13px;font-weight:800;color:#B91C1C">-${ctx.lateBilledMin}${minUnit} (${Number(ctx.lateHours || 0).toFixed(2)}${hrUnit})</div>
+            <div style="font-size:11px;color:#B91C1C">${ctx.canDollars ? `-${safePaperUsd(ctx.lateDedUsd)}` : restrLbl}</div>
+          </div>
+          <div class="aie-ppd-kpi">
+            <div style="font-size:10px;color:#6E6254;font-weight:700;text-transform:uppercase">${isAr ? 'الغياب' : (isFr ? 'Absence' : 'Absence')}</div>
+            <div style="font-size:13px;font-weight:800;color:#B91C1C">${Number(ctx.absDays || 0).toFixed(1)}${dayUnit}</div>
+            <div style="font-size:11px;color:#B91C1C">${ctx.canDollars ? `-${safePaperUsd(ctx.absDedUsd)}` : restrLbl}</div>
+          </div>
+          <div class="aie-ppd-kpi">
+            <div style="font-size:10px;color:#6E6254;font-weight:700;text-transform:uppercase">${isAr ? 'المتبقي المقدر' : (isFr ? 'Net estimé' : 'Est. Remaining')}</div>
+            <div style="font-size:13px;font-weight:800;color:#281D15">${safePlainPaperUsd(ctx.netPayableUsd)}</div>
+            <div style="font-size:11px;color:#5E4316">${ctx.canDollars ? `${isAr ? 'الحضور' : (isFr ? 'Prés.' : 'Att')} ${safeSignedPaperUsd(ctx.netAttUsd)}` : `${ctx.logsCount || 0} ${isAr ? 'بصمات' : (isFr ? 'pointages' : 'punches')}`}</div>
+          </div>
+        </div>
+        <div class="aie-ppd-tbl-wrap">
+          <table class="aie-ppd-table">
+            <thead>
+              <tr>
+                <th>${isAr ? 'التاريخ' : 'Date'}</th>
+                <th>${isAr ? 'دخول' : (isFr ? 'Entrée' : 'In')}</th>
+                <th>${isAr ? 'خروج' : (isFr ? 'Sortie' : 'Out')}</th>
+                <th>${isAr ? 'إضافي' : (isFr ? 'HS' : 'OT')}</th>
+                <th>${isAr ? 'تأخير' : (isFr ? 'Retard' : 'Late')}</th>
+                <th>${isAr ? 'غياب' : 'Abs'}</th>
+                <th>${ctx.canDollars ? (isAr ? 'الأثر ($)' : (isFr ? 'Impact' : 'Net (+/-)')) : (isAr ? 'الحالة' : (isFr ? 'Statut' : 'Status'))}</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="aie-ppd-png-wrap no-print">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <strong style="font-size:12px">WhatsApp-Ready Light-Mode PNG (${pngObj.width}x${pngObj.height}px)</strong>
+          <span style="font-size:11px;color:var(--muted,#6E6254)">${ctx.waDigits ? `WhatsApp on file: +${esc(ctx.waDigits)}` : 'No saved phone on staff profile (WhatsApp opens contact picker)'}</span>
+        </div>
+        ${pngObj.dataUrl ? `<img id="ppdPngPreviewImg" class="aie-ppd-png-preview" src="${pngObj.dataUrl}" alt="Pre-Payday Attendance PNG Preview" data-canvas-width="${pngObj.width}" data-canvas-height="${pngObj.height}" />` : ''}
+      </div>
+    `;
+  }
+
+  function openPrePaydaySummaryModal(opts = {}) {
+    closePrePaydaySummaryModal();
+    let curStaff = opts.staff || '';
+    let curCo = opts.company || '';
+    let curMonth = opts.month || '';
+    let cardLang = opts.lang || '';
+
+    const syncI18n = () => {
+      if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && typeof window.MFG_I18N.setLang === 'function') {
+        const uiL = window.MFG_I18N.getLang();
+        if (uiL && uiL !== 'en') window.MFG_I18N.setLang(uiL, { skipStorage: true });
+      }
+    };
+
+    let ctx = buildPrePaydaySummaryContext({ staff: curStaff, company: curCo, month: curMonth, lang: cardLang });
+    if (!ctx) return null;
+    curStaff = ctx.staff;
+    curCo = ctx.company;
+    curMonth = ctx.month;
+    cardLang = ctx.lang;
+
+    const modal = document.createElement('div');
+    modal.id = 'prePaydayCardModal';
+    modal.className = 'aie-modal-backdrop';
+    modal.innerHTML = `
+      <div class="aie-modal-card" role="dialog" aria-modal="true" aria-labelledby="ppdModalTitle">
+        <div class="aie-modal-hdr no-print">
+          <div class="aie-title-wrap">
+            ${ic('receipt')}
+            <strong id="ppdModalTitle" style="font-size:15px">Pre-Payday Attendance &amp; Earnings Card</strong>
+            <span id="ppdModePill" class="aie-pill">${esc(ctx.canDollars ? '$ / Min' : 'Restricted')}</span>
+          </div>
+          <button type="button" id="ppdCloseBtn" class="aie-btn">Close</button>
+        </div>
+        <div class="aie-modal-body">
+          <div class="aie-ppd-toolbar no-print">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <label style="font-size:11.5px;font-weight:700"><span>Staff</span>
+                <select id="ppdStaffSel" class="aie-ppd-select" aria-label="Select staff member">
+                  ${(ctx.staffOptions || []).map(s => `<option value="${esc(`${s.company}||${s.staff}`)}" data-co="${esc(s.company)}" data-staff="${esc(s.staff)}" ${s.staff === ctx.staff && s.company === ctx.company ? 'selected' : ''}>${esc(s.staff)}${s.fatherName ? ` (${esc(s.fatherName)})` : ''} - ${esc(s.company)}</option>`).join('')}
+                </select>
+              </label>
+              <label style="font-size:11.5px;font-weight:700"><span>Month</span>
+                <select id="ppdMonthSel" class="aie-ppd-select" aria-label="Select month">
+                  ${(ctx.monthOptions || []).map(ym => `<option value="${esc(ym)}" ${ym === ctx.month ? 'selected' : ''}>${esc(ym)}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+            <div id="ppdLangSeg" class="aie-lang-seg" role="group" data-no-i18n="1" aria-label="Card language">
+              <button type="button" class="aie-lang-btn ${ctx.lang === 'bilingual' ? 'active' : ''}" data-ppd-lang="bilingual">EN + عربي</button>
+              <button type="button" class="aie-lang-btn ${ctx.lang === 'en' ? 'active' : ''}" data-ppd-lang="en">EN</button>
+              <button type="button" class="aie-lang-btn ${ctx.lang === 'ar' ? 'active' : ''}" data-ppd-lang="ar">عربي</button>
+              <button type="button" class="aie-lang-btn ${ctx.lang === 'fr' ? 'active' : ''}" data-ppd-lang="fr">FR</button>
+            </div>
+          </div>
+          <div id="ppdCardBodyContainer">${renderPrePaydayModalBodyHtml(ctx)}</div>
+        </div>
+        <div class="aie-modal-foot no-print">
+          <span id="ppdStatusMsg" style="font-size:11px;color:var(--muted,#6E6254)">Read-only pre-payday card (frequency-ranked staff picker)</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <button type="button" id="ppdCopyTextBtn" class="aie-btn">${ic('copy')} Copy Text</button>
+            <a id="ppdWaBtn" class="aie-btn" href="https://wa.me/${encodeURIComponent(ctx.waDigits || '')}?text=${encodeURIComponent(formatPrePaydaySummaryText(ctx))}" target="_blank" rel="noopener noreferrer">${ic('send_msg')} WhatsApp</a>
+            <button type="button" id="ppdDownloadPngBtn" class="aie-btn aie-btn-primary">${ic('download')} Download PNG</button>
+            <button type="button" id="ppdPrintBtn" class="aie-btn">${ic('printer')} Print</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    syncI18n();
+
+    const refreshView = (syncMonths = false) => {
+      ctx = buildPrePaydaySummaryContext({ staff: curStaff, company: curCo, month: curMonth, lang: cardLang });
+      if (!ctx) return;
+      curStaff = ctx.staff;
+      curCo = ctx.company;
+      curMonth = ctx.month;
+      cardLang = ctx.lang;
+      const pillEl = $('ppdModePill');
+      if (pillEl) pillEl.textContent = ctx.canDollars ? '$ / Min' : 'Restricted';
+      if (syncMonths) {
+        const mSelEl = $('ppdMonthSel');
+        if (mSelEl) {
+          mSelEl.innerHTML = (ctx.monthOptions || []).map(ym => `<option value="${esc(ym)}" ${ym === ctx.month ? 'selected' : ''}>${esc(ym)}</option>`).join('');
+        }
+      }
+      const box = $('ppdCardBodyContainer');
+      if (box) box.innerHTML = renderPrePaydayModalBodyHtml(ctx);
+      const waBtn = $('ppdWaBtn');
+      if (waBtn) {
+        waBtn.href = `https://wa.me/${encodeURIComponent(ctx.waDigits || '')}?text=${encodeURIComponent(formatPrePaydaySummaryText(ctx))}`;
+      }
+      modal.querySelectorAll('[data-ppd-lang]').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-ppd-lang') === ctx.lang);
+      });
+      syncI18n();
+    };
+
+    const staffSel = $('ppdStaffSel');
+    if (staffSel) {
+      staffSel.addEventListener('change', () => {
+        const selOpt = staffSel.options && staffSel.selectedIndex >= 0 ? staffSel.options[staffSel.selectedIndex] : null;
+        const optCo = selOpt && selOpt.getAttribute('data-co');
+        const optStaff = selOpt && selOpt.getAttribute('data-staff');
+        if (optCo || optStaff) {
+          curCo = optCo || curCo;
+          curStaff = optStaff || curStaff;
+        } else {
+          const parts = String(staffSel.value || '').split('||');
+          curCo = parts[0] || curCo;
+          curStaff = parts.slice(1).join('||') || curStaff;
+        }
+        cardLang = getPrePaydayStaffLang(curStaff, curCo);
+        refreshView(true);
+      });
+    }
+    const monthSel = $('ppdMonthSel');
+    if (monthSel) {
+      monthSel.addEventListener('change', () => {
+        curMonth = monthSel.value || curMonth;
+        refreshView();
+      });
+    }
+    modal.querySelectorAll('[data-ppd-lang]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const chosen = btn.getAttribute('data-ppd-lang') || 'bilingual';
+        cardLang = setPrePaydayStaffLang(curStaff, curCo, chosen);
+        refreshView();
+      });
+    });
+
+    const copyBtn = $('ppdCopyTextBtn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => {
+        const txt = formatPrePaydaySummaryText(ctx);
+        const st = $('ppdStatusMsg');
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText(txt).then(() => {
+            if (st) {
+              st.textContent = 'Copied pre-payday text summary.';
+              syncI18n();
+            }
+          }).catch(() => {});
+        } else if (st) {
+          st.textContent = `Summary ready (${txt.length} chars).`;
+          syncI18n();
+        }
+      });
+    }
+
+    const dlBtn = $('ppdDownloadPngBtn');
+    if (dlBtn) {
+      dlBtn.addEventListener('click', () => {
+        const out = renderPrePaydaySummaryCanvas(ctx);
+        if (!out || !out.dataUrl) return;
+        const a = document.createElement('a');
+        a.href = out.dataUrl;
+        a.download = `pre-payday-${String(ctx.staff || 'staff').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${ctx.month || 'month'}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      });
+    }
+
+    const printBtn = $('ppdPrintBtn');
+    if (printBtn) {
+      printBtn.addEventListener('click', () => {
+        document.body.classList.add('printing-prepayday-card');
+        try { window.print(); } catch (_) {}
+        setTimeout(() => document.body.classList.remove('printing-prepayday-card'), 500);
+      });
+    }
+
+    const closeBtn = $('ppdCloseBtn');
+    if (closeBtn) closeBtn.addEventListener('click', closePrePaydaySummaryModal);
+    modal.addEventListener('click', ev => { if (ev.target === modal) closePrePaydaySummaryModal(); });
+    return modal;
+  }
+
   window.MFG_AI_EDGE = {
     parseQuoteText,
     sanitizeQuoteRows,
@@ -6699,6 +8365,20 @@
     buildDeterministicDailyBrief,
     buildGroundedFollowUpDraft,
     explainTelematicsRecon,
+    computeOtThresholdClusterDigest,
+    clearOtClusterCaches,
+    buildOtClusterEdgeBrief,
+    renderPayAttClusterBriefCardHtml,
+    runOtClusterExplainInSlot,
+    openOtClusterBriefModal,
+    closeOtClusterBriefModal,
+    buildPrePaydaySummaryContext,
+    formatPrePaydaySummaryText,
+    renderPrePaydaySummaryCanvas,
+    openPrePaydaySummaryModal,
+    closePrePaydaySummaryModal,
+    getPrePaydayStaffLang,
+    setPrePaydayStaffLang,
     callAiEdgeJson,
     resolveAiEdgeRelayEndpoint,
     extractAiEdgeJsonObject,

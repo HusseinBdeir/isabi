@@ -21699,10 +21699,50 @@
       whatFn: p => `Tracks monthly Google Map Tiles (100,000), Places Text Search (10,000), and Routes (10,000) calls. Tightens search debounce from 260ms to 600ms at <b>${fmtNum(p.warn_pct, 0)}%</b>, 1100ms at 80%, and falls back to OpenStreetMap tiles plus frequency-ranked local search at <b>${fmtNum(p.fallback_pct, 0)}%</b>.`,
       threshFn: p => `Warn >= ${fmtNum(p.warn_pct, 0)}% · OSM Cutoff >= ${fmtNum(p.fallback_pct, 0)}%`,
       previewFn: p => `Free-tier shield: Above ${fmtNum(p.warn_pct, 0)}% monthly quota search debounce slows to 600ms (1100ms at 80%), and at ${fmtNum(p.fallback_pct, 0)}% basemaps switch automatically to OpenStreetMap before any overage charge.`
+    },
+    {
+      id: 'S14',
+      code: '#25',
+      name: '30-Day OT Boundary & Snap Cluster Watchdog',
+      domain: 'Payroll & Workforce',
+      behavior: 'audit',
+      whereLabel: 'Attendance & Overtime, AI Sentinels & Ask ISABI',
+      jumpView: 'payroll_attendance',
+      sentinelId: 'S14',
+      why: 'Spots clock-out punch clustering right above an overtime start threshold or snap/block cliff over the last 30 days under the Per-Minute engine so supervisors can inspect handover timing or tune threshold and snap constraints without changing deterministic math.',
+      params: [
+        { key: 'lookbackDays', label: 'Lookback Window (Days)', def: 30, min: 7, max: 90, step: 1, unit: 'days' },
+        { key: 'bandMin', label: 'Boundary Band Width (Min)', def: 4, min: 1, max: 10, step: 1, unit: 'min' },
+        { key: 'minCount', label: 'Min Clustered Punches per Shift', def: 4, min: 2, max: 20, step: 1, unit: 'punches' }
+      ],
+      whatFn: p => `Scans the last <b>${fmtNum(p.lookbackDays, 0)} days</b> of clock-out punches per shift and flags shifts with at least <b>${fmtNum(p.minCount, 0)}</b> clock-outs clustering within <b>+${fmtNum(p.bandMin, 0)} min</b> of the OT start threshold or OT snap/block cliff.`,
+      threshFn: p => `>= ${fmtNum(p.minCount, 0)} punches within +${fmtNum(p.bandMin, 0)}m (${fmtNum(p.lookbackDays, 0)}d)`,
+      previewFn: p => `Live example: If ${fmtNum(p.minCount, 0)} clock-outs land 16m to ${fmtNum(15 + Number(p.bandMin || 4), 0)}m past shift end on a 15m Shift-End threshold over ${fmtNum(p.lookbackDays, 0)} days, this Sentinel highlights the shift for supervisor tuning.`
     }
   ];
 
   const ALERT_RULE_BY_ID = new Map(ALERT_RULE_CATALOG.map(r => [r.id, r]));
+  const mkIndOtClusterRule = (id, industry) => ({
+    id,
+    code: '#07',
+    industry,
+    name: '30-Day OT Boundary & Snap Cluster Watchdog',
+    domain: 'Payroll & Workforce',
+    behavior: 'audit',
+    whereLabel: 'Attendance & Overtime, Domain Sentinels & Ask ISABI',
+    jumpForm: '',
+    jumpView: 'payroll_attendance',
+    lockedActive: false,
+    why: 'Detects 30-day clock-out clustering right above OT start thresholds or snap/block boundaries so managers can distinguish real shift-handover bottlenecks from policy cliff gaming.',
+    params: [
+      { key: 'lookbackDays', label: 'Lookback Window (Days)', def: 30, min: 7, max: 90, step: 1, unit: 'days' },
+      { key: 'bandMin', label: 'Boundary Band Width (Min)', def: 4, min: 1, max: 10, step: 1, unit: 'min' },
+      { key: 'minCount', label: 'Min Clustered Punches per Shift', def: 4, min: 2, max: 20, step: 1, unit: 'punches' }
+    ],
+    whatFn: p => `Scans the last <b>${fmtNum(p.lookbackDays, 0)} days</b> of clock-outs per shift and flags <b>${fmtNum(p.minCount, 0)}+</b> punches within <b>+${fmtNum(p.bandMin, 0)}m</b> of OT start threshold or snap boundary.`,
+    threshFn: p => `>= ${fmtNum(p.minCount, 0)} punches in +${fmtNum(p.bandMin, 0)}m (${fmtNum(p.lookbackDays, 0)}d)`,
+    previewFn: p => `Live rule: Alerts HR whenever ${fmtNum(p.minCount, 0)} or more punches cluster within +${fmtNum(p.bandMin, 0)} min of an OT threshold or snap boundary.`
+  });
   const IND_ALERT_RULE_CATALOG = [
     // Holding & Treasury (5 rules)
     {
@@ -22057,7 +22097,12 @@
       whatFn: p => `Tracks monthly Map Tiles (100,000), Places (10,000), and Routes (10,000) usage. Tightens debounce at <b>${fmtNum(p.warn_pct, 0)}%</b> and enables OpenStreetMap fallback at <b>${fmtNum(p.fallback_pct, 0)}%</b>.`,
       threshFn: p => `Warn >= ${fmtNum(p.warn_pct, 0)}% · Cutoff >= ${fmtNum(p.fallback_pct, 0)}%`,
       previewFn: p => `Free-tier shield: Above ${fmtNum(p.warn_pct, 0)}% monthly quota search debounce slows to 600ms (1100ms at 80%), and at ${fmtNum(p.fallback_pct, 0)}% basemaps switch automatically to OpenStreetMap before any overage charge.`
-    }
+    },
+    mkIndOtClusterRule('ind_hld_07', 'Holding & Treasury'),
+    mkIndOtClusterRule('ind_hsp_07', 'Hospitality & Resorts'),
+    mkIndOtClusterRule('ind_trd_07', 'Automotive & Heavy Trading'),
+    mkIndOtClusterRule('ind_re_07', 'Real Estate & Property'),
+    mkIndOtClusterRule('ind_ins_07', 'Insurance & Brokerage')
   ];
   IND_ALERT_RULE_CATALOG.forEach(r => ALERT_RULE_BY_ID.set(r.id, r));
 
@@ -24633,7 +24678,21 @@
     }
     const qSnapUi = _getMapsQuotaSnapForUi();
     const qSig = `${qSnapUi.band}:${qSnapUi.metrics.tiles_2d.used}:${qSnapUi.metrics.places_text.used}:${qSnapUi.metrics.routes_compute.used}:${qSnapUi.gcp && qSnapUi.gcp.budgetConfirmed ? 1 : 0}`;
-    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}`;
+    const indOtRuleByInd = {
+      'Holding & Treasury': 'ind_hld_07',
+      'Hospitality & Resorts': 'ind_hsp_07',
+      'Automotive & Heavy Trading': 'ind_trd_07',
+      'Real Estate & Property': 'ind_re_07',
+      'Insurance & Brokerage': 'ind_ins_07'
+    };
+    const activeOtRuleId = isNonMfgSn ? (indOtRuleByInd[activeIndForSn] || '') : 'S14';
+    const s14Sig = (activeOtRuleId && isAlertRuleEnabled(activeOtRuleId) && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.computeOtThresholdClusterDigest === 'function')
+      ? (() => {
+        const d = window.MFG_AI_EDGE.computeOtThresholdClusterDigest({ company: STATE.company });
+        return `${d.scannedPunches}:${(d.clusters || []).map(c => `${c.id}=${c.count}`).join(',')}`;
+      })()
+      : 'x';
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
     let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
     if (!rawItems) {
@@ -24897,6 +24956,33 @@
       });
     }
     if (isAlertRuleEnabled('G_MAPS_QUOTA')) rawItems.push(buildMapsQuotaSentinelItem({ ruleId: 'G_MAPS_QUOTA', itemId: 'M24', company: 'All Operations' }));
+    const s14RuleOff = !isAlertRuleEnabled('S14');
+    const s14Res = (!s14RuleOff && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.computeOtThresholdClusterDigest === 'function')
+      ? window.MFG_AI_EDGE.computeOtThresholdClusterDigest({
+        company: STATE.company,
+        lookbackDays: getAlertParam('S14', 'lookbackDays', 30),
+        bandMin: getAlertParam('S14', 'bandMin', 4),
+        minCount: getAlertParam('S14', 'minCount', 4)
+      })
+      : null;
+    const s14Cls = (s14Res && s14Res.clusters) || [];
+    const s14Lead = s14Cls[0] || null;
+    rawItems.push({
+      id: 'S14',
+      code: 'Rule #25 · Attendance & Shifts',
+      title: '30-Day OT Boundary & Snap Cluster Watchdog',
+      detail: s14Lead
+        ? `${fmtNum(s14Cls.length)} boundary cluster(s) across ${fmtNum(s14Res.scannedPunches)} punches in ${fmtNum(s14Res.lookbackDays)}d: ${s14Lead.headlineEn}`
+        : `Scanned ${fmtNum((s14Res && s14Res.scannedPunches) || 0)} clock-out punches in the last ${fmtNum((s14Res && s14Res.lookbackDays) || 30)} days: clean punch distribution around OT thresholds and snap boundaries.`,
+      severity: s14Cls.length > 0 ? 'warn' : 'ok',
+      badge: s14RuleOff ? 'PAUSED' : (s14Cls.length > 0 ? `${fmtNum(s14Cls.length)} CLUSTERS` : 'CLEAN PUNCHES'),
+      company: scope,
+      rawMetric: s14Cls.length,
+      rawSecondary: (s14Res && s14Res.scannedPunches) || 0,
+      scrollPanel: 'snOtCluster',
+      navView: 'payroll_attendance',
+      navLabel: 'Open Attendance'
+    });
       }
 
       const s13CritDays = getAlertParam('S13', 'crit_window_days', 7);
@@ -26152,6 +26238,14 @@
           { label: 'Date', key: 'date', mono: true }, { label: 'Disposition / Status', key: 'state_label' },
           { label: 'Cost ($)', key: 'cost_usd', r: true, fmt: usd2 }
         ], 'snFleetParts')}
+        ${miniTable('30-DAY OT BOUNDARY &amp; SNAP CLUSTERS (S14)', (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.computeOtThresholdClusterDigest === 'function' ? (window.MFG_AI_EDGE.computeOtThresholdClusterDigest({ company: STATE.company }).clusters || []) : []), [
+          { label: 'Co.', key: 'company' },
+          { label: 'Shift', key: 'shiftName' },
+          { label: 'Boundary Cliff', key: 'cliffLabel' },
+          { label: 'Punches', key: 'count', r: true, fmt: (v, r) => `${fmtNum(v || 0, 0)} (${fmtNum((r && r.sharePct) || 0, 0)}%)` },
+          { label: 'Offset Range', key: 'minOffset', r: true, fmt: (v, r) => `+${fmtNum(v || 0, 0)}m to +${fmtNum((r && r.maxOffset) != null ? r.maxOffset : (v || 0), 0)}m` },
+          { label: 'Top Staff', key: 'topStaff', fmt: v => Array.isArray(v) && v.length ? v.slice(0, 3).map(s => `${s.staff} (${s.count})`).join(', ') : '-' }
+        ], 'snOtCluster')}
         ${customHitRows.length ? miniTable('CUSTOM ALERT EXCEPTIONS', customHitRows, [
           { label: 'Alert', key: 'rule_name' }, { label: 'Date', key: 'date', mono: true }, { label: 'Co.', key: 'company' },
           { label: 'Party / Unit', key: 'party' }, { label: 'Detail', key: 'detail' },
@@ -41937,6 +42031,519 @@
   }
   window.__mfgComputeStaffPayrollRegister = computeStaffPayrollRegister;
 
+  function _normalizeAttBracketsBridge(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(b => {
+        const rawOver = b && (b.over_min != null ? b.over_min : (b.overMin != null ? b.overMin : b.upToMin));
+        const rawPen = b && (b.penalty_min != null ? b.penalty_min : (b.penaltyMin != null ? b.penaltyMin : b.billedMin));
+        return {
+          over_min: Math.max(0, Math.round(Number(rawOver || 0))),
+          penalty_min: Math.max(0, Math.round(Number(rawPen || 0)))
+        };
+      })
+      .filter(b => Number.isFinite(b.over_min) && Number.isFinite(b.penalty_min) && b.over_min >= 0 && b.penalty_min > 0)
+      .sort((a, b) => a.over_min - b.over_min);
+  }
+
+  function describeUnifiedMinutePolicy(polOrRule, opts = {}) {
+    const p = polOrRule && typeof polOrRule === 'object' ? polOrRule : {};
+    const r = p.rule && typeof p.rule === 'object' ? p.rule : p;
+    const g = p.group && typeof p.group === 'object' ? p.group : {};
+    const v = (p.activeVersion && typeof p.activeVersion === 'object')
+      ? p.activeVersion
+      : ((g.activeVersion && typeof g.activeVersion === 'object') ? g.activeVersion : {});
+    const w = (p.matchedWindow && typeof p.matchedWindow === 'object')
+      ? p.matchedWindow
+      : ((p.window && typeof p.window === 'object') ? p.window : ((p.timelineWindow && typeof p.timelineWindow === 'object') ? p.timelineWindow : {}));
+    const dIso = String(p.date || (opts && opts.date) || '').slice(0, 10);
+    const rawEntry = (opts && opts.staff && typeof getStaffRuleEntry === 'function')
+      ? (getStaffRuleEntry(opts.staff, (opts && opts.company) || p.company).raw || {})
+      : {};
+    const rawTl = Array.isArray(rawEntry.policy_timeline) ? rawEntry.policy_timeline : [];
+    const rw = rawTl.find(x => x && ((w.id && x.id === w.id) || (dIso && String(x.start_date || '') <= dIso && (!x.end_date || String(x.end_date) >= dIso)))) || {};
+    const rg = (p.groupId && STATE && STATE.workSchedules && Array.isArray(STATE.workSchedules.policyGroups))
+      ? (STATE.workSchedules.policyGroups.find(x => x && x.id === p.groupId) || {})
+      : {};
+    const pick = (...vals) => {
+      for (let i = 0; i < vals.length; i++) {
+        if (vals[i] !== undefined && vals[i] !== null && vals[i] !== '') return vals[i];
+      }
+      return undefined;
+    };
+
+    const graceMin = Math.max(0, Math.round(Number(pick(w.grace_min, v.grace_min, r.grace_min, r.graceMin, p.grace_min, g.grace_min, rw.grace_min, rg.grace_min, 10))));
+    const earlyGraceMin = Math.max(0, Math.round(Number(pick(w.early_leave_grace_min, v.early_leave_grace_min, r.early_leave_grace_min, p.early_leave_grace_min, rw.early_leave_grace_min, rg.early_leave_grace_min, graceMin))));
+    const otThreshMin = Math.max(0, Math.round(Number(pick(p.ot_threshold_min, w.ot_threshold_min, v.ot_threshold_min, r.ot_threshold_min, r.otThresholdMin, g.ot_threshold_min, rw.ot_threshold_min, rg.ot_threshold_min, 10))));
+    const otEarlyThreshMin = Math.max(0, Math.round(Number(pick(p.ot_early_threshold_min, w.ot_early_threshold_min, v.ot_early_threshold_min, r.ot_early_threshold_min, r.otEarlyThresholdMin, g.ot_early_threshold_min, rw.ot_early_threshold_min, rg.ot_early_threshold_min, 15))));
+    const otCountFrom = String(pick(p.ot_count_from, w.ot_count_from, v.ot_count_from, r.ot_count_from, r.otCountFrom, g.ot_count_from, rw.ot_count_from, rg.ot_count_from, 'shift_end')) === 'after_threshold'
+      ? 'after_threshold'
+      : 'shift_end';
+    const otMode = String(pick(w.ot_mode, v.ot_mode, r.ot_mode, p.ot_mode, g.ot_mode, rw.ot_mode, rg.ot_mode, 'always'));
+    const otMult = Number(pick(w.ot_multiplier, v.ot_multiplier, r.ot_multiplier, p.ot_multiplier, g.ot_multiplier, rw.ot_multiplier, rg.ot_multiplier, 1.5)) || 1.5;
+    const rawSnap = String(pick(w.ot_snap_mode, w.otSnapMode, rw.ot_snap_mode, rw.otSnapMode, v.ot_snap_mode, v.otSnapMode, p.ot_snap_mode, p.otSnapMode, r.ot_snap_mode, r.otSnapMode, g.ot_snap_mode, rg.ot_snap_mode, rawEntry.ot_snap_mode, rawEntry.otSnapMode, 'exact')).toLowerCase();
+    const otSnapMode = (rawSnap === 'exact_plus_snap' || rawSnap === 'whole_blocks') ? rawSnap : 'exact';
+    const rawBlock = Number(pick(w.ot_block_min, w.otBlockMin, rw.ot_block_min, rw.otBlockMin, v.ot_block_min, v.otBlockMin, p.ot_block_min, p.otBlockMin, r.ot_block_min, r.otBlockMin, g.ot_block_min, rg.ot_block_min, rawEntry.ot_block_min, rawEntry.otBlockMin, 60));
+    const otBlockMin = rawBlock === 30 ? 30 : 60;
+    const defSnapAt = otBlockMin === 30 ? 25 : 50;
+    const rawSnapAt = Number(pick(w.ot_snap_at_min, w.otSnapAtMin, rw.ot_snap_at_min, rw.otSnapAtMin, v.ot_snap_at_min, v.otSnapAtMin, p.ot_snap_at_min, p.otSnapAtMin, r.ot_snap_at_min, r.otSnapAtMin, g.ot_snap_at_min, rg.ot_snap_at_min, rawEntry.ot_snap_at_min, rawEntry.otSnapAtMin, defSnapAt));
+    const otSnapAtMin = Math.min(otBlockMin, Math.max(1, Math.round(Number.isFinite(rawSnapAt) ? rawSnapAt : defSnapAt)));
+    const lateBrackets = _normalizeAttBracketsBridge(pick(w.late_brackets, w.lateBrackets, rw.late_brackets, rw.lateBrackets, v.late_brackets, v.lateBrackets, p.late_brackets, p.lateBrackets, r.late_brackets, r.lateBrackets, g.late_brackets, rg.late_brackets, rawEntry.late_brackets, rawEntry.lateBrackets, []));
+    const rawLateMode = String(pick(rw.late_penalty_mode, w.late_penalty_mode, v.late_penalty_mode, r.late_penalty_mode, p.late_penalty_mode, g.late_penalty_mode, rg.late_penalty_mode, rawEntry.late_penalty_mode, 'exact_hours'));
+    const lateMode = (lateBrackets.length > 0 && (rw.late_penalty_mode === 'step_brackets' || w.late_penalty_mode === 'step_brackets' || r.late_penalty_mode === 'step_brackets' || rawLateMode === 'step_brackets'))
+      ? 'step_brackets'
+      : rawLateMode;
+    const lateMult = Number(pick(w.late_multiplier, v.late_multiplier, r.late_multiplier, p.late_multiplier, g.late_multiplier, rw.late_multiplier, rg.late_multiplier, 1.5)) || 1.5;
+    const lateBelowBracketMode = String(pick(w.late_below_bracket_mode, w.lateBelowBracketMode, rw.late_below_bracket_mode, rw.lateBelowBracketMode, v.late_below_bracket_mode, v.lateBelowBracketMode, p.late_below_bracket_mode, p.lateBelowBracketMode, r.late_below_bracket_mode, r.lateBelowBracketMode, g.late_below_bracket_mode, rg.late_below_bracket_mode, rawEntry.late_below_bracket_mode, 'exact')) === 'waive'
+      ? 'waive'
+      : 'exact';
+    const lateHalfDayAfterMin = Math.max(1, Math.round(Number(pick(w.late_half_day_after_min, v.late_half_day_after_min, r.late_half_day_after_min, p.late_half_day_after_min, 60))));
+    const noOutRule = String(pick(w.no_clock_out_rule, v.no_clock_out_rule, r.no_clock_out_rule, p.no_clock_out_rule, g.no_clock_out_rule, 'half_day'));
+    const sourceScope = String(p.sourceScope || 'company_default');
+
+    const bracketsSig = lateBrackets.map(b => `${b.over_min}>${b.penalty_min}`).join(',');
+    const sig = [
+      'per_minute', graceMin, earlyGraceMin, otThreshMin, otEarlyThreshMin, otCountFrom,
+      otMode, otMult.toFixed(2), otSnapMode, otBlockMin, otSnapAtMin,
+      lateMode, lateMult.toFixed(2), bracketsSig, lateBelowBracketMode, noOutRule
+    ].join('|');
+
+    const fmtX = n => Number(n || 1).toFixed(2).replace(/\.?0+$/, '');
+    const bracketLblEn = lateBrackets.length
+      ? `${lateBrackets.map(b => `>${b.over_min}m=${b.penalty_min}m`).join(', ')}${lateBelowBracketMode === 'waive' ? ' (waive below)' : ' (exact below)'}`
+      : (lateMode === 'round_30m' ? '30m Blocks' : '');
+    const lateDescEn = lateMode === 'none'
+      ? 'Lateness $0 (track only)'
+      : (lateMode === 'step_brackets'
+          ? `Late Brackets [${bracketLblEn || 'Custom'}]`
+          : (lateMode === 'round_30m'
+              ? 'Late 30m Block'
+              : (lateMode === 'round_hour'
+                  ? 'Late 1h Block'
+                  : (lateMode === 'tiered_half_day'
+                      ? `Late >=${lateHalfDayAfterMin}m = 0.5d`
+                      : (lateMode === 'half_day_any'
+                          ? 'Any Late = 0.5d'
+                          : (lateMode === 'multiplier' ? `Late ${fmtX(lateMult)}x/min` : 'Late 1x/min'))))));
+    const otSnapEn = otSnapMode === 'whole_blocks'
+      ? `Whole ${otBlockMin}m Blocks`
+      : (otSnapMode === 'exact_plus_snap' ? `Exact + Snap >=${otSnapAtMin}m -> ${otBlockMin}m` : 'Exact min');
+    const otDescEn = otMode === 'none'
+      ? 'No OT'
+      : `OT ${fmtX(otMult)}x >=${otThreshMin}m (${otCountFrom === 'after_threshold' ? 'after threshold' : 'from shift end'}, ${otSnapEn})`;
+
+    const lateDescAr = lateMode === 'none'
+      ? 'التأخير 0$ (متابعة)'
+      : (lateMode === 'step_brackets'
+          ? `شرائح التأخير [${bracketLblEn || 'مخصص'}]`
+          : (lateMode === 'round_30m'
+              ? 'شريحة 30 د'
+              : (lateMode === 'round_hour'
+                  ? 'جبر لساعة كاملة'
+                  : (lateMode === 'tiered_half_day'
+                      ? `تأخير >=${lateHalfDayAfterMin} د = 0.5 يوم`
+                      : (lateMode === 'half_day_any'
+                          ? 'أي تأخير = 0.5 يوم'
+                          : (lateMode === 'multiplier' ? `حسم ${fmtX(lateMult)}x بالدقيقة` : 'حسم 1x بالدقيقة'))))));
+    const otSnapAr = otSnapMode === 'whole_blocks'
+      ? `وحدات ${otBlockMin} د كاملة`
+      : (otSnapMode === 'exact_plus_snap' ? `فعلي + جبر من ${otSnapAtMin} د إلى ${otBlockMin} د` : 'دقائق فعلية');
+    const otDescAr = otMode === 'none'
+      ? 'بدون إضافي'
+      : `إضافي ${fmtX(otMult)}x >=${otThreshMin} د (${otCountFrom === 'after_threshold' ? 'بعد الحد' : 'من نهاية الدوام'}، ${otSnapAr})`;
+
+    const lateDescFr = lateMode === 'none'
+      ? 'Retard $0 (suivi)'
+      : (lateMode === 'step_brackets'
+          ? `Paliers retard [${bracketLblEn || 'personnalisé'}]`
+          : (lateMode === 'round_30m'
+              ? 'Tranches 30 min'
+              : (lateMode === 'round_hour'
+                  ? 'Arrondi heure complète'
+                  : (lateMode === 'tiered_half_day'
+                      ? `Retard >=${lateHalfDayAfterMin}m = 0,5 j`
+                      : (lateMode === 'half_day_any'
+                          ? 'Tout retard = 0,5 j'
+                          : (lateMode === 'multiplier' ? `Retard ${fmtX(lateMult)}x / min` : 'Retard 1x / min'))))));
+    const otSnapFr = otSnapMode === 'whole_blocks'
+      ? `Blocs ${otBlockMin}m complets`
+      : (otSnapMode === 'exact_plus_snap' ? `Exact + Palier >=${otSnapAtMin}m -> ${otBlockMin}m` : 'Minutes exactes');
+    const otDescFr = otMode === 'none'
+      ? 'Sans HS'
+      : `HS ${fmtX(otMult)}x >=${otThreshMin}m (${otCountFrom === 'after_threshold' ? 'après seuil' : 'dès fin poste'}, ${otSnapFr})`;
+
+    return {
+      engine: 'per_minute',
+      engineLabel: '$ / Min',
+      graceMin,
+      earlyGraceMin,
+      otThreshMin,
+      otEarlyThreshMin,
+      otCountFrom,
+      otMode,
+      otMult,
+      otSnapMode,
+      otBlockMin,
+      otSnapAtMin,
+      lateMode,
+      lateMult,
+      lateBrackets,
+      lateBelowBracketMode,
+      lateHalfDayAfterMin,
+      noOutRule,
+      sourceScope,
+      sig,
+      summaryEn: `$ / Min · Grace ${graceMin}m · ${otDescEn} · ${lateDescEn}`,
+      summaryAr: `$ / دقيقة · سماح ${graceMin} د · ${otDescAr} · ${lateDescAr}`,
+      summaryFr: `$ / min · Tolérance ${graceMin}m · ${otDescFr} · ${lateDescFr}`
+    };
+  }
+
+  function _isoShiftDay(iso, deltaDays) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ''))) return '';
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d + Number(deltaDays || 0)));
+    return dt.toISOString().slice(0, 10);
+  }
+
+  function computeStaffAttendancePeriodBreakdown(staffName, company, opts = {}) {
+    const cleanStaff = String(staffName || '').trim();
+    if (!cleanStaff) return null;
+    const allowedCos = (typeof window !== 'undefined' && window.__mfgAttPayrollBridge && typeof window.__mfgAttPayrollBridge.allowedCompanyNames === 'function')
+      ? window.__mfgAttPayrollBridge.allowedCompanyNames()
+      : allowedCompanyNames();
+    if (!allowedCos.length) return null;
+    const rawCo = String(company || defaultEntryCompany() || allowedCos[0] || '').trim();
+    const canCo = canonCompany(rawCo) || rawCo;
+    if (!canCo || !allowedCos.includes(canCo)) return null;
+
+    const canDollars = Boolean(canViewPayrollDollarAmounts());
+    const bounds = opts.ym ? getPayrollMonthBounds(String(opts.ym).slice(0, 7)) : null;
+    const rawFrom = String(opts.fromDate || (bounds && bounds.mStart) || `${(SEED_DATE || todayISO()).slice(0, 7)}-01`).slice(0, 10);
+    const rawTo = String(opts.toDate || (bounds && bounds.mEnd) || `${(SEED_DATE || todayISO()).slice(0, 7)}-31`).slice(0, 10);
+    const fromDate = rawFrom <= rawTo ? rawFrom : rawTo;
+    const toDate = rawFrom <= rawTo ? rawTo : rawFrom;
+    const effStartYm = fromDate.slice(0, 7);
+    const effEndYm = toDate.slice(0, 7);
+    const isPartialEndMonth = effEndYm === toDate.slice(0, 7) && toDate < getPayrollMonthBounds(effEndYm).mEnd;
+    const fxRate = Number(opts.fxRate || getLbpFxRate(toDate, 'LBP')) || 89500;
+    const sk = norm(cleanStaff);
+    const coKeyN = norm(canCo);
+
+    const allAtt = ((SEED && SEED.records && SEED.records.attendance) || []).filter(a => {
+      if (!a || a.voided) return false;
+      if (norm(a.staff) !== sk) return false;
+      if (canCo && a.company && norm(canonCompany(a.company) || a.company) !== coKeyN) return false;
+      if (allowedCos.length && a.company && !allowedCos.includes(canonCompany(a.company) || a.company)) return false;
+      const aDate = String(a.date || '').slice(0, 10);
+      const effAttDate = String(a.set_date || a.rep_date || aDate).slice(0, 10);
+      const ym = String(a.month || effAttDate.slice(0, 7) || aDate.slice(0, 7)).slice(0, 7);
+      if (opts.ym) return ym === String(opts.ym).slice(0, 7);
+      if (STATE.basis === 'rep' && !opts.strictCalendarDates) {
+        if (ym < effStartYm || ym > effEndYm) return false;
+        if (isPartialEndMonth && ym === effEndYm && effAttDate > toDate && !/^config/i.test(String(a.type || ''))) return false;
+        return true;
+      }
+      const d = effAttDate || aDate;
+      return d >= fromDate && d <= toDate;
+    });
+
+    // Collect chronological split boundaries within [fromDate, toDate] across staff timeline, company timeline & policy group versions
+    const splitBoundaryDates = new Set([fromDate]);
+    try {
+      const ruleObj = typeof getStaffWorkRule === 'function' ? getStaffWorkRule(cleanStaff, canCo) : null;
+      const addTlCuts = list => {
+        if (!Array.isArray(list)) return;
+        list.forEach(w => {
+          if (!w) return;
+          const ws = String(w.start_date || w.effective_from || '').slice(0, 10);
+          const we = String(w.end_date || w.effective_to || '').slice(0, 10);
+          if (ws && ws > fromDate && ws <= toDate) splitBoundaryDates.add(ws);
+          if (we && we >= fromDate && we < toDate) {
+            const nxt = _isoShiftDay(we, 1);
+            if (nxt && nxt > fromDate && nxt <= toDate) splitBoundaryDates.add(nxt);
+          }
+        });
+      };
+      if (ruleObj) addTlCuts(ruleObj.policy_timeline);
+      const coDefEntry = typeof getCompanyDefaultPolicyEntry === 'function' ? getCompanyDefaultPolicyEntry(canCo) : null;
+      if (coDefEntry) addTlCuts(coDefEntry.policy_timeline);
+      const groups = typeof getPolicyGroups === 'function' ? getPolicyGroups(canCo) : [];
+      const targetGrpId = (ruleObj && ruleObj.policy_group_id) || (typeof getCompanyDefaultPolicyGroupId === 'function' ? getCompanyDefaultPolicyGroupId(canCo) : '');
+      const grp = groups.find(g => g && g.id === targetGrpId);
+      if (grp) addTlCuts(grp.versions);
+    } catch (_) {}
+
+    allAtt.forEach(a => {
+      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      if (d && d >= fromDate && d <= toDate) splitBoundaryDates.add(d);
+    });
+
+    const sortedBoundaries = Array.from(splitBoundaryDates).sort();
+    const rawWindows = [];
+    for (let i = 0; i < sortedBoundaries.length; i++) {
+      const wStart = sortedBoundaries[i];
+      const wEnd = i + 1 < sortedBoundaries.length ? _isoShiftDay(sortedBoundaries[i + 1], -1) : toDate;
+      if (!wStart || !wEnd || wStart > wEnd) continue;
+      const pol = resolveStaffPolicyForDate(cleanStaff, canCo, wStart);
+      const desc = describeUnifiedMinutePolicy(pol, { staff: cleanStaff, company: canCo, date: wStart });
+      const prev = rawWindows.length ? rawWindows[rawWindows.length - 1] : null;
+      if (prev && prev.policy.sig === desc.sig) {
+        prev.toDate = wEnd;
+      } else {
+        rawWindows.push({
+          fromDate: wStart,
+          toDate: wEnd,
+          policy: desc,
+          otMin: 0,
+          otHours: 0,
+          otPayUsd: 0,
+          lateRawMin: 0,
+          lateBilledMin: 0,
+          lateHours: 0,
+          lateDedUsd: 0,
+          absDays: 0,
+          absDedUsd: 0,
+          extUsd: 0,
+          netAttUsd: 0,
+          missingOutCount: 0,
+          logsCount: 0
+        });
+      }
+    }
+    if (!rawWindows.length) {
+      const pol = resolveStaffPolicyForDate(cleanStaff, canCo, fromDate);
+      rawWindows.push({
+        fromDate,
+        toDate,
+        policy: describeUnifiedMinutePolicy(pol, { staff: cleanStaff, company: canCo, date: fromDate }),
+        otMin: 0, otHours: 0, otPayUsd: 0, lateRawMin: 0, lateBilledMin: 0, lateHours: 0,
+        lateDedUsd: 0, absDays: 0, absDedUsd: 0, extUsd: 0, netAttUsd: 0, missingOutCount: 0, logsCount: 0
+      });
+    }
+
+    const dailyRows = [];
+    let totOtMin = 0, totOtHours = 0, totOtPayUsd = 0;
+    let totLateRawMin = 0, totLateBilledMin = 0, totLateHours = 0, totLateDedUsd = 0;
+    let totAbsDays = 0, totAbsDedUsd = 0, totExtUsd = 0, totMissingOut = 0;
+
+    const roundMin = n => Math.round((Number(n) || 0) * 10) / 10;
+    const orderedAtt = allAtt.slice().sort((a, b) =>
+      String(a.set_date || a.rep_date || a.date || '').localeCompare(String(b.set_date || b.rep_date || b.date || ''))
+      || String(a.in_time || '').localeCompare(String(b.in_time || ''))
+    );
+
+    orderedAtt.forEach(a => {
+      const attType = String(a.type || a.status || 'Present').trim();
+      if (/^site\s*(?:present|off)$|^config/i.test(attType)) return;
+      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10) || fromDate;
+      const prof = getStaffContractProfile(cleanStaff, canCo, d);
+      const imp = computeAttendanceRowDollarImpact(a, prof, { fxRate });
+      const win = rawWindows.find(w => d >= w.fromDate && d <= w.toDate)
+        || (d < rawWindows[0].fromDate ? rawWindows[0] : rawWindows[rawWindows.length - 1]);
+
+      const otMinRow = (a.approved_ot_min != null && Number.isFinite(Number(a.approved_ot_min)))
+        ? roundMin(Number(a.approved_ot_min))
+        : roundMin(imp.otH * 60);
+      const lateBilledMinRow = (a.billable_late_min != null && Number.isFinite(Number(a.billable_late_min)))
+        ? roundMin(Number(a.billable_late_min))
+        : roundMin(imp.ltH * 60);
+      const lateRawMinRow = (a.raw_late_min != null && Number.isFinite(Number(a.raw_late_min)))
+        ? roundMin(Number(a.raw_late_min))
+        : lateBilledMinRow;
+      const isMissingOut = Boolean(
+        (a.single_punch_type === 'only_in')
+        || (String(a.in_time || '').trim() && !String(a.out_time || '').trim())
+        || /only\s+clock[- ]in|no\s+out|missing\s+out/i.test(`${a.penalty_summary || ''} ${a.notes || ''}`)
+      );
+
+      const effRow = resolveAttRowEffectiveHoursAndMults(a);
+      const isPendSalRow = Boolean(prof && prof.salaryPending);
+      const hrRateRow = isPendSalRow ? 0 : Number((prof && prof.hourlyRate) || 0);
+      const dailyRateRow = isPendSalRow ? 0 : Number((prof && prof.dailyRate) || 0);
+      const otMultRow = effRow.otMultOverride != null ? effRow.otMultOverride : Number((prof && prof.otMultiplier) || 1);
+      const lateMultRow = effRow.lateMultOverride != null ? effRow.lateMultOverride : Number((prof && prof.lateMultiplier) || 1);
+      const unroundedOtPay = isPendSalRow ? 0 : (effRow.otH * hrRateRow * otMultRow);
+      const unroundedLateDed = isPendSalRow ? 0 : (effRow.ltH * hrRateRow * lateMultRow);
+      const unroundedAbsDed = (!isPendSalRow && /^absence$|^absent$|^half\s*day$|unpaid/i.test(attType) && a.pay_treatment !== 'paid')
+        ? ((imp.lvD > 0 ? imp.lvD : (/^half\s*day$/i.test(attType) ? 0.5 : 1)) * dailyRateRow)
+        : 0;
+      const tallyNum = Number(a && a.tally != null ? a.tally : 0);
+      const unroundedExt = /^extra\s*usd$/i.test(attType)
+        ? tallyNum
+        : (/^extra\s*lbp$/i.test(attType) ? (tallyNum / fxRate) : 0);
+
+      win.logsCount += 1;
+      win.otMin = roundMin(win.otMin + otMinRow);
+      win.otHours = round2(win.otHours + imp.otH);
+      win._rawOtPay = Number(win._rawOtPay || 0) + unroundedOtPay;
+      win.otPayUsd = round2(win._rawOtPay);
+      win.lateRawMin = roundMin(win.lateRawMin + lateRawMinRow);
+      win.lateBilledMin = roundMin(win.lateBilledMin + lateBilledMinRow);
+      win.lateHours = round2(win.lateHours + imp.ltH);
+      win._rawLateDed = Number(win._rawLateDed || 0) + unroundedLateDed;
+      win.lateDedUsd = round2(win._rawLateDed);
+      if (/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType) && a.pay_treatment !== 'paid') {
+        win.absDays = round2(win.absDays + imp.lvD);
+        win._rawAbsDed = Number(win._rawAbsDed || 0) + unroundedAbsDed;
+        win.absDedUsd = round2(win._rawAbsDed);
+        totAbsDays = round2(totAbsDays + imp.lvD);
+      }
+      win._rawExt = Number(win._rawExt || 0) + unroundedExt;
+      win.extUsd = round2(win._rawExt);
+      win.netAttUsd = round2(win.otPayUsd + win.extUsd - win.lateDedUsd - win.absDedUsd);
+      if (isMissingOut) {
+        win.missingOutCount += 1;
+        totMissingOut += 1;
+      }
+
+      totOtMin = roundMin(totOtMin + otMinRow);
+      totOtHours = round2(totOtHours + imp.otH);
+      totOtPayUsd += unroundedOtPay;
+      totLateRawMin = roundMin(totLateRawMin + lateRawMinRow);
+      totLateBilledMin = roundMin(totLateBilledMin + lateBilledMinRow);
+      totLateHours = round2(totLateHours + imp.ltH);
+      totLateDedUsd += unroundedLateDed;
+      totAbsDedUsd += unroundedAbsDed;
+      totExtUsd += unroundedExt;
+
+      dailyRows.push({
+        id: a.id || '',
+        date: d,
+        inTime: String(a.in_time || '').trim(),
+        outTime: String(a.out_time || '').trim(),
+        type: attType,
+        isMissingOut,
+        otMin: otMinRow,
+        otHours: imp.otH,
+        otPayUsd: canDollars ? imp.otPayUsd : null,
+        lateRawMin: lateRawMinRow,
+        lateBilledMin: lateBilledMinRow,
+        lateHours: imp.ltH,
+        lateDedUsd: canDollars ? imp.lateDedUsd : null,
+        absDays: (/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType) && a.pay_treatment !== 'paid') ? imp.lvD : 0,
+        absDedUsd: canDollars ? ((/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType) && a.pay_treatment !== 'paid') ? imp.absDedUsd : 0) : null,
+        extUsd: canDollars ? imp.extUsd : null,
+        netUsd: canDollars ? imp.netImpactUsd : null,
+        ruleApplied: String(a.penalty_summary || win.policy.summaryEn || ''),
+        policyDesc: win.policy
+      });
+    });
+
+    totOtPayUsd = round2(totOtPayUsd);
+    totLateDedUsd = round2(totLateDedUsd);
+    totAbsDedUsd = round2(totAbsDedUsd);
+    totExtUsd = round2(totExtUsd);
+
+    const sr = opts && opts.reconcileStaffRow && typeof opts.reconcileStaffRow === 'object' ? opts.reconcileStaffRow : null;
+    if (rawWindows.length) {
+      const activeWin = [...rawWindows].reverse().find(w => w.logsCount > 0) || rawWindows[rawWindows.length - 1];
+      if (sr) {
+        const srAttOt = round2(sr.att_ot_pay != null ? sr.att_ot_pay : (sr.ot_pay || 0));
+        const srLate = round2(sr.late_ded || 0);
+        const srAbs = round2(sr.abs_ded || 0);
+        const srExt = round2(sr.extras || 0);
+        if (Math.abs(totOtPayUsd - srAttOt) > 0 && Math.abs(totOtPayUsd - srAttOt) <= 0.06) totOtPayUsd = srAttOt;
+        if (Math.abs(totLateDedUsd - srLate) > 0 && Math.abs(totLateDedUsd - srLate) <= 0.06) totLateDedUsd = srLate;
+        if (sr.abs_ded != null && Math.abs(totAbsDedUsd - srAbs) > 0 && Math.abs(totAbsDedUsd - srAbs) <= 0.06) totAbsDedUsd = srAbs;
+        if (Math.abs(totExtUsd - srExt) > 0 && Math.abs(totExtUsd - srExt) <= 0.06) totExtUsd = srExt;
+      }
+      const winGapLimit = Math.max(0.06, rawWindows.length * 0.01);
+      const sumWinField = key => round2(rawWindows.reduce((s, w) => s + Number(w[key] || 0), 0));
+      [
+        ['otPayUsd', totOtPayUsd],
+        ['lateDedUsd', totLateDedUsd],
+        ['absDedUsd', totAbsDedUsd],
+        ['extUsd', totExtUsd]
+      ].forEach(([field, target]) => {
+        const gap = round2(target - sumWinField(field));
+        if (Math.abs(gap) > 0 && Math.abs(gap) <= winGapLimit) {
+          activeWin[field] = round2(Number(activeWin[field] || 0) + gap);
+        }
+      });
+      activeWin.netAttUsd = round2(activeWin.otPayUsd + activeWin.extUsd - activeWin.lateDedUsd - activeWin.absDedUsd);
+    }
+
+    const netAttUsd = round2(totOtPayUsd + totExtUsd - totLateDedUsd - totAbsDedUsd);
+    const refProf = getStaffContractProfile(cleanStaff, canCo, toDate);
+    const activeWindows = rawWindows.map(w => {
+      const out = Object.assign({}, w, {
+        otPayUsd: canDollars ? w.otPayUsd : null,
+        lateDedUsd: canDollars ? w.lateDedUsd : null,
+        absDedUsd: canDollars ? w.absDedUsd : null,
+        extUsd: canDollars ? w.extUsd : null,
+        netAttUsd: canDollars ? w.netAttUsd : null
+      });
+      delete out._rawOtPay;
+      delete out._rawLateDed;
+      delete out._rawAbsDed;
+      delete out._rawExt;
+      return out;
+    });
+
+    return {
+      staff: cleanStaff,
+      company: canCo,
+      fromDate,
+      toDate,
+      canDollars,
+      hrRateUsd: canDollars ? round2(refProf.hourlyRate || 0) : null,
+      perMinRateUsd: canDollars ? Number(((refProf.hourlyRate || 0) / 60).toFixed(4)) : null,
+      dailyRateUsd: canDollars ? round2(refProf.dailyRate || 0) : null,
+      otMin: totOtMin,
+      otHours: totOtHours,
+      otPayUsd: canDollars ? totOtPayUsd : null,
+      lateRawMin: totLateRawMin,
+      lateBilledMin: totLateBilledMin,
+      lateHours: totLateHours,
+      lateDedUsd: canDollars ? totLateDedUsd : null,
+      absDays: totAbsDays,
+      absDedUsd: canDollars ? totAbsDedUsd : null,
+      extUsd: canDollars ? totExtUsd : null,
+      netAttUsd: canDollars ? netAttUsd : null,
+      missingOutCount: totMissingOut,
+      logsCount: dailyRows.length,
+      windows: activeWindows,
+      hasPolicySplit: activeWindows.length > 1,
+      rows: dailyRows
+    };
+  }
+
+  window.__mfgAttPayrollBridge = {
+    describeUnifiedMinutePolicy,
+    computeStaffAttendancePeriodBreakdown,
+    canViewPayrollDollarAmounts: u => canViewPayrollDollarAmounts(u),
+    allowedCompanyNames: u => allowedCompanyNames(u),
+    resolveStaffPolicyForDate: (s, co, d) => resolveStaffPolicyForDate(s, co, d),
+    resolveStaffShiftForDate: (s, co, d) => resolveStaffShiftForDate(s, co, d),
+    evaluateShiftPunchTiming: (s, co, d, i, o, opts) => evaluateShiftPunchTiming(s, co, d, i, o, opts),
+    getStaffContractProfile: (s, co, d) => getStaffContractProfile(s, co, d),
+    computeAttendanceRowDollarImpact: (a, p, opts) => computeAttendanceRowDollarImpact(a, p, opts),
+    getKioskStaffDirectory: (opts) => getKioskStaffDirectory(opts),
+    getStaffWorkRule: (s, co) => getStaffWorkRule(s, co),
+    computeStaffMonthPayrollPosition: (s, co, ym, txD) => computeStaffMonthPayrollPosition(s, co, ym, txD),
+    getPeriodCloseLock: (co, ind) => {
+      const g = (typeof window !== 'undefined' && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.getPeriodCloseLock === 'function')
+        ? window.MFG_AI_EDGE.getPeriodCloseLock(co, ind)
+        : null;
+      return typeof g === 'string' ? g : String((g && g.closedThroughDate) || '');
+    },
+    getLbpFxRate: (d, c) => getLbpFxRate(d, c),
+    defaultEntryCompany: () => defaultEntryCompany(),
+    canonCompany: co => canonCompany(co),
+    getActiveIndustry: co => getActiveIndustry(co),
+    getAlertParam: (id, k, def) => getAlertParam(id, k, def),
+    isAlertRuleEnabled: id => isAlertRuleEnabled(id),
+    getClusterMemoRev: () => `${_TIME24_WS_REV}|${(SEED && SEED._customRev) || 0}|${_ALERT_RULES_REV}|${STATE.enterpriseScalePreview ? 1 : 0}|${Object.keys((STATE.workSchedules && STATE.workSchedules.staffRules) || {}).length}|${((STATE.workSchedules && STATE.workSchedules.policyGroups) || []).length}`,
+    resolveStaffReceiptPhone: (s, co) => resolveStaffReceiptPhone(s, co),
+    sanitizeOutwardReceiptText: txt => sanitizeOutwardReceiptText(txt),
+    formatSalaryReceiptMonthForLang: (ym, lang) => formatSalaryReceiptMonthForLang(ym, lang),
+    getState: () => STATE,
+    getSeed: () => SEED,
+    getSeedDate: () => SEED_DATE,
+    getActiveIndustryBuList: co => getActiveIndustryBuList(co)
+  };
+
   function computeStaffMonthPayrollPosition(staffName, company, payrollMonth, txDate, excludeSalId = null, _skipPrev = false) {
     const sk = norm(staffName);
     if (!sk) return null;
@@ -42881,10 +43488,17 @@
       const effAttDate = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
       const txAttDate = String(a.date || effAttDate || '').slice(0, 10);
       const wk = attDateWeekdayInfo(effAttDate);
-      const isPerMinAtt = a.math_mode
-        ? a.math_mode === 'per_minute'
-        : (resolveStaffPolicyForDate(a.staff, a.company, effAttDate).math_mode === 'per_minute');
-      const workedH = Number(a.worked_hours != null && a.worked_hours > 0 ? a.worked_hours : computeShiftWorkedHours(inFmt, outFmt, isPerMinAtt));
+      const workedH = Number(
+        a.worked_hours != null && a.worked_hours > 0
+          ? a.worked_hours
+          : computeShiftWorkedHours(
+              inFmt,
+              outFmt,
+              a.math_mode
+                ? a.math_mode === 'per_minute'
+                : (resolveStaffPolicyForDate(a.staff, a.company, effAttDate).math_mode === 'per_minute')
+            )
+      );
       const otH = effAttH.otH;
       const regH = Number(a.regular_hours != null && a.regular_hours > 0 ? a.regular_hours : (workedH > 0 ? round2(Math.max(0, workedH - otH)) : 0));
       const ltH = effAttH.ltH;
@@ -43621,6 +44235,7 @@
         ${bannerHtml}
         ${wsReminderHtml}
         ${renderPayrollBiometricPolicySectionHtml()}
+        ${(window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.renderPayAttClusterBriefCardHtml === 'function') ? window.MFG_AI_EDGE.renderPayAttClusterBriefCardHtml({ company: STATE.company }) : ''}
         <div class="panel-card" id="payAttPanel">
           <div class="table-toolbar">
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -43639,6 +44254,8 @@
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
               <button type="button" class="btn btn-ghost-bar" id="payTogglePolicyBtn">${ic('clock')} ${STATE.payrollPolicyOpen ? 'Hide Shifts &amp; Policies' : 'Shifts, Policies &amp; Face ID'}</button>
+              <button type="button" class="btn btn-ghost-bar" id="payAttClusterBriefBtn">${ic('brain_radar')} OT Cluster Brief</button>
+              <button type="button" class="btn btn-ghost-bar" id="payAttPrePaydayCardBtn">${ic('receipt')} Pre-Payday Card</button>
               <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="attendance">${ic('kiosks')} Attendance Kiosk</button>
               ${canOpenFatherBackfill() ? (() => { const fbS = getFatherBackfillSummary(); return `<button type="button" class="btn btn-ghost-bar" data-open-father-backfill="1">${ic('reg_staff')} <span>Father's Name Backfill</span>${fbS.totalMissing > 0 ? ` <span class="badge warn" data-no-i18n="1">${fmtNum(fbS.totalMissing)}</span>` : ''}</button>`; })() : ''}
               ${renderLegacyTenthBackfillPillHtml({ company: COMPANY_BU_MATCH[STATE.company] || '', toolbarBtn: true })}
@@ -43828,15 +44445,51 @@
           const liveShiftTypes = getShiftTypes();
           const wsChartBase = activeWs.slice(0, 8);
           const wsCanRetire = canRetireWorkShift();
-          const wsChartRows = buildWorkShiftChartRows(wsChartBase, {
-            actuals: buildWorkShiftActuals(activeWs, attAll),
-            retire: getWorkShiftRetireInfo(wsChartBase, activeWs)
-          });
+          const wrongCandWs = filterRecords(allWs, { ignorePeriod: true, ignoreSearch: true }).filter(r => !r.end_date);
+          const wsAuditSig = list => list.map(r => `${r.id}:${r.updated_at || ''}:${r.start_date || ''}:${r.end_date || ''}:${r.start_time || ''}:${r.end_time || ''}:${r.grace_min ?? ''}:${r.early_leave_grace_min ?? ''}:${r.is_bu_default ? 1 : 0}`).join(',');
+          const wsAuditKey = [
+            seatScopeSig(), STATE.company || '', STATE.period || '', STATE.dateFrom || '', STATE.dateTo || '',
+            STATE.customStart || '', STATE.customEnd || '', STATE.basis || '', STATE.search || '',
+            STATE.demoCompanyIndustry || '', isOfficialScopeActive() ? 1 : 0, todayISO(), _TIME24_WS_REV,
+            (SEED && SEED._customRev) || 0, (STATE && STATE._customRev) || 0,
+            (SEED && SEED._industryRev) || 0, (STATE && STATE._indCustomRev) || 0,
+            (SEED && SEED._tableRev && SEED._tableRev.attendance) || 0,
+            (SEED && SEED._tableRev && SEED._tableRev.work_shifts) || 0,
+            (SEED && SEED._tableRev && SEED._tableRev.employments) || 0,
+            ((SEED && SEED.records && SEED.records.attendance) || []).length,
+            attAll.length,
+            attAll.length && attAll[0] ? String(attAll[0].id || '') : '',
+            attAll.length && attAll[attAll.length - 1] ? String(attAll[attAll.length - 1].id || '') : '',
+            ((SEED && SEED.records && SEED.records.employments) || []).length,
+            ((STATE.customRecords && STATE.customRecords.employments) || []).length,
+            wsAuditSig(activeWs), wsAuditSig(wrongCandWs)
+          ].join('|');
+          let wsAudit = window.__MFG_SPEED_CACHES_OFF ? null : _PAY_WS_AUDIT_KEPT.get(wsAuditKey);
+          if (wsAudit) {
+            _PAY_WS_AUDIT_KEPT.delete(wsAuditKey);
+            _PAY_WS_AUDIT_KEPT.set(wsAuditKey, wsAudit);
+          } else {
+            wsAudit = {
+              wsChartRows: buildWorkShiftChartRows(wsChartBase, {
+                actuals: buildWorkShiftActuals(activeWs, attAll),
+                retire: getWorkShiftRetireInfo(wsChartBase, activeWs)
+              }),
+              // Staff Clocking Another Shift (owner idea 2026-11-13): who clocks nearest another shift than the one
+              // they are on, with one-click Assign.
+              // The search box narrows registers, not this list (it would drop candidate shifts and the default).
+              wrongShiftRows: getStaffOnWrongShift(wrongCandWs)
+            };
+            if (!window.__MFG_SPEED_CACHES_OFF) {
+              if (_PAY_WS_AUDIT_KEPT.size >= 32) {
+                const oldestWs = _PAY_WS_AUDIT_KEPT.keys().next().value;
+                if (oldestWs !== undefined) _PAY_WS_AUDIT_KEPT.delete(oldestWs);
+              }
+              _PAY_WS_AUDIT_KEPT.set(wsAuditKey, wsAudit);
+            }
+          }
+          const wsChartRows = wsAudit.wsChartRows;
           const wsShowCo = new Set(wsChartBase.map(r => String(r.company || ''))).size > 1;
-          // Staff Clocking Another Shift (owner idea 2026-11-13): who clocks nearest another shift than the one
-          // they are on, with one-click Assign.
-          // The search box narrows registers, not this list (it would drop candidate shifts and the default).
-          const wrongShiftRows = getStaffOnWrongShift(filterRecords(allWs, { ignorePeriod: true, ignoreSearch: true }).filter(r => !r.end_date));
+          const wrongShiftRows = wsAudit.wrongShiftRows;
           const wsCanAssign = canAssignStaffShift();
           const wrongAssignable = wrongShiftRows.length;
           const wrongShowCo = new Set(wrongShiftRows.map(r => String(r.company || ''))).size > 1;
@@ -44504,6 +45157,7 @@
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_staff">${ic('reg_staff')} Staff Registry (All BUs)</button>
             ${canAccessRdlReport('10') ? `<button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="10">${ic('printer')} Payroll RDL (#10)</button>` : ''}
+            <button type="button" class="btn btn-ghost-bar" id="payOpenPrePaydayCardBtn">${ic('receipt')} Pre-Payday Card</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_attendance">${ic('payroll_attendance')} Attendance (${fmtNum(attAll.length)})</button>
             ${exportBtn('paySalPanel', 'Salary_Disbursements')}
@@ -44613,7 +45267,7 @@
                 const canSetRegPend = canShowAttDollars && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance')) && Boolean(r.pending_emp_id);
                 return `
                 <tr class="rrow ${!r.is_active ? 'pbi-row-amber' : ''}" data-rkey="employments" data-rid="${esc(r.salary_pending && r.pending_emp_id ? r.pending_emp_id : r.staff)}">
-                  <td>${relLink('employments', r.staff, r.staff, true)}${!r.hasContract ? ' <span class="badge badge-warn" data-ui-tip="Salary payment without an employment contract">No contract</span>' : (r.salary_pending ? ` <span class="badge badge-warn" data-ui-tip="${canShowAttDollars ? 'Active contract awaiting final salary assignment ($0.00)' : 'Active contract awaiting final salary assignment'}">Pending Salary</span>${canSetRegPend ? ` <button type="button" class="btn btn-primary" style="padding:1px 7px;font-size:10.5px;margin-left:4px" data-set-pending-salary-id="${esc(r.pending_emp_id)}">$ Enter Salary</button>` : ''}` : '')}</td>
+                  <td>${relLink('employments', r.staff, r.staff, true)} <button type="button" class="btn btn-ghost-bar" style="padding:1px 6px;font-size:10px;margin-inline-start:4px" data-open-prepayday-card="${esc(r.staff)}" data-open-prepayday-co="${esc(r.company || '')}" title="Open Pre-Payday Attendance Card">Card</button>${!r.hasContract ? ' <span class="badge badge-warn" data-ui-tip="Salary payment without an employment contract">No contract</span>' : (r.salary_pending ? ` <span class="badge badge-warn" data-ui-tip="${canShowAttDollars ? 'Active contract awaiting final salary assignment ($0.00)' : 'Active contract awaiting final salary assignment'}">Pending Salary</span>${canSetRegPend ? ` <button type="button" class="btn btn-primary" style="padding:1px 7px;font-size:10.5px;margin-inline-start:4px" data-set-pending-salary-id="${esc(r.pending_emp_id)}">$ Enter Salary</button>` : ''}` : '')}</td>
                   <td>${coBadge(r.company)}</td>
                   <td><span class="badge ${r.is_active ? 'badge-ok' : 'badge-warn'}">${esc(r.status)}</span></td>
                   ${canShowAttDollars ? `<td class="r"${r.active_months ? ` data-ui-tip="${esc(`${r.active_months} active contract months${r.reimb ? ` · Package Base + Reimb: ${fmtUSD(round2(r.base + r.reimb), 2)}` : ''}${r.vac_rem ? ` · Rem Vacation: ${fmtNum(r.vac_rem, 1)}d` : ''}`)}"` : ''}>${r.salary_pending && r.base === 0 ? '<span class="badge badge-warn">Pending ($0.00)</span>' : fmtUSD(r.base, 2)}</td><td class="r">${r.reimb ? fmtUSD(r.reimb, 2) : '-'}</td>` : ''}
@@ -45011,6 +45665,9 @@
 
   let _WF_AUDIT_CACHE = null;
   const _WF_AUDIT_KEPT = new Map();
+  const _PAY_WS_AUDIT_KEPT = new Map();
+  const _PAY_BIO_SUM_KEPT = new Map();
+  const _FATHER_BACKFILL_KEPT = new Map();
   let _WF_MAP_CACHE = null;
 
   function buildWorkforceMapData(opts) {
@@ -59011,7 +59668,8 @@
           rawMetric: 0, rawSecondary: 0,
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'hld_due_matrix', navLabel: 'Open Due Matrix'
         },
-        buildMapsQuotaSentinelItem({ ruleId: 'ind_hld_06', itemId: 'H6', company: scopeLabel })
+        buildMapsQuotaSentinelItem({ ruleId: 'ind_hld_06', itemId: 'H6', company: scopeLabel }),
+        buildIndOtClusterItem('H7', 'ind_hld_07', 'Bdeir Holding · Group')
       ]);
     }
 
@@ -59083,7 +59741,8 @@
           rawMetric: arrRows.length, rawSecondary: Math.round(s.totalMemArrears),
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'hsp_memberships', navLabel: 'Open Memberships'
         },
-        buildMapsQuotaSentinelItem({ ruleId: 'ind_hsp_06', itemId: 'R6', company: scopeLabel })
+        buildMapsQuotaSentinelItem({ ruleId: 'ind_hsp_06', itemId: 'R6', company: scopeLabel }),
+        buildIndOtClusterItem('R7', 'ind_hsp_07', scopeLabel)
       ]);
     }
 
@@ -59155,7 +59814,8 @@
           rawMetric: unallocFiles.length, rawSecondary: Math.round(s.unallocatedLandedUsd),
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'trd_landed', navLabel: 'Open Landed Cost'
         },
-        buildMapsQuotaSentinelItem({ ruleId: 'ind_trd_06', itemId: 'T6', company: scopeLabel })
+        buildMapsQuotaSentinelItem({ ruleId: 'ind_trd_06', itemId: 'T6', company: scopeLabel }),
+        buildIndOtClusterItem('T7', 'ind_trd_07', scopeLabel)
       ]);
     }
 
@@ -59226,7 +59886,8 @@
           rawMetric: re.vacantUnitCount, rawSecondary: s.totalUnits,
           scrollPanel: 'industrySentinelsDetailPanel', navView: 're_units', navLabel: 'Open Building Units'
         },
-        buildMapsQuotaSentinelItem({ ruleId: 'ind_re_06', itemId: 'P6', company: scopeLabel })
+        buildMapsQuotaSentinelItem({ ruleId: 'ind_re_06', itemId: 'P6', company: scopeLabel }),
+        buildIndOtClusterItem('P7', 'ind_re_07', scopeLabel)
       ]);
     }
 
@@ -59297,11 +59958,67 @@
           rawMetric: s.openClaimsCount, rawSecondary: s.totalPolicyCount,
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'ins_claims', navLabel: 'Open Claims'
         },
-        buildMapsQuotaSentinelItem({ ruleId: 'ind_ins_06', itemId: 'I6', company: scopeLabel })
+        buildMapsQuotaSentinelItem({ ruleId: 'ind_ins_06', itemId: 'I6', company: scopeLabel }),
+        buildIndOtClusterItem('I7', 'ind_ins_07', scopeLabel)
       ]);
     }
 
     return [];
+  }
+
+  function buildIndOtClusterItem(id, ruleId, scopeLabel) {
+    const lb = getAlertParam(ruleId, 'lookbackDays', 30);
+    const bm = getAlertParam(ruleId, 'bandMin', 4);
+    const mc = getAlertParam(ruleId, 'minCount', 4);
+    const digest = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.computeOtThresholdClusterDigest === 'function')
+      ? window.MFG_AI_EDGE.computeOtThresholdClusterDigest({ company: STATE.company, lookbackDays: lb, bandMin: bm, minCount: mc })
+      : { scannedPunches: 0, clusters: [] };
+    const cls = digest.clusters || [];
+    const lead = cls[0] || null;
+    return {
+      id,
+      ruleId,
+      code: 'Attendance & Shifts',
+      title: '30-Day OT Boundary & Snap Cluster Watchdog',
+      detail: lead
+        ? `${fmtNum(cls.length)} boundary cluster(s) across ${fmtNum(digest.scannedPunches)} punches in ${fmtNum(lb)}d: ${lead.headlineEn}`
+        : `Scanned ${fmtNum(digest.scannedPunches)} clock-outs in ${fmtNum(lb)}d within +${fmtNum(bm)}m band: clean punch distribution.`,
+      severity: cls.length > 0 ? 'warn' : 'ok',
+      badge: cls.length > 0 ? `${fmtNum(cls.length)} CLUSTERS` : 'CLEAN PUNCHES',
+      company: scopeLabel,
+      rawMetric: cls.length,
+      rawSecondary: digest.scannedPunches || 0,
+      scrollPanel: 'industrySentinelsDetailPanel',
+      navView: 'payroll_attendance',
+      navLabel: 'Open Attendance'
+    };
+  }
+
+  function buildIndOtClusterExcTable(id, ruleId) {
+    const lb = getAlertParam(ruleId, 'lookbackDays', 30);
+    const bm = getAlertParam(ruleId, 'bandMin', 4);
+    const mc = getAlertParam(ruleId, 'minCount', 4);
+    const digest = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.computeOtThresholdClusterDigest === 'function')
+      ? window.MFG_AI_EDGE.computeOtThresholdClusterDigest({ company: STATE.company, lookbackDays: lb, bandMin: bm, minCount: mc })
+      : { clusters: [] };
+    return {
+      id,
+      tbl: 'attendance',
+      title: '30-DAY OT THRESHOLD & SNAP BOUNDARY CLUSTERS',
+      headers: ['Company', 'Shift', 'Boundary Cliff', 'Punches', 'Offset Range', 'Top Staff'],
+      rows: (digest.clusters || []).slice(0, 8).map(c => ({
+        rid: c.id,
+        co: c.company,
+        cells: [
+          c.company,
+          c.shiftName,
+          c.cliffLabel,
+          `${fmtNum(c.count)} (${fmtNum(c.sharePct)}%)`,
+          `+${fmtNum(c.minOffset)}m to +${fmtNum(c.maxOffset)}m`,
+          (c.topStaff || []).slice(0, 3).map(s => `${s.staff} (${s.count})`).join(', ')
+        ]
+      }))
+    };
   }
 
   function buildIndustrySentinelExceptionTables(ind) {
@@ -59354,7 +60071,8 @@
             rid: `PAIR-${i + 1}`, co: 'Bdeir Holding',
             cells: [String(p.pairKey || '').replace(/[↔→]/g, ' to '), fmtNum(p.count || 0), fmtUSD(p.matchedUsd || 0, 0), fmtUSD(p.openUsd || 0, 0), '100% Tied']
           }))
-        }
+        },
+        buildIndOtClusterExcTable('H7', 'ind_hld_07')
       ];
     }
     if (ind === 'Hospitality & Resorts') {
@@ -59408,7 +60126,8 @@
             const wf = (canWf && Number(m.balance_usd || 0) > 0) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="hsp_mem_collect" data-wf-id="${esc(m.id)}" data-wf-co="${esc(m.company)}" data-wf-member="${esc(m.member)}" data-wf-unit="${esc(m.unit)}" data-wf-season="${esc(m.season)}" data-wf-contract="${m.contract_usd}">Collect</button>` : '<span class="badge badge-ok">Paid</span>';
             return { rid: m.id, co: m.company, cells: [m.id, m.company, m.member, m.unit, fmtUSD(m.contract_usd, 0), fmtUSD(m.balance_usd, 0)], rawLastHtml: wf };
           })
-        }
+        },
+        buildIndOtClusterExcTable('R7', 'ind_hsp_07')
       ];
     }
     if (ind === 'Automotive & Heavy Trading') {
@@ -59468,7 +60187,8 @@
             const wf = (canWf && unUsd > 0) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="trd_imp_landed" data-wf-id="${esc(f.id)}" data-wf-co="${esc(f.company)}" data-wf-supplier="${esc(supp)}" data-wf-origin="${esc(orig)}" data-wf-bl="${esc(f.bl_no || imp.container_bl || '')}" data-wf-ord="${f.ordered_qty || imp.ordered_qty || 20}" data-wf-fob="${fobUsd || 40000}" data-wf-add="${unUsd}">+ Landed</button>` : '<span class="badge badge-ok">Capitalized</span>';
             return { rid: f.id, co: f.company, cells: [f.import_file || f.id, f.company, `${supp} (${orig})`, fmtUSD(fobUsd, 0), fmtUSD(unUsd, 0)], rawLastHtml: wf };
           })
-        }
+        },
+        buildIndOtClusterExcTable('T7', 'ind_trd_07')
       ];
     }
     if (ind === 'Real Estate & Property') {
@@ -59526,7 +60246,8 @@
             rid: u.id, co: u.company || 'Properties',
             cells: [u.id, u.property, u.unit_name || u.unit_code || u.code || u.name || '-', `${fmtNum(u.area_sqm || 0)} m2`, fmtUSD(u.market_rent_usd || u.annual_rent_usd || 0, 0), u.status || u.occupancy || 'Occupied']
           }))
-        }
+        },
+        buildIndOtClusterExcTable('P7', 'ind_re_07')
       ];
     }
     // Insurance & Brokerage
@@ -59580,7 +60301,8 @@
           rid: c.id, co: 'Insurance Company',
           cells: [c.id, c.loss_date, c.policy_no, c.client, fmtUSD(c.claimed_usd, 0), fmtUSD(c.approved_usd, 0), c.status]
         }))
-      }
+      },
+      buildIndOtClusterExcTable('I7', 'ind_ins_07')
     ];
   }
 
@@ -69237,12 +69959,12 @@
     }
 
     let impliedInd = '';
-    if (/^H[1-5]$/i.test(reqRuleId)) impliedInd = 'Holding & Treasury';
-    else if (/^R[1-5]$/i.test(reqRuleId)) impliedInd = 'Hospitality & Resorts';
-    else if (/^T[1-5]$/i.test(reqRuleId)) impliedInd = 'Automotive & Heavy Trading';
-    else if (/^P[1-5]$/i.test(reqRuleId)) impliedInd = 'Real Estate & Property';
-    else if (/^I[1-5]$/i.test(reqRuleId)) impliedInd = 'Insurance & Brokerage';
-    else if (/^S(?:[2-9]|1[01])$/i.test(reqRuleId)) impliedInd = 'Manufacturing';
+    if (/^H[1-7]$/i.test(reqRuleId)) impliedInd = 'Holding & Treasury';
+    else if (/^R[1-7]$/i.test(reqRuleId)) impliedInd = 'Hospitality & Resorts';
+    else if (/^T[1-7]$/i.test(reqRuleId)) impliedInd = 'Automotive & Heavy Trading';
+    else if (/^P[1-7]$/i.test(reqRuleId)) impliedInd = 'Real Estate & Property';
+    else if (/^I[1-7]$/i.test(reqRuleId)) impliedInd = 'Insurance & Brokerage';
+    else if (/^(?:S(?:[2-9]|1[0-4])|M24|G_MAPS_QUOTA)$/i.test(reqRuleId)) impliedInd = 'Manufacturing';
 
     let reqCoKey = '';
     if (options.company) {
@@ -69993,9 +70715,43 @@
               : 'Aucun accord en vigueur ne livre sous son prix départ plus le gasoil.',
             'Ouvrez chaque accord signalé et relevez le tarif livré au prix plancher, ou confiez le site à un transporteur, avant validation.'
           ];
+        } else if (rid === 'S14') {
+          const digest = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.computeOtThresholdClusterDigest === 'function')
+            ? window.MFG_AI_EDGE.computeOtThresholdClusterDigest({
+              company: evalCoKey,
+              lookbackDays: getAlertParam('S14', 'lookbackDays', 30),
+              bandMin: getAlertParam('S14', 'bandMin', 4),
+              minCount: getAlertParam('S14', 'minCount', 4)
+            })
+            : { scannedPunches: 0, lookbackDays: 30, clusters: [] };
+          const cls = digest.clusters || [];
+          const leadCl = cls[0] || null;
+          rowCnt = cls.length;
+          physValEn = `${fmtNum(rowCnt, 0)} Cluster${rowCnt === 1 ? '' : 's'}`;
+          physValAr = `${fmtNum(rowCnt, 0)} تكتّل`;
+          physValFr = `${fmtNum(rowCnt, 0)} Palier${rowCnt === 1 ? '' : 's'}`;
+          topParty = leadCl ? sanitizePlain(`${leadCl.company} · ${leadCl.shiftName}`) : 'No Repeat Offenders';
+          topSubEn = leadCl ? sanitizePlain(`${leadCl.cliffLabel} (${leadCl.count}/${leadCl.shiftTotal} · +${leadCl.minOffset}..+${leadCl.maxOffset}m)`) : 'Distribution clean';
+          topSubAr = leadCl ? sanitizePlain(`${leadCl.shiftName}: ${leadCl.count} بصمة (${leadCl.sharePct}%)`) : 'التوزيع سليم';
+          topSubFr = leadCl ? sanitizePlain(`${leadCl.shiftName} : ${leadCl.count} pointages (${leadCl.sharePct}%)`) : 'Répartition saine';
+          bEn = [
+            `Scanned ${fmtNum(digest.scannedPunches || 0)} clock-out punches across ${fmtNum(digest.lookbackDays || 30)} days under Per-Minute shift policies: ${fmtNum(rowCnt)} OT threshold or snap boundary cluster(s) detected.`,
+            leadCl ? sanitizePlain(leadCl.headlineEn) : 'No concentration spikes right above overtime thresholds or snap block cutoffs.',
+            leadCl ? sanitizePlain(leadCl.recommendationEn) : 'Keep active overtime start thresholds and snap rules unchanged.'
+          ];
+          bAr = [
+            `تم فحص ${fmtNum(digest.scannedPunches || 0)} بصمة خروج خلال آخر ${fmtNum(digest.lookbackDays || 30)} يوماً: رُصد ${fmtNum(rowCnt)} تكتّل قرب عتبات أو حدود تثبيت الإضافي.`,
+            leadCl ? sanitizePlain(leadCl.headlineAr) : 'لا يوجد تجمع غير طبيعي لبصمات الخروج عند حدود العمل الإضافي.',
+            leadCl ? sanitizePlain(leadCl.recommendationAr) : 'أبقِ عتبات العمل الإضافي وحدود التثبيت الحالية دون تعديل.'
+          ];
+          bFr = [
+            `${fmtNum(digest.scannedPunches || 0)} pointages de sortie analysés sur ${fmtNum(digest.lookbackDays || 30)} jours : ${fmtNum(rowCnt)} regroupement(s) sur seuil ou palier d'heures sup. détecté(s).`,
+            leadCl ? sanitizePlain(leadCl.headlineFr) : 'Aucune concentration anormale aux seuils ou paliers d\'heures sup.',
+            leadCl ? sanitizePlain(leadCl.recommendationFr) : 'Conservez les seuils et paliers d\'heures sup. actuels.'
+          ];
         }
       } else {
-        // 5 Sibling Verticals: H1-H5, R1-R5, T1-T5, P1-P5, I1-I5
+        // 5 Sibling Verticals: H1-H7, R1-R7, T1-T7, P1-P7, I1-I7
         const sec = indExcTables.find(t => t.id === rid) || null;
         const secRows = (sec && sec.rows) || [];
         rowCnt = ruleItem.severity === 'ok' ? 0 : Math.max(1, safeNum(ruleItem.rawMetric) || secRows.length);
@@ -70007,7 +70763,32 @@
           }
           return 0;
         };
-        if (rid === 'H1' && icOps) {
+        if (/^[HRTPI]7$/i.test(rid)) {
+          const firstRow = secRows[0] || null;
+          rowCnt = secRows.length;
+          physValEn = `${fmtNum(rowCnt, 0)} Cluster${rowCnt === 1 ? '' : 's'}`;
+          physValAr = `${fmtNum(rowCnt, 0)} تكتّل`;
+          physValFr = `${fmtNum(rowCnt, 0)} Palier${rowCnt === 1 ? '' : 's'}`;
+          topParty = firstRow ? sanitizePlain(`${firstRow.cells[0]} · ${firstRow.cells[1]}`) : 'No Repeat Offenders';
+          topSubEn = firstRow ? sanitizePlain(`${firstRow.cells[2]} (${firstRow.cells[3]} · ${firstRow.cells[4]})`) : 'Distribution clean';
+          topSubAr = firstRow ? sanitizePlain(`${firstRow.cells[1]} · ${firstRow.cells[3]}`) : 'التوزيع سليم';
+          topSubFr = firstRow ? sanitizePlain(`${firstRow.cells[1]} · ${firstRow.cells[3]}`) : 'Répartition saine';
+          bEn = [
+            `${sanitizePlain(ruleItem.title)} across ${companyEn}: ${sanitizePlain(ruleItem.detail)}`,
+            firstRow ? `Top cluster: ${topParty} (${topSubEn}) - staff: ${sanitizePlain(firstRow.cells[5] || 'Multiple')}.` : 'All 30-day clock-outs sit cleanly away from OT threshold and snap boundaries.',
+            'Review shift OT start thresholds or snap-to-block settings under Attendance & Overtime.'
+          ];
+          bAr = [
+            `فحص عتبات الإضافي في ${companyAr}: تم رصد ${fmtNum(rowCnt, 0)} تكتّل حدودي خلال آخر 30 يوماً.`,
+            firstRow ? `التكتّل الأبرز لدى ${locOffender(topParty, 'ar')} (${topSubAr}).` : 'توزيع بصمات الخروج سليم ولا يظهر تجمعاً عند حدود الإضافي.',
+            'راجع عتبات احتساب الإضافي أو التثبيت في شاشة الحضور والدوام قبل الاعتماد.'
+          ];
+          bFr = [
+            `Contrôle seuils HS sur ${companyFr} : ${fmtNum(rowCnt, 0)} regroupement(s) détecté(s) sur 30 jours.`,
+            firstRow ? `Concentration principale sur ${locOffender(topParty, 'fr')} (${topSubFr}).` : 'Répartition saine des pointages de sortie autour des seuils HS.',
+            'Revoyez les seuils ou paliers d\'heures sup. dans Pointage & Présence avant signature.'
+          ];
+        } else if (rid === 'H1' && icOps) {
           expUsd = round2(safeNum(icOps.totalOpenUsd));
           rowCnt = safeNum(icOps.openCount);
           const leg0 = (icOps.openLegs && icOps.openLegs[0]) || null;
@@ -70286,26 +71067,31 @@
         S11: { ar: 'مراقب فروقات وأعطال المازوت (سقف 5%)', fr: 'Surveillance écarts & pannes gasoil (seuil 5%)' },
         S12: { ar: 'اتفاقيات التوصيل دون نقطة تعادل النقل', fr: 'Accords de livraison sous le seuil de rentabilité du transport' },
         S13: { ar: 'مراقب انتهاء تصاريح العمل والإقامات والهويات', fr: 'Surveillance des expirations de permis, résidences et pièces d’identité' },
+        S14: { ar: 'مراقب تكتّل عتبات وتثبيت الإضافي (30 يوماً)', fr: 'Veille concentration seuils & paliers HS (30j)' },
         H1: { ar: 'تحويلات الشركات الشقيقة غير المقابلة', fr: 'Transferts inter-sociétés sans contrepartie miroir' },
         H2: { ar: 'مراقب فروقات المسارات الثنائية للشركات الشقيقة', fr: 'Contrôle d écart bilatéral entre sociétés sœurs' },
         H3: { ar: 'رقابة سقف مصاريف الخدمات المشتركة للقابضة', fr: 'Plafond des charges partagées Holding' },
         H4: { ar: 'تسهيلات القروض المركزية وجداول السداد', fr: 'Conventions de prêts centraux & échéanciers' },
         H5: { ar: 'مطابقة حسابات الرقابة الموحدة للشركات الشقيقة', fr: 'Pointage consolidé des sous-comptes sociétés sœurs' },
+        H7: { ar: 'مراقب تكتّل حدود الإضافي (القابضة)', fr: 'Veille seuils & paliers HS (Holding)' },
         R1: { ar: 'التحقق من إقفال إيرادات المرافق والشاليهات اليومية', fr: 'Vérification clôture recettes journalières & chalets' },
         R2: { ar: 'فروقات إقفال صناديق نقاط البيع مقابل الإيرادات', fr: 'Écarts de clôture caisses POS vs recettes' },
         R3: { ar: 'مراقب نسبة تكلفة المطبخ والبار والقبو', fr: 'Contrôle ratio coût cuisine, bar & cave' },
         R4: { ar: 'مراقب استهلاك مازوت المولدات والطاقة الشمسية', fr: 'Surveillance consommation groupes électrogènes & solaire' },
         R5: { ar: 'متأخرات العضويات الموسمية للشاليهات والكابانا', fr: 'Arriérés d adhésions saisonnières chalets & cabanas' },
+        R7: { ar: 'مراقب تكتّل حدود الإضافي (الضيافة)', fr: 'Veille seuils & paliers HS (Hôtellerie)' },
         T1: { ar: 'حارس تسلسل دفاتر الفواتير الورقية', fr: 'Contrôle séquentiel des carnets de factures' },
         T2: { ar: 'مراقب الحد الأدنى لهامش ربح الشاحنات والقطع', fr: 'Garde-fou marge plancher camions & pièces' },
         T3: { ar: 'الذمم المدينة المتأخرة مقابل الدفعات المقدمة المفصولة', fr: 'Créances échues vs avances clients séparées' },
         T4: { ar: 'حد إعادة الطلب لقطع الغيار عبر 5 مستودعات', fr: 'Seuil de réapprovisionnement pièces sur 5 dépôts' },
         T5: { ar: 'مصاريف الشحن والجمارك غير المحملة على الاستيراد', fr: 'Fret, douane & transit non imputés sur imports' },
+        T7: { ar: 'مراقب تكتّل حدود الإضافي (الشاحنات والقطع)', fr: 'Veille seuils & paliers HS (Négoce)' },
         P1: { ar: 'عقود الإيجار المنتهية خلال 90 يوماً والزيادة التدرجية', fr: 'Baux expirant sous 90 jours & indexation' },
         P2: { ar: 'فترات الإيجار النشطة غير المفوترة وذمم الإيجارات', fr: 'Périodes locatives non facturées & arriérés loyers' },
         P3: { ar: 'أقساط بيع العقارات المستحقة ونقل سندات الملكية', fr: 'Échéances acheteurs dues & transfert de titres' },
         P4: { ar: 'أوامر الصيانة على حساب المستأجر بانتظار الفوترة', fr: 'Travaux imputables aux locataires à refacturer' },
         P5: { ar: 'الوحدات الشاغرة ومنع تداخل العقود (/2400 سهم)', fr: 'Unités vacantes & garde anti-chevauchement (/2400 parts)' },
+        P7: { ar: 'مراقب تكتّل حدود الإضافي (العقارات)', fr: 'Veille seuils & paliers HS (Immobilier)' },
         I1: { ar: 'بوالص التأمين المستحقة للتجديد والمنتهية غير المجددة', fr: 'Polices à renouveler sous 90 jours & contrats expirés' },
         I2: { ar: 'فروقات كشوفات عمولات شركات التأمين مقابل الاتفاقيات', fr: 'Écarts relevés commissions compagnies vs accords' },
         I3: { ar: 'الأقساط المحصلة قيد الأمانة والمستحق لشركات التأمين', fr: 'Primes encaissées détenues & net à reverser compagnies' },
@@ -70317,7 +71103,8 @@
         R6: { ar: 'مراقب الحصة المجانية لخرائط وأماكن Google الشهرية', fr: 'Garde-fou du quota mensuel gratuit Google Maps & Places' },
         T6: { ar: 'مراقب الحصة المجانية لخرائط وأماكن Google الشهرية', fr: 'Garde-fou du quota mensuel gratuit Google Maps & Places' },
         P6: { ar: 'مراقب الحصة المجانية لخرائط وأماكن Google الشهرية', fr: 'Garde-fou du quota mensuel gratuit Google Maps & Places' },
-        I6: { ar: 'مراقب الحصة المجانية لخرائط وأماكن Google الشهرية', fr: 'Garde-fou du quota mensuel gratuit Google Maps & Places' }
+        I6: { ar: 'مراقب الحصة المجانية لخرائط وأماكن Google الشهرية', fr: 'Garde-fou du quota mensuel gratuit Google Maps & Places' },
+        I7: { ar: 'مراقب تكتّل حدود الإضافي (التأمين)', fr: 'Veille seuils & paliers HS (Assurance)' }
       };
       const tLoc = RULE_TITLES_LOC[targetItem.id] || null;
       const cleanRuleTitleEn = sanitizePlain(`${targetItem.id} · ${targetItem.title}`);
@@ -72519,17 +73306,20 @@
       promptChipsEn = [
         'Summarize open staff advances and net payroll payable',
         'Are there any attendance lateness or unscheduled overtime flags?',
-        'Which employees have pending salary adjustments?'
+        'Which employees have pending salary adjustments?',
+        'Scan last 30 days for OT threshold and snap boundary clustering'
       ];
       promptChipsAr = [
         'لخص سلف الموظفين المفتوحة وصافي الرواتب المستحقة',
         'هل توجد ملاحظات تأخير في الحضور أو ساعات عمل إضافي غير مجدولة؟',
-        'من هم الموظفون الذين لديهم تعديلات رواتب معلقة؟'
+        'من هم الموظفون الذين لديهم تعديلات رواتب معلقة؟',
+        'افحص آخر 30 يوماً بحثاً عن تجمّع بصمات الخروج قرب عتبات أو قوالب الإضافي'
       ];
       promptChipsFr = [
         'Résumez les acomptes ouverts et la paie nette à payer',
         'Y a-t-il des alertes de retard ou d\'heures supplémentaires non planifiées ?',
-        'Quels salariés ont des ajustements de salaire en attente ?'
+        'Quels salariés ont des ajustements de salaire en attente ?',
+        'Analyser les 30 derniers jours pour les regroupements autour des seuils et paliers HS'
       ];
     } else {
       // Universal fallback covering #overview, #daily_ops, #ledger, #statements, #pbi, #sentinels, #kiosks, #users, #contracts, #tables, and all industry views
@@ -113422,6 +114212,7 @@
           ${isGeoEntityInspector && !hasInspSitePin && canModifyRecord() && !isInspWordOnly ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPinSiteQuickBtn">${ic('pin')} Pin Location</button>` : ''}
           ${(key === 'sites' || key === 'regions' || ((key === 'sales_tickets' || key === 'raw_purchases') && row.site)) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspViewOnMapBtn">${ic('reg_sites')} View on Map</button>` : ''}
           <button type="button" class="pa-cmd-btn" data-insp-open-hub="${esc(key)}">${ic('tables')} Open ${esc(INSPECT_LABELS[key] || key)} Table</button>
+          ${(['employments', 'staff_members', 'employees', 'attendance', 'salaries', 'freelance_entries', 'staff_assignments', 'drivers'].includes(key) && row && (row.staff || row.name) && (canViewView('payroll_attendance') || canViewView('payroll'))) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPrePaydayCardBtn">${ic('receipt')} Pre-Payday Card</button>` : ''}
           <button type="button" class="pa-cmd-btn" id="inspPrintBtn">${ic('printer')} Print Form</button>
         </div>
       </div>
@@ -113891,6 +114682,21 @@
 
     const prBtn = $('inspPrintBtn');
     if (prBtn) prBtn.addEventListener('click', () => window.print());
+    const inspPpdBtn = $('inspPrePaydayCardBtn');
+    if (inspPpdBtn) {
+      inspPpdBtn.addEventListener('click', () => {
+        const sNm = row.staff || row.name || '';
+        const sCo = row.company || '';
+        const sYm = String(row.payroll_month || row.month || row.set_date || row.rep_date || row.date || '').slice(0, 7);
+        if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.openPrePaydaySummaryModal === 'function') {
+          window.MFG_AI_EDGE.openPrePaydaySummaryModal({
+            staff: sNm,
+            company: sCo,
+            month: /^\d{4}-\d{2}$/.test(sYm) ? sYm : ''
+          });
+        }
+      });
+    }
     const inspRepDefBtn = $('inspReportDefectBtn');
     if (inspRepDefBtn) {
       inspRepDefBtn.addEventListener('click', () => {
@@ -125754,8 +126560,12 @@
     _cashflowBehindGen++;
     _authSessionEpoch++;
     _WF_AUDIT_KEPT.clear();
+    _PAY_WS_AUDIT_KEPT.clear();
+    _PAY_BIO_SUM_KEPT.clear();
+    _FATHER_BACKFILL_KEPT.clear();
     _WF_AUDIT_CACHE = null;
     if (window.MFG_PBI && typeof window.MFG_PBI.clearHubRelKept === 'function') window.MFG_PBI.clearHubRelKept();
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.clearOtClusterCaches === 'function') window.MFG_AI_EDGE.clearOtClusterCaches();
     if (isDemoSandboxSession()) {
       try {
         for (let i = sessionStorage.length - 1; i >= 0; i--) {
@@ -141032,12 +141842,34 @@
     const defaultCoFilter = (opts && opts.companyFilter !== undefined)
       ? opts.companyFilter
       : ((STATE.company === 'ALL' || STATE.company === DEMO_COMPANY_KEY) ? 'ALL' : (COMPANY_BU_MATCH[STATE.company] || STATE.company));
+    const useCache = !(window.__MFG_SPEED_CACHES_OFF || FATHER_BACKFILL_STATE.open || (opts && opts.forceRefresh));
+    let keptKey = '';
+    if (useCache) {
+      if (typeof ensureStaffMembersSeeded === 'function') { try { ensureStaffMembersSeeded(); } catch (_) {} }
+      const r0 = SEED.records || {};
+      const c0 = STATE.customRecords || {};
+      const scanSig = (FATHER_BACKFILL_STATE.scannedCards || []).map(c => c ? `${c.id || ''}:${c.fullNameLatin || ''}:${c.fatherName || ''}:${c.linkedStaff || ''}` : '').join(',');
+      keptKey = `${seatScopeSig()}|${defaultCoFilter}|${isDemoScopeActive() ? 1 : 0}|${todayISO()}|${SEED._customRev || 0}|${scanSig}|${(r0.staff_members || []).length},${(c0.staff_members || []).length},${(r0.employments || []).length},${(c0.employments || []).length},${(r0.freelance_entries || []).length},${(c0.freelance_entries || []).length},${(r0.staff_assignments || []).length},${(c0.staff_assignments || []).length},${(r0.company_drivers || []).length},${(c0.company_drivers || []).length},${(r0.salaries || []).length},${(c0.salaries || []).length},${(r0.drivers || []).length},${(c0.drivers || []).length},${(r0.documents || []).length},${(c0.documents || []).length}`;
+      const kept = _FATHER_BACKFILL_KEPT.get(keptKey);
+      if (kept) {
+        _FATHER_BACKFILL_KEPT.delete(keptKey);
+        _FATHER_BACKFILL_KEPT.set(keptKey, kept);
+        return kept;
+      }
+    }
     try {
-      return window.MFG_SMART_SCAN.computeFatherNameBackfillReview({
+      const res = window.MFG_SMART_SCAN.computeFatherNameBackfillReview({
         companyFilter: defaultCoFilter,
         scannedCards: FATHER_BACKFILL_STATE.scannedCards,
         user: activeUser()
       }) || { totalMissing: 0, renewalRiskCount: 0, matchedCount: 0, highCount: 0, mediumCount: 0, manualCount: 0, rows: [] };
+      if (useCache && keptKey) {
+        if (_FATHER_BACKFILL_KEPT.size >= 32) {
+          _FATHER_BACKFILL_KEPT.delete(_FATHER_BACKFILL_KEPT.keys().next().value);
+        }
+        _FATHER_BACKFILL_KEPT.set(keptKey, res);
+      }
+      return res;
     } catch (_) {
       return { totalMissing: 0, renewalRiskCount: 0, matchedCount: 0, highCount: 0, mediumCount: 0, manualCount: 0, rows: [] };
     }
@@ -153858,10 +154690,14 @@
   }
 
   function renderPayrollBiometricPolicySectionHtml() {
-    const staffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
-    const shiftTypes = getShiftTypes();
-    const enrolledFaces = staffDir.filter(s => s.hasFace).length;
-    const configuredPins = staffDir.filter(s => s.hasExplicitPin || (IS_DEMO && s.pin)).length;
+    if (STATE.payrollPolicyOpen) {
+      return `
+        <div id="payBiometricPolicySection">
+          ${renderAttendancePolicyCardHtml({ host: 'payroll' })}
+        </div>
+      `;
+    }
+
     const allPunches = sanitizeKioskPunchesList(STATE.kioskPunches).filter(p => p && !p.voided);
     const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
     const punches = scopedCo ? allPunches.filter(p => !p.company || p.company === scopedCo) : allPunches;
@@ -153873,12 +154709,51 @@
     });
     const onSiteCount = Array.from(latestByStaff.values()).filter(p => isPunchActiveOnSite(p, nowMs)).length;
 
-    if (STATE.payrollPolicyOpen) {
-      return `
-        <div id="payBiometricPolicySection">
-          ${renderAttendancePolicyCardHtml({ host: 'payroll' })}
-        </div>
-      `;
+    const opUserBio = STAFF_FACE_MODAL_STATE.open && STAFF_FACE_MODAL_STATE.operatorUser
+      ? STAFF_FACE_MODAL_STATE.operatorUser
+      : (KIOSK_ADMIN_MODAL_STATE.sessionActive && KIOSK_ADMIN_MODAL_STATE.verifiedUser ? KIOSK_ADMIN_MODAL_STATE.verifiedUser : null);
+    const opSig = opUserBio ? String(opUserBio.id || opUserBio.email || opUserBio.full_name || 'op') : '';
+    const bioEntries = (STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object')
+      ? Object.keys(STATE.staffBiometrics).sort().map(k => {
+          const b = STATE.staffBiometrics[k] || {};
+          return `${k}:${b.pin_code ? 1 : 0}:${Array.isArray(b.face_samples) ? b.face_samples.length : 0}:${Array.isArray(b.face_descriptors) ? b.face_descriptors.length : 0}`;
+        }).join(',')
+      : '';
+    const usrBioSig = (STATE.users || []).map(u => u ? `${u.id || u.email || u.full_name || ''}:${u.status || ''}:${u.pin_code ? 1 : 0}:${Array.isArray(u.face_samples) ? u.face_samples.length : 0}:${Array.isArray(u.face_descriptors) ? u.face_descriptors.length : 0}` : '').join(',');
+    const bioKey = [
+      seatScopeSig(), STATE.company || '', STATE.demoCompanyIndustry || '', opSig,
+      IS_DEMO ? 1 : 0, todayISO(), _TIME24_WS_REV,
+      (SEED && SEED._customRev) || 0, (STATE && STATE._customRev) || 0,
+      (SEED && SEED._industryRev) || 0, (STATE && STATE._indCustomRev) || 0,
+      ((SEED && SEED.records && SEED.records.employments) || []).length,
+      ((STATE.customRecords && STATE.customRecords.employments) || []).length,
+      ((SEED && SEED.records && SEED.records.staff_members) || []).length,
+      ((STATE.customRecords && STATE.customRecords.staff_members) || []).length,
+      ((SEED && SEED.records && SEED.records.staff_assignments) || []).length,
+      ((STATE.customRecords && STATE.customRecords.staff_assignments) || []).length,
+      ((SEED && SEED.records && SEED.records.work_shifts) || []).length,
+      bioEntries, usrBioSig
+    ].join('|');
+    let bioCounts = window.__MFG_SPEED_CACHES_OFF ? null : _PAY_BIO_SUM_KEPT.get(bioKey);
+    if (bioCounts) {
+      _PAY_BIO_SUM_KEPT.delete(bioKey);
+      _PAY_BIO_SUM_KEPT.set(bioKey, bioCounts);
+    } else {
+      const staffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
+      const shiftTypes = getShiftTypes();
+      bioCounts = {
+        shiftCount: shiftTypes.length,
+        totalStaff: staffDir.length,
+        enrolledFaces: staffDir.filter(s => s.hasFace).length,
+        configuredPins: staffDir.filter(s => s.hasExplicitPin || (IS_DEMO && s.pin)).length
+      };
+      if (!window.__MFG_SPEED_CACHES_OFF) {
+        if (_PAY_BIO_SUM_KEPT.size >= 32) {
+          const oldestBio = _PAY_BIO_SUM_KEPT.keys().next().value;
+          if (oldestBio !== undefined) _PAY_BIO_SUM_KEPT.delete(oldestBio);
+        }
+        _PAY_BIO_SUM_KEPT.set(bioKey, bioCounts);
+      }
     }
 
     return `
@@ -153889,9 +154764,9 @@
             <span class="ph-sub">Manage work shifts, lateness &amp; overtime policies, Face ID, and wall kiosk PINs</span>
           </div>
           <div class="pay-policy-summary-actions">
-            <span class="badge">${fmtNum(shiftTypes.length)} Shift Types</span>
-            <span class="badge badge-ok">${fmtNum(enrolledFaces)}/${fmtNum(staffDir.length)} Face ID</span>
-            <span class="badge">${fmtNum(configuredPins)} PINs</span>
+            <span class="badge">${fmtNum(bioCounts.shiftCount)} Shift Types</span>
+            <span class="badge badge-ok">${fmtNum(bioCounts.enrolledFaces)}/${fmtNum(bioCounts.totalStaff)} Face ID</span>
+            <span class="badge">${fmtNum(bioCounts.configuredPins)} PINs</span>
             ${onSiteCount > 0 ? `<span class="badge badge-ok">${fmtNum(onSiteCount)} On Site</span>` : ''}
             ${renderLegacyTenthBackfillPillHtml({ company: scopedCo || '' })}
             <button type="button" class="btn" data-open-pay-policy="schedule">${ic('clock')} Shift Schedule</button>
@@ -154661,6 +155536,7 @@
                       <button type="button" class="btn att-util-btn" id="kioskShiftCalPresetBtn">${ic('calendar')} Holidays &amp; Seasons</button>
                       <button type="button" class="btn att-util-btn" id="kioskPunchDriftBtn">${ic('overtime')} Punch Drift</button>
                       <button type="button" class="btn att-util-btn" id="kioskAiDriftRecBtn">${ic('sparkles')} <span>AI Drift Advisor</span></button>
+                      <button type="button" class="btn att-util-btn" id="kioskOtClusterBriefBtn">${ic('brain_radar')} <span>OT Cluster Brief</span></button>
                       <button type="button" class="btn btn-primary att-add-btn" id="kioskNewShiftTypeBtn"${editCoAttr}${canWriteShiftCat ? '' : ' disabled'}>${ic('plus')} New Shift Type</button>
                     </div>
                   </div>
@@ -156800,6 +157676,12 @@
           try { tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
         }
       });
+    });
+    $('kioskOtClusterBriefBtn')?.addEventListener('click', e => {
+      e.stopPropagation();
+      if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.openOtClusterBriefModal === 'function') {
+        window.MFG_AI_EDGE.openOtClusterBriefModal({ company: STATE.company });
+      }
     });
     feedCard.querySelectorAll('[data-sched-shift-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -160196,6 +161078,23 @@
       ev.preventDefault();
       openSalaryAdvanceReceiptModal(btn.getAttribute('data-sal-receipt-id') || '', { returnFocus: btn });
     }));
+    container.querySelectorAll('[data-open-prepayday-card]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      const s = btn.getAttribute('data-open-prepayday-card') || '';
+      const co = btn.getAttribute('data-open-prepayday-co') || STATE.company || '';
+      if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.openPrePaydaySummaryModal === 'function') {
+        window.MFG_AI_EDGE.openPrePaydaySummaryModal({ staff: s, company: co });
+      }
+    }));
+    const payOpenPpdBtn = $('payOpenPrePaydayCardBtn');
+    if (payOpenPpdBtn) {
+      payOpenPpdBtn.addEventListener('click', () => {
+        if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.openPrePaydaySummaryModal === 'function') {
+          window.MFG_AI_EDGE.openPrePaydaySummaryModal({ company: STATE.company });
+        }
+      });
+    }
     container.querySelectorAll('[data-cf-focus-party]').forEach(el => el.addEventListener('click', ev => {
       if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('[data-hld-share-card]')) return;
       ev.stopPropagation();
@@ -161445,6 +162344,37 @@
         });
       });
       wireAttendancePolicyCard(container);
+      const ppdAttBtn = $('payAttPrePaydayCardBtn');
+      if (ppdAttBtn) {
+        ppdAttBtn.addEventListener('click', () => {
+          if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.openPrePaydaySummaryModal === 'function') {
+            window.MFG_AI_EDGE.openPrePaydaySummaryModal({ company: STATE.company });
+          }
+        });
+      }
+      const clAttBtn = $('payAttClusterBriefBtn');
+      if (clAttBtn) {
+        clAttBtn.addEventListener('click', () => {
+          if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.openOtClusterBriefModal === 'function') {
+            window.MFG_AI_EDGE.openOtClusterBriefModal({ company: STATE.company });
+          }
+        });
+      }
+      const clExpBtn = $('otClusterAiExplainBtn');
+      if (clExpBtn) {
+        clExpBtn.addEventListener('click', () => {
+          if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.runOtClusterExplainInSlot === 'function') {
+            window.MFG_AI_EDGE.runOtClusterExplainInSlot($('otClusterAiInsightSlot'));
+          }
+        });
+      }
+      container.querySelectorAll('[data-open-ot-cluster-modal]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.openOtClusterBriefModal === 'function') {
+            window.MFG_AI_EDGE.openOtClusterBriefModal({ company: STATE.company });
+          }
+        });
+      });
     }
     if (STATE.view === 'sentinels' && window.MFG_ASK && typeof window.MFG_ASK.rebindSentinelSummaryButtons === 'function') {
       window.MFG_ASK.rebindSentinelSummaryButtons(container);
@@ -164535,7 +165465,11 @@
     _meterGuardCacheVal = null;
     _WF_MAP_CACHE = null;
     _WF_AUDIT_KEPT.clear();
+    _PAY_WS_AUDIT_KEPT.clear();
+    _PAY_BIO_SUM_KEPT.clear();
+    _FATHER_BACKFILL_KEPT.clear();
     if (window.MFG_PBI && typeof window.MFG_PBI.clearHubRelKept === 'function') window.MFG_PBI.clearHubRelKept();
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.clearOtClusterCaches === 'function') window.MFG_AI_EDGE.clearOtClusterCaches();
     _MAINT_IDX = null;
     _liveSentinelCache = null;
     _customAlertEvalCache = null;

@@ -219,7 +219,7 @@
 
   function detectLang(q) {
     if (/[\u0600-\u06FF]/.test(q)) return 'ar';
-    if (/\b(bonjour|salut|bonsoir|comment|combien|coute|coûte|prix|merci|comptabilit|entreprise|société|societe|facture|caisse|pointage|stock|dépense|depense|dépenses|depenses|chiffre|bénéfice|benefice|trésorerie|tresorerie|clients?|fournisseurs?|aujourd'hui|hier|quel|quelle|quels|quelles|pouvez-vous|est-ce)\b/i.test(q)) {
+    if (/\b(bonjour|salut|bonsoir|comment|combien|coute|coûte|prix|merci|comptabilit|entreprise|société|societe|facture|caisse|pointages?|stock|dépenses?|depenses?|chiffre|bénéfice|benefice|trésorerie|tresorerie|clients?|fournisseurs?|aujourd'hui|hier|quel|quelle|quels|quelles|pouvez-vous|est-ce|seuils?|paliers?|présences?|presences?|heures\s+sup|salaires?|paie|analyser)\b/i.test(q)) {
       return 'fr';
     }
     return 'en';
@@ -2260,6 +2260,62 @@
           'Show live cash in till',
           'Check open AI Sentinel alerts'
         ]
+      };
+    }
+
+    // 13a. 30-Day OT Threshold & Snap Boundary Clustering (deterministic scan, zero dollars exposed)
+    if ((/\b(threshold|snap|cluster|clustering|boundary|boundaries|cliff|tolerant|tolerance|block\s*min|whole[- ]?block)\b/i.test(effLow) &&
+         /\b(ot|overtime|shift|attendance|clock|punch|punches|late|lateness|payroll|hour|hours|min|minute|minutes|30)\b/i.test(effLow)) ||
+        /(عناقيد|تكتل|تجمع|عتب|عتبة|حدود|تثبيت|بصم)/.test(cleanQ) ||
+        (/\b(seuils?|paliers?|regroupements?|ecretages?|écrêtages?|blocs?)\b/i.test(effLow) && /\b(heures?|pointages?|presences?|présences?|hs|retards?|postes?)\b/i.test(effLow))) {
+      if (!canHub('payroll', user) && !canView('payroll_attendance', user)) {
+        return buildRestrictedReply(cleanQ, lang, 'Attendance & Overtime');
+      }
+      const edge = (typeof window !== 'undefined' && window.MFG_AI_EDGE) || null;
+      const coArg = scope.coKey || (_ctx && _ctx.STATE && _ctx.STATE.company) || '';
+      const digest = (edge && typeof edge.computeOtThresholdClusterDigest === 'function')
+        ? edge.computeOtThresholdClusterDigest({ company: coArg, forceFresh: true })
+        : { ok: false, lookbackDays: 30, scannedPunches: 0, clusters: [] };
+      const brief = (edge && typeof edge.buildOtClusterEdgeBrief === 'function')
+        ? edge.buildOtClusterEdgeBrief(digest, { lang })
+        : { summary: 'OT boundary cluster scanner unavailable.', bullets: [] };
+      const bullets = (brief.bullets || []).slice(0, 5).map(b =>
+        `<b>${esc(b.headline)}</b>${b.staffSummary ? ` (${esc(b.staffSummary)})` : ''} · ${esc(b.recommendation)}`
+      );
+      return {
+        q: cleanQ,
+        lang,
+        instantLocal: true,
+        topic: 'attendance_clusters',
+        title: `${esc(brief.title || '30-Day OT Boundary & Snap Cluster Brief')} · ${esc(scope.fullScopeLabel)}`,
+        answer: esc(brief.summary),
+        bullets: bullets.length ? bullets : [esc(`Scanned ${fmtInt(digest.scannedPunches || 0)} clock-out punches in the last ${fmtInt(digest.lookbackDays || 30)} days.`)],
+        promptText: lang === 'ar'
+          ? 'هل تريد فتح الحضور والدوام أو عرض قواعد المراقبة الذكية؟'
+          : (lang === 'fr'
+            ? 'Souhaitez-vous ouvrir Pointage & Présence ou les Alertes Sentinelles ?'
+            : 'Open Attendance & Overtime to inspect policies or inspect full Sentinel details?'),
+        actions: [
+          ...(canView('payroll_attendance', user) ? [{ type: 'view', view: 'payroll_attendance', label: lang === 'ar' ? 'تحليل الحضور وتكتل الإضافي' : (lang === 'fr' ? 'Présence & Paliers HS' : 'Attendance & Cluster Brief') }] : []),
+          ...(canView('sentinels', user) ? [{ type: 'view', view: 'sentinels', label: lang === 'ar' ? 'المراقب الذكي' : (lang === 'fr' ? 'Alertes Sentinelles' : 'AI Sentinels') }] : [])
+        ],
+        followUps: lang === 'ar'
+          ? [
+              'افتح قواعد الحضور والعمل الإضافي',
+              'اعرض تنبيهات المراقب الذكي',
+              'ملخص الإضافي وحضور الموظفين'
+            ]
+          : (lang === 'fr'
+            ? [
+                'Ouvrir les règles de présence et heures sup.',
+                'Consulter les alertes Sentinelles ouvertes',
+                'Résumer les heures sup. et la présence'
+              ]
+            : [
+                'Open Attendance & Overtime policy rules',
+                'Check open AI Sentinel alerts',
+                'Summarize staff overtime & attendance'
+              ])
       };
     }
 

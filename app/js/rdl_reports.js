@@ -3487,10 +3487,40 @@
     const sumPaidReg = staffEarnRows.reduce((s, r) => s + Number(r.paid || 0), 0);
     const sumBalReg = staffEarnRows.reduce((s, r) => s + Number(r.balance || 0), 0);
 
+    const E = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) || {};
+    const bridge = (typeof window !== 'undefined' && window.__mfgAttPayrollBridge) || null;
+    const bridgeHasPayFn = Boolean(bridge && typeof bridge.canViewPayrollDollarAmounts === 'function');
+    const entHasPayFn = typeof E.canViewPayrollDollarAmounts === 'function';
+    const bridgeCanPay = bridgeHasPayFn ? Boolean(bridge.canViewPayrollDollarAmounts()) : false;
+    const canShowPayDollars = Boolean(E.STATE && E.STATE.authed && entHasPayFn && E.canViewPayrollDollarAmounts());
+    const canPayUsd = Boolean((bridgeHasPayFn || entHasPayFn) && (!E || !E.STATE || E.STATE.authed) && (!bridgeHasPayFn || bridgeCanPay) && (!entHasPayFn || canShowPayDollars));
+    const maskUsd = (v, signed) => (!canPayUsd
+      ? '<span class="muted">Restricted</span>'
+      : (signed ? fmtUsdSigned(v, 2) : fmtUsd(v, 2)));
+    const uiLang = (typeof document !== 'undefined' && document.documentElement && String(document.documentElement.lang || '').toLowerCase()) || 'en';
+    const policySummaryText = pol => {
+      if (!pol) return 'Per-Minute Engine';
+      let s = uiLang.startsWith('ar')
+        ? (pol.summaryAr || pol.summaryEn || '')
+        : (uiLang.startsWith('fr') ? (pol.summaryFr || pol.summaryEn || '') : (pol.summaryEn || ''));
+      if (!canPayUsd) {
+        s = String(s)
+          .replace(/\$\s*\/\s*Min/gi, 'Per-Min')
+          .replace(/\$[\d,.]+/g, 'Restricted');
+      }
+      return s;
+    };
+    const fmtMinHrs = (minVal, hrsVal) => {
+      const m = Math.round((Number(minVal) || 0) * 10) / 10;
+      const h = Number(hrsVal) || 0;
+      if (Math.abs(m) < 0.05 && Math.abs(h) < 0.005) return '-';
+      const mStr = Math.abs(m - Math.round(m)) < 0.05 ? fmtNum(Math.round(m), 0) : fmtNum(m, 1);
+      return `${mStr}m (${fmtNum(h, 2)}h)`;
+    };
+    const prePaydayMonth = String(p.to || p.from || '').slice(0, 7);
+
     const totPaid = rows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
     const viewRows = rows.slice(0, 160);
-    const E = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) || {};
-    const canShowPayDollars = Boolean(E.STATE && E.STATE.authed && typeof E.canViewPayrollDollarAmounts === 'function' && E.canViewPayrollDollarAmounts());
     const getAuditPillsFn = typeof E.getAttendanceRuleAuditPills === 'function' ? E.getAttendanceRuleAuditPills : null;
     const attSource = Array.isArray(ctx.attAll) ? ctx.attAll : ((rdlSeedRecs && Array.isArray(rdlSeedRecs.attendance)) ? rdlSeedRecs.attendance : []);
     const staffAuditMap = new Map();
@@ -3537,62 +3567,261 @@
       auditDetailRows.sort((a, b) => b.dStr.localeCompare(a.dStr));
     }
 
-    const summaryHtml = staffEarnRows.length ? `
-      <div class="rdl-section-title" style="margin:6px 0 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#334155">1 · Staff Earnings, Transportation / Reimbursement &amp; Remaining Balance (${fmtNum(staffEarnRows.length, 0)} Staff)</div>
-      <table class="rdl-table" style="margin-bottom:14px">
-        <thead>
-          <tr>
-            <th>Staff Member</th>
-            <th>Co.</th>
-            <th class="num">Base ($)</th>
-            <th class="num">Transp. / Reimb. ($)</th>
-            <th class="num">OT, Site &amp; Extras ($)</th>
-            <th class="num">Deductions ($)</th>
-            <th class="num">Net Earned ($)</th>
-            <th class="num">Paid ($)</th>
-            <th class="num">Balance ($)</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${staffEarnRows.slice(0, 120).map(sr => {
-            const otSite = Number(sr.ot_pay || 0) + Number(sr.site_allow || 0) + Number(sr.extras || 0);
-            const dedTot = Number(sr.late_ded || 0) + Number(sr.abs_ded || 0) + Number(sr.ded || 0);
-            const stAud = staffAuditMap.get(`${normCoNm(sr.company || 'WTC')}|${normStaffNm(sr.staff)}`);
-            const stAudHtml = stAud
-              ? `<div style="margin-top:2px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">${stAud.pills.map(pl => `<span class="att-rule-audit-pill ${esc(pl.tone)}" data-rule-audit-kind="${esc(pl.kind)}">${esc(pl.text)}</span>`).join(' ')}${(stAud.lateCount + stAud.otCount) > stAud.pills.length ? `<span class="att-rule-audit-pill is-meta">+${stAud.lateCount + stAud.otCount - stAud.pills.length} rules</span>` : ''}</div>`
-              : '';
-            return `
+    const attSeedList = staffEarnRows.length
+      ? staffEarnRows.slice(0, 120)
+      : ((p.staff && p.staff !== 'ALL')
+        ? [{ staff: p.staff, company: ctxSingleCo || 'WTC', base: 0, reimb: 0, ot_pay: 0, site_allow: 0, extras: 0, late_ded: 0, abs_ded: 0, ded: 0, earnings: 0, paid: 0, balance: 0 }]
+        : []);
+    const attBreakdowns = (bridge && typeof bridge.computeStaffAttendancePeriodBreakdown === 'function')
+      ? attSeedList.map(sr => {
+        const coName = sr.company || ctxSingleCo || 'WTC';
+        const bk = bridge.computeStaffAttendancePeriodBreakdown(sr.staff, coName, {
+          fromDate: p.from,
+          toDate: p.to,
+          strictCalendarDates: true,
+          reconcileStaffRow: sr
+        });
+        return { sr, bk };
+      }).filter(item => item && item.bk)
+      : [];
+
+    const hasAttRows = attBreakdowns.some(item =>
+      item.bk.logsCount > 0 || item.bk.otMin > 0 || item.bk.lateBilledMin > 0 || item.bk.absDays > 0 || Math.abs(item.bk.extUsd || 0) > 0.005 || (p.staff && p.staff !== 'ALL')
+    );
+
+    const attTotals = attBreakdowns.reduce((acc, item) => {
+      const b = item.bk;
+      acc.otMin += Number(b.otMin || 0);
+      acc.otHours += Number(b.otHours || 0);
+      acc.otPay += Number(b.otPayUsd || 0);
+      acc.lateRawMin += Number(b.lateRawMin || 0);
+      acc.lateBilledMin += Number(b.lateBilledMin || 0);
+      acc.lateHours += Number(b.lateHours || 0);
+      acc.lateDed += Number(b.lateDedUsd || 0);
+      acc.absDays += Number(b.absDays || 0);
+      acc.absDed += Number(b.absDedUsd || 0);
+      acc.extUsd += Number(b.extUsd || 0);
+      acc.netAttUsd += Number(b.netAttUsd || 0);
+      acc.missingOut += Number(b.missingOutCount || 0);
+      return acc;
+    }, { otMin: 0, otHours: 0, otPay: 0, lateRawMin: 0, lateBilledMin: 0, lateHours: 0, lateDed: 0, absDays: 0, absDed: 0, extUsd: 0, netAttUsd: 0, missingOut: 0 });
+
+    const singleItem = (p.staff && p.staff !== 'ALL' && attBreakdowns.length) ? attBreakdowns[0] : null;
+    const singlePayslipHtml = singleItem ? (() => {
+      const b = singleItem.bk;
+      const sr = singleItem.sr || {};
+      const wins = Array.isArray(b.windows) ? b.windows : [];
+      const coDisp = b.company || ctxSingleCo || sr.company || 'WTC';
+      const rateBadge = canPayUsd
+        ? `Hourly ${fmtUsd(b.hrRateUsd || 0, 2)} (${fmtUsd(b.perMinRateUsd || 0, 4)} / min)`
+        : 'Hourly Rate: Restricted';
+      const missPill = b.missingOutCount > 0
+        ? `<span style="display:inline-block;margin-inline-start:8px;padding:2px 8px;border-radius:999px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:11px;font-weight:700">${fmtNum(b.missingOutCount, 0)} Missing OUT</span>`
+        : '';
+      return `
+        <div id="rdlSingleStaffPayslipCard" class="rdl-payslip-card" style="margin:8px 0 12px;padding:12px 14px;border:1px solid #d4b886;border-radius:10px;background:#fffdf8">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+            <div>
+              <div style="font-size:13px;font-weight:800;color:#1e293b">${staffCellHtml(b.staff, coDisp)} ${ctxSingleCo ? '' : `<small style="font-weight:600;color:#64748b">- ${esc(coDisp)}</small>`}${missPill}</div>
+              <div style="font-size:11px;color:#475569;margin-top:2px">Period ${esc(b.fromDate)} to ${esc(b.toDate)} · ${esc(rateBadge)} · ${fmtNum(b.logsCount || 0, 0)} attendance logs</div>
+            </div>
+            <button type="button" id="rdlOpenPrePaydayCardBtn" class="btn btn-ghost-bar no-print" data-rdl-prepayday-staff="${esc(b.staff)}" data-rdl-prepayday-co="${esc(coDisp)}" data-rdl-prepayday-ym="${esc(prePaydayMonth)}" style="font-size:11px;padding:5px 10px;border:1px solid #c0892f;color:#8a5a14;background:#fffaf0;border-radius:7px;font-weight:700;cursor:pointer">Pre-Payday Card</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:8px">
+            <div style="padding:6px 8px;background:#ffffff;border:1px solid #e2e8f0;border-radius:7px">
+              <div style="font-size:10px;color:#64748b;text-transform:uppercase">${canPayUsd ? 'Overtime (+$)' : 'Overtime'}</div>
+              <div style="font-size:12px;font-weight:700;color:#15803d">${esc(fmtMinHrs(b.otMin, b.otHours))} · ${canPayUsd ? `+${fmtUsd(b.otPayUsd || 0, 2)}` : 'Restricted'}</div>
+            </div>
+            <div style="padding:6px 8px;background:#ffffff;border:1px solid #e2e8f0;border-radius:7px">
+              <div style="font-size:10px;color:#64748b;text-transform:uppercase">${canPayUsd ? 'Lateness (-$)' : 'Lateness'}</div>
+              <div style="font-size:12px;font-weight:700;color:#b91c1c">${esc(fmtMinHrs(b.lateBilledMin, b.lateHours))}${b.lateRawMin !== b.lateBilledMin ? ` (raw ${fmtNum(b.lateRawMin, 0)}m)` : ''} · ${canPayUsd ? `-${fmtUsd(b.lateDedUsd || 0, 2)}` : 'Restricted'}</div>
+            </div>
+            <div style="padding:6px 8px;background:#ffffff;border:1px solid #e2e8f0;border-radius:7px">
+              <div style="font-size:10px;color:#64748b;text-transform:uppercase">${canPayUsd ? 'Absence (-$)' : 'Absence'}</div>
+              <div style="font-size:12px;font-weight:700;color:#b91c1c">${fmtNum(b.absDays || 0, 1)}d · ${canPayUsd ? `-${fmtUsd(b.absDedUsd || 0, 2)}` : 'Restricted'}</div>
+            </div>
+            <div style="padding:6px 8px;background:#ffffff;border:1px solid #e2e8f0;border-radius:7px">
+              <div style="font-size:10px;color:#64748b;text-transform:uppercase">${canPayUsd ? 'Extras (+/-$)' : 'Extras'}</div>
+              <div style="font-size:12px;font-weight:700;color:#334155">${canPayUsd ? fmtUsdSigned(b.extUsd || 0, 2) : 'Restricted'}</div>
+            </div>
+            <div style="padding:6px 8px;background:#ffffff;border:1px solid #e2e8f0;border-radius:7px">
+              <div style="font-size:10px;color:#64748b;text-transform:uppercase">Net Att. Impact</div>
+              <div style="font-size:12px;font-weight:800;color:#1e293b">${canPayUsd ? fmtUsdSigned(b.netAttUsd || 0, 2) : 'Restricted'}</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#334155;line-height:1.45">
+            ${wins.map((w, idx) => `
+              <div style="${idx > 0 ? 'margin-top:3px;' : ''}">
+                <strong>${wins.length > 1 ? `Window ${idx + 1} (${esc(w.fromDate)} to ${esc(w.toDate)})` : 'Active Policy'}:</strong>
+                ${esc(policySummaryText(w.policy))}
+              </div>
+            `).join('')}
+          </div>
+        </div>`;
+    })() : '';
+
+    let secSeq = 0;
+    const earnSecNum = staffEarnRows.length ? ++secSeq : 0;
+    const attSecNum = (hasAttRows && attBreakdowns.length) ? ++secSeq : 0;
+    const nextSecNum = ++secSeq;
+    const auditSecNum = auditDetailRows.length ? ++secSeq : 0;
+    const attBreakdownHtml = (hasAttRows && attBreakdowns.length) ? `
+      <div class="rdl-section-title" style="margin:10px 0 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#334155">${attSecNum} · Attendance &amp; Minute Breakdown (${fmtNum(attBreakdowns.length, 0)} Staff)</div>
+      <div id="rdlPayslipAttBreakdown">
+        ${singlePayslipHtml}
+        <table class="rdl-table" style="margin-bottom:14px">
+          <thead>
             <tr>
-              <td class="bold">${staffCellHtml(sr.staff, sr.company)}${stAudHtml}</td>
-              <td>${esc(sr.company || 'WTC')}</td>
-              <td class="num">${canShowPayDollars ? fmtUsd(sr.base || 0, 2) : '-'}</td>
-              <td class="num">${canShowPayDollars && sr.reimb ? fmtUsd(sr.reimb, 2) : '-'}</td>
-              <td class="num">${canShowPayDollars && Math.abs(otSite) > 0.005 ? fmtUsdSigned(otSite, 2) : '-'}</td>
-              <td class="num">${canShowPayDollars && dedTot > 0.005 ? fmtUsd(dedTot, 2) : '-'}</td>
-              <td class="num bold">${canShowPayDollars ? fmtUsd(sr.earnings || 0, 2) : '-'}</td>
-              <td class="num">${canShowPayDollars ? fmtUsd(sr.paid || 0, 2) : '-'}</td>
-              <td class="num bold">${canShowPayDollars ? fmtUsdSigned(sr.balance || 0, 2) : '-'}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-        <tfoot>
-          <tr class="rdl-total-row">
-            <td colspan="2">TOTAL STAFF PAYROLL SUMMARY (${fmtNum(staffEarnRows.length, 0)} staff)</td>
-            <td class="num">${canShowPayDollars ? fmtUsd(sumBase, 2) : '-'}</td>
-            <td class="num">${canShowPayDollars ? fmtUsd(sumReimb, 2) : '-'}</td>
-            <td class="num">${canShowPayDollars ? fmtUsdSigned(sumOtSite, 2) : '-'}</td>
-            <td class="num">${canShowPayDollars ? fmtUsd(sumDedAll, 2) : '-'}</td>
-            <td class="num">${canShowPayDollars ? fmtUsd(sumEarned, 2) : '-'}</td>
-            <td class="num">${canShowPayDollars ? fmtUsd(sumPaidReg, 2) : '-'}</td>
-            <td class="num">${canShowPayDollars ? fmtUsdSigned(sumBalReg, 2) : '-'}</td>
-          </tr>
-        </tfoot>
-      </table>
-      <div class="rdl-section-title" style="margin:10px 0 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#334155">2 · Salary Disbursement Vouchers (${fmtNum(rows.length, 0)} Entries)</div>
+              <th>Staff Member</th>
+              ${ctxSingleCo ? '' : '<th>Co.</th>'}
+              <th>Policy Mode &amp; Rules</th>
+              <th class="num">OT Min / Hrs</th>
+              <th class="num">${canPayUsd ? 'OT Pay (+$)' : 'OT Pay'}</th>
+              <th class="num">Late Billed (Raw)</th>
+              <th class="num">${canPayUsd ? 'Late Ded. (-$)' : 'Late Ded.'}</th>
+              <th class="num">${canPayUsd ? 'Absence (-$)' : 'Absence'}</th>
+              <th class="num">${canPayUsd ? 'Extras (+/-$)' : 'Extras'}</th>
+              <th class="num">${canPayUsd ? 'Net Att. (+/-$)' : 'Net Att.'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${attBreakdowns.map(({ bk }) => {
+              const wins = Array.isArray(bk.windows) ? bk.windows : [];
+              const firstPol = (wins[0] && wins[0].policy) || null;
+              const splitBadge = bk.hasPolicySplit
+                ? ` <span style="display:inline-block;padding:1px 6px;border-radius:999px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:10px;font-weight:700">${wins.length} Policy Split</span>`
+                : '';
+              const missBadge = bk.missingOutCount > 0
+                ? ` <span style="display:inline-block;padding:1px 6px;border-radius:999px;background:#fff7ed;border:1px solid #fb923c;color:#9a3412;font-size:10px;font-weight:700">${fmtNum(bk.missingOutCount, 0)} Missing OUT</span>`
+                : '';
+              const polCol = bk.hasPolicySplit
+                ? `${wins.length} mid-period rules${splitBadge}`
+                : esc(policySummaryText(firstPol));
+              const otMoneyCell = !canPayUsd
+                ? '<span class="muted">Restricted</span>'
+                : (Math.abs(bk.otPayUsd || 0) > 0.005 ? `+${fmtUsd(bk.otPayUsd, 2)}` : '-');
+              const lateTxt = bk.lateBilledMin > 0 || bk.lateRawMin > 0
+                ? `${fmtMinHrs(bk.lateBilledMin, bk.lateHours)}${bk.lateRawMin !== bk.lateBilledMin ? ` (raw ${fmtNum(bk.lateRawMin, 0)}m)` : ''}`
+                : '-';
+              const lateMoneyCell = !canPayUsd
+                ? '<span class="muted">Restricted</span>'
+                : (Math.abs(bk.lateDedUsd || 0) > 0.005 ? `-${fmtUsd(bk.lateDedUsd, 2)}` : '-');
+              const absCell = bk.absDays > 0 || Math.abs(bk.absDedUsd || 0) > 0.005
+                ? `${fmtNum(bk.absDays || 0, 1)}d${canPayUsd ? ` (-${fmtUsd(bk.absDedUsd || 0, 2)})` : ''}`
+                : '-';
+              const extCell = !canPayUsd
+                ? '<span class="muted">Restricted</span>'
+                : (Math.abs(bk.extUsd || 0) > 0.005 ? fmtUsdSigned(bk.extUsd, 2) : '-');
+              const netCell = !canPayUsd
+                ? '<span class="muted">Restricted</span>'
+                : fmtUsdSigned(bk.netAttUsd || 0, 2);
+              const subRowsHtml = (bk.hasPolicySplit && wins.length > 1) ? wins.map((w, wi) => `
+                <tr class="rdl-subtotal-row rdl-att-split-subrow" style="background:#fffdf7;font-size:11px;color:#475569">
+                  <td style="padding-inline-start:18px">Split ${wi + 1}: ${esc(w.fromDate)} to ${esc(w.toDate)}</td>
+                  ${ctxSingleCo ? '' : `<td>${esc(bk.company || 'WTC')}</td>`}
+                  <td>${esc(policySummaryText(w.policy))}</td>
+                  <td class="num">${esc(fmtMinHrs(w.otMin, w.otHours))}</td>
+                  <td class="num">${!canPayUsd ? '<span class="muted">Restricted</span>' : (Math.abs(w.otPayUsd || 0) > 0.005 ? `+${fmtUsd(w.otPayUsd, 2)}` : '-')}</td>
+                  <td class="num">${w.lateBilledMin > 0 || w.lateRawMin > 0 ? esc(`${fmtMinHrs(w.lateBilledMin, w.lateHours)}${w.lateRawMin !== w.lateBilledMin ? ` (raw ${fmtNum(w.lateRawMin, 0)}m)` : ''}`) : '-'}</td>
+                  <td class="num">${!canPayUsd ? '<span class="muted">Restricted</span>' : (Math.abs(w.lateDedUsd || 0) > 0.005 ? `-${fmtUsd(w.lateDedUsd, 2)}` : '-')}</td>
+                  <td class="num">${w.absDays > 0 || Math.abs(w.absDedUsd || 0) > 0.005 ? `${fmtNum(w.absDays || 0, 1)}d${canPayUsd ? ` (-${fmtUsd(w.absDedUsd || 0, 2)})` : ''}` : '-'}</td>
+                  <td class="num">${!canPayUsd ? '<span class="muted">Restricted</span>' : (Math.abs(w.extUsd || 0) > 0.005 ? fmtUsdSigned(w.extUsd, 2) : '-')}</td>
+                  <td class="num">${!canPayUsd ? '<span class="muted">Restricted</span>' : fmtUsdSigned(w.netAttUsd || 0, 2)}</td>
+                </tr>
+              `).join('') : '';
+              return `
+                <tr>
+                  <td class="bold">${staffCellHtml(bk.staff, bk.company)}${missBadge} <button type="button" class="no-print" data-rdl-prepayday-staff="${esc(bk.staff)}" data-rdl-prepayday-co="${esc(bk.company || '')}" data-rdl-prepayday-ym="${esc(prePaydayMonth)}" title="Open Pre-Payday Attendance Card" style="margin-inline-start:6px;padding:1px 6px;font-size:10px;border:1px solid #d4b886;border-radius:5px;background:#fffaf0;color:#8a5a14;cursor:pointer">Card</button></td>
+                  ${ctxSingleCo ? '' : `<td>${esc(bk.company || 'WTC')}</td>`}
+                  <td style="font-size:11px">${polCol}</td>
+                  <td class="num">${esc(fmtMinHrs(bk.otMin, bk.otHours))}</td>
+                  <td class="num" style="color:#15803d">${otMoneyCell}</td>
+                  <td class="num">${esc(lateTxt)}</td>
+                  <td class="num" style="color:#b91c1c">${lateMoneyCell}</td>
+                  <td class="num" style="color:#b91c1c">${absCell}</td>
+                  <td class="num">${extCell}</td>
+                  <td class="num bold">${netCell}</td>
+                </tr>
+                ${subRowsHtml}`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="rdl-total-row">
+              <td colspan="${ctxSingleCo ? 2 : 3}">TOTAL ATTENDANCE MINUTE BREAKDOWN (${fmtNum(attBreakdowns.length, 0)} staff)</td>
+              <td class="num">${esc(fmtMinHrs(attTotals.otMin, attTotals.otHours))}</td>
+              <td class="num">${!canPayUsd ? 'Restricted' : `+${fmtUsd(attTotals.otPay, 2)}`}</td>
+              <td class="num">${esc(fmtMinHrs(attTotals.lateBilledMin, attTotals.lateHours))}</td>
+              <td class="num">${!canPayUsd ? 'Restricted' : `-${fmtUsd(attTotals.lateDed, 2)}`}</td>
+              <td class="num">${fmtNum(attTotals.absDays, 1)}d${canPayUsd ? ` (-${fmtUsd(attTotals.absDed, 2)})` : ''}</td>
+              <td class="num">${!canPayUsd ? 'Restricted' : (Math.abs(attTotals.extUsd || 0) > 0.005 ? fmtUsdSigned(attTotals.extUsd, 2) : '-')}</td>
+              <td class="num">${!canPayUsd ? 'Restricted' : fmtUsdSigned(attTotals.netAttUsd, 2)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     ` : '';
 
+    const summaryHtml = (staffEarnRows.length || attBreakdownHtml) ? `
+      ${staffEarnRows.length ? `
+        <div class="rdl-section-title" style="margin:6px 0 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#334155">${earnSecNum} · Staff Earnings, Transportation / Reimbursement &amp; Remaining Balance (${fmtNum(staffEarnRows.length, 0)} Staff)</div>
+        <table class="rdl-table" style="margin-bottom:14px">
+          <thead>
+            <tr>
+              <th>Staff Member</th>
+              ${ctxSingleCo ? '' : '<th>Co.</th>'}
+              <th class="num">${canPayUsd ? 'Base ($)' : 'Base'}</th>
+              <th class="num">${canPayUsd ? 'Transp. / Reimb. ($)' : 'Transp. / Reimb.'}</th>
+              <th class="num">${canPayUsd ? 'OT, Site &amp; Extras ($)' : 'OT, Site &amp; Extras'}</th>
+              <th class="num">${canPayUsd ? 'Deductions ($)' : 'Deductions'}</th>
+              <th class="num">${canPayUsd ? 'Net Earned ($)' : 'Net Earned'}</th>
+              <th class="num">${canPayUsd ? 'Paid ($)' : 'Paid'}</th>
+              <th class="num">${canPayUsd ? 'Balance ($)' : 'Balance'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${staffEarnRows.slice(0, 120).map(sr => {
+              const otSite = Number(sr.ot_pay || 0) + Number(sr.site_allow || 0) + Number(sr.extras || 0);
+              const dedTot = Number(sr.late_ded || 0) + Number(sr.abs_ded || 0) + Number(sr.ded || 0);
+              const stAud = staffAuditMap.get(`${normCoNm(sr.company || 'WTC')}|${normStaffNm(sr.staff)}`);
+              const stAudHtml = stAud
+                ? `<div style="margin-top:2px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">${stAud.pills.map(pl => `<span class="att-rule-audit-pill ${esc(pl.tone)}" data-rule-audit-kind="${esc(pl.kind)}">${esc(pl.text)}</span>`).join(' ')}${(stAud.lateCount + stAud.otCount) > stAud.pills.length ? `<span class="att-rule-audit-pill is-meta">+${stAud.lateCount + stAud.otCount - stAud.pills.length} rules</span>` : ''}</div>`
+                : '';
+              return `
+              <tr>
+                <td class="bold">${staffCellHtml(sr.staff, sr.company)}${stAudHtml}</td>
+                ${ctxSingleCo ? '' : `<td>${esc(sr.company || 'WTC')}</td>`}
+                <td class="num">${maskUsd(sr.base || 0, false)}</td>
+                <td class="num">${!canPayUsd ? '<span class="muted">Restricted</span>' : (sr.reimb ? fmtUsd(sr.reimb, 2) : '-')}</td>
+                <td class="num">${!canPayUsd ? '<span class="muted">Restricted</span>' : (Math.abs(otSite) > 0.005 ? fmtUsdSigned(otSite, 2) : '-')}</td>
+                <td class="num">${!canPayUsd ? '<span class="muted">Restricted</span>' : (dedTot > 0.005 ? fmtUsd(dedTot, 2) : '-')}</td>
+                <td class="num bold">${maskUsd(sr.earnings || 0, false)}</td>
+                <td class="num">${maskUsd(sr.paid || 0, false)}</td>
+                <td class="num bold">${maskUsd(sr.balance || 0, true)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="rdl-total-row">
+              <td colspan="${ctxSingleCo ? 1 : 2}">TOTAL STAFF PAYROLL SUMMARY (${fmtNum(staffEarnRows.length, 0)} staff)</td>
+              <td class="num">${canPayUsd ? fmtUsd(sumBase, 2) : 'Restricted'}</td>
+              <td class="num">${canPayUsd ? fmtUsd(sumReimb, 2) : 'Restricted'}</td>
+              <td class="num">${canPayUsd ? fmtUsdSigned(sumOtSite, 2) : 'Restricted'}</td>
+              <td class="num">${canPayUsd ? fmtUsd(sumDedAll, 2) : 'Restricted'}</td>
+              <td class="num">${canPayUsd ? fmtUsd(sumEarned, 2) : 'Restricted'}</td>
+              <td class="num">${canPayUsd ? fmtUsd(sumPaidReg, 2) : 'Restricted'}</td>
+              <td class="num">${canPayUsd ? fmtUsdSigned(sumBalReg, 2) : 'Restricted'}</td>
+            </tr>
+          </tfoot>
+        </table>
+      ` : ''}
+      ${attBreakdownHtml}
+    ` : '';
+
+    const vouchersTitleHtml = (staffEarnRows.length || attBreakdownHtml || auditDetailRows.length)
+      ? `<div class="rdl-section-title" style="margin:10px 0 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#334155">${nextSecNum} · Salary Disbursement Vouchers (${fmtNum(rows.length, 0)} Entries)</div>`
+      : '';
     const auditTableHtml = auditDetailRows.length ? `
-      <div class="rdl-section-title" style="margin:14px 0 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#334155">3 · Daily Attendance Rule-Audit &amp; Policy Exceptions (${fmtNum(auditDetailRows.length, 0)} Days)</div>
+      <div class="rdl-section-title" style="margin:14px 0 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#334155">${auditSecNum} · Daily Attendance Rule-Audit &amp; Policy Exceptions (${fmtNum(auditDetailRows.length, 0)} Days)</div>
       <table class="rdl-table" id="rdlPayRuleAuditTable" style="margin-bottom:10px">
         <thead>
           <tr>
@@ -3602,7 +3831,7 @@
             <th>Clock IN / OUT</th>
             <th>Rule Audit</th>
             <th class="num">Billable OT / Late</th>
-            ${canShowPayDollars ? '<th class="num">Net Impact ($)</th>' : ''}
+            ${canPayUsd ? '<th class="num">Net Impact ($)</th>' : ''}
           </tr>
         </thead>
         <tbody>
@@ -3615,11 +3844,11 @@
               otMin > 0 ? `+${otMin}m OT` : '',
               Number(r.leave_days || 0) >= 0.5 ? `${fmtNum(r.leave_days, 1)}d Penalty` : (lateMin > 0 ? `-${lateMin}m Late` : '')
             ].filter(Boolean).join(' / ') || '0m';
-            const impUsd = (r.payroll_impact_usd != null && Number.isFinite(Number(r.payroll_impact_usd)))
+            const impUsd = !canPayUsd ? 0 : ((r.payroll_impact_usd != null && Number.isFinite(Number(r.payroll_impact_usd)))
               ? Number(r.payroll_impact_usd)
-              : (canShowPayDollars && typeof E.computeAttendanceRowDollarImpact === 'function'
+              : (typeof E.computeAttendanceRowDollarImpact === 'function'
                 ? Number((E.computeAttendanceRowDollarImpact(r) || {}).netImpactUsd || 0)
-                : 0);
+                : 0));
             return `
               <tr>
                 <td class="mono">${esc(item.dStr)}</td>
@@ -3628,7 +3857,7 @@
                 <td class="mono">${esc(clockStr)}</td>
                 <td>${item.pills.map(pl => `<span class="att-rule-audit-pill ${esc(pl.tone)}" data-rule-audit-kind="${esc(pl.kind)}">${esc(pl.text)}</span>`).join(' ')}</td>
                 <td class="num mono">${esc(billStr)}</td>
-                ${canShowPayDollars ? `<td class="num">${Math.abs(impUsd) > 0.005 ? fmtUsdSigned(impUsd, 2) : '-'}</td>` : ''}
+                ${canPayUsd ? `<td class="num">${Math.abs(impUsd) > 0.005 ? fmtUsdSigned(impUsd, 2) : '-'}</td>` : ''}
               </tr>`;
           }).join('')}
         </tbody>
@@ -3638,6 +3867,7 @@
     return `
       ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Staff: ${p.staff === 'ALL' ? 'All Staff' : p.staff} · ${staffEarnRows.length} staff · ${rows.length} disbursement entries`)}
       ${summaryHtml}
+      ${vouchersTitleHtml}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -3645,7 +3875,7 @@
             <th>Staff Member</th>
             <th>Payroll Period</th>
             <th>Method</th>
-            <th class="num">Disbursed ($)</th>
+            <th class="num">${canPayUsd ? 'Disbursed ($)' : 'Disbursed'}</th>
           </tr>
         </thead>
         <tbody>
@@ -3655,14 +3885,14 @@
               <td class="bold">${staffCellHtml(r.staff, r.company)}</td>
               <td>${esc(r.role || '-')}</td>
               <td>${esc(r.type || 'Cash')}</td>
-              <td class="num bold">${canShowPayDollars ? fmtUsd(r.paid_usd, 2) : '-'}</td>
+              <td class="num bold">${maskUsd(r.paid_usd, false)}</td>
             </tr>
           `).join('')}
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="4">TOTAL SALARY DISBURSEMENTS (${fmtNum(rows.length, 0)} entries)</td>
-            <td class="num">${canShowPayDollars ? fmtUsd(totPaid, 2) : '-'}</td>
+            <td class="num">${canPayUsd ? fmtUsd(totPaid, 2) : 'Restricted'}</td>
           </tr>
         </tfoot>
       </table>
@@ -6151,19 +6381,26 @@
       const sumDed = staffEarnRows.reduce((s, r) => s + Number(r.late_ded || 0) + Number(r.abs_ded || 0) + Number(r.ded || 0), 0);
       const totPaid = rows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
       const sumBal = staffEarnRows.reduce((s, r) => s + Number(r.balance || 0), 0);
+      const E10 = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) || {};
+      const bridge10 = (typeof window !== 'undefined' && window.__mfgAttPayrollBridge) || null;
+      const bridge10HasFn = Boolean(bridge10 && typeof bridge10.canViewPayrollDollarAmounts === 'function');
+      const ent10HasFn = typeof E10.canViewPayrollDollarAmounts === 'function';
+      const bridgeCanPay10 = bridge10HasFn ? Boolean(bridge10.canViewPayrollDollarAmounts()) : false;
+      const entCanPay10 = ent10HasFn ? Boolean(E10.STATE && E10.STATE.authed && E10.canViewPayrollDollarAmounts()) : false;
+      const canPayUsd10 = Boolean((bridge10HasFn || ent10HasFn) && (!E10 || !E10.STATE || E10.STATE.authed) && (!bridge10HasFn || bridgeCanPay10) && (!ent10HasFn || entCanPay10));
       facts = {
         staffCount: staffEarnRows.length || uniqCount(rows.map(r => r.staff)),
         disbursementVouchers: rows.length,
-        netEarnedUsd: Math.round(sumEarned || totPaid),
-        deductionsUsd: Math.round(sumDed),
-        disbursedUsd: Math.round(totPaid),
-        remainingPayrollBalanceUsd: Math.round(sumBal)
+        netEarnedUsd: canPayUsd10 ? Math.round(sumEarned || totPaid) : null,
+        deductionsUsd: canPayUsd10 ? Math.round(sumDed) : null,
+        disbursedUsd: canPayUsd10 ? Math.round(totPaid) : null,
+        remainingPayrollBalanceUsd: canPayUsd10 ? Math.round(sumBal) : null
       };
       kpis = [
         mkKpi('staff', 'Active Staff', 'الموظفون الفعالون', 'Effectif actif', fmtNum(facts.staffCount, 0), `${fmtNum(rows.length, 0)} vouchers`, `${fmtNum(rows.length, 0)} سند صرف`, `${fmtNum(rows.length, 0)} décaissements`),
-        mkKpi('earn', 'Net Earned', 'صافي الاستحقاق', 'Net acquis', fmtUsd(sumEarned || totPaid, 2), `Deductions ${fmtUsd(sumDed, 0)}`, `حسميات ${fmtUsd(sumDed, 0)}`, `Retenues ${fmtUsd(sumDed, 0)}`),
-        mkKpi('paid', 'Salary Disbursed', 'الرواتب المصروفة', 'Salaires versés', fmtUsd(totPaid, 2), 'Account 641 / 421', 'حساب 641 / 421', 'Comptes 641 / 421'),
-        mkKpi('bal', 'Remaining Balance', 'الرصيد المتبقي', 'Solde restant', fmtUsdSigned(sumBal, 2), p.staff === 'ALL' ? 'All staff' : p.staff, p.staff === 'ALL' ? 'كافة الموظفين' : p.staff, p.staff === 'ALL' ? 'Tout le personnel' : p.staff)
+        mkKpi('earn', 'Net Earned', 'صافي الاستحقاق', 'Net acquis', canPayUsd10 ? fmtUsd(sumEarned || totPaid, 2) : 'Restricted', canPayUsd10 ? `Deductions ${fmtUsd(sumDed, 0)}` : 'Restricted', canPayUsd10 ? `حسميات ${fmtUsd(sumDed, 0)}` : 'مقيّد', canPayUsd10 ? `Retenues ${fmtUsd(sumDed, 0)}` : 'Restreint'),
+        mkKpi('paid', 'Salary Disbursed', 'الرواتب المصروفة', 'Salaires versés', canPayUsd10 ? fmtUsd(totPaid, 2) : 'Restricted', 'Account 641 / 421', 'حساب 641 / 421', 'Comptes 641 / 421'),
+        mkKpi('bal', 'Remaining Balance', 'الرصيد المتبقي', 'Solde restant', canPayUsd10 ? fmtUsdSigned(sumBal, 2) : 'Restricted', p.staff === 'ALL' ? 'All staff' : p.staff, p.staff === 'ALL' ? 'كافة الموظفين' : p.staff, p.staff === 'ALL' ? 'Tout le personnel' : p.staff)
       ];
     } else if (stmtId === '11') {
       const rows = ctx.rmAll.filter(r => {
@@ -7068,16 +7305,16 @@
       if (paramCont) paramCont.innerHTML = renderParamBarHtml(meta, updatedCtx);
       const sheet = root.querySelector('#printableSheet');
       if (sheet) sheet.innerHTML = renderRdlSheet(meta.id, updatedCtx);
-      if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
-        if (paramCont) window.MFG_I18N.translateDom(paramCont);
-        if (sheet) window.MFG_I18N.translateDom(sheet);
-      }
       syncPinnedStatementCoverNote(root, STATE);
       wireParamControls();
       wireTableSorting();
       wireInteractiveSheetEnhancements(meta, updatedCtx);
       if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
         window.MFG_TABLE_COLS.enhanceAllTables(root, STATE);
+      }
+      if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+        if (paramCont) window.MFG_I18N.translateDom(paramCont);
+        if (sheet) window.MFG_I18N.translateDom(sheet);
       }
       if (window.MFG_ASK && typeof window.MFG_ASK.syncStatementSummaryOnChange === 'function') {
         window.MFG_ASK.syncStatementSummaryOnChange();
@@ -7600,10 +7837,20 @@
       }
     }
 
+    function enHeaderText(el) {
+      if (!el || typeof document === 'undefined' || !document.createTreeWalker) return ((el && el.textContent) || '').replace(/\s+/g, ' ').trim();
+      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let out = '', n;
+      while ((n = w.nextNode())) {
+        out += (n.__enText !== undefined ? n.__enText : (n.nodeValue || ''));
+      }
+      return out.replace(/\s+/g, ' ').trim();
+    }
+
     function wireTableSorting() {
       root.querySelectorAll('#printableSheet table.rdl-table thead th').forEach((th, colIdx) => {
         th.style.cursor = 'pointer';
-        th.setAttribute('aria-label', `${(th.textContent || '').trim()} — click to sort`);
+        th.setAttribute('aria-label', `${enHeaderText(th)} — click to sort`);
         th.addEventListener('click', () => {
           const tbl = th.closest('table');
           const tbody = tbl && tbl.querySelector('tbody');
@@ -7714,7 +7961,7 @@
         const groupOptions = [];
         ths.forEach((th, colIdx) => {
           if (th.classList.contains('num')) return;
-          const hdrTxt = (th.textContent || '').replace(/\s+/g, ' ').trim();
+          const hdrTxt = enHeaderText(th);
           if (!hdrTxt || /^#$|^no\.?$|^id$|^je\s*#$|^voucher|^ticket|^ref|^description|^notes/i.test(hdrTxt)) return;
           if (/^date$/i.test(hdrTxt)) {
             const months = new Set();
@@ -7738,12 +7985,12 @@
         });
 
         // Fallback smart tier grouping for aging / balance tables (e.g. RDL-13 Aged Receivables, RDL-15 Supplier Balances, RDL-05 Trial Balance)
-        const has90PlusCol = ths.findIndex(th => /90\+\s*days/i.test(th.textContent || ''));
+        const has90PlusCol = ths.findIndex(th => /90\+\s*days/i.test(enHeaderText(th)));
         if (has90PlusCol >= 0) {
           groupOptions.unshift({ key: 'tier:aging', label: 'Aging Tier', colIdx: 1, mode: 'aging', idx90: has90PlusCol });
         }
         if (groupOptions.length < 2) {
-          const primaryNumIdx = ths.findIndex(th => /total|balance|net|amount/i.test(th.textContent || '') && th.classList.contains('num'));
+          const primaryNumIdx = ths.findIndex(th => /total|balance|net|amount/i.test(enHeaderText(th)) && th.classList.contains('num'));
           if (primaryNumIdx >= 0) {
             groupOptions.push({ key: `tier:bal:${primaryNumIdx}`, label: 'Balance Tier', colIdx: 1, mode: 'balance', numIdx: primaryNumIdx });
           }
@@ -7836,7 +8083,7 @@
             // Sort buckets: if label starts with "1 ·", sort alphabetically; otherwise sort by last summable column desc
             const sumColIdx = (() => {
               for (let i = ths.length - 1; i >= 0; i--) {
-                const h = (ths[i].textContent || '').trim();
+                const h = enHeaderText(ths[i]);
                 if (ths[i].classList.contains('num') && !/%|avg|rate|price/i.test(h)) return i;
               }
               return -1;
@@ -7870,7 +8117,7 @@
               `);
               for (let cIdx = labelSpan; cIdx < ths.length; cIdx++) {
                 const th = ths[cIdx];
-                const hdrTxt = (th.textContent || '').trim();
+                const hdrTxt = enHeaderText(th);
                 if (!th.classList.contains('num')) {
                   cellsHtml.push(`<td></td>`);
                 } else if (/%|avg|unit|price|rate|running/i.test(hdrTxt)) {
@@ -8007,10 +8254,28 @@
               } catch (_) {}
             }
           }
+          if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+            window.MFG_I18N.translateDom(ctrlBar);
+            tbody.querySelectorAll('tr.rdl-interactive-group-row').forEach(r => window.MFG_I18N.translateDom(r));
+          }
         };
 
         tbl._rdlRefreshInteractive = applyTableState;
         applyTableState();
+      });
+
+      sheet.querySelectorAll('[data-rdl-prepayday-staff]').forEach(btn => {
+        if (btn.dataset.boundPrePayday === '1') return;
+        btn.dataset.boundPrePayday = '1';
+        btn.addEventListener('click', ev => {
+          ev.stopPropagation();
+          const staff = btn.getAttribute('data-rdl-prepayday-staff') || '';
+          const co = btn.getAttribute('data-rdl-prepayday-co') || '';
+          const ym = btn.getAttribute('data-rdl-prepayday-ym') || '';
+          if (typeof window !== 'undefined' && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.openPrePaydaySummaryModal === 'function') {
+            window.MFG_AI_EDGE.openPrePaydaySummaryModal({ staff, company: co, month: ym });
+          }
+        });
       });
     }
 

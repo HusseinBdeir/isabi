@@ -5174,6 +5174,40 @@
       return false;
     };
 
+    const opClueRows = [];
+    const pushOpClueRow = (row, rowStaff, srcTitle) => {
+      if (!row) return;
+      const explicitFather = cleanBackfillFatherCandidate(row.father_name);
+      const noteText = (row.notes || row.note || row.reference)
+        ? [row.notes, row.note, row.reference].filter(Boolean).join(' · ')
+        : '';
+      let noteHasFather = false;
+      if (noteText) {
+        const rawNote = normalizeDigits(String(noteText).trim());
+        noteHasFather = Boolean(
+          extractFatherFromTextNote(noteText, '')
+          || /[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'-]{2,42}\(\s*[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'-]{1,28}\s*\)/.test(rawNote)
+        );
+      }
+      if (!explicitFather && !noteHasFather) return;
+      const rCo = coOf(row);
+      opClueRows.push({
+        row,
+        rowStaff,
+        srcTitle,
+        rCo,
+        rCoNorm: rCo ? norm(rCo) : '',
+        rowStaffClean: String(rowStaff || '').replace(/\s*\(\d+\)$/, ''),
+        explicitFather,
+        noteText,
+        noteHasFather
+      });
+    };
+    empAll.forEach(e => pushOpClueRow(e, e.staff || e.name, 'Contract'));
+    flAll.forEach(f => pushOpClueRow(f, f.staff || f.name, 'Freelance'));
+    salAll.forEach(s => pushOpClueRow(s, s.staff, 'Payroll'));
+    drvAll.forEach(d => pushOpClueRow(d, d.name || d.driver, 'Driver'));
+
     const rows = missingStaff.map(sm => {
       const rawName = String(sm.name || sm.staff || '').trim();
       const isNumFallback = /\(\d+\)$/.test(rawName);
@@ -5226,15 +5260,19 @@
       }
 
       // 2. Explicit father_name or workbook notes on operational records for this staff member
-      const inspectOperationalRow = (row, rowStaff, srcTitle) => {
+      const smCoNorm = smCo ? norm(smCo) : '';
+      const smRefNorm = (sm.reference && String(sm.reference).trim()) ? norm(sm.reference) : '';
+      const inspectOperationalRow = (row, rowStaff, srcTitle, meta) => {
         if (!row) return;
-        const rCo = coOf(row);
-        if (rCo && smCo && norm(rCo) !== norm(smCo)) return;
-        const refExactOp = Boolean(row.reference && sm.reference && String(row.reference).trim() && norm(row.reference) === norm(sm.reference));
+        const rCo = meta ? meta.rCo : coOf(row);
+        const rCoNorm = meta ? meta.rCoNorm : (rCo ? norm(rCo) : '');
+        if (rCo && smCo && rCoNorm !== smCoNorm) return;
+        const refExactOp = Boolean(smRefNorm && row.reference && String(row.reference).trim() && norm(row.reference) === smRefNorm);
         if ((!rCo || !smCo) && !refExactOp && hasHomonym) return;
-        const sim = jaroWinklerSim(baseName, String(rowStaff || '').replace(/\s*\(\d+\)$/, ''));
+        const cleanRowStaff = meta ? meta.rowStaffClean : String(rowStaff || '').replace(/\s*\(\d+\)$/, '');
+        const sim = jaroWinklerSim(baseName, cleanRowStaff);
         if (sim < 0.88) return;
-        const explicitFather = cleanBackfillFatherCandidate(row.father_name);
+        const explicitFather = meta ? meta.explicitFather : cleanBackfillFatherCandidate(row.father_name);
         if (explicitFather) {
           candidates.push({
             father_name: explicitFather,
@@ -5245,8 +5283,8 @@
             snippet: `${rowStaff || baseName} (${srcTitle})`
           });
         }
-        const noteText = [row.notes, row.note, row.reference].filter(Boolean).join(' · ');
-        if (noteText) {
+        const noteText = meta ? meta.noteText : [row.notes, row.note, row.reference].filter(Boolean).join(' · ');
+        if (noteText && (!meta || meta.noteHasFather)) {
           const noteFather = extractFatherFromTextNote(noteText, baseName);
           if (noteFather) {
             const pct = sim >= 0.97 ? 91 : 80;
@@ -5261,10 +5299,10 @@
           }
         }
       };
-      empAll.forEach(e => inspectOperationalRow(e, e.staff || e.name, 'Contract'));
-      flAll.forEach(f => inspectOperationalRow(f, f.staff || f.name, 'Freelance'));
-      salAll.forEach(s => inspectOperationalRow(s, s.staff, 'Payroll'));
-      drvAll.forEach(d => inspectOperationalRow(d, d.name || d.driver, 'Driver'));
+      for (let ci = 0; ci < opClueRows.length; ci++) {
+        const clue = opClueRows[ci];
+        inspectOperationalRow(clue.row, clue.rowStaff, clue.srcTitle, clue);
+      }
       if (sm.notes || sm.reference) inspectOperationalRow(sm, rawName, 'Staff Profile');
 
       // 3. Historical / cross-record 3-part name match (e.g. Bilal Badawi -> Bilal Khazaal Badawi)

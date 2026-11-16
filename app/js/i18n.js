@@ -7459,6 +7459,7 @@
       "Region is required. Select a Region or click inside a zone on the map.": "المنطقة مطلوبة. اختر منطقة أو انقر داخل نطاق على الخريطة.",
       "Region optional while supplier delivers material + transport; required if hauled in own trucks or 3rd-party peers": "المنطقة اختيارية عندما يسلّم المورّد المواد مع النقل؛ وإلزامية عند النقل بشاحناتنا أو بناقل خارجي",
       "Regional Driver OT Rates": "تعريفات إضافي السائقين حسب المنطقة",
+      "Regional Driver OT Rules": "قواعد إضافي السائقين حسب المنطقة",
       "Regional Trip & OT Rules": "قواعد بدل النقلات والإضافي حسب المنطقة",
       "Regional driver trip and night overtime rate schedule ($ per trip)": "جدول تعرفات نقلات السائقين والإضافي الليلي حسب المنطقة ($ للنقلة)",
       "Regions": "المناطق",
@@ -11834,6 +11835,87 @@
       "Receipt copied to clipboard": "تم نسخ الإيصال إلى الحافظة",
       "Bilingual EN + عربي": "ثنائي اللغة EN + عربي",
       "EN + عربي": "EN + عربي",
+      "Boundary Cliff": "حافة العتبة / القطع",
+      "Offset Range": "نطاق الفارق",
+      "Punches": "البصمات",
+      "Staff Concentrated": "الموظفون المتمركزون",
+      "Tuning Guidance": "توجيه الضبط",
+      "Card language": "لغة البطاقة",
+      "Select staff member": "اختر الموظف",
+      "Boundary Band Width (Min)": "عرض نطاق العتبة (دقيقة)",
+      "Lookback Window (Days)": "نافذة المراجعة (أيام)",
+      "Min Clustered Punches per Shift": "الحد الأدنى للبصمات المتجمعة لكل وردية",
+      "Top Staff": "أبرز الموظفين",
+      "Late Billed (Raw)": "التأخير المحتسب (الفعلي)",
+      "OT Min / Hrs": "إضافي د / س",
+      "Extras (+/-$)": "إضافات (+/-$)",
+      "All overtime, threshold, and snap block math remains 100% deterministic under the Per-Minute engine.": "تبقى جميع حسابات الإضافي والعتبات والتقريب قطعية 100% وفق محرّك الدقيقة.",
+      "Policy Mode & Rules": "نمط السياسة والقواعد",
+      "OT Cluster Brief": "موجز تكتّل الإضافي",
+      "Pre-Payday Card": "بطاقة ما قبل الصرف",
+      "Open Pre-Payday Card": "فتح بطاقة ما قبل الصرف",
+      "Pre-Payday Attendance & Earnings Card": "بطاقة الحضور والاستحقاقات قبل الصرف",
+      "30-Day OT Boundary & Snap Cluster Brief": "موجز تكتّل حدود الإضافي والتقريب خلال ٣٠ يوماً",
+      "30-Day OT Boundary & Snap Cluster Watchdog": "مراقب تكتّل حدود الإضافي والتقريب (30 يوماً)",
+      "Explain Clusters": "تفسير التكتّلات",
+      "Full Cluster Brief": "الموجز الكامل للتكتّل",
+      "Clean distribution": "توزيع سليم",
+      "Threshold Cliff": "عتبة بدء الإضافي",
+      "Snap / Block Cliff": "عتبة التقريب / البلوك",
+      "Tuning hint:": "إشارة الضبط:",
+      "Active Policy": "السياسة الفعّالة",
+      "Active Policy Engine:": "محرّك السياسة الفعّال:",
+      "Chronological Policy Splits:": "تقسيمات السياسة الزمنية:",
+      "Copy Text": "نسخ النص",
+      "Download PNG": "تنزيل PNG",
+      "Print Card": "طباعة البطاقة",
+      "Overtime (+$)": "الإضافي (+$)",
+      "Lateness (-$)": "التأخير (-$)",
+      "Absence (-$)": "الغياب (-$)",
+      "Extras (+$)": "البدلات والإضافات (+$)",
+      "Net Att. Impact": "صافي أثر الحضور",
+      "OT Pay (+$)": "بدل الإضافي (+$)",
+      "Late Ded. (-$)": "حسم التأخير (-$)",
+      "Net Att. (+/-$)": "صافي الحضور (+/-$)",
+      "OT Pay": "بدل الإضافي",
+      "Late Ded.": "حسم التأخير",
+      "Net Att.": "صافي الحضور",
+      "Card": "بطاقة",
+      "Open Pre-Payday Attendance Card": "فتح بطاقة الحضور قبل الصرف",
+      "Deterministic Digest:": "الموجز القطعي:",
+      "AI Edge Note:": "ملاحظة الذكاء الحافي:",
+      "Select month": "اختر الشهر",
+      "Read-only pre-payday card (frequency-ranked staff picker)": "بطاقة ما قبل الصرف للقراءة فقط (مرتبة حسب تكرار الموظف)",
+      "Copied pre-payday text summary.": "تم نسخ ملخص ما قبل الصرف النصي.",
+      "No saved phone on staff profile (WhatsApp opens contact picker)": "لا يوجد رقم هاتف محفوظ بملف الموظف (يفتح واتساب قائمة جهات الاتصال)",
+      "Pre-Payday Attendance PNG Preview": "معاينة صورة بطاقة الحضور قبل الصرف PNG",
+      "No attendance / payroll data available.": "لا توجد بيانات حضور أو رواتب متاحة.",
+      "Access restricted to your assigned companies.": "الوصول مقيّد بالشركات المصرّح لك بها.",
+      "Per-Minute": "بالدقيقة",
+      "Morning Shift": "الوردية الصباحية",
+      "Afternoon Shift": "الوردية المسائية",
+      "Evening Shift": "الوردية المسائية",
+      "Standard Shift": "الوردية القياسية",
+      "Shift 1": "الوردية 1",
+      "Shift 2": "الوردية 2",
+      "Main Shift": "الوردية الرئيسية",
+      "CLEAN PUNCHES": "بصمات سليمة",
+      "Clean Punches": "بصمات سليمة",
+      "30-DAY OT BOUNDARY & SNAP CLUSTERS (S14)": "تكتّلات حدود الإضافي والتقريب 30 يوماً (S14)",
+      "30-Day OT Boundary & Snap Clusters (S14)": "تكتّلات حدود الإضافي والتقريب 30 يوماً (S14)",
+      "30-DAY OT THRESHOLD & SNAP BOUNDARY CLUSTERS": "تكتّلات عتبات وحدود الإضافي خلال 30 يوماً",
+      "Attendance & Overtime, AI Sentinels & Ask ISABI": "الحضور والإضافي والمراقب الذكي واسأل ISABI",
+      "Attendance & Overtime, Domain Sentinels & Ask ISABI": "الحضور والإضافي ومراقبو القطاع واسأل ISABI",
+      "Rule #25 · Attendance & Shifts": "القاعدة #25 · الحضور والورديات",
+      "Attendance & Shifts": "الحضور والورديات",
+      "Open Attendance": "فتح الحضور",
+      "Spots clock-out punch clustering right above an overtime start threshold or snap/block cliff over the last 30 days under the Per-Minute engine so supervisors can inspect handover timing or tune threshold and snap constraints without changing deterministic math.": "يرصد تجمّع بصمات الخروج مباشرة فوق عتبة بدء الإضافي أو حد التقريب خلال آخر 30 يوماً ضمن محرّك الدقيقة، لمساعدة المشرفين على مراجعة وقت التسليم أو ضبط القيود دون تغيير الحساب الحتمي.",
+      "Attendance & Cluster Brief": "الحضور وموجز التكتّل",
+      "AI Root-Cause Note": "ملاحظة السبب الجذري بالذكاء الاصطناعي",
+      "Missing OUT": "نقص بصمة خروج",
+      "Base Salary": "الراتب الأساسي",
+      "Paid So Far": "المدفوع حتى الآن",
+      "Remaining Net": "الصافي المتبقي",
       "Salary Advance": "سلفة راتب",
       "1 row edited": "1 صف معدّل",
       "1 row added": "1 صف مضاف",
@@ -12229,7 +12311,6 @@
       "Late Min": "دقائق التأخير",
       "Leave": "إجازة",
       "Net USD Diff": "صافي الفرق ($)",
-      "Punches": "البصمات",
       "Rule Shift": "تحوّل القاعدة",
       "Late": "تأخير",
       "USD Diff": "فرق ($)",
@@ -12257,7 +12338,10 @@
       "0m OT Exact": "0د إضافي دقيق",
       "1 Legacy 0.1h Row": "صف 0.1 س قديم واحد",
       "1 Old 0.1h Row": "1 صف 0.1 س قديم",
+      "1 · Daily Attendance Rule-Audit & Policy Exceptions": "1 · تدقيق قواعد الحضور اليومية واستثناءات السياسات",
+      "2 · Daily Attendance Rule-Audit & Policy Exceptions": "2 · تدقيق قواعد الحضور اليومية واستثناءات السياسات",
       "3 · Daily Attendance Rule-Audit & Policy Exceptions": "3 · تدقيق قواعد الحضور اليومية واستثناءات السياسات",
+      "4 · Daily Attendance Rule-Audit & Policy Exceptions": "4 · تدقيق قواعد الحضور اليومية واستثناءات السياسات",
       "6-Industry OT Snap Cost Consolidation Rollup": "تجميع تكلفة تقريب الإضافي للقطاعات الستة",
       "After ($ / Min)": "بعد ($ / دقيقة)",
       "All Open Eligible": "جميع المفتوحة المؤهلة",
@@ -20020,6 +20104,7 @@
       "Region is required. Select a Region or click inside a zone on the map.": "La région est obligatoire. Sélectionnez une région ou cliquez dans une zone sur la carte.",
       "Region optional while supplier delivers material + transport; required if hauled in own trucks or 3rd-party peers": "Région facultative si le fournisseur livre rendu ; obligatoire si transport propre ou tiers",
       "Regional Driver OT Rates": "Barèmes HS chauffeurs par région",
+      "Regional Driver OT Rules": "Règles HS chauffeurs par région",
       "Regional Trip & OT Rules": "Barèmes Régionaux Voyages & HS",
       "Regional driver trip and night overtime rate schedule ($ per trip)": "Barème régional des voyages chauffeurs et heures sup. de nuit ($ par voyage)",
       "Regions": "Régions",
@@ -24395,6 +24480,87 @@
       "Receipt copied to clipboard": "Reçu copié dans le presse-papiers",
       "Bilingual EN + عربي": "Bilingue EN + عربي",
       "EN + عربي": "EN + عربي",
+      "Boundary Cliff": "Seuil de palier",
+      "Offset Range": "Plage d'écart",
+      "Punches": "Pointages",
+      "Staff Concentrated": "Personnel concentré",
+      "Tuning Guidance": "Conseil de réglage",
+      "Card language": "Langue de la carte",
+      "Select staff member": "Sélectionner un employé",
+      "Boundary Band Width (Min)": "Largeur de bande limite (Min)",
+      "Lookback Window (Days)": "Fenêtre d'analyse (Jours)",
+      "Min Clustered Punches per Shift": "Min. pointages groupés par quart",
+      "Top Staff": "Principaux employés",
+      "Late Billed (Raw)": "Retard facturé (Brut)",
+      "OT Min / Hrs": "HS Min / H",
+      "Extras (+/-$)": "Extras (+/-$)",
+      "All overtime, threshold, and snap block math remains 100% deterministic under the Per-Minute engine.": "Tous les calculs d'heures sup., seuils et arrondis restent 100 % déterministes selon le moteur à la minute.",
+      "Policy Mode & Rules": "Mode et règles de politique",
+      "OT Cluster Brief": "Synthèse paliers HS",
+      "Pre-Payday Card": "Fiche pré-paie",
+      "Open Pre-Payday Card": "Ouvrir la fiche pré-paie",
+      "Pre-Payday Attendance & Earnings Card": "Fiche de présence et gains pré-paie",
+      "30-Day OT Boundary & Snap Cluster Brief": "Synthèse 30 jours des seuils et paliers HS",
+      "30-Day OT Boundary & Snap Cluster Watchdog": "Veille 30 jours sur seuils et paliers HS",
+      "Explain Clusters": "Expliquer les paliers",
+      "Full Cluster Brief": "Rapport complet des paliers",
+      "Clean distribution": "Répartition saine",
+      "Threshold Cliff": "Seuil de déclenchement",
+      "Snap / Block Cliff": "Palier d'arrondi / bloc",
+      "Tuning hint:": "Piste de réglage :",
+      "Active Policy": "Politique active",
+      "Active Policy Engine:": "Moteur de politique actif :",
+      "Chronological Policy Splits:": "Découpage chronologique des politiques :",
+      "Copy Text": "Copier le texte",
+      "Download PNG": "Télécharger PNG",
+      "Print Card": "Imprimer la fiche",
+      "Overtime (+$)": "Heures sup. (+$)",
+      "Lateness (-$)": "Retard (-$)",
+      "Absence (-$)": "Absence (-$)",
+      "Extras (+$)": "Primes & frais (+$)",
+      "Net Att. Impact": "Impact net présence",
+      "OT Pay (+$)": "Paie HS (+$)",
+      "Late Ded. (-$)": "Retenue retard (-$)",
+      "Net Att. (+/-$)": "Présence nette (+/-$)",
+      "OT Pay": "Paie HS",
+      "Late Ded.": "Retenue retard",
+      "Net Att.": "Présence nette",
+      "Card": "Fiche",
+      "Open Pre-Payday Attendance Card": "Ouvrir la fiche de présence pré-paie",
+      "Deterministic Digest:": "Synthèse déterministe :",
+      "AI Edge Note:": "Note IA Edge :",
+      "Select month": "Sélectionner le mois",
+      "Read-only pre-payday card (frequency-ranked staff picker)": "Fiche pré-paie en lecture seule (liste triée par fréquence)",
+      "Copied pre-payday text summary.": "Résumé texte pré-paie copié.",
+      "No saved phone on staff profile (WhatsApp opens contact picker)": "Aucun numéro enregistré sur la fiche (WhatsApp ouvre les contacts)",
+      "Pre-Payday Attendance PNG Preview": "Aperçu PNG de présence pré-paie",
+      "No attendance / payroll data available.": "Aucune donnée de présence ou de paie disponible.",
+      "Access restricted to your assigned companies.": "Accès restreint à vos sociétés autorisées.",
+      "Per-Minute": "À la minute",
+      "Morning Shift": "Poste du matin",
+      "Afternoon Shift": "Poste d'après-midi",
+      "Evening Shift": "Poste du soir",
+      "Standard Shift": "Poste standard",
+      "Shift 1": "Poste 1",
+      "Shift 2": "Poste 2",
+      "Main Shift": "Poste principal",
+      "CLEAN PUNCHES": "Pointages conformes",
+      "Clean Punches": "Pointages conformes",
+      "30-DAY OT BOUNDARY & SNAP CLUSTERS (S14)": "Paliers & seuils HS 30 jours (S14)",
+      "30-Day OT Boundary & Snap Clusters (S14)": "Paliers & seuils HS 30 jours (S14)",
+      "30-DAY OT THRESHOLD & SNAP BOUNDARY CLUSTERS": "Paliers et seuils HS sur 30 jours",
+      "Attendance & Overtime, AI Sentinels & Ask ISABI": "Présence & HS, Sentinelles IA & Ask ISABI",
+      "Attendance & Overtime, Domain Sentinels & Ask ISABI": "Présence & HS, Sentinelles Secteur & Ask ISABI",
+      "Rule #25 · Attendance & Shifts": "Règle #25 · Présence & Quarts",
+      "Attendance & Shifts": "Présence & Quarts",
+      "Open Attendance": "Ouvrir le pointage",
+      "Spots clock-out punch clustering right above an overtime start threshold or snap/block cliff over the last 30 days under the Per-Minute engine so supervisors can inspect handover timing or tune threshold and snap constraints without changing deterministic math.": "Détecte les concentrations de pointages de sortie juste au-dessus d'un seuil d'heures supplémentaires ou d'un palier d'arrondi sur 30 jours sous le moteur par minute, afin d'ajuster les consignes sans modifier le calcul déterministe.",
+      "Attendance & Cluster Brief": "Présence & synthèse des paliers",
+      "AI Root-Cause Note": "Note IA sur la cause racine",
+      "Missing OUT": "Sortie manquante",
+      "Base Salary": "Salaire de base",
+      "Paid So Far": "Payé à ce jour",
+      "Remaining Net": "Net restant",
       "Salary Advance": "Avance sur salaire",
       "1 row edited": "1 ligne modifiée",
       "1 row added": "1 ligne ajoutée",
@@ -24790,7 +24956,6 @@
       "Late Min": "Min. retard",
       "Leave": "Congé",
       "Net USD Diff": "Diff. nette USD",
-      "Punches": "Pointages",
       "Rule Shift": "Changement règle",
       "Late": "Retard",
       "USD Diff": "Diff. USD",
@@ -24818,7 +24983,10 @@
       "0m OT Exact": "0m HS exactes",
       "1 Legacy 0.1h Row": "1 ligne 0.1h héritée",
       "1 Old 0.1h Row": "1 ligne 0.1h héritée",
+      "1 · Daily Attendance Rule-Audit & Policy Exceptions": "1 · Audit quotidien des règles de présence et exceptions",
+      "2 · Daily Attendance Rule-Audit & Policy Exceptions": "2 · Audit quotidien des règles de présence et exceptions",
       "3 · Daily Attendance Rule-Audit & Policy Exceptions": "3 · Audit quotidien des règles de présence et exceptions",
+      "4 · Daily Attendance Rule-Audit & Policy Exceptions": "4 · Audit quotidien des règles de présence et exceptions",
       "6-Industry OT Snap Cost Consolidation Rollup": "Consolidation palier HS des 6 secteurs",
       "After ($ / Min)": "Après ($ / min)",
       "All Open Eligible": "Toutes ouvertes éligibles",
@@ -29357,7 +29525,160 @@
     m = trimmed.match(/^Policy,\s*Multipliers\s*&\s*Perks\s+Group\s+for\s+(.+)$/i);
     if (m) return lang === 'ar' ? `مجموعة السياسة والمضاعفات والمزايا لـ ${m[1]}` : `Groupe de politique et avantages pour ${m[1]}`;
 
-
+    // Attendance RDL Breakdown, OT Boundary Clusters & Pre-Payday Card
+    m = trimmed.match(/^2\s*·\s*Attendance\s*&\s*Minute\s*Breakdown\s*\(([\d,]+)\s+Staff\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `2 · تفصيل الحضور والدقائق (${m[1]} موظفاً)`
+        : `2 · Détail Présence & Minutes (${m[1]} Employés)`;
+    }
+    m = trimmed.match(/^3\s*·\s*Salary\s*Disbursement\s*Vouchers\s*\(([\d,]+)\s+Entr(?:y|ies)\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `3 · سندات صرف الرواتب (${m[1]} قيداً)`
+        : `3 · Pièces de Règlement Salaires (${m[1]} Écritures)`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+Boundary\s+Clusters?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} تكتّلات على حدود الإضافي`
+        : `${m[1]} Palier${Number(m[1]) === 1 ? '' : 's'} à Concentration HS`;
+    }
+    m = trimmed.match(/^OT\s+Boundary\s+Cluster\s+Watchdog\s*\(([\d,]+)\s+Shift\s+Cliffs?\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مراقب تكتّل حدود الإضافي (${m[1]} حواف ورديات)`
+        : `Veille Paliers & Seuils HS (${m[1]} Seuils de Quarts)`;
+    }
+    m = trimmed.match(/^Scanned\s+([\d,]+)\s+clock-out\s+punches\s+in\s+the\s+last\s+([\d,]+)\s+days:\s+clean\s+punch\s+distribution\s+around\s+OT\s+thresholds\s+and\s+snap\s+boundaries\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تم مسح ${m[1]} بصمة خروج خلال آخر ${m[2]} يوماً: توزيع سليم للبصمات حول عتبات وحدود الإضافي.`
+        : `${m[1]} pointages de sortie analysés sur ${m[2]} jours : répartition saine autour des seuils et paliers HS.`;
+    }
+    m = trimmed.match(/^Scanned\s+([\d,]+)\s+clock-outs?\s+over\s+([\d,]+)\s+days\s*\(([^)]+)\):\s+clean\s+distribution\s+with\s+no\s+clustering\s+at\s+OT\s+start\s+thresholds\s+or\s+snap\s+boundaries\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تم مسح ${m[1]} بصمة خروج خلال ${m[2]} يوماً (${m[3]}): توزيع سليم دون تجمّع قرب عتبات أو قوالب العمل الإضافي.`
+        : `${m[1]} pointages analysés sur ${m[2]}j (${m[3]}) : aucun regroupement anormal autour des seuils ou paliers HS.`;
+    }
+    m = trimmed.match(/^Scanned\s+([\d,]+)\s+clock-outs?\s+in\s+([\d,]+)d\s+within\s+\+([\d,]+)m\s+band:\s+clean\s+punch\s+distribution\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تم مسح ${m[1]} بصمة خروج خلال ${m[2]} يوماً ضمن نطاق +${m[3]} د: توزيع سليم للبصمات.`
+        : `${m[1]} pointages analysés sur ${m[2]}j (bande +${m[3]}m) : répartition saine.`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+punches\s*·\s*(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} بصمة · ${m[2]} إلى ${m[3]}`
+        : `${m[1]} pointages · ${m[2]} au ${m[3]}`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+(CLUSTERS?|clusters?)$/);
+    if (m) {
+      if (m[2] === 'CLUSTER' || m[2] === 'CLUSTERS') return lang === 'ar' ? `${m[1]} تكتّلات` : `${m[1]} PALIERS`;
+      return lang === 'ar' ? `${m[1]} تكتّلات` : `${m[1]} regroupements`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+boundary\s+cluster\(s\)\s+across\s+([\d,]+)\s+punches\s+in\s+([\d,]+)d:\s+(.+)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} تكتّلات ضمن ${m[2]} بصمة خلال ${m[3]} يوماً: ${m[4]}`
+        : `${m[1]} palier(s) détecté(s) sur ${m[2]} pointages (${m[3]}j) : ${m[4]}`;
+    }
+    m = trimmed.match(/^(\d+)\s+boundary\s+clusters?$/i);
+    if (m) {
+      return lang === 'ar' ? `${m[1]} تكتّل حدودي` : `${m[1]} regroupement(s)`;
+    }
+    m = trimmed.match(/^(Snap\s*\/\s*Block\s*Cliff|Threshold\s*Cliff)\s*·\s*([\d,]+)x\s*\(([\d.,]+%)\)$/i);
+    if (m) {
+      const bKey = /snap/i.test(m[1]) ? 'Snap / Block Cliff' : 'Threshold Cliff';
+      const badge = translateCore(bKey, lang, depth + 1);
+      return lang === 'ar' ? `${badge} · ${m[2]}× (${m[3]})` : `${badge} · ${m[2]}x (${m[3]})`;
+    }
+    m = trimmed.match(/^Detected\s+([\d,]+)\s+clock-out\s+boundary\s+cluster\(s\)\s+across\s+([\d,]+)\s+punches\s*\(([^)]+)\)\.\s*Top\s+finding:\s*(.+)$/i);
+    if (m) {
+      const lead = evalCore(m[4].trim(), lang, depth + 1);
+      const span = m[3].replace(/\s+to\s+/i, lang === 'ar' ? ' إلى ' : ' au ');
+      return lang === 'ar'
+        ? `تم رصد ${m[1]} تجمّع(ات) قرب حدود الإضافي ضمن ${m[2]} بصمة (${span}). الأبرز: ${lead.out}`
+        : `${m[1]} regroupement(s) détecté(s) sur ${m[2]} pointages (${span}). Principal : ${lead.out}`;
+    }
+    m = trimmed.match(/^(.+?)\s+\(([^()]+)\):\s+([\d,]+)\s+clock-outs\s*\(([\d.,]+%)\)\s+clustered\s+at\s+(\+\d+m(?:\s+to\s+\+\d+m)?)\s+raw\s+OT\s+around\s+(.+)$/i);
+    if (m) {
+      const sRes = evalCore(m[1].trim(), lang, depth + 1);
+      const sOut = sRes.ok ? sRes.out : m[1].trim();
+      const bOut = evalCore(m[6].trim(), lang, depth + 1).out;
+      const rng = m[5].replace(/\s+to\s+/i, lang === 'ar' ? ' إلى ' : ' à ');
+      return lang === 'ar'
+        ? `${sOut} (${m[2]}): ${m[3]} بصمات خروج (${m[4]}) تجمعت عند ${rng} إضافي فعلي قرب ${bOut}`
+        : `${sOut} (${m[2]}) : ${m[3]} pointages (${m[4]}) groupés à ${rng} HS brutes autour de ${bOut}`;
+    }
+    m = trimmed.match(/^(.+?)\s+\(([^()]+)\):\s+([\d,]+)\s+clock-outs\s*\(([\d.,]+%)\)\s+clustered\s+at\s+(\+\d+m(?:\s+to\s+\+\d+m)?)\s+past\s+shift\s+end\s*\((\d+)m\s+threshold,\s*(Shift-End counting|After-Threshold)\)\.?$/i);
+    if (m) {
+      const sRes = evalCore(m[1].trim(), lang, depth + 1);
+      const sOut = sRes.ok ? sRes.out : m[1].trim();
+      const rng = m[5].replace(/\s+to\s+/i, lang === 'ar' ? ' إلى ' : ' à ');
+      const modeAr = /Shift-End/i.test(m[7]) ? 'نهاية الدوام' : 'بعد العتبة';
+      const modeFr = /Shift-End/i.test(m[7]) ? 'Fin de poste' : 'Après seuil';
+      return lang === 'ar'
+        ? `${sOut} (${m[2]}): ${m[3]} بصمات خروج (${m[4]}) تجمعت عند ${rng} بعد نهاية الدوام (عتبة ${m[6]} د، ${modeAr})`
+        : `${sOut} (${m[2]}) : ${m[3]} pointages (${m[4]}) groupés à ${rng} après fin de poste (seuil ${m[6]}m, ${modeFr})`;
+    }
+    m = trimmed.match(/^Review\s+(?:snap-at\s+(\d+)m|(\d+)m\s+block)\s+boundary\s+or\s+adjust\s+OT\s+snap\s+to\s+Exact\s+Min\s+on\s+(.+?)\.?$/i);
+    if (m) {
+      const minVal = m[1] || m[2];
+      const sRes = evalCore(m[3].trim(), lang, depth + 1);
+      const sOut = sRes.ok ? sRes.out : m[3].trim();
+      return lang === 'ar'
+        ? `راجع حد التثبيت (${minVal} د) أو فعّل الحساب بالدقيقة الدقيقة لوردية ${sOut}.`
+        : `Vérifiez le palier (${minVal}m) ou passez en minutes exactes sur ${sOut}.`;
+    }
+    m = trimmed.match(/^Evaluate\s+switching\s+Counting\s+Mode\s+from\s+Shift-End\s+to\s+After\s+Threshold\s+or\s+nudging\s+threshold\s+from\s+(\d+)m\s+to\s+(\d+)m\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `قيّم تحويل الاحتساب إلى "بعد العتبة" أو تعديل العتبة من ${m[1]} إلى ${m[2]} دقيقة.`
+        : `Envisagez de compter Après Seuil ou d'ajuster le seuil de ${m[1]}m à ${m[2]}m.`;
+    }
+    m = trimmed.match(/^Inspect\s+shift\s+handover\s*\/\s*queue\s+timing\s+around\s+\+(\d+)m\s+on\s+(.+?)\.?$/i);
+    if (m) {
+      const sRes = evalCore(m[2].trim(), lang, depth + 1);
+      const sOut = sRes.ok ? sRes.out : m[2].trim();
+      return lang === 'ar'
+        ? `تحقق من توقيت التسليم قرب +${m[1]} دقيقة في وردية ${sOut}.`
+        : `Vérifiez les pointages de fin de poste autour de +${m[1]}m sur ${sOut}.`;
+    }
+    m = trimmed.match(/^(\d+)m\s+OT\s+start\s+\((Shift-End|After\s+Threshold)\)$/i);
+    if (m) {
+      const isSe = /Shift-End/i.test(m[2]);
+      return lang === 'ar' ? `${m[1]} د بدء إضافي (${isSe ? 'نهاية الدوام' : 'بعد العتبة'})` : `Seuil ${m[1]}m (${isSe ? 'Fin de poste' : 'Après seuil'})`;
+    }
+    m = trimmed.match(/^Snap\s+at\s+(\d+)m\s+to\s+(\d+)m\s+block$/i);
+    if (m) return lang === 'ar' ? `تثبيت عند ${m[1]} د إلى ${m[2]} د` : `Arrondi à ${m[1]}m vers ${m[2]}m`;
+    m = trimmed.match(/^(\d+)m\s+whole-block\s+cliff$/i);
+    if (m) return lang === 'ar' ? `كتل كاملة ${m[1]} د` : `Blocs complets ${m[1]}m`;
+    m = trimmed.match(/^\+(\d+)m(?:\s+to\s+\+(\d+)m)?$/i);
+    if (m) {
+      if (m[2]) return lang === 'ar' ? `+${m[1]} د إلى +${m[2]} د` : `+${m[1]}m à +${m[2]}m`;
+      return lang === 'ar' ? `+${m[1]} د` : `+${m[1]}m`;
+    }
+    m = trimmed.match(/^WhatsApp-Ready\s+Light-Mode\s+PNG\s*\((\d+x\d+px)\)$/i);
+    if (m) return lang === 'ar' ? `صورة WhatsApp عالية التباين (${m[1]})` : `PNG clair prêt pour WhatsApp (${m[1]})`;
+    m = trimmed.match(/^WhatsApp\s+on\s+file:\s*(\+\d+)$/i);
+    if (m) return lang === 'ar' ? `رقم واتساب المسجّل: ${m[1]}` : `WhatsApp enregistré : ${m[1]}`;
+    m = trimmed.match(/^Summary\s+ready\s*\((\d+)\s+chars\)\.?$/i);
+    if (m) return lang === 'ar' ? `الملخص جاهز (${m[1]} حرفاً).` : `Résumé prêt (${m[1]} caractères).`;
+    m = trimmed.match(/^(.+?)\s*·\s*([\d,]+)x$/);
+    if (m) return lang === 'ar' ? `${m[1].trim()} · ${m[2]}×` : `${m[1].trim()} · ${m[2]}x`;
+    m = trimmed.match(/^(.+?)\s+-\s+(.+)$/);
+    if (m && !/\bto\b/i.test(m[1])) {
+      const bRes = evalCore(m[2].trim(), lang, depth + 1);
+      if (bRes.ok) {
+        const aRes = evalCore(m[1].trim(), lang, depth + 1);
+        if (aRes.ok || /\bshift\b/i.test(m[1].trim())) {
+          return `${aRes.ok ? aRes.out : m[1].trim()} - ${bRes.out}`;
+        }
+      }
+    }
 
     // Sibling industry overview banners & sentinel watchdogs
     m = trimmed.match(/^(\d+)\s+Entities\s*·\s*(\$[\d.,]+[kKMB]?)\s+IC\s+eliminated$/i);
@@ -30532,7 +30853,7 @@
         const sel = el.parentElement;
         const val = el.getAttribute('value') || '';
         if (/^(rec_|usr_|emp_|drv_|eq_|cust_|sup_|site_|prop_|pol_|clm_|cor_|part_|\d{3,})/.test(val)) return true;
-        if (sel && /^(f_|insp_|attFilterStaff|kioskDriver|kioskCustomer|kioskSite|kioskEquip)/.test(sel.id || '')) {
+        if (sel && /^(f_|insp_|attFilterStaff|ppdStaffSel|kioskDriver|kioskCustomer|kioskSite|kioskEquip)/.test(sel.id || '')) {
           if (val && val !== 'all' && val !== 'ALL' && val !== '') return true;
         }
       }
