@@ -433,7 +433,7 @@
     persistAuditsLocal();
     _briefState.data = null;
     const inDemoScope = Boolean(C && ((C.isDemoScopeActive && C.isDemoScopeActive()) || (C.isDemoSandboxSession && C.isDemoSandboxSession())));
-    if (!inDemoScope && !(spec && spec.deferCloudSync) && C && typeof C.syncWithCloud === 'function') {
+    if (!inDemoScope && C && typeof C.syncWithCloud === 'function') {
       C.syncWithCloud(true);
     }
     scheduleMountWatchdog();

@@ -1073,155 +1073,7 @@
 
   let _geoConfigPushChain = Promise.resolve();
 
-  function _replaceGeoConfigStore(snap) {
-    if (!snap || typeof snap !== 'object') return false;
-    const cp = v => (v && typeof v === 'object') ? JSON.parse(JSON.stringify(v)) : {};
-    GEO_STORE.companyHubs = cp(snap.companyHubs);
-    GEO_STORE.regions = cp(snap.regions);
-    GEO_STORE.sites = cp(snap.sites);
-    GEO_STORE.pairKmOverrides = cp(snap.pairKmOverrides);
-    GEO_STORE.verifiedRoutes = cp(snap.verifiedRoutes);
-    GEO_STORE._pairKmTs = cp(snap._pairKmTs);
-    GEO_STORE._deletedKeys = cp(snap._deletedKeys);
-    GEO_STORE.updatedAt = String(snap.updatedAt || '');
-    const isDemoGeo = isDemoGeoMode();
-    try {
-      const ser = JSON.stringify(GEO_STORE);
-      if (isDemoGeo) sessionStorage.setItem('demo_sbx_' + STORAGE_KEY, ser);
-      else localStorage.setItem(STORAGE_KEY, ser);
-    } catch (_) {}
-    return true;
-  }
-
-  let _geoSessionEpoch = 0;
-  let _geoExplicitlySignedOut = false;
-  function markGeoSessionActive() {
-    _geoExplicitlySignedOut = false;
-  }
-  function resetGeoStoreSession() {
-    _geoSessionEpoch++;
-    _geoExplicitlySignedOut = true;
-    GEO_STORE.companyHubs = {};
-    GEO_STORE.regions = {};
-    GEO_STORE.sites = {};
-    GEO_STORE.pairKmOverrides = {};
-    GEO_STORE.verifiedRoutes = {};
-    GEO_STORE.routeKmCache = {};
-    GEO_STORE._pairKmTs = {};
-    GEO_STORE._deletedKeys = {};
-    GEO_STORE.updatedAt = '';
-    try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
-    try { sessionStorage.removeItem('demo_sbx_' + STORAGE_KEY); } catch (_) {}
-    return true;
-  }
-
-  function _splitScopedGeoKey(key, val) {
-    const rawKey = String(key || '').trim();
-    const kl = rawKey.toLowerCase();
-    const indMap = [
-      ['manufacturing::', 'Manufacturing'],
-      ['holding & treasury::', 'Holding & Treasury'],
-      ['holding & group treasury::', 'Holding & Treasury'],
-      ['hospitality & resorts::', 'Hospitality & Resorts'],
-      ['automotive & heavy trading::', 'Automotive & Heavy Trading'],
-      ['real estate & property::', 'Real Estate & Property'],
-      ['insurance & brokerage::', 'Insurance & Brokerage']
-    ];
-    for (const [pfx, indName] of indMap) {
-      if (kl.startsWith(pfx)) {
-        return { hasIndPrefix: true, ind: indName, body: rawKey.slice(pfx.length) };
-      }
-    }
-    const vInd = (val && typeof val === 'object' && (val._industry || val.ind || val.industry)) ? String(val._industry || val.ind || val.industry).trim() : '';
-    return { hasIndPrefix: false, ind: vInd || 'Manufacturing', body: rawKey };
-  }
-
-  function _canSendGeoBucketEntry(bucket, key, val) {
-    try {
-      if (typeof window !== 'undefined' && typeof window.MFG_IS_OWNER === 'function' && window.MFG_IS_OWNER() === true) {
-        return true;
-      }
-    } catch (_) {}
-    if (bucket === 'companyHubs') {
-      const canon = BU_LIST.find(b => norm(b) === norm(key)) || String(key || '').trim();
-      if (!canon) return false;
-      const vCo = (val && typeof val === 'object' && val.company) ? String(val.company).trim() : '';
-      return canAccessGeoIndustryNow('Manufacturing')
-        && canAccessGeoCompanyNow(canon, { requireExplicit: true })
-        && (!vCo || canAccessGeoCompanyNow(vCo));
-    }
-    const split = _splitScopedGeoKey(key, val);
-    if (val && typeof val === 'object') {
-      const vCo = String(val.company || val.resort || val.entity || '').trim();
-      if (vCo && !canAccessGeoCompanyNow(vCo)) return false;
-    }
-    if (!canAccessGeoIndustryNow(split.ind)) return false;
-    const seed = (typeof window !== 'undefined' && window.MFG_SEED) ? window.MFG_SEED : null;
-    if (bucket === 'sites') {
-      const cleanBody = split.body.replace(/^(?:customer|supplier):/i, '').trim();
-      const colonIdx = cleanBody.indexOf(':');
-      if (colonIdx > 0) {
-        const coHead = cleanBody.slice(0, colonIdx).trim();
-        if (coHead && canAccessGeoCompanyNow(coHead, { requireExplicit: true }) === false && /^(wtc|bbconstruction|bbc|lions transport|lions|bdeir holding|blanca|la una|palms|voile|platinum|korri auto|shacman|properties|4235 company|4235|insurance company)$/i.test(coHead)) {
-          return false;
-        }
-      }
-      const nkTarget = norm(cleanBody);
-      const seedSites = (seed && seed.records && Array.isArray(seed.records.sites)) ? seed.records.sites : [];
-      const hits = seedSites.filter(s => s && isRowInGeoIndustry(s, split.ind) && norm(s.name) === nkTarget);
-      if (hits.length && !hits.some(s => !s.company || canAccessGeoCompanyNow(s.company))) return false;
-    } else if (bucket === 'regions') {
-      const nkTarget = norm(split.body);
-      const seedRegs = (seed && seed.records && Array.isArray(seed.records.regions)) ? seed.records.regions : [];
-      const hits = seedRegs.filter(r => r && norm(r.name) === nkTarget);
-      if (hits.length && !hits.some(r => canAccessGeoIndustryNow(r._industry || 'Manufacturing'))) return false;
-    } else if (bucket === 'pairKmOverrides' || bucket === 'verifiedRoutes') {
-      const seedSites = (seed && seed.records && Array.isArray(seed.records.sites)) ? seed.records.sites : [];
-      for (const seg of split.body.split(/\|\|?/)) {
-        const s = String(seg || '').trim();
-        const bm = s.match(/^bu:(.+)$/i);
-        if (bm && !canAccessGeoCompanyNow(bm[1].trim())) return false;
-        const sm = s.match(/^site:(.+)$/i);
-        if (sm) {
-          const sName = sm[1].trim();
-          const hits = seedSites.filter(r => r && isRowInGeoIndustry(r, split.ind) && norm(r.name) === norm(sName));
-          if (hits.length && !hits.some(r => !r.company || canAccessGeoCompanyNow(r.company))) return false;
-        }
-      }
-    }
-    return true;
-  }
-
-  function exportScopedGeoConfigForCaller() {
-    try {
-      if (typeof window !== 'undefined' && typeof window.MFG_IS_OWNER === 'function' && window.MFG_IS_OWNER() === true) {
-        return exportGeoConfig();
-      }
-    } catch (_) {}
-    const out = { companyHubs: {}, regions: {}, sites: {}, pairKmOverrides: {}, verifiedRoutes: {}, _pairKmTs: {}, _deletedKeys: {}, updatedAt: GEO_STORE.updatedAt || '' };
-    ['companyHubs', 'regions', 'sites', 'pairKmOverrides', 'verifiedRoutes'].forEach(bucket => {
-      const src = GEO_STORE[bucket] || {};
-      Object.keys(src).forEach(k => {
-        if (_canSendGeoBucketEntry(bucket, k, src[k])) out[bucket][k] = src[k];
-      });
-    });
-    const pTs = GEO_STORE._pairKmTs || {};
-    Object.keys(pTs).forEach(pk => {
-      if (Object.prototype.hasOwnProperty.call(out.pairKmOverrides, pk)) out._pairKmTs[pk] = pTs[pk];
-    });
-    const dKeys = GEO_STORE._deletedKeys || {};
-    Object.keys(dKeys).forEach(dk => {
-      const idx = dk.indexOf(':');
-      if (idx <= 0) return;
-      const bucket = dk.slice(0, idx);
-      const entryKey = dk.slice(idx + 1);
-      if (!['companyHubs', 'regions', 'sites', 'pairKmOverrides', 'verifiedRoutes'].includes(bucket)) return;
-      if (_canSendGeoBucketEntry(bucket, entryKey, null)) out._deletedKeys[dk] = dKeys[dk];
-    });
-    return out;
-  }
-
-  function saveStoredConfig(pushServer = true, opts = {}) {
+  function saveStoredConfig(pushServer = true) {
     GEO_STORE.updatedAt = new Date().toISOString();
     const isDemoGeo = isDemoGeoMode();
     try {
@@ -1231,89 +1083,28 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(GEO_STORE));
       }
     } catch (_) {}
-    const o = (opts && typeof opts === 'object') ? opts : {};
-    const allowGeoApi = Boolean(o.allowNewSiteModal || o.allowTicketMissingPin || o.allowNewRegionModal);
-    const hasFullGeoWrite = (() => {
+    const canWriteGeoApi = (() => {
       try {
         return (typeof window.MFG_CAN_PIN_LOCATIONS === 'function' && window.MFG_CAN_PIN_LOCATIONS() === true)
-          || (typeof window.MFG_CAN_SHAPE_REGIONS === 'function' && window.MFG_CAN_SHAPE_REGIONS() === true)
-          || (typeof window.MFG_CAN_WRITE_GEO_CONFIG === 'function' && window.MFG_CAN_WRITE_GEO_CONFIG() === true);
+          || (typeof window.MFG_CAN_SHAPE_REGIONS === 'function' && window.MFG_CAN_SHAPE_REGIONS() === true);
       } catch (_) { return false; }
     })();
-    const canWriteGeoApi = allowGeoApi || hasFullGeoWrite;
     const canPostGeoApi = !isDemoGeo && canWriteGeoApi && (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname || '') || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
     if (pushServer && canPostGeoApi && typeof window.fetch === 'function' && (!navigator.webdriver || window.__ISABI_TEST_EDGE) && (!window.__MFG_HEADLESS_TEST || window.__ISABI_TEST_EDGE)) {
       try {
         const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
-        const postCfg = (!hasFullGeoWrite && allowGeoApi && o.scopedConfig && typeof o.scopedConfig === 'object')
-          ? o.scopedConfig
-          : exportScopedGeoConfigForCaller();
-        const saveEpoch = _geoSessionEpoch;
-        const payloadBody = JSON.stringify({ config: postCfg });
-        const pushP = _geoConfigPushChain.catch(() => {}).then(() => edgeFetch('./api/geo_config', {
+        const payloadBody = JSON.stringify({ config: exportGeoConfig() });
+        _geoConfigPushChain = _geoConfigPushChain.catch(() => {}).then(() => edgeFetch('./api/geo_config', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: payloadBody
-        }).then(async res => {
-          if (saveEpoch !== _geoSessionEpoch) return res;
-          if (res && res.ok) {
-            if (!o.skipCloudPush && typeof window.__mfgScheduleCloudPush === 'function') {
-              try { window.__mfgScheduleCloudPush(); } catch (_) {}
-            }
-            if (typeof o.onAccept === 'function') {
-              try { o.onAccept(res); } catch (_) {}
-            }
-            return res;
-          }
-          let errMsg = 'Map update was rejected by the server.';
-          try {
-            const errJson = res ? await (typeof res.clone === 'function' ? res.clone() : res).json().catch(() => null) : null;
-            if (errJson && errJson.error) errMsg = String(errJson.error);
-          } catch (_) {}
-          try { if (res && typeof res === 'object') res._parsedError = errMsg; } catch (_) {}
-          if (res && !res.ok && (res.status == null || Number(res.status) >= 400)) {
-            let restored = false;
-            try {
-              const pullRes = await edgeFetch('./api/geo_config', { method: 'GET', credentials: 'same-origin' });
-              if (pullRes && pullRes.ok) {
-                const pullJson = await pullRes.json().catch(() => null);
-                const srvCfg = pullJson && pullJson.config && typeof pullJson.config === 'object' ? pullJson.config : null;
-                if (srvCfg) {
-                  restored = _replaceGeoConfigStore(srvCfg);
-                }
-              }
-            } catch (_) {}
-            if (!restored && o.prevGeoStoreSnap && typeof o.prevGeoStoreSnap === 'object') {
-              _replaceGeoConfigStore(o.prevGeoStoreSnap);
-            }
-            if (typeof o.onReject === 'function') {
-              try { await o.onReject(res, errMsg); } catch (_) {}
-            } else {
-              const prevSeed = (typeof window !== 'undefined' && window.MFG_SEED) ? window.MFG_SEED : null;
-              if (prevSeed) hydrateSeedGeo(prevSeed, true, true);
-              if (typeof window !== 'undefined' && typeof window.__mfgReapplyCustomRecordsToSeed === 'function') {
-                try { window.__mfgReapplyCustomRecordsToSeed(); } catch (_) {}
-                if (prevSeed) hydrateSeedGeo(prevSeed, true, false);
-              }
-              if (typeof STUDIO === 'object' && STUDIO && typeof STUDIO._rerender === 'function') STUDIO._rerender();
-            }
-            if (o.toastOnReject !== false) {
-              const toastFn = o.toast || (typeof STUDIO === 'object' && STUDIO && STUDIO._toast) || null;
-              if (typeof toastFn === 'function') {
-                try { toastFn(errMsg, 'err'); } catch (_) {}
-              }
-            }
-          }
-          return res;
         })).catch(() => {});
-        _geoConfigPushChain = pushP;
-        return pushP;
       } catch (_) {}
-    } else if (pushServer && !o.skipCloudPush && typeof window.__mfgScheduleCloudPush === 'function') {
+    }
+    if (typeof window.__mfgScheduleCloudPush === 'function') {
       try { window.__mfgScheduleCloudPush(); } catch (_) {}
     }
-    return Promise.resolve({ ok: true, localOnly: true });
   }
 
   function exportGeoConfig() {
@@ -1331,7 +1122,6 @@
 
   function importGeoConfig(incoming) {
     if (!incoming || typeof incoming !== 'object') return false;
-    _geoExplicitlySignedOut = false;
     let changed = false;
     if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
     if (!GEO_STORE._pairKmTs || typeof GEO_STORE._pairKmTs !== 'object') GEO_STORE._pairKmTs = {};
@@ -2299,7 +2089,6 @@
     const isMfg = activeInd === 'Manufacturing';
     const existing = (SEED.records.regions || []).find(r => isRowInGeoIndustry(r, activeInd) && norm(r.name) === q);
     if (existing) return existing;
-    if (!canShapeRegionsNow() || !canAccessGeoIndustryNow(activeInd)) return null;
     const atlasHit = findAtlasRegionByName(regionName);
     if (atlasHit) {
       const wtc = isMfg ? getCompanyHub('WTC', SEED) : null;
@@ -2345,12 +2134,9 @@
 
   function setCompanyHubPin(buName, lat, lng, SEED, explicitRegion) {
     const canon = BU_LIST.find(b => norm(b) === norm(buName)) || buName || 'WTC';
-    if (!canPinCompanyHubNow(canon)) return null;
-    const prevGeoSnap = JSON.parse(JSON.stringify(exportGeoConfig()));
     const nLat = round5(lat), nLng = round5(lng);
     const det = SEED ? findContainingRegion(nLat, nLng, SEED, undefined, { recordsOnly: true }) : { best: '' };
     const region = explicitRegion || det.best || (DEFAULT_BU_HUBS[canon] && DEFAULT_BU_HUBS[canon].region) || '';
-    _geoExplicitlySignedOut = false;
     GEO_STORE.companyHubs[norm(canon)] = {
       name: canon,
       label: (DEFAULT_BU_HUBS[canon] && DEFAULT_BU_HUBS[canon].label) || (canon + ' Plant / Hub'),
@@ -2359,7 +2145,7 @@
       region,
       updated_at: new Date().toISOString()
     };
-    saveStoredConfig(true, { prevGeoStoreSnap: prevGeoSnap });
+    saveStoredConfig(true);
     return getCompanyHub(canon, SEED);
   }
 
@@ -2411,7 +2197,7 @@
 
   const _isPinClearedFlag = v => v === true || v === 1 || (typeof v === 'string' && /^(?:1|true|yes)$/i.test(v.trim()));
 
-  function hydrateSeedGeo(SEED, force = false, resetFromOrig = false) {
+  function hydrateSeedGeo(SEED, force = false) {
     if (!SEED || !SEED.records) return;
     const regions = SEED.records.regions || [];
     const sites = SEED.records.sites || [];
@@ -2432,24 +2218,6 @@
 
     regions.forEach(r => {
       if (!r || !r.name) return;
-      if (!r._geoOrigInit) {
-        r._geoOrigInit = true;
-        r._geoOrig = {
-          zone_type: r.zone_type,
-          center_lat: r.center_lat,
-          center_lng: r.center_lng,
-          radius_km: r.radius_km,
-          zone_geojson: r.zone_geojson,
-          distance_km: r.distance_km
-        };
-      } else if (resetFromOrig && r._geoOrig) {
-        r.zone_type = r._geoOrig.zone_type;
-        r.center_lat = r._geoOrig.center_lat;
-        r.center_lng = r._geoOrig.center_lng;
-        r.radius_km = r._geoOrig.radius_km;
-        r.zone_geojson = r._geoOrig.zone_geojson;
-        r.distance_km = r._geoOrig.distance_km;
-      }
       const nk = norm(r.name);
       const rInd = r._industry || 'Manufacturing';
       const rIsMfg = rInd === 'Manufacturing' && !r._multiIndustrySeed;
@@ -2482,20 +2250,6 @@
     const siteCatsByName = buildSiteCatsByName(sites);
     sites.forEach(s => {
       if (!s || !s.name) return;
-      if (!s._geoOrigInit) {
-        s._geoOrigInit = true;
-        s._geoOrig = {
-          latitude: s.latitude,
-          longitude: s.longitude,
-          region: s.region,
-          _pinCleared: s._pinCleared
-        };
-      } else if (resetFromOrig && s._geoOrig) {
-        s.latitude = s._geoOrig.latitude;
-        s.longitude = s._geoOrig.longitude;
-        s.region = s._geoOrig.region;
-        s._pinCleared = s._geoOrig._pinCleared;
-      }
       const nk = norm(s.name);
       const sInd = s._industry || 'Manufacturing';
       const sIsMfg = sInd === 'Manufacturing' && !s._multiIndustrySeed;
@@ -2530,7 +2284,7 @@
       if (!s.region && s.source === 'app' && geoZone) {
         s.region = geoZone;
       }
-      if (!_geoExplicitlySignedOut && !ov && !pinCleared && isValidLatLngPair(s.latitude, s.longitude) && (s.source === 'app' || s.modified_at)) {
+      if (!ov && !pinCleared && isValidLatLngPair(s.latitude, s.longitude) && (s.source === 'app' || s.modified_at)) {
         const bfMod = String(s.modified_at || s.entered_at || '');
         const bfDel = (GEO_STORE._deletedKeys && typeof GEO_STORE._deletedKeys === 'object') ? GEO_STORE._deletedKeys : {};
         const bfCatDelTs = String(bfDel[`sites:${pfx}${sCat}:${nk}`] || '');
@@ -2862,9 +2616,6 @@
   }
 
   function setPairKmOverride(fromSpec, toSpec, kmVal) {
-    const seedRef = (typeof window !== 'undefined' && window.MFG_SEED) ? window.MFG_SEED : null;
-    if (!canEditPairKm(fromSpec, toSpec, seedRef)) return '';
-    const prevGeoSnap = JSON.parse(JSON.stringify(exportGeoConfig()));
     const pairKey = makePairKey(fromSpec.type || 'site', fromSpec.name, toSpec.type || 'site', toSpec.name);
     if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
     if (!GEO_STORE._pairKmTs || typeof GEO_STORE._pairKmTs !== 'object') GEO_STORE._pairKmTs = {};
@@ -2878,13 +2629,13 @@
       GEO_STORE._pairKmTs[pairKey] = nowIso;
       delete GEO_STORE._deletedKeys[`pairKmOverrides:${pairKey}`];
     }
-    saveStoredConfig(true, { prevGeoStoreSnap: prevGeoSnap });
+    saveStoredConfig(true);
     return pairKey;
   }
 
   async function verifyPairRoadRoute(fromSpec, toSpec, SEED, opts = {}) {
-    if (!(opts && opts.allowReadOnly) && !canEditPairKm(fromSpec, toSpec, SEED)) {
-      return { ok: false, error: 'Your seat does not have write access to verify road routes for this Business Unit' };
+    if (!(opts && opts.allowReadOnly) && !canPinLocationsNow()) {
+      return { ok: false, error: 'Supervisor privileges required to verify road routes' };
     }
     if (!fromSpec || !toSpec || !fromSpec.name || !toSpec.name) {
       return { ok: false, error: 'Select both origin and destination endpoints first' };
@@ -2949,7 +2700,6 @@
       verifiedAt: String(data.verifiedAt || nowIso),
       updated_at: nowIso
     };
-    const prevGeoSnap = JSON.parse(JSON.stringify(exportGeoConfig()));
     GEO_STORE.verifiedRoutes[pairKey] = entry;
     delete GEO_STORE._deletedKeys[`verifiedRoutes:${pairKey}`];
     if (GEO_STORE.routeKmCache && GEO_STORE.routeKmCache[pairKey]) delete GEO_STORE.routeKmCache[pairKey];
@@ -2958,7 +2708,7 @@
       if (GEO_STORE._pairKmTs) delete GEO_STORE._pairKmTs[pairKey];
       GEO_STORE._deletedKeys[`pairKmOverrides:${pairKey}`] = nowIso;
     }
-    saveStoredConfig(opts.pushServer !== false, { prevGeoStoreSnap: prevGeoSnap });
+    saveStoredConfig(opts.pushServer !== false);
     if (typeof window !== 'undefined' && typeof window.__mfgInvalidateSiteNetBack === 'function') {
       try { window.__mfgInvalidateSiteNetBack(); } catch (_) {}
     }
@@ -5447,7 +5197,6 @@
     };
 
     const pickItem = item => {
-      if (inp.disabled || inp.readOnly || (typeof opts.isEditable === 'function' && !opts.isEditable())) { closeMenu(); return; }
       if (!item || !Number.isFinite(Number(item.lat)) || !Number.isFinite(Number(item.lng))) return;
       isPicking = true;
       try {
@@ -5520,7 +5269,6 @@
 
     inp.addEventListener('input', () => {
       if (isPicking) return;
-      if (inp.disabled || inp.readOnly || (typeof opts.isEditable === 'function' && !opts.isEditable())) { reqGen += 1; closeMenu(); return; }
       if (inp.dataset && inp.dataset.pickedDisplay && inp.value !== inp.dataset.pickedDisplay) {
         delete inp.dataset.pickedDisplay;
         delete inp.dataset.pickedMapUrl;
@@ -5687,8 +5435,7 @@
     _renderGen: 0,
     _suppressPasteChangeUntil: 0,
     _jumpPendingTs: 0,
-    _rerender: null,
-    _toast: null
+    _rerender: null
   };
 
   let _studioHoverResets = [];
@@ -5750,21 +5497,6 @@
     STUDIO._studioLinkGen = (STUDIO._studioLinkGen || 0) + 1;
     STUDIO._unpinnedLinkGen = (STUDIO._unpinnedLinkGen || 0) + 1;
     STUDIO._shapelessLinkGen = (STUDIO._shapelessLinkGen || 0) + 1;
-  }
-
-  function buildDistEndpointSites(baseList, pool, maxBase = 140) {
-    const base = Array.isArray(baseList) ? baseList.slice(0, maxBase) : [];
-    const seen = new Set(base.map(s => s && s.name ? norm(s.name) : '').filter(Boolean));
-    (Array.isArray(pool) ? pool : []).forEach(s => {
-      if (!s || s.voided || s.active === false || !s.name) return;
-      const nk = norm(s.name);
-      if (!nk || seen.has(nk)) return;
-      if (s.source === 'app' || (!_isPinClearedFlag(s._pinCleared) && isValidLatLngPair(s.latitude, s.longitude))) {
-        seen.add(nk);
-        base.push(s);
-      }
-    });
-    return base;
   }
 
   function syncStudioDistEndpoints(hubs, siteListForDist) {
@@ -6069,30 +5801,6 @@
       return false;
     }
   };
-  const canWriteGeoConfigNow = () => {
-    try {
-      return typeof window !== 'undefined' && typeof window.MFG_CAN_WRITE_GEO_CONFIG === 'function' && window.MFG_CAN_WRITE_GEO_CONFIG() === true;
-    } catch (_) {
-      return false;
-    }
-  };
-  const canAccessGeoIndustryNow = (ind) => {
-    const targetInd = ind || getGeoActiveIndustry();
-    try {
-      if (typeof window !== 'undefined' && typeof window.MFG_CAN_ACCESS_GEO_INDUSTRY === 'function') {
-        return window.MFG_CAN_ACCESS_GEO_INDUSTRY(targetInd) === true;
-      }
-    } catch (_) {}
-    return true;
-  };
-  const canAccessGeoCompanyNow = (co, opts) => {
-    try {
-      if (typeof window !== 'undefined' && typeof window.MFG_CAN_ACCESS_GEO_COMPANY === 'function') {
-        return window.MFG_CAN_ACCESS_GEO_COMPANY(co, null, opts) === true;
-      }
-    } catch (_) {}
-    return true;
-  };
   const canShapeRegionsNow = () => {
     try {
       return typeof window !== 'undefined' && typeof window.MFG_CAN_SHAPE_REGIONS === 'function' && window.MFG_CAN_SHAPE_REGIONS() === true;
@@ -6113,91 +5821,6 @@
     } catch (_) {
       return false;
     }
-  };
-  const canEnterRegionNow = () => {
-    try {
-      if (typeof window !== 'undefined' && typeof window.MFG_CAN_ENTER_REGION === 'function') {
-        return window.MFG_CAN_ENTER_REGION() === true;
-      }
-    } catch (_) {}
-    return canEnterSiteNow();
-  };
-  const canPinCompanyHubNow = (buName) => {
-    if (!canPinLocationsNow()) return false;
-    const canon = BU_LIST.find(b => norm(b) === norm(buName)) || '';
-    if (!canon) return false;
-    return canAccessGeoIndustryNow('Manufacturing') && canAccessGeoCompanyNow(canon, { requireExplicit: true });
-  };
-  const canPinSiteRowNow = (siteObj, opts) => {
-    const o = (opts && typeof opts === 'object') ? opts : {};
-    const allowCreateOrUnpinned = Boolean(o.allowCreateOrUnpinned);
-    if (!canPinLocationsNow() && !allowCreateOrUnpinned) return false;
-    const s = (siteObj && typeof siteObj === 'object') ? siteObj : null;
-    const ind = o.industry || (s && s._industry) || getGeoActiveIndustry();
-    if (!canAccessGeoIndustryNow(ind)) return false;
-    const co = o.company !== undefined ? o.company : ((s && s.company) || '');
-    return canAccessGeoCompanyNow(co);
-  };
-  const isSiteRowEligibleForInitialPinFill = (siteObj, opts) => {
-    const o = (opts && typeof opts === 'object') ? opts : {};
-    if (!siteObj || typeof siteObj !== 'object' || siteObj.voided) return false;
-    if (_isPinClearedFlag(siteObj._pinCleared)) return false;
-    if (isValidLatLngPair(siteObj.latitude, siteObj.longitude)) return false;
-    const nm = String(o.name !== undefined ? o.name : (siteObj.name || '')).trim();
-    if (!nm) return false;
-    const ind = o.industry || siteObj._industry || getGeoActiveIndustry();
-    const pfx = geoIndStorePrefix(ind);
-    const nk = norm(nm);
-    const cat = o.siteCategory || resolveGeoSiteCat(siteObj);
-    const storeSites = (GEO_STORE && GEO_STORE.sites && typeof GEO_STORE.sites === 'object') ? GEO_STORE.sites : {};
-    const delKeys = (GEO_STORE && GEO_STORE._deletedKeys && typeof GEO_STORE._deletedKeys === 'object') ? GEO_STORE._deletedKeys : {};
-    const candKeys = [];
-    if (cat === 'customer' || cat === 'supplier') {
-      candKeys.push(`${pfx}${cat}:${nk}`);
-    } else {
-      candKeys.push(`${pfx}supplier:${nk}`, `${pfx}customer:${nk}`);
-    }
-    candKeys.push(pfx + nk);
-    for (const sk of candKeys) {
-      if (delKeys[`sites:${sk}`]) return false;
-      const entry = storeSites[sk];
-      if (!entry || typeof entry !== 'object') continue;
-      if (_isPinClearedFlag(entry._pinCleared)) return false;
-      if (isValidLatLngPair(entry.latitude, entry.longitude)) return false;
-    }
-    return true;
-  };
-  const canFillMissingSitePinNow = (siteObj, opts) => {
-    const o = (opts && typeof opts === 'object') ? opts : {};
-    if (!canEnterSiteNow()) return false;
-    if (!isSiteRowEligibleForInitialPinFill(siteObj, o)) return false;
-    const s = (siteObj && typeof siteObj === 'object') ? siteObj : null;
-    const ind = o.industry || (s && s._industry) || getGeoActiveIndustry();
-    if (!canAccessGeoIndustryNow(ind)) return false;
-    const co = o.company !== undefined ? o.company : ((s && s.company) || '');
-    return canAccessGeoCompanyNow(co);
-  };
-  const canEditPairKm = (fromSpec, toSpec, SEED) => {
-    if (!canWriteGeoConfigNow()) return false;
-    const activeInd = getGeoActiveIndustry();
-    if (!canAccessGeoIndustryNow(activeInd)) return false;
-    const seedRef = SEED || (typeof window !== 'undefined' ? window.MFG_SEED : null);
-    const seedSites = (seedRef && seedRef.records && Array.isArray(seedRef.records.sites)) ? seedRef.records.sites : [];
-    const checkSpec = (sp) => {
-      if (!sp || !sp.name) return true;
-      if (sp.type === 'bu') {
-        const canon = BU_LIST.find(b => norm(b) === norm(sp.name)) || sp.name;
-        return canAccessGeoIndustryNow('Manufacturing') && canAccessGeoCompanyNow(canon, { requireExplicit: true });
-      }
-      const nk = norm(sp.name);
-      const sRow = seedSites.find(s => s && !s.voided && isRowInGeoIndustry(s, activeInd) && norm(s.name) === nk)
-        || seedSites.find(s => s && !s.voided && norm(s.name) === nk);
-      if (sRow) {
-        return canAccessGeoIndustryNow(sRow._industry || activeInd) && canAccessGeoCompanyNow(sRow.company || '');
-      }
-      return true;
-    };
-    return checkSpec(fromSpec) && checkSpec(toSpec);
   };
   const canModifyRecordNow = () => {
     try {
@@ -6445,9 +6068,7 @@
     const { siteLife, lifeOf, sitesByRegList, unassignedSites, busByReg, otByReg, canSeeOt, freqRegions } = regData;
 
     // Build distance endpoint options
-    const siteListForDist = isMfg
-      ? buildDistEndpointSites(siteStats.list, activeSites, 140)
-      : buildDistEndpointSites(activeSites, activeSites, 140);
+    const siteListForDist = isMfg ? siteStats.list.slice(0, 140) : activeSites.slice(0, 140);
     syncStudioDistEndpoints(hubs, siteListForDist);
     const distOptionsHtml = (selectedVal) => {
       const buOpts = hubs.map(h => {
@@ -6478,28 +6099,20 @@
       ? regions.find(r => norm(r.name) === norm(STUDIO.selectedRegion))
       : null;
 
-    const canShapeRegions = (typeof ctx.canShapeRegions === 'boolean' ? ctx.canShapeRegions : canShapeRegionsNow()) && canAccessGeoIndustryNow(activeInd);
-    const canPinLocations = (typeof ctx.canPinLocations === 'boolean' ? ctx.canPinLocations : canPinLocationsNow()) && canAccessGeoIndustryNow(activeInd);
-    const canAddSite = ((typeof ctx.canAddSite === 'boolean') ? ctx.canAddSite : canEnterSiteNow()) && canAccessGeoIndustryNow(activeInd);
-    const canModifyRec = ((typeof ctx.canModifyRecord === 'boolean') ? ctx.canModifyRecord : canModifyRecordNow()) && canAccessGeoIndustryNow(activeInd);
+    const canPinLocations = (typeof ctx.canPinLocations === 'boolean') ? ctx.canPinLocations : canPinLocationsNow();
+    const canAddSite = (typeof ctx.canAddSite === 'boolean') ? ctx.canAddSite : canEnterSiteNow();
+    const canModifyRec = (typeof ctx.canModifyRecord === 'boolean') ? ctx.canModifyRecord : canModifyRecordNow();
     let toolDrawerHtml = '';
     if (!STUDIO.collapsed && STUDIO.mode === 'pin' && !canPinLocations) {
       STUDIO.mode = 'view';
     }
-    if (!STUDIO.collapsed && (STUDIO.mode === 'circle' || STUDIO.mode === 'polygon' || STUDIO.mode === 'search') && !canShapeRegions) {
-      STUDIO.mode = 'view';
-    }
     if (!STUDIO.collapsed && STUDIO.mode === 'pin') {
-      const allowedPinBus = isMfg ? BU_LIST.filter(b => canPinCompanyHubNow(b)) : [];
-      if ((!isMfg || !allowedPinBus.length) && STUDIO.pinTargetType === 'bu') STUDIO.pinTargetType = 'site';
-      const isBuPin = isMfg && allowedPinBus.length > 0 && STUDIO.pinTargetType === 'bu';
-      if (isBuPin && !allowedPinBus.some(b => norm(b) === norm(STUDIO.pinTargetName))) {
-        STUDIO.pinTargetName = allowedPinBus[0] || '';
-      }
+      if (!isMfg && STUDIO.pinTargetType === 'bu') STUDIO.pinTargetType = 'site';
+      const isBuPin = isMfg && STUDIO.pinTargetType === 'bu';
       const fIdxPin = typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null;
       const siteFreqMap = fIdxPin ? fIdxPin.site : null;
       const catSiteNames = Array.from(new Set(
-        activeSites.filter(s => canPinSiteRowNow(s)).map(s => s.name)
+        activeSites.map(s => s.name)
       )).sort((a, b) => {
         const ak = norm(a), bk = norm(b);
         const sa = siteFreqMap ? (siteFreqMap.get(ak) || 0) : ((siteStats.byNorm.get(ak) || {}).total || 0);
@@ -6512,13 +6125,13 @@
             <label class="geo-tool-field">Pin Type
               <select id="geoPinTypeSel">
                 <option value="site"${!isBuPin ? ' selected' : ''}>Operational Site</option>
-                ${allowedPinBus.length > 0 ? `<option value="bu"${isBuPin ? ' selected' : ''}>Company BU Hub</option>` : ''}
+                ${isMfg ? `<option value="bu"${isBuPin ? ' selected' : ''}>Company BU Hub</option>` : ''}
               </select>
             </label>
             ${isBuPin ? `
               <label class="geo-tool-field">Company BU
                 <select id="geoPinBuSel">
-                  ${allowedPinBus.map(b => `<option value="${esc(b)}"${STUDIO.pinTargetName === b ? ' selected' : ''}>${esc(b)}</option>`).join('')}
+                  ${BU_LIST.map(b => `<option value="${esc(b)}"${STUDIO.pinTargetName === b ? ' selected' : ''}>${esc(b)}</option>`).join('')}
                 </select>
               </label>
             ` : `
@@ -6556,6 +6169,7 @@
       STUDIO.pinFilter = 'all';
     }
     const shapelessList = STUDIO.collapsed ? [] : getShapelessRegions(SEED, STATE, activeInd);
+    const canShapeRegions = canShapeRegionsNow();
     if (STUDIO.shapePreview && (!canShapeRegions || STUDIO.mode !== 'view'
       || !shapelessList.some(e => norm(e.name) === norm(STUDIO.shapePreview.region)))) {
       STUDIO.shapePreview = null;
@@ -6613,19 +6227,8 @@
             </div>
             <button type="button" class="geo-mini-btn" id="geoUnpinnedExitBtn">Back to All Pins</button>
           </div>
-        ` : (() => {
-          const curUnpinnedRowOpt = { industry: (curUnpinned && curUnpinned._industry) || activeInd };
-          const canFullPinCur = Boolean(canPinLocations && curUnpinned && canPinSiteRowNow({ company: curUnpinned.company, _industry: curUnpinned._industry || activeInd }));
-          const canInitFillCur = Boolean(!canFullPinCur && curUnpinned && canFillMissingSitePinNow(curUnpinned, curUnpinnedRowOpt));
-          const canPinCurUnpinned = canFullPinCur || canInitFillCur;
-          const canEditCurUnpReg = canFullPinCur || !String((curUnpinned && curUnpinned.region) || '').trim();
-          const lockBannerText = canAccessGeoIndustryNow(activeInd) && canAccessGeoCompanyNow(curUnpinned && curUnpinned.company)
-            ? (canEnterSiteNow()
-              ? '<strong>Supervisor Only</strong> · <span>Modifying or re-pinning cleared sites requires Supervisor + Entry or Owner access.</span>'
-              : '<strong>Supervisor Only</strong> · <span>Pinning sites requires Site Entry, Supervisor + Entry, or Owner access.</span>')
-            : '<strong>Restricted BU</strong> · <span>Your seat cannot pin sites assigned to another Business Unit.</span>';
-          return `
-          <div class="geo-unpinned-stepper${!canPinCurUnpinned ? ' is-locked' : ''}" id="geoUnpinnedStepper" role="region" aria-label="Unpinned Sites Queue">
+        ` : `
+          <div class="geo-unpinned-stepper${!canPinLocations ? ' is-locked' : ''}" id="geoUnpinnedStepper" role="region" aria-label="Unpinned Sites Queue">
             <div class="geo-unpinned-head">
               <div class="geo-unpinned-ident">
                 <span class="geo-unpinned-count" id="geoUnpinnedCounter" data-no-i18n="1">${STUDIO.unpinnedIdx + 1} / ${unpinnedQueue.length}</span>
@@ -6643,13 +6246,13 @@
                 <button type="button" class="geo-mini-btn" id="geoUnpinnedExitBtn">Close</button>
               </div>
             </div>
-            ${canPinCurUnpinned ? `
+            ${canPinLocations ? `
               <div class="geo-unpinned-controls">
                 <div class="geo-link-paste-row">
                   <span class="geo-link-paste-ic" aria-hidden="true">${ic('pin')}</span>
                   <input type="text" class="geo-rail-search geo-link-paste-inp" id="geoUnpinnedPasteInp" value="${esc(STUDIO.unpinnedPasteRaw || '')}" placeholder="Search Google Maps, paste link/coords, or click map" aria-label="Paste Map or WhatsApp Link for Unpinned Site" inputmode="search" spellcheck="false" autocomplete="off" enterkeyhint="done">
                 </div>
-                <input type="text" class="geo-rail-search geo-unpinned-reg-inp" id="geoUnpinnedRegionInp" list="geoUnpinnedRegionList" value="${esc(STUDIO.unpinnedRegionDraft || '')}" placeholder="Region" aria-label="Region for Unpinned Site" autocomplete="off"${canEditCurUnpReg ? '' : ' readonly disabled'}>
+                <input type="text" class="geo-rail-search geo-unpinned-reg-inp" id="geoUnpinnedRegionInp" list="geoUnpinnedRegionList" value="${esc(STUDIO.unpinnedRegionDraft || '')}" placeholder="Region" aria-label="Region for Unpinned Site" autocomplete="off">
                 <datalist id="geoUnpinnedRegionList">
                   ${regions.map(r => `<option value="${esc(r.name)}"></option>`).join('')}
                 </datalist>
@@ -6660,11 +6263,11 @@
             ` : `
               <div class="geo-unpinned-lock" id="geoUnpinnedLockBanner">
                 <span class="geo-link-ic is-warn">${ic('lock')}</span>
-                <span><strong data-no-i18n="1">&#128274;</strong> ${lockBannerText}</span>
+                <span><strong data-no-i18n="1">&#128274;</strong> <strong>Supervisor Only</strong> · <span>Pinning existing sites requires Supervisor + Entry or Owner access.</span></span>
               </div>
             `}
           </div>
-        `; })()) : ''}
+        `) : ''}
 
         ${toolDrawerHtml}
 
@@ -6674,7 +6277,7 @@
               <div class="geo-rail-head">
                 <input type="search" class="geo-rail-search" id="geoRegionSearch" value="${esc(STUDIO.regionSearch)}" placeholder="Search regions, sites, or places..." autocomplete="off">
                 <div class="geo-studio-places-box" id="geoStudioPlacesBox"${(STUDIO.regionSearch && STUDIO.regionSearch.trim().length >= 2 && (STUDIO.regionPlacesLoading || (STUDIO.regionPlacesResults && STUDIO.regionPlacesResults.length > 0) || (STUDIO.regionLocalResults && STUDIO.regionLocalResults.length > 0))) ? '' : ' hidden'}>${renderStudioPlacesBoxHtml(STUDIO.regionPlacesResults, STUDIO.regionPlacesLoading, STUDIO.regionLocalResults)}</div>
-                ${renderStudioMapLinkBoxHtml(SEED, activeInd, canAddSite)}
+                ${renderStudioMapLinkBoxHtml(SEED, activeInd, ctx.canAddSite === true)}
               </div>
               ${renderShapelessPanelHtml(shapelessList, SEED, STATE, activeInd, canShapeRegions)}
               <div class="geo-regions-list" id="geoRegionsList">
@@ -6751,9 +6354,9 @@
                 <span class="geo-km-sub" id="geoDistKmBadge">Pin location on map to compute exact road KM</span>
               `}
               <div class="geo-km-override-grp">
-                ${canEditPairKm(fromSpec, toSpec, SEED) && kmEst && kmEst.fromCoord && kmEst.toCoord && kmEst.fromCoord.lat != null && kmEst.toCoord.lat != null && norm(fromSpec.name) !== norm(toSpec.name) ? `<button type="button" class="geo-mini-btn is-verify-road" id="geoVerifyRoadKmBtn">${kmEst.verifiedRoute ? 'Re-verify Road' : 'Verify Road KM'}</button>` : ''}
+                ${canPinLocations && kmEst && kmEst.fromCoord && kmEst.toCoord && kmEst.fromCoord.lat != null && kmEst.toCoord.lat != null && norm(fromSpec.name) !== norm(toSpec.name) ? `<button type="button" class="geo-mini-btn is-verify-road" id="geoVerifyRoadKmBtn">${kmEst.verifiedRoute ? 'Re-verify Road' : 'Verify Road KM'}</button>` : ''}
                 ${kmEst && kmEst.fromCoord && kmEst.toCoord && kmEst.fromCoord.lat != null && kmEst.toCoord.lat != null ? `<button type="button" class="geo-mini-btn" id="geoDistZoomBtn">Zoom Route</button>` : ''}
-                ${(fromSpec.name && toSpec.name && STUDIO.distFrom !== STUDIO.distTo && canEditPairKm(fromSpec, toSpec, SEED)) ? `
+                ${canPinLocations ? `
                   <input type="number" step="0.1" min="0" class="geo-km-override-inp" id="geoDistOverrideInp" value="${hasOverride && kmEst ? kmEst.oneWayKm : ''}" placeholder="Exact km">
                   <button type="button" class="geo-mini-btn" id="geoDistSaveOverrideBtn">${hasOverride ? 'Update KM' : 'Set KM'}</button>
                   ${hasOverride ? `<button type="button" class="geo-mini-btn" id="geoDistClearOverrideBtn">Auto</button>` : ''}
@@ -6864,12 +6467,7 @@
     });
 
     // 2. Draw Active Distance Route Line (From <-> To)
-    syncStudioDistEndpoints(
-      hubs,
-      isMfg
-        ? buildDistEndpointSites(siteStats.list, sites, 140)
-        : buildDistEndpointSites(sites.filter(s => s && s.name), sites, 140)
-    );
+    syncStudioDistEndpoints(hubs, isMfg ? siteStats.list.slice(0, 140) : sites.filter(s => s && s.name).slice(0, 140));
     const parseSpec = raw => {
       const s = String(raw || '');
       if (!s) return { type: 'site', name: '' };
@@ -6965,9 +6563,9 @@
             ${wtcEst && wtcEst.available ? `<div>From WTC: <b>${wtcEst.oneWayKm.toFixed(1)} km</b> (RT ${wtcEst.roundTripKm.toFixed(1)} km)</div>` : ''}
             ${bbcEst && bbcEst.available ? `<div>From BBConstruction: <b>${bbcEst.oneWayKm.toFixed(1)} km</b> (RT ${bbcEst.roundTripKm.toFixed(1)} km)</div>` : ''}
             <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
-              ${(canModifyRecordNow() && canAccessGeoCompanyNow(s.company) && canAccessGeoIndustryNow(s._industry || activeInd)) ? `<button type="button" class="geo-mini-btn primary" data-popup-edit-site="${esc(s.id)}">Edit Site</button>` : ''}
+              ${canModifyRecordNow() ? `<button type="button" class="geo-mini-btn primary" data-popup-edit-site="${esc(s.id)}">Edit Site</button>` : ''}
               <button type="button" class="geo-mini-btn" data-popup-measure-to="site:${esc(s.name)}">Measure KM</button>
-              ${canPinSiteRowNow(s) ? `<button type="button" class="geo-mini-btn" data-popup-repin-site="${esc(s.name)}" data-popup-repin-cat="${esc(siteCat)}">Move Pin</button>` : ''}
+              ${canPinLocationsNow() ? `<button type="button" class="geo-mini-btn" data-popup-repin-site="${esc(s.name)}" data-popup-repin-cat="${esc(siteCat)}">Move Pin</button>` : ''}
             </div>
           </div>
         `);
@@ -6991,7 +6589,7 @@
           <div style="color:#64748B">GPS: ${h.lat.toFixed(5)}, ${h.lng.toFixed(5)}</div>
           <div style="display:flex;gap:5px;margin-top:6px">
             <button type="button" class="geo-mini-btn primary" data-popup-measure-from="bu:${esc(h.name)}">Start KM Here</button>
-            ${canPinCompanyHubNow(h.name) ? `<button type="button" class="geo-mini-btn" data-popup-repin-bu="${esc(h.name)}">Move Hub Pin</button>` : ''}
+            ${canPinLocationsNow() ? `<button type="button" class="geo-mini-btn" data-popup-repin-bu="${esc(h.name)}">Move Hub Pin</button>` : ''}
           </div>
         </div>
       `);
@@ -7213,71 +6811,6 @@
       return false;
     }
     const nk = norm(cleanName);
-    const activeInd = String((spec && (spec._industry || spec.industry)) || (ctx && ctx.industry) || getGeoActiveIndustry()).trim();
-    const isMfg = activeInd === 'Manufacturing';
-    const regions = (SEED && SEED.records && SEED.records.regions) || [];
-    const seedRow = regions.find(r => isRowInGeoIndustry(r, activeInd) && norm(r.name) === nk);
-    const customRegsPre = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.regions)) ? STATE.customRecords.regions : null;
-    const modalPendingRow = (!seedRow && ctx && ctx.allowNewRegionModal && customRegsPre)
-      ? customRegsPre.find(r => r && !r.voided && ((spec && spec.id && String(r.id) === String(spec.id)) || (isRowInGeoIndustry(r, activeInd) && norm(r.name) === nk)))
-      : null;
-    let row = seedRow || modalPendingRow;
-    const allowNewRegion = Boolean(ctx && ctx.allowNewRegionModal === true && canEnterRegionNow() && !seedRow && !regionHasShape(cleanName, SEED, activeInd));
-    if (!canAccessGeoIndustryNow(activeInd) || (!canShapeRegionsNow() && !allowNewRegion)) {
-      if (toast) toast('Supervisor + Entry or Owner access required to edit region zones', 'err');
-      return false;
-    }
-    const prevGeoSnap = !ctx.skipGeoRollback ? JSON.parse(JSON.stringify(exportGeoConfig())) : null;
-    const prevRowId = row && row.id != null ? String(row.id) : '';
-    const prevSeedRegSnap = seedRow ? JSON.parse(JSON.stringify(seedRow)) : null;
-    const prevCustomRegIdx = (!ctx.skipGeoRollback && customRegsPre && prevRowId) ? customRegsPre.findIndex(x => x && String(x.id) === prevRowId) : -1;
-    const prevCustomRegSnap = prevCustomRegIdx >= 0 ? JSON.parse(JSON.stringify(customRegsPre[prevCustomRegIdx])) : null;
-    const prevSeedRev = (SEED && SEED._customRev) || 0;
-    const prevSiteStates = !ctx.skipGeoRollback
-      ? ((SEED.records && SEED.records.sites) || []).map(s => s ? { ref: s, region: s.region, geo_zone: s.geo_zone } : null).filter(Boolean)
-      : [];
-    let regRolledBack = false;
-    const rollbackRegionWrite = errMsg => {
-      if (ctx.skipGeoRollback) {
-        if (typeof ctx.onServerReject === 'function') ctx.onServerReject(errMsg);
-        return;
-      }
-      if (regRolledBack) return;
-      regRolledBack = true;
-      if (prevGeoSnap) _replaceGeoConfigStore(prevGeoSnap);
-      const regArr = (SEED && SEED.records && Array.isArray(SEED.records.regions)) ? SEED.records.regions : [];
-      if (prevSeedRegSnap && row) {
-        Object.keys(row).forEach(k => { if (!(k in prevSeedRegSnap)) delete row[k]; });
-        Object.assign(row, prevSeedRegSnap);
-      } else if (!prevSeedRegSnap && row) {
-        const si = regArr.indexOf(row);
-        if (si >= 0) regArr.splice(si, 1);
-      }
-      const cArr = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.regions)) ? STATE.customRecords.regions : null;
-      if (cArr) {
-        const ci = prevRowId ? cArr.findIndex(x => x && String(x.id) === prevRowId) : (row && row.id ? cArr.findIndex(x => x && String(x.id) === String(row.id)) : -1);
-        if (prevCustomRegSnap) {
-          if (ci >= 0) cArr[ci] = JSON.parse(JSON.stringify(prevCustomRegSnap));
-          else cArr.unshift(JSON.parse(JSON.stringify(prevCustomRegSnap)));
-        } else if (ci >= 0) {
-          cArr.splice(ci, 1);
-        }
-      }
-      prevSiteStates.forEach(st => {
-        st.ref.region = st.region;
-        st.ref.geo_zone = st.geo_zone;
-      });
-      if (SEED) {
-        SEED._customRev = prevSeedRev;
-        hydrateSeedGeo(SEED, true, false);
-      }
-      if (ctx && typeof ctx.saveLocal === 'function') ctx.saveLocal();
-      else if (typeof window !== 'undefined' && typeof window.__mfgSaveLocalAuthAndRecords === 'function') window.__mfgSaveLocalAuthAndRecords();
-      if (typeof STUDIO === 'object' && STUDIO && typeof STUDIO._rerender === 'function') STUDIO._rerender();
-      if (typeof ctx.onServerReject === 'function') ctx.onServerReject(errMsg);
-      const toastFn = toast || (typeof STUDIO === 'object' && STUDIO && STUDIO._toast) || null;
-      if (errMsg && typeof toastFn === 'function') toastFn(errMsg, 'err');
-    };
     const nowIso = new Date().toISOString();
     const resolvedGov = resolveGovernorate({
       zoneType: spec.zone_type,
@@ -7288,9 +6821,11 @@
       corridor: spec.corridor,
       name: cleanName
     }, SEED);
+    const activeInd = getGeoActiveIndustry();
+    const isMfg = activeInd === 'Manufacturing';
     const storePfx = geoIndStorePrefix(activeInd);
     const autoCorridor = resolvedGov.code || spec.corridor || 'Mount Lebanon';
-    const regEntry = {
+    GEO_STORE.regions[storePfx + nk] = {
       name: cleanName,
       corridor: autoCorridor,
       zone_type: spec.zone_type,
@@ -7300,28 +6835,11 @@
       zone_geojson: spec.zone_geojson || null,
       updated_at: nowIso
     };
-    _geoExplicitlySignedOut = false;
-    GEO_STORE.regions[storePfx + nk] = regEntry;
     if (GEO_STORE._deletedKeys) delete GEO_STORE._deletedKeys['regions:' + storePfx + nk];
-    const deferGeoPush = Boolean(ctx && ctx.deferStoredConfigPush);
-    const standaloneCommit = !deferGeoPush && !(ctx && ctx.deferApiPost);
-    const geoSaveOpts = {
-      allowNewRegionModal: allowNewRegion,
-      skipCloudPush: Boolean(ctx && ctx.skipCloudPush),
-      scopedConfig: { regions: { [storePfx + nk]: regEntry }, updatedAt: nowIso },
-      prevGeoStoreSnap: prevGeoSnap,
-      toastOnReject: false,
-      onReject: (ctx && ctx.skipGeoRollback)
-        ? (typeof ctx.onServerReject === 'function' ? ((_res, errMsg) => ctx.onServerReject(errMsg)) : () => {})
-        : ((_res, errMsg) => rollbackRegionWrite(errMsg)),
-      toast
-    };
-    const geoSaveP = saveStoredConfig(standaloneCommit ? false : !deferGeoPush, geoSaveOpts);
-    if (deferGeoPush && ctx && Array.isArray(ctx.deferredGeoPushes)) {
-      ctx.deferredGeoPushes.push(() => saveStoredConfig(true, geoSaveOpts));
-    }
-    if (!standaloneCommit && ctx && Array.isArray(ctx.geoSavePromises) && !deferGeoPush && geoSaveP) ctx.geoSavePromises.push(geoSaveP);
+    saveStoredConfig(!ctx.deferStoredConfigPush);
 
+    const regions = (SEED.records && SEED.records.regions) || [];
+    let row = regions.find(r => isRowInGeoIndustry(r, activeInd) && norm(r.name) === nk);
     const wtcHub = isMfg ? getCompanyHub('WTC', SEED) : null;
     const distKm = (isMfg && wtcHub && spec.center_lat != null && spec.center_lng != null)
       ? round1(roadAdjustedKm(wtcHub.lat, wtcHub.lng, spec.center_lat, spec.center_lng))
@@ -7338,9 +6856,6 @@
       if (row.distance_km == null && distKm != null) row.distance_km = distKm;
       row.modified_at = nowIso;
       row.modified_by = (ctx.userEmail || 'app');
-      if (row === modalPendingRow && !regions.some(x => x && String(x.id) === String(row.id))) {
-        regions.unshift(row);
-      }
     } else {
       row = {
         id: typeof uid === 'function' ? uid('re') : ('re_' + Date.now()),
@@ -7385,49 +6900,10 @@
 
     SEED._customRev = (SEED._customRev || 0) + 1;
     const apiPayload = Object.assign({}, row, { modified_by: ctx.userEmail || 'app' });
-    const postRecFn = (ctx && typeof ctx.postRecordToLocalApi === 'function')
-      ? ctx.postRecordToLocalApi
-      : (typeof postRecordToLocalApi === 'function'
-        ? postRecordToLocalApi
-        : (typeof window !== 'undefined' && typeof window.__mfgPostRecordToLocalApi === 'function' ? window.__mfgPostRecordToLocalApi : null));
     if (ctx.deferApiPost && Array.isArray(ctx.deferredApiRows)) {
       ctx.deferredApiRows.push(apiPayload);
-    } else if (standaloneCommit) {
-      const seqP = (async () => {
-        let recRes = null;
-        if (postRecFn) {
-          recRes = await postRecFn('regions', apiPayload, { deferRender: true });
-          if (recRes && !recRes.networkError && (recRes.ok === false || Number(recRes.status) >= 400)) {
-            rollbackRegionWrite(recRes.error || 'Region update was rejected by the server.');
-            return recRes;
-          }
-        }
-        const rbServer = (ctx && typeof ctx.rollbackRecordOnServer === 'function')
-          ? ctx.rollbackRecordOnServer
-          : (typeof window !== 'undefined' ? window.__mfgRollbackRecordOnServer : null);
-        const seqGeoOpts = Object.assign({}, geoSaveOpts, {
-          onReject: async (_res, errMsg) => {
-            if (recRes && recRes.rollbackToken && typeof rbServer === 'function') {
-              try { await rbServer(recRes); } catch (_) {}
-            }
-            if (!(ctx && ctx.skipGeoRollback)) rollbackRegionWrite(errMsg);
-            else if (ctx && typeof ctx.onServerReject === 'function') ctx.onServerReject(errMsg);
-          }
-        });
-        return saveStoredConfig(true, seqGeoOpts);
-      })().catch(() => {});
-      if (ctx && Array.isArray(ctx.geoSavePromises)) ctx.geoSavePromises.push(seqP);
-    } else if (!ctx.deferApiPost && postRecFn) {
-      const recResP = postRecFn('regions', apiPayload, { deferRender: true });
-      if (recResP && typeof recResP.then === 'function') {
-        const checkedP = recResP.then(recRes => {
-          if (recRes && !recRes.networkError && (recRes.ok === false || Number(recRes.status) >= 400)) {
-            rollbackRegionWrite(recRes.error || 'Region update was rejected by the server.');
-          }
-          return recRes;
-        }).catch(() => {});
-        if (ctx && Array.isArray(ctx.geoSavePromises)) ctx.geoSavePromises.push(checkedP);
-      }
+    } else if (!ctx.deferApiPost && typeof postRecordToLocalApi === 'function') {
+      postRecordToLocalApi('regions', apiPayload);
     }
     if (toast && !ctx.silentToast) toast(`Saved ${spec.zone_type === 'circle' ? `Circle (${round1(spec.radius_km)} km)` : (spec.zone_type === 'boundary' ? 'Map Boundary' : 'Polygon Zone')} for ${cleanName} (${insideCount} pinned ${insideCount === 1 ? 'site' : 'sites'} inside)`, 'ok');
     return true;
@@ -7467,12 +6943,11 @@
     const roundFn = (ctx && ctx.precision === 6) ? (v => Math.round(Number(v) * 1e6) / 1e6) : round5;
     const nLat = roundFn(lat), nLng = roundFn(lng);
     if (targetType === 'bu') {
-      if (!canPinCompanyHubNow(cleanName)) {
-        if (toast) toast('Supervisor + Entry or Owner access for this Business Unit is required to move a Company Hub pin', 'err');
+      if (!canPinLocationsNow()) {
+        if (toast) toast('Supervisor privileges required to modify location pins', 'err');
         return false;
       }
       const hub = setCompanyHubPin(cleanName, nLat, nLng, SEED, explicitRegion);
-      if (!hub) return false;
       SEED._customRev = (SEED._customRev || 0) + 1;
       if (toast) toast(`Pinned Company BU ${hub.name} at (${nLat}, ${nLng}) inside ${hub.region || 'Lebanon'}`, 'ok');
       return true;
@@ -7487,6 +6962,7 @@
       : ((explicitSiteCat === 'supplier' || explicitSiteCat === 'quarry' || explicitSiteCat === 'raw') ? 'supplier' : '');
     // Region records only: a save never fills a blank site Region from a map boundary nobody chose (night trip pay)
     const det = findContainingRegion(nLat, nLng, SEED, activeInd, { recordsOnly: true });
+    const region = explicitRegion || det.best || '';
     const nowIso = new Date().toISOString();
 
     const sites = (SEED.records && SEED.records.sites) || [];
@@ -7495,118 +6971,34 @@
     let row = (explicitSiteId && pool.find(s => isRowInGeoIndustry(s, activeInd) && String(s.id || '') === explicitSiteId))
       || (normCat && pool.find(s => isRowInGeoIndustry(s, activeInd) && norm(s.name) === nk && resolveGeoSiteCat(s) === normCat))
       || pool.find(s => isRowInGeoIndustry(s, activeInd) && norm(s.name) === nk);
-    const pinCompany = String((row && row.company) || (ctx && ctx.company) || '').trim();
-    if (!canAccessGeoIndustryNow(activeInd) || (pinCompany && !canAccessGeoCompanyNow(pinCompany))) {
-      if (toast) toast('Your seat does not have write access to this Business Unit', 'err');
-      return false;
-    }
-    const checkRow = (ctx && ctx.origSiteRow && typeof ctx.origSiteRow === 'object') ? ctx.origSiteRow : row;
-    const effCat = normCat || (checkRow ? resolveGeoSiteCat(checkRow) : (row ? resolveGeoSiteCat(row) : 'supplier'));
-    const rowHasCoords = Boolean(checkRow && !checkRow._pinCleared && isValidLatLngPair(checkRow.latitude, checkRow.longitude));
+    const effCat = normCat || (row ? resolveGeoSiteCat(row) : 'supplier');
+    const rowHasCoords = Boolean(row && !row._pinCleared && isValidLatLngPair(row.latitude, row.longitude));
     const scEntry = GEO_STORE.sites && GEO_STORE.sites[`${storePfx}${effCat}:${nk}`];
     const spEntry = GEO_STORE.sites && GEO_STORE.sites[storePfx + nk];
     const storeHasCoords = Boolean((scEntry && !scEntry._pinCleared && isValidLatLngPair(scEntry.latitude, scEntry.longitude))
       || (spEntry && !spEntry._pinCleared && isValidLatLngPair(spEntry.latitude, spEntry.longitude)));
-    const isRowEligibleInitial = isSiteRowEligibleForInitialPinFill(checkRow, {
-      company: pinCompany,
-      industry: activeInd,
-      siteCategory: effCat,
-      name: String((checkRow && checkRow.name) || cleanName).trim() || cleanName
-    });
-    const allowViaTicketMissing = Boolean((ctx.allowTicketMissingPin === true || !canPinLocationsNow()) && canEnterSiteNow() && !rowHasCoords && !storeHasCoords && isRowEligibleInitial);
+    const allowViaTicketMissing = Boolean(ctx.allowTicketMissingPin === true && canEnterSiteNow() && !rowHasCoords && !storeHasCoords);
     const allowViaNewSiteModal = Boolean(ctx.allowNewSiteModal === true && canEnterSiteNow());
     if (!canPinLocationsNow() && !allowViaNewSiteModal && !allowViaTicketMissing) {
       if (toast) toast('Supervisor privileges required to modify location pins', 'err');
       return false;
     }
-    const existingRowReg = String((checkRow && (checkRow.region || checkRow.geo_zone)) || '').trim();
-    const region = (!canPinLocationsNow() && allowViaTicketMissing && existingRowReg && !(ctx && ctx.allowRegionOverwrite))
-      ? existingRowReg
-      : (explicitRegion || det.best || '');
     // A quarry and a delivery site with this name: the pin goes under this category's key only, so the plain name
     // key (which an older pin of the other site may hold) is left as it is
     const hasTwin = pool.some(s => isRowInGeoIndustry(s, activeInd) && norm(s.name) === nk && resolveGeoSiteCat(s) !== effCat);
 
     if (!isValidLatLngPair(nLat, nLng)) return false;
-    const prevGeoSnap = !ctx.skipGeoRollback ? JSON.parse(JSON.stringify(exportGeoConfig())) : null;
-    const prevRowId = row && row.id != null ? String(row.id) : '';
-    const customSitesPre = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.sites)) ? STATE.customRecords.sites : null;
-    const prevSeedSiteIdx = row ? sites.indexOf(row) : -1;
-    const prevSeedSiteSnap = row && prevSeedSiteIdx >= 0 ? JSON.parse(JSON.stringify(row)) : null;
-    const prevCustomSiteIdx = (!ctx.skipGeoRollback && customSitesPre && prevRowId) ? customSitesPre.findIndex(x => x && String(x.id) === prevRowId) : -1;
-    const prevCustomSiteSnap = prevCustomSiteIdx >= 0 ? JSON.parse(JSON.stringify(customSitesPre[prevCustomSiteIdx])) : null;
-    const prevSeedRev = (SEED && SEED._customRev) || 0;
-    let pinRolledBack = false;
-    const rollbackLocationPinWrite = errMsg => {
-      if (ctx.skipGeoRollback) {
-        if (typeof ctx.onServerReject === 'function') ctx.onServerReject(errMsg);
-        return;
-      }
-      if (pinRolledBack) return;
-      pinRolledBack = true;
-      if (prevGeoSnap) _replaceGeoConfigStore(prevGeoSnap);
-      if (prevSeedSiteSnap && row) {
-        Object.keys(row).forEach(k => { if (!(k in prevSeedSiteSnap)) delete row[k]; });
-        Object.assign(row, prevSeedSiteSnap);
-      } else if (!prevSeedSiteSnap && row) {
-        const si = sites.indexOf(row);
-        if (si >= 0) sites.splice(si, 1);
-      }
-      const cArr = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.sites)) ? STATE.customRecords.sites : null;
-      if (cArr) {
-        const targetId = prevRowId || (row && row.id != null ? String(row.id) : '');
-        const ci = targetId ? cArr.findIndex(x => x && String(x.id) === targetId) : -1;
-        if (prevCustomSiteSnap) {
-          if (ci >= 0) cArr[ci] = JSON.parse(JSON.stringify(prevCustomSiteSnap));
-          else cArr.unshift(JSON.parse(JSON.stringify(prevCustomSiteSnap)));
-        } else if (ci >= 0) {
-          cArr.splice(ci, 1);
-        }
-      }
-      if (SEED) {
-        SEED._customRev = prevSeedRev;
-        hydrateSeedGeo(SEED, true, false);
-      }
-      if (ctx && typeof ctx.saveLocal === 'function') ctx.saveLocal();
-      else if (typeof window !== 'undefined' && typeof window.__mfgSaveLocalAuthAndRecords === 'function') window.__mfgSaveLocalAuthAndRecords();
-      if (typeof STUDIO === 'object' && STUDIO && typeof STUDIO._rerender === 'function') STUDIO._rerender();
-      if (typeof ctx.rerenderApp === 'function') ctx.rerenderApp();
-      if (typeof ctx.onServerReject === 'function') ctx.onServerReject(errMsg);
-      const toastFn = toast || (typeof STUDIO === 'object' && STUDIO && STUDIO._toast) || null;
-      if (errMsg && typeof toastFn === 'function') toastFn(errMsg, 'err');
-    };
     const pinEntry = { name: cleanName, site_category: effCat, latitude: nLat, longitude: nLng, region, updated_at: nowIso };
+    const pinCompany = String((row && row.company) || (ctx && ctx.company) || '').trim();
     if (pinCompany) pinEntry.company = pinCompany;
     if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
-    _geoExplicitlySignedOut = false;
-    const writtenSites = {};
     if (!hasTwin) {
       GEO_STORE.sites[storePfx + nk] = pinEntry;
-      writtenSites[storePfx + nk] = pinEntry;
       delete GEO_STORE._deletedKeys[`sites:${storePfx}${nk}`];
     }
     GEO_STORE.sites[`${storePfx}${effCat}:${nk}`] = pinEntry;
-    writtenSites[`${storePfx}${effCat}:${nk}`] = pinEntry;
     delete GEO_STORE._deletedKeys[`sites:${storePfx}${effCat}:${nk}`];
-    const deferGeoPush = Boolean(ctx && ctx.deferStoredConfigPush);
-    const standaloneCommit = !deferGeoPush && !(ctx && ctx.deferApiPost);
-    const geoSaveOpts = {
-      allowNewSiteModal: allowViaNewSiteModal,
-      allowTicketMissingPin: allowViaTicketMissing,
-      skipCloudPush: Boolean(ctx && ctx.skipCloudPush),
-      scopedConfig: { sites: writtenSites, updatedAt: nowIso },
-      prevGeoStoreSnap: prevGeoSnap,
-      toastOnReject: false,
-      onReject: (ctx && ctx.skipGeoRollback)
-        ? (typeof ctx.onServerReject === 'function' ? ((_res, errMsg) => ctx.onServerReject(errMsg)) : () => {})
-        : ((_res, errMsg) => rollbackLocationPinWrite(errMsg)),
-      toast
-    };
-    const geoSaveP = saveStoredConfig(standaloneCommit ? false : !deferGeoPush, geoSaveOpts);
-    if (deferGeoPush && ctx && Array.isArray(ctx.deferredGeoPushes)) {
-      ctx.deferredGeoPushes.push(() => saveStoredConfig(true, geoSaveOpts));
-    }
-    if (!standaloneCommit && ctx && Array.isArray(ctx.geoSavePromises) && !deferGeoPush && geoSaveP) ctx.geoSavePromises.push(geoSaveP);
+    saveStoredConfig(true);
 
     if (row) {
       row._pinCleared = false;
@@ -7632,7 +7024,6 @@
         id: typeof uid === 'function' ? uid('si') : ('si_' + Date.now()),
         name: cleanName,
         site_category: effCat,
-        ...(pinCompany ? { company: pinCompany } : {}),
         supplier: '',
         customer: '',
         region,
@@ -7668,67 +7059,14 @@
         modifiedAt: nowIso
       });
     }
-    const postRecFn = (ctx && typeof ctx.postRecordToLocalApi === 'function')
-      ? ctx.postRecordToLocalApi
-      : (typeof postRecordToLocalApi === 'function'
-        ? postRecordToLocalApi
-        : (typeof window !== 'undefined' && typeof window.__mfgPostRecordToLocalApi === 'function' ? window.__mfgPostRecordToLocalApi : null));
-    if (standaloneCommit) {
-      const apiSitePayload = Object.assign({}, row, { modified_by: ctx.userEmail || 'app' });
-      const seqP = (async () => {
-        let recRes = null;
-        if (postRecFn) {
-          recRes = await postRecFn('sites', apiSitePayload, { deferRender: true });
-          if (recRes && !recRes.networkError && (recRes.ok === false || Number(recRes.status) >= 400)) {
-            rollbackLocationPinWrite(recRes.error || 'Site pin update was rejected by the server.');
-            return recRes;
-          }
-        }
-        const rbServer = (ctx && typeof ctx.rollbackRecordOnServer === 'function')
-          ? ctx.rollbackRecordOnServer
-          : (typeof window !== 'undefined' ? window.__mfgRollbackRecordOnServer : null);
-        const seqGeoOpts = Object.assign({}, geoSaveOpts, {
-          onReject: async (_res, errMsg) => {
-            if (recRes && recRes.rollbackToken && typeof rbServer === 'function') {
-              try { await rbServer(recRes); } catch (_) {}
-            }
-            if (!(ctx && ctx.skipGeoRollback)) rollbackLocationPinWrite(errMsg);
-            else if (ctx && typeof ctx.onServerReject === 'function') ctx.onServerReject(errMsg);
-          }
-        });
-        return saveStoredConfig(true, seqGeoOpts);
-      })().catch(() => {});
-      if (ctx && Array.isArray(ctx.geoSavePromises)) ctx.geoSavePromises.push(seqP);
-    } else if (!(ctx && ctx.deferApiPost) && postRecFn) {
-      const recResP = postRecFn('sites', Object.assign({}, row, { modified_by: ctx.userEmail || 'app' }), { deferRender: true });
-      if (recResP && typeof recResP.then === 'function') {
-        const checkedP = (!(ctx && ctx.skipGeoRollback))
-          ? recResP.then(recRes => {
-            if (recRes && !recRes.networkError && (recRes.ok === false || Number(recRes.status) >= 400)) {
-              rollbackLocationPinWrite(recRes.error || 'Site pin update was rejected by the server.');
-            }
-            return recRes;
-          }).catch(() => {})
-          : recResP;
-        if (ctx && Array.isArray(ctx.geoSavePromises)) ctx.geoSavePromises.push(checkedP);
-      }
-    }
+    if (typeof postRecordToLocalApi === 'function') postRecordToLocalApi('sites', Object.assign({}, row, { modified_by: ctx.userEmail || 'app' }));
     if (toast) toast(`Pinned ${cleanName}${region ? ' in zone ' + region : ''}`, 'ok');
     return true;
   }
 
   function clearLocationPin(opts, SEED, ctx) {
-    const allowNewSite = Boolean(ctx && ctx.allowNewSiteModal === true && canEnterSiteNow());
-    if (!canPinLocationsNow() && !allowNewSite) return false;
+    if (!canPinLocationsNow() && !(ctx && ctx.allowNewSiteModal === true && canEnterSiteNow())) return;
     const o = opts || {};
-    const activeInd = (ctx && ctx.industry) || o.industry || getGeoActiveIndustry();
-    if (!canAccessGeoIndustryNow(activeInd)) return false;
-    const oName = String(o.name || '').trim();
-    const matchedSite = (SEED && SEED.records && Array.isArray(SEED.records.sites) && oName)
-      ? SEED.records.sites.find(s => s && isRowInGeoIndustry(s, activeInd) && norm(s.name) === norm(oName))
-      : null;
-    const effCo = String(o.company || (matchedSite && matchedSite.company) || '').trim();
-    if (effCo && !canAccessGeoCompanyNow(effCo)) return false;
     const nm = String(o.name || '').trim();
     const nk = norm(nm);
     if (!nk) return;
@@ -7736,7 +7074,6 @@
     const storePfx = geoIndStorePrefix(effInd);
     const cat = o.siteCategory === 'customer' ? 'customer' : (o.siteCategory === 'supplier' ? 'supplier' : '');
     const delIso = new Date().toISOString();
-    const prevGeoSnap = !(ctx && ctx.skipGeoRollback) ? JSON.parse(JSON.stringify(exportGeoConfig())) : null;
     if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
     let changed = false;
     if (cat) {
@@ -7773,24 +7110,7 @@
     }
     const matchedRow = sites.find(s => isRowInGeoIndustry(s, effInd) && norm(s.name) === nk && (!o.excludeId || String(s.id) !== String(o.excludeId)) && (!cat || resolveGeoSiteCat(s) === cat))
       || sites.find(s => isRowInGeoIndustry(s, effInd) && norm(s.name) === nk && (!o.excludeId || String(s.id) !== String(o.excludeId)));
-    if (changed) {
-      const deferGeoPush = Boolean(ctx && ctx.deferStoredConfigPush);
-      const geoSaveOpts = {
-        allowNewSiteModal: allowNewSite,
-        skipCloudPush: Boolean(ctx && ctx.skipCloudPush),
-        prevGeoStoreSnap: prevGeoSnap,
-        toastOnReject: !(ctx && ctx.skipGeoRollback),
-        onReject: (ctx && ctx.onServerReject)
-          ? (_res, errMsg) => ctx.onServerReject(errMsg)
-          : ((ctx && ctx.skipGeoRollback) ? () => {} : undefined),
-        toast: ctx && ctx.toast
-      };
-      const geoSaveP = saveStoredConfig(!deferGeoPush, geoSaveOpts);
-      if (deferGeoPush && ctx && Array.isArray(ctx.deferredGeoPushes)) {
-        ctx.deferredGeoPushes.push(() => saveStoredConfig(true, geoSaveOpts));
-      }
-      if (ctx && Array.isArray(ctx.geoSavePromises) && !deferGeoPush && geoSaveP) ctx.geoSavePromises.push(geoSaveP);
-    }
+    if (changed) saveStoredConfig(true);
     if (SEED) hydrateSeedGeo(SEED, true);
     if (effInd !== 'Manufacturing' && !(ctx && ctx.skipDomainEditSync) && typeof window !== 'undefined' && typeof window.__mfgSyncDomainEditsFromSitePin === 'function') {
       window.__mfgSyncDomainEditsFromSitePin({
@@ -7809,8 +7129,6 @@
   }
 
   function wireGeoStudio(container, ctx) {
-    const o = ctx || {};
-    if (typeof o.toast === 'function') STUDIO._toast = o.toast;
     const deck = container && container.querySelector('#geoMapStudioDeck');
     if (!deck) {
       cleanupGeoStudio(true);
@@ -7836,12 +7154,11 @@
     deck.querySelectorAll('[data-geo-mode]').forEach(btn => {
       btn.addEventListener('click', () => {
         const nextMode = btn.getAttribute('data-geo-mode') || 'view';
-        const indNow = getGeoActiveIndustry();
-        if (nextMode === 'pin' && (!canPinLocationsNow() || !canAccessGeoIndustryNow(indNow))) {
+        if (nextMode === 'pin' && !canPinLocationsNow()) {
           if (toast) toast('Supervisor privileges required to modify location pins', 'err');
           return;
         }
-        if ((nextMode === 'circle' || nextMode === 'polygon' || nextMode === 'search') && (!canShapeRegionsNow() || !canAccessGeoIndustryNow(indNow))) {
+        if ((nextMode === 'circle' || nextMode === 'polygon' || nextMode === 'search') && !canShapeRegionsNow()) {
           if (toast) toast('Supervisor privileges required to edit region shapes', 'err');
           return;
         }
@@ -8270,7 +7587,7 @@
       if (STUDIO._shapelessScrollTop > 0) shapelessListEl.scrollTop = STUDIO._shapelessScrollTop;
       shapelessListEl.addEventListener('scroll', () => { STUDIO._shapelessScrollTop = shapelessListEl.scrollTop; });
     }
-    const canShapeRegions = canShapeRegionsNow() && canAccessGeoIndustryNow(getGeoActiveIndustry());
+    const canShapeRegions = canShapeRegionsNow();
     const batchBtn = deck.querySelector('#geoShapelessBatchBtn');
     if (batchBtn) {
       batchBtn.addEventListener('click', ev => {
@@ -8293,35 +7610,6 @@
         ev.stopPropagation();
         if (!canShapeRegions) return;
         const readyNow = getBatchReadyShapelessCircles(SEED, STATE).filter(item => !regionHasShape(item.entry.name, SEED));
-        const prevGeoSnap = JSON.parse(JSON.stringify(exportGeoConfig()));
-        const prevSeedRegsSnap = (SEED && SEED.records && Array.isArray(SEED.records.regions)) ? JSON.parse(JSON.stringify(SEED.records.regions)) : [];
-        const prevCustRegsSnap = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.regions)) ? JSON.parse(JSON.stringify(STATE.customRecords.regions)) : null;
-        const prevSeedRev = (SEED && SEED._customRev) || 0;
-        const prevSiteStates = ((SEED.records && SEED.records.sites) || []).map(s => s ? { ref: s, region: s.region, geo_zone: s.geo_zone } : null).filter(Boolean);
-        let batchRolledBack = false;
-        const rollbackBatchShapes = errMsg => {
-          if (batchRolledBack) return;
-          batchRolledBack = true;
-          _replaceGeoConfigStore(prevGeoSnap);
-          if (SEED && SEED.records) SEED.records.regions = JSON.parse(JSON.stringify(prevSeedRegsSnap));
-          if (STATE && STATE.customRecords) {
-            if (prevCustRegsSnap) STATE.customRecords.regions = JSON.parse(JSON.stringify(prevCustRegsSnap));
-            else delete STATE.customRecords.regions;
-          }
-          prevSiteStates.forEach(st => {
-            st.ref.region = st.region;
-            st.ref.geo_zone = st.geo_zone;
-          });
-          if (SEED) {
-            SEED._customRev = prevSeedRev;
-            hydrateSeedGeo(SEED, true, false);
-          }
-          if (typeof ctx.saveLocal === 'function') ctx.saveLocal();
-          else if (typeof window !== 'undefined' && typeof window.__mfgSaveLocalAuthAndRecords === 'function') window.__mfgSaveLocalAuthAndRecords();
-          rerenderWorkspace();
-          if (typeof ctx.rerenderApp === 'function') ctx.rerenderApp();
-          if (toast) toast(errMsg || 'Region update was rejected by the server.', 'err');
-        };
         let savedCount = 0;
         let hasBoundarySaved = false;
         const deferredApiRows = [];
@@ -8329,7 +7617,6 @@
           if (persistRegionZone(item.entry.name, Object.assign({}, item.spec), Object.assign({}, ctx, {
             keepSiteRegions: true,
             deferStoredConfigPush: true,
-            skipGeoRollback: true,
             deferHydrate: true,
             deferApiPost: true,
             deferredApiRows,
@@ -8340,84 +7627,29 @@
           }
         });
         if (savedCount > 0) {
-          saveStoredConfig(false, {
-            prevGeoStoreSnap: prevGeoSnap,
-            skipCloudPush: true,
-            toastOnReject: false,
-            toast
-          });
+          saveStoredConfig(true);
           hydrateSeedGeo(SEED, true);
           const savedWord = hasBoundarySaved
             ? (savedCount === 1 ? 'shape' : 'shapes')
             : (savedCount === 1 ? 'circle' : 'circles');
           if (toast) toast(`Saved ${savedCount} ready Region ${savedWord}`, 'ok');
-          const postRec = (ctx && typeof ctx.postRecordToLocalApi === 'function')
-            ? ctx.postRecordToLocalApi
-            : (typeof postRecordToLocalApi === 'function'
-              ? postRecordToLocalApi
-              : (typeof window !== 'undefined' && typeof window.__mfgPostRecordToLocalApi === 'function' ? window.__mfgPostRecordToLocalApi : null));
-          const rbServer = (ctx && typeof ctx.rollbackRecordOnServer === 'function')
-            ? ctx.rollbackRecordOnServer
-            : (typeof window !== 'undefined' ? window.__mfgRollbackRecordOnServer : null);
-          (async () => {
-            const committedRecs = [];
-            let apiRejectedMsg = '';
-            let apiTransientFail = 0;
-            if (deferredApiRows.length && postRec) {
+          const postRec = ctx && typeof ctx.postRecordToLocalApi === 'function' ? ctx.postRecordToLocalApi : null;
+          if (deferredApiRows.length && postRec) {
+            (async () => {
+              let apiFailed = 0;
               for (const apiRow of deferredApiRows) {
                 try {
                   const res = await postRec('regions', apiRow);
-                  if (res && !res.networkError && (res.status === 400 || res.status === 401 || res.status === 403 || res.ok === false || Number(res.status) >= 400)) {
-                    if (res.status === 400 || res.status === 401 || res.status === 403 || res.error || res.ok === false) {
-                      apiRejectedMsg = String(res.error || 'Region update was rejected by the server.');
-                      break;
-                    }
-                    apiTransientFail++;
-                  } else if (res === false) {
-                    apiTransientFail++;
-                  } else if (res && res.ok) {
-                    committedRecs.push(res);
-                  }
+                  if (res === false || (res && res.ok === false)) apiFailed++;
                 } catch (_) {
-                  apiTransientFail++;
+                  apiFailed++;
                 }
               }
-            }
-            if (apiRejectedMsg) {
-              for (let i = committedRecs.length - 1; i >= 0; i--) {
-                if (committedRecs[i] && committedRecs[i].rollbackToken && typeof rbServer === 'function') {
-                  try { await rbServer(committedRecs[i]); } catch (_) {}
-                }
+              if (apiFailed > 0 && toast) {
+                toast(`${apiFailed} Region ${apiFailed === 1 ? 'shape' : 'shapes'} saved locally only; server sync will retry`, 'warn');
               }
-              rollbackBatchShapes(apiRejectedMsg);
-              return;
-            }
-            const rollbackCommittedBatch = async () => {
-              for (let i = committedRecs.length - 1; i >= 0; i--) {
-                if (committedRecs[i] && committedRecs[i].rollbackToken && typeof rbServer === 'function') {
-                  try { await rbServer(committedRecs[i]); } catch (_) {}
-                }
-              }
-            };
-            try {
-              await saveStoredConfig(true, {
-                prevGeoStoreSnap: prevGeoSnap,
-                skipCloudPush: true,
-                toastOnReject: false,
-                onReject: async (_res, errMsg) => {
-                  await rollbackCommittedBatch();
-                  rollbackBatchShapes(errMsg);
-                },
-                toast
-              });
-            } catch (_) {}
-            if (batchRolledBack) return;
-            if (apiTransientFail > 0) {
-              if (toast) toast(`${apiTransientFail} Region ${apiTransientFail === 1 ? 'shape' : 'shapes'} saved locally only; server sync will retry`, 'warn');
-            } else if (typeof window.__mfgScheduleCloudPush === 'function') {
-              try { window.__mfgScheduleCloudPush(); } catch (_) {}
-            }
-          })();
+            })();
+          }
         }
         clearShapelessTransientState();
         STUDIO._userPanned = false;
@@ -8766,16 +7998,14 @@
       unpinnedRegInp.addEventListener('change', () => { STUDIO.unpinnedRegionDraft = unpinnedRegInp.value.trim(); });
     }
     const saveCurrentUnpinnedPin = () => {
+      if (!canPinLocationsNow()) {
+        if (typeof ctx.toast === 'function') ctx.toast('Supervisor privileges required to modify location pins', 'err');
+        return;
+      }
       const indNow = getGeoActiveIndustry();
       const q = getUnpinnedSitesQueue(SEED, STATE, indNow);
       const cur = q[STUDIO.unpinnedIdx];
       if (!cur) return;
-      const canFullPin = canPinSiteRowNow({ company: cur.company, _industry: cur._industry || indNow });
-      const canInitPin = !canFullPin && canFillMissingSitePinNow(cur, { industry: cur._industry || indNow });
-      if (!canFullPin && !canInitPin) {
-        if (typeof ctx.toast === 'function') ctx.toast('Your seat does not have permission to pin this site', 'err');
-        return;
-      }
       if (STUDIO.unpinnedLat == null || STUDIO.unpinnedLng == null) {
         if (typeof ctx.toast === 'function') ctx.toast('Click the map or paste a location first', 'err');
         return;
@@ -8784,23 +8014,17 @@
         if (typeof ctx.toast === 'function') ctx.toast('Outside Lebanon. Check the link.', 'err');
         return;
       }
-      const regVal = (!canFullPin && cur.region)
-        ? cur.region
-        : ((unpinnedRegInp && unpinnedRegInp.value.trim()) || STUDIO.unpinnedRegionDraft || cur.region || '');
-      const pinCallCtx = canInitPin
-        ? Object.assign({}, ctx, { allowTicketMissingPin: true, company: cur.company || '' })
-        : ctx;
+      const regVal = (unpinnedRegInp && unpinnedRegInp.value.trim()) || STUDIO.unpinnedRegionDraft || cur.region || '';
       if (persistLocationPin({
         targetType: 'site',
         siteId: cur.id,
         siteCategory: cur.siteCategory,
-        company: cur.company || '',
         industry: indNow,
         name: cur.name,
         lat: STUDIO.unpinnedLat,
         lng: STUDIO.unpinnedLng,
         region: regVal
-      }, pinCallCtx)) {
+      }, ctx)) {
         STUDIO.unpinnedTargetId = '';
         STUDIO.unpinnedLat = null;
         STUDIO.unpinnedLng = null;
@@ -8867,10 +8091,6 @@
           : null;
       };
       const applyUnpinnedInput = (saveAfter, trigger) => {
-        const indChk = getGeoActiveIndustry();
-        const qChk = getUnpinnedSitesQueue(SEED, STATE, indChk);
-        const curChk = qChk[STUDIO.unpinnedIdx];
-        if (!curChk || (!canPinSiteRowNow({ company: curChk.company, _industry: curChk._industry || indChk }) && !canFillMissingSitePinNow(curChk, { industry: curChk._industry || indChk }))) return;
         const raw = resolveGeoPlaceInputRaw(unpinnedPasteInp);
         STUDIO.unpinnedPasteRaw = String(unpinnedPasteInp.value || '');
         if (!raw.trim()) {
@@ -8942,7 +8162,6 @@
     // Focus card quick actions
     deck.querySelectorAll('[data-geo-edit-search]').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (!canShapeRegionsNow() || !canAccessGeoIndustryNow(getGeoActiveIndustry())) return;
         const nm = btn.getAttribute('data-geo-edit-search') || '';
         STUDIO.selectedRegion = nm;
         STUDIO.drawRegionName = nm;
@@ -8954,7 +8173,6 @@
     });
     deck.querySelectorAll('[data-geo-edit-circle]').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (!canShapeRegionsNow() || !canAccessGeoIndustryNow(getGeoActiveIndustry())) return;
         const nm = btn.getAttribute('data-geo-edit-circle') || '';
         STUDIO.selectedRegion = nm;
         STUDIO.drawRegionName = nm;
@@ -8969,7 +8187,6 @@
     });
     deck.querySelectorAll('[data-geo-edit-poly]').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (!canShapeRegionsNow() || !canAccessGeoIndustryNow(getGeoActiveIndustry())) return;
         const nm = btn.getAttribute('data-geo-edit-poly') || '';
         STUDIO.selectedRegion = nm;
         STUDIO.drawRegionName = nm;
@@ -9200,10 +8417,6 @@
     const saveZoneBtn = deck.querySelector('#geoSaveZoneBtn');
     if (saveZoneBtn) {
       saveZoneBtn.addEventListener('click', () => {
-        if (!canShapeRegionsNow() || !canAccessGeoIndustryNow(getGeoActiveIndustry())) {
-          if (toast) toast('Supervisor + Entry or Owner access required to edit region zones', 'err');
-          return;
-        }
         let regName = (drawRegInp ? drawRegInp.value : STUDIO.drawRegionName).trim();
         if (STUDIO.mode === 'search') {
           let hit = STUDIO.searchDraft;
@@ -9283,22 +8496,12 @@
     const pinTypeSel = deck.querySelector('#geoPinTypeSel');
     if (pinTypeSel) {
       pinTypeSel.addEventListener('change', () => {
-        const wantBu = pinTypeSel.value === 'bu';
-        if (wantBu) {
-          const allowedBus = BU_LIST.filter(b => canPinCompanyHubNow(b));
-          if (!allowedBus.length) {
-            STUDIO.pinTargetType = 'site';
-            pinTypeSel.value = 'site';
-            if (toast) toast('Supervisor + Entry or Owner access is required to move a Company Hub pin', 'err');
-            return;
-          }
-          STUDIO.pinTargetType = 'bu';
-          const firstBu = allowedBus[0];
-          STUDIO.pinTargetName = firstBu;
-          const h = getCompanyHub(firstBu, SEED);
+        STUDIO.pinTargetType = pinTypeSel.value === 'bu' ? 'bu' : 'site';
+        if (STUDIO.pinTargetType === 'bu') {
+          STUDIO.pinTargetName = 'WTC';
+          const h = getCompanyHub('WTC', SEED);
           STUDIO.pinLat = h.lat; STUDIO.pinLng = h.lng; STUDIO.pinRegion = h.region;
         } else {
-          STUDIO.pinTargetType = 'site';
           STUDIO.pinTargetName = '';
         }
         rerenderWorkspace();
@@ -9307,7 +8510,6 @@
     const pinBuSel = deck.querySelector('#geoPinBuSel');
     if (pinBuSel) {
       pinBuSel.addEventListener('change', () => {
-        if (!canPinCompanyHubNow(pinBuSel.value)) return;
         STUDIO.pinTargetName = pinBuSel.value;
         const h = getCompanyHub(STUDIO.pinTargetName, SEED);
         STUDIO.pinLat = h.lat; STUDIO.pinLng = h.lng; STUDIO.pinRegion = h.region;
@@ -9428,25 +8630,13 @@
     const savePinBtn = deck.querySelector('#geoSavePinBtn');
     if (savePinBtn) {
       savePinBtn.addEventListener('click', () => {
-        const indNow = getGeoActiveIndustry();
+        if (!canPinLocationsNow()) {
+          if (typeof ctx.toast === 'function') ctx.toast('Supervisor privileges required to modify location pins', 'err');
+          return;
+        }
         const tName = STUDIO.pinTargetType === 'bu'
           ? ((pinBuSel && pinBuSel.value) || STUDIO.pinTargetName || 'WTC')
           : ((pinSiteInp && pinSiteInp.value) || STUDIO.pinTargetName);
-        if (STUDIO.pinTargetType === 'bu') {
-          if (!canPinCompanyHubNow(tName)) {
-            if (typeof ctx.toast === 'function') ctx.toast('Supervisor + Entry or Owner access for this Business Unit is required to move a Company Hub pin', 'err');
-            return;
-          }
-        } else {
-          const matchedSite = ((SEED.records && SEED.records.sites) || []).find(s => isRowInGeoIndustry(s, indNow) && norm(s.name) === norm(tName));
-          const allowedSitePin = matchedSite
-            ? canPinSiteRowNow(matchedSite)
-            : (canPinLocationsNow() && canAccessGeoIndustryNow(indNow));
-          if (!allowedSitePin) {
-            if (typeof ctx.toast === 'function') ctx.toast('Your seat does not have permission to pin this site', 'err');
-            return;
-          }
-        }
         if (pinCoordPasteInp && pinCoordPasteInp.value) {
           const parsed = parsePastedCoordinates(pinCoordPasteInp.value);
           if (parsed && !isPointInLebanon(parsed.lat, parsed.lng)) {
@@ -9457,7 +8647,7 @@
         }
         const regVal = (pinRegInp && pinRegInp.value.trim()) || STUDIO.pinRegion || '';
         const pinCtx = STUDIO.pinTargetType === 'site'
-          ? Object.assign({}, ctx, { siteCategory: STUDIO.pinSiteCategory === 'customer' ? 'customer' : 'supplier', industry: indNow })
+          ? Object.assign({}, ctx, { siteCategory: STUDIO.pinSiteCategory === 'customer' ? 'customer' : 'supplier' })
           : ctx;
         if (persistLocationPin(STUDIO.pinTargetType, tName, STUDIO.pinLat, STUDIO.pinLng, regVal, pinCtx)) {
           STUDIO.mode = 'view';
@@ -9495,10 +8685,8 @@
     const ovInp = deck.querySelector('#geoDistOverrideInp');
     if (saveOvBtn && ovInp) {
       saveOvBtn.addEventListener('click', () => {
-        const fSp = parseSpec(STUDIO.distFrom);
-        const tSp = parseSpec(STUDIO.distTo);
-        if (!canEditPairKm(fSp, tSp, SEED)) {
-          if (toast) toast('Supervisor + Entry or Owner access for the route Business Units is required to override KM', 'err');
+        if (!canPinLocationsNow()) {
+          if (toast) toast('Supervisor privileges required to modify location pins', 'err');
           return;
         }
         const v = parseFloat(ovInp.value);
@@ -9506,7 +8694,7 @@
           if (toast) toast('Enter a valid non-negative KM value', 'err');
           return;
         }
-        setPairKmOverride(fSp, tSp, v);
+        setPairKmOverride(parseSpec(STUDIO.distFrom), parseSpec(STUDIO.distTo), v);
         if (toast) toast(`Saved ${round1(v)} km distance override`, 'ok');
         rerenderWorkspace();
       });
@@ -9514,23 +8702,19 @@
     const clearOvBtn = deck.querySelector('#geoDistClearOverrideBtn');
     if (clearOvBtn) {
       clearOvBtn.addEventListener('click', () => {
-        const fSp = parseSpec(STUDIO.distFrom);
-        const tSp = parseSpec(STUDIO.distTo);
-        if (!canEditPairKm(fSp, tSp, SEED)) {
-          if (toast) toast('Supervisor + Entry or Owner access for the route Business Units is required to override KM', 'err');
+        if (!canPinLocationsNow()) {
+          if (toast) toast('Supervisor privileges required to modify location pins', 'err');
           return;
         }
-        setPairKmOverride(fSp, tSp, null);
+        setPairKmOverride(parseSpec(STUDIO.distFrom), parseSpec(STUDIO.distTo), null);
         rerenderWorkspace();
       });
     }
     const verifyRoadBtn = deck.querySelector('#geoVerifyRoadKmBtn');
     if (verifyRoadBtn) {
       verifyRoadBtn.addEventListener('click', async () => {
-        const fSp = parseSpec(STUDIO.distFrom);
-        const tSp = parseSpec(STUDIO.distTo);
-        if (!canEditPairKm(fSp, tSp, SEED)) {
-          if (toast) toast('Supervisor + Entry or Owner access for the route Business Units is required to verify road routes', 'err');
+        if (!canPinLocationsNow()) {
+          if (toast) toast('Supervisor privileges required to modify location pins', 'err');
           return;
         }
         if (verifyRoadBtn.disabled) return;
@@ -9608,13 +8792,7 @@
       });
       map.on('click', ev => {
         const lat = round5(ev.latlng.lat), lng = round5(ev.latlng.lng);
-        const indClick = getGeoActiveIndustry();
         if (STUDIO.mode === 'circle') {
-          if (!canShapeRegionsNow() || !canAccessGeoIndustryNow(indClick)) {
-            STUDIO.mode = 'view';
-            rerenderWorkspace();
-            return;
-          }
           STUDIO.circleCenter = { lat, lng };
           STUDIO._userPanned = true;
           const lbl = deck.querySelector('#geoDraftCoordsLbl');
@@ -9622,26 +8800,15 @@
           syncLiveCircleInsideBadge();
           renderStudioMapLayers(L, map, ctx);
         } else if (STUDIO.mode === 'polygon') {
-          if (!canShapeRegionsNow() || !canAccessGeoIndustryNow(indClick)) {
-            STUDIO.mode = 'view';
-            rerenderWorkspace();
-            return;
-          }
           if (STUDIO.polyLocked) return;
           STUDIO.polyPoints.push([lng, lat]);
           STUDIO._userPanned = true;
           syncStudioPolyHeader();
           renderStudioMapLayers(L, map, ctx);
         } else if (STUDIO.mode === 'pin') {
-          if (!canPinLocationsNow() || !canAccessGeoIndustryNow(indClick)) {
+          if (!canPinLocationsNow()) {
             STUDIO.mode = 'view';
             if (toast) toast('Supervisor privileges required to modify location pins', 'err');
-            rerenderWorkspace();
-            return;
-          }
-          if (STUDIO.pinTargetType === 'bu' && !canPinCompanyHubNow(STUDIO.pinTargetName || 'WTC')) {
-            STUDIO.mode = 'view';
-            if (toast) toast('Supervisor + Entry or Owner access for this Business Unit is required to move a Company Hub pin', 'err');
             rerenderWorkspace();
             return;
           }
@@ -9655,7 +8822,7 @@
           renderStudioMapLayers(L, map, ctx);
         } else if (STUDIO.mode === 'view' && STUDIO.shapelessPickRegion) {
           const pickReg = STUDIO.shapelessPickRegion;
-          if (!canShapeRegionsNow() || !canAccessGeoIndustryNow(indClick)) {
+          if (!canShapeRegionsNow()) {
             STUDIO.shapelessPickRegion = '';
             rerenderWorkspace();
             return;
@@ -9688,14 +8855,13 @@
           STUDIO._userPanned = false;
           rerenderWorkspace();
         } else if (STUDIO.mode === 'view' && STUDIO.pinFilter === 'unpinned' && !STUDIO.shapelessPickRegion) {
+          if (!canPinLocationsNow()) {
+            if (toast) toast('Supervisor privileges required to modify location pins', 'err');
+            return;
+          }
           const indNow = getGeoActiveIndustry();
           const uQueueNow = getUnpinnedSitesQueue(SEED, STATE, indNow);
           if (!uQueueNow.length) return;
-          const curUnp = uQueueNow[STUDIO.unpinnedIdx];
-          if (!curUnp || (!canPinSiteRowNow({ company: curUnp.company, _industry: curUnp._industry || indNow }) && !canFillMissingSitePinNow(curUnp, { industry: curUnp._industry || indNow }))) {
-            if (toast) toast('Your seat does not have permission to pin this site', 'err');
-            return;
-          }
           if (!isPointInLebanon(lat, lng)) {
             if (typeof ctx.toast === 'function') ctx.toast('Outside Lebanon. Check the link.', 'err');
             return;
@@ -9749,11 +8915,6 @@
         popEl.querySelectorAll('[data-popup-edit-site]').forEach(b => {
           b.addEventListener('click', () => {
             const sid = b.getAttribute('data-popup-edit-site') || '';
-            const indNow = getGeoActiveIndustry();
-            const sRow = sid ? ((SEED.records && SEED.records.sites) || []).find(s => String(s.id || '') === String(sid)) : null;
-            if (!canModifyRecordNow() || (sRow && (!canAccessGeoCompanyNow(sRow.company) || !canAccessGeoIndustryNow(sRow._industry || indNow)))) {
-              return;
-            }
             try { map.closePopup && map.closePopup(); } catch (_) {}
             if (!sid) return;
             if (typeof ctx.editRecord === 'function') ctx.editRecord('sites', sid);
@@ -9762,33 +8923,29 @@
         });
         popEl.querySelectorAll('[data-popup-repin-site]').forEach(b => {
           b.addEventListener('click', () => {
-            const indNow = getGeoActiveIndustry();
-            const nm = b.getAttribute('data-popup-repin-site') || '';
-            const rCat = b.getAttribute('data-popup-repin-cat') === 'customer' ? 'customer' : 'supplier';
-            const sRow = ((SEED.records && SEED.records.sites) || []).find(s => isRowInGeoIndustry(s, indNow) && norm(s.name) === norm(nm) && resolveGeoSiteCat(s) === rCat)
-              || ((SEED.records && SEED.records.sites) || []).find(s => isRowInGeoIndustry(s, indNow) && norm(s.name) === norm(nm));
-            const allowedSitePin = sRow
-              ? canPinSiteRowNow(sRow)
-              : (canPinLocationsNow() && canAccessGeoIndustryNow(indNow));
-            if (!allowedSitePin) {
-              if (toast) toast('Your seat does not have permission to pin this site', 'err');
+            if (!canPinLocationsNow()) {
+              if (toast) toast('Supervisor privileges required to modify location pins', 'err');
               return;
             }
+            const nm = b.getAttribute('data-popup-repin-site') || '';
+            const rCat = b.getAttribute('data-popup-repin-cat') === 'customer' ? 'customer' : 'supplier';
             STUDIO.mode = 'pin';
             STUDIO.pinTargetType = 'site';
             STUDIO.pinSiteCategory = rCat;
             STUDIO.pinTargetName = nm;
+            const sRow = ((SEED.records && SEED.records.sites) || []).find(s => isRowInGeoIndustry(s) && norm(s.name) === norm(nm) && resolveGeoSiteCat(s) === rCat)
+              || ((SEED.records && SEED.records.sites) || []).find(s => isRowInGeoIndustry(s) && norm(s.name) === norm(nm));
             if (sRow && sRow.latitude != null) { STUDIO.pinLat = Number(sRow.latitude); STUDIO.pinLng = Number(sRow.longitude); STUDIO.pinRegion = sRow.region || ''; } else if (sRow) { STUDIO.pinRegion = sRow.region || ''; }
             rerenderWorkspace();
           });
         });
         popEl.querySelectorAll('[data-popup-repin-bu]').forEach(b => {
           b.addEventListener('click', () => {
-            const bu = b.getAttribute('data-popup-repin-bu') || 'WTC';
-            if (!canPinCompanyHubNow(bu)) {
-              if (toast) toast('Supervisor + Entry or Owner access for this Business Unit is required to move a Company Hub pin', 'err');
+            if (!canPinLocationsNow()) {
+              if (toast) toast('Supervisor privileges required to modify location pins', 'err');
               return;
             }
+            const bu = b.getAttribute('data-popup-repin-bu') || 'WTC';
             const h = getCompanyHub(bu, SEED);
             STUDIO.mode = 'pin';
             STUDIO.pinTargetType = 'bu';
@@ -9925,35 +9082,6 @@
       canvasSel: '#modalSiteMapCanvas',
       kmSel: '#modalSiteKmReadout',
       clearBtnSel: '#modalClearSitePinBtn',
-      canEditPin: () => {
-        const activeInd = getGeoActiveIndustry();
-        if (!canAccessGeoIndustryNow(activeInd)) return false;
-        const coEl = hostEl.querySelector('#f_company') || document.getElementById('f_company');
-        const co = coEl ? String(coEl.value || '').trim() : '';
-        if (!canAccessGeoCompanyNow(co)) return false;
-        const editRec = (typeof window !== 'undefined' && typeof window.MFG_GET_EDITING_MODAL_RECORD === 'function')
-          ? window.MFG_GET_EDITING_MODAL_RECORD('sites')
-          : ((typeof window !== 'undefined' && window.STATE && window.STATE.editingRecord && window.STATE.editingRecord.crKey === 'sites') ? (window.STATE.editingRecord.orig || window.STATE.editingRecord) : null);
-        if (!editRec) return canPinLocationsNow() || canEnterSiteNow();
-        return canPinSiteRowNow(editRec, { company: co, industry: activeInd }) || canFillMissingSitePinNow(editRec, { company: co, industry: activeInd });
-      },
-      canClearPin: () => {
-        const activeInd = getGeoActiveIndustry();
-        if (!canAccessGeoIndustryNow(activeInd)) return false;
-        const coEl = hostEl.querySelector('#f_company') || document.getElementById('f_company');
-        const co = coEl ? String(coEl.value || '').trim() : '';
-        if (!canAccessGeoCompanyNow(co)) return false;
-        const editRec = (typeof window !== 'undefined' && typeof window.MFG_GET_EDITING_MODAL_RECORD === 'function')
-          ? window.MFG_GET_EDITING_MODAL_RECORD('sites')
-          : ((typeof window !== 'undefined' && window.STATE && window.STATE.editingRecord && window.STATE.editingRecord.crKey === 'sites') ? (window.STATE.editingRecord.orig || window.STATE.editingRecord) : null);
-        return editRec ? canPinSiteRowNow(editRec, { company: co, industry: activeInd }) : (canPinLocationsNow() || canEnterSiteNow());
-      },
-      onlyFillEmptyRegion: (() => {
-        const editRec = (typeof window !== 'undefined' && typeof window.MFG_GET_EDITING_MODAL_RECORD === 'function')
-          ? window.MFG_GET_EDITING_MODAL_RECORD('sites')
-          : null;
-        return Boolean(editRec && !canPinLocationsNow() && !(typeof window.MFG_CAN_MODIFY_RECORD === 'function' && window.MFG_CAN_MODIFY_RECORD()));
-      })(),
       getCompany: () => {
         const coEl = hostEl.querySelector('#f_company') || document.getElementById('f_company');
         return coEl ? String(coEl.value || '') : '';
@@ -9985,32 +9113,9 @@
       clearBtnSel: '#inspClearSitePinBtn',
       pinLabel: o.pinLabel || '',
       skipRegionContainmentCheck: Boolean(o.skipRegionContainmentCheck),
-      onlyFillEmptyRegion: typeof o.onlyFillEmptyRegion === 'boolean'
-        ? o.onlyFillEmptyRegion
-        : Boolean(!canPinLocationsNow() && !(typeof window.MFG_CAN_MODIFY_RECORD === 'function' && window.MFG_CAN_MODIFY_RECORD())),
+      onlyFillEmptyRegion: Boolean(o.onlyFillEmptyRegion),
       baselinePin: o.baselinePin || null,
       onPinChange: o.onPinChange || null,
-      canEditPin: () => {
-        if (o.canEditPin === false) return false;
-        const effInd = o.industry || (siteRow && siteRow._industry) || getGeoActiveIndustry();
-        const row = siteRow || {
-          id: '',
-          company: hostEl.getAttribute('data-t24-company') || '',
-          _industry: effInd
-        };
-        const canInitFill = !o.tableKey || o.tableKey === 'sites';
-        return canPinSiteRowNow(row, { industry: effInd }) || (canInitFill && canFillMissingSitePinNow(row, { industry: effInd }));
-      },
-      canClearPin: () => {
-        if (o.canEditPin === false) return false;
-        const effInd = o.industry || (siteRow && siteRow._industry) || getGeoActiveIndustry();
-        const row = siteRow || {
-          id: '',
-          company: hostEl.getAttribute('data-t24-company') || '',
-          _industry: effInd
-        };
-        return canPinSiteRowNow(row, { industry: effInd });
-      },
       getCompany: () => String((siteRow && siteRow.company) || hostEl.getAttribute('data-t24-company') || ''),
       getEditRec: () => (siteRow ? { id: siteRow.id || '', region: String(siteRow.region || '').trim() } : null),
       isBundled: inp => inp ? (inp.value === '1' || inp.value === 'Yes' || inp.value === 'true') : Boolean(siteRow && siteRow.includes_transport),
@@ -10034,8 +9139,6 @@
     let lastVal = '';
     let debounceT = 0;
     let reqGen = 0;
-    const isPinEditable = () => (typeof c.canEditPin === 'function' ? Boolean(c.canEditPin()) : c.canEditPin !== false);
-    const isClearAllowed = () => (typeof c.canClearPin === 'function' ? Boolean(c.canClearPin()) : isPinEditable());
     const setStatus = (html, tone) => {
       if (!statusEl) return;
       statusEl.hidden = !html;
@@ -10058,7 +9161,6 @@
       return null;
     };
     const apply = (force, trigger = 'manual') => {
-      if (!isPinEditable()) return;
       const displayRaw = String(pasteInp.value || '');
       const raw = resolveGeoPlaceInputRaw(pasteInp);
       if (!force && raw === lastVal) return;
@@ -10083,12 +9185,8 @@
         if (latInp) { latInp.value = String(parsed.lat); latInp.dataset.autoFromPlace = ''; latInp.dataset.userEdited = '1'; }
         if (lngInp) { lngInp.value = String(parsed.lng); lngInp.dataset.autoFromPlace = ''; lngInp.dataset.userEdited = '1'; }
         const clrBtnPaste = c.clearBtnSel ? hostEl.querySelector(c.clearBtnSel) : null;
-        if (clrBtnPaste) {
-          const canClr = isClearAllowed();
-          clrBtnPaste.disabled = !canClr;
-          clrBtnPaste.hidden = !canClr;
-        }
-        if (parsed.placeName && siteInp && !siteInp.disabled && !siteInp.readOnly && !String(siteInp.value || '').trim()) {
+        if (clrBtnPaste) clrBtnPaste.hidden = false;
+        if (parsed.placeName && siteInp && !String(siteInp.value || '').trim()) {
           siteInp.value = parsed.placeName;
           _emitGeoFieldEvents(siteInp);
         }
@@ -10150,7 +9248,6 @@
       SEED,
       anchorEl: pasteInp.closest('.geo-link-paste-row') || pasteInp.parentElement,
       getRef: getPasteRef,
-      isEditable: isPinEditable,
       onSelect: () => {
         clearTimeout(debounceT);
         apply(true, 'pick');
@@ -10220,45 +9317,19 @@
       });
     }
     wireSiteMapLinkPaste(hostEl, canvas, SEED, cfg);
-    const isPinEditable = () => (typeof cfg.canEditPin === 'function' ? Boolean(cfg.canEditPin()) : cfg.canEditPin !== false);
-    const canClearNow = () => (typeof cfg.canClearPin === 'function' ? Boolean(cfg.canClearPin()) : isPinEditable());
     const syncClearBtn = hostEl.querySelector(cfg.clearBtnSel);
     const syncLatInp = hostEl.querySelector(cfg.latSel);
     const syncLngInp = hostEl.querySelector(cfg.lngSel);
     const syncRegInp = hostEl.querySelector(cfg.regSel);
     const syncPasteInp = hostEl.querySelector(cfg.pasteSel);
-    const syncPinLockDom = () => {
-      const editable = isPinEditable();
-      const clearable = canClearNow();
-      const hasCurPin = Boolean(
-        syncLatInp && syncLngInp &&
-        syncLatInp.value !== '' && syncLngInp.value !== '' &&
-        Number.isFinite(parseFloat(syncLatInp.value)) && Number.isFinite(parseFloat(syncLngInp.value))
-      );
-      if (syncPasteInp) {
-        syncPasteInp.disabled = !editable;
-        syncPasteInp.readOnly = !editable;
-      }
-      if (syncLatInp) syncLatInp.readOnly = !editable;
-      if (syncLngInp) syncLngInp.readOnly = !editable;
-      if (syncClearBtn) {
-        syncClearBtn.disabled = !clearable;
-        syncClearBtn.hidden = !clearable || !hasCurPin;
-      }
-      if (canvas) canvas.classList.toggle('is-pin-readonly', !editable);
-      return editable;
-    };
-    syncPinLockDom();
-    const syncCoEl = hostEl.querySelector('#f_company') || document.getElementById('f_company');
-    if (syncCoEl) {
-      syncCoEl.addEventListener('change', () => {
-        syncPinLockDom();
-        if (canvas && typeof canvas._refreshSiteOverlay === 'function') canvas._refreshSiteOverlay();
-      }, sig);
-    }
+    const hasSyncInitPin = Boolean(
+      syncLatInp && syncLngInp &&
+      syncLatInp.value !== '' && syncLngInp.value !== '' &&
+      Number.isFinite(parseFloat(syncLatInp.value)) && Number.isFinite(parseFloat(syncLngInp.value))
+    );
     if (syncClearBtn) {
+      syncClearBtn.hidden = !hasSyncInitPin;
       syncClearBtn.addEventListener('click', () => {
-        if (!canClearNow()) return;
         if (syncLatInp) { syncLatInp.value = ''; syncLatInp.dataset.autoFromPlace = ''; syncLatInp.dataset.userEdited = '1'; }
         if (syncLngInp) { syncLngInp.value = ''; syncLngInp.dataset.autoFromPlace = ''; syncLngInp.dataset.userEdited = '1'; }
         if (syncPasteInp) {
@@ -10300,7 +9371,6 @@
       let lastFocusedRegion = '';
 
       const applyPickedSiteLatLng = (lat, lng) => {
-        if (!isPinEditable()) return;
         const activeInd = getGeoActiveIndustry();
         if (!isPointInLebanon(lat, lng)) {
           if (pasteInp && typeof pasteInp._setLinkStatus === 'function') {
@@ -10345,7 +9415,6 @@
           pasteInp._setLinkStatus(renderMapLinkStatusHtml({ ok: true, sourceLabel: 'Map Pin', lat, lng }, info), tone);
         }
         if (typeof cfg.onPinChange === 'function') cfg.onPinChange({ lat, lng, region: regInp ? regInp.value : '', cleared: false });
-        syncPinLockDom();
         refreshSiteOverlay();
       };
 
@@ -10415,11 +9484,7 @@
         const rawLat = latInp && latInp.value !== '' ? parseFloat(latInp.value) : null;
         const rawLng = lngInp && lngInp.value !== '' ? parseFloat(lngInp.value) : null;
         const hasExplicitPin = rawLat != null && rawLng != null && Number.isFinite(rawLat) && Number.isFinite(rawLng);
-        if (clearPinBtn) {
-          const canClr = canClearNow();
-          clearPinBtn.disabled = !canClr;
-          clearPinBtn.hidden = !canClr || !hasExplicitPin;
-        }
+        if (clearPinBtn) clearPinBtn.hidden = !hasExplicitPin;
         const placeHit = siteInp && siteInp.value ? resolvePlaceLocation(siteInp.value, SEED) : null;
         const previewLat = hasExplicitPin ? rawLat : (hasBaselinePin ? Number(bp.lat) : (placeHit ? placeHit.lat : (selRegObj ? selRegObj.center_lat : null)));
         const previewLng = hasExplicitPin ? rawLng : (hasBaselinePin ? Number(bp.lng) : (placeHit ? placeHit.lng : (selRegObj ? selRegObj.center_lng : null)));
@@ -10437,19 +9502,15 @@
               }, SEED);
           const pinColor = (!check.ok && selRegName) ? '#DC2626' : accentColor;
           const badgeText = hasExplicitPin ? pinLabel : (hasBaselinePin ? (bp.label || 'Project Site') : (placeHit ? placeHit.placeName : (selRegObj ? selRegObj.name : pinLabel)));
-          const editableNow = syncPinLockDom();
           const pinMarker = L.marker([previewLat, previewLng], {
-            draggable: editableNow,
+            draggable: true,
             icon: makeSvgPinIcon(L, pinColor, badgeText, false, '', badgeText !== pinLabel),
             zIndexOffset: 1050
           }).addTo(lg);
-          if (editableNow) {
-            pinMarker.on('dragend', ev => {
-              if (!isPinEditable()) return;
-              const pos = ev.target.getLatLng();
-              applyPickedSiteLatLng(round5(pos.lat), round5(pos.lng));
-            });
-          }
+          pinMarker.on('dragend', ev => {
+            const pos = ev.target.getLatLng();
+            applyPickedSiteLatLng(round5(pos.lat), round5(pos.lng));
+          });
           const det = findContainingRegion(previewLat, previewLng, SEED, activeInd);
           const zoneLbl = selRegName || det.best || (selRegObj && selRegObj.name) || '';
           if (kmStatus) {
@@ -10490,7 +9551,6 @@
       canvas._refreshSiteOverlay = refreshSiteOverlay;
       refreshSiteOverlay({ initialOpen: true });
       map.on('click', ev => {
-        if (!isPinEditable()) return;
         applyPickedSiteLatLng(round5(ev.latlng.lat), round5(ev.latlng.lng));
       });
       [latInp, lngInp].forEach(el => {
@@ -10606,9 +9666,6 @@
         key,
         id: s.id || '',
         name: s.name,
-        company: String(s.company || '').trim(),
-        _industry: s._industry || (isMfg ? 'Manufacturing' : ind),
-        _pinCleared: _isPinClearedFlag(s._pinCleared),
         siteCategory: cat,
         region: String(s.region || s.geo_zone || '').trim(),
         lifeState: lc.state,
@@ -10646,18 +9703,6 @@
       onlyFillEmptyRegion: true,
       baselinePin: o.baselinePin || null,
       onPinChange: o.onPinChange || null,
-      canEditPin: () => {
-        if (o.canEditPin === false) return false;
-        const indTarget = o.industry || getGeoActiveIndustry();
-        return canPinSiteRowNow({
-          id: o.id || '',
-          company: String(o.company || ''),
-          _industry: indTarget
-        }, {
-          industry: indTarget,
-          company: String(o.company || '')
-        });
-      },
       getCompany: () => String(o.company || ''),
       getEditRec: () => ({ id: o.id || '', region: String(o.region || '').trim() }),
       isBundled: () => true,
@@ -10709,10 +9754,6 @@
       const undoBtn = hostEl.querySelector('#modalPolyUndoBtn');
       const finishBtn = hostEl.querySelector('#modalPolyFinishBtn');
       const clearBtn = hostEl.querySelector('#modalRegionClearPtsBtn');
-      const editRegRec = (typeof window !== 'undefined' && typeof window.MFG_GET_EDITING_MODAL_RECORD === 'function')
-        ? window.MFG_GET_EDITING_MODAL_RECORD('regions')
-        : ((typeof window !== 'undefined' && window.STATE && window.STATE.editingRecord && window.STATE.editingRecord.crKey === 'regions') ? window.STATE.editingRecord : null);
-      const canEditRegionShape = canAccessGeoIndustryNow(getGeoActiveIndustry()) && (editRegRec ? canShapeRegionsNow() : canEnterRegionNow());
 
       let polyPts = [];
       let polyLocked = false;
@@ -10743,19 +9784,6 @@
         const isBoundary = zt === 'boundary';
         if (mapSearchWrap) mapSearchWrap.hidden = !isBoundary;
         if (corridorWrap) corridorWrap.hidden = !isBoundary;
-        if (!canEditRegionShape) {
-          if (regLockPill) regLockPill.hidden = true;
-          if (regNameInp && canModifyRecordNow()) {
-            regNameInp.readOnly = false;
-            regNameInp.removeAttribute('readonly');
-            regNameInp.removeAttribute('tabindex');
-            regNameInp.setAttribute('aria-readonly', 'false');
-            if (regNameWrap) {
-              regNameWrap.classList.remove('is-policy-locked', 'is-geo-frozen-field', 'has-gov-val');
-            }
-          }
-          return;
-        }
         if (regNameInp) {
           if (isBoundary) {
             regNameInp.readOnly = true;
@@ -10784,7 +9812,6 @@
 
       if (regNameInp) {
         regNameInp.addEventListener('mousedown', ev => {
-          if (!canEditRegionShape) return;
           const ztNow = (shapeSel && shapeSel.value) || 'boundary';
           if (ztNow === 'boundary') {
             ev.preventDefault();
@@ -10797,7 +9824,6 @@
           }
         });
         regNameInp.addEventListener('focus', () => {
-          if (!canEditRegionShape) return;
           const ztNow = (shapeSel && shapeSel.value) || 'boundary';
           if (ztNow === 'boundary' && regNameInp.readOnly) {
             try { regNameInp.blur(); } catch (_) {}
@@ -10881,44 +9907,18 @@
       const syncToolbarAndStatus = () => {
         const zt = (shapeSel && shapeSel.value) || 'boundary';
         syncRegionModeFields();
-        if (shapeSel) shapeSel.disabled = !canEditRegionShape;
-        if (mapSearchInp) {
-          mapSearchInp.disabled = !canEditRegionShape;
-          mapSearchInp.readOnly = !canEditRegionShape;
-        }
         if (radWrap) radWrap.hidden = zt !== 'circle';
-        if (radInp) radInp.readOnly = !canEditRegionShape;
-        if (distInp) {
-          distInp.readOnly = !canEditRegionShape;
-          distInp.disabled = !canEditRegionShape;
-          distInp.classList.toggle('pa-locked-input', !canEditRegionShape);
-        }
-        if (radSlider) {
-          radSlider.hidden = zt !== 'circle';
-          radSlider.disabled = !canEditRegionShape;
-        }
-        if (quickStrip) quickStrip.hidden = !canEditRegionShape || zt !== 'boundary';
-        if (undoBtn) {
-          undoBtn.hidden = !canEditRegionShape || zt !== 'polygon' || polyPts.length === 0;
-          undoBtn.disabled = !canEditRegionShape;
-        }
+        if (radSlider) radSlider.hidden = zt !== 'circle';
+        if (quickStrip) quickStrip.hidden = zt !== 'boundary';
+        if (undoBtn) undoBtn.hidden = zt !== 'polygon' || polyPts.length === 0;
         if (finishBtn) {
-          finishBtn.hidden = !canEditRegionShape || zt !== 'polygon' || polyPts.length < 3;
-          finishBtn.disabled = !canEditRegionShape;
+          finishBtn.hidden = zt !== 'polygon' || polyPts.length < 3;
           finishBtn.textContent = polyLocked ? 'Add Corners' : 'Finish Shape';
         }
         const parsedGj = gjInp && gjInp.value ? parseZoneGeoJson(gjInp.value) : null;
-        if (editCornersBtn) {
-          editCornersBtn.hidden = !canEditRegionShape || !(zt === 'boundary' && parsedGj);
-          editCornersBtn.disabled = !canEditRegionShape;
-        }
-        if (clearBtn) {
-          clearBtn.hidden = !canEditRegionShape;
-          clearBtn.disabled = !canEditRegionShape;
-        }
-        hostEl.querySelectorAll('[data-pick-map-region]').forEach(ch => { ch.disabled = !canEditRegionShape; });
+        if (editCornersBtn) editCornersBtn.hidden = !(zt === 'boundary' && parsedGj);
 
-        const isCrosshair = canEditRegionShape && (zt === 'circle' || (zt === 'polygon' && !polyLocked));
+        const isCrosshair = zt === 'circle' || (zt === 'polygon' && !polyLocked);
         canvas.classList.toggle('is-drawing-zone', isCrosshair);
 
         if (zt === 'boundary') {
@@ -10984,7 +9984,7 @@
       };
 
       const applyPickedAtlasRegion = (hit) => {
-        if (!hit || !canEditRegionShape) return;
+        if (!hit) return;
         activeBoundaryItem = hit;
         if (shapeSel && shapeSel.value !== 'boundary') setSelectValAndSync(shapeSel, 'boundary');
         syncRegionModeFields();
@@ -11013,7 +10013,6 @@
           decorateWithIcon: true,
           onSelectRegion: applyPickedAtlasRegion,
           onClear: () => {
-            if (!canEditRegionShape) return;
             activeBoundaryItem = null;
             if (!shapeSel || shapeSel.value === 'boundary') {
               setFrozenRegionValue('', true);
@@ -11026,7 +10025,6 @@
           }
         });
         mapSearchInp.addEventListener('focus', () => {
-          if (!canEditRegionShape) return;
           if (!shapeSel || shapeSel.value === 'boundary') {
             syncRegionModeFields();
             const q = String(mapSearchInp.value || '').trim();
@@ -11037,7 +10035,6 @@
           }
         });
         mapSearchInp.addEventListener('input', () => {
-          if (!canEditRegionShape) return;
           if (!shapeSel || shapeSel.value === 'boundary') {
             const rawQ = String(mapSearchInp.value || '').trim();
             if (activeBoundaryItem && norm(rawQ) !== norm(activeBoundaryItem.name)) activeBoundaryItem = null;
@@ -11049,14 +10046,12 @@
       }
       hostEl.querySelectorAll('[data-pick-map-region]').forEach(chip => {
         chip.addEventListener('click', () => {
-          if (!canEditRegionShape) return;
           const hit = findAtlasRegionByName(chip.getAttribute('data-pick-map-region'), SEED);
           if (hit) applyPickedAtlasRegion(hit);
         });
       });
       if (shapeSel) {
         shapeSel.addEventListener('change', () => {
-          if (!canEditRegionShape) return;
           closeAllGeoPlaceMenus();
           const zt = shapeSel.value || 'boundary';
           if (zt === 'circle' || zt === 'polygon') {
@@ -11087,7 +10082,6 @@
       }
       if (editCornersBtn) {
         editCornersBtn.addEventListener('click', () => {
-          if (!canEditRegionShape) return;
           if (gjInp && gjInp.value) {
             convertingBoundaryToPoly = true;
             polyPts = extractEditablePolyRing(gjInp.value, 20);
@@ -11099,14 +10093,12 @@
       }
       if (radInp) {
         radInp.addEventListener('input', () => {
-          if (!canEditRegionShape) return;
           if (radSlider) radSlider.value = String(Math.min(25, Math.max(0.3, parseFloat(radInp.value) || 1.5)));
           redraw();
         });
       }
       if (radSlider) {
         radSlider.addEventListener('input', () => {
-          if (!canEditRegionShape) return;
           const v = round1(parseFloat(radSlider.value) || 1.5);
           if (radInp) radInp.value = String(v);
           redraw();
@@ -11114,7 +10106,6 @@
       }
       if (undoBtn) {
         undoBtn.addEventListener('click', () => {
-          if (!canEditRegionShape) return;
           polyPts.pop();
           if (polyPts.length < 3) polyLocked = false;
           commitPolyToHiddenFields();
@@ -11123,7 +10114,6 @@
       }
       if (finishBtn) {
         finishBtn.addEventListener('click', () => {
-          if (!canEditRegionShape) return;
           if (polyPts.length >= 3) {
             polyLocked = !polyLocked;
             commitPolyToHiddenFields();
@@ -11133,7 +10123,6 @@
       }
       if (clearBtn) {
         clearBtn.addEventListener('click', () => {
-          if (!canEditRegionShape) return;
           closeAllGeoPlaceMenus();
           polyPts = [];
           polyLocked = false;
@@ -11195,7 +10184,7 @@
           }
           const zt = (shapeSel && shapeSel.value) || 'boundary';
           const parsedGj = gjInp && gjInp.value ? parseZoneGeoJson(gjInp.value) : null;
-          const isCrosshair = canEditRegionShape && (zt === 'circle' || (zt === 'polygon' && !polyLocked));
+          const isCrosshair = zt === 'circle' || (zt === 'polygon' && !polyLocked);
           canvas.classList.toggle('is-drawing-zone', isCrosshair);
 
           const isMfg = getGeoActiveIndustry() === 'Manufacturing';
@@ -11230,29 +10219,27 @@
                 weight: 2.6
               }).addTo(lg);
               const centerMarker = L.marker([clat, clng], {
-                draggable: canEditRegionShape,
+                draggable: true,
                 icon: makeVertexDivIcon(L, true, false),
                 zIndexOffset: 1100
               }).addTo(lg);
-              if (canEditRegionShape) {
-                centerMarker.on('drag', ev => {
-                  const ll = ev.target.getLatLng();
-                  circLayer.setLatLng(ll);
-                  const radNow = radInp && radInp.value !== '' ? Math.max(0.2, parseFloat(radInp.value) || 1.5) : 1.5;
-                  setModalGovernorate(resolveGovernorateForCircle(ll.lat, ll.lng, radNow).code);
-                });
-                centerMarker.on('dragend', ev => {
-                  const pos = ev.target.getLatLng();
-                  const nLat = round5(pos.lat), nLng = round5(pos.lng);
-                  if (cLatInp) cLatInp.value = String(nLat);
-                  if (cLngInp) cLngInp.value = String(nLng);
-                  if (isMfg && distInp) {
-                    const wtcHub = getCompanyHub('WTC', SEED);
-                    distInp.value = String(Math.round(roadAdjustedKm(wtcHub.lat, wtcHub.lng, nLat, nLng)));
-                  }
-                  redraw();
-                });
-              }
+              centerMarker.on('drag', ev => {
+                const ll = ev.target.getLatLng();
+                circLayer.setLatLng(ll);
+                const radNow = radInp && radInp.value !== '' ? Math.max(0.2, parseFloat(radInp.value) || 1.5) : 1.5;
+                setModalGovernorate(resolveGovernorateForCircle(ll.lat, ll.lng, radNow).code);
+              });
+              centerMarker.on('dragend', ev => {
+                const pos = ev.target.getLatLng();
+                const nLat = round5(pos.lat), nLng = round5(pos.lng);
+                if (cLatInp) cLatInp.value = String(nLat);
+                if (cLngInp) cLngInp.value = String(nLng);
+                if (isMfg && distInp) {
+                  const wtcHub = getCompanyHub('WTC', SEED);
+                  distInp.value = String(Math.round(roadAdjustedKm(wtcHub.lat, wtcHub.lng, nLat, nLng)));
+                }
+                redraw();
+              });
               if (opts.fitBounds) {
                 map.setView([clat, clng], rad > 4 ? 11 : 12, { animate: false });
               }
@@ -11273,35 +10260,33 @@
 
             ll.forEach((ptLatLng, idx) => {
               const isFirst = idx === 0;
-              const canClose = canEditRegionShape && isFirst && !polyLocked && polyPts.length >= 3;
+              const canClose = isFirst && !polyLocked && polyPts.length >= 3;
               const vm = L.marker(ptLatLng, {
-                draggable: canEditRegionShape,
+                draggable: true,
                 icon: makeVertexDivIcon(L, isFirst, canClose),
                 zIndexOffset: isFirst ? 1200 : 1120
               }).addTo(lg);
-              if (canEditRegionShape) {
-                vm.on('click', ev => {
-                  L.DomEvent.stopPropagation(ev);
-                  if (canClose) {
-                    polyLocked = true;
-                    commitPolyToHiddenFields();
-                    redraw();
-                  }
-                });
-                vm.on('drag', ev => {
-                  const pos = ev.target.getLatLng();
-                  polyPts[idx] = [round5(pos.lng), round5(pos.lat)];
-                  if (polyShape) polyShape.setLatLngs(polyPts.map(p => [p[1], p[0]]));
-                  setModalGovernorate(resolveGovernorateForPolygonPoints(polyPts).code);
-                });
-                vm.on('dragend', () => {
+              vm.on('click', ev => {
+                L.DomEvent.stopPropagation(ev);
+                if (canClose) {
+                  polyLocked = true;
                   commitPolyToHiddenFields();
                   redraw();
-                });
-              }
+                }
+              });
+              vm.on('drag', ev => {
+                const pos = ev.target.getLatLng();
+                polyPts[idx] = [round5(pos.lng), round5(pos.lat)];
+                if (polyShape) polyShape.setLatLngs(polyPts.map(p => [p[1], p[0]]));
+                setModalGovernorate(resolveGovernorateForPolygonPoints(polyPts).code);
+              });
+              vm.on('dragend', () => {
+                commitPolyToHiddenFields();
+                redraw();
+              });
             });
 
-            if (canEditRegionShape && polyPts.length >= 3) {
+            if (polyPts.length >= 3) {
               for (let i = 0; i < polyPts.length; i++) {
                 if (!polyLocked && i === polyPts.length - 1) continue;
                 const a = polyPts[i];
@@ -11343,7 +10328,6 @@
         redraw({ fitBounds: true });
 
         map.on('mousemove', ev => {
-          if (!canEditRegionShape) return;
           const zt = (shapeSel && shapeSel.value) || 'boundary';
           if (zt !== 'polygon' || polyLocked || polyPts.length === 0) {
             if (previewLine) {
@@ -11366,7 +10350,6 @@
         });
 
         map.on('click', ev => {
-          if (!canEditRegionShape) return;
           closeAllGeoPlaceMenus();
           const lat = round5(ev.latlng.lat), lng = round5(ev.latlng.lng);
           const zt = (shapeSel && shapeSel.value) || 'boundary';
@@ -11635,15 +10618,9 @@
     extractEditablePolyRing,
     exportGeoConfig,
     importGeoConfig,
-    markGeoSessionActive,
-    resetGeoStoreSession,
-    restoreGeoConfigSnapshot: _replaceGeoConfigStore,
-    isSiteRowEligibleForInitialPinFill,
-    canFillMissingSitePin: canFillMissingSitePinNow,
     getCompanyHub,
     getAllCompanyHubs,
     setCompanyHubPin,
-    canPinCompanyHub: canPinCompanyHubNow,
     haversineKm,
     roadAdjustedKm,
     isPointInRegion,
@@ -11655,7 +10632,6 @@
     validateSiteInsideRegion,
     ensureRegionInSeed,
     estimateLegKm,
-    canEditPairKm,
     getConfigStamp: () => String(GEO_STORE.updatedAt || ''),
     setPairKmOverride,
     getUnifiedSiteStats,

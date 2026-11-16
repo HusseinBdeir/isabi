@@ -235,7 +235,6 @@
     lions: 'Lions Transport',
     bdeirholding: 'Bdeir Holding',
     'bdeir holding': 'Bdeir Holding',
-    'bdeir holding · consolidated jv': 'Bdeir Holding',
     blanca: 'Blanca',
     launa: 'La Una',
     'la una': 'La Una',
@@ -257,12 +256,7 @@
     const s = String(raw || '').trim();
     if (!s) return '';
     const k = s.toLowerCase().replace(/\s+/g, ' ');
-    if (CANON_COMPANY_MAP[k]) return CANON_COMPANY_MAP[k];
-    if (k.includes('·')) {
-      const head = k.split('·')[0].trim();
-      if (CANON_COMPANY_MAP[head]) return CANON_COMPANY_MAP[head];
-    }
-    return s;
+    return CANON_COMPANY_MAP[k] || s;
   }
   if (typeof window !== 'undefined') window.__mfgCanonCompany = canonCompany;
   function ensureCanonicalMultiIndustrySeat(u) {
@@ -9931,19 +9925,6 @@
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: true, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: false, dash_financial_gl: false },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: false, stmt_financial_board: false }
-    },
-    'Viewer': {
-      shortTitle: 'Read-Only Viewer',
-      tagline: 'Read-only operational visibility across assigned companies',
-      title: 'Read-Only Viewer',
-      tierBadge: 'READ ONLY',
-      badgeCls: 'badge-muted',
-      defaultAccess: 'partial|partial',
-      summary: 'Read-only operational visibility across assigned companies without record creation, modification, or void privileges.',
-      rights: { read_ops: true, read_fin: false, enter_dispatch: false, enter_accounting: false, enter_master: false, enter_payroll_jv: false, modify_text: false, modify_data: false, void_data: false, manage_users: false },
-      unlocks: { unlock_unit_price: false, unlock_trans_price: false, unlock_qty_cap: false, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: false, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
-      dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: false, dash_financial_gl: false },
-      statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: false, stmt_financial_board: false }
     }
   };
 
@@ -9954,9 +9935,7 @@
     if (/Supervisor\s*\+\s*Entry/i.test(r)) return 'Supervisor + Entry';
     if (/Supervisor/i.test(r)) return 'Supervisor';
     if (/Sales/i.test(r)) return 'Sales';
-    if (/Entry/i.test(r)) return 'Entry';
-    if (/Viewer|Read/i.test(r)) return 'Viewer';
-    return 'Viewer';
+    return 'Entry';
   }
 
   function parseUserCustomPerms(raw) {
@@ -10003,22 +9982,15 @@
   function getEffectivePermissions(u) {
     u = u || activeUser() || DEFAULT_USERS[0];
     const roleKey = resolveCanonicalRoleKey(u.role);
-    const preset = ROLE_PRESETS[roleKey] || ROLE_PRESETS['Viewer'];
+    const preset = ROLE_PRESETS[roleKey] || ROLE_PRESETS['Entry'];
     const rawCustom = parseUserCustomPerms(u.custom_perms);
     const isCustomRole = roleKey === 'Custom';
     const pbiTier = String(u.pbi_access || (isCustomRole ? 'custom' : 'partial')).toLowerCase();
     const stTier = String(u.statements_access || (isCustomRole ? 'custom' : 'partial')).toLowerCase();
 
     const rights = {};
-    const hasExplicitCustomRights = isCustomRole && rawCustom.rights && typeof rawCustom.rights === 'object' && !Array.isArray(rawCustom.rights) && Object.keys(rawCustom.rights).length > 0;
     PERM_CATALOG.rights.forEach(r => {
-      if (hasExplicitCustomRights) {
-        if (r.id === 'read_ops') {
-          rights[r.id] = ('read_ops' in rawCustom.rights) ? !!rawCustom.rights.read_ops : true;
-        } else {
-          rights[r.id] = !!rawCustom.rights[r.id];
-        }
-      } else if (isCustomRole && rawCustom.rights && r.id in rawCustom.rights) {
+      if (isCustomRole && rawCustom.rights && r.id in rawCustom.rights) {
         rights[r.id] = !!rawCustom.rights[r.id];
       } else if (r.id === 'modify_text' && rawCustom.rights && typeof rawCustom.rights.modify_text === 'boolean') {
         rights[r.id] = !!rawCustom.rights.modify_text;
@@ -10208,84 +10180,11 @@
     u = u || activeUser();
     return !!getEffectivePermissions(u).rights.modify_data;
   }
-  function normGeoIndustryName(indRaw) {
-    const l = String(indRaw || '').trim().toLowerCase();
-    if (!l || l === 'manufacturing') return 'Manufacturing';
-    if (l.includes('holding')) return 'Holding & Treasury';
-    if (l.includes('hospitality') || l.includes('resort')) return 'Hospitality & Resorts';
-    if (l.includes('trading') || l.includes('auto')) return 'Automotive & Heavy Trading';
-    if (l.includes('real estate') || l.includes('property')) return 'Real Estate & Property';
-    if (l.includes('insurance')) return 'Insurance & Brokerage';
-    return String(indRaw || '').trim() || 'Manufacturing';
-  }
-  function canWriteGeoConfig(u) {
-    u = u || activeUser();
-    return canModifyData(u) && (canEnterForm('site', u) || canEnterForm('region', u));
-  }
-  function canFillInitialMissingSitePin(row, crKey, u) {
-    u = u || activeUser();
-    if (!row || typeof row !== 'object') return false;
-    if (crKey && crKey !== 'sites') return false;
-    if (!canEnterForm('site', u)) return false;
-    if (row._pinCleared) return false;
-    if (!canAccessGeoCompany(row.company || defaultEntryCompany(), u)) return false;
-    if (!canAccessGeoIndustry(row._industry || getActiveIndustry(), u)) return false;
-    if (window.MFG_GEO && typeof window.MFG_GEO.isSiteRowEligibleForInitialPinFill === 'function') {
-      return !!window.MFG_GEO.isSiteRowEligibleForInitialPinFill(row, typeof SEED !== 'undefined' ? SEED : null);
-    }
-    const rLat = Number(row.latitude), rLng = Number(row.longitude);
-    const rowHas = row.latitude != null && row.latitude !== '' && row.longitude != null && row.longitude !== ''
-      && Number.isFinite(rLat) && Number.isFinite(rLng) && !(rLat === 0 && rLng === 0);
-    return !rowHas;
-  }
-  function canAccessGeoCompany(coRaw, u, opts) {
-    u = u || activeUser();
-    if (!u) return false;
-    const requireExplicit = Boolean(opts && opts.requireExplicit);
-    const rawTxt = Array.isArray(coRaw) ? coRaw.join(',') : String(coRaw || '').trim();
-    const isUniversalCo = !rawTxt || /^(all(\s+bus?)?|shared|manufacturing-group)$/i.test(rawTxt);
-    if (isOwner(u)) return requireExplicit ? !isUniversalCo : true;
-    if (isUniversalCo) return !requireExplicit;
-    const allowed = allowedCompanyNames(u);
-    if (!allowed.length) return false;
-    const allowedSet = new Set(allowed.map(c => String(canonCompany(c) || c).trim().toLowerCase()).filter(Boolean));
-    const targets = rawTxt.split(/[,;|]+/).map(s => String(canonCompany(s) || s).trim().toLowerCase()).filter(Boolean);
-    if (!targets.length) return !requireExplicit;
-    return targets.some(t => allowedSet.has(t));
-  }
-  function canAccessGeoIndustry(indRaw, u) {
-    u = u || activeUser();
-    if (!u) return false;
-    if (isOwner(u)) return true;
-    const targetInd = normGeoIndustryName(indRaw || (typeof getActiveIndustry === 'function' ? getActiveIndustry() : 'Manufacturing'));
-    const allowed = allowedCompanyNames(u);
-    if (!allowed.length) return false;
-    const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
-    const byName = new Map(cat.map(c => [String(canonCompany(c.name) || c.name).trim().toLowerCase(), c.industry || 'Manufacturing']));
-    return allowed.some(name => {
-      const key = String(canonCompany(name) || name).trim().toLowerCase();
-      const coInd = byName.get(key) || (typeof inferIndustryForCompany === 'function' ? inferIndustryForCompany(name) : 'Manufacturing');
-      return normGeoIndustryName(coInd) === targetInd;
-    });
-  }
-  // Map, Regions with No Shape: shaping existing Regions or pinning Company Hubs / existing Sites requires Supervisor+Entry, Owner, or Custom master+modify
-  window.MFG_CAN_WRITE_GEO_CONFIG = u => canWriteGeoConfig(u);
-  window.MFG_CAN_SHAPE_REGIONS = u => canWriteGeoConfig(u);
-  window.MFG_CAN_PIN_LOCATIONS = u => canWriteGeoConfig(u);
+  // Map, Regions with No Shape: giving an existing Region a shape is a change to that record
+  window.MFG_CAN_SHAPE_REGIONS = u => canEnterForm('region', u) && canModifyData(u);
+  window.MFG_CAN_PIN_LOCATIONS = u => canEnterForm('site', u) && canModifyData(u);
   window.MFG_CAN_ENTER_SITE = u => canEnterForm('site', u);
-  window.MFG_CAN_ENTER_REGION = u => canEnterForm('region', u);
-  window.MFG_CAN_ACCESS_GEO_COMPANY = (co, u, opts) => canAccessGeoCompany(co, u, opts);
-  window.MFG_CAN_ACCESS_GEO_INDUSTRY = (ind, u) => canAccessGeoIndustry(ind, u);
-  window.MFG_IS_OWNER = u => isOwner(u);
-  window.__mfgReapplyCustomRecordsToSeed = () => applyCustomRecordsToSeed();
-  window.MFG_GET_EDITING_MODAL_RECORD = crKey => {
-    const er = STATE.editingRecord;
-    if (!er) return null;
-    if (crKey && er.crKey && er.crKey !== crKey) return null;
-    return er.orig || er;
-  };
   window.MFG_CAN_MODIFY_RECORD = u => canModifyRecord(u);
-  window.MFG_CAN_FILL_INITIAL_SITE_PIN = (row, crKey, u) => canFillInitialMissingSitePin(row, crKey, u);
   // Map: night trip pay per Region is a payroll rate, shown only to a seat that may read overtime_rates
   window.MFG_CAN_SEE_NIGHT_RATES = u => canAccessTable('overtime_rates', u);
   function canModifyTextOnly(u) {
@@ -10304,7 +10203,7 @@
     return canEnterForm('equipment', u) || canEnterForm('companyequipment', u) || canEnterForm('driver', u) || canEnterForm('sales', u) || canEnterForm('raw', u) || canEnterForm('fuel', u);
   }
   const WORD_EDITABLE_ID_KEY_RE = /^(id|name|code|ticket_no|origin_ticket_no|invoice_no|invoice|external_invoice|vat_invoice|voucher|reference|phone|contact|mof_no|financial_no|plate_no|serial_no)$/i;
-  const WORD_LOCK_NUMERIC_KEY_RE = /^(floor_price|fuel_base_price|fuel_step|fuel_surcharge|fuel_surcharge_unit|fuel_steps|fuel_price_ref|qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|trans_unit_cost|cost|trans_cost|amount|usd_amount|lbp_amount|usd_delta|lbp_delta|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|center_lat|center_lng|zone_type|zone_geojson|decimals|price_pending|salary_pending)$/i;
+  const WORD_LOCK_NUMERIC_KEY_RE = /^(floor_price|fuel_base_price|fuel_step|fuel_surcharge|fuel_surcharge_unit|fuel_steps|fuel_price_ref|qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|trans_unit_cost|cost|trans_cost|amount|usd_amount|lbp_amount|usd_delta|lbp_delta|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|decimals|price_pending|salary_pending)$/i;
   const WORD_LOCK_MODAL_ID_SET = new Set([
     'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip',
     'f_mat_total', 'f_trans_total', 'f_total_usd', 'f_amount', 'f_vat', 'f_net', 'f_total',
@@ -10317,7 +10216,7 @@
     'f_salary', 'f_dailyrate', 'f_reimb', 'f_deduction', 'f_workdays', 'f_workhours', 'f_vacdays', 'f_otmult',
     'f_principal', 'f_interest', 'f_creditdays', 'f_creditlimit',
     'f_litres', 'f_odometer', 'f_meter', 'f_interval_hrs', 'f_interval_km', 'f_interval_days',
-    'f_lat', 'f_lng', 'f_radius', 'f_radius_km', 'f_distance_km', 'f_return_rt_km', 'f_center_lat', 'f_center_lng', 'f_zone_type', 'f_zone_geojson', 'f_map_region_search', 'f_site_coord_paste', 'f_decimals',
+    'f_lat', 'f_lng', 'f_radius', 'f_distance_km', 'f_return_rt_km', 'f_decimals',
     'f_price_pending', 'f_raw_price_pending', 'f_salary_pending'
   ]);
   function isNumericInspectorField(fKey, fDef, row) {
@@ -10359,10 +10258,8 @@
   function applyWordOnlyModalNumberLocks(root) {
     const host = root || $('modalBody') || $('entryModal');
     if (!host || !STATE.editingRecord || !STATE.editingRecord.id || !canModifyTextOnly()) return false;
-    const allowInitialSitePin = STATE.editingRecord.crKey === 'sites' && canFillInitialMissingSitePin(STATE.editingRecord.orig, 'sites');
     let restoredAny = false;
     host.querySelectorAll('input, select, textarea').forEach(el => {
-      if (allowInitialSitePin && (el.id === 'f_lat' || el.id === 'f_lng' || el.id === 'f_site_coord_paste')) return;
       if (!isModalControlNumericLocked(el)) return;
       if (el.dataset && el.dataset.initVal !== undefined && String(el.value ?? '') !== String(el.dataset.initVal)) {
         el.value = el.dataset.initVal;
@@ -10381,7 +10278,7 @@
         lbl.appendChild(pill);
       }
     });
-    host.querySelectorAll('#uomQuickPills button, #rawPriceModePills button, #expPriceModePills button, #salPendingModePills button, #addExpItemRowBtn, [data-del-exp-item], #addRepItemRowBtn, [data-del-rep-item], [data-form-quickfill], [data-sal-quick], [data-conv-usd-preset], [data-loan-settle-pct], [data-loan-usd-preset], #originEditKmBtn, [data-reg-zone-mode], #modalClearSitePinBtn, #modalSiteClearPinBtn, #modalRegClearZoneBtn').forEach(btn => {
+    host.querySelectorAll('#uomQuickPills button, #rawPriceModePills button, #expPriceModePills button, #salPendingModePills button, #addExpItemRowBtn, [data-del-exp-item], #addRepItemRowBtn, [data-del-rep-item], [data-form-quickfill], [data-sal-quick], [data-conv-usd-preset], [data-loan-settle-pct], [data-loan-usd-preset], #originEditKmBtn').forEach(btn => {
       btn.disabled = true;
     });
     return restoredAny;
@@ -12988,8 +12885,7 @@
         s.customer = soloCust;
       }
       if (!s.site_category || s._seedCatAuto || s.source === 'app') {
-        const isCustApp = Boolean(s.source === 'app' && s.customer && !s.supplier && !isSupplierDeliveredSite(s));
-        s.site_category = (!s.is_jv && !inRaw && (inSales || isCustApp) && !s.supplier) ? 'customer' : 'supplier';
+        s.site_category = (!s.is_jv && !inRaw && inSales && !s.supplier) ? 'customer' : 'supplier';
         s._seedCatAuto = true;
       } else {
         s.site_category = resolveSiteCategory(s);
@@ -14609,7 +14505,7 @@
     if (kept > 0) msgs.push(`${kept} price ${kept === 1 ? 'agreement' : 'agreements'} reopened or extended: a load or a new agreement within 90 days`);
     if (msgs.length) toast(msgs.join(' · '), 'ok');
     safeRender();
-    postRecordPairsChunked(posts).then(res => { if (res && res.ok) syncWithCloud(true); }).catch(e => console.warn('Dormant agreement sweep push deferred:', e));
+    postRecordPairsChunked(posts).then(() => syncWithCloud(true)).catch(e => console.warn('Dormant agreement sweep push deferred:', e));
     return plan;
   }
 
@@ -51882,7 +51778,7 @@
           <div class="panel-title"><span>${ic('hld_distributions')} EFFECTIVE PARTNER PROFIT-SHARE SCHEDULES (${fmtNum(chronoPrts.length)})</span></div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${exportBtn('hldPartnerChronoPanel', 'Holding_Partner_Profit_Schedules')}
-            ${canEnterAny() ? '<button type="button" class="btn btn-primary" data-ind-open-new="hld_partners">+ Profit-Share Schedule</button>' : ''}
+            <button type="button" class="btn btn-primary" data-ind-open-new="hld_partners">+ Profit-Share Schedule</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -53844,7 +53740,7 @@
           <div class="panel-title"><span>${ic('hld_loans')} EFFECTIVE FACILITY INTEREST-RATE SCHEDULES (${fmtNum(hldFacs.length)})</span></div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${exportBtn('hldFacilitySchedulesPanel', 'Holding_Facility_Interest_Schedules')}
-            ${canEnterAny() ? '<button type="button" class="btn btn-primary" data-ind-open-new="hld_loans">+ Facility Rate Schedule</button>' : ''}
+            <button type="button" class="btn btn-primary" data-ind-open-new="hld_loans">+ Facility Rate Schedule</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -54747,7 +54643,7 @@
             ${searchBox('Search member, chalet unit, resort...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hsp_members" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
             ${exportBtn('hspMembershipsPanel', 'Hospitality_Seasonal_Memberships')}
-            ${canEnterAny() ? '<button type="button" class="btn btn-outline-bar" data-ind-open-new="hsp_tariffs">+ Seasonal Tariff</button>' : ''}
+            <button type="button" class="btn btn-outline-bar" data-ind-open-new="hsp_tariffs">+ Seasonal Tariff</button>
             ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Membership Contract</button>' : ''}
           </div>
         </div>
@@ -54803,7 +54699,7 @@
           <div class="panel-title"><span>${ic('hsp_memberships')} EFFECTIVE RESORT SEASONAL TARIFF SCHEDULES (${fmtNum(tariffList.length)})</span></div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${exportBtn('hspTariffsPanel', 'Hospitality_Seasonal_Tariff_Schedules')}
-            ${canEnterAny() ? '<button type="button" class="btn btn-primary" data-ind-open-new="hsp_tariffs">+ Seasonal Tariff</button>' : ''}
+            <button type="button" class="btn btn-primary" data-ind-open-new="hsp_tariffs">+ Seasonal Tariff</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -55885,7 +55781,7 @@
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
               ${searchBox('Search month, segment, price list...')}
               ${exportBtn('trdTargetsPanel', 'Trading_Sales_Targets_PriceLists')}
-              ${canEnterAny() ? '<button type="button" class="btn btn-primary" data-ind-open-new="trd_targets">+ Price List Schedule</button>' : ''}
+              <button type="button" class="btn btn-primary" data-ind-open-new="trd_targets">+ Price List Schedule</button>
             </div>
           </div>
           <div class="table-wrap">
@@ -63666,7 +63562,7 @@
     const sortSpec = STATE.indTablesSort[activeTab.key] || { col: -1, dir: 'desc' };
     const sortedRows = sortIndMatrixRows(filteredRows, sortSpec.col, sortSpec.dir);
     const dynTotals = computeDynamicDomainTotals(headers, sortedRows, ds.totals, allRows.length);
-    const canCreateIndRec = activeTab.key === 'hld_extended_tbl' ? canEnterForm('external') : canEnterAny();
+    const canCreateIndRec = activeTab.key === 'hld_extended_tbl' ? canEnterForm('external') : true;
 
     return `
       <div class="panel-card" id="industryDomainTablesExplorer" data-ind-tbl-active="${esc(activeTab.key)}" style="margin-bottom:14px;padding:12px 16px">
@@ -65937,7 +65833,7 @@
           <span>Domain Workflows:</span>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${canEnterAny() ? `<button type="button" class="btn btn-primary" style="padding:3px 9px;font-size:11px" data-ind-open-new="${esc(STATE.view)}">+ Domain Register Form</button>` : ''}
+          <button type="button" class="btn btn-primary" style="padding:3px 9px;font-size:11px" data-ind-open-new="${esc(STATE.view)}">+ Domain Register Form</button>
           ${templates.map(t => {
             const isAct = activeTemplateId ? (activeTemplateId === t.id) : (t.form === 'extended' ? STATE.modalGroupOverride === 'extended' : (activeForm === t.form && (t.form !== 'external' || STATE.modalGroupOverride !== 'extended')));
             return `<button type="button" class="btn ${isAct ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:3px 9px;font-size:11px" data-ind-quick-tpl="${esc(t.id)}" data-ind-quick-form="${esc(t.form)}">${esc(t.label)}</button>`;
@@ -65959,129 +65855,38 @@
     return STATE.industryRowEdits;
   }
 
-  function _inferIndBucketName(bucket, r) {
-    const b = String(bucket || '').trim().toLowerCase();
-    if (b.startsWith('hld_')) return 'Holding & Treasury';
-    if (b.startsWith('hsp_')) return 'Hospitality & Resorts';
-    if (b.startsWith('trd_')) return 'Automotive & Heavy Trading';
-    if (b.startsWith('re_')) return 'Real Estate & Property';
-    if (b.startsWith('ins_')) return 'Insurance & Brokerage';
-    return (r && (r._industry || r.ind || r.industry)) || '';
-  }
-
-  let _deferIndustryDomainServerPost = false;
-
-  function postIndustryDomainStoreToLocalApi(opts = {}) {
-    if (!hasServerApi() || isDemoScopeActive()) return Promise.resolve({ ok: true, skipped: true });
-    if (rosterIsServerHeld() && !STATE.authed) return Promise.resolve({ ok: true, skipped: true });
-    const o = opts || {};
-    const forceRowSet = new Set(Array.isArray(o.forceRowIds) ? o.forceRowIds.map(x => String(x || '')) : []);
-    const forceEditSet = new Set(Array.isArray(o.forceEditKeys) ? o.forceEditKeys.map(x => String(x || '')) : []);
+  function postIndustryDomainStoreToLocalApi() {
+    if (!hasServerApi() || isDemoScopeActive()) return;
+    if (rosterIsServerHeld() && !STATE.authed) return;
     try {
       const pLeg = STATE._purgedIndustryLegacy || { rows: [], editKeys: [] };
-      let sentRows = Array.isArray(pLeg.rows) ? pLeg.rows.slice() : [];
-      let sentEdits = Array.isArray(pLeg.editKeys) ? pLeg.editKeys.slice() : [];
-      let customPayload = withoutTillOwnedRows(getIndustryCustomRowsStore());
-      let editsPayload = withoutTillOwnedEdits(getIndustryRowEditStore());
-      if (!isOwner()) {
-        const nextCustom = {};
-        Object.keys(customPayload || {}).forEach(bucket => {
-          const arr = customPayload[bucket];
-          if (!Array.isArray(arr)) return;
-          const bLow = String(bucket || '').trim().toLowerCase();
-          const kept = arr.filter(r => {
-            if (!r || typeof r !== 'object') return false;
-            const pid = String(r.id || r.code || '').trim();
-            if (forceRowSet.has(`${bucket}::${pid}`)) return true;
-            const indNm = _inferIndBucketName(bucket, r);
-            if (indNm && !canAccessGeoIndustry(indNm)) return false;
-            const coRaw = String(r.company || r.fromCo || r.resort || (bLow === 'hld_partners' ? r.entity : '') || '').trim();
-            if (coRaw && !canAccessGeoCompany(coRaw)) return false;
-            return true;
-          });
-          if (kept.length) nextCustom[bucket] = kept;
-        });
-        customPayload = nextCustom;
-
-        const nextEdits = {};
-        Object.keys(editsPayload || {}).forEach(ek => {
-          const entry = editsPayload[ek];
-          if (forceEditSet.has(ek)) {
-            nextEdits[ek] = entry;
-            return;
-          }
-          const indNm = (entry && (entry.ind || entry.industry)) || String(ek || '').split('::')[0] || '';
-          if (indNm && !canAccessGeoIndustry(indNm)) return;
-          const coRaw = String((entry && (entry.company || entry.fromCo || entry.resort || entry.entity)) || '').trim();
-          if (coRaw && !canAccessGeoCompany(coRaw)) return;
-          nextEdits[ek] = entry;
-        });
-        editsPayload = nextEdits;
-
-        sentRows = sentRows.filter(x => {
-          if (!x) return false;
-          if (forceRowSet.has(`${x.bucket}::${x.row_id}`)) return true;
-          const indNm = _inferIndBucketName(x.bucket, x);
-          if (indNm && !canAccessGeoIndustry(indNm)) return false;
-          const bLow = String(x.bucket || '').trim().toLowerCase();
-          const coRaw = String(x.company || x.fromCo || x.resort || (bLow === 'hld_partners' ? x.entity : '') || '').trim();
-          if (coRaw && !canAccessGeoCompany(coRaw)) return false;
-          return true;
-        });
-        sentEdits = sentEdits.filter(k => {
-          if (forceEditSet.has(k)) return true;
-          const indNm = String(k || '').split('::')[0] || '';
-          return !indNm || canAccessGeoIndustry(indNm);
-        });
-      }
-      return edgeApiFetch('./api/industry_domain_store', {
+      const sentRows = Array.isArray(pLeg.rows) ? pLeg.rows.slice() : [];
+      const sentEdits = Array.isArray(pLeg.editKeys) ? pLeg.editKeys.slice() : [];
+      edgeApiFetch('./api/industry_domain_store', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          industryCustomRows: customPayload,
-          industryRowEdits: editsPayload,
+          industryCustomRows: withoutTillOwnedRows(getIndustryCustomRowsStore()),
+          industryRowEdits: withoutTillOwnedEdits(getIndustryRowEditStore()),
           purgedRows: sentRows,
           purgedEditKeys: sentEdits
         })
-      }).then(async res => {
-        if (!res) return { ok: true, networkErr: true };
-        if (res.ok) {
-          const okJson = await res.json().catch(() => null);
-          if (STATE._purgedIndustryLegacy) {
-            if (sentRows.length) {
-              const doneR = new Set(sentRows.map(x => x.bucket + '::' + x.row_id));
-              STATE._purgedIndustryLegacy.rows = (STATE._purgedIndustryLegacy.rows || []).filter(x => !doneR.has(x.bucket + '::' + x.row_id));
-            }
-            if (sentEdits.length) {
-              const doneE = new Set(sentEdits);
-              STATE._purgedIndustryLegacy.editKeys = (STATE._purgedIndustryLegacy.editKeys || []).filter(k => !doneE.has(k));
-            }
+      }).then(res => {
+        if (res && res.ok && STATE._purgedIndustryLegacy) {
+          if (sentRows.length) {
+            const doneR = new Set(sentRows.map(x => x.bucket + '::' + x.row_id));
+            STATE._purgedIndustryLegacy.rows = (STATE._purgedIndustryLegacy.rows || []).filter(x => !doneR.has(x.bucket + '::' + x.row_id));
           }
-          return {
-            ok: true,
-            status: res.status,
-            rollbackToken: (okJson && typeof okJson.rollbackToken === 'string') ? okJson.rollbackToken : ''
-          };
+          if (sentEdits.length) {
+            const doneE = new Set(sentEdits);
+            STATE._purgedIndustryLegacy.editKeys = (STATE._purgedIndustryLegacy.editKeys || []).filter(k => !doneE.has(k));
+          }
         }
-        let errTxt = '';
-        try {
-          const j = await res.json();
-          if (j && j.error) errTxt = String(j.error);
-        } catch (_) {}
-        return {
-          ok: false,
-          status: res.status,
-          error: errTxt || (res.status === 401 || res.status === 403
-            ? 'Permission denied: server rejected industry store update'
-            : `HTTP ${res.status} saving industry domain store`)
-        };
-      }).catch(() => ({ ok: true, networkErr: true }));
-    } catch (_) {
-      return Promise.resolve({ ok: true, networkErr: true });
-    }
+      }).catch(() => {});
+    } catch (_) {}
   }
 
-  function saveIndustryRowEditStore(store, opts = {}) {
+  function saveIndustryRowEditStore(store) {
     const nextStore = store || {};
     const nowIso = new Date().toISOString();
     Object.keys(nextStore).forEach(k => {
@@ -66103,8 +65908,7 @@
         appStoreSetRaw('isabi_mfg_ind_row_edits_v1', JSON.stringify(STATE.industryRowEdits));
       } catch (_) {}
     }
-    if ((opts && opts.skipServerPost) || _deferIndustryDomainServerPost) return Promise.resolve({ ok: true, skipped: true });
-    return postIndustryDomainStoreToLocalApi(opts);
+    postIndustryDomainStoreToLocalApi();
   }
 
   function makeIndustryRowEditKey(ind, tableTitle, primaryId) {
@@ -66280,7 +66084,7 @@
     return slim;
   }
 
-  function saveIndustryCustomRowsStore(opts = {}) {
+  function saveIndustryCustomRowsStore() {
     const store = getIndustryCustomRowsStore();
     const slim = offloadIndustryCustomRowBlobs(store);
     if (!IS_AUTOMATED_TEST) {
@@ -66288,8 +66092,7 @@
         appStoreSetRaw('isabi_mfg_ind_custom_rows_v1', JSON.stringify(slim));
       } catch (_) {}
     }
-    if ((opts && opts.skipServerPost) || _deferIndustryDomainServerPost) return Promise.resolve({ ok: true, skipped: true });
-    return postIndustryDomainStoreToLocalApi(opts);
+    postIndustryDomainStoreToLocalApi();
   }
 
   function getIndustryCustomRows(bucket) {
@@ -66537,17 +66340,10 @@
     return next;
   }
 
-  let _activeDomainModalPostPromises = null;
-
   function addIndustryCustomRow(bucket, rowObj, opts = {}) {
     if (!bucket || !rowObj) return null;
     const store = getIndustryCustomRowsStore();
-    const hadBucket = Array.isArray(store[bucket]);
-    const shouldRollback = !(opts && opts.skipRollback) && !(opts && opts.skipServerPost) && hasServerApi() && !isDemoScopeActive();
-    const prevBucketSnap = shouldRollback
-      ? (hadBucket ? JSON.parse(JSON.stringify(store[bucket])) : null)
-      : null;
-    if (!hadBucket) store[bucket] = [];
+    if (!Array.isArray(store[bucket])) store[bucket] = [];
     const nowIso = new Date().toISOString();
     const pid = String(rowObj.id || rowObj.code || '').trim();
     if (isTillOwnedRowId(pid)) return null;
@@ -66563,32 +66359,9 @@
     );
     if (existingIdx >= 0) store[bucket][existingIdx] = rec;
     else store[bucket].unshift(rec);
-    const postP = saveIndustryCustomRowsStore({
-      skipServerPost: Boolean(opts && opts.skipServerPost),
-      forceRowIds: pid ? [`${bucket}::${pid}`] : []
-    });
-    const hasLiveServerPost = hasServerApi() && !isDemoScopeActive() && !(opts && opts.skipServerPost) && !_deferIndustryDomainServerPost;
-    if (hasLiveServerPost && opts && Array.isArray(opts.postPromises) && postP) opts.postPromises.push(postP);
-    if (hasLiveServerPost && Array.isArray(_activeDomainModalPostPromises) && postP) _activeDomainModalPostPromises.push(postP);
+    saveIndustryCustomRowsStore();
     invalidateIndustryDomainCaches();
-    if (!hasServerApi() || isDemoScopeActive() || (opts && opts.skipServerPost) || _deferIndustryDomainServerPost) {
-      if ((!opts || !opts.skipCloudSync) && !_deferIndustryDomainServerPost && typeof syncWithCloud === 'function') syncWithCloud(true);
-    } else if (postP && typeof postP.then === 'function') {
-      postP.then(res => {
-        if (res && !res.networkErr && !res.networkError && (res.ok === false || Number(res.status) >= 400)) {
-          if (shouldRollback) {
-            if (prevBucketSnap) store[bucket] = prevBucketSnap;
-            else delete store[bucket];
-            saveIndustryCustomRowsStore({ skipServerPost: true });
-            invalidateIndustryDomainCaches();
-            if (typeof renderApp === 'function') renderApp();
-            toast(res.error || 'Permission denied: cannot save industry domain row', 'err');
-          }
-          return;
-        }
-        if ((!opts || !opts.skipCloudSync) && typeof syncWithCloud === 'function') syncWithCloud(true);
-      }).catch(() => {});
-    }
+    if ((!opts || !opts.skipCloudSync) && typeof syncWithCloud === 'function') syncWithCloud(true);
     return rec;
   }
 
@@ -66597,48 +66370,23 @@
     if (!pid || isTillOwnedRowId(pid)) return false;
     const store = getIndustryCustomRowsStore();
     const nowIso = new Date().toISOString();
-    const shouldRollback = !(opts && opts.skipRollback) && !(opts && opts.skipServerPost) && !_deferIndustryDomainServerPost && hasServerApi() && !isDemoScopeActive();
-    const touchedBucketsSnap = shouldRollback ? {} : null;
-    const voidedForceIds = [];
     let hit = false;
     Object.keys(store).forEach(bucket => {
       if (!Array.isArray(store[bucket])) return;
-      const matches = store[bucket].filter(r => r && String(r.id || r.code || '').trim() === pid);
-      if (!matches.length) return;
-      if (touchedBucketsSnap) touchedBucketsSnap[bucket] = JSON.parse(JSON.stringify(store[bucket]));
-      matches.forEach(r => {
-        r.voided = true;
-        r.rev = Number(r.rev || 1) + 1;
-        r.updated_at = nowIso;
-        r.updatedAt = nowIso;
-        voidedForceIds.push(`${bucket}::${pid}`);
-        hit = true;
+      store[bucket].forEach(r => {
+        if (r && String(r.id || r.code || '').trim() === pid) {
+          r.voided = true;
+          r.rev = Number(r.rev || 1) + 1;
+          r.updated_at = nowIso;
+          r.updatedAt = nowIso;
+          hit = true;
+        }
       });
     });
     if (hit) {
-      const postP = saveIndustryCustomRowsStore({
-        skipServerPost: Boolean(opts && opts.skipServerPost),
-        forceRowIds: voidedForceIds
-      });
-      if (hasServerApi() && !isDemoScopeActive() && !(opts && opts.skipServerPost) && !_deferIndustryDomainServerPost && opts && Array.isArray(opts.postPromises) && postP) opts.postPromises.push(postP);
+      saveIndustryCustomRowsStore();
       invalidateIndustryDomainCaches();
-      if (!hasServerApi() || isDemoScopeActive() || (opts && opts.skipServerPost) || _deferIndustryDomainServerPost) {
-        if ((!opts || !opts.skipCloudSync) && !_deferIndustryDomainServerPost && typeof syncWithCloud === 'function') syncWithCloud(true);
-      } else if (postP && typeof postP.then === 'function') {
-        postP.then(res => {
-          if (res && !res.networkErr && !res.networkError && (res.ok === false || Number(res.status) >= 400)) {
-            if (touchedBucketsSnap) {
-              Object.keys(touchedBucketsSnap).forEach(b => { store[b] = touchedBucketsSnap[b]; });
-              saveIndustryCustomRowsStore({ skipServerPost: true });
-              invalidateIndustryDomainCaches();
-              if (typeof renderApp === 'function') renderApp();
-              toast(res.error || 'Permission denied: cannot void industry domain row', 'err');
-            }
-            return;
-          }
-          if ((!opts || !opts.skipCloudSync) && typeof syncWithCloud === 'function') syncWithCloud(true);
-        }).catch(() => {});
-      }
+      if ((!opts || !opts.skipCloudSync) && typeof syncWithCloud === 'function') syncWithCloud(true);
     }
     return hit;
   }
@@ -67652,15 +67400,11 @@
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
       window.MFG_ASK.closeDailyHandover();
     }
-    const isEditMode = Boolean(prefill && prefill._editMode);
-    if (!isEditMode && !canEnterAny()) {
-      toast('Your seat cannot create new domain records', 'err');
-      return;
-    }
-    if (isEditMode && !canModifyRecord()) {
+    if (!canModifyRecord() && !canEnterForm('sales') && !canEnterForm('expense') && !canEnterForm('extended')) {
       toast('Your seat has Read-Only view access', 'err');
       return;
     }
+    const isEditMode = Boolean(prefill && prefill._editMode);
     if (isEditMode && canModifyTextOnly()) {
       toast('Supervisor permission required to edit financial amounts in Smart Form', 'err');
       return;
@@ -68769,14 +68513,6 @@
 
     formEl.onsubmit = async ev => {
       ev.preventDefault();
-      if (!isEditMode && !canEnterAny()) {
-        toast('Your seat cannot create new domain records', 'err');
-        return;
-      }
-      if (isEditMode && (!canModifyRecord() || canModifyTextOnly())) {
-        toast('Supervisor permission required to edit financial amounts in Smart Form', 'err');
-        return;
-      }
       if (!canManageSiblingChronoSchedule(spec.key)) {
         toast('Supervisor permission required to manage chronological rate schedules', 'err');
         return;
@@ -68871,14 +68607,6 @@
         }
       }
 
-      const prevModalCustomSnap = JSON.parse(JSON.stringify(getIndustryCustomRowsStore()));
-      const prevModalEditsSnap = JSON.parse(JSON.stringify(getIndustryRowEditStore()));
-      const domainPostPromises = [];
-      const prevDomCollector = _activeDomainModalPostPromises;
-      const prevDeferDomModal = _deferIndustryDomainServerPost;
-      _activeDomainModalPostPromises = domainPostPromises;
-      if (spec.key !== 'hld_extended') _deferIndustryDomainServerPost = true;
-      try {
       if (spec.key === 'ins_policies') {
         const client = strVal('ide_client');
         if (!client) { showMsg('Policyholder / Client is required.', true); return; }
@@ -68946,7 +68674,6 @@
         const ed = cState.ed;
         const agrRec = {
           id: recId,
-          company: 'Insurance Company',
           carrier,
           line,
           start_date: sd,
@@ -69397,7 +69124,6 @@
         const drw = Math.min(ent, numVal('ide_drawn'));
         const prtRec = {
           id: recId,
-          company: canonCompany(entStr) || String(entStr || '').split('·')[0].trim() || 'Bdeir Holding',
           entity: entStr,
           partner: prtStr,
           pct,
@@ -69516,33 +69242,19 @@
         };
         if (!STATE.customRecords.external_movements) STATE.customRecords.external_movements = [];
         const crArr = STATE.customRecords.external_movements;
-        const prevExtCrSnap = JSON.parse(JSON.stringify(crArr));
-        const sArrExt = (SEED.records && Array.isArray(SEED.records.external_movements)) ? SEED.records.external_movements : null;
-        const prevExtSeedSnap = sArrExt ? JSON.parse(JSON.stringify(sArrExt)) : null;
         const cIdx = crArr.findIndex(x => x && String(x.id) === String(recId));
         if (cIdx >= 0) crArr[cIdx] = Object.assign({}, crArr[cIdx], extRec);
         else crArr.unshift(extRec);
-        if (sArrExt) {
-          const sIdx = sArrExt.findIndex(x => x && String(x.id) === String(recId));
-          if (sIdx >= 0) sArrExt[sIdx] = Object.assign({}, sArrExt[sIdx], extRec);
-          else sArrExt.unshift(extRec);
+        if (SEED.records && Array.isArray(SEED.records.external_movements)) {
+          const sArr = SEED.records.external_movements;
+          const sIdx = sArr.findIndex(x => x && String(x.id) === String(recId));
+          if (sIdx >= 0) sArr[sIdx] = Object.assign({}, sArr[sIdx], extRec);
+          else sArr.unshift(extRec);
         }
         applyCustomRecordsToSeed();
         invalidateIndustryDomainCaches();
         saveLocalAuthAndRecords();
-        const extPostP = postRecordToLocalApi('external_movements', extRec);
-        if (hasServerApi() && !isDemoScopeActive() && extPostP && typeof extPostP.then === 'function') {
-          domainPostPromises.push(extPostP.then(res => {
-            if (res && !res.networkError && (res.ok === false || Number(res.status) >= 400)) {
-              STATE.customRecords.external_movements = prevExtCrSnap;
-              if (SEED.records && prevExtSeedSnap) SEED.records.external_movements = prevExtSeedSnap;
-              applyCustomRecordsToSeed();
-              invalidateIndustryDomainCaches();
-              saveLocalAuthAndRecords();
-            }
-            return res;
-          }));
-        }
+        postRecordToLocalApi('external_movements', extRec);
       } else {
         const fromCo = strVal('ide_from') || 'Bdeir Holding';
         const toCo = strVal('ide_to') || 'WTC';
@@ -69554,7 +69266,6 @@
         const bookMirror = Boolean($('ide_mirror') && $('ide_mirror').checked);
         addIndustryCustomRow('hld_interactions', {
           id: recId,
-          company: canonCompany(fromCo) || fromCo,
           date: dt,
           fromCo,
           toCo,
@@ -69566,58 +69277,7 @@
           method: mth,
           notes: nts,
           bookMirror
-        }, { skipCloudSync: true });
-      }
-      } finally {
-        _deferIndustryDomainServerPost = prevDeferDomModal;
-        if (_activeDomainModalPostPromises === domainPostPromises) _activeDomainModalPostPromises = prevDomCollector;
-      }
-
-      if (spec.key !== 'hld_extended') {
-        const modalForceRowIds = [`${spec.key}::${recId}`];
-        if (spec.key === 're_leases' && !isEditMode) modalForceRowIds.push(`re_invoicing::INV-${recId}`);
-        const modalForceEditKeys = [];
-        if (isEditMode && prefill && prefill._editKey) {
-          const eStore = getIndustryRowEditStore();
-          const prevCellOverride = eStore[prefill._editKey];
-          if (prevCellOverride && typeof prevCellOverride === 'object') {
-            if (Array.isArray(prevCellOverride.removedDocIds) && prevCellOverride.removedDocIds.length) {
-              delete prevCellOverride.cells;
-              delete prevCellOverride.headers;
-            } else {
-              delete eStore[prefill._editKey];
-            }
-            saveIndustryRowEditStore(eStore, { skipServerPost: true });
-            modalForceEditKeys.push(prefill._editKey);
-          }
-        }
-        const domModalPostP = postIndustryDomainStoreToLocalApi({
-          forceRowIds: modalForceRowIds,
-          forceEditKeys: modalForceEditKeys
         });
-        if (hasServerApi() && !isDemoScopeActive() && domModalPostP) domainPostPromises.push(domModalPostP);
-      }
-
-      if (domainPostPromises.length && hasServerApi() && !isDemoScopeActive()) {
-        const domPostResults = await Promise.all(domainPostPromises);
-        const domReject = domPostResults.find(r => r && !r.networkErr && !r.networkError && (r.ok === false || Number(r.status) >= 400));
-        if (domReject) {
-          for (let i = domPostResults.length - 1; i >= 0; i--) {
-            const pr = domPostResults[i];
-            if (pr && pr.ok && pr.rollbackToken) {
-              if (pr.table) await rollbackRecordOnServer(pr);
-              else await rollbackIndustryDomainOnServer(pr);
-            }
-          }
-          STATE.industryCustomRows = prevModalCustomSnap;
-          saveIndustryCustomRowsStore({ skipServerPost: true });
-          STATE.industryRowEdits = prevModalEditsSnap;
-          saveIndustryRowEditStore(prevModalEditsSnap, { skipServerPost: true });
-          invalidateIndustryDomainCaches();
-          if (typeof renderApp === 'function') renderApp();
-          toast(domReject.error || 'Permission denied: cannot save industry domain row', 'err');
-          return;
-        }
       }
 
       const partyGuess = strVal('ide_party') || strVal('ide_client') || strVal('ide_tenant') || strVal('ide_customer') || strVal('ide_supplier') || strVal('ide_member') || strVal('ide_partner') || strVal('ide_carrier') || strVal('ide_to') || co;
@@ -69625,7 +69285,7 @@
       const dtGuess = strVal('ide_date') || strVal('ide_start_date') || today;
       const filesToAttach = pendingDomainFiles.slice();
 
-      if (spec.key === 'hld_extended' && isEditMode && prefill && prefill._editKey) {
+      if (isEditMode && prefill && prefill._editKey) {
         const eStore = getIndustryRowEditStore();
         const prevCellOverride = eStore[prefill._editKey];
         if (prevCellOverride && typeof prevCellOverride === 'object') {
@@ -81268,7 +80928,6 @@
     const textOnlyLock = canModifyTextOnly();
     const canEditAny = canModifyRecord() && !tillOwned;
     const allowVoid = canVoid() && !tillOwned;
-    const allowDomainGeoEdit = Boolean(canEditAny && !textOnlyLock && canWriteGeoConfig() && canAccessGeoCompany(rowCompany) && canAccessGeoIndustry(ind));
     const CHRONO_DOMAIN_KEYS = new Set(['ins_agreements', 're_leases', 'trd_targets', 'hsp_tariffs', 'hld_partners', 'hld_loans']);
     const domainGeoSpec = resolveDomainLocationModifySpec({
       ind,
@@ -81402,7 +81061,7 @@
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span class="badge ${relatedAgreementsInfo.linkedCount ? 'badge-ok' : 'badge-warn'}">${relatedAgreementsInfo.linkedCount} ${relatedAgreementsInfo.linkedCount === 1 ? 'Agreement' : 'Agreements'}</span>
-            ${(canEditAny && !textOnlyLock && canEnterAny()) ? `<button type="button" class="btn btn-outline-bar btn-sm" data-ind-new-rel-agr="${esc(relatedAgreementsInfo.formKey)}">${esc(relatedAgreementsInfo.newBtnLbl)}</button>` : ''}
+            ${(canEditAny && !textOnlyLock) ? `<button type="button" class="btn btn-outline-bar btn-sm" data-ind-new-rel-agr="${esc(relatedAgreementsInfo.formKey)}">${esc(relatedAgreementsInfo.newBtnLbl)}</button>` : ''}
             ${(canEditAny && !textOnlyLock) ? `<button type="button" class="btn btn-outline-bar btn-sm quote-draft-open-btn" data-quote-draft-open="${esc(relatedAgreementsInfo.formKey)}" data-ui-tip="Read a signed quote or a pasted WhatsApp quote into draft agreement rows for you to check and post">${ic('sparkles')} Draft from Quote</button>` : ''}
           </div>
         </div>
@@ -81540,8 +81199,8 @@
               ${editableFieldsHtml}
             </div>
             ${domainGeoSpec ? (() => {
-              const lockGeo = !allowDomainGeoEdit;
-              const gpsLockBadge = lockGeo ? '<span class="badge" style="font-size:9.5px;padding:1px 5px;text-transform:none">🔒 Supervisor Only</span>' : '';
+              const lockGeo = !canEditAny || textOnlyLock;
+              const gpsLockBadge = textOnlyLock ? '<span class="badge" style="font-size:9.5px;padding:1px 5px;text-transform:none">🔒 Supervisor Only</span>' : '';
               const baseHintHtml = domainGeoSpec.baselinePin
                 ? `<span class="badge badge-info" style="margin-left:6px"><span>Parent Pin</span>: <b dir="auto" data-no-i18n="1">${esc(domainGeoSpec.baselinePin.label || '')} (${domainGeoSpec.baselinePin.lat.toFixed(5)}, ${domainGeoSpec.baselinePin.lng.toFixed(5)})</b></span>`
                 : '';
@@ -81664,7 +81323,7 @@
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               ${canEditAny ? '<button type="button" class="btn btn-primary" id="indInspSaveChangesBtn">Save Changes</button>' : ''}
               ${(canEditAny && !textOnlyLock) ? '<button type="button" class="btn btn-outline-bar" id="indInspEditInModalBtn">Edit in Smart Form</button>' : ''}
-              ${canEnterAny() ? '<button type="button" class="btn btn-ghost-bar" id="indInspNewEntryBtn">+ New Domain Record</button>' : ''}
+              <button type="button" class="btn btn-ghost-bar" id="indInspNewEntryBtn">+ New Domain Record</button>
               <button type="button" class="btn btn-outline-bar" id="indInspThermalSlipBtn">${ic('printer')} Thermal Voucher</button>
               <button type="button" class="btn btn-ghost-bar" id="indInspPrintStmtBtn" data-rdl-jump="${esc(meta.id)}">${esc(meta.label)}</button>
               <button type="button" class="btn btn-ghost-bar" id="indInspOpenLedgerBtn" data-nav-jump="ledger">Open General Ledger &amp; SOA</button>
@@ -81877,7 +81536,7 @@
       inputs.forEach(inp => inp.addEventListener('input', wireDomainRules));
 
       const saveBtn = $('indInspSaveChangesBtn');
-      if (saveBtn) saveBtn.onclick = async () => {
+      if (saveBtn) saveBtn.onclick = () => {
         if (!canModifyRecord()) {
           toast('Permission denied: Read-only seat', 'err');
           return;
@@ -81910,64 +81569,8 @@
             return;
           }
         }
-        const prevRowEditsSnap = JSON.parse(JSON.stringify(getIndustryRowEditStore()));
-        const prevCustomRowsSnap = JSON.parse(JSON.stringify(getIndustryCustomRowsStore()));
-        const domGeoRollbackSnap = (hasServerApi() && !isDemoScopeActive())
-          ? _captureLedgerAndGeoRollbackSnap(['sites', 'regions'], Boolean(domainGeoSpec))
-          : null;
-        const domPostPromises = [];
-        const domGeoPromises = [];
-        const domDeferredGeoPushes = [];
-        const domSitePosts = [];
-        const domForceRowIds = [];
-        const rollbackDomSave = (errTxt) => {
-          STATE.industryRowEdits = prevRowEditsSnap;
-          saveIndustryRowEditStore(prevRowEditsSnap, { skipServerPost: true });
-          STATE.industryCustomRows = prevCustomRowsSnap;
-          saveIndustryCustomRowsStore({ skipServerPost: true });
-          invalidateIndustryDomainCaches();
-          if (domGeoRollbackSnap) domGeoRollbackSnap.restore(errTxt);
-          else {
-            if (typeof renderApp === 'function') renderApp();
-            toast(errTxt, 'err');
-          }
-        };
-        const commitDomainInspectorSave = async (forceEditKeys = []) => {
-          if (!hasServerApi() || isDemoScopeActive()) return true;
-          const domStoreRes = await postIndustryDomainStoreToLocalApi({
-            forceRowIds: domForceRowIds,
-            forceEditKeys
-          });
-          if (domStoreRes && !domStoreRes.networkErr && !domStoreRes.networkError && (domStoreRes.ok === false || Number(domStoreRes.status) >= 400)) {
-            const errTxt = await extractServerRejectMsg(domStoreRes, 'Permission denied: save rejected by server');
-            rollbackDomSave(errTxt);
-            return false;
-          }
-          const domRecRes = domSitePosts.length
-            ? await postRecordPairsChunked(domSitePosts, 8, { deferRender: true })
-            : { ok: true, postedResults: [] };
-          if (isServerRejectRes(domRecRes)) {
-            await rollbackRecordListOnServer(domRecRes.postedResults);
-            await rollbackIndustryDomainOnServer(domStoreRes);
-            const errTxt = await extractServerRejectMsg(domRecRes, 'Permission denied: save rejected by server');
-            rollbackDomSave(errTxt);
-            return false;
-          }
-          const domGeoRes = (domDeferredGeoPushes.length || domGeoPromises.length)
-            ? await Promise.all([...domDeferredGeoPushes.map(fn => fn()), ...domGeoPromises])
-            : [];
-          const domGeoFail = domGeoRes.find(r => isServerRejectRes(r) || (r && !r.networkErr && !r.networkError && (r.ok === false || Number(r.status) >= 400)));
-          if (domGeoFail) {
-            await rollbackRecordListOnServer(domRecRes.postedResults);
-            await rollbackIndustryDomainOnServer(domStoreRes);
-            const errTxt = await extractServerRejectMsg(domGeoFail, 'Permission denied: save rejected by server');
-            rollbackDomSave(errTxt);
-            return false;
-          }
-          return true;
-        };
         let domainGeoSave = null;
-        if (domainGeoSpec && allowDomainGeoEdit) {
+        if (domainGeoSpec && !textOnlyLock) {
           const gLatInp = $('ind_insp_latitude');
           const gLngInp = $('ind_insp_longitude');
           const gRegInp = $('ind_insp_region');
@@ -82041,7 +81644,7 @@
           if (!matchSite) {
             if (!dgs.hasPin) {
               if (dgs.pinCleared && domainGeoSpec.siteName && window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function') {
-                window.MFG_GEO.clearLocationPin({ name: domainGeoSpec.siteName, industry: targetInd }, SEED, { skipDomainEditSync: true, skipGeoRollback: true, skipCloudPush: true, deferStoredConfigPush: true, deferredGeoPushes: domDeferredGeoPushes, geoSavePromises: domGeoPromises });
+                window.MFG_GEO.clearLocationPin({ name: domainGeoSpec.siteName, industry: targetInd }, SEED, { skipDomainEditSync: true });
               }
               return;
             }
@@ -82068,7 +81671,6 @@
             };
             SEED.records.sites.unshift(matchSite);
           }
-          const origMatchSiteSnap = matchSite ? Object.assign({}, matchSite) : null;
           if (domainGeoSpec.isReProperty) matchSite._rePropertyId = primaryId;
           if (!matchSite._domainPrimaryId) matchSite._domainPrimaryId = primaryId;
           applyDomainGeoSaveMeta(matchSite, dgs);
@@ -82082,7 +81684,7 @@
           upsertCust();
           let postedViaGeo = false;
           if (dgs.pinCleared && window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function') {
-            window.MFG_GEO.clearLocationPin({ name: matchSite.name, siteCategory: resolveSiteCategory(matchSite), industry: targetInd, excludeId: matchSite.id }, SEED, { skipDomainEditSync: true, skipGeoRollback: true, skipCloudPush: true, deferStoredConfigPush: true, deferredGeoPushes: domDeferredGeoPushes, geoSavePromises: domGeoPromises });
+            window.MFG_GEO.clearLocationPin({ name: matchSite.name, siteCategory: resolveSiteCategory(matchSite), industry: targetInd, excludeId: matchSite.id }, SEED, { skipDomainEditSync: true });
             matchSite._pinCleared = true;
             matchSite.latitude = null;
             matchSite.longitude = null;
@@ -82091,19 +81693,13 @@
           } else if (dgs.hasPin && window.MFG_GEO && typeof window.MFG_GEO.persistLocationPin === 'function') {
             postedViaGeo = window.MFG_GEO.persistLocationPin(
               { targetType: 'site', siteId: matchSite.id, siteCategory: resolveSiteCategory(matchSite), name: matchSite.name, lat: dgs.lat, lng: dgs.lng, region: dgs.region || matchSite.region || '', industry: targetInd },
-              { SEED, STATE, postRecordToLocalApi, uid, company: matchSite.company || rowCompany, precision: 6, rePropertyId: matchSite._rePropertyId, domainPrimaryId: matchSite._domainPrimaryId, origSiteRow: origMatchSiteSnap, allowRegionOverwrite: canWriteGeoConfig(), skipDomainEditSync: true, skipGeoRollback: true, skipCloudPush: true, deferApiPost: true, deferStoredConfigPush: true, deferredGeoPushes: domDeferredGeoPushes, geoSavePromises: domGeoPromises }
+              { SEED, STATE, postRecordToLocalApi, uid, company: matchSite.company || rowCompany, precision: 6, rePropertyId: matchSite._rePropertyId, domainPrimaryId: matchSite._domainPrimaryId, skipDomainEditSync: true }
             );
           } else if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
             window.MFG_GEO.hydrateSeedGeo(SEED, true);
           }
           saveLocalAuthAndRecords();
-          const apiDomSite = Object.assign({}, matchSite);
-          delete apiDomSite.geo_zone;
-          delete apiDomSite._seed_orig;
-          delete apiDomSite._geoOrig;
-          delete apiDomSite._geoOrigInit;
-          delete apiDomSite.zone_shape;
-          domSitePosts.push(['sites', apiDomSite]);
+          if (!postedViaGeo) postRecordToLocalApi('sites', matchSite);
         };
         if (isChronoDomainRow) {
           const fk = resolvedDomainChrono.formKey;
@@ -82175,83 +81771,72 @@
             autoCloseDate: cState.closeDate,
             status: cState.ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
           });
-          const prevDeferDomChrono = _deferIndustryDomainServerPost;
-          let syncedCnt = 0;
-          let cleanedEditKey = false;
-          _deferIndustryDomainServerPost = true;
-          try {
-            if (domainGeoSave) {
-              applyDomainGeoSaveMeta(upd, domainGeoSave);
-              mirrorDomainPinToSites(domainGeoSave);
-            }
-            if (!textOnlyLock) {
-              if (fk === 'ins_agreements') {
-                const nbInp = findInp(/new bus/);
-                const rnInp = findInp(/renewal/);
-                const bnInp = findInp(/bonus|override/);
-                if (nbInp) upd.new_bus_pct = parseNumVal(nbInp.value);
-                if (rnInp) upd.renewal_pct = parseNumVal(rnInp.value);
-                if (bnInp) upd.override_bonus_pct = parseNumVal(bnInp.value);
-              } else if (fk === 're_leases') {
-                const netInp = findInp(/net.*period|period net|base/);
-                if (netInp) {
-                  const netV = parseNumVal(netInp.value);
-                  const is4235 = /4235/i.test(String(upd.company || ''));
-                  const vatUsd = is4235 ? round2(netV * 0.11) : 0;
-                  const mult = upd.frequency === 'Monthly' ? 12 : (upd.frequency === 'Annual' ? 1 : 4);
-                  upd.net_period_usd = netV;
-                  upd.ttc_period_usd = round2(netV + vatUsd);
-                  upd.annual_ttc_usd = round2(upd.ttc_period_usd * mult);
-                }
-              } else if (fk === 'trd_targets') {
-                const unInp = findInp(/list net|unit net/);
-                const ucInp = findInp(/landed cost|unit cost/);
-                if (unInp) upd.unit_net_usd = parseNumVal(unInp.value);
-                if (ucInp) upd.unit_cost_usd = parseNumVal(ucInp.value);
-                upd.period = nextSd.slice(0, 7);
-                delete upd.price_list;
-              } else if (fk === 'hsp_tariffs') {
-                const ssInp = findInp(/seasonal/);
-                const ngInp = findInp(/nightly|daily/);
-                if (ssInp) { upd.seasonal_rate_usd = parseNumVal(ssInp.value); upd.season_contract_usd = upd.seasonal_rate_usd; }
-                if (ngInp) { upd.nightly_rate_usd = parseNumVal(ngInp.value); upd.daily_chalet_ttc_usd = upd.nightly_rate_usd; }
-              } else if (fk === 'hld_partners') {
-                const pctInp = findInp(/split|share %|pct/);
-                if (pctInp) {
-                  upd.pct = parseNumVal(pctInp.value);
-                  upd.entitled_usd = round2(Number(upd.pool_usd || 0) * (upd.pct / 100));
-                  upd.open_usd = Math.max(0, round2(upd.entitled_usd - Number(upd.drawn_usd || 0)));
-                }
-              } else if (fk === 'hld_loans') {
-                const aprInp = findInp(/apr|rate/);
-                if (aprInp) {
-                  const aprV = parseNumVal(aprInp.value);
-                  upd.apr_pct = aprV;
-                  upd.interest_rate_pct = aprV;
-                  upd.rate_apr_pct = aprV;
-                  upd.date = nextSd;
-                  const qInt = round2(Number(upd.balance_usd || 0) * (aprV / 100) * 0.25);
-                  upd.accrued_interest_usd = qInt;
-                  upd.interest_usd = qInt;
-                }
+          if (domainGeoSave) {
+            applyDomainGeoSaveMeta(upd, domainGeoSave);
+            mirrorDomainPinToSites(domainGeoSave);
+          }
+          if (!textOnlyLock) {
+            if (fk === 'ins_agreements') {
+              const nbInp = findInp(/new bus/);
+              const rnInp = findInp(/renewal/);
+              const bnInp = findInp(/bonus|override/);
+              if (nbInp) upd.new_bus_pct = parseNumVal(nbInp.value);
+              if (rnInp) upd.renewal_pct = parseNumVal(rnInp.value);
+              if (bnInp) upd.override_bonus_pct = parseNumVal(bnInp.value);
+            } else if (fk === 're_leases') {
+              const netInp = findInp(/net.*period|period net|base/);
+              if (netInp) {
+                const netV = parseNumVal(netInp.value);
+                const is4235 = /4235/i.test(String(upd.company || ''));
+                const vatUsd = is4235 ? round2(netV * 0.11) : 0;
+                const mult = upd.frequency === 'Monthly' ? 12 : (upd.frequency === 'Annual' ? 1 : 4);
+                upd.net_period_usd = netV;
+                upd.ttc_period_usd = round2(netV + vatUsd);
+                upd.annual_ttc_usd = round2(upd.ttc_period_usd * mult);
+              }
+            } else if (fk === 'trd_targets') {
+              const unInp = findInp(/list net|unit net/);
+              const ucInp = findInp(/landed cost|unit cost/);
+              if (unInp) upd.unit_net_usd = parseNumVal(unInp.value);
+              if (ucInp) upd.unit_cost_usd = parseNumVal(ucInp.value);
+              upd.period = nextSd.slice(0, 7);
+              delete upd.price_list;
+            } else if (fk === 'hsp_tariffs') {
+              const ssInp = findInp(/seasonal/);
+              const ngInp = findInp(/nightly|daily/);
+              if (ssInp) { upd.seasonal_rate_usd = parseNumVal(ssInp.value); upd.season_contract_usd = upd.seasonal_rate_usd; }
+              if (ngInp) { upd.nightly_rate_usd = parseNumVal(ngInp.value); upd.daily_chalet_ttc_usd = upd.nightly_rate_usd; }
+            } else if (fk === 'hld_partners') {
+              const pctInp = findInp(/split|share %|pct/);
+              if (pctInp) {
+                upd.pct = parseNumVal(pctInp.value);
+                upd.entitled_usd = round2(Number(upd.pool_usd || 0) * (upd.pct / 100));
+                upd.open_usd = Math.max(0, round2(upd.entitled_usd - Number(upd.drawn_usd || 0)));
+              }
+            } else if (fk === 'hld_loans') {
+              const aprInp = findInp(/apr|rate/);
+              if (aprInp) {
+                const aprV = parseNumVal(aprInp.value);
+                upd.apr_pct = aprV;
+                upd.interest_rate_pct = aprV;
+                upd.rate_apr_pct = aprV;
+                upd.date = nextSd;
+                const qInt = round2(Number(upd.balance_usd || 0) * (aprV / 100) * 0.25);
+                upd.accrued_interest_usd = qInt;
+                upd.interest_usd = qInt;
               }
             }
-            addIndustryCustomRow(fk, upd, { skipCloudSync: true, skipRollback: true, skipServerPost: true });
-            syncSiblingCustomPredecessorsOnSave(fk, upd.id, cState.closeIds, cState.closeDate);
-            syncedCnt = runDomainChronoScheduleBackfill(fk, upd, origSched);
-            upd.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active${syncedCnt > 0 ? ' · ' + syncedCnt + ' Synced' : ''}`;
-            addIndustryCustomRow(fk, upd, { skipCloudSync: true, skipRollback: true, skipServerPost: true });
-            if (upd.id) domForceRowIds.push(`${fk}::${upd.id}`);
-            const storeClean = getIndustryRowEditStore();
-            if (storeClean[editKey]) {
-              delete storeClean[editKey];
-              saveIndustryRowEditStore(storeClean, { skipServerPost: true });
-              cleanedEditKey = true;
-            }
-          } finally {
-            _deferIndustryDomainServerPost = prevDeferDomChrono;
           }
-          if (!(await commitDomainInspectorSave(cleanedEditKey ? [editKey] : []))) return;
+          addIndustryCustomRow(fk, upd, { skipCloudSync: true });
+          syncSiblingCustomPredecessorsOnSave(fk, upd.id, cState.closeIds, cState.closeDate);
+          const syncedCnt = runDomainChronoScheduleBackfill(fk, upd, origSched);
+          upd.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active${syncedCnt > 0 ? ' · ' + syncedCnt + ' Synced' : ''}`;
+          addIndustryCustomRow(fk, upd, { skipCloudSync: true });
+          const storeClean = getIndustryRowEditStore();
+          if (storeClean[editKey]) {
+            delete storeClean[editKey];
+            saveIndustryRowEditStore(storeClean);
+          }
           closeRecordInspector();
           renderApp();
           syncWithCloud(true);
@@ -82282,19 +81867,12 @@
           nextStoreEntry.longitude = prevEntry.longitude;
         }
         if (prevEntry.region) nextStoreEntry.region = prevEntry.region;
-        const prevDeferDomEdit = _deferIndustryDomainServerPost;
-        _deferIndustryDomainServerPost = true;
-        try {
-          if (domainGeoSave) {
-            applyDomainGeoSaveMeta(nextStoreEntry, domainGeoSave);
-            mirrorDomainPinToSites(domainGeoSave);
-          }
-          store[editKey] = nextStoreEntry;
-          saveIndustryRowEditStore(store, { skipServerPost: true });
-        } finally {
-          _deferIndustryDomainServerPost = prevDeferDomEdit;
+        if (domainGeoSave) {
+          applyDomainGeoSaveMeta(nextStoreEntry, domainGeoSave);
+          mirrorDomainPinToSites(domainGeoSave);
         }
-        if (!(await commitDomainInspectorSave([editKey]))) return;
+        store[editKey] = nextStoreEntry;
+        saveIndustryRowEditStore(store);
         if (opts.trEl && opts.trEl.isConnected) {
           const tblEl = opts.trEl.closest('table');
           const curHdrs = getDomainTableEnHeaders(tblEl);
@@ -82326,151 +81904,88 @@
             return;
           }
         }
-        const execDomainVoid = async () => {
-          const prevVoidEditsSnap = JSON.parse(JSON.stringify(getIndustryRowEditStore()));
-          const prevVoidCustomSnap = JSON.parse(JSON.stringify(getIndustryCustomRowsStore()));
-          const domVoidGeoRollbackSnap = (hasServerApi() && !isDemoScopeActive())
-            ? _captureLedgerAndGeoRollbackSnap(['sites', 'regions'], Boolean(domainGeoSpec))
-            : null;
-          const domVoidGeoPromises = [];
-          const domVoidDeferredGeoPushes = [];
-          const domVoidSitePosts = [];
-          const restoreLocalVoid = (errTxt) => {
-            STATE.industryRowEdits = prevVoidEditsSnap;
-            saveIndustryRowEditStore(prevVoidEditsSnap, { skipServerPost: true });
-            STATE.industryCustomRows = prevVoidCustomSnap;
-            saveIndustryCustomRowsStore({ skipServerPost: true });
-            invalidateIndustryDomainCaches();
-            if (domVoidGeoRollbackSnap) domVoidGeoRollbackSnap.restore(errTxt);
-            else {
-              renderApp();
-              toast(errTxt, 'err');
+        const execDomainVoid = () => {
+          const store = getIndustryRowEditStore();
+          const prevEntry = store[editKey] || {};
+          const nowIso = new Date().toISOString();
+          store[editKey] = Object.assign({}, prevEntry, {
+            ind,
+            tableTitle,
+            primaryId,
+            company: rowCompany || prevEntry.company || '',
+            voided: true,
+            removedDocIds: Array.isArray(prevEntry.removedDocIds) ? prevEntry.removedDocIds : undefined,
+            rev: Number(prevEntry.rev || 0) + 1,
+            updated_at: nowIso,
+            updatedAt: nowIso,
+            _revBumped: true
+          });
+          saveIndustryRowEditStore(store);
+          const wasCustom = voidIndustryCustomRowById(primaryId, { skipCloudSync: true });
+          if (isChronoDomainRow) {
+            const fk = resolvedDomainChrono.formKey;
+            const origSched = Object.assign({}, resolvedDomainChrono.prefill);
+            delete origSched._editMode;
+            delete origSched._editKey;
+            voidSiblingChronoSchedule(fk, primaryId, origSched);
+            runDomainChronoScheduleBackfill(fk, origSched, { start_date: '1900-01-01', end_date: '9999-12-31' });
+            if (store[editKey]) {
+              delete store[editKey];
+              saveIndustryRowEditStore(store);
             }
-          };
-          let wasCustom = false;
-          const prevDeferDomVoid = _deferIndustryDomainServerPost;
-          _deferIndustryDomainServerPost = true;
-          try {
-            const store = getIndustryRowEditStore();
-            const prevEntry = store[editKey] || {};
-            const nowIso = new Date().toISOString();
-            store[editKey] = Object.assign({}, prevEntry, {
-              ind,
-              tableTitle,
-              primaryId,
-              company: rowCompany || prevEntry.company || '',
-              voided: true,
-              removedDocIds: Array.isArray(prevEntry.removedDocIds) ? prevEntry.removedDocIds : undefined,
-              rev: Number(prevEntry.rev || 0) + 1,
-              updated_at: nowIso,
-              updatedAt: nowIso,
-              _revBumped: true
-            });
-            saveIndustryRowEditStore(store, { skipServerPost: true });
-            wasCustom = voidIndustryCustomRowById(primaryId, { skipCloudSync: true, skipRollback: true, skipServerPost: true });
-            if (isChronoDomainRow) {
-              const fk = resolvedDomainChrono.formKey;
-              const origSched = Object.assign({}, resolvedDomainChrono.prefill);
-              delete origSched._editMode;
-              delete origSched._editKey;
-              voidSiblingChronoSchedule(fk, primaryId, origSched);
-              runDomainChronoScheduleBackfill(fk, origSched, { start_date: '1900-01-01', end_date: '9999-12-31' });
-              if (store[editKey]) {
-                delete store[editKey];
-                saveIndustryRowEditStore(store, { skipServerPost: true });
-              }
-            }
-            if (domainGeoSpec && SEED && SEED.records && Array.isArray(SEED.records.sites)) {
-              const targetInd = domainGeoSpec.ind;
-              const reSlug = String(primaryId || domainGeoSpec.siteName || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-              const reExpectedId = norm(`site-re-${reSlug}`);
-              const reRawId = norm(`site-re-${primaryId}`);
-              const rePidNorm = norm(primaryId);
-              const reSn = norm(domainGeoSpec.siteName || '');
-              const matchesMirroredSite = (s) => {
-                if (!s || s.voided || s._industry !== targetInd) return false;
-                if (domainGeoSpec.isReProperty) {
-                  const sid = norm(s.id);
-                  if (sid && (sid === reExpectedId || sid === reRawId || sid === rePidNorm)) return true;
-                  if (s._rePropertyId && norm(s._rePropertyId) === rePidNorm) return true;
-                  if (String(s.id || '').toLowerCase().startsWith('site-re-') && reSn && norm(s.name) === reSn) return true;
-                  return false;
-                }
-                if (s._createdByDomainId && norm(s._createdByDomainId) === rePidNorm) return true;
-                if (String(s.id || '').toLowerCase().startsWith('site-dom-') && s._domainPrimaryId && norm(s._domainPrimaryId) === rePidNorm) return true;
+          }
+          if (domainGeoSpec && SEED && SEED.records && Array.isArray(SEED.records.sites)) {
+            const targetInd = domainGeoSpec.ind;
+            const reSlug = String(primaryId || domainGeoSpec.siteName || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            const reExpectedId = norm(`site-re-${reSlug}`);
+            const reRawId = norm(`site-re-${primaryId}`);
+            const rePidNorm = norm(primaryId);
+            const reSn = norm(domainGeoSpec.siteName || '');
+            const matchesMirroredSite = (s) => {
+              if (!s || s.voided || s._industry !== targetInd) return false;
+              if (domainGeoSpec.isReProperty) {
+                const sid = norm(s.id);
+                if (sid && (sid === reExpectedId || sid === reRawId || sid === rePidNorm)) return true;
+                if (s._rePropertyId && norm(s._rePropertyId) === rePidNorm) return true;
+                if (String(s.id || '').toLowerCase().startsWith('site-re-') && reSn && norm(s.name) === reSn) return true;
                 return false;
-              };
-              const voidTs = new Date().toISOString();
-              const byUser = (typeof activeUser === 'function' && activeUser() && activeUser().email) || 'app';
-              if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
-              const voidedMap = new Map();
-              const markVoidSite = (s) => {
-                s.voided = true;
-                s.modified_at = voidTs;
-                s.modified_by = byUser;
-                if (s.id != null) voidedMap.set(String(s.id), s);
-              };
-              STATE.customRecords.sites.forEach(s => {
-                if (matchesMirroredSite(s)) markVoidSite(s);
-              });
-              SEED.records.sites.forEach(s => {
-                if (!matchesMirroredSite(s)) return;
-                markVoidSite(s);
-                const ci = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(s.id));
-                if (ci >= 0) Object.assign(STATE.customRecords.sites[ci], s);
-                else STATE.customRecords.sites.unshift(Object.assign({}, s));
-              });
-              if (voidedMap.size > 0) {
-                if (window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function' && canWriteGeoConfig() && canAccessGeoIndustry(targetInd)) {
-                  voidedMap.forEach(vs => {
-                    if (canAccessGeoCompany(vs.company || rowCompany)) {
-                      window.MFG_GEO.clearLocationPin({ name: vs.name, siteCategory: resolveSiteCategory(vs), industry: targetInd, excludeId: vs.id }, SEED, { skipDomainEditSync: true, skipGeoRollback: true, skipCloudPush: true, deferStoredConfigPush: true, deferredGeoPushes: domVoidDeferredGeoPushes, geoSavePromises: domVoidGeoPromises });
-                    }
-                  });
-                }
-                applyCustomRecordsToSeed();
-                saveLocalAuthAndRecords();
-                if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
-                  window.MFG_GEO.hydrateSeedGeo(SEED, true);
-                }
-                voidedMap.forEach(s => {
-                  const apiVoidSite = Object.assign({}, s);
-                  delete apiVoidSite.geo_zone;
-                  delete apiVoidSite._seed_orig;
-                  delete apiVoidSite._geoOrig;
-                  delete apiVoidSite._geoOrigInit;
-                  delete apiVoidSite.zone_shape;
-                  domVoidSitePosts.push(['sites', apiVoidSite]);
+              }
+              if (s._createdByDomainId && norm(s._createdByDomainId) === rePidNorm) return true;
+              if (String(s.id || '').toLowerCase().startsWith('site-dom-') && s._domainPrimaryId && norm(s._domainPrimaryId) === rePidNorm) return true;
+              return false;
+            };
+            const voidTs = new Date().toISOString();
+            const byUser = (typeof activeUser === 'function' && activeUser() && activeUser().email) || 'app';
+            if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
+            const voidedMap = new Map();
+            const markVoidSite = (s) => {
+              s.voided = true;
+              s.modified_at = voidTs;
+              s.modified_by = byUser;
+              if (s.id != null) voidedMap.set(String(s.id), s);
+            };
+            STATE.customRecords.sites.forEach(s => {
+              if (matchesMirroredSite(s)) markVoidSite(s);
+            });
+            SEED.records.sites.forEach(s => {
+              if (!matchesMirroredSite(s)) return;
+              markVoidSite(s);
+              const ci = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(s.id));
+              if (ci >= 0) Object.assign(STATE.customRecords.sites[ci], s);
+              else STATE.customRecords.sites.unshift(Object.assign({}, s));
+            });
+            if (voidedMap.size > 0) {
+              if (window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function') {
+                voidedMap.forEach(vs => {
+                  window.MFG_GEO.clearLocationPin({ name: vs.name, siteCategory: resolveSiteCategory(vs), industry: targetInd, excludeId: vs.id }, SEED, { skipDomainEditSync: true });
                 });
               }
-            }
-          } finally {
-            _deferIndustryDomainServerPost = prevDeferDomVoid;
-          }
-          if (hasServerApi() && !isDemoScopeActive()) {
-            const domVoidStoreRes = await postIndustryDomainStoreToLocalApi({ forceEditKeys: [editKey] });
-            if (domVoidStoreRes && !domVoidStoreRes.networkErr && !domVoidStoreRes.networkError && (domVoidStoreRes.ok === false || Number(domVoidStoreRes.status) >= 400)) {
-              restoreLocalVoid(await extractServerRejectMsg(domVoidStoreRes, 'Permission denied: void rejected by server'));
-              return;
-            }
-            const domVoidRecRes = domVoidSitePosts.length
-              ? await postRecordPairsChunked(domVoidSitePosts, 8, { deferRender: true })
-              : { ok: true, postedResults: [] };
-            if (isServerRejectRes(domVoidRecRes)) {
-              await rollbackRecordListOnServer(domVoidRecRes.postedResults);
-              await rollbackIndustryDomainOnServer(domVoidStoreRes);
-              restoreLocalVoid(await extractServerRejectMsg(domVoidRecRes, 'Permission denied: void rejected by server'));
-              return;
-            }
-            const domVoidGeoRes = (domVoidDeferredGeoPushes.length || domVoidGeoPromises.length)
-              ? await Promise.all([...domVoidDeferredGeoPushes.map(fn => fn()), ...domVoidGeoPromises])
-              : [];
-            const domVoidFail = domVoidGeoRes.find(r => isServerRejectRes(r) || (r && !r.networkErr && !r.networkError && (r.ok === false || Number(r.status) >= 400)));
-            if (domVoidFail) {
-              await rollbackRecordListOnServer(domVoidRecRes.postedResults);
-              await rollbackIndustryDomainOnServer(domVoidStoreRes);
-              restoreLocalVoid(await extractServerRejectMsg(domVoidFail, 'Permission denied: void rejected by server'));
-              return;
+              applyCustomRecordsToSeed();
+              saveLocalAuthAndRecords();
+              if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
+                window.MFG_GEO.hydrateSeedGeo(SEED, true);
+              }
+              voidedMap.forEach(s => postRecordToLocalApi('sites', s));
             }
           }
           voidDomainRecordAttachments(domainTblKey, primaryId);
@@ -82514,7 +82029,6 @@
       };
       const nBtn = $('indInspNewEntryBtn');
       if (nBtn) nBtn.onclick = () => {
-        if (!canEnterAny()) { toast('Your seat cannot create new domain records', 'err'); return; }
         closeRecordInspector();
         openIndustryDomainEntryModal(STATE.view);
       };
@@ -82529,7 +82043,6 @@
         relAgrBox.querySelectorAll('[data-ind-new-rel-agr]').forEach(btn => {
           btn.addEventListener('click', ev => {
             ev.preventDefault();
-            if (!canEnterAny()) { toast('Your seat cannot create new domain records', 'err'); return; }
             const fk = btn.getAttribute('data-ind-new-rel-agr') || relatedAgreementsInfo.formKey;
             closeRecordInspector();
             openIndustryDomainEntryModal(fk, relatedAgreementsInfo.newPrefill || {});
@@ -82639,15 +82152,12 @@
     }
 
     panel.hidden = false;
-    if (bodyEl && domainGeoSpec && allowDomainGeoEdit && window.MFG_GEO && typeof window.MFG_GEO.wireDomainInspectorModifyMap === 'function') {
+    if (bodyEl && domainGeoSpec && canEditAny && !textOnlyLock && window.MFG_GEO && typeof window.MFG_GEO.wireDomainInspectorModifyMap === 'function') {
       const indGeoCard = $('indInspGeoPinCard');
       if (indGeoCard) {
         window.MFG_GEO.wireDomainInspectorModifyMap(indGeoCard, {
           pinLabel: domainGeoSpec.pinLabel,
-          industry: domainGeoSpec.ind || ind,
-          id: primaryId,
           company: rowCompany,
-          region: domainGeoSpec.initRegion || '',
           baselinePin: domainGeoSpec.baselinePin,
           siteName: domainGeoSpec.siteName
         }, SEED);
@@ -86283,8 +85793,6 @@
     const est = (fromSpec.name && destSite)
       ? window.MFG_GEO.estimateLegKm(fromSpec, { type: 'site', name: destSite }, SEED)
       : null;
-    const allowKmOverride = Boolean(!isSalesNonDelivery && fromSpec.name && destSite && canEditTicketPairKm(fromSpec, destSite));
-    if (!allowKmOverride) FORM_UI.originKmEditOpen = false;
 
     const kmBadge = $('originKmBadge');
     const etaPill = $('originEtaPill');
@@ -86302,8 +85810,8 @@
           etaPill.textContent = `~${est.estMinutes} min`;
         }
         if (editKmBtn) {
-          editKmBtn.hidden = !allowKmOverride;
-          editKmBtn.classList.toggle('active', Boolean(allowKmOverride && FORM_UI.originKmEditOpen));
+          editKmBtn.hidden = false;
+          editKmBtn.classList.toggle('active', Boolean(FORM_UI.originKmEditOpen));
           editKmBtn.textContent = est.source === 'Custom KM' ? 'Custom KM' : 'Adjust KM';
         }
       } else {
@@ -86312,14 +85820,15 @@
         kmBadge.textContent = '';
         if (etaPill) etaPill.hidden = true;
         if (editKmBtn) {
-          editKmBtn.hidden = !allowKmOverride;
-          editKmBtn.classList.toggle('active', Boolean(allowKmOverride && FORM_UI.originKmEditOpen));
+          const canSetManualKm = Boolean(!isSalesNonDelivery && fromSpec.name && destSite);
+          editKmBtn.hidden = !canSetManualKm;
+          editKmBtn.classList.toggle('active', Boolean(canSetManualKm && FORM_UI.originKmEditOpen));
           editKmBtn.textContent = 'Set KM';
         }
       }
     }
     if (kmEditBar) {
-      const showKmBar = Boolean(allowKmOverride && FORM_UI.originKmEditOpen);
+      const showKmBar = Boolean(!isSalesNonDelivery && FORM_UI.originKmEditOpen && fromSpec.name && destSite);
       if (!showKmBar) FORM_UI.originKmEditOpen = false;
       kmEditBar.hidden = !showKmBar;
       const kmInp = $('originInlineKmInp');
@@ -86654,27 +86163,9 @@
     if (la < -90 || la > 90 || ln < -180 || ln > 180) return false;
     return !(Math.abs(la) < 1e-4 && Math.abs(ln) < 1e-4);
   }
-  function canEditTicketPairKm(fSpec, destSiteName) {
-    if (!fSpec || !fSpec.name || !destSiteName) return false;
-    const G = window.MFG_GEO;
-    if (G && typeof G.canEditPairKm === 'function') {
-      return G.canEditPairKm(fSpec, { type: 'site', name: destSiteName }, SEED);
-    }
-    return canWriteGeoConfig() && canAccessGeoIndustry(getActiveIndustry());
-  }
-  function canPinSiteFromTicket(u, rowOrCo) {
+  function canPinSiteFromTicket(u) {
     u = u || activeUser();
-    if (!(canEnterForm('site', u) || canWriteGeoConfig(u))) return false;
-    const rowObj = (rowOrCo && typeof rowOrCo === 'object') ? rowOrCo : null;
-    const barEl = typeof $ === 'function' ? $('tktSitePinBar') : null;
-    const ticketCo = (typeof rowOrCo === 'string' && rowOrCo)
-      ? rowOrCo
-      : ((barEl && barEl.dataset.company) || (typeof val === 'function' ? val('f_company') : '') || (typeof defaultEntryCompany === 'function' ? defaultEntryCompany() : ''));
-    const effInd = (rowObj && rowObj._industry) || (typeof getActiveIndustry === 'function' ? getActiveIndustry() : 'Manufacturing');
-    if (!canAccessGeoIndustry(effInd, u)) return false;
-    if (ticketCo && !canAccessGeoCompany(ticketCo, u)) return false;
-    if (rowObj && rowObj.company && !canAccessGeoCompany(rowObj.company, u)) return false;
-    return true;
+    return canEnterForm('site', u) || canModifyData(u);
   }
   // Pure decision for a parsed link on the ticket's site (also used by build/verify_ticket_site_pin.mjs)
   function decideTicketSitePin(row, parsed) {
@@ -86700,7 +86191,7 @@
   }
   function saveTicketSitePin(row, lat, lng) {
     const G = window.MFG_GEO;
-    if (!row || !G || typeof G.persistLocationPin !== 'function' || !canPinSiteFromTicket(null, row)) return false;
+    if (!row || !G || typeof G.persistLocationPin !== 'function' || !canPinSiteFromTicket()) return false;
     if (_tktPinHasPin(row)) return false;
     const region = String(row.region || '').trim();
     if (!region) return false;
@@ -86709,40 +86200,9 @@
     if (!Number.isFinite(nLat) || !Number.isFinite(nLng)) return false;
     if (lat == null || lng == null || typeof lat === 'boolean' || typeof lng === 'boolean' || typeof lat === 'object' || typeof lng === 'object') return false;
     if (!Number.isFinite(nLat) || !Number.isFinite(nLng) || nLat < -90 || nLat > 90 || nLng < -180 || nLng > 180 || (Math.abs(nLat) < 1e-4 && Math.abs(nLng) < 1e-4)) return false;
-    const tktCo = row.company || (($('tktSitePinBar') && $('tktSitePinBar').dataset.company) || (typeof val === 'function' ? val('f_company') : '') || (typeof defaultEntryCompany === 'function' ? defaultEntryCompany() : ''));
-    const prevRowSnap = JSON.parse(JSON.stringify(row));
-    if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
-    const preCIdx = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(row.id));
-    const prevCustomSnap = preCIdx >= 0 ? JSON.parse(JSON.stringify(STATE.customRecords.sites[preCIdx])) : null;
-    const prevGeoSnap = typeof G.exportGeoConfig === 'function' ? JSON.parse(JSON.stringify(G.exportGeoConfig())) : null;
-    let tktRolledBack = false;
-    const rollbackTicketPin = errMsg => {
-      if (tktRolledBack) return;
-      tktRolledBack = true;
-      if (prevGeoSnap && typeof G.restoreGeoConfigSnapshot === 'function') G.restoreGeoConfigSnapshot(prevGeoSnap);
-      Object.keys(row).forEach(k => { if (!(k in prevRowSnap)) delete row[k]; });
-      Object.assign(row, JSON.parse(JSON.stringify(prevRowSnap)));
-      if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
-      const rIdx = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(prevRowSnap.id));
-      if (prevCustomSnap) {
-        if (rIdx >= 0) STATE.customRecords.sites[rIdx] = JSON.parse(JSON.stringify(prevCustomSnap));
-        else STATE.customRecords.sites.unshift(JSON.parse(JSON.stringify(prevCustomSnap)));
-      } else if (rIdx >= 0) {
-        STATE.customRecords.sites.splice(rIdx, 1);
-      }
-      applyCustomRecordsToSeed();
-      if (typeof G.hydrateSeedGeo === 'function') G.hydrateSeedGeo(SEED, true, false);
-      saveLocalAuthAndRecords();
-      if (typeof renderApp === 'function') renderApp();
-      try { syncTicketSitePinBar(tktCo, prevRowSnap.name || row.name, true); } catch (_) {}
-      if (errMsg && typeof toast === 'function') toast(errMsg, 'err');
-    };
-    const tktGeoSavePromises = [];
-    const tktDeferredGeoPushes = [];
     // Same write as Edit Site, with the site's own Region passed explicitly so it is kept as it is
-    const pinSaved = G.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category || resolveSiteCategory(row), name: row.name, lat: nLat, lng: nLng, region, industry: row._industry || getActiveIndustry() }, { SEED, STATE, company: tktCo, userEmail: activeUser().email, allowTicketMissingPin: true, skipCloudPush: true, skipGeoRollback: true, deferApiPost: true, deferStoredConfigPush: true, deferredGeoPushes: tktDeferredGeoPushes, geoSavePromises: tktGeoSavePromises, onServerReject: errMsg => rollbackTicketPin(errMsg), saveLocal: saveLocalAuthAndRecords });
+    const pinSaved = G.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category || resolveSiteCategory(row), name: row.name, lat: nLat, lng: nLng, region }, { SEED, STATE, userEmail: activeUser().email, allowTicketMissingPin: true, saveLocal: saveLocalAuthAndRecords });
     if (pinSaved === false) return false;
-    if (tktRolledBack) return false;
     row._pinCleared = false;
     row.latitude = nLat;
     row.longitude = nLng;
@@ -86753,14 +86213,10 @@
     if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
     const customSiteCopy = Object.assign({}, row);
     delete customSiteCopy.geo_zone;
-    delete customSiteCopy._geoOrig;
-    delete customSiteCopy._geoOrigInit;
     const cIdx = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(row.id));
     if (cIdx >= 0) {
       Object.assign(STATE.customRecords.sites[cIdx], customSiteCopy);
       delete STATE.customRecords.sites[cIdx].geo_zone;
-      delete STATE.customRecords.sites[cIdx]._geoOrig;
-      delete STATE.customRecords.sites[cIdx]._geoOrigInit;
     } else {
       STATE.customRecords.sites.unshift(customSiteCopy);
     }
@@ -86770,32 +86226,12 @@
       const apiSite = Object.assign({}, row);
       delete apiSite.geo_zone;
       delete apiSite._seed_orig;
-      delete apiSite._geoOrig;
-      delete apiSite._geoOrigInit;
-      delete apiSite.zone_shape;
-      (async () => {
-        try {
-          const sitePostRes = await postRecordToLocalApi('sites', apiSite, { deferRender: true });
-          if (isServerRejectRes(sitePostRes)) {
-            rollbackTicketPin(await extractServerRejectMsg(sitePostRes, 'Site pin update was rejected by the server.'));
-            return;
-          }
-          const geoResults = (tktDeferredGeoPushes.length || tktGeoSavePromises.length)
-            ? await Promise.all([...tktDeferredGeoPushes.map(fn => fn()), ...tktGeoSavePromises])
-            : [];
-          const failGeo = geoResults.find(r => isServerRejectRes(r) || (r && !r.networkErr && !r.networkError && (r.ok === false || Number(r.status) >= 400)));
-          if (failGeo) {
-            await rollbackRecordOnServer(sitePostRes);
-            rollbackTicketPin(await extractServerRejectMsg(failGeo, 'Site pin update was rejected by the server.'));
-            return;
-          }
-          if (!tktRolledBack) syncWithCloud(true);
-        } catch (_) {}
-      })();
+      postRecordToLocalApi('sites', apiSite);
+      syncWithCloud(true);
     }
     return true;
   }
-  window.MFG_TKT_SITE_PIN = { decide: decideTicketSitePin, canPin: canPinSiteFromTicket, siteRow: (name, side) => _tktPinMfgSiteRow(name, side), save: saveTicketSitePin };
+  window.MFG_TKT_SITE_PIN = { decide: decideTicketSitePin, canPin: canPinSiteFromTicket, siteRow: (name, side) => _tktPinMfgSiteRow(name, side) };
   // show: a Delivery Sales Ticket, or a standard Raw Material Ticket; side: 'sales' | 'raw' (which site row is meant)
   function syncTicketSitePinBar(company, site, show) {
     const bar = $('tktSitePinBar');
@@ -86821,9 +86257,9 @@
       if (statusEl) { statusEl.hidden = true; statusEl.innerHTML = ''; statusEl.className = 'geo-link-status'; }
       if (saveBtn) saveBtn.hidden = true;
     }
-    bar.dataset.company = company || '';
     const justSaved = bar.dataset.saved === siteKey && siteKey;
-    bar.hidden = !(row && canPinSiteFromTicket(null, row) && (justSaved || !_tktPinHasPin(row)));
+    bar.hidden = !(row && canPinSiteFromTicket() && (justSaved || !_tktPinHasPin(row)));
+    bar.dataset.company = company || '';
     if (!inp || inp.dataset.wired === '1') return;
     inp.dataset.wired = '1';
     let pending = null;
@@ -93530,9 +92966,7 @@
     if (!geo || typeof geo.estimateLegKm !== 'function' || !siteName) return null;
     const co = canonTwBu(company || 'WTC');
     const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: siteName }, SEED, { roundTripIfAnyBu: true });
-    const canVerifyPin = typeof geo.canEditPairKm === 'function'
-      ? geo.canEditPairKm({ type: 'bu', name: co }, { type: 'site', name: siteName }, SEED)
-      : (typeof geo.canPinLocations === 'function' && geo.canPinLocations());
+    const canVerifyPin = typeof geo.canPinLocations === 'function' && geo.canPinLocations();
     const hasLive = Boolean(liveCoord && Number.isFinite(liveCoord.lat) && Number.isFinite(liveCoord.lng));
     if (hasLive && typeof geo.getCompanyHub === 'function' && typeof geo.roadAdjustedKm === 'function') {
       const saved = est && est.toCoord;
@@ -96853,13 +96287,7 @@
         }
         const clearPinBtn = $('modalClearSitePinBtn');
         if (clearPinBtn) {
-          const canClearModalPin = editingSiteRec
-            ? (canWriteGeoConfig()
-                && canAccessGeoCompany((editingSiteRec.orig && editingSiteRec.orig.company) || val('f_company'))
-                && canAccessGeoIndustry((editingSiteRec.orig && editingSiteRec.orig._industry) || getActiveIndustry()))
-            : (canWriteGeoConfig() || canEnterForm('site'));
-          clearPinBtn.disabled = !canClearModalPin;
-          clearPinBtn.hidden = !canClearModalPin || !(val('f_lat') !== '' && val('f_lng') !== '');
+          clearPinBtn.hidden = !(val('f_lat') !== '' && val('f_lng') !== '');
         }
         const mapCanvas = $('modalSiteMapCanvas');
         if (mapCanvas && typeof mapCanvas._refreshSiteOverlay === 'function') {
@@ -101376,16 +100804,6 @@
         const editKmToggle = ev.target && ev.target.closest ? ev.target.closest('#originEditKmBtn') : null;
         if (editKmToggle) {
           ev.preventDefault();
-          const co = val('f_company') || defaultEntryCompany();
-          const fSpec = FORM_UI.originMode === 'site'
-            ? { type: 'site', name: val('f_origin_site') }
-            : { type: 'bu', name: FORM_UI.originMode === 'bu' ? (FORM_UI.originBu || co) : co };
-          const dSite = val('f_site');
-          if (!canEditTicketPairKm(fSpec, dSite)) {
-            FORM_UI.originKmEditOpen = false;
-            toast('Route KM overrides require Supervisor + Entry or Owner access for both endpoints.', 'err');
-            return;
-          }
           FORM_UI.originKmEditOpen = !FORM_UI.originKmEditOpen;
           recalcForm();
           if (FORM_UI.originKmEditOpen && $('originInlineKmInp')) {
@@ -101407,11 +100825,6 @@
             ? { type: 'site', name: val('f_origin_site') }
             : { type: 'bu', name: FORM_UI.originMode === 'bu' ? (FORM_UI.originBu || co) : co };
           const dSite = val('f_site');
-          if (!canEditTicketPairKm(fSpec, dSite)) {
-            FORM_UI.originKmEditOpen = false;
-            toast('Route KM overrides require Supervisor + Entry or Owner access for both endpoints.', 'err');
-            return;
-          }
           if (window.MFG_GEO && fSpec.name && dSite) {
             window.MFG_GEO.setPairKmOverride(fSpec, { type: 'site', name: dSite }, v);
             FORM_UI.originKmEditOpen = false;
@@ -101428,11 +100841,6 @@
             ? { type: 'site', name: val('f_origin_site') }
             : { type: 'bu', name: FORM_UI.originMode === 'bu' ? (FORM_UI.originBu || co) : co };
           const dSite = val('f_site');
-          if (!canEditTicketPairKm(fSpec, dSite)) {
-            FORM_UI.originKmEditOpen = false;
-            toast('Route KM overrides require Supervisor + Entry or Owner access for both endpoints.', 'err');
-            return;
-          }
           if (window.MFG_GEO && fSpec.name && dSite) {
             window.MFG_GEO.setPairKmOverride(fSpec, { type: 'site', name: dSite }, null);
             FORM_UI.originKmEditOpen = false;
@@ -102054,15 +101462,12 @@
           ev.preventDefault();
           ev.stopPropagation();
           const geo = window.MFG_GEO;
-          const vCo = verifyRoadBtn.getAttribute('data-verify-road-co') || '';
-          const vSite = verifyRoadBtn.getAttribute('data-verify-road-site') || '';
-          const canVerifyLeg = geo && (typeof geo.canEditPairKm === 'function'
-            ? (vCo && vSite ? geo.canEditPairKm({ type: 'bu', name: vCo }, { type: 'site', name: vSite }, SEED) : (typeof geo.canPinLocations === 'function' && geo.canPinLocations()))
-            : (typeof geo.canPinLocations === 'function' && geo.canPinLocations()));
-          if (!canVerifyLeg) {
-            toast('Supervisor + Entry or Owner access for the route Business Units is required to verify road routes', 'err');
+          if (!geo || typeof geo.canPinLocations !== 'function' || !geo.canPinLocations()) {
+            toast('Supervisor privileges required to verify road routes', 'err');
             return;
           }
+          const vCo = verifyRoadBtn.getAttribute('data-verify-road-co') || '';
+          const vSite = verifyRoadBtn.getAttribute('data-verify-road-site') || '';
           if (typeof geo.verifyPairRoadRoute !== 'function' || !vCo || !vSite) return;
           verifyRoadBtn.disabled = true;
           Promise.resolve(geo.verifyPairRoadRoute({ type: 'bu', name: vCo }, { type: 'site', name: vSite }, SEED, { clearOverride: true }))
@@ -104575,7 +103980,7 @@
         && siteLat == null
         && siteLng == null
         && editCtx.orig
-        && (Boolean(editCtx.orig._pinCleared) || (editCtx.orig.latitude != null && editCtx.orig.latitude !== '') || (editCtx.orig.longitude != null && editCtx.orig.longitude !== ''))
+        && ((editCtx.orig.latitude != null && editCtx.orig.latitude !== '') || (editCtx.orig.longitude != null && editCtx.orig.longitude !== ''))
       );
       let siteReg = val('f_region');
       if (!siteReg && siteLat != null && siteLng != null && window.MFG_GEO && typeof window.MFG_GEO.findContainingRegion === 'function') {
@@ -106237,54 +105642,8 @@
       }
       // The words-only lock goes first: it puts numbers back from the copy taken when the form opened, and
       // the door tablet block below must have the last word (it restores from the row as it is now).
-      const preLockSiteLat = crKey === 'sites' ? record.latitude : undefined;
-      const preLockSiteLng = crKey === 'sites' ? record.longitude : undefined;
-      const preLockSiteCleared = crKey === 'sites' ? Boolean(record._pinCleared) : false;
       if (canModifyTextOnly()) {
         enforceStrictNumericLockFromOrig(orig, record);
-      }
-      if (crKey === 'sites') {
-        const allowSiteGeoEdit = !canModifyTextOnly()
-          && canWriteGeoConfig()
-          && canAccessGeoCompany(orig.company || record.company)
-          && canAccessGeoIndustry(orig._industry || record._industry || getActiveIndustry());
-        const savedLatN = Number(preLockSiteLat), savedLngN = Number(preLockSiteLng);
-        const hasNewValidPin = preLockSiteLat != null && preLockSiteLat !== '' && preLockSiteLng != null && preLockSiteLng !== ''
-          && Number.isFinite(savedLatN) && Number.isFinite(savedLngN) && !(savedLatN === 0 && savedLngN === 0);
-        const allowInitialPinOnly = !allowSiteGeoEdit
-          && !preLockSiteCleared
-          && hasNewValidPin
-          && canFillInitialMissingSitePin(orig, 'sites');
-        if (allowInitialPinOnly) {
-          if (!canModifyRecord()) {
-            const origReg = String(orig.region || orig.geo_zone || '').trim();
-            const nextReg = (!origReg && String(record.region || '').trim()) ? String(record.region).trim() : (orig.region || '');
-            const nextGz = (!origReg && String(record.geo_zone || record.region || '').trim()) ? String(record.geo_zone || record.region).trim() : (orig.geo_zone || orig.region || '');
-            Object.keys(record).forEach(k => { if (!(k in orig)) delete record[k]; });
-            Object.keys(orig).forEach(k => { record[k] = orig[k]; });
-            record.region = nextReg;
-            record.geo_zone = nextGz;
-          }
-          record.latitude = savedLatN;
-          record.longitude = savedLngN;
-          delete record._pinCleared;
-        } else if (!allowSiteGeoEdit) {
-          record.latitude = orig.latitude !== undefined ? orig.latitude : null;
-          record.longitude = orig.longitude !== undefined ? orig.longitude : null;
-          if ('_pinCleared' in orig) record._pinCleared = orig._pinCleared;
-          else delete record._pinCleared;
-        }
-      }
-      if (crKey === 'regions') {
-        const allowRegGeoEdit = !canModifyTextOnly()
-          && canWriteGeoConfig()
-          && canAccessGeoIndustry(orig._industry || record._industry || getActiveIndustry());
-        if (!allowRegGeoEdit) {
-          ['zone_type', 'zone_geojson', 'center_lat', 'center_lng', 'radius_km', 'distance_km'].forEach(zk => {
-            if (zk in orig) record[zk] = orig[zk];
-            else delete record[zk];
-          });
-        }
       }
       // A door tablet attendance row saved with no control changed except the note keeps everything the
       // import wrote. This form works the figures out its own way on every Save; left alone, that would pass
@@ -106610,92 +105969,6 @@
     saveLocalAuthAndRecords();
   }
 
-  function _captureLedgerAndGeoRollbackSnap(extraSeedTables, geoNeeded) {
-    const crSnap = {};
-    const custom = (STATE && STATE.customRecords && typeof STATE.customRecords === 'object') ? STATE.customRecords : {};
-    Object.keys(custom).forEach(k => {
-      if (Array.isArray(custom[k])) crSnap[k] = JSON.parse(JSON.stringify(custom[k]));
-    });
-    const seedArrSnap = {};
-    (Array.isArray(extraSeedTables) ? extraSeedTables : []).forEach(tk => {
-      if (SEED && SEED.records && Array.isArray(SEED.records[tk])) {
-        seedArrSnap[tk] = JSON.parse(JSON.stringify(SEED.records[tk]));
-      }
-    });
-    const seedRowSnaps = {};
-    const snapSeedRow = (tk, id) => {
-      if (!tk || id == null || !SEED || !SEED.records || !Array.isArray(SEED.records[tk])) return;
-      if (seedArrSnap[tk]) return;
-      const sid = String(id);
-      if (!sid) return;
-      if (!seedRowSnaps[tk]) seedRowSnaps[tk] = new Map();
-      if (seedRowSnaps[tk].has(sid)) return;
-      const arr = SEED.records[tk];
-      const idx = arr.findIndex(r => r && String(r.id) === sid);
-      seedRowSnaps[tk].set(sid, idx >= 0 ? { idx, clone: JSON.parse(JSON.stringify(arr[idx])) } : { idx: -1, clone: null });
-    };
-    const geoSnap = (geoNeeded && window.MFG_GEO && typeof window.MFG_GEO.exportGeoConfig === 'function')
-      ? JSON.parse(JSON.stringify(window.MFG_GEO.exportGeoConfig()))
-      : null;
-    const prevSeedRev = (SEED && SEED._customRev) || 0;
-    const restore = (errMsg) => {
-      if (STATE && STATE.customRecords) {
-        Object.keys(STATE.customRecords).forEach(k => {
-          if (!(k in crSnap)) delete STATE.customRecords[k];
-        });
-        Object.keys(crSnap).forEach(k => {
-          STATE.customRecords[k] = crSnap[k];
-        });
-      }
-      if (SEED && SEED.records) {
-        Object.keys(seedArrSnap).forEach(tk => {
-          SEED.records[tk] = seedArrSnap[tk];
-        });
-        Object.keys(seedRowSnaps).forEach(tk => {
-          const arr = SEED.records[tk];
-          if (!Array.isArray(arr)) return;
-          seedRowSnaps[tk].forEach((info, sid) => {
-            const curIdx = arr.findIndex(r => r && String(r.id) === sid);
-            if (info.clone) {
-              if (curIdx >= 0) arr[curIdx] = JSON.parse(JSON.stringify(info.clone));
-              else arr.splice(Math.min(info.idx, arr.length), 0, JSON.parse(JSON.stringify(info.clone)));
-            } else if (curIdx >= 0) {
-              arr.splice(curIdx, 1);
-            }
-          });
-        });
-        SEED._customRev = prevSeedRev;
-      }
-      if (geoSnap && window.MFG_GEO && typeof window.MFG_GEO.restoreGeoConfigSnapshot === 'function') {
-        window.MFG_GEO.restoreGeoConfigSnapshot(geoSnap);
-      }
-      if (typeof applyCustomRecordsToSeed === 'function') applyCustomRecordsToSeed();
-      if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function' && SEED) {
-        window.MFG_GEO.hydrateSeedGeo(SEED, true, false);
-      }
-      if (typeof invalidateIndustryDomainCaches === 'function') invalidateIndustryDomainCaches();
-      saveLocalAuthAndRecords();
-      renderApp();
-      if (errMsg) toast(errMsg, 'err');
-    };
-    return { snapSeedRow, restore };
-  }
-
-  const isServerRejectRes = r => Boolean(r && r.ok === false && !r.networkError && (r.status == null || Number(r.status) >= 400));
-  async function extractServerRejectMsg(r, fallbackMsg = 'Save was rejected by the server.') {
-    if (!r) return fallbackMsg;
-    if (r._parsedError) return String(r._parsedError);
-    if (r.error) return String(r.error);
-    if (r.err && r.err.error) return String(r.err.error);
-    if (typeof r.json === 'function') {
-      try {
-        const gErr = await (typeof r.clone === 'function' ? r.clone() : r).json().catch(() => null);
-        if (gErr && gErr.error) return String(gErr.error);
-      } catch (_) {}
-    }
-    return fallbackMsg;
-  }
-
   async function postRecordToLocalApi(crKey, record, opts = {}) {
     const tblName = CR_TABLE[crKey] || (/^[a-z][a-z0-9_]*$/.test(String(crKey || '')) ? String(crKey) : '');
     if (!hasServerApi() || isDemoScopeActive() || !tblName || !record || !record.id) return { ok: true, status: 200 };
@@ -106711,7 +105984,7 @@
       }
       if (res.status === 409) {
         const err = await res.json().catch(() => null);
-        if (res.status === 409 && err && err.code === 'same_name_conflict') {
+        if (err && err.code === 'same_name_conflict') {
           if (!(opts && opts.deferRender)) {
             quarantineSameNameRejectedRecord(tblName, err.conflictId || err.id || record.id, err, null);
             toast(err.error || 'Duplicate active staff name blocked by server.', 'err');
@@ -106725,78 +105998,15 @@
         const err = await res.json().catch(() => null);
         return { ok: false, blockedSameName: false, status: Number(res.status || 0), table: tblName, id: record.id, err, error: (err && err.error) || `HTTP ${res.status || 0} saving record.` };
       }
-      const okJson = await res.json().catch(() => null);
-      return {
-        ok: true,
-        status: Number(res.status || 200),
-        table: tblName,
-        id: record.id,
-        rollbackToken: (okJson && typeof okJson.rollbackToken === 'string') ? okJson.rollbackToken : ''
-      };
+      return { ok: true, status: Number(res.status || 200) };
     } catch (e) {
       if (t) clearTimeout(t);
       return { ok: false, blockedSameName: false, networkError: true, status: 0, table: tblName, id: record.id, err: null, error: (e && e.message) || 'Network error while saving record.' };
     }
   }
 
-  async function rollbackRecordOnServer(postRes) {
-    if (!postRes || !postRes.rollbackToken || !hasServerApi() || isDemoScopeActive()) return false;
-    let t = null;
-    try {
-      const ctrl = new AbortController();
-      t = setTimeout(() => ctrl.abort(), 8000);
-      const res = await edgeApiFetch('./api/records', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ op: 'rollback', rollbackToken: postRes.rollbackToken }),
-        signal: ctrl.signal
-      });
-      clearTimeout(t);
-      t = null;
-      return Boolean(res && res.ok);
-    } catch (_) {
-      if (t) clearTimeout(t);
-      return false;
-    }
-  }
-  if (typeof window !== 'undefined') {
-    window.__mfgRollbackRecordOnServer = rollbackRecordOnServer;
-    window.__mfgPostRecordToLocalApi = postRecordToLocalApi;
-  }
-
-  async function rollbackRecordListOnServer(resList) {
-    if (!Array.isArray(resList) || !resList.length) return;
-    for (let i = resList.length - 1; i >= 0; i--) {
-      const item = resList[i];
-      if (item && item.rollbackToken) {
-        await rollbackRecordOnServer(item).catch(() => false);
-      }
-    }
-  }
-
-  async function rollbackIndustryDomainOnServer(postRes) {
-    if (!postRes || !postRes.rollbackToken || !hasServerApi() || isDemoScopeActive()) return false;
-    let t = null;
-    try {
-      const ctrl = new AbortController();
-      t = setTimeout(() => ctrl.abort(), 8000);
-      const res = await edgeApiFetch('./api/industry_domain_store', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ op: 'rollback', rollbackToken: postRes.rollbackToken }),
-        signal: ctrl.signal
-      });
-      clearTimeout(t);
-      t = null;
-      return Boolean(res && res.ok);
-    } catch (_) {
-      if (t) clearTimeout(t);
-      return false;
-    }
-  }
-
   async function postRecordPairsChunked(pairs, concurrency = 8, opts = {}) {
-    if (!Array.isArray(pairs) || !pairs.length) return { ok: true, blockedSameName: false, postedPairs: [], postedResults: [] };
+    if (!Array.isArray(pairs) || !pairs.length) return { ok: true, blockedSameName: false, postedPairs: [] };
     const dedup = [];
     const seen = new Set();
     for (let i = pairs.length - 1; i >= 0; i--) {
@@ -106809,26 +106019,21 @@
     }
     dedup.reverse();
     const postedPairs = [];
-    const postedResults = [];
     for (let i = 0; i < dedup.length; i += concurrency) {
       const chunk = dedup.slice(i, i + concurrency);
       const chunkRes = await Promise.all(chunk.map(([ek, er]) => postRecordToLocalApi(ek, er, opts)));
       let sameNameHit = null;
-      let authOrValHit = null;
       let errHit = null;
       chunkRes.forEach((r, idx) => {
         if (r && r.ok) {
           postedPairs.push(chunk[idx]);
-          postedResults.push(r);
         } else if (r && r.blockedSameName && !sameNameHit) {
           sameNameHit = r;
-        } else if (r && (r.status === 400 || r.status === 401 || r.status === 403) && !authOrValHit) {
-          authOrValHit = r;
         } else if (r && !r.ok && !errHit) {
           errHit = r;
         }
       });
-      const hit = sameNameHit || authOrValHit || errHit;
+      const hit = sameNameHit || errHit;
       if (hit) {
         return {
           ok: false,
@@ -106840,11 +106045,10 @@
           err: hit.err || null,
           error: hit.error || '',
           postedPairs,
-          postedResults,
         };
       }
     }
-    return { ok: true, blockedSameName: false, postedPairs, postedResults };
+    return { ok: true, blockedSameName: false, postedPairs };
   }
 
   async function saveModalEntry(evOrOpts) {
@@ -106861,8 +106065,7 @@
       || (STATE.editingPendingSalaryId && (STATE.modalForm === 'employment' || STATE.modalForm === 'freelance'))
     );
     const isSupTicketAction = Boolean(isEditingExisting && (STATE.modalForm === 'sales' || STATE.modalForm === 'raw') && (FORM_UI.ticketDisposition === 'remove_slip' || FORM_UI.ticketDisposition === 'return_wtc') && canVoid());
-    const isInitialSitePinFillSave = Boolean(isEditingExisting && STATE.modalForm === 'site' && editCtx && editCtx.crKey === 'sites' && !canWriteGeoConfig() && canFillInitialMissingSitePin(editCtx.orig, 'sites'));
-    if (!(isEditingExisting ? (canModifyRecord() || isSupTicketAction || isInitialSitePinFillSave) : (isUpdatingPending ? (canModifyData() || canEnterForm(STATE.modalForm)) : canEnterForm(STATE.modalForm)))) {
+    if (!(isEditingExisting ? (canModifyRecord() || isSupTicketAction) : (isUpdatingPending ? (canModifyData() || canEnterForm(STATE.modalForm)) : canEnterForm(STATE.modalForm)))) {
       toast(isEditingExisting ? 'Your seat cannot modify existing records' : 'Your seat cannot post this entry', 'err');
       return;
     }
@@ -106959,20 +106162,6 @@
       let backpayHit = null;
       let siteClosureToastSfx = '';
       const preExtraApiPosts = [];
-      const modalGeoSavePromises = [];
-      const modalDeferredGeoPushes = [];
-      const modalSaveRollbackSnap = (hasServerApi() && !isDemoScopeActive())
-        ? _captureLedgerAndGeoRollbackSnap(
-            (crKey === 'sites' || crKey === 'regions' || Boolean(assignSiteReg))
-              ? ['sites', 'regions', 'jv_partnerships', 'price_rules', 'customers', 'suppliers']
-              : [],
-            Boolean(crKey === 'sites' || crKey === 'regions' || assignSiteReg)
-          )
-        : null;
-      if (modalSaveRollbackSnap) {
-        modalSaveRollbackSnap.snapSeedRow(crKey, record.id);
-        if (editCtx && editCtx.crKey && editCtx.id) modalSaveRollbackSnap.snapSeedRow(editCtx.crKey, editCtx.id);
-      }
       if (assignSiteReg && assignSiteReg.site && assignSiteReg.region) {
         ensureSiteHasRegion(assignSiteReg.site, assignSiteReg.region, assignSiteReg.supplier, preExtraApiPosts);
       }
@@ -107364,34 +106553,23 @@
         }
       }
       if (crKey === 'sites' && window.MFG_GEO) {
-        const effSiteInd = (editCtx && editCtx.orig && editCtx.orig._industry) || record._industry || getActiveIndustry();
-        const effSiteCo = (editCtx && editCtx.orig && editCtx.orig.company) || record.company;
-        const allowNewSiteEntry = !isEditingExisting && canEnterForm('site') && canAccessGeoCompany(effSiteCo) && canAccessGeoIndustry(effSiteInd);
-        const allowPinMut = isEditingExisting
-          ? (!canModifyTextOnly() && canWriteGeoConfig() && canAccessGeoCompany(effSiteCo) && canAccessGeoIndustry(effSiteInd))
-          : allowNewSiteEntry;
-        const allowInitialPinSave = Boolean(
-          isEditingExisting && editCtx && editCtx.orig && !allowPinMut
-          && !record._pinCleared && record.latitude != null && record.longitude != null
-          && canFillInitialMissingSitePin(editCtx.orig, 'sites')
-        );
+        const allowNewSiteEntry = !isEditingExisting && canEnterForm('site');
+        const allowPinMut = canModifyData() || allowNewSiteEntry;
         if (allowPinMut && isEditingExisting && editCtx && editCtx.orig && typeof window.MFG_GEO.clearLocationPin === 'function') {
           const origCat = resolveSiteCategory(editCtx.orig);
           const nameChanged = norm(editCtx.orig.name) !== norm(record.name);
           const catChanged = origCat !== record.site_category;
           const pinRemoved = record.latitude == null || record.longitude == null;
+          const effInd = editCtx.orig._industry || record._industry || getActiveIndustry();
           if (nameChanged || catChanged || pinRemoved) {
-            window.MFG_GEO.clearLocationPin({ name: editCtx.orig.name, siteCategory: origCat, excludeId: record.id, industry: effSiteInd, company: effSiteCo }, SEED, { skipGeoRollback: true, skipCloudPush: true, deferStoredConfigPush: true, deferredGeoPushes: modalDeferredGeoPushes, geoSavePromises: modalGeoSavePromises });
+            window.MFG_GEO.clearLocationPin({ name: editCtx.orig.name, siteCategory: origCat, excludeId: record.id, industry: effInd }, SEED);
           }
           if (pinRemoved && !nameChanged) {
-            window.MFG_GEO.clearLocationPin({ name: record.name, siteCategory: record.site_category, excludeId: record.id, industry: effSiteInd, company: effSiteCo }, SEED, { skipGeoRollback: true, skipCloudPush: true, deferStoredConfigPush: true, deferredGeoPushes: modalDeferredGeoPushes, geoSavePromises: modalGeoSavePromises });
+            window.MFG_GEO.clearLocationPin({ name: record.name, siteCategory: record.site_category, excludeId: record.id, industry: effInd }, SEED);
           }
         }
-        if ((allowPinMut || allowInitialPinSave) && record.latitude != null && record.longitude != null) {
-          window.MFG_GEO.persistLocationPin(
-            { targetType: 'site', siteId: record.id, siteCategory: record.site_category, name: record.name, lat: record.latitude, lng: record.longitude, region: record.region, industry: effSiteInd },
-            { SEED, STATE, company: effSiteCo, allowNewSiteModal: allowNewSiteEntry, allowTicketMissingPin: allowInitialPinSave, allowRegionOverwrite: canWriteGeoConfig(), origSiteRow: editCtx && editCtx.orig, skipGeoRollback: true, skipCloudPush: true, deferApiPost: true, deferStoredConfigPush: true, deferredGeoPushes: modalDeferredGeoPushes, geoSavePromises: modalGeoSavePromises }
-          );
+        if (allowPinMut && record.latitude != null && record.longitude != null) {
+          window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: record.id, siteCategory: record.site_category, name: record.name, lat: record.latitude, lng: record.longitude, region: record.region }, { SEED, STATE, allowNewSiteModal: allowNewSiteEntry });
         }
       }
       if (crKey === 'sites' && record.is_jv) {
@@ -107416,14 +106594,7 @@
         normalizeDistinctSiteCategories(SEED);
       }
       if (crKey === 'regions' && window.MFG_GEO && (record.center_lat != null || record.zone_geojson)) {
-        const effRegInd = (editCtx && editCtx.orig && editCtx.orig._industry) || record._industry || getActiveIndustry();
-        const allowNewRegionModal = !isEditingExisting && canEnterForm('region') && canAccessGeoIndustry(effRegInd);
-        const allowRegMut = isEditingExisting
-          ? (!canModifyTextOnly() && canWriteGeoConfig() && canAccessGeoIndustry(effRegInd))
-          : allowNewRegionModal;
-        if (allowRegMut) {
-          window.MFG_GEO.persistRegionZone(record, { SEED, STATE, allowNewRegionModal, skipGeoRollback: true, skipCloudPush: true, deferApiPost: true, deferStoredConfigPush: true, deferredGeoPushes: modalDeferredGeoPushes, geoSavePromises: modalGeoSavePromises });
-        }
+        window.MFG_GEO.persistRegionZone(record, { SEED, STATE });
       }
       if (crKey === 'warehouse_movements' && record.item_name) {
         const newCatItem = ensureItemInCatalog(record.item_name, record.uom || 'Piece', record.category || 'Spare Parts', record.unit_cost || 0, record.warehouse_location || 'WTC Main Warehouse', record.min_stock || 0);
@@ -107705,11 +106876,8 @@
         toast((opts && opts.message) || (errObj && errObj.error) || 'Could not save record to server. Please check connection and retry.', 'err');
         renderApp();
       };
-      let sameNameMainPostRes = null;
-      let sameNameExtraPostRes = null;
       if (sameNameSaveSnap) {
         const mainPostRes = await postRecordToLocalApi(crKey, record, { deferRender: true });
-        sameNameMainPostRes = mainPostRes;
         if (!mainPostRes || !mainPostRes.ok) {
           restoreModalAfterServerFail(
             (mainPostRes && mainPostRes.table) || CR_TABLE[crKey] || crKey,
@@ -107724,7 +106892,6 @@
           return;
         }
         const extraPostRes = await postRecordPairsChunked(extraApiPosts, 8, { deferRender: true });
-        sameNameExtraPostRes = extraPostRes;
         if (!extraPostRes || !extraPostRes.ok) {
           const postedExtra = Array.isArray(extraPostRes && extraPostRes.postedPairs) ? extraPostRes.postedPairs : [];
           for (let i = postedExtra.length - 1; i >= 0; i--) {
@@ -107845,62 +107012,14 @@
             message: (errObj && errObj.error) || 'Duplicate active staff name blocked by server.'
           });
         };
-        const compensateMainRecordSave = async (extraRes) => {
-          await rollbackRecordListOnServer(extraRes && extraRes.postedResults);
-          const rbOk = await rollbackRecordOnServer(mainPostRes);
-          if (!rbOk) {
-            if (isEditingExisting && editCtx && editCtx.orig && !canModifyTextOnly() && canModifyRecord()) {
-              await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
-            } else if (!isEditingExisting && canVoid()) {
-              await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, void_reason: 'Rolled back after peer save rejection', modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
-            }
-          }
-        };
         const mainPostRes = await postRecordToLocalApi(crKey, record, { deferRender: true });
         if (mainPostRes && mainPostRes.blockedSameName) {
           rollbackSaveOnSameName(mainPostRes.table || CR_TABLE[crKey] || crKey, mainPostRes.id || record.id, mainPostRes.err);
           return;
         }
-        if (isServerRejectRes(mainPostRes)) {
-          const rejectMsg = await extractServerRejectMsg(mainPostRes, 'Save was rejected by the server.');
-          if (modalSaveRollbackSnap) modalSaveRollbackSnap.restore(rejectMsg);
-          else { toast(rejectMsg, 'err'); renderApp(); }
-          return;
-        }
         const extraPostRes = await postRecordPairsChunked(extraApiPosts, 8, { deferRender: true });
         if (extraPostRes && extraPostRes.blockedSameName) {
-          await compensateMainRecordSave(extraPostRes);
           rollbackSaveOnSameName(extraPostRes.table || CR_TABLE[crKey] || crKey, extraPostRes.id || record.id, extraPostRes.err);
-          return;
-        }
-        if (isServerRejectRes(extraPostRes)) {
-          await compensateMainRecordSave(extraPostRes);
-          const rejectMsg = await extractServerRejectMsg(extraPostRes, 'Save was rejected by the server.');
-          if (modalSaveRollbackSnap) modalSaveRollbackSnap.restore(rejectMsg);
-          else { toast(rejectMsg, 'err'); renderApp(); }
-          return;
-        }
-        const geoPostResults = (modalDeferredGeoPushes.length || modalGeoSavePromises.length)
-          ? await Promise.all([...modalDeferredGeoPushes.map(fn => fn()), ...modalGeoSavePromises])
-          : [];
-        const rejectedGeoRes = (Array.isArray(geoPostResults) ? geoPostResults : []).find(gr => isServerRejectRes(gr));
-        if (rejectedGeoRes) {
-          await compensateMainRecordSave(extraPostRes);
-          const rejectMsg = await extractServerRejectMsg(rejectedGeoRes, 'Save was rejected by the server.');
-          if (modalSaveRollbackSnap) modalSaveRollbackSnap.restore(rejectMsg);
-          else { toast(rejectMsg, 'err'); renderApp(); }
-          return;
-        }
-      } else if (modalDeferredGeoPushes.length || modalGeoSavePromises.length) {
-        const geoPostResults = await Promise.all([...modalDeferredGeoPushes.map(fn => fn()), ...modalGeoSavePromises]);
-        const rejectedGeoRes = (Array.isArray(geoPostResults) ? geoPostResults : []).find(gr => isServerRejectRes(gr));
-        if (rejectedGeoRes) {
-          await rollbackRecordListOnServer(sameNameExtraPostRes && sameNameExtraPostRes.postedResults);
-          await rollbackRecordOnServer(sameNameMainPostRes);
-          if (sameNameSaveSnap) restoreStaffSameNameSnapshot(sameNameSaveSnap);
-          const rejectMsg = await extractServerRejectMsg(rejectedGeoRes, 'Save was rejected by the server.');
-          if (modalSaveRollbackSnap) modalSaveRollbackSnap.restore(rejectMsg);
-          else { toast(rejectMsg, 'err'); renderApp(); }
           return;
         }
       }
@@ -107960,46 +107079,6 @@
     return '';
   }
 
-  const _voidRestoreOpSeq = new Map();
-  const _voidRestoreInflight = new Map();
-
-  function _checkVoidRestoreScopeAllowed(crKey, targetRow) {
-    if (!targetRow || isOwner()) return '';
-    const co = String(targetRow.company || targetRow.resort || targetRow.entity || '').trim();
-    const normCo = co.toLowerCase().replace(/\s+/g, ' ');
-    const isSharedCo = !normCo || normCo === 'all' || normCo === 'all bus' || normCo === 'all companies' || normCo === 'shared';
-    if (!isSharedCo && !canAccessGeoCompany(co)) {
-      return 'Cannot void or restore records outside your assigned companies';
-    }
-    if (crKey === 'sites' || crKey === 'regions') {
-      const indRaw = String(targetRow._industry || targetRow.industry || targetRow.ind || '').trim()
-        || (!isSharedCo && typeof getActiveIndustry === 'function' ? getActiveIndustry(co) : 'Manufacturing');
-      if (!canAccessGeoIndustry(indRaw)) {
-        return 'Cannot void or restore records outside your assigned industries';
-      }
-    }
-    return '';
-  }
-
-  function _buildSparseVoidApiRecord(tblKey, rowObj, fallbackId, isVoid, meta) {
-    const recId = String((rowObj && rowObj.id) || fallbackId || '').trim();
-    if (!recId) return null;
-    const out = { id: recId, voided: Boolean(isVoid) };
-    const isUniv = tblKey === 'sites' || tblKey === 'regions' || Boolean(UNIVERSAL_MAIN_SPEC[tblKey]);
-    if (!isUniv && rowObj && rowObj.company) out.company = rowObj.company;
-    if (isVoid) {
-      out.voided_by = (rowObj && rowObj.voided_by) || (meta && meta.who) || '';
-      out.voided_at = (rowObj && rowObj.voided_at) || (meta && meta.when) || '';
-      if (rowObj && rowObj.void_reason) out.void_reason = rowObj.void_reason;
-      if (rowObj && rowObj.voided_with_voucher) out.voided_with_voucher = rowObj.voided_with_voucher;
-    } else {
-      const stamp = (meta && meta.restoreStampIso) || (rowObj && rowObj.restored_at) || '';
-      out.restored_at = stamp;
-      out.modified_at = stamp;
-    }
-    return out;
-  }
-
   function restoreVoidedRecord(crKey, id) {
     if (!canVoid()) { toast('Only Supervisor, Admin, or authorized Custom seats can void or restore records', 'err'); return; }
     const q = String(id == null ? '' : id).trim();
@@ -108012,8 +107091,20 @@
     const archMap = SEED_VOIDED_ARCHIVE[crKey];
     const archivedSeed = archMap && (archMap.get(q) || (r && archMap.get(String(r.id))));
     const candRestore = r || archivedSeed;
-    const scopeErr = _checkVoidRestoreScopeAllowed(crKey, candRestore);
-    if (scopeErr) { toast(scopeErr, 'err'); return false; }
+    // Restoring an own site that was voided while it still listed moved customers (a void made on an
+    // older version) must not run the move again by itself: they are recorded as moved back
+    if (crKey === 'sites') {
+      [r, archivedSeed].forEach(sr => {
+        // Only a row that is actually voided (or held in the voided archive) is reset; a stale Undo on a
+        // live own site must never move its customers back behind Move Back's checks
+        if (sr && sr === r && !r.voided) return;
+        if (!sr || !sr.split_from || !Array.isArray(sr.split_customers) || !sr.split_customers.length) return;
+        const back = Array.isArray(sr.split_returned) ? sr.split_returned.slice() : [];
+        sr.split_customers.forEach(c => { if (!back.some(x => norm(x) === norm(c))) back.push(c); });
+        sr.split_returned = back;
+        sr.split_customers = [];
+      });
+    }
     const candRestoreProbe = candRestore ? Object.assign({}, candRestore, { voided: false }) : null;
     if (candRestoreProbe && isEffectiveSeriesTable(crKey, candRestoreProbe) && candRestoreProbe.start_date) {
       const cStart = String(candRestoreProbe.start_date).slice(0, 10);
@@ -108035,40 +107126,11 @@
       }
     }
     // Group Transfer check first: a refused restore must leave nothing changed.
-    const gtRestorePeer = findGroupTransferCounterpart(crKey, candRestore, true);
+    const gtRestorePeer = findGroupTransferCounterpart(crKey, r, true);
     const gtRestoreBlock = groupTransferCounterpartBlock(gtRestorePeer);
     if (gtRestoreBlock) { toast(gtRestoreBlock, 'err'); return false; }
-
-    const snapTables = [];
-    if (candRestore && (isEffectiveSeriesTable(crKey, candRestore) || crKey === 'products')) snapTables.push(crKey);
-    const rbSnap = _captureLedgerAndGeoRollbackSnap(snapTables, false);
-    const canonTargetId = String((r && r.id) || (archivedSeed && archivedSeed.id) || q);
-    rbSnap.snapSeedRow(crKey, canonTargetId);
-    if (gtRestorePeer && gtRestorePeer.row && gtRestorePeer.row.id) rbSnap.snapSeedRow(gtRestorePeer.crKey, gtRestorePeer.row.id);
-    const archMapBefore = SEED_VOIDED_ARCHIVE[crKey];
-    const hadArchBefore = Boolean(archMapBefore && archMapBefore.has(canonTargetId));
-    const prevArchVal = hadArchBefore ? JSON.parse(JSON.stringify(archMapBefore.get(canonTargetId))) : null;
-    const prevAttCacheRev = _attCacheRev;
-
-    // Restoring an own site that was voided while it still listed moved customers (a void made on an
-    // older version) must not run the move again by itself: they are recorded as moved back
-    let siteSplitReset = false;
-    if (crKey === 'sites') {
-      [r, archivedSeed].forEach(sr => {
-        // Only a row that is actually voided (or held in the voided archive) is reset; a stale Undo on a
-        // live own site must never move its customers back behind Move Back's checks
-        if (sr && sr === r && !r.voided) return;
-        if (!sr || !sr.split_from || !Array.isArray(sr.split_customers) || !sr.split_customers.length) return;
-        const back = Array.isArray(sr.split_returned) ? sr.split_returned.slice() : [];
-        sr.split_customers.forEach(c => { if (!back.some(x => norm(x) === norm(c))) back.push(c); });
-        sr.split_returned = back;
-        sr.split_customers = [];
-        siteSplitReset = true;
-      });
-    }
-    let cleanSeed = null;
     if (archivedSeed && SEED.records && Array.isArray(SEED.records[crKey])) {
-      cleanSeed = Object.assign({}, archivedSeed, { voided: false });
+      const cleanSeed = Object.assign({}, archivedSeed, { voided: false });
       delete cleanSeed.voided_by;
       delete cleanSeed.voided_at;
       if (!SEED.records[crKey].some(x => x && String(x.id) === String(cleanSeed.id))) {
@@ -108095,9 +107157,8 @@
     }
     // A salary voucher that carried back pay comes back with the rows its own void took down (a row voided on its
     // own before stays voided)
-    const bpRestorePeers = salaryVoucherPeers(crKey, candRestore, true).filter(p => candRestore && String(p.voided_with_voucher || '') === String(candRestore.id));
+    const bpRestorePeers = salaryVoucherPeers(crKey, r, true).filter(p => r && String(p.voided_with_voucher || '') === String(r.id));
     bpRestorePeers.forEach(p => {
-      rbSnap.snapSeedRow('salaries', p.id);
       p.voided = false;
       delete p.voided_with_voucher;
       p.restored_at = restoreStampIso;
@@ -108123,7 +107184,6 @@
         const cid = String(ch.id || ch.name || '');
         if (cid && seenChild.has(cid)) return;
         if (cid) seenChild.add(cid);
-        if (ch.id) rbSnap.snapSeedRow(childKey, ch.id);
         ch.voided = false;
         delete ch.voided_by;
         delete ch.voided_at;
@@ -108139,7 +107199,6 @@
         const did = String(d.id || '');
         if (did && seenDocIds.has(did)) return;
         if (did) seenDocIds.add(did);
-        if (did) rbSnap.snapSeedRow('documents', did);
         d.voided = false;
         delete d.voided_by;
         delete d.voided_at;
@@ -108148,101 +107207,25 @@
       });
     }
     applyCustomRecordsToSeed();
-    const restoredRow = r || cleanSeed || archivedSeed;
+    const restoredRow = r || archivedSeed;
     const isEffRestoredTbl = restoredRow ? isEffectiveSeriesTable(crKey, restoredRow) : false;
     let touchedRestorePeers = [];
-    if (canModifyData()) {
-      if (restoredRow && isEffRestoredTbl && restoredRow.start_date) {
-        touchedRestorePeers = syncChronologicalSeriesNeighbors(crKey, restoredRow, null, extraRestorePosts);
-        applyCustomRecordsToSeed();
-      }
-      if (restoredRow && (isEffRestoredTbl || crKey === 'products')) {
-        backfillEffectiveLogChange(crKey, restoredRow, null, extraRestorePosts, { touchedPeers: touchedRestorePeers });
-        applyCustomRecordsToSeed();
-      }
+    if (restoredRow && isEffRestoredTbl && restoredRow.start_date) {
+      touchedRestorePeers = syncChronologicalSeriesNeighbors(crKey, restoredRow, null, extraRestorePosts);
+      applyCustomRecordsToSeed();
+    }
+    if (restoredRow && (isEffRestoredTbl || crKey === 'products')) {
+      backfillEffectiveLogChange(crKey, restoredRow, null, extraRestorePosts, { touchedPeers: touchedRestorePeers });
+      applyCustomRecordsToSeed();
     }
     stampBatchModifiedAt(extraRestorePosts, crKey, r || restoredRow);
+    saveLocalAuthAndRecords();
     renderApp();
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || (archivedSeed && (archivedSeed.name || archivedSeed.ticket_no)) || q;
     toast(bpRestorePeers.length ? 'Record restored, with the back-pay rows of this salary voucher' : '✓ Record restored · ' + label, 'ok');
-
-    const mainRestoreTarget = r || cleanSeed;
-    const sparseBase = !canModifyData() || ((crKey === 'sites' || crKey === 'regions') && !canWriteGeoConfig() && !siteSplitReset);
-    const metaRestore = { restoreStampIso };
-    const mainPayload = mainRestoreTarget
-      ? (sparseBase
-        ? _buildSparseVoidApiRecord(crKey, mainRestoreTarget, canonTargetId, false, metaRestore)
-        : JSON.parse(JSON.stringify(mainRestoreTarget)))
-      : null;
-    const extraPayloads = extraRestorePosts.map(([ek, er]) => {
-      if (!er || !er.id) return null;
-      const useSp = !canModifyData() || ((ek === 'sites' || ek === 'regions') && !canWriteGeoConfig());
-      const payloadRow = useSp
-        ? _buildSparseVoidApiRecord(ek, er, er.id, false, metaRestore)
-        : JSON.parse(JSON.stringify(er));
-      return payloadRow ? [ek, payloadRow] : null;
-    }).filter(Boolean);
-
-    if (!hasServerApi() || isDemoScopeActive()) {
-      saveLocalAuthAndRecords();
-      syncWithCloud(true);
-      return;
-    }
-
-    const opKey = `${crKey}::${canonTargetId}`;
-    const myOpSeq = (_voidRestoreOpSeq.get(opKey) || 0) + 1;
-    _voidRestoreOpSeq.set(opKey, myOpSeq);
-    const prevInflight = _voidRestoreInflight.get(opKey) || Promise.resolve();
-    const runP = prevInflight.catch(() => {}).then(async () => {
-      const mainRes = mainPayload
-        ? await postRecordToLocalApi(crKey, mainPayload, { deferRender: true })
-        : { ok: true, status: 200 };
-      if (isServerRejectRes(mainRes)) {
-        if (myOpSeq === _voidRestoreOpSeq.get(opKey)) {
-          if (hadArchBefore) {
-            if (!SEED_VOIDED_ARCHIVE[crKey]) SEED_VOIDED_ARCHIVE[crKey] = new Map();
-            SEED_VOIDED_ARCHIVE[crKey].set(canonTargetId, prevArchVal);
-          } else if (SEED_VOIDED_ARCHIVE[crKey]) {
-            SEED_VOIDED_ARCHIVE[crKey].delete(canonTargetId);
-          }
-          _attCacheRev = prevAttCacheRev;
-          const errMsg = await extractServerRejectMsg(mainRes, 'Permission denied: cannot restore record.');
-          rbSnap.restore(errMsg);
-        }
-        return false;
-      }
-      const extraRes = extraPayloads.length
-        ? await postRecordPairsChunked(extraPayloads, 8, { deferRender: true })
-        : { ok: true, postedResults: [] };
-      if (isServerRejectRes(extraRes)) {
-        if (extraRes.postedResults && extraRes.postedResults.length) {
-          await rollbackRecordListOnServer(extraRes.postedResults);
-        }
-        if (mainRes && mainRes.ok && mainRes.rollbackToken) {
-          await rollbackRecordOnServer(mainRes);
-        }
-        if (myOpSeq === _voidRestoreOpSeq.get(opKey)) {
-          if (hadArchBefore) {
-            if (!SEED_VOIDED_ARCHIVE[crKey]) SEED_VOIDED_ARCHIVE[crKey] = new Map();
-            SEED_VOIDED_ARCHIVE[crKey].set(canonTargetId, prevArchVal);
-          } else if (SEED_VOIDED_ARCHIVE[crKey]) {
-            SEED_VOIDED_ARCHIVE[crKey].delete(canonTargetId);
-          }
-          _attCacheRev = prevAttCacheRev;
-          const errMsg = await extractServerRejectMsg(extraRes, 'Permission denied: cannot restore linked records.');
-          rbSnap.restore(errMsg);
-        }
-        return false;
-      }
-      if (myOpSeq === _voidRestoreOpSeq.get(opKey)) {
-        saveLocalAuthAndRecords();
-        syncWithCloud(true);
-      }
-      return true;
-    }).finally(() => {
-      if (_voidRestoreInflight.get(opKey) === runP) _voidRestoreInflight.delete(opKey);
-    });
-    _voidRestoreInflight.set(opKey, runP);
+    if (r) postRecordToLocalApi(crKey, r);
+    postRecordPairsChunked(extraRestorePosts);
+    syncWithCloud(true);
   }
 
   function voidRecord(crKey, id, opts) {
@@ -108256,8 +107239,6 @@
     const seedList = (SEED.records && SEED.records[crKey]) || [];
     const seedRow = seedList.find(matchRow);
     if (!r && !seedRow) { toast('Record not found', 'err'); return; }
-    const scopeErr = _checkVoidRestoreScopeAllowed(crKey, r || seedRow);
-    if (scopeErr) { toast(scopeErr, 'err'); return false; }
     // A customer's own site that still holds moved customers: voiding it would send their records back
     // without the checks Move Back makes (rights, other entities). Move them back first.
     if (crKey === 'sites' && _areaSiteHasSplit(seedRow || r) && _areaSiteIsMfgRow(seedRow || r)) {
@@ -108298,8 +107279,7 @@
         actionLabel: 'Void or Delete Posted Ledger Record',
         targetRef: `${crKey}:${q}`,
         company: voidCo,
-        industry: getActiveIndustry(voidCo),
-        deferCloudSync: Boolean(hasServerApi() && !isDemoScopeActive())
+        industry: getActiveIndustry(voidCo)
       };
       if (!(typeof window.MFG_STEP_UP.satisfiesLeaseSync === 'function' && window.MFG_STEP_UP.satisfiesLeaseSync(voidSpec))) {
         window.MFG_STEP_UP.requireStepUpAuth(voidSpec).then(ok => {
@@ -108308,19 +107288,6 @@
         return;
       }
     }
-    const voidedTargetPre = r || seedRow;
-    const isEffVoidTbl = voidedTargetPre ? isEffectiveSeriesTable(crKey, voidedTargetPre) : false;
-    const snapTables = [];
-    if (isEffVoidTbl || crKey === 'products') snapTables.push(crKey);
-    const rbSnap = _captureLedgerAndGeoRollbackSnap(snapTables, false);
-    const canonTargetId = String((seedRow && seedRow.id) || (r && r.id) || q);
-    rbSnap.snapSeedRow(crKey, canonTargetId);
-    if (gtVoidPeer && gtVoidPeer.row && gtVoidPeer.row.id) rbSnap.snapSeedRow(gtVoidPeer.crKey, gtVoidPeer.row.id);
-    const archMapBefore = SEED_VOIDED_ARCHIVE[crKey];
-    const hadArchBefore = Boolean(archMapBefore && archMapBefore.has(canonTargetId));
-    const prevArchVal = hadArchBefore ? JSON.parse(JSON.stringify(archMapBefore.get(canonTargetId))) : null;
-    const prevAttCacheRev = _attCacheRev;
-
     const who = activeUser().full_name;
     const when = nowStamp();
     if (seedRow) {
@@ -108364,7 +107331,6 @@
     // A salary voucher that carried back pay: its other rows (one per closed month) go with it
     const bpVoidPeers = salaryVoucherPeers(crKey, r || seedRow, false);
     bpVoidPeers.forEach(p => {
-      rbSnap.snapSeedRow('salaries', p.id);
       p.voided = true;
       p.voided_by = who;
       p.voided_at = when;
@@ -108392,7 +107358,6 @@
         const cid = String(ch.id || ch.name || '');
         if (cid && seenChild.has(cid)) return;
         if (cid) seenChild.add(cid);
-        if (ch.id) rbSnap.snapSeedRow(childKey, ch.id);
         ch.voided = true;
         ch.voided_by = who;
         ch.voided_at = when;
@@ -108412,7 +107377,6 @@
         const did = String(d.id || '');
         if (did && seenDocIds.has(did)) return;
         if (did) seenDocIds.add(did);
-        if (did) rbSnap.snapSeedRow('documents', did);
         d.voided = true;
         d.voided_by = who;
         d.voided_at = when;
@@ -108422,7 +107386,7 @@
         _attCacheRev++;
         extraVoidPosts.push(['documents', d]);
       });
-    } else if (canModifyData() && r && r.parent_table && (r.parent_id || r.parent_label)) {
+    } else if (r && r.parent_table && (r.parent_id || r.parent_label)) {
       const pk = r.parent_table;
       if (!Array.isArray(STATE.customRecords[pk])) STATE.customRecords[pk] = [];
       const pPool = STATE.customRecords[pk].concat((SEED.records && SEED.records[pk]) || []);
@@ -108432,7 +107396,6 @@
         (pLblNorm && (norm(x.name) === pLblNorm || norm(x.ticket_no) === pLblNorm || norm(x.invoice_no) === pLblNorm))
       ));
       if (pRow) {
-        if (pRow.id) rbSnap.snapSeedRow(pk, pRow.id);
         const remAtts = parseAttachmentsArray(pRow.attachments).filter(a => a && String(a.doc_id || '') !== String(r.id) && String(a.id || '') !== String(r.id));
         pRow.attachments = remAtts;
         pRow.attachment_count = remAtts.length;
@@ -108446,7 +107409,7 @@
         extraVoidPosts.push([pk, pRow]);
       }
     }
-    if (canModifyData() && crKey === 'equipment_defects' && r && r.equipment && Array.isArray(STATE.customRecords.company_equipment)) {
+    if (crKey === 'equipment_defects' && r && r.equipment && Array.isArray(STATE.customRecords.company_equipment)) {
       const defPool = (STATE.customRecords.equipment_defects || []).concat(SEED.records.equipment_defects || []);
       const remOpen = defPool.some(d => d && !d.voided && norm(d.equipment) === norm(r.equipment) && isDefectOpen(d));
       if (!remOpen) {
@@ -108457,7 +107420,6 @@
           const cid = String(ce.id || '');
           if (cid && seenCeIds.has(cid)) return;
           if (cid) seenCeIds.add(cid);
-          if (cid) rbSnap.snapSeedRow('company_equipment', cid);
           ce.status = ce._prev_status || 'Active';
           const cIdx = STATE.customRecords.company_equipment.findIndex(x => x && String(x.id) === cid);
           if (cIdx >= 0) Object.assign(STATE.customRecords.company_equipment[cIdx], ce);
@@ -108466,12 +107428,13 @@
       }
     }
     const voidedTarget = r || seedRow;
+    const isEffVoidTbl = voidedTarget ? isEffectiveSeriesTable(crKey, voidedTarget) : false;
     let reopenedVoidPeers = [];
-    if (canModifyData() && voidedTarget && isEffVoidTbl) {
+    if (voidedTarget && isEffVoidTbl) {
       reopenedVoidPeers = reopenChronologicalSeriesOnVoid(crKey, voidedTarget, extraVoidPosts);
     }
     applyCustomRecordsToSeed();
-    if (canModifyData() && voidedTarget && (isEffVoidTbl || crKey === 'products')) {
+    if (voidedTarget && (isEffVoidTbl || crKey === 'products')) {
       backfillEffectiveLogChange(crKey, null, voidedTarget, extraVoidPosts, { touchedPeers: reopenedVoidPeers });
       applyCustomRecordsToSeed();
     }
@@ -108479,87 +107442,14 @@
       normalizeDistinctSiteCategories(SEED);
     }
     stampBatchModifiedAt(extraVoidPosts, crKey, r);
+    saveLocalAuthAndRecords();
     renderApp();
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || q;
     const targetId = (r && r.id) || q;
     toast(bpVoidPeers.length ? 'Record voided, with the back-pay rows of this salary voucher' : 'Record voided · ' + label, 'ok', { onUndo: () => restoreVoidedRecord(crKey, targetId) });
-
-    const sparseBase = !canModifyData() || ((crKey === 'sites' || crKey === 'regions') && !canWriteGeoConfig());
-    const metaVoid = { who, when };
-    const mainPayload = r
-      ? (sparseBase
-        ? _buildSparseVoidApiRecord(crKey, r, canonTargetId, true, metaVoid)
-        : JSON.parse(JSON.stringify(r)))
-      : null;
-    const extraPayloads = extraVoidPosts.map(([ek, er]) => {
-      if (!er || !er.id) return null;
-      const useSp = !canModifyData() || ((ek === 'sites' || ek === 'regions') && !canWriteGeoConfig());
-      const payloadRow = useSp
-        ? _buildSparseVoidApiRecord(ek, er, er.id, true, metaVoid)
-        : JSON.parse(JSON.stringify(er));
-      return payloadRow ? [ek, payloadRow] : null;
-    }).filter(Boolean);
-
-    if (!hasServerApi() || isDemoScopeActive()) {
-      saveLocalAuthAndRecords();
-      syncWithCloud(true);
-      return;
-    }
-
-    const opKey = `${crKey}::${canonTargetId}`;
-    const myOpSeq = (_voidRestoreOpSeq.get(opKey) || 0) + 1;
-    _voidRestoreOpSeq.set(opKey, myOpSeq);
-    const prevInflight = _voidRestoreInflight.get(opKey) || Promise.resolve();
-    const runP = prevInflight.catch(() => {}).then(async () => {
-      const mainRes = mainPayload
-        ? await postRecordToLocalApi(crKey, mainPayload, { deferRender: true })
-        : { ok: true, status: 200 };
-      if (isServerRejectRes(mainRes)) {
-        if (myOpSeq === _voidRestoreOpSeq.get(opKey)) {
-          if (hadArchBefore) {
-            if (!SEED_VOIDED_ARCHIVE[crKey]) SEED_VOIDED_ARCHIVE[crKey] = new Map();
-            SEED_VOIDED_ARCHIVE[crKey].set(canonTargetId, prevArchVal);
-          } else if (SEED_VOIDED_ARCHIVE[crKey]) {
-            SEED_VOIDED_ARCHIVE[crKey].delete(canonTargetId);
-          }
-          _attCacheRev = prevAttCacheRev;
-          const errMsg = await extractServerRejectMsg(mainRes, 'Permission denied: cannot void or delete record.');
-          rbSnap.restore(errMsg);
-        }
-        return false;
-      }
-      const extraRes = extraPayloads.length
-        ? await postRecordPairsChunked(extraPayloads, 8, { deferRender: true })
-        : { ok: true, postedResults: [] };
-      if (isServerRejectRes(extraRes)) {
-        if (extraRes.postedResults && extraRes.postedResults.length) {
-          await rollbackRecordListOnServer(extraRes.postedResults);
-        }
-        if (mainRes && mainRes.ok && mainRes.rollbackToken) {
-          await rollbackRecordOnServer(mainRes);
-        }
-        if (myOpSeq === _voidRestoreOpSeq.get(opKey)) {
-          if (hadArchBefore) {
-            if (!SEED_VOIDED_ARCHIVE[crKey]) SEED_VOIDED_ARCHIVE[crKey] = new Map();
-            SEED_VOIDED_ARCHIVE[crKey].set(canonTargetId, prevArchVal);
-          } else if (SEED_VOIDED_ARCHIVE[crKey]) {
-            SEED_VOIDED_ARCHIVE[crKey].delete(canonTargetId);
-          }
-          _attCacheRev = prevAttCacheRev;
-          const errMsg = await extractServerRejectMsg(extraRes, 'Permission denied: cannot void linked records.');
-          rbSnap.restore(errMsg);
-        }
-        return false;
-      }
-      if (myOpSeq === _voidRestoreOpSeq.get(opKey)) {
-        saveLocalAuthAndRecords();
-        syncWithCloud(true);
-      }
-      return true;
-    }).finally(() => {
-      if (_voidRestoreInflight.get(opKey) === runP) _voidRestoreInflight.delete(opKey);
-    });
-    _voidRestoreInflight.set(opKey, runP);
+    postRecordToLocalApi(crKey, r);
+    postRecordPairsChunked(extraVoidPosts);
+    syncWithCloud(true);
   }
 
   function getEntryModalStateSignature() {
@@ -109043,17 +107933,14 @@
         b.classList.toggle('active', f === form);
       });
     }
-    const isInitialSitePinFillEdit = Boolean(
-      editTargetRow && !canModifyRecord() && form === 'site' && editTargetCrKey === 'sites' && canFillInitialMissingSitePin(editTargetRow, editTargetCrKey)
-    );
     if (body) {
-      const seatCanSaveEdit = editTargetRow ? (canModifyRecord() || isInitialSitePinFillEdit) : true;
+      const seatCanSaveEdit = editTargetRow ? canModifyRecord() : true;
       const isWordsOnlyEdit = Boolean(editTargetRow && canModifyTextOnly());
       const canVoidCurrent = Boolean(editTargetRow && !editTargetRow.voided && canVoid());
       const isTicketEdit = Boolean(editTargetRow && !editTargetRow.voided && (form === 'sales' || form === 'raw'));
       const footNoteHtml = editTargetRow
         ? (seatCanSaveEdit
-          ? `Editing <b>${esc(String(editTargetRow.name || editTargetRow.id).replace(/[—→]/g, '-'))}</b> as <b>${esc(activeUser().full_name)}</b> · ${isInitialSitePinFillEdit ? 'initial missing-pin mode · existing fields locked' : (isWordsOnlyEdit ? 'words-only edit mode · numbers locked to Supervisor' : 'updates ledger in place')}`
+          ? `Editing <b>${esc(String(editTargetRow.name || editTargetRow.id).replace(/[—→]/g, '-'))}</b> as <b>${esc(activeUser().full_name)}</b> · ${isWordsOnlyEdit ? 'words-only edit mode · numbers locked to Supervisor' : 'updates ledger in place'}`
           : (canVoidCurrent && isTicketEdit
             ? `Supervisor seat (<b>${esc(activeUser().role)}</b>) · use <b>Remove Ticket (0 KM)</b> or <b>${form === 'raw' ? 'Load Rejected · Return ($0 · 2x KM)' : 'Sale Failed · Return Load ($0 · 2x KM)'}</b> to update this ticket`
             : `Read-only seat (<b>${esc(activeUser().role)}</b>) · click <b>360° Details</b> above for full audit breakdown`))
@@ -109223,18 +108110,8 @@
     if (editTargetRow) {
       hydrateEntryModalFromRecord(form, editTargetCrKey, editTargetRow);
       if (!canModifyRecord() && body) {
-        const allowBlankRegOnPinFill = Boolean(isInitialSitePinFillEdit && !String(editTargetRow.region || '').trim());
         body.querySelectorAll('input, select, textarea').forEach(el => {
-          if (isInitialSitePinFillEdit && (el.id === 'f_lat' || el.id === 'f_lng' || el.id === 'f_site_coord_paste' || (allowBlankRegOnPinFill && el.id === 'f_region'))) {
-            el.disabled = false;
-            el.readOnly = false;
-            return;
-          }
           el.disabled = true;
-        });
-        body.querySelectorAll('[data-site-cat], [data-quarry-bundled], [data-reg-zone-mode], #modalRegClearZoneBtn, #modalClearSitePinBtn, #modalSiteClearPinBtn, [data-form-quickfill], #originEditKmBtn').forEach(btn => {
-          btn.disabled = true;
-          if (btn.id === 'modalClearSitePinBtn' || btn.id === 'modalSiteClearPinBtn') btn.hidden = true;
         });
       } else if (canModifyTextOnly() && body) {
         applyWordOnlyModalNumberLocks(body);
@@ -115194,17 +114071,6 @@
       inspFreqIdx.warehouseLoc
     );
 
-    const isInspWordOnly = canModifyTextOnly();
-    const isGeoEntityInspector = key === 'sites' || key === 'customers' || key === 'suppliers';
-    const effInspInd = (row && row._industry) || getActiveIndustry();
-    const allowInspInitialSitePinFill = Boolean(key === 'sites' && canFillInitialMissingSitePin(row, 'sites'));
-    const allowInspFullGeoPinEdit = Boolean(isGeoEntityInspector && canModifyRecord() && !isInspWordOnly && canWriteGeoConfig() && canAccessGeoCompany(row && row.company) && canAccessGeoIndustry(effInspInd));
-    const allowInspGeoPinEdit = Boolean(allowInspFullGeoPinEdit || allowInspInitialSitePinFill);
-    const isInspPinOnlySeat = Boolean(!canModifyRecord() && allowInspInitialSitePinFill);
-    const allowInspRegionZoneEdit = Boolean(key === 'regions' && canModifyRecord() && !isInspWordOnly && canWriteGeoConfig() && canAccessGeoIndustry(effInspInd));
-    const hasInspSitePin = isGeoEntityInspector && !row._pinCleared && row.latitude != null && row.latitude !== '' && row.longitude != null && row.longitude !== '' && Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude));
-    const isMfgSiteDrawer = key === 'sites' && getActiveIndustry() === 'Manufacturing' && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing');
-
     const renderModFieldHtml = (fDef) => {
       const f = fDef.key;
       const rawCur = typeof fDef.getVal === 'function'
@@ -115212,17 +114078,7 @@
         : (row[f] != null ? row[f] : (targetEqRow && targetEqRow[f] != null ? targetEqRow[f] : ''));
       const lbl = fDef.label || f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       const spanCls = fDef.span ? ' span-3' : '';
-      const isPinOnlyFieldAllowed = isInspPinOnlySeat && (
-        /^(latitude|longitude)$/i.test(f) ||
-        (f === 'region' && !String(row && row.region || '').trim())
-      );
-      const isGeoInitialPinField = Boolean(allowInspInitialSitePinFill && /^(latitude|longitude)$/i.test(f));
-      const isGeoFieldLocked = (
-        (isGeoEntityInspector && !allowInspGeoPinEdit && /^(latitude|longitude)$/i.test(f)) ||
-        (key === 'regions' && !allowInspRegionZoneEdit && /^(zone_type|zone_geojson|center_lat|center_lng|radius_km|distance_km)$/i.test(f)) ||
-        (isInspPinOnlySeat && !isPinOnlyFieldAllowed)
-      );
-      const isNumLocked = (isInspWordOnly && !isGeoInitialPinField && isNumericInspectorField(f, fDef, row)) || isGeoFieldLocked;
+      const isNumLocked = isInspWordOnly && isNumericInspectorField(f, fDef, row);
       const lockBadgeHtml = isNumLocked ? `<span class="pa-lock-pill locked" style="margin-left:6px">🔒 Supervisor Only</span>` : '';
       const lockCtrlAttr = isNumLocked ? ' disabled readonly class="pa-locked-input"' : '';
       if (fDef.type === 'bool') {
@@ -115320,6 +114176,10 @@
     }
     bodyEl._activeTableContext = tc;
     bodyEl._preModifySnap = null;
+    const isInspWordOnly = canModifyTextOnly();
+    const isGeoEntityInspector = key === 'sites' || key === 'customers' || key === 'suppliers';
+    const hasInspSitePin = isGeoEntityInspector && !row._pinCleared && row.latitude != null && row.latitude !== '' && row.longitude != null && row.longitude !== '' && Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude));
+    const isMfgSiteDrawer = key === 'sites' && getActiveIndustry() === 'Manufacturing' && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing');
     const inspTicketGatePin = (() => {
       if (!window.MFG_GEO) return null;
       if ((key === 'sales_tickets' || key === 'raw_purchases') && row.site && typeof window.MFG_GEO.resolveVerifiedSiteGatePin === 'function') {
@@ -115390,7 +114250,7 @@
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
           ${((key === 'expenses' && isPendingPriceExpense(row) && (canModifyData() || canEnterForm('expense'))) || (key === 'raw_purchases' && isPendingPriceRaw(row) && (canModifyData() || canEnterForm('raw')))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Price</button>` : ''}
           ${(key === 'employments' && isPendingSalaryEmployment(row) && canViewPayrollDollarAmounts() && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance'))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Salary</button>` : ''}
-          ${(canModifyRecord() || allowInspInitialSitePinFill || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver())) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} ${isInspWordOnly ? 'Modify Words' : 'Modify Record'}</button>` : ''}
+          ${(canModifyRecord() || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver())) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} ${isInspWordOnly ? 'Modify Words' : 'Modify Record'}</button>` : ''}
           ${isEquipInspect && canEnterForm('defect') ? `<button type="button" class="pa-cmd-btn" id="inspReportDefectBtn">${ic('warn')} + Report Warning</button>` : ''}
           ${isEquipInspect && canEnterForm('repair') ? `<button type="button" class="pa-cmd-btn" id="inspLogRepairBtn">${ic('repair')} + Log Repair</button>` : ''}
           ${isEquipInspect && canEnterForm('oillog') ? `<button type="button" class="pa-cmd-btn" id="inspLogOilBtn">${ic('oillog')} + Log Oil</button>` : ''}
@@ -115406,7 +114266,7 @@
           ${!row.voided && canVoid() ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
           ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
           ${inspTicketGatePin && inspTicketGatePin.whatsappUrl ? `<a class="pa-cmd-btn btn-brass" id="inspWhatsAppGatePinBtn" href="${esc(inspTicketGatePin.whatsappUrl)}" target="_blank" rel="noopener">${ic('send')} WhatsApp Gate Pin</a>` : ''}
-          ${allowInspGeoPinEdit && !hasInspSitePin ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPinSiteQuickBtn">${ic('pin')} Pin Location</button>` : ''}
+          ${isGeoEntityInspector && !hasInspSitePin && canModifyRecord() && !isInspWordOnly ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPinSiteQuickBtn">${ic('pin')} Pin Location</button>` : ''}
           ${(key === 'sites' || key === 'regions' || ((key === 'sales_tickets' || key === 'raw_purchases') && row.site)) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspViewOnMapBtn">${ic('reg_sites')} View on Map</button>` : ''}
           <button type="button" class="pa-cmd-btn" data-insp-open-hub="${esc(key)}">${ic('tables')} Open ${esc(INSPECT_LABELS[key] || key)} Table</button>
           ${(['employments', 'staff_members', 'employees', 'attendance', 'salaries', 'freelance_entries', 'staff_assignments', 'drivers'].includes(key) && row && (row.staff || row.name) && (canViewView('payroll_attendance') || canViewView('payroll'))) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPrePaydayCardBtn">${ic('receipt')} Pre-Payday Card</button>` : ''}
@@ -115455,12 +114315,12 @@
         <div class="insp-modify-hdr">
           <div>
             <strong>${ic('edit')} Modify ${esc(INSPECT_LABELS[key] || key)} · ${esc(recTitle)}</strong>
-            <span class="insp-modify-sub">Authorized by ${esc(activeUser().role)} (${esc(activeUser().full_name)}) · ${isInspWordOnly ? 'Words &amp; text editable · Numeric quantities, capacities, prices &amp; amounts locked to Supervisor' : (isInspPinOnlySeat ? 'GPS pin &amp; blank Region editable · Other fields locked to Supervisor' : 'Tip: click any field in the General form below to jump straight to it')}</span>
+            <span class="insp-modify-sub">Authorized by ${esc(activeUser().role)} (${esc(activeUser().full_name)}) · ${isInspWordOnly ? 'Words &amp; text editable · Numeric quantities, capacities, prices &amp; amounts locked to Supervisor' : 'Tip: click any field in the General form below to jump straight to it'}</span>
           </div>
-          <span class="badge badge-brass">${isInspWordOnly ? 'WORDS ONLY · NUMBERS LOCKED TO SUPERVISOR' : (isInspPinOnlySeat ? 'INITIAL PIN FILL ONLY' : 'MODIFY DATA PRIVILEGE VERIFIED')}</span>
+          <span class="badge badge-brass">${isInspWordOnly ? 'WORDS ONLY · NUMBERS LOCKED TO SUPERVISOR' : 'MODIFY DATA PRIVILEGE VERIFIED'}</span>
         </div>
         <div class="form-grid-3" style="margin-top:10px">
-          ${allowInspGeoPinEdit ? `
+          ${(isGeoEntityInspector && !isInspWordOnly) ? `
             <div class="form-field span-3 geo-link-paste-field" id="inspSiteMapLinkWrap">
               <label for="insp_site_coord_paste">Paste Map or WhatsApp Link</label>
               <div class="geo-link-paste-row">
@@ -115471,7 +114331,7 @@
             </div>
           ` : ''}
           ${(() => {
-            if (!allowInspGeoPinEdit) return editSchema.map(renderModFieldHtml).join('');
+            if (!isGeoEntityInspector || isInspWordOnly) return editSchema.map(renderModFieldHtml).join('');
             const inspPinPrompt = key === 'customers'
               ? '<b>Customer Delivery / Office Pin:</b> Click on the map, drag the pin, or paste a link above to set or modify where this customer is located'
               : (key === 'suppliers'
@@ -115486,7 +114346,7 @@
                   <span id="inspSiteMapPrompt">${inspPinPrompt}</span>
                   <span class="geo-modal-map-hdr-actions">
                     <span id="inspSiteKmReadout" class="insp-site-km-readout">${inspKmInitTxt}</span>
-                    <button type="button" class="geo-mini-btn" id="inspClearSitePinBtn"${allowInspFullGeoPinEdit ? '' : ' disabled'} hidden>Clear Pin</button>
+                    <button type="button" class="geo-mini-btn" id="inspClearSitePinBtn" hidden>Clear Pin</button>
                   </span>
                 </div>
                 <div class="geo-modal-map-canvas insp-site-map-canvas" id="inspSiteMapCanvas"></div>
@@ -116128,15 +114988,12 @@
           ev.preventDefault();
           ev.stopPropagation();
           const geo = window.MFG_GEO;
-          const vCo = verifyRoadBtn.getAttribute('data-verify-road-co') || '';
-          const vSite = verifyRoadBtn.getAttribute('data-verify-road-site') || '';
-          const canVerifyLeg = geo && (typeof geo.canEditPairKm === 'function'
-            ? (vCo && vSite ? geo.canEditPairKm({ type: 'bu', name: vCo }, { type: 'site', name: vSite }, SEED) : (typeof geo.canPinLocations === 'function' && geo.canPinLocations()))
-            : (typeof geo.canPinLocations === 'function' && geo.canPinLocations()));
-          if (!canVerifyLeg) {
-            toast('Supervisor + Entry or Owner access for the route Business Units is required to verify road routes', 'err');
+          if (!geo || typeof geo.canPinLocations !== 'function' || !geo.canPinLocations()) {
+            toast('Supervisor privileges required to verify road routes', 'err');
             return;
           }
+          const vCo = verifyRoadBtn.getAttribute('data-verify-road-co') || '';
+          const vSite = verifyRoadBtn.getAttribute('data-verify-road-site') || '';
           if (typeof geo.verifyPairRoadRoute !== 'function' || !vCo || !vSite) return;
           verifyRoadBtn.disabled = true;
           Promise.resolve(geo.verifyPairRoadRoute({ type: 'bu', name: vCo }, { type: 'site', name: vSite }, SEED, { clearOverride: true }))
@@ -116579,7 +115436,7 @@
       }
     };
 
-    const canUseInspModify = canModifyRecord() || allowInspInitialSitePinFill || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver());
+    const canUseInspModify = canModifyRecord() || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver());
     const openModifyDrawerAndFocus = (focusFieldKey) => {
       if (!modDrawer || !canUseInspModify) return;
       if (modDrawer.hidden && !bodyEl._preModifySnap) {
@@ -116587,12 +115444,12 @@
       }
       modDrawer.hidden = false;
       syncModifyLiveSummary();
-      if (allowInspGeoPinEdit && !window.__fastInspectorModifyTest && window.MFG_GEO && typeof window.MFG_GEO.wireInspectorSiteModifyMap === 'function') {
+      if (isGeoEntityInspector && !isInspWordOnly && !window.__fastInspectorModifyTest && window.MFG_GEO && typeof window.MFG_GEO.wireInspectorSiteModifyMap === 'function') {
         window.MFG_GEO.wireInspectorSiteModifyMap(modDrawer, row, SEED, {
           tableKey: key,
           regSel: key === 'customers' ? '#insp_edit_address' : (key === 'suppliers' ? '#insp_edit_location' : '#insp_edit_region'),
           skipRegionContainmentCheck: key !== 'sites',
-          onlyFillEmptyRegion: key !== 'sites' || isInspPinOnlySeat,
+          onlyFillEmptyRegion: key !== 'sites',
           pinLabel: key === 'customers' ? 'Customer Pin' : (key === 'suppliers' ? 'Supplier Pin' : 'Site Pin')
         });
       }
@@ -116603,7 +115460,7 @@
         ? $('insp_site_coord_paste')
         : (focusFieldKey
           ? $('insp_edit_' + focusFieldKey)
-          : ((allowInspGeoPinEdit && !hasInspSitePin && $('insp_site_coord_paste'))
+          : ((isGeoEntityInspector && !isInspWordOnly && !hasInspSitePin && $('insp_site_coord_paste'))
             ? $('insp_site_coord_paste')
             : modDrawer.querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled])')));
       if (targetInp) {
@@ -116703,9 +115560,9 @@
     }
     const saveModBtn = $('inspSaveModifyBtn');
     if (saveModBtn && modDrawer) {
-      saveModBtn.addEventListener('click', async () => {
+      saveModBtn.addEventListener('click', () => {
         if (!canUseInspModify) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
-        const isSaveWordOnly = canModifyTextOnly() || (!canModifyRecord() && canUseInspModify && !isInspPinOnlySeat);
+        const isSaveWordOnly = canModifyTextOnly() || (!canModifyRecord() && canUseInspModify);
         const schemaMap = new Map(editSchema.map(f => [f.key, f]));
         const pendingUpdates = {};
         let effFromDate = todayISO();
@@ -116717,17 +115574,7 @@
           const fk = inp.getAttribute('data-mod-field');
           if (!fk) return;
           const fDef = schemaMap.get(fk) || {};
-          const isInitPinAllowedSave = Boolean(allowInspInitialSitePinFill && /^(latitude|longitude)$/i.test(fk));
-          const isPinOnlyAllowedSave = Boolean(
-            isInspPinOnlySeat &&
-            (isInitPinAllowedSave || (fk === 'region' && !String((row && row.region) || '').trim()))
-          );
-          const isGeoFieldLockedSave = (
-            (isGeoEntityInspector && !allowInspGeoPinEdit && /^(latitude|longitude)$/i.test(fk)) ||
-            (key === 'regions' && !allowInspRegionZoneEdit && /^(zone_type|zone_geojson|center_lat|center_lng|radius_km|distance_km)$/i.test(fk)) ||
-            (isInspPinOnlySeat && !isPinOnlyAllowedSave)
-          );
-          if ((isSaveWordOnly && !isInitPinAllowedSave && isNumericInspectorField(fk, fDef, row)) || isGeoFieldLockedSave) return;
+          if (isSaveWordOnly && isNumericInspectorField(fk, fDef, row)) return;
           if (fk === 'effective_from') {
             effFromDate = inp.value || todayISO();
             return;
@@ -116981,19 +115828,6 @@
           }
         }
         const origRowSnap = Object.assign({}, row);
-        const inspGeoTouched = key === 'sites' || key === 'regions' || key === 'customers' || key === 'suppliers';
-        const inspRollbackSnap = (hasServerApi() && !isDemoScopeActive() && !window.__fastInspectorModifyTest)
-          ? _captureLedgerAndGeoRollbackSnap(['sites', 'regions', 'jv_partnerships', 'price_rules', 'customers', 'suppliers'], inspGeoTouched)
-          : null;
-        if (inspRollbackSnap) {
-          inspRollbackSnap.snapSeedRow(key, row.id);
-          if (targetEqRow && targetEqRow.id) inspRollbackSnap.snapSeedRow('equipment', targetEqRow.id);
-        }
-        const inspGeoSavePromises = [];
-        const inspDeferredGeoPushes = [];
-        let canInitFillInspSitePin = false;
-        let inspInitPinCoords = null;
-        let inspSitePinWasEditedToEmpty = false;
         if (!isAppRecord(origRowSnap)) {
           const sOrig = captureSeedOrigSnapshot(key, origRowSnap);
           if (sOrig && !row._seed_orig) row._seed_orig = buildSeedOrigMeta(sOrig);
@@ -117683,55 +116517,27 @@
             if (preSdIdx >= 0) Object.assign(SEED.records.sites[preSdIdx], row);
             else SEED.records.sites.unshift(row);
           }
-          const canFullMutateInspSitePin = allowInspFullGeoPinEdit && !isSaveWordOnly && !isInspPinOnlySeat;
-          canInitFillInspSitePin = Boolean(allowInspInitialSitePinFill && key === 'sites');
-          inspSitePinWasEditedToEmpty = pinWasEditedToEmpty;
-          inspInitPinCoords = (canInitFillInspSitePin && !pinWasEditedToEmpty && row.latitude != null && row.longitude != null && row.latitude !== '' && row.longitude !== '')
-            ? { lat: Number(row.latitude), lng: Number(row.longitude) }
-            : null;
-          if (!canFullMutateInspSitePin && !canInitFillInspSitePin) {
-            row.latitude = origRowSnap ? (origRowSnap.latitude !== undefined ? origRowSnap.latitude : null) : row.latitude;
-            row.longitude = origRowSnap ? (origRowSnap.longitude !== undefined ? origRowSnap.longitude : null) : row.longitude;
-            if (origRowSnap && '_pinCleared' in origRowSnap) row._pinCleared = origRowSnap._pinCleared;
-            else delete row._pinCleared;
-          } else if (canInitFillInspSitePin) {
-            if (pinWasEditedToEmpty || !inspInitPinCoords) {
-              row.latitude = origRowSnap ? (origRowSnap.latitude !== undefined ? origRowSnap.latitude : null) : row.latitude;
-              row.longitude = origRowSnap ? (origRowSnap.longitude !== undefined ? origRowSnap.longitude : null) : row.longitude;
-              if (origRowSnap && '_pinCleared' in origRowSnap) row._pinCleared = origRowSnap._pinCleared;
-              else delete row._pinCleared;
-            } else if (window.MFG_GEO && typeof window.MFG_GEO.persistLocationPin === 'function') {
-              row._pinCleared = false;
-              window.MFG_GEO.persistLocationPin(
-                { targetType: 'site', siteId: row.id, siteCategory: row.site_category, name: row.name, lat: inspInitPinCoords.lat, lng: inspInitPinCoords.lng, region: row.region, industry: effSiteInd },
-                { SEED, STATE, company: row.company, origSiteRow: origRowSnap, allowTicketMissingPin: true, allowRegionOverwrite: canWriteGeoConfig(), skipGeoRollback: true, skipCloudPush: true, deferApiPost: true, deferStoredConfigPush: true, deferredGeoPushes: inspDeferredGeoPushes, geoSavePromises: inspGeoSavePromises }
-              );
-            }
-          } else {
-            if (pinWasEditedToEmpty) {
-              row._pinCleared = true;
-              row.latitude = null;
-              row.longitude = null;
-            }
-            if (window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function') {
-              if (origRowSnap && origRowSnap.name && (siteNameChanged || siteCatChanged || sitePinRemoved)) {
-                window.MFG_GEO.clearLocationPin({ name: origRowSnap.name, siteCategory: origSiteCat, excludeId: row.id, industry: effSiteInd, company: row.company }, SEED, { skipGeoRollback: true, skipCloudPush: true, deferStoredConfigPush: true, deferredGeoPushes: inspDeferredGeoPushes, geoSavePromises: inspGeoSavePromises });
-              }
-              if (pinWasEditedToEmpty) {
-                window.MFG_GEO.clearLocationPin({ name: row.name, siteCategory: row.site_category, excludeId: row.id, industry: effSiteInd, company: row.company }, SEED, { skipGeoRollback: true, skipCloudPush: true, deferStoredConfigPush: true, deferredGeoPushes: inspDeferredGeoPushes, geoSavePromises: inspGeoSavePromises });
-              }
+          if (pinWasEditedToEmpty) {
+            row._pinCleared = true;
+            row.latitude = null;
+            row.longitude = null;
+          }
+          if (window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function') {
+            if (origRowSnap && origRowSnap.name && (siteNameChanged || siteCatChanged || sitePinRemoved)) {
+              window.MFG_GEO.clearLocationPin({ name: origRowSnap.name, siteCategory: origSiteCat, excludeId: row.id, industry: effSiteInd }, SEED);
             }
             if (pinWasEditedToEmpty) {
-              row._pinCleared = true;
-              row.latitude = null;
-              row.longitude = null;
-            } else if (window.MFG_GEO && row.latitude != null && row.longitude != null && row.latitude !== '' && row.longitude !== '') {
-              row._pinCleared = false;
-              window.MFG_GEO.persistLocationPin(
-                { targetType: 'site', siteId: row.id, siteCategory: row.site_category, name: row.name, lat: row.latitude, lng: row.longitude, region: row.region, industry: effSiteInd },
-                { SEED, STATE, company: row.company, origSiteRow: origRowSnap, allowRegionOverwrite: canWriteGeoConfig(), skipGeoRollback: true, skipCloudPush: true, deferApiPost: true, deferStoredConfigPush: true, deferredGeoPushes: inspDeferredGeoPushes, geoSavePromises: inspGeoSavePromises }
-              );
+              window.MFG_GEO.clearLocationPin({ name: row.name, siteCategory: row.site_category, excludeId: row.id, industry: effSiteInd }, SEED);
             }
+          }
+          const origHadPin = Boolean(origRowSnap && origRowSnap.latitude != null && origRowSnap.longitude != null && origRowSnap.latitude !== '' && origRowSnap.longitude !== '');
+          if (pinWasEditedToEmpty) {
+            row._pinCleared = true;
+            row.latitude = null;
+            row.longitude = null;
+          } else if (window.MFG_GEO && row.latitude != null && row.longitude != null && row.latitude !== '' && row.longitude !== '' && (!isSaveWordOnly || origHadPin)) {
+            row._pinCleared = false;
+            window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category, name: row.name, lat: row.latitude, lng: row.longitude, region: row.region, industry: effSiteInd }, { SEED, STATE });
           }
           row._inspSiteCascadePosts = [];
           if (siteNameChanged && origRowSnap && origRowSnap.name) {
@@ -117776,18 +116582,10 @@
         }
 
         if (key === 'customers' || key === 'suppliers') {
-          const canMutatePartyPin = allowInspGeoPinEdit && !isSaveWordOnly;
           const pinRemoved = row.latitude == null || row.latitude === '' || row.longitude == null || row.longitude === '';
-          const pinWasEditedToEmpty = canMutatePartyPin && ('latitude' in pendingUpdates || 'longitude' in pendingUpdates) && pinRemoved;
+          const pinWasEditedToEmpty = ('latitude' in pendingUpdates || 'longitude' in pendingUpdates) && pinRemoved;
           const origHadPin = Boolean(origRowSnap && !origRowSnap._pinCleared && origRowSnap.latitude != null && origRowSnap.longitude != null && origRowSnap.latitude !== '' && origRowSnap.longitude !== '');
-          if (!canMutatePartyPin) {
-            if (origRowSnap) {
-              row.latitude = origRowSnap.latitude !== undefined ? origRowSnap.latitude : null;
-              row.longitude = origRowSnap.longitude !== undefined ? origRowSnap.longitude : null;
-              if ('_pinCleared' in origRowSnap) row._pinCleared = origRowSnap._pinCleared;
-              else delete row._pinCleared;
-            }
-          } else if (pinWasEditedToEmpty) {
+          if (pinWasEditedToEmpty) {
             row._pinCleared = true;
             row.latitude = null;
             row.longitude = null;
@@ -117807,36 +116605,8 @@
 
         // Universal Post-Save Numeric Invariance Guard across all 46 current tables + any 47th+ future table
         enforceUneditedNumericInvariance(origRowSnap, row, editedKeySet);
-        if (isSaveWordOnly || isInspPinOnlySeat) {
+        if (isSaveWordOnly) {
           enforceStrictNumericLockFromOrig(origRowSnap, row);
-          if (isInspPinOnlySeat && origRowSnap) {
-            const keepEmptyRegion = !String(origRowSnap.region || '').trim();
-            const curRegion = row.region;
-            const curGeoZone = row.geo_zone;
-            const curModBy = row.modified_by;
-            const curModAt = row.modified_at;
-            const curSource = row.source;
-            const curSeedOrig = row._seed_orig;
-            Object.keys(row).forEach(rk => {
-              if (!(rk in origRowSnap)) delete row[rk];
-            });
-            Object.keys(origRowSnap).forEach(rk => {
-              row[rk] = origRowSnap[rk];
-            });
-            if (keepEmptyRegion && curRegion) {
-              row.region = curRegion;
-              row.geo_zone = curGeoZone || curRegion;
-            }
-            if (curModBy !== undefined) row.modified_by = curModBy;
-            if (curModAt !== undefined) row.modified_at = curModAt;
-            if (curSource !== undefined) row.source = curSource;
-            if (curSeedOrig !== undefined) row._seed_orig = curSeedOrig;
-          }
-          if (canInitFillInspSitePin && inspInitPinCoords && !inspSitePinWasEditedToEmpty) {
-            row.latitude = inspInitPinCoords.lat;
-            row.longitude = inspInitPinCoords.lng;
-            row._pinCleared = false;
-          }
         }
         if ((key === 'staff_members' || key === 'employments' || key === 'freelance_entries')
           && ('renewal_status' in pendingUpdates || 'renewal_receipt_no' in pendingUpdates || 'renewal_submitted_date' in pendingUpdates)) {
@@ -117939,40 +116709,8 @@
           stampBatchModifiedAt(inspExtraPosts, key, row);
           saveLocalAuthAndRecords();
           renderApp();
-          const mainPostRes = await postRecordToLocalApi(key, row);
-          const restoreInspOnReject = async (failRes, compensateMain, extraRes) => {
-            await rollbackRecordListOnServer(extraRes && extraRes.postedResults);
-            if (compensateMain && mainPostRes && mainPostRes.ok) {
-              const rbOk = await rollbackRecordOnServer(mainPostRes);
-              if (!rbOk && !isSaveWordOnly && canModifyRecord() && origRowSnap && origRowSnap.id) {
-                await postRecordToLocalApi(key, Object.assign({}, origRowSnap, { modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
-              }
-            }
-            const errTxt = await extractServerRejectMsg(failRes, 'Permission denied: save rejected by server');
-            if (inspRollbackSnap) {
-              inspRollbackSnap.restore(errTxt);
-            } else {
-              toast(errTxt, 'err');
-            }
-            showRecordInspector(key, (origRowSnap && origRowSnap.id) || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
-          };
-          if (isServerRejectRes(mainPostRes)) {
-            await restoreInspOnReject(mainPostRes, false, null);
-            return;
-          }
-          const extraPostRes = await postRecordPairsChunked(inspExtraPosts);
-          if (isServerRejectRes(extraPostRes)) {
-            await restoreInspOnReject(extraPostRes, true, extraPostRes);
-            return;
-          }
-          const inspGeoResults = (inspDeferredGeoPushes.length || inspGeoSavePromises.length)
-            ? await Promise.all([...inspDeferredGeoPushes.map(fn => fn()), ...inspGeoSavePromises])
-            : [];
-          const inspGeoFail = inspGeoResults.find(r => isServerRejectRes(r));
-          if (inspGeoFail) {
-            await restoreInspOnReject(inspGeoFail, true, extraPostRes);
-            return;
-          }
+          postRecordToLocalApi(key, row);
+          postRecordPairsChunked(inspExtraPosts);
           syncWithCloud(true);
           toast(changedCount ? `✓ Record modified (${changedCount} field${changedCount === 1 ? '' : 's'} updated)` : '✓ Record saved');
           if (inspBackpayHit) toast(backpayToastText(inspBackpayHit, row.staff || row.name), 'warn');
@@ -118460,9 +117198,6 @@
     } else if (existing.pin_code) {
       out.pin_code = existing.pin_code;
       delete out.pin_redacted;
-    }
-    if (incoming.custom_perms == null && existing.custom_perms && typeof existing.custom_perms === 'object') {
-      out.custom_perms = existing.custom_perms;
     }
     if (existing.id && /^u\d+$/i.test(String(existing.id)) && /^u-(hussein|zeinab|sabah)$/i.test(String(out.id || ''))) {
       out.id = existing.id;
@@ -122016,7 +120751,7 @@
           if (!u || !u.email) return;
           const idx = merged.findIndex(x => (u.id && String(x.id) === String(u.id)) || norm(x.email) === norm(u.email));
           if (idx >= 0) merged[idx] = mergeUserRow(merged[idx], u);
-          else merged.push(mergeUserRow(null, u));
+          else if (canSyncSeatsMeta) merged.push(mergeUserRow(null, u));
         });
       } else {
         STATE.users.forEach(u => {
@@ -122121,7 +120856,7 @@
     let runPromise = null;
     runPromise = doSync(shouldPush).finally(() => {
       if (syncInFlight === runPromise) syncInFlight = null;
-      if (!isDemoSandboxSession() && (!STATE.authed || runEpoch !== _authSessionEpoch)) {
+      if (!isDemoSandboxSession() && rosterIsServerHeld() && (!STATE.authed || runEpoch !== _authSessionEpoch)) {
         return;
       }
       if (STATE.pushAfterSync) { STATE.pushAfterSync = false; syncWithCloud(true); }
@@ -122222,7 +120957,7 @@
       return;
     }
     const syncEpoch = _authSessionEpoch;
-    const abortedByAuthChange = () => Boolean(!isDemoSandboxSession() && (!STATE.authed || syncEpoch !== _authSessionEpoch));
+    const abortedByAuthChange = () => Boolean(!isDemoSandboxSession() && rosterIsServerHeld() && (!STATE.authed || syncEpoch !== _authSessionEpoch));
     const isEdgeActive = Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
     // Verify active HttpOnly cookie session on Edge hosts when needed
     if (isEdgeActive && STATE.authed && !_edgeSessionToken && !_edgeCookieAuthed && !isDemoSandboxSession()) {
@@ -122368,10 +121103,6 @@
       return;
     }
     try {
-      if (_voidRestoreInflight.size > 0) {
-        await Promise.allSettled(Array.from(_voidRestoreInflight.values()));
-        if (abortedByAuthChange()) return;
-      }
       const seqAtSyncStart = _localPushSeq;
       let getRes = null;
       const ctrlE = new AbortController();
@@ -127945,9 +126676,6 @@
 
   function closeAuthGate() {
     STATE.authed = true;
-    if (window.MFG_GEO && typeof window.MFG_GEO.markGeoSessionActive === 'function') {
-      try { window.MFG_GEO.markGeoSessionActive(); } catch (_) {}
-    }
     window.__mfgSwResuming = false;
     document.documentElement.classList.remove('sw-resuming');
     if (FACE_STATE.loopTimer) { clearTimeout(FACE_STATE.loopTimer); FACE_STATE.loopTimer = null; }
@@ -128066,9 +126794,6 @@
     if (window.MFG_PBI && typeof window.MFG_PBI.clearHubRelKept === 'function') window.MFG_PBI.clearHubRelKept();
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.clearOtClusterCaches === 'function') window.MFG_AI_EDGE.clearOtClusterCaches();
     if (isDemoSandboxSession()) {
-      if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
-        try { window.MFG_GEO.resetGeoStoreSession(); } catch (_) {}
-      }
       try {
         for (let i = sessionStorage.length - 1; i >= 0; i--) {
           const k = sessionStorage.key(i);
@@ -128101,13 +126826,6 @@
       setEdgeSessionToken('');
       _edgeCookieAuthed = false;
       purgePrivateSeedCachesOnLogout();
-      if (_cloudRetryTimer) { clearTimeout(_cloudRetryTimer); _cloudRetryTimer = null; }
-      STATE.pendingCloudPush = false;
-      STATE.pushAfterSync = false;
-      if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
-        try { window.MFG_GEO.resetGeoStoreSession(); } catch (_) {}
-      }
-      try { localStorage.removeItem('isabi_mfg_geo_v1'); } catch (_) {}
       try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
       try { localStorage.removeItem('isabi_mfg_last_seat'); } catch (_) {}
       try { localStorage.removeItem('isabi_mfg_kiosk_station_seat'); } catch (_) {}
@@ -128115,16 +126833,10 @@
       if (rosterIsServerHeld()) {
         STATE.users = [];
         STATE.activeUserIdx = 0;
-        STATE.customRecords = {};
-        STATE.industryCustomRows = {};
-        STATE.industryRowEdits = {};
-        STATE._purgedIndustryLegacy = { rows: [], editKeys: [] };
         _usersApiHydratedOnce = false;
         _usersHydrateInFlight = null;
         syncInFlight = null;
         try { appStoreRemoveRaw('isabi_mfg_users_v2'); } catch (_) {}
-        try { appStoreRemoveRaw('isabi_mfg_ind_custom_rows_v1'); } catch (_) {}
-        try { appStoreRemoveRaw('isabi_mfg_ind_row_edits_v1'); } catch (_) {}
         SEED.records = {};
         SEED.models = {};
         SEED.industryLive = null;
@@ -131866,7 +130578,7 @@
         if (co === toCo) { showErr('Sender and Receiver sister entities must differ.'); return { ok: false }; }
         postedBucket = 'hld_interactions';
         postedRow = addIndustryCustomRow('hld_interactions', {
-          id: recId, company: canonCompany(co) || co, date: dt, fromCo: co, toCo, initiatorCo: co, mirrorCo: toCo,
+          id: recId, date: dt, fromCo: co, toCo, initiatorCo: co, mirrorCo: toCo,
           side: 'Out', usd: numV('ik_usd'), cur: 'USD',
           method: strV('ik_method') || 'Bank Transfer',
           notes: strV('ik_notes') || 'Bilateral sister treasury clearing',
@@ -131889,7 +130601,7 @@
         const drw = Math.min(ent, numV('ik_drawn'));
         postedBucket = 'hld_partners';
         postedRow = addIndustryCustomRow('hld_partners', {
-          id: recId, company: canonCompany(co) || co, entity: co, partner: strV('ik_partner') || 'Rami Haddad',
+          id: recId, entity: co, partner: strV('ik_partner') || 'Rami Haddad',
           pct, pool_usd: pool, entitled_usd: ent, drawn_usd: drw,
           open_usd: round2(ent - drw), start_date: dt,
           status: ent - drw <= 0 ? 'Settled' : 'Active Agreement'
@@ -161608,8 +160320,7 @@
         STATE,
         canAccessTable,
         canAddSite: canEnterForm('site', activeUserRow),
-        canPinLocations: canWriteGeoConfig(activeUserRow),
-        canShapeRegions: canWriteGeoConfig(activeUserRow),
+        canPinLocations: canModifyData(activeUserRow),
         canEnterSite: canEnterForm('site', activeUserRow),
         canModifyRecord: canModifyRecord(activeUserRow),
         filterRecords,
@@ -161833,7 +160544,7 @@
       STATE.indSentinelRuleFilter = btn.getAttribute('data-ind-sn-rule') || 'all';
       renderApp();
     }));
-    if (/^(hld_|hsp_|trd_|re_|ins_)/.test(String(STATE.view || '')) && canEnterAny()) {
+    if (/^(hld_|hsp_|trd_|re_|ins_)/.test(String(STATE.view || '')) && (canModifyRecord() || canEnterForm('sales'))) {
       const ctrlBar = container.querySelector('.cockpit-controls, .cockpit-banner');
       if (ctrlBar && !container.querySelector('[data-ind-open-new]')) {
         const addBtn = document.createElement('button');
@@ -161845,13 +160556,9 @@
         ctrlBar.appendChild(addBtn);
       }
     }
-    if (!canEnterAny()) {
-      container.querySelectorAll('[data-ind-open-new]').forEach(btn => btn.remove());
-    } else {
-      container.querySelectorAll('[data-ind-open-new]').forEach(btn => btn.addEventListener('click', () => {
-        openIndustryDomainEntryModal(btn.getAttribute('data-ind-open-new') || STATE.view);
-      }));
-    }
+    container.querySelectorAll('[data-ind-open-new]').forEach(btn => btn.addEventListener('click', () => {
+      openIndustryDomainEntryModal(btn.getAttribute('data-ind-open-new') || STATE.view);
+    }));
     const indTblSearch = $('indTablesSearchInput');
     if (indTblSearch) {
       indTblSearch.addEventListener('input', e => {
@@ -168523,7 +167230,6 @@
       if (!r.ok) throw new Error('seed HTTP ' + r.status);
       return r.json();
     }
-    if (!STATE.authed) throw new Error('seed API skipped: unauthenticated');
     let dataCache = null;
     if (window.caches && typeof window.caches.open === 'function') {
       try { dataCache = await window.caches.open('isabi-mfg-data-v3'); } catch (_) { dataCache = null; }
@@ -168534,7 +167240,6 @@
         if (cached && cached.ok) return await cached.json();
       } catch (_) {}
     }
-    if (!STATE.authed) throw new Error('seed API skipped: unauthenticated');
     const r = await edgeApiFetch(url);
     if (!r || !r.ok) throw new Error('seed API HTTP ' + (r ? r.status : 0));
     if (dataCache && STATE.authed) {
@@ -168616,10 +167321,6 @@
           });
         }
 
-        if (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch)) {
-          if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
-          return SEED;
-        }
         const [recPayload, indPayload, demoBundlePayloads] = await Promise.all([
           fetchSeedPayloadJson(recordsUrl, useAuthedApi),
           indFetchPromise,
@@ -168691,11 +167392,11 @@
           setTimeout(runNextPrewarm, 50);
         }
       } catch (err) {
+        console.error('Seed hydration error:', err);
         if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
         if (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch)) {
           return SEED;
         }
-        console.error('Seed hydration error:', err);
         if (!useAuthedApi) {
           SEED._recordsReady = true;
           SEED._recordsLoadFailed = true;   // screens carry on; site closure and dormancy refuse to judge loads
