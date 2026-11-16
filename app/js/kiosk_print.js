@@ -56,15 +56,14 @@
   }
 
   function resolveDocArgs(a, b, c) {
-    if (typeof a === 'string' && ['sales', 'raw', 'fuel', 'domain'].includes(a.toLowerCase())) {
+    if (typeof a === 'string' && ['sales', 'raw', 'fuel'].includes(a.toLowerCase())) {
       return { docType: a.toLowerCase(), record: b || {}, opts: c || {} };
     }
     const record = (a && typeof a === 'object') ? a : {};
     const opts = (b && typeof b === 'object') ? b : {};
     let docType = String(opts.docType || record.docType || '').toLowerCase();
-    if (!['sales', 'raw', 'fuel', 'domain'].includes(docType)) {
-      if (record._domainSlip) docType = 'domain';
-      else if (record.litres != null || record.fuel_type || /^DRAFT-FUEL/i.test(record.id || '')) docType = 'fuel';
+    if (!['sales', 'raw', 'fuel'].includes(docType)) {
+      if (record.litres != null || record.fuel_type || /^DRAFT-FUEL/i.test(record.id || '')) docType = 'fuel';
       else if (record.site_owner != null || record.unit_cost != null || /^DRAFT-RAW/i.test(record.id || '')) docType = 'raw';
       else docType = 'sales';
     }
@@ -439,30 +438,7 @@
         extInvoice: record.external_invoice || '',
         notes: record.notes || '',
         enteredBy: record.entered_by || 'Desk Officer',
-        barcodeDigits,
-        gatePin: (() => {
-          if (typeof window === 'undefined' || !window.MFG_GEO) return null;
-          const siteCand = String(ds.siteName || record.site || ds.scopeVal || '').trim();
-          const byName = (siteCand && typeof window.MFG_GEO.resolveVerifiedSiteGatePin === 'function')
-            ? window.MFG_GEO.resolveVerifiedSiteGatePin(siteCand, { industry: ds.industry, company, ticketNo })
-            : null;
-          if (byName) return byName;
-          const hasLat = record.latitude != null && record.latitude !== '' && Number.isFinite(Number(record.latitude));
-          const hasLng = record.longitude != null && record.longitude !== '' && Number.isFinite(Number(record.longitude));
-          if (hasLat && hasLng && typeof window.MFG_GEO.resolveDirectGatePin === 'function') {
-            return window.MFG_GEO.resolveDirectGatePin({
-              id: record.id,
-              name: siteCand || ds.counterparty || record.customer || company,
-              lat: record.latitude,
-              lng: record.longitude,
-              region: record.region,
-              access_note: record.access_note || record.notes || '',
-              industry: ds.industry,
-              company
-            }, { industry: ds.industry, company, ticketNo });
-          }
-          return null;
-        })()
+        barcodeDigits
       };
     }
 

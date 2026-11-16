@@ -141,7 +141,7 @@
     const urlStr = String(url || '');
     const method = String((opts && opts.method) || 'GET').toUpperCase();
     const isAuthCheckUrl = /\/api\/auth\/(?:login|logout|me)(?:\b|\/|\?|$)/i.test(urlStr);
-    const isReadOnlyAiOrScan = /\/api\/(?:ai-edge|ask|smart-scan|resolve-map-link|map-places|map-route)(?:\b|\/|\?|$)/i.test(urlStr);
+    const isReadOnlyAiOrScan = /\/api\/(?:ai-edge|ask|smart-scan|resolve-map-link|map-places)(?:\b|\/|\?|$)/i.test(urlStr);
     const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|cashflow_behind|source_behind|industry_domain_store|staff_biometrics|work_schedules|geo_config|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
     const inDemoSession = isDemoSandboxSession();
     const inDemoCo = !inDemoSession && STATE.company === DEMO_COMPANY_KEY;
@@ -10180,7 +10180,7 @@
   }
   // Map, Regions with No Shape: giving an existing Region a shape is a change to that record
   window.MFG_CAN_SHAPE_REGIONS = u => canEnterForm('region', u) && canModifyData(u);
-  window.MFG_CAN_PIN_LOCATIONS = u => canEnterForm('site', u) && canModifyData(u);
+  window.MFG_CAN_PIN_LOCATIONS = u => canModifyData(u);
   window.MFG_CAN_ENTER_SITE = u => canEnterForm('site', u);
   window.MFG_CAN_MODIFY_RECORD = u => canModifyRecord(u);
   // Map: night trip pay per Region is a payroll rate, shown only to a seat that may read overtime_rates
@@ -21681,24 +21681,6 @@
       whatFn: p => `Evaluates all active staff records against deterministic UTC calendar-day boundaries (Expired <0d, Critical <= ${fmtNum(p.crit_window_days, 0)}d, Due <= 30d, Watch <= ${fmtNum(p.warn_window_days, 0)}d) and flags confirmed non-Lebanese staff lacking work permit expiry dates before compliance penalties hit.`,
       threshFn: p => `Crit <= ${fmtNum(p.crit_window_days, 0)}d · Watch <= ${fmtNum(p.warn_window_days, 0)}d`,
       previewFn: p => `Live example: Any active ID, work permit or residency expiring within ${fmtNum(p.warn_window_days, 0)} days raises a warning, escalating to critical at <= ${fmtNum(p.crit_window_days, 0)} days or overdue; foreign staff lacking permit dates are flagged immediately.`
-    },
-    {
-      id: 'G_MAPS_QUOTA',
-      code: '#24',
-      name: 'Monthly Map Tiles & Places Free-Tier Quota Guard',
-      domain: 'Dispatch & Maps',
-      behavior: 'audit',
-      whereLabel: 'AI Sentinels, Map Studio & Places Search',
-      jumpView: 'sentinels',
-      sentinelId: 'M24',
-      why: 'Protects the $0 monthly Google Maps free tier (100,000 2D tiles, 10,000 Places Text Search requests, 10,000 Routes calls) by tightening client Places debounce at 50% and 80%, switching automatically to OpenStreetMap and local search at 95%, and tracking the Google Cloud $1 budget alert.',
-      params: [
-        { key: 'warn_pct', label: 'Debounce Tightening Warning (%)', def: 50, min: 20, max: 79, step: 5, unit: '%' },
-        { key: 'fallback_pct', label: 'Automatic OpenStreetMap Cutoff (%)', def: 95, min: 81, max: 99, step: 1, unit: '%' }
-      ],
-      whatFn: p => `Tracks monthly Google Map Tiles (100,000), Places Text Search (10,000), and Routes (10,000) calls. Tightens search debounce from 260ms to 600ms at <b>${fmtNum(p.warn_pct, 0)}%</b>, 1100ms at 80%, and falls back to OpenStreetMap tiles plus frequency-ranked local search at <b>${fmtNum(p.fallback_pct, 0)}%</b>.`,
-      threshFn: p => `Warn >= ${fmtNum(p.warn_pct, 0)}% · OSM Cutoff >= ${fmtNum(p.fallback_pct, 0)}%`,
-      previewFn: p => `Free-tier shield: Above ${fmtNum(p.warn_pct, 0)}% monthly quota search debounce slows to 600ms (1100ms at 80%), and at ${fmtNum(p.fallback_pct, 0)}% basemaps switch automatically to OpenStreetMap before any overage charge.`
     }
   ];
 
@@ -21760,22 +21742,8 @@
       threshFn: p => `<= ${fmtUSD(p.tb_tol_usd, 2)} TB diff`,
       previewFn: p => `Core accounting guard: Consolidated Trial Balance must tie within ${fmtUSD(p.tb_tol_usd, 2)}.`
     },
-    {
-      id: 'ind_hld_06', code: '#06', industry: 'Holding & Treasury',
-      name: 'Monthly Map Tiles & Places Free-Tier Quota Guard',
-      domain: 'Location & Maps', behavior: 'audit',
-      whereLabel: 'AI Sentinels & Map Studio', jumpForm: '', jumpView: 'sentinels', lockedActive: false,
-      why: 'Protects the $0 monthly Google Maps free tier across group offices and partner sites by tightening Places search debounce at 50%/80% and switching to OpenStreetMap at 95%.',
-      params: [
-        { key: 'warn_pct', label: 'Debounce Tightening Warning (%)', def: 50, min: 20, max: 79, step: 5, unit: '%' },
-        { key: 'fallback_pct', label: 'Automatic OpenStreetMap Cutoff (%)', def: 95, min: 81, max: 99, step: 1, unit: '%' }
-      ],
-      whatFn: p => `Tracks monthly Map Tiles (100,000), Places (10,000), and Routes (10,000) usage. Tightens debounce at <b>${fmtNum(p.warn_pct, 0)}%</b> and enables OpenStreetMap fallback at <b>${fmtNum(p.fallback_pct, 0)}%</b>.`,
-      threshFn: p => `Warn >= ${fmtNum(p.warn_pct, 0)}% · Cutoff >= ${fmtNum(p.fallback_pct, 0)}%`,
-      previewFn: p => `Free-tier shield: Above ${fmtNum(p.warn_pct, 0)}% monthly quota search debounce slows to 600ms (1100ms at 80%), and at ${fmtNum(p.fallback_pct, 0)}% basemaps switch automatically to OpenStreetMap before any overage charge.`
-    },
 
-    // Hospitality & Resorts (6 rules)
+    // Hospitality & Resorts (5 rules)
     {
       id: 'ind_hsp_01', code: '#01', industry: 'Hospitality & Resorts',
       name: 'Back-Dated Venue Entry & Daily Revenue Close Queue',
@@ -21831,22 +21799,8 @@
       threshFn: p => `> ${fmtUSD(p.arrears_warn_usd, 0)} open balance`,
       previewFn: p => `Live rule: Seasonal memberships with unpaid balance > ${fmtUSD(p.arrears_warn_usd, 0)} appear in collection queue.`
     },
-    {
-      id: 'ind_hsp_06', code: '#06', industry: 'Hospitality & Resorts',
-      name: 'Monthly Map Tiles & Places Free-Tier Quota Guard',
-      domain: 'Location & Maps', behavior: 'audit',
-      whereLabel: 'AI Sentinels & Map Studio', jumpForm: '', jumpView: 'sentinels', lockedActive: false,
-      why: 'Protects the $0 monthly Google Maps free tier across Blanca, La Una, Palms, Voile, and Platinum venue & vendor pins.',
-      params: [
-        { key: 'warn_pct', label: 'Debounce Tightening Warning (%)', def: 50, min: 20, max: 79, step: 5, unit: '%' },
-        { key: 'fallback_pct', label: 'Automatic OpenStreetMap Cutoff (%)', def: 95, min: 81, max: 99, step: 1, unit: '%' }
-      ],
-      whatFn: p => `Tracks monthly Map Tiles (100,000), Places (10,000), and Routes (10,000) usage. Tightens debounce at <b>${fmtNum(p.warn_pct, 0)}%</b> and enables OpenStreetMap fallback at <b>${fmtNum(p.fallback_pct, 0)}%</b>.`,
-      threshFn: p => `Warn >= ${fmtNum(p.warn_pct, 0)}% · Cutoff >= ${fmtNum(p.fallback_pct, 0)}%`,
-      previewFn: p => `Free-tier shield: Above ${fmtNum(p.warn_pct, 0)}% monthly quota search debounce slows to 600ms (1100ms at 80%), and at ${fmtNum(p.fallback_pct, 0)}% basemaps switch automatically to OpenStreetMap before any overage charge.`
-    },
 
-    // Automotive & Heavy Trading (6 rules)
+    // Automotive & Heavy Trading (5 rules)
     {
       id: 'ind_trd_01', code: '#01', industry: 'Automotive & Heavy Trading',
       name: 'Invoice Book Sequence Gap & Missing Pad Serial Guard',
@@ -21902,22 +21856,8 @@
       threshFn: p => `> ${fmtUSD(p.unalloc_tol_usd, 0)} unallocated`,
       previewFn: p => `Live rule: Import shipments with > ${fmtUSD(p.unalloc_tol_usd, 0)} unallocated landed cost stay flagged until capitalized.`
     },
-    {
-      id: 'ind_trd_06', code: '#06', industry: 'Automotive & Heavy Trading',
-      name: 'Monthly Map Tiles & Places Free-Tier Quota Guard',
-      domain: 'Location & Maps', behavior: 'audit',
-      whereLabel: 'AI Sentinels & Map Studio', jumpForm: '', jumpView: 'sentinels', lockedActive: false,
-      why: 'Protects the $0 monthly Google Maps free tier across Korri Auto showrooms, customs yards, and Shacman fleet delivery pins.',
-      params: [
-        { key: 'warn_pct', label: 'Debounce Tightening Warning (%)', def: 50, min: 20, max: 79, step: 5, unit: '%' },
-        { key: 'fallback_pct', label: 'Automatic OpenStreetMap Cutoff (%)', def: 95, min: 81, max: 99, step: 1, unit: '%' }
-      ],
-      whatFn: p => `Tracks monthly Map Tiles (100,000), Places (10,000), and Routes (10,000) usage. Tightens debounce at <b>${fmtNum(p.warn_pct, 0)}%</b> and enables OpenStreetMap fallback at <b>${fmtNum(p.fallback_pct, 0)}%</b>.`,
-      threshFn: p => `Warn >= ${fmtNum(p.warn_pct, 0)}% · Cutoff >= ${fmtNum(p.fallback_pct, 0)}%`,
-      previewFn: p => `Free-tier shield: Above ${fmtNum(p.warn_pct, 0)}% monthly quota search debounce slows to 600ms (1100ms at 80%), and at ${fmtNum(p.fallback_pct, 0)}% basemaps switch automatically to OpenStreetMap before any overage charge.`
-    },
 
-    // Real Estate & Property (6 rules)
+    // Real Estate & Property (5 rules)
     {
       id: 'ind_re_01', code: '#01', industry: 'Real Estate & Property',
       name: 'Lease Expiry & Stepped Escalation Watchdog',
@@ -21973,22 +21913,8 @@
       threshFn: p => `>= ${fmtNum(p.max_vacant_units, 0)} vacant units`,
       previewFn: p => `Live rule: Alerts leasing desk when ${fmtNum(p.max_vacant_units, 0)} or more commercial/residential units are vacant.`
     },
-    {
-      id: 'ind_re_06', code: '#06', industry: 'Real Estate & Property',
-      name: 'Monthly Map Tiles & Places Free-Tier Quota Guard',
-      domain: 'Location & Maps', behavior: 'audit',
-      whereLabel: 'AI Sentinels & Map Studio', jumpForm: '', jumpView: 'sentinels', lockedActive: false,
-      why: 'Protects the $0 monthly Google Maps free tier across 4235 Company S.A.L buildings, cadastral parcels, and tenant handover gate pins.',
-      params: [
-        { key: 'warn_pct', label: 'Debounce Tightening Warning (%)', def: 50, min: 20, max: 79, step: 5, unit: '%' },
-        { key: 'fallback_pct', label: 'Automatic OpenStreetMap Cutoff (%)', def: 95, min: 81, max: 99, step: 1, unit: '%' }
-      ],
-      whatFn: p => `Tracks monthly Map Tiles (100,000), Places (10,000), and Routes (10,000) usage. Tightens debounce at <b>${fmtNum(p.warn_pct, 0)}%</b> and enables OpenStreetMap fallback at <b>${fmtNum(p.fallback_pct, 0)}%</b>.`,
-      threshFn: p => `Warn >= ${fmtNum(p.warn_pct, 0)}% · Cutoff >= ${fmtNum(p.fallback_pct, 0)}%`,
-      previewFn: p => `Free-tier shield: Above ${fmtNum(p.warn_pct, 0)}% monthly quota search debounce slows to 600ms (1100ms at 80%), and at ${fmtNum(p.fallback_pct, 0)}% basemaps switch automatically to OpenStreetMap before any overage charge.`
-    },
 
-    // Insurance & Brokerage (6 rules)
+    // Insurance & Brokerage (5 rules)
     {
       id: 'ind_ins_01', code: '#01', industry: 'Insurance & Brokerage',
       name: 'Policy Expiry Renewal Pipeline & Lapsed Policy Watchdog',
@@ -22043,201 +21969,9 @@
       whatFn: p => `Flags open claim files under carrier survey or settlement review when count reaches <b>${fmtNum(p.open_claims_warn, 0)} claims</b>.`,
       threshFn: p => `>= ${fmtNum(p.open_claims_warn, 0)} open claims`,
       previewFn: p => `Live rule: Alerts claims desk whenever ${fmtNum(p.open_claims_warn, 0)} or more claims await carrier settlement.`
-    },
-    {
-      id: 'ind_ins_06', code: '#06', industry: 'Insurance & Brokerage',
-      name: 'Monthly Map Tiles & Places Free-Tier Quota Guard',
-      domain: 'Location & Maps', behavior: 'audit',
-      whereLabel: 'AI Sentinels & Map Studio', jumpForm: '', jumpView: 'sentinels', lockedActive: false,
-      why: 'Protects the $0 monthly Google Maps free tier across insured risk survey locations and FNOL inspection pins.',
-      params: [
-        { key: 'warn_pct', label: 'Debounce Tightening Warning (%)', def: 50, min: 20, max: 79, step: 5, unit: '%' },
-        { key: 'fallback_pct', label: 'Automatic OpenStreetMap Cutoff (%)', def: 95, min: 81, max: 99, step: 1, unit: '%' }
-      ],
-      whatFn: p => `Tracks monthly Map Tiles (100,000), Places (10,000), and Routes (10,000) usage. Tightens debounce at <b>${fmtNum(p.warn_pct, 0)}%</b> and enables OpenStreetMap fallback at <b>${fmtNum(p.fallback_pct, 0)}%</b>.`,
-      threshFn: p => `Warn >= ${fmtNum(p.warn_pct, 0)}% · Cutoff >= ${fmtNum(p.fallback_pct, 0)}%`,
-      previewFn: p => `Free-tier shield: Above ${fmtNum(p.warn_pct, 0)}% monthly quota search debounce slows to 600ms (1100ms at 80%), and at ${fmtNum(p.fallback_pct, 0)}% basemaps switch automatically to OpenStreetMap before any overage charge.`
     }
   ];
   IND_ALERT_RULE_CATALOG.forEach(r => ALERT_RULE_BY_ID.set(r.id, r));
-
-  function _getMapsQuotaSnapForUi() {
-    const snap = (window.MFG_GEO && typeof window.MFG_GEO.getMapsQuotaState === 'function')
-      ? window.MFG_GEO.getMapsQuotaState()
-      : null;
-    const m = (snap && snap.metrics) || {};
-    const custQuota = typeof isAlertRuleCustomized === 'function' && isAlertRuleCustomized('G_MAPS_QUOTA');
-    const snapTh = (snap && snap.thresholds && typeof snap.thresholds === 'object') ? snap.thresholds : {};
-    const rawWarn = custQuota ? getAlertParam('G_MAPS_QUOTA', 'warn_pct', 50) : (snapTh.warnPct != null ? snapTh.warnPct : 50);
-    const warnPct = Math.max(20, Math.min(79, Math.round(Number(rawWarn) || 50)));
-    const rawTight = snapTh.tightPct != null ? snapTh.tightPct : 80;
-    const tightPct = Math.max(warnPct + 1, Math.min(94, Math.round(Number(rawTight) || 80)));
-    const rawFallback = custQuota ? getAlertParam('G_MAPS_QUOTA', 'fallback_pct', 95) : (snapTh.fallbackPct != null ? snapTh.fallbackPct : 95);
-    const fallbackPct = Math.max(81, tightPct + 1, Math.min(99, Math.round(Number(rawFallback) || 95)));
-    const thresholds = { warnPct, tightPct, fallbackPct };
-    const normBand = b => (!b || b === 'normal') ? 'ok' : b;
-    const rankBand = b => (b === 'fallback_95' ? 3 : (b === 'tight_80' ? 2 : (b === 'warn_50' ? 1 : 0)));
-    const bandForPct = pct => (pct >= fallbackPct ? 'fallback_95' : (pct >= tightPct ? 'tight_80' : (pct >= warnPct ? 'warn_50' : 'ok')));
-    const defMetric = (lbl, limit) => ({ label: lbl, used: 0, limit, cap: limit, pct: 0, band: 'ok' });
-    const normMetric = (mt, lbl, limit) => {
-      const x = mt || defMetric(lbl, limit);
-      const cap = Number(x.limit || x.cap || limit || 0);
-      const used = Math.max(0, Number(x.used || 0));
-      const pct = Number.isFinite(Number(x.pct)) ? Number(x.pct) : (cap > 0 ? Math.round((used / cap) * 1000) / 10 : 0);
-      const hasUsage = used > 0 || pct > 0;
-      const b = hasUsage ? bandForPct(pct) : (normBand(x.band) || 'ok');
-      return Object.assign({}, x, { used, limit: cap, cap, pct, band: b });
-    };
-    const tiles = normMetric(m.tiles_2d, '2D Map Tiles', 100000);
-    const places = normMetric(m.places_text, 'Places Search', 10000);
-    const routes = normMetric(m.routes_compute, 'Routes Compute', 10000);
-    const elev = normMetric(m.elevation, 'Elevation Samples', 5000);
-    const maxPct = Math.max(Number(tiles.pct || 0), Number(places.pct || 0), Number(routes.pct || 0), Number(elev.pct || 0));
-    const allM = [tiles, places, routes, elev];
-    let band = 'ok';
-    allM.forEach(item => {
-      if (rankBand(item.band) > rankBand(band)) band = item.band;
-    });
-    if (!allM.some(item => Number(item.used || 0) > 0 || Number(item.pct || 0) > 0) && snap && snap.overallBand) {
-      band = normBand(snap.overallBand);
-    }
-    const policy = (snap && snap.clientPolicy) || {};
-    const gcp = (snap && snap.gcpBilling) || {
-      projectId: 'gen-lang-client-0240664641',
-      billingAccountId: '01D3FC-354800-7D0DCD',
-      budgetConfirmed: false,
-      consoleBudgetUrl: 'https://console.cloud.google.com/billing/01D3FC-354800-7D0DCD/budgets?project=gen-lang-client-0240664641'
-    };
-    return { snap, thresholds, metrics: { tiles_2d: tiles, places_text: places, routes_compute: routes, elevation: elev }, maxPct: Math.round(maxPct * 10) / 10, band, policy, gcp, month: (snap && snap.month) || todayISO().slice(0, 7) };
-  }
-
-  function buildMapsQuotaSentinelItem(opts = {}) {
-    const ruleId = opts.ruleId || 'G_MAPS_QUOTA';
-    const itemId = opts.itemId || ruleId;
-    const isMfg = ruleId === 'G_MAPS_QUOTA';
-    const q = _getMapsQuotaSnapForUi();
-    const th = q.thresholds || { warnPct: 50, tightPct: 80, fallbackPct: 95 };
-    const warnPct = th.warnPct;
-    const fallbackPct = th.fallbackPct;
-    const { tiles_2d, places_text, routes_compute } = q.metrics;
-    let sev = 'ok';
-    let badge = `FREE TIER OK (${q.maxPct.toFixed(0)}%)`;
-    if (q.band === 'fallback_95' || q.maxPct >= fallbackPct) {
-      sev = 'crit';
-      badge = `OSM FALLBACK (${q.maxPct.toFixed(0)}%)`;
-    } else if (q.band === 'tight_80' || q.band === 'warn_50' || q.maxPct >= warnPct) {
-      sev = 'warn';
-      badge = `${q.policy.placesDebounceMs || (q.maxPct >= th.tightPct ? 1100 : 600)}MS DEBOUNCE (${q.maxPct.toFixed(0)}%)`;
-    }
-    const modeNote = q.band === 'fallback_95'
-      ? 'OpenStreetMap tiles and frequency-ranked local search active ($0 free tier preserved).'
-      : (q.band === 'tight_80'
-        ? `Places autocomplete throttled to 1100ms debounce ahead of ${fallbackPct}% OpenStreetMap cutoff.`
-        : (q.band === 'warn_50'
-          ? `Places autocomplete throttled to 600ms debounce above ${warnPct}% warning threshold.`
-          : 'Google Maps 2D/Hybrid tiles and 260ms Places search running inside the $0 monthly free tier.'));
-    const budgetNote = q.gcp && q.gcp.budgetConfirmed ? ' · $1 Billing Budget Confirmed' : ' · $1 Billing Budget Pending Confirmation';
-    return {
-      id: itemId,
-      ruleId,
-      code: isMfg ? 'Rule #24 · Dispatch & Maps' : 'Rule #06 · Location & Maps',
-      title: 'Monthly Map Tiles & Places Free-Tier Quota Guard',
-      detail: `Month ${q.month}: Tiles ${fmtNum(tiles_2d.used, 0)}/${fmtNum(tiles_2d.limit, 0)} (${Number(tiles_2d.pct || 0).toFixed(1)}%), Places ${fmtNum(places_text.used, 0)}/${fmtNum(places_text.limit, 0)} (${Number(places_text.pct || 0).toFixed(1)}%), Routes ${fmtNum(routes_compute.used, 0)}/${fmtNum(routes_compute.limit, 0)} (${Number(routes_compute.pct || 0).toFixed(1)}%). ${modeNote}${budgetNote}`,
-      severity: sev,
-      badge,
-      company: opts.company || (isMfg ? 'All Operations' : 'Location & Maps'),
-      rawMetric: Math.round(q.maxPct),
-      rawSecondary: Number(tiles_2d.used || 0) + Number(places_text.used || 0),
-      scrollPanel: 'sentinelMapsQuotaCard',
-      navView: 'reg_sites',
-      navLabel: 'Open Map Studio'
-    };
-  }
-
-  function renderMapsQuotaPanelHtml() {
-    const q = _getMapsQuotaSnapForUi();
-    const th = q.thresholds || { warnPct: 50, tightPct: 80, fallbackPct: 95 };
-    const rows = [
-      { key: 'tiles_2d', name: '2D / Hybrid Map Tiles', m: q.metrics.tiles_2d },
-      { key: 'places_text', name: 'Places Text Search', m: q.metrics.places_text },
-      { key: 'routes_compute', name: 'Routes API Compute', m: q.metrics.routes_compute },
-      { key: 'elevation', name: 'Elevation Grade Samples', m: q.metrics.elevation }
-    ];
-    const policyLbl = q.band === 'fallback_95'
-      ? 'OpenStreetMap + Local Search Active'
-      : (q.band === 'tight_80'
-        ? 'Tightened 1100ms Debounce'
-        : (q.band === 'warn_50' ? 'Warning 600ms Debounce' : 'Google Live · 260ms Debounce'));
-    const policyCls = q.band === 'fallback_95' ? 'badge-err' : ((q.band === 'warn_50' || q.band === 'tight_80') ? 'badge-warn' : 'badge-ok');
-    const canConfirmBudget = isOwner(activeUser());
-    const isDemo = isDemoScopeActive();
-    const gcpUrl = (q.gcp && q.gcp.consoleBudgetUrl) || 'https://console.cloud.google.com/billing/01D3FC-354800-7D0DCD/budgets?project=gen-lang-client-0240664641';
-    const routesUrl = (q.snap && q.snap.routesApi && q.snap.routesApi.consoleUrl) || 'https://console.cloud.google.com/apis/library/routes.googleapis.com?project=gen-lang-client-0240664641';
-    return `
-      <div class="sn-maps-quota-card" id="sentinelMapsQuotaCard" data-quota-band="${esc(q.band)}">
-        <div class="panel-head" style="margin-bottom:4px;flex-wrap:wrap;gap:8px">
-          <div>
-            <div class="panel-title"><span>${ic('reg_sites')} GOOGLE MAPS FREE-TIER QUOTA &amp; GCP BILLING GUARD</span></div>
-            <div style="font-size:11.5px;color:var(--muted);margin-top:2px"><span>Billing Cycle</span> <b class="mono" data-no-i18n="1">${esc(q.month)}</b> · <span>${`Thresholds at ${th.warnPct}%, ${th.tightPct}%, and ${th.fallbackPct}% preserve the $0 monthly tier`}</span></div>
-          </div>
-          <span class="badge ${policyCls}" id="sentinelMapsPolicyBadge">${esc(policyLbl)}</span>
-        </div>
-        <div class="sn-maps-quota-grid">
-          ${rows.map(r => {
-            const pct = Math.max(0, Math.min(100, Number((r.m && r.m.pct) || 0)));
-            const mBand = (r.m && r.m.band) || 'ok';
-            const barCls = mBand === 'fallback_95' ? 'is-crit' : ((mBand === 'tight_80' || mBand === 'warn_50') ? 'is-warn' : 'is-ok');
-            const mStatusLbl = mBand === 'fallback_95' ? 'Fallback Active' : (mBand === 'tight_80' ? 'Tight' : (mBand === 'warn_50' ? 'Warn' : 'Free Tier'));
-            return `
-              <div class="sn-maps-quota-meter" data-quota-metric="${esc(r.key)}">
-                <div class="sn-maps-quota-mhead">
-                  <span>${esc(r.name)}</span>
-                  <span class="mono" data-no-i18n="1">${pct.toFixed(1)}%</span>
-                </div>
-                <div class="sn-maps-quota-bar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
-                  <div class="sn-maps-quota-fill ${barCls}" style="width:${pct.toFixed(1)}%"></div>
-                  <span class="sn-maps-quota-tick" style="left:${th.warnPct}%" data-ui-tip="${esc(`${th.warnPct}% Warning threshold: Places debounce tightens to 600ms`)}"></span>
-                  <span class="sn-maps-quota-tick" style="left:${th.tightPct}%" data-ui-tip="${esc(`${th.tightPct}% Tight threshold: Places debounce tightens to 1100ms`)}"></span>
-                  <span class="sn-maps-quota-tick" style="left:${th.fallbackPct}%" data-ui-tip="${esc(`${th.fallbackPct}% Cutoff: Automatic OpenStreetMap tiles and local search`)}"></span>
-                </div>
-                <div class="sn-maps-quota-msub">
-                  <span class="mono" data-no-i18n="1">${fmtNum((r.m && r.m.used) || 0, 0)} / ${fmtNum((r.m && r.m.limit) || 0, 0)}</span>
-                  <span>${esc(mStatusLbl)}</span>
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-        <div class="sn-maps-quota-actions">
-          <div style="font-size:11.5px;color:var(--muted)">
-            <span>GCP Billing Budget ($1.00 Alert)</span>:
-            <b id="sentinelGcpBudgetStatus">${q.gcp && q.gcp.budgetConfirmed ? 'Confirmed Active' : 'Pending Owner Confirmation'}</b>
-            ${q.gcp && q.gcp.budgetConfirmedBy ? `<span class="mono" data-no-i18n="1"> (${esc(q.gcp.budgetConfirmedBy)})</span>` : ''}
-          </div>
-          <div class="sn-maps-quota-btns">
-            <a class="btn-sn-act" href="${esc(gcpUrl)}" target="_blank" rel="noopener">${ic('external')} GCP $1 Budget</a>
-            <a class="btn-sn-act" href="${esc(routesUrl)}" target="_blank" rel="noopener">${ic('external')} Enable Routes API</a>
-            ${canConfirmBudget && !isDemo ? `<button type="button" class="btn-sn-act ${q.gcp && q.gcp.budgetConfirmed ? 'is-undo' : 'is-check'}" id="confirmGcpBudgetBtn" data-confirmed="${q.gcp && q.gcp.budgetConfirmed ? '1' : '0'}">${ic('check_circle')} ${q.gcp && q.gcp.budgetConfirmed ? 'Unconfirm Budget Alert' : 'Confirm $1 Budget Alert'}</button>` : ''}
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__isabiMapsQuotaListenerWired) {
-    window.__isabiMapsQuotaListenerWired = true;
-    window.addEventListener('isabi:maps-quota-changed', () => {
-      try {
-        if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
-        if (STATE && (STATE.view === 'sentinels' || STATE.view === 'alert_rules')) {
-          const ws = $('workspace');
-          const y = ws ? ws.scrollTop : 0;
-          renderApp();
-          if (ws) ws.scrollTop = y;
-        }
-      } catch (_) {}
-    });
-  }
 
   const CUSTOM_ALERT_DOMAINS = [
     { key: 'all', label: 'All Areas' },
@@ -23331,13 +23065,9 @@
     _meterGuardCacheVal = null;
   }
 
-  const MAPS_QUOTA_SIBLING_IDS = ['ind_hld_06', 'ind_hsp_06', 'ind_trd_06', 'ind_re_06', 'ind_ins_06'];
-
   function persistAlertRulesChange(changedOverrides, changedCustom) {
     invalidateAlertRuleCaches();
     saveLocalAuthAndRecords();
-    const ovKeys = changedOverrides && typeof changedOverrides === 'object' ? Object.keys(changedOverrides) : [];
-    const touchesMapsQuota = ovKeys.some(k => k === 'G_MAPS_QUOTA' || MAPS_QUOTA_SIBLING_IDS.includes(k));
     if (hasServerApi() && !isDemoScopeActive()) {
       edgeApiFetch('./api/alert_rules', {
         method: 'POST',
@@ -23346,12 +23076,6 @@
           overrides: changedOverrides || {},
           custom: changedCustom || []
         })
-      }).then(() => {
-        if (touchesMapsQuota && window.MFG_GEO && typeof window.MFG_GEO.fetchMapsUsageSnapshot === 'function') {
-          Promise.resolve(window.MFG_GEO.fetchMapsUsageSnapshot(true)).then(() => {
-            if (STATE.view === 'sentinels' && typeof renderApp === 'function') renderApp();
-          }).catch(() => {});
-        }
       }).catch(() => {});
     }
     syncWithCloud(true);
@@ -23514,8 +23238,7 @@
   }
 
   function renderAlertRules() {
-    const canEditCustom = canReviewSentinels();
-    const canEditBuiltIn = isOwner(activeUser());
+    const canEdit = canReviewSentinels();
     const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
     const isMfgScope = !activeInd || activeInd === 'Manufacturing';
     const sentItems = buildSentinelItems();
@@ -23758,12 +23481,12 @@
           <span class="panel-meta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span>Click any row or <b>Modify</b> to inspect examples &amp; edit thresholds</span>
             <button type="button" class="btn-sn-act" data-nav-jump="sentinels">${ic('sentinels')} View Live Audit Results</button>
-            ${canEditBuiltIn && editedBuiltInCnt > 0 ? `<button type="button" class="btn-sn-act is-undo" id="resetAllAlertRulesBtn">${ic('rotate')} Reset All Defaults (${fmtNum(editedBuiltInCnt)})</button>` : ''}
-            ${canEditCustom ? `<button type="button" class="btn btn-primary" id="toggleCustomAlertCreatorBtn" style="padding:5px 11px;font-size:12px">${ic('plus')} ${STATE.alertRulesShowCreator ? 'Close Creator' : 'New Custom Alert'}</button>` : ''}
+            ${canEdit && editedBuiltInCnt > 0 ? `<button type="button" class="btn-sn-act is-undo" id="resetAllAlertRulesBtn">${ic('rotate')} Reset All Defaults (${fmtNum(editedBuiltInCnt)})</button>` : ''}
+            ${canEdit ? `<button type="button" class="btn btn-primary" id="toggleCustomAlertCreatorBtn" style="padding:5px 11px;font-size:12px">${ic('plus')} ${STATE.alertRulesShowCreator ? 'Close Creator' : 'New Custom Alert'}</button>` : ''}
           </span>
         </div>
 
-        ${canEditCustom && STATE.alertRulesShowCreator ? `
+        ${canEdit && STATE.alertRulesShowCreator ? `
           <div class="alert-custom-creator" id="customAlertCreatorCard">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
               <strong style="font-size:13.5px;color:var(--ink)">${ic('sliders')} Add a New Custom Alert &amp; Business Reason</strong>
@@ -23865,7 +23588,6 @@
             <tbody>
               ${visibleRows.length ? visibleRows.map(r => {
                 const isExp = STATE.alertRulesExpanded === r.id;
-                const canEditRow = r.isCustom ? canEditCustom : canEditBuiltIn;
                 const jumpAttr = r.jumpForm && canEnterForm(r.jumpForm)
                   ? `data-ar-jump-form="${esc(r.jumpForm)}"`
                   : (r.jumpView && canViewView(r.jumpView) ? `data-ar-jump-view="${esc(r.jumpView)}"` : '');
@@ -23901,7 +23623,7 @@
                     </td>
                     <td class="r">
                       <div class="alert-row-actions">
-                        <button type="button" class="btn-sn-act ${isExp ? 'is-check' : ''}" data-ar-expand="${esc(r.id)}">${ic('sliders')} ${isExp ? 'Close' : (canEditRow ? 'Modify' : 'Inspect')}</button>
+                        <button type="button" class="btn-sn-act ${isExp ? 'is-check' : ''}" data-ar-expand="${esc(r.id)}">${ic('sliders')} ${isExp ? 'Close' : (canEdit ? 'Modify' : 'Inspect')}</button>
                       </div>
                     </td>
                   </tr>
@@ -23916,9 +23638,9 @@
                               ${r.lockedActive ? '<span class="badge badge-ok">Core Accounting Rule (Always Active)</span>' : ''}
                             </div>
                             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                              ${canEditRow && !r.lockedActive ? `<button type="button" class="btn-sn-act ${r.enabled ? 'is-undo' : 'is-check'}" data-ar-toggle="${esc(r.id)}">${r.enabled ? 'Pause This Alert' : 'Resume This Alert'}</button>` : ''}
-                              ${canEditRow && !r.isCustom && r.edited ? `<button type="button" class="btn-sn-act" data-ar-reset="${esc(r.id)}">${ic('rotate')} Reset to Factory Default</button>` : ''}
-                              ${canEditRow && r.isCustom ? `<button type="button" class="btn-sn-act is-undo" data-ar-delete-custom="${esc(r.id)}">${ic('trash')} Delete Custom Alert</button>` : ''}
+                              ${canEdit && !r.lockedActive ? `<button type="button" class="btn-sn-act ${r.enabled ? 'is-undo' : 'is-check'}" data-ar-toggle="${esc(r.id)}">${r.enabled ? 'Pause This Alert' : 'Resume This Alert'}</button>` : ''}
+                              ${canEdit && !r.isCustom && r.edited ? `<button type="button" class="btn-sn-act" data-ar-reset="${esc(r.id)}">${ic('rotate')} Reset to Factory Default</button>` : ''}
+                              ${canEdit && r.isCustom ? `<button type="button" class="btn-sn-act is-undo" data-ar-delete-custom="${esc(r.id)}">${ic('trash')} Delete Custom Alert</button>` : ''}
                             </div>
                           </div>
 
@@ -23929,9 +23651,9 @@
                                 <div class="alert-param-box">
                                   <label class="alert-param-lbl" for="arp_${esc(r.id)}_${esc(p.key)}">${esc(p.label)}</label>
                                   <div class="alert-stepper">
-                                    ${canEditRow ? `<button type="button" class="alert-step-btn" data-ar-step="-1" data-ar-rule="${esc(r.id)}" data-ar-key="${esc(p.key)}" aria-label="Decrease ${esc(p.label)}">-</button>` : ''}
-                                    <input type="number" class="alert-param-input" id="arp_${esc(r.id)}_${esc(p.key)}" data-ar-param-input="${esc(r.id)}" data-ar-key="${esc(p.key)}" value="${esc(String(curVal))}" min="${esc(String(p.min))}" max="${esc(String(p.max))}" step="${esc(String(p.step))}" ${canEditRow ? '' : 'readonly'}>
-                                    ${canEditRow ? `<button type="button" class="alert-step-btn" data-ar-step="1" data-ar-rule="${esc(r.id)}" data-ar-key="${esc(p.key)}" aria-label="Increase ${esc(p.label)}">+</button>` : ''}
+                                    ${canEdit ? `<button type="button" class="alert-step-btn" data-ar-step="-1" data-ar-rule="${esc(r.id)}" data-ar-key="${esc(p.key)}" aria-label="Decrease ${esc(p.label)}">-</button>` : ''}
+                                    <input type="number" class="alert-param-input" id="arp_${esc(r.id)}_${esc(p.key)}" data-ar-param-input="${esc(r.id)}" data-ar-key="${esc(p.key)}" value="${esc(String(curVal))}" min="${esc(String(p.min))}" max="${esc(String(p.max))}" step="${esc(String(p.step))}" ${canEdit ? '' : 'readonly'}>
+                                    ${canEdit ? `<button type="button" class="alert-step-btn" data-ar-step="1" data-ar-rule="${esc(r.id)}" data-ar-key="${esc(p.key)}" aria-label="Increase ${esc(p.label)}">+</button>` : ''}
                                     <span class="alert-param-unit">${esc(p.unit)}</span>
                                   </div>
                                   <div class="alert-param-def">Factory default: <b>${esc(String(p.def))} ${esc(p.unit)}</b> (range ${esc(String(p.min))} to ${esc(String(p.max))})</div>
@@ -23946,14 +23668,14 @@
 
                           <div class="alert-why-edit-wrap">
                             <label for="arWhy_${esc(r.id)}">Why We Added This Alert (Business Reason &amp; Your Notes)</label>
-                            <input type="text" class="alert-why-input" id="arWhy_${esc(r.id)}" data-ar-why-input="${esc(r.id)}" value="${esc(r.whyText)}" ${canEditRow ? '' : 'readonly'} placeholder="Write why this alert exists so your team always remembers...">
+                            <input type="text" class="alert-why-input" id="arWhy_${esc(r.id)}" data-ar-why-input="${esc(r.id)}" value="${esc(r.whyText)}" ${canEdit ? '' : 'readonly'} placeholder="Write why this alert exists so your team always remembers...">
                           </div>
 
                           <div class="alert-tune-foot">
                             <span style="font-size:11.5px;color:var(--muted)">Changes apply immediately across Entry Forms, Kiosks, Analytics &amp; AI Sentinels, and sync across devices.</span>
                             <div style="display:flex;gap:8px;align-items:center">
                               <button type="button" class="btn-ghost-bar" data-ar-expand="${esc(r.id)}">Close</button>
-                              ${canEditRow ? `<button type="button" class="btn btn-brass" data-ar-save="${esc(r.id)}">Save Threshold &amp; Note</button>` : ''}
+                              ${canEdit ? `<button type="button" class="btn btn-brass" data-ar-save="${esc(r.id)}">Save Threshold &amp; Note</button>` : ''}
                             </div>
                           </div>
                         </div>
@@ -24631,9 +24353,7 @@
       const sr = _wdStaffArr[i];
       if (sr) wdSig += '|' + (sr.id || '') + ':' + (sr.nationality || '') + ':' + (sr.status || '') + ':' + (sr.id_expiry_date || '') + ':' + (sr.work_permit_expiry || '') + ':' + (sr.residency_expiry || '');
     }
-    const qSnapUi = _getMapsQuotaSnapForUi();
-    const qSig = `${qSnapUi.band}:${qSnapUi.metrics.tiles_2d.used}:${qSnapUi.metrics.places_text.used}:${qSnapUi.metrics.routes_compute.used}:${qSnapUi.gcp && qSnapUi.gcp.budgetConfirmed ? 1 : 0}`;
-    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}`;
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
     let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
     if (!rawItems) {
@@ -24896,7 +24616,6 @@
         navLabel: 'Open Pricing'
       });
     }
-    if (isAlertRuleEnabled('G_MAPS_QUOTA')) rawItems.push(buildMapsQuotaSentinelItem({ ruleId: 'G_MAPS_QUOTA', itemId: 'M24', company: 'All Operations' }));
       }
 
       const s13CritDays = getAlertParam('S13', 'crit_window_days', 7);
@@ -25851,9 +25570,6 @@
   }
 
   function renderSentinels() {
-    if (window.MFG_GEO && typeof window.MFG_GEO.fetchMapsUsageSnapshot === 'function') {
-      window.MFG_GEO.fetchMapsUsageSnapshot(false);
-    }
     const items = buildSentinelItems();
     const { fleet, pricing, parity, overdueArRows, wfAnomalies, generated, isLive } = sentinelSlice();
     const open = items.filter(i => i.severity !== 'ok').length;
@@ -26024,7 +25740,7 @@
               <div class="sentinel-item ${rowCls} is-interactive" data-sn-card="${esc(s.id)}" style="padding:14px 16px" title="Click to jump to itemized records">
                 <div class="sentinel-body">
                   <div class="sentinel-meta-row">
-                    ${!s.isCustom ? `<span class="sr-only" data-no-i18n="1">${esc(s.id)}</span>` : ''}
+                    ${!s.isCustom ? `<span class="sr-only">${esc(s.id)}</span>` : ''}
                     <span class="mono" style="font-size:10.5px;color:var(--brass)">${esc(s.code)} · ${esc(s.company)}</span>
                     ${signedPill}
                   </div>
@@ -26035,7 +25751,7 @@
                   <span class="badge ${badgeCls}">${esc(s.badge)}</span>
                   <button type="button" class="btn-sn-act sn-ai-act-btn sn-explain-btn" data-sn-explain="${esc(s.id)}" aria-haspopup="dialog" aria-expanded="false">${ic('sparkles')}<span class="sn-exp-lbl">Explain</span></button>
                   <button type="button" class="btn-sn-act sn-ai-act-btn sn-listen-btn" data-sn-summary="${esc(s.id)}" aria-pressed="false">${ic('audio')}<span class="sn-lsn-lbl">Listen</span></button>
-                  ${canViewView('alert_rules') ? `<button type="button" class="btn-sn-act" data-open-alert-rule="${esc(s.ruleId || s.id)}" title="See why this alert exists and edit its threshold">${ic('sliders')} Threshold &amp; Why</button>` : ''}
+                  ${canViewView('alert_rules') ? `<button type="button" class="btn-sn-act" data-open-alert-rule="${esc(s.id)}" title="See why this alert exists and edit its threshold">${ic('sliders')} Threshold &amp; Why</button>` : ''}
                   ${s.scrollPanel ? `<button type="button" class="btn-sn-act" data-sn-inspect="${esc(s.id)}">Inspect Rows</button>` : ''}
                   ${s.navView && canViewView(s.navView) ? `<button type="button" class="btn-sn-act" data-sn-open-mod="${esc(s.navView)}">${esc(s.navLabel || 'Open Module')}</button>` : ''}
                   ${canSignOff && s.severity !== 'ok' ? `<button type="button" class="btn-sn-act is-check" data-sn-check="${esc(s.id)}">${ic('check_circle')} Mark Checked</button>` : ''}
@@ -26046,8 +25762,6 @@
           }).join('') : `<div style="padding:20px 16px;font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><span>No rules match the <b>${esc(snFilter)}</b> filter for ${esc(COMPANY_LABELS[STATE.company])}.</span><button type="button" class="btn-sn-act" data-sn-filter="all">Show All Rules (${fmtNum(items.length)})</button></div>`}
         </div>
       </div>
-
-      ${renderMapsQuotaPanelHtml()}
 
       ${renderIndustrySentinelDetailPanel()}
 
@@ -58911,7 +58625,7 @@
     const onlyEnabled = list => {
       const base = list
         .filter(it => !it.ruleId || isAlertRuleEnabled(it.ruleId))
-        .map(it => Object.assign({}, it, { scrollPanel: it.scrollPanel === 'sentinelMapsQuotaCard' ? 'sentinelMapsQuotaCard' : `snInd_${it.id}` }));
+        .map(it => Object.assign({}, it, { scrollPanel: `snInd_${it.id}` }));
       const scopedMetrics = getCustomAlertMetricsForIndustry(ind);
       const snAllowedCos = allowedCompanyNames();
       const customRules = getActiveCustomAlertRules().filter(cr => cr && cr.enabled !== false && scopedMetrics[cr.metric] && (!cr.company || cr.company === 'all' || matchesCashScopeCompany({ company: cr.company }, STATE.company, snAllowedCos)));
@@ -59010,8 +58724,7 @@
           company: 'Bdeir Holding · Group',
           rawMetric: 0, rawSecondary: 0,
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'hld_due_matrix', navLabel: 'Open Due Matrix'
-        },
-        buildMapsQuotaSentinelItem({ ruleId: 'ind_hld_06', itemId: 'H6', company: scopeLabel })
+        }
       ]);
     }
 
@@ -59082,8 +58795,7 @@
           company: scopeLabel,
           rawMetric: arrRows.length, rawSecondary: Math.round(s.totalMemArrears),
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'hsp_memberships', navLabel: 'Open Memberships'
-        },
-        buildMapsQuotaSentinelItem({ ruleId: 'ind_hsp_06', itemId: 'R6', company: scopeLabel })
+        }
       ]);
     }
 
@@ -59154,8 +58866,7 @@
           company: scopeLabel,
           rawMetric: unallocFiles.length, rawSecondary: Math.round(s.unallocatedLandedUsd),
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'trd_landed', navLabel: 'Open Landed Cost'
-        },
-        buildMapsQuotaSentinelItem({ ruleId: 'ind_trd_06', itemId: 'T6', company: scopeLabel })
+        }
       ]);
     }
 
@@ -59225,8 +58936,7 @@
           company: scopeLabel,
           rawMetric: re.vacantUnitCount, rawSecondary: s.totalUnits,
           scrollPanel: 'industrySentinelsDetailPanel', navView: 're_units', navLabel: 'Open Building Units'
-        },
-        buildMapsQuotaSentinelItem({ ruleId: 'ind_re_06', itemId: 'P6', company: scopeLabel })
+        }
       ]);
     }
 
@@ -59296,8 +59006,7 @@
           company: scopeLabel,
           rawMetric: s.openClaimsCount, rawSecondary: s.totalPolicyCount,
           scrollPanel: 'industrySentinelsDetailPanel', navView: 'ins_claims', navLabel: 'Open Claims'
-        },
-        buildMapsQuotaSentinelItem({ ruleId: 'ind_ins_06', itemId: 'I6', company: scopeLabel })
+        }
       ]);
     }
 
@@ -69565,56 +69274,6 @@
         return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
       }
 
-      if (/^(M24|G_MAPS_QUOTA|H6|R6|T6|P6|I6)$/.test(rid)) {
-        const q = _getMapsQuotaSnapForUi();
-        const tilesUsed = safeNum(q.metrics.tiles_2d && q.metrics.tiles_2d.used);
-        const tilesLim = Math.max(1, safeNum(q.metrics.tiles_2d && q.metrics.tiles_2d.limit) || 100000);
-        const placesUsed = safeNum(q.metrics.places_text && q.metrics.places_text.used);
-        const placesLim = Math.max(1, safeNum(q.metrics.places_text && q.metrics.places_text.limit) || 10000);
-        const routesUsed = safeNum(q.metrics.routes_compute && q.metrics.routes_compute.used);
-        const routesLim = Math.max(1, safeNum(q.metrics.routes_compute && q.metrics.routes_compute.limit) || 10000);
-        const debMs = safeNum((q.policy && q.policy.placesDebounceMs) || (q.band === 'tight_80' ? 1100 : (q.band === 'warn_50' ? 600 : 260)));
-        const isOsm = q.band === 'fallback_95';
-        const budOk = Boolean(q.gcp && q.gcp.budgetConfirmed);
-        expUsd = 0;
-        rowCnt = q.band === 'ok' ? 0 : 1;
-        physValEn = `${q.maxPct.toFixed(1)}% Peak`;
-        physValAr = `${q.maxPct.toFixed(1)}% ذروة`;
-        physValFr = `${q.maxPct.toFixed(1)}% pic`;
-        topParty = isOsm ? 'OpenStreetMap Fallback' : 'Google Maps Platform';
-        topSubEn = `${fmtNum(tilesUsed, 0)}/${fmtNum(tilesLim, 0)} tiles · ${fmtNum(debMs, 0)}ms debounce`;
-        topSubAr = `${fmtNum(tilesUsed, 0)}/${fmtNum(tilesLim, 0)} خرائط · ${fmtNum(debMs, 0)} مللي`;
-        topSubFr = `${fmtNum(tilesUsed, 0)}/${fmtNum(tilesLim, 0)} tuiles · ${fmtNum(debMs, 0)}ms`;
-        bEn = [
-          `Cycle ${q.month} on ${companyEn}: 2D tiles ${fmtNum(tilesUsed, 0)}/${fmtNum(tilesLim, 0)}, Places search ${fmtNum(placesUsed, 0)}/${fmtNum(placesLim, 0)}, Routes ${fmtNum(routesUsed, 0)}/${fmtNum(routesLim, 0)} (${q.maxPct.toFixed(1)}% peak).`,
-          isOsm
-            ? 'Automatic 95% cutoff switched Map Studio to OpenStreetMap tiles and frequency-ranked local search ($0 tier preserved).'
-            : `Places autocomplete debounce is set to ${fmtNum(debMs, 0)}ms; Google Cloud $1 billing alert status is ${budOk ? 'Confirmed Active' : 'Pending Owner Confirmation'}.`,
-          budOk
-            ? 'Adjust Warn or OSM Cutoff thresholds under Alerts & Thresholds if field mapping volume expands.'
-            : 'Click Confirm $1 GCP Budget Active on the Maps Quota card once the Billing Alert email rule is verified.'
-        ];
-        bAr = [
-          `دورة ${q.month} في ${companyAr}: اللوحات ${fmtNum(tilesUsed, 0)}/${fmtNum(tilesLim, 0)}، بحث الأماكن ${fmtNum(placesUsed, 0)}/${fmtNum(placesLim, 0)}، المسارات ${fmtNum(routesUsed, 0)}/${fmtNum(routesLim, 0)} (ذروة ${q.maxPct.toFixed(1)}%).`,
-          isOsm
-            ? 'تم التحويل التلقائي عند 95% إلى خرائط OpenStreetMap والبحث المحلي المرتب بالتكرار حفاظاً على الباقة المجانية ($0).'
-            : `مهلة البحث مضبوطة على ${fmtNum(debMs, 0)} مللي ثانية وحالة تنبيه ميزانية Google Cloud ($1) هي ${budOk ? 'مؤكدة' : 'بانتظار تأكيد المالك'}.`,
-          budOk
-            ? 'يمكنك تعديل عتبات التنبيه والتحويل من شاشة التنبيهات والعتبات عند توسع العمل الميداني.'
-            : 'اضغط على تأكيد ميزانية $1 بعد تفعيل تنبيه الفوترة في Google Cloud.'
-        ];
-        bFr = [
-          `Cycle ${q.month} sur ${companyFr} : tuiles ${fmtNum(tilesUsed, 0)}/${fmtNum(tilesLim, 0)}, Places ${fmtNum(placesUsed, 0)}/${fmtNum(placesLim, 0)}, Routes ${fmtNum(routesUsed, 0)}/${fmtNum(routesLim, 0)} (pic ${q.maxPct.toFixed(1)}%).`,
-          isOsm
-            ? 'Le seuil de 95% a basculé automatiquement vers OpenStreetMap et la recherche locale (forfait gratuit 0 $ préservé).'
-            : `L anti-rebond Places est à ${fmtNum(debMs, 0)} ms et l alerte budget Google Cloud 1 $ est ${budOk ? 'confirmée' : 'en attente de confirmation'}.`,
-          budOk
-            ? 'Ajustez les seuils dans Alertes & Seuils si le volume terrain augmente.'
-            : 'Cliquez sur Confirmer le budget GCP 1 $ une fois l alerte e-mail vérifiée dans Cloud Billing.'
-        ];
-        return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
-      }
-
       if (!isNonMfg) {
         // Manufacturing S2 - S11
         if (rid === 'S2') {
@@ -70310,14 +69969,7 @@
         I2: { ar: 'فروقات كشوفات عمولات شركات التأمين مقابل الاتفاقيات', fr: 'Écarts relevés commissions compagnies vs accords' },
         I3: { ar: 'الأقساط المحصلة قيد الأمانة والمستحق لشركات التأمين', fr: 'Primes encaissées détenues & net à reverser compagnies' },
         I4: { ar: 'مراقب خصومات العملاء مقابل إجمالي عمولة الوساطة', fr: 'Garde-fou remises clients vs commission brute' },
-        I5: { ar: 'ملفات المطالبات النشطة قيد الخبرة والاسترداد', fr: 'Sinistres actifs sous expertise & recours' },
-        M24: { ar: 'مراقب الحصة المجانية لخرائط وأماكن Google الشهرية', fr: 'Garde-fou du quota mensuel gratuit Google Maps & Places' },
-        G_MAPS_QUOTA: { ar: 'مراقب الحصة المجانية لخرائط وأماكن Google الشهرية', fr: 'Garde-fou du quota mensuel gratuit Google Maps & Places' },
-        H6: { ar: 'مراقب الحصة المجانية لخرائط وأماكن Google الشهرية', fr: 'Garde-fou du quota mensuel gratuit Google Maps & Places' },
-        R6: { ar: 'مراقب الحصة المجانية لخرائط وأماكن Google الشهرية', fr: 'Garde-fou du quota mensuel gratuit Google Maps & Places' },
-        T6: { ar: 'مراقب الحصة المجانية لخرائط وأماكن Google الشهرية', fr: 'Garde-fou du quota mensuel gratuit Google Maps & Places' },
-        P6: { ar: 'مراقب الحصة المجانية لخرائط وأماكن Google الشهرية', fr: 'Garde-fou du quota mensuel gratuit Google Maps & Places' },
-        I6: { ar: 'مراقب الحصة المجانية لخرائط وأماكن Google الشهرية', fr: 'Garde-fou du quota mensuel gratuit Google Maps & Places' }
+        I5: { ar: 'ملفات المطالبات النشطة قيد الخبرة والاسترداد', fr: 'Sinistres actifs sous expertise & recours' }
       };
       const tLoc = RULE_TITLES_LOC[targetItem.id] || null;
       const cleanRuleTitleEn = sanitizePlain(`${targetItem.id} · ${targetItem.title}`);
@@ -80447,35 +80099,6 @@
                 </div>
               `;
             })() : ''}
-            ${(() => {
-              if (!domainGeoSpec || !window.MFG_GEO || typeof window.MFG_GEO.renderGatePinCardHtml !== 'function') return '';
-              const domGatePin = (domainGeoSpec.siteName && typeof window.MFG_GEO.resolveVerifiedSiteGatePin === 'function'
-                ? window.MFG_GEO.resolveVerifiedSiteGatePin(domainGeoSpec.siteName, { industry: ind, company: rowCompany, ticketNo: primaryId, SEED, STATE })
-                : null)
-                || ((domainGeoSpec.initLat !== '' && domainGeoSpec.initLng !== '' && typeof window.MFG_GEO.resolveDirectGatePin === 'function')
-                  ? window.MFG_GEO.resolveDirectGatePin({
-                      name: domainGeoSpec.siteName || primaryId,
-                      lat: domainGeoSpec.initLat,
-                      lng: domainGeoSpec.initLng,
-                      region: domainGeoSpec.initRegion,
-                      industry: ind,
-                      company: rowCompany
-                    }, { industry: ind, company: rowCompany, ticketNo: primaryId, SEED, STATE })
-                  : null)
-                || ((!domainGeoSpec.initCleared && domainGeoSpec.baselinePin && Number.isFinite(domainGeoSpec.baselinePin.lat) && Number.isFinite(domainGeoSpec.baselinePin.lng) && typeof window.MFG_GEO.resolveDirectGatePin === 'function')
-                  ? window.MFG_GEO.resolveDirectGatePin({
-                      name: domainGeoSpec.baselinePin.label || domainGeoSpec.siteName || primaryId,
-                      lat: domainGeoSpec.baselinePin.lat,
-                      lng: domainGeoSpec.baselinePin.lng,
-                      region: domainGeoSpec.initRegion,
-                      industry: ind,
-                      company: rowCompany
-                    }, { industry: ind, company: rowCompany, ticketNo: primaryId, SEED, STATE })
-                  : null);
-              return domGatePin
-                ? `<div id="inspDomainGatePinCard" class="insp-ticket-gate-wrap" style="margin-top:10px">${window.MFG_GEO.renderGatePinCardHtml(domGatePin, { variant: 'inspector' })}</div>`
-                : '';
-            })()}
             <div id="indInspValidationMsg" style="display:none;margin-top:8px;padding:6px 10px;border-radius:6px;font-size:11.5px;font-weight:600"></div>
           </div>
 
@@ -92160,7 +91783,6 @@
     if (!geo || typeof geo.estimateLegKm !== 'function' || !siteName) return null;
     const co = canonTwBu(company || 'WTC');
     const est = geo.estimateLegKm({ type: 'bu', name: co }, { type: 'site', name: siteName }, SEED, { roundTripIfAnyBu: true });
-    const canVerifyPin = typeof geo.canPinLocations === 'function' && geo.canPinLocations();
     const hasLive = Boolean(liveCoord && Number.isFinite(liveCoord.lat) && Number.isFinite(liveCoord.lng));
     if (hasLive && typeof geo.getCompanyHub === 'function' && typeof geo.roadAdjustedKm === 'function') {
       const saved = est && est.toCoord;
@@ -92170,7 +91792,7 @@
         const hub = geo.getCompanyHub(co, SEED);
         if (hub && hub.lat != null && hub.lng != null) {
           const one = Math.round(Number(geo.roadAdjustedKm(hub.lat, hub.lng, liveCoord.lat, liveCoord.lng)) * 10) / 10;
-          if (one > 0) return { oneWayKm: one, roundTripKm: Math.round(one * 20) / 10, source: 'Unsaved map pin', approx: false, verifiedRoute: false, canVerify: Boolean(canVerifyPin && hub && hub.lat != null && liveCoord.lat != null) };
+          if (one > 0) return { oneWayKm: one, roundTripKm: Math.round(one * 20) / 10, source: 'Unsaved map pin', approx: false };
         }
       }
     }
@@ -92180,15 +91802,7 @@
       oneWayKm: one,
       roundTripKm: est.roundTripKm != null ? Number(est.roundTripKm) : Math.round(one * 20) / 10,
       source: est.source || 'Map road estimate',
-      approx: /region/i.test(String(est.source || '')),
-      verifiedRoute: Boolean(est.verifiedRoute),
-      elevAvailable: Boolean(est.elevAvailable),
-      ascentM: est.ascentM != null ? Number(est.ascentM) : null,
-      descentM: est.descentM != null ? Number(est.descentM) : null,
-      maxGradePct: est.maxGradePct != null ? Number(est.maxGradePct) : null,
-      heavyTruckMins: est.heavyTruckMins != null ? Number(est.heavyTruckMins) : null,
-      estMinutes: est.estMinutes != null ? Number(est.estMinutes) : null,
-      canVerify: Boolean(canVerifyPin && est.fromCoord && est.fromCoord.lat != null && est.toCoord && est.toCoord.lat != null)
+      approx: /region/i.test(String(est.source || ''))
     };
   }
 
@@ -92502,7 +92116,6 @@
     rows.sort((a, b) => (rank[a.status] - rank[b.status]) || ((b.loads90 || 0) - (a.loads90 || 0)) || String(a.party).localeCompare(String(b.party)));
     const count = st => rows.filter(x => x.status === st && x.countsInSummary !== false).length;
     return {
-      siteName: String(siteName || origSiteName || '').trim(),
       rows,
       inputs: Array.from(inputsByCo.values()),
       lossCnt: count('loss'),
@@ -92515,18 +92128,9 @@
     };
   }
 
-  window.__mfgInvalidateSiteNetBack = () => {
-    _siteNbIdx = null;
-    _siteNbIdxKey = '';
-  };
-
   // Hooks for build/verify_site_netback.mjs. All read-only except setRuleEnabledForCheck, which flips rule #22
   // in memory only (nothing is saved or synced), the way a seat pauses it in Alerts & Thresholds.
   window.__mfgSiteNetBack = {
-    invalidate: () => {
-      _siteNbIdx = null;
-      _siteNbIdxKey = '';
-    },
     setRuleEnabledForCheck: on => {
       const st = ensureAlertRulesState();
       st.overrides.S12 = Object.assign({}, st.overrides.S12, { enabled: Boolean(on) });
@@ -92941,10 +92545,6 @@
     if (fl.leg) {
       const legSub = `${nv(`${esc(fmtNum(fl.leg.roundTripKm, 1))} km`)} <span>Round Trip</span>${fl.loadQty ? ` · <span>Load</span> ${nv(`${esc(fmtNum(fl.loadQty, fl.loadQty % 1 ? 1 : 0))} ${esc(fl.unitLbl)}`)}` : ''}`;
       chips.push(`<span class="site-nb-chip"><small>Fuel Cost</small><b>${fl.fuelUnit != null ? perU(fl.fuelUnit) : '-'}</b><em>${legSub}</em></span>`);
-      if (fl.leg.verifiedRoute) {
-        const gSub = `${(fl.leg.heavyTruckMins || fl.leg.estMinutes) ? `<span>Truck ETA</span> ${nv(esc(`~${Math.round(fl.leg.heavyTruckMins || fl.leg.estMinutes)} min`))}` : ''}${fl.leg.elevAvailable && fl.leg.ascentM != null ? `${(fl.leg.heavyTruckMins || fl.leg.estMinutes) ? ' · ' : ''}${nv(esc(`+${fmtNum(fl.leg.ascentM, 0)}m`))} <span>Climb</span>` : ''}`;
-        chips.push(`<span class="site-nb-chip" id="prFloorRoadGradeChip"><small>Road Grade &amp; ETA</small><b>${fl.leg.elevAvailable && fl.leg.maxGradePct != null ? `${nv(esc(`${fmtNum(fl.leg.maxGradePct, 1)}%`))} <span>Max Grade</span>` : `<span>Road route</span>`}</b>${gSub ? `<em>${gSub}</em>` : ''}</span>`);
-      }
     } else {
       chips.push(`<span class="site-nb-chip is-approx"><small>Fuel Cost</small><b>Pin the site to compute</b></span>`);
     }
@@ -92989,10 +92589,7 @@
     el.innerHTML = `
       <div class="pr-floor-head">
         <span class="site-nb-kicker">${ic('fuel')} <span>Delivery Price Floor</span></span>
-        <span class="pr-floor-head-actions">
-          ${ctx.site && fl.leg && fl.leg.canVerify ? `<button type="button" class="pr-verify-road-btn" id="prVerifyRoadKmBtn" data-verify-road-co="${esc(fl.co || ctx.co || 'WTC')}" data-verify-road-site="${esc(ctx.site)}" data-ui-tip="Verify canonical road distance, steepness grade, and heavy-truck ETA">${ic('pin')} <span>${fl.leg.verifiedRoute ? 'Re-verify Road' : 'Verify Road KM'}</span></button>` : ''}
-          <span class="site-nb-status ${stCls}" id="prFloorStatus">${esc(stLbl)}</span>
-        </span>
+        <span class="site-nb-status ${stCls}" id="prFloorStatus">${esc(stLbl)}</span>
       </div>
       <div class="site-nb-inputs">${chips.join('')}</div>
       <div class="pr-floor-msg" id="prFloorMsg">${msg}</div>
@@ -93041,7 +92638,6 @@
       'Region reference KM': 'Region reference KM'
     };
     const burnSrcLbl = { fleet: 'Fleet odometer', group: 'Group fleet odometer', standard: 'Standard estimate' };
-    const nbSiteName = String((opts && opts.siteName) || nb.siteName || '').trim();
     const multiCo = nb.inputs.length > 1;
     const inputsHtml = nb.inputs.map(inp0 => {
       // A site made for customers moved off an area site: show the night rate those customers are paid at.
@@ -93053,13 +92649,11 @@
         ${inp.leg ? `
           <span class="site-nb-chip"><small>Round Trip</small><b>${nv(`${esc(fmtNum(inp.leg.roundTripKm, 1))} km`)}</b></span>
           <span class="site-nb-chip${inp.leg.approx ? ' is-approx' : ''}"><small>Distance Basis</small><b>${esc(srcLbl[inp.leg.source] || 'Map road estimate')}</b></span>
-          ${inp.leg.verifiedRoute ? `<span class="site-nb-chip" data-nb-road-grade="1"><small>Road Grade &amp; ETA</small><b>${inp.leg.elevAvailable && inp.leg.maxGradePct != null ? `${nv(esc(`${fmtNum(inp.leg.maxGradePct, 1)}%`))} <span>Max Grade</span>` : `<span>Road route</span>`}</b>${(inp.leg.heavyTruckMins || inp.leg.estMinutes || (inp.leg.elevAvailable && inp.leg.ascentM != null)) ? `<em>${(inp.leg.heavyTruckMins || inp.leg.estMinutes) ? `<span>Truck ETA</span> ${nv(esc(`~${Math.round(inp.leg.heavyTruckMins || inp.leg.estMinutes)} min`))}` : ''}${inp.leg.elevAvailable && inp.leg.ascentM != null ? `${(inp.leg.heavyTruckMins || inp.leg.estMinutes) ? ' · ' : ''}${nv(esc(`+${fmtNum(inp.leg.ascentM, 0)}m`))} <span>Climb</span>` : ''}</em>` : ''}</span>` : ''}
         ` : `<span class="site-nb-chip is-approx"><small>Round Trip</small><b>Pin the site to compute</b></span>`}
         ${inp.showBurn ? `<span class="site-nb-chip"><small>Fleet Burn</small><b>${nv(`${esc(fmtNum(inp.burn.lPerKm, 2))} L/km`)}</b><em>${esc(burnSrcLbl[inp.burn.src] || 'Standard estimate')}</em></span>` : ''}
         ${inp.showFuelInputs ? fuelPriceChip(inp) : ''}
         <span class="site-nb-chip is-key"><small>Fuel per Trip</small><b>${inp.fuelPerTrip != null ? nv(esc(fmtUSD(inp.fuelPerTrip, 2))) : '-'}</b></span>
         ${inp.showTripPay ? `<span class="site-nb-chip"><small>Night Trip Pay</small><b>${inp.trip.rate > 0 ? nv(esc(fmtUSD(inp.trip.rate, 2))) : '-'}</b>${inp.trip.region ? `<em data-no-i18n="1">${esc(inp.trip.region)}</em>` : ''}</span>` : ''}
-        ${nbSiteName && inp.leg && inp.leg.canVerify ? `<button type="button" class="nb-verify-road-btn" data-verify-road-co="${esc(inp.co)}" data-verify-road-site="${esc(nbSiteName)}" data-ui-tip="Verify canonical road distance, steepness grade, and heavy-truck ETA">${ic('pin')} <span>${inp.leg.verifiedRoute ? 'Re-verify Road' : 'Verify Road KM'}</span></button>` : ''}
       </div>
     `;
     }).join('');
@@ -100651,37 +100245,6 @@
           openSiteRulesHubForSite(curSiteName);
           return;
         }
-        const verifyRoadBtn = ev.target && ev.target.closest ? ev.target.closest('[data-verify-road-co]') : null;
-        if (verifyRoadBtn) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          const geo = window.MFG_GEO;
-          if (!geo || typeof geo.canPinLocations !== 'function' || !geo.canPinLocations()) {
-            toast('Supervisor privileges required to verify road routes', 'err');
-            return;
-          }
-          const vCo = verifyRoadBtn.getAttribute('data-verify-road-co') || '';
-          const vSite = verifyRoadBtn.getAttribute('data-verify-road-site') || '';
-          if (typeof geo.verifyPairRoadRoute !== 'function' || !vCo || !vSite) return;
-          verifyRoadBtn.disabled = true;
-          Promise.resolve(geo.verifyPairRoadRoute({ type: 'bu', name: vCo }, { type: 'site', name: vSite }, SEED, { clearOverride: true }))
-            .then(res => {
-              if (res && res.ok && res.entry) {
-                if (typeof window.__mfgInvalidateSiteNetBack === 'function') window.__mfgInvalidateSiteNetBack();
-                recalcForm(true);
-                const gLbl = res.entry.elevAvailable && res.entry.maxGradePct != null ? ` (${Number(res.entry.maxGradePct).toFixed(1)}% grade)` : '';
-                toast(`Verified road distance: ${Number(res.entry.km || 0).toFixed(1)} km${gLbl}`, 'ok');
-              } else {
-                verifyRoadBtn.disabled = false;
-                toast((res && res.error) || 'Could not verify road route for this leg', 'err');
-              }
-            })
-            .catch(err => {
-              verifyRoadBtn.disabled = false;
-              toast((err && err.message) || 'Road route lookup failed', 'err');
-            });
-          return;
-        }
         const openSiteRuleRow = ev.target && ev.target.closest ? ev.target.closest('[data-open-site-rule]') : null;
         if (openSiteRuleRow) {
           ev.preventDefault();
@@ -107254,7 +106817,7 @@
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
           if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.classList.contains('pr-area-inp') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], [data-verify-road-co], .pr-area-strip')) return;
+            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub], [data-site-quote-draft], .pr-area-strip')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -113333,39 +112896,15 @@
     const isGeoEntityInspector = key === 'sites' || key === 'customers' || key === 'suppliers';
     const hasInspSitePin = isGeoEntityInspector && !row._pinCleared && row.latitude != null && row.latitude !== '' && row.longitude != null && row.longitude !== '' && Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude));
     const isMfgSiteDrawer = key === 'sites' && getActiveIndustry() === 'Manufacturing' && !row._multiIndustrySeed && (!row._industry || row._industry === 'Manufacturing');
-    const inspTicketGatePin = (() => {
-      if (!window.MFG_GEO) return null;
-      if ((key === 'sales_tickets' || key === 'raw_purchases') && row.site && typeof window.MFG_GEO.resolveVerifiedSiteGatePin === 'function') {
-        return window.MFG_GEO.resolveVerifiedSiteGatePin(row.site, {
+    const inspTicketGatePin = ((key === 'sales_tickets' || key === 'raw_purchases') && row.site && window.MFG_GEO && typeof window.MFG_GEO.resolveVerifiedSiteGatePin === 'function')
+      ? window.MFG_GEO.resolveVerifiedSiteGatePin(row.site, {
           side: key === 'raw_purchases' ? 'raw' : 'sales',
           company: row.company,
           ticketNo: row.ticket_no || row.invoice_no || row.id,
           SEED,
           STATE
-        });
-      }
-      if (isGeoEntityInspector) {
-        const entitySide = key === 'suppliers' ? 'raw' : 'sales';
-        const entityInd = row._industry || getActiveIndustry();
-        const byName = (row.name && typeof window.MFG_GEO.resolveVerifiedSiteGatePin === 'function')
-          ? window.MFG_GEO.resolveVerifiedSiteGatePin(row.name, { side: entitySide, company: row.company, industry: entityInd, SEED, STATE })
-          : null;
-        if (byName) return byName;
-        if (hasInspSitePin && typeof window.MFG_GEO.resolveDirectGatePin === 'function') {
-          return window.MFG_GEO.resolveDirectGatePin({
-            id: row.id,
-            name: row.name,
-            lat: row.latitude,
-            lng: row.longitude,
-            region: row.region,
-            access_note: row.access_note || row.notes || '',
-            industry: entityInd,
-            side: entitySide
-          }, { company: row.company, industry: entityInd, SEED, STATE });
-        }
-      }
-      return null;
-    })();
+        })
+      : null;
     bodyEl.innerHTML = `
       <!-- Shared Searchable Datalists for Inspector Modification Drawer & Equipment Log -->
       <div hidden aria-hidden="true">
@@ -113965,37 +113504,6 @@
         }
       };
       inspNbStrip.addEventListener('click', ev => {
-        const verifyRoadBtn = ev.target && ev.target.closest ? ev.target.closest('[data-verify-road-co]') : null;
-        if (verifyRoadBtn) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          const geo = window.MFG_GEO;
-          if (!geo || typeof geo.canPinLocations !== 'function' || !geo.canPinLocations()) {
-            toast('Supervisor privileges required to verify road routes', 'err');
-            return;
-          }
-          const vCo = verifyRoadBtn.getAttribute('data-verify-road-co') || '';
-          const vSite = verifyRoadBtn.getAttribute('data-verify-road-site') || '';
-          if (typeof geo.verifyPairRoadRoute !== 'function' || !vCo || !vSite) return;
-          verifyRoadBtn.disabled = true;
-          Promise.resolve(geo.verifyPairRoadRoute({ type: 'bu', name: vCo }, { type: 'site', name: vSite }, SEED, { clearOverride: true }))
-            .then(res => {
-              if (res && res.ok && res.entry) {
-                if (typeof window.__mfgInvalidateSiteNetBack === 'function') window.__mfgInvalidateSiteNetBack();
-                const gLbl = res.entry.elevAvailable && res.entry.maxGradePct != null ? ` (${Number(res.entry.maxGradePct).toFixed(1)}% grade)` : '';
-                showRecordInspector(key, row.id || idOrName);
-                toast(`Verified road distance: ${Number(res.entry.km || 0).toFixed(1)} km${gLbl}`, 'ok');
-              } else {
-                verifyRoadBtn.disabled = false;
-                toast((res && res.error) || 'Could not verify road route for this leg', 'err');
-              }
-            })
-            .catch(err => {
-              verifyRoadBtn.disabled = false;
-              toast((err && err.message) || 'Road route lookup failed', 'err');
-            });
-          return;
-        }
         const rowEl = ev.target && ev.target.closest ? ev.target.closest('[data-open-site-rule]') : null;
         if (rowEl) openNbRule(rowEl);
       });
@@ -160439,32 +159947,6 @@
         if (n) toast('Reset ' + n + ' checked rule' + (n === 1 ? '' : 's'));
       });
     }
-    const confirmGcpBtn = $('confirmGcpBudgetBtn');
-    if (confirmGcpBtn) {
-      confirmGcpBtn.addEventListener('click', async () => {
-        const geo = window.MFG_GEO;
-        if (!geo || typeof geo.confirmGcpMapsBudget !== 'function') return;
-        const nextVal = confirmGcpBtn.getAttribute('data-confirmed') !== '1';
-        confirmGcpBtn.disabled = true;
-        try {
-          const res = await geo.confirmGcpMapsBudget(nextVal);
-          if (res && res.ok) {
-            if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
-            const ws = $('workspace');
-            const y = ws ? ws.scrollTop : 0;
-            renderApp();
-            if (ws) ws.scrollTop = y;
-            toast(nextVal ? 'GCP $1 billing budget confirmed active' : 'GCP $1 billing budget confirmation cleared', 'ok');
-          } else {
-            confirmGcpBtn.disabled = false;
-            toast((res && res.error) || 'Could not update billing budget confirmation', 'err');
-          }
-        } catch (err) {
-          confirmGcpBtn.disabled = false;
-          toast(err && err.message ? err.message : 'Could not update billing budget confirmation', 'err');
-        }
-      });
-    }
     container.querySelectorAll('[data-sn-explain]').forEach(btn => btn.addEventListener('click', ev => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -160649,35 +160131,18 @@
           toast(`Custom alert ${seqCode} "${nameVal}" activated`, 'ok');
         });
       }
-      const mirrorMapsQuotaOverride = (rid, rowObj, st, changedMap, preserveWhy) => {
-        if (rid !== 'G_MAPS_QUOTA' && !MAPS_QUOTA_SIBLING_IDS.includes(rid)) return;
-        ['G_MAPS_QUOTA'].concat(MAPS_QUOTA_SIBLING_IDS).forEach(mid => {
-          if (mid === rid) return;
-          const mex = (st.overrides && st.overrides[mid]) || {};
-          const mRow = Object.assign({}, preserveWhy ? mex : rowObj, {
-            enabled: typeof rowObj.enabled === 'boolean' ? rowObj.enabled : true,
-            params: Object.assign({}, rowObj.params || {}),
-            updated_at: rowObj.updated_at || new Date().toISOString()
-          });
-          if (!preserveWhy) mRow.why_note = rowObj.why_note || '';
-          if (rowObj.updated_by) mRow.updated_by = rowObj.updated_by;
-          st.overrides[mid] = mRow;
-          changedMap[mid] = mRow;
-        });
-      };
       const resetAllArBtn = $('resetAllAlertRulesBtn');
       if (resetAllArBtn) {
         resetAllArBtn.addEventListener('click', () => {
-          if (!isOwner(activeUser())) { toast('Owner privileges required to modify global alert thresholds', 'err'); return; }
+          if (!canReviewSentinels()) return;
           const st = ensureAlertRulesState();
           const nowIso = new Date().toISOString();
           const resetMap = {};
-          ALERT_RULE_CATALOG.concat(typeof IND_ALERT_RULE_CATALOG !== 'undefined' && Array.isArray(IND_ALERT_RULE_CATALOG) ? IND_ALERT_RULE_CATALOG : []).forEach(r => {
+          ALERT_RULE_CATALOG.forEach(r => {
             if (isAlertRuleCustomized(r.id)) {
               const clean = { enabled: true, params: {}, why_note: '', updated_at: nowIso };
               st.overrides[r.id] = clean;
               resetMap[r.id] = clean;
-              mirrorMapsQuotaOverride(r.id, clean, st, resetMap, false);
             }
           });
           persistAlertRulesChange(resetMap, []);
@@ -160758,13 +160223,9 @@
       }));
       container.querySelectorAll('[data-ar-toggle]').forEach(btn => btn.addEventListener('click', ev => {
         ev.stopPropagation();
+        if (!canReviewSentinels()) return;
         const rid = btn.getAttribute('data-ar-toggle') || '';
         const def = ALERT_RULE_BY_ID.get(rid);
-        if (def) {
-          if (!isOwner(activeUser())) { toast('Owner privileges required to modify global alert thresholds', 'err'); return; }
-        } else if (!canReviewSentinels()) {
-          return;
-        }
         const st = ensureAlertRulesState();
         const nowIso = new Date().toISOString();
         if (def) {
@@ -160773,9 +160234,7 @@
           const ex = st.overrides[rid] || { params: {}, why_note: '' };
           const nextRow = Object.assign({}, ex, { enabled: !curOn, updated_at: nowIso });
           st.overrides[rid] = nextRow;
-          const changedMap = { [rid]: nextRow };
-          mirrorMapsQuotaOverride(rid, nextRow, st, changedMap, true);
-          persistAlertRulesChange(changedMap, []);
+          persistAlertRulesChange({ [rid]: nextRow }, []);
           const ws = $('workspace');
           const y = ws ? ws.scrollTop : 0;
           renderApp();
@@ -160796,16 +160255,14 @@
       }));
       container.querySelectorAll('[data-ar-reset]').forEach(btn => btn.addEventListener('click', ev => {
         ev.stopPropagation();
-        if (!isOwner(activeUser())) { toast('Owner privileges required to modify global alert thresholds', 'err'); return; }
+        if (!canReviewSentinels()) return;
         const rid = btn.getAttribute('data-ar-reset') || '';
         const def = ALERT_RULE_BY_ID.get(rid);
         if (!def) return;
         const st = ensureAlertRulesState();
         const clean = { enabled: true, params: {}, why_note: '', updated_at: new Date().toISOString() };
         st.overrides[rid] = clean;
-        const changedMap = { [rid]: clean };
-        mirrorMapsQuotaOverride(rid, clean, st, changedMap, false);
-        persistAlertRulesChange(changedMap, []);
+        persistAlertRulesChange({ [rid]: clean }, []);
         const ws = $('workspace');
         const y = ws ? ws.scrollTop : 0;
         renderApp();
@@ -160832,14 +160289,9 @@
       }));
       container.querySelectorAll('[data-ar-save]').forEach(btn => btn.addEventListener('click', ev => {
         ev.stopPropagation();
+        if (!canReviewSentinels()) { toast('Only Owner or Supervisor seats may modify thresholds', 'err'); return; }
         const rid = btn.getAttribute('data-ar-save') || '';
         const def = ALERT_RULE_BY_ID.get(rid);
-        if (def) {
-          if (!isOwner(activeUser())) { toast('Owner privileges required to modify global alert thresholds', 'err'); return; }
-        } else if (!canReviewSentinels()) {
-          toast('Only Owner or Supervisor seats may modify thresholds', 'err');
-          return;
-        }
         const st = ensureAlertRulesState();
         const nowIso = new Date().toISOString();
         const whyInp = $('arWhy_' + rid);
@@ -160861,9 +160313,7 @@
             updated_at: nowIso
           };
           st.overrides[rid] = nextRow;
-          const changedMap = { [rid]: nextRow };
-          mirrorMapsQuotaOverride(rid, nextRow, st, changedMap, false);
-          persistAlertRulesChange(changedMap, []);
+          persistAlertRulesChange({ [rid]: nextRow }, []);
           const ws = $('workspace');
           const y = ws ? ws.scrollTop : 0;
           renderApp();

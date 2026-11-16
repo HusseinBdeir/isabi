@@ -1555,39 +1555,6 @@ body:has(.modal-backdrop:not(#recordInspector):not([hidden])) .insp-site-map-wra
   color: var(--muted);
   font-weight: 600;
 }
-.geo-km-grade-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-  padding: 4px 10px;
-  border-radius: 8px;
-  background: rgba(5, 150, 105, 0.09);
-  border: 1px solid rgba(5, 150, 105, 0.28);
-  color: #065F46;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-[data-theme="dark"] .geo-km-grade-badge {
-  background: rgba(16, 185, 129, 0.16);
-  border-color: rgba(52, 211, 153, 0.35);
-  color: #6EE7B7;
-}
-.geo-mini-btn.is-verify-road {
-  border-color: rgba(180, 83, 9, 0.45);
-  background: #FEF9EC;
-  color: #92400E;
-  font-weight: 700;
-}
-.geo-mini-btn.is-verify-road:hover:not(:disabled) {
-  border-color: #B45309;
-  background: #FEF3C7;
-}
-[data-theme="dark"] .geo-mini-btn.is-verify-road {
-  background: rgba(217, 119, 6, 0.16);
-  border-color: rgba(251, 191, 36, 0.35);
-  color: #FCD34D;
-}
 .geo-km-override-grp {
   display: inline-flex;
   align-items: center;
