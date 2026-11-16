@@ -469,13 +469,14 @@ export async function handleEdgeTts(request, env, body, session = null) {
 
 const ID_CARD_SCAN_PROMPT = [
   'Extract structured identity fields from this Lebanese ID card (بطاقة هوية), Individual Civil Extract (إخراج قيد فردي), NSSF Card (بطاقة الصندوق الوطني للضمان الاجتماعي / بطاقة المضمون), Work Permit (بطاقة إجازة عمل), Residency Permit (بطاقة إقامة), or Passport as strict JSON ONLY with keys:',
-  '{"docKind":"lebanese_id|nssf_card|civil_extract|work_permit|residency_permit|passport|id_card","fullNameLatin":"","fullNameArabic":"","firstNameLatin":"","lastNameLatin":"","firstNameArabic":"","lastNameArabic":"","fatherNameLatin":"","fatherNameArabic":"","motherNameLatin":"","motherNameArabic":"","dob":"YYYY-MM-DD","birthYear":"","nationalityLatin":"","nationalityArabic":"","idNumber":"","nssfNumber":"","gender":"","issueDate":"YYYY-MM-DD","idExpiryDate":"YYYY-MM-DD","workPermitNumber":"","workPermitExpiryDate":"YYYY-MM-DD","residencyNumber":"","residencyExpiryDate":"YYYY-MM-DD"}.',
+  '{"docKind":"lebanese_id|nssf_card|civil_extract|work_permit|residency_permit|passport|id_card","fullNameLatin":"","fullNameArabic":"","firstNameLatin":"","lastNameLatin":"","firstNameArabic":"","lastNameArabic":"","fatherNameLatin":"","fatherNameArabic":"","motherNameLatin":"","motherNameArabic":"","dob":"YYYY-MM-DD","birthYear":"","nationalityLatin":"","nationalityArabic":"","idNumber":"","nssfNumber":"","gender":"","issueDate":"YYYY-MM-DD","idExpiryDate":"YYYY-MM-DD","workPermitNumber":"","workPermitExpiryDate":"YYYY-MM-DD","residencyNumber":"","residencyExpiryDate":"YYYY-MM-DD","civilRegistryNumber":"","civilRegistryPlace":"","maritalStatus":""}.',
   'Rules:',
   '1. Convert all Eastern/Arabic-Indic numerals (٠١٢٣٤٥٦٧٨٩) to ASCII digits 0-9.',
   '2. Format full dates as YYYY-MM-DD. If only a 4-digit birth year is visible, put it in "birthYear" and leave "dob" empty "". Never invent day/month.',
   '3. Put First Name + Last Name (Family Name) in fullNameArabic / fullNameLatin WITHOUT Father\'s Name in fullName*; put Father\'s Name separately in fatherNameArabic / fatherNameLatin.',
   '4. Always populate BOTH Arabic (*Arabic) and Latin (*Latin) script fields using standard Lebanese transliteration when only one script appears on the card.',
-  '5. Identify docKind accurately: الجمهورية اللبنانية / بطاقة هوية -> "lebanese_id" (nationalityArabic="لبناني", nationalityLatin="Lebanese", put card expiry in idExpiryDate if printed); الضمان الاجتماعي / NSSF -> "nssf_card" (extract 6-10 digit registration into nssfNumber); إجازة عمل / Ministry of Labour / Work Permit -> "work_permit" (extract workPermitNumber & workPermitExpiryDate); بطاقة إقامة / الأمن العام / General Security / Sûreté Générale / Residency -> "residency_permit" (extract residencyNumber & residencyExpiryDate). Return valid JSON ONLY.'
+  '5. Identify docKind accurately: الجمهورية اللبنانية / بطاقة هوية -> "lebanese_id" (nationalityArabic="لبناني", nationalityLatin="Lebanese", put card expiry in idExpiryDate if printed); الضمان الاجتماعي / NSSF -> "nssf_card" (extract 6-10 digit registration into nssfNumber); إجازة عمل / Ministry of Labour / Work Permit -> "work_permit" (extract workPermitNumber & workPermitExpiryDate); بطاقة إقامة / الأمن العام / General Security / Sûreté Générale / Residency -> "residency_permit" (extract residencyNumber & residencyExpiryDate).',
+  '6. On reverse/back sides of Lebanese ID, residency, or work permit cards, extract Civil Registry Number (رقم السجل) into "civilRegistryNumber", Place of Registration (محل القيد) into "civilRegistryPlace", Marital Status (الوضع العائلي) into "maritalStatus", any reverse-side NSSF/permit/residency number, and the latest renewal stamp expiry date into idExpiryDate / residencyExpiryDate / workPermitExpiryDate. Return valid JSON ONLY.'
 ].join('\n');
 
 export function validateBase64MediaDataUrl(rawDataUrl, opts = {}) {
@@ -631,7 +632,7 @@ export async function handleEdgeSmartScan(request, env, body, session = null, op
 
     const parts = [{ text: promptText }];
     let hasVisionBin = false;
-    const maxB64 = isAuthed ? 6000000 : (hasPhoneScanGrant ? 2400000 : 1600000);
+    const maxB64 = hasPhoneScanGrant ? 2400000 : (isAuthed ? 6000000 : 1600000);
     if (dataUrl.includes(';base64,') && /^(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf)$/i.test(mimeType)) {
       const b64Part = dataUrl.split(';base64,')[1] || '';
       if (b64Part && b64Part.length < maxB64) {
