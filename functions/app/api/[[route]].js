@@ -38,7 +38,9 @@ import {
 import {
   evictCachedMapSession,
   handleGoogleMapPlaces,
-  handleGoogleMapTile
+  handleGoogleMapRoute,
+  handleGoogleMapTile,
+  handleGoogleMapUsage
 } from '../../_lib/google_maps.js';
 import { handleTelematics } from '../../_lib/telematics.js';
 import { handleKioskOptions, handleKioskPunchFeed, handleKioskVerify } from '../../_lib/kiosk_verify.js';
@@ -121,7 +123,7 @@ async function routeAppApi(context) {
     return handleSeedGet(request, env, session, parts[1]);
   }
 
-  const bodyLimit = (subPath === '/map-places' || subPath === '/resolve-map-link')
+  const bodyLimit = (subPath === '/map-places' || subPath === '/map-route' || subPath === '/map-usage' || subPath === '/resolve-map-link')
     ? 4096
     : (session ? AUTHED_MAX_BODY_BYTES : 6291456); // 6 MB pre-auth ceiling (covers 4 MB phone-scan page)
   const { body, rawBytes, tooLarge, parseError, emptyBody } = await parseBodyWithSize(request, bodyLimit);
@@ -156,6 +158,12 @@ async function routeAppApi(context) {
   }
   if (subPath === '/map-places') {
     return handleGoogleMapPlaces(request, env, body, session, { url, parseError });
+  }
+  if (subPath === '/map-route') {
+    return handleGoogleMapRoute(request, env, body, session, { url, parseError, context });
+  }
+  if (subPath === '/map-usage') {
+    return handleGoogleMapUsage(request, env, body, session, { url, parseError, context });
   }
   if (!session) {
     if (isDemoReq && request.method === 'GET' && DEMO_EMPTY_GET_ROUTES.has(subPath)) {

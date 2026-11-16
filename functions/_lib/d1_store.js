@@ -32,6 +32,7 @@ import {
 import { collectLegacyCandidates, scheduleLegacyIdHits, takeMfgLegacySignals } from './legacy_ids.js';
 import { DEPLOYED_SHELL_VER } from './deployed_shell.js';
 import { validateBase64MediaDataUrl } from './gemini.js';
+import { invalidateMapsUsageMemCache, MAPS_QUOTA_RULE_IDS } from './google_maps.js';
 
 export const ALLOWED_TABLES = new Set([
   'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions',
@@ -3084,7 +3085,7 @@ const GEO_IND_COMPANIES = Object.freeze({
   'insurance & brokerage': ['Insurance Company']
 });
 
-const GEO_RL_BUCKETS = ['companyHubs', 'regions', 'sites', 'pairKmOverrides'];
+const GEO_RL_BUCKETS = ['companyHubs', 'regions', 'sites', 'pairKmOverrides', 'verifiedRoutes'];
 
 function canAccessGeoBucketEntry(session, bucket, key, val) {
   if (!session) return false;
@@ -3537,6 +3538,7 @@ export async function handleAlertRules(request, env, session, body) {
         custom: Array.from(custMap.values())
       };
     }, String((session && session.email) || ''));
+    invalidateMapsUsageMemCache();
   }
   return jsonResponse({ ok: true, saved });
 }
@@ -3644,6 +3646,7 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
         regions: Object.assign({}, prev.regions || {}),
         sites: Object.assign({}, prev.sites || {}),
         pairKmOverrides: Object.assign({}, prev.pairKmOverrides || {}),
+        verifiedRoutes: Object.assign({}, prev.verifiedRoutes || {}),
         _pairKmTs: Object.assign({}, prev._pairKmTs || {}),
         _deletedKeys: Object.assign({}, prev._deletedKeys || {}),
         updatedAt: nowIso
@@ -3656,7 +3659,7 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
           merged._deletedKeys[dk] = tsStr;
         }
       }
-      for (const bucket of ['companyHubs', 'regions', 'sites', 'pairKmOverrides']) {
+      for (const bucket of ['companyHubs', 'regions', 'sites', 'pairKmOverrides', 'verifiedRoutes']) {
         const src = (incoming[bucket] && typeof incoming[bucket] === 'object') ? incoming[bucket] : {};
         for (const [k, nxt] of Object.entries(src)) {
           if (nxt === undefined || nxt === null) continue;
@@ -4660,6 +4663,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
       }
     }
 
+    let touchedMapsQuotaOverride = false;
     if (canManageSeats) {
       const prevAr = (hasPrev && prevStorePayload.alertRules && typeof prevStorePayload.alertRules === 'object') ? prevStorePayload.alertRules : {};
       const curAr = (storePayload.alertRules && typeof storePayload.alertRules === 'object') ? storePayload.alertRules : {};
@@ -4669,6 +4673,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
         for (const [oid, ov] of Object.entries(cOv)) {
           if (!oid || !ov || typeof ov !== 'object') continue;
           if (pOv[oid] && stableRowSig(pOv[oid]) === stableRowSig(ov)) continue;
+          if (MAPS_QUOTA_RULE_IDS.includes(String(oid))) touchedMapsQuotaOverride = true;
           subStmts.push(
             db.prepare('INSERT OR REPLACE INTO alert_rules (id, kind, payload_json, updated_at) VALUES (?1, ?2, ?3, ?4)')
               .bind(String(oid), 'override', JSON.stringify(ov), String(ov.updated_at || ''))
@@ -4677,6 +4682,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
         if (hasPrev) {
           for (const oid of Object.keys(pOv)) {
             if (!(oid in cOv)) {
+              if (MAPS_QUOTA_RULE_IDS.includes(String(oid))) touchedMapsQuotaOverride = true;
               subStmts.push(db.prepare("DELETE FROM alert_rules WHERE id = ?1 AND kind = 'override'").bind(String(oid)));
             }
           }
@@ -4897,6 +4903,9 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
     if (subStmts.length) {
       await execBatchedStmts(db, subStmts, 80);
       stats.upsertedSubStores += subStmts.length;
+    }
+    if (touchedMapsQuotaOverride) {
+      invalidateMapsUsageMemCache();
     }
   } catch (err) {
     stats.error = String((err && err.message) || err);

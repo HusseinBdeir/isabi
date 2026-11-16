@@ -75,6 +75,8 @@ RELEASE_GATES = [
     ("isabi", "build/verify_same_name_edge.mjs", "node"),            # server-side same-name guard, sync floor, and staff_members.father_name
     ("isabi", "build/verify_hr_phone_edge.mjs", "node"),             # single-use QR phone-scan lifecycle, R2 purge, RLS, and 13 HR columns
     ("isabi-app", "build/verify_i18n_templates.mjs", "node"),        # dynamic EN/AR/FR template & edge-case coverage (negative $, empty date, fallbacks)
+    ("isabi", "build/verify_google_maps_edge.mjs", "node"),          # Edge Google Maps tiles/places/routes/elevation & quota counters
+    ("isabi-app", "build/verify_gmaps_local.py", "python"),          # Local server.py Maps Routes/quota/elevation & /api/alert_rules RBAC
 ]
 
 
