@@ -12466,7 +12466,56 @@
       "USD + LBP": "دولار + ليرة",
       "LBP Only": "ليرة فقط",
       "USD Only": "دولار فقط",
-      "Historical Seed": "بيانات أساسية تاريخية"
+      "Historical Seed": "بيانات أساسية تاريخية",
+      "Simulate Company Impact": "محاكاة الأثر على الشركة",
+      "Default Shift Rota": "جدول المناوبة الافتراضي",
+      "Minimum Coverage Floor": "الحد الأدنى لتغطية المناوبة",
+      "Min Floor:": "الحد الأدنى:",
+      "Low": "منخفض",
+      "scheduled": "مجدولون",
+      "7-day active headcount density by shift and station. Click a gap or low cell to assign a stand-in, or click a shift to filter below.": "كثافة الطاقم النشط لـ 7 أيام حسب المناوبة والموقع. انقر على خلية فجوة أو نقص لتعيين بديل، أو انقر على مناوبة للتصفية أدناه.",
+      "Stand-In Coverage Picker": "اختيار بديل لتغطية المناوبة",
+      "off-shift active candidates ranked by site frequency": "مرشحون نشطون خارج المناوبة مرتبون حسب تكرار الموقع",
+      "Search candidate or role...": "ابحث عن مرشح أو دور...",
+      "Include 1-day OT Pass": "تضمين تصريح إضافي ليوم واحد",
+      "Same Site": "نفس الموقع",
+      "Week:": "الأسبوع:",
+      "0m OT": "0د إضافي",
+      "$0.00 OT cost": "$0.00 تكلفة إضافي",
+      "Assign Stand-In": "تعيين بديل",
+      "No off-shift non-leave staff available for this shift and date.": "لا يوجد موظفون نشطون متاحون خارج المناوبة لهذا التاريخ والمناوبة.",
+      "Cannot load stand-in picker": "تعذّر تحميل قائمة البدلاء",
+      "You do not have rights to assign stand-in shifts for this company": "ليست لديك صلاحية تعيين مناوبات بديلة لهذه الشركة",
+      "Staff member, company, and date are required": "الموظف والشركة والتاريخ مطلوبة",
+      "Closed payroll period cannot be modified": "لا يمكن تعديل فترة رواتب مغلقة",
+      "Could not save stand-in shift override": "تعذّر حفظ تجاوز المناوبة للبديل",
+      "Approved Cohort 30-Day Outcomes": "نتائج قواعد المجموعات المعتمدة خلال 30 يوماً",
+      "Needs Follow-Up": "بحاجة للمتابعة",
+      "Monitoring": "قيد المتابعة",
+      "Re-Tune Draft": "إعادة ضبط المسودة",
+      "Remove Cohort Rule": "إزالة قاعدة المجموعة",
+      "No approved cohort drift rules active in the 30-day evaluation window.": "لا توجد قواعد مجموعات معتمدة نشطة ضمن نافذة التقييم لـ 30 يوماً.",
+      "Could not find this cohort rule to remove": "تعذّر العثور على قاعدة المجموعة هذه لإزالتها",
+      "Off-Shift Day": "يوم خارج الدوام",
+      "0 coverage impact": "أثر التغطية 0",
+      "Drops Site Shift to 0 Coverage": "ينخفض بمناوبة الموقع إلى تغطية صفرية",
+      "Half-Day Covered": "نصف اليوم مغطى",
+      "Site Shift Covered": "مناوبة الموقع مغطاة",
+      "Top Stand-In:": "أفضل بديل:",
+      "No off-shift active stand-in available at this site.": "لا يوجد بديل نشط خارج المناوبة متاح في هذا الموقع.",
+      "Open Stand-In Picker": "فتح منتقي البديل",
+      "Keep Current Shift": "الإبقاء على المناوبة الحالية",
+      "Simulate Impact": "محاكاة الأثر",
+      "Bulk Shift Rota, Policy Group, Lateness & Overtime": "تحديث جماعي لجدول المناوبة والسياسة والتأخير والإضافي",
+      "Bulk Roster & Policy Simulation": "محاكاة الجدول والسياسة الجماعية",
+      "Zero-Coverage Gaps:": "فجوات تغطية صفرية:",
+      "Below Min Floor:": "دون الحد الأدنى:",
+      "You do not have rights to update rules for the selected staff": "ليست لديك صلاحية تحديث القواعد للموظفين المحددين",
+      "You do not have rights to bulk update schedules or policies here": "ليست لديك صلاحية التحديث الجماعي للجداول أو السياسات هنا",
+      "Select at least one shift, rule change, or effective date to apply": "اختر تغييراً واحداً على الأقل في المناوبة أو القاعدة أو تاريخ السريان للتطبيق",
+      "Late avg:": "متوسط التأخير:",
+      "Unapproved OT avg:": "متوسط الإضافي غير المعتمد:",
+      "Post Drift:": "الانحراف بعد التطبيق:"
     },
     fr: {
       "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
@@ -24914,7 +24963,56 @@
       "USD + LBP": "USD + LBP",
       "LBP Only": "LBP uniquement",
       "USD Only": "USD uniquement",
-      "Historical Seed": "Historique de base"
+      "Historical Seed": "Historique de base",
+      "Simulate Company Impact": "Simuler l'impact société",
+      "Default Shift Rota": "Équipe par défaut",
+      "Minimum Coverage Floor": "Seuil minimal de couverture",
+      "Min Floor:": "Seuil min. :",
+      "Low": "Bas",
+      "scheduled": "planifiés",
+      "7-day active headcount density by shift and station. Click a gap or low cell to assign a stand-in, or click a shift to filter below.": "Densité des effectifs actifs sur 7 jours par équipe et station. Cliquez sur un écart ou effectif bas pour désigner un remplaçant, ou sur une équipe pour filtrer.",
+      "Stand-In Coverage Picker": "Sélecteur de remplaçant",
+      "off-shift active candidates ranked by site frequency": "candidats actifs hors équipe classés par fréquence sur site",
+      "Search candidate or role...": "Rechercher candidat ou rôle...",
+      "Include 1-day OT Pass": "Inclure passe HS 1 jour",
+      "Same Site": "Même site",
+      "Week:": "Semaine :",
+      "0m OT": "0m HS",
+      "$0.00 OT cost": "0,00 $ coût HS",
+      "Assign Stand-In": "Assigner remplaçant",
+      "No off-shift non-leave staff available for this shift and date.": "Aucun collaborateur actif hors équipe disponible pour cette équipe et cette date.",
+      "Cannot load stand-in picker": "Impossible de charger le sélecteur de remplaçant",
+      "You do not have rights to assign stand-in shifts for this company": "Vous n'avez pas les droits pour assigner des remplaçants pour cette société",
+      "Staff member, company, and date are required": "Employé, société et date requis",
+      "Closed payroll period cannot be modified": "Une période de paie clôturée ne peut pas être modifiée",
+      "Could not save stand-in shift override": "Impossible d'enregistrer le remplacement ponctuel",
+      "Approved Cohort 30-Day Outcomes": "Résultats à 30 jours des cohortes approuvées",
+      "Needs Follow-Up": "Suivi requis",
+      "Monitoring": "Sous surveillance",
+      "Re-Tune Draft": "Réajuster le brouillon",
+      "Remove Cohort Rule": "Supprimer la règle",
+      "No approved cohort drift rules active in the 30-day evaluation window.": "Aucune règle de cohorte approuvée active dans la fenêtre d'évaluation de 30 jours.",
+      "Could not find this cohort rule to remove": "Règle de cohorte introuvable pour suppression",
+      "Off-Shift Day": "Jour hors horaire",
+      "0 coverage impact": "0 impact de couverture",
+      "Drops Site Shift to 0 Coverage": "Fait tomber l'équipe du site à 0 couverture",
+      "Half-Day Covered": "Demi-journée couverte",
+      "Site Shift Covered": "Équipe du site couverte",
+      "Top Stand-In:": "Meilleur remplaçant :",
+      "No off-shift active stand-in available at this site.": "Aucun remplaçant actif hors équipe disponible sur ce site.",
+      "Open Stand-In Picker": "Ouvrir le sélecteur de remplaçant",
+      "Keep Current Shift": "Conserver l'équipe actuelle",
+      "Simulate Impact": "Simuler l'impact",
+      "Bulk Shift Rota, Policy Group, Lateness & Overtime": "Mise à jour groupée : équipe, politique, retard et HS",
+      "Bulk Roster & Policy Simulation": "Simulation groupée planning & politique",
+      "Zero-Coverage Gaps:": "Écarts couverture nulle :",
+      "Below Min Floor:": "Sous seuil min. :",
+      "You do not have rights to update rules for the selected staff": "Vous n'avez pas les droits pour modifier les règles du personnel sélectionné",
+      "You do not have rights to bulk update schedules or policies here": "Vous n'avez pas les droits pour modifier en masse les plannings ou politiques ici",
+      "Select at least one shift, rule change, or effective date to apply": "Sélectionnez au moins un changement d'équipe, de règle ou une date d'effet",
+      "Late avg:": "Moy. retard :",
+      "Unapproved OT avg:": "Moy. HS non approuvées :",
+      "Post Drift:": "Dérive après effet :"
     }
   };
 
@@ -29273,18 +29371,43 @@
         : `Règle de cohorte appliquée à ${m[1]} ${rTxt}`;
     }
 
-    m = trimmed.match(/^(.+?):\s*0 scheduled staff on expected workday\s*\(([^)]+)\)$/i);
+    m = trimmed.match(/^(.+?):\s*0 scheduled staff on expected workday\s*\(([^)]+)\)(?:\s*·\s*([\d,]+)\s+on leave)?(?:\s*·\s*Click to pick stand-in)?$/i);
     if (m) {
+      const shRes = evalCore(m[1].trim(), lang, depth + 1);
+      const shOut = shRes.ok ? shRes.out : m[1].trim();
+      const lvAr = m[3] ? ` · ${m[3]} في إجازة` : '';
+      const lvFr = m[3] ? ` · ${m[3]} en congé` : '';
+      const pkAr = /Click to pick stand-in/i.test(trimmed) ? ' · انقر لاختيار بديل' : '';
+      const pkFr = /Click to pick stand-in/i.test(trimmed) ? ' · Cliquer pour choisir un remplaçant' : '';
       return lang === 'ar'
-        ? `${m[1]}: 0 موظف مجدول في يوم عمل متوقع (${m[2]})`
-        : `${m[1]} : 0 employé planifié un jour ouvré attendu (${m[2]})`;
+        ? `${shOut}: 0 موظف مجدول في يوم عمل متوقع (${m[2]})${lvAr}${pkAr}`
+        : `${shOut} : 0 employé planifié un jour ouvré attendu (${m[2]})${lvFr}${pkFr}`;
     }
 
-    m = trimmed.match(/^(.+?):\s*([\d,]+)\s+scheduled staff\s*\(([^)]+)\)$/i);
+    m = trimmed.match(/^(.+?):\s*([\d,]+)\s+scheduled\s*\(below floor of\s*([\d,]+)\)\s*on\s*([^\s·]+)(?:\s*·\s*([\d,]+)\s+on leave)?(?:\s*·\s*Click to pick stand-in)?$/i);
     if (m) {
+      const shRes = evalCore(m[1].trim(), lang, depth + 1);
+      const shOut = shRes.ok ? shRes.out : m[1].trim();
+      const lvAr = m[5] ? ` · ${m[5]} في إجازة` : '';
+      const lvFr = m[5] ? ` · ${m[5]} en congé` : '';
+      const pkAr = /Click to pick stand-in/i.test(trimmed) ? ' · انقر لاختيار بديل' : '';
+      const pkFr = /Click to pick stand-in/i.test(trimmed) ? ' · Cliquer pour choisir un remplaçant' : '';
       return lang === 'ar'
-        ? `${m[1]}: ${m[2]} موظفاً مجدولاً (${m[3]})`
-        : `${m[1]} : ${m[2]} employés planifiés (${m[3]})`;
+        ? `${shOut}: ${m[2]} مجدولاً (دون الحد الأدنى ${m[3]}) في ${m[4]}${lvAr}${pkAr}`
+        : `${shOut} : ${m[2]} planifiés (sous le seuil de ${m[3]}) le ${m[4]}${lvFr}${pkFr}`;
+    }
+
+    m = trimmed.match(/^(.+?):\s*([\d,]+)\s+scheduled staff\s*\(([^)]+)\)(?:\s*·\s*([\d,]+)\s+on leave)?(?:\s*·\s*Click to pick stand-in)?$/i);
+    if (m) {
+      const shRes = evalCore(m[1].trim(), lang, depth + 1);
+      const shOut = shRes.ok ? shRes.out : m[1].trim();
+      const lvAr = m[4] ? ` · ${m[4]} في إجازة` : '';
+      const lvFr = m[4] ? ` · ${m[4]} en congé` : '';
+      const pkAr = /Click to pick stand-in/i.test(trimmed) ? ' · انقر لاختيار بديل' : '';
+      const pkFr = /Click to pick stand-in/i.test(trimmed) ? ' · Cliquer pour choisir un remplaçant' : '';
+      return lang === 'ar'
+        ? `${shOut}: ${m[2]} موظفاً مجدولاً (${m[3]})${lvAr}${pkAr}`
+        : `${shOut} : ${m[2]} employés planifiés (${m[3]})${lvFr}${pkFr}`;
     }
 
     m = trimmed.match(/^(.+?)\s*\(Future Effective Date\)$/i);
@@ -29336,10 +29459,10 @@
     m = trimmed.match(/^Apply to\s+([\d,]+)\s+Staff$/i);
     if (m) return lang === 'ar' ? `تطبيق على ${m[1]} موظفاً` : `Appliquer à ${m[1]} employés`;
 
-    m = trimmed.match(/^Apply policy & perks group, tolerance \(0-30m for IN & OUT\), when lateness occurs, (?:late deduction|punishment), single-punch rule, and overtime to all ([\d,]+) filtered staff$/i);
+    m = trimmed.match(/^Apply (?:default shift rota,\s*)?policy & perks group, tolerance \(0-30m for IN & OUT\), when lateness occurs, (?:late deduction|punishment), single-punch rule, and overtime to all ([\d,]+) filtered staff$/i);
     if (m) return lang === 'ar'
-      ? `تطبيق مجموعة السياسات والمزايا، وفترة السماح (0-30د للدخول والخروج)، ومتى يُحتسب التأخير، وخصم التأخير، وقاعدة البصمة المفردة، والعمل الإضافي على جميع الموظفين المصفّين (${m[1]})`
-      : `Appliquer groupe de politique, tolérance (0-30m Entrée/Sortie), portée du retard, retenue, pointage unique et HS aux ${m[1]} employés filtrés`;
+      ? `تطبيق جدول المناوبة ومجموعة السياسات والمزايا، وفترة السماح (0-30د للدخول والخروج)، ومتى يُحتسب التأخير، وخصم التأخير، وقاعدة البصمة المفردة، والعمل الإضافي على جميع الموظفين المصفّين (${m[1]})`
+      : `Appliquer rotation d'équipe, groupe de politique, tolérance (0-30m Entrée/Sortie), portée du retard, retenue, pointage unique et HS aux ${m[1]} employés filtrés`;
 
     m = trimmed.match(/^Shift Type for\s+(.+)$/i);
     if (m) return lang === 'ar' ? `نوع الدوام لـ ${m[1].trim()}` : `Type d'horaire pour ${m[1].trim()}`;
@@ -29470,6 +29593,54 @@
 
     m = trimmed.match(/^3 · Daily Attendance Rule-Audit & Policy Exceptions\s*\((\d[\d,]*)\s+Days\)$/i);
     if (m) return lang === 'ar' ? `3 · تدقيق قواعد الحضور اليومي واستثناءات السياسة (${m[1]} يوم)` : `3 · Audit quotidien des règles de présence et exceptions (${m[1]} jours)`;
+
+    m = trimmed.match(/^below floor\s*\(<([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `دون الحد الأدنى (<${m[1]})` : `sous le seuil (<${m[1]})`;
+
+    m = trimmed.match(/^Drops Below Min Floor\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `ينخفض دون الحد الأدنى (${m[1]})` : `Passe sous le seuil min. (${m[1]})`;
+
+    m = trimmed.match(/^([+-]?[\d,]+)m\s+OT$/i);
+    if (m) return lang === 'ar' ? `${m[1]}د إضافي` : `${m[1]}m HS`;
+
+    m = trimmed.match(/^(\$[\d,.]+)\s+OT cost$/i);
+    if (m) return lang === 'ar' ? `${m[1]} تكلفة إضافي` : `${m[1]} coût HS`;
+
+    m = trimmed.match(/^Freq\s+(\d[\d,]*)\s*\/\s*(\d[\d,]*)$/i);
+    if (m) return lang === 'ar' ? `تكرار ${m[1]} / ${m[2]}` : `Fréq. ${m[1]} / ${m[2]}`;
+
+    m = trimmed.match(/^Company Bulk Policy\s*\((.+?)\)$/i);
+    if (m) return lang === 'ar' ? `السياسة الجماعية للشركة (${m[1]})` : `Politique groupée société (${m[1]})`;
+
+    m = trimmed.match(/^Filtered Staff\s*\(([\d,]+)\s+Staff\)$/i);
+    if (m) return lang === 'ar' ? `الموظفون المصفّون (${m[1]})` : `Personnel filtré (${m[1]})`;
+
+    m = trimmed.match(/^Assigned\s+(.+?)\s+to\s+(.+?)\s+on\s+([^\s(]+)(?:\s*\(\+1d OT Pass\))?$/i);
+    if (m) {
+      const shRes = evalCore(m[2].trim(), lang, depth + 1);
+      const shOut = shRes.ok ? shRes.out : m[2].trim();
+      const otAr = /\(\+1d OT Pass\)/i.test(trimmed) ? ' (+تصريح إضافي ليوم واحد)' : '';
+      const otFr = /\(\+1d OT Pass\)/i.test(trimmed) ? ' (+passe HS 1 j)' : '';
+      return lang === 'ar'
+        ? `تم تعيين ${m[1].trim()} في ${shOut} بتاريخ ${m[3].trim()}${otAr}`
+        : `${m[1].trim()} affecté à ${shOut} le ${m[3].trim()}${otFr}`;
+    }
+
+    m = trimmed.match(/^Removed cohort rule across\s+([\d,]+)\s+staff$/i);
+    if (m) return lang === 'ar' ? `تمت إزالة قاعدة المجموعة عبر ${m[1]} موظفاً` : `Règle de cohorte supprimée pour ${m[1]} employés`;
+
+    m = trimmed.match(/^Applied policy,\s*lateness,\s*OT snap\s*&\s*threshold rules to\s+([\d,]+)\s+staff(?:\s+from\s+([^\s·]+))?(?:\s*·\s*(Shift updated))?(?:\s*·\s*Recalculated\s+([\d,]+)\s+logs)?$/i);
+    if (m) {
+      const frAr = m[2] ? ` من ${m[2]}` : '';
+      const frFr = m[2] ? ` à partir du ${m[2]}` : '';
+      const shAr = m[3] ? ' · تم تحديث الدوام' : '';
+      const shFr = m[3] ? ' · Horaire mis à jour' : '';
+      const rcAr = m[4] ? ` · إعادة احتساب ${m[4]} سجلاً` : '';
+      const rcFr = m[4] ? ` · ${m[4]} entrées recalculées` : '';
+      return lang === 'ar'
+        ? `تم تطبيق السياسة والتأخير وتقريب الإضافي والعتبة على ${m[1]} موظفاً${frAr}${shAr}${rcAr}`
+        : `Politique, retard, arrondi HS et seuils appliqués à ${m[1]} employés${frFr}${shFr}${rcFr}`;
+    }
 
     m = trimmed.match(/^((?:[+-]?[\d,.]+[hm]\s+(?:OT|Late)|[\d,.]+d(?:\s+Penalty)?)(?:\s*(?:\/|·)\s*(?:[+-]?[\d,.]+[hm]\s+(?:OT|Late)|[\d,.]+d(?:\s+Penalty)?))*)$/i);
     if (m) {

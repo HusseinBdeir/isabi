@@ -483,6 +483,7 @@
     kioskCoEffOpen: {},
     kioskCoPolicyDraft: {},
     kioskCoverageSiteFilter: 'all',
+    kioskCoverageMinFloor: 1,
     kioskLastPunch: null,
     editingRecord: null,
     editingPendingSalaryId: '',
@@ -29755,6 +29756,24 @@
       // Calendar preset tag (`<preset>:<year>`): set by the Holiday & Season Presets, removable as one batch.
       const presetTag = String(item.preset || '').trim().slice(0, 40);
       if (presetTag) out.preset = presetTag;
+      // Preserve cohort drift baseline metadata on approved `adr_` timing rules for 30-day post-approval outcome tracking.
+      if (id.startsWith('adr_') || item.cohort_role || item.approved_at) {
+        const cRole = String(item.cohort_role || '').trim().slice(0, 64);
+        const cSite = String(item.cohort_site || '').trim().slice(0, 64);
+        const cShift = String(item.cohort_shift || '').trim().slice(0, 48);
+        const cKind = item.cohort_kind === 'grace_tolerance' ? 'grace_tolerance' : (item.cohort_kind === 'shift_timing' ? 'shift_timing' : '');
+        const appAt = String(item.approved_at || '').trim().slice(0, 10);
+        if (cRole) out.cohort_role = cRole;
+        if (cSite) out.cohort_site = cSite;
+        if (cShift) out.cohort_shift = cShift;
+        if (cKind) out.cohort_kind = cKind;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(appAt)) out.approved_at = appAt;
+        if (item.pre_obs != null && Number.isFinite(Number(item.pre_obs))) out.pre_obs = Math.max(0, Math.round(Number(item.pre_obs)));
+        if (item.pre_med_in != null && Number.isFinite(Number(item.pre_med_in))) out.pre_med_in = Math.round(Number(item.pre_med_in));
+        if (item.pre_med_out != null && Number.isFinite(Number(item.pre_med_out))) out.pre_med_out = Math.round(Number(item.pre_med_out));
+        if (item.pre_late_min_avg != null && Number.isFinite(Number(item.pre_late_min_avg))) out.pre_late_min_avg = Math.round(Number(item.pre_late_min_avg) * 10) / 10;
+        if (item.pre_unap_ot_min_avg != null && Number.isFinite(Number(item.pre_unap_ot_min_avg))) out.pre_unap_ot_min_avg = Math.round(Number(item.pre_unap_ot_min_avg) * 10) / 10;
+      }
       bySpan.set(`${sd}|${ed}`, out);
     });
     return Array.from(bySpan.values()).sort((a, b) =>
@@ -95796,8 +95815,34 @@
           setText('calc_att_impact', canShowAttDollars
             ? (dedUsd > 0 ? `-${fmtUSD(dedUsd, 2)} Deduction` : '$0.00 (Paid Leave)')
             : (lvPay === 'unpaid' ? 'Unpaid Leave (Dollar view restricted)' : 'Paid Leave'));
+          const attCovEl = $('attLeaveCoveragePreview');
+          if (attCovEl) {
+            if (curStaff) {
+              const edRow = (STATE.editingRecord && STATE.editingRecord.crKey === 'attendance') ? STATE.editingRecord.id : '';
+              const prevObj = computeLeaveCoverageAndCostPreview({
+                staff: curStaff,
+                company: curCo,
+                date: attDate,
+                startDate: attDate,
+                leaveDays: lvDays,
+                leaveType: effSt,
+                excludeRowId: edRow
+              });
+              renderLeaveCoveragePreviewInto(attCovEl, prevObj, {
+                onStandInAssigned: () => recalcForm()
+              });
+            } else {
+              attCovEl.innerHTML = '';
+              attCovEl.hidden = true;
+            }
+          }
           FORM_UI.lastAttTimeKey = '';
           return { mode: 'leave', lvType: effSt, lvDays, dedUsd: canShowAttDollars ? dedUsd : null, attDate, txDate };
+        }
+        const attCovElReset = $('attLeaveCoveragePreview');
+        if (attCovElReset) {
+          attCovElReset.innerHTML = '';
+          attCovElReset.hidden = true;
         }
 
         // Shift Mode ('shift'): Time In & Time Out compared directly against the employee's contract & effective policy
@@ -107277,6 +107322,8 @@
     if (printThermalBtn) { printThermalBtn.hidden = true; printThermalBtn.onclick = null; }
     const salReceiptBtn = $('modalSalaryReceiptBtn');
     if (salReceiptBtn) { salReceiptBtn.hidden = true; salReceiptBtn.onclick = null; }
+    const attCovReset = $('attLeaveCoveragePreview');
+    if (attCovReset) { attCovReset.innerHTML = ''; attCovReset.hidden = true; }
     const tw = $('modalTabs');
     if (tw) tw.hidden = false;
     const modal = $('entryModal');
@@ -112972,6 +113019,7 @@
             return fieldsHtml + (injectedMap ? '' : siteMapBoxHtml);
           })()}
         </div>
+        <div id="inspLeaveCoveragePreview" class="att-leave-cov-preview" hidden></div>
         <div class="insp-modify-foot">
           <div id="inspModLiveCalc" class="insp-mod-live-calc"></div>
           <div style="display:flex;justify-content:flex-end;gap:8px;margin-left:auto">
@@ -113668,6 +113716,29 @@
         const wkInfo = attDateWeekdayInfo(sd);
         const stTp = getModVal('status') || row.type || row.status || 'Present';
         html = `<span>Set Date: <b>${esc(fmtDateDMY(sd))}${wkInfo.short ? ' (' + esc(wkInfo.short) + ')' : ''}</b></span><span>Tx Date: <b>${esc(fmtDateDMY(td))}</b></span><span>Month: <b>${esc(sd.slice(0, 7))}</b></span><span>Type: <b>${esc(stTp)}</b></span>`;
+        const inspCovEl = $('inspLeaveCoveragePreview');
+        if (inspCovEl) {
+          if (/^(vacabsence|absence|absent|sick|annual|paid\s*leave|unpaid\s*leave|leave|half\s*day)/i.test(stTp)) {
+            const mStaff = getModVal('staff') || row.staff || '';
+            const mCo = getModVal('company') || row.company || defaultEntryCompany();
+            const mDays = getModNum('leave_days') || Number(row.leave_days || (/^half\b/i.test(stTp) ? 0.5 : 1));
+            const prevObj = computeLeaveCoverageAndCostPreview({
+              staff: mStaff,
+              company: mCo,
+              date: sd,
+              startDate: sd,
+              leaveDays: mDays,
+              leaveType: stTp,
+              excludeRowId: row.id
+            });
+            renderLeaveCoveragePreviewInto(inspCovEl, prevObj, {
+              onStandInAssigned: () => syncModifyLiveSummary()
+            });
+          } else {
+            inspCovEl.innerHTML = '';
+            inspCovEl.hidden = true;
+          }
+        }
       } else if (key === 'equipment_defects') {
         const sev = getModVal('severity') || row.severity || 'Moderate';
         const st = getModVal('status') || row.status || 'Open';
@@ -132411,7 +132482,7 @@
   }
 
   function simulatePolicyChangeEmployeeDiffs(spec = {}) {
-    const mode = spec.mode === 'policy_group' ? 'policy_group' : 'company_default';
+    const mode = spec.mode === 'policy_group' ? 'policy_group' : (spec.mode === 'bulk_roster' ? 'bulk_roster' : 'company_default');
     const showDollars = canViewPayrollDollarAmounts();
     const today = todayISO();
 
@@ -132420,6 +132491,26 @@
     }
     if (mode === 'company_default' && !canEditShiftsAndRules(null, spec.company || '')) {
       return { ok: false, error: 'You do not have rights to update policy defaults for this company' };
+    }
+    const rawTargets = mode === 'bulk_roster' && Array.isArray(spec.staffTargets)
+      ? spec.staffTargets.map(t => (typeof t === 'string'
+        ? {
+            staff: t,
+            company: spec.company || '',
+            patch: Object.assign(
+              {},
+              (spec.patch && typeof spec.patch === 'object') ? spec.patch : {},
+              spec.shift_id != null ? { shift_id: spec.shift_id } : {},
+              spec.grace_min != null ? { grace_min: spec.grace_min } : {}
+            )
+          }
+        : t))
+      : [];
+    const writableTargets = mode === 'bulk_roster'
+      ? rawTargets.filter(t => t && t.staff && canEditShiftsAndRules(null, t.company || spec.company || ''))
+      : [];
+    if (mode === 'bulk_roster' && !writableTargets.length) {
+      return { ok: false, error: 'You do not have rights to update rules for the selected staff' };
     }
 
     const pgPayloadRaw = (spec.groupPayload && typeof spec.groupPayload === 'object') ? Object.assign({}, spec.groupPayload) : {};
@@ -132533,12 +132624,54 @@
     let netDeltaUsd = showDollars ? 0 : null;
     let scopeLabel = '';
     let simTitle = '';
+    let covWeekOffset = 0;
+    let covSiteFilter = 'all';
+    let covMinFloor = 1;
+    let covCo = '';
+    let covBefore = null;
+    let coverageSummary = null;
+    if (mode === 'bulk_roster') {
+      covWeekOffset = isFutureEffective
+        ? getScheduleWeekOffsetForDate(effFrom)
+        : Number(spec.weekOffset != null ? spec.weekOffset : (STATE.kioskSchedWeekOffset || 0));
+      covSiteFilter = String(spec.siteFilter != null ? spec.siteFilter : (STATE.kioskCoverageSiteFilter || 'all')).trim() || 'all';
+      covMinFloor = Math.max(1, Math.min(5, Math.round(Number(spec.minFloor != null ? spec.minFloor : (STATE.kioskCoverageMinFloor || 1)))));
+      const targetCos = Array.from(new Set(writableTargets.map(t => String(t.company || spec.company || '').trim()).filter(Boolean)));
+      covCo = String(spec.company || (targetCos.length === 1 ? targetCos[0] : '')).trim();
+      covBefore = computeWeeklyShiftCoverageHeatmap({
+        company: covCo,
+        weekOffset: covWeekOffset,
+        siteFilter: covSiteFilter,
+        minFloor: covMinFloor
+      });
+    }
 
     try {
       _POLICY_SIM_SANDBOX = true;
       const companyStaffScopes = [];
 
-      if (mode === 'company_default') {
+      if (mode === 'bulk_roster') {
+        const byCoMap = new Map();
+        writableTargets.forEach(t => {
+          const tCo = String(t.company || spec.company || defaultEntryCompany() || '').trim();
+          const tPatch = Object.assign(
+            {},
+            (t.patch && typeof t.patch === 'object') ? t.patch : {},
+            tCo ? { company: tCo } : {},
+            effFrom ? { effective_from: effFrom } : {},
+            effTo ? { effective_to: effTo } : {}
+          );
+          saveStaffWorkRule(t.staff, tPatch, { deferSave: true, skipRecalc: true });
+          const cKey = norm(tCo);
+          if (!byCoMap.has(cKey)) byCoMap.set(cKey, { company: tCo, staffSet: new Set() });
+          byCoMap.get(cKey).staffSet.add(norm(t.staff));
+        });
+        byCoMap.forEach(sc => {
+          if (sc.staffSet.size > 0) companyStaffScopes.push(sc);
+        });
+        scopeLabel = spec.scopeLabel || `${covCo || 'Filtered Staff'} (${writableTargets.length} Staff)`;
+        simTitle = spec.title || 'Bulk Roster & Policy Simulation';
+      } else if (mode === 'company_default') {
         const co = String(spec.company || defaultEntryCompany() || 'WTC').trim();
         const grpId = spec.groupId || getCompanyDefaultPolicyGroupId(co) || 'pkg_15_open_15d';
         const simRes = setCompanyDefaultPolicyGroup(co, grpId, {
@@ -132810,6 +132943,40 @@
           });
         }
       }
+
+      if (mode === 'bulk_roster' && covBefore) {
+        const hasOffTarget = writableTargets.some(t => t && t.patch && String(t.patch.shift_id || '').trim() === 'off');
+        const preserveShiftIds = hasOffTarget
+          ? (covBefore.rows || []).filter(r => r && (r.assignedCount > 0 || r.zeroGapCount > 0 || r.belowFloorCount > 0)).map(r => r.shiftId)
+          : null;
+        const covAfter = computeWeeklyShiftCoverageHeatmap({
+          company: covCo,
+          weekOffset: covWeekOffset,
+          siteFilter: covBefore.siteFilter || covSiteFilter,
+          minFloor: covMinFloor,
+          preserveShiftIds
+        });
+        const wdArr = covAfter.weekDates || covBefore.weekDates || [];
+        const weekLbl = wdArr.length >= 7
+          ? `${wdArr[0].dayNum} ${wdArr[0].monthShort} - ${wdArr[6].dayNum} ${wdArr[6].monthShort}`
+          : 'Active Week';
+        const zBefore = Number(covBefore.zeroGapCount || 0);
+        const zAfter = Number(covAfter.zeroGapCount || 0);
+        const bBefore = Number(covBefore.belowFloorCount || 0);
+        const bAfter = Number(covAfter.belowFloorCount || 0);
+        coverageSummary = {
+          weekOffset: covWeekOffset,
+          weekLabel: weekLbl,
+          siteFilter: covAfter.siteFilter || covBefore.siteFilter || 'all',
+          minFloor: covMinFloor,
+          zeroGapBefore: zBefore,
+          zeroGapAfter: zAfter,
+          zeroGapDelta: zAfter - zBefore,
+          belowFloorBefore: bBefore,
+          belowFloorAfter: bAfter,
+          belowFloorDelta: bAfter - bBefore
+        };
+      }
     } finally {
       _POLICY_SIM_SANDBOX = false;
       STATE.workSchedules = savedWs;
@@ -132875,12 +133042,13 @@
       earnedDeltaUsd,
       lostDeltaUsd,
       netDeltaUsd,
+      coverageSummary: coverageSummary || null,
       employees
     };
   }
 
   function _syncOverlayModalState(shouldRefreshAtt = false) {
-    const anyModalOpen = ['staffScheduleModal', 'policyGroupModal', 'punchDriftModal', 'shiftTypeModal', 'policySimDiffDrawer', 'shiftCalPresetModal']
+    const anyModalOpen = ['staffScheduleModal', 'policyGroupModal', 'punchDriftModal', 'shiftTypeModal', 'policySimDiffDrawer', 'shiftCalPresetModal', 'covStandInModal']
       .some(id => { const el = $(id); return el && !el.hidden; });
     if (!anyModalOpen) {
       document.body.classList.remove('modal-open');
@@ -132988,6 +133156,19 @@
                 `}
               </div>
             `}
+            ${sim.coverageSummary ? `
+              <div class="psd-cov-summary" id="psdCoverageSummary">
+                <span class="psd-cov-title">${ic('calendar')} <span>Weekly Shift Coverage</span> <span class="muted mono" data-no-i18n="1">(${esc(sim.coverageSummary.weekLabel)} · ${esc(sim.coverageSummary.siteFilter === 'all' ? 'All Sites' : sim.coverageSummary.siteFilter)} · Min ${fmtNum(sim.coverageSummary.minFloor)})</span></span>
+                <span class="badge ${sim.coverageSummary.zeroGapAfter > sim.coverageSummary.zeroGapBefore ? 'badge-red' : (sim.coverageSummary.zeroGapAfter < sim.coverageSummary.zeroGapBefore ? 'badge-emerald' : 'badge-muted')}">
+                  <span>Zero-Coverage Gaps:</span>
+                  <b class="mono" data-no-i18n="1">${fmtNum(sim.coverageSummary.zeroGapBefore)} -&gt; ${fmtNum(sim.coverageSummary.zeroGapAfter)}</b>
+                </span>
+                <span class="badge ${sim.coverageSummary.belowFloorAfter > sim.coverageSummary.belowFloorBefore ? 'badge-amber' : (sim.coverageSummary.belowFloorAfter < sim.coverageSummary.belowFloorBefore ? 'badge-emerald' : 'badge-muted')}">
+                  <span>Below Min Floor:</span>
+                  <b class="mono" data-no-i18n="1">${fmtNum(sim.coverageSummary.belowFloorBefore)} -&gt; ${fmtNum(sim.coverageSummary.belowFloorAfter)}</b>
+                </span>
+              </div>
+            ` : ''}
             <div class="psd-guard-row">
               <span>${fmtNum(sim.unchangedRows)} <span>unchanged logs</span></span>
               <span>·</span>
@@ -133104,6 +133285,7 @@
       drawer.hidden = false;
       document.body.classList.add('modal-open');
       stripNativeTitles(drawer);
+      if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(drawer);
 
       $('psdCloseBtn')?.addEventListener('click', closePolicySimulationDiffDrawer);
       $('psdCancelBtn')?.addEventListener('click', closePolicySimulationDiffDrawer);
@@ -136388,6 +136570,33 @@
     next.sat_start_time = (next.day_timings['6'] && next.day_timings['6'].start_time) || fmtAttClockTime(next.sat_start_time || '07:00') || '07:00';
     next.sat_end_time = (next.day_timings['6'] && next.day_timings['6'].end_time) || fmtAttClockTime(next.sat_end_time || '14:00') || '14:00';
     next.shift_overrides = Array.isArray(next.shift_overrides) ? next.shift_overrides.filter(o => o && o.start_date) : [];
+    if (isFutureEffective && effectivePatch.shift_id != null && !Array.isArray(effectivePatch.shift_overrides)) {
+      const targetSid = String(effectivePatch.shift_id || 'day_8_4').trim() || 'day_8_4';
+      const spanTo = effTo || '2099-12-31';
+      const shRef = targetSid === 'off' ? null : resolveShiftAtDate(targetSid, ruleCo || cur.company, effFrom);
+      const ovId = `bulk_sov_${effFrom.replace(/-/g, '')}`;
+      const priorEnd = shiftIsoDateByDays(effFrom, -1);
+      const nextSov = [];
+      next.shift_overrides.forEach(o => {
+        const oid = String(o.id || '');
+        if (oid === ovId || (o.start_date === effFrom && (o.end_date || o.start_date) === spanTo)) return;
+        if (oid.startsWith('bulk_sov_') && o.start_date < effFrom && (o.end_date || '2099-12-31') >= effFrom) {
+          if (priorEnd >= o.start_date) nextSov.push(Object.assign({}, o, { end_date: priorEnd }));
+          return;
+        }
+        nextSov.push(o);
+      });
+      nextSov.unshift({
+        id: ovId,
+        shift_id: targetSid,
+        custom_start: (shRef && shRef.start_time) || effectivePatch.custom_start || (targetSid === 'off' ? '00:00' : '08:00'),
+        custom_end: (shRef && shRef.end_time) || effectivePatch.custom_end || (targetSid === 'off' ? '00:00' : '16:00'),
+        start_date: effFrom,
+        end_date: spanTo,
+        note: String(patch.timeline_note || opts.timeline_note || 'Scheduled Shift Change').trim().slice(0, 60)
+      });
+      next.shift_overrides = nextSov.slice(0, 40);
+    }
     next.ot_passes = Array.isArray(next.ot_passes) ? next.ot_passes.filter(p => p && p.start_date) : [];
     ws.staffRules[k] = next;
     syncStaffContractPolicyFields(next.staff || staffName, next.company, next, { effectiveFrom: effFrom });
@@ -136449,6 +136658,7 @@
       custom_end: fmtAttClockTime(ovSpec.custom_end || '16:00') || '16:00',
       start_date: startD,
       end_date: endD,
+      site: (ovSpec.site && norm(ovSpec.site) !== 'all') ? String(ovSpec.site).trim() : '',
       note: String(ovSpec.note || '').trim()
     };
     const filtered = (cur.shift_overrides || []).filter(x => !(x.start_date === startD && x.end_date === endD));
@@ -140195,9 +140405,10 @@
     }
   }
 
-  function getScheduleWeekDates(weekOffset = 0) {
+  function getScheduleWeekDates(weekOffset = 0, refIso = '') {
     const today = todayISO();
-    const [y, m, d] = today.split('-').map(Number);
+    const anchor = /^\d{4}-\d{2}-\d{2}$/.test(String(refIso || '').slice(0, 10)) ? String(refIso).slice(0, 10) : today;
+    const [y, m, d] = anchor.split('-').map(Number);
     const dt = new Date(Date.UTC(y, m - 1, d));
     const dow = dt.getUTCDay(); // 0=Sun..6=Sat
     const diffToMon = dow === 0 ? -6 : (1 - dow);
@@ -140218,6 +140429,17 @@
       });
     }
     return days;
+  }
+
+  function getScheduleWeekOffsetForDate(targetIso = '') {
+    const cleanTarget = /^\d{4}-\d{2}-\d{2}$/.test(String(targetIso || '').slice(0, 10))
+      ? String(targetIso).slice(0, 10)
+      : todayISO();
+    const monToday = getScheduleWeekDates(0, todayISO())[0].iso;
+    const monTarget = getScheduleWeekDates(0, cleanTarget)[0].iso;
+    const [y1, m1, d1] = monToday.split('-').map(Number);
+    const [y2, m2, d2] = monTarget.split('-').map(Number);
+    return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / (7 * 86400000));
   }
 
   function formatWorkdaysCompact(daysArr) {
@@ -143940,6 +144162,9 @@
     let draftOtWinEnd = rule.ot_window_end || '';
     let draftPasses = (rule.ot_passes || []).map(p => Object.assign({}, p));
     let draftOverrides = (rule.shift_overrides || []).map(o => Object.assign({}, o));
+    let draftOvShift = 'night_7_3';
+    let draftOvStart = String(opts.focusDate || '').slice(0, 10);
+    let draftOvEnd = String(opts.focusDate || '').slice(0, 10);
     const todayResolvedStaffPol = resolveStaffPolicyForDate(entry.name, entry.company, today);
     let draftCustomMathOverride = Boolean(rule.custom_math_override);
     let draftMathMode = normalizeAttMathMode(draftCustomMathOverride && rule.math_mode ? rule.math_mode : todayResolvedStaffPol.math_mode);
@@ -145067,20 +145292,21 @@
                 <div class="ssm-field" style="min-width:165px">
                   <label for="ssmOvShift">Rotation Shift</label>
                   <select id="ssmOvShift" class="kiosk-select" data-plain-options="1">
-                    ${liveShiftTypes.map(st => `<option value="${esc(st.id)}" ${st.id === 'night_7_3' ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)})</option>`).join('')}
-                    <option value="off">Scheduled Day Off</option>
+                    ${liveShiftTypes.map(st => `<option value="${esc(st.id)}" ${draftOvShift === st.id ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)})</option>`).join('')}
+                    <option value="off" ${draftOvShift === 'off' ? 'selected' : ''}>Scheduled Day Off</option>
                   </select>
                 </div>
                 <div class="ssm-field">
                   <label for="ssmOvStart">From Date</label>
-                  <input type="date" id="ssmOvStart" value="${esc(opts.focusDate || '')}">
+                  <input type="date" id="ssmOvStart" value="${esc(draftOvStart)}">
                 </div>
                 <div class="ssm-field">
                   <label for="ssmOvEnd">To Date</label>
-                  <input type="date" id="ssmOvEnd" value="${esc(opts.focusDate || '')}">
+                  <input type="date" id="ssmOvEnd" value="${esc(draftOvEnd)}">
                 </div>
                 <button type="button" class="btn" id="ssmAddOvBtn" style="align-self:flex-end">+ Add Rotation</button>
               </div>
+              <div class="att-leave-cov-preview" id="ssmLeaveCoveragePreview" hidden></div>
               ${draftOverrides.length ? `
                 <div class="ssm-pass-list">
                   ${draftOverrides.map(ov => {
@@ -145100,6 +145326,7 @@
           <div class="modal-foot" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button type="button" class="btn" id="ssmResetBtn"${canEditStaffRule ? '' : ' disabled'}>Reset Default</button>
+              <button type="button" class="btn" id="ssmSimCompanyLateBtn"${canEditStaffRule ? '' : ' disabled'}>${ic('sliders')} Simulate Company Impact</button>
               <button type="button" class="btn" id="ssmApplyCompanyLateBtn"${canEditStaffRule ? '' : ' disabled'}>Apply Policy &amp; Rules to All ${esc(entry.company)} Staff</button>
             </div>
             <div style="display:flex;gap:8px">
@@ -145147,6 +145374,9 @@
         if ($('ssmDateExcStart')) draftPendingDateStart = normalize24hClockTime($('ssmDateExcStart').value || '09:00', '09:00');
         if ($('ssmDateExcEnd')) draftPendingDateEnd = normalize24hClockTime($('ssmDateExcEnd').value || '15:00', '15:00');
         if ($('ssmDateExcNote')) draftPendingDateNote = String($('ssmDateExcNote').value || '');
+        if ($('ssmOvShift')) draftOvShift = $('ssmOvShift').value || 'night_7_3';
+        if ($('ssmOvStart')) draftOvStart = String($('ssmOvStart').value || '').slice(0, 10);
+        if ($('ssmOvEnd')) draftOvEnd = String($('ssmOvEnd').value || '').slice(0, 10);
         if ($('ssmMathModeSelect') && src !== 'ot_snap') {
           const mv = $('ssmMathModeSelect').value || 'inherit';
           if (mv === 'inherit') {
@@ -146010,47 +146240,114 @@
         closeStaffScheduleModal();
       });
 
-      $('ssmApplyCompanyLateBtn')?.addEventListener('click', () => {
-        if (!canEditShiftsAndRules(null, entry.company)) return;
+      const buildCompanyBulkRulePatch = () => {
         syncLiveInputs();
+        const patch = {
+          policy_group_id: draftPolicyGroupId,
+          custom_math_override: draftCustomMathOverride,
+          math_mode: draftMathMode,
+          ot_threshold_min: draftOtThreshMin,
+          ot_early_threshold_min: draftOtEarlyThreshMin,
+          ot_count_from: draftOtCountFrom,
+          ot_snap_mode: draftOtSnapMode,
+          ot_block_min: draftOtBlockMin,
+          ot_snap_at_min: draftOtSnapAtMin,
+          grace_min: draftGrace,
+          early_leave_grace_min: draftEarlyGrace,
+          late_when: draftLateWhen,
+          late_count_from: draftLateCountFrom,
+          late_penalty_mode: draftLatePenaltyMode,
+          late_brackets: draftLateBrackets,
+          late_below_bracket_mode: draftLateBelowBrk,
+          late_multiplier: draftLateMultiplier,
+          ot_multiplier: draftOtMultiplier,
+          ot_mode: draftOtMode,
+          ot_max_hours: draftOtMaxHours,
+          vacation_days: draftVacationDays,
+          sick_days: draftSickDays,
+          working_days: draftWorkingDays,
+          perks: draftPerks.slice(),
+          late_half_day_after_min: draftLateHalfDayMin,
+          no_clock_out_rule: draftNoClockOutRule
+        };
+        if (draftPolEffFrom) patch.effective_from = draftPolEffFrom;
+        if (draftPolEffTo) patch.effective_to = draftPolEffTo;
+        return patch;
+      };
+      const validateCompanyBulkWindow = basePatch => {
+        const effF = basePatch.effective_from || '';
+        const effT = basePatch.effective_to || '';
+        if (effT && !effF) {
+          toast('Enter an Effective From date when setting Effective To', 'warn');
+          $('ssmPolEffFrom')?.focus();
+          return false;
+        }
+        if (effT && effF && effT < effF) {
+          toast('Effective End Date must be on or after Start Date', 'warn');
+          $('ssmPolEffTo')?.focus();
+          return false;
+        }
+        return true;
+      };
+      const applyCompanyBulkRulesNow = () => {
+        if (!canEditShiftsAndRules(null, entry.company)) return;
+        const basePatch = buildCompanyBulkRulePatch();
+        if (!validateCompanyBulkWindow(basePatch)) return;
         const coStaff = getKioskStaffDirectory().filter(s => s.company === entry.company);
+        const effF = basePatch.effective_from || '';
+        const effT = basePatch.effective_to || '';
+        const runRecalc = !effF || effF <= today;
         coStaff.forEach(s => {
-          saveStaffWorkRule(s.name, {
-            company: s.company,
-            policy_group_id: draftPolicyGroupId,
-            custom_math_override: draftCustomMathOverride,
-            math_mode: draftMathMode,
-            ot_threshold_min: draftOtThreshMin,
-            ot_early_threshold_min: draftOtEarlyThreshMin,
-            ot_count_from: draftOtCountFrom,
-            ot_snap_mode: draftOtSnapMode,
-            ot_block_min: draftOtBlockMin,
-            ot_snap_at_min: draftOtSnapAtMin,
-            grace_min: draftGrace,
-            early_leave_grace_min: draftEarlyGrace,
-            late_when: draftLateWhen,
-            late_count_from: draftLateCountFrom,
-            late_penalty_mode: draftLatePenaltyMode,
-            late_brackets: draftLateBrackets,
-            late_below_bracket_mode: draftLateBelowBrk,
-            late_multiplier: draftLateMultiplier,
-            ot_multiplier: draftOtMultiplier,
-            ot_mode: draftOtMode,
-            ot_max_hours: draftOtMaxHours,
-            vacation_days: draftVacationDays,
-            sick_days: draftSickDays,
-            working_days: draftWorkingDays,
-            perks: draftPerks.slice(),
-            late_half_day_after_min: draftLateHalfDayMin,
-            no_clock_out_rule: draftNoClockOutRule
-          }, { deferSave: true });
+          saveStaffWorkRule(s.name, Object.assign({ company: s.company }, basePatch), { deferSave: true, skipRecalc: runRecalc });
         });
+        let bfCnt = 0;
+        if (coStaff.length > 0 && runRecalc && draftPolBackfill) {
+          const bfRes = backfillAttendancePolicyChange({
+            company: entry.company,
+            staffNames: coStaff.map(s => s.name),
+            fromDate: effF || today,
+            toDate: effT || '',
+            deferSave: true
+          });
+          bfCnt = bfRes ? Number(bfRes.updatedRows || 0) : 0;
+        }
+        if (runRecalc) {
+          coStaff.forEach(s => recalcStaffTodayPunchAndAttendance(s.name));
+        }
         saveLocalAuthAndRecords();
         postWorkScheduleMutation({ op: 'bulk_company_policy', company: entry.company });
         syncWithCloud(true);
-        toast(`Applied policy, multipliers, perks & tolerances to all ${coStaff.length} active staff in ${entry.company}`, 'ok');
+        toast(`Applied policy, multipliers, perks & tolerances to all ${coStaff.length} active staff in ${entry.company}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`, 'ok');
         closeStaffScheduleModal();
+      };
+      $('ssmSimCompanyLateBtn')?.addEventListener('click', () => {
+        if (!canEditShiftsAndRules(null, entry.company)) return;
+        const basePatch = buildCompanyBulkRulePatch();
+        if (!validateCompanyBulkWindow(basePatch)) return;
+        const coStaff = getKioskStaffDirectory().filter(s => s.company === entry.company);
+        const staffTargets = coStaff.map(s => ({
+          staff: s.name,
+          company: s.company,
+          patch: Object.assign({ company: s.company }, basePatch)
+        }));
+        openPolicySimulationDiffDrawer({
+          simSpec: {
+            mode: 'bulk_roster',
+            company: entry.company,
+            effective_from: basePatch.effective_from || '',
+            effective_to: basePatch.effective_to || '',
+            title: `Company Bulk Policy (${entry.company})`,
+            scopeLabel: `${entry.company} (${staffTargets.length} Active Staff)`,
+            staffTargets
+          },
+          canApply: canEditShiftsAndRules(null, entry.company),
+          onConfirmApply: () => {
+            closePolicySimulationDiffDrawer();
+            applyCompanyBulkRulesNow();
+          }
+        });
       });
+      $('ssmApplyCompanyLateBtn')?.addEventListener('click', applyCompanyBulkRulesNow);
 
       modal.querySelectorAll('[data-ssm-shift]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -146397,6 +146694,45 @@
         draftOverrides.unshift({ id: uid('sov'), shift_id: ovShift, start_date: sD, end_date: eD, note: '' });
         renderModalInner();
       });
+
+      const syncSsmLeaveCovPreview = () => {
+        const ssmCovEl = $('ssmLeaveCoveragePreview');
+        if (!ssmCovEl) return;
+        const ovShift = $('ssmOvShift')?.value || draftOvShift || 'night_7_3';
+        const sD = String($('ssmOvStart')?.value || draftOvStart || '').slice(0, 10);
+        const eD = String($('ssmOvEnd')?.value || draftOvEnd || sD).slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(sD)) {
+          ssmCovEl.innerHTML = '';
+          ssmCovEl.hidden = true;
+          return;
+        }
+        const prevObj = computeLeaveCoverageAndCostPreview({
+          staff: entry.name,
+          company: entry.company,
+          date: sD,
+          startDate: sD,
+          endDate: /^\d{4}-\d{2}-\d{2}$/.test(eD) && eD >= sD ? eD : sD,
+          rotationShiftId: ovShift
+        });
+        renderLeaveCoveragePreviewInto(ssmCovEl, prevObj, {
+          onStandInAssigned: () => syncSsmLeaveCovPreview()
+        });
+      };
+      ['ssmOvShift', 'ssmOvStart', 'ssmOvEnd'].forEach(fid => {
+        const fel = $(fid);
+        if (!fel) return;
+        fel.addEventListener('change', () => {
+          syncLiveInputs();
+          syncSsmLeaveCovPreview();
+        });
+        if (fid !== 'ssmOvShift') {
+          fel.addEventListener('input', () => {
+            syncLiveInputs();
+            syncSsmLeaveCovPreview();
+          });
+        }
+      });
+      syncSsmLeaveCovPreview();
 
       modal.querySelectorAll('[data-remove-shift-ov]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -149193,13 +149529,19 @@
     return out.sort((a, b) => a.staff.localeCompare(b.staff));
   }
 
-  function removePunchDriftRule(staff, company, itemId) {
-    if (!canApplyShiftCalendar()) return { ok: false, error: 'You do not have rights to change shifts' };
+  function removePunchDriftRule(staff, company, itemId, opts = {}) {
+    if (STATE.kioskLocked || !canApplyShiftCalendar()) return { ok: false, error: 'You do not have rights to change shifts' };
     const allowed = allowedCompanyNames();
     if (allowed.length && !allowed.some(n => norm(n) === norm(company))) return { ok: false, error: 'You do not have rights to change shifts' };
+    if (company && !canEditShiftsAndRules(null, company)) return { ok: false, error: 'You do not have rights to change shifts' };
+    const rmIds = new Set(Array.isArray(itemId) ? itemId.map(x => String(x)) : [String(itemId)]);
     const cur = getStaffWorkRule(staff, company);
-    const next = normalizeDateTimingsList(cur.own_date_timings).filter(it => String(it.id) !== String(itemId));
-    return saveStaffWorkRule(staff, { company, own_date_timings: next });
+    const next = normalizeDateTimingsList(cur.own_date_timings).filter(it => !rmIds.has(String(it.id)));
+    return saveStaffWorkRule(staff, { company, own_date_timings: next }, {
+      deferSave: Boolean(opts.deferSave),
+      skipRecalc: Boolean(opts.skipRecalc),
+      backfillAtt: opts.backfillAtt
+    });
   }
 
   function resolvePunchRealSite(p, fallbackCo = '') {
@@ -149371,9 +149713,143 @@
     return { role, site: bestSite, siteFreq: bestFreq };
   }
 
+  function buildStaffFullDayLeaveIndex(companies, fromIso, toIso, opts = {}) {
+    const leaveMap = new Map();
+    const coSet = new Set((companies || []).map(c => norm(c)).filter(Boolean));
+    const fromD = String(fromIso || '').slice(0, 10);
+    const toD = String(toIso || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromD) || !/^\d{4}-\d{2}-\d{2}$/.test(toD) || toD < fromD) return leaveMap;
+    const excludeRowId = opts.excludeRowId != null ? String(opts.excludeRowId) : '';
+
+    const minLeaveStart = shiftCalAddDays(fromD, -31);
+    const workedKeys = new Set();
+    const markWorked = p => {
+      if (!p || p.voided) return;
+      const d = String(p.shift_date || p.set_date || p.rep_date || p.date || '').slice(0, 10);
+      if (d.length !== 10 || d < fromD || d > toD) return;
+      if (excludeRowId && p.id != null && String(p.id) === excludeRowId) return;
+      const tp = String(p.type || p.status || '').trim();
+      if (/^(vacabsence|absence|absent|sick|annual|paid\s*leave|unpaid\s*leave|leave|half\s*day)/i.test(tp)) return;
+      const inT = fmtAttClockTime(p.in_time || p.check_in || '');
+      const outT = fmtAttClockTime(p.out_time || p.check_out || '');
+      if (!inT || !outT) return;
+      const stN = norm(p.staff || '');
+      if (!stN) return;
+      const co = canonCompany(p.company || defaultEntryCompany() || 'WTC') || String(p.company || '').trim();
+      const coN = norm(co);
+      if (coSet.size && !coSet.has(coN)) return;
+      workedKeys.add(`${coN}|${stN}|${d}`);
+    };
+
+    const attSeed = (SEED && SEED.records && Array.isArray(SEED.records.attendance)) ? SEED.records.attendance : [];
+    const attCustom = (STATE.customRecords && Array.isArray(STATE.customRecords.attendance)) ? STATE.customRecords.attendance : [];
+    const kioskList = Array.isArray(STATE.kioskPunches) ? STATE.kioskPunches : [];
+    const tabletList = typeof doorTabletPunchList === 'function' ? doorTabletPunchList() : [];
+    attSeed.forEach(markWorked);
+    attCustom.forEach(markWorked);
+    kioskList.forEach(markWorked);
+    tabletList.forEach(markWorked);
+
+    const isLeaveLike = (tp, lvDays) => {
+      if (/^half\b/i.test(tp)) return false;
+      if (!/^(vacabsence|absence|absent|sick|annual|paid\s*leave|unpaid\s*leave|leave)/i.test(tp)) return false;
+      return lvDays == null || lvDays >= 1;
+    };
+
+    const seenIds = new Set();
+    const ingestLeave = (a, isCustomRow) => {
+      if (!a || a.voided) return;
+      if (excludeRowId && a.id != null && String(a.id) === excludeRowId) return;
+      const rid = a.id != null ? String(a.id) : '';
+      if (isCustomRow && rid) {
+        if (seenIds.has(rid)) return;
+        seenIds.add(rid);
+      }
+      const tp = String(a.type || a.status || '').trim();
+      const lvDays = a.leave_days != null && a.leave_days !== '' ? Number(a.leave_days) : null;
+      if (!isLeaveLike(tp, lvDays)) return;
+      const baseDate = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      if (baseDate.length !== 10 || baseDate > toD || baseDate < minLeaveStart) return;
+      const fullSpanDays = lvDays != null ? Math.min(31, Math.max(1, Math.floor(lvDays))) : 1;
+      if (fullSpanDays === 1 && baseDate < fromD) return;
+      if (!isCustomRow && rid) {
+        if (seenIds.has(rid)) return;
+        seenIds.add(rid);
+      }
+      const stN = norm(a.staff || '');
+      if (!stN) return;
+      const co = canonCompany(a.company || defaultEntryCompany() || 'WTC') || String(a.company || '').trim();
+      const coN = norm(co);
+      if (coSet.size && !coSet.has(coN)) return;
+      for (let off = 0; off < fullSpanDays; off++) {
+        const curD = off === 0 ? baseDate : shiftCalAddDays(baseDate, off);
+        if (curD < fromD || curD > toD) continue;
+        const k = `${coN}|${stN}|${curD}`;
+        if (workedKeys.has(k)) continue;
+        leaveMap.set(k, {
+          staff: a.staff,
+          company: co,
+          date: curD,
+          type: tp,
+          leaveDays: lvDays != null ? lvDays : 1,
+          isFullDay: true,
+          hypothetical: false
+        });
+      }
+    };
+    attCustom.forEach(a => ingestLeave(a, true));
+    attSeed.forEach(a => ingestLeave(a, false));
+
+    if (opts.hypotheticalLeave && typeof opts.hypotheticalLeave === 'object') {
+      const h = opts.hypotheticalLeave;
+      const hStaff = String(h.staff || '').trim();
+      const hCo = canonCompany(h.company || defaultEntryCompany() || 'WTC') || String(h.company || '').trim();
+      const hType = String(h.type || h.leaveType || 'Absence').trim();
+      const hDays = h.leaveDays != null && h.leaveDays !== '' ? Number(h.leaveDays) : 1;
+      const hStart = String(h.startDate || h.date || '').slice(0, 10);
+      const hEndRaw = String(h.endDate || '').slice(0, 10);
+      if (hStaff && hCo && (!coSet.size || coSet.has(norm(hCo))) && /^\d{4}-\d{2}-\d{2}$/.test(hStart)) {
+        const isHypHalf = /^half\b/i.test(hType) || (Number.isFinite(hDays) && hDays > 0 && hDays < 1);
+        if (!isHypHalf && hDays >= 1) {
+          const spanEnd = /^\d{4}-\d{2}-\d{2}$/.test(hEndRaw) && hEndRaw >= hStart
+            ? hEndRaw
+            : shiftCalAddDays(hStart, Math.min(30, Math.max(0, Math.floor(hDays) - 1)));
+          for (let off = 0; off <= 30; off++) {
+            const curD = off === 0 ? hStart : shiftCalAddDays(hStart, off);
+            if (curD > spanEnd || curD > toD) break;
+            if (curD < fromD) continue;
+            leaveMap.set(`${norm(hCo)}|${norm(hStaff)}|${curD}`, {
+              staff: hStaff,
+              company: hCo,
+              date: curD,
+              type: hType,
+              leaveDays: hDays,
+              isFullDay: true,
+              hypothetical: true
+            });
+          }
+        }
+      }
+    }
+    return leaveMap;
+  }
+
+  function _resolveCoverageShiftCode(dayShift, ruleShift) {
+    if (!dayShift || !dayShift.isWorkday) return '';
+    if (dayShift.isOverride) {
+      return (dayShift.overrideObj && dayShift.overrideObj.shift_id === 'custom')
+        ? 'custom'
+        : normalizeShiftCodeAlias(dayShift.shift_code || dayShift.id || '');
+    }
+    return ruleShift === 'custom'
+      ? 'custom'
+      : normalizeShiftCodeAlias(dayShift.shift_code || dayShift.id || ruleShift);
+  }
+
   function computeWeeklyShiftCoverageHeatmap(opts = {}) {
     const weekOffset = Number(opts.weekOffset != null ? opts.weekOffset : (STATE.kioskSchedWeekOffset || 0));
-    const weekDates = getScheduleWeekDates(weekOffset);
+    const weekDates = getScheduleWeekDates(weekOffset, opts.refDate || '');
+    const minFloor = Math.max(1, Math.min(5, Math.round(Number(opts.minFloor != null ? opts.minFloor : (STATE.kioskCoverageMinFloor || 1)))));
     const activeScopedCo = opts.company != null ? String(opts.company || '').trim() : (COMPANY_BU_MATCH[STATE.company] || '');
     const buList = activeScopedCo ? [activeScopedCo] : getActiveIndustryBuList(STATE.company);
     const primaryCo = activeScopedCo || buList[0] || defaultEntryCompany() || 'WTC';
@@ -149415,9 +149891,18 @@
     );
     const reqSite = String(opts.siteFilter != null ? opts.siteFilter : (STATE.kioskCoverageSiteFilter || 'all')).trim();
     const validSite = reqSite !== 'all' && sites.some(s => norm(s.site) === norm(reqSite)) ? sites.find(s => norm(s.site) === norm(reqSite)).site : 'all';
-    const filteredStaff = validSite === 'all'
-      ? staffResolved
-      : staffResolved.filter(s => norm(s._covSite) === norm(validSite));
+    const staffScopeList = validSite === 'all' ? staffResolved : staffResolved;
+    const staffMatchesSiteOnDay = (s, dayShift) => {
+      if (validSite === 'all') return true;
+      const ovSite = String((dayShift && dayShift.overrideObj && dayShift.overrideObj.site) || '').trim();
+      const effSite = ovSite || s._covSite;
+      return norm(effSite) === norm(validSite);
+    };
+
+    const leaveIdx = buildStaffFullDayLeaveIndex(allowedCos, weekDates[0].iso, weekDates[weekDates.length - 1].iso, {
+      hypotheticalLeave: opts.hypotheticalLeave || null,
+      excludeRowId: opts.excludeRowId
+    });
 
     const mergedShiftMap = new Map();
     allowedCos.forEach(co => {
@@ -149434,18 +149919,73 @@
     shiftTypes.forEach(st => shiftMap.set(st.id, st));
     const perCoStaffCounts = new Map();
     const perCoShiftCounts = new Map();
+    const coHasAnyShift = new Map();
     const totalPerShift = new Map();
     let hasCustomStaff = false;
-    const staffRuleShifts = filteredStaff.map(s => {
-      const coN = norm(s.company || '');
-      perCoStaffCounts.set(coN, (perCoStaffCounts.get(coN) || 0) + 1);
-      const rawSid = getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4';
-      if (rawSid === 'custom') hasCustomStaff = true;
-      const sid = rawSid === 'custom' ? 'custom' : normalizeShiftCodeAlias(rawSid);
-      totalPerShift.set(sid, (totalPerShift.get(sid) || 0) + 1);
-      perCoShiftCounts.set(`${coN}|${sid}`, (perCoShiftCounts.get(`${coN}|${sid}`) || 0) + 1);
-      return rawSid;
-    });
+    const dayCount = weekDates.length;
+    const customExpectedByDay = new Array(dayCount).fill(false);
+    const staffRuleShifts = new Array(staffScopeList.length);
+    const resolvedGrid = new Array(staffScopeList.length);
+    const effCodeGrid = new Array(staffScopeList.length);
+    const siteMatchGrid = new Array(staffScopeList.length);
+
+    const resolveWeekPass = () => {
+      for (let sIdx = 0; sIdx < staffScopeList.length; sIdx++) {
+        const s = staffScopeList[sIdx];
+        const coN = norm(s.company || '');
+        const baseRule = getStaffWorkRule(s.name, s.company);
+        const rawSid = baseRule.shift_id || 'day_8_4';
+        staffRuleShifts[sIdx] = rawSid;
+        const weekArr = new Array(dayCount);
+        const codeArr = new Array(dayCount);
+        const matchArr = new Array(dayCount);
+        const weekShiftSet = new Set();
+        let hasAnySiteDay = validSite === 'all' || norm(s._covSite) === norm(validSite);
+        let hasNonOffOvDay = false;
+        for (let dIdx = 0; dIdx < dayCount; dIdx++) {
+          const wd = weekDates[dIdx];
+          const dayShift = resolveStaffShiftForDate(s.name, s.company, wd.iso);
+          weekArr[dIdx] = dayShift;
+          const siteOk = staffMatchesSiteOnDay(s, dayShift);
+          matchArr[dIdx] = siteOk;
+          if (siteOk) hasAnySiteDay = true;
+          const effId = siteOk ? _resolveCoverageShiftCode(dayShift, rawSid) : '';
+          codeArr[dIdx] = effId;
+          if (!(dayShift && dayShift.isOverride && dayShift.id === 'off')) hasNonOffOvDay = true;
+          if (effId) {
+            weekShiftSet.add(effId);
+            if (effId === 'custom') {
+              hasCustomStaff = true;
+              customExpectedByDay[dIdx] = true;
+            }
+          } else if (siteOk && rawSid === 'custom' && dayShift && dayShift.isOverride && dayShift.id === 'off' && !customExpectedByDay[dIdx]) {
+            const cDays = Array.isArray(baseRule.custom_days) && baseRule.custom_days.length ? baseRule.custom_days : [1, 2, 3, 4, 5, 6];
+            const cClosed = normalizeDateTimingsList(baseRule.date_timings).some(it => it.day_off && wd.iso >= it.start_date && wd.iso <= it.end_date);
+            if (cDays.includes(wd.dayIdx) && !cClosed) customExpectedByDay[dIdx] = true;
+          }
+        }
+        resolvedGrid[sIdx] = weekArr;
+        effCodeGrid[sIdx] = codeArr;
+        siteMatchGrid[sIdx] = matchArr;
+        if (!hasAnySiteDay) continue;
+        perCoStaffCounts.set(coN, (perCoStaffCounts.get(coN) || 0) + 1);
+        if (weekShiftSet.size === 0 && hasNonOffOvDay && rawSid && rawSid !== 'off' && norm(s._covSite) === (validSite === 'all' ? norm(s._covSite) : norm(validSite))) {
+          const fbSid = rawSid === 'custom' ? 'custom' : normalizeShiftCodeAlias(rawSid);
+          weekShiftSet.add(fbSid);
+          if (fbSid === 'custom') hasCustomStaff = true;
+        }
+        if (weekShiftSet.size > 0) coHasAnyShift.set(coN, true);
+        weekShiftSet.forEach(sid => {
+          totalPerShift.set(sid, (totalPerShift.get(sid) || 0) + 1);
+          perCoShiftCounts.set(`${coN}|${sid}`, (perCoShiftCounts.get(`${coN}|${sid}`) || 0) + 1);
+        });
+      }
+    };
+    if (typeof withReadPass === 'function') withReadPass(resolveWeekPass);
+    else resolveWeekPass();
+
+    const preserveSet = new Set(Array.isArray(opts.preserveShiftIds) ? opts.preserveShiftIds : []);
+    if (preserveSet.has('custom')) hasCustomStaff = true;
 
     const catalogRows = shiftTypes.slice();
     if (hasCustomStaff) {
@@ -149460,45 +150000,44 @@
     const coShiftTypesMap = new Map(allowedCos.map(co => [norm(co), getShiftTypes(co)]));
     const dailyTotals = weekDates.map(() => 0);
     const shiftDayCounts = new Map();
-    const dayCount = weekDates.length;
-    const customExpectedByDay = new Array(dayCount).fill(false);
-    const countCoveragePass = () => {
-      for (let sIdx = 0; sIdx < filteredStaff.length; sIdx++) {
-        const s = filteredStaff[sIdx];
-        const ruleShift = staffRuleShifts[sIdx];
-        const baseRule = ruleShift === 'custom' ? getStaffWorkRule(s.name, s.company) : null;
-        for (let dIdx = 0; dIdx < dayCount; dIdx++) {
-          const wd = weekDates[dIdx];
-          const dayShift = resolveStaffShiftForDate(s.name, s.company, wd.iso);
-          if (ruleShift === 'custom' && !customExpectedByDay[dIdx]) {
-            if (dayShift && dayShift.isWorkday) {
-              customExpectedByDay[dIdx] = true;
-            } else if (dayShift && dayShift.isOverride && dayShift.id === 'off' && baseRule) {
-              const cDays = Array.isArray(baseRule.custom_days) && baseRule.custom_days.length ? baseRule.custom_days : [1, 2, 3, 4, 5, 6];
-              const cClosed = normalizeDateTimingsList(baseRule.date_timings).some(it => it.day_off && wd.iso >= it.start_date && wd.iso <= it.end_date);
-              if (cDays.includes(wd.dayIdx) && !cClosed) customExpectedByDay[dIdx] = true;
-            }
+    const shiftOnLeaveCounts = new Map();
+    for (let sIdx = 0; sIdx < staffScopeList.length; sIdx++) {
+      const s = staffScopeList[sIdx];
+      const weekArr = resolvedGrid[sIdx];
+      const codeArr = effCodeGrid[sIdx];
+      const matchArr = siteMatchGrid[sIdx];
+      for (let dIdx = 0; dIdx < dayCount; dIdx++) {
+        if (!matchArr[dIdx]) continue;
+        const dayShift = weekArr[dIdx];
+        if (!dayShift || !dayShift.isWorkday) continue;
+        const effectiveId = codeArr[dIdx];
+        if (!effectiveId || !catalogIds.has(effectiveId)) continue;
+        const wd = weekDates[dIdx];
+        if (leaveIdx.has(`${norm(s.company)}|${norm(s.name)}|${wd.iso}`)) {
+          let lvArr = shiftOnLeaveCounts.get(effectiveId);
+          if (!lvArr) {
+            lvArr = new Array(dayCount).fill(0);
+            shiftOnLeaveCounts.set(effectiveId, lvArr);
           }
-          if (!dayShift || !dayShift.isWorkday) continue;
-          const effectiveId = ruleShift === 'custom' ? 'custom' : normalizeShiftCodeAlias(dayShift.shift_code || dayShift.id || ruleShift);
-          if (!catalogIds.has(effectiveId)) continue;
-          let arr = shiftDayCounts.get(effectiveId);
-          if (!arr) {
-            arr = new Array(dayCount).fill(0);
-            shiftDayCounts.set(effectiveId, arr);
-          }
-          arr[dIdx]++;
-          dailyTotals[dIdx]++;
+          lvArr[dIdx]++;
+          continue;
         }
+        let arr = shiftDayCounts.get(effectiveId);
+        if (!arr) {
+          arr = new Array(dayCount).fill(0);
+          shiftDayCounts.set(effectiveId, arr);
+        }
+        arr[dIdx]++;
+        dailyTotals[dIdx]++;
       }
-    };
-    if (typeof withReadPass === 'function') withReadPass(countCoveragePass);
-    else countCoveragePass();
+    }
 
     let zeroGapCount = 0;
+    let belowFloorCount = 0;
     const rows = catalogRows.map(st => {
       const totalOnShift = totalPerShift.get(st.id) || 0;
       const countsArr = shiftDayCounts.get(st.id);
+      const onLeaveArr = shiftOnLeaveCounts.get(st.id);
       const isCustomRow = st.id === 'custom';
       const activeCosForShift = isCustomRow
         ? []
@@ -149506,13 +150045,16 @@
             const cN = norm(co);
             const onSh = perCoShiftCounts.get(`${cN}|${st.id}`) || 0;
             const coDef = coDefMap.get(cN) || 'day_8_4';
-            return onSh > 0 || (validSite === 'all' && coDef === st.id && (perCoStaffCounts.get(cN) || 0) > 0);
+            return onSh > 0 || preserveSet.has(st.id) || (!coHasAnyShift.get(cN) && validSite === 'all' && coDef === st.id && (perCoStaffCounts.get(cN) || 0) > 0);
           });
       const relevantCos = activeCosForShift.length ? activeCosForShift : allowedCos;
-      const isImportantShift = isCustomRow ? totalOnShift > 0 : activeCosForShift.length > 0;
+      const rowPrimaryCo = relevantCos.find(c => canEditShiftsAndRules(null, c)) || relevantCos[0] || primaryCo;
+      const isImportantShift = isCustomRow ? (totalOnShift > 0 || preserveSet.has('custom')) : (activeCosForShift.length > 0 || preserveSet.has(st.id));
       let rowZeroGaps = 0;
+      let rowBelowFloor = 0;
       const cells = weekDates.map((wd, dIdx) => {
         const count = countsArr ? countsArr[dIdx] : 0;
+        const onLeaveCount = onLeaveArr ? onLeaveArr[dIdx] : 0;
         let expectedWorkday = false;
         let isClosedShift = false;
         if (isCustomRow) {
@@ -149539,18 +150081,24 @@
           isClosedShift = !expectedWorkday && anyClosed;
         }
         const isZeroGap = Boolean(expectedWorkday && count === 0 && isImportantShift);
+        const isBelowFloor = Boolean(expectedWorkday && isImportantShift && !isZeroGap && count < minFloor);
         if (isZeroGap) {
           zeroGapCount++;
           rowZeroGaps++;
+        } else if (isBelowFloor) {
+          belowFloorCount++;
+          rowBelowFloor++;
         }
         const tier = count === 0 ? 0 : (count >= 6 ? 3 : (count >= 3 ? 2 : 1));
         return {
           iso: wd.iso,
           dayIdx: wd.dayIdx,
           count,
+          onLeaveCount,
           expectedWorkday,
           isClosedShift,
           isZeroGap,
+          isBelowFloor,
           tier
         };
       });
@@ -149561,27 +150109,754 @@
         tone: st.tone || 'amber',
         assignedCount: totalOnShift,
         isDefault: defaultShiftIds.has(st.id),
+        primaryCompany: rowPrimaryCo,
         cells,
-        zeroGapCount: rowZeroGaps
+        zeroGapCount: rowZeroGaps,
+        belowFloorCount: rowBelowFloor
       };
     });
 
     return {
       weekDates,
       weekOffset,
+      minFloor,
+      primaryCompany: primaryCo,
       sites,
       siteFilter: validSite,
       rows,
       dailyTotals,
       zeroGapCount,
-      totalActiveStaff: filteredStaff.length
+      belowFloorCount,
+      totalActiveStaff: Array.from(perCoStaffCounts.values()).reduce((acc, n) => acc + n, 0)
     };
   }
 
+  function computeStandInCandidatesForGap(opts = {}) {
+    const dateStr = /^\d{4}-\d{2}-\d{2}$/.test(String(opts.date || '').slice(0, 10))
+      ? String(opts.date).slice(0, 10)
+      : todayISO();
+    const rawShiftId = String(opts.shiftId || 'day_8_4').trim();
+    const targetShiftId = rawShiftId === 'custom' ? 'custom' : normalizeShiftCodeAlias(rawShiftId);
+    const reqSite = String(opts.site != null ? opts.site : (opts.siteFilter != null ? opts.siteFilter : 'all')).trim();
+    const targetSite = reqSite && norm(reqSite) !== 'all' ? reqSite : '';
+    const minFloor = Math.max(1, Math.min(5, Math.round(Number(opts.minFloor != null ? opts.minFloor : (STATE.kioskCoverageMinFloor || 1)))));
+    const excludeStaffN = norm(opts.excludeStaff || '');
+    const excludeCoN = norm(opts.excludeCompany || opts.company || '');
+
+    const viewerAllowed = allowedCompanyNames();
+    const viewerSet = new Set(viewerAllowed.map(c => norm(c)));
+    const activeScopedCo = String(opts.company || COMPANY_BU_MATCH[STATE.company] || '').trim();
+    if (activeScopedCo && viewerSet.size && !viewerSet.has(norm(activeScopedCo))) {
+      return { ok: false, error: 'You do not have rights for this company', candidates: [] };
+    }
+    const buList = activeScopedCo ? [activeScopedCo] : getActiveIndustryBuList(STATE.company).filter(c => !viewerSet.size || viewerSet.has(norm(c)));
+    const co = activeScopedCo || buList[0] || defaultEntryCompany() || 'WTC';
+
+    const dir = getKioskStaffDirectory({
+      companyOverride: co,
+      scopeBySelectedCompany: Boolean(co),
+      scopeByActiveIndustry: !co,
+      includeEnded: true
+    }).filter(s => s && !s.isEndedContract && (!viewerSet.size || viewerSet.has(norm(s.company))));
+
+    let customGapRule = null;
+    if (targetShiftId === 'custom') {
+      for (let i = 0; i < dir.length; i++) {
+        const rr = getStaffWorkRule(dir[i].name, dir[i].company);
+        if (rr && rr.shift_id === 'custom') {
+          customGapRule = rr;
+          break;
+        }
+      }
+    }
+    const resolvedTargetShift = targetShiftId === 'custom'
+      ? {
+          id: 'custom',
+          name: (customGapRule && customGapRule.custom_name) || 'Custom Rule',
+          short: 'Custom',
+          start_time: (opts.custom_start || (customGapRule && customGapRule.custom_start) || (getBuDefaultShift(co) && getBuDefaultShift(co).start_time) || '08:00'),
+          end_time: (opts.custom_end || (customGapRule && customGapRule.custom_end) || (getBuDefaultShift(co) && getBuDefaultShift(co).end_time) || '16:00'),
+          hours: computeShiftWorkedHours(
+            opts.custom_start || (customGapRule && customGapRule.custom_start) || '08:00',
+            opts.custom_end || (customGapRule && customGapRule.custom_end) || '16:00'
+          ) || 8
+        }
+      : (resolveShiftAtDate(targetShiftId, co, dateStr)
+        || getShiftTypes(co).find(x => normalizeShiftCodeAlias(x.id || x.shift_code) === targetShiftId)
+        || { id: targetShiftId, name: 'Shift', short: 'Shift', start_time: '08:00', end_time: '16:00', hours: 8 });
+    const shiftStart = fmtAttClockTime(resolvedTargetShift.start_time || '08:00') || '08:00';
+    const shiftEnd = fmtAttClockTime(resolvedTargetShift.end_time || '16:00') || '16:00';
+    const shiftHours = Number(resolvedTargetShift.hours || computeShiftWorkedHours(shiftStart, shiftEnd) || 8);
+
+    const weekDates = getScheduleWeekDates(0, dateStr);
+    const weekStartIso = weekDates[0].iso;
+    const weekEndIso = weekDates[weekDates.length - 1].iso;
+    const showDollars = canViewPayrollDollarAmounts();
+    const isSundayGap = attDateWeekdayInfo(dateStr).isSunday;
+
+    const leaveIdx = buildStaffFullDayLeaveIndex([co], weekStartIso, weekEndIso, {
+      hypotheticalLeave: opts.hypotheticalLeave || null,
+      excludeRowId: opts.excludeRowId
+    });
+    const byStaffFreq = _getStaffSiteFreqMap();
+
+    let currentCount = 0;
+    const candidates = [];
+    const scan = () => {
+      dir.forEach((s, origIdx) => {
+        const sCoN = norm(s.company);
+        const sN = norm(s.name);
+        if (excludeStaffN && sN === excludeStaffN && (!excludeCoN || sCoN === excludeCoN)) return;
+        const rs = resolveStaffRoleAndSiteForDate(s.name, s.company, dateStr, s);
+        const onGapDayLeave = leaveIdx.has(`${sCoN}|${sN}|${dateStr}`);
+        const dayShift = resolveStaffShiftForDate(s.name, s.company, dateStr);
+        const baseSh = getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4';
+        const effId = _resolveCoverageShiftCode(dayShift, baseSh);
+        const effSite = String((dayShift && dayShift.overrideObj && dayShift.overrideObj.site) || rs.site || '').trim();
+        if (dayShift && dayShift.isWorkday && !onGapDayLeave && effId === targetShiftId) {
+          if (!targetSite || norm(effSite) === norm(targetSite)) currentCount++;
+        }
+        if ((dayShift && dayShift.isWorkday) || onGapDayLeave) return;
+
+        const fMap = byStaffFreq.get(`${sCoN}|${sN}`) || null;
+        let totalFreq = 0;
+        if (fMap) fMap.forEach(cnt => { totalFreq += Number(cnt || 0); });
+        let siteFreq = 0;
+        if (targetSite && fMap) {
+          fMap.forEach((cnt, stLabel) => {
+            if (norm(stLabel) === norm(targetSite)) siteFreq += Number(cnt || 0);
+          });
+        } else if (!targetSite) {
+          siteFreq = Number(rs.siteFreq || 0);
+        }
+        const isPrimarySameSite = Boolean(targetSite && norm(rs.site) === norm(targetSite));
+        const siteMatch = isPrimarySameSite || siteFreq > 0;
+
+        let currentWeekHours = 0;
+        for (let dIdx = 0; dIdx < weekDates.length; dIdx++) {
+          const wd = weekDates[dIdx];
+          if (leaveIdx.has(`${sCoN}|${sN}|${wd.iso}`)) continue;
+          const ds = resolveStaffShiftForDate(s.name, s.company, wd.iso);
+          if (ds && ds.isWorkday) {
+            currentWeekHours = round2(currentWeekHours + Number(ds.hours || computeShiftWorkedHours(ds.start_time, ds.end_time) || 8));
+          }
+        }
+        const projectedWeekHours = round2(currentWeekHours + shiftHours);
+        const rule = getStaffWorkRule(s.name, s.company);
+        const baseShObj = rule.shift_id !== 'custom' ? resolveShiftAtDate(rule.shift_id || 'day_8_4', s.company, dateStr) : null;
+        const rawRuleDays = (rule.use_custom_days || rule.shift_id === 'custom')
+          ? rule.custom_days
+          : (baseShObj && Array.isArray(baseShObj.days) ? baseShObj.days : [1, 2, 3, 4, 5, 6]);
+        const ruleDays = Array.isArray(rawRuleDays) && rawRuleDays.length ? rawRuleDays : [1, 2, 3, 4, 5, 6];
+        const baseDailyHrs = Number(
+          (baseShObj && baseShObj.hours)
+          || (rule.shift_id === 'custom' && computeShiftWorkedHours(rule.custom_start, rule.custom_end))
+          || 8
+        );
+        const baselineWeekHours = round2(Math.max(1, ruleDays.length) * baseDailyHrs);
+        const extraWeekHours = Math.max(0, round2(projectedWeekHours - baselineWeekHours));
+        const sunOtHours = (isSundayGap && !ruleDays.includes(0)) ? shiftHours : 0;
+        const projectedOtHours = round2(Math.max(extraWeekHours, sunOtHours));
+        const projectedOtMin = Math.round(projectedOtHours * 60);
+
+        const prof = getStaffContractProfile(s.name, s.company, dateStr);
+        const isPendSal = Boolean(prof && prof.salaryPending);
+        const hourlyRate = isPendSal ? 0 : Number((prof && prof.hourlyRate) || 0);
+        const otMultiplier = Number(rule.ot_multiplier || (prof && prof.otMultiplier) || 1.5);
+        const projectedOtUsd = showDollars ? round2(projectedOtHours * hourlyRate * otMultiplier) : null;
+
+        candidates.push({
+          staff: s.name,
+          company: s.company,
+          role: rs.role || s.role || 'Staff',
+          primarySite: rs.site || 'Main Entrance',
+          siteMatch,
+          isPrimarySameSite,
+          siteFreq,
+          totalFreq,
+          shiftId: targetShiftId,
+          shiftName: resolvedTargetShift.name || 'Shift',
+          shiftStart,
+          shiftEnd,
+          shiftHours,
+          currentWeekHours,
+          projectedWeekHours,
+          baselineWeekHours,
+          projectedOtHours,
+          projectedOtMin,
+          otMultiplier,
+          projectedOtUsd,
+          dollarsRedacted: !showDollars,
+          _origIdx: origIdx
+        });
+      });
+    };
+    if (typeof withReadPass === 'function') withReadPass(scan);
+    else scan();
+
+    candidates.sort((a, b) =>
+      ((b.isPrimarySameSite ? 1 : 0) - (a.isPrimarySameSite ? 1 : 0))
+      || ((b.siteMatch ? 1 : 0) - (a.siteMatch ? 1 : 0))
+      || (b.siteFreq - a.siteFreq)
+      || (b.totalFreq - a.totalFreq)
+      || (a.projectedOtMin - b.projectedOtMin)
+      || (a.currentWeekHours - b.currentWeekHours)
+      || (a._origIdx - b._origIdx)
+    );
+
+    return {
+      ok: true,
+      company: co,
+      date: dateStr,
+      shiftId: targetShiftId,
+      shiftName: resolvedTargetShift.name || 'Shift',
+      shiftStart,
+      shiftEnd,
+      shiftWindow: `${shiftStart}-${shiftEnd}`,
+      shiftHours,
+      site: targetSite || 'all',
+      minFloor,
+      currentCount,
+      dollarsRedacted: !showDollars,
+      canWrite: canEditShiftsAndRules(null, co),
+      candidates
+    };
+  }
+
+  function assignStandInOverride(spec = {}) {
+    const staffName = String(spec.staff || '').trim();
+    const co = canonCompany(spec.company || defaultEntryCompany() || '') || String(spec.company || '').trim();
+    const dateStr = String(spec.date || todayISO()).slice(0, 10);
+    const rawShiftId = String(spec.shiftId || 'day_8_4').trim();
+    const shiftId = rawShiftId === 'custom' ? 'custom' : normalizeShiftCodeAlias(rawShiftId);
+    if (!staffName || !co || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return { ok: false, error: 'Staff member, company, and date are required' };
+    }
+    if (!canEditShiftsAndRules(null, co)) {
+      return { ok: false, error: 'You do not have rights to assign stand-in shifts for this company' };
+    }
+    const closeGuard = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
+      ? window.MFG_AI_EDGE.checkPeriodCloseGuard(co, dateStr, dateStr)
+      : null;
+    if (closeGuard && closeGuard.blocked) {
+      return { ok: false, error: closeGuard.reason || 'Closed payroll period cannot be modified' };
+    }
+
+    const shObj = shiftId === 'custom' ? null : resolveShiftAtDate(shiftId, co, dateStr);
+    let customStart = fmtAttClockTime(spec.custom_start || spec.customStart || '') || (shObj && shObj.start_time) || '';
+    let customEnd = fmtAttClockTime(spec.custom_end || spec.customEnd || '') || (shObj && shObj.end_time) || '';
+    if (shiftId === 'custom' && (!customStart || !customEnd)) {
+      const ws = ensureWorkSchedulesState();
+      const customRule = Object.values((ws && ws.staffRules) || {}).find(r => r && r.shift_id === 'custom' && (!r.company || norm(r.company) === norm(co)));
+      customStart = customStart || (customRule && customRule.custom_start) || '08:00';
+      customEnd = customEnd || (customRule && customRule.custom_end) || '16:00';
+    }
+    const ovNote = String(spec.note || `Stand-in (${shObj ? shObj.name : (shiftId === 'custom' ? 'Custom Shift' : shiftId)})`).trim().slice(0, 60);
+    const ovRes = addStaffShiftOverride(staffName, {
+      shift_id: shiftId,
+      custom_start: customStart || '08:00',
+      custom_end: customEnd || '16:00',
+      start_date: dateStr,
+      end_date: dateStr,
+      site: (spec.site && norm(spec.site) !== 'all') ? String(spec.site).trim() : '',
+      note: ovNote
+    }, co);
+    if (!ovRes || !ovRes.ok) {
+      return { ok: false, error: (ovRes && ovRes.error) || 'Could not save stand-in shift override' };
+    }
+
+    let otPassAdded = false;
+    if (spec.withOtPass) {
+      const curRule = getStaffWorkRule(staffName, co);
+      const otRes = addStaffOtPass(staffName, {
+        start_date: dateStr,
+        end_date: dateStr,
+        max_hours: Number(spec.maxHours || 0),
+        keepMode: curRule.ot_mode !== 'max_hours',
+        note: 'Stand-in OT pass'
+      }, co);
+      otPassAdded = Boolean(otRes && otRes.ok);
+    }
+
+    if (dateStr === todayISO() && typeof recalcStaffTodayPunchAndAttendance === 'function') {
+      recalcStaffTodayPunchAndAttendance(staffName);
+    }
+    if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') {
+      refreshPayrollPolicySectionInPlace();
+    }
+    return { ok: true, staff: staffName, company: co, date: dateStr, shiftId, otPassAdded };
+  }
+
+  function closeStandInPickerModal() {
+    const m = $('covStandInModal');
+    if (m) {
+      m.innerHTML = '';
+      m.hidden = true;
+    }
+    _syncOverlayModalState(STATE.view === 'kiosks' || STATE.view === 'payroll_attendance');
+  }
+
+  function openStandInPickerModal(opts = {}) {
+    const res = computeStandInCandidatesForGap(opts);
+    if (!res.ok) {
+      closeStandInPickerModal();
+      toast(res.error || 'Cannot load stand-in picker', 'warn');
+      return null;
+    }
+    if (!res.canWrite) {
+      closeStandInPickerModal();
+      toast('You do not have rights to assign stand-in shifts for this company', 'warn');
+      return null;
+    }
+    let modal = $('covStandInModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'covStandInModal';
+      modal.className = 'modal-backdrop kiosk-submodal-backdrop';
+      modal.style.zIndex = '1235';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      wireBackdropDismiss(modal, closeStandInPickerModal);
+      document.body.appendChild(modal);
+    }
+
+    const st = { includeOtPass: Boolean(opts.withOtPass), query: '' };
+    const showDollars = !res.dollarsRedacted && canViewPayrollDollarAmounts();
+    const wkLbl = attDateWeekdayInfo(res.date).short || '';
+
+    const render = () => {
+      const qN = norm(st.query);
+      const list = qN
+        ? res.candidates.filter(c => norm(c.staff).includes(qN) || norm(c.role).includes(qN) || norm(c.primarySite).includes(qN))
+        : res.candidates;
+      modal.innerHTML = `
+        <div class="modal-card cov-standin-card" style="width:min(780px,96vw);max-width:780px">
+          <div class="modal-head">
+            <div>
+              <div class="modal-title">${ic('users')} <span>Stand-In Coverage Picker</span></div>
+              <div class="modal-sub" data-no-i18n="1">${esc(res.shiftName)} (${esc(res.shiftWindow)}) · ${esc(wkLbl ? `${wkLbl} ${fmtDateDMY(res.date)}` : fmtDateDMY(res.date))} · ${esc(res.site === 'all' ? 'All Sites' : res.site)} · ${esc(res.company)}</div>
+            </div>
+            <button type="button" class="icon-btn" id="covStandInCloseBtn" aria-label="Close">✕</button>
+          </div>
+          <div class="modal-body cov-standin-body">
+            <div class="cov-standin-summary">
+              <span class="badge ${res.currentCount === 0 ? 'badge-red' : 'badge-amber'}"><b class="mono">${fmtNum(res.currentCount)}</b> / <b class="mono">${fmtNum(res.minFloor)}</b> <span>scheduled</span></span>
+              <span class="muted">${fmtNum(res.candidates.length)} <span>off-shift active candidates ranked by site frequency</span></span>
+              ${!showDollars ? `<span class="badge badge-muted" style="margin-inline-start:auto">${ic('lock')} <span>Dollar Diff Redacted</span></span>` : ''}
+            </div>
+            <div class="cov-standin-toolbar">
+              <input type="search" class="search-input" id="covStandInSearch" placeholder="Search candidate or role..." value="${esc(st.query)}">
+              <label class="cov-ot-check">
+                <input type="checkbox" id="covIncludeOtPassChk"${st.includeOtPass ? ' checked' : ''}>
+                <span>Include 1-day OT Pass</span>
+              </label>
+            </div>
+            ${list.length ? `
+              <div class="cov-standin-list">
+                ${list.map(c => `
+                  <div class="cov-standin-row" data-cov-cand-staff="${esc(c.staff)}">
+                    <div class="cov-standin-main">
+                      <div class="cov-standin-top">
+                        <strong data-no-i18n="1">${esc(c.staff)}</strong>
+                        <span class="badge ${c.isPrimarySameSite ? 'badge-emerald' : 'badge-muted'}">${c.isPrimarySameSite ? 'Same Site' : esc(c.primarySite)}</span>
+                        <span class="muted" data-no-i18n="1">${esc(c.role)}</span>
+                      </div>
+                      <div class="cov-standin-meta mono">
+                        <span><span>Week:</span> <b>${fmtNum(c.currentWeekHours, 1)}h</b> - <b>${fmtNum(c.projectedWeekHours, 1)}h</b></span>
+                        <span>·</span>
+                        <span class="${c.projectedOtMin > 0 ? 'att-loss-neg' : 'muted'}">${c.projectedOtMin > 0 ? `+${fmtNum(c.projectedOtMin)}m OT` : '0m OT'}</span>
+                        <span>·</span>
+                        ${showDollars
+                          ? `<span>${c.projectedOtUsd > 0 ? `${fmtUSD(c.projectedOtUsd, 2)} OT cost` : '$0.00 OT cost'}</span>`
+                          : `<span>${ic('lock')} Redacted</span>`}
+                        <span>·</span>
+                        <span class="muted">Freq ${fmtNum(c.siteFreq)} / ${fmtNum(c.totalFreq)}</span>
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-primary kiosk-mini-btn" data-cov-assign-staff="${esc(c.staff)}" data-cov-assign-co="${esc(c.company)}">${ic('check_circle')} <span>Assign Stand-In</span></button>
+                  </div>
+                `).join('')}
+              </div>
+            ` : `
+              <div class="pdr-empty"><span>No off-shift non-leave staff available for this shift and date.</span></div>
+            `}
+          </div>
+          <div class="modal-foot" style="justify-content:flex-end">
+            <button type="button" class="btn" id="covStandInCancelBtn">Close</button>
+          </div>
+        </div>
+      `;
+      modal.hidden = false;
+      document.body.classList.add('modal-open');
+      stripNativeTitles(modal);
+      if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(modal);
+
+      $('covStandInCloseBtn')?.addEventListener('click', closeStandInPickerModal);
+      $('covStandInCancelBtn')?.addEventListener('click', closeStandInPickerModal);
+      $('covIncludeOtPassChk')?.addEventListener('change', e => {
+        st.includeOtPass = Boolean(e.target.checked);
+      });
+      $('covStandInSearch')?.addEventListener('input', e => {
+        st.query = e.target.value || '';
+        const pos = e.target.selectionStart;
+        render();
+        const ni = $('covStandInSearch');
+        if (ni) {
+          ni.focus();
+          if (typeof pos === 'number') {
+            try { ni.setSelectionRange(pos, pos); } catch (_) {}
+          }
+        }
+      });
+      modal.querySelectorAll('[data-cov-assign-staff]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const pickedStaff = btn.getAttribute('data-cov-assign-staff') || '';
+          const pickedCo = btn.getAttribute('data-cov-assign-co') || res.company;
+          const withOtPass = Boolean($('covIncludeOtPassChk')?.checked || st.includeOtPass);
+          const out = assignStandInOverride({
+            staff: pickedStaff,
+            company: pickedCo,
+            date: res.date,
+            shiftId: res.shiftId,
+            site: res.site && res.site !== 'all' ? res.site : '',
+            custom_start: res.shiftStart,
+            custom_end: res.shiftEnd,
+            withOtPass
+          });
+          if (!out.ok) {
+            toast(out.error || 'Could not assign stand-in', 'warn');
+            return;
+          }
+          toast(`Assigned ${pickedStaff} to ${res.shiftName} on ${fmtDateDMY(res.date)}${out.otPassAdded ? ' (+1d OT Pass)' : ''}`, 'ok');
+          closeStandInPickerModal();
+          if (typeof opts.onAssigned === 'function') opts.onAssigned(out);
+        });
+      });
+    };
+
+    render();
+    return modal;
+  }
+
+  function computeLeaveCoverageAndCostPreview(spec = {}) {
+    const co = canonCompany(spec.company || defaultEntryCompany() || '') || String(spec.company || '').trim();
+    const staffName = String(spec.staff || '').trim();
+    const dateStr = String(spec.date || spec.startDate || '').slice(0, 10);
+    const endRaw = String(spec.endDate || '').slice(0, 10);
+    if (!co || !staffName || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return { ok: false, active: false };
+    }
+    const lvDaysRaw = spec.leaveDays != null && spec.leaveDays !== '' ? Number(spec.leaveDays) : 1;
+    const lvDays = Number.isFinite(lvDaysRaw) && lvDaysRaw > 0 ? lvDaysRaw : 1;
+    const rotShiftRaw = spec.rotationShiftId != null ? String(spec.rotationShiftId).trim() : '';
+    const lvType = String(spec.leaveType || (rotShiftRaw === 'off' ? 'Absence' : 'VacAbsence')).trim();
+    const isHalfDay = !rotShiftRaw && (/^half\b/i.test(lvType) || (lvDays > 0 && lvDays < 1));
+    const spanEnd = isHalfDay
+      ? dateStr
+      : (/^\d{4}-\d{2}-\d{2}$/.test(endRaw) && endRaw >= dateStr
+        ? endRaw
+        : shiftCalAddDays(dateStr, Math.min(30, Math.max(0, Math.floor(lvDays) - 1))));
+
+    const showDollars = canViewPayrollDollarAmounts();
+    const canAssignStandIn = canEditShiftsAndRules(null, co);
+    const rs = resolveStaffRoleAndSiteForDate(staffName, co, dateStr);
+    const site = (rs && rs.site) || 'Main Entrance';
+    const role = (rs && rs.role) || 'Staff';
+    const minFloor = Math.max(1, Math.min(5, Math.round(Number(spec.minFloor != null ? spec.minFloor : (STATE.kioskCoverageMinFloor || 1)))));
+    const baseRule = getStaffWorkRule(staffName, co);
+    const targetRotNorm = rotShiftRaw && rotShiftRaw !== 'off'
+      ? (rotShiftRaw === 'custom' ? 'custom' : normalizeShiftCodeAlias(rotShiftRaw))
+      : '';
+
+    const spanDaysCount = isHalfDay
+      ? 1
+      : Math.min(31, Math.max(1, Math.round((Date.parse(spanEnd + 'T00:00:00Z') - Date.parse(dateStr + 'T00:00:00Z')) / 86400000) + 1));
+    const workdays = [];
+    for (let off = 0; off < spanDaysCount; off++) {
+      const dIso = off === 0 ? dateStr : shiftCalAddDays(dateStr, off);
+      const ds = resolveStaffShiftForDate(staffName, co, dIso);
+      if (ds && ds.isWorkday) {
+        workdays.push({ dIso, ds, weekOffset: getScheduleWeekOffsetForDate(dIso) });
+        if (isHalfDay) break;
+      }
+    }
+
+    if (!workdays.length) {
+      return {
+        ok: true,
+        active: true,
+        offShiftOnDate: true,
+        status: 'ok',
+        staff: staffName,
+        company: co,
+        role,
+        site,
+        siteFilter: 'all',
+        date: dateStr,
+        spanStart: dateStr,
+        endDate: spanEnd,
+        shiftId: '',
+        shiftName: 'Off-Shift / Non-Workday',
+        shiftWindow: '',
+        minFloor,
+        beforeCount: 0,
+        afterCount: 0,
+        isHalfDay: false,
+        dropsToZero: false,
+        dropsBelowFloor: false,
+        topStandIn: null,
+        candidateCount: 0,
+        canAssignStandIn,
+        dollarsRedacted: !showDollars
+      };
+    }
+
+    const hypLeaveObj = {
+      staff: staffName,
+      company: co,
+      leaveType: rotShiftRaw ? 'Absence' : lvType,
+      leaveDays: rotShiftRaw ? spanDaysCount : Math.max(1, lvDays),
+      startDate: dateStr,
+      endDate: spanEnd
+    };
+    const isVacatingShiftAny = workdays.some(w => {
+      const wSid = baseRule.shift_id === 'custom' ? 'custom' : _resolveCoverageShiftCode(w.ds, baseRule.shift_id || 'day_8_4');
+      return rotShiftRaw ? (rotShiftRaw === 'off' || targetRotNorm !== wSid) : !isHalfDay;
+    });
+
+    const baseProbeCache = new Map();
+    const afterProbeCache = new Map();
+    const getBaseProbe = wOff => {
+      if (!baseProbeCache.has(wOff)) {
+        baseProbeCache.set(wOff, computeWeeklyShiftCoverageHeatmap({
+          company: co,
+          weekOffset: wOff,
+          siteFilter: site,
+          minFloor,
+          excludeRowId: spec.excludeRowId
+        }));
+      }
+      return baseProbeCache.get(wOff);
+    };
+    const getAfterProbe = (wOff, effSite) => {
+      if (!afterProbeCache.has(wOff)) {
+        afterProbeCache.set(wOff, computeWeeklyShiftCoverageHeatmap({
+          company: co,
+          weekOffset: wOff,
+          siteFilter: effSite,
+          minFloor,
+          excludeRowId: spec.excludeRowId,
+          hypotheticalLeave: hypLeaveObj
+        }));
+      }
+      return afterProbeCache.get(wOff);
+    };
+
+    let worst = null;
+    let affectedWorkdaysCount = 0;
+    workdays.forEach(w => {
+      const ds = w.ds;
+      const dShiftId = baseRule.shift_id === 'custom' && !ds.isOverride
+        ? 'custom'
+        : _resolveCoverageShiftCode(ds, baseRule.shift_id || 'day_8_4');
+      const dShiftName = ds.name || 'Shift';
+      const dShiftWindow = `${ds.start_time || '08:00'}-${ds.end_time || '16:00'}`;
+      const isVacating = rotShiftRaw ? (rotShiftRaw === 'off' || targetRotNorm !== dShiftId) : !isHalfDay;
+      const baseProbe = getBaseProbe(w.weekOffset);
+      const effSite = baseProbe.siteFilter !== 'all' ? baseProbe.siteFilter : 'all';
+      const baseRow = (baseProbe.rows || []).find(r => r.shiftId === dShiftId);
+      const baseCell = baseRow && (baseRow.cells || []).find(c => c.iso === w.dIso);
+      const beforeCount = baseCell ? Number(baseCell.count || 0) : 0;
+      let afterCount = beforeCount;
+      if (isVacating) {
+        const afterProbe = getAfterProbe(w.weekOffset, effSite);
+        const afterRow = (afterProbe.rows || []).find(r => r.shiftId === dShiftId);
+        const afterCell = afterRow && (afterRow.cells || []).find(c => c.iso === w.dIso);
+        afterCount = afterCell ? Number(afterCell.count || 0) : Math.max(0, beforeCount - 1);
+      }
+      const dZero = Boolean(isVacating && afterCount === 0);
+      const dFloor = Boolean(isVacating && !dZero && afterCount < minFloor);
+      if (dZero || dFloor) affectedWorkdaysCount++;
+      const sevRank = dZero ? 2 : (dFloor ? 1 : 0);
+      const cand = {
+        dIso: w.dIso,
+        shiftId: dShiftId,
+        shiftName: dShiftName,
+        shiftWindow: dShiftWindow,
+        effSiteFilter: effSite,
+        isVacating,
+        beforeCount,
+        afterCount,
+        dropsToZero: dZero,
+        dropsBelowFloor: dFloor,
+        sevRank
+      };
+      if (
+        !worst
+        || cand.sevRank > worst.sevRank
+        || (cand.sevRank === worst.sevRank && cand.afterCount < worst.afterCount)
+      ) {
+        worst = cand;
+      }
+    });
+
+    const effDate = worst.dIso;
+    const shiftId = worst.shiftId;
+    const shiftName = worst.shiftName;
+    const shiftWindow = worst.shiftWindow;
+    const effSiteFilter = worst.effSiteFilter;
+    const isVacatingShift = worst.isVacating;
+    const beforeCount = worst.beforeCount;
+    const afterCount = worst.afterCount;
+    const dropsToZero = worst.dropsToZero;
+    const dropsBelowFloor = worst.dropsBelowFloor;
+    const status = dropsToZero ? 'gap' : (dropsBelowFloor ? 'floor' : 'ok');
+
+    let topStandIn = null;
+    let candidateCount = 0;
+    if (dropsToZero || dropsBelowFloor) {
+      const candRes = computeStandInCandidatesForGap({
+        company: co,
+        date: effDate,
+        shiftId,
+        site: effSiteFilter,
+        siteFilter: effSiteFilter,
+        minFloor,
+        excludeStaff: staffName,
+        excludeCompany: co,
+        excludeRowId: spec.excludeRowId,
+        hypotheticalLeave: isVacatingShiftAny ? hypLeaveObj : null
+      });
+      if (candRes && candRes.ok && Array.isArray(candRes.candidates)) {
+        const filteredCands = candRes.candidates.filter(c => norm(c.staff) !== norm(staffName));
+        candidateCount = filteredCands.length;
+        topStandIn = filteredCands[0] || null;
+      }
+    }
+
+    return {
+      ok: true,
+      active: true,
+      offShiftOnDate: false,
+      status,
+      staff: staffName,
+      company: co,
+      role,
+      site: effSiteFilter !== 'all' ? effSiteFilter : site,
+      siteFilter: effSiteFilter,
+      date: effDate,
+      spanStart: dateStr,
+      endDate: spanEnd,
+      workdaysCount: workdays.length,
+      affectedWorkdaysCount,
+      shiftId,
+      shiftName,
+      shiftWindow,
+      minFloor,
+      beforeCount,
+      afterCount,
+      isHalfDay,
+      isVacatingShift,
+      dropsToZero,
+      dropsBelowFloor,
+      topStandIn,
+      candidateCount,
+      canAssignStandIn,
+      excludeRowId: spec.excludeRowId || '',
+      hypotheticalLeave: isVacatingShiftAny ? hypLeaveObj : null,
+      dollarsRedacted: !showDollars
+    };
+  }
+
+  function renderLeaveCoveragePreviewInto(el, prev, opts = {}) {
+    if (!el) return;
+    if (!prev || !prev.ok || !prev.active) {
+      el.className = 'att-leave-cov-preview';
+      el.innerHTML = '';
+      el.hidden = true;
+      return;
+    }
+    el.classList.remove('is-gap-warn', 'is-floor-warn', 'is-ok');
+    el.classList.add(prev.status === 'gap' ? 'is-gap-warn' : (prev.status === 'floor' ? 'is-floor-warn' : 'is-ok'));
+    el.hidden = false;
+
+    if (prev.offShiftOnDate) {
+      el.innerHTML = `
+        <div class="att-leave-cov-head">
+          <span class="badge badge-muted">${ic('check_circle')} <span>Off-Shift Day</span></span>
+          <span class="muted" data-no-i18n="1">${esc(prev.site)} · ${esc(fmtDateDMY(prev.date))}</span>
+          <span class="muted" style="margin-inline-start:auto"><span>0 coverage impact</span></span>
+        </div>
+      `;
+      if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(el);
+      return;
+    }
+
+    const showDollars = !prev.dollarsRedacted && canViewPayrollDollarAmounts();
+    const statusBadge = prev.dropsToZero
+      ? `<span class="badge badge-red">${ic('alert_triangle')} <span>Drops Site Shift to 0 Coverage</span></span>`
+      : (prev.dropsBelowFloor
+        ? `<span class="badge badge-amber">${ic('alert_triangle')} <span>Drops Below Min Floor (${fmtNum(prev.minFloor)})</span></span>`
+        : (prev.isHalfDay
+          ? `<span class="badge badge-emerald">${ic('check_circle')} <span>Half-Day Covered</span></span>`
+          : `<span class="badge badge-emerald">${ic('check_circle')} <span>Site Shift Covered</span></span>`));
+
+    const top = prev.topStandIn;
+    const otCostStr = top
+      ? (showDollars ? (top.projectedOtUsd > 0 ? fmtUSD(top.projectedOtUsd, 2) : '$0.00') : 'Redacted')
+      : '';
+    const standInBtnHtml = (prev.canAssignStandIn && !STATE.kioskLocked && (prev.dropsToZero || prev.dropsBelowFloor))
+      ? `<button type="button" class="btn kiosk-mini-btn" data-cov-open-standin="1">${ic('users')} <span>Open Stand-In Picker</span></button>`
+      : '';
+
+    el.innerHTML = `
+      <div class="att-leave-cov-head">
+        ${statusBadge}
+        <span class="att-leave-cov-ctx" data-no-i18n="1">${esc(prev.site)} · ${esc(prev.shiftName)} (${esc(prev.shiftWindow)}) · ${esc(fmtDateDMY(prev.date))}</span>
+        <span class="att-leave-cov-count mono" data-no-i18n="1">${fmtNum(prev.beforeCount)} -&gt; ${fmtNum(prev.afterCount)}</span>
+      </div>
+      ${(prev.dropsToZero || prev.dropsBelowFloor) ? `
+        <div class="att-leave-cov-foot">
+          ${top ? `
+            <span class="att-leave-cov-cand">
+              <span>Top Stand-In:</span>
+              <strong data-no-i18n="1">${esc(top.staff)}</strong>
+              <span class="badge ${top.isPrimarySameSite ? 'badge-emerald' : 'badge-muted'}">${top.isPrimarySameSite ? 'Same Site' : esc(top.primarySite)}</span>
+              <span class="mono" data-no-i18n="1">${top.projectedOtMin > 0 ? `+${fmtNum(top.projectedOtMin)}m OT` : '0m OT'} · ${esc(otCostStr)}</span>
+            </span>
+          ` : `<span class="muted">No off-shift active stand-in available at this site.</span>`}
+          ${standInBtnHtml}
+        </div>
+      ` : ''}
+    `;
+
+    const pickBtn = el.querySelector('[data-cov-open-standin]');
+    if (pickBtn) {
+      pickBtn.addEventListener('click', () => {
+        openStandInPickerModal({
+          company: prev.company,
+          date: prev.date,
+          shiftId: prev.shiftId,
+          site: prev.siteFilter || prev.site || 'all',
+          siteFilter: prev.siteFilter || 'all',
+          minFloor: prev.minFloor,
+          excludeStaff: prev.staff,
+          excludeCompany: prev.company,
+          excludeRowId: prev.excludeRowId || '',
+          hypotheticalLeave: prev.hypotheticalLeave || null,
+          onAssigned: out => {
+            if (typeof opts.onStandInAssigned === 'function') opts.onStandInAssigned(out);
+          }
+        });
+      });
+    }
+    if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(el);
+  }
   function renderWeeklyShiftCoverageStripHtml(cov, opts = {}) {
     if (!cov || !Array.isArray(cov.weekDates)) return '';
     const activeShift = String(opts.activeShiftFilter || 'all');
     const weekRangeLbl = `${cov.weekDates[0].dayNum} ${cov.weekDates[0].monthShort} - ${cov.weekDates[6].dayNum} ${cov.weekDates[6].monthShort}`;
+    const minFl = Number(cov.minFloor || 1);
     return `
       <div class="att-cov-strip" id="kioskShiftCoverageStrip">
         <div class="att-cov-head">
@@ -149593,8 +150868,14 @@
                 <b class="mono">${fmtNum(cov.zeroGapCount)}</b>
                 <span>${cov.zeroGapCount > 0 ? 'zero-coverage gaps' : 'full workday coverage'}</span>
               </span>
+              ${(minFl > 1 || cov.belowFloorCount > 0) ? `
+                <span class="att-cov-gap-badge ${cov.belowFloorCount > 0 ? 'is-floor-warn' : 'is-ok'}">
+                  <b class="mono">${fmtNum(cov.belowFloorCount)}</b>
+                  <span>below floor (&lt;${fmtNum(minFl)})</span>
+                </span>
+              ` : ''}
             </div>
-            <span class="att-catalog-sub"><span>7-day active headcount density by shift and station. Click a cell or shift to filter the schedule below.</span></span>
+            <span class="att-catalog-sub"><span>7-day active headcount density by shift and station. Click a gap or low cell to assign a stand-in, or click a shift to filter below.</span></span>
           </div>
           <div class="sched-week-nav">
             <button type="button" class="btn kiosk-mini-btn" data-cov-week-nav="-1" aria-label="Previous coverage week">‹ Prev</button>
@@ -149612,6 +150893,10 @@
               <span data-no-i18n="1">${esc(st.site)}</span> (<b class="mono">${fmtNum(st.staffCount)}</b>)
             </button>
           `).join('')}
+          <span class="cov-floor-group" role="group" aria-label="Minimum Coverage Floor">
+            <span class="kiosk-bar-lbl">Min Floor:</span>
+            ${[1, 2, 3].map(fl => `<button type="button" class="kiosk-qchip ${minFl === fl ? 'active' : ''}" data-cov-min-floor="${fl}" aria-pressed="${minFl === fl ? 'true' : 'false'}"><b class="mono">${fl}</b></button>`).join('')}
+          </span>
         </div>
         <div class="cov-table-wrap">
           <table class="cov-grid">
@@ -149633,18 +150918,24 @@
                   ${row.cells.map(c => {
                     const cls = [
                       'cov-cell',
-                      c.isZeroGap ? 'is-zero-gap' : '',
+                      c.isZeroGap ? 'is-zero-gap' : (c.isBelowFloor ? 'is-below-floor' : ''),
                       !c.expectedWorkday ? 'is-off-day' : '',
                       c.tier ? `cov-tier-${c.tier}` : ''
                     ].filter(Boolean).join(' ');
+                    const leaveSuffix = c.onLeaveCount > 0 ? ` · ${c.onLeaveCount} on leave` : '';
                     const tip = c.isZeroGap
-                      ? `${row.shiftName}: 0 scheduled staff on expected workday (${fmtDateDMY(c.iso)})`
-                      : `${row.shiftName}: ${c.count} scheduled staff (${fmtDateDMY(c.iso)})`;
+                      ? `${row.shiftName}: 0 scheduled staff on expected workday (${fmtDateDMY(c.iso)})${leaveSuffix} · Click to pick stand-in`
+                      : (c.isBelowFloor
+                        ? `${row.shiftName}: ${c.count} scheduled (below floor of ${minFl}) on ${fmtDateDMY(c.iso)}${leaveSuffix} · Click to pick stand-in`
+                        : `${row.shiftName}: ${c.count} scheduled staff (${fmtDateDMY(c.iso)})${leaveSuffix}`);
+                    const gapAttrs = (c.isZeroGap || c.isBelowFloor)
+                      ? ` data-cov-gap-shift="${esc(row.shiftId)}" data-cov-gap-date="${esc(c.iso)}" data-cov-gap-site="${esc(cov.siteFilter || 'all')}" data-cov-gap-co="${esc(row.primaryCompany || cov.primaryCompany || '')}"`
+                      : '';
                     return `
                       <td class="c">
-                        <button type="button" class="${cls}" data-cov-shift-pick="${esc(row.shiftId)}" data-ui-tip="${esc(tip)}">
+                        <button type="button" class="${cls}" data-cov-shift-pick="${esc(row.shiftId)}"${gapAttrs} data-ui-tip="${esc(tip)}">
                           <span class="mono">${!c.expectedWorkday && c.count === 0 ? 'Off' : fmtNum(c.count)}</span>
-                          ${c.isZeroGap ? '<small class="cov-gap-tag">Gap</small>' : ''}
+                          ${c.isZeroGap ? '<small class="cov-gap-tag">Gap</small>' : (c.isBelowFloor ? '<small class="cov-gap-tag">Low</small>' : '')}
                         </button>
                       </td>
                     `;
@@ -150007,6 +151298,110 @@
     return fallbackOut;
   }
 
+  function _cohortDayPunchReadings(company, memberNames, fromIso, toIso) {
+    const co = canonCompany(company || defaultEntryCompany() || 'WTC') || String(company || 'WTC').trim();
+    const coN = norm(co);
+    const memberSet = new Set((memberNames || []).map(m => norm(m)).filter(Boolean));
+    const dayMap = new Map();
+    if (!coN || !memberSet.size || toIso < fromIso) return dayMap;
+    const seenIds = new Set();
+    const attCustom = (STATE.customRecords && Array.isArray(STATE.customRecords.attendance)) ? STATE.customRecords.attendance : [];
+    const attSeed = (SEED && SEED.records && Array.isArray(SEED.records.attendance)) ? SEED.records.attendance : [];
+    const kioskList = sanitizeKioskPunchesList(STATE.kioskPunches).filter(p => p && !p.voided);
+    const tabletList = (typeof doorTabletPunchList === 'function' ? doorTabletPunchList() : []).filter(p => p && !p.voided);
+
+    const mergeAtt = a => {
+      if (!a || a.voided) return;
+      const rid = a.id != null ? String(a.id) : '';
+      if (rid && seenIds.has(rid)) return;
+      if (/^(extra|config|site\s*(?:present|off)|vacabsence|paid\s*leave|sick)/i.test(String(a.type || a.status || ''))) return;
+      const aCo = canonCompany(a.company || defaultEntryCompany() || 'WTC') || String(a.company || 'WTC').trim();
+      if (norm(aCo) !== coN) return;
+      const stN = norm(a.staff || '');
+      if (!memberSet.has(stN)) return;
+      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d < fromIso || d > toIso) return;
+      const inT = fmtAttClockTime(a.in_time || a.check_in || '');
+      const outT = fmtAttClockTime(a.out_time || a.check_out || '');
+      if (!inT && !outT) return;
+      if (rid) seenIds.add(rid);
+      const dk = `${stN}|${d}`;
+      const cur = dayMap.get(dk) || { staff: String(a.staff || '').trim(), company: co, date: d, inMin: null, outMin: null };
+      const iM = inT ? parseClockMinutes(inT) : null;
+      const oM = outT ? parseClockMinutes(outT) : null;
+      if (iM != null && (cur.inMin == null || punchDriftWrap(iM - cur.inMin) < 0)) cur.inMin = iM;
+      if (oM != null && (cur.outMin == null || punchDriftWrap(oM - cur.outMin) > 0)) cur.outMin = oM;
+      dayMap.set(dk, cur);
+    };
+    attCustom.forEach(mergeAtt);
+    attSeed.forEach(mergeAtt);
+
+    const mergePunch = p => {
+      if (!p || p.voided) return;
+      const pCo = canonCompany(p.company || defaultEntryCompany() || 'WTC') || String(p.company || 'WTC').trim();
+      if (norm(pCo) !== coN) return;
+      const stN = norm(p.staff || '');
+      if (!memberSet.has(stN)) return;
+      const d = String(p.shift_date || p.set_date || p.rep_date || p.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d < fromIso || d > toIso) return;
+      const dir = String(p.direction || '').toUpperCase();
+      const t = fmtAttClockTime(p.time || (dir === 'OUT' ? p.out_time : p.in_time) || '');
+      const tMin = t ? parseClockMinutes(t) : null;
+      if (tMin == null) return;
+      const dk = `${stN}|${d}`;
+      const cur = dayMap.get(dk) || { staff: String(p.staff || '').trim(), company: co, date: d, inMin: null, outMin: null };
+      if (dir === 'OUT') {
+        if (cur.outMin == null || punchDriftWrap(tMin - cur.outMin) > 0) cur.outMin = tMin;
+      } else {
+        if (cur.inMin == null || punchDriftWrap(tMin - cur.inMin) < 0) cur.inMin = tMin;
+      }
+      dayMap.set(dk, cur);
+    };
+    tabletList.forEach(mergePunch);
+    kioskList.forEach(mergePunch);
+    return dayMap;
+  }
+
+  function _evaluateCohortWindowStats(company, memberNames, fromIso, toIso, opts = {}) {
+    const readings = _cohortDayPunchReadings(company, memberNames, fromIso, toIso);
+    const inDeltas = [];
+    const outDeltas = [];
+    let lateSum = 0;
+    let unapOtSum = 0;
+    let obs = 0;
+    const medianOf = arr => {
+      if (!arr.length) return 0;
+      const s = arr.slice().sort((a, b) => a - b);
+      const mid = Math.floor(s.length / 2);
+      return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+    };
+    const evalPass = () => {
+      readings.forEach(rec => {
+        const inTime = rec.inMin != null ? formatMinutesAsClockTime(rec.inMin) : '';
+        const outTime = rec.outMin != null ? formatMinutesAsClockTime(rec.outMin) : '';
+        if (!inTime && !outTime) return;
+        const ev = evaluateShiftPunchTiming(rec.staff, rec.company, rec.date, inTime, outTime, { internalCalc: true });
+        if (!ev || !ev.shift || !ev.shift.isWorkday) return;
+        obs++;
+        lateSum += Number(ev.billableLateMin || 0);
+        unapOtSum += Number(ev.unapprovedOtMin || 0);
+        const refIn = opts.refStartMin != null ? opts.refStartMin : parseClockMinutes(ev.shift.start_time);
+        const refOut = opts.refEndMin != null ? opts.refEndMin : parseClockMinutes(ev.shift.end_time);
+        if (rec.inMin != null && refIn != null) inDeltas.push(punchDriftWrap(rec.inMin - refIn));
+        if (rec.outMin != null && refOut != null) outDeltas.push(punchDriftWrap(rec.outMin - refOut));
+      });
+    };
+    if (typeof withReadPass === 'function') withReadPass(evalPass);
+    else evalPass();
+    return {
+      obs,
+      medIn: medianOf(inDeltas),
+      medOut: medianOf(outDeltas),
+      lateMinAvg: obs > 0 ? Math.round((lateSum / obs) * 10) / 10 : 0,
+      unapOtMinAvg: obs > 0 ? Math.round((unapOtSum / obs) * 10) / 10 : 0
+    };
+  }
+
   function applyRoleSiteDriftProposal(proposal, opts = {}) {
     if (!proposal || !proposal.company || !Array.isArray(proposal.memberNames) || !proposal.memberNames.length) {
       return { ok: false, error: 'Missing cohort members for drift proposal' };
@@ -150045,6 +151440,21 @@
     const applyShift = opts.applyShift != null
       ? Boolean(opts.applyShift)
       : Boolean(proposal.kind === 'shift_timing' || (allowDualEdit && (sDelta !== 0 || eDelta !== 0 || nextStart !== curStart || nextEnd !== curEnd)));
+
+    const preStats = _evaluateCohortWindowStats(
+      co,
+      proposal.memberNames,
+      shiftCalAddDays(effFrom, -30),
+      shiftCalAddDays(effFrom, -1),
+      { refStartMin: parseClockMinutes(curStart), refEndMin: parseClockMinutes(curEnd) }
+    );
+    const preObsSnap = preStats.obs > 0 ? preStats.obs : Math.max(0, Math.round(Number(proposal.obsCount || 0)));
+    const preMedInSnap = preStats.obs > 0 ? preStats.medIn : Math.round(Number(proposal.medianInMin || 0));
+    const preMedOutSnap = preStats.obs > 0 ? preStats.medOut : Math.round(Number(proposal.medianOutMin || 0));
+    const preLateAvgSnap = preStats.obs > 0
+      ? preStats.lateMinAvg
+      : Math.max(0, Math.round((Number(proposal.medianInMin || 0) - curGrace) * 10) / 10);
+    const preUnapOtAvgSnap = preStats.obs > 0 ? preStats.unapOtMinAvg : 0;
 
     const adrPrefix = `adr_${norm(proposal.shiftId)}_`;
     const updatedStaff = [];
@@ -150091,6 +151501,8 @@
       const patch = { company: co };
       if ((hasGraceChange || hasShiftChange) && spanEnd >= effFrom) {
         const ruleId = `${adrPrefix}${effFrom.replace(/-/g, '')}`;
+        const effCohortKind = applyGrace && !applyShift ? 'grace_tolerance' : 'shift_timing';
+        const rsFallback = !proposal.site ? resolveStaffRoleAndSiteForDate(cleanName, co, effFrom, mEntry) : null;
         const item = {
           id: ruleId,
           start_date: effFrom,
@@ -150098,7 +151510,17 @@
           start_time: applyShift ? nextStart : curStart,
           end_time: applyShift ? nextEnd : curEnd,
           include_off_days: false,
-          note: (applyGrace && !applyShift ? `Role/Site Grace (${proposal.role})` : `Role/Site Drift (${proposal.role})`).slice(0, 60)
+          note: (effCohortKind === 'grace_tolerance' ? `Role/Site Grace (${proposal.role})` : `Role/Site Drift (${proposal.role})`).slice(0, 60),
+          cohort_role: String(proposal.role || (rsFallback && rsFallback.role) || 'Staff').trim().slice(0, 64),
+          cohort_site: String(proposal.site || (rsFallback && rsFallback.site) || '').trim().slice(0, 64),
+          cohort_shift: String(proposal.shiftId || '').trim().slice(0, 48),
+          cohort_kind: effCohortKind,
+          approved_at: today,
+          pre_obs: preObsSnap,
+          pre_med_in: preMedInSnap,
+          pre_med_out: preMedOutSnap,
+          pre_late_min_avg: preLateAvgSnap,
+          pre_unap_ot_min_avg: preUnapOtAvgSnap
         };
         if (applyShift) {
           if (sDelta) item.start_shift_min = sDelta;
@@ -150150,6 +151572,244 @@
       updatedCount: updatedStaff.length,
       backfilledRows,
       updatedStaff
+    };
+  }
+
+  function computeCohortDriftOutcomes(opts = {}) {
+    const refDate = /^\d{4}-\d{2}-\d{2}$/.test(String(opts.refDate || '').slice(0, 10))
+      ? String(opts.refDate).slice(0, 10)
+      : todayISO();
+    const windowDays = Math.max(7, Math.min(90, Math.round(Number(opts.days || 30))));
+    const minTrackDate = shiftCalAddDays(refDate, -windowDays);
+    const reqCompany = opts.company ? (canonCompany(opts.company) || String(opts.company).trim()) : '';
+    const allowedCos = reqCompany
+      ? [reqCompany]
+      : ((opts.companies && opts.companies.length) ? opts.companies : getActiveIndustryBuList(STATE.company));
+    const coSet = new Set(allowedCos.map(c => norm(c)));
+    const viewerAllowed = allowedCompanyNames();
+    const viewerSet = new Set(viewerAllowed.map(c => norm(c)));
+    const ws = ensureWorkSchedulesState();
+    const groups = new Map();
+
+    Object.entries(ws.staffRules || {}).forEach(([rk, r]) => {
+      if (!r || r.reset_default || !r.staff) return;
+      if (!staffRuleKeyMatchesCompany(rk, r)) return;
+      const items = normalizeDateTimingsList(r.own_date_timings).filter(it => {
+        if (!String(it.id || '').startsWith('adr_')) return false;
+        if (it.end_date && it.end_date < minTrackDate) return false;
+        if (it.end_date && it.end_date < refDate && it.start_date < minTrackDate) return false;
+        return true;
+      });
+      if (!items.length) return;
+      let cos = [r.company || ''];
+      if (rk.indexOf('|') < 0) {
+        const active = Array.from(staffActiveCompaniesOf(r.staff).values());
+        cos = (active.length ? active : [r.company || '']).filter(co => !co || !ws.staffRules[staffRuleKey(r.staff, co)]);
+      }
+      cos.forEach(coRaw => {
+        const co = canonCompany(coRaw || defaultEntryCompany() || 'WTC') || String(coRaw || '').trim();
+        const coN = norm(co);
+        if (!co || (coSet.size && !coSet.has(coN)) || (viewerSet.size && !viewerSet.has(coN))) return;
+        const rs = resolveStaffRoleAndSiteForDate(r.staff, co, refDate);
+        items.forEach(it => {
+          const idParts = String(it.id || '').split('_');
+          const idShift = idParts.length >= 3 ? idParts.slice(1, -1).join('_') : '';
+          const shiftId = normalizeShiftCodeAlias(it.cohort_shift || idShift || r.shift_id || 'day_8_4');
+          const role = String(it.cohort_role || rs.role || 'Staff').trim();
+          const site = String(it.cohort_site || rs.site || 'Main Entrance').trim();
+          const gKey = `${coN}|${it.id}|${norm(role)}|${norm(site)}`;
+          if (!groups.has(gKey)) {
+            const shObj = getShiftTypes(co).find(x => normalizeShiftCodeAlias(x.id || x.shift_code) === shiftId) || resolveShiftAtDate(shiftId, co, it.start_date);
+            groups.set(gKey, {
+              key: gKey,
+              ruleId: it.id,
+              company: co,
+              role,
+              site,
+              shiftId,
+              shiftName: (shObj && shObj.name) || shiftId,
+              kind: it.cohort_kind || (it.grace_min != null && !it.start_shift_min && !it.end_shift_min ? 'grace_tolerance' : 'shift_timing'),
+              effFrom: it.start_date,
+              effTo: it.end_date,
+              approvedAt: it.approved_at || it.start_date,
+              startTime: it.start_time || (shObj && shObj.start_time) || '08:00',
+              endTime: it.end_time || (shObj && shObj.end_time) || '16:00',
+              baseStartTime: (shObj && shObj.start_time) || it.start_time || '08:00',
+              baseEndTime: (shObj && shObj.end_time) || it.end_time || '16:00',
+              graceMin: it.grace_min != null ? Number(it.grace_min) : Number((shObj && shObj.grace_min) != null ? shObj.grace_min : 10),
+              startShiftMin: Number(it.start_shift_min || 0),
+              endShiftMin: Number(it.end_shift_min || 0),
+              preObs: it.pre_obs != null ? Number(it.pre_obs) : null,
+              preMedIn: it.pre_med_in != null ? Number(it.pre_med_in) : null,
+              preMedOut: it.pre_med_out != null ? Number(it.pre_med_out) : null,
+              preLateMinAvg: it.pre_late_min_avg != null ? Number(it.pre_late_min_avg) : null,
+              preUnapOtMinAvg: it.pre_unap_ot_min_avg != null ? Number(it.pre_unap_ot_min_avg) : null,
+              members: []
+            });
+          }
+          const grp = groups.get(gKey);
+          if (!grp.members.some(m => norm(m) === norm(r.staff))) grp.members.push(r.staff);
+        });
+      });
+    });
+
+    const cohortMaxEffFrom = new Map();
+    const cohortAllRuleIds = new Map();
+    const cohortMinEffFrom = new Map();
+    groups.forEach(grp => {
+      const ck = `${norm(grp.company)}|${grp.shiftId}|${norm(grp.role)}|${norm(grp.site)}`;
+      const prevMax = cohortMaxEffFrom.get(ck) || '';
+      if (!prevMax || grp.effFrom > prevMax) cohortMaxEffFrom.set(ck, grp.effFrom);
+      const prevMin = cohortMinEffFrom.get(ck) || '';
+      if (!prevMin || grp.effFrom < prevMin) cohortMinEffFrom.set(ck, grp.effFrom);
+      if (!cohortAllRuleIds.has(ck)) cohortAllRuleIds.set(ck, []);
+      cohortAllRuleIds.get(ck).push(grp.ruleId);
+    });
+
+    const outcomes = [];
+    let resolvedCount = 0;
+    let followupCount = 0;
+    let monitoringCount = 0;
+
+    groups.forEach(grp => {
+      const ck = `${norm(grp.company)}|${grp.shiftId}|${norm(grp.role)}|${norm(grp.site)}`;
+      const newestStart = cohortMaxEffFrom.get(ck) || '';
+      if (newestStart && grp.effFrom < newestStart && grp.effTo && (grp.effTo < newestStart || grp.effTo < refDate)) {
+        return;
+      }
+      const preFrom = shiftCalAddDays(grp.effFrom, -30);
+      const preTo = shiftCalAddDays(grp.effFrom, -1);
+      const maxPostEnd = shiftCalAddDays(grp.effFrom, windowDays - 1);
+      const capEnd = (grp.effTo && grp.effTo < maxPostEnd) ? grp.effTo : maxPostEnd;
+      const postTo = refDate < capEnd ? refDate : capEnd;
+
+      let preObs = grp.preObs;
+      let preMedIn = grp.preMedIn;
+      let preMedOut = grp.preMedOut;
+      let preLateMinAvg = grp.preLateMinAvg;
+      let preUnapOtMinAvg = grp.preUnapOtMinAvg;
+      if (preObs == null || preLateMinAvg == null || preUnapOtMinAvg == null) {
+        const preCalc = _evaluateCohortWindowStats(grp.company, grp.members, preFrom, preTo, {
+          refStartMin: parseClockMinutes(grp.baseStartTime),
+          refEndMin: parseClockMinutes(grp.baseEndTime)
+        });
+        if (preObs == null) preObs = preCalc.obs;
+        if (preMedIn == null) preMedIn = preCalc.medIn;
+        if (preMedOut == null) preMedOut = preCalc.medOut;
+        if (preLateMinAvg == null) preLateMinAvg = preCalc.lateMinAvg;
+        if (preUnapOtMinAvg == null) preUnapOtMinAvg = preCalc.unapOtMinAvg;
+      }
+
+      const postStats = (grp.effFrom <= refDate && postTo >= grp.effFrom)
+        ? _evaluateCohortWindowStats(grp.company, grp.members, grp.effFrom, postTo)
+        : { obs: 0, medIn: 0, medOut: 0, lateMinAvg: 0, unapOtMinAvg: 0 };
+
+      const lateMinDeltaAvg = Math.round((postStats.lateMinAvg - preLateMinAvg) * 10) / 10;
+      const unapOtMinDeltaAvg = Math.round((postStats.unapOtMinAvg - preUnapOtMinAvg) * 10) / 10;
+      let status = 'monitoring';
+      let statusLabel = 'Monitoring';
+      if (postStats.obs >= 3 && grp.effFrom <= refDate) {
+        if (
+          Math.abs(postStats.medIn) > 12
+          || Math.abs(postStats.medOut) > 12
+          || postStats.lateMinAvg >= 12
+          || postStats.unapOtMinAvg >= 15
+          || (preLateMinAvg > 0 && lateMinDeltaAvg > 0)
+        ) {
+          status = 'followup';
+          statusLabel = 'Needs Follow-Up';
+          followupCount++;
+        } else {
+          status = 'resolved';
+          statusLabel = 'Resolved';
+          resolvedCount++;
+        }
+      } else {
+        monitoringCount++;
+      }
+
+      const effSMin = parseClockMinutes(grp.startTime) ?? 480;
+      const effEMin = parseClockMinutes(grp.endTime) ?? 960;
+      const round5 = m => Math.round(Number(m || 0) / 5) * 5;
+      const nextRecStart = formatMinutesAsClockTime((effSMin + round5(postStats.medIn) + 1440) % 1440);
+      const nextRecEnd = formatMinutesAsClockTime((effEMin + round5(postStats.medOut) + 1440) % 1440);
+      const nextRecGrace = grp.kind === 'grace_tolerance'
+        ? Math.min(30, Math.max(grp.graceMin, Math.ceil(Math.max(0, postStats.medIn) / 5) * 5 + 5))
+        : grp.graceMin;
+
+      const retuneProposal = {
+        id: `retune_${grp.ruleId}`,
+        kind: grp.kind,
+        company: grp.company,
+        role: grp.role,
+        site: grp.site,
+        shiftId: grp.shiftId,
+        shiftName: grp.shiftName,
+        currentStart: grp.baseStartTime,
+        currentEnd: grp.baseEndTime,
+        currentGraceMin: grp.graceMin,
+        recommendedStartTime: grp.kind === 'grace_tolerance' ? grp.startTime : nextRecStart,
+        recommendedEndTime: grp.kind === 'grace_tolerance' ? grp.endTime : nextRecEnd,
+        recommendedGraceMin: nextRecGrace,
+        obsCount: postStats.obs,
+        staffCount: grp.members.length,
+        memberNames: grp.members.slice(),
+        medianInMin: postStats.medIn,
+        medianOutMin: postStats.medOut,
+        effectiveFrom: refDate
+      };
+
+      outcomes.push({
+        key: grp.key,
+        ruleId: grp.ruleId,
+        relatedRuleIds: Array.from(new Set(cohortAllRuleIds.get(ck) || [grp.ruleId])),
+        earliestEffFrom: cohortMinEffFrom.get(ck) || grp.effFrom,
+        company: grp.company,
+        role: grp.role,
+        site: grp.site,
+        shiftId: grp.shiftId,
+        shiftName: grp.shiftName,
+        kind: grp.kind,
+        effFrom: grp.effFrom,
+        effTo: grp.effTo,
+        approvedAt: grp.approvedAt,
+        startTime: grp.startTime,
+        endTime: grp.endTime,
+        graceMin: grp.graceMin,
+        members: grp.members.slice(),
+        staffCount: grp.members.length,
+        preObs: Number(preObs || 0),
+        preMedIn: Number(preMedIn || 0),
+        preMedOut: Number(preMedOut || 0),
+        preLateMinAvg: Number(preLateMinAvg || 0),
+        preUnapOtMinAvg: Number(preUnapOtMinAvg || 0),
+        postObs: postStats.obs,
+        postMedIn: postStats.medIn,
+        postMedOut: postStats.medOut,
+        postLateMinAvg: postStats.lateMinAvg,
+        postUnapOtMinAvg: postStats.unapOtMinAvg,
+        lateMinDeltaAvg,
+        unapOtMinDeltaAvg,
+        status,
+        statusLabel,
+        canWrite: canEditShiftsAndRules(null, grp.company),
+        retuneProposal
+      });
+    });
+
+    const rankOf = st => (st === 'followup' ? 0 : (st === 'monitoring' ? 1 : 2));
+    outcomes.sort((a, b) =>
+      (rankOf(a.status) - rankOf(b.status))
+      || b.effFrom.localeCompare(a.effFrom)
+      || a.role.localeCompare(b.role)
+    );
+
+    return {
+      refDate,
+      outcomes,
+      resolvedCount,
+      followupCount,
+      monitoringCount
     };
   }
 
@@ -150205,6 +151865,7 @@
     };
     let dg = null;
     let advRes = null;
+    let outcomesRes = null;
     let modal = $('punchDriftModal');
     if (!modal) {
       modal = document.createElement('div');
@@ -150220,6 +151881,8 @@
       window.__lastPunchDriftDigest = dg;
       advRes = computeRoleSiteDriftProposals({ days: st.advDays });
       window.__lastRoleSiteDriftProposals = advRes;
+      outcomesRes = computeCohortDriftOutcomes({ refDate: opts.refDate || todayISO() });
+      window.__lastCohortDriftOutcomes = outcomesRes;
     };
     const patHtml = list => list.map(x => `<span class="pdr-pat" data-side="${esc(x.side)}"><span>${esc(x.label)}</span> <b class="mono">${x.medianMin > 0 ? '+' : ''}${fmtNum(x.medianMin)}</b> <span>min</span></span>`).join(' ');
     const daysHtml = (scope, dows) => (scope === 'weekday'
@@ -150385,6 +152048,67 @@
                     }).join('')}
                   </div>
                 ` : `<div class="pdr-empty"><span>No role and site cohorts crossed the ${fmtNum(st.advDays)}-day drift threshold for this filter.</span></div>`}
+                ${(() => {
+                  const filteredOutcomes = (outcomesRes && Array.isArray(outcomesRes.outcomes) ? outcomesRes.outcomes : []).filter(o => {
+                    if (st.advSite !== 'all' && norm(o.site) !== norm(st.advSite)) return false;
+                    if (st.advRole !== 'all' && norm(o.role) !== norm(st.advRole)) return false;
+                    return true;
+                  });
+                  let fResCnt = 0;
+                  let fFolCnt = 0;
+                  let fMonCnt = 0;
+                  filteredOutcomes.forEach(o => {
+                    if (o.status === 'resolved') fResCnt++;
+                    else if (o.status === 'followup') fFolCnt++;
+                    else fMonCnt++;
+                  });
+                  return `
+                    <div id="pdrOutcomeTrackerSection" class="pdr-outcome-section">
+                      <div class="scp-section-head">
+                        <span>Approved Cohort 30-Day Outcomes</span>
+                        <span class="pdr-outcome-counts">
+                          <span class="pdr-outcome-pill is-resolved"><b class="mono">${fmtNum(fResCnt)}</b> <span>Resolved</span></span>
+                          <span class="pdr-outcome-pill is-followup"><b class="mono">${fmtNum(fFolCnt)}</b> <span>Needs Follow-Up</span></span>
+                          <span class="pdr-outcome-pill is-monitoring"><b class="mono">${fmtNum(fMonCnt)}</b> <span>Monitoring</span></span>
+                        </span>
+                      </div>
+                      ${filteredOutcomes.length ? `
+                        <div class="pdr-outcome-grid">
+                          ${filteredOutcomes.map(o => {
+                            const pillCls = o.status === 'resolved' ? 'is-resolved' : (o.status === 'followup' ? 'is-followup' : 'is-monitoring');
+                            const armKey = `outcome:${o.key}`;
+                            const isArmedRm = st.armed === armKey;
+                            const lateSign = o.lateMinDeltaAvg > 0 ? '+' : '';
+                            const unapSign = o.unapOtMinDeltaAvg > 0 ? '+' : '';
+                            return `
+                              <div class="pdr-outcome-card" data-pdr-outcome-key="${esc(o.key)}">
+                                <div class="pdr-prop-head">
+                                  <div>
+                                    <span class="pdr-outcome-pill ${pillCls}">${esc(o.statusLabel)}</span>
+                                    <strong data-no-i18n="1">${esc(o.role)}</strong>
+                                    <span class="muted" data-no-i18n="1">· ${esc(o.site)} · ${esc(o.company)}</span>
+                                  </div>
+                                  <span class="badge badge-muted mono" data-no-i18n="1">${fmtNum(o.staffCount)} staff · ${esc(fmtDateDMY(o.effFrom))}</span>
+                                </div>
+                                <div class="pdr-prop-metrics mono">
+                                  <span><span>Late avg:</span> <b data-no-i18n="1">${fmtNum(o.preLateMinAvg, 1)}m - ${fmtNum(o.postLateMinAvg, 1)}m (${lateSign}${fmtNum(o.lateMinDeltaAvg, 1)}m)</b></span>
+                                  <span><span>Unapproved OT avg:</span> <b data-no-i18n="1">${fmtNum(o.preUnapOtMinAvg, 1)}m - ${fmtNum(o.postUnapOtMinAvg, 1)}m (${unapSign}${fmtNum(o.unapOtMinDeltaAvg, 1)}m)</b></span>
+                                  <span><span>Post Drift:</span> <b data-no-i18n="1">${o.postMedIn >= 0 ? '+' : ''}${fmtNum(o.postMedIn)}m IN / ${o.postMedOut >= 0 ? '+' : ''}${fmtNum(o.postMedOut)}m OUT (${fmtNum(o.postObs)}d)</b></span>
+                                </div>
+                                ${o.canWrite && !STATE.kioskLocked ? `
+                                  <div class="pdr-prop-actions">
+                                    <button type="button" class="btn kiosk-mini-btn" data-pdr-retune-outcome="${esc(o.key)}">${ic('sliders')} <span>Re-Tune Draft</span></button>
+                                    <button type="button" class="btn kiosk-mini-btn ${isArmedRm ? 'btn-primary' : ''}" data-pdr-rm-outcome="${esc(o.key)}">${isArmedRm ? 'Confirm Remove' : 'Remove Cohort Rule'}</button>
+                                  </div>
+                                ` : '<div class="pdr-prop-actions"><span class="badge badge-muted">View Only</span></div>'}
+                              </div>
+                            `;
+                          }).join('')}
+                        </div>
+                      ` : `<div class="pdr-empty"><span>No approved cohort drift rules active in the 30-day evaluation window.</span></div>`}
+                    </div>
+                  `;
+                })()}
               </div>
             `}
             ${activeRules.length ? `
@@ -150407,6 +152131,7 @@
       modal.hidden = false;
       document.body.classList.add('modal-open');
       stripNativeTitles(modal);
+      if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(modal);
       wire();
     };
     const findingsForKey = key => {
@@ -150533,6 +152258,72 @@
         const r = listActivePunchDriftRules(getActiveIndustryBuList(STATE.company)).find(x => String(x.item.id) === String(rid));
         const res = r ? removePunchDriftRule(r.staff, r.company, r.item.id) : null;
         toast(res && res.ok ? 'Drift rule removed' : ((res && res.error) || 'Nothing changed'), res && res.ok ? 'ok' : 'warn');
+        compute();
+        render();
+      }));
+      modal.querySelectorAll('[data-pdr-retune-outcome]').forEach(b => b.addEventListener('click', () => {
+        const oKey = b.getAttribute('data-pdr-retune-outcome') || '';
+        const outObj = (outcomesRes && Array.isArray(outcomesRes.outcomes) ? outcomesRes.outcomes : []).find(x => x.key === oKey);
+        if (!outObj || !outObj.retuneProposal) return;
+        const rp = outObj.retuneProposal;
+        openShiftTypeModal(rp.shiftId, {
+          company: rp.company,
+          cohortProposal: rp,
+          draftPatch: {
+            start_time: rp.recommendedStartTime,
+            end_time: rp.recommendedEndTime,
+            grace_min: rp.recommendedGraceMin,
+            effective_from: rp.effectiveFrom || todayISO()
+          },
+          onSaved: () => {
+            if (!modal.hidden) {
+              compute();
+              render();
+            }
+          }
+        });
+      }));
+      modal.querySelectorAll('[data-pdr-rm-outcome]').forEach(b => b.addEventListener('click', () => {
+        const oKey = b.getAttribute('data-pdr-rm-outcome') || '';
+        const armKey = `outcome:${oKey}`;
+        if (st.armed !== armKey) {
+          st.armed = armKey;
+          render();
+          return;
+        }
+        st.armed = '';
+        const outObj = (outcomesRes && Array.isArray(outcomesRes.outcomes) ? outcomesRes.outcomes : []).find(x => x.key === oKey);
+        if (!outObj) return;
+        const removedStaff = [];
+        const savedRemovedRules = [];
+        let lastErr = '';
+        outObj.members.forEach(mName => {
+          const r = removePunchDriftRule(mName, outObj.company, outObj.relatedRuleIds || outObj.ruleId, { deferSave: true, skipRecalc: true, backfillAtt: false });
+          if (r && r.ok) {
+            removedStaff.push(mName);
+            if (r.key && r.rule) savedRemovedRules.push(r);
+          } else if (r && r.error) {
+            lastErr = r.error;
+          }
+        });
+        if (removedStaff.length > 0) {
+          const rmToday = todayISO();
+          const rmFrom = outObj.earliestEffFrom || outObj.effFrom;
+          if (rmFrom && rmFrom <= rmToday) {
+            backfillAttendancePolicyChange({
+              company: outObj.company,
+              staffNames: removedStaff,
+              fromDate: rmFrom,
+              toDate: (outObj.effTo && outObj.effTo <= rmToday) ? outObj.effTo : rmToday,
+              deferSave: true
+            });
+          }
+          removedStaff.forEach(sn => recalcStaffTodayPunchAndAttendance(sn));
+          saveLocalAuthAndRecords();
+          savedRemovedRules.forEach(r => postWorkScheduleMutation({ op: 'upsert_staff_rule', key: r.key, item: r.rule }));
+          syncWithCloud(true);
+        }
+        toast(removedStaff.length ? `Removed cohort rule across ${removedStaff.length} staff` : (lastErr || 'Nothing changed'), removedStaff.length ? 'ok' : 'warn');
         compute();
         render();
       }));
@@ -151899,6 +153690,7 @@
       company: effectiveScopedCo || '',
       weekOffset: STATE.kioskSchedWeekOffset || 0,
       siteFilter: STATE.kioskCoverageSiteFilter || 'all',
+      minFloor: STATE.kioskCoverageMinFloor || 1,
       staffList: fullStaffDir.filter(s => !s.isEndedContract)
     }) : null;
     const covSiteActive = coverageHeatmap ? coverageHeatmap.siteFilter : 'all';
@@ -152501,10 +154293,30 @@
                 ${STATE.kioskTabPoliciesOpen ? buildPolicyGroupsStripHtml() : ''}
                 <div class="late-policy-bulk-bar" id="kioskLateBulkPolicyBar"${STATE.kioskBulkBarOpen ? '' : ' hidden'}>
                   <div class="lp-bulk-title">
-                    <strong>${ic('warn')} Bulk Policy Group, Lateness, Tolerance &amp; Overtime</strong>
-                    <span class="muted">Apply policy &amp; perks group, tolerance (0-30m for IN &amp; OUT), when lateness occurs, late deduction, single-punch rule, and overtime to all ${fmtNum(filteredRoster.length)} filtered staff</span>
+                    <strong>${ic('warn')} Bulk Shift Rota, Policy Group, Lateness &amp; Overtime</strong>
+                    <span class="muted">Apply default shift rota, policy &amp; perks group, tolerance (0-30m for IN &amp; OUT), when lateness occurs, late deduction, single-punch rule, and overtime to all ${fmtNum(filteredRoster.length)} filtered staff</span>
                   </div>
                   <div class="lp-bulk-controls">
+                    <div class="ssm-field">
+                      <label for="kioskBulkShiftAssign">Default Shift Rota</label>
+                      <select id="kioskBulkShiftAssign" class="kiosk-select" data-plain-options="1"${canWriteShiftCat ? '' : ' disabled'}>
+                        <option value="keep" selected>Keep Current Shift</option>
+                        ${(() => {
+                          const shFreq = new Map();
+                          fullStaffDir.filter(s => !s.isEndedContract).forEach(s => {
+                            const rSid = getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4';
+                            const nSid = rSid === 'custom' ? 'custom' : normalizeShiftCodeAlias(rSid);
+                            shFreq.set(nSid, (shFreq.get(nSid) || 0) + 1);
+                          });
+                          return shiftTypesCatalog.slice().sort((a, b) => {
+                            const fa = shFreq.get(normalizeShiftCodeAlias(a.id || a.shift_code)) || 0;
+                            const fb = shFreq.get(normalizeShiftCodeAlias(b.id || b.shift_code)) || 0;
+                            if (fb !== fa) return fb - fa;
+                            return (b.is_bu_default ? 1 : 0) - (a.is_bu_default ? 1 : 0);
+                          }).map(st => `<option value="${esc(st.id)}">${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)})</option>`).join('');
+                        })()}
+                      </select>
+                    </div>
                     <div class="ssm-field">
                       <label for="kioskBulkPolicyGroup">Policy &amp; Perks Group</label>
                       <select id="kioskBulkPolicyGroup" class="kiosk-select" data-plain-options="1"${canWriteShiftCat ? '' : ' disabled'}>
@@ -152592,6 +154404,9 @@
                       <label for="kioskBulkEffFrom">Effective From (Opt.)</label>
                       <input type="date" id="kioskBulkEffFrom" class="kiosk-select" aria-label="Bulk Effective From"${canWriteShiftCat ? '' : ' disabled'}>
                     </div>
+                    <button type="button" class="btn" id="kioskBulkSimulateBtn" style="align-self:flex-end"${canWriteShiftCat ? '' : ' disabled'}>
+                      ${ic('sliders')} Simulate Impact
+                    </button>
                     <button type="button" class="btn btn-primary" id="kioskBulkApplyLateBtn" style="align-self:flex-end"${canWriteShiftCat ? '' : ' disabled'}>
                       ${ic('check_circle')} Apply to ${fmtNum(filteredRoster.filter(s => canEditShiftsAndRules(null, s.company)).length)} Staff
                     </button>
@@ -154244,9 +156059,12 @@
         }
       });
     });
-    $('kioskBulkApplyLateBtn')?.addEventListener('click', () => {
+    const readKioskBulkSpec = () => {
       const bulkScopeCo = COMPANY_BU_MATCH[STATE.company] || '';
-      if (!canApplyShiftCalendar() || STATE.kioskLocked || (bulkScopeCo && !canEditShiftsAndRules(null, bulkScopeCo))) return;
+      if (!canApplyShiftCalendar() || STATE.kioskLocked || (bulkScopeCo && !canEditShiftsAndRules(null, bulkScopeCo))) {
+        return { ok: false, error: 'You do not have rights to bulk update schedules or policies here' };
+      }
+      const shEl = $('kioskBulkShiftAssign');
       const pkgEl = $('kioskBulkPolicyGroup');
       const wEl = $('kioskBulkLateWhen');
       const gEl = $('kioskBulkLateGrace');
@@ -154256,6 +156074,7 @@
       const snapEl = $('kioskBulkOtSnap');
       const tEl = $('kioskBulkOtThresh');
       const effEl = $('kioskBulkEffFrom');
+      const shiftBulkVal = shEl ? shEl.value : 'keep';
       const pkgBulkVal = pkgEl ? pkgEl.value : 'keep';
       const graceBulkVal = gEl ? gEl.value : 'keep';
       const whenBulkVal = wEl ? wEl.value : 'keep';
@@ -154268,6 +156087,12 @@
       const effFrom = /^\d{4}-\d{2}-\d{2}$/.test(effFromRaw) ? effFromRaw : '';
       const explicitBulkFields = {};
       let hasExplicitFieldChange = false;
+      if (shiftBulkVal && shiftBulkVal !== 'keep') {
+        explicitBulkFields.shift_id = shiftBulkVal;
+        explicitBulkFields.use_custom_days = false;
+        explicitBulkFields.use_custom_day_timings = false;
+        hasExplicitFieldChange = true;
+      }
       if (whenBulkVal && whenBulkVal !== 'keep') {
         explicitBulkFields.late_when = whenBulkVal;
         hasExplicitFieldChange = true;
@@ -154296,24 +156121,40 @@
       const hasBulkOtChange = Boolean(otBulkVal && otBulkVal !== 'keep');
       const hasBulkPkgChange = Boolean(pkgBulkVal && pkgBulkVal !== 'keep');
       if (!effFrom && !hasExplicitFieldChange && !hasBulkOtChange && !hasBulkPkgChange) {
-        toast('Select at least one rule change or effective date to apply', 'warn');
-        return;
+        return { ok: false, error: 'Select at least one rule change or effective date to apply' };
       }
       const { filteredRoster: targetStaff } = getFilteredKioskRoster();
       const writableStaff = targetStaff.filter(s => canEditShiftsAndRules(null, s.company));
+      const buildStaffPatch = s => Object.assign(
+        {},
+        hasBulkPkgChange ? { apply_policy_group_id: pkgBulkVal } : {},
+        explicitBulkFields,
+        hasBulkOtChange ? buildOtComboPatchForStaff(otBulkVal, s.name, s.company) : {}
+      );
+      return {
+        ok: true,
+        bulkScopeCo,
+        effFrom,
+        shiftBulkVal,
+        hasAnyChange: Boolean(effFrom || hasExplicitFieldChange || hasBulkOtChange || hasBulkPkgChange),
+        writableStaff,
+        buildStaffPatch
+      };
+    };
+
+    const applyKioskBulkSpec = bulkSpec => {
+      if (!bulkSpec || !bulkSpec.ok) return;
+      const { writableStaff, bulkScopeCo, effFrom, hasAnyChange, buildStaffPatch } = bulkSpec;
       const bulkToday = todayISO();
       const runBulkRecalc = !effFrom || effFrom <= bulkToday;
+      const savedBulkRules = [];
       writableStaff.forEach(s => {
-        const staffPatch = Object.assign(
-          {},
-          hasBulkPkgChange ? { apply_policy_group_id: pkgBulkVal } : {},
-          explicitBulkFields,
-          hasBulkOtChange ? buildOtComboPatchForStaff(otBulkVal, s.name, s.company) : {}
-        );
-        saveStaffWorkRule(s.name, Object.assign({}, staffPatch, s.company ? { company: s.company } : {}), { deferSave: true, skipRecalc: runBulkRecalc });
+        const staffPatch = buildStaffPatch(s);
+        const sr = saveStaffWorkRule(s.name, Object.assign({}, staffPatch, s.company ? { company: s.company } : {}), { deferSave: true, skipRecalc: runBulkRecalc });
+        if (sr && sr.ok && sr.key && sr.rule) savedBulkRules.push(sr);
       });
       let bfCnt = 0;
-      if (writableStaff.length > 0 && (effFrom || hasExplicitFieldChange || hasBulkOtChange || hasBulkPkgChange)) {
+      if (writableStaff.length > 0 && hasAnyChange) {
         if (runBulkRecalc) {
           const staffByCo = new Map();
           writableStaff.forEach(s => {
@@ -154337,18 +156178,58 @@
       }
       if (writableStaff.length > 0) {
         saveLocalAuthAndRecords();
+        savedBulkRules.forEach(r => postWorkScheduleMutation({ op: 'upsert_staff_rule', key: r.key, item: r.rule }));
         syncWithCloud(true);
       }
       const bulkNames = writableStaff.map(s => s.name);
       const bulkRemLeg = detectLegacyTenthHourBackfill({ company: bulkScopeCo || '', staffNames: bulkNames.length ? bulkNames : null, countOnly: true });
       renderApp();
       toast(
-        `Applied policy, lateness, OT snap & threshold rules to ${writableStaff.length} staff${effFrom ? ` from ${fmtDateDMY(effFrom)}` : ''}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`,
+        `Applied policy, lateness, OT snap & threshold rules to ${writableStaff.length} staff${effFrom ? ` from ${fmtDateDMY(effFrom)}` : ''}${bulkSpec.shiftBulkVal && bulkSpec.shiftBulkVal !== 'keep' ? ' · Shift updated' : ''}${bfCnt ? ` · Recalculated ${bfCnt} logs` : ''}`,
         'ok',
         bulkRemLeg.migratableCount > 0
           ? { actionLabel: `Review ${bulkRemLeg.migratableCount} Legacy 0.1h`, onAction: () => openBackfillModal({ company: bulkScopeCo || '', staffNames: bulkNames.length ? bulkNames : null, filter: 'tenth_hour' }) }
           : undefined
       );
+    };
+
+    $('kioskBulkSimulateBtn')?.addEventListener('click', () => {
+      const bulkSpec = readKioskBulkSpec();
+      if (!bulkSpec.ok) {
+        if (bulkSpec.error) toast(bulkSpec.error, 'warn');
+        return;
+      }
+      const staffTargets = bulkSpec.writableStaff.map(s => ({
+        staff: s.name,
+        company: s.company,
+        patch: Object.assign({}, bulkSpec.buildStaffPatch(s), s.company ? { company: s.company } : {})
+      }));
+      const uniqueCos = Array.from(new Set(staffTargets.map(t => t.company).filter(Boolean)));
+      const scopeCo = bulkSpec.bulkScopeCo || (uniqueCos.length === 1 ? uniqueCos[0] : '');
+      openPolicySimulationDiffDrawer({
+        simSpec: {
+          mode: 'bulk_roster',
+          company: scopeCo,
+          effective_from: bulkSpec.effFrom,
+          title: 'Bulk Roster & Policy Simulation',
+          scopeLabel: `${scopeCo || 'Filtered Staff'} (${staffTargets.length} Staff)`,
+          staffTargets
+        },
+        canApply: staffTargets.length > 0,
+        onConfirmApply: () => {
+          closePolicySimulationDiffDrawer();
+          applyKioskBulkSpec(bulkSpec);
+        }
+      });
+    });
+
+    $('kioskBulkApplyLateBtn')?.addEventListener('click', () => {
+      const bulkSpec = readKioskBulkSpec();
+      if (!bulkSpec.ok) {
+        if (bulkSpec.error) toast(bulkSpec.error, 'warn');
+        return;
+      }
+      applyKioskBulkSpec(bulkSpec);
     });
     feedCard.querySelectorAll('[data-sched-cell-staff]').forEach(btn => {
       btn.addEventListener('click', e => {
@@ -154386,6 +156267,12 @@
         refreshPayrollPolicySectionInPlace();
       });
     });
+    feedCard.querySelectorAll('[data-cov-min-floor]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        STATE.kioskCoverageMinFloor = Math.max(1, Math.min(3, Number(btn.getAttribute('data-cov-min-floor') || 1)));
+        refreshPayrollPolicySectionInPlace();
+      });
+    });
     feedCard.querySelectorAll('[data-cov-week-nav]').forEach(btn => {
       btn.addEventListener('click', () => {
         const delta = Number(btn.getAttribute('data-cov-week-nav') || 0);
@@ -154395,6 +156282,24 @@
     });
     feedCard.querySelectorAll('[data-cov-shift-pick]').forEach(btn => {
       btn.addEventListener('click', () => {
+        const gapShift = btn.getAttribute('data-cov-gap-shift');
+        const gapDate = btn.getAttribute('data-cov-gap-date');
+        const gapSite = btn.getAttribute('data-cov-gap-site') || 'all';
+        const gapCo = btn.getAttribute('data-cov-gap-co') || COMPANY_BU_MATCH[STATE.company] || '';
+        if (gapShift && gapDate) {
+          if (!STATE.kioskLocked && canEditShiftsAndRules(null, gapCo)) {
+            openStandInPickerModal({
+              company: gapCo,
+              shiftId: gapShift,
+              date: gapDate,
+              site: gapSite,
+              minFloor: STATE.kioskCoverageMinFloor || 1
+            });
+            return;
+          }
+          toast('You do not have rights to assign stand-in shifts for this company', 'warn');
+          return;
+        }
         const picked = btn.getAttribute('data-cov-shift-pick') || 'all';
         STATE.kioskSchedShiftFilter = (STATE.kioskSchedShiftFilter === picked) ? 'all' : picked;
         refreshPayrollPolicySectionInPlace();
@@ -161693,6 +163598,14 @@
       closePolicySimulationDiffDrawer: () => closePolicySimulationDiffDrawer(),
       uiBusy: () => uiBusy(),
       computeWeeklyShiftCoverageHeatmap: (opts = {}) => computeWeeklyShiftCoverageHeatmap(opts),
+      getScheduleWeekOffsetForDate: targetIso => getScheduleWeekOffsetForDate(targetIso),
+      buildStaffFullDayLeaveIndex: (cos, fromD, toD, opts = {}) => buildStaffFullDayLeaveIndex(cos, fromD, toD, opts),
+      computeStandInCandidatesForGap: (opts = {}) => computeStandInCandidatesForGap(opts),
+      assignStandInOverride: (spec = {}) => assignStandInOverride(spec),
+      openStandInPickerModal: (opts = {}) => openStandInPickerModal(opts),
+      closeStandInPickerModal: () => closeStandInPickerModal(),
+      computeCohortDriftOutcomes: (opts = {}) => computeCohortDriftOutcomes(opts),
+      computeLeaveCoverageAndCostPreview: (spec = {}) => computeLeaveCoverageAndCostPreview(spec),
       resolveStaffRoleAndSiteForDate: (staff, co, dateStr) => resolveStaffRoleAndSiteForDate(staff, co, dateStr),
       computeRoleSiteDriftProposals: (opts = {}) => computeRoleSiteDriftProposals(opts),
       runAiShiftPolicyDriftRecommender: (driftRes, opts = {}) => runAiShiftPolicyDriftRecommender(driftRes, opts),

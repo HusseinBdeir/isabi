@@ -2312,6 +2312,7 @@
               ['unpaid', 'Unpaid (Deduct from Salary)'],
               ['paid', 'Paid (Keep Full Salary)']
             ], 'unpaid'), { hintId: 'hint_att_leave_pay', hint: '' })}
+            <div class="att-leave-cov-preview" id="attLeaveCoveragePreview" hidden></div>
           </div>
 
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional remark..."'), { id: 'wrap_att_notes' })}

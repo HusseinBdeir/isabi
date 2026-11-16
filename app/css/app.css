@@ -41029,3 +41029,274 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
     width: 100%;
   }
 }
+
+/* ============================================================================
+   Policy & Shift Coverage Recommendations (Stand-In, 30d Outcomes, Leave/Bulk Sim)
+   ============================================================================ */
+.cov-floor-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-inline-start: auto;
+  flex-wrap: wrap;
+}
+.att-cov-gap-badge.is-floor-warn {
+  background: rgba(254, 243, 199, 0.9);
+  border-color: rgba(217, 119, 6, 0.55);
+  color: #92400E;
+}
+.cov-cell.is-below-floor {
+  background: rgba(254, 243, 199, 0.72);
+  border-color: rgba(217, 119, 6, 0.55);
+  color: #92400E;
+}
+.cov-cell.is-zero-gap:hover,
+.cov-cell.is-below-floor:hover {
+  filter: brightness(0.97);
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.25);
+}
+.cov-standin-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cov-standin-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+.cov-standin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.cov-standin-toolbar .search-input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.cov-ot-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.2px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.cov-standin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.cov-standin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.cov-standin-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+.cov-standin-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cov-standin-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11.8px;
+}
+.pdr-outcome-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.pdr-outcome-section .scp-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pdr-outcome-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pdr-outcome-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.pdr-outcome-pill.is-resolved {
+  background: rgba(209, 250, 229, 0.9);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #065F46;
+}
+.pdr-outcome-pill.is-followup {
+  background: rgba(254, 226, 226, 0.9);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #991B1B;
+}
+.pdr-outcome-pill.is-monitoring {
+  background: rgba(254, 243, 199, 0.85);
+  border-color: rgba(217, 119, 6, 0.45);
+  color: #92400E;
+}
+.pdr-outcome-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+}
+.pdr-outcome-card {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.att-leave-cov-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.att-leave-cov-preview[hidden] {
+  display: none !important;
+}
+.att-leave-cov-preview.is-gap-warn {
+  background: rgba(254, 242, 242, 0.92);
+  border-color: rgba(239, 68, 68, 0.48);
+}
+.att-leave-cov-preview.is-floor-warn {
+  background: rgba(255, 251, 235, 0.94);
+  border-color: rgba(217, 119, 6, 0.5);
+}
+.att-leave-cov-preview.is-ok {
+  background: rgba(236, 253, 245, 0.82);
+  border-color: rgba(16, 185, 129, 0.42);
+}
+.att-leave-cov-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+.att-leave-cov-ctx {
+  color: var(--ink);
+  font-weight: 500;
+}
+.att-leave-cov-count {
+  margin-inline-start: auto;
+  font-weight: 700;
+}
+.att-leave-cov-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+.att-leave-cov-cand {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.psd-cov-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.psd-cov-title {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-weight: 600;
+  margin-inline-end: auto;
+}
+:root[data-theme="dark"] .att-cov-gap-badge.is-floor-warn,
+:root[data-theme="dark"] .cov-cell.is-below-floor,
+:root[data-theme="dark"] .pdr-outcome-pill.is-monitoring {
+  background: rgba(217, 119, 6, 0.22);
+  color: #fde68a;
+  border-color: rgba(245, 158, 11, 0.48);
+}
+:root[data-theme="dark"] .pdr-outcome-pill.is-resolved,
+:root[data-theme="dark"] .att-leave-cov-preview.is-ok {
+  background: rgba(16, 185, 129, 0.18);
+  color: #86efac;
+  border-color: rgba(16, 185, 129, 0.42);
+}
+:root[data-theme="dark"] .pdr-outcome-pill.is-followup,
+:root[data-theme="dark"] .att-leave-cov-preview.is-gap-warn {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.45);
+}
+:root[data-theme="dark"] .att-leave-cov-preview.is-floor-warn {
+  background: rgba(217, 119, 6, 0.18);
+  color: #fde68a;
+  border-color: rgba(245, 158, 11, 0.45);
+}
+@media (max-width: 768px) {
+  .cov-floor-group {
+    margin-inline-start: 0;
+  }
+  .cov-standin-toolbar #covStandInSearch {
+    font-size: 16px !important;
+  }
+  .pdr-outcome-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
