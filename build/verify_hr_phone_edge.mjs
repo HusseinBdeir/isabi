@@ -362,6 +362,9 @@ try {
     work_permit_expiry: '2026-11-28',
     residency_no: 'RES-88412',
     residency_expiry: '2027-02-15',
+    renewal_status: 'submitted',
+    renewal_receipt_no: 'GS-2026-441',
+    renewal_submitted_date: '2026-11-10',
     rev: 1
   };
   const recPost = await legacyCtx.callEdge('POST', '/app/api/records', { table: 'staff_members', record: hrRec }, {
@@ -375,7 +378,7 @@ try {
   const migratedPsCols = new Set(legacyCtx.d1.rows('PRAGMA table_info(phone_scan_sessions)').map(r => String(r.name)));
 
   const syncHrId = 'sm_hr_sync_' + Date.now();
-  const syncRec = Object.assign({}, hrRec, { id: syncHrId, name: 'Fadi Sync HR', nssf_no: '551908' });
+  const syncRec = Object.assign({}, hrRec, { id: syncHrId, name: 'Fadi Sync HR', nssf_no: '551908', renewal_receipt_no: 'GS-2026-442' });
   const syncPost = await legacyCtx.callEdge('POST', '/app/api/sync', {
     op: 'patch',
     doc: 'mfg_web_store',
@@ -396,7 +399,8 @@ try {
   const requiredCols = [
     'father_name', 'father_name_ar', 'full_name_ar', 'mother_name', 'mother_name_ar',
     'nationality_ar', 'id_doc_kind', 'nssf_no', 'id_expiry_date',
-    'work_permit_no', 'work_permit_expiry', 'residency_no', 'residency_expiry'
+    'work_permit_no', 'work_permit_expiry', 'residency_no', 'residency_expiry',
+    'renewal_status', 'renewal_receipt_no', 'renewal_submitted_date'
   ];
   const colsOk = requiredCols.every(c => migratedStaffCols.has(c)) && migratedPsCols.has('meta_json');
   const fieldsRoundTripOk = Boolean(
@@ -408,11 +412,14 @@ try {
     && savedRec.nssf_no === '991234' && savedRec.id_expiry_date === '2028-04-01'
     && savedRec.work_permit_no === 'WP-55910' && savedRec.work_permit_expiry === '2026-11-28'
     && savedRec.residency_no === 'RES-88412' && savedRec.residency_expiry === '2027-02-15'
+    && savedRec.renewal_status === 'submitted' && savedRec.renewal_receipt_no === 'GS-2026-441'
+    && savedRec.renewal_submitted_date === '2026-11-10'
     && savedSyncRec.nssf_no === '551908' && savedSyncRec.work_permit_expiry === '2026-11-28'
     && savedSyncRec.mother_name_ar === 'ليلى نصار'
+    && savedSyncRec.renewal_status === 'submitted' && savedSyncRec.renewal_receipt_no === 'GS-2026-442'
   );
 
-  ok('6. Legacy stripped D1 schema auto-migrates all 13 staff_members cols + meta_json and round-trips via /records & /sync',
+  ok('6. Legacy stripped D1 schema auto-migrates all 16 staff_members cols + meta_json and round-trips via /records & /sync',
     legInit.status === 200 && recPost.status === 200 && syncPost.status === 200 && colsOk && fieldsRoundTripOk,
     { legStatus: legInit.status, recStatus: recPost.status, syncStatus: syncPost.status, colsOk, fieldsRoundTripOk }
   );
@@ -511,6 +518,228 @@ try {
       callsDelta: geminiCalls - callsBeforeDemo,
       wrongTokStatus: demoWrongTok.status,
       wrongTokCode: demoWrongTok.json?.code
+    }
+  );
+
+  // 8a. 2-sided Front + Back complete_id_card pre-validates all pages before R2 put (413 oversized / 400 bad magic), stores 2 pages & purges both on consume
+  const sid2 = 'ps_2side_' + Date.now();
+  const tok2 = 'tok_2side_abc';
+  const init2 = await ctx.callEdge('POST', '/app/api/phone-scan', { sid: sid2, k: tok2, op: 'init_id_card', company: 'WTC' }, {
+    'X-ISABI-Session': ctx.ownerTok
+  });
+  const giantB64 = 'A'.repeat(2_900_000);
+  const bigSecondPage = await ctx.callEdge('POST', '/app/api/phone-scan', {
+    sid: sid2,
+    k: tok2,
+    op: 'complete_id_card',
+    extracted: { docKind: 'id_card', fullNameLatin: 'Karim Back Oversize' },
+    pages: [
+      { id: 'id-card-1', side: 'front', mimeType: 'image/png', dataUrl: TINY_PNG_DATA_URL },
+      { id: 'id-card-2', side: 'back', mimeType: 'image/png', dataUrl: `data:image/png;base64,${giantB64}` }
+    ]
+  });
+  const noR2AfterBig = !Array.from(ctx.bucket.objects.keys()).some(k => k.includes(sid2));
+  const spoofSecondPage = await ctx.callEdge('POST', '/app/api/phone-scan', {
+    sid: sid2,
+    k: tok2,
+    op: 'complete_id_card',
+    extracted: { docKind: 'id_card', fullNameLatin: 'Karim Back Spoof' },
+    pages: [
+      { id: 'id-card-1', side: 'front', mimeType: 'image/png', dataUrl: TINY_PNG_DATA_URL },
+      { id: 'id-card-2', side: 'back', mimeType: 'image/jpeg', dataUrl: `data:image/jpeg;base64,${spoofSvgB64}` }
+    ]
+  });
+  const noR2AfterSpoof = !Array.from(ctx.bucket.objects.keys()).some(k => k.includes(sid2));
+  const comp2 = await ctx.callEdge('POST', '/app/api/phone-scan', {
+    sid: sid2,
+    k: tok2,
+    op: 'complete_id_card',
+    extracted: {
+      docKind: 'id_card',
+      fullNameLatin: 'Karim Fadi Khoury',
+      civilRegistryNumber: '412',
+      civilRegistryPlace: 'Jounieh',
+      maritalStatus: 'Married',
+      sidesCaptured: 2,
+      idExpiryDate: '2030-05-01'
+    },
+    pages: [
+      { id: 'id-card-1', side: 'front', mimeType: 'image/png', dataUrl: TINY_PNG_DATA_URL },
+      { id: 'id-card-2', side: 'back', mimeType: 'image/png', dataUrl: TINY_PNG_DATA_URL }
+    ]
+  });
+  const poll2 = await ctx.callEdge('GET', `/app/api/phone-scan?sid=${encodeURIComponent(sid2)}&k=${encodeURIComponent(tok2)}`);
+  const r2Keys2Before = Array.from(ctx.bucket.objects.keys()).filter(k => k.includes(sid2)).length;
+  const consume2 = await ctx.callEdge('POST', '/app/api/phone-scan', { sid: sid2, k: tok2, op: 'consume' });
+  const r2Keys2After = Array.from(ctx.bucket.objects.keys()).filter(k => k.includes(sid2)).length;
+  ok('8a. 2-sided complete_id_card rejects invalid 2nd page before any R2 write (413/400), stores id-card-1/2 + reverse scalars, and purges both on consume',
+    init2.status === 200
+    && bigSecondPage.status === 413 && noR2AfterBig
+    && spoofSecondPage.status === 400 && noR2AfterSpoof
+    && comp2.status === 200
+    && poll2.status === 200
+    && poll2.json?.session?.pages?.length === 2
+    && poll2.json?.session?.pages?.[0]?.side === 'front'
+    && poll2.json?.session?.pages?.[1]?.side === 'back'
+    && poll2.json?.session?.extracted?.civilRegistryNumber === '412'
+    && poll2.json?.session?.extracted?.civilRegistryPlace === 'Jounieh'
+    && poll2.json?.session?.extracted?.maritalStatus === 'Married'
+    && poll2.json?.session?.extracted?.sidesCaptured === 2
+    && r2Keys2Before === 2
+    && consume2.status === 200 && r2Keys2After === 0,
+    {
+      bigStatus: bigSecondPage.status, spoofStatus: spoofSecondPage.status,
+      compStatus: comp2.status, pagesLen: poll2.json?.session?.pages?.length,
+      r2Before: r2Keys2Before, r2After: r2Keys2After
+    }
+  );
+
+  // 8b. Eager R2 cleanup on GET of an expired 2-page id_card session
+  const sidExp2 = 'ps_exp2_' + Date.now();
+  const tokExp2 = 'tok_exp2_xyz';
+  await ctx.callEdge('POST', '/app/api/phone-scan', { sid: sidExp2, k: tokExp2, op: 'init_id_card', company: 'WTC' }, {
+    'X-ISABI-Session': ctx.ownerTok
+  });
+  await ctx.callEdge('POST', '/app/api/phone-scan', {
+    sid: sidExp2,
+    k: tokExp2,
+    op: 'complete_id_card',
+    extracted: { docKind: 'id_card', fullNameLatin: 'Expired Purge Check', sidesCaptured: 2 },
+    pages: [
+      { id: 'id-card-1', side: 'front', mimeType: 'image/png', dataUrl: TINY_PNG_DATA_URL },
+      { id: 'id-card-2', side: 'back', mimeType: 'image/png', dataUrl: TINY_PNG_DATA_URL }
+    ]
+  });
+  const exp2BeforeR2 = Array.from(ctx.bucket.objects.keys()).filter(k => k.includes(sidExp2)).length;
+  const exp2Row = ctx.d1.rows('SELECT meta_json FROM phone_scan_sessions WHERE sid = ?', sidExp2)[0];
+  const exp2Meta = JSON.parse(exp2Row.meta_json);
+  exp2Meta.expiresAtMs = Date.now() - 5000;
+  ctx.d1.db.prepare('UPDATE phone_scan_sessions SET meta_json = ? WHERE sid = ?').run(JSON.stringify(exp2Meta), sidExp2);
+  const exp2Get = await ctx.callEdge('GET', `/app/api/phone-scan?sid=${encodeURIComponent(sidExp2)}&k=${encodeURIComponent(tokExp2)}`);
+  const exp2AfterR2 = Array.from(ctx.bucket.objects.keys()).filter(k => k.includes(sidExp2)).length;
+  ok('8b. Expired 2-page id_card GET eagerly deletes all R2 objects, sets expired status, and returns empty pages + null extracted',
+    exp2BeforeR2 === 2
+    && exp2Get.status === 200
+    && exp2Get.json?.session?.expired === true
+    && exp2Get.json?.session?.status === 'expired'
+    && exp2Get.json?.session?.extracted === null
+    && exp2Get.json?.session?.pages?.length === 0
+    && exp2AfterR2 === 0,
+    { exp2BeforeR2, exp2AfterR2, session: exp2Get.json?.session }
+  );
+
+  // 8c. Red-team parity: authed /smart-scan + phoneScanSid validation BEFORE token spend, imageDataUrl forwarding, 429 limit, 2-page cap & >650KB cardDataUrl
+  const sid8c = 'ps_8c_' + Date.now();
+  const tok8c = 'tok_8c_secret';
+  const init8c = await ctx.callEdge('POST', '/app/api/phone-scan', { sid: sid8c, k: tok8c, op: 'init_id_card', company: 'WTC' }, {
+    'X-ISABI-Session': ctx.ownerTok
+  });
+  const badSvgScan = await ctx.callEdge('POST', '/app/api/smart-scan', {
+    scanMode: 'id_card',
+    phoneScanSid: sid8c,
+    phoneScanTok: tok8c,
+    mimeType: 'image/svg+xml',
+    dataUrl: `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>').toString('base64')}`
+  }, { 'X-ISABI-Session': ctx.ownerTok });
+  const badMagicScan = await ctx.callEdge('POST', '/app/api/smart-scan', {
+    scanMode: 'id_card',
+    phoneScanSid: sid8c,
+    phoneScanTok: tok8c,
+    mimeType: 'image/jpeg',
+    dataUrl: `data:image/jpeg;base64,${Buffer.from('<svg onload="alert(1)"/>').toString('base64')}`
+  }, { 'X-ISABI-Session': ctx.ownerTok });
+  const oversizePayload = 'data:image/jpeg;base64,' + '/9j/4AAQ' + 'A'.repeat(2450000);
+  const oversizeScan = await ctx.callEdge('POST', '/app/api/smart-scan', {
+    scanMode: 'id_card',
+    phoneScanSid: sid8c,
+    phoneScanTok: tok8c,
+    mimeType: 'image/jpeg',
+    dataUrl: oversizePayload
+  }, { 'X-ISABI-Session': ctx.ownerTok });
+  const metaAfterBad = JSON.parse(ctx.d1.rows('SELECT meta_json FROM phone_scan_sessions WHERE sid = ?', sid8c)[0].meta_json || '{}');
+
+  let capturedGeminiBody8c = '';
+  const prevFetch8c = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    const u = typeof input === 'string' ? input : String((input && input.url) || '');
+    if (u.startsWith('https://generativelanguage.googleapis.com/')) {
+      capturedGeminiBody8c = init && init.body ? String(init.body) : '';
+    }
+    return prevFetch8c(input, init);
+  };
+  let scanImg1, scanImg2, scanImg3, scanImg4;
+  try {
+    const bodyImg = {
+      scanMode: 'id_card',
+      phoneScanSid: sid8c,
+      phoneScanTok: tok8c,
+      mimeType: 'image/png',
+      imageDataUrl: TINY_PNG_DATA_URL
+    };
+    scanImg1 = await ctx.callEdge('POST', '/app/api/smart-scan', bodyImg, { 'X-ISABI-Session': ctx.ownerTok });
+    scanImg2 = await ctx.callEdge('POST', '/app/api/smart-scan', bodyImg, { 'X-ISABI-Session': ctx.ownerTok });
+    scanImg3 = await ctx.callEdge('POST', '/app/api/smart-scan', bodyImg, { 'X-ISABI-Session': ctx.ownerTok });
+    scanImg4 = await ctx.callEdge('POST', '/app/api/smart-scan', bodyImg, { 'X-ISABI-Session': ctx.ownerTok });
+  } finally {
+    globalThis.fetch = prevFetch8c;
+  }
+
+  const capComplete = await ctx.callEdge('POST', '/app/api/phone-scan', {
+    sid: sid8c,
+    k: tok8c,
+    op: 'complete_id_card',
+    extracted: { docKind: 'id_card', fullNameLatin: 'Three Page Cap Test', sidesCaptured: 2 },
+    pages: [
+      { id: 'id-card-1', side: 'front', mimeType: 'image/png', dataUrl: TINY_PNG_DATA_URL },
+      { id: 'id-card-2', side: 'back', mimeType: 'image/png', dataUrl: TINY_PNG_DATA_URL },
+      { id: 'id-card-3', side: 'back', mimeType: 'image/png', dataUrl: TINY_PNG_DATA_URL }
+    ]
+  });
+  const capGet = await ctx.callEdge('GET', `/app/api/phone-scan?sid=${encodeURIComponent(sid8c)}&k=${encodeURIComponent(tok8c)}`);
+  const capR2Keys = Array.from(ctx.bucket.objects.keys()).filter(k => k.includes(sid8c));
+
+  const sid8d = 'ps_8d_' + Date.now();
+  const tok8d = 'tok_8d_secret';
+  await ctx.callEdge('POST', '/app/api/phone-scan', { sid: sid8d, k: tok8d, op: 'init_id_card', company: 'WTC' }, {
+    'X-ISABI-Session': ctx.ownerTok
+  });
+  const jpgHeaderBytes = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01]);
+  const bigValidJpg = Buffer.concat([jpgHeaderBytes, Buffer.alloc(600000, 0x41)]);
+  const bigCardDataUrl = `data:image/jpeg;base64,${bigValidJpg.toString('base64')}`;
+  const cardComp = await ctx.callEdge('POST', '/app/api/phone-scan', {
+    sid: sid8d,
+    k: tok8d,
+    op: 'complete_id_card',
+    extracted: { docKind: 'id_card', fullNameLatin: 'Large Preview Kept', cardDataUrl: bigCardDataUrl }
+  });
+  const cardGet = await ctx.callEdge('GET', `/app/api/phone-scan?sid=${encodeURIComponent(sid8d)}&k=${encodeURIComponent(tok8d)}`);
+
+  ok('8c. Authed /smart-scan+phoneScanSid validates before scan spend (400/413, scansUsed=0), forwards imageDataUrl, enforces 429 limit, caps pages at 2 & keeps >650KB preview',
+    init8c.status === 200
+    && badSvgScan.status === 400
+    && badMagicScan.status === 400
+    && oversizeScan.status === 413
+    && metaAfterBad.scansUsed === 0
+    && scanImg1.status === 200
+    && capturedGeminiBody8c.includes('iVBORw0KGgo')
+    && scanImg2.status === 200
+    && scanImg3.status === 200
+    && scanImg4.status === 429 && scanImg4.json?.code === 'scan_limit_reached'
+    && capComplete.status === 200
+    && capGet.json?.session?.pages?.length === 2
+    && capR2Keys.length === 2
+    && bigCardDataUrl.length > 650000 && bigCardDataUrl.length < 2000000
+    && cardComp.status === 200
+    && cardGet.json?.session?.pages?.length === 1
+    && (cardGet.json?.session?.pages?.[0]?.dataUrl?.length || 0) > 650000,
+    {
+      badStatuses: [badSvgScan.status, badMagicScan.status, oversizeScan.status],
+      scansUsedAfterBad: metaAfterBad.scansUsed,
+      scanStatuses: [scanImg1.status, scanImg2.status, scanImg3.status, scanImg4.status],
+      code4: scanImg4.json?.code,
+      capPages: capGet.json?.session?.pages?.length,
+      capR2Count: capR2Keys.length,
+      cardLen: cardGet.json?.session?.pages?.[0]?.dataUrl?.length || 0
     }
   );
 

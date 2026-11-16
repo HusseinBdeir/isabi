@@ -367,7 +367,8 @@ async function getTableColumns(db, table) {
       'nationality_ar', 'id_doc_kind',
       'nssf_no', 'id_expiry_date',
       'work_permit_no', 'work_permit_expiry',
-      'residency_no', 'residency_expiry'
+      'residency_no', 'residency_expiry',
+      'renewal_status', 'renewal_receipt_no', 'renewal_submitted_date'
     ];
     let addedCol = false;
     for (const colName of staffExtraCols) {
@@ -6163,7 +6164,9 @@ const PHONE_ID_SCALAR_KEYS = [
   'motherNameLatin', 'motherNameArabic', 'dob', 'birthYear', 'nationalityLatin',
   'nationalityArabic', 'idNumber', 'nssfNumber', 'gender', 'issueDate',
   'idExpiryDate', 'workPermitNumber', 'workPermitExpiryDate',
-  'residencyNumber', 'residencyExpiryDate', 'source'
+  'residencyNumber', 'residencyExpiryDate',
+  'civilRegistryNumber', 'civilRegistryPlace', 'maritalStatus', 'sidesCaptured',
+  'source'
 ];
 
 function sanitizePhoneIdExtracted(raw) {
@@ -6171,11 +6174,16 @@ function sanitizePhoneIdExtracted(raw) {
   const out = {};
   for (const k of PHONE_ID_SCALAR_KEYS) {
     if (raw[k] !== undefined && raw[k] !== null) {
+      if (k === 'sidesCaptured') {
+        const n = Number(raw[k]);
+        if (n === 1 || n === 2) out[k] = n;
+        continue;
+      }
       const s = String(raw[k]).trim().slice(0, 120);
       if (s) out[k] = s;
     }
   }
-  if (typeof raw.cardDataUrl === 'string' && raw.cardDataUrl.length <= 650000
+  if (typeof raw.cardDataUrl === 'string' && raw.cardDataUrl.length <= 2000000
       && /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(raw.cardDataUrl)) {
     out.cardDataUrl = raw.cardDataUrl;
   }
@@ -6261,6 +6269,13 @@ export async function handlePhoneScan(request, env, url, body, session) {
     const meta = safeJsonParse(row.meta_json, {}) || {};
     const isConsumed = Boolean(meta.consumed || row.status === 'consumed');
     const isExpired = Boolean(meta.expiresAtMs && nowMs > Number(meta.expiresAtMs));
+    if (meta.mode === 'id_card' && isExpired && !isConsumed && row.pages_json && row.pages_json !== '[]') {
+      await purgePhoneScanR2Pages(env, row.pages_json);
+      try {
+        await env.DB.prepare(`UPDATE phone_scan_sessions SET pages_json = '[]', status = 'expired', updated_ms = ?1 WHERE sid = ?2`)
+          .bind(nowMs, sid).run();
+      } catch (_) {}
+    }
     let pages = (meta.mode === 'id_card' && (isConsumed || isExpired)) ? [] : safeJsonParse(row.pages_json, []);
     // Hydrate any R2-offloaded page dataUrls
     if (env.BUCKET && Array.isArray(pages) && pages.length) {
@@ -6389,33 +6404,46 @@ export async function handlePhoneScan(request, env, url, body, session) {
     const extracted = sanitizePhoneIdExtracted(rawExtracted);
     const idPages = [];
     const safeSidId = sid.replace(/[^a-zA-Z0-9_.-]/g, '_');
-    const rawPg0 = Array.isArray(body && body.pages) ? body.pages[0] : null;
-    const previewPg = rawPg0 && rawPg0.dataUrl
-      ? rawPg0
-      : (extracted.cardDataUrl ? { id: 'id-card-1', mimeType: 'image/jpeg', dataUrl: extracted.cardDataUrl } : null);
-    if (previewPg && previewPg.dataUrl) {
-      const rawDataUrl = String(previewPg.dataUrl).trim();
+    const rawPagesIn = Array.isArray(body && body.pages)
+      ? body.pages.filter(p => p && p.dataUrl).slice(0, 2)
+      : [];
+    const candidatePages = rawPagesIn.length
+      ? rawPagesIn
+      : (extracted.cardDataUrl ? [{ id: 'id-card-1', side: 'front', mimeType: 'image/jpeg', dataUrl: extracted.cardDataUrl }] : []);
+    const validatedPages = [];
+    for (let idx = 0; idx < candidatePages.length; idx++) {
+      const pg = candidatePages[idx];
+      const rawDataUrl = String(pg.dataUrl || '').trim();
+      if (!rawDataUrl) continue;
       if (rawDataUrl.length > 2000000) {
         return jsonResponse({ ok: false, error: 'ID preview exceeds 1.5 MB limit.' }, 413);
       }
-      const declPgMime = (rawPg0 && rawPg0.dataUrl && rawPg0.mimeType) ? String(rawPg0.mimeType) : '';
+      const declPgMime = pg.mimeType ? String(pg.mimeType) : '';
       const imgChk = validateBase64MediaDataUrl(rawDataUrl, { allowPdfAndHeic: false, declaredMime: declPgMime });
       if (!imgChk.ok) {
         return jsonResponse({ ok: false, error: 'Unsupported image format for ID card preview.' }, 400);
       }
-      const safeMime = imgChk.mimeType || 'image/jpeg';
+      validatedPages.push({
+        pid: idx === 0 ? 'id-card-1' : 'id-card-2',
+        side: (String(pg.side || '').toLowerCase() === 'back' || idx === 1) ? 'back' : 'front',
+        safeMime: imgChk.mimeType || 'image/jpeg',
+        rawDataUrl
+      });
+    }
+    if (validatedPages.length) {
       if (existing.pages_json) {
         await purgePhoneScanR2Pages(env, existing.pages_json);
       }
-      const pid = 'id-card-1';
-      if (env.BUCKET) {
-        const r2Key = `phone-scan/${safeSidId}/${pid}.txt`;
-        await env.BUCKET.put(r2Key, rawDataUrl, {
-          httpMetadata: { contentType: 'text/plain; charset=utf-8' }
-        });
-        idPages.push({ id: pid, mimeType: safeMime, r2Key, ts: nowMs });
-      } else {
-        idPages.push({ id: pid, mimeType: safeMime, dataUrl: rawDataUrl, ts: nowMs });
+      for (const vp of validatedPages) {
+        if (env.BUCKET) {
+          const r2Key = `phone-scan/${safeSidId}/${vp.pid}.txt`;
+          await env.BUCKET.put(r2Key, vp.rawDataUrl, {
+            httpMetadata: { contentType: 'text/plain; charset=utf-8' }
+          });
+          idPages.push({ id: vp.pid, side: vp.side, mimeType: vp.safeMime, r2Key, ts: nowMs });
+        } else {
+          idPages.push({ id: vp.pid, side: vp.side, mimeType: vp.safeMime, dataUrl: vp.rawDataUrl, ts: nowMs });
+        }
       }
     }
     delete extracted.cardDataUrl;

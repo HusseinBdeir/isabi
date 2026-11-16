@@ -76,11 +76,13 @@ function httpReq(method, urlPath, bodyObj = null, extraHeaders = {}) {
 // Copy local D1 state into an isolated temp persistence dir so verification never mutates .wrangler/state
 const tmpPersist = fs.mkdtempSync(path.join(os.tmpdir(), 'isabi-cf-persist-'));
 const srcWranglerState = [
+  process.env.ISABI_WRANGLER_STATE || '',
   path.join(ROOT, '.wrangler', 'state'),
   path.resolve(ROOT, '..', '..', '..', 'isabi', '.wrangler', 'state'),
   path.resolve(ROOT, '..', '..', 'isabi', '.wrangler', 'state'),
-  path.resolve(ROOT, '..', 'isabi', '.wrangler', 'state')
-].find(p => fs.existsSync(p));
+  path.resolve(ROOT, '..', 'isabi', '.wrangler', 'state'),
+  path.join(os.homedir(), 'bhfirms', 'isabi', '.wrangler', 'state')
+].find(p => p && fs.existsSync(p));
 if (srcWranglerState) {
   fs.cpSync(srcWranglerState, tmpPersist, { recursive: true });
 }
@@ -112,8 +114,9 @@ wranglerEnv.WRANGLER_SEND_METRICS = 'false';
 // Populate local R2 `isabi-vault/seeds/seed_*.json` for Phase 1B authenticated seed gating
 const appJsSrcDir = [
   path.resolve(ROOT, '..', 'isabi-app', 'js'),
-  path.resolve(ROOT, '..', '..', 'isabi-app', 'js')
-].find(p => fs.existsSync(p)) || path.resolve(ROOT, '..', 'isabi-app', 'js');
+  path.resolve(ROOT, '..', '..', 'isabi-app', 'js'),
+  path.join(os.homedir(), 'bhfirms', 'isabi-app', 'js')
+].find(p => fs.existsSync(path.join(p, 'seed_core.json'))) || path.resolve(ROOT, '..', 'isabi-app', 'js');
 for (const kind of ['core', 'records', 'industries']) {
   const seedFile = path.join(appJsSrcDir, `seed_${kind}.json`);
   if (fs.existsSync(seedFile)) {

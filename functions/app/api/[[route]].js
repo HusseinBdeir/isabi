@@ -96,6 +96,44 @@ async function parseBodyWithSize(request, maxBytes = AUTHED_MAX_BODY_BYTES) {
   }
 }
 
+async function handlePhoneSmartScanRoute(request, env, body, rawBytes, parseError) {
+  if (parseError) return jsonResponse({ ok: false, code: 'invalid_json', error: 'Malformed JSON body.' }, 400);
+  const rawUrl = String((body && body.dataUrl) || '').trim();
+  const rawAlt = String((body && body.imageDataUrl) || '').trim();
+  if (rawBytes > 2400000 || rawUrl.length > 2400000 || rawAlt.length > 2400000) {
+    return jsonResponse({ ok: false, error: 'Mobile ID photo exceeds 2.2 MB upload limit.' }, 413);
+  }
+  const declMime = String((body && body.mimeType) || '').toLowerCase().trim();
+  if (declMime && /svg|xml|html/i.test(declMime)) {
+    return jsonResponse({ ok: false, error: 'Unsupported image format.' }, 400);
+  }
+  if (rawUrl) {
+    const chk1 = validateBase64MediaDataUrl(rawUrl, { allowPdfAndHeic: true, declaredMime: declMime });
+    if (!chk1.ok) return jsonResponse({ ok: false, error: chk1.error }, chk1.status || 400);
+  }
+  if (rawAlt) {
+    const chk2 = validateBase64MediaDataUrl(rawAlt, { allowPdfAndHeic: true, declaredMime: declMime });
+    if (!chk2.ok) return jsonResponse({ ok: false, error: chk2.error }, chk2.status || 400);
+  }
+  const ipHash = await hashClientIp(request);
+  const rl = await checkD1RateLimit(env, `phone-id-scan:${ipHash}`, 15, 60, { failClosed: true });
+  if (!rl.allowed) {
+    return jsonResponse({ ok: false, error: 'Phone scan rate limit reached. Try again in a minute.' }, 429);
+  }
+  const grant = await verifyAndIncrementPhoneIdScan(env, body.phoneScanSid, body.phoneScanTok);
+  if (!grant.ok) {
+    return jsonResponse({ ok: false, code: grant.code || 'phone_scan_denied', error: grant.error || 'Phone scan link expired or already used.' }, grant.status || 403);
+  }
+  return handleEdgeSmartScan(request, env, {
+    dataUrl: rawUrl,
+    imageDataUrl: rawAlt,
+    mimeType: body.mimeType,
+    extractedText: body.extractedText,
+    scanMode: 'id_card',
+    tier: body.tier
+  }, null, { phoneScanGrant: grant });
+}
+
 async function routeAppApi(context) {
   const { request, env, params } = context;
   const parts = Array.isArray(params.route)
@@ -177,41 +215,7 @@ async function routeAppApi(context) {
       if (subPath === '/industry_domain_store') return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
     }
     if (subPath === '/smart-scan' && request.method === 'POST' && body && body.phoneScanSid) {
-      if (parseError) return jsonResponse({ ok: false, code: 'invalid_json', error: 'Malformed JSON body.' }, 400);
-      if (rawBytes > 2400000) {
-        return jsonResponse({ ok: false, error: 'Mobile ID photo exceeds 2.2 MB upload limit.' }, 413);
-      }
-      const rawUrl = String((body && body.dataUrl) || '').trim();
-      const rawAlt = String((body && body.imageDataUrl) || '').trim();
-      const declMime = String((body && body.mimeType) || '').toLowerCase().trim();
-      if (declMime && /svg|xml|html/i.test(declMime)) {
-        return jsonResponse({ ok: false, error: 'Unsupported image format.' }, 400);
-      }
-      if (rawUrl) {
-        const chk1 = validateBase64MediaDataUrl(rawUrl, { allowPdfAndHeic: true, declaredMime: declMime });
-        if (!chk1.ok) return jsonResponse({ ok: false, error: chk1.error }, chk1.status || 400);
-      }
-      if (rawAlt) {
-        const chk2 = validateBase64MediaDataUrl(rawAlt, { allowPdfAndHeic: true, declaredMime: declMime });
-        if (!chk2.ok) return jsonResponse({ ok: false, error: chk2.error }, chk2.status || 400);
-      }
-      const ipHash = await hashClientIp(request);
-      const rl = await checkD1RateLimit(env, `phone-id-scan:${ipHash}`, 15, 60, { failClosed: true });
-      if (!rl.allowed) {
-        return jsonResponse({ ok: false, error: 'Phone scan rate limit reached. Try again in a minute.' }, 429);
-      }
-      const grant = await verifyAndIncrementPhoneIdScan(env, body.phoneScanSid, body.phoneScanTok);
-      if (!grant.ok) {
-        return jsonResponse({ ok: false, code: grant.code || 'phone_scan_denied', error: grant.error || 'Phone scan link expired or already used.' }, grant.status || 403);
-      }
-      return handleEdgeSmartScan(request, env, {
-        dataUrl: rawUrl,
-        imageDataUrl: rawAlt,
-        mimeType: body.mimeType,
-        extractedText: body.extractedText,
-        scanMode: 'id_card',
-        tier: body.tier
-      }, null, { phoneScanGrant: grant });
+      return handlePhoneSmartScanRoute(request, env, body, rawBytes, parseError);
     }
     if (isDemoReq && request.method === 'POST' && (subPath === '/ask' || subPath === '/tts' || subPath === '/smart-scan' || subPath === '/ai-edge')) {
       if (!isSameOriginBrowserRequest(request, url, env)) {
@@ -310,17 +314,7 @@ async function routeAppApi(context) {
   }
   if (subPath === '/smart-scan' && request.method === 'POST') {
     if (body && body.phoneScanSid) {
-      const grant = await verifyAndIncrementPhoneIdScan(env, body.phoneScanSid, body.phoneScanTok);
-      if (!grant.ok) {
-        return jsonResponse({ ok: false, code: grant.code || 'phone_scan_denied', error: grant.error || 'Phone scan link expired or already used.' }, grant.status || 403);
-      }
-      return handleEdgeSmartScan(request, env, {
-        dataUrl: body.dataUrl,
-        mimeType: body.mimeType,
-        extractedText: body.extractedText,
-        scanMode: 'id_card',
-        tier: body.tier
-      }, session, { phoneScanGrant: grant });
+      return handlePhoneSmartScanRoute(request, env, body, rawBytes, parseError);
     }
     return handleEdgeSmartScan(request, env, body, session);
   }
