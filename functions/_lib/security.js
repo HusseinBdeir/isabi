@@ -564,6 +564,74 @@ export async function verifyActiveEdgeSession(session, env) {
   }
 }
 
+// ---- Build tickets --------------------------------------------------------------------------------------------------
+// The build scripts (top-up reconcile, D1 seed export, Owner notices) read and patch the live store as the Owner.
+// They signed their own session with a copy of ISABI_JWT_SECRET kept on each PC, naming a session row that must
+// also exist in D1. On 2026-11-16 neither held: the THEO PC's copy was not the live secret and the fixed session id
+// was gone, so every build fell back to writing D1 directly. A build ticket needs no copy of anything: the script,
+// signed in to Cloudflare through Wrangler, writes the SHA-256 of a random 256-bit ticket into D1 `build_tickets`
+// with a short expiry and sends the ticket itself in X-ISABI-Session.
+//   * Only someone who can already write the database can make one (the same right the direct-D1 fallback uses).
+//   * The database holds a hash, never a usable credential.
+//   * A ticket is refused once its row expires, and whatever the row says once it is BUILD_TICKET_MAX_TTL_SEC old.
+//   * It opens only the routes the builds call (BUILD_TICKET_ROUTES), never a browser request (no Origin header),
+//     and acts as seat u1 exactly as D1 holds it today: suspended or no longer an Owner, and the ticket is void.
+const BUILD_TICKET_RE = /^bt1_[A-Za-z0-9_-]{43}$/;
+export const BUILD_TICKET_MAX_TTL_SEC = 900;
+const BUILD_TICKET_ROUTES = Object.freeze({
+  '/sync': Object.freeze(['POST']),
+  '/users': Object.freeze(['GET']),
+  '/cashflow_behind': Object.freeze(['GET', 'POST']),
+  '/source_behind': Object.freeze(['GET', 'POST'])
+});
+
+export function isBuildTicketRoute(subPath, method) {
+  const allowed = Object.prototype.hasOwnProperty.call(BUILD_TICKET_ROUTES, String(subPath || ''))
+    ? BUILD_TICKET_ROUTES[String(subPath)]
+    : null;
+  return Boolean(allowed && allowed.includes(String(method || '').toUpperCase()));
+}
+
+export async function redeemBuildTicket(request, env, subPath) {
+  if (!request || !env || !env.DB) return null;
+  if (!isBuildTicketRoute(subPath, request.method)) return null;
+  if (request.headers.get('Origin') || request.headers.get('Cookie')) return null;
+  const raw = String(request.headers.get('X-ISABI-Session') || '').trim();
+  if (!BUILD_TICKET_RE.test(raw)) return null;
+  try {
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', ENC.encode(raw)));
+    let hash = '';
+    for (let i = 0; i < digest.length; i++) hash += digest[i].toString(16).padStart(2, '0');
+    const row = await env.DB.prepare('SELECT expires_at FROM build_tickets WHERE ticket_hash = ?1 LIMIT 1')
+      .bind(hash).first();
+    if (!row) return null;
+    const expMs = Date.parse(String(row.expires_at || ''));
+    const nowMs = Date.now();
+    if (!Number.isFinite(expMs) || expMs <= nowMs || expMs - nowMs > BUILD_TICKET_MAX_TTL_SEC * 1000) return null;
+    const uRow = await env.DB.prepare(
+      "SELECT id, email, full_name, status, role, companies, pbi_access, statements_access, custom_perms FROM users WHERE id = 'u1' LIMIT 1"
+    ).first();
+    if (!uRow || String(uRow.status || 'Active') === 'Suspended') return null;
+    if (!/\bowner\b/i.test(String(uRow.role || ''))) return null;
+    return {
+      sid: 'build-ticket',
+      sub: String(uRow.id),
+      email: String(uRow.email || '').trim().toLowerCase(),
+      name: String(uRow.full_name || ''),
+      role: uRow.role,
+      companies: uRow.companies != null ? uRow.companies : 'All',
+      pbi: uRow.pbi_access != null ? uRow.pbi_access : 'full',
+      stmts: uRow.statements_access != null ? uRow.statements_access : 'full',
+      custom_perms: uRow.custom_perms != null ? uRow.custom_perms : '',
+      iss: 'isabi-edge-v1',
+      build_ticket: true
+    };
+  } catch (_) {
+    // No table yet (no build has run since this shipped), or D1 is down: no ticket, the caller answers 401.
+    return null;
+  }
+}
+
 const ROLE_WRITE_PRESETS = Object.freeze({
   'Full Access (Owner)': { modifyText: true, modifyData: true, voidData: true, enterDispatch: true, enterAccounting: true, enterMaster: true, enterPayrollJv: true },
   'Supervisor + Entry': { modifyText: true, modifyData: true, voidData: true, enterDispatch: true, enterAccounting: true, enterMaster: true, enterPayrollJv: true },

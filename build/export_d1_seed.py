@@ -931,7 +931,107 @@ def _b64url_encode(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 
+# ---- Build ticket ---------------------------------------------------------------------------------------------------
+# How this script signs in to the live Edge API without a copy of its signing secret (functions/_lib/security.js,
+# "Build tickets"; the same code lives in isabi-app build/reconcile_cloud_store.py). A ticket is a random 256-bit
+# value: its SHA-256 goes into D1 `build_tickets` through Wrangler (this PC's Cloudflare sign-in is the authority),
+# the ticket itself goes in X-ISABI-Session, and the Edge accepts it for ten minutes on the routes the builds call.
+BUILD_TICKET_TTL_SEC = 600  # the Edge refuses anything valid for more than 900 s
+BUILD_TICKET_PROBE_URL = "https://isabisystems.com/app/api/cashflow_behind"
+# The only programs that may issue one: the release scripts themselves, started as the main program. A gate, a test,
+# a notebook, `python -c`, or any script not named here signs a session as before. ISABI_BUILD_TICKET=1 names one more.
+BUILD_TICKET_PROGRAMS = frozenset({
+    "export_d1_seed.py", "deploy_cloudflare.py", "release_data_only.py", "release_batch.py", "sync_app.py",
+})
+_BUILD_TICKET: dict = {"tok": "", "exp": 0.0, "off": "", "digest": ""}
+
+
+def _build_ticket_allowed() -> bool:
+    """Real runs only. All of these must hold: the main program is one of BUILD_TICKET_PROGRAMS (or the run asked for
+    a ticket by name); no signing secret is given explicitly (that asks for the signed session); and neither the
+    network call nor the Wrangler call has been replaced by a gate. The last two are read from the functions as
+    they are now, not from a copy kept at import, so replacing one before this module is imported is seen too.
+    (A --dry run of these scripts prints its plan and ends before any live pull, so it never comes here.)"""
+    main_file = pathlib.Path(str(getattr(sys.modules.get("__main__"), "__file__", "") or "")).name.lower()
+    if main_file.startswith(("verify_", "test_")):
+        return False
+    if main_file not in BUILD_TICKET_PROGRAMS and os.environ.get("ISABI_BUILD_TICKET") != "1":
+        return False
+    if os.environ.get("ISABI_NO_BUILD_TICKET") == "1" or os.environ.get("ISABI_NO_WRANGLER_STORE") == "1":
+        return False
+    if (os.environ.get("ISABI_JWT_SECRET") or "").strip() or os.environ.get("ISABI_ALLOW_DEV_SECRET") == "1":
+        return False
+    opener = urllib.request.urlopen
+    if getattr(opener, "__module__", "") != "urllib.request" or getattr(opener, "__name__", "") != "urlopen":
+        return False
+    if hasattr(opener, "__wrapped__") or getattr(opener, "__globals__", None) is not vars(urllib.request):
+        return False  # a stand-in dressed up with functools.wraps is still a stand-in: it was not written in urllib
+    if getattr(_wrangler_d1_query, "__code__", None) is not _WRANGLER_D1_QUERY_CODE:
+        return False
+    return urllib.request.urlopen is _ORIG_URLOPEN and _wrangler_d1_query is _ORIG_WRANGLER_D1_QUERY
+
+
+def _drop_build_ticket() -> None:
+    """At exit: delete this run's ticket so it does not stay valid after the program ends (best effort)."""
+    digest = _BUILD_TICKET.get("digest") or ""
+    _BUILD_TICKET["tok"], _BUILD_TICKET["digest"] = "", ""
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        return
+    if not _build_ticket_allowed():
+        return  # the same test as for issuing one: a gate that left a digest behind never reaches Wrangler at exit
+    try:
+        _wrangler_d1_query(f"DELETE FROM build_tickets WHERE ticket_hash = '{digest}';", timeout=45)
+    except Exception:  # noqa: BLE001
+        pass  # it expires by itself within ten minutes
+
+
+def mint_build_ticket() -> str:
+    """A ticket the live Edge accepts, or "" (then a session is signed as before, and the direct D1 read is still
+    the last resort). One ticket per process, renewed a minute before it expires and deleted at exit; a ticket the
+    Edge refuses is not tried again in this process. Only the SHA-256 of the ticket ever reaches the database, and
+    the ticket is never printed."""
+    now = time.time()
+    if _BUILD_TICKET["tok"] and now < _BUILD_TICKET["exp"] - 60:
+        return _BUILD_TICKET["tok"]
+    if _BUILD_TICKET["off"] or not _build_ticket_allowed():
+        return ""
+    tok = "bt1_" + _b64url_encode(secrets.token_bytes(32))
+    digest = hashlib.sha256(tok.encode("ascii")).hexdigest()
+    now_dt = dt.datetime.now(dt.timezone.utc)
+    iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%S.000Z")  # noqa: E731
+    try:
+        # Old rows go only once they are 15 minutes past their expiry, so a PC whose clock runs fast cannot delete
+        # a ticket another PC is still using.
+        _wrangler_d1_query(
+            "CREATE TABLE IF NOT EXISTS build_tickets (ticket_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL, created_at TEXT NOT NULL); "
+            f"DELETE FROM build_tickets WHERE expires_at < '{iso(now_dt - dt.timedelta(minutes=15))}'; "
+            f"INSERT INTO build_tickets (ticket_hash, expires_at, created_at) VALUES ('{digest}', '{iso(now_dt + dt.timedelta(seconds=BUILD_TICKET_TTL_SEC))}', '{iso(now_dt)}');",
+            timeout=60,
+        )
+        _BUILD_TICKET["digest"] = digest
+        if not _BUILD_TICKET.get("atexit"):
+            import atexit  # noqa: PLC0415
+            atexit.register(_drop_build_ticket)
+            _BUILD_TICKET["atexit"] = True
+        req = urllib.request.Request(BUILD_TICKET_PROBE_URL, headers={"User-Agent": "ISABI-D1-Seed/1.0", "X-ISABI-Session": tok}, method="GET")
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            ok = resp.status == 200 and bool(json.loads(resp.read().decode("utf-8")).get("ok"))
+        if not ok:
+            raise RuntimeError("the Edge did not accept it")
+    except Exception as exc:  # noqa: BLE001
+        why = f"HTTP {exc.code}" if isinstance(exc, urllib.error.HTTPError) else (str(exc) or exc.__class__.__name__)
+        _BUILD_TICKET["off"] = why.replace(tok, "<ticket>")[:160]
+        # stderr: callers of this module may print pure JSON on stdout
+        print(f"INFO: build ticket not usable ({_BUILD_TICKET['off']}); signing a session instead", file=sys.stderr, flush=True)
+        return ""
+    _BUILD_TICKET["tok"], _BUILD_TICKET["exp"] = tok, now + BUILD_TICKET_TTL_SEC
+    return tok
+
+
 def _mint_cli_edge_jwt(ttl_sec: int = 300) -> str:
+    ticket = mint_build_ticket()
+    if ticket:
+        return ticket
     secret = (os.environ.get("ISABI_JWT_SECRET") or "").strip()
     if not secret and EDGE_META_JSON.exists():
         try:
@@ -1086,6 +1186,7 @@ def _wrangler_d1_query(sql: str, timeout: int = 60) -> list[dict]:
 
 
 _ORIG_WRANGLER_D1_QUERY = _wrangler_d1_query
+_WRANGLER_D1_QUERY_CODE = _wrangler_d1_query.__code__  # the function as written here: what _build_ticket_allowed trusts
 
 
 def _stitch_kv_rows(kv_rows: list[dict], doc_key: str) -> tuple[dict | None, str, bool]:

@@ -54,6 +54,7 @@ import {
   isOwnerOrFullGroupSession,
   isSameOriginBrowserRequest,
   jsonResponse,
+  redeemBuildTicket,
   verifyActiveEdgeSession
 } from '../../_lib/security.js';
 
@@ -151,7 +152,11 @@ async function routeAppApi(context) {
   if (parts[0] === 'map-tiles') {
     return handleGoogleMapTile(request, env, rawSession, parts, { url, context });
   }
-  const session = rawSession ? await verifyActiveEdgeSession(rawSession, env) : null;
+  let session = rawSession ? await verifyActiveEdgeSession(rawSession, env) : null;
+  if (!session && !rawSession) {
+    // Build scripts only (security.js, Build tickets): null for every other request, route or header.
+    session = await redeemBuildTicket(request, env, subPath);
+  }
 
   if (subPath === '/status' || subPath === '/health') {
     return handleStatus(env, session);
