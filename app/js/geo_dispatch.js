@@ -1045,7 +1045,7 @@
         if (parsed && typeof parsed === 'object') return parsed;
       }
     } catch (_) {}
-    return { companyHubs: {}, regions: {}, sites: {}, pairKmOverrides: {}, routeKmCache: {}, updatedAt: '' };
+    return { companyHubs: {}, regions: {}, sites: {}, pairKmOverrides: {}, routeKmCache: {}, verifiedRoutes: {}, updatedAt: '' };
   }
 
   let GEO_STORE = loadStoredConfig();
@@ -1054,6 +1054,7 @@
   if (!GEO_STORE.sites) GEO_STORE.sites = {};
   if (!GEO_STORE.pairKmOverrides) GEO_STORE.pairKmOverrides = {};
   if (!GEO_STORE.routeKmCache) GEO_STORE.routeKmCache = {};
+  if (!GEO_STORE.verifiedRoutes || typeof GEO_STORE.verifiedRoutes !== 'object') GEO_STORE.verifiedRoutes = {};
   if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
 
   function isValidLatLngPair(lat, lng) {
@@ -1112,6 +1113,7 @@
       regions: GEO_STORE.regions || {},
       sites: GEO_STORE.sites || {},
       pairKmOverrides: GEO_STORE.pairKmOverrides || {},
+      verifiedRoutes: GEO_STORE.verifiedRoutes || {},
       _pairKmTs: GEO_STORE._pairKmTs || {},
       _deletedKeys: GEO_STORE._deletedKeys || {},
       updatedAt: GEO_STORE.updatedAt || ''
@@ -1125,7 +1127,7 @@
     if (!GEO_STORE._pairKmTs || typeof GEO_STORE._pairKmTs !== 'object') GEO_STORE._pairKmTs = {};
     const inDel = (incoming._deletedKeys && typeof incoming._deletedKeys === 'object') ? incoming._deletedKeys : {};
     const inPairTs = (incoming._pairKmTs && typeof incoming._pairKmTs === 'object') ? incoming._pairKmTs : {};
-    ['companyHubs', 'regions', 'sites', 'pairKmOverrides'].forEach(bucket => {
+    ['companyHubs', 'regions', 'sites', 'pairKmOverrides', 'verifiedRoutes'].forEach(bucket => {
       if (!GEO_STORE[bucket]) GEO_STORE[bucket] = {};
       const src = (incoming[bucket] && typeof incoming[bucket] === 'object') ? incoming[bucket] : {};
       Object.keys(src).forEach(k => {
@@ -1154,7 +1156,7 @@
       if (colonIdx <= 0) return;
       const bucket = dk.slice(0, colonIdx);
       const k = dk.slice(colonIdx + 1);
-      if (!['companyHubs', 'regions', 'sites', 'pairKmOverrides'].includes(bucket)) return;
+      if (!['companyHubs', 'regions', 'sites', 'pairKmOverrides', 'verifiedRoutes'].includes(bucket)) return;
       const cur = GEO_STORE[bucket] ? GEO_STORE[bucket][k] : undefined;
       const curTs = (cur && typeof cur === 'object' && cur.updated_at) || (bucket === 'pairKmOverrides' && GEO_STORE._pairKmTs[k]) || '';
       if (!curTs || delTs >= curTs) {
@@ -2362,7 +2364,21 @@
     const isMfg = activeInd === 'Manufacturing';
     const kind = spec.type === 'bu' ? 'bu' : 'site';
     if (kind === 'bu') {
-      if (!isMfg) return null;
+      if (!isMfg) {
+        const nkBu = norm(spec.name);
+        const coOv = GEO_STORE.companyHubs && GEO_STORE.companyHubs[nkBu];
+        if (coOv && isValidLatLngPair(coOv.lat, coOv.lng)) {
+          return { lat: Number(coOv.lat), lng: Number(coOv.lng), pinned: true, label: spec.name, region: coOv.region || '', type: 'bu' };
+        }
+        const coSite = ((SEED && SEED.records && SEED.records.sites) || []).find(s =>
+          isRowInGeoIndustry(s, activeInd) && !s.voided && !_isPinClearedFlag(s._pinCleared) &&
+          norm(s.company) === nkBu && isValidLatLngPair(s.latitude, s.longitude)
+        );
+        if (coSite) {
+          return { lat: Number(coSite.latitude), lng: Number(coSite.longitude), pinned: true, label: spec.name, region: coSite.region || '', type: 'bu' };
+        }
+        return null;
+      }
       const hub = getCompanyHub(spec.name, SEED);
       return { lat: hub.lat, lng: hub.lng, pinned: true, label: hub.name, region: hub.region, type: 'bu' };
     }
@@ -2424,6 +2440,54 @@
     _osrmInflight.set(pairKey, p);
   }
 
+  function _coordsNear(latA, lngA, latB, lngB, tolDeg = 0.0008) {
+    if (latA == null || lngA == null || latB == null || lngB == null) return false;
+    return Math.abs(Number(latA) - Number(latB)) <= tolDeg && Math.abs(Number(lngA) - Number(lngB)) <= tolDeg;
+  }
+
+  function _verifiedRouteForCoords(pairKey, c1, c2) {
+    const vr = GEO_STORE.verifiedRoutes && GEO_STORE.verifiedRoutes[pairKey];
+    if (!vr || !Number.isFinite(Number(vr.km))) return null;
+    if (c1 && c2 && c1.lat != null && c2.lat != null && vr.fromLat != null && vr.toLat != null) {
+      if (_coordsNear(c1.lat, c1.lng, vr.fromLat, vr.fromLng) && _coordsNear(c2.lat, c2.lng, vr.toLat, vr.toLng)) {
+        return { entry: vr, reversed: false };
+      }
+      if (_coordsNear(c1.lat, c1.lng, vr.toLat, vr.toLng) && _coordsNear(c2.lat, c2.lng, vr.fromLat, vr.fromLng)) {
+        return {
+          entry: Object.assign({}, vr, {
+            elevStartM: vr.elevEndM,
+            elevEndM: vr.elevStartM,
+            elevGainM: vr.elevDropM,
+            elevDropM: vr.elevGainM,
+            coordsLngLat: Array.isArray(vr.coordsLngLat) ? vr.coordsLngLat.slice().reverse() : null
+          }),
+          reversed: true
+        };
+      }
+      return null;
+    }
+    return { entry: vr, reversed: false };
+  }
+
+  function _downsampleLngLatCoords(latLngList, maxPts = 120) {
+    if (!Array.isArray(latLngList) || !latLngList.length) return null;
+    const out = [];
+    const step = Math.max(1, Math.ceil(latLngList.length / maxPts));
+    for (let i = 0; i < latLngList.length; i += step) {
+      const pt = latLngList[i];
+      if (Array.isArray(pt) && pt.length >= 2 && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1]))) {
+        out.push([round5(Number(pt[1])), round5(Number(pt[0]))]);
+      }
+    }
+    const last = latLngList[latLngList.length - 1];
+    if (Array.isArray(last) && last.length >= 2 && Number.isFinite(Number(last[0])) && Number.isFinite(Number(last[1]))) {
+      const lng = round5(Number(last[1])), lat = round5(Number(last[0]));
+      const prev = out[out.length - 1];
+      if (!prev || prev[0] !== lng || prev[1] !== lat) out.push([lng, lat]);
+    }
+    return out.length >= 2 ? out : null;
+  }
+
   function estimateLegKm(fromSpec, toSpec, SEED, opts = {}) {
     if (!fromSpec || !toSpec || !fromSpec.name || !toSpec.name) return null;
     const fromIsBu = fromSpec.type === 'bu';
@@ -2438,14 +2502,35 @@
     let source = '';
     let routeCoords = null;
     let estMinutes = null;
+    let verifiedRoute = false;
+    let routeMeta = null;
+
+    const vrMatch = _verifiedRouteForCoords(pairKey, c1, c2);
+    const hasOv = GEO_STORE.pairKmOverrides[pairKey] != null && Number(GEO_STORE.pairKmOverrides[pairKey]) >= 0;
+    const ovTs = (GEO_STORE._pairKmTs && GEO_STORE._pairKmTs[pairKey]) ? String(GEO_STORE._pairKmTs[pairKey]) : '';
+    const vrTs = vrMatch && (vrMatch.entry.updated_at || vrMatch.entry.verifiedAt) ? String(vrMatch.entry.updated_at || vrMatch.entry.verifiedAt) : '';
+    const overrideWins = hasOv && (!vrMatch || !vrTs || !ovTs || ovTs >= vrTs);
 
     if (norm(fromSpec.name) === norm(toSpec.name) && (fromSpec.type || 'site') === (toSpec.type || 'site')) {
       oneWayKm = 0;
       source = 'Same location';
       estMinutes = 0;
-    } else if (GEO_STORE.pairKmOverrides[pairKey] != null && Number(GEO_STORE.pairKmOverrides[pairKey]) >= 0) {
+    } else if (overrideWins) {
       oneWayKm = round1(Number(GEO_STORE.pairKmOverrides[pairKey]));
       source = 'Saved custom KM';
+      if (vrMatch) {
+        routeCoords = vrMatch.entry.coordsLngLat || null;
+        estMinutes = vrMatch.entry.heavyTruckMins || vrMatch.entry.mins || null;
+        routeMeta = vrMatch.entry;
+      }
+    } else if (vrMatch) {
+      const vr = vrMatch.entry;
+      oneWayKm = round1(Number(vr.km));
+      estMinutes = Number(vr.heavyTruckMins || vr.mins || 0) || null;
+      routeCoords = Array.isArray(vr.coordsLngLat) && vr.coordsLngLat.length > 1 ? vr.coordsLngLat : null;
+      source = 'Road route';
+      verifiedRoute = true;
+      routeMeta = vr;
     } else if (GEO_STORE.routeKmCache[pairKey] && GEO_STORE.routeKmCache[pairKey].km != null) {
       oneWayKm = round1(GEO_STORE.routeKmCache[pairKey].km);
       estMinutes = GEO_STORE.routeKmCache[pairKey].mins || null;
@@ -2491,6 +2576,17 @@
       showRoundTrip,
       source,
       estMinutes,
+      verifiedRoute,
+      elevAvailable: Boolean(routeMeta && routeMeta.elevAvailable),
+      ascentM: routeMeta && routeMeta.elevGainM != null ? Number(routeMeta.elevGainM) : null,
+      descentM: routeMeta && routeMeta.elevDropM != null ? Number(routeMeta.elevDropM) : null,
+      maxGradePct: routeMeta && routeMeta.maxGradePct != null ? Number(routeMeta.maxGradePct) : null,
+      avgClimbGradePct: routeMeta && routeMeta.avgClimbGradePct != null ? Number(routeMeta.avgClimbGradePct) : null,
+      carMins: routeMeta && routeMeta.carMins != null ? Number(routeMeta.carMins) : null,
+      heavyTruckMins: routeMeta && routeMeta.heavyTruckMins != null ? Number(routeMeta.heavyTruckMins) : null,
+      routeSource: routeMeta ? String(routeMeta.source || '') : '',
+      elevSource: routeMeta ? String(routeMeta.elevSource || '') : '',
+      verifiedAt: routeMeta ? String(routeMeta.verifiedAt || routeMeta.updated_at || '') : '',
       estDieselL,
       estDieselUsd: fuelEcon && fuelEcon.usd != null ? fuelEcon.usd : null,
       dieselLPerKm: fuelEcon ? fuelEcon.lPerKm : null,
@@ -2535,6 +2631,88 @@
     }
     saveStoredConfig(true);
     return pairKey;
+  }
+
+  async function verifyPairRoadRoute(fromSpec, toSpec, SEED, opts = {}) {
+    if (!(opts && opts.allowReadOnly) && !canPinLocationsNow()) {
+      return { ok: false, error: 'Supervisor privileges required to verify road routes' };
+    }
+    if (!fromSpec || !toSpec || !fromSpec.name || !toSpec.name) {
+      return { ok: false, error: 'Select both origin and destination endpoints first' };
+    }
+    const c1 = resolveEndpointCoord(fromSpec, SEED);
+    const c2 = resolveEndpointCoord(toSpec, SEED);
+    if (!c1 || !c2 || c1.lat == null || c1.lng == null || c2.lat == null || c2.lng == null) {
+      return { ok: false, error: 'Pin both origin and destination coordinates on the map first' };
+    }
+    const pairKey = makePairKey(fromSpec.type || 'site', fromSpec.name, toSpec.type || 'site', toSpec.name);
+    const nowIso = new Date().toISOString();
+    if (norm(fromSpec.name) === norm(toSpec.name) && (fromSpec.type || 'site') === (toSpec.type || 'site')) {
+      return { ok: true, pairKey, entry: { km: 0, mins: 0, carMins: 0, heavyTruckMins: 0, elevAvailable: false, source: 'same', updated_at: nowIso } };
+    }
+    const fetchFn = (typeof window !== 'undefined' && typeof window.ISABI_EDGE_FETCH === 'function')
+      ? window.ISABI_EDGE_FETCH
+      : (typeof fetch === 'function' ? fetch.bind(window) : null);
+    if (!fetchFn) return { ok: false, error: 'Network routing is unavailable in this environment' };
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (_isDemoGeoSession()) headers['X-ISABI-Demo'] = '1';
+    const res = await fetchFn('./api/map-route', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers,
+      body: JSON.stringify({
+        origin: { lat: round5(c1.lat), lng: round5(c1.lng) },
+        destination: { lat: round5(c2.lat), lng: round5(c2.lng) },
+        pairKey
+      })
+    });
+    if (typeof _ingestMapsQuotaHeaders === 'function') _ingestMapsQuotaHeaders(res);
+    if (!res || !res.ok) {
+      return { ok: false, error: `Road route check failed (${res ? res.status : 'offline'})` };
+    }
+    const data = await res.json();
+    if (!data || !data.ok || !Number.isFinite(Number(data.km))) {
+      return { ok: false, error: (data && data.error) || 'Route response incomplete' };
+    }
+    if (!GEO_STORE.verifiedRoutes || typeof GEO_STORE.verifiedRoutes !== 'object') GEO_STORE.verifiedRoutes = {};
+    if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
+    const entry = {
+      km: round1(Number(data.km)),
+      distanceMeters: Number(data.distanceMeters || Math.round(Number(data.km) * 1000)),
+      mins: Number(data.heavyTruckMins || data.mins || 0) || Math.max(1, Math.round((Number(data.km) / 38) * 60)),
+      carMins: Number(data.carMins || data.mins || 0) || null,
+      heavyTruckMins: Number(data.heavyTruckMins || data.mins || 0) || null,
+      source: String(data.source || 'road'),
+      elevSource: String(data.elevSource || ''),
+      elevAvailable: Boolean(data.elevAvailable),
+      elevStartM: data.elevStartM != null ? round1(Number(data.elevStartM)) : null,
+      elevEndM: data.elevEndM != null ? round1(Number(data.elevEndM)) : null,
+      elevGainM: data.elevGainM != null ? round1(Number(data.elevGainM)) : null,
+      elevDropM: data.elevDropM != null ? round1(Number(data.elevDropM)) : null,
+      maxGradePct: data.maxGradePct != null ? round1(Number(data.maxGradePct)) : null,
+      avgClimbGradePct: data.avgClimbGradePct != null ? round1(Number(data.avgClimbGradePct)) : null,
+      fromLat: round5(c1.lat),
+      fromLng: round5(c1.lng),
+      toLat: round5(c2.lat),
+      toLng: round5(c2.lng),
+      coordsLngLat: _downsampleLngLatCoords(data.coords),
+      verifiedAt: String(data.verifiedAt || nowIso),
+      updated_at: nowIso
+    };
+    GEO_STORE.verifiedRoutes[pairKey] = entry;
+    delete GEO_STORE._deletedKeys[`verifiedRoutes:${pairKey}`];
+    if (GEO_STORE.routeKmCache && GEO_STORE.routeKmCache[pairKey]) delete GEO_STORE.routeKmCache[pairKey];
+    if (opts.clearOverride !== false && GEO_STORE.pairKmOverrides && Object.prototype.hasOwnProperty.call(GEO_STORE.pairKmOverrides, pairKey)) {
+      delete GEO_STORE.pairKmOverrides[pairKey];
+      if (GEO_STORE._pairKmTs) delete GEO_STORE._pairKmTs[pairKey];
+      GEO_STORE._deletedKeys[`pairKmOverrides:${pairKey}`] = nowIso;
+    }
+    saveStoredConfig(opts.pushServer !== false);
+    if (typeof window !== 'undefined' && typeof window.__mfgInvalidateSiteNetBack === 'function') {
+      try { window.__mfgInvalidateSiteNetBack(); } catch (_) {}
+    }
+    return { ok: true, pairKey, entry, quotaState: data.quotaState || '' };
   }
 
   // ==================== UNIFIED RAW + SALES SITE & 24H TICKET CHAINING ENGINE ====================
@@ -3720,6 +3898,27 @@
     return header.concat(data);
   }
 
+  function cleanOutwardDriverText(val) {
+    const cleaned = String(val == null ? '' : val)
+      .replace(/\s*[—–]\s*/g, ' - ')
+      .replace(/\s*→\s*/g, ' to ')
+      .replace(/\bTHEO\b/gi, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
+    return /^[-–]+$/.test(cleaned) ? '' : cleaned;
+  }
+
+  function cleanGateAccessNote(raw) {
+    const text = String(raw == null ? '' : raw).trim();
+    if (!text) return '';
+    // Suppress legacy internal workbook migration provenance notes from outward Gate Pin cards & WhatsApp text.
+    if (/^(?:manufacturing\b[\s\S]*\b(?:site|customer|supplier)\b|seeded from\b)/i.test(text)
+      || /\b(?:seeded from the workbooks|workbook type:)\b/i.test(text)) {
+      return '';
+    }
+    return cleanOutwardDriverText(text);
+  }
+
   function resolveVerifiedSiteGatePin(siteName, opts = {}) {
     const cleanSite = String(siteName || '').trim();
     if (!cleanSite) return null;
@@ -3761,6 +3960,7 @@
     const coordText = `${rLat.toFixed(5)}, ${rLng.toFixed(5)}`;
     const ticketNo = String(opts.ticketNo || '').trim();
     const company = String(opts.company || '').trim();
+    const accessNote = cleanGateAccessNote(opts.accessNote || siteRow.access_note || siteRow.directions || siteRow.notes || '');
     let hubName = '';
     let hubKm = null;
     let hubLat = null;
@@ -3774,15 +3974,24 @@
         hubKm = round1(roadAdjustedKm(h.lat, h.lng, rLat, rLng));
       }
     }
+    const verifiedRoute = _findVerifiedRouteForSite(siteRow.name, rLat, rLng, ind, company || 'WTC', opts);
+    if (verifiedRoute && verifiedRoute.km != null) hubKm = round1(Number(verifiedRoute.km));
     const regionObj = (region && SEED) ? resolveRegionRecordOrAtlas(region, SEED, ind) : null;
+    const msgSite = cleanOutwardDriverText(siteRow.name) || 'Delivery Site';
+    const msgTicket = cleanOutwardDriverText(ticketNo);
+    const msgRegion = cleanOutwardDriverText(region);
+    const msgGov = cleanOutwardDriverText(governorate);
     const msgLines = [
-      `Delivery Gate Pin: ${siteRow.name}${ticketNo ? ` (Ticket #${ticketNo})` : ''}`,
-      region ? `Region: ${region}` : (governorate ? `Governorate: ${governorate}` : ''),
+      `Delivery Gate Pin: ${msgSite}${msgTicket ? ` (Ticket #${msgTicket})` : ''}`,
+      msgRegion ? `Region: ${msgRegion}` : (msgGov ? `Governorate: ${msgGov}` : ''),
+      accessNote ? `Access: ${accessNote}` : '',
       `GPS: ${coordText}`,
       `Google Maps: ${googleMapsUrl}`,
       `Waze: ${wazeUrl}`
     ].filter(Boolean);
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(msgLines.join('\n'))}`;
+    const satKey = gateSatKey(rLat, rLng);
+    const satDataUrl = getCachedGateSatelliteSync(rLat, rLng);
 
     return {
       siteId: siteRow.id || '',
@@ -3801,8 +4010,380 @@
       hubKm,
       hubLat,
       hubLng,
-      regionObj
+      regionObj,
+      accessNote,
+      verifiedRoute,
+      satKey,
+      satDataUrl
     };
+  }
+
+  function resolveDirectGatePin(spec, opts = {}) {
+    if (!spec || typeof spec !== 'object') return null;
+    const name = String(spec.name || spec.siteName || opts.name || '').trim();
+    const lat = Number(spec.lat != null ? spec.lat : spec.latitude);
+    const lng = Number(spec.lng != null ? spec.lng : spec.longitude);
+    if (!name || !Number.isFinite(lat) || !Number.isFinite(lng) || (Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001)) return null;
+    if (!isPointInLebanon(lat, lng)) return null;
+    const SEED = opts.SEED || (typeof window !== 'undefined' && (window.MFG_SEED || window.__MFG_SEED_INTERNAL)) || null;
+    const ind = opts.industry || spec.industry || getGeoActiveIndustry();
+    const rLat = round5(lat);
+    const rLng = round5(lng);
+    const region = String(spec.region || opts.region || '').trim();
+    const governorate = canonGovernorateName(resolveGovernorateForPoint(rLat, rLng).label) || '';
+    const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${rLat},${rLng}`;
+    const wazeUrl = `https://waze.com/ul?ll=${rLat},${rLng}&navigate=yes`;
+    const coordText = `${rLat.toFixed(5)}, ${rLng.toFixed(5)}`;
+    const company = String(opts.company || spec.company || '').trim();
+    const ticketNo = String(opts.ticketNo || spec.ticketNo || '').trim();
+    const accessNote = cleanGateAccessNote(spec.accessNote || spec.access_note || spec.directions || opts.accessNote || '');
+    const verifiedRoute = _findVerifiedRouteForSite(name, rLat, rLng, ind, company || 'WTC', opts);
+    const regionObj = (region && SEED) ? resolveRegionRecordOrAtlas(region, SEED, ind) : null;
+    const msgName = cleanOutwardDriverText(name) || 'Gate Location';
+    const msgTicket = cleanOutwardDriverText(ticketNo);
+    const msgRegion = cleanOutwardDriverText(region);
+    const msgGov = cleanOutwardDriverText(governorate);
+    const msgLines = [
+      `Gate Pin: ${msgName}${msgTicket ? ` (#${msgTicket})` : ''}`,
+      msgRegion ? `Region: ${msgRegion}` : (msgGov ? `Governorate: ${msgGov}` : ''),
+      accessNote ? `Access: ${accessNote}` : '',
+      `GPS: ${coordText}`,
+      `Google Maps: ${googleMapsUrl}`,
+      `Waze: ${wazeUrl}`
+    ].filter(Boolean);
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(msgLines.join('\n'))}`;
+    return {
+      siteId: spec.siteId || spec.id || '',
+      siteName: name,
+      side: spec.side || 'site',
+      industry: ind,
+      region,
+      governorate,
+      lat: rLat,
+      lng: rLng,
+      coordText,
+      googleMapsUrl,
+      wazeUrl,
+      whatsappUrl,
+      hubName: '',
+      hubKm: verifiedRoute && verifiedRoute.km != null ? round1(Number(verifiedRoute.km)) : null,
+      hubLat: null,
+      hubLng: null,
+      regionObj,
+      accessNote,
+      verifiedRoute,
+      satKey: gateSatKey(rLat, rLng),
+      satDataUrl: getCachedGateSatelliteSync(rLat, rLng)
+    };
+  }
+
+  function _findVerifiedRouteForSite(siteName, rLat, rLng, ind, company, opts = {}) {
+    const routes = GEO_STORE.verifiedRoutes || {};
+    const pfx = geoIndStorePrefix(ind);
+    const targetToken = `site:${norm(siteName)}`;
+    if (ind === 'Manufacturing' && company) {
+      const pk = pfx + ( `bu:${norm(company)}` <= targetToken ? `bu:${norm(company)}||${targetToken}` : `${targetToken}||bu:${norm(company)}` );
+      const direct = routes[pk];
+      if (direct && _verifiedRouteMatchesTarget(direct, rLat, rLng, opts)) return direct;
+    }
+    const keys = Object.keys(routes);
+    for (let i = 0; i < keys.length; i += 1) {
+      const k = keys[i];
+      if (pfx ? !k.startsWith(pfx) : k.includes('::')) continue;
+      if (!k.includes(targetToken)) continue;
+      const vr = routes[k];
+      if (vr && _verifiedRouteMatchesTarget(vr, rLat, rLng, opts)) return vr;
+    }
+    return null;
+  }
+
+  function _verifiedRouteMatchesTarget(vr, rLat, rLng, opts = {}) {
+    if (!vr || !Number.isFinite(Number(vr.km))) return false;
+    if (vr.toLat != null && _coordsNear(vr.toLat, vr.toLng, rLat, rLng)) return true;
+    if (vr.fromLat != null && _coordsNear(vr.fromLat, vr.fromLng, rLat, rLng)) return true;
+    return vr.toLat == null && vr.fromLat == null;
+  }
+
+  const GATE_SAT_LRU_KEY = 'isabi_gate_sat_lru_v1';
+  const GATE_SAT_IDB_NAME = 'isabi_gate_sat_v1';
+  const GATE_SAT_IDB_STORE = 'thumbs';
+  const GATE_SAT_MAX_LOCAL = 40;
+  const GATE_SAT_MAX_IDB = 200;
+  const _gateSatMem = new Map();
+  const _gateSatInflight = new Map();
+  let _gateSatLruLoadedMode = '';
+
+  function gateSatKey(lat, lng) {
+    if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return '';
+    return `${round5(Number(lat)).toFixed(5)},${round5(Number(lng)).toFixed(5)}`;
+  }
+
+  function _gateSatMemKey(key) {
+    return `${_isDemoGeoSession() ? 'demo' : 'prod'}:${key}`;
+  }
+
+  function _gateSatStorage() {
+    const isDemo = _isDemoGeoSession();
+    return {
+      store: isDemo ? (typeof sessionStorage !== 'undefined' ? sessionStorage : null) : (typeof localStorage !== 'undefined' ? localStorage : null),
+      key: isDemo ? ('demo_sbx_' + GATE_SAT_LRU_KEY) : GATE_SAT_LRU_KEY
+    };
+  }
+
+  function _readGateSatLruList() {
+    try {
+      const { store, key } = _gateSatStorage();
+      if (!store) return [];
+      const raw = store.getItem(key);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr.filter(x => x && x.key && typeof x.dataUrl === 'string' && x.dataUrl.startsWith('data:image/')) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function _writeGateSatLruList(arr) {
+    try {
+      const { store, key } = _gateSatStorage();
+      if (!store) return;
+      let list = arr.slice(-GATE_SAT_MAX_LOCAL);
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        try {
+          store.setItem(key, JSON.stringify(list));
+          return;
+        } catch (_) {
+          if (list.length <= 4) break;
+          list = list.slice(Math.ceil(list.length / 3));
+        }
+      }
+    } catch (_) {}
+  }
+
+  function _openGateSatIdb() {
+    return new Promise(resolve => {
+      if (typeof indexedDB === 'undefined') { resolve(null); return; }
+      try {
+        const req = indexedDB.open(GATE_SAT_IDB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(GATE_SAT_IDB_STORE)) {
+            db.createObjectStore(GATE_SAT_IDB_STORE, { keyPath: 'key' });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      } catch (_) {
+        resolve(null);
+      }
+    });
+  }
+
+  function _hydrateGateSatFromIdb() {
+    if (_isDemoGeoSession()) return;
+    _openGateSatIdb().then(db => {
+      if (!db) return;
+      if (_isDemoGeoSession()) { try { db.close(); } catch (_) {} return; }
+      try {
+        const tx = db.transaction(GATE_SAT_IDB_STORE, 'readonly');
+        const st = tx.objectStore(GATE_SAT_IDB_STORE);
+        const req = st.getAll();
+        req.onsuccess = () => {
+          if (_isDemoGeoSession()) { try { db.close(); } catch (_) {} return; }
+          const rows = Array.isArray(req.result) ? req.result : [];
+          rows.forEach(r => {
+            if (r && r.key && typeof r.dataUrl === 'string' && r.dataUrl.startsWith('data:image/')) {
+              const mk = `prod:${r.key}`;
+              if (!_gateSatMem.has(mk)) _gateSatMem.set(mk, r.dataUrl);
+              _applyGateSatToDom(r.key, r.dataUrl);
+            }
+          });
+          db.close();
+        };
+        req.onerror = () => { try { db.close(); } catch (_) {} };
+      } catch (_) { try { db.close(); } catch (_) {} }
+    });
+  }
+  if (typeof window !== 'undefined' && typeof setTimeout === 'function') {
+    setTimeout(() => { _hydrateGateSatFromIdb(); }, 90);
+  }
+
+  function storeGateSatelliteCache(key, dataUrl) {
+    if (!key || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return;
+    const isDemo = _isDemoGeoSession();
+    _gateSatMem.set(`${isDemo ? 'demo' : 'prod'}:${key}`, dataUrl);
+    const list = _readGateSatLruList().filter(x => x.key !== key);
+    list.push({ key, dataUrl, ts: Date.now() });
+    _writeGateSatLruList(list);
+    if (isDemo) return;
+    _openGateSatIdb().then(db => {
+      if (!db) return;
+      try {
+        const tx = db.transaction(GATE_SAT_IDB_STORE, 'readwrite');
+        const st = tx.objectStore(GATE_SAT_IDB_STORE);
+        st.put({ key, dataUrl, ts: Date.now() });
+        const allReq = st.getAll();
+        allReq.onsuccess = () => {
+          const rows = Array.isArray(allReq.result) ? allReq.result : [];
+          if (rows.length > GATE_SAT_MAX_IDB) {
+            rows.sort((a, b) => Number(a.ts || 0) - Number(b.ts || 0));
+            const drop = rows.slice(0, rows.length - GATE_SAT_MAX_IDB);
+            drop.forEach(r => { if (r && r.key) st.delete(r.key); });
+          }
+        };
+        tx.oncomplete = () => { try { db.close(); } catch (_) {} };
+        tx.onerror = () => { try { db.close(); } catch (_) {} };
+      } catch (_) { try { db.close(); } catch (_) {} }
+    });
+  }
+
+  function getCachedGateSatelliteSync(lat, lng) {
+    const key = gateSatKey(lat, lng);
+    if (!key) return '';
+    const mode = _isDemoGeoSession() ? 'demo' : 'prod';
+    if (_gateSatLruLoadedMode !== mode) {
+      _gateSatLruLoadedMode = mode;
+      _readGateSatLruList().forEach(x => {
+        const mk = `${mode}:${x.key}`;
+        if (!_gateSatMem.has(mk)) _gateSatMem.set(mk, x.dataUrl);
+      });
+    }
+    return _gateSatMem.get(`${mode}:${key}`) || '';
+  }
+
+  function _decodeTileBitmap(blob) {
+    if (typeof createImageBitmap === 'function') {
+      return createImageBitmap(blob).catch(() => null);
+    }
+    if (typeof URL === 'undefined' || typeof Image === 'undefined') return Promise.resolve(null);
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => { try { URL.revokeObjectURL(url); } catch (_) {} resolve(img); };
+      img.onerror = () => { try { URL.revokeObjectURL(url); } catch (_) {} resolve(null); };
+      img.src = url;
+    });
+  }
+
+  function _applyGateSatToDom(key, dataUrl) {
+    if (typeof document === 'undefined' || !key || !dataUrl) return;
+    document.querySelectorAll(`[data-gate-sat-key="${key}"]`).forEach(box => {
+      if (box.getAttribute('data-gate-is58') === '1') return;
+      const w = Number(box.getAttribute('data-sat-w')) || 144;
+      const h = Number(box.getAttribute('data-sat-h')) || 90;
+      box.innerHTML = `<div class="gate-pin-sat-wrap"><img class="gate-pin-sat-img" src="${esc(dataUrl)}" width="${w}" height="${h}" alt="Satellite Gate Approach" loading="eager"><span class="gate-pin-sat-reticle" aria-hidden="true"></span><span class="gate-pin-sat-tag" data-no-i18n="1">Z19 Hybrid</span></div>`;
+      _trGeoDom(box);
+    });
+  }
+
+  async function ensureGateSatelliteCached(lat, lng, opts = {}) {
+    const key = gateSatKey(lat, lng);
+    if (!key) return '';
+    const cached = getCachedGateSatelliteSync(lat, lng);
+    if (cached && !opts.force) return cached;
+    const inflightKey = _gateSatMemKey(key);
+    if (_gateSatInflight.has(inflightKey)) return _gateSatInflight.get(inflightKey);
+    if (typeof document === 'undefined' || typeof navigator !== 'undefined' && navigator.onLine === false) return cached || '';
+    const tilesBand = MAPS_QUOTA_STATE.metrics && MAPS_QUOTA_STATE.metrics.tiles_2d && MAPS_QUOTA_STATE.metrics.tiles_2d.band;
+    if ((MAPS_QUOTA_STATE.clientPolicy && MAPS_QUOTA_STATE.clientPolicy.tileProvider === 'osm') || tilesBand === 'fallback_95') return cached || '';
+    const isHeadless = Boolean((typeof navigator !== 'undefined' && navigator.webdriver) || (typeof window !== 'undefined' && window.__MFG_HEADLESS_TEST));
+    const allowSat = Boolean(typeof window !== 'undefined' && (window.__MFG_TEST_ENABLE_SATELLITE_CAPTURE || window.__MFG_TEST_ENABLE_LIVE_TILES));
+    if (isHeadless && !allowSat && !opts.allowHeadless) return cached || '';
+    const fetchFn = (typeof window !== 'undefined' && typeof window.ISABI_EDGE_FETCH === 'function')
+      ? window.ISABI_EDGE_FETCH
+      : (typeof fetch === 'function' ? fetch.bind(window) : null);
+    if (!fetchFn) return cached || '';
+
+    const task = (async () => {
+      const z = 19;
+      const W = 320;
+      const H = 200;
+      const n = 1 << z;
+      const rLat = Number(lat);
+      const rLng = Number(lng);
+      const latRad = (rLat * Math.PI) / 180;
+      const worldX = ((rLng + 180) / 360) * n * 256;
+      const worldY = ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n * 256;
+      const leftPx = Math.round(worldX - W / 2);
+      const topPx = Math.round(worldY - H / 2);
+      const txMin = Math.floor(leftPx / 256);
+      const txMax = Math.floor((leftPx + W - 1) / 256);
+      const tyMin = Math.floor(topPx / 256);
+      const tyMax = Math.floor((topPx + H - 1) / 256);
+      const lang = _getGeoTileLang();
+      const qs = _isDemoGeoSession() ? '?demo=1' : '';
+
+      const tileTasks = [];
+      for (let ty = tyMin; ty <= tyMax; ty += 1) {
+        for (let tx = txMin; tx <= txMax; tx += 1) {
+          const url = `./api/map-tiles/hybrid/${lang}/${z}/${tx}/${ty}${qs}`;
+          tileTasks.push(
+            fetchFn(url, { credentials: 'same-origin' })
+              .then(async res => {
+                _ingestMapsQuotaHeaders(res);
+                if (!res || !res.ok) return null;
+                const blob = await res.blob();
+                const bmp = await _decodeTileBitmap(blob);
+                return bmp ? { tx, ty, bmp } : null;
+              })
+              .catch(() => null)
+          );
+        }
+      }
+      const tiles = (await Promise.all(tileTasks)).filter(Boolean);
+      if (!tiles.length || tiles.length !== tileTasks.length) {
+        tiles.forEach(t => { try { if (t && t.bmp && typeof t.bmp.close === 'function') t.bmp.close(); } catch (_) {} });
+        return cached || '';
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const g = canvas.getContext('2d');
+      if (!g) {
+        tiles.forEach(t => { try { if (t && t.bmp && typeof t.bmp.close === 'function') t.bmp.close(); } catch (_) {} });
+        return cached || '';
+      }
+      g.fillStyle = '#0F172A';
+      g.fillRect(0, 0, W, H);
+      tiles.forEach(t => {
+        try {
+          g.drawImage(t.bmp, t.tx * 256 - leftPx, t.ty * 256 - topPx);
+          if (typeof t.bmp.close === 'function') t.bmp.close();
+        } catch (_) {}
+      });
+
+      const cx = W / 2, cy = H / 2;
+      g.save();
+      g.strokeStyle = 'rgba(200, 157, 84, 0.92)';
+      g.lineWidth = 1.6;
+      g.beginPath();
+      g.arc(cx, cy, 18, 0, Math.PI * 2);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(cx - 26, cy); g.lineTo(cx - 10, cy);
+      g.moveTo(cx + 10, cy); g.lineTo(cx + 26, cy);
+      g.moveTo(cx, cy - 26); g.lineTo(cx, cy - 10);
+      g.moveTo(cx, cy + 10); g.lineTo(cx, cy + 26);
+      g.stroke();
+      g.fillStyle = '#059669';
+      g.strokeStyle = '#FFFFFF';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(cx, cy, 5.5, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.restore();
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      storeGateSatelliteCache(key, dataUrl);
+      _applyGateSatToDom(key, dataUrl);
+      return dataUrl;
+    })().finally(() => {
+      _gateSatInflight.delete(inflightKey);
+    });
+
+    _gateSatInflight.set(inflightKey, task);
+    return task;
   }
 
   function renderGateMiniMapSvg(gatePin, opts = {}) {
@@ -3864,13 +4445,33 @@
     const variant = opts.variant || 'rdl';
     const is58 = Boolean(opts.is58);
     const qrPx = variant === 'thermal' ? (is58 ? 64 : 76) : 74;
-    const mapW = variant === 'thermal' ? (is58 ? 112 : 128) : 136;
-    const mapH = variant === 'thermal' ? (is58 ? 72 : 82) : 86;
+    const mapW = variant === 'thermal' ? (is58 ? 112 : 132) : 144;
+    const mapH = variant === 'thermal' ? (is58 ? 72 : 82) : 90;
+    const vr = gatePin.verifiedRoute || null;
+    const satKey = gatePin.satKey || gateSatKey(gatePin.lat, gatePin.lng);
+    const satDataUrl = (!is58 && opts.preferSvg !== true) ? (gatePin.satDataUrl || getCachedGateSatelliteSync(gatePin.lat, gatePin.lng)) : '';
+    if (!is58 && !satDataUrl && !opts.noSatPrewarm && Number.isFinite(gatePin.lat) && Number.isFinite(gatePin.lng)) {
+      ensureGateSatelliteCached(gatePin.lat, gatePin.lng);
+    }
+
+    const gradeParts = [];
+    if (vr && vr.elevAvailable) {
+      if (vr.elevGainM != null) gradeParts.push(`+${Math.round(vr.elevGainM)} m`);
+      if (vr.maxGradePct != null) gradeParts.push(`${Number(vr.maxGradePct).toFixed(1)}% grade`);
+    }
+    const truckEta = vr && (vr.heavyTruckMins || vr.mins) ? Math.round(Number(vr.heavyTruckMins || vr.mins)) : null;
+
     const metaParts = [
       gatePin.region ? `<span>Region</span> <b data-no-i18n="1">${esc(gatePin.region)}</b>` : (gatePin.governorate ? `<span>Governorate</span> <b data-no-i18n="1">${esc(gatePin.governorate)}</b>` : ''),
-      gatePin.hubKm != null ? `<b data-no-i18n="1">${esc(gatePin.hubName || 'Hub')}</b> <b data-no-i18n="1">${gatePin.hubKm.toFixed(1)} km</b>` : '',
+      gatePin.hubKm != null ? `<b data-no-i18n="1">${esc(gatePin.hubName || 'Route')}</b> <b data-no-i18n="1">${gatePin.hubKm.toFixed(1)} km</b>` : '',
+      truckEta != null ? `<span>Truck ETA</span> <b data-no-i18n="1">~${truckEta} min</b>` : '',
+      gradeParts.length ? `<span>Grade</span> <b data-no-i18n="1">${esc(gradeParts.join(' · '))}</b>` : '',
       opts.tripsCount > 0 ? `<span>Period Trips</span> <b data-no-i18n="1">${Number(opts.tripsCount).toLocaleString('en-US')}</b>` : ''
     ].filter(Boolean);
+
+    const visualInner = satDataUrl
+      ? `<div class="gate-pin-sat-wrap"><img class="gate-pin-sat-img" src="${esc(satDataUrl)}" width="${mapW}" height="${mapH}" alt="Satellite Gate Approach" loading="eager"><span class="gate-pin-sat-reticle" aria-hidden="true"></span><span class="gate-pin-sat-tag" data-no-i18n="1">Z19 Hybrid</span></div>`
+      : renderGateMiniMapSvg(gatePin, { width: mapW, height: mapH });
 
     return `
       <div class="gate-pin-card is-${esc(variant)}" data-gate-site="${esc(gatePin.siteName)}">
@@ -3882,8 +4483,9 @@
           <span class="gate-pin-coords mono" dir="auto" data-no-i18n="1">${esc(gatePin.coordText)}</span>
         </div>
         ${metaParts.length ? `<div class="gate-pin-meta">${metaParts.join('<span class="geo-link-sep" aria-hidden="true"> · </span>')}</div>` : ''}
+        ${gatePin.accessNote ? `<div class="gate-pin-access-note"><span>Gate Access</span> <b data-no-i18n="1">${esc(gatePin.accessNote)}</b></div>` : ''}
         <div class="gate-pin-visuals">
-          <div class="gate-pin-minimap">${renderGateMiniMapSvg(gatePin, { width: mapW, height: mapH })}</div>
+          <div class="gate-pin-minimap" data-gate-sat-key="${esc(satKey)}" data-gate-is58="${is58 ? '1' : '0'}" data-sat-w="${mapW}" data-sat-h="${mapH}">${visualInner}</div>
           <div class="gate-pin-qr-wrap">
             ${renderQrSvg(gatePin.googleMapsUrl, qrPx)}
             <span class="gate-pin-qr-lbl">Open Gate Pin in Google Maps / Waze</span>
@@ -3901,6 +4503,195 @@
   const MAP_LAYER_KEY = 'isabi_mfg_map_layer_v1';
   const _mountedMapControllers = new Set();
   const _clientPlacesCache = new Map();
+
+  const MAPS_QUOTA_STATE = {
+    month: '',
+    thresholds: { warnPct: 50, tightPct: 80, fallbackPct: 95 },
+    overallBand: 'ok',
+    metrics: {},
+    clientPolicy: {
+      tileProvider: 'google',
+      placesRemoteEnabled: true,
+      placesDebounceMs: 260,
+      placesMinChars: 2,
+      routesRemoteEnabled: true
+    },
+    routesApi: null,
+    gcpBilling: null,
+    fetchedAt: 0,
+    ok: false
+  };
+  let _mapsUsageInflight = null;
+
+  function _normQuotaBand(b) {
+    const s = String(b || '').trim();
+    if (s === 'fallback_95' || s === 'tight_80' || s === 'warn_50' || s === 'ok') return s;
+    if (s === 'normal') return 'ok';
+    return '';
+  }
+
+  function _quotaBandRank(b) {
+    return b === 'fallback_95' ? 3 : (b === 'tight_80' ? 2 : (b === 'warn_50' ? 1 : 0));
+  }
+
+  function _recomputeOverallQuotaBand() {
+    const m = MAPS_QUOTA_STATE.metrics && typeof MAPS_QUOTA_STATE.metrics === 'object' ? Object.values(MAPS_QUOTA_STATE.metrics) : [];
+    if (!m.length) return _normQuotaBand(MAPS_QUOTA_STATE.overallBand) || 'ok';
+    let best = 'ok';
+    m.forEach(item => {
+      const b = _normQuotaBand(item && item.band);
+      if (b && _quotaBandRank(b) > _quotaBandRank(best)) best = b;
+    });
+    return best;
+  }
+
+  function _emitMapsQuotaChanged() {
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+      try {
+        window.dispatchEvent(new CustomEvent('isabi:maps-quota-changed', { detail: Object.assign({}, MAPS_QUOTA_STATE) }));
+      } catch (_) {}
+    }
+  }
+
+  function _applyMapsUsageSnapshot(data) {
+    if (!data || typeof data !== 'object') return MAPS_QUOTA_STATE;
+    const prevBand = MAPS_QUOTA_STATE.overallBand;
+    const prevProvider = MAPS_QUOTA_STATE.clientPolicy && MAPS_QUOTA_STATE.clientPolicy.tileProvider;
+    MAPS_QUOTA_STATE.month = String(data.month || MAPS_QUOTA_STATE.month || '');
+    if (data.thresholds && typeof data.thresholds === 'object') MAPS_QUOTA_STATE.thresholds = data.thresholds;
+    if (data.metrics && typeof data.metrics === 'object') {
+      const normMetrics = {};
+      Object.entries(data.metrics).forEach(([k, v]) => {
+        if (v && typeof v === 'object') {
+          normMetrics[k] = Object.assign({}, v, { band: _normQuotaBand(v.band) || 'ok' });
+        }
+      });
+      MAPS_QUOTA_STATE.metrics = normMetrics;
+    }
+    if (data.overallBand) {
+      MAPS_QUOTA_STATE.overallBand = _normQuotaBand(data.overallBand) || 'ok';
+    } else {
+      MAPS_QUOTA_STATE.overallBand = _recomputeOverallQuotaBand();
+    }
+    if (data.clientPolicy && typeof data.clientPolicy === 'object') {
+      MAPS_QUOTA_STATE.clientPolicy = Object.assign({}, MAPS_QUOTA_STATE.clientPolicy, data.clientPolicy);
+    }
+    if (data.routesApi !== undefined) MAPS_QUOTA_STATE.routesApi = data.routesApi;
+    if (data.gcpBilling !== undefined) MAPS_QUOTA_STATE.gcpBilling = data.gcpBilling;
+    MAPS_QUOTA_STATE.fetchedAt = Date.now();
+    MAPS_QUOTA_STATE.ok = true;
+    const nextProvider = MAPS_QUOTA_STATE.clientPolicy.tileProvider;
+    if (nextProvider !== prevProvider || (MAPS_QUOTA_STATE.overallBand === 'fallback_95' && prevBand !== 'fallback_95')) {
+      refreshMountedMapTiles();
+    }
+    _emitMapsQuotaChanged();
+    return MAPS_QUOTA_STATE;
+  }
+
+  function _ingestMapsQuotaHeaders(res) {
+    if (!res || !res.headers || typeof res.headers.get !== 'function') return;
+    const stateHdr = String(res.headers.get('X-ISABI-Maps-Quota-State') || '').trim();
+    const svcHdr = String(res.headers.get('X-ISABI-Maps-Quota-Service') || '').trim();
+    const fbHdr = String(res.headers.get('X-ISABI-Maps-Fallback') || '').trim();
+    if (!stateHdr && !fbHdr) return;
+    const band = (fbHdr === 'osm' || stateHdr === 'fallback_95') ? 'fallback_95' : (_normQuotaBand(stateHdr) || 'ok');
+    const prevBand = MAPS_QUOTA_STATE.overallBand;
+    const prevProv = MAPS_QUOTA_STATE.clientPolicy.tileProvider;
+    const prevPlacesEnabled = MAPS_QUOTA_STATE.clientPolicy.placesRemoteEnabled;
+    const prevRoutesEnabled = MAPS_QUOTA_STATE.clientPolicy.routesRemoteEnabled;
+    const prevDebounce = MAPS_QUOTA_STATE.clientPolicy.placesDebounceMs;
+    const nextPolicy = Object.assign({}, MAPS_QUOTA_STATE.clientPolicy);
+    if (svcHdr === 'tiles_2d' || svcHdr === 'places_text' || svcHdr === 'routes_compute') {
+      MAPS_QUOTA_STATE.metrics = Object.assign({}, MAPS_QUOTA_STATE.metrics);
+      MAPS_QUOTA_STATE.metrics[svcHdr] = Object.assign({}, MAPS_QUOTA_STATE.metrics[svcHdr] || {}, { band });
+      if (svcHdr === 'tiles_2d') {
+        nextPolicy.tileProvider = (band === 'fallback_95' || fbHdr === 'osm') ? 'osm' : 'google';
+      } else if (svcHdr === 'places_text') {
+        nextPolicy.placesRemoteEnabled = band !== 'fallback_95';
+        nextPolicy.placesDebounceMs = band === 'fallback_95' ? 0 : (band === 'tight_80' ? 1100 : (band === 'warn_50' ? 600 : 260));
+        nextPolicy.placesMinChars = band === 'tight_80' ? 4 : (band === 'warn_50' ? 3 : 2);
+      } else if (svcHdr === 'routes_compute') {
+        nextPolicy.routesRemoteEnabled = band !== 'fallback_95';
+      }
+      MAPS_QUOTA_STATE.clientPolicy = nextPolicy;
+      MAPS_QUOTA_STATE.overallBand = _recomputeOverallQuotaBand();
+    } else {
+      if (fbHdr === 'osm') nextPolicy.tileProvider = 'osm';
+      MAPS_QUOTA_STATE.clientPolicy = nextPolicy;
+      MAPS_QUOTA_STATE.overallBand = band;
+    }
+    if (MAPS_QUOTA_STATE.clientPolicy.tileProvider !== prevProv) {
+      refreshMountedMapTiles();
+    }
+    if (
+      MAPS_QUOTA_STATE.overallBand !== prevBand
+      || MAPS_QUOTA_STATE.clientPolicy.tileProvider !== prevProv
+      || MAPS_QUOTA_STATE.clientPolicy.placesRemoteEnabled !== prevPlacesEnabled
+      || MAPS_QUOTA_STATE.clientPolicy.routesRemoteEnabled !== prevRoutesEnabled
+      || MAPS_QUOTA_STATE.clientPolicy.placesDebounceMs !== prevDebounce
+    ) {
+      _emitMapsQuotaChanged();
+    }
+  }
+
+  async function fetchMapsUsageSnapshot(force = false) {
+    if (!force && MAPS_QUOTA_STATE.ok && (Date.now() - MAPS_QUOTA_STATE.fetchedAt) < 15000) {
+      return MAPS_QUOTA_STATE;
+    }
+    if (_mapsUsageInflight && !force) return _mapsUsageInflight;
+    const isHeadless = Boolean((typeof navigator !== 'undefined' && navigator.webdriver) || (typeof window !== 'undefined' && window.__MFG_HEADLESS_TEST));
+    const allowQuota = Boolean(typeof window !== 'undefined' && (window.__MFG_TEST_ENABLE_MAPS_QUOTA || window.ISABI_EDGE_FETCH));
+    if (isHeadless && !allowQuota && !force) return MAPS_QUOTA_STATE;
+    const fetchFn = (typeof window !== 'undefined' && typeof window.ISABI_EDGE_FETCH === 'function')
+      ? window.ISABI_EDGE_FETCH
+      : (typeof fetch === 'function' ? fetch.bind(window) : null);
+    if (!fetchFn) return MAPS_QUOTA_STATE;
+
+    const isDemo = _isDemoGeoSession();
+    const qp = [];
+    if (isDemo) qp.push('demo=1');
+    if (force) qp.push('fresh=1');
+    const qs = qp.length ? ('?' + qp.join('&')) : '';
+    const p = fetchFn(`./api/map-usage${qs}`, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: isDemo ? { 'X-ISABI-Demo': '1' } : undefined
+    })
+      .then(async res => {
+        _ingestMapsQuotaHeaders(res);
+        if (!res || !res.ok) return MAPS_QUOTA_STATE;
+        const data = await res.json();
+        return _applyMapsUsageSnapshot(data);
+      })
+      .catch(() => MAPS_QUOTA_STATE)
+      .finally(() => {
+        if (_mapsUsageInflight === p) _mapsUsageInflight = null;
+      });
+    _mapsUsageInflight = p;
+    return p;
+  }
+
+  async function confirmGcpMapsBudget(confirmed = true) {
+    const fetchFn = (typeof window !== 'undefined' && typeof window.ISABI_EDGE_FETCH === 'function')
+      ? window.ISABI_EDGE_FETCH
+      : (typeof fetch === 'function' ? fetch.bind(window) : null);
+    if (!fetchFn) return { ok: false, error: 'Offline' };
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (_isDemoGeoSession()) headers['X-ISABI-Demo'] = '1';
+      const res = await fetchFn('./api/map-usage', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify({ action: 'confirm_gcp_budget', confirmed: Boolean(confirmed) })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data && data.ok) _applyMapsUsageSnapshot(data);
+      return data && typeof data === 'object' ? data : { ok: false };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  }
 
   function _isDemoGeoSession() {
     try {
@@ -4014,6 +4805,14 @@
         try { map.removeLayer(ctrl.layer); } catch (_) {}
         ctrl.layer = null;
       }
+      const tilesBand = MAPS_QUOTA_STATE.metrics && MAPS_QUOTA_STATE.metrics.tiles_2d && MAPS_QUOTA_STATE.metrics.tiles_2d.band;
+      const quotaOsm = Boolean(
+        (MAPS_QUOTA_STATE.clientPolicy && MAPS_QUOTA_STATE.clientPolicy.tileProvider === 'osm')
+        || tilesBand === 'fallback_95'
+      );
+      if (quotaOsm) ctrl.isOsmFallback = true;
+      else if (ctrl.tileErrors < 4) ctrl.isOsmFallback = false;
+
       const style = getMapLayerStyle();
       const lang = _getGeoTileLang();
       const googleUrl = _buildGoogleTileUrl(style, lang);
@@ -4070,7 +4869,15 @@
       });
       tileLayer.on('tileerror', () => {
         ctrl.tileErrors += 1;
-        if (!ctrl.isOsmFallback && ctrl.tileErrors >= 4) {
+        if (ctrl.tileErrors === 2) {
+          fetchMapsUsageSnapshot(true);
+        }
+        const nowTilesBand = MAPS_QUOTA_STATE.metrics && MAPS_QUOTA_STATE.metrics.tiles_2d && MAPS_QUOTA_STATE.metrics.tiles_2d.band;
+        const nowQuotaOsm = Boolean(
+          (MAPS_QUOTA_STATE.clientPolicy && MAPS_QUOTA_STATE.clientPolicy.tileProvider === 'osm')
+          || nowTilesBand === 'fallback_95'
+        );
+        if (!ctrl.isOsmFallback && (ctrl.tileErrors >= 4 || nowQuotaOsm)) {
           ctrl.isOsmFallback = true;
           mountBaseLayer();
         }
@@ -4133,6 +4940,9 @@
       } catch (_) {}
     }
     mountBaseLayer();
+    if ((!Boolean(typeof navigator !== 'undefined' && navigator.webdriver) && !Boolean(typeof window !== 'undefined' && window.__MFG_HEADLESS_TEST)) || Boolean(typeof window !== 'undefined' && window.__MFG_TEST_ENABLE_MAPS_QUOTA)) {
+      fetchMapsUsageSnapshot(false);
+    }
     return ctrl;
   }
 
@@ -4253,9 +5063,33 @@
     return matches.slice(0, opts.limit || 5).map(({ _starts, _idx, ...rest }) => rest);
   }
 
+  function _resolvePlacesInputPolicy(defaultDebMs = 280) {
+    const policy = MAPS_QUOTA_STATE.clientPolicy || {};
+    const placesBand = _normQuotaBand(MAPS_QUOTA_STATE.metrics && MAPS_QUOTA_STATE.metrics.places_text && MAPS_QUOTA_STATE.metrics.places_text.band)
+      || (policy.placesRemoteEnabled === false ? 'fallback_95' : 'ok');
+    const remoteQuotaAllowed = (placesBand !== 'fallback_95') && (policy.placesRemoteEnabled !== false);
+    const debMs = Number(policy.placesDebounceMs) > 0
+      ? Math.max(260, Number(policy.placesDebounceMs))
+      : (placesBand === 'tight_80' ? 1100 : (placesBand === 'warn_50' ? 600 : defaultDebMs));
+    const minChars = Number(policy.placesMinChars) > 0
+      ? Math.max(2, Number(policy.placesMinChars))
+      : (placesBand === 'tight_80' ? 4 : (placesBand === 'warn_50' ? 3 : 2));
+    const headlessBlocked = Boolean((typeof navigator !== 'undefined' && navigator.webdriver) && !(typeof window !== 'undefined' && window.__MFG_TEST_ENABLE_PLACES));
+    return {
+      placesBand,
+      remoteQuotaAllowed,
+      debMs,
+      minChars,
+      canQueryLive: remoteQuotaAllowed && !headlessBlocked
+    };
+  }
+
   async function searchGooglePlaces(query, opts = {}) {
     const q = String(query || '').trim();
     if (q.length < 2) return [];
+    const policy = MAPS_QUOTA_STATE.clientPolicy || {};
+    const placesBand = _normQuotaBand(MAPS_QUOTA_STATE.metrics && MAPS_QUOTA_STATE.metrics.places_text && MAPS_QUOTA_STATE.metrics.places_text.band);
+    if (policy.placesRemoteEnabled === false || placesBand === 'fallback_95') return [];
     const isHeadless = Boolean((typeof navigator !== 'undefined' && navigator.webdriver) || (typeof window !== 'undefined' && window.__MFG_HEADLESS_TEST));
     const allowLivePlaces = Boolean(typeof window !== 'undefined' && window.__MFG_TEST_ENABLE_PLACES);
     if (isHeadless && !allowLivePlaces) return [];
@@ -4285,8 +5119,18 @@
       body: JSON.stringify(payload),
       signal: opts.signal
     });
-    if (!res || !res.ok) return [];
-    const data = await res.json();
+    _ingestMapsQuotaHeaders(res);
+    if (!res) return [];
+    const data = await res.json().catch(() => null);
+    if (data && (data.source === 'quota_local_fallback' || data.code === 'quota_local_fallback')) {
+      MAPS_QUOTA_STATE.metrics = Object.assign({}, MAPS_QUOTA_STATE.metrics);
+      MAPS_QUOTA_STATE.metrics.places_text = Object.assign({}, MAPS_QUOTA_STATE.metrics.places_text || {}, { band: 'fallback_95' });
+      MAPS_QUOTA_STATE.clientPolicy = Object.assign({}, MAPS_QUOTA_STATE.clientPolicy, { placesRemoteEnabled: false, placesDebounceMs: 0 });
+      MAPS_QUOTA_STATE.overallBand = _recomputeOverallQuotaBand();
+      _emitMapsQuotaChanged();
+      return [];
+    }
+    if (res.status === 429 || !res.ok) return [];
     const places = Array.isArray(data && data.places) ? data.places : [];
     if (_clientPlacesCache.size >= 100) {
       const oldest = _clientPlacesCache.keys().next().value;
@@ -4443,10 +5287,15 @@
       const myGen = ++reqGen;
       const includeLocal = opts.includeLocalSites !== false;
       const localHits = includeLocal ? rankLocalSitesForSearch(q, SEED, { limit: 4 }) : [];
-      const canQueryLive = !Boolean((typeof navigator !== 'undefined' && navigator.webdriver) && !(typeof window !== 'undefined' && window.__MFG_TEST_ENABLE_PLACES));
-      if (localHits.length > 0 || canQueryLive) {
-        renderMenu(localHits, [], canQueryLive);
+      const qp = _resolvePlacesInputPolicy(280);
+      const debMs = qp.debMs;
+      const canQueryLive = qp.canQueryLive && q.length >= qp.minChars;
+      if (!canQueryLive) {
+        if (localHits.length > 0) renderMenu(localHits, [], false);
+        else closeMenu();
+        return;
       }
+      renderMenu(localHits, [], true);
       debTimer = setTimeout(async () => {
         if (!inp.isConnected || myGen !== reqGen) return;
         abortCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -4460,7 +5309,7 @@
           if (!inp.isConnected || myGen !== reqGen) return;
           renderMenu(localHits, [], false);
         }
-      }, 280);
+      }, debMs);
     });
 
     inp.addEventListener('keydown', ev => {
@@ -5494,11 +6343,18 @@
                 <span class="geo-km-badge" id="geoDistKmBadge">
                   One-Way: ${kmEst.oneWayKm.toFixed(1)} km${kmEst.roundTripKm != null ? ` · Round-Trip: ${kmEst.roundTripKm.toFixed(1)} km` : ''}
                 </span>
+                ${kmEst.verifiedRoute ? `
+                  <span class="geo-km-grade-badge" id="geoDistGradeBadge">
+                    ${kmEst.elevAvailable && kmEst.ascentM != null ? `<b data-no-i18n="1">+${Math.round(kmEst.ascentM)}m</b> <span>Climb</span><span aria-hidden="true"> · </span><b data-no-i18n="1">${Number(kmEst.maxGradePct || 0).toFixed(1)}%</b> <span>Max Grade</span><span aria-hidden="true"> · </span>` : ''}
+                    <span>Truck ETA</span> <b data-no-i18n="1">~${Math.round(kmEst.heavyTruckMins || kmEst.estMinutes || 0)} min</b>
+                  </span>
+                ` : ''}
                 <span class="geo-km-sub" id="geoDistMetaSub"${dieselTipAttr(kmEst)}>~${kmEst.estMinutes} min${isMfg && kmEst.estDieselL != null ? ` · ~${kmEst.estDieselL.toFixed(1)} L diesel${kmEst.estDieselUsd != null ? ` · ~$${kmEst.estDieselUsd.toFixed(2)}` : ''}` : ''} (${esc(kmEst.source)})</span>
               ` : `
                 <span class="geo-km-sub" id="geoDistKmBadge">Pin location on map to compute exact road KM</span>
               `}
               <div class="geo-km-override-grp">
+                ${canPinLocations && kmEst && kmEst.fromCoord && kmEst.toCoord && kmEst.fromCoord.lat != null && kmEst.toCoord.lat != null && norm(fromSpec.name) !== norm(toSpec.name) ? `<button type="button" class="geo-mini-btn is-verify-road" id="geoVerifyRoadKmBtn">${kmEst.verifiedRoute ? 'Re-verify Road' : 'Verify Road KM'}</button>` : ''}
                 ${kmEst && kmEst.fromCoord && kmEst.toCoord && kmEst.fromCoord.lat != null && kmEst.toCoord.lat != null ? `<button type="button" class="geo-mini-btn" id="geoDistZoomBtn">Zoom Route</button>` : ''}
                 ${canPinLocations ? `
                   <input type="number" step="0.1" min="0" class="geo-km-override-inp" id="geoDistOverrideInp" value="${hasOverride && kmEst ? kmEst.oneWayKm : ''}" placeholder="Exact km">
@@ -6464,7 +7320,8 @@
         const myGen = ++STUDIO._regionPlacesGen;
         STUDIO.regionPlacesQuery = qTrim;
         STUDIO.regionLocalResults = rankLocalSitesForSearch(qTrim, SEED, { STATE, limit: 3 });
-        const canQueryLive = !Boolean((typeof navigator !== 'undefined' && navigator.webdriver) && !(typeof window !== 'undefined' && window.__MFG_TEST_ENABLE_PLACES));
+        const qp = _resolvePlacesInputPolicy(280);
+        const canQueryLive = qp.canQueryLive && qTrim.length >= qp.minChars;
         STUDIO.regionPlacesLoading = canQueryLive;
         STUDIO.regionPlacesResults = [];
         if (liveBoxNow) {
@@ -6479,6 +7336,7 @@
             studioPlaceActiveIdx = -1;
           }
         }
+        if (!canQueryLive) return;
         STUDIO._regionPlacesTimer = setTimeout(async () => {
           if (myGen !== STUDIO._regionPlacesGen || String(STUDIO.regionSearch || '').trim() !== qTrim) return;
           try {
@@ -6506,7 +7364,7 @@
               }
             }
           }
-        }, 280);
+        }, qp.debMs);
       });
       searchInp.addEventListener('keydown', ev => {
         const liveBox = document.getElementById('geoStudioPlacesBox') || placesBox;
@@ -7850,6 +8708,36 @@
         }
         setPairKmOverride(parseSpec(STUDIO.distFrom), parseSpec(STUDIO.distTo), null);
         rerenderWorkspace();
+      });
+    }
+    const verifyRoadBtn = deck.querySelector('#geoVerifyRoadKmBtn');
+    if (verifyRoadBtn) {
+      verifyRoadBtn.addEventListener('click', async () => {
+        if (!canPinLocationsNow()) {
+          if (toast) toast('Supervisor privileges required to modify location pins', 'err');
+          return;
+        }
+        if (verifyRoadBtn.disabled) return;
+        const origHtml = verifyRoadBtn.innerHTML;
+        verifyRoadBtn.disabled = true;
+        verifyRoadBtn.textContent = 'Verifying...';
+        try {
+          const r = await verifyPairRoadRoute(parseSpec(STUDIO.distFrom), parseSpec(STUDIO.distTo), SEED, { clearOverride: true });
+          if (!r || !r.ok) {
+            if (toast) toast((r && r.error) || 'Road route check failed', 'err');
+            verifyRoadBtn.disabled = false;
+            verifyRoadBtn.innerHTML = origHtml;
+            return;
+          }
+          const e = r.entry || {};
+          const elevTxt = e.elevAvailable && e.elevGainM != null ? ` (+${Math.round(e.elevGainM)}m climb, ${Number(e.maxGradePct || 0).toFixed(1)}% grade)` : '';
+          if (toast) toast(`Verified ${Number(e.km).toFixed(1)} km road route${elevTxt}`, 'ok');
+          rerenderWorkspace();
+        } catch (_) {
+          if (toast) toast('Road route check failed', 'err');
+          verifyRoadBtn.disabled = false;
+          verifyRoadBtn.innerHTML = origHtml;
+        }
       });
     }
     const zoomRouteBtn = deck.querySelector('#geoDistZoomBtn');
@@ -9788,6 +10676,14 @@
     renderQrSvg,
     packQrEscPosRaster,
     resolveVerifiedSiteGatePin,
+    resolveDirectGatePin,
+    canPinLocations: canPinLocationsNow,
+    getCachedGateSatelliteSync,
+    ensureGateSatelliteCached,
+    verifyPairRoadRoute,
+    fetchMapsUsageSnapshot,
+    confirmGcpMapsBudget,
+    getMapsQuotaState: () => Object.assign({}, MAPS_QUOTA_STATE),
     renderGateMiniMapSvg,
     renderGatePinCardHtml,
     getMapLayerStyle,
