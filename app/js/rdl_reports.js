@@ -4804,6 +4804,88 @@
     `;
   }
 
+  function renderDomainFieldPackGatePinsHtml(industry, sectionId, titleText, company = '', ctx = null) {
+    if (typeof window === 'undefined' || !window.MFG_GEO || typeof window.MFG_GEO.renderGatePinCardHtml !== 'function') return '';
+    const SEED = (ctx && ctx.seed) || window.MFG_SEED || null;
+    const STATE = (ctx && ctx.state) || (window.MFG_ENTERPRISE ? window.MFG_ENTERPRISE.STATE : null);
+    const customSites = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.sites)) ? STATE.customRecords.sites : [];
+    const seedSites = (SEED && SEED.records && Array.isArray(SEED.records.sites)) ? SEED.records.sites : [];
+    const sites = customSites.concat(seedSites);
+    const seen = new Set();
+    const cards = [];
+    const indLow = String(industry || '').trim().toLowerCase();
+    for (let i = 0; i < sites.length && cards.length < 4; i++) {
+      const s = sites[i];
+      if (!s || s.voided || s._pinCleared) continue;
+      const sInd = String(s._industry || s.industry || '').trim().toLowerCase();
+      if (sInd && sInd !== indLow) continue;
+      if (!sInd && indLow !== 'manufacturing') continue;
+      const sName = String(s.name || '').trim();
+      const k = sName.toLowerCase();
+      if (!k || seen.has(k)) continue;
+      let gp = (typeof window.MFG_GEO.resolveVerifiedSiteGatePin === 'function')
+        ? window.MFG_GEO.resolveVerifiedSiteGatePin(sName, { industry, company, SEED, STATE })
+        : null;
+      if (!gp && s.latitude != null && s.latitude !== '' && s.longitude != null && s.longitude !== '' && typeof window.MFG_GEO.resolveDirectGatePin === 'function') {
+        gp = window.MFG_GEO.resolveDirectGatePin({
+          id: s.id,
+          name: sName,
+          lat: s.latitude,
+          lng: s.longitude,
+          region: s.region,
+          access_note: s.access_note || s.notes || '',
+          industry,
+          company: company || s.company || ''
+        }, { industry, company, SEED, STATE });
+      }
+      if (gp) {
+        seen.add(k);
+        cards.push(gp);
+      }
+    }
+    if (cards.length < 4 && typeof window.MFG_GEO.resolveDirectGatePin === 'function') {
+      let editStore = (STATE && STATE.industryRowEdits && typeof STATE.industryRowEdits === 'object')
+        ? STATE.industryRowEdits
+        : (typeof window.__getIndustryRowEditStore === 'function' ? window.__getIndustryRowEditStore() : null);
+      if (!editStore && typeof localStorage !== 'undefined') {
+        try { editStore = JSON.parse(localStorage.getItem('isabi_mfg_ind_row_edits_v1') || '{}'); } catch (_) {}
+      }
+      const edits = editStore && typeof editStore === 'object' ? Object.values(editStore) : [];
+      for (let i = 0; i < edits.length && cards.length < 4; i++) {
+        const e = edits[i];
+        if (!e || e.voided || e._pinCleared) continue;
+        if (String(e.ind || '').trim().toLowerCase() !== indLow) continue;
+        if (e.latitude == null || e.latitude === '' || e.longitude == null || e.longitude === '') continue;
+        const sName = String(e.siteName || e.primaryId || (Array.isArray(e.cells) ? e.cells[1] || e.cells[0] : '') || '').trim();
+        const k = sName.toLowerCase();
+        if (!k || seen.has(k)) continue;
+        const gp = window.MFG_GEO.resolveDirectGatePin({
+          id: e.primaryId || '',
+          name: sName,
+          lat: e.latitude,
+          lng: e.longitude,
+          region: e.region || '',
+          access_note: e.access_note || '',
+          industry,
+          company: company || e.company || ''
+        }, { industry, company, SEED, STATE });
+        if (gp) {
+          seen.add(k);
+          cards.push(gp);
+        }
+      }
+    }
+    if (!cards.length) return '';
+    return `
+      <div id="${esc(sectionId)}" class="rdl-gate-pins-pack" style="margin-top:14px">
+        <div class="rdl-section-hdr">${esc(titleText)}</div>
+        <div class="rdl-gate-pins-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:8px">
+          ${cards.map(gp => window.MFG_GEO.renderGatePinCardHtml(gp, { variant: 'rdl' })).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   function render23HoldingRegister(meta, ctx) {
     const stmtRange = stmtActiveRange(ctx);
     const h = (window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function')
@@ -4891,6 +4973,7 @@
           `).join('')}
         </tbody>
       </table>
+      ${renderDomainFieldPackGatePinsHtml('Holding & Treasury', 'rdlHoldingGatePinsSection', '3. Verified Subsidiary & HQ Gate-Approach Pins', coKey, ctx)}
       ${signatureRowHtml('Group Chief Financial Officer / المدير المالي للمجموعة', 'Managing Shareholder / الشريك المفوض')}
       ${sheetFooterHtml(coKey, 1, 1)}
     `;
@@ -4986,6 +5069,7 @@
           `).join('')}
         </tbody>
       </table>
+      ${renderDomainFieldPackGatePinsHtml('Hospitality & Resorts', 'rdlHospitalityGatePinsSection', '3. Resort Venue & Vendor Delivery Gate-Approach Pins', coKey, ctx)}
       ${signatureRowHtml('Resort General Manager / مدير المنتجع', 'Hospitality Controller / المراقب المالي')}
       ${sheetFooterHtml(coKey, 1, 1)}
     `;
@@ -5080,6 +5164,7 @@
           `).join('')}
         </tbody>
       </table>
+      ${renderDomainFieldPackGatePinsHtml('Automotive & Heavy Trading', 'rdlTradingGatePinsSection', '3. Showroom, Customs & Bonded Yard Gate-Approach Pins', coKey, ctx)}
       ${signatureRowHtml('Commercial Director / المدير التجاري', 'Parts & Customs Controller / مراقب المخزون والجمارك')}
       ${sheetFooterHtml(coKey, 1, 1)}
     `;
@@ -5173,6 +5258,7 @@
           `).join('')}
         </tbody>
       </table>
+      ${renderDomainFieldPackGatePinsHtml('Real Estate & Property', 'rdlRealEstateGatePinsSection', '3. Leased Property & Deed Handover Gate-Approach Pins', coKey, ctx)}
       ${signatureRowHtml('Property Portfolio Director / مدير العقارات', '4235 S.A.L Legal Signatory / المفوض بالتوقيع')}
       ${sheetFooterHtml(coKey, 1, 1)}
     `;
@@ -5263,6 +5349,7 @@
           `).join('')}
         </tbody>
       </table>
+      ${renderDomainFieldPackGatePinsHtml('Insurance & Brokerage', 'rdlInsuranceGatePinsSection', '3. Insured Risk Survey & Inspection Gate-Approach Pins', coKey, ctx)}
       ${signatureRowHtml('Principal Insurance Broker / الوسيط التأميني المعتمد', 'Carrier Accounting Recon / محاسبة شركات التأمين')}
       ${sheetFooterHtml(coKey, 1, 1)}
     `;

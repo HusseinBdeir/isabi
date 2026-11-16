@@ -2681,7 +2681,7 @@ finally:
     }
 
     const unexpectedErrors28 = consoleErrors.filter(
-      e => !/status of 401.*\/app\/api\/(users|auth\/login|auth\/override-requests|staff_biometrics|work_schedules|geo_config|industry_domain_store|sentinel_reviews|alert_rules|sync)/i.test(String(e || ''))
+      e => !/status of 401.*\/app\/api\/(users|auth\/login|auth\/override-requests|staff_biometrics|work_schedules|geo_config|industry_domain_store|sentinel_reviews|alert_rules|sync|seed\/(?:core|records|industries)|map-usage)/i.test(String(e || ''))
     );
 
     if (

@@ -1452,7 +1452,7 @@
       "Billed in selected period": "مفوترون في الفترة المختارة",
       "Billing": "الفوترة",
       "Billing & Recon Sub-Views": "العروض الفرعية للفوترة والمطابقة",
-      "Billing Cycle": "دورية الفوترة",
+      "Billing Cycle": "دورة الفوترة",
       "Billing Period": "فترة الفوترة",
       "Billing Unit of Measure (UoM) Lock": "قفل وحدة القياس الفوترية",
       "Bills": "الفواتير",
@@ -9817,7 +9817,7 @@
       "Venue Work Order": "أمر عمل منشأة",
       "Verification Status": "حالة التحقق",
       "Verification service unreachable. Try again.": "تعذر الاتصال بخدمة التحقق. حاول مجدداً.",
-      "Verified": "موثّق",
+      "Verified": "متحقق",
       "Verified & Filed": "مدقق ومؤرشف",
       "Verified Days": "الأيام المحققة",
       "Verified GPS Pin": "إحداثيات GPS موثقة",
@@ -9961,7 +9961,7 @@
       "Warehouse or store shelf...": "المستودع أو رف التخزين...",
       "Warehouse shelf / spare bin where piece is stored": "رف المستودع / خانة الحفظ للقطعة المستبدلة",
       "Warehouses": "المستودعات",
-      "Warn": "تنبيه عطل",
+      "Warn": "تنبيه",
       "Warn Above (% of Est.)": "تحذير فوق (% من التقديري)",
       "Warn Below (% of Est.)": "تحذير تحت (% من التقديري)",
       "Warning (5%-10%)": "تنبيه (5%-10%)",
@@ -12515,7 +12515,71 @@
       "Select at least one shift, rule change, or effective date to apply": "اختر تغييراً واحداً على الأقل في المناوبة أو القاعدة أو تاريخ السريان للتطبيق",
       "Late avg:": "متوسط التأخير:",
       "Unapproved OT avg:": "متوسط الإضافي غير المعتمد:",
-      "Post Drift:": "الانحراف بعد التطبيق:"
+      "Post Drift:": "الانحراف بعد التطبيق:",
+      "Automatic OpenStreetMap Cutoff (%)": "حد التبديل التلقائي إلى OpenStreetMap (%)",
+      "Debounce Tightening Warning (%)": "عتبة تشديد مهلة البحث (%)",
+      "50% Warning threshold: Places debounce tightens to 600ms": "عتبة التحذير 50%: تتشدد مهلة بحث الأماكن إلى 600 مللي ثانية",
+      "80% Tight threshold: Places debounce tightens to 1100ms": "عتبة التشديد 80%: تتشدد مهلة بحث الأماكن إلى 1100 مللي ثانية",
+      "95% Cutoff: Automatic OpenStreetMap tiles and local search": "حد 95%: التبديل التلقائي لخرائط OpenStreetMap والبحث المحلي",
+      "Verify canonical road distance, steepness grade, and heavy-truck ETA": "التحقق من مسافة الطريق الفعلية والانحدار ووقت وصول الشاحنة الثقيلة",
+      "Query Google Routes API for canonical road KM, steepness grade, and heavy-truck ETA": "استعلام مسارات جوجل للمسافة الفعلية والانحدار ووقت الشاحنة",
+      "Monthly Map Tiles & Places Free-Tier Quota Guard": "مراقب الحصة المجانية الشهرية للخرائط والأماكن",
+      "GOOGLE MAPS FREE-TIER QUOTA & GCP BILLING GUARD": "مراقب الحصة المجانية لخرائط جوجل وميزانية الفوترة",
+      "Thresholds at 50%, 80%, and 95% preserve the $0 monthly tier": "العتبات عند 50% و80% و95% تحفظ الباقة المجانية الشهرية ($0)",
+      "OpenStreetMap + Local Search Active": "خرائط OpenStreetMap والبحث المحلي مفعّلة",
+      "Tightened 1100ms Debounce": "تأخير مشدد 1100 مللي ثانية",
+      "Warning 600ms Debounce": "تأخير تحذيري 600 مللي ثانية",
+      "Google Live · 260ms Debounce": "خرائط جوجل نشطة · تأخير 260 مللي ثانية",
+      "2D / Hybrid Map Tiles": "لوحات الخرائط الثنائية والهجينة",
+      "Places Text Search": "بحث الأماكن النصي",
+      "Routes API Compute": "حسابات مسارات الطرق",
+      "Elevation Grade Samples": "عينات الارتفاع والانحدار",
+      "Fallback Active": "البديل مفعّل",
+      "Tight": "مشدد",
+      "Free Tier": "الباقة المجانية",
+      "GCP Billing Budget ($1.00 Alert)": "ميزانية فوترة GCP (تنبيه $1.00)",
+      "Confirmed Active": "مؤكد ومفعّل",
+      "Pending Owner Confirmation": "بانتظار تأكيد المالك",
+      "GCP $1 Budget": "ميزانية GCP $1",
+      "Enable Routes API": "تفعيل خدمة المسارات",
+      "Unconfirm Budget Alert": "إلغاء تأكيد تنبيه الميزانية",
+      "Confirm $1 Budget Alert": "تأكيد تنبيه ميزانية $1",
+      "Verify Road KM": "تأكيد كم الطريق",
+      "Re-verify Road": "إعادة التحقق",
+      "Road Grade & ETA": "الانحدار ووقت الوصول",
+      "Max Grade": "أقصى انحدار",
+      "max grade": "أقصى انحدار",
+      "Climb": "صعود",
+      "Truck ETA": "وقت الشاحنة",
+      "Road route verified": "تم التحقق من مسار الطريق",
+      "Grade": "الانحدار",
+      "Gate Access": "بوابة الوصول",
+      "Satellite Gate Approach": "صورة فضائية لبوابة الموقع",
+      "Dispatch & Maps": "الإرسال والخرائط",
+      "Location & Maps": "المواقع والخرائط",
+      "AI Sentinels, Map Studio & Places Search": "المراقب الذكي واستوديو الخرائط وبحث الأماكن",
+      "AI Sentinels & Map Studio": "المراقب الذكي واستوديو الخرائط",
+      "Open Map Studio": "فتح استوديو الخرائط",
+      "Rule #24 · Dispatch & Maps": "قاعدة #24 · الإرسال والخرائط",
+      "Rule #06 · Location & Maps": "قاعدة #06 · المواقع والخرائط",
+      "Google Routes API": "مسارات جوجل",
+      "3. Verified Subsidiary & HQ Gate-Approach Pins": "3. نقاط الوصول الفضائية الموثقة للشركات والمقر الرئيسي",
+      "3. Resort Venue & Vendor Delivery Gate-Approach Pins": "3. نقاط الوصول الفضائية الموثقة للمنتجعات والموردين",
+      "3. Showroom, Customs & Bonded Yard Gate-Approach Pins": "3. نقاط الوصول الفضائية الموثقة للمعارض والجمارك والمستودعات",
+      "3. Leased Property & Deed Handover Gate-Approach Pins": "3. نقاط الوصول الفضائية الموثقة للعقارات المؤجرة وتسليم السندات",
+      "3. Insured Risk Survey & Inspection Gate-Approach Pins": "3. نقاط الوصول الفضائية الموثقة لمواقع معاينة الأخطار والحوادث",
+      "Protects the $0 monthly Google Maps free tier (100,000 2D tiles, 10,000 Places Text Search requests, 10,000 Routes calls) by tightening client Places debounce at 50% and 80%, switching automatically to OpenStreetMap and local search at 95%, and tracking the Google Cloud $1 budget alert.": "يحمي الباقة المجانية الشهرية لخرائط جوجل ($0 لـ 100,000 لوحة خرائط و10,000 بحث أماكن و10,000 مسار) عبر تشديد مهلة البحث عند 50% و80% والتحويل التلقائي لخرائط OpenStreetMap والبحث المحلي عند 95% ومتابعة تنبيه ميزانية Google Cloud ($1).",
+      "Protects the $0 monthly Google Maps free tier across group offices and partner sites by tightening Places search debounce at 50%/80% and switching to OpenStreetMap at 95%.": "يحمي الباقة المجانية الشهرية لخرائط جوجل عبر مكاتب المجموعة ومواقع الشركاء بتشديد مهلة البحث عند 50%/80% والتحويل إلى OpenStreetMap عند 95%.",
+      "Protects the $0 monthly Google Maps free tier across Blanca, La Una, Palms, Voile, and Platinum venue & vendor pins.": "يحمي الباقة المجانية الشهرية لخرائط جوجل عبر نقاط الوصول لمواقع بلانكا ولا أونا وبالمز وفوال وبلاتينيوم والموردين.",
+      "Protects the $0 monthly Google Maps free tier across Korri Auto showrooms, customs yards, and Shacman fleet delivery pins.": "يحمي الباقة المجانية الشهرية لخرائط جوجل عبر معارض كوري أوتو وساحات الجمارك ونقاط تسليم أسطول شاكمان.",
+      "Protects the $0 monthly Google Maps free tier across 4235 Company S.A.L buildings, cadastral parcels, and tenant handover gate pins.": "يحمي الباقة المجانية الشهرية لخرائط جوجل عبر عقارات شركة 4235 ش.م.ل والعقارات المسجلة ونقاط تسليم المستأجرين.",
+      "Protects the $0 monthly Google Maps free tier across insured risk survey locations and FNOL inspection pins.": "يحمي الباقة المجانية الشهرية لخرائط جوجل عبر مواقع معاينة الأخطار المؤمّنة ونقاط الكشف الميداني للحوادث.",
+      "Owner privileges required to modify global alert thresholds": "صلاحيات المالك مطلوبة لتعديل عتبات التنبيهات العامة",
+      "Supervisor privileges required to verify road routes": "صلاحيات المشرف مطلوبة للتحقق من مسارات الطرق",
+      "Pause This Alert": "إيقاف هذا التنبيه مؤقتاً",
+      "Resume This Alert": "استئناف هذا التنبيه",
+      "Save Threshold & Note": "حفظ الحد والملاحظة",
+      "Reset to Factory Default": "إعادة التعيين للإعداد الافتراضي"
     },
     fr: {
       "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
@@ -13949,7 +14013,7 @@
       "Billed in selected period": "Facturés sur la période",
       "Billing": "Facturation",
       "Billing & Recon Sub-Views": "Sous-vues Facturation & Rapprochement",
-      "Billing Cycle": "Périodicité",
+      "Billing Cycle": "Cycle de facturation",
       "Billing Period": "Période de Facturation",
       "Billing Unit of Measure (UoM) Lock": "Verrouillage de l'unité de facturation",
       "Bills": "Factures",
@@ -22314,7 +22378,7 @@
       "Venue Work Order": "Ordre de Travail Site",
       "Verification Status": "Statut de vérification",
       "Verification service unreachable. Try again.": "Service de verification injoignable. Reessayez.",
-      "Verified": "Vérifié",
+      "Verified": "Verifie",
       "Verified & Filed": "Vérifié & Classé",
       "Verified Days": "Jours vérifiés",
       "Verified GPS Pin": "Point GPS Vérifié",
@@ -23108,7 +23172,7 @@
       "Night Trip Pay": "Prime voyage de nuit",
       "Unsaved map pin": "Repère carte non enregistré",
       "Saved custom KM": "Km personnalisés enregistrés",
-      "Road route": "Itinéraire routier",
+      "Road route": "Itineraire routier",
       "Map road estimate": "Estimation routière carte",
       "Region zone estimate": "Estimation par zone",
       "Region reference KM": "Km de référence de la zone",
@@ -25012,7 +25076,71 @@
       "Select at least one shift, rule change, or effective date to apply": "Sélectionnez au moins un changement d'équipe, de règle ou une date d'effet",
       "Late avg:": "Moy. retard :",
       "Unapproved OT avg:": "Moy. HS non approuvées :",
-      "Post Drift:": "Dérive après effet :"
+      "Post Drift:": "Dérive après effet :",
+      "Automatic OpenStreetMap Cutoff (%)": "Seuil de bascule automatique OpenStreetMap (%)",
+      "Debounce Tightening Warning (%)": "Seuil d'alerte de l'anti-rebond (%)",
+      "50% Warning threshold: Places debounce tightens to 600ms": "Seuil d'alerte 50% : anti-rebond Places porte a 600 ms",
+      "80% Tight threshold: Places debounce tightens to 1100ms": "Seuil critique 80% : anti-rebond Places porte a 1100 ms",
+      "95% Cutoff: Automatic OpenStreetMap tiles and local search": "Seuil 95% : tuiles OpenStreetMap et recherche locale automatiques",
+      "Verify canonical road distance, steepness grade, and heavy-truck ETA": "Verifier la distance routiere, la pente et le delai camion lourd",
+      "Query Google Routes API for canonical road KM, steepness grade, and heavy-truck ETA": "Interroger Google Routes pour distance routiere, pente et delai camion",
+      "Monthly Map Tiles & Places Free-Tier Quota Guard": "Garde du quota mensuel gratuit des cartes et lieux",
+      "GOOGLE MAPS FREE-TIER QUOTA & GCP BILLING GUARD": "QUOTA GRATUIT GOOGLE MAPS ET BUDGET DE FACTURATION",
+      "Thresholds at 50%, 80%, and 95% preserve the $0 monthly tier": "Les seuils a 50%, 80% et 95% preservent le forfait gratuit a 0 $",
+      "OpenStreetMap + Local Search Active": "OpenStreetMap + recherche locale actives",
+      "Tightened 1100ms Debounce": "Anti-rebond resserre a 1100 ms",
+      "Warning 600ms Debounce": "Anti-rebond d'alerte a 600 ms",
+      "Google Live · 260ms Debounce": "Google actif · anti-rebond 260 ms",
+      "2D / Hybrid Map Tiles": "Tuiles cartographiques 2D et hybrides",
+      "Places Text Search": "Recherche textuelle Places",
+      "Routes API Compute": "Calculs d'itineraires Routes",
+      "Elevation Grade Samples": "Echantillons d'altitude et de pente",
+      "Fallback Active": "Bascule active",
+      "Tight": "Serré",
+      "Free Tier": "Forfait gratuit",
+      "GCP Billing Budget ($1.00 Alert)": "Budget facturation GCP (Alerte 1,00 $)",
+      "Confirmed Active": "Confirme et actif",
+      "Pending Owner Confirmation": "En attente de confirmation",
+      "GCP $1 Budget": "Budget GCP 1 $",
+      "Enable Routes API": "Activer l'API Routes",
+      "Unconfirm Budget Alert": "Annuler confirmation budget",
+      "Confirm $1 Budget Alert": "Confirmer alerte budget 1 $",
+      "Verify Road KM": "Verifier km route",
+      "Re-verify Road": "Reverifier route",
+      "Road Grade & ETA": "Pente et duree",
+      "Max Grade": "Pente max",
+      "max grade": "pente max",
+      "Climb": "Denivele +",
+      "Truck ETA": "ETA camion",
+      "Road route verified": "Itineraire routier verifie",
+      "Grade": "Pente",
+      "Gate Access": "Acces portail",
+      "Satellite Gate Approach": "Approche satellite du portail",
+      "Dispatch & Maps": "Dispatch et cartes",
+      "Location & Maps": "Sites et cartes",
+      "AI Sentinels, Map Studio & Places Search": "Sentinelles IA, Studio Cartes et Places",
+      "AI Sentinels & Map Studio": "Sentinelles IA et Studio Cartes",
+      "Open Map Studio": "Ouvrir Studio Cartes",
+      "Rule #24 · Dispatch & Maps": "Regle #24 · Dispatch et cartes",
+      "Rule #06 · Location & Maps": "Regle #06 · Sites et cartes",
+      "Google Routes API": "API Google Routes",
+      "3. Verified Subsidiary & HQ Gate-Approach Pins": "3. Points d'acces verifies des filiales et du siege",
+      "3. Resort Venue & Vendor Delivery Gate-Approach Pins": "3. Points d'acces verifies des complexes et fournisseurs",
+      "3. Showroom, Customs & Bonded Yard Gate-Approach Pins": "3. Points d'acces verifies des showrooms, douanes et parcs",
+      "3. Leased Property & Deed Handover Gate-Approach Pins": "3. Points d'acces verifies des immeubles loues et actes",
+      "3. Insured Risk Survey & Inspection Gate-Approach Pins": "3. Points d'acces verifies des sites d'inspection et sinistres",
+      "Protects the $0 monthly Google Maps free tier (100,000 2D tiles, 10,000 Places Text Search requests, 10,000 Routes calls) by tightening client Places debounce at 50% and 80%, switching automatically to OpenStreetMap and local search at 95%, and tracking the Google Cloud $1 budget alert.": "Protege le forfait mensuel gratuit Google Maps (100 000 tuiles 2D, 10 000 recherches Places, 10 000 appels Routes) en resserrant l'anti-rebond client a 50% et 80%, en basculant vers OpenStreetMap a 95% et en suivant l'alerte budget Google Cloud de 1 $.",
+      "Protects the $0 monthly Google Maps free tier across group offices and partner sites by tightening Places search debounce at 50%/80% and switching to OpenStreetMap at 95%.": "Protege le forfait mensuel gratuit Google Maps sur les bureaux du groupe et sites partenaires en resserrant l'anti-rebond a 50%/80% et en basculant sur OpenStreetMap a 95%.",
+      "Protects the $0 monthly Google Maps free tier across Blanca, La Una, Palms, Voile, and Platinum venue & vendor pins.": "Protege le forfait mensuel gratuit Google Maps sur les sites et fournisseurs de Blanca, La Una, Palms, Voile et Platinum.",
+      "Protects the $0 monthly Google Maps free tier across Korri Auto showrooms, customs yards, and Shacman fleet delivery pins.": "Protege le forfait mensuel gratuit Google Maps sur les showrooms Korri Auto, zones douanieres et livraisons Shacman.",
+      "Protects the $0 monthly Google Maps free tier across 4235 Company S.A.L buildings, cadastral parcels, and tenant handover gate pins.": "Protege le forfait mensuel gratuit Google Maps sur les immeubles 4235 S.A.L, parcelles cadastrales et remises aux locataires.",
+      "Protects the $0 monthly Google Maps free tier across insured risk survey locations and FNOL inspection pins.": "Protege le forfait mensuel gratuit Google Maps sur les sites d'inspection des risques assures et constats de sinistres.",
+      "Owner privileges required to modify global alert thresholds": "Droits Propriétaire requis pour modifier les seuils d'alerte globaux",
+      "Supervisor privileges required to verify road routes": "Droits Superviseur requis pour vérifier les itinéraires routiers",
+      "Pause This Alert": "Suspendre cette alerte",
+      "Resume This Alert": "Reprendre cette alerte",
+      "Save Threshold & Note": "Enregistrer le seuil et la note",
+      "Reset to Factory Default": "Réinitialiser aux valeurs par défaut"
     }
   };
 
@@ -26992,6 +27120,101 @@
 
     m = trimmed.match(/^([\d,]+) NIGHT TRIPS LOSE$/i);
     if (m) return lang === 'ar' ? `${m[1]} نقلات ليلية خاسرة` : `${m[1]} VOYAGES DE NUIT DÉFICITAIRES`;
+
+    // Google Maps Free-Tier Quota Sentinel & Alert Rules (#24 / #06)
+    m = trimmed.match(/^FREE TIER OK \(([\d.]+%)\)$/i);
+    if (m) return lang === 'ar' ? `الباقة المجانية سليمة (${m[1]})` : `FORFAIT GRATUIT OK (${m[1]})`;
+
+    m = trimmed.match(/^OSM FALLBACK \(([\d.]+%)\)$/i);
+    if (m) return lang === 'ar' ? `التبديل لخرائط OSM (${m[1]})` : `BASCULEMENT OSM (${m[1]})`;
+
+    m = trimmed.match(/^(\d+)MS DEBOUNCE \(([\d.]+%)\)$/i);
+    if (m) return lang === 'ar' ? `تأخير البحث ${m[1]} مللي (${m[2]})` : `ANTI-REBOND ${m[1]}MS (${m[2]})`;
+
+    m = trimmed.match(/^Month ([0-9-]+): Tiles ([\d,]+\/[\d,]+) \(([\d.]+%)\), Places ([\d,]+\/[\d,]+) \(([\d.]+%)\), Routes ([\d,]+\/[\d,]+) \(([\d.]+%)\)\. (.+?)\s*·\s*(\$1 Billing Budget (?:Confirmed|Pending Confirmation))$/i);
+    if (m) {
+      const noteRaw = m[8];
+      const budgetRaw = m[9];
+      let noteAr = noteRaw;
+      let noteFr = noteRaw;
+      let km = null;
+      if (/OpenStreetMap tiles/i.test(noteRaw)) {
+        noteAr = 'خرائط OpenStreetMap والبحث المحلي المرتب بالتكرار مفعّلة (حفظ الباقة المجانية $0).';
+        noteFr = 'Tuiles OpenStreetMap et recherche locale activees (forfait gratuit 0 $ preserve).';
+      } else if ((km = noteRaw.match(/1100ms debounce ahead of (\d+%) OpenStreetMap cutoff/i))) {
+        noteAr = `تم تشديد مهلة البحث إلى 1100 مللي ثانية قبل حد التبديل ${km[1]}.`;
+        noteFr = `Anti-rebond Places porte a 1100 ms avant le basculement a ${km[1]}.`;
+      } else if (/1100ms debounce/i.test(noteRaw)) {
+        noteAr = 'تم تشديد مهلة البحث إلى 1100 مللي ثانية قبل حد التبديل 95%.';
+        noteFr = 'Anti-rebond Places porte a 1100 ms avant le basculement a 95%.';
+      } else if ((km = noteRaw.match(/600ms debounce above (\d+%) warning threshold/i))) {
+        noteAr = `تم تشديد مهلة البحث إلى 600 مللي ثانية بعد تجاوز عتبة التنبيه ${km[1]}.`;
+        noteFr = `Anti-rebond Places porte a 600 ms au-dessus du seuil de ${km[1]}.`;
+      } else if (/600ms debounce/i.test(noteRaw)) {
+        noteAr = 'تم تشديد مهلة البحث إلى 600 مللي ثانية بعد تجاوز عتبة التنبيه 50%.';
+        noteFr = 'Anti-rebond Places porte a 600 ms au-dessus du seuil de 50%.';
+      } else {
+        noteAr = 'خرائط جوجل 2D والبحث التلقائي 260 مللي ثانية ضمن الباقة المجانية الشهرية ($0).';
+        noteFr = 'Tuiles Google Maps 2D et recherche 260 ms dans le forfait gratuit mensuel (0 $).';
+      }
+      const budConf = /Confirmed/i.test(budgetRaw);
+      const budAr = budConf ? 'ميزانية الفوترة $1 مؤكدة' : 'ميزانية الفوترة $1 بانتظار التأكيد';
+      const budFr = budConf ? 'Budget facturation 1 $ confirme' : 'Budget facturation 1 $ en attente';
+      return lang === 'ar'
+        ? `شهر ${m[1]}: الخرائط ${m[2]} (${m[3]})، الأماكن ${m[4]} (${m[5]})، المسارات ${m[6]} (${m[7]}). ${noteAr} · ${budAr}`
+        : `Mois ${m[1]} : Tuiles ${m[2]} (${m[3]}), Places ${m[4]} (${m[5]}), Itineraires ${m[6]} (${m[7]}). ${noteFr} · ${budFr}`;
+    }
+
+    m = trimmed.match(/^Tracks monthly (?:Google )?Map Tiles \(100,000\), Places(?: Text Search)? \(10,000\), and Routes(?: calls)? \(10,000\)(?: calls| usage)?\. Tightens (?:search )?debounce (?:from 260ms to 600ms )?at (\d+%)?(?:,? 1100ms at 80%,?)? and (?:falls back to|enables) OpenStreetMap(?: tiles plus frequency-ranked local search| fallback)? at (\d+%)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يتابع الاستخدام الشهري للخرائط (100,000) والأماكن (10,000) والمسارات (10,000). يشدد التأخير عند ${m[1] || '50%'} ويفعّل خرائط OpenStreetMap والبحث المحلي تلقائياً عند ${m[2] || '95%'}.`
+        : `Suit l'utilisation mensuelle des tuiles (100 000), Places (10 000) et Routes (10 000). Resserre le delai a ${m[1] || '50%'} et active OpenStreetMap automatiquement a ${m[2] || '95%'}.`;
+    }
+
+    m = trimmed.match(/^Warn >= (\d+%) · (?:OSM )?Cutoff >= (\d+%)$/i);
+    if (m) return lang === 'ar' ? `تنبيه >= ${m[1]} · تبديل >= ${m[2]}` : `Alerte >= ${m[1]} · Bascule >= ${m[2]}`;
+
+    m = trimmed.match(/^Free-tier shield: Above (\d+%) monthly quota search debounce slows to 600ms \(1100ms at 80%\), and at (\d+%) basemaps switch automatically to OpenStreetMap before any overage charge\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `حماية الباقة المجانية: فوق ${m[1]} يتباطأ البحث إلى 600 مللي ثانية (و1100 عند 80%)، وعند ${m[2]} تتحول الخرائط تلقائياً إلى OpenStreetMap قبل أي رسوم.`
+        : `Protection forfait gratuit : au-dela de ${m[1]} l'anti-rebond passe a 600 ms (1100 ms a 80%), et a ${m[2]} les fonds basculent sur OpenStreetMap sans depassement.`;
+    }
+    m = trimmed.match(/^Thresholds at (\d+%), (\d+%), and (\d+%) preserve the \$0 monthly tier$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `العتبات عند ${m[1]} و${m[2]} و${m[3]} تحفظ الباقة المجانية الشهرية ($0)`
+        : `Les seuils a ${m[1]}, ${m[2]} et ${m[3]} preservent le forfait gratuit a 0 $`;
+    }
+    m = trimmed.match(/^(\d+%) Warning threshold: Places debounce tightens to 600ms$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `عتبة التحذير ${m[1]}: تتشدد مهلة بحث الأماكن إلى 600 مللي ثانية`
+        : `Seuil d'alerte ${m[1]} : anti-rebond Places porte a 600 ms`;
+    }
+    m = trimmed.match(/^(\d+%) Tight threshold: Places debounce tightens to 1100ms$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `عتبة التشديد ${m[1]}: تتشدد مهلة بحث الأماكن إلى 1100 مللي ثانية`
+        : `Seuil critique ${m[1]} : anti-rebond Places porte a 1100 ms`;
+    }
+    m = trimmed.match(/^(\d+%) Cutoff: Automatic OpenStreetMap tiles and local search$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `حد ${m[1]}: التبديل التلقائي لخرائط OpenStreetMap والبحث المحلي`
+        : `Seuil ${m[1]} : tuiles OpenStreetMap et recherche locale automatiques`;
+    }
+    m = trimmed.match(/^(Decrease|Increase)\s+(.+)$/i);
+    if (m && depth < 3) {
+      const rhs = translateCore(m[2].trim(), lang, depth + 1);
+      if (rhs && rhs !== m[2].trim()) {
+        const isDec = m[1].toLowerCase() === 'decrease';
+        return lang === 'ar'
+          ? `${isDec ? 'إنقاص' : 'زيادة'} ${rhs}`
+          : `${isDec ? 'Diminuer' : 'Augmenter'} ${rhs}`;
+      }
+    }
 
     // Fuel surcharge clause: Price Agreement form hint and the Sales form transport hint
     const fuelSurUnit = u => {
