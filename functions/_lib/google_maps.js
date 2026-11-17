@@ -967,6 +967,58 @@ function computeElevationGradeMetrics(samplePts, elevArr) {
   };
 }
 
+function interpolateRouteElevations(compactCoords, elevSamples, elevArr) {
+  if (!Array.isArray(compactCoords) || compactCoords.length < 2) return null;
+  if (!Array.isArray(elevSamples) || !Array.isArray(elevArr) || elevSamples.length < 2 || elevArr.length !== elevSamples.length) return null;
+  const M = elevSamples.length;
+  const cumSamp = new Array(M);
+  cumSamp[0] = 0;
+  for (let i = 1; i < M; i++) {
+    const d = haversineMeters(elevSamples[i - 1][0], elevSamples[i - 1][1], elevSamples[i][0], elevSamples[i][1]);
+    cumSamp[i] = cumSamp[i - 1] + (Number.isFinite(d) && d > 0 ? d : 0);
+  }
+  const totalSamp = cumSamp[M - 1];
+  const validPairs = [];
+  for (let i = 0; i < M; i++) {
+    const raw = elevArr[i];
+    if (raw === null || raw === undefined || typeof raw === 'boolean' || raw === '') continue;
+    const v = Number(raw);
+    if (!Number.isFinite(v)) continue;
+    const s = totalSamp > 0 ? (cumSamp[i] / totalSamp) : (i / Math.max(1, M - 1));
+    validPairs.push({ s, elev: v });
+  }
+  if (validPairs.length < 2) return null;
+  const N = compactCoords.length;
+  const cumComp = new Array(N);
+  cumComp[0] = 0;
+  for (let i = 1; i < N; i++) {
+    const d = haversineMeters(compactCoords[i - 1][0], compactCoords[i - 1][1], compactCoords[i][0], compactCoords[i][1]);
+    cumComp[i] = cumComp[i - 1] + (Number.isFinite(d) && d > 0 ? d : 0);
+  }
+  const totalComp = cumComp[N - 1];
+  const out = new Array(N);
+  let ptr = 0;
+  for (let i = 0; i < N; i++) {
+    const t = totalComp > 0 ? (cumComp[i] / totalComp) : (i / Math.max(1, N - 1));
+    let val;
+    if (t <= validPairs[0].s) {
+      val = validPairs[0].elev;
+    } else if (t >= validPairs[validPairs.length - 1].s) {
+      val = validPairs[validPairs.length - 1].elev;
+    } else {
+      while (ptr + 1 < validPairs.length - 1 && validPairs[ptr + 1].s < t) ptr++;
+      const a = validPairs[ptr];
+      const b = validPairs[ptr + 1];
+      const span = b.s - a.s;
+      const frac = span > 1e-9 ? Math.max(0, Math.min(1, (t - a.s) / span)) : 0;
+      val = a.elev + frac * (b.elev - a.elev);
+    }
+    const rounded = Math.round(val * 10) / 10;
+    out[i] = Math.max(-500, Math.min(9000, rounded));
+  }
+  return out;
+}
+
 function parseRouteCoord(raw) {
   if (!raw || typeof raw !== 'object') return null;
   if (typeof raw.lat === 'boolean' || typeof raw.lng === 'boolean') return null;
@@ -1049,6 +1101,7 @@ export async function handleGoogleMapRoute(request, env, body, session, opts = {
       elevDropM: 0,
       maxGradePct: 0,
       avgClimbGradePct: 0,
+      elevProfileM: null,
       coords: [[origin.lat, origin.lng], [destination.lat, destination.lng]],
       verifiedAt: new Date().toISOString()
     });
@@ -1057,11 +1110,15 @@ export async function handleGoogleMapRoute(request, env, body, session, opts = {
   const snap = await readMapsUsageSnapshot(env);
   const routesBand = snap.metrics.routes_compute.band;
 
+  const hasValidRouteElev = payload => Boolean(
+    payload && payload.ok
+    && (!payload.elevAvailable || (Array.isArray(payload.elevProfileM) && Array.isArray(payload.coords) && payload.elevProfileM.length === payload.coords.length))
+  );
   const modePrefix = isDemoContext ? 'demo' : 'prod';
   const rKey = `${modePrefix}:${origin.lat.toFixed(5)},${origin.lng.toFixed(5)}->${destination.lat.toFixed(5)},${destination.lng.toFixed(5)}`;
-  const cacheUrl = `https://isabi-route-cache.internal/v2/${encodeURIComponent(rKey)}`;
+  const cacheUrl = `https://isabi-route-cache.internal/v3/${encodeURIComponent(rKey)}`;
   const memHit = ROUTE_QUERY_CACHE.get(rKey);
-  if (memHit && Date.now() < memHit.expiresAt) {
+  if (memHit && Date.now() < memHit.expiresAt && hasValidRouteElev(memHit.payload)) {
     return jsonResponse(Object.assign({}, memHit.payload, { cached: true, quotaState: routesBand }), 200, {
       'X-ISABI-Maps-Quota-State': routesBand,
       'X-ISABI-Maps-Quota-Service': 'routes_compute'
@@ -1075,7 +1132,7 @@ export async function handleGoogleMapRoute(request, env, body, session, opts = {
         const cachedResp = await edgeCache.match(cacheUrl);
         if (cachedResp) {
           const cPayload = await cachedResp.json().catch(() => null);
-          if (cPayload && cPayload.ok) {
+          if (hasValidRouteElev(cPayload)) {
             return jsonResponse(Object.assign({}, cPayload, { cached: true, quotaState: routesBand }), 200, {
               'X-ISABI-Maps-Quota-State': routesBand,
               'X-ISABI-Maps-Quota-Service': 'routes_compute'
@@ -1258,6 +1315,7 @@ export async function handleGoogleMapRoute(request, env, body, session, opts = {
     Math.round(carMins * 1.28 + (elevStats.elevGainM / 100) * 1.35 + (elevStats.maxGradePct >= 8 ? (elevStats.maxGradePct - 7) * 0.8 : 0))
   );
   const compactCoords = downsampleCoords(routeData.coords, 32);
+  const elevProfileM = elevStats.elevAvailable ? interpolateRouteElevations(compactCoords, elevSamples, elevArr) : null;
   const verifiedAt = new Date().toISOString();
   const resPayload = {
     ok: true,
@@ -1277,11 +1335,12 @@ export async function handleGoogleMapRoute(request, env, body, session, opts = {
     elevDropM: elevStats.elevDropM,
     maxGradePct: elevStats.maxGradePct,
     avgClimbGradePct: elevStats.avgClimbGradePct,
+    elevProfileM,
     coords: compactCoords,
     verifiedAt
   };
 
-  if (routeData.source !== 'deterministic_fallback') {
+  if (routeData.source !== 'deterministic_fallback' && elevStats.elevAvailable) {
     setBoundedMap(ROUTE_QUERY_CACHE, rKey, { payload: resPayload, expiresAt: Date.now() + ROUTE_CACHE_TTL_MS }, ROUTE_CACHE_MAX);
     if (!isDemoContext && edgeCache && !testMock) {
       try {

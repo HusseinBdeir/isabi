@@ -114,8 +114,9 @@ function createMockDb() {
       if (/^SELECT\s+1\s+AS\s+ok\s+FROM\s+users\s+LIMIT\s+1/i.test(q)) {
         return users.size > 0 ? { ok: 1 } : null;
       }
-      if (/SELECT\s+payload_json,\s*rev,\s*updated_at\s+FROM\s+edge_kv_store\s+WHERE\s+doc_key/i.test(q)) {
-        const docKey = String(boundArgs[0] || '');
+      if (/SELECT\s+payload_json(?:\s*,\s*rev(?:\s*,\s*updated_at)?)?\s+FROM\s+edge_kv_store\s+WHERE\s+doc_key/i.test(q)) {
+        const litM = q.match(/doc_key\s*=\s*'([^']+)'/i);
+        const docKey = litM ? litM[1] : String(boundArgs[0] || '');
         const rec = kvStore.get(docKey);
         return rec ? { payload_json: rec.payload_json, rev: rec.rev, updated_at: rec.updated_at } : null;
       }
@@ -186,6 +187,32 @@ function createMockDb() {
         const alertRules = kvStore.__alertRules || (kvStore.__alertRules = new Map());
         alertRules.delete(String(boundArgs[0] || ''));
         return { success: true };
+      }
+      if (/^UPDATE\s+edge_kv_store\s+SET\s+payload_json\s*=\s*\?1,\s*updated_at\s*=\s*\?2,\s*rev\s*=\s*rev\s*\+\s*1\s+WHERE\s+doc_key\s*=\s*'geo_config'/i.test(q)) {
+        const cur = kvStore.get('geo_config');
+        if (!cur || Number(cur.rev ?? 0) !== Number(boundArgs[2] ?? 0)) {
+          return { success: true, meta: { changes: 0 } };
+        }
+        const nextRev = Number(cur.rev ?? 0) + 1;
+        kvStore.set('geo_config', {
+          doc_key: 'geo_config',
+          payload_json: String(boundArgs[0] || '{}'),
+          updated_at: String(boundArgs[1] || ''),
+          rev: nextRev
+        });
+        return { success: true, meta: { changes: 1 } };
+      }
+      if (/^INSERT\s+INTO\s+edge_kv_store\s*\(\s*doc_key,\s*payload_json,\s*updated_at,\s*rev\s*\)\s*VALUES\s*\(\s*'geo_config'/i.test(q)) {
+        if (kvStore.has('geo_config')) {
+          return { success: true, meta: { changes: 0 } };
+        }
+        kvStore.set('geo_config', {
+          doc_key: 'geo_config',
+          payload_json: String(boundArgs[0] || '{}'),
+          updated_at: String(boundArgs[1] || ''),
+          rev: 1
+        });
+        return { success: true, meta: { changes: 1 } };
       }
       if (/^UPDATE\s+edge_kv_store\s+SET\s+payload_json/i.test(q)) {
         const key = String(boundArgs[3] || '');
@@ -952,6 +979,147 @@ try {
       vwCode: rVwRoute.json && rVwRoute.json.code,
       syncStatus: syncPatchRes.status,
       thAfterSync: uAfterSync.json && uAfterSync.json.thresholds
+    })
+  );
+
+  // 27. /app/api/map-route returns interpolated elevProfileM + /app/api/geo_config validates coordsLngLat & elevProfileM
+  const rSamePt = await callEdge('POST', '/app/api/map-route', {
+    body: { origin: { lat: 33.89000, lng: 35.50000 }, destination: { lat: 33.89001, lng: 35.50001 } },
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://isabisystems.com' }
+  });
+  const profOk = Array.isArray(rElevHole.json && rElevHole.json.elevProfileM)
+    && Array.isArray(rElevHole.json && rElevHole.json.coords)
+    && rElevHole.json.elevProfileM.length === rElevHole.json.coords.length
+    && rElevHole.json.elevProfileM.every(v => typeof v === 'number' && Number.isFinite(v) && v >= -500 && v <= 9000);
+  const badElevGeo = await callEdge('POST', '/app/api/geo_config', {
+    body: {
+      verifiedRoutes: {
+        'bu:WTC|site:BadElev': { km: 10, coordsLngLat: [[35.5, 33.8], [35.6, 33.9]], elevProfileM: [-900, 120] }
+      }
+    },
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://isabisystems.com' }
+  });
+  const badCoordsGeo = await callEdge('POST', '/app/api/geo_config', {
+    body: {
+      verifiedRoutes: {
+        'bu:WTC|site:BadCoord': { km: 10, coordsLngLat: [[205, 33.8], [35.6, 33.9]], elevProfileM: [100, 120] }
+      }
+    },
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://isabisystems.com' }
+  });
+  const mismatchElevGeo = await callEdge('POST', '/app/api/geo_config', {
+    body: {
+      verifiedRoutes: {
+        'bu:WTC|site:MismatchElev': { km: 10, coordsLngLat: [[35.5, 33.8], [35.55, 33.85], [35.6, 33.9]], elevProfileM: [100, 120] }
+      }
+    },
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://isabisystems.com' }
+  });
+  const unpairedElevGeo = await callEdge('POST', '/app/api/geo_config', {
+    body: {
+      verifiedRoutes: {
+        'bu:WTC|site:UnpairedElev': { km: 10, elevProfileM: [100, 120] }
+      }
+    },
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://isabisystems.com' }
+  });
+  const rElevRecover = await callEdge('POST', '/app/api/map-route', {
+    body: { origin: { lat: 33.881, lng: 35.541 }, destination: { lat: 33.971, lng: 35.691 } },
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://isabisystems.com' }
+  });
+  const validGeo = await callEdge('POST', '/app/api/geo_config', {
+    body: {
+      verifiedRoutes: {
+        'bu:WTC|site:ValidElev': { km: 10, coordsLngLat: [[35.5, 33.8], [35.6, 33.9]], elevProfileM: [80, 240] }
+      }
+    },
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://isabisystems.com' }
+  });
+  await callEdge('POST', '/app/api/geo_config', {
+    body: { verifiedRoutes: { 'bu:WTC|site:ValidElev': null } },
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://isabisystems.com' }
+  });
+
+  // Pre-patch cache upgrade seam: legacy /v2/ and incomplete /v3/ payload missing elevProfileM must be ignored & upgraded
+  const stalePairKey = encodeURIComponent('prod:33.88200,35.54200->33.97200,35.69200');
+  const staleCacheBody = JSON.stringify({
+    ok: true,
+    km: 24.6,
+    mins: 33,
+    heavyTruckMins: 40,
+    elevAvailable: true,
+    elevGainM: 320,
+    elevDropM: 40,
+    maxGradePct: 7.5,
+    avgClimbGradePct: 4.2,
+    coords: [[35.542, 33.882], [35.692, 33.972]]
+  });
+  await globalThis.caches.default.put(
+    `https://isabi-route-cache.internal/v2/${stalePairKey}`,
+    new Response(staleCacheBody, { status: 200, headers: { 'Content-Type': 'application/json' } })
+  );
+  await globalThis.caches.default.put(
+    `https://isabi-route-cache.internal/v3/${stalePairKey}`,
+    new Response(staleCacheBody, { status: 200, headers: { 'Content-Type': 'application/json' } })
+  );
+  const rCacheUpgradeMiss = await callEdge('POST', '/app/api/map-route', {
+    body: { origin: { lat: 33.882, lng: 35.542 }, destination: { lat: 33.972, lng: 35.692 } },
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://isabisystems.com' }
+  });
+  await new Promise(r => setTimeout(r, 40));
+  const rCacheUpgradeHit = await callEdge('POST', '/app/api/map-route', {
+    body: { origin: { lat: 33.882, lng: 35.542 }, destination: { lat: 33.972, lng: 35.692 } },
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://isabisystems.com' }
+  });
+  // Fresh-DB initial geo_config POST must normalize buckets and strip literal null tombstones
+  const freshEnv = Object.assign({}, env, { DB: createMockDb() });
+  const freshInitPost = await callEdge('POST', '/app/api/geo_config', {
+    body: {
+      verifiedRoutes: {
+        'bu:WTC|site:NullTomb': null,
+        'bu:WTC|site:CleanInit': { km: 12, coordsLngLat: [[35.5, 33.8], [35.6, 33.9]], elevProfileM: [90, 210] }
+      }
+    },
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://isabisystems.com' },
+    envOverride: freshEnv
+  });
+  const freshInitGet = await callEdge('GET', '/app/api/geo_config', {
+    headers: { Authorization: `Bearer ${token}`, Origin: 'https://isabisystems.com' },
+    envOverride: freshEnv
+  });
+  const freshVr = (freshInitGet.json && freshInitGet.json.config && freshInitGet.json.config.verifiedRoutes) || {};
+  const freshRaw = freshEnv.DB.kvStore.get('geo_config');
+  const freshStoredVr = (freshRaw && JSON.parse(freshRaw.payload_json).verifiedRoutes) || {};
+  const freshNullStrippedOk = freshInitPost.status === 200
+    && !Object.prototype.hasOwnProperty.call(freshVr, 'bu:WTC|site:NullTomb')
+    && !Object.prototype.hasOwnProperty.call(freshStoredVr, 'bu:WTC|site:NullTomb')
+    && Boolean(freshVr['bu:WTC|site:CleanInit'] && freshVr['bu:WTC|site:CleanInit'].km === 12);
+  check(
+    profOk
+    && rSamePt.status === 200 && rSamePt.json && rSamePt.json.elevProfileM === null
+    && rElevAllNull.json && rElevAllNull.json.elevProfileM === null
+    && rElevRecover.status === 200 && rElevRecover.json && rElevRecover.json.elevAvailable === true && Array.isArray(rElevRecover.json.elevProfileM)
+    && rCacheUpgradeMiss.status === 200 && rCacheUpgradeMiss.json && rCacheUpgradeMiss.json.cached !== true && Array.isArray(rCacheUpgradeMiss.json.elevProfileM) && rCacheUpgradeMiss.json.elevProfileM.length === rCacheUpgradeMiss.json.coords.length
+    && rCacheUpgradeHit.status === 200 && rCacheUpgradeHit.json && rCacheUpgradeHit.json.cached === true && Array.isArray(rCacheUpgradeHit.json.elevProfileM) && rCacheUpgradeHit.json.elevProfileM.length === rCacheUpgradeHit.json.coords.length
+    && freshNullStrippedOk
+    && badElevGeo.status === 400 && badCoordsGeo.status === 400
+    && mismatchElevGeo.status === 400 && unpairedElevGeo.status === 400
+    && validGeo.status === 200,
+    '27. /app/api/map-route returns paired elevProfileM, rejects stale /v2/ or incomplete /v3/ cache without elevProfileM, and /app/api/geo_config enforces 400',
+    JSON.stringify({
+      profLen: rElevHole.json && rElevHole.json.elevProfileM && rElevHole.json.elevProfileM.length,
+      samePtProf: rSamePt.json && rSamePt.json.elevProfileM,
+      recoverAvail: rElevRecover.json && rElevRecover.json.elevAvailable,
+      upgradeMissCached: rCacheUpgradeMiss.json && rCacheUpgradeMiss.json.cached,
+      upgradeMissHasProf: Boolean(rCacheUpgradeMiss.json && Array.isArray(rCacheUpgradeMiss.json.elevProfileM)),
+      upgradeHitCached: rCacheUpgradeHit.json && rCacheUpgradeHit.json.cached,
+      upgradeHitHasProf: Boolean(rCacheUpgradeHit.json && Array.isArray(rCacheUpgradeHit.json.elevProfileM)),
+      freshNullStrippedOk,
+      badElevSt: badElevGeo.status,
+      badCoordSt: badCoordsGeo.status,
+      mismatchSt: mismatchElevGeo.status,
+      unpairedSt: unpairedElevGeo.status,
+      validSt: validGeo.status
     })
   );
 } finally {
