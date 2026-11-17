@@ -139,6 +139,12 @@ const T = issue();
   r = await api('sync', { method: 'POST', headers: withTicket(T), body: { op: 'patch', patch: { cashflow_behind: { status: 'x' } } } });
   ok('a ticket cannot write an Owner notice through sync either (403, as for any session)', r.status === 403, r);
   ok('the same ticket works again inside its window', (await api('source_behind', { headers: withTicket(T) })).status === 200);
+  // The top-up publishes the changed-old-entries notice with the same ticket (owner 2026-11-17).
+  r = await api('changed_entries', { method: 'POST', headers: withTicket(T), body: { changed_entries: { status: 'ok', core_hash: 'c1', items: [] } } });
+  ok('POST changed_entries with a ticket publishes the notice', r.status === 200 && r.json.ok === true, r);
+  r = await api('changed_entries', { headers: withTicket(T) });
+  ok('...and it reads back', r.status === 200 && r.json.changed_entries && r.json.changed_entries.core_hash === 'c1', r);
+  ok('changed_entries without a ticket -> 401', (await api('changed_entries')).status === 401);
 }
 
 console.log('\n[scope] nothing but those routes and methods');
@@ -159,13 +165,13 @@ console.log('\n[scope] nothing but those routes and methods');
   ok(`a ticket changes nothing on ${blocked.length} other route and method pairs`, leaks.length === 0, leaks);
   const otherMethods = [];
   for (const method of ['PUT', 'DELETE', 'PATCH']) {
-    for (const path of ['sync', 'users', 'cashflow_behind', 'source_behind']) {
+    for (const path of ['sync', 'users', 'cashflow_behind', 'source_behind', 'changed_entries']) {
       const withT = await api(path, { method, headers: withTicket(T), body: {} });
       const without = await api(path, { method, body: {} });
       if (withT.status !== without.status || withT.txt !== without.txt || withT.status === 200) otherMethods.push([method, path, withT.status, without.status]);
     }
   }
-  ok('PUT, DELETE and PATCH on the four routes: a ticket changes nothing and nothing answers 200', otherMethods.length === 0, otherMethods);
+  ok('PUT, DELETE and PATCH on the five routes: a ticket changes nothing and nothing answers 200', otherMethods.length === 0, otherMethods);
   // The router builds its path from the route array: odd arrays must not reach a listed route.
   const oddRoutes = [];
   for (const route of [['sync', ''], ['', 'sync'], ['sync', 'x'], ['SYNC'], ['users', ''], ['cashflow_behind', '..', 'sync']]) {

@@ -165,7 +165,7 @@ def wrangler_is_idempotent(args: list[str]) -> bool:
         return True
     # Whole-token matches only: `pages deploy` must not also cover `pages deployment delete`.
     safe_heads = (
-        ["pages", "project", "list"], ["pages", "deployment", "list"], ["d1", "list"], ["r2", "bucket", "list"],
+        ["pages", "project", "list"], ["pages", "deployment", "list"], ["pages", "secret", "list"], ["d1", "list"], ["r2", "bucket", "list"],
         # A second `pages deploy` of the same bundle only adds one more deployment; secrets and R2 objects overwrite.
         ["pages", "deploy"], ["pages", "secret", "put"], ["r2", "object", "put"], ["r2", "object", "get"],
     )
@@ -416,22 +416,68 @@ def ensure_pages_project(env: dict):
         raise subprocess.CalledProcessError(r_create.returncode, r_create.args, output=r_create.stdout, stderr=r_create.stderr)
 
 
+PAGES_SECRET_NAME_RE = re.compile(r"^\s*-\s*([A-Z][A-Z0-9_]*)\s*:", re.M)
+
+
+def pages_secret_names(env: dict) -> set[str] | None:
+    """Names of the secrets the live Pages project holds (never values), or None when the listing failed."""
+    r = run_wrangler(["pages", "secret", "list", "--project-name=isabi-systems"], env, check=False)
+    if r.returncode != 0:
+        return None
+    out = f"{r.stdout or ''}\n{r.stderr or ''}"
+    if "isabi-systems" not in out:
+        return None
+    return set(PAGES_SECRET_NAME_RE.findall(out))
+
+
+def jwt_secret_upload_decision(rotate_secrets: bool, live_names: set[str] | None) -> str:
+    """'upload' or 'keep' for ISABI_JWT_SECRET (owner 2026-11-17).
+
+    Replacing the live signing secret signs every user and every tablet out. A PC's local copy in
+    exports/cloudflare_edge_meta.json is not the live one (2026-11-16: two different copies on one PC, neither
+    live; a worktree with its own exports/ folder made a fresh one), so a deploy uploads it only when asked to
+    (--rotate-secrets) or when the project has no signing secret at all. A failed listing keeps the live one."""
+    if rotate_secrets:
+        return "upload"
+    if live_names is None:
+        return "keep"
+    return "keep" if "ISABI_JWT_SECRET" in live_names else "upload"
+
+
 def upload_secrets(env: dict, *, rotate_secrets: bool = False):
-    jwt_sec = load_or_create_jwt_secret()
+    live_names = None if rotate_secrets else pages_secret_names(env)
+    jwt_decision = jwt_secret_upload_decision(rotate_secrets, live_names)
+    ok_sec = True
+    if jwt_decision == "upload":
+        if rotate_secrets:
+            # A rotation is a new value, never this PC's old copy (it may be stale, or the one being retired).
+            meta_rot = load_edge_meta()
+            meta_rot["jwt_secret"] = secrets.token_urlsafe(48)
+            save_edge_meta(meta_rot)
+        jwt_sec = load_or_create_jwt_secret()
+        if rotate_secrets:
+            print("WARNING: --rotate-secrets replaces the live signing secret with a new one: every user and tablet signs in again.")
+        else:
+            print("The Pages project has no ISABI_JWT_SECRET yet; uploading one.")
+        print("Uploading encrypted ISABI_JWT_SECRET to Cloudflare Pages...")
+        r_jwt = run_wrangler(["pages", "secret", "put", "ISABI_JWT_SECRET", "--project-name=isabi-systems"], env, input_text=jwt_sec, check=True)
+        ok_sec = r_jwt.returncode == 0
+    elif live_names is None:
+        print("WARNING: could not list the Pages project's secrets; the live signing secret was left as it is.")
+    else:
+        print("Live ISABI_JWT_SECRET kept (replace it only with --rotate-secrets).")
+
     gem_key = read_gemini_key()
     gmaps_key = read_google_maps_key()
     meta = load_edge_meta()
     vt_hash = str(os.environ.get("VT_GPS_API_HASH") or meta.get("vt_gps_api_hash") or "").strip()
     vt_email = str(os.environ.get("VT_GPS_EMAIL") or meta.get("vt_gps_email") or "").strip()
     vt_pass = str(os.environ.get("VT_GPS_PASSWORD") or meta.get("vt_gps_password") or "").strip()
-    sec_sha = hashlib.sha256(f"{jwt_sec}|{gem_key}|{gmaps_key}|{vt_hash}|{vt_email}|{vt_pass}".encode("utf-8")).hexdigest()
+    # The signing secret is not part of this fingerprint: it is uploaded only by the decision above.
+    sec_sha = hashlib.sha256(f"other-secrets-v2|{gem_key}|{gmaps_key}|{vt_hash}|{vt_email}|{vt_pass}".encode("utf-8")).hexdigest()
     if not rotate_secrets and meta.get("last_secrets_sha256") == sec_sha:
-        print("Edge secrets unchanged; skipping redundant secret upload.")
+        print("Other Edge secrets unchanged; skipping redundant secret upload.")
         return
-
-    print("Uploading encrypted ISABI_JWT_SECRET to Cloudflare Pages...")
-    r_jwt = run_wrangler(["pages", "secret", "put", "ISABI_JWT_SECRET", "--project-name=isabi-systems"], env, input_text=jwt_sec, check=True)
-    ok_sec = r_jwt.returncode == 0
 
     if gem_key:
         print("Uploading encrypted GEMINI_API_KEY to Cloudflare Pages...")
@@ -1255,7 +1301,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     opts.add_argument("--full-seed", action="store_true", help="Force full D1 data seed instead of SHA-256 delta.")
     opts.add_argument("--force-schema", action="store_true", help="Re-apply migrations/0001_schema.sql even if SHA-256 is unchanged.")
     opts.add_argument("--force-r2-seeds", action="store_true", help="Re-upload private R2 seed_*.json even if SHA-256 is unchanged.")
-    opts.add_argument("--rotate-secrets", action="store_true", help="Re-upload Edge secrets even if SHA-256 is unchanged.")
+    opts.add_argument("--rotate-secrets", action="store_true", help="Re-upload Edge secrets even if SHA-256 is unchanged, and REPLACE the live signing secret ISABI_JWT_SECRET (signs every user and tablet out). Without it the signing secret is uploaded only when the project has none.")
     opts.add_argument("--skip-live-parity", action="store_true", help="Skip post-deploy build/verify_live_parity.mjs.")
     opts.add_argument("--no-sync-release-log", action="store_true", help="Run verify_live_parity.mjs without --sync-release-log.")
     opts.add_argument("--skip-indexnow", action="store_true", help="Skip post-deploy IndexNow ping.")
@@ -2037,7 +2083,7 @@ def print_dry_run_plan(args: argparse.Namespace) -> int:
     )
     if mode == "full-deploy":
         steps.append("Ensure D1 (`isabi-ledger`), R2 (`isabi-vault`), wrangler.toml bindings, and Pages project (`isabi-systems`)")
-        steps.append("Edge secrets -> " + ("ROTATE/UPLOAD" if args.rotate_secrets else "upload only if SHA-256 changed"))
+        steps.append("Edge secrets -> " + ("ROTATE/UPLOAD, including a new live signing secret (signs everyone out)" if args.rotate_secrets else "upload only if SHA-256 changed; the live signing secret is kept (uploaded only when the project has none)"))
         app_js_dir = ISABI_ROOT.parent / "isabi-app" / "js"
         r2_shas = dict(meta.get("r2_seed_shas") or {})
         if not app_js_dir.is_dir():

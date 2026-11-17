@@ -4173,6 +4173,42 @@ finally:
       }));
     }
 
+    // 40b. Owner-only /app/api/changed_entries (workbook edits to already-loaded entries, owner 2026-11-17)
+    const ceUnauth = await httpReq('GET', '/app/api/changed_entries');
+    const ceDemoGet = await httpReq('GET', '/app/api/changed_entries', null, { 'X-ISABI-Demo': '1' });
+    const ceSupGet = await httpReq('GET', '/app/api/changed_entries', null, { 'X-ISABI-Session': bbcSupToken });
+    const ceSupPost = await httpReq('POST', '/app/api/changed_entries', { changed_entries: { status: 'ok' } }, { 'X-ISABI-Session': bbcSupToken });
+    const ceSyncGet = await httpReq('POST', '/app/api/sync', { op: 'get', doc: 'changed_entries' }, { 'X-ISABI-Session': ownerToken });
+    const ceSyncPatch = await httpReq('POST', '/app/api/sync', { op: 'patch', doc: 'mfg_web_store', patch: { changed_entries: { status: 'ok' } } }, { 'X-ISABI-Session': ownerToken });
+    const ceTooBig = await httpReq('POST', '/app/api/changed_entries', { changed_entries: { status: 'ok', pad: 'x'.repeat(35000) } }, { 'X-ISABI-Session': ownerToken });
+    const ceWrongWrap = await httpReq('POST', '/app/api/changed_entries', { source_behind: null }, { 'X-ISABI-Session': ownerToken });
+    const ceSample = { status: 'ok', until: '2026-11-17', core_hash: 'testcore01', listed_count: 1, items: [{ kind: 'edit', table: 'expenses', company: 'BBConstruction', date: '2026-10-30', party: 'Rabih Tannous', old_usd: 9200, new_usd: 700, fields: ['amount'] }] };
+    const ceOwnerPost = await httpReq('POST', '/app/api/changed_entries', { changed_entries: ceSample }, { 'X-ISABI-Session': ownerToken });
+    const ceOwnerGet = await httpReq('GET', '/app/api/changed_entries', null, { 'X-ISABI-Session': ownerToken });
+    const sbAfterCe = await httpReq('GET', '/app/api/source_behind', null, { 'X-ISABI-Session': ownerToken });
+    const ceClearPost = await httpReq('POST', '/app/api/changed_entries', { changed_entries: null }, { 'X-ISABI-Session': ownerToken });
+    const ceClearGet = await httpReq('GET', '/app/api/changed_entries', null, { 'X-ISABI-Session': ownerToken });
+    const cbAfterCe = await httpReq('GET', '/app/api/cashflow_behind', null, { 'X-ISABI-Session': ownerToken });
+    if (
+      ceUnauth.status === 401 &&
+      ceDemoGet.status === 200 && ceDemoGet.json?.demo === true && ceDemoGet.json?.changed_entries === null &&
+      ceSupGet.status === 403 && ceSupPost.status === 403 &&
+      ceSyncGet.status === 403 && ceSyncPatch.status === 403 &&
+      ceTooBig.status === 413 && ceWrongWrap.status === 400 &&
+      ceOwnerPost.status === 200 && ceOwnerGet.json?.changed_entries?.items?.[0]?.party === 'Rabih Tannous' &&
+      sbAfterCe.json?.source_behind === null &&
+      ceClearPost.status === 200 && ceClearGet.json?.changed_entries === null &&
+      cbAfterCe.json?.cashflow_behind?.core_hash === 'testcore01'
+    ) {
+      pass('edge-40b-changed-entries-owner-only-and-sync-guard', 'unauth=401, demo GET=200(null), Supervisor=403, /api/sync=403, invalid=400, >32KB=413, Owner POST+GET+clear=200, own document');
+    } else {
+      fail('edge-40b-changed-entries-owner-only-and-sync-guard', JSON.stringify({
+        unauth: ceUnauth.status, demo: [ceDemoGet.status, ceDemoGet.json], sup: [ceSupGet.status, ceSupPost.status],
+        sync: [ceSyncGet.status, ceSyncPatch.status], bad: [ceTooBig.status, ceWrongWrap.status],
+        owner: [ceOwnerPost.status, ceOwnerGet.json], others: [sbAfterCe.json, cbAfterCe.json], clear: [ceClearPost.status, ceClearGet.json]
+      }));
+    }
+
     // 41. R2->D1 seed restoration, @ISO purge chronology & >2k tail promotion, Supervisor D1 company fallback, & CDP mid-flight auth/seed rehydrate
     const e41Seat = {
       id: 'u-edge41-sup',

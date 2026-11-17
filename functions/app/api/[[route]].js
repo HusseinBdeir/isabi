@@ -66,6 +66,7 @@ const DEMO_EMPTY_GET_ROUTES = new Set([
   '/geo_config',
   '/cashflow_behind',
   '/source_behind',
+  '/changed_entries',
   '/industry_domain_store'
 ]);
 
@@ -217,6 +218,7 @@ async function routeAppApi(context) {
       if (subPath === '/geo_config') return jsonResponse({ ok: true, demo: true, config: null });
       if (subPath === '/cashflow_behind') return jsonResponse({ ok: true, demo: true, cashflow_behind: null });
       if (subPath === '/source_behind') return jsonResponse({ ok: true, demo: true, source_behind: null });
+      if (subPath === '/changed_entries') return jsonResponse({ ok: true, demo: true, changed_entries: null });
       if (subPath === '/industry_domain_store') return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
     }
     if (subPath === '/smart-scan' && request.method === 'POST' && body && body.phoneScanSid) {
@@ -289,7 +291,7 @@ async function routeAppApi(context) {
     return handleKvDoc(request, env, session, 'geo_config', 'config', body);
   }
 
-  if (subPath === '/cashflow_behind' || subPath === '/source_behind') {
+  if (subPath === '/cashflow_behind' || subPath === '/source_behind' || subPath === '/changed_entries') {
     return handleCashflowBehind(request, env, session, body, rawBytes, { parseError, emptyBody }, subPath.slice(1));
   }
 

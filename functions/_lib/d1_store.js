@@ -5076,7 +5076,7 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
 }
 
 // Owner-only notice documents in edge_kv_store (doc_key = response key); /api/sync neither serves nor patches them.
-export const OWNER_NOTICE_DOCS = Object.freeze(['cashflow_behind', 'source_behind']);
+export const OWNER_NOTICE_DOCS = Object.freeze(['cashflow_behind', 'source_behind', 'changed_entries']);
 export function isOwnerNoticeDoc(docKey) {
   return OWNER_NOTICE_DOCS.includes(String(docKey || ''));
 }
