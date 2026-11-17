@@ -87734,6 +87734,7 @@
           ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer / receipt no."'))}
           ${notesField}
           <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
+          ${nearCopyBoxHtml()}
         </div>
         <div id="rcptQuickContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
         <div id="paCustSubgridWrap"></div>
@@ -87985,6 +87986,7 @@
         ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer no."'))}
         ${notesField}
         <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
+        ${nearCopyBoxHtml()}
       </div>
       <div id="settleQuickContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
       <div id="paSupSubgridWrap"></div>
@@ -90014,8 +90016,136 @@
     return customRows.length ? seedRows.concat(customRows) : seedRows;
   }
 
-  // The existing entry the record looks like a second copy of, or null.
+  // The existing entry (or entries) the record looks like a second copy of, or null.
   function findNearCopyEntry(crKey, rec) {
+    return findNearCopySingleEntry(crKey, rec) || findNearCopySumEntry(crKey, rec);
+  }
+
+  // One payment already booked as several rows (owner idea 2026-11-17). Live case: Star Solutions, $1,000 keyed in the
+  // app on 17 Nov, already in the workbook on 16 Nov as Payment #1341 $889.78 + VAT #1342 $110.22. Same rules as the
+  // top-up's several-row matcher (build/reconcile_cloud_store.py find_sum_twin_group, gap_sum_twin_groups): same company,
+  // party and kind of money; every row of that party that day adds up to the entry, or the rows whose invoice or
+  // reference number is written on it do; on the same day or one day either side; to the cent. A single row of the
+  // same amount on the next day is not warned: on the seed of 2026-11-17 that is an ordinary repeat purchase on 2.4% of
+  // expenses. As built: 0.23% of expenses, 0.03% of supplier payments, 0.08% of receipts and 0.04% of salaries warn.
+  const NEAR_COPY_SUM_PARTY = { expenses: 'supplier', settlements: 'supplier', receipts: 'customer', salaries: 'staff' };
+  const NEAR_COPY_SUM_NOT_PAID = ['JV Adjusted', 'Remove', 'Adjusted', 'Free', 'Config', 'Credit Return', 'Credit Discount',
+    'Cash Return', 'Cash Discount', 'IVA', 'Commission', 'RentConfig', 'Rent', 'VATRent'];
+  const NEAR_COPY_SUM_USD_TOL = 0.005;
+  const NEAR_COPY_SUM_LBP_TOL = 1000;
+  const NEAR_COPY_SUM_LBP_PER_USD = 89500;
+
+  function nearCopyPartyKey(v) {
+    return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').toLowerCase().replace(/[^a-z0-9؀-ۿ]/g, '');
+  }
+
+  // The dollar figure the top-up compares: the USD amount, else the pounds at 89,500.
+  function nearCopySumUsd(x) {
+    const n = v => { const k = Number(v || 0); return Number.isFinite(k) ? k : 0; };
+    const u = n(x.amount) || n(x.principal) || n(x.usd_amount);
+    const l = n(x.lbp_amount);
+    return Math.abs(u) > 0.005 ? u : (Math.abs(l) > 1 ? l / NEAR_COPY_SUM_LBP_PER_USD : 0);
+  }
+
+  // Rows are only added together inside one kind of money (cash with cash, payments with payments). '' = takes no part.
+  function nearCopySumClass(crKey, x) {
+    const m = String(x.method || '').trim();
+    if (crKey === 'expenses') {
+      if (m === 'Cash' || m === 'Cash VAT Dis') return 'cash';
+      return ['Credit', 'IVA', 'VAT', 'VAT Dis'].includes(m) ? 'credit' : '';
+    }
+    if (crKey === 'settlements' || crKey === 'receipts') return NEAR_COPY_SUM_NOT_PAID.includes(m) ? '' : 'paid';
+    if (crKey === 'salaries') {
+      if (m === 'Remove' || m === 'Config' || m === 'Free') return '';
+      return nearCopySumUsd(x) >= 0 ? 'out' : 'back';
+    }
+    return '';
+  }
+
+  // Invoice, receipt and cheque numbers written on a row (runs of three digits or more).
+  function nearCopyRefTokens(...vals) {
+    const out = new Set();
+    vals.forEach(v => {
+      if (v == null) return;
+      let s = String(v).trim();
+      if (/^\d+\.0$/.test(s)) s = s.slice(0, -2);
+      (s.match(/\d{3,}/g) || []).forEach(t => out.add(t));
+    });
+    return out;
+  }
+
+  function nearCopyShiftDay(day, n) {
+    const t = new Date(`${day}T00:00:00Z`);
+    if (Number.isNaN(t.getTime())) return '';
+    t.setUTCDate(t.getUTCDate() + n);
+    return t.toISOString().slice(0, 10);
+  }
+
+  // The rows already in ISABI that add up to this payment, as { row, rows, day, reason: 'sum' | 'sum_gap' }, or null.
+  function findNearCopySumEntry(crKey, rec) {
+    const pk = NEAR_COPY_SUM_PARTY[crKey];
+    if (!pk || !rec || rec.price_pending || rec.group_transfer_id || rec.backpay_voucher || rec._backpay_lines) return null;
+    const day = String(rec.date || '').slice(0, 10);
+    const co = norm(rec.company || '');
+    const cls = nearCopySumClass(crKey, rec);
+    const party = nearCopyPartyKey(rec[pk]);
+    const amt = nearCopySumUsd(rec);
+    if (!day || !co || !cls || !party || !(amt > 0.005)) return null;
+    const days = [day, nearCopyShiftDay(day, -1), nearCopyShiftDay(day, 1)].filter(Boolean);
+    const byDay = new Map(days.map(d => [d, []]));
+    const rows = nearCopyPool(crKey);
+    const seen = new Set();
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      // An app row the browser already holds as a copy of a seed row (_absorbedSeedTwin) is that row: never count it twice.
+      if (!r || r.voided || r.voided_at || r.price_pending || r._absorbedSeedTwin) continue;
+      const bucket = byDay.get(String(r.date || '').slice(0, 10));
+      if (!bucket || norm(r.company || '') !== co) continue;
+      if (rec.id && r.id && String(r.id) === String(rec.id)) continue;
+      if (isSelfEditingRow(r, crKey)) continue;
+      if (r.id) {
+        if (seen.has(String(r.id))) continue;
+        seen.add(String(r.id));
+      }
+      if (nearCopyPartyKey(r[pk]) !== party || nearCopySumClass(crKey, r) !== cls) continue;
+      if (Math.abs(nearCopySumUsd(r)) <= 0.005) continue;
+      bucket.push(r);
+    }
+    const lbpOf = x => Number(x.lbp_amount || 0) || 0;
+    const recLbp = lbpOf(rec);
+    // Paid in pounds only (no dollar part): the dollar figure is the pounds at a rate that differs between the form
+    // (the active rate) and the stored rows (rounded per row), so only the pounds are compared.
+    const poundsOnly = x => lbpOf(x) > 1 && !((Number(x.usd_amount || 0) || 0) > 0.005);
+    const addsUp = g => {
+      if (g.length < 2) return false;
+      const lbpOff = Math.abs(g.reduce((s, x) => s + lbpOf(x), 0) - recLbp) < NEAR_COPY_SUM_LBP_TOL;
+      if (poundsOnly(rec) && g.every(poundsOnly)) return lbpOff;
+      return lbpOff && Math.abs(g.reduce((s, x) => s + nearCopySumUsd(x), 0) - amt) < NEAR_COPY_SUM_USD_TOL;
+    };
+    const toks = nearCopyRefTokens(rec.invoice, rec.reference, rec.notes);
+    for (const d of days) {
+      const cands = byDay.get(d);
+      let group = addsUp(cands) ? cands : null;
+      if (!group && toks.size) {
+        const named = cands.filter(x => [...nearCopyRefTokens(x.invoice, x.reference)].some(t => toks.has(t)));
+        if (addsUp(named)) group = named;
+      }
+      if (group) return { row: group[0], rows: group.slice(), day: d, reason: d === day ? 'sum' : 'sum_gap' };
+    }
+    return null;
+  }
+
+  // What a match is known by: the row id, or the ids of the rows that add up (sorted: row order changes after a sync).
+  function nearCopyHitId(hit) {
+    return hit.rows ? hit.rows.map(r => String(r.id || '')).sort().join(',') : String(hit.row.id || '');
+  }
+
+  function nearCopySig(crKey, hit) {
+    return `${crKey}|${nearCopyHitId(hit)}|${hit.reason}`;
+  }
+
+  // One row keyed again with one slip (ticket number, the 11% VAT).
+  function findNearCopySingleEntry(crKey, rec) {
     if (!rec || !['sales_tickets', 'raw_purchases', 'expenses'].includes(crKey)) return null;
     if (rec.removed_slip || rec.ticket_disposition || rec._post_as_paired_return || rec.price_pending || rec.group_transfer_id) return null;
     const day = String(rec.date || '').slice(0, 10);
@@ -90031,7 +90161,7 @@
     const seen = new Set();
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!r || r.voided || r.voided_at || String(r.date || '').slice(0, 10) !== day || norm(r.company || '') !== co) continue;
+      if (!r || r.voided || r.voided_at || r._absorbedSeedTwin || String(r.date || '').slice(0, 10) !== day || norm(r.company || '') !== co) continue;
       if (rec.id && r.id && String(r.id) === String(rec.id)) continue;
       if (isSelfEditingRow(r, crKey)) continue;
       if (r.id) {
@@ -90072,13 +90202,25 @@
       if (hint) hint.innerHTML = '';
       return true;
     }
-    const sig = `${crKey}|${hit.row.id || ''}|${hit.reason}`;
+    const sig = nearCopySig(crKey, hit);
     if (FORM_UI.lastNearCopySig !== sig) {
       FORM_UI.lastNearCopySig = sig;
       if (cb) cb.checked = false;
     }
     wrap.hidden = false;
-    if (hint) {
+    if (hint && hit.rows) {
+      const label = { expenses: 'Expense', settlements: 'Supplier Payment', receipts: 'Customer Receipt', salaries: 'Salary Payment' }[crKey] || 'Entry';
+      const party = hit.row[NEAR_COPY_SUM_PARTY[crKey]] || '';
+      const parts = hit.rows.map(r => {
+        const ref = cleanVoucherRef(r.invoice || r.reference);
+        return `${ref ? '#' + ref + ' ' : ''}${fmtUSD(nearCopySumUsd(r), 2)}`;
+      }).join(' + ');
+      const reason = hit.reason === 'sum'
+        ? 'Same day and party, these entries add up to this amount'
+        : 'Same party, these entries one day apart add up to this amount';
+      const bits = [fmtDateDMY(hit.day), party, parts].filter(Boolean);
+      hint.innerHTML = `<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> · ${esc(bits.join(' · '))}</span>`;
+    } else if (hint) {
       const r = hit.row;
       const label = crKey === 'sales_tickets' ? 'Sales Ticket' : (crKey === 'raw_purchases' ? 'Raw Material Ticket' : 'Expense');
       const ref = crKey === 'expenses' ? cleanVoucherRef(r.invoice || r.reference) : String(r.ticket_no || '');
@@ -90097,15 +90239,18 @@
   // was already confirmed beside. Returns { hit, block, nearCopyOf } (nearCopyOf absent = leave the saved link as is).
   function nearCopyDecision(crKey, record, orig, ticked) {
     const o = orig || null;
-    const idKeys = ['company', 'date', 'ticket_no', 'customer', 'site', 'site_owner', 'supplier', 'truck', 'reference', 'invoice'];
+    const idKeys = ['company', 'date', 'ticket_no', 'customer', 'site', 'site_owner', 'supplier', 'staff', 'method', 'truck', 'reference', 'invoice'];
+    // Pounds as a number: a form saves 0 where a stored dollar row has no pounds field at all.
     const identityChanged = !o || idKeys.some(k => norm(String(record[k] ?? '')) !== norm(String(o[k] ?? '')))
-      || Math.abs(nearCopyRowUsd(crKey, record) - nearCopyRowUsd(crKey, o)) >= 0.005;
+      || Math.abs(nearCopyRowUsd(crKey, record) - nearCopyRowUsd(crKey, o)) >= 0.005
+      || Math.abs((Number(record.lbp_amount || 0) || 0) - (Number(o.lbp_amount || 0) || 0)) >= 1;
     if (!identityChanged) return { hit: null, block: false };
     const hit = findNearCopyEntry(crKey, record);
-    if (hit && o && o.near_copy_of && String(o.near_copy_of) === String(hit.row.id || '')) return { hit: null, block: false };
+    const savedLink = o && o.near_copy_of ? String(o.near_copy_of).split(',').map(s => s.trim()).sort().join(',') : '';
+    if (hit && savedLink && savedLink === nearCopyHitId(hit)) return { hit: null, block: false };
     // `ticked` may be a test on the match (the box counts only for the match it was shown for): one scan per Post.
     const isTicked = hit ? (typeof ticked === 'function' ? Boolean(ticked(hit)) : Boolean(ticked)) : false;
-    if (hit) return isTicked ? { hit, block: false, nearCopyOf: String(hit.row.id || '') } : { hit, block: true };
+    if (hit) return isTicked ? { hit, block: false, nearCopyOf: nearCopyHitId(hit) } : { hit, block: true };
     return (o && o.near_copy_of) ? { hit: null, block: false, nearCopyOf: '' } : { hit: null, block: false };
   }
 
@@ -106644,15 +106789,21 @@
     }
     // A second copy at the keyboard (owner 2026-11-17): warn at Post, post once the box is ticked. An edit is checked
     // only when it changes what identifies the entry, and never against the entry it was already confirmed beside.
-    if (record && (f === 'sales' || f === 'raw' || f === 'expense') && $('wrap_nearcopyok')) {
+    // Since the same day it also covers one payment already booked as several rows (supplier payments, receipts,
+    // salaries and expenses); a bonus posts to attendance and is not checked.
+    const nearCopyForm = f === 'sales' || f === 'raw' || f === 'expense' || f === 'settlement' || f === 'receipt' || (f === 'salary' && crKey === 'salaries');
+    if (record && nearCopyForm && $('wrap_nearcopyok')) {
       const o = (editCtx && editCtx.crKey === crKey && editCtx.orig) ? editCtx.orig : null;
       // The box is read before the banner is refreshed: a different match unticks it, and that must block this Post.
       const prevSig = FORM_UI.lastNearCopySig || '';
       const tickedBefore = Boolean($('f_nearcopyok') && $('f_nearcopyok').checked);
-      const ncd = nearCopyDecision(crKey, record, o, hit => tickedBefore && prevSig === `${crKey}|${hit.row.id || ''}|${hit.reason}`);
+      const ncd = nearCopyDecision(crKey, record, o, hit => tickedBefore && prevSig === nearCopySig(crKey, hit));
       syncNearCopyBanner(crKey, ncd.hit);
       if (ncd.block) addErr('f_nearcopyok', 'Possible second copy of an entry already in ISABI. Check the entry shown under the form, then tick the box to post anyway.');
       if (ncd.nearCopyOf !== undefined) record.near_copy_of = ncd.nearCopyOf;
+    } else if (!nearCopyForm && $('wrap_nearcopyok')) {
+      // Switched to an entry that is not checked (a bonus): no stale box or hint stays on screen.
+      syncNearCopyBanner(crKey, null);
     }
     return { errors, fieldErrors, record, crKey };
   }

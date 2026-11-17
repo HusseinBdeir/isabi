@@ -12780,7 +12780,10 @@
       "The US dollar cash till is below zero. Click to review the cash movements.": "رصيد صندوق الدولار دون الصفر. انقر لمراجعة حركات النقد.",
       "Contracts & Pricing": "العقود والتسعير",
       "Domain Operations & Assets": "عمليات وأصول القطاع",
-      "Costs were higher than sales on this day. Click to see the day records.": "تجاوزت التكاليف المبيعات في هذا اليوم. انقر لعرض قيود اليوم."
+      "Costs were higher than sales on this day. Click to see the day records.": "تجاوزت التكاليف المبيعات في هذا اليوم. انقر لعرض قيود اليوم.",
+      "Same day and party, these entries add up to this amount": "نفس اليوم والطرف، ومجموع هذه القيود يساوي هذا المبلغ",
+      "Same party, these entries one day apart add up to this amount": "نفس الطرف، ومجموع هذه القيود المسجلة بفارق يوم واحد يساوي هذا المبلغ",
+      "Supplier Payment": "دفعة لمورد"
     },
     fr: {
       "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
@@ -25542,7 +25545,10 @@
       "The US dollar cash till is below zero. Click to review the cash movements.": "La caisse en dollars est inférieure à zéro. Cliquez pour revoir les mouvements de trésorerie.",
       "Contracts & Pricing": "Contrats & Tarifs",
       "Domain Operations & Assets": "Opérations & Actifs du Secteur",
-      "Costs were higher than sales on this day. Click to see the day records.": "Les coûts ont dépassé les ventes ce jour-là. Cliquez pour voir les écritures du jour."
+      "Costs were higher than sales on this day. Click to see the day records.": "Les coûts ont dépassé les ventes ce jour-là. Cliquez pour voir les écritures du jour.",
+      "Same day and party, these entries add up to this amount": "Même jour et même tiers, ces écritures totalisent ce montant",
+      "Same party, these entries one day apart add up to this amount": "Même tiers, ces écritures à un jour d'écart totalisent ce montant",
+      "Supplier Payment": "Paiement Fournisseur"
     }
   };
 

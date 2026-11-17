@@ -2251,6 +2251,7 @@
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional payroll note, bonus reason, or voucher ref..."'), { span: true })}
           <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
+          <div class="form-field check-field span-3 near-copy-field" id="wrap_nearcopyok" hidden><input type="checkbox" id="f_nearcopyok"><label for="f_nearcopyok">Post anyway: this is a different entry from the one below</label><span class="hint warn" id="hint_nearcopy"></span></div>
         </div>
         <div id="paSalSubgridWrap"></div>
         <div class="live-calc att-live-calc-compact" id="salLiveCalc">
