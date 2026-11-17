@@ -63,6 +63,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_min_shell_ver_local.py", "python"),  # server.py minShellVer floor/cap
     ("isabi-app", "build/verify_orphan_expense_lines.py", "python"), # top-up reconcile: orphan expense lines
     ("isabi-app", "build/verify_sum_twins.py", "python"),            # top-up reconcile: one app row = several workbook rows
+    ("isabi-app", "build/verify_cash_table_heal.py", "python"),      # top-up: every External / Conversion row has one app record
     ("isabi", "build/verify_gemini_tier_routing.mjs", "node"),       # semantic tier routing + Gemini 4 hygiene
     ("isabi", "build/verify_release_log_sync.mjs", "node"),          # parity gate's release-log status sync keeps hand-written lines
     ("isabi-app", "build/verify_face_or_pin_local.py", "python"),    # server.py sign-in: Face ID or PIN, never both
