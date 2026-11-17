@@ -6,11 +6,12 @@
 // Run: node build/verify_kiosk_cloud.mjs      (Node 22.5+ for node:sqlite; touches nothing live)
 
 import { DatabaseSync } from 'node:sqlite';
-import { handleKioskPunchFeed, handleKioskVerify } from '../functions/_lib/kiosk_verify.js';
+import { handleKioskPosVoidFeed, handleKioskPunchFeed, handleKioskVerify } from '../functions/_lib/kiosk_verify.js';
 import {
-  handleIndustryDomainStore, handleSync, isServerOwnedCustomRow, isServerOwnedRowEditKey,
+  handleIndustryDomainStore, handleRecordsPost, handleSync, isServerOwnedCustomRow, isServerOwnedRowEditKey,
   mirrorStoreDeltaToD1Tables, stripServerOwnedCustomRows
 } from '../functions/_lib/d1_store.js';
+import { DEPLOYED_SHELL_VER } from '../functions/_lib/deployed_shell.js';
 import { canAccessCompany, isOwnerOrFullGroupSession } from '../functions/_lib/security.js';
 
 // ---- minimal D1 stand-in ----
@@ -1005,6 +1006,181 @@ console.log('door tablet same-name guard & fatherName on sync and roster');
     && !(sneakRes.json.punches || []).includes('p-sneak-1')
     && d1.rows("SELECT id FROM kiosk_punches_ext WHERE id = 'p-sneak-1'").length === 0,
     sneakRes.json);
+}
+
+console.log('pos void feed (/app/api/kiosk/pos-voids): Supervisor & Owner only + resort RLS');
+{
+  const posVoids = async (session, body = {}) => {
+    const req = new Request('https://example.test/app/api/kiosk/pos-voids', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const res = await handleKioskPosVoidFeed(req, env, session, body, helpers);
+    return { status: res.status, json: await res.json() };
+  };
+
+  // Seed one voided sale at BLANCA alongside LAUNA's voided sale-mix-1
+  d1.exec(`INSERT OR REPLACE INTO kiosk_pos_sales (id, site_key, day, num, user_id, user_name, total_usd, total_lbp, net_usd, net_lbp, rate, voided, rev, payload_json, updated_at)
+    VALUES ('sale-blanca-void-1', 'blanca', '${DAY}', '901', 'u-blanca', 'Blanca Till', 55, 4950000, 55, 0, 90000, 1, 2,
+      '{"id":"sale-blanca-void-1","day":"${DAY}","num":"901","lines":[{"sku":"CAB","name":"Cabana Day","category":"Venue","qty":1,"price":55,"cur":"USD"}],"voided":true,"voided_by":"Nadine Till","void_reason":"Double swipe"}',
+      '2026-11-17T18:30:00.000Z')`);
+
+  const unauthed = await posVoids(null);
+  ok('NEGATIVE: unauthenticated POS void feed request returns 401', unauthed.status === 401, unauthed);
+
+  const deniedRoles = [
+    ['Entry', { role: 'Entry', companies: 'La Una' }],
+    ['Entry with wildcard company', { role: 'Entry', companies: 'ALL' }],
+    ['Sales', { role: 'Sales', companies: 'La Una' }],
+    ['Viewer', { role: 'Viewer', companies: 'La Una' }],
+    ['Custom with wildcard company', { role: 'Custom', companies: 'ALL' }]
+  ];
+  for (const [label, sess] of deniedRoles) {
+    const r = await posVoids(sess);
+    ok(`NEGATIVE: ${label} refused with 403`, r.status === 403 && r.json && r.json.ok === false, [label, r]);
+  }
+
+  const supLaUna = await posVoids({ role: 'Supervisor', companies: 'La Una' });
+  const idsLaUna = (supLaUna.json.voids || []).map(v => v.id);
+  const mixRow = (supLaUna.json.voids || []).find(v => v.id === 'sale-mix-1');
+  ok('La Una Supervisor gets 200 with La Una voided sale + line summary and zero Blanca leakage',
+    supLaUna.status === 200 && idsLaUna.includes('sale-mix-1') && !idsLaUna.includes('sale-blanca-void-1')
+    && mixRow && /Entrance - Adult/.test(mixRow.summary) && /Snack/.test(mixRow.summary) && mixRow.total_usd === 43.33,
+    { status: supLaUna.status, idsLaUna, mixRow });
+
+  const supWtc = await posVoids({ role: 'Supervisor', companies: 'WTC' });
+  ok('WTC Supervisor (non-Hospitality) gets 200 with empty POS void list',
+    supWtc.status === 200 && Array.isArray(supWtc.json.voids) && supWtc.json.voids.length === 0, supWtc);
+
+  const ownerRes = await posVoids(OWNER);
+  const ownerIds = (ownerRes.json.voids || []).map(v => v.id);
+  const blancaRow = (ownerRes.json.voids || []).find(v => v.id === 'sale-blanca-void-1');
+  ok('Owner sees both La Una and Blanca POS till voids with operator and reason metadata',
+    ownerRes.status === 200 && ownerIds.includes('sale-mix-1') && ownerIds.includes('sale-blanca-void-1')
+    && blancaRow && blancaRow.voided_by === 'Nadine Till' && blancaRow.void_reason === 'Double swipe',
+    { status: ownerRes.status, ownerIds, blancaRow });
+
+  const supEntryLaUna = await posVoids({ role: 'Supervisor + Entry', companies: 'La Una' });
+  const supEntryIds = (supEntryLaUna.json.voids || []).map(v => v.id);
+  ok('Supervisor + Entry sees its assigned La Una POS till voids (200) without Blanca leakage',
+    supEntryLaUna.status === 200 && supEntryIds.includes('sale-mix-1') && !supEntryIds.includes('sale-blanca-void-1'),
+    { status: supEntryLaUna.status, supEntryIds });
+}
+
+console.log('supervisor domain void snapshots & note clearing without resurrection (d1_store)');
+{
+  d1.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY, full_name TEXT NOT NULL, email TEXT NOT NULL UNIQUE,
+      pin_code TEXT DEFAULT '', role TEXT NOT NULL DEFAULT 'Entry', companies TEXT NOT NULL DEFAULT 'WTC',
+      pbi_access TEXT DEFAULT 'full', statements_access TEXT DEFAULT 'full', status TEXT DEFAULT 'Active',
+      custom_perms TEXT DEFAULT '{}', payload_json TEXT DEFAULT '{}'
+    );
+    CREATE TABLE IF NOT EXISTS expenses (
+      id TEXT PRIMARY KEY, name TEXT DEFAULT '', date TEXT DEFAULT '', rep_date TEXT DEFAULT '', company TEXT DEFAULT '',
+      category TEXT DEFAULT '', subcategory TEXT DEFAULT '', supplier TEXT DEFAULT '', equipment TEXT DEFAULT '', method TEXT DEFAULT '',
+      qty REAL DEFAULT 0, amount REAL DEFAULT 0, reference TEXT DEFAULT '',
+      for_equipment INTEGER DEFAULT 0, item_summary TEXT DEFAULT '',
+      source TEXT DEFAULT '', entered_by TEXT DEFAULT '', entered_at TEXT DEFAULT '',
+      voided INTEGER DEFAULT 0, voided_by TEXT DEFAULT '', voided_at TEXT DEFAULT '',
+      modified_by TEXT DEFAULT '', modified_at TEXT DEFAULT '', notes TEXT DEFAULT '',
+      rev INTEGER DEFAULT 1, payload_json TEXT DEFAULT '{}'
+    );
+  `);
+  const SUP_LU = { id: 'u11', email: 'sup@launa.test', full_name: 'La Una Sup', role: 'Supervisor', companies: 'La Una' };
+  const OWNER_FU = { id: 'u1', email: 'owner@example.test', full_name: 'Group Owner', role: 'Owner', companies: 'ALL' };
+  const postRec = async (body, sess) => {
+    const req = new Request('https://example.test/app/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await handleRecordsPost(req, env, sess, body);
+    return { status: res.status, json: await res.json().catch(() => null) };
+  };
+  const postDom = async (body, sess) => {
+    const req = new Request('https://example.test/app/api/industry_domain_store', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await handleIndustryDomainStore(req, env, sess, body);
+    return { status: res.status, json: await res.json().catch(() => null) };
+  };
+  const postSync = async (patchDoc, sess) => {
+    const body = { op: 'patch', doc: 'mfg_web_store', patch: { mfg_web_store: Object.assign({ minShellVer: DEPLOYED_SHELL_VER }, patchDoc) } };
+    const req = new Request('https://example.test/app/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await handleSync(req, env, sess, body, {});
+    return { status: res.status, json: await res.json().catch(() => null) };
+  };
+
+  // Seed existing custom row + existing row edit via Owner, then void as read-only Supervisor carrying void_snapshot
+  const seedDom = await postDom({
+    industryCustomRows: {
+      hsp_revenue: [{ id: 'HSP-RT-SNAP-1', company: 'La Una', date: DAY, outlet: 'Beach', ttc_usd: 120, rev: 1, voided: false }]
+    },
+    industryRowEdits: {
+      'Hospitality & Resorts::Venue Close::HSP-ED-SNAP-1': {
+        ind: 'Hospitality & Resorts', company: 'La Una', primaryId: 'HSP-ED-SNAP-1',
+        tableTitle: 'Venue Close', domainTblKey: 'hsp_revenue', headers: ['ID', 'Amount'], cells: ['HSP-ED-SNAP-1', '$80'], rev: 1, voided: false
+      }
+    }
+  }, OWNER_FU);
+  ok('Owner seeds existing domain row & edit before Supervisor void', seedDom.status === 200, seedDom);
+
+  const supVoidDom = await postDom({
+    industryCustomRows: {
+      hsp_revenue: [{
+        id: 'HSP-RT-SNAP-1', company: 'La Una', date: DAY, outlet: 'Beach', ttc_usd: 120, rev: 2,
+        voided: true, voided_by: 'Spoof', void_reason: 'Sup Note 1',
+        void_snapshot: { date: DAY, counterparty: 'Beach', amount: '$120', domainTblKey: 'hsp_revenue', tableTitle: 'Venue Close' }
+      }]
+    },
+    industryRowEdits: {
+      'Hospitality & Resorts::Venue Close::HSP-ED-SNAP-1': {
+        ind: 'Hospitality & Resorts', company: 'La Una', primaryId: 'HSP-ED-SNAP-1',
+        tableTitle: 'Venue Close', domainTblKey: 'hsp_revenue', headers: ['ID', 'Amount'], cells: ['HSP-ED-SNAP-1', '$80'], rev: 2,
+        voided: true, voided_by: 'Spoof', void_reason: 'Sup Edit Note 1',
+        void_snapshot: { date: DAY, counterparty: 'Guest', amount: '$80', domainTblKey: 'hsp_revenue', tableTitle: 'Venue Close', headers: ['ID', 'Amount'], cells: ['HSP-ED-SNAP-1', '$80'] }
+      }
+    }
+  }, SUP_LU);
+  const storedCustomSnap = JSON.parse(d1.rows("SELECT payload_json FROM industry_custom_rows WHERE bucket='hsp_revenue' AND row_id='HSP-RT-SNAP-1'")[0].payload_json);
+  const storedEditSnap = JSON.parse(d1.rows("SELECT payload_json FROM industry_row_edits WHERE edit_key='Hospitality & Resorts::Venue Close::HSP-ED-SNAP-1'")[0].payload_json);
+  ok('read-only Supervisor voids existing domain row & edit with void_snapshot (200) + server actor stamped',
+    supVoidDom.status === 200 && storedCustomSnap.voided === true && storedCustomSnap.voided_by === 'La Una Sup'
+    && storedCustomSnap.void_snapshot && storedCustomSnap.void_snapshot.tableTitle === 'Venue Close'
+    && storedEditSnap.voided === true && storedEditSnap.voided_by === 'La Una Sup' && storedEditSnap.void_snapshot,
+    { status: supVoidDom.status, storedCustomSnap, storedEditSnap });
+
+  // Note clearing via handleIndustryDomainStore (Supervisor & Owner) without resurrection
+  const clrDomSup = await postDom({
+    industryCustomRows: { hsp_revenue: [Object.assign({}, storedCustomSnap, { rev: 3, void_reason: '' })] },
+    industryRowEdits: { 'Hospitality & Resorts::Venue Close::HSP-ED-SNAP-1': Object.assign({}, storedEditSnap, { rev: 3, void_reason: '' }) }
+  }, SUP_LU);
+  const afterClrCustom = JSON.parse(d1.rows("SELECT payload_json FROM industry_custom_rows WHERE bucket='hsp_revenue' AND row_id='HSP-RT-SNAP-1'")[0].payload_json);
+  const afterClrEdit = JSON.parse(d1.rows("SELECT payload_json FROM industry_row_edits WHERE edit_key='Hospitality & Resorts::Venue Close::HSP-ED-SNAP-1'")[0].payload_json);
+  ok('Supervisor clears void_reason to empty across industry_custom_rows & industry_row_edits without resurrecting old note',
+    clrDomSup.status === 200 && !('void_reason' in afterClrCustom) && !('void_reason' in afterClrEdit),
+    { clrDomSup, afterClrCustom, afterClrEdit });
+
+  // Owner note set & clear across handleRecordsPost + handleSync (including omitted void_reason on clear)
+  await postRec({ table: 'expenses', record: { id: 'exp-d1-clr-1', company: 'La Una', date: DAY, rep_date: DAY, amount_usd: 90, voided: true, void_reason: 'Temp D1 note' } }, OWNER_FU);
+  const clrRec = await postRec({ table: 'expenses', record: { id: 'exp-d1-clr-1', company: 'La Una', date: DAY, rep_date: DAY, amount_usd: 90, voided: true, void_reason: '' } }, OWNER_FU);
+  const storedExp = JSON.parse(d1.rows("SELECT payload_json FROM expenses WHERE id='exp-d1-clr-1'")[0].payload_json);
+  ok('Owner clears void_reason on handleRecordsPost without resurrecting Temp D1 note',
+    clrRec.status === 200 && !('void_reason' in storedExp), { clrRec, storedExp });
+
+  await postSync({
+    customRecords: { expenses: [{ id: 'exp-sync-clr-1', company: 'La Una', date: DAY, rep_date: DAY, amount_usd: 40, voided: true, void_reason: 'Sync Old Note', rev: 1 }] },
+    industryCustomRows: { hsp_revenue: [{ id: 'HSP-SYNC-CLR-1', company: 'La Una', date: DAY, ttc_usd: 60, voided: true, void_reason: 'Sync Ind Note', rev: 1 }] },
+    industryRowEdits: { 'Hospitality & Resorts::Venue Close::HSP-SYNC-ED-1': { ind: 'Hospitality & Resorts', company: 'La Una', primaryId: 'HSP-SYNC-ED-1', voided: true, void_reason: 'Sync Ed Note', rev: 1 } }
+  }, OWNER_FU);
+  const supSyncClr = await postSync({
+    customRecords: { expenses: [{ id: 'exp-sync-clr-1', company: 'La Una', date: DAY, rep_date: DAY, amount_usd: 40, voided: true, void_reason: '', rev: 2 }] },
+    industryCustomRows: { hsp_revenue: [{ id: 'HSP-SYNC-CLR-1', company: 'La Una', date: DAY, ttc_usd: 60, voided: true, rev: 2 }] },
+    industryRowEdits: { 'Hospitality & Resorts::Venue Close::HSP-SYNC-ED-1': { ind: 'Hospitality & Resorts', company: 'La Una', primaryId: 'HSP-SYNC-ED-1', voided: true, void_reason: '', rev: 2 } }
+  }, SUP_LU);
+  const syncKv = JSON.parse(d1.rows("SELECT payload_json FROM edge_kv_store WHERE doc_key='mfg_web_store'")[0].payload_json);
+  const sExp = ((syncKv.customRecords || {}).expenses || []).find(x => x.id === 'exp-sync-clr-1');
+  const sIcr = (((syncKv.industryCustomRows || {}).hsp_revenue) || []).find(x => x.id === 'HSP-SYNC-CLR-1');
+  const sIre = (syncKv.industryRowEdits || {})['Hospitality & Resorts::Venue Close::HSP-SYNC-ED-1'];
+  ok('handleSync (Supervisor & Owner) clears void_reason across customRecords, industryCustomRows & industryRowEdits without resurrection',
+    supSyncClr.status === 200 && sExp && !('void_reason' in sExp) && sIcr && !('void_reason' in sIcr) && sIre && !('void_reason' in sIre),
+    { supSyncClr, sExp, sIcr, sIre });
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

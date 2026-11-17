@@ -1209,6 +1209,79 @@ export async function handleKioskPunchFeed(request, env, session, body, helpers 
     cursor: last ? { since: String(last.updated_at || ''), sinceId: String(last.id || '') } : { since, sinceId }
   });
 }
+
+function summarizePosSaleLines(lines) {
+  if (!Array.isArray(lines) || !lines.length) return 'Gate Till Sale';
+  const parts = [];
+  for (const l of lines) {
+    if (!l || typeof l !== 'object') continue;
+    const qty = posNum(l.qty, 0, 1e6);
+    const label = cleanText(l.name || l.category || l.sku || 'Item', 60);
+    if (!label) continue;
+    parts.push(qty !== null && qty !== 1 ? `${qty}x ${label}` : label);
+  }
+  return parts.length ? cleanText(parts.join(', '), 200) : 'Gate Till Sale';
+}
+
+export async function handleKioskPosVoidFeed(request, env, session, body, helpers = {}) {
+  if (!session) return feedJson({ ok: false, error: 'Sign in to read POS voids.' }, 401);
+  const roleStr = String((session && session.role) || '').trim();
+  const canView = !/^Custom/i.test(roleStr) && /Owner|Full Access|Admin|Supervisor/i.test(roleStr);
+  if (!canView) return feedJson({ ok: false, error: 'Void Log requires Supervisor or Owner access.' }, 403);
+  if (!env || !env.DB) return feedJson({ ok: false, error: 'Kiosk database unavailable.' }, 503);
+  await ensureKioskSchema(env.DB);
+  const isOwner = typeof helpers.isOwnerOrFullGroupSession === 'function' && helpers.isOwnerOrFullGroupSession(session);
+  const canAccess = typeof helpers.canAccessCompany === 'function' ? helpers.canAccessCompany : null;
+  const sites = Object.keys(POS_SITE_COMPANY).filter(code => isOwner || (canAccess && canAccess(session, POS_SITE_COMPANY[code])));
+  if (!sites.length) return feedJson({ ok: true, voids: [] });
+
+  const b = body || {};
+  const limit = Math.max(1, Math.min(250, Math.floor(Number(b.limit) || 200)));
+  const siteList = sites.map(s => `'${s.replace(/[^a-z0-9_-]/g, '')}'`).join(',');
+  const res = await env.DB.prepare(
+    `SELECT id, site_key, day, num, user_id, user_name, total_usd, total_lbp, net_usd, rate, updated_at, payload_json
+     FROM kiosk_pos_sales
+     WHERE site_key IN (${siteList}) AND voided = 1
+     ORDER BY updated_at DESC, id DESC LIMIT ?1`
+  ).bind(limit).all();
+
+  const voids = [];
+  for (const r of (res.results || [])) {
+    const sk = String(r.site_key || '').trim().toLowerCase();
+    const company = posCompanyOf(sk);
+    if (!company) continue;
+    const sale = safeParseJson(r.payload_json, {}) || {};
+    const lines = Array.isArray(sale.lines)
+      ? sale.lines.slice(0, 40).map(l => ({
+        sku: cleanText(l && l.sku, 40),
+        name: cleanText((l && (l.name || l.category)) || '', 80),
+        category: cleanText(l && l.category, 60),
+        qty: Number(l && l.qty) || 0,
+        price: Number(l && l.price) || 0,
+        cur: cleanText((l && l.cur) || 'USD', 8)
+      }))
+      : [];
+    voids.push({
+      id: cleanText(r.id, 80),
+      site: sk.toUpperCase(),
+      company,
+      day: cleanText(r.day, 10),
+      num: cleanText(r.num, 60),
+      user_id: cleanText(r.user_id, 80),
+      user_name: cleanText(r.user_name, 120),
+      total_usd: round2(Number(r.total_usd) || 0),
+      total_lbp: Math.round(Number(r.total_lbp) || 0),
+      net_usd: round2(Number(r.net_usd) || 0),
+      rate: Number(r.rate) || 0,
+      summary: summarizePosSaleLines(sale.lines),
+      lines,
+      voided_at: cleanText(sale.voided_at || sale.voidedAt || r.updated_at || sale.ts || '', 40),
+      voided_by: cleanText(sale.voided_by || sale.voidedBy || r.user_name || 'Till Cashier', 120),
+      void_reason: cleanText(sale.void_reason || sale.voidReason || sale.note || '', 240)
+    });
+  }
+  return feedJson({ ok: true, voids });
+}
 function match1NDescriptors(probe, rosterRows, opts = {}) {
   const threshold = Math.max(0.32, Math.min(0.58, Number(opts.threshold || 0.50)));
   const minMargin = Math.max(0.05, Number(opts.minMargin || 0.08));

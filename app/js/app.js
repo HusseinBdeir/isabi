@@ -11042,7 +11042,8 @@
       tabs: [
         { view: 'sentinels', label: 'AI Sentinels & Audit', icon: 'sentinels', badgeFn: (u, _k, sn) => getSentinelExceptionBadge(u, sn) },
         { view: 'alert_rules', label: 'Alerts & Thresholds', icon: 'alert_rules' },
-        { view: 'approvals', label: 'Approvals Inbox', icon: 'approvals', badgeFn: u => getApprovalsExceptionBadge(u) }
+        { view: 'approvals', label: 'Approvals Inbox', icon: 'approvals', badgeFn: u => getApprovalsExceptionBadge(u) },
+        { view: 'void_log', label: 'Void Log', icon: 'void_log' }
       ]
     },
     {
@@ -11537,6 +11538,8 @@
     if (view === 'alert_rules') return canViewViewBaseline('sentinels', u);
     // Approvals Inbox: anyone who reviews Sentinels, plus any seat that may approve an unlock.
     if (view === 'approvals') return canViewViewBaseline('sentinels', u) || Boolean(window.MFG_APPROVALS && window.MFG_APPROVALS.canApprove(u));
+    // Void Log: strictly limited to Supervisors and Owners (never Custom/Entry/Sales/Viewer).
+    if (view === 'void_log') return canViewVoidLog(u);
     if (view === 'payroll_analytics') return canViewViewBaseline('payroll', u) && (canAccessPbiPage('p12_payroll', u) || canAccessPbiPage('p11_drivers', u));
     if (view === 'external') return canViewViewBaseline('cashflow', u) && canAccessTable('external_movements', u);
     if (view === 'ledger_treasury') return canViewViewBaseline('cashflow', u) && (canAccessTable('loans', u) || canAccessPbiPage('p15_treasury', u));
@@ -11575,6 +11578,13 @@
     return true;
   }
 
+  function canViewVoidLog(u) {
+    const usr = u === undefined ? activeUser() : u;
+    if (!usr || usr.status === 'Suspended') return false;
+    const ck = resolveCanonicalRoleKey(usr.role || '');
+    return ck === 'Full Access (Owner)' || ck === 'Supervisor' || ck === 'Supervisor + Entry';
+  }
+
   function getHubDef(hubId) {
     if (hubId === 'master') hubId = 'univ_parties';
     return HUB_CATALOG.find(h => h.id === hubId) || null;
@@ -11585,7 +11595,7 @@
     if (hubId === 'master') hubId = 'univ_parties';
     const h = getHubDef(hubId);
     if (!h) return canViewViewBaseline(hubId, u);
-    if (hubId === 'sentinels') return canViewViewBaseline('sentinels', u);
+    if (hubId === 'sentinels') return canViewViewBaseline('sentinels', u) || canViewVoidLog(u);
     if (hubId === 'reports') return canViewViewBaseline('pbi', u) || canViewViewBaseline('statements', u);
     if (hubId === 'raw') return canViewViewBaseline('raw', u);
     if (hubId === 'expenses') return canViewViewBaseline('expenses', u) || canViewViewBaseline('suppliers', u);
@@ -11610,6 +11620,7 @@
   }
 
   function isPageEnabledInPolicy(canonView, parentHubId, hp, u) {
+    if (canonView === 'void_log' && !canViewVoidLog(u)) return false;
     if (isSelfActiveAdminUsersCheck(canonView, u) || isSelfActiveAdminUsersCheck(parentHubId, u)) return true;
     if (!hp || !hp.customized) return canViewViewBaseline(canonView, u);
     if (!isHubEnabledInPolicy(parentHubId, hp, u)) return false;
@@ -11621,6 +11632,9 @@
     if (h && Array.isArray(h.tabs)) {
       const anyExplicitSibling = h.tabs.some(t => Object.prototype.hasOwnProperty.call(hp.pages, t.view));
       if (anyExplicitSibling) {
+        if (canonView === 'void_log' && canViewVoidLog(u)) {
+          return h.tabs.some(t => t.view !== 'void_log' && Boolean(hp.pages[t.view]));
+        }
         return false;
       }
       const mfgSlot = INDUSTRY_SLOT_TO_MFG_HUB[parentHubId];
@@ -11645,6 +11659,7 @@
   function canViewView(view, u) {
     u = u || activeUser();
     if (view === 'coa_classes' || view === 'gl_automation') view = 'ledger';
+    if (view === 'void_log' && !canViewVoidLog(u)) return false;
     if (isSelfActiveAdminUsersCheck(view, u)) return true;
     const hp = getEffectiveHubPagePolicy(u);
     if (hp && hp.customized) {
@@ -39235,13 +39250,18 @@
       if (String(d.parent_id || '') !== pid && norm(d.parent_label || '') !== norm(pid)) return;
       d.voided = true;
       d.voided_by = whoName;
+      if (whoUser.email) d.voided_by_email = whoUser.email;
       d.voided_at = nowStamp();
+      d.voided_with_parent = pid;
       const sIdx = (SEED.records.documents || []).findIndex(x => x && String(x.id) === String(d.id));
       if (sIdx >= 0) SEED.records.documents[sIdx].voided = true;
       const cIdx = (STATE.customRecords.documents || []).findIndex(x => x && String(x.id) === String(d.id));
-      if (cIdx >= 0) STATE.customRecords.documents[cIdx] = Object.assign({}, STATE.customRecords.documents[cIdx], { voided: true, voided_by: whoName, voided_at: d.voided_at });
+      if (cIdx >= 0) STATE.customRecords.documents[cIdx] = Object.assign({}, STATE.customRecords.documents[cIdx], { voided: true, voided_by: whoName, voided_by_email: whoUser.email || '', voided_at: d.voided_at, voided_with_parent: pid });
       else STATE.customRecords.documents.unshift(Object.assign({}, d));
-      postRecordToLocalApi('documents', d);
+      const docVoidPayload = !canModifyData()
+        ? _buildSparseVoidApiRecord('documents', d, d.id, true, { who: whoName, when: d.voided_at })
+        : d;
+      if (docVoidPayload) postRecordToLocalApi('documents', docVoidPayload);
       changed = true;
     });
     if (changed) {
@@ -66535,6 +66555,10 @@
     if (!pid || isTillOwnedRowId(pid)) return false;
     const store = getIndustryCustomRowsStore();
     const nowIso = new Date().toISOString();
+    const au = (typeof activeUser === 'function' && activeUser()) || {};
+    const whoName = String((opts && opts.who) || au.full_name || au.name || au.email || 'Supervisor').trim();
+    const whoEmail = String((opts && opts.whoEmail) || au.email || '').trim().toLowerCase();
+    const reason = String((opts && opts.reason) || '').trim().slice(0, 500);
     const shouldRollback = !(opts && opts.skipRollback) && !(opts && opts.skipServerPost) && !_deferIndustryDomainServerPost && hasServerApi() && !isDemoScopeActive();
     const touchedBucketsSnap = shouldRollback ? {} : null;
     const voidedForceIds = [];
@@ -66546,6 +66570,17 @@
       if (touchedBucketsSnap) touchedBucketsSnap[bucket] = JSON.parse(JSON.stringify(store[bucket]));
       matches.forEach(r => {
         r.voided = true;
+        r.voided_by = whoName;
+        if (whoEmail) r.voided_by_email = whoEmail;
+        r.voided_at = nowIso;
+        if (reason) r.void_reason = reason;
+        const snap = {};
+        if (opts && opts.date) snap.date = opts.date;
+        if (opts && opts.counterparty) snap.counterparty = opts.counterparty;
+        if (opts && opts.amount != null && opts.amount !== '') snap.amount = opts.amount;
+        if (opts && opts.domainTblKey) snap.domainTblKey = opts.domainTblKey;
+        if (opts && opts.tableTitle) snap.tableTitle = opts.tableTitle;
+        if (Object.keys(snap).length) r.void_snapshot = Object.assign({}, r.void_snapshot || {}, snap);
         r.rev = Number(r.rev || 1) + 1;
         r.updated_at = nowIso;
         r.updatedAt = nowIso;
@@ -66910,6 +66945,72 @@
     };
   }
 
+  function resolveDomainChronoRestoreState(peers, candRow, guardLabel) {
+    const sd = candRow && candRow.start_date ? String(candRow.start_date).trim().slice(0, 10) : '';
+    if (!sd || !/^\d{4}-\d{2}-\d{2}$/.test(sd)) {
+      return { ok: false, error: `${guardLabel}: Effective Start Date (YYYY-MM-DD) is required.` };
+    }
+    const rawEd = (candRow && candRow.end_date != null) ? String(candRow.end_date).trim() : 'Open';
+    const normEd = (!rawEd || /^open$/i.test(rawEd)) ? 'Open' : rawEd.slice(0, 10);
+    if (normEd !== 'Open' && !/^\d{4}-\d{2}-\d{2}$/.test(normEd)) {
+      return { ok: false, error: `${guardLabel}: Effective End Date must be YYYY-MM-DD or Open.` };
+    }
+    if (normEd !== 'Open' && sd >= normEd) {
+      return { ok: false, error: `${guardLabel}: Effective End Date must be strictly after Start Date (or left Open).` };
+    }
+    const effEndCmp = normEd === 'Open' ? '9999-12-31' : normEd;
+    const rawPriorIds = []
+      .concat(candRow && Array.isArray(candRow.autoClosePriorIds) ? candRow.autoClosePriorIds : [])
+      .concat(candRow && candRow.autoClosePriorId ? [candRow.autoClosePriorId] : [])
+      .map(x => String(x || '').trim())
+      .filter(Boolean);
+    const expectedPriorSet = new Set();
+    rawPriorIds.forEach(x => {
+      expectedPriorSet.add(x.toUpperCase());
+      const upg = typeof resolveLegacyIndustryId === 'function' ? resolveLegacyIndustryId(x) : '';
+      if (upg) expectedPriorSet.add(String(upg).trim().toUpperCase());
+    });
+    const hadExplicitNoPrior = Boolean(
+      candRow && Array.isArray(candRow.autoClosePriorIds) && candRow.autoClosePriorIds.length === 0 && !candRow.autoClosePriorId
+    );
+    const peerList = Array.isArray(peers) ? peers.filter(p => p && !p.voided) : [];
+    const closableOpenPeers = [];
+    for (const p of peerList) {
+      const pId = String(p.id || p.code || '').trim();
+      const pIdUp = pId.toUpperCase();
+      const pStart = String(p.start_date || '1900-01-01').slice(0, 10);
+      const pIsOpen = !p.end_date || /^open$/i.test(String(p.end_date).trim());
+      const pEndCmp = pIsOpen ? '9999-12-31' : String(p.end_date).slice(0, 10);
+      if (!(sd <= pEndCmp && effEndCmp >= pStart)) continue;
+      const canAutoClose = Boolean(
+        pIsOpen
+        && !p._explicitEnd
+        && pStart < sd
+        && !hadExplicitNoPrior
+        && (!expectedPriorSet.size || expectedPriorSet.has(pIdUp))
+      );
+      if (canAutoClose) {
+        closableOpenPeers.push(p);
+      } else {
+        return {
+          ok: false,
+          error: `${guardLabel}: Window (${sd} to ${normEd}) overlaps schedule ${pId || 'peer'} (${pStart} to ${pIsOpen ? 'Open' : pEndCmp}).`
+        };
+      }
+    }
+    const priorPeer = closableOpenPeers[0] || null;
+    const closeIds = closableOpenPeers.map(p => p.id);
+    const closeDate = closeIds.length ? prevCalendarDayISO(sd) : '';
+    return {
+      ok: true,
+      ed: normEd,
+      priorOpen: priorPeer,
+      closeIds,
+      closeDate,
+      priorPrimaryId: priorPeer ? priorPeer.id : ''
+    };
+  }
+
   const SIBLING_CHRONO_FORM_KEYS = new Set([
     'ins_agreements', 're_leases', 'trd_targets', 'hsp_tariffs', 'hld_partners', 'hld_loans'
   ]);
@@ -66966,7 +67067,7 @@
       invalidateIndustryDomainCaches();
     }
   }
-  function voidSiblingChronoSchedule(bucket, primaryId, origSched) {
+  function voidSiblingChronoSchedule(bucket, primaryId, origSched, opts = {}) {
     if (!bucket || !primaryId) return;
     const store = getIndustryCustomRowsStore();
     if (!Array.isArray(store[bucket])) store[bucket] = [];
@@ -66974,6 +67075,10 @@
     const targetId = String((origSched && origSched.id) || primaryId).trim();
     const targetUp = targetId.toUpperCase();
     const nowIso = nextMonotonicIso();
+    const au = (typeof activeUser === 'function' && activeUser()) || {};
+    const whoName = String((opts && opts.who) || au.full_name || au.name || au.email || 'Supervisor').trim();
+    const whoEmail = String((opts && opts.whoEmail) || au.email || '').trim().toLowerCase();
+    const reason = String((opts && opts.reason) || '').trim().slice(0, 500);
     const exIdx = list.findIndex(r => r && String(r.id || r.code || '').trim().toUpperCase() === targetUp);
     const prevObj = exIdx >= 0 ? list[exIdx] : {};
     const linkedCloseIds = new Set(
@@ -66994,11 +67099,22 @@
         _customBucket: bucket,
         voided: true,
         _scheduleVoided: true,
+        voided_by: whoName,
+        voided_at: nowIso,
         rev: nextRev,
         updated_at: nowIso,
         updatedAt: nowIso
       }
     );
+    if (whoEmail) tombstone.voided_by_email = whoEmail;
+    if (reason) tombstone.void_reason = reason;
+    const chronoSnap = {};
+    if (opts && opts.date) chronoSnap.date = opts.date;
+    if (opts && opts.counterparty) chronoSnap.counterparty = opts.counterparty;
+    if (opts && opts.amount != null && opts.amount !== '') chronoSnap.amount = opts.amount;
+    if (opts && opts.domainTblKey) chronoSnap.domainTblKey = opts.domainTblKey;
+    if (opts && opts.tableTitle) chronoSnap.tableTitle = opts.tableTitle;
+    if (Object.keys(chronoSnap).length) tombstone.void_snapshot = Object.assign({}, tombstone.void_snapshot || {}, chronoSnap);
     if (exIdx >= 0) list[exIdx] = tombstone;
     else list.unshift(tombstone);
 
@@ -67025,6 +67141,38 @@
     });
     saveIndustryCustomRowsStore();
     invalidateIndustryDomainCaches();
+  }
+
+  function getSiblingChronoPeersForRow(fk, origSched, primaryId) {
+    let peers = [];
+    if (!origSched) return peers;
+    const pidUp = String(primaryId || origSched.id || '').trim().toUpperCase();
+    if (fk === 'ins_agreements') {
+      const curOps = computeInsuranceOperations();
+      peers = (curOps.agreements || []).filter(a => a && norm(a.carrier) === norm(origSched.carrier) && normInsLineKey(a.line) === normInsLineKey(origSched.line) && String(a.id || '').toUpperCase() !== pidUp);
+    } else if (fk === 're_leases') {
+      const curRe = computeRealEstateOperations({ ignoreSearch: true });
+      const normReProp = p => String(p || '').trim().toUpperCase().slice(0, 14);
+      peers = (curRe.leases || []).filter(l => l && normReProp(l.property) === normReProp(origSched.property) && String(l.unit || '').trim().toUpperCase() === String(origSched.unit || '').trim().toUpperCase() && String(l.id || '').toUpperCase() !== pidUp);
+    } else if (fk === 'trd_targets') {
+      const curTrd = computeTradingOperations({ ignoreSearch: true });
+      peers = (curTrd.targetRows || []).filter(t => t && t.company === origSched.company && normTradingTariffCat(t.category) === normTradingTariffCat(origSched.category) && String(t.id || '').toUpperCase() !== pidUp);
+    } else if (fk === 'hsp_tariffs') {
+      const curHsp = computeHospitalityOperations({ ignoreSearch: true });
+      peers = (curHsp.tariffRows || []).filter(t => t && t.company === origSched.company && t.tier === origSched.tier && String(t.id || '').toUpperCase() !== pidUp);
+    } else if (fk === 'hld_partners') {
+      const curHld = computeHoldingSchedules();
+      const pKey = norm(String(origSched.partner || '').split('(')[0]);
+      const eKey = norm(String(origSched.entity || '').split('·')[0]);
+      const entPeers = (curHld.partnerAgreements || []).filter(p => p && norm(String(p.entity || '').split('·')[0]) === eKey && String(p.id || '').toUpperCase() !== pidUp);
+      const exactPrtPeers = pKey ? entPeers.filter(p => norm(String(p.partner || '').split('(')[0]) === pKey || norm(p.partner).includes(pKey)) : [];
+      peers = exactPrtPeers.length ? exactPrtPeers : entPeers;
+    } else if (fk === 'hld_loans') {
+      const curHld = computeHoldingSchedules();
+      const lKey = String(origSched.lender || '').trim().toUpperCase();
+      peers = (curHld.facilitySchedules || []).filter(f => f && f.company === origSched.company && (!lKey || String(f.lender || '').trim().toUpperCase().includes(lKey) || lKey.includes(String(f.lender || '').trim().toUpperCase())) && String(f.id || '').toUpperCase() !== pidUp);
+    }
+    return peers;
   }
 
   function runDomainChronoScheduleBackfill(formKey, schedRec, oldWindow) {
@@ -81608,6 +81756,7 @@
               <button type="button" class="btn btn-outline-bar" id="indInspThermalSlipBtn">${ic('printer')} Thermal Voucher</button>
               <button type="button" class="btn btn-ghost-bar" id="indInspPrintStmtBtn" data-rdl-jump="${esc(meta.id)}">${esc(meta.label)}</button>
               <button type="button" class="btn btn-ghost-bar" id="indInspOpenLedgerBtn" data-nav-jump="ledger">Open General Ledger &amp; SOA</button>
+              ${allowVoid ? '<input type="text" id="indInspVoidReasonInput" class="insp-edit-inp" placeholder="Optional void reason" aria-label="Optional void reason" style="max-width:210px;padding:6px 10px;font-size:12px">' : ''}
               ${allowVoid ? '<button type="button" class="btn btn-ghost-bar" id="indInspVoidRowBtn" style="color:var(--crit,#DC2626)">Void / Delete Row</button>' : ''}
             </div>
             <button type="button" class="btn btn-ghost-bar" id="indInspCloseFooterBtn">Close Inspector</button>
@@ -82075,32 +82224,7 @@
             }
           }
           if (!nextEd || /^open$/i.test(nextEd)) nextEd = 'Open';
-          let peers = [];
-          if (fk === 'ins_agreements') {
-            const curOps = computeInsuranceOperations();
-            peers = (curOps.agreements || []).filter(a => a && norm(a.carrier) === norm(origSched.carrier) && normInsLineKey(a.line) === normInsLineKey(origSched.line) && String(a.id || '').toUpperCase() !== String(primaryId).toUpperCase());
-          } else if (fk === 're_leases') {
-            const curRe = computeRealEstateOperations({ ignoreSearch: true });
-            const normReProp = p => String(p || '').trim().toUpperCase().slice(0, 14);
-            peers = (curRe.leases || []).filter(l => l && normReProp(l.property) === normReProp(origSched.property) && String(l.unit || '').trim().toUpperCase() === String(origSched.unit || '').trim().toUpperCase() && String(l.id || '').toUpperCase() !== String(primaryId).toUpperCase());
-          } else if (fk === 'trd_targets') {
-            const curTrd = computeTradingOperations({ ignoreSearch: true });
-            peers = (curTrd.targetRows || []).filter(t => t && t.company === origSched.company && normTradingTariffCat(t.category) === normTradingTariffCat(origSched.category) && String(t.id || '').toUpperCase() !== String(primaryId).toUpperCase());
-          } else if (fk === 'hsp_tariffs') {
-            const curHsp = computeHospitalityOperations({ ignoreSearch: true });
-            peers = (curHsp.tariffRows || []).filter(t => t && t.company === origSched.company && t.tier === origSched.tier && String(t.id || '').toUpperCase() !== String(primaryId).toUpperCase());
-          } else if (fk === 'hld_partners') {
-            const curHld = computeHoldingSchedules();
-            const pKey = norm(String(origSched.partner || '').split('(')[0]);
-            const eKey = norm(String(origSched.entity || '').split('·')[0]);
-            const entPeers = (curHld.partnerAgreements || []).filter(p => p && norm(String(p.entity || '').split('·')[0]) === eKey && String(p.id || '').toUpperCase() !== String(primaryId).toUpperCase());
-            const exactPrtPeers = pKey ? entPeers.filter(p => norm(String(p.partner || '').split('(')[0]) === pKey || norm(p.partner).includes(pKey)) : [];
-            peers = exactPrtPeers.length ? exactPrtPeers : entPeers;
-          } else if (fk === 'hld_loans') {
-            const curHld = computeHoldingSchedules();
-            const lKey = String(origSched.lender || '').trim().toUpperCase();
-            peers = (curHld.facilitySchedules || []).filter(f => f && f.company === origSched.company && (!lKey || String(f.lender || '').trim().toUpperCase().includes(lKey) || lKey.includes(String(f.lender || '').trim().toUpperCase())) && String(f.id || '').toUpperCase() !== String(primaryId).toUpperCase());
-          }
+          const peers = getSiblingChronoPeersForRow(fk, origSched, primaryId);
           const cState = resolveDomainChronoSaveState(peers, origSched, nextSd, nextEd, true, 'Chronological Schedule Guard');
           if (!cState.ok) {
             toast(cState.error, 'err');
@@ -82258,6 +82382,10 @@
           toast('Supervisor permission required to void records', 'err');
           return;
         }
+        if (isChronoDomainRow && !canManageSiblingChronoSchedule(resolvedDomainChrono.formKey)) {
+          toast('Supervisor + Entry or Owner permission required to void chronological rate schedules', 'err');
+          return;
+        }
         if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
           const origDtCell = cells.find(c => /^\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4}/.test(String(c || '').trim())) || '';
           const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(STATE.company, origDtCell, origDtCell, { industry: ind });
@@ -82294,26 +82422,72 @@
             const store = getIndustryRowEditStore();
             const prevEntry = store[editKey] || {};
             const nowIso = new Date().toISOString();
-            store[editKey] = Object.assign({}, prevEntry, {
-              ind,
-              tableTitle,
-              primaryId,
-              company: rowCompany || prevEntry.company || '',
-              voided: true,
-              removedDocIds: Array.isArray(prevEntry.removedDocIds) ? prevEntry.removedDocIds : undefined,
-              rev: Number(prevEntry.rev || 0) + 1,
-              updated_at: nowIso,
-              updatedAt: nowIso,
-              _revBumped: true
-            });
+            const au = (typeof activeUser === 'function' && activeUser()) || {};
+            const voidWho = String(au.full_name || au.name || au.email || 'Supervisor').trim();
+            const voidWhoEmail = String(au.email || '').trim().toLowerCase();
+            const voidReasonEl = $('indInspVoidReasonInput');
+            const voidReason = String((voidReasonEl && voidReasonEl.value) || '').trim().slice(0, 500);
+            const snapDateCell = (cells.find(c => /^\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4}/.test(String(c || '').trim())) || '').trim();
+            const cpIdx = headers.findIndex((h, i) => i > 0 && /customer|client|supplier|vendor|counterparty|party|partner|tenant|carrier|insurer|property|staff|employee|driver|entity|resort|outlet|item|product|unit|name|title/i.test(String(h || '')) && String(cells[i] || '').trim());
+            const snapCounterparty = String((cpIdx >= 0 ? cells[cpIdx] : (cells[1] || cells[2] || '')) || '').trim();
+            const amtIdx = headers.findIndex((h, i) => /total|amount|usd|value|balance|net|gross|premium|rent|cost|revenue|billed|cash/i.test(String(h || '')) && !/qty|km|m3|%|rate|share/i.test(String(h || '')) && String(cells[i] || '').trim());
+            const snapAmount = String((amtIdx >= 0 ? cells[amtIdx] : (amountCell || '')) || '').trim();
+            const hasPrevEntry = Boolean(prevEntry && typeof prevEntry === 'object' && Object.keys(prevEntry).length > 0);
+            const voidSnap = {
+              tableTitle: tableTitle || '',
+              domainTblKey: domainTblKey || (prevEntry && prevEntry.domainTblKey) || '',
+              date: snapDateCell || undefined,
+              counterparty: snapCounterparty || undefined,
+              amount: snapAmount || undefined,
+              headers: Array.isArray(headers) ? headers.slice(0, 12) : undefined,
+              cells: Array.isArray(cells) ? cells.slice(0, 12) : undefined
+            };
+            store[editKey] = hasPrevEntry
+              ? Object.assign({}, prevEntry, {
+                  voided: true,
+                  voided_by: voidWho,
+                  voided_by_email: voidWhoEmail || undefined,
+                  voided_at: nowIso,
+                  void_reason: voidReason || prevEntry.void_reason || undefined,
+                  void_snapshot: voidSnap,
+                  rev: Number(prevEntry.rev || 0) + 1,
+                  updated_at: nowIso,
+                  updatedAt: nowIso,
+                  _revBumped: true
+                })
+              : {
+                  ind,
+                  primaryId,
+                  company: rowCompany || '',
+                  voided: true,
+                  voided_by: voidWho,
+                  voided_by_email: voidWhoEmail || undefined,
+                  voided_at: nowIso,
+                  void_reason: voidReason || undefined,
+                  void_snapshot: voidSnap,
+                  rev: 1,
+                  updated_at: nowIso,
+                  updatedAt: nowIso,
+                  _revBumped: true
+                };
             saveIndustryRowEditStore(store, { skipServerPost: true });
-            wasCustom = voidIndustryCustomRowById(primaryId, { skipCloudSync: true, skipRollback: true, skipServerPost: true });
+            const voidMeta = {
+              who: voidWho,
+              whoEmail: voidWhoEmail,
+              reason: voidReason,
+              date: snapDateCell,
+              counterparty: snapCounterparty,
+              amount: snapAmount,
+              domainTblKey: domainTblKey || '',
+              tableTitle
+            };
+            wasCustom = voidIndustryCustomRowById(primaryId, Object.assign({ skipCloudSync: true, skipRollback: true, skipServerPost: true }, voidMeta));
             if (isChronoDomainRow) {
               const fk = resolvedDomainChrono.formKey;
               const origSched = Object.assign({}, resolvedDomainChrono.prefill);
               delete origSched._editMode;
               delete origSched._editKey;
-              voidSiblingChronoSchedule(fk, primaryId, origSched);
+              voidSiblingChronoSchedule(fk, primaryId, origSched, voidMeta);
               runDomainChronoScheduleBackfill(fk, origSched, { start_date: '1900-01-01', end_date: '9999-12-31' });
               if (store[editKey]) {
                 delete store[editKey];
@@ -84849,13 +85023,18 @@
       ? HUB_CATALOG.filter(h => isHubInActiveIndustry(h, activeHubMatrixInd))
       : []).map(h => {
       const vis = canViewHub(h.id, previewUser);
-      const tabStates = (h.tabs || []).map(t => ({
-        view: t.view,
-        label: t.label,
-        on: vis && canViewView(t.view, previewUser),
-        lockedSelf: isSelfActiveAdminUsersCheck(t.view, previewUser)
-      }));
+      const tabStates = (h.tabs || []).map(t => {
+        const lockedRole = t.view === 'void_log' && !canViewVoidLog(previewUser);
+        return {
+          view: t.view,
+          label: t.label,
+          on: !lockedRole && vis && canViewView(t.view, previewUser),
+          lockedSelf: isSelfActiveAdminUsersCheck(t.view, previewUser),
+          lockedRole
+        };
+      });
       const onCount = tabStates.filter(t => t.on).length;
+      const eligibleCount = tabStates.filter(t => !t.lockedRole).length;
       return {
         id: h.id,
         title: h.title,
@@ -84865,9 +85044,9 @@
         lockedSelf: isSelfActiveAdminUsersCheck(h.id, previewUser),
         tabs: tabStates,
         onPages: onCount,
-        totalPages: tabStates.length,
-        allPagesOn: vis && onCount === tabStates.length && tabStates.length > 0,
-        partialPages: vis && onCount > 0 && onCount < tabStates.length
+        totalPages: eligibleCount,
+        allPagesOn: vis && eligibleCount > 0 && onCount === eligibleCount,
+        partialPages: vis && onCount > 0 && onCount < eligibleCount
       };
     });
     const totalMatrixHubs = matrixHubList.length;
@@ -84995,8 +85174,8 @@
                 </div>
                 <div class="perm-hub-pages-list ${h.allPagesOn && h.totalPages > 1 ? 'is-all-selected' : 'is-custom-pages'}">
                   ${h.tabs.map(t => `
-                    <label class="perm-page-chip ${t.on ? 'is-on' : 'is-off'}">
-                      <input type="checkbox" class="perm-cb-page" data-perm-page="${esc(t.view)}" data-perm-parent-hub="${esc(h.id)}" ${t.on ? 'checked' : ''} ${t.lockedSelf ? 'disabled' : ''}>
+                    <label class="perm-page-chip ${t.on ? 'is-on' : 'is-off'} ${t.lockedRole ? 'is-role-locked' : ''}">
+                      <input type="checkbox" class="perm-cb-page" data-perm-page="${esc(t.view)}" data-perm-parent-hub="${esc(h.id)}" ${t.on ? 'checked' : ''} ${(t.lockedSelf || t.lockedRole) ? 'disabled' : ''}>
                       <span class="perm-page-chip-lbl">${esc(t.label)}</span>
                     </label>
                   `).join('')}
@@ -107045,6 +107224,9 @@
         status: Number(res.status || 200),
         table: tblName,
         id: record.id,
+        voided_by: (okJson && typeof okJson.voided_by === 'string') ? okJson.voided_by : '',
+        voided_by_email: (okJson && typeof okJson.voided_by_email === 'string') ? okJson.voided_by_email : '',
+        voided_at: (okJson && typeof okJson.voided_at === 'string') ? okJson.voided_at : '',
         rollbackToken: (okJson && typeof okJson.rollbackToken === 'string') ? okJson.rollbackToken : ''
       };
     } catch (e) {
@@ -108307,6 +108489,7 @@
       out.voided_at = (rowObj && rowObj.voided_at) || (meta && meta.when) || '';
       if (rowObj && rowObj.void_reason) out.void_reason = rowObj.void_reason;
       if (rowObj && rowObj.voided_with_voucher) out.voided_with_voucher = rowObj.voided_with_voucher;
+      if (rowObj && rowObj.voided_with_parent) out.voided_with_parent = rowObj.voided_with_parent;
     } else {
       const stamp = (meta && meta.restoreStampIso) || (rowObj && rowObj.restored_at) || '';
       out.restored_at = stamp;
@@ -108381,11 +108564,26 @@
         siteSplitReset = true;
       });
     }
+    const cleanVoidMeta = obj => {
+      if (!obj || typeof obj !== 'object') return;
+      delete obj.voided_by;
+      delete obj.voidedBy;
+      delete obj.voided_by_email;
+      delete obj.voidedByEmail;
+      delete obj.voided_at;
+      delete obj.voidedAt;
+      delete obj.void_reason;
+      delete obj.voidReason;
+      delete obj.void_snapshot;
+      delete obj.voided_with_parent;
+      delete obj.void_note_updated_by;
+      delete obj.void_note_updated_at;
+    };
+    const restoreWho = (activeUser() && (activeUser().full_name || activeUser().name || activeUser().email)) || '';
     let cleanSeed = null;
     if (archivedSeed && SEED.records && Array.isArray(SEED.records[crKey])) {
       cleanSeed = Object.assign({}, archivedSeed, { voided: false });
-      delete cleanSeed.voided_by;
-      delete cleanSeed.voided_at;
+      cleanVoidMeta(cleanSeed);
       if (!SEED.records[crKey].some(x => x && String(x.id) === String(cleanSeed.id))) {
         SEED.records[crKey].unshift(cleanSeed);
       }
@@ -108394,18 +108592,18 @@
     if (r) {
       r.voided = false;
       r.restored_at = restoreStampIso;
+      if (restoreWho) r.restored_by = restoreWho;
       r.modified_at = restoreStampIso;
-      delete r.voided_by;
-      delete r.voided_at;
+      cleanVoidMeta(r);
     }
     const extraRestorePosts = [];
     if (gtRestorePeer) {
       // Group Transfer: the other company's row comes back with this one.
       gtRestorePeer.row.voided = false;
       gtRestorePeer.row.restored_at = restoreStampIso;
+      if (restoreWho) gtRestorePeer.row.restored_by = restoreWho;
       gtRestorePeer.row.modified_at = restoreStampIso;
-      delete gtRestorePeer.row.voided_by;
-      delete gtRestorePeer.row.voided_at;
+      cleanVoidMeta(gtRestorePeer.row);
       extraRestorePosts.push([gtRestorePeer.crKey, gtRestorePeer.row]);
     }
     // A salary voucher that carried back pay comes back with the rows its own void took down (a row voided on its
@@ -108416,9 +108614,9 @@
       p.voided = false;
       delete p.voided_with_voucher;
       p.restored_at = restoreStampIso;
+      if (restoreWho) p.restored_by = restoreWho;
       p.modified_at = restoreStampIso;
-      delete p.voided_by;
-      delete p.voided_at;
+      cleanVoidMeta(p);
       extraRestorePosts.push(['salaries', p]);
     });
     if (crKey === 'expenses' || crKey === 'equipment_repairs') {
@@ -108440,8 +108638,9 @@
         if (cid) seenChild.add(cid);
         if (ch.id) rbSnap.snapSeedRow(childKey, ch.id);
         ch.voided = false;
-        delete ch.voided_by;
-        delete ch.voided_at;
+        cleanVoidMeta(ch);
+        ch.restored_at = restoreStampIso;
+        if (restoreWho) ch.restored_by = restoreWho;
         extraRestorePosts.push([childKey, ch]);
       });
     }
@@ -108456,8 +108655,9 @@
         if (did) seenDocIds.add(did);
         if (did) rbSnap.snapSeedRow('documents', did);
         d.voided = false;
-        delete d.voided_by;
-        delete d.voided_at;
+        cleanVoidMeta(d);
+        d.restored_at = restoreStampIso;
+        if (restoreWho) d.restored_by = restoreWho;
         _attCacheRev++;
         extraRestorePosts.push(['documents', d]);
       });
@@ -108618,7 +108818,7 @@
       };
       if (!(typeof window.MFG_STEP_UP.satisfiesLeaseSync === 'function' && window.MFG_STEP_UP.satisfiesLeaseSync(voidSpec))) {
         window.MFG_STEP_UP.requireStepUpAuth(voidSpec).then(ok => {
-          if (ok) voidRecord(crKey, id, { bypassStepUp: true });
+          if (ok) voidRecord(crKey, id, Object.assign({}, opts || {}, { bypassStepUp: true }));
         });
         return;
       }
@@ -108636,8 +108836,11 @@
     const prevArchVal = hadArchBefore ? JSON.parse(JSON.stringify(archMapBefore.get(canonTargetId))) : null;
     const prevAttCacheRev = _attCacheRev;
 
-    const who = activeUser().full_name;
+    const au = activeUser() || {};
+    const who = au.full_name || au.name || au.email || 'Supervisor';
+    const whoEmail = String(au.email || '').trim().toLowerCase();
     const when = nowStamp();
+    const reasonOpt = String((opts && opts.reason) || '').trim().slice(0, 500);
     if (seedRow) {
       const origSeedSnap = captureSeedOrigSnapshot(crKey, seedRow) || Object.assign({}, seedRow, { voided: false });
       if (!SEED_VOIDED_ARCHIVE[crKey]) SEED_VOIDED_ARCHIVE[crKey] = new Map();
@@ -108647,7 +108850,9 @@
       }
       seedRow.voided = true;
       seedRow.voided_by = who;
+      if (whoEmail) seedRow.voided_by_email = whoEmail;
       seedRow.voided_at = when;
+      if (reasonOpt) seedRow.void_reason = reasonOpt;
     }
     if (r) {
       if (seedRow && !r._seed_orig) {
@@ -108656,11 +108861,15 @@
       }
       r.voided = true;
       r.voided_by = who;
+      if (whoEmail) r.voided_by_email = whoEmail;
       r.voided_at = when;
+      if (reasonOpt) r.void_reason = reasonOpt;
       delete r.restored_at;
     } else if (seedRow) {
       const sOrig = captureSeedOrigSnapshot(crKey, seedRow);
       r = Object.assign({}, seedRow, { id: seedRow.id || q, voided: true, voided_by: who, voided_at: when });
+      if (whoEmail) r.voided_by_email = whoEmail;
+      if (reasonOpt) r.void_reason = reasonOpt;
       if (sOrig && !r._seed_orig) r._seed_orig = buildSeedOrigMeta(sOrig);
       delete r.restored_at;
       list.unshift(r);
@@ -108670,10 +108879,12 @@
       // Group Transfer: the other company's row is voided with this one, so neither side is left on its own.
       gtVoidPeer.row.voided = true;
       gtVoidPeer.row.voided_by = who;
+      if (whoEmail) gtVoidPeer.row.voided_by_email = whoEmail;
       gtVoidPeer.row.voided_at = when;
+      if (reasonOpt) gtVoidPeer.row.void_reason = reasonOpt;
       delete gtVoidPeer.row.restored_at;
       const peerSeed = ((SEED.records && SEED.records[gtVoidPeer.crKey]) || []).find(x => x && String(x.id) === String(gtVoidPeer.row.id));
-      if (peerSeed && peerSeed !== gtVoidPeer.row) { peerSeed.voided = true; peerSeed.voided_by = who; peerSeed.voided_at = when; }
+      if (peerSeed && peerSeed !== gtVoidPeer.row) { peerSeed.voided = true; peerSeed.voided_by = who; if (whoEmail) peerSeed.voided_by_email = whoEmail; peerSeed.voided_at = when; }
       extraVoidPosts.push([gtVoidPeer.crKey, gtVoidPeer.row]);
     }
     // A salary voucher that carried back pay: its other rows (one per closed month) go with it
@@ -108682,11 +108893,12 @@
       rbSnap.snapSeedRow('salaries', p.id);
       p.voided = true;
       p.voided_by = who;
+      if (whoEmail) p.voided_by_email = whoEmail;
       p.voided_at = when;
       p.voided_with_voucher = String((r || seedRow).id || '');
       delete p.restored_at;
       const pSeed = ((SEED.records && SEED.records.salaries) || []).find(x => x && String(x.id) === String(p.id));
-      if (pSeed && pSeed !== p) { pSeed.voided = true; pSeed.voided_by = who; pSeed.voided_at = when; }
+      if (pSeed && pSeed !== p) { pSeed.voided = true; pSeed.voided_by = who; if (whoEmail) pSeed.voided_by_email = whoEmail; pSeed.voided_at = when; pSeed.voided_with_voucher = p.voided_with_voucher; }
       extraVoidPosts.push(['salaries', p]);
     });
     if (crKey === 'expenses' || crKey === 'equipment_repairs') {
@@ -108710,7 +108922,9 @@
         if (ch.id) rbSnap.snapSeedRow(childKey, ch.id);
         ch.voided = true;
         ch.voided_by = who;
+        if (whoEmail) ch.voided_by_email = whoEmail;
         ch.voided_at = when;
+        ch.voided_with_parent = parentId;
         const cIdx = STATE.customRecords[childKey].findIndex(x => x && String(x.id || x.name) === cid);
         if (cIdx >= 0) Object.assign(STATE.customRecords[childKey][cIdx], ch);
         else STATE.customRecords[childKey].unshift(Object.assign({}, ch));
@@ -108730,7 +108944,9 @@
         if (did) rbSnap.snapSeedRow('documents', did);
         d.voided = true;
         d.voided_by = who;
+        if (whoEmail) d.voided_by_email = whoEmail;
         d.voided_at = when;
+        d.voided_with_parent = parentId;
         const cIdx = STATE.customRecords.documents.findIndex(x => x && String(x.id || '') === did);
         if (cIdx >= 0) Object.assign(STATE.customRecords.documents[cIdx], d);
         else STATE.customRecords.documents.unshift(Object.assign({}, d));
@@ -108867,6 +109083,20 @@
         return false;
       }
       if (myOpSeq === _voidRestoreOpSeq.get(opKey)) {
+        if (mainRes && mainRes.ok) {
+          if (mainRes.voided_by) {
+            if (r) r.voided_by = mainRes.voided_by;
+            if (seedRow) seedRow.voided_by = mainRes.voided_by;
+          }
+          if (mainRes.voided_by_email) {
+            if (r) r.voided_by_email = mainRes.voided_by_email;
+            if (seedRow) seedRow.voided_by_email = mainRes.voided_by_email;
+          }
+          if (mainRes.voided_at) {
+            if (r) r.voided_at = mainRes.voided_at;
+            if (seedRow) seedRow.voided_at = mainRes.voided_at;
+          }
+        }
         saveLocalAuthAndRecords();
         syncWithCloud(true);
       }
@@ -108875,6 +109105,401 @@
       if (_voidRestoreInflight.get(opKey) === runP) _voidRestoreInflight.delete(opKey);
     });
     _voidRestoreInflight.set(opKey, runP);
+  }
+
+  async function restoreVoidedIndustryDomainRow(spec) {
+    if (!canVoid()) {
+      toast('Only Supervisor, Admin, or authorized Custom seats can void or restore records', 'err');
+      return false;
+    }
+    if (!spec || typeof spec !== 'object') return false;
+    const primaryId = String(spec.primaryId || spec.id || '').trim();
+    const editKey = String(spec.editKey || '').trim();
+    const bucket = String(spec.bucket || '').trim();
+    const co = String(spec.company || '').trim();
+    const ind = String(spec.ind || spec.industry || '').trim() || (co ? getActiveIndustry(co) : '');
+    if (isTillOwnedRowId(primaryId) || (bucket === 'hsp_pos' && /^POS-/i.test(primaryId))) {
+      toast('POS till closes are controlled automatically by the Gate Till', 'err');
+      return false;
+    }
+    if (!isOwner()) {
+      const normCo = co.toLowerCase().replace(/\s+/g, ' ').trim();
+      const isShared = !normCo || normCo === 'all' || normCo === 'all bus' || normCo === 'shared';
+      if (!isShared && !canAccessGeoCompany(co)) {
+        toast('Cannot restore records outside your assigned companies', 'err');
+        return false;
+      }
+      if (ind && !canAccessGeoIndustry(ind)) {
+        toast('Cannot restore records outside your assigned industries', 'err');
+        return false;
+      }
+    }
+    const storeCustom = getIndustryCustomRowsStore();
+    const storeEdits = getIndustryRowEditStore();
+    const prevCustomSnap = JSON.parse(JSON.stringify(storeCustom));
+    const prevEditsSnap = JSON.parse(JSON.stringify(storeEdits));
+    if (!Array.isArray(STATE.customRecords.documents)) STATE.customRecords.documents = [];
+    const prevDocsCustomSnap = JSON.parse(JSON.stringify(STATE.customRecords.documents));
+    const prevSeedDocsSnap = (SEED.records && Array.isArray(SEED.records.documents))
+      ? JSON.parse(JSON.stringify(SEED.records.documents))
+      : null;
+    const prevAttCacheRev = _attCacheRev;
+
+    let chronoTargetBucket = '';
+    let chronoCandRow = null;
+    const peekBuckets = bucket ? [bucket] : Object.keys(storeCustom);
+    for (const bk of peekBuckets) {
+      if (!isSiblingChronoFormKey(bk) || !Array.isArray(storeCustom[bk])) continue;
+      const hit = storeCustom[bk].find(r => r && r.voided && String(r.id || r.code || '').trim() === primaryId);
+      if (hit) {
+        chronoTargetBucket = bk;
+        chronoCandRow = hit;
+        break;
+      }
+    }
+    let chronoSaveState = null;
+    if (chronoTargetBucket && chronoCandRow) {
+      if (!canModifyData()) {
+        toast('Supervisor + Entry or Owner permission required to restore chronological rate schedules', 'err');
+        return false;
+      }
+      const peers = getSiblingChronoPeersForRow(chronoTargetBucket, chronoCandRow, primaryId);
+      const probeRow = Object.assign({}, chronoCandRow, { voided: false });
+      chronoSaveState = resolveDomainChronoRestoreState(
+        peers,
+        probeRow,
+        'Chronological Schedule Guard'
+      );
+      if (!chronoSaveState.ok) {
+        toast(chronoSaveState.error, 'err');
+        return false;
+      }
+    }
+
+    const nowIso = nextMonotonicIso();
+    const au = activeUser() || {};
+    const restoreWho = String(au.full_name || au.name || au.email || '').trim();
+    const forceRowIds = [];
+    const forceEditKeys = [];
+    let touchedChronoBucket = '';
+    let restoredSchedRow = null;
+
+    const stripMeta = obj => {
+      if (!obj || typeof obj !== 'object') return;
+      obj.voided = false;
+      delete obj._scheduleVoided;
+      delete obj.voided_by;
+      delete obj.voidedBy;
+      delete obj.voided_by_email;
+      delete obj.voidedByEmail;
+      delete obj.voided_at;
+      delete obj.voidedAt;
+      delete obj.void_reason;
+      delete obj.voidReason;
+      delete obj.void_snapshot;
+      delete obj.voided_with_parent;
+      delete obj.void_note_updated_by;
+      delete obj.void_note_updated_at;
+      obj.restored_at = nowIso;
+      if (restoreWho) obj.restored_by = restoreWho;
+      obj.rev = Number(obj.rev || 1) + 1;
+      obj.updated_at = nowIso;
+      obj.updatedAt = nowIso;
+    };
+
+    if (editKey && storeEdits[editKey] && storeEdits[editKey].voided) {
+      stripMeta(storeEdits[editKey]);
+      storeEdits[editKey]._revBumped = true;
+      forceEditKeys.push(editKey);
+    } else if (primaryId) {
+      Object.keys(storeEdits).forEach(ek => {
+        const ed = storeEdits[ek];
+        if (!ed || !ed.voided) return;
+        const pid = String(ed.primaryId || ek.split('::').pop() || '').trim();
+        if (pid === primaryId && (!ind || !ed.ind || ed.ind === ind)) {
+          stripMeta(ed);
+          ed._revBumped = true;
+          forceEditKeys.push(ek);
+        }
+      });
+    }
+
+    const bucketList = bucket ? [bucket] : Object.keys(storeCustom);
+    bucketList.forEach(bk => {
+      const arr = storeCustom[bk];
+      if (!Array.isArray(arr)) return;
+      arr.forEach(r => {
+        if (!r || !r.voided) return;
+        const rid = String(r.id || r.code || '').trim();
+        if (!rid || (primaryId && rid !== primaryId)) return;
+        stripMeta(r);
+        forceRowIds.push(`${bk}::${rid}`);
+        if (isSiblingChronoFormKey(bk)) {
+          touchedChronoBucket = bk;
+          restoredSchedRow = r;
+        }
+      });
+    });
+
+    if (!forceRowIds.length && !forceEditKeys.length) {
+      toast('Voided record was not found in local domain stores', 'err');
+      return false;
+    }
+
+    const docRestorePayloads = [];
+    if (primaryId) {
+      const docPool = (STATE.customRecords.documents || []).concat((SEED.records && SEED.records.documents) || []);
+      const seenDocIds = new Set();
+      docPool.forEach(d => {
+        if (!d || !d.voided) return;
+        const matchesParent = String(d.voided_with_parent || '') === primaryId
+          || (String(d.parent_id || '') === primaryId && (!spec.crKey || !d.parent_table || norm(d.parent_table) === norm(spec.crKey)));
+        if (!matchesParent) return;
+        const did = String(d.id || '').trim();
+        if (!did || seenDocIds.has(did)) return;
+        seenDocIds.add(did);
+        stripMeta(d);
+        d.modified_at = nowIso;
+        const sHit = (SEED.records && Array.isArray(SEED.records.documents))
+          ? SEED.records.documents.find(x => x && String(x.id) === did)
+          : null;
+        if (sHit && sHit !== d) Object.assign(sHit, d);
+        let cHit = STATE.customRecords.documents.find(x => x && String(x.id) === did);
+        if (cHit && cHit !== d) Object.assign(cHit, d);
+        else if (!cHit) STATE.customRecords.documents.unshift(Object.assign({}, d));
+        _attCacheRev++;
+        const docPayload = !canModifyData()
+          ? _buildSparseVoidApiRecord('documents', d, did, false, { restoreStampIso: nowIso })
+          : JSON.parse(JSON.stringify(d));
+        if (docPayload) docRestorePayloads.push(['documents', docPayload]);
+      });
+      if (docRestorePayloads.length) applyCustomRecordsToSeed();
+    }
+
+    const prevDefer = _deferIndustryDomainServerPost;
+    _deferIndustryDomainServerPost = true;
+    try {
+      if (touchedChronoBucket && restoredSchedRow) {
+        if (chronoSaveState) {
+          restoredSchedRow.end_date = chronoSaveState.ed;
+          restoredSchedRow.autoClosePriorId = chronoSaveState.priorPrimaryId;
+          restoredSchedRow.autoClosePriorIds = chronoSaveState.closeIds;
+          restoredSchedRow.autoCloseDate = chronoSaveState.closeDate;
+          restoredSchedRow.status = chronoSaveState.ed === 'Open' ? 'Active (Open)' : 'Scheduled Window';
+          syncSiblingCustomPredecessorsOnSave(touchedChronoBucket, restoredSchedRow.id || primaryId, chronoSaveState.closeIds, chronoSaveState.closeDate);
+        }
+        if (typeof runDomainChronoScheduleBackfill === 'function') {
+          try { runDomainChronoScheduleBackfill(touchedChronoBucket, restoredSchedRow, { start_date: '1900-01-01', end_date: '9999-12-31' }); } catch (_) {}
+        }
+        const forceSet = new Set(forceRowIds);
+        Object.keys(storeCustom).forEach(bk => {
+          const curArr = Array.isArray(storeCustom[bk]) ? storeCustom[bk] : [];
+          const prevArr = Array.isArray(prevCustomSnap[bk]) ? prevCustomSnap[bk] : [];
+          const prevById = new Map(prevArr.map(pr => [String((pr && (pr.id || pr.code)) || '').trim(), pr]));
+          curArr.forEach(cr => {
+            const rid = String((cr && (cr.id || cr.code)) || '').trim();
+            if (!rid) return;
+            const prevR = prevById.get(rid);
+            if (!prevR || Number(cr.rev || 0) !== Number(prevR.rev || 0) || String(cr.updated_at || '') !== String(prevR.updated_at || '')) {
+              const key = `${bk}::${rid}`;
+              if (!forceSet.has(key)) {
+                forceSet.add(key);
+                forceRowIds.push(key);
+              }
+            }
+          });
+        });
+      }
+      saveIndustryRowEditStore(storeEdits, { skipServerPost: true });
+      saveIndustryCustomRowsStore({ skipServerPost: true });
+    } finally {
+      _deferIndustryDomainServerPost = prevDefer;
+    }
+    invalidateIndustryDomainCaches();
+    renderApp();
+    toast('✓ Record restored · ' + (primaryId || editKey), 'ok');
+
+    if (!hasServerApi() || isDemoScopeActive()) {
+      saveLocalAuthAndRecords();
+      syncWithCloud(true);
+      return true;
+    }
+
+    const rollbackAllLocal = errMsg => {
+      STATE.industryRowEdits = prevEditsSnap;
+      saveIndustryRowEditStore(prevEditsSnap, { skipServerPost: true });
+      STATE.industryCustomRows = prevCustomSnap;
+      saveIndustryCustomRowsStore({ skipServerPost: true });
+      STATE.customRecords.documents = prevDocsCustomSnap;
+      if (prevSeedDocsSnap && SEED.records) SEED.records.documents = prevSeedDocsSnap;
+      _attCacheRev = prevAttCacheRev;
+      if (docRestorePayloads.length) applyCustomRecordsToSeed();
+      invalidateIndustryDomainCaches();
+      renderApp();
+      toast(errMsg || 'Permission denied: cannot restore domain record', 'err');
+    };
+
+    const res = await postIndustryDomainStoreToLocalApi({ forceRowIds, forceEditKeys });
+    if (res && !res.networkErr && !res.networkError && (res.ok === false || Number(res.status) >= 400)) {
+      rollbackAllLocal(res.error);
+      return false;
+    }
+    if (docRestorePayloads.length) {
+      const docRes = await postRecordPairsChunked(docRestorePayloads, 8, { deferRender: true });
+      if (isServerRejectRes(docRes)) {
+        if (docRes.postedResults && docRes.postedResults.length) {
+          await rollbackRecordListOnServer(docRes.postedResults);
+        }
+        await rollbackIndustryDomainOnServer(res);
+        rollbackAllLocal(await extractServerRejectMsg(docRes, 'Permission denied: cannot restore linked attachments.'));
+        return false;
+      }
+    }
+    saveLocalAuthAndRecords();
+    syncWithCloud(true);
+    return true;
+  }
+
+  async function saveVoidNote(spec, noteText) {
+    if (!canVoid()) {
+      toast('Only Supervisor, Admin, or authorized Custom seats can edit void notes', 'err');
+      return false;
+    }
+    if (!spec || typeof spec !== 'object') return false;
+    const cleanNote = String(noteText == null ? '' : noteText).trim().slice(0, 500);
+    const au = activeUser() || {};
+    const actorName = String(au.full_name || au.name || au.email || 'Supervisor').trim();
+    const nowIso = nextMonotonicIso();
+
+    if (spec.sourceKind === 'custom_record') {
+      const crKey = String(spec.crKey || '').trim();
+      const targetId = String(spec.id || '').trim();
+      if (!crKey || !targetId) return false;
+      if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
+      const list = STATE.customRecords[crKey];
+      const rIdx = list.findIndex(x => x && String(x.id || x.name || '') === targetId);
+      const seedList = (SEED.records && SEED.records[crKey]) || [];
+      const seedRow = seedList.find(x => x && String(x.id || x.name || '') === targetId) || null;
+      let r = rIdx >= 0 ? list[rIdx] : null;
+      if (!r && seedRow) {
+        r = Object.assign({}, seedRow);
+        list.unshift(r);
+      }
+      if (!r || !r.voided) {
+        toast('Voided record not found', 'err');
+        return false;
+      }
+      const prevSnap = {
+        void_reason: r.void_reason,
+        void_note_updated_by: r.void_note_updated_by,
+        void_note_updated_at: r.void_note_updated_at
+      };
+      r.void_reason = cleanNote;
+      delete r.voidReason;
+      if (seedRow) {
+        seedRow.void_reason = cleanNote;
+        delete seedRow.voidReason;
+      }
+      r.void_note_updated_by = actorName;
+      r.void_note_updated_at = nowIso;
+      applyCustomRecordsToSeed();
+      renderApp();
+      toast('✓ Void note updated', 'ok');
+      if (!hasServerApi() || isDemoScopeActive()) {
+        saveLocalAuthAndRecords();
+        syncWithCloud(true);
+        return true;
+      }
+      const sparseBase = !canModifyData() || ((crKey === 'sites' || crKey === 'regions') && !canWriteGeoConfig());
+      const payload = sparseBase
+        ? Object.assign({ id: String(r.id), voided: true, void_reason: cleanNote }, (!(crKey === 'sites' || crKey === 'regions' || UNIVERSAL_MAIN_SPEC[crKey]) && r.company) ? { company: r.company } : {})
+        : JSON.parse(JSON.stringify(r));
+      const res = await postRecordToLocalApi(crKey, payload, { deferRender: true });
+      if (isServerRejectRes(res)) {
+        if (prevSnap.void_reason !== undefined) r.void_reason = prevSnap.void_reason; else delete r.void_reason;
+        if (prevSnap.void_note_updated_by !== undefined) r.void_note_updated_by = prevSnap.void_note_updated_by; else delete r.void_note_updated_by;
+        if (prevSnap.void_note_updated_at !== undefined) r.void_note_updated_at = prevSnap.void_note_updated_at; else delete r.void_note_updated_at;
+        if (seedRow) {
+          if (prevSnap.void_reason !== undefined) seedRow.void_reason = prevSnap.void_reason; else delete seedRow.void_reason;
+        }
+        applyCustomRecordsToSeed();
+        renderApp();
+        toast(await extractServerRejectMsg(res, 'Permission denied: cannot update void note.'), 'err');
+        return false;
+      }
+      saveLocalAuthAndRecords();
+      syncWithCloud(true);
+      return true;
+    }
+
+    const storeCustom = getIndustryCustomRowsStore();
+    const storeEdits = getIndustryRowEditStore();
+    const prevCustomSnap = JSON.parse(JSON.stringify(storeCustom));
+    const prevEditsSnap = JSON.parse(JSON.stringify(storeEdits));
+    const forceRowIds = [];
+    const forceEditKeys = [];
+    const primaryId = String(spec.primaryId || spec.id || '').trim();
+    const editKey = String(spec.editKey || '').trim();
+    const bucket = String(spec.bucket || '').trim();
+    const applyNote = obj => {
+      if (!obj || typeof obj !== 'object') return;
+      obj.void_reason = cleanNote;
+      delete obj.voidReason;
+      obj.void_note_updated_by = actorName;
+      obj.void_note_updated_at = nowIso;
+      obj.rev = Number(obj.rev || 1) + 1;
+      obj.updated_at = nowIso;
+      obj.updatedAt = nowIso;
+    };
+    if (editKey && storeEdits[editKey] && storeEdits[editKey].voided) {
+      applyNote(storeEdits[editKey]);
+      storeEdits[editKey]._revBumped = true;
+      forceEditKeys.push(editKey);
+    }
+    if (bucket && Array.isArray(storeCustom[bucket])) {
+      storeCustom[bucket].forEach(r => {
+        if (!r || !r.voided) return;
+        const rid = String(r.id || r.code || '').trim();
+        if (rid && rid === primaryId) {
+          applyNote(r);
+          forceRowIds.push(`${bucket}::${rid}`);
+        }
+      });
+    }
+    if (!forceRowIds.length && !forceEditKeys.length) {
+      toast('Voided record not found', 'err');
+      return false;
+    }
+    const prevDefer = _deferIndustryDomainServerPost;
+    _deferIndustryDomainServerPost = true;
+    try {
+      if (forceEditKeys.length) saveIndustryRowEditStore(storeEdits, { skipServerPost: true });
+      if (forceRowIds.length) saveIndustryCustomRowsStore({ skipServerPost: true });
+    } finally {
+      _deferIndustryDomainServerPost = prevDefer;
+    }
+    invalidateIndustryDomainCaches();
+    renderApp();
+    toast('✓ Void note updated', 'ok');
+    if (!hasServerApi() || isDemoScopeActive()) {
+      saveLocalAuthAndRecords();
+      syncWithCloud(true);
+      return true;
+    }
+    const res = await postIndustryDomainStoreToLocalApi({ forceRowIds, forceEditKeys });
+    if (res && !res.networkErr && !res.networkError && (res.ok === false || Number(res.status) >= 400)) {
+      STATE.industryRowEdits = prevEditsSnap;
+      saveIndustryRowEditStore(prevEditsSnap, { skipServerPost: true });
+      STATE.industryCustomRows = prevCustomSnap;
+      saveIndustryCustomRowsStore({ skipServerPost: true });
+      invalidateIndustryDomainCaches();
+      renderApp();
+      toast(res.error || 'Permission denied: cannot update void note.', 'err');
+      return false;
+    }
+    saveLocalAuthAndRecords();
+    syncWithCloud(true);
+    return true;
   }
 
   function getEntryModalStateSignature() {
@@ -125119,13 +125744,17 @@
     root.querySelectorAll('[data-perm-tabs-select-all]').forEach(cb => {
       cb.addEventListener('change', () => {
         const activeInd = getActiveHubMatrixIndustry();
-        const draft = ensureDraftHubPagesPolicy(getDraftSeatPreviewUser(), activeInd);
+        const pUser = getDraftSeatPreviewUser();
+        const allowVoidTab = canViewVoidLog(pUser);
+        const draft = ensureDraftHubPagesPolicy(pUser, activeInd);
         const targetHubs = HUB_CATALOG.filter(h => isHubInActiveIndustry(h, activeInd));
         const isSelfAdmin = isEditingSelfActiveOwner();
         if (cb.checked) {
           targetHubs.forEach(h => {
             draft.hubs[h.id] = true;
-            (h.tabs || []).forEach(t => { draft.pages[t.view] = true; });
+            (h.tabs || []).forEach(t => {
+              draft.pages[t.view] = (t.view === 'void_log' && !allowVoidTab) ? false : true;
+            });
             if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, h.id);
           });
           draft.hubPagesSelectAll = true;
@@ -125134,7 +125763,9 @@
           targetHubs.forEach(h => {
             const keepOn = h.id === 'overview' || (h.id === 'users' && isSelfAdmin);
             draft.hubs[h.id] = keepOn;
-            (h.tabs || []).forEach(t => { draft.pages[t.view] = keepOn; });
+            (h.tabs || []).forEach(t => {
+              draft.pages[t.view] = (t.view === 'void_log' && !allowVoidTab) ? false : keepOn;
+            });
             if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, h.id);
           });
         }
@@ -125186,13 +125817,17 @@
         }
         if (act === 'ops') {
           const activeInd = getActiveHubMatrixIndustry();
-          const draft = ensureDraftHubPagesPolicy(getDraftSeatPreviewUser(), activeInd);
+          const pUser = getDraftSeatPreviewUser();
+          const allowVoidTab = canViewVoidLog(pUser);
+          const draft = ensureDraftHubPagesPolicy(pUser, activeInd);
           const targetHubs = HUB_CATALOG.filter(h => isHubInActiveIndustry(h, activeInd));
           draft.hubPagesSelectAll = false;
           targetHubs.forEach(h => {
             const isOpsHub = !['cashflow', 'ledger', 'sentinels', 'reports', 'users'].includes(h.id) || (h.id === 'users' && isSelfAdmin);
             draft.hubs[h.id] = isOpsHub;
-            (h.tabs || []).forEach(t => { draft.pages[t.view] = isOpsHub; });
+            (h.tabs || []).forEach(t => {
+              draft.pages[t.view] = (t.view === 'void_log' && !allowVoidTab) ? false : isOpsHub;
+            });
             if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, h.id);
           });
           STATE.userFormDirty = true;
@@ -125214,12 +125849,14 @@
           return;
         }
         const activeInd = getActiveHubMatrixIndustry();
-        const draft = ensureDraftHubPagesPolicy(getDraftSeatPreviewUser(), activeInd);
+        const pUser = getDraftSeatPreviewUser();
+        const allowVoidTab = canViewVoidLog(pUser);
+        const draft = ensureDraftHubPagesPolicy(pUser, activeInd);
         const hubDef = HUB_CATALOG.find(h => h.id === hubId);
         draft.hubPagesSelectAll = false;
         draft.hubs[hubId] = Boolean(cb.checked);
         (hubDef ? hubDef.tabs || [] : []).forEach(t => {
-          draft.pages[t.view] = Boolean(cb.checked);
+          draft.pages[t.view] = (t.view === 'void_log' && !allowVoidTab) ? false : Boolean(cb.checked);
         });
         if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, hubId);
         STATE.userFormDirty = true;
@@ -125235,14 +125872,18 @@
         const hubDef = HUB_CATALOG.find(h => h.id === hubId);
         if (!hubDef) return;
         const activeInd = getActiveHubMatrixIndustry();
-        const draft = ensureDraftHubPagesPolicy(getDraftSeatPreviewUser(), activeInd);
+        const pUser = getDraftSeatPreviewUser();
+        const allowVoidTab = canViewVoidLog(pUser);
+        const draft = ensureDraftHubPagesPolicy(pUser, activeInd);
         draft.hubPagesSelectAll = false;
         draft.hubs[hubId] = true;
         if (cb.checked) {
-          (hubDef.tabs || []).forEach(t => { draft.pages[t.view] = true; });
+          (hubDef.tabs || []).forEach(t => {
+            draft.pages[t.view] = (t.view === 'void_log' && !allowVoidTab) ? false : true;
+          });
         } else {
           (hubDef.tabs || []).forEach((t, idx) => {
-            draft.pages[t.view] = idx === 0;
+            draft.pages[t.view] = (t.view === 'void_log' && !allowVoidTab) ? false : idx === 0;
           });
         }
         if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, hubId);
@@ -125265,6 +125906,11 @@
         }
         const activeInd = getActiveHubMatrixIndustry();
         const prevPreview = getDraftSeatPreviewUser();
+        if (view === 'void_log' && !canViewVoidLog(prevPreview)) {
+          cb.checked = false;
+          toast('Void Log is reserved strictly for Supervisors and Owners');
+          return;
+        }
         const wasHubOn = canViewHub(hubId, prevPreview);
         const draft = ensureDraftHubPagesPolicy(prevPreview, activeInd);
         const hubDef = HUB_CATALOG.find(h => h.id === hubId);
@@ -125272,7 +125918,7 @@
         if (!wasHubOn && cb.checked && hubDef) {
           draft.hubs[hubId] = true;
           (hubDef.tabs || []).forEach(t => {
-            draft.pages[t.view] = (t.view === view);
+            draft.pages[t.view] = (t.view === 'void_log' && !canViewVoidLog(prevPreview)) ? false : (t.view === view);
           });
         } else {
           draft.pages[view] = Boolean(cb.checked);
@@ -126340,6 +126986,7 @@
     sentinels: 'AI Sentinels & Audit',
     alert_rules: 'Alerts & Thresholds',
     approvals: 'Approvals Inbox',
+    void_log: 'Void Log',
     kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
@@ -126461,6 +127108,7 @@
     sentinels: 'AI Sentinels & Audit',
     alert_rules: 'Alerts & Thresholds',
     approvals: 'Approvals Inbox',
+    void_log: 'Void Log',
     kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
@@ -127744,6 +128392,7 @@
       STATE.companySwitchIndFilter = 'all';
       const searchInp = $('companySwitchSearch');
       if (searchInp) searchInp.value = '';
+      if (window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.reset === 'function') window.MFG_VOID_LOG.reset();
     }
     const allowedCos = getAllowedCompanyKeys(user);
     const allowedNames = allowedCompanyNames(user);
@@ -128181,6 +128830,7 @@
     // session can still cancel a waiting request (idle lock or expiry reach here without signOut).
     if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.reset === 'function') window.MFG_APPROVALS.reset();
     if (window.MFG_SAVED_VIEWS && typeof window.MFG_SAVED_VIEWS.reset === 'function') window.MFG_SAVED_VIEWS.reset();
+    if (window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.reset === 'function') window.MFG_VOID_LOG.reset();
     STATE.authed = false;
     STATE.cashflowBehind = null;
     STATE.sourceBehind = null;
@@ -128906,7 +129556,7 @@
     }
     const map = {
       kiosks: 'sales', sales: 'sales', sales_vat: 'vatinvoice', sales_analytics: 'sales',
-      sentinels: 'defect', alert_rules: 'defect', approvals: 'defect',
+      sentinels: 'defect', alert_rules: 'defect', approvals: 'defect', void_log: 'defect',
       raw: 'raw', raw_pricing: 'pricerule_raw', raw_analytics: 'raw', raw_jv: 'jv', jv: 'jv',
       fleet: 'fuel', fleet_equip: 'companyequipment', fleet_maint: 'defect', fleet_drivers: 'triprate', fleet_analytics: 'triprate',
       pricing: 'pricerule',
@@ -160762,6 +161412,7 @@
       case 'sentinels': wsHtml = renderSentinels(); break;
       case 'alert_rules': wsHtml = renderAlertRules(); break;
       case 'approvals': wsHtml = window.MFG_APPROVALS ? window.MFG_APPROVALS.renderView() : ''; break;
+      case 'void_log': wsHtml = window.MFG_VOID_LOG ? window.MFG_VOID_LOG.renderView() : ''; break;
       case 'kiosks': wsHtml = (!STATE.kioskLocked ? renderIndustryContextBanner('kiosks') : '') + renderKiosks(); break;
       case 'sales': wsHtml = renderSales(); break;
       case 'sales_vat': wsHtml = renderSalesVatAndCredit(); break;
@@ -166373,6 +167024,44 @@
     if (window.MFG_SAVED_VIEWS && typeof window.MFG_SAVED_VIEWS.init === 'function') {
       window.MFG_SAVED_VIEWS.init({ STATE, toast, render: renderApp, activeUser, hasServerApi, isDemoScopeActive, edgeApiFetch });
     }
+    if (window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.init === 'function') {
+      window.MFG_VOID_LOG.init({
+        STATE,
+        SEED,
+        SEED_VOIDED_ARCHIVE,
+        COMPANY_LABELS,
+        COMPANY_KEY_BY_NAME,
+        esc,
+        ic,
+        norm,
+        fmtNum,
+        toast,
+        render: renderApp,
+        setView,
+        activeUser,
+        isOwner,
+        canVoid,
+        canModifyData,
+        canViewVoidLog,
+        canAccessTable,
+        canAccessGeoCompany,
+        canAccessGeoIndustry,
+        canViewPayrollDollarAmounts,
+        getActiveIndustry,
+        allowedCompanyNames,
+        getLbpFxRate,
+        getIndustryCustomRowsStore,
+        getIndustryRowEditStore,
+        hasServerApi,
+        isDemoScopeActive,
+        edgeApiFetch,
+        restoreVoidedRecord,
+        restoreVoidedIndustryDomainRow,
+        saveVoidNote,
+        navigateToRecordOrDomainRow,
+        recordDateDMY
+      });
+    }
 
     // Keyboard: Escape closes the innermost open popover / drawer / modal / rail; Ctrl+K toggles Global Search
     document.addEventListener('keydown', e => {
@@ -166803,6 +167492,12 @@
       canVoid: email => {
         const u = email ? STATE.users.find(x => norm(x.email) === norm(email)) : activeUser();
         return canVoid(u);
+      },
+      canViewVoidLog: emailOrUser => {
+        const u = typeof emailOrUser === 'string'
+          ? STATE.users.find(x => norm(x.email) === norm(emailOrUser) || String(x.id) === String(emailOrUser))
+          : (emailOrUser || activeUser());
+        return canViewVoidLog(u);
       },
       canAccessPbiPage: (pageId, email) => {
         const u = email ? STATE.users.find(x => norm(x.email) === norm(email)) : activeUser();

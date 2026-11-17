@@ -3119,6 +3119,7 @@
     alerts: 'Sentinels & Alerts',
     alert_rules: 'Alerts & Thresholds',
     approvals: 'Approvals Inbox',
+    void_log: 'Void Log',
     pbi: 'Dashboards & Reports',
     pbi_hub: 'Dashboards & Reports',
     statements: 'Printable Statements & SOA',

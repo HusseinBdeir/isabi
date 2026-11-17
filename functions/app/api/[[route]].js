@@ -43,7 +43,7 @@ import {
   handleGoogleMapUsage
 } from '../../_lib/google_maps.js';
 import { handleTelematics } from '../../_lib/telematics.js';
-import { handleKioskOptions, handleKioskPunchFeed, handleKioskVerify } from '../../_lib/kiosk_verify.js';
+import { handleKioskOptions, handleKioskPosVoidFeed, handleKioskPunchFeed, handleKioskVerify } from '../../_lib/kiosk_verify.js';
 import { handleResolveMapLink } from '../../_lib/map_link.js';
 import {
   applyEdgeCors,
@@ -210,6 +210,9 @@ async function routeAppApi(context) {
     return handleGoogleMapUsage(request, env, body, session, { url, parseError, context });
   }
   if (!session) {
+    if (isDemoReq && subPath === '/kiosk/pos-voids' && (request.method === 'GET' || request.method === 'POST')) {
+      return jsonResponse({ ok: true, demo: true, voids: [] });
+    }
     if (isDemoReq && request.method === 'GET' && DEMO_EMPTY_GET_ROUTES.has(subPath)) {
       if (subPath === '/sentinel_reviews') return jsonResponse({ ok: true, demo: true, reviews: {} });
       if (subPath === '/alert_rules') return jsonResponse({ ok: true, demo: true, overrides: {}, custom: [] });
@@ -302,6 +305,9 @@ async function routeAppApi(context) {
   // Door tablet punches for Payroll & Attendance (signed-in seats only, scoped to their companies).
   if (subPath === '/kiosk/punches' && request.method === 'POST') {
     return handleKioskPunchFeed(request, env, session, body, { isOwnerOrFullGroupSession, canAccessCompany });
+  }
+  if (subPath === '/kiosk/pos-voids' && (request.method === 'POST' || request.method === 'GET')) {
+    return handleKioskPosVoidFeed(request, env, session, body, { isOwnerOrFullGroupSession, canAccessCompany });
   }
 
   if (subPath === '/blobs') {
