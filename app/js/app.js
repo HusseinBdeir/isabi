@@ -63236,12 +63236,12 @@
     const p6SenRows = scopeBentoRows(sentinels, s => `${s.title || ''} ${s.company || ''} ${s.category || ''} ${s.badge || ''} ${s.metric || ''}`, false);
 
     const domainLabels = {
-      'Holding & Treasury': { rev: 'Intercompany & Advisory', direct: 'Facility & Funding Cost', p1: '1 · Sister Clearing & Flows', p2: '2 · Partner Split & Facilities', p5: '5 · HQ Assets & Treasury Desk' },
-      'Hospitality & Resorts': { rev: 'Venue POS & Chalet Sales', direct: 'Kitchen, Cellar & Energy', p1: '1 · Venue POS & Admissions', p2: '2 · Memberships & Banquets', p5: '5 · Kitchen, Cellar & Generators' },
-      'Automotive & Heavy Trading': { rev: 'Vehicles & Parts Sales', direct: 'FOB & Landed Import Cost', p1: '1 · Showroom & Parts Invoices', p2: '2 · Import Containers & Landed Cost', p5: '5 · 5-Warehouse Stock & PDI' },
-      'Real Estate & Property': { rev: 'Lease Rent & Deed Sales', direct: 'Property Tax & Fit-Out Cost', p1: '1 · Rent Roll & Collections', p2: '2 · Lease Renewals & Deed Sales', p5: '5 · Buildings, Units & MEP' },
-      'Insurance & Brokerage': { rev: 'Gross Written Premium & Comm', direct: 'Carrier Net Remittances', p1: '1 · Policies & Endorsements', p2: '2 · Renewal Queue & Bordereaux', p5: '5 · Claims FNOL & Survey Units' }
-    }[ind] || { rev: 'Operating Revenue', direct: 'Direct Operating Cost', p1: '1 · Commercial & Revenue', p2: '2 · Contracts & Pricing', p5: '5 · Domain Operations & Assets' };
+      'Holding & Treasury': { rev: 'Intercompany & Advisory', direct: 'Facility & Funding Cost', p1: 'Sister Clearing & Flows', p2: 'Partner Split & Facilities', p5: 'HQ Assets & Treasury Desk' },
+      'Hospitality & Resorts': { rev: 'Venue POS & Chalet Sales', direct: 'Kitchen, Cellar & Energy', p1: 'Venue POS & Admissions', p2: 'Memberships & Banquets', p5: 'Kitchen, Cellar & Generators' },
+      'Automotive & Heavy Trading': { rev: 'Vehicles & Parts Sales', direct: 'FOB & Landed Import Cost', p1: 'Showroom & Parts Invoices', p2: 'Import Containers & Landed Cost', p5: '5-Warehouse Stock & PDI' },
+      'Real Estate & Property': { rev: 'Lease Rent & Deed Sales', direct: 'Property Tax & Fit-Out Cost', p1: 'Rent Roll & Collections', p2: 'Lease Renewals & Deed Sales', p5: 'Buildings, Units & MEP' },
+      'Insurance & Brokerage': { rev: 'Gross Written Premium & Comm', direct: 'Carrier Net Remittances', p1: 'Policies & Endorsements', p2: 'Renewal Queue & Bordereaux', p5: 'Claims FNOL & Survey Units' }
+    }[ind] || { rev: 'Operating Revenue', direct: 'Direct Operating Cost', p1: 'Commercial & Revenue', p2: 'Contracts & Pricing', p5: 'Domain Operations & Assets' };
 
     const totalStreamCount = ds0.rows.length + ds1.rows.length + expRows.length + docRows.length + extRows.length + empRows.length;
 
@@ -63270,22 +63270,27 @@
             <div class="dops-title-group">
               <h1 class="dops-page-title cockpit-title">Daily Operations</h1>
               <span class="dops-active-date-lbl" id="dopsActiveDateLabel">${esc(targetDate)} · ${esc(coLbl)}</span>
-              <span class="dops-basis-tag" id="dopsTxBasisBadge">${ic('lock')} <span>Tx Date<span class="dops-basis-long"> Basis (${fmtNum(allOpDates.length)}d)</span></span></span>
+              <div class="dops-day-nav" role="group" aria-label="Step Operating Day">
+                <button type="button" class="dops-step-btn" id="dopsPrevDayBtn" ${prevDate ? `data-dops-pick-date="${esc(prevDate)}"` : 'disabled'} aria-label="Previous Day">&lsaquo;</button>
+                <input type="date" id="dopsDateInput" class="dops-date-input" min="${esc(MIN_DATE)}" max="${esc(MAX_DATE)}" value="${esc(targetDate)}" aria-label="Operating Transaction Date">
+                <button type="button" class="dops-step-btn" id="dopsNextDayBtn" ${nextDate ? `data-dops-pick-date="${esc(nextDate)}"` : 'disabled'} aria-label="Next Day">&rsaquo;</button>
+              </div>
+              <div class="dops-quick-pills" role="group" aria-label="Quick Day Presets">
+                <button type="button" class="dops-qpill${targetDate === today ? ' active' : ''}" data-dops-pick-date="${esc(today)}">Today</button>
+                <button type="button" class="dops-qpill${targetDate === yestWall ? ' active' : ''}" data-dops-pick-date="${esc(yestWall)}">Yesterday</button>
+                <button type="button" class="dops-qpill${targetDate === latestOpDate ? ' active' : ''}" data-dops-pick-date="${esc(latestOpDate)}">Latest (${esc(latestOpDate.slice(5))})</button>
+              </div>
+              <span class="dops-basis-tag is-quiet" id="dopsTxBasisBadge">${ic('lock')} <span>Tx Date<span class="dops-basis-long"> Basis (${fmtNum(allOpDates.length)}d)</span></span></span>
               ${buStripHtml}
             </div>
           </div>
           <div class="dops-bar-controls">
+            <div class="dops-att-strip" id="dopsAttentionStrip" role="group" aria-label="Needs Attention">
+              ${(canViewBooks && dayRevUsd > 0 && dayOpProfit < 0) || openSn.length > 0 ? `<span class="dops-att-lead">Needs Attention</span>` : (canViewBooks && dayOpProfit < 0 ? '' : `<span class="dops-att-chip good is-static">${ic('check_circle')}<span class="dops-att-lbl">All Clear</span></span>`)}
+              ${canViewBooks && dayRevUsd > 0 && dayOpProfit < 0 ? `<button type="button" class="dops-att-chip crit" data-nav-jump="expenses" data-ui-tip="Costs were higher than sales on this day. Click to see the cost breakdown.">${ic('warn')}<span class="dops-att-lbl">Day Loss</span><bdi class="dops-att-val">${fmtUSD(dayOpProfit, 0)}</bdi></button>` : ''}
+              ${openSn.length > 0 ? `<button type="button" class="dops-att-chip warn" data-nav-jump="sentinels" data-ui-tip="Open alerts raised by the automatic checks. Click to review them.">${ic('warn')}<span class="dops-att-lbl">Open Alerts</span><bdi class="dops-att-val">${fmtNum(openSn.length)}</bdi></button>` : ''}
+            </div>
             <input type="search" id="dopsQuickSearchInput" class="dops-search-inp" value="${esc(rawDopsSearch)}" placeholder="Filter day streams..." aria-label="Filter Daily Operations">
-            <div class="dops-quick-pills" role="group" aria-label="Quick Day Presets">
-              <button type="button" class="dops-qpill${targetDate === today ? ' active' : ''}" data-dops-pick-date="${esc(today)}">Today</button>
-              <button type="button" class="dops-qpill${targetDate === yestWall ? ' active' : ''}" data-dops-pick-date="${esc(yestWall)}">Yesterday</button>
-              <button type="button" class="dops-qpill${targetDate === latestOpDate ? ' active' : ''}" data-dops-pick-date="${esc(latestOpDate)}">Latest (${esc(latestOpDate.slice(5))})</button>
-            </div>
-            <div class="dops-day-nav" role="group" aria-label="Step Operating Day">
-              <button type="button" class="dops-step-btn" id="dopsPrevDayBtn" ${prevDate ? `data-dops-pick-date="${esc(prevDate)}"` : 'disabled'} aria-label="Previous Day">&lsaquo;</button>
-              <input type="date" id="dopsDateInput" class="dops-date-input" min="${esc(MIN_DATE)}" max="${esc(MAX_DATE)}" value="${esc(targetDate)}" aria-label="Operating Transaction Date">
-              <button type="button" class="dops-step-btn" id="dopsNextDayBtn" ${nextDate ? `data-dops-pick-date="${esc(nextDate)}"` : 'disabled'} aria-label="Next Day">&rsaquo;</button>
-            </div>
             <button type="button" class="dops-handover-btn" id="dopsHandoverBriefBtn" data-dops-handover="1" aria-expanded="false" aria-label="Shift Handover" data-ui-tip="Open Shift Handover Brief: yesterday-vs-today variance, cash and credit intake, Day P&L bridge, shift priorities, and manager WhatsApp summary">
               ${ic('sparkles')}
               <span class="dops-handover-lbl">Shift Handover</span>
@@ -63439,7 +63444,7 @@
             <div class="dops-card-hd">
               <div class="dops-card-title-wrap">
                 <span class="dops-card-ico amber">${ic('expenses')}</span>
-                <h2 class="dops-card-title">3 · P&amp;L, Bills &amp; Document Vault</h2>
+                <h2 class="dops-card-title">P&amp;L, Bills &amp; Document Vault</h2>
               </div>
               <div class="dops-card-actions">
                 ${canViewExp ? `<button type="button" class="dops-seg-btn" data-nav-jump="documents">Vault (${fmtNum(p3DocRows.length)})</button>
@@ -63478,7 +63483,7 @@
             <div class="dops-card-hd">
               <div class="dops-card-title-wrap">
                 <span class="dops-card-ico teal">${ic('cashflow')}</span>
-                <h2 class="dops-card-title">4 · Treasury, External &amp; Loans</h2>
+                <h2 class="dops-card-title">Treasury, External &amp; Loans</h2>
               </div>
               <div class="dops-card-actions">
                 ${canViewBooks ? `<button type="button" class="dops-seg-btn" data-nav-jump="external">Ext (${fmtNum(p4ExtRows.length)})</button>
@@ -63559,7 +63564,7 @@
             <div class="dops-card-hd">
               <div class="dops-card-title-wrap">
                 <span class="dops-card-ico deals">${ic('payroll')}</span>
-                <h2 class="dops-card-title">6 · Workforce &amp; Operational Controls</h2>
+                <h2 class="dops-card-title">Workforce &amp; Operational Controls</h2>
               </div>
               <div class="dops-card-actions">
                 <button type="button" class="dops-seg-btn" data-nav-jump="sentinels">Alerts (${fmtNum(openSn.length)})</button>

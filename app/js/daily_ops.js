@@ -2840,16 +2840,6 @@
                   <td class="r"><strong style="color:var(--crit)">-${fmtUSD(ev.shortfall, 0)}</strong></td>
                 </tr>
               `).join('')}
-              ${(qFilter === 'all' ? dm.dayPriceRules : []).filter(pr => matchesQuickSearch(qNorm, [pr.customer, pr.supplier, pr.product, pr.site])).map(pr => {
-                const info = describePriceRule(ctx, pr);
-                return `
-                  <tr class="rrow" data-rkey="price_rules" data-rid="${esc(String(pr.id || ''))}">
-                    <td class="dops-trunc"><span class="dops-kind rule">New</span> <strong>${esc(info.party)}</strong></td>
-                    <td class="dops-trunc">${esc(info.sub || pr.rule_type || 'Agreement')}</td>
-                    <td class="r"><strong>${esc(info.primaryRate)}</strong>${info.haulRate ? `<small class="dops-cell-sub">${esc(info.haulRate)}</small>` : ''}</td>
-                  </tr>
-                `;
-              }).join('')}
               ${qRows.map(q => {
                 const expKey = `quarry:${q.key}`;
                 const innerHit = Boolean(qNorm && !matchesQuickSearch(qNorm, [q.site, q.supplier, q.product]) && (q.tickets || []).some(t => matchesQuickSearch(qNorm, [t.ticket_no, t.truck, t.driver, t.truck_owner])));
@@ -2905,6 +2895,17 @@
                   }).join('')}
                 `;
               }).join('')}
+              ${/* Money first: the day's quarry cost rows lead, agreements written today follow them. */ ''}
+              ${(qFilter === 'all' ? dm.dayPriceRules : []).filter(pr => matchesQuickSearch(qNorm, [pr.customer, pr.supplier, pr.product, pr.site])).map(pr => {
+                const info = describePriceRule(ctx, pr);
+                return `
+                  <tr class="rrow" data-rkey="price_rules" data-rid="${esc(String(pr.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind rule">New</span> <strong>${esc(info.party)}</strong></td>
+                    <td class="dops-trunc">${esc(info.sub || pr.rule_type || 'Agreement')}</td>
+                    <td class="r"><strong>${esc(info.primaryRate)}</strong>${info.haulRate ? `<small class="dops-cell-sub">${esc(info.haulRate)}</small>` : ''}</td>
+                  </tr>
+                `;
+              }).join('')}
               ${showRulesUsed.map(ru => {
                 const info = describePriceRule(ctx, ru.rule);
                 return `
@@ -2958,32 +2959,51 @@
     const profPctTxt = `${(dm.opMarginPct * 100).toFixed(1)}%`;
     const payAndComm = ctx.round2(dm.salariesPaid + dm.salesSum.commUsd);
 
+    // Where the day's sales went: one bar whose full width is the larger of sales and total costs, so a loss
+    // shows as costs running past the sales mark. Same figures as the steps under it.
+    const bSales = Math.max(0, Number(dm.salesSum.grossExVat) || 0);
+    const bQuarry = Math.max(0, Number(dm.rawSum.totalCost) || 0);
+    const bExp = Math.max(0, Number(dm.expExVat) || 0);
+    const bPay = Math.max(0, Number(payAndComm) || 0);
+    const bCosts = bQuarry + bExp + bPay;
+    const bBase = Math.max(bSales, bCosts);
+    const bPct = v => (bBase > 0 ? Math.max(0, Math.min(100, (v / bBase) * 100)) : 0).toFixed(2);
+    const bLoss = bCosts > bSales;
+    // Drawn only when the bar and the profit figure agree (a refund can turn a cost negative, which a bar cannot show).
+    const bAgrees = Math.abs((bSales - bCosts) - Number(dm.operatingProfit || 0)) < 1;
+    const pnlBarHtml = bBase > 0 && bAgrees ? `
+        <div class="dops-pnl-bar" role="img" aria-label="Where the day's sales went" data-ui-tip="Where the day's sales went: quarry and haulage, expenses, payroll, and what is left as profit. Costs past the mark are a loss.">
+          <span class="dops-pnl-seg q" style="width:${bPct(bQuarry)}%"></span><span class="dops-pnl-seg e" style="width:${bPct(bExp)}%"></span><span class="dops-pnl-seg p" style="width:${bPct(bPay)}%"></span>${bLoss ? '' : `<span class="dops-pnl-seg g" style="width:${bPct(bSales - bCosts)}%"></span>`}
+          ${bLoss ? `<span class="dops-pnl-over" style="inset-inline-start:${bPct(bSales)}%"></span><span class="dops-pnl-mark" style="inset-inline-start:${bPct(bSales)}%"></span>` : ''}
+        </div>` : '';
+
     const pnlStripHtml = perms.canBooks ? `
       <div class="dops-pnl-bridge dops-substrip" data-dops-open-drawer="expenses">
-        <div class="dops-pnl-step">
+        ${pnlBarHtml}
+        <div class="dops-pnl-step" data-ui-tip="Sales before VAT">
           <small>Sales Ex-VAT</small>
           <b>${fmtUSD(dm.salesSum.grossExVat, 0)}</b>
         </div>
         <span class="dops-pnl-op">-</span>
-        <div class="dops-pnl-step">
-          <small>Quarry &amp; Haul</small>
+        <div class="dops-pnl-step" data-ui-tip="Quarry material and haulage">
+          <small><i class="dops-pnl-dot q"></i>Quarry</small>
           <b>${fmtUSD(dm.rawSum.totalCost, 0)}</b>
         </div>
         <span class="dops-pnl-op">-</span>
-        <div class="dops-pnl-step">
-          <small>Expenses (${fmtNum(dm.expCount)})</small>
+        <div class="dops-pnl-step" data-ui-tip="Expense bills before VAT">
+          <small><i class="dops-pnl-dot e"></i>Expenses</small>
           <b>${fmtUSD(dm.expExVat, 0)}</b>
         </div>
         ${payAndComm > 0 ? `
           <span class="dops-pnl-op">-</span>
-          <div class="dops-pnl-step">
-            <small>Pay &amp; Comm</small>
+          <div class="dops-pnl-step" data-ui-tip="Salaries and sales commissions paid">
+            <small><i class="dops-pnl-dot p"></i>Payroll</small>
             <b>${fmtUSD(payAndComm, 0)}</b>
           </div>
         ` : ''}
         <span class="dops-pnl-op">=</span>
-        <div class="dops-pnl-step is-profit ${dm.operatingProfit < 0 ? 'crit' : 'good'}">
-          <small>Op. Profit (${esc(profPctTxt)})</small>
+        <div class="dops-pnl-step is-profit ${dm.operatingProfit < 0 ? 'crit' : 'good'}" data-ui-tip="Operating profit as a share of the day's sales before VAT">
+          <small>${dm.operatingProfit < 0 ? 'Loss' : 'Profit'} <span class="dops-pnl-pct">${esc(profPctTxt)}</span></small>
           <b>${fmtUSD(dm.operatingProfit, 0)}</b>
         </div>
       </div>
@@ -3958,6 +3978,8 @@
     const expCnt = cntByGroup('expenses');
     const fmCnt = cntByGroup('fuel_maint');
     const teamCnt = cntByGroup('team');
+    // A lens with nothing in it for the day is drawn quiet, so the eye goes to what happened.
+    const zc = n => (Number(n) > 0 ? '' : ' is-zero');
 
     return `
       <!-- PANEL 1: SALES & CLIENT DISPATCH -->
@@ -3965,11 +3987,11 @@
         <div class="dops-card-hd">
           <div class="dops-card-title-wrap">
             <span class="dops-card-ico navy">${ic('sales')}</span>
-            <h2 class="dops-card-title">1 · Sales &amp; Dispatch</h2>
+            <h2 class="dops-card-title">Sales &amp; Dispatch</h2>
           </div>
           <div class="dops-card-actions">
             <div class="dops-seg" role="tablist" aria-label="Commercial Lens">
-              <button type="button" class="dops-seg-btn${commLens === 'pulse' || commLens === 'customers' ? ' active' : ''}" data-dops-lens="comm:pulse">Clients (${fmtNum(dm.customerRows.length)})</button>
+              <button type="button" class="dops-seg-btn${commLens === 'pulse' || commLens === 'customers' ? ' active' : ''}" data-dops-lens="comm:pulse">Clients</button>
               <button type="button" class="dops-seg-btn${commLens === 'hours' ? ' active' : ''}" data-dops-lens="comm:hours">Shift</button>
               <button type="button" class="dops-seg-btn${commLens === 'grades' ? ' active' : ''}" data-dops-lens="comm:grades">Grades</button>
             </div>
@@ -3985,12 +4007,12 @@
         <div class="dops-card-hd">
           <div class="dops-card-title-wrap">
             <span class="dops-card-ico brass">${ic('quarry')}</span>
-            <h2 class="dops-card-title">2 · Quarry &amp; Pricing</h2>
+            <h2 class="dops-card-title">Quarry &amp; Pricing</h2>
           </div>
           <div class="dops-card-actions">
             <div class="dops-seg" role="tablist" aria-label="Quarry & Pricing Lens">
               <button type="button" class="dops-seg-btn${dealsLens === 'highlights' ? ' active' : ''}" data-dops-lens="deals:highlights">Quarry</button>
-              <button type="button" class="dops-seg-btn${dm.newPoliciesCount > 0 ? ' has-alert' : ''}${dealsLens === 'rules' ? ' active' : ''}" data-dops-lens="deals:rules">Rules (${fmtNum(dm.newPoliciesCount || dm.activeRulesUsed.length)})</button>
+              <button type="button" class="dops-seg-btn${dm.newPoliciesCount > 0 ? ' has-alert' : ''}${dealsLens === 'rules' ? ' active' : ''}" data-dops-lens="deals:rules">Rules</button>
               <button type="button" class="dops-seg-btn${dm.belowAgreedLoads > 0 ? ' has-alert' : ''}${dealsLens === 'audit' ? ' active' : ''}" data-dops-lens="deals:audit">Audit</button>
               <button type="button" class="dops-seg-btn${dealsLens === 'vat_jv' ? ' active' : ''}" data-dops-lens="deals:vat_jv">VAT</button>
             </div>
@@ -4006,13 +4028,13 @@
         <div class="dops-card-hd">
           <div class="dops-card-title-wrap">
             <span class="dops-card-ico amber">${ic('expenses')}</span>
-            <h2 class="dops-card-title">3 · P&amp;L &amp; Expenses</h2>
+            <h2 class="dops-card-title">Profit &amp; Expenses</h2>
           </div>
           <div class="dops-card-actions">
             ${perms.canExp ? `<div class="dops-seg" role="tablist" aria-label="Expenses Lens">
-              <button type="button" class="dops-seg-btn${expLens === 'bills' ? ' active' : ''}" data-dops-lens="exp:bills">Bills (${fmtNum(dm.expCount)})</button>
+              <button type="button" class="dops-seg-btn${expLens === 'bills' ? ' active' : ''}" data-dops-lens="exp:bills">Bills</button>
               <button type="button" class="dops-seg-btn${expLens === 'cats' || expLens === 'categories' ? ' active' : ''}" data-dops-lens="exp:cats">Categories</button>
-              <button type="button" class="dops-seg-btn${expLens === 'stock' || expLens === 'items' ? ' active' : ''}" data-dops-lens="exp:stock">Items (${fmtNum(dm.dayExpItems.length)})</button>
+              <button type="button" class="dops-seg-btn${zc(dm.dayExpItems.length)}${expLens === 'stock' || expLens === 'items' ? ' active' : ''}" data-dops-lens="exp:stock">Items</button>
             </div>
             <button type="button" class="dops-disc-link" data-dops-open-drawer="expenses" data-ui-tip="Inspect expense bills & stock purchases">${fmtNum(expCnt)}</button>
             <button type="button" class="dops-add-btn" data-open-modal="expense" data-ui-tip="New Expense / Stock Bill" aria-label="New Expense Bill">${ic('plus')}</button>` : ''}
@@ -4026,14 +4048,14 @@
         <div class="dops-card-hd">
           <div class="dops-card-title-wrap">
             <span class="dops-card-ico teal">${ic('cashflow')}</span>
-            <h2 class="dops-card-title">4 · Treasury</h2>
+            <h2 class="dops-card-title">Cash Flow</h2>
           </div>
           <div class="dops-card-actions">
             ${perms.canBooks ? `<div class="dops-seg" role="tablist" aria-label="Treasury Lens">
-              <button type="button" class="dops-seg-btn${treasuryLens === 'bridge' ? ' active' : ''}" data-dops-lens="treasury:bridge">All (${fmtNum(dm.cashMoveRows.length)})</button>
-              <button type="button" class="dops-seg-btn${dm.extItems.length > 0 ? ' has-alert' : ''}${treasuryLens === 'external' ? ' active' : ''}" data-dops-lens="treasury:external">Ext (${fmtNum(dm.extItems.length)})</button>
-              <button type="button" class="dops-seg-btn${(dm.convItems.length + dm.loanEvents.length) > 0 ? ' has-alert' : ''}${treasuryLens === 'fx_loans' ? ' active' : ''}" data-dops-lens="treasury:fx_loans">FX/Ln (${fmtNum(dm.convItems.length + dm.loanEvents.length)})</button>
-              <button type="button" class="dops-seg-btn${treasuryLens === 'ar_ap' ? ' active' : ''}" data-dops-lens="treasury:ar_ap">AR/AP (${fmtNum(dm.arRcptCount + dm.apSetCount)})</button>
+              <button type="button" class="dops-seg-btn${treasuryLens === 'bridge' ? ' active' : ''}" data-dops-lens="treasury:bridge">All</button>
+              <button type="button" class="dops-seg-btn${zc(dm.extItems.length)}${treasuryLens === 'external' ? ' active' : ''}" data-dops-lens="treasury:external">External</button>
+              <button type="button" class="dops-seg-btn${zc(dm.convItems.length + dm.loanEvents.length)}${treasuryLens === 'fx_loans' ? ' active' : ''}" data-dops-lens="treasury:fx_loans">FX &amp; Loans</button>
+              <button type="button" class="dops-seg-btn${zc(dm.arRcptCount + dm.apSetCount)}${treasuryLens === 'ar_ap' ? ' active' : ''}" data-dops-lens="treasury:ar_ap">AR/AP</button>
             </div>
             <button type="button" class="dops-disc-link" data-dops-open-drawer="treasury" data-ui-tip="Inspect treasury, external, FX & loan records">${fmtNum(extCnt + fxlCnt + arapCnt)}</button>
             <button type="button" class="dops-add-btn" data-open-modal="external" data-ui-tip="New Treasury / External Movement" aria-label="New Treasury Movement">${ic('plus')}</button>` : ''}
@@ -4047,13 +4069,13 @@
         <div class="dops-card-hd">
           <div class="dops-card-title-wrap">
             <span class="dops-card-ico steel">${ic('fleet')}</span>
-            <h2 class="dops-card-title">5 · Diesel, Fuel &amp; Fleet</h2>
+            <h2 class="dops-card-title">Fleet &amp; Diesel</h2>
           </div>
           <div class="dops-card-actions">
             <div class="dops-seg" role="tablist" aria-label="Fleet & Fuel Lens">
-              <button type="button" class="dops-seg-btn${fuelLens === 'units' ? ' active' : ''}" data-dops-lens="fuel:units">Units (${fmtNum((dm.fuelUnitRows || []).length)})</button>
-              <button type="button" class="dops-seg-btn${fuelLens === 'fuel_maint' ? ' active' : ''}" data-dops-lens="fuel:fuel_maint">Fills (${fmtNum(dm.dayFuels.length)})</button>
-              <button type="button" class="dops-seg-btn${(dm.dayMalfs.length + dm.openCritDefects.length) > 0 ? ' has-alert' : ''}${fuelLens === 'maint_only' || fuelLens === 'maint' ? ' active' : ''}" data-dops-lens="fuel:maint_only">Maint (${fmtNum(dm.dayMalfs.length + dm.dayRepairs.length + dm.dayOilLogs.length)})</button>
+              <button type="button" class="dops-seg-btn${fuelLens === 'units' ? ' active' : ''}" data-dops-lens="fuel:units">Units</button>
+              <button type="button" class="dops-seg-btn${zc(dm.dayFuels.length)}${fuelLens === 'fuel_maint' ? ' active' : ''}" data-dops-lens="fuel:fuel_maint">Fills</button>
+              <button type="button" class="dops-seg-btn${zc(dm.dayMalfs.length + dm.dayRepairs.length + dm.dayOilLogs.length + dm.openCritDefects.length)}${(dm.dayMalfs.length + dm.openCritDefects.length) > 0 ? ' has-alert' : ''}${fuelLens === 'maint_only' || fuelLens === 'maint' ? ' active' : ''}" data-dops-lens="fuel:maint_only">Maintenance</button>
             </div>
             <button type="button" class="dops-disc-link" data-dops-open-drawer="fuel_maint" data-ui-tip="Inspect diesel, lubricant & maintenance logs">${fmtNum(fmCnt)}</button>
             <button type="button" class="dops-add-btn" data-open-modal="fuel" data-ui-tip="New Diesel / Lube Issue" aria-label="New Fuel Intake">${ic('plus')}</button>
@@ -4067,12 +4089,12 @@
         <div class="dops-card-hd">
           <div class="dops-card-title-wrap">
             <span class="dops-card-ico deals">${ic('payroll')}</span>
-            <h2 class="dops-card-title">6 · Workforce &amp; Audit</h2>
+            <h2 class="dops-card-title">Team &amp; Audit</h2>
           </div>
           <div class="dops-card-actions">
             <div class="dops-seg" role="tablist" aria-label="Workforce Lens">
-              <button type="button" class="dops-seg-btn${plantLens === 'overview' || plantLens === 'team' ? ' active' : ''}" data-dops-lens="plant:overview">Team (${fmtNum(dm.activeStaffCount)})</button>
-              <button type="button" class="dops-seg-btn${dm.dayRegAdds.length > 0 ? ' has-alert' : ''}${plantLens === 'master_gov' || plantLens === 'master' ? ' active' : ''}" data-dops-lens="plant:master_gov">Audit (+${fmtNum(dm.dayRegAdds.length)})</button>
+              <button type="button" class="dops-seg-btn${plantLens === 'overview' || plantLens === 'team' ? ' active' : ''}" data-dops-lens="plant:overview">Team</button>
+              <button type="button" class="dops-seg-btn${zc(dm.dayRegAdds.length)}${dm.dayRegAdds.length > 0 ? ' has-alert' : ''}${plantLens === 'master_gov' || plantLens === 'master' ? ' active' : ''}" data-dops-lens="plant:master_gov">Audit</button>
             </div>
             <button type="button" class="dops-disc-link" data-dops-open-drawer="team" data-ui-tip="Inspect attendance, salaries & master records">${fmtNum(teamCnt)}</button>
             <button type="button" class="dops-add-btn" data-open-modal="attendance" data-ui-tip="New Attendance / Shift Entry" aria-label="New Attendance Entry">${ic('plus')}</button>
@@ -4105,8 +4127,36 @@
       ? Math.round(((dm.salesSum.ttc - dm.avg7Sales) / dm.avg7Sales) * 100)
       : null;
     const salesDeltaBadge = salesVs7 != null
-      ? `<span class="dops-kpi-delta ${salesVs7 >= 0 ? 'good' : (salesVs7 <= -25 ? 'warn' : 'neutral')}">${salesVs7 >= 0 ? '+' : ''}${salesVs7}% vs 7d</span>`
+      ? `<span class="dops-kpi-delta ${salesVs7 >= 0 ? 'good' : (salesVs7 <= -25 ? 'warn' : 'neutral')}" data-ui-tip="Compared with the average of the last 7 active days">${salesVs7 >= 0 ? '&#9650;' : '&#9660;'} ${Math.abs(salesVs7)}%</span>`
       : `<span class="dops-kpi-delta neutral">${dm.salesSum.loads === 0 ? '0 Dispatches' : 'Tx Date'}</span>`;
+
+    // Share of the day's sales (before VAT) that went to quarry material and haulage
+    const rawSharePct = dm.salesSum.grossExVat > 0 ? Math.round((dm.rawSum.totalCost / dm.salesSum.grossExVat) * 100) : null;
+    const kMoney = v => (Math.abs(Number(v) || 0) >= 10000 ? fmtUSDk(v) : fmtUSD(v, 0));
+
+    // "Needs Attention" strip: the few facts that explain the day, ranked by severity. Deterministic, no AI.
+    const attChip = (tone, icon, label, value, attr, tip) =>
+      `<button type="button" class="dops-att-chip ${tone}" ${attr} data-ui-tip="${esc(tip)}">${ic(icon)}<span class="dops-att-lbl">${label}</span>${value !== '' ? `<bdi class="dops-att-val">${esc(value)}</bdi>` : ''}</button>`;
+    const attChips = [];
+    if (perms.canBooks && dm.operatingProfit < 0) {
+      attChips.push(attChip('crit', 'warn', 'Day Loss', fmtUSD(dm.operatingProfit, 0), 'data-dops-open-drawer="all"', 'Costs were higher than sales on this day. Click to see the day records.'));
+    }
+    // The till figure is the live till, so it is only an exception of the day when the day on screen is today.
+    if (perms.canBooks && dm.targetDate === today && Math.round(dm.liveTillUsd) < 0) {
+      attChips.push(attChip('crit', 'cashflow', 'Till Negative', fmtUSD(dm.liveTillUsd, 0), 'data-dops-open-drawer="treasury"', 'The US dollar cash till is below zero. Click to review the cash movements.'));
+    }
+    if (salesVs7 != null && salesVs7 <= -25) {
+      attChips.push(attChip('warn', 'sales', 'Sales Below Usual', `${salesVs7}%`, 'data-dops-open-drawer="sales"', 'Compared with the average of the last 7 active days'));
+    }
+    const excKinds = [
+      [dm.belowAgreedLoads, 'Below Agreed Rate'],
+      [dm.pendingExps.length, 'Awaiting Price'],
+      [dm.openCritDefects.length, 'Critical Defects'],
+      [dm.dayMalfs.length, 'Tank Variance'],
+      [dm.absentCount, 'Absent']
+    ].filter(k => k[0] > 0);
+    const excLabel = excKinds.length === 1 ? excKinds[0][1] : 'Exceptions';
+    const hasAttention = attChips.length > 0 || dm.exceptionCount > 0;
 
     // KPI 3: Expenses & Bills
     const topExpBill = dm.expenseBillRows[0] || null;
@@ -4133,7 +4183,8 @@
         { label: 'Total Sales Revenue', value: fmtUSD(dm.salesSum.ttc, 0), color: '#2356A8', isTotal: true },
         { label: 'Material vs Transport', value: `${fmtUSD(salesMatDisplay, 0)} + ${fmtUSD(dm.salesSum.transRev, 0)}`, color: '#4A90D9' },
         { label: 'Cash vs Credit', value: `${fmtUSD(dm.salesSum.cashTtc, 0)} / ${fmtUSD(dm.salesSum.creditTtc, 0)}`, color: '#1F7A4C' },
-        { label: 'Delivery vs Pickup', value: `${dm.salesSum.deliveryLoads} Deliv · ${dm.salesSum.pickupLoads} Pickup`, color: '#C0892F' }
+        { label: 'Delivery vs Pickup', value: `${dm.salesSum.deliveryLoads} Deliv · ${dm.salesSum.pickupLoads} Pickup`, color: '#C0892F' },
+        { label: 'Clients · Average Price', value: `${fmtNum(dm.customerRows.length)} · ${fmtUSD(dm.salesSum.avgPriceTtc, 1)}/m³`, color: '#7A889B' }
       ],
       footer: dm.ahSalesCount > 0 ? `Includes ${dm.ahSalesCount} Yesterday After-Hours sales · Click to inspect` : 'Click to inspect sales dispatches'
     });
@@ -4174,6 +4225,7 @@
       rows: [
         { label: 'Sales Revenue (Ex-VAT)', value: fmtUSD(dm.salesSum.grossExVat, 0), color: '#2356A8' },
         { label: 'Less Quarry & Haulage', value: `-${fmtUSD(dm.rawSum.totalCost, 0)}`, color: '#C0892F' },
+        { label: 'After Quarry & Haulage', value: fmtUSD(ctx.round2(Number(dm.salesSum.grossExVat || 0) - Number(dm.rawSum.totalCost || 0)), 0), color: '#4A90D9' },
         { label: 'Less Expenses & Payroll', value: `-${fmtUSD(dm.expExVat + dm.salariesPaid + dm.salesSum.commUsd, 0)}`, color: '#C96A22' },
         { label: 'Day Operating Profit', value: fmtUSD(dm.operatingProfit, 0), color: dm.operatingProfit >= 0 ? '#1F7A4C' : '#C8333B', isTotal: true }
       ],
@@ -4240,6 +4292,7 @@
     // Multi-Entity BU Attribution Strip when viewing All Group
     const buStripHtml = (!isSingleCo && dm.entityRows && dm.entityRows.length > 1)
       ? `<div class="dops-bu-strip" id="dopsBuStrip" aria-label="Business Unit Attribution">
+          <span class="dops-bu-lead">${perms.canBooks ? 'Sales and Profit by Company' : 'Sales by Company'}</span>
           ${dm.entityRows.map(r => {
             const active = r.salesTtc > 0 || (perms.canExp && r.outlay > 0) || r.salesLoads > 0 || r.rawLoads > 0 || (perms.canBooks && r.netCash !== 0);
             const tipTxt = perms.canBooks
@@ -4262,48 +4315,52 @@
             <div class="dops-title-group">
               <h1 class="dops-page-title cockpit-title">Daily Operations</h1>
               <span class="dops-active-date-lbl" id="dopsActiveDateLabel">${esc(fmtHumanDay(dm.targetDate))}</span>
-              <span class="dops-basis-tag" id="dopsTxBasisBadge" data-ui-tip="Always anchored to physical Transaction Date regardless of whether the global system filter is set to Reporting Date or Transaction Date.">${ic('lock')} <span>Tx Date<span class="dops-basis-long"> Basis</span></span></span>
+              <div class="dops-day-nav" role="group" aria-label="Step Operating Day">
+                <button type="button" class="dops-step-btn" id="dopsPrevDayBtn" ${dm.prevDate ? `data-dops-pick-date="${esc(dm.prevDate)}"` : 'disabled'} aria-label="Previous Day">&lsaquo;</button>
+                <input type="date" id="dopsDateInput" class="dops-date-input" min="${esc(ctx.MIN_DATE)}" max="${esc(ctx.MAX_DATE)}" value="${esc(dm.targetDate)}" aria-label="Operating Transaction Date">
+                <button type="button" class="dops-step-btn" id="dopsNextDayBtn" ${dm.nextDate ? `data-dops-pick-date="${esc(dm.nextDate)}"` : 'disabled'} aria-label="Next Day">&rsaquo;</button>
+              </div>
+              <div class="dops-quick-pills" role="group" aria-label="Quick Day Presets">
+                <button type="button" class="dops-qpill${dm.targetDate === today ? ' active' : ''}" data-dops-pick-date="${esc(today)}">Today</button>
+                <button type="button" class="dops-qpill${dm.targetDate === yestWall ? ' active' : ''}" data-dops-pick-date="${esc(yestWall)}">Yesterday</button>
+                ${dm.idx.latestOpDate && dm.idx.latestOpDate !== today && dm.idx.latestOpDate !== yestWall ? `<button type="button" class="dops-qpill${dm.targetDate === dm.idx.latestOpDate ? ' active' : ''}" data-dops-pick-date="${esc(dm.idx.latestOpDate)}">Latest (${esc(fmtShortDay(dm.idx.latestOpDate))})</button>` : ''}
+              </div>
+              <span class="dops-basis-tag is-quiet" id="dopsTxBasisBadge" data-ui-tip="Always anchored to physical Transaction Date regardless of whether the global system filter is set to Reporting Date or Transaction Date.">${ic('lock')} <span>Tx Date<span class="dops-basis-long"> Basis</span></span></span>
               ${buStripHtml}
             </div>
           </div>
 
           <div class="dops-bar-controls">
+            <div class="dops-att-strip" id="dopsAttentionStrip" role="group" aria-label="Needs Attention">
+              ${hasAttention ? `<span class="dops-att-lead">Needs Attention</span>` : `<span class="dops-att-chip good is-static">${ic('check_circle')}<span class="dops-att-lbl">All Clear</span></span>`}
+              ${attChips.join('')}
+              ${dm.exceptionCount > 0 || qFilter === 'exceptions' ? `
+                <button type="button" class="dops-att-chip warn dops-filter-pill exc${qFilter === 'exceptions' ? ' active' : ''}" id="dopsExcFilterBtn" data-dops-qfilter="exceptions" aria-pressed="${qFilter === 'exceptions' ? 'true' : 'false'}" data-ui-tip="Filter all 6 panels to actionable exceptions (${dm.exceptionCount}: below-rate dispatches, pending prices, tank variances, critical defects, or absences)">
+                  ${ic('warn')}
+                  <span class="dops-att-lbl">${excLabel}</span>
+                  <span class="dops-fp-cnt">${fmtNum(dm.exceptionCount)}</span>
+                </button>
+              ` : ''}
+              ${dm.repShiftedCount > 0 || qFilter === 'rep_shifted' ? `
+                <button type="button" class="dops-att-chip info dops-filter-pill rep-shift${qFilter === 'rep_shifted' ? ' active' : ''}${dm.repShiftedCount > 0 ? ' has-items' : ''}" id="dopsRepShiftBtn" data-dops-qfilter="rep_shifted" aria-pressed="${qFilter === 'rep_shifted' ? 'true' : 'false'}" data-ui-tip="${esc(repBtnTip)}">
+                  ${ic('rep_shift')}
+                  <span class="dops-att-lbl">Booked to Another Day</span>
+                  <span class="dops-fp-cnt">${fmtNum(dm.repShiftedCount)}</span>
+                </button>
+              ` : ''}
+            </div>
+
             <div class="dops-qsearch-wrap${qSearch ? ' has-val' : ''}" id="dopsQuickSearchWrap">
               <span class="dops-qsearch-ico" aria-hidden="true">${ic('search')}</span>
               <input type="search" id="dopsQuickSearchInput" class="dops-qsearch-input" placeholder="Filter day..." value="${esc(qSearch)}" autocomplete="off" aria-label="Spotlight filter across all 6 panels">
               <button type="button" class="dops-qsearch-clear" id="dopsQuickSearchClear" aria-label="Clear filter"${qSearch ? '' : ' hidden'}>&times;</button>
             </div>
 
-            <button type="button" class="dops-filter-pill rep-shift${qFilter === 'rep_shifted' ? ' active' : ''}${dm.repShiftedCount > 0 ? ' has-items' : ''}" id="dopsRepShiftBtn" data-dops-qfilter="rep_shifted" aria-pressed="${qFilter === 'rep_shifted' ? 'true' : 'false'}" data-ui-tip="${esc(repBtnTip)}">
-              ${ic('rep_shift')}
-              <span class="dops-fp-lbl">Rep Diff</span>
-              <span class="dops-fp-cnt">${fmtNum(dm.repShiftedCount)}</span>
-            </button>
-
-            ${dm.exceptionCount > 0 || qFilter === 'exceptions' ? `
-              <button type="button" class="dops-filter-pill exc${qFilter === 'exceptions' ? ' active' : ''}" id="dopsExcFilterBtn" data-dops-qfilter="exceptions" aria-pressed="${qFilter === 'exceptions' ? 'true' : 'false'}" data-ui-tip="Filter all 6 panels to actionable exceptions (${dm.exceptionCount}: below-rate dispatches, pending prices, tank variances, critical defects, or absences)">
-                ${ic('warn')}
-                <span class="dops-fp-cnt">${fmtNum(dm.exceptionCount)}</span>
-              </button>
-            ` : ''}
-
-            <button type="button" class="dops-afterhours-btn${dm.includeAh ? ' active' : ''}" id="dopsAfterHoursBtn" aria-pressed="${dm.includeAh ? 'true' : 'false'}" data-ui-tip="${esc(ahBtnTip)}">
+            <button type="button" class="dops-afterhours-btn${dm.includeAh ? ' active' : ''}${dm.ahAvailableCount > 0 ? '' : ' is-zero'}" id="dopsAfterHoursBtn" aria-pressed="${dm.includeAh ? 'true' : 'false'}" data-ui-tip="${esc(ahBtnTip)}">
               ${ic('moon')}
-              <span><span class="dops-ah-prefix">Yesterday's </span>After-Hours</span>
+              <span class="dops-ah-lbl"><span class="dops-ah-prefix">Yesterday's </span>After-Hours</span>
               <span class="dops-ah-count${dm.ahAvailableCount > 0 ? ' has-items' : ''}" id="dopsAfterHoursCount">${dm.ahAvailableCount > 0 ? `+${fmtNum(dm.ahAvailableCount)} · ${fmtUSDk(dm.ahAvailableUsd)}` : '0'}</span>
             </button>
-
-            <div class="dops-quick-pills" role="group" aria-label="Quick Day Presets">
-              <button type="button" class="dops-qpill${dm.targetDate === today ? ' active' : ''}" data-dops-pick-date="${esc(today)}">Today</button>
-              <button type="button" class="dops-qpill${dm.targetDate === yestWall ? ' active' : ''}" data-dops-pick-date="${esc(yestWall)}">Yesterday</button>
-              ${dm.idx.latestOpDate && dm.idx.latestOpDate !== today && dm.idx.latestOpDate !== yestWall ? `<button type="button" class="dops-qpill${dm.targetDate === dm.idx.latestOpDate ? ' active' : ''}" data-dops-pick-date="${esc(dm.idx.latestOpDate)}">Latest (${esc(fmtShortDay(dm.idx.latestOpDate))})</button>` : ''}
-            </div>
-
-            <div class="dops-day-nav" role="group" aria-label="Step Operating Day">
-              <button type="button" class="dops-step-btn" id="dopsPrevDayBtn" ${dm.prevDate ? `data-dops-pick-date="${esc(dm.prevDate)}"` : 'disabled'} aria-label="Previous Day">&lsaquo;</button>
-              <input type="date" id="dopsDateInput" class="dops-date-input" min="${esc(ctx.MIN_DATE)}" max="${esc(ctx.MAX_DATE)}" value="${esc(dm.targetDate)}" aria-label="Operating Transaction Date">
-              <button type="button" class="dops-step-btn" id="dopsNextDayBtn" ${dm.nextDate ? `data-dops-pick-date="${esc(dm.nextDate)}"` : 'disabled'} aria-label="Next Day">&rsaquo;</button>
-            </div>
 
             <button type="button" class="dops-handover-btn" id="dopsHandoverBriefBtn" data-dops-handover="1" aria-expanded="false" aria-label="Shift Handover" data-ui-tip="Open Shift Handover Brief: yesterday-vs-today variance, cash and credit intake, Day P&L bridge, shift priorities, and manager WhatsApp summary">
               ${ic('sparkles')}
@@ -4332,26 +4389,30 @@
             </div>
             <div class="dops-kpi-val-row">
               <span class="dops-kpi-val" id="dopsKpiSalesVal">${fmtUSD(dm.salesSum.ttc, 0)}</span>
-              <span class="dops-kpi-unit">${fmtNum(dm.salesSum.loads)} loads · ${fmtNum(dm.salesSum.m3, 0)} m³ · ${fmtNum(dm.customerRows.length)} clients</span>
+              <span class="dops-kpi-unit">${fmtNum(dm.salesSum.loads)} loads · ${fmtNum(dm.salesSum.m3, 0)} m³</span>
             </div>
             <div class="dops-kpi-sub">
               ${dm.includeAh && dm.salesAhSum.count > 0
                 ? `<span class="dops-kpi-ah">${ic('moon')} +${fmtUSD(dm.salesAhSum.ttc, 0)} (${dm.salesAhSum.loads})</span> · Today <b>${fmtUSD(dm.salesTodayOnly.ttc, 0)}</b>`
-                : `Cash <b>${dm.salesSum.cashTtc >= 1000 ? fmtUSDk(dm.salesSum.cashTtc) : fmtUSD(dm.salesSum.cashTtc, 0)}</b> · Cr <b>${dm.salesSum.creditTtc >= 1000 ? fmtUSDk(dm.salesSum.creditTtc) : fmtUSD(dm.salesSum.creditTtc, 0)}</b> · <b>${fmtUSD(dm.salesSum.avgPriceTtc, 1)}/m³</b>`}
+                : `Cash <b>${kMoney(dm.salesSum.cashTtc)}</b> · Credit <b>${kMoney(dm.salesSum.creditTtc)}</b>`}
             </div>
           </div>
 
           <div class="dops-kpi accent-raw" data-dops-open-drawer="raw" data-chart-pop="${esc(rawPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Quarry &amp; Haul</span>
-              <span class="dops-kpi-delta ${dm.belowAgreedLoads > 0 ? 'crit' : 'neutral'}">${dm.belowAgreedLoads > 0 ? `${dm.belowAgreedLoads} Below Rate` : `${fmtNum(dm.rawSum.tons, 0)} t`}</span>
+              ${dm.belowAgreedLoads > 0
+                ? `<span class="dops-kpi-delta crit">${dm.belowAgreedLoads} Below Rate</span>`
+                : (rawSharePct != null
+                  ? `<span class="dops-kpi-delta ${rawSharePct > 60 ? 'warn' : 'neutral'}" data-ui-tip="Quarry material and haulage as a share of the day's sales before VAT">${rawSharePct}% <span>of sales</span></span>`
+                  : `<span class="dops-kpi-delta neutral">${fmtNum(dm.rawSum.tons, 0)} t</span>`)}
             </div>
             <div class="dops-kpi-val-row">
               <span class="dops-kpi-val" id="dopsKpiRawVal">${fmtUSD(dm.rawSum.totalCost, 0)}</span>
               <span class="dops-kpi-unit">${fmtNum(dm.rawSum.loads)} loads · ${fmtNum(dm.rawSum.m3, 0)} m³</span>
             </div>
             <div class="dops-kpi-sub">
-              Mat <b>${fmtUSD(dm.rawSum.matCost, 0)}</b> · Haul <b>${fmtUSD(dm.rawSum.haulCost, 0)}</b> · Agreed <b>${dm.agreedSalesLoads}/${dm.salesSum.loads}</b>
+              Material <b>${kMoney(dm.rawSum.matCost)}</b> · Haulage <b>${kMoney(dm.rawSum.haulCost)}</b>
             </div>
           </div>
 
@@ -4362,25 +4423,29 @@
             </div>
             <div class="dops-kpi-val-row">
               <span class="dops-kpi-val" id="dopsKpiExpVal">${perms.canExp ? fmtUSD(dm.expTotal, 0) : 'Restricted'}</span>
-              <span class="dops-kpi-unit">${perms.canExp ? `${fmtNum(dm.expCount)} bills · ${fmtNum(dm.dayExpItems.length)} items` : 'Books Restricted'}</span>
+              <span class="dops-kpi-unit">${perms.canExp ? `${fmtNum(dm.dayExpItems.length)} items` : 'Books Restricted'}</span>
               <span id="dopsKpiDealsVal" hidden>${esc(dealsValTxt)}</span>
             </div>
             <div class="dops-kpi-sub">
-              ${perms.canExp ? `Cash <b>${fmtUSD(dm.cashExp, 0)}</b> · Cr <b>${fmtUSD(dm.creditExp, 0)}</b>${topExpBill ? ` · Top <b>${esc(topExpBill.supplier)}</b>` : ''}` : 'Books Restricted'}
+              ${perms.canExp ? `Cash <b>${kMoney(dm.cashExp)}</b> · Credit <b>${kMoney(dm.creditExp)}</b>` : 'Books Restricted'}
             </div>
           </div>
 
           <div class="dops-kpi accent-profit${perms.canBooks && dm.operatingProfit < 0 ? ' is-neg' : ''}" data-dops-lens="exp:bills" data-chart-pop="${esc(profPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Operating Profit</span>
-              <span class="dops-kpi-delta ${perms.canBooks ? profDeltaCls : 'neutral'}">${perms.canBooks ? esc(profPctTxt) : 'Books Restricted'}</span>
+              ${perms.canBooks
+                ? `<span class="dops-kpi-delta ${profDeltaCls}" data-ui-tip="Operating profit as a share of the day's sales before VAT"><span>Margin</span> ${esc(profPctTxt)}</span>`
+                : '<span class="dops-kpi-delta neutral">Books Restricted</span>'}
             </div>
             <div class="dops-kpi-val-row">
               <span class="dops-kpi-val ${perms.canBooks && dm.operatingProfit < 0 ? 'crit' : ''}" id="dopsKpiProfitVal">${perms.canBooks ? fmtUSD(dm.operatingProfit, 0) : 'Restricted'}</span>
-              <span class="dops-kpi-unit">${perms.canBooks ? `GM ${fmtUSD(dm.grossMargin, 0)}` : 'Books Restricted'}</span>
+              <span class="dops-kpi-unit">${perms.canBooks ? `<span>After All Costs</span>` : 'Books Restricted'}</span>
             </div>
             <div class="dops-kpi-sub">
-              ${perms.canBooks ? `Ex-VAT <b>${fmtUSD(dm.salesSum.grossExVat, 0)}</b> · VAT <b>${fmtUSD(dm.salesSum.vat, 0)}</b>${dm.avg7Profit ? ` · 7d <b>${fmtUSD(dm.avg7Profit, 0)}</b>` : ''}` : 'Books Restricted'}
+              ${perms.canBooks
+                ? (dm.avg7Profit ? `7-Day Average <b>${kMoney(dm.avg7Profit)}</b>` : `Sales Before VAT <b>${kMoney(dm.salesSum.grossExVat)}</b>`)
+                : 'Books Restricted'}
             </div>
           </div>
 
@@ -4391,10 +4456,10 @@
             </div>
             <div class="dops-kpi-val-row">
               <span class="dops-kpi-val" id="dopsKpiCashVal">${perms.canBooks ? `${dm.netCashFlow > 0 ? '+' : ''}${fmtUSD(dm.netCashFlow, 0)}` : 'Restricted'}</span>
-              <span class="dops-kpi-unit">${perms.canBooks ? `In ${fmtUSDk(dm.cashInflow)} · Out ${fmtUSDk(dm.cashOutflow)}` : 'Books Restricted'}</span>
+              <span class="dops-kpi-unit">${perms.canBooks ? `Till <b${Math.round(dm.liveTillUsd) < 0 ? ' class="crit"' : ''}>${fmtUSD(dm.liveTillUsd, 0)}</b>` : 'Books Restricted'}</span>
             </div>
             <div class="dops-kpi-sub">
-              ${perms.canBooks ? `AR <b>+${fmtUSDk(dm.arCollected)}</b> · Ext <b>+${fmtUSDk(dm.extInEq)}/-${fmtUSDk(dm.extOutEq)}</b> · Till <b>${fmtUSD(dm.liveTillUsd, 0)}</b>` : 'Books Restricted'}
+              ${perms.canBooks ? `In <b>${fmtUSDk(dm.cashInflow)}</b> · Out <b>${fmtUSDk(dm.cashOutflow)}</b>` : 'Books Restricted'}
             </div>
           </div>
 
@@ -4405,10 +4470,10 @@
             </div>
             <div class="dops-kpi-val-row">
               <span class="dops-kpi-val" id="dopsKpiPlantVal">${fmtNum(dm.activeTrucksCount)} Units</span>
-              <span class="dops-kpi-unit">${fmtNum(dm.dieselIssuedL, 0)} L · +${dm.attOtHours.toFixed(0)}h OT</span>
+              <span class="dops-kpi-unit">${dm.closingTankL != null ? `<span>Tank</span> <b>${fmtNum(dm.closingTankL, 0)} L</b>` : `<span>Diesel</span> ${fmtNum(dm.dieselIssuedL, 0)} L`}</span>
             </div>
             <div class="dops-kpi-sub">
-              ${dm.closingTankL != null ? `Tank <b>${fmtNum(dm.closingTankL, 0)} L</b> · ` : ''}Own <b>${fmtNum(dm.companyFleetTrips)}</b> · 3P <b>${fmtNum(dm.haulerTrips)}</b> · <b>${fmtNum(dm.activeStaffCount)}</b> Staff
+              Own <b>${fmtNum(dm.companyFleetTrips)}</b> · Haulers <b>${fmtNum(dm.haulerTrips)}</b>${dm.attOtHours > 0 ? ` · Overtime <b>+${dm.attOtHours.toFixed(0)}h</b>` : ''}
             </div>
           </div>
         </section>

@@ -2631,3 +2631,192 @@ body.is-daily-ops-view .period-basis-row {
     max-width: 125px;
   }
 }
+
+/* ==================== v19.6.376 CLARITY PASS: DAY BAR, NEEDS-ATTENTION STRIP, QUIET ZEROS, DAY P&L BAR ==================== */
+/* Row 1 = which day (title, date, step, presets, company split). Row 2 = what needs attention, then the tools. */
+@media (min-width: 1024px) {
+  .dops-bar { flex-wrap: wrap; row-gap: 5px; }
+  .dops-bar-left { flex: 1 1 100%; }
+  .dops-title-group { flex: 1 1 auto; }
+  .dops-title-group .dops-bu-strip { margin-inline-start: auto; flex-wrap: nowrap; }
+  .dops-bar-controls { flex: 1 1 100%; flex-wrap: nowrap; min-width: 0; }
+  .dops-bar-controls > .dops-att-strip { flex: 1 1 auto; }
+  .dops-bar-controls > :not(.dops-att-strip) { flex-shrink: 0; }
+}
+
+.dops-basis-tag.is-quiet {
+  background: transparent;
+  border-color: transparent;
+  padding-inline: 2px;
+  font-weight: 500;
+}
+
+.dops-bu-lead {
+  font-size: 9.6px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.dops-att-strip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 2px;
+  margin: -2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.dops-att-strip::-webkit-scrollbar { display: none; }
+/* A seat that may open none of the flagged screens sees no orphan lead label. */
+.dops-att-lead:not(:has(~ .dops-att-chip:not([hidden]))) { display: none; }
+
+.dops-att-lead {
+  font-size: 9.6px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.dops-att-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4.5px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 10.8px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: border-color 0.13s, background 0.13s, box-shadow 0.13s;
+}
+
+.dops-att-chip .ic { font-size: 12px; flex-shrink: 0; }
+.dops-att-chip.is-static { cursor: default; }
+.dops-att-chip:not(.is-static):hover { box-shadow: var(--shadow-sm); }
+
+.dops-att-val,
+.dops-att-chip .dops-fp-cnt {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.dops-att-chip.crit { background: var(--crit-bg); border-color: rgba(200, 51, 59, 0.3); color: var(--crit); }
+.dops-att-chip.warn { background: var(--warn-bg); border-color: rgba(201, 106, 34, 0.3); color: var(--warn); }
+.dops-att-chip.good { background: var(--good-bg); border-color: rgba(31, 122, 76, 0.28); color: var(--good); }
+.dops-att-chip.info { background: var(--surface-2); border-color: var(--line-strong); color: var(--muted); }
+.dops-att-chip.info .dops-fp-cnt { color: var(--ink); background: transparent; padding: 0; }
+.dops-att-chip.warn .dops-fp-cnt { color: inherit; background: transparent; padding: 0; }
+.dops-att-chip.dops-filter-pill { height: 26px; }
+.dops-att-chip.dops-filter-pill.active {
+  background: var(--brass-tint);
+  border-color: var(--brass);
+  color: var(--brass-strong, var(--brass));
+}
+.dops-att-chip.dops-filter-pill.active .dops-fp-cnt { color: inherit; background: transparent; }
+:root[data-theme="dark"] .dops-att-chip.dops-filter-pill.active { color: var(--brass); }
+
+/* Nothing logged after hours: the toggle stays reachable but stops competing for attention. */
+.dops-afterhours-btn.is-zero .dops-ah-lbl,
+.dops-afterhours-btn.is-zero .dops-ah-count { display: none; }
+.dops-afterhours-btn.is-zero { padding-inline: 7px; opacity: 0.72; }
+
+/* Scorecard: one figure, one comparison, one supporting line. */
+.dops-kpi-delta > span { font-weight: 600; }
+.dops-kpi-sub b.crit { color: var(--crit); }
+
+/* A lens with nothing in it for the day reads quiet. */
+.dops-seg-btn.is-zero:not(.active):not(.has-alert) { opacity: 0.5; }
+.dops-card-title-wrap { flex: 0 1 auto; }
+.dops-card-actions { min-width: 0; }
+
+/* Day P&L bar above the steps */
+.dops-pnl-bridge { flex-wrap: wrap; row-gap: 3.5px; }
+.dops-pnl-bar {
+  position: relative;
+  display: flex;
+  flex: 0 0 100%;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--m-chip, var(--line));
+}
+.dops-pnl-seg { display: block; height: 100%; flex: 0 0 auto; }
+.dops-pnl-seg.q, .dops-pnl-dot.q { background: var(--chart-brass, #C0892F); }
+.dops-pnl-seg.e, .dops-pnl-dot.e { background: var(--chart-amber, #C96A22); }
+.dops-pnl-seg.p, .dops-pnl-dot.p { background: var(--chart-slate, #7A889B); }
+.dops-pnl-seg.g { background: var(--chart-good, #1F7A4C); }
+.dops-pnl-over {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  inset-inline-end: 0;
+  background: repeating-linear-gradient(135deg, rgba(200, 51, 59, 0.92) 0 3px, rgba(200, 51, 59, 0.55) 3px 6px);
+}
+.dops-pnl-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-inline-start: -1px;
+  background: var(--surface);
+}
+.dops-pnl-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  margin-inline-end: 3px;
+  vertical-align: 0.5px;
+}
+.dops-pnl-step small .dops-pnl-pct { font-size: 8.4px; font-weight: 700; text-transform: none; }
+
+@media (max-width: 1520px) and (min-width: 1024px) {
+  .dops-bu-lead { display: none; }
+}
+@media (max-width: 1410px) and (min-width: 1024px) {
+  /* The per-company profit is the point of the split: keep it, and drop the weekday label repeat instead. */
+  .dops-bu-prof { display: inline-block; }
+  .dops-att-chip { height: 24px; padding: 0 6.5px; font-size: 10.3px; gap: 4px; }
+  .dops-att-chip.dops-filter-pill { height: 24px; }
+  .dops-qsearch-input { width: 64px; }
+}
+@media (max-width: 1023px) {
+  .dops-att-strip { flex: 1 1 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .dops-att-strip::-webkit-scrollbar { display: none; }
+}
+
+@media (max-width: 1410px) and (min-width: 1024px) {
+  .dops-att-lead { display: none; }
+  .dops-brief-lbl { display: none; }
+  .dops-kpi.accent-profit .dops-kpi-delta > span { display: none; }
+}
+.dops-pnl-step small { text-transform: none; letter-spacing: 0; font-size: 9.2px; }
+.dops-kpi-unit b { font-weight: 700; color: var(--ink); }
+.dops-kpi-unit b.crit { color: var(--crit); }
+
+/* Company split may hold up to five pills (Hospitality): let the day row wrap instead of pushing the page wide. */
+@media (min-width: 1024px) {
+  .dops-title-group { flex-wrap: wrap; row-gap: 4px; }
+}
+@media (max-width: 1410px) and (min-width: 1024px) {
+  /* Panel header keeps its full title on laptops: the icon tile and the bare record count give way. */
+  .dops-card-ico { display: none; }
+  .dops-card-actions .dops-disc-link { display: none; }
+}
+@media (max-width: 768px) {
+  .dops-kpi.accent-profit .dops-kpi-delta > span { display: none; }
+}
