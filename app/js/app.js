@@ -21928,7 +21928,7 @@
     {
       id: 'S14',
       code: '#25',
-      name: '30-Day OT Boundary & Snap Cluster Watchdog',
+      name: 'Overtime Timing Check',
       domain: 'Payroll & Workforce',
       behavior: 'audit',
       whereLabel: 'Attendance & Overtime, AI Sentinels & Ask ISABI',
@@ -21951,7 +21951,7 @@
     id,
     code: '#07',
     industry,
-    name: '30-Day OT Boundary & Snap Cluster Watchdog',
+    name: 'Overtime Timing Check',
     domain: 'Payroll & Workforce',
     behavior: 'audit',
     whereLabel: 'Attendance & Overtime, Domain Sentinels & Ask ISABI',
@@ -25195,7 +25195,7 @@
     rawItems.push({
       id: 'S14',
       code: 'Rule #25 · Attendance & Shifts',
-      title: '30-Day OT Boundary & Snap Cluster Watchdog',
+      title: 'Overtime Timing Check',
       detail: s14Lead
         ? `${fmtNum(s14Cls.length)} boundary cluster(s) across ${fmtNum(s14Res.scannedPunches)} punches in ${fmtNum(s14Res.lookbackDays)}d: ${s14Lead.headlineEn}`
         : `Scanned ${fmtNum((s14Res && s14Res.scannedPunches) || 0)} clock-out punches in the last ${fmtNum((s14Res && s14Res.lookbackDays) || 30)} days: clean punch distribution around OT thresholds and snap boundaries.`,
@@ -26469,7 +26469,7 @@
           { label: 'Date', key: 'date', mono: true }, { label: 'Disposition / Status', key: 'state_label' },
           { label: 'Cost ($)', key: 'cost_usd', r: true, fmt: usd2 }
         ], 'snFleetParts')}
-        ${miniTable('30-DAY OT BOUNDARY &amp; SNAP CLUSTERS (S14)', (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.computeOtThresholdClusterDigest === 'function' ? (window.MFG_AI_EDGE.computeOtThresholdClusterDigest({ company: STATE.company }).clusters || []) : []), [
+        ${miniTable('OVERTIME TIMING CHECK',(window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.computeOtThresholdClusterDigest === 'function' ? (window.MFG_AI_EDGE.computeOtThresholdClusterDigest({ company: STATE.company }).clusters || []) : []), [
           { label: 'Co.', key: 'company' },
           { label: 'Shift', key: 'shiftName' },
           { label: 'Boundary Cliff', key: 'cliffLabel' },
@@ -30474,6 +30474,14 @@
     const hit = cat.find(c => norm(c.name) === cNorm || norm(c.key) === cNorm);
     if (hit && hit.industry) return getCompanyIndustryName(hit.industry);
     return 'Manufacturing';
+  }
+
+  // Company Defaults cards follow the company picked in #companySwitch: one card for a single
+  // company, every company of the industry only on a group scope (owner 2026-11-17).
+  function getAttendanceDefaultsCompanies(companyOpt = '') {
+    const picked = COMPANY_BU_MATCH[STATE.company] || '';
+    if (picked) return [picked];
+    return getActiveIndustryBuList(companyOpt);
   }
 
   function getActiveIndustryBuList(companyOpt = '') {
@@ -44485,7 +44493,6 @@
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
               <button type="button" class="btn btn-ghost-bar" id="payTogglePolicyBtn">${ic('clock')} ${STATE.payrollPolicyOpen ? 'Hide Shifts &amp; Policies' : 'Shifts, Policies &amp; Face ID'}</button>
-              <button type="button" class="btn btn-ghost-bar" id="payAttClusterBriefBtn">${ic('brain_radar')} OT Cluster Brief</button>
               <button type="button" class="btn btn-ghost-bar" id="payAttPrePaydayCardBtn">${ic('receipt')} Pre-Payday Card</button>
               <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="attendance">${ic('kiosks')} Attendance Kiosk</button>
               ${canOpenFatherBackfill() ? (() => { const fbS = getFatherBackfillSummary(); return `<button type="button" class="btn btn-ghost-bar" data-open-father-backfill="1">${ic('reg_staff')} <span>Father's Name Backfill</span>${fbS.totalMissing > 0 ? ` <span class="badge warn" data-no-i18n="1">${fmtNum(fbS.totalMissing)}</span>` : ''}</button>`; })() : ''}
@@ -44672,7 +44679,7 @@
           const activeWs = sortedWs.filter(r => !r.end_date);
           const sumWsStaff = sortedWs.reduce((a, r) => a + Number(r.associated_staff_count || 0), 0);
           const avgWsHrs = sortedWs.length ? (sortedWs.reduce((a, r) => a + Number(r.scheduled_hours || 0), 0) / sortedWs.length) : 8;
-          const activeBuList = getActiveIndustryBuList();
+          const activeBuList = getAttendanceDefaultsCompanies();
           const liveShiftTypes = getShiftTypes();
           const wsChartBase = activeWs.slice(0, 8);
           const wsCanRetire = canRetireWorkShift();
@@ -44786,13 +44793,11 @@
               </div>` : ''}
               ${renderColFilterBar('pay_work_shifts')}
               <div class="table-wrap">
-                <table class="ledger-table" id="payShiftTimingsTable" data-keep-co="1">
+                <table class="ledger-table" id="payShiftTimingsTable">
                   <thead>
                     <tr>
-                      ${th('pay_work_shifts', 'Shift Code', 'shift_code')}
-                      ${th('pay_work_shifts', 'Co.', 'company')}
                       ${th('pay_work_shifts', 'Shift Name', 'shift_name')}
-                      ${th('pay_work_shifts', 'BU Default', 'is_bu_default')}
+                      ${th('pay_work_shifts', 'Co.', 'company')}
                       ${th('pay_work_shifts', 'Effective From', 'start_date')}
                       ${th('pay_work_shifts', 'Effective To', 'end_date')}
                       ${th('pay_work_shifts', 'Start (24h)', 'start_time')}
@@ -44800,19 +44805,19 @@
                       ${th('pay_work_shifts', 'Hrs', 'scheduled_hours', 'r')}
                       ${th('pay_work_shifts', 'Workdays', 'workdays_label')}
                       ${th('pay_work_shifts', 'Timing Exceptions', 'day_schedule_summary')}
-                      ${th('pay_work_shifts', 'IN Grace', 'grace_min', 'r')}
-                      ${th('pay_work_shifts', 'OUT Grace', 'early_leave_grace_min', 'r')}
+                      ${th('pay_work_shifts', 'Grace In / Out', 'grace_min', 'r')}
                       ${th('pay_work_shifts', 'Staff', 'associated_staff_count', 'r')}
                       ${th('pay_work_shifts', 'Notes', 'notes')}
                     </tr>
                   </thead>
                   <tbody>
-                    ${shownWs.map(ws => `
+                    ${shownWs.map(ws => {
+                      const gIn = ws.grace_min != null ? Number(ws.grace_min) : 10;
+                      const gOut = ws.early_leave_grace_min != null ? Number(ws.early_leave_grace_min) : 10;
+                      return `
                       <tr class="rrow" data-rkey="work_shifts" data-rid="${esc(ws.id)}">
-                        <td class="mono">${esc(ws.shift_code || ws.id)}${appCell(ws, 'work_shifts')}</td>
+                        <td><strong>${esc(ws.shift_name)}</strong>${ws.is_bu_default ? ' <span class="badge badge-brass">Default</span>' : ''}${appCell(ws, 'work_shifts')}</td>
                         <td>${coBadge(ws.company || 'WTC')}</td>
-                        <td><strong>${esc(ws.shift_name)}</strong></td>
-                        <td>${ws.is_bu_default ? '<span class="badge badge-brass">BU Default</span>' : '<span class="mu">Optional</span>'}</td>
                         <td class="mono">${esc(fmtDateDMY(ws.start_date))}</td>
                         <td class="mono">${ws.end_date ? esc(fmtDateDMY(ws.end_date)) : '<span class="badge badge-ok">Open</span>'}</td>
                         <td class="mono"><b>${esc(ws.start_time)}</b></td>
@@ -44820,19 +44825,19 @@
                         <td class="r mono"><b>${fmtNum(ws.scheduled_hours || 8, 1)}h</b></td>
                         <td>${esc(ws.workdays_label || 'Mon-Sat')}</td>
                         <td><span class="badge ${ws.day_schedule_summary && ws.day_schedule_summary !== 'Same Every Workday' ? 'badge-info' : ''}">${esc(ws.day_schedule_summary || 'Same Every Workday')}</span></td>
-                        <td class="r mono">${fmtNum(ws.grace_min != null ? ws.grace_min : 10, 0)}m</td>
-                        <td class="r mono">${fmtNum(ws.early_leave_grace_min != null ? ws.early_leave_grace_min : 10, 0)}m</td>
+                        <td class="r mono">${gIn === gOut ? `${fmtNum(gIn, 0)}m` : `${fmtNum(gIn, 0)}m / ${fmtNum(gOut, 0)}m`}</td>
                         <td class="r mono"><b>${fmtNum(ws.associated_staff_count || 0)}</b></td>
                         <td class="mu">${esc(ws.notes || '-')}</td>
                       </tr>
-                    `).join('') || emptyRow(15, 'No shift timing rows match filter')}
-                    ${showMoreRow('pay_work_shifts', sortedWs.length, 15)}
+                    `;
+                    }).join('') || emptyRow(12, 'No shift timing rows match filter')}
+                    ${showMoreRow('pay_work_shifts', sortedWs.length, 12)}
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colspan="8"><b>TOTAL (${fmtNum(sortedWs.length)} SHIFT TIMING ROWS)</b></td>
+                      <td colspan="6"><b>TOTAL (${fmtNum(sortedWs.length)} SHIFT TIMING ROWS)</b></td>
                       <td class="r"><b>Avg ${fmtNum(avgWsHrs, 1)}h</b></td>
-                      <td colspan="4"></td>
+                      <td colspan="3"></td>
                       <td class="r"><b>${fmtNum(sumWsStaff, 0)} staff</b></td>
                       <td></td>
                     </tr>
@@ -60211,7 +60216,7 @@
       id,
       ruleId,
       code: 'Attendance & Shifts',
-      title: '30-Day OT Boundary & Snap Cluster Watchdog',
+      title: 'Overtime Timing Check',
       detail: lead
         ? `${fmtNum(cls.length)} boundary cluster(s) across ${fmtNum(digest.scannedPunches)} punches in ${fmtNum(lb)}d: ${lead.headlineEn}`
         : `Scanned ${fmtNum(digest.scannedPunches)} clock-outs in ${fmtNum(lb)}d within +${fmtNum(bm)}m band: clean punch distribution.`,
@@ -147605,6 +147610,8 @@
       const curPolicyGrp = livePolicyGroups.find(g => g.id === draftPolicyGroupId) || null;
       const buCompanies = getActiveIndustryBuList(entry.company);
       const buCoNormSet = new Set(buCompanies.map(c => norm(c)));
+      const ssmOwnCo = buCompanies.find(c => norm(canonCompany(c)) === norm(canonCompany(entry.company || '')));
+      const ssmDefaultsCos = ssmOwnCo ? [ssmOwnCo] : buCompanies;
       const workShiftRows = ((SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [])
         .filter(r => r && !r.voided && buCoNormSet.has(norm(r.company || 'WTC')))
         .map(r => hydrateWorkShiftRowComputed(r));
@@ -148001,7 +148008,7 @@
                   </div>
                 </div>
                 <div class="att-co-defaults-bar is-ssm-bar" id="ssmBuDefaultBar">
-                  ${buCompanies.map(bu => renderCompanyAttendanceDefaultsCardHtml(bu, { attrPrefix: 'ssm', title: 'Defaults' })).join('')}
+                  ${ssmDefaultsCos.map(bu => renderCompanyAttendanceDefaultsCardHtml(bu, { attrPrefix: 'ssm', title: 'Defaults' })).join('')}
                 </div>
                 <div class="table-wrap" style="max-height:260px">
                   <table class="ledger-table" id="ssmShiftTimingsTable" style="font-size:12px">
@@ -156979,7 +156986,7 @@
       }
       const shiftPanel = $('payShiftTimingsPanel');
       if (shiftPanel) {
-        const activeBuList = getActiveIndustryBuList(STATE.company);
+        const activeBuList = getAttendanceDefaultsCompanies(STATE.company);
         const phSub = shiftPanel.querySelector('.panel-head .ph-sub');
         if (phSub) {
           phSub.textContent = STATE.payrollPolicyOpen
@@ -157593,7 +157600,7 @@
                       <button type="button" class="btn att-util-btn" id="kioskShiftCalPresetBtn">${ic('calendar')} Holidays &amp; Seasons</button>
                       <button type="button" class="btn att-util-btn" id="kioskPunchDriftBtn">${ic('overtime')} Punch Drift</button>
                       <button type="button" class="btn att-util-btn" id="kioskAiDriftRecBtn">${ic('sparkles')} <span>AI Drift Advisor</span></button>
-                      <button type="button" class="btn att-util-btn" id="kioskOtClusterBriefBtn">${ic('brain_radar')} <span>OT Cluster Brief</span></button>
+                      <button type="button" class="btn att-util-btn" id="kioskOtClusterBriefBtn">${ic('brain_radar')} <span>Overtime Timing Check</span></button>
                       <button type="button" class="btn btn-primary att-add-btn" id="kioskNewShiftTypeBtn"${editCoAttr}${canWriteShiftCat ? '' : ' disabled'}>${ic('plus')} New Shift Type</button>
                     </div>
                   </div>
@@ -164423,19 +164430,14 @@
           }
         });
       }
-      const clAttBtn = $('payAttClusterBriefBtn');
-      if (clAttBtn) {
-        clAttBtn.addEventListener('click', () => {
-          if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.openOtClusterBriefModal === 'function') {
-            window.MFG_AI_EDGE.openOtClusterBriefModal({ company: STATE.company });
-          }
-        });
-      }
       const clExpBtn = $('otClusterAiExplainBtn');
       if (clExpBtn) {
         clExpBtn.addEventListener('click', () => {
           if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.runOtClusterExplainInSlot === 'function') {
-            window.MFG_AI_EDGE.runOtClusterExplainInSlot($('otClusterAiInsightSlot'));
+            const clDigest = typeof window.MFG_AI_EDGE.computeOtThresholdClusterDigest === 'function'
+              ? window.MFG_AI_EDGE.computeOtThresholdClusterDigest({ company: STATE.company })
+              : null;
+            window.MFG_AI_EDGE.runOtClusterExplainInSlot($('otClusterAiInsightSlot'), clDigest);
           }
         });
       }

@@ -2278,7 +2278,7 @@
         : { ok: false, lookbackDays: 30, scannedPunches: 0, clusters: [] };
       const brief = (edge && typeof edge.buildOtClusterEdgeBrief === 'function')
         ? edge.buildOtClusterEdgeBrief(digest, { lang })
-        : { summary: 'OT boundary cluster scanner unavailable.', bullets: [] };
+        : { summary: 'Overtime Timing Check unavailable.', bullets: [] };
       const bullets = (brief.bullets || []).slice(0, 5).map(b =>
         `<b>${esc(b.headline)}</b>${b.staffSummary ? ` (${esc(b.staffSummary)})` : ''} · ${esc(b.recommendation)}`
       );
@@ -2287,7 +2287,7 @@
         lang,
         instantLocal: true,
         topic: 'attendance_clusters',
-        title: `${esc(brief.title || '30-Day OT Boundary & Snap Cluster Brief')} · ${esc(scope.fullScopeLabel)}`,
+        title: `${esc(brief.title || 'Overtime Timing Check')} · ${esc(scope.fullScopeLabel)}`,
         answer: esc(brief.summary),
         bullets: bullets.length ? bullets : [esc(`Scanned ${fmtInt(digest.scannedPunches || 0)} clock-out punches in the last ${fmtInt(digest.lookbackDays || 30)} days.`)],
         promptText: lang === 'ar'
@@ -2296,7 +2296,7 @@
             ? 'Souhaitez-vous ouvrir Pointage & Présence ou les Alertes Sentinelles ?'
             : 'Open Attendance & Overtime to inspect policies or inspect full Sentinel details?'),
         actions: [
-          ...(canView('payroll_attendance', user) ? [{ type: 'view', view: 'payroll_attendance', label: lang === 'ar' ? 'تحليل الحضور وتكتل الإضافي' : (lang === 'fr' ? 'Présence & Paliers HS' : 'Attendance & Cluster Brief') }] : []),
+          ...(canView('payroll_attendance', user) ? [{ type: 'view', view: 'payroll_attendance', label: lang === 'ar' ? 'الحضور والدوام الإضافي' : (lang === 'fr' ? 'Pointage & Heures Sup.' : 'Attendance & Overtime') }] : []),
           ...(canView('sentinels', user) ? [{ type: 'view', view: 'sentinels', label: lang === 'ar' ? 'المراقب الذكي' : (lang === 'fr' ? 'Alertes Sentinelles' : 'AI Sentinels') }] : [])
         ],
         followUps: lang === 'ar'

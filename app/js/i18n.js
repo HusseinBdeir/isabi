@@ -21,6 +21,32 @@
   const DICT = {
     en: {},
     ar: {
+      "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "راجع هذا النمط مع الموظفين أدناه، أو ادفع الإضافي بالدقيقة الفعلية بدل التقريب للأعلى.",
+      "Overtime Timing Check": "فحص توقيت العمل الإضافي",
+      "OVERTIME TIMING CHECK": "فحص توقيت العمل الإضافي",
+      "Flags staff clocking out just past the point where overtime kicks in.": "يرصد الموظفين الذين يسجّلون خروجهم بعد لحظة بدء احتساب العمل الإضافي بقليل.",
+      "No sign of staff timing their clock-outs to trigger overtime.": "لا مؤشر على أن الموظفين يوقّتون خروجهم لاحتساب عمل إضافي.",
+      "No clock-outs under an overtime rule to check.": "لا توجد بصمات خروج خاضعة لقاعدة عمل إضافي لفحصها.",
+      "Overtime Timing Check unavailable.": "فحص توقيت العمل الإضافي غير متاح.",
+      "What to do:": "ما العمل:",
+      "What to Do": "ما العمل",
+      "Explain with AI": "اشرح بالذكاء الاصطناعي",
+      "Minutes after shift end": "الدقائق بعد نهاية الدوام",
+      "Overtime starts": "بدء الإضافي",
+      "Rounds up": "التقريب للأعلى",
+      "Rules checked": "القواعد المفحوصة",
+      "This check only reads clock-out times. It never changes pay.": "هذا الفحص يقرأ أوقات الخروج فقط ولا يغيّر الرواتب أبداً.",
+      "Just past the overtime start": "بعد بدء الإضافي مباشرة",
+      "Just past a rounding point": "بعد نقطة التقريب مباشرة",
+      "Overtime counts from shift end": "يُحتسب الإضافي من نهاية الدوام",
+      "Clock-outs": "بصمات الخروج",
+      "Minutes Past the Line": "الدقائق بعد الخط",
+      "Staff Most Often": "الموظفون الأكثر تكراراً",
+      "Where": "الموضع",
+      "Summary:": "الملخص:",
+      "AI note:": "ملاحظة الذكاء الاصطناعي:",
+      "No pattern found": "لا يوجد نمط",
+      "Rule:": "القاعدة:",
       "entry has a candidate workbook match": "قيد له تطابق محتمل في دفاتر العمل",
       "entries have candidate workbook matches": "قيود لها تطابقات محتملة في دفاتر العمل",
       "Matches": "يطابق",
@@ -4203,6 +4229,7 @@
       "IN": "وارد",
       "IN + OUT": "دخول + خروج",
       "IN Grace": "سماح الدخول",
+      "Grace In / Out": "السماح دخول / خروج",
       "IN Late + OUT Early": "تأخير دخول + خروج مبكر",
       "IN Only": "دخول فقط",
       "IN SYNC": "متطابق",
@@ -12786,6 +12813,32 @@
       "Supplier Payment": "دفعة لمورد"
     },
     fr: {
+      "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
+      "Overtime Timing Check": "Contrôle du timing des heures sup",
+      "OVERTIME TIMING CHECK": "CONTRÔLE DU TIMING DES HEURES SUP",
+      "Flags staff clocking out just past the point where overtime kicks in.": "Repère le personnel qui pointe sa sortie juste après le moment où les heures sup commencent.",
+      "No sign of staff timing their clock-outs to trigger overtime.": "Aucun signe de pointages de sortie calés pour déclencher des heures sup.",
+      "No clock-outs under an overtime rule to check.": "Aucun pointage de sortie soumis à une règle d'heures sup à contrôler.",
+      "Overtime Timing Check unavailable.": "Contrôle du timing des heures sup indisponible.",
+      "What to do:": "À faire :",
+      "What to Do": "À faire",
+      "Explain with AI": "Expliquer avec l'IA",
+      "Minutes after shift end": "Minutes après la fin de poste",
+      "Overtime starts": "Début des heures sup",
+      "Rounds up": "Arrondi supérieur",
+      "Rules checked": "Règles contrôlées",
+      "This check only reads clock-out times. It never changes pay.": "Ce contrôle lit seulement les heures de sortie. Il ne modifie jamais la paie.",
+      "Just past the overtime start": "Juste après le début des heures sup",
+      "Just past a rounding point": "Juste après un seuil d'arrondi",
+      "Overtime counts from shift end": "Les heures sup comptent dès la fin de poste",
+      "Clock-outs": "Pointages de sortie",
+      "Minutes Past the Line": "Minutes après la ligne",
+      "Staff Most Often": "Personnel le plus fréquent",
+      "Where": "Où",
+      "Summary:": "Résumé :",
+      "AI note:": "Note IA :",
+      "No pattern found": "Aucun schéma détecté",
+      "Rule:": "Règle :",
       "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
       "entries have candidate workbook matches": "écritures ont des correspondances probables dans les classeurs",
       "Matches": "Correspond à",
@@ -16968,6 +17021,7 @@
       "IN": "ENTRÉE",
       "IN + OUT": "ENTRÉE + SORTIE",
       "IN Grace": "Tolérance Entrée",
+      "Grace In / Out": "Tolérance Entrée / Sortie",
       "IN Late + OUT Early": "Entrée tardive + Sortie anticipée",
       "IN Only": "ENTRÉE seule",
       "IN SYNC": "SYNCHRONISÉ",
@@ -29764,6 +29818,55 @@
 
     m = trimmed.match(/^Policy,\s*Multipliers\s*&\s*Perks\s+Group\s+for\s+(.+)$/i);
     if (m) return lang === 'ar' ? `مجموعة السياسة والمضاعفات والمزايا لـ ${m[1]}` : `Groupe de politique et avantages pour ${m[1]}`;
+
+    // Overtime Timing Check (#payAttClusterBriefCard / #otClusterBriefModal)
+    m = trimmed.match(/^Overtime\s+starts\s+(\d+)\s+min\s+after\s+shift\s+end,\s+counted\s+from\s+shift\s+end$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يبدأ الإضافي بعد ${m[1]} د من نهاية الدوام ويُحتسب من نهاية الدوام`
+        : `Les heures sup démarrent ${m[1]} min après la fin de poste, comptées dès la fin de poste`;
+    }
+    m = trimmed.match(/^Overtime\s+starts\s+(\d+)\s+min\s+after\s+shift\s+end,\s+counted\s+from\s+minute\s+(\d+)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يبدأ الإضافي بعد ${m[1]} د من نهاية الدوام ويُحتسب من الدقيقة ${m[2]}`
+        : `Les heures sup démarrent ${m[1]} min après la fin de poste, comptées à partir de la minute ${m[2]}`;
+    }
+    m = trimmed.match(/^Rounds\s+up\s+to\s+(\d+)\s+min\s+once\s+it\s+reaches\s+(\d+)\s+min$/i);
+    if (m) return lang === 'ar' ? `يُقرَّب إلى ${m[1]} د عند بلوغ ${m[2]} د` : `Arrondi à ${m[1]} min dès ${m[2]} min`;
+    m = trimmed.match(/^Paid\s+in\s+whole\s+(\d+)\s+min\s+blocks$/i);
+    if (m) return lang === 'ar' ? `يُدفع بكتل كاملة من ${m[1]} د` : `Payé par blocs entiers de ${m[1]} min`;
+    m = trimmed.match(/^([\d,]+)\s+clock-outs?\s+checked,\s+last\s+([\d,]+)\s+days\s+\((\d{2}-\d{2}-\d{4})\s+to\s+(\d{2}-\d{2}-\d{4})\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تم فحص ${m[1]} بصمة خروج، آخر ${m[2]} يوماً (${m[3]} إلى ${m[4]})`
+        : `${m[1]} ${m[1] === '1' ? 'pointage de sortie contrôlé' : 'pointages de sortie contrôlés'}, ${m[2]} derniers jours (${m[3]} au ${m[4]})`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+clock-outs?\s+checked$/i);
+    if (m) return lang === 'ar' ? `تم فحص ${m[1]} بصمة خروج` : `${m[1]} ${m[1] === '1' ? 'pointage de sortie contrôlé' : 'pointages de sortie contrôlés'}`;
+    m = trimmed.match(/^Check\s+the\s+end-of-shift\s+handover\.\s+If\s+there\s+is\s+no\s+real\s+delay,\s+count\s+overtime\s+from\s+minute\s+(\d+)\s+instead\s+of\s+from\s+shift\s+end\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تحقق من تسليم نهاية الوردية. إن لم يكن هناك تأخير فعلي، احتسب الإضافي من الدقيقة ${m[1]} بدلاً من نهاية الدوام.`
+        : `Vérifiez la passation de fin de poste. S'il n'y a pas de vrai retard, comptez les heures sup à partir de la minute ${m[1]} plutôt que dès la fin de poste.`;
+    }
+    m = trimmed.match(/^Check\s+what\s+keeps\s+staff\s+(\d+)\s+min\s+past\s+the\s+shift\s+end:\s+handover,\s+a\s+queue\s+at\s+the\s+clock,\s+or\s+waiting\s+for\s+overtime\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تحقق مما يُبقي الموظفين ${m[1]} د بعد نهاية الدوام: التسليم، أو طابور عند جهاز البصمة، أو انتظار احتساب الإضافي.`
+        : `Vérifiez ce qui retient le personnel ${m[1]} min après la fin de poste : passation, file à la pointeuse ou attente des heures sup.`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+shifts?\s+flagged$/i);
+    if (m) {
+      if (lang === 'ar') return `${m[1]} وردية مرصودة`;
+      return m[1] === '1' ? '1 poste signalé' : `${m[1]} postes signalés`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+of\s+([\d,]+)\s+clock-outs\s+\(([\d.,]+%)\)\s+landed\s+([\d,]+)(?:\s+to\s+([\d,]+))?\s+min\s+past\s+the\s+line\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} من ${m[2]} بصمة خروج (${m[3]}) جاءت بعد الخط بـ ${m[4]}${m[5] ? ` إلى ${m[5]}` : ''} د.`
+        : `${m[1]} sur ${m[2]} pointages (${m[3]}) sont tombés ${m[4]}${m[5] ? ` à ${m[5]}` : ''} min après la ligne.`;
+    }
 
     // Attendance RDL Breakdown, OT Boundary Clusters & Pre-Payday Card
     m = trimmed.match(/^2\s*·\s*Attendance\s*&\s*Minute\s*Breakdown\s*\(([\d,]+)\s+Staff\)$/i);

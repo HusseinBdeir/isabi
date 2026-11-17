@@ -6715,7 +6715,8 @@
   function computeOtThresholdClusterDigest(opts = {}) {
     const bridge = getAttBridge();
     if (!bridge || typeof bridge.getSeed !== 'function') {
-      return { ok: false, lookbackDays: 30, bandMin: 4, minCount: 4, scannedPunches: 0, totalShifts: 0, clusters: [], generatedAt: new Date().toISOString() };
+      const todayIso = new Date().toISOString().slice(0, 10);
+      return { ok: false, lookbackDays: 30, startDate: isoShiftDayStr(todayIso, -29) || todayIso, endDate: todayIso, bandMin: 4, minCount: 4, scannedPunches: 0, testedPunches: 0, totalShifts: 0, clusters: [], rules: [], generatedAt: new Date().toISOString() };
     }
     const seed = bridge.getSeed() || {};
     const state = (typeof bridge.getState === 'function' ? bridge.getState() : {}) || {};
@@ -6738,8 +6739,10 @@
         minCount,
         companies: [],
         scannedPunches: 0,
+        testedPunches: 0,
         totalShifts: 0,
         clusters: [],
+        rules: [],
         generatedAt: new Date().toISOString()
       };
     }
@@ -6761,15 +6764,22 @@
 
     const shiftTotals = new Map();
     const clusterBuckets = new Map();
+    // Overtime Timing Check: every clock-out tested under an OT rule, by shift and by rule,
+    // binned by whole minutes past shift end (-15..120) so the card can draw the distribution.
+    const ruleGroups = new Map();
+    const shiftBins = new Map();
     let scannedPunches = 0;
+    let testedPunches = 0;
 
-    const bumpBucket = (bKey, meta, a, d, co, staff, offsetMin, boundaryLabel, subKind) => {
+    const bumpBucket = (bKey, meta, a, d, co, staff, offsetMin, boundaryLabel, subKind, pastLineMin, lineAtMin) => {
       let bk = clusterBuckets.get(bKey);
       if (!bk) {
         bk = Object.assign({
           id: bKey,
           count: 0,
           offsets: [],
+          pastLine: [],
+          lineHits: {},
           dates: new Set(),
           latestDate: '',
           staffMap: new Map(),
@@ -6780,6 +6790,9 @@
       }
       bk.count += 1;
       bk.offsets.push(offsetMin);
+      bk.pastLine.push(Math.max(0, Number(pastLineMin) || 0));
+      const lineKey = Math.round(Number(lineAtMin) || 0);
+      bk.lineHits[lineKey] = (bk.lineHits[lineKey] || 0) + 1;
       bk.dates.add(d);
       if (subKind) bk.subKinds.add(subKind);
       if (!bk.latestDate || d > bk.latestDate) bk.latestDate = d;
@@ -6859,6 +6872,22 @@
       const otBlockMin = Number(polDesc.otBlockMin || 0);
       const otSnapAtMin = Number(polDesc.otSnapAtMin || 0);
 
+      testedPunches += 1;
+      const ruleKey = `${co}|${shiftName}|${threshMin}|${otCountFrom}|${otSnapMode}|${otBlockMin}|${otSnapAtMin}`;
+      let rg = ruleGroups.get(ruleKey);
+      if (!rg) {
+        rg = { key: ruleKey, company: co, shiftName, shiftKey, thresholdMin: threshMin, otCountFrom, snapMode: otSnapMode, blockMin: otBlockMin, snapAtMin: otSnapAtMin, total: 0, bins: {} };
+        ruleGroups.set(ruleKey, rg);
+      }
+      rg.total += 1;
+      let sb = shiftBins.get(shiftKey);
+      if (!sb) { sb = { total: 0, bins: {} }; shiftBins.set(shiftKey, sb); }
+      sb.total += 1;
+      if (pastEndMin >= -15 && pastEndMin <= 240) {
+        rg.bins[pastEndMin] = (rg.bins[pastEndMin] || 0) + 1;
+        sb.bins[pastEndMin] = (sb.bins[pastEndMin] || 0) + 1;
+      }
+
       // 1) OT Start Threshold boundary cluster (especially Shift-End cliff)
       if (threshMin > 0 && pastEndMin >= threshMin && pastEndMin <= (threshMin + bandMin)) {
         const bKey = `${co}|${shiftName}|threshold|${threshMin}|${otCountFrom}`;
@@ -6874,7 +6903,7 @@
           snapAtMin: otSnapAtMin,
           otCountFrom,
           policyDesc: polDesc
-        }, a, d, co, staff, pastEndMin, `${threshMin}m OT start (${otCountFrom === 'shift_end' ? 'Shift-End' : 'After Threshold'})`, otCountFrom === 'shift_end' ? 'shift_end_cliff' : 'after_thresh_cliff');
+        }, a, d, co, staff, pastEndMin, `${threshMin}m OT start (${otCountFrom === 'shift_end' ? 'Shift-End' : 'After Threshold'})`, otCountFrom === 'shift_end' ? 'shift_end_cliff' : 'after_thresh_cliff', pastEndMin - threshMin, threshMin);
       }
 
       // 2) OT Snap / Block cliff clustering (exact_plus_snap or whole_blocks)
@@ -6886,7 +6915,7 @@
             const hitDirect = rawOtMin >= otSnapAtMin && rawOtMin <= (otSnapAtMin + bandMin);
             const hitMod = rem >= otSnapAtMin && rem <= Math.min(otBlockMin - 1, otSnapAtMin + bandMin);
             if (hitDirect || hitMod) {
-              const bKey = `${co}|${shiftName}|snap|${otSnapMode}|${otSnapAtMin}|${otBlockMin}`;
+              const bKey = `${co}|${shiftName}|snap|${otSnapMode}|${otSnapAtMin}|${otBlockMin}|${otCountFrom === 'after_threshold' ? threshMin : 0}|${otCountFrom}`;
               bumpBucket(bKey, {
                 company: co,
                 industry: indName,
@@ -6899,12 +6928,12 @@
                 snapAtMin: otSnapAtMin,
                 otCountFrom,
                 policyDesc: polDesc
-              }, a, d, co, staff, rawOtMin, `Snap at ${otSnapAtMin}m to ${otBlockMin}m block`, 'snap_up_cliff');
+              }, a, d, co, staff, rawOtMin, `Snap at ${otSnapAtMin}m to ${otBlockMin}m block`, 'snap_up_cliff', hitDirect ? rawOtMin - otSnapAtMin : rem - otSnapAtMin, pastEndMin - (hitDirect ? rawOtMin - otSnapAtMin : rem - otSnapAtMin));
             }
           } else if (otSnapMode === 'whole_blocks') {
             const rem = rawOtMin % otBlockMin;
             if (rawOtMin >= otBlockMin && rem <= bandMin) {
-              const bKey = `${co}|${shiftName}|block_above|${otBlockMin}`;
+              const bKey = `${co}|${shiftName}|block_above|${otBlockMin}|${otCountFrom === 'after_threshold' ? threshMin : 0}|${otCountFrom}`;
               bumpBucket(bKey, {
                 company: co,
                 industry: indName,
@@ -6917,7 +6946,7 @@
                 snapAtMin: otSnapAtMin,
                 otCountFrom,
                 policyDesc: polDesc
-              }, a, d, co, staff, rawOtMin, `${otBlockMin}m whole-block cliff`, 'above_block');
+              }, a, d, co, staff, rawOtMin, `${otBlockMin}m whole-block cliff`, 'above_block', rem, pastEndMin - rem);
             }
           }
         }
@@ -6974,11 +7003,49 @@
         ? (bk.snapMode === 'exact_plus_snap' ? `Arrondi à ${bk.snapAtMin}m vers ${bk.blockMin}m` : `Blocs complets ${bk.blockMin}m`)
         : `Seuil ${bk.thresholdMin}m (${isShiftEnd ? 'Fin de poste' : 'Après seuil'})`;
 
+      const sortedPast = bk.pastLine.slice().sort((x, y) => x - y);
+      const shiftBin = shiftBins.get(bk.shiftKey) || { total: 0, bins: {} };
+      // The line drawn on the chart is the one most of the hits crossed (a rounding cluster can sit
+      // at a later block, e.g. +55 on a 25-to-30 rounding rule).
+      const lineEntries = Object.keys(bk.lineHits).map(k => [Number(k), bk.lineHits[k]]).sort((x, y) => y[1] - x[1] || x[0] - y[0]);
+      const lineMin = lineEntries.length ? lineEntries[0][0] : (isSnap
+        ? ((bk.otCountFrom === 'after_threshold' ? bk.thresholdMin : 0) + (bk.snapMode === 'exact_plus_snap' ? bk.snapAtMin : bk.blockMin))
+        : bk.thresholdMin);
+      // F5: plain advice for the card and pop-up (recommendationEn stays for Sentinels and Ask ISABI)
+      const recPlainEn = isSnap
+        ? 'Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.'
+        : (isShiftEnd
+          ? `Check the end-of-shift handover. If there is no real delay, count overtime from minute ${bk.thresholdMin} instead of from shift end.`
+          : `Check what keeps staff ${bk.thresholdMin} min past the shift end: handover, a queue at the clock, or waiting for overtime.`);
+      // Clock-outs tested under the flagged rule only (a shift can carry several staff rules).
+      let ruleTested = 0;
+      const ruleBins = {};
+      ruleGroups.forEach(rg => {
+        if (rg.company !== bk.company || rg.shiftName !== bk.shiftName) return;
+        if (isSnap) {
+          if (rg.snapMode !== bk.snapMode || rg.blockMin !== bk.blockMin || (bk.snapMode === 'exact_plus_snap' && rg.snapAtMin !== bk.snapAtMin)) return;
+        }
+        // A rounding line only moves with the threshold when overtime is counted after it.
+        const effT = x => (x.otCountFrom === 'after_threshold' ? x.thresholdMin : 0);
+        if (rg.otCountFrom !== bk.otCountFrom) return;
+        if (isSnap ? effT(rg) !== effT(bk) : rg.thresholdMin !== bk.thresholdMin) return;
+        ruleTested += rg.total;
+        Object.keys(rg.bins).forEach(k => { ruleBins[k] = (ruleBins[k] || 0) + rg.bins[k]; });
+      });
+      if (!ruleTested) ruleTested = shiftBin.total || bk.count;
+
       clusters.push({
         id: bk.id,
         company: bk.company,
         industry: bk.industry,
         shiftName: bk.shiftName,
+        lineMin,
+        minPastLine: sortedPast.length ? sortedPast[0] : 0,
+        maxPastLine: sortedPast.length ? sortedPast[sortedPast.length - 1] : 0,
+        shiftTested: shiftBin.total,
+        ruleTested,
+        rulePct: Math.round((bk.count / Math.max(1, ruleTested)) * 100),
+        bins: Object.keys(ruleBins).length ? ruleBins : shiftBin.bins,
         cliffKind: bk.cliffKind,
         cliffLabel: bk.boundaryLabel,
         cliffLabelEn: bk.boundaryLabel,
@@ -7003,6 +7070,7 @@
         headlineAr: scrubForbiddenPolicyCopy(headlineAr, true),
         headlineFr: scrubForbiddenPolicyCopy(headlineFr, true),
         recommendationEn: scrubForbiddenPolicyCopy(recEn, true),
+        recommendationPlainEn: scrubForbiddenPolicyCopy(recPlainEn, true),
         recommendationAr: scrubForbiddenPolicyCopy(recAr, true),
         recommendationFr: scrubForbiddenPolicyCopy(recFr, true)
       });
@@ -7020,8 +7088,12 @@
       minCount,
       companies: targetCos,
       scannedPunches,
+      testedPunches,
       totalShifts: shiftTotals.size,
       clusters,
+      rules: Array.from(ruleGroups.values())
+        .sort((x, y) => y.total - x.total || x.company.localeCompare(y.company) || x.shiftName.localeCompare(y.shiftName))
+        .map(r => Object.assign({}, r, { lineMin: r.thresholdMin })),
       generatedAt: new Date().toISOString()
     };
     if (!window.__MFG_SPEED_CACHES_OFF) {
@@ -7043,7 +7115,7 @@
       return {
         source: 'deterministic',
         hasClusters: false,
-        title: lang === 'ar' ? 'تحليل عتبات العمل الإضافي (30 يوماً)' : (lang === 'fr' ? 'Brief Seuils HS (30 jours)' : '30-Day OT Boundary & Snap Cluster Brief'),
+        title: lang === 'ar' ? 'فحص توقيت العمل الإضافي' : (lang === 'fr' ? 'Contrôle du timing des heures sup' : 'Overtime Timing Check'),
         summary: scrubForbiddenPolicyCopy(
           lang === 'ar'
             ? `تم مسح ${d.scannedPunches} بصمة خروج خلال ${d.lookbackDays} يوماً (${d.startDate} إلى ${d.endDate}): توزيع سليم دون تجمع مريب قرب عتبات أو قوالب العمل الإضافي.`
@@ -7071,7 +7143,7 @@
       source: 'deterministic',
       hasClusters: true,
       clusterCount: d.clusters.length,
-      title: lang === 'ar' ? 'تحليل عتبات وتثبيت العمل الإضافي (30 يوماً)' : (lang === 'fr' ? 'Brief Seuils & Paliers HS (30 jours)' : '30-Day OT Boundary & Snap Cluster Brief'),
+      title: lang === 'ar' ? 'فحص توقيت العمل الإضافي' : (lang === 'fr' ? 'Contrôle du timing des heures sup' : 'Overtime Timing Check'),
       summary: scrubForbiddenPolicyCopy(
         lang === 'ar'
           ? `تم رصد ${d.clusters.length} تجمّع(ات) قرب عتبات أو قوالب العمل الإضافي ضمن ${d.scannedPunches} بصمة. الأبرز: ${lead.headline}`
@@ -7096,6 +7168,103 @@
     return known ? `<span>${esc(s)}</span>` : `<span data-no-i18n="1">${esc(s)}</span>`;
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // Overtime Timing Check (#payAttClusterBriefCard, #otClusterBriefModal)
+  // Plain-language card: a one-line green chip when nothing is found; a full card with the rule
+  // tested and a minutes-past-shift-end histogram (overtime line marked) when a shift is flagged.
+  // Reads clock-out times only; pay math stays deterministic and untouched.
+  // ---------------------------------------------------------------------------------------------
+  function otcDmy(iso) {
+    const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : String(iso || '');
+  }
+
+  function otcRuleParts(r) {
+    const t = Math.round(Number((r && r.thresholdMin) || 0));
+    const parts = [];
+    if (t > 0) {
+      parts.push(r.otCountFrom === 'after_threshold'
+        ? `Overtime starts ${t} min after shift end, counted from minute ${t}`
+        : `Overtime starts ${t} min after shift end, counted from shift end`);
+    } else {
+      parts.push('Overtime counts from shift end');
+    }
+    const blk = Math.round(Number((r && r.blockMin) || 0));
+    const snapAt = Math.round(Number((r && r.snapAtMin) || 0));
+    if (r && r.snapMode === 'exact_plus_snap' && snapAt > 0 && blk >= 15) parts.push(`Rounds up to ${blk} min once it reaches ${snapAt} min`);
+    else if (r && r.snapMode === 'whole_blocks' && blk >= 15) parts.push(`Paid in whole ${blk} min blocks`);
+    return parts;
+  }
+
+  function otcRuleLineHtml(r) {
+    return otcRuleParts(r).map(p => `<span>${esc(p)}</span>`).join('<span aria-hidden="true"> · </span>');
+  }
+
+  function otcMetaText(d) {
+    const n = Number((d && d.testedPunches) || 0);
+    return `${fmtNum(n)} ${n === 1 ? 'clock-out' : 'clock-outs'} checked, last ${fmtNum((d && d.lookbackDays) || 30)} days (${otcDmy(d && d.startDate)} to ${otcDmy(d && d.endDate)})`;
+  }
+
+  function otcShiftCount(clusters) {
+    return new Set((clusters || []).map(c => `${c.company}|${c.shiftName}`)).size;
+  }
+
+  function otcFlaggedText(n) {
+    return `${fmtNum(n)} ${Number(n) === 1 ? 'shift' : 'shifts'} flagged`;
+  }
+
+  function otcFindingText(c) {
+    const lo = Math.round(Number(c.minPastLine || 0));
+    const hi = Math.round(Number(c.maxPastLine || 0));
+    const span = lo === hi ? `${lo}` : `${lo} to ${hi}`;
+    const tested = c.ruleTested || c.shiftTotal || c.count;
+    const pct = c.rulePct != null ? c.rulePct : c.sharePct;
+    return `${fmtNum(c.count)} of ${fmtNum(tested)} clock-outs (${pct}%) landed ${span} min past the line.`;
+  }
+
+  function otcSigned(m) {
+    return m > 0 ? `+${m}` : String(m);
+  }
+
+  function renderOtTimingHistHtml(bins, lineMin, opts = {}) {
+    const rawLine = Math.max(0, Math.round(Number(lineMin) || 0));
+    const showLine = rawLine <= 220;
+    const line = Math.min(220, rawLine);
+    const band = Math.max(1, Math.round(Number(opts.bandMin) || 4));
+    const lo = -5;
+    const hi = Math.min(240, Math.max(30, line + 20));
+    const span = hi - lo + 1;
+    let max = 0;
+    const cols = [];
+    for (let m = lo; m <= hi; m++) {
+      const v = Number((bins && bins[m]) || 0);
+      if (v > max) max = v;
+      cols.push([m, v]);
+    }
+    const leftPct = m => (((m - lo) / span) * 100).toFixed(2);
+    const bars = cols.map(([m, v]) => {
+      const h = max && v ? Math.max(6, Math.round((v / max) * 100)) : 0;
+      const inBand = opts.showBand !== false && m >= line && m <= line + band;
+      return `<span class="aie-otc-bar${inBand ? ' is-band' : ''}" style="height:${h}%" data-ui-tip="${esc(otcSigned(m))}: ${v}"></span>`;
+    }).join('');
+    const lineLbl = opts.lineLabel || 'Overtime starts';
+    return `
+      <div class="aie-otc-hist" dir="ltr">
+        <div class="aie-otc-plot">
+          <div class="aie-otc-bars">${bars}</div>
+          <span class="aie-otc-zero" style="left:${leftPct(0)}%"></span>
+          ${showLine ? '' : '<!-- line beyond chart -->'}<span class="aie-otc-line${showLine ? '' : ' hidden'}" style="left:${leftPct(line)}%"><span class="aie-otc-line-lbl${Number(leftPct(line)) > 55 ? ' is-flip' : ''}">${esc(lineLbl)}</span></span>
+        </div>
+        <div class="aie-otc-axis" data-no-i18n="1">
+          <span data-no-i18n="1" style="left:${leftPct(0)}%">0</span>
+          ${line >= 4 ? `<span data-no-i18n="1" style="left:${leftPct(line)}%">${line}</span>` : ''}
+          <span data-no-i18n="1" style="left:${leftPct(hi)}%">${hi}</span>
+        </div>
+        <div class="aie-otc-cap">Minutes after shift end</div>
+      </div>
+    `;
+  }
+
   function renderPayAttClusterBriefCardHtml(opts = {}) {
     const digest = computeOtThresholdClusterDigest(opts);
     const bridge = getAttBridge();
@@ -7105,53 +7274,61 @@
     if (!window.__MFG_SPEED_CACHES_OFF && cardKey && EDGE_STATE._otClusterCardHtmlMemo && EDGE_STATE._otClusterCardHtmlMemo.key === cardKey) {
       return EDGE_STATE._otClusterCardHtmlMemo.html;
     }
-    const brief = buildOtClusterEdgeBrief(digest, Object.assign({}, opts, { lang: 'en' }));
     const clusters = digest.clusters || [];
-    const pillCls = clusters.length ? 'aie-pill is-warn' : 'aie-pill is-good';
-    const pillTxt = clusters.length
-      ? `${clusters.length} boundary cluster${clusters.length > 1 ? 's' : ''}`
-      : 'Clean distribution';
-
-    const rowsHtml = clusters.slice(0, 3).map(c => {
-      const barPct = Math.min(100, Math.max(12, c.sharePct || 25));
-      const headTxt = scrubForbiddenPolicyCopy(c.headlineEn, canDollars);
-      const recTxt = scrubForbiddenPolicyCopy(c.recommendationEn, canDollars);
-      const staffBadges = (c.topStaff || []).slice(0, 3).map(s => `<span class="aie-pill" style="font-size:10px;padding:1px 6px">${esc(s.staff)} · ${s.count}x</span>`).join(' ');
-      const cliffBadge = c.cliffKind === 'snap_cliff' ? 'Snap / Block Cliff' : 'Threshold Cliff';
-      return `
-        <div class="aie-cluster-row">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
-            <strong style="font-size:12px">${shiftLabelHtml(c.shiftName)} - <span>${esc(c.company)}</span></strong>
-            <span class="aie-pill ${c.cliffKind === 'snap_cliff' ? 'is-warn' : 'is-crit'}" style="font-size:10px;padding:2px 7px">${esc(cliffBadge)} · ${c.count}x (${c.sharePct}%)</span>
-          </div>
-          <div class="aie-cluster-bar-track"><div class="aie-cluster-bar-fill" style="width:${barPct}%"></div></div>
-          <div style="font-size:11.5px;line-height:1.4;margin-bottom:4px">${esc(headTxt)}</div>
-          <div style="font-size:11px;color:#7A5414;margin-bottom:4px"><em>Tuning hint:</em> ${esc(recTxt)}</div>
-          <div style="display:flex;gap:4px;flex-wrap:wrap">${staffBadges}</div>
+    const meta = otcMetaText(digest);
+    let html;
+    if (!clusters.length) {
+      const msg = (digest.testedPunches || 0) > 0
+        ? 'No sign of staff timing their clock-outs to trigger overtime.'
+        : 'No clock-outs under an overtime rule to check.';
+      html = `
+        <div id="payAttClusterBriefCard" class="aie-otc-chip" role="status" data-cluster-count="0" data-scanned="${digest.scannedPunches || 0}" data-tested="${digest.testedPunches || 0}">
+          <span class="aie-otc-chip-icon" aria-hidden="true">${ic('check_circle')}</span>
+          <strong class="aie-otc-chip-title">Overtime Timing Check</strong>
+          <span class="aie-otc-chip-msg">${esc(msg)}</span>
+          <span class="aie-otc-chip-meta">${esc(meta)}</span>
+          <button type="button" class="aie-btn aie-otc-chip-btn" data-open-ot-cluster-modal="1">Details</button>
         </div>
       `;
-    }).join('');
-
-    const html = `
-      <div id="payAttClusterBriefCard" class="aie-cluster-card" data-cluster-count="${clusters.length}" data-scanned="${digest.scannedPunches}">
-        <div class="aie-head">
-          <div class="aie-title-wrap">
-            ${ic('brain_radar')}
-            <strong style="font-size:13px">30-Day OT Boundary &amp; Snap Cluster Brief</strong>
-            <span class="${pillCls}">${esc(pillTxt)}</span>
-            <span style="font-size:11px;color:var(--muted,#6E6254)">${fmtNum(digest.scannedPunches)} punches · ${esc(digest.startDate)} to ${esc(digest.endDate)}</span>
+    } else {
+      const rowsHtml = clusters.slice(0, 3).map(c => {
+        const isSnap = c.cliffKind === 'snap_cliff';
+        const recTxt = scrubForbiddenPolicyCopy(c.recommendationPlainEn || c.recommendationEn, canDollars);
+        const staffBadges = (c.topStaff || []).slice(0, 3).map(s => `<span class="aie-pill" style="font-size:10px;padding:1px 6px">${esc(s.staff)} · ${s.count}x</span>`).join(' ');
+        return `
+          <div class="aie-cluster-row">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap">
+              <strong style="font-size:12px">${shiftLabelHtml(c.shiftName)} - <span>${esc(c.company)}</span></strong>
+              <span class="aie-pill ${isSnap ? 'is-warn' : 'is-crit'}" style="font-size:10px;padding:2px 7px">${isSnap ? 'Just past a rounding point' : 'Just past the overtime start'}</span>
+            </div>
+            <div class="aie-otc-rule"><span class="aie-otc-k">Rule:</span> ${otcRuleLineHtml(c)}</div>
+            ${renderOtTimingHistHtml(c.bins, c.lineMin, { bandMin: digest.bandMin, lineLabel: isSnap ? 'Rounds up' : 'Overtime starts' })}
+            <div class="aie-otc-find">${esc(otcFindingText(c))}</div>
+            <div class="aie-otc-todo"><em>What to do:</em> ${esc(recTxt)}</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">${staffBadges}</div>
           </div>
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <button type="button" id="otClusterAiExplainBtn" class="aie-btn">${ic('sparkles')} Explain Clusters</button>
-            <button type="button" class="aie-btn" data-open-ot-cluster-modal="1">${ic('sliders')} Full Cluster Brief</button>
+        `;
+      }).join('');
+      html = `
+        <div id="payAttClusterBriefCard" class="aie-cluster-card" data-cluster-count="${clusters.length}" data-scanned="${digest.scannedPunches || 0}" data-tested="${digest.testedPunches || 0}">
+          <div class="aie-head">
+            <div class="aie-title-wrap">
+              ${ic('brain_radar')}
+              <strong style="font-size:13px">Overtime Timing Check</strong>
+              <span class="aie-pill is-warn">${esc(otcFlaggedText(otcShiftCount(clusters)))}</span>
+              <span class="aie-otc-meta">${esc(meta)}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <button type="button" id="otClusterAiExplainBtn" class="aie-btn">${ic('sparkles')} Explain with AI</button>
+              <button type="button" class="aie-btn" data-open-ot-cluster-modal="1">${ic('sliders')} Details</button>
+            </div>
           </div>
+          <div class="aie-otc-sub">Flags staff clocking out just past the point where overtime kicks in.</div>
+          <div class="aie-cluster-grid">${rowsHtml}</div>
+          <div id="otClusterAiInsightSlot" class="aie-cluster-ai-slot hidden"></div>
         </div>
-        ${clusters.length
-          ? `<div class="aie-cluster-grid">${rowsHtml}</div>`
-          : `<div style="margin-top:6px;font-size:12px;color:var(--muted,#5F5244)">${esc(brief.summary)}</div>`}
-        <div id="otClusterAiInsightSlot" class="aie-cluster-ai-slot hidden"></div>
-      </div>
-    `;
+      `;
+    }
     if (!window.__MFG_SPEED_CACHES_OFF && cardKey) {
       EDGE_STATE._otClusterCardHtmlMemo = { key: cardKey, html };
     }
@@ -7172,28 +7349,25 @@
       }
     };
     slotEl.classList.remove('hidden');
-    slotEl.innerHTML = `<strong>Deterministic Digest:</strong> <span class="ask-answer-body">${esc(scrubForbiddenPolicyCopy(det.summary, canDollars))}</span>`;
+    slotEl.innerHTML = `<strong>Summary:</strong> <span class="ask-answer-body">${esc(scrubForbiddenPolicyCopy(det.summary, canDollars))}</span>`;
     syncI18n();
     if (!d.clusters || !d.clusters.length) return;
     const targetLangName = lang === 'ar' ? 'Arabic' : (lang === 'fr' ? 'French' : 'English');
     const prompt = sanitizeOutward([
-      `You are advising HR operations on attendance policy tuning under a strict Per-Minute ($ / Min) engine with OT start threshold and optional OT snap/block constraints. Respond in ${targetLangName}.`,
-      'Summarize the pattern below concisely in plain language (no markdown em-dashes or arrows). Keep all math deterministic; recommend whether supervisors should check physical shift handover timing vs adjusting ot_threshold_min / ot_count_from / ot_snap_mode.',
+      `You are advising a site manager on overtime rules. Respond in ${targetLangName}, in two or three short plain sentences a non-specialist understands.`,
+      'Staff are clocking out just past the minute where overtime starts paying (or where overtime rounds up). Say whether this looks like a real handover or queue delay at the end of the shift, or like people waiting for the overtime line, and what the manager should check first. Never use field names, codes, markdown, em-dashes or arrows. Do not invent figures.',
       JSON.stringify({
         lookbackDays: d.lookbackDays,
-        scannedPunches: d.scannedPunches,
-        clusters: d.clusters.slice(0, 5).map(c => ({
+        clockOutsChecked: d.testedPunches,
+        flaggedShifts: d.clusters.slice(0, 5).map(c => ({
           company: c.company,
           shift: c.shiftName,
-          cliffKind: c.cliffKind,
-          thresholdMin: c.thresholdMin,
-          otCountFrom: c.otCountFrom,
-          snapMode: c.snapMode,
-          blockMin: c.blockMin,
-          snapAtMin: c.snapAtMin,
-          count: c.count,
+          rule: otcRuleParts(c).join('; '),
+          kind: c.cliffKind === 'snap_cliff' ? 'just past a rounding point' : 'just past the overtime start',
+          clockOutsNearLine: c.count,
+          shiftClockOuts: c.shiftTotal,
           sharePct: c.sharePct,
-          offsetRangeMin: [c.minOffset, c.maxOffset]
+          minutesPastLine: [c.minPastLine, c.maxPastLine]
         }))
       })
     ].join('\n'));
@@ -7201,7 +7375,7 @@
       const aiObj = await callAiEdgeJson('grounded_brief', prompt, null, null, { tier: 'fast', timeoutMs: 4500 });
       const aiTxt = aiObj && (aiObj.summary || aiObj.brief || aiObj.answer || aiObj.recommendation);
       if (aiTxt && String(aiTxt).trim()) {
-        slotEl.innerHTML = `<strong>AI Edge Note:</strong> <span class="ask-answer-body">${esc(scrubForbiddenPolicyCopy(String(aiTxt), canDollars))}</span>`;
+        slotEl.innerHTML = `<strong>AI note:</strong> <span class="ask-answer-body">${esc(scrubForbiddenPolicyCopy(String(aiTxt), canDollars))}</span>`;
         syncI18n();
       }
     } catch (_) {}
@@ -7215,7 +7389,16 @@
   function openOtClusterBriefModal(opts = {}) {
     closeOtClusterBriefModal();
     const digest = computeOtThresholdClusterDigest(Object.assign({}, opts, { forceFresh: true }));
-    const brief = buildOtClusterEdgeBrief(digest, Object.assign({}, opts, { lang: 'en' }));
+    const bridge = getAttBridge();
+    const canDollars = Boolean(bridge && typeof bridge.canViewPayrollDollarAmounts === 'function' && bridge.canViewPayrollDollarAmounts());
+    const clusters = digest.clusters || [];
+    const rules = (digest.rules || []).slice(0, 6);
+    const flagged = clusters.length > 0;
+    const leadMsg = flagged
+      ? 'Flags staff clocking out just past the point where overtime kicks in.'
+      : ((digest.testedPunches || 0) > 0
+        ? 'No sign of staff timing their clock-outs to trigger overtime.'
+        : 'No clock-outs under an overtime rule to check.');
     const modal = document.createElement('div');
     modal.id = 'otClusterBriefModal';
     modal.className = 'aie-modal-backdrop';
@@ -7224,49 +7407,67 @@
         <div class="aie-modal-hdr">
           <div class="aie-title-wrap">
             ${ic('brain_radar')}
-            <strong id="otClusterModalTitle" style="font-size:15px">${esc(brief.title)}</strong>
-            <span class="aie-pill ${digest.clusters.length ? 'is-warn' : 'is-good'}">${digest.clusters.length} clusters</span>
+            <strong id="otClusterModalTitle" style="font-size:15px">Overtime Timing Check</strong>
+            <span class="aie-pill ${flagged ? 'is-warn' : 'is-good'}">${esc(flagged ? otcFlaggedText(otcShiftCount(clusters)) : 'No pattern found')}</span>
           </div>
           <button type="button" id="otClusterModalCloseBtn" class="aie-btn">Close</button>
         </div>
         <div class="aie-modal-body">
-          <div style="font-size:12.5px;margin-bottom:10px;line-height:1.5">${esc(brief.summary)}</div>
+          <div style="font-size:12.5px;line-height:1.5">${esc(leadMsg)}</div>
+          <div class="aie-otc-meta" style="margin:2px 0 10px">${esc(otcMetaText(digest))}</div>
           <div id="otClusterModalAiSlot" class="aie-cluster-ai-slot hidden"></div>
-          ${digest.clusters.length ? `
+          ${flagged ? `
             <div style="margin-top:10px;overflow-x:auto">
               <table class="aie-ppd-table" style="border:1px solid #E2DCD0;border-radius:8px">
                 <thead>
                   <tr>
                     <th>Company</th>
                     <th>Shift</th>
-                    <th>Boundary Cliff</th>
-                    <th>Punches</th>
-                    <th>Offset Range</th>
-                    <th>Staff Concentrated</th>
-                    <th>Tuning Guidance</th>
+                    <th>Where</th>
+                    <th>Clock-outs</th>
+                    <th>Minutes Past the Line</th>
+                    <th>Staff Most Often</th>
+                    <th>What to Do</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${digest.clusters.map(c => `
+                  ${clusters.map(c => {
+                    const lo = Math.round(Number(c.minPastLine || 0));
+                    const hi = Math.round(Number(c.maxPastLine || 0));
+                    return `
                     <tr>
                       <td><strong>${esc(c.company)}</strong></td>
                       <td>${shiftLabelHtml(c.shiftName)}</td>
-                      <td>${esc(c.cliffLabelEn || c.cliffLabel)}</td>
-                      <td><strong>${c.count}</strong> / ${c.shiftTotal} (${c.sharePct}%)</td>
-                      <td>+${c.minOffset}m to +${c.maxOffset}m</td>
+                      <td>${c.cliffKind === 'snap_cliff' ? 'Just past a rounding point' : 'Just past the overtime start'}</td>
+                      <td><strong>${c.count}</strong> / ${c.ruleTested || c.shiftTotal} (${c.rulePct != null ? c.rulePct : c.sharePct}%)</td>
+                      <td>${esc(lo === hi ? `+${lo}m` : `+${lo}m to +${hi}m`)}</td>
                       <td>${esc((c.topStaff || []).slice(0, 4).map(s => `${s.staff} (${s.count})`).join(', '))}</td>
-                      <td style="white-space:normal;min-width:210px">${esc(c.recommendationEn)}</td>
+                      <td style="white-space:normal;min-width:210px">${esc(scrubForbiddenPolicyCopy(c.recommendationPlainEn || c.recommendationEn, canDollars))}</td>
                     </tr>
-                  `).join('')}
+                  `;
+                  }).join('')}
                 </tbody>
               </table>
             </div>
           ` : ''}
+          ${rules.length ? `
+            <div class="aie-otc-rules-head">Rules checked</div>
+            <div class="aie-otc-rules">
+              ${rules.map(r => `
+                <div class="aie-cluster-row">
+                  <strong style="font-size:12px">${shiftLabelHtml(r.shiftName)} - <span>${esc(r.company)}</span></strong>
+                  <div class="aie-otc-rule">${otcRuleLineHtml(r)}</div>
+                  ${renderOtTimingHistHtml(r.bins, r.thresholdMin, { bandMin: digest.bandMin, lineLabel: 'Overtime starts', showBand: false })}
+                  <div class="aie-otc-meta">${esc(`${fmtNum(r.total)} ${Number(r.total) === 1 ? 'clock-out' : 'clock-outs'} checked`)}</div>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
         </div>
         <div class="aie-modal-foot">
-          <span style="font-size:11px;color:var(--muted,#6E6254)">All overtime, threshold, and snap block math remains 100% deterministic under the Per-Minute engine.</span>
+          <span style="font-size:11px;color:var(--muted,#6E6254)">This check only reads clock-out times. It never changes pay.</span>
           <div style="display:flex;gap:8px">
-            <button type="button" id="otClusterModalExplainBtn" class="aie-btn aie-btn-primary">${ic('sparkles')} AI Root-Cause Note</button>
+            ${flagged ? `<button type="button" id="otClusterModalExplainBtn" class="aie-btn aie-btn-primary">${ic('sparkles')} Explain with AI</button>` : ''}
             <button type="button" id="otClusterModalCloseBtn2" class="aie-btn">Close</button>
           </div>
         </div>
