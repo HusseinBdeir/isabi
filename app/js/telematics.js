@@ -477,7 +477,10 @@
           };
           if (!opts.silent && _ctx && typeof _ctx.rerenderWorkspace === 'function') {
             const st = _ctx.getState ? _ctx.getState() : null;
-            if (st && (st.view === 'fleet' || st.view === 'fleet_equip' || st.view === 'reg_equipment' || st.view === 'reg_sites' || st.view === 'sentinels' || st.view === 'trd_trucks' || st.view === 'hsp_energy' || st.view === 're_workorders' || st.view === 'ins_claims' || st.view === 'hld_consolidation' || st.view === 'entities')) {
+            if (st && (st.view === 'reg_sites' || st.view === 'reg_regions')) {
+              const refreshedInPlace = Boolean(window.MFG_GEO && typeof window.MFG_GEO.refreshStudioMapInPlace === 'function' && window.MFG_GEO.refreshStudioMapInPlace());
+              if (!refreshedInPlace) _ctx.rerenderWorkspace();
+            } else if (st && (st.view === 'fleet' || st.view === 'fleet_equip' || st.view === 'reg_equipment' || st.view === 'sentinels' || st.view === 'trd_trucks' || st.view === 'hsp_energy' || st.view === 're_workorders' || st.view === 'ins_claims' || st.view === 'hld_consolidation' || st.view === 'entities')) {
               _ctx.rerenderWorkspace();
             }
           }

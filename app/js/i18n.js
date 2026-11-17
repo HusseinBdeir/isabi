@@ -1544,6 +1544,7 @@
       "Borrowing": "اقتراض",
       "Borrowing & Staff Advances": "القروض وسلف الموظفين",
       "Borrowing Drawdowns & Repayment Vouchers": "سندات سحب القروض ودفعات السداد",
+      "Borrowing Opening": "رصيد قروض افتتاحي",
       "Borrowing Out": "إقراض صادر",
       "Borrowing Repayment In": "استرداد قرض وارد",
       "Both Sides": "الطرفان",
@@ -4112,6 +4113,9 @@
       "Hide Document Preview": "إخفاء معاينة المستند",
       "Hide Group Close Gate": "إخفاء بوابة إقفال المجموعة",
       "Hide Map": "إخفاء الخريطة",
+      "Full Window": "ملء النافذة",
+      "Exit Full Window": "إنهاء ملء النافذة",
+      "Exit Full Window (Esc)": "إنهاء ملء النافذة (Esc)",
       "Hide Menu": "إخفاء القائمة",
       "Hide Period-Close Studio": "إخفاء استوديو إقفال الفترة",
       "Hide Property Close Studio": "إخفاء استوديو الإقفال العقاري",
@@ -12810,7 +12814,35 @@
       "Costs were higher than sales on this day. Click to see the day records.": "تجاوزت التكاليف المبيعات في هذا اليوم. انقر لعرض قيود اليوم.",
       "Same day and party, these entries add up to this amount": "نفس اليوم والطرف، ومجموع هذه القيود يساوي هذا المبلغ",
       "Same party, these entries one day apart add up to this amount": "نفس الطرف، ومجموع هذه القيود المسجلة بفارق يوم واحد يساوي هذا المبلغ",
-      "Supplier Payment": "دفعة لمورد"
+      "Supplier Payment": "دفعة لمورد",
+      "Combined": "الإجمالي الموحّد",
+      "Eq.": "ما يعادل",
+      "Reconciled @": "مسوّى @",
+      "Period Cash Flow": "التدفق النقدي للفترة",
+      "Loaded Cash Movement": "حركة النقد المُدرجة",
+      "+ Cash Entry": "+ قيد نقدي",
+      "Daily Sheet": "الكشف اليومي",
+      "FX": "صرف عملات",
+      "All Days": "كل الأيام",
+      "Till Summary by Category": "ملخص الصندوق حسب الفئة",
+      "Monthly Cash Flow & Till": "التدفق النقدي الشهري والصندوق",
+      "By Category": "حسب الفئة",
+      "By Month": "حسب الشهر",
+      "Counterparty & Category Breakdowns": "تفاصيل الأطراف والفئات",
+      "Customers, Suppliers, Borrowing, Payroll, External & FX": "العملاء، الموردون، السلف، الرواتب، الخارجي والصرف",
+      "Currency Conversions (USD / LBP)": "تحويلات العملات (دولار / ليرة)",
+      "Filter WTC Only": "تصفية WTC فقط",
+      "Filter BBC Only": "تصفية BBC فقط",
+      "Cash Till Guide:": "دليل الصندوق:",
+      "Evening sweeps move surplus cash to the safe so the drawer closes near $0 (LBP @": "تُحوَّل الزيادة النقدية مساءً إلى الخزنة ليُغلق الدرج قرب 0$ (الليرة بسعر",
+      "LL/$).": "ل.ل./$).",
+      "Click any bar to filter entries.": "انقر على أي عمود لتصفية القيود.",
+      "Monthly Cash Inflows vs Outflows · Operating vs Treasury Sweeps": "التدفقات الشهرية الداخلة والخارجة · التشغيلية مقابل تحويلات الخزنة",
+      "Closing Cash Till · Last 30 Operating Days": "إغلاق الصندوق · آخر 30 يوم عمل",
+      "Closing Cash Till · Month-End Balance ($)": "إغلاق الصندوق · رصيد نهاية الشهر ($)",
+      "% of cash volume": "% من حجم النقد",
+      "Net balance": "صافي الرصيد",
+      "USD drawer at start of window; top till cards show the cumulative balance to the end date": "رصيد درج الدولار في بداية الفترة؛ تعرض بطاقات الصندوق العلوية الرصيد التراكمي حتى تاريخ النهاية"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -14336,6 +14368,7 @@
       "Borrowing": "Emprunt",
       "Borrowing & Staff Advances": "Emprunts & Avances au Personnel",
       "Borrowing Drawdowns & Repayment Vouchers": "Tirages d'emprunts et bons de remboursement",
+      "Borrowing Opening": "Solde d'emprunt d'ouverture",
       "Borrowing Out": "Prêt décaissé",
       "Borrowing Repayment In": "Remboursement d'emprunt reçu",
       "Both Sides": "Les Deux Sens",
@@ -16904,6 +16937,9 @@
       "Hide Document Preview": "Masquer l'Aperçu du Document",
       "Hide Group Close Gate": "Masquer le portail de cloture groupe",
       "Hide Map": "Masquer la Carte",
+      "Full Window": "Pleine Fenêtre",
+      "Exit Full Window": "Quitter Pleine Fenêtre",
+      "Exit Full Window (Esc)": "Quitter Pleine Fenêtre (Esc)",
       "Hide Menu": "Masquer le menu",
       "Hide Period-Close Studio": "Masquer l atelier de cloture mensuelle",
       "Hide Property Close Studio": "Masquer l atelier de cloture immobiliere",
@@ -25602,7 +25638,35 @@
       "Costs were higher than sales on this day. Click to see the day records.": "Les coûts ont dépassé les ventes ce jour-là. Cliquez pour voir les écritures du jour.",
       "Same day and party, these entries add up to this amount": "Même jour et même tiers, ces écritures totalisent ce montant",
       "Same party, these entries one day apart add up to this amount": "Même tiers, ces écritures à un jour d'écart totalisent ce montant",
-      "Supplier Payment": "Paiement Fournisseur"
+      "Supplier Payment": "Paiement Fournisseur",
+      "Combined": "Total combiné",
+      "Eq.": "Éq.",
+      "Reconciled @": "Rapproché @",
+      "Period Cash Flow": "Flux de trésorerie de la période",
+      "Loaded Cash Movement": "Mouvements de trésorerie chargés",
+      "+ Cash Entry": "+ Écriture caisse",
+      "Daily Sheet": "Feuille du jour",
+      "FX": "Change FX",
+      "All Days": "Tous les jours",
+      "Till Summary by Category": "Synthèse de caisse par catégorie",
+      "Monthly Cash Flow & Till": "Flux mensuels et solde de caisse",
+      "By Category": "Par catégorie",
+      "By Month": "Par mois",
+      "Counterparty & Category Breakdowns": "Détails par contrepartie et catégorie",
+      "Customers, Suppliers, Borrowing, Payroll, External & FX": "Clients, fournisseurs, emprunts, paie, externe et change",
+      "Currency Conversions (USD / LBP)": "Conversions de devises (USD / LBP)",
+      "Filter WTC Only": "Filtrer WTC uniquement",
+      "Filter BBC Only": "Filtrer BBC uniquement",
+      "Cash Till Guide:": "Guide de caisse :",
+      "Evening sweeps move surplus cash to the safe so the drawer closes near $0 (LBP @": "Les versements du soir transfèrent l'excédent au coffre pour clôturer la caisse près de 0 $ (LBP à",
+      "LL/$).": "LBP/$).",
+      "Click any bar to filter entries.": "Cliquez sur une barre pour filtrer les écritures.",
+      "Monthly Cash Inflows vs Outflows · Operating vs Treasury Sweeps": "Entrées et sorties mensuelles · Exploitation vs transferts coffre",
+      "Closing Cash Till · Last 30 Operating Days": "Solde de clôture · 30 derniers jours ouvrés",
+      "Closing Cash Till · Month-End Balance ($)": "Solde de clôture · Fin de mois ($)",
+      "% of cash volume": "% du volume de trésorerie",
+      "Net balance": "Solde net",
+      "USD drawer at start of window; top till cards show the cumulative balance to the end date": "Caisse USD en début de période ; les cartes supérieures affichent le solde cumulé jusqu'à la date de fin"
     }
   };
 
@@ -28144,6 +28208,9 @@
 
     m = trimmed.match(/^@\s*([\d,]+)\s*LL\/\$$/i);
     if (m) return lang === 'ar' ? `@ ${m[1]} ل.ل./$` : `@ ${m[1]} LBP/$`;
+
+    m = trimmed.match(/^Reconciled\s*@\s*([\d,]+)\s*LL\/\$$/i);
+    if (m) return lang === 'ar' ? `مسوّى @ ${m[1]} ل.ل./$` : `Rapproché @ ${m[1]} LBP/$`;
 
     m = trimmed.match(/^Closes\s+(\S+)$/i);
     if (m) return lang === 'ar' ? `يُغلق بتاريخ ${m[1]}` : `Clôture le ${m[1]}`;
@@ -30994,6 +31061,9 @@
 
     m = trimmed.match(/^([\d.,]+%)\s+of total$/i);
     if (m) return { out: lang === 'ar' ? `${m[1]} من الإجمالي` : `${m[1]} du total`, ok: true };
+
+    m = trimmed.match(/^([\d.,]+%)\s+of cash volume$/i);
+    if (m) return { out: lang === 'ar' ? `${m[1]} من حجم النقد` : `${m[1]} du volume de trésorerie`, ok: true };
 
     m = trimmed.match(/^Avg\s+(\$[\d.,]+)\s*\/\s*([A-Za-z³]+)$/i);
     if (m) {

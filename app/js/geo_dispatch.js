@@ -1101,6 +1101,15 @@
   function resetGeoStoreSession() {
     _geoSessionEpoch++;
     _geoExplicitlySignedOut = true;
+    try {
+      if (typeof STUDIO !== 'undefined' && STUDIO) {
+        STUDIO.fullWindow = false;
+        STUDIO._userPanned = false;
+      }
+      if (typeof document !== 'undefined' && document.body) {
+        document.body.classList.remove('has-geo-full-window');
+      }
+    } catch (_) {}
     GEO_STORE.companyHubs = {};
     GEO_STORE.regions = {};
     GEO_STORE.sites = {};
@@ -5648,7 +5657,14 @@
     map: null,
     layers: null,
     previewLine: null,
-    _userPanned: false,
+    fullWindow: false,
+    _savedView: null,
+    _lastCtx: null,
+    get _userPanned() { return _studioUserPanned; },
+    set _userPanned(v) {
+      _studioUserPanned = Boolean(v);
+      if (!_studioUserPanned) this._savedView = null;
+    },
     _lastHostKey: '',
     _lastActiveInd: '',
     _renderGen: 0,
@@ -5660,6 +5676,222 @@
 
   let _studioHoverResets = [];
   let _lastZoneLayerClickTs = 0;
+  let _studioUserPanned = false;
+  let _studioProgrammaticMove = false;
+  let _studioUserZooming = false;
+  let _studioDeferredInPlaceRefresh = false;
+  let _studioDeferredWorkspaceRerender = false;
+  let _studioZoneClickTimer = 0;
+
+  function _clearStudioZoneClickTimer() {
+    if (_studioZoneClickTimer) {
+      clearTimeout(_studioZoneClickTimer);
+      _studioZoneClickTimer = 0;
+    }
+  }
+
+  function _saveStudioMapView(map) {
+    if (!map || typeof map.getCenter !== 'function' || typeof map.getZoom !== 'function') return;
+    try {
+      const c = map.getCenter();
+      const z = map.getZoom();
+      if (c && Number.isFinite(c.lat) && Number.isFinite(c.lng) && Number.isFinite(z)) {
+        STUDIO._savedView = { lat: Number(c.lat), lng: Number(c.lng), zoom: Number(z) };
+      }
+    } catch (_) {}
+  }
+
+  function _runStudioProgrammaticCamera(fn) {
+    _studioProgrammaticMove = true;
+    try {
+      return fn();
+    } finally {
+      _studioProgrammaticMove = false;
+    }
+  }
+
+  function _studioFullWinIconSvg(active) {
+    if (active) {
+      return '<svg class="geo-fullwin-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
+    }
+    return '<svg class="geo-fullwin-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>';
+  }
+
+  function _applyStudioBtnTipAndAria(el, tipText) {
+    if (!el) return;
+    try {
+      delete el['__enAttr_aria-label'];
+      delete el['__enAttrApp_aria-label'];
+      delete el['__enAttr_data-ui-tip'];
+      delete el['__enAttrApp_data-ui-tip'];
+    } catch (_) {}
+    el.setAttribute('aria-label', tipText);
+    el.setAttribute('data-ui-tip', tipText);
+  }
+
+  function resetStudioLebanonView() {
+    _clearStudioZoneClickTimer();
+    STUDIO.selectedRegion = '';
+    STUDIO._userPanned = false;
+    if (typeof STUDIO._rerender === 'function') STUDIO._rerender();
+  }
+
+  function _bindStudioZoneLayerClick(layer, r, isSel, L, map, rerenderWorkspace) {
+    if (!layer || !r) return;
+    layer.on('dblclick', _clearStudioZoneClickTimer);
+    layer.on('click', ev => {
+      if (STUDIO.mode !== 'view' || STUDIO.shapelessPickRegion) return;
+      _lastZoneLayerClickTs = Date.now();
+      L.DomEvent.stopPropagation(ev);
+      const isTrusted = !(ev.originalEvent && ev.originalEvent.isTrusted === false);
+      if (ev.originalEvent && Number(ev.originalEvent.detail) >= 2) {
+        _clearStudioZoneClickTimer();
+        return;
+      }
+      _clearStudioZoneClickTimer();
+      _studioZoneClickTimer = setTimeout(() => {
+        _studioZoneClickTimer = 0;
+        if (STUDIO.mode !== 'view' || STUDIO.shapelessPickRegion || !STUDIO.map || STUDIO.map !== map) return;
+        const nextSel = (isSel && isTrusted) ? '' : r.name;
+        const curZoom = typeof map.getZoom === 'function' ? Number(map.getZoom()) : 9;
+        const wasZoomed = Boolean(STUDIO._userPanned || curZoom > 10);
+        if (!nextSel) {
+          STUDIO.selectedRegion = '';
+          if (wasZoomed) {
+            STUDIO._userPanned = true;
+            _saveStudioMapView(map);
+          } else {
+            STUDIO._userPanned = false;
+          }
+        } else {
+          STUDIO.selectedRegion = nextSel;
+          let keepCurrentZoom = false;
+          if (wasZoomed) {
+            try {
+              const b = typeof layer.getBounds === 'function' ? layer.getBounds() : null;
+              const c = typeof map.getCenter === 'function' ? map.getCenter() : null;
+              if (b && b.isValid && b.isValid() && (!c || b.contains(c))) {
+                const targetZoom = map.getBoundsZoom(b, false, L.point(26, 26));
+                if (Number.isFinite(targetZoom) && curZoom > Math.min(14, targetZoom)) {
+                  keepCurrentZoom = true;
+                }
+              }
+            } catch (_) {}
+          }
+          if (keepCurrentZoom) {
+            STUDIO._userPanned = true;
+            _saveStudioMapView(map);
+          } else {
+            STUDIO._userPanned = false;
+          }
+        }
+        rerenderWorkspace();
+      }, isTrusted ? 230 : 0);
+    });
+  }
+
+  function syncResetViewBtnDom(deck) {
+    if (!deck) return;
+    const rightCtrl = deck.querySelector('.geo-studio-controls-right');
+    if (!rightCtrl) return;
+    const shouldShow = !STUDIO.collapsed && Boolean(STUDIO.selectedRegion || STUDIO._userPanned);
+    let resetBtn = deck.querySelector('#geoResetLebanonViewBtn');
+    if (shouldShow && !resetBtn) {
+      resetBtn = document.createElement('button');
+      resetBtn.type = 'button';
+      resetBtn.className = 'geo-mini-btn';
+      resetBtn.id = 'geoResetLebanonViewBtn';
+      resetBtn.textContent = 'Reset View';
+      resetBtn.addEventListener('click', () => resetStudioLebanonView());
+      const anchor = deck.querySelector('#geoToggleFullWindowBtn') || deck.querySelector('#geoToggleCollapseBtn');
+      if (anchor && anchor.parentNode === rightCtrl) rightCtrl.insertBefore(resetBtn, anchor);
+      else rightCtrl.appendChild(resetBtn);
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+        try { window.MFG_I18N.translateDom(resetBtn); } catch (_) {}
+      }
+    } else if (!shouldShow && resetBtn) {
+      resetBtn.remove();
+    }
+  }
+
+  function syncStudioFullWindowDom(deck) {
+    const active = Boolean(STUDIO.fullWindow && !STUDIO.collapsed);
+    try {
+      if (document.body) document.body.classList.toggle('has-geo-full-window', active);
+    } catch (_) {}
+    if (!deck) return;
+    deck.classList.toggle('is-full-window', active);
+    const hdrBtn = deck.querySelector('#geoToggleFullWindowBtn');
+    if (hdrBtn) {
+      const label = active ? 'Exit Full Window' : 'Full Window';
+      const tip = active ? 'Exit Full Window (Esc)' : 'Full Window';
+      hdrBtn.classList.toggle('active', active);
+      hdrBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      hdrBtn.innerHTML = `${_studioFullWinIconSvg(active)}<span>${label}</span>`;
+      _applyStudioBtnTipAndAria(hdrBtn, tip);
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+        try { window.MFG_I18N.translateDom(hdrBtn); } catch (_) {}
+      }
+    }
+    const cornerBtn = deck.querySelector('#geoCanvasFullWindowBtn');
+    if (cornerBtn) {
+      const tip = active ? 'Exit Full Window (Esc)' : 'Full Window';
+      cornerBtn.classList.toggle('is-active', active);
+      cornerBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      cornerBtn.innerHTML = _studioFullWinIconSvg(active);
+      _applyStudioBtnTipAndAria(cornerBtn, tip);
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+        try { window.MFG_I18N.translateDom(cornerBtn); } catch (_) {}
+      }
+    }
+  }
+
+  function _invalidateStudioMapSize(map) {
+    if (!map || typeof map.invalidateSize !== 'function') return;
+    _runStudioProgrammaticCamera(() => {
+      try { map.invalidateSize({ pan: true, animate: false }); } catch (_) {}
+    });
+  }
+
+  function setStudioFullWindow(next) {
+    const target = Boolean(next);
+    const deck = document.getElementById('geoMapStudioDeck');
+    if (!deck || STUDIO.collapsed) {
+      STUDIO.fullWindow = false;
+      try { if (document.body) document.body.classList.remove('has-geo-full-window'); } catch (_) {}
+      if (deck) deck.classList.remove('is-full-window');
+      return false;
+    }
+    STUDIO.fullWindow = target;
+    syncStudioFullWindowDom(deck);
+    if (STUDIO.map && typeof STUDIO.map.invalidateSize === 'function') {
+      if (STUDIO._userPanned) _saveStudioMapView(STUDIO.map);
+      const kick = () => {
+        if (STUDIO.map && deck.isConnected) _invalidateStudioMapSize(STUDIO.map);
+      };
+      requestAnimationFrame(kick);
+      setTimeout(kick, 80);
+    }
+    return STUDIO.fullWindow;
+  }
+
+  function refreshStudioMapInPlace() {
+    const deck = document.getElementById('geoMapStudioDeck');
+    if (!deck || STUDIO.collapsed || !STUDIO.map || !window.L || !STUDIO._lastCtx) return false;
+    if (_studioUserZooming) {
+      _studioDeferredInPlaceRefresh = true;
+      return true;
+    }
+    try {
+      if (STUDIO._userPanned) _saveStudioMapView(STUDIO.map);
+      renderStudioMapLayers(window.L, STUDIO.map, STUDIO._lastCtx);
+      syncResetViewBtnDom(deck);
+      syncStudioFullWindowDom(deck);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   function resetStudioHoverState() {
     if (_studioHoverResets.length) {
@@ -5680,6 +5912,10 @@
   }
 
   function cleanupGeoStudio(resetState = true) {
+    _clearStudioZoneClickTimer();
+    _studioUserZooming = false;
+    _studioDeferredInPlaceRefresh = false;
+    _studioDeferredWorkspaceRerender = false;
     resetStudioHoverState();
     _studioHoverResets = [];
     closeAllGeoPlaceMenus();
@@ -5697,12 +5933,19 @@
     STUDIO.polyPoints = [];
     STUDIO.polyLocked = false;
     STUDIO._userPanned = false;
+    STUDIO.fullWindow = false;
+    try {
+      if (typeof document !== 'undefined' && document.body) {
+        document.body.classList.remove('has-geo-full-window');
+      }
+    } catch (_) {}
     if (resetState) {
       STUDIO.selectedRegion = '';
       STUDIO._lastHostKey = '';
       STUDIO._lastActiveInd = '';
       STUDIO._jumpPendingTs = 0;
       STUDIO._rerender = null;
+      STUDIO._lastCtx = null;
       STUDIO.unpinnedIdx = 0;
       STUDIO.unpinnedTargetId = '';
       STUDIO.unpinnedTargetName = '';
@@ -6540,7 +6783,7 @@
     }
 
     return `
-      <section class="geo-studio-deck" id="geoMapStudioDeck" aria-label="Regions and Sites Map">
+      <section class="geo-studio-deck${STUDIO.fullWindow && !STUDIO.collapsed ? ' is-full-window' : ''}" id="geoMapStudioDeck" aria-label="Regions and Sites Map">
         <div class="geo-studio-topbar">
           <div class="geo-studio-title-grp">
             <h3 class="geo-studio-title">Regions &amp; Sites Map</h3>
@@ -6567,7 +6810,8 @@
                 <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'unpinned' ? ' active' : ''}" id="geoUnpinnedFilterBtn" data-geo-pin-filter="unpinned"><span class="geo-dot unpinned"></span><span>Unpinned Sites</span> (${unpinnedQueue.length})</button>
               </div>
             `) : ''}
-            ${!STUDIO.collapsed && STUDIO.selectedRegion ? `<button type="button" class="geo-mini-btn" id="geoResetLebanonViewBtn">Reset View</button>` : ''}
+            ${!STUDIO.collapsed && (STUDIO.selectedRegion || STUDIO._userPanned) ? `<button type="button" class="geo-mini-btn" id="geoResetLebanonViewBtn">Reset View</button>` : ''}
+            ${!STUDIO.collapsed ? `<button type="button" class="geo-mini-btn geo-fullwin-btn${STUDIO.fullWindow ? ' active' : ''}" id="geoToggleFullWindowBtn" aria-pressed="${STUDIO.fullWindow ? 'true' : 'false'}" aria-label="${STUDIO.fullWindow ? 'Exit Full Window (Esc)' : 'Full Window'}" data-ui-tip="${STUDIO.fullWindow ? 'Exit Full Window (Esc)' : 'Full Window'}">${_studioFullWinIconSvg(STUDIO.fullWindow)}<span>${STUDIO.fullWindow ? 'Exit Full Window' : 'Full Window'}</span></button>` : ''}
             <button type="button" class="geo-collapse-btn" id="geoToggleCollapseBtn">${STUDIO.collapsed ? 'Show Map' : 'Hide Map'}</button>
           </div>
         </div>
@@ -6793,14 +7037,7 @@
           circ.on('mouseover', () => { circ.setStyle({ weight: baseW + 1.2, fillOpacity: Math.min(0.32, baseOp + 0.1) }); });
           circ.on('mouseout', resetCircStyle);
         }
-        circ.on('click', ev => {
-          if (STUDIO.mode !== 'view' || STUDIO.shapelessPickRegion) return;
-          _lastZoneLayerClickTs = Date.now();
-          L.DomEvent.stopPropagation(ev);
-          STUDIO.selectedRegion = (isSel && ev.originalEvent && ev.originalEvent.isTrusted) ? '' : r.name;
-          STUDIO._userPanned = false;
-          rerenderWorkspace();
-        });
+        _bindStudioZoneLayerClick(circ, r, isSel, L, map, rerenderWorkspace);
         if (isSel) focusBounds = circ.getBounds();
       } else if (r.zone_geojson) {
         const gj = parseZoneGeoJson(r.zone_geojson);
@@ -6815,14 +7052,7 @@
             geoLayer.on('mouseover', () => { geoLayer.setStyle({ weight: weight + 1.2, fillOpacity: Math.min(0.3, fillOp + 0.09) }); });
             geoLayer.on('mouseout', resetPolyStyle);
           }
-          geoLayer.on('click', ev => {
-            if (STUDIO.mode !== 'view' || STUDIO.shapelessPickRegion) return;
-            _lastZoneLayerClickTs = Date.now();
-            L.DomEvent.stopPropagation(ev);
-            STUDIO.selectedRegion = (isSel && ev.originalEvent && ev.originalEvent.isTrusted) ? '' : r.name;
-            STUDIO._userPanned = false;
-            rerenderWorkspace();
-          });
+          _bindStudioZoneLayerClick(geoLayer, r, isSel, L, map, rerenderWorkspace);
           if (isSel) {
             try { focusBounds = geoLayer.getBounds(); } catch (_) {}
           }
@@ -6849,7 +7079,14 @@
       ? estimateLegKm(fromSpec, toSpec, SEED, {
           roundTripIfAnyBu: isMfg,
           onAsyncRoute: () => {
-            if (document.getElementById('geoMapStudioDeck')) rerenderWorkspace();
+            if (document.getElementById('geoMapStudioDeck')) {
+              if (_studioUserZooming) {
+                _studioDeferredWorkspaceRerender = true;
+                return;
+              }
+              if (STUDIO.map && STUDIO._userPanned) _saveStudioMapView(STUDIO.map);
+              rerenderWorkspace();
+            }
           }
         })
       : null;
@@ -7146,23 +7383,38 @@
       }).addTo(lg);
     }
 
-    if (Array.isArray(STUDIO._focusPasteLatLng) && STUDIO._focusPasteLatLng.length === 2) {
-      map.setView(STUDIO._focusPasteLatLng, 15, { animate: false });
-      STUDIO._focusPasteLatLng = null;
-      STUDIO._userPanned = true;
-    } else if (Array.isArray(STUDIO._focusUnpinnedLatLng) && STUDIO._focusUnpinnedLatLng.length === 2) {
-      map.setView(STUDIO._focusUnpinnedLatLng, 14, { animate: false });
-      STUDIO._focusUnpinnedLatLng = null;
-      STUDIO._userPanned = true;
-    } else if (Array.isArray(STUDIO._focusTruckLatLng) && STUDIO._focusTruckLatLng.length === 2) {
-      map.setView(STUDIO._focusTruckLatLng, 13, { animate: false });
-      STUDIO._focusTruckLatLng = null;
-      STUDIO._userPanned = true;
-    } else if (focusBounds && focusBounds.isValid && focusBounds.isValid() && !STUDIO._userPanned) {
-      map.fitBounds(focusBounds, { padding: [26, 26], maxZoom: 14, animate: false });
-    } else if (!selRegNorm && !STUDIO._userPanned) {
-      map.setView([33.76, 35.52], 9, { animate: false });
-    }
+    _runStudioProgrammaticCamera(() => {
+      if (Array.isArray(STUDIO._focusPasteLatLng) && STUDIO._focusPasteLatLng.length === 2) {
+        map.setView(STUDIO._focusPasteLatLng, 15, { animate: false });
+        STUDIO._focusPasteLatLng = null;
+        STUDIO._userPanned = true;
+        _saveStudioMapView(map);
+      } else if (Array.isArray(STUDIO._focusUnpinnedLatLng) && STUDIO._focusUnpinnedLatLng.length === 2) {
+        map.setView(STUDIO._focusUnpinnedLatLng, 14, { animate: false });
+        STUDIO._focusUnpinnedLatLng = null;
+        STUDIO._userPanned = true;
+        _saveStudioMapView(map);
+      } else if (Array.isArray(STUDIO._focusTruckLatLng) && STUDIO._focusTruckLatLng.length === 2) {
+        map.setView(STUDIO._focusTruckLatLng, 13, { animate: false });
+        STUDIO._focusTruckLatLng = null;
+        STUDIO._userPanned = true;
+        _saveStudioMapView(map);
+      } else if (_studioUserZooming) {
+        // Leave active user zoom animation undisturbed; zoomend captures final view
+      } else if (STUDIO._userPanned && STUDIO._savedView && Number.isFinite(STUDIO._savedView.lat) && Number.isFinite(STUDIO._savedView.lng) && Number.isFinite(STUDIO._savedView.zoom)) {
+        const sv = STUDIO._savedView;
+        const c = typeof map.getCenter === 'function' ? map.getCenter() : null;
+        const z = typeof map.getZoom === 'function' ? map.getZoom() : null;
+        const same = c && Number.isFinite(z) && Math.abs(c.lat - sv.lat) < 1e-6 && Math.abs(c.lng - sv.lng) < 1e-6 && z === sv.zoom;
+        if (!same) {
+          map.setView([sv.lat, sv.lng], sv.zoom, { animate: false });
+        }
+      } else if (focusBounds && focusBounds.isValid && focusBounds.isValid() && !STUDIO._userPanned) {
+        map.fitBounds(focusBounds, { padding: [26, 26], maxZoom: 14, animate: false });
+      } else if (!selRegNorm && !STUDIO._userPanned) {
+        map.setView([33.76, 35.52], 9, { animate: false });
+      }
+    });
     stripLeafletTitles(containerEl);
   }
 
@@ -7784,14 +8036,29 @@
       return;
     }
     const { SEED, STATE, rerenderWorkspace, toast } = ctx;
+    STUDIO._lastCtx = ctx;
     STUDIO._rerender = rerenderWorkspace;
+    try {
+      if (document.body) {
+        document.body.classList.toggle('has-geo-full-window', Boolean(STUDIO.fullWindow && !STUDIO.collapsed));
+      }
+    } catch (_) {}
 
     const collapseBtn = deck.querySelector('#geoToggleCollapseBtn');
     if (collapseBtn) {
       collapseBtn.addEventListener('click', () => {
         STUDIO.collapsed = !STUDIO.collapsed;
-        if (STUDIO.collapsed) cleanupGeoStudio(false);
+        if (STUDIO.collapsed) {
+          STUDIO.fullWindow = false;
+          cleanupGeoStudio(false);
+        }
         rerenderWorkspace();
+      });
+    }
+    const fullWinBtn = deck.querySelector('#geoToggleFullWindowBtn');
+    if (fullWinBtn) {
+      fullWinBtn.addEventListener('click', () => {
+        setStudioFullWindow(!STUDIO.fullWindow);
       });
     }
     if (STUDIO.collapsed) {
@@ -8804,7 +9071,11 @@
         }
         if (unpinnedRegInp && STUDIO.unpinnedRegionDraft && !unpinnedRegInp.value) unpinnedRegInp.value = STUDIO.unpinnedRegionDraft;
         if (panToPin && STUDIO.unpinnedLat != null && STUDIO.unpinnedLng != null && STUDIO.map) {
-          try { STUDIO.map.setView([STUDIO.unpinnedLat, STUDIO.unpinnedLng], 15, { animate: false }); } catch (_) {}
+          STUDIO._userPanned = true;
+          _runStudioProgrammaticCamera(() => {
+            try { STUDIO.map.setView([STUDIO.unpinnedLat, STUDIO.unpinnedLng], 15, { animate: false }); } catch (_) {}
+          });
+          _saveStudioMapView(STUDIO.map);
         }
         if (STUDIO.map && window.L) renderStudioMapLayers(window.L, STUDIO.map, ctx);
       };
@@ -8899,11 +9170,7 @@
     }
     const resetBtn = deck.querySelector('#geoResetLebanonViewBtn');
     if (resetBtn) {
-      resetBtn.addEventListener('click', () => {
-        STUDIO.selectedRegion = '';
-        STUDIO._userPanned = false;
-        rerenderWorkspace();
-      });
+      resetBtn.addEventListener('click', () => resetStudioLebanonView());
     }
 
     // Focus card quick actions
@@ -9323,7 +9590,11 @@
         const rp = deck.querySelector('#geoPinRegionInp');
         if (rp) rp.value = STUDIO.pinRegion;
         if (STUDIO.map && window.L) {
-          STUDIO.map.setView([lat, lng], 14, { animate: false });
+          STUDIO._userPanned = true;
+          _runStudioProgrammaticCamera(() => {
+            STUDIO.map.setView([lat, lng], 14, { animate: false });
+          });
+          _saveStudioMapView(STUDIO.map);
           renderStudioMapLayers(window.L, STUDIO.map, ctx);
         }
       };
@@ -9530,7 +9801,11 @@
         if (STUDIO.map && window.L && est && est.fromCoord && est.toCoord && est.fromCoord.lat != null && est.toCoord.lat != null) {
           STUDIO._userPanned = true;
           const b = window.L.latLngBounds([[est.fromCoord.lat, est.fromCoord.lng], [est.toCoord.lat, est.toCoord.lng]]);
-          STUDIO.map.fitBounds(b, { padding: [42, 42], maxZoom: 13, animate: false });
+          _runStudioProgrammaticCamera(() => {
+            STUDIO.map.fitBounds(b, { padding: [42, 42], maxZoom: 13, animate: false });
+          });
+          _saveStudioMapView(STUDIO.map);
+          syncResetViewBtnDom(deck);
         }
       });
     }
@@ -9541,18 +9816,96 @@
     ensureLeaflet().then(L => {
       if (!canvas.isConnected) return;
       if (STUDIO.map) {
+        if (STUDIO._userPanned) _saveStudioMapView(STUDIO.map);
         try { STUDIO.map.remove(); } catch (_) {}
         STUDIO.map = null;
         STUDIO.layers = null;
       }
-      const map = L.map(canvas, { zoomControl: true, attributionControl: false, doubleClickZoom: STUDIO.mode !== 'polygon' }).setView([33.76, 35.52], 9);
-      stripLeafletTitles(canvas);
+      _studioUserZooming = false;
+      _studioDeferredInPlaceRefresh = false;
+      _studioDeferredWorkspaceRerender = false;
+      const hasSaved = STUDIO._userPanned && STUDIO._savedView && Number.isFinite(STUDIO._savedView.lat) && Number.isFinite(STUDIO._savedView.lng) && Number.isFinite(STUDIO._savedView.zoom);
+      const initCenter = hasSaved ? [STUDIO._savedView.lat, STUDIO._savedView.lng] : [33.76, 35.52];
+      const initZoom = hasSaved ? STUDIO._savedView.zoom : 9;
+      const allowDblZoom = !(STUDIO.mode === 'polygon' && !STUDIO.polyLocked);
+      const map = L.map(canvas, { zoomControl: true, attributionControl: false, doubleClickZoom: allowDblZoom }).setView(initCenter, initZoom);
       STUDIO.map = map;
       addBaseTiles(L, map);
       renderStudioMapLayers(L, map, ctx);
-      setTimeout(() => { try { map.invalidateSize(); } catch (_) {} }, 40);
+      try {
+        const FullWinCtrl = L.Control.extend({
+          options: { position: 'topleft' },
+          onAdd: () => {
+            const wrap = L.DomUtil.create('div', 'leaflet-bar leaflet-control geo-canvas-fullwin-ctrl');
+            const btn = L.DomUtil.create('a', 'geo-canvas-fullwin-btn' + (STUDIO.fullWindow ? ' is-active' : ''), wrap);
+            btn.href = '#';
+            btn.id = 'geoCanvasFullWindowBtn';
+            btn.setAttribute('role', 'button');
+            const tip = STUDIO.fullWindow ? 'Exit Full Window (Esc)' : 'Full Window';
+            btn.setAttribute('aria-pressed', STUDIO.fullWindow ? 'true' : 'false');
+            btn.setAttribute('aria-label', tip);
+            btn.setAttribute('data-ui-tip', tip);
+            btn.innerHTML = _studioFullWinIconSvg(STUDIO.fullWindow);
+            L.DomEvent.disableClickPropagation(wrap);
+            L.DomEvent.disableScrollPropagation(wrap);
+            L.DomEvent.on(btn, 'click', ev => {
+              L.DomEvent.stop(ev);
+              setStudioFullWindow(!STUDIO.fullWindow);
+            });
+            return wrap;
+          }
+        });
+        new FullWinCtrl().addTo(map);
+        syncStudioFullWindowDom(deck);
+      } catch (_) {}
+      stripLeafletTitles(canvas);
+      setTimeout(() => { _invalidateStudioMapSize(map); }, 40);
+      if (typeof ResizeObserver === 'function') {
+        const ro = new ResizeObserver(() => {
+          if (!canvas.isConnected || STUDIO.map !== map) {
+            ro.disconnect();
+            return;
+          }
+          _invalidateStudioMapSize(map);
+        });
+        ro.observe(canvas);
+      }
 
-      map.on('dragend', () => { STUDIO._userPanned = true; });
+      map.on('dragstart dblclick', _clearStudioZoneClickTimer);
+      map.on('zoomstart', () => {
+        _clearStudioZoneClickTimer();
+        if (_studioProgrammaticMove) return;
+        _studioUserZooming = true;
+        STUDIO._userPanned = true;
+      });
+      map.on('dragend', () => {
+        if (_studioProgrammaticMove) return;
+        STUDIO._userPanned = true;
+        _saveStudioMapView(map);
+        syncResetViewBtnDom(deck);
+      });
+      map.on('zoomend', () => {
+        _studioUserZooming = false;
+        if (!_studioProgrammaticMove) {
+          STUDIO._userPanned = true;
+          _saveStudioMapView(map);
+          syncResetViewBtnDom(deck);
+        }
+        if (_studioDeferredWorkspaceRerender) {
+          _studioDeferredWorkspaceRerender = false;
+          _studioDeferredInPlaceRefresh = false;
+          if (typeof STUDIO._rerender === 'function' && deck.isConnected) STUDIO._rerender();
+          return;
+        }
+        if (_studioDeferredInPlaceRefresh) {
+          _studioDeferredInPlaceRefresh = false;
+          refreshStudioMapInPlace();
+        }
+      });
+      map.on('moveend', () => {
+        if (_studioProgrammaticMove || !STUDIO._userPanned) return;
+        _saveStudioMapView(map);
+      });
       map.on('mousemove', ev => {
         if (STUDIO.mode !== 'polygon' || STUDIO.polyLocked || STUDIO.polyPoints.length === 0) {
           if (STUDIO.previewLine) {
@@ -9692,9 +10045,26 @@
           }
           renderStudioMapLayers(L, map, ctx);
         } else if (STUDIO.mode === 'view' && STUDIO.selectedRegion && (Date.now() - _lastZoneLayerClickTs > 90)) {
-          STUDIO.selectedRegion = '';
-          STUDIO._userPanned = false;
-          rerenderWorkspace();
+          const isTrusted = !(ev.originalEvent && ev.originalEvent.isTrusted === false);
+          if (ev.originalEvent && Number(ev.originalEvent.detail) >= 2) {
+            _clearStudioZoneClickTimer();
+            return;
+          }
+          _clearStudioZoneClickTimer();
+          _studioZoneClickTimer = setTimeout(() => {
+            _studioZoneClickTimer = 0;
+            if (STUDIO.mode !== 'view' || !STUDIO.selectedRegion || !STUDIO.map || STUDIO.map !== map) return;
+            const curZoom = typeof map.getZoom === 'function' ? Number(map.getZoom()) : 9;
+            const wasZoomed = Boolean(STUDIO._userPanned || curZoom > 10);
+            STUDIO.selectedRegion = '';
+            if (wasZoomed) {
+              STUDIO._userPanned = true;
+              _saveStudioMapView(map);
+            } else {
+              STUDIO._userPanned = false;
+            }
+            rerenderWorkspace();
+          }, isTrusted ? 230 : 0);
         }
       });
 
@@ -10071,7 +10441,8 @@
           if (resolvedReg && regInp) {
             regInp.value = resolvedReg;
             regInp.dataset.autoFromPlace = '';
-            _emitGeoFieldEvents(regInp);
+            if (canvas) canvas._suppressRegionPan = true;
+            try { _emitGeoFieldEvents(regInp); } finally { if (canvas) canvas._suppressRegionPan = false; }
           }
         }
         if (canvas) canvas._suppressLatLngPan = true;
@@ -10297,7 +10668,8 @@
           if (resolvedReg && regInp) {
             regInp.value = resolvedReg;
             regInp.dataset.autoFromPlace = '';
-            _emitGeoFieldEvents(regInp);
+            if (canvas) canvas._suppressRegionPan = true;
+            try { _emitGeoFieldEvents(regInp); } finally { if (canvas) canvas._suppressRegionPan = false; }
           }
         }
         canvas._suppressLatLngPan = true;
@@ -10468,7 +10840,10 @@
         }, sig);
       });
       if (regInp) {
-        regInp.addEventListener('change', () => refreshSiteOverlay({ panToRegion: true }), sig);
+        regInp.addEventListener('change', () => {
+          if (canvas && canvas._suppressRegionPan) return;
+          refreshSiteOverlay({ panToRegion: true });
+        }, sig);
       }
       if (inclTransInp) {
         inclTransInp.addEventListener('change', () => refreshSiteOverlay(), sig);
@@ -11558,9 +11933,27 @@
     });
     document.addEventListener('keydown', ev => {
       if (ev.key !== 'Escape' || ev.defaultPrevented) return;
-      if (document.querySelector('.modal-backdrop:not([hidden])')) return;
+      const hasHigherOverlay = Boolean(
+        (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.isOpen === 'function' && window.MFG_CMD_PALETTE.isOpen())
+        || document.querySelector(
+          '#aiDrawer.open, .modal-backdrop:not([hidden]), .cmdp-modal:not([hidden]), .psd-drawer-backdrop:not([hidden]), '
+          + '#dateFacilitatorPopover:not([hidden]), #fatherBackfillModal:not([hidden]), #backfillModal:not([hidden]), '
+          + '#policyGroupModal:not([hidden]), #shiftTypeModal:not([hidden]), #punchDriftModal:not([hidden]), '
+          + '#staffScheduleModal:not([hidden]), #staffFaceEnrolModal:not([hidden]), #aiBatchIntakeModal:not([hidden]), '
+          + '#docCameraModal:not([hidden]), #docPreviewModal:not([hidden]), #thermalPrintModal:not([hidden]), '
+          + '#inventoryOptimizerModal:not([hidden]), #treasuryForecastModal:not([hidden]), #payablesOptimizerModal:not([hidden]), '
+          + '#collectionForecastModal:not([hidden]), #whatIfSimulatorModal:not([hidden]), #stepUpAuthModal:not([hidden]), '
+          + '#roleHoverPreviewCard:not([hidden]), #nuRolePermsSelector.open, #nuCompanySelector.open, '
+          + '#colFilterPopover:not([hidden]), .tbl-col-popover:not([hidden]), .pa-suggest-menu:not([hidden]), '
+          + '.pa-select-menu:not([hidden]), #supCategoryMenu:not([hidden]), .rdl-combo-menu:not([hidden]), '
+          + '.geo-place-menu:not([hidden]), #geoStudioPlacesBox:not([hidden]), #pageGuidePopover, #sentinelTriagePopover, '
+          + '#dailyOpsHandoverPopover, #telHistoryReconDrawer:not([hidden]), .sidebar.open'
+        )
+      );
+      if (hasHigherOverlay) return;
       if (!document.getElementById('geoMapStudioDeck') || STUDIO.collapsed) return;
       if (STUDIO.mode !== 'view') {
+        ev.preventDefault();
         STUDIO.mode = 'view';
         STUDIO.drawRegionName = '';
         STUDIO.searchDraft = null;
@@ -11570,11 +11963,16 @@
         clearShapelessTransientState();
         STUDIO._userPanned = false;
         if (typeof STUDIO._rerender === 'function') STUDIO._rerender();
+      } else if (STUDIO.fullWindow) {
+        ev.preventDefault();
+        setStudioFullWindow(false);
       } else if (STUDIO.shapePreview || STUDIO.shapelessBatchPreview || STUDIO.shapelessPickRegion || STUDIO.shapelessSeedFeedback) {
+        ev.preventDefault();
         clearShapelessTransientState();
         STUDIO._userPanned = false;
         if (typeof STUDIO._rerender === 'function') STUDIO._rerender();
       } else if (STUDIO.selectedRegion) {
+        ev.preventDefault();
         STUDIO.selectedRegion = '';
         STUDIO._userPanned = false;
         if (typeof STUDIO._rerender === 'function') STUDIO._rerender();
@@ -11651,6 +12049,9 @@
     renderGeoStudioHtml,
     wireGeoStudio,
     cleanupGeoStudio,
+    setFullWindow: setStudioFullWindow,
+    toggleFullWindow: () => setStudioFullWindow(!STUDIO.fullWindow),
+    refreshStudioMapInPlace,
     wireModalSiteOrRegionMap,
     cleanupModalGeoMap,
     wireInspectorSiteModifyMap,

@@ -366,6 +366,7 @@
     chipFilter: 'all',
     cfEntryMode: 'entries',
     cfBridgeMode: 'streams',
+    cfPartyFoldOpen: false,
     cfFocusDate: '',
     cfFocusDateFromScrub: false,
     cfTillScrubZoom: 'all',
@@ -47452,6 +47453,26 @@
     return (s === '-' || s === '—') ? '' : s;
   }
 
+  // Borrowing opening balances (the workbook's Config rows of 1 Jan 2025, flagged opening_balance) are balances carried
+  // forward, not money lent or borrowed that day: the registers show them as "Borrowing Opening", never "Lend Out"
+  // (owner 2026-11-17). Amounts and their sign are unchanged.
+  function loanRegisterLabels(ln, lbpMag) {
+    const isBorrowIn = /borrows/i.test(String(ln.direction || ''));
+    if (!ln.opening_balance) {
+      return {
+        cat: isBorrowIn ? 'Borrowing In' : 'Borrowing Out',
+        method: isBorrowIn ? 'Borrow In' : 'Lend Out',
+        detail: [ln.direction || '', lbpMag ? `${fmtLBP(lbpMag)} principal` : '', cleanLedgerNote(ln.notes)].filter(Boolean).join(' · ')
+      };
+    }
+    const note = cleanLedgerNote(String(ln.notes || '').replace(/Opening balance \(workbook Config row\)[^\n]*/i, ''));
+    return {
+      cat: 'Borrowing Opening',
+      method: 'Opening',
+      detail: ['Opening Balance', isBorrowIn ? 'We Borrow' : 'Owed to Us', lbpMag ? `${fmtLBP(lbpMag)} principal` : '', note].filter(Boolean).join(' · ')
+    };
+  }
+
   function shortVoucherRef(rawName, fallback) {
     if (!rawName || rawName === '-') return fallback || '—';
     const s = String(rawName).trim();
@@ -47705,14 +47726,14 @@
         const isBorrowIn = /borrows/i.test(String(ln.direction || ''));
         const lbpMag = Math.round(Math.abs(Number(ln.lbp_amount || 0)));
         const usdMag = Math.abs(ln.lbp_amount ? Number(ln.usd_amount || 0) : Number(ln.usd_amount != null ? ln.usd_amount : ln.principal || 0));
-        const det = [ln.direction || '', lbpMag ? `${fmtLBP(lbpMag)} principal` : '', cleanLedgerNote(ln.notes)].filter(Boolean).join(' · ');
+        const lbl = loanRegisterLabels(ln, lbpMag);
         pushMove({
           id: ln.id, rkey: 'loans', date: dt, company: ln.company,
-          stream: 'loan', cat: isBorrowIn ? 'Borrowing In' : 'Borrowing Out',
+          stream: 'loan', cat: lbl.cat,
           party: ln.lender || ln.counterparty || ln.borrower || '—', partyRel: '',
-          detail: det || 'Borrowing / staff advance principal',
+          detail: lbl.detail || 'Borrowing / staff advance principal',
           ref: shortVoucherRef(ln.name),
-          method: isBorrowIn ? 'Borrow In' : 'Lend Out',
+          method: lbl.method,
           usd: isBorrowIn ? usdMag : -usdMag,
           lbp: isBorrowIn ? lbpMag : -lbpMag,
           raw: ln
@@ -48489,102 +48510,10 @@
     const tillLbp = tillAsOf ? Math.round(Number(k.period_till_lbp || 0)) : liveLbp;
     const tillTot = tillAsOf ? Number(k.period_till != null ? k.period_till : round2(tillUsd + tillLbp / rate)) : liveTot;
     const tillOpenUsd = tillStartSet ? round2(tillUsd - (Number(k.cash_in_usd || 0) - Number(k.cash_out_usd || 0))) : 0;
-    const tillOpenLbp = tillStartSet ? Math.round(tillLbp - (Number(k.cash_in_lbp || 0) - Number(k.cash_out_lbp || 0))) : 0;
-    const tillStartTip = 'The till is a running balance: it counts every cash entry from the first day up to the end date. The start date only filters the entries and the period cash flow.';
-    const tillBadgeHtml = (fallbackTxt, fallbackCls) => {
-      const main = tillAsOf
-        ? `<span class="cockpit-pill-tag cf-till-asof ${esc(fallbackCls)}" data-ui-tip="Till balance at the end of this day"><span data-no-i18n="1">${esc(fmtDateDMY(tillAsOf))}</span></span>`
-        : `<span class="cockpit-pill-tag cf-till-asof ${esc(fallbackCls)}">${esc(fallbackTxt)}</span>`;
-      const warn = tillStartSet
-        ? `<span class="cockpit-pill-tag warn cf-till-warn-ic" role="img" data-ui-tip="${esc(tillStartTip)}" aria-label="${esc(tillStartTip)}">${ic('alert')}</span>`
-        : '';
-      return warn ? `<span class="cf-till-badges">${main}${warn}</span>` : main;
-    };
-    const tillStartStripHtml = tillStartSet ? `
-        <div class="cf-till-start-strip" id="cfTillStartWarn" role="note">
-          ${ic('alert')}
-          <span class="cf-till-start-txt"><b>Start Date Ignored by the Till</b><span class="cf-till-sep" aria-hidden="true">·</span>${tillAsOf ? `<span>Till balance at</span> <b data-no-i18n="1">${esc(fmtDateDMY(tillAsOf))}</b>` : '<span>Till balance today</span>'}<span class="cf-till-sep" aria-hidden="true">·</span><span>The till counts every cash entry from the first day, so the start date only filters the entries and the period cash flow.</span></span>
-        </div>` : '';
-    // Till on this day time machine: replay closing USD, LBP and Combined till from 2024-01-01 (or seeded start on
-    // Demo Company) up to tillScrubEnd, with zoom windows (All / 1Y / 90D / 30D) and clickable single-day calendar.
-    const tillScrubEnd = tillAsOf || todayISO();
-    const canScrubScope = (tillIsMfg && !isOfficialScopeActive(u)) || (!tillIsMfg && k.till_tracked !== false);
-    const tillScrubSeries = canScrubScope ? computeTillDaySeries(STATE.company, tillScrubEnd, 'all') : null;
+    const tillBadgeHtml = (fallbackTxt, fallbackCls) => tillAsOf
+      ? `<span class="cockpit-pill-tag cf-till-asof ${esc(fallbackCls)}" data-ui-tip="Till balance at the end of this day"><span data-no-i18n="1">${esc(fmtDateDMY(tillAsOf))}</span></span>`
+      : `<span class="cockpit-pill-tag cf-till-asof ${esc(fallbackCls)}">${esc(fallbackTxt)}</span>`;
     _cfTillScrub = null;
-    let tillScrubHtml = '';
-    if (tillScrubSeries && tillScrubSeries.days.length > 1) {
-      const fullDays = tillScrubSeries.days;
-      const fullLastIdx = fullDays.length - 1;
-      // The last stop is the date the cards already show: use their figures (the live till on today or later).
-      fullDays[fullLastIdx] = Object.assign({}, fullDays[fullLastIdx], { usd: round2(tillUsd), lbp: Math.round(tillLbp), total: round2(tillTot) });
-      const scrubKey = `${STATE.company}|${STATE.period}|${tillRange ? `${tillRange.from || ''}..${tillRange.to || ''}` : 'all'}|${tillScrubEnd}`;
-      const keepIso = (STATE.cfTillScrubDate && STATE.cfTillScrubKey === scrubKey && fullDays.some(dd => dd && dd.date === STATE.cfTillScrubDate))
-        ? STATE.cfTillScrubDate
-        : '';
-      const win = computeCfTillScrubWindow(fullDays, STATE.cfTillScrubZoom || 'all', keepIso);
-      const sDays = fullDays.slice(win.winStart, win.winEnd + 1);
-      const lastIdx = Math.max(0, sDays.length - 1);
-      const startFullIdx = keepIso ? fullDays.findIndex(dd => dd && dd.date === keepIso) : fullLastIdx;
-      const startIdx = Math.max(0, Math.min(lastIdx, startFullIdx - win.winStart));
-      const sd = sDays[startIdx] || fullDays[fullLastIdx];
-      const atEndInit = startFullIdx === fullLastIdx;
-      _cfTillScrub = {
-        fullDays,
-        fullLastIdx,
-        startDate: fullDays[0].date,
-        endDate: fullDays[fullLastIdx].date,
-        winStart: win.winStart,
-        winEnd: win.winEnd,
-        zoom: win.zoom,
-        days: sDays,
-        rate: tillScrubSeries.rate || rate,
-        lastIdx,
-        key: scrubKey,
-        atEndMeta: { tillUsd, tillLbp, tillTot, rate, tillAsOf }
-      };
-      const dayFocused = (STATE.cfFocusDate || '') === sd.date;
-      const allZoomLbl = fullDays[0].date <= '2024-01-31' ? 'All 2024+' : 'All';
-      const zoomSpecs = [
-        ['all', allZoomLbl],
-        ['365', '1Y'],
-        ['90', '90D'],
-        ['30', '30D']
-      ];
-      tillScrubHtml = `
-        <div class="cf-till-scrub" id="cfTillScrub" role="group" aria-label="Till on This Day">
-          <div class="cf-till-scrub-top">
-            <span class="cf-till-scrub-lbl">${ic('calendar')}<b>Till on This Day</b></span>
-            <div class="cf-till-scrub-zoom" id="cfTillScrubZoom" role="group" aria-label="Timeline zoom">
-              ${zoomSpecs.map(([zv, zlbl]) => {
-                const on = win.zoom === zv;
-                return `<button type="button" class="cf-till-scrub-zoom-btn${on ? ' active' : ''}" data-cf-scrub-zoom="${zv}" aria-pressed="${on ? 'true' : 'false'}">${zlbl}</button>`;
-              }).join('')}
-            </div>
-            <div class="cf-till-scrub-track">
-              <button type="button" class="btn cf-till-scrub-step" id="cfTillScrubPrev" aria-label="Previous day"${startFullIdx <= 0 ? ' disabled' : ''}><span data-no-i18n="1">&#x2039;</span></button>
-              <div class="cf-till-scrub-track-wrap">
-                <input type="range" class="cf-till-scrub-range" id="cfTillScrubRange" min="0" max="${lastIdx}" step="1" value="${startIdx}" style="--p:${((startIdx / Math.max(1, lastIdx)) * 100).toFixed(2)}%" aria-label="Till on This Day" aria-valuetext="${esc(fmtDateDMY(sd.date))}" data-ui-tip="Drag to replay the till day by day">
-                <div class="cf-till-scrub-hover" id="cfTillScrubHover" hidden aria-hidden="true" data-no-i18n="1"></div>
-              </div>
-              <button type="button" class="btn cf-till-scrub-step" id="cfTillScrubNext" aria-label="Next day"${startFullIdx >= fullLastIdx ? ' disabled' : ''}><span data-no-i18n="1">&#x203A;</span></button>
-            </div>
-          </div>
-          <div class="cf-till-scrub-bar">
-            <span class="cf-till-scrub-out" aria-live="polite">
-              ${renderDateSegPillHtml('till_day', sd.date, 'till_scrub', 'cfTillScrubSegPill')}
-              <span class="sr-only" id="cfTillScrubDate" data-no-i18n="1">${esc(fmtDateDMY(sd.date))}</span>
-              <span class="cf-till-scrub-kv"><span>Till</span> <b id="cfTillScrubUsd" data-no-i18n="1">${fmtUSD(sd.usd, 2)}</b></span>
-              <button type="button" class="cf-till-scrub-kv cf-till-scrub-chip${dayFocused && STATE.chipFilter === 'cf_in' ? ' active' : ''}" data-cf-scrub-chip="cf_in" aria-pressed="${dayFocused && STATE.chipFilter === 'cf_in' ? 'true' : 'false'}" data-ui-tip="Filter day Cash In"><span>In</span> <b class="good" id="cfTillScrubIn" data-no-i18n="1">${fmtUSD(sd.in_usd, 2)}</b></button>
-              <button type="button" class="cf-till-scrub-kv cf-till-scrub-chip${dayFocused && STATE.chipFilter === 'cf_out' ? ' active' : ''}" data-cf-scrub-chip="cf_out" aria-pressed="${dayFocused && STATE.chipFilter === 'cf_out' ? 'true' : 'false'}" data-ui-tip="Filter day Cash Out"><span>Out</span> <b class="crit" id="cfTillScrubOut" data-no-i18n="1">${fmtUSD(sd.out_usd, 2)}</b></button>
-              <button type="button" class="cf-till-scrub-kv cf-till-scrub-chip${dayFocused && STATE.chipFilter === 'cf_lbp' ? ' active' : ''}" data-cf-scrub-chip="cf_lbp" aria-pressed="${dayFocused && STATE.chipFilter === 'cf_lbp' ? 'true' : 'false'}" data-ui-tip="Filter day LBP entries"><span>LBP</span> <b id="cfTillScrubLbp" data-no-i18n="1">${Math.abs(sd.in_lbp - sd.out_lbp) > 1 ? fmtSignedLBP(sd.in_lbp - sd.out_lbp) : '0 LL'}</b></button>
-            </span>
-            <span class="cf-till-scrub-acts">
-              <button type="button" class="btn cf-till-scrub-daybtn${dayFocused ? ' active' : ''}" id="cfTillScrubDayBtn" aria-pressed="${dayFocused ? 'true' : 'false'}">${dayFocused ? 'Showing Day' : 'Day Entries'}</button>
-              <button type="button" class="btn cf-till-scrub-reset" id="cfTillScrubReset"${(atEndInit && !(STATE.cfFocusDateFromScrub && STATE.cfFocusDate)) ? ' hidden' : ''}>Reset</button>
-            </span>
-          </div>
-        </div>`;
-    }
     // Other industries without a whole cash book yet (siblingCashBook, owner 2026-11-13): no till balance anywhere. The
     // cards show the cash entries loaded so far and the sheets still missing; the register lists those real entries.
     const sibTillOff = !tillIsMfg && k.till_tracked === false;
@@ -48605,23 +48534,12 @@
               : '<span>The cash book has not been checked as complete yet.</span>',
             tone: 'steel'
           })}` : '';
-    const sibTillOffStripHtml = sibTillOff ? `
-        <div class="cf-till-start-strip cf-till-off-strip" id="cfSiblingTillOff" role="note">
-          ${ic('alert')}
-          <span class="cf-till-start-txt"><b>No Till Balance Yet</b><span class="cf-till-sep" aria-hidden="true">·</span><span>Only part of this business's cash book is in ISABI. The entries below are the real cash rows loaded so far, and the running balances count only those rows.</span></span>
-        </div>` : '';
     const q = STATE.search.trim().toLowerCase();
     const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
 
     const allowedNames = allowedCompanyNames(u);
     const activeIndCf = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
     const isHoldingCf = activeIndCf === 'Holding & Treasury';
-    const isIndRollupCf = String(STATE.company || '').startsWith('industry:') || STATE.company === 'manufacturing-group';
-    const indCosCf = getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeIndCf && (!allowedNames.length || allowedNames.includes(c.name)));
-    const showGroupSplit = STATE.company === 'manufacturing-group' && allowedNames.includes('WTC') && allowedNames.includes('BBConstruction');
-    const showSingleEntityBanner = !showGroupSplit && !isIndRollupCf && indCosCf.length > 1;
-    const wtcK = showGroupSplit ? getKPI('wtc') : null;
-    const bbcK = showGroupSplit ? getKPI('bbconstruction') : null;
 
     const allMoves = buildCashTillMoves({ user: u });
     const allDailyRows = buildDailyTillSheetRows({ user: u });
@@ -48644,7 +48562,7 @@
       return true;
     });
 
-    const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const chip = (key, label, extraCls = '') => `<button type="button" class="filter-chip${extraCls ? ' ' + extraCls : ''} ${(isDailyMode ? (STATE.chipFilter || 'all') : cfChip) === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
     let streamCounts = drillScopedMoves._streamCounts;
     if (!streamCounts) {
@@ -48787,71 +48705,21 @@
       dyNetUsd = round2(Number(k.net_cash_usd != null ? k.net_cash_usd : (dyInUsd - dyOutUsd)));
     }
     const latestDayClose = sortedDaily.length ? sortedDaily[0] : { close_usd: liveUsd, close_lbp: liveLbp, close_combined: liveTot };
-
-    // Till bridge (owner idea 2026-11-13): Opening USD Till + Net Cash = Closing USD Till over the dates in effect, so a
-    // large Net Cash reads as the change over the dates, not a balance. USD, the currency of the Net Cash figure.
-    // Manufacturing reads the daily till sheet through getKPI (period_till_usd = till at the end of the dates); other
-    // scopes add up the seat's till entries. Shown only when the Net Cash on screen is that whole movement (no chip,
-    // search, drill or column filter), so the three figures always add up.
-    const cfBridgeRange = periodRange(STATE.period);
-    const cfBridgeToday = todayISO();
-    const cashTillBridge = (kk, coKey, shownNet, liveU) => {
-      if (!kk || kk.till_tracked === false || !Number.isFinite(Number(shownNet))) return null;
-      let openU, closeU;
-      const coIsMfg = (typeof getActiveIndustry === 'function' ? getActiveIndustry(coKey) : 'Manufacturing') === 'Manufacturing';
-      if (coIsMfg && kk.period_till_usd != null && kk.net_cash_usd != null) {
-        // A window ending today or later closes on the live till, the figure the USD Till tile shows (as the till cards).
-        // The bridge needs that live till to equal the sheet's till at today (period_till_usd), or this window's Opening
-        // would not be the Closing of the window before it: when they differ, show no bridge.
-        const endsBeforeToday = Boolean(cfBridgeRange && cfBridgeRange.to && cfBridgeRange.to < cfBridgeToday);
-        if (!endsBeforeToday && (liveU == null || Math.abs(Number(liveU) - Number(kk.period_till_usd)) > 0.01)) return null;
-        closeU = round2(Number(kk.period_till_usd));
-        openU = round2(closeU - Number(kk.net_cash_usd));
-      } else {
-        const f = cfBridgeRange ? String(cfBridgeRange.from || '') : '';
-        const t = cfBridgeRange ? String(cfBridgeRange.to || '') : '';
-        const mvAll = buildCashTillMoves({ user: u, company: coKey, ignorePeriod: true });
-        let before = 0, upto = 0;
-        for (let i = 0; i < mvAll.length; i++) {
-          const mv = mvAll[i];
-          if (!mv || !mv.date) continue;
-          if (f && mv.date < f) before += Number(mv.usd || 0);
-          if (!t || mv.date <= t) upto += Number(mv.usd || 0);
-        }
-        openU = round2(before);
-        closeU = round2(upto);
-        // These scopes have no dated till: the USD Till tile always shows today's till. The bridge's Closing must be that
-        // figure, so the entries must add up to it over all dates and up to the end date (no entry after the window).
-        let allU = 0;
-        for (let i = 0; i < mvAll.length; i++) allU += Number((mvAll[i] && mvAll[i].usd) || 0);
-        if (Math.abs(round2(allU) - Number(liveU || 0)) > 0.01) return null;
-        if (Math.abs(closeU - Number(liveU || 0)) > 0.01) return null;
-      }
-      const netU = round2(closeU - openU);
-      if (Math.abs(netU - Number(shownNet)) > 0.01) return null;
-      const fromIso = cfBridgeRange && cfBridgeRange.from && cfBridgeRange.from !== MIN_DATE ? String(cfBridgeRange.from) : '';
-      if (fromIso && fromIso > cfBridgeToday) return null; // a window wholly in the future has no till yet
-      const toRaw = cfBridgeRange && cfBridgeRange.to ? String(cfBridgeRange.to) : cfBridgeToday;
-      const toIso = toRaw > cfBridgeToday ? cfBridgeToday : toRaw;
-      return { openU, netU, closeU, fromIso, toIso };
-    };
-    const cashTillBridgeHtml = (br, compact) => {
-      if (!br) return '';
-      const tip = 'Net Cash is the change over the selected dates, not a balance: the USD till at the start of the dates plus the Net Cash gives the USD till at the end.';
-      const netCls = br.netU < -0.005 ? 'crit' : (br.netU > 0.005 ? 'good' : '');
-      return `<div class="cf-till-bridge${compact ? ' compact' : ''}" role="note" data-ui-tip="${esc(tip)}" data-open-u="${br.openU}" data-net-u="${br.netU}" data-close-u="${br.closeU}">
-          <span class="cf-tb-term"><small><span>Opening USD Till</span>${br.fromIso ? ` <span class="cf-tb-date" data-no-i18n="1">${esc(fmtDateDMY(br.fromIso))}</span>` : ''}</small><b>${fmtUSD(br.openU, 2)}</b></span>
-          <span class="cf-tb-op" aria-hidden="true">+</span>
-          <span class="cf-tb-term"><small><span>Net Cash Over the Dates</span></small><b class="${netCls}">${fmtSignedUSD(br.netU, 2)}</b></span>
-          <span class="cf-tb-op" aria-hidden="true">=</span>
-          <span class="cf-tb-term"><small><span>Closing USD Till</span> <span class="cf-tb-date" data-no-i18n="1">${esc(fmtDateDMY(br.toIso))}</span></small><b class="brass">${fmtUSD(br.closeU, 2)}</b></span>
-        </div>`;
-    };
-    const cfBridgeUnfiltered = !q && !hasDrill && !hasActiveColFilters(isDailyMode ? 'cf_daily' : 'cf_moves')
-      && (isDailyMode ? (STATE.chipFilter || 'all') === 'all' : activeCfChip === 'all');
-    const singleTillBridge = showSingleEntityBanner && cfBridgeUnfiltered ? cashTillBridge(k, STATE.company, isDailyMode ? dyNetUsd : mvUsdSum, liveUsd) : null;
-    const wtcTillBridge = showGroupSplit ? cashTillBridge(wtcK, 'wtc', wtcK && wtcK.net_cash_usd, wtcK && wtcK.cash_till_usd) : null;
-    const bbcTillBridge = showGroupSplit ? cashTillBridge(bbcK, 'bbconstruction', bbcK && bbcK.net_cash_usd, bbcK && bbcK.cash_till_usd) : null;
+    const tillRateEq = rate > 0 ? tillLbp / rate : 0;
+    const cashEntryOpts = [
+      { modal: 'expense', label: '+ Cash Expense', stream: 'exp' },
+      { modal: 'receipt', label: '+ AR Receipt', stream: 'sales' },
+      { modal: 'settlement', label: '+ AP Payment', stream: 'exp' },
+      { modal: 'salary', label: '+ Salary', stream: 'sal' },
+      { modal: 'external', label: '+ External', stream: 'ext' },
+      { modal: 'treasury', label: '+ Loan', stream: 'loan' },
+      { modal: 'conversion', label: '+ FX Conversion', stream: 'fx' }
+    ].filter(o => canEnterForm(o.modal, u))
+      .sort((a, b) => (streamCounts[b.stream] || 0) - (streamCounts[a.stream] || 0));
+    const cashEntryHtml = cashEntryOpts.length === 0 ? ''
+      : (cashEntryOpts.length === 1
+        ? `<button type="button" class="btn btn-primary" data-open-modal="${esc(cashEntryOpts[0].modal)}">${esc(cashEntryOpts[0].label)}</button>`
+        : `<details class="cf-entry-menu"><summary class="btn btn-primary">+ Cash Entry</summary><div class="cf-entry-menu-list" role="menu">${cashEntryOpts.map(o => `<button type="button" class="cf-entry-menu-item" role="menuitem" data-open-modal="${esc(o.modal)}">${esc(o.label)}</button>`).join('')}</div></details>`);
 
     const filtName = rows => !q ? rows : rows.filter(r => String(r.name || r.type || '').toLowerCase().includes(q));
     const u2lRow = (tConv.rows || []).find(r => /USD to LBP/i.test(r.type)) || { from_amt: 0, to_amt: 0 };
@@ -48953,7 +48821,7 @@
           <div class="cockpit-eyebrow">DUAL-CURRENCY CASH TILL &amp; CASH FLOW RECONCILIATION</div>
           <div class="cockpit-title">Cash Flow &amp; Till</div>
         </div>
-        <div class="cockpit-pills insight-grid">
+        <div class="cockpit-pills insight-grid cols-3">
           ${sibTillOff ? sibTillOffCardsHtml : `${insightCard({
             label: 'USD Cash Till ($)',
             badgeHtml: tillBadgeHtml(Math.abs(tillUsd) < 0.005 ? 'Balanced $0' : 'Live Drawer', 'emerald'),
@@ -48961,9 +48829,9 @@
             valCls: 'emerald',
             id: 'cfTillValUsd',
             pct: 100,
-            sub: tillDated
-              ? `${tillStartSet ? `Opening <b>${fmtUSDk(tillOpenUsd)}</b> · ` : ''}In <b>${fmtUSDk(k.cash_in_usd)}</b> · Out <b>${fmtUSDk(k.cash_out_usd)}</b>`
-              : `In <b>${fmtUSDk(k.live_in_usd != null ? k.live_in_usd : k.cash_in_usd)}</b> · Out <b>${fmtUSDk(k.live_out_usd != null ? k.live_out_usd : k.cash_out_usd)}</b>`,
+            sub: Math.abs(tillLbp) > CF_LBP_DUST
+              ? `Combined <b data-no-i18n="1">${fmtUSD(tillTot, 2)}</b> @ ${fmtNum(rate, 0)} LL/$`
+              : `Reconciled @ ${fmtNum(rate, 0)} LL/$`,
             tone: 'emerald'
           })}
           ${insightCard({
@@ -48973,53 +48841,39 @@
             valCls: 'emerald',
             id: 'cfTillValLbp',
             pct: 100,
-            sub: tillDated
-              ? `${tillStartSet ? `Opening <b>${fmtLBPk(tillOpenLbp)}</b> · ` : ''}In <b>${fmtLBPk(k.cash_in_lbp)}</b> · Out <b>${fmtLBPk(k.cash_out_lbp)}</b>`
-              : `In <b>${fmtLBPk(k.live_in_lbp != null ? k.live_in_lbp : k.cash_in_lbp)}</b> · Out <b>${fmtLBPk(k.live_out_lbp != null ? k.live_out_lbp : k.cash_out_lbp)}</b>`,
+            sub: Math.abs(tillLbp) > CF_LBP_DUST
+              ? `Eq. <b data-no-i18n="1">${fmtUSD(tillRateEq, 2)}</b> @ ${fmtNum(rate, 0)} LL/$`
+              : `In <b>${fmtLBPk(tillDated ? k.cash_in_lbp : (k.live_in_lbp != null ? k.live_in_lbp : k.cash_in_lbp))}</b> · Out <b>${fmtLBPk(tillDated ? k.cash_out_lbp : (k.live_out_lbp != null ? k.live_out_lbp : k.cash_out_lbp))}</b>`,
             tone: 'emerald'
-          })}
-          ${insightCard({
-            label: 'Combined Cash Till',
-            badgeHtml: tillBadgeHtml(`@ ${fmtNum(rate, 0)} LL/$`, 'brass'),
-            val: `${fmtUSD(tillTot, 2)} <small>TOTAL</small>`,
-            valCls: 'brass',
-            id: 'cfTillValTot',
-            sub: `USD <b class="cf-till-tot-usd" data-no-i18n="1">${fmtUSD(tillUsd, 2)}</b> + LBP <b class="cf-till-tot-lbp" data-no-i18n="1">${fmtLBP(tillLbp)}</b> ÷ ${fmtNum(rate, 0)}`,
-            tone: 'brass'
           })}`}
-          ${insightCard({
-            label: 'Selected Period Cash Flow',
+          ${sibTillOff ? insightCard({
+            label: 'Loaded Cash Movement',
             badge: esc(k.label || 'All-Time'),
-            val: `${fmtUSD(k.net_cash_flow, 2)}`,
-            sub: `In <b>${fmtUSDk(k.cash_inflow)}</b> · Out <b>${fmtUSDk(k.cash_outflow)}</b> · USD <b>${fmtUSD(k.net_cash_usd, 2)}</b> · LBP <b>${fmtLBPk(k.net_cash_lbp)}</b>${tillIsMfg && k.period_till != null && k.net_cash_flow != null ? ` · Start Till <b>${fmtUSD(round2(Number(k.period_till) - Number(k.net_cash_flow)), 2)}</b>` : ''}${sibTillOff ? '' : ` · End Till <b>${fmtUSD(k.period_till, 2)}</b>`}`,
+            val: `${fmtUSD(k.net_cash_flow, 2)} <small>TOTAL</small>`,
+            sub: `In <b>${fmtUSDk(k.cash_inflow)}</b> · Out <b>${fmtUSDk(k.cash_outflow)}</b>${Math.abs(Number(k.net_cash_lbp || 0)) > CF_LBP_DUST ? ` · LBP <b>${fmtLBPk(k.net_cash_lbp)}</b>` : ''}`,
+            tone: 'steel'
+          }) : insightCard({
+            label: 'Period Cash Flow',
+            badge: esc(k.label || 'All-Time'),
+            val: `${fmtUSD(k.net_cash_usd != null ? k.net_cash_usd : k.net_cash_flow, 2)} <small>USD</small>`,
+            sub: `USD In <b>${fmtUSDk(k.cash_in_usd != null ? k.cash_in_usd : k.cash_inflow)}</b> · Out <b>${fmtUSDk(k.cash_out_usd != null ? k.cash_out_usd : k.cash_outflow)}</b>${Math.abs(Number(k.net_cash_lbp || 0)) > CF_LBP_DUST ? ` · LBP <b>${fmtLBPk(k.net_cash_lbp)}</b>` : ''}${tillStartSet && Number.isFinite(tillOpenUsd) ? ` · <span data-ui-tip="USD drawer at start of window; top till cards show the cumulative balance to the end date">Opening</span> <b>${fmtUSD(tillOpenUsd, 2)}</b>` : ''}`,
             tone: 'steel'
           })}
         </div>
       </div>
-      ${tillScrubHtml}
-      ${tillStartStripHtml}${sibTillOffStripHtml}
 
       <div class="panel-card" id="tillRecentPanel" style="margin-bottom:14px">
         <div class="panel-head cf-register-head">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <div class="panel-title"><span>CASH TILL REGISTER</span></div>
             <div class="cf-mode-switch" role="tablist" aria-label="Cash Till View Mode">
-              <button type="button" class="cf-mode-btn ${!isDailyMode ? 'active' : ''}" data-cf-mode="entries" role="tab" aria-selected="${!isDailyMode}">Individual Entries <span>(${fmtNum(allMoves.length)})</span></button>
-              ${sibTillOff ? '' : `<button type="button" class="cf-mode-btn ${isDailyMode ? 'active' : ''}" data-cf-mode="daily" role="tab" aria-selected="${isDailyMode}">Daily Till Sheet <span>(${fmtNum(allDailyRows.length)} Days)</span></button>`}
+              <button type="button" class="cf-mode-btn ${!isDailyMode ? 'active' : ''}" data-cf-mode="entries" role="tab" aria-selected="${!isDailyMode}">Entries <span>(${fmtNum(allMoves.length)})</span></button>
+              ${sibTillOff ? '' : `<button type="button" class="cf-mode-btn ${isDailyMode ? 'active' : ''}" data-cf-mode="daily" role="tab" aria-selected="${isDailyMode}">Daily Sheet <span>(${fmtNum(allDailyRows.length)})</span></button>`}
             </div>
-            <button type="button" class="btn cf-liquidity-brief-btn" id="cfLiquidityBriefBtn" data-page-guide-open="1" data-pg-source="cashflow" aria-expanded="false" data-ui-tip="Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing">Liquidity Brief</button>
-            <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
-            <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="cfTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="cashflow" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow & Liquidity Runway Forecast Studio">13W Runway</button>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            ${canEnterForm('receipt', u) ? '<button type="button" class="btn" data-open-modal="receipt">+ AR Receipt</button>' : ''}
-            ${canEnterForm('expense', u) ? '<button type="button" class="btn" data-open-modal="expense">+ Cash Expense</button>' : ''}
-            ${canEnterForm('settlement', u) ? '<button type="button" class="btn" data-open-modal="settlement">+ AP Payment</button>' : ''}
-            ${canEnterForm('salary', u) ? '<button type="button" class="btn" data-open-modal="salary">+ Salary</button>' : ''}
-            ${canEnterForm('external', u) ? '<button type="button" class="btn" data-open-modal="external">+ External</button>' : ''}
-            ${canEnterForm('treasury', u) ? '<button type="button" class="btn" data-open-modal="treasury">+ Loan</button>' : ''}
-            ${canEnterForm('conversion', u) ? '<button type="button" class="btn btn-primary" data-open-modal="conversion">+ FX Conversion</button>' : ''}
+            <button type="button" class="btn cf-liquidity-brief-btn cf-treasury-btn" id="cfTreasuryForecastBtn" data-treasury-forecast-open="1" data-tf-source="cashflow" aria-expanded="false" data-ui-tip="Open Rolling 13-Week Cash-Flow & Liquidity Runway Forecast Studio">13W Runway</button>
             ${exportBtn('tillRecentPanel', isDailyMode ? 'Daily_Till_Sheet' : 'Cash_Till_Entries')}
+            ${cashEntryHtml}
           </div>
         </div>
 
@@ -49028,42 +48882,32 @@
             ${searchBox(isDailyMode ? 'Search date (DD-MM-YYYY) or weekday...' : 'Search counterparty, staff, stakeholder, note, #ref, ticket, category...')}
             <div class="chip-bar">
               ${!isDailyMode ? `
-                ${chip('all', `All (${fmtNum(drillScopedMoves.length)})`)}
+                ${chip('all', 'All')}
                 ${chip('cf_in', '▲ Cash In')}
                 ${chip('cf_out', '▼ Cash Out')}
-                ${chip('cf_sales', `Sales & AR (${fmtNum(streamCounts.sales)})`)}
-                ${chip('cf_exp', `Expenses & AP (${fmtNum(streamCounts.exp)})`)}
-                ${fullFin ? chip('cf_loan', `Borrowing (${fmtNum(streamCounts.loan)})`) : ''}
-                ${fullFin ? chip('cf_sal', `Salary (${fmtNum(streamCounts.sal)})`) : ''}
-                ${fullFin ? chip('cf_ext', `External (${fmtNum(streamCounts.ext)})`) : ''}
-                ${fullFin && isHoldingCf ? chip('cf_extd', `Extended (${fmtNum(streamCounts.extd)})`) : ''}
-                ${fullFin && streamCounts.jv ? chip('cf_jv', `JV Partners (${fmtNum(streamCounts.jv)})`) : ''}
-                ${chip('cf_fx', `FX Conversions (${fmtNum(streamCounts.fx)})`)}
+                ${chip('cf_sales', 'Sales & AR')}
+                ${chip('cf_exp', 'Expenses & AP')}
+                ${fullFin ? chip('cf_loan', 'Borrowing') : ''}
+                ${fullFin ? chip('cf_sal', 'Salary') : ''}
+                ${fullFin ? chip('cf_ext', 'External') : ''}
+                ${fullFin && isHoldingCf ? chip('cf_extd', 'Extended') : ''}
+                ${fullFin && streamCounts.jv ? chip('cf_jv', 'JV Partners') : ''}
+                ${chip('cf_fx', 'FX')}
                 ${chip('cf_lbp', 'LBP (LL)')}
-                ${appOnlyMoves.length ? chip('cf_app_only', `Not in Workbooks (${fmtNum(appOnlyMoves.length)})`) : ''}
+                ${appOnlyMoves.length ? chip('cf_app_only', `Not in Workbooks (${fmtNum(appOnlyMoves.length)})`, 'warn') : ''}
               ` : `
-                ${chip('all', `All Days (${fmtNum(allDailyRows.length)})`)}
+                ${chip('all', 'All Days')}
                 ${chip('cf_day_nonzero', 'Drawer ≠ $0')}
                 ${chip('cf_day_lbp', 'LBP Active')}
                 ${chip('cf_day_neg', 'Timing Deficit (<$0)')}
               `}
             </div>
           </div>
-          <div class="cf-live-strip" aria-label="Filtered Cash Summary">
-            ${!isDailyMode ? `
-              <span>In: <b class="good">${fmtUSD(mvInUsd, 2)}</b></span>
-              <span>Out: <b class="crit">${fmtUSD(mvOutUsd, 2)}</b></span>
-              <span>Net: <b style="color:${mvUsdSum < -0.005 ? 'var(--crit)' : (mvUsdSum > 0.005 ? 'var(--good)' : 'var(--ink)')}">${fmtSignedUSD(mvUsdSum, 2)}</b></span>
-              <span>LBP: <b>${Math.abs(mvLbpSum) > 1 ? fmtSignedLBP(mvLbpSum) : '0 LL'}</b></span>
-            ` : `
-              <span>Click any day row to inspect all cash entries of that day →</span>
-            `}
-          </div>
         </div>
 
         ${renderCashflowBehindNoteHtml(getActiveCashflowBehindItems(u))}
 
-        ${appOnlyMoves.length ? `
+        ${(!isDailyMode && appOnlyMoves.length && cfChip === 'cf_app_only') ? `
         <div class="cf-app-only-strip" id="cfAppOnlyStrip" role="status">
           <span class="badge badge-warn cf-app-only-count"><b>${fmtNum(appOnlyMoves.length)}</b> <span>App Entries Not in the Workbooks</span></span>
           <span class="cf-app-only-txt"><span>Keyed here, with no matching workbook row at the last update. The till counts them on top of the workbook figures.</span></span>
@@ -49074,52 +48918,8 @@
             ${Math.abs(appOnlyLbp) > 1 ? `<span><span>LBP:</span> <b>${fmtSignedLBP(appOnlyLbp)}</b></span>` : ''}
           </span>
           ${appOnlyCandCount > 0 ? `<span class="cf-app-only-cand-note"><b data-no-i18n="1">${fmtNum(appOnlyCandCount)}</b> <span>${appOnlyCandCount === 1 ? 'entry has a candidate workbook match' : 'entries have candidate workbook matches'}</span></span>` : ''}
-          ${cfChip === 'cf_app_only'
-            ? '<button type="button" class="btn cf-app-only-btn" data-chip="all">Show All Entries</button>'
-            : '<button type="button" class="btn cf-app-only-btn" data-cf-app-only-show="1">Show Entries</button>'}
+          <button type="button" class="btn cf-app-only-btn" data-chip="all">Show All Entries</button>
         </div>` : ''}
-
-        ${showGroupSplit ? `
-        <div class="sales-entity-recon" role="region" aria-label="Cash Till by Entity">
-          <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
-            <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>Plant Cash Flow &amp; Till</b><span class="sales-recon-act">Filter WTC Only →</span></div>
-            <div class="sales-recon-metrics">
-              <span><small>Combined Till</small><b class="brass">${fmtUSD(tillAsOf && wtcK.period_till != null ? wtcK.period_till : wtcK.cash_till, 2)}</b></span>
-              <span><small>Cash In ($)</small><b class="good">+${fmtUSD(wtcK.cash_in_usd, 2)}</b></span>
-              <span><small>Cash Out ($)</small><b class="crit">-${fmtUSD(wtcK.cash_out_usd, 2)}</b></span>
-              <span><small>Net Cash ($)</small><b>${fmtSignedUSD(wtcK.net_cash_usd, 2)}</b></span>
-            </div>
-            ${cashTillBridgeHtml(wtcTillBridge, true)}
-          </div>
-          <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
-            <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>Plant Cash Flow &amp; Till</b><span class="sales-recon-act">Filter BBC Only →</span></div>
-            <div class="sales-recon-metrics">
-              <span><small>Combined Till</small><b class="brass">${fmtUSD(tillAsOf && bbcK.period_till != null ? bbcK.period_till : bbcK.cash_till, 2)}</b></span>
-              <span><small>Cash In ($)</small><b class="good">+${fmtUSD(bbcK.cash_in_usd, 2)}</b></span>
-              <span><small>Cash Out ($)</small><b class="crit">-${fmtUSD(bbcK.cash_out_usd, 2)}</b></span>
-              <span><small>Net Cash ($)</small><b>${fmtSignedUSD(bbcK.net_cash_usd, 2)}</b></span>
-            </div>
-            ${cashTillBridgeHtml(bbcTillBridge, true)}
-          </div>
-        </div>` : (showSingleEntityBanner ? `
-        <div class="sales-entity-recon single">
-          <div class="sales-recon-card single-card sales-recon-single" data-co="${esc(STATE.company)}">
-            <div class="sales-recon-head">
-              <span class="badge ${STATE.company === 'bbconstruction' ? 'badge-info' : 'badge-brass'}">${esc(COMPANY_BU_MATCH[STATE.company] || COMPANY_LABELS[STATE.company] || STATE.company)}</span>
-              <b><span>${activeIndCf === 'Manufacturing' ? 'Active Plant Cash Flow &amp; Till' : 'Active Entity Cash Flow &amp; Till'}</span> <span data-no-i18n="1">(${fmtNum(isDailyMode ? sortedDaily.length : sortedMoves.length)}</span> <span>${isDailyMode ? 'Days' : 'Entries'}</span><span data-no-i18n="1">)</span></b>
-              <button type="button" class="btn sales-recon-reset" data-jump-co="${esc(activeIndCf === 'Manufacturing' ? 'manufacturing-group' : ('industry:' + activeIndCf))}">Show All ${esc(activeIndCf === 'Manufacturing' ? 'Group' : activeIndCf)} (${indCosCf.length})</button>
-            </div>
-            <div class="sales-recon-metrics">
-              ${sibTillOff ? '<span data-no-recon-sub="1"><small>Till</small><b>Not Tracked Yet</b></span>' : `<span><small>USD Till ($)</small><b data-cf-single-till="usd">${fmtUSD(tillUsd, 2)}</b></span>
-              <span><small>LBP Till (LL)</small><b data-cf-single-till="lbp">${fmtLBP(tillLbp)}</b></span>
-              <span><small>Combined Till</small><b class="brass" data-cf-single-till="tot">${fmtUSD(tillTot, 2)}</b></span>`}
-              <span><small>Cash In ($)</small><b class="good">+${fmtUSD(isDailyMode ? dyInUsd : mvInUsd, 2)}</b></span>
-              <span><small>Cash Out ($)</small><b class="crit">-${fmtUSD(isDailyMode ? dyOutUsd : mvOutUsd, 2)}</b></span>
-              <span><small>Net Cash ($)</small><b>${fmtSignedUSD(isDailyMode ? dyNetUsd : mvUsdSum, 2)}</b></span>
-            </div>
-            ${cashTillBridgeHtml(singleTillBridge, false)}
-          </div>
-        </div>` : '')}
 
         ${hasDrill ? `
         <div class="cf-drill-strip" role="status">
@@ -49208,7 +49008,7 @@
                 return `
                 <tr class="cf-day-row" data-cf-focus-date="${esc(d.date)}" title="Click to inspect ${fmtNum(d.entries_cnt)} cash entries on ${esc(fmtDateDMY(d.date))}">
                   <td class="mono"><strong>${esc(fmtDateDMY(d.date))}</strong> <span class="mu">${esc(d.dow)}</span></td>
-                  <td class="r"><span class="badge badge-info">${fmtNum(d.entries_cnt)} →</span></td>
+                  <td class="r"><span class="badge badge-info">${fmtNum(d.entries_cnt)}</span></td>
                   <td class="r">${Math.abs(d.open_usd) >= 0.005 ? fmtUSD(d.open_usd, 2) : '$0.00'}</td>
                   <td class="r">${d.in_usd >= 0.005 ? `<strong style="color:var(--good)">+${fmtUSD(d.in_usd, 2)}</strong>` : '—'}</td>
                   <td class="r">${d.out_usd >= 0.005 ? `<strong style="color:var(--crit)">-${fmtUSD(d.out_usd, 2)}</strong>` : '—'}</td>
@@ -49241,10 +49041,10 @@
       <div class="panel-card" id="tillBridgePanel" style="margin-bottom:14px">
         <div class="panel-head cf-register-head">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <div class="panel-title"><span>${isBridgeMonthly ? 'MONTHLY CASH FLOW &amp; TILL PROGRESSION (OPERATING VS TREASURY SWEEPS)' : 'CUMULATIVE BOOK TILL RECONCILIATION BY CATEGORY (USD &amp; LBP)'}</span></div>
+            <div class="panel-title"><span>${isBridgeMonthly ? 'Monthly Cash Flow &amp; Till' : 'Till Summary by Category'}</span></div>
             <div class="cf-mode-switch" role="tablist" aria-label="Book Till Reconciliation Mode">
-              <button type="button" class="cf-mode-btn ${!isBridgeMonthly ? 'active' : ''}" data-cf-bridge-mode="streams" role="tab" aria-selected="${!isBridgeMonthly}">By Stream <span>(${summaryRows.length} Categories)</span></button>
-              ${sibTillOff ? '' : `<button type="button" class="cf-mode-btn ${isBridgeMonthly ? 'active' : ''}" data-cf-bridge-mode="months" role="tab" aria-selected="${isBridgeMonthly}">Monthly Progression <span>(${fmtNum(progRows.length)} Months)</span></button>`}
+              <button type="button" class="cf-mode-btn ${!isBridgeMonthly ? 'active' : ''}" data-cf-bridge-mode="streams" role="tab" aria-selected="${!isBridgeMonthly}">By Category</button>
+              ${sibTillOff ? '' : `<button type="button" class="cf-mode-btn ${isBridgeMonthly ? 'active' : ''}" data-cf-bridge-mode="months" role="tab" aria-selected="${isBridgeMonthly}">By Month</button>`}
             </div>
           </div>
           <span class="panel-meta">${exportBtn('tillBridgePanel', isBridgeMonthly ? 'Monthly_Cash_Flow_Progression' : 'Cash_Till_Reconciliation')}</span>
@@ -49318,7 +49118,7 @@
                 const outBarW = Math.min(100, Math.round((Math.abs(pr.cash_out || 0) / maxProgBar) * 100));
                 return `
                 <tr>
-                  <td>${pr.ymIso ? `<button type="button" class="cf-month-drill-btn${focusYm === pr.ymIso ? ' active' : ''}" data-cf-focus-ym="${esc(pr.ymIso)}" title="Inspect all cash till entries in ${esc(pr.monthLbl)}"><strong>${esc(pr.monthLbl)}</strong> <span>→</span></button>` : `<strong>${esc(pr.monthLbl)}</strong>`}</td>
+                  <td>${pr.ymIso ? `<button type="button" class="cf-month-drill-btn${focusYm === pr.ymIso ? ' active' : ''}" data-cf-focus-ym="${esc(pr.ymIso)}" title="Inspect all cash till entries in ${esc(pr.monthLbl)}"><strong>${esc(pr.monthLbl)}</strong></button>` : `<strong>${esc(pr.monthLbl)}</strong>`}</td>
                   <td class="r">${fmtUSD(pr.cash_sales, 0)}</td>
                   <td class="r">${fmtUSD(pr.receipts, 0)}</td>
                   <td class="r">${fmtUSD(pr.treasury_in, 0)}</td>
@@ -49354,6 +49154,12 @@
         `}
       </div>
 
+      <details class="panel-card cf-party-fold" id="cfPartyBreakdownsFold"${STATE.cfPartyFoldOpen ? ' open' : ''} style="margin-bottom:14px">
+        <summary class="panel-head cf-party-fold-sum">
+          <div class="panel-title"><span>Counterparty &amp; Category Breakdowns</span></div>
+          <span class="panel-meta"><span>Customers, Suppliers, Borrowing, Payroll, External &amp; FX</span></span>
+        </summary>
+        <div class="cf-party-fold-body">
       <div class="split-grid-2" style="margin-bottom:14px">
         <div class="panel-card" id="cfSalesPanel">
           <div class="panel-head">
@@ -49581,9 +49387,9 @@
           </div>
         </div>
       </div>` : `
-      <div class="panel-card" id="cfConvOnlyPanel" style="margin-bottom:14px">
+      <div class="panel-card" id="cfConvOnlyPanel" style="margin-bottom:0">
         <div class="panel-head">
-          <div class="panel-title"><span>CURRENCY CONVERSIONS SUMMARY (USD ↔ LBP)</span></div>
+          <div class="panel-title"><span>Currency Conversions (USD / LBP)</span></div>
           <span class="panel-meta">${exportBtn('cfConvOnlyPanel', 'Cash_Flow_Conversions')}</span>
         </div>
         <div class="table-wrap">
@@ -49596,9 +49402,9 @@
                 const lDelta = isU2L ? Math.round(Number(r.to_amt || 0)) : -Math.round(Number(r.from_amt || 0));
                 return `
                 <tr class="cf-bridge-row" data-cf-focus-stream="cf_fx" title="Click to filter Cash Till Register above to FX Conversions">
-                  <td><strong>${isU2L ? 'USD → LBP' : 'LBP → USD'}</strong></td>
-                  <td class="r mono"><strong style="color:${uDelta < -0.005 ? 'var(--crit)' : (uDelta > 0.005 ? 'var(--good)' : 'inherit')}">${uDelta ? fmtSignedUSD(uDelta, 2) : '—'}</strong></td>
-                  <td class="r mono"><strong style="color:${lDelta < -1 ? 'var(--crit)' : (lDelta > 1 ? 'var(--good)' : 'inherit')}">${lDelta ? fmtSignedLBP(lDelta) : '—'}</strong></td>
+                  <td><strong>${isU2L ? 'USD to LBP' : 'LBP to USD'}</strong></td>
+                  <td class="r mono"><strong style="color:${uDelta < -0.005 ? 'var(--crit)' : (uDelta > 0.005 ? 'var(--good)' : 'inherit')}">${uDelta ? fmtSignedUSD(uDelta, 2) : '-'}</strong></td>
+                  <td class="r mono"><strong style="color:${lDelta < -1 ? 'var(--crit)' : (lDelta > 1 ? 'var(--good)' : 'inherit')}">${lDelta ? fmtSignedLBP(lDelta) : '-'}</strong></td>
                 </tr>`;
               }).join('') || emptyRow(3, 'No currency conversions')}
             </tbody>
@@ -49613,6 +49419,8 @@
           </table>
         </div>
       </div>`}
+        </div>
+      </details>
     `;
   }
 
@@ -64215,7 +64023,8 @@
       const isBorrowIn = /borrows/i.test(String(ln.direction || ''));
       const lbpMag = Math.round(Math.abs(Number(ln.lbp_amount || 0)));
       const usdMag = Math.abs(ln.lbp_amount ? Number(ln.usd_amount || 0) : Number(ln.usd_amount != null ? ln.usd_amount : ln.principal || 0));
-      addMv(ln.id, ln.date || ln.start_date, ln.company, 'loan', isBorrowIn ? 'Borrowing In' : 'Borrowing Out', ln.lender || ln.counterparty || ln.borrower || '—', [ln.direction || '', cleanLedgerNote(ln.notes)].filter(Boolean).join(' · ') || 'Borrowing principal', shortVoucherRef(ln.name || ln.id), isBorrowIn ? 'Borrow In' : 'Lend Out', isBorrowIn ? usdMag : -usdMag, isBorrowIn ? lbpMag : -lbpMag, 'loans', ln);
+      const lbl = loanRegisterLabels(ln, ln.opening_balance ? lbpMag : 0);
+      addMv(ln.id, ln.date || ln.start_date, ln.company, 'loan', lbl.cat, ln.lender || ln.counterparty || ln.borrower || '—', lbl.detail || 'Borrowing principal', shortVoucherRef(ln.name || ln.id), lbl.method, isBorrowIn ? usdMag : -usdMag, isBorrowIn ? lbpMag : -lbpMag, 'loans', ln);
     });
     if (fullFin) effectiveRows('loan_settlements', scopedSeed('loan_settlements'), null).forEach(ls => {
       const isIn = /inflow|drawdown/i.test(String(ls.method || ls.type || ''));
@@ -73483,7 +73292,9 @@
             descFr: 'Affiche les totaux en temps réel et les badges de cadrage pour l\'entité et la période actives. Cliquez sur une carte pour ouvrir le registre.'
           });
         }
-        const panelEls = Array.from(ws.querySelectorAll('.panel-card, .pbi-card, .stmt-paper-card, .dops-card, .kiosk-card')).slice(0, 8);
+        const panelEls = Array.from(ws.querySelectorAll('.panel-card, .pbi-card, .stmt-paper-card, .dops-card, .kiosk-card'))
+          .filter(el => !(el.parentElement && el.parentElement.closest('details:not([open])')))
+          .slice(0, 8);
         panelEls.forEach((pEl, idx) => {
           if (!pEl.id) pEl.id = `pgTourPanel_${idx + 1}`;
           const titleNode = pEl.querySelector('.panel-title, .pbi-card-title, .stmt-title, h2, h3, strong');
@@ -73579,7 +73390,7 @@
       purposeFr = cfSnap.headlineFr;
       kpis = [
         { labelEn: 'Active Entity', labelAr: 'الكيان النشط', labelFr: 'Entité Active', value: coLabel, sub: ind, selector: '#workspace' },
-        { labelEn: 'Cash Till', labelAr: 'صندوق النقد', labelFr: 'Caisse espèces', value: 'Not Tracked Yet', sub: 'Missing From the Cash Book', selector: '#cfSiblingTillOff' }
+        { labelEn: 'Cash Till', labelAr: 'صندوق النقد', labelFr: 'Caisse espèces', value: 'Not Tracked Yet', sub: 'Missing From the Cash Book', selector: '.cockpit-banner' }
       ];
       bulletsEn = cfSnap.bulletsEn.slice();
       bulletsAr = cfSnap.bulletsAr.slice();
@@ -83134,7 +82945,7 @@
         ${showGroupSplit ? `
         <div class="sales-entity-recon" role="region" aria-label="External Entries by Entity">
           <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
-            <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>External Treasury (${fmtNum(byCo.WTC.n)})</b><span class="sales-recon-act">Filter WTC Only →</span></div>
+            <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>External Treasury (${fmtNum(byCo.WTC.n)})</b><span class="sales-recon-act">Filter WTC Only</span></div>
             <div class="sales-recon-metrics">
               <span><small>External In ($)</small><b class="good">+${fmtUSD(byCo.WTC.inUsd, 0)}</b></span>
               <span><small>External Out ($)</small><b class="crit">-${fmtUSD(byCo.WTC.outUsd, 0)}</b></span>
@@ -83142,7 +82953,7 @@
             </div>
           </div>
           <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
-            <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>External Treasury (${fmtNum(byCo.BBConstruction.n)})</b><span class="sales-recon-act">Filter BBC Only →</span></div>
+            <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>External Treasury (${fmtNum(byCo.BBConstruction.n)})</b><span class="sales-recon-act">Filter BBC Only</span></div>
             <div class="sales-recon-metrics">
               <span><small>External In ($)</small><b class="good">+${fmtUSD(byCo.BBConstruction.inUsd, 0)}</b></span>
               <span><small>External Out ($)</small><b class="crit">-${fmtUSD(byCo.BBConstruction.outUsd, 0)}</b></span>
@@ -83577,9 +83388,10 @@
                 const isBor = isBorrowSide(l);
                 const party = l.counterparty || l.lender || '—';
                 const sideKey = isBor ? 'Company borrows' : 'Company lends';
-                const sideBadge = isBor
+                const sideBadge = (isBor
                   ? '<span class="badge badge-warn" style="margin-left:6px">We Borrow</span>'
-                  : '<span class="badge badge-brass" style="margin-left:6px">We Lend</span>';
+                  : '<span class="badge badge-brass" style="margin-left:6px">We Lend</span>')
+                  + (l.opening_balance ? '<span class="badge badge-info" style="margin-left:6px">Opening Balance</span>' : '');
                 return `
                 <tr class="rrow" data-rkey="loans" data-rid="${esc(l.id)}">
                   <td class="mono"><strong>${esc(l.name || '—')}</strong>${appCell(l, 'loans')}</td>
@@ -83673,7 +83485,7 @@
                   <tr class="rrow" data-rkey="loans" data-rid="${esc(l.id)}">
                     <td class="mono">${esc(fmtDateDMY(l.start_date))}</td>
                     <td>${coBadge(l.company)}</td>
-                    <td>${isBor ? '<span class="badge badge-warn">We Borrow</span>' : '<span class="badge badge-brass">We Lend</span>'}</td>
+                    <td>${isBor ? '<span class="badge badge-warn">We Borrow</span>' : '<span class="badge badge-brass">We Lend</span>'}${l.opening_balance ? ' <span class="badge badge-info">Opening Balance</span>' : ''}</td>
                     <td><strong>${esc(party)}</strong> <small class="mono" style="color:var(--ink-soft)">${esc(l.name || '')}</small></td>
                     <td class="r">${fmtUSD(l.principal || 0, 2)}</td>
                     <td class="r">${fmtUSD(l.settled_amount || 0, 2)}</td>
@@ -90200,11 +90012,18 @@
     if (!wrap) return false;
     const cb = $('f_nearcopyok');
     const hint = $('hint_nearcopy');
+    // The hint is rewritten only when what it says changes: the check runs on every pause in typing, and a rewrite
+    // would put the English text back for a moment before it is translated again.
+    const setHint = html => {
+      if (!hint || hint.dataset.ncHtml === html) return;
+      hint.innerHTML = html;
+      hint.dataset.ncHtml = html;
+    };
     if (!hit) {
       FORM_UI.lastNearCopySig = '';
       wrap.hidden = true;
       if (cb) cb.checked = false;
-      if (hint) hint.innerHTML = '';
+      setHint('');
       return true;
     }
     const sig = nearCopySig(crKey, hit);
@@ -90224,7 +90043,7 @@
         ? 'Same day and party, these entries add up to this amount'
         : 'Same party, these entries one day apart add up to this amount';
       const bits = [fmtDateDMY(hit.day), party, parts].filter(Boolean);
-      hint.innerHTML = `<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> · ${esc(bits.join(' · '))}</span>`;
+      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1"> · ${esc(bits.join(' · '))}</span>`);
     } else if (hint) {
       const r = hit.row;
       const label = crKey === 'sales_tickets' ? 'Sales Ticket' : (crKey === 'raw_purchases' ? 'Raw Material Ticket' : 'Expense');
@@ -90234,7 +90053,7 @@
       const reason = hit.reason === 'ticket'
         ? 'Same day, party, truck and amount, ticket number one digit apart'
         : 'Same day and supplier, amount differs by exactly the 11% VAT';
-      hint.innerHTML = `<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1">${ref ? ' #' + esc(ref) : ''} · ${esc(bits.join(' · '))}</span>`;
+      setHint(`<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1">${ref ? ' #' + esc(ref) : ''} · ${esc(bits.join(' · '))}</span>`);
     }
     return true;
   }
@@ -90261,6 +90080,33 @@
 
   function nearCopyBoxHtml() {
     return `<div class="form-field check-field span-3 near-copy-field" id="wrap_nearcopyok" hidden><input type="checkbox" id="f_nearcopyok"><label for="f_nearcopyok">Post anyway: this is a different entry from the one below</label><span class="hint warn" id="hint_nearcopy"></span></div>`;
+  }
+
+  // Warn while typing (owner 2026-11-17): the second-copy check runs while the form is filled in, not only at Post, so
+  // the entry the new one may repeat shows under the form before it is finished. It is the Post check itself
+  // (validateAndBuild in preview: no field is rewritten, nothing is added to a register, no red field is shown), so
+  // typing and Post always agree, and a different match unticks the box exactly as at Post. It waits for a pause in
+  // typing. After a failed Post, recalcForm already re-runs the whole check on every change, so this stands down.
+  const NEAR_COPY_LIVE_FORMS = ['sales', 'raw', 'expense', 'settlement', 'receipt', 'salary'];
+  const NEAR_COPY_LIVE_DELAY_MS = 300;
+  let nearCopyLiveTimer = 0;
+  function cancelNearCopyLiveCheck() {
+    if (nearCopyLiveTimer) clearTimeout(nearCopyLiveTimer);
+    nearCopyLiveTimer = 0;
+  }
+  function scheduleNearCopyLiveCheck(calcRes) {
+    cancelNearCopyLiveCheck();
+    const f = STATE.modalForm;
+    const wrap = $('wrap_nearcopyok');
+    if (!wrap || !NEAR_COPY_LIVE_FORMS.includes(f) || FORM_UI.hydrating) return;
+    nearCopyLiveTimer = setTimeout(() => {
+      nearCopyLiveTimer = 0;
+      // The form may have changed, closed, been posted or failed a Post since the pause began.
+      if (STATE.modalForm !== f || STATE.saving || FORM_UI.postAttempted || FORM_UI.hydrating || !wrap.isConnected || $('wrap_nearcopyok') !== wrap) return;
+      try {
+        validateAndBuild({ skipRecalc: true, calcResult: calcRes || {}, preview: true });
+      } catch (_) { /* a half-filled form can fail to build; Post still runs the full check */ }
+    }, NEAR_COPY_LIVE_DELAY_MS);
   }
 
   function isOwnUnit(truckRow, company) {
@@ -99576,6 +99422,7 @@
         syncFormValidationUI(v.fieldErrors, false);
       } else {
         syncFormValidationUI([], false);
+        scheduleNearCopyLiveCheck(res);
       }
       if (STATE.view === 'kiosks' && typeof updateKioskLiveThermalPreview === 'function') {
         updateKioskLiveThermalPreview(res);
@@ -101666,6 +101513,7 @@
     const body = activeFormHost();
     if (!body) return;
     clearTimeout(modalFocusTimer);
+    cancelNearCopyLiveCheck();
     FORM_UI.priceManual = false; FORM_UI.transManual = false; FORM_UI.methodManual = false; FORM_UI.uomManual = false; FORM_UI.meterTypeManual = false;
     FORM_UI.fuelBaseTouched = false; FORM_UI.fuelBaseAuto = false;
     FORM_UI.otManual = false; FORM_UI.ticketManual = false; FORM_UI.qtyManual = false; FORM_UI.repDateManual = false; FORM_UI.showRepDate = false; FORM_UI.afterHoursYesterday = false;
@@ -104060,6 +103908,12 @@
       fieldErrors.push({ field: fieldId || '', msg });
     };
     const c = (opts && opts.skipRecalc && opts.calcResult) ? opts.calcResult : recalcForm(true);
+    // preview = the second-copy check while typing (scheduleNearCopyLiveCheck): build the record, change nothing on
+    // screen. liveRecheck (any skipRecalc run, preview or the re-check after a failed Post) adds nothing to a register.
+    const preview = Boolean(opts && opts.preview);
+    const liveRecheck = preview || Boolean(opts && opts.skipRecalc);
+    // New catalogue items named on an Expense: added at the end, only when the Post goes through.
+    const pendingCatalogAdds = [];
     const company = val('f_company');
     const date = val('f_date') || todayISO();
     const repDate = val('f_repdate') || date;
@@ -104099,7 +103953,12 @@
       customBlocks.forEach(h => addErr('f_notes', `Custom Alert "${h.rule.name}" (${h.fmtVal} vs ${h.fmtThresh}): add a note explaining why.`));
     }
 
-    if (f !== 'equipment') {
+    // In preview the record carries the official unit name the Post would write into the field, without writing it.
+    const previewTruck = (preview && f !== 'equipment' && $('f_truck') && val('f_truck'))
+      ? (resolveCanonicalEquipmentName(val('f_truck'), company, false, null, false) || val('f_truck'))
+      : null;
+    const truckVal = () => (previewTruck != null ? previewTruck : val('f_truck'));
+    if (f !== 'equipment' && !preview) {
       if ($('f_truck') && val('f_truck')) {
         const canonT = resolveCanonicalEquipmentName(val('f_truck'), company, false, null, false);
         if (canonT && canonT !== val('f_truck')) $('f_truck').value = canonT;
@@ -104196,7 +104055,7 @@
           else if (c.product && val('f_unitprice') !== '' && c.up === 0 && !notes && dispS.mode !== 'return_wtc' && ticketSign({ method: val('f_method') }) !== 0 && !(editCtx && Number(editCtx.orig && editCtx.orig.unit_price || 0) === 0)) addErr('f_notes', 'A free ticket (unit price 0) needs a note.');
           if (c.saleType !== 'Unregistered' && c.transportBy !== 'Company fleet') {
             const tRow = val('f_truck') ? equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'sales', customer: c.customer, site: c.site }) : null;
-            if (!val('f_truckowner') && tRow && tRow.supplier && $('f_truckowner')) {
+            if (!preview && !val('f_truckowner') && tRow && tRow.supplier && $('f_truckowner')) {
               $('f_truckowner').value = tRow.supplier;
             }
             if (c.saleType === 'Delivery' && c.transportBy === 'Third-party truck' && !val('f_truckowner')) {
@@ -104262,7 +104121,7 @@
           product: effProdS,
           site: c.site,
           truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'),
-          truck: val('f_truck'),
+          truck: truckVal(),
           driver: (c.saleType === 'Delivery' || isRetS) ? val('f_driver') : '',
           uom: effUomS,
           ton_factor: resolveProductTonFactor(c.prod, effProdS) || 1,
@@ -104383,7 +104242,7 @@
           if (!c.product && !isRetR) addErr('f_product', 'Raw material is required.');
           if (!c.site) addErr('f_site', 'Site is required.');
           if (!isRetR && !isSuppDeliv && c.site && !effSiteRegR) {
-            setFieldVisible('wrap_f_site_region', true);
+            if (!preview) setFieldVisible('wrap_f_site_region', true);
             addErr('f_site_region', 'Region and Site must both be specified when adding transportation in our trucks or associated 3rd-party haulers.');
           }
           if (!isRetR) {
@@ -104401,7 +104260,7 @@
           if (!isSuppDeliv && !val('f_driver') && !isRetR) addErr('f_driver', 'Active driver is required (assign in Equipment Log).');
           if (!isRetR && !isSuppDeliv && c.transportBy !== 'Company fleet') {
             const tRow = val('f_truck') ? equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'raw', site: c.site }) : null;
-            if (!val('f_truckowner') && tRow && tRow.supplier && $('f_truckowner')) {
+            if (!preview && !val('f_truckowner') && tRow && tRow.supplier && $('f_truckowner')) {
               $('f_truckowner').value = tRow.supplier;
             }
             if (!val('f_truckowner')) {
@@ -104463,7 +104322,7 @@
             transport_by: effTransportByR,
             includes_transport: Boolean(isSuppDeliv),
             truck_owner: effTruckOwnerR,
-            truck: val('f_truck'),
+            truck: truckVal(),
             driver: val('f_driver'),
             uom: effUomR,
             ton_factor: resolveProductTonFactor(c.prod, effProdR) || 1,
@@ -104518,7 +104377,7 @@
       record = { ...base, name: `FUEL ${date} ${c.equipment}${ticket ? ' #' + ticket : ''}`, ticket_no: ticket, rep_date: repDate, fuel_type: c.fuelType, item: resolvedItem, equipment: c.equipment, driver: val('f_driver'), litres: round2(c.litres), odometer: c.type === 'odometer' ? c.reading : null, hours: c.type === 'hours' ? c.reading : null, meter_delta: c.delta };
     } else if (f === 'expense') {
       const pendEditRow = STATE.editingPendingExpenseId ? findExpenseRecordById(STATE.editingPendingExpenseId) : null;
-      if (!pendEditRow && !(opts && opts.skipRecalc)) {
+      if (!pendEditRow && !liveRecheck) {
         const firstTypedItem = val('f_exi_name_0') || (Array.isArray(FORM_UI.expItems) && FORM_UI.expItems[0] ? String(FORM_UI.expItems[0].item_name || '').trim() : '');
         if (firstTypedItem && !val('f_category') && $('f_category')) {
           const catMatch = resolveCatalogItem(firstTypedItem);
@@ -104600,7 +104459,12 @@
               if (isQuarryAgg) {
                 addErr('f_exi_name_' + idx, `Line ${idx + 1}: "${nm}" is a quarry aggregate product and belongs in Raw Material / Sales Tickets.`);
               } else {
-                const autoCatRec = ensureItemInCatalog({
+                // Added only by a Post that goes through (end of validateAndBuild): a re-check while typing, or a
+                // Post held by another field, would leave every half-typed name in the register. The line keeps the
+                // name and unit the new item will have; a second line naming the same new item takes the first one's.
+                const queued = pendingCatalogAdds.find(s => norm(s.name) === norm(nm));
+                if (queued) catIt = { name: queued.name, item_name: queued.name, uom: queued.uom };
+                else pendingCatalogAdds.push({
                   name: nm,
                   category: val('f_category') || 'Spare Parts',
                   subcategory: subVal || inferItemCatalogSubcategory(nm, val('f_category') || 'Spare Parts', ''),
@@ -104608,7 +104472,6 @@
                   default_cost: uc > 0 ? round2(uc) : 0,
                   default_location: whLoc
                 });
-                catIt = autoCatRec || resolveCatalogItem(nm);
               }
             }
             if (!(q > 0)) addErr('f_exi_qty_' + idx, `Line ${idx + 1}: Quantity must be above zero.`);
@@ -104650,14 +104513,15 @@
           let catIt0 = resolveCatalogItem(nm0);
           const isQuarryAgg0 = (typeof productByName === 'function' && Boolean(productByName(nm0)) && typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(nm0)) || /^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(norm(nm0));
           if (!catIt0 && !isQuarryAgg0 && !isExpenseSubcategoryOrCategoryName(nm0)) {
-            catIt0 = ensureItemInCatalog({
+            // Added only by a Post that goes through, as for the item lines above.
+            pendingCatalogAdds.push({
               name: nm0,
               category: val('f_category') || 'Spare Parts',
               subcategory: val('f_subcategory') || inferItemCatalogSubcategory(nm0, val('f_category') || 'Spare Parts', ''),
               uom: it0.uom || (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'),
               default_cost: uc0 > 0 ? round2(uc0) : 0,
               default_location: defWhLocSave
-            }) || resolveCatalogItem(nm0);
+            });
           }
           const uom0 = (catIt0 && catIt0.uom) ? catIt0.uom : (it0.uom || (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'));
           stagedItems.push({
@@ -105787,7 +105651,7 @@
         const stEmp = empList.find(e => e && !e.voided && norm(e.staff) === norm(st) && norm(canonCompany(e.company || 'WTC')) === snCoKey && e.role)
           || empList.find(e => e && !e.voided && norm(e.staff) === norm(st) && e.role);
         empRoleVal = (stMem && stMem.role) || (stEmp && stEmp.role) || '';
-        if (empRoleVal && $('f_role')) $('f_role').value = empRoleVal;
+        if (!preview && empRoleVal && $('f_role')) $('f_role').value = empRoleVal;
       }
       if (!empRoleVal) addErr('f_role', 'Role is required.');
       if (f === 'employment') {
@@ -106810,6 +106674,7 @@
       // Switched to an entry that is not checked (a bonus): no stale box or hint stays on screen.
       syncNearCopyBanner(crKey, null);
     }
+    if (!liveRecheck && !errors.length && pendingCatalogAdds.length) pendingCatalogAdds.forEach(spec => ensureItemInCatalog(spec));
     return { errors, fieldErrors, record, crKey };
   }
 
@@ -107321,6 +107186,7 @@
         FORM_UI.commitQuickCatalogItem();
       }
     }
+    cancelNearCopyLiveCheck();
     const { errors, fieldErrors, record, crKey } = validateAndBuild();
     if (errors.length) {
       FORM_UI.postAttempted = true;
@@ -132586,6 +132452,7 @@
         FORM_UI.commitQuickCatalogItem();
       }
     }
+    cancelNearCopyLiveCheck();
     const { errors, fieldErrors, record, crKey } = validateAndBuild();
     if (errors.length) {
       FORM_UI.postAttempted = true;
@@ -161181,6 +161048,9 @@
       const refTotalUsd = exVatTile && exVatTile.numVal > 0
         ? exVatTile.numVal
         : ((totalRoleTile && totalRoleTile.numVal > 0) ? totalRoleTile.numVal : maxUsd);
+      const flowInTile = usdTiles.find(t => /\b(cash in|external in|inflow)\b/i.test(t.lbl));
+      const flowOutTile = usdTiles.find(t => /\b(cash out|external out|outflow)\b/i.test(t.lbl));
+      const flowGrossUsd = (flowInTile && flowOutTile) ? (flowInTile.numVal + flowOutTile.numVal) : 0;
       const maxNonUsd = tiles.filter(t => !t.isUsd && !/flag/i.test(t.lbl)).reduce((m, t) => Math.max(m, t.numVal), 0);
       const jumpCo = card.getAttribute('data-jump-co') || '';
 
@@ -161259,6 +161129,14 @@
               const grossRef = (ttcTile && ttcTile.numVal > 0) ? ttcTile.numVal : numVal;
               barPct = grossRef > 0 ? Math.min(100, (numVal / grossRef) * 100) : 0;
               subTxt = headCount > 0 ? `Net base · ${fmtUSD(numVal / headCount, 2)} / ${unitNoun}` : 'Net revenue base';
+            } else if (flowGrossUsd > 0 && (t === flowInTile || t === flowOutTile)) {
+              const pct = (numVal / flowGrossUsd) * 100;
+              barPct = numVal > 0 ? Math.min(100, Math.max(2.5, pct)) : 0;
+              subTxt = `${pct.toFixed(1)}% of cash volume`;
+            } else if (flowGrossUsd > 0 && /\bnet\b/i.test(lbl)) {
+              const peakLeg = Math.max(flowInTile.numVal, flowOutTile.numVal, 1);
+              barPct = numVal > 0 ? Math.min(100, Math.max(2.5, (numVal / peakLeg) * 100)) : 0;
+              subTxt = 'Net balance';
             } else if (tone === 'total') {
               barPct = numVal > 0 ? 100 : 0;
               if (/vat incl|total ttc/i.test(lbl)) {
@@ -161537,6 +161415,8 @@
       const openModalBtn = t.closest('[data-open-modal]');
       if (openModalBtn && container.contains(openModalBtn)) {
         e.stopPropagation();
+        const entryMenu = openModalBtn.closest('details.cf-entry-menu');
+        if (entryMenu) entryMenu.open = false;
         const pf = {};
         let hasPf = false;
         ['co', 'eq', 'def', 'part', 'sub', 'disp', 'party', 'cost', 'notes', 'item', 'oil', 'repsrc', 'storewh', 'trtype', 'extkind', 'loanside', 'loan', 'usd', 'region', 'maplink'].forEach(k => {
@@ -161673,15 +161553,6 @@
         if (!canViewView('alert_rules', activeUser())) return;
         e.stopPropagation();
         openAlertRuleTuner(openAlertRuleBtn.getAttribute('data-open-alert-rule') || '');
-        return;
-      }
-
-      const appOnlyShowBtn = t.closest('[data-cf-app-only-show]');
-      if (appOnlyShowBtn && container.contains(appOnlyShowBtn)) {
-        STATE.cfEntryMode = 'entries';
-        STATE.chipFilter = 'cf_app_only';
-        STATE.shown = {};
-        renderApp();
         return;
       }
 
@@ -163027,6 +162898,25 @@
       renderApp();
       if (ws) ws.scrollTop = y;
     }));
+    const cfPartyFold = container.querySelector('#cfPartyBreakdownsFold');
+    if (cfPartyFold) cfPartyFold.addEventListener('toggle', () => {
+      STATE.cfPartyFoldOpen = cfPartyFold.open;
+    });
+    if (!window._cfEntryMenuDocWired && typeof document !== 'undefined') {
+      window._cfEntryMenuDocWired = true;
+      document.addEventListener('click', ev => {
+        const openMenus = document.querySelectorAll('details.cf-entry-menu[open]');
+        if (!openMenus.length) return;
+        const tgt = ev.target;
+        openMenus.forEach(m => {
+          if (!tgt || !m.contains(tgt)) m.open = false;
+        });
+      });
+      document.addEventListener('keydown', ev => {
+        if (ev.key !== 'Escape') return;
+        document.querySelectorAll('details.cf-entry-menu[open]').forEach(m => { m.open = false; });
+      });
+    }
     container.querySelectorAll('[data-cf-chart-grain]').forEach(btn => btn.addEventListener('click', () => {
       STATE.cfChartGrain = btn.getAttribute('data-cf-chart-grain') || 'monthly';
       const ws = $('workspace');

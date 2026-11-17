@@ -12191,7 +12191,7 @@
       <div class="pbi-grid-1" style="margin-bottom:10px">
         <div class="cf-explainer-bar" role="region" aria-label="How Plant Cash Till Works">
           <div class="cf-explainer-copy">
-            <strong>How Cash Till Works:</strong> Cash in: sales and customer payments. Cash out: expenses, supplier payments and wages. Each evening, extra cash moves to the safe. If the drawer is short, cash comes back from the safe to cover it. Either way, the drawer should close near $0. LBP is counted at <span class="mono">${fmtNum(rateLbp, 0)}</span> LL per $1. <em>Click any bar to see its entries.</em>
+            <strong>Cash Till Guide:</strong> Evening sweeps move surplus cash to the safe so the drawer closes near $0 (LBP @ <span class="mono">${fmtNum(rateLbp, 0)}</span> LL/$). <em>Click any bar to filter entries.</em>
           </div>
           <div class="cf-grain-ctrl">
             <span class="cf-grain-lbl">Till Balance View</span>
@@ -12204,7 +12204,7 @@
       </div>
 
       <div class="pbi-grid-2" style="margin-bottom:14px">
-        ${pbiPanel('Monthly Cash Inflows vs Outflows — Operating vs Treasury Sweeps', buildCashFlowSplitColumnSvg(months, focusYm), {
+        ${pbiPanel('Monthly Cash Inflows vs Outflows · Operating vs Treasury Sweeps', buildCashFlowSplitColumnSvg(months, focusYm), {
           subtitle: 'Left column = Inflows · Right column = Outflows · Click any month to filter entries',
           legend: [
             { label: 'Op. Cash In (Sales+AR)', color: C.good },
@@ -12213,7 +12213,7 @@
             { label: 'Sweeps / FX Out', color: C.critSoft }
           ]
         })}
-        ${pbiPanel(chartGrain === 'daily' ? 'Closing Cash Till — Last 30 Operating Days' : 'Closing Cash Till — Month-End Balance ($)', buildTillBalanceChartSvg(tillChartItems, { rate: rateLbp, isDaily: chartGrain === 'daily', selectedYm: focusYm, selectedDate: focusDate }), {
+        ${pbiPanel(chartGrain === 'daily' ? 'Closing Cash Till · Last 30 Operating Days' : 'Closing Cash Till · Month-End Balance ($)', buildTillBalanceChartSvg(tillChartItems, { rate: rateLbp, isDaily: chartGrain === 'daily', selectedYm: focusYm, selectedDate: focusDate }), {
           subtitle: chartGrain === 'daily'
             ? 'End-of-day physical drawer balance anchored at $0 · Click any day to inspect entries'
             : 'Month-end physical drawer balance anchored at $0 (no flow overlay) · Hover for USD + LBP split',

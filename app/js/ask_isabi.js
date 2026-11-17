@@ -11426,6 +11426,11 @@
     try { domEl = document.querySelector(sel); } catch (_) {}
     if (!domEl) domEl = document.getElementById('workspace');
     if (domEl) {
+      let det = domEl.parentElement && domEl.parentElement.closest('details:not([open])');
+      while (det) {
+        det.open = true;
+        det = det.parentElement && det.parentElement.closest('details:not([open])');
+      }
       const badgeTxt = sanitizePageGuideText(
         (targetSec && (sum.lang === 'ar' ? targetSec.titleAr : (sum.lang === 'fr' ? targetSec.titleFr : targetSec.titleEn)))
         || (targetSec && targetSec.title)
@@ -11734,7 +11739,6 @@
     const pop = document.getElementById('pageGuidePopover');
     if (!pop) return;
     let anchor = _chatState.pageGuideAnchor
-      || document.getElementById('cfLiquidityBriefBtn')
       || document.getElementById('topbarPageGuideBtn')
       || document.getElementById('mobilePageGuideBtn');
     if (anchor && anchor.getBoundingClientRect) {
@@ -12371,7 +12375,6 @@
       || _chatState.pageGuideSource
       || 'topbar';
     const targetBtn = btnEl
-      || (source === 'cashflow' ? document.getElementById('cfListenBriefBtn') : null)
       || document.getElementById('topbarPageListenBtn')
       || document.getElementById('pgListenBtn');
 
@@ -12984,7 +12987,7 @@
     _lastTopbarMoreScopeKey = curMoreKey;
     mountTopbarPageGuideButtons();
     if (container && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
-      ['#cfLiquidityBriefBtn', '#cfListenBriefBtn', '#cfWhatIfBtn', '#ceoWhatIfBtn', '#pbiWhatIfBtn', '#ceoCollectionForecastBtn', '#arCollectionForecastBtn', '#indCollectionForecastBtn', '#cfCollectionForecastBtn', '#pbiCollectionForecastBtn'].forEach(sel => {
+      ['#cfWhatIfBtn', '#ceoWhatIfBtn', '#pbiWhatIfBtn', '#ceoCollectionForecastBtn', '#arCollectionForecastBtn', '#indCollectionForecastBtn', '#cfCollectionForecastBtn', '#pbiCollectionForecastBtn'].forEach(sel => {
         const el = container.querySelector && container.querySelector(sel);
         if (el) { try { window.MFG_I18N.translateDom(el); } catch (_) {} }
       });
@@ -13016,8 +13019,7 @@
       _chatState.pageGuideTourIdx = 0;
       _chatState.pageGuideInlineQa = null;
     }
-    const nextAnchor = (_chatState.pageGuideSource === 'cashflow' && document.getElementById('cfLiquidityBriefBtn'))
-      || document.getElementById('topbarPageGuideBtn')
+    const nextAnchor = document.getElementById('topbarPageGuideBtn')
       || document.getElementById('mobilePageGuideBtn');
     _chatState.pageGuideAnchor = nextAnchor;
     openPageGuidePopover(nextAnchor, curSum, { preserveTab: true, source: _chatState.pageGuideSource });
@@ -21346,7 +21348,7 @@
       if (typeof document !== 'undefined') {
         const curLang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
         if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && curLang !== 'en') {
-          ['topbarPageGuideBtn', 'topbarPageListenBtn', 'mobilePageGuideBtn', 'cfLiquidityBriefBtn', 'cfListenBriefBtn', 'cfWhatIfBtn', 'ceoWhatIfBtn', 'pbiWhatIfBtn', 'ceoCollectionForecastBtn', 'arCollectionForecastBtn', 'indCollectionForecastBtn', 'cfCollectionForecastBtn', 'pbiCollectionForecastBtn', 'ceoTreasuryForecastBtn', 'cfTreasuryForecastBtn', 'indTreasuryForecastBtn', 'pbiTreasuryForecastBtn', 'ceoInventoryOptimizerBtn', 'whInventoryOptimizerBtn', 'cfInventoryOptimizerBtn', 'indInventoryOptimizerBtn', 'pbiInventoryOptimizerBtn', 'dopsHandoverBriefBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
+          ['topbarPageGuideBtn', 'topbarPageListenBtn', 'mobilePageGuideBtn', 'cfWhatIfBtn', 'ceoWhatIfBtn', 'pbiWhatIfBtn', 'ceoCollectionForecastBtn', 'arCollectionForecastBtn', 'indCollectionForecastBtn', 'cfCollectionForecastBtn', 'pbiCollectionForecastBtn', 'ceoTreasuryForecastBtn', 'cfTreasuryForecastBtn', 'indTreasuryForecastBtn', 'pbiTreasuryForecastBtn', 'ceoInventoryOptimizerBtn', 'whInventoryOptimizerBtn', 'cfInventoryOptimizerBtn', 'indInventoryOptimizerBtn', 'pbiInventoryOptimizerBtn', 'dopsHandoverBriefBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
             const b = document.getElementById(id);
             if (b) {
               try { window.MFG_I18N.translateDom(b); } catch (_) {}
