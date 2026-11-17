@@ -86,7 +86,12 @@ const NON_DOM_PROSE_TOKENS = new Set([
 // Anchors a later release removed on purpose (owner decisions); older release entries keep naming them.
 const RETIRED_RELEASE_ANCHORS = new Set([
   // v19.6.289: studio shortcuts left the Cash Flow & Treasury tabs (they live on Overview, Dashboards and their own pages)
-  'cfWhatIfBtn', 'cfCollectionForecastBtn', 'cfPayablesOptimizerBtn', 'cfInventoryOptimizerBtn'
+  'cfWhatIfBtn', 'cfCollectionForecastBtn', 'cfPayablesOptimizerBtn', 'cfInventoryOptimizerBtn',
+  // Cash Flow declutter: retired redundant inline brief buttons, till scrubber bar, start-date/sibling strips & 4th combined card
+  'cfLiquidityBriefBtn', 'cfListenBriefBtn', 'cfTillValTot', 'cfTillStartWarn', 'cfSiblingTillOff',
+  'cfTillScrub', 'cfTillScrubDayBtn', 'cfTillScrubHover', 'cfTillScrubNext', 'cfTillScrubPrev',
+  'cfTillScrubRange', 'cfTillScrubSegPill', 'cfTillScrubUsd', 'cfTillScrubZoom',
+  'cfTillScrubDate', 'cfTillScrubIn', 'cfTillScrubOut', 'cfTillScrubLbp', 'cfTillScrubReset'
 ]);
 
 const NON_VISUAL_DOM_IDS = new Set([
@@ -106,8 +111,10 @@ const CONDITIONAL_ROUTE_OR_STATE_IDS = new Set([
   'docCamGuide', 'docCamPhoneQrBtn', 'pscCardSubBar', 'phoneScanCompanionShell',
   'ssPageSwitcher', 'ssSplitPreviewPane', 'faceCamVideo', 'faceEnrollModal',
   'entryUnsavedPrompt', 'telHistoryReconDrawer',
-  // Conditional transient states (mutually exclusive reopen toggle, fuzzy hint, pinned cover note, tour spotlight)
-  'hldReopenAllEntitiesBtn', 'pgTourSpotlight', 'pgTourCard', 'pgInlineAnswerBox', 'stmtPinnedCoverNote', 'aieFuzzyPartyHint'
+  // Conditional transient states (mutually exclusive reopen toggle, fuzzy hint, pinned cover note, tour spotlight, folded/chip-only Cash Flow panels)
+  'hldReopenAllEntitiesBtn', 'pgTourSpotlight', 'pgTourCard', 'pgInlineAnswerBox', 'stmtPinnedCoverNote', 'aieFuzzyPartyHint',
+  'cfAppOnlyStrip', 'cfSalesPanel', 'cfExpPanel', 'cfBorPanel', 'cfBorUnsplitRow',
+  'cfSalPanel', 'cfExtPanel', 'cfExtdConvPanel', 'cfConvOnlyPanel'
 ]);
 
 // Narrow prefix exemption strictly for dedicated `?kiosk=` mode, biometric camera, and pre-login overlays
