@@ -12727,7 +12727,22 @@
       "Site pin update was rejected by the server.": "تم رفض تحديث دبوس الموقع من قبل الخادم.",
       "Supervisor + Entry or Owner access for the route Business Units is required to verify road routes": "تتطلب صلاحية مشرف + إدخال أو مالك لوحدات الأعمال الخاصة بالمسار للتحقق من مسارات الطرق",
       "Your seat cannot create new domain records": "لا يملك مقعدك صلاحية إنشاء سجلات قطاع جديدة",
-      "Your seat does not have write access to verify road routes for this Business Unit": "لا يملك مقعدك صلاحية التعديل للتحقق من مسارات الطرق لوحدة الأعمال هذه"
+      "Your seat does not have write access to verify road routes for this Business Unit": "لا يملك مقعدك صلاحية التعديل للتحقق من مسارات الطرق لوحدة الأعمال هذه",
+      "External Movement": "حركة خارجية",
+      "Loaded entries changed in the workbooks": "قيود مُدرجة سابقاً عُدّلت في الدفاتر",
+      "changed to": "تغيّر إلى",
+      "date changed to": "تغيّر التاريخ إلى",
+      "party changed to": "تغيّر الطرف إلى",
+      "details changed": "تغيّرت التفاصيل",
+      "removed from the workbook": "حُذف من الدفتر",
+      "added with an earlier date": "أُضيف بتاريخ سابق",
+      "Party renamed on": "تغيّر اسم الطرف في",
+      "entries": "قيود",
+      "Included in the last update": "مُدرج في آخر تحديث",
+      "Post anyway: this is a different entry from the one below": "ترحيل على أي حال: هذا قيد مختلف عن القيد أدناه",
+      "Same day, party, truck and amount, ticket number one digit apart": "نفس اليوم والطرف والشاحنة والمبلغ، ورقم الإيصال يختلف برقم واحد",
+      "Same day and supplier, amount differs by exactly the 11% VAT": "نفس اليوم والمورد، والمبلغ يختلف بقيمة ضريبة 11% تماماً",
+      "Possible second copy of an entry already in ISABI. Check the entry shown under the form, then tick the box to post anyway.": "قد يكون هذا نسخة ثانية من قيد موجود في إيسابي. راجع القيد الظاهر أسفل النموذج، ثم ضع علامة في المربع للترحيل على أي حال."
     },
     fr: {
       "entry has a candidate workbook match": "écriture a une correspondance probable dans les classeurs",
@@ -25436,7 +25451,22 @@
       "Site pin update was rejected by the server.": "La mise à jour du repère du site a été refusée par le serveur.",
       "Supervisor + Entry or Owner access for the route Business Units is required to verify road routes": "Un accès Superviseur + Saisie ou Propriétaire pour les unités du trajet est requis pour vérifier les itinéraires routiers",
       "Your seat cannot create new domain records": "Votre poste ne peut pas créer de nouveaux enregistrements sectoriels",
-      "Your seat does not have write access to verify road routes for this Business Unit": "Votre poste ne dispose pas des droits d'écriture pour vérifier les itinéraires routiers de cette unité"
+      "Your seat does not have write access to verify road routes for this Business Unit": "Votre poste ne dispose pas des droits d'écriture pour vérifier les itinéraires routiers de cette unité",
+      "External Movement": "Mouvement externe",
+      "Loaded entries changed in the workbooks": "Écritures déjà chargées modifiées dans les classeurs",
+      "changed to": "changé en",
+      "date changed to": "date changée en",
+      "party changed to": "tiers changé en",
+      "details changed": "détails modifiés",
+      "removed from the workbook": "supprimé du classeur",
+      "added with an earlier date": "ajouté avec une date antérieure",
+      "Party renamed on": "Tiers renommé sur",
+      "entries": "écritures",
+      "Included in the last update": "Inclus dans la dernière mise à jour",
+      "Post anyway: this is a different entry from the one below": "Valider quand même : cette écriture est différente de celle ci-dessous",
+      "Same day, party, truck and amount, ticket number one digit apart": "Même jour, tiers, camion et montant, numéro de bon à un chiffre près",
+      "Same day and supplier, amount differs by exactly the 11% VAT": "Même jour et fournisseur, le montant diffère exactement de la TVA de 11 %",
+      "Possible second copy of an entry already in ISABI. Check the entry shown under the form, then tick the box to post anyway.": "Possible deuxième copie d'une écriture déjà dans ISABI. Vérifiez l'écriture affichée sous le formulaire, puis cochez la case pour valider quand même."
     }
   };
 

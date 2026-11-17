@@ -142,7 +142,7 @@
     const method = String((opts && opts.method) || 'GET').toUpperCase();
     const isAuthCheckUrl = /\/api\/auth\/(?:login|logout|me)(?:\b|\/|\?|$)/i.test(urlStr);
     const isReadOnlyAiOrScan = /\/api\/(?:ai-edge|ask|smart-scan|resolve-map-link|map-places|map-route)(?:\b|\/|\?|$)/i.test(urlStr);
-    const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|cashflow_behind|source_behind|industry_domain_store|staff_biometrics|work_schedules|geo_config|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
+    const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|cashflow_behind|source_behind|changed_entries|industry_domain_store|staff_biometrics|work_schedules|geo_config|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
     const inDemoSession = isDemoSandboxSession();
     const inDemoCo = !inDemoSession && STATE.company === DEMO_COMPANY_KEY;
     if ((inDemoSession || inDemoCo) && method !== 'GET' && method !== 'HEAD' && !isAuthCheckUrl && !isReadOnlyAiOrScan) {
@@ -161,6 +161,7 @@
         rules: { overrides: {}, custom: [] },
         cashflow_behind: null,
         source_behind: null,
+        changed_entries: null,
         records: {},
         industryCustomRows: {},
         industryRowEdits: {}
@@ -375,6 +376,7 @@
     cfChartGrain: 'monthly',
     cashflowBehind: null,
     sourceBehind: null,
+    changedEntries: null,
     behindDayPrev: null,
     arChartMode: 'collections',
     salesChartMode: 'payment',
@@ -9014,11 +9016,13 @@
     if (!hasServerApi() || !ownerNow()) {
       STATE.cashflowBehind = null;
       STATE.sourceBehind = null;
+      STATE.changedEntries = null;
       return false;
     }
-    const [cfRes, srcRes] = await Promise.all([
+    const [cfRes, srcRes, ceRes] = await Promise.all([
       fetchOwnerNoticeDoc('./api/cashflow_behind', 'cashflow_behind'),
-      fetchOwnerNoticeDoc('./api/source_behind', 'source_behind')
+      fetchOwnerNoticeDoc('./api/source_behind', 'source_behind'),
+      fetchOwnerNoticeDoc('./api/changed_entries', 'changed_entries')
     ]);
     if (myGen !== _cashflowBehindGen || !ownerNow()) return false;
     let changed = false;
@@ -9032,6 +9036,7 @@
     };
     apply('cashflowBehind', cfRes);
     apply('sourceBehind', srcRes);
+    apply('changedEntries', ceRes);
     if (changed && (STATE.view === 'cashflow' || STATE.view === 'overview')) safeRender();
     return cfRes.kind === 'ok';
   }
@@ -9306,6 +9311,119 @@
       tailNetHtml = `<span>${multiCo ? 'Combined workbook till matches ISABI net' : 'Workbook till matches ISABI net'}</span> <span class="cf-behind-num" data-no-i18n="1">($0.00)</span>`;
     }
     return `<div class="cf-behind-note" id="cfWorkbookBehindNote" role="status"><span class="badge badge-warn cf-behind-badge"><span>Edited in Workbook</span></span> <span class="cf-behind-items">${leadHtml}${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}</span> <span class="cf-behind-tail">${tailNetHtml}<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span><span>Not yet in ISABI</span></span></div>`;
+  }
+
+  // Owner notice "changed_entries" (owner 2026-11-17): workbook edits to Manufacturing entries an earlier update had
+  // already loaded (build/changed_old_entries.py), shown on the Manufacturing Executive Overview. The document names
+  // the seed it describes (core_hash); any other seed hides it, so the next update replaces or clears it.
+  const CHANGED_ENTRY_TABLE_LABEL = {
+    sales_tickets: 'Sales Ticket',
+    raw_purchases: 'Raw Material Ticket',
+    expenses: 'Expense',
+    receipts: 'Customer Receipt',
+    settlements: 'Supplier Settlement',
+    salaries: 'Salary',
+    external_movements: 'External Movement',
+    loans: 'Loan',
+    loan_settlements: 'Loan Repayment',
+    conversions: 'FX Conversion'
+  };
+  const CHANGED_ENTRIES_SHOWN = 4;
+
+  // Which companies' entries the signed-in seat may see in the current scope: null when the notice is hidden,
+  // else a test on a company name.
+  function changedEntriesCompanyTest(u) {
+    u = u || activeUser();
+    if (!u || !isOwner(u) || isDemoScopeActive() || isOfficialScopeActive(u)) return null;
+    if ((typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing') !== 'Manufacturing') return null;
+    const b = STATE.changedEntries;
+    if (!b || b.status !== 'ok' || !Array.isArray(b.items)) return null;
+    const curCoreHash = String((SEED_MANIFEST && SEED_MANIFEST.coreHash) || '').trim();
+    if (!curCoreHash || String(b.core_hash || '').trim() !== curCoreHash) return null;
+    const scope = String(STATE.company || '').toLowerCase();
+    const groupScope = scope === 'manufacturing-group' || scope === 'all' || scope === 'industry:manufacturing';
+    const cat = getCompanyCatalog();
+    const byName = new Map(cat.map(c => [String(c.name || '').trim().toLowerCase(), c]));
+    const allowed = allowedCompanyNames(u).map(x => String(x || '').toLowerCase());
+    return name => {
+      const low = String(name || '').trim().toLowerCase();
+      const co = byName.get(low) || null;
+      if (!co || (co.industry || 'Manufacturing') !== 'Manufacturing') return false;
+      if (allowed.length && !allowed.includes(low)) return false;
+      return groupScope || co.key === scope;
+    };
+  }
+
+  function getActiveChangedEntries(u) {
+    const inView = changedEntriesCompanyTest(u);
+    if (!inView) return [];
+    return STATE.changedEntries.items.filter(x => {
+      if (!x || typeof x !== 'object' || !CHANGED_ENTRY_TABLE_LABEL[String(x.table || '')]) return false;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(x.date || '').slice(0, 10))) return false;
+      return inView(x.company);
+    });
+  }
+
+  // Entries listed for the companies on screen (the notice carries a count per company; 12 entries at most travel).
+  function changedEntriesTotalInView(shownCount) {
+    const inView = changedEntriesCompanyTest();
+    const by = STATE.changedEntries && STATE.changedEntries.listed_by_company;
+    if (!inView || !by || typeof by !== 'object' || Array.isArray(by)) return shownCount;
+    let total = 0;
+    Object.keys(by).forEach(name => { if (inView(name)) total += _posFiniteInt(by[name]); });
+    return Math.max(total, shownCount);
+  }
+
+  function renderChangedEntryChangeHtml(x) {
+    const usd = v => `<b class="cf-behind-num" data-no-i18n="1">${esc(fmtUSD(Number(v) || 0, 2))}</b>`;
+    const name = v => `<span class="cf-behind-party" data-no-i18n="1">${esc(String(v || '').trim() || '-')}</span>`;
+    const kind = String(x.kind || '');
+    if (kind === 'removed' && _isFiniteNum(x.old_usd)) return `${usd(x.old_usd)} <span>removed from the workbook</span>`;
+    if (kind === 'added_late' && _isFiniteNum(x.new_usd)) return `${usd(x.new_usd)} <span>added with an earlier date</span>`;
+    if (kind === 'party_rename') {
+      const n = _posFiniteInt(x.count);
+      return `<span>Party renamed on</span> <b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(n))}</b> <span>entries</span><span data-no-i18n="1">:</span> ${name(x.party)} <span>changed to</span> ${name(x.new_party)}`;
+    }
+    if (kind !== 'edit') return '';
+    const fields = Array.isArray(x.fields) ? x.fields.map(String) : [];
+    const parts = [];
+    if (fields.includes('amount') && _isFiniteNum(x.old_usd) && _isFiniteNum(x.new_usd)) {
+      const up = Number(x.new_usd) > Number(x.old_usd);
+      parts.push(`${usd(x.old_usd)} <span>changed to</span> <b class="cf-behind-num ${up ? 'good' : 'crit'}" data-no-i18n="1">${esc(fmtUSD(Number(x.new_usd), 2))}</b>`);
+    }
+    if (fields.includes('date') && /^\d{4}-\d{2}-\d{2}$/.test(String(x.new_date || ''))) {
+      parts.push(`<span>date changed to</span> <span class="cf-behind-num" data-no-i18n="1">${esc(fmtDateDMY(x.new_date))}</span>`);
+    }
+    if (fields.includes('party') && String(x.new_party || '').trim()) {
+      parts.push(`<span>party changed to</span> ${name(x.new_party)}`);
+    }
+    if (!parts.length) {
+      parts.push(`${_isFiniteNum(x.new_usd) ? usd(x.new_usd) + ' ' : ''}<span>details changed</span>`);
+    }
+    return parts.join('<span data-no-i18n="1">, </span>');
+  }
+
+  function renderChangedEntriesNoteHtml(items) {
+    if (!Array.isArray(items) || !items.length) return '';
+    const b = STATE.changedEntries || {};
+    const scope = String(STATE.company || '').toLowerCase();
+    const singleCo = !(scope === 'manufacturing-group' || scope === 'all' || scope === 'industry:manufacturing');
+    const segs = items.slice(0, CHANGED_ENTRIES_SHOWN).map(x => {
+      const change = renderChangedEntryChangeHtml(x);
+      if (!change) return '';
+      const coPrefix = singleCo ? '' : `<b data-no-i18n="1"><span class="cf-behind-co-name">${esc(String(x.company || '').trim())}</span><span class="cf-behind-colon">:</span></b> `;
+      const label = CHANGED_ENTRY_TABLE_LABEL[String(x.table)];
+      const party = x.kind === 'party_rename' ? '' : String(x.party || '').trim();
+      const doc = String(x.doc || '').trim();
+      const who = `${party ? ` <span class="cf-behind-party" data-no-i18n="1">${esc(party)}</span>` : ''}${doc ? ` <span class="cf-behind-num" data-no-i18n="1">#${esc(doc)}</span>` : ''}`;
+      return `<span class="cf-behind-co ce-item" data-ce-table="${esc(String(x.table))}">${coPrefix}${renderBehindDayPill(x.date)} <span>${esc(label)}</span>${who}<span data-no-i18n="1">:</span> ${change}</span>`;
+    }).filter(Boolean);
+    if (!segs.length) return '';
+    const extra = Math.max(0, changedEntriesTotalInView(items.length) - segs.length);
+    const moreHtml = extra > 0 ? ` <span class="cf-behind-more"><b class="cf-behind-num" data-no-i18n="1">+${extra}</b> <span>more</span></span>` : '';
+    const untilRaw = String(b.until || '').slice(0, 10);
+    const leadHtml = `<span class="cf-behind-lead"><span>Loaded entries changed in the workbooks</span>${/^\d{4}-\d{2}-\d{2}$/.test(untilRaw) ? ` <span class="cf-behind-cut cf-behind-num" data-no-i18n="1">(${esc(fmtDateDMY(untilRaw))})</span>` : ''}<span data-no-i18n="1">:</span></span> `;
+    return `<div class="cf-behind-note mfg-changed-entries-note" id="mfgChangedEntriesNote" role="status"><span class="badge badge-warn cf-behind-badge"><span>Edited in Workbook</span></span> <span class="cf-behind-items">${leadHtml}${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}${moreHtml}</span> <span class="cf-behind-tail"><span>Included in the last update</span></span></div>`;
   }
 
   function tableToCsv(table) {
@@ -21104,6 +21222,7 @@
     const attActionCount = (arOvd > 0 ? 1 : 0) + openSentinels.length + totPending + (tb.ok === false ? 1 : 0);
 
     return `
+      ${renderChangedEntriesNoteHtml(getActiveChangedEntries())}
       <!-- 1. SINGLE-SCREEN CEO COCKPIT: 4 HEADLINE TELEMETRY KPIS -->
       <section class="kpis kpis-4 ceo-kpis" aria-label="Executive Key Performance Indicators">
         ${kpiCards.map(renderCeoKpiCard).join('')}
@@ -87493,6 +87612,7 @@
           ${fld('External Invoice No.', inp('f_extinvoice', 'text', '', 'placeholder="Customer external ref"'), { id: 'wrap_f_extinvoice', hidden: true })}
           ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Optional PO / dispatch ref"'), { id: 'wrap_f_reference' })}
           <div class="form-field check-field" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok">Post anyway — duplicate ticket number confirmed</label></div>
+          ${nearCopyBoxHtml()}
           ${notesField}
         </div>
         <div id="salesLiveContextStrip" class="att-contract-strip" hidden></div>
@@ -87582,6 +87702,7 @@
           ${fld('Supplier Invoice No.', inp('f_extinvoice', 'text', pendRawEditRow ? (pendRawEditRow.external_invoice || '') : '', 'placeholder="Supplier / hauler invoice #"'), { id: 'wrap_f_extinvoice' })}
           ${fld('Reference', inp('f_reference', 'text', pendRawEditRow ? (pendRawEditRow.reference || '') : '', 'placeholder="Weighbridge / voucher ref"'), { id: 'wrap_f_reference' })}
           <div class="form-field check-field" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok">Post anyway - duplicate ticket number confirmed</label></div>
+          ${pendRawEditRow ? '' : nearCopyBoxHtml()}
           ${rawNotesField}
         </div>
         <div id="rawLiveContextStrip" class="att-contract-strip" hidden></div>
@@ -87828,6 +87949,7 @@
           ${fld('Reference', inp('f_reference', 'text', expRefVal, pendEditRow ? 'placeholder="Enter supplier invoice #..."' : 'placeholder="Supplier invoice or slip #"'), { id: 'wrap_f_reference' })}
           ${expNotesField}
           <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
+          ${nearCopyBoxHtml()}
         </div>
         <div id="expLiveContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
         <div class="live-calc">
@@ -89830,6 +89952,160 @@
         : `Same-day duplicate ${hit.kindLabel} detected (${hit.summary}) - enter a distinct Reference or tick to confirm intentional second entry`;
     }
     return hit;
+  }
+
+  // A second copy at the keyboard (owner 2026-11-17). The six "app-only" rows of 2026-11-16 were workbook entries keyed
+  // again with one slip: ticket 16833 for 16883, an amount before VAT, the wrong company. Same rules as the top-up's
+  // one-difference matcher (build/reconcile_cloud_store.py ticket_no_one_slip and close_twin_difference), so Post
+  // warns about exactly what the top-up would later strike through. A warning only: ticking the box posts it.
+  const NEAR_COPY_VAT_RATE = 0.11;
+  const NEAR_COPY_MIN_VAT = 1.0;
+  // Ticket pads are shared and a truck's trips of one day carry nearby numbers (16833, 16834, 16841): on the real seed
+  // (2026-11-17) a slip in the last two digits or a swap of them matched another real load of the same day, customer,
+  // truck and amount on 17% of sales and 33% of raw tickets, so at the keyboard it cannot be told from the next trip.
+  // Only slips that move the number by 100 or more (a digit missing or extra, a digit in the hundreds or above) are
+  // warned here: 0.03% of sales and 0.26% of raw tickets. The top-up's matcher still catches the closer slips.
+  const NEAR_COPY_MIN_TICKET_GAP = 100;
+
+  // Two ticket numbers one keying slip apart: one digit different, one missing or extra, or two neighbours swapped.
+  // Only all-digit numbers of four digits or more.
+  function ticketNoOneSlip(a, b) {
+    a = normTicketNo(a);
+    b = normTicketNo(b);
+    if (a === b || !/^\d+$/.test(a) || !/^\d+$/.test(b) || Math.min(a.length, b.length) < 4) return false;
+    if (a.length === b.length) {
+      const diff = [];
+      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diff.push(i);
+      if (diff.length === 1) return true;
+      return diff.length === 2 && diff[1] === diff[0] + 1 && a[diff[0]] === b[diff[1]] && a[diff[1]] === b[diff[0]];
+    }
+    if (Math.abs(a.length - b.length) !== 1) return false;
+    const lo = a.length < b.length ? a : b;
+    const hi = a.length < b.length ? b : a;
+    for (let i = 0; i < hi.length; i++) if (hi.slice(0, i) + hi.slice(i + 1) === lo) return true;
+    return false;
+  }
+
+  // The 11% VAT apart either way: one amount is the other plus VAT (VAT part of $1 or more).
+  function amountsVatApart(a, b) {
+    a = Number(a) || 0;
+    b = Number(b) || 0;
+    if (a <= 0.005 || b <= 0.005 || Math.abs(a - b) < 0.5) return false;
+    return [[a, b], [b, a]].some(([net, gross]) => {
+      const vatPart = net * NEAR_COPY_VAT_RATE;
+      return vatPart >= NEAR_COPY_MIN_VAT && Math.abs(gross - net * (1 + NEAR_COPY_VAT_RATE)) < Math.min(0.5, 0.25 * vatPart);
+    });
+  }
+
+  function nearCopyRowUsd(crKey, r) {
+    if (crKey === 'sales_tickets') return Number(r.total_ttc != null ? r.total_ttc : (Number(r.total || 0) + Number(r.vat || 0))) || 0;
+    if (crKey === 'raw_purchases') return Number(r.total || 0) || 0;
+    return Number(r.amount || 0) || 0;
+  }
+
+  function nearCopyPool(crKey) {
+    const seedRows = (SEED.records && SEED.records[crKey]) || [];
+    const customRows = (STATE.customRecords && STATE.customRecords[crKey]) || [];
+    return customRows.length ? seedRows.concat(customRows) : seedRows;
+  }
+
+  // The existing entry the record looks like a second copy of, or null.
+  function findNearCopyEntry(crKey, rec) {
+    if (!rec || !['sales_tickets', 'raw_purchases', 'expenses'].includes(crKey)) return null;
+    if (rec.removed_slip || rec.ticket_disposition || rec._post_as_paired_return || rec.price_pending || rec.group_transfer_id) return null;
+    const day = String(rec.date || '').slice(0, 10);
+    const co = norm(rec.company || '');
+    const amt = nearCopyRowUsd(crKey, rec);
+    if (!day || !co || !(amt > 0.005)) return null;
+    const digits = v => String(v || '').replace(/\D/g, '');
+    const recTruck = digits(rec.truck);
+    const recParty = crKey === 'sales_tickets' ? norm(rec.customer || '') : (crKey === 'raw_purchases' ? norm(rec.site || rec.site_owner || '') : normSupPayable(rec.supplier || ''));
+    if (!recParty) return null;
+    const recInv = normTicketNo(cleanVoucherRef(rec.invoice || rec.reference));
+    const rows = nearCopyPool(crKey);
+    const seen = new Set();
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || r.voided || r.voided_at || String(r.date || '').slice(0, 10) !== day || norm(r.company || '') !== co) continue;
+      if (rec.id && r.id && String(r.id) === String(rec.id)) continue;
+      if (isSelfEditingRow(r, crKey)) continue;
+      if (r.id) {
+        if (seen.has(String(r.id))) continue;
+        seen.add(String(r.id));
+      }
+      if (crKey === 'sales_tickets' || crKey === 'raw_purchases') {
+        if (r.removed_slip || r.ticket_disposition === 'remove_slip') continue;
+        const party = crKey === 'sales_tickets' ? norm(r.customer || '') : norm(r.site || r.site_owner || '');
+        if (party !== recParty) continue;
+        const rTruck = digits(r.truck);
+        if (recTruck && rTruck && recTruck !== rTruck) continue;
+        if (Math.abs(nearCopyRowUsd(crKey, r) - amt) >= 1.0) continue;
+        if (!ticketNoOneSlip(rec.ticket_no, r.ticket_no)) continue;
+        if (Math.abs(Number(normTicketNo(rec.ticket_no)) - Number(normTicketNo(r.ticket_no))) < NEAR_COPY_MIN_TICKET_GAP) continue;
+        return { row: r, reason: 'ticket' };
+      }
+      if (r.price_pending || normSupPayable(r.supplier || '') !== recParty) continue;
+      if (rec.equipment && r.equipment && norm(rec.equipment) !== norm(r.equipment)) continue;
+      const rInv = normTicketNo(cleanVoucherRef(r.invoice || r.reference));
+      if (recInv && rInv && recInv !== rInv) continue;
+      if (!amountsVatApart(amt, nearCopyRowUsd(crKey, r))) continue;
+      return { row: r, reason: 'vat' };
+    }
+    return null;
+  }
+
+  // Shows (or hides) the confirm box under the form; a different match unticks it.
+  function syncNearCopyBanner(crKey, hit) {
+    const wrap = $('wrap_nearcopyok');
+    if (!wrap) return false;
+    const cb = $('f_nearcopyok');
+    const hint = $('hint_nearcopy');
+    if (!hit) {
+      FORM_UI.lastNearCopySig = '';
+      wrap.hidden = true;
+      if (cb) cb.checked = false;
+      if (hint) hint.innerHTML = '';
+      return true;
+    }
+    const sig = `${crKey}|${hit.row.id || ''}|${hit.reason}`;
+    if (FORM_UI.lastNearCopySig !== sig) {
+      FORM_UI.lastNearCopySig = sig;
+      if (cb) cb.checked = false;
+    }
+    wrap.hidden = false;
+    if (hint) {
+      const r = hit.row;
+      const label = crKey === 'sales_tickets' ? 'Sales Ticket' : (crKey === 'raw_purchases' ? 'Raw Material Ticket' : 'Expense');
+      const ref = crKey === 'expenses' ? cleanVoucherRef(r.invoice || r.reference) : String(r.ticket_no || '');
+      const party = crKey === 'sales_tickets' ? r.customer : (crKey === 'raw_purchases' ? (r.site || r.site_owner) : r.supplier);
+      const bits = [fmtDateDMY(String(r.date || '').slice(0, 10)), party, r.truck || '', fmtUSD(nearCopyRowUsd(crKey, r), 2)].filter(Boolean);
+      const reason = hit.reason === 'ticket'
+        ? 'Same day, party, truck and amount, ticket number one digit apart'
+        : 'Same day and supplier, amount differs by exactly the 11% VAT';
+      hint.innerHTML = `<span>${esc(reason)}</span><span data-no-i18n="1">: </span><span>${esc(label)}</span><span data-no-i18n="1">${ref ? ' #' + esc(ref) : ''} · ${esc(bits.join(' · '))}</span>`;
+    }
+    return true;
+  }
+
+  // What Post does about a likely second copy. `orig` is the row being edited (null for a new entry), `ticked` the
+  // confirm box. An edit is checked only when it changes what identifies the entry, and never against the entry it
+  // was already confirmed beside. Returns { hit, block, nearCopyOf } (nearCopyOf absent = leave the saved link as is).
+  function nearCopyDecision(crKey, record, orig, ticked) {
+    const o = orig || null;
+    const idKeys = ['company', 'date', 'ticket_no', 'customer', 'site', 'site_owner', 'supplier', 'truck', 'reference', 'invoice'];
+    const identityChanged = !o || idKeys.some(k => norm(String(record[k] ?? '')) !== norm(String(o[k] ?? '')))
+      || Math.abs(nearCopyRowUsd(crKey, record) - nearCopyRowUsd(crKey, o)) >= 0.005;
+    if (!identityChanged) return { hit: null, block: false };
+    const hit = findNearCopyEntry(crKey, record);
+    if (hit && o && o.near_copy_of && String(o.near_copy_of) === String(hit.row.id || '')) return { hit: null, block: false };
+    // `ticked` may be a test on the match (the box counts only for the match it was shown for): one scan per Post.
+    const isTicked = hit ? (typeof ticked === 'function' ? Boolean(ticked(hit)) : Boolean(ticked)) : false;
+    if (hit) return isTicked ? { hit, block: false, nearCopyOf: String(hit.row.id || '') } : { hit, block: true };
+    return (o && o.near_copy_of) ? { hit: null, block: false, nearCopyOf: '' } : { hit: null, block: false };
+  }
+
+  function nearCopyBoxHtml() {
+    return `<div class="form-field check-field span-3 near-copy-field" id="wrap_nearcopyok" hidden><input type="checkbox" id="f_nearcopyok"><label for="f_nearcopyok">Post anyway: this is a different entry from the one below</label><span class="hint warn" id="hint_nearcopy"></span></div>`;
   }
 
   function isOwnUnit(truckRow, company) {
@@ -106360,6 +106636,18 @@
       if (moneyChanged) {
         addErr($('f_amount') ? 'f_amount' : 'f_date', 'This row is one side of a Group Transfer. To change the amount, dates, settlement or companies, void the transfer and enter it again.');
       }
+    }
+    // A second copy at the keyboard (owner 2026-11-17): warn at Post, post once the box is ticked. An edit is checked
+    // only when it changes what identifies the entry, and never against the entry it was already confirmed beside.
+    if (record && (f === 'sales' || f === 'raw' || f === 'expense') && $('wrap_nearcopyok')) {
+      const o = (editCtx && editCtx.crKey === crKey && editCtx.orig) ? editCtx.orig : null;
+      // The box is read before the banner is refreshed: a different match unticks it, and that must block this Post.
+      const prevSig = FORM_UI.lastNearCopySig || '';
+      const tickedBefore = Boolean($('f_nearcopyok') && $('f_nearcopyok').checked);
+      const ncd = nearCopyDecision(crKey, record, o, hit => tickedBefore && prevSig === `${crKey}|${hit.row.id || ''}|${hit.reason}`);
+      syncNearCopyBanner(crKey, ncd.hit);
+      if (ncd.block) addErr('f_nearcopyok', 'Possible second copy of an entry already in ISABI. Check the entry shown under the form, then tick the box to post anyway.');
+      if (ncd.nearCopyOf !== undefined) record.near_copy_of = ncd.nearCopyOf;
     }
     return { errors, fieldErrors, record, crKey };
   }
@@ -127869,6 +128157,7 @@
     STATE.authed = false;
     STATE.cashflowBehind = null;
     STATE.sourceBehind = null;
+    STATE.changedEntries = null;
     STATE.behindDayPrev = null;
     _cashflowBehindGen++;
     _authSessionEpoch++;
@@ -128055,6 +128344,7 @@
     // Nothing kept for the seat that is leaving stays in memory (kept lookup indexes and workforce audits).
     STATE.cashflowBehind = null;
     STATE.sourceBehind = null;
+    STATE.changedEntries = null;
     STATE.behindDayPrev = null;
     _cashflowBehindGen++;
     _authSessionEpoch++;
@@ -128559,6 +128849,7 @@
     } else {
       STATE.cashflowBehind = null;
       STATE.sourceBehind = null;
+      STATE.changedEntries = null;
     }
     return true;
   }
