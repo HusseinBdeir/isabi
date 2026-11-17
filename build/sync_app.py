@@ -80,6 +80,7 @@ RELEASE_GATES = [
     ("isabi", "build/verify_google_maps_edge.mjs", "node"),          # Edge Google Maps tiles/places/routes/elevation & quota counters
     ("isabi-app", "build/verify_gmaps_local.py", "python"),          # Local server.py Maps Routes/quota/elevation & /api/alert_rules RBAC
     ("isabi", "build/verify_jwt_secret_keep.py", "python"),         # a deploy never replaces the live signing secret unless asked
+    ("isabi", "build/verify_parity_browser.mjs", "node"),          # headless browser launcher, CI D-Bus/sandbox flags & fallback
     ("isabi-app", "build/verify_changed_entries_notice.mjs", "node"),  # Owner notice: workbook edits to already-loaded entries
     ("isabi-app", "build/verify_near_copy.mjs", "node"),             # warn at Post on a likely second copy (ticket slip, 11% VAT apart)
 ]

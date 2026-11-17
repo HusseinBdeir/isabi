@@ -23,12 +23,12 @@
  *      Release log: THEO_RELEASE_LOG, `--release-log`, else ~/bhfirms/memory.
  */
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
-import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { launchHeadlessBrowser } from './_headless_browser.mjs';
 import { cmpVer, parseReleaseLog, syncReleaseLogStatusLines } from './_release_log.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,6 +40,7 @@ function parseArgs(argv) {
     syncReleaseLog: false,
     allowLiveLlm: false,
     skipEdgeHttp: false,
+    smokeBrowser: false,
     // THEO memory folder (Cloudflare memory vault). Absent in CI: Phase E is skipped and Phase A
     // compares the live shell with the repo heads only (it still runs and passes).
     releaseLogPath: process.env.THEO_RELEASE_LOG || path.join(
@@ -58,6 +59,7 @@ function parseArgs(argv) {
     else if (a === '--sync-release-log') opts.syncReleaseLog = true;
     else if (a === '--allow-live-llm') opts.allowLiveLlm = true;
     else if (a === '--skip-edge-http') opts.skipEdgeHttp = true;
+    else if (a === '--smoke-browser') opts.smokeBrowser = true;
     else if (a === '--release-log' && argv[i + 1]) opts.releaseLogPath = argv[++i];
     else if (a.startsWith('--release-log=')) opts.releaseLogPath = a.slice(14);
     else if (a === '--dev-repo' && argv[i + 1]) opts.devRepoPath = argv[++i];
@@ -171,42 +173,110 @@ async function fetchHttpProbe(urlStr, method = 'GET') {
   return { status: res.status, headers, bodyBytes: buf.length, text: buf.toString('utf8') };
 }
 
-function findBrowserBinary() {
-  const candidates = [
-    process.env.BROWSER_BIN,
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    '/usr/bin/google-chrome',
-    '/usr/bin/microsoft-edge',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/chromium'
-  ].filter(Boolean);
-  return candidates.find(p => fs.existsSync(p)) || '';
-}
+async function createCdpClient(wsUrl, handlers = {}) {
+  const ws = new WebSocket(wsUrl);
+  let msgId = 0;
+  const pending = new Map();
 
-function getJsonHttp(urlStr) {
-  return new Promise((resolve, reject) => {
-    http.get(urlStr, res => {
-      let b = '';
-      res.on('data', c => { b += c; });
-      res.on('end', () => {
-        try { resolve(JSON.parse(b)); } catch (e) { reject(e); }
-      });
-    }).on('error', reject);
+  await new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('Timed out connecting to CDP WebSocket')), 10000);
+    ws.onopen = () => { clearTimeout(t); resolve(); };
+    ws.onerror = err => { clearTimeout(t); reject(err instanceof Error ? err : new Error('CDP WebSocket error')); };
   });
+
+  const client = {
+    send(method, params = {}, timeoutMs = 25000) {
+      return new Promise((resolve, reject) => {
+        const id = ++msgId;
+        const timer = setTimeout(() => {
+          if (pending.has(id)) {
+            pending.delete(id);
+            reject(new Error(`CDP timeout on ${method}`));
+          }
+        }, timeoutMs);
+        pending.set(id, {
+          resolve: v => { clearTimeout(timer); resolve(v); },
+          reject: e => { clearTimeout(timer); reject(e); }
+        });
+        ws.send(JSON.stringify({ id, method, params }));
+      });
+    },
+    async evaluate(expression, timeoutMs = 45000) {
+      const r = await client.send('Runtime.evaluate', {
+        expression,
+        awaitPromise: true,
+        returnByValue: true
+      }, timeoutMs);
+      if (r.exceptionDetails) {
+        const desc = r.exceptionDetails.exception
+          ? (r.exceptionDetails.exception.description || r.exceptionDetails.text)
+          : r.exceptionDetails.text;
+        throw new Error(desc || 'Runtime.evaluate exception');
+      }
+      return r.result ? r.result.value : undefined;
+    },
+    close() {
+      for (const [id, p] of pending.entries()) {
+        pending.delete(id);
+        p.reject(new Error('CDP client closed'));
+      }
+      try { ws.close(); } catch (_) {}
+    }
+  };
+
+  ws.onclose = () => {
+    for (const [id, p] of pending.entries()) {
+      pending.delete(id);
+      p.reject(new Error('CDP WebSocket closed unexpectedly'));
+    }
+  };
+  ws.onmessage = async ev => {
+    const msg = JSON.parse(ev.data);
+    if (msg.id && pending.has(msg.id)) {
+      const p = pending.get(msg.id);
+      pending.delete(msg.id);
+      if (msg.error) p.reject(new Error(msg.error.message));
+      else p.resolve(msg.result);
+      return;
+    }
+    if (typeof handlers.onEvent === 'function') {
+      await handlers.onEvent(msg, client);
+    }
+  };
+
+  return client;
 }
 
-async function waitDevtools(port, tries = 60) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      await getJsonHttp(`http://127.0.0.1:${port}/json/version`);
-      return true;
-    } catch (_) {
-      await sleep(250);
+async function runSmokeBrowserCheck() {
+  let session = null;
+  let cdp = null;
+  try {
+    session = await launchHeadlessBrowser({
+      width: 1440,
+      height: 900,
+      onCandidateFailed: a => info('browser-fallback', `${a.bin} did not start, trying next`)
+    });
+    cdp = await createCdpClient(session.pageTarget.webSocketDebuggerUrl);
+    await cdp.send('Runtime.enable');
+    const ua = await cdp.evaluate('navigator.userAgent', 10000);
+    if (typeof ua !== 'string' || !ua.trim()) {
+      throw new Error('navigator.userAgent returned empty value');
     }
+    pass('smoke-browser', `${session.browserBin} (${ua.slice(0, 80)})`);
+  } catch (err) {
+    if (err && err.code === 'NO_BROWSER_BINARY') {
+      fail('smoke-browser-binary', err.message);
+    } else {
+      fail('smoke-browser', err && err.message ? err.message : String(err));
+    }
+  } finally {
+    if (cdp) cdp.close();
+    if (session) await session.close();
   }
-  return false;
+  const passCount = checks.filter(c => c.ok).length;
+  const failCount = checks.filter(c => !c.ok).length;
+  console.log(`\nLive Parity Summary: ${passCount}/${checks.length} passed (${failCount} failed)`);
+  process.exit(failCount > 0 ? 1 : 0);
 }
 
 function buildDeterministicAiStubPayload(postBodyStr) {
@@ -234,6 +304,10 @@ function buildDeterministicAiStubPayload(postBodyStr) {
 }
 
 async function main() {
+  if (OPTS.smokeBrowser) {
+    await runSmokeBrowserCheck();
+    return;
+  }
   const report = {
     timestamp: new Date().toISOString(),
     targetUrl: OPTS.url,
@@ -385,106 +459,43 @@ async function main() {
   // =========================================================================
   // PHASE C: Headless CDP Boot + 6-Industry Hub, Sub-Tab & System-Tray Walk
   // =========================================================================
-  const browserBin = findBrowserBinary();
-  if (!browserBin) {
-    fail('phaseC-browser-binary', 'No headless Edge/Chrome binary found');
-    process.exit(1);
-  }
-
-  const dbgPort = 9420 + Math.floor(Math.random() * 350);
-  const udd = fs.mkdtempSync(path.join(os.tmpdir(), 'isabi-live-parity-'));
-  const browserArgs = [
-    '--headless=new',
-    '--enable-automation',
-    '--disable-ipc-flooding-protection',
-    `--remote-debugging-port=${dbgPort}`,
-    `--user-data-dir=${udd}`,
-    '--no-first-run',
-    '--disable-gpu',
-    '--window-size=1440,900'
-  ];
-  if (process.platform !== 'win32') browserArgs.push('--no-sandbox', '--disable-dev-shm-usage');
-  browserArgs.push('about:blank');
-  const browser = spawn(browserBin, browserArgs, { stdio: 'ignore', windowsHide: true });
-
-  let ws = null;
-  let msgId = 0;
-  const pending = new Map();
+  let session = null;
+  let cdp = null;
   const runtimeExceptions = [];
-
-  function cdpSend(method, params = {}, timeoutMs = 25000) {
-    return new Promise((resolve, reject) => {
-      const id = ++msgId;
-      const timer = setTimeout(() => {
-        if (pending.has(id)) {
-          pending.delete(id);
-          reject(new Error(`CDP timeout on ${method}`));
-        }
-      }, timeoutMs);
-      pending.set(id, {
-        resolve: v => { clearTimeout(timer); resolve(v); },
-        reject: e => { clearTimeout(timer); reject(e); }
-      });
-      ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  async function evaluate(expression, timeoutMs = 45000) {
-    const r = await cdpSend('Runtime.evaluate', {
-      expression,
-      awaitPromise: true,
-      returnByValue: true
-    }, timeoutMs);
-    if (r.exceptionDetails) {
-      const desc = r.exceptionDetails.exception
-        ? (r.exceptionDetails.exception.description || r.exceptionDetails.text)
-        : r.exceptionDetails.text;
-      throw new Error(desc || 'Runtime.evaluate exception');
-    }
-    return r.result ? r.result.value : undefined;
-  }
+  const cdpSend = (method, params, timeoutMs) => cdp.send(method, params, timeoutMs);
+  const evaluate = (expression, timeoutMs) => cdp.evaluate(expression, timeoutMs);
 
   try {
-    if (!(await waitDevtools(dbgPort))) {
-      throw new Error('Browser DevTools port did not come up');
-    }
-    const targets = await getJsonHttp(`http://127.0.0.1:${dbgPort}/json`);
-    const pageTarget = targets.find(t => t.type === 'page');
-    if (!pageTarget) throw new Error('No page target found in headless browser');
-
-    ws = new WebSocket(pageTarget.webSocketDebuggerUrl);
-    await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
-    ws.onmessage = async ev => {
-      const msg = JSON.parse(ev.data);
-      if (msg.id && pending.has(msg.id)) {
-        const p = pending.get(msg.id);
-        pending.delete(msg.id);
-        if (msg.error) p.reject(new Error(msg.error.message));
-        else p.resolve(msg.result);
-        return;
-      }
-      if (msg.method === 'Runtime.exceptionThrown') {
-        const d = msg.params && msg.params.exceptionDetails;
-        const text = (d && ((d.exception && d.exception.description) || d.text)) || 'Unknown exception';
-        runtimeExceptions.push(text.slice(0, 300));
-      } else if (msg.method === 'Fetch.requestPaused') {
-        const { requestId, request } = msg.params;
-        try {
-          const stubBody = buildDeterministicAiStubPayload(request && request.postData);
-          await cdpSend('Fetch.fulfillRequest', {
-            requestId,
-            responseCode: 200,
-            responseHeaders: [
-              { name: 'Content-Type', value: 'application/json; charset=utf-8' },
-              { name: 'Cache-Control', value: 'no-store' }
-            ],
-            body: Buffer.from(stubBody, 'utf8').toString('base64')
-          });
-        } catch (_) {
-          try { await cdpSend('Fetch.continueRequest', { requestId }); } catch (__) {}
+    session = await launchHeadlessBrowser({
+      width: 1440,
+      height: 900,
+      onCandidateFailed: a => info('browser-fallback', `${a.bin} did not start, trying next`)
+    });
+    cdp = await createCdpClient(session.pageTarget.webSocketDebuggerUrl, {
+      onEvent: async (msg, client) => {
+        if (msg.method === 'Runtime.exceptionThrown') {
+          const d = msg.params && msg.params.exceptionDetails;
+          const text = (d && ((d.exception && d.exception.description) || d.text)) || 'Unknown exception';
+          runtimeExceptions.push(text.slice(0, 300));
+        } else if (msg.method === 'Fetch.requestPaused') {
+          const { requestId, request } = msg.params;
+          try {
+            const stubBody = buildDeterministicAiStubPayload(request && request.postData);
+            await client.send('Fetch.fulfillRequest', {
+              requestId,
+              responseCode: 200,
+              responseHeaders: [
+                { name: 'Content-Type', value: 'application/json; charset=utf-8' },
+                { name: 'Cache-Control', value: 'no-store' }
+              ],
+              body: Buffer.from(stubBody, 'utf8').toString('base64')
+            });
+          } catch (_) {
+            try { await client.send('Fetch.continueRequest', { requestId }); } catch (__) {}
+          }
         }
       }
-    };
+    });
 
     await cdpSend('Runtime.enable');
     await cdpSend('Page.enable');
@@ -1097,18 +1108,14 @@ async function main() {
       fail('phaseC-zero-runtime-exceptions', `${runtimeExceptions.length} exception(s): ${runtimeExceptions[0]}`);
     }
   } catch (err) {
-    fail('phaseC-browser-harness', err && err.message ? err.message : String(err));
-  } finally {
-    try { if (ws) ws.close(); } catch (_) {}
-    if (process.platform === 'win32' && browser && browser.pid) {
-      try {
-        execFileSync('taskkill', ['/PID', String(browser.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
-      } catch (_) {}
+    if (err && err.code === 'NO_BROWSER_BINARY') {
+      fail('phaseC-browser-binary', err.message);
     } else {
-      try { browser.kill('SIGKILL'); } catch (_) {}
+      fail('phaseC-browser-harness', err && err.message ? err.message : String(err));
     }
-    await sleep(250);
-    try { fs.rmSync(udd, { recursive: true, force: true }); } catch (_) {}
+  } finally {
+    if (cdp) cdp.close();
+    if (session) await session.close();
   }
 
   if (OPTS.jsonOut) {

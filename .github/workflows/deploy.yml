@@ -61,7 +61,10 @@ jobs:
           node --check functions/_middleware.js
           node --check functions/_lib/kiosk_verify.js
           node --check functions/_lib/d1_store.js
+          node --check build/_headless_browser.mjs
           node --check build/verify_live_parity.mjs
+          node --no-warnings build/verify_parity_browser.mjs
+          node --no-warnings build/verify_live_parity.mjs --smoke-browser
           node --check build/_release_log.mjs
           node --no-warnings build/verify_release_log_sync.mjs
           python3 build/verify_deploy_cli.py
