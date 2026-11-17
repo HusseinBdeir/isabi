@@ -4951,16 +4951,17 @@
     }
   }
 
+  // Satellite only (owner 2026-11-17): every map shows satellite imagery with street labels
+  // ('hybrid'), so all seats share one Edge tile cache. A saved 'roadmap' choice is ignored.
+  const FIXED_MAP_LAYER_STYLE = 'hybrid';
+  try {
+    // Drop the old Map | Satellite choice once per load (dead since the switch was removed).
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(MAP_LAYER_KEY);
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('demo_sbx_' + MAP_LAYER_KEY);
+  } catch (_) {}
+
   function getMapLayerStyle() {
-    try {
-      const raw = _isDemoGeoSession()
-        ? (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('demo_sbx_' + MAP_LAYER_KEY))
-        : (typeof localStorage !== 'undefined' && localStorage.getItem(MAP_LAYER_KEY));
-      const v = String(raw || '').trim().toLowerCase();
-      return v === 'hybrid' ? 'hybrid' : 'roadmap';
-    } catch (_) {
-      return 'roadmap';
-    }
+    return FIXED_MAP_LAYER_STYLE;
   }
 
   function _getGeoTileLang() {
@@ -4975,7 +4976,7 @@
   }
 
   function _buildGoogleTileUrl(style, lang) {
-    const s = style === 'hybrid' ? 'hybrid' : 'roadmap';
+    const s = FIXED_MAP_LAYER_STYLE;
     const l = (lang === 'ar' || lang === 'fr') ? lang : 'en';
     const qs = _isDemoGeoSession() ? '?demo=1' : '';
     return `./api/map-tiles/${s}/${l}/{z}/{x}/{y}${qs}`;
@@ -4983,15 +4984,6 @@
 
   function _syncBasemapControllerUi(ctrl) {
     if (!ctrl) return;
-    const style = getMapLayerStyle();
-    if (ctrl.switchEl) {
-      ctrl.switchEl.querySelectorAll('.geo-basemap-btn').forEach(btn => {
-        const isAct = btn.getAttribute('data-map-style') === style;
-        btn.classList.toggle('is-active', isAct);
-        btn.setAttribute('aria-pressed', isAct ? 'true' : 'false');
-      });
-      _trGeoDom(ctrl.switchEl);
-    }
     if (ctrl.attribEl) {
       const label = ctrl.isOsmFallback ? '© OpenStreetMap' : 'Map data © Google';
       ctrl.attribEl.innerHTML = `<span>${esc(label)}</span>`;
@@ -5011,14 +5003,12 @@
     });
   }
 
-  function setMapLayerStyle(style) {
-    const next = String(style || '').trim().toLowerCase() === 'hybrid' ? 'hybrid' : 'roadmap';
+  function setMapLayerStyle() {
+    // Kept for callers of MFG_GEO.setMapLayerStyle: the style is fixed, so this only remounts tiles.
+    const next = FIXED_MAP_LAYER_STYLE;
     try {
-      if (_isDemoGeoSession()) {
-        if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('demo_sbx_' + MAP_LAYER_KEY, next);
-      } else if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(MAP_LAYER_KEY, next);
-      }
+      if (typeof localStorage !== 'undefined') localStorage.removeItem(MAP_LAYER_KEY);
+      if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('demo_sbx_' + MAP_LAYER_KEY);
     } catch (_) {}
     _mountedMapControllers.forEach(ctrl => {
       if (ctrl) {
@@ -5142,30 +5132,7 @@
       container.querySelectorAll(':scope > .geo-basemap-switch, :scope > .geo-map-attrib').forEach(el => {
         try { el.remove(); } catch (_) {}
       });
-      const switchEl = document.createElement('div');
-      switchEl.className = 'geo-basemap-switch';
-      switchEl.setAttribute('role', 'group');
-      switchEl.setAttribute('aria-label', 'Map Type');
-      switchEl.innerHTML = [
-        '<button type="button" class="geo-basemap-btn" data-map-style="roadmap" aria-label="Switch to street map" aria-pressed="false"><span>Map</span></button>',
-        '<button type="button" class="geo-basemap-btn" data-map-style="hybrid" aria-label="Switch to satellite map with street labels" aria-pressed="false"><span>Satellite</span></button>'
-      ].join('');
-      if (L.DomEvent) {
-        try {
-          L.DomEvent.disableClickPropagation(switchEl);
-          L.DomEvent.disableScrollPropagation(switchEl);
-        } catch (_) {}
-      }
-      switchEl.addEventListener('click', ev => {
-        const btn = ev.target && ev.target.closest ? ev.target.closest('[data-map-style]') : null;
-        if (!btn) return;
-        ev.preventDefault();
-        ev.stopPropagation();
-        setMapLayerStyle(btn.getAttribute('data-map-style'));
-      });
-      container.appendChild(switchEl);
-      ctrl.switchEl = switchEl;
-
+      // No Map | Satellite switch: the map is satellite only (FIXED_MAP_LAYER_STYLE).
       const attribEl = document.createElement('div');
       attribEl.className = 'geo-map-attrib';
       attribEl.setAttribute('aria-hidden', 'true');
