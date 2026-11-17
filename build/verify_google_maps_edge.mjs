@@ -635,12 +635,13 @@ try {
     JSON.stringify([pTooLong.status, tNegCoord.status, tNonIntCoord.status, tBadStyle.status, tBadLang.status])
   );
 
-  // 17. Security/cache headers on 200 tile responses
+  // 17. Security/cache headers on 200 tile responses (30-day tile cache, owner 2026-11-17), miss and hit paths
   check(
-    tSec.headers.get('Cache-Control') === 'private, max-age=86400'
+    tSec.headers.get('Cache-Control') === 'private, max-age=2592000'
+    && tHit.headers.get('Cache-Control') === 'private, max-age=2592000'
     && tSec.headers.get('X-Content-Type-Options') === 'nosniff',
-    '17. Tile response sets Cache-Control: private, max-age=86400 and X-Content-Type-Options: nosniff',
-    JSON.stringify({ cc: tSec.headers.get('Cache-Control'), xcto: tSec.headers.get('X-Content-Type-Options') })
+    '17. Tile response (cache miss and hit) sets Cache-Control: private, max-age=2592000 (30 days) and X-Content-Type-Options: nosniff',
+    JSON.stringify({ cc: tSec.headers.get('Cache-Control'), ccHit: tHit.headers.get('Cache-Control'), xcto: tSec.headers.get('X-Content-Type-Options') })
   );
 
   // 18. POST /app/api/map-route computes Google Routes + DEM climb/grade/heavy-truck ETA and falls back cleanly on upstream 403

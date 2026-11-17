@@ -43,6 +43,9 @@ const DEFAULT_QUOTA_THRESHOLDS = Object.freeze({
 });
 
 const ALLOWED_LANGS = new Set(['en', 'ar', 'fr']);
+// Tiles are cached 30 days (TILE_CACHE_MAX_AGE_SEC) under `isabi-tile-cache.internal/v1/...`:
+// whenever a session setting below changes (mapType, layerTypes, region, imageFormat),
+// bump that `v1` segment or old tiles keep being served for up to 30 days.
 const STYLE_CONFIG = Object.freeze({
   roadmap: Object.freeze({ mapType: 'roadmap', layerTypes: null, imageFormat: 'png', fallbackFormat: 'image/png' }),
   satellite: Object.freeze({ mapType: 'satellite', layerTypes: null, imageFormat: 'jpeg', fallbackFormat: 'image/jpeg' }),
