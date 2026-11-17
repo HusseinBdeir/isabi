@@ -5505,6 +5505,7 @@ finally:
       && e45DemoTileSec.status === 200
       && e45AuthedHybrid.status === 200
       && /^image\/jpeg/i.test(String(e45AuthedHybrid.headers['content-type'] || ''))
+      && e45AuthedHybrid.headers['cache-control'] === 'private, max-age=2592000'
       && e45BadZoom.status === 400
       && e45PostTile.status === 405
       && e45UnauthPlaces.status === 401
@@ -5514,14 +5515,14 @@ finally:
       && e45AuthedPlaces.status === 200 && e45AuthedPlaces.json?.places?.[0]?.name === 'Al Ahed Stadium'
     );
     if (e45Ok) {
-      pass('edge-45-google-maps-proxy', 'Tiles 401/403/200 (PNG + hybrid JPEG) + zoom/method guards + Places 401/403/200');
+      pass('edge-45-google-maps-proxy', 'Tiles 401/403/200 (PNG + hybrid JPEG, 30-day cache) + zoom/method guards + Places 401/403/200');
     } else {
       fail('edge-45-google-maps-proxy', JSON.stringify({
         t401: e45UnauthTile.status,
         t403: e45CrossSiteTile.status,
         tDemoRef: [e45DemoTileRef.status, e45DemoTileRef.headers['content-type'], e45DemoTileRef.buf?.length],
         tDemoSec: e45DemoTileSec.status,
-        tHyb: [e45AuthedHybrid.status, e45AuthedHybrid.headers['content-type']],
+        tHyb: [e45AuthedHybrid.status, e45AuthedHybrid.headers['content-type'], e45AuthedHybrid.headers['cache-control']],
         tBadZoom: e45BadZoom.status,
         tPost: e45PostTile.status,
         pUnauth: e45UnauthPlaces.status,

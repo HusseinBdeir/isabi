@@ -50,6 +50,9 @@ const STYLE_CONFIG = Object.freeze({
 });
 
 const MAX_TILE_ZOOM = 20;
+// Tiles (satellite imagery since the app shows satellite only) are kept 30 days in the
+// Edge cache and the browser: a cache hit costs no Google tile request.
+const TILE_CACHE_MAX_AGE_SEC = 30 * 24 * 60 * 60;
 const SESSION_CACHE_TTL_MS = 60 * 1000;
 const SESSION_CACHE_MAX = 2000;
 const TILE_SESSION_REFRESH_BUFFER_SEC = 300;
@@ -562,7 +565,7 @@ export async function handleGoogleMapTile(request, env, rawSession, parts, opts 
           status: 200,
           headers: {
             'Content-Type': cachedResp.headers.get('Content-Type') || 'image/png',
-            'Cache-Control': 'private, max-age=86400',
+            'Cache-Control': `private, max-age=${TILE_CACHE_MAX_AGE_SEC}`,
             'X-Content-Type-Options': 'nosniff',
             'X-ISABI-Tile-Cache': 'HIT',
             'X-ISABI-Maps-Quota-State': memBand,
@@ -627,7 +630,7 @@ export async function handleGoogleMapTile(request, env, rawSession, parts, opts 
         status: 200,
         headers: {
           'Content-Type': fetched.contentType,
-          'Cache-Control': 'public, max-age=86400'
+          'Cache-Control': `public, max-age=${TILE_CACHE_MAX_AGE_SEC}`
         }
       });
       const putPromise = edgeCache.put(cacheUrl, toCache);
@@ -644,7 +647,7 @@ export async function handleGoogleMapTile(request, env, rawSession, parts, opts 
   const nextBand = (MONTHLY_USAGE_MEM.snapshot && MONTHLY_USAGE_MEM.snapshot.metrics.tiles_2d.band) || tileBand;
   const respHeaders = {
     'Content-Type': fetched.contentType,
-    'Cache-Control': 'private, max-age=86400',
+    'Cache-Control': `private, max-age=${TILE_CACHE_MAX_AGE_SEC}`,
     'X-Content-Type-Options': 'nosniff',
     'X-ISABI-Tile-Cache': 'MISS',
     'X-ISABI-Maps-Quota-State': nextBand,
