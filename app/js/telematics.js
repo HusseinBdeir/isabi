@@ -3202,7 +3202,7 @@
     const spd = sc === 'moving' && unit.speed_kph > 0 ? ` ${Math.round(unit.speed_kph)}kph` : (sc === 'power_cut' ? ' 0V' : '');
     const html = `
       <div style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:999px;background:${bg};color:#FFFFFF;font-size:10.5px;font-weight:800;font-family:var(--font-mono,monospace);box-shadow:0 2px 6px rgba(0,0,0,0.28);border:1.5px solid #FFFFFF;white-space:nowrap">
-        <span>${lbl}${esc(spd)}</span>
+        <span data-no-i18n="1" dir="ltr">${lbl}${esc(spd)}</span>
       </div>
     `;
     return L.divIcon({

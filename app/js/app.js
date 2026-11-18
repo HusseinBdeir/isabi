@@ -19710,6 +19710,8 @@
     valuesDiffer: chronoRowValuesDiffer,
     lastKeptPeriod: () => _lastChronoKeptPeriod,
     keptPeriodToast: chronoKeptPeriodToastText,
+    // The same rule on the schedules of the other five industries; read by build/verify_dated_log_server_save.mjs
+    siblingKeptPeriod: (formKey, rec, existingSelf) => describeSiblingChronoKeptPeriod(formKey, rec, existingSelf),
     // For the headless gate only: the snapshot a save takes so a refused save can be put back
     rollbackSnapForCheck: tables => (window.__MFG_HEADLESS_TEST ? _captureLedgerAndGeoRollbackSnap(tables || [], false) : null),
     formChangedValueForCheck: () => (window.__MFG_HEADLESS_TEST ? entryModalUserChangedValue() : undefined),
@@ -54113,6 +54115,7 @@
     if (voidedIds.size) {
       list = list.filter(x => x && !voidedIds.has(String(x.id || x.code || '').trim().toUpperCase()));
     }
+    const splitClosed = new Map();
     cust.slice().reverse().forEach(ca => {
       if (!ca || ca.voided || ca._scheduleVoided) return;
       const closeIds = Array.isArray(ca.autoClosePriorIds)
@@ -54125,13 +54128,19 @@
           hit.end_date = ca.autoCloseDate;
           hit.status = 'Closed Window';
           hit.backfill_status = `Auto-Closed at ${hit.end_date}`;
+          if (ca._continues_id) splitClosed.set(String(hit.id || '').trim().toUpperCase(), { end_date: hit.end_date, status: hit.status });
         }
       });
     });
     if (wfBucket) {
       list.forEach((r, i) => {
         const p = getIndustryWorkflowPatch(wfBucket, r.id);
-        if (p) list[i] = Object.assign({}, r, p);
+        if (!p) return;
+        list[i] = Object.assign({}, r, p);
+        // A schedule a save kept apart stays closed: a later workflow patch (a lease billed, say) writes its status, not
+        // its window, and must not count it as running again beside the new schedule
+        const sc = splitClosed.get(String(r.id || '').trim().toUpperCase());
+        if (sc) Object.assign(list[i], sc);
       });
     }
     return list;
@@ -54218,7 +54227,25 @@
       });
     });
 
+    // A schedule a save kept apart (planSiblingChronoSplit) and the new schedule that copied its principal, balance,
+    // pool share and drawings are one facility or partner: the totals count the one in force (holdingInForceRows).
+    // The kept row's own amounts stay as they are (an edit or an undo of it starts from them).
+    const flagKept = rows => {
+      const kept = new Set(rows.filter(r => r && r._continues_id).map(r => String(r._continues_id).trim().toUpperCase()));
+      rows.forEach((r, i) => {
+        if (!r) return;
+        // Set on every row from the current schedules (a copy saved from an edit never carries an old flag)
+        const isKept = kept.has(String(r.id || '').trim().toUpperCase());
+        if (isKept || r._split_kept) rows[i] = Object.assign({}, r, { _split_kept: isKept });
+      });
+    };
+    flagKept(facilitySchedules);
+    flagKept(partnerAgreements);
     return { partnerAgreements, partnerDistributions, facilitySchedules, loanAccruals };
+  }
+
+  function holdingInForceRows(rows) {
+    return (Array.isArray(rows) ? rows : []).filter(r => r && !r._split_kept);
   }
 
   function renderHoldingPartners(submode = 'main') {
@@ -54298,9 +54325,9 @@
 
     const hldSched = computeHoldingSchedules();
     const chronoPrts = regPanelRows('hldPartnerChronoPanel', hldSched.partnerAgreements || []);
-    const sumPrtEnt = round2(chronoPrts.reduce((a, r) => a + Number(r.entitled_usd || 0), 0));
-    const sumPrtDrw = round2(chronoPrts.reduce((a, r) => a + Number(r.drawn_usd || 0), 0));
-    const sumPrtOpn = round2(chronoPrts.reduce((a, r) => a + Number(r.open_usd || 0), 0));
+    const sumPrtEnt = round2(holdingInForceRows(chronoPrts).reduce((a, r) => a + Number(r.entitled_usd || 0), 0));
+    const sumPrtDrw = round2(holdingInForceRows(chronoPrts).reduce((a, r) => a + Number(r.drawn_usd || 0), 0));
+    const sumPrtOpn = round2(holdingInForceRows(chronoPrts).reduce((a, r) => a + Number(r.open_usd || 0), 0));
     const chronoPartnerPanelHtml = `
       <div class="panel-card" id="hldPartnerChronoPanel" style="margin-top:14px">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
@@ -56204,10 +56231,10 @@
     const hldFacs = regPanelRows('hldFacilitySchedulesPanel', (computeHoldingSchedules().facilitySchedules || []).filter(f => selParty === 'ALL' || f.lender === selParty || f.company === selParty));
     const hideFacCo = STATE.company === 'bdeirholding';
     const facCoStyle = hideFacCo ? ' style="display:none"' : '';
-    const sumFacPrin = round2(hldFacs.reduce((a, r) => a + Number(r.principal_usd || 0), 0));
-    const sumFacBal = round2(hldFacs.reduce((a, r) => a + Number(r.balance_usd || 0), 0));
-    const sumFacAcc = round2(hldFacs.reduce((a, r) => a + Number(r.accrued_interest_usd || 0), 0));
-    const sumFacDue = round2(hldFacs.reduce((a, r) => a + Number(r.total_due_usd || 0), 0));
+    const sumFacPrin = round2(holdingInForceRows(hldFacs).reduce((a, r) => a + Number(r.principal_usd || 0), 0));
+    const sumFacBal = round2(holdingInForceRows(hldFacs).reduce((a, r) => a + Number(r.balance_usd || 0), 0));
+    const sumFacAcc = round2(holdingInForceRows(hldFacs).reduce((a, r) => a + Number(r.accrued_interest_usd || 0), 0));
+    const sumFacDue = round2(holdingInForceRows(hldFacs).reduce((a, r) => a + Number(r.total_due_usd || 0), 0));
     return `
       ${kpiHtml}
       <div class="panel-card" id="hldLoansPanel">
@@ -59988,10 +60015,13 @@
       `;
     }
 
-    const sumNetPeriod = filteredLeases.reduce((a, r) => a + r.net_period_usd, 0);
-    const sumTtcPeriod = filteredLeases.reduce((a, r) => a + r.ttc_period_usd, 0);
-    const sumAnnualTtc = filteredLeases.reduce((a, r) => a + r.annual_ttc_usd, 0);
-    const sumDep = filteredLeases.reduce((a, r) => a + r.deposit_usd, 0);
+    // A lease a save kept apart and the lease that follows it are one contract: the roll counts the one in force
+    const keptLeaseIds = new Set(filteredLeases.filter(r => r && r._continues_id).map(r => String(r._continues_id).trim().toUpperCase()));
+    const rollLeases = filteredLeases.filter(r => !keptLeaseIds.has(String(r.id || '').trim().toUpperCase()));
+    const sumNetPeriod = rollLeases.reduce((a, r) => a + r.net_period_usd, 0);
+    const sumTtcPeriod = rollLeases.reduce((a, r) => a + r.ttc_period_usd, 0);
+    const sumAnnualTtc = rollLeases.reduce((a, r) => a + r.annual_ttc_usd, 0);
+    const sumDep = rollLeases.reduce((a, r) => a + r.deposit_usd, 0);
 
     return `
       ${bannerHtml}
@@ -63795,8 +63825,8 @@
         const hldSched = computeHoldingSchedules();
         const basePartners = hldSched.partnerAgreements || [];
         const extdSum = computeHoldingExtendedSummary({ ignoreCompany: true, ignoreSearch: true, basis: 'tx' });
-        const totEnt = round2(basePartners.reduce((a, r) => a + Number(r.entitled_usd || 0), 0));
-        const totOpn = round2(basePartners.reduce((a, r) => a + Number(r.open_usd || 0), 0));
+        const totEnt = round2(holdingInForceRows(basePartners).reduce((a, r) => a + Number(r.entitled_usd || 0), 0));
+        const totOpn = round2(holdingInForceRows(basePartners).reduce((a, r) => a + Number(r.open_usd || 0), 0));
         return {
           kpis: [
             { label: 'Extended Received / Took ($)', val: fmtUSD(extdSum.totRecUsd, 2), sub: `${fmtNum(extdSum.rows.length)} extended movements`, cls: 'crit' },
@@ -63838,9 +63868,9 @@
             status: rep >= prin && prin > 0 ? 'Settled' : 'Active Facility'
           };
         }));
-        const totPrin = round2(loanRows.reduce((a, r) => a + Number(r.principal_usd || 0), 0));
-        const totRep = round2(loanRows.reduce((a, r) => a + Number(r.repaid_usd || 0), 0));
-        const totBal = round2(loanRows.reduce((a, r) => a + Number(r.balance_usd || 0), 0));
+        const totPrin = round2(holdingInForceRows(loanRows).reduce((a, r) => a + Number(r.principal_usd || 0), 0));
+        const totRep = round2(holdingInForceRows(loanRows).reduce((a, r) => a + Number(r.repaid_usd || 0), 0));
+        const totBal = round2(holdingInForceRows(loanRows).reduce((a, r) => a + Number(r.balance_usd || 0), 0));
         return {
           kpis: [
             { label: 'Active Credit Facilities', val: fmtNum(loanRows.length), sub: 'Central treasury & subsidiary lines', cls: 'good' },
@@ -68213,9 +68243,11 @@
     if (ind === 'Holding & Treasury') {
       const ic = computeIntercompanyInteractions({ ignoreSearch: true });
       const hldSched = computeHoldingSchedules();
-      const liveFacPrin = round2((hldSched.facilitySchedules || []).reduce((s, r) => s + Number(r.balance_usd || 0), 0));
-      const livePrtEnt = round2((hldSched.partnerAgreements || []).reduce((s, r) => s + Number(r.entitled_usd || 0), 0));
-      const livePrtDrw = round2((hldSched.partnerAgreements || []).reduce((s, r) => s + Number(r.drawn_usd || 0), 0));
+      // A schedule a save kept apart (planSiblingChronoSplit) hands its balance to the new one: count it once
+      const hldInForce = r => r && !r._split_kept;
+      const liveFacPrin = round2((hldSched.facilitySchedules || []).filter(hldInForce).reduce((s, r) => s + Number(r.balance_usd || 0), 0));
+      const livePrtEnt = round2((hldSched.partnerAgreements || []).filter(hldInForce).reduce((s, r) => s + Number(r.entitled_usd || 0), 0));
+      const livePrtDrw = round2((hldSched.partnerAgreements || []).filter(hldInForce).reduce((s, r) => s + Number(r.drawn_usd || 0), 0));
       const matched = dFloor(185000, ic.totalMatchedUsd || 0);
       const openIc = dFloor(24500, ic.totalOpenUsd || 0);
       const hqExp = dFloor(38400, kSnap.expenses || 0);
@@ -69549,7 +69581,7 @@
       ? String(effDate).trim()
       : ((typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06');
     const isRenewal = /renewal/i.test(String(recType || ''));
-    const ops = typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations() : { agreements: [], catalogue: [] };
+    const ops = typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations({ ignorePeriod: true }) : { agreements: [], catalogue: [] };
     const agrs = Array.isArray(ops.agreements) ? ops.agreements : [];
     const activeHits = agrs.filter(a => {
       if (!a || norm(a.carrier) !== norm(carStr) || normInsLineKey(a.line) !== lineKey) return false;
@@ -69597,7 +69629,7 @@
 
     const agrCar = norm(agrObj.carrier);
     const agrLineKey = normInsLineKey(agrObj.line);
-    const ops = typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations() : { policies: [] };
+    const ops = typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations({ ignorePeriod: true }) : { policies: [] };
     const customPols = getIndustryCustomRows('ins_policies');
     const customIdSet = new Set(customPols.map(p => String(p.id || '').trim().toUpperCase()));
     let syncedCount = 0;
@@ -69780,6 +69812,180 @@
   function isSiblingChronoFormKey(formKey) {
     return SIBLING_CHRONO_FORM_KEYS.has(String(formKey || '').trim());
   }
+  // ── The other five industries: a schedule saved from a later day with another value keeps its earlier period
+  //    (owner 2026-11-18, the Manufacturing rule of v19.6.392 carried to hotel tariffs, lease rents, trading price
+  //    lists, insurance rate tables and holding partner and facility schedules). Before, the row moved, the schedule
+  //    before it (or the catalogue baseline) stretched over the days in between and their records were re-priced.
+  //    Now the row stays as it was (same id, ended the day before, or its own earlier end) and the save becomes a new
+  //    schedule from the new day, as + New would. The same values from a later day are still a date correction.
+  //    The fields that make a save "another value" (rates and amounts, not the derived totals or the labels):
+  const SIBLING_CHRONO_VALUE_KEYS = {
+    ins_agreements: ['new_bus_pct', 'renewal_pct', 'override_bonus_pct'],
+    re_leases: ['tenant', 'net_period_usd', 'frequency'],
+    trd_targets: ['unit_net_usd', 'unit_cost_usd', 'fob_unit_usd', 'landed_pct'],
+    hsp_tariffs: ['seasonal_rate_usd', 'nightly_rate_usd'],
+    hld_partners: ['pct', 'pool_usd'],
+    hld_loans: ['apr_pct'],
+  };
+  // Values written two ways for one thing (a live lease billed "Yearly" is the form's "Annual")
+  const SIBLING_CHRONO_VALUE_NORM = {
+    frequency: v => (/^(yearly|annual|annually)$/i.test(String(v || '').trim()) ? 'annual' : String(v || '').trim().toLowerCase()),
+  };
+  const _siblingChronoEnd = r => {
+    const e = String((r && r.end_date) || '').trim();
+    return (!e || /^open$/i.test(e)) ? '' : e.slice(0, 10);
+  };
+  const _sibUp = v => String(v || '').trim().toUpperCase();
+  // What saving `rec` over `existingSelf` keeps apart: null (an ordinary edit or a date correction), or
+  // { keptId, from, to, endedBefore, newFrom }.
+  function describeSiblingChronoKeptPeriod(formKey, rec, existingSelf) {
+    const keys = SIBLING_CHRONO_VALUE_KEYS[String(formKey || '')];
+    if (!keys || !rec || !existingSelf || !existingSelf.id || existingSelf.voided || existingSelf._scheduleVoided) return null;
+    const newStart = String(rec.start_date || '').slice(0, 10);
+    const origStart = String(existingSelf.start_date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newStart) || !/^\d{4}-\d{2}-\d{2}$/.test(origStart) || !(newStart > origStart)) return null;
+    const differs = k => {
+      const nf = SIBLING_CHRONO_VALUE_NORM[k];
+      return nf ? nf(rec[k]) !== nf(existingSelf[k]) : !_chronoSameValue(rec[k], existingSelf[k]);
+    };
+    if (!keys.some(k => (k in rec) && differs(k))) return null;
+    const dayBefore = prevCalendarDayISO(newStart);
+    const origEnd = _siblingChronoEnd(existingSelf);
+    const endedBefore = Boolean(origEnd && origEnd < dayBefore);
+    return { keptId: String(existingSelf.id), from: origStart, to: endedBefore ? origEnd : dayBefore, endedBefore, newFrom: newStart };
+  }
+  // The end a schedule form sends for an edit: when the start moves past the row's own end and the person left the
+  // end field as the form filled it in, that end belongs to the row as it was, not to the save (else the save is
+  // refused as ending before it starts, and the kept row could never keep its own earlier end).
+  function siblingChronoEditEnd(isEditMode, existingSelf, sd, rawEd) {
+    if (!isEditMode || !existingSelf) return rawEd;
+    const ownEnd = _siblingChronoEnd(existingSelf);
+    const typed = (!rawEd || /^open$/i.test(String(rawEd).trim())) ? '' : String(rawEd).trim().slice(0, 10);
+    if (ownEnd && typed === ownEnd && /^\d{4}-\d{2}-\d{2}$/.test(String(sd || '')) && String(sd) > ownEnd) return 'Open';
+    return rawEd;
+  }
+  // A new id never used in the series on this device, voided ones included (a voided id's tombstone stays in the
+  // store, and a save under that id would come back voided)
+  function nextSiblingChronoSplitId(keptId, newFrom, takenIds) {
+    const base = String(keptId || 'SCH').replace(/-\d{8}(-\d+)?$/, '');
+    const stem = `${base}-${String(newFrom || '').replace(/-/g, '')}`;
+    const taken = new Set((takenIds || []).map(_sibUp));
+    let id = stem;
+    for (let n = 2; taken.has(id.toUpperCase()); n++) id = `${stem}-${n}`;
+    return id;
+  }
+  // Turns the edit into a new schedule when describeSiblingChronoKeptPeriod says so. Changes `rec` in place (new id,
+  // closes the kept row the day before, or leaves its own earlier end) and returns { kept, cState, oldWindow } for the
+  // caller, or null for an ordinary save. `cState` is the save state the caller goes on with; `oldWindow` is what the
+  // backfill re-reads (from the new start only: the days before keep their records as they were). `kept.postIds` are
+  // the other device-copy rows the save changed (sent with it). Refuses with { error } when the new schedule would
+  // overlap another one; nothing is changed then.
+  function planSiblingChronoSplit(formKey, rec, existingSelf, peers, guardLabel) {
+    const kp = describeSiblingChronoKeptPeriod(formKey, rec, existingSelf);
+    if (!kp) return null;
+    const keptUp = kp.keptId.toUpperCase();
+    // Schedules that already ran alongside the kept one (live leases share a unit label such as "Commercial Suite")
+    // are left out of the overlap check and of the end of an open new entry, as resolveDomainChronoSaveState does
+    const keptEndCmp = _siblingChronoEnd(existingSelf) || '9999-12-31';
+    const others = (Array.isArray(peers) ? peers : []).filter(p => p && !p.voided && !p._scheduleVoided && _sibUp(p.id) !== keptUp)
+      .filter(p => {
+        const ps = String(p.start_date || '1900-01-01').slice(0, 10);
+        const pe = _siblingChronoEnd(p) || '9999-12-31';
+        return !(kp.from <= pe && keptEndCmp >= ps);
+      });
+    let ed = _siblingChronoEnd(rec);
+    // An open new schedule that a later one follows ends the day before it, as the entry engine does
+    if (!ed) {
+      const next = others.map(p => String(p.start_date || '').slice(0, 10)).filter(s => s > kp.newFrom).sort()[0];
+      if (next) ed = prevCalendarDayISO(next);
+    }
+    const edCmp = ed || '9999-12-31';
+    const clash = others.find(p => {
+      const ps = String(p.start_date || '1900-01-01').slice(0, 10);
+      const pe = _siblingChronoEnd(p) || '9999-12-31';
+      return kp.newFrom <= pe && edCmp >= ps;
+    });
+    if (clash) {
+      return { error: `${guardLabel}: Window (${kp.newFrom} to ${ed || 'Open'}) overlaps schedule ${clash.id} (${String(clash.start_date || '').slice(0, 10)} to ${clash.end_date || 'Open'}).` };
+    }
+    const store = getIndustryCustomRowsStore();
+    const bucket = Array.isArray(store[formKey]) ? store[formKey] : [];
+    // The same split made twice (a second press, or a drawer opened before the first save): the new schedule from that
+    // day is already there
+    const twin = bucket.find(r => r && !r.voided && !r._scheduleVoided && _sibUp(r._continues_id) === keptUp
+      && String(r.start_date || '').slice(0, 10) === kp.newFrom);
+    if (twin) {
+      return { error: `${guardLabel}: Window (${kp.newFrom} to ${ed || 'Open'}) overlaps schedule ${twin.id} (${String(twin.start_date || '').slice(0, 10)} to ${twin.end_date || 'Open'}).` };
+    }
+    const newId = nextSiblingChronoSplitId(kp.keptId, kp.newFrom,
+      (Array.isArray(peers) ? peers : []).map(p => p && p.id).concat([kp.keptId], bucket.map(r => r && (r.id || r.code))));
+    const closeIds = kp.endedBefore ? [] : [kp.keptId];
+    const closeDate = kp.endedBefore ? '' : kp.to;
+    rec.id = newId;
+    // Its own code too: a copied code would make the kept row's lookups (drawer, Edit) find the new one
+    if (rec.code) rec.code = newId;
+    rec.end_date = ed || 'Open';
+    rec._continues_id = kp.keptId;
+    // How far the save re-priced (the kept row's end as it was): undo re-prices the same days
+    rec._split_sweep_end = existingSelf.end_date || 'Open';
+    delete rec.updated_at; delete rec.updatedAt; delete rec.rev; delete rec._createdAt;
+    delete rec._auto_closed_by_id; delete rec._prev_end_date; delete rec._prev_status; delete rec._handoff_succ_id;
+    rec.voided = false;
+    rec._scheduleVoided = false;
+    rec.autoClosePriorId = closeIds[0] || '';
+    rec.autoClosePriorIds = closeIds;
+    rec.autoCloseDate = closeDate;
+    rec.status = rec.end_date === 'Open' ? 'Active (Open)' : 'Scheduled Window';
+    rec.backfill_status = closeIds.length ? `Chrono Active · Closed ${kp.keptId} at ${closeDate}` : 'Chrono Active';
+    const postIds = [];
+    if (bucket.some(r => r && !r.voided && _sibUp(r.id) === keptUp)) postIds.push(kp.keptId);
+    // The schedule after the kept one closed it the day before it starts. When the new schedule now runs up to that
+    // day, the link passes to it: the later schedule closes the new one, and voiding the later schedule opens the new
+    // one again (as it opened the kept one before), while voiding the new one hands the link back to the kept one.
+    if (ed && closeIds.length) {
+      const succ = bucket.find(r => r && !r.voided && !r._scheduleVoided && _sibUp(r.id) !== keptUp
+        && prevCalendarDayISO(String(r.start_date || '').slice(0, 10)) === ed
+        && ([].concat(Array.isArray(r.autoClosePriorIds) ? r.autoClosePriorIds : [], r.autoClosePriorId ? [r.autoClosePriorId] : []).some(x => _sibUp(x) === keptUp)));
+      if (succ) {
+        const keptOwn = bucket.find(r => r && !r.voided && _sibUp(r.id) === keptUp);
+        const swap = ids => (Array.isArray(ids) ? ids.map(x => (_sibUp(x) === keptUp ? newId : x)) : ids);
+        succ.autoClosePriorIds = swap(succ.autoClosePriorIds);
+        if (_sibUp(succ.autoClosePriorId) === keptUp) succ.autoClosePriorId = newId;
+        const stamp = nextMonotonicIso();
+        succ.rev = Number(succ.rev || 1) + 1;
+        succ.updated_at = stamp;
+        succ.updatedAt = stamp;
+        rec._auto_closed_by_id = succ.id;
+        rec._prev_end_date = (keptOwn && keptOwn._prev_end_date !== undefined) ? (keptOwn._prev_end_date || 'Open') : 'Open';
+        rec._prev_status = (keptOwn && keptOwn._prev_status) || 'Active (Open)';
+        rec._handoff_succ_id = succ.id;
+        rec.status = 'Closed Window';
+        postIds.push(succ.id);
+      }
+    }
+    const kept = Object.assign({}, kp, { newId, table: formKey, postIds });
+    const cState = { ok: true, ed: rec.end_date, priorOpen: existingSelf, closeIds, closeDate, priorPrimaryId: closeIds[0] || '' };
+    // The records from the new start to the later of the two ends follow the new schedule
+    const oldWindow = { start_date: kp.newFrom, end_date: existingSelf.end_date || 'Open' };
+    return { kept, cState, oldWindow };
+  }
+  // Drops the End Date and Status cells from a kept row's older cell edits: the split closes that row, and those
+  // cells would paint its old end over it (its other cells stay as the person typed them)
+  function trimKeptSiblingCellEdits(editKey) {
+    if (!editKey) return false;
+    const eStore = getIndustryRowEditStore();
+    const ent = eStore[editKey];
+    if (!ent || !Array.isArray(ent.headers) || !Array.isArray(ent.cells)) return false;
+    const drop = new Set();
+    ent.headers.forEach((h, i) => { if (/(^|\s)(end|status|window|term|effective to)(\s|$)/i.test(String(h || ''))) drop.add(i); });
+    if (!drop.size) return false;
+    ent.headers = ent.headers.filter((_, i) => !drop.has(i));
+    ent.cells = ent.cells.filter((_, i) => !drop.has(i));
+    ent.rev = Number(ent.rev || 0) + 1;
+    ent.updated_at = ent.updatedAt = new Date().toISOString();
+    saveIndustryRowEditStore(eStore, { skipServerPost: true });
+    return true;
+  }
   function canManageSiblingChronoSchedule(formKey, u) {
     if (!isSiblingChronoFormKey(formKey)) return true;
     return canModifyData(u);
@@ -69880,13 +70086,64 @@
     if (Object.keys(chronoSnap).length) tombstone.void_snapshot = Object.assign({}, tombstone.void_snapshot || {}, chronoSnap);
     if (exIdx >= 0) list[exIdx] = tombstone;
     else list.unshift(tombstone);
+    // A schedule kept apart by a save took over the link of the schedule after it (planSiblingChronoSplit): voiding
+    // it hands that link back to the kept schedule, which the later one then closes again as before the save
+    const handKept = String(prevObj._continues_id || (origSched && origSched._continues_id) || '').trim();
+    // ... and the same when a schedule added after the save (+ New) closed the new entry: that one now closes the kept
+    // schedule, so the two never run side by side
+    const handSucc = String(prevObj._handoff_succ_id || (origSched && origSched._handoff_succ_id)
+      || (handKept ? (prevObj._auto_closed_by_id || (origSched && origSched._auto_closed_by_id)) : '') || '').trim().toUpperCase();
+    // The kept row put back exactly as the later schedule had left it (closed by it), not by the restore loop below
+    let handedBackId = '';
+    if (handSucc && handKept) {
+      const succRow = list.find(r => r && !r.voided && String(r.id || r.code || '').trim().toUpperCase() === handSucc);
+      if (succRow) {
+        const back = ids => (Array.isArray(ids) ? ids.map(x => (String(x || '').trim().toUpperCase() === targetUp ? handKept : x)) : ids);
+        succRow.autoClosePriorIds = back(succRow.autoClosePriorIds);
+        if (String(succRow.autoClosePriorId || '').trim().toUpperCase() === targetUp) succRow.autoClosePriorId = handKept;
+        // A schedule split from the voided one now continues the kept one (the chain A, B, D with B voided is A, D)
+        if (String(succRow._continues_id || '').trim().toUpperCase() === targetUp) succRow._continues_id = handKept;
+        succRow.rev = Number(succRow.rev || 1) + 1;
+        succRow.updated_at = nowIso;
+        succRow.updatedAt = nowIso;
+        const keptRow = list.find(r => r && !r.voided && String(r.id || r.code || '').trim().toUpperCase() === handKept.toUpperCase());
+        const succStart = String(succRow.start_date || '').slice(0, 10);
+        if (keptRow && /^\d{4}-\d{2}-\d{2}$/.test(succStart)) {
+          keptRow.end_date = prevCalendarDayISO(succStart);
+          keptRow.status = 'Closed Window';
+          keptRow.backfill_status = `Auto-Closed at ${keptRow.end_date}`;
+          keptRow._auto_closed_by_id = succRow.id;
+          // The new schedule carried the kept row's restore point while it held the link
+          keptRow._prev_end_date = prevObj._prev_end_date !== undefined ? (prevObj._prev_end_date || 'Open') : 'Open';
+          keptRow._prev_status = prevObj._prev_status || 'Active (Open)';
+          keptRow.rev = Number(keptRow.rev || 1) + 1;
+          keptRow.updated_at = nowIso;
+          keptRow.updatedAt = nowIso;
+          handedBackId = handKept.toUpperCase();
+        }
+      }
+    }
 
-    const vStart = String((prevObj && prevObj.start_date) || (origSched && origSched.start_date) || '').slice(0, 10);
+    // Every other schedule split from the voided one (one that had ended before that split, so nothing closed it)
+    // continues the kept schedule now; the earliest of them takes over closing it, so the two never overlap
+    const contRows = handKept ? list.filter(r => r && !r.voided && !r._scheduleVoided
+      && String(r._continues_id || '').trim().toUpperCase() === targetUp) : [];
+    contRows.forEach(r => {
+      r._continues_id = handKept;
+      r.rev = Number(r.rev || 1) + 1;
+      r.updated_at = nowIso;
+      r.updatedAt = nowIso;
+    });
+    const firstCont = handedBackId ? null : contRows
+      .filter(r => /^\d{4}-\d{2}-\d{2}$/.test(String(r.start_date || '').slice(0, 10)))
+      .sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)))[0] || null;
+
+    const vStart =String((prevObj && prevObj.start_date) || (origSched && origSched.start_date) || '').slice(0, 10);
     const vPrevDay = /^\d{4}-\d{2}-\d{2}$/.test(vStart) ? prevCalendarDayISO(vStart) : '';
     list.forEach(cp => {
       if (!cp || cp.voided) return;
       const cidUp = String(cp.id || cp.code || '').trim().toUpperCase();
-      if (!cidUp || cidUp === targetUp) return;
+      if (!cidUp || cidUp === targetUp || cidUp === handedBackId) return;
       const closedByThis = String(cp._auto_closed_by_id || '').trim().toUpperCase() === targetUp
         || linkedCloseIds.has(cidUp)
         || (!cp._auto_closed_by_id && vPrevDay && String(cp.end_date || '').slice(0, 10) === vPrevDay && cp.status === 'Closed Window');
@@ -69902,8 +70159,55 @@
       cp.updated_at = nowIso;
       cp.updatedAt = nowIso;
     });
+    // ... and when the kept schedule, put back as it was by the loop above, runs past the day before it starts, it
+    // ends that day and the later one closes it (its restore point is the end it had, for when the later one is voided
+    // in turn). A kept schedule that ends before then on its own keeps its end, and nothing links the two.
+    if (firstCont) {
+      saveIndustryCustomRowsStore({ skipServerPost: true });
+      invalidateIndustryDomainCaches();
+      const keptUpH = handKept.toUpperCase();
+      const capEnd = prevCalendarDayISO(String(firstCont.start_date).slice(0, 10));
+      const endCmp = e => ((!e || /^open$/i.test(String(e))) ? '9999-12-31' : String(e).slice(0, 10));
+      const keptRow = list.find(r => r && !r.voided && String(r.id || r.code || '').trim().toUpperCase() === keptUpH);
+      // A workbook or live row is not on this device: its end as the schedule reads it now
+      const keptPeer = keptRow ? null : siblingChronoRowById(bucket, handKept);
+      const curEnd = keptRow ? endCmp(keptRow.end_date) : (keptPeer ? endCmp(keptPeer.end_date) : '');
+      if (curEnd && curEnd > capEnd) {
+        const ids = Array.isArray(firstCont.autoClosePriorIds) ? firstCont.autoClosePriorIds.slice() : [];
+        if (!ids.some(x => String(x || '').trim().toUpperCase() === keptUpH)) ids.push(handKept);
+        firstCont.autoClosePriorIds = ids;
+        if (!firstCont.autoClosePriorId) firstCont.autoClosePriorId = handKept;
+        firstCont.autoCloseDate = capEnd;
+      }
+      if (keptRow && curEnd > capEnd) {
+        keptRow._prev_end_date = keptRow.end_date || 'Open';
+        keptRow._prev_status = keptRow.status || 'Active (Open)';
+        keptRow.end_date = capEnd;
+        keptRow.status = 'Closed Window';
+        keptRow.backfill_status = `Auto-Closed at ${capEnd}`;
+        keptRow._auto_closed_by_id = firstCont.id;
+        keptRow.rev = Number(keptRow.rev || 1) + 1;
+        keptRow.updated_at = nowIso;
+        keptRow.updatedAt = nowIso;
+      }
+    }
     saveIndustryCustomRowsStore();
     invalidateIndustryDomainCaches();
+  }
+
+  // A schedule row by id as the table reads it now (workbook, live and device rows, every period): unlike the peers
+  // of a row, it does not depend on the lender, tier, unit or line an edit may have changed
+  function siblingChronoRowById(fk, id) {
+    const up = String(id || '').trim().toUpperCase();
+    if (!up) return null;
+    let rows = [];
+    if (fk === 'ins_agreements') rows = computeInsuranceOperations({ ignorePeriod: true }).agreements || [];
+    else if (fk === 're_leases') rows = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }).leases || [];
+    else if (fk === 'trd_targets') rows = computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }).targetRows || [];
+    else if (fk === 'hsp_tariffs') rows = computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }).tariffRows || [];
+    else if (fk === 'hld_partners') rows = computeHoldingSchedules().partnerAgreements || [];
+    else if (fk === 'hld_loans') rows = computeHoldingSchedules().facilitySchedules || [];
+    return rows.find(r => r && String(r.id || '').trim().toUpperCase() === up) || null;
   }
 
   function getSiblingChronoPeersForRow(fk, origSched, primaryId) {
@@ -69914,11 +70218,11 @@
       const curOps = computeInsuranceOperations();
       peers = (curOps.agreements || []).filter(a => a && norm(a.carrier) === norm(origSched.carrier) && normInsLineKey(a.line) === normInsLineKey(origSched.line) && String(a.id || '').toUpperCase() !== pidUp);
     } else if (fk === 're_leases') {
-      const curRe = computeRealEstateOperations({ ignoreSearch: true });
+      const curRe = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true });
       const normReProp = p => String(p || '').trim().toUpperCase().slice(0, 14);
       peers = (curRe.leases || []).filter(l => l && normReProp(l.property) === normReProp(origSched.property) && String(l.unit || '').trim().toUpperCase() === String(origSched.unit || '').trim().toUpperCase() && String(l.id || '').toUpperCase() !== pidUp);
     } else if (fk === 'trd_targets') {
-      const curTrd = computeTradingOperations({ ignoreSearch: true });
+      const curTrd = computeTradingOperations({ ignoreSearch: true, ignorePeriod: true });
       peers = (curTrd.targetRows || []).filter(t => t && t.company === origSched.company && normTradingTariffCat(t.category) === normTradingTariffCat(origSched.category) && String(t.id || '').toUpperCase() !== pidUp);
     } else if (fk === 'hsp_tariffs') {
       const curHsp = computeHospitalityOperations({ ignoreSearch: true });
@@ -69954,7 +70258,7 @@
     const dtStr = /^\d{4}-\d{2}-\d{2}$/.test(String(effDate || '').trim())
       ? String(effDate).trim()
       : ((typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06');
-    const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true }) : { tariffRows: [] };
+    const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }) : { tariffRows: [] };
     const coTariffs = (hsp.tariffRows || []).filter(t => t && norm(t.company) === norm(coStr));
     const dateHits = coTariffs.filter(t => {
       const sd = String(t.start_date || '1900-01-01').slice(0, 10);
@@ -70001,7 +70305,7 @@
   function retroactiveBackfillHospitalityTariff(trfObj, oldWindow = null) {
     if (!trfObj || !trfObj.company) return 0;
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(trfObj, oldWindow);
-    const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true }) : { membershipRows: [], tariffRows: [] };
+    const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }) : { membershipRows: [], tariffRows: [] };
     const coTariffs = (hsp.tariffRows || []).filter(t => t && norm(t.company) === norm(trfObj.company));
     const customMems = getIndustryCustomRows('hsp_memberships');
     const customMemIds = new Set(customMems.map(m => String(m.id || '').trim().toUpperCase()));
@@ -70015,7 +70319,8 @@
       if (exactMatchExists && norm(qTier) !== norm(trfObj.tier)) return;
       const hit = lookupActiveHospitalityTariff(m.company, qTier, mDate);
       const nextContract = round2(Number(hit.seasonal_rate_usd || m.contract_usd || 0));
-      const paid = Math.min(nextContract, Number(m.paid_usd || 0));
+      // What was paid stays as recorded (a re-price never rewrites money already received)
+      const paid = round2(Number(m.paid_usd || 0));
       const bal = Math.max(0, round2(nextContract - paid));
       const patch = {
         contract_usd: nextContract,
@@ -70054,7 +70359,7 @@
     const dtStr = /^\d{4}-\d{2}-\d{2}$/.test(String(effDate || '').trim())
       ? String(effDate).trim()
       : ((typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06');
-    const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true }) : { leases: [], units: [] };
+    const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) : { leases: [], units: [] };
     const leases = Array.isArray(re.leases) ? re.leases : [];
     const matchTenantOrUnit = l => {
       if (!tuStr) return !propStr || norm(l.property) === norm(propStr);
@@ -70112,7 +70417,7 @@
   function retroactiveBackfillRealEstateLease(leaseObj, oldWindow = null) {
     if (!leaseObj || !leaseObj.company) return 0;
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(leaseObj, oldWindow);
-    const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true }) : { invoices: [] };
+    const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) : { invoices: [] };
     const customInvs = getIndustryCustomRows('re_invoicing');
     const customInvIds = new Set(customInvs.map(iv => String(iv.id || '').trim().toUpperCase()));
     const nLeaseTen = norm(leaseObj.tenant || '');
@@ -70130,7 +70435,7 @@
       const is4235 = /4235/i.test(inv.company);
       const vat = is4235 ? round2(net * 0.11) : 0;
       const tot = round2(net + vat);
-      const col = Math.min(tot, Number(inv.collected_usd || 0));
+      const col = round2(Number(inv.collected_usd || 0));
       const openAr = Math.max(0, round2(tot - col));
       const patch = {
         net_usd: net,
@@ -70165,7 +70470,7 @@
     const dtStr = /^\d{4}-\d{2}-\d{2}$/.test(String(effDate || '').trim())
       ? String(effDate).trim()
       : ((typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06');
-    const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true }) : { targetRows: [], serialUnits: [], stockRows: [] };
+    const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }) : { targetRows: [], serialUnits: [], stockRows: [] };
     const wantedCat = normTradingTariffCat(categoryOrSupplier, coStr);
     const activeHits = (trd.targetRows || []).filter(t => {
       if (!t || norm(t.company) !== norm(coStr)) return false;
@@ -70208,7 +70513,7 @@
   function retroactiveBackfillTradingTariff(tgtObj, oldWindow = null) {
     if (!tgtObj || !tgtObj.company) return 0;
     const { sweepStart, sweepEnd } = computeChronoSweepBounds(tgtObj, oldWindow);
-    const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true }) : { salesRows: [], importRows: [] };
+    const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true, ignorePeriod: true }) : { salesRows: [], importRows: [] };
     const customSalesIds = new Set(getIndustryCustomRows('trd_sales').map(s => String(s.id || '').trim().toUpperCase()));
     const customImpIds = new Set(getIndustryCustomRows('trd_purchases').map(i => String(i.id || '').trim().toUpperCase()));
     const tgtCat = normTradingTariffCat(tgtObj.category || tgtObj.segment, tgtObj.company);
@@ -70312,7 +70617,7 @@
       const hit = lookupActiveHoldingPartnerSplit(dist.entity, dist.partner, dDate);
       const pool = Number(dist.pool_usd || 0);
       const ent = round2(pool * (Number(hit.pct || 0) / 100));
-      const paid = Math.min(ent, Number(dist.paid_usd || 0));
+      const paid = round2(Number(dist.paid_usd || 0));
       const opn = Math.max(0, round2(ent - paid));
       const patch = {
         pct: hit.pct,
@@ -70644,7 +70949,7 @@
         ${fldWrap('Line of Business', `<input type="text" id="ide_line" style="${inpStyle}" value="${esc(prefill.line || 'MOT · Motor')}">`)}
         ${fldWrap('Peril / Incident Description *', `<input type="text" id="ide_peril" style="${inpStyle}" value="${esc(prefill.peril || 'Commercial Vehicle Front Impact Survey')}">`)}
         ${fldWrap('Surveyor / Loss Adjuster', `<input type="text" id="ide_adjuster" style="${inpStyle}" value="${esc(prefill.adjuster || 'Expert Nabil Tabet')}">`)}
-        ${fldWrap('Claimed Amount ($) *', `<input type="number" id="ide_claimed" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.claimed_usd != null ? prefill.claimed_usd : '4500')}">`)}
+        ${fldWrap('Claimed Amount ($) *', `<input type="number" id="ide_claimed" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.claimed_usd != null ? prefill.claimed_usd : '4500')}">`)}
         ${fldWrap('Policy Deductible ($)', `<input type="number" id="ide_deductible" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.deductible_usd != null ? prefill.deductible_usd : '250')}">`)}
         ${fldWrap('Carrier Approved ($)', `<input type="number" id="ide_approved" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.approved_usd != null ? prefill.approved_usd : '0')}">`)}
       `;
@@ -70669,7 +70974,7 @@
       fieldsHtml = `
         ${fldWrap('Bordereau / Remittance ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'REM-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Insurance Carrier *', `<select id="ide_carrier" data-plain-options="1" style="${inpStyle}">${remCarriers.map(c => `<option value="${esc(c)}" ${prefill.carrier === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`)}
-        ${fldWrap('Gross Premium Bordereau ($) *', `<input type="number" id="ide_gwp" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.gwp != null ? prefill.gwp : (prefill.gross_prem_usd != null ? prefill.gross_prem_usd : '15000'))}">`)}
+        ${fldWrap('Gross Premium Bordereau ($) *', `<input type="number" id="ide_gwp" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.gwp != null ? prefill.gwp : (prefill.gross_prem_usd != null ? prefill.gross_prem_usd : '15000'))}">`)}
         ${fldWrap('Retained Broker Comm ($)', `<input type="number" id="ide_comm" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.comm != null ? prefill.comm : (prefill.broker_comm_7063_usd != null ? prefill.broker_comm_7063_usd : '2250'))}">`)}
         ${fldWrap('Settled Wire to Carrier ($)', `<input type="number" id="ide_settled" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.settled != null ? prefill.settled : (prefill.settled_to_carrier_usd != null ? prefill.settled_to_carrier_usd : '10000'))}">`)}
         ${fldWrap('Remaining Carrier Payable ($)', `<input type="text" id="ide_payable" class="mono" readonly style="${roStyle}" value="$2,750.00">`)}
@@ -70678,7 +70983,8 @@
     } else if (spec.key === 're_leases') {
       const tenants = freqRankCandidates('customer', ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Mohamad Ali Fawz', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Mazraa Commercial Logistics']);
       const props = freqRankCandidates('site', ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '4235 Msaytbeh', '1354/50 Mina el Hosn']);
-      const defFreq = prefill.frequency || 'Quarterly';
+      // Live leases are billed "Yearly": the form's Annual (else the select fell back to Quarterly on every edit)
+      const defFreq = /^(yearly|annually)$/i.test(String(prefill.frequency || '').trim()) ? 'Annual' : (prefill.frequency || 'Quarterly');
       const endVal = prefill.end_date === 'Open' ? '' : (prefill.end_date || '2029-10-31');
       datalistsHtml = `
         <datalist id="dl_ide_re_tenants">${tenants.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
@@ -70693,7 +70999,7 @@
         ${fldWrap('Lease Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" min="${isEditMode ? '2020-01-01' : '2025-01-02'}" value="${esc(prefill.start_date || '2026-11-01')}">`, 'Forward chronology: auto-closes prior Open lease on unit at prev day')}
         ${fldWrap('Lease End Date', `<div style="display:flex;gap:6px;align-items:center"><input type="date" id="ide_end_date" style="${inpStyle};flex:1" value="${esc(endVal)}"><button type="button" class="btn btn-ghost-bar btn-sm" id="ideClearEndDateBtn" title="Set evergreen Open lease" style="padding:5px 8px;font-size:11px;white-space:nowrap">✕ Open</button></div>`, 'Leave blank for Open evergreen lease (preserves vacancy/gap windows)')}
         ${fldWrap('Billing Frequency', `<select id="ide_freq" data-plain-options="1" style="${inpStyle}"><option value="Quarterly" ${defFreq === 'Quarterly' ? 'selected' : ''}>Quarterly (4x/yr)</option><option value="Monthly" ${defFreq === 'Monthly' ? 'selected' : ''}>Monthly (12x/yr)</option><option value="Annual" ${defFreq === 'Annual' ? 'selected' : ''}>Annual (1x/yr)</option></select>`)}
-        ${fldWrap('Net Period Rent ($) *', `<input type="number" id="ide_net" class="mono" step="50" min="1" style="${inpStyle}" value="${esc(prefill.net_period_usd != null ? prefill.net_period_usd : '10000')}">`)}
+        ${fldWrap('Net Period Rent ($) *', `<input type="number" id="ide_net" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.net_period_usd != null ? prefill.net_period_usd : '10000')}">`)}
         ${fldWrap('Applicable VAT Rate (%)', `<input type="text" id="ide_vat_rate" class="mono" readonly style="${roStyle}" value="${/4235/.test(defCo) ? '11%' : '0%'}">`)}
         ${fldWrap('Period Billed Rent ($)', `<input type="text" id="ide_period_tot" class="mono" readonly style="${roStyle}" value="$11,100.00">`)}
         ${fldWrap('Contracted Annual Rent ($)', `<input type="text" id="ide_annual_tot" class="mono" readonly style="${roStyle}" value="$44,400.00">`)}
@@ -70720,7 +71026,7 @@
         ${fldWrap('Property *', `<input type="text" id="ide_property" list="dl_ide_re_props" style="${inpStyle}" value="${esc(defProp)}">`)}
         ${fldWrap('Tenant *', `<input type="text" id="ide_tenant" list="dl_ide_re_tenants" style="${inpStyle}" value="${esc(defTenant)}">`)}
         ${fldWrap('Billing Period', `<input type="text" id="ide_period" style="${inpStyle}" value="${esc(prefill.period || '2026-Q4 (Nov-Jan)')}">`)}
-        ${fldWrap('Net Rent ($) *', `<input type="number" id="ide_net" class="mono" step="50" min="1" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initLeaseHit.isFallback ? 'Baseline rate (' + initLeaseHit.leaseId + ' · ' + fmtUSD(initLeaseHit.net_period_usd, 0) + ')' : 'Chrono Lease ' + initLeaseHit.leaseId + ' (' + fmtUSD(initLeaseHit.net_period_usd, 0) + ')')}</span>`)}
+        ${fldWrap('Net Rent ($) *', `<input type="number" id="ide_net" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initLeaseHit.isFallback ? 'Baseline rate (' + initLeaseHit.leaseId + ' · ' + fmtUSD(initLeaseHit.net_period_usd, 0) + ')' : 'Chrono Lease ' + initLeaseHit.leaseId + ' (' + fmtUSD(initLeaseHit.net_period_usd, 0) + ')')}</span>`)}
         ${fldWrap('VAT Amount ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$1,375.00">`)}
         ${fldWrap('Total Billed Rent ($)', `<input type="text" id="ide_tot" class="mono" readonly style="${roStyle}" value="$13,875.00">`)}
         ${fldWrap('Collected Now ($)', `<input type="number" id="ide_collected" class="mono" step="50" min="0" style="${inpStyle}" value="${esc(prefill.collected_usd != null ? prefill.collected_usd : '0')}">`)}
@@ -70748,7 +71054,7 @@
         ${fldWrap('Unit / Common Area *', `<input type="text" id="ide_unit" style="${inpStyle}" value="${esc(prefill.unit || 'Floor 2 East Medical Suite')}">`)}
         ${fldWrap('Contractor / Vendor *', `<input type="text" id="ide_contractor" style="${inpStyle}" value="${esc(prefill.contractor || 'MEP Tech Engineering SAL')}">`)}
         ${fldWrap('Work Category', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Structural Fit-Out & HVAC (CAPEX)" ${/CAPEX/i.test(defCat) ? 'selected' : ''}>Structural Fit-Out & HVAC (CAPEX)</option><option value="Tenant-Fault Repair & Recharge" ${/Tenant/i.test(defCat) ? 'selected' : ''}>Tenant-Fault Repair & Recharge</option><option value="Generator & Common Area Maintenance" ${/Generator/i.test(defCat) ? 'selected' : ''}>Generator & Common Area Maintenance</option></select>`)}
-        ${fldWrap('Approved Budget ($) *', `<input type="number" id="ide_budget" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.budget_usd != null ? prefill.budget_usd : '12000')}">`)}
+        ${fldWrap('Approved Budget ($) *', `<input type="number" id="ide_budget" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.budget_usd != null ? prefill.budget_usd : '12000')}">`)}
         ${fldWrap('Actual Spend ($)', `<input type="number" id="ide_actual" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.actual_usd != null ? prefill.actual_usd : '11500')}">`)}
         ${fldWrap('Tenant Rechargeable?', `<select id="ide_rechargeable" data-plain-options="1" style="${inpStyle}"><option value="no" ${!isRech ? 'selected' : ''}>Landlord Expense / CAPEX</option><option value="yes" ${isRech ? 'selected' : ''}>Yes (Rechargeable to Tenant)</option></select>`)}
       `;
@@ -70764,9 +71070,9 @@
         ${fldWrap('OEM Supplier Scope', `<input type="text" id="ide_supplier" list="dl_ide_trd_sups" style="${inpStyle}" value="${esc(prefill.supplier || sups[0] || 'Shaanxi Heavy Duty Automobile Imp & Exp Co.')}">`)}
         ${fldWrap('Effective Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" min="${isEditMode ? '2024-01-01' : '2026-08-02'}" value="${esc(prefill.start_date || '2026-09-01')}">`, 'Forward chronology: auto-closes prior Open price list at prev day')}
         ${fldWrap('Effective End Date', `<div style="display:flex;gap:6px;align-items:center"><input type="date" id="ide_end_date" style="${inpStyle};flex:1" value="${esc(endVal)}"><button type="button" class="btn btn-ghost-bar btn-sm" id="ideClearEndDateBtn" title="Set ongoing Open price list" style="padding:5px 8px;font-size:11px;white-space:nowrap">✕ Open</button></div>`, 'Leave blank for Open ongoing schedule (preserves explicit closed gaps)')}
-        ${fldWrap('Unit Net Selling Price ($) *', `<input type="number" id="ide_unit_net" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.unit_net_usd != null ? prefill.unit_net_usd : (/Korri/i.test(defCo) ? '420' : '86500'))}">`)}
-        ${fldWrap('Unit Landed Cost ($) *', `<input type="number" id="ide_unit_cost" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.unit_cost_usd != null ? prefill.unit_cost_usd : (/Korri/i.test(defCo) ? '295' : '69200'))}">`)}
-        ${fldWrap('Supplier FOB Unit ($) *', `<input type="number" id="ide_fob_unit" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.fob_unit_usd != null ? prefill.fob_unit_usd : (/Korri/i.test(defCo) ? '265' : '61500'))}">`)}
+        ${fldWrap('Unit Net Selling Price ($) *', `<input type="number" id="ide_unit_net" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.unit_net_usd != null ? prefill.unit_net_usd : (/Korri/i.test(defCo) ? '420' : '86500'))}">`)}
+        ${fldWrap('Unit Landed Cost ($) *', `<input type="number" id="ide_unit_cost" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.unit_cost_usd != null ? prefill.unit_cost_usd : (/Korri/i.test(defCo) ? '295' : '69200'))}">`)}
+        ${fldWrap('Supplier FOB Unit ($) *', `<input type="number" id="ide_fob_unit" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.fob_unit_usd != null ? prefill.fob_unit_usd : (/Korri/i.test(defCo) ? '265' : '61500'))}">`)}
         ${fldWrap('Freight & Duty Add-On (%)', `<input type="number" id="ide_landed_pct" class="mono" step="0.5" min="0" max="100" style="${inpStyle}" value="${esc(prefill.landed_pct != null ? prefill.landed_pct : '12.5')}">`)}
         ${fldWrap('Period Sales Target ($)', `<input type="number" id="ide_target_ttc" class="mono" step="500" min="0" style="${inpStyle}" value="${esc(prefill.target_ttc != null ? prefill.target_ttc : '250000')}">`)}
         ${fldWrap('Realized Period Sales ($)', `<input type="number" id="ide_actual_ttc" class="mono" step="500" min="0" style="${inpStyle}" value="${esc(prefill.actual_ttc != null ? prefill.actual_ttc : '0')}">`)}
@@ -70790,7 +71096,7 @@
         ${fldWrap('Vehicle Model / Part Description *', `<input type="text" id="ide_item" style="${inpStyle}" value="${esc(prefill.item || (/Korri/i.test(defCo) ? 'Weichai OEMInjector & Clutch Kit' : 'Shacman F3000 6x4 Dump Truck 340HP'))}">`)}
         ${fldWrap('Serial Chassis VIN / Warehouse Ref', `<input type="text" id="ide_chassis" class="mono" style="${inpStyle}" value="${esc(prefill.chassis || (/Korri/i.test(defCo) ? 'WH-AL-GHAZIEH' : 'LZGJLDR41PX019301'))}">`, 'ISO 3779 17-char VIN (no I/O/Q) locks Qty = 1')}
         ${fldWrap('Quantity *', `<input type="number" id="ide_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(defQty)}">`)}
-        ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initTrdHit.isFallback ? 'Baseline rate (' + initTrdHit.scheduleId + ' · ' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)' : 'Chrono Price List ' + initTrdHit.scheduleId + ' (' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)')}</span>`)}
+        ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initTrdHit.isFallback ? 'Baseline rate (' + initTrdHit.scheduleId + ' · ' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)' : 'Chrono Price List ' + initTrdHit.scheduleId + ' (' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)')}</span>`)}
         ${fldWrap('Official 11% VAT ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$9,295.00">`)}
         ${fldWrap('Total Invoice Amount ($)', `<input type="text" id="ide_tot" class="mono" readonly style="${roStyle}" value="$93,795.00">`)}
         ${fldWrap('Capitalized Landed Cost ($) *', `<input type="number" id="ide_cost" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(defCost)}">`)}
@@ -70814,7 +71120,7 @@
         ${fldWrap('Container / Bill of Lading *', `<input type="text" id="ide_bl" class="mono" style="${inpStyle}" value="${esc(prefill.bl || prefill.container_bl || 'COSU6891992014 · 2x40HC')}">`)}
         ${fldWrap('Ordered Qty *', `<input type="number" id="ide_ord_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(defOrd)}">`)}
         ${fldWrap('Received Qty *', `<input type="number" id="ide_rec_qty" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.received_qty != null ? prefill.received_qty : defOrd)}">`)}
-        ${fldWrap('Supplier FOB Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(defFob)}">`, `<span id="ideRateSourceHint">${esc(initImpHit.isFallback ? 'Baseline rate (' + initImpHit.scheduleId + ' · ' + fmtUSD(initImpHit.fob_unit_usd, 0) + '/u)' : 'Chrono Tariff ' + initImpHit.scheduleId + ' (' + fmtUSD(initImpHit.fob_unit_usd, 0) + '/u)')}</span>`)}
+        ${fldWrap('Supplier FOB Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(defFob)}">`, `<span id="ideRateSourceHint">${esc(initImpHit.isFallback ? 'Baseline rate (' + initImpHit.scheduleId + ' · ' + fmtUSD(initImpHit.fob_unit_usd, 0) + '/u)' : 'Chrono Tariff ' + initImpHit.scheduleId + ' (' + fmtUSD(initImpHit.fob_unit_usd, 0) + '/u)')}</span>`)}
         ${fldWrap('Freight, Customs & Clearance ($)', `<input type="number" id="ide_landed_add" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(defAdd)}">`)}
         ${fldWrap('Total Capitalized Landed ($)', `<input type="text" id="ide_tot_landed" class="mono" readonly style="${roStyle}" value="$53,400.00">`)}
       `;
@@ -70829,9 +71135,9 @@
         ${fldWrap('Chassis VIN *', `<input type="text" id="ide_vin" class="mono" maxlength="17" style="${inpStyle}" value="${esc(prefill.chassis_vin || prefill.vin || 'LZGJLDR43PX019399')}">`, 'ISO 3779 17-char VIN check-digit & O/I/Q guard')}
         ${fldWrap('Engine Serial # *', `<input type="text" id="ide_engine" class="mono" style="${inpStyle}" value="${esc(prefill.engine_no || 'WP12.430E201-991024')}">`)}
         ${fldWrap('Warehouse / Yard', `<select id="ide_wh" data-plain-options="1" style="${inpStyle}">${whs.map(w => `<option value="${esc(w)}" ${defWh === w ? 'selected' : ''}>${esc(w)}</option>`).join('')}</select>`)}
-        ${fldWrap('FOB Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.fob_usd != null ? prefill.fob_usd : '60500')}">`)}
+        ${fldWrap('FOB Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.fob_usd != null ? prefill.fob_usd : '60500')}">`)}
         ${fldWrap('Allocated Landed Add ($)', `<input type="number" id="ide_landed_add" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.landed_add_usd != null ? prefill.landed_add_usd : '5500')}">`)}
-        ${fldWrap('Showroom List Price ($) *', `<input type="number" id="ide_list" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.list_price_usd != null ? prefill.list_price_usd : '88500')}">`)}
+        ${fldWrap('Showroom List Price ($) *', `<input type="number" id="ide_list" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.list_price_usd != null ? prefill.list_price_usd : '88500')}">`)}
       `;
     } else if (spec.key === 'trd_stock') {
       const whs = freqRankCandidates('site', ['Al Ghazieh', 'Bchamoun Yard', 'Main Showroom', 'Workshop', 'Bonded Yard']);
@@ -70881,7 +71187,7 @@
         ${fldWrap('Revenue Stream *', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Chalet Rental" ${/Chalet/i.test(defCat) ? 'selected' : ''}>Chalet Rental (11% VAT)</option><option value="Restaurant F&B" ${/Restaurant|F&B/i.test(defCat) ? 'selected' : ''}>Restaurant F&B (11% VAT)</option><option value="Beach Entrance" ${/Beach/i.test(defCat) ? 'selected' : ''}>Beach Entrance (11% VAT)</option><option value="Events & Weddings" ${/Event|Wedding/i.test(defCat) ? 'selected' : ''}>Events & Weddings (11% VAT)</option><option value="Staff Tips & Gratuities" ${/Tip|Gratuit/i.test(defCat) ? 'selected' : ''}>Staff Tips & Gratuities (Zero-VAT)</option><option value="Generator Diesel Recharge" ${/Diesel/i.test(defCat) ? 'selected' : ''}>Generator Diesel Recharge (Zero-VAT)</option></select>`)}
         ${fldWrap('Occupied Chalets / Suites', `<input type="number" id="ide_rooms" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(defRooms)}">`)}
         ${fldWrap('Guest Covers', `<input type="number" id="ide_covers" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.covers != null ? prefill.covers : '95')}">`)}
-        ${fldWrap('Total Billed Revenue ($) *', `<input type="number" id="ide_tot" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(defTot)}">`, `<span id="ideRateSourceHint">${esc(initHspHit.isFallback ? 'Baseline rate (' + initHspHit.tariffId + ' · ' + fmtUSD(initHspHit.nightly_rate_usd, 0) + '/night)' : 'Chrono Tariff ' + initHspHit.tariffId + ' (' + fmtUSD(initHspHit.nightly_rate_usd, 0) + '/night)')}</span>`)}
+        ${fldWrap('Total Billed Revenue ($) *', `<input type="number" id="ide_tot" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(defTot)}">`, `<span id="ideRateSourceHint">${esc(initHspHit.isFallback ? 'Baseline rate (' + initHspHit.tariffId + ' · ' + fmtUSD(initHspHit.nightly_rate_usd, 0) + '/night)' : 'Chrono Tariff ' + initHspHit.tariffId + ' (' + fmtUSD(initHspHit.nightly_rate_usd, 0) + '/night)')}</span>`)}
         ${fldWrap('Net Excl. Tax ($)', `<input type="text" id="ide_ht" class="mono" readonly style="${roStyle}" value="$8,000.00">`)}
         ${fldWrap('Output VAT ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$880.00">`, 'Zero-VAT enforced on Tips & Diesel')}
         ${fldWrap('Settlement Channel', `<select id="ide_method" data-plain-options="1" style="${inpStyle}"><option value="Cash & Card" ${defMth === 'Cash & Card' ? 'selected' : ''}>Cash & Card</option><option value="POS Till #1" ${defMth === 'POS Till #1' ? 'selected' : ''}>POS Till #1</option><option value="Card / Whish" ${defMth === 'Card / Whish' ? 'selected' : ''}>Card / Whish</option><option value="Bank Transfer" ${defMth === 'Bank Transfer' ? 'selected' : ''}>Bank Transfer</option></select>`)}
@@ -70896,7 +71202,7 @@
         ${fldWrap('Shift Window', `<input type="text" id="ide_shift" style="${inpStyle}" value="${esc(prefill.shift || 'Full Day')}">`)}
         ${fldWrap('Cashier Name *', `<input type="text" id="ide_cashier" style="${inpStyle}" value="${esc(prefill.cashier || 'Maya S.')}">`)}
         ${fldWrap('Closed Bills Count', `<input type="number" id="ide_bills" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.bills_count != null ? prefill.bills_count : '120')}">`)}
-        ${fldWrap('POS Billed Total ($) *', `<input type="number" id="ide_billed" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.billed_usd != null ? prefill.billed_usd : (prefill.pos_billed_ttc != null ? prefill.pos_billed_ttc : '9500'))}">`)}
+        ${fldWrap('POS Billed Total ($) *', `<input type="number" id="ide_billed" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.billed_usd != null ? prefill.billed_usd : (prefill.pos_billed_ttc != null ? prefill.pos_billed_ttc : '9500'))}">`)}
         ${fldWrap('Physical Cash Counted ($)', `<input type="number" id="ide_cash" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.cash_usd != null ? prefill.cash_usd : '5200')}">`)}
         ${fldWrap('Card & Whish Slips ($)', `<input type="number" id="ide_card" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.card_usd != null ? prefill.card_usd : (prefill.card_whish_usd != null ? prefill.card_whish_usd : '4300'))}">`)}
         ${fldWrap('Approved Comp / Promo ($)', `<input type="number" id="ide_comp" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.comp_usd != null ? prefill.comp_usd : '0')}">`)}
@@ -70928,7 +71234,7 @@
         ${fldWrap('Item Group *', `<input type="text" id="ide_group" style="${inpStyle}" value="${esc(prefill.item_group || 'Prime Cuts & Seafood')}">`)}
         ${fldWrap('Opening Stock ($)', `<input type="number" id="ide_open" class="mono" step="50" min="0" style="${inpStyle}" value="${esc(prefill.opening_usd != null ? prefill.opening_usd : '5000')}">`)}
         ${fldWrap('Purchases In ($) *', `<input type="number" id="ide_purch" class="mono" step="50" min="0" style="${inpStyle}" value="${esc(prefill.purchases_in_usd != null ? prefill.purchases_in_usd : '8400')}">`)}
-        ${fldWrap('Recipe BOM Depletion ($) *', `<input type="number" id="ide_usage" class="mono" step="50" min="1" style="${inpStyle}" value="${esc(prefill.recipe_usage_usd != null ? prefill.recipe_usage_usd : '8000')}">`)}
+        ${fldWrap('Recipe BOM Depletion ($) *', `<input type="number" id="ide_usage" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.recipe_usage_usd != null ? prefill.recipe_usage_usd : '8000')}">`)}
         ${fldWrap('Closing Stock & Ratio', `<input type="text" id="ide_close" class="mono" readonly style="${roStyle}" value="$5,400.00 (1.05x)">`)}
       `;
     } else if (spec.key === 'hsp_energy') {
@@ -70939,7 +71245,7 @@
         ${fldWrap('Generator & Solar Asset *', `<input type="text" id="ide_asset" style="${inpStyle}" value="${esc(prefill.asset || 'Perkins 500kVA Prime Gen #1')}">`)}
         ${fldWrap('Tank Level (Litres)', `<input type="number" id="ide_tank" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.tank_level_l != null ? prefill.tank_level_l : '5800')}">`)}
         ${fldWrap('Run Hours *', `<input type="number" id="ide_hours" class="mono" step="0.5" min="0.5" style="${inpStyle}" value="${esc(prefill.run_hours != null ? prefill.run_hours : '15')}">`)}
-        ${fldWrap('Diesel Consumed (Litres) *', `<input type="number" id="ide_diesel" class="mono" step="5" min="1" style="${inpStyle}" value="${esc(prefill.diesel_used_l != null ? prefill.diesel_used_l : '450')}">`)}
+        ${fldWrap('Diesel Consumed (Litres) *', `<input type="number" id="ide_diesel" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.diesel_used_l != null ? prefill.diesel_used_l : '450')}">`)}
         ${fldWrap('Rated Curve (L/hr) *', `<input type="number" id="ide_rated" class="mono" step="0.5" min="1" style="${inpStyle}" value="${esc(prefill.rated_l_hr != null ? prefill.rated_l_hr : '31')}">`)}
         ${fldWrap('Solar PV Offset (%)', `<input type="number" id="ide_solar" class="mono" step="1" min="0" max="100" style="${inpStyle}" value="${esc(prefill.solar_offset_pct != null ? prefill.solar_offset_pct : '35')}">`)}
         ${fldWrap('Computed Burn (L/hr)', `<input type="text" id="ide_burn" class="mono" readonly style="${roStyle}" value="30.0 L/hr (Normal Burn)">`)}
@@ -70957,7 +71263,7 @@
         ${fldWrap('Effective Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" min="${isEditMode ? '2024-01-01' : '2026-01-02'}" value="${esc(defSd)}">`, 'Forward chronology: auto-closes prior Open split schedule at prev day')}
         ${fldWrap('Effective End Date', `<div style="display:flex;gap:6px;align-items:center"><input type="date" id="ide_end_date" style="${inpStyle};flex:1" value="${esc(endVal)}"><button type="button" class="btn btn-ghost-bar btn-sm" id="ideClearEndDateBtn" title="Set ongoing Open split schedule" style="padding:5px 8px;font-size:11px;white-space:nowrap">✕ Open</button></div>`, 'Leave blank for Open ongoing split (preserves explicit closed gaps)')}
         ${fldWrap('Profit-Share (%) *', `<input type="number" id="ide_pct" class="mono" step="0.5" min="0.5" max="100" style="${inpStyle}" value="${esc(prefill.pct != null ? prefill.pct : initPrtHit.pct)}">`, `<span id="ideRateSourceHint">${esc(initPrtHit.isFallback ? 'Baseline rate (' + initPrtHit.scheduleId + ' · ' + initPrtHit.pct + '%)' : 'Chrono Schedule ' + initPrtHit.scheduleId + ' (' + initPrtHit.pct + '%)')}</span>`)}
-        ${fldWrap('Distributable Pool ($) *', `<input type="number" id="ide_pool" class="mono" step="1000" min="100" style="${inpStyle}" value="${esc(prefill.pool_usd != null ? prefill.pool_usd : '150000')}">`)}
+        ${fldWrap('Distributable Pool ($) *', `<input type="number" id="ide_pool" class="mono" step="any" min="100" style="${inpStyle}" value="${esc(prefill.pool_usd != null ? prefill.pool_usd : '150000')}">`)}
         ${fldWrap('Drawings Paid ($)', `<input type="number" id="ide_drawn" class="mono" step="500" min="0" style="${inpStyle}" value="${esc(prefill.drawn_usd != null ? prefill.drawn_usd : '20000')}">`)}
         ${fldWrap('Entitled & Open Balance', `<input type="text" id="ide_entitled" class="mono" readonly style="${roStyle}" value="$30,000 Entitled · $10,000 Open">`)}
       `;
@@ -70976,7 +71282,7 @@
         ${fldWrap('Lender / Capital Counterparty *', `<input type="text" id="ide_lender" style="${inpStyle}" value="${esc(defLender)}">`)}
         ${fldWrap('Facility Type', `<select id="ide_type" data-plain-options="1" style="${inpStyle}"><option value="Term Facility" ${defType === 'Term Facility' ? 'selected' : ''}>Term Facility</option><option value="Revolving Sister Line" ${defType === 'Revolving Sister Line' ? 'selected' : ''}>Revolving Sister Line</option><option value="Equipment Finance" ${defType === 'Equipment Finance' ? 'selected' : ''}>Equipment Finance</option></select>`)}
         ${fldWrap('Interest Rate (% APR) *', `<input type="number" id="ide_apr" class="mono" step="0.1" min="0" max="40" style="${inpStyle}" value="${esc(defApr)}">`, `<span id="ideRateSourceHint">${esc(initLnHit.isFallback ? 'Baseline rate (' + initLnHit.facilityId + ' · ' + initLnHit.apr_pct + '% APR)' : 'Chrono Facility ' + initLnHit.facilityId + ' (' + initLnHit.apr_pct + '% APR)')}</span>`)}
-        ${fldWrap('Original Principal ($) *', `<input type="number" id="ide_prin" class="mono" step="1000" min="500" style="${inpStyle}" value="${esc(prefill.principal_usd != null ? prefill.principal_usd : '120000')}">`)}
+        ${fldWrap('Original Principal ($) *', `<input type="number" id="ide_prin" class="mono" step="any" min="500" style="${inpStyle}" value="${esc(prefill.principal_usd != null ? prefill.principal_usd : '120000')}">`)}
         ${fldWrap('Principal Repaid ($)', `<input type="number" id="ide_rep" class="mono" step="500" min="0" style="${inpStyle}" value="${esc(prefill.repaid_usd != null ? prefill.repaid_usd : '30000')}">`)}
         ${fldWrap('Quarterly Interest & Balance', `<input type="text" id="ide_bal" class="mono" readonly style="${roStyle}" value="$90,000.00">`)}
       `;
@@ -71012,7 +71318,7 @@
         ${fldWrap('Transfer Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
         ${fldWrap('From Sister Entity (Sender) *', `<select id="ide_from" data-plain-options="1" style="${inpStyle}">${sisters.map(s => `<option value="${esc(s)}" ${s === defFrom ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>`)}
         ${fldWrap('To Sister Entity (Receiver) *', `<select id="ide_to" data-plain-options="1" style="${inpStyle}">${sisters.map(s => `<option value="${esc(s)}" ${s === defTo ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>`)}
-        ${fldWrap('Transfer Amount ($ USD) *', `<input type="number" id="ide_usd" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.usd != null ? prefill.usd : '25000')}">`)}
+        ${fldWrap('Transfer Amount ($ USD) *', `<input type="number" id="ide_usd" class="mono" step="any" min="1" style="${inpStyle}" value="${esc(prefill.usd != null ? prefill.usd : '25000')}">`)}
         ${fldWrap('Settlement Channel', `<select id="ide_method" data-plain-options="1" style="${inpStyle}"><option value="Bank Transfer" ${defMth === 'Bank Transfer' ? 'selected' : ''}>Bank Transfer</option><option value="Cash" ${defMth === 'Cash' ? 'selected' : ''}>Cash</option><option value="Check" ${defMth === 'Check' ? 'selected' : ''}>Check</option></select>`)}
         ${fldWrap('Two-Sided Mirror Pairing', `<label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;padding-top:4px"><input type="checkbox" id="ide_mirror" ${defMirror ? 'checked' : ''}> Book Sister Mirror Entry Automatically</label>`, 'Uncheck to leave in Open One-Sided Queue')}
         ${fldWrap('Treasury Purpose / Notes', `<input type="text" id="ide_notes" style="${inpStyle}" value="${esc(prefill.notes || 'Working capital intercompany advance')}">`)}
@@ -71491,7 +71797,7 @@
         if (!sdInp) return;
         const coStr = strVal('ide_company');
         const tierStr = strVal('ide_tier');
-        const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true }) : { tariffRows: [] };
+        const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true, ignorePeriod: true }) : { tariffRows: [] };
         const peers = (hsp.tariffRows || []).filter(t => t && t.company === coStr && t.tier === tierStr && String(t.id || '') !== strVal('ide_id'));
         let minBound = '2025-01-02';
         peers.forEach(p => {
@@ -71665,7 +71971,23 @@
         toast('Please resolve the domain guardrail error before posting', 'err');
         return;
       }
-      const recId = strVal('ide_id') || strVal('ide_code') || `DOM-${Date.now()}`;
+      let recId = strVal('ide_id') || strVal('ide_code') || `DOM-${Date.now()}`;
+      // Set when a schedule saved from a later day with another value was kept apart (planSiblingChronoSplit)
+      let keptSplit = null;
+      // Shared by the six schedule forms: a later start with another value becomes a new schedule (owner 2026-11-18)
+      const applyKeptSplit = (formKey, rec, existingSelf, peers, guardLabel) => {
+        if (!isEditMode) return { split: null };
+        const split = planSiblingChronoSplit(formKey, rec, existingSelf, peers, guardLabel);
+        if (split && split.error) { showMsg(split.error, true); return { error: true }; }
+        // The pre-filled end was set aside only for a save that keeps the earlier period (siblingChronoEditEnd):
+        // any other save past the row's own end is refused as before
+        if (!split && siblingChronoEditEnd(true, existingSelf, rec.start_date, strVal('ide_end_date') || 'Open') !== (strVal('ide_end_date') || 'Open')) {
+          showMsg(`${guardLabel}: Effective End Date must be strictly after Start Date (or left Open).`, true);
+          return { error: true };
+        }
+        if (split) { recId = rec.id; keptSplit = split.kept; }
+        return { split };
+      };
       const co = strVal('ide_company') || defCo;
       if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
         const dtCandidate = strVal('ide_date') || strVal('ide_start_date') || '';
@@ -71817,7 +72139,7 @@
         const curOps = computeInsuranceOperations();
         const peers = (curOps.agreements || []).filter(a => a && norm(a.carrier) === norm(carrier) && normInsLineKey(a.line) === normInsLineKey(line) && String(a.id || '').toUpperCase() !== String(recId || '').toUpperCase());
         const existingSelf = (curOps.agreements || []).find(a => a && String(a.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
-        const cState = resolveDomainChronoSaveState(peers, existingSelf, sd, rawEd, isEditMode, 'Chronological Rate Guard');
+        let cState = resolveDomainChronoSaveState(peers, existingSelf, sd, siblingChronoEditEnd(isEditMode, existingSelf, sd, rawEd), isEditMode, 'Chronological Rate Guard');
         if (!cState.ok) { showMsg(cState.error, true); return; }
         const ed = cState.ed;
         const agrRec = {
@@ -71837,9 +72159,12 @@
           backfill_status: cState.priorPrimaryId ? `Chrono Active · Closed ${cState.priorPrimaryId} at ${cState.closeDate}` : 'Chrono Active',
           status: ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
         };
+        const ks = applyKeptSplit('ins_agreements', agrRec, existingSelf, peers, 'Chronological Rate Guard');
+        if (ks.error) return;
+        if (ks.split) { cState = ks.split.cState; agrRec.prior_rate_pct = existingSelf.new_bus_pct; }
         addIndustryCustomRow('ins_agreements', agrRec, { skipCloudSync: true });
         syncSiblingCustomPredecessorsOnSave('ins_agreements', recId, cState.closeIds, cState.closeDate);
-        const syncedPols = retroactiveBackfillInsuranceAgreement(agrRec, existingSelf);
+        const syncedPols = retroactiveBackfillInsuranceAgreement(agrRec, ks.split ? ks.split.oldWindow : existingSelf);
         if (syncedPols > 0) {
           agrRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedPols} ${syncedPols === 1 ? 'Policy' : 'Policies'} Synced`;
           addIndustryCustomRow('ins_agreements', agrRec, { skipCloudSync: true });
@@ -71870,11 +72195,11 @@
         const unitVal = strVal('ide_unit') || 'Commercial Unit';
         const sd = strVal('ide_start_date');
         const rawEd = strVal('ide_end_date') || 'Open';
-        const curRe = computeRealEstateOperations({ ignoreSearch: true });
+        const curRe = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true });
         const normReProp = p => String(p || '').trim().toUpperCase().slice(0, 14);
         const peers = (curRe.leases || []).filter(l => l && normReProp(l.property) === normReProp(propVal) && String(l.unit || '').trim().toUpperCase() === unitVal.trim().toUpperCase() && String(l.id || '').toUpperCase() !== String(recId || '').toUpperCase());
         const existingSelf = (curRe.leases || []).find(l => l && String(l.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
-        const cState = resolveDomainChronoSaveState(peers, existingSelf, sd, rawEd, isEditMode, 'Chronological Lease Guard');
+        let cState = resolveDomainChronoSaveState(peers, existingSelf, sd, siblingChronoEditEnd(isEditMode, existingSelf, sd, rawEd), isEditMode, 'Chronological Lease Guard');
         if (!cState.ok) { showMsg(cState.error, true); return; }
         const ed = cState.ed;
         const is4235 = /4235/i.test(co);
@@ -71908,6 +72233,17 @@
           autoCloseDate: cState.closeDate,
           status: ed === 'Open' ? 'Active (Open)' : (daysExp <= 90 ? 'Expiring < 90d' : 'Active')
         };
+        const ks = applyKeptSplit('re_leases', leaseRec, existingSelf, peers, 'Chronological Lease Guard');
+        if (ks.error) return;
+        if (ks.split) {
+          cState = ks.split.cState;
+          // The lease status reads its own end, as on any lease
+          if (leaseRec.end_date !== 'Open') {
+            const dx = Math.max(30, Math.round((Date.parse(leaseRec.end_date + 'T00:00:00Z') - Date.parse('2026-11-06T00:00:00Z')) / 86400000));
+            leaseRec.days_to_expiry = dx;
+            leaseRec.status = dx <= 90 ? 'Expiring < 90d' : 'Active';
+          }
+        }
         addIndustryCustomRow('re_leases', leaseRec, { skipCloudSync: true });
         syncSiblingCustomPredecessorsOnSave('re_leases', recId, cState.closeIds, cState.closeDate);
         if (!isEditMode) {
@@ -71930,7 +72266,7 @@
             audit_note: is4235 ? 'Auto-billed 11% Official VAT lease period' : 'Auto-billed 0% VAT lease period'
           }, { skipCloudSync: true });
         }
-        retroactiveBackfillRealEstateLease(leaseRec, existingSelf);
+        retroactiveBackfillRealEstateLease(leaseRec, ks.split ? ks.split.oldWindow : existingSelf);
       } else if (spec.key === 're_invoicing') {
         const is4235 = /4235/i.test(co);
         const net = numVal('ide_net');
@@ -71994,10 +72330,10 @@
         const sup = strVal('ide_supplier') || 'Shaanxi Heavy Duty Automobile Imp & Exp Co.';
         const sd = strVal('ide_start_date');
         const rawEd = strVal('ide_end_date') || 'Open';
-        const curTrd = computeTradingOperations({ ignoreSearch: true });
+        const curTrd = computeTradingOperations({ ignoreSearch: true, ignorePeriod: true });
         const peers = (curTrd.targetRows || []).filter(t => t && t.company === co && normTradingTariffCat(t.category) === cat && String(t.id || '').toUpperCase() !== String(recId || '').toUpperCase());
         const existingSelf = (curTrd.targetRows || []).find(t => t && String(t.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
-        const cState = resolveDomainChronoSaveState(peers, existingSelf, sd, rawEd, isEditMode, 'Chronological Price List Guard');
+        let cState = resolveDomainChronoSaveState(peers, existingSelf, sd, siblingChronoEditEnd(isEditMode, existingSelf, sd, rawEd), isEditMode, 'Chronological Price List Guard');
         if (!cState.ok) { showMsg(cState.error, true); return; }
         const ed = cState.ed;
         const tTtc = numVal('ide_target_ttc') || 250000;
@@ -72023,9 +72359,12 @@
           backfill_status: cState.priorPrimaryId ? `Chrono Active · Closed ${cState.priorPrimaryId} at ${cState.closeDate}` : 'Chrono Active',
           status: ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
         };
+        const ks = applyKeptSplit('trd_targets', tgtRec, existingSelf, peers, 'Chronological Price List Guard');
+        if (ks.error) return;
+        if (ks.split) cState = ks.split.cState;
         addIndustryCustomRow('trd_targets', tgtRec, { skipCloudSync: true });
         syncSiblingCustomPredecessorsOnSave('trd_targets', recId, cState.closeIds, cState.closeDate);
-        const syncedTrd = retroactiveBackfillTradingTariff(tgtRec, existingSelf);
+        const syncedTrd = retroactiveBackfillTradingTariff(tgtRec, ks.split ? ks.split.oldWindow : existingSelf);
         if (syncedTrd > 0) {
           tgtRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedTrd} Synced`;
           addIndustryCustomRow('trd_targets', tgtRec, { skipCloudSync: true });
@@ -72116,7 +72455,7 @@
         const curHsp = computeHospitalityOperations({ ignoreSearch: true });
         const peers = (curHsp.tariffRows || []).filter(t => t && t.company === co && t.tier === tier && String(t.id || '').toUpperCase() !== String(recId || '').toUpperCase());
         const existingSelf = (curHsp.tariffRows || []).find(t => t && String(t.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
-        const cState = resolveDomainChronoSaveState(peers, existingSelf, sd, rawEd, isEditMode, 'Chronological Tariff Guard');
+        let cState = resolveDomainChronoSaveState(peers, existingSelf, sd, siblingChronoEditEnd(isEditMode, existingSelf, sd, rawEd), isEditMode, 'Chronological Tariff Guard');
         if (!cState.ok) { showMsg(cState.error, true); return; }
         const ed = cState.ed;
         const sesVal = numVal('ide_seasonal_rate');
@@ -72139,9 +72478,12 @@
           backfill_status: cState.priorPrimaryId ? `Chrono Active · Closed ${cState.priorPrimaryId} at ${cState.closeDate}` : 'Chrono Active',
           status: ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
         };
+        const ks = applyKeptSplit('hsp_tariffs', trfRec, existingSelf, peers, 'Chronological Tariff Guard');
+        if (ks.error) return;
+        if (ks.split) cState = ks.split.cState;
         addIndustryCustomRow('hsp_tariffs', trfRec, { skipCloudSync: true });
         syncSiblingCustomPredecessorsOnSave('hsp_tariffs', recId, cState.closeIds, cState.closeDate);
-        const syncedHsp = retroactiveBackfillHospitalityTariff(trfRec, existingSelf);
+        const syncedHsp = retroactiveBackfillHospitalityTariff(trfRec, ks.split ? ks.split.oldWindow : existingSelf);
         if (syncedHsp > 0) {
           trfRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedHsp} Synced`;
           addIndustryCustomRow('hsp_tariffs', trfRec, { skipCloudSync: true });
@@ -72264,7 +72606,7 @@
         const exactPrtPeers = pKey ? entPeers.filter(p => norm(String(p.partner || '').split('(')[0]) === pKey || norm(p.partner).includes(pKey)) : [];
         const peers = exactPrtPeers.length ? exactPrtPeers : entPeers;
         const existingSelf = (curHld.partnerAgreements || []).find(p => p && String(p.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
-        const cState = resolveDomainChronoSaveState(peers, existingSelf, sd, rawEd, isEditMode, 'Chronological Schedule Guard');
+        let cState = resolveDomainChronoSaveState(peers, existingSelf, sd, siblingChronoEditEnd(isEditMode, existingSelf, sd, rawEd), isEditMode, 'Chronological Schedule Guard');
         if (!cState.ok) { showMsg(cState.error, true); return; }
         const ed = cState.ed;
         const pool = numVal('ide_pool');
@@ -72289,9 +72631,12 @@
           backfill_status: cState.priorPrimaryId ? `Chrono Active · Closed ${cState.priorPrimaryId} at ${cState.closeDate}` : 'Chrono Active',
           status: ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
         };
+        const ks = applyKeptSplit('hld_partners', prtRec, existingSelf, peers, 'Chronological Schedule Guard');
+        if (ks.error) return;
+        if (ks.split) cState = ks.split.cState;
         addIndustryCustomRow('hld_partners', prtRec, { skipCloudSync: true });
         syncSiblingCustomPredecessorsOnSave('hld_partners', recId, cState.closeIds, cState.closeDate);
-        const syncedDist = retroactiveBackfillHoldingPartner(prtRec, existingSelf);
+        const syncedDist = retroactiveBackfillHoldingPartner(prtRec, ks.split ? ks.split.oldWindow : existingSelf);
         if (syncedDist > 0) {
           prtRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedDist} Synced`;
           addIndustryCustomRow('hld_partners', prtRec, { skipCloudSync: true });
@@ -72304,7 +72649,7 @@
         const lKey = lender.trim().toUpperCase();
         const peers = (curHld.facilitySchedules || []).filter(f => f && f.company === co && (!lKey || String(f.lender || '').trim().toUpperCase().includes(lKey) || lKey.includes(String(f.lender || '').trim().toUpperCase())) && String(f.id || '').toUpperCase() !== String(recId || '').toUpperCase());
         const existingSelf = (curHld.facilitySchedules || []).find(f => f && String(f.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
-        const cState = resolveDomainChronoSaveState(peers, existingSelf, sd, rawEd, isEditMode, 'Chronological Facility Guard');
+        let cState = resolveDomainChronoSaveState(peers, existingSelf, sd, siblingChronoEditEnd(isEditMode, existingSelf, sd, rawEd), isEditMode, 'Chronological Facility Guard');
         if (!cState.ok) { showMsg(cState.error, true); return; }
         const ed = cState.ed;
         const prin = numVal('ide_prin');
@@ -72334,9 +72679,12 @@
           backfill_status: cState.priorPrimaryId ? `Chrono Active · Closed ${cState.priorPrimaryId} at ${cState.closeDate}` : 'Chrono Active',
           status: ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
         };
+        const ks = applyKeptSplit('hld_loans', lnRec, existingSelf, peers, 'Chronological Facility Guard');
+        if (ks.error) return;
+        if (ks.split) cState = ks.split.cState;
         addIndustryCustomRow('hld_loans', lnRec, { skipCloudSync: true });
         syncSiblingCustomPredecessorsOnSave('hld_loans', recId, cState.closeIds, cState.closeDate);
-        const syncedAcc = retroactiveBackfillHoldingLoan(lnRec, existingSelf);
+        const syncedAcc = retroactiveBackfillHoldingLoan(lnRec, ks.split ? ks.split.oldWindow : existingSelf);
         if (syncedAcc > 0) {
           lnRec.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active · ${syncedAcc} Synced`;
           addIndustryCustomRow('hld_loans', lnRec, { skipCloudSync: true });
@@ -72452,8 +72800,12 @@
       if (spec.key !== 'hld_extended') {
         const modalForceRowIds = [`${spec.key}::${recId}`];
         if (spec.key === 're_leases' && !isEditMode) modalForceRowIds.push(`re_invoicing::INV-${recId}`);
+        // The kept schedule (closed the day before) and a later one that handed its link over are sent too
+        if (keptSplit) (keptSplit.postIds || []).forEach(pid => modalForceRowIds.push(`${spec.key}::${pid}`));
         const modalForceEditKeys = [];
-        if (isEditMode && prefill && prefill._editKey) {
+        // A schedule kept apart keeps its own cell edits, all but its end and status (the split closed it)
+        if (keptSplit && prefill && prefill._editKey && trimKeptSiblingCellEdits(prefill._editKey)) modalForceEditKeys.push(prefill._editKey);
+        if (isEditMode && prefill && prefill._editKey && !keptSplit) {
           const eStore = getIndustryRowEditStore();
           const prevCellOverride = eStore[prefill._editKey];
           if (prevCellOverride && typeof prevCellOverride === 'object') {
@@ -72522,7 +72874,8 @@
       closeIndustryDomainEntryModal();
       renderApp();
       syncWithCloud(true);
-      toast(isEditMode ? `Saved changes to ${recId}` : `Posted ${recId} to ${ind}`);
+      toast((isEditMode && !keptSplit) ? `Saved changes to ${recId}` : `Posted ${recId} to ${ind}`);
+      if (keptSplit) toast(chronoKeptPeriodToastText(keptSplit), 'ok');
 
       if (filesToAttach.length > 0) {
         const domCrKey = inferDomainTblKey(ind, spec.key, recId);
@@ -72697,11 +73050,12 @@
     const customStore = getIndustryCustomRowsStore();
     for (const [bucket, arr] of Object.entries(customStore || {})) {
       if (!Array.isArray(arr)) continue;
+      // An exact id first: a schedule kept apart by a save is a prefix of the new one's id (A, A-20260801), and the
+      // newer row comes first in the list
       const hit = arr.find(r => r && !r.voided && (
         String(r.id || r.code || '').toUpperCase() === needle ||
-        String(r.vin || r.chassis_vin || '').toUpperCase() === needle ||
-        (needle.length >= 5 && String(r.id || r.code || '').toUpperCase().includes(needle))
-      ));
+        String(r.vin || r.chassis_vin || '').toUpperCase() === needle
+      )) || arr.find(r => r && !r.voided && needle.length >= 5 && String(r.id || r.code || '').toUpperCase().includes(needle));
       if (hit) {
         const pid = String(hit.id || hit.code || needle);
         const domKey = inferDomainTblKey('', bucket, pid);
@@ -72911,7 +73265,10 @@
     const customStore = getIndustryCustomRowsStore();
     for (const [bucket, arr] of Object.entries(customStore || {})) {
       if (!Array.isArray(arr)) continue;
-      const hit = arr.find(r => r && !r.voided && !r._scheduleVoided && (String(r.id || '').trim().toUpperCase() === pidUp || String(r.code || '').trim().toUpperCase() === pidUp));
+      // The row with that id first, then one with that code (a code may repeat across a schedule's periods)
+      const live = r => r && !r.voided && !r._scheduleVoided;
+      const hit = arr.find(r => live(r) && String(r.id || '').trim().toUpperCase() === pidUp)
+        || arr.find(r => live(r) && String(r.code || '').trim().toUpperCase() === pidUp);
       if (hit) {
         return { formKey: bucket, prefill: Object.assign({}, hit, basePrefill, { id: hit.id || primaryId, code: hit.code || undefined }) };
       }
@@ -81547,7 +81904,7 @@
 
         if (hasIndustryLiveOrDemo('holding')) {
           const hldSched = computeHoldingSchedules();
-          (hldSched.facilitySchedules || []).forEach((f, idx) => {
+          holdingInForceRows(hldSched.facilitySchedules).forEach((f, idx) => {
             if (!f || safeNum(f.balance_usd) <= 0 || !isCoInScope(f.company || 'Bdeir Holding')) return;
             const balUsd = round2(safeNum(f.balance_usd));
             const unitSlice = 1000;
@@ -84690,6 +85047,7 @@
                         <span class="geo-modal-map-hdr-actions">
                           <span id="indInspKmReadout" class="insp-site-km-readout">Click map or paste link</span>
                           <button type="button" class="geo-mini-btn" id="indInspClearPinBtn" hidden>Clear Pin</button>
+                          <button type="button" class="geo-mini-btn geo-fullwin-btn geo-picker-bar-fullwin-btn" id="indInspToggleFullWinBtn" aria-pressed="false" aria-label="Full Window" data-ui-tip="Full Window"><svg class="geo-fullwin-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Full Window</span></button>
                         </span>
                       </div>
                       <div class="geo-modal-map-canvas insp-site-map-canvas" id="indInspMapCanvas"></div>
@@ -84984,7 +85342,7 @@
       inputs.forEach(inp => inp.addEventListener('input', wireDomainRules));
 
       const saveBtn = $('indInspSaveChangesBtn');
-      if (saveBtn) saveBtn.onclick = async () => {
+      const runIndInspSave = async () => {
         if (!canModifyRecord()) {
           toast('Permission denied: Read-only seat', 'err');
           return;
@@ -85218,7 +85576,15 @@
             toast('Supervisor permission required to manage chronological rate schedules', 'err');
             return;
           }
-          const origSched = Object.assign({}, resolvedDomainChrono.prefill);
+          // The row as it stands now, not as the drawer opened it (another device's save may have synced in since)
+          const freshChrono = findDomainRecordPrefillForModal(ind, domainTblKey, primaryId, headers, cells, initialRowCompany, editKey);
+          const freshOk = Boolean(freshChrono && freshChrono.formKey === resolvedDomainChrono.formKey && freshChrono.prefill && freshChrono.prefill.start_date);
+          if (!freshOk && resolvedDomainChrono.prefill && resolvedDomainChrono.prefill.start_date) {
+            // The schedule is no longer there as it was (voided or changed on another device): nothing is saved
+            toast('Chronological Schedule Guard: this schedule changed since the drawer opened. Reopen it and save again.', 'err');
+            return;
+          }
+          const origSched = Object.assign({}, freshOk ? freshChrono.prefill : resolvedDomainChrono.prefill);
           delete origSched._editMode;
           delete origSched._editKey;
           const cleanChronoToken = (v, fb) => {
@@ -85243,11 +85609,12 @@
           }
           if (!nextEd || /^open$/i.test(nextEd)) nextEd = 'Open';
           const peers = getSiblingChronoPeersForRow(fk, origSched, primaryId);
-          const cState = resolveDomainChronoSaveState(peers, origSched, nextSd, nextEd, true, 'Chronological Schedule Guard');
+          let cState = resolveDomainChronoSaveState(peers, origSched, nextSd, siblingChronoEditEnd(true, origSched, nextSd, nextEd), true, 'Chronological Schedule Guard');
           if (!cState.ok) {
             toast(cState.error, 'err');
             return;
           }
+          let drawerSplit = null;
           const upd = Object.assign({}, origSched, {
             id: origSched.id || primaryId,
             start_date: nextSd,
@@ -85262,10 +85629,6 @@
           let cleanedEditKey = false;
           _deferIndustryDomainServerPost = true;
           try {
-            if (domainGeoSave) {
-              applyDomainGeoSaveMeta(upd, domainGeoSave);
-              mirrorDomainPinToSites(domainGeoSave);
-            }
             if (!textOnlyLock) {
               if (fk === 'ins_agreements') {
                 const nbInp = findInp(/new bus/);
@@ -85280,7 +85643,8 @@
                   const netV = parseNumVal(netInp.value);
                   const is4235 = /4235/i.test(String(upd.company || ''));
                   const vatUsd = is4235 ? round2(netV * 0.11) : 0;
-                  const mult = upd.frequency === 'Monthly' ? 12 : (upd.frequency === 'Annual' ? 1 : 4);
+                  const fqN = SIBLING_CHRONO_VALUE_NORM.frequency(upd.frequency);
+                  const mult = fqN === 'monthly' ? 12 : (fqN === 'annual' ? 1 : 4);
                   upd.net_period_usd = netV;
                   upd.ttc_period_usd = round2(netV + vatUsd);
                   upd.annual_ttc_usd = round2(upd.ttc_period_usd * mult);
@@ -85318,14 +85682,35 @@
                 }
               }
             }
+            // A later start with another value: the schedule stays as it was and this save becomes a new one
+            drawerSplit = planSiblingChronoSplit(fk, upd, origSched, peers, 'Chronological Schedule Guard');
+            if (drawerSplit && drawerSplit.error) {
+              toast(drawerSplit.error, 'err');
+              return;
+            }
+            if (!drawerSplit && siblingChronoEditEnd(true, origSched, nextSd, nextEd) !== nextEd) {
+              toast('Chronological Schedule Guard: Effective End Date must be strictly after Start Date (or left Open).', 'err');
+              return;
+            }
+            if (drawerSplit) {
+              cState = drawerSplit.cState;
+              if (fk === 'ins_agreements') upd.prior_rate_pct = origSched.new_bus_pct;
+            }
+            if (domainGeoSave) {
+              applyDomainGeoSaveMeta(upd, domainGeoSave);
+              mirrorDomainPinToSites(domainGeoSave);
+            }
             addIndustryCustomRow(fk, upd, { skipCloudSync: true, skipRollback: true, skipServerPost: true });
             syncSiblingCustomPredecessorsOnSave(fk, upd.id, cState.closeIds, cState.closeDate);
-            syncedCnt = runDomainChronoScheduleBackfill(fk, upd, origSched);
+            syncedCnt = runDomainChronoScheduleBackfill(fk, upd, drawerSplit ? drawerSplit.oldWindow : origSched);
             upd.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active${syncedCnt > 0 ? ' · ' + syncedCnt + ' Synced' : ''}`;
             addIndustryCustomRow(fk, upd, { skipCloudSync: true, skipRollback: true, skipServerPost: true });
             if (upd.id) domForceRowIds.push(`${fk}::${upd.id}`);
+            if (drawerSplit) (drawerSplit.kept.postIds || []).forEach(pid => domForceRowIds.push(`${fk}::${pid}`));
             const storeClean = getIndustryRowEditStore();
-            if (storeClean[editKey]) {
+            // A schedule kept apart keeps its own cell edits, all but its end and status (the split closed it)
+            if (drawerSplit && trimKeptSiblingCellEdits(editKey)) cleanedEditKey = true;
+            if (storeClean[editKey] && !drawerSplit) {
               delete storeClean[editKey];
               saveIndustryRowEditStore(storeClean, { skipServerPost: true });
               cleanedEditKey = true;
@@ -85337,7 +85722,8 @@
           closeRecordInspector();
           renderApp();
           syncWithCloud(true);
-          toast(`Saved changes to ${primaryId}${syncedCnt > 0 ? ' · ' + syncedCnt + ' downstream rows synced' : ''}`);
+          toast(`Saved changes to ${drawerSplit ? upd.id : primaryId}${syncedCnt > 0 ? ' · ' + syncedCnt + ' downstream rows synced' : ''}`);
+          if (drawerSplit) toast(chronoKeptPeriodToastText(drawerSplit.kept), 'ok');
           return;
         }
         const nextCells = inputs.map((el, idx) => lockedNumericIndices.has(idx) ? String(cells[idx] || '').trim() : el.value.trim());
@@ -85392,6 +85778,20 @@
         closeRecordInspector();
         syncWithCloud(true);
         toast(`Saved changes to ${primaryId}`);
+      };
+      // One save at a time: a second press while the first waits on the server would split the schedule again from
+      // the row as the drawer opened it (two new schedules from the same day)
+      let indInspSaveRunning = false;
+      if (saveBtn) saveBtn.onclick = async () => {
+        if (indInspSaveRunning) return;
+        indInspSaveRunning = true;
+        saveBtn.disabled = true;
+        try {
+          await runIndInspSave();
+        } finally {
+          indInspSaveRunning = false;
+          saveBtn.disabled = false;
+        }
       };
 
       const voidBtn = $('indInspVoidRowBtn');
@@ -85505,8 +85905,26 @@
               const origSched = Object.assign({}, resolvedDomainChrono.prefill);
               delete origSched._editMode;
               delete origSched._editKey;
+              const voidedUp = String(primaryId || '').trim().toUpperCase();
+              const voidedOwn = (getIndustryCustomRowsStore()[fk] || []).find(r => r && String(r.id || r.code || '').trim().toUpperCase() === voidedUp) || null;
               voidSiblingChronoSchedule(fk, primaryId, origSched, voidMeta);
-              runDomainChronoScheduleBackfill(fk, origSched, { start_date: '1900-01-01', end_date: '9999-12-31' });
+              // A schedule a save kept apart (planSiblingChronoSplit) only ever priced the records of its own days: undoing
+              // it re-prices those days and leaves every other record as it was (a typed price before the split stays)
+              const splitOwn = Boolean((voidedOwn && voidedOwn._continues_id) || origSched._continues_id);
+              // The save re-priced up to the kept row's end as it was (a new entry may end before it): so does the undo
+              const laterSweepEnd = (a, b) => {
+                const ea = (!a || /^open$/i.test(String(a))) ? '9999-12-31' : String(a).slice(0, 10);
+                const eb = (!b || /^open$/i.test(String(b))) ? '' : String(b).slice(0, 10);
+                const m = eb && eb > ea ? eb : ea;
+                return m === '9999-12-31' ? 'Open' : m;
+              };
+              const voidSweep = splitOwn
+                ? { start_date: String((voidedOwn && voidedOwn.start_date) || origSched.start_date || '').slice(0, 10), end_date: ((voidedOwn && voidedOwn._auto_closed_by_id) || origSched._auto_closed_by_id)
+                  // closed by a later schedule: that one priced its own days, the undo stops where it starts
+                  ? ((voidedOwn && voidedOwn.end_date) || origSched.end_date || 'Open')
+                  : laterSweepEnd((voidedOwn && voidedOwn.end_date) || origSched.end_date, (voidedOwn && voidedOwn._split_sweep_end) || origSched._split_sweep_end) }
+                : { start_date: '1900-01-01', end_date: '9999-12-31' };
+              runDomainChronoScheduleBackfill(fk, splitOwn ? Object.assign({}, origSched, voidSweep) : origSched, voidSweep);
               if (store[editKey]) {
                 delete store[editKey];
                 saveIndustryRowEditStore(store, { skipServerPost: true });
@@ -114228,6 +114646,9 @@
           || (tabBtn && tabBtn.textContent ? tabBtn.textContent.trim() : '')
           || (preExtd ? 'New Extended Stakeholder Entry' : FORM_TITLES[nextForm])
           || nextForm;
+        if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
+          window.MFG_GEO.exitInlinePickerFullWindow();
+        }
         promptUnsavedEntrySwitch({
           type: 'form',
           formType,
@@ -114272,6 +114693,9 @@
     const isNonMfgModalScope = Boolean(curIndForModalScope && curIndForModalScope !== 'Manufacturing');
     if (isNonMfgModalScope && !editTargetRow && !pendingTargetRow && !(opts && opts.indQuickTpl) && (MFG_ONLY_MODAL_FORMS.has(formType) || MFG_ONLY_MODAL_FORMS.has(form))) {
       closeEntryModal(true);
+      if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
+        window.MFG_GEO.cleanupTicketOriginMiniMap();
+      }
       openIndustryDomainEntryModal(STATE.view, prefill && typeof prefill === 'object' ? prefill : {});
       return;
     }
@@ -114527,6 +114951,9 @@
       const saveBtnHtml = (seatCanSaveEdit || (canVoidCurrent && isTicketEdit))
         ? `<button type="button" class="btn btn-brass" id="dynSaveModalBtn"${!seatCanSaveEdit ? ' hidden' : ''}>${saveBtnLbl}</button>`
         : '';
+      if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
+        window.MFG_GEO.cleanupTicketOriginMiniMap();
+      }
       body.innerHTML = renderEntryModalBody() + renderEntryAttachmentsBarHtml(form, seatCanSaveEdit) + `
         <div class="modal-foot">
           <span class="form-note">${footNoteHtml}</span>
@@ -115153,6 +115580,9 @@
     cancelNearCopyLiveCheck();
     const isInteractiveClose = Boolean((ev && ev.isTrusted) || window.__MFG_TEST_UNSAVED_CLOSE);
     if (!force && isInteractiveClose && isEntryModalDirty()) {
+      if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
+        window.MFG_GEO.exitInlinePickerFullWindow();
+      }
       promptUnsavedEntrySwitch({ type: 'close' });
       return;
     }
@@ -120986,6 +121416,7 @@
                   <span class="geo-modal-map-hdr-actions">
                     <span id="inspSiteKmReadout" class="insp-site-km-readout">${inspKmInitTxt}</span>
                     <button type="button" class="geo-mini-btn" id="inspClearSitePinBtn"${allowInspFullGeoPinEdit ? '' : ' disabled'} hidden>Clear Pin</button>
+                    <button type="button" class="geo-mini-btn geo-fullwin-btn geo-picker-bar-fullwin-btn" id="inspSiteToggleFullWinBtn" aria-pressed="false" aria-label="Full Window" data-ui-tip="Full Window"><svg class="geo-fullwin-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Full Window</span></button>
                   </span>
                 </div>
                 <div class="geo-modal-map-canvas insp-site-map-canvas" id="inspSiteMapCanvas"></div>
@@ -133227,6 +133658,9 @@
 
   function setDemoCompanyIndustry(indId) {
     if (!indId || !INDUSTRY_SIDEBAR_SPEC[indId]) return;
+    if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
+      window.MFG_GEO.exitInlinePickerFullWindow();
+    }
     if (STATE.company && STATE.company !== DEMO_COMPANY_KEY) _demoCompanyPrevRealCo = STATE.company;
     const prevDemo = isDemoScopeActive();
     const prevInd = getActiveIndustry(STATE.company);
@@ -133282,6 +133716,9 @@
   let _coPickOpenSession = false;
   function selectCompanyScope(coKey, closePopover = true, opts = null) {
     if (!coKey) return;
+    if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
+      window.MFG_GEO.exitInlinePickerFullWindow();
+    }
     if (STATE.company && STATE.company !== DEMO_COMPANY_KEY && coKey === DEMO_COMPANY_KEY) _demoCompanyPrevRealCo = STATE.company;
     const prevDemo = isDemoScopeActive();
     const prevInd = getActiveIndustry(STATE.company);
@@ -134347,6 +134784,14 @@
     if (typeof closeHoldingExtendedShareCard === 'function') closeHoldingExtendedShareCard();
     // Same for a pinned KPI breakdown or an open touch sheet: the previous seat's figures go with it.
     if (window.MFG_CHART_POP && typeof window.MFG_CHART_POP.close === 'function') window.MFG_CHART_POP.close();
+    if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
+      window.MFG_GEO.exitInlinePickerFullWindow();
+    }
+    closeEntryModal(true);
+    closeRecordInspector();
+    if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
+      window.MFG_GEO.resetGeoStoreSession();
+    }
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.close === 'function') {
       window.MFG_CMD_PALETTE.close({ clearCache: true });
     }
@@ -171713,6 +172158,9 @@
   }
 
   function setView(view, opts = {}) {
+    if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
+      window.MFG_GEO.exitInlinePickerFullWindow();
+    }
     const _scrollPaySal = (view === 'payroll_salaries');
     const _scrollUnitEcon = (view === 'unit_economics');
     if (view === 'cashflow_analytics') view = 'cashflow';
@@ -173841,6 +174289,10 @@
           window.MFG_ASK.closeDayCloseDigest();
           return;
         }
+        if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function' && window.MFG_GEO.exitInlinePickerFullWindow()) {
+          e.preventDefault();
+          return;
+        }
         const ins = $('recordInspector');
         if (ins && !ins.hidden) {
           if ($('inspAccountBriefPopover') && window.MFG_ASK && typeof window.MFG_ASK.closeInspectorBrief === 'function') {
@@ -173919,6 +174371,9 @@
     // History: back / forward + hash links move between modules (only after sign-in)
     window.addEventListener('popstate', e => {
       if (!STATE.authed) return;
+      if (window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
+        window.MFG_GEO.exitInlinePickerFullWindow();
+      }
       const v = (e.state && e.state.view) || (location.hash || '').replace(/^#/, '') || 'overview';
       let scopeRestored = false;
       _coPickOpenSession = false;
@@ -173946,6 +174401,9 @@
       expenses_analytics: 'expenses', fleet_analytics: 'fleet_drivers', payroll_analytics: 'payroll', jv: 'raw_jv'
     };
     window.addEventListener('hashchange', () => {
+      if (STATE.authed && window.MFG_GEO && typeof window.MFG_GEO.exitInlinePickerFullWindow === 'function') {
+        window.MFG_GEO.exitInlinePickerFullWindow();
+      }
       const rawHash = (location.hash || '').replace(/^#/, '');
       if (rawHash === 'unit_economics') {
         if (!STATE.authed) {
@@ -175768,7 +176226,8 @@
       const isEmptyBounded = isBounded && !(ic.byPair && ic.byPair.length) && !exps.length;
       const roll = isEmptyBounded ? null : computeEnterpriseRollup();
       const hldSched = typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules() : { partnerAgreements: [] };
-      const schedPartners = Array.isArray(hldSched.partnerAgreements) ? hldSched.partnerAgreements : [];
+      // The partners in force: a schedule kept apart by a save and the one that follows it are one partner
+      const schedPartners = holdingInForceRows(hldSched.partnerAgreements);
       const partners = isEmptyBounded
         ? []
         : (schedPartners.length

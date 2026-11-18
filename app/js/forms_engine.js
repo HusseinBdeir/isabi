@@ -1446,12 +1446,13 @@
           ${fld('Latitude (GPS)', inp('f_lat', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
           ${fld('Longitude (GPS)', inp('f_lng', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
           <div class="form-field span-3" id="siteRegionConsistencyBanner" hidden></div>
-          <div class="geo-modal-map-wrap">
+          <div class="geo-modal-map-wrap" id="modalSiteMapWrap">
             <div class="geo-modal-map-bar">
               <span id="modalSiteMapPrompt"><b>Site Location:</b> Click on the map, drag the pin, or select a Region above to set or modify where this site is</span>
               <span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <span id="modalSiteKmReadout" style="font-weight:700;color:var(--accent,#1D4ED8)">${isMfgForm ? 'Click map or select Region to estimate KM' : 'Click map or select Region'}</span>
                 <button type="button" class="geo-mini-btn" id="modalClearSitePinBtn" hidden>Clear Pin</button>
+                <button type="button" class="geo-mini-btn geo-fullwin-btn geo-picker-bar-fullwin-btn" id="modalSiteToggleFullWinBtn" aria-pressed="false" aria-label="Full Window" data-ui-tip="Full Window"><svg class="geo-fullwin-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Full Window</span></button>
               </span>
             </div>
             <div class="geo-modal-map-canvas" id="modalSiteMapCanvas"></div>
@@ -1520,6 +1521,7 @@
                 <button type="button" class="geo-mini-btn" id="modalPolyUndoBtn" hidden>Undo Corner</button>
                 <button type="button" class="geo-mini-btn primary" id="modalPolyFinishBtn" hidden>Finish Shape</button>
                 <button type="button" class="geo-mini-btn" id="modalRegionClearPtsBtn">Clear Zone</button>
+                <button type="button" class="geo-mini-btn geo-fullwin-btn geo-picker-bar-fullwin-btn" id="modalRegionToggleFullWinBtn" aria-pressed="false" aria-label="Full Window" data-ui-tip="Full Window"><svg class="geo-fullwin-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Full Window</span></button>
               </div>
             </div>
             <div class="geo-modal-map-canvas" id="modalRegionMapCanvas"></div>
