@@ -6752,6 +6752,339 @@ finally:
         entSyncExpAfter
       }).slice(0, 900));
     }
+
+    // 51. D1 Pre-Void Field Edit Lock, Anti-Tamper (/records, /sync, /industry_domain_store) & Read-Only Supervisor Void/Restore
+    const e51TodayIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Beirut' }).format(new Date());
+    const e51ForgedNewCreate = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: {
+        id: 'exp-e51-forged-new', company: 'BBConstruction', date: e51TodayIso, supplier: 'E51 Forge',
+        category: 'Supply', amount: 40, amount_usd: 40, total: 40, voided: false,
+        _pre_void_orig: { amount: 9999 },
+        _pre_void_edits: [{ at: '2020-01-01T00:00:00Z', by: 'Forager', changes: { amount: { from: 9999, to: 40 } } }]
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    const e51Id = 'exp-e51-diff-bbc';
+    const e51Create = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: e51Id, company: 'BBConstruction', date: e51TodayIso, supplier: 'E51 Supplier', category: 'Supply', amount: 580, amount_usd: 580, total: 580, voided: false }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51Edit = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: e51Id, company: 'BBConstruction', date: e51TodayIso, supplier: 'E51 Supplier', category: 'Supply', amount: 95, amount_usd: 95, total: 95, voided: false }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51TamperRec = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: e51Id, company: 'BBConstruction', amount: 95, _pre_void_orig: { amount: 1 }, _pre_void_edits: [] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51SupVoid = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: e51Id, company: 'BBConstruction', voided: true, void_reason: 'E51 sup void after edit', discount: 0, vat: 0, mat_indiff: false }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const e51SupRestore = await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: e51Id, company: 'BBConstruction', voided: false, discount: 0, vat: 0, mat_indiff: false }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const e51SyncRead2 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const e51Doc2 = e51SyncRead2.json?.docs?.mfg_web_store || {};
+    const e51Exps2 = (e51Doc2.customRecords?.expenses || []).filter(x => x && x.id !== e51Id);
+    const e51SyncTamper = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true,
+      ifMatchUpdatedAt: String(e51Doc2.updatedAt || ''),
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), Date.parse(e51Doc2.updatedAt || 0) + 1000)).toISOString(),
+          customRecords: Object.assign({}, e51Doc2.customRecords || {}, {
+            expenses: e51Exps2.concat([{ id: e51Id, company: 'BBConstruction', date: e51TodayIso, supplier: 'E51 Supplier', category: 'Supply', amount: 95, amount_usd: 95, total: 95, voided: false, _pre_void_orig: { amount: 2 }, _pre_void_edits: [] }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51Get = await httpReq('GET', '/app/api/records?table=expenses&company=BBConstruction&limit=500', null, { 'X-ISABI-Session': bbcSupToken });
+    const e51Row = (e51Get.json?.rows || []).find(r => r && r.id === e51Id);
+    const e51ForgedNewRow = (e51Get.json?.rows || []).find(r => r && r.id === 'exp-e51-forged-new');
+
+    const e51DomKey = 'Manufacturing::Sites::E51-CELL-BBC';
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryRowEdits: { [e51DomKey]: { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'E51-CELL-BBC', company: 'BBConstruction', headers: ['Site', 'Total'], cells: ['E51-CELL-BBC', '720'], rev: 1, voided: false } }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryRowEdits: { [e51DomKey]: { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'E51-CELL-BBC', company: 'BBConstruction', headers: ['Site', 'Total'], cells: ['E51-CELL-BBC', '110'], rev: 2, voided: true, void_reason: 'E51 cell void' } }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51DomGet = await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': bbcSupToken });
+    const e51CellAfter = (e51DomGet.json?.industryRowEdits || {})[e51DomKey];
+
+    // Read-Only Supervisor /api/sync attempt to tamper D1-only E51-CELL-BBC cells -> reverted; pure unvoid -> 200 & voided=false
+    const e51SyncRead3 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': bbcSupToken });
+    const e51Doc3 = e51SyncRead3.json?.docs?.mfg_web_store || {};
+    const e51SupSyncTamper = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true,
+      ifMatchUpdatedAt: String(e51Doc3.updatedAt || ''),
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), Date.parse(e51Doc3.updatedAt || 0) + 1000)).toISOString(),
+          industryRowEdits: Object.assign({}, e51Doc3.industryRowEdits || {}, {
+            [e51DomKey]: { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'E51-CELL-BBC', company: 'BBConstruction', headers: ['Site', 'Total'], cells: ['E51-CELL-BBC', '9999'], rev: 3, voided: false }
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const e51DomAfterSupTamper = ((await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': bbcSupToken })).json?.industryRowEdits || {})[e51DomKey];
+
+    const e51SyncRead4 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': bbcSupToken });
+    const e51Doc4 = e51SyncRead4.json?.docs?.mfg_web_store || {};
+    const e51SupSyncUnvoid = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true,
+      ifMatchUpdatedAt: String(e51Doc4.updatedAt || ''),
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), Date.parse(e51Doc4.updatedAt || 0) + 1000)).toISOString(),
+          industryRowEdits: Object.assign({}, e51Doc4.industryRowEdits || {}, {
+            [e51DomKey]: { ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'E51-CELL-BBC', company: 'BBConstruction', headers: ['Site', 'Total'], cells: ['E51-CELL-BBC', '110'], rev: 4, voided: false, void_reason: '' }
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const e51DomAfterSupUnvoid = ((await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': bbcSupToken })).json?.industryRowEdits || {})[e51DomKey];
+
+    // Finding #1: Read-Only Supervisor initial void via /app/api/sync preserves void_reason on customRecords + industryCustomRows
+    await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: 'exp-e51-ro-init', company: 'BBConstruction', date: e51TodayIso, supplier: 'E51 RO Init', category: 'Supply', amount: 120, amount_usd: 120, total: 120, voided: false }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { mfg_sites: [{ id: 'DOM-E51-RO-INIT', company: 'BBConstruction', ind: 'Manufacturing', name: 'E51 RO Dom Init', amount_usd: 220, rev: 1, voided: false }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51SyncRead5 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': bbcSupToken });
+    const e51Doc5 = e51SyncRead5.json?.docs?.mfg_web_store || {};
+    const e51Exps5 = (e51Doc5.customRecords?.expenses || []).filter(x => x && x.id !== 'exp-e51-ro-init');
+    const e51Sites5 = (e51Doc5.industryCustomRows?.mfg_sites || []).filter(x => x && x.id !== 'DOM-E51-RO-INIT');
+    const e51RoInitSync = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true,
+      ifMatchUpdatedAt: String(e51Doc5.updatedAt || ''),
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), Date.parse(e51Doc5.updatedAt || 0) + 1000)).toISOString(),
+          customRecords: Object.assign({}, e51Doc5.customRecords || {}, {
+            expenses: e51Exps5.concat([{ id: 'exp-e51-ro-init', company: 'BBConstruction', date: e51TodayIso, supplier: 'E51 RO Init', category: 'Supply', amount: 120, amount_usd: 120, total: 120, voided: true, void_reason: 'E51 RO initial reason' }])
+          }),
+          industryCustomRows: Object.assign({}, e51Doc5.industryCustomRows || {}, {
+            mfg_sites: e51Sites5.concat([{ id: 'DOM-E51-RO-INIT', company: 'BBConstruction', ind: 'Manufacturing', name: 'E51 RO Dom Init', amount_usd: 220, rev: 2, voided: true, void_reason: 'E51 DOM RO init reason' }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const e51RoInitRecRow = ((await httpReq('GET', '/app/api/records?table=expenses&company=BBConstruction&limit=500', null, { 'X-ISABI-Session': bbcSupToken })).json?.rows || []).find(r => r && r.id === 'exp-e51-ro-init');
+    const e51RoInitDomRow = (((await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': bbcSupToken })).json?.industryCustomRows || {}).mfg_sites || []).find(r => r && r.id === 'DOM-E51-RO-INIT');
+    const e51RoInitReasonOk = Boolean(
+      e51RoInitSync.status === 200 &&
+      e51RoInitRecRow && e51RoInitRecRow.voided === true && e51RoInitRecRow.void_reason === 'E51 RO initial reason' &&
+      e51RoInitDomRow && e51RoInitDomRow.voided === true && e51RoInitDomRow.void_reason === 'E51 DOM RO init reason'
+    );
+
+    // Finding #2: Stale-KV /api/sync after /api/records edit preserves D1 edited amount & _pre_void_* history
+    const e51SyncRead6 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const e51Doc6 = e51SyncRead6.json?.docs?.mfg_web_store || {};
+    const e51Exps6 = (e51Doc6.customRecords?.expenses || []).filter(x => x && x.id !== 'exp-e51-stale-sync');
+    await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true,
+      ifMatchUpdatedAt: String(e51Doc6.updatedAt || ''),
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), Date.parse(e51Doc6.updatedAt || 0) + 1000)).toISOString(),
+          customRecords: Object.assign({}, e51Doc6.customRecords || {}, {
+            expenses: e51Exps6.concat([{ id: 'exp-e51-stale-sync', company: 'BBConstruction', date: e51TodayIso, supplier: 'Stale Sync V', category: 'Supply', amount: 500, amount_usd: 500, total: 500, voided: false }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: 'exp-e51-stale-sync', company: 'BBConstruction', date: e51TodayIso, supplier: 'Stale Sync V', category: 'Supply', amount: 90, amount_usd: 90, total: 90, voided: false }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51SyncRead7 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const e51Doc7 = e51SyncRead7.json?.docs?.mfg_web_store || {};
+    const e51Exps7 = (e51Doc7.customRecords?.expenses || []).filter(x => x && x.id !== 'exp-e51-stale-sync');
+    await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true,
+      ifMatchUpdatedAt: String(e51Doc7.updatedAt || ''),
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), Date.parse(e51Doc7.updatedAt || 0) + 1000)).toISOString(),
+          customRecords: Object.assign({}, e51Doc7.customRecords || {}, {
+            expenses: e51Exps7.concat([{ id: 'exp-e51-stale-sync', company: 'BBConstruction', date: e51TodayIso, supplier: 'Stale Sync V', category: 'Supply', amount: 500, amount_usd: 500, total: 500, modified_at: '2026-11-18T23:59:59Z', voided: false }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51StaleAfter = ((await httpReq('GET', '/app/api/records?table=expenses&company=BBConstruction&limit=500', null, { 'X-ISABI-Session': ownerToken })).json?.rows || []).find(r => r && r.id === 'exp-e51-stale-sync');
+    const e51StaleNoClobberOk = Boolean(
+      e51StaleAfter && Number(e51StaleAfter.amount) === 90 &&
+      Number(e51StaleAfter._pre_void_orig?.amount || 0) === 500 &&
+      Array.isArray(e51StaleAfter._pre_void_edits) && e51StaleAfter._pre_void_edits.length === 1
+    );
+
+    // Finding #5: D1 16 sequential /api/records edits cap at 15 (keeping edit #1 orig) + industryCustomRows anti-tamper & actor binding
+    await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: 'exp-e51-cap15', company: 'BBConstruction', date: e51TodayIso, supplier: 'Cap15 V', category: 'Supply', amount: 100, amount_usd: 100, total: 100, voided: false }
+    }, { 'X-ISABI-Session': ownerToken });
+    for (let ci = 1; ci <= 16; ci++) {
+      await httpReq('POST', '/app/api/records', {
+        table: 'expenses',
+        record: { id: 'exp-e51-cap15', company: 'BBConstruction', date: e51TodayIso, supplier: 'Cap15 V', category: 'Supply', amount: 100 + ci * 10, amount_usd: 100 + ci * 10, total: 100 + ci * 10, voided: false }
+      }, { 'X-ISABI-Session': ownerToken });
+    }
+    const e51CapRow = ((await httpReq('GET', '/app/api/records?table=expenses&company=BBConstruction&limit=500', null, { 'X-ISABI-Session': ownerToken })).json?.rows || []).find(r => r && r.id === 'exp-e51-cap15');
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { mfg_sites: [{ id: 'E51-ICR-TAMPER', company: 'BBConstruction', ind: 'Manufacturing', name: 'E51 ICR Site', amount_usd: 410, rev: 1, voided: false }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { mfg_sites: [{ id: 'E51-ICR-TAMPER', company: 'BBConstruction', ind: 'Manufacturing', name: 'E51 ICR Site', amount_usd: 130, rev: 2, voided: false }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { mfg_sites: [{ id: 'E51-ICR-TAMPER', company: 'BBConstruction', ind: 'Manufacturing', name: 'E51 ICR Site', amount_usd: 130, rev: 3, voided: false, _pre_void_orig: { amount_usd: 1 }, _pre_void_edits: [{ at: '2020-01-01T00:00:00Z', by: 'Attacker', changes: { amount_usd: { from: 1, to: 130 } } }] }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51IcrAfter = (((await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': ownerToken })).json?.industryCustomRows || {}).mfg_sites || []).find(r => r && r.id === 'E51-ICR-TAMPER');
+    const e51CapAndIcrOk = Boolean(
+      e51CapRow && Number(e51CapRow._pre_void_orig?.amount || 0) === 100 &&
+      Array.isArray(e51CapRow._pre_void_edits) && e51CapRow._pre_void_edits.length === 15 &&
+      Number(e51CapRow._pre_void_edits[14]?.changes?.amount?.to || 0) === 260 &&
+      e51IcrAfter && Number(e51IcrAfter._pre_void_orig?.amount_usd || 0) === 410 &&
+      Array.isArray(e51IcrAfter._pre_void_edits) && e51IcrAfter._pre_void_edits.length === 1 &&
+      !/Attacker/i.test(String(e51IcrAfter._pre_void_edits[0]?.by || ''))
+    );
+
+    // First-edit sibling seed row (!ex) in /api/industry_domain_store preserves verified single-step _pre_void_* with server actor & blocks forged multi-edit/voided creates
+    const e51SeedInitKey = 'Manufacturing::Sites::E51-SEED-FIRST';
+    const e51SeedBadKey = 'Manufacturing::Sites::E51-SEED-FORGED';
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryRowEdits: {
+        [e51SeedInitKey]: {
+          ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'E51-SEED-FIRST', company: 'BBConstruction',
+          headers: ['Site', 'Total'], cells: ['E51-SEED-FIRST', '310'], rev: 1, voided: false,
+          _pre_void_orig: { site: 'E51-SEED-FIRST', total: '640' },
+          _pre_void_edits: [{ at: '2020-01-01T00:00:00Z', by: 'SpoofActor', changes: { total: { from: '640', to: '310' } } }]
+        },
+        [e51SeedBadKey]: {
+          ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'E51-SEED-FORGED', company: 'BBConstruction',
+          headers: ['Site', 'Total'], cells: ['E51-SEED-FORGED', '40'], rev: 1, voided: true, void_reason: 'forged create',
+          _pre_void_orig: { site: 'E51-SEED-FORGED', total: '9999' },
+          _pre_void_edits: [{ at: '2020-01-01T00:00:00Z', by: 'SpoofActor', changes: { total: { from: '9999', to: '40' } } }]
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryRowEdits: {
+        [e51SeedInitKey]: {
+          ind: 'Manufacturing', tableTitle: 'Sites', primaryId: 'E51-SEED-FIRST', company: 'BBConstruction',
+          headers: ['Site', 'Total'], cells: ['E51-SEED-FIRST', '310'], rev: 2, voided: true, void_reason: 'seed edit then void'
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51SeedGet = await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': ownerToken });
+    const e51SeedGood = (e51SeedGet.json?.industryRowEdits || {})[e51SeedInitKey];
+    const e51SeedBad = (e51SeedGet.json?.industryRowEdits || {})[e51SeedBadKey];
+    const e51SeedInitEditOk = Boolean(
+      e51SeedGood && e51SeedGood.voided === true && String(e51SeedGood._pre_void_orig?.total || '') === '640' &&
+      Array.isArray(e51SeedGood._pre_void_edits) && e51SeedGood._pre_void_edits.length === 1 &&
+      !/SpoofActor/i.test(String(e51SeedGood._pre_void_edits[0]?.by || '')) &&
+      !/^2020/.test(String(e51SeedGood._pre_void_edits[0]?.at || '')) &&
+      e51SeedBad && !e51SeedBad._pre_void_orig && !(Array.isArray(e51SeedBad._pre_void_edits) && e51SeedBad._pre_void_edits.length)
+    );
+
+    // Concurrent /api/sync vs /api/records Case A (stale pre-edit void preserves $90 + edits) & Case B (stale notes edit does not unvoid DB void)
+    await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: 'exp-e51-race-a', company: 'BBConstruction', date: e51TodayIso, supplier: 'Race A', category: 'Supply', amount: 500, amount_usd: 500, total: 500, voided: false }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: 'exp-e51-race-b', company: 'BBConstruction', date: e51TodayIso, supplier: 'Race B', category: 'Supply', amount: 500, amount_usd: 500, total: 500, voided: false }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51RaceRead0 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const e51RaceDoc0 = e51RaceRead0.json?.docs?.mfg_web_store || {};
+    const e51RaceExps0 = (e51RaceDoc0.customRecords?.expenses || []).filter(x => x && x.id !== 'exp-e51-race-a' && x.id !== 'exp-e51-race-b');
+    await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true,
+      ifMatchUpdatedAt: String(e51RaceDoc0.updatedAt || ''),
+      patch: {
+        mfg_web_store: Object.assign({}, e51RaceDoc0, {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), Date.parse(e51RaceDoc0.updatedAt || 0) + 1000)).toISOString(),
+          customRecords: Object.assign({}, e51RaceDoc0.customRecords || {}, {
+            expenses: e51RaceExps0.concat([
+              { id: 'exp-e51-race-a', company: 'BBConstruction', date: e51TodayIso, supplier: 'Race A', category: 'Supply', amount: 500, amount_usd: 500, total: 500, voided: false },
+              { id: 'exp-e51-race-b', company: 'BBConstruction', date: e51TodayIso, supplier: 'Race B', category: 'Supply', amount: 500, amount_usd: 500, total: 500, voided: false }
+            ])
+          })
+        })
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: 'exp-e51-race-a', company: 'BBConstruction', date: e51TodayIso, supplier: 'Race A', category: 'Supply', amount: 90, amount_usd: 90, total: 90, voided: false }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/records', {
+      table: 'expenses',
+      record: { id: 'exp-e51-race-b', company: 'BBConstruction', date: e51TodayIso, supplier: 'Race B', category: 'Supply', amount: 90, amount_usd: 90, total: 90, voided: true, void_reason: 'E51 race B void' }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51RaceRead1 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const e51RaceDoc1 = e51RaceRead1.json?.docs?.mfg_web_store || {};
+    const e51RaceExps1 = (e51RaceDoc1.customRecords?.expenses || []).filter(x => x && x.id !== 'exp-e51-race-a' && x.id !== 'exp-e51-race-b');
+    await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true,
+      ifMatchUpdatedAt: String(e51RaceDoc1.updatedAt || ''),
+      patch: {
+        mfg_web_store: Object.assign({}, e51RaceDoc1, {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), Date.parse(e51RaceDoc1.updatedAt || 0) + 1000)).toISOString(),
+          customRecords: Object.assign({}, e51RaceDoc1.customRecords || {}, {
+            expenses: e51RaceExps1.concat([
+              { id: 'exp-e51-race-a', company: 'BBConstruction', date: e51TodayIso, supplier: 'Race A', category: 'Supply', amount: 500, amount_usd: 500, total: 500, voided: true, void_reason: 'stale void', modified_at: '2020-01-01T00:00:00Z' },
+              { id: 'exp-e51-race-b', company: 'BBConstruction', date: e51TodayIso, supplier: 'Race B', category: 'Supply', amount: 500, amount_usd: 500, total: 500, notes: 'stale late note', voided: false }
+            ])
+          })
+        })
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e51RaceRows = (await httpReq('GET', '/app/api/records?table=expenses&company=BBConstruction&limit=500', null, { 'X-ISABI-Session': ownerToken })).json?.rows || [];
+    const e51RaceAAfter = e51RaceRows.find(r => r && r.id === 'exp-e51-race-a');
+    const e51RaceBAfter = e51RaceRows.find(r => r && r.id === 'exp-e51-race-b');
+    const e51SyncRaceOk = Boolean(
+      e51RaceAAfter && Number(e51RaceAAfter.amount) === 90 && !e51RaceAAfter.voided &&
+      Array.isArray(e51RaceAAfter._pre_void_edits) && e51RaceAAfter._pre_void_edits.length === 1 &&
+      e51RaceBAfter && e51RaceBAfter.voided === true && Number(e51RaceBAfter.amount) === 90
+    );
+
+    const e51Ok = Boolean(
+      e51ForgedNewCreate.status === 200 && e51ForgedNewRow && !e51ForgedNewRow._pre_void_orig && !(Array.isArray(e51ForgedNewRow._pre_void_edits) && e51ForgedNewRow._pre_void_edits.length) &&
+      e51Create.status === 200 && e51Edit.status === 200 && e51TamperRec.status === 200 &&
+      e51SupVoid.status === 200 && e51SupRestore.status === 200 && e51SyncTamper.status === 200 &&
+      e51Row && !e51Row.voided && Number(e51Row._pre_void_orig?.amount || 0) === 580 &&
+      Array.isArray(e51Row._pre_void_edits) && e51Row._pre_void_edits.length === 1 &&
+      e51CellAfter && e51CellAfter.voided === true && String(e51CellAfter._pre_void_orig?.total || '') === '720' &&
+      Array.isArray(e51CellAfter._pre_void_edits) && e51CellAfter._pre_void_edits.length === 1 &&
+      (e51SupSyncTamper.status === 403 || (e51DomAfterSupTamper && String(e51DomAfterSupTamper.cells?.[1] || '') === '110')) &&
+      e51SupSyncUnvoid.status === 200 && e51DomAfterSupUnvoid && e51DomAfterSupUnvoid.voided === false && String(e51DomAfterSupUnvoid._pre_void_orig?.total || '') === '720' &&
+      e51RoInitReasonOk && e51StaleNoClobberOk && e51CapAndIcrOk && e51SeedInitEditOk && e51SyncRaceOk
+    );
+    if (e51Ok) {
+      pass('edge-51-pre-void-edit-lock-and-d1-parity', 'D1 locks _pre_void_orig/_pre_void_edits across /records, /sync, and /industry_domain_store cell edits + seed first-edit + sync/void race + Read-Only Supervisor 200 void/restore parity');
+    } else {
+      fail('edge-51-pre-void-edit-lock-and-d1-parity', JSON.stringify({
+        statuses: [e51ForgedNewCreate.status, e51Create.status, e51Edit.status, e51TamperRec.status, e51SupVoid.status, e51SupRestore.status, e51SyncTamper.status, e51SupSyncTamper.status, e51SupSyncUnvoid.status, e51RoInitSync.status],
+        e51RoInitReasonOk, e51StaleNoClobberOk, e51CapAndIcrOk, e51SeedInitEditOk, e51SyncRaceOk,
+        e51ForgedNewRow, e51Row, e51CellAfter, e51DomAfterSupTamper, e51DomAfterSupUnvoid, e51RoInitRecRow, e51RoInitDomRow, e51StaleAfter, e51IcrAfter, e51SeedGood, e51SeedBad, e51RaceAAfter, e51RaceBAfter
+      }).slice(0, 800));
+    }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
     killTree(edgeProc.pid);
