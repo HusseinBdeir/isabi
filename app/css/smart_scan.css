@@ -709,3 +709,61 @@ body.kiosk-locked #mobileSmartScanBtn {
   border-color: rgba(212, 168, 71, 0.52);
   color: #FDE68A;
 }
+
+/* Mobile 1-Row AI Quick Bar & Collapsible Smart Scan Bar (<= 768px) */
+.mob-ai-quick-bar {
+  display: none !important;
+}
+@media (max-width: 768px) {
+  .mob-ai-quick-bar {
+    display: flex !important;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 8px 0;
+  }
+  .mob-ai-quick-bar .mob-ai-qbtn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 0 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(192, 137, 47, 0.42);
+    background: var(--surface, #FAF9F6);
+    color: var(--ink, #281D15);
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .mob-ai-quick-bar .mob-ai-qbtn[hidden] {
+    display: none !important;
+  }
+  .mob-ai-quick-bar .mob-ai-qbtn span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mob-ai-quick-bar .mob-ai-qbtn svg.ic {
+    width: 14px;
+    height: 14px;
+    color: var(--brass-strong, #A9741E);
+    flex-shrink: 0;
+  }
+  .mob-ai-quick-bar .mob-ai-qbtn.is-open {
+    background: var(--brass-tint, rgba(200, 157, 84, 0.16));
+    border-color: var(--brass, #C0892F);
+  }
+  :root[data-theme="dark"] .mob-ai-quick-bar .mob-ai-qbtn {
+    background: var(--surface-2, #1E293B);
+    color: var(--ink, #F8FAFC);
+    border-color: rgba(212, 168, 71, 0.45);
+  }
+  #entryModal:not(.mob-ai-scan-open) #entrySmartScanBar:not(.is-dragover),
+  #indDomainEntryModal:not(.mob-ai-scan-open) #indEntrySmartScanBar:not(.is-dragover) {
+    display: none !important;
+  }
+}
