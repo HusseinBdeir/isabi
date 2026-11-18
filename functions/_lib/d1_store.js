@@ -2809,11 +2809,13 @@ function hasExplicitGpsKeyInPayload(obj) {
 const VOID_META_KEYS = [
   'voided', 'voided_by', 'voidedBy', 'voided_by_email', 'voidedByEmail',
   'voided_at', 'voidedAt', 'void_reason', 'voidReason', 'void_snapshot',
-  'voided_with_voucher', 'voided_with_parent', 'void_note_updated_by', 'void_note_updated_at'
+  'voided_with_voucher', 'voided_with_parent', 'void_note_updated_by', 'void_note_updated_at',
+  'twin_of', 'twin_difference'
 ];
 
 const VOID_META_AND_GPS_SKIP_KEYS = new Set([
   ...VOID_META_KEYS,
+  '_reopenedExplicitly',
   'restored_at', 'restoredAt', 'restored_by', 'restoredBy',
   'modified_at', 'modifiedAt', 'modified_by', 'modifiedBy', 'updated_at', 'updatedAt',
   'rev', '_rev', '_revBumped', '_customRev', 'sync_source', 'payload_json',
@@ -3199,13 +3201,44 @@ function applyExplicitVoidReason(targetObj, incomingObj) {
   return targetObj;
 }
 
+function isSyncTwinVoidBy(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  return /^(system-topup|sharepoint top-up)/i.test(String(obj.voided_by || obj.voidedBy || '').trim());
+}
+
 function enforceServerVoidActorFields(targetObj, prevObj, session, nowIso, opts = {}) {
   if (!targetObj || typeof targetObj !== 'object') return targetObj;
   const wasVoid = Boolean(prevObj && prevObj.voided);
   const nowVoid = Boolean(targetObj.voided);
   if (!nowVoid) {
     if (wasVoid) {
+      if (prevObj && (!session || !session.build_ticket) && isSyncTwinVoidBy(prevObj)) {
+        targetObj.voided = true;
+        for (const vk of VOID_META_KEYS) {
+          if (vk !== 'voided' && vk in prevObj && prevObj[vk] !== undefined) targetObj[vk] = prevObj[vk];
+        }
+        delete targetObj.restored_at;
+        delete targetObj.restoredAt;
+        delete targetObj.restored_by;
+        delete targetObj.restoredBy;
+        delete targetObj._reopenedExplicitly;
+        return targetObj;
+      }
+      const wasWbMatch = Boolean(
+        prevObj && (
+          prevObj.twin_of
+          || prevObj.twin_difference
+          || /^(workbook match|workbook reconciliation)/i.test(String(prevObj.voided_by || '').trim())
+        )
+      );
       stripVoidFields(targetObj);
+      if (wasWbMatch) {
+        targetObj._reopenedExplicitly = true;
+        targetObj.rev = Math.max(Number((prevObj && prevObj.rev) || 1), Number(targetObj.rev || 1)) + 1;
+      } else if (prevObj && (!session || !session.build_ticket)) {
+        if (prevObj._reopenedExplicitly !== undefined) targetObj._reopenedExplicitly = prevObj._reopenedExplicitly;
+        else delete targetObj._reopenedExplicitly;
+      }
       if (session && !session.build_ticket) {
         const actorName = String(session.name || session.full_name || session.email || '').trim();
         if (actorName) targetObj.restored_by = actorName;
@@ -3248,6 +3281,7 @@ function enforceServerVoidActorFields(targetObj, prevObj, session, nowIso, opts 
     delete targetObj.voidedAt;
     delete targetObj.restored_at;
     delete targetObj.restored_by;
+    delete targetObj._reopenedExplicitly;
   } else {
     if (prevObj.voided_by) targetObj.voided_by = prevObj.voided_by;
     if (prevObj.voided_by_email) targetObj.voided_by_email = prevObj.voided_by_email;
@@ -3481,6 +3515,14 @@ export async function handleRecordsPost(request, env, session, body) {
     const voidNoteChanged = wasVoid && nowVoid && hasVoidReasonChange(exHydrated, record);
     if (!perms.voidData && (wasVoid !== nowVoid || voidNoteChanged)) {
       return jsonResponse({ ok: false, error: 'Role permission: seat cannot void or unvoid records.' }, 403);
+    }
+    if (
+      wasVoid
+      && !nowVoid
+      && (!session || !session.build_ticket)
+      && /^(system-topup|sharepoint top-up)/i.test(String(exHydrated.voided_by || '').trim())
+    ) {
+      return jsonResponse({ ok: false, error: 'Synced workbook rows cannot be restored directly.' }, 403);
     }
     const isSparsePureVoid = Boolean(
       (wasVoid !== nowVoid || voidNoteChanged)
@@ -5523,6 +5565,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         const exRev = Number(ex.rev || 1);
         const voidNoteChanged = Boolean(exVoid) && Boolean(incVoid) && hasVoidReasonChange(exObj, r);
         if (Boolean(exVoid) === Boolean(incVoid) && !voidNoteChanged && !hasGpsFieldMutation(exObj, r) && !hasNonVoidFieldChange(exObj, r)) continue;
+        if (exVoid && !incVoid && (!session || !session.build_ticket) && isSyncTwinVoidBy(exObj)) {
+          return jsonResponse({ ok: false, error: 'Synced workbook rows cannot be restored directly.' }, 403);
+        }
         if (exVoid && !incVoid && exRev >= incRev) continue;
         if (exRev > incRev && !(incVoid && !exVoid)) continue;
         if (!perms.voidData && (Boolean(exVoid) !== Boolean(incVoid) || voidNoteChanged)) {
@@ -5574,8 +5619,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         const ev = detectRecordGeoAuditEvent('sites', null, rowToWrite, 'industry_domain_store', rowInd);
         if (ev) pendingDomainGeoAudits.push(ev);
       }
+      const effRev = Number(rowToWrite.rev || incRev);
       const writtenPayload = JSON.stringify(rowToWrite);
-      pendingRowWrites.push([bucket, rid, co, incRev, incVoid, incTs, writtenPayload]);
+      pendingRowWrites.push([bucket, rid, co, effRev, incVoid, incTs, writtenPayload]);
       rbRowsMeta.push({
         op: 'write',
         bucket,
@@ -5586,7 +5632,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         prevVoid: ex ? Number(ex.voided || 0) : 0,
         prevTs: ex ? String(ex.updated_at || '') : '',
         prevPayload: ex ? String(ex.payload_json || '{}') : '',
-        writtenRev: incRev,
+        writtenRev: effRev,
         writtenVoid: incVoid,
         writtenPayload
       });
@@ -5624,6 +5670,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       const exRev = Number(ex.rev || 1);
       const voidNoteChanged = Boolean(exVoid) && Boolean(incVoid) && hasVoidReasonChange(exObj, ev);
       if (Boolean(exVoid) === Boolean(incVoid) && !voidNoteChanged && !hasGpsFieldMutation(exObj, ev) && !hasNonVoidFieldChange(exObj, ev)) continue;
+      if (exVoid && !incVoid && (!session || !session.build_ticket) && isSyncTwinVoidBy(exObj)) {
+        return jsonResponse({ ok: false, error: 'Synced workbook rows cannot be restored directly.' }, 403);
+      }
       if (exVoid && !incVoid && exRev >= incRev) continue;
       if (exRev > incRev && !(incVoid && !exVoid)) continue;
       if (!perms.voidData && (Boolean(exVoid) !== Boolean(incVoid) || voidNoteChanged)) {
@@ -5679,8 +5728,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       const geoEv = detectRecordGeoAuditEvent('sites', null, editToWrite, 'industry_domain_store', edInd);
       if (geoEv) pendingDomainGeoAudits.push(geoEv);
     }
+    const effEditRev = Number(editToWrite.rev || incRev);
     const writtenPayload = JSON.stringify(editToWrite);
-    pendingEditWrites.push([ek, incRev, incVoid, incTs, writtenPayload]);
+    pendingEditWrites.push([ek, effEditRev, incVoid, incTs, writtenPayload]);
     rbEditsMeta.push({
       op: 'write',
       editKey: ek,
@@ -5689,7 +5739,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
       prevVoid: ex ? Number(ex.voided || 0) : 0,
       prevTs: ex ? String(ex.updated_at || '') : '',
       prevPayload: ex ? String(ex.payload_json || '{}') : '',
-      writtenRev: incRev,
+      writtenRev: effEditRev,
       writtenVoid: incVoid,
       writtenPayload
     });
@@ -7484,6 +7534,16 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
           }
           restoreVoidFieldsFromBase(sanIr, pr);
         }
+        if (
+          wasVoid
+          && !Boolean(sanIr.voided)
+          && (!session || !session.build_ticket)
+          && /^(system-topup|sharepoint top-up)/i.test(String(pr.voided_by || '').trim())
+        ) {
+          outList.push(pr);
+          keptIds.add(rid);
+          continue;
+        }
         const isSparsePureVoid = Boolean(
           (wasVoid !== Boolean(sanIr.voided) || voidNoteChanged)
           && !hasExplicitGpsKeyInPayload(sanIr)
@@ -7519,13 +7579,26 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
               rev: mergedIr.rev || pr.rev
             });
             if (nextRowRo.voided) {
+              if (!wasVoid) delete nextRowRo._reopenedExplicitly;
               nextRowRo.voided_by = wasVoid ? (pr.voided_by || mergedIr.voided_by || '') : (mergedIr.voided_by || mergedIr.voidedBy || pr.voided_by || '');
               if (wasVoid && pr.voided_by_email) nextRowRo.voided_by_email = pr.voided_by_email;
               nextRowRo.voided_at = wasVoid ? (pr.voided_at || mergedIr.voided_at || '') : (mergedIr.voided_at || mergedIr.voidedAt || pr.voided_at || '');
               if (voidNoteChanged) applyExplicitVoidReason(nextRowRo, mergedIr);
             } else {
+              const wasWbMatch = Boolean(
+                pr.twin_of
+                || pr.twin_difference
+                || /^(workbook match|workbook reconciliation)/i.test(String(pr.voided_by || '').trim())
+              );
               stripVoidFields(nextRowRo);
               if (mergedIr.restored_at) nextRowRo.restored_at = mergedIr.restored_at;
+              if (wasWbMatch) {
+                nextRowRo._reopenedExplicitly = true;
+                nextRowRo.rev = Math.max(Number(pr.rev || 1) + 1, Number(mergedIr.rev || 1));
+              } else if (!session || !session.build_ticket) {
+                if (pr._reopenedExplicitly !== undefined) nextRowRo._reopenedExplicitly = pr._reopenedExplicitly;
+                else delete nextRowRo._reopenedExplicitly;
+              }
             }
             outList.push(nextRowRo);
             keptIds.add(rid);
@@ -7656,6 +7729,16 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
             continue;
           }
           restoreVoidFieldsFromBase(sanIr, pr);
+        }
+        if (
+          wasVoid
+          && !Boolean(sanIr.voided)
+          && (!session || !session.build_ticket)
+          && /^(system-topup|sharepoint top-up)/i.test(String(pr.voided_by || '').trim())
+        ) {
+          outB.push(pr);
+          kept.add(rid);
+          continue;
         }
         const isSparsePureVoid = Boolean((wasVoid !== Boolean(sanIr.voided) || voidNoteChanged) && !hasExplicitGpsKeyInPayload(sanIr) && !hasNonVoidFieldChange(pr, sanIr));
         const mergedIr = isSparsePureVoid ? restoreGpsFieldsFromBase(Object.assign({}, pr, sanIr), pr) : sanIr;
@@ -7871,7 +7954,7 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
           if (!ir || typeof ir !== 'object' || !ir.id) continue;
           const rid = String(ir.id).trim();
           const pr = pMap.get(rid);
-          if (Boolean(ir.voided) && (!pr || !pr.voided)) probeIds.push(rid);
+          if (Boolean(ir.voided) ? (!pr || !pr.voided) : (!pr || Boolean(pr.voided))) probeIds.push(rid);
         }
         for (let i = 0; i < probeIds.length; i += 80) {
           const slice = probeIds.slice(i, i + 80);
@@ -7908,7 +7991,7 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
           if (!ir || typeof ir !== 'object') continue;
           const rid = String(ir.id || ir.code || '').trim();
           const pr = rid ? pMap.get(rid) : null;
-          if (rid && Boolean(ir.voided) && (!pr || !pr.voided)) probeIds.push(rid);
+          if (rid && (Boolean(ir.voided) ? (!pr || !pr.voided) : (!pr || Boolean(pr.voided)))) probeIds.push(rid);
         }
         for (let i = 0; i < probeIds.length; i += 80) {
           const slice = probeIds.slice(i, i + 80);
@@ -7942,7 +8025,7 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
       for (const [ek, iv] of Object.entries(incomingDoc.industryRowEdits)) {
         if (!ek || !iv || typeof iv !== 'object') continue;
         const pv = prevIre[ek];
-        if (Boolean(iv.voided) && (!pv || !pv.voided)) probeEks.push(ek);
+        if (Boolean(iv.voided) ? (!pv || !pv.voided) : (!pv || Boolean(pv.voided))) probeEks.push(ek);
       }
       for (let i = 0; i < probeEks.length; i += 80) {
         const slice = probeEks.slice(i, i + 80);
