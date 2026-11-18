@@ -2815,7 +2815,6 @@ const VOID_META_KEYS = [
 
 const VOID_META_AND_GPS_SKIP_KEYS = new Set([
   ...VOID_META_KEYS,
-  'printed', 'printed_at', 'last_printed_at', 'print_count',
   '_reopenedExplicitly',
   'restored_at', 'restoredAt', 'restored_by', 'restoredBy',
   'modified_at', 'modifiedAt', 'modified_by', 'modifiedBy', 'updated_at', 'updatedAt',
@@ -3208,6 +3207,18 @@ function isSyncTwinVoidBy(obj) {
   return /^(system-topup|sharepoint top-up)/i.test(String(obj.voided_by || obj.voidedBy || '').trim());
 }
 
+function sanitizeIncomingTwinKeys(targetObj, baseObj, session, perms) {
+  if (!targetObj || typeof targetObj !== 'object') return targetObj;
+  const trusted = Boolean((session && session.build_ticket) || (perms && perms.roleKey === 'Full Access (Owner)'));
+  if (trusted) return targetObj;
+  const base = (baseObj && typeof baseObj === 'object') ? baseObj : null;
+  for (const k of ['twin_of', 'twin_difference']) {
+    if (base && k in base && base[k] !== undefined) targetObj[k] = base[k];
+    else delete targetObj[k];
+  }
+  return targetObj;
+}
+
 function enforceServerVoidActorFields(targetObj, prevObj, session, nowIso, opts = {}) {
   if (!targetObj || typeof targetObj !== 'object') return targetObj;
   const wasVoid = Boolean(prevObj && prevObj.voided);
@@ -3408,7 +3419,7 @@ async function loadVoidReasonRuleCfgEdge(db) {
   };
 }
 
-function checkMandatoryVoidReasonEdge(tableOrBucket, rowObj, session, ruleCfg) {
+function checkMandatoryVoidReasonEdge(tableOrBucket, rowObj, session, ruleCfg, existingObj = null) {
   if (session && session.build_ticket) return null;
   const cfg = ruleCfg || { enabled: true, min_usd: 500, backdated_days: 1 };
   if (!cfg.enabled) return null;
@@ -3420,11 +3431,15 @@ function checkMandatoryVoidReasonEdge(tableOrBucket, rowObj, session, ruleCfg) {
     || (titleStr && MASTER_DIRECTORY_TITLE_RX_EDGE.test(titleStr) && (!tblLow || MASTER_DIRECTORY_VOID_TABLES_EDGE.has(tblLow) || /^wf::/i.test(tblLow) || tblLow.includes('::')))
   );
   if (isMaster) return null;
-  const byRaw = String(row.voided_by || row.voidedBy || '').trim();
+  // Exempt ONLY from verified existing DB row state, never from untrusted incoming client fields.
+  const exR = (existingObj && typeof existingObj === 'object') ? existingObj : null;
+  const exByRaw = String((exR && (exR.voided_by || exR.voidedBy)) || '').trim();
   if (
-    row.twin_of
-    || row.twin_difference
-    || /^(system-topup|sharepoint top-up|workbook match|workbook reconciliation)/i.test(byRaw)
+    exR && (
+      exR.twin_of
+      || exR.twin_difference
+      || /^(system-topup|sharepoint top-up|workbook match|workbook reconciliation)/i.test(exByRaw)
+    )
   ) {
     return null;
   }
@@ -3665,9 +3680,10 @@ export async function handleRecordsPost(request, env, session, body) {
     if (!String(recordToWrite.entered_at || '').trim()) {
       recordToWrite.entered_at = new Date().toISOString();
     }
+    sanitizeIncomingTwinKeys(recordToWrite, null, session, perms);
     if (Boolean(recordToWrite.voided)) {
       const vrCfg = await loadVoidReasonRuleCfgEdge(env.DB);
-      const vrErr = checkMandatoryVoidReasonEdge(canonTable, recordToWrite, session, vrCfg);
+      const vrErr = checkMandatoryVoidReasonEdge(canonTable, recordToWrite, session, vrCfg, null);
       if (vrErr) return jsonResponse(vrErr, 400);
     }
     enforceServerVoidActorFields(recordToWrite, null, session, new Date().toISOString());
@@ -3743,9 +3759,10 @@ export async function handleRecordsPost(request, env, session, body) {
         }
       }
     }
+    sanitizeIncomingTwinKeys(recordToWrite, exHydrated, session, perms);
     if (!wasVoid && nowVoid) {
       const vrCfg = await loadVoidReasonRuleCfgEdge(env.DB);
-      const vrErr = checkMandatoryVoidReasonEdge(canonTable, recordToWrite, session, vrCfg);
+      const vrErr = checkMandatoryVoidReasonEdge(canonTable, recordToWrite, session, vrCfg, exHydrated);
       if (vrErr) return jsonResponse(vrErr, 400);
     }
     enforceServerVoidActorFields(recordToWrite, exHydrated, session, new Date().toISOString(), { allowDoorTablet: canonTable === 'attendance' });
@@ -5768,8 +5785,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
             applyExplicitVoidReason(rowToWrite, r);
           }
         }
+        sanitizeIncomingTwinKeys(rowToWrite, exObj, session, perms);
         if (!exVoid && incVoid) {
-          const vrErr = checkMandatoryVoidReasonEdge(bucket, rowToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB));
+          const vrErr = checkMandatoryVoidReasonEdge(bucket, rowToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB), exObj);
           if (vrErr) return jsonResponse(vrErr, 400);
         }
         enforceServerVoidActorFields(rowToWrite, exObj, session, serverVoidNow);
@@ -5787,8 +5805,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         if (!perms.canWriteGeoConfig && (hasAnyGpsField(r) || hasExplicitGpsKeyInPayload(r))) {
           return await rejectDomainGeo403('Supervisor + Entry or Geo-authorized seat required to pin location coordinates.', { industry: rowInd, company: co, target_id: rid, target_label: String(r.name || rid), detail: { bucket } });
         }
+        sanitizeIncomingTwinKeys(rowToWrite, null, session, perms);
         if (incVoid) {
-          const vrErr = checkMandatoryVoidReasonEdge(bucket, rowToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB));
+          const vrErr = checkMandatoryVoidReasonEdge(bucket, rowToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB), null);
           if (vrErr) return jsonResponse(vrErr, 400);
         }
         enforceServerVoidActorFields(rowToWrite, null, session, serverVoidNow);
@@ -5882,8 +5901,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
           applyExplicitVoidReason(editToWrite, ev);
         }
       }
+      sanitizeIncomingTwinKeys(editToWrite, exObj, session, perms);
       if (!exVoid && incVoid && !/^WF::/i.test(ek)) {
-        const vrErr = checkMandatoryVoidReasonEdge(editToWrite.domainTblKey || ek, editToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB));
+        const vrErr = checkMandatoryVoidReasonEdge(editToWrite.domainTblKey || ek, editToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB), exObj);
         if (vrErr) return jsonResponse(vrErr, 400);
       }
       enforceServerVoidActorFields(editToWrite, exObj, session, serverEditVoidNow);
@@ -5904,8 +5924,9 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
           return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot edit domain records.' }, 403);
         }
       }
+      sanitizeIncomingTwinKeys(editToWrite, null, session, perms);
       if (incVoid && !/^WF::/i.test(ek)) {
-        const vrErr = checkMandatoryVoidReasonEdge(editToWrite.domainTblKey || ek, editToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB));
+        const vrErr = checkMandatoryVoidReasonEdge(editToWrite.domainTblKey || ek, editToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB), null);
         if (vrErr) return jsonResponse(vrErr, 400);
       }
       enforceServerVoidActorFields(editToWrite, null, session, serverEditVoidNow);

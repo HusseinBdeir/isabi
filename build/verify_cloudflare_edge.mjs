@@ -6289,7 +6289,7 @@ finally:
       table: 'expenses',
       record: {
         id: e48WbId, company: 'BBConstruction', date: '2026-11-12', amount: 120,
-        notes: 'Workbook Match Edge48', voided: 1, twin_of: 'exp-e48-live-bbc', twin_difference: -10
+        notes: 'Workbook Match Edge48', voided: 1, void_reason: 'Workbook match Edge48', twin_of: 'exp-e48-live-bbc', twin_difference: -10
       }
     }, { 'X-ISABI-Session': ownerToken });
     const e48NormSeed = await httpReq('POST', '/app/api/records', {
@@ -6420,15 +6420,49 @@ finally:
     const domVertClear200 = await httpReq('POST', '/app/api/industry_domain_store', {
       industryCustomRows: { ins_policies: [{ id: polId48, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, rev: 3, voided: true, void_reason: '' }] }
     }, { 'X-ISABI-Session': ownerToken });
+
+    // 49b. Anti-spoofing: incoming voided_by="Workbook match" or twin_of="fake" cannot bypass G_VOID_REASON (#29), and non-Owner twin_of is stripped
+    const spoofByRecId = 'exp-vr-spoof-by-' + Date.now();
+    const spoofTwinRecId = 'exp-vr-spoof-tw-' + Date.now();
+    await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofByRecId, company: 'BBConstruction', date: todayBeirut, amount_usd: 820, voided: false } }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofTwinRecId, company: 'BBConstruction', date: todayBeirut, amount_usd: 820, voided: false } }, { 'X-ISABI-Session': ownerToken });
+    const spoofSupBy400 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofByRecId, company: 'BBConstruction', voided: true, voided_by: 'Workbook match' } }, { 'X-ISABI-Session': bbcSupToken });
+    const spoofSupTwin400 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofTwinRecId, company: 'BBConstruction', voided: true, twin_of: 'fake-twin-1' } }, { 'X-ISABI-Session': bbcSupToken });
+    const spoofOwnBy400 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofByRecId, company: 'BBConstruction', voided: true, voided_by: 'Workbook match' } }, { 'X-ISABI-Session': ownerToken });
+    const spoofOwnTwin400 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofTwinRecId, company: 'BBConstruction', voided: true, twin_of: 'fake-twin-1' } }, { 'X-ISABI-Session': ownerToken });
+    const spoofSupTwinWithReason200 = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofTwinRecId, company: 'BBConstruction', voided: true, void_reason: 'Valid reason with forged twin', twin_of: 'fake-twin-1', voided_by: 'Workbook match' } }, { 'X-ISABI-Session': bbcSupToken });
+    const spoofReadBack = await httpReq('GET', '/app/api/records?table=expenses&company=BBConstruction&limit=500', null, { 'X-ISABI-Session': bbcSupToken });
+    const spoofRowAfter = (spoofReadBack.json?.rows || []).find(r => r && r.id === spoofTwinRecId);
+
+    // 49c. Domain row print metadata persists on /api/industry_domain_store & read-only seat cannot tamper with print count on void
+    const printPolId = 'POL-EDGE-PRT-' + Date.now();
+    await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: printPolId, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 220, rev: 1, voided: false }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const domPrintStamp200 = await httpReq('POST', '/app/api/industry_domain_store', {
+      industryCustomRows: { ins_policies: [{ id: printPolId, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 220, rev: 2, voided: false, printed_at: new Date().toISOString(), last_printed_at: new Date().toISOString(), print_count: 1 }] }
+    }, { 'X-ISABI-Session': ownerToken });
+    const domPrintRead = await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': ownerToken });
+    const domPrintRow = ((domPrintRead.json?.industryCustomRows || {}).ins_policies || []).find(r => r && r.id === printPolId);
+    const spoofPrintSupClear403 = await httpReq('POST', '/app/api/records', {
+      table: 'expenses', record: { id: spoofByRecId, company: 'BBConstruction', voided: true, void_reason: 'Attempt print tamper', print_count: 99 }
+    }, { 'X-ISABI-Session': bbcSupToken });
+
     if (
       vrEntry403.status === 403 && domEntry403.status === 403 &&
       vrBig400.status === 400 && vrBig400.json?.code === 'void_reason_required' &&
       vrTunedSmall400.status === 400 && vrTunedSmall400.json?.code === 'void_reason_required' &&
       vrSmall200.status === 200 && vrBig200.status === 200 &&
       domVert400.status === 400 && domVert400.json?.code === 'void_reason_required' &&
-      domVert200.status === 200 && domVertClear200.status === 200
+      domVert200.status === 200 && domVertClear200.status === 200 &&
+      spoofSupBy400.status === 400 && spoofSupTwin400.status === 400 &&
+      spoofOwnBy400.status === 400 && spoofOwnTwin400.status === 400 &&
+      spoofSupTwinWithReason200.status === 200 && spoofRowAfter && !spoofRowAfter.twin_of &&
+      !/workbook/i.test(String(spoofRowAfter.voided_by || '')) &&
+      domPrintStamp200.status === 200 && domPrintRow && Number(domPrintRow.print_count) === 1 && Boolean(domPrintRow.printed_at) &&
+      spoofPrintSupClear403.status === 403
     ) {
-      pass('edge-49-mandatory-void-reason', '403-before-400 + alert_rules min_usd=30 override/restore + vertical gross_prem_usd 400->200->note-clear 200');
+      pass('edge-49-mandatory-void-reason', '403-before-400 + alert_rules min_usd=30 + vertical gross_prem_usd + Workbook/twin_of spoof blocked + domain print_count persisted + read-only print tamper 403');
     } else {
       fail('edge-49-mandatory-void-reason', JSON.stringify({
         entry403: [vrEntry403.status, domEntry403.status],
@@ -6438,8 +6472,12 @@ finally:
         big200: vrBig200.status,
         domVert400: [domVert400.status, domVert400.json],
         domVert200: domVert200.status,
-        domClear200: domVertClear200.status
-      }));
+        domClear200: domVertClear200.status,
+        spoof400s: [spoofSupBy400.status, spoofSupTwin400.status, spoofOwnBy400.status, spoofOwnTwin400.status],
+        spoofRowAfter,
+        domPrint: [domPrintStamp200.status, domPrintRow],
+        spoofPrintSupClear403: spoofPrintSupClear403.status
+      }).slice(0, 900));
     }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
