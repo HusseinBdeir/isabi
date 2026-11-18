@@ -7532,6 +7532,73 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
   return stats;
 }
 
+function compareIsoTsMs(a, b) {
+  const sa = String(a || '');
+  const sb = String(b || '');
+  const ma = sa ? Date.parse(sa) : NaN;
+  const mb = sb ? Date.parse(sb) : NaN;
+  if (Number.isFinite(ma) && Number.isFinite(mb)) {
+    return ma < mb ? -1 : (ma > mb ? 1 : 0);
+  }
+  if (Number.isFinite(ma) !== Number.isFinite(mb)) {
+    return Number.isFinite(ma) ? 1 : -1;
+  }
+  return sa < sb ? -1 : (sa > sb ? 1 : 0);
+}
+
+function mergePartyHygieneStoreDoc(incomingDoc, prevDoc, session) {
+  const prev = (prevDoc && typeof prevDoc === 'object') ? prevDoc : {};
+  const canManage = Boolean(canManageUsersSeat(session));
+  if (!canManage) {
+    if (prev.partyHygiene !== undefined) incomingDoc.partyHygiene = prev.partyHygiene;
+    else delete incomingDoc.partyHygiene;
+    return;
+  }
+  if (!(prev.partyHygiene || incomingDoc.partyHygiene)) return;
+  const pPh = (prev.partyHygiene && typeof prev.partyHygiene === 'object' && prev.partyHygiene.rules && typeof prev.partyHygiene.rules === 'object') ? prev.partyHygiene.rules : {};
+  const iPh = (incomingDoc.partyHygiene && typeof incomingDoc.partyHygiene === 'object' && incomingDoc.partyHygiene.rules && typeof incomingDoc.partyHygiene.rules === 'object') ? incomingDoc.partyHygiene.rules : {};
+  const safeRules = {};
+  const allowedKinds = new Set(['customer', 'supplier', 'site', 'staff', 'counterparty']);
+  const allowedStatuses = new Set(['confirmed', 'dismissed', 'undone']);
+  const isOwner = Boolean(isOwnerOrFullGroupSession(session));
+  for (const [rk, pv] of Object.entries(pPh)) {
+    if (!pv || typeof pv !== 'object') continue;
+    safeRules[rk] = pv;
+  }
+  for (const [rk, iv] of Object.entries(iPh)) {
+    if (Object.keys(safeRules).length >= 2000 && !(rk in safeRules)) break;
+    if (!iv || typeof iv !== 'object') continue;
+    const iInd = String(iv.industry || 'Manufacturing').trim();
+    const iKind = String(iv.kind || '').trim().toLowerCase();
+    const iStatus = String(iv.status || '').trim().toLowerCase();
+    const iAlias = String(iv.alias || '').trim();
+    const iCanon = String(iv.canonical || '').trim();
+    if (!iInd || !allowedKinds.has(iKind) || !allowedStatuses.has(iStatus) || !iAlias || !iCanon) continue;
+    const expectedKey = `${iInd}::${iKind}::${iAlias.toLowerCase().replace(/\s+/g, ' ')}`;
+    if (String(rk || '') !== expectedKey) continue;
+    if (!isOwner && !canAccessGeoIndustrySession(session, iInd)) continue;
+    const existing = safeRules[rk];
+    if (existing) {
+      const exInd = String(existing.industry || 'Manufacturing').trim();
+      if (!isOwner && exInd && !canAccessGeoIndustrySession(session, exInd)) continue;
+      if (compareIsoTsMs(iv.updated_at, existing.updated_at) < 0) continue;
+    }
+    safeRules[rk] = {
+      key: String(rk).slice(0, 220),
+      industry: iInd.slice(0, 80),
+      kind: iKind,
+      alias: iAlias.slice(0, 180),
+      canonical: iCanon.slice(0, 180),
+      status: iStatus,
+      source: String(iv.source || 'deterministic').slice(0, 40),
+      reason: String(iv.reason || '').slice(0, 180),
+      updated_at: (iv.updated_at && Number.isFinite(Date.parse(String(iv.updated_at)))) ? String(iv.updated_at).slice(0, 64) : new Date().toISOString(),
+      updated_by: String(iv.updated_by || '').slice(0, 120)
+    };
+  }
+  incomingDoc.partyHygiene = { rules: safeRules };
+}
+
 async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
   if (!session || isOwnerOrFullGroupSession(session) || !incomingDoc || typeof incomingDoc !== 'object') {
     return incomingDoc;
@@ -7925,7 +7992,10 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
     else delete incomingDoc.alertRules;
     if (prev.staffBiometrics !== undefined) incomingDoc.staffBiometrics = prev.staffBiometrics;
     else delete incomingDoc.staffBiometrics;
+    if (prev.partyHygiene !== undefined) incomingDoc.partyHygiene = prev.partyHygiene;
+    else delete incomingDoc.partyHygiene;
   } else {
+    mergePartyHygieneStoreDoc(incomingDoc, prev, session);
     if (prev.staffBiometrics || incomingDoc.staffBiometrics) {
       const pSb = (prev.staffBiometrics && typeof prev.staffBiometrics === 'object') ? prev.staffBiometrics : {};
       const iSb = (incomingDoc.staffBiometrics && typeof incomingDoc.staffBiometrics === 'object') ? incomingDoc.staffBiometrics : {};
@@ -8314,6 +8384,17 @@ function scopeStoreDocForSession(docObj, session) {
 
   if (docObj.alertRules && typeof docObj.alertRules === 'object') {
     copyDoc.alertRules = scopeAlertRulesForSession(docObj.alertRules, session);
+  }
+
+  if (docObj.partyHygiene && typeof docObj.partyHygiene === 'object') {
+    const rawRules = (docObj.partyHygiene.rules && typeof docObj.partyHygiene.rules === 'object') ? docObj.partyHygiene.rules : {};
+    const scopedRules = {};
+    for (const [rk, rv] of Object.entries(rawRules)) {
+      if (!rv || typeof rv !== 'object') continue;
+      const rInd = String(rv.industry || 'Manufacturing').trim();
+      if (rInd && canAccessGeoIndustrySession(session, rInd)) scopedRules[rk] = rv;
+    }
+    copyDoc.partyHygiene = { rules: scopedRules };
   }
 
   if (docObj.workSchedules && typeof docObj.workSchedules === 'object') {
@@ -9486,8 +9567,12 @@ export async function handleSync(request, env, session, body, _ctx) {
     if (pKey === 'mfg_web_store') {
       prevDoc = await overlayCanonicalSubStoresOnMfgDoc(env.DB, prevDoc || {});
     }
-    if (pKey === 'mfg_web_store' && !isOwnerOrFullGroupSession(session)) {
-      await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
+    if (pKey === 'mfg_web_store') {
+      if (isOwnerOrFullGroupSession(session)) {
+        mergePartyHygieneStoreDoc(incomingDoc, prevDoc, session);
+      } else {
+        await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
+      }
     }
     const syncAuditBlocked = [];
     if (pKey === 'mfg_web_store') {

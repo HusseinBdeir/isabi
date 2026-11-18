@@ -88,6 +88,7 @@ RELEASE_GATES = [
     ("isabi", "build/verify_parity_browser.mjs", "node"),          # headless browser launcher, CI D-Bus/sandbox flags & fallback
     ("isabi-app", "build/verify_changed_entries_notice.mjs", "node"),  # Owner notice: workbook edits to already-loaded entries
     ("isabi-app", "build/verify_near_copy.mjs", "node"),             # warn at Post on a likely second copy (ticket slip, 11% VAT apart)
+    ("isabi-app", "build/verify_typo_hygiene_unit.mjs", "node"),     # site/staff typo, sibling near-copy, Data Hygiene skeleton/AI/RLS
     ("isabi", "build/verify_geo_audit_gate_dwell_edge.mjs", "node"), # Geo audit log, gt1.* gate pins & RLS parity
     ("isabi", "build/verify_web_push_unit.mjs", "node"),             # RFC 8291 / VAPID / CAS / sibling digest unit gate
     ("isabi", "build/verify_device_unsent.mjs", "node"),             # device reports of unsent entries: seat-owned rows, Owner-only list
