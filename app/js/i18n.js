@@ -11858,6 +11858,7 @@
       "Reset selection": "إعادة تعيين الاختيار",
       "Select a target company above to set as Default Policy & Perks Group": "اختر شركة مستهدفة أعلاه لتعيينها كمجموعة السياسات والمزايا الافتراضية",
       "Select company...": "اختر الشركة...",
+      "Target company for custom copy": "الشركة المستهدفة للنسخة المخصّصة",
       "Shift Type & Hours": "نوع الوردية والساعات",
       "Shift schedules and policy groups synced.": "تمت مزامنة جداول الورديات ومجموعات السياسة.",
       "Switch default": "تغيير الافتراضي",
@@ -12808,6 +12809,30 @@
       "Party renamed on": "تغيّر اسم الطرف في",
       "entries": "قيود",
       "Included in the last update": "مُدرج في آخر تحديث",
+      "Not Sent": "لم يُرسل",
+      "entry on this device has not reached the cloud since": "قيد على هذا الجهاز لم يصل إلى السحابة منذ",
+      "entries on this device have not reached the cloud since": "قيود على هذا الجهاز لم تصل إلى السحابة منذ",
+      "Changes on this device have not reached the cloud since": "تغييرات على هذا الجهاز لم تصل إلى السحابة منذ",
+      "This device is offline.": "هذا الجهاز غير متصل بالإنترنت.",
+      "Sign in again to send them.": "سجّل الدخول من جديد لإرسالها.",
+      "Update the app to send them.": "حدّث التطبيق لإرسالها.",
+      "The cloud refused them. Tell the Owner.": "رفضتها السحابة. أبلغ المالك.",
+      "Still trying to send them.": "ما زالت محاولة إرسالها جارية.",
+      "Another seat keyed them on this device and must sign in to send them.": "أدخلها مستخدم آخر على هذا الجهاز وعليه تسجيل الدخول لإرسالها.",
+      "Update App": "حدّث التطبيق",
+      "Sending the entries on this device": "جارٍ إرسال القيود الموجودة على هذا الجهاز",
+      "Held on Device": "محتجز على جهاز",
+      "Entries other devices have not sent": "قيود لم ترسلها أجهزة أخرى",
+      "entry held since": "قيد محتجز منذ",
+      "entries held since": "قيود محتجزة منذ",
+      "entry keyed from": "قيد أُدخل منذ",
+      "entries keyed from": "قيود أُدخلت منذ",
+      "reached the cloud late, on": "وصول متأخر إلى السحابة في",
+      "device offline": "الجهاز غير متصل",
+      "needs sign-in": "يحتاج إلى تسجيل الدخول",
+      "needs app update": "يحتاج إلى تحديث التطبيق",
+      "refused by the cloud": "رفض من السحابة",
+      "still retrying": "ما زالت المحاولة جارية",
       "Post anyway: this is a different entry from the one below": "ترحيل على أي حال: هذا قيد مختلف عن القيد أدناه",
       "Same day, party, truck and amount, ticket number one digit apart": "نفس اليوم والطرف والشاحنة والمبلغ، ورقم الإيصال يختلف برقم واحد",
       "Same day and supplier, amount differs by exactly the 11% VAT": "نفس اليوم والمورد، والمبلغ يختلف بقيمة ضريبة 11% تماماً",
@@ -13038,6 +13063,21 @@
       "Dwell Drift": "انحراف التوقف",
       "Pins Aligned (0 Drift)": "الدبابيس متطابقة (0 انحراف)",
       "No GPS dwell drift detected for the current scope": "لا يوجد انحراف في توقفات GPS ضمن النطاق الحالي",
+      "Verified Gate Match Radius (m)": "نصف قطر مطابقة البوابة المعتمدة (م)",
+      "Site Turnaround Wait Alert (min)": "تنبيه انتظار الدوران في الموقع (د)",
+      "Geofenced Gate Arrival & Site Turnaround": "وصول البوابات المسيّجة ومدة الدوران بالموقع",
+      "No geofenced site arrivals or turnaround dwell stops matched today in the current scope.": "لم تُطابَق أي حالات وصول لبوابات مسيّجة أو توقفات دوران اليوم ضمن النطاق الحالي.",
+      "On site now": "في الموقع حالياً",
+      "Visits": "زيارات",
+      "Avg Site Wait": "متوسط انتظار الموقع",
+      "Daily Ops": "العمليات اليومية",
+      "On Schedule": "ضمن الموعد",
+      "Site Wait": "انتظار الموقع",
+      "Gate Arrival (GPS)": "وصول البوابة (GPS)",
+      "Site Turnaround Dwell": "مدة التوقف والدوران بالموقع",
+      "Site Departure (GPS)": "مغادرة البوابة (GPS)",
+      "Wait Over Limit": "انتظار متجاوز للحد",
+      "GPS Gate Visit": "زيارة بوابة GPS",
       "No geo audit events match the selected filter": "لا توجد أحداث تدقيق خرائط مطابقة للمرشّح المحدد",
       "Company Hub Pin Moved": "تم نقل دبوس مركز الشركة",
       "Site Pin Set": "تم تثبيت دبوس الموقع",
@@ -13312,7 +13352,19 @@
       "Void Reason": "سبب الإلغاء",
       "Void Reason & Audit Note": "سبب الإلغاء وملاحظة التدقيق",
       "Workbook Sync": "مزامنة الدفتر",
-      "Voided record": "سجل ملغى"
+      "Voided record": "سجل ملغى",
+      "7-Day Avg": "متوسط 7 أيام",
+      "This Day": "هذا اليوم",
+      "Open Records": "فتح السجلات",
+      "Show This Day": "عرض هذا اليوم",
+      "Keep this breakdown open": "إبقاء هذا التفصيل مفتوحاً",
+      "Breakdown": "التفصيل",
+      "2-Day Avg": "متوسط يومين",
+      "3-Day Avg": "متوسط 3 أيام",
+      "4-Day Avg": "متوسط 4 أيام",
+      "5-Day Avg": "متوسط 5 أيام",
+      "6-Day Avg": "متوسط 6 أيام",
+      "Show Details": "عرض التفاصيل"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -25152,6 +25204,7 @@
       "Reset selection": "Réinitialiser la sélection",
       "Select a target company above to set as Default Policy & Perks Group": "Sélectionnez une société cible ci-dessus pour la définir par défaut",
       "Select company...": "Choisir une société...",
+      "Target company for custom copy": "Société cible pour la copie dédiée",
       "Shift Type & Hours": "Type de poste et horaires",
       "Shift schedules and policy groups synced.": "Horaires de poste et groupes de politique synchronisés.",
       "Switch default": "Changer par défaut",
@@ -26102,6 +26155,30 @@
       "Party renamed on": "Tiers renommé sur",
       "entries": "écritures",
       "Included in the last update": "Inclus dans la dernière mise à jour",
+      "Not Sent": "Non envoyé",
+      "entry on this device has not reached the cloud since": "écriture sur cet appareil n'a pas atteint le cloud depuis",
+      "entries on this device have not reached the cloud since": "écritures sur cet appareil n'ont pas atteint le cloud depuis",
+      "Changes on this device have not reached the cloud since": "Des modifications sur cet appareil n'ont pas atteint le cloud depuis",
+      "This device is offline.": "Cet appareil est hors ligne.",
+      "Sign in again to send them.": "Reconnectez-vous pour les envoyer.",
+      "Update the app to send them.": "Mettez l'application à jour pour les envoyer.",
+      "The cloud refused them. Tell the Owner.": "Le cloud les a refusées. Prévenez le propriétaire.",
+      "Still trying to send them.": "Nouvelle tentative d'envoi en cours.",
+      "Another seat keyed them on this device and must sign in to send them.": "Un autre utilisateur les a saisies sur cet appareil et doit se connecter pour les envoyer.",
+      "Update App": "Mettre à jour l'application",
+      "Sending the entries on this device": "Envoi des écritures de cet appareil",
+      "Held on Device": "Retenu sur un appareil",
+      "Entries other devices have not sent": "Écritures non envoyées par d'autres appareils",
+      "entry held since": "écriture retenue depuis",
+      "entries held since": "écritures retenues depuis",
+      "entry keyed from": "écriture saisie à partir du",
+      "entries keyed from": "écritures saisies à partir du",
+      "reached the cloud late, on": "arrivée tardive dans le cloud le",
+      "device offline": "appareil hors ligne",
+      "needs sign-in": "connexion requise",
+      "needs app update": "mise à jour de l'application requise",
+      "refused by the cloud": "refus du cloud",
+      "still retrying": "nouvelle tentative en cours",
       "Post anyway: this is a different entry from the one below": "Valider quand même : cette écriture est différente de celle ci-dessous",
       "Same day, party, truck and amount, ticket number one digit apart": "Même jour, tiers, camion et montant, numéro de bon à un chiffre près",
       "Same day and supplier, amount differs by exactly the 11% VAT": "Même jour et fournisseur, le montant diffère exactement de la TVA de 11 %",
@@ -26332,6 +26409,21 @@
       "Dwell Drift": "Dérive d'arrêt",
       "Pins Aligned (0 Drift)": "Repères alignés (0 dérive)",
       "No GPS dwell drift detected for the current scope": "Aucune dérive d'arrêt GPS dans ce périmètre",
+      "Verified Gate Match Radius (m)": "Rayon de correspondance portail vérifié (m)",
+      "Site Turnaround Wait Alert (min)": "Alerte attente rotation sur site (min)",
+      "Geofenced Gate Arrival & Site Turnaround": "Arrivées au portail géorepérées et rotation sur site",
+      "No geofenced site arrivals or turnaround dwell stops matched today in the current scope.": "Aucune arrivée au portail géorepérée ni attente de rotation détectée aujourd'hui dans ce périmètre.",
+      "On site now": "Sur site actuellement",
+      "Visits": "Visites",
+      "Avg Site Wait": "Attente moy. sur site",
+      "Daily Ops": "Opérations du jour",
+      "On Schedule": "Dans les temps",
+      "Site Wait": "Attente site",
+      "Gate Arrival (GPS)": "Arrivée portail (GPS)",
+      "Site Turnaround Dwell": "Durée rotation sur site",
+      "Site Departure (GPS)": "Départ portail (GPS)",
+      "Wait Over Limit": "Attente hors délai",
+      "GPS Gate Visit": "Passage portail GPS",
       "No geo audit events match the selected filter": "Aucun événement d'audit cartographique pour ce filtre",
       "Company Hub Pin Moved": "Repère de base société déplacé",
       "Site Pin Set": "Repère de site défini",
@@ -26606,7 +26698,19 @@
       "Void Reason": "Motif d'annulation",
       "Void Reason & Audit Note": "Motif d'annulation et note d'audit",
       "Workbook Sync": "Synchro classeur",
-      "Voided record": "Enregistrement annulé"
+      "Voided record": "Enregistrement annulé",
+      "7-Day Avg": "Moy. 7 jours",
+      "This Day": "Ce jour",
+      "Open Records": "Ouvrir les écritures",
+      "Show This Day": "Afficher ce jour",
+      "Keep this breakdown open": "Garder ce détail ouvert",
+      "Breakdown": "Détail",
+      "2-Day Avg": "Moy. 2 jours",
+      "3-Day Avg": "Moy. 3 jours",
+      "4-Day Avg": "Moy. 4 jours",
+      "5-Day Avg": "Moy. 5 jours",
+      "6-Day Avg": "Moy. 6 jours",
+      "Show Details": "Afficher le détail"
     }
   };
 
@@ -28725,11 +28829,23 @@
         ? `يقارن حتمياً تجمعات التوقف الثابتة 10+ دقائق مع المواقع المثبّتة في ${geoIndTr(m[1])} لرصد انحراف الدبابيس القديمة أو التفريغ خارج الدبوس.`
         : `Croise de manière déterministe les arrêts >= 10 min face aux sites épinglés de ${geoIndTr(m[1])} pour détecter dérives ou déposes hors repère.`;
     }
+    m = trimmed.match(/^Flags non-hub dwell stops between ([\d,]+)\s*m and ([\d,]+)\s*m(?:\s+from a pinned site)? as Stale Pin Drift,\s*(?:stops beyond|>)\s*([\d,]+)\s*m as Unapproved Off-Pin Drops,\s*and (?:verified )?gate waits \(([\d,]+)\s*m(?:\s+radius)?\) over ([\d,]+)\s*min\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يرصد التوقفات خارج المركز بين ${m[1]} م و${m[2]} م كانحراف دبوس قديم، وما يتجاوز ${m[3]} م كتفريغ خارج الدبوس، وتجاوز انتظار البوابة (${m[4]} م) لأكثر من ${m[5]} د.`
+        : `Signale les arrêts hors centre entre ${m[1]} m et ${m[2]} m comme dérive, > ${m[3]} m hors repère, et attentes portail (${m[4]} m) > ${m[5]} min.`;
+    }
     m = trimmed.match(/^Flags non-hub dwell stops between ([\d,]+)\s*m and ([\d,]+)\s*m from a pinned site as Stale Pin Drift and (?:stops beyond|>)\s*([\d,]+)\s*m as Unapproved Off-Pin Drops\.?$/i);
     if (m) {
       return lang === 'ar'
         ? `يُنبّه عن توقفات التوقف خارج المركز بين ${m[1]} م و${m[2]} م كانحراف دبوس قديم وما يتجاوز ${m[3]} م كتفريغ خارج الدبوس.`
         : `Signale les stationnements hors centre entre ${m[1]} m et ${m[2]} m comme dérive et au-delà de ${m[3]} m comme dépose hors repère.`;
+    }
+    m = trimmed.match(/^Drift >= ([\d,]+)m · Off-pin > ([\d,]+)m · Gate ([\d,]+)m \/ > ([\d,]+)m$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `انحراف >= ${m[1]} م · خارج الدبوس > ${m[2]} م · بوابة ${m[3]} م / > ${m[4]} د`
+        : `Dérive >= ${m[1]} m · Hors repère > ${m[2]} m · Portail ${m[3]} m / > ${m[4]} min`;
     }
     m = trimmed.match(/^Drift >= ([\d,]+)m · Off-pin > ([\d,]+)m$/i);
     if (m) {
@@ -28761,6 +28877,54 @@
       return lang === 'ar'
         ? `${m[1]} عنقود توقف منحرف: ${m[2]} دبوس قديم، ${m[3]} تفريغ خارج الدبوس.${m[4] || ''}`
         : `${m[1]} zone(s) en dérive : ${m[2]} repère(s) obsolète(s), ${m[3]} dépose(s) hors repère.${m[4] || ''}`;
+    }
+    m = trimmed.match(/^Site Wait >\s*([\d,]+)m$/i);
+    if (m) {
+      return lang === 'ar' ? `انتظار الموقع > ${m[1]}د` : `Attente site > ${m[1]}m`;
+    }
+    m = trimmed.match(/^Site Wait \(([\d,]+)\)$/i);
+    if (m) {
+      return lang === 'ar' ? `انتظار الموقع (${m[1]})` : `Attente site (${m[1]})`;
+    }
+    m = trimmed.match(/^Filter panels to geofenced site stops exceeding ([\d,]+) minutes$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تصفية اللوحات إلى توقفات المواقع المسيّجة المتجاوزة لـ ${m[1]} دقيقة`
+        : `Filtrer les panneaux sur les arrêts portail dépassant ${m[1]} minutes`;
+    }
+    m = trimmed.match(/^Geofenced site stops exceeding ([\d,]+) minutes$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `توقفات المواقع المسيّجة المتجاوزة لـ ${m[1]} دقيقة`
+        : `Arrêts portail géorepérés dépassant ${m[1]} minutes`;
+    }
+    m = trimmed.match(/^Gate Arrival (.+?) · Dwell ([\d,]+) min · (.+)$/i);
+    if (m) {
+      const depTxt = String(m[3] || '');
+      const depTr = depTxt === 'On site now'
+        ? (lang === 'ar' ? 'في الموقع حالياً' : 'Sur site actuellement')
+        : (depTxt === 'Closed' ? (lang === 'ar' ? 'مغلق' : 'Clôturé') : depTxt.replace(/^Departure\s+/i, lang === 'ar' ? 'مغادرة ' : 'Départ '));
+      return lang === 'ar'
+        ? `وصول البوابة ${m[1]} · توقف ${m[2]} د · ${depTr}`
+        : `Arrivée portail ${m[1]} · Arrêt ${m[2]} min · ${depTr}`;
+    }
+    m = trimmed.match(/^([\d,]+) GPS gate visits · max ([\d,]+) min wait$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} زيارات بوابة GPS · أقصى انتظار ${m[2]} د`
+        : `${m[1]} passages portail GPS · attente max ${m[2]} min`;
+    }
+    m = trimmed.match(/^GPS Gate Turnaround:\s*([\d,]+) visits · ([\d,]+)m avg$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `دوران بوابات GPS: ${m[1]} زيارة · متوسط ${m[2]} د`
+        : `Rotation portail GPS : ${m[1]} visites · moy. ${m[2]} min`;
+    }
+    m = trimmed.match(/^([\d,]+) visits · ([\d,]+)m avg$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} زيارة · متوسط ${m[2]} د`
+        : `${m[1]} visites · moy. ${m[2]} min`;
     }
     m = trimmed.match(/^(Decrease|Increase)\s+(.+)$/i);
     if (m && depth < 3) {
@@ -29583,17 +29747,28 @@
     m = trimmed.match(/^USD Rem:\s*(\$[\d.,-]+)\s*\|\s*LBP Rem:\s*([\d.,-]+\s*LL)$/i);
     if (m) return lang === 'ar' ? `المتبقي بالدولار: ${m[1]} | المتبقي بالليرة: ${m[2]}` : `Reste USD : ${m[1]} | Reste LBP : ${m[2]}`;
 
-    m = trimmed.match(/^([\d.]+)d\s+recorded absence(?:\s*\((\d+)d\s+contract start\/end gap deducted in Absence \$\))?$/i);
+    m = trimmed.match(/^([\d.]+)d\s+recorded absence(?:\s*\((\d+)d\s+contract start\/end gap deducted in Absence \$\))?(?:\s*\(([\d.]+)d\s+vacation over the yearly allowance deducted in Absence \$\))?$/i);
     if (m) {
       const gap = m[2] ? (lang === 'ar' ? ` (${m[2]} يوم فرق بداية/نهاية عقد مخصوم ضمن الغياب $)` : ` (${m[2]}j d'écart début/fin de contrat déduit)`) : '';
-      return lang === 'ar' ? `${m[1]} يوم غياب مسجل${gap}` : `${m[1]}j d'absence enregistrée${gap}`;
+      const overVac = m[3] ? (lang === 'ar' ? ` (${m[3]} يوم إجازة فوق الرصيد السنوي مخصوم ضمن الغياب $)` : ` (${m[3]}j de congé au-delà du solde annuel déduit)`) : '';
+      return lang === 'ar' ? `${m[1]} يوم غياب مسجل${gap}${overVac}` : `${m[1]}j d'absence enregistrée${gap}${overVac}`;
     }
 
-    m = trimmed.match(/^(\d+)\s+active contract months(?:\s*·\s*Package Base \+ Reimb:\s*(\$[\d.,]+))?(?:\s*·\s*Rem Vacation:\s*([\d.]+)d)?$/i);
+    m = trimmed.match(/^(\d+)\s+active contract months(?:\s*·\s*Package Base \+ Reimb:\s*(-?\$[\d.,]+))?(?:\s*·\s*Rem Vacation:\s*(-?[\d.]+)d)?(?:\s*·\s*(Month in progress|Period ends mid-month):\s*(\d+) of (\d+) days (?:still ahead|after the period end), full month base (-?\$[\d.,]+))?$/i);
     if (m) {
       const pkg = m[2] ? (lang === 'ar' ? ` · إجمالي الأساسي والنقل: ${m[2]}` : ` · Base + Transp. : ${m[2]}`) : '';
       const vac = m[3] ? (lang === 'ar' ? ` · رصيد الإجازة: ${m[3]} يوم` : ` · Congés restants : ${m[3]}j`) : '';
-      return lang === 'ar' ? `${m[1]} أشهر عقد نشطة${pkg}${vac}` : `${m[1]} mois de contrat actifs${pkg}${vac}`;
+      let cap = '';
+      if (m[4] && /^Month in progress$/i.test(m[4])) {
+        cap = lang === 'ar'
+          ? ` · الشهر الجاري: ${m[5]} من ${m[6]} يوماً لم تحن بعد، الأساسي للشهر كاملاً ${m[7]}`
+          : ` · Mois en cours : ${m[5]} jours sur ${m[6]} restent à venir, base du mois complet ${m[7]}`;
+      } else if (m[4]) {
+        cap = lang === 'ar'
+          ? ` · الفترة تنتهي في منتصف الشهر: ${m[5]} من ${m[6]} يوماً بعد نهاية الفترة، الأساسي للشهر كاملاً ${m[7]}`
+          : ` · La période se termine en cours de mois : ${m[5]} jours sur ${m[6]} après la fin de la période, base du mois complet ${m[7]}`;
+      }
+      return lang === 'ar' ? `${m[1]} أشهر عقد نشطة${pkg}${vac}${cap}` : `${m[1]} mois de contrat actifs${pkg}${vac}${cap}`;
     }
 
     const translatePayrollPeriodRef = (raw, targetLang) => {
@@ -30495,6 +30670,12 @@
     m = trimmed.match(/^Linked\s+Customer:\s*([^|·]+)$/i);
     if (m) return lang === 'ar' ? `العميل المرتبط: ${m[1].trim()}` : `Client lié : ${m[1].trim()}`;
 
+    m = trimmed.match(/^Customize for\s+(.+?)\s+only$/i);
+    if (m) {
+      const co = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `تخصيص لـ ${co} فقط` : `Personnaliser pour ${co} uniquement`;
+    }
+
     m = trimmed.match(/^Customize\s+(.+?)\s*\(([^)]+)\)$/i);
     if (m) {
       const sh = translateCore(m[1].trim(), lang, depth + 1);
@@ -31344,6 +31525,38 @@
       const nmRes = evalCore(rawNm, lang, depth + 1);
       const nmOut = nmRes.ok ? nmRes.out : rawNm;
       return lang === 'ar' ? `تطبيق بأثر رجعي على ${m[1]} موظفاً في ${nmOut}` : `Appliquer rétroactivement aux ${m[1]} employés de ${nmOut}`;
+    }
+
+    m = trimmed.match(/^Shared across all companies:\s*saving here updates\s+(.+?)\s+everywhere\.?$/i);
+    if (m) {
+      const rawNm = m[1].trim();
+      const nmRes = evalCore(rawNm, lang, depth + 1);
+      const nmOut = nmRes.ok ? nmRes.out : rawNm;
+      return lang === 'ar'
+        ? `مشتركة بين جميع الشركات: الحفظ هنا يحدّث ${nmOut} في كل الشركات.`
+        : `Partagé entre toutes les sociétés : enregistrer ici met à jour ${nmOut} partout.`;
+    }
+
+    m = trimmed.match(/^Custom copy for\s+(.+?)\s+only\s*\(cloned from\s+(.+?)\)\.\s*Other companies stay unchanged\.?$/i);
+    if (m) {
+      const co = translateCore(m[1].trim(), lang, depth + 1);
+      const rawNm = m[2].trim();
+      const nmRes = evalCore(rawNm, lang, depth + 1);
+      const nmOut = nmRes.ok ? nmRes.out : rawNm;
+      return lang === 'ar'
+        ? `نسخة مخصّصة لـ ${co} فقط (مستنسخة من ${nmOut}). تبقى الشركات الأخرى دون تغيير.`
+        : `Copie dédiée à ${co} uniquement (clonée depuis ${nmOut}). Les autres sociétés restent inchangées.`;
+    }
+
+    m = trimmed.match(/^Move\s*&\s*backfill\s+([\d,]+)\s+(.+?)\s+staff from\s+(.+)$/i);
+    if (m) {
+      const co = translateCore(m[2].trim(), lang, depth + 1);
+      const rawNm = m[3].trim();
+      const nmRes = evalCore(rawNm, lang, depth + 1);
+      const nmOut = nmRes.ok ? nmRes.out : rawNm;
+      return lang === 'ar'
+        ? `نقل وتطبيق بأثر رجعي على ${m[1]} من موظفي ${co} من ${nmOut}`
+        : `Transférer et recalculer ${m[1]} employés ${co} depuis ${nmOut}`;
     }
 
     m = trimmed.match(/^Scanned\s+([\d,]+)\s+workday readings\s*\(([^)]+)\)\.\s*Found\s+([\d,]+)\s+draft cohort suggestion\(s\)\.?$/i);

@@ -5584,6 +5584,231 @@ export async function handleCashflowBehind(request, env, session, body, rawBytes
   return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405);
 }
 
+// ---- Entries held on a device (owner 2026-11-18) ------------------------------------------------------------------
+// On 16 and 17 Nov one device kept a day of entries to itself; they reached the store after the evening top-up, which
+// could not pair them with their workbook rows. A device whose entries have waited now reports it here when it can
+// reach the Edge (its sync push is refused, or it only has to refresh), and the Owner reads the list.
+//   * One edge_kv_store row per seat and device: doc_key = device_unsent:<seat id>:<device id>. A seat writes only
+//     its own rows; the seat, e-mail and name come from the session, never from the request.
+//   * POST { device_id, label, count, since, reason, shell }: count >= 1 = holding; count 0 = sent. A row that held
+//     entries for DEVICE_UNSENT_LATE_MIN_MS or longer stays as "sent late" for DEVICE_UNSENT_LATE_HOURS so the Owner
+//     knows late entries arrived; a shorter hold (a signal drop) is simply removed.
+//   * count >= 1 with sent_late: the device was never able to report (offline the whole time) and has just sent
+//     entries that waited an hour or more: filed straight as "sent late".
+//   * count 0 with all_seats: the seat's sync has just sent everything it can send from the device, so it also
+//     closes the reports other seats left open for the same device (a shared device changes seats) when it can send
+//     what those seats send: an Owner or full-group seat closes any; a limited seat closes a report only when it
+//     may use every company the reporting seat was limited to (each report keeps its seat's companies).
+//     The answer says how many reports for the device are still open (`open`), so the device knows to ask again.
+//   * GET is Owner-only. /api/sync neither serves nor patches these rows (isDeviceUnsentDoc).
+const DEVICE_UNSENT_PREFIX = 'device_unsent:';
+const DEVICE_UNSENT_REASONS = Object.freeze(['offline', 'sign_in', 'update', 'blocked', 'retrying']);
+export const DEVICE_UNSENT_HOLD_DAYS = 7;
+export const DEVICE_UNSENT_LATE_HOURS = 48;
+export const DEVICE_UNSENT_LATE_MIN_MS = 3600000;
+const DEVICE_UNSENT_MAX_ROWS = 400;
+const DEVICE_UNSENT_MAX_SINCE_DAYS = 90;
+
+export function isDeviceUnsentDoc(docKey) {
+  const k = String(docKey || '');
+  return k === 'device_unsent' || k.startsWith(DEVICE_UNSENT_PREFIX);
+}
+
+function cleanDeviceUnsentText(v, max) {
+  return String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f<>"'`&]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+// { ok: true, val } or { ok: false, error }. nowMs is passed in so the checks can be tested at a fixed time.
+export function validateDeviceUnsentReport(body, nowMs) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, error: 'Invalid device report.' };
+  const deviceId = String(body.device_id == null ? '' : body.device_id);
+  if (!/^[a-z0-9]{12,32}$/.test(deviceId)) return { ok: false, error: 'Invalid device id.' };
+  const count = body.count;
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > 100000) return { ok: false, error: 'Invalid entry count.' };
+  const val = { device_id: deviceId, count, label: cleanDeviceUnsentText(body.label, 60) };
+  const shell = String(body.shell == null ? '' : body.shell);
+  val.shell = /^\d{1,3}(?:\.\d{1,5}){1,3}$/.test(shell) ? shell : '';
+  if (count === 0) {
+    val.all_seats = body.all_seats === true;
+    return { ok: true, val };
+  }
+  const sentLate = body.sent_late === true;
+  const reason = String(body.reason == null ? '' : body.reason);
+  if (!sentLate && !DEVICE_UNSENT_REASONS.includes(reason)) return { ok: false, error: 'Invalid reason.' };
+  const sinceMs = Date.parse(String(body.since == null ? '' : body.since));
+  if (!Number.isFinite(sinceMs) || sinceMs > nowMs + 300000 || sinceMs < nowMs - DEVICE_UNSENT_MAX_SINCE_DAYS * 86400000) {
+    return { ok: false, error: 'Invalid since time.' };
+  }
+  val.reason = sentLate ? '' : reason;
+  val.sent_late = sentLate;
+  val.since = new Date(Math.min(sinceMs, nowMs)).toISOString();
+  return { ok: true, val };
+}
+
+// The rows the Owner list shows at nowMs: devices still holding entries (reported within DEVICE_UNSENT_HOLD_DAYS),
+// then devices whose held entries arrived within DEVICE_UNSENT_LATE_HOURS. Oldest hold first.
+export function listDeviceUnsentRows(rows, nowMs) {
+  const out = [];
+  for (const row of (rows || [])) {
+    const p = safeJsonParse(row && row.payload_json, null);
+    if (!p || typeof p !== 'object' || Array.isArray(p)) continue;
+    const state = p.state === 'sent_late' ? 'sent_late' : 'holding';
+    const stampMs = Date.parse(String(state === 'sent_late' ? p.sent_at : p.reported_at) || '');
+    if (!Number.isFinite(stampMs)) continue;
+    const maxAgeMs = state === 'sent_late' ? DEVICE_UNSENT_LATE_HOURS * 3600000 : DEVICE_UNSENT_HOLD_DAYS * 86400000;
+    if (nowMs - stampMs > maxAgeMs) continue;
+    const n = Number(state === 'sent_late' ? p.sent_count : p.count);
+    if (!Number.isInteger(n) || n < 1) continue;
+    out.push({
+      device_id: String(p.device_id || ''),
+      label: String(p.label || ''),
+      user_id: String(p.user_id || ''),
+      email: String(p.email || ''),
+      name: String(p.name || ''),
+      state,
+      count: state === 'sent_late' ? 0 : n,
+      sent_count: state === 'sent_late' ? n : 0,
+      since: String(p.since || ''),
+      reason: state === 'sent_late' ? '' : String(p.reason || ''),
+      shell: String(p.shell || ''),
+      reported_at: String(p.reported_at || ''),
+      sent_at: state === 'sent_late' ? String(p.sent_at || '') : ''
+    });
+  }
+  out.sort((a, b) => (a.state === b.state ? String(a.since).localeCompare(String(b.since)) : (a.state === 'holding' ? -1 : 1)));
+  return out;
+}
+
+export async function handleDeviceUnsent(request, env, session, body, bodyMeta = null) {
+  if (request.method === 'GET') {
+    if (isDemoHeader(request)) return jsonResponse({ ok: true, demo: true, devices: [] });
+    if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+    if (!/\bowner\b/i.test(String(session.role || ''))) return jsonResponse({ ok: false, error: 'Owner permissions required.' }, 403);
+    if (!env || !env.DB) return jsonResponse({ ok: true, devices: [] });
+    const res = await env.DB.prepare(
+      "SELECT payload_json FROM edge_kv_store WHERE doc_key LIKE 'device_unsent:%' ORDER BY updated_at DESC LIMIT ?1"
+    ).bind(DEVICE_UNSENT_MAX_ROWS).all();
+    return jsonResponse({ ok: true, devices: listDeviceUnsentRows(res.results || [], Date.now()) });
+  }
+  if (request.method !== 'POST') return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405);
+  if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
+  if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+  if (bodyMeta && (bodyMeta.parseError || bodyMeta.emptyBody)) {
+    return jsonResponse({ ok: false, error: 'Valid non-empty JSON body required.' }, 400);
+  }
+  const nowMs = Date.now();
+  const chk = validateDeviceUnsentReport(body, nowMs);
+  if (!chk.ok) return jsonResponse({ ok: false, error: chk.error }, 400);
+  const seatId = String(session.sub || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+  if (!seatId) return jsonResponse({ ok: false, error: 'Seat not recognised.' }, 403);
+  if (!env || !env.DB) return jsonResponse({ ok: false, error: 'D1 not bound' }, 503);
+  const rl = await checkD1RateLimit(env, `device-unsent:${seatId}`, 30, 600);
+  if (!rl.allowed) return jsonResponse({ ok: false, error: 'Too many device reports. Try again later.' }, 429);
+  const val = chk.val;
+  const docKey = `${DEVICE_UNSENT_PREFIX}${seatId}:${val.device_id}`;
+  const nowIso = new Date(nowMs).toISOString();
+  const exRow = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
+  const prev = exRow ? safeJsonParse(exRow.payload_json, null) : null;
+  const prevHolding = Boolean(prev && typeof prev === 'object' && prev.state === 'holding' && Number(prev.count) >= 1);
+  if (val.count === 0) {
+    // Sent. A device that held entries for an hour or more stays listed as "sent late"; a shorter hold is removed;
+    // one that never reported has nothing to clear.
+    const rows = [{ key: docKey, p: prev, holding: prevHolding, mayClose: true }];
+    const fullGroup = isOwnerOrFullGroupSession(session);
+    const others = await env.DB.prepare("SELECT doc_key, payload_json FROM edge_kv_store WHERE doc_key LIKE 'device_unsent:%' AND doc_key LIKE ?1")
+      .bind(`%:${val.device_id}`).all();
+    for (const o of (others.results || [])) {
+      const k = String(o.doc_key || '');
+      if (k === docKey || !k.startsWith(DEVICE_UNSENT_PREFIX) || !k.endsWith(`:${val.device_id}`)) continue;
+      const op = safeJsonParse(o.payload_json, null);
+      const holding = Boolean(op && typeof op === 'object' && op.state === 'holding' && Number(op.count) >= 1);
+      const cos = holding && Array.isArray(op.companies) ? op.companies : [];
+      const mayClose = Boolean(val.all_seats) && (fullGroup
+        || (cos.length > 0 && !cos.includes('*') && cos.every(c => canAccessCompany(session, c))));
+      rows.push({ key: k, p: op, holding, mayClose });
+    }
+    let changed = 0;
+    let open = 0;
+    let state = '';
+    for (const row of rows) {
+      if (!row.holding) continue;
+      if (!row.mayClose) { open++; continue; }
+      const heldSinceMs = Date.parse(String(row.p.since || ''));
+      if (Number.isFinite(heldSinceMs) && nowMs - heldSinceMs < DEVICE_UNSENT_LATE_MIN_MS) {
+        await env.DB.prepare('DELETE FROM edge_kv_store WHERE doc_key = ?1').bind(row.key).run();
+        if (!state) state = 'cleared';
+      } else {
+        const late = Object.assign({}, row.p, { state: 'sent_late', sent_count: Number(row.p.count), count: 0, sent_at: nowIso, shell: (row.key === docKey && val.shell) || row.p.shell || '' });
+        await env.DB.prepare('UPDATE edge_kv_store SET payload_json = ?1, updated_at = ?2, rev = rev + 1 WHERE doc_key = ?3')
+          .bind(JSON.stringify(late), nowIso, row.key).run();
+        state = 'sent_late';
+      }
+      changed++;
+    }
+    return jsonResponse(changed ? { ok: true, saved: true, state, open } : { ok: true, saved: false, open });
+  }
+  if (val.sent_late && nowMs - Date.parse(val.since) < DEVICE_UNSENT_LATE_MIN_MS) {
+    return jsonResponse({ ok: true, saved: false });   // a short wait is no late arrival
+  }
+  if (!exRow) {
+    const cutoffIso = new Date(nowMs - DEVICE_UNSENT_HOLD_DAYS * 86400000).toISOString();
+    await env.DB.prepare("DELETE FROM edge_kv_store WHERE doc_key LIKE 'device_unsent:%' AND updated_at < ?1").bind(cutoffIso).run();
+    const cnt = await env.DB.prepare("SELECT COUNT(*) AS n FROM edge_kv_store WHERE doc_key LIKE 'device_unsent:%'").first();
+    if (Number((cnt && cnt.n) || 0) >= DEVICE_UNSENT_MAX_ROWS) {
+      return jsonResponse({ ok: false, error: 'Device list is full.' }, 429);
+    }
+  }
+  const identity = {
+    device_id: val.device_id,
+    label: val.label,
+    user_id: seatId,
+    email: String(session.email || '').trim().toLowerCase().slice(0, 160),
+    name: cleanDeviceUnsentText(session.name || session.full_name || '', 80),
+    // The companies this seat sends rows for ('*' = every company): who else may close this report.
+    companies: isOwnerOrFullGroupSession(session)
+      ? ['*']
+      : String(session.companies || '').split(/[,;|]/).map(c => cleanDeviceUnsentText(c, 60)).filter(Boolean).slice(0, 40)
+  };
+  if (val.sent_late) {
+    const late = Object.assign({ state: 'sent_late' }, identity, {
+      count: 0,
+      sent_count: prevHolding ? Math.max(Number(prev.count), val.count) : val.count,
+      since: (prevHolding && String(prev.since || '') && String(prev.since) < val.since) ? String(prev.since) : val.since,
+      reason: '',
+      shell: val.shell,
+      reported_at: nowIso,
+      sent_at: nowIso
+    });
+    await env.DB.prepare(
+      `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
+       VALUES (?1, ?2, ?3, 1)
+       ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1`
+    ).bind(docKey, JSON.stringify(late), nowIso).run();
+    return jsonResponse({ ok: true, saved: true, state: 'sent_late' });
+  }
+  const stored = {
+    state: 'holding',
+    device_id: identity.device_id,
+    label: identity.label,
+    user_id: identity.user_id,
+    email: identity.email,
+    name: identity.name,
+    companies: identity.companies,
+    count: val.count,
+    // The first time the wait was reported wins while the device keeps holding: a reload cannot shorten the wait.
+    since: (prevHolding && String(prev.since || '') && String(prev.since) < val.since) ? String(prev.since) : val.since,
+    reason: val.reason,
+    shell: val.shell,
+    reported_at: nowIso
+  };
+  await env.DB.prepare(
+    `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
+     VALUES (?1, ?2, ?3, 1)
+     ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1`
+  ).bind(docKey, JSON.stringify(stored), nowIso).run();
+  return jsonResponse({ ok: true, saved: true, state: 'holding' });
+}
+
 export async function handleIndustryDomainStore(request, env, session, body, ctx = null) {
   if (!env || !env.DB) return jsonResponse({ ok: true, industryCustomRows: {}, industryRowEdits: {} });
   if (!session) {
@@ -8431,6 +8656,9 @@ export async function handleSync(request, env, session, body, _ctx) {
   if (isOwnerNoticeDoc(docKey) || patchDocKeys.some(isOwnerNoticeDoc)) {
     const noticeDoc = isOwnerNoticeDoc(docKey) ? docKey : patchDocKeys.find(isOwnerNoticeDoc);
     return jsonResponse({ ok: false, error: `Owner notice is managed from /api/${noticeDoc}.` }, 403);
+  }
+  if (isDeviceUnsentDoc(docKey) || patchDocKeys.some(isDeviceUnsentDoc)) {
+    return jsonResponse({ ok: false, error: 'Device reports are managed from /api/device_unsent.' }, 403);
   }
 
   if (request.method === 'GET' || (body && (body.op === 'get_mfg' || body.op === 'get_control'))) {
