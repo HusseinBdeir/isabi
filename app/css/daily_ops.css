@@ -1811,6 +1811,7 @@ body.is-daily-ops-view .period-basis-row {
 .dops-kind.pay   { background: rgba(122, 136, 155, 0.15); color: var(--muted); }
 .dops-kind.fuel  { background: var(--steel-tint); color: var(--steel); }
 .dops-kind.maint { background: var(--warn-bg); color: var(--warn); }
+.dops-kind.warn  { background: var(--warn-bg); color: var(--warn); }
 .dops-kind.crit  { background: var(--crit-bg); color: var(--crit); }
 .dops-kind.team  { background: rgba(31, 122, 76, 0.12); color: var(--good); }
 

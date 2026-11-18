@@ -8600,6 +8600,65 @@
       : '';
   }
 
+  function _stripTurnaroundInternals(rec) {
+    if (!rec || typeof rec !== 'object') return rec;
+    const hasMeta = Object.prototype.hasOwnProperty.call(rec, '_turnaround_meta');
+    const isEph = Boolean(rec._turnaround_ephemeral);
+    if (!hasMeta && !isEph) return rec;
+    const copy = Object.assign({}, rec);
+    if (isEph) {
+      delete copy.gate_arrival;
+      delete copy.unload_dwell_min;
+      delete copy.site_departure;
+      delete copy.turnaround_flagged;
+    }
+    delete copy._turnaround_ephemeral;
+    delete copy._turnaround_meta;
+    return copy;
+  }
+
+  function stampVisibleTicketRows(rkey, list) {
+    if (!Array.isArray(list) || !list.length) return;
+    if (typeof window === 'undefined' || !window.MFG_TELEMATICS || typeof window.MFG_TELEMATICS.stampSameDayTicketsInScope !== 'function') return;
+    const dates = new Set();
+    list.forEach(r => {
+      if (!r || r.voided) return;
+      const d = String(r.date || '').slice(0, 10);
+      if (d) dates.add(d);
+    });
+    if (!dates.size) return;
+    const poolSalesAll = Array.isArray(SEED && SEED.records && SEED.records.sales_tickets) ? SEED.records.sales_tickets : [];
+    const poolRawAll = Array.isArray(SEED && SEED.records && SEED.records.raw_purchases) ? SEED.records.raw_purchases : [];
+    dates.forEach(dIso => {
+      const listSameDay = list.filter(r => r && !r.voided && String(r.date || '').slice(0, 10) === dIso);
+      const salesRows = poolSalesAll.filter(r => r && !r.voided && String(r.date || '').slice(0, 10) === dIso);
+      const rawRows = poolRawAll.filter(r => r && !r.voided && String(r.date || '').slice(0, 10) === dIso);
+      window.MFG_TELEMATICS.stampSameDayTicketsInScope({
+        industry: 'manufacturing',
+        companyScope: STATE.company,
+        dateIso: dIso,
+        preserveDigest: true,
+        salesTickets: rkey === 'sales_tickets' ? (salesRows.length ? salesRows : listSameDay) : salesRows,
+        rawTickets: rkey === 'raw_purchases' ? (rawRows.length ? rawRows : listSameDay) : rawRows
+      });
+    });
+    const tdy = typeof todayISO === 'function' ? todayISO() : '';
+    if (tdy && dates.has(tdy) && typeof window.MFG_TELEMATICS.ensureTurnaroundHistoryForDate === 'function') {
+      window.MFG_TELEMATICS.ensureTurnaroundHistoryForDate(tdy, { companyScope: STATE.company, silent: Boolean(window.__MFG_HEADLESS_TEST) });
+    }
+  }
+
+  function tktTurnaroundBadge(rkey, r) {
+    if (!r || r.voided) return '';
+    const st = (typeof window !== 'undefined' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getTicketTurnaroundStamp === 'function')
+      ? window.MFG_TELEMATICS.getTicketTurnaroundStamp(rkey, r)
+      : (r.unload_dwell_min != null ? { gate_arrival: r.gate_arrival, unload_dwell_min: r.unload_dwell_min, site_departure: r.site_departure, turnaround_flagged: Boolean(r.turnaround_flagged), on_site_now: Boolean(r._turnaround_meta && r._turnaround_meta.on_site_now) } : null);
+    if (!st || st.unload_dwell_min == null || st.unload_dwell_min <= 0) return '';
+    const depTxt = st.on_site_now ? 'On site now' : (st.site_departure ? `Departure ${st.site_departure}` : 'Closed');
+    const tip = `Gate Arrival ${st.gate_arrival || '-'} · Dwell ${fmtNum(st.unload_dwell_min, 0)} min · ${depTxt}`;
+    return `<span class="tkt-dwell-badge${st.turnaround_flagged ? ' is-warn' : ''}" data-no-i18n="1" data-ui-tip="${esc(tip)}">${fmtNum(st.unload_dwell_min, 0)}m${st.on_site_now ? ' live' : ''}</span>`;
+  }
+
   function repDateShiftBadge(r) {
     if (!r || !r.date) return '';
     const dTx = String(r.date).slice(0, 10);
@@ -22581,10 +22640,12 @@
       why: 'Clusters stationary 10+ minute non-hub truck stops deterministically against pinned site gates and verified routes to flag stale map pins (250m to 2500m drift) or unapproved off-pin drops (>2500m) without altering deterministic mileage or margin math.',
       params: [
         { key: 'staleMinM', label: 'Stale Pin Threshold (m)', def: 250, min: 100, max: 600, step: 50, unit: 'm' },
-        { key: 'offPinMinM', label: 'Off-Pin Drop Threshold (m)', def: 2500, min: 1000, max: 5000, step: 250, unit: 'm' }
+        { key: 'offPinMinM', label: 'Off-Pin Drop Threshold (m)', def: 2500, min: 1000, max: 5000, step: 250, unit: 'm' },
+        { key: 'gateRadiusM', label: 'Verified Gate Match Radius (m)', def: 120, min: 50, max: 200, step: 10, unit: 'm' },
+        { key: 'maxSiteWaitMin', label: 'Site Turnaround Wait Alert (min)', def: 45, min: 15, max: 180, step: 5, unit: 'min' }
       ],
-      whatFn: p => `Flags non-hub dwell stops between <b>${fmtNum(p.staleMinM, 0)} m</b> and <b>${fmtNum(p.offPinMinM, 0)} m</b> from a pinned site as Stale Pin Drift and stops beyond <b>${fmtNum(p.offPinMinM, 0)} m</b> as Unapproved Off-Pin Drops.`,
-      threshFn: p => `Drift >= ${fmtNum(p.staleMinM, 0)}m · Off-pin > ${fmtNum(p.offPinMinM, 0)}m`,
+      whatFn: p => `Flags non-hub dwell stops between <b>${fmtNum(p.staleMinM, 0)} m</b> and <b>${fmtNum(p.offPinMinM, 0)} m</b> from a pinned site as Stale Pin Drift, stops beyond <b>${fmtNum(p.offPinMinM, 0)} m</b> as Unapproved Off-Pin Drops, and verified gate waits (<b>${fmtNum(p.gateRadiusM || 120, 0)} m</b> radius) over <b>${fmtNum(p.maxSiteWaitMin || 45, 0)} min</b>.`,
+      threshFn: p => `Drift >= ${fmtNum(p.staleMinM, 0)}m · Off-pin > ${fmtNum(p.offPinMinM, 0)}m · Gate ${fmtNum(p.gateRadiusM || 120, 0)}m / > ${fmtNum(p.maxSiteWaitMin || 45, 0)}m`,
       previewFn: () => 'Deterministic watchdog: Never alters saved KM or ticket net-back margins; supervisors inspect the dwell cluster on Map Studio or queue a Gate Pin Review in Approvals.'
     },
     {
@@ -23025,10 +23086,12 @@
     why: `Cross-checks stationary 10+ minute dwell clusters against pinned ${industry} locations to flag Stale Pin Drift or Unapproved Off-Pin Drops deterministically.`,
     params: [
       { key: 'staleMinM', label: 'Stale Pin Threshold (m)', def: 250, min: 100, max: 600, step: 50, unit: 'm' },
-      { key: 'offPinMinM', label: 'Off-Pin Drop Threshold (m)', def: 2500, min: 1000, max: 5000, step: 250, unit: 'm' }
+      { key: 'offPinMinM', label: 'Off-Pin Drop Threshold (m)', def: 2500, min: 1000, max: 5000, step: 250, unit: 'm' },
+      { key: 'gateRadiusM', label: 'Verified Gate Match Radius (m)', def: 120, min: 50, max: 200, step: 10, unit: 'm' },
+      { key: 'maxSiteWaitMin', label: 'Site Turnaround Wait Alert (min)', def: 45, min: 15, max: 180, step: 5, unit: 'min' }
     ],
-    whatFn: p => `Flags non-hub dwell stops between <b>${fmtNum(p.staleMinM, 0)} m</b> and <b>${fmtNum(p.offPinMinM, 0)} m</b> as Stale Pin Drift and > <b>${fmtNum(p.offPinMinM, 0)} m</b> as Unapproved Off-Pin Drops.`,
-    threshFn: p => `Drift >= ${fmtNum(p.staleMinM, 0)}m · Off-pin > ${fmtNum(p.offPinMinM, 0)}m`,
+    whatFn: p => `Flags non-hub dwell stops between <b>${fmtNum(p.staleMinM, 0)} m</b> and <b>${fmtNum(p.offPinMinM, 0)} m</b> as Stale Pin Drift, > <b>${fmtNum(p.offPinMinM, 0)} m</b> as Unapproved Off-Pin Drops, and gate waits (<b>${fmtNum(p.gateRadiusM || 120, 0)} m</b>) over <b>${fmtNum(p.maxSiteWaitMin || 45, 0)} min</b>.`,
+    threshFn: p => `Drift >= ${fmtNum(p.staleMinM, 0)}m · Off-pin > ${fmtNum(p.offPinMinM, 0)}m · Gate ${fmtNum(p.gateRadiusM || 120, 0)}m / > ${fmtNum(p.maxSiteWaitMin || 45, 0)}m`,
     previewFn: () => 'Dwell watchdog: Queue a Gate Pin Review in Approvals directly from any drifted site cluster.'
   });
   IND_ALERT_RULE_CATALOG.push(
@@ -27958,6 +28021,7 @@
               </tr>
             </thead>
             <tbody>
+              ${(() => { stampVisibleTicketRows('sales_tickets', shown); return ''; })()}
               ${shown.map(r => {
                 const sgn = ticketSign(r);
                 const isRem = isRemovedTicket(r);
@@ -27985,7 +28049,7 @@
                   <td>${r.sale_type === 'Unregistered' ? '<span class="has-sr-only" data-ui-tip="Unregistered">Unreg.<span class="sr-only">istered</span></span>' : esc(r.sale_type)}</td>
                   <td>${relLink('customers', r.customer, r.customer, true)}</td>
                   <td>${relLink('products', r.product)}</td>
-                  <td>${r.site ? relLink('sites', r.site) : '—'}</td>
+                  <td>${r.site ? relLink('sites', r.site) : '—'}${tktTurnaroundBadge('sales_tickets', r)}</td>
                   <td class="td-truck-drv"><span class="mono">${r.truck ? relLink('equipment', r.truck) : esc(r.transport_by === 'Third-party truck' ? '3rd-party' : (r.transport_by || '—'))}</span>${r.driver ? `<div class="drv-sub">${relLink('drivers', r.driver)}</div>` : ''}</td>
                   <td class="r">${fmtTicketQtyCell(r, sgn, true)}</td>
                   ${showTaxCols ? `
@@ -28788,6 +28852,7 @@
               </tr>
             </thead>
             <tbody>
+              ${(() => { stampVisibleTicketRows('raw_purchases', shown); return ''; })()}
               ${shown.map(r => {
                 const rSgn = rawSign(r);
                 const isRem = isRemovedTicket(r);
@@ -28804,7 +28869,7 @@
                   <td class="mono">${esc(recordDateDMY(r))}${repDateShiftBadge(r)}${appCell(r, 'raw_purchases')}</td>
                   <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '(no number)')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="raw" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Raw Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispBadgeHtml}</span></td>
                   <td>${coBadge(r.company)}</td>
-                  <td>${relLink('sites', r.site, r.site || '—', true)}${isBundledRow ? ' <span class="quarry-landed-pill is-bundled" data-ui-tip="Supplier provides both Raw Material and Transportation in Material Cost; internal transport split unknown">Mat+Trans</span>' : ''}</td>
+                  <td>${relLink('sites', r.site, r.site || '—', true)}${isBundledRow ? ' <span class="quarry-landed-pill is-bundled" data-ui-tip="Supplier provides both Raw Material and Transportation in Material Cost; internal transport split unknown">Mat+Trans</span>' : ''}${tktTurnaroundBadge('raw_purchases', r)}</td>
                   <td>${r.site_owner ? relLink('suppliers', r.site_owner) : '—'}</td>
                   <td>${r.truck_owner ? relLink('suppliers', r.truck_owner) : esc(r.transport_by === 'Company fleet' ? 'Company fleet' : (isBundledRow ? 'Supplier-delivered' : (r.transport_by || '—')))}</td>
                   <td>${relLink('products', r.product)}</td>
@@ -28854,6 +28919,7 @@
                 </tr>
               </thead>
               <tbody>
+                ${(() => { stampVisibleTicketRows('sales_tickets', shownSalesHaul); return ''; })()}
                 ${shownSalesHaul.map(r => {
                   const sgn = ticketSign(r);
                   const tp = sgn * Number(r.trans_price || 0);
@@ -28871,7 +28937,7 @@
                     <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispShHtml}</span></td>
                     <td>${coBadge(r.company)}</td>
                     <td>${relLink('customers', r.customer, r.customer, true)}</td>
-                    <td>${r.site ? relLink('sites', r.site) : '—'}</td>
+                    <td>${r.site ? relLink('sites', r.site) : '—'}${tktTurnaroundBadge('sales_tickets', r)}</td>
                     <td>${r.truck_owner ? relLink('suppliers', r.truck_owner) : '—'}</td>
                     <td class="td-truck-drv"><span class="mono">${r.truck ? relLink('equipment', r.truck) : '3rd-party'}</span>${r.driver ? `<div class="drv-sub">${relLink('drivers', r.driver)}</div>` : ''}</td>
                     <td>${relLink('products', r.product)}</td>
@@ -42331,6 +42397,17 @@
 
     const cutoffMode = opts.cutoffMode || STATE.payrollCutoffMode || 'closed_month';
     const cutoffApplicable = Boolean(isOpenEnd && effStartYm <= lastClosedYm);
+    // To Date / Full on a period filter that starts in the month in progress. It never reads the standard
+    // cutoff pill, and a pick made on the bar is kept with the period it was made on (periodSig), so it cannot
+    // carry over to another period, to the standard bar or to the staff cards and reports.
+    const periodSig = `${rawFrom}..${rawTo}`;
+    const inProgressPick = opts.inProgressPick !== undefined ? opts.inProgressPick : STATE.payrollInProgressPick;
+    const inProgressAuto = (opts.inProgressDefault === 'mtd' || opts.inProgressDefault === 'full_month')
+      ? opts.inProgressDefault
+      : (rawTo >= currentMonthEnd ? 'full_month' : 'mtd');
+    const inProgressMode = (inProgressPick && inProgressPick.sig === periodSig && (inProgressPick.mode === 'mtd' || inProgressPick.mode === 'full_month'))
+      ? inProgressPick.mode
+      : inProgressAuto;
     let effEndYm, effSiteCutoff, effToDate;
     if (cutoffApplicable) {
       if (cutoffMode === 'mtd') {
@@ -42347,9 +42424,12 @@
         effToDate = lastClosedEnd;
       }
     } else if (isOpenEnd) {
+      // Period filter that starts in the month in progress. A filter that runs to the month's last day counts the
+      // contract month in full, as on the salary form's monthly position; one that stops earlier counts to date.
+      // A pick on the bar (To Date / Full) overrides that, for the exact period it was made on only.
       effEndYm = todayYm;
       effSiteCutoff = today;
-      effToDate = cutoffMode === 'full_month' ? currentMonthEnd : today;
+      effToDate = inProgressMode === 'mtd' ? today : currentMonthEnd;
     } else {
       effEndYm = rawTo.slice(0, 7);
       effSiteCutoff = rawTo < today ? rawTo : today;
@@ -42358,9 +42438,17 @@
     const effFromDate = rawFrom;
     const advDateCap = (isOpenEnd || (rawFrom <= '2025-01-01' && rawTo >= '2026-08-01')) ? '2099-12-31' : effToDate;
 
+    // A period filter that starts in the month in progress offers To Date / Full on the bar.
+    const monthInProgress = Boolean(!cutoffApplicable && isOpenEnd && effStartYm === todayYm);
+    // Days cut off the end month are "still ahead" only when the cut is the data date inside the month in progress;
+    // on a period that ended earlier they are days after the period end.
+    const capIsDaysAhead = Boolean(effEndYm === todayYm && effToDate === today);
     const cutoffMeta = {
       mode: cutoffMode,
       applicable: cutoffApplicable,
+      monthInProgress,
+      inProgressMode,
+      periodSig,
       isOpenEnd,
       effStartYm,
       effEndYm,
@@ -42382,7 +42470,7 @@
     const canMemoReg = !matchFn && !opts.empRows && !opts.logRows;
     const canPayMaskReg = canViewPayrollDollarAmounts() ? 1 : 0;
     const regCacheKey = canMemoReg
-      ? `${idx.rev}|${scopeCo}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${rawFrom}..${rawTo}|${isOpenEnd ? 1 : 0}|${STATE.basis}|${cutoffMode}|${ignoreSearchFlag ? '' : STATE.search.trim().toLowerCase()}|${fxRate}|pay:${canPayMaskReg}`
+      ? `${idx.rev}|${scopeCo}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${rawFrom}..${rawTo}|${isOpenEnd ? 1 : 0}|${STATE.basis}|${cutoffMode}|mip:${inProgressMode}|${ignoreSearchFlag ? '' : STATE.search.trim().toLowerCase()}|${fxRate}|pay:${canPayMaskReg}`
       : '';
     if (canMemoReg && idx.regCache.has(regCacheKey)) {
       return idx.regCache.get(regCacheKey);
@@ -42485,6 +42573,14 @@
           late_ded: 0,
           rec_absent_days: 0,
           gap_days: 0,
+          cap_days: 0,
+          cap_month_days: 0,
+          cap_full_base: 0,
+          cap_base: 0,
+          cap_reimb: 0,
+          cap_abs: 0,
+          cap_ded: 0,
+          cap_days_ahead: false,
           unacc_vac_days: 0,
           vac_rem: 0,
           absent_days: 0,
@@ -42594,6 +42690,34 @@
       }
     });
 
+    // Vacation taken before the period starts. The yearly allowance is granted each January and runs on from the
+    // first contract month, so a period that starts later must carry in what was granted and taken before it;
+    // otherwise every vacation day inside the period counts as over the allowance and is charged as unpaid.
+    const preVacTaken = new Map();
+    attPool.forEach(a => {
+      if (!a || a.voided) return;
+      const aDate = String(a.date || '').slice(0, 10);
+      const effAttDate = String(a.set_date || a.rep_date || aDate).slice(0, 10);
+      const filterYm = String(a.month || effAttDate.slice(0, 7) || aDate.slice(0, 7)).slice(0, 7);
+      const isBefore = STATE.basis === 'rep' ? (filterYm < effStartYm) : (aDate < effFromDate);
+      if (!isBefore) return;
+      const ym = String(a.month || aDate.slice(0, 7)).slice(0, 7);
+      // Same floor as the register with no period filter (it starts at 2024-01), so both tally the same months.
+      if (!ym || ym >= effStartYm || ym < '2024-01') return;
+      const tp = String(a.type || a.status || '');
+      const tl = Number(a.tally != null ? a.tally : 0);
+      let taken = 0;
+      if (/^config\s*vac/i.test(tp)) taken = tl;
+      else if (/^vacabsence$|^paid\s*leave$/i.test(tp) || (a.pay_treatment === 'paid' && Number(a.leave_days || 0) > 0)) {
+        taken = Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tl > 0 ? tl : (a.source === 'app' ? 1 : 0));
+      }
+      if (!taken) return;
+      const gk = `${norm(a.company || 'WTC')}|${norm(a.staff || '(Unassigned)')}|${ym}`;
+      preVacTaken.set(gk, (preVacTaken.get(gk) || 0) + taken);
+    });
+    // Contract months before the period, per person: how many contracts covered the month and the January grant.
+    const preContractMonths = new Map();
+
     // 1. Expand employment contracts across Staff x Month (with LBP component, Extended days, MTD cap & cumulative Vacation Unaccepted)
     const empGrid = new Map();
     empAll.forEach(e => {
@@ -42610,6 +42734,21 @@
       const cEndRaw = String(e.end_date || '2030-12-31').slice(0, 10);
       const cEnd = (isPartialEndMonth && effToDate < cEndRaw) ? effToDate : cEndRaw;
       if (cStart > cEnd) return;
+      if (cStart.slice(0, 7) < effStartYm) {
+        const pk = `${coNorm}|${sk}`;
+        if (!preContractMonths.has(pk)) preContractMonths.set(pk, new Map());
+        const preMap = preContractMonths.get(pk);
+        let preYm = cStart.slice(0, 7) < '2024-01' ? '2024-01' : cStart.slice(0, 7);
+        let preGuard = 0;
+        while (preYm < effStartYm && preYm <= cEnd.slice(0, 7) && preGuard < 240) {
+          preGuard += 1;
+          const slot = preMap.get(preYm) || { n: 0, granted: 0 };
+          slot.n += 1;
+          if (preYm.endsWith('-01')) slot.granted += Number(e.vacation_days || 0);
+          preMap.set(preYm, slot);
+          preYm = shiftYearMonth(preYm, 1);
+        }
+      }
       const startYm = cStart.slice(0, 7) > effStartYm ? cStart.slice(0, 7) : effStartYm;
       const endYm = cEnd.slice(0, 7) < effEndYm ? cEnd.slice(0, 7) : effEndYm;
       if (startYm > endYm) return;
@@ -42625,10 +42764,13 @@
           const uStart = curYm === cStart.slice(0, 7) ? Math.max(0, Number(cStart.slice(8, 10)) - 1) : 0;
           const uEnd = curYm === cEnd.slice(0, 7) ? Math.max(0, daysInMonth - Number(cEnd.slice(8, 10))) : 0;
           const unatt = uStart + uEnd;
+          // Days after the To Date cutoff that the contract itself still covers: not yet worked, never an absence.
+          const uEndContract = curYm === cEndRaw.slice(0, 7) ? Math.max(0, daysInMonth - Number(cEndRaw.slice(8, 10))) : 0;
+          const capDays = Math.max(0, uEnd - uEndContract);
           const actDays = Math.max(0, daysInMonth - unatt);
           const gk = `${coNorm}|${sk}|${curYm}`;
           if (!empGrid.has(gk)) empGrid.set(gk, []);
-          empGrid.get(gk).push({ contract: e, unatt, actDays, cStart, cEnd, ovStart, ovEnd, mStart, effMEnd, daysInMonth });
+          empGrid.get(gk).push({ contract: e, unatt, capDays, actDays, cStart, cEnd, ovStart, ovEnd, mStart, effMEnd, daysInMonth });
         }
         curYm = shiftYearMonth(curYm, 1);
       }
@@ -42643,11 +42785,24 @@
       empByPerson.get(pk).push({ ym, gk, cList });
     });
 
-    empByPerson.forEach(ymEntries => {
+    empByPerson.forEach((ymEntries, personKey) => {
       ymEntries.sort((a, b) => a.ym.localeCompare(b.ym));
       let cumVac = 0;
       let cumVacAbs = 0;
       let cumUnacc = 0;
+      // Carry in the allowance granted and the vacation taken in the contract months before the period, with the
+      // same month-by-month rule as below, so a filtered period charges what the full register charges for it.
+      const preMonths = preContractMonths.get(personKey);
+      if (preMonths) {
+        Array.from(preMonths.keys()).sort().forEach(preYm => {
+          const slot = preMonths.get(preYm);
+          const preTaken = preVacTaken.get(`${personKey}|${preYm}`) || 0;
+          cumVac += slot.granted;
+          cumVacAbs += slot.n * preTaken;
+          const preUnaccEach = (cumVac - cumVacAbs < 0) ? Math.min(preTaken, cumVacAbs - cumVac) : 0;
+          cumUnacc += slot.n * preUnaccEach;
+        });
+      }
       ymEntries.forEach(({ ym, gk, cList }) => {
         const effCList = cList.slice().sort((a, b) => (b.actDays - a.actDays) || b.cStart.localeCompare(a.cStart) || (Number(b.contract.salary_usd || 0) - Number(a.contract.salary_usd || 0)));
         const prim = effCList[0].contract;
@@ -42677,6 +42832,7 @@
 
         const mb = ensureMonth(ym);
         const contractRates = [];
+        let monthCapDays = 0;
         effCList.forEach((item, idxItem) => {
           const ce = item.contract;
           const cePend = isPendingSalaryEmployment(ce);
@@ -42710,13 +42866,43 @@
           const gapDays = item.unatt;
           const gapAndUnaccAbsDed = (gapDays + unaccVacEach) * dayRate;
           const gapDed = gapDays * dedRate;
+          // Days cut off the end month by the cutoff (To Date, or a period that ends mid-month) that the contract
+          // still covers are not absences. Their share is kept aside here and, once Earnings are worked out below
+          // (step 6), moved off Absence ($) / Ded. ($): the per-day deduction comes off Reimb. first, the rest and
+          // the day rate come off Base, so those two columns keep recorded absences and real contract gaps only.
+          // Never more than this month's Base + Reimb.: what does not fit (in the first days of a month, a daily
+          // rate on fewer working days than the days cut, or a per-day deduction with little or no reimbursement)
+          // stays where it was. A day counts as moved only when both its shares moved; the rest stay gap days.
+          const capDays = Math.min(gapDays, Number(item.capDays || 0));
+          let capDaysMoved = capDays;
+          if (capDays > 0) {
+            const capAbsWant = capDays * dayRate;
+            const capDedWant = capDays * dedRate;
+            const roomBase = Math.max(0, mBase);
+            const roomReimb = Math.max(0, mReimb);
+            const moved = Math.min(capAbsWant + capDedWant, roomBase + roomReimb);
+            let offReimb = Math.min(capDedWant, roomReimb);
+            const offBase = Math.min(moved - offReimb, roomBase);
+            offReimb += Math.min(moved - offReimb - offBase, roomReimb - offReimb);
+            const absMoved = Math.min(capAbsWant, moved);
+            const dedMoved = moved - absMoved;
+            s.cap_base += offBase;
+            s.cap_reimb += offReimb;
+            s.cap_abs += absMoved;
+            s.cap_ded += dedMoved;
+            s.cap_full_base += mBase;
+            const absLeftDays = dayRate > 0 ? (capAbsWant - absMoved) / dayRate : 0;
+            const dedLeftDays = dedRate > 0 ? (capDedWant - dedMoved) / dedRate : 0;
+            capDaysMoved = Math.max(0, capDays - Math.max(absLeftDays, dedLeftDays));
+            if (capDays > monthCapDays) monthCapDays = capDays;
+          }
 
           s.base += mBase;
           s.base_usd_only += salUsdExt;
           s.base_lbp += salLbpExt;
           s.reimb += mReimb;
           if (idxItem === 0) {
-            s.gap_days += gapDays;
+            s.gap_days += gapDays - capDaysMoved;
             s.unacc_vac_days += unaccVacEach;
           }
           s.abs_ded += gapAndUnaccAbsDed;
@@ -42727,6 +42913,12 @@
 
           contractRates.push({ dayRate, dayRateU, dayRateL, hrRate, hrRateU, hrRateL, otMult, ltMult, dedRate, dedRateU, dedRateL });
         });
+        // Days cut in this month: the most any of its contracts lost (a renewal month has two contracts, and the
+        // one still running at the cut is not always the one listed first).
+        if (monthCapDays > 0) {
+          s.cap_days += monthCapDays;
+          s.cap_month_days = effCList[0].daysInMonth;
+        }
         monthContractMap.set(gk, contractRates);
       });
     });
@@ -43415,7 +43607,17 @@
     const staffRows = Array.from(staffMap.values()).map(s => {
       const rawEarn = s.base + s.att_ot_pay + s.trip_ot_pay + s.extras + s.reimb + s.site_allow - s.late_ded - s.abs_ded - s.ded;
       const rawPaid = s.vouchers_paid + s.config_paid;
-      s.base = round2(s.base);
+      // Earnings above are final. The share of the days cut off the end month now moves off Absence / Ded.
+      // onto Base / Reimb.: base + reimb - abs_ded - ded is the same before and after.
+      // (cap_base + cap_reimb = cap_abs + cap_ded by construction.)
+      if (s.cap_base > 0 || s.cap_reimb > 0) {
+        s.base -= s.cap_base;
+        s.reimb -= s.cap_reimb;
+        s.abs_ded -= s.cap_abs;
+        s.ded -= s.cap_ded;
+      }
+      if (s.cap_days > 0) s.cap_days_ahead = capIsDaysAhead;
+      s.base = round2(s.base) || 0;
       s.att_ot_pay = round2(s.att_ot_pay);
       s.trip_ot_pay = round2(s.trip_ot_pay);
       s.ot_pay = round2(s.att_ot_pay + s.trip_ot_pay);
@@ -43424,11 +43626,13 @@
       s.late_ded = round2(s.late_ded);
       s.rec_absent_days = round2(s.rec_absent_days);
       s.gap_days = round2(s.gap_days);
+      s.cap_days = round2(s.cap_days);
+      s.cap_full_base = round2(s.cap_full_base);
       s.absent_days = s.rec_absent_days;
-      s.abs_ded = round2(s.abs_ded);
+      s.abs_ded = round2(s.abs_ded) || 0;
       s.extras = round2(s.extras);
-      s.reimb = round2(s.reimb);
-      s.ded = round2(s.ded);
+      s.reimb = round2(s.reimb) || 0;
+      s.ded = round2(s.ded) || 0;
       s.site_allow = round2(s.site_allow);
       s.vouchers_paid = round2(s.vouchers_paid);
       s.config_paid = round2(s.config_paid);
@@ -44350,7 +44554,7 @@
     const actionsHtml = opts.actionsHtml ? String(opts.actionsHtml) : '';
 
     return `
-      <div class="payroll-cutoff-bar ${isPbi ? 'is-pbi ' : ''}${cm.applicable ? '' : 'is-custom-period'}" id="${esc(barId)}" data-cutoff-mode="${esc(cm.applicable ? cm.mode : 'custom')}" data-staff-status="${esc(stMode)}">
+      <div class="payroll-cutoff-bar ${isPbi ? 'is-pbi ' : ''}${cm.applicable ? '' : 'is-custom-period'}" id="${esc(barId)}" data-cutoff-mode="${esc(cm.applicable ? cm.mode : (cm.monthInProgress ? cm.inProgressMode : 'custom'))}"${cm.monthInProgress ? ` data-in-progress-sig="${esc(cm.periodSig || '')}"` : ''} data-staff-status="${esc(stMode)}">
         <div class="payroll-cutoff-ctrl">
           ${cm.applicable ? `
           <div class="payroll-cutoff-pills" role="group" aria-label="Payroll period cutoff">
@@ -44366,11 +44570,24 @@
               <span class="pcp-dot" aria-hidden="true"></span>
               <span class="pcp-lbl">${esc(cm.todayYmLabel)} · Full</span>
             </button>
+          </div>` : (cm.monthInProgress ? `
+          <div class="payroll-cutoff-pills is-two" role="group" aria-label="Payroll period cutoff">
+            <button type="button" class="payroll-cutoff-pill ${cm.inProgressMode === 'mtd' ? 'active' : ''}" data-payroll-cutoff="mtd" data-tone="mtd">
+              <span class="pcp-dot" aria-hidden="true"></span>
+              <span class="pcp-lbl">${esc(cm.todayYmLabel)} · MTD (${esc(String(cm.today || today).slice(8, 10))}d)</span>
+            </button>
+            <button type="button" class="payroll-cutoff-pill ${cm.inProgressMode === 'mtd' ? '' : 'active'}" data-payroll-cutoff="full_month" data-tone="full">
+              <span class="pcp-dot" aria-hidden="true"></span>
+              <span class="pcp-lbl">${esc(cm.todayYmLabel)} · Full</span>
+            </button>
+          </div>
+          <div class="payroll-cutoff-custom-slot">
+            <button type="button" class="pcc-reset-btn" data-payroll-cutoff-reset="1">Standard Cutoff</button>
           </div>` : `
           <div class="payroll-cutoff-custom-slot">
             <span class="pcc-pill"><span class="pcp-dot is-locked" aria-hidden="true"></span><span>Period Filter · ${esc(cm.effEndLabel)}</span></span>
             <button type="button" class="pcc-reset-btn" data-payroll-cutoff-reset="1">Standard Cutoff</button>
-          </div>`}
+          </div>`)}
         </div>
         <div class="payroll-bar-aux">
           <div class="payroll-status-pills" role="group" aria-label="Staff status filter">
@@ -44933,7 +45150,7 @@
     const otRates = subMode === 'contracts' ? filterRecords(SEED.records.overtime_rates, { ignorePeriod: true }) : [];
 
     const regOpts = subMode === 'allowances'
-      ? { cutoffMode: STATE.allowancesCutoffMode || 'mtd', ignoreSearch: true }
+      ? { cutoffMode: STATE.allowancesCutoffMode || 'mtd', ignoreSearch: true, inProgressPick: STATE.allowancesInProgressPick || null, inProgressDefault: 'mtd' }
       : {};
     const regData = computeStaffPayrollRegister(regOpts);
     const { staffRows, driverOtRows = [], siteStaffRowsBase, siteDailyRows = [], siteLogRows = [], salByStaffMap, payMonths, profOf, cutoffMeta } = regData;
@@ -46739,12 +46956,14 @@
                   <td>${relLink('employments', r.staff, r.staff, true)} <button type="button" class="btn btn-ghost-bar" style="padding:1px 6px;font-size:10px;margin-inline-start:4px" data-open-prepayday-card="${esc(r.staff)}" data-open-prepayday-co="${esc(r.company || '')}" title="Open Pre-Payday Attendance Card">Card</button>${!r.hasContract ? ' <span class="badge badge-warn" data-ui-tip="Salary payment without an employment contract">No contract</span>' : (r.salary_pending ? ` <span class="badge badge-warn" data-ui-tip="${canShowAttDollars ? 'Active contract awaiting final salary assignment ($0.00)' : 'Active contract awaiting final salary assignment'}">Pending Salary</span>${canSetRegPend ? ` <button type="button" class="btn btn-primary" style="padding:1px 7px;font-size:10.5px;margin-inline-start:4px" data-set-pending-salary-id="${esc(r.pending_emp_id)}">$ Enter Salary</button>` : ''}` : '')}</td>
                   <td>${coBadge(r.company)}</td>
                   <td><span class="badge ${r.is_active ? 'badge-ok' : 'badge-warn'}">${esc(r.status)}</span></td>
-                  ${canShowAttDollars ? `<td class="r"${r.active_months ? ` data-ui-tip="${esc(`${r.active_months} active contract months${r.reimb ? ` · Package Base + Reimb: ${fmtUSD(round2(r.base + r.reimb), 2)}` : ''}${r.vac_rem ? ` · Rem Vacation: ${fmtNum(r.vac_rem, 1)}d` : ''}`)}"` : ''}>${r.salary_pending && r.base === 0 ? '<span class="badge badge-warn">Pending ($0.00)</span>' : fmtUSD(r.base, 2)}</td><td class="r">${r.reimb ? fmtUSD(r.reimb, 2) : '-'}</td>` : ''}
+                  ${canShowAttDollars ? `<td class="r"${r.active_months ? ` data-ui-tip="${esc(`${r.active_months} active contract months${r.reimb ? ` · Package Base + Reimb: ${fmtUSD(round2(r.base + r.reimb), 2)}` : ''}${r.vac_rem ? ` · Rem Vacation: ${fmtNum(r.vac_rem, 1)}d` : ''}${r.cap_days > 0 ? (r.cap_days_ahead
+                    ? ` · Month in progress: ${fmtNum(r.cap_days, 0)} of ${fmtNum(r.cap_month_days, 0)} days still ahead, full month base ${fmtUSD(r.cap_full_base, 2)}`
+                    : ` · Period ends mid-month: ${fmtNum(r.cap_days, 0)} of ${fmtNum(r.cap_month_days, 0)} days after the period end, full month base ${fmtUSD(r.cap_full_base, 2)}`) : ''}`)}"` : ''}>${r.salary_pending && r.base === 0 ? '<span class="badge badge-warn">Pending ($0.00)</span>' : fmtUSD(r.base, 2)}</td><td class="r">${r.reimb ? fmtUSD(r.reimb, 2) : '-'}</td>` : ''}
                   <td class="r">${r.ot_hrs ? fmtNum(r.ot_hrs, 1) : '-'}</td>
                   ${canShowAttDollars ? `<td class="r">${r.att_ot_pay ? fmtUSD(r.att_ot_pay, 2) : '-'}</td><td class="r"${r.trip_ot_cnt ? ` data-ui-tip="${esc(`${fmtNum(r.trip_ot_cnt, 0)} night OT trips (${fmtNum(r.sales_ot_trips || 0, 0)} Sales · ${fmtNum(r.raw_ot_trips || 0, 0)} Quarry)`)}"` : ''}>${r.trip_ot_pay ? fmtUSD(r.trip_ot_pay, 2) : '-'}</td><td class="r">${r.site_allow ? fmtUSD(r.site_allow, 2) : '-'}</td>` : ''}
                   <td class="r">${r.late_hrs ? fmtNum(r.late_hrs, 1) : '-'}</td>
                   ${canShowAttDollars ? `<td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '-'}</td>` : ''}
-                  <td class="r"${r.gap_days > 0 ? ` data-ui-tip="${esc(canShowAttDollars ? `${fmtNum(r.rec_absent_days, 1)}d recorded absence (${fmtNum(r.gap_days, 0)}d contract start/end gap deducted in Absence $)` : `${fmtNum(r.rec_absent_days, 1)}d recorded absence`)}"` : ''}>${r.absent_days ? fmtNum(r.absent_days, 1).replace(/\.0$/, '') : '-'}</td>
+                  <td class="r"${(r.gap_days > 0 || r.unacc_vac_days > 0) ? ` data-ui-tip="${esc(canShowAttDollars ? `${fmtNum(r.rec_absent_days, 1)}d recorded absence${r.gap_days > 0 ? ` (${fmtNum(r.gap_days, 0)}d contract start/end gap deducted in Absence $)` : ''}${r.unacc_vac_days > 0 ? ` (${fmtNum(r.unacc_vac_days, 1)}d vacation over the yearly allowance deducted in Absence $)` : ''}` : `${fmtNum(r.rec_absent_days, 1)}d recorded absence`)}"` : ''}>${r.absent_days ? fmtNum(r.absent_days, 1).replace(/\.0$/, '') : '-'}</td>
                   ${canShowAttDollars ? `<td class="r">${r.abs_ded ? fmtUSD(r.abs_ded, 2) : '-'}</td><td class="r">${r.ded ? fmtUSD(r.ded, 2) : '-'}</td><td class="r"${(r.reimb || r.extras || r.ded) ? ` data-ui-tip="${esc(`Base: ${fmtUSD(r.base, 2)} · Reimb: +${fmtUSD(r.reimb, 2)} · Extras: ${fmtSignedUSD(r.extras, 2)} · Reimb Ded: -${fmtUSD(r.ded, 2)}`)}"` : ''}><strong>${fmtUSD(r.earnings, 2)}</strong></td><td class="r"${r.config_paid ? ` data-ui-tip="${esc(`Vouchers: ${fmtUSD(r.vouchers_paid, 2)} · Opening Config: ${fmtUSD(r.config_paid, 2)}`)}"` : ''}><strong>${fmtUSD(r.paid, 2)}</strong></td><td class="r ${r.balance < 0 ? 'pbi-neg' : ''}"${lbpNote ? ` data-ui-tip="${esc(lbpNote)}"` : ''}><strong>${fmtUSD(r.balance, 2)}</strong></td><td class="r"${r.advance_cnt ? ` data-ui-tip="${esc(`${fmtNum(r.advance_cnt, 0)} post-cutoff advance voucher(s)`)}"` : ''}>${r.advances ? `<span class="badge badge-brass">${fmtUSD(r.advances, 2)}</span>` : '-'}</td>` : ''}
                 </tr>`;
               }).join('') || emptyRow(canShowAttDollars ? 18 : 6, 'No staff records match filter')}
@@ -64437,7 +64656,18 @@
     const sibDayLoss = canViewProfit && dayRevUsd > 0 && dayOpProfit < 0;
     const sibTillNeg = canViewBooks && closingTillUsd !== null && Math.round(closingTillUsd) < 0;
     const sibSalesLow = sibSalesVs7 != null && sibSalesVs7 <= -25;
-    const sibHasAtt = sibDayLoss || sibTillNeg || sibSalesLow || openSn.length > 0;
+    if (typeof window !== 'undefined' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.ensureTurnaroundHistoryForDate === 'function') {
+      const tdySib = typeof todayISO === 'function' ? todayISO() : '';
+      if (tdySib && targetDate <= tdySib) {
+        window.MFG_TELEMATICS.ensureTurnaroundHistoryForDate(targetDate, { companyScope: STATE.company, silent: Boolean(window.__MFG_HEADLESS_TEST) });
+      }
+    }
+    const sibTurnDigest = (typeof window !== 'undefined' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.computeSiteTurnaroundDigest === 'function')
+      ? window.MFG_TELEMATICS.computeSiteTurnaroundDigest({ industry: ind, companyScope: STATE.company, dateIso: targetDate, applyStamps: true })
+      : { visits: [], flaggedVisits: [], flaggedCount: 0, maxSiteWaitMin: 45, avgWaitMin: 0 };
+    const rawAssetJump = (spec.slots && (spec.slots.find(s => /truck|energy|workorder|claim|consolidat/i.test(String(s.view || ''))) || spec.slots[0]) || { view: '' }).view;
+    const sibAssetJumpView = [rawAssetJump, 'reg_sites', 'overview'].find(v => v && canViewView(v)) || '';
+    const sibHasAtt = sibDayLoss || sibTillNeg || sibSalesLow || openSn.length > 0 || sibTurnDigest.flaggedCount > 0;
 
     const sibSalesPop = JSON.stringify({
       title: `${domainLabels.rev} · ${targetDate}`,
@@ -64640,6 +64870,7 @@
               ${sibTillNeg ? `<button type="button" class="dops-att-chip crit" data-nav-jump="cashflow" data-ui-tip="The US dollar cash till is below zero as of this day. Click to review cash movements.">${ic('cashflow')}<span class="dops-att-lbl">Till Negative</span><bdi class="dops-att-val">${fmtUSD(closingTillUsd, 0)}</bdi></button>` : ''}
               ${sibSalesLow ? `<button type="button" class="dops-att-chip warn" data-nav-jump="${esc((spec.slots && spec.slots[0] && spec.slots[0].view) || 'overview')}" data-ui-tip="Compared with the average of the last 7 active days">${ic('sales')}<span class="dops-att-lbl">Sales Below Usual</span><bdi class="dops-att-val">${sibSalesVs7}%</bdi></button>` : ''}
               ${openSn.length > 0 ? `<button type="button" class="dops-att-chip warn" data-nav-jump="sentinels" data-ui-tip="Open alerts raised by the automatic checks. Click to review them.">${ic('warn')}<span class="dops-att-lbl">Open Alerts</span><bdi class="dops-att-val">${fmtNum(openSn.length)}</bdi></button>` : ''}
+              ${sibTurnDigest.flaggedCount > 0 ? `<button type="button" class="dops-att-chip warn" id="dopsTurnaroundBtn"${sibAssetJumpView ? ` data-nav-jump="${esc(sibAssetJumpView)}"` : ''} data-ui-tip="Geofenced site stops exceeding ${fmtNum(sibTurnDigest.maxSiteWaitMin, 0)} minutes">${ic('clock')}<span class="dops-att-lbl">Site Wait &gt; ${fmtNum(sibTurnDigest.maxSiteWaitMin, 0)}m</span><bdi class="dops-att-val">${fmtNum(sibTurnDigest.flaggedCount)}</bdi></button>` : ''}
             </div>
             <input type="search" id="dopsQuickSearchInput" class="dops-search-inp" value="${esc(rawDopsSearch)}" placeholder="Filter day streams..." aria-label="Filter Daily Operations">
             <button type="button" class="dops-handover-btn" id="dopsHandoverBriefBtn" data-dops-handover="1" aria-expanded="false" aria-label="Shift Handover" data-ui-tip="Open Shift Handover Brief: yesterday-vs-today variance, cash and credit intake, Day P&L bridge, shift priorities, and manager WhatsApp summary">
@@ -64886,6 +65117,7 @@
                 <h2 class="dops-card-title">${esc(domainLabels.p5)}</h2>
               </div>
               <div class="dops-card-actions">
+                ${sibTurnDigest.visits && sibTurnDigest.visits.length > 0 ? `<span class="dops-dwell-badge${sibTurnDigest.flaggedCount > 0 ? ' is-warn' : ''}" data-no-i18n="1">${sibTurnDigest.flaggedCount > 0 ? `${fmtNum(sibTurnDigest.flaggedCount)} Wait &gt; ${fmtNum(sibTurnDigest.maxSiteWaitMin, 0)}m` : `${fmtNum(sibTurnDigest.avgWaitMin, 0)}m Wait`}</span>` : ''}
                 <button type="button" class="dops-disc-link" data-nav-jump="reg_equipment">${fmtNum(p5EqRows.length)}</button>
               </div>
             </div>
@@ -67721,7 +67953,7 @@
       if (!Array.isArray(arr)) { slim[bucket] = arr; return; }
       slim[bucket] = arr.map(rec => {
         if (!rec || typeof rec !== 'object') return rec;
-        const copy = Object.assign({}, rec);
+        const copy = Object.assign({}, _stripTurnaroundInternals(rec));
         if (typeof copy.data_url === 'string' && copy.data_url.length > 2048) {
           const bId = copy._blob_id || copy.id || copy.code;
           if (bId && typeof putDocBlob === 'function') {
@@ -96740,7 +96972,11 @@
     fuel_surcharge: 'Surcharge per Step ($)',
     fuel_surcharge_unit: 'Fuel Surcharge in Transport Price ($)',
     fuel_steps: 'Diesel Steps Above Agreement',
-    fuel_price_ref: 'Diesel Price Used ($ / L)'
+    fuel_price_ref: 'Diesel Price Used ($ / L)',
+    gate_arrival: 'Gate Arrival (GPS)',
+    unload_dwell_min: 'Site Turnaround Dwell',
+    site_departure: 'Site Departure (GPS)',
+    turnaround_flagged: 'Wait Over Limit'
   };
 
   // What a losing delivery agreement is measured against, in plain words (shared by the strip, the Sentinel and the form).
@@ -109596,7 +109832,7 @@
     if (record && editCtx && editCtx.orig) {
       const orig = editCtx.orig;
       const seedOrigSnap = !isAppRecord(orig) ? captureSeedOrigSnapshot(crKey, orig) : null;
-      record = Object.assign({}, orig, record);
+      record = Object.assign({}, _stripTurnaroundInternals(orig), record);
       if (seedOrigSnap && !record._seed_orig) {
         record._seed_orig = buildSeedOrigMeta(seedOrigSnap);
       }
@@ -110151,7 +110387,7 @@
     try {
       const ctrl = new AbortController();
       t = setTimeout(() => ctrl.abort(), 8000);
-      const res = await edgeApiFetch('./api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: tblName, record }), signal: ctrl.signal });
+      const res = await edgeApiFetch('./api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: tblName, record: _stripTurnaroundInternals(record) }), signal: ctrl.signal });
       clearTimeout(t);
       t = null;
       if (!res) {
@@ -110428,6 +110664,27 @@
       if (assignSiteReg && assignSiteReg.site && assignSiteReg.region) {
         ensureSiteHasRegion(assignSiteReg.site, assignSiteReg.region, assignSiteReg.supplier, preExtraApiPosts);
       }
+      if (crKey === 'sales_tickets' || crKey === 'raw_purchases') {
+        if (postAsPairedReturn) {
+          delete record.gate_arrival;
+          delete record.unload_dwell_min;
+          delete record.site_departure;
+          delete record.turnaround_flagged;
+          delete record._turnaround_meta;
+          delete record._turnaround_ephemeral;
+        } else if (typeof window !== 'undefined' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.resolveTicketTurnaroundStampForSave === 'function') {
+          const modalEditedFields = (isEditingExisting && editCtx && editCtx.orig)
+            ? ['truck', 'equipment', 'site', 'date'].filter(fk => String(editCtx.orig[fk] ?? '').trim() !== String(record[fk] ?? '').trim())
+            : [];
+          window.MFG_TELEMATICS.resolveTicketTurnaroundStampForSave(crKey, record, { editedFields: modalEditedFields, dateIso: record.date });
+        }
+      }
+      const syncTurnaroundKeysAfterAssign = target => {
+        if (!target || (crKey !== 'sales_tickets' && crKey !== 'raw_purchases')) return;
+        ['gate_arrival', 'unload_dwell_min', 'site_departure', 'turnaround_flagged', '_turnaround_meta', '_turnaround_ephemeral'].forEach(tk => {
+          if (!Object.prototype.hasOwnProperty.call(record, tk)) delete target[tk];
+        });
+      };
       if (isEditingExisting && postAsPairedReturn && (crKey === 'sales_tickets' || crKey === 'raw_purchases')) {
         // Keep the original outbound ticket intact (with updated KM) and insert a new paired Return row sharing its serial #
         const sArr = (SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [];
@@ -110484,12 +110741,17 @@
         } else {
           const sArr = (SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [];
           sArr.forEach(r => {
-            if (r && String(r.id) === String(record.id)) Object.assign(r, record);
+            if (r && String(r.id) === String(record.id)) {
+              Object.assign(r, record);
+              syncTurnaroundKeysAfterAssign(r);
+            }
           });
           if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
           const cIdx = STATE.customRecords[crKey].findIndex(r => r && String(r.id) === String(record.id));
-          if (cIdx >= 0) Object.assign(STATE.customRecords[crKey][cIdx], record);
-          else STATE.customRecords[crKey].unshift(Object.assign({}, record));
+          if (cIdx >= 0) {
+            Object.assign(STATE.customRecords[crKey][cIdx], record);
+            syncTurnaroundKeysAfterAssign(STATE.customRecords[crKey][cIdx]);
+          } else STATE.customRecords[crKey].unshift(Object.assign({}, record));
         }
       } else if (isUpdatingPending && (crKey === 'expenses' || crKey === 'raw_purchases' || crKey === 'employments')) {
         if (crKey === 'employments' && STATE.editingPendingSalaryId) {
@@ -110497,22 +110759,32 @@
         }
         const sArr = (SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [];
         sArr.forEach(r => {
-          if (r && String(r.id) === String(record.id)) Object.assign(r, record);
+          if (r && String(r.id) === String(record.id)) {
+            Object.assign(r, record);
+            if (typeof syncTurnaroundKeysAfterAssign === 'function') syncTurnaroundKeysAfterAssign(r);
+          }
         });
         if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
         const cIdx = STATE.customRecords[crKey].findIndex(r => r && String(r.id) === String(record.id));
-        if (cIdx >= 0) Object.assign(STATE.customRecords[crKey][cIdx], record);
-        else STATE.customRecords[crKey].unshift(record);
+        if (cIdx >= 0) {
+          Object.assign(STATE.customRecords[crKey][cIdx], record);
+          if (typeof syncTurnaroundKeysAfterAssign === 'function') syncTurnaroundKeysAfterAssign(STATE.customRecords[crKey][cIdx]);
+        } else STATE.customRecords[crKey].unshift(record);
       } else if (record._updatingExistingId) {
         delete record._updatingExistingId;
         const sArr = (SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [];
         sArr.forEach(r => {
-          if (r && String(r.id) === String(record.id)) Object.assign(r, record);
+          if (r && String(r.id) === String(record.id)) {
+            Object.assign(r, record);
+            if (typeof syncTurnaroundKeysAfterAssign === 'function') syncTurnaroundKeysAfterAssign(r);
+          }
         });
         if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
         const cIdx = STATE.customRecords[crKey].findIndex(r => r && String(r.id) === String(record.id));
-        if (cIdx >= 0) Object.assign(STATE.customRecords[crKey][cIdx], record);
-        else STATE.customRecords[crKey].unshift(Object.assign({}, record));
+        if (cIdx >= 0) {
+          Object.assign(STATE.customRecords[crKey][cIdx], record);
+          if (typeof syncTurnaroundKeysAfterAssign === 'function') syncTurnaroundKeysAfterAssign(STATE.customRecords[crKey][cIdx]);
+        } else STATE.customRecords[crKey].unshift(Object.assign({}, record));
       } else {
         if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
         STATE.customRecords[crKey].unshift(record);
@@ -111878,6 +112150,10 @@
       delete r.restored_at;
       delete r._reopenedExplicitly;
       list.unshift(r);
+    }
+    if ((crKey === 'sales_tickets' || crKey === 'raw_purchases') && typeof window !== 'undefined' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.resolveTicketTurnaroundStampForSave === 'function') {
+      if (r) window.MFG_TELEMATICS.resolveTicketTurnaroundStampForSave(crKey, r);
+      if (seedRow) window.MFG_TELEMATICS.resolveTicketTurnaroundStampForSave(crKey, seedRow);
     }
     const extraVoidPosts = [];
     if (gtVoidPeer) {
@@ -115008,6 +115284,7 @@
       if (key === 'jv_share' || key === 'share_pct' || key === 'percentage') return fmtNum(v, Number.isInteger(v) ? 0 : 1) + '%';
       if (key === 'rate' || key === 'vat_fx_rate' || key === 'active_rate') return fmtNum(v, Number.isInteger(v) ? 0 : 2);
       if (key === 'est_km' || key === 'est_round_trip_km' || key === 'distance_km' || key === 'radius_km') return `${fmtNum(v, 1)} km`;
+      if (key === 'unload_dwell_min') return `${fmtNum(v, 0)} min`;
       if (key === 'lbp_delta') return fmtSignedLBP(v);
       if (/^lbp_|_lbp$/.test(key)) return fmtLBP(v);
       if (key === 'usd_delta') return fmtSignedUSD(v, 2);
@@ -117673,6 +117950,7 @@
     if (!anyDriverEdited) {
       Object.keys(orig).forEach(k => {
         if (editedSet && editedSet.has(k)) return;
+        if (k === 'unload_dwell_min') return;
         if (updated._pinCleared && (k === 'latitude' || k === 'longitude')) return;
         if (k === 'overtime' && editedSet && (editedSet.has('time') || editedSet.has('driver') || editedSet.has('transport_by'))) return;
         if (typeof orig[k] === 'number' || k.endsWith('_indiff')) {
@@ -117879,6 +118157,40 @@
       }
     }
 
+    if ((key === 'sales_tickets' || key === 'raw_purchases') && row && !row.voided && typeof window !== 'undefined' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getTicketTurnaroundStamp === 'function') {
+      let liveTa = window.MFG_TELEMATICS.getTicketTurnaroundStamp(key, row);
+      const rowDate = String(row.date || '').slice(0, 10);
+      if (!liveTa && rowDate && typeof window.MFG_TELEMATICS.stampSameDayTicketsInScope === 'function') {
+        const poolSales = Array.isArray(SEED && SEED.records && SEED.records.sales_tickets)
+          ? SEED.records.sales_tickets.filter(r => r && !r.voided && String(r.date || '').slice(0, 10) === rowDate)
+          : [];
+        const poolRaw = Array.isArray(SEED && SEED.records && SEED.records.raw_purchases)
+          ? SEED.records.raw_purchases.filter(r => r && !r.voided && String(r.date || '').slice(0, 10) === rowDate)
+          : [];
+        const targetPool = key === 'sales_tickets' ? poolSales : poolRaw;
+        const existIdx = targetPool.findIndex(r => r === row || (r && row.id != null && String(r.id) === String(row.id)));
+        if (existIdx >= 0) targetPool[existIdx] = row;
+        else targetPool.push(row);
+        window.MFG_TELEMATICS.stampSameDayTicketsInScope({
+          industry: 'manufacturing',
+          companyScope: row.company || STATE.company,
+          dateIso: rowDate,
+          preserveDigest: true,
+          salesTickets: poolSales,
+          rawTickets: poolRaw
+        });
+        liveTa = window.MFG_TELEMATICS.getTicketTurnaroundStamp(key, row);
+      }
+      if (liveTa && liveTa.unload_dwell_min != null && liveTa.unload_dwell_min > 0) {
+        row = Object.assign({}, row, {
+          gate_arrival: liveTa.gate_arrival,
+          unload_dwell_min: liveTa.unload_dwell_min,
+          site_departure: liveTa.site_departure || (liveTa.on_site_now ? 'On site now' : ''),
+          turnaround_flagged: Boolean(liveTa.turnaround_flagged)
+        });
+      }
+    }
+
     const populatedKeys = Object.keys(row).filter(k => !k.startsWith('_') && !hidden.has(k) && !isMaskedPayrollAccessBlocked(key, k) && !(key === 'employments' && k === 'salary_pending' && !canViewPayrollDollarAmounts()) && row[k] !== '' && row[k] != null && !(typeof row[k] === 'number' && row[k] === 0 && /tip|discount|tier|adj|difference/.test(k) && !schemaByKey.has(k)));
     const allKeysSet = new Set(populatedKeys);
     schema.forEach(f => {
@@ -117887,7 +118199,7 @@
     const allKeys = Array.from(allKeysSet);
 
     const idFields = new Set(['code', 'pcg_class', 'automation_mode', 'name', 'official_name', 'ticket_no', 'invoice_no', 'set_date', 'date', 'rep_date', 'month', 'time', 'payroll_month', 'company', 'sale_type', 'rule_type', 'type', 'status', 'severity', 'customer', 'supplier', 'staff', 'driver', 'reported_by', 'approved_by', 'prior_defect_notified', 'defect_ref', 'linked_part_log', 'partner', 'counterparty', 'loan', 'role', 'mof_no', 'financial_no', 'vat_registered', 'iva', 'phone', 'contact', 'email', 'address', 'location', 'direction', 'is_company_driver']);
-    const opsFields = new Set(['source_module', 'debit_rule', 'credit_rule', 'product', 'item', 'input_product', 'fuel_type', 'site', 'region', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'equipment', 'equipment_category', 'subsystem', 'action_type', 'part_name', 'part_serial', 'condition', 'removed_disposition', 'storage_location', 'vendor_or_buyer', 'meter_reading', 'resolved_date', 'description', 'plate_no', 'ownership', 'capacity', 'truck_size', 'default_driver', 'day_operator', 'night_operator', 'model', 'working_days', 'start_date', 'end_date', 'latitude', 'longitude', 'is_jv', 'is_truck_owner', 'ticket_product', 'fuel_item', 'customer_declared_qty', 'external_invoice', 'trucks_count', 'trucks', 'drivers', 'category', 'subcategory', 'category1', 'category2', 'cost_class', 'from_currency', 'to_currency']);
+    const opsFields = new Set(['source_module', 'debit_rule', 'credit_rule', 'product', 'item', 'input_product', 'fuel_type', 'site', 'region', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'equipment', 'equipment_category', 'subsystem', 'action_type', 'part_name', 'part_serial', 'condition', 'removed_disposition', 'storage_location', 'vendor_or_buyer', 'meter_reading', 'resolved_date', 'description', 'plate_no', 'ownership', 'capacity', 'truck_size', 'default_driver', 'day_operator', 'night_operator', 'model', 'working_days', 'start_date', 'end_date', 'latitude', 'longitude', 'is_jv', 'is_truck_owner', 'ticket_product', 'fuel_item', 'customer_declared_qty', 'external_invoice', 'trucks_count', 'trucks', 'drivers', 'category', 'subcategory', 'category1', 'category2', 'cost_class', 'from_currency', 'to_currency', 'gate_arrival', 'unload_dwell_min', 'site_departure', 'turnaround_flagged']);
     const finFields = new Set(['soa_legs', 'debit', 'credit', 'qty', 'external_qty', 'uom', 'unit', 'rate_per', 'ton_factor', 'litres', 'odometer', 'hours', 'regular_hours', 'overtime_hours', 'late_hours', 'extra_hours', 'days_count', 'unit_price', 'price', 'list_price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'delivered_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'new_part_cost', 'repair_cost', 'sale_proceeds', 'qty1', 'adj1', 'trans_adj1', 'qty2', 'adj2', 'trans_adj2', 'vat', 'vat_amount', 'net_amount', 'total', 'total_ttc', 'amount', 'usd_amount', 'lbp_amount', 'usd_delta', 'lbp_delta', 'discount', 'tip', 'salary_usd', 'daily_rate', 'daily_usd', 'rate_usd', 'credit_days', 'credit_limit', 'principal', 'interest_rate', 'exchange_rate', 'percentage', 'basis', 'difference', 'ar_balance', 'ap_balance', 'balance', 'loads', 'raw_loads', 'sales_ttc', 'raw_cost', 'receipts', 'settlements_paid', 'method', 'vat_invoice', 'record_ticket', 'raw_ticket', 'expense_record', 'invoice', 'reference', 'revenue_account', 'purchase_account', 'notes']);
 
     const s1 = [], s2 = [], s3 = [];
@@ -121886,6 +122198,9 @@
 
         // Universal Post-Save Numeric Invariance Guard across all 46 current tables + any 47th+ future table
         enforceUneditedNumericInvariance(origRowSnap, row, editedKeySet);
+        if ((key === 'sales_tickets' || key === 'raw_purchases') && !isSaveWordOnly && !isInspPinOnlySeat && typeof window !== 'undefined' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.resolveTicketTurnaroundStampForSave === 'function') {
+          window.MFG_TELEMATICS.resolveTicketTurnaroundStampForSave(key, row, { editedFields: editedKeySet, dateIso: row.date });
+        }
         if (isSaveWordOnly || isInspPinOnlySeat) {
           enforceStrictNumericLockFromOrig(origRowSnap, row);
           if (isInspPinOnlySeat && origRowSnap) {
@@ -122510,16 +122825,31 @@
       if (Array.isArray(STATE.stepUpAudits)) {
         appStoreSetRaw('isabi_mfg_step_up_audits_v1', JSON.stringify(STATE.stepUpAudits.slice(0, 300)));
       }
+      const cleanCustomRecs = {};
+      let customRecsChanged = false;
+      Object.keys(STATE.customRecords || {}).forEach(tbl => {
+        const arr = STATE.customRecords[tbl];
+        if (!Array.isArray(arr)) { cleanCustomRecs[tbl] = arr; return; }
+        let arrChanged = false;
+        const nextArr = arr.map(rec => {
+          const clean = _stripTurnaroundInternals(rec);
+          if (clean !== rec) arrChanged = true;
+          return clean;
+        });
+        if (arrChanged) customRecsChanged = true;
+        cleanCustomRecs[tbl] = arrChanged ? nextArr : arr;
+      });
+      const customRecsToSave = customRecsChanged ? cleanCustomRecs : STATE.customRecords;
       try {
-        appStoreSetRaw('isabi_mfg_custom_recs_v2', JSON.stringify(STATE.customRecords));
+        appStoreSetRaw('isabi_mfg_custom_recs_v2', JSON.stringify(customRecsToSave));
       } catch (quotaErr) {
         const slimRecs = {};
-        Object.keys(STATE.customRecords || {}).forEach(tbl => {
-          const arr = STATE.customRecords[tbl];
+        Object.keys(customRecsToSave || {}).forEach(tbl => {
+          const arr = customRecsToSave[tbl];
           if (!Array.isArray(arr)) { slimRecs[tbl] = arr; return; }
           slimRecs[tbl] = arr.map(rec => {
             if (!rec || typeof rec !== 'object') return rec;
-            const copy = Object.assign({}, rec);
+            const copy = Object.assign({}, _stripTurnaroundInternals(rec));
             if (typeof copy.data_url === 'string' && copy.data_url.length > 2048) {
               const bId = copy._blob_id || copy.id;
               if (bId) {
@@ -124216,6 +124546,7 @@
 
   function _slimRecordForCloud(r) {
     if (!r || typeof r !== 'object') return r;
+    r = _stripTurnaroundInternals(r);
     if (r.voided) {
       const vb = String(r.voided_by || '');
       if (vb.startsWith('system-topup') || vb.startsWith('SharePoint Top-Up')) {
@@ -139026,16 +139357,17 @@
     let backfilledStaff = 0;
     const affectedStaffNames = [];
     if (opts.backfill !== false && grpObj) {
-      const allStaff = getKioskStaffDirectory({ includeEnded: true, lite: true });
-      allStaff.forEach(s => {
-        if (norm(s.company || '') !== coKey) return;
-        const raw = getStaffRuleEntry(s.name, s.company).raw || null;
-        const hasExplicitOther = _staffRuleHasExplicitCustomization(raw, prevDefId, true);
+      const seenDefPairs = new Set();
+      const applyDefaultMove = (staffName, company, rawRule) => {
+        const pk = `${norm(canonCompany(company || co) || co)}|${norm(staffName)}`;
+        if (seenDefPairs.has(pk)) return;
+        seenDefPairs.add(pk);
+        const hasExplicitOther = _staffRuleHasExplicitCustomization(rawRule, prevDefId, true);
         if (!hasExplicitOther) {
-          affectedStaffNames.push(s.name);
+          affectedStaffNames.push(staffName);
           if (!effFrom || effFrom <= today) {
             const patchSpec = {
-              company: s.company,
+              company,
               apply_policy_group_id: activeGroupIdForToday,
               follows_company_default: true
             };
@@ -139046,11 +139378,24 @@
             if (opts.ot_snap_mode != null) patchSpec.ot_snap_mode = normalizeOtSnapMode(opts.ot_snap_mode);
             if (opts.ot_block_min != null) patchSpec.ot_block_min = normalizeOtBlockMin(opts.ot_block_min);
             if (opts.ot_snap_at_min != null) patchSpec.ot_snap_at_min = clampOtSnapAtMin(opts.ot_snap_at_min, patchSpec.ot_block_min != null ? patchSpec.ot_block_min : updatedCoEntry.ot_block_min);
-            saveStaffWorkRule(s.name, patchSpec, { deferSave: true, skipRecalc: true, fromCompanyDefault: true });
+            saveStaffWorkRule(staffName, patchSpec, { deferSave: true, skipRecalc: true, fromCompanyDefault: true });
             backfilledStaff++;
           }
         }
+      };
+      const allStaff = getKioskStaffDirectory({ includeEnded: true, lite: true });
+      allStaff.forEach(s => {
+        if (norm(s.company || '') !== coKey) return;
+        const raw = getStaffRuleEntry(s.name, s.company).raw || null;
+        applyDefaultMove(s.name, s.company, raw);
       });
+      if (ws.staffRules && typeof ws.staffRules === 'object') {
+        Object.keys(ws.staffRules).forEach(rk => {
+          const r = ws.staffRules[rk];
+          if (!r || r.reset_default || !r.staff || norm(r.company || '') !== coKey) return;
+          applyDefaultMove(r.staff, r.company, r);
+        });
+      }
     }
     let attBackfillRes = null;
     if (opts.backfill !== false && !opts.skipAttBackfill) {
@@ -139261,7 +139606,26 @@
     const existingBuiltin = DEFAULT_POLICY_GROUPS.find(d => d.id === grpId) || null;
     const existingIdx = ws.policyGroups.findIndex(g => g && String(g.id) === grpId);
     const prevRaw = existingIdx >= 0 ? ws.policyGroups[existingIdx] : existingBuiltin;
-    const prev = prevRaw ? normalizePolicyGroupObj(prevRaw, existingBuiltin) : null;
+    const reqCoNormEarly = norm(String(spec.company || '').trim());
+    const isSingleScopedEarly = Boolean(reqCoNormEarly && reqCoNormEarly !== norm('All Companies') && reqCoNormEarly !== norm('All BUs'));
+    const forkedFromId = (existingIdx < 0 && !existingBuiltin && isSingleScopedEarly && spec.forked_from_group_id)
+      ? normalizePolicyGroupIdAlias(spec.forked_from_group_id)
+      : '';
+    const forkWillSetCoDef = Boolean(forkedFromId && spec.fork_will_set_co_default);
+    const forkSourceBuiltin = forkedFromId ? (DEFAULT_POLICY_GROUPS.find(d => d.id === forkedFromId) || null) : null;
+    const forkSourceRaw = forkedFromId
+      ? ((ws.policyGroups || []).find(g => g && !g.voided && String(g.id) === forkedFromId) || forkSourceBuiltin)
+      : null;
+    const prev = prevRaw
+      ? normalizePolicyGroupObj(prevRaw, existingBuiltin)
+      : (forkSourceRaw
+        ? normalizePolicyGroupObj(Object.assign({}, forkSourceRaw, {
+            id: grpId,
+            isBuiltin: false,
+            company: spec.company,
+            versions: normalizePolicyTimelineList(forkSourceRaw.versions).map(v => Object.assign({}, v, { policy_group_id: grpId }))
+          }))
+        : null);
     const effFrom = spec.effective_from && /^\d{4}-\d{2}-\d{2}$/.test(String(spec.effective_from).slice(0, 10))
       ? String(spec.effective_from).slice(0, 10)
       : '';
@@ -139275,6 +139639,11 @@
     let nextVersions = Array.isArray(spec.versions)
       ? normalizePolicyTimelineList(spec.versions)
       : normalizePolicyTimelineList(prev && prev.versions);
+    if (forkedFromId && nextVersions.length) {
+      nextVersions = nextVersions.map(v => (!v.policy_group_id || normalizePolicyGroupIdAlias(v.policy_group_id) === forkedFromId)
+        ? Object.assign({}, v, { policy_group_id: grpId })
+        : v);
+    }
     const specMath = spec.math_mode != null ? normalizeAttMathMode(spec.math_mode) : (prev ? prev.math_mode : 'per_minute');
     const specOtThresh = spec.ot_threshold_min != null ? clampAttThresholdMin(spec.ot_threshold_min, 10) : (prev ? prev.ot_threshold_min : 10);
     const specOtEarly = spec.ot_early_threshold_min != null ? clampAttThresholdMin(spec.ot_early_threshold_min, 15) : (prev ? prev.ot_early_threshold_min : 15);
@@ -139379,6 +139748,7 @@
 
     const normalized = normalizePolicyGroupObj(Object.assign({}, activeSpecForToday, {
       id: grpId,
+      isBuiltin: Boolean(existingBuiltin),
       voided: false,
       updated_at: nowIso
     }), existingBuiltin);
@@ -139411,10 +139781,61 @@
       bucket.staffNames.push(sClean);
     };
     const touchedStaffKeys = new Set();
+    const touchedStaffCoPairs = new Set();
     const spanFrom = effFrom || today;
     const spanEndToday = effTo
       ? ((effFrom && effFrom > today) || spec.includeFutureBackfill ? effTo : (effTo < today ? effTo : today))
       : ((effFrom && effFrom > today) ? '9999-12-31' : today);
+    const applyForkMove = (staffName, company, rk, curGroupId, rawRule) => {
+      if (norm(company || '') !== newCoN) return;
+      const pk = `${newCoN}|${norm(staffName)}`;
+      if (touchedStaffCoPairs.has(pk)) return;
+      touchedStaffCoPairs.add(pk);
+      touchedStaffKeys.add(norm(rk));
+      const wasOnForkSource = normalizePolicyGroupIdAlias(curGroupId) === forkedFromId;
+      const prevCoDefId = getCompanyDefaultPolicyGroupId(company);
+      const handledByCoDef = Boolean(forkWillSetCoDef && !_staffRuleHasExplicitCustomization(rawRule, prevCoDefId, true));
+      if (!wasOnForkSource || handledByCoDef) return;
+      const ov = _getStaffGroupOverrideFlags(rawRule, forkedFromId, spanFrom, spanEndToday, company);
+      if (ov.isFullOverride) return;
+      if (spec.backfill !== false) {
+        recordAffected(staffName, company);
+        if (rawRule && !rawRule.reset_default && ov.hasAnyOverride) {
+          if (!effFrom || effFrom <= today) {
+            const todayResolved = resolvePolicyGroupAtDate(grpId, company, today);
+            const owned = ownStaffRuleForCompany(staffName, company, rawRule);
+            if (owned && typeof owned === 'object') {
+              owned.policy_group_id = grpId;
+              _applyGroupFieldsForOverrideFlags(owned, todayResolved, ov);
+              if (!ov.hasCustomPolicy) {
+                syncStaffContractPolicyFields(staffName, company, owned, { effectiveFrom: effFrom });
+              }
+              owned.updated_at = nowIso;
+            }
+          } else {
+            const futureResolved = resolvePolicyGroupAtDate(grpId, company, effFrom);
+            const futurePatch = {
+              company,
+              policy_group_id: grpId,
+              effective_from: effFrom,
+              effective_to: effTo || '',
+              timeline_note: String(spec.version_note || spec.note || '')
+            };
+            _applyGroupFieldsForOverrideFlags(futurePatch, futureResolved, ov);
+            saveStaffWorkRule(staffName, futurePatch, { deferSave: true, skipRecalc: true });
+          }
+        } else {
+          saveStaffWorkRule(staffName, {
+            company,
+            apply_policy_group_id: grpId,
+            effective_from: effFrom || '',
+            effective_to: effTo || '',
+            timeline_note: String(spec.version_note || spec.note || '')
+          }, { deferSave: true, skipRecalc: true });
+        }
+        backfilledStaff++;
+      }
+    };
     const bfCoNormSet = (!isSingleScoped && Array.isArray(spec.backfillScopeCompanies) && spec.backfillScopeCompanies.length)
       ? new Set(spec.backfillScopeCompanies.map(c => norm(canonCompany(c))).filter(Boolean))
       : null;
@@ -139426,6 +139847,10 @@
       const entry = getStaffRuleEntry(s.name, s.company);
       const rk = entry.key;
       const raw = entry.raw || null;
+      if (forkedFromId) {
+        applyForkMove(s.name, s.company, rk, curRule.policy_group_id, raw);
+        return;
+      }
       const ov = _getStaffGroupOverrideFlags(raw, grpId, spanFrom, spanEndToday, s.company);
       const wasDefaultFollowerBeforeNarrow = isSingleScoped && sCoN !== newCoN && revertedDefaultCos.has(sCoN) && (!raw || raw.reset_default || (raw.follows_company_default !== false && !ov.hasAnyOverride));
       if (curRule.policy_group_id !== grpId && !wasDefaultFollowerBeforeNarrow) return;
@@ -139511,7 +139936,16 @@
         backfilledStaff++;
       }
     });
-    if (isSingleScoped && ws.staffRules && typeof ws.staffRules === 'object') {
+    if (isSingleScoped && forkedFromId && ws.staffRules && typeof ws.staffRules === 'object') {
+      Object.keys(ws.staffRules).forEach(rk => {
+        if (touchedStaffKeys.has(norm(rk))) return;
+        const r = ws.staffRules[rk];
+        if (!r || r.reset_default || !r.staff || norm(r.company || '') !== newCoN) return;
+        const curGid = r.policy_group_id || getStaffWorkRule(r.staff, r.company).policy_group_id;
+        applyForkMove(r.staff, r.company, rk, curGid, r);
+      });
+    }
+    if (isSingleScoped && !forkedFromId && ws.staffRules && typeof ws.staffRules === 'object') {
       Object.keys(ws.staffRules).forEach(rk => {
         const r = ws.staffRules[rk];
         if (!r || r.reset_default || normalizePolicyGroupIdAlias(r.policy_group_id) !== grpId) return;
@@ -140401,24 +140835,38 @@
     if (mode === 'company_default') {
       const coKey = norm(spec.company || defaultEntryCompany() || 'WTC');
       const prevDefId = getCompanyDefaultPolicyGroupId(spec.company || '');
+      const seenDefPairs = new Set();
       staffDirAll.forEach(s => {
         if (norm(s.company) !== coKey) return;
+        seenDefPairs.add(`${coKey}|${norm(s.name)}`);
         const raw = getStaffRuleEntry(s.name, s.company).raw || null;
         if (_staffRuleHasExplicitCustomization(raw, prevDefId, true)) {
           overriddenStaff.push({ staff: s.name, company: s.company, reason: 'custom_rule' });
         }
       });
+      Object.keys(curWs.staffRules || {}).forEach(rk => {
+        const r = curWs.staffRules[rk];
+        if (!r || r.reset_default || !r.staff || norm(r.company || '') !== coKey) return;
+        const pk = `${coKey}|${norm(r.staff)}`;
+        if (seenDefPairs.has(pk)) return;
+        seenDefPairs.add(pk);
+        if (_staffRuleHasExplicitCustomization(r, prevDefId, true)) {
+          overriddenStaff.push({ staff: r.staff, company: r.company, reason: 'custom_rule' });
+        }
+      });
     } else if (pgPayloadRaw.id) {
-      const grpIdN = normalizePolicyGroupIdAlias(pgPayloadRaw.id);
+      const grpIdN = normalizePolicyGroupIdAlias(pgPayloadRaw.forked_from_group_id || pgPayloadRaw.id);
       const coScope = pgPayloadRaw.company && !/^all/i.test(String(pgPayloadRaw.company)) ? norm(pgPayloadRaw.company) : '';
-      const isNarrowing = Boolean(coScope && coScope !== norm('All Companies') && coScope !== norm('All BUs'));
+      const isNarrowing = !pgPayloadRaw.forked_from_group_id && Boolean(coScope && coScope !== norm('All Companies') && coScope !== norm('All BUs'));
       const bfSimSet = (!isNarrowing && Array.isArray(pgPayloadRaw.backfillScopeCompanies) && pgPayloadRaw.backfillScopeCompanies.length)
         ? new Set(pgPayloadRaw.backfillScopeCompanies.map(c => norm(canonCompany(c))).filter(Boolean))
         : null;
       const simSpanEnd = effTo || (isFutureEffective ? '9999-12-31' : endD);
+      const seenSimPairs = new Set();
       staffDirAll.forEach(s => {
         if (!isNarrowing && coScope && norm(s.company) !== coScope) return;
         if (bfSimSet && !bfSimSet.has(norm(canonCompany(s.company || '')))) return;
+        seenSimPairs.add(`${norm(s.company)}|${norm(s.name)}`);
         const raw = getStaffRuleEntry(s.name, s.company).raw || null;
         const rule = getStaffWorkRule(s.name, s.company);
         const ov = _getStaffGroupOverrideFlags(raw, grpIdN, startD, simSpanEnd, s.company);
@@ -140426,6 +140874,20 @@
           overriddenStaff.push({ staff: s.name, company: s.company, reason: 'custom_rule' });
         }
       });
+      if (pgPayloadRaw.forked_from_group_id && coScope) {
+        Object.keys(curWs.staffRules || {}).forEach(rk => {
+          const r = curWs.staffRules[rk];
+          if (!r || r.reset_default || !r.staff || norm(r.company || '') !== coScope) return;
+          const pk = `${coScope}|${norm(r.staff)}`;
+          if (seenSimPairs.has(pk)) return;
+          seenSimPairs.add(pk);
+          const ov = _getStaffGroupOverrideFlags(r, grpIdN, startD, simSpanEnd, r.company);
+          const rGid = normalizePolicyGroupIdAlias(r.policy_group_id || getStaffWorkRule(r.staff, r.company).policy_group_id);
+          if (rGid === grpIdN && ov.isFullOverride) {
+            overriddenStaff.push({ staff: r.staff, company: r.company, reason: 'custom_rule' });
+          }
+        });
+      }
     }
 
     const employeesMap = new Map();
@@ -143594,7 +144056,10 @@
       const u = activeUser();
       const fullWs = ensureWorkSchedulesState();
       let wsPayload = fullWs;
-      if (!isOwner(u)) {
+      const uidLower = String((u && (u.id || u.user_id)) || '').trim().toLowerCase();
+      const uCosRaw = Array.isArray(u && u.companies) ? u.companies : String((u && u.companies) || '').split(/[,;|]+/);
+      const hasServerFullGroup = isOwner(u) || uidLower === 'u1' || uidLower === 'u2' || uCosRaw.some(c => /^(\*|all\b)/i.test(String(c || '').trim()));
+      if (!hasServerFullGroup) {
         const allowedSet = new Set(allowedCompanyNames(u).map(n => norm(n)).filter(Boolean));
         const scopedDefaults = {};
         Object.entries(fullWs.companyPolicyDefaults || {}).forEach(([ck, cv]) => {
@@ -144352,7 +144817,7 @@
       || patch.ot_block_min != null
       || patch.ot_snap_at_min != null
     );
-    const patchHasIndividualPolicyFields = !isFutureEffective && (
+    const patchHasNonMathPolicyFields = !isFutureEffective && (
       patch.late_penalty_mode != null
       || patch.late_brackets != null
       || patch.late_below_bracket_mode != null
@@ -144367,6 +144832,9 @@
       || patch.grace_min != null
       || patch.early_leave_grace_min != null
       || patch.no_clock_out_rule != null
+    );
+    const patchHasIndividualPolicyFields = !isFutureEffective && (
+      patchHasNonMathPolicyFields
       || patch.custom_policy_override === true
       || patch.custom_math_override === true
       || patchHasMathFields
@@ -144437,7 +144905,9 @@
       next.custom_math_override = rawExisting ? Boolean(rawExisting.custom_math_override) : false;
     } else if (patchHasIndividualPolicyFields) {
       next.follows_company_default = false;
-      next.custom_policy_override = true;
+      if (effectivePatch.custom_policy_override === false) next.custom_policy_override = false;
+      else if (effectivePatch.custom_policy_override === true || patchHasNonMathPolicyFields) next.custom_policy_override = true;
+      else next.custom_policy_override = rawExisting ? Boolean(rawExisting.custom_policy_override) : false;
       if (effectivePatch.custom_math_override === false) next.custom_math_override = false;
       else if (effectivePatch.custom_math_override === true || patchHasMathFields) next.custom_math_override = true;
       else next.custom_math_override = rawExisting ? Boolean(rawExisting.custom_math_override) : false;
@@ -153730,10 +154200,10 @@
         openPolicyGroupModal(gid, { targetCompany: entry.company }, savedGrp => {
           if (!canEditPolicyGroupsCatalog()) return;
           const scopedNow = getPolicyGroups(entry.company);
-          if (!savedGrp || !scopedNow.some(g => g.id === draftPolicyGroupId)) {
-            applyPolicyGroupToDraft(getCompanyDefaultPolicyGroupId(entry.company));
-          } else if (savedGrp.id === draftPolicyGroupId) {
+          if (savedGrp && savedGrp.id && scopedNow.some(g => g.id === savedGrp.id)) {
             applyPolicyGroupToDraft(savedGrp.id);
+          } else if (!savedGrp || !scopedNow.some(g => g.id === draftPolicyGroupId)) {
+            applyPolicyGroupToDraft(getCompanyDefaultPolicyGroupId(entry.company));
           }
           renderModalInner();
         });
@@ -160591,11 +161061,25 @@
     const explicitTargetCo = (seedSpec && seedSpec.targetCompany) || COMPANY_BU_MATCH[STATE.company] || '';
     const groups = getPolicyGroups(explicitTargetCo);
     const normGroupId = normalizePolicyGroupIdAlias(groupId);
-    const existing = normGroupId ? groups.find(g => g.id === normGroupId) : null;
+    let existing = normGroupId ? groups.find(g => g.id === normGroupId) : null;
     if (!canEdit && !existing) {
       toast('Full-group scheduling rights are required to edit Policy & Perks groups', 'warn');
       return null;
     }
+    let forkedFromGroup = null;
+    let draftForkId = '';
+    let lastAutoForkName = '';
+    const suggestForkedPolicyGroupName = (baseNm, coNm) => {
+      const escapedCo = String(coNm || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const cleanBase = String(baseNm || 'Custom Policy').trim()
+        .replace(new RegExp(`\\s*\\(${escapedCo}(?:\\s+\\d+)?\\)$`, 'i'), '').trim() || 'Custom Policy';
+      const wsPgs = (ensureWorkSchedulesState().policyGroups || []).filter(g => g && !g.voided);
+      const candidate0 = `${cleanBase} (${coNm})`;
+      if (!wsPgs.some(g => norm(g.name) === norm(candidate0))) return candidate0;
+      let idx = 2;
+      while (wsPgs.some(g => norm(g.name) === norm(`${cleanBase} (${coNm} ${idx})`))) idx++;
+      return `${cleanBase} (${coNm} ${idx})`;
+    };
     const isRo = !canEdit || Boolean(STATE.kioskLocked);
     const matchedDefCos = existing ? industryAllowedCos.filter(co => getCompanyDefaultPolicyGroupId(co) === existing.id) : [];
     const activeTargetCo = explicitTargetCo || (industryAllowedCos.length === 1 ? industryAllowedCos[0] : (matchedDefCos.length === 1 ? matchedDefCos[0] : ''));
@@ -160674,6 +161158,7 @@
       && !pgmAllowedCos.some(c => norm(c) === norm(existing.company))) {
       pgmAllowedCos.push(existing.company);
     }
+    let draftForkPickerCo = explicitTargetCo || draftTargetDefCo || (industryAllowedCos.length === 1 ? industryAllowedCos[0] : (pgmAllowedCos[0] || ''));
     const getEffBackfillCos = () => {
       const isUniv = !draftCompany || draftCompany === 'All Companies' || draftCompany === 'All BUs';
       return !isUniv ? [draftCompany] : (explicitTargetCo ? [explicitTargetCo] : indCosForModal.slice());
@@ -160693,6 +161178,8 @@
 
     const renderGroupModal = () => {
       draftMathMode = 'per_minute';
+      const isExistingUnivNow = Boolean(existing && (existing.isBuiltin || !existing.company || existing.company === 'All Companies' || existing.company === 'All BUs'));
+      const isSingleDraftCo = Boolean(draftCompany && draftCompany !== 'All Companies' && draftCompany !== 'All BUs');
       const knownIds = new Set(AVAILABLE_STAFF_PERKS.map(p => p.id));
       const extraPerks = draftPerks.filter(p => p && !knownIds.has(p));
       const perkItems = AVAILABLE_STAFF_PERKS.concat(extraPerks.map(p => ({ id: p, label: p, icon: 'check_circle' })));
@@ -160703,7 +161190,43 @@
             if (getStaffWorkRule(s.name, s.company).policy_group_id !== existing.id) return false;
             return effScopeNormSet.has(norm(canonCompany(s.company || '')));
           })
-        : [];
+        : ((forkedFromGroup && isSingleDraftCo)
+            ? (() => {
+                const seenPairs = new Set();
+                const list = getKioskStaffDirectory({ includeEnded: true, lite: true }).filter(s => {
+                  const sCoCanon = canonCompany(s.company || '') || s.company || '';
+                  if (!effScopeNormSet.has(norm(sCoCanon))) return false;
+                  const pk = `${norm(sCoCanon)}|${norm(s.name)}`;
+                  if (normalizePolicyGroupIdAlias(getStaffWorkRule(s.name, s.company).policy_group_id) === forkedFromGroup.id) {
+                    seenPairs.add(pk);
+                    return true;
+                  }
+                  if (draftSetCoDef) {
+                    const raw = getStaffRuleEntry(s.name, s.company).raw || null;
+                    if (!_staffRuleHasExplicitCustomization(raw, getCompanyDefaultPolicyGroupId(s.company), true)) {
+                      seenPairs.add(pk);
+                      return true;
+                    }
+                  }
+                  return false;
+                });
+                const wsCur = ensureWorkSchedulesState();
+                Object.keys(wsCur.staffRules || {}).forEach(rk => {
+                  const r = wsCur.staffRules[rk];
+                  if (!r || r.reset_default || !r.staff || !r.company) return;
+                  const coCanon = canonCompany(r.company) || r.company;
+                  if (!effScopeNormSet.has(norm(coCanon))) return;
+                  const pk = `${norm(coCanon)}|${norm(r.staff)}`;
+                  if (seenPairs.has(pk)) return;
+                  const curGid = normalizePolicyGroupIdAlias(r.policy_group_id || getStaffWorkRule(r.staff, coCanon).policy_group_id);
+                  if (curGid === forkedFromGroup.id || (draftSetCoDef && !_staffRuleHasExplicitCustomization(r, getCompanyDefaultPolicyGroupId(coCanon), true))) {
+                    seenPairs.add(pk);
+                    list.push({ name: r.staff, company: coCanon });
+                  }
+                });
+                return list;
+              })()
+            : []);
       const assignedCnt = assignedStaff.length;
       const showDollars = canViewPayrollDollarAmounts();
       const today = todayISO();
@@ -160729,8 +161252,9 @@
         || draftEarlyGrace !== base.early_leave_grace_min
         || draftNoOut !== base.no_clock_out_rule
         || draftWorkDays !== base.working_days
+        || (forkedFromGroup && isSingleDraftCo && draftSetCoDef && getCompanyDefaultPolicyGroupId(draftCompany) !== forkedFromGroup.id)
       );
-      const previewRes = (draftBackfill && existing && hasDraftRuleChange)
+      const previewRes = (draftBackfill && (existing || (forkedFromGroup && isSingleDraftCo)) && hasDraftRuleChange)
         ? (assignedStaff.length > 0
             ? previewPolicyChangeImpact({
                 company: effBackfillCos.length === 1 ? effBackfillCos[0] : '',
@@ -160768,6 +161292,36 @@
           ? `Only pays completed ${draftOtBlockMin}m blocks (remainder >= ${draftOtSnapAtMin}m snaps up; remainder < ${draftOtSnapAtMin}m pays 0m; daily cap applies after snap).`
           : `Pays exact overtime minutes 1-for-1 at $/min once OT >= ${draftOtThreshMin}m.`);
 
+      const forkBtnCo = (existing && !forkedFromGroup && isExistingUnivNow && !isRo)
+        ? (explicitTargetCo || (industryAllowedCos.length === 1 ? industryAllowedCos[0] : (pgmAllowedCos.includes(draftForkPickerCo) ? draftForkPickerCo : (pgmAllowedCos[0] || ''))))
+        : '';
+      const showForkTargetPicker = Boolean(forkBtnCo && !explicitTargetCo && industryAllowedCos.length > 1 && pgmAllowedCos.length > 1);
+      const forkBannerHtml = (existing && !forkedFromGroup && isExistingUnivNow && !isRo && forkBtnCo)
+        ? `
+          <div class="pgm-fork-banner" id="pgmSharedArchetypeBanner">
+            <div class="pgm-fork-banner-msg">
+              ${ic('layers')}
+              <span>Shared across all companies: saving here updates ${esc(existing.name)} everywhere.</span>
+            </div>
+            <div class="pgm-fork-banner-actions">
+              ${showForkTargetPicker ? `
+                <select id="pgmForkTargetCo" class="kiosk-select" data-plain-options="1" aria-label="Target company for custom copy">
+                  ${pgmAllowedCos.map(co => `<option value="${esc(co)}"${co === forkBtnCo ? ' selected' : ''}>${esc(co)}</option>`).join('')}
+                </select>
+              ` : ''}
+              <button type="button" class="btn btn-primary kiosk-mini-btn" id="pgmForkCompanyBtn">${ic('copy')} <span>Customize for ${esc(forkBtnCo)} only</span></button>
+            </div>
+          </div>
+        `
+        : ((!existing && forkedFromGroup && isSingleDraftCo && !isRo)
+            ? `
+              <div class="pgm-forked-banner" id="pgmForkedDraftBanner">
+                ${ic('check_circle')}
+                <span>Custom copy for ${esc(draftCompany)} only (cloned from ${esc(forkedFromGroup.name)}). Other companies stay unchanged.</span>
+              </div>
+            `
+            : '');
+
       modal.innerHTML = `
         <div class="modal-card" style="width:min(820px,96vw);max-width:820px">
           <div class="modal-head">
@@ -160778,6 +161332,7 @@
             <button type="button" class="icon-btn" id="pgmCloseBtn" aria-label="Close">✕</button>
           </div>
           <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+            ${forkBannerHtml}
             <div class="pgm-top-grid">
               <div class="ssm-field">
                 <label for="pgmName">Policy &amp; Perks Group Name</label>
@@ -160786,7 +161341,7 @@
               <div class="ssm-field">
                 <label for="pgmCompany">Company Scope</label>
                 <select id="pgmCompany" class="kiosk-select" data-plain-options="1" ${existing && existing.isBuiltin ? 'disabled' : ''}>
-                  ${((!pinnedPgmSingleCo && isFullGroupSeat()) || draftCompany === 'All Companies' || isExistingUniv) ? `<option value="All Companies" ${draftCompany === 'All Companies' ? 'selected' : ''}>All Companies (Universal)</option>` : ''}
+                  ${(!forkedFromGroup && ((!pinnedPgmSingleCo && isFullGroupSeat()) || draftCompany === 'All Companies' || isExistingUnivNow)) ? `<option value="All Companies" ${draftCompany === 'All Companies' ? 'selected' : ''}>All Companies (Universal)</option>` : ''}
                   ${pgmAllowedCos.map(co => `<option value="${esc(co)}" ${draftCompany === co ? 'selected' : ''}>${esc(co)} Only</option>`).join('')}
                 </select>
               </div>
@@ -161088,10 +161643,10 @@
                     <input type="checkbox" id="pgmSetCoDefaultChk" ${draftSetCoDef ? 'checked' : ''}${canToggleDef ? '' : ' disabled'}>
                     <span>${targetDefCoNow ? `Set as Default Policy &amp; Perks Group for ${esc(targetDefCoNow)}` : 'Select a target company above to set as Default Policy &amp; Perks Group'}</span>
                   </label>
-                  ${existing ? `
+                  ${(existing || (forkedFromGroup && isSingleDraftCo)) ? `
                     <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;cursor:${isRo ? 'not-allowed' : 'pointer'};margin:0">
                       <input type="checkbox" id="pgmBackfillChk" ${draftBackfill ? 'checked' : ''}${isRo ? ' disabled' : ''}>
-                      <span>Backfill all ${fmtNum(assignedCnt)} staff assigned to ${esc(existing.name)}</span>
+                      <span>${existing ? `Backfill all ${fmtNum(assignedCnt)} staff assigned to ${esc(existing.name)}` : `Move &amp; backfill ${fmtNum(assignedCnt)} ${esc(draftCompany)} staff from ${esc(forkedFromGroup.name)}`}</span>
                     </label>
                   ` : ''}
                 </div>
@@ -161351,10 +161906,71 @@
           toast(r.error || 'Cannot delete group', 'warn');
         }
       });
+      $('pgmForkTargetCo')?.addEventListener('change', e => {
+        syncPgmDom();
+        draftForkPickerCo = e.target.value || '';
+        renderGroupModal();
+      });
+      $('pgmForkCompanyBtn')?.addEventListener('click', () => {
+        if (isRo || !existing) return;
+        syncPgmDom();
+        const chosenCo = ($('pgmForkTargetCo') && $('pgmForkTargetCo').value)
+          || explicitTargetCo
+          || (industryAllowedCos.length === 1 ? industryAllowedCos[0] : (pgmAllowedCos.includes(draftForkPickerCo) ? draftForkPickerCo : (pgmAllowedCos[0] || '')));
+        if (!chosenCo) return;
+        const srcGrp = existing;
+        forkedFromGroup = srcGrp;
+        existing = null;
+        draftForkId = uid('pkg');
+        draftCompany = chosenCo;
+        draftTargetDefCo = chosenCo;
+        if (!String(draftName || '').trim() || norm(draftName) === norm(srcGrp.name)) {
+          lastAutoForkName = suggestForkedPolicyGroupName(srcGrp.name, chosenCo);
+          draftName = lastAutoForkName;
+        }
+        if (norm(draftShort) === norm(srcGrp.short || '')) draftShort = '';
+        if (draftEditingVersionId) {
+          draftEditingVersionId = '';
+          draftEffFrom = '';
+          draftEffTo = '';
+          draftVersionNote = '';
+          const resNow = resolvePolicyGroupAtDate(srcGrp, chosenCo, todayISO());
+          draftOtThreshMin = resNow.ot_threshold_min;
+          draftOtEarlyThreshMin = resNow.ot_early_threshold_min;
+          draftOtCountFrom = resNow.ot_count_from;
+          draftOtSnapMode = normalizeOtSnapMode(resNow.ot_snap_mode);
+          draftOtBlockMin = normalizeOtBlockMin(resNow.ot_block_min);
+          draftOtSnapAtMin = clampOtSnapAtMin(resNow.ot_snap_at_min, draftOtBlockMin);
+          draftLateMode = resNow.late_penalty_mode;
+          draftLateMult = resNow.late_multiplier;
+          draftOtMult = resNow.ot_multiplier;
+          draftOtMode = resNow.ot_mode;
+          draftOtMaxHrs = resNow.ot_max_hours != null ? resNow.ot_max_hours : 2;
+          draftLateBrackets = normalizeLateBrackets(resNow.late_brackets);
+          draftLateBelowBrk = normalizeLateBelowBracketMode(resNow.late_below_bracket_mode);
+          draftLateHalfDayMin = Number(resNow.late_half_day_after_min != null ? resNow.late_half_day_after_min : 60);
+          draftGrace = resNow.grace_min;
+          draftEarlyGrace = resNow.early_leave_grace_min;
+        }
+        const baseVerList = normalizePolicyTimelineList(draftVersionsEdited ? draftVersions : srcGrp.versions);
+        draftVersions = baseVerList.map(v => Object.assign({}, v, { policy_group_id: draftForkId }));
+        draftSetCoDef = Boolean(getCompanyDefaultPolicyGroupId(chosenCo) === srcGrp.id);
+        draftBackfill = true;
+        renderGroupModal();
+      });
       $('pgmCompany')?.addEventListener('change', () => {
         syncPgmDom();
         const nextDefCo = effDefCo(draftCompany);
-        draftSetCoDef = Boolean(existing && nextDefCo && getCompanyDefaultPolicyGroupId(nextDefCo) === existing.id);
+        if (forkedFromGroup && !existing) {
+          draftTargetDefCo = nextDefCo;
+          draftSetCoDef = Boolean(nextDefCo && getCompanyDefaultPolicyGroupId(nextDefCo) === forkedFromGroup.id);
+          if (lastAutoForkName && norm(draftName) === norm(lastAutoForkName) && nextDefCo) {
+            lastAutoForkName = suggestForkedPolicyGroupName(forkedFromGroup.name, nextDefCo);
+            draftName = lastAutoForkName;
+          }
+        } else {
+          draftSetCoDef = Boolean(existing && nextDefCo && getCompanyDefaultPolicyGroupId(nextDefCo) === existing.id);
+        }
         renderGroupModal();
       });
       const buildPgmDraftSaveContext = () => {
@@ -161379,8 +161995,9 @@
         const willSetCoDef = Boolean(draftSetCoDef && targetDefCo);
         const willRevertCoDef = Boolean(!draftSetCoDef && existing && targetDefCo && getCompanyDefaultPolicyGroupId(targetDefCo) === existing.id);
         const willUpdateCoDefault = Boolean((willSetCoDef || willRevertCoDef) && canEditShiftsAndRules(null, targetDefCo));
+        const saveId = existing ? existing.id : (draftForkId || uid('pkg'));
         const savePayload = {
-          id: existing ? existing.id : uid('pkg'),
+          id: saveId,
           name: cleanName,
           short: String(draftShort || '').trim(),
           company: existing && existing.isBuiltin ? 'All Companies' : draftCompany,
@@ -161416,7 +162033,13 @@
           deferSave: willUpdateCoDefault,
           deferSync: willUpdateCoDefault
         };
-        if (draftVersionsEdited) savePayload.versions = draftVersions;
+        if (!existing && forkedFromGroup && draftCompany && draftCompany !== 'All Companies' && draftCompany !== 'All BUs') {
+          savePayload.forked_from_group_id = forkedFromGroup.id;
+          savePayload.fork_will_set_co_default = Boolean(willSetCoDef && targetDefCo && norm(targetDefCo) === norm(draftCompany));
+        }
+        if (draftVersionsEdited) {
+          savePayload.versions = draftVersions.map(v => (v && typeof v === 'object') ? Object.assign({}, v, { policy_group_id: saveId }) : v);
+        }
         return { targetDefCo, willSetCoDef, willRevertCoDef, willUpdateCoDefault, savePayload };
       };
       const commitPgmSaveContext = ctx => {
@@ -161444,6 +162067,8 @@
           }
           const attBfCount = res.attBackfill ? Number(res.attBackfill.updatedRows || 0) : 0;
           const defBfCount = defUpdateRes && defUpdateRes.attBackfill ? Number(defUpdateRes.attBackfill.updatedRows || 0) : 0;
+          const totalBfStaff = Number(res.backfilledStaff || 0) + Number((defUpdateRes && defUpdateRes.backfilledStaff) || 0);
+          const totalAttBfCount = attBfCount + defBfCount;
           const pgScopeCo = (willSetCoDef && targetDefCo) ? targetDefCo : (draftCompany !== 'All Companies' ? draftCompany : (explicitTargetCo || ''));
           const pgStaffNames = getKioskStaffDirectory({ includeEnded: true, lite: true })
             .filter(s => {
@@ -161454,14 +162079,14 @@
             .map(s => s.name);
           const pgRemLeg = detectLegacyTenthHourBackfill({ company: pgScopeCo, staffNames: pgStaffNames.length ? pgStaffNames : null, countOnly: true });
           closePolicyGroupModal();
-          if (STATE.view === 'payroll_attendance' && STATE.payrollPolicyOpen && (attBfCount + defBfCount) === 0) {
+          if (STATE.view === 'payroll_attendance' && STATE.payrollPolicyOpen && totalAttBfCount === 0) {
             refreshPayrollPolicySectionInPlace();
           } else if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') {
             renderApp();
           }
           if (typeof onSaved === 'function') onSaved(res.policyGroup);
           toast(
-            `Saved group "${res.policyGroup.name}" (${res.policyGroup.summaryText})${willSetCoDef ? ` · Default for ${targetDefCo}` : ''}${res.backfilledStaff ? ` · Backfilled ${res.backfilledStaff} staff` : ''}${attBfCount ? ` · Recalculated ${attBfCount} logs` : ''}`,
+            `Saved group "${res.policyGroup.name}" (${res.policyGroup.summaryText})${willSetCoDef ? ` · Default for ${targetDefCo}` : ''}${totalBfStaff ? ` · Backfilled ${totalBfStaff} staff` : ''}${totalAttBfCount ? ` · Recalculated ${totalAttBfCount} logs` : ''}`,
             'ok',
             pgRemLeg.migratableCount > 0
               ? { actionLabel: `Review ${pgRemLeg.migratableCount} Legacy 0.1h`, onAction: () => openBackfillModal({ company: pgScopeCo, staffNames: pgStaffNames.length ? pgStaffNames : null, filter: 'tenth_hour' }) }
@@ -168020,6 +168645,18 @@
       const nextMode = btn.getAttribute('data-payroll-cutoff') || 'closed_month';
       const barEl = btn.closest('.payroll-cutoff-bar');
       const isAllowBar = Boolean(barEl && barEl.id === 'payAllowCutoffBar');
+      // Period filter on the month in progress: To Date / Full is a pick for that period only. It never touches
+      // the standard cutoff pill, which the staff cards and the no-filter screens read.
+      const inProgressSig = barEl ? (barEl.getAttribute('data-in-progress-sig') || '') : '';
+      if (inProgressSig) {
+        if ((barEl.getAttribute('data-cutoff-mode') || '') === nextMode) return;
+        if (nextMode !== 'mtd' && nextMode !== 'full_month') return;
+        const pick = { sig: inProgressSig, mode: nextMode };
+        if (isAllowBar) STATE.allowancesInProgressPick = pick;
+        else STATE.payrollInProgressPick = pick;
+        rerenderAnchoredPayrollBar(barEl);
+        return;
+      }
       const curMode = isAllowBar ? (STATE.allowancesCutoffMode || 'mtd') : (STATE.payrollCutoffMode || 'closed_month');
       if (curMode === nextMode) return;
       if (isAllowBar) STATE.allowancesCutoffMode = nextMode;
@@ -168028,8 +168665,8 @@
     }));
     container.querySelectorAll('[data-payroll-cutoff-reset]').forEach(btn => btn.addEventListener('click', () => {
       const barEl = btn.closest('.payroll-cutoff-bar');
-      if (barEl && barEl.id === 'payAllowCutoffBar') STATE.allowancesCutoffMode = 'mtd';
-      else STATE.payrollCutoffMode = 'closed_month';
+      if (barEl && barEl.id === 'payAllowCutoffBar') { STATE.allowancesCutoffMode = 'mtd'; STATE.allowancesInProgressPick = null; }
+      else { STATE.payrollCutoffMode = 'closed_month'; STATE.payrollInProgressPick = null; }
       setDateFilter({ reset: true });
     }));
     container.querySelectorAll('[data-payroll-status]').forEach(btn => btn.addEventListener('click', () => {
