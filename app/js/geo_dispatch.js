@@ -2646,16 +2646,16 @@
     return round1(air * factor);
   }
 
-  function makePairKey(aType, aName, bType, bName) {
-    const pfx = geoIndStorePrefix();
+  function makePairKey(aType, aName, bType, bName, explicitInd) {
+    const pfx = geoIndStorePrefix(explicitInd);
     const left = `${aType}:${norm(aName)}`;
     const right = `${bType}:${norm(bName)}`;
     return pfx + (left <= right ? `${left}||${right}` : `${right}||${left}`);
   }
 
-  function resolveEndpointCoord(spec, SEED) {
+  function resolveEndpointCoord(spec, SEED, explicitInd) {
     if (!spec || !spec.name) return null;
-    const activeInd = getGeoActiveIndustry();
+    const activeInd = explicitInd || getGeoActiveIndustry();
     const isMfg = activeInd === 'Manufacturing';
     const kind = spec.type === 'bu' ? 'bu' : 'site';
     if (kind === 'bu') {
@@ -2913,10 +2913,10 @@
     const fromIsBu = fromSpec.type === 'bu';
     const anyBu = fromSpec.type === 'bu' || toSpec.type === 'bu';
     const showRoundTrip = opts.roundTripIfAnyBu ? anyBu : fromIsBu;
-    const pairKey = makePairKey(fromSpec.type || 'site', fromSpec.name, toSpec.type || 'site', toSpec.name);
+    const pairKey = makePairKey(fromSpec.type || 'site', fromSpec.name, toSpec.type || 'site', toSpec.name, opts.industry);
 
-    const c1 = resolveEndpointCoord(fromSpec, SEED);
-    const c2 = resolveEndpointCoord(toSpec, SEED);
+    const c1 = resolveEndpointCoord(fromSpec, SEED, opts.industry);
+    const c2 = resolveEndpointCoord(toSpec, SEED, opts.industry);
 
     let oneWayKm = null;
     let source = '';

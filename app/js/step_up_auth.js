@@ -1184,24 +1184,24 @@
       <div class="sua-watchdog-card" id="stepUpWatchdogPanel" data-ui-lang="${esc(curLang())}" data-scope-sig="${esc(scopeSig)}" dir="${curLang() === 'ar' ? 'rtl' : 'ltr'}">
         <div class="sua-watchdog-top">
           <div class="sua-watchdog-title">
-            <span class="sua-pill ${hasAlerts ? 'is-alert' : 'is-ok'}">${esc(tr(hasAlerts ? 'Off-Hours Override Alert' : 'Step-Up Gate Active'))}</span>
-            <strong>${esc(tr('Step-Up Biometric / 2FA Gate & Off-Hours Override Watchdog'))}</strong>
+            <span class="sua-pill ${hasAlerts ? 'is-alert' : 'is-ok'}">${esc(hasAlerts ? 'Off-Hours Override Alert' : 'Step-Up Gate Active')}</span>
+            <strong>${esc('Step-Up Biometric / 2FA Gate & Off-Hours Override Watchdog')}</strong>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <div class="aie-lang-seg" role="group" aria-label="${esc(tr('Brief Language'))}">
+            <div class="aie-lang-seg" role="group" aria-label="${esc('Brief Language')}">
               <button type="button" class="aie-lang-btn ${lang === 'en' ? 'active' : ''}" data-sua-lang="en" data-no-i18n="1">EN</button>
               <button type="button" class="aie-lang-btn ${lang === 'ar' ? 'active' : ''}" data-sua-lang="ar" data-no-i18n="1">AR</button>
               <button type="button" class="aie-lang-btn ${lang === 'fr' ? 'active' : ''}" data-sua-lang="fr" data-no-i18n="1">FR</button>
             </div>
-            <button type="button" class="sua-btn" id="suaAiBriefBtn">${esc(tr('AI Override Anomaly Brief'))}</button>
+            <button type="button" class="sua-btn" id="suaAiBriefBtn">${esc('AI Override Anomaly Brief')}</button>
           </div>
         </div>
 
         <div class="sua-kpi-strip">
-          <div class="sua-kpi-box"><small>${esc(tr('Verified Overrides'))}</small><strong data-no-i18n="1">${rows.length}</strong></div>
-          <div class="sua-kpi-box"><small>${esc(tr('Off-Hours (22:00-06:00)'))}</small><strong data-no-i18n="1">${offCount}</strong></div>
-          <div class="sua-kpi-box"><small>${esc(tr('Rapid Burst Flags'))}</small><strong data-no-i18n="1">${burstCount}</strong></div>
-          <div class="sua-kpi-box"><small>${esc(tr('Biometric / 2FA Confirmed'))}</small><strong data-no-i18n="1">${face2faCount}</strong></div>
+          <div class="sua-kpi-box"><small>${esc('Verified Overrides')}</small><strong data-no-i18n="1">${rows.length}</strong></div>
+          <div class="sua-kpi-box"><small>${esc('Off-Hours (22:00-06:00)')}</small><strong data-no-i18n="1">${offCount}</strong></div>
+          <div class="sua-kpi-box"><small>${esc('Rapid Burst Flags')}</small><strong data-no-i18n="1">${burstCount}</strong></div>
+          <div class="sua-kpi-box"><small>${esc('Biometric / 2FA Confirmed')}</small><strong data-no-i18n="1">${face2faCount}</strong></div>
         </div>
 
         ${_briefState.open && _briefState.data ? `
@@ -1218,13 +1218,13 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  <th>${esc(tr('Local Time'))}</th>
-                  <th>${esc(tr('Signed-In Seat'))}</th>
-                  <th>${esc(tr('Entity'))}</th>
-                  <th>${esc(tr('High-Privilege Action'))}</th>
-                  <th>${esc(tr('Target'))}</th>
-                  <th>${esc(tr('Method'))}</th>
-                  <th>${esc(tr('Watchdog Status'))}</th>
+                  <th>${esc('Local Time')}</th>
+                  <th>${esc('Signed-In Seat')}</th>
+                  <th>${esc('Entity')}</th>
+                  <th>${esc('High-Privilege Action')}</th>
+                  <th>${esc('Target')}</th>
+                  <th>${esc('Method')}</th>
+                  <th>${esc('Watchdog Status')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1233,13 +1233,13 @@
                     <td class="mono" data-no-i18n="1">${esc(String(r.ts || '').slice(0, 10))} · ${esc(r.local_time || '')}</td>
                     <td data-no-i18n="1"><strong>${esc(r.user_name)}</strong></td>
                     <td data-no-i18n="1">${esc(r.company)}</td>
-                    <td data-no-i18n="1">${esc(tr(r.action_label))}</td>
+                    <td data-no-i18n="1" data-sua-action-en="${esc(r.action_label)}">${esc(tr(r.action_label))}</td>
                     <td class="mono" data-no-i18n="1">${esc(r.target_ref || '-')}</td>
                     <td data-no-i18n="1"><span class="sua-pill is-ok">${esc(r.auth_method)}</span></td>
                     <td>
                       ${r.off_hours || r.burst_anomaly
-                        ? `<span class="sua-pill is-alert">${esc(tr(r.off_hours && r.burst_anomaly ? 'Off-Hours + Burst' : (r.off_hours ? 'Off-Hours (22:00-06:00)' : 'Burst Override')))}</span>`
-                        : `<span class="sua-pill is-ok">${esc(tr('Standard Hours'))}</span>`}
+                        ? `<span class="sua-pill is-alert">${esc(r.off_hours && r.burst_anomaly ? 'Off-Hours + Burst' : (r.off_hours ? 'Off-Hours (22:00-06:00)' : 'Burst Override'))}</span>`
+                        : `<span class="sua-pill is-ok">${esc('Standard Hours')}</span>`}
                     </td>
                   </tr>
                 `).join('')}
@@ -1247,7 +1247,7 @@
             </table>
           </div>
         ` : `
-          <div style="font-size:12.5px;color:#57534E">${esc(tr('No high-privilege step-up overrides recorded yet in this scope. Period-close reopens, settled voids, role changes, VIN releases, intercompany wires, and carrier settlements log here automatically.'))}</div>
+          <div style="font-size:12.5px;color:#57534E">${esc('No high-privilege step-up overrides recorded yet in this scope. Period-close reopens, settled voids, role changes, VIN releases, intercompany wires, and carrier settlements log here automatically.')}</div>
         `}
       </div>
     `;
@@ -1294,6 +1294,12 @@
       if (existing.getAttribute('data-scope-sig') === expectedSig) {
         existing.setAttribute('data-ui-lang', curLang());
         existing.dir = curLang() === 'ar' ? 'rtl' : 'ltr';
+        existing.querySelectorAll('[data-sua-action-en]').forEach(td => {
+          td.textContent = tr(td.getAttribute('data-sua-action-en') || '');
+        });
+        if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+          window.MFG_I18N.translateDom(existing);
+        }
         return;
       }
       existing.remove();
@@ -1328,6 +1334,9 @@
       ws.appendChild(card);
     }
     wireWatchdogEvents(card);
+    if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(card);
+    }
   }
 
   function scheduleMountWatchdog() {

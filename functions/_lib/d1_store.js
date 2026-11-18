@@ -3471,7 +3471,7 @@ function checkMandatoryVoidReasonEdge(tableOrBucket, rowObj, session, ruleCfg, e
 }
 
 const SALES_ALLOWED_TABLES = new Set([
-  'sites', 'sales_tickets', 'customer_receipts', 'customers', 'products',
+  'sites', 'sales_tickets', 'customer_receipts', 'customers', 'products', 'items',
   'price_rules', 'vat_invoices', 'credit_terms', 'regions', 'equipment',
   'drivers', 'documents'
 ]);
@@ -3483,7 +3483,7 @@ const CUSTOM_MASTER_TABLES = new Set([
   'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products', 'product_types', 'uoms',
   'sites', 'regions', 'staff_members', 'staff_roles', 'staff_assignments', 'work_shifts', 'salary_payments',
   'salaries', 'employments', 'freelance_entries', 'logistics_allowances', 'overtime_rates', 'attendance',
-  'fx_rates', 'vat_rates', 'currencies'
+  'fx_rates', 'vat_rates', 'currencies', 'gl_accounts'
 ]);
 const CUSTOM_TREASURY_TABLES = new Set(['external_movements', 'loans', 'loan_settlements', 'conversions']);
 const CUSTOM_JV_TABLES = new Set(['jv_partnerships', 'jv_distributions']);
@@ -3507,7 +3507,24 @@ function canCreateTableRecord(perms, canonTable) {
     if (CUSTOM_JV_TABLES.has(canonTable)) return Boolean(perms.enterPayrollJv);
     return anyEnter;
   }
+  if (perms.roleKey === 'Entry' && (canonTable === 'gl_accounts' || CUSTOM_JV_TABLES.has(canonTable))) return false;
   return Boolean(perms.modifyText && (perms.enterDispatch || perms.enterAccounting || perms.enterMaster));
+}
+
+const FIN_LOCKED_TEXT_TABLES = new Set([
+  'gl_accounts', ...CUSTOM_JV_TABLES, ...CUSTOM_TREASURY_TABLES
+]);
+
+function canEditExistingTableRecord(perms, canonTable) {
+  if (!perms) return false;
+  if (canCreateTableRecord(perms, canonTable)) return true;
+  if (perms.roleKey === 'Custom') {
+    const anyEnter = Boolean(perms.enterDispatch || perms.enterAccounting || perms.enterMaster || perms.enterPayrollJv);
+    if (!anyEnter && perms.modifyText && !perms.modifyData) {
+      return !FIN_LOCKED_TEXT_TABLES.has(canonTable);
+    }
+  }
+  return false;
 }
 
 export async function handleRecordsPost(request, env, session, body) {
@@ -3724,6 +3741,13 @@ export async function handleRecordsPost(request, env, session, body) {
     const regionZoneChanged = hasRegionZoneMutation(exHydrated, recordToWrite);
     const missingPinFill = isInitialMissingSitePinFill(canonTable, exHydrated, recordToWrite, perms);
     const allowUnpinnedPinAdd = !missingPinFill && isInitialUnpinnedSitePinAddition(canonTable, exHydrated, recordToWrite, perms);
+    const canEditTbl = canEditExistingTableRecord(perms, canonTable);
+    const allowVoidTbl = perms.roleKey === 'Supervisor' || canCreateTableRecord(perms, canonTable);
+    const allowVoidOnly = Boolean(
+      perms.voidData && allowVoidTbl && (wasVoid !== nowVoid || voidNoteChanged)
+      && !gpsChanged && !regionZoneChanged
+      && !hasNonVoidFieldChange(exHydrated, recordToWrite)
+    );
     if (missingPinFill) {
       recordToWrite = applyInitialMissingSitePinFill(exHydrated, recordToWrite, session && session.email);
     } else if (allowUnpinnedPinAdd) {
@@ -3741,18 +3765,16 @@ export async function handleRecordsPost(request, env, session, body) {
       if (!perms.canWriteGeoConfig && regionZoneChanged) {
         return await rejectRecGeo403('Supervisor + Entry or Geo-authorized seat required to modify region zone shapes.', 'region');
       }
-      if (!perms.modifyText && !perms.modifyData) {
-        const allowVoidOnly = Boolean(
-          perms.voidData && (wasVoid !== nowVoid || voidNoteChanged)
-          && !gpsChanged && !regionZoneChanged
-          && !hasNonVoidFieldChange(exHydrated, recordToWrite)
-        );
-        if (!allowVoidOnly) {
-          if (canonTable === 'sites' || canonTable === 'regions') {
-            return await rejectRecGeo403('Role permission: read-only seat cannot modify existing records.');
-          }
-          return jsonResponse({ ok: false, error: 'Role permission: read-only seat cannot modify existing records.' }, 403);
+      if ((!canEditTbl || (!perms.modifyText && !perms.modifyData)) && !allowVoidOnly) {
+        const denyMsg = !canEditTbl
+          ? 'Role permission: seat cannot modify records in this table.'
+          : 'Role permission: read-only seat cannot modify existing records.';
+        if (canonTable === 'sites' || canonTable === 'regions') {
+          return await rejectRecGeo403(denyMsg);
         }
+        return jsonResponse({ ok: false, error: denyMsg }, 403);
+      }
+      if (allowVoidOnly && (!canEditTbl || (!perms.modifyText && !perms.modifyData))) {
         if (voidNoteChanged) {
           recordToWrite = Object.assign({}, exHydrated);
           applyExplicitVoidReason(recordToWrite, record);
@@ -7885,7 +7907,9 @@ export async function handleAuthMe(env, session) {
 async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, auditOut = null) {
   if (!incomingDoc || typeof incomingDoc !== 'object' || !session) return;
   const perms = getSessionWritePerms(session);
-  if (perms.modifyData && perms.modifyText && perms.canEnterAny && perms.voidData && perms.canWriteGeoConfig) return;
+  const isFullSyncWriteSeat = (perms.roleKey === 'Full Access (Owner)' || perms.roleKey === 'Supervisor + Entry')
+    && perms.modifyData && perms.modifyText && perms.canEnterAny && perms.voidData && perms.canWriteGeoConfig;
+  if (isFullSyncWriteSeat) return;
   const prev = (prevDoc && typeof prevDoc === 'object') ? prevDoc : {};
   const isReadOnly = !perms.modifyText && !perms.modifyData;
 
@@ -7904,7 +7928,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
         if (pr && pr.id) pMap.set(String(pr.id).trim(), pr);
       }
       const d1Map = new Map();
-      if (db && ALLOWED_TABLES.has(canonTable) && (!perms.modifyData || !perms.canWriteGeoConfig || isReadOnly || !perms.voidData)) {
+      if (db && ALLOWED_TABLES.has(canonTable) && canonTable !== 'users') {
         const probeIds = [];
         for (const ir of iList) {
           if (!ir || typeof ir !== 'object' || !ir.id) continue;
@@ -7972,7 +7996,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
           && (!session || !session.build_ticket)
           && /^(system-topup|sharepoint top-up)/i.test(String(pr.voided_by || '').trim())
         ) {
-          outList.push(pr);
+          if (pMap.has(rid)) outList.push(pMap.get(rid));
           keptIds.add(rid);
           continue;
         }
@@ -7999,7 +8023,9 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
             continue;
           }
           const allowVoidOnly = Boolean(
-            perms.voidData && (wasVoid !== Boolean(mergedIr.voided) || (wasVoid && Boolean(mergedIr.voided) && hasVoidReasonChange(pr, mergedIr)))
+            perms.voidData
+            && (perms.roleKey === 'Supervisor' || canCreateTableRecord(perms, canonTable))
+            && (wasVoid !== Boolean(mergedIr.voided) || (wasVoid && Boolean(mergedIr.voided) && hasVoidReasonChange(pr, mergedIr)))
             && !hasGpsFieldMutation(pr, mergedIr)
             && !hasRegionZoneMutation(pr, mergedIr)
             && !hasNonVoidFieldChange(pr, mergedIr)
@@ -8061,6 +8087,20 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
           keptIds.add(rid);
           continue;
         }
+        const canEditTblSync = canEditExistingTableRecord(perms, canonTable);
+        const allowVoidSync = Boolean(
+          perms.voidData
+          && (perms.roleKey === 'Supervisor' || canCreateTableRecord(perms, canonTable))
+          && (wasVoid !== Boolean(mergedIr.voided) || (wasVoid && Boolean(mergedIr.voided) && hasVoidReasonChange(pr, mergedIr)))
+          && !hasGpsFieldMutation(pr, mergedIr)
+          && !hasRegionZoneMutation(pr, mergedIr)
+          && !hasNonVoidFieldChange(pr, mergedIr)
+        );
+        if (!canEditTblSync && !allowVoidSync) {
+          if (pMap.has(rid)) outList.push(pMap.get(rid));
+          keptIds.add(rid);
+          continue;
+        }
         const allowUnpinnedPinAdd = !perms.canWriteGeoConfig && isInitialUnpinnedSitePinAddition(canonTable, pr, mergedIr, perms);
         if (!perms.canWriteGeoConfig) {
           if (allowUnpinnedPinAdd) {
@@ -8107,7 +8147,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
         outList.push(mergedIr);
         keptIds.add(rid);
       }
-      if (isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData) {
+      if (!isFullSyncWriteSeat) {
         for (const pr of pList) {
           const rid = pr && pr.id ? String(pr.id).trim() : '';
           if (rid && !keptIds.has(rid)) outList.push(pr);
@@ -8115,7 +8155,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
       }
       incomingDoc.customRecords[k] = outList;
     }
-  } else if ((isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData) && !Object.prototype.hasOwnProperty.call(incomingDoc, 'customRecords') && prev.customRecords && typeof prev.customRecords === 'object') {
+  } else if (!isFullSyncWriteSeat && !Object.prototype.hasOwnProperty.call(incomingDoc, 'customRecords') && prev.customRecords && typeof prev.customRecords === 'object') {
     incomingDoc.customRecords = prev.customRecords;
   }
 
@@ -8220,7 +8260,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
         outB.push(mergedIr);
         kept.add(rid);
       }
-      if (isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData) {
+      if (!isFullSyncWriteSeat) {
         for (const pr of pList) {
           const rid = pr && String(pr.id || pr.code || '').trim();
           if (rid && !kept.has(rid)) outB.push(pr);
@@ -8229,7 +8269,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
       safeIcr[bk] = outB;
     }
     incomingDoc.industryCustomRows = safeIcr;
-  } else if ((isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData) && !Object.prototype.hasOwnProperty.call(incomingDoc, 'industryCustomRows') && prev.industryCustomRows && typeof prev.industryCustomRows === 'object') {
+  } else if (!isFullSyncWriteSeat && !Object.prototype.hasOwnProperty.call(incomingDoc, 'industryCustomRows') && prev.industryCustomRows && typeof prev.industryCustomRows === 'object') {
     incomingDoc.industryCustomRows = prev.industryCustomRows;
   }
 
@@ -8362,13 +8402,13 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
         }
       }
     }
-    if (isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData) {
+    if (!isFullSyncWriteSeat) {
       for (const [ek, pv] of Object.entries(prevIre)) {
         if (!(ek in safeIre)) safeIre[ek] = pv;
       }
     }
     incomingDoc.industryRowEdits = safeIre;
-  } else if ((isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData) && !Object.prototype.hasOwnProperty.call(incomingDoc, 'industryRowEdits') && prev.industryRowEdits && typeof prev.industryRowEdits === 'object') {
+  } else if (!isFullSyncWriteSeat && !Object.prototype.hasOwnProperty.call(incomingDoc, 'industryRowEdits') && prev.industryRowEdits && typeof prev.industryRowEdits === 'object') {
     incomingDoc.industryRowEdits = prev.industryRowEdits;
   }
 }
