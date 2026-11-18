@@ -8,7 +8,8 @@
 //   - a seat's report lands in its own row (seat id + device id): it cannot change another seat's row;
 //   - only the Owner reads the list; "sent" after an hour or more turns a holding device into "arrived late" for
 //     48 hours, and a shorter hold (a signal drop) is simply removed;
-//   - an Owner or full-group seat can close the reports other seats left open for the same device, nobody else;
+//   - a seat whose sync has sent everything closes the reports other seats left open for the same device when it
+//     may use every company those seats were limited to (an Owner or full-group seat: any); never otherwise;
 //   - bad input is refused, the first reported wait wins while the device keeps holding, old rows drop out;
 //   - /api/sync neither serves nor patches these rows.
 // Nothing live is touched.   Run: node build/verify_device_unsent.mjs      (Node 22.5+ for node:sqlite)
@@ -78,6 +79,8 @@ const seat = (id, name, email, role, cos) => {
 const OWNER = await seat('u1', 'Owner Seat', 'owner.seat@example.test', 'Full Access (Owner)', 'All');
 const ENTRY = await seat('u7', 'Entry Seat', 'entry.seat@example.test', 'Entry', 'WTC');
 const SUP = await seat('u3', 'Supervisor Seat', 'sup.seat@example.test', 'Supervisor', 'WTC');
+const BBC = await seat('u9', 'BBC Entry Seat', 'bbc.seat@example.test', 'Entry', 'BBConstruction');
+const BOTH = await seat('u8', 'Two Company Seat', 'both.seat@example.test', 'Entry', 'WTC, BBConstruction');
 
 async function api(path, { method = 'GET', body, headers = {}, raw } = {}) {
   const h = Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '10.9.0.2' }, headers);
@@ -177,19 +180,35 @@ console.log('\n[a short hold, and a shared device]');
   r = await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: { device_id: DEV_S, count: 0 } });
   ok('... and once sent it is removed, not listed as late (a signal drop is no Owner alert)', r.json.saved === true && r.json.state === 'cleared' && !kv(`device_unsent:u7:${DEV_S}`), r);
 
-  // a shared device: the Entry seat reported and left; other seats sign in on the same device
+  // a shared device: the WTC Entry seat reported and left; other seats sign in on the same device
   const DEV_SH = 'devshared000005';
+  const openRows = () => d1.rows("SELECT doc_key, payload_json FROM edge_kv_store WHERE doc_key LIKE ?", `%:${DEV_SH}`).filter(x => JSON.parse(x.payload_json).state === 'holding').map(x => x.doc_key).sort();
   await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: report({ device_id: DEV_SH, count: 6, since: iso(NOW - 5 * 3600000) }) });
+  ok('a holding report keeps the companies its seat is limited to', JSON.stringify(kv(`device_unsent:u7:${DEV_SH}`).companies) === '["WTC"]', kv(`device_unsent:u7:${DEV_SH}`));
+  r = await api('device_unsent', { method: 'POST', headers: as(BBC), body: { device_id: DEV_SH, count: 0, all_seats: true } });
+  ok('a seat of another company cannot close it, even asking for all seats; the answer says one report is still open', r.json.saved === false && r.json.open === 1 && kv(`device_unsent:u7:${DEV_SH}`).state === 'holding', r);
+  r = await api('device_unsent', { method: 'POST', headers: as(SUP), body: { device_id: DEV_SH, count: 0 } });
+  ok('a seat of the same company without all_seats touches only its own row', r.json.saved === false && r.json.open === 1 && kv(`device_unsent:u7:${DEV_SH}`).state === 'holding', r);
   r = await api('device_unsent', { method: 'POST', headers: as(SUP), body: { device_id: DEV_SH, count: 0, all_seats: true } });
-  ok('a Supervisor limited to its companies cannot close another seat\'s report, even asking for all seats', r.json.saved === false && kv(`device_unsent:u7:${DEV_SH}`).state === 'holding', r);
-  r = await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { device_id: DEV_SH, count: 0 } });
-  ok('the Owner without all_seats touches only its own row', r.json.saved === false && kv(`device_unsent:u7:${DEV_SH}`).state === 'holding', r);
-  r = await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { device_id: DEV_SH, count: 0, all_seats: true } });
-  const sh = kv(`device_unsent:u7:${DEV_SH}`);
-  ok('the Owner, who sends every company\'s rows, closes it: arrived late, still under the seat that held it', r.json.saved === true && r.json.state === 'sent_late' && sh.state === 'sent_late' && sh.sent_count === 6 && sh.user_id === 'u7', { r, sh });
+  let sh = kv(`device_unsent:u7:${DEV_SH}`);
+  ok('a seat of the same company, whose sync sent that company\'s rows, closes it: arrived late, still under the seat that held it', r.json.saved === true && r.json.state === 'sent_late' && r.json.open === 0 && sh.state === 'sent_late' && sh.sent_count === 6 && sh.user_id === 'u7', { r, sh });
   ok('... and only for that device', kv(`device_unsent:u7:${DEV_A}`).state === 'holding' && kv(`device_unsent:u7:${DEV_B}`).state === 'holding');
+
+  // a seat limited to two companies reported; a seat limited to one of them cannot vouch for the other
+  await api('device_unsent', { method: 'POST', headers: as(BOTH), body: report({ device_id: DEV_SH, count: 4, since: iso(NOW - 3 * 3600000) }) });
+  r = await api('device_unsent', { method: 'POST', headers: as(SUP), body: { device_id: DEV_SH, count: 0, all_seats: true } });
+  ok('a report of a two-company seat is not closed by a seat limited to one of them', r.json.saved === false && r.json.open === 1 && kv(`device_unsent:u8:${DEV_SH}`).state === 'holding', r);
+  r = await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { device_id: DEV_SH, count: 0 } });
+  ok('the Owner without all_seats touches only its own row', r.json.saved === false && r.json.open === 1 && kv(`device_unsent:u8:${DEV_SH}`).state === 'holding', r);
+  await api('device_unsent', { method: 'POST', headers: as(BBC), body: report({ device_id: DEV_SH, count: 2, since: iso(NOW - 2 * 3600000) }) });
+  ok('two reports are open for the device', openRows().length === 2, openRows());
+  r = await api('device_unsent', { method: 'POST', headers: as(OWNER), body: { device_id: DEV_SH, count: 0, all_seats: true } });
+  ok('the Owner, who sends every company\'s rows, closes them all', r.json.saved === true && r.json.open === 0 && openRows().length === 0 && kv(`device_unsent:u8:${DEV_SH}`).sent_count === 4 && kv(`device_unsent:u9:${DEV_SH}`).sent_count === 2, { r, open: openRows() });
+  await api('device_unsent', { method: 'POST', headers: as(OWNER), body: report({ device_id: DEV_SH, count: 1 }) });
+  ok('an Owner\'s own report says it covers every company, so no limited seat closes it', JSON.stringify(kv(`device_unsent:u1:${DEV_SH}`).companies) === '["*"]'
+    && (await api('device_unsent', { method: 'POST', headers: as(BOTH), body: { device_id: DEV_SH, count: 0, all_seats: true } })).json.open === 1 && kv(`device_unsent:u1:${DEV_SH}`).state === 'holding');
   r = await api('device_unsent', { method: 'POST', headers: as(OWNER), body: report({ device_id: DEV_SH, count: 1, all_seats: true }) });
-  ok('all_seats means nothing on a holding report', r.json.state === 'holding' && kv(`device_unsent:u1:${DEV_SH}`).count === 1 && kv(`device_unsent:u7:${DEV_SH}`).state === 'sent_late', r);
+  ok('all_seats means nothing on a holding report', r.json.state === 'holding' && kv(`device_unsent:u8:${DEV_SH}`).state === 'sent_late', r);
 }
 
 console.log('\n[never able to report: arrived late]');

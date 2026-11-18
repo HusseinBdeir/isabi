@@ -5410,8 +5410,11 @@ export async function handleCashflowBehind(request, env, session, body, rawBytes
 //     knows late entries arrived; a shorter hold (a signal drop) is simply removed.
 //   * count >= 1 with sent_late: the device was never able to report (offline the whole time) and has just sent
 //     entries that waited an hour or more: filed straight as "sent late".
-//   * count 0 with all_seats, from an Owner or full-group seat: that seat sends every company's rows, so it closes
-//     the reports other seats left open for the same device (a shared device changes seats).
+//   * count 0 with all_seats: the seat's sync has just sent everything it can send from the device, so it also
+//     closes the reports other seats left open for the same device (a shared device changes seats) when it can send
+//     what those seats send: an Owner or full-group seat closes any; a limited seat closes a report only when it
+//     may use every company the reporting seat was limited to (each report keeps its seat's companies).
+//     The answer says how many reports for the device are still open (`open`), so the device knows to ask again.
 //   * GET is Owner-only. /api/sync neither serves nor patches these rows (isDeviceUnsentDoc).
 const DEVICE_UNSENT_PREFIX = 'device_unsent:';
 const DEVICE_UNSENT_REASONS = Object.freeze(['offline', 'sign_in', 'update', 'blocked', 'retrying']);
@@ -5525,21 +5528,26 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
   if (val.count === 0) {
     // Sent. A device that held entries for an hour or more stays listed as "sent late"; a shorter hold is removed;
     // one that never reported has nothing to clear.
-    const rows = [{ key: docKey, p: prev, holding: prevHolding }];
-    if (val.all_seats && isOwnerOrFullGroupSession(session)) {
-      const others = await env.DB.prepare("SELECT doc_key, payload_json FROM edge_kv_store WHERE doc_key LIKE 'device_unsent:%' AND doc_key LIKE ?1")
-        .bind(`%:${val.device_id}`).all();
-      for (const o of (others.results || [])) {
-        const k = String(o.doc_key || '');
-        if (k === docKey || !k.startsWith(DEVICE_UNSENT_PREFIX) || !k.endsWith(`:${val.device_id}`)) continue;
-        const op = safeJsonParse(o.payload_json, null);
-        rows.push({ key: k, p: op, holding: Boolean(op && typeof op === 'object' && op.state === 'holding' && Number(op.count) >= 1) });
-      }
+    const rows = [{ key: docKey, p: prev, holding: prevHolding, mayClose: true }];
+    const fullGroup = isOwnerOrFullGroupSession(session);
+    const others = await env.DB.prepare("SELECT doc_key, payload_json FROM edge_kv_store WHERE doc_key LIKE 'device_unsent:%' AND doc_key LIKE ?1")
+      .bind(`%:${val.device_id}`).all();
+    for (const o of (others.results || [])) {
+      const k = String(o.doc_key || '');
+      if (k === docKey || !k.startsWith(DEVICE_UNSENT_PREFIX) || !k.endsWith(`:${val.device_id}`)) continue;
+      const op = safeJsonParse(o.payload_json, null);
+      const holding = Boolean(op && typeof op === 'object' && op.state === 'holding' && Number(op.count) >= 1);
+      const cos = holding && Array.isArray(op.companies) ? op.companies : [];
+      const mayClose = Boolean(val.all_seats) && (fullGroup
+        || (cos.length > 0 && !cos.includes('*') && cos.every(c => canAccessCompany(session, c))));
+      rows.push({ key: k, p: op, holding, mayClose });
     }
     let changed = 0;
+    let open = 0;
     let state = '';
     for (const row of rows) {
       if (!row.holding) continue;
+      if (!row.mayClose) { open++; continue; }
       const heldSinceMs = Date.parse(String(row.p.since || ''));
       if (Number.isFinite(heldSinceMs) && nowMs - heldSinceMs < DEVICE_UNSENT_LATE_MIN_MS) {
         await env.DB.prepare('DELETE FROM edge_kv_store WHERE doc_key = ?1').bind(row.key).run();
@@ -5552,7 +5560,7 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
       }
       changed++;
     }
-    return jsonResponse(changed ? { ok: true, saved: true, state } : { ok: true, saved: false });
+    return jsonResponse(changed ? { ok: true, saved: true, state, open } : { ok: true, saved: false, open });
   }
   if (val.sent_late && nowMs - Date.parse(val.since) < DEVICE_UNSENT_LATE_MIN_MS) {
     return jsonResponse({ ok: true, saved: false });   // a short wait is no late arrival
@@ -5570,7 +5578,11 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
     label: val.label,
     user_id: seatId,
     email: String(session.email || '').trim().toLowerCase().slice(0, 160),
-    name: cleanDeviceUnsentText(session.name || session.full_name || '', 80)
+    name: cleanDeviceUnsentText(session.name || session.full_name || '', 80),
+    // The companies this seat sends rows for ('*' = every company): who else may close this report.
+    companies: isOwnerOrFullGroupSession(session)
+      ? ['*']
+      : String(session.companies || '').split(/[,;|]/).map(c => cleanDeviceUnsentText(c, 60)).filter(Boolean).slice(0, 40)
   };
   if (val.sent_late) {
     const late = Object.assign({ state: 'sent_late' }, identity, {
@@ -5591,11 +5603,12 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
   }
   const stored = {
     state: 'holding',
-    device_id: val.device_id,
-    label: val.label,
-    user_id: seatId,
-    email: String(session.email || '').trim().toLowerCase().slice(0, 160),
-    name: cleanDeviceUnsentText(session.name || session.full_name || '', 80),
+    device_id: identity.device_id,
+    label: identity.label,
+    user_id: identity.user_id,
+    email: identity.email,
+    name: identity.name,
+    companies: identity.companies,
     count: val.count,
     // The first time the wait was reported wins while the device keeps holding: a reload cannot shorten the wait.
     since: (prevHolding && String(prev.since || '') && String(prev.since) < val.since) ? String(prev.since) : val.since,
