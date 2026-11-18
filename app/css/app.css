@@ -22083,10 +22083,13 @@ u.row-sel-dot::after {
 tr.rrow:hover u.row-sel-dot {
   opacity: 0.72;
 }
+/* Hover shows an empty brass-edged box (no check, so it never reads as Approve next to the Void x);
+   the single check appears only once the row is selected. */
 u.row-sel-dot:hover {
   opacity: 1 !important;
   border-color: var(--brass);
-  color: var(--brass);
+  background: rgba(192, 137, 47, 0.12);
+  color: transparent;
 }
 tr.rrow.is-row-selected u.row-sel-dot {
   opacity: 1;

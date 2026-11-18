@@ -163737,7 +163737,8 @@
         protoDot = document.createElement('u');
         protoDot.className = 'row-sel-dot';
         protoDot.setAttribute('data-row-sel', '1');
-        protoDot.textContent = '✓';
+        // No text node: the check is drawn only by CSS (u.row-sel-dot::after) and only on a selected row. A text
+        // check here doubled it on hover and leaked a stray check into CSV exports (tableToCsv reads innerText).
         enhanceVisualWorkspace._protoDot = protoDot;
       }
       for (let i = 0; i < rrows.length; i++) {
