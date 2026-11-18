@@ -1113,6 +1113,9 @@
       ? Boolean($('indEntryModalEyebrow') && /EDIT DOMAIN RECORD/i.test($('indEntryModalEyebrow').textContent || ''))
       : isEditingAnyMfgRecord();
     if (batchBtn && (isSingleRecordEdit || !canUseBatchIntake())) batchBtn.hidden = true;
+    const qBarMob = $(isDomainModal ? 'indMobAiQuickBar' : 'entryMobAiQuickBar');
+    const qBatchMob = qBarMob ? qBarMob.querySelector('[data-mob-ai="batch"]') : null;
+    if (qBatchMob) qBatchMob.hidden = Boolean(batchBtn && batchBtn.hidden);
 
     strip.querySelectorAll('[data-aie-vlang]').forEach(btn => {
       btn.addEventListener('click', e => {

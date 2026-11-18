@@ -5738,8 +5738,13 @@
       const curPageIdx = Math.max(0, pagePool.findIndex(p => p.id === activePageId));
       const prevPage = pagePool[(curPageIdx - 1 + pagePool.length) % pagePool.length] || activePage;
       const nextPage = pagePool[(curPageIdx + 1) % pagePool.length] || activePage;
-      const pbiCatalogCollapsed = Boolean(STATE.pbiCatalogCollapsed !== undefined ? STATE.pbiCatalogCollapsed : (window.__pbiCatalogCollapsed || false));
-      const pbiSlicersCollapsed = Boolean(STATE.pbiSlicersCollapsed !== undefined ? STATE.pbiSlicersCollapsed : (window.__pbiSlicersCollapsed || false));
+      const isMobPbi = typeof window !== 'undefined' && window.innerWidth <= 860;
+      const pbiCatalogCollapsed = isMobPbi
+        ? Boolean(STATE.pbiCatalogMobCollapsed !== undefined ? STATE.pbiCatalogMobCollapsed : true)
+        : Boolean(window.__pbiCatalogCollapsed !== undefined ? window.__pbiCatalogCollapsed : STATE.pbiCatalogCollapsed);
+      const pbiSlicersCollapsed = isMobPbi
+        ? Boolean(STATE.pbiSlicersMobCollapsed !== undefined ? STATE.pbiSlicersMobCollapsed : !activeSlicerCount)
+        : Boolean(window.__pbiSlicersCollapsed !== undefined ? window.__pbiSlicersCollapsed : STATE.pbiSlicersCollapsed);
 
       headerHtml = `
       <div class="pbi-studio-hdr">
@@ -9694,8 +9699,12 @@
           toggleCat.classList.toggle('active', !nextCollapsed);
           const caret = toggleCat.querySelector('.pbi-dt-caret');
           if (caret) caret.textContent = nextCollapsed ? '▸' : '▾';
-          window.__pbiCatalogCollapsed = nextCollapsed;
-          if (window.STATE) window.STATE.pbiCatalogCollapsed = nextCollapsed;
+          if (typeof window !== 'undefined' && window.innerWidth <= 860) {
+            if (window.STATE) window.STATE.pbiCatalogMobCollapsed = nextCollapsed;
+          } else {
+            window.__pbiCatalogCollapsed = nextCollapsed;
+            if (window.STATE) window.STATE.pbiCatalogCollapsed = nextCollapsed;
+          }
         }
         return;
       }
@@ -9709,8 +9718,12 @@
           toggleSlicers.classList.toggle('active', !nextCollapsed);
           const caret = toggleSlicers.querySelector('.pbi-dt-caret');
           if (caret) caret.textContent = nextCollapsed ? '▸' : '▾';
-          window.__pbiSlicersCollapsed = nextCollapsed;
-          if (window.STATE) window.STATE.pbiSlicersCollapsed = nextCollapsed;
+          if (typeof window !== 'undefined' && window.innerWidth <= 860) {
+            if (window.STATE) window.STATE.pbiSlicersMobCollapsed = nextCollapsed;
+          } else {
+            window.__pbiSlicersCollapsed = nextCollapsed;
+            if (window.STATE) window.STATE.pbiSlicersCollapsed = nextCollapsed;
+          }
         }
         return;
       }

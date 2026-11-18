@@ -366,6 +366,7 @@
     railWidth: clampRailWidth(localStorage.getItem('isabi_mfg_rail_width') || RAIL_DEFAULT_W),
     search: '',
     chipFilter: 'all',
+    mobRegSummaryOpen: false,
     cfEntryMode: 'entries',
     cfBridgeMode: 'streams',
     cfPartyFoldOpen: false,
@@ -6826,6 +6827,52 @@
     const isFiltered = STATE.period !== 'all' || STATE.dateGrain !== 'all' || Boolean(STATE.dateFrom || STATE.dateTo);
     if (barEl) barEl.classList.toggle('custom-active', STATE.period === 'custom' || isFiltered);
     if (rstEl) rstEl.hidden = !isFiltered;
+    const mptBtn = $('mobilePeriodToggleBtn');
+    const mptPer = $('mobilePeriodTogglePer');
+    const mptBasis = $('mobilePeriodToggleBasis');
+    if (mptBtn && mptPer && mptBasis) {
+      let shortPer = 'All-Time';
+      const p = String(STATE.period || 'all');
+      if (!isFiltered && p === 'all') shortPer = 'All-Time';
+      else if (p === 'today') shortPer = 'Today';
+      else if (p === 'yesterday') shortPer = 'Yesterday';
+      else if (p === 'wtd') shortPer = 'WTD';
+      else if (p === 'mtd') shortPer = 'MTD';
+      else if (p === 'qtd') shortPer = 'QTD';
+      else if (p === 'ytd') shortPer = 'YTD';
+      else if (p === 'last_week' || p === 'last_7d') shortPer = '7D';
+      else if (p === 'last_30d' || p === 'prev_m1') shortPer = '30D';
+      else if (p === 'prev_m2') shortPer = '2M';
+      else if (p === 'last_q') shortPer = '1Q';
+      else if (p === 'last_90d') shortPer = '90D';
+      else if (p === 'last_12m') shortPer = '12M';
+      else if (p.startsWith('year:')) shortPer = p.slice(5);
+      else if (p.startsWith('month:')) shortPer = p.slice(6);
+      else if (p.startsWith('day:')) shortPer = p.slice(4);
+      else if (p.startsWith('week:')) shortPer = p.slice(5);
+      else shortPer = `${String(r.from || '').slice(2)}..${String(r.to || '').slice(2)}`;
+      const effBasis = isTxOnlyBasisView(STATE.view) ? 'tx' : (STATE.basis === 'tx' ? 'tx' : 'rep');
+      mptPer.textContent = shortPer;
+      mptBasis.textContent = effBasis === 'tx' ? 'Tx' : 'Rep';
+      mptBtn.classList.toggle('is-filtered', isFiltered);
+      mptBtn.setAttribute('aria-expanded', ($('topbar') && $('topbar').classList.contains('mob-period-open')) ? 'true' : 'false');
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(mptBtn); } catch (_) {}
+      }
+    }
+  }
+
+  function closeMobileTopSheets() {
+    const tb = $('topbar');
+    if (tb && tb.classList.contains('mob-period-open')) {
+      tb.classList.remove('mob-period-open');
+    }
+    const mptBtn = $('mobilePeriodToggleBtn');
+    if (mptBtn) mptBtn.setAttribute('aria-expanded', 'false');
+    const ms = $('mobileSubnav');
+    if (ms && ms.classList.contains('mob-hubs-open')) {
+      ms.classList.remove('mob-hubs-open');
+    }
   }
 
   if (typeof window !== 'undefined') {
@@ -59948,7 +59995,7 @@
 
     return `
       ${bannerHtml}
-      <div class="panel" style="margin-bottom:16px">
+      <div class="panel mob-summary-panel" style="margin-bottom:16px">
           <div class="panel-head">
             <div>
               <h3>Lease Escalation &amp; VAT Compliance Summary</h3>
@@ -65177,6 +65224,11 @@
     const sortedRows = sortIndMatrixRows(filteredRows, fState.sortCol, fState.sortDir);
     const dynTotals = computeDynamicDomainTotals(headers, sortedRows, ds.totals, allRows.length);
     const hasActiveFilter = (fState.period && fState.period !== 'all') || Boolean(fState.dim) || Boolean(searchNorm) || fState.sortCol >= 0;
+    const activeIndFilterCount = ((fState.period && fState.period !== 'all') ? 1 : 0) + (fState.dim ? 1 : 0) + (searchNorm ? 1 : 0) + (fState.sortCol >= 0 ? 1 : 0);
+    const isMobIndPbi = typeof window !== 'undefined' && window.innerWidth <= 860;
+    const indSlicersCollapsed = isMobIndPbi
+      ? Boolean(STATE.indPbiSlicersMobCollapsed !== undefined ? STATE.indPbiSlicersMobCollapsed : !hasActiveFilter)
+      : false;
 
     const maxBar = Math.max(1, ...ds.bars.map(b => Number(b.val || 0)));
     const maxBar2 = Math.max(1, ...ds.secondBars.map(b => Number(b.val || 0)));
@@ -65188,7 +65240,7 @@
             <div class="panel-title"><span>${ic('pbi')} ${esc(ind.toUpperCase())} · INTERACTIVE EXECUTIVE DASHBOARD SUITE (${pages.length} PAGES)</span></div>
             <div class="panel-meta" style="margin-top:2px">Page ${esc(activePage.num)}: <b>${esc(activePage.label)}</b> · ${esc(activePage.title)}</div>
           </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <div class="ind-pbi-actions" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-whatif-btn" id="pbiWhatIfBtn" data-whatif-open="1" data-wi-source="pbi" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX &amp; Working-Capital Scenario Simulator">${ic('sliders')}<span class="pbi-wi-lbl">What-If Studio</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-collection-btn" id="pbiCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="pbi" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')}<span class="pbi-cf-lbl">Collection Forecast</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-payables-btn" id="pbiPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="pbi" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')}<span class="pbi-po-lbl">Payables Optimizer</span></button>
@@ -65196,13 +65248,16 @@
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-inventory-btn" id="pbiInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="pbi" aria-expanded="false" data-ui-tip="Open Inventory Turnover, Stock Reorder &amp; Working-Capital Carrying-Cost Optimizer Studio">${ic('warehouse')}<span class="pbi-io-lbl">Stock &amp; EOQ</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-explain-btn" id="pbiExplainOutliersBtn" data-pbi-explain="1" aria-expanded="false" data-ui-tip="Explain active dashboard KPIs, top-3 concentration &amp; outliers">${ic('sparkles')}<span class="pbi-exp-lbl">Explain</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-listen-btn" id="pbiListenSummaryBtn" data-pbi-summary="1" data-ui-tip="Listen to spoken walkthrough of active dashboard">${ic('audio')}<span class="pbi-lsn-lbl">Listen</span></button>
+            <button type="button" class="pbi-drawer-toggle ${!indSlicersCollapsed ? 'active' : ''}" id="indPbiToggleSlicersBtn" aria-expanded="${indSlicersCollapsed ? 'false' : 'true'}" aria-label="Toggle dashboard filters">
+              <span class="pbi-dt-caret">${indSlicersCollapsed ? '▸' : '▾'}</span> <span>Filters</span>${activeIndFilterCount ? ` <span data-no-i18n="1">(${activeIndFilterCount})</span>` : ''}
+            </button>
             <button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-nav-jump="${esc(activePage.view)}">Open ${esc(activePage.label)} Hub</button>
             <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" data-nav-jump="statements">Printable A4 Statements</button>
             ${exportBtn('industryPbiTableCard', `${activePage.id}_register`)}
           </div>
         </div>
 
-        <div class="pbi-page-tabs" role="tablist" aria-label="${esc(ind)} Dashboard Pages" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="pbi-page-tabs ind-pbi-page-tabs" role="tablist" aria-label="${esc(ind)} Dashboard Pages" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
           ${pages.map(p => `
             <button type="button" class="btn ${p.id === activePage.id ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:5px 11px;font-size:11.5px" data-ind-pbi-page="${esc(p.id)}" role="tab" aria-selected="${p.id === activePage.id ? 'true' : 'false'}">
               <b>${esc(p.num)}</b> · ${esc(p.label)}
@@ -65210,7 +65265,7 @@
           `).join('')}
         </div>
 
-        <div class="table-toolbar" id="indPbiSlicerBar" style="margin-bottom:14px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <div class="table-toolbar${indSlicersCollapsed ? ' is-collapsed' : ''}" id="indPbiSlicerBar" style="margin-bottom:14px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <div class="chip-bar" role="group" aria-label="Period Grain">
               <button type="button" class="filter-chip ${fState.period === 'all' ? 'active' : ''}" data-ind-pbi-period="all">All Periods</button>
@@ -65221,14 +65276,14 @@
               ` : ''}
             </div>
             ${dimCandidates.length > 1 ? `
-              <select id="indPbiDimSelect" data-plain-options="1" aria-label="Filter by ${esc(dimLabel)}" style="height:30px;padding:0 9px;border:1px solid var(--line,#CBD5E1);border-radius:6px;background:var(--card,#ffffff);color:var(--ink,#0F172A);font-weight:600">
+              <select id="indPbiDimSelect" data-plain-options="1" aria-label="Filter by ${esc(dimLabel)}" style="padding:0 9px;border:1px solid var(--line,#CBD5E1);border-radius:6px;background:var(--card,#ffffff);color:var(--ink,#0F172A);font-weight:600">
                 <option value="">All ${esc(dimLabel)} (${allRows.length})</option>
                 ${dimCandidates.map(v => `<option value="${esc(v)}" ${fState.dim === v ? 'selected' : ''}>${esc(v)} (${dimCounts.get(v) || 0})</option>`).join('')}
               </select>
             ` : ''}
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <input type="search" id="indPbiSearchInput" class="search-input" style="height:30px;min-width:190px" value="${esc(fState.search || '')}" placeholder="Search ${esc(activePage.label)} register...">
+            <input type="search" id="indPbiSearchInput" class="search-input" style="min-width:190px" value="${esc(fState.search || '')}" placeholder="Search ${esc(activePage.label)} register...">
             ${hasActiveFilter ? `<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" id="indPbiResetBtn">Reset Filters</button>` : ''}
           </div>
         </div>
@@ -70985,13 +71040,12 @@
     const defSampleId = defaultSampleByInd[ind] || 'dom_ins_policy';
 
     const bodyEl = $('indEntryModalBody');
-    bodyEl.innerHTML = `
-      ${datalistsHtml}
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 10px;margin-bottom:10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px">
-        <div style="display:flex;gap:6px;flex-wrap:wrap" role="tablist" aria-label="Domain Register Forms">
-          ${list.filter(f => f.key !== 'hld_extended' || canEnterForm('external')).map(f => `<button type="button" class="btn ${f.key === spec.key ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:4px 10px;font-size:11.5px" ${(isEditMode && f.key !== spec.key) || !canManageSiblingChronoSchedule(f.key) ? 'disabled' : ''} data-ide-switch-form="${esc(f.key)}">${esc(f.label)}</button>`).join('')}
-        </div>
-        <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" id="ideOpenSharedSpineBtn">Shared Expense / Cash Voucher</button>
+    modal.classList.remove('mob-ai-scan-open', 'mob-ai-voice-open');
+    const indScanBarHtml = isEditMode ? '' : `
+      <div class="mob-ai-quick-bar no-print" id="indMobAiQuickBar">
+        <button type="button" class="mob-ai-qbtn" data-mob-ai="scan" aria-expanded="false">${ic('camera')} <span>Scan Slip / PDF</span></button>
+        <button type="button" class="mob-ai-qbtn" data-mob-ai="voice" aria-expanded="false">${ic('mic')} <span>Voice Fill</span></button>
+        <button type="button" class="mob-ai-qbtn" data-mob-ai="batch">${ic('bolt')} <span>Batch Table</span></button>
       </div>
       <div id="indEntrySmartScanBar" class="ss-bar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;padding:9px 12px;border-radius:8px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#CBD5E1)">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -71012,7 +71066,16 @@
           </select>
           <button type="button" class="btn btn-primary btn-sm" id="indEntryRunSampleScanBtn">Auto-Fill Sample</button>
         </div>
+      </div>`;
+    bodyEl.innerHTML = `
+      ${datalistsHtml}
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 10px;margin-bottom:10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap" role="tablist" aria-label="Domain Register Forms">
+          ${list.filter(f => f.key !== 'hld_extended' || canEnterForm('external')).map(f => `<button type="button" class="btn ${f.key === spec.key ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:4px 10px;font-size:11.5px" ${(isEditMode && f.key !== spec.key) || !canManageSiblingChronoSchedule(f.key) ? 'disabled' : ''} data-ide-switch-form="${esc(f.key)}">${esc(f.label)}</button>`).join('')}
+        </div>
+        <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" id="ideOpenSharedSpineBtn">Shared Expense / Cash Voucher</button>
       </div>
+      ${indScanBarHtml}
       <form id="indDomainEntryForm" autocomplete="off">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px" id="indEntryFieldsGrid">
           ${fieldsHtml}
@@ -72525,6 +72588,46 @@
       });
     }
 
+    const indQuickBar = $('indMobAiQuickBar');
+    const syncIndMobAiUi = () => {
+      if (!indQuickBar) return;
+      const scanOn = modal.classList.contains('mob-ai-scan-open');
+      const voiceOn = modal.classList.contains('mob-ai-voice-open');
+      const sBtn = indQuickBar.querySelector('[data-mob-ai="scan"]');
+      const vBtn = indQuickBar.querySelector('[data-mob-ai="voice"]');
+      if (sBtn) {
+        sBtn.classList.toggle('is-open', scanOn);
+        sBtn.setAttribute('aria-expanded', scanOn ? 'true' : 'false');
+      }
+      if (vBtn) {
+        vBtn.classList.toggle('is-open', voiceOn);
+        vBtn.setAttribute('aria-expanded', voiceOn ? 'true' : 'false');
+      }
+    };
+    if (indQuickBar) {
+      indQuickBar.querySelectorAll('[data-mob-ai]').forEach(btn => btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const mode = btn.getAttribute('data-mob-ai');
+        if (mode === 'scan') {
+          const next = !modal.classList.contains('mob-ai-scan-open');
+          modal.classList.toggle('mob-ai-scan-open', next);
+          if (next) modal.classList.remove('mob-ai-voice-open');
+          syncIndMobAiUi();
+        } else if (mode === 'voice') {
+          const next = !modal.classList.contains('mob-ai-voice-open');
+          modal.classList.toggle('mob-ai-voice-open', next);
+          if (next) {
+            modal.classList.remove('mob-ai-scan-open');
+            const vInp = $('aieIndVoicePromptInput');
+            if (vInp) setTimeout(() => { try { vInp.focus(); } catch (_) {} }, 30);
+          }
+          syncIndMobAiUi();
+        } else if (mode === 'batch') {
+          const batchBtn = $('aieIndOpenBatchBtn');
+          if (batchBtn) batchBtn.click();
+        }
+      }));
+    }
     const scanUpBtn = $('indEntryScanUploadBtn');
     const scanFileInp = $('indEntryScanFileInput');
     const scanCamBtn = $('indEntryScanCameraBtn');
@@ -72537,7 +72640,11 @@
         const picked = scanFileInp.files ? Array.from(scanFileInp.files) : [];
         scanFileInp.value = '';
         if (picked.length && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
+          modal.classList.add('mob-ai-scan-open');
+          modal.classList.remove('mob-ai-voice-open');
+          syncIndMobAiUi();
           await window.MFG_SMART_SCAN.scanIntoDomainModal(picked, { captureMethod: 'File Upload' });
+          syncIndMobAiUi();
         }
       });
     }
@@ -72546,7 +72653,11 @@
         openDocumentCameraCapture(async (files, method) => {
           const batch = Array.from(files || []);
           if (batch.length && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
+            modal.classList.add('mob-ai-scan-open');
+            modal.classList.remove('mob-ai-voice-open');
+            syncIndMobAiUi();
             await window.MFG_SMART_SCAN.scanIntoDomainModal(batch, { captureMethod: method || 'Camera Scan' });
+            syncIndMobAiUi();
           }
         });
       });
@@ -72555,7 +72666,11 @@
       scanRunSampleBtn.addEventListener('click', () => {
         const sid = (scanSampleSel && scanSampleSel.value) || defSampleId;
         if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.runDomainSampleScan === 'function') {
+          modal.classList.add('mob-ai-scan-open');
+          modal.classList.remove('mob-ai-voice-open');
+          syncIndMobAiUi();
           window.MFG_SMART_SCAN.runDomainSampleScan(sid);
+          syncIndMobAiUi();
         }
       });
     }
@@ -125799,6 +125914,57 @@
     return moved;
   }
 
+  function syncMobileRegisterSummaryFold(container, view) {
+    if (!container) return;
+    const oldBar = $('mobRegSummaryFoldBar');
+    if (oldBar && oldBar.parentNode) oldBar.remove();
+    const banner = container.querySelector('.cockpit-banner');
+    const summaryBlock = container.querySelector('.cockpit-banner, :scope > .kpi-grid, :scope > .kpi-row, .sales-entity-recon, :scope > .aie-panel');
+    const hasTable = Boolean(container.querySelector('.table-wrap table'));
+    const qualifies = Boolean(!CHART_FIRST_VIEWS.has(view) && view !== 'statements' && view !== 'ledger' && hasTable && summaryBlock);
+    if (!qualifies) {
+      container.classList.remove('mob-reg-summary-collapsed');
+      return;
+    }
+    const isOpen = Boolean(STATE.mobRegSummaryOpen);
+    container.classList.toggle('mob-reg-summary-collapsed', !isOpen);
+    const foldBar = document.createElement('div');
+    foldBar.className = 'mob-reg-summary-fold-bar no-print';
+    foldBar.id = 'mobRegSummaryFoldBar';
+    const titleRaw = String(VIEW_TITLES[view] || (banner && banner.querySelector('.cockpit-title') ? banner.querySelector('.cockpit-title').textContent : '') || 'Summary').trim();
+    const firstValEl = container.querySelector('.cockpit-pill-val, :scope > .kpi-grid .kpi-val, :scope > .kpi-row .kpi-val, .sales-recon-metrics b');
+    const valRaw = firstValEl ? String(firstValEl.textContent || '').trim() : '';
+    const kpiNumMatch = valRaw.match(/[$€£+-]?\s*[\d,]+(?:\.\d+)?\s*(?:[KMBkmb]|%)?/);
+    const shortKpi = kpiNumMatch ? kpiNumMatch[0].replace(/\s+/g, '') : '';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mob-reg-summary-fold-btn';
+    btn.id = 'mobRegSummaryFoldBtn';
+    btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    btn.innerHTML = `<span class="mrs-title">${esc(titleRaw)}</span>${shortKpi ? `<span class="mrs-kpi" data-no-i18n="1">${esc(shortKpi)}</span>` : ''}<span class="mrs-cta"><span class="mrs-cta-lbl">${isOpen ? 'Hide KPIs' : 'KPIs'}</span><span class="mrs-chev" aria-hidden="true">${isOpen ? '▴' : '▾'}</span></span>`;
+    btn.addEventListener('click', () => {
+      STATE.mobRegSummaryOpen = !STATE.mobRegSummaryOpen;
+      const nextOpen = Boolean(STATE.mobRegSummaryOpen);
+      container.classList.toggle('mob-reg-summary-collapsed', !nextOpen);
+      btn.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+      const lbl = btn.querySelector('.mrs-cta-lbl');
+      const chev = btn.querySelector('.mrs-chev');
+      if (lbl) lbl.textContent = nextOpen ? 'Hide KPIs' : 'KPIs';
+      if (chev) chev.textContent = nextOpen ? '▴' : '▾';
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(btn); } catch (_) {}
+      }
+    });
+    foldBar.appendChild(btn);
+    const subBar = $('hubSubtabBar');
+    const demoBar = $('demoCompanyVerticalBar');
+    const anchor = (subBar && subBar.parentElement === container)
+      ? subBar
+      : ((demoBar && demoBar.parentElement === container) ? demoBar : null);
+    if (anchor) anchor.insertAdjacentElement('afterend', foldBar);
+    else container.insertBefore(foldBar, container.firstChild);
+  }
+
   // ---- Chart preferences per seat (fold state, register Table / Chart mode, choice frequency) -------------
   // Kept in this device's store under the seat's key (session store inside the demo scopes, like every
   // other app preference). Display only: nothing here is synced or posted.
@@ -134504,6 +134670,7 @@
     clearTimeout(toastFadeTimer);
     const tEl = $('toast');
     if (tEl) { tEl.classList.remove('is-leaving'); tEl.hidden = true; }
+    closeMobileTopSheets();
     closeEntryModal(true);
     if (window.MFG_ASK && typeof window.MFG_ASK.clearSessionState === 'function') {
       window.MFG_ASK.clearSessionState();
@@ -135035,6 +135202,7 @@
     el.querySelectorAll('[data-subnav-hub]').forEach(btn => btn.addEventListener('click', e => {
       const pill = e.target && e.target.closest ? e.target.closest('em[data-target-view]') : null;
       const tv = pill ? pill.getAttribute('data-target-view') : '';
+      el.classList.remove('mob-hubs-open');
       if (tv && canViewView(tv, user)) {
         e.stopPropagation();
         setView(tv);
@@ -167462,6 +167630,7 @@
       if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
         window.MFG_AI_EDGE.syncAllSurfacesNow();
       }
+      syncMobileRegisterSummaryFold(container, STATE.view);
       if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.mountWatchdogNow === 'function') {
         window.MFG_STEP_UP.mountWatchdogNow();
       }
@@ -168748,8 +168917,25 @@
     });
     container.querySelectorAll('[data-pbi-page]').forEach(btn => btn.addEventListener('click', () => {
       STATE.pbiPage = btn.getAttribute('data-pbi-page');
+      if (window.innerWidth <= 860) {
+        STATE.pbiCatalogMobCollapsed = true;
+      }
       renderApp();
     }));
+    const indSlicerToggleBtn = $('indPbiToggleSlicersBtn');
+    if (indSlicerToggleBtn) {
+      indSlicerToggleBtn.addEventListener('click', () => {
+        const bar = $('indPbiSlicerBar');
+        if (!bar) return;
+        const nextCollapsed = !bar.classList.contains('is-collapsed');
+        bar.classList.toggle('is-collapsed', nextCollapsed);
+        indSlicerToggleBtn.classList.toggle('active', !nextCollapsed);
+        indSlicerToggleBtn.setAttribute('aria-expanded', nextCollapsed ? 'false' : 'true');
+        const caret = indSlicerToggleBtn.querySelector('.pbi-dt-caret');
+        if (caret) caret.textContent = nextCollapsed ? '▸' : '▾';
+        if (window.innerWidth <= 860) STATE.indPbiSlicersMobCollapsed = nextCollapsed;
+      });
+    }
     container.querySelectorAll('[data-ind-pbi-page]').forEach(btn => btn.addEventListener('click', () => {
       const ind = getActiveIndustry(STATE.company);
       if (!STATE.indPbiPageByInd) STATE.indPbiPageByInd = {};
@@ -171589,6 +171775,7 @@
       if (view !== prevView) {
         STATE.cfTillScrubDate = '';
         STATE.cfTillScrubKey = '';
+        STATE.mobRegSummaryOpen = false;
       }
       STATE.cfFocusYm = '';
       STATE.cfFocusParty = '';
@@ -171615,6 +171802,7 @@
     if (sidebar) sidebar.classList.remove('open');
     const bd = $('railBackdrop');
     if (bd) bd.hidden = true;
+    closeMobileTopSheets();
     STATE._resetWorkspaceScroll = true;
     _preModalWorkspaceScrollSnap = null;
     _preModalWorkspaceScope = '';
@@ -172660,6 +172848,14 @@
       clickHub(btn.getAttribute('data-hub') || btn.getAttribute('data-view'));
     }));
     document.querySelectorAll('#mobileBottomDock [data-dock-view]').forEach(btn => btn.addEventListener('click', () => {
+      const ms = $('mobileSubnav');
+      if (window.innerWidth <= 860 && btn.classList.contains('on')) {
+        if (ms && ms.querySelector('[data-subnav-hub]')) {
+          ms.classList.toggle('mob-hubs-open');
+        }
+        return;
+      }
+      if (ms) ms.classList.remove('mob-hubs-open');
       const dv = btn.getAttribute('data-dock-view');
       const u = activeUser();
       const grps = dv === 'overview' ? ['exec'] : (dv === 'sales' ? ['commercial', 'plant'] : ['books', 'universal', 'system', 'master']);
@@ -172671,6 +172867,36 @@
       if (firstHub) clickHub(firstHub.id);
       else setView(dv);
     }));
+    const mptBtn = $('mobilePeriodToggleBtn');
+    if (mptBtn) {
+      mptBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const tb = $('topbar');
+        if (!tb) return;
+        const willOpen = !tb.classList.contains('mob-period-open');
+        tb.classList.toggle('mob-period-open', willOpen);
+        mptBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        if (willOpen) {
+          const ms = $('mobileSubnav');
+          if (ms) ms.classList.remove('mob-hubs-open');
+        }
+      });
+    }
+    document.addEventListener('click', e => {
+      const tb = $('topbar');
+      if (tb && tb.classList.contains('mob-period-open') && e.target && e.target.closest) {
+        if (!e.target.closest('#mobilePeriodToggleBtn, .period-basis-row, #dateFacilitatorPopover')) {
+          tb.classList.remove('mob-period-open');
+          if (mptBtn) mptBtn.setAttribute('aria-expanded', 'false');
+        }
+      }
+      const ms = $('mobileSubnav');
+      if (ms && ms.classList.contains('mob-hubs-open') && e.target && e.target.closest) {
+        if (!e.target.closest('#mobileSubnav, #mobileBottomDock')) {
+          ms.classList.remove('mob-hubs-open');
+        }
+      }
+    });
     const brand = $('brandHomeLink');
     if (brand) brand.addEventListener('click', e => { e.preventDefault(); setView('overview'); });
 
@@ -173638,6 +173864,10 @@
         if (askDrawer && askDrawer.classList.contains('open')) { closeDrawer(); return; }
         if ($('telHistoryReconDrawer') && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.closeReconDrawer === 'function') {
           if (window.MFG_TELEMATICS.closeReconDrawer()) return;
+        }
+        if ($('topbar')?.classList.contains('mob-period-open') || $('mobileSubnav')?.classList.contains('mob-hubs-open')) {
+          closeMobileTopSheets();
+          return;
         }
         if (sidebar && sidebar.classList.contains('open')) { closeRail(); return; }
         if (STATE.showAddUserForm) { STATE.showAddUserForm = false; renderApp(); }
