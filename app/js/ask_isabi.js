@@ -109,6 +109,10 @@
     handoverBriefInflight: new Map(),
     handoverDraftLang: '',
     handoverCustomDraftByScope: new Map(),
+    closeDigestPopoverOpen: false,
+    closeDigestPopoverAnchor: null,
+    closeDigestDraftLang: '',
+    closeDigestServerState: null,
     pageGuideOpen: false,
     pageGuideAnchor: null,
     pageGuideScope: '',
@@ -5895,6 +5899,7 @@
         revDeltaPct: 0,
         anomalyCount: 0,
         canViewBooks: false,
+        canViewProfit: false,
         closingTillUsd: null,
         dayNetCash: null,
         dayOpProfit: null,
@@ -5920,6 +5925,9 @@
     const canViewBooks = hoSnap
       ? Boolean(hoSnap.canViewBooks)
       : Boolean(canHub('cashflow', user) && (!_ctx || typeof _ctx.canViewHub !== 'function' || _ctx.canViewHub('ledger', user)));
+    const canViewProfit = hoSnap
+      ? Boolean(hoSnap.canViewProfit != null ? hoSnap.canViewProfit : (hoSnap.canViewBooks && hoSnap.dayOpProfit != null))
+      : Boolean(canViewBooks && canHub('expenses', user));
 
     let targetDate = (hoSnap && hoSnap.targetDate) || st.dailyOpsDate || (_ctx && typeof _ctx.todayISO === 'function' ? _ctx.todayISO() : '2026-11-06');
     let dayRevUsd = hoSnap ? Number(hoSnap.dayRevUsd || 0) : 0;
@@ -5928,7 +5936,7 @@
     let tillUntracked = Boolean(hoSnap && canViewBooks && hoSnap.closingTillUsd == null);
     let closingTillUsd = hoSnap && canViewBooks ? Number(hoSnap.closingTillUsd || 0) : null;
     let dayNetCash = hoSnap && canViewBooks ? Number(hoSnap.dayNetCash || 0) : null;
-    let dayOpProfit = hoSnap && canViewBooks ? Number(hoSnap.dayOpProfit || 0) : null;
+    let dayOpProfit = (hoSnap && canViewProfit && hoSnap.dayOpProfit != null) ? Number(hoSnap.dayOpProfit) : null;
     const priorRevUsd = hoSnap ? Number(hoSnap.priorRevUsd || 0) : 0;
     const revDeltaPct = hoSnap ? Number(hoSnap.revDeltaPct || 0) : 0;
     const isCalendarYesterday = hoSnap ? Boolean(hoSnap.isCalendarYesterday) : true;
@@ -5959,7 +5967,7 @@
           if (canViewBooks) {
             closingTillUsd = Number(dm.liveTillUsd || 0);
             dayNetCash = Number(dm.netCashFlow || 0);
-            dayOpProfit = Number(dm.operatingProfit || 0);
+            if (canViewProfit) dayOpProfit = Number(dm.operatingProfit || 0);
           }
         } else if (_ctx && typeof _ctx.getKPI === 'function') {
           const k = _ctx.getKPI(coKey) || {};
@@ -5968,7 +5976,7 @@
           if (canViewBooks) {
             tillUntracked = k.till_tracked === false;
             closingTillUsd = Number(k.cash_till || 0);
-            dayOpProfit = Number(k.operating_profit || 0);
+            if (canViewProfit) dayOpProfit = Number(k.operating_profit || 0);
           }
         }
       } else {
@@ -5987,7 +5995,7 @@
             tillUntracked = snap.closingTillUsd == null;
             closingTillUsd = Number(snap.closingTillUsd || 0);
             dayNetCash = Number(snap.dayNetCash || 0);
-            dayOpProfit = Number(snap.dayOpProfit || 0);
+            if (canViewProfit && snap.dayOpProfit != null) dayOpProfit = Number(snap.dayOpProfit);
           }
         }
       }
@@ -6030,7 +6038,8 @@
         const netClause = roundedNet > 0
           ? `مع صافي تدفق نقدي داخل بقيمة ${formatSpokenMoney(dayNetCash, 'ar')}`
           : (roundedNet < 0 ? `بعد صافي تدفق نقدي خارج بقيمة ${netAbsMoney}` : 'مع تعادل التدفق النقدي لليوم');
-        sentences.push(`بلغ التحصيل النقدي ${formatSpokenMoney(totalCashIntakeUsd, 'ar')} مقابل ${formatSpokenMoney(creditSalesUsd, 'ar')} آجل؛ ${tillUntracked ? 'رصيد الصندوق غير متتبَّع بعد' : `رصيد الصندوق النقدي ${tillMoney}`}، ${netClause}، والربح التشغيلي لليوم ${formatSpokenMoney(dayOpProfit, 'ar')}.`);
+        const profClauseAr = canViewProfit && dayOpProfit != null ? `، والربح التشغيلي لليوم ${formatSpokenMoney(dayOpProfit, 'ar')}` : '';
+        sentences.push(`بلغ التحصيل النقدي ${formatSpokenMoney(totalCashIntakeUsd, 'ar')} مقابل ${formatSpokenMoney(creditSalesUsd, 'ar')} آجل؛ ${tillUntracked ? 'رصيد الصندوق غير متتبَّع بعد' : `رصيد الصندوق النقدي ${tillMoney}`}، ${netClause}${profClauseAr}.`);
       } else if (hoSnap && (cashSalesUsd > 0 || creditSalesUsd > 0)) {
         sentences.push(`توزعت حركات المناوبة بين ${formatSpokenMoney(cashSalesUsd, 'ar')} نقداً و${formatSpokenMoney(creditSalesUsd, 'ar')} بالآجل.`);
       }
@@ -6060,7 +6069,8 @@
         const netClause = roundedNet > 0
           ? `avec une entrée nette de trésorerie de ${formatSpokenMoney(dayNetCash, 'fr')} sur la journée`
           : (roundedNet < 0 ? `après une sortie nette de trésorerie de ${netAbsMoney} sur la journée` : 'avec un flux net de trésorerie équilibré sur la journée');
-        sentences.push(`Les encaissements atteignent ${formatSpokenMoney(totalCashIntakeUsd, 'fr')} pour ${formatSpokenMoney(creditSalesUsd, 'fr')} à crédit ; ${tillUntracked ? "la caisse n'est pas encore suivie" : `la caisse s'établit à ${tillMoney}`}, ${netClause}, avec un résultat du jour de ${formatSpokenMoney(dayOpProfit, 'fr')}.`);
+        const profClauseFr = canViewProfit && dayOpProfit != null ? `, avec un résultat du jour de ${formatSpokenMoney(dayOpProfit, 'fr')}` : '';
+        sentences.push(`Les encaissements atteignent ${formatSpokenMoney(totalCashIntakeUsd, 'fr')} pour ${formatSpokenMoney(creditSalesUsd, 'fr')} à crédit ; ${tillUntracked ? "la caisse n'est pas encore suivie" : `la caisse s'établit à ${tillMoney}`}, ${netClause}${profClauseFr}.`);
       } else if (hoSnap && (cashSalesUsd > 0 || creditSalesUsd > 0)) {
         sentences.push(`L'activité du poste se répartit entre ${formatSpokenMoney(cashSalesUsd, 'fr')} au comptant et ${formatSpokenMoney(creditSalesUsd, 'fr')} à crédit.`);
       }
@@ -6090,7 +6100,8 @@
         const netClause = roundedNet > 0
           ? `with net cash inflow of ${formatSpokenMoney(dayNetCash, 'en')} for the day`
           : (roundedNet < 0 ? `after net cash outflow of ${netAbsMoney} for the day` : 'with even net cash movement for the day');
-        sentences.push(`Cash intake stands at ${formatSpokenMoney(totalCashIntakeUsd, 'en')} alongside ${formatSpokenMoney(creditSalesUsd, 'en')} credit billing; ${tillUntracked ? 'the cash till is not tracked yet' : `cash till stands at ${tillMoney}`}, ${netClause}, with day operating profit at ${formatSpokenMoney(dayOpProfit, 'en')}.`);
+        const profClauseEn = canViewProfit && dayOpProfit != null ? `, with day operating profit at ${formatSpokenMoney(dayOpProfit, 'en')}` : '';
+        sentences.push(`Cash intake stands at ${formatSpokenMoney(totalCashIntakeUsd, 'en')} alongside ${formatSpokenMoney(creditSalesUsd, 'en')} credit billing; ${tillUntracked ? 'the cash till is not tracked yet' : `cash till stands at ${tillMoney}`}, ${netClause}${profClauseEn}.`);
       } else if (hoSnap && (cashSalesUsd > 0 || creditSalesUsd > 0)) {
         sentences.push(`Shift intake splits into ${formatSpokenMoney(cashSalesUsd, 'en')} cash and ${formatSpokenMoney(creditSalesUsd, 'en')} credit billing.`);
       }
@@ -6122,9 +6133,10 @@
       revDeltaPct,
       anomalyCount,
       canViewBooks,
+      canViewProfit,
       closingTillUsd: canViewBooks && !tillUntracked ? Math.round(closingTillUsd) : null,
       dayNetCash: canViewBooks ? Math.round(dayNetCash) : null,
-      dayOpProfit: canViewBooks ? Math.round(dayOpProfit) : null,
+      dayOpProfit: canViewProfit && dayOpProfit != null ? Math.round(dayOpProfit) : null,
       openSentinelCount: openCount,
       critSentinelCount: critCount,
       topSentinelTitle,
@@ -10537,6 +10549,8 @@
         lang: safeLang,
         rlsClamped: true,
         canViewBooks: false,
+        canViewExp: false,
+        canViewProfit: false,
         canOpenRecordsDrawer: false,
         scopeKey: 'dops_ho|uninitialized',
         industry: 'Manufacturing',
@@ -10608,6 +10622,8 @@
       lang: safeLang,
       rlsClamped: Boolean(snap.rlsClamped),
       canViewBooks: Boolean(snap.canViewBooks),
+      canViewExp: Boolean(snap.canViewExp != null ? snap.canViewExp : snap.canViewBooks),
+      canViewProfit: Boolean(snap.canViewProfit != null ? snap.canViewProfit : snap.canViewBooks),
       canOpenRecordsDrawer: Boolean(snap.canOpenRecordsDrawer),
       scopeKey: snap.scopeKey,
       industry: snap.industry,
@@ -10631,7 +10647,7 @@
       creditSalesUsd: snap.creditSalesUsd || 0,
       arCollectedUsd: snap.canViewBooks ? (snap.arCollectedUsd || 0) : 0,
       totalCashIntakeUsd: snap.totalCashIntakeUsd || 0,
-      dayOpProfit: snap.canViewBooks ? snap.dayOpProfit : null,
+      dayOpProfit: (snap.canViewProfit != null ? snap.canViewProfit : snap.canViewBooks) ? snap.dayOpProfit : null,
       closingTillUsd: snap.canViewBooks ? snap.closingTillUsd : null,
       dayNetCash: snap.canViewBooks ? snap.dayNetCash : null,
       pnlBridgeBalanced: Boolean(snap.pnlBridgeBalanced),
@@ -10962,6 +10978,7 @@
 
   function openDailyHandoverPopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
+    if (_chatState.closeDigestPopoverOpen) closeDayCloseDigestPopover();
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
@@ -11332,6 +11349,657 @@
     if (_chatState.handoverPopoverOpen) {
       closeDailyHandoverPopover();
     }
+  }
+
+  // ---- Close-of-Day Needs Attention Digest + Web Push & WhatsApp Popover ----
+  function _b64UrlToUint8Array(base64Url) {
+    const clean = String(base64Url || '').trim().replace(/-/g, '+').replace(/_/g, '/');
+    const pad = clean.length % 4 ? '='.repeat(4 - (clean.length % 4)) : '';
+    const bin = atob(clean + pad);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function _formatWaPhoneDigits(rawPhone) {
+    let digits = String(rawPhone || '').replace(/[^\d]/g, '');
+    if (digits.startsWith('00')) digits = digits.slice(2);
+    return digits.length >= 7 && digits.length <= 16 ? digits : '';
+  }
+
+  function _digestPrefsStorageKey() {
+    const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) || (_ctx && _ctx.MFG_ENTERPRISE) || null;
+    const isDemo = Boolean((typeof window.__ISABI_IS_DEMO === 'function' && window.__ISABI_IS_DEMO()) || window.__ISABI_DEMO_MODE__ || (ent && ent.STATE && ent.STATE.company === 'democompany'));
+    if (isDemo) return 'isabi_close_digest_prefs_v1:demo';
+    const u = ent && typeof ent.activeUser === 'function' ? ent.activeUser() : null;
+    const rawId = String((u && (u.id || u.sub || u.email)) || 'anon').trim().toLowerCase().replace(/[^a-z0-9@._-]/g, '_');
+    return `isabi_close_digest_prefs_v1:${rawId}`;
+  }
+
+  function _readLocalDigestPrefs() {
+    try {
+      return JSON.parse(localStorage.getItem(_digestPrefsStorageKey()) || '{}') || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function _saveLocalDigestPrefs(patch) {
+    try {
+      const k = _digestPrefsStorageKey();
+      const next = Object.assign(_readLocalDigestPrefs(), patch || {});
+      localStorage.setItem(k, JSON.stringify(next));
+      return next;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function buildDayCloseAttentionDigest(opts = {}) {
+    const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) || (_ctx && _ctx.MFG_ENTERPRISE) || null;
+    const rawLang = opts && opts.lang ? String(opts.lang).toLowerCase() : resolveActiveBriefingLang();
+    const lang = (rawLang === 'ar' || rawLang === 'fr') ? rawLang : 'en';
+    const curState = (_ctx && _ctx.STATE) || (ent && ent.STATE) || {};
+    const snap = (ent && typeof ent.computeDailyHandoverSnapshot === 'function')
+      ? ent.computeDailyHandoverSnapshot({
+        company: (opts && (opts.company || opts.scopeKey)) || curState.company || '',
+        targetDate: (opts && (opts.targetDate || opts.date)) || curState.dailyOpsDate || '',
+        includeAfterHours: opts.includeAfterHours != null ? opts.includeAfterHours : curState.dailyOpsIncludeAfterHours
+      })
+      : null;
+
+    if (!snap || snap.rlsClamped) {
+      return {
+        ok: false,
+        lang,
+        targetDate: (opts && (opts.targetDate || opts.date)) || '',
+        companyKey: '',
+        companyEn: 'Restricted',
+        companyAr: 'مقيد',
+        companyFr: 'Restreint',
+        canViewBooks: false,
+        dayRevUsd: 0,
+        dayTxCount: 0,
+        attentionItems: [],
+        texts: {
+          en: 'Close-of-Day summary is unavailable for this seat.',
+          ar: 'ملخص إغلاق اليوم غير متاح لهذا المقعد.',
+          fr: 'Le résumé de clôture est indisponible pour ce poste.'
+        },
+        text: 'Close-of-Day summary is unavailable for this seat.'
+      };
+    }
+
+    const fmtU = v => `$${Math.round(Math.abs(Number(v) || 0)).toLocaleString('en-US')}`;
+    const fmtS = v => {
+      const n = Math.round(Number(v) || 0);
+      return n < 0 ? `-${fmtU(n)}` : fmtU(n);
+    };
+    const attentionItems = [];
+    const allowProfit = snap.canViewProfit != null ? Boolean(snap.canViewProfit) : Boolean(snap.canViewBooks);
+    if (allowProfit && Number(snap.dayRevUsd || 0) > 0 && snap.dayOpProfit != null && Number(snap.dayOpProfit) < 0) {
+      attentionItems.push({
+        kind: 'day_loss',
+        en: `Day Loss -${fmtU(snap.dayOpProfit)}`,
+        ar: `خسارة اليوم -${fmtU(snap.dayOpProfit)}`,
+        fr: `Perte du jour -${fmtU(snap.dayOpProfit)}`
+      });
+    }
+    if (snap.canViewBooks && snap.closingTillUsd != null && Math.round(Number(snap.closingTillUsd)) < 0) {
+      attentionItems.push({
+        kind: 'till_negative',
+        en: `Till Negative ${fmtS(snap.closingTillUsd)}`,
+        ar: `عجز الصندوق ${fmtS(snap.closingTillUsd)}`,
+        fr: `Caisse négative ${fmtS(snap.closingTillUsd)}`
+      });
+    }
+    if (snap.vs7dPct != null && Number(snap.vs7dPct) <= -25) {
+      const pct = Math.round(Number(snap.vs7dPct));
+      attentionItems.push({
+        kind: 'sales_low',
+        en: `Sales Below Usual (${pct}%)`,
+        ar: `المبيعات دون المعتاد (${pct}%)`,
+        fr: `Ventes sous la moyenne (${pct}%)`
+      });
+    }
+    if (Number(snap.pendingBillsCount || 0) > 0) {
+      const c = Number(snap.pendingBillsCount);
+      attentionItems.push({
+        kind: 'pending_price',
+        en: `${c} Pending Price`,
+        ar: `${c} فواتير بانتظار السعر`,
+        fr: `${c} factures en attente`
+      });
+    }
+    if (Number(snap.critDefectsCount || 0) > 0) {
+      const c = Number(snap.critDefectsCount);
+      attentionItems.push({
+        kind: 'critical_defects',
+        en: `${c} Critical Defects`,
+        ar: `${c} أعطال حرجة`,
+        fr: `${c} pannes critiques`
+      });
+    }
+    if (Number(snap.tankVarianceCount || 0) > 0) {
+      const c = Number(snap.tankVarianceCount);
+      attentionItems.push({
+        kind: 'tank_variance',
+        en: `${c} Tank Variance`,
+        ar: `${c} فروقات عداد`,
+        fr: `${c} écarts compteur`
+      });
+    }
+    if (Number(snap.openSentinelCount || 0) > 0) {
+      const c = Number(snap.openSentinelCount);
+      attentionItems.push({
+        kind: 'open_alerts',
+        en: `${c} Open Alerts`,
+        ar: `${c} تنبيهات مفتوحة`,
+        fr: `${c} alertes ouvertes`
+      });
+    } else if (Number(snap.anomalyCount || 0) > 0 && !attentionItems.length) {
+      attentionItems.push({
+        kind: 'priority',
+        en: snap.topAnomalyEn || 'Review priority',
+        ar: snap.topAnomalyAr || 'مراجعة الأولويات',
+        fr: snap.topAnomalyFr || 'Revoir la priorité'
+      });
+    }
+
+    const tillPartEn = (snap.canViewBooks && snap.closingTillUsd != null) ? ` · Till ${fmtS(snap.closingTillUsd)}` : '';
+    const tillPartAr = (snap.canViewBooks && snap.closingTillUsd != null) ? ` · الصندوق ${fmtS(snap.closingTillUsd)}` : '';
+    const tillPartFr = (snap.canViewBooks && snap.closingTillUsd != null) ? ` · Caisse ${fmtS(snap.closingTillUsd)}` : '';
+
+    const rawTexts = {
+      en: `${snap.companyEn} (${snap.targetDate}): Sales ${fmtU(snap.dayRevUsd)} (${snap.dayTxCount}). Needs Attention: ${attentionItems.length ? attentionItems.map(x => x.en).join(' · ') : 'All Clear'}${tillPartEn}.`,
+      ar: `${snap.companyAr} (${snap.targetDate}): المبيعات ${fmtU(snap.dayRevUsd)} (${snap.dayTxCount}). بحاجة للمتابعة: ${attentionItems.length ? attentionItems.map(x => x.ar).join(' · ') : 'الوضع سليم'}${tillPartAr}.`,
+      fr: `${snap.companyFr} (${snap.targetDate}) : Ventes ${fmtU(snap.dayRevUsd)} (${snap.dayTxCount}). À surveiller : ${attentionItems.length ? attentionItems.map(x => x.fr).join(' · ') : 'Tout est en ordre'}${tillPartFr}.`
+    };
+    const texts = {
+      en: sanitizeDailyHandoverText(rawTexts.en),
+      ar: sanitizeDailyHandoverText(rawTexts.ar),
+      fr: sanitizeDailyHandoverText(rawTexts.fr)
+    };
+    return {
+      ok: true,
+      lang,
+      targetDate: snap.targetDate,
+      companyKey: snap.companyKey,
+      companyEn: snap.companyEn,
+      companyAr: snap.companyAr,
+      companyFr: snap.companyFr,
+      canViewBooks: Boolean(snap.canViewBooks),
+      dayRevUsd: Number(snap.dayRevUsd || 0),
+      dayTxCount: Number(snap.dayTxCount || 0),
+      attentionItems,
+      texts,
+      text: texts[lang] || texts.en
+    };
+  }
+
+  let _dopsDigestOutsideBound = false;
+  function ensureDayCloseDigestGlobalDismiss() {
+    if (_dopsDigestOutsideBound || typeof document === 'undefined') return;
+    _dopsDigestOutsideBound = true;
+    document.addEventListener('click', e => {
+      const btn = e.target && e.target.closest ? e.target.closest('[data-dops-close-digest]') : null;
+      if (btn) {
+        e.preventDefault();
+        toggleDayCloseDigestPopover(btn);
+      }
+    });
+    document.addEventListener('mousedown', e => {
+      if (!_chatState.closeDigestPopoverOpen) return;
+      const pop = document.getElementById('dopsCloseDigestPopover');
+      if (!pop) return;
+      if (pop.contains(e.target)) return;
+      if (e.target && e.target.closest && (
+        e.target.closest('[data-dops-close-digest]') ||
+        e.target.closest('#langSwitch') ||
+        e.target.closest('#mobileLangBtn')
+      )) return;
+      closeDayCloseDigestPopover();
+    });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', () => {
+        if (_chatState.closeDigestPopoverOpen) positionDayCloseDigestPopover();
+      });
+    }
+  }
+
+  function positionDayCloseDigestPopover() {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const pop = document.getElementById('dopsCloseDigestPopover');
+    if (!pop) return;
+    const anchor = (_chatState.closeDigestPopoverAnchor && _chatState.closeDigestPopoverAnchor.isConnected ? _chatState.closeDigestPopoverAnchor : null)
+      || document.getElementById('dopsCloseDigestBtn')
+      || document.getElementById('dopsHandoverBriefBtn');
+    const vw = window.innerWidth || 1366;
+    const vh = window.innerHeight || 768;
+    if (vw <= 768 || !anchor || !anchor.getBoundingClientRect) {
+      pop.style.left = '10px';
+      pop.style.right = '10px';
+      pop.style.width = 'auto';
+      pop.style.bottom = 'calc(72px + env(safe-area-inset-bottom, 0px))';
+      pop.style.top = 'auto';
+      pop.style.maxHeight = 'calc(100dvh - 104px)';
+      pop.style.overflowY = 'auto';
+      return;
+    }
+    pop.style.right = 'auto';
+    pop.style.bottom = 'auto';
+    pop.style.maxHeight = 'calc(100dvh - 28px)';
+    pop.style.overflowY = 'auto';
+    const rect = anchor.getBoundingClientRect();
+    const popW = Math.min(470, vw - 24);
+    pop.style.width = `${popW}px`;
+    const popH = Math.min(pop.offsetHeight || 380, vh - 28);
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+    let left = isRtl ? rect.left : (rect.right - popW > 12 ? rect.right - popW : rect.left);
+    left = Math.max(12, Math.min(vw - popW - 12, left));
+    let top = rect.bottom + 8;
+    if (top + popH > vh - 12 && rect.top - popH - 8 >= 20) top = rect.top - popH - 8;
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(Math.max(12, Math.min(vh - popH - 12, top)))}px`;
+  }
+
+  function closeDayCloseDigestPopover() {
+    _chatState.closeDigestPopoverOpen = false;
+    _chatState.closeDigestPopoverAnchor = null;
+    _chatState.closeDigestDraftLang = '';
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('dopsCloseDigestPopover');
+    if (pop && pop.parentNode) pop.parentNode.removeChild(pop);
+    document.querySelectorAll('[data-dops-close-digest]').forEach(b => {
+      b.classList.remove('is-open', 'active');
+      b.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function openDayCloseDigestPopover(anchorEl) {
+    if (typeof document === 'undefined') return null;
+    if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
+    if (_chatState.whatIfOpen) closeWhatIfStudio();
+    if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
+    if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
+    if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
+    if (_chatState.inventoryOptimizerOpen) closeInventoryOptimizerStudio();
+    ensureDayCloseDigestGlobalDismiss();
+
+    const activeLang = ['en', 'ar', 'fr'].includes(_chatState.closeDigestDraftLang)
+      ? _chatState.closeDigestDraftLang
+      : resolveActiveBriefingLang();
+    const formatScheduledStatus = (hr, lastSent) => {
+      const h = Number(hr || 18);
+      const l = resolveActiveBriefingLang();
+      if (l === 'ar') return `مجدول يومياً الساعة ${h}:00 بتوقيت بيروت${lastSent ? ` (آخر إرسال ${lastSent})` : ''}.`;
+      if (l === 'fr') return `Planifié chaque jour à ${h}:00 heure de Beyrouth${lastSent ? ` (dernier envoi ${lastSent})` : ''}.`;
+      return `Scheduled daily at ${h}:00 Beirut time${lastSent ? ` (last sent ${lastSent})` : ''}.`;
+    };
+    const formatTestSentStatus = count => {
+      const n = Number(count || 0);
+      const l = resolveActiveBriefingLang();
+      if (l === 'ar') return `تم تسليم التنبيه التجريبي إلى ${n} جهاز.`;
+      if (l === 'fr') return `Notification test envoyée à ${n} appareil(s).`;
+      return `Test push delivered to ${n} device(s).`;
+    };
+    const applyPopI18n = target => {
+      if (!target || resolveActiveBriefingLang() === 'en') return;
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+        try { window.MFG_I18N.translateDom(target); } catch (_) {}
+      }
+    };
+    const digest = buildDayCloseAttentionDigest({ lang: activeLang });
+    const localPrefs = _readLocalDigestPrefs();
+    const srv = _chatState.closeDigestServerState || {};
+    const curHour = Number(srv.closeHourBeirut || localPrefs.closeHourBeirut || 18);
+    const curPhone = String(srv.whatsappPhone != null ? srv.whatsappPhone : (localPrefs.whatsappPhone || ''));
+    const curSubscribed = Boolean(srv.subscribed);
+
+    let pop = document.getElementById('dopsCloseDigestPopover');
+    if (!pop) {
+      pop = document.createElement('aside');
+      pop.id = 'dopsCloseDigestPopover';
+      pop.className = 'ceo-period-popover insp-brief-popover dops-handover-popover no-print';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', 'Close-of-Day Digest');
+      document.body.appendChild(pop);
+    }
+    _chatState.closeDigestPopoverOpen = true;
+    _chatState.closeDigestPopoverAnchor = (anchorEl && anchorEl.isConnected ? anchorEl : null) || document.getElementById('dopsCloseDigestBtn');
+    document.querySelectorAll('[data-dops-close-digest]').forEach(b => {
+      b.classList.add('is-open', 'active');
+      b.setAttribute('aria-expanded', 'true');
+    });
+
+    const icons = typeof window !== 'undefined' ? window.MFG_ICONS : null;
+    const bellIco = icons ? icons.svg('bell') : '';
+    const copyIco = icons ? icons.svg('copy') : '';
+    const shareIco = icons ? icons.svg('share') : '';
+    const digits = _formatWaPhoneDigits(curPhone);
+    const activeText = digest.texts[activeLang] || digest.texts.en || '';
+    const waHref = digits
+      ? `https://wa.me/${digits}?text=${encodeURIComponent(activeText)}`
+      : `https://wa.me/?text=${encodeURIComponent(activeText)}`;
+    const isDemo = Boolean((typeof window.__ISABI_IS_DEMO === 'function' && window.__ISABI_IS_DEMO()) || window.__ISABI_DEMO_MODE__ || (window.MFG_ENTERPRISE && window.MFG_ENTERPRISE.STATE && window.MFG_ENTERPRISE.STATE.company === 'democompany'));
+    const canPushApi = Boolean((window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API || (typeof location !== 'undefined' && /^https?:/.test(location.protocol || ''))) && !isDemo);
+
+    pop.innerHTML = `
+      <div class="ceo-pv-head">
+        <span class="ceo-pv-title">${bellIco}<span>Close-of-Day Digest</span></span>
+        <span class="dops-ho-head-badge" data-no-i18n="1">${esc(digest.targetDate || '')}</span>
+        <button type="button" class="ceo-pv-close" data-dops-digest-close="1" aria-label="Close Close-of-Day Digest">&times;</button>
+      </div>
+      <div class="insp-pv-draft-wrap dops-pv-draft-wrap" style="margin-top:6px">
+        <div class="insp-pv-draft-hdr">
+          <span class="insp-pv-draft-lbl">Needs Attention Summary</span>
+          <div class="insp-pv-draft-langs" data-no-i18n="1">
+            <button type="button" class="insp-pv-dlang-btn${activeLang === 'en' ? ' active' : ''}" data-dops-digest-lang="en">EN</button>
+            <button type="button" class="insp-pv-dlang-btn${activeLang === 'ar' ? ' active' : ''}" data-dops-digest-lang="ar">عربي</button>
+            <button type="button" class="insp-pv-dlang-btn${activeLang === 'fr' ? ' active' : ''}" data-dops-digest-lang="fr">FR</button>
+          </div>
+        </div>
+        <textarea class="insp-pv-draft-ta dops-pv-draft-ta" id="dopsDigestPreviewTa" data-no-i18n="1" rows="3" readonly dir="${activeLang === 'ar' ? 'rtl' : 'ltr'}">${esc(activeText)}</textarea>
+      </div>
+      <div class="dops-digest-row">
+        <input type="tel" class="dops-digest-phone-inp" id="dopsDigestPhoneInp" value="${esc(curPhone)}" placeholder="WhatsApp recipient (optional)" aria-label="WhatsApp phone number">
+        <select class="dops-digest-hour-sel" id="dopsDigestHourSel" aria-label="Close hour (Beirut)">
+          ${[16, 17, 18, 19, 20, 21].map(h => `<option value="${h}"${h === curHour ? ' selected' : ''}>${h}:00 Beirut</option>`).join('')}
+        </select>
+      </div>
+      <div class="ceo-pv-foot insp-pv-foot dops-pv-foot" style="margin-top:8px">
+        <button type="button" class="ceo-pv-btn is-secondary" data-dops-digest-copy="1">${copyIco}<span>Copy Line</span></button>
+        <a class="ceo-pv-btn is-secondary insp-pv-wa-link" id="dopsDigestWaLink" href="${esc(waHref)}" target="_blank" rel="noopener noreferrer">${shareIco}<span>WhatsApp</span></a>
+        <button type="button" class="ceo-pv-btn${curSubscribed ? ' is-speaking' : ''}" id="dopsDigestPushBtn"${canPushApi ? '' : ' disabled'}>${bellIco}<span>${curSubscribed ? 'Push Enabled' : 'Enable Web Push'}</span></button>
+        <button type="button" class="ceo-pv-btn is-secondary" id="dopsDigestTestBtn"${canPushApi && curSubscribed ? '' : ' hidden'}><span>Send Test Push</span></button>
+      </div>
+      <div class="dops-digest-status" id="dopsDigestStatus"${!isDemo && curSubscribed ? ' data-no-i18n="1"' : ''}>${isDemo ? 'Sign in to a live seat to enable scheduled browser push alerts.' : (curSubscribed ? esc(formatScheduledStatus(curHour, srv.lastSentDate || '')) : 'Use 1-tap WhatsApp anytime, or enable Web Push for automatic close-of-day alerts.')}</div>
+    `;
+
+    const curUiLang = resolveActiveBriefingLang();
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && curUiLang !== 'en') {
+      try { window.MFG_I18N.translateDom(pop); } catch (_) {}
+    }
+
+    const closeBtn = pop.querySelector('[data-dops-digest-close]');
+    if (closeBtn) closeBtn.addEventListener('click', e => { e.preventDefault(); closeDayCloseDigestPopover(); });
+
+    const taEl = pop.querySelector('#dopsDigestPreviewTa');
+    const waEl = pop.querySelector('#dopsDigestWaLink');
+    const phoneEl = pop.querySelector('#dopsDigestPhoneInp');
+    const hourEl = pop.querySelector('#dopsDigestHourSel');
+    const pushBtn = pop.querySelector('#dopsDigestPushBtn');
+    const testBtn = pop.querySelector('#dopsDigestTestBtn');
+    const statusEl = pop.querySelector('#dopsDigestStatus');
+
+    const updateWaHref = () => {
+      const dl = _chatState.closeDigestDraftLang || activeLang;
+      const dObj = buildDayCloseAttentionDigest({ lang: dl });
+      const txt = dObj.texts[dl] || dObj.text || '';
+      if (taEl) {
+        taEl.dir = dl === 'ar' ? 'rtl' : 'ltr';
+        taEl.value = txt;
+      }
+      const pDigits = _formatWaPhoneDigits(phoneEl ? phoneEl.value : '');
+      if (waEl) {
+        waEl.setAttribute('href', pDigits
+          ? `https://wa.me/${pDigits}?text=${encodeURIComponent(txt)}`
+          : `https://wa.me/?text=${encodeURIComponent(txt)}`);
+      }
+    };
+
+    const syncPrefsToServer = async () => {
+      const phone = phoneEl ? phoneEl.value.trim() : '';
+      const closeHour = hourEl ? Number(hourEl.value || 18) : 18;
+      const dl = _chatState.closeDigestDraftLang || activeLang;
+      _saveLocalDigestPrefs({ whatsappPhone: phone, closeHourBeirut: closeHour, lang: dl });
+      if (!canPushApi) return;
+      try {
+        await (window.ISABI_EDGE_FETCH || fetch)('./api/day-close-push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            op: 'prefs',
+            closeHourBeirut: closeHour,
+            whatsappPhone: phone,
+            lang: dl,
+            scopeKey: digest.companyKey
+          })
+        });
+      } catch (_) {}
+    };
+
+    pop.querySelectorAll('[data-dops-digest-lang]').forEach(lBtn => {
+      lBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const nl = lBtn.getAttribute('data-dops-digest-lang') || 'en';
+        _chatState.closeDigestDraftLang = nl;
+        pop.querySelectorAll('[data-dops-digest-lang]').forEach(x => x.classList.toggle('active', x === lBtn));
+        _saveLocalDigestPrefs({ lang: nl });
+        updateWaHref();
+        syncPrefsToServer();
+      });
+    });
+
+    if (phoneEl) {
+      phoneEl.addEventListener('input', updateWaHref);
+      phoneEl.addEventListener('change', syncPrefsToServer);
+    }
+    if (hourEl) {
+      hourEl.addEventListener('change', syncPrefsToServer);
+    }
+
+    const copyBtn = pop.querySelector('[data-dops-digest-copy]');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async e => {
+        e.preventDefault();
+        const txt = taEl ? taEl.value : activeText;
+        if (typeof window !== 'undefined') window.__LAST_COPIED_DOPS_DIGEST = txt;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(txt);
+        } catch (_) {}
+        const sp = copyBtn.querySelector('span');
+        if (sp) {
+          sp.textContent = 'Copied!';
+          applyPopI18n(sp);
+        }
+        setTimeout(() => {
+          if (sp && copyBtn.isConnected) {
+            sp.textContent = 'Copy Line';
+            applyPopI18n(sp);
+          }
+        }, 1400);
+      });
+    }
+
+    const setStatus = (msg, tone = '', rawFormatted = false) => {
+      if (!statusEl) return;
+      if (rawFormatted) statusEl.setAttribute('data-no-i18n', '1');
+      else statusEl.removeAttribute('data-no-i18n');
+      statusEl.textContent = msg;
+      statusEl.className = `dops-digest-status${tone ? ' is-' + tone : ''}`;
+      if (!rawFormatted) applyPopI18n(statusEl);
+    };
+
+    const refreshServerState = async () => {
+      if (!canPushApi) return;
+      try {
+        const res = await (window.ISABI_EDGE_FETCH || fetch)('./api/day-close-push');
+        if (!res.ok) return;
+        const j = await res.json();
+        if (!j || !j.ok || !pop.isConnected) return;
+        _chatState.closeDigestServerState = j;
+        if (phoneEl && Object.prototype.hasOwnProperty.call(j, 'whatsappPhone')) {
+          const srvPhone = String(j.whatsappPhone || '');
+          if (phoneEl.value !== srvPhone) {
+            phoneEl.value = srvPhone;
+            updateWaHref();
+          }
+          _saveLocalDigestPrefs({ whatsappPhone: srvPhone });
+        }
+        if (j.closeHourBeirut && hourEl) hourEl.value = String(j.closeHourBeirut);
+        if (pushBtn) {
+          pushBtn.classList.toggle('is-speaking', Boolean(j.subscribed));
+          const sp = pushBtn.querySelector('span');
+          if (sp) {
+            sp.textContent = j.subscribed ? 'Push Enabled' : 'Enable Web Push';
+            applyPopI18n(sp);
+          }
+        }
+        if (testBtn) testBtn.hidden = !j.subscribed;
+        if (j.subscribed) {
+          setStatus(formatScheduledStatus(j.closeHourBeirut || 18, j.lastSentDate || ''), 'ok', true);
+          try {
+            if (navigator.serviceWorker && typeof navigator.serviceWorker.getRegistration === 'function') {
+              navigator.serviceWorker.getRegistration('./').then(r => r && r.pushManager && r.pushManager.getSubscription()).then(s => {
+                if (s && s.endpoint) _chatState.activePushEndpoint = String(s.endpoint);
+              }).catch(() => {});
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+    };
+    refreshServerState();
+
+    if (pushBtn && canPushApi) {
+      pushBtn.addEventListener('click', async e => {
+        e.preventDefault();
+        pushBtn.disabled = true;
+        try {
+          const isSub = Boolean(_chatState.closeDigestServerState && _chatState.closeDigestServerState.subscribed);
+          if (isSub) {
+            let ep = String(_chatState.activePushEndpoint || '');
+            if (navigator.serviceWorker) {
+              const reg = typeof navigator.serviceWorker.getRegistration === 'function'
+                ? await Promise.race([navigator.serviceWorker.getRegistration('./').catch(() => null), new Promise(r => setTimeout(() => r(null), 400))])
+                : null;
+              const effReg = reg || (navigator.serviceWorker.ready ? await Promise.race([Promise.resolve(navigator.serviceWorker.ready).catch(() => null), new Promise(r => setTimeout(() => r(null), 400))]) : null);
+              const existingSub = effReg && effReg.pushManager ? await effReg.pushManager.getSubscription().catch(() => null) : null;
+              if (existingSub) {
+                if (existingSub.endpoint) ep = String(existingSub.endpoint);
+                try { await existingSub.unsubscribe(); } catch (_) {}
+              }
+            }
+            _chatState.activePushEndpoint = '';
+            const r = await (window.ISABI_EDGE_FETCH || fetch)('./api/day-close-push', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ op: 'unsubscribe', endpoint: ep })
+            });
+            const jr = await r.json().catch(() => ({}));
+            _chatState.closeDigestServerState = Object.assign(_chatState.closeDigestServerState || {}, { subscribed: Boolean(jr.subscribed) });
+            await refreshServerState();
+            setStatus('Web Push disabled on this browser.');
+          } else {
+            if (typeof Notification === 'undefined' || !navigator.serviceWorker || !('PushManager' in window)) {
+              setStatus('Web Push is not supported in this browser.', 'err');
+              return;
+            }
+            const perm = await Notification.requestPermission();
+            if (perm !== 'granted') {
+              setStatus('Notification permission was not granted.', 'err');
+              return;
+            }
+            const infoRes = await (window.ISABI_EDGE_FETCH || fetch)('./api/day-close-push');
+            const infoJson = await infoRes.json();
+            if (!infoJson || !infoJson.vapidPublicKey) {
+              setStatus('Push key unavailable on server.', 'err');
+              return;
+            }
+            const reg = await navigator.serviceWorker.ready;
+            let sub = await reg.pushManager.getSubscription();
+            if (!sub) {
+              sub = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: _b64UrlToUint8Array(infoJson.vapidPublicKey)
+              });
+            }
+            const subJson = sub.toJSON ? sub.toJSON() : sub;
+            const phone = phoneEl ? phoneEl.value.trim() : '';
+            const closeHour = hourEl ? Number(hourEl.value || 18) : 18;
+            const dl = _chatState.closeDigestDraftLang || activeLang;
+            const saveRes = await (window.ISABI_EDGE_FETCH || fetch)('./api/day-close-push', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                op: 'subscribe',
+                subscription: subJson,
+                closeHourBeirut: closeHour,
+                whatsappPhone: phone,
+                lang: dl,
+                scopeKey: digest.companyKey
+              })
+            });
+            const saveJson = await saveRes.json().catch(() => ({}));
+            if (!saveRes.ok || !saveJson.ok) {
+              setStatus(saveJson.error || 'Could not save push subscription.', 'err', Boolean(saveJson.error));
+              return;
+            }
+            _chatState.activePushEndpoint = String((subJson && subJson.endpoint) || (sub && sub.endpoint) || '');
+            _chatState.closeDigestServerState = Object.assign(_chatState.closeDigestServerState || {}, { subscribed: true, closeHourBeirut: closeHour, whatsappPhone: phone, lang: dl });
+            await refreshServerState();
+          }
+        } catch (err) {
+          setStatus((err && err.message) || 'Push setup failed.', 'err', Boolean(err && err.message));
+        } finally {
+          pushBtn.disabled = false;
+        }
+      });
+    }
+
+    if (testBtn && canPushApi) {
+      testBtn.addEventListener('click', async e => {
+        e.preventDefault();
+        testBtn.disabled = true;
+        try {
+          const dl = _chatState.closeDigestDraftLang || activeLang;
+          const r = await (window.ISABI_EDGE_FETCH || fetch)('./api/day-close-push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              op: 'test',
+              company: digest.companyKey,
+              targetDate: digest.targetDate,
+              lang: dl
+            })
+          });
+          const j = await r.json().catch(() => ({}));
+          if (r.ok && j.ok) setStatus(formatTestSentStatus(j.delivered), 'ok', true);
+          else setStatus(j.error || 'Test push delivery failed.', 'err', Boolean(j.error));
+        } catch (err) {
+          setStatus((err && err.message) || 'Test push failed.', 'err', Boolean(err && err.message));
+        } finally {
+          testBtn.disabled = false;
+        }
+      });
+    }
+
+    positionDayCloseDigestPopover();
+    return pop;
+  }
+
+  function toggleDayCloseDigestPopover(anchorEl) {
+    if (_chatState.closeDigestPopoverOpen) {
+      closeDayCloseDigestPopover();
+      return { open: false };
+    }
+    _chatState.closeDigestDraftLang = resolveActiveBriefingLang();
+    openDayCloseDigestPopover(anchorEl);
+    return { open: true };
+  }
+
+  function rebindDayCloseDigestButtons(container) {
+    ensureDayCloseDigestGlobalDismiss();
+    if (!_chatState.closeDigestPopoverOpen) return;
+    const anchor = (container && container.querySelector && container.querySelector('#dopsCloseDigestBtn'))
+      || (typeof document !== 'undefined' ? document.getElementById('dopsCloseDigestBtn') : null);
+    if (!anchor) {
+      closeDayCloseDigestPopover();
+      return;
+    }
+    _chatState.closeDigestPopoverAnchor = anchor;
+    openDayCloseDigestPopover(anchor);
   }
 
   // ============================================================================
@@ -19869,6 +20537,52 @@
   }
 
 
+  async function unsubscribePushOnSignOut(opts = {}) {
+    const tok = (opts && opts.token) ? String(opts.token) : '';
+    let ep = String(_chatState.activePushEndpoint || '');
+    try {
+      const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : null;
+      let reg = null;
+      if (sw) {
+        if (typeof sw.getRegistration === 'function') {
+          reg = await Promise.race([
+            sw.getRegistration('./').catch(() => null),
+            new Promise(r => setTimeout(() => r(null), 300))
+          ]);
+        }
+        if (!reg && sw.ready) {
+          reg = await Promise.race([
+            Promise.resolve(sw.ready).catch(() => null),
+            new Promise(r => setTimeout(() => r(null), 200))
+          ]);
+        }
+      }
+      const sub = reg && reg.pushManager && typeof reg.pushManager.getSubscription === 'function'
+        ? await Promise.resolve(reg.pushManager.getSubscription()).catch(() => null)
+        : null;
+      if (sub) {
+        if (!ep && sub.endpoint) ep = String(sub.endpoint);
+        if (typeof sub.unsubscribe === 'function') {
+          await Promise.resolve(sub.unsubscribe()).catch(() => {});
+        }
+      }
+    } catch (_) {}
+    _chatState.activePushEndpoint = '';
+    const canApi = Boolean(opts && opts.serverApi);
+    if (ep && canApi && typeof fetch === 'function') {
+      try {
+        const hdrs = { 'Content-Type': 'application/json' };
+        if (tok) hdrs['X-ISABI-Session'] = tok;
+        await fetch('./api/day-close-push', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: hdrs,
+          body: JSON.stringify({ op: 'unsubscribe', endpoint: ep })
+        }).catch(() => {});
+      } catch (_) {}
+    }
+  }
+
   function clearSessionState() {
     _chatState.sessionEpoch = (_chatState.sessionEpoch || 0) + 1;
     stopActivePlayback();
@@ -19880,6 +20594,18 @@
     closeTopbarMoreMenus();
     closePageGuidePopover();
     closeDailyHandoverPopover();
+    closeDayCloseDigestPopover();
+    _chatState.closeDigestServerState = null;
+    _chatState.closeDigestDraftLang = '';
+    _chatState.activePushEndpoint = '';
+    try {
+      const rmKeys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('isabi_close_digest_prefs_v1')) rmKeys.push(k);
+      }
+      rmKeys.forEach(k => localStorage.removeItem(k));
+    } catch (_) {}
     closeSentinelTriagePopover();
     closeInspectorBriefPopover();
     closeDashboardVariancePopover();
@@ -21349,7 +22075,7 @@
       if (typeof document !== 'undefined') {
         const curLang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
         if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && curLang !== 'en') {
-          ['topbarPageGuideBtn', 'topbarPageListenBtn', 'mobilePageGuideBtn', 'cfWhatIfBtn', 'ceoWhatIfBtn', 'pbiWhatIfBtn', 'ceoCollectionForecastBtn', 'arCollectionForecastBtn', 'indCollectionForecastBtn', 'cfCollectionForecastBtn', 'pbiCollectionForecastBtn', 'ceoTreasuryForecastBtn', 'cfTreasuryForecastBtn', 'indTreasuryForecastBtn', 'pbiTreasuryForecastBtn', 'ceoInventoryOptimizerBtn', 'whInventoryOptimizerBtn', 'cfInventoryOptimizerBtn', 'indInventoryOptimizerBtn', 'pbiInventoryOptimizerBtn', 'dopsHandoverBriefBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
+          ['topbarPageGuideBtn', 'topbarPageListenBtn', 'mobilePageGuideBtn', 'cfWhatIfBtn', 'ceoWhatIfBtn', 'pbiWhatIfBtn', 'ceoCollectionForecastBtn', 'arCollectionForecastBtn', 'indCollectionForecastBtn', 'cfCollectionForecastBtn', 'pbiCollectionForecastBtn', 'ceoTreasuryForecastBtn', 'cfTreasuryForecastBtn', 'indTreasuryForecastBtn', 'pbiTreasuryForecastBtn', 'ceoInventoryOptimizerBtn', 'whInventoryOptimizerBtn', 'cfInventoryOptimizerBtn', 'indInventoryOptimizerBtn', 'pbiInventoryOptimizerBtn', 'dopsHandoverBriefBtn', 'dopsCloseDigestBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
             const b = document.getElementById(id);
             if (b) {
               try { window.MFG_I18N.translateDom(b); } catch (_) {}
@@ -21403,6 +22129,10 @@
         _chatState.handoverDraftLang = curLang;
         if (_chatState.handoverPopoverOpen) {
           openDailyHandoverPopover(_chatState.handoverPopoverAnchor, buildDailyHandoverSummary(curLang));
+        }
+        _chatState.closeDigestDraftLang = curLang;
+        if (_chatState.closeDigestPopoverOpen) {
+          openDayCloseDigestPopover(_chatState.closeDigestPopoverAnchor);
         }
         if (_ctx && _ctx.STATE && _ctx.STATE.rdl && _ctx.STATE.rdl.pinnedCoverNote && window.MFG_RDL && typeof window.MFG_RDL.syncPinnedStatementCoverNote === 'function') {
           try { window.MFG_RDL.syncPinnedStatementCoverNote(document, _ctx.STATE); } catch (_) {}
@@ -21617,6 +22347,13 @@
     speakInventoryOptimizer,
     rebindInventoryOptimizerButtons,
     stopInventoryOptimizerIfActive,
+    buildDayCloseAttentionDigest,
+    openDayCloseDigestPopover,
+    closeDayCloseDigest: closeDayCloseDigestPopover,
+    closeDayCloseDigestPopover,
+    toggleDayCloseDigest: toggleDayCloseDigestPopover,
+    toggleDayCloseDigestPopover,
+    rebindDayCloseDigestButtons,
     clearSessionState,
     stopSpeaking: stopActivePlayback,
     stopBriefingIfActive,
@@ -21645,6 +22382,7 @@
       sentinelPopoverRuleId: _chatState.sentinelPopoverRuleId || '',
       handoverPopoverOpen: Boolean(_chatState.handoverPopoverOpen),
       handoverPopoverScope: _chatState.handoverPopoverScope || '',
+      closeDigestPopoverOpen: Boolean(_chatState.closeDigestPopoverOpen),
       handoverCustomDraftSize: _chatState.handoverCustomDraftByScope ? _chatState.handoverCustomDraftByScope.size : 0,
       handoverBriefCacheSize: _chatState.handoverBriefCache ? _chatState.handoverBriefCache.size : 0,
       pageGuideOpen: Boolean(_chatState.pageGuideOpen),
@@ -21680,6 +22418,7 @@
       cacheSize: _chatState.ttsAudioCache ? _chatState.ttsAudioCache.size : 0
     }),
     syncScope: syncHeaderAndChips,
+    unsubscribePushOnSignOut,
     answer: answerHtmlSnapshot,
     answerQuestion,
     getState: () => ({

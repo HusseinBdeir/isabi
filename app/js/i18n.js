@@ -13107,7 +13107,123 @@
       "Uphill Terrain Impact": "أثر تضاريس الصعود",
       "Period Fuel Delta": "فرق وقود الفترة",
       "Delta (L)": "الفرق (ل)",
-      "Delta ($)": "الفرق ($)"
+      "Delta ($)": "الفرق ($)",
+      "7-Day Daily Average": "المتوسط اليومي لـ 7 أيام",
+      "Day Cash Inflow": "التدفق النقدي الداخل لليوم",
+      "Day Cash Outflow": "التدفق النقدي الخارج لليوم",
+      "Day Direct Cost": "التكلفة المباشرة لليوم",
+      "Day Expenses": "مصاريف اليوم",
+      "Day Revenue": "إيرادات اليوم",
+      "Day Vault Documents": "مستندات خزينة اليوم",
+      "Direct Costs & Bills": "التكاليف المباشرة والفواتير",
+      "Less Direct Costs": "ناقص التكاليف المباشرة",
+      "Less Expenses": "ناقص المصاريف",
+      "Open Payables": "الذمم الدائنة المفتوحة",
+      "Operational Units": "الوحدات التشغيلية",
+      "Period Direct Cost": "التكلفة المباشرة للفترة",
+      "Period In / Out": "داخل / خارج الفترة",
+      "Total Filed Scans": "إجمالي المسوحات المؤرشفة",
+      "The US dollar cash till is below zero as of this day. Click to review cash movements.": "رصيد الصندوق النقدي بالدولار دون الصفر حتى هذا اليوم. اضغط لمراجعة الحركات النقدية.",
+      "The US dollar cash till is below zero as of this day. Click to review the cash movements.": "رصيد الصندوق النقدي بالدولار دون الصفر حتى هذا اليوم. اضغط لمراجعة الحركات النقدية.",
+      "Cash Sales + Customer Receipts": "مبيعات نقدية + تحصيلات عملاء",
+      "Supplier Payments + Cash Expenses + Salaries": "مدفوعات موردين + مصاريف نقدية + رواتب",
+      "Driver, Category & Odometer": "السائق والفئة والعدّاد",
+      "Drivers, Fills & Odometer": "السائقون والتعبئة والعدّاد",
+      "Close-of-Day Digest": "ملخص إغلاق اليوم",
+      "Trend & Team Lens": "عرض الاتجاه والفريق",
+      "Configure Close-of-Day Needs Attention Web Push & 1-tap WhatsApp summary": "إعداد إشعارات الويب وملخص واتساب لإغلاق اليوم بضغطة واحدة",
+      "Close Digest": "ملخص الإغلاق",
+      "7-Day Sales & Profit": "المبيعات والأرباح (7 أيام)",
+      "7-Day Sales Trend": "اتجاه المبيعات (7 أيام)",
+      "Trend": "الاتجاه",
+      "Click any day": "اضغط على أي يوم",
+      "Costs": "التكاليف",
+      "FX Exchange": "صرف عملة",
+      "Receipts & Payments": "التحصيلات والمدفوعات",
+      "Expenses & Stock": "المصاريف والمخزون",
+      "Fuel & Maintenance": "الوقود والصيانة",
+      "Maintenance, Oil & Variance": "الصيانة والزيوت والفروقات",
+      "Stock Variance": "فرق المخزون",
+      "Haulage (Own vs Haulers)": "النقل (شاحناتنا مقابل الناقلين)",
+      "Delivered · Picked Up · Overtime": "توصيل · استلام · إضافي",
+      "Overtime / Impact": "الإضافي / الأثر",
+      "Needs Attention Summary": "ملخص الحالات التي تستدعي الانتباه",
+      "WhatsApp recipient (optional)": "رقم واتساب للمستلم (اختياري)",
+      "WhatsApp phone number": "رقم هاتف واتساب",
+      "Copy Line": "نسخ السطر",
+      "Enable Web Push": "تفعيل إشعارات الويب",
+      "Push Enabled": "الإشعارات مفعّلة",
+      "Send Test Push": "إرسال إشعار تجريبي",
+      "Sign in to a live seat to enable scheduled browser push alerts.": "سجّل الدخول بحساب فعلي لتفعيل إشعارات إغلاق اليوم المجدولة.",
+      "Use 1-tap WhatsApp anytime, or enable Web Push for automatic close-of-day alerts.": "أرسل عبر واتساب بضغطة واحدة أو فعّل إشعارات المتصفح لتنبيهات إغلاق اليوم تلقائياً.",
+      "Close Close-of-Day Digest": "إغلاق نافذة ملخص اليوم",
+      "Showrooms": "صالات العرض",
+      "Desks": "مكاتب",
+      "transfers": "تحويلات",
+      "payouts": "مدفوعات",
+      "usages": "استهلاكات",
+      "shipments": "شحنات",
+      "work orders": "أوامر عمل",
+      "remittances": "تسويات",
+      "Click bar to open day": "اضغط على العمود لفتح اليوم",
+      "Click to open revenue hub": "اضغط لفتح قسم الإيرادات",
+      "Click to review direct costs & payables": "اضغط لمراجعة التكاليف المباشرة والذمم",
+      "Click to open Expenses hub": "اضغط لفتح قسم المصاريف",
+      "Click to inspect Payroll & Team hub": "اضغط لمراجعة الرواتب والفريق",
+      "7-Day Sales and Profit Trend": "اتجاه المبيعات والأرباح لـ 7 أيام",
+      "Closing Till: Not Tracked Yet": "رصيد الصندوق: غير متتبَّع بعد",
+      "Collection": "تحصيل",
+      "Included": "مشمول",
+      "Less Direct Cost": "ناقص التكلفة المباشرة",
+      "Intercompany": "حسابات الشركاء",
+      "Facility Cost": "كلفة التمويل",
+      "Venue Sales": "مبيعات الصالات",
+      "Venue Cost": "كلفة الضيافة",
+      "Showroom & Parts": "المعرض والقطع",
+      "Import Cost": "كلفة الاستيراد",
+      "Lease & Deeds": "الإيجار والبيع",
+      "Property Cost": "كلفة العقار",
+      "Premium & Comm": "الأقساط والعمولة",
+      "Carrier Cost": "كلفة الشركات",
+      "Day Profit": "ربح اليوم",
+      "Team & Alerts": "الفريق والتنبيهات",
+      "Till Untracked": "غير متتبَّع",
+      "Picked Up": "استلام بالموقع",
+      "· Picked Up": "· استلام بالموقع",
+      "Day Logs": "سجلات اليوم",
+      "0 Entries": "0 قيود",
+      "Close hour (Beirut)": "ساعة الإغلاق (بيروت)",
+      "16:00 Beirut": "16:00 بيروت",
+      "17:00 Beirut": "17:00 بيروت",
+      "18:00 Beirut": "18:00 بيروت",
+      "19:00 Beirut": "19:00 بيروت",
+      "20:00 Beirut": "20:00 بيروت",
+      "21:00 Beirut": "21:00 بيروت",
+      "Web Push disabled on this browser.": "تم تعطيل إشعارات المتصفح على هذا الجهاز.",
+      "Web Push is not supported in this browser.": "إشعارات المتصفح غير مدعومة في هذا المتصفح.",
+      "Notification permission was not granted.": "لم يتم منح إذن الإشعارات.",
+      "Push key unavailable on server.": "مفتاح الإشعارات غير متوفر على الخادم.",
+      "Could not save push subscription.": "تعذّر حفظ اشتراك الإشعارات.",
+      "Push setup failed.": "فشل إعداد الإشعارات.",
+      "Test push delivery failed.": "فشل إرسال الإشعار التجريبي.",
+      "Test push failed.": "فشل الإشعار التجريبي.",
+      "External Hauler": "ناقل خارجي",
+      "Receipts & Payables": "المقبوضات والذمم الدائنة",
+      "overtime loads": "نقلات إضافية",
+      "receipts, payables": "مقبوضات أو مدفوعات",
+      "Tax Invoice": "فاتورة ضريبية",
+      "Tax Invoices": "فواتير ضريبية",
+      "Discounts / Partner Splits": "الحسومات / حصص الشركاء",
+      "Joint Venture Partner": "شريك ائتلاف",
+      "Partner Share": "حصة الشريك",
+      "Quarry Loads": "نقلات الكسارة",
+      "Quarry Volume": "كمية الكسارة",
+      "Receivables Collection": "تحصيل الذمم المدينة",
+      "Ticket 11% Tax": "ضريبة التذاكر 11%",
+      "Day Revenue (Ex-Tax)": "إيرادات اليوم (دون ضريبة)",
+      "Premium & Commission": "الأقساط والعمولات",
+      "Schedules and direct costs require Expenses, Cash Flow & General Ledger permissions.": "تتطلب الجداول والتكاليف المباشرة صلاحيات المصاريف والتدفقات النقدية ودفتر الأستاذ العام.",
+      "Gross Premium": "إجمالي الأقساط"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -26196,7 +26312,123 @@
       "Uphill Terrain Impact": "Impact relief en montée",
       "Period Fuel Delta": "Delta carburant période",
       "Delta (L)": "Delta (L)",
-      "Delta ($)": "Delta ($)"
+      "Delta ($)": "Delta ($)",
+      "7-Day Daily Average": "Moyenne quotidienne 7j",
+      "Day Cash Inflow": "Entrées caisse du jour",
+      "Day Cash Outflow": "Sorties caisse du jour",
+      "Day Direct Cost": "Coût direct du jour",
+      "Day Expenses": "Dépenses du jour",
+      "Day Revenue": "Revenus du jour",
+      "Day Vault Documents": "Documents du jour",
+      "Direct Costs & Bills": "Coûts directs & factures",
+      "Less Direct Costs": "Moins coûts directs",
+      "Less Expenses": "Moins dépenses",
+      "Open Payables": "Dettes fournisseurs ouvertes",
+      "Operational Units": "Unités opérationnelles",
+      "Period Direct Cost": "Coût direct de la période",
+      "Period In / Out": "Entrées / Sorties période",
+      "Total Filed Scans": "Total documents numérisés",
+      "The US dollar cash till is below zero as of this day. Click to review cash movements.": "La caisse en dollars est négative à cette date. Cliquez pour voir les mouvements.",
+      "The US dollar cash till is below zero as of this day. Click to review the cash movements.": "La caisse en dollars est négative à cette date. Cliquez pour voir les mouvements.",
+      "Cash Sales + Customer Receipts": "Ventes comptant + encaissements clients",
+      "Supplier Payments + Cash Expenses + Salaries": "Paiements fournisseurs + dépenses caisse + salaires",
+      "Driver, Category & Odometer": "Chauffeur, catégorie & compteur",
+      "Drivers, Fills & Odometer": "Chauffeurs, pleins & compteur",
+      "Close-of-Day Digest": "Résumé de clôture",
+      "Trend & Team Lens": "Vue tendance & équipe",
+      "Configure Close-of-Day Needs Attention Web Push & 1-tap WhatsApp summary": "Configurer les notifications push de clôture et le résumé WhatsApp en 1 clic",
+      "Close Digest": "Clôture",
+      "7-Day Sales & Profit": "Ventes & Profit (7j)",
+      "7-Day Sales Trend": "Tendance Ventes (7j)",
+      "Trend": "Tendance",
+      "Click any day": "Cliquer un jour",
+      "Costs": "Coûts",
+      "FX Exchange": "Change devises",
+      "Receipts & Payments": "Encaissements & paiements",
+      "Expenses & Stock": "Dépenses & stock",
+      "Fuel & Maintenance": "Carburant & maintenance",
+      "Maintenance, Oil & Variance": "Maintenance, huile & écarts",
+      "Stock Variance": "Écart stock",
+      "Haulage (Own vs Haulers)": "Transport (Propre vs Tiers)",
+      "Delivered · Picked Up · Overtime": "Livré · Enlevé · H. Sup.",
+      "Overtime / Impact": "Heures Sup. / Impact",
+      "Needs Attention Summary": "Résumé des points à surveiller",
+      "WhatsApp recipient (optional)": "Destinataire WhatsApp (optionnel)",
+      "WhatsApp phone number": "Numéro WhatsApp",
+      "Copy Line": "Copier la ligne",
+      "Enable Web Push": "Activer les notifications",
+      "Push Enabled": "Notifications actives",
+      "Send Test Push": "Tester l'alerte",
+      "Sign in to a live seat to enable scheduled browser push alerts.": "Connectez-vous à un poste actif pour programmer les alertes push.",
+      "Use 1-tap WhatsApp anytime, or enable Web Push for automatic close-of-day alerts.": "Envoyez par WhatsApp en 1 clic ou activez le Push pour les alertes de clôture.",
+      "Close Close-of-Day Digest": "Fermer le résumé de clôture",
+      "Showrooms": "Showrooms",
+      "Desks": "Bureaux",
+      "transfers": "virements",
+      "payouts": "décaissements",
+      "usages": "consommations",
+      "shipments": "expéditions",
+      "work orders": "ordres de travaux",
+      "remittances": "remises",
+      "Click bar to open day": "Cliquer sur la barre pour ouvrir ce jour",
+      "Click to open revenue hub": "Cliquer pour ouvrir les revenus",
+      "Click to review direct costs & payables": "Cliquer pour voir coûts directs & dettes",
+      "Click to open Expenses hub": "Cliquer pour ouvrir les dépenses",
+      "Click to inspect Payroll & Team hub": "Cliquer pour voir la paie et l'équipe",
+      "7-Day Sales and Profit Trend": "Tendance des ventes et du résultat sur 7 jours",
+      "Closing Till: Not Tracked Yet": "Caisse de clôture : pas encore suivie",
+      "Collection": "Encaissement",
+      "Included": "Inclus",
+      "Less Direct Cost": "Moins coût direct",
+      "Intercompany": "Intragroupe",
+      "Facility Cost": "Coût financier",
+      "Venue Sales": "Ventes sites",
+      "Venue Cost": "Coût hôtellerie",
+      "Showroom & Parts": "Showroom & pièces",
+      "Import Cost": "Coût import",
+      "Lease & Deeds": "Loyers & actes",
+      "Property Cost": "Coût immobilier",
+      "Premium & Comm": "Primes & comm.",
+      "Carrier Cost": "Coût assureurs",
+      "Day Profit": "Résultat du jour",
+      "Team & Alerts": "Équipe & alertes",
+      "Till Untracked": "Non suivie",
+      "Picked Up": "Enlèvement",
+      "· Picked Up": "· Enlèvement",
+      "Day Logs": "Pointages du jour",
+      "0 Entries": "0 écritures",
+      "Close hour (Beirut)": "Heure de clôture (Beyrouth)",
+      "16:00 Beirut": "16:00 Beyrouth",
+      "17:00 Beirut": "17:00 Beyrouth",
+      "18:00 Beirut": "18:00 Beyrouth",
+      "19:00 Beirut": "19:00 Beyrouth",
+      "20:00 Beirut": "20:00 Beyrouth",
+      "21:00 Beirut": "21:00 Beyrouth",
+      "Web Push disabled on this browser.": "Notifications Web désactivées sur ce navigateur.",
+      "Web Push is not supported in this browser.": "Les notifications Web ne sont pas prises en charge sur ce navigateur.",
+      "Notification permission was not granted.": "L'autorisation de notification n'a pas été accordée.",
+      "Push key unavailable on server.": "Clé de notification indisponible sur le serveur.",
+      "Could not save push subscription.": "Impossible d'enregistrer l'abonnement.",
+      "Push setup failed.": "Échec de la configuration des notifications.",
+      "Test push delivery failed.": "Échec de l'envoi du test.",
+      "Test push failed.": "Échec du test.",
+      "External Hauler": "Transporteur externe",
+      "Receipts & Payables": "Encaissements et dettes",
+      "overtime loads": "voyages supplémentaires",
+      "receipts, payables": "encaissements ou règlements",
+      "Tax Invoice": "Facture fiscale",
+      "Tax Invoices": "Factures fiscales",
+      "Discounts / Partner Splits": "Remises / Parts associés",
+      "Joint Venture Partner": "Partenaire coentreprise",
+      "Partner Share": "Part associé",
+      "Quarry Loads": "Voyages carrière",
+      "Quarry Volume": "Volume carrière",
+      "Receivables Collection": "Recouvrement clients",
+      "Ticket 11% Tax": "Taxe tickets 11%",
+      "Day Revenue (Ex-Tax)": "Revenus du jour (HT)",
+      "Premium & Commission": "Primes & commissions",
+      "Schedules and direct costs require Expenses, Cash Flow & General Ledger permissions.": "Les échéanciers et coûts directs nécessitent les droits Dépenses, Trésorerie & Grand Livre.",
+      "Gross Premium": "Prime brute"
     }
   };
 
@@ -31331,6 +31563,144 @@
         : `${m[1]} vignette${nCnt === 1 ? '' : 's'} satellite Zoom-19 préchargée${nCnt === 1 ? '' : 's'}`;
     }
 
+    // Daily Operations spelled-out phrases & Close-of-Day Digest (v19.6.378+)
+    m = trimmed.match(/^Material\s+(\$[\d.,]+)\s*·\s*Haulage\s+(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `المواد ${m[1]} · النقل ${m[2]}` : `Matériau ${m[1]} · Transport ${m[2]}`;
+
+    m = trimmed.match(/^Own\s+([\d,]+)\s*·\s*Haulers\s+([\d,]+)(?:\s*\((.+)\))?$/i);
+    if (m) return lang === 'ar' ? `شاحناتنا ${m[1]} · الناقلون ${m[2]}${m[3] ? ` (${m[3]})` : ''}` : `Propre ${m[1]} · Tiers ${m[2]}${m[3] ? ` (${m[3]})` : ''}`;
+
+    m = trimmed.match(/^Own\s+([\d,]+)\s*\/\s*Haulers\s+([\d,]+)$/i);
+    if (m) return lang === 'ar' ? `شاحناتنا ${m[1]} / الناقلون ${m[2]}` : `Propre ${m[1]} / Tiers ${m[2]}`;
+
+    m = trimmed.match(/^Haulers\s+([\d,]+)\s+trips$/i);
+    if (m) return lang === 'ar' ? `الناقلون ${m[1]} نقلة` : `Tiers ${m[1]} voyages`;
+
+    m = trimmed.match(/^Delivered\s+([\d,]+)\s*·\s*Picked Up\s+([\d,]+)(?:\s*·\s*([\d,]+)\s+Overtime)?$/i);
+    if (m) return lang === 'ar'
+      ? `توصيل ${m[1]} · استلام ${m[2]}${m[3] ? ` · ${m[3]} إضافي` : ''}`
+      : `Livré ${m[1]} · Enlevé ${m[2]}${m[3] ? ` · ${m[3]} h. sup.` : ''}`;
+
+    m = trimmed.match(/^([\d,]+)\s+Delivered\s*·\s*([\d,]+)\s+Picked Up$/i);
+    if (m) return lang === 'ar' ? `${m[1]} توصيل · ${m[2]} استلام` : `${m[1]} livrés · ${m[2]} enlevés`;
+
+    m = trimmed.match(/^Collected\s+\+(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `محصّل +${m[1]}` : `Encaissé +${m[1]}`;
+
+    m = trimmed.match(/^Discount\s+(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `حسم ${m[1]}` : `Remise ${m[1]}`;
+
+    m = trimmed.match(/^Receipts\s+\+(\$[\d.,]+)\s*·\s*Cash Sales\s+\+(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `التحصيلات +${m[1]} · المبيعات النقدية +${m[2]}` : `Encaissements +${m[1]} · Ventes comptant +${m[2]}`;
+
+    m = trimmed.match(/^External\s*&\s*Loans\s+([+\-]?\$[\d.,]+)\s*·\s*Rate\s+([\d,]+)$/i);
+    if (m) return lang === 'ar' ? `الخارجي والقروض ${m[1]} · السعر ${m[2]}` : `Externe & Prêts ${m[1]} · Taux ${m[2]}`;
+
+    m = trimmed.match(/^Receipts\s+\+(\$[\d.,]+)\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `التحصيلات +${m[1]} (${m[2]})` : `Encaissements +${m[1]} (${m[2]})`;
+
+    m = trimmed.match(/^Payments\s+\-(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `المدفوعات -${m[1]}` : `Paiements -${m[1]}`;
+
+    m = trimmed.match(/^Variance:\s*([+\-]?[\d.,]+)\s*L$/i);
+    if (m) return lang === 'ar' ? `الفرق: ${m[1]} ليتر` : `Écart : ${m[1]} L`;
+
+    m = trimmed.match(/^([+\-]?[\d.,]+)\s*L\s+Variance$/i);
+    if (m) return lang === 'ar' ? `فرق ${m[1]} ليتر` : `Écart ${m[1]} L`;
+
+    m = trimmed.match(/^([\d,]+)\s+Maintenance$/i);
+    if (m) return lang === 'ar' ? `${m[1]} صيانة` : `${m[1]} maintenance`;
+
+    m = trimmed.match(/^Oil\s+([\d.,]+)\s*L\s*·\s*Grease\s+([\d.,]+)\s*kg$/i);
+    if (m) return lang === 'ar' ? `زيت ${m[1]} ليتر · شحم ${m[2]} كغ` : `Huile ${m[1]} L · Graisse ${m[2]} kg`;
+
+    m = trimmed.match(/^\+([\d.,]+)h\s+Overtime$/i);
+    if (m) return lang === 'ar' ? `+${m[1]} س إضافي` : `+${m[1]}h H. sup.`;
+
+    m = trimmed.match(/^Overtime\s+\+([\d.,]+)h\s*·\s*([\d,]+)\s+Overtime Loads$/i);
+    if (m) return lang === 'ar' ? `الإضافي +${m[1]} س · ${m[2]} نقلة إضافية` : `H. sup. +${m[1]}h · ${m[2]} voyages sup.`;
+
+    m = trimmed.match(/^([\d,]+)\s+Overtime loads$/i);
+    if (m) return lang === 'ar' ? `${m[1]} نقلة إضافية` : `${m[1]} voyages sup.`;
+
+    m = trimmed.match(/^Overtime\s+\+([\d.,]+)h$/i);
+    if (m) return lang === 'ar' ? `إضافي +${m[1]} س` : `H. sup. +${m[1]}h`;
+
+    m = trimmed.match(/^([\d,]+)\s+Booked to Another Day$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مرحّلة ليوم آخر` : `${m[1]} reportée(s) à un autre jour`;
+
+    m = trimmed.match(/^Booked to Another Day\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `مرحّلة ليوم آخر (${m[1]})` : `Reportées (${m[1]})`;
+
+    m = trimmed.match(/^Costs\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `التكاليف (${m[1]})` : `Coûts (${m[1]})`;
+
+    m = trimmed.match(/^Receipts\s*&\s*Payments\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `التحصيلات والمدفوعات (${m[1]})` : `Encaissements & paiements (${m[1]})`;
+
+    m = trimmed.match(/^Expenses\s*&\s*Stock\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `المصاريف والمخزون (${m[1]})` : `Dépenses & stock (${m[1]})`;
+
+    m = trimmed.match(/^Fuel\s*&\s*Maintenance\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `الوقود والصيانة (${m[1]})` : `Carburant & maintenance (${m[1]})`;
+
+    m = trimmed.match(/^External\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `حركات خارجية (${m[1]})` : `Externe (${m[1]})`;
+
+    m = trimmed.match(/^Closing Till\s*\(([^)]+)\):\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `رصيد الصندوق (${m[1]}): ${m[2]}` : `Caisse clôture (${m[1]}) : ${m[2]}`;
+
+    m = trimmed.match(/^Till\s*\(([^)]+)\):$/i);
+    if (m) return lang === 'ar' ? `الصندوق (${m[1]}):` : `Caisse (${m[1]}) :`;
+
+    m = trimmed.match(/^([\d,]+)\s+Critical$/i);
+    if (m) return lang === 'ar' ? `${m[1]} حرج` : `${m[1]} critique`;
+
+    m = trimmed.match(/^\(([\d,]+)\s+sales\s*·\s*([\d,]+)\s+quarry\)$/i);
+    if (m) return lang === 'ar' ? `(${m[1]} مبيعات · ${m[2]} كسارة)` : `(${m[1]} ventes · ${m[2]} carrière)`;
+
+    m = trimmed.match(/^\(([\d,]+)\s+sales\)$/i);
+    if (m) return lang === 'ar' ? `(${m[1]} مبيعات)` : `(${m[1]} ventes)`;
+
+    m = trimmed.match(/^[·•]\s*Tax\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `· ضريبة ${m[1]}` : `· Taxe ${m[1]}`;
+
+    m = trimmed.match(/^([\d,]+)\s+(transfers|payouts|orders|usages|invoices|shipments|entries|work orders|policies|remittances)$/i);
+    if (m) {
+      const unitMap = {
+        transfers: ['تحويلات', 'virements'],
+        payouts: ['مدفوعات', 'décaissements'],
+        orders: ['طلبات', 'commandes'],
+        usages: ['استهلاكات', 'consommations'],
+        invoices: ['فواتير', 'factures'],
+        shipments: ['شحنات', 'expéditions'],
+        entries: ['قيود', 'écritures'],
+        'work orders': ['أوامر عمل', 'ordres de travaux'],
+        policies: ['بوالص', 'polices'],
+        remittances: ['تسويات', 'remises']
+      }[m[2].toLowerCase()];
+      if (unitMap) return `${m[1]} ${lang === 'ar' ? unitMap[0] : unitMap[1]}`;
+    }
+
+    m = trimmed.match(/^No quarry, expense, or payroll cost entries recorded on\s+(.+)\.$/i);
+    if (m) return lang === 'ar' ? `لا توجد قيود كسارة أو مصاريف أو رواتب مسجلة بتاريخ ${m[1]}.` : `Aucune écriture carrière, dépense ou paie enregistrée le ${m[1]}.`;
+
+    m = trimmed.match(/^No matching customer receipts or supplier settlements on\s+(.+)\.$/i);
+    if (m) return lang === 'ar' ? `لا توجد مقبوضات عملاء أو مدفوعات موردين مطابقة بتاريخ ${m[1]}.` : `Aucun encaissement client ni règlement fournisseur correspondant le ${m[1]}.`;
+
+    m = trimmed.match(/^Scheduled daily at\s+(\d{1,2}:00)\s+Beirut time(?:\s*\(last sent\s+([^)]+)\))?\.$/i);
+    if (m) return lang === 'ar'
+      ? `مجدول يومياً عند الساعة ${m[1]} بتوقيت بيروت${m[2] ? ` (آخر إرسال ${m[2]})` : ''}.`
+      : `Programmé chaque jour à ${m[1]} heure de Beyrouth${m[2] ? ` (dernier envoi ${m[2]})` : ''}.`;
+
+    m = trimmed.match(/^Test push delivered to\s+(\d+)\s+device\(s\)\.$/i);
+    if (m) return lang === 'ar' ? `تم إرسال إشعار تجريبي إلى ${m[1]} جهاز.` : `Notification test envoyée à ${m[1]} appareil(s).`;
+
+    m = trimmed.match(/^Tax Invoices\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `فواتير ضريبية (${m[1]})` : `Factures fiscales (${m[1]})`;
+
+    m = trimmed.match(/^Tax Invoice\s*#(.+)$/i);
+    if (m) return lang === 'ar' ? `فاتورة ضريبية #${m[1]}` : `Facture fiscale #${m[1]}`;
     return null;
   }
 

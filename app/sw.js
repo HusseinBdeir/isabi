@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.384';
+const SHELL_CACHE = 'isabi-mfg-v19.6.385';
 const SHELL_VER = SHELL_CACHE.replace(/^isabi-mfg-v/, '');
 const DATA_CACHE = 'isabi-mfg-data-v3';
 const SHELL_DIR = new URL('./', self.location.href).pathname;
@@ -8,53 +8,53 @@ const SHELL_DIR = new URL('./', self.location.href).pathname;
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.384',
-  './css/geo_dispatch.css?v=19.6.384',
-  './css/daily_ops.css?v=19.6.384',
-  './css/ask_isabi.css?v=19.6.384',
-  './css/fleet_pnl.css?v=19.6.384',
-  './css/smart_scan.css?v=19.6.384',
-  './css/doc_scanner.css?v=19.6.384',
-  './css/ai_edge.css?v=19.6.384',
-  './css/telematics.css?v=19.6.384',
-  './css/step_up_auth.css?v=19.6.384',
-  './css/command_palette.css?v=19.6.384',
-  './css/workflow.css?v=19.6.384',
-  './js/face.js?v=19.6.384',
-  './js/endpoints.js?v=19.6.384',
-  './js/seed_manifest.js?v=19.6.384',
-  './js/icons.js?v=19.6.384',
-  './js/geo_dispatch.js?v=19.6.384',
-  './js/forms_engine.js?v=19.6.384',
-  './js/pbi_pages.js?v=19.6.384',
-  './js/rdl_reports.js?v=19.6.384',
-  './js/kiosk_print.js?v=19.6.384',
-  './js/table_columns.js?v=19.6.384',
-  './js/daily_ops.js?v=19.6.384',
-  './js/i18n.js?v=19.6.384',
-  './js/ask_isabi.js?v=19.6.384',
-  './js/fleet_pnl.js?v=19.6.384',
-  './js/doc_scanner.js?v=19.6.384',
-  './js/smart_scan.js?v=19.6.384',
-  './js/ai_edge.js?v=19.6.384',
-  './js/telematics.js?v=19.6.384',
-  './js/local_dev_roster.js?v=19.6.384',
-  './js/step_up_auth.js?v=19.6.384',
-  './js/command_palette.js?v=19.6.384',
-  './js/a11y_dialog.js?v=19.6.384',
-  './js/approvals.js?v=19.6.384',
-  './js/void_log.js?v=19.6.384',
-  './js/saved_views.js?v=19.6.384',
-  './js/app.js?v=19.6.384',
-  './manifest.json?v=19.6.384',
-  './favicon.ico?v=19.6.384',
-  './favicon-dark.ico?v=19.6.384',
-  './icon.svg?v=19.6.384',
-  './icon-dark.svg?v=19.6.384',
-  './icon-180.png?v=19.6.384',
-  './icon-192.png?v=19.6.384',
-  './icon-512.png?v=19.6.384',
-  './icon-512-maskable.png?v=19.6.384'
+  './css/app.css?v=19.6.385',
+  './css/geo_dispatch.css?v=19.6.385',
+  './css/daily_ops.css?v=19.6.385',
+  './css/ask_isabi.css?v=19.6.385',
+  './css/fleet_pnl.css?v=19.6.385',
+  './css/smart_scan.css?v=19.6.385',
+  './css/doc_scanner.css?v=19.6.385',
+  './css/ai_edge.css?v=19.6.385',
+  './css/telematics.css?v=19.6.385',
+  './css/step_up_auth.css?v=19.6.385',
+  './css/command_palette.css?v=19.6.385',
+  './css/workflow.css?v=19.6.385',
+  './js/face.js?v=19.6.385',
+  './js/endpoints.js?v=19.6.385',
+  './js/seed_manifest.js?v=19.6.385',
+  './js/icons.js?v=19.6.385',
+  './js/geo_dispatch.js?v=19.6.385',
+  './js/forms_engine.js?v=19.6.385',
+  './js/pbi_pages.js?v=19.6.385',
+  './js/rdl_reports.js?v=19.6.385',
+  './js/kiosk_print.js?v=19.6.385',
+  './js/table_columns.js?v=19.6.385',
+  './js/daily_ops.js?v=19.6.385',
+  './js/i18n.js?v=19.6.385',
+  './js/ask_isabi.js?v=19.6.385',
+  './js/fleet_pnl.js?v=19.6.385',
+  './js/doc_scanner.js?v=19.6.385',
+  './js/smart_scan.js?v=19.6.385',
+  './js/ai_edge.js?v=19.6.385',
+  './js/telematics.js?v=19.6.385',
+  './js/local_dev_roster.js?v=19.6.385',
+  './js/step_up_auth.js?v=19.6.385',
+  './js/command_palette.js?v=19.6.385',
+  './js/a11y_dialog.js?v=19.6.385',
+  './js/approvals.js?v=19.6.385',
+  './js/void_log.js?v=19.6.385',
+  './js/saved_views.js?v=19.6.385',
+  './js/app.js?v=19.6.385',
+  './manifest.json?v=19.6.385',
+  './favicon.ico?v=19.6.385',
+  './favicon-dark.ico?v=19.6.385',
+  './icon.svg?v=19.6.385',
+  './icon-dark.svg?v=19.6.385',
+  './icon-180.png?v=19.6.385',
+  './icon-192.png?v=19.6.385',
+  './icon-512.png?v=19.6.385',
+  './icon-512-maskable.png?v=19.6.385'
 ];
 
 // Face ID engine + weights (about 13.7 MB): warmed for offline use only on a device that uses Face ID
@@ -547,4 +547,51 @@ self.addEventListener('message', event => {
       }
     })()
   );
+});
+
+self.addEventListener('push', event => {
+  event.waitUntil((async () => {
+    let data = {};
+    try {
+      data = event && event.data ? event.data.json() : {};
+    } catch (_) {
+      try { data = { body: event && event.data ? event.data.text() : '' }; } catch (_2) { data = {}; }
+    }
+    const title = String(data.title || 'ISABI Command Center');
+    const options = {
+      body: String(data.body || ''),
+      icon: './icon-192.png',
+      badge: './icon-192.png',
+      tag: String(data.tag || 'isabi-day-close'),
+      renotify: true,
+      data: { url: String(data.url || './#daily_ops') }
+    };
+    await self.registration.showNotification(title, options);
+  })());
+});
+
+self.addEventListener('notificationclick', event => {
+  if (event.notification && typeof event.notification.close === 'function') event.notification.close();
+  const targetRel = (event.notification && event.notification.data && event.notification.data.url) || './#daily_ops';
+  const appScope = new URL('./', self.location.href).href;
+  let targetUrl = new URL('./#daily_ops', self.location.href).href;
+  try {
+    const parsed = new URL(targetRel, self.location.href);
+    if (parsed.origin === self.location.origin && parsed.href.startsWith(appScope)) targetUrl = parsed.href;
+  } catch (_) {}
+  event.waitUntil((async () => {
+    const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of allClients) {
+      if (c && c.url && c.url.startsWith(appScope)) {
+        try {
+          if ('navigate' in c && typeof c.navigate === 'function') await c.navigate(targetUrl);
+        } catch (_) {}
+        try { if (typeof c.focus === 'function') await c.focus(); } catch (_) {}
+        return;
+      }
+    }
+    if (self.clients && typeof self.clients.openWindow === 'function') {
+      try { await self.clients.openWindow(targetUrl); } catch (_) {}
+    }
+  })());
 });

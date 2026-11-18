@@ -646,14 +646,29 @@ body.is-daily-ops-view .period-basis-row {
   color: var(--brass);
 }
 
-/* ==================== BAND 3: 6-PANEL CEO INSIGHT BOARD (3x2 ON DESKTOP) ==================== */
+/* ==================== BAND 3: 6-PANEL CEO INSIGHT BOARD (24-COL DESKTOP: 8/8/8 + 10/7/7) ==================== */
 .dops-bento-grid {
   flex: 1 1 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(24, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 7px;
+}
+
+.dops-bento-grid > #dopsPulseMixCard,
+.dops-bento-grid > #dopsAgreementsCard,
+.dops-bento-grid > #dopsExpensesCard {
+  grid-column: span 8;
+}
+
+.dops-bento-grid > #dopsTreasuryCard {
+  grid-column: span 10;
+}
+
+.dops-bento-grid > #dopsFleetFuelCard,
+.dops-bento-grid > #dopsPlantCard {
+  grid-column: span 7;
 }
 
 .dops-card {
@@ -2532,6 +2547,9 @@ body.is-daily-ops-view .period-basis-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-rows: auto;
   }
+  .dops-bento-grid > .dops-card {
+    grid-column: auto !important;
+  }
   .dops-card {
     height: auto;
   }
@@ -2545,7 +2563,9 @@ body.is-daily-ops-view .period-basis-row {
 @media (max-width: 768px) {
   .dops-date-input,
   .dops-drawer-search,
-  .dops-qsearch-input {
+  .dops-qsearch-input,
+  .dops-digest-phone-inp,
+  .dops-digest-hour-sel {
     font-size: 16px !important;
   }
   .dops-qsearch-wrap {
@@ -2802,6 +2822,7 @@ body.is-daily-ops-view .period-basis-row {
 @media (max-width: 1410px) and (min-width: 1024px) {
   .dops-att-lead { display: none; }
   .dops-brief-lbl { display: none; }
+  .dops-close-digest-lbl { display: none; }
   .dops-kpi.accent-profit .dops-kpi-delta > span { display: none; }
 }
 .dops-pnl-step small { text-transform: none; letter-spacing: 0; font-size: 9.2px; }
@@ -2819,4 +2840,84 @@ body.is-daily-ops-view .period-basis-row {
 }
 @media (max-width: 768px) {
   .dops-kpi.accent-profit .dops-kpi-delta > span { display: none; }
+}
+
+/* Panel 6 7-Day Sales & Profit Trend body + Close-of-Day Digest Popover */
+.dops-trend-body {
+  justify-content: space-between;
+}
+.dops-trend-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8.5px 2px;
+  font-size: 9.8px;
+  font-weight: 700;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.dops-trend-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dops-trend-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+.dops-trend-dot.sales { background: var(--chart-navy, #2356A8); }
+.dops-trend-dot.cost { background: var(--chart-amber, #C0892F); }
+.dops-trend-dot.prof { background: var(--chart-good, #1F7A4C); border-radius: 999px; }
+.dops-trend-hint {
+  margin-inline-start: auto;
+  font-weight: 600;
+  opacity: 0.85;
+}
+.dops-trend-svg-wrap {
+  flex: 1 1 0;
+  min-height: 82px;
+  height: auto !important;
+  padding: 0 6px;
+}
+.dops-trend-svg-wrap svg {
+  width: 100%;
+  height: 100%;
+}
+.dops-digest-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.dops-digest-phone-inp,
+.dops-digest-hour-sel {
+  height: 29px;
+  padding: 0 8px;
+  border-radius: 7px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  min-width: 0;
+}
+.dops-digest-phone-inp {
+  flex: 1 1 150px;
+}
+.dops-digest-status {
+  font-size: 10.6px;
+  color: var(--muted);
+  margin-top: 5px;
+  line-height: 1.35;
+}
+.dops-digest-status.is-err {
+  color: var(--crit);
+  font-weight: 600;
+}
+.dops-digest-status.is-ok {
+  color: var(--good);
+  font-weight: 600;
 }
