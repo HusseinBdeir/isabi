@@ -767,6 +767,57 @@ def main() -> int:  # noqa: PLR0915
               "an unreadable entry is listed, not shipped, and does not hold the line up")
         git(A, "push", "-q", "origin", f":{RB.QUEUE_NS}/20000101T000000Z-bad00000")
 
+        # 14b. a dropped connection is waited out, never a reason to give up a place in line (2026-11-18 outage)
+        reset = "fatal: unable to access 'https://github.com/x/isabi.git/': Recv failure: Connection was reset"
+        real_git, real_sleep, real_poll, real_touch = RL._git, RB._sleep, RB.poll_once, RB._touch
+        slept: list[float] = []
+        fails = [0]
+
+        def flaky_git(args, cwd, **kw):
+            if args[:1] == ["fetch"] and any(str(a).startswith(f"+{RB.QUEUE_NS}/") for a in args) and fails[0] > 0:
+                fails[0] -= 1
+                return subprocess.CompletedProcess(["git", *args], 128, "", fails_text[0])
+            return real_git(args, cwd, **kw)
+
+        fails_text = [reset]
+        RL._git, RB._sleep = flaky_git, slept.append
+        try:
+            fails[0] = 2
+            line_ok = isinstance(RB.read_line(B), list)
+            check(line_ok and slept == list(RB.NET_RETRY_S) and fails[0] == 0,
+                  "reading the line retries a connection reset (after 5 s, then 15 s) and succeeds")
+            slept.clear()
+            fails[0] = 3
+            kind, msg = raises(RB.read_line, B)
+            check(kind == "BatchError" and "Connection was reset" in msg and len(slept) == len(RB.NET_RETRY_S),
+                  "three failed reads in a row give up with the network error named")
+            slept.clear()
+            fails[0], fails_text[0] = 1, "fatal: repository 'https://github.com/x/nope.git/' not found"
+            kind, msg = raises(RB.read_line, B)
+            check(kind == "BatchError" and "not found" in msg and slept == [], "a failure that is not the network is reported at once, without retrying")
+            fails[0] = 0
+            slept.clear()
+            polls = [0]
+
+            def offline_then_left_out(cwd, entry_id, **kw):
+                polls[0] += 1
+                if polls[0] <= 2:
+                    raise RB.BatchError(f"cannot read the release line from origin ({reset})")
+                return "LEFT_OUT", "left out (test)", False
+
+            RB.poll_once, RB._touch = offline_then_left_out, (lambda cwd, entry_id: None)
+            st, msg = RB.wait(B, "20990101T000000Z-test0001", wait_s=600, poll_s=7, quiet=True)
+            check(st == "LEFT_OUT" and polls[0] == 3 and slept == [7, 7], "a session waiting in line keeps waiting while GitHub cannot be reached")
+            slept.clear()
+            RB.poll_once = lambda cwd, entry_id, **kw: (_ for _ in ()).throw(RB.BatchError(f"cannot read ({reset})"))
+            st, msg = RB.wait(B, "20990101T000000Z-test0001", wait_s=0, poll_s=7, quiet=True)
+            check(st == "WAITING" and "place in line is kept" in msg, "still offline when the wait runs out: WAITING (run again), not an error")
+            RB.poll_once = lambda cwd, entry_id, **kw: (_ for _ in ()).throw(RB.BatchError("the entry belongs to another worktree"))
+            kind, msg = raises(RB.wait, B, "20990101T000000Z-test0001", wait_s=600, poll_s=7, quiet=True)
+            check(kind == "BatchError" and "another worktree" in msg, "an error that is not the network still stops the wait")
+        finally:
+            RL._git, RB._sleep, RB.poll_once, RB._touch = real_git, real_sleep, real_poll, real_touch
+
         # 15. versions
         check(RB.next_version("19.6.9", "19.6.10", "") == "19.6.11" and RB.next_version("19.6.99") == "19.6.100", "the next version counts numerically")
         check("is not above" in raises(RB.batch_version, A, appA, "19.6.50")[1] and RB.batch_version(A, appA, "v19.6.200") == "19.6.200",
