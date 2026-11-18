@@ -16243,7 +16243,10 @@
     }
     return removed;
   }
+  // Set by appendOrUpdateTruckWindow when a save kept the earlier period as its own log ({ s, e, cap, own, drv }), else null.
+  let _lastTruckLogSplit = null;
   function appendOrUpdateTruckWindow(eq, winSpec, editIdx = -1) {
+    _lastTruckLogSplit = null;
     if (!eq || !winSpec) return null;
     ensureEquipmentInitBaseline(eq);
     if (!Array.isArray(eq.adj_windows)) eq.adj_windows = [];
@@ -16283,6 +16286,37 @@
       _explicitEnd: Boolean(existing._explicitEnd),
       _autoClosedByNext: Boolean(existing._autoClosedByNext)
     } : null;
+
+    // A log saved with a later Start Date and another size, owner or driver is a new period, not a correction of the
+    // old one: the days from the old start to the day before the new start were worked under the old values. The old
+    // log stays as it was, closed the day before, and this save goes on as the log that follows it. Before, the
+    // earlier log stretched over those days and their tickets were re-sized and re-assigned to it (truck 357152,
+    // 2026-11-18: an open 5 m³ log saved as 9 m³ from a later day turned two priced 5 m³ tickets into 8 m³).
+    // A later start with the same size, owner and driver is still a correction of the date and moves the log.
+    let splitKept = null;
+    if (existing && oldSnap && s > oldSnap.s && !winSpec._moveStart) {
+      const oldOwnEff = norm(oldSnap.own || eq.supplier);
+      const oldDrvEff = norm(oldSnap.drv || eq.default_driver);
+      const capDiff = cap > 0 && oldSnap.cap > 0 && Math.abs(cap - oldSnap.cap) > 1e-6;
+      const ownDiff = Boolean(own) && norm(own) !== oldOwnEff;
+      const drvDiff = Boolean(drv) && norm(drv) !== oldDrvEff;
+      if (capDiff || ownDiff || drvDiff) {
+        const dayBefore = prevDayISO(s);
+        splitKept = Object.assign({}, existing);
+        delete splitKept._lastBackfill;
+        if (oldSnap.e && oldSnap.e < dayBefore) {
+          splitKept.e = oldSnap.e;   // it had already ended before the new start: that end stands
+          delete splitKept._autoClosedByNext;
+        } else {
+          splitKept.e = dayBefore;
+          splitKept._autoClosedByNext = true;
+          delete splitKept._explicitEnd;
+        }
+        eq.adj_windows.push(splitKept);
+        existing.s = s;   // so the kept period sorts before it when its neighbours are read below
+        _lastTruckLogSplit = { s: oldSnap.s, e: splitKept.e, cap: oldSnap.cap, own: oldSnap.own, drv: oldSnap.drv };
+      }
+    }
 
     const effEditIdx = existing ? eq.adj_windows.indexOf(existing) : -1;
     const bounds = getTruckWindowBounds(eq, { co, side, cust, site }, effEditIdx);
@@ -16369,8 +16403,12 @@
     if (winSpec.backfillTickets !== false) {
       const dateCandidatesFrom = [s];
       const dateCandidatesTo = [effEnd || '9999-12-31'];
-      if (oldSnap) {
+      if (oldSnap && !splitKept) {
         if (oldSnap.s) dateCandidatesFrom.push(oldSnap.s);
+        dateCandidatesTo.push(oldSnap.e || '9999-12-31');
+      } else if (oldSnap) {
+        // A kept earlier period keeps its tickets: the days before the new start are not re-read. The days after a
+        // shortened end still are (no log covers them any more).
         dateCandidatesTo.push(oldSnap.e || '9999-12-31');
       }
       if (prevPeer && String(prevPeer.e || '') !== prevPeerOldE) {
@@ -16462,6 +16500,9 @@
           const agrSize = resolveAgreementTruckSize({ side: 'sales', company: r.company || 'WTC', customer: r.customer, site: r.site, product: r.product, date: dt, truckRow: eq });
           if (!agrSize && Math.abs(curQty - effCap) > 1e-6) {
             ensureSeedOrigCapturedBeforeMutate('sales_tickets', r);
+            // Marks a quantity set by a log change, not keyed by a person: the top-up puts the workbook quantity back
+            // on a workbook ticket that carries it (build/meter_check.py)
+            r._log_resized = { from: curQty, to: effCap, at: truckBfStampIso };
             r.qty = effCap;
             if (!r.mat_indiff) r.price = round2(effCap * Number(r.unit_price || 0) - Math.abs(Number(r.discount || 0)));
             if (String(r.sale_type || 'Delivery') === 'Delivery' && !r.trans_indiff) r.trans_price = round2(effCap * Number(r.trans_unit_price || 0));
@@ -16515,6 +16556,7 @@
           const agrSize = resolveAgreementTruckSize({ side: 'raw', company: r.company || 'WTC', site: r.site, product: r.product, siteOwner: r.site_owner, truckOwner: r.truck_owner, date: dt, truckRow: eq });
           if (!agrSize && Math.abs(curRawQty - effCap) > 1e-6) {
             ensureSeedOrigCapturedBeforeMutate('raw_purchases', r);
+            r._log_resized = { from: curRawQty, to: effCap, at: truckBfStampIso };
             r.qty = effCap;
             if (!r.mat_indiff && Number(r.unit_cost || 0) > 0) r.cost = round2(effCap * Number(r.unit_cost || 0));
             if (!r.trans_indiff && Number(r.trans_unit_cost || 0) > 0) r.trans_cost = round2(effCap * Number(r.trans_unit_cost || 0));
@@ -19214,6 +19256,13 @@
     backfill: backfillEffectiveLogChange,
     registerSpec: registerChronoSeriesSpec,
     unregisterSpec: unregisterChronoSeriesSpec,
+    // Truck size, owner and driver logs (equipment.adj_windows); read by build/verify_truck_log_split.mjs
+    truckLog: {
+      save: appendOrUpdateTruckWindow,
+      remove: removeTruckWindowAt,
+      resolve: resolveTruckWindow,
+      lastKept: () => _lastTruckLogSplit,
+    },
   };
 
   let _arrUidSeq = 1;
@@ -101424,15 +101473,17 @@
           return;
         }
         appendOrUpdateTruckWindow(targetEq, winSpec, rawEditIdx);
+        const keptLog = _lastTruckLogSplit;
         if (!eVal && $('f_driver')) $('f_driver').value = drvVal;
         persistEquipmentLogMutation(targetEq);
         logWrap.dataset.logKey = '';
         renderModalEquipDriverLog(curTruck, company);
-        toast(rawEditIdx >= 0
+        toast((rawEditIdx >= 0 && !keptLog
           ? `✓ Updated driver assignment "${drvVal}" on ${targetEq.name} (${sVal} to ${eVal || 'Open'})`
           : (eVal
               ? `✓ Substitute driver "${drvVal}" logged on ${targetEq.name} (${sVal} to ${eVal})`
-              : `✓ Active driver "${drvVal}" logged on ${targetEq.name} (from ${sVal} · Open)`), 'ok');
+              : `✓ Active driver "${drvVal}" logged on ${targetEq.name} (from ${sVal} · Open)`))
+          + (keptLog ? ` · Earlier log kept to ${fmtDateDMY(keptLog.e)}` : ''), 'ok');
       });
     }
     logWrap.querySelectorAll('[data-del-modal-tw-idx]').forEach(btn => {
@@ -120723,6 +120774,7 @@
           return;
         }
         const savedWin = appendOrUpdateTruckWindow(targetEqRow, winSpec, rawEditIdx);
+        const keptLog = _lastTruckLogSplit;
         const bf = (savedWin && savedWin._lastBackfill) || { total: 0 };
         if (targetEqRow !== row) {
           if (targetEqRow.capacity) row.capacity = targetEqRow.capacity;
@@ -120740,7 +120792,8 @@
         syncWithCloud(true);
         renderApp();
         const bfMsg = bf && bf.total > 0 ? ` · Backfilled ${bf.total} ticket${bf.total === 1 ? '' : 's'}` : '';
-        toast(`✓ ${rawEditIdx >= 0 ? 'Updated' : 'Logged'} equipment assignment (${drvVal || (fmtNum(capVal, 1) + ' m³')} · ${sVal} to ${eVal || 'Open'})${bfMsg}`);
+        const keptMsg = keptLog ? ` · Earlier log kept to ${fmtDateDMY(keptLog.e)}` : '';
+        toast(`✓ ${rawEditIdx >= 0 && !keptLog ? 'Updated' : 'Logged'} equipment assignment (${drvVal || (fmtNum(capVal, 1) + ' m³')} · ${sVal} to ${eVal || 'Open'})${bfMsg}${keptMsg}`);
         showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
       });
     }

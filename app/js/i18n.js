@@ -30218,6 +30218,12 @@
     m = trimmed.match(/^(\d+)\s+price agreements?\s+closed after 90 days without a load$/i);
     if (m) return lang === 'ar' ? `أُغلق ${m[1]} من اتفاقيات الأسعار بعد 90 يوماً بلا نقلات` : `${m[1]} accord(s) de prix clôturé(s) après 90 jours sans voyage`;
 
+    // Truck log saved with a later start and another size, owner or driver: the earlier period stays as its own log
+    m = trimmed.match(/^(.+?)\s+·\s+Earlier log kept to\s+(\S+)$/i);
+    if (m) return `${translateCore(m[1].trim(), lang, depth + 1)} · ${lang === 'ar' ? `أُبقي السجل السابق حتى ${m[2]}` : `Journal précédent conservé jusqu'au ${m[2]}`}`;
+    m = trimmed.match(/^Earlier log kept to\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `أُبقي السجل السابق حتى ${m[1]}` : `Journal précédent conservé jusqu'au ${m[1]}`;
+
     m = trimmed.match(/^Verified inside\s+(.+?)\.$/i);
     if (m) return lang === 'ar' ? `تم التحقق داخل ${m[1]}.` : `Vérifié dans ${m[1]}.`;
 
