@@ -48523,6 +48523,33 @@
           });
         });
       }
+
+      // Opening till (owner 2026-11-13 / 2026-11-18): on each company's first sheet day the till starts from opening
+      // balances that are not payments (Config rows, salary and borrowing openings), so they are not register lines.
+      // The top-up stores their total with the sheet (build/till_register_check.py opening_till_line, from the
+      // loaded records, so app edits never move it) and the register shows it as one line, so register and till
+      // agree from day one. Whole-register seats only, and never in the official-books scope (it trims the register,
+      // so a difference taken against the full register would not hold there).
+      if (!offScope) {
+        const otAllowed = allowedCompanyNames(u);
+        ['WTC', 'BBConstruction'].forEach(coName => {
+          if (!matchesCashScopeCompany({ company: coName }, effCo, otAllowed)) return;
+          const coModel = SEED.models && SEED.models[coName.toLowerCase()];
+          const ot = coModel && coModel.cash_flow_sheet && coModel.cash_flow_sheet.opening_till;
+          if (!ot || !/^\d{4}-\d{2}-\d{2}$/.test(String(ot.date || ''))) return;
+          pushMove({
+            id: `opening-till-${coName.toLowerCase()}`, rkey: '', date: ot.date, company: coName,
+            stream: 'open', cat: 'Opening Till',
+            party: coName, partyRel: '',
+            detail: 'Opening balances the till starts from on its first day (not payments)',
+            ref: '—',
+            method: 'Opening',
+            usd: Number(ot.usd || 0),
+            lbp: Number(ot.lbp || 0),
+            raw: { id: `opening-till-${coName.toLowerCase()}`, date: ot.date, company: coName, notes: 'Opening till' }
+          });
+        });
+      }
     }
 
     // 9. Dual-Currency FX Conversions (USD ↔ LBP)
@@ -49690,8 +49717,8 @@
                   : `${esc(r.ref)} <span class="mu">· ${esc(r.method)}</span>`;
                 const cfCand = appOnlyCandMap ? appOnlyCandMap.get(`${r.rkey}:${r.id}`) : null;
                 return `
-                <tr class="rrow" data-rkey="${esc(r.rkey)}" data-rid="${esc(r.id)}">
-                  <td class="mono"><button type="button" class="cf-date-jump" data-cf-focus-date="${esc(r.date)}" title="Filter till sheet to ${esc(fmtDateDMY(r.date))}">${esc(fmtDateDMY(r.date))}</button>${appCell(r.raw, r.rkey)}</td>
+                <tr${r.rkey ? ` class="rrow" data-rkey="${esc(r.rkey)}" data-rid="${esc(r.id)}"` : ''}>
+                  <td class="mono"><button type="button" class="cf-date-jump" data-cf-focus-date="${esc(r.date)}" title="Filter till sheet to ${esc(fmtDateDMY(r.date))}">${esc(fmtDateDMY(r.date))}</button>${r.rkey ? appCell(r.raw, r.rkey) : ''}</td>
                   <td>${coBadge(r.company)}</td>
                   <td class="cf-cat-cell"><span class="cf-flow-badge ${flowCls}">${flowSym}</span><span class="cf-cat-txt">${esc(r.cat)}</span></td>
                   <td class="cf-party-cell" title="${esc(r.party)}">${partyHtml}</td>
@@ -74102,13 +74129,15 @@
       if (!canPayroll && m.stream === 'sal') continue;
       const uAmt = safeNum(m.usd) + (safeNum(m.lbp) / fxRate);
       const cp = scrubOutwardGuideText(m.party || m.counterparty || m.type || coLabel) || coLabel;
+      // The Opening Till line counts in the period's cash, but no counterparty stands behind it: never list it as one.
+      const isOpenLine = m.stream === 'open';
       if (uAmt >= 0) {
         periodInUsd += uAmt;
-        inByCounterparty[cp] = (inByCounterparty[cp] || 0) + uAmt;
+        if (!isOpenLine) inByCounterparty[cp] = (inByCounterparty[cp] || 0) + uAmt;
       } else {
         const absOut = Math.abs(uAmt);
         periodOutUsd += absOut;
-        outByCounterparty[cp] = (outByCounterparty[cp] || 0) + absOut;
+        if (!isOpenLine) outByCounterparty[cp] = (outByCounterparty[cp] || 0) + absOut;
       }
     }
     periodInUsd = round2(periodInUsd);

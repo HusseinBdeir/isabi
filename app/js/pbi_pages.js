@@ -8914,8 +8914,8 @@
                       ? `<span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ref)}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.ticketId)}" title="Preview / Print Ticket ${esc(r.ref)}">${ctx.ic('printer')}</button></span> <span class="mu">· ${esc(r.method)}</span>`
                       : `${esc(r.ref)} <span class="mu">· ${esc(r.method)}</span>`;
                     return `
-                    <tr class="rrow" data-rkey="${esc(r.rkey)}" data-rid="${esc(r.id)}">
-                      <td class="mono"><button type="button" class="cf-date-jump" data-cf-focus-date="${esc(r.date)}" title="Filter entries to ${esc(fmtDateDMY(r.date))}">${esc(fmtDateDMY(r.date))}</button>${ctx.appCell ? ctx.appCell(r.raw, r.rkey) : ''}</td>
+                    <tr${r.rkey ? ` class="rrow" data-rkey="${esc(r.rkey)}" data-rid="${esc(r.id)}"` : ''}>
+                      <td class="mono"><button type="button" class="cf-date-jump" data-cf-focus-date="${esc(r.date)}" title="Filter entries to ${esc(fmtDateDMY(r.date))}">${esc(fmtDateDMY(r.date))}</button>${(ctx.appCell && r.rkey) ? ctx.appCell(r.raw, r.rkey) : ''}</td>
                       <td>${ctx.coBadge ? ctx.coBadge(r.company) : shortCoHtml(r.company)}</td>
                       <td class="cf-cat-cell"><span class="cf-flow-badge ${flowCls}">${flowSym}</span><span class="cf-cat-txt">${esc(r.cat)}</span></td>
                       <td class="cf-party-cell" title="${esc(r.party)}">${partyHtml}</td>
