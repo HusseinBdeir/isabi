@@ -13,7 +13,14 @@ import {
 } from './security.js';
 
 const VT_BASE_URL = 'https://track.vt-lb.com/api';
-const SNAPSHOT_TTL_MS = 20000;
+// Positions: shared cache short enough that a 10 s browser poll sees each new
+// tracker report within ~10-18 s. "Refresh GPS" (`fresh=1`) accepts a cache no
+// older than FRESH_MIN_MS, which also caps upstream calls when the button is
+// pressed repeatedly. Geofences rarely change, so they are re-read every 5 min.
+const SNAPSHOT_TTL_MS = 8000;
+const FRESH_MIN_MS = 3000;
+const GEOFENCE_TTL_MS = 300000;
+const UPSTREAM_RETRY_MS = 5000;
 
 export const VT_DEVICE_MAP = {
   19130: {
@@ -110,6 +117,8 @@ export const VT_DEVICE_MAP = {
 };
 
 let _memSnapshotCache = { ts: 0, data: null };
+let _memGeofenceCache = { ts: 0, data: null };
+let _memUpstreamFailAt = 0;
 let _memRefreshedHash = '';
 
 function round1(n) { return Math.round((Number(n) || 0) * 10) / 10; }
@@ -824,9 +833,13 @@ async function loadDbEquipMap(env) {
   return map;
 }
 
-async function getNormalizedUpstreamSnapshot(env) {
+async function getNormalizedUpstreamSnapshot(env, opts = {}) {
   const now = Date.now();
-  if (_memSnapshotCache.data && (now - _memSnapshotCache.ts) < SNAPSHOT_TTL_MS) {
+  const maxAgeMs = Number.isFinite(opts.maxAgeMs) ? Math.max(FRESH_MIN_MS, opts.maxAgeMs) : SNAPSHOT_TTL_MS;
+  // Age is measured from when the snapshot was read upstream (fetched_at), not
+  // from when this isolate copied it out of D1, so a D1 copy is never re-aged.
+  const snapAgeMs = s => now - (Date.parse((s && s.fetched_at) || '') || 0);
+  if (_memSnapshotCache.data && snapAgeMs(_memSnapshotCache.data) >= 0 && snapAgeMs(_memSnapshotCache.data) < maxAgeMs) {
     return _memSnapshotCache.data;
   }
 
@@ -842,19 +855,44 @@ async function getNormalizedUpstreamSnapshot(env) {
     return snap;
   }
 
-  // Check D1 shared 20s cache across isolates
+  // Check the D1 cache shared across isolates. A copy of any age is kept as the
+  // last-known fallback for when the provider does not answer.
+  let d1Snap = null;
   if (env && env.DB) {
     try {
       const kv = await env.DB.prepare('SELECT payload_json, updated_at FROM edge_kv_store WHERE doc_key = ?').bind('telematics_vt_cache_v1').first();
       if (kv && kv.payload_json) {
         const parsed = JSON.parse(kv.payload_json);
-        const ageMs = now - (Date.parse(kv.updated_at || '') || 0);
-        if (parsed && Array.isArray(parsed.units) && ageMs >= 0 && ageMs < SNAPSHOT_TTL_MS) {
-          _memSnapshotCache = { ts: now, data: parsed };
-          return parsed;
+        if (parsed && Array.isArray(parsed.units)) {
+          if (!parsed.fetched_at) parsed.fetched_at = kv.updated_at || '';
+          d1Snap = parsed;
+          if (Array.isArray(parsed.geofences) && !_memGeofenceCache.data) {
+            const gfAt = Date.parse(parsed.geofences_at || parsed.fetched_at || '') || 0;
+            if (gfAt) _memGeofenceCache = { ts: gfAt, data: parsed.geofences };
+          }
+          const ageMs = snapAgeMs(parsed);
+          if (ageMs >= 0 && ageMs < maxAgeMs) {
+            _memSnapshotCache = { ts: now, data: parsed };
+            return parsed;
+          }
         }
       }
     } catch (_) {}
+  }
+
+  const lastKnown = () => {
+    const mem = _memSnapshotCache.data;
+    const best = (mem && d1Snap)
+      ? ((Date.parse(mem.fetched_at || '') || 0) >= (Date.parse(d1Snap.fetched_at || '') || 0) ? mem : d1Snap)
+      : (mem || d1Snap);
+    return best ? Object.assign({}, best, { stale: true }) : null;
+  };
+
+  // After a failed provider call, answer from the last-known copy for a few
+  // seconds instead of making every poll wait on another 6.5 s timeout.
+  if (_memUpstreamFailAt && (now - _memUpstreamFailAt) < UPSTREAM_RETRY_MS) {
+    const fallback = lastKnown();
+    if (fallback) return fallback;
   }
 
   let apiHash = await resolveVtApiHash(env, false);
@@ -863,27 +901,41 @@ async function getNormalizedUpstreamSnapshot(env) {
   }
 
   const fetchDevices = h => fetchJsonWithTimeout(`${VT_BASE_URL}/get_devices?lang=en&user_api_hash=${encodeURIComponent(h)}`, { headers: { Accept: 'application/json' } }, 6500);
-  let devRes = await fetchDevices(apiHash);
-  if (devRes.status === 401 || (devRes.json && devRes.json.status === 0)) {
-    apiHash = await resolveVtApiHash(env, true);
-    if (apiHash) devRes = await fetchDevices(apiHash);
+  let devRes = null;
+  try {
+    devRes = await fetchDevices(apiHash);
+    if (devRes.status === 401 || (devRes.json && devRes.json.status === 0)) {
+      apiHash = await resolveVtApiHash(env, true);
+      if (apiHash) devRes = await fetchDevices(apiHash);
+    }
+  } catch (_) {
+    devRes = null;
   }
-  if (!devRes.ok || !Array.isArray(devRes.json)) {
-    // Serve stale cache if available
-    if (_memSnapshotCache.data) return Object.assign({}, _memSnapshotCache.data, { stale: true });
+  if (!devRes || !devRes.ok || !Array.isArray(devRes.json)) {
+    // Provider slow or down: serve the last positions received, flagged stale.
+    _memUpstreamFailAt = now;
+    const fallback = lastKnown();
+    if (fallback) return fallback;
     throw new Error('Telematics upstream temporarily unavailable.');
   }
 
-  let geofences = [];
-  try {
-    const gfRes = await fetchJsonWithTimeout(`${VT_BASE_URL}/get_geofences?lang=en&user_api_hash=${encodeURIComponent(apiHash)}`, { headers: { Accept: 'application/json' } }, 4500);
-    const rawGfs = gfRes.json && gfRes.json.items && Array.isArray(gfRes.json.items.geofences) ? gfRes.json.items.geofences : [];
-    geofences = rawGfs.map(g => {
-      let coords = [];
-      try { coords = typeof g.coordinates === 'string' ? JSON.parse(g.coordinates) : (g.coordinates || []); } catch (_) {}
-      return { id: g.id, name: g.name, coordinates: coords };
-    });
-  } catch (_) {}
+  _memUpstreamFailAt = 0;
+  let geofences = _memGeofenceCache.data || [];
+  let geofencesAt = _memGeofenceCache.ts || 0;
+  if (!_memGeofenceCache.data || (now - _memGeofenceCache.ts) >= GEOFENCE_TTL_MS) {
+    try {
+      const gfRes = await fetchJsonWithTimeout(`${VT_BASE_URL}/get_geofences?lang=en&user_api_hash=${encodeURIComponent(apiHash)}`, { headers: { Accept: 'application/json' } }, 4500);
+      if (gfRes.ok && gfRes.json && gfRes.json.items && Array.isArray(gfRes.json.items.geofences)) {
+        geofences = gfRes.json.items.geofences.map(g => {
+          let coords = [];
+          try { coords = typeof g.coordinates === 'string' ? JSON.parse(g.coordinates) : (g.coordinates || []); } catch (_) {}
+          return { id: g.id, name: g.name, coordinates: coords };
+        });
+        geofencesAt = now;
+        _memGeofenceCache = { ts: now, data: geofences };
+      }
+    } catch (_) {}
+  }
 
   const dbEquipMap = await loadDbEquipMap(env);
   const allDevices = [];
@@ -895,6 +947,7 @@ async function getNormalizedUpstreamSnapshot(env) {
   const units = allDevices.map(d => normalizeDevice(d, geofences, dbEquipMap));
   const snap = {
     fetched_at: new Date(now).toISOString(),
+    geofences_at: geofencesAt ? new Date(geofencesAt).toISOString() : '',
     geofences,
     units
   };
@@ -1061,15 +1114,17 @@ export async function handleTelematics(request, env, session, url, parsedBody = 
     }
   }
 
-  // 6. Live Fleet & Sensor Snapshot (`action=snapshot`)
+  // 6. Live Fleet & Sensor Snapshot (`action=snapshot`; `fresh=1` = Refresh GPS)
   try {
-    const snap = await getNormalizedUpstreamSnapshot(env);
+    const wantFresh = String(url.searchParams.get('fresh') || '') === '1';
+    const snap = await getNormalizedUpstreamSnapshot(env, wantFresh ? { maxAgeMs: FRESH_MIN_MS } : {});
     const scopedUnits = filterUnitsByScope(snap.units, session, reqCompany, false);
     return jsonResponse({
       ok: true,
       demo: false,
       stale: Boolean(snap.stale),
       fetched_at: snap.fetched_at,
+      server_now: new Date().toISOString(),
       provider: 'ISABI Telematics Bridge (Teltonika CAN + GPS)',
       geofences: snap.geofences || [],
       units: scopedUnits,
