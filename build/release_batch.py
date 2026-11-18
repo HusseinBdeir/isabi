@@ -35,6 +35,9 @@ left-out entry is in the line; its own session replaces it by joining again with
 An entry is cleared only from the worktree that joined it (leave --force when the owner says a change is abandoned).
 A session waiting in line refreshes its entry every 10 minutes; an entry with no sign of life for 3 hours is
 skipped by leaders (never shipped behind its session's back) until that session joins again.
+A dropped connection is waited out: reading the line retries twice, and a session waiting in line keeps its place and
+keeps polling until GitHub answers again, so one network blip never ends a wait. Still offline when the wait runs out:
+WAITING, and the message names `wait --id <entry>` (which waits out an outage; ship re-joins first and does not).
 The line is ordered by the second each change joined, by each PC's own clock: a skewed clock can change the order
 of a batch, never what ships.
 
@@ -118,6 +121,39 @@ _mono = time.monotonic  # the clock for waits and budgets (the gate swaps it to 
 
 class BatchError(RL.LockError):
     """The line or the batch cannot be used as asked; the message says what to do."""
+
+
+# A dropped connection (Wi-Fi, DNS, a GitHub hiccup) is no reason to give up a place in line: reading the line retries,
+# and a session waiting in line keeps waiting through it. 2026-11-18: one "Recv failure: Connection was reset" ended the
+# waits of six sessions at once (exit 2) and their entries went stale for 3 hours.
+_NET_ERR_RE = re.compile(
+    r"Could not resolve host|Connection (?:was )?reset|Recv failure|Send failure|Failed to connect|"
+    r"Connection timed out|Operation timed out|Connection refused|Network is unreachable|"
+    r"remote end hung up|early EOF|Empty reply from server|SSL connection timeout|gnutls_handshake\(\) failed|"
+    r"did not finish \(TimeoutExpired\)|The requested URL returned error: 5\d\d|"
+    # Only the schannel errors that clear by themselves: an untrusted root or a failed revocation check (a proxy or an
+    # antivirus intercepting TLS) stays until someone fixes it, so it must be reported, not waited out.
+    r"schannel: (?:failed to receive handshake|server closed (?:the connection )?abruptly|failed to decrypt data)|"
+    # Not the network but just as passing: every session ships from the same checkout, so two sessions fetching the
+    # line or the lock at once race on the same local ref. Only that race: a lock FILE left behind by a killed git
+    # ("Unable to create '...lock': File exists") stays until removed and must be reported. Never apply this pattern
+    # to push output (a lost compare-and-swap on GitHub reads the same and is not passing).
+    r"cannot lock ref '[^']*': is at [0-9a-f]+ but expected [0-9a-f]+", re.IGNORECASE)
+NET_RETRY_S = (5, 15)   # pauses between the attempts of one read of the line
+_sleep = time.sleep     # the gate swaps it to test the retries without waiting
+_inner_retries = [True]  # wait() turns these off: its own loop retries, within its own deadline
+
+
+def _is_net_error(text: str) -> bool:
+    """True when a git failure is the network, not the repository: worth waiting out, never worth giving up for."""
+    return bool(_NET_ERR_RE.search(text or ""))
+
+
+def _offline_hint(msg: str, err: str, entry_id: str) -> str:
+    """A WAITING message that ended on a network error names `wait --id` (ship re-joins first and is not tolerant)."""
+    if not _is_net_error(err):
+        return msg
+    return f"{msg} Offline: keep waiting with: python build/release_batch.py wait --id {entry_id}"
 
 
 # ------------------------------------------------------------------------------------------------------ git plumbing
@@ -284,10 +320,19 @@ def _push_ref(ref: str, new_sha: str, expected_old: str, cwd: Path) -> bool:
 def read_line(cwd: Path = ISABI_ROOT) -> list[dict]:
     """Every entry in the line, oldest first. Each carries `_ref` and `_sha` (the value to compare-and-swap on).
     An entry that cannot be read is listed with state "unreadable" and never shipped."""
-    r = RL._git(["fetch", "--no-tags", "--quiet", "--prune", RL.REMOTE, f"+{QUEUE_NS}/*:{SEEN_NS}/*"], cwd, check=False,
-                timeout=90)
-    if r.returncode != 0:
-        raise BatchError(f"cannot read the release line from {RL.REMOTE} ({(r.stderr or r.stdout).strip()[:300]})")
+    pauses = list(NET_RETRY_S) if _inner_retries[0] else []
+    while True:
+        try:
+            r = RL._git(["fetch", "--no-tags", "--quiet", "--prune", RL.REMOTE, f"+{QUEUE_NS}/*:{SEEN_NS}/*"], cwd,
+                        check=False, timeout=90)
+            err = "" if r.returncode == 0 else ((r.stderr or r.stdout).strip() or f"git fetch exit {r.returncode}")
+        except RL.LockError as exc:  # git hung or could not start
+            err = str(exc)
+        if not err:
+            break
+        if not pauses or not _is_net_error(err):
+            raise BatchError(f"cannot read the release line from {RL.REMOTE} ({err[:300]})")
+        _sleep(pauses.pop(0))
     out = RL._git(["for-each-ref", "--format=%(refname) %(objectname)", f"{SEEN_NS}/"], cwd).stdout
     entries: list[dict] = []
     for ln in out.splitlines():
@@ -703,22 +748,52 @@ def _live_verdict(entry_id: str, ver: str, by: str) -> tuple[str, str]:
 def wait(cwd: Path, entry_id: str, *, wait_s: int = DEFAULT_WAIT_S, poll_s: int = POLL_S, known: dict | None = None,
          quiet: bool = False) -> tuple[str, str]:
     """Poll until the entry is SHIPPED (live), LEFT_OUT, GONE, or it is its TURN; WAITING when wait_s runs out.
-    While waiting, the entry is refreshed so leaders know its session is still there."""
+    While waiting, the entry is refreshed so leaders know its session is still there. Network errors are waited out
+    by this loop alone (read_line's own retries are off here, so a long outage cannot push a wait past its deadline)."""
+    prev, _inner_retries[0] = _inner_retries[0], False
+    try:
+        return _wait(cwd, entry_id, wait_s=wait_s, poll_s=poll_s, known=known, quiet=quiet)
+    finally:
+        _inner_retries[0] = prev
+
+
+def _wait(cwd: Path, entry_id: str, *, wait_s: int, poll_s: int, known: dict | None, quiet: bool) -> tuple[str, str]:
     deadline = _mono() + max(0, wait_s)
     free_since: float | None = None
     touched: float | None = None
     shown = ""
     while True:
-        if touched is None or _mono() - touched >= HEARTBEAT_S:
-            _touch(cwd, entry_id)
-            touched = _mono()
-        state, msg, free = poll_once(cwd, entry_id, known=known,
-                                     free_for_s=(_mono() - free_since) if free_since is not None else 0.0)
+        try:
+            if touched is None or _mono() - touched >= HEARTBEAT_S:
+                _touch(cwd, entry_id)
+                touched = _mono()
+            state, msg, free = poll_once(cwd, entry_id, known=known,
+                                         free_for_s=(_mono() - free_since) if free_since is not None else 0.0)
+        except RL.LockError as exc:
+            if not _is_net_error(str(exc)):
+                raise
+            # Offline: the place in line is kept (the entry goes stale only after 3 hours without a heartbeat), so keep
+            # waiting; the lock may have changed meanwhile, so the head-start clock starts again once back online.
+            free_since = None
+            why = re.sub(r"\s*after \d+ ms", "", str(exc).splitlines()[0])[:200]  # the same text each poll: printed once
+            # The hint is `wait`, not ship: ship reads the lock and joins again first, and neither waits out an outage.
+            msg = (f"{entry_id}: GitHub cannot be reached ({why}); your place in line is kept. Still offline when this "
+                   f"command ends? Keep waiting with: python build/release_batch.py wait --id {entry_id}")
+            if not quiet and msg != shown:
+                print(msg, flush=True)
+                shown = msg
+            if _mono() >= deadline:
+                return "WAITING", msg
+            _sleep(max(0, poll_s))
+            continue
         free_since = (free_since if free_since is not None else _mono()) if free else None
         if state == "SHIPPED":  # collected by its own session: the entry has done its job
-            done_entry = next((e for e in read_line(cwd) if e["id"] == entry_id and e.get("state") == "shipped"), None)
-            if done_entry:
-                _delete_entry(cwd, done_entry)
+            try:
+                done_entry = next((e for e in read_line(cwd) if e["id"] == entry_id and e.get("state") == "shipped"), None)
+                if done_entry:
+                    _delete_entry(cwd, done_entry)
+            except RL.LockError:  # the change is live either way; an uncollected entry is pruned after 24 hours
+                pass
         if state in ("SHIPPED", "LEFT_OUT", "GONE", "TURN", "LEADER", "HALF_FORMED"):
             return state, msg
         if not quiet and msg != shown:
@@ -726,7 +801,7 @@ def wait(cwd: Path, entry_id: str, *, wait_s: int = DEFAULT_WAIT_S, poll_s: int 
             shown = msg
         if _mono() >= deadline:
             return "WAITING", msg
-        time.sleep(max(0, poll_s))
+        _sleep(max(0, poll_s))
 
 
 # ------------------------------------------------------------------------------------------------- building a batch
@@ -1323,7 +1398,7 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
             if not quiet:
                 print(str(exc).splitlines()[0], flush=True)
             if _mono() >= deadline:
-                return "WAITING", str(exc).splitlines()[0], None
+                return "WAITING", _offline_hint(str(exc).splitlines()[0], str(exc), entry["id"]), None
             time.sleep(max(0, poll_s))
             continue
         if batch["entries"]:
@@ -1334,7 +1409,12 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
             return "LEADER", (f"you lead batch {('v' + shell) if shell else '(no shell change)'} with "
                               f"{len(batch['entries'])} change{'s' if len(batch['entries']) != 1 else ''}.{note}"), batch
         if _mono() >= deadline:  # nothing merged (this entry was left out): the next poll says why
-            state, msg, _free = poll_once(cwd, entry["id"], known=entry)
+            try:
+                state, msg, _free = poll_once(cwd, entry["id"], known=entry)
+            except RL.LockError as exc:
+                if not _is_net_error(str(exc)):
+                    raise
+                return "WAITING", _offline_hint(str(exc).splitlines()[0], str(exc), entry["id"]), None
             return ("WAITING" if state in ("TURN", "IN_BATCH") else state), msg, None
 
 
@@ -1428,7 +1508,7 @@ def main(argv: list[str] | None = None) -> int:
                                       site_branch=args.site_branch, gates=args.gate, version=args.version, wait_s=args.wait,
                                       force=args.force)
             print(f"RESULT: {state}: {msg}")
-            if state == "WAITING":
+            if state == "WAITING" and "wait --id" not in msg:  # offline: the message names the wait command instead
                 print("Run the same ship command again to keep waiting (a place in line is kept).")
             elif state == "TURN":
                 print(f'Lead the batch now, in the background or with a long timeout (it can take minutes):\n'
