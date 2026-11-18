@@ -1229,14 +1229,14 @@ async function loadPosVoidRekeyWindowMin(db) {
   if (!db) return winMin;
   try {
     const res = await db.prepare(
-      `SELECT id, payload_json FROM alert_rules WHERE id IN ('ind_hsp_10', 'S18')`
+      `SELECT id, payload_json FROM alert_rules WHERE id IN ('ind_hsp_10', 'S19')`
     ).all();
     const byId = new Map();
     for (const r of (res.results || [])) {
       const obj = safeParseJson(r.payload_json, null);
       if (obj && typeof obj === 'object') byId.set(String(r.id), obj);
     }
-    const ov = byId.get('ind_hsp_10') || byId.get('S18');
+    const ov = byId.get('ind_hsp_10') || byId.get('S19');
     const rawW = ov && ov.params ? Number(ov.params.rekey_window_min) : NaN;
     if (Number.isFinite(rawW)) {
       winMin = Math.max(15, Math.min(720, Math.round(rawW)));
@@ -1250,7 +1250,7 @@ async function loadPosVoidRekeyWindowMin(db) {
       ).first();
       const doc = kv && kv.payload_json ? safeParseJson(kv.payload_json, null) : null;
       const overrides = doc && doc.alertRules && doc.alertRules.overrides;
-      const ov = overrides && (overrides.ind_hsp_10 || overrides.S18);
+      const ov = overrides && (overrides.ind_hsp_10 || overrides.S19);
       const rawW = ov && ov.params ? Number(ov.params.rekey_window_min) : NaN;
       if (Number.isFinite(rawW)) {
         winMin = Math.max(15, Math.min(720, Math.round(rawW)));

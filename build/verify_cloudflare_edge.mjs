@@ -6421,7 +6421,7 @@ finally:
       industryCustomRows: { ins_policies: [{ id: polId48, company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, rev: 3, voided: true, void_reason: '' }] }
     }, { 'X-ISABI-Session': ownerToken });
 
-    // 49b. Anti-spoofing: incoming voided_by="Workbook match" or twin_of="fake" cannot bypass G_VOID_REASON (#29), and non-Owner twin_of is stripped
+    // 49b. Anti-spoofing: incoming voided_by="Workbook match" or twin_of="fake" cannot bypass G_VOID_REASON (#30), and non-Owner twin_of is stripped
     const spoofByRecId = 'exp-vr-spoof-by-' + Date.now();
     const spoofTwinRecId = 'exp-vr-spoof-tw-' + Date.now();
     await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: spoofByRecId, company: 'BBConstruction', date: todayBeirut, amount_usd: 820, voided: false } }, { 'X-ISABI-Session': ownerToken });
@@ -6448,7 +6448,7 @@ finally:
       table: 'expenses', record: { id: spoofByRecId, company: 'BBConstruction', voided: true, void_reason: 'Attempt print tamper', print_count: 99 }
     }, { 'X-ISABI-Session': bbcSupToken });
 
-    // 49d. /api/sync op=patch enforces G_VOID_REASON (#29) on active->void transitions and strips non-Owner twin_of/twin_difference
+    // 49d. /api/sync op=patch enforces G_VOID_REASON (#30) on active->void transitions and strips non-Owner twin_of/twin_difference
     const sync49Read0 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
     const sync49Doc0 = sync49Read0.json?.docs?.mfg_web_store || {};
     const sync49Ts0 = String(sync49Doc0.updatedAt || '');
