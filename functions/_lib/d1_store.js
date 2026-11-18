@@ -738,13 +738,14 @@ function hydrateRowJson(row) {
   const base = safeJsonParse(row.payload_json, {});
   const merged = Object.assign({}, base, row);
   delete merged.payload_json;
-  for (const jk of ['attachments', 'adj_windows', 'driver_rows', 'admin_overrides', '_seed_orig']) {
+  for (const jk of ['attachments', 'adj_windows', 'driver_rows', 'admin_overrides', '_seed_orig', '_pre_void_orig', '_pre_void_edits']) {
     if (typeof merged[jk] === 'string' && /^[\[{]/.test(merged[jk].trim())) {
       merged[jk] = safeJsonParse(merged[jk], merged[jk]);
     }
   }
   if ('voided' in merged) merged.voided = Boolean(merged.voided);
   if ('_pinCleared' in merged) merged._pinCleared = Boolean(merged._pinCleared);
+  if ('_reopenedExplicitly' in merged) merged._reopenedExplicitly = Boolean(merged._reopenedExplicitly);
   return merged;
 }
 
@@ -2816,10 +2817,10 @@ const VOID_META_KEYS = [
 const VOID_META_AND_GPS_SKIP_KEYS = new Set([
   ...VOID_META_KEYS,
   '_reopenedExplicitly',
-  'restored_at', 'restoredAt', 'restored_by', 'restoredBy',
+  'restored_at', 'restoredAt', 'restored_by', 'restoredBy', 'restored_by_email', 'restoredByEmail',
   'modified_at', 'modifiedAt', 'modified_by', 'modifiedBy', 'updated_at', 'updatedAt',
   'rev', '_rev', '_revBumped', '_customRev', 'sync_source', 'payload_json',
-  '_seed_orig', '_seedCatAuto', 'geo_zone', '_geoOrig', '_geoOrigInit', 'zone_shape',
+  '_seed_orig', '_pre_void_orig', '_pre_void_edits', '_seedCatAuto', 'geo_zone', '_geoOrig', '_geoOrigInit', 'zone_shape',
   ...ALL_GPS_KEYS,
   ...REGION_ZONE_KEYS,
   'distance_km'
@@ -2830,7 +2831,7 @@ const PIN_FILL_SKIP_KEYS = new Set([
   'modified_at', 'modifiedAt', 'modified_by', 'modifiedBy', 'updated_at', 'updatedAt',
   'entered_by', 'enteredBy', 'entered_at', 'enteredAt', 'source',
   'rev', '_rev', '_revBumped', '_customRev', 'sync_source', 'payload_json',
-  '_seed_orig', '_seedCatAuto', 'geo_zone', '_geoOrig', '_geoOrigInit', 'zone_shape',
+  '_seed_orig', '_pre_void_orig', '_pre_void_edits', '_seedCatAuto', 'geo_zone', '_geoOrig', '_geoOrigInit', 'zone_shape',
   ...ALL_GPS_KEYS
 ]);
 
@@ -2859,7 +2860,16 @@ function asStrictBoolOrNull(val) {
   return null;
 }
 
+function isZeroOrEmptyVoidDefault(val) {
+  if (val === undefined || val === null || val === false || val === '' || val === '[]' || val === '{}') return true;
+  if (typeof val === 'number') return Number.isFinite(val) && Math.abs(val) < 1e-9;
+  if (Array.isArray(val)) return val.length === 0;
+  if (typeof val === 'object') return Object.keys(val).length === 0;
+  return false;
+}
+
 function fieldsEquivForVoidCmp(a, b) {
+  if (isZeroOrEmptyVoidDefault(a) && isZeroOrEmptyVoidDefault(b)) return true;
   if (typeof a === 'boolean' || typeof b === 'boolean') {
     const ba = asStrictBoolOrNull(a);
     const bb = asStrictBoolOrNull(b);
@@ -2873,7 +2883,7 @@ function hasNonVoidFieldChange(baseObj, nextObj) {
   const base = (baseObj && typeof baseObj === 'object') ? baseObj : {};
   for (const [k, v] of Object.entries(nextObj)) {
     if (VOID_META_AND_GPS_SKIP_KEYS.has(k)) continue;
-    if (!(k in base) && (v === undefined || v === null || v === '')) continue;
+    if (!(k in base) && isZeroOrEmptyVoidDefault(v)) continue;
     if (!fieldsEquivForVoidCmp(base[k], v)) return true;
   }
   return false;
@@ -3219,10 +3229,194 @@ function sanitizeIncomingTwinKeys(targetObj, baseObj, session, perms) {
   return targetObj;
 }
 
+const PRE_VOID_NON_BUSINESS_KEYS = new Set([
+  ...VOID_META_AND_GPS_SKIP_KEYS,
+  'id', 'entered_by', 'enteredBy', 'entered_by_email', 'enteredByEmail', 'entered_at', 'enteredAt',
+  'created_at', 'createdAt', '_createdAt', 'client_updated_at', 'source', 'same_person_confirmed',
+  'attachments', 'adj_windows', 'driver_rows', 'admin_overrides', 'removedDocIds', 'backfill_status',
+  'settled_amount', 'has_paired_return', 'data_url', 'headers', 'cells'
+]);
+
+function preVoidValEqual(a, b) {
+  if (a === b) return true;
+  if (typeof a === 'boolean' || typeof b === 'boolean') {
+    const ba = asStrictBoolOrNull(a);
+    const bb = asStrictBoolOrNull(b);
+    return ba !== null && bb !== null ? ba === bb : Boolean(a) === Boolean(b);
+  }
+  const sa = String(a == null ? '' : a).trim();
+  const sb = String(b == null ? '' : b).trim();
+  if (sa === sb) return true;
+  if (sa && sb) {
+    const na = Number(sa), nb = Number(sb);
+    if (Number.isFinite(na) && Number.isFinite(nb) && Math.abs(na - nb) < 1e-6) return true;
+  }
+  return false;
+}
+
+function sanitizePreVoidOrig(obj, extraAllowedKeys = null) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  const extraSet = extraAllowedKeys instanceof Set ? extraAllowedKeys : (Array.isArray(extraAllowedKeys) ? new Set(extraAllowedKeys) : null);
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (Object.keys(out).length >= 48) break;
+    if (!k || k.startsWith('_') || (PRE_VOID_NON_BUSINESS_KEYS.has(k) && !(extraSet && extraSet.has(k)))) continue;
+    if (v !== null && typeof v === 'object') continue;
+    out[String(k)] = v == null ? '' : v;
+  }
+  return out;
+}
+
+function extractCellFieldsForDiff(obj) {
+  const out = {};
+  if (!obj || !Array.isArray(obj.cells)) return out;
+  const hdrs = Array.isArray(obj.headers) ? obj.headers : [];
+  const usedKeys = new Set();
+  for (let idx = 0; idx < obj.cells.length; idx++) {
+    const hdrLbl = String((hdrs[idx] && hdrs[idx]) || `Column ${idx + 1}`).trim();
+    const baseKey = hdrLbl.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `col_${idx}`;
+    const fKey = usedKeys.has(baseKey) ? `${baseKey}_${idx}` : baseKey;
+    usedKeys.add(fKey);
+    out[fKey] = { label: hdrLbl.slice(0, 80), val: obj.cells[idx] == null ? '' : obj.cells[idx] };
+  }
+  return out;
+}
+
+function verifyInitialSeedEdit(targetObj, actorName, nowIso) {
+  if (!targetObj || typeof targetObj !== 'object' || Boolean(targetObj.voided)) return false;
+  if (!Array.isArray(targetObj._pre_void_edits) || targetObj._pre_void_edits.length !== 1) return false;
+  const cellMap = extractCellFieldsForDiff(targetObj);
+  const cellKeySet = new Set(Object.keys(cellMap));
+  const orig = sanitizePreVoidOrig(targetObj._pre_void_orig, cellKeySet);
+  if (!orig || !Object.keys(orig).length) return false;
+  const edits = clonePreVoidEdits(targetObj._pre_void_edits);
+  if (edits.length !== 1) return false;
+  const ch = edits[0].changes;
+  const chKeys = Object.keys(ch);
+  if (!chKeys.length || chKeys.length > 24) return false;
+  for (const ck of chKeys) {
+    if (!Object.prototype.hasOwnProperty.call(orig, ck)) return false;
+    const cv = ch[ck];
+    if (!preVoidValEqual(cv.from, orig[ck])) return false;
+    let curVal;
+    if (Object.prototype.hasOwnProperty.call(cellMap, ck)) {
+      curVal = cellMap[ck].val;
+    } else if (!ck.startsWith('_') && !PRE_VOID_NON_BUSINESS_KEYS.has(ck) && Object.prototype.hasOwnProperty.call(targetObj, ck) && (targetObj[ck] === null || typeof targetObj[ck] !== 'object')) {
+      curVal = targetObj[ck];
+    } else {
+      return false;
+    }
+    if (!preVoidValEqual(cv.to, curVal) || preVoidValEqual(cv.from, cv.to)) return false;
+  }
+  targetObj._pre_void_orig = orig;
+  targetObj._pre_void_edits = [{ at: nowIso, by: actorName || 'User', changes: ch }];
+  return true;
+}
+
+function clonePreVoidEdits(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object' || !item.changes || typeof item.changes !== 'object' || Array.isArray(item.changes)) continue;
+    const cleanChanges = {};
+    for (const [ck, cv] of Object.entries(item.changes)) {
+      if (Object.keys(cleanChanges).length >= 24) break;
+      if (!ck || !cv || typeof cv !== 'object' || Array.isArray(cv)) continue;
+      const entry = { from: cv.from == null ? '' : cv.from, to: cv.to == null ? '' : cv.to };
+      if (cv.label) entry.label = String(cv.label).slice(0, 80);
+      cleanChanges[String(ck).slice(0, 80)] = entry;
+    }
+    if (!Object.keys(cleanChanges).length) continue;
+    out.push({
+      at: String(item.at || '').slice(0, 64),
+      by: String(item.by || '').slice(0, 120),
+      changes: cleanChanges
+    });
+  }
+  return out.slice(-15);
+}
+
+function preserveAndRecordPreVoidEdits(targetObj, prevObj, session, nowIso, wasVoid = false, nowVoid = false, opts = {}) {
+  if (!targetObj || typeof targetObj !== 'object') return;
+  if (session && session.build_ticket) return;
+  const actorName = session
+    ? String(session.full_name || session.name || session.email || '').trim().slice(0, 120)
+    : '';
+  if (!prevObj || typeof prevObj !== 'object') {
+    if (opts && opts.allowInitialSeedEdit && verifyInitialSeedEdit(targetObj, actorName, nowIso)) return;
+    delete targetObj._pre_void_orig;
+    delete targetObj._pre_void_edits;
+    return;
+  }
+  const prevOrig = sanitizePreVoidOrig(prevObj._pre_void_orig);
+  const prevEdits = clonePreVoidEdits(prevObj._pre_void_edits);
+  const isZeroOrEmptyDefault = v => (
+    v === undefined || v === null || v === '' || v === false || v === 0 ||
+    (typeof v === 'number' && Math.abs(v) < 1e-9)
+  );
+  const changes = {};
+  const keys = new Set([...Object.keys(prevObj), ...Object.keys(targetObj)]);
+  for (const k of keys) {
+    if (Object.keys(changes).length >= 24) break;
+    if (!k || k.startsWith('_') || PRE_VOID_NON_BUSINESS_KEYS.has(k)) continue;
+    const av = prevObj[k];
+    const bv = targetObj[k];
+    if ((av !== null && typeof av === 'object') || (bv !== null && typeof bv === 'object')) continue;
+    const aHas = Object.prototype.hasOwnProperty.call(prevObj, k) && av !== undefined && av !== null;
+    const bHas = Object.prototype.hasOwnProperty.call(targetObj, k) && bv !== undefined && bv !== null;
+    if (!aHas && isZeroOrEmptyDefault(bv)) continue;
+    if (!bHas && isZeroOrEmptyDefault(av)) continue;
+    if (!preVoidValEqual(av, bv)) {
+      changes[k] = { from: av == null ? '' : av, to: bv == null ? '' : bv };
+    }
+  }
+  if (Array.isArray(prevObj.cells) || Array.isArray(targetObj.cells)) {
+    const pCellMap = extractCellFieldsForDiff({ cells: prevObj.cells, headers: Array.isArray(targetObj.headers) ? targetObj.headers : prevObj.headers });
+    const nCellMap = extractCellFieldsForDiff(targetObj);
+    const cellKeys = new Set([...Object.keys(pCellMap), ...Object.keys(nCellMap)]);
+    for (const fKey of cellKeys) {
+      if (Object.keys(changes).length >= 24) break;
+      const pc = pCellMap[fKey];
+      const nc = nCellMap[fKey];
+      const pv = pc ? pc.val : '';
+      const nv = nc ? nc.val : '';
+      const hdrLbl = (nc && nc.label) || (pc && pc.label) || fKey;
+      if (!preVoidValEqual(pv, nv)) {
+        changes[fKey] = { label: hdrLbl, from: pv, to: nv };
+      }
+    }
+  }
+  if (Object.keys(changes).length > 0 && !(wasVoid && nowVoid)) {
+    if (prevOrig && Object.keys(prevOrig).length) {
+      targetObj._pre_void_orig = prevOrig;
+    } else {
+      const initSnap = sanitizePreVoidOrig(prevObj) || {};
+      const pCellMap = extractCellFieldsForDiff({ cells: prevObj.cells, headers: Array.isArray(targetObj.headers) ? targetObj.headers : prevObj.headers });
+      for (const [fKey, entry] of Object.entries(pCellMap)) {
+        if (Object.keys(initSnap).length >= 48) break;
+        initSnap[fKey] = entry.val;
+      }
+      targetObj._pre_void_orig = initSnap;
+    }
+    prevEdits.push({
+      at: nowIso,
+      by: actorName || 'User',
+      changes
+    });
+    targetObj._pre_void_edits = prevEdits.slice(-15);
+  } else {
+    if (prevOrig && Object.keys(prevOrig).length) targetObj._pre_void_orig = prevOrig;
+    else delete targetObj._pre_void_orig;
+    if (prevEdits.length) targetObj._pre_void_edits = prevEdits;
+    else delete targetObj._pre_void_edits;
+  }
+}
+
 function enforceServerVoidActorFields(targetObj, prevObj, session, nowIso, opts = {}) {
   if (!targetObj || typeof targetObj !== 'object') return targetObj;
   const wasVoid = Boolean(prevObj && prevObj.voided);
   const nowVoid = Boolean(targetObj.voided);
+  preserveAndRecordPreVoidEdits(targetObj, prevObj, session, nowIso, wasVoid, nowVoid, opts);
   if (!nowVoid) {
     if (wasVoid) {
       if (prevObj && (!session || !session.build_ticket) && isSyncTwinVoidBy(prevObj)) {
@@ -6057,7 +6251,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
           const vrErr = checkMandatoryVoidReasonEdge(bucket, rowToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB), null);
           if (vrErr) return jsonResponse(vrErr, 400);
         }
-        enforceServerVoidActorFields(rowToWrite, null, session, serverVoidNow);
+        enforceServerVoidActorFields(rowToWrite, null, session, serverVoidNow, { allowInitialSeedEdit: !incVoid });
         const ev = detectRecordGeoAuditEvent('sites', null, rowToWrite, 'industry_domain_store', rowInd);
         if (ev) pendingDomainGeoAudits.push(ev);
       }
@@ -6176,7 +6370,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
         const vrErr = checkMandatoryVoidReasonEdge(editToWrite.domainTblKey || ek, editToWrite, session, await loadVoidReasonRuleCfgEdge(env.DB), null);
         if (vrErr) return jsonResponse(vrErr, 400);
       }
-      enforceServerVoidActorFields(editToWrite, null, session, serverEditVoidNow);
+      enforceServerVoidActorFields(editToWrite, null, session, serverEditVoidNow, { allowInitialSeedEdit: !incVoid });
       const geoEv = detectRecordGeoAuditEvent('sites', null, editToWrite, 'industry_domain_store', edInd);
       if (geoEv) pendingDomainGeoAudits.push(geoEv);
     }
@@ -6586,6 +6780,9 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
           if (pr._seed_orig && typeof pr._seed_orig === 'object' && !pr._is_app_record && pr.source !== 'app') {
             const restored = Object.assign({}, pr, pr._seed_orig, { id: prevId, voided: Boolean(pr._seed_orig.voided) });
             delete restored._seed_orig;
+            delete restored._pre_void_orig;
+            delete restored._pre_void_edits;
+            delete restored.void_reason;
             delete restored.voided_at;
             delete restored.voided_by;
             delete restored.restored_at;
@@ -7904,6 +8101,39 @@ export async function handleAuthMe(env, session) {
   return jsonResponse({ ok: true, edge: true, authenticated: true, session, user: userOut });
 }
 
+function pickSyncBase(dbr, pr) {
+  if (!dbr || typeof dbr !== 'object') return pr;
+  if (!pr || typeof pr !== 'object') return dbr;
+  const dbTs = String(dbr.modified_at || dbr.updated_at || dbr.updatedAt || dbr.restored_at || dbr.voided_at || '');
+  const prTs = String(pr.modified_at || pr.updated_at || pr.updatedAt || pr.restored_at || pr.voided_at || '');
+  const dbVoid = Boolean(dbr.voided);
+  const prVoid = Boolean(pr.voided);
+  if (dbVoid !== prVoid) {
+    if (dbVoid && (!pr.restored_at || String(dbr.voided_at || '') >= String(pr.restored_at || ''))) return dbr;
+    if (prVoid && (!dbr.restored_at || String(dbr.restored_at || '') < String(pr.voided_at || ''))) return pr;
+    return dbTs >= prTs ? dbr : pr;
+  }
+  const dbEd = Array.isArray(dbr._pre_void_edits) ? dbr._pre_void_edits.length : 0;
+  const prEd = Array.isArray(pr._pre_void_edits) ? pr._pre_void_edits.length : 0;
+  if (dbEd !== prEd) return dbEd > prEd ? dbr : pr;
+  if (!dbTs && !prTs && dbr.rev !== pr.rev) {
+    return Number(dbr.rev || 1) >= Number(pr.rev || 1) ? dbr : pr;
+  }
+  return dbTs >= prTs ? dbr : pr;
+}
+
+function isStaleDbVoidPayload(d1r, kvPr, sanIr) {
+  return Boolean(
+    d1r && d1r.voided
+    && sanIr && !sanIr.voided
+    && (!kvPr || !kvPr.voided)
+    && !String(sanIr.restored_at || sanIr.restoredAt || '').trim()
+    && !sanIr._reopenedExplicitly
+    && Number(sanIr.rev || 1) <= Number(d1r.rev || 1)
+    && (!kvPr || !hasNonVoidFieldChange(kvPr, sanIr))
+  );
+}
+
 async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, auditOut = null) {
   if (!incomingDoc || typeof incomingDoc !== 'object' || !session) return;
   const perms = getSessionWritePerms(session);
@@ -7933,7 +8163,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
         for (const ir of iList) {
           if (!ir || typeof ir !== 'object' || !ir.id) continue;
           const rid = String(ir.id).trim();
-          if (rid && !pMap.has(rid)) probeIds.push(rid);
+          if (rid) probeIds.push(rid);
         }
         if (probeIds.length) {
           for (let i = 0; i < probeIds.length; i += 80) {
@@ -7951,7 +8181,9 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
       for (const ir of iList) {
         if (!ir || typeof ir !== 'object' || !ir.id) continue;
         const rid = String(ir.id).trim();
-        const pr = pMap.get(rid) || d1Map.get(rid) || null;
+        const d1r = d1Map.get(rid) || null;
+        const kvPr = pMap.get(rid) || null;
+        const pr = pickSyncBase(d1r, kvPr) || null;
         if (!pr) {
           if (!canCreateTableRecord(perms, canonTable)) continue;
           let cleanedNew = Object.assign({}, ir);
@@ -7984,7 +8216,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
         }
         if (!perms.voidData && (nowVoid !== wasVoid || voidNoteChanged)) {
           if (isReadOnly) {
-            if (pMap.has(rid)) outList.push(pMap.get(rid));
+            outList.push(pr);
             keptIds.add(rid);
             continue;
           }
@@ -7994,7 +8226,10 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
           wasVoid
           && !Boolean(sanIr.voided)
           && (!session || !session.build_ticket)
-          && /^(system-topup|sharepoint top-up)/i.test(String(pr.voided_by || '').trim())
+          && (
+            /^(system-topup|sharepoint top-up)/i.test(String(pr.voided_by || '').trim())
+            || isStaleDbVoidPayload(d1r, kvPr, sanIr)
+          )
         ) {
           if (pMap.has(rid)) outList.push(pMap.get(rid));
           keptIds.add(rid);
@@ -8041,7 +8276,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
               nextRowRo.voided_by = wasVoid ? (pr.voided_by || mergedIr.voided_by || '') : (mergedIr.voided_by || mergedIr.voidedBy || pr.voided_by || '');
               if (wasVoid && pr.voided_by_email) nextRowRo.voided_by_email = pr.voided_by_email;
               nextRowRo.voided_at = wasVoid ? (pr.voided_at || mergedIr.voided_at || '') : (mergedIr.voided_at || mergedIr.voidedAt || pr.voided_at || '');
-              if (voidNoteChanged || !wasVoid) applyExplicitVoidReason(nextRowRo, mergedIr);
+              if (!wasVoid || voidNoteChanged) applyExplicitVoidReason(nextRowRo, mergedIr);
             } else {
               const wasWbMatch = Boolean(
                 pr.twin_of
@@ -8171,13 +8406,38 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
       }
       const iList = Array.isArray(incIcr[bk]) ? incIcr[bk] : [];
       const pMap = new Map(pList.filter(x => x && (x.id || x.code)).map(x => [String(x.id || x.code).trim(), x]));
+      const d1IcrMap = new Map();
+      if (db && (isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData)) {
+        const icrProbeIds = [];
+        for (const ir of iList) {
+          if (!ir || typeof ir !== 'object') continue;
+          const rid = String(ir.id || ir.code || '').trim();
+          if (rid) icrProbeIds.push(rid);
+        }
+        for (let i = 0; i < icrProbeIds.length; i += 80) {
+          const slice = icrProbeIds.slice(i, i + 80);
+          const ph = slice.map((_, idx) => `?${idx + 2}`).join(',');
+          try {
+            const exRes = await db.prepare(`SELECT row_id, rev, voided, updated_at, payload_json FROM industry_custom_rows WHERE bucket = ?1 AND row_id IN (${ph})`).bind(bk, ...slice).all();
+            for (const xr of (exRes.results || [])) {
+              const obj = safeJsonParse(xr.payload_json, {});
+              obj.voided = Boolean(Number(xr.voided || 0) || obj.voided);
+              if (xr.rev && obj.rev === undefined) obj.rev = Number(xr.rev);
+              if (xr.updated_at && !obj.updated_at) obj.updated_at = String(xr.updated_at);
+              d1IcrMap.set(String(xr.row_id).trim(), obj);
+            }
+          } catch (_) {}
+        }
+      }
       const outB = [];
       const kept = new Set();
       for (const ir of iList) {
         if (!ir || typeof ir !== 'object') continue;
         const rid = String(ir.id || ir.code || '').trim();
         if (!rid) continue;
-        const pr = pMap.get(rid);
+        const d1r = d1IcrMap.get(rid) || null;
+        const kvPr = pMap.get(rid) || null;
+        const pr = pickSyncBase(d1r, kvPr) || null;
         if (!pr) {
           if (isReadOnly || !perms.canEnterAny) continue;
           let cleanedNew = Object.assign({}, ir);
@@ -8208,7 +8468,10 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
           wasVoid
           && !Boolean(sanIr.voided)
           && (!session || !session.build_ticket)
-          && /^(system-topup|sharepoint top-up)/i.test(String(pr.voided_by || '').trim())
+          && (
+            /^(system-topup|sharepoint top-up)/i.test(String(pr.voided_by || '').trim())
+            || isStaleDbVoidPayload(d1r, kvPr, sanIr)
+          )
         ) {
           outB.push(pr);
           kept.add(rid);
@@ -8227,9 +8490,14 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
           if (allowVoidOnly) {
             const nextRo = Object.assign({}, pr, { voided: Boolean(mergedIr.voided), updated_at: mergedIr.updated_at || pr.updated_at, rev: mergedIr.rev || pr.rev });
             if (nextRo.voided) {
-              if (voidNoteChanged || !wasVoid) applyExplicitVoidReason(nextRo, mergedIr);
+              if (!wasVoid) delete nextRo._reopenedExplicitly;
+              nextRo.voided_by = wasVoid ? (pr.voided_by || mergedIr.voided_by || '') : (mergedIr.voided_by || mergedIr.voidedBy || pr.voided_by || '');
+              if (wasVoid && pr.voided_by_email) nextRo.voided_by_email = pr.voided_by_email;
+              nextRo.voided_at = wasVoid ? (pr.voided_at || mergedIr.voided_at || '') : (mergedIr.voided_at || mergedIr.voidedAt || pr.voided_at || '');
+              if (!wasVoid || voidNoteChanged) applyExplicitVoidReason(nextRo, mergedIr);
             } else {
               stripVoidFields(nextRo);
+              if (mergedIr.restored_at) nextRo.restored_at = mergedIr.restored_at;
             }
             outB.push(nextRo);
           } else {
@@ -8276,10 +8544,33 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
   if (incomingDoc.industryRowEdits && typeof incomingDoc.industryRowEdits === 'object') {
     const prevIre = (prev.industryRowEdits && typeof prev.industryRowEdits === 'object') ? prev.industryRowEdits : {};
     const incIre = incomingDoc.industryRowEdits;
+    const d1IreMap = new Map();
+    if (db && (isReadOnly || !perms.modifyData || !perms.canWriteGeoConfig || !perms.voidData)) {
+      const ireProbeEks = [];
+      for (const [ek, iv] of Object.entries(incIre)) {
+        if (ek && iv && typeof iv === 'object') ireProbeEks.push(ek);
+      }
+      for (let i = 0; i < ireProbeEks.length; i += 80) {
+        const slice = ireProbeEks.slice(i, i + 80);
+        const ph = slice.map((_, idx) => `?${idx + 1}`).join(',');
+        try {
+          const exRes = await db.prepare(`SELECT edit_key, rev, voided, updated_at, payload_json FROM industry_row_edits WHERE edit_key IN (${ph})`).bind(...slice).all();
+          for (const xr of (exRes.results || [])) {
+            const obj = safeJsonParse(xr.payload_json, {});
+            obj.voided = Boolean(Number(xr.voided || 0) || obj.voided);
+            if (xr.rev && obj.rev === undefined) obj.rev = Number(xr.rev);
+            if (xr.updated_at && !obj.updated_at) obj.updated_at = String(xr.updated_at);
+            d1IreMap.set(String(xr.edit_key).trim(), obj);
+          }
+        } catch (_) {}
+      }
+    }
     const safeIre = {};
     for (const [ek, iv] of Object.entries(incIre)) {
       if (!iv || typeof iv !== 'object') continue;
-      const pv = prevIre[ek] && typeof prevIre[ek] === 'object' ? prevIre[ek] : null;
+      const d1v = d1IreMap.get(ek) || null;
+      const kvPv = prevIre[ek] && typeof prevIre[ek] === 'object' ? prevIre[ek] : null;
+      const pv = pickSyncBase(d1v, kvPv) || null;
       if (pv) {
         const wasVoid = Boolean(pv.voided);
         const nowVoid = Boolean(iv.voided);
@@ -8294,6 +8585,18 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
             continue;
           }
           restoreVoidFieldsFromBase(sanIv, pv);
+        }
+        if (
+          wasVoid
+          && !Boolean(sanIv.voided)
+          && (!session || !session.build_ticket)
+          && (
+            /^(system-topup|sharepoint top-up)/i.test(String(pv.voided_by || '').trim())
+            || isStaleDbVoidPayload(d1v, kvPv, sanIv)
+          )
+        ) {
+          safeIre[ek] = pv;
+          continue;
         }
         const isSparsePureVoid = Boolean((wasVoid !== Boolean(sanIv.voided) || voidNoteChanged) && !hasExplicitGpsKeyInPayload(sanIv) && !hasNonVoidFieldChange(pv, sanIv));
         const mergedIv = isSparsePureVoid ? restoreGpsFieldsFromBase(Object.assign({}, pv, sanIv), pv) : sanIv;
@@ -8321,15 +8624,25 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
               detail: { editKey: ek, error: 'Unauthorized read-only domain edit GPS mutation reverted on sync' }
             });
           }
-          if (allowVoidOnly && voidNoteChanged) {
+          if (allowVoidOnly) {
             safeIre[ek] = Object.assign({}, pv, {
+              voided: Boolean(mergedIv.voided),
               rev: mergedIv.rev || pv.rev,
               updated_at: mergedIv.updated_at || pv.updated_at,
               updatedAt: mergedIv.updatedAt || pv.updatedAt
             });
-            applyExplicitVoidReason(safeIre[ek], mergedIv);
+            if (safeIre[ek].voided) {
+              if (!wasVoid) delete safeIre[ek]._reopenedExplicitly;
+              safeIre[ek].voided_by = wasVoid ? (pv.voided_by || mergedIv.voided_by || '') : (mergedIv.voided_by || mergedIv.voidedBy || pv.voided_by || '');
+              if (wasVoid && pv.voided_by_email) safeIre[ek].voided_by_email = pv.voided_by_email;
+              safeIre[ek].voided_at = wasVoid ? (pv.voided_at || mergedIv.voided_at || '') : (mergedIv.voided_at || mergedIv.voidedAt || pv.voided_at || '');
+              if (!wasVoid || voidNoteChanged) applyExplicitVoidReason(safeIre[ek], mergedIv);
+            } else {
+              stripVoidFields(safeIre[ek]);
+              if (mergedIv.restored_at) safeIre[ek].restored_at = mergedIv.restored_at;
+            }
           } else {
-            safeIre[ek] = allowVoidOnly ? mergedIv : pv;
+            safeIre[ek] = pv;
           }
         } else {
           if (!perms.canWriteGeoConfig && hasGpsFieldMutation(pv, mergedIv)) {
@@ -8417,6 +8730,72 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
   if (!incomingDoc || typeof incomingDoc !== 'object' || !session || session.build_ticket) return;
   const prev = (prevDoc && typeof prevDoc === 'object') ? prevDoc : {};
   const nowIso = new Date().toISOString();
+  const needsSyncProbe = (ir, pr) => {
+    if (!pr) return true;
+    if (Boolean(ir.voided) !== Boolean(pr.voided)) return true;
+    if (ir._pre_void_edits || ir._pre_void_orig || pr._pre_void_edits || pr._pre_void_orig) return true;
+    if (hasNonVoidFieldChange(pr, ir)) return true;
+    return stableRowSig(pr) !== stableRowSig(ir);
+  };
+  const lastEditTs = obj => {
+    const eds = obj && Array.isArray(obj._pre_void_edits) ? obj._pre_void_edits : null;
+    return (eds && eds.length) ? String(eds[eds.length - 1]?.at || '') : '';
+  };
+  const preserveNewerDbRowOverStaleSync = (ir, dbr, pr) => {
+    if (!ir || typeof ir !== 'object' || !dbr || typeof dbr !== 'object') return false;
+    const dbV = Boolean(dbr.voided);
+    const irV = Boolean(ir.voided);
+    const staleDbVoid = isStaleDbVoidPayload(dbr, pr, ir);
+    const restoredAt = String(ir.restored_at || ir.restoredAt || '').trim();
+    const dbVoidTs = String(dbr.voided_at || dbr.voidedAt || '');
+    const editTs = lastEditTs(dbr);
+    const dbBizTs = String(editTs || dbr.modified_at || dbr.updated_at || dbr.updatedAt || '');
+    const irTs = String(ir.modified_at || ir.updated_at || ir.updatedAt || '');
+    const irVoidTs = String(ir.voided_at || ir.voidedAt || irTs || '');
+    const dbEdCnt = Array.isArray(dbr._pre_void_edits) ? dbr._pre_void_edits.length : 0;
+    const irEdCnt = Array.isArray(ir._pre_void_edits) ? ir._pre_void_edits.length : 0;
+    const dbOrigCnt = (dbr._pre_void_orig && typeof dbr._pre_void_orig === 'object') ? Object.keys(dbr._pre_void_orig).length : 0;
+    const irOrigCnt = (ir._pre_void_orig && typeof ir._pre_void_orig === 'object') ? Object.keys(ir._pre_void_orig).length : 0;
+    const prEdCnt = (pr && Array.isArray(pr._pre_void_edits)) ? pr._pre_void_edits.length : 0;
+    const prOrigCnt = (pr && pr._pre_void_orig && typeof pr._pre_void_orig === 'object') ? Object.keys(pr._pre_void_orig).length : 0;
+    const dbAheadOfPr = Boolean(!pr || hasNonVoidFieldChange(pr, dbr) || dbEdCnt > prEdCnt || dbOrigCnt > prOrigCnt || (dbV && !pr.voided));
+    const hasDbDelta = hasNonVoidFieldChange(ir, dbr) || dbEdCnt > irEdCnt || dbOrigCnt > irOrigCnt;
+    const staleUnvoidOverwrite = Boolean(
+      staleDbVoid
+      || (
+        dbV && !irV
+        && (!pr || !pr.voided)
+        && !ir._reopenedExplicitly
+        && (!restoredAt || (dbVoidTs && restoredAt < dbVoidTs))
+        && (hasDbDelta || !irTs || (dbVoidTs && irTs < dbVoidTs))
+      )
+    );
+    const isOlderTs = Boolean(dbAheadOfPr && dbEdCnt > irEdCnt && editTs && irTs && irTs < editTs);
+    const matchesPreEditOrig = Boolean(
+      dbAheadOfPr
+      && dbEdCnt > irEdCnt
+      && dbr._pre_void_orig && typeof dbr._pre_void_orig === 'object'
+      && hasNonVoidFieldChange(ir, dbr)
+      && !hasNonVoidFieldChange(Object.assign({}, dbr, dbr._pre_void_orig), ir)
+    );
+    const uneditedStaleOverNewerDb = Boolean(matchesPreEditOrig || (pr && !hasNonVoidFieldChange(pr, ir) && hasDbDelta));
+    if (!staleUnvoidOverwrite && !isOlderTs && !uneditedStaleOverNewerDb) return false;
+    const keepBucket = ir._customBucket;
+    if (!staleUnvoidOverwrite && !dbV && irV && uneditedStaleOverNewerDb && !isOlderTs && irVoidTs && (!dbBizTs || irVoidTs >= dbBizTs)) {
+      const keepVoid = { voided: true };
+      for (const vk of ['void_reason', 'voidReason', 'void_note', 'voidNote', 'voided_at', 'voidedAt', 'voided_by', 'voidedBy', 'voided_by_email', 'voidedByEmail', 'modified_at']) {
+        if (vk in ir && ir[vk] !== undefined) keepVoid[vk] = ir[vk];
+      }
+      for (const k of Object.keys(ir)) delete ir[k];
+      Object.assign(ir, dbr, keepVoid);
+      if (keepBucket && !ir._customBucket) ir._customBucket = keepBucket;
+      return false;
+    }
+    for (const k of Object.keys(ir)) delete ir[k];
+    Object.assign(ir, dbr);
+    if (keepBucket && !ir._customBucket) ir._customBucket = keepBucket;
+    return true;
+  };
 
   if (incomingDoc.customRecords && typeof incomingDoc.customRecords === 'object') {
     const prevCr = (prev.customRecords && typeof prev.customRecords === 'object') ? prev.customRecords : {};
@@ -8432,7 +8811,7 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
           if (!ir || typeof ir !== 'object' || !ir.id) continue;
           const rid = String(ir.id).trim();
           const pr = pMap.get(rid);
-          if (Boolean(ir.voided) ? (!pr || !pr.voided) : (!pr || Boolean(pr.voided))) probeIds.push(rid);
+          if (needsSyncProbe(ir, pr)) probeIds.push(rid);
         }
         for (let i = 0; i < probeIds.length; i += 80) {
           const slice = probeIds.slice(i, i + 80);
@@ -8450,7 +8829,8 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
         const rid = String(ir.id).trim();
         const pr = pMap.get(rid) || null;
         const d1r = d1Map.get(rid) || null;
-        const base = (d1r && d1r.voided) ? d1r : pr;
+        if (preserveNewerDbRowOverStaleSync(ir, d1r, pr)) continue;
+        const base = pickSyncBase(d1r, pr);
         enforceServerVoidActorFields(ir, base, session, nowIso, { allowDoorTablet: canonTable === 'attendance' });
       }
     }
@@ -8469,16 +8849,18 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
           if (!ir || typeof ir !== 'object') continue;
           const rid = String(ir.id || ir.code || '').trim();
           const pr = rid ? pMap.get(rid) : null;
-          if (rid && (Boolean(ir.voided) ? (!pr || !pr.voided) : (!pr || Boolean(pr.voided)))) probeIds.push(rid);
+          if (rid && needsSyncProbe(ir, pr)) probeIds.push(rid);
         }
         for (let i = 0; i < probeIds.length; i += 80) {
           const slice = probeIds.slice(i, i + 80);
           const ph = slice.map((_, idx) => `?${idx + 2}`).join(',');
           try {
-            const exRes = await db.prepare(`SELECT row_id, voided, payload_json FROM industry_custom_rows WHERE bucket = ?1 AND row_id IN (${ph})`).bind(bk, ...slice).all();
+            const exRes = await db.prepare(`SELECT row_id, rev, voided, updated_at, payload_json FROM industry_custom_rows WHERE bucket = ?1 AND row_id IN (${ph})`).bind(bk, ...slice).all();
             for (const xr of (exRes.results || [])) {
               const obj = safeJsonParse(xr.payload_json, {});
               obj.voided = Boolean(Number(xr.voided || 0) || obj.voided);
+              if (xr.rev && obj.rev === undefined) obj.rev = Number(xr.rev);
+              if (xr.updated_at && !obj.updated_at) obj.updated_at = String(xr.updated_at);
               d1Map.set(String(xr.row_id).trim(), obj);
             }
           } catch (_) {}
@@ -8490,7 +8872,8 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
         if (!rid) continue;
         const pr = pMap.get(rid) || null;
         const d1r = d1Map.get(rid) || null;
-        enforceServerVoidActorFields(ir, (d1r && d1r.voided) ? d1r : pr, session, nowIso);
+        if (preserveNewerDbRowOverStaleSync(ir, d1r, pr)) continue;
+        enforceServerVoidActorFields(ir, pickSyncBase(d1r, pr), session, nowIso);
       }
     }
   }
@@ -8503,16 +8886,18 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
       for (const [ek, iv] of Object.entries(incomingDoc.industryRowEdits)) {
         if (!ek || !iv || typeof iv !== 'object') continue;
         const pv = prevIre[ek];
-        if (Boolean(iv.voided) ? (!pv || !pv.voided) : (!pv || Boolean(pv.voided))) probeEks.push(ek);
+        if (needsSyncProbe(iv, pv)) probeEks.push(ek);
       }
       for (let i = 0; i < probeEks.length; i += 80) {
         const slice = probeEks.slice(i, i + 80);
         const ph = slice.map((_, idx) => `?${idx + 1}`).join(',');
         try {
-          const exRes = await db.prepare(`SELECT edit_key, voided, payload_json FROM industry_row_edits WHERE edit_key IN (${ph})`).bind(...slice).all();
+          const exRes = await db.prepare(`SELECT edit_key, rev, voided, updated_at, payload_json FROM industry_row_edits WHERE edit_key IN (${ph})`).bind(...slice).all();
           for (const xr of (exRes.results || [])) {
             const obj = safeJsonParse(xr.payload_json, {});
             obj.voided = Boolean(Number(xr.voided || 0) || obj.voided);
+            if (xr.rev && obj.rev === undefined) obj.rev = Number(xr.rev);
+            if (xr.updated_at && !obj.updated_at) obj.updated_at = String(xr.updated_at);
             d1EditMap.set(String(xr.edit_key).trim(), obj);
           }
         } catch (_) {}
@@ -8522,7 +8907,8 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
       if (!ek || !iv || typeof iv !== 'object') continue;
       const pv = prevIre[ek] && typeof prevIre[ek] === 'object' ? prevIre[ek] : null;
       const d1e = d1EditMap.get(ek) || null;
-      enforceServerVoidActorFields(iv, (d1e && d1e.voided) ? d1e : pv, session, nowIso);
+      if (preserveNewerDbRowOverStaleSync(iv, d1e, pv)) continue;
+      enforceServerVoidActorFields(iv, pickSyncBase(d1e, pv), session, nowIso);
     }
   }
 }
