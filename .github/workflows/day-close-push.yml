@@ -1,0 +1,28 @@
+name: Close-of-Day Needs Attention Push
+
+on:
+  schedule:
+    # Runs hourly at :05 across 15:00..22:00 Asia/Beirut (12:05..20:05 UTC across EET UTC+2 and EEST UTC+3)
+    - cron: '5 12,13,14,15,16,17,18,19,20 * * *'
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ISABI_BUILD_TICKET: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Wrangler CLI for D1 build-ticket minting
+        run: npm install -g wrangler@4
+      - name: Dispatch due close-of-day push notifications
+        run: python3 build/dispatch_day_close_push.py

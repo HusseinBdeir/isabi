@@ -7105,7 +7105,7 @@ async function hasOrphanKvParts(db, key) {
   return Boolean(r);
 }
 
-async function readEdgeKvDoc(db, key) {
+export async function readEdgeKvDoc(db, key) {
   const rows = await db.prepare(
     'SELECT doc_key, payload_json, updated_at, rev FROM edge_kv_store WHERE doc_key = ?1 OR doc_key LIKE ?2 ORDER BY doc_key ASC'
   ).bind(key, `${key}__part_%`).all();
@@ -7129,7 +7129,7 @@ async function readEdgeKvDoc(db, key) {
   };
 }
 
-async function writeEdgeKvDoc(db, key, jsonStr, updatedAt, updatedBy, casOpts = null) {
+export async function writeEdgeKvDoc(db, key, jsonStr, updatedAt, updatedBy, casOpts = null) {
   const slices = chunkStringSurrogateSafe(jsonStr, KV_CHUNK_CHARS);
   const headSlice = slices[0];
   if (casOpts && typeof casOpts === 'object') {
@@ -7966,11 +7966,22 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
   }
 }
 
+export function isPushOwnedDoc(docKey) {
+  const k = String(docKey || '');
+  return k === 'vapid_keypair_v1'
+    || k === 'day_close_push_subs_v1'
+    || k.startsWith('vapid_keypair_v1__part_')
+    || k.startsWith('day_close_push_subs_v1__part_');
+}
+
 export async function handleSync(request, env, session, body, _ctx) {
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   if (!env || !env.DB) return jsonResponse({ ok: false, error: 'D1 not bound' }, 503);
   const docKey = String((body && body.doc) || 'mfg_web_store');
   const patchDocKeys = (body && body.op === 'patch' && body.patch && typeof body.patch === 'object') ? Object.keys(body.patch) : [];
+  if (isPushOwnedDoc(docKey) || patchDocKeys.some(isPushOwnedDoc)) {
+    return jsonResponse({ ok: false, error: 'Push keys and subscriptions are managed from /api/day-close-push.' }, 403);
+  }
   if (isKioskOwnedDoc(docKey) || patchDocKeys.some(isKioskOwnedDoc)) {
     return jsonResponse({ ok: false, error: 'This document is managed from Kiosks, Tablet Keys.' }, 403);
   }

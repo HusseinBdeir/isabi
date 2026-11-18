@@ -145,12 +145,17 @@ const T = issue();
   r = await api('changed_entries', { headers: withTicket(T) });
   ok('...and it reads back', r.status === 200 && r.json.changed_entries && r.json.changed_entries.core_hash === 'c1', r);
   ok('changed_entries without a ticket -> 401', (await api('changed_entries')).status === 401);
+  r = await api('day-close-push', { method: 'POST', headers: withTicket(T), body: { op: 'dispatch_due' } });
+  ok('POST day-close-push (dispatch_due) with a ticket -> 200', r.status === 200 && r.json && r.json.ok === true, r);
+  r = await api('day-close-push', { method: 'POST', headers: withTicket(T), body: { op: 'subscribe', subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/x', keys: { p256dh: 'x', auth: 'y' } } } });
+  ok('POST day-close-push (subscribe) with a ticket -> 403', r.status === 403, r);
+  ok('POST day-close-push (dispatch_due) without a ticket -> 401', (await api('day-close-push', { method: 'POST', body: { op: 'dispatch_due' } })).status === 401);
 }
 
 console.log('\n[scope] nothing but those routes and methods');
 {
   const blocked = [
-    ['GET', 'sync'], ['POST', 'users'], ['GET', 'auth/me'], ['GET', 'saved-views'], ['POST', 'saved-views'], ['GET', 'records'], ['POST', 'records'],
+    ['GET', 'sync'], ['GET', 'day-close-push'], ['POST', 'users'], ['GET', 'auth/me'], ['GET', 'saved-views'], ['POST', 'saved-views'], ['GET', 'records'], ['POST', 'records'],
     ['GET', 'work_schedules'], ['POST', 'work_schedules'], ['GET', 'geo_config'], ['GET', 'sentinel_reviews'], ['GET', 'alert_rules'], ['POST', 'alert_rules'],
     ['GET', 'staff_biometrics'], ['GET', 'industry_domain_store'], ['POST', 'industry_domain_store'], ['POST', 'kiosk/punches'], ['GET', 'blobs'],
     ['GET', 'telematics'], ['POST', 'ask'], ['POST', 'tts'], ['POST', 'ai-edge'], ['POST', 'auth/verify-override'], ['GET', 'auth/override-requests'],
@@ -165,13 +170,13 @@ console.log('\n[scope] nothing but those routes and methods');
   ok(`a ticket changes nothing on ${blocked.length} other route and method pairs`, leaks.length === 0, leaks);
   const otherMethods = [];
   for (const method of ['PUT', 'DELETE', 'PATCH']) {
-    for (const path of ['sync', 'users', 'cashflow_behind', 'source_behind', 'changed_entries']) {
+    for (const path of ['sync', 'users', 'cashflow_behind', 'source_behind', 'changed_entries', 'day-close-push']) {
       const withT = await api(path, { method, headers: withTicket(T), body: {} });
       const without = await api(path, { method, body: {} });
       if (withT.status !== without.status || withT.txt !== without.txt || withT.status === 200) otherMethods.push([method, path, withT.status, without.status]);
     }
   }
-  ok('PUT, DELETE and PATCH on the five routes: a ticket changes nothing and nothing answers 200', otherMethods.length === 0, otherMethods);
+  ok('PUT, DELETE and PATCH on the six routes: a ticket changes nothing and nothing answers 200', otherMethods.length === 0, otherMethods);
   // The router builds its path from the route array: odd arrays must not reach a listed route.
   const oddRoutes = [];
   for (const route of [['sync', ''], ['', 'sync'], ['sync', 'x'], ['SYNC'], ['users', ''], ['cashflow_behind', '..', 'sync']]) {
@@ -188,8 +193,9 @@ console.log('\n[scope] nothing but those routes and methods');
   const st = await api('status', { headers: withTicket(T) });
   const stAnon = await api('status');
   ok('status answers a ticket exactly as it answers nobody', st.status === stAnon.status && st.txt === stAnon.txt, [st, stAnon]);
-  ok('route table: exact paths only', isBuildTicketRoute('/sync', 'POST') && isBuildTicketRoute('/users', 'get') && !isBuildTicketRoute('/sync/', 'POST')
-    && !isBuildTicketRoute('/sync', 'GET') && !isBuildTicketRoute('/users', 'POST') && !isBuildTicketRoute('/SYNC', 'POST') && !isBuildTicketRoute('', 'POST'));
+  ok('route table: exact paths only', isBuildTicketRoute('/sync', 'POST') && isBuildTicketRoute('/users', 'get') && isBuildTicketRoute('/day-close-push', 'POST')
+    && !isBuildTicketRoute('/day-close-push', 'GET') && !isBuildTicketRoute('/day-close-push/', 'POST')
+    && !isBuildTicketRoute('/sync/', 'POST') && !isBuildTicketRoute('/sync', 'GET') && !isBuildTicketRoute('/users', 'POST') && !isBuildTicketRoute('/SYNC', 'POST') && !isBuildTicketRoute('', 'POST'));
   ok('route table: object built-ins are not routes', !isBuildTicketRoute('constructor', 'POST') && !isBuildTicketRoute('__proto__', 'GET')
     && !isBuildTicketRoute('toString', 'GET') && !isBuildTicketRoute('hasOwnProperty', 'POST'));
 }

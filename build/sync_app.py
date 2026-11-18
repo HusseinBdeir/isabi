@@ -84,6 +84,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_changed_entries_notice.mjs", "node"),  # Owner notice: workbook edits to already-loaded entries
     ("isabi-app", "build/verify_near_copy.mjs", "node"),             # warn at Post on a likely second copy (ticket slip, 11% VAT apart)
     ("isabi", "build/verify_geo_audit_gate_dwell_edge.mjs", "node"), # Geo audit log, gt1.* gate pins & RLS parity
+    ("isabi", "build/verify_web_push_unit.mjs", "node"),             # RFC 8291 / VAPID / CAS / sibling digest unit gate
 ]
 
 
