@@ -6129,6 +6129,107 @@ finally:
         }
       }));
     }
+
+    // 47. Close-of-Day Needs Attention Web Push (/app/api/day-close-push + /api/sync 403 guard + SSRF validation + Owner dispatch_due RLS)
+    const ePushAnonGet = await httpReq('GET', '/app/api/day-close-push');
+    const ePushDemoGet = await httpReq('GET', '/app/api/day-close-push', null, { 'X-ISABI-Demo': '1' });
+    const ePushDemoPost = await httpReq('POST', '/app/api/day-close-push', { op: 'prefs', closeHourBeirut: 18 }, { 'X-ISABI-Demo': '1' });
+    const ePushDemoAuthPost = await httpReq('POST', '/app/api/day-close-push', { op: 'prefs', closeHourBeirut: 18 }, { 'X-ISABI-Session': ownerToken, 'X-ISABI-Demo': '1' });
+    const ePushOwnerGet0 = await httpReq('GET', '/app/api/day-close-push', null, { 'X-ISABI-Session': ownerToken });
+    const ePushSyncVapid403 = await httpReq('POST', '/app/api/sync', { op: 'patch', doc: 'vapid_keypair_v1', patch: { vapid_keypair_v1: { x: 1 } } }, { 'X-ISABI-Session': ownerToken });
+    const ePushSyncSubs403 = await httpReq('POST', '/app/api/sync', { op: 'patch', doc: 'day_close_push_subs_v1', patch: { day_close_push_subs_v1: { byUser: {} } } }, { 'X-ISABI-Session': ownerToken });
+    const ePushSyncRead = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+
+    const ePushEcdh = crypto.createECDH('prime256v1');
+    ePushEcdh.generateKeys();
+    const ePushP256dh = ePushEcdh.getPublicKey('base64url');
+    const ePushAuth = crypto.randomBytes(16).toString('base64url');
+    const ePushSubKeys = { p256dh: ePushP256dh, auth: ePushAuth };
+
+    const ePushHttp400 = await httpReq('POST', '/app/api/day-close-push', { op: 'subscribe', subscription: { endpoint: 'http://fcm.googleapis.com/fcm/send/abc', keys: ePushSubKeys } }, { 'X-ISABI-Session': ownerToken });
+    const ePushMeta400 = await httpReq('POST', '/app/api/day-close-push', { op: 'subscribe', subscription: { endpoint: 'https://169.254.169.254/latest/meta-data', keys: ePushSubKeys } }, { 'X-ISABI-Session': ownerToken });
+    const ePushEvil400 = await httpReq('POST', '/app/api/day-close-push', { op: 'subscribe', subscription: { endpoint: 'https://evil.example.com/push', keys: ePushSubKeys } }, { 'X-ISABI-Session': ownerToken });
+    const ePushBadB64_400 = await httpReq('POST', '/app/api/day-close-push', { op: 'subscribe', subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/badb64', keys: { p256dh: '!!!', auth: 'x' } } }, { 'X-ISABI-Session': ownerToken });
+    const ePushBadScope_400 = await httpReq('POST', '/app/api/day-close-push', { op: 'subscribe', scopeKey: 'bogus_scope', subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/badscope', keys: ePushSubKeys } }, { 'X-ISABI-Session': ownerToken });
+
+    const ePushEntryShac403 = await httpReq('POST', '/app/api/day-close-push', { op: 'subscribe', scopeKey: 'shacman', subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/e-shac', keys: ePushSubKeys } }, { 'X-ISABI-Session': entryToken });
+    const ePushEntryProps403 = await httpReq('POST', '/app/api/day-close-push', { op: 'subscribe', scopeKey: 'properties', subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/e-prop', keys: ePushSubKeys } }, { 'X-ISABI-Session': entryToken });
+    const ePushEntryEmpty403 = await httpReq('POST', '/app/api/day-close-push', { op: 'subscribe', scopeKey: '', subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/e-empty', keys: ePushSubKeys } }, { 'X-ISABI-Session': entryToken });
+    const ePushEntryMfgGrp403 = await httpReq('POST', '/app/api/day-close-push', { op: 'subscribe', scopeKey: 'manufacturing-group', subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/e-grp', keys: ePushSubKeys } }, { 'X-ISABI-Session': entryToken });
+    const ePushEntryWtc200 = await httpReq('POST', '/app/api/day-close-push', { op: 'subscribe', scopeKey: 'wtc', subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/e-wtc', keys: ePushSubKeys } }, { 'X-ISABI-Session': entryToken });
+    const ePushEntryUnsub200 = await httpReq('POST', '/app/api/day-close-push', { op: 'unsubscribe', endpoint: 'https://fcm.googleapis.com/fcm/send/e-wtc' }, { 'X-ISABI-Session': entryToken });
+
+    const ePushSub200 = await httpReq('POST', '/app/api/day-close-push', {
+      op: 'subscribe',
+      closeHourBeirut: 18,
+      whatsappPhone: '+961 3 111 222',
+      lang: 'en',
+      scopeKey: 'wtc',
+      subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/ePush-test-token', keys: ePushSubKeys }
+    }, { 'X-ISABI-Session': ownerToken });
+    const ePushPrefs200 = await httpReq('POST', '/app/api/day-close-push', {
+      op: 'prefs',
+      closeHourBeirut: 19,
+      whatsappPhone: '+961 3 555 777',
+      lang: 'fr',
+      scopeKey: 'wtc'
+    }, { 'X-ISABI-Session': ownerToken });
+    const ePushOwnerGet1 = await httpReq('GET', '/app/api/day-close-push', null, { 'X-ISABI-Session': ownerToken });
+    const ePushPrefsReset200 = await httpReq('POST', '/app/api/day-close-push', {
+      op: 'prefs',
+      closeHourBeirut: 19,
+      whatsappPhone: '+961 3 555 777',
+      lang: 'fr',
+      scopeKey: ''
+    }, { 'X-ISABI-Session': ownerToken });
+    const ePushOwnerGetReset = await httpReq('GET', '/app/api/day-close-push', null, { 'X-ISABI-Session': ownerToken });
+    const ePushEntryTakeover200 = await httpReq('POST', '/app/api/day-close-push', {
+      op: 'subscribe',
+      scopeKey: 'wtc',
+      subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/ePush-test-token', keys: ePushSubKeys }
+    }, { 'X-ISABI-Session': entryToken });
+    const ePushOwnerLostGet = await httpReq('GET', '/app/api/day-close-push', null, { 'X-ISABI-Session': ownerToken });
+    const ePushEntryAfterUn200 = await httpReq('POST', '/app/api/day-close-push', { op: 'unsubscribe', endpoint: 'https://fcm.googleapis.com/fcm/send/ePush-test-token' }, { 'X-ISABI-Session': entryToken });
+    const ePushEntryDisp403 = await httpReq('POST', '/app/api/day-close-push', { op: 'dispatch_due' }, { 'X-ISABI-Session': entryToken });
+    const ePushOwnerGet2 = await httpReq('GET', '/app/api/day-close-push', null, { 'X-ISABI-Session': ownerToken });
+
+    const ePushDocs = ePushSyncRead.json?.docs || {};
+    const ePushOk = Boolean(
+      ePushAnonGet.status === 401 &&
+      ePushDemoGet.status === 200 && ePushDemoGet.json?.demo === true && ePushDemoGet.json?.subscribed === false && ePushDemoGet.json?.vapidPublicKey === '' &&
+      ePushDemoPost.status === 401 && ePushDemoAuthPost.status === 403 &&
+      ePushOwnerGet0.status === 200 && typeof ePushOwnerGet0.json?.vapidPublicKey === 'string' && ePushOwnerGet0.json.vapidPublicKey.length >= 80 &&
+      !('privateJwk' in (ePushOwnerGet0.json || {})) && !/privateJwk/.test(ePushOwnerGet0.text || '') &&
+      ePushSyncVapid403.status === 403 && ePushSyncSubs403.status === 403 &&
+      !('vapid_keypair_v1' in ePushDocs) && !('day_close_push_subs_v1' in ePushDocs) &&
+      ePushHttp400.status === 400 && ePushMeta400.status === 400 && ePushEvil400.status === 400 &&
+      ePushBadB64_400.status === 400 && ePushBadScope_400.status === 400 &&
+      ePushEntryShac403.status === 403 && ePushEntryProps403.status === 403 && ePushEntryEmpty403.status === 403 && ePushEntryMfgGrp403.status === 403 &&
+      ePushEntryWtc200.status === 200 && ePushEntryUnsub200.status === 200 &&
+      ePushSub200.status === 200 && ePushSub200.json?.subscribed === true && Number(ePushSub200.json?.endpointCount) === 1 &&
+      ePushPrefs200.status === 200 &&
+      ePushOwnerGet1.status === 200 && ePushOwnerGet1.json?.subscribed === true && Number(ePushOwnerGet1.json?.closeHourBeirut) === 19 && ePushOwnerGet1.json?.lang === 'fr' && ePushOwnerGet1.json?.scopeKey === 'wtc' &&
+      ePushPrefsReset200.status === 200 && ePushOwnerGetReset.status === 200 && ePushOwnerGetReset.json?.scopeKey === '' &&
+      ePushEntryTakeover200.status === 200 && ePushEntryTakeover200.json?.subscribed === true &&
+      ePushOwnerLostGet.status === 200 && ePushOwnerLostGet.json?.subscribed === false && Number(ePushOwnerLostGet.json?.endpointCount) === 0 &&
+      ePushEntryAfterUn200.status === 200 && ePushEntryAfterUn200.json?.subscribed === false &&
+      ePushEntryDisp403.status === 403 &&
+      ePushOwnerGet2.status === 200 && ePushOwnerGet2.json?.subscribed === false
+    );
+    if (ePushOk) {
+      pass('edge-47-day-close-push', 'VAPID public key without privateJwk, demo GET 200 / POST 401+403, /sync 403 push guards, malformed b64/scopeKey 400, entryToken RLS 403/200, owner prefs scopeKey reset, HTTPS/allowlist SSRF 400s, subscribe+prefs+unsubscribe round-trip & Entry dispatch_due 403');
+    } else {
+      fail('edge-47-day-close-push', JSON.stringify({
+        anon: ePushAnonGet.status, demoGet: ePushDemoGet.status, demoPost: ePushDemoPost.status, demoAuthPost: ePushDemoAuthPost.status,
+        get0: { st: ePushOwnerGet0.status, len: (ePushOwnerGet0.json?.vapidPublicKey || '').length },
+        sync403: [ePushSyncVapid403.status, ePushSyncSubs403.status],
+        ssrf: [ePushHttp400.status, ePushMeta400.status, ePushEvil400.status, ePushBadB64_400.status, ePushBadScope_400.status],
+        entryRls: [ePushEntryShac403.status, ePushEntryProps403.status, ePushEntryEmpty403.status, ePushEntryMfgGrp403.status, ePushEntryWtc200.status, ePushEntryUnsub200.status],
+        sub: { st: ePushSub200.status, j: ePushSub200.json }, prefs: { st: ePushPrefs200.status, j: ePushPrefs200.json },
+        get1: ePushOwnerGet1.json, getReset: ePushOwnerGetReset.json, entry403: ePushEntryDisp403.status,
+        unsub: { st: ePushUnsub200.status, j: ePushUnsub200.json }, get2: ePushOwnerGet2.json
+      }).slice(0, 800));
+    }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
     killTree(edgeProc.pid);

@@ -627,7 +627,8 @@ const BUILD_TICKET_ROUTES = Object.freeze({
   '/users': Object.freeze(['GET']),
   '/cashflow_behind': Object.freeze(['GET', 'POST']),
   '/source_behind': Object.freeze(['GET', 'POST']),
-  '/changed_entries': Object.freeze(['GET', 'POST'])
+  '/changed_entries': Object.freeze(['GET', 'POST']),
+  '/day-close-push': Object.freeze(['POST'])
 });
 
 export function isBuildTicketRoute(subPath, method) {

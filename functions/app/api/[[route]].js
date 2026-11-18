@@ -47,6 +47,7 @@ import {
 import { handleTelematics } from '../../_lib/telematics.js';
 import { handleKioskOptions, handleKioskPosVoidFeed, handleKioskPunchFeed, handleKioskVerify } from '../../_lib/kiosk_verify.js';
 import { handleResolveMapLink } from '../../_lib/map_link.js';
+import { handleDayClosePush } from '../../_lib/web_push.js';
 import {
   applyEdgeCors,
   canAccessCompany,
@@ -71,7 +72,8 @@ const DEMO_EMPTY_GET_ROUTES = new Set([
   '/cashflow_behind',
   '/source_behind',
   '/changed_entries',
-  '/industry_domain_store'
+  '/industry_domain_store',
+  '/day-close-push'
 ]);
 
 const DEMO_AI_MAX_BYTES = 1572864; // 1.5 MB ceiling on unauthenticated Demo AI payloads
@@ -241,6 +243,7 @@ async function routeAppApi(context) {
       if (subPath === '/source_behind') return jsonResponse({ ok: true, demo: true, source_behind: null });
       if (subPath === '/changed_entries') return jsonResponse({ ok: true, demo: true, changed_entries: null });
       if (subPath === '/industry_domain_store') return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
+      if (subPath === '/day-close-push') return jsonResponse({ ok: true, demo: true, subscribed: false, endpointCount: 0, vapidPublicKey: '', closeHourBeirut: 18, whatsappPhone: '', lang: 'en', scopeKey: '', lastSentDate: '' });
     }
     if (subPath === '/smart-scan' && request.method === 'POST' && body && body.phoneScanSid) {
       return handlePhoneSmartScanRoute(request, env, body, rawBytes, parseError);
@@ -343,6 +346,10 @@ async function routeAppApi(context) {
 
   if (subPath === '/telematics' && (request.method === 'GET' || request.method === 'POST')) {
     return handleTelematics(request, env, session, url, body);
+  }
+
+  if (subPath === '/day-close-push' && (request.method === 'GET' || request.method === 'POST')) {
+    return handleDayClosePush(request, env, session, body);
   }
 
   // Edge AI Endpoints (Authenticated)
