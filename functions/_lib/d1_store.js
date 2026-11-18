@@ -5405,13 +5405,17 @@ export async function handleCashflowBehind(request, env, session, body, rawBytes
 // reach the Edge (its sync push is refused, or it only has to refresh), and the Owner reads the list.
 //   * One edge_kv_store row per seat and device: doc_key = device_unsent:<seat id>:<device id>. A seat writes only
 //     its own rows; the seat, e-mail and name come from the session, never from the request.
-//   * POST { device_id, label, count, since, reason, shell }: count >= 1 = holding; count 0 = sent, and a row that
-//     was holding stays as "sent late" for DEVICE_UNSENT_LATE_HOURS so the Owner knows late entries arrived.
+//   * POST { device_id, label, count, since, reason, shell }: count >= 1 = holding; count 0 = sent. A row that held
+//     entries for DEVICE_UNSENT_LATE_MIN_MS or longer stays as "sent late" for DEVICE_UNSENT_LATE_HOURS so the Owner
+//     knows late entries arrived; a shorter hold (a signal drop) is simply removed.
+//   * count 0 with all_seats, from an Owner or full-group seat: that seat sends every company's rows, so it closes
+//     the reports other seats left open for the same device (a shared device changes seats).
 //   * GET is Owner-only. /api/sync neither serves nor patches these rows (isDeviceUnsentDoc).
 const DEVICE_UNSENT_PREFIX = 'device_unsent:';
 const DEVICE_UNSENT_REASONS = Object.freeze(['offline', 'sign_in', 'update', 'blocked', 'retrying']);
 export const DEVICE_UNSENT_HOLD_DAYS = 7;
 export const DEVICE_UNSENT_LATE_HOURS = 48;
+export const DEVICE_UNSENT_LATE_MIN_MS = 3600000;
 const DEVICE_UNSENT_MAX_ROWS = 400;
 const DEVICE_UNSENT_MAX_SINCE_DAYS = 90;
 
@@ -5434,7 +5438,10 @@ export function validateDeviceUnsentReport(body, nowMs) {
   const val = { device_id: deviceId, count, label: cleanDeviceUnsentText(body.label, 60) };
   const shell = String(body.shell == null ? '' : body.shell);
   val.shell = /^\d{1,3}(?:\.\d{1,5}){1,3}$/.test(shell) ? shell : '';
-  if (count === 0) return { ok: true, val };
+  if (count === 0) {
+    val.all_seats = body.all_seats === true;
+    return { ok: true, val };
+  }
   const reason = String(body.reason == null ? '' : body.reason);
   if (!DEVICE_UNSENT_REASONS.includes(reason)) return { ok: false, error: 'Invalid reason.' };
   const sinceMs = Date.parse(String(body.since == null ? '' : body.since));
@@ -5512,12 +5519,36 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
   const prev = exRow ? safeJsonParse(exRow.payload_json, null) : null;
   const prevHolding = Boolean(prev && typeof prev === 'object' && prev.state === 'holding' && Number(prev.count) >= 1);
   if (val.count === 0) {
-    // Sent. A device that was holding stays listed as "sent late"; one that never reported has nothing to clear.
-    if (!prevHolding) return jsonResponse({ ok: true, saved: false });
-    const late = Object.assign({}, prev, { state: 'sent_late', sent_count: Number(prev.count), count: 0, sent_at: nowIso, shell: val.shell || prev.shell || '' });
-    await env.DB.prepare('UPDATE edge_kv_store SET payload_json = ?1, updated_at = ?2, rev = rev + 1 WHERE doc_key = ?3')
-      .bind(JSON.stringify(late), nowIso, docKey).run();
-    return jsonResponse({ ok: true, saved: true, state: 'sent_late' });
+    // Sent. A device that held entries for an hour or more stays listed as "sent late"; a shorter hold is removed;
+    // one that never reported has nothing to clear.
+    const rows = [{ key: docKey, p: prev, holding: prevHolding }];
+    if (val.all_seats && isOwnerOrFullGroupSession(session)) {
+      const others = await env.DB.prepare("SELECT doc_key, payload_json FROM edge_kv_store WHERE doc_key LIKE 'device_unsent:%' AND doc_key LIKE ?1")
+        .bind(`%:${val.device_id}`).all();
+      for (const o of (others.results || [])) {
+        const k = String(o.doc_key || '');
+        if (k === docKey || !k.startsWith(DEVICE_UNSENT_PREFIX) || !k.endsWith(`:${val.device_id}`)) continue;
+        const op = safeJsonParse(o.payload_json, null);
+        rows.push({ key: k, p: op, holding: Boolean(op && typeof op === 'object' && op.state === 'holding' && Number(op.count) >= 1) });
+      }
+    }
+    let changed = 0;
+    let state = '';
+    for (const row of rows) {
+      if (!row.holding) continue;
+      const heldSinceMs = Date.parse(String(row.p.since || ''));
+      if (Number.isFinite(heldSinceMs) && nowMs - heldSinceMs < DEVICE_UNSENT_LATE_MIN_MS) {
+        await env.DB.prepare('DELETE FROM edge_kv_store WHERE doc_key = ?1').bind(row.key).run();
+        if (!state) state = 'cleared';
+      } else {
+        const late = Object.assign({}, row.p, { state: 'sent_late', sent_count: Number(row.p.count), count: 0, sent_at: nowIso, shell: (row.key === docKey && val.shell) || row.p.shell || '' });
+        await env.DB.prepare('UPDATE edge_kv_store SET payload_json = ?1, updated_at = ?2, rev = rev + 1 WHERE doc_key = ?3')
+          .bind(JSON.stringify(late), nowIso, row.key).run();
+        state = 'sent_late';
+      }
+      changed++;
+    }
+    return jsonResponse(changed ? { ok: true, saved: true, state } : { ok: true, saved: false });
   }
   if (!exRow) {
     const cutoffIso = new Date(nowMs - DEVICE_UNSENT_HOLD_DAYS * 86400000).toISOString();
