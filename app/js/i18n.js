@@ -12940,7 +12940,114 @@
       "Unpin": "إلغاء التثبيت",
       "Show filters ▾": "إظهار الفلاتر ▾",
       "Hide filters ▴": "إخفاء الفلاتر ▴",
-      "Parts & Warehouses": "قطع الغيار والمستودعات"
+      "Parts & Warehouses": "قطع الغيار والمستودعات",
+      "Audit Window (Days)": "نافذة التدقيق (أيام)",
+      "Off-Pin Drop Threshold (m)": "عتبة التفريغ خارج الدبوس (م)",
+      "Stale Pin Threshold (m)": "عتبة الدبوس القديم (م)",
+      "Driver Gate Link": "رابط بوابة السائق",
+      "Inspect on Map": "فحص على الخريطة",
+      "Queue Gate Pin": "طلب تثبيت البوابة",
+      "Suggest Gate Pin": "اقتراح دبوس البوابة",
+      "Actor": "المستخدم",
+      "Dwell": "مدة التوقف",
+      "Entity / Industry": "الشركة / القطاع",
+      "Nearest Pinned Site": "أقرب موقع مثبّت",
+      "Offset": "الابتعاد",
+      "Outcome": "النتيجة",
+      "Approve & Promote Pin": "اعتماد وترقية الدبوس",
+      "Preview on Map": "معاينة على الخريطة",
+      "Hide Vector": "إخفاء المسار",
+      "Queue Gate Pin Review": "رفع لمراجعة البوابة",
+      "Geo-Pin & Hub Change Audit Trail": "سجل تدقيق تغييرات الدبابيس والمراكز",
+      "GPS Dwell vs. Pinned Site Drift Watchdog": "مراقب انحراف التوقف GPS عن المواقع المثبّتة",
+      "GEO-PIN & HUB CHANGE AUDIT TRAIL": "سجل تدقيق تغييرات الدبابيس والمراكز",
+      "GPS DWELL VS. PINNED SITE DRIFT WATCHDOG": "مراقب انحراف التوقف GPS عن المواقع المثبّتة",
+      "Blocked (403)": "محظور (403)",
+      "Applied": "مطبّق",
+      "Hubs & Zones": "المراكز والمناطق",
+      "Site Pins": "دبابيس المواقع",
+      "Route KM": "مسافات الطرق",
+      "Gate Promotions": "ترقيات البوابات",
+      "Driver & Field Gate-Pin Suggestions": "اقتراحات دبابيس البوابات من السائقين والميدان",
+      "My Gate-Pin Suggestions": "اقتراحاتي لدبابيس البوابات",
+      "No gate pin suggestions are awaiting review.": "لا توجد اقتراحات دبابيس بوابات بانتظار المراجعة.",
+      "Gate Coordinate Review": "مراجعة إحداثيات البوابة",
+      "Paste Google Maps link, Plus Code, or lat, lng...": "الصق رابط خرائط جوجل أو رمز بلس أو خط العرض والطول...",
+      "Use My Current GPS": "استخدام موقعي GPS الحالي",
+      "Tap map or drag green pin to set suggested truck entrance": "اضغط على الخريطة أو اسحب الدبوس الأخضر لتحديد مدخل الشاحنات المقترح",
+      "Access & Gate Note": "ملاحظة البوابة والوصول",
+      "e.g., Main truck gate after security barrier": "مثال: بوابة الشاحنات الرئيسية بعد الحاجز الأمني",
+      "Driver or Contact Label": "اسم السائق أو جهة الاتصال",
+      "Optional name or truck plate": "اسم اختياري أو رقم اللوحة",
+      "Submit for Approval": "إرسال للاعتماد",
+      "Enter site or customer gate name": "أدخل اسم الموقع أو بوابة العميل",
+      "Single-Site Driver Companion Link": "رابط مرافق السائق لموقع واحد",
+      "Drivers can open this link without an app login to submit one candidate gate pin for Supervisor review. Direct map writes remain locked.": "يمكن للسائق فتح هذا الرابط من دون تسجيل دخول لإرسال إحداثي مقترح للبوابة لمراجعة المشرف، مع بقاء التعديل المباشر على الخريطة مقفولاً.",
+      "Open Companion Page": "فتح صفحة المرافق",
+      "Send via WhatsApp": "إرسال عبر واتساب",
+      "Driver gate link copied.": "تم نسخ رابط بوابة السائق.",
+      "Gate Pin Submission": "إرسال إحداثي البوابة",
+      "Loading site details...": "جاري تحميل تفاصيل الموقع...",
+      "Link Unavailable": "الرابط غير متاح",
+      "Connection Required": "يلزم الاتصال بالإنترنت",
+      "Submit Gate Pin": "إرسال دبوس البوابة",
+      "Submitted Suggestions": "المقترحات المرسلة",
+      "Access note (e.g., West truck gate after scale)": "ملاحظة الوصول (مثال: البوابة الغربية بعد القبان)",
+      "Driver name or truck plate": "اسم السائق أو لوحة الشاحنة",
+      "Thank you. Your suggested gate pin is queued for Supervisor review.": "شكرًا لك. تم إرسال دبوس البوابة المقترح لمراجعة المشرف.",
+      "Stale Pin Drift": "انحراف دبوس قديم",
+      "Unapproved Off-Pin Drop": "توقف غير معتمد خارج الدبوس",
+      "Dwell Drift": "انحراف التوقف",
+      "Pins Aligned (0 Drift)": "الدبابيس متطابقة (0 انحراف)",
+      "No GPS dwell drift detected for the current scope": "لا يوجد انحراف في توقفات GPS ضمن النطاق الحالي",
+      "No geo audit events match the selected filter": "لا توجد أحداث تدقيق خرائط مطابقة للمرشّح المحدد",
+      "Company Hub Pin Moved": "تم نقل دبوس مركز الشركة",
+      "Site Pin Set": "تم تثبيت دبوس الموقع",
+      "Site Pin Moved": "تم نقل دبوس الموقع",
+      "Site Pin Cleared": "تم مسح دبوس الموقع",
+      "Region Zone Saved": "تم حفظ نطاق المنطقة",
+      "Region Zone Cleared": "تم مسح نطاق المنطقة",
+      "Route KM Override Saved": "تم حفظ مسافة الطريق المعتمدة",
+      "Route KM Override Cleared": "تم مسح مسافة الطريق المعتمدة",
+      "Verified Route Saved": "تم حفظ المسار المعتمد",
+      "Verified Route Cleared": "تم مسح المسار المعتمد",
+      "Gate Pin Promoted": "تمت ترقية دبوس البوابة",
+      "Blocked Unauthorized Write": "تم حظر تعديل غير مصرح به",
+      "AI Sentinels, Users & Roles, Map Studio": "المراقب الذكي والمستخدمون والأدوار واستوديو الخرائط",
+      "AI Sentinels, Fleet Telematics & Map Studio": "المراقب الذكي وتتبع الأسطول واستوديو الخرائط",
+      "Domain Sentinels, Users & Roles, Map Studio": "مراقبو القطاع والمستخدمون والأدوار واستوديو الخرائط",
+      "Domain Sentinels & Fleet Telematics": "مراقبو القطاع وتتبع الأسطول",
+      "Rule #26 · Location & Maps": "قاعدة #26 · المواقع والخرائط",
+      "Rule #27 · Location & Maps": "قاعدة #27 · المواقع والخرائط",
+      "Rule #08 · Location & Maps": "قاعدة #08 · المواقع والخرائط",
+      "Rule #09 · Location & Maps": "قاعدة #09 · المواقع والخرائط",
+      "100% server-side audit": "تدقيق 100% على الخادم",
+      "GPS Dwell vs. Pinned Site Drift": "توقف GPS مقابل انحراف الموقع المثبّت",
+      "GEO-PIN & HUB AUDIT EVENTS LOGGED": "سجل أحداث دبابيس المواقع ومراكز الشركات",
+      "GPS DWELL vs. PINNED SITE DRIFT CLUSTERS": "عناقيد التوقف GPS المنحرفة عن المواقع المثبّتة",
+      "Open Geo Audit Trail": "فتح سجل تدقيق المواقع",
+      "Inspect Dwell Drift": "فحص انحراف التوقف",
+      "Map Studio": "استوديو الخرائط",
+      "Logs every Company Hub pin move, site pin change or clear, Region boundary change, verified KM override, gate-pin promotion, and blocked 403 map write attempt under seat RLS so route-distance and night-trip pay changes stay fully traceable.": "يسجّل كل تحريك لدبوس مركز الشركة أو تعديل/مسح دبوس موقع أو حدود منطقة أو تعديل كم معتمد أو ترقية بوابة سائق أو محاولة كتابة مرفوضة 403 وفق صلاحيات المقعد لتبقى تغييرات المسافة وبدل الرحلات الليلية موثّقة بالكامل.",
+      "Live audit: Moving a Company Hub, editing pairKmOverrides, promoting a driver gate pin, or blocking an unauthorized Viewer write appears immediately in Sentinels and Users.": "تدقيق مباشر: يظهر تحريك مركز شركة أو تعديل مسافة زوجية أو ترقية بوابة سائق أو حظر كتابة غير مصرح بها فوراً في المراقبين والمستخدمين.",
+      "Clusters stationary 10+ minute non-hub truck stops deterministically against pinned site gates and verified routes to flag stale map pins (250m to 2500m drift) or unapproved off-pin drops (>2500m) without altering deterministic mileage or margin math.": "يُجمّع حتمياً توقفات الشاحنات الثابتة 10+ دقائق خارج المراكز ويقارنها ببوابات المواقع المثبّتة والمسارات المعتمدة لرصد الدبابيس القديمة (250 م إلى 2500 م) أو التفريغ خارج الدبابيس (>2500 م) دون المساس بحسابات المسافات والهوامش.",
+      "Deterministic watchdog: Never alters saved KM or ticket net-back margins; supervisors inspect the dwell cluster on Map Studio or queue a Gate Pin Review in Approvals.": "مراقب حتمي: لا يغيّر أبداً المسافات المحفوظة أو هوامش التذاكر؛ يفحص المشرف عنقود التوقف على استوديو الخرائط أو يرسله لمراجعة بوابة في الموافقات.",
+      "Audit panel: Review pin shifts, promoted driver gate pins, and blocked unauthorized attempts in Sentinels or Users.": "لوحة التدقيق: مراجعة إزاحات الدبابيس وبوابات السائقين المرقّاة ومحاولات الكتابة المرفوضة في المراقبين أو المستخدمين.",
+      "Dwell watchdog: Queue a Gate Pin Review in Approvals directly from any drifted site cluster.": "مراقب التوقف: إرسال طلب مراجعة دبوس بوابة إلى الموافقات مباشرة من أي عنقود موقع منحرف.",
+      "All 10+ minute non-hub stationary GPS dwell clusters align within 250 m of pinned site gates and verified routes.": "جميع توقفات GPS الثابتة 10+ دقائق خارج المراكز متطابقة ضمن 250 م مع بوابات المواقع المثبّتة والمسارات المعتمدة.",
+      "PINS ALIGNED": "الدبابيس متطابقة",
+      "Approve unlock requests and candidate gate pins from colleagues, and clear items waiting on a decision.": "اعتمد طلبات فك القفل واقتراحات دبابيس البوابات من الزملاء، وأغلق البنود بانتظار القرار.",
+      "Items that wait on a decision in your companies. Requests you send appear below with their outcome.": "البنود التي تنتظر قراراً في شركاتك. تظهر طلباتك المرسلة أدناه مع نتيجتها.",
+      "Items that wait on a decision in your companies. Live approvals require a signed-in workspace connection.": "البنود التي تنتظر قراراً في شركاتك. تتطلب الموافقات المباشرة اتصالاً مسجّلاً بمساحة العمل.",
+      "Site Gate": "بوابة الموقع",
+      "Company Hub:": "مركز الشركة:",
+      "Distance from WTC:": "المسافة من WTC:",
+      "Click to load boundary": "انقر لتحميل الحدود",
+      "Map Boundary": "حدود الخريطة",
+      "Map Boundary Search": "البحث عن حدود على الخريطة",
+      "Modifying or re-pinning cleared sites requires Supervisor + Entry or Owner access.": "يتطلب تعديل أو إعادة تثبيت المواقع الممسوحة صلاحية مشرف + إدخال أو مالك.",
+      "Pin location on map to compute exact road KM": "ثبّت الموقع على الخريطة لحساب المسافة الفعلية بالكيلومتر",
+      "Pinning sites requires Site Entry, Supervisor + Entry, or Owner access.": "يتطلب تثبيت المواقع صلاحية إدخال موقع أو مشرف + إدخال أو مالك."
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -21418,7 +21525,7 @@
       "Site Location & Transportation Basis": "Localisation du Site & Mode de Transport",
       "Site Location:": "Localisation du Site :",
       "Site Material Cost Rules": "Règles coût matériaux par site",
-      "Site Name": "Nom du Site",
+      "Site Name": "Nom du site",
       "Site Name (Inside Region)": "Nom du Site (Dans la Région)",
       "Site Override (Optional)": "Exception Site (Facultatif)",
       "Site Owner": "Propriétaire du Site",
@@ -25862,7 +25969,114 @@
       "Unpin": "Désépingler",
       "Show filters ▾": "Afficher les filtres ▾",
       "Hide filters ▴": "Masquer les filtres ▴",
-      "Parts & Warehouses": "Pièces & Magasins"
+      "Parts & Warehouses": "Pièces & Magasins",
+      "Audit Window (Days)": "Fenêtre d'audit (jours)",
+      "Off-Pin Drop Threshold (m)": "Seuil dépose hors repère (m)",
+      "Stale Pin Threshold (m)": "Seuil repère obsolète (m)",
+      "Driver Gate Link": "Lien portail chauffeur",
+      "Inspect on Map": "Inspecter sur la carte",
+      "Queue Gate Pin": "Proposer un repère portail",
+      "Suggest Gate Pin": "Suggérer repère portail",
+      "Actor": "Auteur",
+      "Dwell": "Stationnement",
+      "Entity / Industry": "Entité / Secteur",
+      "Nearest Pinned Site": "Site repéré le plus proche",
+      "Offset": "Écart",
+      "Outcome": "Résultat",
+      "Approve & Promote Pin": "Approuver et promouvoir",
+      "Preview on Map": "Aperçu sur carte",
+      "Hide Vector": "Masquer le vecteur",
+      "Queue Gate Pin Review": "Soumettre à révision",
+      "Geo-Pin & Hub Change Audit Trail": "Journal d'audit des repères et bases",
+      "GPS Dwell vs. Pinned Site Drift Watchdog": "Veille de dérive entre arrêts GPS et repères",
+      "GEO-PIN & HUB CHANGE AUDIT TRAIL": "JOURNAL D'AUDIT DES REPÈRES ET BASES",
+      "GPS DWELL VS. PINNED SITE DRIFT WATCHDOG": "VEILLE DE DÉRIVE ENTRE ARRÊTS GPS ET REPÈRES",
+      "Blocked (403)": "Bloqué (403)",
+      "Applied": "Appliqué",
+      "Hubs & Zones": "Bases & zones",
+      "Site Pins": "Repères de sites",
+      "Route KM": "Distances routières",
+      "Gate Promotions": "Promotions portail",
+      "Driver & Field Gate-Pin Suggestions": "Propositions de repères portail terrain et chauffeurs",
+      "My Gate-Pin Suggestions": "Mes propositions de repères portail",
+      "No gate pin suggestions are awaiting review.": "Aucune proposition de repère portail en attente de révision.",
+      "Gate Coordinate Review": "Révision des coordonnées du portail",
+      "Paste Google Maps link, Plus Code, or lat, lng...": "Coller un lien Google Maps, Plus Code ou lat, lng...",
+      "Use My Current GPS": "Utiliser ma position GPS",
+      "Tap map or drag green pin to set suggested truck entrance": "Touchez la carte ou déplacez le repère vert vers l'entrée camion",
+      "Access & Gate Note": "Note d'accès et de portail",
+      "e.g., Main truck gate after security barrier": "Ex. : portail poids lourds après la barrière",
+      "Driver or Contact Label": "Nom du chauffeur ou contact",
+      "Optional name or truck plate": "Nom ou plaque facultatifs",
+      "Submit for Approval": "Soumettre pour approbation",
+      "Enter site or customer gate name": "Saisir le nom du site ou du portail",
+      "Single-Site Driver Companion Link": "Lien chauffeur dédié à un site",
+      "Drivers can open this link without an app login to submit one candidate gate pin for Supervisor review. Direct map writes remain locked.": "Le chauffeur peut ouvrir ce lien sans connexion pour proposer un repère portail au superviseur, tandis que l'édition directe reste verrouillée.",
+      "Open Companion Page": "Ouvrir la page dédiée",
+      "Send via WhatsApp": "Envoyer par WhatsApp",
+      "Driver gate link copied.": "Lien portail chauffeur copié.",
+      "Gate Pin Submission": "Soumission du repère portail",
+      "Loading site details...": "Chargement des détails du site...",
+      "Link Unavailable": "Lien indisponible",
+      "Connection Required": "Connexion requise",
+      "Submit Gate Pin": "Envoyer le repère portail",
+      "Submitted Suggestions": "Suggestions soumises",
+      "Access note (e.g., West truck gate after scale)": "Note d'accès (ex. : portail ouest après pont-bascule)",
+      "Driver name or truck plate": "Nom du chauffeur ou plaque",
+      "Thank you. Your suggested gate pin is queued for Supervisor review.": "Merci. Votre repère portail est soumis à la révision du superviseur.",
+      "Stale Pin Drift": "Dérive de repère",
+      "Unapproved Off-Pin Drop": "Arrêt hors repère non approuvé",
+      "Dwell Drift": "Dérive d'arrêt",
+      "Pins Aligned (0 Drift)": "Repères alignés (0 dérive)",
+      "No GPS dwell drift detected for the current scope": "Aucune dérive d'arrêt GPS dans ce périmètre",
+      "No geo audit events match the selected filter": "Aucun événement d'audit cartographique pour ce filtre",
+      "Company Hub Pin Moved": "Repère de base société déplacé",
+      "Site Pin Set": "Repère de site défini",
+      "Site Pin Moved": "Repère de site déplacé",
+      "Site Pin Cleared": "Repère de site effacé",
+      "Region Zone Saved": "Zone régionale enregistrée",
+      "Region Zone Cleared": "Zone régionale effacée",
+      "Route KM Override Saved": "Distance routière enregistrée",
+      "Route KM Override Cleared": "Distance routière effacée",
+      "Verified Route Saved": "Itinéraire vérifié enregistré",
+      "Verified Route Cleared": "Itinéraire vérifié effacé",
+      "Gate Pin Promoted": "Repère portail promu",
+      "Blocked Unauthorized Write": "Écriture non autorisée bloquée",
+      "AI Sentinels, Users & Roles, Map Studio": "Sentinelles IA, Utilisateurs et Rôles, Studio Cartes",
+      "AI Sentinels, Fleet Telematics & Map Studio": "Sentinelles IA, Télématique Flotte et Studio Cartes",
+      "Domain Sentinels, Users & Roles, Map Studio": "Sentinelles Secteur, Utilisateurs et Rôles, Studio Cartes",
+      "Domain Sentinels & Fleet Telematics": "Sentinelles Secteur et Télématique Flotte",
+      "Rule #26 · Location & Maps": "Règle #26 · Sites et cartes",
+      "Rule #27 · Location & Maps": "Règle #27 · Sites et cartes",
+      "Rule #08 · Location & Maps": "Règle #08 · Sites et cartes",
+      "Rule #09 · Location & Maps": "Règle #09 · Sites et cartes",
+      "100% server-side audit": "Audit 100 % côté serveur",
+      "GPS Dwell vs. Pinned Site Drift": "Stationnement GPS vs dérive du site épinglé",
+      "GEO-PIN & HUB AUDIT EVENTS LOGGED": "JOURNAL DES MODIFICATIONS DES REPÈRES ET CENTRES",
+      "GPS DWELL vs. PINNED SITE DRIFT CLUSTERS": "ZONES DE STATIONNEMENT GPS DÉRIVANT DES REPÈRES",
+      "Open Geo Audit Trail": "Ouvrir le journal géo",
+      "Inspect Dwell Drift": "Inspecter la dérive GPS",
+      "Map Studio": "Studio Cartes",
+      "Logs every Company Hub pin move, site pin change or clear, Region boundary change, verified KM override, gate-pin promotion, and blocked 403 map write attempt under seat RLS so route-distance and night-trip pay changes stay fully traceable.": "Journalise chaque déplacement du centre société, modification ou effacement de repère site, zone de région, km vérifié, promotion de repère portail et écriture refusée 403 sous RLS afin que les changements de distance et primes de nuit restent traçables.",
+      "Live audit: Moving a Company Hub, editing pairKmOverrides, promoting a driver gate pin, or blocking an unauthorized Viewer write appears immediately in Sentinels and Users.": "Audit en direct : tout déplacement de centre, édition de km vérifié, promotion de portail ou blocage Lecteur apparaît aussitôt dans Sentinelles et Utilisateurs.",
+      "Clusters stationary 10+ minute non-hub truck stops deterministically against pinned site gates and verified routes to flag stale map pins (250m to 2500m drift) or unapproved off-pin drops (>2500m) without altering deterministic mileage or margin math.": "Regroupe de façon déterministe les arrêts camions >= 10 min hors centres face aux portails épinglés et trajets vérifiés pour signaler repères obsolètes (250 m à 2500 m) ou déposes hors repère (>2500 m) sans modifier aucun calcul kilométrique ou de marge.",
+      "Deterministic watchdog: Never alters saved KM or ticket net-back margins; supervisors inspect the dwell cluster on Map Studio or queue a Gate Pin Review in Approvals.": "Sentinelle déterministe : ne modifie jamais les km enregistrés ni les marges ; le superviseur inspecte le groupe sur Studio Cartes ou propose un repère portail dans Approbations.",
+      "Audit panel: Review pin shifts, promoted driver gate pins, and blocked unauthorized attempts in Sentinels or Users.": "Panneau d'audit : examiner les déplacements de repères, portails promus et écritures bloquées dans Sentinelles ou Utilisateurs.",
+      "Dwell watchdog: Queue a Gate Pin Review in Approvals directly from any drifted site cluster.": "Sentinelle stationnement : envoyer une révision de repère portail vers Approbations directement depuis tout groupe en dérive.",
+      "All 10+ minute non-hub stationary GPS dwell clusters align within 250 m of pinned site gates and verified routes.": "Tous les stationnements GPS >= 10 min hors centres sont alignés dans un rayon de 250 m des repères portail et trajets vérifiés.",
+      "PINS ALIGNED": "REPÈRES ALIGNÉS",
+      "Approve unlock requests and candidate gate pins from colleagues, and clear items waiting on a decision.": "Approuvez les demandes de déverrouillage et les repères portail proposés par vos collègues, et traitez les éléments en attente.",
+      "Items that wait on a decision in your companies. Requests you send appear below with their outcome.": "Éléments en attente de décision dans vos sociétés. Vos demandes envoyées apparaissent ci-dessous avec leur résultat.",
+      "Items that wait on a decision in your companies. Live approvals require a signed-in workspace connection.": "Éléments en attente de décision dans vos sociétés. Les approbations en direct exigent une connexion active à l'espace de travail.",
+      "Site Gate": "Portail du site",
+      "Company Hub:": "Centre société :",
+      "Distance from WTC:": "Distance depuis WTC :",
+      "Click to load boundary": "Cliquer pour charger la limite",
+      "Map Boundary": "Limite cartographique",
+      "Map Boundary Search": "Recherche de limites",
+      "Modifying or re-pinning cleared sites requires Supervisor + Entry or Owner access.": "Modifier ou réépingler des sites effacés exige un accès Superviseur + Saisie ou Propriétaire.",
+      "Pin location on map to compute exact road KM": "Épinglez le lieu sur la carte pour calculer la distance routière exacte en KM",
+      "Pinning sites requires Site Entry, Supervisor + Entry, or Owner access.": "Épingler des sites exige un accès Saisie site, Superviseur + Saisie ou Propriétaire."
     }
   };
 
@@ -27929,6 +28143,73 @@
       return lang === 'ar'
         ? `حد ${m[1]}: التبديل التلقائي لخرائط OpenStreetMap والبحث المحلي`
         : `Seuil ${m[1]} : tuiles OpenStreetMap et recherche locale automatiques`;
+    }
+    // Geo-Pin Audit Trail & GPS Dwell vs. Pinned Site Drift Alert Rules / Sentinels (#26-#27 / #08-#09)
+    const geoIndTr = rawInd => {
+      const s = String(rawInd || '').trim();
+      const hit = translateCore(s, lang, depth + 1);
+      return hit || s;
+    };
+    m = trimmed.match(/^Monitors all server-side geo configuration changes and unauthorized map write blocks across the last ([\d,]+) days\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يراقب جميع تغييرات إعدادات المواقع على الخادم ومحاولات الكتابة المرفوضة خلال آخر ${m[1]} يوماً.`
+        : `Surveille toutes les modifications géo côté serveur et les écritures bloquées sur les ${m[1]} derniers jours.`;
+    }
+    m = trimmed.match(/^Audits all server-side geo writes and blocked 403 write attempts across (.+?) for the last ([\d,]+) days\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يدقق جميع عمليات كتابة المواقع ومحاولات الكتابة المرفوضة 403 عبر ${geoIndTr(m[1])} خلال آخر ${m[2]} يوماً.`
+        : `Audite toutes les écritures géo et tentatives refusées 403 dans ${geoIndTr(m[1])} sur les ${m[2]} derniers jours.`;
+    }
+    m = trimmed.match(/^Tracks every pinned site update, zone change, promoted driver gate pin, and blocked 403 map write across (.+?) under strict entity and industry RLS\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يتتبع كل تحديث لموقع مثبّت أو تعديل منطقة أو ترقية بوابة سائق أو محاولة كتابة مرفوضة 403 في ${geoIndTr(m[1])} وفق صلاحيات الكيان والقطاع.`
+        : `Suit chaque mise à jour de site, zone, repère portail promu et écriture refusée 403 dans ${geoIndTr(m[1])} sous RLS entité et secteur.`;
+    }
+    m = trimmed.match(/^Cross-checks stationary 10\+ minute dwell clusters against pinned (.+?) locations to flag Stale Pin Drift or Unapproved Off-Pin Drops deterministically\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يقارن حتمياً تجمعات التوقف الثابتة 10+ دقائق مع المواقع المثبّتة في ${geoIndTr(m[1])} لرصد انحراف الدبابيس القديمة أو التفريغ خارج الدبوس.`
+        : `Croise de manière déterministe les arrêts >= 10 min face aux sites épinglés de ${geoIndTr(m[1])} pour détecter dérives ou déposes hors repère.`;
+    }
+    m = trimmed.match(/^Flags non-hub dwell stops between ([\d,]+)\s*m and ([\d,]+)\s*m from a pinned site as Stale Pin Drift and (?:stops beyond|>)\s*([\d,]+)\s*m as Unapproved Off-Pin Drops\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يُنبّه عن توقفات التوقف خارج المركز بين ${m[1]} م و${m[2]} م كانحراف دبوس قديم وما يتجاوز ${m[3]} م كتفريغ خارج الدبوس.`
+        : `Signale les stationnements hors centre entre ${m[1]} m et ${m[2]} m comme dérive et au-delà de ${m[3]} m comme dépose hors repère.`;
+    }
+    m = trimmed.match(/^Drift >= ([\d,]+)m · Off-pin > ([\d,]+)m$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `انحراف >= ${m[1]} م · خارج الدبوس > ${m[2]} م`
+        : `Dérive >= ${m[1]} m · Hors repère > ${m[2]} m`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+BLOCKED\s+\(403\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} محظور (403)` : `${m[1]} BLOQUÉ (403)`;
+    m = trimmed.match(/^([\d,]+)\s+LOGGED$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مسجّل` : `${m[1]} JOURNALISÉ`;
+    m = trimmed.match(/^([\d,]+)\s+DRIFT\s+\(([\d,]+)\s+STALE\s+\/\s+([\d,]+)\s+OFF\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} انحراف (${m[2]} قديم / ${m[3]} خارج)` : `${m[1]} DÉRIVE (${m[2]} OBS. / ${m[3]} HORS)`;
+    m = trimmed.match(/^([\d,]+)\s+audited geo map events\s*\(([\d,]+)\s+promoted gate pins?,\s*([\d,]+)\s+blocked 403 write attempts?\)(?:\s+in last ([\d,]+)d)?\s*under seat RLS\.?$/i);
+    if (m) {
+      const dTxt = m[4] ? { ar: ` خلال آخر ${m[4]} يوماً`, fr: ` sur les ${m[4]} derniers jours` } : { ar: '', fr: '' };
+      return lang === 'ar'
+        ? `${m[1]} أحداث تدقيق خرائط (${m[2]} بوابات مرقّاة، ${m[3]} محاولات كتابة مرفوضة 403)${dTxt.ar} وفق صلاحيات المقعد.`
+        : `${m[1]} événements géo audités (${m[2]} portails promus, ${m[3]} écritures refusées 403)${dTxt.fr} sous RLS.`;
+    }
+    m = trimmed.match(/^All 10\+ minute non-hub stationary GPS dwell clusters align within ([\d,]+)\s*m of pinned site gates and verified routes\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `جميع عناقيد التوقف الثابتة 10+ دقائق خارج المركز متوافقة ضمن ${m[1]} م من بوابات المواقع المثبتة والمسارات المعتمدة.`
+        : `Tous les arrêts >= 10 min hors centre sont alignés à moins de ${m[1]} m des portails et itinéraires vérifiés.`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+drifted dwell cluster\(s\):\s*([\d,]+)\s+stale pin\(s\),\s*([\d,]+)\s+off-pin drop\(s\)\.(.*)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} عنقود توقف منحرف: ${m[2]} دبوس قديم، ${m[3]} تفريغ خارج الدبوس.${m[4] || ''}`
+        : `${m[1]} zone(s) en dérive : ${m[2]} repère(s) obsolète(s), ${m[3]} dépose(s) hors repère.${m[4] || ''}`;
     }
     m = trimmed.match(/^(Decrease|Increase)\s+(.+)$/i);
     if (m && depth < 3) {

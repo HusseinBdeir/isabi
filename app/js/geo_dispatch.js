@@ -1121,6 +1121,19 @@
     GEO_STORE.updatedAt = '';
     try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
     try { sessionStorage.removeItem('demo_sbx_' + STORAGE_KEY); } catch (_) {}
+    if (typeof GEO_AUDIT_CACHE === 'object' && GEO_AUDIT_CACHE) {
+      GEO_AUDIT_CACHE.logs = [];
+      GEO_AUDIT_CACHE.fetchedAt = 0;
+      GEO_AUDIT_CACHE.inflight = null;
+      GEO_AUDIT_CACHE.demoAdds = [];
+    }
+    if (typeof DEMO_GATE_SUGGESTIONS !== 'undefined' && Array.isArray(DEMO_GATE_SUGGESTIONS)) {
+      DEMO_GATE_SUGGESTIONS.length = 0;
+    }
+    if (typeof STUDIO === 'object' && STUDIO) {
+      STUDIO.dwellDriftTarget = null;
+      STUDIO.auditFocusTarget = null;
+    }
     return true;
   }
 
@@ -4754,6 +4767,8 @@
           <a class="gate-pin-link-btn" href="${esc(gatePin.googleMapsUrl)}" target="_blank" rel="noopener">Google Maps</a>
           <a class="gate-pin-link-btn" href="${esc(gatePin.wazeUrl)}" target="_blank" rel="noopener">Waze</a>
           <a class="gate-pin-link-btn is-wa" href="${esc(gatePin.whatsappUrl)}" target="_blank" rel="noopener">WhatsApp Driver</a>
+          <button type="button" class="gate-pin-link-btn" data-gate-suggest-site="${esc(gatePin.siteName || '')}" data-gate-site-id="${esc(gatePin.siteId || '')}" data-gate-suggest-co="${esc(gatePin.company || '')}" data-gate-suggest-ind="${esc(gatePin.industry || '')}" data-gate-suggest-lat="${gatePin.lat != null ? esc(String(gatePin.lat)) : ''}" data-gate-suggest-lng="${gatePin.lng != null ? esc(String(gatePin.lng)) : ''}">Suggest Gate Pin</button>
+          ${canMintDriverGateLinkNow() ? `<button type="button" class="gate-pin-link-btn" data-gate-mint-site="${esc(gatePin.siteName || '')}" data-gate-site-id="${esc(gatePin.siteId || '')}" data-gate-mint-co="${esc(gatePin.company || '')}" data-gate-mint-ind="${esc(gatePin.industry || '')}">Driver Gate Link</button>` : ''}
         </div>
       </div>
     `;
@@ -5671,7 +5686,9 @@
     _suppressPasteChangeUntil: 0,
     _jumpPendingTs: 0,
     _rerender: null,
-    _toast: null
+    _toast: null,
+    dwellDriftTarget: null,
+    auditFocusTarget: null
   };
 
   let _studioHoverResets = [];
@@ -5733,6 +5750,8 @@
     _clearStudioZoneClickTimer();
     STUDIO.selectedRegion = '';
     STUDIO._userPanned = false;
+    STUDIO.dwellDriftTarget = null;
+    STUDIO.auditFocusTarget = null;
     if (typeof STUDIO._rerender === 'function') STUDIO._rerender();
   }
 
@@ -7172,6 +7191,8 @@
               ${(canModifyRecordNow() && canAccessGeoCompanyNow(s.company) && canAccessGeoIndustryNow(s._industry || activeInd)) ? `<button type="button" class="geo-mini-btn primary" data-popup-edit-site="${esc(s.id)}">Edit Site</button>` : ''}
               <button type="button" class="geo-mini-btn" data-popup-measure-to="site:${esc(s.name)}">Measure KM</button>
               ${canPinSiteRowNow(s) ? `<button type="button" class="geo-mini-btn" data-popup-repin-site="${esc(s.name)}" data-popup-repin-cat="${esc(siteCat)}">Move Pin</button>` : ''}
+              ${(canAccessGeoCompanyNow(s.company) && canAccessGeoIndustryNow(s._industry || activeInd)) ? `<button type="button" class="geo-mini-btn" data-popup-suggest-gate="${esc(s.name)}" data-popup-suggest-id="${esc(s.id || '')}" data-popup-suggest-co="${esc(s.company || '')}" data-popup-suggest-ind="${esc(s._industry || activeInd)}" data-popup-suggest-cat="${esc(siteCat)}" data-popup-suggest-lat="${lat}" data-popup-suggest-lng="${lng}">Suggest Gate Pin</button>` : ''}
+              ${(canMintDriverGateLinkNow() && canAccessGeoCompanyNow(s.company) && canAccessGeoIndustryNow(s._industry || activeInd)) ? `<button type="button" class="geo-mini-btn" data-popup-mint-gate="${esc(s.name)}" data-popup-mint-id="${esc(s.id || '')}" data-popup-mint-co="${esc(s.company || '')}" data-popup-mint-ind="${esc(s._industry || activeInd)}" data-popup-mint-cat="${esc(siteCat)}">Driver Gate Link</button>` : ''}
             </div>
           </div>
         `);
@@ -7217,6 +7238,72 @@
     if (STUDIO.previewLine) {
       try { map.removeLayer(STUDIO.previewLine); } catch (_) {}
       STUDIO.previewLine = null;
+    }
+
+    if (STUDIO.dwellDriftTarget && STUDIO.dwellDriftTarget.dwellLat != null && STUDIO.dwellDriftTarget.dwellLng != null) {
+      const ddt = STUDIO.dwellDriftTarget;
+      const dLat = Number(ddt.dwellLat), dLng = Number(ddt.dwellLng);
+      const pLat = ddt.pinnedLat != null ? Number(ddt.pinnedLat) : null;
+      const pLng = ddt.pinnedLng != null ? Number(ddt.pinnedLng) : null;
+      if (Number.isFinite(dLat) && Number.isFinite(dLng)) {
+        if (pLat != null && pLng != null && Number.isFinite(pLat) && Number.isFinite(pLng)) {
+          L.polyline([[pLat, pLng], [dLat, dLng]], { color: '#DC2626', weight: 3, dashArray: '6, 5', opacity: 0.9 }).addTo(lg);
+          L.circleMarker([pLat, pLng], { radius: 6, color: '#2563EB', fillColor: '#3B82F6', fillOpacity: 0.9, weight: 2 }).addTo(lg);
+        }
+        L.circle([dLat, dLng], { radius: 180, color: '#DC2626', fillColor: '#FCA5A5', fillOpacity: 0.25, weight: 2 }).addTo(lg);
+        const dm = L.circleMarker([dLat, dLng], { radius: 8, color: '#991B1B', fillColor: '#DC2626', fillOpacity: 0.95, weight: 2 }).addTo(lg);
+        const distTxt = ddt.shiftMeters != null ? `${Math.round(ddt.shiftMeters)} m from pin` : 'Off-pin dwell cluster';
+        const pop = dm.bindPopup(`
+          <div style="min-width:210px;font-family:inherit;font-size:12px;line-height:1.45">
+            <div style="font-weight:700;font-size:13px;color:#991B1B">GPS Dwell Drift Watchdog</div>
+            <div><b>${esc(ddt.siteName || 'Observed Truck Dwell')}</b> (${esc(ddt.company || '')})</div>
+            <div>Offset: <b>${esc(distTxt)}</b> · ${Number(ddt.stopCount || 1)} stops · ${Math.round(Number(ddt.totalMin || 0))} min dwell</div>
+            <div style="margin-top:6px;display:flex;gap:5px;flex-wrap:wrap">
+              <button type="button" class="geo-mini-btn primary" data-dwell-queue-gate="1">Queue Gate Pin Review</button>
+              <button type="button" class="geo-mini-btn" data-dwell-clear-overlay="1">Hide Vector</button>
+            </div>
+          </div>
+        `);
+        focusBounds = L.latLngBounds([[dLat, dLng]]);
+        if (pLat != null && pLng != null) focusBounds.extend([pLat, pLng]);
+        setTimeout(() => { try { pop.openPopup(); } catch (_) {} }, 80);
+      }
+    }
+
+    if (STUDIO.auditFocusTarget) {
+      const af = STUDIO.auditFocusTarget;
+      const pLat = af.prev_lat != null ? Number(af.prev_lat) : null;
+      const pLng = af.prev_lng != null ? Number(af.prev_lng) : null;
+      const nLat = af.next_lat != null ? Number(af.next_lat) : null;
+      const nLng = af.next_lng != null ? Number(af.next_lng) : null;
+      const hasPrev = pLat != null && pLng != null && Number.isFinite(pLat) && Number.isFinite(pLng);
+      const hasNext = nLat != null && nLng != null && Number.isFinite(nLat) && Number.isFinite(nLng);
+      if (hasPrev && hasNext && (Math.abs(pLat - nLat) > 1e-5 || Math.abs(pLng - nLng) > 1e-5)) {
+        L.polyline([[pLat, pLng], [nLat, nLng]], { color: '#C0892F', weight: 3, dashArray: '5, 5', opacity: 0.92 }).addTo(lg);
+        L.circleMarker([pLat, pLng], { radius: 6, color: '#64748B', fillColor: '#94A3B8', fillOpacity: 0.85, weight: 2 }).addTo(lg);
+      }
+      const focLat = hasNext ? nLat : (hasPrev ? pLat : null);
+      const focLng = hasNext ? nLng : (hasPrev ? pLng : null);
+      if (focLat != null && focLng != null) {
+        const isBlk = af.outcome === 'blocked_403';
+        const am = L.circleMarker([focLat, focLng], {
+          radius: 9,
+          color: isBlk ? '#991B1B' : '#92400E',
+          fillColor: isBlk ? '#DC2626' : '#D97706',
+          fillOpacity: 0.9,
+          weight: 2.5
+        }).addTo(lg);
+        const pop = am.bindPopup(`
+          <div style="min-width:200px;font-family:inherit;font-size:12px;line-height:1.45">
+            <div style="font-weight:700;color:${isBlk ? '#991B1B' : '#92400E'}">${esc(isBlk ? 'Blocked Map Write (403)' : 'Geo Audit Pin Change')}</div>
+            <div><b>${esc(af.target_label || af.target_id || 'Location')}</b>${af.company ? ` (${esc(af.company)})` : ''}</div>
+            <div style="color:#64748B">${esc(af.actor_name || af.actor_email || '')}${af.shift_meters != null ? ` · ${Math.round(Number(af.shift_meters))} m` : ''}</div>
+          </div>
+        `);
+        focusBounds = L.latLngBounds([[focLat, focLng]]);
+        if (hasPrev) focusBounds.extend([pLat, pLng]);
+        setTimeout(() => { try { pop.openPopup(); } catch (_) {} }, 80);
+      }
     }
 
     if (STUDIO.mode === 'search' && STUDIO.searchDraft && STUDIO.searchDraft.geojson) {
@@ -10134,6 +10221,58 @@
             rerenderWorkspace();
           });
         });
+        popEl.querySelectorAll('[data-popup-suggest-gate]').forEach(b => {
+          b.addEventListener('click', () => {
+            try { map.closePopup && map.closePopup(); } catch (_) {}
+            openSuggestGatePinModal({
+              site_name: b.getAttribute('data-popup-suggest-gate') || '',
+              site_id: b.getAttribute('data-popup-suggest-id') || '',
+              company: b.getAttribute('data-popup-suggest-co') || '',
+              industry: b.getAttribute('data-popup-suggest-ind') || getGeoActiveIndustry(),
+              site_category: b.getAttribute('data-popup-suggest-cat') || '',
+              existing_lat: b.getAttribute('data-popup-suggest-lat') ? Number(b.getAttribute('data-popup-suggest-lat')) : null,
+              existing_lng: b.getAttribute('data-popup-suggest-lng') ? Number(b.getAttribute('data-popup-suggest-lng')) : null
+            });
+          });
+        });
+        popEl.querySelectorAll('[data-popup-mint-gate]').forEach(b => {
+          b.addEventListener('click', () => {
+            try { map.closePopup && map.closePopup(); } catch (_) {}
+            mintDriverGateLink({
+              site_name: b.getAttribute('data-popup-mint-gate') || '',
+              site_id: b.getAttribute('data-popup-mint-id') || '',
+              company: b.getAttribute('data-popup-mint-co') || '',
+              industry: b.getAttribute('data-popup-mint-ind') || getGeoActiveIndustry(),
+              site_category: b.getAttribute('data-popup-mint-cat') || ''
+            });
+          });
+        });
+        popEl.querySelectorAll('[data-dwell-queue-gate]').forEach(b => {
+          b.addEventListener('click', () => {
+            const ddt = STUDIO.dwellDriftTarget;
+            try { map.closePopup && map.closePopup(); } catch (_) {}
+            if (!ddt) return;
+            openSuggestGatePinModal({
+              industry: ddt.industry || getGeoActiveIndustry(),
+              company: ddt.company || '',
+              site_id: ddt.siteId || '',
+              site_name: ddt.siteName || '',
+              site_category: ddt.siteCategory || '',
+              existing_lat: ddt.pinnedLat,
+              existing_lng: ddt.pinnedLng,
+              suggested_lat: ddt.dwellLat,
+              suggested_lng: ddt.dwellLng,
+              access_note: `Observed ${Number(ddt.stopCount || 1)} Teltonika stops (${Math.round(Number(ddt.totalMin || 0))} min dwell)`
+            });
+          });
+        });
+        popEl.querySelectorAll('[data-dwell-clear-overlay]').forEach(b => {
+          b.addEventListener('click', () => {
+            STUDIO.dwellDriftTarget = null;
+            try { map.closePopup && map.closePopup(); } catch (_) {}
+            rerenderWorkspace();
+          });
+        });
       });
     }).catch(() => {});
   }
@@ -11984,6 +12123,922 @@
     window.addEventListener('mfg:lang-changed', refreshMountedMapTiles);
   }
 
+  // ==================== GEO AUDIT TRAIL, DRIVER GATE PIN APPROVALS & DRIFT HELPERS ====================
+  const GEO_AUDIT_CACHE = { logs: [], fetchedAt: 0, inflight: null, demoAdds: [] };
+  const DEMO_GATE_SUGGESTIONS = [];
+
+  function _geoFetchFn() {
+    if (typeof window !== 'undefined' && typeof window.ISABI_EDGE_FETCH === 'function') return window.ISABI_EDGE_FETCH;
+    return (u, o) => fetch(u, Object.assign({ credentials: 'same-origin' }, o || {}));
+  }
+
+  function _geoToast(msg, tone) {
+    try {
+      if (typeof toast === 'function') { toast(msg, tone); return; }
+    } catch (_) {}
+    if (typeof STUDIO === 'object' && STUDIO && typeof STUDIO._toast === 'function') {
+      try { STUDIO._toast(msg, tone); return; } catch (_) {}
+    }
+    if (typeof window !== 'undefined' && typeof window.__mfgToast === 'function') {
+      try { window.__mfgToast(msg, tone); } catch (_) {}
+    }
+  }
+
+  function _geoLang() {
+    try {
+      return (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function')
+        ? String(window.MFG_I18N.getLang() || 'en').trim().toLowerCase()
+        : 'en';
+    } catch (_) { return 'en'; }
+  }
+
+  function _geoTr(s) {
+    try {
+      if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function') {
+        return window.MFG_I18N.t(s, _geoLang()) || s;
+      }
+    } catch (_) {}
+    return s;
+  }
+
+  function _canonIndKeyClient(raw) {
+    const k = norm(raw);
+    if (!k || k === 'manufacturing' || k === 'all' || k === 'manufacturing-group') return 'manufacturing';
+    if (k.includes('holding')) return 'holding';
+    if (k.includes('hospitality') || k.includes('resort')) return 'hospitality';
+    if (k.includes('trading') || k.includes('automotive')) return 'trading';
+    if (k.includes('real estate') || k === 'real_estate' || k.includes('property')) return 'real_estate';
+    if (k.includes('insurance') || k.includes('broker')) return 'insurance';
+    return k;
+  }
+
+  function _displayIndFromCanon(key) {
+    const k = _canonIndKeyClient(key);
+    const map = {
+      manufacturing: 'Manufacturing',
+      holding: 'Holding & Treasury',
+      hospitality: 'Hospitality & Resorts',
+      trading: 'Automotive & Heavy Trading',
+      real_estate: 'Real Estate & Property',
+      insurance: 'Insurance & Brokerage'
+    };
+    return map[k] || 'Manufacturing';
+  }
+
+  function canMintDriverGateLinkNow() {
+    if (isDemoGeoMode()) return false;
+    if (canWriteGeoConfigNow() || canPinLocationsNow() || canEnterSiteNow()) return true;
+    try {
+      const u = (typeof window !== 'undefined' && typeof window.__mfgGetActiveUser === 'function') ? window.__mfgGetActiveUser() : null;
+      if (!u || u.status === 'Suspended') return false;
+      const role = String(u.role || '');
+      return /^(Owner|Full Access \(Owner\)|Supervisor|Supervisor \+ Entry|Kiosk)$/i.test(role) || Boolean(u.kiosk);
+    } catch (_) {}
+    return false;
+  }
+
+  function _buildDemoGeoAuditRows() {
+    const now = Date.now();
+    const iso = mins => new Date(now - mins * 60000).toISOString();
+    const base = [
+      {
+        id: 'demo_ga_1', created_at: iso(18), action: 'gate_pin_promoted', outcome: 'applied',
+        actor_email: 'supervisor@example.com', actor_name: 'Operations Supervisor', actor_role: 'Supervisor + Entry',
+        source: 'gate_promotion', industry: 'manufacturing', company: 'WTC',
+        target_type: 'site', target_id: 'si_choueifat', target_label: 'Choueifat Plant Gate',
+        prev_lat: 33.8065, prev_lng: 35.4892, next_lat: 33.8074, next_lng: 35.4901, shift_meters: 130,
+        detail: { accessNote: 'East gate truck scale entrance' }
+      },
+      {
+        id: 'demo_ga_2', created_at: iso(42), action: 'hub_moved', outcome: 'applied',
+        actor_email: 'owner@example.com', actor_name: 'Managing Owner', actor_role: 'Full Access (Owner)',
+        source: 'geo_config', industry: 'manufacturing', company: 'BBConstruction',
+        target_type: 'hub', target_id: 'BBConstruction', target_label: 'BBConstruction Sibline Hub',
+        prev_lat: 33.6255, prev_lng: 35.4218, next_lat: 33.6261, next_lng: 35.4224, shift_meters: 87,
+        detail: {}
+      },
+      {
+        id: 'demo_ga_3', created_at: iso(65), action: 'pair_km_edited', outcome: 'applied',
+        actor_email: 'supervisor@example.com', actor_name: 'Operations Supervisor', actor_role: 'Supervisor + Entry',
+        source: 'geo_config', industry: 'manufacturing', company: 'Lions Transport',
+        target_type: 'pair_km', target_id: 'bu:lions transport||site:jiyeh', target_label: 'Lions Transport to Jiyeh',
+        prev_lat: null, prev_lng: null, next_lat: 33.6685, next_lng: 35.4240, shift_meters: null,
+        detail: { prevKm: 31, nextKm: 33 }
+      },
+      {
+        id: 'demo_ga_4', created_at: iso(95), action: 'blocked_403', outcome: 'blocked_403',
+        actor_email: 'viewer@example.com', actor_name: 'Viewer Seat', actor_role: 'Viewer',
+        source: 'geo_config', industry: 'hospitality', company: 'La Una',
+        target_type: 'site', target_id: 'hsp_launa_gate', target_label: 'La Una Service Entrance',
+        prev_lat: 33.9712, prev_lng: 35.6114, next_lat: 33.9720, next_lng: 35.6122, shift_meters: 115,
+        detail: { error: 'Supervisor + Entry or Owner permissions required to modify geo pins' }
+      },
+      {
+        id: 'demo_ga_5', created_at: iso(130), action: 'site_pin_moved', outcome: 'applied',
+        actor_email: 'supervisor@example.com', actor_name: 'Fleet Manager', actor_role: 'Supervisor + Entry',
+        source: 'industry_domain_store', industry: 'trading', company: 'Korri Auto',
+        target_type: 'site', target_id: 'trd_showroom', target_label: 'Korri Auto Heavy Yard',
+        prev_lat: 33.8920, prev_lng: 35.5612, next_lat: 33.8928, next_lng: 35.5619, shift_meters: 110,
+        detail: {}
+      },
+      {
+        id: 'demo_ga_6', created_at: iso(175), action: 'site_pin_set', outcome: 'applied',
+        actor_email: 'supervisor@example.com', actor_name: 'Property Supervisor', actor_role: 'Supervisor + Entry',
+        source: 'industry_domain_store', industry: 'real_estate', company: 'Properties',
+        target_type: 'site', target_id: 're_tower_a', target_label: 'Block B Generator Gate',
+        prev_lat: null, prev_lng: null, next_lat: 33.8891, next_lng: 35.5042, shift_meters: null,
+        detail: {}
+      },
+      {
+        id: 'demo_ga_7', created_at: iso(210), action: 'site_pin_set', outcome: 'applied',
+        actor_email: 'supervisor@example.com', actor_name: 'Treasury Lead', actor_role: 'Supervisor + Entry',
+        source: 'industry_domain_store', industry: 'holding', company: 'Bdeir Holding',
+        target_type: 'site', target_id: 'hld_hq', target_label: 'Bdeir Holding Central Desk',
+        prev_lat: null, prev_lng: null, next_lat: 33.8862, next_lng: 35.4981, shift_meters: null,
+        detail: {}
+      },
+      {
+        id: 'demo_ga_8', created_at: iso(245), action: 'site_pin_set', outcome: 'applied',
+        actor_email: 'supervisor@example.com', actor_name: 'Claims Coordinator', actor_role: 'Supervisor + Entry',
+        source: 'industry_domain_store', industry: 'insurance', company: 'Insurance Company',
+        target_type: 'site', target_id: 'ins_survey', target_label: 'Claim Survey Bay',
+        prev_lat: null, prev_lng: null, next_lat: 33.8780, next_lng: 35.5340, shift_meters: null,
+        detail: {}
+      }
+    ];
+    return GEO_AUDIT_CACHE.demoAdds.concat(base);
+  }
+
+  function canViewGeoAuditLogsNow() {
+    if (isDemoGeoMode()) return true;
+    try {
+      const u = (typeof window !== 'undefined' && typeof window.__mfgGetActiveUser === 'function') ? window.__mfgGetActiveUser() : null;
+      if (!u || u.status === 'Suspended') return false;
+      const uid = String(u.id || '').trim();
+      const role = String(u.role || '').trim();
+      if (uid === 'u1' || uid === 'u2') return true;
+      return /^(Owner|Full Access \(Owner\)|Supervisor|Supervisor \+ Entry)$/i.test(role);
+    } catch (_) { return false; }
+  }
+
+  async function fetchGeoAuditLogs(opts = {}) {
+    const o = opts || {};
+    if (isDemoGeoMode()) {
+      const demoAll = _buildDemoGeoAuditRows();
+      GEO_AUDIT_CACHE.logs = demoAll;
+      GEO_AUDIT_CACHE.fetchedAt = Date.now();
+      return getScopedGeoAuditLogs(o);
+    }
+    const canFetchApi = typeof window !== 'undefined'
+      && (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname || '') || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE)
+      && (!navigator.webdriver || window.__ISABI_TEST_EDGE)
+      && (!window.__MFG_HEADLESS_TEST || window.__ISABI_TEST_EDGE);
+    if (!canFetchApi || _geoExplicitlySignedOut) return GEO_AUDIT_CACHE.logs || [];
+    if (!canViewGeoAuditLogsNow()) {
+      GEO_AUDIT_CACHE.logs = [];
+      return [];
+    }
+    if (!o.force && GEO_AUDIT_CACHE.fetchedAt && (Date.now() - GEO_AUDIT_CACHE.fetchedAt) < 15000 && GEO_AUDIT_CACHE.logs.length) {
+      return getScopedGeoAuditLogs(o);
+    }
+    if (GEO_AUDIT_CACHE.inflight && !o.force) {
+      try {
+        await GEO_AUDIT_CACHE.inflight;
+        return getScopedGeoAuditLogs(o);
+      } catch (_) {}
+    }
+    const limit = Math.min(200, Math.max(10, Number(o.limit || 100)));
+    const p = (async () => {
+      try {
+        const res = await _geoFetchFn()(`./api/geo/audit?limit=${limit}`);
+        if (!res || !res.ok) return GEO_AUDIT_CACHE.logs || [];
+        const j = await res.json();
+        if (j && j.ok && Array.isArray(j.audits)) {
+          GEO_AUDIT_CACHE.logs = j.audits;
+          GEO_AUDIT_CACHE.fetchedAt = Date.now();
+        }
+      } catch (_) {}
+      return GEO_AUDIT_CACHE.logs || [];
+    })();
+    GEO_AUDIT_CACHE.inflight = p;
+    try { await p; } finally { if (GEO_AUDIT_CACHE.inflight === p) GEO_AUDIT_CACHE.inflight = null; }
+    return getScopedGeoAuditLogs(o);
+  }
+
+  function getScopedGeoAuditLogs(opts = {}) {
+    const o = opts || {};
+    const src = isDemoGeoMode() ? _buildDemoGeoAuditRows() : (Array.isArray(GEO_AUDIT_CACHE.logs) ? GEO_AUDIT_CACHE.logs : []);
+    const reqInd = o.industry && o.industry !== 'all' ? _canonIndKeyClient(o.industry) : '';
+    const reqCo = o.company && !/^(all|manufacturing-group)$/i.test(String(o.company)) ? norm(o.company) : '';
+    const reqOutcome = o.outcome ? String(o.outcome).trim().toLowerCase() : '';
+    const reqGroup = o.group ? String(o.group).trim().toLowerCase() : 'all';
+    const lbDays = Number(o.lookbackDays || 0);
+    const lbCutMs = (Number.isFinite(lbDays) && lbDays > 0) ? (Date.now() - lbDays * 86400000) : 0;
+
+    return src.filter(r => {
+      if (!r) return false;
+      if (lbCutMs > 0) {
+        const tsMs = Date.parse(r.created_at || '');
+        if (Number.isFinite(tsMs) && tsMs < lbCutMs) return false;
+      }
+      const dispInd = _displayIndFromCanon(r.industry || 'manufacturing');
+      if (!canAccessGeoIndustryNow(dispInd)) return false;
+      if (r.company && !canAccessGeoCompanyNow(r.company)) return false;
+      if (reqInd && _canonIndKeyClient(r.industry || 'manufacturing') !== reqInd) return false;
+      if (reqCo && norm(r.company || '') !== reqCo) return false;
+      if (reqOutcome && String(r.outcome || '').toLowerCase() !== reqOutcome) return false;
+      if (reqGroup && reqGroup !== 'all') {
+        const act = String(r.action || '').toLowerCase();
+        const tt = String(r.target_type || '').toLowerCase();
+        if (reqGroup === 'applied' && r.outcome !== 'applied') return false;
+        if (reqGroup === 'blocked_403' && r.outcome !== 'blocked_403') return false;
+        if (reqGroup === 'hubs_zones' && !(act.includes('hub') || act.includes('region') || tt === 'hub' || tt === 'company_hub' || tt === 'region')) return false;
+        if (reqGroup === 'site_pins' && !(act === 'site_pin_set' || act === 'site_pin_moved' || act === 'pin_cleared' || ((tt === 'site' || tt === 'domain_location') && act !== 'gate_pin_promoted'))) return false;
+        if (reqGroup === 'route_km' && !(act.includes('pair_km') || act.includes('verified_route') || tt === 'pair_km' || tt === 'verified_route')) return false;
+        if (reqGroup === 'gate_promotions' && !(act === 'gate_pin_promoted' || r.source === 'gate_promotion')) return false;
+      }
+      return true;
+    });
+  }
+
+  function focusGeoAuditOnMap(auditRow) {
+    if (!auditRow || typeof auditRow !== 'object') return false;
+    STUDIO.collapsed = false;
+    STUDIO.dwellDriftTarget = null;
+    STUDIO.auditFocusTarget = auditRow;
+    STUDIO._userPanned = false;
+    const dispInd = _displayIndFromCanon(auditRow.industry || 'manufacturing');
+    const lat = auditRow.next_lat != null ? Number(auditRow.next_lat) : (auditRow.prev_lat != null ? Number(auditRow.prev_lat) : null);
+    const lng = auditRow.next_lng != null ? Number(auditRow.next_lng) : (auditRow.prev_lng != null ? Number(auditRow.prev_lng) : null);
+    if (typeof window !== 'undefined' && typeof window.__mfgOpenGeoSiteFocus === 'function') {
+      window.__mfgOpenGeoSiteFocus({
+        industry: dispInd,
+        company: auditRow.company || '',
+        siteName: auditRow.target_label || auditRow.target_id || '',
+        lat, lng, auditRow
+      });
+      return true;
+    }
+    if (STUDIO.map && lat != null && lng != null) {
+      try { STUDIO.map.setView([lat, lng], 14, { animate: false }); } catch (_) {}
+    }
+    if (typeof STUDIO._rerender === 'function') STUDIO._rerender();
+    return true;
+  }
+
+  function setStudioDwellDriftTarget(target) {
+    STUDIO.collapsed = false;
+    STUDIO.auditFocusTarget = null;
+    STUDIO.dwellDriftTarget = target || null;
+    STUDIO._userPanned = false;
+    if (target && typeof window !== 'undefined' && typeof window.__mfgOpenGeoSiteFocus === 'function') {
+      window.__mfgOpenGeoSiteFocus({
+        industry: _displayIndFromCanon(target.industry || 'manufacturing'),
+        company: target.company || '',
+        siteName: target.siteName || '',
+        lat: target.dwellLat,
+        lng: target.dwellLng
+      });
+      return true;
+    }
+    if (typeof STUDIO._rerender === 'function') STUDIO._rerender();
+    return true;
+  }
+
+  function applyPromotedGatePinClient(suggestion, clearedRoutePairs) {
+    if (!suggestion || !isValidLatLngPair(suggestion.suggested_lat, suggestion.suggested_lng)) return false;
+    const lat = Number(suggestion.suggested_lat);
+    const lng = Number(suggestion.suggested_lng);
+    const dispInd = _displayIndFromCanon(suggestion.industry || 'manufacturing');
+    const storePfx = geoIndStorePrefix(dispInd);
+    const sName = String(suggestion.site_name || '').trim();
+    const nk = norm(sName);
+    const cat = suggestion.site_category === 'customer' ? 'customer' : (suggestion.site_category === 'supplier' ? 'supplier' : 'supplier');
+    const nowIso = new Date().toISOString();
+    const entry = {
+      name: sName,
+      site_category: cat,
+      latitude: lat,
+      longitude: lng,
+      company: suggestion.company || '',
+      updated_at: nowIso,
+      source: 'gate_promotion',
+      _pinCleared: false
+    };
+    if (suggestion.promoted_target_id || suggestion.site_id) entry.id = suggestion.promoted_target_id || suggestion.site_id;
+    if (!GEO_STORE.sites || typeof GEO_STORE.sites !== 'object') GEO_STORE.sites = {};
+    if (nk) {
+      GEO_STORE.sites[`${storePfx}${cat}:${nk}`] = Object.assign({}, GEO_STORE.sites[`${storePfx}${cat}:${nk}`] || {}, entry);
+      if (GEO_STORE.sites[`${storePfx}${nk}`]) {
+        GEO_STORE.sites[`${storePfx}${nk}`] = Object.assign({}, GEO_STORE.sites[`${storePfx}${nk}`], entry);
+      }
+      if (GEO_STORE._deletedKeys) {
+        delete GEO_STORE._deletedKeys[`sites:${storePfx}${cat}:${nk}`];
+        delete GEO_STORE._deletedKeys[`sites:${storePfx}${nk}`];
+      }
+    }
+    if (Array.isArray(clearedRoutePairs) && GEO_STORE.verifiedRoutes) {
+      clearedRoutePairs.forEach(pk => { delete GEO_STORE.verifiedRoutes[pk]; });
+    }
+    GEO_STORE.updatedAt = nowIso;
+
+    const SEED = typeof window !== 'undefined' ? (window.MFG_SEED || window.__MFG_SEED_INTERNAL) : null;
+    const st = (typeof window !== 'undefined' && typeof window.__mfgGetState === 'function')
+      ? window.__mfgGetState()
+      : (typeof window !== 'undefined' ? window.STATE : null);
+    const matchTarget = row => {
+      if (!row || row.voided) return false;
+      const tid = suggestion.promoted_target_id || suggestion.site_id;
+      if (tid && String(row.id) === String(tid)) return true;
+      return isRowInGeoIndustry(row, dispInd) && nk && norm(row.name) === nk;
+    };
+    if (SEED && SEED.records && Array.isArray(SEED.records.sites)) {
+      const r = SEED.records.sites.find(matchTarget);
+      if (r) { r.latitude = lat; r.longitude = lng; r._pinCleared = false; r.modified_at = nowIso; }
+    }
+    if (st && st.customRecords && Array.isArray(st.customRecords.sites)) {
+      const cr = st.customRecords.sites.find(matchTarget);
+      if (cr) { cr.latitude = lat; cr.longitude = lng; cr._pinCleared = false; cr.modified_at = nowIso; }
+    }
+    if (dispInd !== 'Manufacturing' && typeof window !== 'undefined' && typeof window.__mfgSyncDomainEditsFromSitePin === 'function') {
+      try {
+        window.__mfgSyncDomainEditsFromSitePin({
+          industry: dispInd,
+          company: suggestion.company || '',
+          domainPrimaryId: suggestion.promoted_target_id || suggestion.site_id || '',
+          siteId: suggestion.promoted_target_id || suggestion.site_id || '',
+          siteName: sName,
+          lat, lng, pinCleared: false, modifiedAt: nowIso, skipServerPost: true
+        });
+      } catch (_) {}
+    }
+    if (SEED) {
+      SEED._customRev = (SEED._customRev || 0) + 1;
+      hydrateSeedGeo(SEED, true, false);
+    }
+    saveStoredConfig(false, { skipCloudPush: true });
+    GEO_AUDIT_CACHE.fetchedAt = 0;
+    return true;
+  }
+
+  let _gateSuggestMap = null;
+  function _closeGateSuggestModal() {
+    if (_gateSuggestMap) {
+      try { _gateSuggestMap.remove(); } catch (_) {}
+      _gateSuggestMap = null;
+    }
+    const el = document.getElementById('gateSuggestModal');
+    if (el) el.remove();
+  }
+
+  function openSuggestGatePinModal(opts = {}) {
+    _closeGateSuggestModal();
+    if (typeof document === 'undefined' || !document.body) return;
+    const o = opts || {};
+    const dispInd = _displayIndFromCanon(o.industry || getGeoActiveIndustry());
+    const company = String(o.company || (typeof window.__mfgActiveCompanyName === 'function' ? window.__mfgActiveCompanyName() : '') || '').trim();
+    const siteName = String(o.site_name || o.name || '').trim();
+    const siteId = String(o.site_id || '').trim();
+    const siteCat = o.site_category || '';
+    const SEED = typeof window !== 'undefined' ? (window.MFG_SEED || window.__MFG_SEED_INTERNAL) : null;
+    const curSite = (SEED && sNameMatch(SEED, siteName, dispInd, siteCat)) || null;
+    function sNameMatch(sd, nm, dInd, sc) {
+      const arr = (sd && sd.records && sd.records.sites) || [];
+      const nk = norm(nm);
+      return (siteId && arr.find(x => x && String(x.id) === siteId))
+        || arr.find(x => isRowInGeoIndustry(x, dInd) && norm(x.name) === nk && (!sc || resolveGeoSiteCat(x) === sc))
+        || arr.find(x => isRowInGeoIndustry(x, dInd) && norm(x.name) === nk);
+    }
+    const exLat = isValidLatLngPair(o.existing_lat, o.existing_lng) ? Number(o.existing_lat)
+      : (curSite && isValidLatLngPair(curSite.latitude, curSite.longitude) ? Number(curSite.latitude) : null);
+    const exLng = isValidLatLngPair(o.existing_lat, o.existing_lng) ? Number(o.existing_lng)
+      : (curSite && isValidLatLngPair(curSite.latitude, curSite.longitude) ? Number(curSite.longitude) : null);
+    let sugLat = isValidLatLngPair(o.suggested_lat, o.suggested_lng) ? round5(o.suggested_lat) : (exLat != null ? round5(exLat) : 33.8547);
+    let sugLng = isValidLatLngPair(o.suggested_lat, o.suggested_lng) ? round5(o.suggested_lng) : (exLng != null ? round5(exLng) : 35.5123);
+    let accMeters = o.accuracy_meters != null ? Number(o.accuracy_meters) : null;
+
+    const wrap = document.createElement('div');
+    wrap.id = 'gateSuggestModal';
+    wrap.className = 'modal-backdrop';
+    wrap.innerHTML = `
+      <div class="modal-card gate-suggest-card" role="dialog" aria-modal="true" aria-labelledby="gateSuggestModalTitle">
+        <div class="modal-header">
+          <div>
+            <span class="modal-eyebrow">${esc(_geoTr('Gate Coordinate Review'))}</span>
+            <h2 id="gateSuggestModalTitle">${esc(_geoTr('Suggest Gate Pin'))}${siteName ? `<span data-no-i18n="1">: ${esc(siteName)}</span>` : ''}</h2>
+          </div>
+          <div class="modal-header-actions">
+            <button type="button" class="modal-close-btn" id="gsCloseBtn" aria-label="${esc(_geoTr('Close'))}">✕</button>
+          </div>
+        </div>
+        <div class="modal-body gate-suggest-body">
+          <div class="gate-suggest-meta-bar">
+            <span class="badge badge-info" data-no-i18n="1">${esc(dispInd)}${company ? ` · ${esc(company)}` : ''}</span>
+            <span class="gate-suggest-coord mono" id="gsCoordBadge" data-no-i18n="1">${sugLat.toFixed(5)}, ${sugLng.toFixed(5)}</span>
+          </div>
+          <div class="gate-suggest-controls">
+            <input type="text" id="gsPasteInp" class="geo-search-inp" placeholder="${esc(_geoTr('Paste Google Maps link, Plus Code, or lat, lng...'))}" value="">
+            <button type="button" class="btn-ghost-bar" id="gsUseGpsBtn">${esc(_geoTr('Use My Current GPS'))}</button>
+          </div>
+          <div id="gsPickMap" class="gate-suggest-map" aria-label="${esc(_geoTr('Tap map or drag green pin to set suggested truck entrance'))}"></div>
+          <div class="gate-suggest-fields">
+            ${!siteName ? `<label class="gate-field-lbl"><span>${esc(_geoTr('Site Name'))}</span><input type="text" id="gsSiteNameInp" value="" placeholder="${esc(_geoTr('Enter site or customer gate name'))}" maxlength="160"></label>` : ''}
+            <label class="gate-field-lbl"><span>${esc(_geoTr('Access & Gate Note'))}</span>
+              <input type="text" id="gsAccessNoteInp" value="${esc(o.access_note || '')}" placeholder="${esc(_geoTr('e.g., Main truck gate after security barrier'))}" maxlength="380">
+            </label>
+            <label class="gate-field-lbl"><span>${esc(_geoTr('Driver or Contact Label'))}</span>
+              <input type="text" id="gsDriverLblInp" value="${esc(o.driver_label || '')}" placeholder="${esc(_geoTr('Optional name or truck plate'))}" maxlength="80">
+            </label>
+          </div>
+          <div class="gate-suggest-status" id="gsStatusMsg" hidden></div>
+          <div class="modal-footer gate-suggest-ft">
+            <button type="button" class="btn-ghost-bar" id="gateSuggestOpenApprovalsBtn">${esc(_geoTr('My Gate-Pin Suggestions'))}</button>
+            <button type="button" class="btn-ghost-bar" id="gsCancelBtn">${esc(_geoTr('Cancel'))}</button>
+            <button type="button" class="btn btn-brass" id="gsSubmitBtn">${esc(_geoTr('Submit for Approval'))}</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap);
+    if (window.MFG_I18N && _geoLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(wrap); } catch (_) {}
+    }
+    const close = () => _closeGateSuggestModal();
+    wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
+    wrap.querySelector('#gsCloseBtn').addEventListener('click', close);
+    wrap.querySelector('#gsCancelBtn').addEventListener('click', close);
+    const openApvBtn = wrap.querySelector('#gateSuggestOpenApprovalsBtn');
+    if (openApvBtn) {
+      openApvBtn.addEventListener('click', () => {
+        close();
+        if (typeof window.__navToView === 'function') window.__navToView('approvals');
+        else if (typeof location !== 'undefined') location.hash = '#approvals';
+      });
+    }
+
+    const coordBadge = wrap.querySelector('#gsCoordBadge');
+    const pasteInp = wrap.querySelector('#gsPasteInp');
+    const gpsBtn = wrap.querySelector('#gsUseGpsBtn');
+    const noteInp = wrap.querySelector('#gsAccessNoteInp');
+    const drvInp = wrap.querySelector('#gsDriverLblInp');
+    const statusEl = wrap.querySelector('#gsStatusMsg');
+    const submitBtn = wrap.querySelector('#gsSubmitBtn');
+    const showSt = (txt, err) => {
+      statusEl.textContent = txt;
+      statusEl.className = 'gate-suggest-status ' + (err ? 'is-err' : 'is-ok');
+      statusEl.hidden = !txt;
+    };
+
+    let marker = null;
+    const setPoint = (la, ln, acc) => {
+      if (!isValidLatLngPair(la, ln)) return;
+      sugLat = round5(la);
+      sugLng = round5(ln);
+      if (acc != null && Number.isFinite(Number(acc))) accMeters = Math.round(Number(acc));
+      coordBadge.textContent = `${sugLat.toFixed(5)}, ${sugLng.toFixed(5)}` + (accMeters != null ? ` (±${accMeters}m)` : '');
+      if (marker) marker.setLatLng([sugLat, sugLng]);
+      if (_gateSuggestMap) _gateSuggestMap.setView([sugLat, sugLng], Math.max(_gateSuggestMap.getZoom(), 15), { animate: false });
+    };
+
+    const mapHost = wrap.querySelector('#gsPickMap');
+    ensureLeaflet().then(L => {
+      if (!mapHost.isConnected) return;
+      _gateSuggestMap = L.map(mapHost, { zoomControl: true, attributionControl: false }).setView([sugLat, sugLng], 15);
+      addBaseTiles(L, _gateSuggestMap);
+      stripLeafletTitles(mapHost);
+      if (exLat != null && exLng != null) {
+        L.circleMarker([exLat, exLng], { radius: 7, color: '#1D4ED8', fillColor: '#3B82F6', fillOpacity: 0.9, weight: 2 }).addTo(_gateSuggestMap);
+      }
+      marker = L.marker([sugLat, sugLng], { draggable: true, icon: makeSvgPinIcon(L, '#059669', 'Suggested Gate', false), zIndexOffset: 1100 }).addTo(_gateSuggestMap);
+      marker.on('dragend', ev => {
+        const ll = ev.target.getLatLng();
+        setPoint(ll.lat, ll.lng, null);
+      });
+      _gateSuggestMap.on('click', ev => setPoint(ev.latlng.lat, ev.latlng.lng, null));
+      setTimeout(() => { try { _gateSuggestMap && _gateSuggestMap.invalidateSize(); } catch (_) {} }, 40);
+    }).catch(() => {});
+
+    pasteInp.addEventListener('change', async () => {
+      const raw = pasteInp.value.trim();
+      if (!raw) return;
+      const hit = (typeof resolveMapLinkAsync === 'function')
+        ? await resolveMapLinkAsync(raw, { allowGeocoding: true })
+        : (parsePastedCoordinates(raw) || parseMapLink(raw));
+      if (hit && hit.ok && isValidLatLngPair(hit.lat, hit.lng)) {
+        setPoint(hit.lat, hit.lng, null);
+        showSt(_geoTr('Coordinates parsed onto map.'), false);
+      } else {
+        showSt(_geoTr('Could not extract valid coordinates from link or text.'), true);
+      }
+    });
+
+    gpsBtn.addEventListener('click', () => {
+      if (!navigator.geolocation) { showSt(_geoTr('GPS geolocation is unavailable in this browser.'), true); return; }
+      gpsBtn.disabled = true;
+      navigator.geolocation.getCurrentPosition(pos => {
+        gpsBtn.disabled = false;
+        setPoint(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+        showSt(_geoTr('Current GPS location captured.'), false);
+      }, () => {
+        gpsBtn.disabled = false;
+        showSt(_geoTr('Unable to acquire GPS fix. Tap the map to place the pin.'), true);
+      }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 });
+    });
+
+    submitBtn.addEventListener('click', async () => {
+      const siteInp = wrap.querySelector('#gsSiteNameInp');
+      const effSiteName = (siteInp && siteInp.value.trim()) || siteName;
+      if (!isValidLatLngPair(sugLat, sugLng)) {
+        showSt(_geoTr('Valid non-zero coordinates are required.'), true);
+        return;
+      }
+      if (!company || (!effSiteName && !siteId)) {
+        showSt(_geoTr('Company and site details are required.'), true);
+        return;
+      }
+      submitBtn.disabled = true;
+      const payload = {
+        op: 'create',
+        industry: _canonIndKeyClient(dispInd),
+        company,
+        site_id: siteId,
+        site_name: effSiteName,
+        site_category: siteCat,
+        existing_lat: exLat,
+        existing_lng: exLng,
+        suggested_lat: sugLat,
+        suggested_lng: sugLng,
+        accuracy_meters: accMeters,
+        source_url: /^https?:\/\//i.test(pasteInp.value.trim()) ? pasteInp.value.trim().slice(0, 380) : '',
+        access_note: noteInp.value.trim(),
+        driver_label: drvInp.value.trim()
+      };
+      if (isDemoGeoMode()) {
+        const demoRow = Object.assign({}, payload, {
+          id: 'demo_gs_' + Date.now(),
+          status: 'pending',
+          created_at: new Date().toISOString(),
+          submitter_kind: 'viewer',
+          submitter_name: 'Demo Visitor',
+          shift_meters: (exLat != null && exLng != null) ? Math.round(haversineKm(exLat, exLng, sugLat, sugLng) * 1000) : null
+        });
+        DEMO_GATE_SUGGESTIONS.unshift(demoRow);
+        submitBtn.disabled = false;
+        _geoToast(_geoTr('Gate pin suggestion queued for review in Demo Sandbox.'), 'ok');
+        close();
+        if (typeof o.onSubmitted === 'function') o.onSubmitted(demoRow);
+        return;
+      }
+      try {
+        const res = await _geoFetchFn()('./api/geo/gate-suggestions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.ok) {
+          submitBtn.disabled = false;
+          showSt(j.error || _geoTr('Could not submit gate pin suggestion.'), true);
+          return;
+        }
+        _geoToast(_geoTr('Gate pin suggestion submitted for Supervisor approval.'), 'ok');
+        close();
+        if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.refresh === 'function') {
+          window.MFG_APPROVALS.refresh({ silent: true });
+        }
+        if (typeof o.onSubmitted === 'function') o.onSubmitted(j.suggestion);
+      } catch (_) {
+        submitBtn.disabled = false;
+        showSt(_geoTr('Offline: could not submit gate pin suggestion.'), true);
+      }
+    });
+  }
+
+  async function mintDriverGateLink(opts = {}) {
+    const o = opts || {};
+    if (isDemoGeoMode()) {
+      _geoToast(_geoTr('Driver gate links require a live signed-in workspace.'), 'err');
+      return null;
+    }
+    const dispInd = _displayIndFromCanon(o.industry || getGeoActiveIndustry());
+    const company = String(o.company || (typeof window.__mfgActiveCompanyName === 'function' ? window.__mfgActiveCompanyName() : '') || '').trim();
+    const siteName = String(o.site_name || o.name || '').trim();
+    const siteId = String(o.site_id || '').trim();
+    if (!company || (!siteName && !siteId)) {
+      _geoToast(_geoTr('Select a site with an assigned company before generating a driver link.'), 'err');
+      return null;
+    }
+    try {
+      const res = await _geoFetchFn()('./api/geo/gate-suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          op: 'mint_link',
+          industry: _canonIndKeyClient(dispInd),
+          company,
+          site_id: siteId,
+          site_name: siteName,
+          site_category: o.site_category || '',
+          driver_label: o.driver_label || ''
+        })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok || !j.url_param) {
+        _geoToast(j.error || _geoTr('Could not generate driver gate link.'), 'err');
+        return null;
+      }
+      const prev = document.getElementById('driverGateLinkModal');
+      if (prev) prev.remove();
+      const fullUrl = `${location.origin}${location.pathname}${j.url_param}`;
+      const waTxt = encodeURIComponent(`Please open this ISABI Gate Pin link when at the truck entrance of ${siteName || company}:\n${fullUrl}`);
+      const qrSvg = renderQrSvg(fullUrl, 168);
+      const wrap = document.createElement('div');
+      wrap.id = 'driverGateLinkModal';
+      wrap.className = 'modal-backdrop';
+      wrap.innerHTML = `
+        <div class="modal-card driver-gate-link-card" role="dialog" aria-modal="true" aria-labelledby="driverGateLinkTitle">
+          <div class="modal-header">
+            <div>
+              <span class="modal-eyebrow">${esc(_geoTr('Single-Site Driver Companion Link'))}</span>
+              <h2 id="driverGateLinkTitle">${esc(_geoTr('Driver Gate Link'))}${siteName ? `<span data-no-i18n="1">: ${esc(siteName)}</span>` : ''}</h2>
+            </div>
+            <div class="modal-header-actions">
+              <button type="button" class="modal-close-btn" id="dglCloseBtn" aria-label="${esc(_geoTr('Close'))}">✕</button>
+            </div>
+          </div>
+          <div class="modal-body driver-gate-link-body">
+            <div class="driver-gate-qr-row">
+              <div class="driver-gate-qr-box">${qrSvg}</div>
+              <div class="driver-gate-link-info">
+                <div class="badge badge-info" data-no-i18n="1">${esc(dispInd)} · ${esc(company)}</div>
+                <p>${esc(_geoTr('Drivers can open this link without an app login to submit one candidate gate pin for Supervisor review. Direct map writes remain locked.'))}</p>
+                <div class="driver-gate-url-row">
+                  <input type="text" id="dglUrlInp" readonly value="${esc(fullUrl)}" data-no-i18n="1">
+                  <button type="button" class="btn btn-primary" id="dglCopyBtn">${esc(_geoTr('Copy Link'))}</button>
+                </div>
+                <div class="driver-gate-link-acts">
+                  <a class="btn-ghost-bar" href="${esc(fullUrl)}" target="_blank" rel="noopener">${esc(_geoTr('Open Companion Page'))}</a>
+                  <a class="btn-ghost-bar" href="https://wa.me/?text=${waTxt}" target="_blank" rel="noopener">${esc(_geoTr('Send via WhatsApp'))}</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      document.body.appendChild(wrap);
+      if (window.MFG_I18N && _geoLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(wrap); } catch (_) {}
+      }
+      wrap.addEventListener('click', e => { if (e.target === wrap) wrap.remove(); });
+      wrap.querySelector('#dglCloseBtn').addEventListener('click', () => wrap.remove());
+      wrap.querySelector('#dglCopyBtn').addEventListener('click', () => {
+        try { navigator.clipboard && navigator.clipboard.writeText(fullUrl); } catch (_) {}
+        _geoToast(_geoTr('Driver gate link copied.'), 'ok');
+      });
+      return j;
+    } catch (_) {
+      _geoToast(_geoTr('Offline: could not generate driver gate link.'), 'err');
+      return null;
+    }
+  }
+
+  async function bootStandaloneDriverGateCompanion() {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search || '');
+    const tok = String(sp.get('gate_pin') || '').trim();
+    if (!tok) return;
+    document.documentElement.classList.add('phone-scan-companion');
+    let root = document.getElementById('driverGatePinCompanion');
+    if (!root) {
+      root = document.createElement('main');
+      root.id = 'driverGatePinCompanion';
+      root.className = 'driver-gate-companion';
+      document.body.appendChild(root);
+    }
+    const renderMsg = (title, msg, isErr) => {
+      root.innerHTML = `
+        <div class="dgc-card">
+          <div class="dgc-hd">
+            <div><span class="dgc-brand">ISABI SYSTEMS</span><h1>${esc(_geoTr(title))}</h1></div>
+          </div>
+          <div class="dgc-msg ${isErr ? 'is-err' : ''}">${esc(_geoTr(msg))}</div>
+        </div>`;
+    };
+    renderMsg('Gate Pin Submission', 'Loading site details...', false);
+    let data = null;
+    try {
+      const res = await _geoFetchFn()(`./api/geo/gate-suggestions?gate_token=${encodeURIComponent(tok)}`);
+      data = await res.json().catch(() => null);
+      if (!res || !res.ok || !data || !data.ok || !data.target) {
+        renderMsg('Link Unavailable', (data && data.error) || 'This driver gate pin link is invalid or expired.', true);
+        return;
+      }
+    } catch (_) {
+      renderMsg('Connection Required', 'Unable to verify the driver gate pin link right now.', true);
+      return;
+    }
+
+    const tgt = data.target;
+    const curLang = _geoLang();
+    let pickLat = tgt.existing_lat != null ? round5(tgt.existing_lat) : 33.8547;
+    let pickLng = tgt.existing_lng != null ? round5(tgt.existing_lng) : 35.5123;
+    let pickAcc = null;
+    let submissions = Array.isArray(data.my_submissions) ? data.my_submissions : [];
+
+    root.innerHTML = `
+      <div class="dgc-card">
+        <div class="dgc-hd">
+          <div>
+            <span class="dgc-brand">ISABI SYSTEMS</span>
+            <h1>${esc(_geoTr('Suggest Gate Pin'))}</h1>
+            <div class="dgc-sub" data-no-i18n="1">${esc(tgt.site_name || tgt.site_id || '')} · ${esc(tgt.company || '')}</div>
+          </div>
+          <div class="lang-switch" id="dgcLangSwitch" role="group" aria-label="${esc(_geoTr('Language'))}">
+            <button type="button" class="lang-btn${curLang === 'en' ? ' active' : ''}" data-dgc-lang="en">EN</button>
+            <button type="button" class="lang-btn${curLang === 'ar' ? ' active' : ''}" data-dgc-lang="ar">عربي</button>
+            <button type="button" class="lang-btn${curLang === 'fr' ? ' active' : ''}" data-dgc-lang="fr">FR</button>
+          </div>
+        </div>
+        <div class="dgc-meta">
+          <span class="mono" id="dgcCoordOut" data-no-i18n="1">${pickLat.toFixed(5)}, ${pickLng.toFixed(5)}</span>
+          <button type="button" class="btn-ghost-bar" id="dgcGpsBtn">${esc(_geoTr('Use My Current GPS'))}</button>
+        </div>
+        <div id="dgcMap" class="dgc-map"></div>
+        <div class="dgc-form">
+          <input type="text" id="dgcPasteInp" placeholder="${esc(_geoTr('Paste Google Maps link, Plus Code, or lat, lng...'))}">
+          <input type="text" id="dgcNoteInp" placeholder="${esc(_geoTr('Access note (e.g., West truck gate after scale)'))}" maxlength="380">
+          <input type="text" id="dgcDriverInp" value="${esc(tgt.driver_label || '')}" placeholder="${esc(_geoTr('Driver name or truck plate'))}" maxlength="80">
+          <div id="dgcStatus" class="gate-suggest-status" hidden></div>
+          <button type="button" class="btn btn-brass dgc-submit" id="dgcSubmitBtn">${esc(_geoTr('Submit Gate Pin'))}</button>
+        </div>
+        <div class="dgc-hist" id="dgcHistBox"></div>
+      </div>`;
+
+    const applyLang = lc => {
+      if (window.MFG_I18N && typeof window.MFG_I18N.setLang === 'function') {
+        window.MFG_I18N.setLang(lc, false);
+        window.MFG_I18N.translateDom(root);
+      }
+      root.querySelectorAll('[data-dgc-lang]').forEach(b => b.classList.toggle('active', b.getAttribute('data-dgc-lang') === lc));
+    };
+    root.querySelectorAll('[data-dgc-lang]').forEach(b => b.addEventListener('click', () => applyLang(b.getAttribute('data-dgc-lang'))));
+    if (curLang !== 'en') applyLang(curLang);
+
+    const coordOut = root.querySelector('#dgcCoordOut');
+    const stBox = root.querySelector('#dgcStatus');
+    const histBox = root.querySelector('#dgcHistBox');
+    let dgcMap = null;
+    let dgcMarker = null;
+
+    const renderHist = () => {
+      if (!submissions.length) { histBox.innerHTML = ''; return; }
+      histBox.innerHTML = `<div class="dgc-hist-hd">${esc(_geoTr('Submitted Suggestions'))}</div>` + submissions.map(s => `
+        <div class="dgc-hist-row">
+          <div><b data-no-i18n="1">${Number(s.suggested_lat).toFixed(5)}, ${Number(s.suggested_lng).toFixed(5)}</b> · <span>${esc(_geoTr(s.status || 'pending'))}</span>${s.access_note ? ` · <span data-no-i18n="1">${esc(s.access_note)}</span>` : ''}</div>
+          ${s.status === 'pending' ? `<button type="button" class="btn-ghost-bar" data-dgc-cancel="${esc(s.id)}">${esc(_geoTr('Cancel'))}</button>` : ''}
+        </div>`).join('');
+    };
+    renderHist();
+
+    const setPick = (la, ln, acc) => {
+      if (!isValidLatLngPair(la, ln)) return;
+      pickLat = round5(la); pickLng = round5(ln);
+      if (acc != null && Number.isFinite(Number(acc))) pickAcc = Math.round(Number(acc));
+      coordOut.textContent = `${pickLat.toFixed(5)}, ${pickLng.toFixed(5)}` + (pickAcc != null ? ` (±${pickAcc}m)` : '');
+      if (dgcMarker) dgcMarker.setLatLng([pickLat, pickLng]);
+      if (dgcMap) dgcMap.setView([pickLat, pickLng], Math.max(dgcMap.getZoom(), 15), { animate: false });
+    };
+
+    ensureLeaflet().then(L => {
+      const mEl = root.querySelector('#dgcMap');
+      if (!mEl || !mEl.isConnected) return;
+      dgcMap = L.map(mEl, { zoomControl: true, attributionControl: false }).setView([pickLat, pickLng], 15);
+      addBaseTiles(L, dgcMap);
+      stripLeafletTitles(mEl);
+      if (tgt.existing_lat != null && tgt.existing_lng != null) {
+        L.circleMarker([Number(tgt.existing_lat), Number(tgt.existing_lng)], { radius: 7, color: '#1D4ED8', fillColor: '#3B82F6', fillOpacity: 0.9, weight: 2 }).addTo(dgcMap);
+      }
+      dgcMarker = L.marker([pickLat, pickLng], { draggable: true, icon: makeSvgPinIcon(L, '#059669', 'Gate', false), zIndexOffset: 1100 }).addTo(dgcMap);
+      dgcMarker.on('dragend', ev => { const ll = ev.target.getLatLng(); setPick(ll.lat, ll.lng, null); });
+      dgcMap.on('click', ev => setPick(ev.latlng.lat, ev.latlng.lng, null));
+      setTimeout(() => { try { dgcMap && dgcMap.invalidateSize(); } catch (_) {} }, 50);
+    }).catch(() => {});
+
+    root.querySelector('#dgcPasteInp').addEventListener('change', async e => {
+      const raw = e.target.value.trim();
+      if (!raw) return;
+      const hit = (typeof resolveMapLinkAsync === 'function')
+        ? await resolveMapLinkAsync(raw, { allowGeocoding: true })
+        : (parsePastedCoordinates(raw) || parseMapLink(raw));
+      if (hit && hit.ok && isValidLatLngPair(hit.lat, hit.lng)) { setPick(hit.lat, hit.lng, null); }
+    });
+
+    root.querySelector('#dgcGpsBtn').addEventListener('click', () => {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(pos => {
+        setPick(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+      }, () => {
+        stBox.textContent = _geoTr('Unable to capture GPS location. Tap the map instead.');
+        stBox.className = 'gate-suggest-status is-err';
+        stBox.hidden = false;
+      }, { enableHighAccuracy: true, timeout: 10000 });
+    });
+
+    root.querySelector('#dgcSubmitBtn').addEventListener('click', async e => {
+      const b = e.currentTarget;
+      b.disabled = true;
+      try {
+        const res = await _geoFetchFn()('./api/geo/gate-suggestions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            gate_token: tok,
+            op: 'create',
+            suggested_lat: pickLat,
+            suggested_lng: pickLng,
+            accuracy_meters: pickAcc,
+            source_url: /^https?:\/\//i.test(root.querySelector('#dgcPasteInp').value.trim()) ? root.querySelector('#dgcPasteInp').value.trim() : '',
+            access_note: root.querySelector('#dgcNoteInp').value.trim(),
+            driver_label: root.querySelector('#dgcDriverInp').value.trim()
+          })
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.ok) {
+          stBox.textContent = j.error || _geoTr('Submission failed.');
+          stBox.className = 'gate-suggest-status is-err';
+          stBox.hidden = false;
+          b.disabled = false;
+          return;
+        }
+        if (j.suggestion) submissions.unshift(j.suggestion);
+        renderHist();
+        stBox.textContent = _geoTr('Thank you. Your suggested gate pin is queued for Supervisor review.');
+        stBox.className = 'gate-suggest-status is-ok';
+        stBox.hidden = false;
+        b.disabled = false;
+      } catch (_) {
+        stBox.textContent = _geoTr('Offline: could not submit.');
+        stBox.className = 'gate-suggest-status is-err';
+        stBox.hidden = false;
+        b.disabled = false;
+      }
+    });
+
+    histBox.addEventListener('click', async e => {
+      const cb = e.target.closest('[data-dgc-cancel]');
+      if (!cb) return;
+      cb.disabled = true;
+      const cid = cb.getAttribute('data-dgc-cancel');
+      try {
+        const res = await _geoFetchFn()('./api/geo/gate-suggestions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ gate_token: tok, op: 'cancel', id: cid })
+        });
+        const j = await res.json().catch(() => ({}));
+        if (res.ok && j.ok && j.suggestion) {
+          submissions = submissions.map(x => x.id === cid ? j.suggestion : x);
+          renderHist();
+        }
+      } catch (_) {}
+      cb.disabled = false;
+    });
+  }
+
+  if (typeof document !== 'undefined' && !document.documentElement.dataset.geoGateCardsWired) {
+    document.documentElement.dataset.geoGateCardsWired = '1';
+    document.addEventListener('click', ev => {
+      const sugBtn = ev.target && ev.target.closest ? ev.target.closest('[data-gate-suggest-site]') : null;
+      if (sugBtn) {
+        ev.preventDefault();
+        openSuggestGatePinModal({
+          site_id: sugBtn.getAttribute('data-gate-site-id') || '',
+          site_name: sugBtn.getAttribute('data-gate-suggest-site') || '',
+          company: sugBtn.getAttribute('data-gate-suggest-co') || '',
+          industry: sugBtn.getAttribute('data-gate-suggest-ind') || getGeoActiveIndustry(),
+          existing_lat: sugBtn.getAttribute('data-gate-suggest-lat') ? Number(sugBtn.getAttribute('data-gate-suggest-lat')) : null,
+          existing_lng: sugBtn.getAttribute('data-gate-suggest-lng') ? Number(sugBtn.getAttribute('data-gate-suggest-lng')) : null
+        });
+        return;
+      }
+      const mintBtn = ev.target && ev.target.closest ? ev.target.closest('[data-gate-mint-site]') : null;
+      if (mintBtn) {
+        ev.preventDefault();
+        mintDriverGateLink({
+          site_id: mintBtn.getAttribute('data-gate-site-id') || '',
+          site_name: mintBtn.getAttribute('data-gate-mint-site') || '',
+          company: mintBtn.getAttribute('data-gate-mint-co') || '',
+          industry: mintBtn.getAttribute('data-gate-mint-ind') || getGeoActiveIndustry()
+        });
+      }
+    });
+    if (/[?&]gate_pin=[a-zA-Z0-9_.-]+/i.test((typeof window !== 'undefined' && window.location && window.location.search) || '')) {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => bootStandaloneDriverGateCompanion(), { once: true });
+      } else {
+        setTimeout(() => bootStandaloneDriverGateCompanion(), 0);
+      }
+    }
+  }
+
   window.MFG_GEO = {
     BU_LIST,
     STUDIO,
@@ -12076,6 +13131,18 @@
     fetchMapsUsageSnapshot,
     confirmGcpMapsBudget,
     getMapsQuotaState: () => Object.assign({}, MAPS_QUOTA_STATE),
+    fetchGeoAuditLogs,
+    getScopedGeoAuditLogs,
+    openSuggestGatePinModal,
+    mintDriverGateLink,
+    bootStandaloneDriverGateCompanion,
+    canMintDriverGateLink: canMintDriverGateLinkNow,
+    focusGeoAuditOnMap,
+    setStudioDwellDriftTarget,
+    applyPromotedGatePinClient,
+    getDemoGateSuggestions: () => DEMO_GATE_SUGGESTIONS,
+    ensureLeaflet,
+    addBaseTiles,
     renderGateMiniMapSvg,
     renderGatePinCardHtml,
     getMapLayerStyle,

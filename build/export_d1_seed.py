@@ -78,6 +78,8 @@ EDGE_RUNTIME_TABLES = {
     "override_requests",
     "saved_views",
     "override_audit",
+    "geo_audit_log",
+    "geo_gate_suggestions",
 }
 
 MULTI_INDUSTRY_COMPANIES = (

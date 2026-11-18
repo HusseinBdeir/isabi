@@ -83,6 +83,7 @@ RELEASE_GATES = [
     ("isabi", "build/verify_parity_browser.mjs", "node"),          # headless browser launcher, CI D-Bus/sandbox flags & fallback
     ("isabi-app", "build/verify_changed_entries_notice.mjs", "node"),  # Owner notice: workbook edits to already-loaded entries
     ("isabi-app", "build/verify_near_copy.mjs", "node"),             # warn at Post on a likely second copy (ticket slip, 11% VAT apart)
+    ("isabi", "build/verify_geo_audit_gate_dwell_edge.mjs", "node"), # Geo audit log, gt1.* gate pins & RLS parity
 ]
 
 

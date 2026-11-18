@@ -16,6 +16,7 @@
   'use strict';
 
   const API = './api/auth/override-requests';
+  const GATE_API = './api/geo/gate-suggestions';
   const POLL_MS = 20000;
   const WAIT_POLL_MS = 4000;
   const LIST_CAP = 12;
@@ -25,6 +26,8 @@
   let pollTimer = 0;
   let pending = [];
   let mine = [];
+  let gatePending = [];
+  let gateMine = [];
   let primed = false;
   let seenIds = new Set();
   let fetching = false;
@@ -75,10 +78,38 @@
     return UNLOCK_FIELDS.some(f => { try { return D.canUnlockField(f, u); } catch (_) { return false; } });
   }
 
+  function canApproveGatePins(u) {
+    if (!D) return false;
+    u = u || D.activeUser();
+    if (!u || u.status === 'Suspended') return false;
+    if (typeof D.canWriteGeoConfig === 'function') {
+      try { return Boolean(D.canWriteGeoConfig(u)); } catch (_) { return false; }
+    }
+    return false;
+  }
+
+  function demoGateList() {
+    try {
+      const arr = window.MFG_GEO && typeof window.MFG_GEO.getDemoGateSuggestions === 'function'
+        ? window.MFG_GEO.getDemoGateSuggestions() : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (_) { return []; }
+  }
+
   function pendingRequestCount() {
-    if (!serverReady() || !canApprove()) return 0;
+    const isDemo = Boolean(D && typeof D.isDemoScopeActive === 'function' && D.isDemoScopeActive());
+    if (isDemo) {
+      return canApproveGatePins() ? demoGateList().filter(g => g && g.status === 'pending').length : 0;
+    }
+    if (!serverReady()) return 0;
     const now = Date.now();
-    return pending.filter(r => r && r.status === 'pending' && Date.parse(r.expires_at || '') > now).length;
+    const ovCnt = canApprove()
+      ? pending.filter(r => r && r.status === 'pending' && Date.parse(r.expires_at || '') > now).length
+      : 0;
+    const gateCnt = canApproveGatePins()
+      ? gatePending.filter(g => g && g.status === 'pending').length
+      : 0;
+    return ovCnt + gateCnt;
   }
 
   async function apiJson(url, opts) {
@@ -128,19 +159,32 @@
     const g = gen;
     try {
       const wantPending = canApprove();
-      const calls = [apiJson(`${API}?mine=1`)];
-      if (wantPending) calls.push(apiJson(`${API}?status=pending`));
-      const [mineRes, pendRes] = await Promise.all(calls);
+      const wantGatePending = canApproveGatePins();
+      const calls = [
+        apiJson(`${API}?mine=1`),
+        wantPending ? apiJson(`${API}?status=pending`) : Promise.resolve(null),
+        apiJson(`${GATE_API}?mine=1`).catch(() => null),
+        wantGatePending ? apiJson(`${GATE_API}?status=pending`).catch(() => null) : Promise.resolve(null)
+      ];
+      const [mineRes, pendRes, gateMineRes, gatePendRes] = await Promise.all(calls);
       if (g !== gen) return;
-      if (mineRes.res && mineRes.res.ok && Array.isArray(mineRes.j.requests)) mine = mineRes.j.requests;
+      if (mineRes && mineRes.res && mineRes.res.ok && Array.isArray(mineRes.j.requests)) mine = mineRes.j.requests;
       if (wantPending && pendRes && pendRes.res && pendRes.res.ok && Array.isArray(pendRes.j.requests)) {
         const next = pendRes.j.requests;
         const fresh = primed ? next.filter(r => r && r.status === 'pending' && !seenIds.has(r.id)) : [];
         pending = next;
         next.forEach(r => r && seenIds.add(r.id));
-        primed = true;
         if (fresh.length && !(opts && opts.silent)) showLiveCard(fresh[0], fresh.length);
       }
+      if (gateMineRes && gateMineRes.res && gateMineRes.res.ok && Array.isArray(gateMineRes.j.suggestions)) {
+        gateMine = gateMineRes.j.suggestions;
+      }
+      if (wantGatePending && gatePendRes && gatePendRes.res && gatePendRes.res.ok && Array.isArray(gatePendRes.j.suggestions)) {
+        gatePending = gatePendRes.j.suggestions;
+      } else if (!wantGatePending) {
+        gatePending = [];
+      }
+      primed = true;
       lastError = '';
     } catch (_) {
       lastError = 'offline';
@@ -149,7 +193,13 @@
     }
     if (g !== gen) return;
     // Re-render the inbox only when what it shows changed, and never while a field in it has focus.
-    const sig = JSON.stringify([pending.map(r => r.id + r.status), mine.map(r => r.id + r.status), lastError]);
+    const sig = JSON.stringify([
+      pending.map(r => r.id + r.status),
+      mine.map(r => r.id + r.status),
+      gatePending.map(r => r.id + r.status),
+      gateMine.map(r => r.id + r.status),
+      lastError
+    ]);
     const changed = sig !== lastSig;
     lastSig = sig;
     const st = D.STATE;
@@ -163,9 +213,93 @@
   function schedulePoll() {
     clearTimeout(pollTimer);
     pollTimer = setTimeout(async () => {
-      if (document.visibilityState === 'visible' && serverReady() && canApprove()) await refresh();
+      const onInbox = D && D.STATE && D.STATE.view === 'approvals';
+      if (document.visibilityState === 'visible' && serverReady() && (canApprove() || canApproveGatePins() || onInbox)) await refresh();
       schedulePoll();
     }, POLL_MS);
+  }
+
+  // ------------------------------------------------------------------ decide (approve / deny) & gate pins
+  async function decideGatePin(id, decision, btn) {
+    if (!id) return;
+    const isDemo = Boolean(D && typeof D.isDemoScopeActive === 'function' && D.isDemoScopeActive());
+    if (isDemo) {
+      const arr = demoGateList();
+      const hit = arr.find(x => x && x.id === id);
+      if (hit) {
+        hit.status = decision;
+        if (decision === 'approved' && window.MFG_GEO && typeof window.MFG_GEO.applyPromotedGatePinClient === 'function') {
+          window.MFG_GEO.applyPromotedGatePinClient(hit, []);
+        }
+        if (decision === 'approved' && D && typeof D.onGatePinPromoted === 'function') D.onGatePinPromoted(hit, []);
+        D.toast(decision === 'approved' ? 'Gate pin approved and promoted to site master.' : 'Gate pin suggestion declined.', 'ok');
+        if (D.refreshNavBadges) D.refreshNavBadges();
+        D.render();
+      }
+      return;
+    }
+    if (!serverReady()) return;
+    const host = btn && btn.closest('[data-apv-gate-req]');
+    if (host) host.setAttribute('data-apv-busy', '1');
+    if (btn) btn.disabled = true;
+    try {
+      const { res, j } = await apiJson(GATE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'decide', id, decision })
+      });
+      if (res && res.ok && j.ok) {
+        gatePending = gatePending.filter(r => r.id !== id);
+        if (decision === 'approved' && j.suggestion && window.MFG_GEO && typeof window.MFG_GEO.applyPromotedGatePinClient === 'function') {
+          window.MFG_GEO.applyPromotedGatePinClient(j.suggestion, j.clearedRoutePairs || []);
+        }
+        if (decision === 'approved' && D && typeof D.onGatePinPromoted === 'function') {
+          D.onGatePinPromoted(j.suggestion, j.clearedRoutePairs || []);
+        }
+        D.toast(decision === 'approved' ? 'Gate pin approved and promoted to site master.' : 'Gate pin suggestion declined.', 'ok');
+      } else {
+        D.toast(j.error || 'Could not record gate pin decision.', 'err');
+      }
+    } catch (_) {
+      D.toast('Offline: gate pin decision was not sent.', 'err');
+    } finally {
+      if (host) host.removeAttribute('data-apv-busy');
+      await refresh({ silent: true });
+      if (D && D.STATE && D.STATE.view === 'approvals') D.render();
+    }
+  }
+
+  async function cancelGatePin(id, btn) {
+    if (!id) return;
+    const isDemo = Boolean(D && typeof D.isDemoScopeActive === 'function' && D.isDemoScopeActive());
+    if (isDemo) {
+      const hit = demoGateList().find(x => x && x.id === id);
+      if (hit) hit.status = 'cancelled';
+      D.render();
+      return;
+    }
+    if (!serverReady()) return;
+    if (btn) btn.disabled = true;
+    try {
+      const { res, j } = await apiJson(GATE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'cancel', id })
+      });
+      if (res && res.ok && j.ok) {
+        gateMine = gateMine.map(r => r.id === id ? (j.suggestion || Object.assign({}, r, { status: 'cancelled' })) : r);
+        gatePending = gatePending.filter(r => r.id !== id);
+        D.toast('Gate pin suggestion cancelled.', 'ok');
+      } else {
+        D.toast(j.error || 'Could not cancel gate pin suggestion.', 'err');
+      }
+    } catch (_) {
+      D.toast('Offline: cancel request was not sent.', 'err');
+    } finally {
+      if (btn) btn.disabled = false;
+      await refresh({ silent: true });
+      if (D && D.STATE && D.STATE.view === 'approvals') D.render();
+    }
   }
 
   // ------------------------------------------------------------------ decide (approve / deny)
@@ -345,7 +479,7 @@
   function statusPill(st) {
     const map = {
       pending: ['warn', 'Waiting'], approved: ['good', 'Approved'], denied: ['crit', 'Declined'],
-      cancelled: ['mu', 'Cancelled'], expired: ['mu', 'Expired']
+      declined: ['crit', 'Declined'], cancelled: ['mu', 'Cancelled'], expired: ['mu', 'Expired']
     };
     const [cls, lbl] = map[st] || ['mu', st || ''];
     return `<span class="apv-pill apv-pill-${cls}">${esc(lbl)}</span>`;
@@ -457,16 +591,124 @@
     return section('apvFlags', 'Open Sentinel Flags', items.length, `<div class="apv-list">${rows}</div>`, 'No Sentinel flags are open.');
   }
 
+  const _apvGateMaps = new Map();
+  function hydrateGateComparisonMaps() {
+    if (!window.MFG_GEO || typeof window.MFG_GEO.ensureLeaflet !== 'function') return;
+    const boxes = document.querySelectorAll('#apvGatePins [data-apv-gate-preview]');
+    if (!boxes.length) return;
+    window.MFG_GEO.ensureLeaflet().then(L => {
+      boxes.forEach(el => {
+        if (!el || !el.isConnected || el.dataset.mapMounted === '1') return;
+        const sLat = Number(el.getAttribute('data-sug-lat'));
+        const sLng = Number(el.getAttribute('data-sug-lng'));
+        if (!Number.isFinite(sLat) || !Number.isFinite(sLng)) return;
+        const eLatRaw = el.getAttribute('data-ex-lat');
+        const eLngRaw = el.getAttribute('data-ex-lng');
+        const hasEx = eLatRaw !== '' && eLngRaw !== '' && Number.isFinite(Number(eLatRaw)) && Number.isFinite(Number(eLngRaw));
+        const eLat = hasEx ? Number(eLatRaw) : null;
+        const eLng = hasEx ? Number(eLngRaw) : null;
+        try {
+          const oldMap = _apvGateMaps.get(el.id);
+          if (oldMap) {
+            try { oldMap.remove(); } catch (_) {}
+            _apvGateMaps.delete(el.id);
+          }
+          for (const [k, m] of _apvGateMaps.entries()) {
+            const dom = document.getElementById(k);
+            if (!dom || !dom.isConnected) {
+              try { m.remove(); } catch (_) {}
+              _apvGateMaps.delete(k);
+            }
+          }
+          el.dataset.mapMounted = '1';
+          el.innerHTML = '';
+          const map = L.map(el, { zoomControl: false, attributionControl: false, dragging: true, scrollWheelZoom: false }).setView([sLat, sLng], 15);
+          window.MFG_GEO.addBaseTiles(L, map);
+          if (hasEx) {
+            L.polyline([[eLat, eLng], [sLat, sLng]], { color: '#C0892F', weight: 2.5, dashArray: '4, 4' }).addTo(map);
+            L.circleMarker([eLat, eLng], { radius: 6, color: '#1D4ED8', fillColor: '#3B82F6', fillOpacity: 0.9, weight: 2 }).addTo(map);
+          }
+          L.circleMarker([sLat, sLng], { radius: 7, color: '#047857', fillColor: '#10B981', fillOpacity: 0.95, weight: 2 }).addTo(map);
+          if (hasEx) {
+            map.fitBounds(L.latLngBounds([[eLat, eLng], [sLat, sLng]]), { padding: [18, 18], maxZoom: 16, animate: false });
+          }
+          _apvGateMaps.set(el.id, map);
+          setTimeout(() => { try { map.invalidateSize(); } catch (_) {} }, 30);
+        } catch (_) {}
+      });
+    }).catch(() => {});
+  }
+
+  function renderGateSuggestions() {
+    const isDemo = Boolean(D && typeof D.isDemoScopeActive === 'function' && D.isDemoScopeActive());
+    const liveList = (isDemo ? demoGateList() : gatePending).filter(g => g && g.status === 'pending');
+    const rows = liveList.map(g => {
+      const who = g.driver_label || g.submitter_name || g.submitter_email || L('Field Driver', 'سائق ميداني', 'Chauffeur');
+      const hasEx = g.existing_lat != null && g.existing_lng != null && Number.isFinite(Number(g.existing_lat)) && Number.isFinite(Number(g.existing_lng));
+      const exTxt = hasEx ? `${Number(g.existing_lat).toFixed(5)}, ${Number(g.existing_lng).toFixed(5)}` : L('Unpinned', 'غير مثبت', 'Non épinglé');
+      const sgTxt = `${Number(g.suggested_lat).toFixed(5)}, ${Number(g.suggested_lng).toFixed(5)}`;
+      const shiftTxt = g.shift_meters != null
+        ? L(`${fmtNum(g.shift_meters, 0)} m shift`, `إزاحة ${fmtNum(g.shift_meters, 0)} م`, `Décalage ${fmtNum(g.shift_meters, 0)} m`)
+        : L('New pin', 'دبوس جديد', 'Nouveau point');
+      const accTxt = g.accuracy_meters != null ? `±${fmtNum(g.accuracy_meters, 0)}m` : '';
+      return `
+        <div class="apv-row apv-gate-row" data-apv-gate-req="${esc(g.id)}">
+          <div class="apv-row-main">
+            <div class="apv-row-title">${(g.site_name || g.site_id) ? `<b data-no-i18n="1">${esc(g.site_name || g.site_id)}</b>` : `<b>Site Gate</b>`} · <span data-no-i18n="1">${esc(who)}</span></div>
+            <div class="apv-row-meta" data-no-i18n="1">${esc(g.company || '')} · ${esc(g.industry || 'manufacturing')} · ${esc(shiftTxt)}${accTxt ? ' · ' + esc(accTxt) : ''} · ${esc(minutesAgo(g.created_at))}</div>
+            <div class="apv-gate-coords-line mono" data-no-i18n="1">
+              <span>${esc(exTxt)}</span> <span aria-hidden="true">/</span> <b>${esc(sgTxt)}</b>
+            </div>
+            ${g.access_note ? `<div class="apv-row-note" data-no-i18n="1">${esc(g.access_note)}</div>` : ''}
+            <div class="apv-gate-preview-box" id="apvGateMapPreview_${esc(g.id)}" data-apv-gate-preview="${esc(g.id)}" data-sug-lat="${esc(String(g.suggested_lat))}" data-sug-lng="${esc(String(g.suggested_lng))}" data-ex-lat="${hasEx ? esc(String(g.existing_lat)) : ''}" data-ex-lng="${hasEx ? esc(String(g.existing_lng)) : ''}">
+              <svg viewBox="0 0 180 64" width="180" height="64" aria-hidden="true">
+                <rect x="0" y="0" width="180" height="64" rx="8" fill="#F8F6F1"/>
+                ${hasEx ? '<line x1="46" y1="36" x2="134" y2="26" stroke="#C0892F" stroke-width="2.5" stroke-dasharray="4 4"/><circle cx="46" cy="36" r="6" fill="#3B82F6" stroke="#1D4ED8" stroke-width="2"/>' : ''}
+                <circle cx="${hasEx ? '134' : '90'}" cy="${hasEx ? '26' : '32'}" r="7" fill="#10B981" stroke="#047857" stroke-width="2"/>
+              </svg>
+            </div>
+          </div>
+          <div class="apv-row-acts apv-gate-acts">
+            <button type="button" class="btn btn-primary" data-apv-gate-decide="approved" data-apv-gate-id="${esc(g.id)}">${ic('check')} Approve &amp; Promote Pin</button>
+            <button type="button" class="btn btn-ghost-bar" data-apv-gate-decide="declined" data-apv-gate-id="${esc(g.id)}">Decline</button>
+            <button type="button" class="btn btn-ghost-bar" data-apv-gate-map="${esc(g.id)}">${ic('pin')} Preview on Map</button>
+          </div>
+        </div>`;
+    }).join('');
+    if (liveList.length) setTimeout(hydrateGateComparisonMaps, 30);
+    return section('apvGatePins', 'Driver & Field Gate-Pin Suggestions', liveList.length, `<div class="apv-list">${rows}</div>`, 'No gate pin suggestions are awaiting review.');
+  }
+
+  function renderMyGateSuggestions() {
+    const isDemo = Boolean(D && typeof D.isDemoScopeActive === 'function' && D.isDemoScopeActive());
+    const list = isDemo ? demoGateList() : gateMine;
+    if (!list.length) return '';
+    const rows = list.slice(0, 8).map(g => `
+      <div class="apv-row apv-row-compact">
+        <div class="apv-row-main">
+          <div class="apv-row-title">${(g.site_name || g.site_id) ? `<b data-no-i18n="1">${esc(g.site_name || g.site_id)}</b>` : `<b>Site Gate</b>`} · <span data-no-i18n="1">${esc(g.company || '')}</span></div>
+          <div class="apv-row-meta mono" data-no-i18n="1">${Number(g.suggested_lat).toFixed(5)}, ${Number(g.suggested_lng).toFixed(5)} · ${esc(minutesAgo(g.created_at))}${g.access_note ? ' · ' + esc(g.access_note) : ''}</div>
+        </div>
+        <div class="apv-row-acts">
+          ${statusPill(g.status)}
+          ${g.status === 'pending' ? `<button type="button" class="btn btn-ghost-bar" data-apv-gate-cancel="${esc(g.id)}">Cancel</button>` : ''}
+        </div>
+      </div>`).join('');
+    return section('apvMyGatePins', 'My Gate-Pin Suggestions', list.length, `<div class="apv-list">${rows}</div>`, '');
+  }
+
   function renderView() {
     if (!D) return '';
     const u = D.activeUser();
     const approver = canApprove(u);
+    const approverGate = canApproveGatePins(u);
     const live = serverReady();
+    const isDemo = Boolean(D && typeof D.isDemoScopeActive === 'function' && D.isDemoScopeActive());
     const intro = live
-      ? (approver
-        ? 'Approve unlock requests from colleagues and clear the items that wait on a decision. New requests appear here and as a card while the app is open.'
-        : 'Items that wait on a decision in your companies. Unlock requests you send from a locked field are listed with their outcome.')
-      : 'Items that wait on a decision in your companies. Unlock requests need a signed-in workspace with a live connection.';
+      ? ((approver || approverGate)
+        ? 'Approve unlock requests and candidate gate pins from colleagues, and clear items waiting on a decision.'
+        : 'Items that wait on a decision in your companies. Requests you send appear below with their outcome.')
+      : 'Items that wait on a decision in your companies. Live approvals require a signed-in workspace connection.';
     if (live && !primed) setTimeout(() => refresh({ silent: true }), 0);
     return `
       <div class="apv-inbox" id="apvInbox">
@@ -474,7 +716,9 @@
           <div class="apv-head-title">${ic('approvals')}<div><h2>Approvals Inbox</h2><p>${esc(intro)}</p></div></div>
           ${live ? `<button type="button" class="btn btn-ghost-bar" data-apv-refresh="1">${ic('rotate')} Refresh</button>` : ''}
         </div>
+        ${(live || isDemo) && approverGate ? renderGateSuggestions() : ''}
         ${live && approver ? renderRequests() : ''}
+        ${(live || isDemo) ? renderMyGateSuggestions() : ''}
         ${live ? renderMine() : ''}
         ${renderPrices(u)}
         ${renderSalaries(u)}
@@ -488,6 +732,31 @@
     document.addEventListener('click', e => {
       const root = e.target.closest('#apvInbox');
       if (!root) return;
+      const gDec = e.target.closest('[data-apv-gate-decide]');
+      if (gDec) { decideGatePin(gDec.getAttribute('data-apv-gate-id'), gDec.getAttribute('data-apv-gate-decide'), gDec); return; }
+      const gCan = e.target.closest('[data-apv-gate-cancel]');
+      if (gCan) { cancelGatePin(gCan.getAttribute('data-apv-gate-cancel'), gCan); return; }
+      const gMap = e.target.closest('[data-apv-gate-map]');
+      if (gMap) {
+        const gid = gMap.getAttribute('data-apv-gate-map');
+        const all = demoGateList().concat(gatePending, gateMine);
+        const item = all.find(x => x && x.id === gid);
+        if (item && window.MFG_GEO && typeof window.MFG_GEO.focusGeoAuditOnMap === 'function') {
+          window.MFG_GEO.focusGeoAuditOnMap({
+            action: 'gate_pin_promoted',
+            outcome: 'applied',
+            industry: item.industry,
+            company: item.company,
+            target_label: item.site_name || item.site_id,
+            prev_lat: item.existing_lat,
+            prev_lng: item.existing_lng,
+            next_lat: item.suggested_lat,
+            next_lng: item.suggested_lng,
+            shift_meters: item.shift_meters
+          });
+        }
+        return;
+      }
       const dec = e.target.closest('[data-apv-decide]');
       if (dec) { decide(dec.getAttribute('data-apv-id'), dec.getAttribute('data-apv-decide'), dec); return; }
       const rp = e.target.closest('[data-apv-raw-price]');
@@ -500,7 +769,8 @@
       if (e.target.closest('[data-apv-refresh]')) refresh();
     });
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && serverReady() && canApprove()) refresh({ silent: false });
+      const onInbox = D && D.STATE && D.STATE.view === 'approvals';
+      if (document.visibilityState === 'visible' && serverReady() && (canApprove() || canApproveGatePins() || onInbox)) refresh({ silent: false });
     });
   }
 
@@ -519,6 +789,10 @@
     gen += 1;
     pending = [];
     mine = [];
+    gatePending = [];
+    gateMine = [];
+    for (const m of _apvGateMaps.values()) { try { m.remove(); } catch (_) {} }
+    _apvGateMaps.clear();
     primed = false;
     lastSig = '';
     seenIds = new Set();
@@ -527,5 +801,5 @@
     if (serverReady()) refresh({ silent: true, noRender: true });
   }
 
-  window.MFG_APPROVALS = { init, reset, renderView, canApprove, pendingRequestCount, requestOverride, cancelRequest, cancelActive, refresh };
+  window.MFG_APPROVALS = { init, reset, renderView, canApprove, canApproveGatePins, pendingRequestCount, requestOverride, cancelRequest, cancelActive, refresh };
 })();

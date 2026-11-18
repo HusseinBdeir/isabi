@@ -793,3 +793,84 @@ export function jsonResponse(payload, status = 200, extraHeaders = {}) {
   }
   return new Response(JSON.stringify(payload), { status, headers });
 }
+
+export const DRIVER_GATE_TOKEN_RE = /^gt1\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/;
+
+export async function mintDriverGateToken(claims, env, ttlHours = 72) {
+  let secret = '';
+  try {
+    secret = resolveEdgeJwtSecret(env);
+  } catch (_) {
+    secret = '';
+  }
+  if (!secret) {
+    return { ok: false, status: 503, code: 'secret_missing', error: 'Gate token signing secret is not configured.' };
+  }
+  const ttl = Math.max(1, Math.min(168, Number(ttlHours) || 72));
+  const nowSec = Math.floor(Date.now() / 1000);
+  const rand = new Uint8Array(8);
+  crypto.getRandomValues(rand);
+  const jti = Array.from(rand).map(b => b.toString(16).padStart(2, '0')).join('');
+  const indKey = canonGeoIndustryKey((claims && claims.industry) || 'manufacturing') || 'manufacturing';
+  const payload = {
+    typ: 'geo_gate_pin',
+    jti,
+    ind: indKey,
+    co: String((claims && claims.company) || '').trim().slice(0, 80),
+    sid: String((claims && claims.site_id) || '').trim().slice(0, 80),
+    sn: String((claims && claims.site_name) || '').trim().slice(0, 160),
+    sc: String((claims && claims.site_category) || '').trim().slice(0, 80),
+    tt: String((claims && claims.target_type) || 'site').trim().slice(0, 32),
+    dl: String((claims && claims.driver_label) || '').trim().slice(0, 80),
+    mb: String((claims && claims.minted_by_email) || '').trim().slice(0, 120),
+    mbi: String((claims && claims.minted_by_id) || '').trim().slice(0, 64),
+    iat: nowSec,
+    exp: nowSec + Math.round(ttl * 3600)
+  };
+  const payloadB64 = b64UrlEncode(ENC.encode(JSON.stringify(payload)));
+  const signingInput = `gt1.${payloadB64}`;
+  const key = await getHmacKey(secret);
+  const sig = await crypto.subtle.sign('HMAC', key, ENC.encode(signingInput));
+  return {
+    ok: true,
+    token: `${signingInput}.${b64UrlEncode(sig)}`,
+    claims: payload
+  };
+}
+
+export async function verifyDriverGateToken(rawToken, env) {
+  const token = String(rawToken || '').trim();
+  const m = DRIVER_GATE_TOKEN_RE.exec(token);
+  if (!m) {
+    return { ok: false, status: 403, code: 'invalid_token', error: 'Invalid driver gate link token.' };
+  }
+  let secret = '';
+  try {
+    secret = resolveEdgeJwtSecret(env);
+  } catch (_) {
+    return { ok: false, status: 503, code: 'secret_missing', error: 'Gate token verification secret is not configured.' };
+  }
+  try {
+    const signingInput = `gt1.${m[1]}`;
+    const sigBytes = b64UrlDecode(m[2]);
+    const key = await getHmacKey(secret);
+    const valid = await crypto.subtle.verify('HMAC', key, sigBytes, ENC.encode(signingInput));
+    if (!valid) {
+      return { ok: false, status: 403, code: 'invalid_signature', error: 'Invalid or tampered driver gate link token.' };
+    }
+    const payload = JSON.parse(DEC.decode(b64UrlDecode(m[1])));
+    if (!payload || payload.typ !== 'geo_gate_pin') {
+      return { ok: false, status: 403, code: 'wrong_token_type', error: 'Unsupported gate token type.' };
+    }
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (!Number.isFinite(payload.exp) || payload.exp <= nowSec) {
+      return { ok: false, status: 403, code: 'expired_token', error: 'This driver gate link has expired. Ask dispatch for a fresh link.' };
+    }
+    if (!String(payload.co || '').trim() || (!String(payload.sn || '').trim() && !String(payload.sid || '').trim())) {
+      return { ok: false, status: 403, code: 'incomplete_claims', error: 'Driver gate token is missing target site metadata.' };
+    }
+    return { ok: true, claims: payload };
+  } catch (_) {
+    return { ok: false, status: 403, code: 'invalid_token', error: 'Invalid driver gate link token.' };
+  }
+}

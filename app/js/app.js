@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  if (/[?&](phone_scan|ps)=[a-zA-Z0-9_.-]+/i.test(window.location.search || '')) return;
+  if (/[?&](phone_scan|ps|gate_pin)=[a-zA-Z0-9_.-]+/i.test(window.location.search || '')) return;
 
   const ic = (name, cls) => (window.MFG_ICONS ? window.MFG_ICONS.svg(name, cls) : '');
 
@@ -142,7 +142,7 @@
     const method = String((opts && opts.method) || 'GET').toUpperCase();
     const isAuthCheckUrl = /\/api\/auth\/(?:login|logout|me)(?:\b|\/|\?|$)/i.test(urlStr);
     const isReadOnlyAiOrScan = /\/api\/(?:ai-edge|ask|smart-scan|resolve-map-link|map-places|map-route)(?:\b|\/|\?|$)/i.test(urlStr);
-    const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|cashflow_behind|source_behind|changed_entries|industry_domain_store|staff_biometrics|work_schedules|geo_config|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
+    const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|cashflow_behind|source_behind|changed_entries|industry_domain_store|staff_biometrics|work_schedules|geo_config|geo\/audit|geo\/gate-suggestions|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
     const inDemoSession = isDemoSandboxSession();
     const inDemoCo = !inDemoSession && STATE.company === DEMO_COMPANY_KEY;
     if ((inDemoSession || inDemoCo) && method !== 'GET' && method !== 'HEAD' && !isAuthCheckUrl && !isReadOnlyAiOrScan) {
@@ -157,6 +157,8 @@
         demo_isolated: true,
         items: [],
         rows: [],
+        audits: [],
+        suggestions: [],
         reviews: {},
         rules: { overrides: {}, custom: [] },
         cashflow_behind: null,
@@ -406,6 +408,8 @@
     repSrcFilter: 'all',
     oilFilter: 'all',
     sentinelFilter: 'all',
+    geoAuditFilter: 'all',
+    userGeoAuditFilter: 'all',
     dailyOpsDate: '',
     dailyOpsIncludeAfterHours: true,
     dailyOpsCommLens: 'pulse',
@@ -10397,6 +10401,33 @@
   window.MFG_CAN_ACCESS_GEO_INDUSTRY = (ind, u) => canAccessGeoIndustry(ind, u);
   window.MFG_IS_OWNER = u => isOwner(u);
   window.__mfgReapplyCustomRecordsToSeed = () => applyCustomRecordsToSeed();
+  window.__mfgGetActiveUser = () => activeUser();
+  window.__mfgGetState = () => STATE;
+  window.__mfgActiveCompanyName = () => COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || '';
+  window.__mfgToast = (m, t) => toast(m, t);
+  window.__mfgOpenGeoSiteFocus = (spec = {}) => {
+    try {
+      const recPanel = $('recordInspector');
+      if (recPanel && !recPanel.hidden) closeRecordInspector();
+    } catch (_) {}
+    const tgtInd = spec.industry || 'Manufacturing';
+    const tgtCo = spec.company || '';
+    if (tgtCo && canAccessGeoCompany(tgtCo)) {
+      const coKey = COMPANY_KEY_BY_NAME[tgtCo] || COMPANY_KEY_BY_NAME[canonCompany(tgtCo)];
+      if (coKey && STATE.company !== coKey && getAllowedCompanyKeys(activeUser()).includes(coKey)) {
+        STATE.company = coKey;
+      }
+    }
+    const targetView = tgtInd === 'Manufacturing'
+      ? 'reg_sites'
+      : resolveIndustryCompatibleView('reg_sites', tgtInd);
+    if (canViewView(targetView)) setView(targetView);
+    else if (canViewView('overview')) setView('overview');
+    setTimeout(() => {
+      const deck = document.getElementById('geoMapStudioDeck');
+      if (deck && deck.scrollIntoView) deck.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  };
   window.MFG_GET_EDITING_MODAL_RECORD = crKey => {
     const er = STATE.editingRecord;
     if (!er) return null;
@@ -11604,8 +11635,9 @@
     }
     if (view === 'payroll_attendance' || view === 'payroll_contracts') return canViewViewBaseline('payroll', u);
     if (view === 'alert_rules') return canViewViewBaseline('sentinels', u);
-    // Approvals Inbox: anyone who reviews Sentinels, plus any seat that may approve an unlock.
-    if (view === 'approvals') return canViewViewBaseline('sentinels', u) || Boolean(window.MFG_APPROVALS && window.MFG_APPROVALS.canApprove(u));
+    // Approvals Inbox: every authenticated non-suspended seat can open #approvals to view/cancel own gate pins;
+    // approver-only sections remain strictly gated inside MFG_APPROVALS while Sentinels hub visibility stays unchanged.
+    if (view === 'approvals') return Boolean(u && u.status !== 'Suspended');
     // Void Log: strictly limited to Supervisors and Owners (never Custom/Entry/Sales/Viewer).
     if (view === 'void_log') return canViewVoidLog(u);
     if (view === 'payroll_analytics') return canViewViewBaseline('payroll', u) && (canAccessPbiPage('p12_payroll', u) || canAccessPbiPage('p11_drivers', u));
@@ -11757,6 +11789,12 @@
     if (view === 'void_log' && !canViewVoidLog(u)) return false;
     if (isSelfActiveAdminUsersCheck(view, u)) return true;
     const hp = getEffectiveHubPagePolicy(u);
+    if (view === 'approvals') {
+      if (hp && hp.customized && hp.pages && Object.prototype.hasOwnProperty.call(hp.pages, 'approvals')) {
+        return Boolean(hp.pages.approvals);
+      }
+      return canViewViewBaseline('approvals', u);
+    }
     if (hp && hp.customized) {
       const canonView = VIEW_TO_CANONICAL_TAB_VIEW[view] || view;
       const parentHubId = VIEW_TO_HUB[canonView] || VIEW_TO_HUB[view];
@@ -11776,7 +11814,7 @@
       if (!isHubEnabledInPolicy(hubId, hp, u)) return false;
       const h = getHubDef(hubId);
       if (!h || !Array.isArray(h.tabs) || !h.tabs.length) return true;
-      return h.tabs.some(t => isPageEnabledInPolicy(t.view, h.id, hp, u));
+      return h.tabs.some(t => (hubId !== 'sentinels' || t.view !== 'approvals') && isPageEnabledInPolicy(t.view, h.id, hp, u));
     }
     return canViewHubBaseline(hubId, u);
   }
@@ -22054,6 +22092,41 @@
       whatFn: p => `Scans the last <b>${fmtNum(p.lookbackDays, 0)} days</b> of clock-out punches per shift and flags shifts with at least <b>${fmtNum(p.minCount, 0)}</b> clock-outs clustering within <b>+${fmtNum(p.bandMin, 0)} min</b> of the OT start threshold or OT snap/block cliff.`,
       threshFn: p => `>= ${fmtNum(p.minCount, 0)} punches within +${fmtNum(p.bandMin, 0)}m (${fmtNum(p.lookbackDays, 0)}d)`,
       previewFn: p => `Live example: If ${fmtNum(p.minCount, 0)} clock-outs land 16m to ${fmtNum(15 + Number(p.bandMin || 4), 0)}m past shift end on a 15m Shift-End threshold over ${fmtNum(p.lookbackDays, 0)} days, this Sentinel highlights the shift for supervisor tuning.`
+    },
+    {
+      id: 'S15',
+      code: '#26',
+      name: 'Geo-Pin & Hub Change Audit Trail',
+      domain: 'Location & Maps',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels, Users & Roles, Map Studio',
+      jumpView: 'sentinels',
+      sentinelId: 'S15',
+      why: 'Logs every Company Hub pin move, site pin change or clear, Region boundary change, verified KM override, gate-pin promotion, and blocked 403 map write attempt under seat RLS so route-distance and night-trip pay changes stay fully traceable.',
+      params: [
+        { key: 'lookbackDays', label: 'Audit Window (Days)', def: 30, min: 7, max: 180, step: 1, unit: 'days' }
+      ],
+      whatFn: p => `Monitors all server-side geo configuration changes and unauthorized map write blocks across the last <b>${fmtNum(p.lookbackDays, 0)} days</b>.`,
+      threshFn: () => '100% server-side audit',
+      previewFn: () => 'Live audit: Moving a Company Hub, editing pairKmOverrides, promoting a driver gate pin, or blocking an unauthorized Viewer write appears immediately in Sentinels and Users.'
+    },
+    {
+      id: 'S16',
+      code: '#27',
+      name: 'GPS Dwell vs. Pinned Site Drift Watchdog',
+      domain: 'Location & Maps',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels, Fleet Telematics & Map Studio',
+      jumpView: 'sentinels',
+      sentinelId: 'S16',
+      why: 'Clusters stationary 10+ minute non-hub truck stops deterministically against pinned site gates and verified routes to flag stale map pins (250m to 2500m drift) or unapproved off-pin drops (>2500m) without altering deterministic mileage or margin math.',
+      params: [
+        { key: 'staleMinM', label: 'Stale Pin Threshold (m)', def: 250, min: 100, max: 600, step: 50, unit: 'm' },
+        { key: 'offPinMinM', label: 'Off-Pin Drop Threshold (m)', def: 2500, min: 1000, max: 5000, step: 250, unit: 'm' }
+      ],
+      whatFn: p => `Flags non-hub dwell stops between <b>${fmtNum(p.staleMinM, 0)} m</b> and <b>${fmtNum(p.offPinMinM, 0)} m</b> from a pinned site as Stale Pin Drift and stops beyond <b>${fmtNum(p.offPinMinM, 0)} m</b> as Unapproved Off-Pin Drops.`,
+      threshFn: p => `Drift >= ${fmtNum(p.staleMinM, 0)}m · Off-pin > ${fmtNum(p.offPinMinM, 0)}m`,
+      previewFn: () => 'Deterministic watchdog: Never alters saved KM or ticket net-back margins; supervisors inspect the dwell cluster on Map Studio or queue a Gate Pin Review in Approvals.'
     }
   ];
 
@@ -22440,6 +22513,57 @@
     mkIndOtClusterRule('ind_re_07', 'Real Estate & Property'),
     mkIndOtClusterRule('ind_ins_07', 'Insurance & Brokerage')
   ];
+  const mkIndGeoAuditRule = (id, industry) => ({
+    id,
+    code: '#08',
+    industry,
+    name: 'Geo-Pin & Hub Change Audit Trail',
+    domain: 'Location & Maps',
+    behavior: 'audit',
+    whereLabel: 'Domain Sentinels, Users & Roles, Map Studio',
+    jumpForm: '',
+    jumpView: 'sentinels',
+    sentinelId: id,
+    lockedActive: false,
+    why: `Tracks every pinned site update, zone change, promoted driver gate pin, and blocked 403 map write across ${industry} under strict entity and industry RLS.`,
+    params: [{ key: 'lookbackDays', label: 'Audit Window (Days)', def: 30, min: 7, max: 180, step: 1, unit: 'days' }],
+    whatFn: p => `Audits all server-side geo writes and blocked 403 write attempts across ${industry} for the last <b>${fmtNum(p.lookbackDays, 0)} days</b>.`,
+    threshFn: () => '100% server-side audit',
+    previewFn: () => 'Audit panel: Review pin shifts, promoted driver gate pins, and blocked unauthorized attempts in Sentinels or Users.'
+  });
+  const mkIndDwellDriftRule = (id, industry) => ({
+    id,
+    code: '#09',
+    industry,
+    name: 'GPS Dwell vs. Pinned Site Drift Watchdog',
+    domain: 'Location & Maps',
+    behavior: 'audit',
+    whereLabel: 'Domain Sentinels & Fleet Telematics',
+    jumpForm: '',
+    jumpView: 'sentinels',
+    sentinelId: id,
+    lockedActive: false,
+    why: `Cross-checks stationary 10+ minute dwell clusters against pinned ${industry} locations to flag Stale Pin Drift or Unapproved Off-Pin Drops deterministically.`,
+    params: [
+      { key: 'staleMinM', label: 'Stale Pin Threshold (m)', def: 250, min: 100, max: 600, step: 50, unit: 'm' },
+      { key: 'offPinMinM', label: 'Off-Pin Drop Threshold (m)', def: 2500, min: 1000, max: 5000, step: 250, unit: 'm' }
+    ],
+    whatFn: p => `Flags non-hub dwell stops between <b>${fmtNum(p.staleMinM, 0)} m</b> and <b>${fmtNum(p.offPinMinM, 0)} m</b> as Stale Pin Drift and > <b>${fmtNum(p.offPinMinM, 0)} m</b> as Unapproved Off-Pin Drops.`,
+    threshFn: p => `Drift >= ${fmtNum(p.staleMinM, 0)}m · Off-pin > ${fmtNum(p.offPinMinM, 0)}m`,
+    previewFn: () => 'Dwell watchdog: Queue a Gate Pin Review in Approvals directly from any drifted site cluster.'
+  });
+  IND_ALERT_RULE_CATALOG.push(
+    mkIndGeoAuditRule('ind_hld_08', 'Holding & Treasury'),
+    mkIndGeoAuditRule('ind_hsp_08', 'Hospitality & Resorts'),
+    mkIndGeoAuditRule('ind_trd_08', 'Automotive & Heavy Trading'),
+    mkIndGeoAuditRule('ind_re_08', 'Real Estate & Property'),
+    mkIndGeoAuditRule('ind_ins_08', 'Insurance & Brokerage'),
+    mkIndDwellDriftRule('ind_hld_09', 'Holding & Treasury'),
+    mkIndDwellDriftRule('ind_hsp_09', 'Hospitality & Resorts'),
+    mkIndDwellDriftRule('ind_trd_09', 'Automotive & Heavy Trading'),
+    mkIndDwellDriftRule('ind_re_09', 'Real Estate & Property'),
+    mkIndDwellDriftRule('ind_ins_09', 'Insurance & Brokerage')
+  );
   IND_ALERT_RULE_CATALOG.forEach(r => ALERT_RULE_BY_ID.set(r.id, r));
 
   function _getMapsQuotaSnapForUi() {
@@ -22618,6 +22742,246 @@
         }
       } catch (_) {}
     });
+  }
+
+  function _geoAuditIndSlug(raw) {
+    const k = norm(raw);
+    if (!k || k === 'manufacturing' || k === 'manufacturing-group' || k === 'all') return 'manufacturing';
+    if (k.includes('holding')) return 'holding';
+    if (k.includes('hospitality') || k.includes('resort')) return 'hospitality';
+    if (k.includes('trading') || k.includes('automotive')) return 'trading';
+    if (k.includes('real estate') || k === 'real_estate' || k.includes('property')) return 'real_estate';
+    if (k.includes('insurance') || k.includes('broker')) return 'insurance';
+    return 'manufacturing';
+  }
+
+  function _geoAuditRuleIdForInd(ind) {
+    const slug = _geoAuditIndSlug(ind);
+    return { manufacturing: 'S15', holding: 'ind_hld_08', hospitality: 'ind_hsp_08', trading: 'ind_trd_08', real_estate: 'ind_re_08', insurance: 'ind_ins_08' }[slug] || 'S15';
+  }
+
+  function _dwellDriftRuleIdForInd(ind) {
+    const slug = _geoAuditIndSlug(ind);
+    return { manufacturing: 'S16', holding: 'ind_hld_09', hospitality: 'ind_hsp_09', trading: 'ind_trd_09', real_estate: 'ind_re_09', insurance: 'ind_ins_09' }[slug] || 'S16';
+  }
+
+  function _geoAuditCoMatchScope(rowCo, scopeKey) {
+    if (!scopeKey || scopeKey === 'all' || String(scopeKey).startsWith('industry:')) return true;
+    if (scopeKey === 'manufacturing-group') return ['WTC', 'BBConstruction', 'Lions Transport'].includes(canonCompany(rowCo));
+    const nm = COMPANY_BU_MATCH[scopeKey] || '';
+    return nm ? norm(rowCo) === norm(nm) : true;
+  }
+
+  function _buildGeoAuditSentinelItem(ind, opts = {}) {
+    const isMfg = !ind || ind === 'Manufacturing';
+    const ruleId = opts.ruleId || _geoAuditRuleIdForInd(ind);
+    const itemId = opts.id || (isMfg ? 'S15' : 'GEO_AUDIT');
+    const lookbackDays = getAlertParam(ruleId, 'lookbackDays', 30);
+    const allLogs = (window.MFG_GEO && typeof window.MFG_GEO.getScopedGeoAuditLogs === 'function')
+      ? window.MFG_GEO.getScopedGeoAuditLogs({ industry: isMfg ? 'all' : ind, lookbackDays })
+      : [];
+    const logs = (isMfg && STATE.company && !['all', 'manufacturing-group'].includes(STATE.company))
+      ? allLogs.filter(r => _geoAuditCoMatchScope(r.company, STATE.company))
+      : allLogs;
+    const blk = logs.filter(r => r && r.outcome === 'blocked_403').length;
+    const prom = logs.filter(r => r && r.action === 'gate_pin_promoted').length;
+    const sev = blk > 0 ? 'warn' : 'ok';
+    const badge = blk > 0 ? `${fmtNum(blk)} BLOCKED (403)` : `${fmtNum(logs.length)} LOGGED`;
+    return {
+      id: itemId,
+      ruleId,
+      code: isMfg ? 'Rule #26 · Location & Maps' : 'Rule #08 · Location & Maps',
+      title: 'Geo-Pin & Hub Change Audit Trail',
+      detail: `${fmtNum(logs.length)} audited geo map events (${fmtNum(prom)} promoted gate pin${prom === 1 ? '' : 's'}, ${fmtNum(blk)} blocked 403 write attempt${blk === 1 ? '' : 's'}) in last ${fmtNum(lookbackDays, 0)}d under seat RLS.`,
+      severity: sev,
+      badge,
+      company: opts.company || (isMfg ? (COMPANY_LABELS[STATE.company] || 'All Operations') : ind),
+      rawMetric: blk,
+      rawSecondary: logs.length,
+      scrollPanel: 'sentinelGeoAuditCard',
+      navView: 'reg_sites',
+      navLabel: 'Open Map Studio'
+    };
+  }
+
+  function _buildDwellDriftSentinelItem(ind, opts = {}) {
+    const isMfg = !ind || ind === 'Manufacturing';
+    const ruleId = opts.ruleId || _dwellDriftRuleIdForInd(ind);
+    const itemId = opts.id || (isMfg ? 'S16' : 'DWELL_DRIFT');
+    const staleMinM = getAlertParam(ruleId, 'staleMinM', 250);
+    const offPinMinM = getAlertParam(ruleId, 'offPinMinM', 2500);
+    const digest = (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.computeGpsDwellDriftDigest === 'function')
+      ? window.MFG_TELEMATICS.computeGpsDwellDriftDigest({
+          industry: _geoAuditIndSlug(isMfg ? 'manufacturing' : ind),
+          companyScope: isMfg ? STATE.company : '',
+          staleMinM,
+          offPinMinM
+        })
+      : { totalClusters: 0, alertCount: 0, staleCount: 0, offPinCount: 0, alerts: [] };
+    const top = digest.alerts && digest.alerts[0] ? digest.alerts[0] : null;
+    const sev = digest.offPinCount > 0 ? 'crit' : (digest.alertCount > 0 ? 'warn' : 'ok');
+    const badge = digest.alertCount > 0
+      ? `${fmtNum(digest.alertCount)} DRIFT (${fmtNum(digest.staleCount)} STALE / ${fmtNum(digest.offPinCount)} OFF)`
+      : 'PINS ALIGNED';
+    return {
+      id: itemId,
+      ruleId,
+      code: isMfg ? 'Rule #27 · Location & Maps' : 'Rule #09 · Location & Maps',
+      title: 'GPS Dwell vs. Pinned Site Drift Watchdog',
+      detail: digest.alertCount > 0
+        ? `${fmtNum(digest.alertCount)} drifted dwell cluster(s): ${fmtNum(digest.staleCount)} stale pin(s), ${fmtNum(digest.offPinCount)} off-pin drop(s).${top ? ` Top: ${top.siteName} (${top.shiftMeters != null ? fmtNum(top.shiftMeters, 0) + ' m' : 'Off-pin'}, ${fmtNum(top.stopCount, 0)} stops).` : ''}`
+        : `All 10+ minute non-hub stationary GPS dwell clusters align within ${fmtNum(staleMinM, 0)} m of pinned site gates and verified routes.`,
+      severity: sev,
+      badge,
+      company: opts.company || (isMfg ? (COMPANY_LABELS[STATE.company] || 'All Operations') : ind),
+      rawMetric: digest.alertCount,
+      rawSecondary: digest.offPinCount,
+      scrollPanel: 'snGpsDwellDriftPanel',
+      navView: 'reg_sites',
+      navLabel: 'Open Map Studio'
+    };
+  }
+
+  const trGeoUi = s => (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' ? window.MFG_I18N.t(s) : s);
+
+  function renderGpsDwellDriftPanelHtml(indOverride) {
+    const ind = indOverride || getActiveIndustry(STATE.company);
+    const isMfg = !ind || ind === 'Manufacturing';
+    const ruleId = _dwellDriftRuleIdForInd(ind);
+    const staleMinM = getAlertParam(ruleId, 'staleMinM', 250);
+    const offPinMinM = getAlertParam(ruleId, 'offPinMinM', 2500);
+    const digest = (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.computeGpsDwellDriftDigest === 'function')
+      ? window.MFG_TELEMATICS.computeGpsDwellDriftDigest({
+          industry: _geoAuditIndSlug(isMfg ? 'manufacturing' : ind),
+          companyScope: isMfg ? STATE.company : '',
+          staleMinM,
+          offPinMinM
+        })
+      : { totalClusters: 0, alertCount: 0, staleCount: 0, offPinCount: 0, alerts: [] };
+    const rowsHtml = (digest.alerts || []).map((a, idx) => `
+      <tr>
+        <td><span class="badge ${a.kind === 'stale_pin' ? 'badge-warn' : 'badge-crit'}">${esc(trGeoUi(a.label))}</span></td>
+        <td data-no-i18n="1"><b>${esc(a.siteName)}</b></td>
+        <td data-no-i18n="1">${esc(a.company)}${a.units && a.units.length ? ' · ' + esc(a.units.join(', ')) : ''}</td>
+        <td class="r mono" data-no-i18n="1">${a.shiftMeters != null ? fmtNum(a.shiftMeters, 0) + ' m' : 'Off-pin'}</td>
+        <td class="r mono" data-no-i18n="1">${fmtNum(a.stopCount, 0)} (${fmtNum(a.totalMin, 0)} min)</td>
+        <td>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="btn-sn-act" data-dwell-map-idx="${idx}" data-dwell-panel="snGpsDwellDriftPanel">${ic('pin')} Inspect on Map</button>
+            <button type="button" class="btn-sn-act is-check" data-dwell-queue-idx="${idx}" data-dwell-panel="snGpsDwellDriftPanel">${ic('check_circle')} Queue Gate Pin</button>
+          </div>
+        </td>
+      </tr>`).join('');
+    return `
+      <div class="panel-card sn-dwell-panel" id="snGpsDwellDriftPanel">
+        <div class="panel-head">
+          <div class="panel-title"><span>GPS DWELL VS. PINNED SITE DRIFT WATCHDOG</span></div>
+          <span class="badge ${digest.alertCount > 0 ? 'badge-warn' : 'badge-ok'}" data-no-i18n="1">${fmtNum(digest.alertCount, 0)} FLAGGED</span>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Nearest Pinned Site</th>
+                <th>Entity &amp; Units</th>
+                <th class="r">Offset</th>
+                <th class="r">Dwell</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml || emptyRow(6, 'No GPS dwell drift detected for the current scope')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  function _geoAuditFilterChipsHtml(activeKey, panelId) {
+    const chips = [
+      { k: 'all', lbl: 'All' },
+      { k: 'applied', lbl: 'Applied' },
+      { k: 'blocked_403', lbl: 'Blocked (403)' },
+      { k: 'hubs_zones', lbl: 'Hubs & Zones' },
+      { k: 'site_pins', lbl: 'Site Pins' },
+      { k: 'route_km', lbl: 'Route KM' },
+      { k: 'gate_promotions', lbl: 'Gate Promotions' }
+    ];
+    return chips.map(c => `<button type="button" class="sn-chip${activeKey === c.k ? ' active' : ''}" data-geo-audit-filter="${c.k}" data-geo-audit-panel="${esc(panelId)}">${esc(c.lbl)}</button>`).join('');
+  }
+
+  function renderGeoAuditPanelInnerHtml(panelId, groupKey, opts = {}) {
+    const indFilter = opts.industry || 'all';
+    const ruleId = _geoAuditRuleIdForInd(indFilter === 'all' ? 'Manufacturing' : indFilter);
+    const lookbackDays = getAlertParam(ruleId, 'lookbackDays', 30);
+    const rows = (window.MFG_GEO && typeof window.MFG_GEO.getScopedGeoAuditLogs === 'function')
+      ? window.MFG_GEO.getScopedGeoAuditLogs({
+          industry: indFilter,
+          company: opts.company || 'all',
+          group: groupKey || 'all',
+          lookbackDays
+        })
+      : [];
+    const actionLabelMap = {
+      hub_moved: 'Company Hub Pin Moved',
+      site_pin_set: 'Site Pin Set',
+      site_pin_moved: 'Site Pin Moved',
+      pin_cleared: 'Site Pin Cleared',
+      region_zone_changed: 'Region Zone Saved',
+      pair_km_edited: 'Route KM Override Saved',
+      verified_route_changed: 'Verified Route Saved',
+      gate_pin_promoted: 'Gate Pin Promoted',
+      blocked_403: 'Blocked Unauthorized Write'
+    };
+    const bodyRows = rows.slice(0, 30).map((r, idx) => {
+      const hasCoord = r.next_lat != null || r.prev_lat != null;
+      const shiftTxt = r.shift_meters != null ? `${fmtNum(r.shift_meters, 0)} m` : (r.detail && r.detail.nextKm != null ? `${r.detail.nextKm} km` : '-');
+      return `
+        <tr>
+          <td class="mono" style="font-size:10.5px" data-no-i18n="1">${esc(String(r.created_at || '').slice(0, 19).replace('T', ' '))}</td>
+          <td data-no-i18n="1"><b>${esc(r.actor_name || r.actor_email || '-')}</b> <span style="color:var(--muted);font-size:10.5px">${esc(r.actor_role || '')}</span></td>
+          <td><span class="badge ${r.outcome === 'blocked_403' ? 'badge-crit' : 'badge-ok'}">${r.outcome === 'blocked_403' ? 'Blocked (403)' : 'Applied'}</span></td>
+          <td>${esc(trGeoUi(actionLabelMap[r.action] || r.action || 'Geo Change'))}</td>
+          <td data-no-i18n="1">${esc(r.target_label || r.target_id || '-')}</td>
+          <td data-no-i18n="1">${esc(r.company || '-')} · ${esc(r.industry || 'manufacturing')}</td>
+          <td class="r mono" data-no-i18n="1">${esc(shiftTxt)}</td>
+          <td>${hasCoord ? `<button type="button" class="btn-sn-act" data-geo-audit-map="${esc(r.id || String(idx))}" data-geo-audit-panel="${esc(panelId)}">${ic('pin')} View on Map</button>` : '-'}</td>
+        </tr>`;
+    }).join('');
+    return `
+      <div class="panel-head">
+        <div class="panel-title"><span>GEO-PIN &amp; HUB CHANGE AUDIT TRAIL</span></div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span class="badge badge-neutral" data-no-i18n="1">${fmtNum(rows.length, 0)}</span>
+          <button type="button" class="btn-sn-act" data-geo-audit-refresh="${esc(panelId)}">${ic('rotate')} Refresh</button>
+        </div>
+      </div>
+      <div class="sn-chips geo-audit-chips">${_geoAuditFilterChipsHtml(groupKey || 'all', panelId)}</div>
+      <div class="table-wrap">
+        <table class="ledger-table">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Actor</th>
+              <th>Outcome</th>
+              <th>Action</th>
+              <th>Target</th>
+              <th>Entity / Industry</th>
+              <th class="r">Shift</th>
+              <th>Map</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${bodyRows || emptyRow(8, 'No geo audit events match the selected filter')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function renderGeoAuditPanelHtml(panelId, filterStateKey, opts = {}) {
+    const fKey = (STATE && STATE[filterStateKey]) || 'all';
+    return `<div class="panel-card geo-audit-panel" id="${esc(panelId)}">${renderGeoAuditPanelInnerHtml(panelId, fKey, opts)}</div>`;
   }
 
   const CUSTOM_ALERT_DOMAINS = [
@@ -25354,6 +25718,9 @@
         navLabel: 'Open Staff Roster'
       });
 
+      rawItems.push(_buildGeoAuditSentinelItem('Manufacturing', { id: 'S15', ruleId: 'S15', company: scope }));
+      rawItems.push(_buildDwellDriftSentinelItem('Manufacturing', { id: 'S16', ruleId: 'S16', company: scope }));
+
       const snScopedMetrics = getCustomAlertMetricsForIndustry(activeIndForSn);
       const snAllowedCos = allowedCompanyNames();
       let customIdx = 0;
@@ -26476,6 +26843,10 @@
       </div>
 
       ${renderMapsQuotaPanelHtml()}
+
+      ${renderGpsDwellDriftPanelHtml(isNonMfgSn ? activeInd : 'Manufacturing')}
+
+      ${(canReviewSentinels() || isOwner() || isDemoScopeActive()) ? renderGeoAuditPanelHtml('sentinelGeoAuditCard', 'geoAuditFilter', { industry: isNonMfgSn ? activeInd : 'all', company: isNonMfgSn ? 'all' : STATE.company }) : ''}
 
       ${renderIndustrySentinelDetailPanel()}
 
@@ -59726,9 +60097,24 @@
     if (!ind || ind === 'Manufacturing') return [];
     const scopeLabel = COMPANY_LABELS[STATE.company] || ind;
     const onlyEnabled = list => {
-      const base = list
+      const pfxMap = {
+        'Holding & Treasury': 'hld',
+        'Hospitality & Resorts': 'hsp',
+        'Automotive & Heavy Trading': 'trd',
+        'Real Estate & Property': 're',
+        'Insurance & Brokerage': 'ins'
+      };
+      const indPfx = pfxMap[ind] || 'hld';
+      const geoItem = _buildGeoAuditSentinelItem(ind, { id: indPfx.toUpperCase() + '_GA', ruleId: `ind_${indPfx}_08`, company: scopeLabel });
+      const dwellItem = _buildDwellDriftSentinelItem(ind, { id: indPfx.toUpperCase() + '_DW', ruleId: `ind_${indPfx}_09`, company: scopeLabel });
+      const withGeo = list.concat([geoItem, dwellItem]);
+      const base = withGeo
         .filter(it => !it.ruleId || isAlertRuleEnabled(it.ruleId))
-        .map(it => Object.assign({}, it, { scrollPanel: it.scrollPanel === 'sentinelMapsQuotaCard' ? 'sentinelMapsQuotaCard' : `snInd_${it.id}` }));
+        .map(it => Object.assign({}, it, {
+          scrollPanel: ['sentinelMapsQuotaCard', 'sentinelGeoAuditCard', 'snGpsDwellDriftPanel'].includes(it.scrollPanel)
+            ? it.scrollPanel
+            : `snInd_${it.id}`
+        }));
       const scopedMetrics = getCustomAlertMetricsForIndustry(ind);
       const snAllowedCos = allowedCompanyNames();
       const customRules = getActiveCustomAlertRules().filter(cr => cr && cr.enabled !== false && scopedMetrics[cr.metric] && (!cr.company || cr.company === 'all' || matchesCashScopeCompany({ company: cr.company }, STATE.company, snAllowedCos)));
@@ -81137,9 +81523,11 @@
 
   if (typeof window !== 'undefined') {
     window.__mfgSyncDomainEditsFromSitePin = function syncDomainLocationEditsFromSite(info) {
-      if (!info || !info.industry || info.industry === 'Manufacturing') return;
-      const targetInd = String(info.industry).trim();
-      const pidNorm = norm(info.domainPrimaryId || info.rePropertyId || '');
+      if (!info || !info.industry) return;
+      const targetSlug = _geoAuditIndSlug(info.industry);
+      if (targetSlug === 'manufacturing') return;
+      const targetCoNorm = info.company ? norm(canonCompany(info.company)) : '';
+      const pidNorm = norm(info.domainPrimaryId || info.rePropertyId || info.siteId || '');
       const snNorm = norm(info.siteName || '');
       const hasCoords = info.lat != null && info.lng != null && Number.isFinite(Number(info.lat)) && Number.isFinite(Number(info.lng));
       const ts = String(info.modifiedAt || new Date().toISOString());
@@ -81148,13 +81536,16 @@
       let storeChanged = false;
       Object.keys(store).forEach(ek => {
         const e = store[ek];
-        if (!e || e.voided || e.ind !== targetInd) return;
+        if (!e || e.voided) return;
+        const eSlug = _geoAuditIndSlug(e.ind || String(ek).split('::')[0] || '');
+        if (eSlug !== targetSlug) return;
+        if (targetCoNorm && e.company && norm(canonCompany(e.company)) !== targetCoNorm) return;
         const ePidNorm = norm(e.primaryId || '');
         const eSiteNorm = norm(e.siteName || '');
         const exactMatch = Boolean(
           (pidNorm && ePidNorm === pidNorm)
           || (snNorm && eSiteNorm && eSiteNorm === snNorm)
-          || (snNorm && !eSiteNorm && ePidNorm === snNorm)
+          || (snNorm && ePidNorm === snNorm)
         );
         if (!exactMatch) return;
         if (info.pinCleared) {
@@ -81173,7 +81564,7 @@
         e._revBumped = true;
         storeChanged = true;
       });
-      if (storeChanged) saveIndustryRowEditStore(store);
+      if (storeChanged) saveIndustryRowEditStore(store, { skipServerPost: Boolean(info.skipServerPost) });
 
       const icr = STATE && STATE.industryCustomRows;
       let icrChanged = false;
@@ -81183,20 +81574,29 @@
           if (!Array.isArray(arr)) return;
           arr.forEach(r => {
             if (!r || r.voided) return;
-            const rPid = norm(r.id || '');
-            const rSn = norm(r.siteName || '');
-            if (!((pidNorm && rPid === pidNorm) || (snNorm && rSn && rSn === snNorm))) return;
+            const rSlug = _geoAuditIndSlug(r._industry || r.industry || String(bk).split('::')[0] || '');
+            if (rSlug !== targetSlug) return;
+            const rCo = r.company || r.resort || r.entity || '';
+            if (targetCoNorm && rCo && norm(canonCompany(rCo)) !== targetCoNorm) return;
+            const rPid = norm(r.id || r.code || '');
+            const rSn = norm(r.siteName || r.name || r.property || r.unit || '');
+            if (!((pidNorm && rPid === pidNorm) || (snNorm && (rSn === snNorm || rPid === snNorm)))) return;
             if (info.pinCleared) {
               r._pinCleared = true;
+              r.lat = null;
+              r.lng = null;
               r.latitude = null;
               r.longitude = null;
             } else if (hasCoords) {
               r._pinCleared = false;
+              r.lat = Number(info.lat);
+              r.lng = Number(info.lng);
               r.latitude = Number(info.lat);
               r.longitude = Number(info.lng);
               if (info.region) r.region = String(info.region).trim();
             }
             r.modified_at = ts;
+            r.updated_at = ts;
             icrChanged = true;
           });
         });
@@ -81342,6 +81742,26 @@
         initLng = fmtCoord6(entryObj.longitude);
       }
       initRegion = String(entryObj.region || (matchedSite && matchedSite.region) || '').trim();
+    }
+    if (!initCleared && (!initLat || !initLng) && window.MFG_GEO && typeof window.MFG_GEO.resolveVerifiedSiteGatePin === 'function') {
+      const gpFallback = window.MFG_GEO.resolveVerifiedSiteGatePin(siteName, {
+        seed: SEED,
+        company: ctx.rowCompany || '',
+        industry: ind,
+        siteId: pid,
+        siteCategory: 'customer'
+      }) || window.MFG_GEO.resolveVerifiedSiteGatePin(siteName, {
+        seed: SEED,
+        company: ctx.rowCompany || '',
+        industry: ind,
+        siteId: pid,
+        siteCategory: 'supplier'
+      });
+      if (gpFallback && Number.isFinite(Number(gpFallback.lat)) && Number.isFinite(Number(gpFallback.lng))) {
+        initLat = fmtCoord6(gpFallback.lat);
+        initLng = fmtCoord6(gpFallback.lng);
+        if (!initRegion && gpFallback.region) initRegion = String(gpFallback.region).trim();
+      }
     }
     if (!initRegion) {
       initRegion = pickHeaderVal(/^(region|zone|district|area|city|governorate)/i) || '';
@@ -81849,6 +82269,8 @@
               ${(canEditAny && !textOnlyLock) ? '<button type="button" class="btn btn-outline-bar" id="indInspEditInModalBtn">Edit in Smart Form</button>' : ''}
               ${canEnterAny() ? '<button type="button" class="btn btn-ghost-bar" id="indInspNewEntryBtn">+ New Domain Record</button>' : ''}
               <button type="button" class="btn btn-outline-bar" id="indInspThermalSlipBtn">${ic('printer')} Thermal Voucher</button>
+              ${domainGeoSpec ? `<button type="button" class="btn btn-outline-bar" id="indInspSuggestGatePinBtn">${ic('pin')} Suggest Gate Pin</button>` : ''}
+              ${(domainGeoSpec && window.MFG_GEO && typeof window.MFG_GEO.canMintDriverGateLink === 'function' && window.MFG_GEO.canMintDriverGateLink()) ? `<button type="button" class="btn btn-outline-bar" id="indInspDriverGateLinkBtn">${ic('send')} Driver Gate Link</button>` : ''}
               <button type="button" class="btn btn-ghost-bar" id="indInspPrintStmtBtn" data-rdl-jump="${esc(meta.id)}">${esc(meta.label)}</button>
               <button type="button" class="btn btn-ghost-bar" id="indInspOpenLedgerBtn" data-nav-jump="ledger">Open General Ledger &amp; SOA</button>
               ${allowVoid ? '<input type="text" id="indInspVoidReasonInput" class="insp-edit-inp" placeholder="Optional void reason" aria-label="Optional void reason" style="max-width:210px;padding:6px 10px;font-size:12px">' : ''}
@@ -82819,6 +83241,28 @@
       }
       const cBtn = $('indInspCloseFooterBtn');
       if (cBtn) cBtn.onclick = () => closeRecordInspector();
+      const indSugBtn = $('indInspSuggestGatePinBtn');
+      if (indSugBtn && domainGeoSpec && window.MFG_GEO && typeof window.MFG_GEO.openSuggestGatePinModal === 'function') {
+        indSugBtn.onclick = () => window.MFG_GEO.openSuggestGatePinModal({
+          industry: domainGeoSpec.ind || ind,
+          company: rowCompany || COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || ind,
+          site_id: primaryId,
+          site_name: domainGeoSpec.siteName || primaryId,
+          site_category: 'customer',
+          existing_lat: domainGeoSpec.baselinePin && domainGeoSpec.baselinePin.lat != null ? domainGeoSpec.baselinePin.lat : null,
+          existing_lng: domainGeoSpec.baselinePin && domainGeoSpec.baselinePin.lng != null ? domainGeoSpec.baselinePin.lng : null
+        });
+      }
+      const indMintBtn = $('indInspDriverGateLinkBtn');
+      if (indMintBtn && domainGeoSpec && window.MFG_GEO && typeof window.MFG_GEO.mintDriverGateLink === 'function') {
+        indMintBtn.onclick = () => window.MFG_GEO.mintDriverGateLink({
+          industry: domainGeoSpec.ind || ind,
+          company: rowCompany || COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || ind,
+          site_id: primaryId,
+          site_name: domainGeoSpec.siteName || primaryId,
+          site_category: 'customer'
+        });
+      }
       const indExpBtn = $('indInspExplainBriefBtn');
       const indLsnBtn = $('indInspListenReviewBtn');
       if (indExpBtn) {
@@ -85143,7 +85587,7 @@
             return {
               view: t.view,
               label: t.label,
-              on: !lockedRole && vis && canViewView(t.view, previewUser),
+              on: !lockedRole && (t.view === 'approvals' ? canViewView(t.view, previewUser) : (vis && canViewView(t.view, previewUser))),
               lockedSelf: isSelfActiveAdminUsersCheck(t.view, previewUser),
               lockedRole
             };
@@ -86032,6 +86476,8 @@
           </div>
         </div>
       </div>
+
+      ${(owner || tier === 'supervisor') ? renderGeoAuditPanelHtml('usersGeoAuditPanel', 'userGeoAuditFilter', { industry: 'all', company: 'all' }) : ''}
 
       <div class="panel-card system-showcase-card" id="systemShowcasePanel">
         <div class="system-showcase-inner">
@@ -116465,6 +116911,8 @@
           ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
           ${inspTicketGatePin && inspTicketGatePin.whatsappUrl ? `<a class="pa-cmd-btn btn-brass" id="inspWhatsAppGatePinBtn" href="${esc(inspTicketGatePin.whatsappUrl)}" target="_blank" rel="noopener">${ic('send')} WhatsApp Gate Pin</a>` : ''}
           ${allowInspGeoPinEdit && !hasInspSitePin ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPinSiteQuickBtn">${ic('pin')} Pin Location</button>` : ''}
+          ${((key === 'sites' || ((key === 'sales_tickets' || key === 'raw_purchases') && row.site)) && canAccessGeoCompany(row.company || COMPANY_BU_MATCH[STATE.company] || '')) ? `<button type="button" class="pa-cmd-btn" id="inspSuggestGatePinBtn">${ic('pin')} Suggest Gate Pin</button>` : ''}
+          ${((key === 'sites' || ((key === 'sales_tickets' || key === 'raw_purchases') && row.site)) && canAccessGeoCompany(row.company || COMPANY_BU_MATCH[STATE.company] || '') && window.MFG_GEO && typeof window.MFG_GEO.canMintDriverGateLink === 'function' && window.MFG_GEO.canMintDriverGateLink()) ? `<button type="button" class="pa-cmd-btn" id="inspDriverGateLinkBtn">${ic('send')} Driver Gate Link</button>` : ''}
           ${(key === 'sites' || key === 'regions' || ((key === 'sales_tickets' || key === 'raw_purchases') && row.site)) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspViewOnMapBtn">${ic('reg_sites')} View on Map</button>` : ''}
           <button type="button" class="pa-cmd-btn" data-insp-open-hub="${esc(key)}">${ic('tables')} Open ${esc(INSPECT_LABELS[key] || key)} Table</button>
           ${(['employments', 'staff_members', 'employees', 'attendance', 'salaries', 'freelance_entries', 'staff_assignments', 'drivers'].includes(key) && row && (row.staff || row.name) && (canViewView('payroll_attendance') || canViewView('payroll'))) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspPrePaydayCardBtn">${ic('receipt')} Pre-Payday Card</button>` : ''}
@@ -117684,6 +118132,39 @@
     const quickPinBtn = $('inspPinSiteQuickBtn');
     if (quickPinBtn && modDrawer) {
       quickPinBtn.addEventListener('click', () => openModifyDrawerAndFocus('site_coord_paste'));
+    }
+
+    const inspSugBtn = $('inspSuggestGatePinBtn');
+    if (inspSugBtn && window.MFG_GEO && typeof window.MFG_GEO.openSuggestGatePinModal === 'function') {
+      inspSugBtn.addEventListener('click', () => {
+        const tgtSiteName = key === 'sites' ? (row.name || row.Site || '') : (row.site || '');
+        const tgtSiteId = key === 'sites' ? String(row.id || '') : '';
+        const tgtCat = key === 'sites' ? resolveSiteCategory(row) : (key === 'raw_purchases' ? 'supplier' : 'customer');
+        window.MFG_GEO.openSuggestGatePinModal({
+          industry: row._industry || getActiveIndustry(),
+          company: row.company || COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || 'WTC',
+          site_id: tgtSiteId,
+          site_name: tgtSiteName,
+          site_category: tgtCat,
+          existing_lat: row.latitude != null ? row.latitude : null,
+          existing_lng: row.longitude != null ? row.longitude : null
+        });
+      });
+    }
+    const inspMintBtn = $('inspDriverGateLinkBtn');
+    if (inspMintBtn && window.MFG_GEO && typeof window.MFG_GEO.mintDriverGateLink === 'function') {
+      inspMintBtn.addEventListener('click', () => {
+        const tgtSiteName = key === 'sites' ? (row.name || row.Site || '') : (row.site || '');
+        const tgtSiteId = key === 'sites' ? String(row.id || '') : '';
+        const tgtCat = key === 'sites' ? resolveSiteCategory(row) : (key === 'raw_purchases' ? 'supplier' : 'customer');
+        window.MFG_GEO.mintDriverGateLink({
+          industry: row._industry || getActiveIndustry(),
+          company: row.company || COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || 'WTC',
+          site_id: tgtSiteId,
+          site_name: tgtSiteName,
+          site_category: tgtCat
+        });
+      });
     }
 
     const setPriceBtn = $('inspSetInvoicePriceBtn');
@@ -124665,7 +125146,7 @@
 
   let _authCamStartPromise = null;
   async function startAuthFaceScanner(forceStart = false) {
-    if (PARAMS.get('phone_scan') || PARAMS.get('ps')) return false;
+    if (PARAMS.get('phone_scan') || PARAMS.get('ps') || PARAMS.get('gate_pin')) return false;
     if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) {
       stopFaceCamera();
       updateAuthFaceUi();
@@ -124930,7 +125411,7 @@
           (h.tabs || []).forEach(t => {
             if (!Object.prototype.hasOwnProperty.call(STATE.draftCustomPerms.pages, t.view)) {
               if (!hOn) {
-                STATE.draftCustomPerms.pages[t.view] = false;
+                STATE.draftCustomPerms.pages[t.view] = t.view === 'approvals' ? canViewView('approvals', evalUser) : false;
               } else if (t.mfgOnly) {
                 STATE._permEvalInd = 'Manufacturing';
                 try {
@@ -126006,7 +126487,9 @@
             const isOpsHub = !['cashflow', 'ledger', 'sentinels', 'reports', 'users'].includes(h.id) || (h.id === 'users' && isSelfAdmin);
             draft.hubs[h.id] = isOpsHub;
             (h.tabs || []).forEach(t => {
-              draft.pages[t.view] = (t.view === 'void_log' && !allowVoidTab) ? false : isOpsHub;
+              draft.pages[t.view] = (t.view === 'void_log' && !allowVoidTab)
+                ? false
+                : (t.view === 'approvals' ? canViewViewBaseline('approvals', pUser) : isOpsHub);
             });
             if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, h.id);
           });
@@ -126036,7 +126519,9 @@
         draft.hubPagesSelectAll = false;
         draft.hubs[hubId] = Boolean(cb.checked);
         (hubDef ? hubDef.tabs || [] : []).forEach(t => {
-          draft.pages[t.view] = (t.view === 'void_log' && !allowVoidTab) ? false : Boolean(cb.checked);
+          draft.pages[t.view] = (t.view === 'void_log' && !allowVoidTab)
+            ? false
+            : (hubId === 'sentinels' && t.view === 'approvals' && !cb.checked ? Boolean(draft.pages.approvals) : Boolean(cb.checked));
         });
         if (hubId === 'univ_catalog' && draft.hubs) delete draft.hubs.univ_rates;
         if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, hubId);
@@ -126104,15 +126589,19 @@
         const draft = ensureDraftHubPagesPolicy(prevPreview, activeInd);
         const hubDef = HUB_CATALOG.find(h => h.id === hubId);
         draft.hubPagesSelectAll = false;
-        if (!wasHubOn && cb.checked && hubDef) {
+        if (!wasHubOn && cb.checked && hubDef && !(hubId === 'sentinels' && view === 'approvals')) {
           draft.hubs[hubId] = true;
           (hubDef.tabs || []).forEach(t => {
-            draft.pages[t.view] = (t.view === 'void_log' && !canViewVoidLog(prevPreview)) ? false : (t.view === view);
+            draft.pages[t.view] = (t.view === 'void_log' && !canViewVoidLog(prevPreview))
+              ? false
+              : (t.view === view || (hubId === 'sentinels' && t.view === 'approvals' && Boolean(draft.pages.approvals)));
           });
         } else {
           draft.pages[view] = Boolean(cb.checked);
           if (hubDef) {
-            draft.hubs[hubId] = (hubDef.tabs || []).some(t => Boolean(draft.pages[t.view]));
+            draft.hubs[hubId] = hubId === 'sentinels'
+              ? (Boolean(draft.hubs.sentinels) && (hubDef.tabs || []).some(t => t.view !== 'approvals' && Boolean(draft.pages[t.view])))
+              : (hubDef.tabs || []).some(t => Boolean(draft.pages[t.view]));
           }
         }
         if (hubId === 'univ_catalog' && draft.hubs) delete draft.hubs.univ_rates;
@@ -159509,6 +159998,7 @@
                 Operator: <b>${esc(activeUser().full_name)}</b>${footerThermalNote}
               </div>
               <div class="kiosk-action-btns">
+                <button type="button" class="btn" id="kioskSuggestGatePinBtn">${ic('pin')} Suggest Gate Pin</button>
                 <button type="button" class="btn" id="kioskResetFormBtn">${ic('rotate')} Reset</button>
                 ${showThermalPane ? `
                   <button type="button" class="btn" id="kioskPostOnlyBtn">Post Only (No Print)</button>
@@ -161332,6 +161822,23 @@
       }
       updateKioskLiveThermalPreview();
 
+      const kioskSugBtn = $('kioskSuggestGatePinBtn');
+      if (kioskSugBtn && window.MFG_GEO && typeof window.MFG_GEO.openSuggestGatePinModal === 'function') {
+        kioskSugBtn.addEventListener('click', () => {
+          const indNow = getActiveIndustry(STATE.company);
+          const siteEl = document.querySelector('#kioskFormBody [id*="site"], #kioskFormBody [name*="site"], #kioskFormBody select[id*="loc"], #kioskFormBody input[id*="loc"]');
+          const coEl = document.querySelector('#kioskFormBody #f_company, #kioskFormBody select[name="company"], #kioskFormBody input[name="company"]');
+          const sName = (siteEl && siteEl.value && String(siteEl.value).trim()) || '';
+          const coName = (coEl && coEl.value && String(coEl.value).trim()) || defaultEntryCompany() || COMPANY_BU_MATCH[STATE.company] || 'WTC';
+          window.MFG_GEO.openSuggestGatePinModal({
+            industry: indNow,
+            company: coName,
+            site_name: sName,
+            site_category: STATE.activeKiosk === 'raw' ? 'supplier' : 'customer'
+          });
+        });
+      }
+
       const resetBtn = $('kioskResetFormBtn');
       if (resetBtn) {
         resetBtn.addEventListener('click', () => {
@@ -162808,11 +163315,124 @@
           }
         }
       }
+
+      const geoFilterBtn = t.closest('[data-geo-audit-filter]');
+      if (geoFilterBtn && container.contains(geoFilterBtn)) {
+        const panelId = geoFilterBtn.getAttribute('data-geo-audit-panel') || 'sentinelGeoAuditCard';
+        const fk = geoFilterBtn.getAttribute('data-geo-audit-filter') || 'all';
+        if (panelId === 'usersGeoAuditPanel') STATE.userGeoAuditFilter = fk;
+        else STATE.geoAuditFilter = fk;
+        _rehydrateGeoAuditPanelsInPlace(panelId);
+        return;
+      }
+
+      const geoRefBtn = t.closest('[data-geo-audit-refresh]');
+      if (geoRefBtn && container.contains(geoRefBtn)) {
+        const panelId = geoRefBtn.getAttribute('data-geo-audit-refresh') || 'sentinelGeoAuditCard';
+        if (window.MFG_GEO && typeof window.MFG_GEO.fetchGeoAuditLogs === 'function') {
+          geoRefBtn.disabled = true;
+          window.MFG_GEO.fetchGeoAuditLogs({ force: true }).finally(() => {
+            _lastGeoAuditAutoFetchTs = Date.now();
+            if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
+            _rehydrateGeoAuditPanelsInPlace(panelId);
+          });
+        }
+        return;
+      }
+
+      const geoMapBtn = t.closest('[data-geo-audit-map]');
+      if (geoMapBtn && container.contains(geoMapBtn)) {
+        const aid = geoMapBtn.getAttribute('data-geo-audit-map') || '';
+        if (window.MFG_GEO && typeof window.MFG_GEO.getScopedGeoAuditLogs === 'function') {
+          const all = window.MFG_GEO.getScopedGeoAuditLogs({ industry: 'all', company: 'all' });
+          const row = all.find(x => String(x.id || '') === aid) || all[Number(aid)] || null;
+          if (row && typeof window.MFG_GEO.focusGeoAuditOnMap === 'function') window.MFG_GEO.focusGeoAuditOnMap(row);
+        }
+        return;
+      }
+
+      const dwMapBtn = t.closest('[data-dwell-map-idx]');
+      if (dwMapBtn && container.contains(dwMapBtn)) {
+        const idx = Number(dwMapBtn.getAttribute('data-dwell-map-idx'));
+        const actInd = getActiveIndustry(STATE.company);
+        const dwRuleId = _dwellDriftRuleIdForInd(actInd);
+        const digest = (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.computeGpsDwellDriftDigest === 'function')
+          ? window.MFG_TELEMATICS.computeGpsDwellDriftDigest({
+              industry: _geoAuditIndSlug(!actInd || actInd === 'Manufacturing' ? 'manufacturing' : actInd),
+              companyScope: (!actInd || actInd === 'Manufacturing') ? STATE.company : '',
+              staleMinM: getAlertParam(dwRuleId, 'staleMinM', 250),
+              offPinMinM: getAlertParam(dwRuleId, 'offPinMinM', 2500)
+            })
+          : { alerts: [] };
+        const hit = digest.alerts && digest.alerts[idx];
+        if (hit && window.MFG_GEO && typeof window.MFG_GEO.setStudioDwellDriftTarget === 'function') {
+          window.MFG_GEO.setStudioDwellDriftTarget(hit);
+        }
+        return;
+      }
+
+      const dwQBtn = t.closest('[data-dwell-queue-idx]');
+      if (dwQBtn && container.contains(dwQBtn)) {
+        const idx = Number(dwQBtn.getAttribute('data-dwell-queue-idx'));
+        const actInd = getActiveIndustry(STATE.company);
+        const dwRuleId = _dwellDriftRuleIdForInd(actInd);
+        const digest = (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.computeGpsDwellDriftDigest === 'function')
+          ? window.MFG_TELEMATICS.computeGpsDwellDriftDigest({
+              industry: _geoAuditIndSlug(!actInd || actInd === 'Manufacturing' ? 'manufacturing' : actInd),
+              companyScope: (!actInd || actInd === 'Manufacturing') ? STATE.company : '',
+              staleMinM: getAlertParam(dwRuleId, 'staleMinM', 250),
+              offPinMinM: getAlertParam(dwRuleId, 'offPinMinM', 2500)
+            })
+          : { alerts: [] };
+        const hit = digest.alerts && digest.alerts[idx];
+        if (hit && window.MFG_GEO && typeof window.MFG_GEO.openSuggestGatePinModal === 'function') {
+          window.MFG_GEO.openSuggestGatePinModal({
+            industry: hit.industry,
+            company: hit.company,
+            site_id: hit.siteId || '',
+            site_name: hit.siteName || '',
+            site_category: hit.siteCategory || '',
+            existing_lat: hit.pinnedLat,
+            existing_lng: hit.pinnedLng,
+            suggested_lat: hit.dwellLat,
+            suggested_lng: hit.dwellLng,
+            access_note: `Observed ${Number(hit.stopCount || 1)} Teltonika stops (${Math.round(Number(hit.totalMin || 0))} min dwell)`
+          });
+        }
+      }
+    });
+  }
+
+  let _lastGeoAuditAutoFetchTs = 0;
+  function _rehydrateGeoAuditPanelsInPlace(onlyPanelId) {
+    const activeIndNow = getActiveIndustry(STATE.company);
+    const isNonMfg = Boolean(activeIndNow && activeIndNow !== 'Manufacturing');
+    const targets = [
+      { id: 'sentinelGeoAuditCard', fk: STATE.geoAuditFilter || 'all', opts: { industry: isNonMfg ? activeIndNow : 'all', company: isNonMfg ? 'all' : STATE.company } },
+      { id: 'usersGeoAuditPanel', fk: STATE.userGeoAuditFilter || 'all', opts: { industry: 'all', company: 'all' } }
+    ];
+    targets.forEach(t => {
+      if (onlyPanelId && t.id !== onlyPanelId) return;
+      const el = document.getElementById(t.id);
+      if (!el) return;
+      el.innerHTML = renderGeoAuditPanelInnerHtml(t.id, t.fk, t.opts);
+      if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(el); } catch (_) {}
+      }
     });
   }
 
   function wireWorkspace(container, activeUserRow) {
     wireWorkspaceDelegatedOnce(container);
+    if ((hasServerApi() || isDemoScopeActive()) && STATE.authed && (container.querySelector('#sentinelGeoAuditCard') || container.querySelector('#usersGeoAuditPanel')) && window.MFG_GEO && typeof window.MFG_GEO.fetchGeoAuditLogs === 'function') {
+      if ((Date.now() - _lastGeoAuditAutoFetchTs) > 10000) {
+        _lastGeoAuditAutoFetchTs = Date.now();
+        window.MFG_GEO.fetchGeoAuditLogs({ force: true }).then(() => {
+          if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
+          _rehydrateGeoAuditPanelsInPlace();
+        }).catch(() => {});
+      }
+    }
     wireModalSuggestions(container);
     applyIndustryDomRowEdits(container);
     applyIndustryRelatedAgreementPills(container);
@@ -167158,6 +167778,7 @@
         todayISO,
         canEnterForm,
         fmtNum,
+        getAlertParam,
         rerenderWorkspace: renderApp,
         openEntryModal,
         jumpView: v => setView(v)
@@ -167260,6 +167881,12 @@
         openPendingRawPriceModal,
         openPendingExpensePriceModal,
         openPendingSalaryModal,
+        canWriteGeoConfig: u => canWriteGeoConfig(u),
+        onGatePinPromoted: () => {
+          saveLocalAuthAndRecords();
+          if (_sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
+          renderApp();
+        },
         refreshNavBadges: () => {
           const el = $('navCountSentinels');
           const badge = getApprovalsExceptionBadge(activeUser());

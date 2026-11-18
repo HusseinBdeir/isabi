@@ -466,3 +466,67 @@ CREATE TABLE IF NOT EXISTS override_audit (
   ip_hash TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_override_audit_co_created ON override_audit (company, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS geo_audit_log (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL DEFAULT '',
+  action TEXT NOT NULL DEFAULT '',
+  outcome TEXT NOT NULL DEFAULT 'applied',
+  actor_user_id TEXT DEFAULT '',
+  actor_email TEXT DEFAULT '',
+  actor_name TEXT DEFAULT '',
+  actor_role TEXT DEFAULT '',
+  source TEXT DEFAULT '',
+  industry TEXT DEFAULT 'manufacturing',
+  company TEXT DEFAULT '',
+  target_type TEXT DEFAULT '',
+  target_id TEXT DEFAULT '',
+  target_label TEXT DEFAULT '',
+  prev_lat REAL,
+  prev_lng REAL,
+  next_lat REAL,
+  next_lng REAL,
+  shift_meters REAL,
+  detail_json TEXT DEFAULT '{}',
+  ip_hash TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_geo_audit_created ON geo_audit_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_geo_audit_co_created ON geo_audit_log (company, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_geo_audit_ind_created ON geo_audit_log (industry, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS geo_gate_suggestions (
+  id TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT '',
+  resolved_at TEXT DEFAULT '',
+  submitter_kind TEXT NOT NULL DEFAULT 'viewer',
+  submitter_user_id TEXT DEFAULT '',
+  submitter_email TEXT DEFAULT '',
+  submitter_name TEXT DEFAULT '',
+  submitter_role TEXT DEFAULT '',
+  driver_label TEXT DEFAULT '',
+  industry TEXT NOT NULL DEFAULT 'manufacturing',
+  company TEXT NOT NULL DEFAULT '',
+  target_type TEXT NOT NULL DEFAULT 'site',
+  site_id TEXT DEFAULT '',
+  site_name TEXT NOT NULL DEFAULT '',
+  site_category TEXT DEFAULT '',
+  existing_lat REAL,
+  existing_lng REAL,
+  suggested_lat REAL NOT NULL,
+  suggested_lng REAL NOT NULL,
+  shift_meters REAL,
+  accuracy_meters REAL,
+  source_url TEXT DEFAULT '',
+  access_note TEXT DEFAULT '',
+  decider_user_id TEXT DEFAULT '',
+  decider_email TEXT DEFAULT '',
+  decider_name TEXT DEFAULT '',
+  decider_role TEXT DEFAULT '',
+  decision_note TEXT DEFAULT '',
+  promoted_target_id TEXT DEFAULT '',
+  ip_hash TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_geo_gate_status_created ON geo_gate_suggestions (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_geo_gate_site ON geo_gate_suggestions (industry, company, site_name, status);

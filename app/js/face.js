@@ -277,7 +277,7 @@ const Face = (() => {
     // (prevents dual-<video> SurfaceTexture black-screen on Android and back-to-back camera HAL churn).
     try {
       const sp = new URLSearchParams(window.location.search || "");
-      if (sp.get("phone_scan") || sp.get("ps")) return;
+      if (sp.get("phone_scan") || sp.get("ps") || sp.get("gate_pin")) return;
       if (isKioskBoot()) {
         gateAutoStart();
         load().catch(() => {});

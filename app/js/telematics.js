@@ -506,6 +506,8 @@
 
   function buildFallbackHistory(unit, devId, fDate, tDate) {
     return {
+      _fallback: true,
+      demo: true,
       device_id: devId,
       equipment: unit.equipment,
       company: unit.company,
@@ -797,6 +799,521 @@
     return out;
   }
 
+  // ==================== DETERMINISTIC GPS DWELL VS. PINNED SITE DRIFT WATCHDOG ====================
+  let _lastDwellAlerts = [];
+
+  function _haversineMeters(lat1, lng1, lat2, lng2) {
+    const la1 = Number(lat1), ln1 = Number(lng1), la2 = Number(lat2), ln2 = Number(lng2);
+    if (![la1, ln1, la2, ln2].every(Number.isFinite)) return null;
+    const R = 6371000;
+    const toRad = d => (d * Math.PI) / 180;
+    const dLat = toRad(la2 - la1);
+    const dLng = toRad(ln2 - ln1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(la1)) * Math.cos(toRad(la2)) * (Math.sin(dLng / 2) ** 2);
+    return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a))));
+  }
+
+  function _parseStopMinutes(val, strVal) {
+    if (val != null && Number.isFinite(Number(val))) return Number(val);
+    const s = String(strVal || '').trim().toLowerCase();
+    if (!s) return 0;
+    let total = 0;
+    const h = s.match(/(\d+(?:\.\d+)?)\s*h/);
+    const m = s.match(/(\d+(?:\.\d+)?)\s*m/);
+    if (h) total += Number(h[1]) * 60;
+    if (m) total += Number(m[1]);
+    return total;
+  }
+
+  function _canonDwellInd(raw) {
+    const k = norm(raw);
+    if (!k || k === 'manufacturing' || k === 'manufacturing-group' || k === 'all') return 'manufacturing';
+    if (k.includes('holding')) return 'holding';
+    if (k.includes('hospitality') || k.includes('resort')) return 'hospitality';
+    if (k.includes('trading') || k.includes('automotive')) return 'trading';
+    if (k.includes('real estate') || k === 'real_estate' || k.includes('property')) return 'real_estate';
+    if (k.includes('insurance') || k.includes('broker')) return 'insurance';
+    return k;
+  }
+
+  function _companyDefaultInd(co) {
+    const c = normAlnum(co);
+    if (!c || c === 'wtc' || c === 'bbconstruction' || c === 'bbc' || c === 'lionstransport' || c === 'lions') return 'manufacturing';
+    if (c.includes('holding')) return 'holding';
+    if (['blanca', 'launa', 'palms', 'voile', 'platinum'].includes(c)) return 'hospitality';
+    if (c === 'korriauto' || c === 'shacman') return 'trading';
+    if (c === 'properties' || c.includes('4235')) return 'real_estate';
+    if (c.includes('insurance')) return 'insurance';
+    return 'manufacturing';
+  }
+
+  function _indStripToCanon(industryViewKey) {
+    const k = String(industryViewKey || '').trim().toLowerCase();
+    if (k.startsWith('trd_')) return 'trading';
+    if (k.startsWith('hsp_')) return 'hospitality';
+    if (k.startsWith('re_')) return 'real_estate';
+    if (k.startsWith('ins_')) return 'insurance';
+    if (k.startsWith('hld_')) return 'holding';
+    return 'manufacturing';
+  }
+
+  function _canSeatAccessDwellStop(co, indCanon) {
+    if (isDemoActive()) return true;
+    if (co && !canSeatAccessCompany(co)) return false;
+    try {
+      if (typeof window.MFG_CAN_ACCESS_GEO_INDUSTRY === 'function') {
+        const disp = { manufacturing: 'Manufacturing', holding: 'Holding & Treasury', hospitality: 'Hospitality & Resorts', trading: 'Automotive & Heavy Trading', real_estate: 'Real Estate & Property', insurance: 'Insurance & Brokerage' }[indCanon] || 'Manufacturing';
+        if (!window.MFG_CAN_ACCESS_GEO_INDUSTRY(disp)) return false;
+      }
+    } catch (_) {}
+    return true;
+  }
+
+  function _buildDemoDwellStops() {
+    return [
+      { id: 'demo_ds_mfg_1', company: 'WTC', industry: 'manufacturing', equipment: 'TB3', lat: 33.8098, lng: 35.4932, duration_min: 38, zone_name: 'Choueifat South Approach' },
+      { id: 'demo_ds_mfg_2', company: 'BBConstruction', industry: 'manufacturing', equipment: 'TB1', lat: 33.6312, lng: 35.4310, duration_min: 26, zone_name: 'Sibline Quarry Gate' },
+      { id: 'demo_ds_mfg_off', company: 'Lions Transport', industry: 'manufacturing', equipment: 'TB7', lat: 33.7420, lng: 35.4680, duration_min: 22, zone_name: 'Damour Layby' },
+      { id: 'demo_ds_hsp_1', company: 'La Una', industry: 'hospitality', equipment: 'Resort Van 1', lat: 33.9752, lng: 35.6164, duration_min: 19, zone_name: 'La Una Service Ramp' },
+      { id: 'demo_ds_trd_1', company: 'Korri Auto', industry: 'trading', equipment: 'Service Carrier 2', lat: 33.8968, lng: 35.5665, duration_min: 24, zone_name: 'Korri PDI Gate' },
+      { id: 'demo_ds_re_1', company: 'Properties', industry: 'real_estate', equipment: 'MEP Van 4', lat: 33.8935, lng: 35.5092, duration_min: 18, zone_name: 'Tower B Service Dock' },
+      { id: 'demo_ds_hld_1', company: 'Bdeir Holding', industry: 'holding', equipment: 'Cash Courier 1', lat: 33.8895, lng: 35.5028, duration_min: 15, zone_name: 'Treasury Vault Entrance' },
+      { id: 'demo_ds_ins_1', company: 'Insurance Company', industry: 'insurance', equipment: 'Surveyor Unit 1', lat: 33.8822, lng: 35.5390, duration_min: 16, zone_name: 'Garage Inspection Gate' }
+    ];
+  }
+
+  const DWELL_RULE_BY_IND = {
+    manufacturing: 'S16',
+    holding: 'ind_hld_09',
+    hospitality: 'ind_hsp_09',
+    trading: 'ind_trd_09',
+    real_estate: 'ind_re_09',
+    insurance: 'ind_ins_09'
+  };
+
+  function _resolveDwellThreshold(ruleId, paramKey, optVal, fallbackVal) {
+    if (optVal != null && Number.isFinite(Number(optVal))) return Number(optVal);
+    try {
+      if (_ctx && typeof _ctx.getAlertParam === 'function') {
+        const v = Number(_ctx.getAlertParam(ruleId, paramKey, fallbackVal));
+        if (Number.isFinite(v) && v > 0) return v;
+      }
+      if (typeof window !== 'undefined' && window.MFG_ALERT_CONFIG && typeof window.MFG_ALERT_CONFIG.getParam === 'function') {
+        const v = Number(window.MFG_ALERT_CONFIG.getParam(ruleId, paramKey, fallbackVal));
+        if (Number.isFinite(v) && v > 0) return v;
+      }
+    } catch (_) {}
+    return fallbackVal;
+  }
+
+  function _pointToSegmentMeters(pLat, pLng, aLat, aLng, bLat, bLng) {
+    if (![pLat, pLng, aLat, aLng, bLat, bLng].every(Number.isFinite)) return null;
+    const mPerLat = 111320;
+    const mPerLng = 111320 * Math.max(0.2, Math.cos((pLat * Math.PI) / 180));
+    const ax = (aLng - pLng) * mPerLng;
+    const ay = (aLat - pLat) * mPerLat;
+    const bx = (bLng - pLng) * mPerLng;
+    const by = (bLat - pLat) * mPerLat;
+    const abx = bx - ax;
+    const aby = by - ay;
+    const lenSq = abx * abx + aby * aby;
+    if (lenSq < 1e-6) return _haversineMeters(pLat, pLng, aLat, aLng);
+    const t = Math.max(0, Math.min(1, -((ax * abx) + (ay * aby)) / lenSq));
+    const cx = ax + t * abx;
+    const cy = ay + t * aby;
+    return Math.round(Math.hypot(cx, cy));
+  }
+
+  function _minDistToVerifiedRoutes(lat, lng, indCanon, coName, siteName, geoCfg) {
+    const siteNorm = norm(siteName || '');
+    if (!siteNorm) return null;
+    const coNorm = norm(coName || '');
+    const segSite = `site:${siteNorm}`;
+    const segBu = coNorm ? `bu:${coNorm}` : '';
+    const routes = geoCfg && geoCfg.verifiedRoutes && typeof geoCfg.verifiedRoutes === 'object' ? geoCfg.verifiedRoutes : {};
+    let best = null;
+    for (const [k, r] of Object.entries(routes)) {
+      if (!r || typeof r !== 'object') continue;
+      const kl = norm(k);
+      const rInd = kl.includes('::') ? _canonDwellInd(kl.split('::')[0]) : 'manufacturing';
+      if (indCanon && rInd !== indCanon) continue;
+      const bodyStr = kl.includes('::') ? kl.split('::').slice(1).join('::') : kl;
+      const parts = bodyStr.split('||').map(x => norm(x)).filter(Boolean);
+      const siteMatch = parts.some(p => p === segSite || p === siteNorm);
+      if (!siteMatch) continue;
+      const buPart = parts.find(p => p.startsWith('bu:'));
+      const rCo = norm(r.company || (buPart ? buPart.slice(3) : ''));
+      if (coNorm && rCo && rCo !== coNorm) continue;
+      if (segBu && buPart && buPart !== segBu) continue;
+      const pts = Array.isArray(r.coords) ? r.coords : (Array.isArray(r.points) ? r.points : null);
+      if (!pts || !pts.length) continue;
+      const parsed = pts.map(pt => ({
+        lat: Array.isArray(pt) ? Number(pt[0]) : Number(pt && pt.lat),
+        lng: Array.isArray(pt) ? Number(pt[1]) : Number(pt && pt.lng)
+      })).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+      if (!parsed.length) continue;
+      if (parsed.length === 1) {
+        const d = _haversineMeters(lat, lng, parsed[0].lat, parsed[0].lng);
+        if (d != null && (best == null || d < best)) best = d;
+      } else {
+        for (let i = 0; i < parsed.length - 1; i++) {
+          const d = _pointToSegmentMeters(lat, lng, parsed[i].lat, parsed[i].lng, parsed[i + 1].lat, parsed[i + 1].lng);
+          if (d != null && (best == null || d < best)) best = d;
+        }
+      }
+    }
+    return best;
+  }
+
+  function computeGpsDwellDriftDigest(opts = {}) {
+    ensureSeatScopeFresh();
+    const o = opts || {};
+    const filterInd = o.industry && o.industry !== 'all' ? _canonDwellInd(o.industry) : '';
+    const filterCo = o.companyScope || '';
+
+    const rawStops = [];
+    const extTest = typeof window !== 'undefined' && Array.isArray(window.__ISABI_TEST_DWELL_STOPS) ? window.__ISABI_TEST_DWELL_STOPS : [];
+    for (const s of extTest) {
+      if (s && s.lat != null && s.lng != null) rawStops.push(s);
+    }
+    if (isDemoActive()) {
+      for (const ds of _buildDemoDwellStops()) rawStops.push(ds);
+    }
+    const curSeatPrefix = getSeatIdentitySig() + '|';
+    const lbDays = Math.max(1, Number(o.lookbackDays || 30) || 30);
+    const lbCutMs = Date.now() - lbDays * 86400000;
+    const todayStr = todayIso();
+    const histStopCoords = [];
+    for (const [hk, hist] of _histCache.entries()) {
+      if (!String(hk || '').startsWith(curSeatPrefix)) continue;
+      if (!hist || !Array.isArray(hist.stops)) continue;
+      if (hist._fallback || (hist.demo && !isDemoActive())) continue;
+      const tail = String(hk).slice(curSeatPrefix.length);
+      const [hkDev, hkFrom, hkTo] = tail.split('|');
+      const devKey = String(hist.device_id || hkDev || '').trim();
+      const eqKey = norm(hist.equipment || '');
+      const histEndRaw = hist.to_date || hkTo || hist.from_date || hkFrom || '';
+      const histEndMs = histEndRaw ? Date.parse(String(histEndRaw).slice(0, 10) + 'T23:59:59Z') : NaN;
+      if (Number.isFinite(histEndMs) && histEndMs < lbCutMs) continue;
+      for (const st of hist.stops) {
+        if (!st || st.lat == null || st.lng == null) continue;
+        const mins = _parseStopMinutes(st.duration_min, st.stop_duration);
+        if (mins < 10) continue;
+        const stTsRaw = st.end_time || st.start_time || histEndRaw || '';
+        const stMs = stTsRaw ? Date.parse(String(stTsRaw).replace(' ', 'T')) : NaN;
+        if (Number.isFinite(stMs) && stMs < lbCutMs) continue;
+        const sLat = Number(st.lat);
+        const sLng = Number(st.lng);
+        const isToday = String(stTsRaw || histEndRaw).slice(0, 10) === todayStr;
+        histStopCoords.push({ devKey, eqKey, lat: sLat, lng: sLng, isToday });
+        rawStops.push({
+          company: hist.company || 'WTC',
+          industry: _companyDefaultInd(hist.company || 'WTC'),
+          equipment: hist.equipment || '',
+          lat: sLat,
+          lng: sLng,
+          duration_min: mins,
+          zone_name: st.zone_name || ''
+        });
+      }
+    }
+    // Read only real live snapshot units (never buildOfflineFallbackUnits mock fixtures outside explicit Demo mode)
+    const liveUnits = Array.isArray(_snapStore.units) && (!_snapStore.demo || isDemoActive()) ? _snapStore.units : [];
+    for (const u of liveUnits) {
+      if (!u || u.lat == null || u.lng == null || u.status_code === 'moving') continue;
+      const uDev = u.device_id != null ? String(u.device_id).trim() : '';
+      const uEq = norm(u.equipment || '');
+      const uLat = Number(u.lat);
+      const uLng = Number(u.lng);
+      const sameStopCached = histStopCoords.some(hs => {
+        if (!hs.isToday) return false;
+        const sameUnit = (uDev && hs.devKey && uDev === hs.devKey) || (uEq && hs.eqKey && uEq === hs.eqKey);
+        if (!sameUnit) return false;
+        const d = _haversineMeters(hs.lat, hs.lng, uLat, uLng);
+        return d != null && d <= 25;
+      });
+      if (sameStopCached) continue;
+      const mins = _parseStopMinutes(u.stop_duration_min, u.stop_duration);
+      if (mins < 10) continue;
+      rawStops.push({
+        company: u.company || 'WTC',
+        industry: _companyDefaultInd(u.company || 'WTC'),
+        equipment: u.equipment || '',
+        lat: uLat,
+        lng: uLng,
+        duration_min: mins,
+        zone_name: u.isabi_region || u.zone_name || ''
+      });
+    }
+
+    if (!rawStops.length) {
+      _lastDwellAlerts = [];
+      return { totalClusters: 0, alertCount: 0, staleCount: 0, offPinCount: 0, clusters: [], alerts: [] };
+    }
+
+    const seed = _ctx && typeof _ctx.getSeed === 'function' ? _ctx.getSeed() : window.MFG_SEED;
+    const geoCfg = (window.MFG_GEO && typeof window.MFG_GEO.exportGeoConfig === 'function')
+      ? window.MFG_GEO.exportGeoConfig()
+      : { companyHubs: {}, sites: {}, verifiedRoutes: {} };
+
+    const hubs = [];
+    if (window.MFG_GEO && typeof window.MFG_GEO.getAllCompanyHubs === 'function') {
+      (window.MFG_GEO.getAllCompanyHubs(seed) || []).forEach(h => {
+        if (h && h.lat != null && h.lng != null) hubs.push({ name: h.name, lat: Number(h.lat), lng: Number(h.lng) });
+      });
+    }
+    if (geoCfg.companyHubs && typeof geoCfg.companyHubs === 'object') {
+      Object.entries(geoCfg.companyHubs).forEach(([k, h]) => {
+        if (h && h.lat != null && h.lng != null) hubs.push({ name: h.name || k, lat: Number(h.lat), lng: Number(h.lng) });
+      });
+    }
+
+    // Filter non-hub >=10m stops with strict RLS and industry/company scope
+    const eligible = [];
+    for (const s of rawStops) {
+      const mins = _parseStopMinutes(s.duration_min, s.stop_duration);
+      if (mins < 10) continue;
+      const co = String(s.company || 'WTC').trim();
+      const ind = _canonDwellInd(s.industry || _companyDefaultInd(co));
+      if (filterInd && ind !== filterInd) continue;
+      if (filterCo && !companyMatchesScope(co, filterCo)) continue;
+      if (!_canSeatAccessDwellStop(co, ind)) continue;
+      const lat = Number(s.lat), lng = Number(s.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || (Math.abs(lat) < 1e-4 && Math.abs(lng) < 1e-4)) continue;
+      const nearHub = hubs.some(h => {
+        const d = _haversineMeters(lat, lng, h.lat, h.lng);
+        return d != null && d <= 220;
+      });
+      if (nearHub) continue;
+      eligible.push({ company: co, industry: ind, equipment: String(s.equipment || ''), lat, lng, duration_min: mins, zone_name: String(s.zone_name || '') });
+    }
+
+    // Deterministic greedy 200m clustering
+    const clusters = [];
+    for (const st of eligible) {
+      let hit = null;
+      for (const cl of clusters) {
+        if (cl.industry !== st.industry || norm(cl.company) !== norm(st.company)) continue;
+        const d = _haversineMeters(cl.dwellLat, cl.dwellLng, st.lat, st.lng);
+        if (d != null && d <= 200) { hit = cl; break; }
+      }
+      if (hit) {
+        const n = hit.stopCount + 1;
+        hit.dwellLat = Math.round((((hit.dwellLat * hit.stopCount) + st.lat) / n) * 1e6) / 1e6;
+        hit.dwellLng = Math.round((((hit.dwellLng * hit.stopCount) + st.lng) / n) * 1e6) / 1e6;
+        hit.stopCount = n;
+        hit.totalMin = Math.round(hit.totalMin + st.duration_min);
+        if (st.equipment && !hit.units.includes(st.equipment)) hit.units.push(st.equipment);
+      } else {
+        clusters.push({
+          id: `dw_${st.industry}_${clusters.length + 1}`,
+          industry: st.industry,
+          company: st.company,
+          dwellLat: Math.round(st.lat * 1e6) / 1e6,
+          dwellLng: Math.round(st.lng * 1e6) / 1e6,
+          stopCount: 1,
+          totalMin: Math.round(st.duration_min),
+          units: st.equipment ? [st.equipment] : [],
+          zoneHint: st.zone_name
+        });
+      }
+    }
+
+    if (!clusters.length) {
+      _lastDwellAlerts = [];
+      return { totalClusters: 0, alertCount: 0, staleCount: 0, offPinCount: 0, clusters: [], alerts: [] };
+    }
+
+    // Index all pinned sites per industry from SEED + GEO_STORE + active domain pins
+    const sitePool = [];
+    const seedSites = (seed && seed.records && Array.isArray(seed.records.sites)) ? seed.records.sites : [];
+    for (const sr of seedSites) {
+      if (!sr || sr.voided || sr._pinCleared) continue;
+      if (sr.latitude == null || sr.longitude == null) continue;
+      const lat = Number(sr.latitude), lng = Number(sr.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || (Math.abs(lat) < 1e-4 && Math.abs(lng) < 1e-4)) continue;
+      sitePool.push({
+        id: String(sr.id || ''),
+        name: String(sr.name || ''),
+        company: String(sr.company || ''),
+        industry: _canonDwellInd(sr._industry || 'manufacturing'),
+        site_category: String(sr.site_category || 'supplier'),
+        lat, lng
+      });
+    }
+    if (geoCfg.sites && typeof geoCfg.sites === 'object') {
+      for (const [gk, gv] of Object.entries(geoCfg.sites)) {
+        if (!gv || gv._pinCleared || gv.latitude == null || gv.longitude == null) continue;
+        const lat = Number(gv.latitude), lng = Number(gv.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || (Math.abs(lat) < 1e-4 && Math.abs(lng) < 1e-4)) continue;
+        const ind = gk.includes('::') ? _canonDwellInd(gk.split('::')[0]) : 'manufacturing';
+        sitePool.push({
+          id: String(gv.id || ''),
+          name: String(gv.name || gk.split('::').pop().replace(/^(supplier|customer):/i, '')),
+          company: String(gv.company || ''),
+          industry: ind,
+          site_category: String(gv.site_category || 'supplier'),
+          lat, lng
+        });
+      }
+    }
+    const stNow = _ctx && typeof _ctx.getState === 'function' ? _ctx.getState() : (typeof window !== 'undefined' ? window.STATE : null);
+    if (stNow && stNow.industryCustomRows && typeof stNow.industryCustomRows === 'object') {
+      for (const [bk, rows] of Object.entries(stNow.industryCustomRows)) {
+        if (!Array.isArray(rows)) continue;
+        const bkInd = _canonDwellInd(bk.split('::')[0] || '');
+        for (const row of rows) {
+          if (!row || row.voided || row._pinCleared) continue;
+          const la = Number(row.latitude != null ? row.latitude : row.lat);
+          const ln = Number(row.longitude != null ? row.longitude : row.lng);
+          if (!Number.isFinite(la) || !Number.isFinite(ln) || (Math.abs(la) < 1e-4 && Math.abs(ln) < 1e-4)) continue;
+          sitePool.push({
+            id: String(row.id || row.code || ''),
+            name: String(row.siteName || row.name || row.title || row.property || row.unit || bk),
+            company: String(row.company || row.resort || row.entity || ''),
+            industry: _canonDwellInd(row._industry || bkInd),
+            site_category: String(row.site_category || 'supplier'),
+            lat: la, lng: ln
+          });
+        }
+      }
+    }
+    if (stNow && stNow.industryRowEdits && typeof stNow.industryRowEdits === 'object') {
+      for (const [ek, eobj] of Object.entries(stNow.industryRowEdits)) {
+        if (!eobj || eobj.voided) continue;
+        const eInd = _canonDwellInd(eobj.ind || ek.split('::')[0] || '');
+        const ePid = norm(eobj.primaryId || '');
+        const eSn = norm(eobj.siteName || eobj.primaryId || '');
+        if (eobj._pinCleared) {
+          for (let i = sitePool.length - 1; i >= 0; i--) {
+            const sp = sitePool[i];
+            if (sp.industry !== eInd) continue;
+            if ((ePid && norm(sp.id) === ePid) || (eSn && norm(sp.name) === eSn)) sitePool.splice(i, 1);
+          }
+          continue;
+        }
+        const la = Number(eobj.latitude != null ? eobj.latitude : eobj.lat);
+        const ln = Number(eobj.longitude != null ? eobj.longitude : eobj.lng);
+        if (!Number.isFinite(la) || !Number.isFinite(ln) || (Math.abs(la) < 1e-4 && Math.abs(ln) < 1e-4)) continue;
+        let updated = false;
+        for (const sp of sitePool) {
+          if (sp.industry !== eInd) continue;
+          if ((ePid && norm(sp.id) === ePid) || (eSn && norm(sp.name) === eSn)) {
+            sp.lat = la;
+            sp.lng = ln;
+            updated = true;
+          }
+        }
+        if (!updated) {
+          sitePool.push({
+            id: String(eobj.primaryId || ''),
+            name: String(eobj.siteName || eobj.primaryId || ek),
+            company: String(eobj.company || eobj.resort || eobj.entity || ''),
+            industry: eInd,
+            site_category: String(eobj.site_category || 'supplier'),
+            lat: la, lng: ln
+          });
+        }
+      }
+    }
+
+    const alerts = [];
+    let staleCount = 0;
+    let offPinCount = 0;
+    for (const cl of clusters) {
+      const clRuleId = DWELL_RULE_BY_IND[cl.industry] || 'S16';
+      const clStaleMinM = Math.max(50, _resolveDwellThreshold(clRuleId, 'staleMinM', o.staleMinM, 250));
+      const clOffPinMinM = Math.max(clStaleMinM + 50, _resolveDwellThreshold(clRuleId, 'offPinMinM', o.offPinMinM, 2500));
+      const candSites = sitePool.filter(sp => sp.industry === cl.industry && (!sp.company || norm(sp.company) === norm(cl.company) || cl.industry === 'manufacturing'));
+      let nearest = null;
+      let nearestMeters = null;
+      for (const sp of candSites) {
+        const d = _haversineMeters(cl.dwellLat, cl.dwellLng, sp.lat, sp.lng);
+        if (d != null && (nearestMeters == null || d < nearestMeters)) {
+          nearestMeters = d;
+          nearest = sp;
+        }
+      }
+      const routeOffsetMeters = nearest
+        ? _minDistToVerifiedRoutes(cl.dwellLat, cl.dwellLng, cl.industry, cl.company, nearest.name, geoCfg)
+        : null;
+      const isOffRoute = routeOffsetMeters != null && routeOffsetMeters > 300;
+      if (nearest && nearestMeters <= clStaleMinM && !isOffRoute) continue;
+
+      let kind = 'off_pin';
+      let label = 'Unapproved Off-Pin Drop';
+      let severity = 'warn';
+      if (nearest && nearestMeters <= clOffPinMinM) {
+        kind = 'stale_pin';
+        label = 'Stale Pin Drift';
+        severity = nearestMeters > Math.max(800, clStaleMinM * 2) ? 'crit' : 'warn';
+        staleCount++;
+      } else if (nearest && nearestMeters <= clStaleMinM && isOffRoute) {
+        kind = 'stale_pin';
+        label = 'Stale Pin Drift';
+        staleCount++;
+      } else {
+        offPinCount++;
+        severity = 'crit';
+      }
+      alerts.push({
+        id: cl.id,
+        kind,
+        label,
+        severity,
+        industry: cl.industry,
+        company: cl.company,
+        dwellLat: cl.dwellLat,
+        dwellLng: cl.dwellLng,
+        stopCount: cl.stopCount,
+        totalMin: cl.totalMin,
+        units: cl.units,
+        zoneHint: cl.zoneHint,
+        siteId: nearest ? nearest.id : '',
+        siteName: nearest ? nearest.name : (cl.zoneHint || 'Unpinned Location'),
+        siteCategory: nearest ? nearest.site_category : 'supplier',
+        pinnedLat: nearest ? nearest.lat : null,
+        pinnedLng: nearest ? nearest.lng : null,
+        shiftMeters: nearestMeters,
+        routeOffsetMeters
+      });
+    }
+
+    _lastDwellAlerts = alerts;
+    return {
+      totalClusters: clusters.length,
+      alertCount: alerts.length,
+      staleCount,
+      offPinCount,
+      alerts
+    };
+  }
+
+  function renderDwellDriftStripHtml() {
+    const digest = computeGpsDwellDriftDigest({ companyScope: getActiveCompanyScope(), industry: 'manufacturing' });
+    if (!digest.alerts.length) return '';
+    const rows = digest.alerts.slice(0, 6).map(a => `
+      <div class="tel-dwell-row" data-tel-dwell-id="${esc(a.id)}">
+        <div class="tel-dwell-main">
+          <span class="badge ${a.kind === 'stale_pin' ? 'badge-warn' : 'badge-crit'}">${esc(tr(a.label))}</span>
+          <b data-no-i18n="1">${esc(a.siteName)}</b>
+          <span class="tel-dwell-meta" data-no-i18n="1">${esc(a.company)}${a.units.length ? ' · ' + esc(a.units.join(', ')) : ''} · ${a.shiftMeters != null ? fmtNum(a.shiftMeters, 0) + ' m' : 'Off-pin'} · ${fmtNum(a.stopCount, 0)} stops (${fmtNum(a.totalMin, 0)} min)</span>
+        </div>
+        <div class="tel-dwell-acts">
+          <button type="button" class="tel-mini-btn is-brass" data-tel-dwell-map="${esc(a.id)}">${ic('pin')} <span>Inspect on Map</span></button>
+          <button type="button" class="tel-mini-btn" data-tel-dwell-queue="${esc(a.id)}"><span>Queue Gate Pin</span></button>
+        </div>
+      </div>`).join('');
+    return `
+      <div class="tel-dwell-strip" id="telDwellDriftStrip">
+        <div class="tel-dwell-hd">
+          <span>${ic('shield')} <b>GPS Dwell vs. Pinned Site Drift Watchdog</b></span>
+          <span class="badge badge-warn" data-no-i18n="1">${fmtNum(digest.alertCount, 0)}</span>
+        </div>
+        <div class="tel-dwell-list">${rows}</div>
+      </div>`;
+  }
+
   function startOrSyncAutoPoll() {
     if (isHeadlessEnv()) {
       stopAutoPoll();
@@ -962,6 +1479,7 @@
           </div>
 
           ${renderReconDrawerHtml(units)}
+          ${renderDwellDriftStripHtml()}
 
           <div class="table-wrap" style="padding:0 15px 12px">
             <table class="ledger-table" id="fleetTelematicsTable">
@@ -1077,6 +1595,10 @@
 
     const cfg = configs[industryViewKey];
     if (!cfg) return '';
+    const dwellDigest = computeGpsDwellDriftDigest({ industry: _indStripToCanon(industryViewKey) });
+    const dwellChip = dwellDigest.alertCount > 0
+      ? `<span class="tel-ind-chip is-dwell"><span data-no-i18n="1">${fmtNum(dwellDigest.alertCount, 0)} </span><span>Dwell Drift</span></span>`
+      : `<span class="tel-ind-chip"><span>Pins Aligned (0 Drift)</span></span>`;
 
     return `
       <div class="tel-ind-strip" data-tel-ind-strip="${esc(industryViewKey)}">
@@ -1089,6 +1611,7 @@
         </div>
         <div class="tel-ind-strip-metrics">
           ${cfg.chipsHtml.map(c => `<span class="tel-ind-chip">${c}</span>`).join('')}
+          ${dwellChip}
         </div>
       </div>
     `;
@@ -1335,6 +1858,41 @@
           meterInp.value = valStr;
           meterInp.dispatchEvent(new Event('input', { bubbles: true }));
         }
+        return;
+      }
+
+      const btnDwellMap = t.closest('[data-tel-dwell-map]');
+      if (btnDwellMap) {
+        ev.preventDefault();
+        const did = btnDwellMap.getAttribute('data-tel-dwell-map') || '';
+        const hit = _lastDwellAlerts.find(x => x.id === did) || computeGpsDwellDriftDigest({}).alerts.find(x => x.id === did);
+        if (hit && window.MFG_GEO && typeof window.MFG_GEO.setStudioDwellDriftTarget === 'function') {
+          window.MFG_GEO.setStudioDwellDriftTarget(hit);
+        } else if (_ctx && typeof _ctx.jumpView === 'function') {
+          _ctx.jumpView('reg_sites');
+        }
+        return;
+      }
+
+      const btnDwellQueue = t.closest('[data-tel-dwell-queue]');
+      if (btnDwellQueue) {
+        ev.preventDefault();
+        const did = btnDwellQueue.getAttribute('data-tel-dwell-queue') || '';
+        const hit = _lastDwellAlerts.find(x => x.id === did) || computeGpsDwellDriftDigest({}).alerts.find(x => x.id === did);
+        if (hit && window.MFG_GEO && typeof window.MFG_GEO.openSuggestGatePinModal === 'function') {
+          window.MFG_GEO.openSuggestGatePinModal({
+            industry: hit.industry,
+            company: hit.company,
+            site_id: hit.siteId || '',
+            site_name: hit.siteName || '',
+            site_category: hit.siteCategory || '',
+            existing_lat: hit.pinnedLat,
+            existing_lng: hit.pinnedLng,
+            suggested_lat: hit.dwellLat,
+            suggested_lng: hit.dwellLng,
+            access_note: `Observed ${Number(hit.stopCount || 1)} Teltonika stops (${Math.round(Number(hit.totalMin || 0))} min dwell)`
+          });
+        }
       }
     });
 
@@ -1403,6 +1961,7 @@
     evaluateSettledFuelPhysics,
     computeLedgerReconForUnitDate,
     getWatchdogAlertsForSentinels,
+    computeGpsDwellDriftDigest,
     renderFleetTelematicsDeck,
     renderCrossIndustryStrip,
     renderLeafletTruckMarkers,

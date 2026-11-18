@@ -1513,7 +1513,7 @@
         if (!hubTargetInd) return;
       }
       const hubEvalInd = hubTargetInd || pctx.activeInd;
-      if (_ctx.canViewHub && !evalPermInIndustry(hubEvalInd, pctx, () => _ctx.canViewHub(h.id, u))) return;
+      if (_ctx.canViewHub && !evalPermInIndustry(hubEvalInd, pctx, () => _ctx.canViewHub(h.id, u)) && !(h.id === 'sentinels' && _ctx.canViewView && evalPermInIndustry(hubEvalInd, pctx, () => _ctx.canViewView('approvals', u)))) return;
 
       (h.tabs || []).forEach((t, tIdx) => {
         if (!t || !t.view || seenViews.has(t.view)) return;

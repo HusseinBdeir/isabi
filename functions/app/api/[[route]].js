@@ -11,6 +11,8 @@ import {
   handleAuthMe,
   handleBlobs,
   handleCashflowBehind,
+  handleGeoAuditGet,
+  handleGeoGateSuggestions,
   handleIndustryDomainStore,
   handleKvDoc,
   handleOverrideRequests,
@@ -64,6 +66,8 @@ const DEMO_EMPTY_GET_ROUTES = new Set([
   '/staff_biometrics',
   '/work_schedules',
   '/geo_config',
+  '/geo/audit',
+  '/geo/gate-suggestions',
   '/cashflow_behind',
   '/source_behind',
   '/changed_entries',
@@ -169,7 +173,9 @@ async function routeAppApi(context) {
 
   const bodyLimit = (subPath === '/map-places' || subPath === '/map-route' || subPath === '/map-usage' || subPath === '/resolve-map-link')
     ? 4096
-    : (session ? AUTHED_MAX_BODY_BYTES : 6291456); // 6 MB pre-auth ceiling (covers 4 MB phone-scan page)
+    : (subPath === '/geo/gate-suggestions'
+      ? 16384
+      : (session ? AUTHED_MAX_BODY_BYTES : 6291456)); // 6 MB pre-auth ceiling (covers 4 MB phone-scan page)
   const { body, rawBytes, tooLarge, parseError, emptyBody } = await parseBodyWithSize(request, bodyLimit);
   if (tooLarge) {
     return jsonResponse({ ok: false, error: 'Request payload exceeds size limit.' }, 413);
@@ -209,6 +215,16 @@ async function routeAppApi(context) {
   if (subPath === '/map-usage') {
     return handleGoogleMapUsage(request, env, body, session, { url, parseError, context });
   }
+  if (subPath === '/geo/gate-suggestions' && (request.method === 'GET' || request.method === 'POST')) {
+    const qTok = url && url.searchParams ? url.searchParams.get('gate_token') : '';
+    const bTok = (body && typeof body === 'object') ? body.gate_token : '';
+    if (qTok || bTok) {
+      if (request.method === 'POST' && parseError) {
+        return jsonResponse({ ok: false, code: 'invalid_json', error: 'Malformed JSON body.' }, 400);
+      }
+      return handleGeoGateSuggestions(request, env, null, body, url);
+    }
+  }
   if (!session) {
     if (isDemoReq && subPath === '/kiosk/pos-voids' && (request.method === 'GET' || request.method === 'POST')) {
       return jsonResponse({ ok: true, demo: true, voids: [] });
@@ -219,6 +235,8 @@ async function routeAppApi(context) {
       if (subPath === '/staff_biometrics') return jsonResponse({ ok: true, demo: true, staff_biometrics: {} });
       if (subPath === '/work_schedules') return jsonResponse({ ok: true, demo: true, work_schedules: null });
       if (subPath === '/geo_config') return jsonResponse({ ok: true, demo: true, config: null });
+      if (subPath === '/geo/audit') return jsonResponse({ ok: true, demo: true, audits: [], total: 0 });
+      if (subPath === '/geo/gate-suggestions') return jsonResponse({ ok: true, demo: true, suggestions: [], canApprove: false });
       if (subPath === '/cashflow_behind') return jsonResponse({ ok: true, demo: true, cashflow_behind: null });
       if (subPath === '/source_behind') return jsonResponse({ ok: true, demo: true, source_behind: null });
       if (subPath === '/changed_entries') return jsonResponse({ ok: true, demo: true, changed_entries: null });
@@ -256,6 +274,15 @@ async function routeAppApi(context) {
   }
   if (subPath === '/saved-views' && (request.method === 'POST' || request.method === 'GET')) {
     return handleSavedViews(request, env, session, body);
+  }
+  if (subPath === '/geo/audit' && request.method === 'GET') {
+    return handleGeoAuditGet(request, env, session, url);
+  }
+  if (subPath === '/geo/gate-suggestions' && (request.method === 'GET' || request.method === 'POST')) {
+    if (request.method === 'POST' && parseError) {
+      return jsonResponse({ ok: false, code: 'invalid_json', error: 'Malformed JSON body.' }, 400);
+    }
+    return handleGeoGateSuggestions(request, env, session, body, url);
   }
 
   if (subPath === '/users' && request.method === 'GET') {

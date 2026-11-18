@@ -19,6 +19,7 @@ import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import export_d1_seed as eds  # noqa: E402
+import release_data_only as rdo  # noqa: E402
 
 RUNTIME = sorted(eds.EDGE_RUNTIME_TABLES)
 STMT_RE = re.compile(r"^\s*(INSERT OR REPLACE INTO|INSERT INTO|DELETE FROM)\s+\"?([A-Za-z0-9_]+)\"?", re.I)
@@ -70,16 +71,24 @@ eds.fetch_live_cloud_store = fake_live_fetch
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="isabi-runtime-tables-"))
 try:
     ok("override_audit is listed in 0001_schema.sql (so it needs the guard today)", "override_audit" in orig_parse(eds.SCHEMA_SQL.read_text(encoding="utf-8")))
+    schema_cols = orig_parse(eds.SCHEMA_SQL.read_text(encoding="utf-8"))
+    ok("geo_audit_log is listed in 0001_schema.sql and EDGE_RUNTIME_TABLES", "geo_audit_log" in schema_cols and "geo_audit_log" in RUNTIME)
+    ok("geo_gate_suggestions is listed in 0001_schema.sql and EDGE_RUNTIME_TABLES", "geo_gate_suggestions" in schema_cols and "geo_gate_suggestions" in RUNTIME)
+    ok("release_data_only.EDGE_OWNED covers all EDGE_RUNTIME_TABLES incl. geo_audit_log & geo_gate_suggestions", set(rdo.EDGE_OWNED) >= set(eds.EDGE_RUNTIME_TABLES) and {"geo_audit_log", "geo_gate_suggestions"} <= set(rdo.EDGE_OWNED))
     dbp = tmp / "local.db"
     conn = sqlite3.connect(str(dbp))
     conn.execute("CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT)")
     conn.execute("CREATE TABLE override_requests (id TEXT PRIMARY KEY, status TEXT, caller_user_id TEXT)")
     conn.execute("CREATE TABLE saved_views (id TEXT PRIMARY KEY, user_id TEXT, table_key TEXT)")
     conn.execute("CREATE TABLE override_audit (id TEXT PRIMARY KEY, created_at TEXT, caller_user_id TEXT)")
+    conn.execute("CREATE TABLE geo_audit_log (id TEXT PRIMARY KEY, created_at TEXT, action TEXT)")
+    conn.execute("CREATE TABLE geo_gate_suggestions (id TEXT PRIMARY KEY, status TEXT, site_name TEXT)")
     conn.execute("INSERT INTO customers VALUES ('c-local-1', 'Acme')")
     conn.execute("INSERT INTO override_requests VALUES ('ovr-1-deadbeef', 'pending', 'u-test')")
     conn.execute("INSERT INTO saved_views VALUES ('sv-1-deadbeef', 'u-test', 'sales_tickets')")
     conn.execute("INSERT INTO override_audit VALUES ('ova-1-deadbeef', '2026-11-12T00:00:00.000Z', 'u-test')")
+    conn.execute("INSERT INTO geo_audit_log VALUES ('ga-1-deadbeef', '2026-11-17T00:00:00.000Z', 'site_pin_moved')")
+    conn.execute("INSERT INTO geo_gate_suggestions VALUES ('gs-1-deadbeef', 'pending', 'Site A')")
     conn.commit()
     conn.close()
 
@@ -94,7 +103,7 @@ try:
 
     man = tmp / "manifest.json"
     prev = dict(meta["row_hashes"])
-    for t, pk in (("override_audit", "ova-live-1"), ("override_requests", "ovr-live-1"), ("saved_views", "sv-live-1"), ("customers", "c-vanished")):
+    for t, pk in (("override_audit", "ova-live-1"), ("override_requests", "ovr-live-1"), ("saved_views", "sv-live-1"), ("geo_audit_log", "ga-live-1"), ("geo_gate_suggestions", "gs-live-1"), ("customers", "c-vanished")):
         prev[eds.encode_row_key(t, (pk,))] = "0" * 64
     man.write_text(json.dumps({"row_hashes": prev}), encoding="utf-8")
     files_d, meta_d = eds.export_all(delta=True, offline=False, manifest_path=man, db_path=dbp,

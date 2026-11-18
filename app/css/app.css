@@ -41709,3 +41709,19 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.sn-dwell-panel,
+.geo-audit-panel {
+  margin-top: 12px;
+}
+.geo-audit-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.apv-gate-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
