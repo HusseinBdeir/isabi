@@ -897,6 +897,128 @@
     const origSeed = captureSeedOrigSnapshot(crKey, row);
     if (origSeed && !row._seed_orig) row._seed_orig = buildSeedOrigMeta(origSeed);
   }
+  const PRE_VOID_SKIP_KEYS = new Set([
+    'id', 'rev', 'source', 'voided', 'voided_at', 'voided_by', 'voided_by_email', 'void_reason', 'void_snapshot',
+    'restored_at', 'restored_by', 'restored_by_email', 'modified_at', 'modified_by', 'entered_at', 'entered_by',
+    'entered_by_email', 'created_at', 'updated_at', 'updatedAt', 'client_updated_at', 'same_person_confirmed',
+    'twin_of', 'twin_difference', 'latitude', 'longitude', 'adj_windows', 'driver_rows', 'cells', 'headers',
+    'attachments', 'removedDocIds', 'backfill_status', 'settled_amount', 'has_paired_return', 'data_url'
+  ]);
+  function _asStrictBoolOrNullPreVoid(v) {
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number' && (v === 0 || v === 1)) return v === 1;
+    if (typeof v === 'string') {
+      const s = v.trim().toLowerCase();
+      if (s === '1' || s === 'true') return true;
+      if (s === '0' || s === 'false') return false;
+    }
+    return null;
+  }
+  function _preVoidValEqual(a, b) {
+    if (a === b) return true;
+    if (typeof a === 'boolean' || typeof b === 'boolean') {
+      const ba = _asStrictBoolOrNullPreVoid(a);
+      const bb = _asStrictBoolOrNullPreVoid(b);
+      if (ba !== null && bb !== null) return ba === bb;
+    }
+    const sa = String(a == null ? '' : a).trim();
+    const sb = String(b == null ? '' : b).trim();
+    if (sa === sb) return true;
+    if (sa && sb) {
+      const na = Number(sa), nb = Number(sb);
+      if (Number.isFinite(na) && Number.isFinite(nb) && Math.abs(na - nb) < 1e-6) return true;
+    }
+    return false;
+  }
+  function _buildPreVoidSnap(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+    const out = {};
+    Object.keys(obj).forEach(k => {
+      if (!k || k.charAt(0) === '_' || PRE_VOID_SKIP_KEYS.has(k)) return;
+      const v = obj[k];
+      if (v !== undefined && (v === null || typeof v !== 'object')) out[k] = v;
+    });
+    return out;
+  }
+  function _clonePreVoidEdits(arr) {
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter(e => e && typeof e === 'object' && e.changes && typeof e.changes === 'object')
+      .map(e => ({
+        at: String(e.at || ''),
+        by: String(e.by || ''),
+        changes: JSON.parse(JSON.stringify(e.changes))
+      }));
+  }
+  function _mergePreVoidAuditMeta(target, loc, rem) {
+    if (!target || typeof target !== 'object') return;
+    const hasOrig = o => Boolean(o && typeof o === 'object' && Object.keys(o).length > 0);
+    const orig = hasOrig(loc && loc._pre_void_orig)
+      ? loc._pre_void_orig
+      : (hasOrig(rem && rem._pre_void_orig) ? rem._pre_void_orig : null);
+    if (orig) target._pre_void_orig = Object.assign({}, orig);
+    const merged = [];
+    const seen = new Set();
+    const pushAll = arr => {
+      _clonePreVoidEdits(arr).forEach(ev => {
+        const sig = `${ev.at}|${ev.by}|${JSON.stringify(ev.changes)}`;
+        if (seen.has(sig)) return;
+        seen.add(sig);
+        merged.push(ev);
+      });
+    };
+    if (loc && loc._pre_void_edits) pushAll(loc._pre_void_edits);
+    if (rem && rem._pre_void_edits) pushAll(rem._pre_void_edits);
+    if (merged.length) {
+      merged.sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+      target._pre_void_edits = merged.slice(-15);
+    }
+  }
+  function capturePreVoidEditTrail(prevObj, nextObj, opts = {}) {
+    if (!prevObj || !nextObj || typeof prevObj !== 'object' || typeof nextObj !== 'object') return false;
+    if (nextObj.voided) return false;
+    const seedOrig = (prevObj._pre_void_orig && typeof prevObj._pre_void_orig === 'object')
+      ? prevObj._pre_void_orig
+      : ((nextObj._pre_void_orig && typeof nextObj._pre_void_orig === 'object') ? nextObj._pre_void_orig : null);
+    const prevEdits = _clonePreVoidEdits(
+      (Array.isArray(prevObj._pre_void_edits) && prevObj._pre_void_edits.length)
+        ? prevObj._pre_void_edits
+        : nextObj._pre_void_edits
+    );
+    const isZeroOrEmptyDef = v => (
+      v === undefined || v === null || v === '' || v === false || v === 0 ||
+      (typeof v === 'number' && Math.abs(v) < 1e-9)
+    );
+    const changes = {};
+    const keyPool = new Set([...Object.keys(prevObj), ...Object.keys(nextObj)]);
+    let changeCnt = 0;
+    keyPool.forEach(k => {
+      if (changeCnt >= 24 || !k || k.charAt(0) === '_' || PRE_VOID_SKIP_KEYS.has(k)) return;
+      const a = prevObj[k];
+      const b = nextObj[k];
+      if ((a !== null && typeof a === 'object') || (b !== null && typeof b === 'object')) return;
+      const aHas = Object.prototype.hasOwnProperty.call(prevObj, k) && a !== undefined && a !== null;
+      const bHas = Object.prototype.hasOwnProperty.call(nextObj, k) && b !== undefined && b !== null;
+      if (!aHas && isZeroOrEmptyDef(b)) return;
+      if (!bHas && isZeroOrEmptyDef(a)) return;
+      if (!_preVoidValEqual(a, b)) {
+        changes[k] = { from: a == null ? '' : a, to: b == null ? '' : b };
+        changeCnt += 1;
+      }
+    });
+    if (!changeCnt) {
+      if (seedOrig && !nextObj._pre_void_orig) nextObj._pre_void_orig = Object.assign({}, seedOrig);
+      if (prevEdits.length && !Array.isArray(nextObj._pre_void_edits)) nextObj._pre_void_edits = prevEdits;
+      return false;
+    }
+    const au = (typeof activeUser === 'function' && activeUser()) || {};
+    const byStr = String((opts && opts.by) || au.full_name || au.name || au.email || nextObj.modified_by || 'User').trim().slice(0, 120);
+    const atStr = String((opts && opts.at) || nextObj.modified_at || new Date().toISOString());
+    nextObj._pre_void_orig = seedOrig ? Object.assign({}, seedOrig) : (_buildPreVoidSnap(prevObj) || {});
+    prevEdits.push({ at: atStr, by: byStr, changes });
+    nextObj._pre_void_edits = prevEdits.slice(-15);
+    return true;
+  }
   let _lastMonotonicMs = 0;
   function nextMonotonicIso() {
     const now = Date.now();
@@ -17753,7 +17875,7 @@
   // original one), newId (the entry that follows it), from, to, table }, else null.
   let _lastChronoKeptPeriod = null;
   // Bookkeeping the entry that follows must not inherit from the row it was typed over.
-  const CHRONO_NEW_ENTRY_DROP_RE = /^_(seed_orig|auto_closed_|prev_end_date|last_prev_end|prev_status|explicitEnd|reopenedExplicitly|dormant_|backpay_|reconciled_at|absorbedSeedTwin|lastBackfill|moveStart)/;
+  const CHRONO_NEW_ENTRY_DROP_RE = /^_(seed_orig|pre_void_|auto_closed_|prev_end_date|last_prev_end|prev_status|explicitEnd|reopenedExplicitly|dormant_|backpay_|reconciled_at|absorbedSeedTwin|lastBackfill|moveStart)/;
   // Turns "an existing row saved from a later day with another value" into what + Add would have done: the row goes
   // back to what it was (same id, so the next top-up still matches it to its workbook line) and the values being saved
   // become a new entry under a new id. Everything after this point in the engine then runs as for an added entry: the
@@ -69388,15 +69510,24 @@
     const pid = String(rowObj.id || rowObj.code || '').trim();
     if (isTillOwnedRowId(pid)) return null;
     const existingIdx = pid ? store[bucket].findIndex(r => r && String(r.id || r.code || '').trim() === pid) : -1;
-    const prevRev = existingIdx >= 0 ? Number(store[bucket][existingIdx].rev || 1) : 0;
+    const prevRow = existingIdx >= 0 ? store[bucket][existingIdx] : null;
+    const prevRev = prevRow ? Number(prevRow.rev || 1) : 0;
     const nextRev = Math.max(prevRev + 1, Number(rowObj.rev || 1));
     const tsIso = rowObj.updated_at || rowObj.updatedAt || nowIso;
     const rec = Object.assign(
       { _customBucket: bucket, _createdAt: nowIso, voided: false },
-      existingIdx >= 0 ? store[bucket][existingIdx] : {},
+      prevRow || {},
       rowObj,
       { _customBucket: bucket, rev: nextRev, updated_at: tsIso, updatedAt: tsIso }
     );
+    if (prevRow) {
+      _mergePreVoidAuditMeta(rec, prevRow, rowObj);
+      if (!(opts && opts.skipEditTrail) && !rec.voided) {
+        const auPre = (typeof activeUser === 'function' && activeUser()) || {};
+        const actorPre = String((opts && opts.by) || rec.modified_by || auPre.full_name || auPre.name || auPre.email || '').trim();
+        capturePreVoidEditTrail(prevRow, rec, { by: actorPre || undefined, at: rec.modified_at || tsIso });
+      }
+    }
     if (existingIdx >= 0) store[bucket][existingIdx] = rec;
     else store[bucket].unshift(rec);
     const postP = saveIndustryCustomRowsStore({
@@ -69543,6 +69674,7 @@
           loc.voided = true;
           loc.rev = Math.max(lRev, rRev);
           loc.updated_at = rTs || lTs || new Date().toISOString();
+          _mergePreVoidAuditMeta(loc, loc, rem);
           changed = true;
         } else if (lVoid && !rVoid && lRev >= rRev) {
           // keep local void tombstone
@@ -69553,6 +69685,7 @@
             rev: Math.max(lRev, rRev),
             updated_at: rTs || lTs
           });
+          _mergePreVoidAuditMeta(merged, loc, rem);
           const idx = locArr.indexOf(loc);
           if (idx >= 0) locArr[idx] = merged;
           byId.set(id, merged);
@@ -69599,6 +69732,7 @@
           updatedAt: rTs || lTs,
           _revBumped: true
         });
+        _mergePreVoidAuditMeta(store[editKey], loc, rem);
         changed = true;
       } else if (rRev > lRev || (rRev === lRev && rTs > lTs)) {
         store[editKey] = Object.assign({}, loc, rem, {
@@ -69609,6 +69743,7 @@
           updatedAt: rTs || lTs,
           _revBumped: true
         });
+        _mergePreVoidAuditMeta(store[editKey], loc, rem);
         changed = true;
       } else if (mergedRemovedDocs.length > (Array.isArray(loc.removedDocIds) ? loc.removedDocIds.length : 0)) {
         loc.removedDocIds = mergedRemovedDocs;
@@ -69735,7 +69870,7 @@
         net_payable_4017_usd: payable
       };
       if (customIdSet.has(String(pol.id || '').trim().toUpperCase())) {
-        addIndustryCustomRow('ins_policies', Object.assign({ id: pol.id }, patch), { skipCloudSync: true });
+        addIndustryCustomRow('ins_policies', Object.assign({ id: pol.id }, patch), { skipCloudSync: true, skipEditTrail: true });
       } else {
         saveIndustryWorkflowPatch('ins_policies', pol.id, patch);
       }
@@ -70013,6 +70148,7 @@
     rec._split_sweep_end = existingSelf.end_date || 'Open';
     delete rec.updated_at; delete rec.updatedAt; delete rec.rev; delete rec._createdAt;
     delete rec._auto_closed_by_id; delete rec._prev_end_date; delete rec._prev_status; delete rec._handoff_succ_id;
+    delete rec._pre_void_orig; delete rec._pre_void_edits;
     rec.voided = false;
     rec._scheduleVoided = false;
     rec.autoClosePriorId = closeIds[0] || '';
@@ -70412,7 +70548,7 @@
         status: bal <= 0 ? 'Paid in Full' : 'Partial / Active'
       };
       if (customMemIds.has(String(m.id || '').trim().toUpperCase())) {
-        addIndustryCustomRow('hsp_memberships', Object.assign({ id: m.id }, patch), { skipCloudSync: true });
+        addIndustryCustomRow('hsp_memberships', Object.assign({ id: m.id }, patch), { skipCloudSync: true, skipEditTrail: true });
       } else {
         saveIndustryWorkflowPatch('hsp_memberships', m.id, patch);
       }
@@ -70429,7 +70565,7 @@
       const tot = round2(rooms * Number(hit.nightly_rate_usd || 560));
       const ht = round2(tot / 1.11);
       const vat = round2(tot - ht);
-      addIndustryCustomRow('hsp_revenue', Object.assign({}, rev, { ttc_usd: tot, ht_usd: ht, vat_usd: vat }), { skipCloudSync: true });
+      addIndustryCustomRow('hsp_revenue', Object.assign({}, rev, { ttc_usd: tot, ht_usd: ht, vat_usd: vat }), { skipCloudSync: true, skipEditTrail: true });
       syncedCount += 1;
     });
     return syncedCount;
@@ -70531,7 +70667,7 @@
         status: openAr <= 0 ? 'Paid' : (col > 0 ? 'Partial' : 'Open')
       };
       if (customInvIds.has(String(inv.id || '').trim().toUpperCase())) {
-        addIndustryCustomRow('re_invoicing', Object.assign({ id: inv.id }, patch), { skipCloudSync: true });
+        addIndustryCustomRow('re_invoicing', Object.assign({ id: inv.id }, patch), { skipCloudSync: true, skipEditTrail: true });
       } else {
         saveIndustryWorkflowPatch('re_invoicing', inv.id, patch);
       }
@@ -70614,7 +70750,7 @@
       const cost = round2(qty * Number(hit.unit_cost_usd || 0));
       const patch = { net_usd: net, vat_usd: vat, ttc_usd: ttc, cost_usd: cost };
       if (customSalesIds.has(String(sl.id || '').trim().toUpperCase())) {
-        addIndustryCustomRow('trd_sales', Object.assign({ id: sl.id }, patch), { skipCloudSync: true });
+        addIndustryCustomRow('trd_sales', Object.assign({ id: sl.id }, patch), { skipCloudSync: true, skipEditTrail: true });
       } else {
         saveIndustryWorkflowPatch('trd_sales', sl.id, patch);
       }
@@ -70631,7 +70767,7 @@
       const tot = round2(fob + add);
       const patch = { fob_usd: fob, landed_add_usd: add, total_landed_usd: tot };
       if (customImpIds.has(String(im.id || '').trim().toUpperCase())) {
-        addIndustryCustomRow('trd_purchases', Object.assign({ id: im.id }, patch), { skipCloudSync: true });
+        addIndustryCustomRow('trd_purchases', Object.assign({ id: im.id }, patch), { skipCloudSync: true, skipEditTrail: true });
       } else {
         saveIndustryWorkflowPatch('trd_purchases', im.id, patch);
       }
@@ -70711,7 +70847,7 @@
         status: opn <= 0 ? 'Settled' : 'Active Tranche'
       };
       if (customDistIds.has(String(dist.id || '').trim().toUpperCase())) {
-        addIndustryCustomRow('hld_distributions', Object.assign({ id: dist.id }, patch), { skipCloudSync: true });
+        addIndustryCustomRow('hld_distributions', Object.assign({ id: dist.id }, patch), { skipCloudSync: true, skipEditTrail: true });
       } else {
         saveIndustryWorkflowPatch('hld_distributions', dist.id, patch);
       }
@@ -70800,7 +70936,7 @@
         facility_id: hit.facilityId || hit.scheduleId
       };
       if (customAccIds.has(String(ac.id || '').trim().toUpperCase())) {
-        addIndustryCustomRow('hld_loan_accruals', Object.assign({ id: ac.id }, patch), { skipCloudSync: true });
+        addIndustryCustomRow('hld_loan_accruals', Object.assign({ id: ac.id }, patch), { skipCloudSync: true, skipEditTrail: true });
       } else {
         saveIndustryWorkflowPatch('hld_loan_accruals', ac.id, patch);
       }
@@ -85824,11 +85960,15 @@
               applyDomainGeoSaveMeta(upd, domainGeoSave);
               mirrorDomainPinToSites(domainGeoSave);
             }
+            const prevCustList = getIndustryCustomRowsStore()[fk] || [];
+            if (!drawerSplit && !prevCustList.some(r => r && String(r.id || r.code || '').trim() === String(upd.id || upd.code || '').trim())) {
+              capturePreVoidEditTrail(origSched, upd, { at: new Date().toISOString() });
+            }
             addIndustryCustomRow(fk, upd, { skipCloudSync: true, skipRollback: true, skipServerPost: true });
             syncSiblingCustomPredecessorsOnSave(fk, upd.id, cState.closeIds, cState.closeDate);
             syncedCnt = runDomainChronoScheduleBackfill(fk, upd, drawerSplit ? drawerSplit.oldWindow : origSched);
             upd.backfill_status = `${cState.priorPrimaryId ? 'Closed ' + cState.priorPrimaryId + ' · ' : ''}Chrono Active${syncedCnt > 0 ? ' · ' + syncedCnt + ' Synced' : ''}`;
-            addIndustryCustomRow(fk, upd, { skipCloudSync: true, skipRollback: true, skipServerPost: true });
+            addIndustryCustomRow(fk, upd, { skipCloudSync: true, skipRollback: true, skipServerPost: true, skipEditTrail: true });
             if (upd.id) domForceRowIds.push(`${fk}::${upd.id}`);
             if (drawerSplit) (drawerSplit.kept.postIds || []).forEach(pid => domForceRowIds.push(`${fk}::${pid}`));
             const storeClean = getIndustryRowEditStore();
@@ -85874,6 +86014,35 @@
           nextStoreEntry.longitude = prevEntry.longitude;
         }
         if (prevEntry.region) nextStoreEntry.region = prevEntry.region;
+        const prevCellsForDiff = Array.isArray(prevEntry.cells) ? prevEntry.cells : (Array.isArray(cells) ? cells : []);
+        const prevCellEdits = _clonePreVoidEdits(prevEntry._pre_void_edits);
+        if (prevEntry._pre_void_orig && typeof prevEntry._pre_void_orig === 'object') {
+          nextStoreEntry._pre_void_orig = Object.assign({}, prevEntry._pre_void_orig);
+        }
+        if (prevCellEdits.length) nextStoreEntry._pre_void_edits = prevCellEdits.slice(-15);
+        const cellChanges = {};
+        let cellChangeCnt = 0;
+        const origCellSnap = {};
+        const usedFKeys = new Set();
+        nextCells.forEach((nVal, idx) => {
+          const hdrLbl = String((Array.isArray(headers) && headers[idx]) || `Column ${idx + 1}`).trim();
+          const baseFKey = hdrLbl.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `col_${idx}`;
+          const fKey = usedFKeys.has(baseFKey) ? `${baseFKey}_${idx}` : baseFKey;
+          usedFKeys.add(fKey);
+          const pVal = String(prevCellsForDiff[idx] == null ? '' : prevCellsForDiff[idx]).trim();
+          origCellSnap[fKey] = pVal;
+          if (!lockedNumericIndices.has(idx) && !_preVoidValEqual(pVal, nVal) && cellChangeCnt < 24) {
+            cellChanges[fKey] = { label: hdrLbl, from: pVal, to: nVal };
+            cellChangeCnt += 1;
+          }
+        });
+        if (cellChangeCnt > 0) {
+          if (!nextStoreEntry._pre_void_orig) nextStoreEntry._pre_void_orig = origCellSnap;
+          const auCell = (typeof activeUser === 'function' && activeUser()) || {};
+          const byCell = String(auCell.full_name || auCell.name || auCell.email || 'User').trim().slice(0, 120);
+          prevCellEdits.push({ at: nowIso, by: byCell, changes: cellChanges });
+          nextStoreEntry._pre_void_edits = prevCellEdits.slice(-15);
+        }
         const prevDeferDomEdit = _deferIndustryDomainServerPost;
         _deferIndustryDomainServerPost = true;
         try {
@@ -109234,7 +109403,9 @@
       if (pendRawEditRow) {
         if (!(c.up > 0)) addErr('f_unitprice', 'Enter the final supplier invoice unit price above zero.');
         if (!c.owner) addErr('f_siteowner', 'Site owner (material payee) is required.');
+        const pendRawOrigPre = Object.assign({}, pendRawEditRow);
         record = Object.assign({}, pendRawEditRow, {
+          _pend_row_orig: pendRawOrigPre,
           company,
           date,
           rep_date: repDate,
@@ -109463,7 +109634,9 @@
       if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
       if (pendEditRow) {
         if (!(c.amount > 0)) addErr('f_amount', 'Enter the final supplier invoice amount above zero.');
+        const pendExpOrigPre = Object.assign({}, pendEditRow);
         record = Object.assign({}, pendEditRow, {
+          _pend_row_orig: pendExpOrigPre,
           company,
           date,
           rep_date: repDate,
@@ -112446,6 +112619,7 @@
           STATE.customRecords[crKey].unshift(updatedOrig);
         }
         if (updatedOrig) preExtraApiPosts.push([crKey, updatedOrig]);
+        Object.keys(record).forEach(k => { if (CHRONO_NEW_ENTRY_DROP_RE.test(k)) delete record[k]; });
         record.id = uid(STATE.modalForm.slice(0, 2));
         record.paired_from_id = String(editCtx.id);
         STATE.customRecords[crKey].unshift(record);
@@ -112453,13 +112627,18 @@
         const origCrKey = editCtx.crKey;
         if (origCrKey && origCrKey !== crKey) {
           const oldSeedArr = (SEED.records && Array.isArray(SEED.records[origCrKey])) ? SEED.records[origCrKey] : [];
+          const crossAu = (typeof activeUser === 'function' && activeUser()) || {};
+          const crossActor = String(crossAu.full_name || crossAu.name || crossAu.email || '').trim();
+          const crossEmail = String(crossAu.email || '').trim().toLowerCase();
           let voidedOld = null;
           const reclassVR = reclassReason || `Reclassified to ${CR_LABEL[crKey] || crKey}`;
           oldSeedArr.forEach(r => {
             if (r && String(r.id) === String(editCtx.id)) {
               r.voided = true;
-              r.voided_at = new Date().toISOString();
+              r.voided_at = saveStampIso;
               r.void_reason = reclassVR;
+              if (crossActor) r.voided_by = crossActor;
+              if (crossEmail) r.voided_by_email = crossEmail;
               voidedOld = Object.assign({}, r);
             }
           });
@@ -112467,13 +112646,16 @@
           const oldCIdx = STATE.customRecords[origCrKey].findIndex(r => r && String(r.id) === String(editCtx.id));
           if (oldCIdx >= 0) {
             STATE.customRecords[origCrKey][oldCIdx].voided = true;
-            STATE.customRecords[origCrKey][oldCIdx].voided_at = new Date().toISOString();
+            STATE.customRecords[origCrKey][oldCIdx].voided_at = saveStampIso;
             STATE.customRecords[origCrKey][oldCIdx].void_reason = reclassVR;
+            if (crossActor) STATE.customRecords[origCrKey][oldCIdx].voided_by = crossActor;
+            if (crossEmail) STATE.customRecords[origCrKey][oldCIdx].voided_by_email = crossEmail;
             voidedOld = Object.assign({}, STATE.customRecords[origCrKey][oldCIdx]);
           } else if (voidedOld) {
             STATE.customRecords[origCrKey].unshift(voidedOld);
           }
           if (voidedOld) preExtraApiPosts.push([origCrKey, voidedOld]);
+          Object.keys(record).forEach(k => { if (CHRONO_NEW_ENTRY_DROP_RE.test(k)) delete record[k]; });
           record.id = uid(STATE.modalForm.slice(0, 2));
           if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
           STATE.customRecords[crKey].unshift(record);
@@ -113013,10 +113195,17 @@
       }
       const pendSalOrigSnap = record._pend_sal_orig || null;
       delete record._pend_sal_orig;
+      const pendRowOrigSnap = record._pend_row_orig || null;
+      delete record._pend_row_orig;
       if (pendSalOrigSnap && crKey === 'employments') {
         const sArrClean = (SEED.records && Array.isArray(SEED.records.employments)) ? SEED.records.employments : [];
         sArrClean.forEach(r => { if (r && r._pend_sal_orig) delete r._pend_sal_orig; });
         (STATE.customRecords.employments || []).forEach(r => { if (r && r._pend_sal_orig) delete r._pend_sal_orig; });
+      }
+      if (pendRowOrigSnap && (crKey === 'expenses' || crKey === 'raw_purchases')) {
+        const sArrClr = (SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [];
+        sArrClr.forEach(r => { if (r && r._pend_row_orig) delete r._pend_row_orig; });
+        (STATE.customRecords[crKey] || []).forEach(r => { if (r && r._pend_row_orig) delete r._pend_row_orig; });
       }
       const editStartUnchanged = (isEditingExisting && String(record.start_date || '').slice(0, 10) === String((editCtx && editCtx.orig && editCtx.orig.start_date) || '').slice(0, 10))
         || Boolean(pendSalOrigSnap && String(record.start_date || '').slice(0, 10) === String(pendSalOrigSnap.start_date || '').slice(0, 10));
@@ -113110,7 +113299,7 @@
       }
       const editOrigModal = (isEditingExisting && editCtx && editCtx.crKey === crKey && editCtx.orig)
         ? editCtx.orig
-        : pendSalOrigSnap;
+        : (pendSalOrigSnap || pendRowOrigSnap);
       const isEffModalTbl = isEffectiveSeriesTable(crKey, record);
       let touchedModalPeers = [];
       // Set when this save kept the earlier period on the row as it was and went on as a new entry (a later Start
@@ -113150,6 +113339,17 @@
         }
       }
       stampBatchModifiedAt(extraApiPosts, crKey, record);
+      if (!keptPeriodModal && editOrigModal && String(editOrigModal.id || '') === String(record.id || '')) {
+        if (capturePreVoidEditTrail(editOrigModal, record, { at: record.modified_at }) || record._pre_void_orig) {
+          const syncPreVoidMeta = r => {
+            if (!r || String(r.id || '') !== String(record.id || '')) return;
+            if (record._pre_void_orig) r._pre_void_orig = Object.assign({}, record._pre_void_orig);
+            if (Array.isArray(record._pre_void_edits)) r._pre_void_edits = _clonePreVoidEdits(record._pre_void_edits);
+          };
+          if (Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey].forEach(syncPreVoidMeta);
+          if (SEED.records && Array.isArray(SEED.records[crKey])) SEED.records[crKey].forEach(syncPreVoidMeta);
+        }
+      }
       const findPreSnapRow = (snap, tblName, rowId) => {
         if (!snap || rowId == null) return null;
         const sid = String(rowId);
@@ -124427,6 +124627,17 @@
             }
           }
           stampBatchModifiedAt(inspExtraPosts, key, row);
+          if (!keptPeriodInsp && origRowSnap && String(origRowSnap.id || '') === String(row.id || '')) {
+            if (capturePreVoidEditTrail(origRowSnap, row, { at: row.modified_at }) || row._pre_void_orig) {
+              const syncInspPreVoid = r => {
+                if (!r || String(r.id || '') !== String(row.id || '')) return;
+                if (row._pre_void_orig) r._pre_void_orig = Object.assign({}, row._pre_void_orig);
+                if (Array.isArray(row._pre_void_edits)) r._pre_void_edits = _clonePreVoidEdits(row._pre_void_edits);
+              };
+              if (Array.isArray(STATE.customRecords[key])) STATE.customRecords[key].forEach(syncInspPreVoid);
+              if (SEED.records && Array.isArray(SEED.records[key])) SEED.records[key].forEach(syncInspPreVoid);
+            }
+          }
           saveLocalAuthAndRecords();
           renderApp();
           const mainPostRes = await postRecordToLocalApi(key, row);
@@ -125895,15 +126106,18 @@
             cur.voided_by = r.voided_by;
             cur.voided_at = r.voided_at;
             if (r._seed_orig && !cur._seed_orig) cur._seed_orig = r._seed_orig;
+            _mergePreVoidAuditMeta(cur, cur, r);
             delete cur.restored_at;
             changed = true;
           }
         }
         else if (!r.voided && cur.voided && r.restored_at && (!cur.voided_at || _stampMs(r.restored_at) > _stampMs(cur.voided_at))) {
+          const preMergeCur = Object.assign({}, cur);
           if (r.origin === 'door_tablet') Object.assign(cur, r);   // its figures were re-worked from the punches; take them with it
           cur.voided = false;
           cur.restored_at = r.restored_at;
           if (r.modified_at) cur.modified_at = r.modified_at;
+          _mergePreVoidAuditMeta(cur, preMergeCur, r);
           delete cur.voided_by;
           delete cur.voided_at;
           changed = true;
@@ -125917,9 +126131,11 @@
             || (Array.isArray(r.adj_windows) && (!Array.isArray(cur.adj_windows) || r.adj_windows.length > cur.adj_windows.length));
           if ((rModTs && (!curModTs || rModTs > curModTs)) || (!curModTs && completedPending)) {
             _preserveClosedEffectiveDates(cur, r);
+            const preMergeCur = Object.assign({}, cur);
             const prevSeedOrig = cur._seed_orig;
             Object.assign(cur, r);
             if (prevSeedOrig && !cur._seed_orig) cur._seed_orig = prevSeedOrig;
+            _mergePreVoidAuditMeta(cur, preMergeCur, r);
             if (!r.admin_overrides && cur.admin_overrides) delete cur.admin_overrides;
             changed = true;
           }

@@ -186,7 +186,7 @@
     days: 'all',
     module: 'all',
     actor: 'all',
-    lens: 'all',
+    lenses: [],
     drillDay: '',
     cluster: 'all',
     q: '',
@@ -202,6 +202,7 @@
   let armedCutoffKey = '';
   let editingNoteKey = '';
   let inspectKey = '';
+  let digestRange = '7d';
   let openCombo = '';
   let comboQuery = '';
   let lastMatchedKeys = [];
@@ -230,7 +231,23 @@
     armedCutoffKey = '';
   }
 
-  const filterState = Object.assign({}, DEFAULT_FILTERS);
+  const filterState = Object.assign({}, DEFAULT_FILTERS, { lenses: [] });
+
+  function hasLens(key) {
+    return Array.isArray(filterState.lenses) && filterState.lenses.includes(key);
+  }
+  function toggleLens(key) {
+    const k = String(key || 'all').trim();
+    if (!k || k === 'all') {
+      filterState.lenses = [];
+      return;
+    }
+    const cur = Array.isArray(filterState.lenses) ? filterState.lenses.slice() : [];
+    const idx = cur.indexOf(k);
+    if (idx >= 0) cur.splice(idx, 1);
+    else cur.push(k);
+    filterState.lenses = cur;
+  }
 
   const posVoidsState = {
     scopeKey: '',
@@ -469,6 +486,256 @@
       }
     }
     return null;
+  }
+
+  const MONEY_FIELD_RE = /amount|salary|wage|allowance|rate|usd|lbp|total|net|gross|paid|price|cost|bonus|deduct|reimbursement|advance|nssf|stipend|commission|pay|fee|tax|vat|balance|package|principal/i;
+  const NON_USD_SUFFIX_RE = /(?:^|_)(?:lbp|ll|pct|percent|rate_pct|km|m3|qty|fx_rate|exchange_rate|conversion_rate|interest_rate|tax_rate|vat_rate|comm_rate|commission_rate|rate_ll|apr)(?:$|_)/i;
+  const USD_ALIAS_ORDER = ['total_ttc', 'ttc_usd', 'total_usd', 'amount_ttc_usd', 'amount_usd', 'usd_amount', 'total', 'amount', 'net_usd', 'net_period_usd', 'ttc_period_usd', 'gross_prem_usd'];
+  const USD_ALIAS_SET = new Set(USD_ALIAS_ORDER);
+  const PRE_VOID_FIELD_LABELS = {
+    amount: 'Amount',
+    amount_usd: 'Amount (USD)',
+    usd_amount: 'Amount (USD)',
+    total: 'Total',
+    total_usd: 'Amount (USD)',
+    total_ttc: 'Total TTC',
+    ttc_usd: 'Total TTC',
+    amount_ttc_usd: 'Total TTC',
+    net_usd: 'Net (USD)',
+    vat_usd: 'VAT (USD)',
+    rep_date: 'Report Date',
+    set_date: 'Set Date',
+    start_date: 'Start Date',
+    end_date: 'End Date',
+    due_date: 'Due Date',
+    ticket_no: 'Ticket No',
+    invoice_no: 'Invoice No',
+    voucher_no: 'Voucher No',
+    package_usd: 'Package (USD)',
+    gross_prem_usd: 'Gross Premium'
+  };
+  const SEED_ORIG_COMPARE_KEYS = [
+    'customer', 'supplier', 'counterparty', 'staff', 'company', 'date', 'rep_date', 'method', 'type',
+    'amount', 'usd_amount', 'lbp_amount', 'price', 'discount', 'total', 'total_ttc', 'vat', 'principal', 'fx_rate'
+  ];
+
+  function extractPreVoidDiffSummary(rec, crKey, finalAmountUsd, masked) {
+    const empty = {
+      hasPreVoidEdits: false,
+      editCount: 0,
+      fieldDiffs: [],
+      timeline: [],
+      origAmountUsd: null,
+      peakAbsUsd: (!masked && finalAmountUsd != null && Number.isFinite(finalAmountUsd)) ? Math.abs(finalAmountUsd) : null,
+      searchText: ''
+    };
+    if (!rec || typeof rec !== 'object') return empty;
+    const rawEdits = Array.isArray(rec._pre_void_edits)
+      ? rec._pre_void_edits.filter(ev => ev && typeof ev === 'object' && ev.changes && typeof ev.changes === 'object')
+      : [];
+    const origSnap = (rec._pre_void_orig && typeof rec._pre_void_orig === 'object') ? rec._pre_void_orig : null;
+    const seedOrig = (!origSnap && rec._seed_orig && typeof rec._seed_orig === 'object') ? rec._seed_orig : null;
+
+    const sameScalarVal = (a, b) => {
+      const sa = String(a == null ? '' : a).trim();
+      const sb = String(b == null ? '' : b).trim();
+      if (sa === sb) return true;
+      if (sa && sb) {
+        const na = parseMoneyNumber(sa), nb = parseMoneyNumber(sb);
+        if (na !== null && nb !== null && Math.abs(na - nb) < 1e-6) return true;
+      }
+      return false;
+    };
+    const recCur = String(rec.currency || rec.cur || '').trim().toUpperCase();
+    const recFx = Number(rec.fx_rate || rec.rate || (D && D.getLbpFxRate ? D.getLbpFxRate() : 89500)) || 89500;
+    const isRateOnlyField = (k, lbl) => {
+      const ks = String(k || '').trim();
+      const ls = String(lbl || '').trim();
+      const combined = `${ks} ${ls}`;
+      if (/(?:^|_)(?:rate|interest_rate|apr|fx_rate|exchange_rate|conversion_rate|tax_rate|vat_rate|comm_rate|commission_rate|rate_ll)(?:$|_)/i.test(ks)) {
+        return !/usd|\$/i.test(ls) || /ll\s*\/\s*\$|lbp\s*\/\s*\$|ll\s*\/\s*usd/i.test(ls);
+      }
+      if (/^\s*(?:exchange|conversion|interest|tax|vat|commission)?\s*rate(?:\s*\([^)]*\))?\s*$/i.test(ls)) {
+        return !/\/\s*(?:m3|m³|unit|ton|hr|day)\b/i.test(ls);
+      }
+      return /ll\s*\/\s*\$|lbp\s*\/\s*\$|ll\s*\/\s*usd|\(ll\/\$\)/i.test(combined);
+    };
+    const isMoneyField = (k, lbl) => (MONEY_FIELD_RE.test(String(k || '')) || MONEY_FIELD_RE.test(String(lbl || ''))) && !/pct|percent|rate_pct|km|m3|qty/i.test(`${k} ${lbl}`) && !isRateOnlyField(k, lbl);
+    const isLbpDiffField = (k, lbl, valHint, isCellField = false) => {
+      if (isRateOnlyField(k, lbl)) return false;
+      if (/\blbp\b|\bl\.l\b|\bll\b|ll\/\$|lbp\/\$/i.test(`${k} ${lbl} ${valHint == null ? '' : valHint}`)) return true;
+      return !isCellField && recCur === 'LBP' && isMoneyField(k, lbl) && !/usd/i.test(String(k || '')) && !NON_USD_SUFFIX_RE.test(String(k || ''));
+    };
+    const isUsdFormatField = (k, lbl, valHint, isCellField = false) => isMoneyField(k, lbl)
+      && !isRateOnlyField(k, lbl)
+      && !isLbpDiffField(k, lbl, valHint, isCellField)
+      && !NON_USD_SUFFIX_RE.test(String(k || ''))
+      && !/\blbp\b|\bl\.l\b|\bll\b|%|km|m3|qty/i.test(String(lbl || ''));
+    const pushDiffPeakUsd = (k, lbl, val, isCellField = false) => {
+      if (masked) return;
+      if (isCellField && !/\b(?:usd)\b|\$/i.test(`${lbl} ${val == null ? '' : val}`)) return;
+      const n = parseMoneyNumber(val);
+      if (n === null) return;
+      if (isUsdFormatField(k, lbl, val, false)) {
+        peakCandidates.push(Math.abs(n));
+      } else if (isLbpDiffField(k, lbl, val, isCellField) && recFx > 0) {
+        peakCandidates.push(Math.abs(n / recFx));
+      }
+    };
+    const fmtDiffVal = (k, lbl, val, isCellField = false) => {
+      if (masked && (isMoneyField(k, lbl) || isRateOnlyField(k, lbl))) return tr('Confidential');
+      if (val === undefined || val === null || val === '') return '';
+      const sv = String(val).trim();
+      if (!sv) return '';
+      if (/^(date|rep_date|set_date|start_date|end_date|due_date|day)$/i.test(k) || /^\d{4}-\d{2}-\d{2}(?:$|[T\s])/.test(sv)) {
+        return formatDateDMY(sv);
+      }
+      if (!isCellField && isLbpDiffField(k, lbl, sv, isCellField)) {
+        const n = parseMoneyNumber(sv);
+        if (n !== null) return `${n < 0 ? '-' : ''}${fmtNum(Math.round(Math.abs(n)))} LBP`;
+      }
+      if (!isCellField && isUsdFormatField(k, lbl, sv, isCellField)) {
+        const n = parseMoneyNumber(sv);
+        if (n !== null) return formatSignedUsd(n);
+      }
+      if (!isCellField && isRateOnlyField(k, lbl)) {
+        const n = parseMoneyNumber(sv);
+        if (n !== null) return fmtNum(n);
+      }
+      return sv;
+    };
+
+    const byKeyMap = new Map();
+    const timeline = [];
+    const peakCandidates = [];
+    if (!masked && finalAmountUsd != null && Number.isFinite(finalAmountUsd)) {
+      peakCandidates.push(Math.abs(finalAmountUsd));
+    }
+
+    if (rawEdits.length > 0) {
+      rawEdits.forEach(ev => {
+        const stepParts = [];
+        Object.entries(ev.changes).forEach(([fk, ch]) => {
+          if (!ch || typeof ch !== 'object') return;
+          const isCell = /^col_\d+$/i.test(fk) || Boolean(ch.label);
+          const lbl = String(ch.label || PRE_VOID_FIELD_LABELS[fk] || fk.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())).trim();
+          const initRaw = (origSnap && origSnap[fk] !== undefined) ? origSnap[fk] : ch.from;
+          const voidRaw = (rec[fk] !== undefined && rec[fk] !== null && typeof rec[fk] !== 'object') ? rec[fk] : ch.to;
+          if (!byKeyMap.has(fk)) {
+            byKeyMap.set(fk, { key: fk, label: lbl, rawFrom: initRaw, rawTo: voidRaw, isCell });
+          } else {
+            byKeyMap.get(fk).rawTo = voidRaw;
+          }
+          pushDiffPeakUsd(fk, lbl, ch.from, isCell);
+          pushDiffPeakUsd(fk, lbl, ch.to, isCell);
+          if (stepParts.length < 4) {
+            stepParts.push(`${lbl}: ${fmtDiffVal(fk, lbl, ch.from, isCell) || '-'} to ${fmtDiffVal(fk, lbl, ch.to, isCell) || '-'}`);
+          }
+        });
+        if (stepParts.length) {
+          timeline.push({ at: String(ev.at || ''), by: String(ev.by || ''), summary: stepParts.join(' · ') });
+        }
+      });
+    } else if (seedOrig) {
+      SEED_ORIG_COMPARE_KEYS.forEach(fk => {
+        if (!(fk in seedOrig) && !(fk in rec)) return;
+        const av = seedOrig[fk];
+        const bv = rec[fk];
+        if ((av == null || av === '') && (bv == null || bv === '')) return;
+        if (sameScalarVal(av, bv)) return;
+        const lbl = PRE_VOID_FIELD_LABELS[fk] || fk.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        byKeyMap.set(fk, { key: fk, label: lbl, rawFrom: av, rawTo: bv, isCell: false });
+        pushDiffPeakUsd(fk, lbl, av, false);
+        pushDiffPeakUsd(fk, lbl, bv, false);
+      });
+      if (byKeyMap.size > 0 && (rec.modified_by || rec.modified_at)) {
+        const parts = Array.from(byKeyMap.values()).slice(0, 4).map(d =>
+          `${d.label}: ${fmtDiffVal(d.key, d.label, d.rawFrom, false) || '-'} to ${fmtDiffVal(d.key, d.label, d.rawTo, false) || '-'}`
+        );
+        timeline.push({ at: String(rec.modified_at || ''), by: String(rec.modified_by || ''), summary: parts.join(' · ') });
+      }
+    }
+
+    const rawList = Array.from(byKeyMap.values());
+    if (!rawList.length && !rawEdits.length) return empty;
+
+    const keptAliases = new Map();
+    rawList.sort((a, b) => {
+      const ia = USD_ALIAS_ORDER.indexOf(a.key);
+      const ib = USD_ALIAS_ORDER.indexOf(b.key);
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return -1;
+      if (ib >= 0) return 1;
+      return 0;
+    });
+    const deduped = [];
+    rawList.forEach(d => {
+      if (USD_ALIAS_SET.has(d.key)) {
+        const nf = parseMoneyNumber(d.rawFrom);
+        const nt = parseMoneyNumber(d.rawTo);
+        const sig = `${nf != null ? nf.toFixed(2) : d.rawFrom}|${nt != null ? nt.toFixed(2) : d.rawTo}`;
+        if (keptAliases.has(sig)) return;
+        keptAliases.set(sig, d.key);
+      }
+      deduped.push(d);
+    });
+
+    const fieldDiffs = deduped.slice(0, 12).map(d => ({
+      key: d.key,
+      label: d.label,
+      from: fmtDiffVal(d.key, d.label, d.rawFrom, d.isCell),
+      to: fmtDiffVal(d.key, d.label, d.rawTo, d.isCell),
+      masked: Boolean(masked && isMoneyField(d.key, d.label))
+    }));
+
+    let origAmountUsd = null;
+    if (!masked) {
+      const baseSnap = origSnap || seedOrig;
+      if (baseSnap) {
+        const origRecOnly = Object.assign(
+          { currency: rec.currency, cur: rec.cur, fx_rate: rec.fx_rate, rate: rec.rate },
+          baseSnap
+        );
+        origAmountUsd = extractRecordAmountUsd(origRecOnly, crKey);
+        if (origAmountUsd === null) {
+          for (const d of deduped) {
+            if (/total|amount|usd|value|net|gross|premium|rent|cost|revenue|billed|cash/i.test(`${d.key} ${d.label}`) && !isRateOnlyField(d.key, d.label) && !NON_USD_SUFFIX_RE.test(d.key)) {
+              const fn = parseMoneyNumber(d.rawFrom);
+              if (fn !== null) {
+                origAmountUsd = isLbpDiffField(d.key, d.label, d.rawFrom, d.isCell)
+                  ? (recFx > 0 ? Math.round((fn / recFx) * 100) / 100 : null)
+                  : Math.round(fn * 100) / 100;
+                if (origAmountUsd !== null) break;
+              }
+            }
+          }
+        }
+        if (origAmountUsd === null) {
+          const origFallbackObj = Object.assign({}, rec, baseSnap);
+          delete origFallbackObj.cells;
+          delete origFallbackObj.headers;
+          delete origFallbackObj.void_snapshot;
+          origAmountUsd = extractDomainAmountUsd(origFallbackObj);
+        }
+        if (origAmountUsd !== null && Number.isFinite(origAmountUsd)) {
+          peakCandidates.push(Math.abs(origAmountUsd));
+        }
+      }
+    }
+
+    const searchText = masked
+      ? ''
+      : fieldDiffs.map(d => `${d.label} ${d.from} ${d.to}`).join(' ').slice(0, 240);
+
+    return {
+      hasPreVoidEdits: rawEdits.length > 0 || fieldDiffs.length > 0,
+      editCount: Math.max(rawEdits.length, fieldDiffs.length ? 1 : 0),
+      fieldDiffs,
+      timeline,
+      origAmountUsd,
+      peakAbsUsd: masked ? null : (peakCandidates.length ? Math.max(...peakCandidates) : null),
+      searchText
+    };
   }
 
   function effectiveRecordDate(rec, fallbackSnap) {
@@ -722,24 +989,54 @@
     const todayIso = localTodayIso();
     const yd = new Date(Date.now() - 86400000);
     const yesterdayIso = `${yd.getFullYear()}-${String(yd.getMonth() + 1).padStart(2, '0')}-${String(yd.getDate()).padStart(2, '0')}`;
+    const isHspDemo = activeInd === 'Hospitality & Resorts';
+    const hspDemoPreVoid = isHspDemo
+      ? {
+          hasPreVoidEdits: true,
+          editCount: 1,
+          origAmountUsd: 1650,
+          peakAbsUsd: 1650,
+          fieldDiffs: [
+            { key: 'amount', label: 'Amount', from: '$1,650', to: '$1,280', masked: false },
+            { key: 'notes', label: 'Notes', from: 'Full weekend cabana rate', to: 'Adjusted prior to void', masked: false }
+          ],
+          timeline: [{ at: `${todayIso}T13:55:00`, by: 'Supervisor Demo', summary: 'Amount: $1,650 to $1,280' }],
+          preVoidSearchText: 'Amount $1,650 $1,280'
+        }
+      : { hasPreVoidEdits: false, editCount: 0, origAmountUsd: null, peakAbsUsd: 1280, fieldDiffs: [], timeline: [], preVoidSearchText: '' };
+    const mfgDemoPreVoid = !isHspDemo
+      ? {
+          hasPreVoidEdits: true,
+          editCount: 1,
+          origAmountUsd: 640,
+          peakAbsUsd: 640,
+          fieldDiffs: [
+            { key: 'amount', label: 'Amount', from: '$640', to: '$95', masked: false },
+            { key: 'notes', label: 'Notes', from: 'Full fleet filter crate (16 pcs)', to: 'Single unit credit', masked: false }
+          ],
+          timeline: [{ at: `${yesterdayIso}T22:18:00`, by: 'Supervisor Demo', summary: 'Amount: $640 to $95' }],
+          preVoidSearchText: 'Amount $640 $95'
+        }
+      : { hasPreVoidEdits: false, editCount: 0, origAmountUsd: null, peakAbsUsd: 95, fieldDiffs: [], timeline: [], preVoidSearchText: '' };
+
     const out = [
-      {
+      Object.assign({
         key: 'demo::user-1',
         sourceKind: 'demo',
         systemKind: 'manual',
         originGroup: 'user',
         id: 'DEMO-VOID-1042',
         crKey: 'sales_tickets',
-        moduleLabel: activeInd === 'Hospitality & Resorts' ? 'Venue & Chalet Close' : 'Sales & Deliveries',
+        moduleLabel: isHspDemo ? 'Venue & Chalet Close' : 'Sales & Deliveries',
         company: firstCo,
         industry: activeInd,
         date: todayIso,
-        summary: activeInd === 'Hospitality & Resorts' ? 'Cabana C-04 Duplicate Billing' : 'Ticket #1042 · Duplicate dispatch entry',
-        refCode: activeInd === 'Hospitality & Resorts' ? 'Cabana C-04' : 'TKT #1042',
-        partyName: activeInd === 'Hospitality & Resorts' ? 'Cabana C-04' : 'Cedar Coast Developers',
-        partyRelKey: activeInd === 'Hospitality & Resorts' ? '' : 'customers',
-        partyInRegistry: activeInd !== 'Hospitality & Resorts',
-        detailLine: activeInd === 'Hospitality & Resorts' ? 'Duplicate close settlement' : 'Duplicate dispatch entry',
+        summary: isHspDemo ? 'Cabana C-04 Duplicate Billing' : 'Ticket #1042 · Duplicate dispatch entry',
+        refCode: isHspDemo ? 'Cabana C-04' : 'TKT #1042',
+        partyName: isHspDemo ? 'Cabana C-04' : 'Cedar Coast Developers',
+        partyRelKey: isHspDemo ? '' : 'customers',
+        partyInRegistry: !isHspDemo,
+        detailLine: isHspDemo ? 'Duplicate close settlement' : 'Duplicate dispatch entry',
         amountUsd: 1280,
         amountMasked: false,
         voidedBy: 'Supervisor Demo',
@@ -760,45 +1057,45 @@
         canEditNote: false,
         afterHours: false,
         raw: { id: 'DEMO-VOID-1042', company: firstCo, date: todayIso, void_reason: 'Duplicate entry entered under wrong shift', demo: true }
-      },
-      {
+      }, hspDemoPreVoid),
+      Object.assign({
         key: 'demo::user-2',
         sourceKind: 'demo',
-        systemKind: activeInd === 'Hospitality & Resorts' ? 'pos_till' : 'manual',
-        originGroup: activeInd === 'Hospitality & Resorts' ? 'pos' : 'user',
+        systemKind: isHspDemo ? 'pos_till' : 'manual',
+        originGroup: isHspDemo ? 'pos' : 'user',
         id: 'DEMO-VOID-1039',
-        crKey: activeInd === 'Hospitality & Resorts' ? 'pos_till' : 'expenses',
-        moduleLabel: activeInd === 'Hospitality & Resorts' ? 'POS Gate Till' : 'Expenses & Overhead',
+        crKey: isHspDemo ? 'pos_till' : 'expenses',
+        moduleLabel: isHspDemo ? 'POS Gate Till' : 'Expenses & Overhead',
         company: secondCo,
         industry: activeInd,
         date: yesterdayIso,
-        summary: activeInd === 'Hospitality & Resorts' ? '#409 · 2x Adult Ticket, 1x Sunbed' : 'EXP-409 · Cancelled fuel filter invoice',
-        refCode: activeInd === 'Hospitality & Resorts' ? '#409' : 'EXP-409',
-        partyName: activeInd === 'Hospitality & Resorts' ? 'Gate Cashier Demo' : 'IPT Diesel Supply',
-        partyRelKey: activeInd === 'Hospitality & Resorts' ? '' : 'suppliers',
-        partyInRegistry: activeInd !== 'Hospitality & Resorts',
-        detailLine: activeInd === 'Hospitality & Resorts' ? '2x Adult Ticket, 1x Sunbed' : 'Cancelled fuel filter invoice',
+        summary: isHspDemo ? '#409 · 2x Adult Ticket, 1x Sunbed' : 'EXP-409 · Cancelled fuel filter invoice',
+        refCode: isHspDemo ? '#409' : 'EXP-409',
+        partyName: isHspDemo ? 'Gate Cashier Demo' : 'IPT Diesel Supply',
+        partyRelKey: isHspDemo ? '' : 'suppliers',
+        partyInRegistry: !isHspDemo,
+        detailLine: isHspDemo ? '2x Adult Ticket, 1x Sunbed' : 'Cancelled fuel filter invoice',
         amountUsd: 95,
         amountMasked: false,
-        voidedBy: activeInd === 'Hospitality & Resorts' ? 'Gate Cashier Demo' : 'Supervisor Demo',
-        actorDisplay: activeInd === 'Hospitality & Resorts' ? 'Gate Cashier Demo' : 'Supervisor Demo',
-        actorKey: activeInd === 'Hospitality & Resorts' ? 'Gate Cashier Demo' : 'Supervisor Demo',
+        voidedBy: isHspDemo ? 'Gate Cashier Demo' : 'Supervisor Demo',
+        actorDisplay: isHspDemo ? 'Gate Cashier Demo' : 'Supervisor Demo',
+        actorKey: isHspDemo ? 'Gate Cashier Demo' : 'Supervisor Demo',
         voidedAt: `${yesterdayIso} 22:48`,
         voidedDayIso: yesterdayIso,
         voidedAtMs: parseTimestampMs(`${yesterdayIso}T22:48:00`),
-        voidReason: activeInd === 'Hospitality & Resorts' ? 'Guest changed ticket count at gate' : 'Supplier re-issued corrected VAT invoice',
+        voidReason: isHspDemo ? 'Guest changed ticket count at gate' : 'Supplier re-issued corrected VAT invoice',
         noteUpdatedBy: '',
         noteUpdatedAt: '',
         twinIds: [],
         twinDiff: '',
         isCascadedChild: false,
         hasVoidedParent: false,
-        isPosTill: activeInd === 'Hospitality & Resorts',
+        isPosTill: isHspDemo,
         canRestore: false,
         canEditNote: false,
         afterHours: true,
         raw: { id: 'DEMO-VOID-1039', company: secondCo, date: yesterdayIso, demo: true }
-      }
+      }, mfgDemoPreVoid)
     ];
     if (activeInd === 'Manufacturing') {
       out.push({
@@ -819,6 +1116,13 @@
         partyInRegistry: true,
         detailLine: 'Matched against updated workbook row',
         amountUsd: 420,
+        origAmountUsd: null,
+        peakAbsUsd: 420,
+        hasPreVoidEdits: false,
+        editCount: 0,
+        fieldDiffs: [],
+        timeline: [],
+        preVoidSearchText: '',
         amountMasked: false,
         voidedBy: 'SharePoint Recon',
         actorDisplay: L('Workbook Sync', 'مزامنة الدفتر', 'Synchro classeur'),
@@ -1067,6 +1371,7 @@
         const voidedAtRaw = String(rec.voided_at || rec.voidedAt || rec.modified_at || rec.updated_at || '').trim();
         const masked = isPayrollTable && !canModifyDollars;
         const amtUsd = masked ? null : extractRecordAmountUsd(rec, crKey);
+        const diffMeta = extractPreVoidDiffSummary(rec, crKey, amtUsd, masked);
         const disp = extractStructuredDisplay(rec, crKey, masked, null);
         const canRestoreRow = Boolean(
           userCanVoid && !hasVoidedParent && originMeta.systemKind !== 'sync_twin'
@@ -1095,6 +1400,13 @@
           detailLine: disp.detailLine,
           amountUsd: amtUsd,
           amountMasked: masked,
+          origAmountUsd: diffMeta.origAmountUsd,
+          peakAbsUsd: diffMeta.peakAbsUsd,
+          hasPreVoidEdits: diffMeta.hasPreVoidEdits,
+          editCount: diffMeta.editCount,
+          fieldDiffs: diffMeta.fieldDiffs,
+          timeline: diffMeta.timeline,
+          preVoidSearchText: diffMeta.searchText,
           voidedBy: byRaw || (originMeta.originGroup === 'system' ? 'System' : 'Supervisor'),
           actorDisplay: originMeta.actorDisplay,
           actorKey: originMeta.actorKey,
@@ -1156,10 +1468,25 @@
         const voidByRaw = String(r.voided_by || (ed && ed.voided_by) || (isTillAutoRow ? 'Gate Till Sync' : 'Supervisor')).trim();
         const reasonRaw = String(r.void_reason || (ed && ed.void_reason) || '').trim();
         const originMeta = classifyVoidOrigin(r, voidByRaw, reasonRaw, isTillAutoRow);
-        const amtUsd = extractDomainAmountUsd(r) ?? (ed ? extractDomainAmountUsd(ed) : null) ?? extractDomainAmountUsd(snap);
+        const indMasked = PAYROLL_CONFIDENTIAL_TABLES.has(bucket) && !canModifyDollars;
+        const amtUsd = indMasked ? null : (extractDomainAmountUsd(r) ?? (ed ? extractDomainAmountUsd(ed) : null) ?? extractDomainAmountUsd(snap));
+        const rawMergedInd = ed ? Object.assign({}, ed, r, { void_snapshot: snap }) : r;
+        const combinedEditsInd = []
+          .concat(ed && Array.isArray(ed._pre_void_edits) ? ed._pre_void_edits : [])
+          .concat(Array.isArray(r._pre_void_edits) ? r._pre_void_edits : [])
+          .filter(ev => ev && typeof ev === 'object' && ev.changes)
+          .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')))
+          .slice(-15);
+        const combinedOrigInd = (ed && ed._pre_void_orig && typeof ed._pre_void_orig === 'object') || (r._pre_void_orig && typeof r._pre_void_orig === 'object')
+          ? Object.assign({}, (r._pre_void_orig && typeof r._pre_void_orig === 'object') ? r._pre_void_orig : {}, (ed && ed._pre_void_orig && typeof ed._pre_void_orig === 'object') ? ed._pre_void_orig : {})
+          : null;
+        const diffSrcInd = combinedEditsInd.length
+          ? Object.assign({}, rawMergedInd, { _pre_void_orig: combinedOrigInd || rawMergedInd._pre_void_orig, _pre_void_edits: combinedEditsInd })
+          : rawMergedInd;
+        const diffMetaInd = extractPreVoidDiffSummary(diffSrcInd, bucket, amtUsd, indMasked);
         const isChronoBucket = CHRONO_BUCKETS.has(bucket);
         const mergedForDisp = Object.assign({}, snap, ed || {}, r);
-        const disp = extractStructuredDisplay(mergedForDisp, bucket, false, snap);
+        const disp = extractStructuredDisplay(mergedForDisp, bucket, indMasked, snap);
 
         entries.push({
           key: uniqKey,
@@ -1182,7 +1509,14 @@
           partyInRegistry: disp.partyInRegistry,
           detailLine: disp.detailLine,
           amountUsd: amtUsd,
-          amountMasked: false,
+          amountMasked: indMasked,
+          origAmountUsd: diffMetaInd.origAmountUsd,
+          peakAbsUsd: diffMetaInd.peakAbsUsd,
+          hasPreVoidEdits: diffMetaInd.hasPreVoidEdits,
+          editCount: diffMetaInd.editCount,
+          fieldDiffs: diffMetaInd.fieldDiffs,
+          timeline: diffMetaInd.timeline,
+          preVoidSearchText: diffMetaInd.searchText,
           voidedBy: voidByRaw,
           actorDisplay: originMeta.actorDisplay,
           actorKey: originMeta.actorKey,
@@ -1200,7 +1534,7 @@
           canRestore: Boolean(userCanVoid && originMeta.systemKind !== 'sync_twin' && (!isChronoBucket || canRestoreChrono)),
           canEditNote: Boolean(userCanVoid && originMeta.systemKind !== 'sync_twin'),
           afterHours: isAfterHoursStamp(voidedAtRaw),
-          raw: ed ? Object.assign({}, ed, r, { void_snapshot: snap }) : r
+          raw: rawMergedInd
         });
       });
     });
@@ -1226,9 +1560,12 @@
       const voidByRaw = String(ed.voided_by || (isTillAutoRow ? 'Gate Till Sync' : 'Supervisor')).trim();
       const reasonRaw = String(ed.void_reason || '').trim();
       const originMeta = classifyVoidOrigin(ed, voidByRaw, reasonRaw, isTillAutoRow);
-      const amtUsd = extractDomainAmountUsd(ed);
+      const edTblSlug = String(ek.split('::')[1] || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      const edMasked = (PAYROLL_CONFIDENTIAL_TABLES.has(tblKeyEff) || PAYROLL_CONFIDENTIAL_TABLES.has(edTblSlug)) && !canModifyDollars;
+      const amtUsd = edMasked ? null : extractDomainAmountUsd(ed);
+      const diffMetaEd = extractPreVoidDiffSummary(ed, tblKeyEff, amtUsd, edMasked);
       const mergedForDisp = Object.assign({}, snap, ed);
-      const disp = extractStructuredDisplay(mergedForDisp, tblKeyEff, false, snap);
+      const disp = extractStructuredDisplay(mergedForDisp, tblKeyEff, edMasked, snap);
 
       entries.push({
         key: uniqKey,
@@ -1251,7 +1588,14 @@
         partyInRegistry: disp.partyInRegistry,
         detailLine: disp.detailLine,
         amountUsd: amtUsd,
-        amountMasked: false,
+        amountMasked: edMasked,
+        origAmountUsd: diffMetaEd.origAmountUsd,
+        peakAbsUsd: diffMetaEd.peakAbsUsd,
+        hasPreVoidEdits: diffMetaEd.hasPreVoidEdits,
+        editCount: diffMetaEd.editCount,
+        fieldDiffs: diffMetaEd.fieldDiffs,
+        timeline: diffMetaEd.timeline,
+        preVoidSearchText: diffMetaEd.searchText,
         voidedBy: voidByRaw,
         actorDisplay: originMeta.actorDisplay,
         actorKey: originMeta.actorKey,
@@ -1287,6 +1631,7 @@
         const ticketLabel = pv.num ? `#${pv.num}` : String(pv.id).slice(0, 14);
         const byRaw = String(pv.voided_by || pv.user_name || 'Till Cashier');
 
+        const posAmtUsd = Number.isFinite(Number(pv.total_usd)) ? Math.round(Number(pv.total_usd) * 100) / 100 : null;
         entries.push({
           key: uniqKey,
           sourceKind: 'pos_till',
@@ -1304,8 +1649,15 @@
           partyRelKey: '',
           partyInRegistry: false,
           detailLine: String(pv.summary || 'Gate Till Sale').slice(0, 110),
-          amountUsd: Number.isFinite(Number(pv.total_usd)) ? Math.round(Number(pv.total_usd) * 100) / 100 : null,
+          amountUsd: posAmtUsd,
           amountMasked: false,
+          origAmountUsd: null,
+          peakAbsUsd: posAmtUsd != null ? Math.abs(posAmtUsd) : null,
+          hasPreVoidEdits: false,
+          editCount: 0,
+          fieldDiffs: [],
+          timeline: [],
+          preVoidSearchText: '',
           voidedBy: byRaw,
           actorDisplay: byRaw,
           actorKey: byRaw,
@@ -2053,7 +2405,8 @@
     const tbPeriod = (D && D.STATE)
       ? `${D.STATE.period || 'all'}:${D.STATE.dateGrain || 'all'}:${D.STATE.dateFrom || ''}:${D.STATE.dateTo || ''}`
       : 'all';
-    const filtSig = `${filterState.origin || 'user'}:${filterState.days || 'all'}:${filterState.module || 'all'}:${filterState.actor || 'all'}:${filterState.lens || 'all'}:${filterState.drillDay || ''}:${String(filterState.q || '').trim()}`;
+    const lensSig = Array.isArray(filterState.lenses) && filterState.lenses.length ? filterState.lenses.slice().sort().join('+') : 'all';
+    const filtSig = `${filterState.origin || 'user'}:${filterState.days || 'all'}:${filterState.module || 'all'}:${filterState.actor || 'all'}:${lensSig}:${filterState.cluster || 'all'}:${filterState.drillDay || ''}:${String(filterState.q || '').trim()}`;
     const uNow = (D && D.activeUser) ? D.activeUser() : null;
     const paySig = (D && D.canViewPayrollDollarAmounts && D.canViewPayrollDollarAmounts(uNow)) ? 'pay1' : 'pay0';
     const reasonDigest = scopeRows.slice(0, 25).map(e => `${e.key}:${e.voidReason || ''}`).join('~');
@@ -2229,7 +2582,7 @@
     const daysWin = filterState.days || 'all';
     const modF = filterState.module || 'all';
     const actorF = filterState.actor || 'all';
-    const lensF = filterState.lens || 'all';
+    const activeLenses = Array.isArray(filterState.lenses) ? filterState.lenses : [];
     const drillDay = String(filterState.drillDay || '').trim();
     const q = String(filterState.q || '').trim().toLowerCase();
 
@@ -2261,28 +2614,33 @@
     const modCounts = new Map();
     const actorMap = new Map();
     const dayMap = new Map();
-    const lensCounts = { all: dateFiltered.length, after_hours: 0, missing_reason: 0, high_value: 0, restorable: 0, pos_only: 0 };
+    const lensCounts = { all: dateFiltered.length, after_hours: 0, missing_reason: 0, high_value: 0, edited_before_void: 0, restorable: 0, pos_only: 0 };
 
     dateFiltered.forEach(e => {
       modCounts.set(e.moduleLabel, (modCounts.get(e.moduleLabel) || 0) + 1);
+      const hasUsdVal = !e.amountMasked && !e.isCascadedChild && e.amountUsd !== null && Number.isFinite(e.amountUsd);
       const ak = e.actorKey || e.voidedBy;
-      const prevA = actorMap.get(ak) || { key: ak, label: e.actorDisplay, count: 0, usd: 0 };
+      const prevA = actorMap.get(ak) || { key: ak, label: e.actorDisplay, count: 0, usd: 0, unmasked: 0, masked: 0 };
       prevA.count += 1;
-      if (!e.amountMasked && !e.isCascadedChild && e.amountUsd != null) prevA.usd += Math.abs(e.amountUsd);
+      if (e.amountMasked) prevA.masked += 1;
+      else if (hasUsdVal) { prevA.usd += Math.abs(e.amountUsd); prevA.unmasked += 1; }
       actorMap.set(ak, prevA);
 
       const dBucket = e.voidedDayIso || e.date;
       if (dBucket) {
-        const prevD = dayMap.get(dBucket) || { day: dBucket, count: 0, afterHours: 0, usd: 0 };
+        const prevD = dayMap.get(dBucket) || { day: dBucket, count: 0, afterHours: 0, usd: 0, unmasked: 0, masked: 0 };
         prevD.count += 1;
         if (e.afterHours) prevD.afterHours += 1;
-        if (!e.amountMasked && !e.isCascadedChild && e.amountUsd != null) prevD.usd += Math.abs(e.amountUsd);
+        if (e.amountMasked) prevD.masked += 1;
+        else if (hasUsdVal) { prevD.usd += Math.abs(e.amountUsd); prevD.unmasked += 1; }
         dayMap.set(dBucket, prevD);
       }
 
       if (e.afterHours) lensCounts.after_hours++;
       if (!String(e.voidReason || '').trim()) lensCounts.missing_reason++;
-      if (!e.amountMasked && e.amountUsd != null && Math.abs(e.amountUsd) >= 500) lensCounts.high_value++;
+      const peakVal = e.peakAbsUsd != null ? e.peakAbsUsd : (e.amountUsd != null ? Math.abs(e.amountUsd) : null);
+      if (!e.amountMasked && peakVal != null && peakVal >= 500) lensCounts.high_value++;
+      if (e.hasPreVoidEdits) lensCounts.edited_before_void++;
       if (e.canRestore) lensCounts.restorable++;
       if (e.isPosTill) lensCounts.pos_only++;
     });
@@ -2295,9 +2653,11 @@
     // Module breakdown with USD
     const modBreakdownMap = new Map();
     dateFiltered.forEach(e => {
-      const prevM = modBreakdownMap.get(e.moduleLabel) || { label: e.moduleLabel, count: 0, usd: 0 };
+      const hasUsdVal = !e.amountMasked && !e.isCascadedChild && e.amountUsd !== null && Number.isFinite(e.amountUsd);
+      const prevM = modBreakdownMap.get(e.moduleLabel) || { label: e.moduleLabel, count: 0, usd: 0, unmasked: 0, masked: 0 };
       prevM.count += 1;
-      if (!e.amountMasked && !e.isCascadedChild && e.amountUsd != null) prevM.usd += Math.abs(e.amountUsd);
+      if (e.amountMasked) prevM.masked += 1;
+      else if (hasUsdVal) { prevM.usd += Math.abs(e.amountUsd); prevM.unmasked += 1; }
       modBreakdownMap.set(e.moduleLabel, prevM);
     });
     const topModules = Array.from(modBreakdownMap.values()).sort((a, b) => (b.count - a.count) || (b.usd - a.usd)).slice(0, 4);
@@ -2310,13 +2670,17 @@
       if (modF !== 'all' && e.moduleLabel !== modF) return false;
       if (actorF !== 'all' && e.actorKey !== actorF && e.voidedBy !== actorF && e.actorDisplay !== actorF) return false;
       if (drillDay && (e.voidedDayIso || e.date) !== drillDay) return false;
-      if (lensF === 'after_hours' && !e.afterHours) return false;
-      if (lensF === 'missing_reason' && String(e.voidReason || '').trim()) return false;
-      if (lensF === 'high_value' && (e.amountMasked || e.amountUsd == null || Math.abs(e.amountUsd) < 500)) return false;
-      if (lensF === 'restorable' && !e.canRestore) return false;
-      if (lensF === 'pos_only' && !e.isPosTill) return false;
+      if (activeLenses.includes('after_hours') && !e.afterHours) return false;
+      if (activeLenses.includes('missing_reason') && String(e.voidReason || '').trim()) return false;
+      if (activeLenses.includes('high_value')) {
+        const peakVal = e.peakAbsUsd != null ? e.peakAbsUsd : (e.amountUsd != null ? Math.abs(e.amountUsd) : null);
+        if (e.amountMasked || peakVal == null || peakVal < 500) return false;
+      }
+      if (activeLenses.includes('edited_before_void') && !e.hasPreVoidEdits) return false;
+      if (activeLenses.includes('restorable') && !e.canRestore) return false;
+      if (activeLenses.includes('pos_only') && !e.isPosTill) return false;
       if (q) {
-        const hay = `${e.id} ${e.company} ${e.moduleLabel} ${e.summary} ${e.refCode} ${e.partyName} ${e.detailLine} ${e.voidedBy} ${e.actorDisplay} ${e.voidReason} ${e.date} ${e.voidedAt}`.toLowerCase();
+        const hay = `${e.id} ${e.company} ${e.moduleLabel} ${e.summary} ${e.refCode} ${e.partyName} ${e.detailLine} ${e.voidedBy} ${e.actorDisplay} ${e.voidReason} ${e.date} ${e.voidedAt} ${e.preVoidSearchText || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -2387,6 +2751,10 @@
       filterState.actor = 'all';
       pruned = true;
     }
+    if (hasLens('pos_only') && (!stats.lensCounts || stats.lensCounts.pos_only === 0)) {
+      filterState.lenses = filterState.lenses.filter(x => x !== 'pos_only');
+      pruned = true;
+    }
     if (pruned) stats = applyFiltersAndSort(allEntries);
     return stats;
   }
@@ -2396,12 +2764,22 @@
       filterState.days !== 'all'
       || filterState.module !== 'all'
       || filterState.actor !== 'all'
-      || filterState.lens !== 'all'
+      || (Array.isArray(filterState.lenses) && filterState.lenses.length > 0)
       || (filterState.cluster && filterState.cluster !== 'all')
       || filterState.drillDay
       || String(filterState.q || '').trim()
       || getTopBarPeriodRange()
     );
+  }
+
+  function formatMaskedBucketUsd(usd, unmaskedCnt, maskedCnt, emptyFallback, withMixedNote) {
+    if (unmaskedCnt > 0) {
+      return (withMixedNote && maskedCnt > 0)
+        ? `${formatSignedUsd(usd)} (+${fmtNum(maskedCnt)} ${tr('Confidential')})`
+        : formatSignedUsd(usd);
+    }
+    if (maskedCnt > 0) return tr('Confidential');
+    return emptyFallback !== undefined ? emptyFallback : formatSignedUsd(0);
   }
 
   function renderKpiStripHtml(scopedEntries, filteredEntries) {
@@ -2413,13 +2791,18 @@
     const reopenableSysCount = systemRows.filter(e => e.canRestore).length;
 
     let totalUsd = 0;
+    let unmaskedCount = 0;
     let maskedCount = 0;
     let childSkipped = 0;
     filteredEntries.forEach(e => {
       if (e.amountMasked) { maskedCount++; return; }
       if (e.isCascadedChild) { childSkipped++; return; }
-      if (e.amountUsd !== null && Number.isFinite(e.amountUsd)) totalUsd += e.amountUsd;
+      if (e.amountUsd !== null && Number.isFinite(e.amountUsd)) {
+        totalUsd += e.amountUsd;
+        unmaskedCount++;
+      }
     });
+    const kpiUsdDisplay = formatMaskedBucketUsd(totalUsd, unmaskedCount, maskedCount, formatSignedUsd(0), false);
 
     const subUsd = childSkipped
       ? L(`${fmtNum(childSkipped)} linked child lines excluded`, `تم استبعاد ${fmtNum(childSkipped)} بنود تابعة`, `${fmtNum(childSkipped)} lignes liées exclues`)
@@ -2428,8 +2811,9 @@
         : L('Deduplicated parent vouchers', 'صافي الإلغاءات بدون تكرار', 'Hors doublons des lignes liées'));
     const scopedPosCount = userTillRows.filter(e => e.isPosTill).length;
 
-    const userCardOn = filterState.origin === 'user' && filterState.lens === 'all' && filterState.days === 'all';
-    const valCardOn = filterState.lens === 'high_value';
+    const noLenses = !Array.isArray(filterState.lenses) || filterState.lenses.length === 0;
+    const userCardOn = filterState.origin === 'user' && noLenses && filterState.days === 'all';
+    const valCardOn = hasLens('high_value');
     const weekCardOn = filterState.days === '7';
     const sysCardOn = filterState.origin === 'system';
 
@@ -2446,7 +2830,7 @@
         </button>
         <button type="button" class="vlog-kpi-card${valCardOn ? ' is-active' : ''}" data-vlog-kpi="value" aria-pressed="${valCardOn ? 'true' : 'false'}">
           <span class="vlog-kpi-lbl">Voided Value</span>
-          <strong class="vlog-kpi-val mono" data-no-i18n="1">${esc(formatSignedUsd(totalUsd))}</strong>
+          <strong class="vlog-kpi-val mono" data-no-i18n="1">${esc(kpiUsdDisplay)}</strong>
           <span class="vlog-kpi-sub" data-no-i18n="1">${esc(subUsd)}</span>
         </button>
         <button type="button" class="vlog-kpi-card${weekCardOn ? ' is-active' : ''}" data-vlog-kpi="recent" aria-pressed="${weekCardOn ? 'true' : 'false'}">
@@ -2475,10 +2859,11 @@
             const hPct = Math.max(12, Math.round((d.count / maxDayCnt) * 100));
             const ahPct = d.count ? Math.round((d.afterHours / d.count) * 100) : 0;
             const isActive = filterState.drillDay === d.day;
+            const dUsd = formatMaskedBucketUsd(d.usd, d.unmasked, d.masked, '-', false);
             const tip = L(
-              `${formatDateDMY(d.day)} · ${fmtNum(d.count)} ${d.count === 1 ? 'void' : 'voids'} (${formatSignedUsd(d.usd)})${d.afterHours ? ` · ${fmtNum(d.afterHours)} after-hours` : ''}`,
-              `${formatDateDMY(d.day)} · ${fmtNum(d.count)} إلغاء (${formatSignedUsd(d.usd)})${d.afterHours ? ` · ${fmtNum(d.afterHours)} خارج الدوام` : ''}`,
-              `${formatDateDMY(d.day)} · ${fmtNum(d.count)} ${d.count === 1 ? 'annulation' : 'annulations'} (${formatSignedUsd(d.usd)})${d.afterHours ? ` · ${fmtNum(d.afterHours)} hors horaires` : ''}`
+              `${formatDateDMY(d.day)} · ${fmtNum(d.count)} ${d.count === 1 ? 'void' : 'voids'} (${dUsd})${d.afterHours ? ` · ${fmtNum(d.afterHours)} after-hours` : ''}`,
+              `${formatDateDMY(d.day)} · ${fmtNum(d.count)} إلغاء (${dUsd})${d.afterHours ? ` · ${fmtNum(d.afterHours)} خارج الدوام` : ''}`,
+              `${formatDateDMY(d.day)} · ${fmtNum(d.count)} ${d.count === 1 ? 'annulation' : 'annulations'} (${dUsd})${d.afterHours ? ` · ${fmtNum(d.afterHours)} hors horaires` : ''}`
             );
             return `
               <button type="button" class="vlog-bar-col${isActive ? ' is-active' : ''}" data-vlog-drill-day="${esc(d.day)}" data-ui-tip="${esc(tip)}" data-no-i18n="1" aria-pressed="${isActive ? 'true' : 'false'}">
@@ -2499,7 +2884,7 @@
           <button type="button" class="vlog-meter-row${active ? ' is-active' : ''}" data-vlog-pick-module="${esc(m.label)}" aria-pressed="${active ? 'true' : 'false'}">
             <span class="vlog-meter-top">
               <span class="vlog-meter-name">${esc(m.label)}</span>
-              <span class="vlog-meter-meta mono" data-no-i18n="1">${fmtNum(m.count)} · ${esc(formatSignedUsd(m.usd))}</span>
+              <span class="vlog-meter-meta mono" data-no-i18n="1">${fmtNum(m.count)} · ${esc(formatMaskedBucketUsd(m.usd, m.unmasked, m.masked, '-', false))}</span>
             </span>
             <span class="vlog-meter-track"><span class="vlog-meter-fill is-cobalt" style="width:${pct}%"></span></span>
           </button>`;
@@ -2514,7 +2899,7 @@
           <button type="button" class="vlog-meter-row${active ? ' is-active' : ''}" data-vlog-pick-actor="${esc(a.key)}" aria-pressed="${active ? 'true' : 'false'}">
             <span class="vlog-meter-top">
               <span class="vlog-meter-name" data-no-i18n="1">${esc(a.label)}</span>
-              <span class="vlog-meter-meta mono" data-no-i18n="1">${fmtNum(a.count)} · ${esc(formatSignedUsd(a.usd))}</span>
+              <span class="vlog-meter-meta mono" data-no-i18n="1">${fmtNum(a.count)} · ${esc(formatMaskedBucketUsd(a.usd, a.unmasked, a.masked, '-', false))}</span>
             </span>
             <span class="vlog-meter-track"><span class="vlog-meter-fill is-brass" style="width:${pct}%"></span></span>
           </button>`;
@@ -2552,10 +2937,14 @@
   }
 
   function formatAmountCell(e) {
-    if (e.amountMasked) return `<span class="vlog-badge vlog-badge-mu">Confidential</span>`;
-    if (e.amountUsd === null || !Number.isFinite(e.amountUsd)) return '<span class="vlog-muted" data-no-i18n="1">-</span>';
-    const prefix = e.amountUsd < 0 ? '-$' : '$';
-    return `<span class="mono" data-no-i18n="1">${prefix}${fmtNum(Math.round(Math.abs(e.amountUsd) * 100) / 100)}</span>`;
+    if (e.amountMasked) return `<span class="vlog-badge vlog-badge-mu">${esc(tr('Confidential'))}</span>`;
+    const mainHtml = (e.amountUsd === null || !Number.isFinite(e.amountUsd))
+      ? '<span class="vlog-muted" data-no-i18n="1">-</span>'
+      : `<span class="mono" data-no-i18n="1">${esc(formatSignedUsd(e.amountUsd))}</span>`;
+    if (e.hasPreVoidEdits && e.origAmountUsd != null && Number.isFinite(e.origAmountUsd) && (e.amountUsd == null || Math.abs(e.origAmountUsd - e.amountUsd) >= 0.01)) {
+      return `${mainHtml}<div class="vlog-amt-orig mono" data-no-i18n="1">${esc(tr('Orig:'))} ${esc(formatSignedUsd(e.origAmountUsd))}</div>`;
+    }
+    return mainHtml;
   }
 
   function buildModuleSelectOptionsHtml(moduleOptions) {
@@ -2685,10 +3074,10 @@
   }
 
   function renderToolbarChipsRowHtml(stats) {
-    const lc = stats.lensCounts || { all: 0, after_hours: 0, missing_reason: 0, high_value: 0, restorable: 0, pos_only: 0 };
+    const lc = stats.lensCounts || { all: 0, after_hours: 0, missing_reason: 0, high_value: 0, edited_before_void: 0, restorable: 0, pos_only: 0 };
     const tb = stats.tbRange;
     const lensChip = (val, label, count) => {
-      const on = filterState.lens === val;
+      const on = val === 'all' ? (!Array.isArray(filterState.lenses) || filterState.lenses.length === 0) : hasLens(val);
       const txt = val === 'all' ? label : `${label} (${fmtNum(count)})`;
       return `<button type="button" class="vlog-lens-chip${on ? ' active' : ''}" data-vlog-lens="${val}" aria-pressed="${on ? 'true' : 'false'}" data-no-i18n="1">${esc(txt)}</button>`;
     };
@@ -2712,6 +3101,7 @@
           ${lensChip('after_hours', tr('After-Hours'), lc.after_hours)}
           ${lensChip('missing_reason', tr('Missing Reason'), lc.missing_reason)}
           ${lensChip('high_value', L('High Value ($500+)', 'قيمة عالية ($500+)', 'Montant élevé (500 $+)'), lc.high_value)}
+          ${lensChip('edited_before_void', tr('Edited Before Void'), lc.edited_before_void || 0)}
           ${lensChip('restorable', tr('Restorable'), lc.restorable)}
           ${showPosChip ? lensChip('pos_only', tr('POS Gate Till'), lc.pos_only) : ''}
           ${tbChipHtml}
@@ -2736,8 +3126,10 @@
 
     let sumUsd = 0;
     let unmaskedCount = 0;
+    let tableMaskedCount = 0;
     entries.forEach(e => {
-      if (!e.amountMasked && !e.isCascadedChild && e.amountUsd !== null && Number.isFinite(e.amountUsd)) {
+      if (e.amountMasked) { tableMaskedCount++; return; }
+      if (!e.isCascadedChild && e.amountUsd !== null && Number.isFinite(e.amountUsd)) {
         sumUsd += e.amountUsd;
         unmaskedCount++;
       }
@@ -2760,6 +3152,7 @@
         }
         if (e.isCascadedChild) originBadges.push('<span class="vlog-badge vlog-badge-warn">Auto-voided child line</span>');
         if (e.afterHours) originBadges.push('<span class="vlog-badge vlog-badge-crit">After-Hours</span>');
+        if (e.hasPreVoidEdits) originBadges.push(`<span class="vlog-badge vlog-badge-warn" data-no-i18n="1">${esc(tr('Edited Before Void'))}${e.editCount > 1 ? ` (${fmtNum(e.editCount)})` : ''}</span>`);
 
         const isEditingNote = editingNoteKey === e.key;
         const noteBlock = isEditingNote
@@ -2833,7 +3226,7 @@
       }).join('')
       : `<tr><td colspan="${colSpanTotal}" class="vlog-empty">No voided entries match these filters.</td></tr>`;
 
-    const footUsd = unmaskedCount > 0 ? formatSignedUsd(sumUsd) : '-';
+    const footUsd = formatMaskedBucketUsd(sumUsd, unmaskedCount, tableMaskedCount, '-', false);
     const totalColSpan = hideCo ? 4 : 5;
     const afterAmtCols = 3;
 
@@ -2933,6 +3326,7 @@
           <div class="vlog-head-acts">
             <button type="button" class="btn btn-outline-bar${aiPanelOpen ? ' active' : ''}" id="vlogAiPatternBtn">${ic('sparkles')} AI Void Pattern Summary</button>
             ${askAvailable ? `<button type="button" class="btn btn-outline-bar" id="vlogAuditBriefBtn">${ic('sparkles')} Audit Brief</button>` : ''}
+            <button type="button" class="btn btn-outline-bar" id="vlogDigestBtn">${ic('printer')} Void Digest</button>
             <button type="button" class="btn btn-ghost-bar" id="vlogRefreshBtn">${ic('rotate')} Refresh</button>
             <button type="button" class="btn btn-outline-bar" id="vlogExportCsvBtn">${ic('download')} Export CSV</button>
           </div>
@@ -3093,7 +3487,7 @@
     const raw = entry.raw && typeof entry.raw === 'object' ? entry.raw : {};
     const snap = (raw.void_snapshot && typeof raw.void_snapshot === 'object') ? raw.void_snapshot : {};
     const skipMeta = new Set([
-      '_seed_orig', 'payload_json', 'face_samples', 'pin_code', 'headers', 'cells', 'lines',
+      '_seed_orig', '_pre_void_orig', '_pre_void_edits', 'payload_json', 'face_samples', 'pin_code', 'headers', 'cells', 'lines',
       'void_snapshot', 'twin_of', 'voided', 'voided_by', 'voidedBy', 'voided_at', 'voidedAt',
       'void_reason', 'voidReason', 'voided_by_email', 'voidedByEmail', 'void_note_updated_by', 'void_note_updated_at'
     ]);
@@ -3171,10 +3565,58 @@
     }
     if (entry.afterHours) statusPills.push('<span class="vlog-badge vlog-badge-crit">After-Hours</span>');
     if (entry.isCascadedChild) statusPills.push('<span class="vlog-badge vlog-badge-warn">Auto-voided child line</span>');
+    if (entry.hasPreVoidEdits) statusPills.push(`<span class="vlog-badge vlog-badge-warn" data-no-i18n="1">${esc(tr('Edited Before Void'))}${entry.editCount > 1 ? ` (${fmtNum(entry.editCount)})` : ''}</span>`);
 
-    const heroAmtHtml = entry.amountMasked
+    const heroOrigSubHtml = (!entry.amountMasked && !hidePayField && entry.hasPreVoidEdits && entry.origAmountUsd != null && Number.isFinite(entry.origAmountUsd) && (entry.amountUsd == null || Math.abs(entry.origAmountUsd - entry.amountUsd) >= 0.01))
+      ? `<span class="vlog-amt-orig mono" data-no-i18n="1">${esc(tr('Orig:'))} ${esc(formatSignedUsd(entry.origAmountUsd))}</span>`
+      : '';
+    const heroAmtHtml = (entry.amountMasked || hidePayField)
       ? `<span class="vlog-badge vlog-badge-mu">${esc(tr('Confidential'))}</span>`
-      : (entry.amountUsd == null ? '-' : esc(formatSignedUsd(entry.amountUsd)));
+      : `${entry.amountUsd == null ? '-' : esc(formatSignedUsd(entry.amountUsd))}${heroOrigSubHtml}`;
+
+    const preVoidDiffsList = Array.isArray(entry.fieldDiffs) ? entry.fieldDiffs : [];
+    const preVoidTimeline = Array.isArray(entry.timeline) ? entry.timeline : [];
+    const preVoidSecHtml = entry.hasPreVoidEdits
+      ? `<div class="vlog-drawer-sec" id="vlogPreVoidDiffSec">
+          <div class="vlog-drawer-sec-hd">
+            <span>Pre-Void Edit History</span>
+            <span class="vlog-drawer-meta mono" data-no-i18n="1">${fmtNum(entry.editCount || 1)} ${esc((entry.editCount || 1) === 1 ? tr('revision') : tr('revisions'))}</span>
+          </div>
+          ${preVoidDiffsList.length ? `
+            <div class="vlog-diff-table-wrap">
+              <table class="vlog-diff-table">
+                <thead>
+                  <tr>
+                    <th>Field</th>
+                    <th>Original</th>
+                    <th>At Void</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${preVoidDiffsList.map(d => {
+                    const isPriv = hidePayField && (d.masked || MONEY_FIELD_RE.test(String(d.key || '') + ' ' + String(d.label || '')));
+                    const fStr = isPriv ? tr('Confidential') : (d.from === '' ? '-' : String(d.from));
+                    const tStr = isPriv ? tr('Confidential') : (d.to === '' ? '-' : String(d.to));
+                    return `
+                      <tr>
+                        <td class="vlog-diff-field" data-no-i18n="1">${esc(tr(d.label))}</td>
+                        <td class="vlog-diff-orig" data-no-i18n="1">${esc(fStr)}</td>
+                        <td class="vlog-diff-void" data-no-i18n="1">${esc(tStr)}</td>
+                      </tr>`;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>` : ''}
+          ${preVoidTimeline.length ? `
+            <div class="vlog-diff-timeline">
+              ${preVoidTimeline.map(ev => `
+                <div class="vlog-diff-ev" data-no-i18n="1">
+                  <span class="vlog-diff-ev-meta">${esc(ev.by || tr('User'))} · ${esc(formatStampShort(ev.at))}</span>
+                  <span class="vlog-diff-ev-chg">${esc(ev.summary)}</span>
+                </div>`).join('')}
+            </div>` : ''}
+        </div>`
+      : '';
 
     const partyActionHtml = entry.partyName && entry.partyInRegistry
       ? `<button type="button" class="btn btn-outline-bar vlog-btn-xs" data-vlog-open-party="1">${ic('user')} Open Counterparty 360°</button>`
@@ -3311,9 +3753,10 @@
           ${noteEditorHtml}
           ${twinsSecHtml}
           ${childrenSecHtml}
+          ${preVoidSecHtml}
           <div class="vlog-drawer-sec">
             <div class="vlog-drawer-sec-hd"><span>Captured Fields</span></div>
-            <div class="vlog-inspect-grid">
+            <div class="vlog-inspect-grid" id="vlogFieldsGrid">
               ${detailRows.map(([k, v]) => `
                 <div class="vlog-inspect-item">
                   <span class="vlog-inspect-k" data-no-i18n="1">${esc(tr(k))}</span>
@@ -3347,13 +3790,18 @@
     if (!D || !D.canViewVoidLog || !D.canViewVoidLog(D.activeUser())) return '';
     const all = collectScopedVoidEntries();
     const { matched } = applyFiltersAndSort(all);
-    const headers = ['Voided At', 'Record Date', 'Entity', 'Industry', 'Module', 'Record ID', 'Summary', 'Amount (USD)', 'Voided By', 'Origin', 'Reason'];
+    const headers = ['Voided At', 'Record Date', 'Entity', 'Industry', 'Module', 'Record ID', 'Summary', 'Amount (USD)', 'Voided By', 'Origin', 'Reason', 'Pre-Void Edits'];
     const lines = [headers.map(csvSafeCell).join(',')];
     matched.forEach(e => {
       const amtStr = e.amountMasked ? 'Confidential' : (e.amountUsd == null ? '' : String(e.amountUsd));
       const originLbl = e.isPosTill
         ? 'Gate Till'
         : (e.systemKind === 'workbook_match' ? 'Workbook Match' : (e.originGroup === 'system' ? 'Workbook Sync' : 'Manual Void'));
+      const preVoidCol = e.hasPreVoidEdits
+        ? ((e.fieldDiffs && e.fieldDiffs.length)
+          ? e.fieldDiffs.map(d => `${d.label}: ${d.from || '-'} to ${d.to || '-'}`).join('; ')
+          : `${e.editCount || 1} revision(s)`)
+        : '';
       lines.push([
         formatStampShort(e.voidedAt),
         formatDateDMY(e.date),
@@ -3365,7 +3813,8 @@
         amtStr,
         e.voidedBy || '',
         originLbl,
-        e.voidReason || ''
+        e.voidReason || '',
+        preVoidCol
       ].map(csvSafeCell).join(','));
     });
     const csvText = lines.join('\r\n');
@@ -3431,7 +3880,7 @@
     filterState.days = 'all';
     filterState.module = 'all';
     filterState.actor = 'all';
-    filterState.lens = 'all';
+    filterState.lenses = [];
     filterState.cluster = 'all';
     filterState.drillDay = '';
     filterState.q = '';
@@ -3460,11 +3909,303 @@
     const userCnt = stats.originCounts.user;
     const sysCnt = stats.originCounts.system;
     const lc = stats.lensCounts || {};
-    const topModStr = (stats.topModules || []).slice(0, 3).map(m => `${m.label} (${m.count}, ${formatSignedUsd(m.usd)})`).join('; ');
+    const topModStr = (stats.topModules || []).slice(0, 3).map(m => `${m.label} (${m.count}, ${formatMaskedBucketUsd(m.usd, m.unmasked, m.masked, '-', false)})`).join('; ');
     const topActStr = (stats.topActors || []).slice(0, 3).map(a => `${a.label} (${a.count})`).join('; ');
-    const prompt = `Audit the Void Log for ${activeCo}: ${userCnt} user/till voids (${lc.after_hours || 0} after-hours, ${lc.missing_reason || 0} missing reason, ${lc.high_value || 0} >= $500) and ${sysCnt} workbook/system matches. Top modules: ${topModStr || 'none'}. Top actors: ${topActStr || 'none'}. Highlight suspicious patterns, control gaps, and what a supervisor should inspect next.`;
+    const prompt = `Audit the Void Log for ${activeCo}: ${userCnt} user/till voids (${lc.after_hours || 0} after-hours, ${lc.missing_reason || 0} missing reason, ${lc.high_value || 0} >= $500, ${lc.edited_before_void || 0} edited before void) and ${sysCnt} workbook/system matches. Top modules: ${topModStr || 'none'}. Top actors: ${topActStr || 'none'}. Highlight suspicious patterns, control gaps, and what a supervisor should inspect next.`;
     if (typeof window.MFG_ASK.open === 'function') window.MFG_ASK.open();
     window.MFG_ASK.ask(prompt);
+  }
+
+  function closeDigestModal() {
+    document.body.classList.remove('is-printing-vlog-digest');
+    const existing = document.getElementById('vlogDigestModal');
+    if (existing) existing.remove();
+  }
+
+  function buildDigestDataset(rangeMode) {
+    const u = D && D.activeUser ? D.activeUser() : null;
+    const all = collectScopedVoidEntries();
+    const stats = applyFiltersAndSort(all);
+    const scopeCos = activeScopeCompanies(u);
+    const hideCo = scopeCos.length <= 1;
+    const nowMs = Date.now();
+
+    let rows = [];
+    if (rangeMode === 'current') {
+      rows = stats.matched.slice();
+    } else {
+      const daysBack = rangeMode === '30d' ? 30 : 7;
+      const cutoffMs = nowMs - daysBack * 86400000;
+      rows = (stats.topbarScoped || []).filter(e => {
+        if (e.originGroup === 'system') return false;
+        const ms = e.voidedAtMs || parseTimestampMs(e.date);
+        return Boolean(ms && ms >= cutoffMs);
+      });
+    }
+
+    let totalUsd = 0;
+    let unmaskedCount = 0;
+    let maskedCount = 0;
+    let childSkipped = 0;
+    let editedCount = 0;
+    let afterHoursCount = 0;
+    let missingReasonCount = 0;
+    let highValueCount = 0;
+
+    const emMap = new Map();
+    const actorMap = new Map();
+    const flagged = [];
+
+    rows.forEach(e => {
+      const hasMissingReason = !String(e.voidReason || '').trim();
+      const peakVal = e.peakAbsUsd != null ? e.peakAbsUsd : (e.amountUsd != null ? Math.abs(e.amountUsd) : null);
+      const isHighVal = Boolean(!e.amountMasked && peakVal != null && peakVal >= 500);
+      if (e.hasPreVoidEdits) editedCount++;
+      if (e.afterHours) afterHoursCount++;
+      if (hasMissingReason) missingReasonCount++;
+      if (isHighVal) highValueCount++;
+
+      const hasUsdVal = !e.amountMasked && !e.isCascadedChild && e.amountUsd !== null && Number.isFinite(e.amountUsd);
+      if (e.amountMasked) maskedCount++;
+      else if (e.isCascadedChild) childSkipped++;
+      else if (hasUsdVal) {
+        totalUsd += e.amountUsd;
+        unmaskedCount++;
+      }
+
+      const emKey = hideCo ? e.moduleLabel : `${e.company || 'Shared'}::${e.moduleLabel}`;
+      const curEm = emMap.get(emKey) || { company: e.company || 'Shared', moduleLabel: e.moduleLabel, count: 0, usd: 0, unmasked: 0, masked: 0, edited: 0 };
+      curEm.count++;
+      if (e.amountMasked) curEm.masked++;
+      else if (hasUsdVal) { curEm.usd += Math.abs(e.amountUsd); curEm.unmasked++; }
+      if (e.hasPreVoidEdits) curEm.edited++;
+      emMap.set(emKey, curEm);
+
+      const ak = e.actorKey || e.voidedBy;
+      const curAct = actorMap.get(ak) || { key: ak, label: e.actorDisplay || e.voidedBy, count: 0, usd: 0, unmasked: 0, masked: 0, afterHours: 0, edited: 0 };
+      curAct.count++;
+      if (e.amountMasked) curAct.masked++;
+      else if (hasUsdVal) { curAct.usd += Math.abs(e.amountUsd); curAct.unmasked++; }
+      if (e.afterHours) curAct.afterHours++;
+      if (e.hasPreVoidEdits) curAct.edited++;
+      actorMap.set(ak, curAct);
+
+      if (e.afterHours || e.hasPreVoidEdits || hasMissingReason || isHighVal) {
+        const score = (e.hasPreVoidEdits ? 4 : 0) + (isHighVal ? 3 : 0) + (e.afterHours ? 2 : 0) + (hasMissingReason ? 1 : 0);
+        flagged.push({ entry: e, isHighVal, hasMissingReason, score });
+      }
+    });
+
+    const emRows = Array.from(emMap.values()).sort((a, b) => (b.count - a.count) || (b.usd - a.usd));
+    const actorRows = Array.from(actorMap.values()).sort((a, b) => (b.count - a.count) || (b.usd - a.usd));
+    flagged.sort((a, b) => (b.score - a.score) || ((b.entry.voidedAtMs || 0) - (a.entry.voidedAtMs || 0)));
+
+    return {
+      u,
+      hideCo,
+      rangeMode,
+      tbRange: stats.tbRange,
+      voidCount: rows.length,
+      totalUsd,
+      unmaskedCount,
+      maskedCount,
+      childSkipped,
+      editedCount,
+      afterHoursCount,
+      missingReasonCount,
+      highValueCount,
+      emRows,
+      actorRows,
+      flagged: flagged.slice(0, 35),
+      flaggedTotal: flagged.length
+    };
+  }
+
+  function openDigestModal(overrideRange) {
+    if (!D || !D.canViewVoidLog || !D.canViewVoidLog(D.activeUser())) return;
+    if (overrideRange) digestRange = String(overrideRange);
+    closeDigestModal();
+
+    const ds = buildDigestDataset(digestRange);
+    const u = ds.u || {};
+    const scopeStr = String((D.STATE && D.STATE.company) || '');
+    const rawCoLbl = (D.COMPANY_LABELS && D.COMPANY_LABELS[scopeStr]) || (D.getActiveIndustry ? D.getActiveIndustry(scopeStr) : '') || scopeStr || 'All Entities';
+    const activeCoLbl = tr(rawCoLbl);
+    const activeIndLbl = tr((D.getActiveIndustry && D.getActiveIndustry(scopeStr)) || 'All Industries');
+    const actorWho = String(u.full_name || u.name || u.email || 'Supervisor').trim();
+    const genAtStr = formatStampShort(new Date().toISOString());
+
+    const rangeLabelMap = {
+      '7d': tr('Weekly Digest (Last 7 Days)'),
+      '30d': tr('Last 30 Days'),
+      'current': tr('Current Filter View')
+    };
+    const rangePill = (rKey, label) => `<button type="button" class="vlog-seg-btn${digestRange === rKey ? ' active' : ''}" data-vlog-digest-range="${rKey}">${esc(label)}</button>`;
+
+    const emHtml = ds.emRows.length
+      ? ds.emRows.map(m => `
+          <tr>
+            ${ds.hideCo ? '' : `<td data-no-i18n="1">${esc(m.company)}</td>`}
+            <td data-no-i18n="1">${esc(tr(m.moduleLabel))}</td>
+            <td class="num mono" data-no-i18n="1">${fmtNum(m.count)}</td>
+            <td class="num mono" data-no-i18n="1">${fmtNum(m.edited)}</td>
+            <td class="num mono" data-no-i18n="1">${esc(formatMaskedBucketUsd(m.usd, m.unmasked, m.masked, '-', true))}</td>
+          </tr>`).join('')
+      : `<tr><td colspan="${ds.hideCo ? 4 : 5}" class="vlog-digest-empty">${esc(tr('No voided activity in this reporting window.'))}</td></tr>`;
+
+    const actorHtml = ds.actorRows.length
+      ? ds.actorRows.map(a => `
+          <tr>
+            <td data-no-i18n="1">${esc(a.label)}</td>
+            <td class="num mono" data-no-i18n="1">${fmtNum(a.count)}</td>
+            <td class="num mono" data-no-i18n="1">${fmtNum(a.afterHours)}</td>
+            <td class="num mono" data-no-i18n="1">${fmtNum(a.edited)}</td>
+            <td class="num mono" data-no-i18n="1">${esc(formatMaskedBucketUsd(a.usd, a.unmasked, a.masked, '-', true))}</td>
+          </tr>`).join('')
+      : `<tr><td colspan="5" class="vlog-digest-empty">${esc(tr('No actor activity recorded.'))}</td></tr>`;
+
+    const flaggedHtml = ds.flagged.length
+      ? ds.flagged.map(({ entry: e, isHighVal, hasMissingReason }) => {
+        const flags = [];
+        if (e.hasPreVoidEdits) flags.push(tr('Edited Before Void'));
+        if (isHighVal) flags.push(L('High Value ($500+)', 'قيمة عالية ($500+)', 'Montant élevé (500 $+)'));
+        if (e.afterHours) flags.push(tr('After-Hours'));
+        if (hasMissingReason) flags.push(tr('Missing Reason'));
+        const amtDisp = e.amountMasked
+          ? tr('Confidential')
+          : `${e.amountUsd == null ? '-' : formatSignedUsd(e.amountUsd)}${e.hasPreVoidEdits && e.origAmountUsd != null && (e.amountUsd == null || Math.abs(e.origAmountUsd - e.amountUsd) >= 0.01) ? ` (${tr('Orig:')} ${formatSignedUsd(e.origAmountUsd)})` : ''}`;
+        return `
+          <tr>
+            <td class="mono vlog-nowrap" data-no-i18n="1">${esc(formatStampShort(e.voidedAt))}</td>
+            ${ds.hideCo ? '' : `<td data-no-i18n="1">${esc(e.company)}</td>`}
+            <td data-no-i18n="1"><strong>${esc(e.refCode)}</strong> · ${esc(tr(e.moduleLabel))}${e.partyName ? ` (${esc(e.partyName)})` : ''}</td>
+            <td class="num mono vlog-nowrap" data-no-i18n="1">${esc(amtDisp)}</td>
+            <td data-no-i18n="1">${esc(flags.join(', '))}</td>
+            <td data-no-i18n="1">${esc(e.actorDisplay)} · ${esc(e.voidReason || tr('No reason recorded'))}</td>
+          </tr>`;
+      }).join('')
+      : `<tr><td colspan="${ds.hideCo ? 5 : 6}" class="vlog-digest-empty">${esc(tr('No flagged exceptions in this window.'))}</td></tr>`;
+
+    const modal = document.createElement('div');
+    modal.id = 'vlogDigestModal';
+    modal.className = 'vlog-modal-backdrop is-digest-modal';
+    modal.innerHTML = `
+      <div class="vlog-modal vlog-digest-modal" role="dialog" aria-modal="true" aria-labelledby="vlogDigestTitle">
+        <div class="vlog-modal-hd vlog-digest-noprint">
+          <div class="vlog-drawer-hd-main">
+            <h3 id="vlogDigestTitle">Weekly Void Digest</h3>
+            <span class="vlog-inspect-sub" data-no-i18n="1">${esc(activeCoLbl)} · ${esc(rangeLabelMap[digestRange] || '')}</span>
+          </div>
+          <div class="vlog-digest-hd-acts">
+            <div class="vlog-seg-group" role="group" aria-label="Digest window">
+              ${rangePill('7d', 'Last 7 Days')}
+              ${rangePill('30d', 'Last 30 Days')}
+              ${rangePill('current', 'Current Filter View')}
+            </div>
+            <button type="button" class="btn btn-primary vlog-btn-xs" id="vlogDigestPrintBtn">${ic('printer')} Print / Save PDF</button>
+            <button type="button" class="vlog-modal-x" id="vlogDigestCloseBtn" aria-label="Close modal">×</button>
+          </div>
+        </div>
+        <div class="vlog-modal-body vlog-digest-sheet" id="vlogDigestSheet">
+          <div class="vlog-digest-brand">
+            <div>
+              <div class="vlog-digest-kicker">ISABI Command Center · Void Audit Digest</div>
+              <h2 class="vlog-digest-h2" data-no-i18n="1">${esc(activeCoLbl)}</h2>
+              <div class="vlog-digest-meta-row" data-no-i18n="1">
+                <span>${esc(tr('Industry'))}: <strong>${esc(activeIndLbl)}</strong></span>
+                <span>${esc(tr('Window'))}: <strong>${esc(rangeLabelMap[digestRange] || '')}</strong></span>
+                <span>${esc(tr('Prepared By'))}: <strong>${esc(actorWho)}</strong></span>
+                <span>${esc(tr('Generated'))}: <strong class="mono">${esc(genAtStr)}</strong></span>
+              </div>
+            </div>
+          </div>
+          <div class="vlog-digest-kpis">
+            <div class="vlog-digest-kpi">
+              <span class="vlog-digest-kpi-lbl">Total Voids</span>
+              <strong class="vlog-digest-kpi-val mono" data-no-i18n="1">${fmtNum(ds.voidCount)}</strong>
+            </div>
+            <div class="vlog-digest-kpi">
+              <span class="vlog-digest-kpi-lbl">Voided Value</span>
+              <strong class="vlog-digest-kpi-val mono" data-no-i18n="1">${esc(formatMaskedBucketUsd(ds.totalUsd, ds.unmaskedCount, ds.maskedCount, '-', true))}</strong>
+            </div>
+            <div class="vlog-digest-kpi">
+              <span class="vlog-digest-kpi-lbl">Edited Before Void</span>
+              <strong class="vlog-digest-kpi-val mono" data-no-i18n="1">${fmtNum(ds.editedCount)}</strong>
+            </div>
+            <div class="vlog-digest-kpi">
+              <span class="vlog-digest-kpi-lbl">After-Hours / No Reason</span>
+              <strong class="vlog-digest-kpi-val mono" data-no-i18n="1">${fmtNum(ds.afterHoursCount)} / ${fmtNum(ds.missingReasonCount)}</strong>
+            </div>
+          </div>
+          <div class="vlog-digest-split">
+            <div class="vlog-digest-sec">
+              <div class="vlog-digest-sec-hd">By Entity &amp; Module</div>
+              <table class="data-table vlog-digest-tbl">
+                <thead>
+                  <tr>
+                    ${ds.hideCo ? '' : '<th>Entity</th>'}
+                    <th>Module</th>
+                    <th class="num">Count</th>
+                    <th class="num">Edited</th>
+                    <th class="num">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>${emHtml}</tbody>
+              </table>
+            </div>
+            <div class="vlog-digest-sec">
+              <div class="vlog-digest-sec-hd">By Void Actor</div>
+              <table class="data-table vlog-digest-tbl">
+                <thead>
+                  <tr>
+                    <th>Voided By</th>
+                    <th class="num">Count</th>
+                    <th class="num">After-Hours</th>
+                    <th class="num">Edited</th>
+                    <th class="num">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>${actorHtml}</tbody>
+              </table>
+            </div>
+          </div>
+          <div class="vlog-digest-sec">
+            <div class="vlog-digest-sec-hd">
+              <span>Flagged Exception Register</span>
+              <span class="mono" data-no-i18n="1">${esc(ds.flaggedTotal > 35 ? L(`Top 35 of ${fmtNum(ds.flaggedTotal)}`, `أعلى 35 من ${fmtNum(ds.flaggedTotal)}`, `Top 35 sur ${fmtNum(ds.flaggedTotal)}`) : fmtNum(ds.flaggedTotal))}</span>
+            </div>
+            <table class="data-table vlog-digest-tbl">
+              <thead>
+                <tr>
+                  <th>Voided At</th>
+                  ${ds.hideCo ? '' : '<th>Entity</th>'}
+                  <th>Reference &amp; Module</th>
+                  <th class="num">Amount</th>
+                  <th>Flags</th>
+                  <th>Actor &amp; Reason</th>
+                </tr>
+              </thead>
+              <tbody>${flaggedHtml}</tbody>
+            </table>
+          </div>
+          <div class="vlog-digest-signoff">
+            <div class="vlog-digest-sign-box"><span>Prepared By</span><div class="vlog-sign-line"></div></div>
+            <div class="vlog-digest-sign-box"><span>Operations / Finance Review</span><div class="vlog-sign-line"></div></div>
+            <div class="vlog-digest-sign-box"><span>Owner / External Audit Sign-Off</span><div class="vlog-sign-line"></div></div>
+          </div>
+        </div>
+        <div class="vlog-modal-ft vlog-digest-noprint">
+          <button type="button" class="btn btn-ghost-bar" id="vlogDigestDoneBtn">Close</button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(modal);
+    const lc = lang();
+    if (lc !== 'en' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function') {
+      try { window.MFG_I18N.translateDom(modal, lc); } catch (_) {}
+    }
+    const closeBtn = document.getElementById('vlogDigestCloseBtn');
+    if (closeBtn) closeBtn.focus();
   }
 
   function wireDelegationOnce() {
@@ -3482,9 +4223,44 @@
         const cur = findEntryByKey(inspectKey);
         if (cur) openInspectModal(cur);
       }
+      if (document.getElementById('vlogDigestModal')) openDigestModal();
+    });
+
+    window.addEventListener('beforeprint', () => {
+      if (document.getElementById('vlogDigestModal')) {
+        document.body.classList.add('is-printing-vlog-digest');
+      }
+    });
+
+    window.addEventListener('afterprint', () => {
+      document.body.classList.remove('is-printing-vlog-digest');
     });
 
     document.addEventListener('click', async e => {
+      const digestModal = document.getElementById('vlogDigestModal');
+      if (digestModal && (e.target === digestModal || digestModal.contains(e.target))) {
+        if (e.target === digestModal || e.target.closest('#vlogDigestCloseBtn') || e.target.closest('#vlogDigestDoneBtn')) {
+          closeDigestModal();
+          return;
+        }
+        const rangeBtn = e.target.closest('[data-vlog-digest-range]');
+        if (rangeBtn) {
+          digestRange = rangeBtn.getAttribute('data-vlog-digest-range') || '7d';
+          openDigestModal(digestRange);
+          return;
+        }
+        if (e.target.closest('#vlogDigestPrintBtn')) {
+          document.body.classList.add('is-printing-vlog-digest');
+          const isHeadless = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+          if (!isHeadless && typeof window.print === 'function') {
+            try { window.print(); } catch (_) {}
+            setTimeout(() => document.body.classList.remove('is-printing-vlog-digest'), 1200);
+          }
+          return;
+        }
+        return;
+      }
+
       const inspModal = document.getElementById('vlogInspectModal');
       if (inspModal && (e.target === inspModal || inspModal.contains(e.target))) {
         if (e.target === inspModal || e.target.closest('#vlogInspectCloseBtn') || e.target.closest('#vlogInspectDoneBtn')) {
@@ -3663,14 +4439,14 @@
         const which = kpiBtn.getAttribute('data-vlog-kpi');
         if (which === 'user') {
           filterState.origin = 'user';
-          filterState.lens = 'all';
+          filterState.lenses = [];
           filterState.days = 'all';
           filterState.drillDay = '';
         } else if (which === 'value') {
-          if (filterState.lens === 'high_value') {
-            filterState.lens = 'all';
+          if (hasLens('high_value')) {
+            toggleLens('high_value');
           } else {
-            filterState.lens = 'high_value';
+            toggleLens('high_value');
             filterState.sortKey = 'amount';
             filterState.sortDir = 'desc';
           }
@@ -3678,7 +4454,7 @@
           filterState.days = filterState.days === '7' ? 'all' : '7';
         } else if (which === 'system') {
           filterState.origin = filterState.origin === 'system' ? 'user' : 'system';
-          filterState.lens = 'all';
+          filterState.lenses = [];
           filterState.days = 'all';
           filterState.drillDay = '';
         }
@@ -3713,7 +4489,7 @@
       const lensBtn = e.target.closest('[data-vlog-lens]');
       if (lensBtn) {
         const nextL = lensBtn.getAttribute('data-vlog-lens') || 'all';
-        filterState.lens = (filterState.lens === nextL && nextL !== 'all') ? 'all' : nextL;
+        toggleLens(nextL);
         filterState.visibleLimit = PAGE_STEP;
         disarmRestoreConfirmations();
         patchResultsInPlace();
@@ -3813,6 +4589,11 @@
 
       if (e.target.closest('#vlogAuditBriefBtn')) {
         launchAuditBrief();
+        return;
+      }
+
+      if (e.target.closest('#vlogDigestBtn')) {
+        openDigestModal();
         return;
       }
 
@@ -3938,6 +4719,11 @@
 
     document.addEventListener('keydown', async e => {
       if (e.key === 'Escape') {
+        if (document.getElementById('vlogDigestModal')) {
+          e.preventDefault();
+          closeDigestModal();
+          return;
+        }
         if (document.getElementById('vlogInspectModal')) {
           e.preventDefault();
           closeInspectModal();
@@ -3969,8 +4755,9 @@
     aiRequestGen += 1;
     aiCloudState = { loading: false, sig: '', attemptedSig: '', text: '', mode: '', recs: [], error: '' };
     inFlightKeys.clear();
-    Object.assign(filterState, DEFAULT_FILTERS);
+    Object.assign(filterState, DEFAULT_FILTERS, { lenses: [] });
     closeInspectModal();
+    closeDigestModal();
     posVoidsState.gen += 1;
     posVoidsState.scopeKey = '';
     posVoidsState.items = [];
@@ -3997,6 +4784,7 @@
     computeVoidSentinelDigest,
     computeVoidCascadePreview,
     openInspectModal,
+    openDigestModal,
     jumpToVoidEntry,
     exportCsv
   };
