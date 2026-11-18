@@ -738,7 +738,7 @@ function hydrateRowJson(row) {
   const base = safeJsonParse(row.payload_json, {});
   const merged = Object.assign({}, base, row);
   delete merged.payload_json;
-  for (const jk of ['attachments', 'adj_windows', 'driver_rows', 'admin_overrides', '_seed_orig', '_pre_void_orig', '_pre_void_edits']) {
+  for (const jk of ['attachments', 'adj_windows', 'driver_rows', 'admin_overrides', '_seed_orig', '_subcategories', '_pre_void_orig', '_pre_void_edits']) {
     if (typeof merged[jk] === 'string' && /^[\[{]/.test(merged[jk].trim())) {
       merged[jk] = safeJsonParse(merged[jk], merged[jk]);
     }
@@ -2463,8 +2463,12 @@ export async function prepareUpsertTableRecordStmt(db, table, record) {
   }
 
   let recId = String(record.id).trim();
+  const exRow = await db.prepare(`SELECT id FROM ${canonTable} WHERE id = ?1 LIMIT 1`).bind(recId).first();
   if (UNIVERSAL_UNIQUE_TABLES.has(canonTable) && !record.voided && cols.has('name')) {
-    const mainVal = String(record.name || record.driver || record.equipment || '').trim();
+    const mainVal = String(record.name || record.item_name || record.driver || record.equipment || '').trim();
+    if (canonTable === 'items' && !String(record.name || '').trim() && record.item_name) {
+      record = Object.assign({}, record, { name: String(record.item_name).trim() });
+    }
     if (mainVal) {
       let dupRow = null;
       if (canonTable === 'expense_subcategories' && cols.has('category')) {
@@ -2478,7 +2482,7 @@ export async function prepareUpsertTableRecordStmt(db, table, record) {
         ).bind(recId, mainVal).first();
       }
       if (dupRow) {
-        if (record.modified_by) {
+        if (!exRow && record.modified_by) {
           record = Object.assign({}, record, { id: dupRow.id });
           recId = String(dupRow.id);
         } else {
@@ -3782,9 +3786,15 @@ export async function handleRecordsPost(request, env, session, body) {
   }
 
   const cols = await getTableColumns(env.DB, canonTable);
+  if (!cols.size) {
+    return jsonResponse({ ok: false, error: `Unknown schema for table: ${canonTable}` }, 400);
+  }
   let exRow = await env.DB.prepare(`SELECT * FROM ${canonTable} WHERE id = ?1`).bind(String(record.id).trim()).first();
-  if (!exRow && UNIVERSAL_UNIQUE_TABLES.has(canonTable) && !record.voided && cols.has('name')) {
-    const mainVal = String(record.name || record.driver || record.equipment || '').trim();
+  if (UNIVERSAL_UNIQUE_TABLES.has(canonTable) && !record.voided && cols.has('name')) {
+    const mainVal = String(record.name || record.item_name || record.driver || record.equipment || '').trim();
+    if (canonTable === 'items' && mainVal && !String(record.name || '').trim()) {
+      record = Object.assign({}, record, { name: mainVal });
+    }
     if (mainVal) {
       let dupRow = null;
       if (canonTable === 'expense_subcategories' && cols.has('category')) {
@@ -3798,7 +3808,7 @@ export async function handleRecordsPost(request, env, session, body) {
         ).bind(String(record.id).trim(), mainVal).first();
       }
       if (dupRow) {
-        if (!record.modified_by) {
+        if (exRow || !record.modified_by) {
           return jsonResponse({
             ok: false,
             error: `Duplicate ${canonTable} main column '${mainVal}' already exists (id=${dupRow.id}).`
@@ -6237,7 +6247,7 @@ export async function handleIndustryDomainStore(request, env, session, body, ctx
           if (ev) pendingDomainGeoAudits.push(ev);
         }
       } else {
-        if (!perms.canEnterAny || (!perms.modifyText && !perms.modifyData)) {
+        if (!perms.canEnterAny) {
           return jsonResponse({ ok: false, error: 'Role permission: seat cannot create domain records.' }, 403);
         }
         if (!perms.voidData && Boolean(incVoid)) {
@@ -8439,7 +8449,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
         const kvPr = pMap.get(rid) || null;
         const pr = pickSyncBase(d1r, kvPr) || null;
         if (!pr) {
-          if (isReadOnly || !perms.canEnterAny) continue;
+          if (!perms.canEnterAny) continue;
           let cleanedNew = Object.assign({}, ir);
           sanitizeIncomingTwinKeys(cleanedNew, null, session, perms);
           if (!perms.canWriteGeoConfig || !validateRecordGpsCoords(cleanedNew)) stripGpsFields(cleanedNew);
