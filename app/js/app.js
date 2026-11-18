@@ -8987,7 +8987,7 @@
     u = u || activeUser();
     if (!canViewView('cashflow', u)) return null;
     const n = getScopedAppOnlyCashRows(u).length;
-    return n > 0 ? { text: `${fmtNum(n)} Unmatched`, cls: 'warn' } : null;
+    return n > 0 ? { text: `${fmtNum(n)} Unmatched`, cls: 'warn', targetView: 'cashflow' } : null;
   }
 
   let _cashflowBehindGen = 0;
@@ -10532,8 +10532,8 @@
   };
 
   const UNIV_REGISTRY_GROUPS = {
-    reg_customers: ['customers', 'suppliers', 'staff_members'],
-    reg_suppliers: ['customers', 'suppliers', 'staff_members'],
+    reg_customers: ['customers'],
+    reg_suppliers: ['suppliers'],
     reg_products: ['products', 'product_types', 'uoms'],
     reg_items: ['items', 'uoms'],
     reg_categories: ['expense_categories', 'expense_subcategories'],
@@ -10567,12 +10567,12 @@
     hsp_revenue: 'Revenue, POS & Chalets',
     hsp_memberships: 'Memberships & Splits',
     hsp_stock: 'Kitchen, Bar & Stock',
-    hsp_energy: 'Generators & Utilities',
+    hsp_energy: 'Repairs, Assets & Utilities',
     // Trading & Commercial Vehicles industry hubs (Phase 3)
     trd_sales: 'Invoicing & Receivables',
     trd_purchases: 'Imports & Landed Cost',
     trd_trucks: 'Showroom & Serial Units',
-    trd_stock: 'Spare Parts & Warehouses',
+    trd_stock: 'Parts & Warehouses',
     // Real Estate & Property industry hubs (Phase 4)
     re_leases: 'Leases & Rent Roll',
     re_sales: 'Property Sales & Buyers',
@@ -10586,9 +10586,10 @@
     cashflow: 'Cash Flow & Treasury',
     ledger: 'General Ledger & COA',
     univ_parties: 'Counterparties & Sites',
-    univ_catalog: 'Catalog & Categories',
-    univ_fleet: 'Fleet, Drivers & Staff',
-    univ_rates: 'Currencies & VAT',
+    univ_staff: 'Staff & Roles',
+    univ_fleet: 'Equipment & Drivers',
+    univ_catalog: 'Catalog, Categories & Tax',
+    univ_rates: 'Catalog, Categories & Tax',
     tables: 'All Tables & Registers',
     kiosks: 'Plant Kiosks',
     users: 'Users & Security',
@@ -10599,13 +10600,13 @@
   function getApprovalsExceptionBadge(u) {
     if (!window.MFG_APPROVALS || !canViewView('approvals', u)) return null;
     const n = window.MFG_APPROVALS.pendingRequestCount();
-    return n > 0 ? { text: `${fmtNum(n)} Request${n === 1 ? '' : 's'}`, cls: 'crit' } : null;
+    return n > 0 ? { text: `${fmtNum(n)} Request${n === 1 ? '' : 's'}`, cls: 'crit', targetView: 'approvals' } : null;
   }
 
   function getSentinelExceptionBadge(u, sentinelsOpen) {
     if (!canViewView('sentinels', u)) return null;
     const cnt = Number(sentinelsOpen || 0);
-    return cnt > 0 ? { text: `${fmtNum(cnt)} Alert${cnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Alert${cnt === 1 ? '' : 's'}`, cls: 'warn', targetView: 'sentinels' } : null;
   }
 
   function getDieselExceptionBadge(u) {
@@ -10614,17 +10615,25 @@
     if (!dt || !dt.malfunctionAlert) return null;
     return {
       text: `Malf ${dt.malfunctionPct.toFixed(1)}%`,
-      cls: dt.malfunctionSeverity === 'crit' ? 'crit' : 'warn'
+      cls: dt.malfunctionSeverity === 'crit' ? 'crit' : 'warn',
+      targetView: 'fleet'
     };
   }
 
   function getFleetExceptionBadge(u) {
     if (!canViewView('fleet_maint', u)) return null;
     const mi = getMaintIndex();
-    if (mi.openCritCount > 0) return { text: `${fmtNum(mi.openCritCount)} Crit`, cls: 'crit' };
-    if (mi.openCount > 0) return { text: `${fmtNum(mi.openCount)} Open`, cls: 'warn' };
-    if (mi.unnotifiedParts && mi.unnotifiedParts.length > 0) return { text: `${fmtNum(mi.unnotifiedParts.length)} Audit`, cls: 'warn' };
+    if (mi.openCritCount > 0) return { text: `${fmtNum(mi.openCritCount)} Crit`, cls: 'crit', targetView: 'fleet_maint' };
+    if (mi.openCount > 0) return { text: `${fmtNum(mi.openCount)} Open`, cls: 'warn', targetView: 'fleet_maint' };
+    if (mi.unnotifiedParts && mi.unnotifiedParts.length > 0) return { text: `${fmtNum(mi.unnotifiedParts.length)} Audit`, cls: 'warn', targetView: 'fleet_maint' };
     return null;
+  }
+
+  function getWarehouseExceptionBadge(u) {
+    if (!canViewView('warehouse', u)) return null;
+    const wh = typeof getWarehouseIndex === 'function' ? getWarehouseIndex() : null;
+    const cnt = wh ? Number(wh.lowStockCount || 0) : 0;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Low`, cls: 'warn', targetView: 'warehouse' } : null;
   }
 
   function getWorkforceMapExceptionBadge(u) {
@@ -10636,7 +10645,7 @@
       : wf.latestOpDate;
     const dayAnoms = (wf.anomsByDate && dayKey && wf.anomsByDate.get(dayKey)) || [];
     const ghostCnt = dayAnoms.filter(a => a.anomalyCode === 'absent_no_sub' || a.anomalyCode === 'absent_with_sub').length;
-    return ghostCnt > 0 ? { text: `${fmtNum(ghostCnt)} Alert${ghostCnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
+    return ghostCnt > 0 ? { text: `${fmtNum(ghostCnt)} Alert${ghostCnt === 1 ? '' : 's'}`, cls: 'warn', targetView: 'workforce_map' } : null;
   }
 
   let _pendRawCache = null;
@@ -10667,7 +10676,7 @@
       : canViewView('raw', u);
     if (!allowed) return null;
     const pend = getScopedPendingPriceRaw({ ignoreSearch: true });
-    return pend.count > 0 ? { text: `${fmtNum(pend.count)} Pending`, cls: 'warn' } : null;
+    return pend.count > 0 ? { text: `${fmtNum(pend.count)} Pending`, cls: 'warn', targetView: targetView || 'raw' } : null;
   }
 
   let _pendExpCache = null;
@@ -10717,7 +10726,7 @@
       : canViewView('expenses', u);
     if (!allowed) return null;
     const pend = getScopedPendingPriceExpenses({ ignoreSearch: true });
-    return pend.count > 0 ? { text: `${fmtNum(pend.count)} Pending`, cls: 'warn' } : null;
+    return pend.count > 0 ? { text: `${fmtNum(pend.count)} Pending`, cls: 'warn', targetView: targetView || 'expenses' } : null;
   }
 
   function renderPendingPriceQueuePanel(pendRows) {
@@ -10814,7 +10823,7 @@
       : (canViewView('payroll_contracts', u) || canViewView('payroll', u));
     if (!allowed) return null;
     const pend = getScopedPendingSalaryEmployments({ ignoreSearch: true });
-    return pend.count > 0 ? { text: `${fmtNum(pend.count)} Pending`, cls: 'warn' } : null;
+    return pend.count > 0 ? { text: `${fmtNum(pend.count)} Pending`, cls: 'warn', targetView: targetView || 'payroll_contracts' } : null;
   }
 
   function renderPendingSalaryQueuePanel(pendRows) {
@@ -10882,17 +10891,36 @@
   function getLedgerExceptionBadge(u, k) {
     if (!canViewView('ledger', u)) return null;
     if (k && k.tb_check != null && Math.abs(Number(k.tb_check)) >= 0.005) {
-      return { text: 'TB ' + fmtUSDk(Number(k.tb_check)), cls: 'crit' };
+      return { text: 'TB ' + fmtUSDk(Number(k.tb_check)), cls: 'crit', targetView: 'ledger' };
     }
     return null;
   }
 
+  function getStaffComplianceExceptionBadge(u) {
+    if (!canViewView('reg_staff', u)) return null;
+    if (typeof computeStaffComplianceWatchdog !== 'function') return null;
+    if (typeof ensureStaffMembersSeeded === 'function') ensureStaffMembersSeeded();
+    const critDays = typeof getAlertParam === 'function' ? getAlertParam('S13', 'crit_window_days', 7) : 7;
+    const warnDays = typeof getAlertParam === 'function' ? getAlertParam('S13', 'warn_window_days', 60) : 60;
+    const rawSm = (SEED && SEED.records && Array.isArray(SEED.records.staff_members)) ? SEED.records.staff_members : [];
+    const univStaffRows = (typeof filterRecords === 'function'
+      ? filterRecords(rawSm, { tableKey: 'staff_members', ignorePeriod: true, ignoreSearch: true, ignoreCompany: true })
+      : rawSm).filter(r => typeof isStaffMemberAllowedForSeat !== 'function' || isStaffMemberAllowedForSeat(r, SEED));
+    const wd = computeStaffComplianceWatchdog(univStaffRows, SEED, { critDays, warnDays });
+    const c = (wd && wd.counts) || {};
+    const critCnt = Number(c.expired || 0) + Number(c.critical_7 || 0);
+    const actCnt = Number(c.actionable || 0);
+    if (critCnt > 0) return { text: `${fmtNum(critCnt)} Expiring`, cls: 'crit', targetView: 'reg_staff' };
+    if (actCnt > 0) return { text: `${fmtNum(actCnt)} Due`, cls: 'warn', targetView: 'reg_staff' };
+    return null;
+  }
+
   function getHoldingOpenReconExceptionBadge(u) {
-    if (!canViewView('hld_interactions', u)) return null;
+    if (!canViewView('hld_open_recon', u)) return null;
     if (typeof computeIntercompanyInteractions !== 'function') return null;
     const icRes = computeIntercompanyInteractions({ ignoreSearch: true });
     const openCnt = icRes && Array.isArray(icRes.openRows) ? icRes.openRows.length : 0;
-    return openCnt > 0 ? { text: `${fmtNum(openCnt)} Open`, cls: 'warn' } : null;
+    return openCnt > 0 ? { text: `${fmtNum(openCnt)} Open`, cls: 'warn', targetView: 'hld_open_recon' } : null;
   }
 
   function getHospitalityMembershipExceptionBadge(u) {
@@ -10900,7 +10928,7 @@
     if (typeof computeHospitalityOperations !== 'function') return null;
     const hspRes = computeHospitalityOperations({ ignoreSearch: true });
     const openCnt = hspRes ? Number(hspRes.overdueMembershipsCount || 0) : 0;
-    return openCnt > 0 ? { text: `${fmtNum(openCnt)} Open`, cls: 'warn' } : null;
+    return openCnt > 0 ? { text: `${fmtNum(openCnt)} Open`, cls: 'warn', targetView: 'hsp_memberships' } : null;
   }
 
   function getHospitalityStockExceptionBadge(u) {
@@ -10908,23 +10936,23 @@
     if (typeof computeHospitalityOperations !== 'function') return null;
     const hspRes = computeHospitalityOperations({ ignoreSearch: true });
     const alertCnt = hspRes ? Number(hspRes.stockAlertCount || 0) : 0;
-    return alertCnt > 0 ? { text: `${fmtNum(alertCnt)} Alert${alertCnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
+    return alertCnt > 0 ? { text: `${fmtNum(alertCnt)} Alert${alertCnt === 1 ? '' : 's'}`, cls: 'warn', targetView: 'hsp_stock' } : null;
   }
 
   function getTradingImportsExceptionBadge(u) {
-    if (!canViewView('trd_purchases', u)) return null;
+    if (!canViewView('trd_landed', u)) return null;
     if (typeof computeTradingOperations !== 'function') return null;
     const trdRes = computeTradingOperations({ ignoreSearch: true });
     const openCnt = trdRes ? Number(trdRes.unallocatedLandedCount || 0) : 0;
-    return openCnt > 0 ? { text: `${fmtNum(openCnt)} Open`, cls: 'warn' } : null;
+    return openCnt > 0 ? { text: `${fmtNum(openCnt)} Open`, cls: 'warn', targetView: 'trd_landed' } : null;
   }
 
   function getTradingTrucksExceptionBadge(u) {
-    if (!canViewView('trd_trucks', u)) return null;
+    if (!canViewView('trd_warranty', u)) return null;
     if (typeof computeTradingOperations !== 'function') return null;
     const trdRes = computeTradingOperations({ ignoreSearch: true });
     const pdiCnt = trdRes ? Number(trdRes.openWarrantyCount || 0) : 0;
-    return pdiCnt > 0 ? { text: `${fmtNum(pdiCnt)} PDI`, cls: 'warn' } : null;
+    return pdiCnt > 0 ? { text: `${fmtNum(pdiCnt)} PDI`, cls: 'warn', targetView: 'trd_warranty' } : null;
   }
 
   function getTradingStockExceptionBadge(u) {
@@ -10932,31 +10960,31 @@
     if (typeof computeTradingOperations !== 'function') return null;
     const trdRes = computeTradingOperations({ ignoreSearch: true });
     const alertCnt = trdRes ? Number(trdRes.reorderAlertCount || 0) : 0;
-    return alertCnt > 0 ? { text: `${fmtNum(alertCnt)} Alert${alertCnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
+    return alertCnt > 0 ? { text: `${fmtNum(alertCnt)} Alert${alertCnt === 1 ? '' : 's'}`, cls: 'warn', targetView: 'trd_stock' } : null;
   }
 
   function getRealEstateLeasesExceptionBadge(u) {
-    if (!canViewView('re_leases', u)) return null;
+    if (!canViewView('re_invoicing', u)) return null;
     if (typeof computeRealEstateOperations !== 'function') return null;
     const reRes = computeRealEstateOperations({ ignoreSearch: true });
     const cnt = reRes ? Number(reRes.unbilledOrEscalationCount || 0) : 0;
-    return cnt > 0 ? { text: `${fmtNum(cnt)} Alert${cnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Alert${cnt === 1 ? '' : 's'}`, cls: 'warn', targetView: 're_invoicing' } : null;
   }
 
   function getRealEstateSalesExceptionBadge(u) {
-    if (!canViewView('re_sales', u)) return null;
+    if (!canViewView('re_instalments', u)) return null;
     if (typeof computeRealEstateOperations !== 'function') return null;
     const reRes = computeRealEstateOperations({ ignoreSearch: true });
     const cnt = reRes ? Number(reRes.overdueInstalmentsCount || 0) : 0;
-    return cnt > 0 ? { text: `${fmtNum(cnt)} Due`, cls: 'warn' } : null;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Due`, cls: 'warn', targetView: 're_instalments' } : null;
   }
 
   function getRealEstatePortfolioExceptionBadge(u) {
-    if (!canViewView('re_properties', u)) return null;
+    if (!canViewView('re_units', u)) return null;
     if (typeof computeRealEstateOperations !== 'function') return null;
     const reRes = computeRealEstateOperations({ ignoreSearch: true });
     const cnt = reRes ? Number(reRes.vacantOrFitoutCount || 0) : 0;
-    return cnt > 0 ? { text: `${fmtNum(cnt)} Open`, cls: 'warn' } : null;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Open`, cls: 'warn', targetView: 're_units' } : null;
   }
 
   function getRealEstateWorkOrdersExceptionBadge(u) {
@@ -10964,23 +10992,23 @@
     if (typeof computeRealEstateOperations !== 'function') return null;
     const reRes = computeRealEstateOperations({ ignoreSearch: true });
     const cnt = reRes ? Number(reRes.pendingRechargeCount || reRes.openWorkOrderCount || 0) : 0;
-    return cnt > 0 ? { text: `${fmtNum(cnt)} Pending`, cls: 'warn' } : null;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Pending`, cls: 'warn', targetView: 're_workorders' } : null;
   }
 
   function getInsurancePoliciesExceptionBadge(u) {
-    if (!canViewView('ins_policies', u)) return null;
+    if (!canViewView('ins_renewals', u)) return null;
     if (typeof computeInsuranceOperations !== 'function') return null;
     const insRes = computeInsuranceOperations({ ignoreSearch: true });
     const cnt = insRes ? Number(insRes.renewalsDueCount || 0) : 0;
-    return cnt > 0 ? { text: `${fmtNum(cnt)} Due`, cls: 'warn' } : null;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Due`, cls: 'warn', targetView: 'ins_renewals' } : null;
   }
 
   function getInsuranceBillingExceptionBadge(u) {
-    if (!canViewView('ins_billing', u)) return null;
+    if (!canViewView('ins_statements', u)) return null;
     if (typeof computeInsuranceOperations !== 'function') return null;
     const insRes = computeInsuranceOperations({ ignoreSearch: true });
     const cnt = insRes ? Number(insRes.statementDiscrepancyCount || 0) : 0;
-    return cnt > 0 ? { text: `${fmtNum(cnt)} Recon`, cls: 'warn' } : null;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Recon`, cls: 'warn', targetView: 'ins_statements' } : null;
   }
 
   function getInsuranceClaimsExceptionBadge(u) {
@@ -10988,15 +11016,15 @@
     if (typeof computeInsuranceOperations !== 'function') return null;
     const insRes = computeInsuranceOperations({ ignoreSearch: true });
     const cnt = insRes ? Number(insRes.openClaimsCount || 0) : 0;
-    return cnt > 0 ? { text: `${fmtNum(cnt)} Open`, cls: 'warn' } : null;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Open`, cls: 'warn', targetView: 'ins_claims' } : null;
   }
 
   function getInsuranceCatalogueExceptionBadge(u) {
-    if (!canViewView('ins_catalogue', u)) return null;
+    if (!canViewView('ins_agreements', u)) return null;
     if (typeof computeInsuranceOperations !== 'function') return null;
     const insRes = computeInsuranceOperations({ ignoreSearch: true });
     const cnt = insRes ? Number(insRes.expiringAgreementsCount || 0) : 0;
-    return cnt > 0 ? { text: `${fmtNum(cnt)} Alert`, cls: 'warn' } : null;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Alert`, cls: 'warn', targetView: 'ins_agreements' } : null;
   }
 
   function getHubExceptionBadge(hubId, u, k, sentinelsOpen) {
@@ -11004,7 +11032,9 @@
     if (hubId === 'raw') return getPendingRawPriceExceptionBadge(u);
     if (hubId === 'expenses') return getPendingPriceExceptionBadge(u);
     if (hubId === 'fleet') return getFleetExceptionBadge(u) || getDieselExceptionBadge(u);
+    if (hubId === 'warehouse') return getWarehouseExceptionBadge(u);
     if (hubId === 'payroll') return getPendingSalaryExceptionBadge(u) || getWorkforceMapExceptionBadge(u);
+    if (hubId === 'univ_staff') return getStaffComplianceExceptionBadge(u);
     if (hubId === 'ledger') return getLedgerExceptionBadge(u, k);
     if (hubId === 'cashflow') return getCashAppOnlyExceptionBadge(u);
     if (hubId === 'hld_interactions') return getHoldingOpenReconExceptionBadge(u);
@@ -11041,8 +11071,8 @@
       group: 'exec',
       tabs: [
         { view: 'sentinels', label: 'AI Sentinels & Audit', icon: 'sentinels', badgeFn: (u, _k, sn) => getSentinelExceptionBadge(u, sn) },
-        { view: 'alert_rules', label: 'Alerts & Thresholds', icon: 'alert_rules' },
         { view: 'approvals', label: 'Approvals Inbox', icon: 'approvals', badgeFn: u => getApprovalsExceptionBadge(u) },
+        { view: 'alert_rules', label: 'Alerts & Thresholds', icon: 'alert_rules' },
         { view: 'void_log', label: 'Void Log', icon: 'void_log' }
       ]
     },
@@ -11051,7 +11081,7 @@
       title: HUB_TITLES.reports,
       group: 'exec',
       tabs: [
-        { view: 'pbi', label: 'Analytics & Insights', icon: 'pbi' },
+        { view: 'pbi', label: 'Dashboards', icon: 'pbi' },
         { view: 'statements', label: 'Statements & Reports', icon: 'statements' }
       ]
     },
@@ -11081,9 +11111,9 @@
       group: 'commercial',
       tabs: [
         { view: 'expenses', match: ['expenses', 'expenses_analytics'], label: 'Expenses & Overhead', icon: 'expenses', badgeFn: u => getPendingPriceExceptionBadge(u, 'expenses') },
-        { view: 'recurring_expenses', label: 'Recurring Schedules', icon: 'recurring_expenses' },
+        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers' },
         { view: 'documents', label: 'Document Vault', icon: 'receipt' },
-        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers' }
+        { view: 'recurring_expenses', label: 'Recurring Schedules', icon: 'recurring_expenses' }
       ]
     },
     {
@@ -11092,9 +11122,9 @@
       group: 'plant',
       tabs: [
         { view: 'fleet', label: 'Diesel & Lubricants', icon: 'fleet', badgeFn: u => getDieselExceptionBadge(u) },
-        { view: 'fleet_equip', label: 'Fleet & Running Costs', icon: 'fleet_equip' },
         { view: 'fleet_maint', label: 'Repairs, Warnings & Oil Logs', icon: 'fleet_maint', badgeFn: u => getFleetExceptionBadge(u) },
-        { view: 'fleet_drivers', match: ['fleet_drivers', 'fleet_analytics'], label: 'Drivers & Overtime', icon: 'fleet_drivers' }
+        { view: 'fleet_drivers', match: ['fleet_drivers', 'fleet_analytics'], label: 'Drivers & Overtime', icon: 'fleet_drivers' },
+        { view: 'fleet_equip', label: 'Fleet & Running Costs', icon: 'fleet_equip' }
       ]
     },
     {
@@ -11102,7 +11132,7 @@
       title: HUB_TITLES.warehouse,
       group: 'plant',
       tabs: [
-        { view: 'warehouse', label: 'Warehouse Stock & Moves', icon: 'warehouse' },
+        { view: 'warehouse', label: 'Warehouse Stock & Moves', icon: 'warehouse', badgeFn: u => getWarehouseExceptionBadge(u) },
         { view: 'warehouse_parts', label: 'Parts & Item Usage', icon: 'warehouse_parts' }
       ]
     },
@@ -11185,8 +11215,8 @@
       group: 'plant',
       industry: 'Hospitality & Resorts',
       tabs: [
-        { view: 'hsp_energy', label: 'Diesel, Solar & Generators', icon: 'hsp_energy' },
-        { view: 'hsp_maint', label: 'Venue Repairs & Assets', icon: 'hsp_maint' }
+        { view: 'hsp_maint', label: 'Venue Repairs & Assets', icon: 'hsp_maint' },
+        { view: 'hsp_energy', label: 'Diesel, Solar & Generators', icon: 'hsp_energy' }
       ]
     },
     {
@@ -11312,8 +11342,8 @@
       group: 'plant',
       industry: 'Insurance & Brokerage',
       tabs: [
-        { view: 'ins_catalogue', label: '12 Lines & 52 Insurance Products', icon: 'ins_catalogue' },
-        { view: 'ins_agreements', label: 'Commission Rate Agreements', icon: 'ins_agreements', badgeFn: u => getInsuranceCatalogueExceptionBadge(u) }
+        { view: 'ins_catalogue', label: 'Lines & Products', icon: 'ins_catalogue' },
+        { view: 'ins_agreements', label: 'Commission Agreements', icon: 'ins_agreements', badgeFn: u => getInsuranceCatalogueExceptionBadge(u) }
       ]
     },
     {
@@ -11321,11 +11351,11 @@
       title: HUB_TITLES.payroll,
       group: 'plant',
       tabs: [
-        { view: 'payroll', match: ['payroll', 'payroll_analytics'], label: 'Payroll & Workforce', icon: 'payroll' },
-        { view: 'workforce_map', label: 'Daily Plant & Machine Map', icon: 'workforce_map', badgeFn: u => getWorkforceMapExceptionBadge(u) },
+        { view: 'payroll', match: ['payroll', 'payroll_analytics'], label: 'Payroll & Salaries', icon: 'payroll' },
         { view: 'payroll_attendance', label: 'Attendance & Overtime', icon: 'payroll_attendance' },
-        { view: 'payroll_allowances', label: 'Site Transport', icon: 'payroll_allowances' },
-        { view: 'payroll_contracts', label: 'Contracts & OT Rates', icon: 'payroll_contracts', badgeFn: u => getPendingSalaryExceptionBadge(u, 'payroll_contracts') }
+        { view: 'payroll_contracts', label: 'Contracts & Pay Rates', icon: 'payroll_contracts', badgeFn: u => getPendingSalaryExceptionBadge(u, 'payroll_contracts') },
+        { view: 'workforce_map', label: 'Daily Plant & Machine Map', icon: 'workforce_map', mfgOnly: true, badgeFn: u => getWorkforceMapExceptionBadge(u) },
+        { view: 'payroll_allowances', label: 'Site Transport', icon: 'payroll_allowances', mfgOnly: true }
       ]
     },
     {
@@ -11355,8 +11385,29 @@
       group: 'universal',
       universal: true,
       tabs: [
-        { view: 'reg_customers', match: ['reg_customers', 'reg_suppliers'], label: 'Counterparties', icon: 'reg_customers', universal: true },
+        { view: 'reg_suppliers', label: 'Suppliers', icon: 'reg_suppliers', universal: true },
+        { view: 'reg_customers', label: 'Customers', icon: 'reg_customers', universal: true },
         { view: 'reg_sites', match: ['reg_sites', 'reg_regions'], label: 'Sites & Regions', icon: 'reg_sites', universal: true }
+      ]
+    },
+    {
+      id: 'univ_staff',
+      title: HUB_TITLES.univ_staff,
+      group: 'universal',
+      universal: true,
+      tabs: [
+        { view: 'reg_staff', label: 'Staff Members', icon: 'reg_staff', universal: true, badgeFn: u => getStaffComplianceExceptionBadge(u) },
+        { view: 'reg_roles', label: 'Staff Roles', icon: 'reg_roles', universal: true }
+      ]
+    },
+    {
+      id: 'univ_fleet',
+      title: HUB_TITLES.univ_fleet,
+      group: 'universal',
+      universal: true,
+      tabs: [
+        { view: 'reg_equipment', label: 'Equipment & Trucks', icon: 'reg_equipment', universal: true },
+        { view: 'reg_drivers', label: 'Drivers & Operators', icon: 'reg_drivers', universal: true }
       ]
     },
     {
@@ -11367,27 +11418,7 @@
       tabs: [
         { view: 'reg_products', label: 'Products & Grades', icon: 'reg_products', universal: true },
         { view: 'reg_items', label: 'Items & Spare Parts', icon: 'reg_items', universal: true },
-        { view: 'reg_categories', label: 'Expense Categories', icon: 'reg_categories', universal: true }
-      ]
-    },
-    {
-      id: 'univ_fleet',
-      title: HUB_TITLES.univ_fleet,
-      group: 'universal',
-      universal: true,
-      tabs: [
-        { view: 'reg_equipment', label: 'Equipment & Trucks', icon: 'reg_equipment', universal: true },
-        { view: 'reg_drivers', label: 'Drivers & Operators', icon: 'reg_drivers', universal: true },
-        { view: 'reg_staff', label: 'Staff Members', icon: 'reg_staff', universal: true },
-        { view: 'reg_roles', label: 'Staff Roles', icon: 'reg_roles', universal: true }
-      ]
-    },
-    {
-      id: 'univ_rates',
-      title: HUB_TITLES.univ_rates,
-      group: 'universal',
-      universal: true,
-      tabs: [
+        { view: 'reg_categories', label: 'Expense Categories', icon: 'reg_categories', universal: true },
         { view: 'reg_fx_rates', match: ['reg_fx_rates', 'reg_currencies'], label: 'Currency & FX Rates', icon: 'reg_fx_rates', universal: true },
         { view: 'reg_vat_rates', label: 'VAT Rates', icon: 'reg_vat_rates', universal: true }
       ]
@@ -11442,9 +11473,22 @@
     ins_policies: 'sales', ins_billing: 'raw', ins_claims: 'fleet', ins_catalogue: 'warehouse', ins_carriers: 'warehouse'
   };
 
+  function isFleetUniversalIndustry(indId) {
+    const ind = indId || getActiveIndustry(STATE.company);
+    if (ind === 'Manufacturing' || ind === 'Automotive & Heavy Trading') return true;
+    const customRecs = (STATE && STATE.customRecords) || {};
+    const hasCustomInInd = (arr) => Array.isArray(arr) && arr.some(r => r && !r.voided && !r.archived && r._industry === ind);
+    if (hasCustomInInd(customRecs.equipment) || hasCustomInInd(customRecs.drivers)) return true;
+    const indStore = (STATE && STATE.industryCustomRows) || {};
+    return hasCustomInInd(indStore.equipment) || hasCustomInInd(indStore.drivers);
+  }
+
   function isHubInActiveIndustry(h, indId) {
     if (!h) return false;
     const activeInd = indId || getActiveIndustry(STATE.company);
+    if (h.id === 'univ_fleet') {
+      return isFleetUniversalIndustry(activeInd);
+    }
     if (activeInd === 'Holding & Treasury') {
       return !['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Holding & Treasury');
     }
@@ -11461,6 +11505,22 @@
       return !['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Insurance & Brokerage');
     }
     return !h.industry;
+  }
+
+  function effectiveIndustryForPerms() {
+    return (STATE && STATE._permEvalInd) || getActiveIndustry(STATE.company);
+  }
+
+  function hasMultipleComparisonEntities(u, indOverride) {
+    u = u || activeUser();
+    const ind = indOverride || effectiveIndustryForPerms();
+    const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
+    const indCos = cat.filter(c => c && (c.industry || 'Manufacturing') === ind);
+    if (STATE.company === DEMO_COMPANY_KEY) return indCos.length >= 2;
+    const allowed = allowedCompanyNames(u);
+    if (allowed.length < 2) return false;
+    const allowedNorm = new Set(allowed.map(n => norm(n)));
+    return indCos.filter(c => allowedNorm.has(norm(c.name))).length >= 2;
   }
 
   function isSelfActiveAdminUsersCheck(targetKey, u) {
@@ -11501,8 +11561,12 @@
 
   function canViewViewBaseline(view, u) {
     u = u || activeUser();
+    const effInd = effectiveIndustryForPerms();
     if (view === 'coa_classes' || view === 'gl_automation') return canViewViewBaseline('ledger', u);
-    if (view === 'entities') return canAccessPbiPage('p02_companies', u);
+    if (view === 'entities') return hasMultipleComparisonEntities(u, effInd) && canAccessPbiPage('p02_companies', u);
+    if (view === 'reg_equipment' || view === 'reg_drivers') {
+      if (!isFleetUniversalIndustry(effInd)) return false;
+    }
     if (view === 'hld_consolidation' || view === 'hld_entities') return canAccessPbiPage('p02_companies', u) || canViewViewBaseline('overview', u);
     if (view === 'hld_interactions' || view === 'hld_open_recon' || view === 'hld_due_matrix') return canViewViewBaseline('external', u) || canViewViewBaseline('cashflow', u);
     if (view === 'hld_partners' || view === 'hld_extended' || view === 'hld_distributions') return canViewViewBaseline('raw_jv', u) || canViewViewBaseline('external', u) || canViewViewBaseline('cashflow', u);
@@ -11534,7 +11598,11 @@
     if (view === 'cashflow_analytics') return canViewViewBaseline('cashflow', u) && canAccessPbiPage('p14_cashflow', u);
     if (view === 'warehouse' || view === 'warehouse_parts') return canViewViewBaseline('fleet', u) || canViewViewBaseline('expenses', u) || canViewViewBaseline('raw', u);
     if (view === 'expenses_analytics') return canViewViewBaseline('expenses', u) && canAccessPbiPage('p07_ap', u);
-    if (view === 'workforce_map' || view === 'payroll_attendance' || view === 'payroll_allowances' || view === 'payroll_contracts') return canViewViewBaseline('payroll', u);
+    if (view === 'workforce_map' || view === 'payroll_allowances') {
+      if (effectiveIndustryForPerms() !== 'Manufacturing') return false;
+      return canViewViewBaseline('payroll', u);
+    }
+    if (view === 'payroll_attendance' || view === 'payroll_contracts') return canViewViewBaseline('payroll', u);
     if (view === 'alert_rules') return canViewViewBaseline('sentinels', u);
     // Approvals Inbox: anyone who reviews Sentinels, plus any seat that may approve an unlock.
     if (view === 'approvals') return canViewViewBaseline('sentinels', u) || Boolean(window.MFG_APPROVALS && window.MFG_APPROVALS.canApprove(u));
@@ -11587,12 +11655,14 @@
 
   function getHubDef(hubId) {
     if (hubId === 'master') hubId = 'univ_parties';
+    if (hubId === 'univ_rates') hubId = 'univ_catalog';
     return HUB_CATALOG.find(h => h.id === hubId) || null;
   }
 
   function canViewHubBaseline(hubId, u) {
     u = u || activeUser();
     if (hubId === 'master') hubId = 'univ_parties';
+    if (hubId === 'univ_rates') return canViewViewBaseline('reg_fx_rates', u) || canViewViewBaseline('reg_vat_rates', u);
     const h = getHubDef(hubId);
     if (!h) return canViewViewBaseline(hubId, u);
     if (hubId === 'sentinels') return canViewViewBaseline('sentinels', u) || canViewVoidLog(u);
@@ -11609,6 +11679,17 @@
     if (isSelfActiveAdminUsersCheck(hubId, u)) return true;
     if (!hp || !hp.customized) return canViewHubBaseline(hubId, u);
     if (hp.selectAll) return true;
+    if (hubId === 'univ_rates') {
+      if (Object.prototype.hasOwnProperty.call(hp.hubs, 'univ_rates')) return Boolean(hp.hubs.univ_rates);
+      if (Object.prototype.hasOwnProperty.call(hp.hubs, 'univ_catalog')) return Boolean(hp.hubs.univ_catalog);
+      return canViewHubBaseline('univ_rates', u);
+    }
+    if (hubId === 'univ_catalog' && Object.prototype.hasOwnProperty.call(hp.hubs, 'univ_catalog')) {
+      return Boolean(hp.hubs.univ_catalog) || Boolean(hp.hubs.univ_rates);
+    }
+    if (hubId === 'univ_staff' && !Object.prototype.hasOwnProperty.call(hp.hubs, 'univ_staff') && Object.prototype.hasOwnProperty.call(hp.hubs, 'univ_fleet')) {
+      return Boolean(hp.hubs.univ_fleet);
+    }
     if (Object.prototype.hasOwnProperty.call(hp.hubs, hubId)) {
       return Boolean(hp.hubs[hubId]);
     }
@@ -11622,13 +11703,27 @@
   function isPageEnabledInPolicy(canonView, parentHubId, hp, u) {
     if (canonView === 'void_log' && !canViewVoidLog(u)) return false;
     if (isSelfActiveAdminUsersCheck(canonView, u) || isSelfActiveAdminUsersCheck(parentHubId, u)) return true;
+    const h = getHubDef(parentHubId);
+    const effInd = effectiveIndustryForPerms();
+    const tabDef = (h && Array.isArray(h.tabs)) ? h.tabs.find(t => t.view === canonView) : null;
+    if (canonView === 'entities' && !hasMultipleComparisonEntities(u, effInd)) return false;
+    if (tabDef && tabDef.mfgOnly && effInd !== 'Manufacturing') return false;
+    if ((canonView === 'reg_equipment' || canonView === 'reg_drivers') && !isFleetUniversalIndustry(effInd)) return false;
     if (!hp || !hp.customized) return canViewViewBaseline(canonView, u);
     if (!isHubEnabledInPolicy(parentHubId, hp, u)) return false;
     if (hp.selectAll) return true;
     if (Object.prototype.hasOwnProperty.call(hp.pages, canonView)) {
       return Boolean(hp.pages[canonView]);
     }
-    const h = getHubDef(parentHubId);
+    if ((canonView === 'reg_fx_rates' || canonView === 'reg_vat_rates') && Object.prototype.hasOwnProperty.call(hp.hubs, 'univ_rates')) {
+      return Boolean(hp.hubs.univ_rates);
+    }
+    if (parentHubId === 'univ_catalog' && (canonView === 'reg_products' || canonView === 'reg_items' || canonView === 'reg_categories') && Object.prototype.hasOwnProperty.call(hp.hubs, 'univ_catalog') && !hp.hubs.univ_catalog) {
+      return false;
+    }
+    if ((canonView === 'reg_staff' || canonView === 'reg_roles') && !Object.prototype.hasOwnProperty.call(hp.hubs, 'univ_staff') && Object.prototype.hasOwnProperty.call(hp.hubs, 'univ_fleet')) {
+      return Boolean(hp.hubs.univ_fleet);
+    }
     if (h && Array.isArray(h.tabs)) {
       const anyExplicitSibling = h.tabs.some(t => Object.prototype.hasOwnProperty.call(hp.pages, t.view));
       if (anyExplicitSibling) {
@@ -21274,7 +21369,7 @@
               <h3>Operating Entities Scorecard</h3>
               <span class="ph-sub">Click any entity to focus workspace</span>
             </div>
-            <button type="button" class="btn-ghost-bar ceo-ph-btn" data-nav-jump="entities">Entity Comparison</button>
+            ${canViewView('entities') ? '<button type="button" class="btn-ghost-bar ceo-ph-btn" data-nav-jump="entities">Entity Comparison</button>' : ''}
           </div>
           <div class="table-scroll ceo-table-scroll">
             <table class="m-grid ceo-scorecard-table" data-no-col-mgr="1">
@@ -44205,7 +44300,7 @@
       ? 'Attendance & Overtime'
       : (subMode === 'allowances'
           ? 'Site Transport'
-          : (subMode === 'contracts' ? 'Contracts & OT Rates' : 'Payroll & Workforce'));
+          : (subMode === 'contracts' ? 'Contracts & Pay Rates' : 'Payroll & Salaries'));
 
     const bannerHtml = subMode === 'attendance' ? `
       <div class="cockpit-banner has-insights">
@@ -44512,7 +44607,7 @@
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
+              ${canViewView('workforce_map') ? `<button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>` : ''}
               <button type="button" class="btn btn-ghost-bar" id="payTogglePolicyBtn">${ic('clock')} ${STATE.payrollPolicyOpen ? 'Hide Shifts &amp; Policies' : 'Shifts, Policies &amp; Face ID'}</button>
               <button type="button" class="btn btn-ghost-bar" id="payAttPrePaydayCardBtn">${ic('receipt')} Pre-Payday Card</button>
               <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="attendance">${ic('kiosks')} Attendance Kiosk</button>
@@ -45208,7 +45303,7 @@
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_staff">${ic('reg_staff')} Staff Registry (All BUs)</button>
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_roles">${ic('reg_roles')} Staff Roles</button>
-              <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_allowances">${ic('payroll_allowances')} Site Transport (${fmtNum(logAll.length)})</button>
+              ${canViewView('payroll_allowances') ? `<button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_allowances">${ic('payroll_allowances')} Site Transport (${fmtNum(logAll.length)})</button>` : ''}
               ${canOpenFatherBackfill() ? (() => { const fbS = getFatherBackfillSummary(); return `<button type="button" class="btn btn-ghost-bar" data-open-father-backfill="1">${ic('reg_staff')} <span>Father's Name Backfill</span>${fbS.totalMissing > 0 ? ` <span class="badge warn" data-no-i18n="1">${fmtNum(fbS.totalMissing)}</span>` : ''}</button>`; })() : ''}
               ${exportBtn('payEmpPanel', 'Employment_Contracts')}
               ${(canShowAttDollars && canEnterForm('employment')) ? '<button type="button" class="btn btn-ghost-bar" data-open-pending-salary="1">+ Pending-Salary Hire</button>' : ''}
@@ -45416,7 +45511,7 @@
             ${canAccessRdlReport('10') ? `<button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="10">${ic('printer')} Payroll RDL (#10)</button>` : ''}
             ${canAccessRdlReport('28') ? `<button type="button" class="btn btn-ghost-bar" data-open-hr-bordereau data-hr-pack-company="${esc(COMPANY_BU_MATCH[STATE.company] || '')}" data-ui-tip="Open Company CNSS R3 &amp; Nominal Bordereau">${ic('printer')} CNSS R3 Bordereau</button>` : ''}
             <button type="button" class="btn btn-ghost-bar" id="payOpenPrePaydayCardBtn">${ic('receipt')} Pre-Payday Card</button>
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
+            ${canViewView('workforce_map') ? `<button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>` : ''}
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_attendance">${ic('payroll_attendance')} Attendance (${fmtNum(attAll.length)})</button>
             ${exportBtn('paySalPanel', 'Salary_Disbursements')}
             ${canEnterForm('salary') ? '<button type="button" class="btn btn-primary" data-open-modal="salary">+ Pay Salary</button>' : ''}
@@ -61055,7 +61150,7 @@
               <h3>Operating Entities Scorecard (${indEntities.length})</h3>
               <span class="ph-sub">Click any entity to focus workspace</span>
             </div>
-            <button type="button" class="btn-ghost-bar ceo-ph-btn" data-nav-jump="entities">Entity Comparison</button>
+            ${canViewView('entities') ? '<button type="button" class="btn-ghost-bar ceo-ph-btn" data-nav-jump="entities">Entity Comparison</button>' : ''}
           </div>
           <div class="table-scroll ceo-table-scroll">
             <table class="m-grid ceo-scorecard-table" data-no-col-mgr="1">
@@ -84409,20 +84504,27 @@
       }
     ];
     const seatInd = previewUser ? getSeatPrimaryIndustry(previewUser) : getActiveIndustry(STATE.company);
-    const hubs = (typeof HUB_CATALOG !== 'undefined'
-      ? HUB_CATALOG.filter(h => isHubInActiveIndustry(h, seatInd))
-      : []).map(h => {
-      const vis = canViewHub(h.id, previewUser);
-      const totalPages = (h.tabs || []).length;
-      const onPages = vis ? (h.tabs || []).filter(t => canViewView(t.view, previewUser)).length : 0;
-      return {
-        id: h.id,
-        title: h.title,
-        visible: vis,
-        onPages,
-        totalPages
-      };
-    });
+    const prevCapEvalInd = STATE._permEvalInd;
+    let hubs = [];
+    try {
+      STATE._permEvalInd = seatInd || 'Manufacturing';
+      hubs = (typeof HUB_CATALOG !== 'undefined'
+        ? HUB_CATALOG.filter(h => isHubInActiveIndustry(h, seatInd))
+        : []).map(h => {
+        const vis = canViewHub(h.id, previewUser);
+        const totalPages = (h.tabs || []).length;
+        const onPages = vis ? (h.tabs || []).filter(t => canViewView(t.view, previewUser)).length : 0;
+        return {
+          id: h.id,
+          title: h.title,
+          visible: vis,
+          onPages,
+          totalPages
+        };
+      });
+    } finally {
+      STATE._permEvalInd = prevCapEvalInd;
+    }
     const dashSuites = PERM_CATALOG.dashboards.map(d => ({
       id: d.id,
       short: DASH_SUITE_SHORT_NAMES[d.id] || d.label,
@@ -85005,50 +85107,66 @@
     const activeHubMatrixInd = (STATE.permHubIndFilter && validInds.includes(STATE.permHubIndFilter))
       ? STATE.permHubIndFilter
       : previewSeatInd;
-    const hubVisibilityList = (typeof HUB_CATALOG !== 'undefined'
-      ? HUB_CATALOG.filter(h => isHubInActiveIndustry(h, previewSeatInd))
-      : []).map(h => {
-      const vis = canViewHub(h.id, previewUser);
-      const totalP = (h.tabs || []).length;
-      const onP = vis ? (h.tabs || []).filter(t => canViewView(t.view, previewUser)).length : 0;
-      return {
-        id: h.id,
-        title: h.title,
-        visible: vis,
-        onPages: onP,
-        totalPages: totalP
-      };
-    });
-    const matrixHubList = (typeof HUB_CATALOG !== 'undefined'
-      ? HUB_CATALOG.filter(h => isHubInActiveIndustry(h, activeHubMatrixInd))
-      : []).map(h => {
-      const vis = canViewHub(h.id, previewUser);
-      const tabStates = (h.tabs || []).map(t => {
-        const lockedRole = t.view === 'void_log' && !canViewVoidLog(previewUser);
+    const prevEvalInd = STATE._permEvalInd;
+    let hubVisibilityList = [];
+    try {
+      STATE._permEvalInd = previewSeatInd;
+      hubVisibilityList = (typeof HUB_CATALOG !== 'undefined'
+        ? HUB_CATALOG.filter(h => isHubInActiveIndustry(h, previewSeatInd))
+        : []).map(h => {
+        const vis = canViewHub(h.id, previewUser);
+        const visTabs = (h.tabs || []).filter(t => (!t.mfgOnly || previewSeatInd === 'Manufacturing') && (t.view !== 'entities' || hasMultipleComparisonEntities(previewUser, previewSeatInd)) && !(t.view === 'void_log' && !canViewVoidLog(previewUser)));
+        const totalP = visTabs.length;
+        const onP = vis ? visTabs.filter(t => canViewView(t.view, previewUser)).length : 0;
         return {
-          view: t.view,
-          label: t.label,
-          on: !lockedRole && vis && canViewView(t.view, previewUser),
-          lockedSelf: isSelfActiveAdminUsersCheck(t.view, previewUser),
-          lockedRole
+          id: h.id,
+          title: h.title,
+          visible: vis,
+          onPages: onP,
+          totalPages: totalP
         };
       });
-      const onCount = tabStates.filter(t => t.on).length;
-      const eligibleCount = tabStates.filter(t => !t.lockedRole).length;
-      return {
-        id: h.id,
-        title: h.title,
-        shortLabel: h.shortLabel || h.title,
-        group: h.group || 'ops',
-        visible: vis && onCount > 0,
-        lockedSelf: isSelfActiveAdminUsersCheck(h.id, previewUser),
-        tabs: tabStates,
-        onPages: onCount,
-        totalPages: eligibleCount,
-        allPagesOn: vis && eligibleCount > 0 && onCount === eligibleCount,
-        partialPages: vis && onCount > 0 && onCount < eligibleCount
-      };
-    });
+    } finally {
+      STATE._permEvalInd = prevEvalInd;
+    }
+    let matrixHubList = [];
+    try {
+      STATE._permEvalInd = activeHubMatrixInd;
+      matrixHubList = (typeof HUB_CATALOG !== 'undefined'
+        ? HUB_CATALOG.filter(h => isHubInActiveIndustry(h, activeHubMatrixInd))
+        : []).map(h => {
+        const vis = canViewHub(h.id, previewUser);
+        const tabStates = (h.tabs || [])
+          .filter(t => (!t.mfgOnly || activeHubMatrixInd === 'Manufacturing') && (t.view !== 'entities' || hasMultipleComparisonEntities(previewUser, activeHubMatrixInd)))
+          .map(t => {
+            const lockedRole = t.view === 'void_log' && !canViewVoidLog(previewUser);
+            return {
+              view: t.view,
+              label: t.label,
+              on: !lockedRole && vis && canViewView(t.view, previewUser),
+              lockedSelf: isSelfActiveAdminUsersCheck(t.view, previewUser),
+              lockedRole
+            };
+          });
+        const onCount = tabStates.filter(t => t.on).length;
+        const eligibleCount = tabStates.filter(t => !t.lockedRole).length;
+        return {
+          id: h.id,
+          title: h.title,
+          shortLabel: h.shortLabel || h.title,
+          group: h.group || 'ops',
+          visible: vis && onCount > 0,
+          lockedSelf: isSelfActiveAdminUsersCheck(h.id, previewUser),
+          tabs: tabStates,
+          onPages: onCount,
+          totalPages: eligibleCount,
+          allPagesOn: vis && eligibleCount > 0 && onCount === eligibleCount,
+          partialPages: vis && onCount > 0 && onCount < eligibleCount
+        };
+      });
+    } finally {
+      STATE._permEvalInd = prevEvalInd;
+    }
     const totalMatrixHubs = matrixHubList.length;
     const enabledMatrixHubs = matrixHubList.filter(h => h.visible).length;
     const totalMatrixPages = matrixHubList.reduce((acc, h) => acc + h.totalPages, 0);
@@ -124770,24 +124888,86 @@
           : {};
       }
     }
-    const existingHp = getEffectiveHubPagePolicy(pUser);
+    const rawSnapCp = pUser && pUser.custom_perms
+      ? (typeof pUser.custom_perms === 'string' ? parseUserCustomPerms(pUser.custom_perms) : pUser.custom_perms)
+      : {};
+    const evalUser = pUser
+      ? Object.assign({}, pUser, { custom_perms: JSON.parse(JSON.stringify(rawSnapCp || {})) })
+      : pUser;
+    const existingHp = getEffectiveHubPagePolicy(evalUser);
     if (!STATE.draftCustomPerms.hubPagesCustomized || !STATE.draftCustomPerms.hubs || !STATE.draftCustomPerms.pages) {
       STATE.draftCustomPerms.hubPagesCustomized = true;
       STATE.draftCustomPerms.hubPagesSelectAll = Boolean(existingHp && existingHp.selectAll);
       STATE.draftCustomPerms.hubs = (existingHp && existingHp.hubs && typeof existingHp.hubs === 'object') ? Object.assign({}, existingHp.hubs) : {};
       STATE.draftCustomPerms.pages = (existingHp && existingHp.pages && typeof existingHp.pages === 'object') ? Object.assign({}, existingHp.pages) : {};
     }
-    HUB_CATALOG.filter(h => isHubInActiveIndustry(h, effInd)).forEach(h => {
-      if (!Object.prototype.hasOwnProperty.call(STATE.draftCustomPerms.hubs, h.id)) {
-        const hOn = canViewHub(h.id, pUser);
-        STATE.draftCustomPerms.hubs[h.id] = hOn;
-        (h.tabs || []).forEach(t => {
-          if (!Object.prototype.hasOwnProperty.call(STATE.draftCustomPerms.pages, t.view)) {
-            STATE.draftCustomPerms.pages[t.view] = hOn && canViewView(t.view, pUser);
-          }
-        });
+    const prevEvalInd = STATE._permEvalInd;
+    try {
+      STATE._permEvalInd = effInd || 'Manufacturing';
+      if (Object.prototype.hasOwnProperty.call(STATE.draftCustomPerms.hubs, 'univ_rates')) {
+        const legacyRatesOn = Boolean(STATE.draftCustomPerms.hubs.univ_rates);
+        const catDef = HUB_CATALOG.find(h => h.id === 'univ_catalog');
+        if (catDef && Array.isArray(catDef.tabs)) {
+          const prevHadCat = Object.prototype.hasOwnProperty.call(STATE.draftCustomPerms.hubs, 'univ_catalog');
+          const prevCatVal = prevHadCat ? Boolean(STATE.draftCustomPerms.hubs.univ_catalog) : canViewHubBaseline('univ_catalog', evalUser);
+          catDef.tabs.forEach(t => {
+            if (!Object.prototype.hasOwnProperty.call(STATE.draftCustomPerms.pages, t.view)) {
+              if (t.view === 'reg_fx_rates' || t.view === 'reg_vat_rates') {
+                STATE.draftCustomPerms.pages[t.view] = legacyRatesOn;
+              } else {
+                STATE.draftCustomPerms.pages[t.view] = prevHadCat ? prevCatVal : canViewViewBaseline(t.view, evalUser);
+              }
+            }
+          });
+          STATE.draftCustomPerms.hubs.univ_catalog = catDef.tabs.some(t => Boolean(STATE.draftCustomPerms.pages[t.view]));
+        }
+        delete STATE.draftCustomPerms.hubs.univ_rates;
       }
-    });
+      HUB_CATALOG.filter(h => isHubInActiveIndustry(h, effInd)).forEach(h => {
+        if (!Object.prototype.hasOwnProperty.call(STATE.draftCustomPerms.hubs, h.id)) {
+          const hOn = canViewHub(h.id, evalUser);
+          STATE.draftCustomPerms.hubs[h.id] = hOn;
+          (h.tabs || []).forEach(t => {
+            if (!Object.prototype.hasOwnProperty.call(STATE.draftCustomPerms.pages, t.view)) {
+              if (!hOn) {
+                STATE.draftCustomPerms.pages[t.view] = false;
+              } else if (t.mfgOnly) {
+                STATE._permEvalInd = 'Manufacturing';
+                try {
+                  STATE.draftCustomPerms.pages[t.view] = canViewView(t.view, evalUser);
+                } finally {
+                  STATE._permEvalInd = effInd || 'Manufacturing';
+                }
+              } else if (t.view === 'entities') {
+                const allInds = ['Manufacturing', 'Holding & Treasury', 'Hospitality & Resorts', 'Automotive & Heavy Trading', 'Real Estate & Property', 'Insurance & Brokerage'];
+                const multiInd = allInds.find(ind => hasMultipleComparisonEntities(evalUser, ind));
+                if (multiInd) {
+                  STATE._permEvalInd = multiInd;
+                  try {
+                    STATE.draftCustomPerms.pages[t.view] = canViewView('entities', evalUser);
+                  } finally {
+                    STATE._permEvalInd = effInd || 'Manufacturing';
+                  }
+                } else if (STATE.permHubScopeMode !== 'seat') {
+                  const evPerms = getEffectivePermissions(evalUser);
+                  const evRole = String((evalUser && evalUser.role) || '');
+                  const evPbi = String((evalUser && evalUser.pbi_access) || 'partial');
+                  STATE.draftCustomPerms.pages[t.view] = (/^Custom/i.test(evRole) || evPbi === 'custom')
+                    ? Boolean(evPerms && evPerms.dashboards && evPerms.dashboards.dash_overview)
+                    : (evPbi !== 'none');
+                } else {
+                  STATE.draftCustomPerms.pages[t.view] = false;
+                }
+              } else {
+                STATE.draftCustomPerms.pages[t.view] = canViewView(t.view, evalUser);
+              }
+            }
+          });
+        }
+      });
+    } finally {
+      STATE._permEvalInd = prevEvalInd;
+    }
     return STATE.draftCustomPerms;
   }
 
@@ -125858,6 +126038,7 @@
         (hubDef ? hubDef.tabs || [] : []).forEach(t => {
           draft.pages[t.view] = (t.view === 'void_log' && !allowVoidTab) ? false : Boolean(cb.checked);
         });
+        if (hubId === 'univ_catalog' && draft.hubs) delete draft.hubs.univ_rates;
         if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, hubId);
         STATE.userFormDirty = true;
         commitHubPagesPolicyToRoleIfNeeded(roleEl ? roleEl.value : 'Entry');
@@ -125886,6 +126067,7 @@
             draft.pages[t.view] = (t.view === 'void_log' && !allowVoidTab) ? false : idx === 0;
           });
         }
+        if (hubId === 'univ_catalog' && draft.hubs) delete draft.hubs.univ_rates;
         if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, hubId);
         STATE.userFormDirty = true;
         commitHubPagesPolicyToRoleIfNeeded(roleEl ? roleEl.value : 'Entry');
@@ -125911,7 +126093,14 @@
           toast('Void Log is reserved strictly for Supervisors and Owners');
           return;
         }
-        const wasHubOn = canViewHub(hubId, prevPreview);
+        const prevPageEvalInd = STATE._permEvalInd;
+        let wasHubOn = false;
+        try {
+          STATE._permEvalInd = activeInd || 'Manufacturing';
+          wasHubOn = canViewHub(hubId, prevPreview);
+        } finally {
+          STATE._permEvalInd = prevPageEvalInd;
+        }
         const draft = ensureDraftHubPagesPolicy(prevPreview, activeInd);
         const hubDef = HUB_CATALOG.find(h => h.id === hubId);
         draft.hubPagesSelectAll = false;
@@ -125926,6 +126115,7 @@
             draft.hubs[hubId] = (hubDef.tabs || []).some(t => Boolean(draft.pages[t.view]));
           }
         }
+        if (hubId === 'univ_catalog' && draft.hubs) delete draft.hubs.univ_rates;
         if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, hubId);
         STATE.userFormDirty = true;
         commitHubPagesPolicyToRoleIfNeeded(roleEl ? roleEl.value : 'Entry');
@@ -126981,7 +127171,7 @@
     overview: 'Executive Overview',
     daily_ops: 'Daily Operations',
     entities: 'Entity Comparison',
-    pbi: 'Analytics & Insights',
+    pbi: 'Dashboards',
     tables: 'All Tables & Registers',
     sentinels: 'AI Sentinels & Audit',
     alert_rules: 'Alerts & Thresholds',
@@ -127016,12 +127206,12 @@
     documents: 'Document & Receipt Vault',
     warehouse: 'Warehouse Stock & Moves',
     warehouse_parts: 'Parts & Item Usage',
-    payroll: 'Payroll & Workforce',
+    payroll: 'Payroll & Salaries',
     workforce_map: 'Daily Plant & Machine Map',
     payroll_attendance: 'Attendance & Overtime',
     payroll_allowances: 'Site Transport',
-    payroll_contracts: 'Contracts & OT Rates',
-    payroll_analytics: 'Payroll & Workforce',
+    payroll_contracts: 'Contracts & Pay Rates',
+    payroll_analytics: 'Payroll & Salaries',
     ledger: 'General Ledger & SOA',
     gl: 'General Ledger & SOA',
     coa_classes: 'Chart of Accounts & Classes',
@@ -127061,7 +127251,7 @@
     hsp_stock: 'Cellar, Kitchen & Transfers',
     hsp_menu: 'Menu Engineering & Food Cost %',
     hsp_energy: 'Diesel, Solar & Generators',
-    hsp_maint: 'Venue Repairs & Fixed Assets',
+    hsp_maint: 'Venue Repairs & Assets',
     // Automotive & Heavy Trading sub-views (Phase 3)
     trd_sales: 'Sales Invoices, Lines & Books',
     trd_receivables: 'Receivables, Advances & Promises',
@@ -127094,8 +127284,8 @@
     ins_remittances: 'Insurer Net Premium Remittances & Fiduciary Cash',
     ins_statements: 'Carrier Commission Statement Reconciliation',
     ins_claims: 'FNOL Claims, Reserves & Insurer Settlements',
-    ins_catalogue: '12 Insurance Lines & 52 Carrier Products',
-    ins_agreements: 'Carrier Commission Rate Agreements',
+    ins_catalogue: 'Lines & Products',
+    ins_agreements: 'Commission Agreements',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -127103,7 +127293,7 @@
     overview: 'Executive Overview',
     daily_ops: 'Daily Operations',
     entities: 'Entity Comparison',
-    pbi: 'Analytics & Insights',
+    pbi: 'Dashboards',
     tables: 'All Tables & Registers',
     sentinels: 'AI Sentinels & Audit',
     alert_rules: 'Alerts & Thresholds',
@@ -127138,12 +127328,12 @@
     documents: 'Document & Receipt Vault',
     warehouse: 'Warehouse Stock & Moves',
     warehouse_parts: 'Parts & Item Usage',
-    payroll: 'Payroll & Workforce',
+    payroll: 'Payroll & Salaries',
     workforce_map: 'Daily Plant & Machine Map',
     payroll_attendance: 'Attendance & Overtime',
     payroll_allowances: 'Site Transport',
-    payroll_contracts: 'Contracts & OT Rates',
-    payroll_analytics: 'Payroll & Workforce',
+    payroll_contracts: 'Contracts & Pay Rates',
+    payroll_analytics: 'Payroll & Salaries',
     ledger: 'General Ledger & SOA',
     gl: 'General Ledger & SOA',
     coa_classes: 'Chart of Accounts & Classes',
@@ -127180,8 +127370,8 @@
     hsp_partners: 'Partner Splits',
     hsp_stock: 'Kitchen & Cellar Stock',
     hsp_menu: 'Menu & Recipe Cost',
-    hsp_energy: 'Generators & Utilities',
-    hsp_maint: 'Venue Repairs',
+    hsp_energy: 'Diesel, Solar & Generators',
+    hsp_maint: 'Venue Repairs & Assets',
     trd_sales: 'Sales & Invoice Books',
     trd_receivables: 'Receivables & Advances',
     trd_targets: 'Targets & Price Lists',
@@ -127212,7 +127402,7 @@
     ins_statements: 'Statement Recon',
     ins_claims: 'Claims & FNOL',
     ins_catalogue: 'Lines & Products',
-    ins_agreements: 'Carrier Rates',
+    ins_agreements: 'Commission Agreements',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -127241,60 +127431,60 @@
       grp1: 'Commercial & Procurement',
       grp2: 'Plant, Fleet & Workforce',
       slots: [
-        { hub: 'sales', view: 'sales', label: 'Sales & Receivables', pillId: '' },
+        { hub: 'sales', view: 'sales', label: 'Sales & Receivables', pillId: 'navCountSales' },
         { hub: 'raw', view: 'raw', label: 'Quarry, Haulage & JVs', pillId: 'navCountRaw' },
         { hub: 'fleet', view: 'fleet', label: 'Fleet & Maintenance', pillId: 'navCountFleet' },
-        { hub: 'warehouse', view: 'warehouse', label: 'Warehouse & Parts', pillId: '' }
+        { hub: 'warehouse', view: 'warehouse', label: 'Warehouse & Parts', pillId: 'navCountWarehouse' }
       ]
     },
     'Holding & Treasury': {
       grp1: 'Group & Intercompany',
       grp2: 'Capital, Partners & Workforce',
       slots: [
-        { hub: 'hld_consolidation', view: 'hld_consolidation', label: 'Group Consolidation', pillId: '' },
+        { hub: 'hld_consolidation', view: 'hld_consolidation', label: 'Group Consolidation', pillId: 'navCountSales' },
         { hub: 'hld_interactions', view: 'hld_interactions', label: 'Intercompany Hub', pillId: 'navCountRaw' },
         { hub: 'hld_partners', view: 'hld_extended', label: 'Extended & Partners', pillId: 'navCountFleet' },
-        { hub: 'hld_loans', view: 'hld_loans', label: 'Loans, Capital & Assets', pillId: '' }
+        { hub: 'hld_loans', view: 'hld_loans', label: 'Loans, Capital & Assets', pillId: 'navCountWarehouse' }
       ]
     },
     'Hospitality & Resorts': {
       grp1: 'Venue Revenue & Procurement',
       grp2: 'Resort Stock, Energy & Staff',
       slots: [
-        { hub: 'hsp_revenue', view: 'hsp_revenue', label: 'Revenue, POS & Chalets', pillId: '' },
+        { hub: 'hsp_revenue', view: 'hsp_revenue', label: 'Revenue, POS & Chalets', pillId: 'navCountSales' },
         { hub: 'hsp_memberships', view: 'hsp_memberships', label: 'Memberships & Splits', pillId: 'navCountRaw' },
         { hub: 'hsp_stock', view: 'hsp_stock', label: 'Kitchen, Bar & Stock', pillId: 'navCountFleet' },
-        { hub: 'hsp_energy', view: 'hsp_energy', label: 'Generators & Utilities', pillId: '' }
+        { hub: 'hsp_energy', view: 'hsp_maint', label: 'Repairs, Assets & Utilities', pillId: 'navCountWarehouse' }
       ]
     },
     'Automotive & Heavy Trading': {
       grp1: 'Sales, Imports & Payables',
       grp2: 'Stock, Trucks & Workforce',
       slots: [
-        { hub: 'trd_sales', view: 'trd_sales', label: 'Invoicing & Receivables', pillId: '' },
+        { hub: 'trd_sales', view: 'trd_sales', label: 'Invoicing & Receivables', pillId: 'navCountSales' },
         { hub: 'trd_purchases', view: 'trd_purchases', label: 'Imports & Landed Cost', pillId: 'navCountRaw' },
         { hub: 'trd_trucks', view: 'trd_trucks', label: 'Showroom & Serial Units', pillId: 'navCountFleet' },
-        { hub: 'trd_stock', view: 'trd_stock', label: 'Spare Parts & Warehouses', pillId: '' }
+        { hub: 'trd_stock', view: 'trd_stock', label: 'Parts & Warehouses', pillId: 'navCountWarehouse' }
       ]
     },
     'Real Estate & Property': {
       grp1: 'Leasing, Sales & Billing',
       grp2: 'Portfolio, Works & Workforce',
       slots: [
-        { hub: 're_leases', view: 're_leases', label: 'Leases & Rent Roll', pillId: '' },
+        { hub: 're_leases', view: 're_leases', label: 'Leases & Rent Roll', pillId: 'navCountSales' },
         { hub: 're_sales', view: 're_sales', label: 'Property Sales & Buyers', pillId: 'navCountRaw' },
         { hub: 're_properties', view: 're_properties', label: 'Portfolio & Valuations', pillId: 'navCountFleet' },
-        { hub: 're_workorders', view: 're_workorders', label: 'Work Orders & Fit-Out', pillId: '' }
+        { hub: 're_workorders', view: 're_workorders', label: 'Work Orders & Fit-Out', pillId: 'navCountWarehouse' }
       ]
     },
     'Insurance & Brokerage': {
       grp1: 'Production, Renewals & Claims',
       grp2: 'Claims, Catalogue & Workforce',
       slots: [
-        { hub: 'ins_policies', view: 'ins_policies', label: 'Policies & Renewals', pillId: '' },
+        { hub: 'ins_policies', view: 'ins_policies', label: 'Policies & Renewals', pillId: 'navCountSales' },
         { hub: 'ins_billing', view: 'ins_billing', label: 'Premiums & Insurer Recon', pillId: 'navCountRaw' },
         { hub: 'ins_claims', view: 'ins_claims', label: 'Claims & Recoveries', pillId: 'navCountFleet' },
-        { hub: 'ins_catalogue', view: 'ins_catalogue', label: 'Lines, Products & Rates', pillId: '' }
+        { hub: 'ins_catalogue', view: 'ins_catalogue', label: 'Lines, Products & Rates', pillId: 'navCountWarehouse' }
       ]
     }
   };
@@ -127333,6 +127523,15 @@
     const effInd = (targetInd && INDUSTRY_SIDEBAR_SPEC[targetInd])
       ? targetInd
       : (INDUSTRY_SIDEBAR_SPEC[getActiveIndustry(STATE.company)] ? getActiveIndustry(STATE.company) : 'Manufacturing');
+    if (view === 'entities' && !hasMultipleComparisonEntities(activeUser(), effInd)) {
+      return 'overview';
+    }
+    if ((view === 'workforce_map' || view === 'payroll_allowances') && effInd !== 'Manufacturing') {
+      return 'payroll';
+    }
+    if ((view === 'reg_equipment' || view === 'reg_drivers') && !isFleetUniversalIndustry(effInd)) {
+      return 'reg_staff';
+    }
     const nextSpec = INDUSTRY_SIDEBAR_SPEC[effInd] || INDUSTRY_SIDEBAR_SPEC['Manufacturing'];
     const curHub = VIEW_TO_HUB[view] || view;
     const allSpecs = Object.values(INDUSTRY_SIDEBAR_SPEC);
@@ -127354,9 +127553,12 @@
 
   function syncSidebarHubVisibilityDom(u) {
     const user = u || activeUser();
+    const activeInd = getActiveIndustry(STATE.company);
     document.querySelectorAll('#sidebarNav .nav-item').forEach(btn => {
       const hubId = btn.getAttribute('data-hub') || btn.getAttribute('data-view');
-      btn.hidden = !canViewHub(hubId, user);
+      const hDef = getHubDef(hubId);
+      const inInd = hDef ? isHubInActiveIndustry(hDef, activeInd) : true;
+      btn.hidden = !inInd || !canViewHub(hubId, user);
     });
     document.querySelectorAll('#sidebarNav .grp').forEach(grpEl => {
       let sib = grpEl.nextElementSibling, anyVisible = false;
@@ -129623,6 +129825,7 @@
     const activeIndSpec = INDUSTRY_SIDEBAR_SPEC[activeInd] || INDUSTRY_SIDEBAR_SPEC['Manufacturing'];
     const activeIndHubSet = new Set(activeIndSpec.slots.map(s => s.hub).concat(['expenses', 'payroll']));
     const hubsInGroup = HUB_CATALOG.filter(h => {
+      if (!isHubInActiveIndustry(h, activeInd)) return false;
       if (h.group === 'commercial' || h.group === 'plant') {
         if (!activeIndHubSet.has(h.id)) return false;
       }
@@ -129636,9 +129839,18 @@
     el.innerHTML = hubsInGroup.map(h => {
       const on = h.id === activeHubId;
       const badge = getHubExceptionBadge(h.id, user, k, sentinelsOpen);
-      return `<button type="button" class="m-subnav-pill${on ? ' on' : ''}" data-subnav-hub="${esc(h.id)}" data-subnav-view="${esc(resolveHubView(h.id, user))}" title="${esc(h.title)}"><i class="m-subnav-ico" aria-hidden="true">${ic(h.id)}</i><span>${esc(h.title)}</span>${badge ? `<em class="${esc(badge.cls)}">${esc(badge.text)}</em>` : ''}</button>`;
+      return `<button type="button" class="m-subnav-pill${on ? ' on' : ''}" data-subnav-hub="${esc(h.id)}" data-subnav-view="${esc(resolveHubView(h.id, user))}" title="${esc(h.title)}"><i class="m-subnav-ico" aria-hidden="true">${ic(h.id)}</i><span>${esc(h.title)}</span>${badge ? `<em class="${esc(badge.cls)}"${badge.targetView ? ` data-target-view="${esc(badge.targetView)}"` : ''}>${esc(badge.text)}</em>` : ''}</button>`;
     }).join('');
-    el.querySelectorAll('[data-subnav-hub]').forEach(btn => btn.addEventListener('click', () => clickHub(btn.getAttribute('data-subnav-hub'))));
+    el.querySelectorAll('[data-subnav-hub]').forEach(btn => btn.addEventListener('click', e => {
+      const pill = e.target && e.target.closest ? e.target.closest('em[data-target-view]') : null;
+      const tv = pill ? pill.getAttribute('data-target-view') : '';
+      if (tv && canViewView(tv, user)) {
+        e.stopPropagation();
+        setView(tv);
+        return;
+      }
+      clickHub(btn.getAttribute('data-subnav-hub'));
+    }));
 
     // Sync Mobile Bottom Dock active states
     const dOver = $('dockBtnOverview'), dDisp = $('dockBtnDispatch'), dBooks = $('dockBtnBooks'), dEntry = $('mobileDockEntryBtn'), dEntryLbl = $('mobileDockEntryLabel');
@@ -129691,7 +129903,7 @@
     const pillsHtml = permittedTabs.map(t => {
       const matchViews = t.match || [t.view];
       const isActive = matchViews.includes(STATE.view);
-      const lbl = (isActive && !UNIV_VIEW_TO_TABLE_KEY[STATE.view] && VIEW_TITLES[STATE.view])
+      const lbl = (isActive && STATE.view !== t.view && !UNIV_VIEW_TO_TABLE_KEY[STATE.view] && VIEW_TITLES[STATE.view])
         ? VIEW_TITLES[STATE.view]
         : (t.shortLabel || t.label || VIEW_TITLES[t.view] || t.view);
       const badge = typeof t.badgeFn === 'function' ? t.badgeFn(user, k, sentinelsOpen) : null;
@@ -144925,12 +145137,15 @@
     const hasFollowupOnly = !hasAlerts && c.renewal_submitted > 0;
     const packAccess = typeof canAccessRdlReport === 'function' ? canAccessRdlReport('28') : false;
     const leadItem = wd.items[0] || null;
+    const isRegStaffScope = (o.scope || 'reg_staff') === 'reg_staff';
+    const isAllClear = !hasAlerts && !hasFollowupOnly;
+    const isSlim = isAllClear && activeTier === 'all' && !STATE.permitWatchdogExpanded;
     const toneCls = (c.expired > 0 || c.critical_7 > 0)
       ? 'is-critical'
       : (hasAlerts ? 'is-warn' : (hasFollowupOnly ? 'is-followup' : 'is-ok'));
     const curScopeCo = COMPANY_BU_MATCH[STATE.company] || '';
     return `
-      <div class="panel-card permit-watchdog-strip ${toneCls}" id="staffPermitWatchdogStrip" data-scope="${esc(o.scope || 'reg_staff')}">
+      <div class="panel-card permit-watchdog-strip ${toneCls}${isSlim ? ' is-slim' : ''}" id="staffPermitWatchdogStrip" data-scope="${esc(o.scope || 'reg_staff')}">
         <div class="pwd-head">
           <div class="pwd-title-wrap">
             <span class="pwd-ico">${ic('shield')}</span>
@@ -144946,7 +145161,8 @@
             </div>
           </div>
           <div class="pwd-actions">
-            ${packAccess ? `<button type="button" class="btn btn-sm" data-open-hr-bordereau data-hr-pack-company="${esc(curScopeCo)}" data-ui-tip="Open Company CNSS R3 &amp; Nominal Bordereau">${ic('printer')} CNSS R3 Bordereau</button><button type="button" class="btn btn-sm" data-open-hr-pack data-hr-pack-staff="${esc(leadItem ? leadItem.staffId : '')}" data-hr-pack-name="${esc(leadItem ? leadItem.staffName : '')}">${ic('printer')} Contract &amp; NSSF Pack</button>` : ''}
+            ${(packAccess && !isRegStaffScope) ? `<button type="button" class="btn btn-sm" data-open-hr-bordereau data-hr-pack-company="${esc(curScopeCo)}" data-ui-tip="Open Company CNSS R3 &amp; Nominal Bordereau">${ic('printer')} CNSS R3 Bordereau</button><button type="button" class="btn btn-sm" data-open-hr-pack data-hr-pack-staff="${esc(leadItem ? leadItem.staffId : '')}" data-hr-pack-name="${esc(leadItem ? leadItem.staffName : '')}">${ic('printer')} Contract &amp; NSSF Pack</button>` : ''}
+            ${isAllClear ? `<button type="button" class="btn btn-sm btn-ghost-bar pwd-toggle-btn" data-toggle-permit-watchdog="1" aria-expanded="${isSlim ? 'false' : 'true'}">${isSlim ? 'Show filters ▾' : 'Hide filters ▴'}</button>` : ''}
           </div>
         </div>
         <div class="pwd-chips" role="group" aria-label="Compliance watchdog filter">
@@ -161317,24 +161533,31 @@
       if (badge && badge.text) {
         el.textContent = badge.text;
         el.className = 'nav-pill' + (badge.cls ? ' ' + badge.cls : '');
+        el.dataset.targetView = badge.targetView ? String(badge.targetView) : '';
         el.hidden = false;
       } else {
         el.textContent = '';
         el.className = 'nav-pill';
+        el.dataset.targetView = '';
         el.hidden = true;
       }
     };
     const activeSpec = INDUSTRY_SIDEBAR_SPEC[activeInd] || INDUSTRY_SIDEBAR_SPEC['Manufacturing'];
+    const slot0Hub = (activeSpec.slots[0] && activeSpec.slots[0].hub) || 'sales';
     const slot1Hub = (activeSpec.slots[1] && activeSpec.slots[1].hub) || 'raw';
     const slot2Hub = (activeSpec.slots[2] && activeSpec.slots[2].hub) || 'fleet';
+    const slot3Hub = (activeSpec.slots[3] && activeSpec.slots[3].hub) || 'warehouse';
     setExceptionPill('navCountOverview', getHubExceptionBadge('overview', user, k, sentinelsOpen));
     setExceptionPill('navCountSentinels', getHubExceptionBadge('sentinels', user, k, sentinelsOpen));
+    setExceptionPill('navCountSales', getHubExceptionBadge(slot0Hub, user, k, sentinelsOpen));
     setExceptionPill('navCountRaw', getHubExceptionBadge(slot1Hub, user, k, sentinelsOpen));
     setExceptionPill('navCountExpenses', getHubExceptionBadge('expenses', user, k, sentinelsOpen));
     setExceptionPill('navCountFleet', getHubExceptionBadge(slot2Hub, user, k, sentinelsOpen));
+    setExceptionPill('navCountWarehouse', getHubExceptionBadge(slot3Hub, user, k, sentinelsOpen));
     setExceptionPill('navCountPayroll', getHubExceptionBadge('payroll', user, k, sentinelsOpen));
     setExceptionPill('navCountCashflow', getHubExceptionBadge('cashflow', user, k, sentinelsOpen));
     setExceptionPill('navCountTB', getHubExceptionBadge('ledger', user, k, sentinelsOpen));
+    setExceptionPill('navCountUnivStaff', getHubExceptionBadge('univ_staff', user, k, sentinelsOpen));
 
     if (window.innerWidth <= 860) renderMobileSubnav(user, k, sentinelsOpen);
 
@@ -161468,9 +161691,13 @@
       case 'reg_categories':
       case 'reg_fx_rates':
       case 'reg_currencies':
-      case 'reg_vat_rates':
+      case 'reg_vat_rates': {
         ensureStaffMembersSeeded();
-        wsHtml = window.MFG_PBI ? window.MFG_PBI.renderUniversalRegistriesView({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, canAccessRdlReport, canViewPayrollDollarAmounts, pageTitle: canonicalViewTitle, registryGroupKeys: univGroupKeys }) : renderOverview();
+        const curUnivHub = getHubDef(VIEW_TO_HUB[STATE.view]);
+        const siblingSubtabTableKeys = curUnivHub && Array.isArray(curUnivHub.tabs)
+          ? curUnivHub.tabs.flatMap(t => [t.view].concat(t.match || [])).map(v => UNIV_VIEW_TO_TABLE_KEY[v]).filter(Boolean)
+          : [];
+        wsHtml = window.MFG_PBI ? window.MFG_PBI.renderUniversalRegistriesView({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, canAccessRdlReport, canViewPayrollDollarAmounts, pageTitle: canonicalViewTitle, registryGroupKeys: univGroupKeys, siblingSubtabTableKeys }) : renderOverview();
         if (STATE.view === 'reg_staff') {
           const canViewPayStaff = typeof canViewPayrollDollarAmounts === 'function' ? Boolean(canViewPayrollDollarAmounts()) : false;
           const wdStaffCols = ['name', 'father_name', 'nationality', 'dob', 'permit_status', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'role_category', 'phone', 'reference', 'nssf_no', 'work_permit_no', 'residency_no']
@@ -161484,6 +161711,7 @@
           wsHtml = window.MFG_TELEMATICS.renderFleetTelematicsDeck() + wsHtml;
         }
         break;
+      }
       case 'statements': wsHtml = renderStatements(); break;
       case 'users': wsHtml = renderUsers(); break;
       default: wsHtml = renderOverview();
@@ -162106,6 +162334,16 @@
       if (fatherBackfillBtn && container.contains(fatherBackfillBtn)) {
         e.stopPropagation();
         openFatherNameBackfillModal();
+        return;
+      }
+      const watchdogToggle = t.closest('[data-toggle-permit-watchdog]');
+      if (watchdogToggle && container.contains(watchdogToggle)) {
+        e.stopPropagation();
+        STATE.permitWatchdogExpanded = !STATE.permitWatchdogExpanded;
+        const wsEl = $('workspace');
+        const keepY = wsEl ? wsEl.scrollTop : 0;
+        renderApp();
+        if (wsEl) wsEl.scrollTop = keepY;
         return;
       }
       const watchdogChip = t.closest('[data-permit-watchdog-tier]');
@@ -165427,6 +165665,13 @@
   function clickHub(hubId) {
     if (hubId === 'master') hubId = 'univ_parties';
     const u = activeUser();
+    if (hubId === 'univ_rates') {
+      const rateTarget = canViewView('reg_fx_rates', u)
+        ? 'reg_fx_rates'
+        : (canViewView('reg_vat_rates', u) ? 'reg_vat_rates' : resolveHubView('univ_catalog', u));
+      setView(rateTarget);
+      return;
+    }
     const target = resolveHubView(hubId, u);
     setView(target);
   }
@@ -166233,7 +166478,16 @@
     }
     window.addEventListener('scroll', hideAllChartTooltips, { passive: true });
 
-    document.querySelectorAll('#sidebarNav .nav-item, #railSystemBar button.rail-sys-btn[data-hub]').forEach(btn => btn.addEventListener('click', () => clickHub(btn.getAttribute('data-hub') || btn.getAttribute('data-view'))));
+    document.querySelectorAll('#sidebarNav .nav-item, #railSystemBar button.rail-sys-btn[data-hub]').forEach(btn => btn.addEventListener('click', e => {
+      const pill = e.target && e.target.closest ? e.target.closest('.nav-pill[data-target-view]') : null;
+      const tv = pill ? String(pill.getAttribute('data-target-view') || '').trim() : '';
+      if (tv && canViewView(tv)) {
+        e.stopPropagation();
+        setView(tv);
+        return;
+      }
+      clickHub(btn.getAttribute('data-hub') || btn.getAttribute('data-view'));
+    }));
     document.querySelectorAll('#mobileBottomDock [data-dock-view]').forEach(btn => btn.addEventListener('click', () => {
       const dv = btn.getAttribute('data-dock-view');
       const u = activeUser();
@@ -166948,6 +167202,8 @@
         canAccessTable,
         canViewView,
         canViewHub,
+        isHubInActiveIndustry,
+        hasMultipleComparisonEntities,
         canEnterForm,
         canModifyRecord,
         canManageSiblingChronoSchedule,
@@ -167010,11 +167266,13 @@
           if (el && badge && badge.text) {
             el.textContent = badge.text;
             el.className = 'nav-pill' + (badge.cls ? ' ' + badge.cls : '');
+            el.dataset.targetView = badge.targetView ? String(badge.targetView) : '';
             el.hidden = false;
           } else if (el && el.dataset.apvBadge === '1') {
             // The last request is gone: drop the red pill; the next render restores any Sentinel count.
             el.textContent = '';
             el.className = 'nav-pill';
+            el.dataset.targetView = '';
             el.hidden = true;
           }
           if (el) el.dataset.apvBadge = badge && badge.text ? '1' : '';

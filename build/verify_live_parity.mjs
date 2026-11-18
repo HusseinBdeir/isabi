@@ -852,7 +852,7 @@ async function main() {
       // 14-26: All 13 Phase-16 Recon & Phase-17 Period-Close Studios across all 6 verticals
       await test('mfg-statement-recon', M, 'raw', toggleIn('mfgAiStatementReconPanel'), ['mfgAiStatementReconPanel', 'mfgAiPostReconBtn']);
       await test('mfg-period-close', M, 'statements', toggleIn('mfgPeriodClosePanel'), ['mfgPeriodClosePanel', 'mfgAiCutoffSweepBtn', 'mfgConfirmationPackBtn']);
-      await test('holding-14-entity-close', HLD, 'entities', toggleIn('hldCloseGatePanel'), ['hldCloseGatePanel', 'hldBoardPackBriefBtn', 'hldBoardPackListenBtn', 'hldSealAll14EntitiesBtn']);
+      await test('holding-14-entity-close', HLD, 'hld_consolidation', toggleIn('hldCloseGatePanel'), ['hldCloseGatePanel', 'hldBoardPackBriefBtn', 'hldBoardPackListenBtn', 'hldSealAll14EntitiesBtn']);
       await test('holding-bank-sweep', HLD, 'hld_interactions', toggleIn('hldAiBankSweepPanel'), ['hldAiBankSweepPanel', 'hldAiPostBankSweepBtn']);
       await test('holding-semantic-matcher', HLD, 'hld_interactions', toggleIn('hldAiMatchPanel'), ['hldAiMatchPanel']);
       await test('hospitality-settlement-recon', HSP, 'hsp_revenue', toggleIn('hspAiSettlementReconPanel'), ['hspAiSettlementReconPanel', 'hspAiPostClearBtn']);

@@ -1016,6 +1016,68 @@ html.phone-scan-companion #mobileSearchBtn {
   color: #E5B968;
 }
 
+.cmdp-item-pin {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: 1px solid rgba(15, 30, 56, 0.14);
+  background: var(--surface, #FFFFFF);
+  color: var(--muted, #6B7280);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.cmdp-item-pin svg.ic {
+  width: 13px;
+  height: 13px;
+}
+
+.cmdp-item:hover .cmdp-item-pin,
+.cmdp-item.is-active .cmdp-item-pin,
+.cmdp-item-pin.is-pinned {
+  display: inline-flex;
+}
+
+.cmdp-item-pin:hover {
+  border-color: var(--brass, #B88228);
+  background: rgba(184, 130, 40, 0.12);
+  color: var(--brass-strong, #9E6D1B);
+}
+
+.cmdp-item-pin.is-pinned {
+  border-color: rgba(184, 130, 40, 0.45);
+  background: rgba(184, 130, 40, 0.14);
+  color: var(--brass-strong, #9E6D1B);
+}
+
+.cmdp-item-pin.is-pinned svg.ic {
+  fill: currentColor;
+}
+
+@media (pointer: coarse) {
+  .cmdp-item-pin {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+  }
+}
+
+:root[data-theme="dark"] .cmdp-item-pin {
+  background: #271E17;
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #A69580;
+}
+
+:root[data-theme="dark"] .cmdp-item-pin.is-pinned {
+  border-color: rgba(217, 165, 74, 0.45);
+  background: rgba(217, 165, 74, 0.18);
+  color: #E5B968;
+}
+
 .cmdp-badge.kind-filter {
   background: rgba(184, 130, 40, 0.12);
   border-color: rgba(184, 130, 40, 0.30);

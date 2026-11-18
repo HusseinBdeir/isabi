@@ -80,6 +80,7 @@
     // ---- Universal Registries ----
     universal: s('<circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 0 0 0 18 14 14 0 0 0 0-18z"/>'),
     univ_parties: s('<rect x="4" y="3" width="9.5" height="18" rx="1.2"/><path d="M13.5 9h6.5v12h-6.5"/><line x1="7.2" y1="7" x2="10.3" y2="7"/><line x1="7.2" y1="11" x2="10.3" y2="11"/><line x1="7.2" y1="15" x2="10.3" y2="15"/><line x1="16.2" y1="13" x2="17.4" y2="13"/><line x1="16.2" y1="17" x2="17.4" y2="17"/>'),
+    univ_staff: s('<rect x="3" y="4.5" width="18" height="15" rx="2.2"/><circle cx="9" cy="10.8" r="2.2"/><path d="M5.5 16.5c.6-2 2-3 3.5-3s2.9 1 3.5 3"/><line x1="14" y1="10" x2="18.5" y2="10"/><line x1="14" y1="14" x2="17.5" y2="14"/>'),
     univ_catalog: s('<path d="M20.5 16V8a2 2 0 0 0-1-1.73l-6.5-3.75a2 2 0 0 0-2 0L4.5 6.27A2 2 0 0 0 3.5 8v8a2 2 0 0 0 1 1.73l6.5 3.75a2 2 0 0 0 2 0l6.5-3.75a2 2 0 0 0 1-1.73z"/><polyline points="3.8 7 12 11.8 20.2 7"/><line x1="12" y1="21.6" x2="12" y2="11.8"/>'),
     univ_fleet: s('<circle cx="6.2" cy="18" r="2.2"/><circle cx="17.8" cy="18" r="2.2"/><path d="M4 18H2.2V7.2a1.2 1.2 0 0 1 1.2-1.2h8.8l2.8 4.8h4.8a2 2 0 0 1 2 2V18H20"/><line x1="8.4" y1="18" x2="15.6" y2="18"/>'),
     reg_equipment: s('<circle cx="6.2" cy="18" r="2.2"/><circle cx="17.8" cy="18" r="2.2"/><path d="M4 18H2.2V7.2a1.2 1.2 0 0 1 1.2-1.2h8.8l2.8 4.8h4.8a2 2 0 0 1 2 2V18H20"/><line x1="8.4" y1="18" x2="15.6" y2="18"/>'),
@@ -165,6 +166,7 @@
     box: s('<path d="M20.5 16V8a2 2 0 0 0-1-1.73l-6.5-3.75a2 2 0 0 0-2 0L4.5 6.27A2 2 0 0 0 3.5 8v8a2 2 0 0 0 1 1.73l6.5 3.75a2 2 0 0 0 2 0l6.5-3.75a2 2 0 0 0 1-1.73z"/><polyline points="3.8 7 12 11.8 20.2 7"/><line x1="12" y1="21.6" x2="12" y2="11.8"/>'),
     user_x: s('<path d="M16 21v-2a4 4 0 0 0-4-4H5.5a4 4 0 0 0-4 4v2"/><circle cx="8.8" cy="7.2" r="3.8"/><line x1="17.5" y1="8.5" x2="22.2" y2="13.2"/><line x1="22.2" y1="8.5" x2="17.5" y2="13.2"/>'),
     pin: s('<path d="M20 10c0 5.8-8 11.5-8 11.5S4 15.8 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="2.8"/>'),
+    bookmark: s('<path d="M6.5 3.5h11a1.2 1.2 0 0 1 1.2 1.2V21l-6.7-4.2L5.3 21V4.7a1.2 1.2 0 0 1 1.2-1.2z"/>'),
     globe: s('<circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 0 0 0 18 14 14 0 0 0 0-18z"/>'),
     // Phase 1+ Multi-Industry Hub & Sub-Tab Icons (Holding, Hospitality, Trading, Real Estate, Insurance)
     hld_consolidation: s('<rect x="3" y="3" width="7" height="7" rx="1.2"/><rect x="14" y="3" width="7" height="7" rx="1.2"/><rect x="8.5" y="14" width="7" height="7" rx="1.2"/><path d="M6.5 10v2.2h11V10"/><line x1="12" y1="12.2" x2="12" y2="14"/>'),

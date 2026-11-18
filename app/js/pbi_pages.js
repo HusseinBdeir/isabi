@@ -5724,7 +5724,7 @@
       <div class="pbi-studio-hdr">
         <div class="pbi-studio-top">
           <div class="pbi-hero-identity">
-            <h2 class="pbi-studio-title sr-only">Analytics &amp; Insights</h2>
+            <h2 class="pbi-studio-title sr-only">Dashboards</h2>
             <div class="pbi-stepper-pill" role="group" aria-label="Step through analytical pages">
               <button type="button" class="pbi-step-btn" data-pbi-step-target="${esc(prevPage.id)}" aria-label="Previous analytical page">◁</button>
               <span class="pbi-step-counter"><b>${esc(activePage.num)}</b><span>/ ${pagePool.length}</span></span>
@@ -11222,6 +11222,7 @@
     const { STATE, SEED, filterRecords, sortRows, th, shownCount, showMoreRow, emptyRow, appCell, canEnterForm } = ctx;
     const connMeta = TABLE_CATALOG.find(t => t.key === connKey);
     if (!connMeta) return '';
+    if (typeof ctx.canAccessTable === 'function' && !ctx.canAccessTable(connKey)) return '';
     const isRawPr = meta.key === 'suppliers' && connKey === 'price_rules';
     const isSitePr = meta.key === 'sites' && connKey === 'price_rules';
     const connIsUniv = Boolean(connMeta.universal);
@@ -11538,14 +11539,24 @@
     const groupTabsMeta = groupKeys.length > 1
       ? groupKeys.map(gk => univPool.find(t => t.key === gk)).filter(Boolean)
       : [];
-    const mfgOnlyRelKeys = !isMfg && (meta.key === 'sites' || meta.key === 'regions')
-      ? new Set(['price_rules', 'raw_purchases', 'sales_tickets', 'jv_partnerships', 'jv_distributions', 'logistics_allowances', 'overtime_rates'])
+    const isFleetInd = isMfg || activeIndUreg === 'Automotive & Heavy Trading';
+    const siblingSet = new Set(Array.isArray(ctx.siblingSubtabTableKeys) ? ctx.siblingSubtabTableKeys : []);
+    const mfgOnlyRelKeys = !isMfg
+      ? new Set([
+          'sales_tickets', 'raw_purchases', 'vat_invoices', 'price_rules',
+          'fuel_intakes', 'fuel_malfunctions', 'equipment_defects', 'equipment_repairs',
+          'repair_items', 'equipment_oil_logs', 'part_movements', 'warehouse_movements',
+          'jv_partnerships', 'jv_distributions', 'logistics_allowances', 'overtime_rates',
+          'freelance_entries', 'staff_assignments',
+          ...(isFleetInd ? [] : ['equipment', 'company_equipment', 'drivers', 'company_drivers'])
+        ])
       : null;
-    const relTablesMeta = (meta.relTables || [])
-      .filter(rk => !groupKeys.includes(rk) && (!mfgOnlyRelKeys || !mfgOnlyRelKeys.has(rk)))
+    const allConnTablesMeta = (meta.relTables || [])
+      .filter(rk => (!mfgOnlyRelKeys || !mfgOnlyRelKeys.has(rk)) && (typeof ctx.canAccessTable !== 'function' || ctx.canAccessTable(rk)))
       .map(rk => TABLE_CATALOG.find(t => t.key === rk))
       .filter(Boolean);
-    const activeConnKey = (STATE.univConnTableKey && relTablesMeta.some(rt => rt.key === STATE.univConnTableKey))
+    const relTablesMeta = allConnTablesMeta.filter(rt => !groupKeys.includes(rt.key) && !siblingSet.has(rt.key));
+    const activeConnKey = (STATE.univConnTableKey && allConnTablesMeta.some(rt => rt.key === STATE.univConnTableKey))
       ? STATE.univConnTableKey
       : '';
     if (STATE.univConnTableKey && !activeConnKey) {
@@ -11583,31 +11594,33 @@
           </div>
         ` : ''}
 
-        ${relTablesMeta.length ? `
+        ${(relTablesMeta.length || activeConnKey) ? `
           <div class="pa-hub-rel-strip pa-hub-conns-bar">
-            <div class="pa-hub-conns">
-              <span class="pa-conn-hdr">
-                <span class="pa-conn-ico">${pbiIcon('link')}</span>
-                <span class="pa-hub-lbl">Connected Tables:</span>
-              </span>
-              <div class="pa-conn-chips">
-                ${relTablesMeta.map(rt => {
-                  const isRawPr = meta.key === 'suppliers' && rt.key === 'price_rules';
-                  const rCnt = isRawPr
-                    ? (chipCounts.rawPrCnt != null ? chipCounts.rawPrCnt : 0)
-                    : (chipCounts.byKey[rt.key] != null ? chipCounts.byKey[rt.key] : 0);
-                  const rtLbl = isRawPr ? 'Raw & Haulage Agreements' : ((rt.key === 'external_movements' && ctx.activeIndustry !== 'Holding & Treasury') ? 'External Movements' : rt.label);
-                  const isConnOpen = activeConnKey === rt.key;
-                  const rtIco = TABLE_ICON_MAP[rt.key] || rt.navView || 'tables';
-                  return `<button type="button" class="filter-chip conn-table-chip ${isConnOpen ? 'active' : ''}" data-conn-table-key="${esc(rt.key)}" data-ui-tip="${isConnOpen ? 'Click to close inline preview' : 'Click to preview ' + fmtNum(rCnt) + ' linked ' + esc(rtLbl) + ' records inline'}">
-                    <span class="conn-chip-ico">${pbiIcon(rtIco)}</span>
-                    <span class="conn-chip-lbl">${esc(rtLbl)}</span>
-                    <span class="conn-chip-cnt mono">(${fmtNum(rCnt)})</span>
-                    <span class="conn-chip-chev" aria-hidden="true">${isConnOpen ? '▴' : '▾'}</span>
-                  </button>`;
-                }).join('')}
+            ${relTablesMeta.length ? `
+              <div class="pa-hub-conns">
+                <span class="pa-conn-hdr">
+                  <span class="pa-conn-ico">${pbiIcon('link')}</span>
+                  <span class="pa-hub-lbl">Connected Tables:</span>
+                </span>
+                <div class="pa-conn-chips">
+                  ${relTablesMeta.map(rt => {
+                    const isRawPr = meta.key === 'suppliers' && rt.key === 'price_rules';
+                    const rCnt = isRawPr
+                      ? (chipCounts.rawPrCnt != null ? chipCounts.rawPrCnt : 0)
+                      : (chipCounts.byKey[rt.key] != null ? chipCounts.byKey[rt.key] : 0);
+                    const rtLbl = isRawPr ? 'Raw & Haulage Agreements' : ((rt.key === 'external_movements' && ctx.activeIndustry !== 'Holding & Treasury') ? 'External Movements' : rt.label);
+                    const isConnOpen = activeConnKey === rt.key;
+                    const rtIco = TABLE_ICON_MAP[rt.key] || rt.navView || 'tables';
+                    return `<button type="button" class="filter-chip conn-table-chip ${isConnOpen ? 'active' : ''}" data-conn-table-key="${esc(rt.key)}" data-ui-tip="${isConnOpen ? 'Click to close inline preview' : 'Click to preview ' + fmtNum(rCnt) + ' linked ' + esc(rtLbl) + ' records inline'}">
+                      <span class="conn-chip-ico">${pbiIcon(rtIco)}</span>
+                      <span class="conn-chip-lbl">${esc(rtLbl)}</span>
+                      <span class="conn-chip-cnt mono">(${fmtNum(rCnt)})</span>
+                      <span class="conn-chip-chev" aria-hidden="true">${isConnOpen ? '▴' : '▾'}</span>
+                    </button>`;
+                  }).join('')}
+                </div>
               </div>
-            </div>
+            ` : ''}
             ${activeConnKey ? renderConnTableExplorerHtml(ctx, meta, rel, chipCounts, activeConnKey) : ''}
           </div>
         ` : ''}
@@ -11676,7 +11689,7 @@
                       : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : ((meta.key === 'recurring_expenses' && c === 'item') || (meta.key === 'currencies' && c === 'role') ? null : HUB_LOOKUP_TARGETS[c]));
                     const isLookup = lkTarget && lkTarget !== meta.key && v != null && v !== '' && cell !== '—';
                     const inlineConnSpec = !isLookup && isNum && Number(v) > 0 ? resolveInlineConnTableForCol(c, meta.key) : null;
-                    const hasConnTarget = inlineConnSpec && relTablesMeta.some(rt => rt.key === inlineConnSpec.connKey);
+                    const hasConnTarget = inlineConnSpec && (relTablesMeta.some(rt => rt.key === inlineConnSpec.connKey) || allConnTablesMeta.some(rt => rt.key === inlineConnSpec.connKey));
                     const partyKeyVal = hasConnTarget ? String(r.name || r.code || '').trim() : '';
                     const isInlineConnActive = hasConnTarget && activeConnKey === inlineConnSpec.connKey && norm(STATE.univConnPartyFilter || '') === norm(partyKeyVal) && (!inlineConnSpec.subRole || STATE.univConnSubRole === inlineConnSpec.subRole);
                     const isMaskedPay = !canViewPay && isMaskedPayrollColPbi(meta.key, c);

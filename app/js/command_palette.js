@@ -29,6 +29,10 @@
   const FILTER_SVG ='<svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 5h16.8l-6.5 7.7v5.5l-3.8 1.9v-7.4z"/></svg>';
 
   const FREQ_STORAGE_PREFIX = 'isabi_cmdp_freq_v1::';
+  const PIN_STORAGE_PREFIX = 'isabi_cmdp_pins_v1::';
+  const RECENT_STORAGE_PREFIX = 'isabi_cmdp_recent_v1::';
+  const MAX_PINS = 8;
+  const MAX_RECENT_VIEWS = 8;
 
   const MFG_ONLY_TABLES = new Set([
     'sales_tickets', 'raw_purchases', 'vat_invoices',
@@ -36,7 +40,7 @@
     'repair_items', 'equipment_oil_logs', 'part_movements', 'warehouse_movements',
     'jv_partnerships', 'jv_distributions', 'price_rules', 'overtime_rates',
     'freelance_entries', 'logistics_allowances', 'products', 'product_types',
-    'sites', 'equipment', 'company_equipment', 'drivers', 'company_drivers',
+    'sites', 'company_equipment', 'company_drivers',
     'staff_assignments'
   ]);
 
@@ -203,10 +207,40 @@
     return { hubId: '', hubTitle: '', tabTitle: '', icon: 'tables' };
   }
 
+  function isFleetHubInInd(ind) {
+    if (!ind) return false;
+    if (_ctx && typeof _ctx.isHubInActiveIndustry === 'function') {
+      return Boolean(_ctx.isHubInActiveIndustry({ id: 'univ_fleet' }, ind));
+    }
+    return ind === 'Manufacturing' || ind === 'Automotive & Heavy Trading';
+  }
+
+  function resolveFallbackFleetIndustry(pctx) {
+    const permSet = pctx && pctx.permittedIndustries;
+    if (!permSet) return '';
+    const candidates = ['Manufacturing', 'Automotive & Heavy Trading'].concat(Array.from(permSet));
+    return candidates.find(ind => permSet.has(ind) && isFleetHubInInd(ind)) || '';
+  }
+
   function resolveSidebarTableTarget(tableKey, isMfgOnly, pctx) {
     const base = SIDEBAR_TABLE_TARGET_MAP[tableKey];
     if (!base) return null;
     const u = pctx && pctx.user;
+    if (tableKey === 'equipment' || tableKey === 'drivers') {
+      const inFleetInd = isFleetHubInInd(pctx && pctx.activeInd);
+      let fleetInd = '';
+      if (!inFleetInd) {
+        fleetInd = resolveFallbackFleetIndustry(pctx);
+        if (!fleetInd) return null;
+      }
+      return {
+        view: base.view,
+        panelId: base.panelId || '',
+        univRegKey: base.univRegKey || '',
+        univConnTableKey: base.univConnTableKey || '',
+        forceInd: fleetInd
+      };
+    }
     if (base.mfgView) {
       const canBaseView = Boolean(_ctx && _ctx.canViewView && _ctx.canViewView(base.view, u));
       const canMfgView = Boolean(_ctx && _ctx.canViewView && _ctx.canViewView(base.mfgView, u));
@@ -611,6 +645,84 @@
   let _suppressAllUsage = false;
   let _pendingUnivRegKey = '';
 
+  function loadSeatJsonList(prefix, user) {
+    try {
+      const storeKey = prefix + getSeatKey(user);
+      const inDemo = Boolean(_ctx && _ctx.isDemoScopeActive && _ctx.isDemoScopeActive());
+      const raw = inDemo
+        ? sessionStorage.getItem('demo_sbx_' + storeKey)
+        : localStorage.getItem(storeKey);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter(v => typeof v === 'string' && v.trim()) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveSeatJsonList(prefix, list, user) {
+    try {
+      const storeKey = prefix + getSeatKey(user);
+      const inDemo = Boolean(_ctx && _ctx.isDemoScopeActive && _ctx.isDemoScopeActive());
+      const clean = Array.isArray(list) ? list.filter(v => typeof v === 'string' && v.trim()) : [];
+      if (inDemo) {
+        sessionStorage.setItem('demo_sbx_' + storeKey, JSON.stringify(clean));
+      } else {
+        localStorage.setItem(storeKey, JSON.stringify(clean));
+      }
+    } catch (_) {}
+  }
+
+  function loadSeatPinnedIds(user) {
+    return loadSeatJsonList(PIN_STORAGE_PREFIX, user).slice(0, MAX_PINS);
+  }
+
+  function saveSeatPinnedIds(ids, user) {
+    saveSeatJsonList(PIN_STORAGE_PREFIX, (Array.isArray(ids) ? ids : []).slice(0, MAX_PINS), user);
+  }
+
+  function getPinnedIds(user) {
+    const u = user || (_ctx && _ctx.activeUser && _ctx.activeUser()) || null;
+    if (!u) return [];
+    return loadSeatPinnedIds(u);
+  }
+
+  function togglePin(itemId, user) {
+    const id = String(itemId || '').trim();
+    if (!id || !_ctx || !_ctx.STATE || !_ctx.STATE.authed) return false;
+    const u = user || (_ctx.activeUser ? _ctx.activeUser() : null);
+    if (!u) return false;
+    const cur = loadSeatPinnedIds(u);
+    const idx = cur.indexOf(id);
+    let pinned = false;
+    if (idx >= 0) {
+      cur.splice(idx, 1);
+    } else {
+      cur.unshift(id);
+      pinned = true;
+    }
+    saveSeatPinnedIds(cur.slice(0, MAX_PINS), u);
+    return pinned;
+  }
+
+  function loadSeatRecentViews(user) {
+    const u = user || (_ctx && _ctx.activeUser && _ctx.activeUser()) || null;
+    if (!u) return [];
+    return loadSeatJsonList(RECENT_STORAGE_PREFIX, user).slice(0, MAX_RECENT_VIEWS);
+  }
+
+  function pushSeatRecentView(viewKey, user) {
+    const vk = String(viewKey || '').trim();
+    if (!vk) return;
+    const cur = loadSeatJsonList(RECENT_STORAGE_PREFIX, user).filter(v => v !== vk);
+    cur.unshift(vk);
+    saveSeatJsonList(RECENT_STORAGE_PREFIX, cur.slice(0, MAX_RECENT_VIEWS), user);
+  }
+
+  function isPinnableItem(it) {
+    return Boolean(it && (it.kind === 'dashboard' || it.kind === 'table' || it.kind === 'form' || it.kind === 'statement'));
+  }
+
   function recordUsage(kind, key) {
     if (kind === 'view' && _pendingUnivRegKey && _ctx && _ctx.STATE) {
       _ctx.STATE.activeUnivRegKey = _pendingUnivRegKey;
@@ -632,6 +744,7 @@
       } else {
         localStorage.setItem(storeKey, JSON.stringify(map));
       }
+      if (kind === 'view') pushSeatRecentView(key, u);
       _cachedIndexKey = '';
     } catch (_) {}
   }
@@ -778,6 +891,18 @@
     }
   }
 
+  function evalPermInIndustry(targetInd, pctx, fn) {
+    const STATE = pctx && pctx.STATE;
+    if (!STATE || !targetInd) return fn();
+    const prevEval = STATE._permEvalInd;
+    try {
+      STATE._permEvalInd = targetInd;
+      return fn();
+    } finally {
+      STATE._permEvalInd = prevEval;
+    }
+  }
+
   function runScopedDomainRegister(ind, tabKey, pctx) {
     if (!_ctx || typeof _ctx.buildIndustryDomainTableRegister !== 'function') return null;
     const STATE = pctx.STATE;
@@ -825,7 +950,7 @@
         if (r.company && !pctx.demoActive && !isCompanyPermitted(r.company, pctx)) return false;
         if (r._industry) {
           if (!pctx.permittedIndustries.has(r._industry)) return false;
-        } else if (hasMultiSeed || MFG_ONLY_TABLES.has(tableKey)) {
+        } else if (hasMultiSeed || MFG_ONLY_TABLES.has(tableKey) || tableKey === 'equipment' || tableKey === 'drivers') {
           if (!pctx.permittedIndustries.has('Manufacturing')) return false;
         }
         if (!checkOff(r)) return false;
@@ -1050,12 +1175,12 @@
 
       const targetSpec = resolveSidebarTableTarget(meta.key, isMfgOnly, pctx);
       const targetView = targetSpec ? targetSpec.view : '';
-      const canTargetView = Boolean(targetView && _ctx.canViewView && _ctx.canViewView(targetView, u));
+      const targetInd = (targetSpec && targetSpec.forceInd) ? targetSpec.forceInd : (isMfgOnly ? 'Manufacturing' : '');
+      const canTargetView = Boolean(targetView && _ctx.canViewView && evalPermInIndustry(targetInd || pctx.activeInd, pctx, () => _ctx.canViewView(targetView, u)));
       if (!canTargetView) continue;
 
       const rows = getScopedRows(meta.key, Boolean(meta.universal));
       const rowCnt = rows.length;
-      const targetInd = (targetSpec && targetSpec.forceInd) ? targetSpec.forceInd : (isMfgOnly ? 'Manufacturing' : '');
       const cleanGroup = String(meta.group || '').replace(/^\d+\s*·\s*/, '');
       const hubInfo = lookupHubInfoForView(targetView);
       const subHubTitle = hubInfo.hubTitle || cleanGroup;
@@ -1381,13 +1506,33 @@
       if (!h || !h.id) return;
       if (h.industry && !pctx.permittedIndustries.has(h.industry)) return;
       if (!h.industry && ['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && !pctx.permittedIndustries.has('Manufacturing')) return;
-      if (_ctx.canViewHub && !_ctx.canViewHub(h.id, u)) return;
+      if (_ctx.isHubInActiveIndustry && !Array.from(pctx.permittedIndustries).some(ind => _ctx.isHubInActiveIndustry(h, ind))) return;
+      let hubTargetInd = h.industry || (['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) ? 'Manufacturing' : '');
+      if (h.id === 'univ_fleet' && _ctx.isHubInActiveIndustry && !_ctx.isHubInActiveIndustry(h, pctx.activeInd)) {
+        hubTargetInd = resolveFallbackFleetIndustry(pctx);
+        if (!hubTargetInd) return;
+      }
+      const hubEvalInd = hubTargetInd || pctx.activeInd;
+      if (_ctx.canViewHub && !evalPermInIndustry(hubEvalInd, pctx, () => _ctx.canViewHub(h.id, u))) return;
 
       (h.tabs || []).forEach((t, tIdx) => {
         if (!t || !t.view || seenViews.has(t.view)) return;
-        if (_ctx.canViewView && !_ctx.canViewView(t.view, u)) return;
+        let targetInd = hubTargetInd;
+        let tabEvalInd = hubEvalInd;
+        if (t.mfgOnly) {
+          if (!pctx.permittedIndustries.has('Manufacturing')) return;
+          targetInd = 'Manufacturing';
+          tabEvalInd = 'Manufacturing';
+        } else if (t.view === 'entities' && _ctx.hasMultipleComparisonEntities) {
+          if (!_ctx.hasMultipleComparisonEntities(u, pctx.activeInd)) {
+            const matchCompInd = Array.from(pctx.permittedIndustries).find(ind => _ctx.hasMultipleComparisonEntities(u, ind));
+            if (!matchCompInd) return;
+            targetInd = matchCompInd;
+            tabEvalInd = matchCompInd;
+          }
+        }
+        if (_ctx.canViewView && !evalPermInIndustry(tabEvalInd, pctx, () => _ctx.canViewView(t.view, u))) return;
         seenViews.add(t.view);
-        const targetInd = h.industry || (['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) ? 'Manufacturing' : '');
         const hubTitle = String(h.title || h.label || '').trim();
         items.push(makeCandidate({
           id: `view:${t.view}`,
@@ -1707,25 +1852,55 @@
       return true;
     };
 
-    // Before typing: show seat's most-used permitted tables + quick entry forms/views (Hard Rule 11)
+    const pinnedIds = loadSeatPinnedIds(idx.pctx.user);
+    const pinnedSet = new Set(pinnedIds);
+
+    // Before typing: show Pinned & Recent Views + seat's most-used permitted tables + quick entry forms/views (Hard Rule 11)
     if (!qTrim) {
       if (catFilter !== 'all') {
-        const pool = idx.items.filter(matchCategory).slice().sort((a, b) => b.freq - a.freq).slice(0, 24);
+        const pool = idx.items
+          .filter(matchCategory)
+          .slice()
+          .sort((a, b) => (pinnedSet.has(b.id) ? 1 : 0) - (pinnedSet.has(a.id) ? 1 : 0) || (b.freq - a.freq))
+          .slice(0, 24)
+          .map(it => Object.assign({}, it, { isPinned: pinnedSet.has(it.id) }));
         return { query: '', hasEntryIntent: false, exactCount: 0, totalCount: pool.length, items: pool, showAskFallback: false };
+      }
+      const byId = new Map();
+      idx.items.forEach(it => { if (!byId.has(it.id)) byId.set(it.id, it); });
+      const pinnedAndRecent = [];
+      const prSeen = new Set();
+      pinnedIds.forEach(pid => {
+        const hit = byId.get(pid);
+        if (hit && !prSeen.has(hit.id)) {
+          prSeen.add(hit.id);
+          pinnedAndRecent.push(Object.assign({}, hit, { sectionEn: 'Pinned & Recent Views', isPinned: true }));
+        }
+      });
+      const recentViews = loadSeatRecentViews(idx.pctx.user);
+      let addedRecent = 0;
+      for (let rIdx = 0; rIdx < recentViews.length && addedRecent < 4 && pinnedAndRecent.length < 8; rIdx++) {
+        const vid = `view:${recentViews[rIdx]}`;
+        const hit = byId.get(vid);
+        if (hit && !prSeen.has(hit.id)) {
+          prSeen.add(hit.id);
+          pinnedAndRecent.push(Object.assign({}, hit, { sectionEn: 'Pinned & Recent Views', isPinned: false }));
+          addedRecent += 1;
+        }
       }
       const topTables = idx.items
         .filter(it => it.kind === 'table')
         .slice()
         .sort((a, b) => b.freq - a.freq)
         .slice(0, 8)
-        .map(it => Object.assign({}, it, { sectionEn: 'Most-Used Tables' }));
+        .map(it => Object.assign({}, it, { sectionEn: 'Most-Used Tables', isPinned: pinnedSet.has(it.id) }));
       const topQuick = idx.items
         .filter(it => it.kind === 'form' || it.kind === 'dashboard' || it.kind === 'statement')
         .slice()
         .sort((a, b) => b.freq - a.freq)
         .slice(0, 6)
-        .map(it => Object.assign({}, it, { sectionEn: 'Quick Entry Forms & Views' }));
-      const combined = topTables.concat(topQuick);
+        .map(it => Object.assign({}, it, { sectionEn: 'Quick Entry Forms & Views', isPinned: pinnedSet.has(it.id) }));
+      const combined = pinnedAndRecent.concat(topTables, topQuick);
       return { query: '', hasEntryIntent: false, exactCount: 0, totalCount: combined.length, items: combined, showAskFallback: false };
     }
 
@@ -1802,7 +1977,7 @@
     exact.sort((a, b) => (a._exactTier - b._exactTier) || (b.freq - a.freq));
     freqOrdered.sort((a, b) => b.freq - a.freq);
 
-    const merged = exact.concat(freqOrdered);
+    const merged = exact.concat(freqOrdered).map(it => Object.assign({}, it, { isPinned: pinnedSet.has(it.id) }));
     return {
       query: qTrim,
       hasEntryIntent,
@@ -2679,6 +2854,16 @@
           askIsabi(_currentQuery.trim());
           return;
         }
+        // Pin / Unpin view, table, form, or statement without executing it
+        const pinBtn = e.target && e.target.closest ? e.target.closest('[data-cmdp-pin-id]') : null;
+        if (pinBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const pinId = pinBtn.getAttribute('data-cmdp-pin-id') || '';
+          if (pinId) togglePin(pinId);
+          renderResults();
+          return;
+        }
         // Touch / mouse path into the same filter chip as Tab
         const filterBtn = e.target && e.target.closest ? e.target.closest('[data-cmdp-filter-idx]') : null;
         if (filterBtn && !_filterTarget) {
@@ -2810,6 +2995,9 @@
       const filterBtnHtml = isFilterableItem(it)
         ? `<span class="cmdp-item-filter" role="button" data-cmdp-filter-idx="${i}" aria-label="${isStatementTarget(it) ? 'Set a parameter for this statement' : 'Filter this table'}">${FILTER_SVG}</span>`
         : '';
+      const pinBtnHtml = isPinnableItem(it)
+        ? `<span class="cmdp-item-pin${it.isPinned ? ' is-pinned' : ''}" role="button" tabindex="-1" data-cmdp-pin-id="${escHtml(it.id)}" aria-label="${it.isPinned ? 'Unpin item' : 'Pin item'}" title="${it.isPinned ? 'Unpin' : 'Pin to top'}">${iconSvg('bookmark')}</span>`
+        : '';
 
       html += `
         <button type="button" class="cmdp-item${i === _activeIdx ? ' is-active' : ''}" role="option" aria-selected="${i === _activeIdx ? 'true' : 'false'}" data-cmdp-idx="${i}">
@@ -2819,6 +3007,7 @@
             <span class="cmdp-item-sub">${subParts.join(' <span data-no-i18n="1">&middot;</span> ')}</span>
           </span>
           <span class="cmdp-item-right">
+            ${pinBtnHtml}
             ${filterBtnHtml}
             ${indBadgeHtml}
             <span class="cmdp-badge kind-${escHtml(it.kind)}">${escHtml(it.badgeEn)}</span>
@@ -3045,6 +3234,9 @@
     search,
     askIsabi,
     recordUsage,
+    togglePin,
+    getPinnedIds,
+    getRecentViews: () => loadSeatRecentViews(),
     invalidateCache: () => { _cachedIndexKey = ''; }
   };
 })();
