@@ -12026,6 +12026,56 @@
       "Verified Gate Pin": "إحداثي البوابة الموثق",
       "Verified Site Gate Mini-Map": "خريطة مصغّرة لبوابة الموقع الموثقة",
       "Gate Pin QR Code": "رمز QR لإحداثي البوابة",
+      "Brake Lining & Shoe Set": "طقم بطانات وفحمات المكابح",
+      "Clear active filter slice and search query": "مسح الفلتر النشط ونص البحث",
+      "Retarder & Drivetrain Inspection": "فحص المُبطئ وناقل الحركة",
+      "Brake / Retarder Baseline": "مرجع المكابح والمُبطئ الأساسي",
+      "Steep-Corridor Brake & Drivetrain Wear Watchdog": "مراقب تآكل المكابح وناقل الحركة على المنحدرات",
+      "STEEP-CORRIDOR BRAKE & DRIVETRAIN WEAR WATCHDOG": "مراقب تآكل المكابح وناقل الحركة على المنحدرات",
+      "Fleet & Maintenance, Fleet & Running Costs & AI Sentinels": "الأسطول والصيانة، تكاليف التشغيل والإنذار الذكي",
+      "Weights preventive brake-lining, retarder, clutch, and transmission/axle service intervals on company fleet trucks by cumulative steep-corridor tonnage-km rather than flat odometer km alone, spotting heavy mountain-quarry wear before roadside breakdowns.": "يرجح فترات الصيانة الوقائية لبطانات المكابح والمبطئ والكلتش وناقل الحركة لشاحنات الشركة وفق إجمالي الطن-كيلومتر على المنحدرات بدلاً من قراءة العداد المسطح فقط، لرصد التآكل الجبلي مبكراً قبل الأعطال.",
+      "Weights preventive brake-lining, retarder, and drivetrain service intervals by steep tonnage-km alongside flat odometer km": "يرجح فترات الصيانة الوقائية للمكابح والمبطئ وناقل الحركة بالطن-كم على المنحدرات إلى جانب العداد الفعلي",
+      "Steep Grade Threshold (%)": "عتبة الانحدار الحاد (%)",
+      "Steep Climb or Descent Threshold (m)": "عتبة الصعود أو الهبوط الحاد (م)",
+      "Steep Wear Multiplier (x)": "مضاعف تآكل المنحدرات (x)",
+      "Unserviced Steep Tonnage-KM Alert": "تنبيه طن-كم المنحدرات غير المخدوم",
+      "Steep-Corridor Brake & Drivetrain Wear Weighting": "ترجيح تآكل المكابح وناقل الحركة على المنحدرات",
+      "Steep Corridors": "مسارات حادة الانحدار",
+      "Defects, Repairs & Oil": "الأعطال والإصلاحات والزيوت",
+      "Steep Hauling Volume": "حجم النقل على المنحدرات",
+      "Steep Loads": "نقلات المنحدرات",
+      "Cumulative Steep Tonnage-KM": "إجمالي طن-كم المنحدرات",
+      "Grade >=": "انحدار >=",
+      "Grade ≥": "انحدار ≥",
+      "Added Brake & Drivetrain Wear": "تآكل المكابح وناقل الحركة الإضافي",
+      "Wear Factor": "معامل التآكل",
+      "Effective Avg": "المتوسط الفعلي",
+      "Units Due for Inspection": "الآليات المستحقة للفحص",
+      "Watchdog Paused": "المراقب متوقف مؤقتاً",
+      "Top Steep Corridor": "أكثر مسار منحدر استخداماً",
+      "Top Corridor": "المسار الرئيسي",
+      "Steep Volume (m³)": "حجم المنحدرات (م³)",
+      "Steep Tonnage-KM": "طن-كم المنحدرات",
+      "Extra Wear (+km)": "تآكل إضافي (+كم)",
+      "Drivetrain Status": "حالة ناقل الحركة والمكابح",
+      "On Track": "ضمن الحد",
+      "+ Log Service": "+ تسجيل صيانة",
+      "Verify steep road corridors in Map Studio to weight brake and drivetrain wear from hauled loads": "تحقق من المسارات الحادة في استوديو الخرائط لاحتساب تآكل المكابح وناقل الحركة من الحمولات",
+      "Own-fleet trucks flagged by weighted steep-corridor tonnage-km before roadside brake or transmission failure": "شاحنات أسطول الشركة المنبّهة حسب طن-كم المنحدرات قبل تعطل المكابح أو ناقل الحركة على الطريق",
+      "Flagged Units": "الآليات المنبّهة",
+      "Service Schedule": "جدول الصيانة",
+      "Flat Odometer": "قراءة العداد الفعلية",
+      "wear km": "كم تآكل",
+      "Brake Wear Due": "صيانة مكابح مستحقة",
+      "Steep Wear": "إجهاد المنحدرات",
+      "WEAR NOMINAL": "التآكل ضمن الحد",
+      "Open Maintenance": "فتح الصيانة",
+      "Rule #29 · Fleet & Maintenance": "القاعدة #29 · الأسطول والصيانة",
+      "Heavy-Wear Corridors": "مسارات الإجهاد العالي",
+      "Drivetrain / Gearbox Baseline": "مرجع ناقل الحركة وعلبة التروس الأساسي",
+      "None logged": "غير مسجل",
+      "Paused in Alerts & Thresholds.": "متوقف مؤقتاً في التنبيهات والحدود.",
+      "Paused in Alerts & Thresholds. Resume anytime to re-enable live watchdog monitoring.": "متوقف مؤقتاً في التنبيهات والحدود. استأنفه في أي وقت لإعادة تفعيل المراقبة الفورية.",
       "Open Gate Pin in Google Maps / Waze": "فتح البوابة في Google Maps / Waze",
       "Google Maps": "Google Maps",
       "Waze": "Waze",
@@ -25372,6 +25422,56 @@
       "Verified Gate Pin": "Point GPS Vérifié",
       "Verified Site Gate Mini-Map": "Mini-carte GPS vérifiée du portail",
       "Gate Pin QR Code": "Code QR du point GPS",
+      "Brake Lining & Shoe Set": "Jeu de garnitures & mâchoires de frein",
+      "Clear active filter slice and search query": "Effacer le filtre actif et la recherche",
+      "Retarder & Drivetrain Inspection": "Inspection ralentisseur & transmission",
+      "Brake / Retarder Baseline": "Référence freins & ralentisseur",
+      "Steep-Corridor Brake & Drivetrain Wear Watchdog": "Veille usure freins & transmission en pente",
+      "STEEP-CORRIDOR BRAKE & DRIVETRAIN WEAR WATCHDOG": "VEILLE USURE FREINS & TRANSMISSION EN PENTE",
+      "Fleet & Maintenance, Fleet & Running Costs & AI Sentinels": "Flotte & Maintenance, Coûts & Sentinelles IA",
+      "Weights preventive brake-lining, retarder, clutch, and transmission/axle service intervals on company fleet trucks by cumulative steep-corridor tonnage-km rather than flat odometer km alone, spotting heavy mountain-quarry wear before roadside breakdowns.": "Pondère les intervalles préventifs des freins, ralentisseurs, embrayages et ponts des camions de la flotte selon les tonnes-km cumulées en pente plutôt que le seul compteur kilométrique, afin de détecter l usure sévère avant panne.",
+      "Weights preventive brake-lining, retarder, and drivetrain service intervals by steep tonnage-km alongside flat odometer km": "Pondère les échéances préventives freins, ralentisseur et transmission par tonne-km en pente en parallèle du compteur kilométrique",
+      "Steep Grade Threshold (%)": "Seuil de pente sévère (%)",
+      "Steep Climb or Descent Threshold (m)": "Seuil de dénivelé sévère (m)",
+      "Steep Wear Multiplier (x)": "Multiplicateur usure en pente (x)",
+      "Unserviced Steep Tonnage-KM Alert": "Seuil alerte tonne-km en pente non révisée",
+      "Steep-Corridor Brake & Drivetrain Wear Weighting": "Pondération usure freins & transmission en pente",
+      "Steep Corridors": "Corridors pentus",
+      "Defects, Repairs & Oil": "Défauts, Réparations & Huiles",
+      "Steep Hauling Volume": "Volume transporté en pente",
+      "Steep Loads": "Rotations en pente",
+      "Cumulative Steep Tonnage-KM": "Tonne-km cumulées en pente",
+      "Grade >=": "Pente >=",
+      "Grade ≥": "Pente ≥",
+      "Added Brake & Drivetrain Wear": "Usure freins & transmission ajoutée",
+      "Wear Factor": "Facteur d usure",
+      "Effective Avg": "Moy. pondérée",
+      "Units Due for Inspection": "Unités à inspecter",
+      "Watchdog Paused": "Veille en pause",
+      "Top Steep Corridor": "Corridor pentu principal",
+      "Top Corridor": "Corridor principal",
+      "Steep Volume (m³)": "Volume en pente (m³)",
+      "Steep Tonnage-KM": "Tonne-km en pente",
+      "Extra Wear (+km)": "Usure ajoutée (+km)",
+      "Drivetrain Status": "Statut freins & transmission",
+      "On Track": "Conforme",
+      "+ Log Service": "+ Saisir entretien",
+      "Verify steep road corridors in Map Studio to weight brake and drivetrain wear from hauled loads": "Vérifiez des corridors routiers pentus dans Map Studio pour pondérer l usure freins et transmission",
+      "Own-fleet trucks flagged by weighted steep-corridor tonnage-km before roadside brake or transmission failure": "Camions de la flotte signalés par tonne-km pondérée en pente avant avarie freins ou transmission",
+      "Flagged Units": "Unités signalées",
+      "Service Schedule": "Programme d entretien",
+      "Flat Odometer": "Kilométrage compteur",
+      "wear km": "km usure",
+      "Brake Wear Due": "Freins à réviser",
+      "Steep Wear": "Usure pente",
+      "WEAR NOMINAL": "USURE CONFORME",
+      "Open Maintenance": "Ouvrir Maintenance",
+      "Rule #29 · Fleet & Maintenance": "Règle #29 · Flotte & Maintenance",
+      "Heavy-Wear Corridors": "Corridors à forte usure",
+      "Drivetrain / Gearbox Baseline": "Référence transmission & boîte de vitesses",
+      "None logged": "Aucun enregistré",
+      "Paused in Alerts & Thresholds.": "En pause dans Alertes & Seuils.",
+      "Paused in Alerts & Thresholds. Resume anytime to re-enable live watchdog monitoring.": "En pause dans Alertes & Seuils. Réactivez à tout moment pour reprendre la surveillance en direct.",
       "Open Gate Pin in Google Maps / Waze": "Ouvrir le point dans Google Maps / Waze",
       "Google Maps": "Google Maps",
       "Waze": "Waze",
@@ -28724,6 +28824,85 @@
 
     m = trimmed.match(/^(\d+)MS DEBOUNCE \(([\d.]+%)\)$/i);
     if (m) return lang === 'ar' ? `تأخير البحث ${m[1]} مللي (${m[2]})` : `ANTI-REBOND ${m[1]}MS (${m[2]})`;
+
+    // Steep-Corridor Brake & Drivetrain Wear Watchdog (#29 / S18)
+    m = trimmed.match(/^Weights brake-lining, retarder, and drivetrain intervals by steep-corridor loads \(grade >= ([\d.,]+)% or climb\/drop >= ([\d.,]+) m at ([\d.,]+)x wear\) and alerts once unserviced company trucks cross ([\d,]+) t-km\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `يُرجّح فترات صيانة بطانات المكابح والمُبطئ وناقل الحركة حسب أحمال المنحدرات (انحدار >= ${m[1]}% أو صعود/هبوط >= ${m[2]} م بمعامل ${m[3]}x) ويُنبّه عندما تتجاوز شاحنات الشركة غير المخدومة ${m[4]} طن-كم.`
+        : `Pondère les intervalles freins, ralentisseur et transmission selon les trajets pentus (pente >= ${m[1]}% ou dénivelé >= ${m[2]} m à ${m[3]}x) et alerte au-delà de ${m[4]} t-km non révisés.`;
+    }
+    m = trimmed.match(/^>= ([\d.,]+)% or >= ([\d.,]+)m · ([\d.,]+)x · ([\d,]+) t-km$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `>= ${m[1]}% أو >= ${m[2]} م · ${m[3]}x · ${m[4]} طن-كم`
+        : `>= ${m[1]}% ou >= ${m[2]} m · ${m[3]}x · ${m[4]} t-km`;
+    }
+    m = trimmed.match(/^Steep wear monitor: Flat odometer readings stay unchanged while heavy steep-corridor loads \(grade >= ([\d.,]+)% or >= ([\d.,]+)m at ([\d.,]+)x\) accelerate brake and drivetrain inspection schedules\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مراقب إجهاد المنحدرات: تبقى قراءات العداد الفعلية كما هي بينما تسرّع أحمال المنحدرات (انحدار >= ${m[1]}% أو >= ${m[2]} م بمعامل ${m[3]}x) جداول فحص المكابح وناقل الحركة.`
+        : `Suivi usure en pente : le kilométrage compteur reste intact tandis que les trajets pentus (pente >= ${m[1]}% ou >= ${m[2]} m à ${m[3]}x) avancent les échéances freins et transmission.`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+OVERDUE\s+WEAR$/i);
+    if (m) return lang === 'ar' ? `${m[1]} تآكل مستحق` : `${m[1]} USURE ÉCHUE`;
+    m = trimmed.match(/^([\d,]+)\s+INSPECT\s+SOON$/i);
+    if (m) return lang === 'ar' ? `${m[1]} فحص قريب` : `${m[1]} À INSPECTER`;
+    m = trimmed.match(/^([\d,]+)\s+company trucks?\s+flagged across\s+([\d,]+)\s+steep-corridor loads\s+\(([\d,]+)\s+t-km\s+·\s+\+([\d,]+)\s+weighted wear km\)\.\s+Top priority:\s+(.+?)\s+\((.+?)\s+·\s+([\d,]+)\s+t-km\)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تم تنبيه ${m[1]} شاحنة شركة عبر ${m[2]} نقلة منحدر (${m[3]} طن-كم · +${m[4]} كم تآكل مرجّح). الأولوية: ${m[5]} (${m[6]} · ${m[7]} طن-كم).`
+        : `${m[1]} camion(s) de la flotte signalé(s) sur ${m[2]} trajets pentus (${m[3]} t-km · +${m[4]} km d'usure pondérée). Priorité : ${m[5]} (${m[6]} · ${m[7]} t-km).`;
+    }
+    m = trimmed.match(/^([\d,]+)\s+steep-corridor loads monitored\s+\(([\d,]+)\s+t-km\s+·\s+\+([\d,]+)\s+weighted wear km\):\s+all company fleet brake and drivetrain intervals within limits\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تمت مراقبة ${m[1]} نقلة منحدر (${m[2]} طن-كم · +${m[3]} كم تآكل مرجّح): جميع فترات مكابح وناقل حركة الأسطول ضمن الحدود.`
+        : `${m[1]} trajet(s) pentu(s) suivi(s) (${m[2]} t-km · +${m[3]} km d'usure pondérée) : tous les intervalles freins et transmission sont conformes.`;
+    }
+    m = trimmed.match(/^(Brake & Drivetrain|Steep Wear)\s*\(([\d,]+)\)$/i);
+    if (m) {
+      const k = m[1].toLowerCase() === 'steep wear'
+        ? ['إجهاد المنحدرات', 'Usure pente']
+        : ['المكابح وناقل الحركة', 'Freins & Transmission'];
+      return (lang === 'ar' ? k[0] : k[1]) + ` (${m[2]})`;
+    }
+    m = trimmed.match(/^Unserviced steep tonnage >= ([\d,]+) t-km$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `حمولة منحدرات غير مخدومة >= ${m[1]} طن-كم`
+        : `Tonnage pentu non révisé >= ${m[1]} t-km`;
+    }
+    m = trimmed.match(/^Weighted (.+) interval$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1) || m[1].trim();
+      return lang === 'ar' ? `فترة ${inner} المرجّحة` : `Intervalle pondéré : ${inner}`;
+    }
+    m = trimmed.match(/^Effective wear:\s*([\d,]+)\s*\/\s*([\d,]+)\s*km\s*\(([\d,]+)\s*steep t-km\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `التآكل الفعلي: ${m[1]} / ${m[2]} كم (${m[3]} طن-كم منحدرات)`
+        : `Usure effective : ${m[1]} / ${m[2]} km (${m[3]} t-km en pente)`;
+    }
+    m = trimmed.match(/^Effective wear:\s*([\d,]+)\s*km\s*\(([\d,]+)\s*steep t-km\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `التآكل الفعلي: ${m[1]} كم (${m[2]} طن-كم منحدرات)`
+        : `Usure effective : ${m[1]} km (${m[2]} t-km en pente)`;
+    }
+    m = trimmed.match(/^([\d,]+)\s*steep t-km\s*\(\+([\d,]+)\s*wear km\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `${m[1]} طن-كم منحدرات (+${m[2]} كم تآكل)`
+        : `${m[1]} t-km en pente (+${m[2]} km usure)`;
+    }
+    m = trimmed.match(/^(.+?):\s*([\d,]+)\s*t-km\s*\(\+([\d,]+)\s*wear km\)$/i);
+    if (m && depth < 3) {
+      const lhs = translateCore(m[1].trim(), lang, depth + 1) || m[1].trim();
+      return lang === 'ar'
+        ? `${lhs}: ${m[2]} طن-كم (+${m[3]} كم تآكل)`
+        : `${lhs} : ${m[2]} t-km (+${m[3]} km usure)`;
+    }
 
     m = trimmed.match(/^Month ([0-9-]+): Tiles ([\d,]+\/[\d,]+) \(([\d.]+%)\), Places ([\d,]+\/[\d,]+) \(([\d.]+%)\), Routes ([\d,]+\/[\d,]+) \(([\d.]+%)\)\. (.+?)\s*·\s*(\$1 Billing Budget (?:Confirmed|Pending Confirmation))$/i);
     if (m) {
