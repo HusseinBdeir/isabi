@@ -11,6 +11,7 @@ import {
   handleAuthMe,
   handleBlobs,
   handleCashflowBehind,
+  handleDeviceUnsent,
   handleGeoAuditGet,
   handleGeoGateSuggestions,
   handleIndustryDomainStore,
@@ -72,6 +73,7 @@ const DEMO_EMPTY_GET_ROUTES = new Set([
   '/cashflow_behind',
   '/source_behind',
   '/changed_entries',
+  '/device_unsent',
   '/industry_domain_store',
   '/day-close-push'
 ]);
@@ -242,6 +244,7 @@ async function routeAppApi(context) {
       if (subPath === '/cashflow_behind') return jsonResponse({ ok: true, demo: true, cashflow_behind: null });
       if (subPath === '/source_behind') return jsonResponse({ ok: true, demo: true, source_behind: null });
       if (subPath === '/changed_entries') return jsonResponse({ ok: true, demo: true, changed_entries: null });
+      if (subPath === '/device_unsent') return jsonResponse({ ok: true, demo: true, devices: [] });
       if (subPath === '/industry_domain_store') return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
       if (subPath === '/day-close-push') return jsonResponse({ ok: true, demo: true, subscribed: false, endpointCount: 0, vapidPublicKey: '', closeHourBeirut: 18, whatsappPhone: '', lang: 'en', scopeKey: '', lastSentDate: '' });
     }
@@ -326,6 +329,12 @@ async function routeAppApi(context) {
 
   if (subPath === '/cashflow_behind' || subPath === '/source_behind' || subPath === '/changed_entries') {
     return handleCashflowBehind(request, env, session, body, rawBytes, { parseError, emptyBody }, subPath.slice(1));
+  }
+
+  // Entries a device has not sent yet: any signed-in seat reports its own device, the Owner reads the list.
+  if (subPath === '/device_unsent') {
+    if (rawBytes > 2048) return jsonResponse({ ok: false, error: 'Device report exceeds 2 KB limit.' }, 413);
+    return handleDeviceUnsent(request, env, session, body, { parseError, emptyBody });
   }
 
   if (subPath === '/industry_domain_store') {
