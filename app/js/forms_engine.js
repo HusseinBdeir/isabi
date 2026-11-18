@@ -1950,6 +1950,8 @@
         ['Gear / Transmission Oil 90', 'Gear / Transmission Oil 90'],
         ['ATF / Torque Converter Oil', 'ATF / Torque Converter Oil'],
         ['Differential / Axle Oil 85W-140', 'Differential / Axle Oil 85W-140'],
+        ['Brake Lining & Shoe Set', 'Brake Lining & Shoe Set'],
+        ['Retarder & Drivetrain Inspection', 'Retarder & Drivetrain Inspection'],
         ['Oil & Fuel Filter Service', 'Oil & Fuel Filter Service']
       ];
       return `

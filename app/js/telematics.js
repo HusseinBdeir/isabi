@@ -3111,6 +3111,7 @@
 
     let vrCnt = 0;
     let steepCnt = 0;
+    let heavyWearCorridorCnt = 0;
     const pfxLower = targetInd ? `${targetInd.toLowerCase()}::` : '';
     Object.entries(vrMap).forEach(([rk, vr]) => {
       if (!vr || !(Number(vr.km) > 0)) return;
@@ -3163,11 +3164,17 @@
       if (vr.elevAvailable && (Number(vr.maxGradePct || 0) >= 5 || Number(vr.elevGainM || 0) >= 150)) {
         steepCnt += 1;
       }
+      if (vr.elevAvailable && (Number(vr.maxGradePct || 0) >= 8 || Math.max(Number(vr.elevGainM || 0), Number(vr.elevDropM || 0)) >= 250)) {
+        heavyWearCorridorCnt += 1;
+      }
     });
     const terrainChip = vrCnt > 0
       ? `<span data-no-i18n="1">${fmtNum(vrCnt)} </span><span>Verified Corridors</span>${steepCnt > 0 ? ` (<span data-no-i18n="1">${fmtNum(steepCnt)}</span> <span>Grade &ge;5%</span>)` : ''}`
       : '<span>Grade-Adjusted Route Burn</span>';
     const chipsOut = cfg.chipsHtml.concat([terrainChip]);
+    if (industryViewKey === 'trd_trucks' && heavyWearCorridorCnt > 0) {
+      chipsOut.push(`<span data-no-i18n="1">${fmtNum(heavyWearCorridorCnt)} </span><span>Heavy-Wear Corridors</span> (<span data-no-i18n="1">&ge;8%</span>)`);
+    }
 
     return `
       <div class="tel-ind-strip" data-tel-ind-strip="${esc(industryViewKey)}">
