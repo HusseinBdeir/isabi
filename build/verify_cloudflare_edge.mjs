@@ -6448,6 +6448,99 @@ finally:
       table: 'expenses', record: { id: spoofByRecId, company: 'BBConstruction', voided: true, void_reason: 'Attempt print tamper', print_count: 99 }
     }, { 'X-ISABI-Session': bbcSupToken });
 
+    // 49d. /api/sync op=patch enforces G_VOID_REASON (#29) on active->void transitions and strips non-Owner twin_of/twin_difference
+    const sync49Read0 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const sync49Doc0 = sync49Read0.json?.docs?.mfg_web_store || {};
+    const sync49Ts0 = String(sync49Doc0.updatedAt || '');
+    const sync49Exps0 = (sync49Doc0.customRecords?.expenses || []).filter(x => x && x.id !== spoofByRecId);
+    const ownSyncVr400 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: sync49Ts0,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), (Date.parse(sync49Ts0) || 0) + 1000)).toISOString(),
+          customRecords: Object.assign({}, sync49Doc0.customRecords || {}, {
+            expenses: sync49Exps0.concat([{ id: spoofByRecId, company: 'BBConstruction', date: todayBeirut, amount_usd: 820, voided: true, voided_by: 'Workbook match', twin_of: 'fake-sync-twin' }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    const sync49Pol400 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: sync49Ts0,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), (Date.parse(sync49Ts0) || 0) + 1500)).toISOString(),
+          industryCustomRows: Object.assign({}, sync49Doc0.industryCustomRows || {}, {
+            ins_policies: ((sync49Doc0.industryCustomRows || {}).ins_policies || []).filter(x => x && x.id !== 'POL-SYNC-VR-49D').concat([
+              { id: 'POL-SYNC-VR-49D', company: 'Insurance Company', date: todayBeirut, carrier: 'MedGulf', gross_prem_usd: 750, voided: true, rev: 1 }
+            ])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    const supSync49Read0 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': bbcSupToken });
+    const supSync49Doc0 = supSync49Read0.json?.docs?.mfg_web_store || {};
+    const supSync49Ts0 = String(supSync49Doc0.updatedAt || '');
+    const supSync49Exps0 = (supSync49Doc0.customRecords?.expenses || []).filter(x => x && x.id !== spoofByRecId);
+    const supSyncVr400 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: supSync49Ts0,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), (Date.parse(supSync49Ts0) || 0) + 2000)).toISOString(),
+          customRecords: Object.assign({}, supSync49Doc0.customRecords || {}, {
+            expenses: supSync49Exps0.concat([{ id: spoofByRecId, company: 'BBConstruction', date: todayBeirut, amount_usd: 820, voided: true, twin_of: 'fake-sup-sync-twin' }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': bbcSupToken });
+
+    const supSyncValid200 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true, ifMatchUpdatedAt: supSync49Ts0,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), (Date.parse(supSync49Ts0) || 0) + 3000)).toISOString(),
+          customRecords: Object.assign({}, supSync49Doc0.customRecords || {}, {
+            expenses: supSync49Exps0.concat([{ id: spoofByRecId, company: 'BBConstruction', date: todayBeirut, amount_usd: 820, voided: true, void_reason: 'Valid sync void note', voided_by: 'Workbook match', twin_of: 'fake-sup-sync-twin', twin_difference: 9 }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const supSyncReadBack = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': bbcSupToken });
+    const supSyncExpAfter = ((supSyncReadBack.json?.docs?.mfg_web_store?.customRecords || {}).expenses || []).find(r => r && r.id === spoofByRecId);
+
+    const entSyncRead0 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': entryToken });
+    const entSyncDoc0 = entSyncRead0.json?.docs?.mfg_web_store || {};
+    const entSyncTs0 = String(entSyncDoc0.updatedAt || '');
+    const entTwinExpId = 'exp-sync-ent-tw-' + Date.now();
+    const entSyncTwin200 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch', doc: 'mfg_web_store', awaitMirror: true, ifMatchUpdatedAt: entSyncTs0,
+      patch: {
+        mfg_web_store: {
+          minShellVer: MIN_SYNC_SHELL_VER,
+          updatedAt: new Date(Math.max(Date.now(), (Date.parse(entSyncTs0) || 0) + 4000)).toISOString(),
+          customRecords: Object.assign({}, entSyncDoc0.customRecords || {}, {
+            expenses: (entSyncDoc0.customRecords?.expenses || []).concat([{ id: entTwinExpId, company: 'WTC', date: todayBeirut, amount_usd: 115, voided: false, twin_of: 'fake-entry-sync-twin', twin_difference: -4 }])
+          })
+        }
+      }
+    }, { 'X-ISABI-Session': entryToken });
+    const entSyncReadBack = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': entryToken });
+    const entSyncExpAfter = ((entSyncReadBack.json?.docs?.mfg_web_store?.customRecords || {}).expenses || []).find(r => r && r.id === entTwinExpId);
+    const syncGuardsOk = Boolean(
+      ownSyncVr400.status === 400 && ownSyncVr400.json?.code === 'void_reason_required' &&
+      sync49Pol400.status === 400 && sync49Pol400.json?.code === 'void_reason_required' &&
+      supSyncVr400.status === 400 && supSyncVr400.json?.code === 'void_reason_required' &&
+      supSyncValid200.status === 200 && supSyncExpAfter && supSyncExpAfter.voided === true &&
+      !supSyncExpAfter.twin_of && supSyncExpAfter.twin_difference === undefined &&
+      !/workbook/i.test(String(supSyncExpAfter.voided_by || '')) &&
+      entSyncTwin200.status === 200 && entSyncExpAfter && !entSyncExpAfter.twin_of && entSyncExpAfter.twin_difference === undefined
+    );
+
     if (
       vrEntry403.status === 403 && domEntry403.status === 403 &&
       vrBig400.status === 400 && vrBig400.json?.code === 'void_reason_required' &&
@@ -6460,9 +6553,10 @@ finally:
       spoofSupTwinWithReason200.status === 200 && spoofRowAfter && !spoofRowAfter.twin_of &&
       !/workbook/i.test(String(spoofRowAfter.voided_by || '')) &&
       domPrintStamp200.status === 200 && domPrintRow && Number(domPrintRow.print_count) === 1 && Boolean(domPrintRow.printed_at) &&
-      spoofPrintSupClear403.status === 403
+      spoofPrintSupClear403.status === 403 &&
+      syncGuardsOk
     ) {
-      pass('edge-49-mandatory-void-reason', '403-before-400 + alert_rules min_usd=30 + vertical gross_prem_usd + Workbook/twin_of spoof blocked + domain print_count persisted + read-only print tamper 403');
+      pass('edge-49-mandatory-void-reason', '403-before-400 + alert_rules min_usd=30 + vertical gross_prem_usd + Workbook/twin_of spoof blocked + domain print_count persisted + read-only print tamper 403 + /api/sync guards');
     } else {
       fail('edge-49-mandatory-void-reason', JSON.stringify({
         entry403: [vrEntry403.status, domEntry403.status],
@@ -6476,7 +6570,11 @@ finally:
         spoof400s: [spoofSupBy400.status, spoofSupTwin400.status, spoofOwnBy400.status, spoofOwnTwin400.status],
         spoofRowAfter,
         domPrint: [domPrintStamp200.status, domPrintRow],
-        spoofPrintSupClear403: spoofPrintSupClear403.status
+        spoofPrintSupClear403: spoofPrintSupClear403.status,
+        syncGuardsOk,
+        sync49Statuses: [ownSyncVr400.status, sync49Pol400.status, supSyncVr400.status, supSyncValid200.status, entSyncTwin200.status],
+        supSyncExpAfter,
+        entSyncExpAfter
       }).slice(0, 900));
     }
   } finally {

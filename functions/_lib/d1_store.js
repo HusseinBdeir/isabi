@@ -7706,6 +7706,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
         if (!pr) {
           if (!canCreateTableRecord(perms, canonTable)) continue;
           let cleanedNew = Object.assign({}, ir);
+          sanitizeIncomingTwinKeys(cleanedNew, null, session, perms);
           if (!validateRecordGpsCoords(cleanedNew)) {
             stripGpsFields(cleanedNew);
             stripRegionZoneFields(cleanedNew);
@@ -7725,6 +7726,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
         const nowVoid = Boolean(ir.voided);
         const voidNoteChanged = wasVoid && nowVoid && hasVoidReasonChange(pr, ir);
         let sanIr = Object.assign({}, ir);
+        sanitizeIncomingTwinKeys(sanIr, pr, session, perms);
         if (!validateRecordGpsCoords(sanIr)) {
           restoreGpsFieldsFromBase(sanIr, pr);
           restoreRegionZoneFieldsFromBase(sanIr, pr);
@@ -7788,7 +7790,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
               nextRowRo.voided_by = wasVoid ? (pr.voided_by || mergedIr.voided_by || '') : (mergedIr.voided_by || mergedIr.voidedBy || pr.voided_by || '');
               if (wasVoid && pr.voided_by_email) nextRowRo.voided_by_email = pr.voided_by_email;
               nextRowRo.voided_at = wasVoid ? (pr.voided_at || mergedIr.voided_at || '') : (mergedIr.voided_at || mergedIr.voidedAt || pr.voided_at || '');
-              if (voidNoteChanged) applyExplicitVoidReason(nextRowRo, mergedIr);
+              if (voidNoteChanged || !wasVoid) applyExplicitVoidReason(nextRowRo, mergedIr);
             } else {
               const wasWbMatch = Boolean(
                 pr.twin_of
@@ -7914,6 +7916,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
         if (!pr) {
           if (isReadOnly || !perms.canEnterAny) continue;
           let cleanedNew = Object.assign({}, ir);
+          sanitizeIncomingTwinKeys(cleanedNew, null, session, perms);
           if (!perms.canWriteGeoConfig || !validateRecordGpsCoords(cleanedNew)) stripGpsFields(cleanedNew);
           else cleanedNew = normalizeIncomingSiteCoordAliases(cleanedNew);
           if (!perms.voidData && Boolean(cleanedNew.voided)) stripVoidFields(cleanedNew);
@@ -7925,6 +7928,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
         const nowVoid = Boolean(ir.voided);
         const voidNoteChanged = wasVoid && nowVoid && hasVoidReasonChange(pr, ir);
         let sanIr = Object.assign({}, ir);
+        sanitizeIncomingTwinKeys(sanIr, pr, session, perms);
         if (!validateRecordGpsCoords(sanIr)) restoreGpsFieldsFromBase(sanIr, pr);
         else sanIr = normalizeIncomingSiteCoordAliases(sanIr);
         if (!perms.voidData && (nowVoid !== wasVoid || voidNoteChanged)) {
@@ -7958,7 +7962,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
           if (allowVoidOnly) {
             const nextRo = Object.assign({}, pr, { voided: Boolean(mergedIr.voided), updated_at: mergedIr.updated_at || pr.updated_at, rev: mergedIr.rev || pr.rev });
             if (nextRo.voided) {
-              if (voidNoteChanged) applyExplicitVoidReason(nextRo, mergedIr);
+              if (voidNoteChanged || !wasVoid) applyExplicitVoidReason(nextRo, mergedIr);
             } else {
               stripVoidFields(nextRo);
             }
@@ -8016,6 +8020,7 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
         const nowVoid = Boolean(iv.voided);
         const voidNoteChanged = wasVoid && nowVoid && hasVoidReasonChange(pv, iv);
         let sanIv = Object.assign({}, iv);
+        sanitizeIncomingTwinKeys(sanIv, pv, session, perms);
         if (!validateRecordGpsCoords(sanIv)) restoreGpsFieldsFromBase(sanIv, pv);
         else sanIv = normalizeIncomingSiteCoordAliases(sanIv);
         if (!perms.voidData && (nowVoid !== wasVoid || voidNoteChanged)) {
@@ -8102,10 +8107,13 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
             });
           }
           if (perms.voidData && Boolean(iv.voided) && validateRecordGpsCoords(iv) && !hasAnyGpsField(iv) && !hasExplicitGpsKeyInPayload(iv)) {
-            safeIre[ek] = iv;
+            const cleanedRo = Object.assign({}, iv);
+            sanitizeIncomingTwinKeys(cleanedRo, null, session, perms);
+            safeIre[ek] = cleanedRo;
           }
         } else {
           let cleanedNew = Object.assign({}, iv);
+          sanitizeIncomingTwinKeys(cleanedNew, null, session, perms);
           if (!perms.canWriteGeoConfig && (hasAnyGpsField(iv) || hasExplicitGpsKeyInPayload(iv)) && Array.isArray(auditOut)) {
             const nc = extractEffectivePinCoords(iv);
             auditOut.push({
@@ -8254,6 +8262,153 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
   }
 }
 
+async function enforceSyncVoidReasonAndTwinGuards(db, incomingDoc, prevDoc, session) {
+  if (!incomingDoc || typeof incomingDoc !== 'object' || !session || session.build_ticket) return null;
+  const perms = getSessionWritePerms(session);
+  const trustedTwin = Boolean(session.build_ticket || (perms && perms.roleKey === 'Full Access (Owner)'));
+  const prev = (prevDoc && typeof prevDoc === 'object') ? prevDoc : {};
+  let voidRuleCfg = null;
+  const getRuleCfg = async () => {
+    if (!voidRuleCfg) voidRuleCfg = await loadVoidReasonRuleCfgEdge(db);
+    return voidRuleCfg;
+  };
+
+  if (incomingDoc.customRecords && typeof incomingDoc.customRecords === 'object') {
+    const prevCr = (prev.customRecords && typeof prev.customRecords === 'object') ? prev.customRecords : {};
+    for (const [k, list] of Object.entries(incomingDoc.customRecords)) {
+      if (!Array.isArray(list) || !list.length) continue;
+      const canonTable = CR_KEY_TO_TABLE[k] || k;
+      const pList = Array.isArray(prevCr[k]) ? prevCr[k] : [];
+      const pMap = new Map(pList.filter(x => x && x.id).map(x => [String(x.id).trim(), x]));
+      const d1Map = new Map();
+      if (db && ALLOWED_TABLES.has(canonTable)) {
+        const probeIds = [];
+        for (const ir of list) {
+          if (!ir || typeof ir !== 'object' || !ir.id) continue;
+          const rid = String(ir.id).trim();
+          const pr = pMap.get(rid);
+          const needsVoidCheck = Boolean(ir.voided) && (!pr || !pr.voided);
+          const needsTwinBase = !trustedTwin && !pr && ('twin_of' in ir || 'twin_difference' in ir);
+          if (rid && (needsVoidCheck || needsTwinBase)) probeIds.push(rid);
+        }
+        for (let i = 0; i < probeIds.length; i += 80) {
+          const slice = probeIds.slice(i, i + 80);
+          const ph = slice.map((_, idx) => `?${idx + 1}`).join(',');
+          try {
+            const exRes = await db.prepare(`SELECT * FROM ${canonTable} WHERE id IN (${ph})`).bind(...slice).all();
+            for (const xr of (exRes.results || [])) {
+              d1Map.set(String(xr.id).trim(), hydrateRowJson(xr));
+            }
+          } catch (_) {}
+        }
+      }
+      for (const ir of list) {
+        if (!ir || typeof ir !== 'object' || !ir.id) continue;
+        const rid = String(ir.id).trim();
+        const pr = pMap.get(rid) || null;
+        const d1r = d1Map.get(rid) || null;
+        const existing = (d1r && (d1r.voided || !pr)) ? d1r : (pr || d1r || null);
+        if (!trustedTwin) sanitizeIncomingTwinKeys(ir, existing, session, perms);
+        if (Boolean(ir.voided) && !(existing && existing.voided)) {
+          const cfg = await getRuleCfg();
+          const checkObj = existing ? Object.assign({}, existing, ir) : ir;
+          const vrErr = checkMandatoryVoidReasonEdge(k, checkObj, session, cfg, existing);
+          if (vrErr) return vrErr;
+        }
+      }
+    }
+  }
+
+  if (incomingDoc.industryCustomRows && typeof incomingDoc.industryCustomRows === 'object') {
+    const prevIcr = (prev.industryCustomRows && typeof prev.industryCustomRows === 'object') ? prev.industryCustomRows : {};
+    for (const [bk, list] of Object.entries(incomingDoc.industryCustomRows)) {
+      if (!Array.isArray(list) || !list.length) continue;
+      const pList = Array.isArray(prevIcr[bk]) ? prevIcr[bk] : [];
+      const pMap = new Map(pList.filter(x => x && (x.id || x.code)).map(x => [String(x.id || x.code).trim(), x]));
+      const d1Map = new Map();
+      if (db) {
+        const probeIds = [];
+        for (const ir of list) {
+          if (!ir || typeof ir !== 'object') continue;
+          const rid = String(ir.id || ir.code || '').trim();
+          const pr = rid ? pMap.get(rid) : null;
+          const needsVoidCheck = Boolean(ir.voided) && (!pr || !pr.voided);
+          const needsTwinBase = !trustedTwin && !pr && ('twin_of' in ir || 'twin_difference' in ir);
+          if (rid && (needsVoidCheck || needsTwinBase)) probeIds.push(rid);
+        }
+        for (let i = 0; i < probeIds.length; i += 80) {
+          const slice = probeIds.slice(i, i + 80);
+          const ph = slice.map((_, idx) => `?${idx + 2}`).join(',');
+          try {
+            const exRes = await db.prepare(`SELECT row_id, voided, payload_json FROM industry_custom_rows WHERE bucket = ?1 AND row_id IN (${ph})`).bind(bk, ...slice).all();
+            for (const xr of (exRes.results || [])) {
+              const obj = safeJsonParse(xr.payload_json, {});
+              obj.voided = Boolean(Number(xr.voided || 0) || obj.voided);
+              d1Map.set(String(xr.row_id).trim(), obj);
+            }
+          } catch (_) {}
+        }
+      }
+      for (const ir of list) {
+        if (!ir || typeof ir !== 'object') continue;
+        const rid = String(ir.id || ir.code || '').trim();
+        if (!rid) continue;
+        const pr = pMap.get(rid) || null;
+        const d1r = d1Map.get(rid) || null;
+        const existing = (d1r && (d1r.voided || !pr)) ? d1r : (pr || d1r || null);
+        if (!trustedTwin) sanitizeIncomingTwinKeys(ir, existing, session, perms);
+        if (Boolean(ir.voided) && !(existing && existing.voided)) {
+          const cfg = await getRuleCfg();
+          const checkObj = existing ? Object.assign({}, existing, ir) : ir;
+          const vrErr = checkMandatoryVoidReasonEdge(bk, checkObj, session, cfg, existing);
+          if (vrErr) return vrErr;
+        }
+      }
+    }
+  }
+
+  if (incomingDoc.industryRowEdits && typeof incomingDoc.industryRowEdits === 'object') {
+    const prevIre = (prev.industryRowEdits && typeof prev.industryRowEdits === 'object') ? prev.industryRowEdits : {};
+    const d1EditMap = new Map();
+    if (db) {
+      const probeEks = [];
+      for (const [ek, iv] of Object.entries(incomingDoc.industryRowEdits)) {
+        if (!ek || !iv || typeof iv !== 'object') continue;
+        const pv = prevIre[ek];
+        const needsVoidCheck = Boolean(iv.voided) && (!pv || !pv.voided);
+        const needsTwinBase = !trustedTwin && !pv && ('twin_of' in iv || 'twin_difference' in iv);
+        if (needsVoidCheck || needsTwinBase) probeEks.push(ek);
+      }
+      for (let i = 0; i < probeEks.length; i += 80) {
+        const slice = probeEks.slice(i, i + 80);
+        const ph = slice.map((_, idx) => `?${idx + 1}`).join(',');
+        try {
+          const exRes = await db.prepare(`SELECT edit_key, voided, payload_json FROM industry_row_edits WHERE edit_key IN (${ph})`).bind(...slice).all();
+          for (const xr of (exRes.results || [])) {
+            const obj = safeJsonParse(xr.payload_json, {});
+            obj.voided = Boolean(Number(xr.voided || 0) || obj.voided);
+            d1EditMap.set(String(xr.edit_key).trim(), obj);
+          }
+        } catch (_) {}
+      }
+    }
+    for (const [ek, iv] of Object.entries(incomingDoc.industryRowEdits)) {
+      if (!ek || !iv || typeof iv !== 'object') continue;
+      const pv = prevIre[ek] && typeof prevIre[ek] === 'object' ? prevIre[ek] : null;
+      const d1e = d1EditMap.get(ek) || null;
+      const existing = (d1e && (d1e.voided || !pv)) ? d1e : (pv || d1e || null);
+      if (!trustedTwin) sanitizeIncomingTwinKeys(iv, existing, session, perms);
+      if (Boolean(iv.voided) && !(existing && existing.voided) && !/^WF::/i.test(ek)) {
+        const cfg = await getRuleCfg();
+        const checkObj = existing ? Object.assign({}, existing, iv) : iv;
+        const vrErr = checkMandatoryVoidReasonEdge((checkObj && checkObj.domainTblKey) || ek, checkObj, session, cfg, existing);
+        if (vrErr) return vrErr;
+      }
+    }
+  }
+  return null;
+}
+
 export function isPushOwnedDoc(docKey) {
   const k = String(docKey || '');
   return k === 'vapid_keypair_v1'
@@ -8384,6 +8539,10 @@ export async function handleSync(request, env, session, body, _ctx) {
         } catch (_) {}
       }
       stripServerOwnedCustomRows(incomingDoc, prevDoc);
+      const syncVrErr = await enforceSyncVoidReasonAndTwinGuards(env.DB, incomingDoc, prevDoc, session);
+      if (syncVrErr) {
+        return jsonResponse(syncVrErr, 400);
+      }
       await enforceSyncVoidActors(env.DB, incomingDoc, prevDoc, session);
       holdMinShellVer(incomingDoc, prevDoc);
       const sameNameConflict = await checkSameNameSyncPatchConflict(env.DB, incomingDoc, prevDoc);
