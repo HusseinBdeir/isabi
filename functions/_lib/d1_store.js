@@ -5408,6 +5408,8 @@ export async function handleCashflowBehind(request, env, session, body, rawBytes
 //   * POST { device_id, label, count, since, reason, shell }: count >= 1 = holding; count 0 = sent. A row that held
 //     entries for DEVICE_UNSENT_LATE_MIN_MS or longer stays as "sent late" for DEVICE_UNSENT_LATE_HOURS so the Owner
 //     knows late entries arrived; a shorter hold (a signal drop) is simply removed.
+//   * count >= 1 with sent_late: the device was never able to report (offline the whole time) and has just sent
+//     entries that waited an hour or more: filed straight as "sent late".
 //   * count 0 with all_seats, from an Owner or full-group seat: that seat sends every company's rows, so it closes
 //     the reports other seats left open for the same device (a shared device changes seats).
 //   * GET is Owner-only. /api/sync neither serves nor patches these rows (isDeviceUnsentDoc).
@@ -5442,13 +5444,15 @@ export function validateDeviceUnsentReport(body, nowMs) {
     val.all_seats = body.all_seats === true;
     return { ok: true, val };
   }
+  const sentLate = body.sent_late === true;
   const reason = String(body.reason == null ? '' : body.reason);
-  if (!DEVICE_UNSENT_REASONS.includes(reason)) return { ok: false, error: 'Invalid reason.' };
+  if (!sentLate && !DEVICE_UNSENT_REASONS.includes(reason)) return { ok: false, error: 'Invalid reason.' };
   const sinceMs = Date.parse(String(body.since == null ? '' : body.since));
   if (!Number.isFinite(sinceMs) || sinceMs > nowMs + 300000 || sinceMs < nowMs - DEVICE_UNSENT_MAX_SINCE_DAYS * 86400000) {
     return { ok: false, error: 'Invalid since time.' };
   }
-  val.reason = reason;
+  val.reason = sentLate ? '' : reason;
+  val.sent_late = sentLate;
   val.since = new Date(Math.min(sinceMs, nowMs)).toISOString();
   return { ok: true, val };
 }
@@ -5550,6 +5554,9 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
     }
     return jsonResponse(changed ? { ok: true, saved: true, state } : { ok: true, saved: false });
   }
+  if (val.sent_late && nowMs - Date.parse(val.since) < DEVICE_UNSENT_LATE_MIN_MS) {
+    return jsonResponse({ ok: true, saved: false });   // a short wait is no late arrival
+  }
   if (!exRow) {
     const cutoffIso = new Date(nowMs - DEVICE_UNSENT_HOLD_DAYS * 86400000).toISOString();
     await env.DB.prepare("DELETE FROM edge_kv_store WHERE doc_key LIKE 'device_unsent:%' AND updated_at < ?1").bind(cutoffIso).run();
@@ -5557,6 +5564,30 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
     if (Number((cnt && cnt.n) || 0) >= DEVICE_UNSENT_MAX_ROWS) {
       return jsonResponse({ ok: false, error: 'Device list is full.' }, 429);
     }
+  }
+  const identity = {
+    device_id: val.device_id,
+    label: val.label,
+    user_id: seatId,
+    email: String(session.email || '').trim().toLowerCase().slice(0, 160),
+    name: cleanDeviceUnsentText(session.name || session.full_name || '', 80)
+  };
+  if (val.sent_late) {
+    const late = Object.assign({ state: 'sent_late' }, identity, {
+      count: 0,
+      sent_count: prevHolding ? Math.max(Number(prev.count), val.count) : val.count,
+      since: (prevHolding && String(prev.since || '') && String(prev.since) < val.since) ? String(prev.since) : val.since,
+      reason: '',
+      shell: val.shell,
+      reported_at: nowIso,
+      sent_at: nowIso
+    });
+    await env.DB.prepare(
+      `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
+       VALUES (?1, ?2, ?3, 1)
+       ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1`
+    ).bind(docKey, JSON.stringify(late), nowIso).run();
+    return jsonResponse({ ok: true, saved: true, state: 'sent_late' });
   }
   const stored = {
     state: 'holding',

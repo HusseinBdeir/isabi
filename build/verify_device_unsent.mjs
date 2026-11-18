@@ -192,6 +192,23 @@ console.log('\n[a short hold, and a shared device]');
   ok('all_seats means nothing on a holding report', r.json.state === 'holding' && kv(`device_unsent:u1:${DEV_SH}`).count === 1 && kv(`device_unsent:u7:${DEV_SH}`).state === 'sent_late', r);
 }
 
+console.log('\n[never able to report: arrived late]');
+{
+  const DEV_L = 'devlate00000006';
+  let r = await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: { device_id: DEV_L, label: 'Android Tablet', count: 20, since: iso(Date.now() - 20 * 3600000), sent_late: true, shell: '19.6.391' } });
+  const row = kv(`device_unsent:u7:${DEV_L}`);
+  ok('a device that was offline for 20 hours files its entries as arrived late once they are sent', r.json.saved === true && r.json.state === 'sent_late' && row.state === 'sent_late' && row.sent_count === 20 && row.count === 0 && row.user_id === 'u7' && /^\d{4}-/.test(row.sent_at), { r, row });
+  r = await api('device_unsent', { headers: as(OWNER) });
+  const d = r.json.devices.find(x => x.device_id === DEV_L);
+  ok('the Owner list shows it as arrived late', Boolean(d) && d.state === 'sent_late' && d.sent_count === 20, d);
+  r = await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: { device_id: 'devlate00000007', count: 3, since: iso(Date.now() - 30 * 60000), sent_late: true } });
+  ok('a wait under an hour is no late arrival: nothing stored', r.status === 200 && r.json.saved === false && !kv('device_unsent:u7:devlate00000007'), r);
+  r = await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: { device_id: 'devlate00000008', count: 0, since: iso(Date.now() - 5 * 3600000), sent_late: true } });
+  ok('arrived late with nothing sent stores nothing', r.status === 200 && r.json.saved === false && !kv('device_unsent:u7:devlate00000008'), r);
+  r = await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: { device_id: 'devlate00000009', count: 3, since: 'long ago', sent_late: true } });
+  ok('arrived late still needs a real start time', r.status === 400, r);
+}
+
 console.log('\n[bad input]');
 {
   const bad = async (over, raw) => (await api('device_unsent', { method: 'POST', headers: as(ENTRY), body: raw === undefined ? report(over) : undefined, raw })).status;
