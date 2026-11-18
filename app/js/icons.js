@@ -168,6 +168,8 @@
     user_x: s('<path d="M16 21v-2a4 4 0 0 0-4-4H5.5a4 4 0 0 0-4 4v2"/><circle cx="8.8" cy="7.2" r="3.8"/><line x1="17.5" y1="8.5" x2="22.2" y2="13.2"/><line x1="22.2" y1="8.5" x2="17.5" y2="13.2"/>'),
     pin: s('<path d="M20 10c0 5.8-8 11.5-8 11.5S4 15.8 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="2.8"/>'),
     bookmark: s('<path d="M6.5 3.5h11a1.2 1.2 0 0 1 1.2 1.2V21l-6.7-4.2L5.3 21V4.7a1.2 1.2 0 0 1 1.2-1.2z"/>'),
+    pushpin: s('<path d="M9 3.5h6"/><path d="M10 3.5v5.2L7 12.5v1.8h10v-1.8l-3-3.8V3.5"/><line x1="12" y1="14.3" x2="12" y2="21"/>'),
+    close_x: s('<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>'),
     globe: s('<circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 0 0 0 18 14 14 0 0 0 0-18z"/>'),
     // Phase 1+ Multi-Industry Hub & Sub-Tab Icons (Holding, Hospitality, Trading, Real Estate, Insurance)
     hld_consolidation: s('<rect x="3" y="3" width="7" height="7" rx="1.2"/><rect x="14" y="3" width="7" height="7" rx="1.2"/><rect x="8.5" y="14" width="7" height="7" rx="1.2"/><path d="M6.5 10v2.2h11V10"/><line x1="12" y1="12.2" x2="12" y2="14"/>'),

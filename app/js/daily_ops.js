@@ -649,6 +649,163 @@
     return usd + (lbp ? lbp / (fxRate || 89500) : 0);
   }
 
+  // The figures the six KPI popovers show for one day, read from the same rows with the same rules as
+  // buildDayModel. The popovers' "7-Day Avg" column averages them over the prior active sales days;
+  // build/verify_popover_touch_normal.mjs checks they equal the day model on the selected day.
+  function computeDayFigures(ctx, idx, d, includeAh) {
+    const { round2, norm } = ctx;
+    const yest = shiftIsoDays(d, -1);
+    const daySales = idx.salesByDate.get(d) || [];
+    const ahSales = includeAh ? (idx.salesByDate.get(yest) || []).filter(isAfterHoursTicket) : [];
+    const dayRaw = idx.rawByDate.get(d) || [];
+    const ahRaw = includeAh ? (idx.rawByDate.get(yest) || []).filter(isAfterHoursTicket) : [];
+    const effSales = ahSales.length ? ahSales.concat(daySales) : daySales;
+    const effRaw = ahRaw.length ? ahRaw.concat(dayRaw) : dayRaw;
+    const s = summarizeSalesList(ctx, effSales);
+    const r = summarizeRawList(ctx, effRaw);
+    const fxRate = Number((ctx.getLbpFxRate ? ctx.getLbpFxRate(d) : 89500) || 89500);
+
+    let expTotal = 0, expExVat = 0, cashExp = 0, creditExp = 0, expCount = 0;
+    const exps = idx.expByDate.get(d) || [];
+    for (let i = 0; i < exps.length; i++) {
+      const x = exps[i];
+      const isPend = Boolean(ctx.isPendingPriceExpense(x));
+      const sgn = ctx.expenseSign(x);
+      if (sgn === 0 && !isPend) continue;
+      if (sgn !== 0) expCount += 1;
+      const a = round2(Number(x.amount || 0) * (sgn || 1));
+      expTotal += a;
+      if (ctx.expenseKind(x) !== 'VAT') expExVat += a;
+      const isCred = Boolean(ctx.isApCreditExpense(x));
+      if (isCred) creditExp += a;
+      else if (ctx.isCashExpense(x)) cashExp += a;
+    }
+    expTotal = round2(expTotal); expExVat = round2(expExVat); cashExp = round2(cashExp); creditExp = round2(creditExp);
+
+    const custSet = new Set();
+    effSales.forEach(t => { if (t.customer && ctx.ticketSign(t)) custSet.add(norm(t.customer)); });
+    let arCollected = 0;
+    (idx.rcptByDate.get(d) || []).forEach(rc => {
+      if (ctx.receiptKind(rc) !== 'Settlement') return;
+      arCollected += Number(rc.amount || 0) + Number(rc.discount || 0);
+      if (rc.customer) custSet.add(norm(rc.customer));
+    });
+    arCollected = round2(arCollected);
+    let apPaid = 0;
+    (idx.setByDate.get(d) || []).forEach(sp => { if (ctx.settlementKind(sp) === 'Payment') apPaid += Number(sp.amount || 0) + Number(sp.discount || 0); });
+    apPaid = round2(apPaid);
+    let salariesPaid = 0;
+    (idx.salByDate.get(d) || []).forEach(sl => { salariesPaid += salaryRowUsd(sl, fxRate); });
+    salariesPaid = round2(salariesPaid);
+    let extInEq = 0, extOutEq = 0;
+    (idx.extByDate.get(d) || []).forEach(ex => {
+      const isOut = /out|expense/i.test(String(ex.direction || ex.flow || ''));
+      const lbp = Number(ex.lbp_amount || 0);
+      const usd = lbp ? Number(ex.usd_amount || 0) : Number(ex.usd_amount != null ? ex.usd_amount : ex.amount || 0);
+      const eqAmt = round2(usd + (lbp ? lbp / fxRate : 0));
+      if (isOut) extOutEq += eqAmt; else extInEq += eqAmt;
+    });
+    extInEq = round2(extInEq); extOutEq = round2(extOutEq);
+    let loanInEq = 0, loanOutEq = 0;
+    (idx.loanByDate.get(d) || []).forEach(ln => {
+      const lbp = Number(ln.lbp_amount || 0);
+      const usd = Number(ln.usd_amount != null ? ln.usd_amount : (lbp ? 0 : ln.principal || 0));
+      const eq = round2(usd + (lbp ? lbp / fxRate : (usd ? 0 : Number(ln.principal || 0))));
+      if (/borrow/i.test(String(ln.direction || ''))) loanInEq = round2(loanInEq + eq);
+      else loanOutEq = round2(loanOutEq + eq);
+    });
+    (idx.loanSetByDate.get(d) || []).forEach(ls => {
+      const lbp = Number(ls.lbp_amount || 0);
+      const usd = lbp ? Number(ls.usd_amount || 0) : Number(ls.amount || 0);
+      const eq = round2(usd + (lbp ? lbp / fxRate : 0));
+      if (/inflow|drawdown/i.test(String(ls.method || ls.type || ''))) loanInEq = round2(loanInEq + eq);
+      else loanOutEq = round2(loanOutEq + eq);
+    });
+    const operatingProfit = round2(s.grossExVat - (r.totalCost + expExVat + salariesPaid + s.commUsd));
+    const netCashFlow = round2(round2(s.cashNet + arCollected + extInEq + loanInEq) - round2(cashExp + apPaid + salariesPaid + extOutEq + loanOutEq));
+
+    let dieselIssuedL = 0, ownTrips = 0, haulerTrips = 0, otHours = 0, otStaff = 0;
+    const fuels = idx.fuelByDate.get(d) || [];
+    fuels.forEach(fl => {
+      const itemStr = String(fl.item || fl.fuel_type || 'Diesel');
+      if (ctx.isDieselTankRefillIntake(fl) || /grease/i.test(itemStr)) return;
+      if (/diesel|mazout/i.test(itemStr)) dieselIssuedL += Number(fl.litres || 0);
+    });
+    effSales.concat(effRaw).forEach(t => {
+      if (t.transport_by === 'Company fleet') ownTrips += 1;
+      else if (t.truck) haulerTrips += 1;
+    });
+    (idx.attByDate.get(d) || []).forEach(a => {
+      const oth = Number(a.overtime_hours || 0);
+      if (oth > 0) { otHours += oth; otStaff += 1; }
+    });
+
+    return {
+      salesTtc: s.ttc,
+      salesMat: round2(s.ttc - s.transRev),
+      salesTrans: s.transRev,
+      salesCash: s.cashTtc,
+      salesCredit: s.creditTtc,
+      salesLoads: s.loads,
+      deliveryLoads: s.deliveryLoads,
+      pickupLoads: s.pickupLoads,
+      clients: custSet.size,
+      avgPriceTtc: s.avgPriceTtc,
+      salesExVat: s.grossExVat,
+      rawTotal: r.totalCost,
+      rawMat: r.matCost,
+      rawHaul: r.haulCost,
+      rawLoads: r.loads,
+      afterRaw: round2(s.grossExVat - r.totalCost),
+      expTotal,
+      expCash: cashExp,
+      expCredit: creditExp,
+      expCount,
+      expItemLines: (idx.expItemsByDate.get(d) || []).length,
+      costsBelowRaw: round2(expExVat + salariesPaid + s.commUsd),
+      operatingProfit,
+      cashSalesReceipts: round2(s.cashNet + arCollected),
+      extIn: extInEq,
+      extOut: extOutEq,
+      paidOut: round2(apPaid + cashExp + salariesPaid),
+      netCashFlow,
+      dieselIssuedL: round2(dieselIssuedL),
+      fuelFills: fuels.length,
+      otHours: round2(otHours),
+      otStaff,
+      otLoads: s.otLoads,
+      ownTrips,
+      haulerTrips
+    };
+  }
+
+  // Average of computeDayFigures over prior days (no after-hours borrowing, as for the 7-day sales benchmark).
+  // Days that sold no measured volume do not pull the average price down. Null with fewer than 2 days.
+  function averageDayFigures(ctx, idx, dates) {
+    if (!Array.isArray(dates) || dates.length < 2) return null;
+    const rows = dates.map(d => computeDayFigures(ctx, idx, d, false));
+    const avg = {};
+    Object.keys(rows[0]).forEach(k => {
+      avg[k] = ctx.round2(rows.reduce((a, x) => a + Number(x[k] || 0), 0) / rows.length);
+    });
+    const priced = rows.filter(x => x.avgPriceTtc > 0);
+    avg.avgPriceTtc = priced.length ? ctx.round2(priced.reduce((a, x) => a + x.avgPriceTtc, 0) / priced.length) : 0;
+    return { days: rows.length, from: dates[0], to: dates[dates.length - 1], avg };
+  }
+
+  // Column heading of the average: says how many prior days it covers when there are fewer than 7.
+  function normAvgLabel(days) {
+    return ['7-Day Avg', '7-Day Avg', '2-Day Avg', '3-Day Avg', '4-Day Avg', '5-Day Avg', '6-Day Avg'][Number(days) < 7 ? Number(days) || 0 : 0];
+  }
+
+  // Percent gap of a day's figure against its usual level; null when the usual level is too small to compare.
+  function normGapPct(cur, avg, floor) {
+    const a = Number(avg);
+    const c = Number(cur);
+    if (!Number.isFinite(a) || !Number.isFinite(c) || Math.abs(a) < (floor || 1)) return null;
+    return Math.round(((c - a) / Math.abs(a)) * 100);
+  }
+
   function buildDayModel(ctx) {
     const { STATE, round2, norm } = ctx;
     const idx = getDailyTxIndex(ctx);
@@ -1339,6 +1496,7 @@
     const benchRows = priorSales7.map(d => computeQuickDayTotals(ctx, idx, d, false));
     const avg7Sales = benchRows.length ? round2(benchRows.reduce((a, r) => a + r.salesTtc, 0) / benchRows.length) : 0;
     const avg7Profit = benchRows.length ? round2(benchRows.reduce((a, r) => a + r.opProfit, 0) / benchRows.length) : 0;
+    const norm7 = averageDayFigures(ctx, idx, priorSales7);
 
     // Shift / Hourly Rhythm Buckets
     const hourBuckets = [
@@ -2241,6 +2399,7 @@
       exceptionCount,
       avg7Sales,
       avg7Profit,
+      norm7,
       pulseRows,
       hourBuckets,
       entityRows,
@@ -4262,17 +4421,24 @@
       ? `${dm.newPoliciesCount} ${dm.newPoliciesCount === 1 ? 'Rule' : 'Rules'} · ${dm.convItems.length} FX`
       : `${dm.activeRulesUsed.length} ${dm.activeRulesUsed.length === 1 ? 'Rule' : 'Rules'} Used`;
 
-    // Hover Popovers for all 6 KPI Cards
+    // Hover Popovers for all 6 KPI Cards. Rows carry `n` (the same figure averaged over the last active sales
+    // days, dm.norm7) and `g` (this day's gap against it); `go` names the records a pinned or touch popover opens.
+    const N7 = dm.norm7 ? dm.norm7.avg : null;
+    const popNorm = dm.norm7 ? { label: normAvgLabel(dm.norm7.days), days: dm.norm7.days } : null;
+    const nUsd = v => fmtUSD(v, 0);
+    const nCnt = v => fmtNum(Math.round(Number(v) || 0));
+    const withNorm = (row, nTxt, cur, avg, floor) => (N7 ? Object.assign(row, { n: nTxt, g: cur == null ? null : normGapPct(cur, avg, floor) }) : row);
     const salesMatDisplay = ctx.round2(Number(dm.salesSum.ttc || 0) - Number(dm.salesSum.transRev || 0));
     const salesPop = JSON.stringify({
       title: `Sales & Dispatch · ${fmtHumanDay(dm.targetDate)}`,
       badge: `${fmtNum(dm.salesSum.loads)} loads`,
+      norm: popNorm,
       rows: [
-        { label: 'Total Sales Revenue', value: fmtUSD(dm.salesSum.ttc, 0), color: '#2356A8', isTotal: true },
-        { label: 'Material vs Transport', value: `${fmtUSD(salesMatDisplay, 0)} + ${fmtUSD(dm.salesSum.transRev, 0)}`, color: '#4A90D9' },
-        { label: 'Cash vs Credit', value: `${fmtUSD(dm.salesSum.cashTtc, 0)} / ${fmtUSD(dm.salesSum.creditTtc, 0)}`, color: '#1F7A4C' },
-        { label: 'Delivery vs Pickup', value: `${dm.salesSum.deliveryLoads} Delivered · ${dm.salesSum.pickupLoads} Picked Up`, color: '#C0892F' },
-        { label: 'Clients · Average Price', value: `${fmtNum(dm.customerRows.length)} · ${fmtUSD(dm.salesSum.avgPriceTtc, 1)}/m³`, color: '#7A889B' }
+        withNorm({ label: 'Total Sales Revenue', value: fmtUSD(dm.salesSum.ttc, 0), color: '#2356A8', isTotal: true, go: 'drawer:sales' }, N7 && nUsd(N7.salesTtc), dm.salesSum.ttc, N7 && N7.salesTtc, 50),
+        withNorm({ label: 'Material vs Transport', value: `${fmtUSD(salesMatDisplay, 0)} + ${fmtUSD(dm.salesSum.transRev, 0)}`, color: '#4A90D9', go: 'drawer:sales' }, N7 && `${nUsd(N7.salesMat)} + ${nUsd(N7.salesTrans)}`, null),
+        withNorm({ label: 'Cash vs Credit', value: `${fmtUSD(dm.salesSum.cashTtc, 0)} / ${fmtUSD(dm.salesSum.creditTtc, 0)}`, color: '#1F7A4C', go: 'drawer:sales' }, N7 && `${nUsd(N7.salesCash)} / ${nUsd(N7.salesCredit)}`, null),
+        withNorm({ label: 'Delivery vs Pickup', value: `${dm.salesSum.deliveryLoads} Delivered · ${dm.salesSum.pickupLoads} Picked Up`, color: '#C0892F', go: 'drawer:sales' }, N7 && `${nCnt(N7.deliveryLoads)} · ${nCnt(N7.pickupLoads)}`, null),
+        withNorm({ label: 'Clients · Average Price', value: `${fmtNum(dm.customerRows.length)} · ${fmtUSD(dm.salesSum.avgPriceTtc, 1)}/m³`, color: '#7A889B', go: 'drawer:sales' }, N7 && `${nCnt(N7.clients)} · ${fmtUSD(N7.avgPriceTtc, 1)}/m³`, null)
       ],
       footer: dm.ahSalesCount > 0 ? `Includes ${dm.ahSalesCount} Yesterday After-Hours sales · Click to inspect` : 'Click to inspect sales dispatches'
     });
@@ -4280,11 +4446,12 @@
     const rawPop = JSON.stringify({
       title: `Quarry, Haulage & Pricing · ${fmtHumanDay(dm.targetDate)}`,
       badge: `${fmtNum(dm.rawSum.loads)} loads`,
+      norm: popNorm,
       rows: [
-        { label: 'Total Quarry & Haulage', value: fmtUSD(dm.rawSum.totalCost, 0), color: '#C0892F', isTotal: true },
-        { label: 'Quarry Material Cost', value: fmtUSD(dm.rawSum.matCost, 0), color: '#2356A8' },
-        { label: 'Third-Party Haulage', value: fmtUSD(dm.rawSum.haulCost, 0), color: '#4A90D9' },
-        { label: 'Rate Compliance', value: `${dm.agreedSalesLoads}/${dm.salesSum.loads} Agreed · ${dm.belowAgreedLoads} Below`, color: dm.belowAgreedLoads > 0 ? '#C8333B' : '#1F7A4C' }
+        withNorm({ label: 'Total Quarry & Haulage', value: fmtUSD(dm.rawSum.totalCost, 0), color: '#C0892F', isTotal: true, go: 'drawer:raw' }, N7 && nUsd(N7.rawTotal), dm.rawSum.totalCost, N7 && N7.rawTotal, 50),
+        withNorm({ label: 'Quarry Material Cost', value: fmtUSD(dm.rawSum.matCost, 0), color: '#2356A8', go: 'drawer:raw' }, N7 && nUsd(N7.rawMat), dm.rawSum.matCost, N7 && N7.rawMat, 50),
+        withNorm({ label: 'Third-Party Haulage', value: fmtUSD(dm.rawSum.haulCost, 0), color: '#4A90D9', go: 'drawer:raw' }, N7 && nUsd(N7.rawHaul), dm.rawSum.haulCost, N7 && N7.rawHaul, 50),
+        { label: 'Rate Compliance', value: `${dm.agreedSalesLoads}/${dm.salesSum.loads} Agreed · ${dm.belowAgreedLoads} Below`, color: dm.belowAgreedLoads > 0 ? '#C8333B' : '#1F7A4C', go: 'drawer:sales' }
       ],
       footer: 'Click to inspect quarry & haulage tickets'
     });
@@ -4292,11 +4459,12 @@
     const expPop = JSON.stringify(perms.canExp ? {
       title: `Expenses & Stock Bills · ${fmtHumanDay(dm.targetDate)}`,
       badge: `${fmtNum(dm.expCount)} bills`,
+      norm: popNorm,
       rows: [
-        { label: 'Total Expenses', value: fmtUSD(dm.expTotal, 0), color: '#C96A22', isTotal: true },
-        { label: 'Cash vs Credit Bills', value: `${fmtUSD(dm.cashExp, 0)} Cash · ${fmtUSD(dm.creditExp, 0)} Credit`, color: '#2356A8' },
-        { label: 'Largest Expense Today', value: topExpBill ? `${topExpBill.supplier}: ${fmtUSD(topExpBill.amount != null ? topExpBill.amount : topExpBill.total, 0)}` : 'None', color: '#C8333B' },
-        { label: 'Warehouse & Stock Items', value: `${fmtNum(dm.dayExpItems.length)} item lines`, color: '#1F7A4C' }
+        withNorm({ label: 'Total Expenses', value: fmtUSD(dm.expTotal, 0), color: '#C96A22', isTotal: true, go: 'drawer:expenses' }, N7 && nUsd(N7.expTotal), dm.expTotal, N7 && N7.expTotal, 50),
+        withNorm({ label: 'Cash vs Credit Bills', value: `${fmtUSD(dm.cashExp, 0)} Cash · ${fmtUSD(dm.creditExp, 0)} Credit`, color: '#2356A8', go: 'drawer:expenses' }, N7 && `${nUsd(N7.expCash)} · ${nUsd(N7.expCredit)}`, null),
+        { label: 'Largest Expense Today', value: topExpBill ? `${topExpBill.supplier}: ${fmtUSD(topExpBill.amount != null ? topExpBill.amount : topExpBill.total, 0)}` : 'None', color: '#C8333B', go: 'drawer:expenses' },
+        withNorm({ label: 'Warehouse & Stock Items', value: `${fmtNum(dm.dayExpItems.length)} item lines`, color: '#1F7A4C', go: 'drawer:expenses' }, N7 && nCnt(N7.expItemLines), dm.dayExpItems.length, N7 && N7.expItemLines, 1)
       ],
       footer: 'Click to inspect expense bills & stock purchases'
     } : {
@@ -4310,14 +4478,15 @@
       title: `Day Operating P&L · ${fmtHumanDay(dm.targetDate)}`,
       badge: profPctTxt,
       badgeTone: dm.operatingProfit >= 0 ? 'good' : 'crit',
+      norm: popNorm,
       rows: [
-        { label: 'Sales Revenue (Ex-VAT)', value: fmtUSD(dm.salesSum.grossExVat, 0), color: '#2356A8' },
-        { label: 'Less Quarry & Haulage', value: `-${fmtUSD(dm.rawSum.totalCost, 0)}`, color: '#C0892F' },
-        { label: 'After Quarry & Haulage', value: fmtUSD(ctx.round2(Number(dm.salesSum.grossExVat || 0) - Number(dm.rawSum.totalCost || 0)), 0), color: '#4A90D9' },
-        { label: 'Less Expenses & Payroll', value: `-${fmtUSD(dm.expExVat + dm.salariesPaid + dm.salesSum.commUsd, 0)}`, color: '#C96A22' },
-        { label: 'Day Operating Profit', value: fmtUSD(dm.operatingProfit, 0), color: dm.operatingProfit >= 0 ? '#1F7A4C' : '#C8333B', isTotal: true }
+        withNorm({ label: 'Sales Revenue (Ex-VAT)', value: fmtUSD(dm.salesSum.grossExVat, 0), color: '#2356A8', go: 'drawer:sales' }, N7 && nUsd(N7.salesExVat), dm.salesSum.grossExVat, N7 && N7.salesExVat, 50),
+        withNorm({ label: 'Less Quarry & Haulage', value: `-${fmtUSD(dm.rawSum.totalCost, 0)}`, color: '#C0892F', go: 'drawer:raw' }, N7 && `-${nUsd(N7.rawTotal)}`, dm.rawSum.totalCost, N7 && N7.rawTotal, 50),
+        withNorm({ label: 'After Quarry & Haulage', value: fmtUSD(ctx.round2(Number(dm.salesSum.grossExVat || 0) - Number(dm.rawSum.totalCost || 0)), 0), color: '#4A90D9' }, N7 && nUsd(N7.afterRaw), ctx.round2(Number(dm.salesSum.grossExVat || 0) - Number(dm.rawSum.totalCost || 0)), N7 && N7.afterRaw, 50),
+        withNorm({ label: 'Less Expenses & Payroll', value: `-${fmtUSD(dm.expExVat + dm.salariesPaid + dm.salesSum.commUsd, 0)}`, color: '#C96A22', go: 'drawer:costs' }, N7 && `-${nUsd(N7.costsBelowRaw)}`, dm.expExVat + dm.salariesPaid + dm.salesSum.commUsd, N7 && N7.costsBelowRaw, 50),
+        withNorm({ label: 'Day Operating Profit', value: fmtUSD(dm.operatingProfit, 0), color: dm.operatingProfit >= 0 ? '#1F7A4C' : '#C8333B', isTotal: true, go: 'drawer:costs' }, N7 && nUsd(N7.operatingProfit), dm.operatingProfit, N7 && N7.operatingProfit, 50)
       ],
-      footer: `7-day active average: ${fmtUSD(dm.avg7Profit, 0)}/day`
+      footer: N7 ? 'Click to inspect expense bills & stock purchases' : `7-day active average: ${fmtUSD(dm.avg7Profit, 0)}/day`
     } : {
       title: `Day Operating P&L · ${fmtHumanDay(dm.targetDate)}`,
       badge: 'Restricted',
@@ -4329,11 +4498,12 @@
       title: `Treasury & External Cash · ${fmtHumanDay(dm.targetDate)}`,
       badge: dm.netCashFlow >= 0 ? 'Net Inflow' : 'Net Outflow',
       badgeTone: dm.netCashFlow >= 0 ? 'good' : 'warn',
+      norm: popNorm,
       rows: [
-        { label: 'Cash Sales + Customer Receipts', value: `+${fmtUSD(dm.salesSum.cashNet + dm.arCollected, 0)}`, color: '#1F7A4C' },
-        { label: 'External In / Out', value: `+${fmtUSD(dm.extInEq, 0)} / -${fmtUSD(dm.extOutEq, 0)}`, color: '#1E9E8A' },
-        { label: 'Supplier Payments + Cash Expenses + Salaries', value: `-${fmtUSD(dm.apPaid + dm.cashExp + dm.salariesPaid, 0)}`, color: '#C96A22' },
-        { label: 'Net Day Cash Flow', value: `${dm.netCashFlow >= 0 ? '+' : ''}${fmtUSD(dm.netCashFlow, 0)}`, color: '#2356A8', isTotal: true }
+        withNorm({ label: 'Cash Sales + Customer Receipts', value: `+${fmtUSD(dm.salesSum.cashNet + dm.arCollected, 0)}`, color: '#1F7A4C', go: 'drawer:treasury' }, N7 && `+${nUsd(N7.cashSalesReceipts)}`, dm.salesSum.cashNet + dm.arCollected, N7 && N7.cashSalesReceipts, 50),
+        withNorm({ label: 'External In / Out', value: `+${fmtUSD(dm.extInEq, 0)} / -${fmtUSD(dm.extOutEq, 0)}`, color: '#1E9E8A', go: 'drawer:treasury' }, N7 && `+${nUsd(N7.extIn)} / -${nUsd(N7.extOut)}`, null),
+        withNorm({ label: 'Supplier Payments + Cash Expenses + Salaries', value: `-${fmtUSD(dm.apPaid + dm.cashExp + dm.salariesPaid, 0)}`, color: '#C96A22', go: 'drawer:treasury' }, N7 && `-${nUsd(N7.paidOut)}`, dm.apPaid + dm.cashExp + dm.salariesPaid, N7 && N7.paidOut, 50),
+        withNorm({ label: 'Net Day Cash Flow', value: `${dm.netCashFlow >= 0 ? '+' : ''}${fmtUSD(dm.netCashFlow, 0)}`, color: '#2356A8', isTotal: true, go: 'drawer:treasury' }, N7 && `${N7.netCashFlow >= 0 ? '+' : ''}${nUsd(N7.netCashFlow)}`, dm.netCashFlow, N7 && N7.netCashFlow, 50)
       ],
       footer: dm.tillUsd === null ? 'Closing Till: Not Tracked Yet' : `Closing Till${dm.tillIsDated ? ` (${fmtShortDay(dm.targetDate)})` : ''}: ${fmtUSD(dm.tillUsd, 0)}${dm.tillLbp ? ' + ' + fmtCompactLbp(dm.tillLbp) : ''}`
     } : {
@@ -4346,11 +4516,12 @@
     const plantPop = JSON.stringify({
       title: `Plant, Diesel & Workforce · ${fmtHumanDay(dm.targetDate)}`,
       badge: `${fmtNum(dm.activeTrucksCount)} units · ${fmtNum(dm.activeStaffCount)} staff`,
+      norm: popNorm,
       rows: [
-        { label: 'Diesel Issued Today', value: `${fmtNum(dm.dieselIssuedL, 0)} L (${fmtNum(dm.dayFuels.length)} fills)`, color: '#2356A8', isTotal: true },
-        { label: 'WTC Closing Diesel Tank', value: dm.closingTankL != null ? `${fmtNum(dm.closingTankL, 0)} L` : 'N/A', color: '#1F7A4C' },
-        { label: 'Overtime Logged', value: `+${dm.attOtHours.toFixed(1)}h (${fmtNum(dm.attOtStaffCount)} staff · ${fmtNum(dm.salesSum.otLoads)} overtime loads)`, color: '#C0892F' },
-        { label: 'Fleet Dispatch Split', value: `${fmtNum(dm.companyFleetTrips)} Own · ${fmtNum(dm.haulerTrips)} External Hauler`, color: '#4A90D9' }
+        withNorm({ label: 'Diesel Issued Today', value: `${fmtNum(dm.dieselIssuedL, 0)} L (${fmtNum(dm.dayFuels.length)} fills)`, color: '#2356A8', isTotal: true, go: 'drawer:fuel_maint' }, N7 && `${fmtNum(N7.dieselIssuedL, 0)} L`, dm.dieselIssuedL, N7 && N7.dieselIssuedL, 20),
+        { label: 'WTC Closing Diesel Tank', value: dm.closingTankL != null ? `${fmtNum(dm.closingTankL, 0)} L` : 'N/A', color: '#1F7A4C', go: 'drawer:fuel_maint' },
+        withNorm({ label: 'Overtime Logged', value: `+${dm.attOtHours.toFixed(1)}h (${fmtNum(dm.attOtStaffCount)} staff · ${fmtNum(dm.salesSum.otLoads)} overtime loads)`, color: '#C0892F', go: 'drawer:team' }, N7 && `+${Number(N7.otHours || 0).toFixed(1)}h`, dm.attOtHours, N7 && N7.otHours, 1),
+        withNorm({ label: 'Fleet Dispatch Split', value: `${fmtNum(dm.companyFleetTrips)} Own · ${fmtNum(dm.haulerTrips)} External Hauler`, color: '#4A90D9', go: 'drawer:fuel_maint' }, N7 && `${nCnt(N7.ownTrips)} · ${nCnt(N7.haulerTrips)}`, null)
       ],
       footer: 'Click to inspect diesel, fleet & attendance'
     });
@@ -4905,6 +5076,10 @@
     isAfterHoursTicket,
     fmtHumanDay,
     computeQuickDayTotals,
+    computeDayFigures: (ctx, d, includeAh) => computeDayFigures(ctx, getDailyTxIndex(ctx), d, includeAh),
+    normGapPct,
+    normAvgLabel,
+    opDates: ctx => getDailyTxIndex(ctx).sortedOpDates.slice(),
     buildDayModel,
     getLastDayModel: () => _lastDayModel,
     buildBriefing: lang => (window.MFG_ASK && typeof window.MFG_ASK.buildDailyBriefing === 'function' ? window.MFG_ASK.buildDailyBriefing(lang) : null),

@@ -3710,25 +3710,46 @@
     const actIdx = activeIdx != null && activeIdx !== '' && Number.isFinite(Number(activeIdx))
       ? Number(activeIdx)
       : (spec.activeIdx != null && Number.isFinite(Number(spec.activeIdx)) ? Number(spec.activeIdx) : -1);
+    // "Usual day" column: spec.norm = { label, days } and per row `n` (the same figure averaged over the
+    // prior active days, already formatted) plus `g` (percent gap of this day against it, or null).
+    const hasNorm = Boolean(spec.norm && rows.some(r => r.n != null && r.n !== ''));
+    const gapHtml = g => {
+      if (g == null || !Number.isFinite(Number(g))) return '';
+      const n = Math.round(Number(g));
+      const off = Math.abs(n) >= 25;
+      const txt = n === 0 ? '0%' : `${n > 0 ? '&#9650;' : '&#9660;'} ${Math.abs(n) > 999 ? '999+' : Math.abs(n)}%`;
+      return `<i class="chart-pop-gap${off ? ' is-off' : ''}" data-gap="${n}">${txt}</i>`;
+    };
     return `
       <div class="chart-pop-hdr">
         <span class="chart-pop-title">${esc(titleTxt)}</span>
         ${badgeTxt ? `<span class="chart-pop-badge${badgeCls}">${esc(badgeTxt)}</span>` : ''}
       </div>
-      <div class="chart-pop-rows">
+      <div class="chart-pop-rows${hasNorm ? ' has-norm' : ''}">
+        ${hasNorm ? `
+            <div class="chart-pop-row chart-pop-colhdr" aria-hidden="true">
+              <span></span>
+              <span class="chart-pop-colhdr-val">This Day</span>
+              <span class="chart-pop-colhdr-val">${esc(spec.norm.label || '7-Day Avg')}</span>
+            </div>` : ''}
         ${rows.map((r, ri) => {
           const isAct = actIdx >= 0 && (r.idx != null ? Number(r.idx) === actIdx : ri === actIdx) && rows.length > 1;
           const isTot = Boolean(r.isTotal || r.tot);
-          const rowCls = (isTot ? ' is-total' : '') + (isAct ? ' is-active' : '');
+          const goAttr = r.go && /^[a-z]+:[a-z_]+$/.test(String(r.go)) ? ` data-pop-go="${esc(r.go)}"` : '';
+          const rowCls = (isTot ? ' is-total' : '') + (isAct ? ' is-active' : '') + (goAttr ? ' has-go' : '');
           const valTone = r.tone === 'good' ? ' good' : (r.tone === 'crit' ? ' crit' : (r.tone === 'brass' ? ' brass' : ''));
           const colHex = r.color || r.c || '';
           const swatchHtml = colHex
             ? `<i class="chart-pop-swatch${r.line ? ' is-line' : ''}" style="background:${esc(colHex)}"></i>`
             : '';
+          const normHtml = hasNorm
+            ? `<span class="chart-pop-norm">${r.n != null && r.n !== '' ? `<bdi>${esc(r.n)}</bdi>${gapHtml(r.g)}` : ''}</span>`
+            : '';
           return `
-            <div class="chart-pop-row${rowCls}">
+            <div class="chart-pop-row${rowCls}"${goAttr}>
               <span class="chart-pop-lbl">${swatchHtml}<span>${esc(r.label || r.l || '')}</span></span>
               <span class="chart-pop-val${valTone}">${esc(r.value || r.v || '—')}</span>
+              ${normHtml}
             </div>
           `;
         }).join('')}

@@ -142,7 +142,7 @@
     const method = String((opts && opts.method) || 'GET').toUpperCase();
     const isAuthCheckUrl = /\/api\/auth\/(?:login|logout|me)(?:\b|\/|\?|$)/i.test(urlStr);
     const isReadOnlyAiOrScan = /\/api\/(?:ai-edge|ask|smart-scan|resolve-map-link|map-places|map-route)(?:\b|\/|\?|$)/i.test(urlStr);
-    const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|cashflow_behind|source_behind|changed_entries|industry_domain_store|staff_biometrics|work_schedules|geo_config|geo\/audit|geo\/gate-suggestions|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
+    const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|cashflow_behind|source_behind|changed_entries|device_unsent|industry_domain_store|staff_biometrics|work_schedules|geo_config|geo\/audit|geo\/gate-suggestions|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
     const inDemoSession = isDemoSandboxSession();
     const inDemoCo = !inDemoSession && STATE.company === DEMO_COMPANY_KEY;
     if ((inDemoSession || inDemoCo) && method !== 'GET' && method !== 'HEAD' && !isAuthCheckUrl && !isReadOnlyAiOrScan) {
@@ -8550,6 +8550,18 @@
     return !!(r && (r.source === 'app' || /^[a-z]{2}-[0-9a-z]+-[0-9a-z]{6}$/.test(String(r.id || ''))));
   }
 
+  // A workbook row keeps its workbook id (build/stable_seed_ids.py SEED_TX_ID_RE) when someone saves it in the app,
+  // and gains `source: 'app'` on the way. Pairing an app entry with its workbook copy judges a row by that id, never
+  // by `source`: the saved workbook row is still the workbook row (owner incident 2026-11-18, WTC ticket #11485).
+  const _SEED_TX_ID_RE = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)(?:\d+|_[0-9a-f]{10,16})|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-(?:\d+|[0-9a-f]{8,16}))(?:-i\d+)?$/;
+  function isWorkbookRowId(id) {
+    return _SEED_TX_ID_RE.test(String(id == null ? '' : id));
+  }
+  // Keyed in the app as a new entry (so it may be a second copy of a workbook row), not a workbook row saved in it.
+  function isAppKeyedEntry(r) {
+    return isAppRecord(r) && !isWorkbookRowId(r.id);
+  }
+
   function appCell(r, crKey) {
     if (!r || r.voided) return '';
     const rid = r.id || r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment;
@@ -8797,6 +8809,9 @@
           if (r._reopenedExplicitly || r.restored_at) continue;
           const isClaimer = (!r.voided && r._absorbedSeedTwin) || (r.voided && /^system-topup/i.test(String(r.voided_by || '')));
           if (!isClaimer) continue;
+          // An entry the register paired holds the workbook row it was paired with (same day or Reporting Date).
+          const pairedId = (!r.voided && r._absorbedSeedTwin) ? _ABSORBED_TWIN_ID.get(r) : '';
+          if (pairedId) { claimed.add(pairedId); continue; }
           const bKey = `${norm(r.company || 'WTC')}|${_cfCandParty(key, r)}`;
           const bucket = wbByBucket.get(bKey);
           if (!bucket) continue;
@@ -64333,6 +64348,33 @@
     const sibSalesVs7 = (avg7SibRev > 0 && (dayRevUsd > 0 || dayRevRows.length > 0))
       ? Math.round(((dayRevUsd - avg7SibRev) / avg7SibRev) * 100)
       : null;
+    // "7-Day Avg" column of the KPI popovers: each day figure averaged over the same prior active revenue days.
+    const sibDayFigures = dt => {
+      const netRev = sumArrNetOn(revEvents, dt);
+      const direct = sumArrUsdOn(directEvents, dt);
+      const exp = sumExpUsdOn(dt);
+      const moves = cashMoves.filter(m => String(m.date || '').slice(0, 10) === dt);
+      const cIn = round2(moves.reduce((s, m) => s + Number(m.in_usd || 0), 0));
+      const cOut = round2(moves.reduce((s, m) => s + Number(m.out_usd || 0), 0));
+      return {
+        rev: sumArrUsdOn(revEvents, dt), netRev, direct, exp, profit: round2(netRev - direct - exp),
+        cashIn: cIn, cashOut: cOut, netCash: round2(cIn - cOut),
+        docs: docRows.filter(r => String(r.date || '').slice(0, 10) === dt).length,
+        attLogs: attRows.filter(a => String(a.date || '').slice(0, 10) === dt).length
+      };
+    };
+    const sibN7 = priorRevOp7.length >= 2 ? (() => {
+      const rows = priorRevOp7.map(sibDayFigures);
+      const avg = {};
+      Object.keys(rows[0]).forEach(k => { avg[k] = round2(rows.reduce((s, r) => s + Number(r[k] || 0), 0) / rows.length); });
+      return avg;
+    })() : null;
+    const sibPopNorm = sibN7 ? {
+      label: (window.MFG_DAILY_OPS && typeof window.MFG_DAILY_OPS.normAvgLabel === 'function') ? window.MFG_DAILY_OPS.normAvgLabel(priorRevOp7.length) : '7-Day Avg',
+      days: priorRevOp7.length
+    } : null;
+    const sibGap = (cur, avg, floor) => (Math.abs(Number(avg)) < floor ? null : Math.round(((Number(cur) - Number(avg)) / Math.abs(Number(avg))) * 100));
+    const sibWithNorm = (row, nTxt, cur, avg, floor) => (sibN7 ? Object.assign(row, { n: nTxt, g: cur == null ? null : sibGap(cur, avg, floor) }) : row);
     const pulseBaseDates = allOpDates.filter(d => d <= targetDate).slice(-7);
     const pulseDates = pulseBaseDates.includes(targetDate)
       ? pulseBaseDates
@@ -64400,19 +64442,20 @@
     const sibSalesPop = JSON.stringify({
       title: `${domainLabels.rev} · ${targetDate}`,
       badge: `${fmtNum(dayRevRows.length)} ${domainLabels.revUnit}`,
+      norm: sibPopNorm,
       rows: [
-        { label: 'Day Revenue', value: fmtUSD(dayRevUsd, 0), color: '#2356A8', isTotal: true },
+        sibWithNorm({ label: 'Day Revenue', value: fmtUSD(dayRevUsd, 0), color: '#2356A8', isTotal: true }, sibN7 && fmtUSD(sibN7.rev, 0), dayRevUsd, sibN7 && sibN7.rev, 50),
         { label: 'Period Revenue', value: fmtUSD(revUsd, 0), color: '#4A90D9' },
-        { label: 'Open Receivables', value: canViewBooks ? fmtUSD(kSnap.ar_balance || 0, 0) : 'Restricted', color: canViewBooks ? '#1F7A4C' : '#64748B' },
-        { label: '7-Day Daily Average', value: avg7SibRev > 0 ? fmtUSD(avg7SibRev, 0) : 'Baseline', color: '#7A889B' }
-      ],
+        { label: 'Open Receivables', value: canViewBooks ? fmtUSD(kSnap.ar_balance || 0, 0) : 'Restricted', color: canViewBooks ? '#1F7A4C' : '#64748B' }
+      ].concat(sibN7 ? [] : [{ label: '7-Day Daily Average', value: avg7SibRev > 0 ? fmtUSD(avg7SibRev, 0) : 'Baseline', color: '#7A889B' }]),
       footer: 'Click to open revenue hub'
     });
     const sibDirectPop = JSON.stringify(canViewDirect ? {
       title: `${domainLabels.direct} · ${targetDate}`,
       badge: `${fmtNum(dayDirectRows.length)} ${domainLabels.directUnit}`,
+      norm: sibPopNorm,
       rows: [
-        { label: 'Day Direct Cost', value: fmtUSD(dayDirectUsd, 0), color: '#C0892F', isTotal: true },
+        sibWithNorm({ label: 'Day Direct Cost', value: fmtUSD(dayDirectUsd, 0), color: '#C0892F', isTotal: true }, sibN7 && fmtUSD(sibN7.direct, 0), dayDirectUsd, sibN7 && sibN7.direct, 50),
         { label: 'Period Direct Cost', value: fmtUSD(directUsd, 0), color: '#4A90D9' },
         { label: 'Open Payables', value: fmtUSD(kSnap.ap_balance || 0, 0), color: '#C96A22' },
         { label: 'Active Schedules', value: fmtNum(ds1.rows.length), color: '#7A889B' }
@@ -64427,10 +64470,11 @@
     const sibExpPop = JSON.stringify(canViewExp ? {
       title: `Expenses & Vault · ${targetDate}`,
       badge: `${fmtNum(dayExpList.length)} bills`,
+      norm: sibPopNorm,
       rows: [
-        { label: 'Day Expenses', value: fmtUSD(dayExpUsd, 0), color: '#C96A22', isTotal: true },
+        sibWithNorm({ label: 'Day Expenses', value: fmtUSD(dayExpUsd, 0), color: '#C96A22', isTotal: true }, sibN7 && fmtUSD(sibN7.exp, 0), dayExpUsd, sibN7 && sibN7.exp, 50),
         { label: 'Period Bills', value: fmtUSD(expTotal, 0), color: '#2356A8' },
-        { label: 'Day Vault Documents', value: fmtNum(dayDocList.length), color: '#1F7A4C' },
+        sibWithNorm({ label: 'Day Vault Documents', value: fmtNum(dayDocList.length), color: '#1F7A4C' }, sibN7 && fmtNum(Math.round(sibN7.docs)), dayDocList.length, sibN7 && sibN7.docs, 1),
         { label: 'Total Filed Scans', value: fmtNum(docRows.length), color: '#7A889B' }
       ],
       footer: 'Click to open Expenses hub'
@@ -64444,14 +64488,15 @@
       title: `Day Operating P&L · ${targetDate}`,
       badge: `${dayMarginPct}% Margin`,
       badgeTone: dayOpProfit >= 0 ? 'good' : 'crit',
+      norm: sibPopNorm,
       rows: [
-        { label: Math.abs(dayRevUsd - dayRevNetUsd) >= 0.5 ? 'Day Revenue (Ex-Tax)' : 'Day Revenue', value: fmtUSD(dayRevNetUsd, 0), color: '#2356A8' },
-        { label: 'Less Direct Costs', value: `-${fmtUSD(dayDirectUsd, 0)}`, color: '#C0892F' },
-        { label: 'Less Expenses', value: `-${fmtUSD(dayExpUsd, 0)}`, color: '#C96A22' },
-        { label: 'Day Operating Profit', value: fmtUSD(dayOpProfit, 0), color: dayOpProfit >= 0 ? '#1F7A4C' : '#C8333B', isTotal: true },
+        sibWithNorm({ label: Math.abs(dayRevUsd - dayRevNetUsd) >= 0.5 ? 'Day Revenue (Ex-Tax)' : 'Day Revenue', value: fmtUSD(dayRevNetUsd, 0), color: '#2356A8' }, sibN7 && fmtUSD(sibN7.netRev, 0), dayRevNetUsd, sibN7 && sibN7.netRev, 50),
+        sibWithNorm({ label: 'Less Direct Costs', value: `-${fmtUSD(dayDirectUsd, 0)}`, color: '#C0892F' }, sibN7 && `-${fmtUSD(sibN7.direct, 0)}`, dayDirectUsd, sibN7 && sibN7.direct, 50),
+        sibWithNorm({ label: 'Less Expenses', value: `-${fmtUSD(dayExpUsd, 0)}`, color: '#C96A22' }, sibN7 && `-${fmtUSD(sibN7.exp, 0)}`, dayExpUsd, sibN7 && sibN7.exp, 50),
+        sibWithNorm({ label: 'Day Operating Profit', value: fmtUSD(dayOpProfit, 0), color: dayOpProfit >= 0 ? '#1F7A4C' : '#C8333B', isTotal: true }, sibN7 && fmtUSD(sibN7.profit, 0), dayOpProfit, sibN7 && sibN7.profit, 50),
         { label: 'Period Profit', value: fmtUSD(opProfit, 0), color: '#7A889B' }
       ],
-      footer: avg7SibProfit != null ? `7-day active average: ${fmtUSD(avg7SibProfit, 0)}/day` : 'Chart of Accounts tied'
+      footer: avg7SibProfit != null && !sibN7 ? `7-day active average: ${fmtUSD(avg7SibProfit, 0)}/day` : 'Chart of Accounts tied'
     } : {
       title: `Day Operating P&L · ${targetDate}`,
       badge: 'Books Restricted',
@@ -64462,10 +64507,11 @@
       title: `Treasury & Cash · ${targetDate}`,
       badge: dayNetCash >= 0 ? 'Net Inflow' : 'Net Outflow',
       badgeTone: dayNetCash >= 0 ? 'good' : 'warn',
+      norm: sibPopNorm,
       rows: [
-        { label: 'Day Cash Inflow', value: `+${fmtUSD(dayCashIn, 0)}`, color: '#1F7A4C' },
-        { label: 'Day Cash Outflow', value: `-${fmtUSD(dayCashOut, 0)}`, color: '#C96A22' },
-        { label: 'Net Day Cash Flow', value: `${dayNetCash >= 0 ? '+' : ''}${fmtUSD(dayNetCash, 0)}`, color: '#2356A8', isTotal: true },
+        sibWithNorm({ label: 'Day Cash Inflow', value: `+${fmtUSD(dayCashIn, 0)}`, color: '#1F7A4C' }, sibN7 && `+${fmtUSD(sibN7.cashIn, 0)}`, dayCashIn, sibN7 && sibN7.cashIn, 50),
+        sibWithNorm({ label: 'Day Cash Outflow', value: `-${fmtUSD(dayCashOut, 0)}`, color: '#C96A22' }, sibN7 && `-${fmtUSD(sibN7.cashOut, 0)}`, dayCashOut, sibN7 && sibN7.cashOut, 50),
+        sibWithNorm({ label: 'Net Day Cash Flow', value: `${dayNetCash >= 0 ? '+' : ''}${fmtUSD(dayNetCash, 0)}`, color: '#2356A8', isTotal: true }, sibN7 && `${sibN7.netCash >= 0 ? '+' : ''}${fmtUSD(sibN7.netCash, 0)}`, dayNetCash, sibN7 && sibN7.netCash, 50),
         { label: 'Period In / Out', value: `${fmtUSDk(cashIn)} / ${fmtUSDk(cashOut)}`, color: '#7A889B' }
       ],
       footer: closingTillUsd === null ? 'Closing Till: Not Tracked Yet' : `Closing Till (${targetDate}): ${fmtUSD(closingTillUsd, 0)}`
@@ -64478,11 +64524,12 @@
     const sibPlantPop = JSON.stringify({
       title: `Workforce & Controls · ${targetDate}`,
       badge: openSn.length > 0 ? `${openSn.length} Open` : 'All Clear',
+      norm: sibPopNorm,
       rows: [
         { label: 'Active Staff', value: fmtNum(empRows.length), color: '#2356A8' },
         { label: 'Operational Units', value: fmtNum(eqRows.length), color: '#1E9E8A' },
         { label: 'Overtime Hours', value: `+${fmtNum(otHours, 0)}h`, color: '#C0892F' },
-        { label: 'Attendance Logs', value: `${fmtNum(dayAttList.length)} day · ${fmtNum(attRows.length)} total`, color: '#7A889B' }
+        sibWithNorm({ label: 'Attendance Logs', value: `${fmtNum(dayAttList.length)} day · ${fmtNum(attRows.length)} total`, color: '#7A889B' }, sibN7 && `${fmtNum(Math.round(sibN7.attLogs))} day`, dayAttList.length, sibN7 && sibN7.attLogs, 1)
       ],
       footer: 'Click to inspect Payroll & Team hub'
     });
@@ -123473,11 +123520,28 @@
   const _SEED_TWIN_TX_KEYS = new Set(['sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses', 'receipts', 'settlements', 'salaries', 'attendance', 'external_movements', 'loans', 'loan_settlements']);
   const _normTwinAlpha = x => String(x || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, '');
   const _cleanTwinTkt = v => norm(String(v || '').replace(/^#+/, ''));
-  function _isSeedTwinMatch(k, s, r) {
-    if (!s || !r || s === r || isAppRecord(s) || s.voided) return false;
-    const dS = String(s.date || s.start_date || '').slice(0, 10), dR = String(r.date || r.start_date || '').slice(0, 10);
+  // Tables paired on the Reporting Date as well (second pass below): the pad tickets only, by their ticket number.
+  // A receipt, payment, salary, expense or external movement keyed against another day stays an app entry until
+  // the top-up, with its "date differs" hint in Cash Flow (computeAppOnlyWorkbookCandidates): money has no ticket
+  // number to tie it to one workbook row, so the accountant sees it instead of the app deciding.
+  const _SEED_TWIN_TICKET_KEYS = new Set(['sales_tickets', 'raw_purchases']);
+  const _SEED_TWIN_REP_KEYS = _SEED_TWIN_TICKET_KEYS;
+  // The workbook row each paired app entry stands for, by row object (never saved or sent).
+  const _ABSORBED_TWIN_ID = new WeakMap();
+  // repDay (optional): compare the workbook row's date with this day (the app entry's Reporting Date) instead of the
+  // entry's Transaction Date. A ticket keyed the next morning carries Transaction Date = the entry day and Reporting
+  // Date = the ticket day, while the workbook dates the ticket on its own day. On that pass only a ticket number
+  // written on both rows pairs them (never the customer-and-total fallback of the same-day rule).
+  function _isSeedTwinMatch(k, s, r, repDay) {
+    if (!s || !r || s === r || isAppKeyedEntry(s) || s.voided) return false;
+    const dS = String(s.date || s.start_date || '').slice(0, 10), dR = repDay ? String(repDay).slice(0, 10) : String(r.date || r.start_date || '').slice(0, 10);
     if (!dS || !dR || dS !== dR) return false;
     if (norm(s.company || 'WTC') !== norm(r.company || 'WTC')) return false;
+    if (repDay) {
+      if (!_SEED_TWIN_REP_KEYS.has(k)) return false;
+      const tS = _cleanTwinTkt(s.ticket_no), tR = _cleanTwinTkt(r.ticket_no);
+      return Boolean(tS && tR && tS === tR);
+    }
     if (k === 'sales_tickets') {
       const tS = _cleanTwinTkt(s.ticket_no), tR = _cleanTwinTkt(r.ticket_no);
       if (tS && tR) return tS === tR;
@@ -123543,12 +123607,55 @@
       let touched = false;
       const checkTwins = canDedupSeedTwins && _SEED_TWIN_TX_KEYS.has(k);
       const claimedSeedTwins = checkTwins ? new Set() : null;
+      const repTwinQueue = (checkTwins && _SEED_TWIN_REP_KEYS.has(k)) ? [] : null;
+      if (checkTwins) {
+        // An entry a top-up struck through as a copy still holds its workbook row (the top-up keeps that row
+        // reserved for it): a second entry with the same values keyed since is a second entry, never that row's
+        // copy. Nothing is removed here; the rows are only marked as taken before the passes below.
+        let byDay = null, byId = null;
+        const rowsOn = day => {
+          if (!byDay) {
+            byDay = new Map();
+            list.forEach(s => {
+              if (!s || s.voided) return;
+              const d = String(s.date || s.start_date || '').slice(0, 10);
+              if (!d) return;
+              const bucket = byDay.get(d);
+              if (bucket) bucket.push(s); else byDay.set(d, [s]);
+            });
+          }
+          return byDay.get(day) || [];
+        };
+        customList.forEach(r => {
+          if (!r || !r.voided || r.restored_at || r._reopenedExplicitly || !isAppKeyedEntry(r)) return;
+          if (!/^(?:system-topup|Workbook match)/i.test(String(r.voided_by || ''))) return;
+          const twinIds = Array.isArray(r.twin_of) ? r.twin_of : (r.twin_of ? [r.twin_of] : []);
+          if (twinIds.length) {
+            if (!byId) {
+              byId = new Map();
+              list.forEach(s => { if (s && s.id) byId.set(String(s.id), s); });
+            }
+            twinIds.forEach(id => { const s = byId.get(String(id)); if (s) claimedSeedTwins.add(s); });
+            return;
+          }
+          const rIso = String(r.date || '').slice(0, 10);
+          let held = rowsOn(rIso).find(s => !claimedSeedTwins.has(s) && _isSeedTwinMatch(k, s, r));
+          if (!held && _SEED_TWIN_REP_KEYS.has(k)) {
+            const repIso = String(r.rep_date || '').slice(0, 10);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(repIso) && repIso !== rIso && _cleanTwinTkt(r.ticket_no)) {
+              held = rowsOn(repIso).find(s => !claimedSeedTwins.has(s) && _isSeedTwinMatch(k, s, r, repIso));
+            }
+          }
+          if (held) claimedSeedTwins.add(held);
+        });
+      }
       customList.forEach(r => {
         if (!r) return;
         if ('_pinCleared' in r) r._pinCleared = r._pinCleared === true || r._pinCleared === 1 || (typeof r._pinCleared === 'string' && /^(?:1|true|yes)$/i.test(r._pinCleared.trim()));
         if (k === 'external_movements' && /^extended$/i.test(String(r.kind || ''))) r.company = 'Bdeir Holding';
         if (/^bdeir\s*holding$/i.test(String(r.company || '').trim())) r._industry = 'Holding & Treasury';
         if (r._absorbedSeedTwin) delete r._absorbedSeedTwin;
+        _ABSORBED_TWIN_ID.delete(r);
         const rid = String(r.id == null ? '' : r.id);
         const rNameNorm = norm(r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment);
         if (r.voided) {
@@ -123570,16 +123677,27 @@
           }
           return;
         }
-        if (checkTwins && isAppRecord(r)) {
+        // Only an entry keyed in the app can be a second copy. A workbook row saved in the app (workbook id) is the
+        // workbook row itself: it merges into it by id below and stays the row an app copy pairs with.
+        if (checkTwins && isAppKeyedEntry(r)) {
           const rIso = String(r.date || '').slice(0, 10);
           if (/^\d{4}-\d{2}-\d{2}$/.test(rIso) && rIso <= seedCutIso) {
             const seedTwin = list.find(s => !claimedSeedTwins.has(s) && _isSeedTwinMatch(k, s, r));
             if (seedTwin) {
               claimedSeedTwins.add(seedTwin);
               r._absorbedSeedTwin = true;
+              if (seedTwin.id) _ABSORBED_TWIN_ID.set(r, String(seedTwin.id));
               const dupIdx = rid ? list.findIndex(x => x && x !== seedTwin && String(x.id) === rid) : -1;
               if (dupIdx >= 0) { list.splice(dupIdx, 1); touched = true; }
               return;
+            }
+          }
+          // An entry someone reopened after a top-up struck it through is theirs to keep: the top-up never pairs
+          // it again, and neither does this pass.
+          if (repTwinQueue && !r.restored_at && !r._reopenedExplicitly) {
+            const repIso = String(r.rep_date || '').slice(0, 10);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(repIso) && repIso !== rIso && repIso <= seedCutIso && _cleanTwinTkt(r.ticket_no)) {
+              repTwinQueue.push([r, repIso]);
             }
           }
         }
@@ -123607,6 +123725,23 @@
         }
         if (rid) { list.push(r); touched = true; }
       });
+      // Second pass, once every entry has taken its same-day workbook copy and every voided row has left the list:
+      // a ticket keyed the next morning is the workbook ticket of that number dated on its Reporting Date. It leaves
+      // the register (the workbook row stays), exactly as the next top-up strikes it through.
+      if (repTwinQueue && repTwinQueue.length) {
+        repTwinQueue.forEach(([r, repIso]) => {
+          const seedTwin = list.find(s => !claimedSeedTwins.has(s) && _isSeedTwinMatch(k, s, r, repIso));
+          if (!seedTwin) return;
+          claimedSeedTwins.add(seedTwin);
+          r._absorbedSeedTwin = true;
+          if (seedTwin.id) _ABSORBED_TWIN_ID.set(r, String(seedTwin.id));
+          const rid = String(r.id == null ? '' : r.id);
+          for (let i = list.length - 1; i >= 0; i--) {
+            const x = list[i];
+            if (x && x !== seedTwin && (x === r || (rid && String(x.id) === rid))) { list.splice(i, 1); touched = true; }
+          }
+        });
+      }
       if (UNIVERSAL_MAIN_SPEC[k] && (!list._univDeduped || touched)) {
         const seenMain = new Set();
         for (let i = 0; i < list.length; i++) {
@@ -126070,7 +126205,588 @@
         else appStoreRemoveRaw(CLOUD_PENDING_PUSH_KEY);
       } catch (_) {}
     }
+    if (flag) noteCloudUnsent();
   }
+
+  // ---- Entries not sent yet (owner 2026-11-18) -------------------------------------------------------------------
+  // On 16 and 17 Nov one device kept a day of entries to itself: they reached the cloud after the evening top-up,
+  // which could not pair them with their workbook rows. A device now says so itself once what it holds has waited
+  // UNSENT_WARN_AFTER_MS (#unsentEntriesBar), and reports it to the Edge whenever it can reach it, so the Owner sees
+  // which devices hold entries (#devicesHoldingBar). The wait starts at the first change the cloud has not confirmed
+  // and ends only when a sync confirms the cloud holds everything: a refused push (old app version, sign-in needed)
+  // drops the pending flag but not the wait.
+  const CLOUD_UNSENT_SINCE_KEY = 'isabi_mfg_unsent_since_v1';
+  const CLOUD_UNSENT_REPORTED_KEY = 'isabi_mfg_unsent_reported_v1';
+  const CLOUD_UNSENT_CONFIRMED_KEY = 'isabi_mfg_unsent_confirmed_v1';
+  const CLOUD_UNSENT_LATE_KEY = 'isabi_mfg_unsent_late_v1';
+  const DEVICE_ID_KEY = 'isabi_mfg_device_id_v1';
+  const UNSENT_WARN_AFTER_MS = 10 * 60 * 1000;
+  const UNSENT_REPORT_EVERY_MS = 5 * 60 * 1000;
+  const UNSENT_LATE_AFTER_MS = 60 * 60 * 1000;   // the Edge lists a hold as "arrived late" from one hour
+  const UNSENT_REASON_TEXT = {
+    offline: 'This device is offline.',
+    sign_in: 'Sign in again to send them.',
+    update: 'Update the app to send them.',
+    blocked: 'The cloud refused them. Tell the Owner.',
+    retrying: 'Still trying to send them.',
+    other_seat: 'Another seat keyed them on this device and must sign in to send them.'
+  };
+  const UNSENT_REASON_SHORT = {
+    offline: 'device offline',
+    sign_in: 'needs sign-in',
+    update: 'needs app update',
+    blocked: 'refused by the cloud',
+    retrying: 'still retrying'
+  };
+  let _unsentSinceMs = 0;
+  let _unsentScoped = false;        // the seat signed in now sends only its own companies' rows
+  let _unsentAllowedCos = null;     // ... and these are the companies (a Set), as the last cloud read gave them
+  let _unsentLastCount = 0;         // how many entries waited when the last sync read the cloud
+  let _unsentKnown = null;          // { idx, allowedCos }: what the cloud held at the last successful read of it
+  let _unsentReported = '';         // '1' while the Edge may hold an open "holding" report for this device (any seat)
+  let _unsentReportedAtMs = 0;
+  let _unsentClearTriedAtMs = 0;
+  // While a wait is on: per company, when a sync last confirmed the cloud held every row of it on this device
+  // (at[company]); allAt / allExcept = the same for every company at once, bar the ones that then had rows waiting.
+  let _unsentConfirmed = { at: {}, allAt: 0, allExcept: [] };
+  let _unsentLatePending = null;    // { sinceMs, count, at }: an "arrived late" line not yet accepted by the Edge
+  let _unsentSyncLeftAtMs = 0;      // when a sync last ended with the wait still on
+  let _lastOnlineAtMs = 0;
+  let _unsentReportInflight = false;
+  let _deviceIdMem = '';
+  try {
+    if (!IS_AUTOMATED_TEST) {
+      const rawSince = Number(appStoreGetRaw(CLOUD_UNSENT_SINCE_KEY) || 0);
+      if (rawSince > 1.6e12 && rawSince <= Date.now()) _unsentSinceMs = rawSince;
+      else if (STATE.pendingCloudPush) {
+        // Pending from a shell that did not keep the time: the wait is counted from now.
+        _unsentSinceMs = Date.now();
+        appStoreSetRaw(CLOUD_UNSENT_SINCE_KEY, String(_unsentSinceMs));
+      }
+      _unsentReported = appStoreGetRaw(CLOUD_UNSENT_REPORTED_KEY) ? '1' : '';
+      if (_unsentSinceMs) {
+        const c = JSON.parse(appStoreGetRaw(CLOUD_UNSENT_CONFIRMED_KEY) || 'null');
+        if (c && typeof c === 'object' && c.at && typeof c.at === 'object') {
+          _unsentConfirmed = { at: c.at, allAt: Number(c.allAt) || 0, allExcept: Array.isArray(c.allExcept) ? c.allExcept.map(String) : [] };
+        }
+      }
+      const lp = JSON.parse(appStoreGetRaw(CLOUD_UNSENT_LATE_KEY) || 'null');
+      if (lp && Number(lp.sinceMs) > 1.6e12 && Number(lp.count) >= 1) _unsentLatePending = { sinceMs: Number(lp.sinceMs), count: Number(lp.count), at: Number(lp.at) || Date.now() };
+    }
+  } catch (_) {}
+
+  function saveUnsentConfirmed() {
+    if (IS_AUTOMATED_TEST) return;
+    try { appStoreSetRaw(CLOUD_UNSENT_CONFIRMED_KEY, JSON.stringify(_unsentConfirmed)); } catch (_) {}
+  }
+  function resetUnsentConfirmed() {
+    _unsentConfirmed = { at: {}, allAt: 0, allExcept: [] };
+    if (IS_AUTOMATED_TEST) return;
+    try { appStoreRemoveRaw(CLOUD_UNSENT_CONFIRMED_KEY); } catch (_) {}
+  }
+  function unsentConfirmedAtFor(co) {
+    const own = Number(_unsentConfirmed.at[co]) || 0;
+    return _unsentConfirmed.allExcept.includes(co) ? own : Math.max(own, _unsentConfirmed.allAt);
+  }
+  // A sync has just read the cloud (lackCos = the companies that still have rows waiting, of those this seat sends)
+  // or sent everything it can send (lackCos = null): every other company of this seat is confirmed as of now.
+  function noteCompaniesConfirmed(lackCos) {
+    if (!_unsentSinceMs) return;
+    const now = Date.now();
+    if (_unsentScoped && _unsentAllowedCos) {
+      _unsentAllowedCos.forEach(c => { if (!lackCos || !lackCos.has(c)) _unsentConfirmed.at[c] = now; });
+    } else {
+      _unsentConfirmed.allAt = now;
+      _unsentConfirmed.allExcept = lackCos ? Array.from(lackCos) : [];
+    }
+    saveUnsentConfirmed();
+  }
+
+  function noteCloudUnsent() {
+    if (_unsentSinceMs || isDemoScopeActive()) return;
+    _unsentSinceMs = Date.now();
+    if (!IS_AUTOMATED_TEST) {
+      try { appStoreSetRaw(CLOUD_UNSENT_SINCE_KEY, String(_unsentSinceMs)); } catch (_) {}
+    }
+  }
+
+  // A shared device: the seat signed in now sends only its own companies' rows. Rows of other companies keyed or
+  // changed here since the wait began (by a seat that used the device before), and since a sync last confirmed that
+  // company's rows, are still on the device, and this seat's sync finding nothing to push says nothing about them.
+  // Sending is decided by company, never by seat: two seats of one company send each other's rows.
+  function unsentRowsOutsideScope() {
+    if (!_unsentSinceMs || !_unsentScoped || !_unsentAllowedCos) return false;
+    const floor = _unsentSinceMs - 5000;
+    const allowed = _unsentAllowedCos;
+    const cr = STATE.customRecords || {};
+    const keys = Object.keys(cr);
+    for (let i = 0; i < keys.length; i++) {
+      const arr = cr[keys[i]];
+      if (!Array.isArray(arr)) continue;
+      const isUniv = /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(keys[i]);
+      for (let j = 0; j < arr.length; j++) {
+        const r = arr[j];
+        if (!r || !r.id) continue;
+        if (r.company ? allowed.has(norm(r.company)) : isUniv) continue;
+        const t = _unsentRowTouchedMs(r);
+        if (t >= floor && t > unsentConfirmedAtFor(norm(r.company || ''))) return true;
+      }
+    }
+    let ind = {};
+    try { ind = getIndustryCustomRowsStore() || {}; } catch (_) { ind = {}; }
+    const bks = Object.keys(ind);
+    for (let i = 0; i < bks.length; i++) {
+      const bList = ind[bks[i]];
+      if (!Array.isArray(bList)) continue;
+      for (let j = 0; j < bList.length; j++) {
+        const r = bList[j];
+        const pid = r && String(r.id || r.code || '').trim();
+        if (!pid || isTillOwnedRowId(pid)) continue;
+        const co = norm(r.company || r.resort || r.entity || '');
+        if (allowed.has(co)) continue;
+        const t = _unsentRowTouchedMs(r);
+        if (t >= floor && t > unsentConfirmedAtFor(co)) return true;
+      }
+    }
+    return false;
+  }
+
+  // A sync has just confirmed the cloud holds everything the seat signed in can send.
+  function noteCloudInSync() {
+    noteCompaniesConfirmed(null);
+    if (unsentRowsOutsideScope()) {
+      // This seat's own rows are in the cloud now: what it held before the push no longer describes them. Rows of
+      // other companies keep whatever was last known about them.
+      noteOwnRowsNowHeld();
+      _unsentLastCount = 0;
+      return;
+    }
+    const had = _unsentSinceMs;
+    const heldCount = _unsentLastCount;
+    const wasReported = Boolean(_unsentReported);
+    _unsentSinceMs = 0;
+    _unsentKnown = null;
+    _unsentSyncLeftAtMs = 0;
+    _unsentLastCount = 0;
+    if (had) {
+      resetUnsentConfirmed();
+      if (!IS_AUTOMATED_TEST) {
+        try { appStoreRemoveRaw(CLOUD_UNSENT_SINCE_KEY); } catch (_) {}
+      }
+      updateUnsentEntriesBar();
+      // Entries that waited an hour or more and were never reported (the device was offline the whole time, as on
+      // 16 and 17 Nov) still reach the Owner's list, as "arrived late". Kept on the device until the Edge takes it.
+      if (!wasReported && heldCount > 0 && Date.now() - had >= UNSENT_LATE_AFTER_MS) {
+        _unsentLatePending = { sinceMs: had, count: heldCount, at: Date.now() };
+        if (!IS_AUTOMATED_TEST) {
+          try { appStoreSetRaw(CLOUD_UNSENT_LATE_KEY, JSON.stringify(_unsentLatePending)); } catch (_) {}
+        }
+      }
+    }
+    if (_unsentReported) reportUnsentToCloud(null);
+    else if (_unsentLatePending) {
+      if (Date.now() - _unsentLatePending.at > 48 * 3600000) dropUnsentLatePending();   // too old to be news
+      else reportUnsentToCloud(null, _unsentLatePending);
+    }
+  }
+
+  function dropUnsentLatePending() {
+    _unsentLatePending = null;
+    if (IS_AUTOMATED_TEST) return;
+    try { appStoreRemoveRaw(CLOUD_UNSENT_LATE_KEY); } catch (_) {}
+  }
+
+  // The seat signed in has just sent every row it can send: record them as held by the cloud.
+  function noteOwnRowsNowHeld() {
+    const allowed = _unsentAllowedCos;
+    if (!allowed) return;
+    const known = _unsentKnown || { idx: new Map(), ind: new Map(), allowedCos: allowed };
+    known.allowedCos = allowed;
+    const cr = STATE.customRecords || {};
+    Object.keys(cr).forEach(k => {
+      if (!Array.isArray(cr[k])) return;
+      const isUniv = /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(k);
+      cr[k].forEach(r => {
+        if (!r || !r.id) return;
+        if (!(r.company ? allowed.has(norm(r.company)) : isUniv)) return;
+        known.idx.set(`${k}\u0001${r.id}`, `${r.voided ? 1 : 0}|${_recModTs(r)}`);
+      });
+    });
+    let ind = {};
+    try { ind = getIndustryCustomRowsStore() || {}; } catch (_) { ind = {}; }
+    Object.keys(ind).forEach(bk => {
+      if (!Array.isArray(ind[bk])) return;
+      ind[bk].forEach(r => {
+        const pid = r && String(r.id || r.code || '').trim();
+        if (!pid || isTillOwnedRowId(pid)) return;
+        if (!allowed.has(norm(r.company || r.resort || r.entity || ''))) return;
+        known.ind.set(`${bk}\u0001${pid}`, [r.voided ? 1 : 0, Number(r.rev || 1), _indRowStamp(r)]);
+      });
+    });
+    _unsentKnown = known;
+  }
+
+  // The seat left: nothing about its scope is carried to the next one.
+  function noteUnsentSeatLeft() {
+    _unsentScoped = false;
+    _unsentAllowedCos = null;
+    _unsentKnown = null;
+  }
+
+  // This mode has no cloud to send to (a plant server on the local network, or the Demo sandbox): nothing waits.
+  function noteNoCloudSync() {
+    if (!_unsentSinceMs) return;
+    _unsentSinceMs = 0;
+    _unsentKnown = null;
+    _unsentSyncLeftAtMs = 0;
+    _unsentLastCount = 0;
+    resetUnsentConfirmed();
+    if (!IS_AUTOMATED_TEST) {
+      try { appStoreRemoveRaw(CLOUD_UNSENT_SINCE_KEY); } catch (_) {}
+    }
+  }
+
+  function getDeviceIdent() {
+    let id = _deviceIdMem;
+    if (!id && !IS_AUTOMATED_TEST) {
+      try { id = String(appStoreGetRaw(DEVICE_ID_KEY) || ''); } catch (_) { id = ''; }
+    }
+    if (!/^[a-z0-9]{12,32}$/.test(id)) {
+      const rnd = () => Math.random().toString(36).slice(2, 10);
+      id = (Date.now().toString(36) + rnd() + rnd()).replace(/[^a-z0-9]/g, '').slice(0, 20).padEnd(12, '0');
+      if (!IS_AUTOMATED_TEST) {
+        try { appStoreSetRaw(DEVICE_ID_KEY, id); } catch (_) {}
+      }
+    }
+    _deviceIdMem = id;
+    const ua = String(navigator.userAgent || '');
+    const os = /Android/i.test(ua) ? 'Android' : (/iPhone|iPad|iPod/i.test(ua) ? 'iOS' : (/Windows/i.test(ua) ? 'Windows' : (/Mac OS X|Macintosh/i.test(ua) ? 'Mac' : (/Linux/i.test(ua) ? 'Linux' : ''))));
+    const kind = /iPad|Tablet|SM-[TX]\d|Android(?!.*Mobile)/i.test(ua) ? 'Tablet' : (/iPhone|iPod|Mobile/i.test(ua) ? 'Phone' : 'Computer');
+    return { id, label: `${os ? os + ' ' : ''}${kind}` };
+  }
+
+  function _unsentRowTouchedMs(r) {
+    if (!r || typeof r !== 'object') return 0;
+    const created = appRecordCreatedMs(r);
+    return Math.max(
+      Number.isNaN(created) ? 0 : created,
+      _stampMs(r.entered_at),
+      _stampMs(_recModTs(r)),
+      _stampMs(r.voided_at),
+      _stampMs(r._updatedAt || r.updatedAt || r._createdAt)
+    );
+  }
+
+  // industry: the other industries' rows, where a till owns its own rows and this device never sends them.
+  // allowed (a Set, or null): the companies the seat signed in sends; other companies' rows are not its to count.
+  function _countRowsTouchedSince(store, sinceMs, industry, allowed) {
+    let n = 0;
+    Object.keys(store || {}).forEach(k => {
+      const arr = store[k];
+      if (!Array.isArray(arr)) return;
+      const isUniv = !industry && /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(k);
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r) continue;
+        if (industry && isTillOwnedRowId(String(r.id || r.code || '').trim())) continue;
+        if (allowed) {
+          if (industry ? !allowed.has(norm(r.company || r.resort || r.entity || '')) : !(r.company ? allowed.has(norm(r.company)) : isUniv)) continue;
+        }
+        if (_unsentRowTouchedMs(r) >= sinceMs) n++;
+      }
+    });
+    return n;
+  }
+  const _indRowStamp = r => String((r && (r.updated_at || r.updatedAt || r._updatedAt || r._createdAt)) || '');
+
+  // What the cloud held at the last successful read of it: one line per entry (void state and last change), copied
+  // out because the merge keeps the cloud's own row objects and later edits here would change them too.
+  // allowedCos = the companies a scoped seat may push (null = all), as doSync's canPushCo.
+  function noteCloudHeldEntries(remote, allowedCos) {
+    const idx = new Map();
+    const rem = (remote && remote.customRecords && typeof remote.customRecords === 'object') ? remote.customRecords : {};
+    Object.keys(rem).forEach(k => {
+      if (!Array.isArray(rem[k])) return;
+      rem[k].forEach(x => {
+        if (x && x.id) idx.set(`${k}\u0001${x.id}`, `${x.voided ? 1 : 0}|${_recModTs(x)}`);
+      });
+    });
+    // The other industries' rows, compared as doSync compares them (void state, revision, last change).
+    const ind = new Map();
+    const remInd = (remote && remote.industryCustomRows && typeof remote.industryCustomRows === 'object') ? remote.industryCustomRows : {};
+    Object.keys(remInd).forEach(bk => {
+      if (!Array.isArray(remInd[bk])) return;
+      remInd[bk].forEach(x => {
+        const pid = String((x && (x.id || x.code)) || '').trim();
+        if (pid) ind.set(`${bk}\u0001${pid}`, [x.voided ? 1 : 0, Number(x.rev || 1), _indRowStamp(x)]);
+      });
+    });
+    _unsentKnown = { idx, ind, allowedCos: allowedCos || null };
+  }
+
+  // Entries the cloud does not hold yet, as doSync judges a push (missing there, void state differs, or newer here).
+  // lackCos (optional Set): filled with the companies those entries belong to.
+  function countCustomRowsCloudLacks(known, lackCos) {
+    let n = 0;
+    const hit = co => { n++; if (lackCos) lackCos.add(co); };
+    const allowed = known.allowedCos;
+    Object.keys(STATE.customRecords || {}).forEach(k => {
+      const mine = STATE.customRecords[k];
+      if (!Array.isArray(mine) || !mine.length) return;
+      const isUniv = /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(k);
+      mine.forEach(r => {
+        if (!r || !r.id) return;
+        if (allowed && !(r.company ? allowed.has(norm(r.company)) : isUniv)) return;
+        const co = norm(r.company || '');
+        const held = known.idx.get(`${k}\u0001${r.id}`);
+        if (held === undefined) { hit(co); return; }
+        const cut = held.indexOf('|');
+        if ((held.slice(0, cut) === '1') !== Boolean(r.voided)) { hit(co); return; }
+        if (!r.voided) {
+          const myMod = _recModTs(r), remMod = held.slice(cut + 1);
+          if (myMod && (!remMod || myMod > remMod)) hit(co);
+        }
+      });
+    });
+    let mineInd = {};
+    try { mineInd = getIndustryCustomRowsStore() || {}; } catch (_) { mineInd = {}; }
+    Object.keys(mineInd).forEach(bk => {
+      const bList = mineInd[bk];
+      if (!Array.isArray(bList)) return;
+      bList.forEach(r => {
+        const pid = r && String(r.id || r.code || '').trim();
+        if (!pid || isTillOwnedRowId(pid)) return;
+        const co = norm(r.company || r.resort || r.entity || '');
+        if (allowed && !allowed.has(co)) return;
+        const held = known.ind.get(`${bk}\u0001${pid}`);
+        if (!held || Boolean(r.voided) !== Boolean(held[0]) || Number(r.rev || 1) > held[1] || _indRowStamp(r) > held[2]) hit(co);
+      });
+    });
+    return n;
+  }
+
+  // How many entries wait on this device: exact against what the cloud held at its last successful read (rows other
+  // devices keyed are there, so they are never counted); with no read yet (offline since the app opened), what was
+  // keyed or changed here since the wait began.
+  function countUnsentEntries() {
+    if (!_unsentSinceMs) return 0;
+    if (_unsentKnown) return countCustomRowsCloudLacks(_unsentKnown);
+    const floor = _unsentSinceMs - 5000;
+    const allowed = (_unsentScoped && _unsentAllowedCos) ? _unsentAllowedCos : null;
+    let n = _countRowsTouchedSince(STATE.customRecords, floor, false, allowed);
+    try { n += _countRowsTouchedSince(getIndustryCustomRowsStore(), floor, true, allowed); } catch (_) {}
+    return n;
+  }
+
+  function unsentEntriesInfo() {
+    if (!_unsentSinceMs || !STATE.authed || isDemoScopeActive() || isDemoSandboxSession()) return null;
+    const ageMs = Date.now() - _unsentSinceMs;
+    const st = String(STATE.cloudStatus || '');
+    const count = countUnsentEntries();
+    // "Another seat" only when this seat has nothing of its own waiting: its own failures keep their own reason
+    // (and are reported).
+    const reason = (count === 0 && unsentRowsOutsideScope()) ? 'other_seat'
+      : ((navigator.onLine === false || /Offline|unreachable/i.test(st)) ? 'offline'
+        : (/Sign-in|Sign In/i.test(st) ? 'sign_in'
+          : (/Refresh app/i.test(st) ? 'update'
+            : (/read-only|blocked/i.test(st) ? 'blocked' : 'retrying'))));
+    return { sinceMs: _unsentSinceMs, ageMs, count, reason, due: ageMs >= UNSENT_WARN_AFTER_MS };
+  }
+
+  function fmtUnsentStamp(ms) {
+    const d = new Date(ms);
+    if (!Number.isFinite(d.getTime())) return '';
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  function updateUnsentEntriesBar() {
+    const el = $('unsentEntriesBar');
+    if (!el) return;
+    const info = unsentEntriesInfo();
+    if (!info || !info.due) {
+      if (!el.hidden || el.dataset.sig) { el.hidden = true; el.dataset.sig = ''; el.innerHTML = ''; }
+      return;
+    }
+    const n = info.count;
+    const isUpdate = info.reason === 'update';
+    const sig = `${n}|${info.reason}|${info.sinceMs}`;
+    if (el.dataset.sig !== sig || el.hidden) {   // unchanged: leave the bar (and a focused button) alone
+      const lead = n > 0
+        ? `<b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(n))}</b> <span>${n === 1 ? 'entry on this device has not reached the cloud since' : 'entries on this device have not reached the cloud since'}</span>`
+        : '<span>Changes on this device have not reached the cloud since</span>';
+      el.dataset.sig = sig;
+      // Another seat's entries: this seat cannot send them, so there is no button to press.
+      const btnHtml = info.reason === 'other_seat' ? '' : ` <button type="button" class="btn btn-sm unsent-bar-btn" id="unsentSendNowBtn" data-unsent-act="${isUpdate ? 'update' : 'send'}"><span>${isUpdate ? 'Update App' : 'Send Now'}</span></button>`;
+      el.innerHTML = `<span class="badge badge-warn cf-behind-badge"><span>Not Sent</span></span> <span class="cf-behind-items">${lead} <span class="cf-behind-num" data-no-i18n="1">${esc(fmtUnsentStamp(info.sinceMs))}</span><span data-no-i18n="1">.</span> <span class="unsent-bar-reason">${esc(UNSENT_REASON_TEXT[info.reason])}</span></span>${btnHtml}`;
+      el.hidden = false;
+    }
+    reportUnsentToCloud(info);
+  }
+
+  // info = what this device holds (a "holding" report), or null once everything is sent (clears the report).
+  // A holding report goes out only once a sync has ended with the wait still on, after the wait was already due and
+  // after the device last came back online: a signal drop that the next sync clears is never reported.
+  // late = { sinceMs, count }: everything is sent, it waited an hour or more and was never reported: one "arrived
+  // late" line for the Owner.
+  async function reportUnsentToCloud(info, late) {
+    if (_unsentReportInflight || !hasServerApi() || navigator.onLine === false) return;
+    if (!STATE.authed || isDemoScopeActive() || isDemoSandboxSession()) return;
+    if (info) {
+      if (info.reason === 'other_seat' || info.reason === 'offline') return;
+      if (_unsentSyncLeftAtMs < info.sinceMs + UNSENT_WARN_AFTER_MS || _unsentSyncLeftAtMs <= _lastOnlineAtMs) return;
+      if (Date.now() - _unsentReportedAtMs < UNSENT_REPORT_EVERY_MS) return;
+    } else if (!late) {
+      if (!_unsentReported) return;
+      // The Edge decides which reports this seat may close: its own always, and those of seats whose companies it
+      // sends (its sync has just sent everything it can send from this device). While some stay open the device
+      // asks again, at most every few minutes, so the seat that can close them does so when it signs in.
+      if (Date.now() - _unsentClearTriedAtMs < UNSENT_REPORT_EVERY_MS) return;
+    }
+    const dev = getDeviceIdent();
+    const shellVer = String(window.__MFG_SHELL_VER || '');
+    const payload = info
+      ? { device_id: dev.id, label: dev.label, count: Math.max(1, info.count), since: new Date(info.sinceMs).toISOString(), reason: info.reason, shell: shellVer }
+      : (late
+        ? { device_id: dev.id, label: dev.label, count: late.count, since: new Date(late.sinceMs).toISOString(), sent_late: true, shell: shellVer }
+        : { device_id: dev.id, label: dev.label, count: 0, all_seats: true, shell: shellVer });
+    _unsentReportInflight = true;
+    if (info) _unsentReportedAtMs = Date.now();
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 6000);
+    try {
+      const r = await edgeApiFetch('./api/device_unsent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal
+      });
+      if (r && r.ok) {
+        if (late) {
+          dropUnsentLatePending();
+        } else {
+          let stillOpen = 0;
+          if (!info) {
+            const d = await r.json().catch(() => null);
+            stillOpen = Number(d && d.open) || 0;
+            if (stillOpen > 0) _unsentClearTriedAtMs = Date.now();
+          }
+          _unsentReported = (info || stillOpen > 0) ? '1' : '';
+          if (!IS_AUTOMATED_TEST) {
+            try {
+              if (_unsentReported) appStoreSetRaw(CLOUD_UNSENT_REPORTED_KEY, '1');
+              else appStoreRemoveRaw(CLOUD_UNSENT_REPORTED_KEY);
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {
+    } finally {
+      clearTimeout(t);
+      _unsentReportInflight = false;
+    }
+  }
+
+  function onUnsentBarClick(ev) {
+    const btn = ev.target && ev.target.closest ? ev.target.closest('[data-unsent-act]') : null;
+    if (!btn) return;
+    if (btn.getAttribute('data-unsent-act') === 'update') {
+      // Entries are kept on the device across the reload; the new version sends them at its first sync.
+      saveLocalAuthAndRecords();
+      const reload = () => { try { location.reload(); } catch (_) {} };
+      try {
+        const sw = navigator.serviceWorker;
+        if (sw && sw.getRegistration) {
+          sw.getRegistration().then(reg => (reg && reg.update ? reg.update() : null)).catch(() => {}).then(reload);
+          return;
+        }
+      } catch (_) {}
+      reload();
+      return;
+    }
+    toast('Sending the entries on this device', 'ok');
+    syncWithCloud(true);
+  }
+
+  // Owner: devices that reported entries they have not sent, and devices whose held entries arrived late.
+  async function loadDevicesHolding() {
+    const ownerNow = () => STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser());
+    if (!hasServerApi() || !ownerNow()) {
+      if (STATE.devicesHolding) { STATE.devicesHolding = null; updateDevicesHoldingBar(); }
+      return;
+    }
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    try {
+      const r = await edgeApiFetch('./api/device_unsent', { signal: ctrl.signal });
+      if (!ownerNow()) return;
+      if (r && (r.status === 401 || r.status === 403)) STATE.devicesHolding = null;
+      else if (r && r.ok) {
+        const d = await r.json().catch(() => null);
+        if (!ownerNow()) return;
+        if (d && Array.isArray(d.devices)) STATE.devicesHolding = d.devices;
+      }
+    } catch (_) {
+    } finally {
+      clearTimeout(t);
+    }
+    updateDevicesHoldingBar();
+  }
+
+  function updateDevicesHoldingBar() {
+    const el = $('devicesHoldingBar');
+    if (!el) return;
+    const ownerNow = STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser());
+    const myId = getDeviceIdent().id;
+    const myEmail = norm((activeUser() || {}).email);
+    const list = (ownerNow && Array.isArray(STATE.devicesHolding) ? STATE.devicesHolding : [])
+      .filter(d => d && typeof d === 'object' && !(String(d.device_id || '') === myId && norm(d.email) === myEmail));
+    if (!list.length) {
+      if (!el.hidden || el.dataset.sig) { el.hidden = true; el.dataset.sig = ''; el.innerHTML = ''; }
+      return;
+    }
+    const sig = JSON.stringify(list.map(d => [d.device_id, d.email, d.state, d.count, d.sent_count, d.since, d.reason, d.sent_at]));
+    if (el.dataset.sig === sig && !el.hidden) return;
+    const SHOWN = 4;
+    const segs = list.slice(0, SHOWN).map(d => {
+      const seat = (STATE.users || []).find(u => u && norm(u.email) === norm(d.email));
+      const who = String((seat && (seat.full_name || seat.name)) || d.name || d.email || 'Unknown seat').trim();
+      const label = String(d.label || '').trim();
+      const late = d.state === 'sent_late';
+      const n = Math.max(1, Number(late ? d.sent_count : d.count) || 1);
+      const since = fmtUnsentStamp(Date.parse(String(d.since || '')));
+      const head = `<b data-no-i18n="1"><span class="cf-behind-co-name">${esc(who)}</span></b>${label ? ` <span class="cf-behind-party" data-no-i18n="1">(${esc(label)})</span>` : ''}<span data-no-i18n="1">:</span> <b class="cf-behind-num" data-no-i18n="1">${esc(fmtNum(n))}</b>`;
+      if (late) {
+        const sentAt = fmtUnsentStamp(Date.parse(String(d.sent_at || '')));
+        return `<span class="cf-behind-co dev-hold-item is-late">${head} <span>${n === 1 ? 'entry keyed from' : 'entries keyed from'}</span> <span class="cf-behind-num" data-no-i18n="1">${esc(since)}</span> <span>reached the cloud late, on</span> <span class="cf-behind-num" data-no-i18n="1">${esc(sentAt)}</span></span>`;
+      }
+      const why = UNSENT_REASON_SHORT[String(d.reason || '')] || UNSENT_REASON_SHORT.retrying;
+      return `<span class="cf-behind-co dev-hold-item">${head} <span>${n === 1 ? 'entry held since' : 'entries held since'}</span> <span class="cf-behind-num" data-no-i18n="1">${esc(since)}</span><span data-no-i18n="1">, </span><span>${esc(why)}</span></span>`;
+    });
+    const extra = list.length - Math.min(list.length, SHOWN);
+    const moreHtml = extra > 0 ? ` <span class="cf-behind-more"><b class="cf-behind-num" data-no-i18n="1">+${extra}</b> <span>more</span></span>` : '';
+    el.dataset.sig = sig;
+    el.innerHTML = `<span class="badge badge-warn cf-behind-badge"><span>Held on Device</span></span> <span class="cf-behind-items"><span class="cf-behind-lead"><span>Entries other devices have not sent</span><span data-no-i18n="1">:</span></span> ${segs.join('<span class="cf-behind-sep" aria-hidden="true" data-no-i18n="1"> · </span>')}${moreHtml}</span>`;
+    el.hidden = false;
+  }
+
+  (function wireUnsentBars() {
+    const wire = () => {
+      const el = $('unsentEntriesBar');
+      if (el && !el._unsentWired) {
+        el._unsentWired = true;
+        el.addEventListener('click', onUnsentBarClick);
+      }
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
+    else wire();
+    window.addEventListener('online', () => { _lastOnlineAtMs = Date.now(); updateUnsentEntriesBar(); });
+    window.addEventListener('offline', () => updateUnsentEntriesBar());
+    // The bar appears on the clock, not on a sync: an offline device makes no sync that would draw it.
+    if (!IS_AUTOMATED_TEST) {
+      setInterval(() => { if (_unsentSinceMs && document.visibilityState !== 'hidden') updateUnsentEntriesBar(); }, 60000);
+    }
+  })();
 
   function compareShellVersions(a, b) {
     const pa = String(a || '').replace(/^[^0-9]*/, '').split('.').map(n => parseInt(n, 10) || 0);
@@ -126231,6 +126947,7 @@
     let runPromise = null;
     runPromise = doSync(shouldPush).finally(() => {
       if (syncInFlight === runPromise) syncInFlight = null;
+      if (_unsentSinceMs) _unsentSyncLeftAtMs = Date.now();   // this sync ended with entries still waiting
       if (!isDemoSandboxSession() && (!STATE.authed || runEpoch !== _authSessionEpoch)) {
         return;
       }
@@ -126458,6 +127175,8 @@
           if (STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser())) {
             await loadCashflowBehindNotice();
             if (abortedByAuthChange()) return;
+            await loadDevicesHolding();
+            if (abortedByAuthChange()) return;
           }
         }
       } catch (_) { /* API not reachable */ }
@@ -126474,6 +127193,7 @@
     const useEdgeSyncPrimary = Boolean(isEdgeActive && (allowHarnessEdge || !IS_HEADLESS_HARNESS));
     if (!useEdgeSyncPrimary || (!allowHarnessEdge && (navigator.webdriver || window.__MFG_HEADLESS_TEST || PARAMS.get('nosse') === '1' || (location.port && Number(location.port) >= 8095))) || isPublicDemoSandbox) {
       STATE.cloudStatus = isPublicDemoSandbox ? '● Demo Sandbox' : '● Ready (Local)';
+      noteNoCloudSync();
       updateCloudBadges();
       return;
     }
@@ -126526,6 +127246,16 @@
         const c = norm(coRaw || '');
         return Boolean(c && allowedCoSet.has(c));
       };
+      // What the cloud holds, read before the merge. Only kept while something waits or is about to be pushed.
+      _unsentScoped = isScopedRemote;
+      _unsentAllowedCos = isScopedRemote ? allowedCoSet : null;
+      if (_unsentSinceMs || pushChanges || STATE.pendingCloudPush) noteCloudHeldEntries(remote, isScopedRemote ? allowedCoSet : null);
+      else _unsentKnown = null;
+      if (_unsentSinceMs && _unsentKnown) {
+        const lackCos = new Set();
+        _unsentLastCount = countCustomRowsCloudLacks(_unsentKnown, lackCos);
+        noteCompaniesConfirmed(lackCos);
+      }
       const mRes = mergeRemoteMfgDoc(remote, Boolean(pushChanges));
       let changed = mRes.changed;
       if (mRes.needPush) pushChanges = true;
@@ -126702,6 +127432,7 @@
           if (putJson && putJson.conflict) {
             const cDocs = (putJson.docs && typeof putJson.docs === 'object') ? putJson.docs : {};
             const freshRemote = cDocs[CLOUD_DOC_KEY] || {};
+            noteCloudHeldEntries(freshRemote, isScopedRemote ? allowedCoSet : null);
             if (mergeRemoteMfgDoc(freshRemote, true).changed) changed = true;
             saveLocalAuthAndRecords();
             expectedUpdatedAt = String(freshRemote.updatedAt || '');
@@ -126721,6 +127452,7 @@
           STATE.cloudUpdatedAt = (putJson && putJson.updatedAt) || payload.updatedAt;
           if (_localPushSeq === seqBeforePayload && !STATE.pushAfterSync) {
             setPendingCloudPush(false);
+            noteCloudInSync();
           } else {
             STATE.pushAfterSync = true;
           }
@@ -126732,9 +127464,14 @@
       } else if (STATE.pendingCloudPush) {
         if (_localPushSeq === seqAtSyncStart && !STATE.pushAfterSync) {
           setPendingCloudPush(false);
+          noteCloudInSync();
         } else {
           STATE.pushAfterSync = true;
         }
+      } else if (_localPushSeq === seqAtSyncStart && !STATE.pushAfterSync) {
+        // Nothing to push and nothing changed here meanwhile: the cloud holds everything (a wait left behind by a
+        // refused push ends here, once the refusal is gone).
+        noteCloudInSync();
       }
       updateCloudBadges();
       if (changed) safeRender();
@@ -126759,6 +127496,7 @@
       auth.textContent = STATE.cloudStatus;
       auth.className = isNormal ? 'auth-cloud-ok' : 'auth-cloud-warn';
     }
+    updateUnsentEntriesBar();
   }
 
   // ==========================================================================
@@ -132083,6 +132821,8 @@
     FACE_STATE.pendingPinDescriptor = null;
     // A stakeholder balance card must not stay in the page once the seat signs out or the session ends.
     if (typeof closeHoldingExtendedShareCard === 'function') closeHoldingExtendedShareCard();
+    // Same for a pinned KPI breakdown or an open touch sheet: the previous seat's figures go with it.
+    if (window.MFG_CHART_POP && typeof window.MFG_CHART_POP.close === 'function') window.MFG_CHART_POP.close();
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.close === 'function') {
       window.MFG_CMD_PALETTE.close({ clearCache: true });
     }
@@ -132101,6 +132841,10 @@
     STATE.cashflowBehind = null;
     STATE.sourceBehind = null;
     STATE.changedEntries = null;
+    STATE.devicesHolding = null;
+    noteUnsentSeatLeft();
+    updateDevicesHoldingBar();
+    updateUnsentEntriesBar();
     STATE.behindDayPrev = null;
     _cashflowBehindGen++;
     _authSessionEpoch++;
@@ -132290,6 +133034,10 @@
     STATE.cashflowBehind = null;
     STATE.sourceBehind = null;
     STATE.changedEntries = null;
+    STATE.devicesHolding = null;
+    noteUnsentSeatLeft();
+    updateDevicesHoldingBar();
+    updateUnsentEntriesBar();
     STATE.behindDayPrev = null;
     _cashflowBehindGen++;
     _authSessionEpoch++;
@@ -169831,12 +170579,49 @@
       if (railNavEl) railNavEl.addEventListener('scroll', hideRailHoverTooltip, { passive: true });
     }
 
-    // Unified Institutional Chart Explanation Popover (#mfgChartPopover) for all SVG & bar visuals
+    // Unified Institutional Chart Explanation Popover (#mfgChartPopover) for all SVG & bar visuals. Three modes:
+    //   hover  - follows the hovered host (mouse), pointer-events none;
+    //   pinned - desktop: the pin on a Daily Operations KPI card keeps it open, its rows open their records;
+    //   sheet  - touch screens have no hover: a long press on any popover host opens it as a bottom sheet.
+    // A re-render hides it (renderAppPass); a pinned popover or sheet then reopens on the same host if it is
+    // still there with the same figures (verify_popover_touch_normal.mjs).
     const chartPopEl = $('mfgChartPopover');
     const wsElForPop = $('workspace');
     let _wsScrollTimer = null;
     let _lastWsWheelTs = 0;
+    let chartPopBackdrop = null;
+    const POP_HOST_ACTION_SEL = '[data-dops-open-drawer], [data-nav-jump], [data-dops-lens], [data-dops-pick-date], [role="button"], button';
+    const chartPopHeld = () => Boolean(chartPopEl && !chartPopEl.hidden && (chartPopEl._pinned || chartPopEl._sheet));
+    const syncChartPinButtons = () => {
+      const pinnedHost = chartPopEl && chartPopEl._pinned && !chartPopEl.hidden ? chartPopEl._popHost : null;
+      document.querySelectorAll('#workspace .dops-kpi-pin').forEach(b => {
+        const on = Boolean(pinnedHost && b.parentElement === pinnedHost);
+        if (b.getAttribute('aria-pressed') !== String(on)) b.setAttribute('aria-pressed', String(on));
+      });
+    };
+    const resetChartPopMode = () => {
+      if (!chartPopEl) return;
+      chartPopEl.classList.remove('is-pinned', 'is-sheet');
+      chartPopEl.setAttribute('role', 'tooltip');
+      chartPopEl.removeAttribute('aria-modal');
+      chartPopEl.removeAttribute('aria-label');
+      chartPopEl.removeAttribute('aria-labelledby');
+      if (chartPopBackdrop) chartPopBackdrop.hidden = true;
+      syncChartPinButtons();
+    };
+    let _chartPopClosedAt = 0;
+    const closeChartPopover = () => {
+      if (!chartPopEl) return;
+      // Closing hands focus back to the card (a11y_dialog.js); that focus must not reopen it as a hover popover.
+      if (chartPopEl._pinned || chartPopEl._sheet) _chartPopClosedAt = performance.now();
+      chartPopEl._pinned = false;
+      chartPopEl._sheet = false;
+      if (!chartPopEl.hidden) chartPopEl.hidden = true;
+      resetChartPopMode();
+    };
+    // Mouse-driven hiding (leaving a host, scrolling) leaves a pinned popover or an open sheet alone.
     const hideChartPopover = () => {
+      if (chartPopHeld()) return;
       if (chartPopEl && !chartPopEl.hidden) chartPopEl.hidden = true;
     };
     const hideAllChartTooltips = () => {
@@ -169855,51 +170640,16 @@
       }
       hideAllChartTooltips();
     };
-    const showChartPopoverForEvent = e => {
-      if (e && e.isTrusted && wsElForPop) {
-        if (e.type === 'mousemove' && (e.movementX || e.movementY)) {
-          _lastWsWheelTs = 0;
-          if (wsElForPop.classList.contains('is-scrolling')) wsElForPop.classList.remove('is-scrolling');
-        } else if (_lastWsWheelTs && (performance.now() - _lastWsWheelTs) < 140) {
-          hideChartPopover();
-          return;
-        }
-      }
-      if (!chartPopEl || !e || !e.target || typeof e.target.closest !== 'function') {
-        hideChartPopover();
-        return;
-      }
-      const popHost = e.target.closest('[data-chart-pop]');
-      if (!popHost || popHost.closest('#execChartWrap')) {
-        hideChartPopover();
-        return;
-      }
-      const rawSpec = popHost.getAttribute('data-chart-pop');
-      if (!rawSpec || !window.MFG_PBI || typeof window.MFG_PBI.renderChartPopHtml !== 'function') {
-        hideChartPopover();
-        return;
-      }
-      const sEl = e.target.closest('[data-series-idx]');
-      const activeIdx = sEl ? Number(sEl.getAttribute('data-series-idx')) : -1;
-      const hRect = popHost.getBoundingClientRect();
-      const hasPtr = typeof e.clientX === 'number' && typeof e.clientY === 'number' && (e.clientX > 0 || e.clientY > 0);
-      // Cards and list rows (HTML hosts of normal size) get a popover pinned to the host itself;
-      // chart marks (SVG) and very tall or wide hosts follow the pointer.
+    // Cards and list rows (HTML hosts of normal size) get the popover pinned under the host itself;
+    // chart marks (SVG) and very tall or wide hosts follow the pointer.
+    const isHostAnchoredPop = popHost => {
       const isMark = typeof SVGElement !== 'undefined' && popHost instanceof SVGElement;
-      const pinToHost = !isMark && hRect.height <= 160 && hRect.width <= 520;
-      const popKey = `${rawSpec}|${activeIdx}`;
-      if (pinToHost && !chartPopEl.hidden && chartPopEl._popHost === popHost && chartPopEl._popKey === popKey) return;
-      if (chartPopEl._popKey !== popKey || chartPopEl.hidden) {
-        const html = window.MFG_PBI.renderChartPopHtml(rawSpec, activeIdx);
-        if (!html) {
-          hideChartPopover();
-          return;
-        }
-        chartPopEl.innerHTML = html;
-        chartPopEl._popKey = popKey;
-      }
-      chartPopEl._popHost = popHost;
-      chartPopEl.hidden = false;
+      const hRect = popHost.getBoundingClientRect();
+      return !isMark && hRect.height <= 160 && hRect.width <= 520;
+    };
+    const placeChartPopover = (popHost, e, pinToHost) => {
+      const hRect = popHost.getBoundingClientRect();
+      const hasPtr = Boolean(e) && typeof e.clientX === 'number' && typeof e.clientY === 'number' && (e.clientX > 0 || e.clientY > 0);
       const pRect = chartPopEl.getBoundingClientRect();
       const M = 10;
       const vw = window.innerWidth;
@@ -169928,6 +170678,229 @@
       chartPopEl.style.right = rightPx === null ? 'auto' : `${rightPx}px`;
       chartPopEl.style.top = `${Math.max(M, Math.min(vh - pRect.height - M, Math.round(topPx)))}px`;
     };
+    // Desktop only: a small pin in the corner of a KPI card, added the first time the card is hovered or focused.
+    const canPinChartPops = () => {
+      try { return window.matchMedia('(hover: hover) and (pointer: fine)').matches; } catch (_) { return false; }
+    };
+    const ensureChartPinButton = popHost => {
+      if (!popHost || !popHost.classList || !popHost.classList.contains('dops-kpi') || !canPinChartPops()) return;
+      if (popHost.querySelector(':scope > .dops-kpi-pin')) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'dops-kpi-pin';
+      btn.setAttribute('data-chart-pin', '');
+      btn.setAttribute('aria-pressed', 'false');
+      btn.setAttribute('aria-label', 'Keep this breakdown open');
+      btn.setAttribute('data-ui-tip', 'Keep this breakdown open');
+      btn.innerHTML = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS.svg('pushpin') : '';
+      popHost.appendChild(btn);
+    };
+    const openHeldChartPopover = (popHost, mode, activeIdx) => {
+      if (!chartPopEl || !popHost || !popHost.isConnected) return false;
+      const rawSpec = popHost.getAttribute('data-chart-pop');
+      if (!rawSpec || !window.MFG_PBI || typeof window.MFG_PBI.renderChartPopHtml !== 'function') return false;
+      const html = window.MFG_PBI.renderChartPopHtml(rawSpec, activeIdx);
+      if (!html) return false;
+      const isSheet = mode === 'sheet';
+      // A KPI card with no action of its own (a restricted card) gets no open button.
+      const canOpen = popHost.matches(POP_HOST_ACTION_SEL)
+        && !(popHost.classList.contains('dops-kpi') && !popHost.matches('[data-dops-open-drawer], [data-nav-jump], [data-dops-lens]'));
+      const openLbl = popHost.hasAttribute('data-dops-pick-date') ? 'Show This Day'
+        : (popHost.hasAttribute('data-dops-lens') ? 'Show Details' : 'Open Records');
+      chartPopEl.innerHTML = (isSheet ? '<div class="chart-pop-grab" aria-hidden="true"></div>' : '') + html
+        + '<div class="chart-pop-actions">'
+        + (canOpen ? `<button type="button" class="chart-pop-act is-primary" data-pop-act="open">${esc(openLbl)}</button>` : '')
+        + `<button type="button" class="chart-pop-act" data-pop-act="close">${isSheet ? 'Close' : 'Unpin'}</button>`
+        + '</div>';
+      chartPopEl._popKey = `${rawSpec}|${activeIdx}|held`;
+      chartPopEl._popRaw = rawSpec;
+      chartPopEl._popIdx = activeIdx;
+      chartPopEl._popHost = popHost;
+      chartPopEl._pinned = !isSheet;
+      chartPopEl._sheet = isSheet;
+      chartPopEl.classList.toggle('is-pinned', !isSheet);
+      chartPopEl.classList.toggle('is-sheet', isSheet);
+      chartPopEl.setAttribute('role', 'dialog');
+      chartPopEl.setAttribute('aria-modal', isSheet ? 'true' : 'false');
+      // Named by the title element so the name follows the translated title (an aria-label would stay English).
+      const ttl = chartPopEl.querySelector('.chart-pop-title');
+      if (ttl) {
+        ttl.id = 'mfgChartPopTitle';
+        chartPopEl.setAttribute('aria-labelledby', 'mfgChartPopTitle');
+      } else chartPopEl.setAttribute('aria-label', 'Breakdown');
+      chartPopEl.querySelectorAll('.chart-pop-row[data-pop-go]').forEach(r => {
+        r.setAttribute('role', 'button');
+        r.setAttribute('tabindex', '0');
+      });
+      if (isSheet) {
+        if (!chartPopBackdrop) {
+          chartPopBackdrop = document.createElement('div');
+          chartPopBackdrop.className = 'mfg-chart-pop-backdrop';
+          chartPopBackdrop.hidden = true;
+          chartPopBackdrop.addEventListener('click', closeChartPopover);
+          chartPopBackdrop.addEventListener('touchmove', ev => ev.preventDefault(), { passive: false });
+          document.body.appendChild(chartPopBackdrop);
+        }
+        chartPopBackdrop.hidden = false;
+        chartPopEl.style.left = '';
+        chartPopEl.style.right = '';
+        chartPopEl.style.top = '';
+        chartPopEl.scrollTop = 0;
+      }
+      chartPopEl.hidden = false;
+      if (!isSheet) placeChartPopover(popHost, null, true);
+      syncChartPinButtons();
+      return true;
+    };
+    // A row of a pinned popover or sheet opens its own records (the Daily Operations drawer it names);
+    // "Open Records" does what clicking the card does.
+    const runChartPopAction = go => {
+      const host = chartPopEl ? chartPopEl._popHost : null;
+      const m = /^drawer:([a-z_]+)$/.exec(String(go || ''));
+      closeChartPopover();
+      if (!host || !host.isConnected) return;
+      // SVG chart marks have no .click(): dispatch the event so delegated handlers see it on every host.
+      if (!m) { host.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })); return; }
+      const proxy = document.createElement('span');
+      proxy.hidden = true;
+      proxy.setAttribute('data-dops-open-drawer', m[1]);
+      (host.parentElement || host).appendChild(proxy);
+      try { proxy.click(); } finally { proxy.remove(); }
+    };
+    const showChartPopoverForEvent = e => {
+      if (chartPopHeld()) return;
+      if (e && e.type === 'focusin' && performance.now() - _chartPopClosedAt < 500) return;
+      if (e && e.isTrusted && wsElForPop) {
+        if (e.type === 'mousemove' && (e.movementX || e.movementY)) {
+          _lastWsWheelTs = 0;
+          if (wsElForPop.classList.contains('is-scrolling')) wsElForPop.classList.remove('is-scrolling');
+        } else if (_lastWsWheelTs && (performance.now() - _lastWsWheelTs) < 140) {
+          hideChartPopover();
+          return;
+        }
+      }
+      if (!chartPopEl || !e || !e.target || typeof e.target.closest !== 'function') {
+        hideChartPopover();
+        return;
+      }
+      if (e.target.closest('[data-chart-pin]') && chartPopEl._popHost && !chartPopEl.hidden) return;
+      const popHost = e.target.closest('[data-chart-pop]');
+      if (!popHost || popHost.closest('#execChartWrap')) {
+        hideChartPopover();
+        return;
+      }
+      const rawSpec = popHost.getAttribute('data-chart-pop');
+      if (!rawSpec || !window.MFG_PBI || typeof window.MFG_PBI.renderChartPopHtml !== 'function') {
+        hideChartPopover();
+        return;
+      }
+      const sEl = e.target.closest('[data-series-idx]');
+      const activeIdx = sEl ? Number(sEl.getAttribute('data-series-idx')) : -1;
+      const pinToHost = isHostAnchoredPop(popHost);
+      const popKey = `${rawSpec}|${activeIdx}`;
+      if (pinToHost && !chartPopEl.hidden && chartPopEl._popHost === popHost && chartPopEl._popKey === popKey) return;
+      if (chartPopEl.classList.contains('is-pinned') || chartPopEl.classList.contains('is-sheet')) resetChartPopMode();
+      if (chartPopEl._popKey !== popKey || chartPopEl.hidden) {
+        const html = window.MFG_PBI.renderChartPopHtml(rawSpec, activeIdx);
+        if (!html) {
+          hideChartPopover();
+          return;
+        }
+        chartPopEl.innerHTML = html;
+        chartPopEl._popKey = popKey;
+        chartPopEl._popRaw = rawSpec;
+        chartPopEl._popIdx = activeIdx;
+      }
+      chartPopEl._popHost = popHost;
+      chartPopEl.hidden = false;
+      if (pinToHost) ensureChartPinButton(popHost);
+      placeChartPopover(popHost, e, pinToHost);
+    };
+    // A pinned popover follows its card when the page scrolls, and closes once the card is gone.
+    const followPinnedChartPop = () => {
+      if (!chartPopEl || !chartPopEl._pinned || chartPopEl.hidden) return;
+      const h = chartPopEl._popHost;
+      if (!h || !h.isConnected) { closeChartPopover(); return; }
+      const r = h.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > window.innerHeight) { closeChartPopover(); return; }
+      placeChartPopover(h, null, true);
+    };
+    if (chartPopEl) {
+      chartPopEl.addEventListener('click', e => {
+        if (!chartPopHeld()) return;
+        const act = e.target && e.target.closest ? e.target.closest('[data-pop-act]') : null;
+        if (act) {
+          e.preventDefault();
+          if (act.getAttribute('data-pop-act') === 'open') runChartPopAction('');
+          else {
+            const pinBtn = chartPopEl._pinned && chartPopEl._popHost ? chartPopEl._popHost.querySelector(':scope > .dops-kpi-pin') : null;
+            closeChartPopover();
+            if (pinBtn && pinBtn.isConnected) { try { pinBtn.focus({ preventScroll: true }); } catch (_) {} }
+          }
+          return;
+        }
+        const row = e.target && e.target.closest ? e.target.closest('.chart-pop-row[data-pop-go]') : null;
+        if (row) {
+          e.preventDefault();
+          runChartPopAction(row.getAttribute('data-pop-go'));
+        }
+      });
+      chartPopEl.addEventListener('keydown', e => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('.chart-pop-row[data-pop-go]')) {
+          e.preventDefault();
+          runChartPopAction(e.target.getAttribute('data-pop-go'));
+        }
+      });
+      // Swipe the sheet down to close it.
+      let sheetSwipeY = null;
+      chartPopEl.addEventListener('touchstart', e => {
+        sheetSwipeY = chartPopEl._sheet && chartPopEl.scrollTop <= 0 && e.touches && e.touches.length === 1 ? e.touches[0].clientY : null;
+      }, { passive: true });
+      chartPopEl.addEventListener('touchend', e => {
+        const t = e.changedTouches && e.changedTouches[0];
+        if (sheetSwipeY !== null && t && t.clientY - sheetSwipeY > 70) closeChartPopover();
+        sheetSwipeY = null;
+      }, { passive: true });
+      // A re-render hides the popover: reopen a pinned popover or sheet on the same host when it is still there.
+      if (typeof MutationObserver === 'function') {
+        new MutationObserver(() => {
+          if (!chartPopEl.hidden) return;
+          const wasHeld = chartPopEl._pinned || chartPopEl._sheet;
+          if (!wasHeld) {
+            if (chartPopEl.classList.contains('is-pinned') || chartPopEl.classList.contains('is-sheet')) resetChartPopMode();
+            return;
+          }
+          const mode = chartPopEl._sheet ? 'sheet' : 'pin';
+          const raw = chartPopEl._popRaw;
+          const idx = chartPopEl._popIdx;
+          chartPopEl._pinned = false;
+          chartPopEl._sheet = false;
+          resetChartPopMode();
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (!chartPopEl.hidden || chartPopEl._pinned || chartPopEl._sheet) return;
+            const gateEl = $('authGate');
+            if (gateEl && !gateEl.hidden) return;   // signed out or locked: never bring figures back under the gate
+            const host = Array.from(document.querySelectorAll('#workspace [data-chart-pop]'))
+              .find(h => h.getAttribute('data-chart-pop') === raw && h.getBoundingClientRect().height > 0);
+            if (host) openHeldChartPopover(host, mode, idx);
+          }));
+        }).observe(chartPopEl, { attributes: true, attributeFilter: ['hidden'] });
+      }
+    }
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape' || !chartPopHeld()) return;
+      e.stopPropagation();
+      const pinBtn = chartPopEl._pinned && chartPopEl._popHost ? chartPopEl._popHost.querySelector(':scope > .dops-kpi-pin') : null;
+      closeChartPopover();
+      if (pinBtn && pinBtn.isConnected) { try { pinBtn.focus({ preventScroll: true }); } catch (_) {} }
+    }, true);
+    // A click anywhere else closes a pinned popover (the pin itself toggles it).
+    document.addEventListener('pointerdown', e => {
+      if (!chartPopEl || !chartPopEl._pinned || chartPopEl.hidden) return;
+      const t = e.target;
+      if (!t || chartPopEl.contains(t) || (t.closest && t.closest('[data-chart-pin]'))) return;
+      closeChartPopover();
+    }, true);
     if (wsElForPop) {
       wsElForPop.addEventListener('mouseover', showChartPopoverForEvent);
       wsElForPop.addEventListener('pointerover', showChartPopoverForEvent);
@@ -169937,8 +170910,80 @@
       wsElForPop.addEventListener('wheel', markWorkspaceScrolling, { passive: true });
       wsElForPop.addEventListener('touchmove', markWorkspaceScrolling, { passive: true });
       wsElForPop.addEventListener('scroll', hideAllChartTooltips, { passive: true });
+      wsElForPop.addEventListener('scroll', followPinnedChartPop, { passive: true });
+      // The pin on a KPI card: toggles the pinned popover and never reaches the card's own click.
+      wsElForPop.addEventListener('click', e => {
+        const pinBtn = e.target && e.target.closest ? e.target.closest('[data-chart-pin]') : null;
+        if (!pinBtn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const host = pinBtn.closest('[data-chart-pop]');
+        const wasThis = chartPopEl && chartPopEl._pinned && !chartPopEl.hidden && chartPopEl._popHost === host;
+        closeChartPopover();
+        if (!wasThis && host && openHeldChartPopover(host, 'pin', -1) && e.detail === 0) {
+          // Pinned from the keyboard: move focus into the popover (it sits after the app shell in the page).
+          const first = chartPopEl.querySelector('.chart-pop-row[data-pop-go], [data-pop-act]');
+          if (first) { try { first.focus({ preventScroll: true }); } catch (_) {} }
+        }
+      }, true);
+      wsElForPop.addEventListener('keydown', e => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.closest && e.target.closest('[data-chart-pin]')) e.stopPropagation();
+      }, true);
+      // Touch: a long press on a popover host opens the breakdown as a bottom sheet (no hover on phones and tablets).
+      const LONG_PRESS_MS = 480;
+      const LONG_PRESS_SLOP = 10;
+      let lpState = null;
+      let lpFired = false;
+      const cancelLongPress = () => {
+        if (lpState) clearTimeout(lpState.timer);
+        lpState = null;
+      };
+      wsElForPop.addEventListener('touchstart', e => {
+        cancelLongPress();
+        lpFired = false;
+        if (!e.touches || e.touches.length !== 1 || !e.target || typeof e.target.closest !== 'function') return;
+        const host = e.target.closest('[data-chart-pop]');
+        if (!host || host.closest('#execChartWrap')) return;
+        const sEl = e.target.closest('[data-series-idx]');
+        const t0 = e.touches[0];
+        lpState = {
+          host,
+          idx: sEl ? Number(sEl.getAttribute('data-series-idx')) : -1,
+          x: t0.clientX,
+          y: t0.clientY,
+          timer: setTimeout(() => {
+            const st = lpState;
+            lpState = null;
+            if (!st || !st.host.isConnected) return;
+            closeChartPopover();
+            if (openHeldChartPopover(st.host, 'sheet', st.idx)) {
+              lpFired = true;
+              try { if (navigator.vibrate) navigator.vibrate(12); } catch (_) {}
+            }
+          }, LONG_PRESS_MS)
+        };
+      }, { passive: true });
+      wsElForPop.addEventListener('touchmove', e => {
+        if (!lpState || !e.touches || !e.touches[0]) return;
+        const t = e.touches[0];
+        if (Math.abs(t.clientX - lpState.x) > LONG_PRESS_SLOP || Math.abs(t.clientY - lpState.y) > LONG_PRESS_SLOP) cancelLongPress();
+      }, { passive: true });
+      wsElForPop.addEventListener('touchend', e => {
+        cancelLongPress();
+        // The finger lifting after a long press must not also click the card underneath.
+        if (lpFired) {
+          lpFired = false;
+          if (e.cancelable) e.preventDefault();
+        }
+      }, { passive: false });
+      wsElForPop.addEventListener('touchcancel', () => { cancelLongPress(); lpFired = false; }, { passive: true });
+      wsElForPop.addEventListener('contextmenu', e => {
+        if ((lpState || lpFired || chartPopEl._sheet) && e.target && e.target.closest && e.target.closest('[data-chart-pop]')) e.preventDefault();
+      });
     }
     window.addEventListener('scroll', hideAllChartTooltips, { passive: true });
+    window.addEventListener('resize', followPinnedChartPop, { passive: true });
+    window.MFG_CHART_POP = { close: closeChartPopover, isHeld: chartPopHeld };
 
     document.querySelectorAll('#sidebarNav .nav-item, #railSystemBar button.rail-sys-btn[data-hub]').forEach(btn => btn.addEventListener('click', e => {
       const pill = e.target && e.target.closest ? e.target.closest('.nav-pill[data-target-view]') : null;
@@ -171640,6 +172685,23 @@
     window.__mergeWorkSchedules = incoming => mergeWorkSchedules(incoming);
     window.__bumpPendingCloudPush = () => setPendingCloudPush(true);
     window.__getPendingCloudPushState = () => ({ pending: Boolean(STATE.pendingCloudPush), seq: _localPushSeq });
+    window.__isSeedTwinMatch = (k, s, r, repDay) => _isSeedTwinMatch(k, s, r, repDay);
+    window.__unsentEntries = {
+      info: () => unsentEntriesInfo(),
+      state: () => ({ sinceMs: _unsentSinceMs, reported: _unsentReported, known: Boolean(_unsentKnown), scoped: _unsentScoped, lastCount: _unsentLastCount, latePending: _unsentLatePending, confirmed: _unsentConfirmed }),
+      backdate: ms => { if (_unsentSinceMs) _unsentSinceMs -= Math.max(0, Number(ms) || 0); updateUnsentEntriesBar(); return _unsentSinceMs; },
+      noteHeld: remote => noteCloudHeldEntries(remote, null),
+      syncLeft: () => { _unsentSyncLeftAtMs = Date.now(); },
+      setScoped: (on, cos) => { _unsentScoped = Boolean(on); _unsentAllowedCos = on ? new Set((cos || []).map(c => norm(c))) : null; if (_unsentKnown) _unsentKnown.allowedCos = _unsentAllowedCos; },
+      setLastCount: n => { _unsentLastCount = Number(n) || 0; },
+      setReported: on => { _unsentReported = on ? '1' : ''; _unsentClearTriedAtMs = 0; },
+      cameOnline: () => { _lastOnlineAtMs = Date.now(); },
+      inSync: () => noteCloudInSync(),
+      refresh: () => { updateUnsentEntriesBar(); updateDevicesHoldingBar(); },
+      report: info => { _unsentReportedAtMs = 0; return reportUnsentToCloud(info); },
+      loadDevices: () => loadDevicesHolding(),
+      device: () => getDeviceIdent()
+    };
     window.__sanitizeUniversalCustomRecords = cr => sanitizeUniversalCustomRecords(cr);
     window.__applyCustomRecordsToSeed = () => applyCustomRecordsToSeed();
     window.__getKPI = co => getKPI(co);
