@@ -3305,6 +3305,14 @@
     if (m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return 'Rent & Barter';
     return 'Payment';
   }
+  // Owner rule 2026-11-18: Config and VATConfig are balances carried forward, never payments, so no cash view (till,
+  // register, per-name cash tables, sibling cash books, Daily Operations cash panel) lists them as cash on any day.
+  // receiptKind / settlementKind still say 'VAT received' / 'VAT paid' for VATConfig so AR and VAT ledgers keep them.
+  // Mirrors build/cashflow_workbook.py NONCASH_CONFIG_METHODS; the Opening Till line carries the opening-day ones.
+  function isCarriedBalanceMethod(r) {
+    const m = String((r && r.method) || '').trim();
+    return m === 'Config' || m === 'VATConfig';
+  }
   function isArSettlingReceipt(r) {
     if (!r || r.voided) return false;
     const m = String(r.method || '').trim();
@@ -4180,6 +4188,7 @@
       const knd = receiptKind(r);
       const isRentComm = mth === 'Rent' || mth === 'VATRent';
       if (knd !== 'Settlement' && knd !== 'VAT received' && !isRentComm) return;
+      if (isCarriedBalanceMethod(r)) return;
       if (mth === 'VATRent') {
         const lbp = Math.round(Number(r.lbp_amount || ((Number(r.amount || 0) + Number(r.discount || 0)) * 89500)));
         addMove(r.date, 0, 0, 0, lbp, mult);
@@ -4203,6 +4212,7 @@
       addMove(x.date, usd < 0 ? -usd : 0, usd >= 0 ? usd : 0, lbp < 0 ? -lbp : 0, lbp >= 0 ? lbp : 0, mult);
     });
     forEachCashCustomDelta('settlements', matchCo, (s, mult) => {
+      if (isCarriedBalanceMethod(s)) return;
       const knd = settlementKind(s);
       const lbp = Number(s.lbp_amount || 0);
       const usd = lbp ? Number(s.usd_amount || 0) : Number(s.usd_amount != null ? s.usd_amount : s.amount || 0);
@@ -8662,11 +8672,13 @@
     if (key === 'sales_tickets') return isCashSaleTicket(r) && ticketSign(r) !== 0;
     if (key === 'expenses') return isCashExpense(r) && expenseSign(r) !== 0;
     if (key === 'receipts') {
+      if (isCarriedBalanceMethod(r)) return false; // a carried balance moves no cash (owner 2026-11-18)
       const mth = String(r.method || '').trim();
       const knd = receiptKind(r);
       return knd === 'Settlement' || knd === 'VAT received' || mth === 'Rent' || mth === 'VATRent';
     }
     if (key === 'settlements') {
+      if (isCarriedBalanceMethod(r)) return false;
       const knd = settlementKind(r);
       return knd === 'Payment' || knd === 'VAT paid';
     }
@@ -16089,7 +16101,7 @@
         const prevS = String(bounds.prevPeer.s || '2024-01-01').slice(0, 10);
         const prevExpE = (bounds.prevPeer._explicitEnd && bounds.prevPeer.e) ? String(bounds.prevPeer.e).slice(0, 10) : '';
         if (s === prevS) {
-          return { ok: false, field: 'start', reason: `A log entry for ${unitLbl} already starts on ${fmtDateDMY(prevS)}. Click that row to edit it, or pick a Start Date after ${fmtDateDMY(prevS)}.` };
+          return { ok: false, field: 'start', reason: `A log entry for ${unitLbl} already starts on ${fmtDateDMY(prevS)}. Use Edit on that row to change it, or pick a Start Date after ${fmtDateDMY(prevS)}.` };
         }
         if (s < prevS) {
           return { ok: false, field: 'start', reason: `New log Start Date (${fmtDateDMY(s)}) cannot be before the previous log's Start Date (${fmtDateDMY(prevS)}).` };
@@ -16397,9 +16409,14 @@
       eq.adj_windows.push(targetWin);
     }
     eq.adj_windows.sort((a, b) => String(a.s || '').localeCompare(String(b.s || '')) || String(a.e || '9999-12-31').localeCompare(String(b.e || '9999-12-31')));
-    syncEquipmentBaselineFromWindows(eq);
-    _WIN_REV++;
-    _FLEET_IDX = null;
+    // _dryRun (describeTruckLogSave): `eq` is a copy of the truck, so nothing outside it may change: no driver
+    // registry sync, no cache reset, and the tickets are only read.
+    const isDryRun = Boolean(winSpec._dryRun);
+    if (!isDryRun) {
+      syncEquipmentBaselineFromWindows(eq);
+      _WIN_REV++;
+      _FLEET_IDX = null;
+    }
     if (winSpec.backfillTickets !== false) {
       const dateCandidatesFrom = [s];
       const dateCandidatesTo = [effEnd || '9999-12-31'];
@@ -16420,7 +16437,8 @@
       const priorRefCap = oldSnap ? Number(oldSnap.cap || 0) : Number((prevPeer && prevPeer.cap) || preSyncCap || 0);
       const capChanged = Boolean(Number(cap || 0) > 0 && priorRefCap > 0 && Math.abs(priorRefCap - Number(cap)) > 1e-6);
       targetWin._lastBackfill = backfillTruckWindowToTickets(eq, targetWin, {
-        persistCustom: Boolean(winSpec.persistTicketBackfill),
+        persistCustom: Boolean(winSpec.persistTicketBackfill) && !isDryRun,
+        dryRun: isDryRun,
         rangeFrom: dateCandidatesFrom[0] || s,
         rangeTo: dateCandidatesTo[dateCandidatesTo.length - 1] || '9999-12-31',
         capChanged,
@@ -16429,6 +16447,120 @@
       });
     }
     return targetWin;
+  }
+  // What saving this log would do, worked out on a copy of the truck (the forms show it before the button is
+  // pressed; owner 2026-11-18 after truck 357152). Nothing is changed. Returns:
+  //   { ok: false, reason }                       the save would be refused, with the form's own message
+  //   { ok: true, mode, saved, kept, closed, tickets }
+  //     mode    'add' (a new log) | 'split' (a picked log saved from a later day with another size, owner or driver:
+  //             its earlier days stay as their own log) | 'move' (a picked log, same values, another start: the log
+  //             itself moves) | 'update' (a picked log changed in place)
+  //     saved   { s, e, cap, own, drv } as the log would read after the save
+  //     kept    { s, e, cap, own, drv } the earlier period that stays apart (split only), else null
+  //     closed  { s, e, was } a log before it whose end date the save changes, else null
+  //     tickets { total, sales, raw, fuel, resized, usdDelta, firstDay, lastDay } the tickets the save would change
+  function describeTruckLogSave(eq, winSpec, editIdx = -1) {
+    if (!eq || !winSpec) return { ok: false, reason: '' };
+    const chk = validateTruckWindowChronology(eq, winSpec, editIdx);
+    if (!chk.ok) return { ok: false, reason: chk.reason, field: chk.field || '' };
+    let copyEq;
+    try { copyEq = JSON.parse(JSON.stringify(eq)); } catch (_) { return { ok: false, reason: '' }; }
+    if (!Array.isArray(copyEq.adj_windows)) copyEq.adj_windows = [];
+    const snap = w => ({ s: String(w.s || '2024-01-01').slice(0, 10), e: String(w.e || '').slice(0, 10), cap: Number(w.cap || 0), own: String(w.own || ''), drv: String(w.drv || '') });
+    const before = copyEq.adj_windows.map(w => (w ? snap(w) : null));
+    const hasEdit = typeof editIdx === 'number' && editIdx >= 0 && editIdx < copyEq.adj_windows.length;
+    const editBefore = hasEdit ? before[editIdx] : null;
+    const beforeRefs = copyEq.adj_windows.slice();
+    const heldSplit = _lastTruckLogSplit;
+    let savedWin = null, kept = null;
+    try {
+      savedWin = appendOrUpdateTruckWindow(copyEq, Object.assign({}, winSpec, { _dryRun: true, persistTicketBackfill: false }), editIdx);
+      kept = _lastTruckLogSplit;
+    } finally {
+      _lastTruckLogSplit = heldSplit;
+    }
+    if (!savedWin) return { ok: false, reason: '' };
+    const saved = snap(savedWin);
+    let mode = 'add';
+    if (kept) mode = 'split';
+    else if (editBefore) mode = editBefore.s !== saved.s ? 'move' : 'update';
+    // A log before the saved one whose end the save moved (the open log a new one closes, or the one that stretches
+    // or shrinks when a log moves)
+    let closed = null;
+    beforeRefs.forEach((w, i) => {
+      if (!w || w === savedWin || !before[i] || closed) return;
+      const nowE = String(w.e || '').slice(0, 10);
+      if (nowE !== before[i].e && String(w.s || '').slice(0, 10) === before[i].s && before[i].s < saved.s) {
+        closed = { s: before[i].s, e: nowE, was: before[i].e, cap: before[i].cap };
+      }
+    });
+    const bf = savedWin._lastBackfill || { sales: 0, raw: 0, fuel: 0, total: 0, rows: [] };
+    const rows = Array.isArray(bf.rows) ? bf.rows : [];
+    const resizedRows = rows.filter(r => Math.abs(Number(r.qtyTo || 0) - Number(r.qtyFrom || 0)) > 1e-6);
+    const days = rows.map(r => r.date).filter(Boolean).sort();
+    const tickets = {
+      total: Number(bf.total || 0), sales: Number(bf.sales || 0), raw: Number(bf.raw || 0), fuel: Number(bf.fuel || 0),
+      resized: resizedRows.length,
+      usdDelta: round2(rows.reduce((sum, r) => sum + (Number(r.usdTo || 0) - Number(r.usdFrom || 0)), 0)),
+      firstDay: days[0] || '', lastDay: days[days.length - 1] || '',
+      earlier: rows.filter(r => r.date && r.date < saved.s).length,
+    };
+    return { ok: true, mode, saved, kept: kept ? Object.assign({}, kept) : null, closed, tickets, was: editBefore };
+  }
+  // The line both truck log forms show under their button, as separate short phrases (each is translated on its own).
+  function truckLogSavePreviewHtml(plan, opts = {}) {
+    if (!plan) return '';
+    if (!plan.ok) return plan.reason ? `<span class="tw-prev-part tw-prev-warn">${esc(plan.reason)}</span>` : '';
+    const showSize = opts.showSize !== false;
+    const d = fmtDateDMY;
+    const what = w => {
+      const bits = [];
+      if (showSize && Number(w.cap) > 0) bits.push(`${fmtNum(w.cap, 1)} m³`);
+      if (w.drv) bits.push(w.drv);
+      else if (w.own) bits.push(w.own);
+      return bits.join(' · ');
+    };
+    const tag = txt => (txt ? ` <span class="tw-prev-val" data-no-i18n="1">(${esc(txt)})</span>` : '');
+    const parts = [];
+    if (plan.mode === 'split' && plan.kept) {
+      parts.push(`<span>Keeps ${esc(d(plan.kept.s))} to ${esc(d(plan.kept.e))} as its own log</span>${tag(what(plan.kept))}`);
+      parts.push(`<span>New log from ${esc(d(plan.saved.s))}</span>${tag(what(plan.saved))}`);
+    } else if (plan.mode === 'add') {
+      if (plan.closed) parts.push(`<span>Ends the log before it on ${esc(d(plan.closed.e))}</span>${tag(showSize && Number(plan.closed.cap) > 0 ? `${fmtNum(plan.closed.cap, 1)} m³` : '')}`);
+      parts.push(`<span>New log from ${esc(d(plan.saved.s))}</span>${tag(what(plan.saved))}`);
+    } else if (plan.mode === 'move') {
+      parts.push(`<span>Moves this log's start from ${esc(d(plan.was.s))} to ${esc(d(plan.saved.s))}</span>`);
+      if (plan.closed) parts.push(`<span>The log before it then runs to ${esc(d(plan.closed.e))}</span>`);
+    } else {
+      parts.push('<span>Changes this log in place</span>');
+    }
+    const t = plan.tickets || { total: 0 };
+    if (!(t.total > 0)) {
+      parts.push('<span>No ticket changes</span>');
+    } else {
+      const span = t.firstDay && t.lastDay ? (t.firstDay === t.lastDay ? d(t.firstDay) : `${d(t.firstDay)} to ${d(t.lastDay)}`) : '';
+      parts.push(`<span>${t.total === 1 ? '1 ticket changes' : `${fmtNum(t.total, 0)} tickets change`}</span>${tag(span)}`);
+      if (t.resized > 0) {
+        const usd = Math.abs(t.usdDelta) >= 0.005 ? `${t.usdDelta > 0 ? '+' : '-'}${fmtUSD(Math.abs(t.usdDelta), 2)}` : '';
+        parts.push(`<span>${t.resized === 1 ? '1 quantity re-sized' : `${fmtNum(t.resized, 0)} quantities re-sized`}</span>${tag(usd)}`);
+      }
+    }
+    // Amber when tickets of days before the new start would change: that is the save to look at twice
+    const warn = t.total > 0 && (plan.mode === 'move' || plan.mode === 'update' || t.earlier > 0 || t.resized > 0);
+    return parts.map(p => `<span class="tw-prev-part${warn ? ' tw-prev-warn' : ''}">${p}</span>`).join('<span class="tw-prev-sep" data-no-i18n="1" aria-hidden="true"> · </span>');
+  }
+  function paintTruckLogSavePreview(hostEl, plan, opts) {
+    if (!hostEl) return;
+    const html = truckLogSavePreviewHtml(plan, opts);
+    // Rewritten only when it says something new: it is refreshed on every keystroke, and a rewrite would flash the
+    // English text before it is translated again.
+    if (hostEl.dataset.twPrevHtml === html) return;
+    hostEl.dataset.twPrevHtml = html;
+    hostEl.innerHTML = html;
+    hostEl.hidden = !html;
+    if (html && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(hostEl);
+    }
   }
   function backfillTruckWindowToTickets(eq, targetWin, opts = {}) {
     if (!eq || !targetWin || !SEED || !SEED.records) return { sales: 0, raw: 0, fuel: 0, total: 0 };
@@ -16447,11 +16579,15 @@
     const wEnd = rawWEnd === '9999-12-31' ? '' : rawWEnd;
     const wCustNorm = norm(targetWin.cust);
     const wSiteNorm = norm(targetWin.site);
-    const persistCustom = opts.persistCustom !== false && !window.__fastInspectorModifyTest;
+    // dryRun: work out what the save would change on copies of the rows; nothing is written, stamped or sent.
+    const dry = Boolean(opts.dryRun);
+    const dryRows = [];
+    const capOrig = dry ? () => {} : ensureSeedOrigCapturedBeforeMutate;
+    const persistCustom = !dry && opts.persistCustom !== false && !window.__fastInspectorModifyTest;
     const baseFallback = eq._initBaseline || { cap: Number(eq.capacity || 0), own: String(eq.supplier || '').trim(), drv: String(eq.default_driver || '').trim() };
     let salesCnt = 0, rawCnt = 0, fuelCnt = 0;
 
-    const truckBfStampIso = nextMonotonicIso();
+    const truckBfStampIso = dry ? '' : nextMonotonicIso();
     const touchTicketInCustom = (tk, row) => {
       if (!persistCustom || !row || !row.id) return;
       row.modified_at = truckBfStampIso;
@@ -16464,8 +16600,9 @@
 
     if (wSide === 'both' || wSide === 'sales') {
       const salesList = Array.isArray(SEED.records.sales_tickets) ? SEED.records.sales_tickets : [];
-      salesList.forEach(r => {
-        if (!r || r.voided || !matchUnit(r.truck)) return;
+      salesList.forEach(src => {
+        if (!src || src.voided || !matchUnit(src.truck)) return;
+        const r = dry ? Object.assign({}, src) : src;
         const dt = String(r.date || '').slice(0, 10);
         if (!dt) return;
         if (wCoNorm && norm(r.company || 'WTC') !== wCoNorm) return;
@@ -16485,12 +16622,12 @@
           if (!isExPlant && !isCustTrk && (effOwn || isOwn)) {
             const nextTrBy = isOwn ? 'Company fleet' : 'Third-party truck';
             const nextOwn = isOwn ? '' : effOwn;
-            if (String(r.transport_by || '') !== nextTrBy) { ensureSeedOrigCapturedBeforeMutate('sales_tickets', r); r.transport_by = nextTrBy; rowChanged = true; }
-            if (String(r.truck_owner || '') !== nextOwn) { ensureSeedOrigCapturedBeforeMutate('sales_tickets', r); r.truck_owner = nextOwn; rowChanged = true; }
+            if (String(r.transport_by || '') !== nextTrBy) { capOrig('sales_tickets', r); r.transport_by = nextTrBy; rowChanged = true; }
+            if (String(r.truck_owner || '') !== nextOwn) { capOrig('sales_tickets', r); r.truck_owner = nextOwn; rowChanged = true; }
           }
         }
         if (effDrv && String(r.driver || '') !== effDrv) {
-          ensureSeedOrigCapturedBeforeMutate('sales_tickets', r);
+          capOrig('sales_tickets', r);
           r.driver = effDrv;
           rowChanged = true;
         }
@@ -16499,7 +16636,7 @@
         if (matchesPriorCap && effCap > 0 && /^m/i.test(String(r.uom || 'm³')) && !r.removed_slip && !isReturnTicket(r)) {
           const agrSize = resolveAgreementTruckSize({ side: 'sales', company: r.company || 'WTC', customer: r.customer, site: r.site, product: r.product, date: dt, truckRow: eq });
           if (!agrSize && Math.abs(curQty - effCap) > 1e-6) {
-            ensureSeedOrigCapturedBeforeMutate('sales_tickets', r);
+            capOrig('sales_tickets', r);
             // Marks a quantity set by a log change, not keyed by a person: the top-up puts the workbook quantity back
             // on a workbook ticket that carries it (build/meter_check.py)
             r._log_resized = { from: curQty, to: effCap, at: truckBfStampIso };
@@ -16515,16 +16652,18 @@
         }
         if (rowChanged) {
           salesCnt++;
+          if (dry) dryRows.push({ table: 'sales_tickets', id: String(src.id || ''), date: dt, ticket_no: String(src.ticket_no || ''), qtyFrom: Number(src.qty || 0), qtyTo: Number(r.qty || 0), usdFrom: Number(src.total_ttc != null ? src.total_ttc : (src.total || 0)), usdTo: Number(r.total_ttc != null ? r.total_ttc : (r.total || 0)) });
           touchTicketInCustom('sales_tickets', r);
         }
       });
-      if (salesCnt > 0 && SEED._tableRev) SEED._tableRev.sales_tickets = (SEED._tableRev.sales_tickets || 0) + 1;
+      if (!dry && salesCnt > 0 && SEED._tableRev) SEED._tableRev.sales_tickets = (SEED._tableRev.sales_tickets || 0) + 1;
     }
 
     if (wSide === 'both' || wSide === 'raw') {
       const rawList = Array.isArray(SEED.records.raw_purchases) ? SEED.records.raw_purchases : [];
-      rawList.forEach(r => {
-        if (!r || r.voided || !matchUnit(r.truck)) return;
+      rawList.forEach(src => {
+        if (!src || src.voided || !matchUnit(src.truck)) return;
+        const r = dry ? Object.assign({}, src) : src;
         const dt = String(r.date || '').slice(0, 10);
         if (!dt) return;
         if (wCoNorm && norm(r.company || 'WTC') !== wCoNorm) return;
@@ -16541,12 +16680,12 @@
           if (effOwn || isOwn) {
             const nextTrBy = isOwn ? 'Company fleet' : 'Third-party truck';
             const nextOwn = isOwn ? '' : effOwn;
-            if (String(r.transport_by || '') !== nextTrBy) { ensureSeedOrigCapturedBeforeMutate('raw_purchases', r); r.transport_by = nextTrBy; rowChanged = true; }
-            if (String(r.truck_owner || '') !== nextOwn) { ensureSeedOrigCapturedBeforeMutate('raw_purchases', r); r.truck_owner = nextOwn; rowChanged = true; }
+            if (String(r.transport_by || '') !== nextTrBy) { capOrig('raw_purchases', r); r.transport_by = nextTrBy; rowChanged = true; }
+            if (String(r.truck_owner || '') !== nextOwn) { capOrig('raw_purchases', r); r.truck_owner = nextOwn; rowChanged = true; }
           }
         }
         if (effDrv && String(r.driver || '') !== effDrv) {
-          ensureSeedOrigCapturedBeforeMutate('raw_purchases', r);
+          capOrig('raw_purchases', r);
           r.driver = effDrv;
           rowChanged = true;
         }
@@ -16555,7 +16694,7 @@
         if (matchesRawPriorCap && effCap > 0 && /^m/i.test(String(r.uom || 'm³')) && !r.removed_slip && !isReturnTicket(r)) {
           const agrSize = resolveAgreementTruckSize({ side: 'raw', company: r.company || 'WTC', site: r.site, product: r.product, siteOwner: r.site_owner, truckOwner: r.truck_owner, date: dt, truckRow: eq });
           if (!agrSize && Math.abs(curRawQty - effCap) > 1e-6) {
-            ensureSeedOrigCapturedBeforeMutate('raw_purchases', r);
+            capOrig('raw_purchases', r);
             r._log_resized = { from: curRawQty, to: effCap, at: truckBfStampIso };
             r.qty = effCap;
             if (!r.mat_indiff && Number(r.unit_cost || 0) > 0) r.cost = round2(effCap * Number(r.unit_cost || 0));
@@ -16566,16 +16705,18 @@
         }
         if (rowChanged) {
           rawCnt++;
+          if (dry) dryRows.push({ table: 'raw_purchases', id: String(src.id || ''), date: dt, ticket_no: String(src.ticket_no || ''), qtyFrom: Number(src.qty || 0), qtyTo: Number(r.qty || 0), usdFrom: Number(src.total || 0), usdTo: Number(r.total || 0) });
           touchTicketInCustom('raw_purchases', r);
         }
       });
-      if (rawCnt > 0 && SEED._tableRev) SEED._tableRev.raw_purchases = (SEED._tableRev.raw_purchases || 0) + 1;
+      if (!dry && rawCnt > 0 && SEED._tableRev) SEED._tableRev.raw_purchases = (SEED._tableRev.raw_purchases || 0) + 1;
     }
 
     if (wSide === 'both' || wSide === 'fuel') {
       const fuelList = Array.isArray(SEED.records.fuel_intakes) ? SEED.records.fuel_intakes : [];
-      fuelList.forEach(r => {
-        if (!r || r.voided || !matchUnit(r.equipment || r.truck)) return;
+      fuelList.forEach(src => {
+        if (!src || src.voided || !matchUnit(src.equipment || src.truck)) return;
+        const r = dry ? Object.assign({}, src) : src;
         const dt = String(r.date || '').slice(0, 10);
         if (!dt) return;
         if (wCoNorm && norm(r.company || 'WTC') !== wCoNorm) return;
@@ -16589,10 +16730,11 @@
           touchTicketInCustom('fuel_intakes', r);
         }
       });
-      if (fuelCnt > 0 && SEED._tableRev) SEED._tableRev.fuel_intakes = (SEED._tableRev.fuel_intakes || 0) + 1;
+      if (!dry && fuelCnt > 0 && SEED._tableRev) SEED._tableRev.fuel_intakes = (SEED._tableRev.fuel_intakes || 0) + 1;
     }
 
     const total = salesCnt + rawCnt + fuelCnt;
+    if (dry) return { sales: salesCnt, raw: rawCnt, fuel: fuelCnt, total, rows: dryRows };
     if (total > 0) {
       _WIN_REV++;
       _FLEET_IDX = null;
@@ -17397,6 +17539,183 @@
     }
   }
 
+  // ── A dated row saved from a later day with another value keeps the earlier period (owner 2026-11-18) ──
+  // The truck-log rule of v19.6.388, for every dated log the general engine governs: price agreements, contracts,
+  // allowances, rates, recurring expenses and any future dated table. Fields that never make a save "another value":
+  // identity, the dates themselves, free text and bookkeeping.
+  const CHRONO_NON_VALUE_KEYS = new Set([
+    'id', 'name', 'date', 'rep_date', 'start_date', 'end_date', 'effective_to', 'status', 'notes', 'note', 'remarks',
+    'comment', 'comments', 'source', 'voided', 'voided_at', 'voided_by', 'void_reason', 'restored_at', 'restored_by',
+    'created_at', 'created_by', 'entered_by', 'entered_by_email', 'entered_at', 'modified_at', 'modified_by',
+    'updated_at', 'updatedAt', 'attachments', 'admin_overrides', 'after_hours', 'after_hours_logged_on',
+    'same_person_confirmed', 'wb_index', 'wb_end_date', 'wb_total', 'backfill_enabled',
+  ]);
+  // Figures a form works out from the row's dates or from its other fields: they move with a date, so they are not a
+  // value of their own (an allowance paid per day is re-totalled over its window).
+  const CHRONO_DERIVED_KEYS = {
+    price_rules: ['price', 'trans_price', 'total1', 'total2'],
+    logistics_allowances: ['amount', 'usd_amount', 'lbp_amount', 'working_days'],
+  };
+  function _chronoSameValue(a, b) {
+    const isEmpty = v => v == null || v === '' || v === 0 || v === false || (Array.isArray(v) && !v.length);
+    if (isEmpty(a) && isEmpty(b)) return true;
+    if ((a && typeof a === 'object') || (b && typeof b === 'object')) {
+      try { return JSON.stringify(a) === JSON.stringify(b); } catch (_) { return false; }
+    }
+    if (typeof a !== 'boolean' && typeof b !== 'boolean' && !isEmpty(a) && !isEmpty(b)) {
+      const na = Number(a), nb = Number(b);
+      if (Number.isFinite(na) && Number.isFinite(nb)) return Math.abs(na - nb) < 1e-6;
+    }
+    if (typeof a === 'boolean' || typeof b === 'boolean') return Boolean(a) === Boolean(b);
+    return norm(a) === norm(b);
+  }
+  // True when `savedRow` carries a value the row did not have before. Only the fields the save itself carries are
+  // read: a field the form does not send is not a change. A table may name its value fields (`chronoSpec.valueKeys`).
+  function chronoRowValuesDiffer(crKey, savedRow, origRow) {
+    if (!savedRow || !origRow) return false;
+    const customSpec = CUSTOM_CHRONO_SPECS.get(crKey);
+    const cat = getCatalogChronoEntry(crKey);
+    const declared = (customSpec && customSpec.valueKeys) || (cat && ((cat.chronoSpec && cat.chronoSpec.valueKeys) || cat.valueKeys)) || null;
+    let keys;
+    if (Array.isArray(declared) && declared.length) {
+      keys = declared.filter(k => k in savedRow);
+    } else {
+      const derived = new Set(CHRONO_DERIVED_KEYS[crKey] || []);
+      if (crKey === 'price_rules') {
+        // An agreement priced as a fixed sum (no rate per unit) holds its value in the sum itself
+        if (!(Number(savedRow.unit_price) > 0 || Number(origRow.unit_price) > 0)) derived.delete('price');
+        if (!(Number(savedRow.trans_unit_price) > 0 || Number(origRow.trans_unit_price) > 0)) derived.delete('trans_price');
+      }
+      if (crKey === 'logistics_allowances' && !(Number(savedRow.daily_usd) > 0 || Number(origRow.daily_usd) > 0)) {
+        derived.delete('amount'); derived.delete('usd_amount'); derived.delete('lbp_amount');
+      }
+      keys = Object.keys(savedRow).filter(k => k && k.charAt(0) !== '_' && !CHRONO_NON_VALUE_KEYS.has(k) && !derived.has(k));
+    }
+    return keys.some(k => !_chronoSameValue(savedRow[k], origRow[k]));
+  }
+  // What the next save of this row would do to the days before its new start: null (nothing kept apart), or the
+  // period that stays as its own entry. Read by the forms before a save and by the engine during it.
+  // Tables the rule leaves alone: shift timings (their own ledger and backfill switch), the company fleet rows that
+  // drive the truck logs (those logs have the rule already), and the shared registries matched by name.
+  const CHRONO_KEEP_PERIOD_EXEMPT = new Set(['work_shifts', 'company_equipment', 'company_drivers', 'fx_rates', 'vat_rates']);
+  function chronoKeptPeriodToastText(kp) {
+    return kp ? `Earlier period kept to ${fmtDateDMY(kp.to)} · New entry from ${fmtDateDMY(kp.newFrom)}` : '';
+  }
+  // `hint.userChangedValue` is what the form itself knows: false when the person changed nothing but dates, notes or
+  // the label (a date correction, whatever the form re-writes or fills in by default when it builds the row), true
+  // when a value field was changed, undefined when the caller cannot tell (the row's own fields then decide).
+  function describeChronoKeptPeriod(crKey, savedRow, editOrig, hint) {
+    if (!savedRow || !editOrig || !editOrig.id || editOrig.voided || savedRow._moveStart) return null;
+    if (CHRONO_KEEP_PERIOD_EXEMPT.has(crKey) || (typeof UNIVERSAL_MAIN_SPEC !== 'undefined' && UNIVERSAL_MAIN_SPEC && UNIVERSAL_MAIN_SPEC[crKey])) return null;
+    // Filling in a row that was waiting for its figure (Salary Pending, Price Pending) completes that row: there is
+    // no earlier period under an old value to keep.
+    if (editOrig.salary_pending || editOrig.price_pending) return null;
+    if (hint && hint.userChangedValue === false) return null;
+    if (!isEffectiveSeriesTable(crKey, savedRow)) return null;
+    const newStart = String(savedRow.start_date || '').slice(0, 10);
+    const origStart = String(editOrig.start_date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newStart) || !/^\d{4}-\d{2}-\d{2}$/.test(origStart) || !(newStart > origStart)) return null;
+    // A row re-assigned to another series (another customer, staff, site...) is a correction of the row, not a new
+    // period of the same agreement: it moves whole, as before.
+    if (!isSameChronologicalSeries(crKey, Object.assign({}, savedRow, { voided: false }), editOrig)) return null;
+    if (!chronoRowValuesDiffer(crKey, savedRow, editOrig)) return null;
+    const dayBefore = prevDayISO(newStart);
+    const origEnd = _rowEndIso(editOrig);
+    const endedBefore = Boolean(origEnd && origEnd < dayBefore);
+    return { from: origStart, to: endedBefore ? origEnd : dayBefore, endedBefore, newFrom: newStart };
+  }
+  // Set by syncChronologicalSeriesNeighbors when a save kept the earlier period apart: { id (the row that stays, the
+  // original one), newId (the entry that follows it), from, to, table }, else null.
+  let _lastChronoKeptPeriod = null;
+  // Bookkeeping the entry that follows must not inherit from the row it was typed over.
+  const CHRONO_NEW_ENTRY_DROP_RE = /^_(seed_orig|auto_closed_|prev_end_date|last_prev_end|prev_status|explicitEnd|reopenedExplicitly|dormant_|backpay_|reconciled_at|absorbedSeedTwin|lastBackfill|moveStart)/;
+  // Turns "an existing row saved from a later day with another value" into what + Add would have done: the row goes
+  // back to what it was (same id, so the next top-up still matches it to its workbook line) and the values being saved
+  // become a new entry under a new id. Everything after this point in the engine then runs as for an added entry: the
+  // open row before it ends the day before, an explicit earlier end stands, the tickets before the new start are not
+  // re-read. Returns the restored row, or null when the save is an ordinary edit or a date correction.
+  // Takes the entry a kept-period save added out of the working rows and the device copy again: a save the server
+  // refused is put back from a snapshot taken before it, and that snapshot does not know the new entry.
+  function dropChronoKeptPeriodEntry(kept) {
+    if (!kept || !kept.newId || !kept.table) return 0;
+    let dropped = 0;
+    [SEED.records && SEED.records[kept.table], STATE.customRecords && STATE.customRecords[kept.table]].forEach(arr => {
+      if (!Array.isArray(arr)) return;
+      for (let i = arr.length - 1; i >= 0; i--) {
+        if (arr[i] && String(arr[i].id) === String(kept.newId)) { arr.splice(i, 1); dropped += 1; }
+      }
+    });
+    if (dropped) {
+      if (SEED._tableRev) SEED._tableRev[kept.table] = (SEED._tableRev[kept.table] || 0) + 1;
+      SEED._customRev = (SEED._customRev || 0) + 1;
+    }
+    return dropped;
+  }
+  function splitChronoSaveIntoNewEntry(crKey, savedRow, editOrig, extraApiPosts, hint) {
+    const plan = describeChronoKeptPeriod(crKey, savedRow, editOrig, hint);
+    if (!plan) return null;
+    const origId = String(editOrig.id);
+    if (!SEED.records) return null;
+    if (!Array.isArray(SEED.records[crKey])) SEED.records[crKey] = [];
+    const list = SEED.records[crKey];
+    let restored;
+    try { restored = JSON.parse(JSON.stringify(editOrig)); } catch (_) { restored = Object.assign({}, editOrig); }
+    restored.id = editOrig.id;
+    const overwrite = (target, src) => {
+      Object.keys(target).forEach(k => { if (!(k in src)) delete target[k]; });
+      Object.assign(target, src);
+      return target;
+    };
+    // 1. The row keeps its id and gets its old values back
+    const seedIdx = list.findIndex(x => x && String(x.id) === origId);
+    if (seedIdx >= 0 && list[seedIdx] !== savedRow) restored = overwrite(list[seedIdx], restored);
+    else if (seedIdx >= 0) list[seedIdx] = restored;
+    else list.push(restored);
+    if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
+    const custom = STATE.customRecords[crKey];
+    const cIdx = custom.findIndex(x => x && String(x.id) === origId);
+    if (cIdx >= 0 && custom[cIdx] !== savedRow) overwrite(custom[cIdx], restored);
+    else if (cIdx >= 0) custom[cIdx] = Object.assign({}, restored);
+    // 2. The values being saved become a new entry
+    Object.keys(savedRow).forEach(k => { if (CHRONO_NEW_ENTRY_DROP_RE.test(k)) delete savedRow[k]; });
+    ['wb_index', 'wb_end_date', 'wb_total'].forEach(k => { delete savedRow[k]; });
+    const stampIso = nextMonotonicIso();
+    const who = (typeof activeUser === 'function' && activeUser()) || null;
+    savedRow.id = uid((String(crKey).replace(/[^a-z]/g, '') + 'xx').slice(0, 2));
+    savedRow.source = 'app';
+    savedRow.voided = false;
+    savedRow.created_at = stampIso;
+    if (who) {
+      if (who.full_name) savedRow.entered_by = who.full_name;
+      if (who.email) savedRow.entered_by_email = who.email;
+    }
+    savedRow._continues_id = origId;
+    // A contract and the one that follows it are the same person by construction: both say so, or the server's
+    // same-name guard refuses the new contract while the old one is still open there (and the old one after it).
+    if (crKey === 'employments' || crKey === 'freelance_entries') {
+      savedRow.same_person_confirmed = true;
+      restored.same_person_confirmed = true;
+      if (cIdx >= 0 && custom[cIdx]) custom[cIdx].same_person_confirmed = true;
+    }
+    // A price agreement is found by its name on the tickets it priced: the new entry gets a name of its own, as an
+    // added agreement would (the date in an automatic code moves to the new start; a typed name gets the date).
+    if (crKey === 'price_rules' && savedRow.name && String(savedRow.name) === String(editOrig.name || '')) {
+      const nm = String(savedRow.name);
+      const compact = plan.newFrom.replace(/-/g, '');
+      savedRow.name = /^PRC-\d{8}-/.test(nm) ? nm.replace(/^PRC-\d{8}-/, `PRC-${compact}-`) : `${nm} (${fmtDateDMY(plan.newFrom)})`;
+      if (String(savedRow.name) === nm) savedRow.name = `${nm} (${fmtDateDMY(plan.newFrom)})`;
+    }
+    // An end date the row only had because the entry after it starts then is worked out again for the new entry
+    const savedEnd = _rowEndIso(savedRow);
+    if (savedEnd && savedEnd === _rowEndIso(editOrig) && !editOrig._explicitEnd) _setRowEndIso(savedRow, '');
+    if (!list.includes(savedRow)) list.push(savedRow);
+    if (!custom.includes(savedRow)) custom.unshift(savedRow);
+    if (SEED._tableRev) SEED._tableRev[crKey] = (SEED._tableRev[crKey] || 0) + 1;
+    SEED._customRev = (SEED._customRev || 0) + 1;
+    _lastChronoKeptPeriod = { id: origId, newId: savedRow.id, from: plan.from, to: plan.to, newFrom: plan.newFrom, table: crKey };
+    return restored;
+  }
+
   // Synchronizes adjacent rows in the same effective-dated series when `savedRow` is added or edited:
   //   - Marks `savedRow._explicitEnd` when user explicitly sets/clears `end_date`.
   //   - If `savedRow` has a predecessor `prevPeer`:
@@ -17407,8 +17726,14 @@
   //         intentional gap (`prevPeer._explicitEnd = true`) untouched!
   //   - If `savedRow` has a successor `nextPeer` and `savedRow.end_date` is blank (Open), caps
   //     `savedRow.end_date = prevDayISO(nextPeer.start_date)` (`_explicitEnd = false`).
-  function syncChronologicalSeriesNeighbors(crKey, savedRow, editOrig, extraApiPosts) {
+  function syncChronologicalSeriesNeighbors(crKey, savedRow, editOrig, extraApiPosts, hint) {
+    _lastChronoKeptPeriod = null;
     if (!savedRow || !savedRow.start_date || !isEffectiveSeriesTable(crKey, savedRow)) return [];
+    // A later Start Date with another value is a new period: the days before it stay under the old values, on the
+    // row as it was, and this save goes on as a new entry that follows it. Before, the row moved, the entry before
+    // it (or the list price) stretched over those days and their tickets were re-priced. The same values from a
+    // later day are still a correction of the date and move the row.
+    if (editOrig && splitChronoSaveIntoNewEntry(crKey, savedRow, editOrig, extraApiPosts, hint)) editOrig = null;
     const syncSelfToCustom = () => {
       if (!savedRow || !savedRow.id) return;
       if (Array.isArray(STATE.customRecords[crKey])) {
@@ -18330,6 +18655,10 @@
       if (pLow < rangeFrom) rangeFrom = pLow < pS ? pLow : pS;
       if (pHigh > rangeTo) rangeTo = pHigh;
     });
+    // An agreement saved from a later day with another rate kept its earlier period as it was: the tickets of those
+    // days are not re-read (they stay under the same agreement, at the price they carry).
+    const notBefore = (opts && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.notBefore || ''))) ? String(opts.notBefore) : '';
+    if (notBefore && rangeFrom < notBefore) rangeFrom = notBefore;
 
     const candidates = [ruleRow, origRow, ...touchedPeers].filter(Boolean);
     const anyCandidateTruckSize = candidates.some(c => Number(c.truck_size || 0) > 0);
@@ -19251,6 +19580,14 @@
     getBounds: getChronologicalSeriesBounds,
     validate: validateChronologicalSeriesEntry,
     syncNeighbors: syncChronologicalSeriesNeighbors,
+    // A row saved from a later day with another value keeps its earlier period; read by build/verify_dated_log_keep_period.mjs
+    describeKeptPeriod: describeChronoKeptPeriod,
+    valuesDiffer: chronoRowValuesDiffer,
+    lastKeptPeriod: () => _lastChronoKeptPeriod,
+    keptPeriodToast: chronoKeptPeriodToastText,
+    // For the headless gate only: the snapshot a save takes so a refused save can be put back
+    rollbackSnapForCheck: tables => (window.__MFG_HEADLESS_TEST ? _captureLedgerAndGeoRollbackSnap(tables || [], false) : null),
+    formChangedValueForCheck: () => (window.__MFG_HEADLESS_TEST ? entryModalUserChangedValue() : undefined),
     reopenOnVoid: reopenChronologicalSeriesOnVoid,
     resolveActive: resolveEffectiveSeriesRow,
     backfill: backfillEffectiveLogChange,
@@ -19262,6 +19599,9 @@
       remove: removeTruckWindowAt,
       resolve: resolveTruckWindow,
       lastKept: () => _lastTruckLogSplit,
+      // What a save would do, before it is pressed (changes nothing); the line both forms show under their button
+      describe: describeTruckLogSave,
+      previewHtml: truckLogSavePreviewHtml,
     },
   };
 
@@ -22231,6 +22571,26 @@
       whatFn: p => `Flags non-hub dwell stops between <b>${fmtNum(p.staleMinM, 0)} m</b> and <b>${fmtNum(p.offPinMinM, 0)} m</b> from a pinned site as Stale Pin Drift and stops beyond <b>${fmtNum(p.offPinMinM, 0)} m</b> as Unapproved Off-Pin Drops.`,
       threshFn: p => `Drift >= ${fmtNum(p.staleMinM, 0)}m · Off-pin > ${fmtNum(p.offPinMinM, 0)}m`,
       previewFn: () => 'Deterministic watchdog: Never alters saved KM or ticket net-back margins; supervisors inspect the dwell cluster on Map Studio or queue a Gate Pin Review in Approvals.'
+    },
+    {
+      id: 'S17',
+      code: '#28',
+      name: 'Loads Off the Logged Truck Size',
+      domain: 'Fleet & Diesel',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels & Truck Logs',
+      jumpView: 'sentinels',
+      sentinelId: 'S17',
+      why: 'A truck is billed and paid by its size. When its tickets carry another quantity than the size its log gives that day, either the truck changed size and nobody logged it, or a quantity was keyed wrong. Both cost money on every load until someone looks.',
+      params: [
+        { key: 'lookback_days', label: 'Days of Tickets to Check', def: 90, min: 7, max: 365, step: 1, unit: 'days' },
+        { key: 'tolerance_m3', label: 'Difference Allowed per Load', def: 0.25, min: 0, max: 2, step: 0.05, unit: 'm³' },
+        { key: 'min_loads', label: 'Min Loads at the Same Size to Flag', def: 2, min: 1, max: 20, step: 1, unit: 'loads' },
+        { key: 'crit_usd', label: 'Critical Value of the Difference', def: 1000, min: 0, max: 50000, step: 100, unit: '$' }
+      ],
+      whatFn: p => `Reads every m³ Sales and Raw Material ticket of the last <b>${fmtNum(p.lookback_days, 0)}</b> days against the size its truck's log (or price agreement) gives that day, and lists a truck once <b>${fmtNum(p.min_loads, 0)}</b> or more loads carry the same other size, more than <b>${fmtNum(p.tolerance_m3, 2)} m³</b> apart. Critical once the difference is worth <b>$${fmtNum(p.crit_usd, 0)}</b> at the tickets' own rates.`,
+      threshFn: p => `${fmtNum(p.lookback_days, 0)} days · Off by > ${fmtNum(p.tolerance_m3, 2)} m³ · Loads >= ${fmtNum(p.min_loads, 0)} · Crit >= $${fmtNum(p.crit_usd, 0)}`,
+      previewFn: () => 'Live example: A truck logged at 28 m³ whose last 14 tickets read 27 m³ is listed with its loads, the m³ and the value of the difference; add a log from the day the size changed, or correct the tickets.'
     }
   ];
 
@@ -25508,6 +25868,13 @@
     const nbSnSig = nbSn
       ? `${nbSn.agreements}:${nbSn.sites}:${nbSn.lossCnt}:${nbSn.nightCnt}:${nbSn.noDistCnt}:${nbSn.approxCnt}:${nbSn.noFuelCnt}:${nbSn.shortfall90}:${nbSn.lossLoads90}:${nbSn.showFuel ? 1 : 0}:${nbSn.prices.map(p => `${p.co}@${p.usdPerL}@${p.date}`).join(',')}`
       : 'x';
+    // Loads off the truck's logged size (own cache, keyed on seat, scope, tickets, truck logs and the rule's
+    // thresholds). Switched off in Alerts & Thresholds: no scan, the card shows as paused.
+    const tsSnOff = !isNonMfgSn && !isAlertRuleEnabled('S17');
+    const tsSn = (isNonMfgSn || tsSnOff) ? null : getTruckSizeSentinelData();
+    const tsSnSig = tsSn
+      ? `${tsSn.trucksCnt}:${tsSn.loadsCnt}:${tsSn.m3Abs}:${tsSn.usdAbs}:${tsSn.judged}:${tsSn.noLog}:${tsSn.lookback}:${tsSn.rows.length}`
+      : (tsSnOff ? 'off' : 'x');
     const _wdStaffArr = (SEED.records && SEED.records.staff_members) || [];
     let wdSig = String(_wdStaffArr.length);
     for (let i = 0; i < _wdStaffArr.length; i++) {
@@ -25530,7 +25897,7 @@
         return `${d.scannedPunches}:${(d.clusters || []).map(c => `${c.id}=${c.count}`).join(',')}`;
       })()
       : 'x';
-    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}`;
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}|ts:${tsSnSig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
     let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
     if (!rawItems) {
@@ -25791,6 +26158,41 @@
         scrollPanel: 'snNetBack',
         navView: 'pricing',
         navLabel: 'Open Pricing'
+      });
+    }
+    if (tsSnOff && (typeof canAccessTable !== 'function' || canAccessTable('sales_tickets') || canAccessTable('raw_purchases'))) {
+      rawItems.push({
+        id: 'S17',
+        code: 'Rule #28 · Truck Sizes',
+        title: 'Loads Off the Logged Truck Size',
+        detail: '',
+        severity: 'ok',
+        badge: 'PAUSED',
+        company: scope,
+        rawMetric: 0,
+        rawSecondary: 0,
+        navView: 'fleet',
+        navLabel: 'Open Fleet'
+      });
+    }
+    if (tsSn) {
+      const tsCritUsd = Number(getAlertParam('S17', 'crit_usd', 1000)) || 0;
+      const tsNoLogTxt = tsSn.noLog > 0 ? ` ${fmtNum(tsSn.noLog)} more fall on a day no log covers and are not judged.` : '';
+      rawItems.push({
+        id: 'S17',
+        code: 'Rule #28 · Truck Sizes',
+        title: 'Loads Off the Logged Truck Size',
+        detail: tsSn.loadsCnt > 0
+          ? `${fmtNum(tsSn.judged)} m³ tickets of the last ${fmtNum(tsSn.lookback)} days checked against the size their truck's log gives that day: ${fmtNum(tsSn.loadsCnt)} loads on ${fmtNum(tsSn.trucksCnt)} trucks carry another size (${fmtNum(tsSn.m3Abs, 1)} m³ apart in all, worth ${fmtUSD(tsSn.usdAbs, 0)} at the tickets' own rates).${tsNoLogTxt}`
+          : `${fmtNum(tsSn.judged)} m³ tickets of the last ${fmtNum(tsSn.lookback)} days checked against the size their truck's log gives that day: every load carries its logged size.${tsNoLogTxt}`,
+        severity: tsSn.loadsCnt > 0 ? ((tsCritUsd > 0 && tsSn.usdAbs >= tsCritUsd) ? 'crit' : 'warn') : 'ok',
+        badge: tsSn.loadsCnt > 0 ? `${fmtNum(tsSn.loadsCnt)} LOADS OFF SIZE` : 'SIZES MATCH',
+        company: scope,
+        rawMetric: tsSn.loadsCnt,
+        rawSecondary: tsSn.trucksCnt,
+        scrollPanel: 'snTruckSize',
+        navView: 'fleet',
+        navLabel: 'Open Fleet'
       });
     }
     if (isAlertRuleEnabled('G_MAPS_QUOTA')) rawItems.push(buildMapsQuotaSentinelItem({ ruleId: 'G_MAPS_QUOTA', itemId: 'M24', company: 'All Operations' }));
@@ -26832,6 +27234,7 @@
     const usd2 = v => fmtUSD(v, 2);
     const num1 = v => fmtNum(v, 1);
     const nbSnData = (isNonMfgSn || !isAlertRuleEnabled('S12')) ? null : getNetBackSentinelData();
+    const tsSnData = (isNonMfgSn || !isAlertRuleEnabled('S17')) ? null : getTruckSizeSentinelData();
     const nbUnitFmt = (v, r) => (v == null || !Number.isFinite(Number(v)))
       ? '-'
       : `<span data-no-i18n="1">${esc(usd2(v))}${r && r.unit ? ` / ${esc(r.unit)}` : ''}</span>`;
@@ -27051,6 +27454,19 @@
             ? `<button type="button" class="btn-sn-act btn-nb-pin-site" data-nb-pin-site="${esc(String(r.site))}" data-ui-tip="Open this site on the map to pin it or set its distance">${ic('pin')} <span>Pin Site</span></button>`
             : '') }
         ], 'snNetBackApprox') : ''}
+        ${tsSnData ? miniTable('LOADS OFF THE LOGGED TRUCK SIZE', tsSnData.rows, [
+          { label: 'Truck', key: 'truck', mono: true, fmt: v => `<span data-no-i18n="1">${esc(v || '-')}</span>` },
+          { label: 'Co.', key: 'company' },
+          { label: 'Tickets', key: 'side_label', fmt: v => `<span>${esc(v || '')}</span>` },
+          { label: 'Size From', key: 'source_label', fmt: v => `<span>${esc(v || '')}</span>` },
+          { label: 'Logged Size', key: 'logged_size', r: true, noFoot: true, fmt: v => `<span data-no-i18n="1">${fmtNum(v || 0, 2)} m³</span>` },
+          { label: 'On the Tickets', key: 'ticket_size', r: true, noFoot: true, fmt: v => `<span data-no-i18n="1">${fmtNum(v || 0, 2)} m³</span>` },
+          { label: 'Loads', key: 'loads', r: true, fmt: v => `<span data-no-i18n="1">${fmtNum(v || 0, 0)}</span>` },
+          { label: 'First Load', key: 'first_date', mono: true, fmt: v => `<span data-no-i18n="1">${esc(fmtDateDMY(v))}</span>` },
+          { label: 'Last Load', key: 'last_date', mono: true, fmt: v => `<span data-no-i18n="1">${esc(fmtDateDMY(v))}</span>` },
+          { label: 'm³ Apart', key: 'm3_diff', r: true, fmt: v => `<span data-no-i18n="1">${Number(v || 0) > 0 ? '+' : ''}${fmtNum(v || 0, 1)}</span>` },
+          { label: 'Worth', key: 'usd_diff', r: true, fmt: v => `<span data-no-i18n="1">${Number(v || 0) < 0 ? '-' : (Number(v || 0) > 0 ? '+' : '')}${usd2(Math.abs(Number(v || 0)))}</span>` }
+        ], 'snTruckSize') : ''}
         ${miniTable('FUEL CONSUMPTION &amp; METER OUTLIERS', fleet.consumption_outliers || [], [
           { label: 'Equipment', key: 'equipment', mono: true }, { label: 'Type', key: 'type' }, { label: 'Metric', key: 'metric' },
           { label: 'Value', key: 'value', r: true, fmt: num1 }, { label: 'Distance / Hours', key: 'distance_km', r: true, fmt: (v, r) => fmtNum(v != null ? v : r.hours, 0) }, { label: 'Diesel (L)', key: 'diesel_l', r: true, fmt: v => fmtNum(v, 0) }
@@ -48386,6 +48802,7 @@
       const knd = receiptKind(r);
       const isRentComm = mth === 'Rent' || mth === 'VATRent';
       if (knd !== 'Settlement' && knd !== 'VAT received' && !isRentComm) return;
+      if (isCarriedBalanceMethod(r)) return;
       let lbp = 0, usd = 0, cat = 'AR Receipt';
       if (mth === 'VATRent') {
         lbp = -Math.round(Number(r.lbp_amount || ((Number(r.amount || 0) + Number(r.discount || 0)) * rate)));
@@ -48436,6 +48853,7 @@
     filterRecords(SEED.records.settlements, baseFilterOpts).forEach(s => {
       const knd = settlementKind(s);
       if (knd !== 'Payment' && knd !== 'VAT paid') return;
+      if (isCarriedBalanceMethod(s)) return;
       const lbp = -Math.round(Number(s.lbp_amount || (knd === 'VAT paid' ? Number(s.amount || 0) * rate : 0)));
       const usd = knd === 'VAT paid' ? 0 : -(s.lbp_amount ? Number(s.usd_amount || 0) : Number(s.usd_amount != null ? s.usd_amount : s.amount || 0));
       pushMove({
@@ -48879,6 +49297,7 @@
       const knd = receiptKind(rc);
       const isRentComm = mth === 'Rent' || mth === 'VATRent';
       if (knd !== 'Settlement' && knd !== 'VAT received' && !isRentComm) return;
+      if (isCarriedBalanceMethod(rc)) return;
       let u = 0, l = 0;
       if (mth === 'VATRent') {
         l = -Math.round(mult * Number(rc.lbp_amount || ((Number(rc.amount || 0) + Number(rc.discount || 0)) * (rate || 89500))));
@@ -48915,6 +49334,7 @@
     forEachCashCustomDelta('settlements', matchCo, (sp, mult) => {
       const knd = settlementKind(sp);
       if (knd !== 'Payment' && knd !== 'VAT paid') return;
+      if (isCarriedBalanceMethod(sp)) return;
       const lRaw = Number(sp.lbp_amount || 0);
       const u = knd === 'Payment' ? round2(mult * (lRaw ? Number(sp.usd_amount || 0) : Number(sp.usd_amount != null ? sp.usd_amount : sp.amount || 0))) : 0;
       const l = knd === 'Payment' ? Math.round(mult * lRaw) : Math.round(mult * (lRaw || Math.round(Number(sp.amount || 0) * (rate || 89500))));
@@ -65054,6 +65474,7 @@
       const mth = String(rc.method || '').trim();
       const knd = receiptKind(rc);
       if (knd !== 'Settlement' && knd !== 'VAT received' && mth !== 'Rent' && mth !== 'VATRent') return;
+      if (isCarriedBalanceMethod(rc)) return;
       const lRaw = Number(rc.lbp_amount || 0);
       const u = mth === 'Rent' ? -round2(Number(rc.usd_amount != null ? rc.usd_amount : rc.amount || 0))
         : (knd === 'Settlement' ? round2(lRaw ? Number(rc.usd_amount || 0) : Number(rc.usd_amount != null ? rc.usd_amount : rc.amount || 0)) : 0);
@@ -65072,6 +65493,7 @@
     effectiveRows('settlements', scopedSeed('settlements'), null).forEach(sp => {
       const knd = settlementKind(sp);
       if (knd !== 'Payment' && knd !== 'VAT paid') return;
+      if (isCarriedBalanceMethod(sp)) return;
       const lRaw = Number(sp.lbp_amount || 0);
       const u = knd === 'Payment' ? -round2(lRaw ? Number(sp.usd_amount || 0) : Number(sp.usd_amount != null ? sp.usd_amount : sp.amount || 0)) : 0;
       const l = knd === 'Payment' ? -Math.round(lRaw) : -Math.round(lRaw || Math.round(Number(sp.amount || 0) * 89500));
@@ -71560,6 +71982,7 @@
     let trdOps = null;
     let icOps = null;
     let nbSnBrief = null;
+    let tsSnBrief = null;
     let customHitsMap = {};
 
     try {
@@ -71568,6 +71991,7 @@
       snSliceData = sentinelSlice();
       kpiData = getKPI();
       if (targetInd === 'Manufacturing') nbSnBrief = getNetBackSentinelData();
+      if (targetInd === 'Manufacturing' && isAlertRuleEnabled('S17')) tsSnBrief = getTruckSizeSentinelData();
       if (targetInd !== 'Manufacturing') {
         indExcTables = buildIndustrySentinelExceptionTables(targetInd) || [];
         if (canViewBooks && typeof getIndustryGlModel === 'function') {
@@ -72254,6 +72678,41 @@
             leadCl ? sanitizePlain(leadCl.headlineFr) : 'Aucune concentration anormale aux seuils ou paliers d\'heures sup.',
             leadCl ? sanitizePlain(leadCl.recommendationFr) : 'Conservez les seuils et paliers d\'heures sup. actuels.'
           ];
+        } else if (rid === 'S17') {
+          const tsd = tsSnBrief || { rows: [], loadsCnt: 0, trucksCnt: 0, m3Abs: 0, usdAbs: 0, judged: 0, lookback: 90, noLog: 0 };
+          expUsd = round2(safeNum(tsd.usdAbs));
+          rowCnt = safeNum(tsd.loadsCnt);
+          if (!(expUsd > 0)) {
+            physValEn = `${fmtNum(tsd.loadsCnt, 0)} Loads Off Size`;
+            physValAr = `${fmtNum(tsd.loadsCnt, 0)} نقلة بغير الحجم المسجّل`;
+            physValFr = `${fmtNum(tsd.loadsCnt, 0)} voyages hors volume`;
+          }
+          const tsTop = (tsd.rows || [])[0] || null;
+          topParty = tsTop ? sanitizePlain(`${tsTop.truck} (${tsTop.company})`) : 'No Repeat Offenders';
+          topSubEn = tsTop ? `${fmtNum(tsTop.loads)} loads at ${fmtNum(tsTop.ticket_size, 2)} m³, logged ${fmtNum(tsTop.logged_size, 2)} m³` : 'Every load carries its logged size';
+          topSubAr = tsTop ? `${fmtNum(tsTop.loads)} نقلة بحجم ${fmtNum(tsTop.ticket_size, 2)} م³، والمسجّل ${fmtNum(tsTop.logged_size, 2)} م³` : 'كل نقلة تحمل الحجم المسجّل';
+          topSubFr = tsTop ? `${fmtNum(tsTop.loads)} voyages à ${fmtNum(tsTop.ticket_size, 2)} m³, journal à ${fmtNum(tsTop.logged_size, 2)} m³` : 'Chaque voyage porte le volume du journal';
+          bEn = [
+            `${fmtNum(tsd.judged)} m³ tickets of the last ${fmtNum(tsd.lookback)} days were read against the size each truck's log gives that day: ${fmtNum(tsd.loadsCnt)} loads on ${fmtNum(tsd.trucksCnt)} trucks carry another size, ${fmtNum(tsd.m3Abs, 1)} m³ apart in all.`,
+            tsTop
+              ? `The most frequent is ${topParty}: ${topSubEn}, last on ${fmtDateDMY(tsTop.last_date)}; the differences are worth ${fmtUSD(expUsd, 0)} at the tickets' own rates.`
+              : 'No truck has repeated loads at a size other than its log.',
+            'For each truck, add a log from the day its size changed, or correct the tickets keyed at the wrong quantity, before signing off.'
+          ];
+          bAr = [
+            `تمت قراءة ${fmtNum(tsd.judged)} قسيمة بالمتر المكعب لآخر ${fmtNum(tsd.lookback)} يوماً مقابل الحجم الذي يعطيه سجل كل شاحنة في ذلك اليوم: ${fmtNum(tsd.loadsCnt)} نقلة على ${fmtNum(tsd.trucksCnt)} شاحنة تحمل حجماً آخر، بفارق إجمالي ${fmtNum(tsd.m3Abs, 1)} م³.`,
+            tsTop
+              ? `الأكثر تكراراً ${locOffender(topParty, 'ar')}: ${topSubAr}، آخرها في ${fmtDateDMY(tsTop.last_date)}؛ قيمة الفروقات ${fmtUSD(expUsd, 0)} بأسعار القسائم نفسها.`
+              : 'لا توجد شاحنة تكررت نقلاتها بحجم غير المسجّل في سجلها.',
+            'لكل شاحنة، أضف سجلاً من اليوم الذي تغيّر فيه الحجم، أو صحّح القسائم المدخلة بكمية خاطئة، قبل الاعتماد.'
+          ];
+          bFr = [
+            `${fmtNum(tsd.judged)} bons en m³ des ${fmtNum(tsd.lookback)} derniers jours ont été comparés au volume que le journal de chaque camion donne ce jour-là : ${fmtNum(tsd.loadsCnt)} voyages sur ${fmtNum(tsd.trucksCnt)} camions portent un autre volume, soit ${fmtNum(tsd.m3Abs, 1)} m³ d écart au total.`,
+            tsTop
+              ? `Le plus fréquent est ${locOffender(topParty, 'fr')} : ${topSubFr}, dernier le ${fmtDateDMY(tsTop.last_date)} ; les écarts valent ${fmtUSD(expUsd, 0)} aux tarifs des bons.`
+              : 'Aucun camion ne répète des voyages à un volume autre que celui de son journal.',
+            'Pour chaque camion, ajoutez un journal à partir du jour où le volume a changé, ou corrigez les bons saisis à la mauvaise quantité, avant validation.'
+          ];
         }
       } else {
         // 5 Sibling Verticals: H1-H7, R1-R7, T1-T7, P1-P7, I1-I7
@@ -72573,6 +73032,7 @@
         S12: { ar: 'اتفاقيات التوصيل دون نقطة تعادل النقل', fr: 'Accords de livraison sous le seuil de rentabilité du transport' },
         S13: { ar: 'مراقب انتهاء تصاريح العمل والإقامات والهويات', fr: 'Surveillance des expirations de permis, résidences et pièces d’identité' },
         S14: { ar: 'مراقب تكتّل عتبات وتثبيت الإضافي (30 يوماً)', fr: 'Veille concentration seuils & paliers HS (30j)' },
+        S17: { ar: 'نقلات بغير حجم الشاحنة المسجّل', fr: 'Voyages hors volume du journal du camion' },
         H1: { ar: 'تحويلات الشركات الشقيقة غير المقابلة', fr: 'Transferts inter-sociétés sans contrepartie miroir' },
         H2: { ar: 'مراقب فروقات المسارات الثنائية للشركات الشقيقة', fr: 'Contrôle d écart bilatéral entre sociétés sœurs' },
         H3: { ar: 'رقابة سقف مصاريف الخدمات المشتركة للقابضة', fr: 'Plafond des charges partagées Holding' },
@@ -73339,7 +73799,7 @@
           getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters,
           ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd,
           expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense,
-          isBulkDieselExpense, receiptKind, settlementKind, isDieselTankRefillIntake,
+          isBulkDieselExpense, receiptKind, settlementKind, isCarriedBalanceMethod, isDieselTankRefillIntake,
           activeUser, isOwner, canViewHub,
           coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2
         };
@@ -96252,6 +96712,134 @@
   }
 
   let _nbSentinelCache = null;
+  // Sentinel S17 (rule #28), owner 2026-11-18: m³ tickets whose quantity is not the size the truck's log gives that
+  // day. Every such load is either a size change nobody logged or a keying slip, and it is worth money per load.
+  // Deterministic and read-only: the size is the one the ticket forms lock to (a price agreement's truck size first,
+  // then the log in force that day); a day no log covers is not judged. Rows are grouped per truck, company, side
+  // and the two sizes, so one line reads "363234 · 27 on the tickets, 28 on the log · 14 loads".
+  let _tsSentinelCache = null;
+  let _tsSentinelScans = 0;   // how many times the tickets were actually read (the gate checks it is not on every screen change)
+  function getTruckSizeSentinelData() {
+    if (getActiveIndustry(STATE.company) !== 'Manufacturing') return null;
+    if (!SEED || !SEED._recordsReady) return null; // tickets are not in memory yet
+    const canSales = typeof canAccessTable !== 'function' || canAccessTable('sales_tickets');
+    const canRaw = typeof canAccessTable !== 'function' || canAccessTable('raw_purchases');
+    if (!canSales && !canRaw) return null;
+    const today = todayISO();
+    const recs = SEED.records || {};
+    const u = activeUser() || {};
+    const singleBu = COMPANY_BU_MATCH[STATE.company] || '';
+    const lookback = Math.min(730, Math.max(1, Math.round(Number(getAlertParam('S17', 'lookback_days', 90)) || 90)));
+    const tol = Math.max(0, Number(getAlertParam('S17', 'tolerance_m3', 0.25)) || 0);
+    const minLoads = Math.max(1, Math.round(Number(getAlertParam('S17', 'min_loads', 2)) || 1));
+    const fromDt = new Date(today + 'T00:00:00Z');
+    fromDt.setUTCDate(fromDt.getUTCDate() - lookback);
+    const fromIso = fromDt.toISOString().slice(0, 10);
+    const key = [SEED._customRev || 0, STATE._customRev || 0, _WIN_REV, STATE.company, today, u.id || u.email || '', u.role || '',
+      (recs.sales_tickets || []).length, (recs.raw_purchases || []).length, (recs.equipment || []).length, (recs.price_rules || []).length,
+      isOfficialScopeActive() ? 'OFF' : 'ALL', lookback, tol, minLoads, canSales ? 1 : 0, canRaw ? 1 : 0, allowedCompanyNames().join(',')].join('|');
+    if (_tsSentinelCache && _tsSentinelCache.key === key) return _tsSentinelCache.data;
+    _tsSentinelScans += 1;
+
+    const eqByKey = new Map();
+    (recs.equipment || []).forEach(e => {
+      if (!e || e.voided) return;
+      [norm(e.name || e.equipment), norm(e.plate_no)].forEach(k => { if (k && !eqByKey.has(k)) eqByKey.set(k, e); });
+    });
+    // Trucks a price agreement gives its own size to: only their tickets need the agreement lookup
+    const agrTrucks = new Set();
+    (recs.price_rules || []).forEach(r => { if (r && !r.voided && Number(r.truck_size) > 0 && r.truck) agrTrucks.add(norm(r.truck)); });
+    const allowedCoSet = new Set(allowedCompanyNames().map(n => norm(n)));
+    const groups = new Map();
+    let scanned = 0, judged = 0, noLog = 0;
+    const scan = (tableKey, side) => {
+      const pool = (recs[tableKey] || []).filter(r => {
+        if (!r || r.voided || r.removed_slip || r._is_statement_adj) return false;
+        const dt = String(r.date || '').slice(0, 10);
+        if (!dt || dt < fromIso || dt > today) return false;
+        if (!/^m/i.test(String(r.uom || 'm³'))) return false;
+        return Boolean(norm(r.truck)) && Number(r.qty) > 0;
+      });
+      if (!pool.length) return;
+      const scoped = filterRecords(pool, { ignorePeriod: true, ignoreCompany: true, ignoreSearch: true, tableKey })
+        .filter(r => !singleBu || canonTwBu(r.company || 'WTC') === singleBu)
+        .filter(r => allowedCoSet.has(norm(canonTwBu(r.company || 'WTC'))));
+      scoped.forEach(r => {
+        if (isReturnTicket(r)) return;
+        const eq = eqByKey.get(norm(r.truck));
+        if (!eq) return;
+        scanned += 1;
+        const dt = String(r.date || '').slice(0, 10);
+        const co = r.company || 'WTC';
+        let expected = 0, src = '';
+        if (agrTrucks.has(norm(eq.name)) || agrTrucks.has(norm(eq.plate_no))) {
+          const agr = side === 'sales'
+            ? resolveAgreementTruckSize({ side: 'sales', company: co, customer: r.customer, site: r.site, product: r.product, date: dt, truckRow: eq })
+            : resolveAgreementTruckSize({ side: 'raw', company: co, site: r.site, product: r.product, siteOwner: r.site_owner, truckOwner: r.truck_owner, date: dt, truckRow: eq });
+          if (agr && Number(agr.size) > 0) { expected = Number(agr.size); src = 'agreement'; }
+        }
+        if (!expected) {
+          const win = resolveTruckWindow(eq, co, dt, side === 'sales' ? { side: 'sales', customer: r.customer, site: r.site } : { side: 'raw', site: r.site });
+          if (win && Number(win.cap) > 0) { expected = Number(win.cap); src = 'log'; }
+        }
+        if (!expected) { noLog += 1; return; }
+        judged += 1;
+        const qty = Number(r.qty || 0);
+        const diff = qty - expected;
+        if (Math.abs(diff) <= tol + 1e-9) return;
+        // What the difference is worth at the ticket's own rates (per m³ legs only; a fixed-sum leg does not move)
+        const rate = side === 'sales'
+          ? (r.mat_indiff ? 0 : Number(r.unit_price || 0)) + ((String(r.sale_type || 'Delivery') === 'Delivery' && !r.trans_indiff) ? Number(r.trans_unit_price || 0) : 0)
+          : (r.mat_indiff ? 0 : Number(r.unit_cost || 0)) + (r.trans_indiff ? 0 : Number(r.trans_unit_cost || 0));
+        const gk = [norm(eq.name), canonTwBu(co), side, expected.toFixed(3), qty.toFixed(3), src].join('|');
+        let g = groups.get(gk);
+        if (!g) {
+          g = { rkey: 'equipment', rid: String(eq.id || eq.name || ''), truck: String(eq.name || r.truck), company: canonTwBu(co), side,
+            side_label: side === 'sales' ? 'Sales' : 'Raw Material', logged_size: expected, ticket_size: qty, size_source: src,
+            source_label: src === 'agreement' ? 'Price Agreement' : 'Truck Log', loads: 0, m3_diff: 0, usd_diff: 0, first_date: dt, last_date: dt, last_ticket: '' };
+          groups.set(gk, g);
+        }
+        g.loads += 1;
+        g.m3_diff = round2(g.m3_diff + diff);
+        g.usd_diff = round2(g.usd_diff + diff * rate);
+        if (dt < g.first_date) g.first_date = dt;
+        if (dt >= g.last_date) { g.last_date = dt; g.last_ticket = String(r.ticket_no || ''); }
+      });
+    };
+    if (canSales) scan('sales_tickets', 'sales');
+    if (canRaw) scan('raw_purchases', 'raw');
+    const rows = Array.from(groups.values()).filter(g => g.loads >= minLoads)
+      .sort((a, b) => b.loads - a.loads || Math.abs(b.usd_diff) - Math.abs(a.usd_diff) || String(b.last_date).localeCompare(String(a.last_date)) || a.truck.localeCompare(b.truck));
+    const trucks = new Set(rows.map(g => norm(g.truck)));
+    const data = {
+      rows, lookback, tol, minLoads, fromIso, scanned, judged, noLog,
+      trucksCnt: trucks.size,
+      loadsCnt: rows.reduce((s, g) => s + g.loads, 0),
+      m3Abs: round2(rows.reduce((s, g) => s + Math.abs(g.m3_diff), 0)),
+      usdAbs: round2(rows.reduce((s, g) => s + Math.abs(g.usd_diff), 0)),
+      singleCnt: groups.size - rows.length,
+    };
+    _tsSentinelCache = { key, data };
+    return data;
+  }
+  if (typeof window !== 'undefined') {
+    // Read by build/verify_truck_size_sentinel.mjs
+    window.__mfgTruckSizeSentinel = {
+      data: () => getTruckSizeSentinelData(),
+      item: () => (buildSentinelItems() || []).find(x => x && x.id === 'S17') || null,
+      clearCache: () => { _tsSentinelCache = null; },
+      scans: () => _tsSentinelScans,
+      // The gate's on/off switch (headless only): the rule as Alerts & Thresholds would pause it
+      setRuleEnabledForCheck: on => {
+        if (!window.__MFG_HEADLESS_TEST) return isAlertRuleEnabled('S17');
+        const st = ensureAlertRulesState();
+        st.overrides.S17 = Object.assign({}, st.overrides.S17, { enabled: Boolean(on) });
+        invalidateAlertRuleCaches();
+        return isAlertRuleEnabled('S17');
+      },
+    };
+  }
+
   function getNetBackSentinelData() {
     if (getActiveIndustry(STATE.company) !== 'Manufacturing') return null;
     if (typeof canAccessTable === 'function' && !canAccessTable('price_rules')) return null;
@@ -96936,8 +97524,12 @@
     FORM_UI.lastCustomer = '';
     recalcForm();
     if (cleanBefore) {
-      FORM_UI.initialModalSig = getEntryModalStateSignature();
+      FORM_UI.initialModalSig = getEntryModalStateSignature(); markEntryModalBaseline();
       FORM_UI.userInteracted = false;
+    } else if (FORM_UI.initialModalFields && siteEl) {
+      // The move re-wrote the site on the form and on the row being edited: for the "what did the person change"
+      // check the new site is the starting point, not a change.
+      FORM_UI.initialModalFields[siteEl.id || 'f_site'] = String(siteEl.value == null ? '' : siteEl.value).trim();
     }
     toast(`✓ Moved to Own Site: ${res.newSite}`);
     return res;
@@ -101511,6 +102103,7 @@
               <button type="button" class="btn" id="btnCancelLogEquipDriver" hidden>Cancel</button>
             </div>
           </div>
+          <div class="tw-save-preview" id="modalTwSavePreview" role="status" aria-live="polite" hidden></div>
         ` : ''}
         <div class="table-wrap" style="max-height:210px;overflow:auto">
           <table class="ledger-table">
@@ -101527,7 +102120,7 @@
                 const sideLbl = w.side === 'sales' ? 'Sales' : (w.side === 'raw' ? 'Raw & Trans' : (w.side === 'fuel' ? 'Diesel & Lub.' : 'All Tables'));
                 const wCo = w.co || 'WTC';
                 return `
-                  <tr data-modal-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${canonTwBu(wCo) !== canonTwBu(defCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to edit this log entry">
+                  <tr data-modal-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${canonTwBu(wCo) !== canonTwBu(defCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to start a new log from this entry">
                     <td>${coBadge(wCo)}</td>
                     <td><span class="badge badge-info">${esc(sideLbl)}</span></td>
                     <td class="mono">${esc(w.s || '2024-01-01')}</td>
@@ -101587,6 +102180,73 @@
         }
       });
     }
+    // What the button would do, said under it before it is pressed (same line as the truck's 360° log form)
+    const modalTwEditIdx = () => ((logBox && logBox.dataset.editModalWinIdx != null && logBox.dataset.editModalWinIdx !== '') ? Number(logBox.dataset.editModalWinIdx) : -1);
+    const readModalTwSpec = () => {
+      const eIdx = modalTwEditIdx();
+      // Changing a log keeps its scope and size. A new assignment, started from a row or not, is a general one at
+      // the truck's current size, as before: this form has no size field, so it never takes a size from an old row.
+      const refWin = (eIdx >= 0 && Array.isArray(targetEq.adj_windows)) ? targetEq.adj_windows[eIdx] : null;
+      return {
+        co: val('f_log_co') || defCo,
+        side: (refWin && refWin.side) || 'both',
+        s: val('f_log_start') || todayISO(),
+        e: val('f_log_end') || '',
+        cap: Number((refWin && refWin.cap) || targetEq.capacity || 0),
+        own: val('f_log_owner'),
+        drv: val('f_log_driver'),
+        cust: (refWin && refWin.cust) || '',
+        site: (refWin && refWin.site) || '',
+        persistTicketBackfill: true
+      };
+    };
+    const refreshModalTwPreview = () => {
+      const host = $('modalTwSavePreview');
+      if (!host || !canSwitchEquipmentDriver()) return;
+      const spec = readModalTwSpec();
+      if (!spec.own || !spec.drv || !spec.s) { paintTruckLogSavePreview(host, null); return; }
+      let plan = null;
+      try { plan = describeTruckLogSave(targetEq, spec, modalTwEditIdx()); } catch (_) { plan = null; }
+      paintTruckLogSavePreview(host, plan, { showSize: false });
+    };
+    // While typing the line waits for a pause (it reads the truck's tickets); a pick or a button refreshes it at once
+    let modalTwPrevTimer = 0;
+    const queueModalTwPreview = () => {
+      if (modalTwPrevTimer) clearTimeout(modalTwPrevTimer);
+      modalTwPrevTimer = setTimeout(() => { modalTwPrevTimer = 0; if ($('modalTwSavePreview')) refreshModalTwPreview(); }, 180);
+    };
+    ['f_log_co', 'f_log_start', 'f_log_end', 'f_log_owner', 'f_log_driver'].forEach(fid => {
+      const el = $(fid);
+      if (!el) return;
+      el.addEventListener('input', queueModalTwPreview);
+      el.addEventListener('change', queueModalTwPreview);
+    });
+    refreshModalTwPreview();
+    // Clicking a row starts a NEW assignment from it (its owner and driver, starting today); changing a log itself is
+    // the row's Edit button. A change "from now on" must never rewrite the days already worked.
+    const startModalWinNewFrom = idx => {
+      if (!canSwitchEquipmentDriver() || !logBox || !Array.isArray(targetEq.adj_windows)) return;
+      const w = targetEq.adj_windows[idx];
+      if (!w) return;
+      logBox.dataset.editModalWinIdx = '';
+      if ($('f_log_co')) $('f_log_co').value = canonTwBu(w.co || defCo);
+      syncModalTwCoRows();
+      if ($('f_log_start')) {
+        const minNewS = getTruckWindowMinStart(targetEq, { co: w.co || defCo, side: 'both', cust: '', site: '' }, -1);
+        if (minNewS) $('f_log_start').setAttribute('min', minNewS);
+        else $('f_log_start').removeAttribute('min');
+        $('f_log_start').value = (minNewS && minNewS > today) ? minNewS : today;
+      }
+      if ($('f_log_end')) $('f_log_end').value = '';
+      if ($('f_log_owner')) $('f_log_owner').value = w.own || targetEq.supplier || defLogOwner || '';
+      if ($('f_log_driver')) $('f_log_driver').value = w.drv || targetEq.default_driver || '';
+      if (logBtn) logBtn.textContent = '+ Log Driver Assignment';
+      if (cancelLogBtn) cancelLogBtn.hidden = false;
+      logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => {
+        tr.style.background = Number(tr.getAttribute('data-modal-tw-row-idx')) === idx ? 'rgba(74,144,217,0.10)' : '';
+      });
+      refreshModalTwPreview();
+    };
     const startModalWinEdit = idx => {
       if (!canSwitchEquipmentDriver() || !logBox || !Array.isArray(targetEq.adj_windows)) return;
       const w = targetEq.adj_windows[idx];
@@ -101608,6 +102268,7 @@
       logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => {
         tr.style.background = Number(tr.getAttribute('data-modal-tw-row-idx')) === idx ? 'rgba(200,157,84,0.14)' : '';
       });
+      refreshModalTwPreview();
     };
     if (cancelLogBtn) {
       cancelLogBtn.addEventListener('click', ev => {
@@ -101626,6 +102287,7 @@
         if (logBtn) logBtn.textContent = '+ Log Driver Assignment';
         cancelLogBtn.hidden = true;
         logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => { tr.style.background = ''; });
+        refreshModalTwPreview();
       });
     }
     logWrap.querySelectorAll('[data-edit-modal-tw-idx]').forEach(btn => {
@@ -101638,7 +102300,7 @@
     logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => {
       tr.addEventListener('click', ev => {
         if (ev.target && ev.target.closest('button, a, [data-rel-key]')) return;
-        startModalWinEdit(Number(tr.getAttribute('data-modal-tw-row-idx')));
+        startModalWinNewFrom(Number(tr.getAttribute('data-modal-tw-row-idx')));
       });
     });
     if (logBtn) {
@@ -101653,20 +102315,9 @@
         if (!ownVal) { toast('Enter the Truck Owner name to log.', 'err'); return; }
         if (!drvVal) { toast('Enter the Active / Substitute Driver name to log.', 'err'); return; }
         if (eVal && eVal < sVal) { toast('End Date cannot be before Start Date.', 'err'); return; }
-        const rawEditIdx = (logBox && logBox.dataset.editModalWinIdx != null && logBox.dataset.editModalWinIdx !== '') ? Number(logBox.dataset.editModalWinIdx) : -1;
-        const editWin = (rawEditIdx >= 0 && Array.isArray(targetEq.adj_windows)) ? targetEq.adj_windows[rawEditIdx] : null;
-        const winSpec = {
-          co: logCo,
-          side: (editWin && editWin.side) || 'both',
-          s: sVal,
-          e: eVal,
-          cap: Number((editWin && editWin.cap) || targetEq.capacity || 0),
-          own: ownVal,
-          drv: drvVal,
-          cust: (editWin && editWin.cust) || '',
-          site: (editWin && editWin.site) || '',
-          persistTicketBackfill: true
-        };
+        const rawEditIdx = modalTwEditIdx();
+        // The same reading of the form the line under the button used, so the save does what the line said
+        const winSpec = readModalTwSpec();
         const chk = validateTruckWindowChronology(targetEq, winSpec, rawEditIdx);
         if (!chk.ok) {
           toast(chk.reason, 'err');
@@ -109378,6 +110029,8 @@
       ? JSON.parse(JSON.stringify(window.MFG_GEO.exportGeoConfig()))
       : null;
     const prevSeedRev = (SEED && SEED._customRev) || 0;
+    const extraDrops = [];
+    const dropOnRestore = (tk, id) => { if (tk && id != null && String(id)) extraDrops.push([String(tk), String(id)]); };
     const restore = (errMsg) => {
       if (STATE && STATE.customRecords) {
         Object.keys(STATE.customRecords).forEach(k => {
@@ -109404,6 +110057,14 @@
             }
           });
         });
+        // Rows the save added after this snapshot was taken (a kept-period save adds a new entry): out again
+        extraDrops.forEach(([tk, sid]) => {
+          const arr = SEED.records[tk];
+          if (!Array.isArray(arr)) return;
+          for (let i = arr.length - 1; i >= 0; i--) {
+            if (arr[i] && String(arr[i].id) === sid) arr.splice(i, 1);
+          }
+        });
         SEED._customRev = prevSeedRev;
       }
       if (geoSnap && window.MFG_GEO && typeof window.MFG_GEO.restoreGeoConfigSnapshot === 'function') {
@@ -109418,7 +110079,7 @@
       renderApp();
       if (errMsg) toast(errMsg, 'err');
     };
-    return { snapSeedRow, restore };
+    return { snapSeedRow, restore, dropOnRestore };
   }
 
   const isServerRejectRes = r => Boolean(r && r.ok === false && !r.networkError && (r.status == null || Number(r.status) >= 400));
@@ -110392,6 +111053,9 @@
         : pendSalOrigSnap;
       const isEffModalTbl = isEffectiveSeriesTable(crKey, record);
       let touchedModalPeers = [];
+      // Set when this save kept the earlier period on the row as it was and went on as a new entry (a later Start
+      // Date with another value): `record` then carries a new id and is handled as an added entry from here on.
+      let keptPeriodModal = null;
       if (isEffModalTbl && record.start_date) {
         if ('date' in record) record.date = record.start_date;
         if (editOrigModal && _rowEndIso(editOrigModal) && !_rowEndIso(record)) {
@@ -110399,14 +111063,21 @@
         } else if (_rowEndIso(record)) {
           record._reopenedExplicitly = false;
         }
-        touchedModalPeers = syncChronologicalSeriesNeighbors(crKey, record, editOrigModal, extraApiPosts);
+        // What the form knows about this edit: whether the person changed anything but dates, notes or the label
+        const modalValueHint = (isEditingExisting && editOrigModal) ? { userChangedValue: entryModalUserChangedValue() } : undefined;
+        touchedModalPeers = syncChronologicalSeriesNeighbors(crKey, record, editOrigModal, extraApiPosts, modalValueHint);
+        keptPeriodModal = _lastChronoKeptPeriod;
+        if (keptPeriodModal && modalSaveRollbackSnap && typeof modalSaveRollbackSnap.dropOnRestore === 'function') {
+          modalSaveRollbackSnap.dropOnRestore(crKey, keptPeriodModal.newId);
+        }
       }
       if (record && (crKey === 'documents' || (Array.isArray(record.attachments) && record.attachments.length) || Boolean(editOrigModal))) {
         syncRecordAttachmentsToDocumentVault(crKey, record, extraApiPosts);
       }
       applyCustomRecordsToSeed();
       if (isEffModalTbl || crKey === 'products') {
-        backfillEffectiveLogChange(crKey, record, editOrigModal, extraApiPosts, { touchedPeers: touchedModalPeers });
+        backfillEffectiveLogChange(crKey, record, keptPeriodModal ? null : editOrigModal, extraApiPosts,
+          { touchedPeers: touchedModalPeers, notBefore: keptPeriodModal ? keptPeriodModal.newFrom : '' });
         applyCustomRecordsToSeed();
       }
       if (backpayCtx) {
@@ -110441,7 +111112,10 @@
         const qId = (errObj && (errObj.conflictId || errObj.id)) || conflictId;
         const canonQTbl = qTbl === 'staff' ? 'staff_members' : (qTbl === 'freelance' ? 'freelance_entries' : qTbl);
         if (sameNameSaveSnap) restoreStaffSameNameSnapshot(sameNameSaveSnap);
-        if (opts && opts.quarantine) {
+        // A save that kept the earlier period added a new entry after that snapshot was taken: out again
+        dropChronoKeptPeriodEntry(keptPeriodModal);
+        // ... and with it gone there is nothing left to set aside (a search by name could pick another row)
+        if (opts && opts.quarantine && !keptPeriodModal) {
           if (!preSaveSameNameIds || !preSaveSameNameIds.has(`${canonQTbl}:${String(qId || '')}`)) {
             quarantineSameNameRejectedRecord(qTbl, qId, errObj, null);
           }
@@ -110481,7 +111155,12 @@
             }
           }
           if (hasServerApi() && !isDemoScopeActive()) {
-            if (!isEditingExisting && !isUpdatingPending) {
+            if (keptPeriodModal) {
+              // The save had gone on as a new entry: that entry is struck out on the server and the row it was
+              // typed over goes back as it was.
+              await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
+              if (editCtx && editCtx.orig) await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { same_person_confirmed: true }), { deferRender: true });
+            } else if (!isEditingExisting && !isUpdatingPending) {
               await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, voided_at: new Date().toISOString() }), { deferRender: true });
             } else if (editCtx && editCtx.orig && String(editCtx.orig.id || '') === String(record.id || '')) {
               await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { same_person_confirmed: true }), { deferRender: true });
@@ -110526,7 +111205,7 @@
         FORM_UI.lastAttTimeKey = '';
         recalcForm();
         FORM_UI.userInteracted = false;
-        FORM_UI.initialModalSig = getEntryModalStateSignature();
+        FORM_UI.initialModalSig = getEntryModalStateSignature(); markEntryModalBaseline();
       } else if (afterSaveTarget && afterSaveTarget.type && afterSaveTarget.type !== 'close') {
         if (afterSaveTarget.type === 'form' && afterSaveTarget.formType) {
           const nextPf = afterSaveTarget.prefill ? Object.assign({}, afterSaveTarget.prefill) : null;
@@ -110575,6 +111254,7 @@
         toast(`${CR_LABEL[crKey].replace(/^./, ch => ch.toUpperCase())} posted · ${record.name}`, 'ok');
       }
       if (backpayHit) toast(backpayToastText(backpayHit, record.staff || record.name), 'warn');
+      if (keptPeriodModal) toast(chronoKeptPeriodToastText(keptPeriodModal), 'ok');
       renderApp();
       if (!isEditingExisting && !isUpdatingPending && crKey === 'salaries' && record && !record.voided && canViewPayrollDollarAmounts()) {
         const _salRecCtx = buildSalaryVoucherReceiptContext(record);
@@ -110593,7 +111273,13 @@
           await rollbackRecordListOnServer(extraRes && extraRes.postedResults);
           const rbOk = await rollbackRecordOnServer(mainPostRes);
           if (!rbOk) {
-            if (isEditingExisting && editCtx && editCtx.orig && !canModifyTextOnly() && canModifyRecord()) {
+            if (keptPeriodModal) {
+              // The save had gone on as a new entry: strike that entry out and put the row it was typed over back
+              await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, void_reason: 'Rolled back after peer save rejection', modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
+              if (editCtx && editCtx.orig) {
+                await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
+              }
+            } else if (isEditingExisting && editCtx && editCtx.orig && !canModifyTextOnly() && canModifyRecord()) {
               await postRecordToLocalApi(crKey, Object.assign({}, editCtx.orig, { modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
             } else if (!isEditingExisting && canVoid()) {
               await postRecordToLocalApi(crKey, Object.assign({}, record, { voided: true, void_reason: 'Rolled back after peer save rejection', modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
@@ -110741,6 +111427,10 @@
       const stamp = (meta && meta.restoreStampIso) || (rowObj && rowObj.restored_at) || '';
       out.restored_at = stamp;
       out.modified_at = stamp;
+      if ((meta && meta.reopenedExplicitly) || (rowObj && rowObj._reopenedExplicitly)) {
+        out._reopenedExplicitly = true;
+        if (rowObj && rowObj.rev != null) out.rev = rowObj.rev;
+      }
     }
     return out;
   }
@@ -110759,6 +111449,10 @@
     const candRestore = r || archivedSeed;
     const scopeErr = _checkVoidRestoreScopeAllowed(crKey, candRestore);
     if (scopeErr) { toast(scopeErr, 'err'); return false; }
+    if (candRestore && /^(system-topup|sharepoint top-up)/i.test(String(candRestore.voided_by || '').trim())) {
+      toast('Synced workbook rows cannot be restored directly.', 'err');
+      return false;
+    }
     const candRestoreProbe = candRestore ? Object.assign({}, candRestore, { voided: false }) : null;
     if (candRestoreProbe && isEffectiveSeriesTable(crKey, candRestoreProbe) && candRestoreProbe.start_date) {
       const cStart = String(candRestoreProbe.start_date).slice(0, 10);
@@ -110811,6 +111505,10 @@
         siteSplitReset = true;
       });
     }
+    const wasWorkbookMatch = Boolean(
+      (candRestore && (candRestore.twin_of || candRestore.twin_difference))
+      || /^(workbook match|workbook reconciliation)/i.test(String((candRestore && candRestore.voided_by) || '').trim())
+    );
     const cleanVoidMeta = obj => {
       if (!obj || typeof obj !== 'object') return;
       delete obj.voided_by;
@@ -110825,12 +111523,18 @@
       delete obj.voided_with_parent;
       delete obj.void_note_updated_by;
       delete obj.void_note_updated_at;
+      delete obj.twin_of;
+      delete obj.twin_difference;
     };
     const restoreWho = (activeUser() && (activeUser().full_name || activeUser().name || activeUser().email)) || '';
     let cleanSeed = null;
     if (archivedSeed && SEED.records && Array.isArray(SEED.records[crKey])) {
       cleanSeed = Object.assign({}, archivedSeed, { voided: false });
       cleanVoidMeta(cleanSeed);
+      if (wasWorkbookMatch) {
+        cleanSeed._reopenedExplicitly = true;
+        cleanSeed.rev = Number(cleanSeed.rev || 1) + 1;
+      }
       if (!SEED.records[crKey].some(x => x && String(x.id) === String(cleanSeed.id))) {
         SEED.records[crKey].unshift(cleanSeed);
       }
@@ -110842,6 +111546,10 @@
       if (restoreWho) r.restored_by = restoreWho;
       r.modified_at = restoreStampIso;
       cleanVoidMeta(r);
+      if (wasWorkbookMatch) {
+        r._reopenedExplicitly = true;
+        r.rev = Number(r.rev || 1) + 1;
+      }
     }
     const extraRestorePosts = [];
     if (gtRestorePeer) {
@@ -110930,7 +111638,7 @@
 
     const mainRestoreTarget = r || cleanSeed;
     const sparseBase = !canModifyData() || ((crKey === 'sites' || crKey === 'regions') && !canWriteGeoConfig() && !siteSplitReset);
-    const metaRestore = { restoreStampIso };
+    const metaRestore = { restoreStampIso, reopenedExplicitly: wasWorkbookMatch };
     const mainPayload = mainRestoreTarget
       ? (sparseBase
         ? _buildSparseVoidApiRecord(crKey, mainRestoreTarget, canonTargetId, false, metaRestore)
@@ -111100,6 +111808,7 @@
       if (whoEmail) seedRow.voided_by_email = whoEmail;
       seedRow.voided_at = when;
       if (reasonOpt) seedRow.void_reason = reasonOpt;
+      delete seedRow._reopenedExplicitly;
     }
     if (r) {
       if (seedRow && !r._seed_orig) {
@@ -111112,6 +111821,7 @@
       r.voided_at = when;
       if (reasonOpt) r.void_reason = reasonOpt;
       delete r.restored_at;
+      delete r._reopenedExplicitly;
     } else if (seedRow) {
       const sOrig = captureSeedOrigSnapshot(crKey, seedRow);
       r = Object.assign({}, seedRow, { id: seedRow.id || q, voided: true, voided_by: who, voided_at: when });
@@ -111119,6 +111829,7 @@
       if (reasonOpt) r.void_reason = reasonOpt;
       if (sOrig && !r._seed_orig) r._seed_orig = buildSeedOrigMeta(sOrig);
       delete r.restored_at;
+      delete r._reopenedExplicitly;
       list.unshift(r);
     }
     const extraVoidPosts = [];
@@ -111423,6 +112134,25 @@
       }
     }
 
+    const isSyncTwinRow = row => Boolean(row && /^(system-topup|sharepoint top-up)/i.test(String(row.voided_by || '').trim()));
+    const hasBlockedSyncTwinEdit = Boolean(
+      (editKey && storeEdits[editKey] && storeEdits[editKey].voided && isSyncTwinRow(storeEdits[editKey]))
+      || (!editKey && primaryId && Object.keys(storeEdits).some(ek => {
+        const ed = storeEdits[ek];
+        if (!ed || !ed.voided || !isSyncTwinRow(ed)) return false;
+        const pid = String(ed.primaryId || ek.split('::').pop() || '').trim();
+        return pid === primaryId && (!ind || !ed.ind || ed.ind === ind);
+      }))
+    );
+    const hasBlockedSyncTwinCustom = (bucket ? [bucket] : Object.keys(storeCustom)).some(bk => {
+      const arr = storeCustom[bk];
+      return Array.isArray(arr) && arr.some(r => r && r.voided && String(r.id || r.code || '').trim() === primaryId && isSyncTwinRow(r));
+    });
+    if (hasBlockedSyncTwinEdit || hasBlockedSyncTwinCustom) {
+      toast('Synced workbook rows cannot be restored directly.', 'err');
+      return false;
+    }
+
     const nowIso = nextMonotonicIso();
     const au = activeUser() || {};
     const restoreWho = String(au.full_name || au.name || au.email || '').trim();
@@ -111433,6 +112163,11 @@
 
     const stripMeta = obj => {
       if (!obj || typeof obj !== 'object') return;
+      const isWbMatch = Boolean(
+        obj.twin_of
+        || obj.twin_difference
+        || /^(workbook match|workbook reconciliation)/i.test(String(obj.voided_by || '').trim())
+      );
       obj.voided = false;
       delete obj._scheduleVoided;
       delete obj.voided_by;
@@ -111447,6 +112182,9 @@
       delete obj.voided_with_parent;
       delete obj.void_note_updated_by;
       delete obj.void_note_updated_at;
+      delete obj.twin_of;
+      delete obj.twin_difference;
+      if (isWbMatch) obj._reopenedExplicitly = true;
       obj.restored_at = nowIso;
       if (restoreWho) obj.restored_by = restoreWho;
       obj.rev = Number(obj.rev || 1) + 1;
@@ -111770,6 +112508,69 @@
     return parts.join('|');
   }
 
+  // The entry form's fields by id, as the signature above reads them (kept when the form opens, so a save can tell
+  // which fields the person changed).
+  function entryModalFieldMap() {
+    const body = $('modalBody');
+    const out = {};
+    if (!body) return out;
+    body.querySelectorAll('input, select, textarea').forEach(el => {
+      if (!el.id && !el.name) return;
+      if (el.type === 'file') return;
+      if (el.classList.contains('pa-select-filter') || el.classList.contains('co-multi-search') || el.classList.contains('aie-voice-input') || el.id === 'openLoansSearchInput' || el.id === 'siteRulesSearchInput' || el.id === 'tktSitePinPasteInp') return;
+      out[el.id || el.name] = el.type === 'checkbox' ? (el.checked ? '1' : '0') : String(el.value == null ? '' : el.value).trim();
+    });
+    return out;
+  }
+  function markEntryModalBaseline() {
+    FORM_UI.initialModalFields = entryModalFieldMap();
+    FORM_UI.touchedFields = new Set();
+    FORM_UI.touchedAll = false;
+  }
+  function clearEntryModalBaseline() {
+    FORM_UI.initialModalFields = null;
+    FORM_UI.touchedFields = new Set();
+    FORM_UI.touchedAll = false;
+  }
+  // Form fields that are a date, a note or the row's label: changing one of them is never "another value".
+  const ENTRY_NON_VALUE_FIELD_RE = /^(f_date|f_repdate|f_enddate|f_startdate|f_start|f_end|f_notes|f_name)$/;
+  // Notes which fields the person worked on. Typing or picking in a field marks that field. A pill, a suggestion or
+  // a preset button can set other fields than the one it sits in, so it marks the whole form, unless it belongs to
+  // a date or note field (a calendar button, a clear button).
+  function noteEntryModalTouch(ev) {
+    const t = ev && ev.target;
+    if (!t || !t.closest) return;
+    if (!(FORM_UI.touchedFields instanceof Set)) FORM_UI.touchedFields = new Set();
+    if (ev.type !== 'click') {
+      const k = t.id || t.name;
+      if (k) FORM_UI.touchedFields.add(k);
+      return;
+    }
+    const wrap = t.closest('.form-field');
+    const ids = wrap ? Array.from(wrap.querySelectorAll('input, select, textarea')).map(el => el.id || el.name).filter(Boolean) : [];
+    ids.forEach(k => FORM_UI.touchedFields.add(k));
+    if (!ids.length || !ids.every(k => ENTRY_NON_VALUE_FIELD_RE.test(k))) FORM_UI.touchedAll = true;
+  }
+  // Did the person change a field that is not a date, a note or the label, so that it now reads differently from
+  // when the form opened? undefined when the form has no baseline to compare with.
+  function entryModalUserChangedValue() {
+    const base = FORM_UI.initialModalFields;
+    if (!base || typeof base !== 'object') return undefined;
+    const now = entryModalFieldMap();
+    const touched = FORM_UI.touchedFields instanceof Set ? FORM_UI.touchedFields : new Set();
+    const same = (a, b) => {
+      const sa = String(a == null ? '' : a).trim(), sb = String(b == null ? '' : b).trim();
+      if (sa === sb) return true;
+      if (sa !== '' && sb !== '') {
+        const na = Number(sa.replace(/,/g, '')), nb = Number(sb.replace(/,/g, ''));
+        if (Number.isFinite(na) && Number.isFinite(nb)) return Math.abs(na - nb) < 1e-6;
+      }
+      return norm(sa) === norm(sb);
+    };
+    const keys = FORM_UI.touchedAll ? Array.from(new Set(Object.keys(now).concat(Object.keys(base)))) : Array.from(touched);
+    return keys.some(k => !ENTRY_NON_VALUE_FIELD_RE.test(k) && !same(now[k], base[k]));
+  }
+
   function isEntryModalDirty() {
     const modal = $('entryModal');
     if (!modal || modal.hidden) return false;
@@ -111870,7 +112671,7 @@
     const target = FORM_UI.pendingSwitchTarget;
     hideEntryUnsavedPrompt();
     FORM_UI.userInteracted = false;
-    FORM_UI.initialModalSig = '';
+    FORM_UI.initialModalSig = ''; clearEntryModalBaseline();
     if (!target || target.type === 'close') {
       closeEntryModal(true);
       return;
@@ -112377,6 +113178,7 @@
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
           }
           FORM_UI.userInteracted = true;
+          noteEntryModalTouch(ev);
         };
         body.addEventListener('input', markDirtyInteraction, true);
         body.addEventListener('change', markDirtyInteraction, true);
@@ -112878,7 +113680,7 @@
       window.MFG_I18N.translateDom(modal || document.body);
     }
     FORM_UI.userInteracted = false;
-    FORM_UI.initialModalSig = getEntryModalStateSignature();
+    FORM_UI.initialModalSig = getEntryModalStateSignature(); markEntryModalBaseline();
   }
 
   function closeEntryModal(force, ev) {
@@ -112891,7 +113693,7 @@
     }
     hideEntryUnsavedPrompt();
     FORM_UI.userInteracted = false;
-    FORM_UI.initialModalSig = '';
+    FORM_UI.initialModalSig = ''; clearEntryModalBaseline();
     if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.resetModalState === 'function') {
       window.MFG_SMART_SCAN.resetModalState();
     }
@@ -118878,6 +119680,7 @@
                 </div>
               </div>
             </div>
+            <div class="tw-save-preview" id="inspTwSavePreview" role="status" aria-live="polite" hidden></div>
           ` : ''}
           <div class="table-wrap" style="max-height:260px;overflow:auto">
             <table class="ledger-table">
@@ -118896,7 +119699,7 @@
                   const scopeLbl = [w.cust ? `Client: ${w.cust}` : '', w.site ? `Site: ${w.site}` : ''].filter(Boolean).join(' · ') || 'General (All)';
                   const wCo = w.co || 'WTC';
                   return `
-                    <tr data-insp-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${canonTwBu(wCo) !== canonTwBu(inspDefaultTwCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to edit this log entry">
+                    <tr data-insp-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${canonTwBu(wCo) !== canonTwBu(inspDefaultTwCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to start a new log from this entry">
                       <td>${coBadge(wCo)}</td>
                       <td><span class="badge badge-info">${esc(sideLbl)}</span></td>
                       <td class="mono">${esc(w.s || '2024-01-01')}</td>
@@ -121147,12 +121950,23 @@
             inspBackpayCtx = { company: bpCo, staff: row.staff, before: backpayBeforeSet(bpCo, row.staff, [row.id], origRowSnap || null) };
           }
           let touchedInspPeers = [];
+          let keptPeriodInsp = null;   // see keptPeriodModal: the save went on as a new entry, `row` has a new id
           if (isEffInspTbl && row.start_date) {
-            touchedInspPeers = syncChronologicalSeriesNeighbors(key, row, origRowSnap, inspExtraPosts);
+            // What the drawer knows about this edit: whether a field other than dates, notes or the label was changed
+            const inspValueHint = {
+              userChangedValue: Object.keys(pendingUpdates).some(fk => fk && fk.charAt(0) !== '_' && !CHRONO_NON_VALUE_KEYS.has(fk)
+                && !_chronoSameValue(row[fk], origRowSnap ? origRowSnap[fk] : undefined))
+            };
+            touchedInspPeers = syncChronologicalSeriesNeighbors(key, row, origRowSnap, inspExtraPosts, inspValueHint);
+            keptPeriodInsp = _lastChronoKeptPeriod;
+            if (keptPeriodInsp && inspRollbackSnap && typeof inspRollbackSnap.dropOnRestore === 'function') {
+              inspRollbackSnap.dropOnRestore(key, keptPeriodInsp.newId);
+            }
           }
           applyCustomRecordsToSeed();
           if (isEffInspTbl || key === 'products') {
-            backfillEffectiveLogChange(key, row, origRowSnap, inspExtraPosts, { touchedPeers: touchedInspPeers });
+            backfillEffectiveLogChange(key, row, keptPeriodInsp ? null : origRowSnap, inspExtraPosts,
+              { touchedPeers: touchedInspPeers, notBefore: keptPeriodInsp ? keptPeriodInsp.newFrom : '' });
             applyCustomRecordsToSeed();
           }
           let inspBackpayHit = null;
@@ -121173,14 +121987,19 @@
             await rollbackRecordListOnServer(extraRes && extraRes.postedResults);
             if (compensateMain && mainPostRes && mainPostRes.ok) {
               const rbOk = await rollbackRecordOnServer(mainPostRes);
+              if (!rbOk && keptPeriodInsp && row && row.id) {
+                // The save had gone on as a new entry: strike that entry out on the server as well
+                await postRecordToLocalApi(key, Object.assign({}, row, { voided: true, void_reason: 'Rolled back after peer save rejection', modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
+              }
               if (!rbOk && !isSaveWordOnly && canModifyRecord() && origRowSnap && origRowSnap.id) {
                 await postRecordToLocalApi(key, Object.assign({}, origRowSnap, { modified_at: nextMonotonicIso(), modified_by: activeUser().email }), { deferRender: true }).catch(() => null);
               }
             }
             const errTxt = await extractServerRejectMsg(failRes, 'Permission denied: save rejected by server');
             if (inspRollbackSnap) {
-              inspRollbackSnap.restore(errTxt);
+              inspRollbackSnap.restore(errTxt);   // also takes out the entry a kept-period save added (dropOnRestore)
             } else {
+              dropChronoKeptPeriodEntry(keptPeriodInsp);
               toast(errTxt, 'err');
             }
             showRecordInspector(key, (origRowSnap && origRowSnap.id) || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
@@ -121205,6 +122024,7 @@
           syncWithCloud(true);
           toast(changedCount ? `✓ Record modified (${changedCount} field${changedCount === 1 ? '' : 's'} updated)` : '✓ Record saved');
           if (inspBackpayHit) toast(backpayToastText(inspBackpayHit, row.staff || row.name), 'warn');
+          if (keptPeriodInsp) toast(chronoKeptPeriodToastText(keptPeriodInsp), 'ok');
           showRecordInspector(key, row.id || row.name || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
         }
       });
@@ -121316,6 +122136,37 @@
         sInp.removeAttribute('min');
       }
     };
+    // What the button would do, said under it before it is pressed (owner 2026-11-18): worked out on a copy of the
+    // truck by the same function the save runs, so the line and the save always agree.
+    const inspTwEditIdx = () => ((twBox && twBox.dataset.editTwIdx != null && twBox.dataset.editTwIdx !== '') ? Number(twBox.dataset.editTwIdx) : -1);
+    const readInspTwSpec = () => {
+      const eIdx = inspTwEditIdx();
+      const origWin = (eIdx >= 0 && targetEqRow && Array.isArray(targetEqRow.adj_windows)) ? targetEqRow.adj_windows[eIdx] : null;
+      return {
+        co: ($('insp_tw_co') && $('insp_tw_co').value) || 'WTC',
+        side: ($('insp_tw_side') && $('insp_tw_side').value) || 'both',
+        s: ($('insp_tw_start') && $('insp_tw_start').value) || todayISO(),
+        e: ($('insp_tw_end') && $('insp_tw_end').value) || '',
+        cap: canModifyData()
+          ? Number(($('insp_tw_cap') && $('insp_tw_cap').value) || 0)
+          : Number((origWin && origWin.cap != null ? origWin.cap : ((targetEqRow && targetEqRow.capacity) || 0))),
+        own: (($('insp_tw_own') && $('insp_tw_own').value) || '').trim(),
+        drv: (($('insp_tw_drv') && $('insp_tw_drv').value) || '').trim(),
+        cust: ($('insp_tw_cust') && $('insp_tw_cust').value) || '',
+        site: ($('insp_tw_site') && $('insp_tw_site').value) || '',
+        persistTicketBackfill: true
+      };
+    };
+    const refreshInspTwPreview = () => {
+      const host = $('inspTwSavePreview');
+      if (!host || !targetEqRow || !canSwitchEquipmentDriver()) return;
+      const spec = readInspTwSpec();
+      // Nothing to say until the form holds what a save needs (the button names what is missing)
+      if (!spec.own || !spec.drv || !spec.s) { paintTruckLogSavePreview(host, null); return; }
+      let plan = null;
+      try { plan = describeTruckLogSave(targetEqRow, spec, inspTwEditIdx()); } catch (_) { plan = null; }
+      paintTruckLogSavePreview(host, plan);
+    };
     syncInspTwCoFilter();
     syncInspTwStartMin(-1);
     ['insp_tw_co', 'insp_tw_side', 'insp_tw_cust', 'insp_tw_site'].forEach(fid => {
@@ -121325,6 +122176,45 @@
         syncInspTwStartMin();
       });
     });
+    // While typing the line waits for a pause (it reads the truck's tickets); a pick or a button refreshes it at once
+    let inspTwPrevTimer = 0;
+    const queueInspTwPreview = () => {
+      if (inspTwPrevTimer) clearTimeout(inspTwPrevTimer);
+      inspTwPrevTimer = setTimeout(() => { inspTwPrevTimer = 0; if ($('inspTwSavePreview')) refreshInspTwPreview(); }, 180);
+    };
+    ['insp_tw_co', 'insp_tw_side', 'insp_tw_cap', 'insp_tw_start', 'insp_tw_end', 'insp_tw_own', 'insp_tw_drv', 'insp_tw_cust', 'insp_tw_site'].forEach(fid => {
+      const el = $(fid);
+      if (!el) return;
+      el.addEventListener('input', queueInspTwPreview);
+      el.addEventListener('change', queueInspTwPreview);
+    });
+    refreshInspTwPreview();
+    // Clicking a log row starts a NEW log from it (its values, starting today): the usual wish is "from now on this
+    // truck is 9 m³ / has this driver", and that must never rewrite the days already worked. Changing a log itself
+    // (a wrong date or a typing slip) is the row's Edit button.
+    const startInspWinNewFrom = idx => {
+      if (!canSwitchEquipmentDriver() || !twBox || !targetEqRow || !Array.isArray(targetEqRow.adj_windows)) return;
+      const w = targetEqRow.adj_windows[idx];
+      if (!w) return;
+      twBox.dataset.editTwIdx = '';
+      if ($('insp_tw_co')) $('insp_tw_co').value = canonTwBu(w.co || inspDefaultTwCo);
+      syncInspTwCoFilter();
+      if ($('insp_tw_side')) $('insp_tw_side').value = (w.side === 'all' || !w.side) ? 'both' : w.side;
+      if ($('insp_tw_cap')) $('insp_tw_cap').value = String(Number(w.cap != null ? w.cap : (targetEqRow.capacity || 0)));
+      if ($('insp_tw_start')) $('insp_tw_start').value = todayISO();
+      if ($('insp_tw_end')) $('insp_tw_end').value = '';
+      if ($('insp_tw_own')) $('insp_tw_own').value = w.own != null ? w.own : (targetEqRow.supplier || '');
+      if ($('insp_tw_drv')) $('insp_tw_drv').value = w.drv != null ? w.drv : (targetEqRow.default_driver || '');
+      if ($('insp_tw_cust')) $('insp_tw_cust').value = w.cust || '';
+      if ($('insp_tw_site')) $('insp_tw_site').value = w.site || '';
+      syncInspTwStartMin(-1);
+      if (addTwBtn) addTwBtn.textContent = '+ Add Log Entry';
+      if (cancelTwBtn) cancelTwBtn.hidden = false;
+      bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => {
+        tr.style.background = Number(tr.getAttribute('data-insp-tw-row-idx')) === idx ? 'rgba(74,144,217,0.10)' : '';
+      });
+      refreshInspTwPreview();
+    };
     const startInspWinEdit = idx => {
       if (!canSwitchEquipmentDriver() || !twBox || !targetEqRow || !Array.isArray(targetEqRow.adj_windows)) return;
       const w = targetEqRow.adj_windows[idx];
@@ -121346,6 +122236,7 @@
       bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => {
         tr.style.background = Number(tr.getAttribute('data-insp-tw-row-idx')) === idx ? 'rgba(200,157,84,0.14)' : '';
       });
+      refreshInspTwPreview();
     };
     if (cancelTwBtn) {
       cancelTwBtn.addEventListener('click', () => {
@@ -121364,6 +122255,7 @@
         if (addTwBtn) addTwBtn.textContent = '+ Add Log Entry';
         cancelTwBtn.hidden = true;
         bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => { tr.style.background = ''; });
+        refreshInspTwPreview();
       });
     }
     bodyEl.querySelectorAll('button[data-edit-tw-idx]').forEach(btn => btn.addEventListener('click', e => {
@@ -121372,37 +122264,24 @@
     }));
     bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => tr.addEventListener('click', e => {
       if (e.target && e.target.closest('button, a, [data-rel-key]')) return;
-      startInspWinEdit(Number(tr.getAttribute('data-insp-tw-row-idx')));
+      startInspWinNewFrom(Number(tr.getAttribute('data-insp-tw-row-idx')));
     }));
     if (addTwBtn && targetEqRow) {
       addTwBtn.addEventListener('click', () => {
         if (!canSwitchEquipmentDriver()) { toast('Your seat does not have permission to switch equipment drivers', 'err'); return; }
-        const rawEditIdx = (twBox && twBox.dataset.editTwIdx != null && twBox.dataset.editTwIdx !== '') ? Number(twBox.dataset.editTwIdx) : -1;
-        const origEditWin = (rawEditIdx >= 0 && Array.isArray(targetEqRow.adj_windows)) ? targetEqRow.adj_windows[rawEditIdx] : null;
-        const capVal = canModifyData()
-          ? Number(($('insp_tw_cap') && $('insp_tw_cap').value) || 0)
-          : Number((origEditWin && origEditWin.cap != null ? origEditWin.cap : (targetEqRow.capacity || 0)));
-        const sVal = ($('insp_tw_start') && $('insp_tw_start').value) || todayISO();
-        const eVal = ($('insp_tw_end') && $('insp_tw_end').value) || '';
-        const ownVal = (($('insp_tw_own') && $('insp_tw_own').value) || '').trim();
-        const drvVal = (($('insp_tw_drv') && $('insp_tw_drv').value) || '').trim();
+        const rawEditIdx = inspTwEditIdx();
+        // The same reading of the form the line under the button used, so the save does what the line said
+        const winSpec = readInspTwSpec();
+        const capVal = winSpec.cap;
+        const sVal = winSpec.s;
+        const eVal = winSpec.e;
+        const ownVal = winSpec.own;
+        const drvVal = winSpec.drv;
         const isTruckCat = /^(truck|mixer)/i.test(targetEqRow.type || '');
         if (!ownVal) { toast('Select or enter the Truck Owner.', 'err'); return; }
         if (!drvVal) { toast('Select or enter the Active / Substitute Driver.', 'err'); return; }
         if (isTruckCat && !(capVal > 0)) { toast('Enter Truck Capacity (m³) above 0.', 'err'); return; }
         if (eVal && eVal < sVal) { toast('End Date cannot be before Start Date.', 'err'); return; }
-        const winSpec = {
-          co: ($('insp_tw_co') && $('insp_tw_co').value) || 'WTC',
-          side: ($('insp_tw_side') && $('insp_tw_side').value) || 'both',
-          s: sVal,
-          e: eVal,
-          cap: capVal,
-          own: ($('insp_tw_own') && $('insp_tw_own').value) || '',
-          drv: drvVal,
-          cust: ($('insp_tw_cust') && $('insp_tw_cust').value) || '',
-          site: ($('insp_tw_site') && $('insp_tw_site').value) || '',
-          persistTicketBackfill: true
-        };
         const chk = validateTruckWindowChronology(targetEqRow, winSpec, rawEditIdx);
         if (!chk.ok) {
           toast(chk.reason, 'err');
@@ -163987,7 +164866,7 @@
     let wsHtml = '';
     switch (STATE.view) {
       case 'overview': wsHtml = renderOverview(); break;
-      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, computeTillAtDate, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isDieselTankRefillIntake, activeUser, isOwner, canViewHub, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
+      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, computeTillAtDate, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isCarriedBalanceMethod, isDieselTankRefillIntake, activeUser, isOwner, canViewHub, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
       case 'entities': wsHtml = renderEntitiesComparison(); break;
       case 'hld_consolidation': wsHtml = renderHoldingConsolidation('main'); break;
       case 'hld_entities': wsHtml = renderHoldingConsolidation('entities'); break;
@@ -169907,7 +170786,12 @@
         restoreVoidedIndustryDomainRow,
         saveVoidNote,
         navigateToRecordOrDomainRow,
-        recordDateDMY
+        recordDateDMY,
+        periodRange,
+        fmtDateDMY,
+        showRecordInspector,
+        coBadge,
+        relLink
       });
     }
 

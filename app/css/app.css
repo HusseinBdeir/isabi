@@ -41922,3 +41922,61 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
   background: rgba(217, 165, 74, 0.28);
   border-color: rgba(217, 165, 74, 0.72);
 }
+/* Truck log forms: what the button will do, said under it before it is pressed (v19.6.390) */
+.tw-save-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 0;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 6px 0 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(74, 144, 217, 0.32);
+  background: rgba(74, 144, 217, 0.08);
+  color: var(--ink, #0F1E38);
+  font-size: 12.4px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.tw-save-preview[hidden] {
+  display: none !important;
+}
+.tw-save-preview .tw-prev-part {
+  min-width: 0;
+}
+.tw-save-preview .tw-prev-val {
+  color: var(--mu, #5B6B82);
+  font-variant-numeric: tabular-nums;
+}
+.tw-save-preview .tw-prev-sep {
+  color: var(--mu, #5B6B82);
+  white-space: pre;
+}
+.tw-save-preview .tw-prev-warn {
+  color: #9A4A12;
+  font-weight: 600;
+}
+.tw-save-preview:has(.tw-prev-warn) {
+  border-color: rgba(201, 106, 34, 0.46);
+  background: rgba(201, 106, 34, 0.10);
+}
+:root[data-theme="dark"] .tw-save-preview {
+  border-color: rgba(96, 165, 250, 0.38);
+  background: rgba(96, 165, 250, 0.12);
+  color: var(--ink, #E9ECF2);
+}
+:root[data-theme="dark"] .tw-save-preview .tw-prev-warn {
+  color: #fde68a;
+}
+:root[data-theme="dark"] .tw-save-preview:has(.tw-prev-warn) {
+  border-color: rgba(245, 158, 11, 0.42);
+  background: rgba(240, 144, 69, 0.16);
+}
+/* Sentinel table: loads off the truck's logged size spans the full sentinel grid, like the other wide tables */
+#snTruckSize {
+  grid-column: 1 / -1;
+}
